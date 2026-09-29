@@ -1,0 +1,239 @@
+"""Creality K2 Plus yazıcılarından canlı durum okuma ve ağ taraması.
+
+K2 Plus (Creality OS, Klipper tabanlı) iki yoldan konuşabilir:
+  1. Creality'nin yerel WebSocket'i (ws://IP:9999) — Creality Print'in kullandığı kanal,
+     bağlanınca JSON durum mesajları gönderir (state, printProgress, printFileName ...).
+  2. Moonraker HTTP API (http://IP:7125) — açık olan cihazlarda.
+Önce Moonraker, olmazsa WebSocket denenir. Alan adları firmware sürümüne göre
+değişebildiğinden eşleme toleranslı yazıldı.
+"""
+import ipaddress
+import json
+import socket
+import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import httpx
+from websockets.sync.client import connect as ws_connect
+
+from . import config, db
+
+CREALITY_WS_PORT = 9999
+MOONRAKER_PORT = 7125
+TIMEOUT = 3
+
+# Birleşik durum kodları → arayüz etiketleri frontend'dedir.
+IDLE, PRINTING, PAUSED, DONE, ERROR, OFFLINE = 'HAZIR', 'YAZDIRIYOR', 'DURAKLADI', 'TAMAMLANDI', 'HATA', 'CEVRIMDISI'
+
+_MOONRAKER_STATES = {'standby': IDLE, 'printing': PRINTING, 'paused': PAUSED,
+                     'complete': DONE, 'cancelled': IDLE, 'error': ERROR}
+# Creality K serisi 'state' alanı
+_CREALITY_STATES = {0: IDLE, 1: PRINTING, 2: DONE, 3: ERROR, 4: IDLE, 5: PAUSED}
+
+
+def _moonraker(ip):
+    url = f'http://{ip}:{MOONRAKER_PORT}'
+    r = httpx.get(f'{url}/printer/objects/query',
+                  params={'print_stats': '', 'virtual_sdcard': ''}, timeout=TIMEOUT)
+    r.raise_for_status()
+    status = r.json()['result']['status']
+    ps, sd = status.get('print_stats', {}), status.get('virtual_sdcard', {})
+    info = {}
+    try:
+        info = httpx.get(f'{url}/printer/info', timeout=TIMEOUT).json()['result']
+    except Exception:
+        pass
+    return {
+        'state': _MOONRAKER_STATES.get(ps.get('state'), IDLE),
+        'progress': round((sd.get('progress') or 0) * 100, 1),
+        'file': ps.get('filename') or None,
+        'print_s': ps.get('print_duration'),   # işin net baskı süresi (duraklamalar hariç), sn
+        'hostname': info.get('hostname'),
+        'model': None,
+        'source': 'moonraker',
+    }
+
+
+def _num(v):
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _creality_ws(ip):
+    merged = {}
+    with ws_connect(f'ws://{ip}:{CREALITY_WS_PORT}', open_timeout=TIMEOUT, close_timeout=1) as ws:
+        # Tam durum isteği; firmware bunu yok sayarsa periyodik mesajlar yine gelir.
+        try:
+            ws.send(json.dumps({'method': 'get', 'params': {'reqPrinterPara': 1}}))
+        except Exception:
+            pass
+        deadline = time.monotonic() + TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                msg = ws.recv(timeout=max(0.1, deadline - time.monotonic()))
+            except TimeoutError:
+                break
+            try:
+                data = json.loads(msg)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(data, dict):
+                merged.update(data)
+            if 'state' in merged and ('printProgress' in merged or 'model' in merged):
+                break
+    if not merged:
+        raise ConnectionError('Yazıcıdan veri gelmedi')
+    try:
+        state = _CREALITY_STATES.get(int(merged.get('state')), IDLE)
+    except (TypeError, ValueError):
+        state = IDLE
+    file = merged.get('printFileName') or None
+    if file:
+        file = str(file).rsplit('/', 1)[-1]
+    return {
+        'state': state,
+        'progress': float(merged.get('printProgress') or 0),
+        'file': file,
+        'print_s': _num(merged.get('printJobTime')),   # işin baskı süresi, sn (firmware veriyorsa)
+        'hostname': merged.get('hostname'),
+        'model': merged.get('model'),
+        'source': 'creality-ws',
+    }
+
+
+def probe(ip):
+    """Yazıcının canlı durumunu döner; ulaşılamazsa None."""
+    for fn in (_moonraker, _creality_ws):
+        try:
+            return fn(ip)
+        except Exception:
+            continue
+    return None
+
+
+def poll_all():
+    with db.connect() as conn:
+        printers = db.rows(conn.execute(
+            'SELECT id, ip, model, live_state, live_file, live_progress, live_since, current_part_id FROM printers'))
+    if not printers:
+        return
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda p: (p, probe(p['ip'])), printers))
+    now = db.now()
+    with db.connect() as conn:
+        for p, live in results:
+            if live:
+                since = p['live_since'] if p['live_state'] == live['state'] and p['live_since'] else now
+                conn.execute(
+                    '''UPDATE printers SET live_state = ?, live_progress = ?, live_file = ?, live_source = ?,
+                       last_seen = ?, live_since = ?, model = COALESCE(model, ?), live_print_s = ? WHERE id = ?''',
+                    (live['state'], live['progress'], live['file'], live['source'], now, since, live['model'],
+                     live.get('print_s'), p['id']))
+                detect_unrecorded_abort(conn, p, live['state'], now)
+            else:
+                conn.execute('UPDATE printers SET live_state = ? WHERE id = ?', (OFFLINE, p['id']))
+        track_jobs(conn, now)
+
+
+def detect_unrecorded_abort(conn, before, state, now):
+    """Sistemde üretime başlatılmamış (kayıtsız) bir baskı bitmeden durdu: yazdırıyor / duraklatılmış iken yazıcı
+    boşa geçti (iptal) ya da hata verdi. Kritik uyarı için olay kaydı açılır. Bağlantı kopması (çevrimdışı) sayılmaz;
+    baskı tamamlandıysa (TAMAMLANDI) olay yoktur."""
+    if before['live_state'] not in (PRINTING, PAUSED) or state not in (IDLE, ERROR) or before['current_part_id']:
+        return
+    started = before['live_since'] if before['live_state'] == PRINTING else None
+    conn.execute('''INSERT INTO printer_incidents (printer_id, kind, file, progress, end_state, started_at, ended_at)
+                    VALUES (?, 'KAYITSIZ_IPTAL', ?, ?, ?, ?, ?)''',
+                 (before['id'], before['live_file'], before['live_progress'], state, started, now))
+
+
+def track_jobs(conn, now):
+    """Üretimdeki parçanın yazıcıdaki gerçek başlangıç ve bitiş anı (yazıcının kendi bildirimine göre).
+
+    Başlangıç: yazıcı bu parçanın dosyasını basarken ilk görüldüğü an. Bitiş: ardından yazıcı "tamamlandı"
+    dediği an. Böylece personelin parçayı yazıcıda ne kadar beklettiği (bitiş → "Üretim Tamamlandı") ölçülür.
+    Dosya adı parçanın baskı dosyasıyla uyuşmuyorsa (başka bir iş) kaydedilmez; baskı dosyası tanımsız
+    parçalarda dosya adı kontrol edilmez."""
+    from .alerts import expected_files, norm_file
+    files = expected_files(conn)
+    rows = db.rows(conn.execute(
+        '''SELECT op.id, op.part_id, op.printer_started_at, op.printer_done_at, p.live_state, p.live_file, p.live_print_s
+           FROM printers p JOIN order_parts op ON op.id = p.current_part_id
+           WHERE op.state = 'URETIMDE' AND p.live_state IN (?, ?, ?)''', (PRINTING, PAUSED, DONE)))
+    for r in rows:
+        expected = files.get(r['part_id'])
+        if expected and norm_file(expected) != norm_file(r['live_file']):
+            continue
+        if r['live_print_s'] is not None and not r['printer_done_at']:   # parçanın net baskı süresi (yazıcının bildirdiği)
+            conn.execute('UPDATE order_parts SET print_seconds = ? WHERE id = ?', (int(r['live_print_s']), r['id']))
+        if r['live_state'] in (PRINTING, PAUSED) and not r['printer_started_at']:
+            conn.execute('UPDATE order_parts SET printer_started_at = ? WHERE id = ?', (now, r['id']))
+        elif r['live_state'] == DONE and r['printer_started_at'] and not r['printer_done_at']:
+            conn.execute('UPDATE order_parts SET printer_done_at = ? WHERE id = ?', (now, r['id']))
+
+
+def _local_networks():
+    """Makinenin fiziksel ağ arayüzlerindeki IPv4 /24 ağları (docker köprüleri hariç)."""
+    nets = set()
+    try:
+        out = subprocess.run(['ip', '-4', '-o', 'addr', 'show'], capture_output=True, text=True, timeout=5).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            iface, cidr = parts[1], parts[3]
+            if iface == 'lo' or iface.startswith(('docker', 'br-', 'veth', 'virbr', 'tailscale', 'zt')):
+                continue
+            nets.add(ipaddress.ip_interface(cidr.split('/')[0] + '/24').network)
+    except Exception:
+        pass
+    if not nets:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('10.255.255.255', 1))
+            nets.add(ipaddress.ip_interface(s.getsockname()[0] + '/24').network)
+    return [n for n in nets if n.is_private]
+
+
+def _port_open(ip, port):
+    try:
+        with socket.create_connection((ip, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def discover():
+    """Yerel ağda 9999/7125 portu açık cihazları bulur ve yazıcı olduğunu doğrular."""
+    hosts = [str(h) for net in _local_networks() for h in net.hosts()]
+
+    def check(ip):
+        if _port_open(ip, MOONRAKER_PORT) or _port_open(ip, CREALITY_WS_PORT):
+            live = probe(ip)
+            if live:
+                return ip, live
+        return None
+
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        return [r for r in pool.map(check, hosts) if r]
+
+
+_started = False
+
+
+def start_poller():
+    global _started
+    if _started or not config.PRINTER_POLL_ENABLED:
+        return
+    _started = True
+
+    def loop():
+        while True:
+            try:
+                poll_all()
+            except Exception:
+                pass
+            time.sleep(config.PRINTER_POLL_SECONDS)
+
+    threading.Thread(target=loop, daemon=True, name='printer-poller').start()

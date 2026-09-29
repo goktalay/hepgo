@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caymaz Parça Haritası</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --text: #1c2230;
+    --muted: #6b7385;
+    --line: #1c2230;
+    --part: #ffffff;
+    --hover: #ffd966;
+    --hover-line: #b8860b;
+    --border: #dde1e8;
+    --g-nose: #e8f0ff;
+    --g-body: #eef7ee;
+    --g-strake: #fff1e6;
+    --g-wing: #ffffff;
+    --g-elevon: #f3ecff;
+    --cover: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151c; --panel: #1b1f29; --text: #e6e9ef; --muted: #8b93a5;
+      --line: #cfd5e1; --part: #1b1f29; --hover: #8a6d1f; --hover-line: #ffd966;
+      --border: #2c3240; --g-nose: #1c2638; --g-body: #1b2a20; --g-strake: #2e231b;
+      --g-wing: #1b1f29; --g-elevon: #261f35; --cover: #ff7b6b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151c; --panel: #1b1f29; --text: #e6e9ef; --muted: #8b93a5;
+    --line: #cfd5e1; --part: #1b1f29; --hover: #8a6d1f; --hover-line: #ffd966;
+    --border: #2c3240; --g-nose: #1c2638; --g-body: #1b2a20; --g-strake: #2e231b;
+    --g-wing: #1b1f29; --g-elevon: #261f35; --cover: #ff7b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .stage { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  svg { width: 100%; height: auto; display: block; max-height: calc(100vh - 120px); }
+  .part { stroke: var(--line); stroke-width: 3; stroke-linejoin: round; cursor: pointer; transition: fill .12s; }
+  .part[data-group="nose"] { fill: var(--g-nose); }
+  .part[data-group="body"] { fill: var(--g-body); }
+  .part[data-group="strake"] { fill: var(--g-strake); }
+  .part[data-group="wing"] { fill: var(--g-wing); }
+  .part[data-group="elevon"] { fill: var(--g-elevon); }
+  .part[data-group="cover"] { fill: transparent; stroke: var(--cover); stroke-width: 4; }
+  .part[data-group="cover"].active { fill: var(--hover) !important; fill-opacity: .7; }
+  .hole { fill: var(--cover); pointer-events: none; }
+  .slot { fill: none; stroke: var(--cover); stroke-width: 2.5; pointer-events: none; }
+  .part.active { fill: var(--hover) !important; stroke: var(--hover-line); stroke-width: 5; }
+  .label { font-size: 22px; fill: var(--muted); pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+  .part.active + .label { fill: var(--text); font-weight: 700; }
+  aside { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: calc(100vh - 120px); overflow: auto; }
+  aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
+  aside h2:first-child { margin-top: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font: 12px ui-monospace, monospace; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .chip.active { background: var(--hover); border-color: var(--hover-line); }
+  .tip {
+    position: fixed; pointer-events: none; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.15); display: none; z-index: 10; min-width: 160px;
+  }
+  .tip b { font-family: ui-monospace, monospace; font-size: 15px; }
+  .tip div { color: var(--muted); }
+  .total { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Caymaz – Parça Haritası</h1>
+  <p>Parçaların üzerinde gezinin; sağdaki listeden de seçebilirsiniz.</p>
+</header>
+<main>
+  <div class="stage">
+    <svg id="plane" viewBox="50 50 1745 1770" aria-label="Uçak parça haritası"></svg>
+  </div>
+  <aside id="list"></aside>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+// Koordinatlar referans çizimin piksel uzayındadır (≈1920×1920).
+// Simetri ekseni x = 921; sağ taraf sol tarafın aynasıdır.
+const AXIS2 = 1842;
+const mirror = pts => pts.map(([x, y]) => [AXIS2 - x, y]).reverse();
+
+const GROUPS = {
+  nose:   'Burun',
+  body:   'Gövde',
+  strake: 'Yan Şerit',
+  wing:   'Kanat',
+  elevon: 'Elevon',
+  cover:  'Kapak',
+};
+
+const parts = [];
+const add = (id, group, side, pts) => parts.push({ id, group, side, pts });
+
+// --- Burun: yarı genişlik profili w(y), uç y=78, taban y=287
+const noseW = y => 77 * Math.sqrt(Math.max(0, (y - 78) / 209));
+function noseBand(y0, y1) {
+  const left = [], right = [];
+  for (let i = 0; i <= 16; i++) {
+    const y = y0 + (y1 - y0) * i / 16;
+    left.push([920 - noseW(y), y]);
+    right.push([920 + noseW(y), y]);
+  }
+  return [...left, ...right.reverse()];
+}
+add('BR-01', 'nose', 'M', noseBand(78, 155));
+add('BR-02', 'nose', 'M', noseBand(155, 287));
+
+// --- Gövde segmentleri
+add('GV-01', 'body', 'M', [[843,287],[997,287],[1017,335],[1017,540],[825,540],[825,335]]);
+const bodyY = [540, 733, 925, 1117, 1310, 1502, 1695];
+for (let i = 0; i < bodyY.length - 1; i++) {
+  add(`GV-0${i + 2}`, 'body', 'M',
+    [[825, bodyY[i]], [1017, bodyY[i]], [1017, bodyY[i + 1]], [825, bodyY[i + 1]]]);
+}
+
+// --- Yan şeritler (strake)
+const strakes = [
+  ['1', [[808,345],[815,332],[825,328],[825,460],[808,460]]],
+  ['2', [[808,460],[825,460],[825,648],[775,648],[808,490]]],
+];
+for (const [n, pts] of strakes) {
+  add(`YS-L${n}`, 'strake', 'L', pts);
+  add(`YS-R${n}`, 'strake', 'R', mirror(pts));
+}
+
+// --- Kanat: ızgara hücreleri kanat dış hattına göre kırpılır
+const wingOutline = [
+  [775,648],[825,648],[825,1770],[818,1788],[800,1795],[85,1795],[92,1560],
+];
+const cols = [825, 633, 443, 252, 80];          // kökten uca
+const rows = [648, 838, 1030, 1222, 1413, 1602, 1795];
+const rowName = 'ABCDEF';
+
+function clip(subject, clipper) {
+  // Sutherland–Hodgman, dışbükey kırpıcı
+  const area = clipper.reduce((s, p, i) => {
+    const q = clipper[(i + 1) % clipper.length];
+    return s + p[0] * q[1] - q[0] * p[1];
+  }, 0);
+  const sgn = Math.sign(area);
+  const inside = (p, a, b) => sgn * ((b[0]-a[0])*(p[1]-a[1]) - (b[1]-a[1])*(p[0]-a[0])) >= 0;
+  const hit = (p, q, a, b) => {
+    const [x1,y1] = p, [x2,y2] = q, [x3,y3] = a, [x4,y4] = b;
+    const d = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
+    const t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / d;
+    return [x1 + t*(x2-x1), y1 + t*(y2-y1)];
+  };
+  let out = subject;
+  for (let i = 0; i < clipper.length && out.length; i++) {
+    const a = clipper[i], b = clipper[(i + 1) % clipper.length];
+    const input = out; out = [];
+    for (let j = 0; j < input.length; j++) {
+      const p = input[j], q = input[(j + 1) % input.length];
+      const pin = inside(p, a, b), qin = inside(q, a, b);
+      if (pin) { out.push(p); if (!qin) out.push(hit(p, q, a, b)); }
+      else if (qin) out.push(hit(p, q, a, b));
+    }
+  }
+  return out;
+}
+const polyArea = pts => Math.abs(pts.reduce((s, p, i) => {
+  const q = pts[(i + 1) % pts.length]; return s + p[0]*q[1] - q[0]*p[1];
+}, 0)) / 2;
+
+// Birleşik hücreler: hücre kodu → kaç sütun boyunca uca doğru uzandığı
+const SPANS = {
+  D3: 2,   // D3 + D4 tek parça
+};
+
+for (let r = 0; r < rows.length - 1; r++) {
+  for (let c = 0; c < cols.length - 1; c++) {
+    const span = SPANS[`${rowName[r]}${c + 1}`] || 1;
+    const outer = cols[c + span];
+    const rect = [[outer, rows[r]], [cols[c], rows[r]], [cols[c], rows[r+1]], [outer, rows[r+1]]];
+    const pts = clip(rect, wingOutline);
+    if (pts.length < 3 || polyArea(pts) < 200) continue;
+    const code = `${rowName[r]}${c + 1}`;
+    add(`KL-${code}`, 'wing', 'L', pts);
+    add(`KR-${code}`, 'wing', 'R', mirror(pts));
+    c += span - 1;
+  }
+}
+
+// --- Elevonlar (kanat panellerinin üstüne yerleşir)
+const elevons = [
+  ['1', [[420,1793],[420,1733],[432,1733],[432,1715],[715,1715],[715,1793]]],
+  ['2', [[120,1715],[405,1715],[405,1733],[415,1733],[415,1793],[120,1793]]],
+];
+for (const [n, pts] of elevons) {
+  add(`EL-L${n}`, 'elevon', 'L', pts);
+  add(`EL-R${n}`, 'elevon', 'R', mirror(pts));
+}
+
+// --- Bölünen parçalar: A ve B ayrı yazıcılarda basılır.
+// y: yatay kesim çizgisi (A üst, B alt)
+const SPLITS = {
+  'KL-C1': { y: 1126 },
+  'KR-C1': { y: 1126 },
+};
+for (const [id, { y }] of Object.entries(SPLITS)) {
+  const i = parts.findIndex(p => p.id === id);
+  if (i < 0) continue;
+  const p = parts[i];
+  const top = [[-1e4, -1e4], [1e4, -1e4], [1e4, y], [-1e4, y]];
+  const bottom = [[-1e4, y], [1e4, y], [1e4, 1e4], [-1e4, 1e4]];
+  parts.splice(i, 1,
+    { ...p, id: `${id}-A`, parent: id, sub: 'A', pts: clip(p.pts, top) },
+    { ...p, id: `${id}-B`, parent: id, sub: 'B', pts: clip(p.pts, bottom) });
+}
+
+// --- Kapaklar: kapak adı = dosya adı. Koordinatlar kapak çizimlerinin
+// 2000 px uzayındadır; IMG ile bu sayfanın koordinatlarına ölçeklenir.
+const IMG = 1 / 1.0345;
+const box = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+const COVERS = [
+  { file: 'ARABA-KAPAK', id: 'ARABA-KAPAK', side: 'L', pts: box(665, 1091, 708, 1134),
+    holes: [[675,1101,3],[698,1101,3],[675,1124,3],[698,1124,3]] },
+  { file: 'ARABA-KAPAK', id: 'ARABA-KAPAK', side: 'L', pts: box(665, 1182, 708, 1225),
+    holes: [[675,1192,3],[698,1192,3],[675,1215,3],[698,1215,3]] },
+  { file: 'ARABA-KAPAK', id: 'ARABA-KAPAK', side: 'R', pts: box(1196, 1091, 1239, 1134),
+    holes: [[1217,1102,3],[1217,1123,3]] },
+  { file: 'ARABA-KAPAK', id: 'ARABA-KAPAK', side: 'R', pts: box(1196, 1182, 1239, 1225),
+    holes: [[1217,1193,3],[1217,1214,3]] },
+  { file: 'KP-GV-07', id: 'KP-GV-07', side: 'M', pts: [[920,1575],[984,1575],[988,1732],[916,1732]] },
+  { file: 'KP-GV-05', id: 'KP-GV-05', side: 'M', pts: [[910,1159],[993,1159],[997,1351],[906,1351]] },
+  { file: 'KP-GV-03', id: 'KP-GV-03', side: 'M', pts: [[921,776],[983,776],[988,933],[916,933]] },
+  { file: 'KP-GV-02', id: 'KP-GV-02', side: 'M', pts: box(881, 567, 1024, 751),
+    holes: [[899,605,4],[952,599,7],[952,632,5],[1005,604,4]] },
+  // Servo kapakları: dördü tek yazıcıda tek baskı → aynı id, tek parça.
+  // slots: [x, y, genişlik, yükseklik] iç kanal/çentik çizgileri
+  { file: 'SERVO-KAPAK', id: 'SERVO-KAPAK', side: 'L', pts: box(577, 1674, 648, 1734),
+    slots: [[583, 1684, 11, 40]] },
+  { file: 'SERVO-KAPAK', id: 'SERVO-KAPAK', side: 'L', pts: box(268, 1674, 340, 1734),
+    slots: [[274, 1684, 11, 40]] },
+  { file: 'SERVO-KAPAK', id: 'SERVO-KAPAK', side: 'R', pts: box(1256, 1674, 1328, 1734),
+    slots: [[1286, 1674, 12, 13], [1286, 1721, 12, 13]] },
+  { file: 'SERVO-KAPAK', id: 'SERVO-KAPAK', side: 'R', pts: box(1564, 1674, 1636, 1734),
+    slots: [[1594, 1674, 12, 13], [1594, 1721, 12, 13]] },
+];
+const inPoly = ([x, y], pts) => {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+const structure = parts.slice();
+// Aynı id'yi taşıyan kapaklar tek parçanın şekilleri olarak birleştirilir.
+for (const c of COVERS) {
+  const pts = c.pts.map(([x, y]) => [x * IMG, y * IMG]);
+  const mid = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]);
+  const shape = {
+    pts,
+    holes: (c.holes || []).map(([x, y, r]) => [x * IMG, y * IMG, r * IMG]),
+    slots: (c.slots || []).map(v => v.map(n => n * IMG)),
+  };
+  const host = structure.find(p => inPoly(mid, p.pts))?.id;
+  const existing = parts.find(p => p.id === c.id);
+  if (existing) {
+    existing.shapes.push(shape);
+    if (host) existing.hosts.push(host);
+    if (existing.side !== c.side) existing.side = 'LR';
+    continue;
+  }
+  parts.push({ id: c.id, group: 'cover', side: c.side, file: c.file, shapes: [shape], hosts: host ? [host] : [] });
+}
+
+// --- Çizim
+const SVGNS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('plane');
+const tip = document.getElementById('tip');
+const list = document.getElementById('list');
+const sideName = { L: 'Sol', R: 'Sağ', M: 'Merkez', LR: 'Sol + Sağ' };
+const byId = new Map();
+
+const centroid = pts => {
+  let x = 0, y = 0;
+  pts.forEach(p => { x += p[0]; y += p[1]; });
+  return [x / pts.length, y / pts.length];
+};
+
+for (const p of parts) {
+  p.els = [];
+  for (const sh of p.shapes || [p]) {
+    const poly = document.createElementNS(SVGNS, 'polygon');
+    poly.setAttribute('points', sh.pts.map(q => q.map(v => v.toFixed(1)).join(',')).join(' '));
+    poly.setAttribute('class', 'part');
+    poly.dataset.id = p.id;
+    poly.dataset.group = p.group;
+    svg.appendChild(poly);
+
+    const [cx, cy] = centroid(sh.pts);
+    const label = document.createElementNS(SVGNS, 'text');
+    label.setAttribute('class', 'label');
+    label.setAttribute('x', cx); label.setAttribute('y', cy);
+    label.textContent = p.id;
+    if (polyArea(sh.pts) < 6000 || p.group === 'strake' || p.group === 'cover') label.style.display = 'none';
+    svg.appendChild(label);
+
+    for (const [hx, hy, hr] of sh.holes || []) {
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('class', 'hole');
+      c.setAttribute('cx', hx); c.setAttribute('cy', hy); c.setAttribute('r', hr);
+      svg.appendChild(c);
+    }
+    for (const [sx, sy, sw, shh] of sh.slots || []) {
+      const r = document.createElementNS(SVGNS, 'rect');
+      r.setAttribute('class', 'slot');
+      r.setAttribute('x', sx); r.setAttribute('y', sy);
+      r.setAttribute('width', sw); r.setAttribute('height', shh);
+      r.setAttribute('rx', Math.min(sw, shh) / 2);
+      svg.appendChild(r);
+    }
+
+    p.els.push(poly);
+  }
+  byId.set(p.id, p);
+}
+
+function setActive(id, on) {
+  const p = byId.get(id);
+  if (!p) return;
+  p.els.forEach(el => el.classList.toggle('active', on));
+  p.chip?.classList.toggle('active', on);
+}
+
+function showTip(p, ev) {
+  tip.innerHTML = `<b>${p.id}</b>
+    <div>Grup: ${GROUPS[p.group]}</div>
+    <div>Taraf: ${sideName[p.side]}</div>
+    ${p.parent ? `<div>Ana parça: ${p.parent} – Part ${p.sub} (ayrı yazıcı)</div>` : ''}
+    ${p.file ? `<div>Dosya: ${p.file}</div>` : ''}
+    ${p.shapes?.length > 1 ? `<div>Adet: ${p.shapes.length} (tek yazıcıda tek baskı)</div>` : ''}
+    ${p.hosts?.length ? `<div>Bulunduğu parça: ${p.hosts.join(', ')}</div>` : ''}
+    <div>Durum: Beklemede</div>`;
+  tip.style.display = 'block';
+  moveTip(ev);
+}
+function moveTip(ev) {
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth) x = ev.clientX - w - pad;
+  if (y + h > innerHeight) y = ev.clientY - h - pad;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+
+svg.addEventListener('mouseover', ev => {
+  const id = ev.target.dataset?.id; if (!id) return;
+  setActive(id, true); showTip(byId.get(id), ev);
+});
+svg.addEventListener('mousemove', ev => { if (tip.style.display === 'block') moveTip(ev); });
+svg.addEventListener('mouseout', ev => {
+  const id = ev.target.dataset?.id; if (!id) return;
+  setActive(id, false); tip.style.display = 'none';
+});
+
+// --- Liste
+const total = document.createElement('div');
+total.className = 'total';
+total.textContent = `Toplam ${parts.length} parça`;
+list.appendChild(total);
+for (const g of Object.keys(GROUPS)) {
+  const items = parts.filter(p => p.group === g);
+  const h = document.createElement('h2');
+  h.textContent = `${GROUPS[g]} (${items.length})`;
+  list.appendChild(h);
+  const box = document.createElement('div');
+  box.className = 'chips';
+  for (const p of items) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = p.id;
+    chip.addEventListener('mouseenter', () => setActive(p.id, true));
+    chip.addEventListener('mouseleave', () => setActive(p.id, false));
+    p.chip = chip;
+    box.appendChild(chip);
+  }
+  list.appendChild(box);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+// Güvenlik → Tanımlanamayan Kişiler: kameralarda görülen, henüz kimseye atanmamış yüzler; benzer yüzler bir grupta.
+// Gruba tıklanınca tüm görülmeler (yüz ve görüldüğü anın tam karesi); "Kişiye Ata" ile gruptaki tüm yüzler bir kullanıcıya
+// ya da firma personeline atanır ve sonraki görülmelerde o kişi tanınır. Aynı kişinin grupları birleştirilebilir.
+import { api, fileUrl } from '../api.js';
+import { clear, confirmDialog, every, fmtDateTime, h, matches, modal, segmented, toast, toastError } from '../ui.js';
+
+export async function renderFaces(body) {
+  let state = 'unknown';
+  const nav = h('select', { class: 'input', title: 'Durum' }, h('option', { value: 'unknown' }, 'Tanımlanamayanlar'), h('option', { value: 'known' }, 'Tanınan kişiler'));
+  nav.addEventListener('change', () => { state = nav.value; selected.clear(); load(); });
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Kamera, kişi ara…', style: { width: '200px' } });
+  const mergeBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => mergeSelected() }, 'Seçilenleri Birleştir');
+  const info = h('span', { class: 'small muted' });
+  const out = h('div');
+  const selected = new Set();
+  let rows = [];
+  const syncBtn = () => { mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = `Seçilenleri Birleştir${selected.size ? ` (${selected.size})` : ''}`; };
+
+  const draw = () => {
+    const list = rows.filter(g => matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
+    info.textContent = state === 'unknown'
+      ? `${list.length} tanımlanamayan kişi grubu · aynı kişiye ait grupları seçip birleştirebilirsiniz`
+      : `${list.length} tanınan kişi`;
+    clear(out, list.length ? h('div', { class: 'fg-grid' }, list.map(g => {
+      const cb = h('input', { type: 'checkbox', checked: selected.has(g.id), onclick: e => e.stopPropagation(),
+        onchange: e => { e.target.checked ? selected.add(g.id) : selected.delete(g.id); card.classList.toggle('on', e.target.checked); syncBtn(); } });
+      const card = h('div', { class: `card fg-card ${selected.has(g.id) ? 'on' : ''}`, onclick: () => openGroup(g.id) },
+        h('div', { class: 'fg-img' }, g.best_crop ? h('img', { src: fileUrl(g.best_crop, 256), alt: '', loading: 'lazy' }) : null,
+          state === 'unknown' ? h('label', { class: 'fg-check', onclick: e => e.stopPropagation() }, cb) : null),
+        h('div', { class: 'fg-body' },
+          state === 'known' ? h('b', null, g.user_name || g.person_name, g.person_company ? h('span', { class: 'small muted' }, ` · ${g.person_company}`) : null)
+            : h('b', null, 'Tanımlanamayan kişi'),
+          h('div', { class: 'small' }, `${g.sightings} görülme`),
+          h('div', { class: 'small muted' }, `Son: ${fmtDateTime(g.last_seen)}${g.last_camera_name ? ` · ${g.last_camera_name}` : ''}`),
+          h('div', { class: 'small muted' }, `İlk: ${fmtDateTime(g.first_seen)}`)));
+      return card;
+    })) : h('div', { class: 'card empty' }, state === 'unknown'
+      ? 'Tanımlanamayan kişi yok. Kameralarda yüz tanıma açıksa görülen yüzler burada gruplanır.' : 'Henüz kişiye atanmış yüz yok'));
+  };
+  async function load() {
+    rows = await api.get(`/api/faces/groups?state=${state}`);
+    for (const id of [...selected]) if (!rows.some(g => g.id === id)) selected.delete(id);
+    syncBtn();
+    mergeBtn.hidden = state !== 'unknown';
+    draw();
+  }
+  async function mergeSelected() {
+    if (!await confirmDialog('Grupları birleştir', `${selected.size} grup aynı kişi olarak birleştirilsin mi?`, { okLabel: 'Birleştir' })) return;
+    try { await api.post('/api/faces/merge', { ids: [...selected] }); selected.clear(); toast('Gruplar birleştirildi'); load(); } catch (err) { toastError(err); }
+  }
+
+  async function openGroup(id) {
+    const g = await api.get(`/api/faces/groups/${id}`);
+    const who = g.user_name || g.person_name;
+    const m = modal({
+      title: who ? `${who}${g.person_company ? ` · ${g.person_company}` : ''}` : 'Tanımlanamayan kişi', wide: true,
+      body: h('div', null,
+        h('div', { class: 'fg-head' }, g.best_crop ? h('img', { src: fileUrl(g.best_crop, 256), alt: '' }) : null,
+          h('div', null, h('div', null, h('b', null, `${g.sightings} görülme`), ` · ${g.samples} yüz örneği`),
+            h('div', { class: 'small muted' }, `İlk ${fmtDateTime(g.first_seen)} · Son ${fmtDateTime(g.last_seen)}`),
+            h('div', { class: 'small muted' }, `Kameralar: ${g.cameras || '—'}`),
+            h('p', { class: 'small muted' }, 'Yüze tıklayınca görüldüğü anın tam karesi açılır.'))),
+        h('div', { class: 'fg-shots' }, g.items.map(s => h('button', { class: 'fg-shot', type: 'button', onclick: () => showFrame(s) },
+          h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' }),
+          h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'))))),
+      actions: [
+        { label: 'Grubu Sil', class: 'danger', onClick: async () => {
+          if (!await confirmDialog('Grubu sil', 'Bu gruptaki tüm yüz ve kare resimleri silinsin mi? (yanlış tespitler için)', { okLabel: 'Sil', danger: true })) return true;
+          await api.del(`/api/faces/groups/${id}`); toast('Grup silindi'); load();
+        } },
+        who ? { label: 'Atamayı Kaldır', onClick: async () => { await api.post(`/api/faces/groups/${id}/unassign`); toast('Atama kaldırıldı'); load(); } } : null,
+        'spacer',
+        { label: 'Kapat' },
+        { label: who ? 'Başka Kişiye Ata' : 'Kişiye Ata', class: 'primary', onClick: () => { assign(id, () => { m.close(); load(); }); return true; } },
+      ].filter(Boolean),
+    });
+  }
+
+  function showFrame(s) {
+    modal({ title: `${fmtDateTime(s.at)} · ${s.camera_name || ''}`, wide: true,
+      body: h('a', { href: fileUrl(s.frame), target: '_blank', rel: 'noopener' }, h('img', { class: 'fg-frame', src: fileUrl(s.frame), alt: '' })),
+      actions: [{ label: 'Kapat', class: 'primary' }] });
+  }
+
+  async function assign(id, done) {
+    const { users, people } = await api.get('/api/faces/people');
+    let kind = 'user';
+    const q2 = h('input', { class: 'input', type: 'search', placeholder: 'Ad ara…' });
+    const list = h('div', { class: 'pick-list' });
+    const fill = () => {
+      const src = kind === 'user' ? users : people;
+      clear(list, src.filter(p => matches(q2.value, p.full_name, p.company_name, p.title)).slice(0, 60).map(p =>
+        h('button', { class: 'pick', type: 'button', onclick: async () => {
+          try {
+            await api.post(`/api/faces/groups/${id}/assign`, kind === 'user' ? { user_id: p.id } : { person_id: p.id });
+            toast(`Gruptaki tüm yüzler ${p.full_name} kişisine atandı`);
+            m.close();
+            done();
+          } catch (err) { toastError(err); }
+        } }, h('div', { class: 'grow' }, h('b', null, p.full_name),
+          h('span', { class: 'small muted' }, kind === 'user' ? ' Personel' : ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`)))));
+    };
+    const seg = segmented([['user', 'Kullanıcılar (personel)'], ['person', 'Firma personeli']], kind, v => { kind = v; fill(); });
+    q2.addEventListener('input', fill);
+    fill();
+    const m = modal({ title: 'Kişiye Ata', body: h('div', null, seg, h('div', { style: { margin: '10px 0' } }, q2), list), actions: [{ label: 'Vazgeç' }] });
+    q2.focus();
+  }
+
+  q.addEventListener('input', draw);
+  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), mergeBtn), h('p', null, info), out);
+  await load();
+  every(15000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
+}

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- CAYMAZ Üretim Takip uygulama ikonu: gök zemin üzerinde parçalı delta kanat İHA -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1f45"/>
+      <stop offset=".55" stop-color="#16407e"/>
+      <stop offset="1" stop-color="#2d8fd8"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbe9f8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".42" r=".55">
+      <stop offset="0" stop-color="#7cc4ff" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#7cc4ff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="plane">
+      <path id="p" d="M256 70 C266 88 272 118 274 150 L276 196 L292 214 L428 352 L428 380 L298 364 L288 400 L278 412 L234 412 L224 400 L214 364 L84 380 L84 352 L220 214 L236 196 L238 150 C240 118 246 88 256 70 Z"/>
+    </clipPath>
+  </defs>
+  <rect id="bgr" width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- 3D baskı katmanlarını anımsatan ince yatay çizgiler -->
+  <g stroke="#ffffff" stroke-opacity=".06" stroke-width="2">
+    <path d="M0 96H512M0 128H512M0 160H512M0 192H512M0 224H512M0 256H512M0 288H512M0 320H512M0 352H512M0 384H512M0 416H512M0 448H512"/>
+  </g>
+  <circle cx="256" cy="230" r="230" fill="url(#glow)"/>
+  <!-- Uçak gövdesi -->
+  <use href="#p" fill="url(#wing)"/>
+  <!-- Parça (panel) çizgileri -->
+  <g clip-path="url(#plane)" stroke="#16407e" stroke-opacity=".55" stroke-width="3.2" fill="none">
+    <path d="M232 150H280M228 214H284M100 300H412M140 262H372M60 338H452"/>
+    <path d="M238 60V420M274 60V420"/>
+    <path d="M186 250V420M326 250V420M142 294V420M370 294V420"/>
+  </g>
+  <!-- Elevonlar -->
+  <path d="M96 378 L204 366 L206 374 L98 386 Z M416 378 L308 366 L306 374 L414 386 Z" fill="#2d8fd8"/>
+  <!-- Burun ucu vurgusu -->
+  <path d="M256 70 C262 81 266 96 269 112 L243 112 C246 96 250 81 256 70 Z" fill="#2d8fd8"/>
+</svg>

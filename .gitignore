@@ -1,0 +1,20 @@
+# Sanal ortam, önbellek
+.venv/
+__pycache__/
+*.pyc
+
+# Canlı veriler: veritabanı, yüklenen dosyalar, yedekler, anahtarlar (signing.key, camera.key), küçük resim önbelleği
+/data/
+/tenants/
+*.db
+*.db-wal
+*.db-shm
+
+# Gizli ayarlar (yönetici şifresi vb.)
+.env
+.env.*
+
+# Büyük ikili dosyalar (GitHub'a konmaz; README → "Harici bileşenler")
+vendor/models/
+vendor/ocr/
+vendor/whisper/

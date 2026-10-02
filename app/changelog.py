@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.68.0'
+VERSION = '2.69.0'
 
 CHANGELOG = [
+    {'version': '2.69.0', 'date': '2026-10-02', 'title': 'Tasarım: montaj kartları + gerçek ağaç görünümü',
+     'changes': [
+         'Projeye girince montaj/çizimler kart olarak listelenir (önizleme görseli ya da tür ikonu, hızlı işlem düğmeleri).',
+         'Bir montaj kartına tıklayınca alt yapısı gerçek ağaç (organizasyon şeması bileşeni, treeSpider) olarak açılır; düğüme dokununca işlemler menüsü gelir.',
+     ]},
     {'version': '2.68.0', 'date': '2026-10-02', 'title': 'Sayfa başlığı tam genişlik bant',
      'changes': [
          'Sayfa başlığı satırı (ör. “Endüstriyel Tasarım”) artık header ile içerik arası ara tonda tam genişlik bir bant; geniş ekranda yanlarda renk farkı kalmadı.',

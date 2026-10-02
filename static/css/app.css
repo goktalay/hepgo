@@ -4806,6 +4806,25 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .dz-file { font-weight: 600; }
 .dz-note { margin: 2px 0; white-space: pre-wrap; }
 .dz-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Üst-seviye montaj/çizim kartları (projeye girince) */
+.dz-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.dz-mcard { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.dz-mcard-head { display: flex; gap: 12px; padding: 12px; align-items: flex-start; color: var(--text); border-radius: var(--radius) var(--radius) 0 0; }
+.dz-mcard-head:hover { text-decoration: none; background: var(--surface-2); }
+.dz-mcard-thumb { flex: none; width: 78px; height: 78px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden;
+  display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--surface-2), var(--border)); }
+.dz-mcard-thumb.has-img { background: #fff; }
+.dz-mcard-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.dz-mcard-ico { width: 42px; height: 42px; display: block; }
+.dz-mcard-ico svg { width: 100%; height: 100%; }
+.dz-mcard-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dz-mcard-info > .badge { align-self: flex-start; }
+.dz-mcard-name { font-size: 15px; }
+.dz-mcard-open { font-size: 12px; font-weight: 600; color: var(--primary); margin-top: 2px; }
+.dz-mcard .dz-acts { padding: 0 12px 12px; margin-top: auto; }
+/* Montaj ağacı sahnesi (treeSpider) */
+.dz-ts { margin-top: 8px; }
+.dz-ts-hint { margin: 0 0 6px; }
 .dz-history { display: flex; flex-direction: column; gap: 10px; }
 .dz-hrow { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .dz-hver { font-weight: 700; color: var(--primary); min-width: 34px; }

@@ -6,8 +6,11 @@ import { isStep, viewStep } from '../step3d.js';
 
 const KIND = { assembly: 'Montaj Çizimi', drawing: 'Çizim', part: 'Parça' };
 const KIND_BADGE = { assembly: 'blue', drawing: 'gray', part: 'green' };
+const KIND_COLOR = { assembly: '#1d4e89', drawing: '#5d6879', part: '#16a34a' };
+const isImg = n => /\.(png|jpe?g|webp|gif|bmp)$/i.test(n || '');
 
 export async function render(view, params, ctx) {
+  if (params[0] && params[1]) return renderAssembly(view, Number(params[0]), Number(params[1]), ctx);
   if (params[0]) return renderProject(view, Number(params[0]), ctx);
   return renderProjects(view, ctx);
 }
@@ -87,47 +90,53 @@ async function deleteRequests() {
   modal({ title: 'Silme Talepleri', wide: true, body: list, actions: [{ label: 'Kapat' }] });
 }
 
+// Üst seviye montaj/çizim kartı — gövdeye tıklayınca o montajın ağaç görünümü açılır; altta hızlı işlem düğmeleri
+function montajCard(d, pid, acts) {
+  const cur = d.current;
+  const img = cur && isImg(cur.file_name);
+  const kids = (d.children || []).length;
+  const thumb = img
+    ? h('img', { src: `/api/design/file?v=${cur.id}`, alt: d.name, loading: 'lazy' })
+    : h('span', { class: 'dz-mcard-ico', style: { color: KIND_COLOR[d.kind] || '#5d6879' } }, kindGlyph(d.kind));
+  return h('div', { class: 'card dz-mcard' },
+    h('a', { class: 'dz-mcard-head', href: `#/design/${pid}/${d.id}`, title: 'Ağaç görünümünü aç' },
+      h('div', { class: `dz-mcard-thumb ${img ? 'has-img' : ''}` }, thumb),
+      h('div', { class: 'dz-mcard-info' },
+        h('span', { class: `badge ${KIND_BADGE[d.kind] || 'gray'}` }, KIND[d.kind] || 'Çizim'),
+        h('b', { class: 'dz-mcard-name' }, d.name),
+        cur ? h('span', { class: 'dz-ver' }, `v${cur.version}`) : h('span', { class: 'small muted' }, 'sürüm yok'),
+        h('div', { class: 'small muted' }, `${kids} alt çizim${d.prod_count ? ` · ${d.prod_count} parça` : ''}`),
+        h('span', { class: 'dz-mcard-open' }, 'Ağacı aç →'))),
+    h('div', { class: 'dz-acts' },
+      h('button', { class: 'btn sm primary', type: 'button', onclick: () => acts.newVersion(d) }, cur ? 'Yeni Sürüm' : 'Dosya Yükle'),
+      d.version_count ? h('button', { class: 'btn sm', type: 'button', onclick: () => acts.history(d) }, `Geçmiş (${d.version_count})`) : null,
+      h('button', { class: 'btn sm', type: 'button', title: 'Notlar', onclick: () => acts.notesModal(d) }, `📝${d.note_count ? ` ${d.note_count}` : ''}`),
+      h('button', { class: 'btn sm', type: 'button', title: 'Üretim Parçaları', onclick: () => acts.partsModal(d) }, `🔩${d.prod_count ? ` ${d.prod_count}` : ''}`),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => acts.addDrawing(d) }, '+ Alt'),
+      h('button', { class: 'btn sm ghost', type: 'button', title: 'Kopyala', onclick: () => acts.copyModal(d) }, '⧉'),
+      h('button', { class: 'btn sm ghost', type: 'button', title: 'Yeniden adlandır', onclick: () => acts.rename(d) }, '✎'),
+      h('button', { class: 'btn sm ghost danger-text', type: 'button', title: 'Sil', onclick: () => acts.del(d) }, '🗑')));
+}
+
 async function renderProject(view, pid, ctx) {
   const body = h('div');
   const isMaster = ctx.user.master;
-  let p = null;
-  const reload = () => load();
   const load = async () => {
+    let p;
     try { p = await api.get(`/api/design/projects/${pid}`); } catch (err) { return clear(view, pageHead('Endüstriyel Tasarım', { back: '#/design' }), h('div', { class: 'card empty' }, err.message)); }
+    const acts = designActions(pid, load, isMaster);
     clear(view,
       pageHead(p.name, { back: '#/design', sub: p.description || 'Tasarım projesi',
-        right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => addDrawing(null) }, '+ Montaj / Çizim Ekle')) }),
+        right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => acts.addDrawing(null) }, '+ Montaj / Çizim Ekle')) }),
       body);
-    clear(body, p.tree.length ? h('div', { class: 'dz-tree' }, p.tree.map(n => node(n, 0)))
+    clear(body, p.tree.length ? h('div', { class: 'dz-grid' }, p.tree.map(d => montajCard(d, pid, acts)))
       : h('div', { class: 'card empty' }, 'Bu projede çizim yok. “+ Montaj / Çizim Ekle” ile ekleyin.'));
   };
+  load();
+}
 
-  function node(d, level) {
-    const cur = d.current;
-    const children = (d.children || []).map(c => node(c, level + 1));
-    return h('div', { class: 'dz-node', style: { marginLeft: level ? '22px' : '0' } },
-      h('div', { class: `dz-card ${cur ? '' : 'empty'}` },
-        h('div', { class: 'dz-main' },
-          h('span', { class: `badge ${KIND_BADGE[d.kind] || 'gray'}` }, KIND[d.kind] || 'Çizim'),
-          h('b', { class: 'dz-name' }, d.name),
-          cur ? h('span', { class: 'dz-ver' }, `v${cur.version}`) : h('span', { class: 'small muted' }, 'sürüm yok')),
-        cur ? h('div', { class: 'dz-cur' },
-          h('div', { class: 'dz-file-row' }, [...dzFileLinks('v', cur.id, cur.file_name, isMaster),
-            isStep(cur.file_name) ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => stepModal(cur.id, cur.file_name) }, '🧊 3B Önizle') : null]),
-          cur.note ? h('div', { class: 'small dz-note' }, cur.note) : null,
-          h('div', { class: 'small muted' }, `v${cur.version} · ${fmtDateTime(cur.created_at)} · ${cur.uploaded_by_name || ''}`)) : null,
-        h('div', { class: 'dz-acts' },
-          h('button', { class: 'btn sm primary', type: 'button', onclick: () => newVersion(d) }, cur ? 'Yeni Sürüm' : 'Dosya Yükle'),
-          d.version_count ? h('button', { class: 'btn sm', type: 'button', onclick: () => history(d) }, `Geçmiş (${d.version_count})`) : null,
-          h('button', { class: 'btn sm', type: 'button', onclick: () => notesModal(d) }, `📝 Notlar${d.note_count ? ` (${d.note_count})` : ''}`),
-          h('button', { class: 'btn sm', type: 'button', onclick: () => partsModal(d) }, `🔩 Üretim Parçaları${d.prod_count ? ` (${d.prod_count})` : ''}`),
-          h('button', { class: 'btn sm', type: 'button', onclick: () => addDrawing(d) }, '+ Alt Çizim'),
-          h('button', { class: 'btn sm', type: 'button', onclick: () => copyModal(d) }, '⧉ Kopyala'),
-          h('button', { class: 'btn sm ghost', type: 'button', onclick: () => rename(d) }, '✎'),
-          h('button', { class: 'btn sm ghost danger-text', type: 'button', onclick: () => del(d) }, '🗑'))),
-      children.length ? h('div', { class: 'dz-children' }, children) : null);
-  }
-
+// Ortak düğüm işlemleri (hem üst-seviye kartlar hem ağaç görünümü kullanır). reload: liste/ağacı yeniden çizer.
+function designActions(pid, reload, isMaster) {
   function addDrawing(parent) {
     const name = h('input', { class: 'input', placeholder: parent ? 'Alt çizim / parça adı' : 'Çizim / montaj adı' });
     const kind = h('select', { class: 'input' },
@@ -264,19 +273,157 @@ async function renderProject(view, pid, ctx) {
       } }] });
   }
 
-  // STEP dosyasının 3B önizlemesi
-  async function stepModal(vid, name) {
-    const wrap = h('div', { class: 'step3d-wrap' }, h('div', { class: 'loading', style: { padding: '24px' } }, '3B model yükleniyor… (ilk açılışta CAD çekirdeği iner)'));
-    let viewer = null;
-    modal({ title: `${name} · 3B Önizleme`, wide: true, body: wrap, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
-    try {
-      const resp = await fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' });
-      if (!resp.ok) throw new Error('Dosya alınamadı');
-      const buf = await resp.arrayBuffer();
-      clear(wrap);
-      viewer = await viewStep(wrap, buf);
-    } catch (err) { clear(wrap, h('div', { class: 'card empty' }, 'Önizleme yüklenemedi: ' + (err.message || err))); }
-  }
+  return { addDrawing, newVersion, history, rename, del, notesModal, partsModal, copyModal };
+}
 
+// STEP dosyasının 3B önizlemesi (bağımsız)
+async function stepModal(vid, name) {
+  const wrap = h('div', { class: 'step3d-wrap' }, h('div', { class: 'loading', style: { padding: '24px' } }, '3B model yükleniyor… (ilk açılışta CAD çekirdeği iner)'));
+  let viewer = null;
+  modal({ title: `${name} · 3B Önizleme`, wide: true, body: wrap, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
+  try {
+    const resp = await fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error('Dosya alınamadı');
+    const buf = await resp.arrayBuffer();
+    clear(wrap);
+    viewer = await viewStep(wrap, buf);
+  } catch (err) { clear(wrap, h('div', { class: 'card empty' }, 'Önizleme yüklenemedi: ' + (err.message || err))); }
+}
+
+// ---------- Montaj ağacı: gerçek ağaç (organizasyon şemasında kullanılan treeSpider bileşeni) ----------
+let _TreeSpider = null;
+async function loadTreeSpider() {
+  if (_TreeSpider) return _TreeSpider;
+  if (!document.querySelector('link[data-treespider]')) {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = '/static/vendor/treespider/treeSpider.css'; l.dataset.treespider = '1';
+    document.head.append(l);
+  }
+  const mod = await import('/static/vendor/treespider/treeSpider.bundle.min.js');
+  _TreeSpider = mod.default;
+  return _TreeSpider;
+}
+
+function findNode(nodes, id) {
+  for (const n of (nodes || [])) { if (String(n.id) === String(id)) return n; const f = findNode(n.children, id); if (f) return f; }
+  return null;
+}
+
+function kindGlyphMarkup(kind) {
+  if (kind === 'assembly') return '<path d="M24 5 40 14v20L24 43 8 34V14z"/><path d="M8 14 24 23l16-9M24 23v20"/>';
+  if (kind === 'part') return '<circle cx="24" cy="24" r="6"/><path d="M24 6v6M24 36v6M6 24h6M36 24h6M11 11l4.2 4.2M32.8 32.8 37 37M37 11l-4.2 4.2M15.2 32.8 11 37"/>';
+  return '<path d="M14 6h13l9 9v27H14z"/><path d="M27 6v9h9M19 25h11M19 31h11M19 19h6"/>';
+}
+function kindGlyph(kind) {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${kindGlyphMarkup(kind)}</svg>`;
+  return t.content.firstElementChild;
+}
+function kindAvatar(kind) {
+  const c = KIND_COLOR[kind] || '#5d6879';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" rx="20" fill="${c}"/><svg x="30" y="30" width="60" height="60" viewBox="0 0 48 48" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${kindGlyphMarkup(kind)}</svg></svg>`;
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+async function renderChart(stage, tree_data, byId, openMenu) {
+  const TreeSpider = await loadTreeSpider();
+  clear(stage);
+  const cid = 'dzts-' + Date.now().toString(36);
+  const cont = h('div', { style: { width: '100%', height: '100%' } });
+  cont.id = cid;
+  stage.append(cont);
+  const chart = new TreeSpider({
+    targetContainer: '#' + cid, autoInitialize: false,
+    tree_data, tree_type: 'default', chart_head_type: 'default',
+    head_image_shape: 'symbolCircle', show_chart_head_border: true,
+    backgroundPattern: 'none', chart_head_bg: '#ffffff',
+    color_range: ['#12385c', '#1d4e89', '#2b6cb0', '#3f7cb8'],
+    width: '100%', height: '100%', font_link: '', font_name: "system-ui, 'Segoe UI', Arial, sans-serif",
+  });
+  chart.on('chart_head.create', e => {
+    const svgEl = e && e.detail && e.detail.headNode; if (!svgEl) return;
+    const clip = svgEl.querySelector('[id^="default-head-clip-"]');
+    const id = clip ? clip.id.replace('default-head-clip-', '') : null;
+    if (id == null) return;
+    svgEl.style.cursor = 'pointer';
+    // Kısa dokunuş → işlem menüsü; alt dalları açıp kapatmak için düğümdeki ok (.ts-linker) kendi çalışır.
+    let timer = null, longPressed = false, sx = 0, sy = 0;
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    svgEl.addEventListener('pointerdown', ev => {
+      longPressed = false; sx = ev.clientX; sy = ev.clientY;
+      timer = setTimeout(() => { longPressed = true; openMenu({ clientX: sx, clientY: sy }, byId[id] || null); }, 420);
+    });
+    svgEl.addEventListener('pointermove', ev => { if (Math.abs(ev.clientX - sx) > 8 || Math.abs(ev.clientY - sy) > 8) cancel(); });
+    svgEl.addEventListener('pointercancel', cancel);
+    svgEl.addEventListener('pointerleave', cancel);
+    svgEl.addEventListener('pointerup', ev => {
+      cancel();
+      if (longPressed) { ev.preventDefault(); ev.stopPropagation(); return; }
+      if (ev.target.closest && ev.target.closest('.ts-linker')) return;   // oka basıldıysa bileşen açar/kapar
+      openMenu({ clientX: ev.clientX, clientY: ev.clientY }, byId[id] || null);
+    });
+  });
+  chart.initialize();
+}
+
+async function renderAssembly(view, pid, nodeId, ctx) {
+  const isMaster = ctx.user.master;
+  const body = h('div');
+  const stage = h('div', { class: 'org-ts dz-ts' });
+  let acts = null;
+
+  let menuEl = null;
+  const closeMenu = () => { if (menuEl) { menuEl.remove(); menuEl = null; document.removeEventListener('click', closeMenu); } };
+  const openMenu = (ev, node) => {
+    closeMenu();
+    if (!node || !acts) return;
+    const cur = node.current;
+    const items = [
+      [cur ? 'Yeni Sürüm' : 'Dosya Yükle', () => acts.newVersion(node), false],
+      node.version_count ? [`Sürüm Geçmişi (${node.version_count})`, () => acts.history(node), false] : null,
+      cur ? ['Dosyayı Önizle', () => window.open(`/api/design/file?v=${cur.id}`, '_blank', 'noopener'), false] : null,
+      (cur && isStep(cur.file_name)) ? ['🧊 3B Önizle', () => stepModal(cur.id, cur.file_name), false] : null,
+      [`📝 Notlar${node.note_count ? ` (${node.note_count})` : ''}`, () => acts.notesModal(node), false],
+      [`🔩 Üretim Parçaları${node.prod_count ? ` (${node.prod_count})` : ''}`, () => acts.partsModal(node), false],
+      ['+ Alt Çizim', () => acts.addDrawing(node), false],
+      ['⧉ Kopyala', () => acts.copyModal(node), false],
+      ['✎ Yeniden Adlandır', () => acts.rename(node), false],
+      ['🗑 Sil', () => acts.del(node), true],
+    ].filter(Boolean);
+    menuEl = h('div', { class: 'org-menu' }, items.map(([label, fn, danger]) =>
+      h('button', { class: `org-menu-item ${danger ? 'danger' : ''}`, onclick: () => { closeMenu(); fn(); } }, label)));
+    document.body.append(menuEl);
+    const w = menuEl.offsetWidth || 210, hh = menuEl.offsetHeight || 320;
+    menuEl.style.left = Math.min(ev.clientX, window.innerWidth - w - 8) + 'px';
+    menuEl.style.top = Math.min(ev.clientY, window.innerHeight - hh - 8) + 'px';
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  };
+
+  const load = async () => {
+    let p;
+    try { p = await api.get(`/api/design/projects/${pid}`); } catch (err) { return clear(view, pageHead('Endüstriyel Tasarım', { back: `#/design/${pid}` }), h('div', { class: 'card empty' }, err.message)); }
+    const root = findNode(p.tree, nodeId);
+    if (!root) { location.hash = `#/design/${pid}`; return; }
+    acts = designActions(pid, load, isMaster);
+    clear(view,
+      pageHead(root.name, { back: `#/design/${pid}`, sub: `${p.name} · ${KIND[root.kind] || 'Çizim'}`,
+        right: h('div', { class: 'head-right' },
+          h('button', { class: 'btn', type: 'button', onclick: () => acts.newVersion(root) }, root.current ? 'Yeni Sürüm' : 'Dosya Yükle'),
+          h('button', { class: 'btn primary', type: 'button', onclick: () => acts.addDrawing(root) }, '+ Alt Çizim')) }),
+      body);
+    clear(body,
+      h('p', { class: 'small muted dz-ts-hint' }, 'Bir düğüme dokunun → işlemler menüsü (yeni sürüm, alt çizim, notlar, üretim parçaları…). Alt dalları açıp kapatmak için düğümdeki oka dokunun.'),
+      stage);
+    const byId = {}; const flat = [];
+    const walk = (node, parentId) => { byId[String(node.id)] = node; flat.push({ node, parentId }); (node.children || []).forEach(c => walk(c, String(node.id))); };
+    walk(root, undefined);
+    const tree_data = flat.map(({ node, parentId }) => ({
+      id: String(node.id), parentId,
+      name: node.name || '—',
+      role: `${KIND[node.kind] || ''}${node.current ? ` · v${node.current.version}` : ' · sürüm yok'}`,
+      image: (node.current && isImg(node.current.file_name)) ? `/api/design/file?v=${node.current.id}` : kindAvatar(node.kind),
+    }));
+    renderChart(stage, tree_data, byId, openMenu);
+  };
   load();
 }

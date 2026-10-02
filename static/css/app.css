@@ -4877,3 +4877,7 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .term-host { height: min(70vh, 640px); width: 100%; }
 .term-host .xterm { height: 100%; padding: 6px; }
 .term-status { margin-left: auto; }
+
+/* Beyaz etiket: başlıkta firma adı (HEPGO yerine) */
+.product.wl b { font-size: 15px; letter-spacing: normal; line-height: 1.1; }
+.product.wl { font-size: 0; }

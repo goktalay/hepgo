@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.61.0'
+VERSION = '2.62.0'
 
 CHANGELOG = [
+    {'version': '2.62.0', 'date': '2026-10-02', 'title': 'Beyaz etiket (firmanın kendi markası)',
+     'changes': [
+         'Pakete “Beyaz etiket” seçeneği eklendi: firma kendi domaini/markasıyla kullanırsa arayüzde HEPGO görünmez.',
+         'Beyaz etikette başlık, giriş ekranı, sekme adı ve uygulama (PWA) adı firmanın adı; logo/ikon firmanın (BRAND_DIR).',
+     ]},
     {'version': '2.61.0', 'date': '2026-10-02', 'title': 'HEPGO markası',
      'changes': [
          'Ürün adı “HEPGO ERP” olarak güncellendi (başlık, uygulama simgeleri, bildirimler, favicon).',

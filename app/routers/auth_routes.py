@@ -341,7 +341,8 @@ def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.D
 @router.get('/meta')
 def meta(request: Request):
     # remote: internetten (caymaz.app) bağlanıldı; video/log yükleme için yerel adres gösterilir
-    return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': is_remote(request), 'local_url': config.LOCAL_URL}
+    return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': is_remote(request), 'local_url': config.LOCAL_URL,
+            'white_label': config.WHITE_LABEL}
 
 
 @router.get('/plane')

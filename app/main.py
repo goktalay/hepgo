@@ -5,7 +5,7 @@ import re
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, printer_driver, production, push, sync, sysstat
@@ -96,6 +96,14 @@ async def revalidate_static(request, call_next):
 
 @app.get('/manifest.webmanifest')
 def manifest():
+    # Beyaz etikette uygulama adı firmanın adı olur (HEPGO görünmez); ikonlar BRAND_DIR'den gelir (ayrı middleware).
+    if config.WHITE_LABEL:
+        import json as _json
+        data = _json.loads((config.STATIC_DIR / 'manifest.webmanifest').read_text(encoding='utf-8'))
+        name = config.COMPANY_NAME or data.get('name')
+        data['name'] = name
+        data['short_name'] = (name or '')[:12]
+        return Response(_json.dumps(data, ensure_ascii=False), media_type='application/manifest+json')
     return FileResponse(config.STATIC_DIR / 'manifest.webmanifest', media_type='application/manifest+json')
 
 

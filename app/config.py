@@ -50,6 +50,9 @@ SESSION_HOURS = int(os.environ.get('CAYMAZ_SESSION_HOURS', '12'))
 # Dağıtık entegrasyon (fabrika ajanı): 'local' = cihazlara doğrudan erişim (bu makinede; varsayılan),
 # 'remote' = Mikro ERP / PDKS / yazıcılar fabrikadaki ajan üzerinden (merkez bulut sunucuda).
 AGENT_MODE = os.environ.get('CAYMAZ_AGENT_MODE', 'local').strip().lower()
+# Beyaz etiket: firma kendi domaini + markasıyla kullanıyorsa (ör. caymaz.app) arayüzde HEPGO görünmez;
+# her yerde firmanın adı (COMPANY_NAME) ve logosu (BRAND_DIR) kullanılır. Pakete göre provisioning'de set edilir.
+WHITE_LABEL = os.environ.get('CAYMAZ_WHITE_LABEL', '0') == '1'
 # Fabrika ajanının merkeze bağlanırken kullanacağı paylaşılan anahtar (her firma için ayrı).
 AGENT_KEY = os.environ.get('CAYMAZ_AGENT_KEY', '')
 # Ajan tarafı için merkez WebSocket adresi (ör. wss://caymaz.app/ws/agent) — yalnız ajan süreci kullanır.

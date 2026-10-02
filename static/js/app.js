@@ -105,6 +105,8 @@ async function boot() {
   const pUser = api.get('/api/auth/me').catch(() => null);
   ctx.meta = await pMeta;
   ctx.user = await pUser;
+  // Beyaz etiket: sekme başlığı firma adı (HEPGO görünmez); değilse ürün adı
+  try { document.title = ctx.meta?.white_label ? (ctx.meta.company || '') : 'HEPGO ERP'; } catch { /* */ }
   initLang(ctx.user?.prefs?.settings?.lang);   // dil: kullanıcı tercihi → yoksa localStorage → Türkçe
   ctx.user ? enterApp() : renderLogin();
   requestAnimationFrame(() => window.__splashDone?.());   // ilk ekran çizildi → açılış ekranı kalkar
@@ -135,11 +137,12 @@ function renderLogin() {
     enterApp();
   };
   const body = h('div', { class: 'login-body' });
+  const wl = ctx.meta?.white_label;
   const form = h('form', { class: 'card login' },
     h('img', { src: '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
-    h('h1', null, 'Fabrika Yönetim Sistemi'),
+    h('h1', null, wl ? (ctx.meta.company || '') : 'HEPGO ERP'),
     body,
-    h('a', { class: 'login-home', href: '/' }, '← Tanıtım sayfası'));
+    wl ? null : h('a', { class: 'login-home', href: 'https://hepgo.com', target: '_blank', rel: 'noopener' }, 'hepgo.com'));
   const showForm = () => {
     clear(body, field('Kullanıcı adı', username), field('Şifre', password), submit);
     username.focus();
@@ -466,7 +469,9 @@ function renderShell() {
     h('header', { class: 'app-header' },
       h('a', { class: 'brand', href: '#/' },
         h('img', { src: '/static/img/logo.png', alt: ctx.meta?.company || '' }),
-        h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
+        ctx.meta?.white_label   // firma kendi markası: HEPGO yerine firma adı
+          ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
+          : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       h('div', { class: 'header-right' }, radio.button(popup), securityOnly() ? null : chatButton(popup),
         docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,

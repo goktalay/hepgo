@@ -69,7 +69,9 @@ function sweep() {
   const ex = headEl ? exporter(view) : null;
   let btn = view.querySelector('.xl-btn');
   if (!ex || !headEl) { btn?.remove(); return; }
-  if (btn && btn.closest('.page-head') === headEl) return;
+  // Excel, alt-modülün eylem toolbar'ına girer (varsa); yoksa başlık bandına. (Alt-modüle ait bir işlem olduğu için.)
+  const host = view.querySelector('.module-toolbar') || headEl;
+  if (btn && btn.parentElement === host) return;
   btn?.remove();
   btn = document.createElement('button');
   btn.type = 'button'; btn.className = 'btn xl-btn'; btn.title = 'Listeyi Excel olarak indir';
@@ -83,7 +85,7 @@ function sweep() {
     const d = new Date(), pad = n => String(n).padStart(2, '0');
     downloadXlsx({ sheet: t, ...spec }, `${t} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
   });
-  headEl.append(btn);   // başlığın en sağı
+  host.append(btn);   // alt-modül toolbar'ı (varsa), yoksa başlık bandı
 }
 
 export function enableListExport() {

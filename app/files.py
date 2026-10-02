@@ -51,8 +51,9 @@ def is_remote(request: Request):
 
 
 def local_only(request: Request):
-    """Bağımlılık: büyük dosya yüklemeleri yalnızca yerel ağdan."""
-    if is_remote(request):
+    """Bağımlılık: büyük dosya yüklemeleri yalnızca yerel ağdan — ANCAK CAYMAZ_LOCAL_UPLOAD=0 ise bu kısıt kalkar
+    (bulut/merkez kurulumda yerel ağ olmadığı için zorunluluk anlamsız; her yerden yüklemeye izin verilir)."""
+    if config.LOCAL_UPLOAD_REQUIRED and is_remote(request):
         raise HTTPException(403, f'Video ve uçuş logu yalnızca yerel ağdan yüklenebilir: {config.LOCAL_URL}')
 
 

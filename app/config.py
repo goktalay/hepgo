@@ -62,6 +62,8 @@ PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'
 # Video ve uçuş logu gibi büyük dosyalar yalnızca yerel ağdan yüklenir (Cloudflare tüneli üzerinden çok yavaş).
 LOCAL_URL = os.environ.get('CAYMAZ_LOCAL_URL', 'http://192.168.1.189:8080')
+# Büyük dosya (video/uçuş logu) yüklemesi yalnızca yerel ağdan mı zorunlu? Bulut/merkez kurulumda 0 yapılır.
+LOCAL_UPLOAD_REQUIRED = os.environ.get('CAYMAZ_LOCAL_UPLOAD', '1') == '1'
 
 # Şifresini hiç değiştirmemiş (yöneticinin verdiği / sıfırladığı şifreyle giren) kullanıcı ilk girişte şifresini değiştirmeden
 # sistemi kullanamaz. Testler ve demo için 0 yapılabilir.

@@ -341,8 +341,11 @@ def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.D
 @router.get('/meta')
 def meta(request: Request):
     # remote: internetten (caymaz.app) bağlanıldı; video/log yükleme için yerel adres gösterilir
-    return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': is_remote(request), 'local_url': config.LOCAL_URL,
-            'white_label': config.WHITE_LABEL}
+    # remote: büyük dosya yükleme engeli için. Yerel-yükleme zorunluluğu kapalıysa (bulut kurulum) her yerden
+    # yüklemeye izin verilir → remote=false raporlanır (arayüzdeki "yalnızca yerel ağ" engelleri kalkar).
+    remote = is_remote(request) and config.LOCAL_UPLOAD_REQUIRED
+    return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': remote, 'local_url': config.LOCAL_URL,
+            'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED}
 
 
 @router.get('/plane')

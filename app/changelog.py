@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.63.0'
+VERSION = '2.64.0'
 
 CHANGELOG = [
+    {'version': '2.64.0', 'date': '2026-10-02', 'title': 'Yerel yükleme zorunluluğu opsiyonel',
+     'changes': [
+         'Büyük dosya (video/uçuş logu) yüklemesindeki “yalnızca yerel ağ” zorunluluğu artık kapatılabilir (CAYMAZ_LOCAL_UPLOAD=0).',
+         'Bulut/merkez kurulumda her yerden yükleme yapılabilir; parça parça yükleme tünel üzerinden çalışır.',
+     ]},
     {'version': '2.63.0', 'date': '2026-10-02', 'title': 'Dağıtık ajan: yazıcıya gönderme + durum göstergesi',
      'changes': [
          'Uzak modda yazıcıya G-code gönderme de fabrikadaki ajan üzerinden yapılır (printer.send).',

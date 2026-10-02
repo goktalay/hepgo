@@ -5,7 +5,7 @@ import { renderCalls } from './calls.js';
 import { tabView } from './crm.js';
 import { plateEl } from './security.js';
 import {
-  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, pageHead, peoplePicker,
+  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, moduleToolbar, pageHead, peoplePicker,
   secondsBetween, secondsSince, segmented, toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -20,10 +20,10 @@ export async function render(view, params, ctx) {
   const delivered = tab === 'cargo' && params[1] === 'delivered';   // teslim edilen kargolar
   const nav = moduleTabs(TABS, tab, v => { location.hash = v ? `#/secretariat/${v}` : '#/secretariat'; });
   const body = h('div');
-  // Başlığın sağı: sekmenin ana işlemi ile eski kayıtlar / teslim edilenler (alt modül seçimi artık sekme çubuğunda)
+  // Sekmenin ana işlemi ile eski kayıtlar / teslim edilenler toolbar'da (alt modül seçimi sekme çubuğunda)
   const cargoAdd = h('button', { class: 'btn primary', type: 'button' }, '+ Kargo Kaydet');
   const callAdd = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Arama');
-  const right = tab === 'calls' ? h('div', { class: 'head-right' }, callAdd) : h('div', { class: 'head-right' },
+  const toolbar = tab === 'calls' ? moduleToolbar(callAdd) : moduleToolbar(
     tab === 'cargo' ? (delivered ? null : cargoAdd) : h('button', { class: 'btn primary', type: 'button', onclick: () => newVisit() }, '+ Yeni Misafir Girişi'),
     tab === 'cargo'
       ? (delivered ? h('a', { class: 'btn', href: '#/secretariat/cargo' }, 'Bekleyen Kargolar') : h('a', { class: 'btn', href: '#/secretariat/cargo/delivered' }, 'Teslim Edilenler'))
@@ -31,8 +31,8 @@ export async function render(view, params, ctx) {
   const title = history ? 'Sekreterya · Eski Kayıtlar' : delivered ? 'Sekreterya · Teslim Edilen Kargolar' : 'Sekreterya';
   const sub = history ? 'Çıkış yapmış misafir kayıtları' : delivered ? 'Teslim alınan kargolar'
     : tab === 'calls' ? 'Şirkete dışarıdan gelen telefonlar · ilgili kişiye bağlanır ve bildirilir' : 'Misafir kayıtları ve gelen kargolar';
-  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub, right }), nav, body);
-  if (tab === 'calls') return renderCalls(body, callAdd, right);
+  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub }), nav, toolbar, body);
+  if (tab === 'calls') return renderCalls(body, callAdd, toolbar);
   if (tab === 'cargo') return delivered ? renderDelivered(body) : renderCargo(body, cargoAdd);
   return history ? renderHistory(body) : renderVisits(body);
 }
@@ -105,10 +105,10 @@ async function renderVisit(view, id, ctx, sub) {
       sub: h('span', null, v.left_at ? h('span', { class: 'badge gray' }, 'Çıkış yaptı') : h('span', { class: 'badge green' }, 'İçeride'),
         `  Geliş ${fmtDateTime(v.arrived_at)}`, v.left_at ? ` · Çıkış ${fmtDateTime(v.left_at)} · ${fmtDuration(secondsBetween(v.arrived_at, v.left_at))}` : '',
         ` · Kaydeden: ${v.created_by_name || '—'}`),
-      right: h('div', { class: 'row-actions' },
-        h('button', { class: 'btn', onclick: () => editVisit() }, 'Düzenle'),
-        !v.left_at ? h('button', { class: 'btn success', onclick: () => leave() }, 'Misafir Çıkışı') : null),
     }),
+    moduleToolbar(
+      h('button', { class: 'btn', onclick: () => editVisit() }, 'Düzenle'),
+      !v.left_at ? h('button', { class: 'btn success', onclick: () => leave() }, 'Misafir Çıkışı') : null),
     v.note ? h('div', { class: 'alert info' }, v.note) : null);
   const set = nv => { v = nv; drawHead(); tabs = buildTabs(); clear(tabBox, tabs); };
   async function leave() {
@@ -378,7 +378,7 @@ export async function renderMyCargo(view, params = []) {
         } }, 'Teslim Aldım')))))
       : h('div', { class: 'card empty' }, 'Bekleyen kargonuz yok'));
   };
-  clear(view, pageHead('Kargolarım', { back: '#/', sub: history ? 'Teslim aldığınız kargolar' : 'Sekreteryada sizin için bekleyen kargolar', right: nav }), out);
+  clear(view, pageHead('Kargolarım', { back: '#/', sub: history ? 'Teslim aldığınız kargolar' : 'Sekreteryada sizin için bekleyen kargolar', tabs: nav }), out);
   await load();
   if (!history) every(30000, () => load().catch(() => {}));
 }

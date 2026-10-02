@@ -38,7 +38,7 @@ export async function render(view, params, ctx) {
   };
   clear(view,
     pageHead('İmza Talepleri', { back: '#/', sub: 'Evrakları sistem içinde dijital olarak imzalayın',
-      right: h('div', { class: 'head-right' }, segmented([['inbox', 'Bana gelenler'], ['sent', 'Gönderdiklerim']], box, v => { box = v; load().catch(toastError); })) }),
+      tabs: segmented([['inbox', 'Bana gelenler'], ['sent', 'Gönderdiklerim']], box, v => { box = v; load().catch(toastError); }) }),
     stats,
     body);
   await load();

@@ -6,7 +6,7 @@ import { companyTag, subnav } from './production.js';
 import { logoOf } from './companies.js';
 import { ORDER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, pageHead, pref, progressBar, secondsBetween, segmented,
+  clear, confirmDialog, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref, progressBar, secondsBetween, segmented,
   selectInput, setPref, shortCompany, statStrip, svgIcon, toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -50,9 +50,10 @@ export async function render(view, params, ctx) {
   [q, status, product].forEach(el => el.addEventListener(el === q ? 'input' : 'change', draw));
 
   clear(view,
-    pageHead('İş Emri Yönetimi', { back: '#/production', sub: 'Üretim Yönetimi', right: h('div', { class: 'head-right' },
-      h('button', { class: 'btn primary', onclick: () => newOrder(load) }, svgIcon(icons.plus), 'Yeni İş Emri'), viewSeg) }),
+    pageHead('İş Emri Yönetimi', { back: '#/production', sub: 'Üretim Yönetimi' }),
     subnav('is-emri', ctx),
+    moduleToolbar(
+      h('button', { class: 'btn primary', onclick: () => newOrder(load) }, svgIcon(icons.plus), 'Yeni İş Emri'), viewSeg),
     stats,
     h('div', { class: 'filters' }, q, status, product, period.el),
     body);
@@ -208,11 +209,11 @@ async function renderDetail(view, id, ctx) {
       back: '#/orders',
       sub: h('span', null, orderBadge(o), '  ', o.company_name ? h('b', { title: o.company_name }, `${shortCompany(o.company_name)} · `) : null,
         `${o.product_name}`, lastDone?.at ? ` · son aşama ${fmtDateTime(lastDone.at)}` : ''),
-      right: h('div', { class: 'head-right' },
-        h('button', { class: 'btn', onclick: () => printOrderForm(o, ctx.meta.company) }, 'Formu Yazdır'),
-        canProd ? h('a', { class: 'btn primary', href: `#/production/${o.id}` }, 'Üretimde Aç') : null,
-        o.status === 'SIPARIS' ? h('button', { class: 'btn ghost', onclick: () => remove(o, () => { location.hash = '#/orders'; }) }, 'Sil') : null),
     }),
+    moduleToolbar(
+      h('button', { class: 'btn', onclick: () => printOrderForm(o, ctx.meta.company) }, 'Formu Yazdır'),
+      canProd ? h('a', { class: 'btn primary', href: `#/production/${o.id}` }, 'Üretimde Aç') : null,
+      o.status === 'SIPARIS' ? h('button', { class: 'btn ghost', onclick: () => remove(o, () => { location.hash = '#/orders'; }) }, 'Sil') : null),
     h('div', { class: 'od-layout' },
       h('div', { class: 'card card-pad od-info' }, h('h2', { class: 'od-h' }, 'Sipariş bilgileri'),
         h('dl', { class: 'kv' }, info.map(([k, v]) => [h('dt', null, k), h('dd', null, v)]))),

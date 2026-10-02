@@ -1,7 +1,7 @@
 // Araçlar → Üretim Hataları: üretimde parçalara girilen hata kayıtları; filtre, en çok hata verenler, fotoğraflı detay, CSV.
 import { api, fileUrl } from '../api.js';
 import { PART_STATES, badge } from '../status.js';
-import { clear, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, toastError, periodFilter } from '../ui.js';
+import { clear, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, toastError, periodFilter } from '../ui.js';
 import { companyTag } from './production.js';
 
 const day = iso => (iso || '').slice(0, 10);
@@ -164,8 +164,8 @@ export async function renderProductionErrors(view, ctx) {
   } }, 'Temizle');
   draw();
   clear(view,
-    pageHead('Üretim Hataları', { back: '#/tools', sub: 'Üretimdeki parça "Hata verdi" ile kapatılırken girilen hata kodu, açıklama ve resim',
-      right: h('div', { class: 'head-right' }, modeSeg) }),
+    pageHead('Üretim Hataları', { back: '#/tools', sub: 'Üretimdeki parça "Hata verdi" ile kapatılırken girilen hata kodu, açıklama ve resim' }),
+    moduleToolbar(modeSeg),
     stats,
     h('div', { class: 'filters' }, q, period.el, printer, part, order, person, code,
       h('label', { class: 'check' }, photoOnly, 'Yalnızca resimli'), reset, h('span', { class: 'spacer' }), csvBtn),

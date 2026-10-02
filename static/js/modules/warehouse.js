@@ -154,7 +154,7 @@ export async function render(view, params, ctx) {
   });
 
   clear(view,
-    pageHead('Onay Yönetimi', { back: '#/', right: h('div', { class: 'head-right' }, segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); })) }),
+    pageHead('Onay Yönetimi', { back: '#/', tabs: segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); }) }),
     stats,
     h('div', { class: 'filters' },
       q, orderSel, period.el,

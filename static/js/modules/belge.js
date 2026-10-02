@@ -1,7 +1,7 @@
 // Evrak › Belge Yönetim: uygulama içi Excel/Word/Sunum. Sahip paylaşım izni verir (görüntüle/düzenle),
 // her kaydetmede sürüm geçmişi tutulur. Dış programsız, tarayıcı içinde.
 import { api } from '../api.js';
-import { clear, confirmDialog, fmtDateTime, h, modal, pageHead, segmented, svgIcon, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, svgIcon, toast, toastError } from '../ui.js';
 import { icons } from '../icons.js';
 
 const KIND = { excel: 'Excel', word: 'Word', sunum: 'Sunum' };
@@ -34,8 +34,9 @@ async function list(view, ctx) {
   document.addEventListener('click', () => { newMenu.hidden = true; }, { once: false });
 
   clear(view,
-    pageHead('Evrak Yönetimi', { back: '#/', right: h('div', { class: 'bz-newwrap' }, newBtn, newMenu) }),
+    pageHead('Evrak Yönetimi', { back: '#/' }),
     subTabs('belge'),
+    moduleToolbar(h('div', { class: 'bz-newwrap' }, newBtn, newMenu)),
     body);
   draw();
 }
@@ -92,8 +93,8 @@ async function editor(view, id, ctx) {
   function beforeUnload(e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } }
 
   clear(view,
-    pageHead(doc.title, { back: '#/documents/belge',
-      right: h('div', { class: 'bz-toolbar' }, h('span', { class: 'badge gray' }, KIND[doc.kind]), saveState, actions) }),
+    pageHead(doc.title, { back: '#/documents/belge' }),
+    moduleToolbar(h('div', { class: 'bz-toolbar' }, h('span', { class: 'badge gray' }, KIND[doc.kind]), saveState, actions)),
     h('div', { class: 'bz-title-row' }, title),
     bodyEl);
 }

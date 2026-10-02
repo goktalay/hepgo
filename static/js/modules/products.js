@@ -7,7 +7,7 @@ import { viewer } from '../gcode3d.js';
 import { mountAssembly } from '../assembly3d.js';
 import { layerToggle, loadPlane, partInfoLines, renderAssembly, renderPlane } from '../plane.js';
 import {
-  clear, confirmDialog, field, fmtMinutes, h, matches, modal, onLeave, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, field, fmtMinutes, h, matches, modal, moduleToolbar, onLeave, pageHead, pref, segmented, selectInput, setPref, statStrip,
   toast, toastError,
 } from '../ui.js';
 import { spareMovesModal, spareAdjustModal } from './stock.js';
@@ -54,7 +54,8 @@ export async function render(view, params, ctx) {
   q.addEventListener('input', draw);
   act.addEventListener('change', draw);
   clear(view,
-    pageHead('Ürün Yönetimi', { back: '#/', sub: 'Mamul, yarı mamul, yedek parça ve hammadde', right: h('div', { class: 'head-right' }, q, kind, act, newButton()) }),
+    pageHead('Ürün Yönetimi', { back: '#/', sub: 'Mamul, yarı mamul, yedek parça ve hammadde', right: h('div', { class: 'head-right' }, q, kind, act) }),
+    moduleToolbar(newButton()),
     stats,
     h('div', { class: 'grid-cards product-grid' }, cards.map(c => c[1])),
     empty);

@@ -8,7 +8,7 @@ import { printWipReport } from '../print.js';
 import { partInPrinter } from '../gcode3d.js';
 import { ORDER_STATES, PART_STATES, PRINTER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
-  clear, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fmtMinutes, h, matches, modal, pageHead, pref,
+  clear, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fmtMinutes, h, matches, modal, moduleToolbar, pageHead, pref,
   multiSelect, peoplePicker, progressBar, secondsBetween, secondsSince, segmented, selectInput, setPref, shortCompany, svgIcon, toast, toastError,
 } from '../ui.js';
 
@@ -85,8 +85,8 @@ async function renderBoard(view, ctx) {
   function drawColBar(list) { colBar.set(columns, colOptions(list)); }
 
   clear(view,
-    pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', right: h('div', { class: 'head-right' },
-      segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); })) }),
+    pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', tabs:
+      segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); }) }),
     subnav('room', ctx),
     h('div', { class: 'filters' },
       q, status, product, colBar,
@@ -313,7 +313,7 @@ function printBlock(part, detail) {
 
 function orderHead(order, plane, ctx) {
   // Üst satır: ← · firma logosu · sipariş no · durum; alt satır: diğer bilgiler
-  return pageHead(h('span', { class: 'order-title' }, order.company_name
+  return [pageHead(h('span', { class: 'order-title' }, order.company_name
     ? logoOf({ name: order.company_name, logo: order.company_logo }, 'co-logo md') : null, h('span', null, order.code),
   h('span', { class: 'order-title-badge' }, orderBadge(order))), {
     back: '#/production',
@@ -324,8 +324,8 @@ function orderHead(order, plane, ctx) {
       `Siparişi veren: ${order.created_by_name || '—'}`,
       order.note ? h('span', { class: 'muted' }, ` · ${order.note}`) : null,
       order.field_task ? h('a', { href: `#/field/task/${order.field_task.id}`, style: { marginLeft: '6px' } }, ` · Saha görevi ${order.field_task.code}`) : null),
-    right: h('button', { class: 'btn lg', onclick: () => printWipReport(order, plane, ctx.meta.company) }, 'Yarı Mamul Raporu'),
-  });
+  }),
+  moduleToolbar(h('button', { class: 'btn lg', onclick: () => printWipReport(order, plane, ctx.meta.company) }, 'Yarı Mamul Raporu'))];
 }
 
 // ---------- Montaj → kalibrasyon → saha deposu ----------

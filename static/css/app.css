@@ -194,10 +194,10 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 html[data-toolbar-align="left"] .module-toolbar { justify-content: flex-start; }
 html[data-toolbar-align="right"] .module-toolbar { justify-content: flex-end; }
 
-/* ---- Gövde (orta alan) arka plan desenleri — Görünüm ayarı; hafif, okunurluğu bozmaz ---- */
-html[data-bg] main#view { position: relative; z-index: 1; }
+/* ---- Gövde (orta alan) arka plan desenleri — Görünüm ayarı; hafif, okunurluğu bozmaz ----
+   Desen içeriğin ve opak barların (üst bar, başlık bandı, footer) ARKASINDA (z-index:-1); yalnız kart boşluklarından görünür. */
 html[data-bg] .scroller::before {
-  content: ''; position: fixed; left: 0; right: 0; top: 64px; bottom: 42px; z-index: 0; pointer-events: none;
+  content: ''; position: fixed; left: 0; right: 0; top: 64px; bottom: 42px; z-index: -1; pointer-events: none;
   background-repeat: no-repeat; background-size: cover; background-position: center;
 }
 html[data-bg="soft"] .scroller::before {

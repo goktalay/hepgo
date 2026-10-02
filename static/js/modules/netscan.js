@@ -1,7 +1,7 @@
 // Araçlar › Ağ Tarayıcı: sunucunun yerel ağındaki cihazlar (IP, bilgisayar adı, MAC, üretici, açık portlar, tür).
 // Tarama sunucuda arka planda çalışır; sayfa ilerlemeyi saniyede bir okur. Yalnızca Sistem Yöneticisi.
 import { api } from '../api.js';
-import { clear, every, field, fmtDateTime, h, matches, modal, pageHead, pref, selectInput, setPref, statStrip, toast, toastError } from '../ui.js';
+import { clear, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, selectInput, setPref, statStrip, toast, toastError } from '../ui.js';
 
 const ipKey = ip => (ip || '').split('.').map(n => n.padStart(3, '0')).join('.');
 const WEB = { 80: 'http', 8080: 'http', 443: 'https', 7125: 'http' };
@@ -119,7 +119,8 @@ export async function renderNetscan(view) {
   kind.addEventListener('change', draw);
   offline.addEventListener('change', () => { setPref('netscan.offline', offline.checked ? '1' : '0'); draw(); });
   clear(view,
-    pageHead('Ağ Tarayıcı', { back: '#/tools', sub: 'Sunucunun bulunduğu ağdaki bilgisayarlar ve cihazlar', right: h('div', { class: 'head-right' }, csvBtn, scanBtn) }),
+    pageHead('Ağ Tarayıcı', { back: '#/tools', sub: 'Sunucunun bulunduğu ağdaki bilgisayarlar ve cihazlar' }),
+    moduleToolbar(csvBtn, scanBtn),
     stats, info, progress,
     h('div', { class: 'filters' }, q, kind, h('label', { class: 'check' }, offline, 'Çevrimdışı olanları da göster')),
     body);

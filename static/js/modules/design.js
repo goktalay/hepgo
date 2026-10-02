@@ -1,7 +1,7 @@
 // Endüstriyel Tasarım: projeler → çizim / montaj çizimi ağacı → alt çizimler (parçalar) → her çizimin sürüm geçmişi.
 // Her yeni dosya yüklemesi yeni sürümdür; eski sürümler (dosya + açıklama) geçmişte kalır ve açılıp görülebilir.
 import { api, upload } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, pageHead, toast, toastError } from '../ui.js';
 import { isStep, viewStep } from '../step3d.js';
 
 const KIND = { assembly: 'Montaj Çizimi', drawing: 'Çizim', part: 'Parça' };
@@ -65,10 +65,11 @@ async function renderProjects(view, ctx) {
       } }],
     });
   };
-  clear(view, pageHead('Endüstriyel Tasarım', { back: '#/', sub: 'Tasarım projeleri, çizimler ve sürümler',
-    right: h('div', { class: 'head-right' },
+  clear(view, pageHead('Endüstriyel Tasarım', { back: '#/', sub: 'Tasarım projeleri, çizimler ve sürümler' }),
+    moduleToolbar(
       ctx.user.master ? h('button', { class: 'btn', onclick: deleteRequests }, '🗑 Silme Talepleri') : null,
-      h('button', { class: 'btn primary', onclick: newProject }, '+ Yeni Proje')) }), body);
+      h('button', { class: 'btn primary', onclick: newProject }, '+ Yeni Proje')),
+    body);
   load();
 }
 
@@ -126,8 +127,8 @@ async function renderProject(view, pid, ctx) {
     try { p = await api.get(`/api/design/projects/${pid}`); } catch (err) { return clear(view, pageHead('Endüstriyel Tasarım', { back: '#/design' }), h('div', { class: 'card empty' }, err.message)); }
     const acts = designActions(pid, load, isMaster);
     clear(view,
-      pageHead(p.name, { back: '#/design', sub: p.description || 'Tasarım projesi',
-        right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => acts.addDrawing(null) }, '+ Montaj / Çizim Ekle')) }),
+      pageHead(p.name, { back: '#/design', sub: p.description || 'Tasarım projesi' }),
+      moduleToolbar(h('button', { class: 'btn primary', onclick: () => acts.addDrawing(null) }, '+ Montaj / Çizim Ekle')),
       body);
     clear(body, p.tree.length ? h('div', { class: 'dz-grid' }, p.tree.map(d => montajCard(d, pid, acts)))
       : h('div', { class: 'card empty' }, 'Bu projede çizim yok. “+ Montaj / Çizim Ekle” ile ekleyin.'));
@@ -406,10 +407,10 @@ async function renderAssembly(view, pid, nodeId, ctx) {
     if (!root) { location.hash = `#/design/${pid}`; return; }
     acts = designActions(pid, load, isMaster);
     clear(view,
-      pageHead(root.name, { back: `#/design/${pid}`, sub: `${p.name} · ${KIND[root.kind] || 'Çizim'}`,
-        right: h('div', { class: 'head-right' },
-          h('button', { class: 'btn', type: 'button', onclick: () => acts.newVersion(root) }, root.current ? 'Yeni Sürüm' : 'Dosya Yükle'),
-          h('button', { class: 'btn primary', type: 'button', onclick: () => acts.addDrawing(root) }, '+ Alt Çizim')) }),
+      pageHead(root.name, { back: `#/design/${pid}`, sub: `${p.name} · ${KIND[root.kind] || 'Çizim'}` }),
+      moduleToolbar(
+        h('button', { class: 'btn', type: 'button', onclick: () => acts.newVersion(root) }, root.current ? 'Yeni Sürüm' : 'Dosya Yükle'),
+        h('button', { class: 'btn primary', type: 'button', onclick: () => acts.addDrawing(root) }, '+ Alt Çizim')),
       body);
     clear(body,
       h('p', { class: 'small muted dz-ts-hint' }, 'Bir düğüme dokunun → işlemler menüsü (yeni sürüm, alt çizim, notlar, üretim parçaları…). Alt dalları açıp kapatmak için düğümdeki oka dokunun.'),

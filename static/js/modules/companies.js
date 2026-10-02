@@ -3,7 +3,7 @@ import { setListExport } from '../listexport.js';
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  clear, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, matches, modal, pageHead, peoplePicker, pref, segmented,
+  clear, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, segmented,
   selectInput, setPref, statStrip, svgIcon, toast, toastError,
 } from '../ui.js';
 import { calendarPanel, docList, notesPanel, tabView } from './crm.js';
@@ -117,10 +117,10 @@ async function renderList(view, ctx) {
   act.addEventListener('change', draw);
   const reload = async () => { companies = await api.get(`/api/companies${Q()}`); draw(); };
   clear(view,
-    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları',
-      right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
-        svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), viewSwitch('companies')) }),
+    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları', tabs: viewSwitch('companies') }),
     SUP ? null : crmNav('companies', ctx),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
+      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma')),
     stats,
     h('div', { class: 'filters' }, q, act),
     grid);
@@ -232,10 +232,9 @@ async function renderDirectory(view, ctx) {
   kindSel.addEventListener('change', draw);
   const modeSeg = segmented([['cards', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('rehber.view', v); draw(); });
   clear(view,
-    pageHead(TITLE, { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar',
-      right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: addPerson }, svgIcon(icons.plus), 'Kişi Ekle'),
-        viewSwitch('rehber')) }),
+    pageHead(TITLE, { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar', tabs: viewSwitch('rehber') }),
     SUP ? null : crmNav('companies', ctx),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: addPerson }, svgIcon(icons.plus), 'Kişi Ekle')),
     stats,
     h('div', { class: 'filters' }, q, kindSel, co, h('span', { class: 'spacer' }), modeSeg),
     body);
@@ -272,10 +271,10 @@ async function renderContact(view, ctx, kind, id, tab) {
     docList(x.documents, kind === 'person' ? 'Bu kişiye bağlı (görebildiğiniz) evrak yok' : 'Yüklediği ya da imzaladığı (görebildiğiniz) evrak yok'));
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   clear(view,
-    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? `Rehber · ${c.company_name}` : 'Rehber · Kullanıcı',
-      right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        h('button', { class: 'btn', onclick: () => vcard(c) }, 'Kaydet .vcf'),
-        kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null) }),
+    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? `Rehber · ${c.company_name}` : 'Rehber · Kullanıcı' }),
+    moduleToolbar(
+      h('button', { class: 'btn', onclick: () => vcard(c) }, 'Kaydet .vcf'),
+      kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null),
     h('div', { class: 'card card-pad contact-head' },
       contactAvatar(c, 'dir-avatar xl'),
       h('div', { class: 'grow' },
@@ -481,10 +480,10 @@ async function renderDetail(view, id, ctx, tab) {
       h('button', { class: 'btn sm primary', onclick: () => meetingForm(c, {}, reload) }, svgIcon(icons.plus), 'Toplantı Ekle')),
     meetingList(c, reload));
   clear(view,
-    pageHead(c.name, { back: BASE, sub: SUP ? (c.active ? 'Tedarikçi' : 'Pasif tedarikçi') : c.active ? 'Firma' : 'Pasif firma',
-      right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        h('button', { class: 'btn', onclick: () => companyForm(c, reload) }, 'Düzenle'),
-        h('button', { class: 'btn danger', onclick: remove }, 'Sil')) }),
+    pageHead(c.name, { back: BASE, sub: SUP ? (c.active ? 'Tedarikçi' : 'Pasif tedarikçi') : c.active ? 'Firma' : 'Pasif firma' }),
+    moduleToolbar(
+      h('button', { class: 'btn', onclick: () => companyForm(c, reload) }, 'Düzenle'),
+      h('button', { class: 'btn danger', onclick: remove }, 'Sil')),
     h('div', { class: 'card card-pad co-top' },
       h('div', { class: 'co-head' }, logoOf(c, 'co-logo big'), h('div', null, h('h2', null, c.name),
         h('div', { class: 'small muted' }, [c.tax_office, c.tax_no ? `VN ${c.tax_no}` : null].filter(Boolean).join(' · ')))),

@@ -5,7 +5,7 @@ import { setListExport } from '../listexport.js';
 import { idCard } from '../idcard.js';
 import { api, fileUrl, upload } from '../api.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, toast, toastError, periodFilter
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, toast, toastError, periodFilter
 } from '../ui.js';
 
 const LEAVE_STATUS = { BEKLIYOR: ['Onay bekliyor', 'yellow'], ONAYLANDI: ['Onaylandı', 'green'], REDDEDILDI: ['Reddedildi', 'red'], IPTAL: ['Geri çekildi', 'gray'] };
@@ -56,7 +56,7 @@ export async function render(view, params, ctx) {
   const tab = ['applications', 'leaves', 'matrix', 'attendance', 'org'].includes(params[0]) ? params[0] : 'personnel';
   const nav = segmented([['personnel', 'Personel'], ['applications', 'İş Başvuruları'], ['leaves', 'İzinler'], ['attendance', 'Giriş-Çıkış'], ['org', 'Organizasyon Şeması'], ['matrix', 'Görev Matrisi']], tab,
     v => { location.hash = v === 'personnel' ? '#/hr' : `#/hr/${v}`; }, { tabs: true });
-  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub, right: extra ? h('div', { class: 'head-right' }, extra) : null }), h('div', { class: 'module-tabs' }, nav));
+  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub }), h('div', { class: 'module-tabs' }, nav), moduleToolbar(extra || null));
   if (tab === 'leaves') return renderLeaves(view, head);
   if (tab === 'matrix') return renderMatrix(view, head);
   if (tab === 'attendance') return renderAttendance(view, head, ctx);
@@ -1028,7 +1028,8 @@ export async function renderMyLeaves(view) {
   const add = h('button', { class: 'btn primary', onclick: () => leaveForm({ title: 'İzin Talebi', url: '/api/me/leaves', hint: 'Talebiniz İnsan Kaynakları onayına gider; İK tarihleri değiştirebilir.' }) }, '＋ İzin Talebi');
   const pending = data.items.filter(l => l.status === 'BEKLIYOR').length;
   clear(view,
-    pageHead('İzinlerim', { back: '#/', sub: 'Ücretli / ücretsiz izin talepleriniz ve İK kararları', right: add }),
+    pageHead('İzinlerim', { back: '#/', sub: 'Ücretli / ücretsiz izin talepleriniz ve İK kararları' }),
+    moduleToolbar(add),
     h('div', { class: 'stat-strip' },
       h('div', { class: 'stat' }, h('span', { class: 'v' }, data.used_paid_this_year), h('span', { class: 'l' }, `${new Date().getFullYear()} kullanılan ücretli izin (gün)`)),
       h('div', { class: 'stat' }, h('span', { class: 'v' }, pending), h('span', { class: 'l' }, 'Onay bekleyen talep'))),
@@ -1142,7 +1143,7 @@ async function renderAttendance(view, head, ctx) {
   const paint = () => {
     const range = h('span', { class: 'att-range' }, field('Başlangıç', dFrom), field('Bitiş', dTo), h('button', { class: 'btn', type: 'button', onclick: load }, 'Göster'));
     clear(view, head(vmode === 'gantt' ? 'Personel istihdam süreleri (işe başlama → ayrılış / bugün)' : 'Personel giriş-çıkış kayıtları (PDKS cihazından)',
-      h('span', { class: 'head-right' }, vmode === 'table' ? range : null, viewSeg)), body);
+      [vmode === 'table' ? range : null, viewSeg]), body);
     if (vmode === 'gantt') return gantt();
     load();
   };

@@ -1,7 +1,7 @@
 // Duyurular: Sistem Yöneticisi yazar, herkes okur. Açınca okundu sayılır ve "Okunmamış" listesinden düşer;
 // yönetici her duyuruyu kimin okuduğunu ve okumadığını görür.
 import { api } from '../api.js';
-import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, pref, segmented, setPref, toast } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, pref, segmented, setPref, toast } from '../ui.js';
 
 export const LEVELS = { BILGI: ['blue', 'Bilgi'], ONEMLI: ['yellow', 'Önemli'], KRITIK: ['red', 'Kritik'] };
 
@@ -31,9 +31,9 @@ export async function render(view, params, ctx) {
   const load = async () => { data = await api.get('/api/announcements'); draw(); };
   await load();
   const seg = segmented([['unread', 'Okunmamış'], ['all', 'Tümü']], mode, v => { mode = v; setPref('ann.view', v); draw(); });
-  clear(view, pageHead('Duyurular', { back: '#/', sub: 'Yönetimden duyurular · açtığınız duyuru okunmuş sayılır',
-    right: h('div', { class: 'head-right' }, data.can_edit ? h('button', { class: 'btn primary', onclick: () => annForm(null, load) }, '+ Yeni Duyuru') : null, seg) }),
-  out);
+  clear(view, pageHead('Duyurular', { back: '#/', sub: 'Yönetimden duyurular · açtığınız duyuru okunmuş sayılır', tabs: seg }),
+    moduleToolbar(data.can_edit ? h('button', { class: 'btn primary', onclick: () => annForm(null, load) }, '+ Yeni Duyuru') : null),
+    out);
 }
 
 async function renderDetail(view, id, ctx) {
@@ -43,13 +43,13 @@ async function renderDetail(view, id, ctx) {
   const total = admin ? a.readers.length + a.unread.length : 0;
   clear(view,
     pageHead(a.title, { back: '#/announcements', sub: h('span', null, h('span', { class: `badge ${cls}` }, label), `  ${fmtDateTime(a.created_at)} · ${a.created_by_name || 'Yönetim'}`,
-      a.updated_at ? ` · düzenlendi ${fmtDateTime(a.updated_at)}` : ''),
-    right: admin ? h('div', { class: 'head-right' },
+      a.updated_at ? ` · düzenlendi ${fmtDateTime(a.updated_at)}` : '') }),
+    moduleToolbar(admin ? [
       h('button', { class: 'btn', onclick: () => annForm(a, () => renderDetail(view, id, ctx)) }, 'Düzenle'),
       h('button', { class: 'btn ghost', onclick: async () => {
         if (!await confirmDialog('Duyuruyu sil', `"${a.title}" silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
         await api.del(`/api/announcements/${id}`); toast('Duyuru silindi'); location.hash = '#/announcements';
-      } }, 'Sil')) : null }),
+      } }, 'Sil')] : null),
     h('div', { class: `card card-pad ann-body lv-${a.level}` }, a.body),
     admin ? h('div', { class: 'ann-reads' },
       h('div', { class: 'card card-pad' },

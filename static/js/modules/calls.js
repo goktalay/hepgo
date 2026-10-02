@@ -3,7 +3,7 @@
 // İki sayfada da kart ve liste görünümü vardır (tercih tarayıcıda saklanır).
 import { api } from '../api.js';
 import {
-  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, pageHead, pref, secondsSince,
+  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref, secondsSince,
   segmented, setPref, toast, toastError,
 } from '../ui.js';
 
@@ -70,7 +70,7 @@ export async function renderCalls(body, addBtn, head) {
   q.addEventListener('input', draw);
   scope.addEventListener('change', () => { setPref('calls.scope', scope.value); draw(); });
   addBtn.onclick = () => callForm(null, load);
-  head.insertBefore(vt.seg, head.lastChild);   // kart / liste: başlıkta, alt modül seçiminin solunda
+  head.insertBefore(vt.seg, head.lastChild);   // kart / liste: toolbar'da, alt modül işleminin solunda
   clear(body, h('div', { class: 'filters' }, scope, q, info), out);
   await load();
   every(30000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
@@ -199,7 +199,8 @@ export async function renderMyCalls(view) {
   const load = async () => { rows = await api.get('/api/me/calls'); draw(); };
   q.addEventListener('input', draw);
   scope.addEventListener('change', () => { setPref('mycalls.scope', scope.value); draw(); });
-  clear(view, pageHead('Aramalarım', { back: '#/', sub: 'Sekreteryanın sizin için not ettiği telefonlar · geri dönünce "Tamamlandı" deyin', right: h('div', { class: 'head-right' }, vt.seg) }),
+  clear(view, pageHead('Aramalarım', { back: '#/', sub: 'Sekreteryanın sizin için not ettiği telefonlar · geri dönünce "Tamamlandı" deyin' }),
+    moduleToolbar(vt.seg),
     h('div', { class: 'filters' }, scope, q), out);
   await load();
   every(30000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });

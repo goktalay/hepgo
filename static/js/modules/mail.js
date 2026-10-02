@@ -3,7 +3,7 @@
 // uzak resimler istenirse yüklenir. Yeni / Yanıtla / Tümünü yanıtla / İlet penceresi ekleriyle.
 import { api } from '../api.js';
 import { icons } from '../icons.js';
-import { clear, confirmDialog, field, h, modal, pageHead, svgIcon, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, h, modal, moduleToolbar, pageHead, svgIcon, toast, toastError } from '../ui.js';
 
 const FOLDER_ICONS = { inbox: '📥', starred: '⭐', important: '🏷️', sent: '📤', drafts: '📝', all: '🗂️', spam: '⚠️', trash: '🗑️' };
 const size = b => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
@@ -28,8 +28,8 @@ export async function renderMail(view, params = []) {
   const acc = await api.get('/api/mail/account');
   const newBtn = h('button', { class: 'btn primary', type: 'button' }, svgIcon(icons.plus), 'Yeni E-posta');
   const setBtn = h('button', { class: 'btn', type: 'button', title: 'Mail ayarları' }, svgIcon(icons.settings));
-  clear(view, pageHead('Mail', { back: '#/', sub: acc.connected ? acc.email : 'Gmail hesabınızı bağlayın',
-    right: h('div', { class: 'head-right' }, acc.connected ? [newBtn, setBtn] : null) }));
+  clear(view, pageHead('Mail', { back: '#/', sub: acc.connected ? acc.email : 'Gmail hesabınızı bağlayın' }),
+    moduleToolbar(acc.connected ? [newBtn, setBtn] : null));
   const again = () => window.dispatchEvent(new Event('hashchange'));   // Kişisel başlığıyla yeniden çiz
   if (!acc.connected) { view.append(connectCard(again, acc.oauth_available)); return; }
 

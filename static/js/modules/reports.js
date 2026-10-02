@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { foot, head, printPage } from '../print.js';
-import { clear, fmtDateTime, h, matches, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, toastError, periodRange } from '../ui.js';
+import { clear, fmtDateTime, h, matches, moduleToolbar, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, toastError, periodRange } from '../ui.js';
 
 export const MODULE_NAMES = {
   production: 'Üretim Yönetimi', orders: 'İş Emri Yönetimi', warehouse: 'Depo Yönetimi', stock: 'Stok Yönetimi', printers: 'Yazıcı Yönetimi',
@@ -56,7 +56,8 @@ export async function render(view, params, ctx) {
   };
   q.addEventListener('input', draw);
   const viewSeg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('reports.view', v); draw(); });
-  clear(view, pageHead('Raporlar', { back: '#/', sub: `${list.length} rapor · yetkinize göre modüllerin raporları`, right: viewSeg }),
+  clear(view, pageHead('Raporlar', { back: '#/', sub: `${list.length} rapor · yetkinize göre modüllerin raporları` }),
+    moduleToolbar(viewSeg),
     h('div', { class: 'filters' }, modSel, q), out);
   drawChips();
   draw();
@@ -109,7 +110,7 @@ async function renderReport(view, key, ctx) {
       data = await api.get(`/api/reports/${key}?date_from=${fromI.value}&date_to=${toI.value}`);
     } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); return; }
     clear(headBox, pageHead(data.title, { back: '#/reports', sub: h('span', null, h('span', { class: 'rp-mod-tag', style: { '--tone': MODULE_TONE[data.module] } },
-      MODULE_NAMES[data.module] || data.module), `  ${data.desc}`), right: h('div', { class: 'head-right' }, typeSeg, printBtn) }));
+      MODULE_NAMES[data.module] || data.module), `  ${data.desc}`) }), moduleToolbar(typeSeg, printBtn));
     draw();
   }
 

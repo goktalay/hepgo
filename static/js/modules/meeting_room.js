@@ -5,7 +5,7 @@
 // yapılacaklar / sorular, notlar ve konuşmacı adlı tam döküm; yazdırılabilir.
 import { api } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
-import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, pageHead, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, onLeave, pageHead, toast, toastError } from '../ui.js';
 
 const STATUS_TEXT = { DUZENLEYEN: 'Düzenleyen', KATILIYOR: 'Katılıyor', BELKI: 'Belki', KATILMIYOR: 'Katılmıyor', BEKLIYOR: 'Yanıt bekleniyor' };
 const clock = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -18,13 +18,13 @@ export async function renderRoom(view, id) {
   const org = r.can_edit;
   const timer = h('b', { class: 'mr-timer' });
   const stateChip = h('span', { class: 'mr-state' });
-  const right = h('div', { class: 'head-right' });
+  const right = h('div', { class: 'module-toolbar' });   // düzenleyenin eylem düğmeleri (Başlat / Bitir / Özet); draw() doldurur
   const people = h('ul', { class: 'mr-people' });
   const note = h('textarea', { class: 'input mr-note', placeholder: 'Toplantı notlarınız… (otomatik kaydedilir)' }, r.my_note || '');
   const saved = h('span', { class: 'small muted' });
   const recBox = h('div', { class: 'mr-rec' });
   const info = h('div', { class: 'card card-pad mr-info' });
-  clear(view, pageHead(r.title, { back: '#/meetings', sub: h('span', null, stateChip, ' ', timer), right }),
+  clear(view, pageHead(r.title, { back: '#/meetings', sub: h('span', null, stateChip, ' ', timer) }), right,
     h('div', { class: 'mr-grid' },
       h('section', { class: 'card card-pad' }, h('h3', null, 'Katılımcılar'), people),
       h('section', { class: 'card card-pad mr-notes' }, h('div', { class: 'mr-notes-head' }, h('h3', null, 'Notlarım'), saved), note,
@@ -206,8 +206,8 @@ export async function renderSummary(view, id) {
         : h('div', { class: 'small muted' }, empty));
     const processing = s.process_status === 'ISLENIYOR';
     clear(view,
-      pageHead(`Toplantı özeti · ${s.title}`, { back: '#/meetings', sub: `${fmtDateTime(s.started_at)} – ${s.ended_at ? s.ended_at.slice(11, 16) : ''} · ${clock(dur)} · düzenleyen ${s.organizer}`,
-        right: h('div', { class: 'head-right' }, h('button', { class: 'btn', type: 'button', onclick: () => printSummary(s, dur).catch(toastError) }, '🖨 Yazdır')) }),
+      pageHead(`Toplantı özeti · ${s.title}`, { back: '#/meetings', sub: `${fmtDateTime(s.started_at)} – ${s.ended_at ? s.ended_at.slice(11, 16) : ''} · ${clock(dur)} · düzenleyen ${s.organizer}` }),
+      moduleToolbar(h('button', { class: 'btn', type: 'button', onclick: () => printSummary(s, dur).catch(toastError) }, '🖨 Yazdır')),
       processing ? h('div', { class: 'alert info ms-proc' }, h('span', { class: 'chat-rec-dot' }), ' Ses kaydı metne çevriliyor ve konuşmacılara ayrılıyor… Bu sayfa kendiliğinden yenilenir.') : null,
       s.process_status === 'HATA' ? h('div', { class: 'alert warn' }, `Ses işlenemedi: ${s.process_error || ''} `,
         org ? h('button', { class: 'btn sm', type: 'button', onclick: async () => { await api.post(`/api/meetings/${id}/reprocess`); await load(); draw(); watch(); } }, 'Yeniden dene') : null) : null,

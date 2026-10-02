@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import { renderRoom, renderSummary } from './meeting_room.js';
 import { icons } from '../icons.js';
-import { avatar, clear, confirmDialog, dateTimeInput, every, field, h, matches, modal, pageHead, peoplePicker, pref, setPref, svgIcon, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, dateTimeInput, every, field, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, setPref, svgIcon, toast, toastError } from '../ui.js';
 
 export const STATUS = {
   BEKLIYOR: ['gray', 'Yanıt bekleniyor', '⏳'], KATILIYOR: ['green', 'Katılıyor', '✓'], BELKI: ['yellow', 'Belki', '?'],
@@ -39,7 +39,8 @@ export async function renderMeetings(view, params = []) {
   const out = h('div');
   let rows = [];
   clear(view, pageHead('Toplantılar', { back: '#/', sub: 'Şirket içi toplantılarınız ve davetleriniz',
-    right: h('div', { class: 'head-right' }, q, scopeSel, h('button', { class: 'btn primary', type: 'button', onclick: () => meetingForm(null, load) }, svgIcon(icons.plus), 'Yeni Toplantı')) }), out);
+    right: h('div', { class: 'head-right' }, q, scopeSel) }),
+    moduleToolbar(h('button', { class: 'btn primary', type: 'button', onclick: () => meetingForm(null, load) }, svgIcon(icons.plus), 'Yeni Toplantı')), out);
 
   const card = m => {
     const d = new Date(m.starts_at);

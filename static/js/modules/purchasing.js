@@ -4,7 +4,7 @@ import { api, fileUrl, upload } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
 import { renderSuppliers } from './companies.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -92,7 +92,8 @@ async function renderRequests(view) {
       : h('div', { class: 'card empty' }, list.length ? 'Filtreye uyan talep yok' : 'Henüz talep yok. “Yeni Talep” ile başlayın.'));
   };
   q.addEventListener('input', draw); st.addEventListener('change', draw);
-  clear(view, pageHead('Talep Yönetimi', { back: '#/', right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => requestForm(null) }, '＋ Yeni Talep')) }),
+  clear(view, pageHead('Talep Yönetimi', { back: '#/' }),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: () => requestForm(null) }, '＋ Yeni Talep')),
     stats, h('div', { class: 'filters' }, q, st, period.el), body);
   draw();
 }
@@ -157,7 +158,8 @@ async function renderRequest(view, id, isAdmin) {
     } }, 'İptal Et') : null,
   ];
   clear(view,
-    pageHead(`${r.code} · ${r.title}`, { back: '#/purchasing/requests', sub: 'Satın Alma · Talep Yönetimi', right: h('div', { class: 'head-right' }, actions) }),
+    pageHead(`${r.code} · ${r.title}`, { back: '#/purchasing/requests', sub: 'Satın Alma · Talep Yönetimi' }),
+    moduleToolbar(actions),
     h('div', { class: 'card card-pad pu-head' },
       h('dl', { class: 'hr-kv' },
         h('dt', null, 'Durum'), h('dd', null, h('span', { class: `badge ${REQ_TONE[r.status]}` }, r.status_label)),
@@ -220,7 +222,8 @@ async function renderInvoices(view) {
       : h('div', { class: 'card empty' }, list.length ? 'Filtreye uyan belge yok' : 'Henüz fatura / irsaliye girilmedi'));
   };
   q.addEventListener('input', draw); kind.addEventListener('change', draw);
-  clear(view, pageHead('Fatura İrsaliye', { back: '#/', right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => invoiceForm({}) }, '＋ Fatura / İrsaliye Gir')) }),
+  clear(view, pageHead('Fatura İrsaliye', { back: '#/' }),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: () => invoiceForm({}) }, '＋ Fatura / İrsaliye Gir')),
     stats, h('div', { class: 'filters' }, q, kind, period.el), body);
   draw();
 }
@@ -316,7 +319,8 @@ async function renderQuotes(view) {
   };
   const seg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('purchasing.quoteView', v); draw(); });
   q.addEventListener('input', draw); st.addEventListener('change', draw);
-  clear(view, pageHead('Teklif Yönetimi', { back: '#/', right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => quoteForm(null) }, '＋ Yeni Teklif')) }),
+  clear(view, pageHead('Teklif Yönetimi', { back: '#/' }),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: () => quoteForm(null) }, '＋ Yeni Teklif')),
     h('div', { class: 'filters' }, q, st, period.el, h('span', { class: 'spacer' }), seg), body);
   draw();
 }
@@ -384,7 +388,8 @@ async function renderQuote(view, id, ctx) {
     !draft ? h('button', { class: 'btn primary', onclick: revise }, 'Revize Et') : null,
   ];
   clear(view,
-    pageHead(`${x.code} · ${x.title}`, { back: '#/purchasing/quotes', sub: `Satın Alma · Teklif Yönetimi · Rev. ${x.revision}`, right: h('div', { class: 'head-right' }, actions) }),
+    pageHead(`${x.code} · ${x.title}`, { back: '#/purchasing/quotes', sub: `Satın Alma · Teklif Yönetimi · Rev. ${x.revision}` }),
+    moduleToolbar(actions),
     h('div', { class: 'card card-pad pu-head' }, h('dl', { class: 'hr-kv' },
       h('dt', null, 'Durum'), h('dd', null, h('span', { class: `badge ${QUOTE_TONE[x.status]}` }, x.status_label), x.sent_to ? ` · ${x.sent_to}` : '', x.sent_at ? ` · ${fmtDateTime(x.sent_at)}` : ''),
       h('dt', null, 'Tedarikçi'), h('dd', null, x.company_name || '—'),

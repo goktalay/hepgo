@@ -5,7 +5,7 @@ import { crmNav } from './crmhub.js';
 import { api, fileUrl, uploadLarge } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  clear, confirmDialog, every, field, fmtDate, fmtDateTime, h, matches, modal, pageHead, peoplePicker, segmented, selectInput,
+  clear, confirmDialog, every, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, segmented, selectInput,
   statStrip, svgIcon, toast, toastError, uploadPanel, companyName, shortCompany, periodFilter
 } from '../ui.js';
 import { signBadge, signatureBlock } from './sign.js';
@@ -93,10 +93,10 @@ async function renderList(view, ctx) {
 
   clear(view,
     pageHead('Evrak Yönetimi', { back: '#/', right: h('div', { class: 'head-right doc-head' },   // filtreler başlıkta
-      h('div', { class: 'doc-search-wrap' }, svgIcon(icons.search), q), company, kind, status, period.el,
-      h('button', { class: 'btn primary', onclick: () => openUpload(ctx, {}, load) }, svgIcon(icons.upload), 'Evrak Yükle')) }),
+      h('div', { class: 'doc-search-wrap' }, svgIcon(icons.search), q), company, kind, status, period.el) }),
     crmNav('documents', ctx),
     docSubTabs('evrak'),
+    moduleToolbar(h('button', { class: 'btn primary', onclick: () => openUpload(ctx, {}, load) }, svgIcon(icons.upload), 'Evrak Yükle')),
     body);
   await load();
   every(5000, () => { if (docs.some(d => ['BEKLIYOR', 'ISLENIYOR'].includes(d.ocr_status))) load().catch(() => {}); });
@@ -289,11 +289,11 @@ async function renderDetail(view, id, ctx) {
   };
   const kv = (k, v) => [h('dt', null, k), h('dd', null, v)];
   clear(view,
-    pageHead(d.title, { back: '#/documents', sub: d.file_name,
-      right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        h('a', { class: 'btn', href: url, download: d.file_name }, 'İndir'),
-        d.can_edit ? h('button', { class: 'btn', onclick: edit }, 'Düzenle') : null,
-        d.can_edit ? h('button', { class: 'btn danger', onclick: remove }, 'Sil') : null) }),
+    pageHead(d.title, { back: '#/documents', sub: d.file_name }),
+    moduleToolbar(
+      h('a', { class: 'btn', href: url, download: d.file_name }, 'İndir'),
+      d.can_edit ? h('button', { class: 'btn', onclick: edit }, 'Düzenle') : null,
+      d.can_edit ? h('button', { class: 'btn danger', onclick: remove }, 'Sil') : null),
     h('div', { class: 'doc-layout' },
       h('div', { class: 'card doc-stage' }, preview),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px' } },

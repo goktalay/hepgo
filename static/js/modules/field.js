@@ -6,7 +6,7 @@ import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../st
 import { segIcon } from '../segicons.js';
 import { stockPicker } from '../stockpick.js';
 import {
-  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, pageHead, pref,
+  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
   internTag, nameWithIntern, periodFilter
 } from '../ui.js';
@@ -311,8 +311,7 @@ async function renderTask(view, id, ctx) {
     clear(head, pageHead(`Saha görevi ${t.code}`, {
       back: '#/field',
       sub: h('span', null, badge(TASK_STATES, t.status), '  ', `Saha sorumlusu: ${t.lead_name || '—'}`),
-      right: h('div', { class: 'head-right' }, actions),
-    }));
+    }), moduleToolbar(actions));
     stats.set([
       { label: 'Uçuş', value: t.flights.length },
       { label: 'Raporu hazır uçuş', value: `${t.logs_ready}/${t.flights.length}`, tone: t.logs_ready === t.flights.length && t.flights.length ? 'ok' : '' },

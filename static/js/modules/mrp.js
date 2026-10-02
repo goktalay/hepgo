@@ -8,7 +8,7 @@ import { gcodeTab } from './products.js';
 import * as stock from './stock.js';
 import * as warehouse from './warehouse.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   toast, toastError,
 } from '../ui.js';
 
@@ -99,7 +99,8 @@ async function renderMaterials(view) {
   };
   const seg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('mrp.view', v); draw(); });
   [q, kind, state].forEach(el => el.addEventListener(el === q ? 'input' : 'change', draw));
-  clear(view, pageHead('Malzeme Yönetimi', { back: '#/', sub: 'Yedek parça, hammadde, demirbaş ve sarf malzemeler', right: h('div', { class: 'head-right' }, canEdit ? newMenu() : null) }),
+  clear(view, pageHead('Malzeme Yönetimi', { back: '#/', sub: 'Yedek parça, hammadde, demirbaş ve sarf malzemeler' }),
+    moduleToolbar(canEdit ? newMenu() : null),
     stats, h('div', { class: 'filters' }, q, kind, state, h('span', { class: 'spacer' }), seg), body);
   draw();
 }
@@ -199,9 +200,9 @@ async function renderMaterial(view, id, ctx) {
   };
   const seg = segmented(tabs, tab, v => { tab = v; setPref('mrp.tab', v); show(); });
   seg.classList.add('hr-tabs');
-  clear(view, pageHead(m.name, { back: '#/mrp/materials', sub: `MRP · ${m.code} · ${(TYPE[m.type] || [m.type])[0]}`,
-    right: h('div', { class: 'head-right' }, edit ? [h('button', { class: 'btn', onclick: () => moveModal(m, 'GIRIS') }, '＋ Stok Girişi'),
-      h('button', { class: 'btn', onclick: () => moveModal(m, 'CIKIS') }, 'Stok Çıkışı')] : null) }),
+  clear(view, pageHead(m.name, { back: '#/mrp/materials', sub: `MRP · ${m.code} · ${(TYPE[m.type] || [m.type])[0]}` }),
+  moduleToolbar(edit ? [h('button', { class: 'btn', onclick: () => moveModal(m, 'GIRIS') }, '＋ Stok Girişi'),
+    h('button', { class: 'btn', onclick: () => moveModal(m, 'CIKIS') }, 'Stok Çıkışı')] : null),
   top, seg, stage);
   show();
 }
@@ -414,7 +415,8 @@ async function renderDepots(view, ctx) {
     name.focus();
   };
   clear(view,
-    pageHead('Depo Yönetimi', { back: '#/', sub: 'Depolar ve sorumluları', right: h('div', { class: 'head-right' }, canEdit ? h('button', { class: 'btn primary', onclick: () => form(null) }, '＋ Yeni Depo') : null) }),
+    pageHead('Depo Yönetimi', { back: '#/', sub: 'Depolar ve sorumluları' }),
+    moduleToolbar(canEdit ? h('button', { class: 'btn primary', onclick: () => form(null) }, '＋ Yeni Depo') : null),
     h('div', { class: 'mrp-depots' }, ws.map(w => h('div', { class: `card mrp-depot big ${w.active ? '' : 'passive'}` },
       h('div', { class: 'mrp-depot-name' }, h('b', null, w.name), w.code ? h('span', { class: 'mono small muted' }, w.code) : null, w.active ? null : h('span', { class: 'badge gray' }, 'Pasif')),
       h('div', { class: 'mrp-depot-qty' }, w.material_count, h('small', null, 'çeşit malzeme')),

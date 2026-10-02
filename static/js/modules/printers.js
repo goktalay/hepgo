@@ -95,7 +95,7 @@ export async function render(view, params, ctx) {
   }));
 
   clear(view,
-    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · durumlar her 10 saniyede yazıcılardan okunur' : 'Durumlar her 10 saniyede yazıcılardan okunur', right: h('div', { class: 'head-right' }, modeSeg) }),
+    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · durumlar her 10 saniyede yazıcılardan okunur' : 'Durumlar her 10 saniyede yazıcılardan okunur', tabs: modeSeg }),
     canOpen ? subnav('printers', ctx) : null,
     stats,
     h('div', { class: 'filters' },

@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.71.0'
+VERSION = '2.72.0'
 
 CHANGELOG = [
+    {'version': '2.72.0', 'date': '2026-10-02', 'title': 'Alt-modül düzeni tüm modüllere yayıldı + arka plan düzeltmesi',
+     'changes': [
+         'Tüm modüllerde: alt-modül seçici (sekmeler) başlık bandında üstte; eyleme ait düğmeler altta ayrı toolbar’da (hiza ayarından sol/orta/sağ).',
+         'Endüstriyel Tasarım dahil ~30 modül yeni düzene geçirildi.',
+         'Gövde arka plan deseni artık opak barların (üst/alt bar, footer) ARKASINDA; “Renksiz” seçilen bantta artık desen sızmıyor.',
+     ]},
     {'version': '2.71.0', 'date': '2026-10-02', 'title': 'Alt-modül düzeni standardı (başlangıç: Yönetim)',
      'changes': [
          'Alt-modül seçici (sekmeler) başlık bandında üstte; eyleme ait düğmeler (ör. Excel) altta ayrı toolbar’da (hiza ayarlı).',

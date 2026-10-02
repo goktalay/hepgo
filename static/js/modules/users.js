@@ -4,7 +4,7 @@ import { segIcon } from '../segicons.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon,
+  avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon,
   toast, toastError, periodRange
 } from '../ui.js';
 
@@ -32,10 +32,11 @@ async function renderList(view, ctx) {
   act.addEventListener('change', draw);
 
   clear(view,
-    pageHead('Kullanıcı Yönetimi', { back: '#/', right: h('div', { class: 'head-right' },
+    pageHead('Kullanıcı Yönetimi', { back: '#/' }),
+    moduleToolbar(
       role, act,
       h('button', { class: 'btn primary', onclick: () => userForm(null, ctx, load) }, svgIcon(icons.plus), 'Yeni Kullanıcı'),
-      segmented([['cards', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('users.view', v); draw(); })) }),
+      segmented([['cards', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('users.view', v); draw(); })),
     body);
   await load();
 }

@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.70.0'
+VERSION = '2.71.0'
 
 CHANGELOG = [
+    {'version': '2.71.0', 'date': '2026-10-02', 'title': 'Alt-modül düzeni standardı (başlangıç: Yönetim)',
+     'changes': [
+         'Alt-modül seçici (sekmeler) başlık bandında üstte; eyleme ait düğmeler (ör. Excel) altta ayrı toolbar’da (hiza ayarlı).',
+         'Yönetim modülü yeni düzene geçti; diğer modüller sırayla aktarılıyor.',
+     ]},
     {'version': '2.70.0', 'date': '2026-10-02', 'title': 'Görünüm & Renkler (merkezi kişiselleştirme)',
      'changes': [
          'Ayarlar › Görünüm & Renkler: aktif temaya (açık/koyu) göre üst bar, başlık bandı, footer, sayfa zemini ve vurgu rengi değiştirilebilir.',

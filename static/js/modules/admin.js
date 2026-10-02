@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { chartConfig, heatEl, loadChart, theme } from './reports.js';
 import { loadPlane, renderPlane } from '../plane.js';
 import { PRINTER_STATES } from '../status.js';
-import { avatar, clear, every, fmtDateTime, fmtDuration, h, matches, onLeave, pageHead, segmented, selectInput } from '../ui.js';
+import { avatar, clear, every, fmtDateTime, fmtDuration, h, matches, moduleToolbar, onLeave, pageHead, segmented, selectInput } from '../ui.js';
 
 const REFRESH_MS = 5000;
 
@@ -82,8 +82,9 @@ async function renderLive(view, params, ctx) {
     pageHead('Yönetim', {
       back: '#/',
       sub: h('span', null, h('span', { class: 'live-dot' }), ' Canlı · 5 saniyede bir yenilenir · ', stamp),
-      right: h('div', { class: 'head-right' }, picker, nav('live')),
+      tabs: nav('live'),
     }),
+    moduleToolbar(picker),
     tiles,
     h('div', { class: 'filters' }, h('span', { class: 'lbl' }, 'Yazıcılar'), pq, pstate, h('span', { class: 'lbl' }, 'Personel'), uq),
     h('div', { class: 'admin-layout' }, planesBox, h('div', { class: 'admin-side' }, onlineBox, printersBox)));
@@ -246,7 +247,7 @@ async function renderSystem(view) {
   const charts = [];
   onLeave(() => charts.forEach(c => c.destroy()));
   clear(view, pageHead('Yönetim', { back: '#/', sub: h('span', null, 'Sistem durumu · 30 saniyede bir yenilenir · ', stamp),
-    right: h('div', { class: 'head-right' }, nav('')) }), body);
+    tabs: nav('') }), body);
 
   const gauge = (label, pct, sub, warn = 80, crit = 92) => {
     const tone = pct >= crit ? 'crit' : pct >= warn ? 'warn' : 'ok';

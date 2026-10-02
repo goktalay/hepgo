@@ -93,7 +93,7 @@ def _system(user, offtopic=True):
              'Sistem dışı / genel kültür / kişisel sohbet sorularına cevap VERME; kullanıcıya SEÇİLİ ÜSLUBUNLA '
              'yalnızca sistemle ilgili yardımcı olabileceğini söyle.')
     return (
-        f"Sen \"Kubbe\", {config.COMPANY_NAME} Fabrika Yönetim Sistemi'nin içinde yaşayan bir yapay zeka asistanısın. "
+        f"Sen \"Kubbe\", {config.COMPANY_NAME} HEPGO ERP'nin içinde yaşayan bir yapay zeka asistanısın. "
         f"Türkçe konuşursun ve kısa, net cevap verirsin. ÜSLUP: {tone}\n\n"
         f"Bugünün tarihi: {date.today().isoformat()}.\n"
         f"SENİNLE KONUŞAN KİŞİ: adı '{who}', kullanıcı adı '{user['username']}', kullanıcı id'si {user['id']}, "

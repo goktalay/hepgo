@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.60.0'
+VERSION = '2.61.0'
 
 CHANGELOG = [
+    {'version': '2.61.0', 'date': '2026-10-02', 'title': 'HEPGO markası',
+     'changes': [
+         'Ürün adı “HEPGO ERP” olarak güncellendi (başlık, uygulama simgeleri, bildirimler, favicon).',
+         'Merkez platformu ve tanıtım sayfası HEPGO markasıyla; alan adı hepgo.com’a taşınıyor.',
+     ]},
     {'version': '2.60.0', 'date': '2026-10-02', 'title': 'Dağıtık entegrasyon altyapısı (fabrika ajanı) — temel',
      'changes': [
          'Merkez buluta taşındığında Mikro ERP, PDKS ve yazıcıların fabrika LAN’ında kalması için ajan altyapısı eklendi.',

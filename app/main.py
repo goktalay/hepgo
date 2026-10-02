@@ -46,7 +46,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title='Fabrika Yönetim Sistemi', lifespan=lifespan)
+app = FastAPI(title='HEPGO ERP', lifespan=lifespan)
 
 
 class _AssetGZip:

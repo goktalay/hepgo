@@ -466,7 +466,7 @@ function renderShell() {
     h('header', { class: 'app-header' },
       h('a', { class: 'brand', href: '#/' },
         h('img', { src: '/static/img/logo.png', alt: ctx.meta?.company || '' }),
-        h('span', { class: 'product' }, h('b', null, 'FABRİKA'), 'Yönetim Sistemi')),
+        h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       h('div', { class: 'header-right' }, radio.button(popup), securityOnly() ? null : chatButton(popup),
         docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,

@@ -2,6 +2,7 @@
 :root {
   --bg: #f8f9fb;   /* sayfa zemini: kutucuk başlık bandıyla karışmasın diye açık */
   --header-bg: #edf0f5;   /* üst başlık satırı: sayfa zemininden hafif daha kısık (koyu) — ayrım görünsün */
+  --head-band: #f1f3f7;   /* sayfa başlığı (page-head) bandı: header ile içerik arası ara ton */
   --surface: #ffffff;
   --surface-2: #f8fafc;
   --text: #16202e;
@@ -178,7 +179,11 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 .avatar.lg { width: 88px; height: 88px; font-size: 28px; }
 
 /* ---------- Page chrome ---------- */
-.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+/* Başlık bandı tam genişlik (ortalanmış main#view içinden viewport kenarına taşar); iç içerik içerik sütununa hizalanır */
+.page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--head-band); border-bottom: 1px solid var(--border);
+  width: 100vw; margin: -20px 0 16px; margin-left: 50%; transform: translateX(-50vw);
+  padding: 16px calc(max((100vw - 1480px) / 2, 0px) + 20px); }
 .page-head h1 { font-size: 22px; }
 .page-head .sub { color: var(--muted); }
 .page-head .spacer { flex: 1; }
@@ -779,7 +784,8 @@ img, svg, video, canvas { max-width: 100%; }
   .filters .input, .filters select, .filters > .seg { width: 100% !important; max-width: 100%; }
   .filters .spacer { display: none; }
   .filters > .btn, .filters > a.btn { flex: 1 1 auto; }
-  .page-head { gap: 8px; }
+  .page-head { gap: 8px; margin: -12px 0 12px; margin-left: 50%;
+    padding: 12px calc(max((100vw - 1480px) / 2, 0px) + 12px); }
   .page-head h1 { font-size: 19px; }
   .page-head > div:last-child:not(.spacer) { width: 100%; }
   /* Mobilde modül/alt-modül açılışlarındaki ana sayfaya dönen geri oku gizlenir (global başlıktan erişilir); detay→liste geri okları kalır */
@@ -1317,6 +1323,7 @@ a.dir-row:hover { background: var(--surface-2); text-decoration: none; }
     color-scheme: dark;
     --bg: #0f141c;
     --header-bg: #0b0f16;   /* üst başlık: sayfa zemininden hafif daha kısık (koyu) */
+    --head-band: #0d1118;   /* sayfa başlığı bandı: header ile içerik arası ara ton */
     --surface: #171e29;
     --surface-2: #1d2532;
     --text: #e4e9f1;

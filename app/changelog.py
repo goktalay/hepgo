@@ -3,9 +3,13 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.67.0'
+VERSION = '2.68.0'
 
 CHANGELOG = [
+    {'version': '2.68.0', 'date': '2026-10-02', 'title': 'Sayfa başlığı tam genişlik bant',
+     'changes': [
+         'Sayfa başlığı satırı (ör. “Endüstriyel Tasarım”) artık header ile içerik arası ara tonda tam genişlik bir bant; geniş ekranda yanlarda renk farkı kalmadı.',
+     ]},
     {'version': '2.67.0', 'date': '2026-10-02', 'title': 'Tasarım proje kartları + üst başlık ayrımı',
      'changes': [
          'Endüstriyel Tasarım proje listesi düzgün kart görünümüne geçti: önizleme görseli olan projede küçük resim, olmayan projede sade tasarım ikonu gösterilir.',

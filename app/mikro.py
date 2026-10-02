@@ -19,11 +19,19 @@ def connect(db=None):
                            timeout=_TIMEOUT, login_timeout=_TIMEOUT, charset='UTF-8', as_dict=True)
 
 
-def query(sql, params=None, db=None):
+def _query_direct(sql, params=None, db=None):
     with connect(db) as conn:
         cur = conn.cursor()
         cur.execute(sql, params or ())
         return cur.fetchall()
+
+
+def query(sql, params=None, db=None):
+    """Tüm Mikro okumalarının tek geçiş noktası. Uzak modda fabrikadaki ajana iletilir (merkez MSSQL'e bağlanmaz)."""
+    if config.AGENT_MODE == 'remote':
+        from . import devices
+        return devices.call_sync('mikro.query', {'sql': sql, 'params': list(params) if params else None, 'db': db})
+    return _query_direct(sql, params, db)
 
 
 def ping():

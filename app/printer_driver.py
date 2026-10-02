@@ -149,14 +149,24 @@ def device_name(ip):
         return None
 
 
-def probe(ip):
-    """Yazıcının canlı durumunu döner; ulaşılamazsa None."""
+def _probe_direct(ip):
     for fn in (_moonraker, _creality_ws):
         try:
             return fn(ip)
         except Exception:
             continue
     return None
+
+
+def probe(ip):
+    """Yazıcının canlı durumunu döner; ulaşılamazsa None. Uzak modda fabrikadaki ajan yoklar."""
+    if config.AGENT_MODE == 'remote':
+        try:
+            from . import devices
+            return devices.call_sync('printer.probe', {'ip': ip}, timeout=15)
+        except Exception:
+            return None
+    return _probe_direct(ip)
 
 
 def poll_all():

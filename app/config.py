@@ -47,6 +47,13 @@ SEED_SPARE_STOCK = os.environ.get('CAYMAZ_SEED_SPARE_STOCK', '1') == '1'
 # Firma logosu ve uygulama simgeleri: bu klasördeki img/ ve icons/ dosyaları static/ içindekilerin yerine sunulur
 BRAND_DIR = Path(os.environ['CAYMAZ_BRAND_DIR']) if os.environ.get('CAYMAZ_BRAND_DIR') else None
 SESSION_HOURS = int(os.environ.get('CAYMAZ_SESSION_HOURS', '12'))
+# Dağıtık entegrasyon (fabrika ajanı): 'local' = cihazlara doğrudan erişim (bu makinede; varsayılan),
+# 'remote' = Mikro ERP / PDKS / yazıcılar fabrikadaki ajan üzerinden (merkez bulut sunucuda).
+AGENT_MODE = os.environ.get('CAYMAZ_AGENT_MODE', 'local').strip().lower()
+# Fabrika ajanının merkeze bağlanırken kullanacağı paylaşılan anahtar (her firma için ayrı).
+AGENT_KEY = os.environ.get('CAYMAZ_AGENT_KEY', '')
+# Ajan tarafı için merkez WebSocket adresi (ör. wss://caymaz.app/ws/agent) — yalnız ajan süreci kullanır.
+AGENT_CENTRAL_URL = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL', '')
 PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 # Testlerde arka plan yazıcı yoklamasını kapatmak için 0 yapılır.
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'

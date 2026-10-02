@@ -3,9 +3,20 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.58.0'
+VERSION = '2.60.0'
 
 CHANGELOG = [
+    {'version': '2.60.0', 'date': '2026-10-02', 'title': 'Dağıtık entegrasyon altyapısı (fabrika ajanı) — temel',
+     'changes': [
+         'Merkez buluta taşındığında Mikro ERP, PDKS ve yazıcıların fabrika LAN’ında kalması için ajan altyapısı eklendi.',
+         'Cihaz erişimi artık bir yönlendirme katmanından geçer: “local” (varsayılan, mevcut davranış) ya da “remote” (fabrikadaki ajan).',
+         'Bu sürümde varsayılan “local” olduğundan çalışan sistemde hiçbir değişiklik yoktur.',
+     ]},
+    {'version': '2.59.0', 'date': '2026-10-02', 'title': 'Araçlar › Terminal (yalnız MASTER)',
+     'changes': [
+         'Sistem sahibi (MASTER) için web tabanlı terminal: uygulamaya kendi hesabıyla girip yerel makinede kabuk (SSH benzeri) çalıştırır.',
+         'Sahada olunmasa bile komut çalıştırma imkânı; her oturum denetim kaydına yazılır. Yalnızca MASTER erişebilir.',
+     ]},
     {'version': '2.58.0', 'date': '2026-10-02', 'title': 'Bina Kontrol: süren tur düzeltmeleri',
      'changes': [
          'Başlat düğmesi artık “Bitir”e dönüşüp üzerinde geçen süreyi gösterir; tur bitene kadar her saniye konum kaydedilir.',

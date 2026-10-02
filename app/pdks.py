@@ -48,6 +48,33 @@ def configured():
     return bool(config.PDKS_HOST and config.PDKS_DB and config.PDKS_USER and config.PDKS_PASSWORD)
 
 
+# --- Dağıtık mod: uzak modda PDKS okumaları fabrikadaki ajana iletilir (merkez Firebird'e bağlanmaz) ---
+def _remote():
+    return config.AGENT_MODE == 'remote'
+
+
+def test():
+    if _remote():
+        from . import devices
+        r = devices.call_sync('pdks.test', {})
+        return bool(r.get('ok')), r.get('message', '')
+    return _test_direct()
+
+
+def fetch_personnel():
+    if _remote():
+        from . import devices
+        return devices.call_sync('pdks.personnel', {})
+    return _fetch_personnel_direct()
+
+
+def daily_attendance(date_from, date_to):
+    if _remote():
+        from . import devices
+        return devices.call_sync('pdks.attendance', {'date_from': date_from, 'date_to': date_to})
+    return _daily_attendance_direct(date_from, date_to)
+
+
 def connect(timeout=8):
     """Salt okunur Firebird bağlantısı (bağlamsal; `with pdks.connect() as con:`). Ulaşılamayan adreste `timeout` sn sonra hata verir.
     firebird-driver'ın bağlantı zaman aşımı sürümlere göre değiştiğinden bağlanma ayrı iş parçacığında yapılır."""
@@ -82,7 +109,7 @@ def _columns(cur, table):
     return [r[0] for r in cur.fetchall()]
 
 
-def test():
+def _test_direct():
     """(ok, mesaj) — bağlantı ve okunabilen tablo sayısı. Şifre mesajda yer almaz."""
     if not configured():
         return False, 'Sunucu, veritabanı yolu, kullanıcı ve şifre girilmeli.'
@@ -152,7 +179,7 @@ def schema(cur):
 
 
 # ---------- Yüksek seviye okuma: personel ve günlük giriş-çıkış (yön sıradan türetilir)
-def fetch_personnel():
+def _fetch_personnel_direct():
     """PDKS'deki personeller: [{kart_id, ad, soyad, sicil, tc, unvan, aktif, ise_baslama}]."""
     with _lock, connect() as con:
         cur = con.cursor()
@@ -189,7 +216,7 @@ def fetch_scans(date_from, date_to):
         return out
 
 
-def daily_attendance(date_from, date_to):
+def _daily_attendance_direct(date_from, date_to):
     """Kart başına gün başına: ilk okuma = giriş, son okuma = çıkış, okuma sayısı ve kabaca içeride süre (dk).
     {kart_id: {tarih: {giris, cikis, okuma, dakika}}}. Cihaz yön tutmadığından ilk/son okuma esas alınır."""
     scans = fetch_scans(date_from, date_to)

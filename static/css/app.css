@@ -4871,3 +4871,9 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .bz-shareadd { display: flex; gap: 8px; margin-top: 10px; }
 .bz-shareadd select { flex: 1; }
 @media (max-width: 820px) { .bz-sunum { grid-template-columns: 1fr; } .bz-slides { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line,#e4e8f0); } .bz-slidethumb { width: 120px; flex: none; } }
+
+/* Araçlar › Terminal (MASTER web konsolu) */
+.term-card { padding: 8px; overflow: hidden; background: #0b1020; }
+.term-host { height: min(70vh, 640px); width: 100%; }
+.term-host .xterm { height: 100%; padding: 6px; }
+.term-status { margin-left: auto; }

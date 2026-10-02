@@ -8,8 +8,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, db, document_ocr, files, flight_analysis, printer_driver, production, push, sync, sysstat
-from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
+from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, printer_driver, production, push, sync, sysstat
+from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, console, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
                       announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, system, users, warehouse)
 
 
@@ -35,6 +35,8 @@ async def lifespan(app):
     from . import meet_audio
     meet_audio.resume_pending()    # yarım kalan online toplantı ses işlemleri
     import asyncio
+    from . import agent_hub
+    agent_hub.set_loop(asyncio.get_running_loop())   # dağıtık mod: senkron cihaz kodundan ajana köprü
     from . import watchdog
     watchdog.start()   # olay döngüsü donarsa yığın izini kaydeder
     from .routers import meet as meet_router
@@ -65,7 +67,7 @@ app.add_middleware(_AssetGZip)
 for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
-          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, files.router):
+          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, console.ws_router, agent_hub.ws_router, files.router):
     app.include_router(r)
 
 app.mount('/static', StaticFiles(directory=config.STATIC_DIR), name='static')

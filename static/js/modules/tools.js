@@ -20,14 +20,16 @@ const TOOLS = [
   { key: 'production-errors', title: 'Üretim Hataları', icon: 'warning', desc: 'Parçalara girilen hata kayıtları: hata kodu, açıklama, resim',
     modules: ['production', 'printers', 'orders'] },
   { key: 'network', title: 'Ağ Tarayıcı', icon: 'network', desc: 'Sunucunun ağındaki bilgisayarlar: IP, bilgisayar adı, MAC, üretici', modules: ['admin'] },
+  { key: 'terminal', title: 'Terminal', icon: 'terminal', desc: 'Sistem sahibi için yerel kabuk (SSH benzeri) — sahada olmadan komut çalıştırın', master: true },
 ];
-// Kullanıcının görebileceği araçlar (modül koşulu olanlar yalnızca o modüllerden birine sahip olanlara)
-const visibleTools = ctx => TOOLS.filter(t => !t.modules || t.modules.some(m => ctx.user.modules.includes(m)));
+// Kullanıcının görebileceği araçlar (modül koşulu olanlar o modüllerden birine sahip olana; master koşulu yalnız sistem sahibine)
+const visibleTools = ctx => TOOLS.filter(t => (t.master ? ctx.user.master : (!t.modules || t.modules.some(m => ctx.user.modules.includes(m)))));
 
 export async function render(view, params, ctx) {
   if (params[0] === 'planner') return renderPlanner(view, ctx);
   if (params[0] === 'production-errors') return renderProductionErrors(view, ctx);
   if (params[0] === 'network') return ctx.user.modules.includes('admin') ? renderNetscan(view) : clear(view, h('div', { class: 'card empty' }, 'Bu araç yalnızca Sistem Yöneticisine açıktır.'));
+  if (params[0] === 'terminal') { const con = await import('./console.js'); return con.render(view, params.slice(1), ctx); }
   if (params[0] === 'flight-log') {
     if (params[2] === '3d') return render3D(view, Number(params[1]), `#/tools/flight-log/${params[1]}`);
     return params[1] ? renderReportView(view, Number(params[1]), '#/tools/flight-log', ctx) : renderFlightLogs(view, ctx);

@@ -3,6 +3,7 @@
   --bg: #f8f9fb;   /* sayfa zemini: kutucuk başlık bandıyla karışmasın diye açık */
   --header-bg: #edf0f5;   /* üst başlık satırı: sayfa zemininden hafif daha kısık (koyu) — ayrım görünsün */
   --head-band: #f1f3f7;   /* sayfa başlığı (page-head) bandı: header ile içerik arası ara ton */
+  --footer-bg: var(--surface);   /* alt bilgi (footer) zemini — Görünüm ayarından değiştirilebilir */
   --surface: #ffffff;
   --surface-2: #f8fafc;
   --text: #16202e;
@@ -137,7 +138,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .app-footer {
   flex: none;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--footer-bg);
   color: var(--muted);
   font-size: 12px;
   padding: 12px 20px;
@@ -187,6 +188,67 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 .page-head h1 { font-size: 22px; }
 .page-head .sub { color: var(--muted); }
 .page-head .spacer { flex: 1; }
+.page-head-t { min-width: 0; }
+/* Alt-modüle ait eylem düğmeleri: başlığın altında ayrı toolbar; hiza kişisel ayardan (varsayılan orta) */
+.module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; justify-content: center; }
+html[data-toolbar-align="left"] .module-toolbar { justify-content: flex-start; }
+html[data-toolbar-align="right"] .module-toolbar { justify-content: flex-end; }
+
+/* ---- Gövde (orta alan) arka plan desenleri — Görünüm ayarı; hafif, okunurluğu bozmaz ---- */
+html[data-bg] main#view { position: relative; z-index: 1; }
+html[data-bg] .scroller::before {
+  content: ''; position: fixed; left: 0; right: 0; top: 64px; bottom: 42px; z-index: 0; pointer-events: none;
+  background-repeat: no-repeat; background-size: cover; background-position: center;
+}
+html[data-bg="soft"] .scroller::before {
+  background:
+    radial-gradient(1200px 600px at 8% -12%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 60%),
+    radial-gradient(1000px 520px at 112% 8%, color-mix(in srgb, #16a34a 11%, transparent), transparent 60%); }
+html[data-bg="mesh"] .scroller::before {
+  background:
+    radial-gradient(720px 520px at 0% 0%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 55%),
+    radial-gradient(720px 520px at 100% 0%, color-mix(in srgb, #7c3aed 13%, transparent), transparent 55%),
+    radial-gradient(820px 620px at 50% 120%, color-mix(in srgb, #0ea5e9 13%, transparent), transparent 55%); }
+html[data-bg="dots"] .scroller::before {
+  background-image: radial-gradient(color-mix(in srgb, var(--muted) 32%, transparent) 1.2px, transparent 1.4px);
+  background-size: 22px 22px; opacity: .55; }
+html[data-bg="grid"] .scroller::before {
+  background-image: linear-gradient(color-mix(in srgb, var(--muted) 18%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--muted) 18%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px; opacity: .5; }
+html[data-bg="aurora"] .scroller::before {
+  background:
+    radial-gradient(900px 600px at 20% 20%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 60%),
+    radial-gradient(900px 600px at 80% 60%, color-mix(in srgb, #16a34a 18%, transparent), transparent 60%),
+    radial-gradient(900px 600px at 50% 100%, color-mix(in srgb, #7c3aed 18%, transparent), transparent 60%);
+  background-size: 200% 200%; animation: bgAurora 26s ease-in-out infinite alternate; }
+@keyframes bgAurora { 0% { background-position: 0% 0%; } 100% { background-position: 100% 100%; } }
+html[data-bg="waves"] .scroller::before {
+  background: linear-gradient(120deg, color-mix(in srgb, var(--primary) 14%, transparent),
+    color-mix(in srgb, #0ea5e9 12%, transparent), color-mix(in srgb, #7c3aed 12%, transparent),
+    color-mix(in srgb, var(--primary) 14%, transparent));
+  background-size: 300% 300%; animation: bgWaves 30s ease infinite; }
+@keyframes bgWaves { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+html.reduce-motion[data-bg="aurora"] .scroller::before,
+html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
+
+/* Görünüm ayarı: renk seçici satırları */
+.set-color-ctl { display: inline-flex; align-items: center; gap: 10px; }
+.set-color { width: 46px; height: 30px; padding: 0; border: 1px solid var(--border-strong); border-radius: 8px; background: none; cursor: pointer; }
+.set-color:disabled { opacity: .4; cursor: not-allowed; }
+.set-none { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.set-bg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 4px; }
+.set-bg-tile { border: 2px solid var(--border); border-radius: 10px; height: 60px; cursor: pointer; position: relative; overflow: hidden; background: var(--surface-2); padding: 0; }
+.set-bg-tile.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.set-bg-tile .set-bg-name { position: absolute; left: 0; right: 0; bottom: 0; font-size: 11px; text-align: center; background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--text); padding: 1px 0; }
+.set-bg-tile[data-p=""] { background: var(--bg); }
+.set-bg-tile[data-p="soft"] { background: radial-gradient(60px 40px at 10% 0%, color-mix(in srgb, var(--primary) 30%, transparent), transparent 60%), radial-gradient(60px 40px at 110% 10%, color-mix(in srgb, #16a34a 24%, transparent), transparent 60%), var(--bg); }
+.set-bg-tile[data-p="mesh"] { background: radial-gradient(50px at 0% 0%, color-mix(in srgb, var(--primary) 34%, transparent), transparent 60%), radial-gradient(50px at 100% 0%, color-mix(in srgb, #7c3aed 28%, transparent), transparent 60%), radial-gradient(50px at 50% 120%, color-mix(in srgb, #0ea5e9 28%, transparent), transparent 60%), var(--bg); }
+.set-bg-tile[data-p="dots"] { background-image: radial-gradient(color-mix(in srgb, var(--muted) 40%, transparent) 1.2px, transparent 1.4px); background-size: 12px 12px; background-color: var(--bg); }
+.set-bg-tile[data-p="grid"] { background-image: linear-gradient(color-mix(in srgb, var(--muted) 24%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--muted) 24%, transparent) 1px, transparent 1px); background-size: 14px 14px; background-color: var(--bg); }
+.set-bg-tile[data-p="aurora"] { background: radial-gradient(50px at 20% 20%, color-mix(in srgb, var(--primary) 40%, transparent), transparent 60%), radial-gradient(50px at 80% 70%, color-mix(in srgb, #16a34a 34%, transparent), transparent 60%), radial-gradient(50px at 50% 110%, color-mix(in srgb, #7c3aed 34%, transparent), transparent 60%), var(--bg); }
+.set-bg-tile[data-p="waves"] { background: linear-gradient(120deg, color-mix(in srgb, var(--primary) 26%, transparent), color-mix(in srgb, #0ea5e9 22%, transparent), color-mix(in srgb, #7c3aed 22%, transparent)), var(--bg); }
+.set-bg-tile[data-p="aurora"]::after, .set-bg-tile[data-p="waves"]::after { content: '✦ canlı'; position: absolute; top: 3px; right: 4px; font-size: 9px; color: var(--primary); font-weight: 700; }
 .back {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);

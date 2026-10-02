@@ -32,10 +32,18 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     dnd: { calls: false, messages: false, until: null, dur: 'always', ...(cur.dnd || {}) },
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
+    toolbarAlign: cur.toolbarAlign || 'center',
+    colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
+    background: cur.background || '',
   };
   let timer;
   const save = (msg = 'Ayarlar kaydedildi') => {
     applySettings(s);
+    try {   // giriş ekranı da aynı açılsın diye cihazda yansıt (tema/boyut gibi)
+      localStorage.setItem('caymaz.toolbarAlign', s.toolbarAlign || 'center');
+      localStorage.setItem('caymaz.uiColors', JSON.stringify(s.colors || {}));
+      localStorage.setItem('caymaz.uiBg', s.background || '');
+    } catch { /* gizli pencere */ }
     ctx.user.prefs = { ...ctx.user.prefs, settings: s };
     clearTimeout(timer);
     timer = setTimeout(() => api.put('/api/auth/prefs/settings', s).then(() => toast(msg)).catch(() => toast('Kaydedilemedi', 'err')), 400);
@@ -56,6 +64,61 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   const startSel = h('select', { class: 'input' }, h('option', { value: 'dashboard' }, 'Kişisel pano'),
     modules.map(m => h('option', { value: m.key, selected: s.start === m.key }, m.title)));
   startSel.addEventListener('change', () => { s.start = startSel.value; save(); });
+
+  // ---------- Görünüm & Renkler (MERKEZİ: üst bar, alt bar, footer, zemin — aktif temaya göre; modül içeriğine dokunulmaz)
+  const alignSeg = segmented([['left', 'Sol'], ['center', 'Orta'], ['right', 'Sağ']], s.toolbarAlign || 'center', v => { s.toolbarAlign = v; save(); });
+  const themeKeyNow = () => (s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) ? 'dark' : 'light';
+  const DEFAULT_COLORS = {
+    light: { header: '#edf0f5', band: '#f1f3f7', footer: '#ffffff', bg: '#f8f9fb', accent: '#1d4f91' },
+    dark: { header: '#0b0f16', band: '#0d1118', footer: '#171e29', bg: '#0f141c', accent: '#4a8ae0' },
+  };
+  const COLOR_DEFS = [
+    ['header', 'Üst bar', 'En üstteki logo/menü şeridi', true],
+    ['band', 'Başlık bandı (alt bar)', 'Sayfa başlığının olduğu şerit', true],
+    ['footer', 'Alt bilgi (footer)', 'En alttaki bilgi şeridi', true],
+    ['bg', 'Sayfa zemini', 'İçerik alanının arka plan rengi', false],
+    ['accent', 'Vurgu rengi', 'Düğmeler, bağlantılar ve seçili öğeler', false],
+  ];
+  const BG_PRESETS = [['', 'Yok'], ['soft', 'Yumuşak'], ['mesh', 'Mesh'], ['aurora', 'Aurora ✦'], ['waves', 'Dalga ✦'], ['dots', 'Nokta'], ['grid', 'Izgara']];
+  function appearanceBody() {
+    const tk = themeKeyNow();
+    s.colors[tk] = s.colors[tk] || {};
+    const resets = [];
+    const rows = COLOR_DEFS.map(([key, label, hint, allowNone]) => {
+      const cur0 = s.colors[tk][key];
+      const def = DEFAULT_COLORS[tk][key];
+      const none0 = cur0 === 'var(--bg)';
+      const inp = h('input', { type: 'color', class: 'set-color', value: (cur0 && !none0) ? cur0 : def, disabled: none0 });
+      inp.addEventListener('input', () => { s.colors[tk][key] = inp.value; save(); });
+      let noneCb = null;
+      if (allowNone) {
+        noneCb = h('input', { type: 'checkbox', checked: none0 });
+        noneCb.addEventListener('change', () => { if (noneCb.checked) { s.colors[tk][key] = 'var(--bg)'; inp.disabled = true; } else { delete s.colors[tk][key]; inp.disabled = false; } save(); });
+      }
+      resets.push(() => { delete s.colors[tk][key]; inp.value = def; inp.disabled = false; if (noneCb) noneCb.checked = false; });
+      return h('div', { class: 'set-row' },
+        h('div', { class: 'grow' }, h('b', null, label), hint ? h('small', null, hint) : null),
+        h('div', { class: 'set-color-ctl' },
+          allowNone ? h('label', { class: 'set-none' }, noneCb, 'Renksiz') : null, inp,
+          h('button', { class: 'btn xs ghost', type: 'button', title: 'Varsayılan', onclick: () => { delete s.colors[tk][key]; inp.value = def; inp.disabled = false; if (noneCb) noneCb.checked = false; save(); } }, '↺')));
+    });
+    const bgGrid = h('div', { class: 'set-bg-grid' }, BG_PRESETS.map(([key, name]) => {
+      const tile = h('button', { class: `set-bg-tile ${s.background === key ? 'on' : ''}`, type: 'button', 'data-p': key, title: name },
+        h('span', { class: 'set-bg-name' }, name));
+      tile.addEventListener('click', () => { s.background = key; save(); bgGrid.querySelectorAll('.set-bg-tile').forEach(t => t.classList.toggle('on', t.getAttribute('data-p') === key)); });
+      return tile;
+    }));
+    const resetAll = h('button', { class: 'btn sm', type: 'button', onclick: () => { resets.forEach(f => f()); save('Renkler sıfırlandı'); } }, `${tk === 'dark' ? 'Koyu' : 'Açık'} tema renklerini sıfırla`);
+    return card('Görünüm & Renkler',
+      `Renkler yalnızca ŞU AN AKTİF temayı (${tk === 'dark' ? 'Koyu' : 'Açık'}) etkiler. Diğer temayı düzenlemek için temayı değiştirip bu sayfaya dönün. Değişiklikler merkezidir; modüllerin kendi içeriğine dokunmaz.`,
+      line('Araç çubuğu hizası', 'Alt-modül işlem düğmelerinin (toolbar) yatay konumu', alignSeg),
+      h('h4', { class: 'set-sub' }, 'Merkezi renkler'),
+      ...rows,
+      h('h4', { class: 'set-sub' }, 'Gövde arka planı'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Orta alana yumuşak bir desen. “✦” işaretliler hareketlidir (Hareketleri azalt açıksa durur).'),
+      bgGrid,
+      h('div', { class: 'set-actions' }, resetAll));
+  }
 
   // ---------- Bildirimler
   const flashSel = h('select', { class: 'input' }, [3, 5, 8, 12].map(n => h('option', { value: n, selected: s.flashSec === n }, `${n} saniye`)));
@@ -204,6 +267,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s, 'compact', 'Sıkı görünüm', 'Kart ve tablo boşluklarını azaltır, ekrana daha çok bilgi sığar'),
         toggle(s, 'motion', 'Hareketleri azalt', 'Geçiş ve animasyonları kapatır'),
         line('Açılış sayfası', 'Giriş yapınca açılacak sayfa', startSel)) },
+    { key: 'appearance', title: 'Görünüm & Renkler', desc: 'Üst/alt bar, footer, zemin renkleri; gövde arka planı; toolbar hizası', icon: 'card', body: appearanceBody },
     { key: 'notifications', title: 'Bildirimler', desc: 'Bildirim kutusu, masaüstü bildirimi', icon: 'bell',
       body: () => card('Bildirimler', 'Yeni uyarı, bildirim ya da mesaj geldiğinde nasıl haber verileceği.',
         toggle(s, 'flash', 'Sağ üstte bildirim kutusu', 'Yeni uyarı, bildirim ya da mesajda kısa süre görünen kutu'),

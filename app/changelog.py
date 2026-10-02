@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.69.0'
+VERSION = '2.70.0'
 
 CHANGELOG = [
+    {'version': '2.70.0', 'date': '2026-10-02', 'title': 'Görünüm & Renkler (merkezi kişiselleştirme)',
+     'changes': [
+         'Ayarlar › Görünüm & Renkler: aktif temaya (açık/koyu) göre üst bar, başlık bandı, footer, sayfa zemini ve vurgu rengi değiştirilebilir.',
+         'Üst bar, başlık bandı ve footer “Renksiz” yapılabilir (sayfa zemini ile aynı).',
+         'Gövde (orta alan) için yumuşak arka plan desenleri — bazıları hareketli (Aurora, Dalga).',
+         'Alt-modül işlem düğmeleri (toolbar) için hiza ayarı: sol / orta / sağ (varsayılan orta).',
+     ]},
     {'version': '2.69.0', 'date': '2026-10-02', 'title': 'Tasarım: montaj kartları + gerçek ağaç görünümü',
      'changes': [
          'Projeye girince montaj/çizimler kart olarak listelenir (önizleme görseli ya da tür ikonu, hızlı işlem düğmeleri).',

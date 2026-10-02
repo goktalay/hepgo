@@ -208,12 +208,30 @@ export function moduleTabs(options, active, onChange) {
   return h('div', { class: 'module-tabs' }, segmented(options, active, onChange, { tabs: true }));
 }
 
-export function pageHead(title, { back, sub, right } = {}) {
+// Sayfa başlığı bandı. `tabs`: alt-modül seçicisi (segmented), başlık bandının sağında üstte durur.
+// `right`: başlıkta kalması gereken öğeler (ör. sekme seçici). Alt-modüle ait EYLEM düğmeleri bantta değil,
+// aşağıdaki ayrı toolbar'da (moduleToolbar) yer almalıdır.
+export function pageHead(title, { back, sub, right, tabs } = {}) {
   return h('div', { class: 'page-head' },
     back ? h('a', { class: 'back', href: back, 'aria-label': 'Geri' }, '←') : null,
-    h('div', null, h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null),
+    h('div', { class: 'page-head-t' }, h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null),
     h('div', { class: 'spacer' }),
+    tabs || null,
     right || null);
+}
+
+// Alt-modüle ait eylem düğmeleri için başlığın hemen altında ayrı toolbar. Hiza kullanıcı ayarından (sol/orta/sağ, varsayılan orta).
+// Kullanım: clear(view, pageHead(...), moduleToolbar(btn1, btn2, ...), body). Düğüm yoksa görünmez.
+export function moduleToolbar(...items) {
+  const kids = items.flat().filter(Boolean);
+  if (!kids.length) return null;
+  return h('div', { class: 'module-toolbar' }, kids);
+}
+
+// Toolbar hizasını (kişisel ayar) belge köküne uygula; CSS justify-content'i buradan okur.
+export function applyToolbarAlign(v) {
+  const al = v || pref('toolbarAlign', 'center');
+  document.documentElement.dataset.toolbarAlign = ['left', 'center', 'right'].includes(al) ? al : 'center';
 }
 
 // Görünüm tercihlerini (kart/liste vb.) tarayıcıda hatırla.

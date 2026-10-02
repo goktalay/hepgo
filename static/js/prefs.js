@@ -14,8 +14,35 @@ function applyTheme() {
   const dark = t === 'dark' || (t === 'system' && media.matches);
   if (dark) document.documentElement.dataset.theme = 'dark'; else delete document.documentElement.dataset.theme;
   try { localStorage.setItem('caymaz.theme', t); } catch { /* gizli pencere */ }
+  applyUiCustom();   // tema değişince kişisel renkler + toolbar hizası yeniden uygulanır
 }
 media.addEventListener?.('change', () => { if (current.theme === 'system') applyTheme(); });
+
+// Kişiselleştirilebilir MERKEZİ arayüz değişkenleri (aktif temaya göre): üst bar, alt bar (başlık bandı), footer, body zemini, vurgu.
+// "Renksiz" bar = 'var(--bg)' (body zeminiyle aynı). Modüllerin kendi içeriğine dokunulmaz.
+const UI_VARS = { header: '--header-bg', band: '--head-band', footer: '--footer-bg', bg: '--bg', accent: '--primary' };
+export function activeThemeKey() {
+  const t = current.theme || 'light';
+  return (t === 'dark' || (t === 'system' && media.matches)) ? 'dark' : 'light';
+}
+export function applyUiCustom() {
+  const root = document.documentElement;
+  let align = current.toolbarAlign;
+  if (!align) { try { align = localStorage.getItem('caymaz.toolbarAlign'); } catch { /* */ } }
+  root.dataset.toolbarAlign = ['left', 'center', 'right'].includes(align) ? align : 'center';
+  let colors = current.colors;
+  if (!colors) { try { colors = JSON.parse(localStorage.getItem('caymaz.uiColors') || 'null'); } catch { /* */ } }
+  const c = (colors && colors[activeThemeKey()]) || {};
+  for (const [k, varName] of Object.entries(UI_VARS)) {
+    if (c[k]) root.style.setProperty(varName, c[k]); else root.style.removeProperty(varName);
+  }
+  // vurgu rengi değişince, üzerine gelince koyulaşan ton da ona göre
+  if (c.accent) root.style.setProperty('--primary-hover', c.accent); else root.style.removeProperty('--primary-hover');
+  // Gövde (orta alan) arka plan deseni/animasyonu — merkezi; CSS html[data-bg="..."] ile çizilir
+  let bg = current.background;
+  if (bg == null) { try { bg = localStorage.getItem('caymaz.uiBg') || ''; } catch { bg = ''; } }
+  if (bg) root.dataset.bg = bg; else delete root.dataset.bg;
+}
 
 // Masaüstü bildirimi CİHAZ-BAZLIDIR (senkron değil): her cihazda ayrı açılır ve o cihazın tarayıcı izni gerekir.
 export const deviceNotify = () => { try { return localStorage.getItem('caymaz.desktopNotify') === '1'; } catch { return false; } };

@@ -135,7 +135,7 @@ async function renderFlightLogs(view, ctx) {
   src.addEventListener('change', draw);
 
   clear(view,
-    pageHead('Uçuş Logu Analizi', { back: '#/tools', sub: 'ArduPilot DataFlash logu (.bin) veya metin logu (.log) yükleyin; uçuş raporu otomatik hazırlanır.' }),
+    pageHead('Uçuş Logu Analizi', { back: '#/tools', sub: 'Uçuş logu (.bin/.log) → rapor' }),
     stats,
     h('div', { class: 'card upload-card' }, ctx.meta.remote ? localUploadNotice(ctx.meta, 'Uçuş logu') : [
       h('div', { class: 'row' }, field('Log dosyası', file, 'En fazla 2 GB'), field('Uçak', aircraft), field('Pilot', pilot)),

@@ -5,14 +5,13 @@ import { PRINTER_STATES, badge } from '../status.js';
 import { printerRoom } from './printers3d.js';
 import { subnav } from './production.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref,
   svgIcon, toast, toastError,
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
   const body = h('div');
   const canOpen = ctx.user.modules.includes('production');
-  const stats = statStrip();
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Yazıcı adı, IP veya dosya ara…', style: { width: '230px' } });
   const state = selectInput([
     ...Object.entries(PRINTER_STATES).map(([k, s]) => [k, s.label]),
@@ -31,18 +30,6 @@ export async function render(view, params, ctx) {
   const idle = p => p.live_state === 'HAZIR' || p.live_state === 'TAMAMLANDI';
   const mismatch = p => (idle(p) && p.current_part) || (p.live_state === 'YAZDIRIYOR' && !p.current_part);
   const draw = () => {
-    const n = f => printers.filter(f).length;
-    stats.set([
-      { label: 'Toplam yazıcı', value: printers.length },
-      { label: 'Yazdıran', value: n(p => p.live_state === 'YAZDIRIYOR'), tone: 'ok' },
-      { label: 'Hazır (boşta)', value: n(p => p.live_state === 'HAZIR') },
-      { label: 'Baskısı biten', value: n(p => p.live_state === 'TAMAMLANDI'), sub: 'tabla boşaltılmalı' },
-      { label: 'Hata / duraklatıldı', value: n(p => p.live_state === 'HATA' || p.live_state === 'DURAKLADI'),
-        tone: n(p => p.live_state === 'HATA' || p.live_state === 'DURAKLADI') ? 'alert' : '' },
-      { label: 'Çevrimdışı', value: n(p => !p.live_state || p.live_state === 'CEVRIMDISI'), tone: 'muted' },
-      { label: 'Sistemde işi olan', value: n(p => p.current_part) },
-      { label: 'Durumu uyumsuz', value: n(mismatch), tone: n(mismatch) ? 'alert' : '', sub: 'yazıcı ↔ sistem' },
-    ]);
     const list = printers.filter(p =>
       (!state.value || (state.value === 'SYSTEM' ? p.current_part : state.value === 'MISMATCH' ? mismatch(p)
         : state.value === 'AUTO' ? p.auto_added : p.live_state === state.value)) &&
@@ -95,14 +82,11 @@ export async function render(view, params, ctx) {
   }));
 
   clear(view,
-    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · durumlar her 10 saniyede yazıcılardan okunur' : 'Durumlar her 10 saniyede yazıcılardan okunur', tabs: canOpen ? subnav('printers', ctx) : null }),
-    moduleToolbar(modeSeg),
-    stats,
-    h('div', { class: 'filters' },
-      q, state,
-      h('span', { class: 'spacer' }),
-      refreshBtn, namesBtn, discoverBtn,
-      h('button', { class: 'btn primary', onclick: () => printerForm(null, load) }, svgIcon(icons.plus), 'Yeni Yazıcı')),
+    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · canlı durumlar' : 'Canlı yazıcı durumları', tabs: canOpen ? subnav('printers', ctx) : null }),
+    // Tek toolbar: görünüm seçici + eylem düğmeleri baloncukta (Excel dahil) + arama/filtre; ayrı bar yok, istatistik kartları yok
+    moduleToolbar(modeSeg, refreshBtn, namesBtn, discoverBtn,
+      h('button', { class: 'btn primary', onclick: () => printerForm(null, load) }, svgIcon(icons.plus), 'Yeni Yazıcı'),
+      q, state),
     body);
   await load();
   every(10000, () => load().catch(() => {}));

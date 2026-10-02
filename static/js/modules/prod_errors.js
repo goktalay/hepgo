@@ -164,7 +164,7 @@ export async function renderProductionErrors(view, ctx) {
   } }, 'Temizle');
   draw();
   clear(view,
-    pageHead('Üretim Hataları', { back: '#/tools', sub: 'Üretimdeki parça "Hata verdi" ile kapatılırken girilen hata kodu, açıklama ve resim' }),
+    pageHead('Üretim Hataları', { back: '#/tools', sub: 'Hata kodu, açıklama ve resim' }),
     moduleToolbar(modeSeg),
     stats,
     h('div', { class: 'filters' }, q, period.el, printer, part, order, person, code,

@@ -119,7 +119,7 @@ export async function renderNetscan(view) {
   kind.addEventListener('change', draw);
   offline.addEventListener('change', () => { setPref('netscan.offline', offline.checked ? '1' : '0'); draw(); });
   clear(view,
-    pageHead('Ağ Tarayıcı', { back: '#/tools', sub: 'Sunucunun bulunduğu ağdaki bilgisayarlar ve cihazlar' }),
+    pageHead('Ağ Tarayıcı', { back: '#/tools', sub: 'Ağdaki bilgisayar ve cihazlar' }),
     moduleToolbar(csvBtn, scanBtn),
     stats, info, progress,
     h('div', { class: 'filters' }, q, kind, h('label', { class: 'check' }, offline, 'Çevrimdışı olanları da göster')),

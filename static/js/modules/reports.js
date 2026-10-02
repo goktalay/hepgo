@@ -56,7 +56,7 @@ export async function render(view, params, ctx) {
   };
   q.addEventListener('input', draw);
   const viewSeg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('reports.view', v); draw(); });
-  clear(view, pageHead('Raporlar', { back: '#/', sub: `${list.length} rapor · yetkinize göre modüllerin raporları` }),
+  clear(view, pageHead('Raporlar', { back: '#/', sub: `${list.length} rapor · modül raporları` }),
     moduleToolbar(viewSeg),
     h('div', { class: 'filters' }, modSel, q), out);
   drawChips();

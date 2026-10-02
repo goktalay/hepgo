@@ -38,7 +38,7 @@ export async function renderMeetings(view, params = []) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Konu, kişi, yer ara…', style: { width: '200px' } });
   const out = h('div');
   let rows = [];
-  clear(view, pageHead('Toplantılar', { back: '#/', sub: 'Şirket içi toplantılarınız ve davetleriniz',
+  clear(view, pageHead('Toplantılar', { back: '#/', sub: 'Toplantılar ve davetler',
     right: h('div', { class: 'head-right' }, q, scopeSel) }),
     moduleToolbar(h('button', { class: 'btn primary', type: 'button', onclick: () => meetingForm(null, load) }, svgIcon(icons.plus), 'Yeni Toplantı')), out);
 

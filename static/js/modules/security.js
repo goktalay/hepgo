@@ -16,7 +16,7 @@ export async function render(view, params, ctx) {
   const body = h('div');
   // Araçlar sekmesinde yeni giriş düğmesi başlığın sağında (popup)
   const addBtn = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Araç Girişi');
-  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Fabrika girişi: araç giriş / çıkış kaydı, kameralar', tabs: nav }),
+  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Araç giriş/çıkış ve kameralar', tabs: nav }),
     moduleToolbar(tab === '' ? addBtn : null), body);
   if (tab === 'log') return renderLog(body);
   if (tab === 'building') return renderBuilding(body);

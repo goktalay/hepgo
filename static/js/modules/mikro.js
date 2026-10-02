@@ -50,7 +50,7 @@ export async function render(view, params, ctx) {
     catch (err) { toastError(err); }
   });
 
-  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü (sistem Mikro’yu yalnızca okur)', right: canImport ? resetBtn : null }),
+  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü', right: canImport ? resetBtn : null }),
     banner, h('div', { class: 'mk-tabs', style: { margin: '12px 0' } }, seg), stage);
   drawTabs();
   load();

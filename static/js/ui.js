@@ -221,11 +221,22 @@ export function pageHead(title, { back, sub, right, tabs } = {}) {
 }
 
 // Alt-modüle ait eylem düğmeleri için başlığın hemen altında ayrı toolbar. Hiza kullanıcı ayarından (sol/orta/sağ, varsayılan orta).
+// İşlem düğmeleri ve görünüm seçicileri (.btn/.seg/.icon-btn) baloncuk (pill-group) içinde toplanır; arama/filtre girişleri (input/select) baloncuk dışında aynı satırda kalır.
 // Kullanım: clear(view, pageHead(...), moduleToolbar(btn1, btn2, ...), body). Düğüm yoksa görünmez.
 export function moduleToolbar(...items) {
   const kids = items.flat().filter(Boolean);
   if (!kids.length) return null;
-  return h('div', { class: 'module-toolbar' }, kids);
+  const bar = h('div', { class: 'module-toolbar' });
+  // Yalnızca EYLEM düğmeleri (.btn/.icon-btn) baloncukta gruplanır; görünüm seçiciler (.seg) ve arama/filtre girişleri kendi başına kalır.
+  const isBtn = el => el.classList && (el.classList.contains('btn') || el.classList.contains('icon-btn')) && !el.classList.contains('back');
+  let group = null;
+  for (const el of kids) {
+    if (isBtn(el)) {
+      if (!group) { group = h('div', { class: 'pill-group module-pills' }); bar.append(group); }
+      group.append(el);
+    } else { bar.append(el); group = null; }
+  }
+  return bar;
 }
 
 // Toolbar hizasını (kişisel ayar) belge köküne uygula; CSS justify-content'i buradan okur.

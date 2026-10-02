@@ -40,6 +40,6 @@ export async function render(view, params, ctx) {
           h('a', { class: 'btn sm', href: `/api/master/backups/download?name=${encodeURIComponent(b.name)}&scope=${b.scope}`, download: '' }, 'İndir'))))
       : h('div', { class: 'empty small muted' }, 'Yedek bulunamadı'));
 
-  clear(view, pageHead('Veri & Yedek', { back: '#/', sub: 'Sistem sahibi · şirket verisini indir, yedekleri gör' }),
+  clear(view, pageHead('Veri & Yedek', { back: '#/', sub: 'Sistem sahibi · veri ve yedekler' }),
     h('div', { class: 'mv-grid' }, exportCard, backupCard));
 }

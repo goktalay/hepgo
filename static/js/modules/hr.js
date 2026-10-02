@@ -1033,7 +1033,7 @@ export async function renderMyLeaves(view) {
   const add = h('button', { class: 'btn primary', onclick: () => leaveForm({ title: 'İzin Talebi', url: '/api/me/leaves', hint: 'Talebiniz İnsan Kaynakları onayına gider; İK tarihleri değiştirebilir.' }) }, '＋ İzin Talebi');
   const pending = data.items.filter(l => l.status === 'BEKLIYOR').length;
   clear(view,
-    pageHead('İzinlerim', { back: '#/', sub: 'Ücretli / ücretsiz izin talepleriniz ve İK kararları' }),
+    pageHead('İzinlerim', { back: '#/', sub: 'İzin talepleri ve İK kararları' }),
     moduleToolbar(add),
     h('div', { class: 'stat-strip' },
       h('div', { class: 'stat' }, h('span', { class: 'v' }, data.used_paid_this_year), h('span', { class: 'l' }, `${new Date().getFullYear()} kullanılan ücretli izin (gün)`)),

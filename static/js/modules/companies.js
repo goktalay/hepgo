@@ -117,7 +117,7 @@ async function renderList(view, ctx) {
   act.addEventListener('change', draw);
   const reload = async () => { companies = await api.get(`/api/companies${Q()}`); draw(); };
   clear(view,
-    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları', tabs: SUP ? null : crmNav('companies', ctx) }),
+    pageHead(TITLE, { back: '#/', sub: 'Firmalar, kişiler ve evraklar', tabs: SUP ? null : crmNav('companies', ctx) }),
     moduleToolbar(viewSwitch('companies'), h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
       svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma')),
     stats,

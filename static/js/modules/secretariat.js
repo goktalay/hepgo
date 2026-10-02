@@ -378,14 +378,14 @@ export async function renderMyCargo(view, params = []) {
         } }, 'Teslim Aldım')))))
       : h('div', { class: 'card empty' }, 'Bekleyen kargonuz yok'));
   };
-  clear(view, pageHead('Kargolarım', { back: '#/', sub: history ? 'Teslim aldığınız kargolar' : 'Sekreteryada sizin için bekleyen kargolar', tabs: nav }), out);
+  clear(view, pageHead('Kargolarım', { back: '#/', sub: history ? 'Teslim aldığınız kargolar' : 'Sizin için bekleyen kargolar', tabs: nav }), out);
   await load();
   if (!history) every(30000, () => load().catch(() => {}));
 }
 
 export async function renderMyGuests(view) {
   const rows = await api.get('/api/me/guests');
-  clear(view, pageHead('Misafirlerim', { back: '#/', sub: 'Görüşülecek kişi olarak bildirildiğiniz misafirler' }),
+  clear(view, pageHead('Misafirlerim', { back: '#/', sub: 'Size bildirilen misafirler' }),
     rows.length ? h('div', { class: 'visit-grid' }, rows.map(r => h('div', { class: 'card visit-card' },
       h('div', { class: 'visit-top' }, h('b', null, r.code), r.left_at ? h('span', { class: 'badge gray' }, 'Çıkış yaptı') : h('span', { class: 'badge green' }, 'İçeride')),
       r.purpose ? h('div', { class: 'visit-purpose' }, r.purpose) : null,

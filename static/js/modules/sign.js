@@ -37,7 +37,7 @@ export async function render(view, params, ctx) {
       : h('div', { class: 'card empty' }, box === 'inbox' ? 'Size gelen imza talebi yok' : 'Gönderdiğiniz imza talebi yok'));
   };
   clear(view,
-    pageHead('İmza Talepleri', { back: '#/', sub: 'Evrakları sistem içinde dijital olarak imzalayın',
+    pageHead('İmza Talepleri', { back: '#/', sub: 'Dijital evrak imzalama',
       tabs: segmented([['inbox', 'Bana gelenler'], ['sent', 'Gönderdiklerim']], box, v => { box = v; load().catch(toastError); }) }),
     stats,
     body);

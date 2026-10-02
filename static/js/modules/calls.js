@@ -199,7 +199,7 @@ export async function renderMyCalls(view) {
   const load = async () => { rows = await api.get('/api/me/calls'); draw(); };
   q.addEventListener('input', draw);
   scope.addEventListener('change', () => { setPref('mycalls.scope', scope.value); draw(); });
-  clear(view, pageHead('Aramalarım', { back: '#/', sub: 'Sekreteryanın sizin için not ettiği telefonlar · geri dönünce "Tamamlandı" deyin' }),
+  clear(view, pageHead('Aramalarım', { back: '#/', sub: 'Sekreteryanın not ettiği telefonlar' }),
     moduleToolbar(vt.seg),
     h('div', { class: 'filters' }, scope, q), out);
   await load();

@@ -31,7 +31,7 @@ export async function render(view, params, ctx) {
   const load = async () => { data = await api.get('/api/announcements'); draw(); };
   await load();
   const seg = segmented([['unread', 'Okunmamış'], ['all', 'Tümü']], mode, v => { mode = v; setPref('ann.view', v); draw(); });
-  clear(view, pageHead('Duyurular', { back: '#/', sub: 'Yönetimden duyurular · açtığınız duyuru okunmuş sayılır', tabs: seg }),
+  clear(view, pageHead('Duyurular', { back: '#/', sub: 'Yönetim duyuruları', tabs: seg }),
     moduleToolbar(data.can_edit ? h('button', { class: 'btn primary', onclick: () => annForm(null, load) }, '+ Yeni Duyuru') : null),
     out);
 }

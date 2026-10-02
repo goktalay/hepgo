@@ -199,7 +199,7 @@ export async function renderPlanner(view, ctx) {
   }
 
   clear(view,
-    pageHead('Üretim Planlayıcı', { back: '#/tools', sub: 'Mamul ve adet seçin; yazıcılara hangi parçaların hangi sırayla yükleneceği hesaplansın' }),
+    pageHead('Üretim Planlayıcı', { back: '#/tools', sub: 'Mamul ve adet → yükleme planı' }),
     h('div', { class: 'card card-pad pl-form' },
       field('Mamul', product),
       field('Adet', qty),

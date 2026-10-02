@@ -168,7 +168,7 @@ async function renderFlightsList(view, ctx) {
   modeSeg.addEventListener('change', () => { mode = modeSeg.value; setPref('field.flights', mode); load().catch(toastError); });
   q.addEventListener('input', draw);
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar', tabs: fieldViewSwitch('flights') }),
+    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi · saha uçakları', tabs: fieldViewSwitch('flights') }),
     stats,
     h('div', { class: 'filters' }, modeSeg, q, period.el),
     body);
@@ -817,7 +817,7 @@ async function renderPlaces(view, ctx) {
         : h('div', { class: 'empty' }, `Kayıtlı ${o.noun} yok`));
     draw();
   }
-  clear(view, pageHead('Görev Yerleri ve Araçlar', { back: '#/field', sub: 'Yol Yönetimi\'nde seçilen görev yerleri ve araç plakaları' }),
+  clear(view, pageHead('Görev Yerleri ve Araçlar', { back: '#/field', sub: 'Görev yerleri ve araçlar' }),
     stats, h('div', { class: 'places-grid' }, locBox, vehBox));
   await load();
 }

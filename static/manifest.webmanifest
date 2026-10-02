@@ -4,11 +4,11 @@
   "description": "Üretim, depo, stok, saha, uçuş, firma ve evrak yönetimi",
   "lang": "tr",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f3f5f9",
+  "background_color": "#f8f9fb",
   "theme_color": "#16407e",
   "categories": ["business", "productivity"],
   "icons": [

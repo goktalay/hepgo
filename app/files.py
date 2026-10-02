@@ -19,6 +19,14 @@ KINDS = {
     'logos': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},
     'cargo': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'},
     'camfaces': {'.jpg'},
+    'gcode': {'.gcode', '.png', '.bin'},
+    # İnsan Kaynakları: CV, özlük dosyaları, sözleşmeler (yalnızca İK modülü indirir)
+    'hr': {'.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.doc', '.docx', '.odt', '.txt', '.rtf', '.zip'},
+    'products': {'.jpg', '.jpeg', '.png', '.webp', '.gif'},   # ürün resmi: 2B üstten görünüm   # parça G-code'ları, önizleme resmi ve 3B yol (app/gcode.py)
+    # Endüstriyel Tasarım: çizim / montaj dosyaları (STEP vb.) ve üretim G-code'ları. Ham erişim yalnızca /api/design/file üzerinden (Master indirir, diğerleri önizler).
+    'design': {'.step', '.stp', '.stl', '.3mf', '.igs', '.iges', '.dwg', '.dxf', '.gcode', '.nc', '.tap', '.ngc', '.cnc',
+               '.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.zip', '.txt', '.doc', '.docx', '.xls', '.xlsx'},
+    'calls': {'.webm', '.ogg', '.oga', '.opus', '.weba', '.m4a', '.mp4', '.aac', '.wav'},   # sesli görüşme kayıtları (katılımcı başına)
     # Mesajlaşma: resim, ses (bas-konuş), belge. Tarayıcıda çalışabilecek türler (html, svg, js) kabul edilmez.
     'chat': {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
              '.odt', '.ods', '.txt', '.csv', '.rtf', '.zip', '.rar', '.7z', '.mp4', '.mov', '.m4v', '.webm',
@@ -52,7 +60,7 @@ def local_only(request: Request):
 # Cloudflare tüneli tek istekte ~100 MB'tan büyük gövdeyi kabul etmez. Büyük dosyalar istemcide parçalara bölünür:
 # POST /api/uploads ile başlatılır, PUT /api/uploads/<jeton>?offset= ile parçalar sırayla eklenir; dosyayı kullanan
 # uç nokta (ör. uçuş logu) jetonu take_upload ile alır.
-CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES}
+CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES, 'gcode': 2 * 1024 ** 3}
 LOCAL_ONLY_EXT = KINDS['videos']   # video her türde yalnızca yerel ağdan
 CHUNK_SIZE = 16 * 1024 * 1024
 CHUNK_MAX = 64 * 1024 * 1024
@@ -215,6 +223,8 @@ def thumbnail(path: Path, kind: str, name: str, w: int):
 def get_file(kind: str, name: str, w: int = 0, user=Depends(current_user)):
     if kind not in KINDS or '/' in name or '..' in name:
         raise HTTPException(404)
+    if kind == 'design' and not user.get('master'):   # tasarım dosyalarına ham erişim yalnızca Master; diğerleri /api/design/file (önizleme) kullanır
+        raise HTTPException(403, 'Tasarım dosyaları yalnızca uygulama içinden önizlenir')
     path = config.UPLOAD_DIR / kind / name
     if not path.is_file():
         raise HTTPException(404)

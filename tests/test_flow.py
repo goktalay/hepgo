@@ -9,7 +9,9 @@ from pathlib import Path
 
 tmp = tempfile.mkdtemp()
 os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0',
-                  CAYMAZ_ADMIN_USERNAME='admin@test', CAYMAZ_ADMIN_PASSWORD='admin-sifre-1')
+                  CAYMAZ_ADMIN_USERNAME='admin@test', CAYMAZ_ADMIN_PASSWORD='admin-sifre-1',
+                  # Mikro ERP bu testte devre dışı (yerel .env'den sızmasın): modül seti deterministik kalsın.
+                  CAYMAZ_MIKRO_DB='', CAYMAZ_MIKRO_USER='', CAYMAZ_MIKRO_PASSWORD='')
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -52,7 +54,7 @@ def ok_users():
 
 def notes(client):
     """Kullanıcının bildirimleri, türe göre."""
-    return {n['key']: n for n in ok(client.get('/api/notifications'))['items']}
+    return {n['key']: n for n in ok(client.get('/api/notifications'))['items'] if n['key'] != 'docs-missing'}   # eksik evrak (tests/test_my_docs)
 
 
 def main():
@@ -62,7 +64,7 @@ def main():
         login(admin, 'admin@test', 'admin-sifre-1')
         me = ok(admin.get('/api/auth/me'))
         assert set(me['modules']) == {'admin', 'production', 'orders', 'warehouse', 'stock', 'field', 'printers',
-                                      'products', 'tools', 'users', 'companies', 'documents', 'secretariat', 'security', 'reports', 'announcements'}
+                                      'products', 'tools', 'users', 'companies', 'documents', 'secretariat', 'security', 'reports', 'announcements', 'hr', 'mrp', 'purchasing', 'sales', 'cleaning', 'design'}
         assert admin.get('/api/printers').status_code == 200
 
         def mk(name, roles):
@@ -204,22 +206,22 @@ def main():
         o = ok(prod.get(f'/api/orders/{oid}'))
         assert o['status'] == 'DEPO' and o['progress'] == 100, o['status']
         assert prod.post(f'/api/orders/{oid}/assembly/GOVDE', json={'staff_ids': [m1, m2]}).status_code == 400
-        assert ok(prod.get('/api/notifications'))['total'] == 0   # depo yöneticisi olmayan depo bildirimini görmez
+        assert notes(prod) == {}   # depo yöneticisi olmayan depo bildirimini görmez
 
     with TestClient(app) as depo:
         login(depo, 'depocu', 'sifre-1234')
         pending = ok(depo.get('/api/warehouse/pending'))
         assert len(pending) == 64
-        nt = ok(depo.get('/api/notifications'))   # depocu: onay bekleyen parça bildirimi
-        assert nt['total'] == 64 and nt['items'][0]['key'] == 'warehouse-pending'
-        assert nt['items'][0]['detail'] == '64 tanesi size teslim edildi'
+        nt = notes(depo)   # depocu: onay bekleyen parça bildirimi
+        assert set(nt) == {'warehouse-pending'} and nt['warehouse-pending']['count'] == 64
+        assert nt['warehouse-pending']['detail'] == '64 tanesi size teslim edildi'
         stock = ok(depo.get('/api/stock'))
         assert stock['pending_counts']['09'] == 1 and stock['part_counts']['09'] == 0
         ok(depo.post('/api/warehouse/approve', json={'ids': [p['id'] for p in pending[:-1]]}))
         assert ok(depo.get('/api/stock'))['part_counts']['09'] == 1
         assert len(ok(depo.get('/api/warehouse/pending'))) == 1
         ok(depo.post('/api/warehouse/approve', json={'ids': [pending[-1]['id']]}))
-        assert ok(depo.get('/api/notifications')) == {'total': 0, 'items': []}
+        assert notes(depo) == {}
 
     with TestClient(app) as prod:
         login(prod, 'uretici', 'sifre-1234')
@@ -438,7 +440,7 @@ def main():
         assert task['distance_km'] == 300 and task['vehicle_plate'] == '06 ABC 123, 34 XY 99'
         assert [v['distance_km'] for v in task['vehicles']] == [240, 60]
         assert notes(sc) == {}
-        assert task['can'] == {'manage': False, 'flights': False, 'expenses': True, 'road': False, 'road_own': [rid, rid2]}
+        assert task['can'] == {'manage': False, 'flights': False, 'expenses': True, 'road': False, 'road_own': [rid, rid2], 'isg': False}
         assert sc.put(f'/api/field/flights/{f1["id"]}', json={'launch': 'RAMPA'}).status_code == 403
         assert sc.delete(f'/api/field/vehicles/{car}').status_code == 400   # görevde kullanılıyor
         ok(sc.put(f'/api/field/vehicles/{car}', json={'plate': '06 ABC 123', 'active': False}))
@@ -654,7 +656,7 @@ def main():
     # Sürümlü arayüz dosyaları: index.html sürümlü adresleri kullanır; yanlış yol ve dizin dışı istek reddedilir
     with TestClient(app) as c:
         import re
-        html = c.get('/').text
+        html = c.get('/app').text
         ver = re.search(r'/sv/([0-9a-f]+)/js/app.js', html).group(1)
         r = c.get(f'/sv/{ver}/js/app.js')
         assert r.status_code == 200 and 'immutable' in r.headers['cache-control']

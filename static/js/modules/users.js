@@ -1,10 +1,11 @@
 // Kullanıcı Yönetimi (yalnızca Sistem Yöneticisi)
+import { setListExport } from '../listexport.js';
 import { segIcon } from '../segicons.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import {
   avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon,
-  toast, toastError,
+  toast, toastError, periodRange
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -23,6 +24,8 @@ async function renderList(view, ctx) {
   const draw = () => {
     const list = users.filter(u => (!role.value || u.roles.includes(role.value)) && (!act.value || String(u.active) === act.value));
     clear(body, list.length ? (mode === 'cards' ? cards(list) : table(list)) : h('div', { class: 'card empty' }, 'Kullanıcı bulunamadı'));
+    setListExport(() => ({ columns: ['Ad Soyad', 'Kullanıcı adı', 'Telefon', 'Roller', 'Durum', 'Son giriş'],
+      rows: list.map(u => [u.full_name, u.username, u.phone || '', (u.roles || []).join(', '), u.active ? (u.absence ? u.absence.label : 'Aktif') : 'Pasif', u.last_login || u.last_seen || '']) }));
   };
   const load = async () => { users = await api.get('/api/users'); draw(); };
   role.addEventListener('change', draw);
@@ -45,20 +48,26 @@ function cards(users) {
       avatar(u, 'lg'),
       h('div', { class: 'name' }, u.full_name),
       h('div', { class: 'uname' }, u.username),
-      h('div', { class: 'chips' }, u.roles.map(r => h('span', { class: 'chip' }, r))),
-      u.active ? null : h('span', { class: 'badge red' }, 'Pasif'))));
+      h('div', { class: 'chips' }, u.roles.map(r => h('span', { class: `chip ${r === 'Stajer' ? 'intern' : ''}` }, r))),
+      u.active ? null : h('span', { class: 'badge red' }, 'Pasif'),
+      u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: `${u.absence.until} tarihine kadar` }, u.absence.label) : null,
+      u.external ? h('a', { class: 'badge purple', href: u.external.href, title: 'Dış firma personeli (İK personeli değil)' }, `Dış firma: ${u.external.company_name}`) : null)));
 }
 
+// WhatsApp tarzı satır listesi: çevrimiçi ise avatar etrafında yeşil halka, pasif kullanıcıda tüm satır gri. Tutarlı satır yükseklikleri.
 function table(users) {
-  return h('div', { class: 'table-wrap' }, h('table', null,
-    h('thead', null, h('tr', null, ['', 'Personel', 'Kullanıcı adı', 'Roller', 'Durum', 'Son giriş'].map(t => h('th', null, t)))),
-    h('tbody', null, users.map(u => h('tr', { class: 'click', onclick: () => open(u) },
-      h('td', { style: { width: '48px' } }, avatar(u)),
-      h('td', null, h('b', null, u.full_name)),
-      h('td', { class: 'muted' }, u.username),
-      h('td', { style: { whiteSpace: 'normal' } }, u.roles.join(', ') || '—'),
-      h('td', null, u.active ? h('span', { class: 'badge green' }, 'Aktif') : h('span', { class: 'badge red' }, 'Pasif')),
-      h('td', { class: 'muted' }, fmtDateTime(u.last_login)))))));
+  return h('div', { class: 'u-list' }, users.map(u =>
+    h('button', { class: `u-row ${u.active ? '' : 'passive'} ${u.is_foreign ? 'foreign' : ''} ${u.external ? 'external' : ''}`, type: 'button', onclick: () => open(u) },
+      h('span', { class: `u-av ${u.active && u.online ? 'online' : ''}`, title: u.active && u.online ? 'Çevrimiçi' : null }, avatar(u, 'md')),
+      h('div', { class: 'u-row-mid' },
+        h('div', { class: 'u-row-top' }, h('b', null, u.full_name),
+          u.active ? null : h('span', { class: 'u-pill' }, 'Pasif'),
+          u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: `${u.absence.until} tarihine kadar` }, u.absence.label) : null,
+          u.external ? h('span', { class: 'badge purple' }, `Dış: ${u.external.company_name}`) : null),
+        h('div', { class: 'u-row-sub' }, u.username)),
+      h('div', { class: 'u-row-end' },
+        h('span', { class: 'u-row-roles' }, u.roles.join(', ') || '—'),
+        h('span', { class: 'u-row-seen' }, fmtDateTime(u.last_login) || '—')))));
 }
 
 // ---------- Form (yeni / düzenle) ----------
@@ -69,21 +78,35 @@ function formFields(user, ctx) {
     phone: h('input', { class: 'input', type: 'tel', value: user?.phone || '' }),
     password: h('input', { class: 'input', type: 'password', autocomplete: 'new-password' }),
     active: h('input', { type: 'checkbox', checked: user ? !!user.active : true }),
+    ai_offtopic: h('input', { type: 'checkbox', checked: user ? user.ai_offtopic !== 0 : true }),
     roles: ctx.meta.roles.map(r => [r, h('input', { type: 'checkbox', checked: !!user?.roles.includes(r) })]),
   };
   const el = h('div', null,
     h('div', { class: 'row' }, field('Personel adı soyadı', f.full_name), field('Telefon', f.phone)),
     field('Kullanıcı adı (e-posta)', f.username),
     field(user ? 'Yeni şifre' : 'Şifre', f.password, user ? 'Boş bırakırsanız şifre değişmez. En az 8 karakter.' : 'En az 8 karakter'),
-    field('Roller', h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '6px' } },
-      f.roles.map(([r, cb]) => h('label', { class: 'check' }, cb, r)))),
-    h('label', { class: 'check' }, f.active, 'Hesap aktif'));
+    h('fieldset', { class: 'uf-group' }, h('legend', null, 'Roller'),
+      h('p', { class: 'uf-info' }, 'Roller, kullanıcının hangi modülleri göreceğini, hangi işlemleri yapabileceğini ve hangi bildirimleri alacağını belirler. Birden çok rol seçilebilir.'),
+      h('div', { class: 'uf-roles' }, f.roles.map(([r, cb]) => h('label', { class: 'check' }, cb, r)))),
+    h('fieldset', { class: 'uf-group' }, h('legend', null, 'Hesap Durumu'),
+      h('label', { class: 'check' }, f.active, h('b', null, 'Hesap aktif')),
+      h('p', { class: 'uf-info' },
+        'Açıkken kullanıcı sisteme giriş yapabilir. Kapatıldığında (pasif): kullanıcı giriş yapamaz ve açık oturumu bir sonraki işlemde sonlanır; ',
+        'görev, sohbet ve atama listelerinde seçilemez. Kullanıcının geçmiş kayıtları, mesajları ve raporları silinmez; hesap istenildiği zaman yeniden aktif edilebilir. ',
+        'İşten ayrılan ya da uzun süre kullanmayacak kişiler için silmek yerine pasif yapmanız önerilir.')),
+    ctx.user.ai === false ? null : h('fieldset', { class: 'uf-group' }, h('legend', null, 'Yapay Zeka Asistanı'),
+      h('label', { class: 'check' }, f.ai_offtopic, h('b', null, 'Sistem dışı (genel) soru sorabilir')),
+      h('p', { class: 'uf-info' },
+        'Asistan (Kubbe) sistemle ilgili soruları her kullanıcıya, yalnızca kullanıcının yetkili olduğu veriler üzerinden yanıtlar. ',
+        'Bu seçenek açıksa kullanıcı sistem dışı genel sorular da sorabilir (ör. genel bilgi, çeviri, metin yazma); kapalıysa asistan bu tür soruları kibarca geri çevirir. ',
+        'Tüm sorular kullanıcının aylık token kotasından düşer (Program Ayarları › Yapay Zeka).')));
   const value = () => ({
     username: f.username.value.trim(),
     full_name: f.full_name.value.trim(),
     phone: f.phone.value.trim() || null,
     password: f.password.value || null,
     active: f.active.checked,
+    ai_offtopic: f.ai_offtopic.checked,
     roles: f.roles.filter(([, cb]) => cb.checked).map(([r]) => r),
   });
   return { el, value };
@@ -118,7 +141,7 @@ async function renderDetail(view, id, tab, ctx) {
     h('div', { class: 'split' },
       h('nav', { class: 'card side-nav' },
         h('div', { class: 'who' }, avatar(user, 'lg'), h('b', null, user.full_name),
-          h('div', { class: 'chips' }, user.roles.map(r => h('span', { class: 'chip' }, r)))),
+          h('div', { class: 'chips' }, user.roles.map(r => h('span', { class: `chip ${r === 'Stajer' ? 'intern' : ''}` }, r)))),
         TABS.map(([k, label]) => h('a', { href: `#/users/${id}/${k}`, class: k === tab ? 'on' : '' }, segIcon(label), label))),
       content));
 
@@ -186,8 +209,9 @@ async function renderLogs(content, id) {
   const stats = statStrip();
   const kind = selectInput([['page', 'Sayfa hareketleri'], ['action', 'İşlemler']], { all: 'Tüm kayıtlar' });
   const q = h('input', { class: 'input', type: 'search', placeholder: 'İşlem, sayfa veya detay ara…', style: { width: '220px' } });
-  const from = h('input', { class: 'input', type: 'date', title: 'Başlangıç tarihi' });
-  const to = h('input', { class: 'input', type: 'date', title: 'Bitiş tarihi' });
+  const wk = periodRange('week');   // varsayılan: bu hafta
+  const from = h('input', { class: 'input', type: 'date', title: 'Başlangıç tarihi', value: wk.date_from });
+  const to = h('input', { class: 'input', type: 'date', title: 'Bitiş tarihi', value: wk.date_to });
   const limit = selectInput([['200', 'Son 200'], ['1000', 'Son 1000'], ['5000', 'Son 5000']], { all: null, value: '1000' });
   const count = h('span', { class: 'small muted' });
   const body = h('div');
@@ -231,8 +255,9 @@ async function renderLogins(content, id) {
   const stats = statStrip();
   const result = selectInput([['1', 'Başarılı'], ['0', 'Hatalı şifre']], { all: 'Tüm sonuçlar' });
   const q = h('input', { class: 'input', type: 'search', placeholder: 'IP veya tarayıcı ara…', style: { width: '200px' } });
-  const from = h('input', { class: 'input', type: 'date' });
-  const to = h('input', { class: 'input', type: 'date' });
+  const wkl = periodRange('week');
+  const from = h('input', { class: 'input', type: 'date', value: wkl.date_from });
+  const to = h('input', { class: 'input', type: 'date', value: wkl.date_to });
   const body = h('div');
   const ok = logs.filter(l => l.success);
   stats.set([

@@ -45,7 +45,7 @@ class CompanyIn(BaseModel):
 
 
 def _check_company(conn, cid):
-    if cid is not None and not conn.execute('SELECT 1 FROM companies WHERE id = ? AND active = 1', (cid,)).fetchone():
+    if cid is not None and not conn.execute('SELECT 1 FROM companies WHERE id = ? AND active = 1 AND is_supplier = 0', (cid,)).fetchone():
         raise HTTPException(400, 'Geçerli bir firma seçin')
 
 
@@ -69,16 +69,22 @@ class CalibrationIn(SectionIn):
 
 
 @router.get('')
-def list_orders(include_done: bool = True, user=Depends(_order_reader), conn=db.DB):
-    if include_done:
-        return order_summaries(conn)
-    return order_summaries(conn, "o.status NOT IN ('TAMAMLANDI', 'HURDA')")
+def list_orders(include_done: bool = True, date_from: str = '', date_to: str = '', user=Depends(_order_reader), conn=db.DB):
+    """Siparişler. Tarih aralığı verilirse: açık siparişler her zaman, kapanmışlar (tamamlandı / hurda) yalnızca
+    açılışı ya da tamamlanması bu aralıktaysa (listeler varsayılan 'bu hafta' ile hızlı açılsın)."""
+    if not include_done:
+        return order_summaries(conn, "o.status NOT IN ('TAMAMLANDI', 'HURDA')")
+    if date_from or date_to:
+        c1, a1 = db.date_cond('o.created_at', date_from, date_to)
+        c2, a2 = db.date_cond('o.completed_at', date_from, date_to)
+        return order_summaries(conn, f"(o.status NOT IN ('TAMAMLANDI', 'HURDA') OR ({c1}) OR ({c2}))", (*a1, *a2))
+    return order_summaries(conn)
 
 
 @router.get('/companies')
 def order_companies(user=Depends(_order_reader), conn=db.DB):
     """Sipariş formundaki firma listesi (Firma Yönetimi modülü olmayanlar için de)."""
-    return db.rows(conn.execute('SELECT id, name, logo FROM companies WHERE active = 1 ORDER BY name'))
+    return db.rows(conn.execute('SELECT id, name, logo FROM companies WHERE active = 1 AND is_supplier = 0 ORDER BY name'))
 
 
 @router.put('/{oid}/company')
@@ -130,7 +136,8 @@ def get_order(oid: int, user=Depends(_order_reader), conn=db.DB):
     order = _get_order(conn, oid)
     order['parts'] = db.rows(conn.execute(
         '''SELECT op.id, op.part_id, op.state, op.started_at, op.finished_at, op.approved_at,
-                  op.printer_started_at, op.printer_done_at, op.print_seconds, p.name AS printer_name
+                  op.printer_started_at, op.printer_done_at, op.print_seconds, p.name AS printer_name,
+                  EXISTS(SELECT 1 FROM direct_part_requests d WHERE d.order_part_id = op.id AND d.status = 'BEKLIYOR') AS direct_pending
            FROM order_parts op LEFT JOIN printers p ON p.id = op.printer_id
            WHERE op.order_id = ?''', (oid,)))
     order['assembly'] = assembly_info(conn, order)
@@ -255,6 +262,12 @@ def part_detail(oid: int, part_id: str, user=Depends(_order_reader), conn=db.DB)
         op['delivered_to_name'] = conn.execute('SELECT full_name FROM users WHERE id = ?',
                                                (op['delivered_to'],)).fetchone()[0]
     op['group'] = catalogs.part_meta(op['product_schema'], part_id)['group']
+    op['direct_request'] = db.row(conn.execute(
+        """SELECT d.*, pr.name AS printer_name, ru.full_name AS requested_by_name, du.full_name AS decided_by_name
+           FROM direct_part_requests d LEFT JOIN printers pr ON pr.id = d.printer_id
+           LEFT JOIN users ru ON ru.id = d.requested_by LEFT JOIN users du ON du.id = d.decided_by
+           WHERE d.order_part_id = ? ORDER BY d.id DESC LIMIT 1""", (op['id'],)))
+    op['can_approve_direct'] = auth.ADMIN in user['roles']
     return op
 
 
@@ -264,6 +277,8 @@ def start_part(oid: int, part_id: str, body: StartIn, user=Depends(part_operator
     _check_open(op)
     if op['state'] not in (WAITING, ERROR):
         raise HTTPException(400, 'Bu parça zaten üretimde veya üretilmiş')
+    if conn.execute("SELECT 1 FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR'", (op['id'],)).fetchone():
+        raise HTTPException(409, 'Bu parça için doğrudan depo ekleme talebi Sistem Yöneticisi onayında')
     printer = db.row(conn.execute('SELECT * FROM printers WHERE id = ?', (body.printer_id,)))
     if not printer:
         raise HTTPException(404, 'Yazıcı bulunamadı')
@@ -312,6 +327,128 @@ def finish_part(oid: int, part_id: str, body: FinishIn, user=Depends(part_operat
              f'{op["order_code"]} / {part_id} → {keeper[0]}')
     recompute(conn, oid)
     return {'ok': True}
+
+
+class DirectIn(BaseModel):
+    printer_id: int
+    at: Optional[str] = None
+
+
+class DirectDecideIn(BaseModel):
+    note: Optional[str] = None
+
+
+@router.post('/{oid}/parts/{part_id}/direct-request')
+def direct_request(oid: int, part_id: str, body: DirectIn, user=Depends(part_operator), conn=db.DB):
+    """Parçayı seçili yazıcıyla basılmış kabul edip doğrudan depoya ekleme talebi; Sistem Yöneticisi onayına gider."""
+    op = _get_part(conn, oid, part_id)
+    _check_open(op)
+    if op['state'] not in (WAITING, ERROR):
+        raise HTTPException(400, 'Bu parça zaten üretimde veya üretilmiş')
+    if conn.execute("SELECT 1 FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR'", (op['id'],)).fetchone():
+        raise HTTPException(409, 'Bu parça için zaten bir onay bekleyen talep var')
+    printer = db.row(conn.execute('SELECT id, name FROM printers WHERE id = ?', (body.printer_id,)))
+    if not printer:
+        raise HTTPException(404, 'Yazıcı bulunamadı')
+    last = conn.execute('SELECT MAX(at) FROM part_events WHERE order_part_id = ?', (op['id'],)).fetchone()[0]
+    at = db.pick_time(body.at, last, 'Baskı zamanı', 'parçanın son işlemi')
+    rid = conn.execute(
+        "INSERT INTO direct_part_requests (order_part_id, printer_id, print_at, requested_by, requested_at) VALUES (?,?,?,?,?)",
+        (op['id'], printer['id'], at, user['id'], db.now())).lastrowid
+    conn.execute('INSERT INTO part_events (order_part_id, event, user_id, printer_id, at) VALUES (?,?,?,?,?)',
+                 (op['id'], 'DOGRUDAN_TALEP', user['id'], printer['id'], db.now()))
+    db.audit(conn, user['id'], 'Doğrudan depo ekleme talebi açtı', 'order_part', op['id'],
+             f'{op["order_code"]} / {part_id} -> {printer["name"]} (onay bekliyor)')
+    return {'id': rid}
+
+
+@router.post('/{oid}/parts/{part_id}/direct-approve')
+def direct_approve(oid: int, part_id: str, body: DirectDecideIn, user=Depends(auth.current_user), conn=db.DB):
+    """Sistem Yöneticisi onaylar: parça seçili yazıcıdan çıkmış gibi DEPO'ya (depo onayına) düşer."""
+    if auth.ADMIN not in user['roles']:
+        raise HTTPException(403, 'Doğrudan depo eklemeyi yalnızca Sistem Yöneticisi onaylar')
+    op = _get_part(conn, oid, part_id)
+    req = db.row(conn.execute("SELECT * FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR' ORDER BY id DESC LIMIT 1", (op['id'],)))
+    if not req:
+        raise HTTPException(404, 'Onay bekleyen talep yok')
+    if op['state'] not in (WAITING, ERROR):
+        raise HTTPException(400, 'Parça artık uygun durumda değil')
+    at = req['print_at'] or db.now()
+    conn.execute("UPDATE order_parts SET state = ?, printer_id = ?, started_at = ?, printer_started_at = ?, printer_done_at = ?, finished_at = ?, delivered_to = NULL, approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ?",
+                 (WAREHOUSE, req['printer_id'], at, at, at, at, db.now(), op['id']))
+    conn.execute("UPDATE direct_part_requests SET status = 'ONAYLANDI', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
+                 (user['id'], db.now(), (body.note or '').strip()[:500] or None, req['id']))
+    conn.execute('INSERT INTO part_events (order_part_id, event, user_id, printer_id, at) VALUES (?,?,?,?,?)',
+                 (op['id'], 'DOGRUDAN_DEPO', user['id'], req['printer_id'], db.now()))
+    db.audit(conn, user['id'], 'Doğrudan depo eklemeyi onayladı', 'order_part', op['id'],
+             f'{op["order_code"]} / {part_id} -> depo onayina')
+    recompute(conn, oid)
+    return {'ok': True}
+
+
+@router.post('/{oid}/parts/{part_id}/direct-reject')
+def direct_reject(oid: int, part_id: str, body: DirectDecideIn, user=Depends(auth.current_user), conn=db.DB):
+    if auth.ADMIN not in user['roles']:
+        raise HTTPException(403, 'Bunu yalnizca Sistem Yoneticisi yapabilir')
+    op = _get_part(conn, oid, part_id)
+    req = db.row(conn.execute("SELECT id FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR' ORDER BY id DESC LIMIT 1", (op['id'],)))
+    if not req:
+        raise HTTPException(404, 'Onay bekleyen talep yok')
+    conn.execute("UPDATE direct_part_requests SET status = 'REDDEDILDI', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
+                 (user['id'], db.now(), (body.note or '').strip()[:500] or None, req['id']))
+    db.audit(conn, user['id'], 'Doğrudan depo eklemeyi reddetti', 'order_part', op['id'], f'{op["order_code"]} / {part_id}')
+    return {'ok': True}
+
+
+class SendIn(BaseModel):
+    printer_id: int
+    at: Optional[str] = None
+
+
+@router.post('/{oid}/parts/{part_id}/send-to-printer')
+def send_to_printer(oid: int, part_id: str, body: SendIn, user=Depends(part_operator), conn=db.DB):
+    """Parçanın G-code'unu seçili yazıcıya (Moonraker) gönderip baskıyı başlatır; yükleme arka planda, ilerleme izlenir."""
+    from .. import printer_send
+    op = _get_part(conn, oid, part_id)
+    _check_open(op)
+    if op['state'] not in (WAITING, ERROR):
+        raise HTTPException(400, 'Bu parça zaten üretimde veya üretilmiş')
+    if conn.execute("SELECT 1 FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR'", (op['id'],)).fetchone():
+        raise HTTPException(409, 'Bu parça için doğrudan depo ekleme talebi onayda')
+    printer = db.row(conn.execute('SELECT id, name, ip, current_part_id FROM printers WHERE id = ?', (body.printer_id,)))
+    if not printer:
+        raise HTTPException(404, 'Yazıcı bulunamadı')
+    if not printer['ip']:
+        raise HTTPException(400, 'Yazıcının IP adresi tanımlı değil')
+    if printer['current_part_id']:
+        busy = db.row(conn.execute('SELECT o.code, op.part_id FROM order_parts op JOIN orders o ON o.id = op.order_id WHERE op.id = ?', (printer['current_part_id'],)))
+        if busy:
+            raise HTTPException(409, f'{printer["name"]} meşgul: {busy["code"]} / {busy["part_id"]}')
+    gcode = conn.execute('SELECT gcode_file FROM products WHERE schema = ?', (f'part-{part_id}',)).fetchone()
+    gcode_rel = gcode[0] if gcode else None
+    if not gcode_rel:
+        raise HTTPException(400, 'Bu parçanın G-code dosyası sistemde tanımlı değil')
+    last = conn.execute('SELECT MAX(at) FROM part_events WHERE order_part_id = ?', (op['id'],)).fetchone()[0]
+    at = db.pick_time(body.at, last, 'Başlama zamanı', 'parçanın son işlemi')
+    try:
+        started = printer_send.start(op['id'], dict(printer), gcode_rel, at, user['id'], oid, op['order_code'], part_id)
+    except FileNotFoundError:
+        raise HTTPException(400, 'G-code dosyası sunucuda bulunamadı')
+    if not started:
+        raise HTTPException(409, 'Bu parça için yükleme zaten sürüyor')
+    return {'ok': True}
+
+
+@router.get('/{oid}/parts/{part_id}/send-progress')
+def send_progress(oid: int, part_id: str, user=Depends(_order_reader), conn=db.DB):
+    from .. import printer_send
+    op = _get_part(conn, oid, part_id)
+    st = printer_send.state(op['id'])
+    if not st:
+        return {'status': 'none'}
+    pct = round(st['sent'] * 100 / st['total'], 1) if st['total'] else 0
+    return {'status': st['status'], 'sent': st['sent'], 'total': st['total'], 'percent': pct,
+            'filename': st['filename'], 'printer': st['printer'], 'error': st['error']}
 
 
 @router.post('/{oid}/parts/{part_id}/error')

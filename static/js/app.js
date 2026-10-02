@@ -14,8 +14,6 @@ import { hideTip } from './plane.js';
 import * as users from './modules/users.js';
 import * as orders from './modules/orders.js';
 import * as production from './modules/production.js';
-import * as warehouse from './modules/warehouse.js';
-import * as stock from './modules/stock.js';
 import * as fieldMod from './modules/field.js';
 import * as printers from './modules/printers.js';
 import * as tools from './modules/tools.js';
@@ -24,6 +22,15 @@ import * as admin from './modules/admin.js';
 import * as alertsPage from './modules/alerts.js';
 import { renderDashboard } from './modules/dashboard.js';
 import { renderMyCalls } from './modules/calls.js';
+import * as voice from './modules/voice.js';
+import * as messages from './modules/messages.js';
+import * as sysconfig from './modules/sysconfig.js';
+import * as meet from './modules/meet.js';
+import * as radio from './modules/radio.js';
+import { syncPush } from './push.js';
+import { mountMascot } from './modules/mascot.js';
+import { renderMail } from './modules/mail.js';
+import { renderMeetings } from './modules/meetings.js';
 import { accountChooser, accountToken, rememberAccount } from './accounts.js';
 import * as companies from './modules/companies.js';
 import * as documents from './modules/documents.js';
@@ -32,46 +39,83 @@ import * as secretariat from './modules/secretariat.js';
 import * as security from './modules/security.js';
 import * as reportsMod from './modules/reports.js';
 import * as announcements from './modules/announcements.js';
+import * as cleaning from './modules/cleaning.js';
+import * as design from './modules/design.js';
+import * as hr from './modules/hr.js';
+import * as mrp from './modules/mrp.js';
+import * as purchasing from './modules/purchasing.js';
+import * as master from './modules/master.js';
+import * as mikro from './modules/mikro.js';
+import * as sales from './modules/sales.js';
+import * as crmHub from './modules/crmhub.js';
+import { initLang, onLangChange, getLang } from './i18n.js';
+import './i18n.en.js';   // İngilizce kataloğu kaydeder (registerCatalog('en', …))
+import { enableSegSelect } from './segselect.js';
+import { enableListExport } from './listexport.js';
+import { enableHeadGroup } from './headgroup.js';
 
 // Ana sayfadaki modül düğmeleri; yeni modül eklemek için bu listeye bir satır eklenir.
 // tone: 'red' → yalnızca yöneticilere açık modüller kırmızı tonlarda gösterilir.
 // menu: true → ana ekranda ve modül menüsünde değil, sağ üstteki kullanıcı menüsünde gösterilir.
+// sub: 'x' → x modülüne erişimi olan kullanıcıda ızgarada ayrı görünmez (x'in alt sekmesidir).
 const MODULES = [
+  { key: 'master', title: 'Veri & Yedek', mod: master, tone: 'purple', menu: true },   // yalnızca sistem sahibi; KVKK: veri göstermez, yalnız indir/yedek
   { key: 'admin', title: 'Yönetim', mod: admin, tone: 'red' },
   { key: 'production', title: 'Üretim Yönetimi', mod: production },
-  { key: 'orders', title: 'Sipariş Yönetimi', mod: orders },
-  { key: 'warehouse', title: 'Depo Yönetimi', mod: warehouse },
-  { key: 'stock', title: 'Stok Yönetimi', mod: stock },
+  { key: 'orders', title: 'İş Emri Yönetimi', mod: orders, hidden: true },   // Üretim Yönetimi'nin alt modülü (Yarı Mamul'ün yanında); ızgarada ayrı görünmez
+  { key: 'mrp', title: 'MRP', mod: mrp },
+  { key: 'purchasing', title: 'Satın Alma', mod: purchasing },   // Malzeme, Yarı Mamül (eski Stok), Onay (eski Depo), Depo Yönetimi
+  { key: 'sales', title: 'Satış Yönetimi', mod: sales, sub: 'crm' },   // CRM alt modülü   // Firmalar için satış faturası oluşturma
+  { key: 'mikro', title: 'Mikro ERP', mod: mikro, hidden: true },   // Program Ayarları › Entegrasyonlar altından açılır (yalnızca MASTER)
   { key: 'field', title: 'Saha Yönetimi', mod: fieldMod },
-  { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers },
+  { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers, sub: 'production' },   // Üretim Yönetimi'nin alt modülü; Üretim'e erişimi olmayanda ızgarada kalır
   { key: 'products', title: 'Ürün Yönetimi', mod: products, tone: 'red' },
-  { key: 'companies', title: 'Firma Yönetimi', mod: companies },
-  { key: 'documents', title: 'Evrak Yönetimi', mod: documents },
-  { key: 'secretariat', title: 'Sekreterya', mod: secretariat },
-  { key: 'security', title: 'Güvenlik', mod: security },
-  { key: 'reports', title: 'Raporlar', mod: reportsMod },
-  { key: 'announcements', title: 'Duyurular', mod: announcements },
+  { key: 'design', title: 'Endüstriyel Tasarım', mod: design },
+  { key: 'crm', title: 'CRM', mod: crmHub },   // Firma + Evrak + Satış (grup; ayrı yetkisi yok)
+  { key: 'companies', title: 'Firma Yönetimi', mod: companies, sub: 'crm' },
+  { key: 'documents', title: 'Evrak Yönetimi', mod: documents, sub: 'crm' },
+  { key: 'secretariat', title: 'Sekreterya', mod: secretariat, group: 'system' },
+  { key: 'security', title: 'Güvenlik', mod: security, group: 'system' },
+  { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
+  { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
+  { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },
+  { key: 'cleaning', title: 'Temizlik', mod: cleaning, group: 'system' },
   { key: 'tools', title: 'Araçlar', mod: tools, menu: true },
   { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', menu: true },
 ];
+
+// Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?
+const hasModule = (u, key) => (key === 'crm' ? crmHub.hasCrm(u) : u.modules.includes(key));
+const inGrid = (m, u) => !m.menu && !m.hidden && hasModule(u, m.key) && !(m.sub && hasModule(u, m.sub));
 
 const root = document.getElementById('app');
 const ctx = { user: null, meta: null };
 
 async function boot() {
-  try {
-    ctx.meta = await api.get('/api/meta');
-    ctx.user = await api.get('/api/auth/me');
-  } catch {
-    ctx.user = null;
+  // Dış katılımcı toplantı linki (/m/{code}): oturum gerektirmeden doğrudan katılım ekranı
+  const mm = location.pathname.match(/^\/m\/([^/]+)/);
+  if (mm) {
+    document.title = 'Toplantıya Katıl';
+    const r = meet.guestEntry(decodeURIComponent(mm[1]), new URLSearchParams(location.search).get('t'));
+    window.__splashDone?.();
+    return r;
   }
-  ctx.user ? renderShell() : renderLogin();
+  // İki istek paralel (mobilde açılışı kısaltır); oturum yoksa yalnızca kullanıcı boş kalır
+  const pMeta = api.get('/api/meta').catch(() => null);
+  const pUser = api.get('/api/auth/me').catch(() => null);
+  ctx.meta = await pMeta;
+  ctx.user = await pUser;
+  initLang(ctx.user?.prefs?.settings?.lang);   // dil: kullanıcı tercihi → yoksa localStorage → Türkçe
+  ctx.user ? enterApp() : renderLogin();
+  requestAnimationFrame(() => window.__splashDone?.());   // ilk ekran çizildi → açılış ekranı kalkar
 }
 
-window.addEventListener('caymaz:unauthorized', () => {
+window.addEventListener('caymaz:unauthorized', e => {
   if (ctx.user) {
     ctx.user = null;
-    toast('Oturum süreniz doldu, lütfen tekrar giriş yapın', 'err');
+    // İzinli / raporlu personelin oturumu kapanınca sunucunun açıklaması gösterilir; diğer durumlarda genel mesaj
+    const why = e?.detail && /izinli|rapor/i.test(e.detail) ? e.detail : 'Oturum süreniz doldu, lütfen tekrar giriş yapın';
+    toast(why, 'err');
     renderLogin();
   }
 });
@@ -88,13 +132,14 @@ function renderLogin() {
   const done = async deviceToken => {   // giriş başarılı: kabuk açılır, hesap bu cihazda hatırlanır
     ctx.user = await api.get('/api/auth/me');
     if (deviceToken) rememberAccount(ctx.user, deviceToken);
-    renderShell();
+    enterApp();
   };
   const body = h('div', { class: 'login-body' });
   const form = h('form', { class: 'card login' },
     h('img', { src: '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
     h('h1', null, 'Fabrika Yönetim Sistemi'),
-    body);
+    body,
+    h('a', { class: 'login-home', href: '/' }, '← Tanıtım sayfası'));
   const showForm = () => {
     clear(body, field('Kullanıcı adı', username), field('Şifre', password), submit);
     username.focus();
@@ -120,6 +165,57 @@ function renderLogin() {
   accountChooser(body, { onLogin: done, onOther: showForm }).catch(() => {});
 }
 
+// Giriş sonrası: şifresini hiç değiştirmemiş kullanıcı önce şifresini değiştirir (sunucu da başka isteğe izin vermez)
+function enterApp() {
+  if (ctx.user.must_change_password) { renderForcePassword(); return; }
+  if (/^#\/tv\//.test(location.hash)) {   // TV / kiosk ekranı: kabuk (başlık, alt çubuk, bildirimler) olmadan tam ekran
+    import('./modules/tvroom.js').then(m => m.renderTv(root, ctx));
+    return;
+  }
+  renderShell(); checkWhatsNew();
+}
+window.addEventListener('caymaz:mustchange', () => { if (ctx.user) { ctx.user.must_change_password = true; renderForcePassword(); } });
+
+function renderForcePassword() {
+  currentPage = null;
+  stopTimers();
+  const current = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
+  const next = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
+  const again = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true });
+  const meter = h('div', { class: 'pw-meter' }, h('i'));
+  const submit = h('button', { class: 'btn primary lg', type: 'submit' }, 'Şifremi Değiştir ve Devam Et');
+  next.addEventListener('input', () => {   // basit güç göstergesi
+    const v = next.value;
+    const score = [v.length >= 8, v.length >= 12, /[A-ZÇĞİÖŞÜ]/.test(v) && /[a-zçğıöşü]/.test(v), /\d/.test(v), /[^\wçğıöşüÇĞİÖŞÜ]/.test(v)].filter(Boolean).length;
+    meter.className = `pw-meter s${score}`;
+  });
+  const form = h('form', { class: 'card login force-pw' },
+    h('img', { src: '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
+    h('h1', null, 'Şifrenizi değiştirin'),
+    h('p', { class: 'muted' }, `Merhaba ${ctx.user.full_name.split(' ')[0]}, güvenliğiniz için size verilen şifreyi ilk girişte kendi şifrenizle değiştirmeniz gerekiyor.`),
+    field('Mevcut (size verilen) şifre', current),
+    field('Yeni şifre', h('div', null, next, meter), 'En az 8 karakter; büyük-küçük harf, rakam ve işaret kullanın'),
+    field('Yeni şifre (tekrar)', again),
+    submit,
+    h('button', { class: 'btn ghost', type: 'button', onclick: () => logout() }, 'Çıkış Yap'));
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (next.value !== again.value) { toastError(new Error('Yeni şifreler eşleşmiyor')); return; }
+    submit.disabled = true;
+    try {
+      await api.post('/api/auth/password', { current: current.value, new: next.value });
+      ctx.user = await api.get('/api/auth/me');
+      toast('Şifreniz değiştirildi');
+      renderShell();
+    } catch (err) { toastError(err); } finally { submit.disabled = false; }
+  });
+  const canvas = h('canvas', { class: 'globe-bg', 'aria-hidden': 'true' });
+  clear(root, h('div', { class: 'login-wrap' }, canvas, form));
+  const globe = createGlobe(canvas, { size: 0.46, speed: 7 });
+  onLeave(() => globe.destroy());
+  current.focus();
+}
+
 // ---------- Kabuk ----------
 let view, scroller;
 // Açılır menüler (modül ızgarası, kullanıcı menüsü) dışarı tıklanınca ya da Esc ile kapanır.
@@ -142,18 +238,39 @@ function popup(button, panel) {
 
 // Google tarzı modül ızgarası: yalnızca kullanıcının girebildiği modüller
 function appsLauncher() {
-  const allowed = MODULES.filter(m => !m.menu && ctx.user.modules.includes(m.key));
+  const allowed = MODULES.filter(m => inGrid(m, ctx.user));
   const btn = h('button', { class: 'icon-btn', 'aria-label': 'Modüller', title: 'Modüller', 'aria-haspopup': 'menu' },
     svgIcon(icons.apps));
   const current = () => location.hash.replace(/^#\/?/, '').split('/')[0];
   const panel = h('div', { class: 'dropdown apps-panel', role: 'menu' });
+  // Alt modüller (Yazıcı Yönetimi, Firma/Evrak/Satış) da ait oldukları modül açıkken vurgulanır
+  const isOn = m => current() === m.key || MODULES.some(x => x.sub === m.key && x.key === current());
+  const tile = m => h('a', { class: `app-tile ${m.tone ? `tone-${m.tone}` : ''} ${isOn(m) ? 'on' : ''}`, href: `#/${m.key}`, role: 'menuitem',
+    onclick: () => { panel.hidden = true; } },
+    h('span', { class: 'ico' }, svgIcon(icons[m.key])),
+    h('span', null, m.title));
+  // İki grup: Modüller (iş modülleri) ve Sistem Yönetimi (Sekreterya, Güvenlik, Raporlar, Duyurular).
+  // Başlığa dokununca grup açılır / kapanır; durum cihazda hatırlanır.
+  const groups = [['mods', 'Modüller', icons.apps, allowed.filter(m => m.group !== 'system')],
+    ['system', 'Sistem Yönetimi', icons.settings, allowed.filter(m => m.group === 'system')]].filter(g => g[3].length);
+  const closedKey = 'caymaz.appsClosed';
+  const closed = () => { try { return JSON.parse(localStorage.getItem(closedKey) || '[]'); } catch { return []; } };
+  const group = ([key, title, ico, list]) => {
+    const box = h('div', { class: `apps-group ${closed().includes(key) ? 'closed' : ''}` });
+    const head = h('button', { class: 'apps-group-h', type: 'button', 'aria-expanded': String(!box.classList.contains('closed')) },
+      h('span', { class: 'gi' }, svgIcon(ico)), h('span', { class: 'gt' }, title), h('span', { class: 'gn' }, list.length),
+      h('span', { class: 'chev', 'aria-hidden': 'true' }));
+    head.addEventListener('click', () => {
+      const shut = box.classList.toggle('closed');
+      head.setAttribute('aria-expanded', String(!shut));
+      const set = new Set(closed()); shut ? set.add(key) : set.delete(key);
+      try { localStorage.setItem(closedKey, JSON.stringify([...set])); } catch { /* gizli pencere */ }
+    });
+    box.append(head, h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, list.map(tile))));
+    return box;
+  };
   const fill = () => clear(panel,
-    allowed.length ? h('div', { class: 'apps-grid' }, allowed.map(m =>
-      h('a', { class: `app-tile ${m.tone ? `tone-${m.tone}` : ''} ${current() === m.key ? 'on' : ''}`, href: `#/${m.key}`, role: 'menuitem',
-        onclick: () => { panel.hidden = true; } },
-        h('span', { class: 'ico' }, svgIcon(icons[m.key])),
-        h('span', null, m.title))))
-      : h('div', { class: 'empty' }, 'Erişebildiğiniz modül yok'));
+    groups.length ? groups.map(group) : h('div', { class: 'empty' }, 'Erişebildiğiniz modül yok'));
   btn.addEventListener('click', () => {   // popup'tan önce çalışır: panel henüz gizliyse şimdi açılıyor
     fill();
     if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Modül menüsü' });
@@ -196,40 +313,6 @@ function flash(kind, item, names) {
   setTimeout(() => box.remove(), flashMs() + 400);
 }
 
-// Uyarı düğmesi: tüm kullanıcılar; 5 sn'de bir sayıyı günceller, tıklanınca uyarıları listeler
-let alertTimer;
-function alertsButton() {
-  const count = h('span', { class: 'alert-count', hidden: true });
-  const btn = h('button', { class: 'icon-btn alert-btn', title: 'Uyarılar', 'aria-label': 'Uyarılar', 'aria-haspopup': 'menu' },
-    svgIcon(icons.warning), count);
-  const panel = h('div', { class: 'dropdown alerts-panel', role: 'menu' });
-  let data = { total: 0, alerts: [] };
-  const draw = () => {
-    count.hidden = !data.total;
-    count.textContent = data.total > 99 ? '99+' : data.total;
-    btn.classList.toggle('danger', data.alerts.some(a => a.level === 'danger'));
-    btn.classList.toggle('warn', !!data.total);
-    btn.classList.toggle('critical', data.alerts.some(a => a.critical));   // kritik uyarı: yanıp söner
-    clear(panel,
-      h('div', { class: 'alerts-head' }, 'Uyarılar'),
-      data.alerts.length ? data.alerts.map(a => h('a', { class: `alert-item ${a.level} ${a.critical ? 'critical' : ''}`, href: `#/alerts/${a.key}`, onclick: () => { panel.hidden = true; } },
-        h('span', { class: 'n' }, a.count),
-        h('div', null, h('b', null, a.title),
-          h('div', { class: 'small muted' }, a.names.join(', ') + (a.count > a.names.length ? '…' : '')))))
-        : h('div', { class: 'empty small' }, 'Uyarı yok'));
-  };
-  const load = async () => {
-    try { data = await api.get('/api/alerts'); draw(); announce('alerts', data.alerts); } catch { /* oturum kapanırsa kabuk yeniden çizilir */ }
-  };
-  popup(btn, panel);
-  btn.addEventListener('click', () => { load(); if (!panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Uyarı listesi' }); });
-  clearInterval(alertTimer);
-  alertTimer = setInterval(load, 5000);
-  draw();
-  load();
-  return h('div', { class: 'menu-anchor' }, btn, panel);
-}
-
 const settingsTheme = () => ctx.user?.prefs?.settings?.theme;
 
 // Kullanıcı menüsündeki sayılar: bildirimlerden (bekleyen kargo, arama, imza, misafir, takvim) sağa yaslı rozet
@@ -248,38 +331,85 @@ function syncMenuCounts(items) {
     el.hidden = !n;
     el.textContent = n > 99 ? '99+' : n;
   }
+  // Kişisel alt modül seçicisindeki sayılar da güncel kalsın
+  for (const o of view?.querySelectorAll('.personal-sel option') || []) {
+    const p = PERSONAL.find(x => x.route === o.value);
+    const n = p ? by.get(p.notify) || 0 : 0;
+    if (p) o.textContent = n ? `${p.title} (${n})` : p.title;
+  }
 }
 
-// Bildirim düğmesi: kullanıcıyı ilgilendiren bildirimler (rolüne göre); uyarılarla aynı zamanlayıcıda güncellenir
-let notifyTimer;
-function notificationsButton() {
-  const count = h('span', { class: 'alert-count', hidden: true });
-  const btn = h('button', { class: 'icon-btn notify-btn', title: 'Bildirimler', 'aria-label': 'Bildirimler', 'aria-haspopup': 'menu' },
-    svgIcon(icons.bell), count);
-  const panel = h('div', { class: 'dropdown alerts-panel', role: 'menu' });
-  let data = { total: 0, items: [] };
+// Birleşik bildirim düğmesi: üretim/yazıcı UYARILARI + kişiye özel BİLDİRİMLER tek zilde (mobilde yer kazanır).
+// Rozet toplamı gösterir; rengi en önemli kayda göre: kritik (yanıp söner) > hata (kırmızı) > uyarı (turuncu) > bildirim (mavi).
+let alertTimer, notifyTimer;
+let refreshNotify = () => {};   // bildirimleri hemen yeniden oku (ör. Kişisel sayfası görüldü sayınca)
+// Eksik özlük evrakı geri sayımı (zilin solunda, küçük): gün / saat / dakika; tıklayınca Evraklarım. Evrak tamamlanınca kaybolur.
+function docsCountdown() {
+  const el = h('a', { class: 'docs-cd', href: '#/my-documents', hidden: true, title: 'Eksik özlük evrakınızı yükleyin' });
+  const pad = n => String(n).padStart(2, '0');
   const draw = () => {
-    count.hidden = !data.total;
-    count.textContent = data.total > 99 ? '99+' : data.total;
-    btn.classList.toggle('on', !!data.total);
+    const d = ctx.user?.docs_due;
+    if (!d?.deadline) { el.hidden = true; return; }
+    el.hidden = false;
+    const ms = new Date(d.deadline) - new Date();
+    if (ms <= 0) { clear(el, h('b', null, 'Süre doldu'), h('span', null, `${d.missing} evrak eksik`)); el.classList.add('over'); return; }
+    const m = Math.floor(ms / 60000), dd = Math.floor(m / 1440), hh = Math.floor((m % 1440) / 60), mm = m % 60;
+    clear(el, h('span', { class: 'docs-cd-t' }, `${dd}g ${pad(hh)}s ${pad(mm)}dk`), h('span', { class: 'docs-cd-s' }, `${d.missing} evrak`));
+  };
+  const refresh = async () => { try { const me = await api.get('/api/auth/me'); ctx.user.docs_due = me.docs_due; draw(); } catch { /* */ } };
+  draw();
+  setInterval(draw, 30000);   // sayfa değişince durmasın (başlık öğesi)
+  window.addEventListener('caymaz:docs', refresh);
+  setInterval(refresh, 10 * 60000);
+  return el;
+}
+
+function inboxButton() {
+  const count = h('span', { class: 'alert-count', hidden: true });
+  const btn = h('button', { class: 'icon-btn notify-btn alert-btn inbox-btn', title: 'Bildirimler ve uyarılar', 'aria-label': 'Bildirimler ve uyarılar', 'aria-haspopup': 'menu' },
+    svgIcon(icons.bell), count);
+  const panel = h('div', { class: 'dropdown alerts-panel inbox-panel', role: 'menu' });
+  let al = { total: 0, alerts: [] }, nt = { total: 0, items: [] };
+  const close = () => { panel.hidden = true; };
+  const draw = () => {
+    const alerts = securityOnly() ? [] : al.alerts;
+    const total = alerts.length + nt.total;
+    count.hidden = !total;
+    count.textContent = total > 99 ? '99+' : total;
+    btn.classList.toggle('on', !!total);
+    btn.classList.toggle('warn', alerts.length > 0);
+    btn.classList.toggle('danger', alerts.some(a => a.level === 'danger') || nt.items.some(n => n.critical));
+    btn.classList.toggle('critical', alerts.some(a => a.critical));
+    const sec = (title, n, tone) => h('div', { class: `inbox-sec ${tone}` }, h('span', null, title), n ? h('b', null, n) : null);
     clear(panel,
       h('div', { class: 'alerts-head' }, 'Bildirimler'),
-      data.items.length ? data.items.map(n => h('a', { class: 'alert-item info', href: n.href, onclick: () => { panel.hidden = true; } },
-        h('span', { class: 'n' }, n.count),
-        h('div', null, h('b', null, n.title),
-          n.detail ? h('div', { class: 'small', style: { color: 'var(--primary)', fontWeight: 600 } }, n.detail) : null,
-          h('div', { class: 'small muted' }, n.names.join(', ') + (n.count > n.names.length ? '…' : '')))))
-        : h('div', { class: 'empty small' }, 'Bildiriminiz yok'));
+      alerts.length ? [sec('Uyarılar', alerts.length, 'warn'),
+        ...alerts.map(a => h('a', { class: `alert-item ${a.level} ${a.critical ? 'critical' : ''}`, href: `#/alerts/${a.key}`, onclick: close },
+          h('span', { class: 'n' }, a.count),
+          h('div', null, h('b', null, a.title),
+            h('div', { class: 'small muted' }, a.names.join(', ') + (a.count > a.names.length ? '…' : '')))))] : null,
+      nt.items.length ? [alerts.length ? sec('Bildirimler', nt.total, 'info') : null,
+        ...nt.items.map(n => h('a', { class: `alert-item ${n.critical ? 'danger critical' : 'info'}`, href: n.href, onclick: close },
+          h('span', { class: 'n' }, n.count),
+          h('div', null, h('b', null, n.title),
+            n.detail ? h('div', { class: 'small', style: { color: 'var(--primary)', fontWeight: 600 } }, n.detail) : null,
+            h('div', { class: 'small muted' }, n.names.join(', ') + (n.count > n.names.length ? '…' : '')))))] : null,
+      !alerts.length && !nt.items.length ? h('div', { class: 'empty small' }, 'Uyarı ya da bildiriminiz yok') : null);
   };
-  const load = async () => {
-    try { data = await api.get('/api/notifications'); draw(); syncMenuCounts(data.items); announce('notify', data.items); } catch { /* oturum kapanırsa kabuk yeniden çizilir */ }
+  const loadAlerts = async () => {
+    if (securityOnly()) return;
+    try { al = await api.get('/api/alerts'); draw(); announce('alerts', al.alerts); } catch { /* oturum kapanırsa kabuk yeniden çizilir */ }
   };
+  const loadNotify = async () => {
+    try { nt = await api.get('/api/notifications'); draw(); syncMenuCounts(nt.items); announce('notify', nt.items); } catch { /* */ }
+  };
+  refreshNotify = loadNotify;
   popup(btn, panel);
-  btn.addEventListener('click', () => { load(); if (!panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Bildirim listesi' }); });
-  clearInterval(notifyTimer);
-  notifyTimer = setInterval(load, 5000);
-  draw();
-  load();
+  btn.addEventListener('click', () => { loadAlerts(); loadNotify(); if (!panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Bildirim listesi' }); });
+  clearInterval(alertTimer); clearInterval(notifyTimer);
+  alertTimer = setInterval(loadAlerts, 5000);
+  notifyTimer = setInterval(loadNotify, 5000);
+  draw(); loadAlerts(); loadNotify();
   return h('div', { class: 'menu-anchor' }, btn, panel);
 }
 
@@ -308,19 +438,26 @@ function renderShell() {
   applySettings(ctx.user.prefs?.settings, ctx.user);
   const u = ctx.user;
   setChatUser(u);
+  voice.connect(ctx);   // sesli görüşme WebSocket'i (gelen arama her ekranda çalar)
+  radio.connect(ctx);   // telsiz: kanallardaki canlı konuşmalar her ekranda duyulur
+  syncPush();          // arka plan bildirimi aboneliğini tazele (izin önceden verildiyse)
+  mountMascot(ctx);     // köşedeki yapay zeka maskotu (anahtar tanımlıysa görünür)
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
   const menu = h('div', { class: 'dropdown', role: 'menu' },
     h('a', { class: 'menu-link', href: '#/personal', onclick: () => { menu.hidden = true; } }, svgIcon(icons.person), 'Kişisel', menuCount('personal')),
     h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Ayarlar'),
+    securityOnly() ? null : h('a', { class: 'menu-link', href: '#/meet', onclick: () => { menu.hidden = true; } }, svgIcon(icons.phone), 'Görüntülü Toplantı'),
     menuModules.map(m => h('a', { class: `menu-link ${m.tone ? `tone-${m.tone}` : ''}`, href: `#/${m.key}`,
       onclick: () => { menu.hidden = true; } }, svgIcon(icons[m.key]), m.title)),
     menuModules.length ? h('div', { class: 'menu-sep' }) : null,
     installButton(),
+    (u.master || u.roles.includes('Sistem Yöneticisi')) ? h('a', { class: 'menu-link', href: '#/sysconfig', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Program Ayarları') : null,
     h('button', { onclick: () => { menu.hidden = true; changePassword(); } }, 'Şifremi Değiştir'),
+    h('button', { onclick: () => { menu.hidden = true; aboutModal(); } }, 'Program Hakkında'),
     h('button', { onclick: logout }, 'Çıkış Yap'));
   const userBtn = h('button', { class: 'user-btn', 'aria-haspopup': 'menu' },
     avatar(u),
-    h('span', { class: 'who' }, h('b', null, u.full_name), h('span', null, u.roles.join(', ') || 'Rol atanmamış')));
+    h('span', { class: 'who' }, h('b', null, u.full_name), h('span', null, u.master ? 'MASTER · Sistem Sahibi' : (u.roles.join(', ') || 'Rol atanmamış'))));
   popup(userBtn, menu);
 
   view = h('main', { id: 'view' });
@@ -330,14 +467,15 @@ function renderShell() {
       h('a', { class: 'brand', href: '#/' },
         h('img', { src: '/static/img/logo.png', alt: ctx.meta?.company || '' }),
         h('span', { class: 'product' }, h('b', null, 'FABRİKA'), 'Yönetim Sistemi')),
-      h('div', { class: 'header-right' }, securityOnly() ? null : alertsButton(), securityOnly() ? null : chatButton(popup), notificationsButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+      h('div', { class: 'header-right' }, radio.button(popup), securityOnly() ? null : chatButton(popup),
+        docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
     h('footer', { class: 'app-footer' },
-      h('span', { class: 'footer-copy' }, `© ${new Date().getFullYear()} ${ctx.meta?.company || ''}`),
+      brandBadge(ctx),
       statusBar())));
   // Açılış sayfası (Ayarlar → Arayüz): girişte ana sayfa yerine seçilen modül
   const start = u.prefs?.settings?.start;
-  if (start && start !== 'dashboard' && u.modules.includes(start) && !location.hash.replace(/^#\/?/, '')) {
+  if (start && start !== 'dashboard' && hasModule(u, start) && !location.hash.replace(/^#\/?/, '')) {
     history.replaceState(null, '', `#/${start}`);
   }
   route();
@@ -350,11 +488,115 @@ async function calendarPage(view, ctx) {
     h('div', { class: 'card card-pad' }, calendarPanel('user', ctx.user.id, ctx, { mine: true })));
 }
 
+// Footer marka rozeti: dar ekranda ünvan gizlenmez, yalnızca logo-ikon kalır. Üzerine gelince / dokununca
+// (durum çubuğu kutucukları gibi) logo + şirket ünvanı + sistemi tasarlayan (Muhammed Kaderoğlu) şık bir kutuda açılır.
+function brandBadge(ctx) {
+  const company = ctx.meta?.company || 'GÖKKUBBE Teknoloji';
+  const year = new Date().getFullYear();
+  const badge = h('button', { class: 'footer-brand', type: 'button', 'aria-label': company },
+    h('img', { class: 'fb-mark', src: '/static/img/logo-mark.png', alt: '' }),
+    h('span', { class: 'fb-name' }, `© ${year} ${company}`));
+  const hover = matchMedia('(hover: hover) and (pointer: fine)').matches;
+  let pop = null, closeTimer;
+  const close = () => { if (pop) { pop.remove(); pop = null; badge.classList.remove('open'); document.removeEventListener('click', close); } };
+  const open = () => {
+    if (pop) return;
+    pop = h('div', { class: 'sb-pop fb-pop', role: 'dialog', onclick: e => e.stopPropagation(),
+      onmouseenter: () => clearTimeout(closeTimer), onmouseleave: () => { if (hover) closeTimer = setTimeout(close, 300); } },
+      h('img', { class: 'fb-logo', src: '/static/img/logo.png', alt: company }),
+      h('div', { class: 'fb-title' }, company),
+      h('div', { class: 'fb-by' }, h('span', { class: 'fb-by-label' }, 'Sistemi tasarlayan'), h('b', null, 'Muhammed Kaderoğlu')),
+      h('div', { class: 'fb-copy' }, `© ${year} · Tüm hakları saklıdır`));
+    document.body.append(pop);
+    const r = badge.getBoundingClientRect();
+    pop.style.bottom = `${innerHeight - r.top + 8}px`;
+    pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
+    badge.classList.add('open');
+    setTimeout(() => document.addEventListener('click', close), 0);
+  };
+  badge.addEventListener('click', e => { e.stopPropagation(); open(); });   // dokununca açılır; dışarı dokununca / mouseleave ile kapanır
+  if (hover) {
+    badge.addEventListener('mouseenter', () => { clearTimeout(closeTimer); open(); });
+    badge.addEventListener('mouseleave', () => { closeTimer = setTimeout(close, 300); });
+  }
+  return badge;
+}
+
+// Program Hakkında: sürüm numarası + değişiklik geçmişi (soldan sürüm seç, sağda neler değişti)
+async function aboutModal() {
+  let d;
+  try { d = await api.get('/api/system/about'); } catch (err) { return toastError(err); }
+  let sel = d.entries[0];
+  const list = h('div', { class: 'about-vers' });
+  const detail = h('div', { class: 'about-detail' });
+  const drawDetail = () => clear(detail,
+    h('div', { class: 'about-dh' }, h('b', null, `Sürüm ${sel.version}`), sel.title ? h('span', { class: 'about-title' }, sel.title) : null, h('span', { class: 'small muted' }, sel.date)),
+    h('ul', { class: 'about-changes' }, sel.changes.map(c => h('li', null, c))));
+  const drawList = () => clear(list, d.entries.map(e => h('button', { class: `about-ver ${e === sel ? 'on' : ''}`, type: 'button', onclick: () => { sel = e; drawList(); drawDetail(); } },
+    h('b', null, `v${e.version}`), h('small', null, e.date), e === d.entries[0] ? h('span', { class: 'about-badge' }, 'Güncel') : null)));
+  drawList(); drawDetail();
+  modal({ title: `Program Hakkında · Sürüm ${d.version}`, wide: true,
+    body: h('div', { class: 'about-wrap' }, h('div', { class: 'about-side' }, list), detail),
+    actions: [{ label: 'Kapat' }] });
+}
+
+// "Neler değişti?": kullanıcının gördüğü sürümden sonraki değişiklik notları (yoksa en son sürümün notları)
+const verCmp = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+let loadedVersion = null;   // bu sayfa açıldığında çalışan sürüm
+async function whatsNewModal(since) {
+  let d;
+  try { d = await api.get('/api/system/about'); } catch (err) { return toastError(err); }
+  const fresh = since ? d.entries.filter(e => verCmp(e.version, since) > 0) : [];
+  const list = fresh.length ? fresh : d.entries.slice(0, 1);
+  modal({ title: fresh.length ? `Yenilikler · ${since} → ${d.version}` : `Sürüm ${d.version} · Yenilikler`, wide: true,
+    body: h('div', { class: 'wn-list' },
+      fresh.length ? null : h('p', { class: 'small muted' }, 'Bu güncelleme küçük iyileştirmeler ve düzeltmeler içeriyor. Son sürümün notları:'),
+      list.map(e => h('section', { class: 'wn-item' },
+        h('div', { class: 'about-dh' }, h('b', null, `Sürüm ${e.version}`), e.title ? h('span', { class: 'about-title' }, e.title) : null, h('span', { class: 'small muted' }, e.date)),
+        h('ul', { class: 'about-changes' }, e.changes.map(c => h('li', null, c)))))),
+    actions: [{ label: 'Tüm geçmiş', onClick: () => { aboutModal(); } }, 'spacer', { label: 'Kapat', class: 'primary' }] });
+}
+// Uygulama açılınca: önceki ziyaretten bu yana sürüm yükseldiyse "Yenilikler" kısa uyarısı (bir kez)
+async function checkWhatsNew() {
+  let d; try { d = await api.get('/api/system/about'); } catch { return; }
+  loadedVersion = d.version;
+  let seen = null; try { seen = localStorage.getItem('caymaz.seenVersion'); } catch { /* */ }
+  try { localStorage.setItem('caymaz.seenVersion', d.version); } catch { /* */ }
+  if (!seen || verCmp(d.version, seen) <= 0 || document.getElementById('wn-chip')) return;
+  const chip = h('div', { id: 'wn-chip', class: 'wn-chip' },
+    h('span', null, `✨ Sürüm ${d.version} yüklendi`),
+    h('button', { class: 'btn sm', type: 'button', onclick: () => { chip.remove(); whatsNewModal(seen); } }, 'Neler değişti?'),
+    h('button', { class: 'ver-x', type: 'button', title: 'Kapat', onclick: () => chip.remove() }, '×'));
+  document.body.append(chip);
+  setTimeout(() => chip.remove(), 20000);
+}
+
+// "Yeni sürüm" uyarısı: sunucudaki arayüz derlemesi değişince herkese üstte banner; dokununca önbelleği temizleyip yeniden yükler.
+let buildId = null;
+window.addEventListener('caymaz:build', e => {
+  if (!buildId) { buildId = e.detail; return; }
+  if (e.detail !== buildId && !document.getElementById('ver-banner')) showVersionBanner();
+});
+function showVersionBanner() {
+  const bar = h('div', { id: 'ver-banner', class: 'ver-banner' },
+    h('span', null, '🎉 Yeni sürüm hazır — güncellemek için dokunun'),
+    h('button', { class: 'btn sm ghost-light', type: 'button', onclick: () => whatsNewModal(loadedVersion) }, 'Neler değişti?'),
+    h('button', { class: 'btn sm', type: 'button', onclick: hardReload }, 'Güncelle'),
+    h('button', { class: 'ver-x', type: 'button', title: 'Şimdilik kapat', onclick: () => bar.remove() }, '×'));
+  document.body.append(bar);
+}
+async function hardReload() {
+  try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } } catch { /* */ }
+  location.reload();
+}
+
 async function logout() {
   for (const k of Object.keys(seen)) delete seen[k];   // sonraki oturumda ilk yükleme yine "görüldü" sayılır
   clearInterval(alertTimer);
   clearInterval(notifyTimer);
   stopStatusBar();
+  voice.disconnect();   // sesli görüşme WebSocket'ini kapat
+  radio.disconnect();
   await leavePage();   // son sayfa kaydı, oturum kapanmadan yazılsın
   closeChat();
   applySettings({ theme: settingsTheme(), screensaver: { on: false } }, null);
@@ -390,7 +632,7 @@ const securityOnly = () => ctx.user.modules.includes('security') && ctx.user.mod
 // ---------- Ana sayfa ----------
 function renderHome() {
   if (securityOnly()) { location.hash = '#/security'; return; }   // güvenliğin tek ekranı
-  const allowed = MODULES.filter(m => !m.menu && ctx.user.modules.includes(m.key));
+  const allowed = MODULES.filter(m => inGrid(m, ctx.user));
   if (!ctx.user.modules.length) { clear(view, h('div', { class: 'card empty' }, 'Hesabınıza henüz bir rol atanmamış. Sistem yöneticisine başvurun.')); return; }
   clear(view, h('div', { class: 'loading' }, 'Yükleniyor…'));
   renderDashboard(view, ctx, allowed).catch(err => { if (err?.status !== 401) clear(view, h('div', { class: 'card empty' }, err.message)); });
@@ -398,7 +640,7 @@ function renderHome() {
 
 // ---------- Hareket kaydı: her sayfaya giriş ve çıkış (kalınan süreyle) loglanır ----------
 const SUB_PAGES = {
-  production: p => `Sipariş #${p[0]}`,
+  production: p => `İş Emri #${p[0]}`,
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,
   stock: p => `Ürün #${p[0]}`,
@@ -413,9 +655,16 @@ function pageTitle(key, params) {
   if (key === 'sign') return params[0] ? `İmza talebi #${params[0]}` : 'Kişisel › İmza talepleri';
   if (key === 'calendar') return 'Kişisel › Takvim';
   if (key === 'personal') return 'Kişisel';
+  if (key === 'voice-call') return `Görüşme Detayı${params[0] ? ` #${params[0]}` : ''}`;
   if (key === 'my-cargo') return params[0] === 'history' ? 'Kişisel › Kargolarım › Kargo Geçmişi' : 'Kişisel › Kargolarım';
   if (key === 'my-guests') return 'Kişisel › Misafirlerim';
   if (key === 'my-calls') return 'Kişisel › Aramalarım';
+  if (key === 'mail') return 'Kişisel › Mail';
+  if (key === 'my-leaves') return 'Kişisel › İzinlerim';
+  if (key === 'master') return `MASTER${params[0] ? ` › Kullanıcı #${params[0]}` : ''}`;
+  if (key === 'purchasing') return `Satın Alma${params.length ? ` › ${{ requests: 'Talep Yönetimi', suppliers: 'Tedarikçi Yönetimi', invoices: 'Fatura İrsaliye', quotes: 'Teklif Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
+  if (key === 'mrp') return `MRP${params.length ? ` › ${{ materials: 'Malzeme Yönetimi', semi: 'Yarı Mamül', approvals: 'Onay Yönetimi', depots: 'Depo Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
+  if (key === 'meetings') return params[0] ? `Kişisel › Toplantı #${params[0]}` : 'Kişisel › Toplantılar';
   if (key === 'settings') return params[0] ? `Ayarlar › ${params[0]}` : 'Ayarlar';
   const m = MODULES.find(x => x.key === key);
   const base = m ? m.title : key;
@@ -454,10 +703,14 @@ window.addEventListener('pagehide', () => leavePage(true));
 // Her alt modül kendi sayfasını çizer; başlık "Kişisel" olur ve alt modül seçimi başlığın en sağında açılır liste olarak eklenir.
 const PERSONAL = [
   { key: 'calendar', route: 'calendar', title: 'Takvim', notify: 'calendar-due', render: () => calendarPage(view, ctx) },
+  { key: 'meetings', route: 'meetings', title: 'Toplantılar', notify: 'meeting-invite', render: params => renderMeetings(view, params) },
   { key: 'sign', route: 'sign', title: 'İmza Talepleri', notify: 'signature-pending', render: params => signPage.render(view, params, ctx) },
   { key: 'cargo', route: 'my-cargo', title: 'Kargolarım', notify: 'cargo-waiting', render: params => secretariat.renderMyCargo(view, params) },
   { key: 'guests', route: 'my-guests', title: 'Misafirlerim', notify: 'guest-visit', render: () => secretariat.renderMyGuests(view) },
   { key: 'calls', route: 'my-calls', title: 'Aramalarım', notify: 'call-waiting', render: () => renderMyCalls(view) },
+  { key: 'mail', route: 'mail', title: 'Mail', notify: 'mail-unread', render: params => renderMail(view, params) },
+  { key: 'leaves', route: 'my-leaves', title: 'İzinlerim', notify: 'leave-decided', render: () => hr.renderMyLeaves(view) },
+  { key: 'docs', route: 'my-documents', title: 'Evraklarım', notify: 'docs-missing', render: () => hr.renderMyDocuments(view) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {
@@ -497,6 +750,24 @@ async function route() {
     view.className = '';
     return alertsPage.render(view, params, ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
   }
+  if (key === 'voice-call' && params[0]) {   // görüşme detayı: bağımsız sayfa (arama kaydından açılır)
+    view.className = '';
+    return voice.renderCall(view, Number(params[0]), ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
+  if (key === 'messages') {   // Mesajlar: WhatsApp-Web tarzı sohbet + arama (herkese açık)
+    view.className = 'msg-view';
+    onLeave(() => messages.stop());
+    return messages.render(view, params, ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
+  if (key === 'sysconfig') {   // Program Ayarları (sistem yöneticisi / MASTER)
+    view.className = '';
+    return sysconfig.render(view, params, ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
+  if (key === 'meet') {   // Görüntülü online toplantı (herkese açık)
+    view.className = '';
+    onLeave(() => meet.destroy());
+    return meet.render(view, params, ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
   if (key === 'personal') {   // Kişisel modülü: son açılan (ya da ilk) alt modüle git
     const last = pref('personal.last', 'calendar');
     location.replace(`#/${(PERSONAL.find(p => p.key === last) || PERSONAL[0]).route}`);
@@ -507,7 +778,7 @@ async function route() {
     view.className = '';
     setPref('personal.last', personal.key);
     return personal.render(params)
-      .then(() => personalHead(personal))
+      .then(() => { if (!(personal.key === 'meetings' && params[1])) personalHead(personal); refreshNotify(); })   // toplantı ekranı / özeti kendi başlığıyla
       .catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
   }
   if (key === 'sign') {   // imza talebi ayrıntısı
@@ -516,13 +787,17 @@ async function route() {
   }
   if (key === 'settings') {   // kişisel ayarlar: herkese açık
     view.className = '';
-    return renderSettings(view, ctx, { changePassword, modules: MODULES.filter(m => !m.menu && ctx.user.modules.includes(m.key)) }, params[0]).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+    return renderSettings(view, ctx, { changePassword, modules: MODULES.filter(m => inGrid(m, ctx.user)) }, params[0]).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
+  if (key === 'stock' || key === 'warehouse') {   // eski adresler: MRP alt modülleri
+    location.replace(`#/mrp/${key === 'stock' ? 'semi' : 'approvals'}${params.length ? `/${params.join('/')}` : ''}`);
+    return;
   }
   const m = MODULES.find(x => x.key === key);
   // Ton her geçişte yeniden ayarlanır; aksi halde kırmızı modülden dönünce ana sayfa kırmızı kalır
   view.className = m?.tone ? `tone-${m.tone}` : '';
   if (!m) return renderHome();
-  if (!ctx.user.modules.includes(key)) {
+  if (!hasModule(ctx.user, key)) {
     clear(view, h('div', { class: 'card empty' }, 'Bu modüle erişim yetkiniz yok.'));
     return;
   }
@@ -536,8 +811,38 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+onLangChange(() => { if (ctx.user) renderShell(); else route(); });   // dil değişince kabuk (menü) + ekran yeniden çizilir
 window.addEventListener('caymaz:logout', () => logout());   // bekleme ekranı: farklı kullanıcıyla giriş
 enableDictation();   // tüm çok satırlı metin kutularında mikrofon (sesle yazdırma)
+// Mobilde klavye açılınca görünür alan küçülür; uygulama kabuğunu görünür viewport yüksekliğine indir ki
+// alttaki yazı kutuları (sohbet vb.) klavyenin arkasında kalmasın.
+(function keyboardFit() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const fit = () => {
+    document.documentElement.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
+    if (vv.offsetTop > 1 || window.scrollY > 0) window.scrollTo(0, 0);   // iOS'ta sayfayı klavye altına kaydırmasın
+  };
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', fit);
+  fit();
+})();
+enableSegSelect();   // telefonda düğme grupları (sekme / görünüm / filtre) açılır listeye dönüşür
+enableListExport();  // tüm listelerde başlığın en sağında Excel indirme düğmesi
+enableHeadGroup();   // başlıktaki bağımsız eylem düğmelerini (ör. "+ Yeni" + "Excel") tek kapsülde toplar
+window.addEventListener('caymaz:toast', e => toast(e.detail));
+// İskelet kabları (başlık + içerik + alt çubuk) asla kaymamalı; tarayıcı odak / scrollIntoView ile kaydırırsa geri al
+// Kaydırması kapalı (overflow: hidden / clip) her kap da buna dahil: ör. mesajlarda kayarsa yazma kutusu alt çubuğun arkasında kalıyordu.
+const SKELETON = ['shell', 'msg-page', 'msg-conv', 'msg-view'];
+const noScroll = el => {
+  if (el === document.scrollingElement || SKELETON.some(c => el.classList?.contains(c))) return true;
+  const cs = getComputedStyle(el);
+  return /hidden|clip/.test(cs.overflowY) && /hidden|clip/.test(cs.overflowX);
+};
+document.addEventListener('scroll', e => {
+  const t = e.target === document ? document.scrollingElement : e.target;
+  if (t && (t.scrollTop || t.scrollLeft) && noScroll(t)) { t.scrollTop = 0; t.scrollLeft = 0; }
+}, true);
 boot();
 
 // Web uygulaması: service worker ve "Uygulamayı Yükle" (tarayıcı destekliyorsa kullanıcı menüsünde görünür)

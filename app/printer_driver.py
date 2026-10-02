@@ -105,6 +105,50 @@ def _creality_ws(ip):
     }
 
 
+def hardware_id(ip):
+    """Yazıcının kalıcı donanım kimliği: Moonraker'ın seri numarasından türeyen ağ adı (ör. K2Plus-3697).
+    IP değişse de sabittir. Yalnızca Moonraker'dan okunur (Creality WS'in sayısal hostname'i güvenilmez)."""
+    try:
+        hn = (_moonraker(ip).get('hostname') or '').strip()
+        return hn or None
+    except Exception:
+        return None
+
+
+def device_name(ip):
+    """Yazıcının ekranından girilen kullanıcı adı (Creality 'deviceName'). Boşsa None döner.
+    Ağ hostname'i (K2Plus-XXXX) KULLANILMAZ — o kullanıcı adı değildir."""
+    try:
+        merged = {}
+        with ws_connect(f'ws://{ip}:{CREALITY_WS_PORT}', open_timeout=TIMEOUT, close_timeout=1) as ws:
+            try:
+                ws.send(json.dumps({'method': 'get', 'params': {'reqPrinterPara': 1}}))
+            except Exception:
+                pass
+            deadline = time.monotonic() + TIMEOUT
+            while time.monotonic() < deadline:
+                try:
+                    msg = ws.recv(timeout=max(0.1, deadline - time.monotonic()))
+                except TimeoutError:
+                    break
+                try:
+                    data = json.loads(msg)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(data, dict):
+                    merged.update(data)
+                if 'deviceName' in merged:
+                    break
+        # Kullanıcının cihaz ekranından verdiği ad: bazı firmware'lerde deviceName, çoğunda WS 'hostname' alanında (ör. '25', '31').
+        # Ağ/seri adı (K2Plus-XXXX) yalnızca Moonraker'dan gelir; WS hostname kullanıcı adıdır.
+        name = str(merged.get('deviceName') or '').strip() or str(merged.get('hostname') or '').strip()
+        if not name or name.upper().startswith('K2PLUS-'):   # ağ adıysa kullanıcı adı sayılmaz
+            return None
+        return name
+    except Exception:
+        return None
+
+
 def probe(ip):
     """Yazıcının canlı durumunu döner; ulaşılamazsa None."""
     for fn in (_moonraker, _creality_ws):
@@ -176,6 +220,84 @@ def track_jobs(conn, now):
             conn.execute('UPDATE order_parts SET printer_done_at = ? WHERE id = ?', (now, r['id']))
 
 
+_recon_lock = threading.Lock()
+_recon_last = 0.0
+
+
+def reconcile_ips():
+    """Ağı tarayıp yazıcıların IP'lerini kalıcı donanım kimliğine (hw_id) göre günceller: IP değişen yazıcının
+    kaydı silinmez, yalnızca IP'si güncellenir. Değişen IP sayısını döner."""
+    found = discover()
+    if not found:
+        return 0
+    ips = [ip for ip, _ in found]
+    with ThreadPoolExecutor(max_workers=24) as pool:
+        hw = dict(zip(ips, pool.map(hardware_id, ips)))
+    live_by_ip = {ip: live for ip, live in found}
+    moved = 0
+    now = db.now()
+    with db.connect() as conn:
+        by_hw = {}
+        for r in db.rows(conn.execute('SELECT id, ip, hw_id, hw_alias FROM printers')):
+            for k in (r['hw_id'], r['hw_alias']):   # kalıcı kimlik (K2Plus-XXXX) ya da elle verilmiş ağ adı
+                if k:
+                    by_hw[k.upper()] = r
+        ips_of = {}
+        for ip, h in hw.items():
+            if h:
+                ips_of.setdefault(h.upper(), set()).add(ip)
+        for ip, _live in found:
+            h = (hw.get(ip) or '').upper()
+            if not h or h not in by_hw or by_hw[h]['ip'] == ip:
+                continue
+            if by_hw[h]['ip'] in ips_of.get(h, ()):   # aynı yazıcının ikinci ağ bağlantısı (kablolu + Wi-Fi): mevcut IP hâlâ geçerli
+                continue
+            # IP degisti: kaydi koru, IP'sini guncelle
+            conn.execute("UPDATE printers SET ip = ip || '#eski' WHERE ip = ? AND id != ?", (ip, by_hw[h]['id']))
+            conn.execute('UPDATE printers SET ip = ? WHERE id = ?', (ip, by_hw[h]['id']))
+            by_hw[h]['ip'] = ip
+            moved += 1
+        conn.execute("UPDATE printers SET ip = replace(ip, '#eski', '') WHERE ip LIKE '%#eski'")
+        cols = 'live_state = ?, live_progress = ?, live_file = ?, live_source = ?, last_seen = ?, live_since = ?, live_print_s = ?'
+        for pr in db.rows(conn.execute('SELECT id, ip, live_state, live_since FROM printers')):
+            live = live_by_ip.get(pr['ip'])
+            if live:
+                since = pr['live_since'] if pr['live_state'] == live['state'] and pr['live_since'] else now
+                conn.execute('UPDATE printers SET ' + cols + ' WHERE id = ?',
+                             (live['state'], live['progress'], live['file'], live['source'], now, since, live.get('print_s'), pr['id']))
+        conn.commit()
+    return moved
+
+
+def reconcile_if_offline(min_interval=25):
+    """Çevrimdışı yazıcı varsa (IP değişmiş olabilir) ve son taramadan beri min_interval sn geçtiyse IP'leri tazeler.
+    Aynı anda tek tarama; kilit meşgulse hemen döner. Değişen IP'ler bir sonraki yoklama/tazelemede yansır."""
+    global _recon_last
+    if not config.PRINTER_POLL_ENABLED:   # yazıcı ağı kapalıysa (ör. testler) tarama yapılmaz
+        return 0
+    with db.connect() as conn:
+        offline = conn.execute("SELECT COUNT(*) FROM printers WHERE live_state IS NULL OR live_state = 'CEVRIMDISI'").fetchone()[0]
+    if not offline:
+        return 0
+    if not _recon_lock.acquire(blocking=False):
+        return 0
+    try:
+        if time.monotonic() - _recon_last < min_interval:
+            return 0
+        _recon_last = time.monotonic()
+        return reconcile_ips()   # canli durumu da tazeler
+    finally:
+        _recon_lock.release()
+
+
+def trigger_reconcile():
+    """Yazıcı listesi istendiğinde çağrılır: IP tazelemeyi ARKA PLANDA başlatır (liste anında döner, bekletmez).
+    Çevrimdışı yazıcı yoksa, yakında tarandıysa ya da yazıcı ağı kapalıysa hiçbir şey yapmaz."""
+    if not config.PRINTER_POLL_ENABLED:
+        return
+    threading.Thread(target=lambda: reconcile_if_offline(), name='reconcile', daemon=True).start()
+
+
 def _local_networks():
     """Makinenin fiziksel ağ arayüzlerindeki IPv4 /24 ağları (docker köprüleri hariç)."""
     nets = set()
@@ -229,9 +351,13 @@ def start_poller():
     _started = True
 
     def loop():
+        cycle = 0
         while True:
             try:
                 poll_all()
+                cycle += 1
+                if cycle % 12 == 0:   # ~2 dakikada bir: çevrimdışı yazıcı varsa IP'leri kendiliğinden tazele (DHCP değişimi)
+                    reconcile_if_offline(min_interval=0)
             except Exception:
                 pass
             time.sleep(config.PRINTER_POLL_SECONDS)

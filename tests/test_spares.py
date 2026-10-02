@@ -43,13 +43,15 @@ def main():
 
         # ---- Başlangıç: üç yedek parça, stokları ve CAYMAZ başına kullanımları
         products = ok(admin.get('/api/products'))
-        sp = {p['code']: p for p in products if p['type'] == 'YEDEK_PARCA' and not p['part_spare']}
+        sp = {p['code']: p for p in products if p['role'] == 'sarf'}
+        # basılı stok parçaları (montaj sarfı ve parça yedekleri) yarı mamul tipindedir; davranışları şemadan gelir
+        assert all(p['type'] == 'YARI_MAMUL' and p['stocked'] for p in products if p['role'] in ('sarf', 'part'))
         assert {c: (p['stock'], p['per_print'], sum(u['qty'] for u in p['usages']), p['part_count']) for c, p in sp.items()} == {
             'KMH': (1, 1, 1, 1), 'BBK': (183, 12, 68, 1), 'KBK': (38, 12, 6, 1)}
         cyz = next(p for p in products if p['code'] == 'CYZ')
         assert cyz['type'] == 'MAMUL' and {x['code']: x['qty'] for x in cyz['spares']} == {'KMH': 1, 'BBK': 68, 'KBK': 6}
         # Yarı mamuller: CAYMAZ'ın dört ana yapısı, parçaları CAYMAZ'ın parçalarını tam olarak böler; sipariş verilemez
-        semi = {p['code']: p for p in products if p['type'] == 'YARI_MAMUL'}
+        semi = {p['code']: p for p in products if p['role'] == 'section'}
         assert {c: (p['name'], p['part_count'], p['parent']['code']) for c, p in semi.items()} == {
             'SLK': ('Sol Kanat', 22, 'CYZ'), 'SGK': ('Sağ Kanat', 22, 'CYZ'), 'GVD': ('Gövde', 18, 'CYZ'), 'ELK': ('Elektronik', 2, 'CYZ')}
         assert [s['code'] for s in cyz['semis']] == ['SLK', 'SGK', 'GVD', 'ELK']
@@ -113,7 +115,7 @@ def main():
         login(c, 'uyon')
         o = ok(c.post('/api/orders', json={'product_id': sp['BBK']['id'], 'quantity': 1}))[0]
         order = ok(c.get(f'/api/orders/{o["id"]}'))
-        assert [p['part_id'] for p in order['parts']] == ['BBK'] and order['product_type'] == 'YEDEK_PARCA'
+        assert [p['part_id'] for p in order['parts']] == ['BBK'] and order['product_stocked']
         ok(c.post(f'/api/orders/{o["id"]}/parts/BBK/start', json={'printer_id': printer}))
         ok(c.post(f'/api/orders/{o["id"]}/parts/BBK/finish', json={'warehouse_user_id': depocu}))
         assert ok(c.get(f'/api/orders/{o["id"]}'))['status'] == 'DEPO'
@@ -161,7 +163,7 @@ def main():
     with TestClient(app) as c:
         login(c, 'uyon')   # kamera tutucu bitti: bir uçağa yetmiyor
         n = notes(c)['spares-low']
-        assert n['names'] == ['KMH: stok 0, gereken 1'] and n['href'] == '#/stock'
+        assert n['names'] == ['KMH: stok 0, gereken 1'] and n['href'] == '#/mrp/semi'
     with TestClient(app) as s:
         login(s, 'saha')   # yedek parça siparişi sahaya götürülebilecek uçak listesinde yok
         assert o['id'] not in {a['id'] for a in ok(s.get('/api/field/available-aircraft'))}

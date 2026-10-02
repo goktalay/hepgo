@@ -25,7 +25,7 @@ def norm_file(name):
 def expected_files(conn):
     """Parça kodu → baskı dosyası (parça yedekleri ve kod = parça olan yedek parçalar, ör. KMH)."""
     files = {pid: i['print_file'] for pid, i in semis.print_info(conn).items() if i['print_file']}
-    for code, f in conn.execute("SELECT code, print_file FROM products WHERE type = 'YEDEK_PARCA' AND print_file IS NOT NULL"):
+    for code, f in conn.execute("SELECT code, print_file FROM products WHERE schema LIKE 'spare-%' AND print_file IS NOT NULL"):
         files.setdefault(code, f)
     return files
 
@@ -149,9 +149,39 @@ ALERTS = [
 ]
 
 
-def summary(conn):
+# Uyarıları yalnızca üretimle ilgili kullanıcılar görür (üretim ya da yazıcı modülü; yönetici ikisine de sahiptir).
+ALERT_MODULES = ('production', 'printers')
+
+
+def visible(user):
+    # Uyarılar yalnızca üyesi olunan iş rollerinden gelir: Sistem Yöneticisi rolü (ve MASTER) modüllere erişim verir
+    # ama tek başına üretim / yazıcı uyarısı getirmez.
+    from . import auth
+    roles = set(user.get('real_roles', user.get('roles', []))) - {auth.ADMIN}
+    return bool(set(ALERT_MODULES) & set(auth.allowed_modules(roles)))
+
+
+def _muted(user):
+    """Kullanıcının kapattığı uyarı türleri. Kritik uyarılar (güvenlik) kapatılamaz."""
+    if not user:
+        return set()
+    try:
+        import json
+        p = json.loads(user['prefs']) if user.get('prefs') else {}
+        muted = set(p.get('settings', {}).get('muteAlert') or [])
+    except Exception:
+        muted = set()
+    return {a['key'] for a in ALERTS if a['key'] in muted and not a.get('critical')}
+
+
+def summary(conn, user=None):
+    if user is not None and not visible(user):
+        return []
+    muted = _muted(user)
     out = []
     for a in ALERTS:
+        if a['key'] in muted:
+            continue
         items = a['fn'](conn)
         if items:
             out.append({'key': a['key'], 'level': a['level'], 'title': a['title'], 'count': len(items), 'critical': a.get('critical', False),
@@ -159,7 +189,19 @@ def summary(conn):
     return out
 
 
-def detail(conn, key):
+def types_for(user):
+    """Kullanıcı üretim/yazıcı uyarılarını görüyorsa uyarı türleri + kapalı mı + kritik mi (kritik kapatılamaz)."""
+    if user is not None and not visible(user):
+        return []
+    muted = _muted(user)
+    return [{'key': a['key'], 'title': a['title'], 'level': a['level'], 'critical': a.get('critical', False),
+             'on': a['key'] not in muted} for a in ALERTS]
+
+
+def detail(conn, key, user=None):
+    # Ayrıntı sayfası bildirim değil: modüle erişimi olan (yönetici dahil) açıp bakabilir
+    if user is not None and not set(ALERT_MODULES) & set(user['modules']):
+        return None
     a = next((x for x in ALERTS if x['key'] == key), None)
     if not a:
         return None

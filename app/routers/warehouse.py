@@ -42,9 +42,10 @@ def pending(user=Depends(warehouse_user), conn=db.DB):
 
 
 @router.get('/warehouse/history')
-def history(user=Depends(warehouse_user), conn=db.DB):
+def history(date_from: str = '', date_to: str = '', user=Depends(warehouse_user), conn=db.DB):
+    dc, da = db.date_cond('op.approved_at', date_from, date_to)
     return db.rows(conn.execute(
-        _PART_SELECT + ' WHERE op.approved_at IS NOT NULL ORDER BY op.approved_at DESC LIMIT 500', ()))
+        _PART_SELECT + f' WHERE op.approved_at IS NOT NULL AND {dc} ORDER BY op.approved_at DESC LIMIT 500', tuple(da)))
 
 
 @router.post('/warehouse/approve')

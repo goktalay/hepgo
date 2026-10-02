@@ -90,7 +90,13 @@ def _summary(conn, where='1=1', args=()):
 
 
 @router.get('/visits')
-def visits(user=Depends(sec_user), conn=db.DB):
+def visits(scope: str = '', date_from: str = '', date_to: str = '', user=Depends(sec_user), conn=db.DB):
+    """scope=inside: içerideki misafirler; scope=history: çıkış yapmışlar (tarih aralığıyla, geliş tarihine göre)."""
+    if scope == 'inside':
+        return _summary(conn, 'g.left_at IS NULL')
+    if scope == 'history':
+        dc, da = db.date_cond('g.arrived_at', date_from, date_to)
+        return _summary(conn, f'g.left_at IS NOT NULL AND {dc}', tuple(da))
     return _summary(conn)
 
 
@@ -209,8 +215,11 @@ FROM cargo k JOIN users r ON r.id = k.recipient_id LEFT JOIN users c ON c.id = k
 
 
 @router.get('/cargo')
-def cargo_list(user=Depends(sec_user), conn=db.DB):
-    return db.rows(conn.execute(CARGO_SELECT + ' ORDER BY k.delivered_at IS NOT NULL, k.created_at DESC LIMIT 500'))
+def cargo_list(date_from: str = '', date_to: str = '', user=Depends(sec_user), conn=db.DB):
+    # Bekleyen kargolar her zaman; teslim edilenler teslim tarihine göre (tarih aralığı verilirse)
+    dc, da = db.date_cond('k.delivered_at', date_from, date_to)
+    where = f'(k.delivered_at IS NULL OR ({dc}))' if (date_from or date_to) else '1=1'
+    return db.rows(conn.execute(CARGO_SELECT + f' WHERE {where} ORDER BY k.delivered_at IS NOT NULL, k.created_at DESC LIMIT 500', tuple(da)))
 
 
 @router.post('/cargo')
@@ -265,6 +274,7 @@ def receive(cid: int, user=Depends(auth.current_user), conn=db.DB):
 def my_guests(user=Depends(auth.current_user), conn=db.DB):
     """Görüşülecek kişi olarak ilişkilendirildiğim misafir kayıtları (son 60)."""
     rows = _summary(conn, 'g.id IN (SELECT visit_id FROM guest_visit_hosts WHERE user_id = ?)', (user['id'],))[:60]
+    conn.execute('UPDATE guest_visit_hosts SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL', (db.now(), user['id']))   # bildirim kalkar
     for r in rows:
         r['people'] = db.rows(conn.execute(
             '''SELECT gp.full_name, gp.title, gp.company_text, c.name AS company_name, c.logo AS company_logo

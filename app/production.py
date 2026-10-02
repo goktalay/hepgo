@@ -40,12 +40,16 @@ MIN_ELECTRONICS_STAFF = 1
 
 EVENT_TEXT = {
     'URETIME_BASLADI': 'Üretime başladı',
+    'YAZICIYA_GONDERILDI': 'G-code yazıcıya gönderildi, baskı başlatıldı',
+    'DOGRUDAN_DEPO': 'Doğrudan depoya eklendi (Sistem Yöneticisi onayıyla, basılmış)',
+    'DOGRUDAN_TALEP': 'Doğrudan depoya ekleme talebi (onay bekliyor)',
     'URETIM_TAMAMLANDI': 'Üretim tamamlandı, depoya teslim edildi',
     'HATA': 'Hata verdi',
     'DEPO_ONAY': 'Depo teslim aldı (onay)',
     'MONTAJA_ALINDI': 'Montaja alındı',
     'MONTAJ_TAMAMLANDI': 'Montaj tamamlandı',
     'ELEKTRONIK_MONTAJ': 'Elektronik komponentler monte edildi',
+    'AKTARILDI': 'Siparişler arası aktarıldı',
 }
 
 
@@ -81,9 +85,9 @@ def recompute(conn, order_id, at=None):
     states = [p['state'] for p in parts]
     in_depot = all(s in (WAREHOUSE, ASSEMBLY) for s in states)
 
-    product = db.row(conn.execute('SELECT p.type, o.id, o.code, o.product_id FROM orders o JOIN products p ON p.id = o.product_id '
+    product = db.row(conn.execute('SELECT p.schema, o.id, o.code, o.product_id FROM orders o JOIN products p ON p.id = o.product_id '
                                   'WHERE o.id = ?', (order_id,)))
-    if product['type'] == spares.SPARE and in_depot and all(p['approved_at'] for p in parts):
+    if spares.is_stocked(product) and in_depot and all(p['approved_at'] for p in parts):
         # Yedek parça: montaj yok; depo onayıyla sipariş tamamlanır, bir baskıda üretilen adet stoğa girer
         now = at or db.now()
         conn.execute("UPDATE orders SET status = 'TAMAMLANDI', completed_at = ? WHERE id = ?", (now, order_id))
@@ -114,6 +118,7 @@ def order_summaries(conn, where='1=1', args=()):
     orders = db.rows(conn.execute(
         f'''SELECT o.*, u.full_name AS created_by_name, p.name AS product_name, p.serial AS product_serial,
                    p.code AS product_code, p.schema AS product_schema, p.queue_prefix, p.type AS product_type,
+                   (p.schema LIKE 'part-%' OR p.schema LIKE 'spare-%') AS product_stocked,
                    p.per_print, c.name AS company_name, c.logo AS company_logo
             FROM orders o LEFT JOIN users u ON u.id = o.created_by
             LEFT JOIN products p ON p.id = o.product_id
@@ -200,12 +205,11 @@ def _staff(conn, staff_ids, role=auth.ASSEMBLER, minimum=MIN_ASSEMBLY_STAFF):
     ids = sorted(set(staff_ids or []))
     if len(ids) < minimum:
         raise HTTPException(400, f'En az {minimum} {role.lower()} seçin')
-    ok = {r[0] for r in conn.execute(
-        f'''SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id
-            WHERE r.role = ? AND u.active = 1 AND u.id IN ({','.join('?' * len(ids))})''',
-        (role, *ids))}
+    ok = {u for u in ids if auth.has_role_or_intern(conn, u, role)}   # yardımcı personelde stajer de olur
     if ok != set(ids):
         raise HTTPException(400, f'Seçilen kişilerden biri {role.lower()} değil')
+    if not set(ids) - auth.interns(conn):
+        raise HTTPException(400, f'Stajerlerin yanında en az 1 {role.lower()} seçin')
     return ids
 
 
@@ -433,7 +437,8 @@ def unscrap(conn, order_id, user_id):
     o = db.row(conn.execute('SELECT id, code, status FROM orders WHERE id = ?', (order_id,)))
     if not o or o['status'] != 'HURDA':
         return False
-    conn.execute("UPDATE orders SET status = 'TAMAMLANDI', scrapped_at = NULL, scrap_reason = NULL WHERE id = ?", (order_id,))
+    conn.execute("UPDATE orders SET status = 'TAMAMLANDI', scrapped_at = NULL, scrap_reason = NULL, material_review_at = NULL WHERE id = ?", (order_id,))
+    conn.execute("DELETE FROM material_moves WHERE order_id = ? AND source = 'UCUS'", (order_id,))   # malzeme değerlendirmesi geri alınır
     db.audit(conn, user_id, 'Uçağı hurdadan geri aldı', 'order', order_id, o['code'])
     return True
 
@@ -457,7 +462,7 @@ def order_timeline(conn, order):
     all_made = len(produced) == len(parts) and parts
     all_approved = len(approved) == len(parts) and parts
     status = order['status']
-    spare = order.get('product_type') == 'YEDEK_PARCA'
+    spare = bool(order.get('product_stocked'))   # basılı stok parçası: montaj yok
     after = status in AFTER_ASSEMBLY or status in IN_ASSEMBLY
 
     def stage(key, title, state, at=None, by=None, lines=(), steps=()):

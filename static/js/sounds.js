@@ -16,14 +16,18 @@ export const EVENTS = [
   ['announcement', 'Duyuru', 'Yeni duyuru'],
   ['signature', 'İmza', 'İmzanızı bekleyen evrak'],
   ['calendar', 'Takvim', 'Randevu / hatırlatma zamanı'],
+  ['mail', 'E-posta', 'Gmail gelen kutusuna yeni e-posta'],
+  ['meeting', 'Toplantı daveti', 'Bir toplantıya davet edildiniz'],
+  ['meeting_soon', 'Toplantı hatırlatması', 'Toplantı zamanı yaklaşıyor'],
   ['online', 'Kullanıcı çevrimiçi oldu', 'Bir kullanıcı sisteme girdi'],
   ['offline', 'Kullanıcı çevrimdışı oldu', 'Bir kullanıcı sistemden çıktı / ayrıldı'],
 ];
 export const DEFAULTS = { alert: 'Dikkat', critical: 'Alarm', notification: 'Nazik', message: 'Mesaj', cargo: 'Kapı Zili', call: 'Telefon',
-  guest: 'Üçlü Zil', announcement: 'Çan', signature: 'Kristal', calendar: 'Marimba', online: 'Arp Yukarı', offline: 'Arp Aşağı' };
+  guest: 'Üçlü Zil', announcement: 'Çan', signature: 'Kristal', calendar: 'Marimba', mail: 'Damla', meeting: 'Ksilofon', meeting_soon: 'Rüzgâr Çanı', online: 'Arp Yukarı', offline: 'Arp Aşağı' };
 // Bildirim anahtarı (app/notifications.py) → ses olayı
 const NOTIFY_EVENT = { 'cargo-waiting': 'cargo', 'call-waiting': 'call', 'guest-visit': 'guest', announcements: 'announcement',
-  'signature-pending': 'signature', 'calendar-due': 'calendar' };
+  'signature-pending': 'signature', 'calendar-due': 'calendar', 'mail-unread': 'mail',
+  'meeting-invite': 'meeting', 'meeting-soon': 'meeting_soon' };
 export const eventOfNotification = key => NOTIFY_EVENT[key] || 'notification';
 
 // ---------- ses üretimi

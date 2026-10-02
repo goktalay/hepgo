@@ -1,11 +1,14 @@
 // Saha Yönetimi: görevler; görev detayında Uçuş, Masraf ve Yol alt modülleri; görev yerleri ve araçlar
 import { api, fileUrl, uploadChunked, uploadLarge } from '../api.js';
 import { icons } from '../icons.js';
-import { printTaskForm } from '../print.js';
+import { printTaskForm, printTaskReport } from '../print.js';
 import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../status.js';
+import { segIcon } from '../segicons.js';
+import { stockPicker } from '../stockpick.js';
 import {
-  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, pageHead, pref,
+  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
+  internTag, nameWithIntern, periodFilter
 } from '../ui.js';
 import { clock } from '../chart.js';
 import { render3D } from './replay3d.js';
@@ -102,17 +105,19 @@ async function renderList(view, ctx) {
         h('td', { class: 'muted' }, fmtDateTime(t.created_at)))))))
       : h('div', { class: 'card empty' }, 'Filtreye uyan görev yok'));
   };
+  const period = periodFilter('fieldTasks', () => load(), { title: 'Açık görevler her zaman; bitenler seçilen dönemde' });
   const load = async () => {
-    [tasks, available] = await Promise.all([api.get('/api/field/tasks'),
+    [tasks, available] = await Promise.all([api.get(`/api/field/tasks?${period.qs()}`),
       manager ? api.get('/api/field/available-aircraft').then(a => a.length).catch(() => null) : null]);
     draw();
   };
   q.addEventListener('input', draw);
   [status, driver, place, mineOnly].forEach(el => el.addEventListener('change', draw));
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', right: fieldViewSwitch('tasks') }),
+    pageHead('Saha Yönetimi', { back: '#/' }),
+    fieldViewSwitch('tasks'),
     stats,
-    h('div', { class: 'filters' }, q, status, driver, place, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
+    h('div', { class: 'filters' }, q, status, driver, place, period.el, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
       h('span', { class: 'spacer' }),
       h('a', { class: 'btn', href: '#/field/places' }, 'Görev Yerleri ve Araçlar'),
       manager ? h('button', { class: 'btn primary', onclick: () => newTask(ctx, load) }, svgIcon(icons.plus), 'Yeni Saha Görevi') : null),
@@ -122,7 +127,7 @@ async function renderList(view, ctx) {
 }
 
 // ---------- Görünüm seçici: Saha Görevi (görev listesi) | Uçuş Yönetimi (görevlerdeki uçaklar)
-const fieldViewSwitch = current => segmented([['tasks', 'Saha Görevi'], ['flights', 'Uçuş Yönetimi']], current, v => {
+const fieldViewSwitch = current => moduleTabs([['tasks', 'Saha Görevi'], ['flights', 'Uçuş Yönetimi']], current, v => {
   setPref('field.view', v);
   location.hash = v === 'flights' ? '#/field/flights' : '#/field';
   if (v === 'tasks') window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -158,14 +163,16 @@ async function renderFlightsList(view, ctx) {
       : h('div', { class: 'card empty' }, mode === 'ready' ? 'Uçuşa hazır uçak yok. Saha görevine eklenen, montajı bitmiş uçaklar burada görünür.'
         : 'Kayıt yok'));
   };
-  const load = async () => { rows = await api.get(`/api/field/flights?view=${mode}`); draw(); };
+  const period = periodFilter('fieldFlights', () => load(), { title: 'Uçmuş / tüm uçaklarda görevin başladığı dönem' });
+  const load = async () => { period.el.hidden = mode === 'ready'; rows = await api.get(`/api/field/flights?view=${mode}&${period.qs()}`); draw(); };
   const modeSeg = selectInput([['ready', 'Uçuşa hazır'], ['flown', 'Uçmuş'], ['all', 'Tüm uçaklar']], { all: null, value: mode });
   modeSeg.addEventListener('change', () => { mode = modeSeg.value; setPref('field.flights', mode); load().catch(toastError); });
   q.addEventListener('input', draw);
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar', right: fieldViewSwitch('flights') }),
+    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar' }),
+    fieldViewSwitch('flights'),
     stats,
-    h('div', { class: 'filters' }, modeSeg, q),
+    h('div', { class: 'filters' }, modeSeg, q, period.el),
     body);
   await load();
   every(30000, () => load().catch(() => {}));
@@ -204,8 +211,8 @@ async function newTask(ctx, done) {
   const note = h('textarea', { class: 'input', rows: 2, placeholder: 'İsteğe bağlı' });
   const drawStaff = () => {
     clear(person, h('option', { value: '' }, 'Personel seçin'),
-      staff.filter(s => !chosen.has(s.id)).map(s => h('option', { value: s.id }, s.full_name)));
-    clear(chips, chosen.size ? [...chosen.values()].map(s => h('span', { class: 'chip x' }, s.full_name,
+      staff.filter(s => !chosen.has(s.id)).map(s => h('option', { value: s.id }, nameWithIntern(s))));
+    clear(chips, chosen.size ? [...chosen.values()].map(s => h('span', { class: `chip x ${s.intern ? 'intern' : ''}` }, s.full_name, internTag(s),
       h('button', { type: 'button', 'aria-label': 'Çıkar', onclick: () => { chosen.delete(s.id); drawStaff(); } }, '×')))
       : h('span', { class: 'small muted' }, 'Henüz personel eklenmedi'));
   };
@@ -251,10 +258,19 @@ async function newTask(ctx, done) {
 async function renderTask(view, id, ctx) {
   let tab = pref('field.tab', 'flights');
   const head = h('div');
-  const tabSeg = segmented([['flights', 'Uçuş Yönetimi'], ['expenses', 'Masraf Yönetimi'], ['road', 'Yol Yönetimi']], tab,
-    v => { tab = v; setPref('field.tab', v); drawTab(); });   // alt modül seçimi: başlığın en sağında
+  // Yerleşim: üstte görev bilgileri (katlanabilir), altında alt modül sekmeleri, en altta seçili alt modül
+  const TABS = [['flights', 'Uçuş Yönetimi'], ['expenses', 'Masraf Yönetimi'], ['road', 'Yol Yönetimi'], ['equipment', 'Ekipman Listesi'], ['isg', 'İSG Kontrol']];
+  // Sekme çubuğu: solda alt modüller, en sağda seçili alt modülün işlemleri (Ekle vb.; formlar açılır pencerede)
+  const tabList = h('div', { class: 'tabbar', role: 'tablist' });
+  const tabActs = h('div', { class: 'task-tab-acts' });
+  const tabSeg = h('div', { class: 'task-tabs' }, tabList, h('span', { class: 'spacer' }), tabActs);
+  const setTabActions = (...nodes) => clear(tabActs, nodes.flat().filter(Boolean));
+  const drawTabs = () => clear(tabList, TABS.map(([k, l]) => h('button', { class: `tab ${k === tab ? 'on' : ''}`, type: 'button', role: 'tab',
+    'aria-selected': k === tab ? 'true' : 'false', onclick: () => { tab = k; setPref('field.tab', k); drawTabs(); drawTab(); } }, segIcon(l), l)));
+  drawTabs();
   const stats = statStrip();
-  const info = h('div', { class: 'card card-pad' });
+  let infoOpen = pref('field.infoOpen', '1') === '1';
+  const info = h('div', { class: 'card task-info' });
   const body = h('div');
   let t;
 
@@ -266,19 +282,36 @@ async function renderTask(view, id, ctx) {
 
   function drawHead() {
     const c = t.can;
+    // Başlığın en sağında iki birleşik düğme grubu: görev durumu · belgeler (sade, tek renk; vurgu yalnız ikon renginde)
     const actions = [];
+    const ico = (d, tone) => { const e = svgIcon(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`); if (tone) e.classList.add(tone); return e; };
+    const I = {
+      play: '<path d="M7 5l12 7-12 7z"/>', stop: '<path d="M6 6l12 12M18 6L6 18"/>',
+      ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', fail: '<path d="M6 6l12 12M18 6L6 18"/>',
+      form: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+      print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+    };
     if (c.manage && t.status === 'BASLANGIC') {
-      actions.push(h('button', { class: 'btn danger', onclick: cancel }, 'Görevi İptal Et'),
-        h('button', { class: 'btn primary', onclick: start }, 'Görevi Başlat'));
+      actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Görev durumu' },
+        h('button', { class: 'btn', type: 'button', onclick: cancel }, ico(I.stop, 'ic-bad'), 'İptal Et'),
+        h('button', { class: 'btn', type: 'button', onclick: start }, ico(I.play, 'ic-pri'), 'Görevi Başlat')));
     } else if (c.manage && t.status === 'GOREVDE') {
-      actions.push(h('button', { class: 'btn danger', onclick: () => finish(false) }, 'Başarısız Tamamla'),
-        h('button', { class: 'btn success', onclick: () => finish(true) }, 'Başarılı Tamamla'));
+      actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Görevi tamamla' },
+        h('button', { class: 'btn', type: 'button', title: 'Görevi başarılı olarak tamamla', onclick: () => finish(true) }, ico(I.ok, 'ic-ok'), 'Başarılı'),
+        h('button', { class: 'btn', type: 'button', title: 'Görevi başarısız olarak tamamla', onclick: () => finish(false) }, ico(I.fail, 'ic-bad'), 'Başarısız')));
     }
-    actions.push(h('button', { class: 'btn', onclick: () => printTaskForm(t, ctx.meta.company) }, 'Görev Formunu Yazdır'));
+    const formBtn = h('button', { class: 'btn', type: 'button', title: 'Boş / doldurulacak görev formu', onclick: () => printTaskForm(t, ctx.meta.company) }, ico(I.form), 'Görev Formu');
+    const repBtn = h('button', { class: 'btn', type: 'button', title: 'Adım adım yapılan işlemler, görev tanımları, İSG, ekipman, imza ve uçuş raporları — tek belgede' }, ico(I.print), 'Görev Raporu');
+    repBtn.addEventListener('click', async () => {
+      repBtn.disabled = true;
+      try { printTaskReport(await api.get(`/api/field/tasks/${id}/report`), ctx.meta.company); }
+      catch (err) { toastError(err); } finally { repBtn.disabled = false; }
+    });
+    actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Belgeler' }, formBtn, repBtn));
     clear(head, pageHead(`Saha görevi ${t.code}`, {
       back: '#/field',
       sub: h('span', null, badge(TASK_STATES, t.status), '  ', `Saha sorumlusu: ${t.lead_name || '—'}`),
-      right: h('div', { class: 'head-right' }, actions, tabSeg),
+      right: h('div', { class: 'head-right' }, actions),
     }));
     stats.set([
       { label: 'Uçuş', value: t.flights.length },
@@ -288,23 +321,31 @@ async function renderTask(view, id, ctx) {
       { label: 'Görev süresi', value: t.started_at ? fmtDuration(t.duration_seconds) : '—' },
       { label: 'Toplam havada', value: clock(t.flights.reduce((a, f) => a + (f.flight_s || 0), 0)), sub: 'hazır raporlardan' },
     ]);
-    clear(info, h('dl', { class: 'kv task-kv' },
-      h('dt', null, 'Durum'), h('dd', null, badge(TASK_STATES, t.status), t.result ? ` · ${t.result === 'BASARILI' ? 'Başarılı' : 'Başarısız'}` : ''),
-      h('dt', null, 'Saha sorumlusu'), h('dd', null, t.lead_name || '—'),
-      h('dt', null, 'Pilot'), h('dd', null, t.pilot_name || '—'),
-      h('dt', null, 'Şoför'), h('dd', null, driversOf(t) || '—'),
-      h('dt', null, 'Personel'), h('dd', null, t.staff.map(s => s.full_name).join(', ') || '—'),
-      h('dt', null, 'Uçaklar'), h('dd', { class: 'mono' }, t.aircraft || '—'),
-      h('dt', null, 'Görev yeri'), h('dd', null, t.location_name || '—'),
-      h('dt', null, 'Araç plakası'), h('dd', { class: 'mono' }, t.vehicle_plate || '—'),
-      h('dt', null, 'Oluşturan'), h('dd', null, `${t.created_by_name || '—'} · ${fmtDateTime(t.created_at)}`),
-      t.started_at ? [h('dt', null, 'Başlama / bitiş'), h('dd', null, `${fmtDateTime(t.started_at)} – ${t.finished_at ? fmtDateTime(t.finished_at) : 'devam ediyor'}`)] : null,
-      t.note ? [h('dt', null, 'Not'), h('dd', null, t.note)] : null));
+    const plates = t.flights.length ? h('span', { class: 'task-plates' }, t.flights.map(f => f.queue_no ? queuePlate(f.queue_no) : h('span', { class: 'mono' }, f.order_code))) : '—';
+    const kv = (k, v) => h('div', { class: 'task-kv' }, h('span', null, k), h('b', null, v || '—'));
+    const toggle = h('button', { class: 'task-toggle', type: 'button', title: infoOpen ? 'Bilgileri gizle' : 'Bilgileri göster' }, infoOpen ? '▴' : '▾');
+    const summary = h('div', { class: 'task-sum', onclick: () => { infoOpen = !infoOpen; setPref('field.infoOpen', infoOpen ? '1' : '0'); drawHead(); } },
+      h('b', null, 'Görev Bilgileri'), badge(TASK_STATES, t.status),
+      t.result ? h('span', { class: `badge ${t.result === 'BASARILI' ? 'green' : 'red'}` }, t.result === 'BASARILI' ? 'Başarılı' : 'Başarısız') : null,
+      h('span', { class: 'task-sum-txt' }, [t.lead_name, t.pilot_name, t.location_name].filter(Boolean).join(' · ')),
+      infoOpen ? null : plates, h('span', { class: 'spacer' }), toggle);
+    clear(info, summary, infoOpen ? h('div', { class: 'task-info-body' },
+      stats,
+      h('div', { class: 'task-kv-grid' },
+        kv('Saha sorumlusu', t.lead_name), kv('Pilot', t.pilot_name), kv('Şoför', driversOf(t)),
+        kv('Personel', t.staff.map(s => s.full_name).join(', ')), kv('Görev yeri', t.location_name), kv('Araç plakası', t.vehicle_plate),
+        kv('Oluşturan', `${t.created_by_name || '—'} · ${fmtDateTime(t.created_at)}`),
+        kv('Başlama / bitiş', t.started_at ? `${fmtDateTime(t.started_at)} – ${t.finished_at ? fmtDateTime(t.finished_at) : 'devam ediyor'}` : 'Başlamadı'),
+        h('div', { class: 'task-kv wide' }, h('span', null, 'Uçaklar'), plates),
+        t.note ? h('div', { class: 'task-kv wide' }, h('span', null, 'Not'), h('b', null, t.note)) : null)) : null);
   }
 
   function drawTab() {
+    setTabActions();
     if (tab === 'expenses') return drawExpenses();
     if (tab === 'road') return drawRoad();
+    if (tab === 'equipment') return drawEquipment();
+    if (tab === 'isg') return drawIsg();
     return drawFlights();
   }
 
@@ -436,16 +477,20 @@ async function renderTask(view, id, ctx) {
   // Masraf Yönetimi
   async function drawExpenses() {
     const [meta, people] = await Promise.all([api.get('/api/field/meta'), api.get('/api/people')]);
+    if (tab !== 'expenses') return;   // beklerken başka sekmeye geçildi
     const spender = h('select', { class: 'input' }, people.map(p => h('option', { value: p.id, selected: p.id === ctx.user.id }, p.full_name)));
     const date = h('input', { class: 'input', type: 'date', value: new Date().toISOString().slice(0, 10) });
     const cat = h('select', { class: 'input' }, meta.expense_categories.map(c => h('option', { value: c }, c)));
     const amount = h('input', { class: 'input', type: 'number', min: '0', step: '0.01', placeholder: '0,00' });
     const desc = h('input', { class: 'input', placeholder: 'Açıklama' });
     const receipt = h('input', { class: 'input', type: 'file', accept: 'image/*,.pdf', style: { height: 'auto', padding: '6px' } });
-    const add = h('button', { class: 'btn primary' }, svgIcon(icons.plus), 'Masraf Ekle');
-    add.addEventListener('click', async () => {
-      add.disabled = true;
-      try {
+    const addModal = () => modal({
+      title: 'Masraf Ekle',
+      body: h('div', null,
+        h('div', { class: 'row' }, field('Tarih', date), field('Tutar (₺)', amount)),
+        h('div', { class: 'row' }, field('Masrafı yapan', spender), field('Kategori', cat)),
+        field('Açıklama', desc), field('Fiş / fatura (isteğe bağlı)', receipt)),
+      actions: [{ label: 'Vazgeç' }, { label: 'Masraf Ekle', class: 'primary', onClick: async () => {
         if (!(Number(amount.value) > 0)) throw new Error('Tutar girin');
         const fd = new FormData();
         fd.append('spent_on', date.value);
@@ -457,8 +502,9 @@ async function renderTask(view, id, ctx) {
         await api.post(`/api/field/tasks/${id}/expenses`, fd);
         toast('Masraf eklendi');
         await load();
-      } catch (err) { toastError(err); } finally { add.disabled = false; }
+      } }],
     });
+    if (t.can.expenses) setTabActions(h('button', { class: 'btn primary', type: 'button', onclick: addModal }, svgIcon(icons.plus), 'Masraf Ekle'));
     const byCat = {};
     const byPerson = {};
     t.expenses.forEach(e => {
@@ -467,10 +513,6 @@ async function renderTask(view, id, ctx) {
       byPerson[who] = (byPerson[who] || 0) + e.amount;
     });
     clear(body,
-      t.can.expenses ? h('div', { class: 'card upload-card' },
-        h('div', { class: 'row' }, field('Tarih', date), field('Masrafı yapan', spender), field('Kategori', cat), field('Tutar (₺)', amount)),
-        h('div', { class: 'row' }, field('Açıklama', desc), field('Fiş / fatura (isteğe bağlı)', receipt),
-          h('div', { class: 'field', style: { flex: '0 0 auto' } }, add))) : null,
       Object.keys(byCat).length ? h('div', { class: 'chips', style: { justifyContent: 'flex-start', margin: '0 0 10px' } },
         Object.entries(byCat).map(([k, v]) => h('span', { class: 'chip' }, `${k}: ${tl(v)}`)),
         h('span', { class: 'chip', style: { fontWeight: 700 } }, `Toplam: ${tl(t.expense_total)}`)) : null,
@@ -495,9 +537,94 @@ async function renderTask(view, id, ctx) {
   }
 
   // Yol Yönetimi: görev yeri + göreve giden araçlar (her aracın şoförü ve km'leri ayrı)
+  // İSG Kontrol: görevdeki her kişinin KKD maddeleri için saha sorumlusunun Yaptı / Yapmadı işareti (raporda da görünür)
+  async function drawIsg() {
+    let list;
+    try { list = await api.get(`/api/field/tasks/${id}/isg`); } catch (err) { return clear(body, h('div', { class: 'card empty' }, err.message)); }
+    const can = t.can.isg;
+    const set = async (p, item, status) => {
+      try { list = await api.put(`/api/field/tasks/${id}/isg`, { user_id: p.user_id, item: item.name, status, note: item.note || '' }); render(); }
+      catch (err) { toastError(err); }
+    };
+    const render = () => {
+      const total = list.reduce((a, p) => a + p.ppe.length, 0), done = list.reduce((a, p) => a + p.ppe.filter(x => x.status).length, 0);
+      clear(body, h('div', { class: 'isgc' },
+        h('div', { class: 'card card-pad isgc-head' }, h('b', null, `İSG Kontrolü · ${done}/${total} madde işaretlendi`),
+          h('span', { class: 'small muted' }, can ? 'Her kişinin KKD maddeleri için sahada “Yaptı” ya da “Yapmadı” işaretleyin. Görev raporunda görünür.'
+            : 'İşaretlemeyi saha sorumlusu yapar.')),
+        list.map(p => h('section', { class: 'card card-pad isgc-person' },
+          h('div', { class: 'isgc-ph' }, h('b', null, p.name), h('span', { class: 'small muted' }, p.roles.join(', ')),
+            p.position ? h('span', { class: 'badge blue' }, p.position) : null),
+          p.emergency ? h('div', { class: 'isgc-em' }, h('b', null, 'Acil durum görevi: '), p.emergency) : null,
+          p.trainings_expired.length || p.trainings_missing.length ? h('div', { class: 'isgc-warn' },
+            p.trainings_expired.length ? `Süresi dolan eğitim: ${p.trainings_expired.join(', ')}. ` : '',
+            p.trainings_missing.length ? `Alındığı tarihi girilmemiş eğitim: ${p.trainings_missing.length}` : '') : null,
+          p.ppe.length ? h('table', { class: 'table isgc-table' },
+            h('thead', null, h('tr', null, ['KKD', 'Kullanım yeri / zamanı', 'Durum'].map(c => h('th', null, c)))),
+            h('tbody', null, p.ppe.map(x => h('tr', { class: x.status === 'YAPMADI' ? 'no' : x.status === 'YAPTI' ? 'yes' : '' },
+              h('td', null, x.name), h('td', { class: 'small' }, x.usage || ''),
+              h('td', { class: 'nowrap' },
+                h('button', { class: `isgc-btn yes ${x.status === 'YAPTI' ? 'on' : ''}`, type: 'button', disabled: !can, onclick: () => set(p, x, x.status === 'YAPTI' ? null : 'YAPTI') }, '✓ Yaptı'),
+                h('button', { class: `isgc-btn no ${x.status === 'YAPMADI' ? 'on' : ''}`, type: 'button', disabled: !can, onclick: () => set(p, x, x.status === 'YAPMADI' ? null : 'YAPMADI') }, '✗ Yapmadı'),
+                x.checked_by_name ? h('div', { class: 'small muted' }, `${x.checked_by_name} · ${fmtDateTime(x.checked_at)}`) : null)))))
+            : h('div', { class: 'small muted' }, 'Bu kişi için İK’da KKD tanımlı değil (İK › personel › İSG › KKD).')))));
+    };
+    render();
+  }
+
+  // Ekipman Listesi: Modül Ayarları'ndaki standart liste göreve kopyalanır; saha yöneticisi göreve özel çıkarır / ekler / miktar girer
+  function drawEquipment() {
+    const can = t.can.manage;
+    const list = t.equipment || [];
+    const fmtQ = v => Number(v).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+    const save = async (e, patch) => {
+      try { t.equipment = await api.put(`/api/field/tasks/${id}/equipment/${e.id}`, patch); drawEquipment(); } catch (err) { toastError(err); }
+    };
+    const rows = list.map((e, i) => {
+      const q = h('input', { class: 'input eq-qty', type: 'number', min: '0', step: 'any', value: e.qty, disabled: !can });
+      q.addEventListener('change', () => save(e, { qty: Number(q.value) || 0 }));
+      return h('tr', null,
+        h('td', { class: 'num muted' }, i + 1),
+        h('td', null, h('b', null, e.name), e.product_code ? h('span', { class: 'eq-code', style: { marginLeft: '6px' } }, e.product_code) : null, e.std_id ? null : h('span', { class: 'badge blue', style: { marginLeft: '6px' } }, 'göreve özel'),
+          e.note ? h('div', { class: 'small muted' }, e.note) : null),
+        h('td', { class: 'nowrap' }, can ? q : fmtQ(e.qty), ' ', h('span', { class: 'muted' }, e.unit || '')),
+        h('td', { class: 'num' }, can ? h('button', { class: 'btn sm danger', title: 'Bu görevden çıkar', onclick: async () => {
+          try { t.equipment = await api.del(`/api/field/tasks/${id}/equipment/${e.id}`); drawEquipment(); } catch (err) { toastError(err); }
+        } }, 'Çıkar') : null));
+    });
+    let chosen = null;
+    const unit0 = () => unit;
+    const pick = stockPicker({ onPick: p => { chosen = p; if (p?.unit) unit0().value = p.unit; } });
+    const qty = h('input', { class: 'input eq-qty', type: 'number', min: '0', step: 'any', value: '1' });
+    const unit = h('input', { class: 'input eq-unit', placeholder: 'birim', value: 'adet' });
+    const addModal = () => modal({
+      title: 'Ekipman Ekle',
+      body: h('div', null, field('Ekipman (stoktan)', pick.el), h('div', { class: 'row' }, field('Miktar', qty), field('Birim', unit)),
+        h('p', { class: 'small muted' }, 'Stoktaki tüm ürünlerden aranır (en az 3 harf). Yalnızca bu göreve eklenir; standart liste Program Ayarları › Modül Ayarları’ndan değişir.')),
+      actions: [{ label: 'Vazgeç' }, { label: 'Ekle', class: 'primary', onClick: async () => {
+        if (!chosen) throw new Error('Ekipmanı stoktaki ürünlerden arayıp seçin');
+        t.equipment = await api.post(`/api/field/tasks/${id}/equipment`, { product_id: chosen.id, qty: Number(qty.value) || 1, unit: unit.value.trim() });
+        drawEquipment();
+      } }],
+    });
+    if (can) setTabActions(h('div', { class: 'btn-join' },
+      h('button', { class: 'btn', type: 'button', title: 'Görevdeki değişiklikleri silip standart listeyi yeniden yükle', onclick: async () => {
+        if (!await confirmDialog('Standart listeye dön', 'Bu görevdeki ekipman değişiklikleri silinip standart liste yeniden yüklensin mi?', { okLabel: 'Standart listeyi yükle' })) return;
+        try { t.equipment = await api.post(`/api/field/tasks/${id}/equipment/reset`, {}); drawEquipment(); } catch (err) { toastError(err); }
+      } }, 'Standart Liste')),
+      h('button', { class: 'btn primary', type: 'button', onclick: addModal }, svgIcon(icons.plus), 'Ekipman Ekle'));
+    clear(body, h('div', { class: 'card card-pad' },
+      h('div', { class: 'eq-head' }, h('div', null, h('b', null, `Ekipman Listesi (${list.length} kalem)`),
+        h('div', { class: 'small muted' }, 'Program Ayarları › Modül Ayarları › Saha Yönetimi’ndeki standart liste her göreve otomatik eklenir. Bu görev için çıkarabilir, ekleyebilir ve miktarları değiştirebilirsiniz.'))),
+      list.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'eq-table' },
+        h('thead', null, h('tr', null, ['#', 'Ekipman', 'Miktar', ''].map(c => h('th', null, c)))), h('tbody', null, rows)))
+        : h('div', { class: 'empty small' }, 'Bu görev için ekipman listesi boş.')));
+  }
+
   async function drawRoad() {
     const [locations, vehicles, drivers] = await Promise.all([api.get('/api/field/locations'), api.get('/api/field/vehicles'),
       api.get(`/api/people?role=${encodeURIComponent('Şoför')}`)]);
+    if (tab !== 'road') return;
     const can = t.can.road;
     const opt = (list, cur, label, text) => [h('option', { value: '' }, label),
       ...list.filter(x => x.active !== 0 || x.id === cur).map(x => h('option', { value: x.id, selected: x.id === cur }, text(x)))];
@@ -551,15 +678,20 @@ async function renderTask(view, id, ctx) {
     const newDriver = h('select', { class: 'input' }, opt(drivers, t.driver_id, 'Şoför seçin', d => d.full_name));
     const newStart = kmInput('', false);
     newStart.placeholder = 'Başlangıç km';
-    const add = h('button', { class: 'btn', onclick: async () => {
-      if (!newPlate.value) return toastError(new Error('Araç seçin'));
-      try {
+    const addModal = () => modal({
+      title: 'Göreve Araç Ekle',
+      body: h('div', null, field('Araç', newPlate), field('Şoför', newDriver), field('Başlangıç km', newStart),
+        h('p', { class: 'small muted' }, 'Bitiş km’sini görev dönüşünde şoför ya da saha yöneticisi girer. Listede olmayan araç için: ',
+          h('a', { href: '#/field/places' }, 'görev yerlerini ve araçları yönet'), '.')),
+      actions: [{ label: 'Vazgeç' }, { label: 'Araç Ekle', class: 'primary', onClick: async () => {
+        if (!newPlate.value) throw new Error('Araç seçin');
         await api.post(`/api/field/tasks/${id}/vehicles`, { vehicle_id: Number(newPlate.value),
           driver_id: newDriver.value ? Number(newDriver.value) : null, start_km: num(newStart.value) });
         toast('Araç eklendi');
         await load();
-      } catch (err) { toastError(err); }
-    } }, svgIcon(icons.plus), 'Araç Ekle');
+      } }],
+    });
+    if (can) setTabActions(h('button', { class: 'btn primary', type: 'button', onclick: addModal }, svgIcon(icons.plus), 'Araç Ekle'));
 
     clear(body,
       h('div', { class: 'card card-pad', style: { marginBottom: '12px' } },
@@ -573,7 +705,6 @@ async function renderTask(view, id, ctx) {
         t.vehicles.length ? h('div', { class: 'table-wrap' }, h('table', null,
           h('thead', null, h('tr', null, ['Araç', 'Şoför', 'Başlangıç km', 'Bitiş km', 'Gidilen yol', ''].map(c => h('th', null, c)))),
           h('tbody', null, rows))) : h('div', { class: 'empty small' }, 'Bu göreve henüz araç eklenmedi'),
-        can ? h('div', { class: 'road-add' }, newPlate, newDriver, newStart, add) : null,
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' } },
           h('a', { href: '#/field/places' }, 'Görev yerlerini ve araçları yönet'),
           h('span', { style: { flex: 1 } }),
@@ -612,7 +743,7 @@ async function renderTask(view, id, ctx) {
     });
   }
 
-  clear(view, head, stats, info, h('div', { style: { marginTop: '16px' } }), body);
+  clear(view, head, info, tabSeg, body);
   await load();
   every(8000, () => { if (tab === 'flights' && t.flights.some(f => f.log_status === 'ISLENIYOR')) load().catch(() => {}); });
 }

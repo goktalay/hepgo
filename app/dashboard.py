@@ -12,9 +12,9 @@ from . import db
 WIDGETS = []
 
 
-def widget(key, title, desc, module=None, size=1, default=False):
+def widget(key, title, desc, module=None, size=1, default=False, modules=None):
     def deco(fn):
-        WIDGETS.append({'key': key, 'title': title, 'desc': desc, 'module': module, 'size': size, 'default': default, 'fn': fn})
+        WIDGETS.append({'key': key, 'title': title, 'desc': desc, 'module': module, 'modules': modules, 'size': size, 'default': default, 'fn': fn})
         return fn
     return deco
 
@@ -26,7 +26,8 @@ DEFAULT_LAYOUT = ['clock', 'calendar', 'announcements', 'kpi_production', 'chart
 def available(user):
     mods = set(user['modules'])
     order = {k: i + 1 for i, k in enumerate(DEFAULT_LAYOUT)}
-    return [{**w, 'default': order.get(w['key'], 0)} for w in WIDGETS if w['module'] is None or w['module'] in mods]
+    return [{**w, 'default': order.get(w['key'], 0)} for w in WIDGETS
+            if (w['module'] is None or w['module'] in mods) and (not w.get('modules') or set(w['modules']) & mods)]
 
 
 def data(conn, user, keys):
@@ -52,12 +53,24 @@ def w_modules(conn, user):
     return {}
 
 
-@widget('calendar', 'Takvimim', 'Bugünkü ve yaklaşan randevular, hatırlatmalar', size=1)
+@widget('calendar', 'Takvimim', 'Bugünkü ve yaklaşan randevular, hatırlatmalar ve toplantılar', size=1)
 def w_calendar(conn, user):
     from .routers.crm import _event_rows, _mine
     where, args = _mine(user['id'])
     rows = _event_rows(conn, f"{where} AND (e.starts_at >= ? OR (e.kind = 'HATIRLATMA' AND e.done_at IS NULL))", (*args, today()), limit=8)
-    return {'items': [{'title': r['title'], 'at': r['starts_at'], 'kind': r['kind'], 'done': bool(r['done_at'])} for r in rows]}
+    items = [{'title': r['title'], 'at': r['starts_at'], 'kind': r['kind'], 'done': bool(r['done_at']), 'href': '#/calendar'} for r in rows]
+    # Yaklaşan (ve süren) toplantılar: düzenlediğim ya da davet edildiğim, katılmayacağım demediklerim
+    since = (datetime.now() - timedelta(minutes=30)).isoformat(timespec='seconds')   # başlamayan toplantı 30 dk sonra düşer
+    for m in db.rows(conn.execute(
+            '''SELECT m.id, m.title, m.starts_at, m.ends_at, m.location, m.started_at, m.ended_at,
+                      (SELECT status FROM team_meeting_invites WHERE meeting_id = m.id AND user_id = ?) AS my_status
+               FROM team_meetings m WHERE m.cancelled_at IS NULL AND m.ended_at IS NULL AND (m.started_at IS NOT NULL OR m.starts_at >= ?)
+                 AND (m.created_by = ? OR m.id IN (SELECT meeting_id FROM team_meeting_invites WHERE user_id = ? AND status != 'KATILMIYOR'))
+               ORDER BY m.starts_at LIMIT 8''', (user['id'], since, user['id'], user['id']))):
+        items.append({'title': m['title'], 'at': m['starts_at'], 'kind': 'TOPLANTI', 'location': m['location'],
+                      'live': bool(m['started_at']), 'pending': m['my_status'] == 'BEKLIYOR', 'href': f'#/meetings/{m["id"]}'})
+    items.sort(key=lambda i: i['at'] or '')
+    return {'items': items[:16]}   # liste kutucukta kaydırılır
 
 
 @widget('notifications', 'Bildirimlerim', 'Sizi ilgilendiren bekleyen işler', size=1)
@@ -66,12 +79,10 @@ def w_notifications(conn, user):
     return {'items': notifications.for_user(conn, user)}
 
 
-@widget('alerts', 'Uyarılar', 'Sistem uyarıları (yazıcı, üretim)', size=1)
+@widget('alerts', 'Uyarılar', 'Sistem uyarıları (yazıcı, üretim)', size=1, modules=('production', 'printers'))
 def w_alerts(conn, user):
     from . import alerts
-    if set(user['modules']) <= {'security', 'announcements'}:
-        return {'items': []}
-    return {'items': alerts.summary(conn)}
+    return {'items': alerts.summary(conn, user)}
 
 
 @widget('my_cargo', 'Kargolarım', 'Sekreteryada bekleyen kargolarınız', size=1)
@@ -158,7 +169,7 @@ def w_kpi_printers(conn, user):
 @widget('kpi_warehouse', 'Depo', 'Onay bekleyen parçalar ve saha deposu onayı bekleyen uçaklar', 'warehouse')
 def w_kpi_warehouse(conn, user):
     return {'kpis': [
-        {'label': 'Onay bekleyen parça', 'value': count(conn, "SELECT COUNT(*) FROM order_parts WHERE state = 'DEPO' AND approved_at IS NULL"), 'href': '#/warehouse', 'tone': 'alert'},
+        {'label': 'Onay bekleyen parça', 'value': count(conn, "SELECT COUNT(*) FROM order_parts WHERE state = 'DEPO' AND approved_at IS NULL"), 'href': '#/mrp/approvals', 'tone': 'alert'},
         {'label': 'Saha deposu onayı', 'value': count(conn, "SELECT COUNT(*) FROM orders WHERE status = 'SAHA_ONAY'")},
         {'label': 'Saha deposundaki uçak', 'value': count(conn, "SELECT COUNT(*) FROM orders o JOIN products p ON p.id = o.product_id WHERE o.status = 'TAMAMLANDI' AND p.type = 'MAMUL'"), 'tone': 'ok'},
     ]}
@@ -169,7 +180,7 @@ def w_kpi_stock(conn, user):
     from . import spares
     rows = [r for r in spares.summary(conn) if r['per_aircraft']]
     lim = min(rows, key=lambda r: r['enough_for'] if r['enough_for'] is not None else 1e9) if rows else None
-    return {'kpis': [{'label': 'Stok yeter (uçak)', 'value': lim['enough_for'] if lim else '—', 'tone': 'alert' if lim and not lim['enough_for'] else 'ok', 'href': '#/stock'},
+    return {'kpis': [{'label': 'Stok yeter (uçak)', 'value': lim['enough_for'] if lim else '—', 'tone': 'alert' if lim and not lim['enough_for'] else 'ok', 'href': '#/mrp/semi'},
                      {'label': 'Kısıtlayan parça', 'value': lim['code'] if lim else '—'}]}
 
 

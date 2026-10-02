@@ -45,6 +45,11 @@ def main():
         # Yeni yazıcı ilk boş yere: sol alt 2. sıra (2 numara sağa taşındı)
         ok(a.post('/api/printers', json={'name': '18', 'ip': '10.0.0.18'}))
         assert next(p for p in ok(a.get('/api/printers')) if p['name'] == '18')['rack_slot'] == 2
+        # Sıralama ekranı: tüm yazıcılar birlikte kaydedilir; bir kata 15'ten fazla yazıcı konabilir
+        allp = sorted(ok(a.get('/api/printers')), key=lambda p: int(p['name']))
+        ok(a.put('/api/printers/layout', json={'items': [{'id': p['id'], 'side': 'R', 'level': 2, 'slot': n + 1} for n, p in enumerate(allp)]}))
+        assert {(p['rack_side'], p['rack_level']) for p in ok(a.get('/api/printers'))} == {('R', 2)}
+        assert max(p['rack_slot'] for p in ok(a.get('/api/printers'))) == 18
         ok(a.post('/api/users', json={'username': 'uret', 'full_name': 'Üretim', 'roles': ['Montaj Personeli'], 'password': 'sifre-1234'}))
     with TestClient(app) as u:   # yalnızca üretim modülü olan (montaj personeli) odayı görür, yerleşimi değiştiremez
         ok(u.post('/api/auth/login', json={'username': 'uret', 'password': 'sifre-1234'}))

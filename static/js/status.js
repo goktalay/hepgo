@@ -42,9 +42,9 @@ export const PRINTER_STATES = {
   CEVRIMDISI: { label: 'Çevrimdışı', badge: 'gray' },
 };
 
-// Sipariş durumu: tamamlanan yedek parça siparişi saha deposuna değil stoğa girer
+// Sipariş durumu: tamamlanan parça baskısı siparişi saha deposuna değil stoğa girer
 export function orderBadge(o) {
-  if (o.product_type === 'YEDEK_PARCA' && o.status === 'TAMAMLANDI') return h('span', { class: 'badge purple' }, 'Stoğa girdi');
+  if (o.product_stocked && o.status === 'TAMAMLANDI') return h('span', { class: 'badge purple' }, 'Stoğa girdi');
   return badge(ORDER_STATES, o.status);
 }
 

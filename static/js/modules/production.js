@@ -1,9 +1,11 @@
 // Üretim Yönetimi: sipariş panosu (Todo / Liste / Kart) ve parça bazlı sipariş detayı
+import { setListExport } from '../listexport.js';
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import { layerToggle, loadPlane, partInfoLines, renderAssembly, renderPlane } from '../plane.js';
 import { logoOf } from './companies.js';
 import { printWipReport } from '../print.js';
+import { partInPrinter } from '../gcode3d.js';
 import { ORDER_STATES, PART_STATES, PRINTER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
   clear, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fmtMinutes, h, matches, modal, pageHead, pref,
@@ -20,11 +22,21 @@ const PART_OPERATORS = ['Sistem Yöneticisi', 'Üretim Yöneticisi', 'Üretim So
 
 export async function render(view, params, ctx) {
   if (params[0]) return renderOrder(view, Number(params[0]), ctx);
-  return renderBoard(view);
+  return renderBoard(view, ctx);
+}
+
+// Üretim Yönetimi alt-modül sekmeleri: Yarı Mamul (üretim panosu), İş Emri Yönetimi ve Yazıcı Yönetimi.
+export function subnav(active, ctx) {
+  const mk = (k, label, href, ico) => h('button', { class: k === active ? 'on' : '', type: 'button', onclick: () => { location.hash = href; } },
+    svgIcon(icons[ico]), label);
+  const tabs = [mk('room', 'Yarı Mamul', '#/production', 'stock')];
+  if (ctx.user.modules.includes('orders')) tabs.push(mk('is-emri', 'İş Emri Yönetimi', '#/orders', 'orders'));
+  if (ctx.user.modules.includes('printers')) tabs.push(mk('printers', 'Yazıcı Yönetimi', '#/printers', 'printers'));
+  return h('div', { class: 'module-tabs' }, h('div', { class: 'seg seg-tabs' }, tabs));
 }
 
 // ---------- Pano ----------
-async function renderBoard(view) {
+async function renderBoard(view, ctx) {
   let mode = pref('production.view', 'todo');
   const showDone = h('input', { type: 'checkbox' });
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Sipariş, firma, kişi, kuyruk no ara…', style: { width: '220px' } });
@@ -41,6 +53,9 @@ async function renderBoard(view) {
       (!product.value || String(o.product_id) === product.value) &&
       (!onlyErrors.checked || o.counts.HATA) &&
       matches(q.value, o.code, o.created_by_name, o.queue_no, o.product_name, o.product_serial, o.company_name));
+    setListExport(() => ({ columns: ['Sipariş', 'Kuyruk no', 'Firma', 'Ürün', 'Durum', 'Siparişi veren', 'Sipariş tarihi', 'Başlama', 'Bitiş', 'İlerleme %'],
+      rows: list.map(o => [o.code, o.queue_no || '', o.company_name || '', o.product_name || '', ORDER_STATES[o.status]?.label || o.status, o.created_by_name || '', o.created_at, o.start_date || '', o.end_date || '',
+        o.progress != null ? Math.round(o.progress) : '']) }));
     colBar.hidden = mode !== 'todo';
     if (mode === 'todo') {
       drawColBar(list);
@@ -70,8 +85,9 @@ async function renderBoard(view) {
   function drawColBar(list) { colBar.set(columns, colOptions(list)); }
 
   clear(view,
-    pageHead('Üretim Yönetimi', { back: '#/', right: h('div', { class: 'head-right' },
+    pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', right: h('div', { class: 'head-right' },
       segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); })) }),
+    subnav('room', ctx),
     h('div', { class: 'filters' },
       q, status, product, colBar,
       h('label', { class: 'check' }, onlyErrors, 'Hatalı parçası olanlar'),
@@ -95,8 +111,8 @@ function orderCard(o) {
   return h('div', { class: 'card order-card', onclick: () => openOrder(o) },
     h('div', { class: 'top' }, h('span', { class: 'code' }, o.code), orderBadge(o)),
     companyTag(o),
-    h('div', { class: 'small muted' }, o.product_type === 'YEDEK_PARCA'
-      ? `Yedek parça · ${o.product_name} · ${o.per_print} adet` : `${o.product_name} · ${o.product_serial}`),
+    h('div', { class: 'small muted' }, o.product_stocked
+      ? `Parça baskısı · ${o.product_name} · ${o.per_print} adet` : `${o.product_name} · ${o.product_serial}`),
     h('dl', null,
       h('dt', null, 'Siparişi veren'), h('dd', null, o.created_by_name || '—'),
       h('dt', null, 'Sipariş'), h('dd', null, fmtDate(o.created_at)),
@@ -136,7 +152,7 @@ function listView(list) {
 async function renderOrder(view, id, ctx) {
   let order = await api.get(`/api/orders/${id}`);
   const plane = await loadPlane(order.product_id);
-  const spare = order.product_type === 'YEDEK_PARCA';   // yedek parça: montaj yok, parça görünümünde kalır
+  const spare = !!order.product_stocked;   // basılı stok parçası: montaj yok, parça görünümünde kalır
   if (!spare && ASSEMBLY_VIEW.includes(order.status)) return renderAssemblyOrder(view, order, plane, ctx);
   const canOperate = ctx.user.roles.some(r => PART_OPERATORS.includes(r));
   let byPart = new Map(order.parts.map(p => [p.part_id, p]));
@@ -168,6 +184,7 @@ async function renderOrder(view, id, ctx) {
           ? secondsBetween(op.printer_started_at, op.printer_done_at || new Date().toISOString()) : secondsSince(op.started_at)))}`
           + (part.print_minutes ? ` / ${fmtMinutes(part.print_minutes)}` : '') : null,
         ...waitLines(op),
+        op.direct_pending ? 'Doğrudan depo ekleme: onay bekliyor' : null,
         op.state === 'DEPO' && !op.approved_at ? 'Depo onayı bekliyor' : null,
         part.layer === 'electronics' ? ekStateText(op) : null,
         ...partInfoLines(part, plane.groups),
@@ -295,10 +312,12 @@ function printBlock(part, detail) {
 }
 
 function orderHead(order, plane, ctx) {
+  // Üst satır: ← · firma logosu · sipariş no · durum; alt satır: diğer bilgiler
   return pageHead(h('span', { class: 'order-title' }, order.company_name
-    ? logoOf({ name: order.company_name, logo: order.company_logo }, 'co-logo md') : null, order.code), {
+    ? logoOf({ name: order.company_name, logo: order.company_logo }, 'co-logo md') : null, h('span', null, order.code),
+  h('span', { class: 'order-title-badge' }, orderBadge(order))), {
     back: '#/production',
-    sub: h('span', null, orderBadge(order), '  ',
+    sub: h('span', { class: 'order-sub' },
       order.company_name ? h('b', { title: order.company_name }, `${shortCompany(order.company_name)} · `) : null,
       `${order.product_name} (${order.product_serial}) · `,
       order.queue_no ? [queuePlate(order.queue_no), ' · '] : null,
@@ -603,7 +622,11 @@ function stepInfo(order, asm, key) {
 // ---------- Parça işlemleri ----------
 async function partAction(order, op, part, refresh) {
   if (order.status === 'TAMAMLANDI') return showHistory(order, op, part);
-  if (op.state === 'BEKLIYOR' || op.state === 'HATA') return choosePrinter(order, op, part, refresh);
+  if (op.state === 'BEKLIYOR' || op.state === 'HATA') {
+    const d = await api.get(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}`).catch(() => null);
+    if (d?.direct_request?.status === 'BEKLIYOR') return directReview(order, op, part, d, refresh);
+    return choosePrinter(order, op, part, refresh);
+  }
   if (op.state === 'URETIMDE') return inProduction(order, op, part, refresh);
   return showHistory(order, op, part);
 }
@@ -655,7 +678,22 @@ async function choosePrinter(order, op, part, refresh) {
     actions: [
       { label: 'Vazgeç' },
       {
-        label: 'Tamam', class: 'primary', onClick: async () => {
+        label: 'Doğrudan Depoya Ekle', onClick: async () => {
+          if (!selected) throw new Error('Önce yazıcıyı seçin');
+          await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/direct-request`, { printer_id: selected, at: when.getValue() });
+          toast('Doğrudan depo ekleme talebi Sistem Yöneticisi onayına gönderildi');
+          await refresh();
+        },
+      },
+      {
+        label: 'Yazıcıya Gönder', onClick: async () => {
+          if (!selected) throw new Error('Bir yazıcı seçin');
+          await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/send-to-printer`, { printer_id: selected, at: when.getValue() });
+          sendProgress(order, op, part, refresh);   // yükleme ilerleme ekranı
+        },
+      },
+      {
+        label: 'Üretime Al', class: 'primary', onClick: async () => {
           if (!selected) throw new Error('Bir yazıcı seçin');
           await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/start`, { printer_id: selected, at: when.getValue() });
           toast(`${part.id} üretime alındı`);
@@ -664,6 +702,87 @@ async function choosePrinter(order, op, part, refresh) {
       },
     ],
   });
+}
+
+// Doğrudan depo ekleme talebi onay bekliyor: Sistem Yöneticisi onaylar/reddeder; diğerleri durumu görür
+function directReview(order, op, part, detail, refresh) {
+  const d = detail.direct_request;
+  const admin = detail.can_approve_direct;
+  const note = h('textarea', { class: 'input', rows: 2, placeholder: admin ? 'Not (isteğe bağlı; redde sebep)' : '' });
+  const act = async (kind) => {
+    await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/direct-${kind}`, { note: note.value });
+    toast(kind === 'approve' ? 'Onaylandı; parça depo onayına düştü' : 'Talep reddedildi');
+    await refresh();
+  };
+  modal({
+    title: `${part.id} — Doğrudan depo ekleme`,
+    body: h('div', null,
+      h('div', { class: 'alert info' }, h('b', null, 'Basılmış kabul edilip doğrudan depoya eklenecek.'),
+        h('div', { class: 'small', style: { marginTop: '4px' } },
+          `Yazıcı: ${d.printer_name || '—'} · Talep: ${fmtDateTime(d.requested_at)} · ${d.requested_by_name || ''}`)),
+      admin ? h('p', { class: 'muted', style: { marginBottom: 0 } }, 'Onaylarsanız parça, seçili yazıcıdan çıkmış gibi depo onayına gider.')
+        : h('p', { class: 'muted', style: { marginBottom: 0 } }, 'Sistem Yöneticisi onayı bekleniyor.'),
+      admin ? field('Not', note) : null),
+    actions: admin ? [
+      { label: 'Kapat' },
+      { label: 'Reddet', class: 'danger', onClick: () => act('reject') },
+      { label: 'Onayla', class: 'primary', onClick: () => act('approve') },
+    ] : [{ label: 'Kapat' }],
+  });
+}
+
+// Yazıcıya G-code yükleme ilerlemesi: sunucu → yazıcı yükleme arka planda; bu ekran ilerlemeyi saniyede birkaç kez okur
+function sendProgress(order, op, part, refresh) {
+  const bar = h('i');
+  const track = h('div', { class: 'print-progress' }, h('div', { class: 'track' }, bar));
+  const label = h('div', { class: 'small muted', style: { textAlign: 'center' } }, 'Bağlanıyor…');
+  const stage = h('div', { class: 'send3d g3d-view' }, h('div', { class: 'loading' }, '3B hazırlanıyor…'));
+  const box = h('div', null, stage,
+    h('p', { class: 'small muted', style: { textAlign: 'center', margin: '8px 0 6px' } }, `${part.id} · ${part.print_file || 'G-code'} yazıcıya gönderiliyor`),
+    track, label);
+  let closed = false, done = false, v3 = null;
+  // Yazıcının 3B hali ve parçanın yazıcı içinde dolan 3B görünümü
+  if (part.gcode_preview) {
+    partInPrinter(stage, part.gcode_preview, { progress: 0 }).then(v => { v3 = v; if (closed) v.destroy(); })
+      .catch(() => clear(stage, h('div', { class: 'empty small' }, '3B görünüm yüklenemedi')));
+  } else { clear(stage, h('div', { class: 'empty small' }, 'Bu parçanın 3B önizlemesi yok')); }
+  const m = modal({
+    title: `${part.id} — Yazıcıya gönderiliyor`,
+    body: box,
+    onClose: () => { closed = true; v3?.destroy(); if (done) refresh(); },
+    actions: [{ label: 'Arka planda sürdür' }],
+  });
+  const mb = v => `${(v / 1048576).toFixed(1)} MB`;
+  const poll = async () => {
+    if (closed) return;
+    let st;
+    try { st = await api.get(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/send-progress`); } catch { setTimeout(poll, 1000); return; }
+    if (st.status === 'uploading') {
+      bar.style.width = `${st.percent}%`;
+      v3?.setProgress(st.percent / 100);   // parça yükleme yüzdesi kadar dolar
+      label.textContent = `Yükleniyor… %${Math.floor(st.percent)} (${mb(st.sent)} / ${mb(st.total)}) · ${st.printer}`;
+    } else if (st.status === 'starting') {
+      bar.style.width = '100%'; v3?.done();
+      label.textContent = 'Yükleme bitti, baskı başlatılıyor…';
+    } else if (st.status === 'done') {
+      done = true;
+      bar.style.width = '100%'; bar.classList.add('ok'); v3?.done();
+      label.textContent = `Gönderildi. ${part.id} ${st.printer} yazıcısında üretime alındı.`;
+      toast(`${part.id} yazıcıya gönderildi, baskı başladı`);
+      setTimeout(() => { if (!closed) m.close(); refresh(); }, 1600);
+      return;
+    } else if (st.status === 'error') {
+      bar.classList.add('err');
+      clear(box, h('div', { class: 'alert err' }, h('b', null, 'Gönderilemedi'), h('div', { class: 'small' }, st.error || '')),
+        h('p', { class: 'small muted' }, 'Parça üretime alınmadı. Yazıcıyı ve bağlantıyı kontrol edip tekrar deneyin.'));
+      v3?.destroy(); v3 = null;
+      return;
+    } else {
+      label.textContent = 'Hazırlanıyor…';
+    }
+    setTimeout(poll, 700);
+  };
+  poll();
 }
 
 // Bu parçanın yazdırma süresi: yazıcının bildirdiği net baskı süresi (duraklamalar hariç; yalnızca basarken ilerler).
@@ -690,6 +809,13 @@ async function inProduction(order, op, part, refresh) {
   const fill = h('i');
   const pct = h('span');
   const bar = h('div', { class: 'print-progress' }, h('div', { class: 'track' }, fill), pct);
+  // Yazıcının 3B hali ve parçanın yazıcı içinde, baskı yüzdesi kadar dolan 3B görünümü
+  const stage = h('div', { class: 'send3d g3d-view' }, h('div', { class: 'loading' }, '3B hazırlanıyor…'));
+  let v3 = null, v3closed = false;
+  if (part.gcode_preview) {
+    partInPrinter(stage, part.gcode_preview, { progress: 0 }).then(v => { v3 = v; if (v3closed) v.destroy(); else drawBar(); })
+      .catch(() => clear(stage, h('div', { class: 'empty small' }, '3B görünüm yüklenemedi')));
+  } else { clear(stage, h('div', { class: 'empty small' }, 'Bu parçanın 3B önizlemesi yok')); }
   const drawBar = () => {
     const lv = detail.printer_live;
     let v = lv?.state === 'TAMAMLANDI' || detail.printer_done_at ? 100 : lv?.progress != null && lv.progress > 0 ? lv.progress : null;
@@ -698,6 +824,7 @@ async function inProduction(order, op, part, refresh) {
     fill.style.width = `${Math.max(0, Math.min(100, v || 0))}%`;
     fill.classList.toggle('paused', lv?.state === 'DURAKLADI');
     pct.textContent = v == null ? '' : `%${Math.floor(v)}`;
+    if (v != null) (lv?.state === 'TAMAMLANDI' || detail.printer_done_at) ? v3?.done() : v3?.setProgress(v / 100);
   };
   drawBar();
   const tick = setInterval(() => { clock.textContent = fmtDuration(secs.value()); drawBar(); }, 1000);
@@ -708,9 +835,10 @@ async function inProduction(order, op, part, refresh) {
   const stateText = { YAZDIRIYOR: 'Basıyor', DURAKLADI: 'Duraklatıldı', TAMAMLANDI: 'Baskı bitti', HAZIR: 'Boşta', HATA: 'Hata', CEVRIMDISI: 'Çevrimdışı' };
   modal({
     title: `${part.id} — Üretimde`,
-    onClose: () => { clearInterval(tick); clearInterval(poll); },
+    onClose: () => { clearInterval(tick); clearInterval(poll); v3closed = true; v3?.destroy(); },
     body: h('div', null,
-      h('p', { class: 'muted', style: { textAlign: 'center', margin: 0 } }, 'Yazdırma süresi'),
+      stage,
+      h('p', { class: 'muted', style: { textAlign: 'center', margin: '10px 0 0' } }, 'Yazdırma süresi'),
       clock,
       bar,
       h('p', { class: 'small muted', style: { textAlign: 'center', margin: '0 0 12px' } }, secs.exact

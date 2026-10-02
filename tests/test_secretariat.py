@@ -90,6 +90,8 @@ def main():
         assert n['guest-visit']['count'] == 1 and 'Mehmet Yılmaz' in n['guest-visit']['names'][0]
         g = ok(u.get('/api/me/guests'))
         assert g[0]['code'] == 'MS-0001' and len(g[0]['people']) == 3
+        # Misafirlerim açıldı: bildirim görüldü sayılır ve kalkar
+        assert 'guest-visit' not in {x['key'] for x in ok(u.get('/api/notifications'))['items']}
         assert u.get(f'/api/files/{photo}').status_code == 404   # başkasının kargo resmi
     with TestClient(app) as u:   # kargo sahibi: bildirim, Kargolarım, teslim aldım
         login(u, 'ayse')

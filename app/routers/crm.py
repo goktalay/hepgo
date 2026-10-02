@@ -14,7 +14,14 @@ from pydantic import BaseModel
 from .. import auth, db
 
 router = APIRouter(prefix='/api/crm')
-crm_user = auth.require_module('companies')
+
+
+def crm_user(user=Depends(auth.current_user)):
+    """Firma notları / takvimi: Firma Yönetimi ve (tedarikçiler için) Satın Alma."""
+    if not {'companies', 'purchasing'} & set(user['modules']):
+        raise HTTPException(403, 'Bu modüle erişim yetkiniz yok')
+    return user
+
 
 SUBJECTS = {'company': ('companies', 'name'), 'person': ('company_people', 'full_name'), 'user': ('users', 'full_name')}
 KINDS = ('RANDEVU', 'HATIRLATMA')
@@ -45,11 +52,13 @@ def _can_edit(conn, user, owner_id):
 # ---------- Rehber
 
 @router.get('/contacts')
-def contacts(user=Depends(crm_user), conn=db.DB):
-    """Rehber: firma kişileri + sistem kullanıcıları (aktif, silinmemiş)."""
+def contacts(supplier: bool = False, user=Depends(crm_user), conn=db.DB):
+    """Rehber: firma kişileri + sistem kullanıcıları (aktif, silinmemiş). supplier=1: tedarikçi kişileri."""
+    if ('purchasing' if supplier else 'companies') not in user['modules']:
+        raise HTTPException(403, 'Bu modüle erişim yetkiniz yok')
     people = db.rows(conn.execute(
         '''SELECT p.*, c.name AS company_name, c.logo AS company_logo, c.active AS company_active
-           FROM company_people p JOIN companies c ON c.id = p.company_id ORDER BY p.full_name'''))
+           FROM company_people p JOIN companies c ON c.id = p.company_id WHERE c.is_supplier = ? ORDER BY p.full_name''', (int(supplier),)))
     users = db.rows(conn.execute(
         '''SELECT id, username AS email, full_name, phone, photo FROM users
            WHERE deleted_at IS NULL AND active = 1 ORDER BY full_name'''))
@@ -333,7 +342,8 @@ def _label(conn, rows, user):
 def my_events(start: str, end: str, user=Depends(auth.current_user), conn=db.DB):
     where, args = _mine(user['id'])
     rows = _label(conn, _event_rows(conn, f'{where} AND e.starts_at >= ? AND e.starts_at < ?', (*args, start, end)), user)
-    return rows + _meeting_events(conn, 'user', user['id'], start, end)
+    from .meetings import calendar_items   # şirket içi toplantılar (Kişisel → Toplantılar)
+    return rows + _meeting_events(conn, 'user', user['id'], start, end) + calendar_items(conn, user['id'], start, end)
 
 
 @router.get('/my/upcoming')

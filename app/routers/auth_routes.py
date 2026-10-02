@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import alerts, auth, catalogs, config, db, notifications
+from .. import alerts, auth, catalogs, config, db, notifications, policy, push
 from ..files import is_remote
 
 router = APIRouter(prefix='/api')
@@ -34,24 +34,33 @@ def _client_ip(request):
     return ip
 
 
-LOCK_MINUTES = 15
-MAX_USER_FAILS = 5    # aynı kullanıcı adına, son başarılı girişten sonra
-MAX_IP_FAILS = 20     # aynı IP'den, tüm kullanıcı adlarına
-
-
 def _locked(conn, username, ip):
-    """Kaba kuvvet koruması: son LOCK_MINUTES dakikadaki başarısız denemeler sınırı aştıysa kalan dakika."""
-    since = (datetime.now() - timedelta(minutes=LOCK_MINUTES)).isoformat(timespec='seconds')
+    """Kaba kuvvet koruması: son (kilit süresi) dakikadaki başarısız denemeler sınırı aştıysa kalan dakika.
+
+    Sınırlar Program Ayarları → Güvenlik'ten (policy) okunur."""
+    pol = policy.get(conn)
+    lock_min, user_fails, ip_fails = pol['lockout_minutes'], pol['lockout_fails'], pol['ip_fails']
+    since = (datetime.now() - timedelta(minutes=lock_min)).isoformat(timespec='seconds')
     last_ok = conn.execute('SELECT MAX(id) FROM login_logs WHERE username = ? AND success = 1',
                            (username,)).fetchone()[0] or 0
-    for where, args, limit in (('username = ? AND id > ?', (username, last_ok), MAX_USER_FAILS),
-                               ('ip = ?', (ip,), MAX_IP_FAILS)):
+    for where, args, limit in (('username = ? AND id > ?', (username, last_ok), user_fails),
+                               ('ip = ?', (ip,), ip_fails)):
         rows = conn.execute(f'SELECT at FROM login_logs WHERE success = 0 AND at > ? AND {where} '
                             'ORDER BY id DESC LIMIT ?', (since, *args, limit)).fetchall()
         if len(rows) >= limit:
-            until = datetime.fromisoformat(rows[-1][0]) + timedelta(minutes=LOCK_MINUTES)
+            until = datetime.fromisoformat(rows[-1][0]) + timedelta(minutes=lock_min)
             return max(1, -(-int((until - datetime.now()).total_seconds()) // 60))
     return 0
+
+
+def _absent_check(conn, user):
+    """İzinli / sağlık raporlu personel giriş yapamaz (sistem sahibi hariç)."""
+    if auth.is_master(user['username']):
+        return
+    a = auth.absence(conn, user['id'])
+    if a:
+        conn.commit()   # giriş kaydı yazılsın
+        raise HTTPException(403, auth.absence_message(a))
 
 
 @router.post('/auth/login')
@@ -69,12 +78,32 @@ def login(body: LoginIn, request: Request, response: Response, conn=db.DB):
         # Başarısız deneme kaydı yine de yazılsın diye hata öncesi commit edilir.
         conn.commit()
         raise HTTPException(401, 'Kullanıcı adı veya şifre hatalı')
-    token = auth.create_session(conn, user['id'])
+    _absent_check(conn, user)
+    pol = policy.get(conn)
+    _expire_check(conn, user['id'], pol)
+    token = auth.create_session(conn, user['id'], pol['session_hours'])
     conn.execute('UPDATE users SET last_seen = ? WHERE id = ?', (db.now(), user['id']))
     db.audit(conn, user['id'], 'Sisteme giriş yaptı', 'session', None, _client_ip(request))
     response.set_cookie(auth.COOKIE, token, httponly=True, samesite='lax',
-                        max_age=config.SESSION_HOURS * 3600)
+                        max_age=pol['session_hours'] * 3600)
     return {'ok': True, 'device_token': _trust_device(conn, user['id'], request, body.device_token)}
+
+
+def _expire_check(conn, uid, pol):
+    """Şifre geçerlilik süresi dolduysa kullanıcıyı ilk fırsatta şifre değiştirmeye zorlar."""
+    if pol['expire_days'] <= 0:
+        return
+    row = conn.execute('SELECT password_changed_at FROM users WHERE id = ?', (uid,)).fetchone()
+    changed = row[0] if row else None
+    if not changed:   # hiç kaydı yoksa şimdiden başlat (bir sonraki dolumda uyarır)
+        conn.execute('UPDATE users SET password_changed_at = ? WHERE id = ?', (db.now(), uid))
+        return
+    try:
+        age = (datetime.now() - datetime.fromisoformat(changed)).days
+    except ValueError:
+        return
+    if age >= pol['expire_days']:
+        conn.execute('UPDATE users SET must_change_password = 1 WHERE id = ?', (uid,))
 
 
 # ---------- Bu cihazdaki hesaplar ve PIN ile giriş
@@ -126,6 +155,8 @@ class PinLoginIn(BaseModel):
 
 @router.post('/auth/login-pin')
 def login_pin(body: PinLoginIn, request: Request, response: Response, conn=db.DB):
+    if not policy.get(conn)['pin_enabled']:
+        raise HTTPException(403, 'PIN ile giriş sistem yöneticisi tarafından kapatıldı; şifreyle giriş yapın')
     u = _device_user(conn, body.token)
     if not u or not u['active'] or not u['pin_hash']:
         raise HTTPException(401, 'Bu cihazda PIN ile giriş yok; şifreyle giriş yapın')
@@ -143,11 +174,14 @@ def login_pin(body: PinLoginIn, request: Request, response: Response, conn=db.DB
             raise HTTPException(401, 'PIN çok kez hatalı girildi; şifreyle giriş yapın')
         conn.commit()
         raise HTTPException(400, 'PIN hatalı')
-    token = auth.create_session(conn, u['id'])
+    _absent_check(conn, u)
+    pol = policy.get(conn)
+    _expire_check(conn, u['id'], pol)
+    token = auth.create_session(conn, u['id'], pol['session_hours'])
     conn.execute('UPDATE users SET last_seen = ? WHERE id = ?', (db.now(), u['id']))
     conn.execute('UPDATE trusted_devices SET last_used = ? WHERE id = ?', (db.now(), u['device_id']))
     db.audit(conn, u['id'], 'Sisteme PIN ile giriş yaptı', 'session', None, ip)
-    response.set_cookie(auth.COOKIE, token, httponly=True, samesite='lax', max_age=config.SESSION_HOURS * 3600)
+    response.set_cookie(auth.COOKIE, token, httponly=True, samesite='lax', max_age=pol['session_hours'] * 3600)
     return {'ok': True}
 
 
@@ -166,9 +200,13 @@ def set_pin(body: PinIn, user=Depends(auth.current_user), conn=db.DB):
         conn.execute('UPDATE users SET pin_hash = NULL WHERE id = ?', (user['id'],))
         db.audit(conn, user['id'], 'Giriş PIN\'ini kapattı', 'user', user['id'], None)
         return {'has_pin': False}
-    if not re.fullmatch(r'\d{4}', body.pin):
-        raise HTTPException(400, 'PIN 4 rakam olmalı')
-    if body.pin in ('0000', '1111', '1234', '4321', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '0123'):
+    pol = policy.get(conn)
+    if not pol['pin_enabled']:
+        raise HTTPException(403, 'PIN ile giriş sistem yöneticisi tarafından kapatıldı')
+    n = pol['pin_length']
+    if not re.fullmatch(rf'\d{{{n}}}', body.pin):
+        raise HTTPException(400, f'PIN {n} rakam olmalı')
+    if len(set(body.pin)) == 1 or body.pin in ('1234', '4321', '0123', '12345', '123456', '654321', '1234567', '12345678'):
         raise HTTPException(400, 'Bu PIN çok kolay tahmin edilir; başka bir PIN seçin')
     conn.execute('UPDATE users SET pin_hash = ? WHERE id = ?', (auth.hash_password(body.pin), user['id']))
     db.audit(conn, user['id'], 'Giriş PIN\'ini ayarladı', 'user', user['id'], None)
@@ -226,9 +264,15 @@ def logout(request: Request, response: Response, conn=db.DB):
 
 @router.get('/auth/me')
 def me(user=Depends(auth.current_user), conn=db.DB):
-    out = {k: user[k] for k in ('id', 'username', 'full_name', 'photo', 'roles', 'modules')}
+    out = {k: user[k] for k in ('id', 'username', 'full_name', 'photo', 'roles', 'modules', 'master')}
+    out['ai'] = bool(config.AI_API_KEY)   # yapay zeka asistanı tanımlı mı (anahtar yoksa maskot ve YZ ayarları gizlenir)
+    out['real_roles'] = user.get('real_roles', user['roles'])   # MASTER: ekranda gösterilen gerçek (atanmış) roller
     out['prefs'] = json.loads(user['prefs']) if user['prefs'] else {}
     out['has_pin'] = bool(conn.execute('SELECT pin_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0])
+    out['must_change_password'] = bool(user['must_change_password']) and config.FORCE_PASSWORD_CHANGE and policy.get(conn)['force_first_change']
+    from .hr import my_docs
+    d = my_docs(conn, user['id'])   # eksik özlük evrakı → başlıkta geri sayım
+    out['docs_due'] = {'missing': len(d['missing']), 'deadline': d['deadline']} if d and d['missing'] else None
     return out
 
 
@@ -277,9 +321,19 @@ def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.D
     stored = conn.execute('SELECT password_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0]
     if not auth.verify_password(body.current, stored):
         raise HTTPException(400, 'Mevcut şifre hatalı')
-    if len(body.new) < 8:
-        raise HTTPException(400, 'Yeni şifre en az 8 karakter olmalı')
-    conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', (auth.hash_password(body.new), user['id']))
+    pol = policy.get(conn)
+    try:
+        policy.validate_password(pol, body.new, user['username'])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if body.new == body.current:
+        raise HTTPException(400, 'Yeni şifre mevcut şifreyle aynı olamaz')
+    # Son N şifrenin yeniden kullanımını engelle (Güvenlik kuralı)
+    if pol['reuse_block'] and any(auth.verify_password(body.new, h) for h in policy.recent_hashes(conn, user['id'], pol['reuse_block'])):
+        raise HTTPException(400, f"Son {pol['reuse_block']} şifrenizden birini yeniden kullanamazsınız")
+    new_hash = auth.hash_password(body.new)
+    conn.execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', (new_hash, user['id']))
+    policy.record_history(conn, user['id'], new_hash)
     db.audit(conn, user['id'], 'Şifresini değiştirdi', 'user', user['id'])
     return {'ok': True}
 
@@ -293,27 +347,32 @@ def meta(request: Request):
 @router.get('/plane')
 def get_plane(user=Depends(auth.current_user)):
     """Geriye uyumluluk: varsayılan ürünün şeması. Yeni kod /api/products/{id}/plane kullanır."""
-    return catalogs.plane_json(catalogs.DEFAULT_SCHEMA)
+    return {**catalogs.plane_json(catalogs.DEFAULT_SCHEMA), 'schema': catalogs.DEFAULT_SCHEMA}
 
 
 @router.get('/people')
 def people(role: str = '', user=Depends(auth.current_user), conn=db.DB):
     """Seçim listeleri için rolüne göre aktif personel (ör. depocular, şoförler); rol verilmezse tüm personel."""
+    interns = auth.interns(conn)
     if not role:
-        return db.rows(conn.execute(
+        rows = db.rows(conn.execute(
             'SELECT id, full_name, username, photo FROM users WHERE active = 1 AND deleted_at IS NULL ORDER BY full_name'))
-    return db.rows(conn.execute(
-        '''SELECT u.id, u.full_name, u.username, u.photo FROM users u
-           JOIN user_roles r ON r.user_id = u.id
-           WHERE r.role = ? AND u.active = 1 ORDER BY u.full_name''', (role,)))
+    else:   # yardımcı personel rollerinde stajerler de listelenir (en sonda)
+        roles = (role, auth.INTERN) if role in auth.HELPER_ROLES else (role,)
+        rows = db.rows(conn.execute(
+            f'''SELECT DISTINCT u.id, u.full_name, u.username, u.photo FROM users u JOIN user_roles r ON r.user_id = u.id
+                WHERE r.role IN ({','.join('?' * len(roles))}) AND u.active = 1 AND u.deleted_at IS NULL ORDER BY u.full_name''', roles))
+    for r in rows:
+        r['intern'] = r['id'] in interns
+    if role in auth.HELPER_ROLES:
+        rows.sort(key=lambda r: (r['intern'], r['full_name']))
+    return rows
 
 
 @router.get('/alerts')
 def list_alerts(user=Depends(auth.current_user), conn=db.DB):
     """Üst çubuktaki uyarılar: tüm kullanıcılara açık (yalnızca Güvenlik modülü olan kullanıcı hariç)."""
-    if set(user['modules']) <= {'security', 'announcements'}:   # yalnızca güvenlik (duyurular herkese açık)
-        return {'total': 0, 'records': 0, 'alerts': []}
-    items = alerts.summary(conn)
+    items = alerts.summary(conn, user)   # yalnızca üretim / yazıcı modülü olanlar görür
     # Rozet uyarı türü sayısını gösterir; her türün içindeki kayıt sayısı listede ayrıca yazar
     return {'total': len(items), 'records': sum(a['count'] for a in items), 'alerts': items}
 
@@ -323,6 +382,12 @@ def list_notifications(user=Depends(auth.current_user), conn=db.DB):
     """Üst çubuktaki bildirimler: yalnızca kullanıcıyı ilgilendirenler. Rozet toplam kayıt sayısıdır."""
     items = notifications.for_user(conn, user)
     return {'total': sum(n['count'] for n in items), 'items': items}
+
+
+@router.get('/notifications/types')
+def notification_types(user=Depends(auth.current_user)):
+    """Ayarlar → Bildirimler: kullanıcının açıp kapatabileceği bildirim ve uyarı türleri."""
+    return {'notifications': notifications.types_for(user), 'alerts': alerts.types_for(user)}
 
 
 @router.post('/alerts/incidents/{iid}/ack')
@@ -338,7 +403,7 @@ def acknowledge_incident(iid: int, user=Depends(auth.current_user), conn=db.DB):
 
 @router.get('/alerts/{key}')
 def alert_detail(key: str, user=Depends(auth.current_user), conn=db.DB):
-    d = alerts.detail(conn, key)
+    d = alerts.detail(conn, key, user)
     if not d:
         raise HTTPException(404, 'Uyarı türü bulunamadı')
     return d
@@ -377,3 +442,40 @@ def dashboard_widgets(user=Depends(auth.current_user)):
 def dashboard_data(keys: str = '', user=Depends(auth.current_user), conn=db.DB):
     from .. import dashboard
     return dashboard.data(conn, user, [k for k in keys.split(',') if k][:30])
+
+
+# ---------- Arka plan bildirimleri (Web Push): bu cihaza abone ol / aboneliği kaldır
+class PushSubIn(BaseModel):
+    endpoint: str
+    keys: dict = {}
+
+
+@router.get('/push/key')
+def push_key(user=Depends(auth.current_user)):
+    if not push.available():
+        raise HTTPException(503, 'Arka plan bildirimleri sunucuda kurulu değil')
+    return {'key': push.public_key()}
+
+
+@router.post('/push/subscribe')
+def push_subscribe(body: PushSubIn, request: Request, user=Depends(auth.current_user), conn=db.DB):
+    try:
+        push.subscribe(conn, user['id'], body.model_dump(), request.headers.get('user-agent'))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {'ok': True}
+
+
+@router.post('/push/unsubscribe')
+def push_unsubscribe(body: PushSubIn, user=Depends(auth.current_user), conn=db.DB):
+    push.unsubscribe(conn, user['id'], body.endpoint)
+    return {'ok': True}
+
+
+@router.post('/push/test')
+def push_test(user=Depends(auth.current_user), conn=db.DB):
+    n = conn.execute('SELECT COUNT(*) FROM push_subs WHERE user_id = ?', (user['id'],)).fetchone()[0]
+    if not n:
+        raise HTTPException(400, 'Bu hesapta arka plan bildirimine abone cihaz yok')
+    push.send([user['id']], {'type': 'notif', 'title': 'Deneme bildirimi', 'body': 'Arka plan bildirimleri bu cihazda çalışıyor.', 'tag': 'test', 'url': '/app#/settings'})
+    return {'ok': True, 'devices': n}

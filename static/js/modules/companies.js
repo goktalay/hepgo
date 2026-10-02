@@ -1,4 +1,5 @@
 // Firma Yönetimi: firmalar, logoları, firmada çalışan / ilişkili kişiler ve firmanın evrakları.
+import { setListExport } from '../listexport.js';
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import {
@@ -6,9 +7,26 @@ import {
   selectInput, setPref, statStrip, svgIcon, toast, toastError,
 } from '../ui.js';
 import { calendarPanel, docList, notesPanel, tabView } from './crm.js';
+import { crmNav } from './crmhub.js';
 import { openUpload } from './documents.js';
 
+// Aynı ekranlar Satın Alma › Tedarikçi Yönetimi'nde tedarikçiler için kullanılır (adres kökü, API kapsamı ve başlık değişir)
+let BASE = '#/companies', SUP = false, TITLE = 'Firma Yönetimi';
+const Q = () => (SUP ? '?supplier=1' : '');
+
+export function renderSuppliers(view, params, ctx) {
+  BASE = '#/purchasing/suppliers'; SUP = true; TITLE = 'Tedarikçi Yönetimi';
+  return route(view, params, ctx);
+}
+
+let canLinkUsers = false;   // Kullanıcı Yönetimi yetkisi: dış firma kişisine sistem kullanıcısı bağlayabilir
 export async function render(view, params, ctx) {
+  canLinkUsers = ctx.user.modules.includes('users');
+  BASE = '#/companies'; SUP = false; TITLE = 'Firma Yönetimi';
+  return route(view, params, ctx);
+}
+
+async function route(view, params, ctx) {
   // #/companies/rehber[/person|user/<id>[/<sekme>]] · #/companies/<id>[/<sekme>]
   if (params[0] === 'rehber') {
     if (['person', 'user'].includes(params[1]) && params[2]) return renderContact(view, ctx, params[1], Number(params[2]), params[3]);
@@ -19,8 +37,8 @@ export async function render(view, params, ctx) {
 }
 
 // Firmalar / Rehber görünüm seçici (adres çubuğunda: #/companies ve #/companies/rehber)
-const viewSwitch = current => segmented([['companies', 'Firmalar'], ['rehber', 'Rehber']], current,
-  v => { location.hash = v === 'rehber' ? '#/companies/rehber' : '#/companies'; });
+const viewSwitch = current => segmented([['companies', SUP ? 'Tedarikçiler' : 'Firmalar'], ['rehber', 'Rehber']], current,
+  v => { location.hash = v === 'rehber' ? `${BASE}/rehber` : BASE; });
 
 const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toLocaleUpperCase('tr');
 export const logoOf = (c, cls = 'co-logo') => (c.logo ? h('img', { class: cls, src: fileUrl(c.logo, 256), alt: c.name })
@@ -37,7 +55,7 @@ function companyForm(c = {}, done) {
   };
   const logo = h('input', { class: 'input', type: 'file', accept: 'image/*', style: { height: 'auto', padding: '6px' } });
   modal({
-    title: c.id ? 'Firmayı düzenle' : 'Yeni Firma',
+    title: c.id ? (SUP ? 'Tedarikçiyi düzenle' : 'Firmayı düzenle') : SUP ? 'Yeni Tedarikçi' : 'Yeni Firma',
     wide: true,
     body: h('div', null,
       field('Firma adı', f.name),
@@ -53,7 +71,7 @@ function companyForm(c = {}, done) {
         label: 'Kaydet', class: 'primary', onClick: async () => {
           const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, k === 'active' ? el.checked : el.value.trim() || null]));
           if (!body.name) throw new Error('Firma adı zorunlu');
-          const id = c.id || (await api.post('/api/companies', body)).id;
+          const id = c.id || (await api.post(`/api/companies${Q()}`, body)).id;
           if (c.id) await api.put(`/api/companies/${c.id}`, body);
           if (logo.files[0]) {
             const fd = new FormData();
@@ -70,21 +88,23 @@ function companyForm(c = {}, done) {
 
 // ---------- Liste
 async function renderList(view, ctx) {
-  let companies = await api.get('/api/companies');
+  let companies = await api.get(`/api/companies${Q()}`);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Firma, vergi no, telefon ara…', style: { width: '240px' } });
   const act = selectInput([['1', 'Aktif'], ['0', 'Pasif']], { all: 'Aktif ve pasif' });
   const stats = statStrip();
   const grid = h('div');
   const draw = () => {
     stats.set([
-      { label: 'Firma', value: companies.length },
+      { label: SUP ? 'Tedarikçi' : 'Firma', value: companies.length },
       { label: 'Aktif', value: companies.filter(c => c.active).length, tone: 'ok' },
       { label: 'Kişi', value: companies.reduce((a, c) => a + c.people_count, 0) },
       { label: 'Evrak', value: companies.reduce((a, c) => a + c.document_count, 0), sub: 'görebildiğiniz' },
     ]);
     const list = companies.filter(c => (!act.value || String(c.active) === act.value)
       && matches(q.value, c.name, c.tax_no, c.phone, c.email, c.tax_office));
-    clear(grid, list.length ? h('div', { class: 'co-grid' }, list.map(c => h('a', { class: `card co-card ${c.active ? '' : 'inactive'}`, href: `#/companies/${c.id}` },
+    setListExport(() => ({ columns: ['Firma', 'Vergi dairesi', 'Vergi no', 'Telefon', 'E-posta', 'Web', 'Kişi', 'Evrak', 'Durum'],
+      rows: list.map(c => [c.name, c.tax_office || '', c.tax_no || '', c.phone || '', c.email || '', c.website || '', c.people_count, c.document_count, c.active ? 'Aktif' : 'Pasif']) }));
+    clear(grid, list.length ? h('div', { class: 'co-grid' }, list.map(c => h('a', { class: `card co-card ${c.active ? '' : 'inactive'}`, href: `${BASE}/${c.id}` },
       logoOf(c),
       h('div', { class: 'grow' },
         h('b', null, c.name), c.active ? null : h('span', { class: 'badge gray', style: { marginLeft: '6px' } }, 'Pasif'),
@@ -95,11 +115,12 @@ async function renderList(view, ctx) {
   };
   q.addEventListener('input', draw);
   act.addEventListener('change', draw);
-  const reload = async () => { companies = await api.get('/api/companies'); draw(); };
+  const reload = async () => { companies = await api.get(`/api/companies${Q()}`); draw(); };
   clear(view,
-    pageHead('Firma Yönetimi', { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları',
-      right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `#/companies/${id}`; }) },
-        svgIcon(icons.plus), 'Yeni Firma'), viewSwitch('companies')) }),
+    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları',
+      right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
+        svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), viewSwitch('companies')) }),
+    SUP ? null : crmNav('companies', ctx),
     stats,
     h('div', { class: 'filters' }, q, act),
     grid);
@@ -129,9 +150,9 @@ function vcard(p) {
 // Rehber kaydı: firma kişisi (person) ya da sistem kullanıcısı (user) tek biçimde
 const contactOf = (kind, x, ctx) => (kind === 'person'
   ? { kind, id: x.id, full_name: x.full_name, title: x.title, phone: x.phone, email: x.email, note: x.note,
-    company_id: x.company_id, company_name: x.company_name, company_logo: x.company_logo, href: `#/companies/rehber/person/${x.id}` }
+    company_id: x.company_id, company_name: x.company_name, company_logo: x.company_logo, href: `${BASE}/rehber/person/${x.id}` }
   : { kind, id: x.id, full_name: x.full_name, title: (x.roles || []).join(', '), phone: x.phone, email: x.email, photo: x.photo,
-    company_name: ctx.meta?.company || 'Personel', href: `#/companies/rehber/user/${x.id}` });
+    company_name: ctx.meta?.company || 'Personel', href: `${BASE}/rehber/user/${x.id}` });
 
 const contactAvatar = (c, cls = 'dir-avatar') => (c.photo ? h('img', { class: `${cls} photo`, src: fileUrl(c.photo, 256), alt: '', loading: 'lazy' })
   : h('span', { class: `${cls} ${c.kind}` }, initials(c.full_name)));
@@ -146,7 +167,7 @@ const orgLine = c => (c.kind === 'person'
   : h('span', { class: 'dir-company' }, h('span', { class: 'dir-kind' }, 'Kullanıcı'), h('span', { class: 'dir-org' }, c.company_name)));
 
 async function renderDirectory(view, ctx) {
-  let data = await api.get('/api/crm/contacts');
+  let data = await api.get(`/api/crm/contacts${Q()}`);
   const companies = [...new Map(data.people.map(p => [p.company_id, p.company_name])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'tr'));
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad, ünvan, firma, telefon, e-posta ara…', style: { width: '260px' } });
@@ -155,7 +176,7 @@ async function renderDirectory(view, ctx) {
   let mode = pref('rehber.view', 'cards');
   const stats = statStrip();
   const body = h('div');
-  const reload = async () => { data = await api.get('/api/crm/contacts'); draw(); };
+  const reload = async () => { data = await api.get(`/api/crm/contacts${Q()}`); draw(); };
   const addPerson = () => {
     const pick = selectInput(companies.map(([id, name]) => [String(id), name]), { all: null });
     if (co.value) pick.value = co.value;
@@ -178,6 +199,8 @@ async function renderDirectory(view, ctx) {
       && (!co.value || kindSel.value === 'user' || (c.kind === 'person' && String(c.company_id) === co.value))
       && matches(q.value, c.full_name, c.title, c.company_name, c.phone, c.email, c.note))
       .sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'));
+    setListExport(() => ({ columns: ['Ad Soyad', 'Tür', 'Ünvan', 'Firma', 'Telefon', 'E-posta', 'Not'],
+      rows: list.map(c => [c.full_name, c.kind === 'user' ? 'Kullanıcı' : 'Firma kişisi', c.title || '', c.company_name || '', c.phone || '', c.email || '', c.note || '']) }));
     const groups = new Map();
     for (const c of list) {
       const letter = trUpper(c.full_name.trim()[0]) || '#';
@@ -209,9 +232,10 @@ async function renderDirectory(view, ctx) {
   kindSel.addEventListener('change', draw);
   const modeSeg = segmented([['cards', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('rehber.view', v); draw(); });
   clear(view,
-    pageHead('Firma Yönetimi', { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar',
+    pageHead(TITLE, { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar',
       right: h('div', { class: 'head-right' }, h('button', { class: 'btn primary', onclick: addPerson }, svgIcon(icons.plus), 'Kişi Ekle'),
         viewSwitch('rehber')) }),
+    SUP ? null : crmNav('companies', ctx),
     stats,
     h('div', { class: 'filters' }, q, kindSel, co, h('span', { class: 'spacer' }), modeSeg),
     body);
@@ -234,7 +258,7 @@ async function renderContact(view, ctx, kind, id, tab) {
           h('button', { class: 'btn sm primary', onclick: () => meetingForm(co, { people: [{ id }] }, reload) }, svgIcon(icons.plus), 'Toplantı Ekle')),
         meetingList(cm, reload));
     }
-    return x.meetings.length ? h('div', { class: 'meet-list' }, x.meetings.map(m => h('a', { class: 'meet-item link', href: `#/companies/${m.company_id}/meetings` },
+    return x.meetings.length ? h('div', { class: 'meet-list' }, x.meetings.map(m => h('a', { class: 'meet-item link', href: `${BASE}/${m.company_id}/meetings` },
       h('div', { class: 'meet-head' }, h('div', { class: 'meet-when' }, h('b', null, fmtDateTime(m.meeting_at))),
         h('div', { class: 'grow' }, h('b', null, m.subject), h('span', { class: 'small muted' }, ` · ${m.company_name}`))),
       h('div', { class: 'meet-sub' }, h('span', null, 'Karşı taraf: '), m.people.map(p => p.full_name).join(', ') || '—'),
@@ -248,7 +272,7 @@ async function renderContact(view, ctx, kind, id, tab) {
     docList(x.documents, kind === 'person' ? 'Bu kişiye bağlı (görebildiğiniz) evrak yok' : 'Yüklediği ya da imzaladığı (görebildiğiniz) evrak yok'));
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   clear(view,
-    pageHead(c.full_name, { back: '#/companies/rehber', sub: kind === 'person' ? `Rehber · ${c.company_name}` : 'Rehber · Kullanıcı',
+    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? `Rehber · ${c.company_name}` : 'Rehber · Kullanıcı',
       right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         h('button', { class: 'btn', onclick: () => vcard(c) }, 'Kaydet .vcf'),
         kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null) }),
@@ -257,7 +281,7 @@ async function renderContact(view, ctx, kind, id, tab) {
       h('div', { class: 'grow' },
         h('h2', null, c.full_name),
         c.title ? h('div', { class: 'muted' }, c.title) : null,
-        kind === 'person' ? h('a', { class: 'dir-company', href: `#/companies/${x.company_id}` },
+        kind === 'person' ? h('a', { class: 'dir-company', href: `${BASE}/${x.company_id}` },
           logoOf({ name: x.company_name, logo: x.company_logo }, 'co-logo xs'), x.company_name) : orgLine(c)),
       h('dl', { class: 'kv contact-kv' },
         kv('Telefon', c.phone ? h('a', { href: telHref(c.phone) }, c.phone) : null),
@@ -276,15 +300,26 @@ function personForm(cid, p = {}, done) {
   const inp = k => h('input', { class: 'input', value: p[k] || '' });
   const f = { full_name: inp('full_name'), title: inp('title'), phone: inp('phone'), email: inp('email'),
     note: h('textarea', { class: 'input', rows: 2 }, p.note || '') };
+  // Dış firma personeli (ör. kiralık güvenlik): sisteme giriş yapacaksa kullanıcı hesabı bu kişiye bağlanır; İK'da personel açılmaz
+  const userSel = canLinkUsers ? h('select', { class: 'input' }, h('option', { value: '' }, '— Sistem kullanıcısı yok —'),
+    p.user_id ? h('option', { value: p.user_id, selected: true }, p.user_name || `#${p.user_id}`) : null) : null;
+  if (userSel) api.get('/api/users').then(list => {
+    for (const u of list.filter(u => u.id !== p.user_id && (!u.external || u.external.person_id === p.id))) {
+      userSel.append(h('option', { value: u.id }, `${u.full_name} (${u.username})${u.roles?.length ? ` · ${u.roles.join(', ')}` : ''}`));
+    }
+  }).catch(() => {});
   modal({
     title: p.id ? 'Kişiyi düzenle' : 'Kişi ekle',
     body: h('div', null, field('Ad soyad', f.full_name), field('Görevi / ünvanı', f.title),
-      h('div', { class: 'row' }, field('Telefon', f.phone), field('E-posta', f.email)), field('Not', f.note)),
+      h('div', { class: 'row' }, field('Telefon', f.phone), field('E-posta', f.email)), field('Not', f.note),
+      userSel ? field('Sistem kullanıcısı', userSel,
+        'Firmanın bize çalışan personeli (ör. kiralık güvenlik) sisteme giriş yapacaksa hesabını seçin. Bağlanan kullanıcı İK’da personel olarak görünmez; firma başka birini gönderirse yeni kişiyi ekleyip hesabı ona bağlayın.') : null),
     actions: [
       { label: 'Vazgeç' },
       {
         label: 'Kaydet', class: 'primary', onClick: async () => {
           const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim() || null]));
+          if (userSel) { body.link_user = true; body.user_id = userSel.value ? Number(userSel.value) : null; }
           if (!body.full_name) throw new Error('Ad soyad zorunlu');
           if (p.id) await api.put(`/api/companies/people/${p.id}`, body); else await api.post(`/api/companies/${cid}/people`, body);
           toast('Kişi kaydedildi');
@@ -409,7 +444,7 @@ async function renderDetail(view, id, ctx, tab) {
   const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
   const remove = async () => {
     if (!await confirmDialog('Firmayı sil', `${c.name} silinsin mi? Kişileri, notları ve takvim kayıtları da silinir.`, { okLabel: 'Sil', danger: true })) return;
-    try { await api.del(`/api/companies/${id}`); toast('Firma silindi'); location.hash = '#/companies'; } catch (err) { toastError(err); }
+    try { await api.del(`/api/companies/${id}`); toast(SUP ? 'Tedarikçi silindi' : 'Firma silindi'); location.hash = BASE; } catch (err) { toastError(err); }
   };
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   const people = () => h('div', null,
@@ -418,7 +453,8 @@ async function renderDetail(view, id, ctx, tab) {
     c.people.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Ad soyad', 'Görevi', 'Telefon', 'E-posta', ''].map(t => h('th', null, t)))),
       h('tbody', null, c.people.map(p => h('tr', null,
-        h('td', null, h('a', { href: `#/companies/rehber/person/${p.id}` }, h('b', null, p.full_name)),
+        h('td', null, h('a', { href: `${BASE}/rehber/person/${p.id}` }, h('b', null, p.full_name)),
+          p.user_id ? h('span', { class: `badge ${p.user_active ? 'blue' : 'gray'}`, style: { marginLeft: '6px' }, title: `Sistem hesabı: ${p.user_username || ''}` }, 'Sistem kullanıcısı') : null,
           p.note ? h('div', { class: 'small muted' }, p.note) : null),
         h('td', null, p.title || '—'),
         h('td', null, p.phone ? h('a', { href: `tel:${p.phone}` }, p.phone) : '—'),
@@ -445,7 +481,7 @@ async function renderDetail(view, id, ctx, tab) {
       h('button', { class: 'btn sm primary', onclick: () => meetingForm(c, {}, reload) }, svgIcon(icons.plus), 'Toplantı Ekle')),
     meetingList(c, reload));
   clear(view,
-    pageHead(c.name, { back: '#/companies', sub: c.active ? 'Firma' : 'Pasif firma',
+    pageHead(c.name, { back: BASE, sub: SUP ? (c.active ? 'Tedarikçi' : 'Pasif tedarikçi') : c.active ? 'Firma' : 'Pasif firma',
       right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         h('button', { class: 'btn', onclick: () => companyForm(c, reload) }, 'Düzenle'),
         h('button', { class: 'btn danger', onclick: remove }, 'Sil')) }),

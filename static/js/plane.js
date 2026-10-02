@@ -1,4 +1,5 @@
 // Parçalı uçak haritası bileşeni. Geometri, ürünün sunucudaki şemasından (/api/products/{id}/plane) gelir.
+import { closeTipPreview, tipPreview } from './gcode3d.js';
 import { api } from './api.js';
 import { fmtMinutes, h, pref, segmented, setPref } from './ui.js';
 
@@ -90,6 +91,7 @@ function moveTip(ev) {
 }
 export function hideTip() {
   if (tipEl) tipEl.style.display = 'none';
+  closeTipPreview();
 }
 
 /**
@@ -212,8 +214,10 @@ export function renderPlane(plane, opts = {}) {
     setHot(id, true);
     if (opts.tooltip) {
       const t = tip();
-      t.replaceChildren(h('b', null, id), ...opts.tooltip(items.get(id).part).filter(Boolean).map(l => h('div', null, l)));
+      const part = items.get(id).part;
+      t.replaceChildren(h('b', null, id), ...opts.tooltip(part).filter(Boolean).map(l => h('div', null, l)));
       t.style.display = 'block';
+      if (part.gcode_preview && opts.preview3d !== false) tipPreview(t, part.gcode_preview);   // G-code'dan 3B parça
       moveTip(ev);
     }
   });
@@ -238,7 +242,16 @@ export function renderPlane(plane, opts = {}) {
     if (layer) svg.dataset.layer = layer; else delete svg.dataset.layer;
     update();
   };
-  return { svg, update, setLayer };
+  // Şemada o an görünen dolgu renkleri (3B Montaj aynı renklerle çizer)
+  const fills = () => {
+    const m = new Map();
+    for (const [id, { polys }] of items) {
+      const p = polys[0];
+      m.set(id, p ? (p.isConnected ? getComputedStyle(p).fill : p.style.fill) : null);
+    }
+    return m;
+  };
+  return { svg, update, setLayer, fills, plane };
 }
 
 // GÖVDE / KAPAK / ELEKTRONİK geçiş düğmeleri: seçilen katman kullanıcı tercihinde saklanır
@@ -248,8 +261,11 @@ export function layerToggle(pl, key = 'plane.layer', plane = null) {
   const saved = pref(key, 'body');
   const start = LAYERS.some(l => l[0] === saved) ? saved : 'body';
   pl.setLayer(start);
+  const asm = h('button', { class: 'btn asm3d-btn', type: 'button', title: 'Parçaları şemaya göre birleştirip uçağı 3B görün; patlatma ile ayırın',
+    onclick: () => import('./assembly3d.js').then(m => m.openAssembly(plane || pl.plane, pl.fills())) },
+  h('span', { class: 'asm3d-ico', 'aria-hidden': 'true' }, '◆'), '3B Montaj');
   return h('div', { class: 'layer-toggle' },
-    segmented(LAYERS, start, v => { pl.setLayer(v); setPref(key, v); }));
+    segmented(LAYERS, start, v => { pl.setLayer(v); setPref(key, v); }), h('span', { class: 'spacer' }), asm);
 }
 
 export const SIDE_TEXT = { L: 'Sol', R: 'Sağ', M: 'Merkez', LR: 'Sol + Sağ' };

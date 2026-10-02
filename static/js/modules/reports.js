@@ -5,11 +5,11 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { foot, head, printPage } from '../print.js';
-import { clear, fmtDateTime, h, matches, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, toastError } from '../ui.js';
+import { clear, fmtDateTime, h, matches, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, toastError, periodRange } from '../ui.js';
 
 export const MODULE_NAMES = {
-  production: 'Üretim Yönetimi', orders: 'Sipariş Yönetimi', warehouse: 'Depo Yönetimi', stock: 'Stok Yönetimi', printers: 'Yazıcı Yönetimi',
-  field: 'Saha Yönetimi', companies: 'Firma Yönetimi', documents: 'Evrak Yönetimi', secretariat: 'Sekreterya', security: 'Güvenlik',
+  production: 'Üretim Yönetimi', orders: 'İş Emri Yönetimi', warehouse: 'Depo Yönetimi', stock: 'Stok Yönetimi', printers: 'Yazıcı Yönetimi',
+  field: 'Saha Yönetimi', companies: 'Firma Yönetimi', documents: 'Evrak Yönetimi', secretariat: 'Sekreterya', security: 'Güvenlik', hr: 'İnsan Kaynakları', mrp: 'MRP', purchasing: 'Satın Alma',
   admin: 'Yönetim', products: 'Ürün Yönetimi',
 };
 const MODULE_TONE = {
@@ -67,6 +67,7 @@ const iso = d => d.toISOString().slice(0, 10);
 function preset(key) {
   const t = new Date();
   const d = n => { const x = new Date(t); x.setDate(x.getDate() - n); return x; };
+  if (key === 'week') { const r = periodRange('week'); return [r.date_from, r.date_to]; }
   if (key === '7') return [iso(d(6)), iso(t)];
   if (key === '30') return [iso(d(29)), iso(t)];
   if (key === '90') return [iso(d(89)), iso(t)];
@@ -77,8 +78,8 @@ function preset(key) {
 }
 
 async function renderReport(view, key, ctx) {
-  let range = pref(`reports.range`, '30');
-  let [from, to] = preset(range) || preset('30');
+  let range = pref(`reports.range2`, 'week');   // varsayılan: bu hafta
+  let [from, to] = preset(range) || preset('week');
   let type = pref('reports.type', 'chart');
   let data = null;
   let charts = [];
@@ -88,12 +89,12 @@ async function renderReport(view, key, ctx) {
   const fromI = h('input', { class: 'input', type: 'date', value: from });
   const toI = h('input', { class: 'input', type: 'date', value: to });
   // Dönem: açılır liste; tarih elle değişince "Özel aralık"
-  const rangeSeg = h('select', { class: 'input', title: 'Dönem' }, [['7', 'Son 7 gün'], ['30', 'Son 30 gün'], ['month', 'Bu ay'], ['last', 'Geçen ay'],
+  const rangeSeg = h('select', { class: 'input', title: 'Dönem' }, [['week', 'Bu hafta'], ['7', 'Son 7 gün'], ['30', 'Son 30 gün'], ['month', 'Bu ay'], ['last', 'Geçen ay'],
     ['90', 'Son 90 gün'], ['year', 'Bu yıl'], ['', 'Özel aralık']].map(([k, label]) => h('option', { value: k, selected: k === range }, label)));
   rangeSeg.addEventListener('change', () => {
     range = rangeSeg.value;
     if (!range) return;
-    setPref('reports.range', range);
+    setPref('reports.range2', range);
     [fromI.value, toI.value] = preset(range);
     load();
   });

@@ -7,3 +7,7 @@ pymavlink>=2.4.40
 av>=14
 opencv-python-headless>=4.8
 numpy>=1.26
+onnxruntime
+anthropic>=1.10   # Yapay zeka asistanı (maskot) — Claude API
+pywebpush>=2.0
+firebird-driver>=1.10

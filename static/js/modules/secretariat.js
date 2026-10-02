@@ -5,8 +5,8 @@ import { renderCalls } from './calls.js';
 import { tabView } from './crm.js';
 import { plateEl } from './security.js';
 import {
-  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, pageHead, peoplePicker,
-  secondsBetween, secondsSince, segmented, toast, toastError,
+  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, pageHead, peoplePicker,
+  secondsBetween, secondsSince, segmented, toast, toastError, periodFilter
 } from '../ui.js';
 
 const TABS = [['', 'Misafirler'], ['cargo', 'Kargolar'], ['calls', 'Aramalar']];
@@ -18,21 +18,20 @@ export async function render(view, params, ctx) {
   const tab = ['cargo', 'calls'].includes(params[0]) ? params[0] : '';
   const history = params[0] === 'history';               // eski misafir kayıtları
   const delivered = tab === 'cargo' && params[1] === 'delivered';   // teslim edilen kargolar
-  const nav = segmented(TABS, tab, v => { location.hash = v ? `#/secretariat/${v}` : '#/secretariat'; });
+  const nav = moduleTabs(TABS, tab, v => { location.hash = v ? `#/secretariat/${v}` : '#/secretariat'; });
   const body = h('div');
-  // Başlığın sağı: sekmenin ana işlemi, eski kayıtlar / teslim edilenler ve alt modül seçimi
+  // Başlığın sağı: sekmenin ana işlemi ile eski kayıtlar / teslim edilenler (alt modül seçimi artık sekme çubuğunda)
   const cargoAdd = h('button', { class: 'btn primary', type: 'button' }, '+ Kargo Kaydet');
   const callAdd = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Arama');
-  const right = tab === 'calls' ? h('div', { class: 'head-right' }, callAdd, nav) : h('div', { class: 'head-right' },
+  const right = tab === 'calls' ? h('div', { class: 'head-right' }, callAdd) : h('div', { class: 'head-right' },
     tab === 'cargo' ? (delivered ? null : cargoAdd) : h('button', { class: 'btn primary', type: 'button', onclick: () => newVisit() }, '+ Yeni Misafir Girişi'),
     tab === 'cargo'
       ? (delivered ? h('a', { class: 'btn', href: '#/secretariat/cargo' }, 'Bekleyen Kargolar') : h('a', { class: 'btn', href: '#/secretariat/cargo/delivered' }, 'Teslim Edilenler'))
-      : (history ? h('a', { class: 'btn', href: '#/secretariat' }, 'Aktif Misafirler') : h('a', { class: 'btn', href: '#/secretariat/history' }, 'Eski Kayıtlar')),
-    nav);
+      : (history ? h('a', { class: 'btn', href: '#/secretariat' }, 'Aktif Misafirler') : h('a', { class: 'btn', href: '#/secretariat/history' }, 'Eski Kayıtlar')));
   const title = history ? 'Sekreterya · Eski Kayıtlar' : delivered ? 'Sekreterya · Teslim Edilen Kargolar' : 'Sekreterya';
   const sub = history ? 'Çıkış yapmış misafir kayıtları' : delivered ? 'Teslim alınan kargolar'
     : tab === 'calls' ? 'Şirkete dışarıdan gelen telefonlar · ilgili kişiye bağlanır ve bildirilir' : 'Misafir kayıtları ve gelen kargolar';
-  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub, right }), body);
+  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub, right }), nav, body);
   if (tab === 'calls') return renderCalls(body, callAdd, right);
   if (tab === 'cargo') return delivered ? renderDelivered(body) : renderCargo(body, cargoAdd);
   return history ? renderHistory(body) : renderVisits(body);
@@ -49,7 +48,7 @@ const visitCard = r => h('a', { class: 'card visit-card', href: `#/secretariat/v
 
 async function renderVisits(body) {
   const load = async () => {
-    const inside = (await api.get('/api/secretariat/visits')).filter(r => !r.left_at);
+    const inside = (await api.get('/api/secretariat/visits?scope=inside')).filter(r => !r.left_at);
     clear(body, inside.length ? h('div', { class: 'visit-grid' }, inside.map(visitCard))
       : h('div', { class: 'card empty' }, 'İçeride misafir yok. Yeni misafir için sağ üstteki "Yeni Misafir Girişi"ni kullanın.'));
   };
@@ -61,7 +60,8 @@ async function renderVisits(body) {
 async function renderHistory(body) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Kod, kişi, görüşülen, plaka, amaç ara…', style: { width: '280px' } });
   const out = h('div');
-  const rows = (await api.get('/api/secretariat/visits')).filter(r => r.left_at);
+  const period = periodFilter('secHistory', () => renderHistory(body), { title: 'Geliş tarihi' });
+  const rows = (await api.get(`/api/secretariat/visits?scope=history&${period.qs()}`)).filter(r => r.left_at);
   const draw = () => {
     const list = rows.filter(r => matches(q.value, r.code, r.purpose, r.people_names, r.host_names, r.plates, r.note));
     clear(out, list.length ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
@@ -73,7 +73,7 @@ async function renderHistory(body) {
       : h('div', { class: 'card empty' }, rows.length ? 'Aramaya uyan kayıt yok' : 'Eski kayıt yok'));
   };
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, q, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
+  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
   draw();
 }
 
@@ -284,7 +284,8 @@ async function renderCargo(body, addBtn) {
 async function renderDelivered(body) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Kişi, kargo firması, takip no, açıklama ara…', style: { width: '280px' } });
   const out = h('div');
-  const rows = (await api.get('/api/secretariat/cargo')).filter(k => k.delivered_at);
+  const period = periodFilter('secDelivered', () => renderDelivered(body), { title: 'Teslim tarihi' });
+  const rows = (await api.get(`/api/secretariat/cargo?${period.qs()}`)).filter(k => k.delivered_at);
   const draw = () => {
     const list = rows.filter(k => matches(q.value, k.recipient_name, k.carrier, k.tracking_no, k.description, k.delivered_by_name));
     clear(out, list.length ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
@@ -298,7 +299,7 @@ async function renderDelivered(body) {
       : h('div', { class: 'card empty' }, rows.length ? 'Aramaya uyan kayıt yok' : 'Teslim edilmiş kargo yok'));
   };
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, q, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
+  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
   draw();
 }
 
@@ -344,7 +345,7 @@ async function newCargo(done) {
 export async function renderMyCargo(view, params = []) {
   const history = params[0] === 'history';
   const nav = segmented([['', 'Bekleyen Kargolar'], ['history', 'Kargo Geçmişi']], history ? 'history' : '',
-    v => { location.hash = v ? '#/my-cargo/history' : '#/my-cargo'; });
+    v => { location.hash = v ? '#/my-cargo/history' : '#/my-cargo'; }, { tabs: true });
   const out = h('div');
   const load = async () => {
     const rows = await api.get('/api/me/cargo');

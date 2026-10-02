@@ -4,7 +4,7 @@ import { segIcon } from '../segicons.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  clear, companyName, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, modal, peoplePicker, segmented, shortCompany, svgIcon,
+  clear, companyName, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, modal, peoplePicker, pref, segmented, setPref, shortCompany, svgIcon,
   toast, toastError,
 } from '../ui.js';
 import { KINDS, OCR, badgeOf, size, thumbOf } from './documents.js';
@@ -201,76 +201,205 @@ function eventInfo(subject, subjectId, e, ctx, reload) {
 
 // mine: kişisel takvim (kullanıcı menüsü → Takvim): oluşturduğum / katıldığım tüm kayıtlar ve toplantılarım;
 // yeni kayıt kişisel takvime (konu = kendim) eklenir.
+// Takvim: Gün, Hafta (saat ızgarası), Ay, Yıl ve Ajanda (liste) görünümleri. Boş saate / güne tıklayınca yeni kayıt;
+// kayda tıklayınca ayrıntı. Seçilen görünüm tarayıcıda hatırlanır.
+const HOUR_PX = 48;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const monday = d => addDays(d, -((d.getDay() + 6) % 7));
+const LONG_DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+
 export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
   const today = new Date();
-  let year = today.getFullYear(), month = today.getMonth();
+  let anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let mode = pref('cal.view', 'month');
   const title = h('b', { class: 'cal-title' });
-  const grid = h('div', { class: 'cal-grid' });
+  const body = h('div', { class: 'cal-body' });
   const upcoming = h('div', { class: 'cal-upcoming' });
   const newEvent = preset => eventForm(subject, subjectId, preset, load);
-  const chip = e => {
-    // kişisel takvimde (Firmalar modülü dışı) firma kısa adıyla; tam adı üzerine gelince
-    const label = e.subject_name ? `${e.title} · ${e.subject_name}` : e.kind === 'TOPLANTI' && mine ? `${e.title} · ${shortCompany(e.company_name)}` : e.title;
-    const full = e.kind === 'TOPLANTI' && mine && !e.subject_name ? `${e.title} · ${e.company_name}` : label;
-    const el = h('button', { type: 'button', class: `cal-chip ${e.kind.toLowerCase()} ${e.done_at ? 'done' : ''}`, title: full },
-      e.kind !== 'HATIRLATMA' || hm(e.starts_at) !== '00:00' ? h('span', { class: 'cal-time' }, hm(e.starts_at)) : null, label);
-    el.addEventListener('click', ev => { ev.stopPropagation(); eventInfo(subject, subjectId, e, ctx, load); });
-    return el;
+  const label = e => (e.subject_name ? `${e.title} · ${e.subject_name}` : e.kind === 'TOPLANTI' && mine ? `${e.title} · ${shortCompany(e.company_name)}` : e.title);
+  const open = (e, ev) => {
+    ev?.stopPropagation();
+    if (e.link) { location.hash = e.link; return; }   // şirket içi toplantı: Kişisel → Toplantılar ayrıntısı
+    eventInfo(subject, subjectId, e, ctx, load);
   };
-  async function load() {
-    const first = new Date(year, month, 1);
-    const gridStart = new Date(year, month, 1 - ((first.getDay() + 6) % 7));
-    const gridEnd = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + 42);
-    title.textContent = `${MONTHS[month]} ${year}`;
-    const [events, next] = await Promise.all(mine
-      ? [api.get(`/api/crm/my/events?start=${ymd(gridStart)}&end=${ymd(gridEnd)}`), api.get('/api/crm/my/upcoming')]
-      : [api.get(`/api/crm/events?subject=${subject}&subject_id=${subjectId}&start=${ymd(gridStart)}&end=${ymd(gridEnd)}`),
-        api.get(`/api/crm/events/upcoming?subject=${subject}&subject_id=${subjectId}`)]);
-    const byDay = new Map();
-    for (const e of events) {
-      const k = e.starts_at.slice(0, 10);
-      if (!byDay.has(k)) byDay.set(k, []);
-      byDay.get(k).push(e);
+  const chip = e => {
+    const full = e.kind === 'TOPLANTI' && mine && !e.subject_name ? `${e.title} · ${e.company_name}` : label(e);
+    return h('button', { type: 'button', class: `cal-chip ${e.kind.toLowerCase()} ${e.done_at ? 'done' : ''}`, title: full, onclick: ev => open(e, ev) },
+      e.kind !== 'HATIRLATMA' || hm(e.starts_at) !== '00:00' ? h('span', { class: 'cal-time' }, hm(e.starts_at)) : null, label(e));
+  };
+  const range = () => {
+    if (mode === 'day') return [anchor, addDays(anchor, 1)];
+    if (mode === 'week') { const s0 = monday(anchor); return [s0, addDays(s0, 7)]; }
+    if (mode === 'year') return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear() + 1, 0, 1)];
+    if (mode === 'agenda') return [anchor, addDays(anchor, 60)];
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const s0 = monday(first);
+    return [s0, addDays(s0, 42)];
+  };
+  const titleText = () => {
+    const d = anchor;
+    if (mode === 'day') return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${LONG_DAYS[(d.getDay() + 6) % 7]}`;
+    if (mode === 'week') {
+      const s0 = monday(d), e0 = addDays(s0, 6);
+      return s0.getMonth() === e0.getMonth() ? `${s0.getDate()}–${e0.getDate()} ${MONTHS[e0.getMonth()]} ${e0.getFullYear()}`
+        : `${s0.getDate()} ${MONTHS[s0.getMonth()].slice(0, 3)} – ${e0.getDate()} ${MONTHS[e0.getMonth()].slice(0, 3)} ${e0.getFullYear()}`;
     }
+    if (mode === 'year') return String(d.getFullYear());
+    if (mode === 'agenda') return `${fmtDate(ymd(d))} itibarıyla 60 gün`;
+    return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  };
+  const byDayOf = events => {
+    const m = new Map();
+    for (const e of events) { const k = e.starts_at.slice(0, 10); if (!m.has(k)) m.set(k, []); m.get(k).push(e); }
+    for (const l of m.values()) l.sort((x, y) => x.starts_at.localeCompare(y.starts_at));
+    return m;
+  };
+
+  // ---------- Ay
+  function drawMonth(byDay, start) {
     const cells = [];
     for (let i = 0; i < 42; i++) {
-      const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
-      const key = ymd(d);
-      const list = (byDay.get(key) || []).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-      const cell = h('div', { class: `cal-cell ${d.getMonth() !== month ? 'out' : ''} ${key === ymd(today) ? 'today' : ''}`,
-        title: 'Bu güne kayıt eklemek için tıklayın' },
-        h('span', { class: 'cal-day' }, d.getDate()),
+      const d = addDays(start, i), key = ymd(d), list = byDay.get(key) || [];
+      const cell = h('div', { class: `cal-cell ${d.getMonth() !== anchor.getMonth() ? 'out' : ''} ${key === ymd(today) ? 'today' : ''}`, title: 'Bu güne kayıt eklemek için tıklayın' },
+        h('button', { type: 'button', class: 'cal-day', title: 'Gün görünümü', onclick: ev => { ev.stopPropagation(); anchor = d; setMode('day'); } }, d.getDate()),
         list.slice(0, 3).map(chip),
-        list.length > 3 ? h('button', { type: 'button', class: 'cal-more', onclick: ev => {
-          ev.stopPropagation();   // günün tüm kayıtları
-          const box = modal({ title: fmtDate(key), body: h('div', { class: 'cal-day-list' }, list.map(e => {
-            const c = chip(e);
-            c.addEventListener('click', () => box.close());
-            return c;
-          })), actions: [{ label: 'Kapat', class: 'primary' }] });
-        } }, `+${list.length - 3} kayıt daha`) : null);
+        list.length > 3 ? h('button', { type: 'button', class: 'cal-more', onclick: ev => { ev.stopPropagation(); anchor = d; setMode('day'); } }, `+${list.length - 3} kayıt daha`) : null);
       cell.addEventListener('click', () => newEvent({ starts_at: `${key}T09:00:00` }));
       cells.push(cell);
     }
-    clear(grid, DAYS.map(d => h('div', { class: 'cal-head' }, d)), cells);
-    clear(upcoming, h('h3', null, 'Yaklaşan ve bekleyen'),
+    clear(body, h('div', { class: 'cal-grid' }, DAYS.map(d => h('div', { class: 'cal-head' }, d)), cells));
+  }
+
+  // ---------- Gün / Hafta: saat ızgarası
+  function drawTime(byDay, start, days) {
+    const cols = [];
+    const allDay = [];
+    for (let i = 0; i < days; i++) {
+      const d = addDays(start, i), key = ymd(d), list = byDay.get(key) || [];
+      const timed = list.filter(e => !(e.kind === 'HATIRLATMA' && hm(e.starts_at) === '00:00'));
+      allDay.push(h('div', { class: 'cal-allday-cell' }, list.filter(e => !timed.includes(e)).map(chip)));
+      // Çakışan kayıtlar yan yana şeritlere dağıtılır
+      const lanes = [];
+      const placed = timed.map(e => {
+        const s0 = new Date(e.starts_at), en = e.ends_at ? new Date(e.ends_at) : new Date(s0.getTime() + 30 * 60e3);
+        const top = (s0.getHours() * 60 + s0.getMinutes()) * HOUR_PX / 60;
+        const endMin = en.toDateString() === s0.toDateString() ? en.getHours() * 60 + en.getMinutes() : 24 * 60;
+        const height = Math.max(22, (endMin - (s0.getHours() * 60 + s0.getMinutes())) * HOUR_PX / 60);
+        let lane = lanes.findIndex(endAt => endAt <= top);
+        if (lane < 0) { lane = lanes.length; lanes.push(0); }
+        lanes[lane] = top + height;
+        return { e, top, height, lane };
+      });
+      const n = Math.max(1, lanes.length);
+      const col = h('div', { class: `cal-tcol ${key === ymd(today) ? 'today' : ''}` },
+        placed.map(({ e, top, height, lane }) => h('button', {
+          type: 'button', class: `cal-tev ${e.kind.toLowerCase()} ${e.done_at ? 'done' : ''} ${height < 40 ? 'short' : ''}`, onclick: ev => open(e, ev),
+          title: `${hm(e.starts_at)}${e.ends_at ? `–${hm(e.ends_at)}` : ''} · ${label(e)}`,
+          style: { top: `${top}px`, height: `${height}px`, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` } },
+        height < 40   // kısa kayıt: tek satır saat + başlık
+          ? h('b', null, h('span', { class: 'cal-time' }, hm(e.starts_at)), label(e))
+          : [h('b', null, label(e)), h('span', null, `${hm(e.starts_at)}${e.ends_at ? `–${hm(e.ends_at)}` : ''}${e.location ? ` · ${e.location}` : ''}`)])));
+      col.addEventListener('click', ev => {   // boş saate tıkla: o saatte yeni kayıt (yarım saate yuvarlanır)
+        if (ev.target !== col) return;
+        const min = Math.floor((ev.offsetY / HOUR_PX) * 2) * 30;
+        newEvent({ starts_at: `${key}T${pad2(Math.floor(min / 60))}:${pad2(min % 60)}:00` });
+      });
+      if (key === ymd(today)) {   // şu anki saat çizgisi
+        const now = new Date();
+        col.append(h('div', { class: 'cal-now', style: { top: `${(now.getHours() * 60 + now.getMinutes()) * HOUR_PX / 60}px` } }));
+      }
+      cols.push(col);
+    }
+    const heads = Array.from({ length: days }, (_, i) => {
+      const d = addDays(start, i);
+      return h('button', { type: 'button', class: `cal-thead ${ymd(d) === ymd(today) ? 'today' : ''}`, onclick: () => { anchor = d; setMode('day'); } },
+        h('span', null, DAYS[(d.getDay() + 6) % 7]), h('b', null, d.getDate()));
+    });
+    const hours = h('div', { class: 'cal-hours' }, Array.from({ length: 24 }, (_, i) => h('div', null, i ? `${pad2(i)}:00` : '')));
+    const scroller = h('div', { class: 'cal-tscroll' }, h('div', { class: 'cal-tgrid' }, hours, cols));
+    const view = h('div', { class: `cal-time-view d${days}` },
+      h('div', { class: 'cal-thead-row' }, h('span'), heads),
+      h('div', { class: 'cal-allday' }, h('span', { class: 'small muted' }, 'Tüm gün'), allDay),
+      scroller);
+    view.style.setProperty('--days', days);   // sütun sayısı (CSS değişkeni stil nesnesiyle verilemiyor)
+    clear(body, view);
+    requestAnimationFrame(() => { scroller.scrollTop = 7.5 * HOUR_PX; });
+  }
+
+  // ---------- Yıl: 12 küçük ay; kaydı olan gün işaretli, tıklayınca gün görünümü
+  function drawYear(byDay) {
+    const y = anchor.getFullYear();
+    clear(body, h('div', { class: 'cal-year' }, MONTHS.map((mn, mi) => {
+      const first = new Date(y, mi, 1), s0 = monday(first);
+      const cells = [];
+      for (let i = 0; i < 42; i++) {
+        const d = addDays(s0, i), key = ymd(d), n = d.getMonth() === mi ? (byDay.get(key) || []).length : 0;
+        cells.push(h('button', { type: 'button', class: `cal-yd ${d.getMonth() !== mi ? 'out' : ''} ${key === ymd(today) ? 'today' : ''} ${n ? 'has' : ''}`,
+          title: n ? `${n} kayıt` : '', disabled: d.getMonth() !== mi, onclick: () => { anchor = d; setMode('day'); } }, d.getDate()));
+      }
+      return h('div', { class: 'cal-ym' }, h('button', { type: 'button', class: 'cal-ym-title', onclick: () => { anchor = first; setMode('month'); } }, mn),
+        h('div', { class: 'cal-ygrid' }, DAYS.map(d => h('span', null, d[0])), cells));
+    })));
+  }
+
+  // ---------- Ajanda: günlere göre liste
+  function drawAgenda(byDay) {
+    const keys = [...byDay.keys()].sort();
+    clear(body, keys.length ? h('div', { class: 'cal-agenda' }, keys.map(k => {
+      const d = new Date(`${k}T12:00`);
+      return h('div', { class: `cal-ag-day ${k === ymd(today) ? 'today' : ''}` },
+        h('div', { class: 'cal-ag-date' }, h('b', null, d.getDate()), h('span', null, `${MONTHS[d.getMonth()].slice(0, 3)} · ${DAYS[(d.getDay() + 6) % 7]}`)),
+        h('div', { class: 'cal-ag-list' }, byDay.get(k).map(e => h('button', { type: 'button', class: `cal-ag-ev ${e.kind.toLowerCase()} ${e.done_at ? 'done' : ''}`, onclick: ev => open(e, ev) },
+          h('span', { class: 'cal-ag-time' }, e.kind === 'HATIRLATMA' && hm(e.starts_at) === '00:00' ? 'Tüm gün' : `${hm(e.starts_at)}${e.ends_at ? `–${hm(e.ends_at)}` : ''}`),
+          kindBadge(e.kind), h('b', null, label(e)), e.location ? h('span', { class: 'small muted' }, e.location) : null))));
+    })) : h('div', { class: 'card empty' }, 'Bu aralıkta kayıt yok'));
+  }
+
+  async function load() {
+    const [start, end] = range();
+    title.textContent = titleText();
+    const [events, next] = await Promise.all(mine
+      ? [api.get(`/api/crm/my/events?start=${ymd(start)}&end=${ymd(end)}`), api.get('/api/crm/my/upcoming')]
+      : [api.get(`/api/crm/events?subject=${subject}&subject_id=${subjectId}&start=${ymd(start)}&end=${ymd(end)}`),
+        api.get(`/api/crm/events/upcoming?subject=${subject}&subject_id=${subjectId}`)]);
+    const byDay = byDayOf(events);
+    if (mode === 'day') drawTime(byDay, start, 1);
+    else if (mode === 'week') drawTime(byDay, start, 7);
+    else if (mode === 'year') drawYear(byDay);
+    else if (mode === 'agenda') drawAgenda(byDay);
+    else drawMonth(byDay, start);
+    clear(upcoming, mode === 'agenda' ? null : [h('h3', null, 'Yaklaşan ve bekleyen'),
       next.length ? next.map(e => h('button', { type: 'button', class: `cal-up ${e.done_at ? 'done' : ''}`, onclick: () => eventInfo(subject, subjectId, e, ctx, load) },
         h('span', { class: 'cal-up-when' }, fmtDateTime(e.starts_at)), kindBadge(e.kind), h('b', null, e.title),
         e.subject_name ? h('span', { class: 'small muted' }, e.subject_name) : null,
         e.users.length ? h('span', { class: 'small muted' }, e.users.map(u => u.full_name).join(', ')) : null))
-        : h('div', { class: 'empty small' }, 'Yaklaşan randevu ya da bekleyen hatırlatma yok'));
+        : h('div', { class: 'empty small' }, 'Yaklaşan randevu ya da bekleyen hatırlatma yok')]);
   }
-  const nav = (dm) => { month += dm; if (month < 0) { month = 11; year--; } if (month > 11) { month = 0; year++; } load().catch(toastError); };
+  const seg = segmented([['day', 'Gün'], ['week', 'Hafta'], ['month', 'Ay'], ['year', 'Yıl'], ['agenda', 'Ajanda']], mode, v => setMode(v, true));
+  function setMode(v, fromSeg) {
+    mode = v;
+    setPref('cal.view', v);
+    if (!fromSeg) seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', ['day', 'week', 'month', 'year', 'agenda'][i] === v));
+    load().catch(toastError);
+  }
+  const step = dir => {
+    const y = anchor.getFullYear(), m = anchor.getMonth(), d = anchor.getDate();
+    anchor = mode === 'day' ? addDays(anchor, dir) : mode === 'week' ? addDays(anchor, 7 * dir) : mode === 'year' ? new Date(y + dir, m, 1)
+      : mode === 'agenda' ? addDays(anchor, 30 * dir) : new Date(y, m + dir, 1);
+    void d;
+    load().catch(toastError);
+  };
   load().catch(toastError);
   return h('div', { class: 'cal' },
     h('div', { class: 'cal-bar' },
-      h('button', { class: 'btn sm', type: 'button', onclick: () => nav(-1), 'aria-label': 'Önceki ay' }, '‹'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => { year = today.getFullYear(); month = today.getMonth(); load().catch(toastError); } }, 'Bugün'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => nav(1), 'aria-label': 'Sonraki ay' }, '›'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => step(-1), 'aria-label': 'Önceki' }, '‹'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => { anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate()); load().catch(toastError); } }, 'Bugün'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => step(1), 'aria-label': 'Sonraki' }, '›'),
       title,
       h('span', { class: 'grow' }),
-      h('span', { class: 'cal-legend' }, Object.entries(EVENT_KINDS).map(([k, [label]]) => h('span', { class: `cal-dot ${k.toLowerCase()}` }, label))),
-      h('button', { class: 'btn sm primary', type: 'button', onclick: () => newEvent({}) }, svgIcon(icons.plus), 'Randevu / Hatırlatma')),
-    grid,
+      seg,
+      h('span', { class: 'cal-legend' }, Object.entries(EVENT_KINDS).map(([k, [lbl]]) => h('span', { class: `cal-dot ${k.toLowerCase()}` }, lbl))),
+      h('button', { class: 'btn sm primary', type: 'button', onclick: () => newEvent(mode === 'day' ? { starts_at: `${ymd(anchor)}T09:00:00` } : {}) }, svgIcon(icons.plus), 'Randevu / Hatırlatma')),
+    body,
     upcoming);
 }

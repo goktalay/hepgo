@@ -8,6 +8,11 @@ ROWS = [('L', 1), ('L', 2), ('R', 1), ('R', 2)]
 MIN_SLOTS = 15   # bir raf katındaki yer sayısı (yazıcı sayısı artarsa uzar)
 
 
+def name_key(name):
+    """Yazıcı adı sıralama anahtarı: önce sayı adları (değerine göre), sonra metin adları (alfabetik)."""
+    return _key(name)
+
+
 def _key(name):
     m = re.search(r'\d+', name or '')
     return (0, int(m.group()), name) if m and re.fullmatch(r'\s*(K2\s*Plus\s*)?\d+\s*', name or '', re.I) else (1, 0, name or '')

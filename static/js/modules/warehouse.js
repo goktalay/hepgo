@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { PART_STATES, badge, queuePlate } from '../status.js';
 import {
-  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, pageHead, segmented, statStrip, toast, toastError,
+  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, pageHead, segmented, statStrip, toast, toastError, periodFilter
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -55,10 +55,12 @@ export async function render(view, params, ctx) {
       const rows = filt(history);
       clear(body, rows.length ? historyTable(rows) : h('div', { class: 'card empty' }, 'Filtreye uyan kayıt yok'));
     }
+    period.el.hidden = tab !== 'history';   // dönem yalnızca geçmişte
     approveBtn.textContent = selected.size ? `Seçilenleri Onayla (${selected.size})` : 'Seçilenleri Onayla';
   };
+  const period = periodFilter('whHistory', () => load().catch(toastError), { title: 'Depo Geçmişi: onay tarihi' });
   const load = async () => {
-    [pending, history, aircraft] = await Promise.all([api.get('/api/warehouse/pending'), api.get('/api/warehouse/history'),
+    [pending, history, aircraft] = await Promise.all([api.get('/api/warehouse/pending'), api.get(`/api/warehouse/history?${period.qs()}`),
       api.get('/api/warehouse/aircraft')]);
     draw();
   };
@@ -152,10 +154,10 @@ export async function render(view, params, ctx) {
   });
 
   clear(view,
-    pageHead('Depo Yönetimi', { back: '#/', right: h('div', { class: 'head-right' }, segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); })) }),
+    pageHead('Onay Yönetimi', { back: '#/', right: h('div', { class: 'head-right' }, segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); })) }),
     stats,
     h('div', { class: 'filters' },
-      q, orderSel,
+      q, orderSel, period.el,
       h('label', { class: 'check' }, mine, 'Sadece bana teslim edilenler'),
       h('span', { class: 'spacer' }),
       approveBtn),

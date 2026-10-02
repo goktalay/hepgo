@@ -3,6 +3,7 @@
 // "Yerini değiştir" ile başka rafa taşınır (dolu rafta yer değiştirilir). Durum her yenilemede renk ve etiketle güncellenir.
 // Three.js yerel kopyadan (static/vendor/three) yalnızca bu görünüm açılınca yüklenir.
 import { api } from '../api.js';
+import { loadPath, partObject } from '../gcode3d.js';
 import { PRINTER_STATES, badge } from '../status.js';
 import { clear, field, fmtDateTime, h, modal, onLeave, segmented, toast } from '../ui.js';
 
@@ -25,6 +26,8 @@ export const STATE_COLORS = {
 };
 const SIDE_TEXT = { L: 'Sol raf', R: 'Sağ raf' };
 const LEVEL_TEXT = { 1: 'Alt kat', 2: 'Üst kat' };
+// Basılan parça: sistemdeki sipariş parçası; yoksa yazıcıdaki dosya adından tanınan parça (sunucu: file_part)
+export const partOf = p => p.current_part || p.file_part || null;
 export const placeText = p => (p.rack_side ? `${SIDE_TEXT[p.rack_side]} · ${LEVEL_TEXT[p.rack_level]} · ${p.rack_slot}. sıra` : 'Yeri yok');
 
 /**
@@ -40,7 +43,8 @@ export function printerRoom(opts) {
   // odanın kendisi değil sayfa tam ekrana alınır)
   const fullBtn = h('button', { class: 'btn', type: 'button', onclick: () => setFull(!el.classList.contains('pr3d-full')) });
   const el = h('div', { class: 'pr3d' },
-    h('div', { class: 'pr3d-bar' }, views, h('span', { class: 'spacer' }), legend, fullBtn),
+    h('div', { class: 'pr3d-bar' }, views, h('span', { class: 'spacer' }), legend,
+      h('a', { class: 'btn', href: '/app#/tv/printers', target: '_blank', rel: 'noopener', title: 'Ofis monitörleri için: tam ekran, kendiliğinden dolaşan canlı görünüm' }, 'TV Ekranı ↗'), fullBtn),
     stage);
   const drawFullBtn = () => { fullBtn.textContent = el.classList.contains('pr3d-full') ? 'Tam ekrandan çık' : 'Tam ekran'; };
   function setFull(on) {
@@ -70,7 +74,7 @@ export function printerRoom(opts) {
         h('dt', null, 'Dosya'), h('dd', { class: 'mono small' }, p.live_file || '—'),
         h('dt', null, 'Sistemde'), h('dd', null, p.current_part
           ? (opts.canOpen ? h('a', { href: `#/production/${p.current_order_id}` }, `${p.current_order} / ${p.current_part}`) : `${p.current_order} / ${p.current_part}`)
-          : 'İş yok'),
+          : p.file_part ? `${p.file_part} (dosya adından; sistemde siparişi yok)` : 'İş yok'),
         h('dt', null, 'Son görülme'), h('dd', null, fmtDateTime(p.last_seen))));
   };
   function openInfo(id) {
@@ -80,16 +84,18 @@ export function printerRoom(opts) {
     selected = id;
     room?.select(id);
     const box = h('div', { class: 'pr3d-info' }, infoBody(p));
+    const view3d = h('div', { class: 'pr3d-solo' });
+    const soloView = room?.solo(view3d, p);
     const m = modal({
-      title: p.name,
-      body: box,
-      onClose: () => { if (info?.id === id) { info = null; selected = null; room?.select(null); } },
+      title: p.name, wide: true,
+      body: h('div', { class: 'pr3d-pop' }, view3d, box),
+      onClose: () => { soloView?.destroy(); if (info?.id === id) { info = null; selected = null; room?.select(null); } },
       actions: [
         opts.canEdit ? { label: 'Yerini Değiştir', onClick: () => { moveDialog(p); } } : null,
         { label: 'Kapat', class: 'primary' },
       ].filter(Boolean),
     });
-    info = { id, box, close: m.close };
+    info = { id, box, close: m.close, solo: soloView };
   }
 
   // Yer değiştirme: hedef raf doluysa iki yazıcı yer değiştirir
@@ -141,11 +147,12 @@ export function printerRoom(opts) {
 
   const api3d = {
     el,
+    tour: on => { const go = () => room ? room.tour(on) : setTimeout(go, 300); go(); },
     update(list) {
       printers = list;
       room?.set(list);
       const p = info && printers.find(x => x.id === info.id);
-      if (p) clear(info.box, infoBody(p));
+      if (p) { clear(info.box, infoBody(p)); info.solo?.update(p); }
     },
     destroy() {
       dead = true;
@@ -286,6 +293,30 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
 
   const world = new THREE.Group();
   scene.add(world);
+  // Basılan parçanın G-code'dan 3B yolu (gerçek ölçüde: 1 mm = 0,001): yüzdesi kadarı dolu, üstü şeffaf
+  let previews = null;
+  const previewsReady = api.get('/api/products/previews').then(m => { previews = m; }).catch(() => { previews = {}; });
+  function showPart(u, p, prog, done) {
+    const path = previews?.[partOf(p)]?.preview || null;
+    if (u.gpath !== path) {
+      u.gpath = path;
+      if (u.gobj) { u.gobj.parent?.remove(u.gobj); u.gobj.geometry.dispose(); u.gobj.material.dispose(); u.gobj = null; }
+      if (path) {
+        loadPath(path).then(data => {
+          if (u.gpath !== path) return;
+          const obj = partObject(THREE, data, { faint: 0.16 });
+          obj.scale.setScalar(0.001);
+          obj.position.set(0, u.bedY + 0.002, 0);
+          u.part.parent.add(obj);
+          u.gobj = obj;
+          obj.setCut(u.cut ?? 1);
+          u.part.visible = false;
+        }).catch(() => {});
+      }
+    }
+    u.cut = done ? 1 : prog / 100;
+    if (u.gobj) { u.gobj.setCut(u.cut); u.gobj.visible = true; }
+  }
   let built = '', units = new Map(), len = 10, lamps = null, lastView = 'entry';
 
   function buildStatic(perRow) {
@@ -358,15 +389,24 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
 
   function place(u, p) {
     const x = sideX(p.rack_side);
-    const z = -0.6 + 0.6 + (p.rack_slot - 1) * PITCH + PITCH / 2 - 0.05;
+    const z = -0.6 + 0.6 + ((p._pos || p.rack_slot) - 1) * PITCH + PITCH / 2 - 0.05;   // katında bitişik sıra (boş numara boşluk bırakmaz)
     u.g.position.set(x, SHELF[(p.rack_level || 1) - 1], z);
     u.g.rotation.y = x > 0 ? -Math.PI / 2 : Math.PI / 2;   // ön yüz koridora bakar
   }
 
+  let lastList = null;
+  previewsReady.then(() => { if (lastList) set(lastList); });   // parça 3B yolları gelince hemen çiz
   function set(list) {
+    lastList = list;
     const withPlace = list.filter(p => p.rack_side);
-    const perRow = Math.max(15, ...withPlace.map(p => p.rack_slot));
-    const sig = `${perRow}|${withPlace.map(p => `${p.id}:${p.rack_side}${p.rack_level}${p.rack_slot}`).join(',')}`;
+    // Gerçekte rafta boşluk yok: her taraf / katta yazıcılar sıra numarasına göre bitişik dizilir; raf boyu en kalabalık kata göre
+    const rows = {};
+    for (const p of [...withPlace].sort((a, b) => a.rack_slot - b.rack_slot)) {
+      const k = `${p.rack_side}${p.rack_level}`;
+      p._pos = (rows[k] = (rows[k] || 0) + 1);
+    }
+    const perRow = Math.max(1, ...Object.values(rows));
+    const sig = `${perRow}|${withPlace.map(p => `${p.id}:${p.rack_side}${p.rack_level}${p._pos}`).join(',')}`;
     if (sig !== built) {
       const first = !built;
       buildStatic(perRow);
@@ -401,10 +441,16 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
       const prog = Math.max(0, Math.min(100, p.live_progress || 0));
       const building = (st === 'YAZDIRIYOR' || st === 'DURAKLADI') && prog > 0;
       const done = st === 'TAMAMLANDI';
-      u.part.visible = building || done;
-      const hgt = Math.max(0.004, 0.12 * (done ? 1 : prog / 100));
-      u.part.scale.y = hgt;
-      u.part.position.y = u.bedY + hgt / 2;
+      const showing = building || done;
+      if (showing && partOf(p) && previews?.[partOf(p)]) {   // gerçek parça (G-code) — yüzdeye kadar dolu
+        showPart(u, p, prog, done);
+      } else {
+        if (u.gobj) u.gobj.visible = false;
+        u.part.visible = showing;   // G-code'u olmayan (sistem dışı) baskı: büyüyen kutu
+        const hgt = Math.max(0.004, 0.12 * (done ? 1 : prog / 100));
+        u.part.scale.y = hgt;
+        u.part.position.y = u.bedY + hgt / 2;
+      }
       u.plate.draw(p.name, st, p.id === selectedId);
     }
   }
@@ -467,14 +513,125 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
       u.cross.position.z = Math.sin(t * 1.3 + k) * 0.15;
       u.head.position.x = Math.sin(t * 2.1 + k * 1.7) * 0.16;
     }
-    controls.update();
+    if (tourFn) tourFn(t); else controls.update();
     renderer.render(scene, camera);
     css.render(scene, camera);
   };
+  let tourFn = null;
   loop();
 
+  // Kiosk turu (TV ekranı): girişte etrafa bakar → koridorda yürür, raflara döner → sonda geri döner ve yükselir →
+  // odayı üstten dolaşır → köşeden genel bakış → başa döner. Odanın boyuna göre rota çıkarılır; yumuşak eğri (Catmull-Rom).
+  function tour(on, period = 96) {
+    if (!on) { tourFn = null; controls.enabled = true; return; }
+    const z0 = -0.6, zEnd = z0 + len - 0.9, mid = z0 + len / 2, eye = 1.62, look = 1.3;
+    const K = [];   // [saniye, konum, hedef]
+    const key = (dt, p, t) => K.push([dt, new THREE.Vector3(...p), new THREE.Vector3(...t)]);
+    key(5, [0, eye, -2.6], [0, 1.2, 2]);
+    key(4, [0.1, eye, -2.45], [look, 1.05, 0.2]);         // sola bak
+    key(4, [-0.1, eye, -2.3], [-look, 1.05, 0.2]);        // sağa bak
+    let side = 1;
+    for (let z = -1.5; z < zEnd - 1; z += 1.9) {           // koridorda yürü, başı raflara dönsün
+      key(3.6, [side * 0.12, eye + Math.sin(z) * 0.03, z], [side * look, side > 0 ? 1.3 : 0.75, z + 1.7]);
+      side = -side;
+    }
+    key(4, [0, eye + 0.2, zEnd], [0, 1.1, zEnd + 2]);       // koridor sonu
+    key(5, [0.3, 2.5, zEnd - 0.3], [0, 0.9, zEnd - 5]);     // dönüp geriye bak, yüksel
+    key(7, [0.8, 4.2 + len * 0.45, mid + len * 0.12], [0, 0.4, mid]);    // üstten (tüm oda kadrajda)
+    key(7, [-0.8, 4.4 + len * 0.45, mid - len * 0.12], [0, 0.4, mid]);   // üstten yavaşça dolaş
+    key(6, [-3.2, 3.6, -3.4], [0, 0.7, mid]);               // köşeden genel bakış
+    const total = K.reduce((a, k) => a + k[0], 0);
+    const pc = new THREE.CatmullRomCurve3(K.map(k => k[1]), true, 'centripetal');
+    const tc = new THREE.CatmullRomCurve3(K.map(k => k[2]), true, 'centripetal');
+    const starts = [];
+    K.reduce((a, k) => { starts.push(a); return a + k[0]; }, 0);
+    const scale = total / period;   // istenen döngü süresine yay
+    const p = new THREE.Vector3(), tg = new THREE.Vector3();
+    const t0 = clock.getElapsedTime();
+    controls.enabled = false;
+    tourFn = t => {
+      const s = ((t - t0) * scale) % total;
+      let i = starts.length - 1;
+      while (i > 0 && starts[i] > s) i--;
+      const f = (s - starts[i]) / K[i][0];
+      const u = (i + f) / K.length;   // eğri zaten yumuşak; sabit hızla akar (yürüyüşte durup kalkmasın)
+      pc.getPoint(u, p); tc.getPoint(u, tg);
+      camera.position.copy(p);
+      camera.lookAt(tg);
+    };
+  }
+
+  // Tek yazıcı görünümü (bilgi penceresi): aynı model, içindeki parça (G-code 3B yolu, yüzdesi kadar dolu); döndürülebilir
+  function solo(box, p) {
+    const r2 = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    r2.setPixelRatio(Math.min(devicePixelRatio, 2));
+    r2.toneMapping = THREE.ACESFilmicToneMapping;
+    box.replaceChildren(r2.domElement);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.3));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(1.2, 2, 1.5);
+    sc.add(key);
+    const cam = new THREE.PerspectiveCamera(38, 1, 0.02, 20);
+    const ctl = new OrbitControls(cam, r2.domElement);
+    ctl.enableDamping = true;
+    ctl.target.set(0, 0.46, 0);
+    cam.position.set(1.15, 1.0, 1.45);
+    ctl.autoRotate = true;
+    ctl.autoRotateSpeed = 0.8;
+    r2.domElement.addEventListener('pointerdown', () => { ctl.autoRotate = false; });
+    const u = makePrinter();
+    for (const m of u.hit ? [u.hit] : []) m.visible = false;
+    sc.add(u.g);
+    const upd = pp => {
+      const st = pp.live_state || 'CEVRIMDISI';
+      u.state = st;
+      u.light.material = stateMats[st] || stateMats.CEVRIMDISI;
+      for (const m of u.shell) m.material = bodyMats[st] || bodyMats.CEVRIMDISI;
+      const prog = Math.max(0, Math.min(100, pp.live_progress || 0));
+      const done = st === 'TAMAMLANDI';
+      const showing = ((st === 'YAZDIRIYOR' || st === 'DURAKLADI') && prog > 0) || done;
+      if (showing && partOf(pp) && previews?.[partOf(pp)]) showPart(u, pp, prog, done);
+      else {
+        if (u.gobj) u.gobj.visible = false;
+        u.part.visible = showing;
+        const hgt = Math.max(0.004, 0.12 * (done ? 1 : prog / 100));
+        u.part.scale.y = hgt;
+        u.part.position.y = u.bedY + hgt / 2;
+      }
+    };
+    upd(p);
+    previewsReady.then(() => upd(p));
+    const fit = () => {
+      const w = box.clientWidth || 360, hh = box.clientHeight || 320;
+      r2.setSize(w, hh);
+      cam.aspect = w / hh;
+      cam.updateProjectionMatrix();
+    };
+    const ro2 = new ResizeObserver(fit);
+    ro2.observe(box);
+    fit();
+    const clk = new THREE.Clock();
+    let raf2 = 0;
+    const tick = () => {
+      raf2 = requestAnimationFrame(tick);
+      if (u.state === 'YAZDIRIYOR') {
+        const t = clk.getElapsedTime();
+        u.cross.position.z = Math.sin(t * 1.3) * 0.15;
+        u.head.position.x = Math.sin(t * 2.1) * 0.16;
+      }
+      ctl.update();
+      r2.render(sc, cam);
+    };
+    tick();
+    return {
+      update: upd,
+      destroy() { cancelAnimationFrame(raf2); ro2.disconnect(); ctl.dispose(); r2.dispose(); r2.domElement.remove(); },
+    };
+  }
+
   return {
-    set, select, view,
+    set, select, view, solo, tour,
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();

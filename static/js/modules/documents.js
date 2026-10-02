@@ -1,11 +1,12 @@
 // Evrak Yönetimi: taranmış evrak, resim, ses, video ve diğer dosyalar; OCR / konuşma metninde arama; videodaki kişiler
 // (yüz tanıma, kişiye bağlama); firma/kişi ilişkilendirme;
 // görünürlük (herkes / seçili roller / yalnızca yükleyen).
+import { crmNav } from './crmhub.js';
 import { api, fileUrl, uploadLarge } from '../api.js';
 import { icons } from '../icons.js';
 import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, h, matches, modal, pageHead, peoplePicker, segmented, selectInput,
-  statStrip, svgIcon, toast, toastError, uploadPanel, companyName, shortCompany,
+  statStrip, svgIcon, toast, toastError, uploadPanel, companyName, shortCompany, periodFilter
 } from '../ui.js';
 import { signBadge, signatureBlock } from './sign.js';
 
@@ -22,8 +23,15 @@ const badgeOf = (map, key) => { const [label, color] = map[key] || [key, 'gray']
 const size = b => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 export async function render(view, params, ctx) {
+  if (params[0] === 'belge') { const belge = await import('./belge.js'); return belge.render(view, params.slice(1), ctx); }
   if (params[0]) return renderDetail(view, Number(params[0]), ctx);
   return renderList(view, ctx);
+}
+
+// Evrak ↔ Belge Yönetim alt sekmeleri
+function docSubTabs(active) {
+  return h('div', { class: 'module-tabs' }, segmented([['evrak', 'Evraklar'], ['belge', 'Belge Yönetim']], active,
+    v => { location.hash = v === 'belge' ? '#/documents/belge' : '#/documents'; }, { tabs: true }));
 }
 
 // ---------- Küçük resim / tür simgesi
@@ -43,8 +51,7 @@ async function renderList(view, ctx) {
   const company = selectInput(companies.map(c => [c.id, c.name]), { all: 'Tüm firmalar' });
   const kind = selectInput(Object.entries(KINDS).map(([k, v]) => [k, v[0]]), { all: 'Tüm türler' });
   const status = selectInput(Object.entries(OCR).map(([k, v]) => [k, v[0]]), { all: 'Tüm metin durumları' });
-  const from = h('input', { class: 'input', type: 'date', title: 'Başlangıç tarihi' });
-  const to = h('input', { class: 'input', type: 'date', title: 'Bitiş tarihi' });
+  const period = periodFilter('documents', () => load().catch(toastError), { title: 'Evrak tarihi (yoksa yükleme tarihi)' });
   const body = h('div');
   let docs = [];
   let ocrAvailable = true;
@@ -73,7 +80,7 @@ async function renderList(view, ctx) {
   const load = async () => {
     const my = ++seq;
     const qs = new URLSearchParams(Object.entries({ q: q.value.trim(), company_id: company.value, kind: kind.value,
-      status: status.value, date_from: from.value, date_to: to.value }).filter(([, v]) => v));
+      status: status.value, ...period.range() }).filter(([, v]) => v));
     const r = await api.get(`/api/documents?${qs}`);
     if (my !== seq) return;   // daha yeni arama geldi
     docs = r.documents;
@@ -82,12 +89,14 @@ async function renderList(view, ctx) {
   };
   let timer;
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load().catch(toastError), 300); });
-  [company, kind, status, from, to].forEach(el => el.addEventListener('change', () => load().catch(toastError)));
+  [company, kind, status].forEach(el => el.addEventListener('change', () => load().catch(toastError)));
 
   clear(view,
     pageHead('Evrak Yönetimi', { back: '#/', right: h('div', { class: 'head-right doc-head' },   // filtreler başlıkta
-      h('div', { class: 'doc-search-wrap' }, svgIcon(icons.search), q), company, kind, status, from, to,
+      h('div', { class: 'doc-search-wrap' }, svgIcon(icons.search), q), company, kind, status, period.el,
       h('button', { class: 'btn primary', onclick: () => openUpload(ctx, {}, load) }, svgIcon(icons.upload), 'Evrak Yükle')) }),
+    crmNav('documents', ctx),
+    docSubTabs('evrak'),
     body);
   await load();
   every(5000, () => { if (docs.some(d => ['BEKLIYOR', 'ISLENIYOR'].includes(d.ocr_status))) load().catch(() => {}); });

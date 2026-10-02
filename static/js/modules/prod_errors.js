@@ -1,7 +1,7 @@
 // Araçlar → Üretim Hataları: üretimde parçalara girilen hata kayıtları; filtre, en çok hata verenler, fotoğraflı detay, CSV.
 import { api, fileUrl } from '../api.js';
 import { PART_STATES, badge } from '../status.js';
-import { clear, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, toastError } from '../ui.js';
+import { clear, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip, toastError, periodFilter } from '../ui.js';
 import { companyTag } from './production.js';
 
 const day = iso => (iso || '').slice(0, 10);
@@ -14,14 +14,13 @@ const printerLabel = r => (r.printer_name ? (/^\d+$/.test(r.printer_name) ? `Yaz
 
 export async function renderProductionErrors(view, ctx) {
   let rows;
-  try { rows = await api.get('/api/production-errors'); } catch (err) { toastError(err); rows = []; }
+  const period = periodFilter('prodErrors', () => renderProductionErrors(view, ctx));   // dönem değişince sayfa yeni veriyle kurulur
+  try { rows = await api.get(`/api/production-errors?${period.qs()}`); } catch (err) { toastError(err); rows = []; }
   const canOpen = ctx.user.modules.includes('production');
   const uniq = (key, label) => [...new Map(rows.filter(r => r[key] != null).map(r => [String(r[key]), label(r)])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'tr', { numeric: true }));
 
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Hata kodu, açıklama, parça, sipariş ara…', style: { width: '260px' } });
-  const from = h('input', { class: 'input', type: 'date', title: 'Başlangıç tarihi' });
-  const to = h('input', { class: 'input', type: 'date', title: 'Bitiş tarihi' });
   const printer = selectInput(uniq('printer_id', printerLabel), { all: 'Tüm yazıcılar' });
   const part = selectInput(uniq('part_id', r => r.part_id), { all: 'Tüm parçalar' });
   const order = selectInput(uniq('order_id', r => r.order_code), { all: 'Tüm siparişler' });
@@ -39,7 +38,7 @@ export async function renderProductionErrors(view, ctx) {
   const modeSeg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('prodErrors.view', v); draw(); });
 
   const filtered = () => rows.filter(r =>
-    (!from.value || day(r.at) >= from.value) && (!to.value || day(r.at) <= to.value) &&
+
     (!printer.value || String(r.printer_id) === printer.value) && (!part.value || r.part_id === part.value) &&
     (!order.value || String(r.order_id) === order.value) && (!person.value || String(r.user_id) === person.value) &&
     (!code.value || codeKey(r.error_code) === code.value) && (!photoOnly.checked || r.photo) &&
@@ -155,11 +154,11 @@ export async function renderProductionErrors(view, ctx) {
     a.remove();
   });
 
-  for (const el of [q, from, to, printer, part, order, person, code, photoOnly]) {
+  for (const el of [q, printer, part, order, person, code, photoOnly]) {
     el.addEventListener(el === q ? 'input' : 'change', draw);
   }
   const reset = h('button', { class: 'btn ghost', type: 'button', onclick: () => {
-    for (const el of [q, from, to, printer, part, order, person, code]) el.value = '';
+    for (const el of [q, printer, part, order, person, code]) el.value = '';
     photoOnly.checked = false;
     draw();
   } }, 'Temizle');
@@ -168,7 +167,7 @@ export async function renderProductionErrors(view, ctx) {
     pageHead('Üretim Hataları', { back: '#/tools', sub: 'Üretimdeki parça "Hata verdi" ile kapatılırken girilen hata kodu, açıklama ve resim',
       right: h('div', { class: 'head-right' }, modeSeg) }),
     stats,
-    h('div', { class: 'filters' }, q, from, to, printer, part, order, person, code,
+    h('div', { class: 'filters' }, q, period.el, printer, part, order, person, code,
       h('label', { class: 'check' }, photoOnly, 'Yalnızca resimli'), reset, h('span', { class: 'spacer' }), csvBtn),
     tops,
     body);

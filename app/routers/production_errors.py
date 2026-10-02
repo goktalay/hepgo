@@ -16,7 +16,8 @@ def errors_user(user=Depends(auth.current_user)):
 
 
 @router.get('')
-def list_errors(user=Depends(errors_user), conn=db.DB):
+def list_errors(date_from: str = '', date_to: str = '', user=Depends(errors_user), conn=db.DB):
+    dc, da = db.date_cond('e.at', date_from, date_to)
     rows = db.rows(conn.execute(
         '''SELECT e.id, e.at, e.error_code, e.note, e.photo,
                   op.part_id, op.state AS part_state, o.id AS order_id, o.code AS order_code, o.queue_no,
@@ -30,8 +31,8 @@ def list_errors(user=Depends(errors_user), conn=db.DB):
            LEFT JOIN companies c ON c.id = o.company_id
            LEFT JOIN printers p ON p.id = e.printer_id
            LEFT JOIN users u ON u.id = e.user_id
-           WHERE e.event = 'HATA'
-           ORDER BY e.at DESC, e.id DESC'''))
+           WHERE e.event = 'HATA' AND ''' + dc + '''
+           ORDER BY e.at DESC, e.id DESC''', da))
     for r in rows:
         r['part_state_text'] = PART_STATES_TEXT.get(r['part_state'], r['part_state'])
     return rows

@@ -197,8 +197,13 @@ def meta(user=Depends(field_user)):
 
 
 @router.get('/tasks')
-def list_tasks(user=Depends(field_user), conn=db.DB):
-    return _tasks(conn)
+def list_tasks(date_from: str = '', date_to: str = '', user=Depends(field_user), conn=db.DB):
+    """Görevler. Tarih aralığı: açık görevler (başlangıç / görevde) her zaman; diğerleri açıldığı ya da bittiği döneme göre."""
+    if not (date_from or date_to):
+        return _tasks(conn)
+    c1, a1 = db.date_cond('t.created_at', date_from, date_to)
+    c2, a2 = db.date_cond('t.finished_at', date_from, date_to)
+    return _tasks(conn, f"(t.status IN ('BASLANGIC', 'GOREVDE') OR ({c1}) OR ({c2}))", (*a1, *a2))
 
 
 @router.get('/tasks/{tid}')
@@ -208,7 +213,9 @@ def task_detail(tid: int, user=Depends(field_user), conn=db.DB):
         '''SELECT e.*, u.full_name AS created_by_name, sp.full_name AS spent_by_name FROM field_expenses e
            LEFT JOIN users u ON u.id = e.created_by LEFT JOIN users sp ON sp.id = e.spent_by
            WHERE e.task_id = ? ORDER BY e.spent_on DESC, e.id DESC''', (tid,)))
+    t['equipment'] = task_equipment(conn, tid)
     t['can'] = {
+        'isg': is_manager(user) or user['id'] == t['lead_id'],   # İSG kontrolünü saha sorumlusu doldurur
         'manage': is_manager(user),
         'flights': is_manager(user) or auth.PILOT in user['roles'],
         'expenses': is_manager(user) or _member(t, user),
@@ -257,7 +264,7 @@ def create_task(body: TaskIn, user=Depends(field_manager), conn=db.DB):
     if not staff:
         raise HTTPException(400, 'En az bir saha personeli ekleyin')
     for sid in staff:
-        if not _has_role(conn, sid, auth.FIELD_STAFF):
+        if not auth.has_role_or_intern(conn, sid, auth.FIELD_STAFF):
             raise HTTPException(400, 'Personel listesinde saha personeli olmayan biri var')
     code = db.next_code(conn, 'field_tasks', 'code', 'GRV')
     cur = conn.execute(
@@ -268,6 +275,7 @@ def create_task(body: TaskIn, user=Depends(field_manager), conn=db.DB):
     conn.executemany('INSERT INTO field_task_staff (task_id, user_id) VALUES (?,?)', [(tid, s) for s in staff])
     conn.executemany('INSERT INTO field_flights (task_id, order_id, updated_at) VALUES (?,?,?)',
                      [(tid, o, db.now()) for o in orders])
+    task_equipment(conn, tid)   # standart saha ekipman listesi göreve kopyalanır
     # Montaj aşamasında sahaya götürülen uçaklar görev açılınca "Sahada Montaj" aşamasına geçer
     conn.execute(f"""UPDATE orders SET status = 'SAHADA_MONTAJ' WHERE status = 'MONTAJ'
                      AND id IN ({','.join('?' * len(orders))})""", orders)
@@ -614,7 +622,7 @@ def _flight_notes(conn, fid):
 
 
 @router.get('/flights')
-def list_flights(view: str = 'ready', user=Depends(field_user), conn=db.DB):
+def list_flights(view: str = 'ready', date_from: str = '', date_to: str = '', user=Depends(field_user), conn=db.DB):
     """Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar. ready: uçuşa hazır (saha deposunda, montajı bitmiş; görev
     başlangıç / görevde), flown: uçmuş (logu hazır ya da hurda), all: iptal edilmemiş görevlerdeki tümü."""
     where = {'ready': "o.status = 'TAMAMLANDI' AND t.status IN ('BASLANGIC', 'GOREVDE')",
@@ -622,6 +630,10 @@ def list_flights(view: str = 'ready', user=Depends(field_user), conn=db.DB):
              'all': "t.status != 'IPTAL'"}.get(view)
     if not where:
         raise HTTPException(400, 'Geçersiz görünüm')
+    dargs = ()
+    if view != 'ready' and (date_from or date_to):   # uçuşa hazırlar her zaman; uçmuş / tümü görevin başladığı döneme göre
+        dc, dargs = db.date_cond('COALESCE(t.started_at, t.created_at)', date_from, date_to)
+        where = f'{where} AND {dc}'
     return db.rows(conn.execute(
         f'''SELECT f.id, f.task_id, f.launch, o.id AS order_id, o.code AS order_code, o.queue_no, o.status AS order_status,
                    o.scrapped_at, p.name AS product_name, COALESCE(p.usage_type, 'TEK') AS usage_type,
@@ -634,7 +646,7 @@ def list_flights(view: str = 'ready', user=Depends(field_user), conn=db.DB):
             LEFT JOIN field_locations loc ON loc.id = t.location_id LEFT JOIN users pl ON pl.id = t.pilot_id
             LEFT JOIN flight_logs l ON l.id = (SELECT MAX(id) FROM flight_logs WHERE flight_id = f.id)
             WHERE t.status != 'IPTAL' AND {where}
-            ORDER BY t.id DESC, o.queue_no'''))
+            ORDER BY t.id DESC, o.queue_no''', tuple(dargs)))
 
 
 @router.post('/flights/{fid}/scrap')
@@ -664,6 +676,9 @@ def flight_detail(fid: int, user=Depends(field_user), conn=db.DB):
         '''SELECT o.id, o.code, o.queue_no, o.status, o.note, o.created_at, o.completed_at, o.scrapped_at, o.scrap_reason,
                   p.name AS product_name, p.serial AS product_serial, p.code AS product_code, COALESCE(p.usage_type, 'TEK') AS usage_type
            FROM orders o LEFT JOIN products p ON p.id = o.product_id WHERE o.id = ?''', (flight['order_id'],)))
+    if order and order['status'] == 'HURDA':   # hurda uçağın malzemeleri değerlendirilmedi mi?
+        from .mrp import pending_reviews
+        order['material_pending'] = any(r['id'] == order['id'] for r in pending_reviews(conn))
     log = None
     if f['log_id']:
         log = db.row(conn.execute(
@@ -832,3 +847,413 @@ def delete_video(vid: int, user=Depends(field_user), conn=db.DB):
     conn.execute('DELETE FROM flight_videos WHERE id = ?', (vid,))
     db.audit(conn, user['id'], 'Uçuş videosu sildi', 'field_task', flight['task_id'], v['file_name'])
     return {'ok': True}
+
+
+# ---------- Modül Ayarları (Program Ayarları › Modül Ayarları › Saha Yönetimi) ----------
+# Standart saha ekipman listesi: her yeni görevde göreve kopyalanır; saha yöneticisi göreve özel çıkarır / ekler / miktarını değiştirir.
+# Görev tanımları: görev raporunda her rolün sahada üstlendiği işin açıklaması.
+DUTIES_KEY = 'field.duties'
+DUTY_DEFAULTS = {
+    'lead': 'Görevin planlanması ve sahada yönetimi; ekip koordinasyonu, iş güvenliği, uçuş onayı, test sonucunun ve raporun onaylanması.',
+    'pilot': 'Uçuş öncesi kontroller (hava aracı, batarya, kumanda, yer istasyonu), uçuşun icrası, uçuş logunun ve gözlemlerin kaydı.',
+    'driver': 'Ekibin ve ekipmanın görev yerine güvenle taşınması, araç kontrolü, başlangıç / bitiş kilometresinin kaydı.',
+    'staff': 'Ekipmanın yüklenmesi ve kurulumu, sahada montaj, fırlatma desteği, uçuş sonrası toplama ve kontroller.',
+}
+DUTY_TITLES = {'lead': 'Saha Sorumlusu', 'pilot': 'Pilot', 'driver': 'Şoför', 'staff': 'Saha Personeli'}
+
+
+def _sysadmin(user):
+    if not (user.get('master') or auth.ADMIN in user['roles']):
+        raise HTTPException(403, 'Modül ayarları yalnızca sistem yöneticisine açıktır')
+
+
+def duties(conn):
+    import json
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (DUTIES_KEY,)).fetchone()
+    try:
+        saved = json.loads(row[0]) if row else {}
+    except ValueError:
+        saved = {}
+    return {k: (saved.get(k) or v) for k, v in DUTY_DEFAULTS.items()}
+
+
+EQ_PRODUCT = 'p.code AS product_code, p.type AS product_type'
+
+
+def std_equipment(conn):
+    return db.rows(conn.execute(f'''SELECT e.id, e.name, e.qty, e.unit, e.note, e.sort, e.product_id, {EQ_PRODUCT}
+                                    FROM field_equipment e LEFT JOIN products p ON p.id = e.product_id ORDER BY e.sort, e.id'''))
+
+
+def _stock_qty(conn, ids):
+    """Ürünlerin toplam stoğu (malzeme hareketleri + yarı mamul / yedek parça hareketleri)."""
+    if not ids:
+        return {}
+    q = ','.join('?' * len(ids))
+    out = {}
+    for t, col in (('material_moves', 'product_id'), ('spare_moves', 'spare_id')):
+        for pid, n in conn.execute(f'SELECT {col}, SUM(qty) FROM {t} WHERE {col} IN ({q}) GROUP BY {col}', list(ids)):
+            out[pid] = out.get(pid, 0) + (n or 0)
+    return out
+
+
+@router.get('/equipment-search')
+def equipment_search(q: str = '', user=Depends(field_user), conn=db.DB):
+    """Ekipman seçimi: stoktaki her şey (yedek parça, sarf, hammadde, yarı mamul, mamul — tip ayırmadan); kod, ad, barkod,
+    marka / model, açıklama ve Mikro stok kodunda arar. En az 3 karakter; kısa parça kodları (R2, 09) tam eşleşmeyle 2 karakterde de bulunur."""
+    q = q.strip()
+    if len(q) < 2:
+        return []
+    # Türkçe büyük / küçük harf (İ-i, I-ı, Ş-ş…) SQLite LIKE'ta eşleşmediği için süzme Python'da
+    tr = str.maketrans('İIŞĞÜÖÇ', 'iışğüöç')
+    low = lambda s: (s or '').translate(tr).lower()
+    k = low(q)
+    hits = []
+    mikro = {}
+    for pid, mc in conn.execute("SELECT local_id, mikro_code FROM mikro_links WHERE kind = 'stok'"):
+        mikro[pid] = mc
+    for r in db.rows(conn.execute('SELECT id, code, name, type, unit, brand, model, barcode, description, schema FROM products WHERE active = 1')):
+        code = low(r['code'])
+        if len(k) < 3 and code != k:   # 2 karakter: yalnızca kod tam eşleşmesi
+            continue
+        hay = ' '.join(low(r[f]) for f in ('code', 'name', 'barcode', 'brand', 'model', 'description')) + ' ' + low(mikro.get(r['id']))
+        if k in hay:
+            hits.append((code != k, not code.startswith(k), not low(r['name']).startswith(k), low(r['name']), r))
+    rows = [x[4] for x in sorted(hits, key=lambda x: x[:4])[:50]]
+    for r in rows:
+        sch = r.pop('schema') or ''
+        r['kind'] = 'YEDEK_PARCA' if sch.startswith(('part-', 'spare-')) else r['type']
+        r['mikro_code'] = mikro.get(r['id'])
+        for f in ('barcode', 'description'):
+            r.pop(f, None)
+    st = _stock_qty(conn, [r['id'] for r in rows])
+    for r in rows:
+        r['stock'] = st.get(r['id'], 0)
+    return rows
+
+
+def _product(conn, pid):
+    if not pid:
+        return None
+    p = db.row(conn.execute('SELECT id, code, name, unit FROM products WHERE id = ?', (pid,)))
+    if not p:
+        raise HTTPException(400, 'Seçilen ürün stokta bulunamadı')
+    return p
+
+
+class EquipIn(BaseModel):
+    id: Optional[int] = None
+    product_id: Optional[int] = None
+    name: str
+    qty: float = 1
+    unit: Optional[str] = None
+    note: Optional[str] = None
+
+
+class FieldSettingsIn(BaseModel):
+    equipment: list[EquipIn] = []
+    duties: dict = {}
+
+
+@router.get('/settings')
+def get_settings(user=Depends(auth.current_user), conn=db.DB):
+    _sysadmin(user)
+    return {'equipment': std_equipment(conn), 'duties': duties(conn), 'duty_titles': DUTY_TITLES, 'duty_defaults': DUTY_DEFAULTS}
+
+
+@router.put('/settings')
+def put_settings(body: FieldSettingsIn, user=Depends(auth.current_user), conn=db.DB):
+    import json
+    _sysadmin(user)
+    now = db.now()
+    keep = []
+    for i, e in enumerate(body.equipment):
+        name = (e.name or '').strip()[:120]
+        if not name:
+            continue
+        qty = max(0.0, float(e.qty or 0))
+        prod = _product(conn, e.product_id)
+        if prod:
+            name = prod['name'][:120]
+        if e.id and conn.execute('SELECT 1 FROM field_equipment WHERE id = ?', (e.id,)).fetchone():
+            conn.execute('UPDATE field_equipment SET name = ?, qty = ?, unit = ?, note = ?, sort = ?, product_id = ? WHERE id = ?',
+                         (name, qty, (e.unit or '').strip()[:20] or None, (e.note or '').strip()[:200] or None, i, e.product_id or None, e.id))
+            keep.append(e.id)
+        else:
+            if not prod:
+                raise HTTPException(400, f'“{name}”: yeni ekipman stoktaki ürünlerden seçilmeli')
+            keep.append(conn.execute('INSERT INTO field_equipment (name, qty, unit, note, sort, created_at, product_id) VALUES (?,?,?,?,?,?,?)',
+                                     (name, qty, (e.unit or '').strip()[:20] or None, (e.note or '').strip()[:200] or None, i, now, prod['id'])).lastrowid)
+    conn.execute(f"DELETE FROM field_equipment WHERE id NOT IN ({','.join('?' * len(keep)) or 'NULL'})", keep)
+    d = {k: (str(body.duties.get(k) or '').strip()[:1000] or DUTY_DEFAULTS[k]) for k in DUTY_DEFAULTS}
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (DUTIES_KEY, json.dumps(d, ensure_ascii=False)))
+    db.audit(conn, user['id'], 'Saha modül ayarlarını güncelledi', 'settings', None, f'{len(keep)} standart ekipman')
+    return get_settings(user, conn)
+
+
+# ---------- Göreve özel ekipman listesi ----------
+def task_equipment(conn, tid):
+    """Görevin ekipman listesi; görev için henüz oluşturulmadıysa standart listeden kopyalanır."""
+    if not conn.execute('SELECT equip_init FROM field_tasks WHERE id = ?', (tid,)).fetchone()[0]:
+        now = db.now()
+        conn.executemany('INSERT INTO field_task_equipment (task_id, name, qty, unit, note, std_id, sort, created_at, product_id) VALUES (?,?,?,?,?,?,?,?,?)',
+                         [(tid, e['name'], e['qty'], e['unit'], e['note'], e['id'], e['sort'], now, e['product_id']) for e in std_equipment(conn)])
+        conn.execute('UPDATE field_tasks SET equip_init = 1 WHERE id = ?', (tid,))
+    return db.rows(conn.execute(f'''SELECT e.id, e.name, e.qty, e.unit, e.note, e.std_id, e.product_id, {EQ_PRODUCT}
+                                    FROM field_task_equipment e LEFT JOIN products p ON p.id = e.product_id
+                                    WHERE e.task_id = ? ORDER BY e.sort, e.id''', (tid,)))
+
+
+class TaskEquipIn(BaseModel):
+    product_id: Optional[int] = None
+    name: Optional[str] = None
+    qty: Optional[float] = None
+    unit: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.get('/tasks/{tid}/equipment')
+def get_task_equipment(tid: int, user=Depends(field_user), conn=db.DB):
+    get_task(conn, tid)
+    return task_equipment(conn, tid)
+
+
+@router.post('/tasks/{tid}/equipment')
+def add_task_equipment(tid: int, body: TaskEquipIn, user=Depends(field_manager), conn=db.DB):
+    t = get_task(conn, tid)
+    task_equipment(conn, tid)
+    prod = _product(conn, body.product_id)
+    if not prod:
+        raise HTTPException(400, 'Ekipmanı stoktaki ürünlerden seçin')
+    name = prod['name'][:120]
+    top = conn.execute('SELECT COALESCE(MAX(sort), 0) + 1 FROM field_task_equipment WHERE task_id = ?', (tid,)).fetchone()[0]
+    conn.execute('INSERT INTO field_task_equipment (task_id, name, qty, unit, note, sort, created_at, product_id) VALUES (?,?,?,?,?,?,?,?)',
+                 (tid, name, max(0.0, float(body.qty or 1)), (body.unit or prod['unit'] or '').strip()[:20] or None,
+                  (body.note or '').strip()[:200] or None, top, db.now(), prod['id']))
+    db.audit(conn, user['id'], 'Görev ekipmanı ekledi', 'field_task', tid, f'{t["code"]}: {name}')
+    return task_equipment(conn, tid)
+
+
+@router.put('/tasks/{tid}/equipment/{eid}')
+def edit_task_equipment(tid: int, eid: int, body: TaskEquipIn, user=Depends(field_manager), conn=db.DB):
+    r = db.row(conn.execute('SELECT * FROM field_task_equipment WHERE id = ? AND task_id = ?', (eid, tid)))
+    if not r:
+        raise HTTPException(404, 'Ekipman bulunamadı')
+    conn.execute('UPDATE field_task_equipment SET name = ?, qty = ?, unit = ?, note = ? WHERE id = ?',
+                 ((body.name or r['name']).strip()[:120], max(0.0, float(body.qty if body.qty is not None else r['qty'])),
+                  r['unit'] if body.unit is None else (body.unit.strip()[:20] or None),
+                  r['note'] if body.note is None else (body.note.strip()[:200] or None), eid))
+    return task_equipment(conn, tid)
+
+
+@router.delete('/tasks/{tid}/equipment/{eid}')
+def delete_task_equipment(tid: int, eid: int, user=Depends(field_manager), conn=db.DB):
+    r = db.row(conn.execute('SELECT name FROM field_task_equipment WHERE id = ? AND task_id = ?', (eid, tid)))
+    if not r:
+        raise HTTPException(404, 'Ekipman bulunamadı')
+    conn.execute('DELETE FROM field_task_equipment WHERE id = ?', (eid,))
+    db.audit(conn, user['id'], 'Görev ekipmanını çıkardı', 'field_task', tid, r['name'])
+    return task_equipment(conn, tid)
+
+
+@router.post('/tasks/{tid}/equipment/reset')
+def reset_task_equipment(tid: int, user=Depends(field_manager), conn=db.DB):
+    """Göreve özel değişiklikleri atıp standart listeyi yeniden yükler."""
+    get_task(conn, tid)
+    conn.execute('DELETE FROM field_task_equipment WHERE task_id = ?', (tid,))
+    conn.execute('UPDATE field_tasks SET equip_init = 0 WHERE id = ?', (tid,))
+    return task_equipment(conn, tid)
+
+
+# ---------- Görevin İSG kontrolü: kişilerin KKD maddeleri için Yaptı / Yapmadı (saha sorumlusu doldurur)
+def _task_crew(t):
+    """Görevdeki kişiler (sırayla, tekrarsız): [(user_id, ad, [roller])]."""
+    out = {}
+    def add(uid, name, role):
+        if uid:
+            out.setdefault(uid, [name, []])
+            if role not in out[uid][1]:
+                out[uid][1].append(role)
+    add(t['lead_id'], t['lead_name'], 'Saha Sorumlusu')
+    add(t['pilot_id'], t['pilot_name'], 'Pilot')
+    if t['driver_id']:
+        add(t['driver_id'], t['driver_name'], 'Şoför')
+    for v in t['vehicles']:
+        add(v['driver_id'], v['driver_name'], 'Şoför')
+    for s in t['staff']:
+        add(s['id'], s['full_name'], 'Saha Personeli')
+    return [(uid, n, roles) for uid, (n, roles) in out.items()]
+
+
+def task_isg(conn, t):
+    """Kişi başına: uçuş ekibi pozisyonu, acil durum görevi, KKD listesi (İK'dan) + bu görevdeki Yaptı / Yapmadı işaretleri,
+    süresi dolmuş / alınmamış eğitimler."""
+    today = db.now()[:10]
+    checks = {(r['user_id'], r['item']): r for r in db.rows(conn.execute(
+        'SELECT c.*, u.full_name AS checked_by_name FROM field_task_isg c LEFT JOIN users u ON u.id = c.checked_by WHERE c.task_id = ?', (t['id'],)))}
+    out = []
+    for uid, name, roles in _task_crew(t):
+        e = db.row(conn.execute('SELECT id, flight_position, emergency_duty FROM employees WHERE user_id = ?', (uid,)))
+        ppe = db.rows(conn.execute('SELECT name, usage FROM employee_ppe WHERE employee_id = ? ORDER BY sort, id', (e['id'],))) if e else []
+        tr = db.rows(conn.execute('SELECT name, done_at, valid_until FROM employee_trainings WHERE employee_id = ? ORDER BY sort, id', (e['id'],))) if e else []
+        for p in ppe:
+            c = checks.get((uid, p['name'])) or {}
+            p.update(status=c.get('status'), note=c.get('note'), checked_by_name=c.get('checked_by_name'), checked_at=c.get('checked_at'))
+        out.append({'user_id': uid, 'name': name, 'roles': roles, 'position': e and e['flight_position'], 'emergency': e and e['emergency_duty'],
+                    'ppe': ppe, 'trainings_missing': [x['name'] for x in tr if not x['done_at']],
+                    'trainings_expired': [x['name'] for x in tr if x['valid_until'] and x['valid_until'] < today]})
+    return out
+
+
+class IsgCheckIn(BaseModel):
+    user_id: int
+    item: str
+    status: Optional[str] = None   # YAPTI | YAPMADI | None (temizle)
+    note: Optional[str] = None
+
+
+@router.get('/tasks/{tid}/isg')
+def get_task_isg(tid: int, user=Depends(field_user), conn=db.DB):
+    return task_isg(conn, get_task(conn, tid))
+
+
+@router.put('/tasks/{tid}/isg')
+def set_task_isg(tid: int, body: IsgCheckIn, user=Depends(field_user), conn=db.DB):
+    t = get_task(conn, tid)
+    if not (is_manager(user) or user['id'] == t['lead_id']):
+        raise HTTPException(403, 'İSG kontrolünü saha sorumlusu doldurur')
+    if body.status not in (None, 'YAPTI', 'YAPMADI'):
+        raise HTTPException(400, 'Geçersiz durum')
+    if body.user_id not in {u for u, *_ in _task_crew(t)}:
+        raise HTTPException(400, 'Kişi bu görevde değil')
+    item = (body.item or '').strip()[:200]
+    if not item:
+        raise HTTPException(400, 'Madde boş')
+    if body.status is None and not (body.note or '').strip():
+        conn.execute('DELETE FROM field_task_isg WHERE task_id = ? AND user_id = ? AND item = ?', (tid, body.user_id, item))
+    else:
+        conn.execute('''INSERT INTO field_task_isg (task_id, user_id, item, status, note, checked_by, checked_at) VALUES (?,?,?,?,?,?,?)
+                        ON CONFLICT(task_id, user_id, item) DO UPDATE SET status = excluded.status, note = excluded.note,
+                        checked_by = excluded.checked_by, checked_at = excluded.checked_at''',
+                     (tid, body.user_id, item, body.status, (body.note or '').strip()[:300] or None, user['id'], db.now()))
+    return task_isg(conn, t)
+
+
+# ---------- Görev raporu (yazdırılabilir): adım adım akış, görev tanımları, ekipman, uçuş raporları ----------
+STEP_TEXT = {
+    'Saha görevi oluşturdu': 'Görev oluşturuldu',
+    'Saha görevini başlattı': 'Sahaya çıkış — görev başlatıldı',
+    'Saha görevini bitirdi': 'Görev tamamlandı',
+    'Saha görevini iptal etti': 'Görev iptal edildi',
+    'Uçuş bilgisini düzenledi': 'Uçuş bilgisi girildi (fırlatma sistemi / not)',
+    'Göreve araç ekledi': 'Göreve araç atandı',
+    'Araç yol bilgisini girdi': 'Araç kilometre bilgisi girildi',
+    'Yol bilgisini girdi': 'Görev yeri / yol bilgisi girildi',
+    'Görevden aracı çıkardı': 'Araç görevden çıkarıldı',
+    'Görev masrafı ekledi': 'Masraf girildi',
+    'Görev masrafı sildi': 'Masraf silindi',
+    'Uçuş notu ekledi': 'Uçuş notu eklendi',
+    'Uçuş resmi yükledi': 'Uçuş fotoğrafı yüklendi',
+    'Uçuş videosu yükledi': 'Uçuş videosu yüklendi',
+    'Uçuş videosu sildi': 'Uçuş videosu silindi',
+    'Görev ekipmanı ekledi': 'Göreve ekipman eklendi',
+    'Görev ekipmanını çıkardı': 'Görevden ekipman çıkarıldı',
+}
+
+
+@router.get('/tasks/{tid}/report')
+def task_report(tid: int, user=Depends(field_user), conn=db.DB):
+    import json
+    t = task_detail(tid, user, conn)
+    fids = [f['id'] for f in t['flights']]
+    fmarks = ','.join('?' * len(fids)) or 'NULL'
+    audits = db.rows(conn.execute(
+        f'''SELECT a.action, a.detail, a.at, a.user_id, u.full_name FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+            WHERE (a.entity = 'field_task' AND a.entity_id = ?) OR (a.entity = 'field_flight' AND a.entity_id IN ({fmarks}))
+            ORDER BY a.at, a.id''', (str(tid), *[str(f) for f in fids])))
+    steps = [{'at': a['at'], 'who': a['full_name'], 'user_id': a['user_id'], 'text': STEP_TEXT.get(a['action'], a['action']), 'detail': a['detail']}
+             for a in audits]
+    have = {s['text'] for s in steps}
+    # Eski görevlerde kayıt günlüğü eksik olabilir: görev zamanlarından tamamla
+    if 'Görev oluşturuldu' not in have:
+        steps.append({'at': t['created_at'], 'who': t['created_by_name'], 'user_id': t['created_by'], 'text': 'Görev oluşturuldu', 'detail': t['code']})
+    if t['started_at'] and 'Sahaya çıkış — görev başlatıldı' not in have:
+        steps.append({'at': t['started_at'], 'who': t['lead_name'], 'user_id': t['lead_id'], 'text': 'Sahaya çıkış — görev başlatıldı', 'detail': None})
+    if t['finished_at'] and 'Görev tamamlandı' not in have:
+        steps.append({'at': t['finished_at'], 'who': t['lead_name'], 'user_id': t['lead_id'], 'text': 'Görev tamamlandı',
+                      'detail': 'Başarılı' if t['result'] == 'BASARILI' else 'Başarısız'})
+    logs = db.rows(conn.execute(
+        f'''SELECT l.*, u.full_name AS uploaded_by_name, o.code AS order_code, o.queue_no FROM flight_logs l
+            LEFT JOIN users u ON u.id = l.uploaded_by LEFT JOIN field_flights f ON f.id = l.flight_id LEFT JOIN orders o ON o.id = f.order_id
+            WHERE l.flight_id IN ({fmarks}) ORDER BY l.id''', fids)) if fids else []
+    for l in logs:
+        ac = l['queue_no'] or l['order_code'] or ''
+        steps.append({'at': l['uploaded_at'], 'who': l['uploaded_by_name'], 'user_id': l['uploaded_by'], 'text': 'Uçuş logu yüklendi', 'detail': f'{ac} · {l["file_name"]}'})
+        if l['analyzed_at'] and l['status'] == 'TAMAM':
+            steps.append({'at': l['analyzed_at'], 'who': 'Sistem', 'user_id': None, 'text': 'Uçuş raporu hazırlandı (log analizi)', 'detail': ac})
+            if l['analysis']:
+                try:
+                    s = json.loads(l['analysis']).get('summary') or {}
+                    for key, label in (('takeoff_utc', 'Kalkış'), ('landing_utc', 'İniş')):
+                        if s.get(key):
+                            at = datetime.fromisoformat(s[key]).astimezone().replace(tzinfo=None).isoformat(timespec='seconds')
+                            steps.append({'at': at, 'who': t['pilot_name'], 'user_id': t['pilot_id'], 'text': f'{label} (test uçuşu)', 'detail': ac})
+                except (ValueError, TypeError):
+                    pass
+    if t['report_at']:
+        steps.append({'at': t['report_at'], 'who': 'Sistem', 'user_id': None, 'text': 'Tüm uçuş raporları hazır — rapor tamamlandı', 'detail': None})
+    START, FINISH = 'Sahaya çıkış — görev başlatıldı', 'Görev tamamlandı'
+    prio = {'Görev oluşturuldu': 0, START: 1, FINISH: 3}   # aynı saniyedeki adımlar mantıklı sırada
+    steps.sort(key=lambda s: (s['at'] or '', prio.get(s['text'], 2)))
+    # Aşama: sahaya çıkış adımından önce Hazırlık, görev bitişinden sonra Rapor, arası Saha
+    i_start = next((i for i, s in enumerate(steps) if s['text'] == START), None)
+    i_end = next((i for i, s in enumerate(steps) if s['text'] in (FINISH, 'Görev iptal edildi')), None)
+    for i, s in enumerate(steps):
+        s['phase'] = ('Hazırlık' if i_start is None or i < i_start else 'Rapor' if i_end is not None and i > i_end else 'Saha')
+    # Görev tanımları: kişi → roller + rol açıklaması + yaptığı işlemler
+    d = duties(conn)
+    people = {}
+
+    def add(uid, name, role, extra=None):
+        if not uid:
+            return
+        p = people.setdefault(uid, {'user_id': uid, 'full_name': name, 'roles': [], 'duties': [], 'actions': 0})
+        title = DUTY_TITLES[role] + (f' ({extra})' if extra else '')
+        if title not in p['roles']:
+            p['roles'].append(title)
+            p['duties'].append(d[role])
+    add(t['lead_id'], t['lead_name'], 'lead')
+    add(t['pilot_id'], t['pilot_name'], 'pilot')
+    if t['driver_id']:
+        add(t['driver_id'], t['driver_name'], 'driver')
+    for v in t['vehicles']:
+        add(v['driver_id'], v['driver_name'], 'driver', v['plate'])
+    for s in t['staff']:
+        add(s['id'], s['full_name'], 'staff')
+    for s in steps:
+        if s['user_id'] in people:
+            people[s['user_id']]['actions'] += 1
+    # Görev tanımı: İnsan Kaynakları'ndaki kişisel görev tanımı (yalnızca Genel / Kurum İçi maddeler); yoksa rol açıklaması
+    from .hr import shareable_duties
+    hr = shareable_duties(conn, list(people))
+    for uid, p in people.items():
+        if hr.get(uid):
+            p['duties'], p['duty_source'] = hr[uid], 'hr'
+        else:
+            p['duty_source'] = 'role'
+    # Uçuş raporları
+    reports = []
+    for f in t['flights']:
+        lg = next((l for l in reversed(logs) if l['flight_id'] == f['id'] and l['status'] == 'TAMAM'), None)
+        an = {}
+        if lg and lg['analysis']:
+            try:
+                an = json.loads(lg['analysis'])
+            except ValueError:
+                an = {}
+        reports.append({'flight': {k: f.get(k) for k in ('id', 'order_code', 'queue_no', 'product_name', 'product_serial', 'launch_text', 'note', 'flight_s')},
+                        'log': {'file_name': lg['file_name'], 'uploaded_by_name': lg['uploaded_by_name'], 'analyzed_at': lg['analyzed_at']} if lg else None,
+                        'summary': an.get('summary') or {}, 'findings': an.get('findings') or [],
+                        'notes': _flight_notes(conn, f['id']), 'videos': len(f['videos'])})
+    return {'task': t, 'steps': steps, 'people': list(people.values()), 'equipment': task_equipment(conn, tid), 'reports': reports,
+            'isg': task_isg(conn, t)}

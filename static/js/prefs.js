@@ -17,8 +17,13 @@ function applyTheme() {
 }
 media.addEventListener?.('change', () => { if (current.theme === 'system') applyTheme(); });
 
+// Masaüstü bildirimi CİHAZ-BAZLIDIR (senkron değil): her cihazda ayrı açılır ve o cihazın tarayıcı izni gerekir.
+export const deviceNotify = () => { try { return localStorage.getItem('caymaz.desktopNotify') === '1'; } catch { return false; } };
+export function setDeviceNotify(on) { try { on ? localStorage.setItem('caymaz.desktopNotify', '1') : localStorage.removeItem('caymaz.desktopNotify'); } catch { /* */ } if (current) current.desktop = !!on; }
+
 export function applySettings(s, user) {
   current = s || {};
+  current.desktop = deviceNotify();   // senkron ayardan değil, bu cihazın yerel tercihinden
   if (user !== undefined) currentUser = user;
   if (!current.theme) {   // eski cihaz tercihi (başlıktaki tema düğmesi) varsa korunur
     try { current.theme = localStorage.getItem('caymaz.theme') || 'light'; } catch { current.theme = 'light'; }

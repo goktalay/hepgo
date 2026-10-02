@@ -67,6 +67,10 @@ const I = {
   report: svg('<path d="M6 3.5h9l3 3V20.5H6z"/><path d="M9 17v-3M12 17v-5M15 17v-2"/>'),
   media: svg('<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 16l5-5 4 4 3-3 5 5"/><circle cx="15.5" cy="9" r="1.5"/>'),
   route3d: svg('<path d="M4 18c3-8 6 2 9-6s5-6 7-6"/><circle cx="4" cy="18" r="1.5"/><circle cx="20" cy="6" r="1.5"/>'),
+  tree: svg('<rect x="3.5" y="3.5" width="6" height="5" rx="1"/><rect x="14.5" y="10" width="6" height="4.5" rx="1"/><rect x="14.5" y="16.5" width="6" height="4.5" rx="1"/><path d="M6.5 8.5v10h8M6.5 12.25h8"/>'),
+  recipe: svg('<path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v15l-2.5-1.5-2 1.5-2-1.5-2 1.5-2-1.5L5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M9 8.5h6M9 12h6M9 15.5h3"/>'),
+  image: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18l5-5 4 4 3-3 4 4"/>'),
+  sort: svg('<path d="M7 4v16M4 17l3 3 3-3M14 6h7M14 12h5M14 18h3"/>'),
   grid: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 12h17M12 3.5v17"/>'),
 };
 
@@ -77,7 +81,7 @@ const BY_LABEL = {
   'Firmalar': I.building, 'Rehber': I.book, 'Sistem Durumu': I.server, 'Canlı Üretim': I.pulse,
   'Dijital': I.digits, 'Analog': I.clock, 'Mevcut durum': I.printer3d, 'Hepsi boş': I.empty,
   'Uçak uçak': I.plane, 'En kısa toplam süre': I.bolt, 'Uzak': I.zoomOut, 'Orta': I.zoom, 'Yakın': I.zoomIn,
-  'Kullanıcılar (personel)': I.users, 'Firma personeli': I.badgePerson, '3B Görünüm': I.cube,
+  'Kullanıcılar (personel)': I.users, 'Firma personeli': I.badgePerson, '3B Görünüm': I.cube, 'Sıralama': I.sort, 'Ürün Ağacı': I.tree, 'Personel': I.users, 'İş Başvuruları': I.inbox, 'Bekleyenler': I.hourglass, 'Reddedilenler': I.lock, 'İzinler': I.calendar, 'Özlük Dosyaları': I.book, 'Adresler': I.door, 'Tedarikçiler': I.building, 'Fiziksel Özellikler': I.cube, 'Stok Hareketi': I.history, 'Depo': I.box, 'Resimler': I.image, 'Fatura İrsaliye': I.recipe, 'Hurda ve Kullanım': I.flag, 'Kullanıldığı Ürünler': I.tree, 'İmzalı Form Bekleyen': I.hourglass, 'Genel': I.eye, 'Sözleşmeler': I.recipe, 'Geçmiş': I.history, 'Yaklaşan ve Süren': I.calendar, 'Tüm Geçmiş': I.history, 'Reçete': I.recipe, 'Resim': I.image, '3B': I.cube, 'Parçalar': I.gear,
   'Giriş': I.door, 'Sol raf': I.left, 'Sağ raf': I.right, 'Genel': I.eye,
   'Mamul': I.plane, 'Yarı mamul': I.layers, 'Yedek parça': I.gear,
   'Bana gelenler': I.inbox, 'Gönderdiklerim': I.send,
@@ -92,6 +96,9 @@ const BY_LABEL = {
   'Bilgileri Düzenle': I.edit, 'Kullanıcı Logları': I.log, 'Giriş Logları': I.login,
   'Gelen Kişiler': I.users, 'Gelen Araçlar': I.car, 'Görüşülecek Kişiler': I.person,
   'Uçuş Raporu': I.report, '3B Uçuş İzleme': I.route3d, 'Uçuş Notları': I.note, 'Video ve Resimler': I.media,
+  'Gün': svg('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><rect x="10" y="13" width="4" height="4" rx="1"/>'),
+  'Hafta': svg('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M3.5 15h17"/>'),
+  'Ay': I.calendar, 'Yıl': I.grid, 'Ajanda': I.list,
   'Kişiler': I.users, 'Adresler': I.pin, 'Evrak Yönetimi': I.folder, 'Notlar': I.note, 'Toplantı Yönetimi': I.meeting, 'Takvim': I.calendar,
 };
 
@@ -107,7 +114,8 @@ export function segIconByKey(key) {
 
 export function segIcon(label) {
   if (typeof label !== 'string') return null;
-  const markup = BY_LABEL[label] || (/^\d+'l[ıi]$/.test(label) ? I.grid : null);   // kamera duvarı: 4'lı, 6'lı…
+  const base = label.replace(/ \([^)]*\)$/, '');   // "Bekleyenler (3)" → "Bekleyenler"
+  const markup = BY_LABEL[label] || BY_LABEL[base] || (/^\d+'l[ıi]$/.test(label) ? I.grid : null);   // kamera duvarı: 4'lı, 6'lı…
   if (!markup) return null;
   const t = document.createElement('template');
   t.innerHTML = markup;

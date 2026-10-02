@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fabrika Yönetim Sistemi</title>
+<meta name="description" content="Üretimden sahaya, stoktan satışa tüm fabrikayı tek platformdan yönetin. Bilgisayar, tablet ve mobilde.">
+<link rel="icon" href="/static/img/logo-mark.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#ffffff">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<script>
+  // Eski uygulama adresleri (caymaz.app/#/...) → /app
+  if (location.hash.indexOf('#/') === 0) location.replace('/app' + location.hash);
+  // Ana ekrana yüklenmiş uygulama (PWA) kısayolu tanıtım yerine doğrudan uygulamayı açsın
+  else if ((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone) location.replace('/app');
+</script>
+<link rel="stylesheet" href="/static/css/landing.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/">
+      <img src="/static/img/logo.png" alt="" class="brand-logo">
+      <span class="brand-txt"><b>FABRİKA</b><span>Yönetim Sistemi</span></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#ozellikler">Özellikler</a>
+      <a href="#cihazlar">Cihazlar</a>
+      <a href="#yapay-zeka">Yapay Zeka</a>
+      <a href="#guvenlik">Güvenlik</a>
+    </nav>
+    <div class="nav-auth" id="auth">
+      <a class="btn btn-primary" href="/app" id="loginBtn">Giriş Yap</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="wrap hero-grid">
+      <div class="hero-copy reveal">
+        <span class="pill"><i></i> Üretimden sahaya tek platform</span>
+        <h1>Fabrikanızı <span class="grad">tek ekrandan</span> yönetin.</h1>
+        <p class="lead">Yazıcı odasından iş emirlerine, stoktan satın almaya, saha görevlerinden görüntülü toplantılara kadar tüm operasyon gerçek zamanlı ve tek yerde. Masada bilgisayarda, üretimde tablette, yolda telefonda.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="/app" data-app-link>Uygulamaya Giriş</a>
+          <a class="btn btn-ghost btn-lg" href="#ozellikler">Özellikleri keşfet</a>
+        </div>
+        <ul class="hero-points">
+          <li><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Canlı yazıcı ve üretim takibi</li>
+          <li><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Rol tabanlı yetkilendirme</li>
+          <li><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Yapay zeka asistanı</li>
+        </ul>
+      </div>
+      <div class="hero-visual reveal" style="--d:.1s">
+        <div class="laptop">
+          <div class="laptop-screen"><img src="/static/img/landing/desk-dashboard.webp" alt="Bilgisayarda kişisel pano" loading="eager"></div>
+          <div class="laptop-base"></div>
+        </div>
+        <div class="phone phone-hero">
+          <div class="phone-screen"><img src="/static/img/landing/mob-assistant.webp" alt="Telefonda yapay zeka asistanı"></div>
+        </div>
+        <div class="float-card fc-1"><b>9</b><span>yazıcı şu an baskıda</span></div>
+        <div class="float-card fc-2"><i class="dot-ok"></i><span>13 parça depoya teslim</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RAKAMLAR -->
+  <section class="stats wrap reveal">
+    <div><b>20+</b><span>modül tek çatı altında</span></div>
+    <div><b>Canlı</b><span>yazıcı, üretim ve sunucu durumu</span></div>
+    <div><b>3 cihaz</b><span>bilgisayar · tablet · mobil</span></div>
+    <div><b>Mikro ERP</b><span>cari, stok ve fatura aktarımı</span></div>
+  </section>
+
+  <!-- ÖZELLİKLER -->
+  <section class="section" id="ozellikler">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Özellikler</span>
+        <h2>Fabrikanın her köşesi için bir modül</h2>
+        <p>Her kullanıcı yalnızca rolünün gerektirdiği modülleri görür. Modüller birbirine bağlıdır: bir iş emri üretimden depoya, depodan montaja, oradan sahaya kesintisiz akar.</p>
+      </div>
+      <div class="features" id="features"></div>
+    </div>
+  </section>
+
+  <!-- CİHAZ VİTRİNİ -->
+  <section class="section section-tint" id="cihazlar">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Her cihazda</span>
+        <h2>Bilgisayarda, tablette ve telefonda aynı güç</h2>
+        <p>Arayüz bulunduğu ekrana kendini uyarlar. Ofiste detaylı ekranlar, üretim alanında dokunmatik tablet, sahada tek elle kullanılan mobil görünüm.</p>
+      </div>
+      <div class="dev-tabs reveal" role="tablist">
+        <button class="on" data-dev="desk" role="tab"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>Bilgisayar</button>
+        <button data-dev="tab" role="tab"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M11 18h2"/></svg>Tablet</button>
+        <button data-dev="mob" role="tab"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>Mobil</button>
+      </div>
+      <div class="dev-stage reveal">
+        <div class="dev-pane on" data-pane="desk">
+          <div class="laptop laptop-big">
+            <div class="laptop-screen"><div class="slides" data-slides>
+              <img src="/static/img/landing/desk-dashboard.webp" alt="Kişisel pano" loading="lazy">
+              <img src="/static/img/landing/desk-production.webp" alt="Üretim yönetimi" loading="lazy">
+              <img src="/static/img/landing/desk-printers3d.webp" alt="3B yazıcı odası" loading="lazy">
+            </div></div>
+            <div class="laptop-base"></div>
+          </div>
+          <div class="captions" data-captions>
+            <span class="on">Kişisel pano: saat, takvim, duyurular, üretim özeti ve 14 günlük grafik</span>
+            <span>Üretim yönetimi: iş emirleri sipariş → üretim → depo → montaj → kalibrasyon akışında</span>
+            <span>Yazıcı odası 3B: raflardaki her yazıcının canlı durumu renkle</span>
+          </div>
+        </div>
+        <div class="dev-pane" data-pane="tab">
+          <div class="tablet">
+            <div class="tablet-screen"><div class="slides" data-slides>
+              <img src="/static/img/landing/tab-messages.webp" alt="Tablette mesajlaşma" loading="lazy">
+              <img src="/static/img/landing/tab-printers.webp" alt="Tablette yazıcı listesi" loading="lazy">
+            </div></div>
+          </div>
+          <div class="captions" data-captions>
+            <span class="on">Mesajlaşma: birebir ve grup sohbet, dosya, bas-konuş ve sohbetten sesli arama</span>
+            <span>Yazıcı yönetimi: durum, aktif dosya, iş başlangıcı — üretim alanında dokunmatik kullanım</span>
+          </div>
+        </div>
+        <div class="dev-pane" data-pane="mob">
+          <div class="phones">
+            <div class="phone"><div class="phone-screen"><img src="/static/img/landing/mob-dashboard.webp" alt="Telefonda pano" loading="lazy"></div></div>
+            <div class="phone phone-up"><div class="phone-screen"><img src="/static/img/landing/mob-meet.webp" alt="Telefonda görüntülü toplantı" loading="lazy"></div></div>
+            <div class="phone"><div class="phone-screen"><img src="/static/img/landing/mob-assistant.webp" alt="Telefonda yapay zeka asistanı" loading="lazy"></div></div>
+          </div>
+          <div class="captions static"><span class="on">Pano, görüntülü toplantılar ve yapay zeka asistanı cebinizde — uygulama gibi ana ekrana eklenebilir</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ÖNE ÇIKANLAR -->
+  <section class="section">
+    <div class="wrap rows">
+      <div class="row reveal">
+        <div class="row-media"><div class="laptop"><div class="laptop-screen"><img src="/static/img/landing/desk-printers3d.webp" alt="3B yazıcı odası" loading="lazy"></div><div class="laptop-base"></div></div></div>
+        <div class="row-copy">
+          <span class="eyebrow">Yazıcı odası</span>
+          <h3>Onlarca 3B yazıcı, tek bakışta</h3>
+          <p>Yazıcılar ağdan otomatik bulunur, durumları birkaç saniyede bir okunur. Baskıdaki dosya sistemdeki iş emriyle eşleşmezse, kayıtsız bir baskı yarıda kesilirse ya da yazıcı hata verirse anında uyarı düşer.</p>
+          <ul class="ticks"><li>Liste ve 3B oda görünümü</li><li>Yazıcıya doğrudan G-code gönderme</li><li>Hata ve uyumsuzluk uyarıları</li></ul>
+        </div>
+      </div>
+      <div class="row row-rev reveal">
+        <div class="row-media"><div class="tablet"><div class="tablet-screen"><img src="/static/img/landing/tab-messages.webp" alt="Mesajlaşma" loading="lazy"></div></div>
+          <div class="phone phone-mini"><div class="phone-screen"><img src="/static/img/landing/mob-meet.webp" alt="Görüntülü toplantı" loading="lazy"></div></div></div>
+        <div class="row-copy">
+          <span class="eyebrow">İletişim</span>
+          <h3>Mesajlaşma, sesli arama ve görüntülü toplantı</h3>
+          <p>Ekip içi sohbet, dosya ve bas-konuş sesli mesajlar; sohbetten tek dokunuşla sesli arama. Davet koduyla görüntülü toplantı — şirket dışından katılımcılar da yalnızca bir link ile, giriş yapmadan katılır.</p>
+          <ul class="ticks"><li>Bekleme odası ve katılımcı kabulü</li><li>Ekran paylaşımı, sohbet, el kaldırma</li><li>Kayıtların metne çevrilmesi</li></ul>
+        </div>
+      </div>
+      <div class="row reveal" id="yapay-zeka">
+        <div class="row-media"><div class="phone phone-solo"><div class="phone-screen"><img src="/static/img/landing/mob-assistant.webp" alt="Yapay zeka asistanı" loading="lazy"></div></div></div>
+        <div class="row-copy">
+          <span class="eyebrow">Yapay zeka</span>
+          <h3>Sorun, sistem cevaplasın</h3>
+          <p>Köşedeki asistana “bugün kaç parça teslim edildi?” diye sorun; asistan veritabanına bakıp yalnızca sizin yetkili olduğunuz verilerle cevap verir. Bir kaydın değişmesini isterseniz talebi sistem yöneticisinin onayına gönderir.</p>
+          <ul class="ticks"><li>Yetkiye göre sınırlandırılmış, salt-okunur sorgular</li><li>Değişiklikler yönetici onayıyla</li><li>Kişiye özel karakter ve konuşma tarzı</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GÜVENLİK -->
+  <section class="section section-dark" id="guvenlik">
+    <div class="wrap">
+      <div class="sec-head light reveal">
+        <span class="eyebrow">Güvenlik</span>
+        <h2>Veriniz sizde, kontrol sizde</h2>
+        <p>Sistem kendi sunucunuzda çalışır. Her işlem kayıt altındadır ve her kullanıcı yalnızca yetkili olduğu bilgiyi görür.</p>
+      </div>
+      <div class="sec-grid">
+        <div class="sec-card reveal"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><b>Şifre ve giriş kuralları</b><p>Karmaşıklık, geçerlilik süresi, yeniden kullanım engeli, deneme kilidi ve PIN ile giriş.</p></div>
+        <div class="sec-card reveal" style="--d:.05s"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M17 11l2 2 4-4"/></svg><b>Rol tabanlı erişim</b><p>Modüller ve veriler rol ve yetkiye göre açılır; gizli belgeler yönetimden bile saklanabilir.</p></div>
+        <div class="sec-card reveal" style="--d:.1s"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><b>Denetim kaydı</b><p>Kim, ne zaman, neyi değiştirdi — tüm önemli işlemler iz bırakır.</p></div>
+        <div class="sec-card reveal" style="--d:.15s"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2.5"/></svg><b>Gece yedekleme</b><p>Veritabanı ve dosyalar her gece otomatik yedeklenir.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta wrap reveal">
+    <div class="cta-card">
+      <div>
+        <h2>Ekibiniz hazır mı?</h2>
+        <p>Hesabınızla giriş yapın, kaldığınız yerden devam edin.</p>
+      </div>
+      <a class="btn btn-white btn-lg" href="/app" data-app-link>Uygulamaya Giriş</a>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-brand"><img src="/static/img/logo.png" alt=""><span id="companyName">GÖKKUBBE Teknoloji</span></div>
+    <div class="foot-meta">Sistemi tasarlayan: <b>Muhammed Kaderoğlu</b> · © <span id="year"></span></div>
+  </div>
+</footer>
+
+<script src="/static/js/landing.js" defer></script>
+</body>
+</html>

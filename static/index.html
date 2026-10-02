@@ -13,14 +13,44 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Fabrika">
 <meta name="application-name" content="Fabrika Yönetim Sistemi">
-<link rel="stylesheet" href="/static/vendor/flatpickr/flatpickr.min.css">
-<link rel="stylesheet" href="/static/css/app.css">
 <script>try { var t = localStorage.getItem('caymaz.theme'); if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.dataset.theme = 'dark'; } catch (e) {}</script>
+<!-- Açılış ekranı: stil dosyaları ve JS modülleri inene kadar beyaz sayfa yerine logo + dönen gösterge (anında çizilir) -->
+<style>
+  html, body { margin: 0; background: #f8f9fb; }
+  html[data-theme="dark"], html[data-theme="dark"] body { background: #0f172a; }
+  #splash { position: fixed; inset: 0; z-index: 2147483000; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 26px; background: #f8f9fb; transition: opacity .3s ease; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html[data-theme="dark"] #splash { background: #0f172a; }
+  #splash.out { opacity: 0; pointer-events: none; }
+  #splash .sp-logo { width: min(220px, 58vw); height: auto; animation: sp-in .6s ease both; }
+  #splash .sp-ring { width: 38px; height: 38px; border-radius: 50%; border: 3.5px solid rgba(22, 64, 126, .15); border-top-color: #16407e;
+    animation: sp-rot .8s linear infinite; }
+  html[data-theme="dark"] #splash .sp-ring { border-color: rgba(148, 163, 184, .25); border-top-color: #60a5fa; }
+  #splash .sp-txt { font-size: 13px; color: #64748b; letter-spacing: .02em; margin-top: -12px; }
+  @keyframes sp-rot { to { transform: rotate(360deg); } }
+  @keyframes sp-in { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #splash .sp-ring { animation-duration: 2s; } #splash .sp-logo { animation: none; } }
+</style>
+<!-- Stil dosyaları sayfanın çizilmesini engellemesin (açılış ekranı hemen görünsün); yüklenince uygulanır -->
+<link rel="preload" as="style" href="/static/vendor/flatpickr/flatpickr.min.css" onload="this.onload=null;this.rel='stylesheet'">
+<link rel="preload" as="style" href="/static/css/app.css" id="app-css" onload="this.onload=null;this.rel='stylesheet';window.__cssReady=1;window.__splashTry&&window.__splashTry()">
+<!--MODULEPRELOAD-->
 </head>
 <body>
+<div id="splash" role="status" aria-label="Yükleniyor"><img class="sp-logo" src="/static/img/logo.png" alt=""><div class="sp-ring"></div><div class="sp-txt">Yükleniyor…</div></div>
+<script>
+  // Uygulama ilk ekranını çizince (app.js → window.__splashDone) ve stil yüklenince açılış ekranı yumuşakça kalkar.
+  (function () {
+    var ready = 0, gone = 0;
+    function hide() { if (gone) return; gone = 1; var s = document.getElementById('splash'); if (!s) return; s.classList.add('out'); setTimeout(function () { s.remove(); }, 320); }
+    window.__splashTry = function () { if (ready && window.__cssReady) hide(); };
+    window.__splashDone = function () { ready = 1; window.__splashTry(); };
+    setTimeout(hide, 25000);   // güvenlik: bir şey ters giderse ekran sonsuza dek kapalı kalmasın
+  })();
+</script>
 <div id="app"></div>
-<script src="/static/vendor/flatpickr/flatpickr.min.js"></script>
-<script src="/static/vendor/flatpickr/tr.js"></script>
+<script src="/static/vendor/flatpickr/flatpickr.min.js" defer></script>
+<script src="/static/vendor/flatpickr/tr.js" defer></script>
 <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ tools_user = auth.require_module('tools')
 @router.get('/products')
 def products(user=Depends(tools_user), conn=db.DB):
     info = semis.print_info(conn)
-    rows = db.rows(conn.execute("SELECT id, code, name, serial, schema FROM products WHERE type = 'MAMUL' AND active = 1 ORDER BY id"))
+    rows = db.rows(conn.execute("SELECT id, code, name, serial, schema FROM products WHERE type = 'MAMUL' AND schema != 'custom' AND active = 1 ORDER BY id"))
     for r in rows:
         ids = catalogs.part_ids(r['schema'])
         r['part_count'] = len(ids)
@@ -30,7 +30,7 @@ class PlanIn(BaseModel):
 
 @router.post('/plan')
 def make_plan(body: PlanIn, user=Depends(tools_user), conn=db.DB):
-    product = db.row(conn.execute("SELECT * FROM products WHERE id = ? AND type = 'MAMUL'", (body.product_id,)))
+    product = db.row(conn.execute("SELECT * FROM products WHERE id = ? AND type = 'MAMUL' AND schema != 'custom'", (body.product_id,)))
     if not product:
         raise HTTPException(404, 'Mamul bulunamadı')
     if not 1 <= body.quantity <= 50:

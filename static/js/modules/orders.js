@@ -2,12 +2,12 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { printOrderForm } from '../print.js';
-import { companyTag } from './production.js';
+import { companyTag, subnav } from './production.js';
 import { logoOf } from './companies.js';
 import { ORDER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, pageHead, pref, progressBar, secondsBetween, segmented,
-  selectInput, setPref, shortCompany, statStrip, svgIcon, toast, toastError,
+  selectInput, setPref, shortCompany, statStrip, svgIcon, toast, toastError, periodFilter
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -15,8 +15,7 @@ export async function render(view, params, ctx) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Sipariş kodu, firma, kişi, kuyruk no ara…', style: { width: '240px' } });
   const status = selectInput(Object.entries(ORDER_STATES).map(([k, s]) => [k, s.label]), { all: 'Tüm durumlar' });
   const product = h('select', { class: 'input' });
-  const from = h('input', { class: 'input', type: 'date', title: 'Sipariş tarihi (başlangıç)' });
-  const to = h('input', { class: 'input', type: 'date', title: 'Sipariş tarihi (bitiş)' });
+  const period = periodFilter('orders', () => load(), { title: 'Açık siparişler her zaman; tamamlananlar seçilen dönemde açılan / biten' });
   const stats = statStrip();
   const body = h('div');
   let orders = [];
@@ -27,15 +26,13 @@ export async function render(view, params, ctx) {
     const list = orders.filter(o =>
       (!status.value || o.status === status.value) &&
       (!product.value || String(o.product_id) === product.value) &&
-      (!from.value || o.created_at.slice(0, 10) >= from.value) &&
-      (!to.value || o.created_at.slice(0, 10) <= to.value) &&
       matches(q.value, o.code, o.created_by_name, o.queue_no, o.note, o.product_name, o.product_serial, o.company_name));
     const open = list.filter(o => o.status !== 'TAMAMLANDI');
     const month = new Date().toISOString().slice(0, 7);
     stats.set([
       { label: 'Listelenen sipariş', value: list.length },
       { label: 'Açık sipariş', value: open.length },
-      { label: 'Tamamlanan', value: list.length - open.length, tone: 'ok' },
+      { label: 'Tamamlanan', value: list.length - open.length, tone: 'ok', sub: period.label().toLocaleLowerCase('tr') },
       { label: 'Bu ay açılan', value: list.filter(o => o.created_at.startsWith(month)).length },
       { label: 'Hatalı sipariş', value: list.filter(o => o.status === 'HATA').length, tone: list.some(o => o.status === 'HATA') ? 'alert' : '' },
       { label: 'Montaja hazır', value: list.filter(o => o.status === 'MONTAJ').length },
@@ -45,18 +42,19 @@ export async function render(view, params, ctx) {
       : mode === 'card' ? h('div', { class: 'oc-grid' }, list.map(orderCard)) : table(list, load, ctx));
   };
   const load = async () => {
-    const [o, products] = await Promise.all([api.get('/api/orders'), api.get('/api/products')]);
+    const [o, products] = await Promise.all([api.get(`/api/orders?${period.qs()}`), api.get('/api/products')]);
     orders = o;
     if (!product.options.length) clear(product, h('option', { value: '' }, 'Tüm ürünler'), products.filter(p => p.orderable).map(p => h('option', { value: p.id }, `${p.name} (${p.serial})`)));   // yalnızca sipariş verilebilir ürünler
     draw();
   };
-  [q, status, product, from, to].forEach(el => el.addEventListener(el === q ? 'input' : 'change', draw));
+  [q, status, product].forEach(el => el.addEventListener(el === q ? 'input' : 'change', draw));
 
   clear(view,
-    pageHead('Sipariş Yönetimi', { back: '#/', right: h('div', { class: 'head-right' },
-      h('button', { class: 'btn primary', onclick: () => newOrder(load) }, svgIcon(icons.plus), 'Yeni Sipariş'), viewSeg) }),
+    pageHead('İş Emri Yönetimi', { back: '#/production', sub: 'Üretim Yönetimi', right: h('div', { class: 'head-right' },
+      h('button', { class: 'btn primary', onclick: () => newOrder(load) }, svgIcon(icons.plus), 'Yeni İş Emri'), viewSeg) }),
+    subnav('is-emri', ctx),
     stats,
-    h('div', { class: 'filters' }, q, status, product, h('span', { class: 'lbl' }, 'Tarih'), from, to),
+    h('div', { class: 'filters' }, q, status, product, period.el),
     body);
   await load();
 }
@@ -85,8 +83,8 @@ function table(list, reload, ctx) {
         // kodun altında firma (logo + kısa ad); tıklanınca firma değiştirilir
         h('div', { class: 'order-co-line' }, h('button', { class: 'link-btn', title: 'Firmayı değiştir', onclick: () => changeCompany(o, reload) },
           companyTag(o, 'xs') || h('span', { class: 'small muted' }, 'Firma seçin')))),
-      h('td', null, o.product_name, o.product_type === 'YEDEK_PARCA'
-        ? h('div', { class: 'small muted' }, `Yedek parça · 1 baskı = ${o.per_print} adet`)
+      h('td', null, o.product_name, o.product_stocked
+        ? h('div', { class: 'small muted' }, `Parça baskısı · 1 baskı = ${o.per_print} adet`)
         : h('div', { class: 'small muted mono' }, o.product_serial)),
       h('td', { class: 'muted' }, fmtDateTime(o.created_at)),
       h('td', null, fmtDate(o.start_date)),
@@ -136,11 +134,11 @@ async function newOrder(done) {
   const products = (await api.get('/api/products?active_only=true')).filter(p => p.orderable);   // ürün ayarı
   const company = companySelect(await companies(), null);
   const group = (label, list) => (list.length ? h('optgroup', { label }, list.map(p => h('option', { value: p.id },
-    p.type === 'YEDEK_PARCA' ? `${p.code} — ${p.name} (1 baskı = ${p.per_print} adet · stok ${p.stock})`
+    p.stocked ? `${p.code} — ${p.name} (1 baskı = ${p.per_print} adet · stok ${p.stock})`
       : `${p.name} — seri no ${p.serial} (${p.part_count} parça)`))) : null);
   const product = h('select', { class: 'input' },
-    group('Mamul', products.filter(p => p.type === 'MAMUL')),
-    group('Yedek parça (montaj sarfı)', products.filter(p => p.type === 'YEDEK_PARCA' && !p.part_spare)),
+    group('Mamul', products.filter(p => p.role === 'mamul')),
+    group('Montaj sarfı', products.filter(p => p.role === 'sarf')),
     // Parça yedekleri: ait oldukları yarı mamule göre (Sol Kanat, Sağ Kanat, Gövde, Elektronik)
     [...new Set(products.filter(p => p.part_spare).sort((a, b) => (a.parent?.id || 0) - (b.parent?.id || 0))
       .map(p => p.parent?.name || '—'))].map(name =>
@@ -150,7 +148,7 @@ async function newOrder(done) {
   const hint = h('div', { class: 'small muted', style: { marginTop: '-6px', marginBottom: '10px' } });
   const syncHint = () => {
     const p = products.find(x => String(x.id) === product.value);
-    hint.textContent = p?.type === 'YEDEK_PARCA'
+    hint.textContent = p?.stocked
       ? `Tek baskı: depo onayından sonra ${p.per_print} adet ${p.name} stoğa girer.`
       : 'Sipariş tek uçaktır; birden fazla uçak için ayrı sipariş açın.';
   };

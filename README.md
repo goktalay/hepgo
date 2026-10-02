@@ -417,11 +417,61 @@ Yüklenen dosyaların adı değişmediği için tarayıcı 30 gün önbelleğe a
 - **PIN** (Ayarlar → Hesap; `users.pin_hash`): 4 haneli PIN şifreyle açılır / değiştirilir / kapatılır; kolay PIN'ler kabul edilmez.
   PIN yalnızca daha önce şifreyle giriş yapılmış cihazda çalışır; hatalı PIN giriş denemesi sayılır, sınır aşılınca o cihazda şifre istenir.
 
+## Stajer ve ilk girişte şifre değişikliği
+- **Stajer** rolü (`auth.INTERN`) hiçbir modüle yetkili değildir; pano, Kişisel, mesajlaşma, duyurular gibi genel yapıyı kullanır.
+  Yardımcı personel seçimlerinde (Montaj, Elektronik, Saha Personeli; `auth.HELPER_ROLES`) listenin sonunda "Stajer" etiketiyle
+  çıkar ve seçilebilir; montaj / elektronik adımında yanında en az bir asıl personel olmalıdır. Diğer kullanıcılar gibi pasifleştirilir.
+- **İlk girişte şifre değişikliği** (`users.must_change_password`): yöneticinin oluşturduğu ya da şifresini sıfırladığı kullanıcı ve
+  şifresini hiç değiştirmemiş mevcut kullanıcılar, girişten sonra şifresini değiştirmeden sistemi kullanamaz (sunucu diğer istekleri
+  428 ile reddeder). `CAYMAZ_FORCE_PASSWORD_CHANGE=0` ile kapatılır (testler kapalı çalışır).
+
+## Kişisel → Toplantılar (şirket içi)
+`app/routers/meetings.py`, `static/js/modules/meetings.js`; tablolar `team_meetings`, `team_meeting_invites`. Düzenleyen konu,
+başlangıç / bitiş, yer ya da bağlantı, **talep notu** ve **hatırlatma süresi** (5 dk – 1 gün önce) ile toplantı oluşturup kullanıcıları
+davet eder. Davet bildirime ("Toplantı daveti" sesiyle) ve Kişisel sayısına düşer; davetli **notuyla** Katılıyorum / Belki / Katılmıyorum
+der. Toplantıdan seçilen süre önce düzenleyene ve katılmayacağını söylemeyenlere hatırlatma bildirimi ("Toplantı hatırlatması" sesi,
+masaüstü bildirimi) çıkar. Zaman değişince yanıtlar sıfırlanır; iptal edilen toplantı listede iptal olarak görünür. Toplantılar kişisel
+takvimde de görünür (katılmayacağım dediklerim hariç).
+
+### Toplantı ekranı ve toplantı özeti
+`app/routers/meeting_room.py`, `app/meeting_audio.py`, `static/js/modules/meeting_room.js`. Toplantı ekranını (`#/meetings/<id>/room`)
+düzenleyen **Toplantıyı Başlat** ile açar; başlayınca herkes kendi notunu alır (otomatik kaydedilir), katılımcılar canlı görünür.
+Düzenleyen **Kaydı Başlat / Durdur** ile kendi cihazının mikrofonundan kayıt alır; kayıt 5 sn'lik parçalarla sırayla sunucuya
+eklenir (`uploads/meetings/<id>/`). **Toplantıyı Bitir** denince notlar kilitlenir, kayıt arka planda işlenir: WAV → Whisper
+(zaman damgalı) → her parçanın ses kimliği (WeSpeaker ResNet34 ONNX, `vendor/models/wespeaker_resnet34_LM.onnx`, onnxruntime)
+→ konuşmacılara kümeleme → kayıtlı ses profilleriyle (`voice_profiles`) eşleşenler otomatik tanınır, kalanlar "Tanımsız kişi N".
+Özet (`#/meetings/<id>/summary`): konuşma süreleri, tanımsız kişiler (sesini dinle, kişiye ata → ses profili öğrenilir, aynı kişiye
+atanan gruplar birleşir), kararlar / yapılacaklar / sorular (döküm ve notlardan anahtar ifadelerle), katılımcı notları ve konuşmacı
+adlı tam döküm (satırı dinle); yazdırılabilir. Sessiz ya da Whisper'ın uydurduğu bilinen kalıplar dökümden elenir.
+
+## Takvim görünümleri
+Kişisel → Takvim ve firma / kişi takvimleri aynı bileşeni kullanır (`calendarPanel`, `static/js/modules/crm.js`): **Gün** ve
+**Hafta** (saat ızgarası, çakışan kayıtlar yan yana, şu anki saat çizgisi, boş saate tıklayınca o saatte yeni kayıt), **Ay**,
+**Yıl** (kaydı olan günler işaretli; güne tıklayınca gün görünümü) ve **Ajanda** (60 günlük liste). Seçilen görünüm hatırlanır.
+
+## Kişisel → Mail (Gmail)
+Her kullanıcı kendi Gmail / Google Workspace hesabını bağlar (`app/mail.py`, `app/routers/mail.py`, `static/js/modules/mail.js`):
+- **Google ile bağlan (OAuth, kurumsal hesaplar):** Google Cloud'da "Internal" OAuth istemcisi (Web uygulaması), Gmail API açık,
+  yetki `https://mail.google.com/`, dönüş adresi `<CAYMAZ_PUBLIC_URL>/api/mail/oauth/callback`. `.env`: `CAYMAZ_GOOGLE_CLIENT_ID`,
+  `CAYMAZ_GOOGLE_CLIENT_SECRET`, `CAYMAZ_PUBLIC_URL`. Yenileme jetonu şifrelenmiş saklanır; IMAP/SMTP'ye XOAUTH2 ile girilir;
+  hesap ayrılınca izin Google'da geri alınır.
+- **Uygulama şifresi (kişisel Gmail):** 16 haneli uygulama şifresi (2 adımlı doğrulama gerekli; Workspace'te genelde kapalı).
+Şifre şifrelenmiş saklanır, hiçbir yanıtta dönmez; postalar sunucuda saklanmaz, Gmail'den anlık okunur (IMAP), SMTP ile gönderilir.
+Klasörler (Gelen, Yıldızlı, Önemli, Gönderilen, Taslak, Tüm Postalar, Spam, Çöp), Gmail sözdizimiyle arama, okundu / yıldız /
+arşiv / sil / spam, yanıtla / tümünü yanıtla / ilet (orijinal eklerle), ek gönderme, imza. İçerik betiksiz güvenli kutuda gösterilir,
+uzak resimler istenince yüklenir. Okunmamış sayısı bildirime, Kişisel sayısına ve sese ("E-posta") yansır.
+**Ekler → Evrak Yönetimi** (`app/mail_import.py`): Evrak modülü olan kullanıcıda gelen kutusuna yeni düşen e-postaların ekleri
+2 dakikada bir "Yalnızca ben" görünürlüğünde evrak olarak kaydedilir ve OCR'dan geçer (yönetici dahil başkası göremez; aynı ek iki
+kez aktarılmaz). Hesap bağlanmadan önceki postalar için okuma ekranında "Ekleri Evraklara Kaydet" düğmesi. Mail ayarlarından kapatılabilir.
+
 ## Mesajlaşma
 Kullanıcılar arası birebir canlı mesajlaşma (`app/routers/chat.py`, `static/js/chat.js`, tablo `chat_messages`). Alttaki "Aktif kullanıcı"
 kutucuğundaki kişiye ya da başlıktaki mesaj düğmesinden bir kişiye tıklanınca sağ altta sohbet penceresi açılır; açıkken 2 sn'de bir
 yenilenir. Metin, dosya / resim (ataç, sürükle-bırak, yapıştır; en çok 25 MB) ve bas-konuş sesli mesaj (mikrofona basılı tut, bırakınca
-gider, yukarı kaydırınca iptal) gönderilir. Okundu bilgisi çift tik ile görünür. Başlıktaki düğmenin sayısı okunmamış mesajı olan kişi
+gider, yukarı kaydırınca iptal) gönderilir. Okundu bilgisi çift tik ile görünür. **Gruplar:** kullanıcı "+ Yeni grup" ile grup kurar
+(kuran grup yöneticisidir; ad / üye değiştirir), üyeler grupça yazışır, gruptan ayrılabilir. **Tüm Şirket** kanalı (şirket logolu):
+herkes üyedir, yalnızca Sistem Yöneticisi yazar; yazılan mesaj herkese düşer. Tablolar `chat_groups`, `chat_group_members`,
+`chat_group_messages`, `chat_group_reads`. Mesaj kutusunda emoji paneli (son kullanılanlar üstte). Başlıktaki düğmenin sayısı okunmamış mesajı olan kişi
 sayısıdır; liste kişiye göre gruplanır. Dosyaları yalnızca iki taraf açabilir.
 
 ## Yazıcı odası (Yazıcı Yönetimi → 3B Görünüm)
@@ -542,6 +592,15 @@ uyuşmazsa kaydedilmez. Uyarılar dosya adını karşılaştırır (uzantı, kla
 - Stok bir uçağa yetmezse Üretim ve Depo Yöneticisine "Stoğu yetmeyen yedek parça" bildirimi gider.
 - Yedek parça siparişleri sahaya götürülebilecek uçak listesinde görünmez.
 
+### Parça G-code'ları ve 3B görünüm
+`app/gcode.py`: parçaların G-code dosyaları ürüne bağlanır (`products.gcode_file`, adı `print_file` ile eşleşir; aynı diskteyse
+sabit bağlantı). Dilimleyici bilgileri (süre, filament g/m, maliyet, katman, malzeme, sıcaklıklar, yazıcı) ve gömülü önizleme
+`gcode_meta` / `gcode_thumb`'a; dış duvar takım yolu 3B dosyasına (`*.3d.bin`) ve ışıklı kart resmine (`*.3d.png`) çıkarılır.
+Toplu içe aktarma: `.venv/bin/python -m app.gcode <klasör> …`. Arayüz (`static/js/gcode3d.js`, Three.js): Ürün Yönetimi parça
+kartlarında 3B resim, parça detayında döndürülebilir 3B görünüm ve G-code kartı (indirme), Üretim'de parçanın üzerine gelince dönen
+3B parça, Yazıcı Odası'nda basılan parça gerçek ölçüde tablada (yüzdesi kadarı dolu, üstü şeffaf), yazıcı penceresinde tek yazıcı ve
+içindeki parça. G-code dosyaları Ürün, Üretim, Yazıcı, Stok ve Depo modüllerine açıktır.
+
 ## Parça kataloğu
 
 Uçağın tüm parçaları ve koordinatları tek bir yerde, `app/plane.py` içindedir. Hem harita hem sipariş parçaları
@@ -606,9 +665,15 @@ Canlı veriler (`data/`, `tenants/`) ve gizli ayarlar (`.env`) da depoda değild
 .venv/bin/python -m tests.test_announcements      # duyurular (okundu, okuyanlar)
 .venv/bin/python -m tests.test_calls              # aramalar, kişisel pano, sistem durumu
 .venv/bin/python -m tests.test_chat               # mesajlaşma (dosya, ses, okundu, gruplama)
+.venv/bin/python -m tests.test_chat_groups        # mesaj grupları, Tüm Şirket kanalı
 .venv/bin/python -m tests.test_thumbs             # küçük resim ve önbellek
 .venv/bin/python -m tests.test_unlock             # bekleme ekranı kilidi
 .venv/bin/python -m tests.test_pin                # PIN ile giriş, bu cihazdaki hesaplar
+.venv/bin/python -m tests.test_mail               # Gmail (sahte IMAP/SMTP), ekler → evrak
+.venv/bin/python -m tests.test_meetings           # toplantı daveti, yanıt, hatırlatma
+.venv/bin/python -m tests.test_meeting_room       # toplantı ekranı, ses kaydı, konuşmacı ayırma, özet
+.venv/bin/python -m tests.test_intern             # stajer rolü
+.venv/bin/python -m tests.test_force_password     # ilk girişte şifre değişikliği
 .venv/bin/python -m tests.check_js           # arayüz JavaScript sözdizimi
 ```
 

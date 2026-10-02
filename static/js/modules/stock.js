@@ -44,7 +44,7 @@ export function spareAdjustModal(p, done) {
 
 function sparesCard(spares, ctx, partSpares = []) {
   const inStock = partSpares.filter(x => x.stock > 0);
-  const canAdjust = ['warehouse', 'products'].some(m => ctx.user.modules.includes(m));
+  const canAdjust = ['warehouse', 'products'].some(m => ctx.user.modules.includes(m)) || ctx.user.roles.includes('MRP Sorumlusu');
   return h('div', { class: 'card card-pad' },
     h('h2', { style: { fontSize: '15px', marginBottom: '8px' } }, 'Yedek parça stoğu'),
     spares.length ? h('div', { class: 'spare-list' }, spares.map(sp => {
@@ -73,9 +73,9 @@ export async function render(view, params, ctx) {
   // Kartta montaj sarfı yedek parçalar (uçak başına kullanılan); parça yedekleri tek satırda özetlenir
   const spares = allSpares.filter(x => x.per_aircraft > 0);
   const partSpares = allSpares.filter(x => !x.per_aircraft);
-  const products = allProducts.filter(p => p.type === 'MAMUL');   // stok haritası mamuller için
+  const products = allProducts.filter(p => p.role === 'mamul');   // stok haritası şemalı mamuller için
   const plane = await loadPlane(stock.product.id);
-  const picker = h('select', { class: 'input', onchange: e => { location.hash = `#/stock/${e.target.value}`; } },
+  const picker = h('select', { class: 'input', onchange: e => { location.hash = `#/mrp/semi/${e.target.value}`; } },
     products.map(p => h('option', { value: p.id, selected: p.id === stock.product.id }, `${p.name} (${p.serial})`)));
   const counts = stock.part_counts;
   const pending = stock.pending_counts;
@@ -120,7 +120,7 @@ export async function render(view, params, ctx) {
   inStock.addEventListener('change', redraw);
 
   clear(view,
-    pageHead('Stok Yönetimi', { back: '#/', sub: `${stock.product.name} · seri no ${stock.product.serial}` }),
+    pageHead('Yarı Mamül', { back: '#/', sub: `${stock.product.name} · seri no ${stock.product.serial}` }),
     stats,
     h('div', { class: 'filters' }, picker, q, group, h('label', { class: 'check' }, inStock, 'Sadece stokta olanlar')),
     h('div', { class: 'plane-layout stock-layout' },

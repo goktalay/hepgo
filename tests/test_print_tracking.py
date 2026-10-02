@@ -117,6 +117,11 @@ def main():
             assert c.execute('SELECT COUNT(*) FROM printer_incidents').fetchone()[0] == 0
             detect_unrecorded_abort(c, before('YAZDIRIYOR'), 'HAZIR', db.now())         # iptal edildi → olay
             detect_unrecorded_abort(c, before('DURAKLADI'), 'HATA', db.now())            # duraklatılmışken hata → olay
+        # Yalnızca Sistem Yöneticisi rolü uyarı getirmez; uyarılar üretim / yazıcı rolünden gelir
+        assert ok(a.get('/api/alerts'))['alerts'] == []
+        me_id = ok(a.get('/api/auth/me'))['id']
+        with db.connect() as c:
+            c.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'Üretim Yöneticisi')", (me_id,)); c.commit()
         s = {x['key']: x for x in ok(a.get('/api/alerts'))['alerts']}
         crit = s['printer-unrecorded-abort']
         assert crit['critical'] and crit['level'] == 'danger' and crit['count'] == 2
@@ -127,12 +132,16 @@ def main():
         ok(a.post(f'/api/alerts/incidents/{det["items"][0]["incident_id"]}/ack'))
         assert a.post(f'/api/alerts/incidents/{det["items"][0]["incident_id"]}/ack').status_code == 404   # zaten görüldü
         assert ok(a.get('/api/alerts/printer-unrecorded-abort'))['items'].__len__() == 1
-        pilot = ok(a.post('/api/users', json={'username': 'pilot@t', 'full_name': 'Pilot', 'roles': ['Pilot'], 'password': 'sifre-1234'}))
-        assert pilot
-    with TestClient(app) as pl:
+        ok(a.post('/api/users', json={'username': 'pilot@t', 'full_name': 'Pilot', 'roles': ['Pilot'], 'password': 'sifre-1234'}))
+        ok(a.post('/api/users', json={'username': 'bakim@t', 'full_name': 'Bakım', 'roles': ['Yazıcı Bakım Sorumlusu'], 'password': 'sifre-1234'}))
+    with TestClient(app) as pl:   # Pilot üretimle ilgili değil: yazıcı uyarılarını görmez
         ok(pl.post('/api/auth/login', json={'username': 'pilot@t', 'password': 'sifre-1234'}))
-        iid = ok(pl.get('/api/alerts/printer-unrecorded-abort'))['items'][0]['incident_id']   # herkes görür
-        assert pl.post(f'/api/alerts/incidents/{iid}/ack').status_code == 403   # yalnızca yazıcı / üretim sorumluları kapatır
+        assert ok(pl.get('/api/alerts'))['alerts'] == []
+        assert pl.get('/api/alerts/printer-unrecorded-abort').status_code == 404
+    with TestClient(app) as bk:   # Yazıcı Bakım Sorumlusu görür ama kritik olayı yalnızca yetkili kapatır (bakım kapatabilir)
+        ok(bk.post('/api/auth/login', json={'username': 'bakim@t', 'password': 'sifre-1234'}))
+        iid = ok(bk.get('/api/alerts/printer-unrecorded-abort'))['items'][0]['incident_id']
+        assert bk.post(f'/api/alerts/incidents/{iid}/ack').status_code == 200
     print('Baskı dosyası ve yazıcı takibi testleri geçti.')
 
 

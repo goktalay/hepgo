@@ -30,6 +30,18 @@ ADMIN_PASSWORD = os.environ.get('CAYMAZ_ADMIN_PASSWORD', '')
 ADMIN_FULL_NAME = os.environ.get('CAYMAZ_ADMIN_FULL_NAME', 'Sistem Yöneticisi')
 
 COMPANY_NAME = os.environ.get('CAYMAZ_COMPANY_NAME', 'GÖKKUBBE Teknoloji')
+# Bu tenant'a merkez (Veilox) tarafından verilen modüller (virgüllü). Boşsa tüm modüller açıktır.
+_mods = os.environ.get('CAYMAZ_MODULES', '').strip()
+MODULES = [m.strip() for m in _mods.split(',') if m.strip()] if _mods else None
+# Mikro ERP (MSSQL) tek yönlü veri aktarımı bağlantısı
+MIKRO_HOST = os.environ.get('CAYMAZ_MIKRO_HOST', '192.168.1.100')
+MIKRO_PORT = int(os.environ.get('CAYMAZ_MIKRO_PORT', '1433'))
+MIKRO_DB = os.environ.get('CAYMAZ_MIKRO_DB', '')
+MIKRO_USER = os.environ.get('CAYMAZ_MIKRO_USER', '')
+MIKRO_PASSWORD = os.environ.get('CAYMAZ_MIKRO_PASSWORD', '')
+# MASTER (sistem sahibi) hesapları: her firmada bu e-postalar tam yetkilidir; başka kimse MASTER olamaz.
+MASTER_USERNAMES = {u.strip().lower() for u in os.environ.get(
+    'CAYMAZ_MASTER_USERNAME', 'mkaderoglu@gokkubbetech.com,mkaderoglu@turkbey.com').split(',') if u.strip()}
 # Yedek parçaların başlangıç stoğu (GÖKKUBBE sayımı); yeni firmada 0 yapılır, stok sıfırdan başlar
 SEED_SPARE_STOCK = os.environ.get('CAYMAZ_SEED_SPARE_STOCK', '1') == '1'
 # Firma logosu ve uygulama simgeleri: bu klasördeki img/ ve icons/ dosyaları static/ içindekilerin yerine sunulur
@@ -40,6 +52,30 @@ PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'
 # Video ve uçuş logu gibi büyük dosyalar yalnızca yerel ağdan yüklenir (Cloudflare tüneli üzerinden çok yavaş).
 LOCAL_URL = os.environ.get('CAYMAZ_LOCAL_URL', 'http://192.168.1.189:8080')
+
+# Şifresini hiç değiştirmemiş (yöneticinin verdiği / sıfırladığı şifreyle giren) kullanıcı ilk girişte şifresini değiştirmeden
+# sistemi kullanamaz. Testler ve demo için 0 yapılabilir.
+FORCE_PASSWORD_CHANGE = os.environ.get('CAYMAZ_FORCE_PASSWORD_CHANGE', '1') == '1'
+
+# Kişisel → Mail: kurumsal Gmail (Google Workspace) için "Google ile bağlan" (OAuth). Google Cloud'da oluşturulan
+# OAuth istemcisi (Web uygulaması); yönlendirme adresi PUBLIC_URL + /api/mail/oauth/callback olarak eklenmelidir.
+# PDKS (personel devam kontrol — Firebird veritabanı, ör. Fixap / ZKTeco tabanlı)
+PDKS_HOST = os.environ.get('CAYMAZ_PDKS_HOST', '192.168.1.100')
+PDKS_PORT = int(os.environ.get('CAYMAZ_PDKS_PORT', '3050'))
+PDKS_DB = os.environ.get('CAYMAZ_PDKS_DB', r'\\192.168.1.100\MPremium\PDKS.GDB')
+PDKS_USER = os.environ.get('CAYMAZ_PDKS_USER', 'SYSDBA')
+PDKS_PASSWORD = os.environ.get('CAYMAZ_PDKS_PASSWORD', '')
+
+GOOGLE_CLIENT_ID = os.environ.get('CAYMAZ_GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('CAYMAZ_GOOGLE_CLIENT_SECRET', '')
+PUBLIC_URL = os.environ.get('CAYMAZ_PUBLIC_URL', '').rstrip('/')   # ör. https://caymaz.app
+
+# Yapay zeka asistanı (maskot sohbeti) — Claude API. Anahtar .env'de tutulur (asla loglanmaz).
+# CAYMAZ_AI_API_KEY yoksa standart ANTHROPIC_API_KEY de kabul edilir. Model env ile değiştirilebilir.
+AI_API_KEY = os.environ.get('CAYMAZ_AI_API_KEY', '') or os.environ.get('ANTHROPIC_API_KEY', '')
+AI_MODEL = os.environ.get('CAYMAZ_AI_MODEL', 'claude-haiku-4-5')
+# Anahtar bir çalışma alanına (workspace) bağlı değilse Anthropic bu başlığı ister. Workspace'e bağlı anahtarda gerekmez.
+AI_WORKSPACE_ID = os.environ.get('CAYMAZ_AI_WORKSPACE_ID', '')
 
 for d in (DATA_DIR, UPLOAD_DIR):
     d.mkdir(parents=True, exist_ok=True)

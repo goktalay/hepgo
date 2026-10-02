@@ -1,10 +1,11 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, db, policy
 from ..files import save_upload
 
 router = APIRouter(prefix='/api/users')
@@ -18,6 +19,7 @@ class UserIn(BaseModel):
     roles: list[str] = []
     active: bool = True
     password: Optional[str] = None
+    ai_offtopic: bool = True   # yapay zekaya sistem dışı soru sorabilme
 
 
 def _validate(conn, body, user_id=None):
@@ -30,20 +32,30 @@ def _validate(conn, body, user_id=None):
                        (body.username.strip(), user_id)).fetchone()
     if dup:
         raise HTTPException(400, 'Bu kullanıcı adı zaten kayıtlı')
-    if body.password is not None and body.password != '' and len(body.password) < 8:
-        raise HTTPException(400, 'Şifre en az 8 karakter olmalı')
+    if body.password is not None and body.password != '':
+        try:
+            policy.validate_password(policy.get(conn), body.password, body.username)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
 
-def _with_roles(conn, users):
+def _with_roles(conn, users, viewer=None):
     for u in users:
         u['roles'] = auth.user_roles(conn, u['id'])
+        u['is_master'] = auth.is_master(u['username'])
+        # Sistem sahibini diğer yöneticiler sıradan Sistem Yöneticisi olarak görür (MASTER gizli)
+        if u['is_master'] and not (viewer and viewer.get('master')):
+            u['roles'] = [auth.ADMIN]
+            u['is_master'] = False
     return users
+
 
 
 @router.get('')
 def list_users(q: str = '', role: str = '', user=Depends(admin_only), conn=db.DB):
     sql = '''SELECT id, username, full_name, phone, photo, active, created_at, last_seen,
-                    (SELECT MAX(at) FROM login_logs l WHERE l.user_id = users.id AND success = 1) AS last_login
+                    (SELECT MAX(at) FROM login_logs l WHERE l.user_id = users.id AND success = 1) AS last_login,
+                    (SELECT MAX(is_foreign) FROM employees e WHERE e.user_id = users.id) AS is_foreign
              FROM users WHERE deleted_at IS NULL'''
     args = []
     if q:
@@ -52,7 +64,19 @@ def list_users(q: str = '', role: str = '', user=Depends(admin_only), conn=db.DB
     if role:
         sql += ' AND id IN (SELECT user_id FROM user_roles WHERE role = ?)'
         args.append(role)
-    return _with_roles(conn, db.rows(conn.execute(sql + ' ORDER BY full_name', args)))
+    rows = _with_roles(conn, db.rows(conn.execute(sql + ' ORDER BY full_name', args)), user)
+    absent = auth.absent_map(conn)   # bugün izinli / raporlu olanlar
+    ext = {r[0]: {'person_id': r[1], 'company_id': r[2], 'company_name': r[3], 'href': f"#/{'purchasing/suppliers' if r[4] else 'companies'}/{r[2]}"}
+           for r in conn.execute('SELECT p.user_id, p.id, c.id, c.name, c.is_supplier FROM company_people p JOIN companies c ON c.id = p.company_id '
+                                 'WHERE p.user_id IS NOT NULL')}
+    from .admin import ONLINE_WINDOW
+    cut = (datetime.now() - ONLINE_WINDOW).isoformat(timespec='seconds')
+    for r in rows:
+        r['absence'] = absent.get(r['id'])
+        r['external'] = ext.get(r['id'])   # dış firma personeli (ör. kiralık güvenlik)
+        r['online'] = bool(r['active'] and r.get('last_seen') and r['last_seen'] >= cut)   # WhatsApp tarzı çevrimiçi halkası için
+        r['is_foreign'] = bool(r.get('is_foreign'))   # yabancı uyruklu personel (listede açık turuncu arka plan)
+    return rows
 
 
 @router.post('')
@@ -61,10 +85,11 @@ def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
     if not body.password:
         raise HTTPException(400, 'Yeni kullanıcı için şifre zorunlu')
     cur = conn.execute(
-        'INSERT INTO users (username, password_hash, full_name, phone, active, created_at) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO users (username, password_hash, full_name, phone, active, created_at, must_change_password) VALUES (?,?,?,?,?,?,1)',
         (body.username.strip(), auth.hash_password(body.password), body.full_name.strip(),
          body.phone, int(body.active), db.now()))
     uid = cur.lastrowid
+    policy.record_history(conn, uid, conn.execute('SELECT password_hash FROM users WHERE id = ?', (uid,)).fetchone()[0])
     conn.executemany('INSERT INTO user_roles (user_id, role) VALUES (?,?)', [(uid, r) for r in set(body.roles)])
     db.audit(conn, user['id'], 'Kullanıcı oluşturdu', 'user', uid, body.username)
     return {'id': uid}
@@ -72,26 +97,33 @@ def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
 
 @router.get('/{uid}')
 def get_user(uid: int, user=Depends(admin_only), conn=db.DB):
-    u = db.row(conn.execute('SELECT id, username, full_name, phone, photo, active, created_at FROM users '
+    u = db.row(conn.execute('SELECT id, username, full_name, phone, photo, active, created_at, ai_offtopic FROM users '
                             'WHERE id = ? AND deleted_at IS NULL', (uid,)))
     if not u:
         raise HTTPException(404, 'Kullanıcı bulunamadı')
-    return _with_roles(conn, [u])[0]
+    return _with_roles(conn, [u], user)[0]
 
 
 @router.put('/{uid}')
 def update_user(uid: int, body: UserIn, user=Depends(admin_only), conn=db.DB):
     if not conn.execute('SELECT 1 FROM users WHERE id = ?', (uid,)).fetchone():
         raise HTTPException(404, 'Kullanıcı bulunamadı')
+    mu = db.row(conn.execute('SELECT username FROM users WHERE id = ?', (uid,)))
+    if mu and auth.is_master(mu['username']) and (body.username.strip().lower() != mu['username'].lower() or not body.active):
+        raise HTTPException(400, 'Sistem sahibinin hesabı pasifleştirilemez ve kullanıcı adı değiştirilemez')
     _validate(conn, body, uid)
     if uid == user['id'] and (auth.ADMIN not in body.roles or not body.active):
         raise HTTPException(400, 'Kendi yönetici yetkinizi veya hesabınızı kapatamazsınız')
-    conn.execute('UPDATE users SET username = ?, full_name = ?, phone = ?, active = ? WHERE id = ?',
-                 (body.username.strip(), body.full_name.strip(), body.phone, int(body.active), uid))
+    conn.execute('UPDATE users SET username = ?, full_name = ?, phone = ?, active = ?, ai_offtopic = ? WHERE id = ?',
+                 (body.username.strip(), body.full_name.strip(), body.phone, int(body.active), int(body.ai_offtopic), uid))
     conn.execute('DELETE FROM user_roles WHERE user_id = ?', (uid,))
     conn.executemany('INSERT INTO user_roles (user_id, role) VALUES (?,?)', [(uid, r) for r in set(body.roles)])
     if body.password:
-        conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', (auth.hash_password(body.password), uid))
+        # yöneticinin sıfırladığı şifre: kullanıcı ilk girişte değiştirir (yönetici kendi şifresini buradan değiştirirse hariç)
+        new_hash = auth.hash_password(body.password)
+        conn.execute('UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?',
+                     (new_hash, int(uid != user['id']), uid))
+        policy.record_history(conn, uid, new_hash)
         conn.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
     if not body.active:
         conn.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
@@ -121,6 +153,8 @@ def delete_user(uid: int, user=Depends(admin_only), conn=db.DB):
         raise HTTPException(404, 'Kullanıcı bulunamadı')
     if uid == user['id']:
         raise HTTPException(400, 'Kendi hesabınızı silemezsiniz')
+    if auth.is_master(u['username']):
+        raise HTTPException(403, 'Sistem sahibinin hesabı silinemez')
     if auth.ADMIN in auth.user_roles(conn, uid) and conn.execute(
             '''SELECT COUNT(*) FROM users x JOIN user_roles r ON r.user_id = x.id
                WHERE r.role = ? AND x.active = 1 AND x.deleted_at IS NULL AND x.id != ?''', (auth.ADMIN, uid)).fetchone()[0] == 0:

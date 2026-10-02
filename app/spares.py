@@ -10,7 +10,34 @@ import math
 
 from . import config, db
 
-MAMUL, SPARE = 'MAMUL', 'YEDEK_PARCA'
+# Ürün tipleri (etiket): MAMUL, YARI_MAMUL, YEDEK_PARCA (satın alınan / reçetede kullanılan parça), HAMMADDE.
+# Davranış tipten değil şemadan gelir: basılıp stokta tutulan parçalar (şema part-* ve spare-*) yarı mamul tipindedir.
+MAMUL, SEMI, SPARE, RAW = 'MAMUL', 'YARI_MAMUL', 'YEDEK_PARCA', 'HAMMADDE'
+FIXTURE, CONSUMABLE = 'DEMIRBAS', 'SARF'   # MRP malzemeleri: demirbaş ve sarf malzeme (reçetede kullanılmaz)
+TYPES = {MAMUL: 'Mamul', SEMI: 'Yarı mamul', SPARE: 'Yedek parça', RAW: 'Hammadde', FIXTURE: 'Demirbaş', CONSUMABLE: 'Sarf malzeme'}
+CUSTOM = 'custom'   # Ürün Yönetimi'nden açılan ürün: çizim şeması yok (ağaç, reçete, resim, G-code ile tanımlanır)
+STOCKED_SQL = "(schema LIKE 'part-%' OR schema LIKE 'spare-%')"   # basılıp stokta tutulan (sipariş = baskı)
+
+
+def is_stocked(p):
+    """Basılıp stokta tutulan parça: parça yedeği (part-*) ya da montaj sarfı (spare-*)."""
+    return (p.get('schema') or '').startswith(('part-', 'spare-'))
+
+
+def is_sarf(p):
+    """Montaj sarfı (KMH, BBK, KBK): mamulün montajında stoktan düşülür."""
+    return (p.get('schema') or '').startswith('spare-')
+
+
+def is_section(p):
+    """Mamul şemasından türeyen yarı mamul (Sol Kanat, Sağ Kanat, Gövde, Elektronik)."""
+    return (p.get('schema') or '').startswith('semi-')
+
+
+def role(p):
+    schema = p.get('schema') or ''
+    return ('part' if schema.startswith('part-') else 'sarf' if schema.startswith('spare-') else 'section'
+            if schema.startswith('semi-') else 'custom' if schema == CUSTOM else 'mamul')
 
 
 # ---------- Çizimler (her yedek parça tek parçalı bir şema; koordinatlar kendi çizim uzayında)
@@ -92,7 +119,7 @@ SPARES = {
     'BBK': ('Büyük Bağlantı Klipsi', _bbk, 12, 68, 183),
     'KBK': ('Küçük Bağlantı Klipsi', _kbk, 12, 6, 38),
 }
-SCHEMAS = {f'spare-{code.lower()}': {'module': SpareSchema(code, v[0], v[1]), 'title': f'{v[0]} (yedek parça)'}
+SCHEMAS = {f'spare-{code.lower()}': {'module': SpareSchema(code, v[0], v[1]), 'title': f'{v[0]} (montaj sarfı)'}
            for code, v in SPARES.items()}
 
 
@@ -105,7 +132,7 @@ def seed(conn):
         pid = conn.execute(
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, created_at)
                VALUES (?,?,?,?,?,?,?,?,?)''',
-            (code, name, f'{code}-YP', f'Yedek parça · bir baskıda {per_print} adet', f'spare-{code.lower()}', code, SPARE,
+            (code, name, f'{code}-YP', f'Yedek parça · bir baskıda {per_print} adet', f'spare-{code.lower()}', code, SEMI,
              per_print, db.now())).lastrowid
         if initial and config.SEED_SPARE_STOCK:   # yeni firmada (ör. Türkbey) stok sıfırdan başlar
             conn.execute('INSERT INTO spare_moves (spare_id, qty, reason, created_at) VALUES (?,?,?,?)',
@@ -134,13 +161,30 @@ def produced(conn, order, at=None):
 
 
 def per_product(conn, product_id):
-    """Bir mamulde kullanılan yedek parça adetleri {spare_id: adet}: mamule doğrudan bağlı olanlar ve
-    yarı mamulleri (Sol Kanat, Sağ Kanat, Gövde, Elektronik) üzerinden bağlı olanların toplamı."""
-    rows = conn.execute(
-        '''SELECT ps.spare_id, SUM(ps.qty) FROM product_spares ps
-           WHERE ps.qty > 0 AND (ps.parent_id = ? OR ps.parent_id IN (SELECT id FROM products WHERE parent_id = ?))
-           GROUP BY ps.spare_id''', (product_id, product_id)).fetchall()
-    return {sid: q for sid, q in rows}
+    """Bir mamulde kullanılan montaj sarfı adetleri {spare_id: adet}: ürün ağacında (product_bom) mamulün altındaki
+    tüm dallardan, üst adetlerle çarpılarak toplanır (ör. BBK: Sol Kanat 27 + Sağ Kanat 27 + Gövde 14)."""
+    kids = {}
+    for parent, child, qty, schema in conn.execute(
+            'SELECT b.parent_id, b.child_id, b.qty, p.schema FROM product_bom b JOIN products p ON p.id = b.child_id WHERE b.qty > 0'):
+        kids.setdefault(parent, []).append((child, qty, schema))
+    out = {}
+
+    def walk(pid, mult, seen):
+        for child, qty, schema in kids.get(pid, []):
+            if child in seen:
+                continue
+            if schema.startswith('spare-'):
+                out[child] = out.get(child, 0) + qty * mult
+            walk(child, qty * mult, seen | {child})
+    walk(product_id, 1, {product_id})
+    return {k: int(math.ceil(v - 1e-9)) for k, v in out.items()}
+
+
+def usages(conn, spare_id):
+    """Montaj sarfının kullanıldığı ürünler ve adetleri (ürün ağacındaki doğrudan üstleri)."""
+    return db.rows(conn.execute(
+        """SELECT b.parent_id, b.qty, p.name AS parent_name FROM product_bom b JOIN products p ON p.id = b.parent_id
+           WHERE b.child_id = ? AND b.qty > 0 ORDER BY p.id""", (spare_id,)))
 
 
 def consume(conn, order, at=None):
@@ -153,13 +197,11 @@ def consume(conn, order, at=None):
 
 def summary(conn):
     """Yedek parçalar: stok, bir baskıda üretilen, mamul başına kullanılan ve stoğun kaç mamule yettiği."""
-    rows = db.rows(conn.execute(f"SELECT id, code, name, per_print, active FROM products WHERE type = '{SPARE}' ORDER BY id"))
+    rows = db.rows(conn.execute(f"SELECT id, code, name, schema, per_print, active FROM products WHERE {STOCKED_SQL} ORDER BY id"))
     for r in rows:
         r['stock'] = stock(conn, r['id'])
-        r['usages'] = db.rows(conn.execute(
-            '''SELECT ps.parent_id, ps.qty, p.name AS parent_name FROM product_spares ps JOIN products p ON p.id = ps.parent_id
-               WHERE ps.spare_id = ? ORDER BY p.id''', (r['id'],)))
-        need = sum(u['qty'] for u in r['usages'])
+        r['usages'] = usages(conn, r['id']) if is_sarf(r) else []   # parça yedekleri siparişle basılır, montajda düşülmez
+        need = int(math.ceil(sum(u['qty'] for u in r['usages']) - 1e-9))
         r['per_aircraft'] = need
         r['enough_for'] = r['stock'] // need if need else None
         r['open_orders'] = conn.execute("SELECT COUNT(*) FROM orders WHERE product_id = ? AND status NOT IN ('TAMAMLANDI', 'HURDA')",

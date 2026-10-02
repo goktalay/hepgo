@@ -124,8 +124,11 @@ export async function renderDashboard(view, ctx, modules) {
         n.detail ? h('small', null, n.detail) : null), 'Bekleyen bildiriminiz yok');
       case 'alerts': return list(d.items, a => h('li', { class: a.critical ? 'crit' : '' }, h('a', { href: `#/alerts/${a.key}` }, h('span', { class: `db-n ${a.level}` }, a.count), a.title)),
         'Uyarı yok');
-      case 'calendar': return list(d.items, e => h('li', null, h('a', { href: '#/calendar' }, h('span', { class: 'db-time' }, fmtDateTime(e.at).replace(/\.\d{4}/, '')), e.title),
-        h('small', null, e.kind === 'HATIRLATMA' ? 'Hatırlatma' : 'Randevu')), 'Yaklaşan randevu yok');
+      case 'calendar': return list(d.items, e => h('li', { class: e.kind === 'TOPLANTI' ? 'db-meeting' : '' },
+        h('a', { href: e.href || '#/calendar' }, h('span', { class: 'db-time' }, fmtDateTime(e.at).replace(/\.\d{4}/, '')), e.title),
+        e.kind === 'TOPLANTI' ? h('small', null, e.live ? h('span', { class: 'badge green' }, 'Devam ediyor') : 'Toplantı',
+          e.pending ? [' · ', h('span', { class: 'badge yellow' }, 'Yanıt bekliyor')] : null, e.location ? ` · ${e.location}` : '')
+          : h('small', null, e.kind === 'HATIRLATMA' ? 'Hatırlatma' : 'Randevu')), 'Yaklaşan randevu ya da toplantı yok');
       case 'my_cargo': return list(d.items, k => h('li', null, h('a', { href: '#/my-cargo' }, h('b', null, k.carrier || 'Kargo'), k.description ? ` · ${k.description}` : ''),
         h('small', null, fmtDateTime(k.created_at))), 'Bekleyen kargonuz yok');
       case 'my_calls': return list(d.items, c => h('li', null, h('a', { href: '#/my-calls' }, h('b', null, c.caller_name),
@@ -222,17 +225,26 @@ export async function renderDashboard(view, ctx, modules) {
       }
     }
     try {
-      const r = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=4`)).json();
-      const c = r.current;
-      const [icon, text] = wmo(c.weather_code, c.is_day);
-      const dname = ds => new Date(`${ds}T12:00`).toLocaleDateString('tr-TR', { weekday: 'short' });
-      clear(body, h('div', { class: 'db-weather' },
-        h('div', { class: 'db-wnow' }, h('span', { class: 'db-wicon' }, icon), h('div', null, h('b', null, `${Math.round(c.temperature_2m)}°`),
-          h('span', null, text), h('small', null, `Hissedilen ${Math.round(c.apparent_temperature)}° · Nem %${c.relative_humidity_2m} · Rüzgâr ${Math.round(c.wind_speed_10m)} km/sa`))),
-        h('div', { class: 'db-wdays' }, r.daily.time.map((t, i) => h('div', null, h('span', null, i ? dname(t) : 'Bugün'), h('i', null, wmo(r.daily.weather_code[i], 1)[0]),
-          h('b', null, `${Math.round(r.daily.temperature_2m_max[i])}°`), h('small', null, `${Math.round(r.daily.temperature_2m_min[i])}°`),
-          r.daily.precipitation_probability_max?.[i] ? h('em', null, `☔ %${r.daily.precipitation_probability_max[i]}`) : null))),
-        h('div', { class: 'db-wsrc' }, `${name || ''} · Open-Meteo`)));
+      const r = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=1`)).json();
+      const c = r.current, d = r.daily;
+      const [, text] = wmo(c.weather_code, c.is_day);
+      const hm = s => (s || '').slice(11, 16);
+      const dirs = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB'];
+      const stat = (ic, label, val) => h('div', { class: 'wx-stat' }, svgEl(WX_MINI[ic]), h('span', null, label), h('b', null, val));
+      clear(body, h('div', { class: `wx wx-${wxTheme(c.weather_code, c.is_day)}` },
+        h('div', { class: 'wx-hero' },
+          h('div', { class: 'wx-main' },
+            h('div', { class: 'wx-place' }, name || 'Konum'),
+            h('div', { class: 'wx-temp' }, `${Math.round(c.temperature_2m)}`, h('sup', null, '°C')),
+            h('div', { class: 'wx-cond' }, text),
+            h('div', { class: 'wx-hl' }, `En yüksek ${Math.round(d.temperature_2m_max[0])}° · En düşük ${Math.round(d.temperature_2m_min[0])}°`)),
+          h('div', { class: 'wx-art' }, svgEl(wxIcon(c.weather_code, c.is_day)))),
+        h('div', { class: 'wx-stats' },
+          stat('feel', 'Hissedilen', `${Math.round(c.apparent_temperature)}°`),
+          stat('drop', 'Nem', `%${c.relative_humidity_2m}`),
+          stat('wind', 'Rüzgâr', `${Math.round(c.wind_speed_10m)} km/sa ${dirs[Math.round((c.wind_direction_10m || 0) / 45) % 8]}`),
+          stat('sun', 'Güneş doğuş · batış', `${hm(d.sunrise?.[0])} · ${hm(d.sunset?.[0])}`)),
+        h('div', { class: 'db-wsrc' }, 'Open-Meteo')));
     } catch { clear(body, h('div', { class: 'db-none' }, 'Hava durumu alınamadı (internet bağlantısı?)')); }
   }
 
@@ -302,4 +314,46 @@ function wmo(code, day = 1) {
     95: ['⛈️', 'Gök gürültülü fırtına'], 96: ['⛈️', 'Dolu ile fırtına'], 99: ['⛈️', 'Dolu ile fırtına'],
   };
   return m[code] || ['🌡️', '—'];
+}
+
+
+// ---------- Hava durumu çizimleri (SVG): durum + gece/gündüz; zemin teması
+const WX_SUN = '<circle cx="32" cy="32" r="11" fill="#fbbf24"/><g stroke="#fbbf24" stroke-width="3" stroke-linecap="round">' +
+  [0, 45, 90, 135, 180, 225, 270, 315].map(a => `<line x1="32" y1="9" x2="32" y2="14" transform="rotate(${a} 32 32)"/>`).join('') + '</g>';
+const WX_MOON = '<path d="M38 12a18 18 0 1 0 14 26A15 15 0 0 1 38 12z" fill="#e2e8f0"/>';
+const WX_CLOUD = (x = 0, y = 0, c = '#f8fafc') => `<path transform="translate(${x} ${y})" d="M20 46h26a10 10 0 0 0 0-20 14 14 0 0 0-27-3A11 11 0 0 0 20 46z" fill="${c}" stroke="rgba(15,23,42,.12)" stroke-width="1"/>`;
+const WX_RAIN = '<g stroke="#60a5fa" stroke-width="3" stroke-linecap="round"><line x1="24" y1="50" x2="21" y2="58"/><line x1="33" y1="50" x2="30" y2="58"/><line x1="42" y1="50" x2="39" y2="58"/></g>';
+const WX_SNOW = '<g fill="#e0f2fe"><circle cx="23" cy="54" r="2.5"/><circle cx="33" cy="57" r="2.5"/><circle cx="43" cy="54" r="2.5"/></g>';
+const WX_BOLT = '<path d="M34 46l-6 10h6l-3 8 9-12h-6l4-6z" fill="#facc15"/>';
+const WX_FOG = '<g stroke="#cbd5e1" stroke-width="3" stroke-linecap="round"><line x1="14" y1="50" x2="50" y2="50"/><line x1="18" y1="56" x2="46" y2="56"/></g>';
+function wxIcon(code, day = 1) {
+  const sky = day ? WX_SUN : WX_MOON;
+  let body;
+  if (code === 0) body = sky;
+  else if (code <= 2) body = `<g transform="translate(-8 -8) scale(.85)">${sky}</g>${WX_CLOUD(4, 4)}`;
+  else if (code === 3) body = `${WX_CLOUD(-6, -6, '#cbd5e1')}${WX_CLOUD(4, 2)}`;
+  else if (code === 45 || code === 48) body = `${WX_CLOUD(0, -6, '#e2e8f0')}${WX_FOG}`;
+  else if (code >= 95) body = `${WX_CLOUD(0, -6, '#94a3b8')}${WX_BOLT}`;
+  else if ((code >= 71 && code <= 77) || code === 85 || code === 86) body = `${WX_CLOUD(0, -6)}${WX_SNOW}`;
+  else body = `${WX_CLOUD(0, -6, '#cbd5e1')}${WX_RAIN}`;
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${body}</svg>`;
+}
+function wxTheme(code, day) {
+  if (!day) return 'night';
+  if (code >= 95) return 'storm';
+  if (code >= 51) return 'rain';
+  if (code === 3 || code === 45 || code === 48) return 'cloudy';
+  return 'clear';
+}
+const WX_MINI = {
+  feel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/></svg>',
+  drop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>',
+  wind: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 9h11a3 3 0 1 0-3-3M3 15h15a3 3 0 1 1-3 3"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18h16M7 18a5 5 0 0 1 10 0M12 5v3M5.6 9.6l2 2M18.4 9.6l-2 2"/></svg>',
+};
+function svgEl(markup) {
+  const w = document.createElement('span');
+  w.className = 'wx-svg';
+  w.innerHTML = markup;
+  return w;
 }

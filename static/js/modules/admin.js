@@ -37,7 +37,7 @@ const DEFAULT_TILES = ['online_users', 'printers_printing', 'printers_really_idl
   'orders_open', 'today_done', 'parts_error', 'parts_pending_approval', 'printers_offline'];
 const PREF = 'adminTiles';
 
-const nav = cur => segmented([['', 'Sistem Durumu'], ['live', 'Canlı Üretim']], cur, k => { location.hash = k ? `#/admin/${k}` : '#/admin'; });
+const nav = cur => segmented([['', 'Sistem Durumu'], ['live', 'Canlı Üretim']], cur, k => { location.hash = k ? `#/admin/${k}` : '#/admin'; }, { tabs: true });
 
 export async function render(view, params, ctx) {
   if (params[0] === 'live') return renderLive(view, params, ctx);

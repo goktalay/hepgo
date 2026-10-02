@@ -1,0 +1,819 @@
+// Program Ayarları (yalnızca Sistem Yöneticisi / MASTER): sistem geneli ayarlar. Kişisel Ayarlar tarzında iki panel.
+// Bölümler: Sunucu Durumu (CPU/GPU/RAM/disk grafikleri + servisler ve yeniden başlat), Entegrasyonlar (API anahtarları…).
+import { api } from '../api.js';
+import { stockPicker } from '../stockpick.js';
+import { segIconByKey } from '../segicons.js';
+import { avatar, clear, confirmDialog, every, fmtDateTime, fmtDuration, h, modal, pageHead, toast, toastError } from '../ui.js';
+
+// Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
+const SC_MQ = matchMedia('(max-width: 800px)');
+let _scRedraw = null;
+SC_MQ.addEventListener('change', () => { if (_scRedraw && location.hash.startsWith('#/sysconfig')) _scRedraw(); });
+
+const pct = v => (v == null ? '—' : `%${Math.round(v)}`);
+const gb = b => (b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${Math.round(b / 1e9)} GB`);
+
+function spark(values, color) {
+  const w = 260, hh = 54, n = Math.max(values.length, 2);
+  const pts = values.map((v, i) => `${(i / (n - 1)) * w},${hh - 1 - (Math.max(0, Math.min(100, v || 0)) / 100) * (hh - 2)}`).join(' ');
+  const area = values.length ? `M0,${hh} L${pts.replaceAll(' ', ' L')} L${w},${hh}Z` : '';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${hh}`); svg.setAttribute('class', 'sc-spark'); svg.setAttribute('preserveAspectRatio', 'none');
+  svg.innerHTML = `<path d="${area}" fill="${color}" opacity="0.14"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  return svg;
+}
+
+function metricCard(label, color) {
+  const val = h('b', { class: 'sc-metric-val' }, '—');
+  const sub = h('small', { class: 'muted' }, '');
+  const chart = h('div', { class: 'sc-chart' });
+  const card = h('div', { class: 'card card-pad sc-metric' }, h('div', { class: 'sc-metric-top' }, h('span', { class: 'sc-metric-label' }, label), val), sub, chart);
+  return { card, set(v, subText, series) { val.textContent = pct(v); sub.textContent = subText || ''; clear(chart, spark(series, color)); } };
+}
+
+function serverBody(view) {
+  const cpu = metricCard('CPU', '#2563eb'), gpu = metricCard('GPU', '#16a34a'), ram = metricCard('RAM', '#7c3aed');
+  const diskVal = h('b', { class: 'sc-metric-val' }, '—');
+  const diskBar = h('div', { class: 'sc-disk-bar' }, h('i'));
+  const diskSub = h('small', { class: 'muted' }, '');
+  const diskCard = h('div', { class: 'card card-pad sc-metric' }, h('div', { class: 'sc-metric-top' }, h('span', { class: 'sc-metric-label' }, 'Disk'), diskVal), diskSub, diskBar);
+  const info = h('dl', { class: 'sys-kv sc-info' });
+  const svcList = h('div', { class: 'sc-svc-list' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  const hist = { cpu: [], gpu: [], ram: [] };
+  let sinceT = 0;
+
+  const loadStatus = async () => {
+    try {
+      const s = await api.get(`/api/system/status?since=${sinceT}`);
+      (s.history || []).forEach(p => { hist.cpu.push(p.cpu); hist.gpu.push(p.gpu); hist.ram.push(p.ram); sinceT = p.t; });
+      for (const k of ['cpu', 'gpu', 'ram']) hist[k] = hist[k].slice(-120);
+      cpu.set(s.cpu, '', hist.cpu);
+      gpu.set(s.gpu, s.gpu != null ? '' : 'yok', hist.gpu);
+      ram.set(s.ram_total ? 100 * s.ram_used / s.ram_total : null, s.ram_total ? `${gb(s.ram_used)} / ${gb(s.ram_total)}` : '', hist.ram);
+      if (s.disk_total) {
+        const u = 100 * s.disk_used / s.disk_total;
+        diskVal.textContent = pct(u);
+        diskBar.querySelector('i').style.width = `${u.toFixed(1)}%`;
+        diskBar.querySelector('i').className = u >= 92 ? 'bad' : u >= 80 ? 'warn' : '';
+        diskSub.textContent = `${gb(s.disk_used)} dolu · ${gb(s.disk_free)} boş`;
+      }
+    } catch { /* */ }
+  };
+  const loadInfo = async () => {
+    try {
+      const d = await api.get('/api/system/details?what=server');
+      clear(info, [['Çekirdek', d.cpus], ['Yük (1/5/15 dk)', (d.load || []).map(x => x.toFixed(2)).join(' / ')],
+        d.gpu_name ? ['Ekran kartı', d.gpu_name] : null, d.gpu_temp != null ? ['GPU sıcaklığı', `${d.gpu_temp} °C`] : null,
+        d.uptime_s ? ['Sunucu açık', fmtDuration(d.uptime_s)] : null].filter(Boolean).flatMap(([k, v]) => [h('dt', null, k), h('dd', null, String(v))]));
+    } catch { /* */ }
+  };
+  const loadSvc = async () => {
+    try {
+      const rows = await api.get('/api/system/services');
+      clear(svcList, rows.map(r => h('div', { class: 'sc-svc' },
+        h('span', { class: `sc-svc-dot ${r.running ? 'on' : 'off'}` }),
+        h('div', { class: 'grow' }, h('b', null, r.label), h('small', { class: 'muted' }, `${r.name} · ${r.active}/${r.sub}`)),
+        r.restartable ? h('button', { class: 'btn xs', type: 'button', onclick: () => restart(r) }, 'Yeniden başlat') : null)));
+    } catch (err) { clear(svcList, h('div', { class: 'empty small' }, err.message)); }
+  };
+  const restart = async r => {
+    const self = r.name === 'caymaz.service';
+    if (!await confirmDialog('Servisi yeniden başlat', `${r.label} yeniden başlatılsın mı?${self ? ' Bu, bu uygulamadır; birkaç saniye bağlantı kesilir ve sayfayı yenilemeniz gerekebilir.' : ''}`, { okLabel: 'Yeniden başlat', danger: self })) return;
+    try { await api.post(`/api/system/services/${r.name}/restart`, {}); toast(`${r.label} yeniden başlatılıyor…`, 'success'); setTimeout(loadSvc, 3000); }
+    catch (err) { toastError(err); }
+  };
+
+  loadStatus(); loadInfo(); loadSvc();
+  every(2000, loadStatus); every(15000, loadSvc); every(30000, loadInfo);
+  return h('div', null,
+    h('div', { class: 'sc-metrics' }, cpu.card, gpu.card, ram.card, diskCard),
+    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Sunucu bilgisi'), info),
+    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Servisler'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Sistem servislerini buradan yeniden başlatabilirsiniz.'), svcList));
+}
+
+// Sayı kutusu: sabit genişlikte tek parça kontrol (− değer birim +); birim yazısının uzunluğu kutuyu kaydırmaz
+function numBox(inp, suffix) {
+  const step = Number(inp.step) || 1;
+  const nudge = dir => {
+    const min = inp.min !== '' ? Number(inp.min) : -Infinity, max = inp.max !== '' ? Number(inp.max) : Infinity;
+    const v = Math.min(max, Math.max(min, (Number(inp.value) || 0) + dir * step));
+    inp.value = String(v); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  inp.classList.add('numbox-in');
+  return h('span', { class: 'sc-num-wrap numbox' },
+    h('button', { class: 'numbox-btn', type: 'button', tabindex: -1, 'aria-label': 'Azalt', onclick: () => nudge(-1) }, '−'),
+    inp, suffix ? h('span', { class: 'numbox-unit' }, suffix) : null,
+    h('button', { class: 'numbox-btn', type: 'button', tabindex: -1, 'aria-label': 'Artır', onclick: () => nudge(1) }, '+'));
+}
+
+// ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
+// Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
+const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', google: 'mailDot', general: 'gear' };
+function integrationsBody(view, ctx) {
+  const wrap = h('div', { class: 'sc-integ-list' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const card = grp => {
+    const ctl = {};
+    const clear = new Set();
+    const rows = grp.fields.map(f => {
+      const secret = f.kind === 'secret';
+      const inp = h('input', {
+        class: 'input', type: secret ? 'password' : f.kind === 'int' ? 'number' : 'text', autocomplete: secret ? 'new-password' : 'off',
+        spellcheck: 'false', value: secret ? '' : (f.value ?? ''),
+        placeholder: secret ? (f.set ? '••••••••  (kayıtlı)' : f.hint) : f.hint,
+      });
+      ctl[f.key] = inp;
+      // Kutunun altında tek sade satır: durum (gizli alanlarda kayıtlı mı) ve gerekiyorsa "Temizle"
+      const state = secret ? (f.set ? h('span', { class: 'sc-f-ok' }, 'Kayıtlı') : h('span', { class: 'sc-f-empty' }, 'Girilmedi'))
+        : h('span');   // ipucu zaten kutunun içinde (placeholder); tekrar yazılmaz
+      let clr = null;
+      if (f.source === 'panel') {
+        clr = h('button', { class: 'sc-f-clear', type: 'button', title: 'Bu değeri sil' }, 'Temizle');
+        clr.addEventListener('click', () => { clear.add(f.key); inp.value = ''; inp.placeholder = 'Kaydedince silinecek'; clr.remove(); });
+      }
+      return h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, f.label), inp,
+        h('span', { class: 'sc-f-meta' }, state, clr));
+    });
+    const status = h('span', { class: `sc-integ-status ${grp.configured ? 'ok' : ''}` }, grp.configured ? 'Bağlı' : 'Ayarlanmadı');
+    const msg = h('div', { class: 'sc-integ-msg', hidden: true });
+    const say = (ok, text) => { msg.hidden = false; msg.className = `sc-integ-msg ${ok ? 'ok' : 'err'}`; msg.textContent = text; };
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    const testBtn = h('button', { class: 'btn', type: 'button' }, grp.key === 'general' ? null : 'Bağlantıyı Test Et');
+    saveBtn.addEventListener('click', async () => {
+      const values = {};
+      for (const f of grp.fields) values[f.key] = ctl[f.key].value;
+      saveBtn.disabled = true;
+      try {
+        await api.put(`/api/system/integrations/${grp.key}`, { values, clear: [...clear] });
+        toast(`${grp.title} kaydedildi`, 'success');
+        if (grp.key !== 'general') { const r = await api.post(`/api/system/integrations/${grp.key}/test`, {}); say(r.ok, r.message); }
+        await reload(grp.key);
+      } catch (err) { toastError(err); } finally { saveBtn.disabled = false; }
+    });
+    testBtn.addEventListener('click', async () => {
+      testBtn.disabled = true; say(true, 'Deneniyor…');
+      try { const r = await api.post(`/api/system/integrations/${grp.key}/test`, {}); say(r.ok, r.message); }
+      catch (err) { say(false, err.message); } finally { testBtn.disabled = false; }
+    });
+    const extra = grp.key === 'mikro' && ctx.user.master && grp.configured
+      ? h('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/mikro'; } }, 'Mikro ERP’yi Aç') : null;
+    return h('section', { class: 'card card-pad sc-integ', 'data-g': grp.key },
+      h('div', { class: 'sc-integ-h' },
+        h('span', { class: 'sc-integ-ico' }, segIconByKey(INTEG_ICON[grp.key] || 'grid')),
+        h('div', { class: 'grow' }, h('b', null, grp.title), h('small', null, grp.desc)),
+        status),
+      h('div', { class: 'sc-fields' }, ...rows),
+      h('div', { class: 'sc-integ-foot' }, msg, h('span', { class: 'spacer' }), extra, grp.key === 'general' ? null : testBtn, saveBtn));
+  };
+  // Galeri: her entegrasyon büyük ikonlu kart; tıklayınca bilgilendirme + ayar formu açılır
+  let open = null;
+  const reload = async focus => {
+    let d;
+    try { d = await api.get('/api/system/integrations'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    if (focus) open = focus;
+    const grp = open && d.groups.find(g => g.key === open);
+    if (grp) {
+      const info = INTEG_INFO[grp.key] || {};
+      clear(wrap,
+        h('button', { class: 'btn sm integ-back', type: 'button', onclick: () => { open = null; reload(); } }, '← Tüm entegrasyonlar'),
+        h('section', { class: `card integ-hero ${grp.configured ? 'on' : ''}`, 'data-g': grp.key },
+          h('span', { class: 'integ-logo lg' }, INTEG_LOGO[grp.key]?.() || segIconByKey('grid')),
+          h('div', { class: 'grow' },
+            h('h2', null, grp.title), h('p', null, info.lead || grp.desc),
+            h('span', { class: `sc-integ-status ${grp.configured ? 'ok' : ''}` }, grp.configured ? 'Bağlı' : 'Ayarlanmadı'))),
+        info.sections?.length ? h('section', { class: 'card card-pad integ-info' },
+          info.sections.map(([t, items]) => h('div', { class: 'integ-info-sec' }, h('h4', null, t), h('ul', null, items.map(x => h('li', null, x)))))) : null,
+        h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
+        ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null);
+      return;
+    }
+    clear(wrap,
+      h('p', { class: 'small muted' }, 'Sistemin bağlandığı dış servisler. Ayarlamak ya da ayrıntılı bilgi almak için bir entegrasyona dokunun. Anahtar ve şifreler şifreli saklanır; ayarı eksik olan özellik kullanıcılara görünmez.'),
+      h('div', { class: 'integ-gallery' }, d.groups.map(g => h('button', { class: `integ-tile ${g.configured ? 'on' : ''}`, type: 'button', 'data-g': g.key,
+        onclick: () => { open = g.key; reload(); } },
+        h('span', { class: 'integ-logo' }, INTEG_LOGO[g.key]?.() || segIconByKey('grid')),
+        h('b', null, INTEG_INFO[g.key]?.short || g.title),
+        h('small', null, INTEG_INFO[g.key]?.tag || ''),
+        h('span', { class: `sc-integ-status ${g.configured ? 'ok' : ''}` }, g.configured ? 'Bağlı' : 'Ayarlanmadı')))));
+  };
+  reload();
+  return wrap;
+}
+
+// Entegrasyon logoları (arayüzde tanıtım amaçlı; her biri kendi markasının uygulama ikonu)
+const svgEl = markup => { const t = document.createElement('template'); t.innerHTML = markup.trim(); return t.content.firstElementChild; };
+const INTEG_LOGO = {
+  ai: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Claude"><rect width="64" height="64" rx="16" fill="#D97757"/>
+    <g fill="#fff" transform="translate(32 32)">${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a, i) =>
+      `<rect x="-2.6" y="-21" width="5.2" height="${i % 2 ? 15 : 19}" rx="2.6" transform="rotate(${a})"/>`).join('')}<circle r="4.2"/></g></svg>`),
+  google: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Google"><rect width="64" height="64" rx="16" fill="#fff"/>
+    <g transform="translate(12 12) scale(0.833)"><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.9-2.2 5.3-4.6 6.9v5.7h7.4c4.4-4 6.9-9.9 6.9-16.6z"/>
+    <path fill="#34A853" d="M24 47c6.2 0 11.4-2 15.2-5.5l-7.4-5.7c-2.1 1.4-4.7 2.2-7.8 2.2-6 0-11.1-4-12.9-9.5H3.4v5.9C7.2 42 15 47 24 47z"/>
+    <path fill="#FBBC05" d="M11.1 28.5c-.5-1.4-.7-2.9-.7-4.5s.3-3.1.7-4.5v-5.9H3.4C1.9 16.6 1 20.2 1 24s.9 7.4 2.4 10.4l7.7-5.9z"/>
+    <path fill="#EA4335" d="M24 10c3.4 0 6.4 1.2 8.8 3.4l6.6-6.6C35.4 3 30.2 1 24 1 15 1 7.2 6 3.4 13.6l7.7 5.9C12.9 14 18 10 24 10z"/></g></svg>`),
+  mikro: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Mikro"><defs><linearGradient id="mk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e30613"/><stop offset="1" stop-color="#a1000b"/></linearGradient></defs>
+    <rect width="64" height="64" rx="16" fill="url(#mk)"/><text x="32" y="40" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800" fill="#fff" letter-spacing="-.5">mikro</text></svg>`),
+  pdks: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="PDKS"><rect width="64" height="64" rx="16" fill="#0e7490"/>
+    <circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="3.2"/><path d="M32 23v10l7 4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
+  general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
+};
+const INTEG_INFO = {
+  ai: { short: 'Claude', tag: 'Yapay zeka asistanı',
+    lead: 'Anthropic’in Claude modeli, sistemdeki maskot asistan “Kubbe”yi çalıştırır: kullanıcıların sorularını yetkileri dahilindeki verilerle yanıtlar, kayıt değişikliklerini yönetici onayına gönderir.',
+    sections: [
+      ['Ne işe yarar?', ['Kullanıcı sistemle ilgili soruları asistana sorar; asistan yalnızca kullanıcının yetkili olduğu verileri okur.',
+        'Kayıt değiştirme istekleri doğrudan uygulanmaz; Program Ayarları › YZ Onayları’na düşer.',
+        'Kullanıcı başına aylık token kotası Program Ayarları › Yapay Zeka’dan yönetilir.']],
+      ['Anahtar nasıl alınır?', ['console.anthropic.com adresinde oturum açın › API Keys › Create Key.',
+        'Anahtar bir çalışma alanına (workspace) bağlıysa Workspace ID’yi de girin (wrkspc_ ile başlar).',
+        'Model alanı boş bırakılırsa claude-haiku-4-5 kullanılır (hızlı ve ekonomik).']],
+      ['Bilinmesi gerekenler', ['Anahtar şifreli saklanır ve bir daha gösterilmez.', 'Anahtar tanımlı değilse maskot ve yapay zeka bölümleri kimseye görünmez.',
+        'Kullanım Anthropic hesabınızdan ücretlendirilir.']],
+    ] },
+  mikro: { short: 'Mikro ERP', tag: 'Muhasebe / ERP aktarımı',
+    lead: 'Mikro ERP’nin SQL Server veritabanından cari, stok ve alış / satış faturaları tek yönlü olarak sisteme aktarılır.',
+    sections: [
+      ['Ne işe yarar?', ['Cari kartlar Firma Yönetimi’ne, stok kartları ürün / malzeme listelerine, faturalar Satış ve Satın Alma’ya aktarılır.',
+        'Aktarım tek yönlüdür: sistem Mikro’ya hiçbir şey yazmaz.', 'Daha önce aktarılan kayıtlar listede gizlenir; istenirse gösterilir.']],
+      ['Bağlantı bilgileri', ['Sunucu: Mikro SQL Server’ın yerel ağdaki IP adresi ya da adı; port genellikle 1433.',
+        'Veritabanı: firmanın Mikro veritabanı (ör. MikroDB_V16_FIRMA ya da MikroDesktop_001).',
+        'Kullanıcı: yalnızca okuma yetkisi olan bir SQL / Windows kullanıcısı önerilir.']],
+      ['Bilinmesi gerekenler', ['Bu sunucu Mikro sunucusuna yerel ağdan erişebilmelidir.', 'Bilgiler eksikse Mikro ERP modülü görünmez.',
+        'Aktarım ekranı yalnızca sistem sahibine (MASTER) açıktır.']],
+    ] },
+  pdks: { short: 'PDKS', tag: 'Personel giriş-çıkış',
+    lead: 'Personel devam kontrol cihazlarının (ör. Fixap) Firebird veritabanından giriş-çıkış hareketleri yalnızca okunur; cihaza ya da veritabanına hiçbir şey yazılmaz.',
+    sections: [
+      ['Ne işe yarar?', ['Kart / yüz okuyucuların giriş-çıkış kayıtları personelle eşleştirilir.',
+        'İnsan Kaynakları’nda günlük giriş-çıkış, geç kalma ve devamsızlık izin / raporlarla birlikte görünür.',
+        'Bağlantı tek yönlüdür: sistem PDKS’ye hiçbir şey yazmaz.']],
+      ['Bağlantı bilgileri', ['Sunucu: PDKS Firebird sunucusunun IP’si (ör. 192.168.1.100); port genellikle 3050.',
+        'Veritabanı yolu: sunucudaki .GDB / .FDB dosyası (ör. \\\\192.168.1.100\\MPremium\\PDKS.GDB).',
+        'Kullanıcı: Firebird kullanıcısı (genelde SYSDBA); yalnızca okuma yetkisi yeterlidir.']],
+      ['Bilinmesi gerekenler', ['Bu sunucu PDKS sunucusuna yerel ağdan erişebilmelidir (3050 portu).',
+        'Şifre şifreli saklanır ve bir daha gösterilmez.', 'Firebird istemci kütüphanesi sistemle birlikte gelir; ayrıca kurulum gerekmez.']],
+    ] },
+  google: { short: 'Google', tag: 'Gmail e-posta bağlantısı',
+    lead: 'Kullanıcıların kendi Gmail hesaplarını sisteme bağlayıp e-postalarını Evrak Yönetimi ve Mesajlar ile birlikte kullanmasını sağlar.',
+    sections: [
+      ['Ne işe yarar?', ['Her kullanıcı E-posta bölümünden kendi Gmail hesabını bağlar; şifresi sisteme girilmez (Google OAuth).',
+        'E-posta ekleri Evrak Yönetimi’ne aktarılabilir.']],
+      ['Nasıl ayarlanır?', ['Google Cloud Console › API’ler ve Hizmetler › Kimlik Bilgileri › OAuth istemci kimliği oluşturun (Web uygulaması).',
+        'Yetkili yönlendirme adresi: [internet adresi]/api/mail/oauth/callback (Genel ayarlardaki internet adresi).',
+        'Gmail API’yi etkinleştirin; oluşan Client ID ve Client Secret’ı buraya girin.']],
+      ['Bilinmesi gerekenler', ['Bilgiler eksikse kullanıcılar Gmail bağlayamaz.', 'Client Secret şifreli saklanır.']],
+    ] },
+  general: { short: 'Genel', tag: 'Firma adı ve adresler',
+    lead: 'Sistemin kimliği: başlıklarda ve yazdırılan belgelerde görünen firma adı, davet ve e-posta bağlantılarında kullanılan adresler.',
+    sections: [
+      ['Alanlar', ['Firma adı: başlıklarda, belgelerde ve asistanda kullanılır.',
+        'İnternet adresi: dışarıdan erişim adresi (ör. https://caymaz.app); toplantı davetleri ve e-posta bağlantıları bununla oluşur.',
+        'Yerel ağ adresi: şirket içinden doğrudan erişim (büyük dosya / video yüklemeleri bu adresten yapılır).']],
+    ] },
+};
+
+// ---- Modül Ayarları: her modülün kendi ayarları (ilk: Saha Yönetimi) -------------
+const MODULE_SETTINGS = [
+  { key: 'field', title: 'Saha Yönetimi', desc: 'Standart saha ekipman listesi ve görev tanımları', icon: 'route3d', body: fieldSettingsBody },
+  { key: 'hr', title: 'İnsan Kaynakları · İSG', desc: 'Görev tanımı belgelerinin genel hükümleri', icon: 'person', body: isgGeneralBody },
+  { key: 'cleaning', title: 'Temizlik', desc: 'Günlük temizlik çeklisti maddeleri', icon: 'grid', body: cleaningSettingsBody },
+  { key: 'building', title: 'Güvenlik · Bina Kontrol', desc: 'Günlük bina kontrol (tur) saatleri', icon: 'lock', body: buildingSettingsBody },
+];
+
+// Bina kontrol saatleri: her gün güvenlik personelinin bina turu atacağı saatler
+function buildingSettingsBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let times = [];
+  const save = async () => { try { times = (await api.put('/api/security/building/config', { times })).times; draw(); toast('Saatler kaydedildi'); } catch (err) { toastError(err); } };
+  const draw = () => {
+    const add = h('input', { type: 'time', class: 'input', style: { maxWidth: '150px' } });
+    clear(wrap, h('section', { class: 'card card-pad' },
+      h('h3', { style: { marginTop: 0 } }, 'Günlük Bina Kontrol Saatleri'),
+      h('p', { class: 'small muted' }, 'Güvenlik personelinin her gün bina turu atması gereken saatler. Her saat, o gün Güvenlik › Bina Kontrol ekranında bekleyen bir tur olarak görünür; saati gelince vurgulanır.'),
+      times.length ? h('div', { class: 'bc-times' }, times.map(t => h('span', { class: 'bc-time-chip' }, t,
+        h('button', { class: 'bc-time-x', type: 'button', title: 'Kaldır', onclick: () => { times = times.filter(x => x !== t); save(); } }, '×')))) : h('div', { class: 'muted', style: { margin: '8px 0' } }, 'Saat eklenmedi.'),
+      h('div', { class: 'cl-set-add' }, add,
+        h('button', { class: 'btn primary', type: 'button', onclick: () => { if (add.value && !times.includes(add.value)) { times = [...times, add.value].sort(); save(); } } }, 'Ekle'))));
+  };
+  (async () => { try { times = (await api.get('/api/security/building/config')).times || []; } catch { times = []; } draw(); })();
+  return wrap;
+}
+
+// Temizlik çeklisti maddeleri: Sistem Yöneticisi günlük yapılacak işleri ekler / düzenler / sıralar
+function cleaningSettingsBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const load = async () => {
+    let items;
+    try { items = await api.get('/api/cleaning/items'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const active = items.filter(i => i.active);
+    const add = h('input', { class: 'input', placeholder: 'Yeni iş (ör. Tuvaletlerin temizliği)' });
+    const doAdd = async () => { const v = add.value.trim(); if (!v) return; try { await api.post('/api/cleaning/items', { label: v }); add.value = ''; load(); } catch (err) { toastError(err); } };
+    add.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+    const rowEl = (it, i) => {
+      const label = h('input', { class: 'input', value: it.label });
+      label.addEventListener('blur', async () => {
+        const v = label.value.trim();
+        if (v && v !== it.label) { try { await api.put(`/api/cleaning/items/${it.id}`, { label: v }); toast('Güncellendi'); } catch (err) { toastError(err); } }
+      });
+      const mv = async dir => { try { await api.post(`/api/cleaning/items/${it.id}/move?dir=${dir}`, {}); load(); } catch (err) { toastError(err); } };
+      return h('div', { class: 'cl-set-row' }, label,
+        h('button', { class: 'btn sm', type: 'button', title: 'Yukarı', disabled: i === 0, onclick: () => mv('up') }, '↑'),
+        h('button', { class: 'btn sm', type: 'button', title: 'Aşağı', disabled: i === active.length - 1, onclick: () => mv('down') }, '↓'),
+        h('button', { class: 'btn sm danger', type: 'button', title: 'Kaldır', onclick: async () => {
+          if (await confirmDialog('İşi kaldır', `“${it.label}” listeden kaldırılsın mı? (geçmiş kayıtlar korunur)`, { okLabel: 'Kaldır', danger: true })) { try { await api.del(`/api/cleaning/items/${it.id}`); load(); } catch (err) { toastError(err); } }
+        } }, '×'));
+    };
+    clear(wrap, h('section', { class: 'card card-pad' },
+      h('h3', { style: { marginTop: 0 } }, 'Günlük Temizlik İşleri'),
+      h('p', { class: 'small muted' }, 'Temizlik görevlisinin her gün yapması gereken işler. Buradaki sıra, Temizlik ekranında da aynıdır.'),
+      active.length ? h('div', { class: 'cl-set-list' }, active.map(rowEl)) : h('div', { class: 'muted', style: { margin: '8px 0' } }, 'Henüz iş eklenmedi.'),
+      h('div', { class: 'cl-set-add' }, add, h('button', { class: 'btn primary', type: 'button', onclick: doAdd }, 'Ekle'))));
+  };
+  load();
+  return wrap;
+}
+
+// İSG genel hükümleri: görev tanımı belgelerinde ortak bölümler (her satır bir madde)
+function isgGeneralBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  (async () => {
+    let g;
+    try { g = await api.get('/api/hr/isg-general'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const inp = (v, ph) => h('input', { class: 'input', value: v || '', placeholder: ph });
+    const area = (v, rows = 4, ph = '') => h('textarea', { class: 'input', rows, placeholder: ph }, v || '');
+    const f = {
+      doc_no: inp(g.doc_no, 'ör. GKT-İSG-GT-CAYMAZ-01'), rev: inp(g.rev, 'ör. Rev. 00 — 01.10.2026'), place: inp(g.place, 'Faaliyet / çalışma yeri'),
+      purpose: area(g.purpose, 4), scope: area(g.scope, 3),
+      legal: area((g.legal || []).join('\n'), 6, 'Her satıra bir madde'),
+      phases: area((g.phases || []).join('\n'), 6, 'Her satıra bir aşama (ör. Hazırlık (tesis): …)'),
+      zones: area((g.zones || []).map(z => `${z.a} | ${z.b}`).join('\n'), 6, 'Bölge / komut | Kural'),
+      common: area((g.common || []).join('\n'), 8, 'Tüm personelin İSG yükümlülükleri — her satıra bir madde'),
+      emergency_note: area(g.emergency_note, 3),
+    };
+    const lines = el => el.value.split('\n').map(x => x.trim()).filter(Boolean);
+    const fld = (label, el, hint) => h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, label), el, hint ? h('span', { class: 'sc-f-meta' }, hint) : null);
+    const save = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        await api.put('/api/hr/isg-general', { doc_no: f.doc_no.value, rev: f.rev.value, place: f.place.value, purpose: f.purpose.value, scope: f.scope.value,
+          legal: lines(f.legal), phases: lines(f.phases), common: lines(f.common), emergency_note: f.emergency_note.value,
+          zones: lines(f.zones).map(l => { const [a, ...b] = l.split('|'); return { a: a.trim(), b: b.join('|').trim() }; }) });
+        toast('İSG genel hükümleri kaydedildi', 'success');
+      } catch (err) { toastError(err); } finally { save.disabled = false; }
+    });
+    clear(wrap,
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Belge Bilgileri'),
+        h('div', { class: 'sc-fields' }, fld('Doküman no', f.doc_no), fld('Revizyon / tarih', f.rev), fld('Faaliyet / çalışma yeri', f.place))),
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Genel Hükümler'),
+        h('p', { class: 'small muted' }, 'Personel görev tanımı belgelerinde (İK › personel › Görev Tanımı › Yazdır) ortak bölümler buradan alınır. Liste alanlarında her satır bir maddedir.'),
+        h('div', { class: 'sc-fields one' }, fld('Amaç', f.purpose), fld('Kapsam', f.scope), fld('Yasal dayanak', f.legal),
+          fld('Faaliyet aşamaları', f.phases), fld('Saha emniyet bölgeleri ve komutlar', f.zones, 'Her satır: Bölge / Komut | Kural'),
+          fld('İSG yükümlülükleri (tüm personel)', f.common, 'Görev tanımı belgesinin D bölümü'), fld('Acil durum notu', f.emergency_note))),
+      h('div', { class: 'set-actions left' }, save));
+  })();
+  return wrap;
+}
+// Otomatik senkronizasyon kutusu (PDKS / Mikro): aç-kapa, aralık (dk), şimdi çalıştır, son durum
+function syncBox(group) {
+  const box = h('div', { class: 'card card-pad integ-sync' });
+  const draw = async () => {
+    let st;
+    try { st = (await api.get('/api/system/sync')).sync[group]; } catch { clear(box, h('div', { class: 'small muted' }, 'Senkronizasyon durumu alınamadı')); return; }
+    const toggle = h('input', { type: 'checkbox', checked: st.enabled });
+    const interval = h('input', { class: 'input', type: 'number', min: '5', step: '5', value: st.interval, style: { width: '90px' } });
+    const save = async () => {
+      try { await api.put(`/api/system/sync/${group}`, { enabled: toggle.checked, interval: Number(interval.value) || 30 }); toast('Senkronizasyon ayarı kaydedildi'); draw(); }
+      catch (err) { toastError(err); }
+    };
+    toggle.addEventListener('change', save);
+    const runBtn = h('button', { class: 'btn sm', type: 'button' }, 'Şimdi senkronize et');
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true; runBtn.textContent = 'Çalışıyor…';
+      try { const r = await api.post(`/api/system/sync/${group}/run`, {}); toast(r.ok ? ('Senkron tamam · ' + r.message) : ('Hata: ' + r.message), r.ok ? 'success' : 'err'); }
+      catch (err) { toastError(err); } finally { runBtn.disabled = false; runBtn.textContent = 'Şimdi senkronize et'; draw(); }
+    });
+    const last = st.last_run ? `${fmtDateTime(st.last_run)} · ${st.last_ok ? '✓' : '✕'} ${st.last_msg || ''}` : 'Henüz çalışmadı';
+    clear(box,
+      h('h3', null, 'Otomatik senkronizasyon'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Açıkken bu entegrasyon belirtilen aralıkla kendiliğinden güncellenir (tek yönlü, yalnızca okuma). İstediğiniz an kapatabilirsiniz.'),
+      h('label', { class: 'set-toggle' }, toggle, h('span', null, h('b', null, 'Otomatik senkronizasyon açık'))),
+      h('div', { class: 'integ-sync-row' }, h('span', null, 'Her'), interval, h('span', null, 'dakikada bir'),
+        h('button', { class: 'btn sm primary', type: 'button', onclick: save }, 'Kaydet'), runBtn),
+      h('div', { class: `small ${st.last_ok === false ? 'warn-text' : 'muted'}` }, 'Son çalışma: ' + last));
+  };
+  draw();
+  return box;
+}
+
+function modulesBody(view, ctx) {
+  let cur = MODULE_SETTINGS[0].key;
+  const pane = h('div');
+  const tabs = h('div', { class: 'seg wrap ms-tabs' });
+  const draw = () => {
+    clear(tabs, MODULE_SETTINGS.map(m => h('button', { type: 'button', class: m.key === cur ? 'on' : '', onclick: () => { cur = m.key; draw(); } },
+      segIconByKey(m.icon), m.title)));
+    const m = MODULE_SETTINGS.find(x => x.key === cur);
+    clear(pane, m.body(view, ctx));
+  };
+  draw();
+  return h('div', null, h('p', { class: 'small muted' }, 'Modüllere özel ayarlar. Bir modül seçin.'), tabs, pane);
+}
+
+function fieldSettingsBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  (async () => {
+    let d;
+    try { d = await api.get('/api/field/settings'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    let items = d.equipment.map(e => ({ ...e }));
+    const tbody = h('tbody');
+    const drawRows = () => clear(tbody, items.length ? items.map((e, i) => {
+      // Ekipman: stoktaki ürünlerden aranarak seçilir (3 karakterden sonra liste)
+      const pick = stockPicker({ value: e.name, linked: !!e.product_id, onPick: p => {
+        if (p) { e.product_id = p.id; e.name = p.name; e.product_code = p.code; if (!e.unit || e.unit === 'adet') e.unit = p.unit || e.unit; unit.value = e.unit || ''; }
+        else { e.product_id = null; }
+      } });
+      e._pick = pick;
+      const name = h('div', null, pick.el, e.product_id ? h('div', { class: 'eq-code' }, e.product_code || '')
+        : e.id ? h('div', { class: 'eq-code warn-text' }, 'Stokla eşleşmedi — listeden seçin') : null);
+      const qty = h('input', { class: 'input eq-qty', type: 'number', min: '0', step: 'any', value: e.qty, oninput: ev => { e.qty = Number(ev.target.value) || 0; } });
+      const unit = h('input', { class: 'input eq-unit', value: e.unit || '', placeholder: 'birim', oninput: ev => { e.unit = ev.target.value; } });
+      const note = h('input', { class: 'input', value: e.note || '', placeholder: 'Not (ops.)', oninput: ev => { e.note = ev.target.value; } });
+      const mv = (dir) => { const j = i + dir; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; drawRows(); };
+      return h('tr', null, h('td', { class: 'num muted' }, i + 1), h('td', null, name), h('td', null, qty), h('td', null, unit), h('td', null, note),
+        h('td', { class: 'nowrap' },
+          h('button', { class: 'btn xs', type: 'button', title: 'Yukarı', onclick: () => mv(-1), disabled: i === 0 }, '↑'),
+          h('button', { class: 'btn xs', type: 'button', title: 'Aşağı', onclick: () => mv(1), disabled: i === items.length - 1 }, '↓'),
+          h('button', { class: 'btn xs danger', type: 'button', title: 'Sil', onclick: () => { items.splice(i, 1); drawRows(); } }, '✕')));
+    }) : [h('tr', null, h('td', { colspan: 6, class: 'muted small' }, 'Henüz ekipman yok. “Ekipman Ekle” ile başlayın.'))]);
+    drawRows();
+    const addBtn = h('button', { class: 'btn', type: 'button', onclick: () => { items.push({ name: '', qty: 1, unit: 'adet', note: '', product_id: null }); drawRows(); items[items.length - 1]._pick?.focus(); } }, '＋ Ekipman Ekle');
+    const duties = {};
+    const dutyRows = Object.entries(d.duty_titles).map(([k, title]) => {
+      const ta = h('textarea', { class: 'input', rows: 2 }, d.duties[k]);
+      duties[k] = ta;
+      return h('label', { class: 'sc-field' }, h('span', { class: 'sc-field-l' }, h('b', null, title)), ta);
+    });
+    const save = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        const r = await api.put('/api/field/settings', {
+          equipment: items.filter(e => e.product_id || (e.id && (e.name || '').trim())).map(e => ({ id: e.id || null, product_id: e.product_id || null, name: e.name, qty: e.qty, unit: e.unit, note: e.note })),
+          duties: Object.fromEntries(Object.entries(duties).map(([k, ta]) => [k, ta.value])),
+        });
+        items = r.equipment.map(e => ({ ...e })); drawRows();
+        toast('Saha Yönetimi ayarları kaydedildi', 'success');
+      } catch (err) { toastError(err); } finally { save.disabled = false; }
+    });
+    clear(wrap,
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Saha Ekipman Listesi'),
+        h('p', { class: 'small muted' }, 'Her saha görevine götürülen standart ekipman. Yeni açılan her göreve otomatik eklenir; saha yöneticisi göreve özel çıkarabilir, ekleyebilir ve miktarı değiştirebilir. Buradaki değişiklik mevcut görevleri etkilemez.'),
+        h('div', { class: 'table-wrap' }, h('table', { class: 'eq-table eq-std' },
+          h('thead', null, h('tr', null, ['#', 'Ekipman', 'Miktar', 'Birim', 'Not', ''].map(c => h('th', null, c)))), tbody)),
+        h('div', { class: 'set-actions left' }, addBtn)),
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Saha Görev Tanımları'),
+        h('p', { class: 'small muted' }, 'Saha görev raporunda, kişinin İnsan Kaynakları’nda görev tanımı yoksa rolüne göre bu açıklama yazılır.'),
+        h('div', { class: 'sc-fields one' }, ...dutyRows)),
+      h('div', { class: 'set-actions left' }, save));
+  })();
+  return wrap;
+}
+
+// ---- Güvenlik / Şifre kuralları -------------------------------------------------
+function securityBody(view) {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let pol = null;
+  const P = {};   // alan → kontrol öğesi
+
+  const num = (key, label, hint, { min = 0, max = 9999, suffix = '' } = {}) => {
+    const inp = h('input', { class: 'input sc-num', type: 'number', min, max, step: 1 });
+    P[key] = { get: () => Number(inp.value), set: v => { inp.value = v; } };
+    return h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, label), hint ? h('small', null, hint) : null),
+      numBox(inp, suffix));
+  };
+  const tog = (key, label, hint) => {
+    const cb = h('input', { type: 'checkbox' });
+    P[key] = { get: () => cb.checked, set: v => { cb.checked = !!v; } };
+    return h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, label), hint ? h('small', null, hint) : null));
+  };
+  const card = (title, sub, ...kids) => h('section', { class: 'card card-pad set-card' }, h('h3', null, title), sub ? h('p', { class: 'small muted' }, sub) : null, ...kids);
+
+  const build = () => {
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Kuralları Kaydet');
+    const resetBtn = h('button', { class: 'btn', type: 'button' }, 'Varsayılana Döndür');
+    saveBtn.addEventListener('click', async () => {
+      const data = {}; for (const k in P) data[k] = P[k].get();
+      saveBtn.disabled = true;
+      try { const r = await api.put('/api/system/security', data); apply(r.policy); toast('Güvenlik kuralları kaydedildi', 'success'); }
+      catch (err) { toastError(err); } finally { saveBtn.disabled = false; }
+    });
+    resetBtn.addEventListener('click', async () => {
+      if (!await confirmDialog('Varsayılana döndür', 'Tüm güvenlik / şifre kuralları varsayılan değerlere döndürülsün mü?', { okLabel: 'Döndür' })) return;
+      apply(pol.defaults);
+      toast('Varsayılanlar forma yüklendi — “Kuralları Kaydet” ile uygulayın');
+    });
+    clear(wrap,
+      h('p', { class: 'small muted' }, 'Bu kurallar tüm kullanıcılara uygulanır: şifre değiştirme, giriş, oturum süresi, kaba kuvvet kilidi ve PIN.'),
+      card('Şifre karmaşıklığı', 'Yeni / değiştirilen şifrelerin taşıması gereken kurallar.',
+        num('min_length', 'En az uzunluk', 'Şifre bu kadar karakterden kısa olamaz', { min: 4, max: 64, suffix: 'karakter' }),
+        tog('require_upper', 'Büyük harf zorunlu', 'En az bir A–Z / Ç,Ğ,İ… harfi'),
+        tog('require_lower', 'Küçük harf zorunlu', 'En az bir a–z harfi'),
+        tog('require_digit', 'Rakam zorunlu', 'En az bir 0–9 rakamı'),
+        tog('require_symbol', 'Özel karakter zorunlu', 'En az bir !, ?, *, . gibi karakter'),
+        tog('disallow_username', 'Kullanıcı adı içeremez', 'Şifre, kullanıcı adını barındıramaz'),
+        tog('disallow_common', 'Yaygın şifreleri engelle', '“123456”, “password”, “parola” gibi bilinen şifreler reddedilir')),
+      card('Şifre yaşam döngüsü', 'Şifre eskime ve yeniden kullanım.',
+        num('expire_days', 'Şifre geçerlilik süresi', '0 = süresiz. Süre dolunca kullanıcı ilk girişte şifre değiştirir', { min: 0, max: 3650, suffix: 'gün' }),
+        num('reuse_block', 'Yeniden kullanım engeli', '0 = kapalı. Son N şifre tekrar seçilemez', { min: 0, max: 24, suffix: 'şifre' }),
+        tog('force_first_change', 'İlk girişte şifre değiştirmeyi zorunlu tut', 'Yöneticinin verdiği/sıfırladığı şifreyle giren kullanıcı devam etmeden önce şifresini değiştirir')),
+      card('Giriş güvenliği', 'Kaba kuvvet koruması ve oturum.',
+        num('lockout_fails', 'Kullanıcı deneme sınırı', 'Art arda bu kadar hatalı denemeden sonra hesap geçici kilitlenir', { min: 3, max: 100, suffix: 'deneme' }),
+        num('ip_fails', 'IP deneme sınırı', 'Aynı ağ adresinden toplam hatalı deneme sınırı', { min: 5, max: 500, suffix: 'deneme' }),
+        num('lockout_minutes', 'Kilit süresi', 'Sınır aşılınca bu süre boyunca giriş engellenir', { min: 1, max: 1440, suffix: 'dakika' }),
+        num('session_hours', 'Oturum süresi', 'Giriş sonrası oturumun geçerli kalacağı süre', { min: 1, max: 720, suffix: 'saat' })),
+      card('PIN ile giriş', 'Cihazda 4+ haneli PIN ile hızlı giriş.',
+        tog('pin_enabled', 'PIN ile girişe izin ver', 'Kapatılırsa hiçbir kullanıcı PIN kullanamaz; herkes şifreyle girer'),
+        num('pin_length', 'PIN hane sayısı', 'Yeni PIN’ler bu kadar haneli olur', { min: 4, max: 8, suffix: 'hane' })),
+      h('div', { class: 'set-actions left' }, saveBtn, resetBtn));
+  };
+  const apply = data => { for (const k in P) if (k in data) P[k].set(data[k]); };
+
+  (async () => {
+    try { pol = await api.get('/api/system/security'); build(); apply(pol.policy); }
+    catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); }
+  })();
+  return wrap;
+}
+
+// ---- Yapay Zeka: token kullanımı + kişiye özel aylık kota ----------------------
+const kTok = n => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0));
+const trNum = n => Number(n || 0).toLocaleString('tr-TR');
+const axTok = v => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${Math.round(v / 1e3)}K` : String(v));
+const TR_MON = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+const pad2 = n => String(n).padStart(2, '0');
+const isoDay = dt => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+
+// Eksik günleri / ayları 0 ile doldurur → [{key, label, i, o, n}]
+function fillSeries(rows, mode) {
+  const by = Object.fromEntries(rows.map(r => [r.d, r]));
+  const out = [];
+  const now = new Date();
+  if (mode === 'daily') {
+    for (let k = 29; k >= 0; k--) {
+      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - k);
+      const key = isoDay(dt), r = by[key] || {};
+      out.push({ key, label: `${dt.getDate()} ${TR_MON[dt.getMonth()]}`, i: r.i || 0, o: r.o || 0, n: r.n || 0 });
+    }
+  } else {
+    for (let k = 11; k >= 0; k--) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - k, 1);
+      const key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}`, r = by[key] || {};
+      out.push({ key, label: `${TR_MON[dt.getMonth()]} ${String(dt.getFullYear()).slice(2)}`, i: r.i || 0, o: r.o || 0, n: r.n || 0 });
+    }
+  }
+  return out;
+}
+
+// Zaman çizgi grafiği (girdi+çıktı toplamı ve çıktı ayrı çizgi); dokununca / üzerine gelince değer balonu.
+function lineChart(series) {
+  const W = 640, H = 260, L = 58, R = 12, T = 16, B = 36;
+  const tot = series.map(p => p.i + p.o);
+  const max = Math.max(1, ...tot);
+  const step = (() => { const raw = max / 4, e = 10 ** Math.floor(Math.log10(raw)), f = raw / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; })();
+  const top = step * Math.ceil(max / step);
+  const n = series.length;
+  const x = k => L + (n > 1 ? (k / (n - 1)) * (W - L - R) : (W - L - R) / 2);
+  const y = v => T + (1 - v / top) * (H - T - B);
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'sc-line' });
+  for (let v = 0; v <= top + 1e-9; v += step) {
+    svg.append(el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: 'grid' }));
+    svg.append(el('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', class: 'ax' }, axTok(v)));
+  }
+  const every = Math.max(1, Math.ceil(n / 5));
+  series.forEach((p, k) => { if ((k % every === 0 && n - 1 - k >= every) || k === n - 1) svg.append(el('text', { x: x(k), y: H - 10, 'text-anchor': k === 0 ? 'start' : k === n - 1 ? 'end' : 'middle', class: 'ax' }, p.label)); });
+  const pts = vals => vals.map((v, k) => `${x(k)},${y(v)}`).join(' ');
+  svg.append(el('path', { d: `M${x(0)},${y(0)} L${pts(tot).replaceAll(' ', ' L')} L${x(n - 1)},${y(0)}Z`, class: 'area' }));
+  svg.append(el('polyline', { points: pts(series.map(p => p.o)), class: 'ln out' }));
+  svg.append(el('polyline', { points: pts(tot), class: 'ln tot' }));
+  const guide = el('line', { y1: T, y2: H - B, class: 'guide', visibility: 'hidden' });
+  const dot = el('circle', { r: 5, class: 'dot', visibility: 'hidden' });
+  svg.append(guide, dot);
+  const tip = h('div', { class: 'sc-line-tip', hidden: true });
+  const box = h('div', { class: 'sc-line-wrap' }, svg, tip);
+  const show = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) / r.width * W;
+    const k = Math.max(0, Math.min(n - 1, Math.round((px - L) / ((W - L - R) / Math.max(1, n - 1)))));
+    const p = series[k];
+    guide.setAttribute('x1', x(k)); guide.setAttribute('x2', x(k)); guide.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', x(k)); dot.setAttribute('cy', y(tot[k])); dot.setAttribute('visibility', 'visible');
+    clear(tip, h('b', null, p.label), h('div', null, `Toplam: ${trNum(tot[k])}`), h('div', { class: 'muted' }, `Girdi ${trNum(p.i)} · Çıktı ${trNum(p.o)}`), h('div', { class: 'muted' }, `${p.n} istek`));
+    tip.hidden = false;
+    const left = (x(k) / W) * 100;
+    tip.style.left = `${Math.min(80, Math.max(20, left))}%`;
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('touchmove', show, { passive: true });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; guide.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); });
+  return box;
+}
+
+function usageModal(u) {
+  const body = h('div', { class: 'sc-ai-detail' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  modal({ title: u.full_name, body, wide: true });
+  (async () => {
+    let d;
+    try { d = await api.get(`/api/system/ai-usage/${u.id}`); } catch (err) { clear(body, h('div', { class: 'empty' }, err.message)); return; }
+    const stat = (label, value, sub) => h('div', { class: 'sc-ai-stat' }, h('small', null, label), h('b', null, value), sub ? h('span', { class: 'small muted' }, sub) : null);
+    const fmtDay = v => `${v.slice(8, 10)}.${v.slice(5, 7)}.${v.slice(0, 4)}`;
+    const chartBox = h('div');
+    let mode = 'daily';
+    const seg = h('div', { class: 'seg' });
+    const draw = () => {
+      const s = fillSeries(mode === 'daily' ? d.daily : d.monthly, mode);
+      clear(chartBox, s.some(p => p.i + p.o) ? lineChart(s) : h('div', { class: 'empty small' }, mode === 'daily' ? 'Son 30 günde kullanım yok.' : 'Son 12 ayda kullanım yok.'));
+      for (const b of seg.children) b.classList.toggle('on', b.dataset.m === mode);
+    };
+    for (const [m, label] of [['daily', 'Son 30 gün'], ['monthly', 'Son 12 ay']]) {
+      const b = h('button', { type: 'button', 'data-m': m }, label);
+      b.addEventListener('click', () => { mode = m; draw(); });
+      seg.append(b);
+    }
+    clear(body,
+      h('div', { class: 'sc-ai-stats' },
+        stat('Bu ay', kTok(d.month), d.quota ? `kota ${kTok(d.quota)} · %${Math.round((d.month / d.quota) * 100)}` : 'kota sınırsız'),
+        stat('Toplam', kTok(d.total), `${trNum(d.calls)} istek`),
+        stat('Girdi', kTok(d.in_total), `çıktı ${kTok(d.out_total)}`),
+        stat('Son kullanım', d.last_at ? fmtDay(d.last_at) : '—', d.last_at ? `${d.last_at.slice(11, 16)}${d.first_at ? ` · ilk ${fmtDay(d.first_at)}` : ''}` : null)),
+      h('div', { class: 'sc-ai-chart-h' }, h('b', null, 'Zamana göre kullanım'), seg),
+      chartBox,
+      h('div', { class: 'sc-ai-legend small muted' }, h('span', { class: 'k tot' }), 'Toplam (girdi+çıktı)', h('span', { class: 'k out' }), 'Çıktı'));
+    draw();
+  })();
+}
+
+function aiBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  (async () => {
+    let d;
+    try { d = await api.get('/api/system/ai-usage'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const defIn = h('input', { class: 'input sc-num', type: 'number', min: 0, step: 1000, value: d.default || 0 });
+    const qInputs = {};
+    const cards = d.users.map(u => {
+      const inp = h('input', { class: 'input sc-num', type: 'number', min: 0, step: 1000, placeholder: 'varsayılan',
+        value: u.custom ? u.quota : '', 'aria-label': `${u.full_name} aylık kota` });
+      qInputs[u.id] = inp;
+      const over = u.quota && u.used_month >= u.quota;
+      const ratio = u.quota ? Math.min(1, u.used_month / u.quota) : 0;
+      const num = h('button', { class: `sc-ai-num ${over ? 'over' : ''}`, type: 'button', title: 'Kullanım ayrıntısı ve grafik' },
+        h('b', null, kTok(u.used_month)), h('small', null, ` / ${u.quota ? kTok(u.quota) : '∞'}`));
+      num.addEventListener('click', () => usageModal(u));
+      return h('div', { class: `sc-ai-card ${over ? 'over' : ''}` },
+        h('div', { class: 'sc-ai-who' }, avatar(u),
+          h('div', { class: 'grow' }, h('b', null, u.full_name), h('small', null, u.username))),
+        h('div', { class: 'sc-ai-use' },
+          h('span', { class: 'small muted' }, 'Bu ay'), num),
+        u.quota ? h('div', { class: 'sc-ai-bar' }, h('i', { style: { width: `${Math.round(ratio * 100)}%` } })) : null,
+        h('label', { class: 'sc-ai-q' }, h('span', { class: 'small muted' }, 'Aylık kota'),
+          numBox(inp, 'token')));
+    });
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Kotaları Kaydet');
+    saveBtn.addEventListener('click', async () => {
+      const users = {}; for (const id in qInputs) { const v = Number(qInputs[id].value); if (v > 0) users[id] = v; }
+      saveBtn.disabled = true;
+      try { await api.put('/api/system/ai-quota', { default: Number(defIn.value) || 0, users }); toast('Kotalar kaydedildi', 'success'); }
+      catch (err) { toastError(err); } finally { saveBtn.disabled = false; }
+    });
+    clear(wrap,
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Yapay Zeka Asistanı'),
+        h('p', { class: 'small muted' }, d.enabled ? `Model: ${d.model} · Kotalar aylık token (girdi+çıktı) toplamıdır; 0 = sınırsız. Ay: ${d.month}` : 'Asistan anahtarı tanımlı değil (maskot gizli).'),
+        h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, 'Varsayılan aylık kota'), h('small', null, 'Kişiye özel kota konmayan herkes için (0 = sınırsız)')),
+          numBox(defIn, 'token'))),
+      h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Kullanıcılar (bu ay)'),
+        h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Kişiye özel aylık kota girin; boş bırakılırsa varsayılan geçerli olur. Kotası dolan kullanıcıya kırıcı olmayan esprili bir mesaj gösterilir.'),
+        h('div', { class: 'sc-ai-cards' }, ...cards),
+        h('div', { class: 'set-actions left' }, saveBtn)));
+  })();
+  return wrap;
+}
+
+// ---- Yapay zekanın önerdiği kayıt değişiklikleri: onay/ret ----------------------
+function aiChangesBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const load = async () => {
+    let d;
+    try { d = await api.get('/api/system/ai-changes'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const STAT = { BEKLIYOR: ['Bekliyor', 'gray'], ONAYLANDI: ['Onaylandı', 'green'], RED: ['Reddedildi', 'red'], HATA: ['Hata', 'red'] };
+    const card = r => {
+      const badge = STAT[r.status] || [r.status, 'gray'];
+      const pending = r.status === 'BEKLIYOR';
+      const editable = pending || r.status === 'HATA';
+      let pv = null; try { pv = r.preview ? JSON.parse(r.preview) : null; } catch { /* */ }
+      const appr = h('button', { class: 'btn primary xs', type: 'button' }, 'Onayla ve Uygula');
+      const rej = h('button', { class: 'btn xs', type: 'button' }, 'Reddet');
+      const edit = h('button', { class: 'btn xs', type: 'button' }, r.status === 'HATA' ? 'SQL’i Düzelt ve Yeniden Dene' : 'SQL’i Düzenle');
+      edit.addEventListener('click', () => {
+        const ta = h('textarea', { class: 'input sc-sql-edit', rows: 10, spellcheck: 'false' }, r.sql);
+        const msg = h('div', { class: 'small muted' }, 'Kaydetmeden önce SQL geri alınabilir şekilde denenir; hata verirse kaydedilmez.');
+        modal({ title: `Talep #${r.id} · SQL`, wide: true, body: h('div', null, h('p', { class: 'small' }, r.summary), ta, msg), actions: ['spacer',
+          { label: 'Vazgeç' },
+          { label: 'Dene ve Kaydet', class: 'primary', onClick: async () => {
+            try { const res = await api.put(`/api/system/ai-changes/${r.id}`, { sql: ta.value }); toast(`Ön deneme başarılı · ${res.affected} satır. Talep onay bekliyor.`, 'success'); load(); return false; }
+            catch (err) { msg.textContent = err.message; msg.className = 'sc-integ-msg err'; return true; }   // hata: pencere açık kalsın
+          } }] });
+      });
+      appr.addEventListener('click', async () => {
+        appr.disabled = true;
+        let pre;
+        try { pre = await api.post(`/api/system/ai-changes/${r.id}/preview`, {}); } catch (err) { pre = { ok: false, error: err.message }; }
+        appr.disabled = false;
+        if (!pre.ok) {
+          toast(`Bu SQL şu an uygulanamaz: ${pre.error}. “SQL’i Düzenle” ile düzeltebilirsiniz.`, 'err');
+          return;
+        }
+        if (!await confirmDialog('Değişikliği onayla', `Ön deneme: ${pre.affected} satır etkilenecek${pre.each.length > 1 ? ` (${pre.each.join(' + ')})` : ''}.\n\n${r.sql}\n\nUygulansın mı?`, { okLabel: 'Onayla ve Uygula', danger: true })) return;
+        appr.disabled = rej.disabled = true;
+        try { const res = await api.post(`/api/system/ai-changes/${r.id}/approve`, {}); res.ok ? toast(`Uygulandı (${res.affected} satır)`, 'success') : toast(res.error || 'Uygulanamadı', 'err'); load(); }
+        catch (err) { toastError(err); appr.disabled = rej.disabled = false; }
+      });
+      rej.addEventListener('click', async () => {
+        if (!await confirmDialog('Talebi reddet', `“${r.summary}” talebi reddedilsin mi?`, { okLabel: 'Reddet' })) return;
+        rej.disabled = appr.disabled = true;
+        try { await api.post(`/api/system/ai-changes/${r.id}/reject`, { note: '' }); toast('Reddedildi'); load(); }
+        catch (err) { toastError(err); rej.disabled = appr.disabled = false; }
+      });
+      return h('div', { class: `card card-pad sc-change ${pending ? 'pending' : ''}` },
+        h('div', { class: 'sc-change-h' }, h('b', null, r.user_name), h('span', { class: `badge ${badge[1]}` }, badge[0]),
+          h('span', { class: 'small muted', style: { marginLeft: 'auto' } }, (r.created_at || '').slice(0, 16).replace('T', ' '))),
+        h('div', { class: 'sc-change-sum' }, r.summary),
+        h('pre', { class: 'sc-change-sql' }, r.sql),
+        pending && pv ? h('div', { class: 'small muted' }, `Ön deneme: ${pv.affected} satır etkilenecek`) : null,
+        r.note ? h('div', { class: 'small muted' }, `Not: ${r.note}${r.affected != null ? ` · ${r.affected} satır` : ''}`) : null,
+        r.status === 'ONAYLANDI' && r.affected != null ? h('div', { class: 'small muted' }, `Uygulandı · ${r.affected} satır`) : null,
+        editable ? h('div', { class: 'set-actions left' }, pending ? appr : null, edit, pending ? rej : null) : null);
+    };
+    const pend = d.items.filter(r => r.status === 'BEKLIYOR');
+    const done = d.items.filter(r => r.status !== 'BEKLIYOR');
+    clear(wrap,
+      h('p', { class: 'small muted' }, 'Yapay zekanın kullanıcı adına önerdiği kayıt değişiklikleri. Onayladığınızda SQL, ilgili kullanıcının yetkisiyle çalıştırılır ve kullanıcıya bildirim gider.'),
+      h('h3', null, `Onay bekleyen (${pend.length})`),
+      pend.length ? h('div', { class: 'sc-change-list' }, ...pend.map(card)) : h('div', { class: 'empty small' }, 'Bekleyen talep yok.'),
+      done.length ? h('h3', null, 'Son kararlar') : null,
+      done.length ? h('div', { class: 'sc-change-list' }, ...done.map(card)) : null);
+  };
+  load();
+  return wrap;
+}
+
+const GROUPS = [
+  { key: 'server', title: 'Sunucu Durumu', desc: 'CPU, GPU, RAM, disk ve servisler', icon: 'screen', body: serverBody },
+  { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
+  { key: 'ai', title: 'Yapay Zeka', desc: 'Maskot asistanı: token kullanımı ve kotalar', icon: 'bolt', body: aiBody, needs: 'ai' },
+  { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },
+  { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
+  { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
+];
+
+const SC_COLORS = { server: '#34c759', security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500' };
+const SC_SECTIONS = [['server', 'security'], ['ai', 'ai-changes'], ['modules', 'integrations']];
+
+export async function render(view, params, ctx) {
+  if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {
+    clear(view, pageHead('Program Ayarları', { back: '#/' }), h('div', { class: 'card empty' }, 'Bu bölüm yalnızca sistem yöneticisine açıktır.'));
+    return;
+  }
+  // Claude API anahtarı girilmemişse yapay zeka bölümleri gizli (anahtar Entegrasyonlar'dan girilir)
+  const groups = GROUPS.filter(x => !x.needs || ctx.user[x.needs]);
+  const SUBTITLE = 'Sistem geneli ayarlar · yalnızca sistem yöneticisi';
+  // Mobilde iOS Ayarlar gibi gruplanmış ana liste; masaüstünde iki sütun.
+  const used = new Set(SC_SECTIONS.flat());
+  const rest = groups.filter(gr => !used.has(gr.key)).map(gr => gr.key);
+  const allSections = rest.length ? [...SC_SECTIONS, rest] : SC_SECTIONS;
+  const masterList = () => h('div', { class: 'set-ios' }, allSections.map(keys => {
+    const rows = keys.map(k => groups.find(gr => gr.key === k)).filter(Boolean);
+    return rows.length ? h('div', { class: 'ios-group' }, rows.map(gr => h('a', { class: 'ios-row', href: `#/sysconfig/${gr.key}` },
+      h('span', { class: 'ios-ico', style: { background: SC_COLORS[gr.key] || '#8e8e93' } }, segIconByKey(gr.icon)),
+      h('span', { class: 'ios-label' }, h('b', null, gr.title), h('small', null, gr.desc)),
+      h('span', { class: 'ios-chev' })))) : null;
+  }).filter(Boolean));
+
+  const draw = () => {
+    const g = groups.find(x => x.key === params[0]) || groups[0];
+    if (SC_MQ.matches) {
+      if (params[0]) clear(view, pageHead(g.title, { back: '#/sysconfig', sub: g.desc }), h('div', { class: 'set-detail set-detail-solo' }, g.body(view, ctx)));
+      else clear(view, masterList());   // mobil ana liste: başlık / geri / açıklama gösterilmez (iOS tarzı)
+    } else {
+      clear(view, pageHead('Program Ayarları', { back: '#/', sub: SUBTITLE }),
+        h('div', { class: 'set-layout' },
+          h('nav', { class: 'card set-nav' }, groups.map(x => h('a', { href: `#/sysconfig/${x.key}`, class: x === g ? 'on' : '' },
+            h('span', { class: 'set-ico' }, segIconByKey(x.icon)), h('span', null, h('b', null, x.title), h('small', null, x.desc))))),
+          h('div', { class: 'set-detail' }, g.body(view, ctx))));
+    }
+  };
+  _scRedraw = draw;
+  draw();
+}

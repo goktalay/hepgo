@@ -1,6 +1,12 @@
 // Küçük DOM yardımcıları: öğe oluşturma, modal, bildirim, biçimlendirme.
 import { fileUrl } from './api.js';
 import { segIcon } from './segicons.js';
+import { t } from './i18n.js';
+
+// Dil desteği: metin çocukları ve bazı öznitelikler (placeholder/title/aria-label)
+// merkezi olarak katalogdan çevrilir. Böylece tüm arayüz + yazdırma şablonları
+// (hepsi h() kullanır) tek noktadan çevrilir; karşılığı yoksa Türkçe kalır.
+const I18N_ATTRS = new Set(['placeholder', 'title', 'aria-label']);
 
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -11,6 +17,7 @@ export function h(tag, attrs, ...children) {
     else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
     else if (k === 'html') el.innerHTML = v;
     else if (v === true) el.setAttribute(k, '');
+    else if (I18N_ATTRS.has(k) && typeof v === 'string') el.setAttribute(k, t(v));
     else el.setAttribute(k, v);
   }
   append(el, children);
@@ -20,7 +27,9 @@ export function h(tag, attrs, ...children) {
 function append(el, children) {
   for (const c of children.flat(Infinity)) {
     if (c === null || c === undefined || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    if (c instanceof Node) { el.append(c); continue; }
+    const s = String(c);
+    el.append(document.createTextNode(typeof c === 'string' ? t(s) : s));
   }
 }
 
@@ -183,14 +192,20 @@ export function field(label, control, hint) {
   return h('div', { class: 'field' }, h('label', null, label), control, hint ? h('div', { class: 'hint' }, hint) : null);
 }
 
-export function segmented(options, value, onChange) {
-  const el = h('div', { class: 'seg' });
+export function segmented(options, value, onChange, opts = {}) {
+  const el = h('div', { class: `seg ${opts.tabs ? 'seg-tabs' : ''}`.trim() });
   const render = v => {
     el.replaceChildren(...options.map(([key, label]) =>
       h('button', { class: key === v ? 'on' : '', type: 'button', onclick: () => { render(key); onChange(key); } }, segIcon(label), label)));
   };
   render(value);
   return el;
+}
+
+// Alt modül sekme çubuğu (İK'deki gibi): başlığın hemen altında tam genişlikte, alt çizgili sekmeler.
+// options: [[key, label], ...] · onChange(key). Modüllerde combobox / pill yerine standart olarak kullanılır.
+export function moduleTabs(options, active, onChange) {
+  return h('div', { class: 'module-tabs' }, segmented(options, active, onChange, { tabs: true }));
 }
 
 export function pageHead(title, { back, sub, right } = {}) {
@@ -257,13 +272,17 @@ export function dateTimeInput({ value, min } = {}) {
   return el;
 }
 
+// Stajer etiketi (yardımcı personel seçimlerinde stajerler de listelenir)
+export const internTag = p => (p?.intern || p?.roles?.includes?.('Stajer') ? h('span', { class: 'intern-tag', title: 'Stajer: hiçbir modüle yetkili değil' }, 'Stajer') : null);
+export const nameWithIntern = p => (p.intern ? `${p.full_name} (Stajer)` : p.full_name);   // açılır listeler için
+
 // Çoklu kişi seçimi (ör. montaj personeli): kartlara dokunarak seçilir. getIds() → seçilen id'ler.
 export function peoplePicker(people, { empty = 'Kişi yok', selected = [], sub = p => p.username || '' } = {}) {
   const chosen = new Set(selected);
   const el = h('div', { class: 'pick-list multi' }, people.length ? people.map(p => {
     const cb = h('input', { type: 'checkbox', checked: chosen.has(p.id) });
-    const row = h('div', { class: `pick ${chosen.has(p.id) ? 'on' : ''}` }, cb,
-      h('div', { class: 'grow' }, h('b', null, p.full_name), h('span', { class: 'small muted' }, sub(p))));
+    const row = h('div', { class: `pick ${chosen.has(p.id) ? 'on' : ''} ${p.intern ? 'intern' : ''}` }, cb,
+      h('div', { class: 'grow' }, h('b', null, p.full_name, internTag(p)), h('span', { class: 'small muted' }, sub(p))));
     row.addEventListener('click', e => {
       if (e.target !== cb) cb.checked = !cb.checked;
       cb.checked ? chosen.add(p.id) : chosen.delete(p.id);
@@ -322,4 +341,44 @@ export function multiSelect(label, options, selected, onChange, { extra = null, 
   wrap.set = (values, opts) => { if (opts) options = opts; chosen = new Set(values); drawBtn(); if (!panel.hidden) drawPanel(); };
   drawBtn();
   return wrap;
+}
+
+// ---------- Tarih aralığı filtresi (listeler): varsayılan "Bu hafta" ----------
+// periodFilter(key, onChange) → { el, range(): { date_from, date_to } (YYYY-MM-DD; Tümü'nde boş), qs(): 'date_from=..&date_to=..' }
+// Seçim oturum boyunca (sessionStorage) liste başına hatırlanır; uygulama yeniden açılınca yine "Bu hafta" ile başlar.
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const PERIODS = [['today', 'Bugün'], ['week', 'Bu hafta'], ['month', 'Bu ay'], ['30d', 'Son 30 gün'], ['90d', 'Son 3 ay'], ['year', 'Bu yıl'], ['all', 'Tümü'], ['custom', 'Özel aralık…']];
+export function periodRange(p, custom = {}) {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const day = new Date(y, m, d);
+  switch (p) {
+    case 'today': return { date_from: isoDay(day), date_to: isoDay(day) };
+    case 'week': { const dow = (day.getDay() + 6) % 7; const s = new Date(y, m, d - dow); return { date_from: isoDay(s), date_to: isoDay(new Date(y, m, d - dow + 6)) }; }
+    case 'month': return { date_from: isoDay(new Date(y, m, 1)), date_to: isoDay(new Date(y, m + 1, 0)) };
+    case '30d': return { date_from: isoDay(new Date(y, m, d - 29)), date_to: isoDay(day) };
+    case '90d': return { date_from: isoDay(new Date(y, m, d - 89)), date_to: isoDay(day) };
+    case 'year': return { date_from: `${y}-01-01`, date_to: `${y}-12-31` };
+    case 'custom': return { date_from: custom.from || '', date_to: custom.to || '' };
+    default: return { date_from: '', date_to: '' };
+  }
+}
+export function periodFilter(key, onChange, { initial = 'week', title = 'Tarih aralığı' } = {}) {
+  const sk = `caymaz.period.${key}`;
+  let saved = null; try { saved = JSON.parse(sessionStorage.getItem(sk) || 'null'); } catch { /* */ }
+  let p = saved?.p || initial;
+  const from = h('input', { class: 'input period-date', type: 'date', value: saved?.from || '', title: 'Başlangıç' });
+  const to = h('input', { class: 'input period-date', type: 'date', value: saved?.to || '', title: 'Bitiş' });
+  const sel = h('select', { class: 'input period-sel', title }, PERIODS.map(([v, l]) => h('option', { value: v, selected: v === p }, l)));
+  const customBox = h('span', { class: 'period-custom', hidden: p !== 'custom' }, from, h('span', { class: 'muted' }, '–'), to);
+  const el = h('span', { class: 'period-filter' }, sel, customBox);
+  const save = () => { try { sessionStorage.setItem(sk, JSON.stringify({ p, from: from.value, to: to.value })); } catch { /* */ } };
+  const range = () => periodRange(p, { from: from.value, to: to.value });
+  sel.addEventListener('change', () => {
+    p = sel.value;
+    if (p === 'custom' && !from.value) { const w = periodRange('week'); from.value = w.date_from; to.value = w.date_to; }
+    customBox.hidden = p !== 'custom'; save(); onChange?.(range());
+  });
+  for (const i of [from, to]) i.addEventListener('change', () => { save(); onChange?.(range()); });
+  const qs = () => { const r = range(); return new URLSearchParams(Object.entries(r).filter(([, v]) => v)).toString(); };
+  return { el, range, qs, label: () => PERIODS.find(x => x[0] === p)?.[1] || '' };
 }

@@ -10,6 +10,7 @@ import {
   uploadPanel,
 } from '../ui.js';
 import { tabView } from './crm.js';
+import { aircraftReviewModal } from './mrp.js';
 import { render3D } from './replay3d.js';
 import { logBadge } from './tools.js';
 
@@ -67,11 +68,16 @@ export async function renderFlight(view, id, ctx, tab) {
       return h('div', { class: 'fl-scrap' }, h('button', { class: 'btn sm danger', onclick: async () => {
         if (!await confirmDialog('Uçtu — hurdaya ayır', `${o.queue_no || o.code} tek kullanımlık; uçtuğu için hurdaya ayrılsın mı? Bir daha sahaya gidemez.`,
           { okLabel: 'Hurdaya Ayır', danger: true })) return;
-        try { await api.post(`/api/field/flights/${id}/scrap`); toast('Uçak hurdaya ayrıldı'); reload(); } catch (err) { toastError(err); }
+        try {
+          await api.post(`/api/field/flights/${id}/scrap`);
+          toast('Uçak hurdaya ayrıldı');
+          await aircraftReviewModal(o.id, reload);   // içindeki malzemeler: hurda mı, sağlam mı?
+        } catch (err) { toastError(err); }
       } }, 'Uçtu — Hurdaya Ayır'), h('span', { class: 'small muted' }, 'Uçuş logu havada kalma gösterirse otomatik yapılır.'));
     }
     if (o.status === 'HURDA') {
-      return h('div', { class: 'fl-scrap' }, h('button', { class: 'btn sm', onclick: async () => {
+      return h('div', { class: 'fl-scrap' }, o.material_pending ? h('button', { class: 'btn sm danger', onclick: () => aircraftReviewModal(o.id, reload).catch(toastError) },
+        'Malzemeleri Değerlendir') : null, h('button', { class: 'btn sm', onclick: async () => {
         if (!await confirmDialog('Hurdadan geri al', `${o.queue_no || o.code} yeniden saha deposuna alınsın mı?`, { okLabel: 'Geri Al' })) return;
         try { await api.post(`/api/field/flights/${id}/unscrap`); toast('Uçak saha deposuna geri alındı'); reload(); } catch (err) { toastError(err); }
       } }, 'Hurdadan Geri Al'));

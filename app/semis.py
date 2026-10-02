@@ -7,11 +7,11 @@ ortak olan parça tek üründür (aynı stok). Ağaçta yarı mamulün altındak
 """
 import copy
 
-from . import db
+from . import db, spares
 from . import plane as caymaz
 from . import plane_v2
 
-SEMI = 'YARI_MAMUL'
+SEMI = spares.SEMI
 ELECTRONICS = 'ELEKTRONIK'
 
 # kod: (montaj bölümü, ad)
@@ -125,9 +125,9 @@ SCHEMAS = {f'semi-{code.lower()}': {'module': SemiSchema(sec), 'title': f'CAYMAZ
            for code, (sec, name) in SEMIS.items()}
 SCHEMAS.update({f'semi-v2-{code.lower()}': {'module': SemiSchema(sec, plane_v2), 'title': f'CAYMAZ V2 {name} (yarı mamul)'}
                 for code, (sec, name) in SEMIS.items()})
-SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id']), 'title': f'CAYMAZ parçası {p["id"]} (yedek parça)'}
+SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id']), 'title': f'CAYMAZ parçası {p["id"]}'}
                 for p in caymaz.build()})
-SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v2), 'title': f'CAYMAZ V2 parçası {p["id"]} (yedek parça)'}
+SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v2), 'title': f'CAYMAZ V2 parçası {p["id"]}'}
                 for p in plane_v2.build() if f'{PART_PREFIX}{p["id"]}' not in SCHEMAS})
 # yarı mamul kodu → montaj bölümü (V2 yarı mamulleri kod sonunda 2: SLK2, SGK2, GVD2, ELK2)
 SEMI_SECTIONS = {**{c: v[0] for c, v in SEMIS.items()}, **{f'{c}2': v[0] for c, v in SEMIS.items()}}
@@ -149,18 +149,20 @@ def seed(conn):
             (code, name, f'{code}-YM', f'CAYMAZ yarı mamulü · montajda birleştirilen ana yapı', f'semi-{code.lower()}',
              code, SEMI, parent[0] if parent else None, db.now()))
     # Ürün ağacı: CAYMAZ'ın her parçası, ait olduğu yarı mamulün altında bir yedek parça (başlangıç stoğu 0)
-    semi_ids = dict(conn.execute("SELECT code, id FROM products WHERE type = ?", (SEMI,)).fetchall())
+    semi_ids = dict(conn.execute("SELECT code, id FROM products WHERE schema LIKE 'semi-%'").fetchall())
     for part in caymaz.build():
         schema = f'{PART_PREFIX}{part["id"]}'
         if conn.execute('SELECT 1 FROM products WHERE schema = ?', (schema,)).fetchone():
             continue
         code = part['id'] if not conn.execute('SELECT 1 FROM products WHERE code = ?', (part['id'],)).fetchone() else f'P-{part["id"]}'
-        conn.execute(
+        new_id = conn.execute(
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, parent_id,
                                       orderable, created_at)
                VALUES (?,?,?,?,?,?,?,?,?,0,?)''',
             (code, part_name(part), f'{part["id"]}-YP', 'CAYMAZ parçası · mamul siparişiyle üretilir', schema,
-             'YP', 'YEDEK_PARCA', 1, semi_ids.get(semi_of(part)), db.now()))
+             'YP', SEMI, 1, semi_ids.get(semi_of(part)), db.now())).lastrowid
+        if semi_ids.get(semi_of(part)):   # katalogdan sonradan eklenen parça ağaçta ana yapısının altına girer
+            conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (semi_ids[semi_of(part)], new_id))
     # Katalogdan çıkarılan parçanın parça yedeği (ör. L15-R15) kaldırılır: siparişi yoksa silinir, varsa pasif
     current = {k for k in SCHEMAS if k.startswith(PART_PREFIX)}   # tüm modellerin parçaları
     for pid, schema in conn.execute("SELECT id, schema FROM products WHERE schema LIKE ?", (f'{PART_PREFIX}%',)).fetchall():
@@ -171,6 +173,8 @@ def seed(conn):
             continue
         conn.execute('DELETE FROM spare_moves WHERE spare_id = ?', (pid,))
         conn.execute('DELETE FROM product_spares WHERE spare_id = ? OR parent_id = ?', (pid, pid))
+        conn.execute('DELETE FROM product_bom WHERE child_id = ? OR parent_id = ?', (pid, pid))
+        conn.execute('DELETE FROM product_recipe WHERE item_id = ? OR product_id = ?', (pid, pid))
         conn.execute('DELETE FROM products WHERE id = ?', (pid,))
     # Baskı dosyası ve süresi (Excel eşleştirmesi): yalnızca boş olanlara yazılır, elle düzenleneni ezmez
     from .print_files import PRINT_FILES
@@ -181,7 +185,7 @@ def seed(conn):
     # sonrası Ürün Yönetimi'nden düzenlenir). Birden çok yarı mamulde kullanıldıkları için parent_id boştur.
     if parent:
         for code, per_semi in SPARE_USAGE.items():
-            sp = conn.execute("SELECT id FROM products WHERE code = ? AND type = 'YEDEK_PARCA'", (code,)).fetchone()
+            sp = conn.execute("SELECT id FROM products WHERE code = ? AND schema LIKE 'spare-%'", (code,)).fetchone()
             if not sp or not conn.execute('SELECT 1 FROM product_spares WHERE parent_id = ? AND spare_id = ?',
                                           (parent[0], sp[0])).fetchone():
                 continue
@@ -213,6 +217,7 @@ def create_v2(conn, code='CYZ2'):
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, parent_id, orderable, created_at)
                VALUES (?,?,?,?,?,?,?,?,0,?)''', (f'{c}2', f'{name} V2', f'{c}2-YM', 'CAYMAZ V2 yarı mamulü · montajda birleştirilen ana yapı',
                                                    f'semi-v2-{c.lower()}', f'{c}2', SEMI, mamul, db.now())).lastrowid
+        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (mamul, semi_ids[f'{c}2']))
     for part in plane_v2.build():
         schema = f'{PART_PREFIX}{part["id"]}'
         if conn.execute('SELECT 1 FROM products WHERE schema = ?', (schema,)).fetchone():
@@ -222,57 +227,28 @@ def create_v2(conn, code='CYZ2'):
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, parent_id,
                                       orderable, created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?)''',
             (pcode, part_name(part), f'{part["id"]}-YP', 'CAYMAZ V2 parçası · mamul siparişiyle üretilir', schema, 'YP',
-             'YEDEK_PARCA', 1, semi_ids[semi_of(part, '2')], db.now()))
-    v1 = dict(conn.execute("SELECT code, id FROM products WHERE type = ? AND code IN ('SLK','SGK','GVD','ELK')", (SEMI,)).fetchall())
+             SEMI, 1, semi_ids[semi_of(part, '2')], db.now()))
+    for part in plane_v2.build():   # ağaç: V2 ana yapısı → parçaları (V1 ile ortak olanlar dahil)
+        child = conn.execute('SELECT id FROM products WHERE schema = ?', (f'{PART_PREFIX}{part["id"]}',)).fetchone()
+        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (semi_ids[semi_of(part, '2')], child[0]))
+    v1 = dict(conn.execute("SELECT code, id FROM products WHERE schema LIKE 'semi-%' AND code IN ('SLK','SGK','GVD','ELK')").fetchall())
     for c in SEMIS:
-        if c in v1:
-            conn.execute('''INSERT OR IGNORE INTO product_spares (parent_id, spare_id, qty)
-                            SELECT ?, spare_id, qty FROM product_spares WHERE parent_id = ?''', (semi_ids[f'{c}2'], v1[c]))
+        if c in v1:   # montaj sarfı kullanımları V1 ana yapılarından kopyalanır
+            conn.execute('''INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty, pos)
+                            SELECT ?, b.child_id, b.qty, 1 FROM product_bom b JOIN products p ON p.id = b.child_id
+                            WHERE b.parent_id = ? AND p.schema LIKE 'spare-%' ''', (semi_ids[f'{c}2'], v1[c]))
     return mamul
 
 
 def print_info(conn):
     """Parça kodu → baskı dosyası ve süresi (parça yedeği ürünlerinden)."""
-    return {r['schema'][len(PART_PREFIX):]: {'print_file': r['print_file'], 'print_minutes': r['print_minutes']}
+    return {r['schema'][len(PART_PREFIX):]: {'print_file': r['print_file'], 'print_minutes': r['print_minutes'],
+                                            'gcode_preview': r['gcode_preview']}   # 3B görünüm (app/gcode.py)
             for r in db.rows(conn.execute(
-                "SELECT schema, print_file, print_minutes FROM products WHERE schema LIKE ?", (f'{PART_PREFIX}%',)))}
+                "SELECT schema, print_file, print_minutes, gcode_preview FROM products WHERE schema LIKE ?", (f'{PART_PREFIX}%',)))}
 
 
 def tree(conn, root_id):
-    """Ürün ağacı: mamul → yarı mamul → yedek parça (parent_id ilişkisi). qty: üst üründe kullanılan adet."""
-    from . import spares
-    rows = db.rows(conn.execute('SELECT id, code, name, type, schema, parent_id, active, print_minutes FROM products ORDER BY id'))
-    usage = {(a, b): q for a, b, q in conn.execute('SELECT parent_id, spare_id, qty FROM product_spares')}
-    by_id = {r['id']: r for r in rows}
-    by_schema = {r['schema']: r for r in rows}
-    kids = {}
-    for r in rows:
-        if r['type'] == SEMI:   # yarı mamulün parçaları şemasından (ortak parçalar iki modelin altında da görünür)
-            from . import catalogs
-            for pid in catalogs.part_ids(r['schema']):
-                child = by_schema.get(f'{PART_PREFIX}{pid}')
-                if child:
-                    kids.setdefault(r['id'], []).append({**child, 'parent_id': r['id']})
-            kids.setdefault(r['parent_id'], []).append(r)
-        elif not (is_part_spare(r) and r['parent_id'] and by_id.get(r['parent_id'], {}).get('type') == SEMI):
-            kids.setdefault(r['parent_id'], []).append(r)
-    for (parent_id, spare_id), q in usage.items():   # kullanım bağlantıları (bir parça birden çok yarı mamulde)
-        if q > 0 and spare_id in by_id and by_id[spare_id]['parent_id'] != parent_id:
-            kids.setdefault(parent_id, []).append({**by_id[spare_id], 'parent_id': parent_id})
-
-    def node(r):
-        n = {k: r[k] for k in ('id', 'code', 'name', 'type', 'active')}
-        n['qty'] = usage.get((r['parent_id'], r['id']), 1)
-        if r['type'] == SEMI and r['code'] in SEMI_SECTIONS:
-            n['section'] = SEMI_SECTIONS[r['code']]
-        if r['type'] == spares.SPARE:
-            n['stock'] = spares.stock(conn, r['id'])
-            n['part_spare'] = is_part_spare(r)
-        n['children'] = [node(c) for c in sorted(kids.get(r['id'], []), key=lambda c: (c['type'] != SEMI, c['id']))]
-        # baskı süresi: parça yedeğinde kendi süresi; yarı mamul ve mamulde altındaki parça yedeklerinin toplamı
-        n['print_minutes'] = r['print_minutes'] if n.get('part_spare') else (
-            sum(c['print_minutes'] or 0 for c in n['children'] if c['type'] != spares.SPARE or c.get('part_spare'))
-            if n['children'] else r['print_minutes'])
-        return n
-    root = next((r for r in rows if r['id'] == root_id), None)
-    return node(root) if root else None
+    """Ürün ağacı (product_bom): mamul → yarı mamuller (iç içe) → parçalar; bkz. app/bom.py."""
+    from . import bom
+    return bom.tree(conn, root_id)

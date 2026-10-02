@@ -770,7 +770,7 @@ def firma_iliski(conn, p):
     visits = q('''SELECT cp.company_id, COUNT(DISTINCT gp.visit_id) FROM guest_visit_people gp JOIN company_people cp ON cp.id = gp.person_id
                   JOIN guest_visits g ON g.id = gp.visit_id WHERE g.arrived_at BETWEEN ? AND ? GROUP BY cp.company_id''', (a, b))
     rows = []
-    for cid, name in conn.execute('SELECT id, name FROM companies WHERE active = 1'):
+    for cid, name in conn.execute('SELECT id, name FROM companies WHERE active = 1 AND is_supplier = 0'):
         r = {'name': name, 'people': people.get(cid, 0), 'meet': meet.get(cid, 0), 'notes': notes.get(cid, 0), 'docs': docs.get(cid, 0),
              'orders': orders.get(cid, 0), 'visits': visits.get(cid, 0)}
         r['score'] = r['meet'] * 3 + r['orders'] * 4 + r['visits'] * 2 + r['docs'] + r['notes']
@@ -1012,7 +1012,7 @@ def urun_baski_listesi(conn, p):
     stock = {r[0][len('part-'):]: r[1] for r in conn.execute("SELECT schema, id FROM products WHERE schema LIKE 'part-%'")}
     from .spares import stock as stock_of
     tables, labels, data = [], [], []
-    for pid, name, schema in conn.execute("SELECT id, name, schema FROM products WHERE type = 'MAMUL' AND active = 1 ORDER BY id").fetchall():
+    for pid, name, schema in conn.execute("SELECT id, name, schema FROM products WHERE type = 'MAMUL' AND schema != 'custom' AND active = 1 ORDER BY id").fetchall():
         rows = []
         for part in catalogs.part_ids(schema):
             i = info.get(part, {})

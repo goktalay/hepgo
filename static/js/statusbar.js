@@ -65,6 +65,7 @@ export function statusBar() {
     let s;
     busy = true;
     try { s = await api.get(`/api/system/status?since=${since}`); } catch { return; } finally { busy = false; }
+    if (s.build) window.dispatchEvent(new CustomEvent('caymaz:build', { detail: s.build }));   // sürüm değişimini bildir
     users.textContent = s.active_users;
     // Kullanıcı girdi / ayrıldı sesi (ilk okumada çalmaz)
     const ids = new Set(s.online_ids || []);

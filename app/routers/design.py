@@ -37,7 +37,11 @@ class CopyIn(BaseModel):
 def projects(user=Depends(design_user), conn=db.DB):
     return db.rows(conn.execute(
         '''SELECT p.*, u.full_name AS created_by_name,
-                  (SELECT COUNT(*) FROM design_drawings d WHERE d.project_id = p.id) AS drawing_count
+                  (SELECT COUNT(*) FROM design_drawings d WHERE d.project_id = p.id) AS drawing_count,
+                  (SELECT v.id FROM design_drawing_versions v JOIN design_drawings d2 ON d2.id = v.drawing_id
+                    WHERE d2.project_id = p.id AND (lower(v.file_name) LIKE '%.png' OR lower(v.file_name) LIKE '%.jpg'
+                      OR lower(v.file_name) LIKE '%.jpeg' OR lower(v.file_name) LIKE '%.webp')
+                    ORDER BY v.created_at DESC LIMIT 1) AS thumb_vid
            FROM design_projects p LEFT JOIN users u ON u.id = p.created_by
            WHERE p.archived = 0 ORDER BY p.id DESC'''))
 

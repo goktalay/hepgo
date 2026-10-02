@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.66.0'
+VERSION = '2.67.0'
 
 CHANGELOG = [
+    {'version': '2.67.0', 'date': '2026-10-02', 'title': 'Tasarım proje kartları + üst başlık ayrımı',
+     'changes': [
+         'Endüstriyel Tasarım proje listesi düzgün kart görünümüne geçti: önizleme görseli olan projede küçük resim, olmayan projede sade tasarım ikonu gösterilir.',
+         'Üst başlık satırı (modül/firma adı) sayfa zemininden hafif daha kısık renkte — ayrım belirginleşti.',
+     ]},
     {'version': '2.66.0', 'date': '2026-10-02', 'title': 'Sunucu grafikleri entegrasyonun içine taşındı',
      'changes': [
          'Program Ayarları’ndan ayrı “Sunucu Durumu” bölümü kaldırıldı.',

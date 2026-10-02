@@ -20,16 +20,34 @@ function dzFileLinks(qkey, id, name, isMaster) {
   return out;
 }
 
+// Görsel yüklenmemiş projeler için sade tasarım ikonu (pergel + gönye)
+function designIcon() {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M24 7v6"/><circle cx="24" cy="15" r="2.4" fill="currentColor" stroke="none"/>
+    <path d="M24 17.2 14 39"/><path d="M24 17.2 34 39"/><path d="M18.8 28.4h10.4"/>
+    <path d="M8 41h32"/></svg>`;
+  return t.content.firstElementChild;
+}
+
+function projCard(p) {
+  const thumb = p.thumb_vid
+    ? h('img', { src: `/api/design/file?v=${p.thumb_vid}`, alt: p.name, loading: 'lazy' })
+    : h('span', { class: 'dz-proj-ico' }, designIcon());
+  return h('a', { class: 'card dz-proj', href: `#/design/${p.id}` },
+    h('div', { class: `dz-proj-thumb ${p.thumb_vid ? 'has-img' : ''}` }, thumb),
+    h('div', { class: 'dz-proj-body' },
+      h('b', { class: 'dz-proj-name' }, p.name),
+      p.description ? h('div', { class: 'small muted dz-proj-desc' }, p.description) : null,
+      h('div', { class: 'small muted dz-proj-meta' }, `${p.drawing_count} çizim · ${p.created_by_name || ''} · ${fmtDateTime(p.created_at)}`)));
+}
+
 async function renderProjects(view, ctx) {
   const body = h('div');
   const load = async () => {
     let list;
     try { list = await api.get('/api/design/projects'); } catch (err) { return clear(body, h('div', { class: 'card empty' }, err.message)); }
-    clear(body, list.length ? h('div', { class: 'grid-cards' }, list.map(p =>
-      h('a', { class: 'card dz-proj', href: `#/design/${p.id}` },
-        h('b', null, p.name),
-        p.description ? h('div', { class: 'small muted dz-proj-desc' }, p.description) : null,
-        h('div', { class: 'small muted' }, `${p.drawing_count} çizim · ${p.created_by_name || ''} · ${fmtDateTime(p.created_at)}`))))
+    clear(body, list.length ? h('div', { class: 'dz-proj-grid' }, list.map(projCard))
       : h('div', { class: 'card empty' }, 'Henüz proje yok. “Yeni Proje” ile başlayın.'));
   };
   const newProject = () => {

@@ -1,6 +1,7 @@
 /* CAYMAZ Üretim Takip — Gündüz teması */
 :root {
   --bg: #f8f9fb;   /* sayfa zemini: kutucuk başlık bandıyla karışmasın diye açık */
+  --header-bg: #edf0f5;   /* üst başlık satırı: sayfa zemininden hafif daha kısık (koyu) — ayrım görünsün */
   --surface: #ffffff;
   --surface-2: #f8fafc;
   --text: #16202e;
@@ -52,7 +53,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Header / Footer ---------- */
 .app-header {
-  background: var(--surface);
+  background: var(--header-bg);
   border-bottom: 1px solid var(--border);
   height: 64px;
   display: flex;
@@ -1315,6 +1316,7 @@ a.dir-row:hover { background: var(--surface-2); text-decoration: none; }
   html[data-theme="dark"] {
     color-scheme: dark;
     --bg: #0f141c;
+    --header-bg: #0b0f16;   /* üst başlık: sayfa zemininden hafif daha kısık (koyu) */
     --surface: #171e29;
     --surface-2: #1d2532;
     --text: #e4e9f1;
@@ -4772,8 +4774,19 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .bc-time-x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px; }
 
 /* Endüstriyel Tasarım (proje çizim ağacı + sürümler) */
-.dz-proj { display: flex; flex-direction: column; gap: 4px; }
+.dz-proj-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.dz-proj { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; transition: transform .12s ease, box-shadow .12s ease; }
+.dz-proj:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.1); }
+.dz-proj-thumb { position: relative; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--surface-2, #f2f4f8), var(--border)); border-bottom: 1px solid var(--border); overflow: hidden; }
+.dz-proj-thumb.has-img { background: #fff; }
+.dz-proj-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dz-proj-ico { width: 54px; height: 54px; color: var(--muted); opacity: .7; }
+.dz-proj-ico svg { width: 100%; height: 100%; }
+.dz-proj-body { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; }
+.dz-proj-name { font-size: 15px; }
 .dz-proj-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dz-proj-meta { margin-top: 2px; }
 .dz-tree { display: flex; flex-direction: column; gap: 10px; }
 .dz-node { display: flex; flex-direction: column; gap: 10px; }
 .dz-children { display: flex; flex-direction: column; gap: 10px; border-left: 2px dashed var(--border); padding-left: 12px; margin-left: 8px; }

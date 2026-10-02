@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.72.0'
+VERSION = '2.73.0'
 
 CHANGELOG = [
+    {'version': '2.73.0', 'date': '2026-10-02', 'title': 'Alt-modül seçici başlık bandına taşındı (referans: İK)',
+     'changes': [
+         'Alt-modül seçici (sekmeler) artık başlık BANDINDA (eski Excel’in yeri); eylem düğmeleri altta ortalı toolbar’da.',
+         'İnsan Kaynakları yeni düzende; onay sonrası diğer modüller de banda alınacak.',
+     ]},
     {'version': '2.72.0', 'date': '2026-10-02', 'title': 'Alt-modül düzeni tüm modüllere yayıldı + arka plan düzeltmesi',
      'changes': [
          'Tüm modüllerde: alt-modül seçici (sekmeler) başlık bandında üstte; eyleme ait düğmeler altta ayrı toolbar’da (hiza ayarından sol/orta/sağ).',

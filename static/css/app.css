@@ -189,6 +189,8 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 .page-head .sub { color: var(--muted); }
 .page-head .spacer { flex: 1; }
 .page-head-t { min-width: 0; }
+/* Alt-modül seçici (sekmeler) başlık bandında: sağda; dar ekranda kaydırılır/alt satıra geçer */
+.page-head > .seg.seg-tabs { align-self: center; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
 /* Alt-modüle ait eylem düğmeleri: başlığın altında ayrı toolbar; hiza kişisel ayardan (varsayılan orta) */
 .module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; justify-content: center; }
 html[data-toolbar-align="left"] .module-toolbar { justify-content: flex-start; }

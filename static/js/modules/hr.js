@@ -56,7 +56,7 @@ export async function render(view, params, ctx) {
   const tab = ['applications', 'leaves', 'matrix', 'attendance', 'org'].includes(params[0]) ? params[0] : 'personnel';
   const nav = segmented([['personnel', 'Personel'], ['applications', 'İş Başvuruları'], ['leaves', 'İzinler'], ['attendance', 'Giriş-Çıkış'], ['org', 'Organizasyon Şeması'], ['matrix', 'Görev Matrisi']], tab,
     v => { location.hash = v === 'personnel' ? '#/hr' : `#/hr/${v}`; }, { tabs: true });
-  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub }), h('div', { class: 'module-tabs' }, nav), moduleToolbar(extra || null));
+  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub, tabs: nav }), moduleToolbar(extra || null));
   if (tab === 'leaves') return renderLeaves(view, head);
   if (tab === 'matrix') return renderMatrix(view, head);
   if (tab === 'attendance') return renderAttendance(view, head, ctx);

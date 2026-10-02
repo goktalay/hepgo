@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.74.0'
+VERSION = '2.75.0'
 
 CHANGELOG = [
+    {'version': '2.75.0', 'date': '2026-10-02', 'title': 'Banttaki seçici baloncuk (pill) + yatay kaydırma',
+     'changes': [
+         'Başlık bandındaki alt-modül seçici artık baloncuk (pill) görünümlü — grup düğmeleri gibi.',
+         'Sekmeler sığmayınca alt satıra geçmez; başlık satırında yatay kayar.',
+     ]},
     {'version': '2.74.0', 'date': '2026-10-02', 'title': 'Excel düğmesi alt-modül toolbar’ına indi',
      'changes': [
          'Global “Excel” düğmesi artık başlık bandında değil, alt-modülün eylem toolbar’ında (ör. “+ Personel Ekle” yanında).',

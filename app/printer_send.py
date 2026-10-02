@@ -46,6 +46,23 @@ def _multipart_stream(path, filename, fields, boundary, progress):
 
 
 def _upload(printer, path, filename, start_print, job):
+    """Uzak modda G-code içeriği fabrikadaki ajana aktarılır, ajan yazıcıya yükler; yerelde doğrudan yüklenir."""
+    if config.AGENT_MODE == 'remote':
+        import base64
+        from . import devices
+        with open(path, 'rb') as f:
+            data = f.read()
+        job['total'] = len(data)
+        job['sent'] = 0
+        res = devices.call_sync('printer.send', {'ip': printer['ip'], 'filename': filename,
+                                                 'start': bool(start_print), 'content_b64': base64.b64encode(data).decode()},
+                                timeout=300)
+        job['sent'] = len(data)
+        return res
+    return _upload_direct(printer, path, filename, start_print, job)
+
+
+def _upload_direct(printer, path, filename, start_print, job):
     url = f'http://{printer["ip"]}:{MOONRAKER_PORT}/server/files/upload'
     boundary = f'----caymaz{secrets.token_hex(16)}'
     total = os.path.getsize(path)
@@ -63,6 +80,23 @@ def _upload(printer, path, filename, start_print, job):
         r = client.post(url, content=body, headers=headers)
     r.raise_for_status()
     return r.json().get('result', {})
+
+
+def agent_send(args):
+    """Ajan tarafı (fabrika): merkezden gelen G-code içeriğini geçici dosyaya yazıp yerel yazıcıya yükler."""
+    import base64
+    import tempfile
+    data = base64.b64decode(args['content_b64'])
+    fd, tmp = tempfile.mkstemp(suffix='.gcode')
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        return _upload_direct({'ip': args['ip']}, tmp, args['filename'], bool(args.get('start', True)), {})
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def _run(order_part_id, printer, path, filename, at, user_id, order_id, order_code, part_id):

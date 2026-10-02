@@ -36,6 +36,30 @@ def _is_sysadmin(user):
     return auth.ADMIN in user['roles'] or user.get('master')
 
 
+@router.get('/agent')
+def agent_status(user=Depends(auth.current_user)):
+    """Dağıtık mod durumu: fabrika ajanı bağlı mı + ping gidiş-dönüş. Yalnızca Sistem Yöneticisi / MASTER."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu bilgi yalnızca sistem yöneticisine açıktır')
+    import time
+    from .. import config, agent_hub, devices
+    out = {'mode': config.AGENT_MODE}
+    if config.AGENT_MODE != 'remote':
+        out['online'] = True
+        out['detail'] = 'Yerel mod: cihazlar bu makinede (ajan gerekmez).'
+        return out
+    out['online'] = agent_hub.online()
+    out['info'] = agent_hub.status()
+    if out['online']:
+        try:
+            t = time.time()
+            devices.call_sync('ping', timeout=8)
+            out['ping'] = {'ok': True, 'ms': round((time.time() - t) * 1000)}
+        except Exception as e:   # noqa: BLE001
+            out['ping'] = {'ok': False, 'error': str(e)}
+    return out
+
+
 @router.get('/services')
 def services(user=Depends(auth.current_user)):
     """Sistem servisleri (systemd --user) ve durumları. Yalnızca Sistem Yöneticisi / MASTER."""

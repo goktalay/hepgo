@@ -52,6 +52,11 @@ def _printer_probe(args):
     return printer_driver._probe_direct(args['ip'])
 
 
+def _printer_send(args):
+    from . import printer_send
+    return printer_send.agent_send(args)
+
+
 OPS = {
     'ping': _ping,
     'mikro.query': _mikro_query,
@@ -61,6 +66,7 @@ OPS = {
     'pdks.attendance': _pdks_attendance,
     'pdks.test': _pdks_test,
     'printer.probe': _printer_probe,
+    'printer.send': _printer_send,
 }
 
 

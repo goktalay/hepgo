@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.62.0'
+VERSION = '2.63.0'
 
 CHANGELOG = [
+    {'version': '2.63.0', 'date': '2026-10-02', 'title': 'Dağıtık ajan: yazıcıya gönderme + durum göstergesi',
+     'changes': [
+         'Uzak modda yazıcıya G-code gönderme de fabrikadaki ajan üzerinden yapılır (printer.send).',
+         'Program Ayarları › Sunucu Durumu’na “Fabrika bağlantısı (ajan)” göstergesi eklendi (çevrimiçi/çevrimdışı + yanıt süresi).',
+     ]},
     {'version': '2.62.0', 'date': '2026-10-02', 'title': 'Beyaz etiket (firmanın kendi markası)',
      'changes': [
          'Pakete “Beyaz etiket” seçeneği eklendi: firma kendi domaini/markasıyla kullanırsa arayüzde HEPGO görünmez.',

@@ -83,10 +83,27 @@ function serverBody(view) {
     catch (err) { toastError(err); }
   };
 
-  loadStatus(); loadInfo(); loadSvc();
-  every(2000, loadStatus); every(15000, loadSvc); every(30000, loadInfo);
+  const agentBody = h('div');
+  const loadAgent = async () => {
+    try {
+      const a = await api.get('/api/system/agent');
+      if (a.mode !== 'remote') { clear(agentBody, h('div', { class: 'sc-svc' }, h('span', { class: 'sc-svc-dot on' }), h('div', { class: 'grow' }, h('b', null, 'Yerel mod'), h('small', { class: 'muted' }, 'Cihazlar bu makinede · fabrika ajanı gerekmez')))); return; }
+      const on = a.online;
+      clear(agentBody, h('div', { class: 'sc-svc' },
+        h('span', { class: `sc-svc-dot ${on ? 'on' : 'off'}` }),
+        h('div', { class: 'grow' }, h('b', null, on ? 'Fabrika ajanı bağlı' : 'Fabrika ajanı ÇEVRİMDIŞI'),
+          h('small', { class: 'muted' }, on
+            ? `${a.info?.host || ''} · ${a.ping?.ok ? 'yanıt ' + a.ping.ms + ' ms' : 'ping yok'}`
+            : 'Mikro ERP / PDKS / yazıcılar şu an erişilemez — fabrikadaki ajanı kontrol edin'))));
+    } catch { /* */ }
+  };
+
+  loadStatus(); loadInfo(); loadSvc(); loadAgent();
+  every(2000, loadStatus); every(15000, loadSvc); every(30000, loadInfo); every(10000, loadAgent);
   return h('div', null,
     h('div', { class: 'sc-metrics' }, cpu.card, gpu.card, ram.card, diskCard),
+    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Fabrika bağlantısı (dağıtık)'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Merkez bulutta çalışıyorsa Mikro ERP, PDKS ve yazıcılar fabrikadaki ajan üzerinden erişilir.'), agentBody),
     h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Sunucu bilgisi'), info),
     h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Servisler'),
       h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Sistem servislerini buradan yeniden başlatabilirsiniz.'), svcList));

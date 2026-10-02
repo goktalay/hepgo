@@ -188,7 +188,9 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 .page-head h1 { font-size: 22px; }
 .page-head .sub { color: var(--muted); }
 .page-head .spacer { flex: 1; }
-.page-head-t { min-width: 0; }
+.page-head-t { min-width: 0; flex: 0 1 auto; }
+/* Uzun açıklama (sub) başlık bandını büyütüp sekmeleri kaydırmasın: tek satır, taşarsa kırpılır */
+.page-head-t .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 /* Alt-modül seçici başlık bandında: BALONCUK (pill) stili — grup düğmeleri gibi. Sığmayınca alt satıra GEÇMEZ, yatay kayar (min-width:0). */
 .page-head > .seg.seg-tabs { align-self: center; margin-left: auto; flex: 0 1 auto; min-width: 0; max-width: 100%;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; overscroll-behavior-x: contain;

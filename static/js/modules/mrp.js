@@ -8,7 +8,7 @@ import { gcodeTab } from './products.js';
 import * as stock from './stock.js';
 import * as warehouse from './warehouse.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   toast, toastError,
 } from '../ui.js';
 
@@ -53,9 +53,9 @@ function mrpHead(view, cur, subs) {
   if (detail) head.querySelector('h1').after(h('div', { class: 'sub' }, detail));
   const back = head.querySelector('a.back');
   if (back) back.setAttribute('href', '#/');
-  // Alt modüller açılır liste yerine sekme çubuğu
-  if (!head.nextElementSibling || !head.nextElementSibling.classList.contains('module-tabs')) {
-    head.after(moduleTabs(subs.map(s => [s.key, s.title]), cur.key, k => { location.hash = `#/mrp/${k}`; }));
+  // Alt modüller açılır liste yerine başlık bandında sekme çubuğu (.seg.seg-tabs)
+  if (!head.querySelector('.seg-tabs')) {
+    head.append(segmented(subs.map(s => [s.key, s.title]), cur.key, k => { location.hash = `#/mrp/${k}`; }, { tabs: true }));
   }
 }
 

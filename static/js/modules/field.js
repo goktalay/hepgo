@@ -6,7 +6,7 @@ import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../st
 import { segIcon } from '../segicons.js';
 import { stockPicker } from '../stockpick.js';
 import {
-  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref,
+  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
   internTag, nameWithIntern, periodFilter
 } from '../ui.js';
@@ -114,8 +114,7 @@ async function renderList(view, ctx) {
   q.addEventListener('input', draw);
   [status, driver, place, mineOnly].forEach(el => el.addEventListener('change', draw));
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/' }),
-    fieldViewSwitch('tasks'),
+    pageHead('Saha Yönetimi', { back: '#/', tabs: fieldViewSwitch('tasks') }),
     stats,
     h('div', { class: 'filters' }, q, status, driver, place, period.el, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
       h('span', { class: 'spacer' }),
@@ -127,11 +126,11 @@ async function renderList(view, ctx) {
 }
 
 // ---------- Görünüm seçici: Saha Görevi (görev listesi) | Uçuş Yönetimi (görevlerdeki uçaklar)
-const fieldViewSwitch = current => moduleTabs([['tasks', 'Saha Görevi'], ['flights', 'Uçuş Yönetimi']], current, v => {
+const fieldViewSwitch = current => segmented([['tasks', 'Saha Görevi'], ['flights', 'Uçuş Yönetimi']], current, v => {
   setPref('field.view', v);
   location.hash = v === 'flights' ? '#/field/flights' : '#/field';
   if (v === 'tasks') window.dispatchEvent(new HashChangeEvent('hashchange'));
-});
+}, { tabs: true });
 
 // ---------- Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar; tıklayınca uçuş detayı
 async function renderFlightsList(view, ctx) {
@@ -169,8 +168,7 @@ async function renderFlightsList(view, ctx) {
   modeSeg.addEventListener('change', () => { mode = modeSeg.value; setPref('field.flights', mode); load().catch(toastError); });
   q.addEventListener('input', draw);
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar' }),
-    fieldViewSwitch('flights'),
+    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar', tabs: fieldViewSwitch('flights') }),
     stats,
     h('div', { class: 'filters' }, modeSeg, q, period.el),
     body);

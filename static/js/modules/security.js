@@ -2,7 +2,7 @@
 // tıklanınca "çıkış yaptı" denir. Giriş / çıkış kayıtları ayrı sekmede. Kameralar ve tanımlanamayan yüzler de burada.
 import { api } from '../api.js';
 import {
-  clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleTabs, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
+  clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
   toast, toastError, periodFilter
 } from '../ui.js';
 import { renderCameras } from './cameras.js';
@@ -12,12 +12,12 @@ const TABS = [['', 'Araçlar'], ['log', 'Giriş / Çıkış Kayıtları'], ['bui
 
 export async function render(view, params, ctx) {
   const tab = TABS.some(t => t[0] === params[0]) ? params[0] || '' : '';
-  const nav = moduleTabs(TABS, tab, v => { location.hash = v ? `#/security/${v}` : '#/security'; });
+  const nav = segmented(TABS, tab, v => { location.hash = v ? `#/security/${v}` : '#/security'; }, { tabs: true });
   const body = h('div');
   // Araçlar sekmesinde yeni giriş düğmesi başlığın sağında (popup)
   const addBtn = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Araç Girişi');
-  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Fabrika girişi: araç giriş / çıkış kaydı, kameralar' }),
-    nav, moduleToolbar(tab === '' ? addBtn : null), body);
+  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Fabrika girişi: araç giriş / çıkış kaydı, kameralar', tabs: nav }),
+    moduleToolbar(tab === '' ? addBtn : null), body);
   if (tab === 'log') return renderLog(body);
   if (tab === 'building') return renderBuilding(body);
   if (tab === 'cameras') return renderCameras(body, ctx, params.slice(1));

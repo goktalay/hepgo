@@ -60,8 +60,9 @@ export async function render(view, params, ctx) {
   let t; q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 300); });
 
   clear(view, pageHead('Satış Yönetimi', { back: '#/', sub: 'Firmalar için satış faturası',
+    tabs: crmNav('sales', ctx),
     right: h('button', { class: 'btn primary', type: 'button', onclick: () => invoiceForm(ctx, null) }, '＋ Yeni Fatura') }),
-    crmNav('sales', ctx), h('div', { class: 'filters' }, q, period.el), body);
+    h('div', { class: 'filters' }, q, period.el), body);
   draw();
 }
 

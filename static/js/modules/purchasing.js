@@ -4,7 +4,7 @@ import { api, fileUrl, upload } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
 import { renderSuppliers } from './companies.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -48,9 +48,9 @@ function purchasingHead(view, cur) {
   head.querySelector('h1').textContent = 'Satın Alma';
   const subEl = head.querySelector('.sub');   // alt başlık sekmeyle tekrar olmasın
   if (subEl) subEl.remove();
-  // Alt modüller açılır liste yerine sekme çubuğu (başlığın hemen altında)
-  if (!head.nextElementSibling || !head.nextElementSibling.classList.contains('module-tabs')) {
-    head.after(moduleTabs(SUBS.map(s => [s.key, s.title]), cur.key, k => { location.hash = `#/purchasing/${k}`; }));
+  // Alt modüller açılır liste yerine başlık bandında sekme çubuğu (.seg.seg-tabs)
+  if (!head.querySelector('.seg-tabs')) {
+    head.append(segmented(SUBS.map(s => [s.key, s.title]), cur.key, k => { location.hash = `#/purchasing/${k}`; }, { tabs: true }));
   }
 }
 

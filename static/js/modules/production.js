@@ -32,7 +32,7 @@ export function subnav(active, ctx) {
   const tabs = [mk('room', 'Yarı Mamul', '#/production', 'stock')];
   if (ctx.user.modules.includes('orders')) tabs.push(mk('is-emri', 'İş Emri Yönetimi', '#/orders', 'orders'));
   if (ctx.user.modules.includes('printers')) tabs.push(mk('printers', 'Yazıcı Yönetimi', '#/printers', 'printers'));
-  return h('div', { class: 'module-tabs' }, h('div', { class: 'seg seg-tabs' }, tabs));
+  return h('div', { class: 'seg seg-tabs' }, tabs);
 }
 
 // ---------- Pano ----------
@@ -85,9 +85,8 @@ async function renderBoard(view, ctx) {
   function drawColBar(list) { colBar.set(columns, colOptions(list)); }
 
   clear(view,
-    pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', tabs:
-      segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); }) }),
-    subnav('room', ctx),
+    pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', tabs: subnav('room', ctx) }),
+    moduleToolbar(segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); })),
     h('div', { class: 'filters' },
       q, status, product, colBar,
       h('label', { class: 'check' }, onlyErrors, 'Hatalı parçası olanlar'),

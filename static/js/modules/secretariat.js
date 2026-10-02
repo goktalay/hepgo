@@ -5,7 +5,7 @@ import { renderCalls } from './calls.js';
 import { tabView } from './crm.js';
 import { plateEl } from './security.js';
 import {
-  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleTabs, moduleToolbar, pageHead, peoplePicker,
+  avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, peoplePicker,
   secondsBetween, secondsSince, segmented, toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -18,7 +18,7 @@ export async function render(view, params, ctx) {
   const tab = ['cargo', 'calls'].includes(params[0]) ? params[0] : '';
   const history = params[0] === 'history';               // eski misafir kayıtları
   const delivered = tab === 'cargo' && params[1] === 'delivered';   // teslim edilen kargolar
-  const nav = moduleTabs(TABS, tab, v => { location.hash = v ? `#/secretariat/${v}` : '#/secretariat'; });
+  const nav = segmented(TABS, tab, v => { location.hash = v ? `#/secretariat/${v}` : '#/secretariat'; }, { tabs: true });
   const body = h('div');
   // Sekmenin ana işlemi ile eski kayıtlar / teslim edilenler toolbar'da (alt modül seçimi sekme çubuğunda)
   const cargoAdd = h('button', { class: 'btn primary', type: 'button' }, '+ Kargo Kaydet');
@@ -31,7 +31,7 @@ export async function render(view, params, ctx) {
   const title = history ? 'Sekreterya · Eski Kayıtlar' : delivered ? 'Sekreterya · Teslim Edilen Kargolar' : 'Sekreterya';
   const sub = history ? 'Çıkış yapmış misafir kayıtları' : delivered ? 'Teslim alınan kargolar'
     : tab === 'calls' ? 'Şirkete dışarıdan gelen telefonlar · ilgili kişiye bağlanır ve bildirilir' : 'Misafir kayıtları ve gelen kargolar';
-  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub }), nav, toolbar, body);
+  clear(view, pageHead(title, { back: history ? '#/secretariat' : delivered ? '#/secretariat/cargo' : '#/', sub, tabs: nav }), toolbar, body);
   if (tab === 'calls') return renderCalls(body, callAdd, toolbar);
   if (tab === 'cargo') return delivered ? renderDelivered(body) : renderCargo(body, cargoAdd);
   return history ? renderHistory(body) : renderVisits(body);

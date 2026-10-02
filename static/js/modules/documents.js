@@ -30,8 +30,8 @@ export async function render(view, params, ctx) {
 
 // Evrak ↔ Belge Yönetim alt sekmeleri
 function docSubTabs(active) {
-  return h('div', { class: 'module-tabs' }, segmented([['evrak', 'Evraklar'], ['belge', 'Belge Yönetim']], active,
-    v => { location.hash = v === 'belge' ? '#/documents/belge' : '#/documents'; }, { tabs: true }));
+  return segmented([['evrak', 'Evraklar'], ['belge', 'Belge Yönetim']], active,
+    v => { location.hash = v === 'belge' ? '#/documents/belge' : '#/documents'; });
 }
 
 // ---------- Küçük resim / tür simgesi
@@ -92,11 +92,9 @@ async function renderList(view, ctx) {
   [company, kind, status].forEach(el => el.addEventListener('change', () => load().catch(toastError)));
 
   clear(view,
-    pageHead('Evrak Yönetimi', { back: '#/', right: h('div', { class: 'head-right doc-head' },   // filtreler başlıkta
+    pageHead('Evrak Yönetimi', { back: '#/', tabs: crmNav('documents', ctx), right: h('div', { class: 'head-right doc-head' },   // filtreler başlıkta
       h('div', { class: 'doc-search-wrap' }, svgIcon(icons.search), q), company, kind, status, period.el) }),
-    crmNav('documents', ctx),
-    docSubTabs('evrak'),
-    moduleToolbar(h('button', { class: 'btn primary', onclick: () => openUpload(ctx, {}, load) }, svgIcon(icons.upload), 'Evrak Yükle')),
+    moduleToolbar(docSubTabs('evrak'), h('button', { class: 'btn primary', onclick: () => openUpload(ctx, {}, load) }, svgIcon(icons.upload), 'Evrak Yükle')),
     body);
   await load();
   every(5000, () => { if (docs.some(d => ['BEKLIYOR', 'ISLENIYOR'].includes(d.ocr_status))) load().catch(() => {}); });

@@ -117,9 +117,8 @@ async function renderList(view, ctx) {
   act.addEventListener('change', draw);
   const reload = async () => { companies = await api.get(`/api/companies${Q()}`); draw(); };
   clear(view,
-    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları', tabs: viewSwitch('companies') }),
-    SUP ? null : crmNav('companies', ctx),
-    moduleToolbar(h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
+    pageHead(TITLE, { back: '#/', sub: 'Firmalar, firma kişileri ve firmaların evrakları', tabs: SUP ? null : crmNav('companies', ctx) }),
+    moduleToolbar(viewSwitch('companies'), h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
       svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma')),
     stats,
     h('div', { class: 'filters' }, q, act),
@@ -232,9 +231,8 @@ async function renderDirectory(view, ctx) {
   kindSel.addEventListener('change', draw);
   const modeSeg = segmented([['cards', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('rehber.view', v); draw(); });
   clear(view,
-    pageHead(TITLE, { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar', tabs: viewSwitch('rehber') }),
-    SUP ? null : crmNav('companies', ctx),
-    moduleToolbar(h('button', { class: 'btn primary', onclick: addPerson }, svgIcon(icons.plus), 'Kişi Ekle')),
+    pageHead(TITLE, { back: '#/', sub: 'Rehber: firma kişileri ve kullanıcılar', tabs: SUP ? null : crmNav('companies', ctx) }),
+    moduleToolbar(viewSwitch('rehber'), h('button', { class: 'btn primary', onclick: addPerson }, svgIcon(icons.plus), 'Kişi Ekle')),
     stats,
     h('div', { class: 'filters' }, q, kindSel, co, h('span', { class: 'spacer' }), modeSeg),
     body);

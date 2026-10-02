@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.75.0'
+VERSION = '2.76.0'
 
 CHANGELOG = [
+    {'version': '2.76.0', 'date': '2026-10-02', 'title': 'Alt-modül seçici tüm modüllerde banda alındı + İK Takip',
+     'changes': [
+         'Tüm modüllerde birincil alt-modül seçici başlık bandında (baloncuk/pill); ikincil görünüm toggle’ları ve eylem düğmeleri altta toolbar’da.',
+         'İnsan Kaynakları: İzinler ve Giriş-Çıkış artık “Takip” sekmesi altında; “Organizasyon Şeması” → “Organizasyon”.',
+         'Uzun açıklamalar başlık bandını büyütüp sekmeleri kaydırmaz (tek satır, taşarsa kırpılır).',
+     ]},
     {'version': '2.75.0', 'date': '2026-10-02', 'title': 'Banttaki seçici baloncuk (pill) + yatay kaydırma',
      'changes': [
          'Başlık bandındaki alt-modül seçici artık baloncuk (pill) görünümlü — grup düğmeleri gibi.',

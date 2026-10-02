@@ -50,8 +50,7 @@ export async function render(view, params, ctx) {
   [q, status, product].forEach(el => el.addEventListener(el === q ? 'input' : 'change', draw));
 
   clear(view,
-    pageHead('İş Emri Yönetimi', { back: '#/production', sub: 'Üretim Yönetimi' }),
-    subnav('is-emri', ctx),
+    pageHead('İş Emri Yönetimi', { back: '#/production', sub: 'Üretim Yönetimi', tabs: subnav('is-emri', ctx) }),
     moduleToolbar(
       h('button', { class: 'btn primary', onclick: () => newOrder(load) }, svgIcon(icons.plus), 'Yeni İş Emri'), viewSeg),
     stats,

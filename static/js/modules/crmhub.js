@@ -15,7 +15,7 @@ export const hasCrm = user => CRM_KIDS.some(([k]) => user.modules.includes(k));
 export function crmNav(active, ctx) {
   const tabs = CRM_KIDS.filter(([k]) => ctx.user.modules.includes(k)).map(([k, label]) =>
     h('button', { class: k === active ? 'on' : '', type: 'button', onclick: () => { location.hash = `#/${k}`; } }, svgIcon(icons[k]), label));
-  return tabs.length > 1 ? h('div', { class: 'module-tabs' }, h('div', { class: 'seg seg-tabs' }, tabs)) : null;
+  return tabs.length > 1 ? h('div', { class: 'seg seg-tabs' }, tabs) : null;
 }
 
 // #/crm → erişilebilen ilk alt modüle yönlendirir

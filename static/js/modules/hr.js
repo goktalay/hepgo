@@ -54,9 +54,14 @@ export async function render(view, params, ctx) {
   COMPANY = ctx.meta?.company || '';
   if (/^\d+$/.test(params[0] || '')) return renderDetail(view, Number(params[0]), ctx);
   const tab = ['applications', 'leaves', 'matrix', 'attendance', 'org'].includes(params[0]) ? params[0] : 'personnel';
-  const nav = segmented([['personnel', 'Personel'], ['applications', 'İş Başvuruları'], ['leaves', 'İzinler'], ['attendance', 'Giriş-Çıkış'], ['org', 'Organizasyon Şeması'], ['matrix', 'Görev Matrisi']], tab,
-    v => { location.hash = v === 'personnel' ? '#/hr' : `#/hr/${v}`; }, { tabs: true });
-  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub, tabs: nav }), moduleToolbar(extra || null));
+  // "Takip" üst sekmesi: İzinler ve Giriş-Çıkış onun altında ikincil seçici olarak toplanır
+  const TAKIP = ['leaves', 'attendance'];
+  const navKey = TAKIP.includes(tab) ? 'takip' : tab;
+  const nav = segmented([['personnel', 'Personel'], ['applications', 'İş Başvuruları'], ['takip', 'Takip'], ['org', 'Organizasyon'], ['matrix', 'Görev Matrisi']], navKey,
+    v => { location.hash = v === 'personnel' ? '#/hr' : v === 'takip' ? '#/hr/leaves' : `#/hr/${v}`; }, { tabs: true });
+  const takipNav = () => segmented([['leaves', 'İzinler'], ['attendance', 'Giriş-Çıkış']], tab, v => { location.hash = `#/hr/${v}`; });
+  const head = (sub, extra) => h('div', null, pageHead('İnsan Kaynakları', { back: '#/', sub, tabs: nav }),
+    moduleToolbar(TAKIP.includes(tab) ? takipNav() : null, extra || null));
   if (tab === 'leaves') return renderLeaves(view, head);
   if (tab === 'matrix') return renderMatrix(view, head);
   if (tab === 'attendance') return renderAttendance(view, head, ctx);
@@ -1414,7 +1419,7 @@ async function renderOrg(view, head) {
     }));
     renderChart(tree_data, byId);
   };
-  clear(view, head('Organizasyon şeması — bir kişiye tıklayarak kart ekleyin, düzenleyin ya da silin'), body);
+  clear(view, head('Organizasyon şeması'), body);
   load();
 }
 

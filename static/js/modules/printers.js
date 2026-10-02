@@ -5,7 +5,7 @@ import { PRINTER_STATES, badge } from '../status.js';
 import { printerRoom } from './printers3d.js';
 import { subnav } from './production.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, pageHead, pref, segmented, selectInput, setPref, statStrip,
+  clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   svgIcon, toast, toastError,
 } from '../ui.js';
 
@@ -95,8 +95,8 @@ export async function render(view, params, ctx) {
   }));
 
   clear(view,
-    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · durumlar her 10 saniyede yazıcılardan okunur' : 'Durumlar her 10 saniyede yazıcılardan okunur', tabs: modeSeg }),
-    canOpen ? subnav('printers', ctx) : null,
+    pageHead('Yazıcı Yönetimi', { back: canOpen ? '#/production' : '#/', sub: canOpen ? 'Üretim Yönetimi · durumlar her 10 saniyede yazıcılardan okunur' : 'Durumlar her 10 saniyede yazıcılardan okunur', tabs: canOpen ? subnav('printers', ctx) : null }),
+    moduleToolbar(modeSeg),
     stats,
     h('div', { class: 'filters' },
       q, state,

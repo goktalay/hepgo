@@ -8,8 +8,8 @@ const KIND = { excel: 'Excel', word: 'Word', sunum: 'Sunum' };
 const KIND_ICON = { excel: icons.reports || icons.documents, word: icons.documents, sunum: icons.flight || icons.documents };
 
 function subTabs(active) {
-  return h('div', { class: 'module-tabs' }, segmented([['evrak', 'Evraklar'], ['belge', 'Belge Yönetim']], active,
-    v => { location.hash = v === 'belge' ? '#/documents/belge' : '#/documents'; }, { tabs: true }));
+  return segmented([['evrak', 'Evraklar'], ['belge', 'Belge Yönetim']], active,
+    v => { location.hash = v === 'belge' ? '#/documents/belge' : '#/documents'; }, { tabs: true });
 }
 
 export async function render(view, params, ctx) {
@@ -34,8 +34,7 @@ async function list(view, ctx) {
   document.addEventListener('click', () => { newMenu.hidden = true; }, { once: false });
 
   clear(view,
-    pageHead('Evrak Yönetimi', { back: '#/' }),
-    subTabs('belge'),
+    pageHead('Evrak Yönetimi', { back: '#/', tabs: subTabs('belge') }),
     moduleToolbar(h('div', { class: 'bz-newwrap' }, newBtn, newMenu)),
     body);
   draw();

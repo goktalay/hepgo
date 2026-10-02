@@ -51,10 +51,12 @@ export function statusBar() {
     h('span', { class: 'sb-label' }, 'GPU'), gpuVal, cpuSpark);
   const ramBox = h('span', { class: 'sb-item' }, h('span', { class: 'sb-label' }, 'RAM'), ramVal, ramSpark);
 
+  // Not: Sunucu (disk/CPU/GPU/RAM) grafikleri footer'dan kaldırıldı — merkezi sunucu bilgisi kullanıcılara gösterilmez.
+  // Bu bilgiler yalnızca Program Ayarları › Sunucu Durumu'nda sistem yöneticisine açıktır.
+  void diskBox; void cpuBox; void ramBox;
   const bar = h('div', { class: 'statusbar' },
     h('span', { class: 'sb-item sb-users', title: 'Son 2 dakikada sistemde işlem yapan kullanıcılar' },
-      h('span', { class: 'sb-dot' }), h('span', { class: 'sb-label' }, 'Aktif kullanıcı'), users),
-    diskBox, cpuBox, ramBox);
+      h('span', { class: 'sb-dot' }), h('span', { class: 'sb-label' }, 'Aktif kullanıcı'), users));
 
   let mounted = false;
   const tick = async () => {

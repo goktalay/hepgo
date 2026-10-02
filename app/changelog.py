@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.64.0'
+VERSION = '2.65.0'
 
 CHANGELOG = [
+    {'version': '2.65.0', 'date': '2026-10-02', 'title': 'Sunucu bilgileri gizlendi (gizlilik)',
+     'changes': [
+         'Alt bilgideki sunucu grafikleri (CPU/GPU/RAM/disk) kaldırıldı; merkezi sunucu bilgisi kullanıcılara gösterilmez.',
+         'Sunucu kaynak grafikleri yalnızca sistem yöneticisine açık; merkez bulutta çalışırken entegrasyonun çalıştığı fabrika makinesinin grafikleri gösterilir.',
+     ]},
     {'version': '2.64.0', 'date': '2026-10-02', 'title': 'Yerel yükleme zorunluluğu opsiyonel',
      'changes': [
          'Büyük dosya (video/uçuş logu) yüklemesindeki “yalnızca yerel ağ” zorunluluğu artık kapatılabilir (CAYMAZ_LOCAL_UPLOAD=0).',

@@ -57,6 +57,12 @@ def _printer_send(args):
     return printer_send.agent_send(args)
 
 
+# --- Entegrasyon makinesi (fabrika) kaynak grafiği — merkez sunucu DEĞİL ---
+def _sysstat(args):
+    from . import sysstat
+    return sysstat.snapshot()
+
+
 OPS = {
     'ping': _ping,
     'mikro.query': _mikro_query,
@@ -67,6 +73,7 @@ OPS = {
     'pdks.test': _pdks_test,
     'printer.probe': _printer_probe,
     'printer.send': _printer_send,
+    'sysstat': _sysstat,
 }
 
 

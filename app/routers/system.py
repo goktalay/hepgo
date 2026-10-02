@@ -434,10 +434,23 @@ def status(since: int = 0, user=Depends(auth.current_user), conn=db.DB):
     admin = auth.ADMIN in user['roles']
     # Çevrimiçi olan / ayrılan kullanıcı sesi için kimlikler (kendisi ve çevrimiçi durumunu gizleyenler hariç; yönetici hepsini görür)
     online_ids = sorted(r[0] for r in rows if r[0] != user['id'] and (admin or not r[1]))
-    snap = sysstat.snapshot()
-    snap['history'] = [p for p in snap['history'] if p['t'] > since]   # istemci yalnızca yeni örnekleri alır
-    from .. import changelog
-    return {'active_users': active, 'online_ids': online_ids, 'build': app_version(), 'version': changelog.VERSION, **snap}
+    from .. import changelog, config
+    out = {'active_users': active, 'online_ids': online_ids, 'build': app_version(), 'version': changelog.VERSION}
+    # Sunucu grafikleri (CPU/GPU/RAM/disk) YALNIZCA sistem yöneticisine. Merkez sunucu bilgisi sıradan kullanıcıya gösterilmez.
+    # Uzak modda (merkez bulutta) merkez sunucu DEĞİL, entegrasyonun çalıştığı FABRİKA makinesinin grafikleri gösterilir.
+    if _is_sysadmin(user):
+        if config.AGENT_MODE == 'remote':
+            from .. import devices
+            try:
+                snap = devices.call_sync('sysstat', timeout=8)
+                snap['host'] = 'factory'
+            except Exception as e:   # noqa: BLE001
+                snap = {'history': [], 'unavailable': str(e)}
+        else:
+            snap = sysstat.snapshot()
+        snap['history'] = [p for p in snap.get('history', []) if p.get('t', 0) > since]
+        out.update(snap)
+    return out
 
 
 @router.get('/about')

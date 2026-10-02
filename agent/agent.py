@@ -25,7 +25,9 @@ os.environ['CAYMAZ_AGENT_MODE'] = 'local'   # ajan op'ları doğrudan çalışt�
 os.environ.setdefault('CAYMAZ_PRINTER_POLL', '0')  # ajan yoklama döngüsü çalıştırmaz; merkez tetikler
 
 import websockets   # noqa: E402
-from app import agent_ops, config   # noqa: E402
+from app import agent_ops, config, sysstat   # noqa: E402
+
+sysstat.start()   # entegrasyon makinesinin (fabrika) kaynak grafiği için örnekleme
 
 URL = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL') or config.AGENT_CENTRAL_URL
 KEY = os.environ.get('CAYMAZ_AGENT_KEY') or config.AGENT_KEY

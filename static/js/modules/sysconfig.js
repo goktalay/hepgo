@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
-import { avatar, clear, confirmDialog, every, fmtDateTime, fmtDuration, h, modal, pageHead, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, fmtDateTime, h, modal, pageHead, toast, toastError } from '../ui.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SC_MQ = matchMedia('(max-width: 800px)');
@@ -31,14 +31,15 @@ function metricCard(label, color) {
   return { card, set(v, subText, series) { val.textContent = pct(v); sub.textContent = subText || ''; clear(chart, spark(series, color)); } };
 }
 
-function serverBody(view) {
+// Entegrasyon sunucusu kartı: bir sunucuda çalışan entegrasyonun (Mikro ERP, PDKS) çalıştığı makinenin anlık
+// kaynak grafiklerini (CPU/GPU/RAM/disk) ve fabrika ajanı bağlantı durumunu gösterir. Veri /api/system/status'tan gelir;
+// uzak modda bu uçnokta merkez sunucuyu DEĞİL, fabrikadaki entegrasyon makinesini yansıtır (ajan sysstat). Yalnız sistem yöneticisi.
+function integServerCard(view) {
   const cpu = metricCard('CPU', '#2563eb'), gpu = metricCard('GPU', '#16a34a'), ram = metricCard('RAM', '#7c3aed');
   const diskVal = h('b', { class: 'sc-metric-val' }, '—');
   const diskBar = h('div', { class: 'sc-disk-bar' }, h('i'));
   const diskSub = h('small', { class: 'muted' }, '');
   const diskCard = h('div', { class: 'card card-pad sc-metric' }, h('div', { class: 'sc-metric-top' }, h('span', { class: 'sc-metric-label' }, 'Disk'), diskVal), diskSub, diskBar);
-  const info = h('dl', { class: 'sys-kv sc-info' });
-  const svcList = h('div', { class: 'sc-svc-list' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
   const hist = { cpu: [], gpu: [], ram: [] };
   let sinceT = 0;
 
@@ -59,54 +60,29 @@ function serverBody(view) {
       }
     } catch { /* */ }
   };
-  const loadInfo = async () => {
-    try {
-      const d = await api.get('/api/system/details?what=server');
-      clear(info, [['Çekirdek', d.cpus], ['Yük (1/5/15 dk)', (d.load || []).map(x => x.toFixed(2)).join(' / ')],
-        d.gpu_name ? ['Ekran kartı', d.gpu_name] : null, d.gpu_temp != null ? ['GPU sıcaklığı', `${d.gpu_temp} °C`] : null,
-        d.uptime_s ? ['Sunucu açık', fmtDuration(d.uptime_s)] : null].filter(Boolean).flatMap(([k, v]) => [h('dt', null, k), h('dd', null, String(v))]));
-    } catch { /* */ }
-  };
-  const loadSvc = async () => {
-    try {
-      const rows = await api.get('/api/system/services');
-      clear(svcList, rows.map(r => h('div', { class: 'sc-svc' },
-        h('span', { class: `sc-svc-dot ${r.running ? 'on' : 'off'}` }),
-        h('div', { class: 'grow' }, h('b', null, r.label), h('small', { class: 'muted' }, `${r.name} · ${r.active}/${r.sub}`)),
-        r.restartable ? h('button', { class: 'btn xs', type: 'button', onclick: () => restart(r) }, 'Yeniden başlat') : null)));
-    } catch (err) { clear(svcList, h('div', { class: 'empty small' }, err.message)); }
-  };
-  const restart = async r => {
-    const self = r.name === 'caymaz.service';
-    if (!await confirmDialog('Servisi yeniden başlat', `${r.label} yeniden başlatılsın mı?${self ? ' Bu, bu uygulamadır; birkaç saniye bağlantı kesilir ve sayfayı yenilemeniz gerekebilir.' : ''}`, { okLabel: 'Yeniden başlat', danger: self })) return;
-    try { await api.post(`/api/system/services/${r.name}/restart`, {}); toast(`${r.label} yeniden başlatılıyor…`, 'success'); setTimeout(loadSvc, 3000); }
-    catch (err) { toastError(err); }
-  };
 
   const agentBody = h('div');
   const loadAgent = async () => {
     try {
       const a = await api.get('/api/system/agent');
-      if (a.mode !== 'remote') { clear(agentBody, h('div', { class: 'sc-svc' }, h('span', { class: 'sc-svc-dot on' }), h('div', { class: 'grow' }, h('b', null, 'Yerel mod'), h('small', { class: 'muted' }, 'Cihazlar bu makinede · fabrika ajanı gerekmez')))); return; }
+      if (a.mode !== 'remote') { clear(agentBody, h('div', { class: 'sc-svc' }, h('span', { class: 'sc-svc-dot on' }), h('div', { class: 'grow' }, h('b', null, 'Yerel sunucu'), h('small', { class: 'muted' }, 'Bu entegrasyon uygulamayla aynı makinede çalışıyor · ayrı ajan gerekmez')))); return; }
       const on = a.online;
       clear(agentBody, h('div', { class: 'sc-svc' },
         h('span', { class: `sc-svc-dot ${on ? 'on' : 'off'}` }),
         h('div', { class: 'grow' }, h('b', null, on ? 'Fabrika ajanı bağlı' : 'Fabrika ajanı ÇEVRİMDIŞI'),
           h('small', { class: 'muted' }, on
             ? `${a.info?.host || ''} · ${a.ping?.ok ? 'yanıt ' + a.ping.ms + ' ms' : 'ping yok'}`
-            : 'Mikro ERP / PDKS / yazıcılar şu an erişilemez — fabrikadaki ajanı kontrol edin'))));
+            : 'Bu entegrasyon şu an erişilemez — fabrikadaki ajanı kontrol edin'))));
     } catch { /* */ }
   };
 
-  loadStatus(); loadInfo(); loadSvc(); loadAgent();
-  every(2000, loadStatus); every(15000, loadSvc); every(30000, loadInfo); every(10000, loadAgent);
-  return h('div', null,
+  loadStatus(); loadAgent();
+  every(2000, loadStatus); every(10000, loadAgent);
+  return h('section', { class: 'card card-pad sc-integ-server' },
+    h('h3', { style: { marginTop: 0 } }, 'Çalıştığı sunucu'),
+    h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Bu entegrasyonun çalıştığı makinenin anlık kaynak kullanımı. Merkez bulutta çalışıyorsa buradaki değerler fabrikadaki entegrasyon makinesine aittir.'),
     h('div', { class: 'sc-metrics' }, cpu.card, gpu.card, ram.card, diskCard),
-    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Fabrika bağlantısı (dağıtık)'),
-      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Merkez bulutta çalışıyorsa Mikro ERP, PDKS ve yazıcılar fabrikadaki ajan üzerinden erişilir.'), agentBody),
-    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Sunucu bilgisi'), info),
-    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Servisler'),
-      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Sistem servislerini buradan yeniden başlatabilirsiniz.'), svcList));
+    agentBody);
 }
 
 // Sayı kutusu: sabit genişlikte tek parça kontrol (− değer birim +); birim yazısının uzunluğu kutuyu kaydırmaz
@@ -127,6 +103,8 @@ function numBox(inp, suffix) {
 // ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
 // Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
 const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', google: 'mailDot', general: 'gear' };
+// Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
+const SERVER_INTEGRATIONS = ['mikro', 'pdks'];
 function integrationsBody(view, ctx) {
   const wrap = h('div', { class: 'sc-integ-list' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   const card = grp => {
@@ -201,7 +179,8 @@ function integrationsBody(view, ctx) {
         info.sections?.length ? h('section', { class: 'card card-pad integ-info' },
           info.sections.map(([t, items]) => h('div', { class: 'integ-info-sec' }, h('h4', null, t), h('ul', null, items.map(x => h('li', null, x)))))) : null,
         h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
-        ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null);
+        ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null,
+        SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null);
       return;
     }
     clear(wrap,
@@ -787,7 +766,6 @@ function aiChangesBody() {
 }
 
 const GROUPS = [
-  { key: 'server', title: 'Sunucu Durumu', desc: 'CPU, GPU, RAM, disk ve servisler', icon: 'screen', body: serverBody },
   { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
   { key: 'ai', title: 'Yapay Zeka', desc: 'Maskot asistanı: token kullanımı ve kotalar', icon: 'bolt', body: aiBody, needs: 'ai' },
   { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },
@@ -795,8 +773,8 @@ const GROUPS = [
   { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
 ];
 
-const SC_COLORS = { server: '#34c759', security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500' };
-const SC_SECTIONS = [['server', 'security'], ['ai', 'ai-changes'], ['modules', 'integrations']];
+const SC_COLORS = { security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500' };
+const SC_SECTIONS = [['security', 'ai'], ['ai-changes'], ['modules', 'integrations']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {

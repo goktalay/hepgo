@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.65.0'
+VERSION = '2.66.0'
 
 CHANGELOG = [
+    {'version': '2.66.0', 'date': '2026-10-02', 'title': 'Sunucu grafikleri entegrasyonun içine taşındı',
+     'changes': [
+         'Program Ayarları’ndan ayrı “Sunucu Durumu” bölümü kaldırıldı.',
+         'Kaynak grafikleri (CPU/GPU/RAM/disk) artık Entegrasyonlar içinde, yalnızca bir sunucuda çalışan entegrasyonun (Mikro ERP, PDKS) detayında “Çalıştığı sunucu” olarak gösterilir.',
+         'Uzak modda bu grafikler merkez sunucuyu değil, entegrasyonun çalıştığı fabrika makinesini yansıtır; yalnızca sistem yöneticisine açıktır.',
+     ]},
     {'version': '2.65.0', 'date': '2026-10-02', 'title': 'Sunucu bilgileri gizlendi (gizlilik)',
      'changes': [
          'Alt bilgideki sunucu grafikleri (CPU/GPU/RAM/disk) kaldırıldı; merkezi sunucu bilgisi kullanıcılara gösterilmez.',

@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.78.0'
+VERSION = '2.79.0'
 
 CHANGELOG = [
+    {'version': '2.79.0', 'date': '2026-10-03', 'title': 'İngilizce: dinamik metinler de çevrildi',
+     'changes': [
+         'Sayı/tarih/isim yerleşen dinamik metinler (ör. “5 kişi”, “3 dk önce”, “X silinsin mi?”) tüm modüllerde t() ile çevrilebilir yapıldı.',
+         '~424 dinamik metnin İngilizce karşılığı eklendi; yer tutucular ({n}, {name}…) korunarak doğru sırayla gösterilir.',
+     ]},
     {'version': '2.78.0', 'date': '2026-10-03', 'title': 'İngilizce dil desteği tamamlandı',
      'changes': [
          'Arayüz metinlerinin İngilizce çevirisi tüm modüllere yayıldı (~2400 ek metin); Ayarlar › Arayüz › Dil = English.',

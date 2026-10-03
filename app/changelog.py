@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.100.1'
+VERSION = '2.101.0'
 
 CHANGELOG = [
+    {'version': '2.101.0', 'date': '2026-10-03', 'title': 'Veilox Merkez (HEPGO standardında) + Üyeliğim & Destek',
+     'changes': [
+         'Yeni Merkez (merkez.veilox.app): Üyelik Yönetimi — firmalar (onay, kurulum, kurulum linki, pasife al / aktif et, düzenle, sil), paketler, aylık ödeme takibi ve tahsilat grafiği.',
+         'Destek Talepleri: firmalardan gelen talepler, canlı yazışma, durum / öncelik / atama; yeni talep ve yanıtlar zilde ve anlık bildirimde.',
+         'Toplu SMS (Netgsm): üye firmalara duyuru; sağlayıcı ayarı ve gönderim kaydı.',
+         '“Pasife al” artık güvenli ve geri alınabilir: firma kullanıcılarının girişi durur (master hariç), veri ve sunucu korunur.',
+         'Firmalarda yeni “Üyeliğim & Destek”: paket, aylık ücret, ödeme geçmişi ve bizimle destek talepleri (aç, yazış, takip et).',
+         'Merkez çok kullanıcılı: “Merkez Destek” rolündeki personel firmalara onaylı destek girişi yapabilir.',
+     ]},
     {'version': '2.100.1', 'date': '2026-10-03', 'title': 'Düzeltme: kullanıcı menüsü ikonları',
      'changes': [
          'Kullanıcı menüsündeki “Ekranı Paylaş” öğesinde aşırı büyük görünen ikon düzeltildi; ekran paylaşımı için ekran ikonu kullanılıyor.',

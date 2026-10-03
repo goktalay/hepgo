@@ -86,6 +86,12 @@ def login(body: LoginIn, request: Request, response: Response, conn=db.DB):
                 return fed
         raise HTTPException(401, 'Kullanıcı adı veya şifre hatalı')
     _absent_check(conn, user)
+    if not auth.is_master(user['username']):   # merkez firmayı pasife aldıysa (yumuşak askı)
+        from .. import central_client
+        s = central_client.suspension()
+        if s.get('suspended'):
+            conn.commit()
+            raise HTTPException(403, central_client.suspended_message(s))
     pol = policy.get(conn)
     _expire_check(conn, user['id'], pol)
     token = auth.create_session(conn, user['id'], pol['session_hours'])

@@ -348,7 +348,18 @@ def ai_change_decided(conn, user):
     return _result(rows, [f'{r["summary"]} — {lbl.get(r["status"], r["status"])}' for r in rows], '#/', None)
 
 
+def tickets_waiting(conn, user):
+    """Merkez: firmalardan gelen, yanıt bekleyen destek talepleri (yalnızca merkez modunda, talep yetkilisine)."""
+    from . import config
+    if not config.FEDERATION_CENTRAL or 'tickets' not in user.get('modules', []):
+        return _result([], [], '#/tickets')
+    rows = db.rows(conn.execute(
+        "SELECT id, code, company_name, subject FROM tickets WHERE support_unread > 0 AND status NOT IN ('kapali') ORDER BY updated_at DESC"))
+    return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], '#/tickets', 'Yanıtlamak için açın')
+
+
 NOTIFICATIONS = [
+    {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
     {'key': 'ai-change-pending', 'roles': [auth.ADMIN], 'fn': ai_change_pending, 'title': 'Yapay zeka değişiklik talebi onay bekliyor'},
     {'key': 'ai-change-decided', 'roles': None, 'fn': ai_change_decided, 'title': 'Yapay zeka değişiklik talebin sonuçlandı'},

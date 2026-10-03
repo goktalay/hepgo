@@ -63,6 +63,11 @@ FEDERATION_SECRET = os.environ.get('CAYMAZ_FEDERATION_SECRET', '')          # t�
 FEDERATION_URL = os.environ.get('CAYMAZ_FEDERATION_URL', '').rstrip('/')    # müşteri: merkez taban adresi (ör. https://veilox.app)
 FEDERATION_CENTRAL = os.environ.get('CAYMAZ_FEDERATION_CENTRAL', '0') == '1'   # merkez (Veilox) instance'ı mı (doğrulama ucunu açar)
 FEDERATION_SESSION_HOURS = int(os.environ.get('CAYMAZ_FEDERATION_SESSION_HOURS', '4'))   # onaylı destek oturumu süresi
+# Firma kimliği (merkezdeki slug): destek talebi, üyelik/ödeme bilgisi ve askı durumu merkezden bu kimlikle sorulur.
+TENANT_SLUG = os.environ.get('CAYMAZ_TENANT_SLUG', '').strip().lower()
+# Merkez (HEPGO merkez modu) ↔ Veilox kurulum servisi arası İÇ anahtar (federasyon anahtarından AYRI; firmalarda yok).
+CENTRAL_API_SECRET = os.environ.get('CAYMAZ_CENTRAL_API_SECRET', '')
+VEILOX_SOCKET = os.environ.get('CAYMAZ_VEILOX_SOCKET', '/run/hepgo/veilox.sock')
 PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 # Testlerde arka plan yazıcı yoklamasını kapatmak için 0 yapılır.
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'

@@ -195,6 +195,68 @@ CREATE TABLE IF NOT EXISTS fin_txns (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_fin_txns_acc ON fin_txns(account_id, date);
+-- Merkez modu (Veilox Merkez): firmaların destek talepleri (ticket) + mesajları
+CREATE TABLE IF NOT EXISTS tickets (
+    id              INTEGER PRIMARY KEY,
+    code            TEXT,                          -- T-0001
+    slug            TEXT NOT NULL,                 -- firma (merkez slug)
+    company_name    TEXT,
+    subject         TEXT NOT NULL,
+    category        TEXT,                          -- teknik | fatura | öneri | diğer
+    priority        TEXT NOT NULL DEFAULT 'normal',-- dusuk | normal | yuksek | acil
+    status          TEXT NOT NULL DEFAULT 'acik',  -- acik | yanit_bekliyor | cozuldu | kapali
+    opened_by_name  TEXT,
+    opened_by_email TEXT,
+    assignee_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    company_unread  INTEGER NOT NULL DEFAULT 0,    -- firmanın okumadığı destek yanıtı sayısı
+    support_unread  INTEGER NOT NULL DEFAULT 1,    -- desteğin okumadığı firma mesajı sayısı
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tickets_slug ON tickets(slug, updated_at);
+CREATE INDEX IF NOT EXISTS ix_tickets_status ON tickets(status, updated_at);
+CREATE TABLE IF NOT EXISTS ticket_messages (
+    id          INTEGER PRIMARY KEY,
+    ticket_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    author_kind TEXT NOT NULL,                     -- company | support | system
+    author_name TEXT,
+    body        TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_ticket_messages_t ON ticket_messages(ticket_id, id);
+-- Merkez: firma bayrakları (yumuşak askı, iletişim telefonu) — kurulum kayıtları Veilox'ta, bunlar merkezde
+CREATE TABLE IF NOT EXISTS member_flags (
+    slug        TEXT PRIMARY KEY,
+    suspended   INTEGER NOT NULL DEFAULT 0,
+    reason      TEXT,
+    phone       TEXT,
+    note        TEXT,
+    updated_at  TEXT
+);
+-- Merkez: üyelik ödemeleri (dönem bazlı)
+CREATE TABLE IF NOT EXISTS member_payments (
+    id          INTEGER PRIMARY KEY,
+    slug        TEXT NOT NULL,
+    period      TEXT NOT NULL,                     -- YYYY-MM
+    amount      REAL NOT NULL,
+    paid_at     TEXT NOT NULL,
+    method      TEXT,                              -- havale | kart | nakit
+    note        TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_member_payments ON member_payments(slug, period);
+-- Merkez: toplu SMS gönderim kaydı
+CREATE TABLE IF NOT EXISTS sms_log (
+    id          INTEGER PRIMARY KEY,
+    numbers     TEXT NOT NULL,                     -- JSON liste
+    message     TEXT NOT NULL,
+    status      TEXT NOT NULL,                     -- sent | failed | dry
+    provider    TEXT,
+    response    TEXT,
+    sent_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
 -- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
 CREATE TABLE IF NOT EXISTS family_members (
     id          INTEGER PRIMARY KEY,

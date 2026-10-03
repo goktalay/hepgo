@@ -42,8 +42,8 @@ def verify(body: VerifyIn, request: Request, conn=db.DB):
     ok = bool(user and user['active'] and auth.verify_password(body.password, user['password_hash']))
     if not ok:
         return {'ok': False}
-    is_support = conn.execute('SELECT 1 FROM user_roles WHERE user_id = ? AND role = ?',
-                              (user['id'], auth.SUPPORT_ROLE)).fetchone() is not None
+    is_support = auth.is_master(user['username']) or conn.execute(
+        'SELECT 1 FROM user_roles WHERE user_id = ? AND role = ?', (user['id'], auth.SUPPORT_ROLE)).fetchone() is not None
     if not is_support:
         return {'ok': False, 'reason': 'not_support'}
     return {'ok': True, 'username': user['username'], 'full_name': user['full_name']}

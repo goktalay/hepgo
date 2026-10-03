@@ -75,6 +75,13 @@ MODULE_ROLES['mikro'] = []   # M20 Mikro ERP: YALNIZCA MASTER (sistem sahibi). H
 # hiçbir modül yetkisi vermesin (yalnızca çapraz-giriş yetkisinin işareti). Müşteri instance'larında listede görünmez.
 if config.FEDERATION_CENTRAL and SUPPORT_ROLE not in ROLES:
     ROLES.append(SUPPORT_ROLE)
+# Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS. Firma instance'larında: Üyeliğim & Destek.
+if config.FEDERATION_CENTRAL:
+    MODULE_ROLES['members'] = [ADMIN]                  # firmalar, paketler, ödeme takibi, askı
+    MODULE_ROLES['tickets'] = [ADMIN, SUPPORT_ROLE]    # destek talepleri (merkez gelen kutusu)
+    MODULE_ROLES['sms'] = [ADMIN]                      # toplu SMS
+elif config.FEDERATION_URL:
+    MODULE_ROLES['uyelik'] = [ADMIN]                   # firma: paket, ödemeler, destek talepleri, sözleşme
 MRP_MANAGERS = [ADMIN, WAREHOUSE_MANAGER, MRP_LEAD]   # malzeme / depo kaydı, stok hareketi
 # Modül içinde değişiklik yapabilen roller (okuma MODULE_ROLES ile).
 # Montaj Personeli (2026-09-26) Üretim'e montaj/kalibrasyon, Elektronik Personeli elektronik kat montajı için
@@ -238,6 +245,11 @@ def current_user(request: Request, conn=db.DB):
             conn.execute('DELETE FROM sessions WHERE token = ?', (token,))
             conn.commit()
             raise HTTPException(401, absence_message(hit[1]))
+        # Merkez firmayı pasife aldıysa (yumuşak askı) master dışındaki herkes durur; master Üyeliğim'e erişebilir
+        from . import central_client
+        s = central_client.suspension()
+        if s.get('suspended'):
+            raise HTTPException(401, central_client.suspended_message(s))
     if user['master']:   # sistem sahibi: her şeye erişir (rol iptal edilse bile) ama role bağlı bildirim/katılım gerçek rollerine göre
         user['real_roles'] = real
         user['roles'] = [*ROLES, MASTER]
@@ -256,7 +268,7 @@ def current_user(request: Request, conn=db.DB):
     # Merkez (Veilox) bu firmaya belirli modülleri verdiyse, herkes (master dâhil) yalnızca o modülleri görür.
     # 'master' modülü (sistem sahibi aracı) her zaman kalır; CAYMAZ_MODULES tanımsızsa kısıtlama yoktur.
     if config.MODULES is not None:
-        allow = set(config.MODULES) | {'master'}
+        allow = set(config.MODULES) | {'master', 'uyelik'}   # Üyeliğim & Destek: paketten bağımsız, her firmada destek kanalı
         user['modules'] = [m for m in user['modules'] if m in allow]
     return user
 

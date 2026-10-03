@@ -20,6 +20,10 @@ import * as tools from './modules/tools.js';
 import * as products from './modules/products.js';
 import * as admin from './modules/admin.js';
 import * as finance from './modules/finance.js';
+import * as members from './modules/members.js';
+import * as ticketsMod from './modules/tickets.js';
+import * as smsMod from './modules/sms.js';
+import * as membershipMod from './modules/membership.js';
 import * as alertsPage from './modules/alerts.js';
 import { renderDashboard } from './modules/dashboard.js';
 import { renderMyCalls } from './modules/calls.js';
@@ -93,6 +97,12 @@ const MODULES = [
   { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
+  // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
+  { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
+  { key: 'tickets', title: 'Destek Talepleri', mod: ticketsMod },
+  { key: 'sms', title: 'Toplu SMS', mod: smsMod, group: 'system' },
+  // Firma paneli: merkezle ilişki (paket, ödemeler, destek talepleri) — firma instance'ında
+  { key: 'uyelik', title: 'Üyeliğim & Destek', mod: membershipMod, group: 'system' },
   { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
   { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },
   { key: 'cleaning', title: 'Temizlik', mod: cleaning, group: 'system' },

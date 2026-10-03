@@ -240,6 +240,60 @@ CREATE TABLE IF NOT EXISTS fin_txns (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_fin_txns_acc ON fin_txns(account_id, date);
+-- Finans v2: Mikro muhasebe (hesap planı + yevmiye satırları) → mizan / mali tablolar
+CREATE TABLE IF NOT EXISTS fin_coa (
+    code        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS fin_ledger (
+    id          INTEGER PRIMARY KEY,
+    guid        TEXT NOT NULL UNIQUE,
+    date        TEXT NOT NULL,
+    journal_no  INTEGER,
+    entry_no    INTEGER,
+    kind        INTEGER,                       -- Mikro fiş türü
+    account     TEXT NOT NULL,
+    description TEXT,
+    debit       REAL NOT NULL DEFAULT 0,
+    credit      REAL NOT NULL DEFAULT 0,
+    doc_no      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_fin_ledger_acc ON fin_ledger(account, date);
+CREATE INDEX IF NOT EXISTS ix_fin_ledger_date ON fin_ledger(date);
+-- Finans v2: çek / senet portföyü
+CREATE TABLE IF NOT EXISTS fin_instruments (
+    id          INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL,                 -- cek | senet
+    direction   TEXT NOT NULL,                 -- alinan (müşteriden) | verilen (tedarikçiye)
+    number      TEXT,
+    bank        TEXT,
+    drawer      TEXT,                          -- keşideci / borçlu
+    company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+    amount      REAL NOT NULL,
+    currency    TEXT NOT NULL DEFAULT 'TRY',
+    issue_date  TEXT,
+    due_date    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'portfoy',  -- portfoy | tahsilde | teminatta | ciro | tahsil | odendi | karsiliksiz | iade
+    note        TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_fin_instr_due ON fin_instruments(due_date, status);
+-- Finans v2: planlı ödeme / tahsilatlar (kira, kredi taksidi… nakit akışı takvimi)
+CREATE TABLE IF NOT EXISTS fin_plans (
+    id          INTEGER PRIMARY KEY,
+    date        TEXT NOT NULL,
+    direction   TEXT NOT NULL,                 -- in | out
+    amount      REAL NOT NULL,
+    description TEXT NOT NULL,
+    category    TEXT,
+    repeat      TEXT NOT NULL DEFAULT 'none',  -- none | monthly
+    until       TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
 -- Merkez modu (Veilox Merkez): firmaların destek talepleri (ticket) + mesajları
 CREATE TABLE IF NOT EXISTS tickets (
     id              INTEGER PRIMARY KEY,
@@ -1814,6 +1868,9 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    ft_cols = {r[1] for r in conn.execute('PRAGMA table_info(fin_txns)')}
+    if ft_cols and 'due_date' not in ft_cols:   # vade (Mikro cha_vade) — nakit akışı / yaşlandırma
+        conn.execute('ALTER TABLE fin_txns ADD COLUMN due_date TEXT')
     fc_cols = {r[1] for r in conn.execute('PRAGMA table_info(feed_comments)')}
     if fc_cols and 'parent_id' not in fc_cols:   # yoruma yanıt (tek seviye: yanıtlar ana yorumun altında)
         conn.execute('ALTER TABLE feed_comments ADD COLUMN parent_id INTEGER REFERENCES feed_comments(id) ON DELETE CASCADE')

@@ -29,6 +29,54 @@ def _tl(r):
     return round(amt, 2)
 
 
+def _due(r):
+    """Mikro cha_vade: YYYYMMDD tarih ya da (küçük sayı) gün farkı; 0/boş → vade yok (hareket tarihi)."""
+    v = r.get('vade')
+    d0 = str(r.get('tarih'))[:10]
+    try:
+        v = int(v or 0)
+    except (TypeError, ValueError):
+        return None
+    if v >= 19000101:
+        s = str(v)
+        return f'{s[:4]}-{s[4:6]}-{s[6:8]}'
+    if v and -3650 < v < 3650:
+        from datetime import date, timedelta
+        try:
+            return (date.fromisoformat(d0) + timedelta(days=v)).isoformat()
+        except ValueError:
+            return None
+    return None
+
+
+def sync_ledger(conn):
+    """Hesap planı + muhasebe fiş satırları (tek yönlü; Mikro'da silinen/iptal edilen yerelden de kalkar)."""
+    coa = mikro.list_coa()
+    now = db.now()
+    conn.executemany('INSERT INTO fin_coa (code, name, updated_at) VALUES (?,?,?) ON CONFLICT(code) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at',
+                     [((r['kod'] or '').strip(), (r['ad'] or '').strip() or (r['kod'] or '').strip(), now) for r in coa if (r.get('kod') or '').strip()])
+    rows = mikro.list_ledger()
+    have = {g for (g,) in conn.execute('SELECT guid FROM fin_ledger')}
+    seen, added, data = set(), 0, []
+    for r in rows:
+        g = r.get('guid')
+        if not g:
+            continue
+        seen.add(g)
+        amt = round(float(r.get('tutar') or 0), 2)
+        data.append((g, str(r['tarih'])[:10], r.get('yevmiye'), r.get('sira'), r.get('tur'), (r.get('hesap') or '').strip(),
+                     (r.get('aciklama') or '').strip()[:300] or None, amt if amt > 0 else 0.0, -amt if amt < 0 else 0.0, (r.get('belge') or '').strip() or None))
+        added += g not in have
+    conn.executemany('''INSERT INTO fin_ledger (guid, date, journal_no, entry_no, kind, account, description, debit, credit, doc_no)
+                        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(guid) DO UPDATE SET date=excluded.date, journal_no=excluded.journal_no,
+                        entry_no=excluded.entry_no, kind=excluded.kind, account=excluded.account, description=excluded.description,
+                        debit=excluded.debit, credit=excluded.credit, doc_no=excluded.doc_no''', data)
+    gone = have - seen
+    if gone:
+        conn.executemany('DELETE FROM fin_ledger WHERE guid = ?', [(g,) for g in gone])
+    return {'hesap_plani': len(coa), 'yevmiye_satiri': len(rows), 'yeni': added, 'silinen': len(gone)}
+
+
 def _iban(v):
     return ''.join(ch for ch in (v or '') if ch.isalnum()).upper() or None
 
@@ -160,20 +208,20 @@ def sync(conn, include_cari=True, user_id=None):
             continue
         cat = EVRAK.get(int(r.get('ev') or 0), 'Mikro hareketi')
         want[ref] = (aid, str(r['tarih'])[:10], direction, _tl(r), cat,
-                     ((r.get('aciklama') or '').strip() or cat)[:300], _doc(r)[:60] or None)
+                     ((r.get('aciklama') or '').strip() or cat)[:300], _doc(r)[:60] or None, _due(r) if kind == 'cari' else None)
     existing = {row[0]: row[1:] for row in conn.execute(
-        "SELECT mikro_ref, id, account_id, date, direction, amount, category, description, doc_no FROM fin_txns WHERE mikro_ref LIKE 'cha:%'")}
+        "SELECT mikro_ref, id, account_id, date, direction, amount, category, description, doc_no, due_date FROM fin_txns WHERE mikro_ref LIKE 'cha:%'")}
     present = {r['guid'] for r in rows if r.get('guid')}
     added = updated = deleted = 0
     for ref, v in want.items():
         if ref in existing:
             old = existing[ref]
             if tuple(old[1:]) != v:
-                conn.execute('UPDATE fin_txns SET account_id=?, date=?, direction=?, amount=?, category=?, description=?, doc_no=? WHERE id=?', (*v, old[0]))
+                conn.execute('UPDATE fin_txns SET account_id=?, date=?, direction=?, amount=?, category=?, description=?, doc_no=?, due_date=? WHERE id=?', (*v, old[0]))
                 updated += 1
         else:
-            conn.execute('''INSERT INTO fin_txns (account_id, date, direction, amount, currency, category, description, doc_no, mikro_ref, created_by, created_at)
-                            VALUES (?,?,?,?,'TRY',?,?,?,?,?,?)''', (*v[:4], v[4], v[5], v[6], ref, user_id, db.now()))
+            conn.execute('''INSERT INTO fin_txns (account_id, date, direction, amount, currency, category, description, doc_no, due_date, mikro_ref, created_by, created_at)
+                            VALUES (?,?,?,?,'TRY',?,?,?,?,?,?,?)''', (*v[:4], v[4], v[5], v[6], v[7], ref, user_id, db.now()))
             added += 1
     for ref, old in existing.items():
         guid = ref.split(':')[1] if ref.count(':') >= 2 else ''
@@ -181,9 +229,13 @@ def sync(conn, include_cari=True, user_id=None):
         if stale:
             conn.execute('DELETE FROM fin_txns WHERE id=?', (old[0],))
             deleted += 1
+    try:   # muhasebe (mizan / mali tablolar) — okunamazsa ticari senkron yine tamamlanır
+        ledger = sync_ledger(conn)
+    except Exception as err:   # noqa: BLE001
+        ledger = {'hata': str(err)[:200]}
     unmapped = sorted({r['kod'] for r in rows if _cins(r) == 0 and not links.get(r['kod'])})
     stats = {'at': db.now(), 'banka': len(banks), 'kasa': len(kasas), 'yeni_hesap': new_acc, 'hareket': len(rows),
-             'eklenen': added, 'guncellenen': updated, 'silinen': deleted, 'cari': include_cari, 'cari_eslesmeyen': len(unmapped)}
+             'eklenen': added, 'guncellenen': updated, 'silinen': deleted, 'cari': include_cari, 'cari_eslesmeyen': len(unmapped), 'muhasebe': ledger}
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (KV_KEY, json.dumps(stats, ensure_ascii=False)))
     conn.commit()
     stats['eslesmeyen_kodlar'] = unmapped[:20]

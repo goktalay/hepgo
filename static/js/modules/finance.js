@@ -6,7 +6,8 @@ import { clear, confirmDialog, field, fmtDate, h, matches, modal, moduleToolbar,
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n || 0);
-const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cariler'], ['txns', 'Hareketler']];
+const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cariler'], ['txns', 'Hareketler'], ['cash', 'Nakit Akışı'],
+  ['instruments', 'Çek / Senet'], ['trial', 'Mizan'], ['statements', 'Mali Tablolar']];
 
 export async function render(view, params, ctx) {
   const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'summary';
@@ -16,6 +17,10 @@ export async function render(view, params, ctx) {
   if (sub === 'bank') return accountsView(body, 'bank');
   if (sub === 'cari') return cariView(body);
   if (sub === 'txns') return txnsView(body);
+  if (sub === 'cash') return cashView(body);
+  if (sub === 'instruments') return instrumentsView(body);
+  if (sub === 'trial') return trialView(body);
+  if (sub === 'statements') return statementsView(body);
   return summaryView(body);
 }
 
@@ -221,4 +226,226 @@ async function txnsView(view) {
   accSel.addEventListener('change', load); q.addEventListener('input', draw);
   clear(view, moduleToolbar(addBtn), h('div', { class: 'filters' }, accSel, q), out);
   await load();
+}
+
+// ================= Finans v2 =================
+const today = () => new Date().toISOString().slice(0, 10);
+const yearStart = () => `${new Date().getFullYear()}-01-01`;
+const dt = (v, onChange) => { const i = h('input', { class: 'input', type: 'date', value: v, style: { width: 'auto' } }); i.addEventListener('change', onChange); return i; };
+const short = n => {
+  const a = Math.abs(n || 0), sg = n < 0 ? '−' : '';
+  if (a >= 1e9) return `${sg}${(a / 1e9).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}\u00a0Mr\u00a0₺`;
+  if (a >= 1e6) return `${sg}${(a / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 1 })}\u00a0Mn\u00a0₺`;
+  if (a >= 1e4) return `${sg}${(a / 1e3).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}\u00a0B\u00a0₺`;
+  return money(n);
+};
+const kpi = (label, n, tone) => ({ label, value: short(n), sub: Math.abs(n || 0) >= 1e4 ? money(n) : null, tone });
+const num0 = n => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+const noLedger = () => h('div', { class: 'card card-pad ct-note' }, h('b', null, 'Muhasebe verisi yok. '),
+  'Mizan ve mali tablolar Mikro ERP muhasebe fişlerinden oluşur. Program Ayarları › Entegrasyonlar › Mikro ERP sayfasında “Finans · Banka · Kasa” sekmesinden senkronize edin (otomatik senkron açıksa kendiliğinden gelir).');
+
+// ---------- Nakit akışı ----------
+async function cashView(view) {
+  clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let d;
+  try { d = await api.get('/api/finance/cashflow?weeks=12'); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  const reload = () => cashView(view);
+  const strip = statStrip();
+  const min = Math.min(...d.weeks.map(w => w.balance), d.cash);
+  strip.set([kpi('Bugünkü nakit (kasa + banka)', d.cash, d.cash >= 0 ? 'ok' : 'alert'), kpi('Vadesi geçmiş alacak', d.overdue.in, d.overdue.in ? 'alert' : ''),
+    kpi('Vadesi geçmiş borç', d.overdue.out, d.overdue.out ? 'alert' : ''), kpi('12 hafta sonu tahmini', d.end_balance, d.end_balance >= 0 ? 'ok' : 'alert'),
+    kpi('En düşük nokta', min, min < 0 ? 'alert' : '')]);
+  const canvas = h('canvas', { height: 120 });
+  const items = d.items.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+    h('thead', null, h('tr', null, ['Tarih', 'Tür', 'Kim / Ne', 'Açıklama', 'Giriş', 'Çıkış'].map(x => h('th', null, x)))),
+    h('tbody', null, d.items.map(i => h('tr', null, h('td', null, fmtDate(i.date)), h('td', null, h('span', { class: `badge ${i.dir === 'in' ? 'green' : ''}` }, i.kind)),
+      h('td', null, i.label || '—'), h('td', { class: 'muted small' }, i.detail || ''),
+      h('td', { class: 'num', style: { color: 'var(--ok,#16a34a)' } }, i.dir === 'in' ? money(i.amount) : ''),
+      h('td', { class: 'num', style: { color: 'var(--danger,#dc2626)' } }, i.dir === 'out' ? money(i.amount) : '')))))) :
+    h('div', { class: 'empty' }, 'Önümüzdeki 12 haftada vadesi gelen kalem yok.');
+  const agingCard = (title, a) => h('section', { class: 'card card-pad fin-aging' }, h('div', { class: 'mk-fin-h', style: { padding: 0 } }, h('b', null, title), h('span', { class: 'small muted' }, `Toplam ${money(a.total)}`)),
+    h('div', { class: 'fin-buckets' }, a.labels.map((l, k) => h('div', { class: `fin-bucket b${k}` }, h('small', null, l), h('b', null, money(a.totals[k]))))),
+    a.top.length ? h('table', { class: 'table small' }, h('thead', null, h('tr', null, h('th', null, 'Cari'), ...a.labels.map(l => h('th', { class: 'num' }, l)), h('th', { class: 'num' }, 'Toplam'))),
+      h('tbody', null, a.top.map(r => h('tr', null, h('td', null, r.name), ...r.buckets.map(v => h('td', { class: 'num' }, v ? num0(v) : '')), h('td', { class: 'num' }, h('b', null, num0(r.total))))))) : null);
+  const payday = h('input', { class: 'input', type: 'number', min: 0, max: 28, value: d.settings.payday || '', placeholder: 'yok', style: { width: '80px' } });
+  payday.addEventListener('change', async () => { try { await api.put('/api/finance/settings', { payday: Number(payday.value) || 0, salaries: true }); toast('Maaş günü kaydedildi', 'success'); reload(); } catch (e) { toastError(e); } });
+  clear(view,
+    moduleToolbar(h('button', { class: 'btn primary', type: 'button', onclick: () => planForm(reload) }, '＋ Planlı ödeme / tahsilat'),
+      h('button', { class: 'btn', type: 'button', onclick: () => plansModal(reload) }, 'Planlı kalemler'),
+      h('label', { class: 'small muted', style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, 'Maaş günü (ayın):', payday)),
+    strip,
+    h('section', { class: 'card card-pad' }, h('div', { class: 'mk-fin-h', style: { padding: 0 } }, h('b', null, 'Haftalık nakit akışı (12 hafta)'),
+      h('span', { class: 'small muted' }, 'Açık alacak/borç vadeleri (FIFO), çek/senet, planlı kalemler ve maaş günü')), canvas),
+    h('div', { class: 'fin-two' }, agingCard('Alacak yaşlandırma', d.aging_rec), agingCard('Borç yaşlandırma', d.aging_pay)),
+    h('section', { class: 'card' }, h('div', { class: 'mk-fin-h' }, h('b', null, 'Yaklaşan kalemler'), h('span', { class: 'small muted' }, `${d.items_total} kalem`)), items));
+  loadChart().then(Chart => {
+    const cfg = chartConfig({ type: 'bar', labels: d.weeks.map(w => fmtDate(w.start).slice(0, 5)),
+      datasets: [{ label: 'Giriş', data: d.weeks.map(w => w.in) }, { label: 'Çıkış', data: d.weeks.map(w => w.out) }] }, theme(), true);
+    Object.assign(cfg.data.datasets[0], { backgroundColor: '#22c55e', borderColor: '#22c55e' });
+    Object.assign(cfg.data.datasets[1], { backgroundColor: '#ef4444', borderColor: '#ef4444' });
+    cfg.data.datasets.push({ type: 'line', label: 'Tahmini nakit', data: d.weeks.map(w => w.balance), borderColor: '#7c3aed', backgroundColor: '#7c3aed',
+      borderWidth: 2.5, pointRadius: 3, tension: .3 });
+    new Chart(canvas, cfg);
+  }).catch(() => {});
+}
+
+function planForm(done) {
+  const date = h('input', { class: 'input', type: 'date', value: today() });
+  let dir = 'out';
+  const dirSeg = segmented([['out', 'Ödeme'], ['in', 'Tahsilat']], 'out', v => { dir = v; });
+  const amount = h('input', { class: 'input', type: 'number', step: '0.01' });
+  const desc = h('input', { class: 'input', placeholder: 'ör. Kira, kredi taksidi, SGK primi' });
+  const cat = h('input', { class: 'input', placeholder: 'Kategori (ops.)' });
+  const rep = h('select', { class: 'input' }, h('option', { value: 'none' }, 'Tek sefer'), h('option', { value: 'monthly' }, 'Her ay'));
+  const until = h('input', { class: 'input', type: 'date' });
+  modal({ title: 'Planlı ödeme / tahsilat', body: h('div', null, field('Yön', dirSeg), field('Tarih', date), field('Tutar', amount), field('Açıklama', desc),
+      field('Kategori', cat), field('Tekrar', rep), field('Bitiş (her ay için, ops.)', until)),
+    actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
+      await api.post('/api/finance/plans', { date: date.value, direction: dir, amount: Number(amount.value), description: desc.value, category: cat.value || null, repeat: rep.value, until: until.value || null });
+      toast('Kaydedildi', 'success'); done?.();
+    } }] });
+}
+
+async function plansModal(done) {
+  let rows; try { rows = await api.get('/api/finance/plans'); } catch (e) { return toastError(e); }
+  const m = modal({ title: 'Planlı kalemler', wide: true, body: rows.length ? h('table', { class: 'table' },
+    h('thead', null, h('tr', null, ['Tarih', 'Açıklama', 'Tekrar', 'Tutar', ''].map(x => h('th', null, x)))),
+    h('tbody', null, rows.map(r => h('tr', null, h('td', null, fmtDate(r.date)), h('td', null, r.description, r.category ? h('div', { class: 'small muted' }, r.category) : null),
+      h('td', null, r.repeat === 'monthly' ? `Her ay${r.until ? ` · ${fmtDate(r.until)}’e kadar` : ''}` : 'Tek sefer'),
+      h('td', { class: 'num', style: { color: r.direction === 'in' ? 'var(--ok,#16a34a)' : 'var(--danger,#dc2626)' } }, `${r.direction === 'in' ? '+' : '−'}${money(r.amount)}`),
+      h('td', null, h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { await api.del(`/api/finance/plans/${r.id}`); m.close(); done?.(); } }, 'Sil')))))) :
+    h('div', { class: 'empty' }, 'Planlı kalem yok.'), actions: [{ label: 'Kapat' }] });
+}
+
+// ---------- Çek / senet ----------
+async function instrumentsView(view) {
+  clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let d, firms = [];
+  try { [d, firms] = await Promise.all([api.get('/api/finance/instruments'), api.get('/api/finance/cari')]); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  const reload = () => instrumentsView(view);
+  const open = d.rows.filter(r => ['portfoy', 'tahsilde', 'teminatta'].includes(r.status));
+  const sum = (dir) => open.filter(r => r.direction === dir).reduce((a, r) => a + r.amount, 0);
+  const strip = statStrip();
+  strip.set([kpi('Portföydeki alınan çek/senet', sum('alinan')), kpi('Ödenecek verilen çek/senet', sum('verilen'), sum('verilen') ? 'alert' : ''),
+    kpi('Bu ay vadesi gelen', open.filter(r => r.due_date.slice(0, 7) === today().slice(0, 7)).reduce((a, r) => a + r.amount, 0))]);
+  const ST = d.statuses;
+  const tone = { portfoy: 'blue', tahsilde: 'yellow', teminatta: 'yellow', ciro: '', tahsil: 'green', odendi: 'green', karsiliksiz: 'red', iade: '' };
+  clear(view,
+    moduleToolbar(h('button', { class: 'btn primary', type: 'button', onclick: () => instrForm(null, firms, ST, reload) }, '＋ Çek / senet')),
+    strip,
+    d.rows.length ? h('div', { class: 'card table-wrap' }, h('table', { class: 'table' },
+      h('thead', null, h('tr', null, ['Vade', 'Tür', 'No', 'Cari / keşideci', 'Banka', 'Tutar', 'Durum', ''].map(x => h('th', null, x)))),
+      h('tbody', null, d.rows.map(r => {
+        const late = ['portfoy', 'tahsilde', 'teminatta'].includes(r.status) && r.due_date < today();
+        return h('tr', null, h('td', { class: late ? 'fin-late' : '' }, fmtDate(r.due_date)),
+          h('td', null, `${r.direction === 'alinan' ? 'Alınan' : 'Verilen'} ${r.kind === 'cek' ? 'çek' : 'senet'}`),
+          h('td', { class: 'mono small' }, r.number || '—'), h('td', null, r.company || r.drawer || '—'), h('td', { class: 'small' }, r.bank || '—'),
+          h('td', { class: 'num' }, money(r.amount)), h('td', null, h('span', { class: `badge ${tone[r.status] || ''}` }, ST[r.status] || r.status)),
+          h('td', null, h('button', { class: 'btn sm', type: 'button', onclick: () => instrForm(r, firms, ST, reload) }, 'Düzenle')));
+      })))) : h('div', { class: 'card empty' }, 'Kayıtlı çek / senet yok. “＋ Çek / senet” ile ekleyin; vadeleri nakit akışına otomatik girer.'));
+}
+
+function instrForm(r, firms, ST, done) {
+  r = r || { kind: 'cek', direction: 'alinan', status: 'portfoy', due_date: today() };
+  let kind = r.kind, dir = r.direction;
+  const kindSeg = segmented([['cek', 'Çek'], ['senet', 'Senet']], kind, v => { kind = v; });
+  const dirSeg = segmented([['alinan', 'Alınan (müşteriden)'], ['verilen', 'Verilen (tedarikçiye)']], dir, v => { dir = v; });
+  const number = h('input', { class: 'input', value: r.number || '' });
+  const bank = h('input', { class: 'input', value: r.bank || '', placeholder: 'Banka / şube' });
+  const drawer = h('input', { class: 'input', value: r.drawer || '', placeholder: 'Keşideci / borçlu' });
+  const company = h('select', { class: 'input' }, h('option', { value: '' }, '— cari seçin (ops.) —'), firms.map(f => h('option', { value: f.id, selected: f.id === r.company_id }, f.name)));
+  const amount = h('input', { class: 'input', type: 'number', step: '0.01', value: r.amount || '' });
+  const issue = h('input', { class: 'input', type: 'date', value: r.issue_date || '' });
+  const due = h('input', { class: 'input', type: 'date', value: r.due_date || '' });
+  const status = h('select', { class: 'input' }, Object.entries(ST).map(([k, l]) => h('option', { value: k, selected: k === r.status }, l)));
+  const note = h('input', { class: 'input', value: r.note || '' });
+  const actions = [{ label: 'Vazgeç' }];
+  if (r.id) actions.push({ label: 'Sil', class: 'danger', onClick: async () => { if (!await confirmDialog('Sil', 'Kayıt silinsin mi?', { okLabel: 'Sil', danger: true })) return true; await api.del(`/api/finance/instruments/${r.id}`); done?.(); } });
+  actions.push({ label: 'Kaydet', class: 'primary', onClick: async () => {
+    const b = { kind, direction: dir, number: number.value, bank: bank.value, drawer: drawer.value, company_id: company.value ? Number(company.value) : null,
+      amount: Number(amount.value), issue_date: issue.value || null, due_date: due.value, status: status.value, note: note.value };
+    if (r.id) await api.put(`/api/finance/instruments/${r.id}`, b); else await api.post('/api/finance/instruments', b);
+    toast('Kaydedildi', 'success'); done?.();
+  } });
+  modal({ title: r.id ? 'Çek / senet' : 'Yeni çek / senet', wide: true,
+    body: h('div', { class: 'fin-form2' }, field('Tür', kindSeg), field('Yön', dirSeg), field('Cari', company), field('Keşideci / borçlu', drawer),
+      field('Çek / senet no', number), field('Banka', bank), field('Tutar (TL)', amount), field('Düzenleme tarihi', issue), field('Vade', due),
+      field('Durum', status), field('Not', note)), actions });
+}
+
+// ---------- Mizan ----------
+async function trialView(view) {
+  let from = yearStart(), to = today(), level = 3, q = '';
+  const levelSel = h('select', { class: 'input', style: { width: 'auto' } }, [[1, 'Sınıf'], [2, 'Grup'], [3, 'Ana hesap'], [4, 'Alt hesap'], [9, 'Tüm detay']]
+    .map(([v, l]) => h('option', { value: v, selected: v === 3 }, l)));
+  const search = h('input', { class: 'input', type: 'search', placeholder: 'Hesap kodu / adı ara…', style: { maxWidth: '220px' } });
+  const out = h('div');
+  const load = async () => {
+    clear(out, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+    let d;
+    try { d = await api.get(`/api/finance/trial?date_from=${from}&date_to=${to}&level=${level}`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
+    if (!d.has_ledger) return clear(out, noLedger());
+    const rows = d.rows.filter(r => matches(q, r.code, r.name));
+    clear(out, h('div', { class: 'card table-wrap' }, h('table', { class: 'table fin-trial' },
+      h('thead', null, h('tr', null, h('th', null, 'Hesap'), h('th', null, 'Hesap adı'), h('th', { class: 'num' }, 'Borç'), h('th', { class: 'num' }, 'Alacak'),
+        h('th', { class: 'num' }, 'Borç bakiye'), h('th', { class: 'num' }, 'Alacak bakiye'))),
+      h('tbody', null, rows.map(r => h('tr', { class: `d${Math.min(r.depth, 5)} ${r.has_children ? 'grp' : ''}`, onclick: () => ledgerModal(r.code, r.name, from, to) },
+        h('td', { class: 'mono' }, r.code), h('td', null, r.name || '—'), h('td', { class: 'num' }, num0(r.debit)), h('td', { class: 'num' }, num0(r.credit)),
+        h('td', { class: 'num' }, r.bal_debit ? num0(r.bal_debit) : ''), h('td', { class: 'num' }, r.bal_credit ? num0(r.bal_credit) : '')))),
+      h('tfoot', null, h('tr', null, h('td', { colspan: 2 }, h('b', null, 'Toplam'), d.balanced ? h('span', { class: 'badge green', style: { marginLeft: '8px' } }, 'Dengeli') : h('span', { class: 'badge red', style: { marginLeft: '8px' } }, 'Dengesiz')),
+        ...['debit', 'credit', 'bal_debit', 'bal_credit'].map(k => h('td', { class: 'num' }, h('b', null, num0(d.total[k])))))))));
+  };
+  levelSel.addEventListener('change', () => { level = Number(levelSel.value); load(); });
+  let st; search.addEventListener('input', () => { clearTimeout(st); st = setTimeout(() => { q = search.value.trim(); load(); }, 300); });
+  clear(view, h('div', { class: 'filters' }, h('span', { class: 'small muted' }, 'Dönem'), dt(from, e => { from = e.target.value; load(); }), dt(to, e => { to = e.target.value; load(); }),
+    h('span', { class: 'small muted' }, 'Seviye'), levelSel, search, h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, 'Satıra dokunun: hesap ekstresi')), out);
+  load();
+}
+
+async function ledgerModal(code, name, from, to) {
+  let d;
+  try { d = await api.get(`/api/finance/ledger?account=${encodeURIComponent(code)}&date_from=${from}&date_to=${to}`); } catch (e) { return toastError(e); }
+  modal({ title: `${code} ${name || ''} · ekstre`, wide: true,
+    body: h('div', null, h('div', { class: 'small muted', style: { marginBottom: '8px' } }, `Devreden: ${money(d.opening)} · Kapanış: ${money(d.closing)} · ${d.rows.length} satır`),
+      h('div', { class: 'table-wrap', style: { maxHeight: '60vh' } }, h('table', { class: 'table small' },
+        h('thead', null, h('tr', null, ['Tarih', 'Yevmiye', 'Hesap', 'Açıklama', 'Borç', 'Alacak', 'Bakiye'].map(x => h('th', null, x)))),
+        h('tbody', null, d.rows.slice(-1500).map(r => h('tr', null, h('td', null, fmtDate(r.date)), h('td', { class: 'mono' }, r.journal_no || ''), h('td', { class: 'mono' }, r.account),
+          h('td', null, r.description || r.doc_no || ''), h('td', { class: 'num' }, r.debit ? num0(r.debit) : ''), h('td', { class: 'num' }, r.credit ? num0(r.credit) : ''),
+          h('td', { class: 'num' }, num0(r.balance)))))))),
+    actions: [{ label: 'Kapat' }] });
+}
+
+// ---------- Mali tablolar ----------
+async function statementsView(view) {
+  let from = yearStart(), to = today();
+  const out = h('div');
+  const load = async () => {
+    clear(out, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+    let d;
+    try { d = await api.get(`/api/finance/statements?date_from=${from}&date_to=${to}`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
+    if (!d.has_ledger) return clear(out, noLedger());
+    const k = d.kpi;
+    const strip = statStrip();
+    strip.set([kpi('Net satışlar', k.net_satis), kpi('Brüt kâr', k.brut_kar, k.brut_kar >= 0 ? 'ok' : 'alert'),
+      kpi('Faaliyet kârı', k.faaliyet_kar, k.faaliyet_kar >= 0 ? 'ok' : 'alert'), kpi('Net kâr', k.net_kar, k.net_kar >= 0 ? 'ok' : 'alert'),
+      { label: 'Brüt / net marj', value: k.brut_marj == null ? '—' : `%${k.brut_marj} / %${k.net_marj}` }]);
+    const income = h('section', { class: 'card card-pad' }, h('h3', null, 'Gelir tablosu'), h('div', { class: 'small muted' }, `${fmtDate(d.date_from)} – ${fmtDate(d.date_to)}`),
+      h('table', { class: 'table fin-is' }, h('tbody', null, d.income.map(r => h('tr', { class: r.total ? 'tot' : '' }, h('td', { class: 'muted' }, r.code),
+        h('td', null, r.label), h('td', { class: `num ${r.amount < 0 ? 'neg' : ''}` }, num0(r.amount)))))),
+      d.yansitilmamis ? h('p', { class: 'small muted' }, `Not: 7/A maliyet hesaplarında henüz 6’ya yansıtılmamış ${money(d.yansitilmamis)} faaliyet/finansman gideri tabloya dahil edildi.`) : null,
+      d.uretim_maliyeti ? h('p', { class: 'small muted' }, `Üretim maliyetleri (71–74) ${money(d.uretim_maliyeti)}: stoğa / satılan mamul maliyetine yansıtılır, doğrudan gider değildir.`) : null);
+    const b = d.balance;
+    const side = (title, rows, extra) => h('div', { class: 'fin-bs-side' }, h('b', null, title),
+      h('table', { class: 'table' }, h('tbody', null, rows.map(r => h('tr', null, h('td', { class: 'mono muted' }, r.code), h('td', null, r.name), h('td', { class: 'num' }, num0(r.amount)))),
+        extra || null)));
+    const balance = h('section', { class: 'card card-pad' }, h('h3', null, 'Bilanço özeti'), h('div', { class: 'small muted' }, `${fmtDate(d.date_to)} itibarıyla (kapanmamış dönem)`),
+      h('div', { class: 'fin-bs' }, side('Aktif', b.aktif), side('Pasif', b.pasif, h('tr', null, h('td'), h('td', null, 'Dönem kârı / zararı'), h('td', { class: 'num' }, num0(b.donem_sonucu))))),
+      h('div', { class: 'fin-bs fin-bs-tot' }, h('div', null, 'Toplam aktif ', h('b', null, money(b.toplam_aktif))), h('div', null, 'Toplam pasif ', h('b', null, money(b.toplam_pasif)))),
+      h('details', { class: 'fin-bs-detail' }, h('summary', null, 'Ana hesap kırılımı'), h('table', { class: 'table small' }, h('tbody', null,
+        b.detail.map(r => h('tr', null, h('td', { class: 'mono' }, r.code), h('td', null, r.name), h('td', { class: 'num' }, num0(r.amount))))))));
+    clear(out, strip, h('div', { class: 'fin-stack' }, income, balance));
+  };
+  clear(view, h('div', { class: 'filters' }, h('span', { class: 'small muted' }, 'Dönem'), dt(from, e => { from = e.target.value; load(); }), dt(to, e => { to = e.target.value; load(); }),
+    h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, 'Kaynak: Mikro ERP muhasebe fişleri')), out);
+  load();
 }

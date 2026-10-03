@@ -218,7 +218,19 @@ def list_fin_hareket():
     return query("""SELECT CAST(cha_Guid AS varchar(40)) AS guid, cha_tarihi AS tarih, cha_cari_cins AS cins, cha_kod AS kod,
             cha_kasa_hizmet AS kh, cha_kasa_hizkod AS khkod, cha_tip AS tip, cha_meblag AS tutar, cha_evrak_tip AS ev,
             cha_cinsi AS ci, cha_evrakno_seri AS seri, cha_evrakno_sira AS sira, cha_belge_no AS belge, cha_aciklama AS aciklama,
-            cha_d_cins AS dc, cha_d_kur AS kur
+            cha_d_cins AS dc, cha_d_kur AS kur, cha_vade AS vade
         FROM CARI_HESAP_HAREKETLERI
         WHERE cha_iptal = 0 AND (cha_cari_cins IN (0, 2, 4) OR cha_kasa_hizmet IN (2, 4))
         ORDER BY cha_tarihi, cha_evrakno_sira""")
+
+
+def list_coa():
+    """Muhasebe hesap planı (kod → ad)."""
+    return query("SELECT muh_hesap_kod AS kod, muh_hesap_isim1 AS ad FROM MUHASEBE_HESAP_PLANI ORDER BY muh_hesap_kod")
+
+
+def list_ledger():
+    """Muhasebe fiş satırları (iptaller hariç). meblag0 işaretli: borç +, alacak − (ana döviz TL)."""
+    return query("""SELECT CAST(fis_Guid AS varchar(40)) AS guid, fis_tarih AS tarih, fis_yevmiye_no AS yevmiye, fis_sira_no AS sira,
+            fis_tur AS tur, fis_hesap_kod AS hesap, fis_aciklama1 AS aciklama, fis_meblag0 AS tutar, fis_tic_belgeno AS belge
+        FROM MUHASEBE_FISLERI WHERE fis_iptal = 0 ORDER BY fis_tarih, fis_sira_no, fis_satir_no""")

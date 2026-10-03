@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.107.0'
+VERSION = '2.108.0'
 
 CHANGELOG = [
+    {'version': '2.108.0', 'date': '2026-10-03', 'title': 'Finans v2: nakit akışı, çek/senet, mizan, mali tablolar',
+     'changes': [
+         'Mizan: Mikro muhasebe fişlerinden; dönem ve seviye (sınıf / grup / ana hesap / alt hesap / tüm detay), borç-alacak toplamları ve bakiyeler, dengeli kontrolü; satıra dokununca hesap ekstresi (yürüyen bakiye).',
+         'Mali tablolar: gelir tablosu (net satış, brüt kâr, faaliyet kârı, net kâr, marjlar; 7/A’da yansıtılmamış giderler dahil) ve bilanço özeti (aktif = pasif + dönem sonucu).',
+         'Nakit akışı: 12 haftalık tahmin — açık alacak/borçlar vadesine göre (FIFO kapama, Mikro vade tarihleri), çek/senet vadeleri, planlı ödeme/tahsilatlar (kira, kredi taksidi; aylık tekrar) ve maaş günü; yürüyen nakit grafiği; alacak ve borç yaşlandırma (0–30 / 31–60 / 61–90 / 90+ gün).',
+         'Çek / senet portföyü: alınan / verilen, banka, keşideci, vade, durum (portföyde, tahsilde, teminatta, ciro, tahsil, ödendi, karşılıksız, iade); vadeler nakit akışına otomatik girer.',
+         'Mikro senkronu artık hesap planını, muhasebe fişlerini ve cari vade tarihlerini de getiriyor (otomatik senkronla düzenli güncellenir).',
+     ]},
     {'version': '2.107.0', 'date': '2026-10-03', 'title': 'Üyelik sözleşmeleri (Merkez + firma paneli)',
      'changes': [
          'Merkez › Üyelik Yönetimi › Sözleşmeler: Abonelik ve Hizmet Sözleşmesi, KVKK Veri İşleme Sözleşmesi, Hizmet Seviyesi Taahhüdü (SLA) ve Kabul Edilebilir Kullanım Politikası taslakları; düzenleme (firma alanları + canlı önizleme), yayınlama, yeni sürüm, yayından kaldırma.',

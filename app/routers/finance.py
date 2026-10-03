@@ -222,3 +222,149 @@ def cari_list(supplier: int = -1, user=Depends(fin_user), conn=db.DB):
 def cari_statement(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
     """Firmanın cari ekstresi (hesap yoksa açılır)."""
     return statement(_cari_account(conn, company_id), date_from, date_to, user, conn)
+
+
+# ================= Finans v2: mizan, mali tablolar, nakit akışı, çek / senet, planlı ödemeler =================
+import json as _json   # noqa: E402
+
+from .. import finance_reports as fr   # noqa: E402
+
+SET_KEY = 'fin.settings'
+
+
+def _settings(conn):
+    r = conn.execute('SELECT v FROM app_kv WHERE k=?', (SET_KEY,)).fetchone()
+    try:
+        s = _json.loads(r[0]) if r else {}
+    except ValueError:
+        s = {}
+    return {'payday': int(s.get('payday') or 0), 'salaries': s.get('salaries', True)}
+
+
+@router.get('/trial')
+def trial(date_from: str = '', date_to: str = '', level: int = 3, user=Depends(fin_user), conn=db.DB):
+    """Mizan (Mikro muhasebe fişlerinden)."""
+    return {**fr.trial_balance(conn, date_from, date_to, max(1, min(level, 9))), 'has_ledger': fr.has_ledger(conn)}
+
+
+@router.get('/ledger')
+def ledger(account: str, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+    return fr.account_ledger(conn, account.strip(), date_from, date_to)
+
+
+@router.get('/statements')
+def fin_statements(date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+    return {**fr.statements(conn, date_from, date_to), 'has_ledger': fr.has_ledger(conn)}
+
+
+@router.get('/cashflow')
+def fin_cashflow(weeks: int = 12, user=Depends(fin_user), conn=db.DB):
+    st = _settings(conn)
+    return {**fr.cashflow(conn, max(4, min(weeks, 52)), st['payday'], st['salaries']), 'settings': st}
+
+
+class FinSettingsIn(BaseModel):
+    payday: int = 0
+    salaries: bool = True
+
+
+@router.put('/settings')
+def fin_settings(body: FinSettingsIn, user=Depends(fin_user), conn=db.DB):
+    v = {'payday': max(0, min(body.payday, 28)), 'salaries': body.salaries}
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (SET_KEY, _json.dumps(v)))
+    conn.commit()
+    return v
+
+
+# ---- Çek / senet
+INSTR_STATUS = {'portfoy': 'Portföyde', 'tahsilde': 'Bankada tahsilde', 'teminatta': 'Teminatta', 'ciro': 'Ciro edildi',
+                'tahsil': 'Tahsil edildi', 'odendi': 'Ödendi', 'karsiliksiz': 'Karşılıksız / protestolu', 'iade': 'İade edildi'}
+
+
+class InstrIn(BaseModel):
+    kind: str = 'cek'
+    direction: str = 'alinan'
+    number: Optional[str] = None
+    bank: Optional[str] = None
+    drawer: Optional[str] = None
+    company_id: Optional[int] = None
+    amount: float
+    issue_date: Optional[str] = None
+    due_date: str
+    status: str = 'portfoy'
+    note: Optional[str] = None
+
+
+def _instr_clean(b: InstrIn):
+    if b.kind not in ('cek', 'senet') or b.direction not in ('alinan', 'verilen') or b.status not in INSTR_STATUS:
+        raise HTTPException(400, 'Geçersiz tür / yön / durum')
+    if not b.amount or b.amount <= 0 or not b.due_date:
+        raise HTTPException(400, 'Tutar ve vade tarihi gerekli')
+    return (b.kind, b.direction, (b.number or '').strip() or None, (b.bank or '').strip() or None, (b.drawer or '').strip() or None,
+            b.company_id, round(b.amount, 2), b.issue_date or None, b.due_date[:10], b.status, (b.note or '').strip() or None)
+
+
+@router.get('/instruments')
+def instruments(status: str = '', user=Depends(fin_user), conn=db.DB):
+    rows = db.rows(conn.execute('''SELECT i.*, c.name AS company FROM fin_instruments i LEFT JOIN companies c ON c.id=i.company_id
+                                   ORDER BY CASE WHEN i.status IN ('portfoy','tahsilde','teminatta') THEN 0 ELSE 1 END, i.due_date'''))
+    return {'rows': rows, 'statuses': INSTR_STATUS}
+
+
+@router.post('/instruments')
+def instrument_add(body: InstrIn, user=Depends(fin_user), conn=db.DB):
+    now = db.now()
+    cur = conn.execute('''INSERT INTO fin_instruments (kind, direction, number, bank, drawer, company_id, amount, issue_date, due_date, status, note,
+                          created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (*_instr_clean(body), user['id'], now, now))
+    db.audit(conn, user['id'], 'Çek/senet kaydı', 'fin_instrument', cur.lastrowid, f'{body.kind} {body.amount}')
+    conn.commit()
+    return {'id': cur.lastrowid}
+
+
+@router.put('/instruments/{iid}')
+def instrument_edit(iid: int, body: InstrIn, user=Depends(fin_user), conn=db.DB):
+    conn.execute('''UPDATE fin_instruments SET kind=?, direction=?, number=?, bank=?, drawer=?, company_id=?, amount=?, issue_date=?, due_date=?,
+                    status=?, note=?, updated_at=? WHERE id=?''', (*_instr_clean(body), db.now(), iid))
+    conn.commit()
+    return {'ok': True}
+
+
+@router.delete('/instruments/{iid}')
+def instrument_del(iid: int, user=Depends(fin_user), conn=db.DB):
+    conn.execute('DELETE FROM fin_instruments WHERE id=?', (iid,))
+    conn.commit()
+    return {'ok': True}
+
+
+# ---- Planlı ödeme / tahsilat
+class PlanIn(BaseModel):
+    date: str
+    direction: str = 'out'
+    amount: float
+    description: str
+    category: Optional[str] = None
+    repeat: str = 'none'
+    until: Optional[str] = None
+
+
+@router.get('/plans')
+def plans(user=Depends(fin_user), conn=db.DB):
+    return db.rows(conn.execute('SELECT * FROM fin_plans ORDER BY date'))
+
+
+@router.post('/plans')
+def plan_add(body: PlanIn, user=Depends(fin_user), conn=db.DB):
+    if body.direction not in ('in', 'out') or body.amount <= 0 or not body.description.strip() or not body.date:
+        raise HTTPException(400, 'Tarih, yön, tutar ve açıklama gerekli')
+    cur = conn.execute('INSERT INTO fin_plans (date, direction, amount, description, category, repeat, until, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                       (body.date[:10], body.direction, round(body.amount, 2), body.description.strip()[:200], (body.category or '').strip() or None,
+                        body.repeat if body.repeat in ('none', 'monthly') else 'none', (body.until or '')[:10] or None, user['id'], db.now()))
+    conn.commit()
+    return {'id': cur.lastrowid}
+
+
+@router.delete('/plans/{pid}')
+def plan_del(pid: int, user=Depends(fin_user), conn=db.DB):
+    conn.execute('DELETE FROM fin_plans WHERE id=?', (pid,))
+    conn.commit()
+    return {'ok': True}

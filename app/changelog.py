@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.83.0'
+VERSION = '2.84.0'
 
 CHANGELOG = [
+    {'version': '2.84.0', 'date': '2026-10-03', 'title': 'Canlı yüz çerçeveleri + ayarlanabilir tanıma hassasiyeti',
+     'changes': [
+         'İzleme ekranında yüzlerin etrafına çerçeve: bilinen kişi yeşil + adı altında yazılı, bilinmeyen kırmızı.',
+         'Yüz tanıma hassasiyeti (algılama eşiği + en küçük yüz) NVR eklenti ayarlarından değiştirilebilir — anında geçerli.',
+         'Varsayılan eşik 0.90’dan 0.60’a çekildi; giriş kameralarında yürüyen / açılı yüzler artık daha çok yakalanır.',
+     ]},
     {'version': '2.83.0', 'date': '2026-10-03', 'title': 'Google Haritalar entegrasyonu + Kameralar düzeltmeleri',
      'changes': [
          'Entegrasyonlar’a Google Haritalar API anahtarı eklendi; Güvenlik › Bina Kontrol haritası artık Google Haritalar (arazi/terrain) görünümünde — bina tanınır (anahtar yoksa açık kaynak haritaya düşer).',

@@ -32,9 +32,9 @@ FACE_DIR = config.UPLOAD_DIR / 'camfaces'
 CLIP_SECONDS, CLIP_FPS = 6, 5                    # kaydedilen klip: görülme öncesi ~6 sn, 5 kare/sn
 _CH_RE = re.compile(r'/unicast/c(\d+)/')         # NVR kanal numarası (stream_url'den)
 LIVE_EVERY, LIVE_WIDTH = 0.2, 960        # izleme karesi
-FACE_EVERY, FACE_WIDTH = 0.5, 1280       # yüz arama
+FACE_EVERY, FACE_WIDTH = 0.5, 1600       # yüz arama (giriş kameralarında uzak/açılı yüzler için daha geniş)
 FRAME_WIDTH = 1920                       # saklanan tam kare
-MIN_FACE, MIN_SCORE = 44, 0.9
+MIN_FACE, MIN_SCORE = 36, 0.6            # yürüyen/açılı yüzler 0.9'u geçemiyordu; 0.6 daha çok yakalar
 SAME_GROUP = 0.40                        # SFace kosinüs: aynı kişinin grubu
 STORE_EVERY = 20                         # sn: aynı grup, aynı kamera için görülme saklama aralığı
 RELOAD_EVERY = 10                        # sn: kamera listesi ve gruplar
@@ -100,6 +100,38 @@ class Identities:
                     return gid, None
             return None, who
 
+    def identify(self, emb):
+        """Salt-okunur: yüz tanınan (atanmış ya da eğitilmiş) bir kişiye mi ait? ('person'|'user', id) ya da None.
+        Canlı çerçeve etiketi için; grupları değiştirmez."""
+        with self.lock:
+            best, sim0 = None, SAME_GROUP
+            for g in self.groups.values():
+                if g.get('person_id') or g.get('user_id'):
+                    sim = float(np.dot(g['c'], emb))
+                    if sim >= sim0:
+                        best = ('person', g['person_id']) if g['person_id'] else ('user', g['user_id'])
+                        sim0 = sim
+            if best:
+                return best
+            who, who_sim = None, KNOWN_PERSON
+            for key, v in self.known:
+                sim = float(np.dot(v, emb))
+                if sim >= who_sim:
+                    who, who_sim = key, sim
+            return who
+
+
+def _write_overlay(cid, boxes):
+    """Canlı çerçeve metadata'sı (yüz kutuları + kimlik) — izleme ekranı overlay'i için. live/<cid>.json."""
+    try:
+        LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        p = LIVE_DIR / f'{cid}.json'
+        tmp = p.with_suffix('.json.tmp')
+        tmp.write_text(json.dumps({'boxes': boxes, 'ts': time.time()}))
+        os.replace(tmp, p)
+    except Exception:   # noqa: BLE001
+        pass
+
 
 def _channel_of(stream_url):
     m = _CH_RE.search(stream_url or '')
@@ -112,6 +144,8 @@ class Schedule:
     def __init__(self):
         self.ch = {}
         self.shift = {k: list(v) for k, v in shifts.DEFAULT.items()}
+        self.score = MIN_SCORE      # yüz tanıma eşiği (eklenti ayarlarından değişir)
+        self.min_face = MIN_FACE
 
     def reload(self):
         try:
@@ -119,7 +153,12 @@ class Schedule:
                 self.shift = shifts.get(conn)
                 row = conn.execute("SELECT v FROM app_kv WHERE k = 'nvr_channels'").fetchone()
                 self.ch = json.loads(row[0]) if row else {}
-        except Exception:   # noqa: BLE001 — okunamazsa hepsi aktif sayılır
+                cfg = conn.execute("SELECT v FROM app_kv WHERE k = 'facerec_config'").fetchone()
+                if cfg:
+                    d = json.loads(cfg[0])
+                    self.score = float(d.get('score', MIN_SCORE))
+                    self.min_face = int(d.get('min_face', MIN_FACE))
+        except Exception:   # noqa: BLE001 — okunamazsa varsayılanlar
             self.ch = {}
 
     def active(self, channel):
@@ -282,22 +321,29 @@ class Camera:
                 continue   # kanalın zamanlaması dışında (ör. sadece gündüz) — yüz tanıma atlanır
             seen_at, frame = self.latest
             try:
+                score_thr = self.sched.score if self.sched else MIN_SCORE
+                min_face = self.sched.min_face if self.sched else MIN_FACE
+                detector.setScoreThreshold(score_thr)   # eşik eklenti ayarlarından değişebilir
                 img = _resize(frame, FACE_WIDTH)
                 h, w = img.shape[:2]
                 detector.setInputSize((w, h))
                 _, faces = detector.detect(img)
-                if faces is None:
-                    continue
+                boxes = []
                 full = None
                 now_iso = db.now()
-                for f in faces:
-                    if min(f[2], f[3]) < MIN_FACE:
+                for f in (faces if faces is not None else []):
+                    if min(f[2], f[3]) < min_face:
                         continue
                     emb = _norm(recognizer.feature(recognizer.alignCrop(img, f)).flatten().astype(np.float32))
+                    who = self.ident.identify(emb)   # canlı çerçeve etiketi (salt-okunur)
+                    boxes.append({'x': round(float(f[0]) / w, 4), 'y': round(float(f[1]) / h, 4),
+                                  'w': round(float(f[2]) / w, 4), 'h': round(float(f[3]) / h, 4),
+                                  'kind': who[0] if who else None, 'id': who[1] if who else None})
                     full = full if full is not None else _resize(frame, FRAME_WIDTH)
                     sid = _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso)
                     if sid:
                         self._save_clip(sid)
+                _write_overlay(self.row['id'], boxes)   # yüz yoksa boş → çerçeveler temizlenir
             except Exception:
                 log.exception('yüz işleme hatası (kamera %s)', self.row['id'])
 

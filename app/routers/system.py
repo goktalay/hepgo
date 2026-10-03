@@ -284,6 +284,35 @@ def put_nvr_capacity(body: NvrCapacityIn, user=Depends(auth.current_user), conn=
     return {'gpu': cap}
 
 
+@router.get('/nvr/facerec')
+def get_facerec(user=Depends(auth.current_user), conn=db.DB):
+    """Yüz tanıma hassasiyeti (eşik + en küçük yüz). Düşük eşik = daha çok yüz yakalar (daha çok yanlış olabilir)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    row = conn.execute("SELECT v FROM app_kv WHERE k = 'facerec_config'").fetchone()
+    cfg = json.loads(row[0]) if row else {}
+    return {'score': cfg.get('score', 0.6), 'min_face': cfg.get('min_face', 36)}
+
+
+class FacerecIn(BaseModel):
+    score: float = 0.6
+    min_face: int = 36
+
+
+@router.put('/nvr/facerec')
+def put_facerec(body: FacerecIn, user=Depends(auth.current_user), conn=db.DB):
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    score = round(max(0.1, min(0.99, body.score)), 2)
+    min_face = max(16, min(240, body.min_face))
+    conn.execute("INSERT OR REPLACE INTO app_kv (k, v) VALUES ('facerec_config', ?)",
+                 (json.dumps({'score': score, 'min_face': min_face}),))
+    conn.commit()
+    _push_face_config(conn)   # fabrika tanıma servisine aktar (anında geçerli)
+    db.audit(conn, user['id'], 'Yüz tanıma hassasiyeti güncellendi', 'settings', None, f'eşik={score} min={min_face}')
+    return {'score': score, 'min_face': min_face}
+
+
 @router.get('/nvr/stat')
 def nvr_stat(user=Depends(auth.current_user)):
     """NVR'ın çalıştığı fabrika makinesinin canlı CPU/GPU/RAM grafiği (yüz-tanıma yükü)."""

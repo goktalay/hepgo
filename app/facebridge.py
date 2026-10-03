@@ -58,10 +58,12 @@ def push(conn):
     from . import shifts
     row = conn.execute("SELECT v FROM app_kv WHERE k = 'nvr_channels'").fetchone()
     channels = json.loads(row[0]) if row else {}
+    frow = conn.execute("SELECT v FROM app_kv WHERE k = 'facerec_config'").fetchone()
+    facerec = json.loads(frow[0]) if frow else {'score': 0.6, 'min_face': 36}
     enroll = [{'subject_type': r[0], 'user_id': r[1], 'person_id': r[2], 'embedding': base64.b64encode(r[3]).decode()}
               for r in conn.execute('SELECT subject_type, user_id, person_id, embedding FROM face_enroll')]
     cfg = {
         'nvr': {'host': config.NVR_HOST, 'port': config.NVR_PORT, 'user': config.NVR_USER, 'password': config.NVR_PASSWORD},
-        'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll,
+        'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll, 'facerec': facerec,
     }
     return rpc('push_config', cfg=cfg)

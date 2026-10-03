@@ -35,17 +35,55 @@ async function renderWall(box) {
   const grid = h('div', { class: 'cw-grid' });
   const wall = h('div', { class: 'cw' });
   let tiles = [];
+  let overlays = {};   // cam_id → [{x,y,w,h,known,label}]
   let alive = true;
   onLeave(() => { alive = false; tiles.forEach(t => t.stop()); if (wall.classList.contains('cw-full')) setFull(false); });
+  // Yüz çerçevelerini toplu çek (görünen kameralar için) ve her kareye çizdir
+  async function overlayLoop() {
+    if (!alive) return;
+    const ids = [...new Set(tiles.map(t => t.camId()).filter(Boolean))];
+    if (ids.length) {
+      try { overlays = (await api.get(`/api/cameras/overlays?ids=${ids.join(',')}`)).overlays || {}; tiles.forEach(t => t.drawBoxes()); } catch { /* */ }
+    }
+    if (alive) setTimeout(overlayLoop, 500);
+  }
+  const onResize = () => tiles.forEach(t => t.drawBoxes());
+  window.addEventListener('resize', onResize);
+  onLeave(() => window.removeEventListener('resize', onResize));
 
   function tile(i) {
     const img = h('img', { alt: '' });
+    const canvas = h('canvas', { class: 'cw-canvas' });
     const over = h('div', { class: 'cw-over' });
     const sel = h('select', { class: 'cw-sel', title: 'Bu karede gösterilecek kamera' },
       h('option', { value: '' }, '— Boş —'), cams.map(c => h('option', { value: c.id, selected: c.id === cfg.slots[i] }, c.name)));
-    const el = h('div', { class: 'cw-tile' }, img, over, h('div', { class: 'cw-head' }, sel));
+    const el = h('div', { class: 'cw-tile' }, img, canvas, over, h('div', { class: 'cw-head' }, sel));
     let etag = null, url = null, stopped = false;
     const camId = () => Number(sel.value) || null;
+    // Yüz çerçeveleri: bilinen=yeşil + ad, bilinmeyen=kırmızı. Normalize kutular görüntünün (contain) konumuna ölçeklenir.
+    const drawBoxes = () => {
+      const boxes = overlays[camId()] || [];
+      const W = el.clientWidth, H = el.clientHeight;
+      canvas.width = W; canvas.height = H;
+      const cx = canvas.getContext('2d');
+      cx.clearRect(0, 0, W, H);
+      if (!boxes.length || !img.naturalWidth) return;
+      const scale = Math.min(W / img.naturalWidth, H / img.naturalHeight);
+      const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+      const ox = (W - dw) / 2, oy = (H - dh) / 2;
+      cx.lineWidth = Math.max(2, Math.round(W / 320)); cx.font = `${Math.max(12, Math.round(W / 36))}px sans-serif`;
+      for (const b of boxes) {
+        const x = ox + b.x * dw, y = oy + b.y * dh, w = b.w * dw, hgt = b.h * dh;
+        const col = b.known ? '#16a34a' : '#dc2626';
+        cx.strokeStyle = col; cx.strokeRect(x, y, w, hgt);
+        const label = b.known ? (b.label || 'Tanınan') : null;
+        if (label) {
+          const tw = cx.measureText(label).width + 10, th = Math.max(16, Math.round(W / 28));
+          cx.fillStyle = col; cx.fillRect(x, y + hgt, Math.max(w, tw), th);
+          cx.fillStyle = '#fff'; cx.textBaseline = 'middle'; cx.fillText(label, x + 5, y + hgt + th / 2);
+        }
+      }
+    };
     sel.addEventListener('change', () => { cfg.slots[i] = camId(); save(); etag = null; img.removeAttribute('src'); loop(); });
     el.addEventListener('dblclick', e => { if (e.target !== sel) el.classList.toggle('max'); });
     const period = () => (cfg.layout <= 4 ? 250 : cfg.layout <= 9 ? 400 : 600);
@@ -70,8 +108,9 @@ async function renderWall(box) {
       } catch { over.hidden = false; over.textContent = 'Bağlantı yok'; }
       if (camId() === id) timer = setTimeout(loop, period());
     }
+    img.addEventListener('load', drawBoxes);
     loop();
-    return { el, stop: () => { stopped = true; clearTimeout(timer); if (url) URL.revokeObjectURL(url); } };
+    return { el, camId, drawBoxes, stop: () => { stopped = true; clearTimeout(timer); if (url) URL.revokeObjectURL(url); } };
   }
 
   function draw() {
@@ -94,8 +133,9 @@ async function renderWall(box) {
   const autoBtn = h('button', { class: 'btn', type: 'button', onclick: () => { cfg.slots = active.map(c => c.id); save(); draw(); } }, 'Sırayla yerleştir');
   wall.append(h('div', { class: 'cw-bar' }, h('span', { class: 'small muted' }, 'Düzen'), layoutSeg, autoBtn, h('span', { class: 'spacer' }),
     h('span', { class: 'small muted' }, 'Kareye çift tıklayınca büyür'), fullBtn), grid);
-  clear(box, cams.length ? wall : h('div', { class: 'card empty' }, 'Kayıtlı kamera yok. "Kamera Listesi"nden ekleyin ya da ağda bulun.'));
+  clear(box, cams.length ? wall : h('div', { class: 'card empty' }, 'Kayıtlı kamera yok. NVR entegrasyonunda kanallarda yüz tanımayı açın.'));
   draw();
+  overlayLoop();
 }
 
 // ---------- Kamera listesi

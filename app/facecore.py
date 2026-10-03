@@ -126,6 +126,26 @@ def events(conn, date_from, date_to, kind='known', limit=500):
             WHERE {where} ORDER BY s.at DESC LIMIT ?''', (*args, min(limit, 2000))))}
 
 
+def overlays(conn, ids):
+    """Canlı çerçeve metadata'sı (yüz kutuları + kimlik) — izleme ekranı overlay'i. live/<cid>.json'dan, bayatları atar."""
+    import json as _json
+    import time
+    live = config.DATA_DIR / 'cameras' / 'live'
+    now, out = time.time(), {}
+    for cid in ids or []:
+        p = live / f'{int(cid)}.json'
+        if not p.is_file():
+            continue
+        try:
+            d = _json.loads(p.read_text())
+        except Exception:   # noqa: BLE001
+            continue
+        if now - d.get('ts', 0) > 6:   # 6 sn'den eski → kamera o an yüz görmüyor
+            continue
+        out[str(int(cid))] = d.get('boxes', [])
+    return {'overlays': out}
+
+
 def cameras_list(conn):
     """Kamera listesi (şifre hariç) — Kameralar sekmesi. Canlı kare yaşı yerel live dizininden."""
     import time
@@ -153,6 +173,8 @@ def push_config(conn, cfg):
         config.NVR_PORT = int(nv['port'])
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('nvr_channels', json.dumps(cfg.get('channels') or {})))
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('shift_config', json.dumps(cfg.get('shift') or {})))
+    if cfg.get('facerec') is not None:
+        conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('facerec_config', json.dumps(cfg.get('facerec'))))
     # Eğitim izleri (bulut face_enroll aynası) — eşleştirme için embedding yeterli; kırpık yer tutucu
     conn.execute('DELETE FROM face_enroll')
     n = 0
@@ -188,6 +210,8 @@ def rpc(conn, method, args):
         return events(conn, a['date_from'], a['date_to'], a.get('kind', 'known'), a.get('limit', 500))
     if method == 'cameras_list':
         return cameras_list(conn)
+    if method == 'overlays':
+        return overlays(conn, a.get('ids') or [])
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')

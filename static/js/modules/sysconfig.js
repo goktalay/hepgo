@@ -160,11 +160,13 @@ function nvrPanel() {
       watch);
   };
 
+  const frCard = facerecCard();   // bir kez; her çizimde yeniden eklenir (durum korunur)
   let draw, refreshCap;
   draw = () => {
     const rows = data.channels.map(channelRow);
     clear(wrap,
       gpuCard(),
+      frCard,
       h('section', { class: 'card card-pad' },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
           h('h3', { style: { margin: 0, flex: 1 } }, `Kanallar (${data.channels.length})`),
@@ -193,6 +195,30 @@ function nvrPanel() {
       data = d; draw();
     } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); }
   })();
+  return wrap;
+}
+
+// Yüz tanıma hassasiyeti (NVR eklenti ayarları): algılama eşiği + en küçük yüz. Fabrika servisine anında aktarılır.
+function facerecCard() {
+  const wrap = h('section', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  const draw = cfg => {
+    const score = h('input', { type: 'range', min: '0.3', max: '0.95', step: '0.05', value: String(cfg.score), style: { flex: 1 } });
+    const scoreVal = h('b', { style: { minWidth: '38px', textAlign: 'right' } }, String(cfg.score));
+    score.addEventListener('input', () => { scoreVal.textContent = score.value; });
+    const minFace = h('input', { type: 'number', class: 'input', min: '16', max: '240', value: String(cfg.min_face), style: { maxWidth: '100px' } });
+    const save = async () => {
+      try { const r = await api.put('/api/system/nvr/facerec', { score: Number(score.value), min_face: Number(minFace.value) }); draw(r); toast('Hassasiyet kaydedildi · anında geçerli', 'success'); }
+      catch (err) { toastError(err); }
+    };
+    clear(wrap,
+      h('h3', { style: { marginTop: 0 } }, 'Yüz Tanıma Hassasiyeti'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Eşik düşükse daha çok yüz yakalanır (uzak / açılı / hareketli), ama yanlış tespit artabilir. Varsayılan 0.60. Giriş kameralarında kişi görünmüyorsa eşiği düşürün.'),
+      h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, 'Algılama eşiği'),
+        h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center' } }, score, scoreVal)),
+      h('label', { class: 'sc-field', style: { maxWidth: '280px' } }, h('span', { class: 'sc-f-label' }, 'En küçük yüz (piksel)'), minFace),
+      h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }), h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Kaydet')));
+  };
+  (async () => { try { draw(await api.get('/api/system/nvr/facerec')); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); } })();
   return wrap;
 }
 

@@ -198,6 +198,27 @@ def frame(cid: int, request: Request, user=Depends(cam_user)):
     return Response(path.read_bytes(), media_type='image/jpeg', headers=headers)
 
 
+@router.get('/overlays')
+def overlays(ids: str = '', user=Depends(cam_user), conn=db.DB):
+    """Canlı izleme çerçeveleri: verilen kamera id'leri için yüz kutuları + kimlik (bilinen=ad, bilinmeyen=boş)."""
+    id_list = [int(x) for x in ids.split(',') if x.strip().isdigit()][:40]
+    if not id_list:
+        return {'overlays': {}}
+    r = _face(conn, 'overlays', ids=id_list)
+    ov = r.get('overlays', {})
+    uids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'user' and b.get('id')}
+    pids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'person' and b.get('id')}
+    users = {x[0]: x[1] for x in conn.execute(
+        f'SELECT id, full_name FROM users WHERE id IN ({",".join("?" * len(uids))})', tuple(uids))} if uids else {}
+    people = {x[0]: x[1] for x in conn.execute(
+        f'SELECT id, full_name FROM company_people WHERE id IN ({",".join("?" * len(pids))})', tuple(pids))} if pids else {}
+    for bs in ov.values():
+        for b in bs:
+            b['known'] = bool(b.get('kind'))
+            b['label'] = users.get(b['id']) if b.get('kind') == 'user' else (people.get(b['id']) if b.get('kind') == 'person' else None)
+    return {'overlays': ov}
+
+
 # ---------- Tanımlanamayan kişiler (kamera yüz grupları)
 
 class AssignIn(BaseModel):

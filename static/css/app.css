@@ -300,10 +300,10 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .btn.on { outline: 2px solid var(--primary); }
 /* Pano: GridStack sürükle-bırak */
 .grid-stack { margin: 0 -4px; }
-.grid-stack-item-content.db-tile { inset: 0; display: flex; flex-direction: column; overflow: auto; padding: 12px 14px; }
-.grid-stack-item-content.db-tile .db-head { cursor: default; }
-.grid-stack.editing .grid-stack-item-content.db-tile .db-head { cursor: move; }
-.grid-stack-item-content.db-tile .db-body { flex: 1; min-height: 0; }
+.grid-stack-item-content.db-tile { inset: 0; display: flex; flex-direction: column; overflow: hidden; padding: 0; min-height: 0; }
+.grid-stack-item-content.db-tile > .db-head { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2, rgba(127,127,127,.04)); flex: none; cursor: default; }
+.grid-stack.editing .grid-stack-item-content.db-tile > .db-head { cursor: move; }
+.grid-stack-item-content.db-tile > .db-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
 .grid-stack .db-tools { display: none; gap: 4px; }
 .grid-stack.editing .db-tools { display: flex; }
 .grid-stack.editing .grid-stack-item-content { outline: 2px dashed var(--border); }

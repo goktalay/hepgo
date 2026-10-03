@@ -3,7 +3,7 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.92.0'
+VERSION = '2.92.1'
 
 CHANGELOG = [
     {'version': '2.92.0', 'date': '2026-10-03', 'title': 'Tanımlanmayan kişiler: sıralama, resim çıkarma, kara liste',

@@ -5294,3 +5294,5 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .sms-warn { border-left: 4px solid #f59e0b; margin-bottom: 12px; }
 .sms-msg { max-width: 420px; white-space: pre-wrap; }
 @media (max-width: 900px) { .sms-grid { grid-template-columns: 1fr; } }
+.fin-click { cursor: pointer; }
+.fin-click:hover td { background: var(--surface-2, rgba(127,127,127,.06)); }

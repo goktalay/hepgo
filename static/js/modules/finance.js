@@ -1,11 +1,12 @@
-// Finans / Ön-Muhasebe (1. sürüm): Özet (nakit pozisyonu + grafik), Kasa & Banka, Cari Hesaplar, Hareketler.
-// Cari ekstre yürüyen bakiyeyle; Mikro ERP'den cari getirme. Sonraki sürümler: nakit akışı takvimi, çek/senet, mizan, bordro.
+// Finans / Ön-Muhasebe: Özet (nakit pozisyonu + grafik), Kasa & Banka, Cariler, Hareketler.
+// Cariler = Firma Yönetimi'ndeki firmalar + Satın Alma'daki tedarikçiler (ayrı cari listesi yok); ekstre yürüyen bakiyeyle.
+// Mikro ERP aktarımı bu modülde değil, Program Ayarları › Entegrasyonlar'dadır.
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDate, h, matches, modal, moduleToolbar, pageHead, segmented, selectInput, statStrip, toast, toastError } from '../ui.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n || 0);
-const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cari Hesaplar'], ['txns', 'Hareketler']];
+const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cariler'], ['txns', 'Hareketler']];
 
 export async function render(view, params, ctx) {
   const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'summary';
@@ -13,7 +14,7 @@ export async function render(view, params, ctx) {
   const body = h('div');
   clear(view, pageHead('Finans', { back: '#/', sub: 'Ön muhasebe · kasa-banka, cari, nakit akışı', tabs: nav }), body);
   if (sub === 'bank') return accountsView(body, 'bank');
-  if (sub === 'cari') return accountsView(body, 'cari');
+  if (sub === 'cari') return cariView(body);
   if (sub === 'txns') return txnsView(body);
   return summaryView(body);
 }
@@ -53,7 +54,7 @@ async function summaryView(view) {
 // ---------- Kasa & Banka / Cari hesap listesi ----------
 async function accountsView(view, group) {
   clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
-  const kinds = group === 'bank' ? ['kasa', 'banka'] : ['cari'];
+  const kinds = ['kasa', 'banka'];
   let list = [];
   const load = async () => {
     try {
@@ -64,9 +65,7 @@ async function accountsView(view, group) {
   };
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ara…', style: { maxWidth: '220px' } });
   q.addEventListener('input', draw);
-  const addBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => accountForm(group, null, load) },
-    group === 'bank' ? '＋ Hesap Ekle' : '＋ Cari Ekle');
-  const mikroBtn = group === 'cari' ? h('button', { class: 'btn', type: 'button', onclick: () => importMikro(load) }, 'Mikro’dan Getir') : null;
+  const addBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => accountForm(null, load) }, '＋ Hesap Ekle');
   const out = h('div');
 
   function draw() {
@@ -80,63 +79,72 @@ async function accountsView(view, group) {
       a.company_name ? h('div', { class: 'small muted' }, a.company_name) : (a.bank ? h('div', { class: 'small muted' }, a.bank) : null),
       a.iban ? h('div', { class: 'small muted mono' }, a.iban) : null,
       h('div', { class: 'fin-bal', style: { color: a.balance >= 0 ? 'var(--text)' : 'var(--danger,#dc2626)' } }, money(a.balance)))))
-      : h('div', { class: 'card empty' }, group === 'bank' ? 'Kasa/banka hesabı yok.' : 'Cari hesap yok.'),
+      : h('div', { class: 'card empty' }, 'Kasa / banka hesabı yok.'),
     rows.length ? h('div', { class: 'fin-total' }, 'Toplam: ', h('b', null, money(total))) : null);
   }
-  clear(view, moduleToolbar(mikroBtn, addBtn), h('div', { class: 'filters' }, q), out);
+  clear(view, moduleToolbar(addBtn), h('div', { class: 'filters' }, q), out);
   await load();
 }
 
-function accountForm(group, acc, done) {
-  const isCari = group === 'cari';
-  const kind = h('select', { class: 'input' }, (isCari ? [['cari', 'Cari']] : [['kasa', 'Kasa'], ['banka', 'Banka']]).map(([v, l]) => h('option', { value: v, selected: acc?.kind === v }, l)));
-  const name = h('input', { class: 'input', value: acc?.name || '', placeholder: isCari ? 'Cari adı' : 'Ör. Merkez Kasa, Ziraat TL' });
+function accountForm(acc, done) {
+  const kind = h('select', { class: 'input' }, [['kasa', 'Kasa'], ['banka', 'Banka']].map(([v, l]) => h('option', { value: v, selected: acc?.kind === v }, l)));
+  const name = h('input', { class: 'input', value: acc?.name || '', placeholder: 'Ör. Merkez Kasa, Ziraat TL' });
   const bank = h('input', { class: 'input', value: acc?.bank || '', placeholder: 'Banka' });
   const iban = h('input', { class: 'input', value: acc?.iban || '', placeholder: 'TR..' });
   const opening = h('input', { class: 'input', type: 'number', step: '0.01', value: acc?.opening ?? 0 });
-  const mikro = h('input', { class: 'input', value: acc?.mikro_code || '', placeholder: 'Mikro cari/hesap kodu (ops.)' });
   modal({
-    title: acc ? 'Hesabı düzenle' : (isCari ? 'Yeni cari' : 'Yeni hesap'),
-    body: h('div', null, field('Tür', kind), field('Ad', name),
-      isCari ? null : field('Banka', bank), isCari ? null : field('IBAN', iban),
-      field('Açılış bakiyesi', opening), field('Mikro kodu', mikro)),
+    title: acc ? 'Hesabı düzenle' : 'Yeni kasa / banka hesabı',
+    body: h('div', null, field('Tür', kind), field('Ad', name), field('Banka', bank), field('IBAN', iban), field('Açılış bakiyesi', opening)),
     actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
       if (!name.value.trim()) throw new Error('Ad girin');
-      const payload = { kind: kind.value, name: name.value.trim(), bank: bank.value || null, iban: iban.value || null,
-        opening: Number(opening.value) || 0, mikro_code: mikro.value || null, company_id: acc?.company_id || null };
+      const payload = { kind: kind.value, name: name.value.trim(), bank: bank.value || null, iban: iban.value || null, opening: Number(opening.value) || 0 };
       if (acc) await api.put(`/api/finance/accounts/${acc.id}`, payload); else await api.post('/api/finance/accounts', payload);
       toast('Kaydedildi'); done?.();
     } }],
   });
 }
 
-async function importMikro(done) {
-  const m = modal({ title: 'Mikro’dan cari getir', body: h('div', { class: 'loading' }, 'Mikro’ya bağlanılıyor…'), actions: [{ label: 'Kapat' }] });
-  let d;
-  try { d = await api.get('/api/finance/mikro/accounts'); } catch (e) { return toastError(e); }
-  if (!d.ok) { m.close(); toast(d.reason || 'Mikro tanımlı değil', 'err'); return; }
-  const picked = new Set();
-  const list = h('div', { class: 'fin-mikro' }, d.accounts.map(a => {
-    const cb = h('input', { type: 'checkbox', onchange: e => e.target.checked ? picked.add(a) : picked.delete(a) });
-    return h('label', { class: 'fin-mikro-row' }, cb, h('span', null, h('b', null, a.name), h('small', { class: 'muted mono' }, ` ${a.code}`)));
-  }));
-  m.close();
-  modal({ title: `Mikro cari (${d.accounts.length})`, wide: true,
-    body: h('div', null, h('p', { class: 'small muted' }, 'Eklemek istediğiniz carileri seçin.'), list),
-    actions: [{ label: 'Vazgeç' }, { label: 'Seçilenleri Ekle', class: 'primary', onClick: async () => {
-      for (const a of picked) await api.post('/api/finance/accounts', { kind: 'cari', name: a.name, mikro_code: a.code });
-      toast(`${picked.size} cari eklendi`); done?.();
-    } }] });
+// ---------- Cariler = firmalar / tedarikçiler ----------
+async function cariView(view) {
+  clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let list = [], kind = '-1';
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Firma, vergi no, telefon ara…', style: { maxWidth: '240px' } });
+  const seg = segmented([['-1', 'Hepsi'], ['0', 'Müşteriler'], ['1', 'Tedarikçiler']], kind, v => { kind = v; load(); });
+  const onlyBal = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: () => draw() }), 'Bakiyesi olanlar');
+  const out = h('div');
+  const load = async () => {
+    try { list = await api.get(`/api/finance/cari?supplier=${kind}`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
+    draw();
+  };
+  function draw() {
+    const nz = onlyBal.querySelector('input').checked;
+    const rows = list.filter(c => matches(q.value, c.name, c.tax_no, c.phone)).filter(c => !nz || Math.abs(c.balance) > 0.004);
+    const rec = rows.filter(c => c.balance > 0).reduce((a, c) => a + c.balance, 0), pay = rows.filter(c => c.balance < 0).reduce((a, c) => a - c.balance, 0);
+    clear(out, rows.length ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
+      h('thead', null, h('tr', null, ['Firma', 'Tür', 'Vergi no', 'Son hareket', 'Bakiye'].map(x => h('th', null, x)))),
+      h('tbody', null, rows.map(c => h('tr', { class: 'fin-click', onclick: () => statementModal({ cari: true, company_id: c.id, name: c.name }, load) },
+        h('td', null, h('b', null, c.name), c.phone ? h('div', { class: 'small muted' }, c.phone) : null),
+        h('td', null, c.is_supplier ? h('span', { class: 'badge yellow' }, 'Tedarikçi') : h('span', { class: 'badge blue' }, 'Müşteri')),
+        h('td', { class: 'mono small' }, c.tax_no || '—'), h('td', { class: 'muted' }, c.last_date ? fmtDate(c.last_date) : '—'),
+        h('td', { class: 'num', style: { fontWeight: 700, color: c.balance > 0 ? 'var(--ok,#16a34a)' : c.balance < 0 ? 'var(--danger,#dc2626)' : 'var(--muted)' } },
+          money(c.balance)))))))) : h('div', { class: 'card empty' }, 'Firma bulunamadı.'),
+    h('div', { class: 'fin-total' }, 'Alacak: ', h('b', null, money(rec)), ' · Borç: ', h('b', null, money(pay))));
+  }
+  q.addEventListener('input', draw);
+  clear(view, h('div', { class: 'filters' }, q, seg, onlyBal), out,
+    h('p', { class: 'small muted', style: { marginTop: '10px' } }, 'Cariler, Firma Yönetimi’ndeki firmalar ve Satın Alma’daki tedarikçilerdir. Yeni cari için firmayı oradan ekleyin; Mikro aktarımı Program Ayarları › Entegrasyonlar’dadır.'));
+  await load();
 }
 
 // ---------- Cari / hesap ekstresi ----------
 async function statementModal(acc, done) {
   let d;
-  try { d = await api.get(`/api/finance/accounts/${acc.id}/statement`); } catch (e) { return toastError(e); }
+  try { d = await api.get(acc.cari ? `/api/finance/cari/${acc.company_id}` : `/api/finance/accounts/${acc.id}/statement`); } catch (e) { return toastError(e); }
+  const account = { ...d.account, cari: acc.cari };
   const b = d.account.balance;
   let m;
   const bodyEl = h('div', null,
-    h('div', { class: 'fin-stmt-head' }, h('div', null, acc.company_name ? h('div', { class: 'muted' }, acc.company_name) : null,
+    h('div', { class: 'fin-stmt-head' }, h('div', null, acc.cari ? h('div', { class: 'muted' }, 'Cari ekstre') : null,
       h('div', null, 'Güncel bakiye: ', h('b', { style: { color: b >= 0 ? 'var(--text)' : 'var(--danger,#dc2626)' } }, money(b))))),
     d.rows.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Tarih', 'Açıklama', 'Giriş', 'Çıkış', 'Bakiye', ''].map(x => h('th', null, x)))),
@@ -151,10 +159,12 @@ async function statementModal(acc, done) {
             await api.del(`/api/finance/txns/${t.id}`); m.close(); done?.(); statementModal(acc, done);
           } }, '×'))))])))
       : h('div', { class: 'empty' }, 'Henüz hareket yok.'));
-  m = modal({ title: acc.name, wide: true, body: bodyEl,
-    actions: [{ label: 'Düzenle', onClick: () => { m.close(); accountForm(acc.kind === 'cari' ? 'cari' : 'bank', acc, done); return true; } },
-      { label: 'Hareket Ekle', class: 'primary', onClick: () => { m.close(); txnForm(acc, done); return true; } },
-      { label: 'Kapat' }] });
+  m = modal({ title: acc.name || d.account.name, wide: true, body: bodyEl,
+    actions: [acc.cari
+      ? { label: 'Firma kartı', onClick: () => { m.close(); location.hash = `#/companies/${acc.company_id}`; return true; } }
+      : { label: 'Düzenle', onClick: () => { m.close(); accountForm(acc, done); return true; } },
+    { label: 'Hareket Ekle', class: 'primary', onClick: () => { m.close(); txnForm(account, () => { done?.(); statementModal(acc, done); }); return true; } },
+    { label: 'Kapat' }] });
 }
 
 function txnForm(acc, done) {

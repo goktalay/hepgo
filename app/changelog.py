@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.101.0'
+VERSION = '2.101.1'
 
 CHANGELOG = [
+    {'version': '2.101.1', 'date': '2026-10-03', 'title': 'Finans: cariler = firmalar; Mikro yalnız Entegrasyonlar’da',
+     'changes': [
+         'Finans › Cariler artık Firma Yönetimi’ndeki firmalar ve Satın Alma’daki tedarikçilerdir (ayrı cari listesi yok); müşteri/tedarikçi filtresi, bakiye ve ekstre.',
+         'Firmanın cari hesabı ilk ekstre/harekette otomatik açılır; ekstreden “Firma kartı”na geçilir.',
+         'Finans içindeki “Mikro’dan Getir” kaldırıldı — Mikro aktarımı yalnızca Program Ayarları › Entegrasyonlar altında.',
+     ]},
     {'version': '2.101.0', 'date': '2026-10-03', 'title': 'Veilox Merkez (HEPGO standardında) + Üyeliğim & Destek',
      'changes': [
          'Yeni Merkez (merkez.veilox.app): Üyelik Yönetimi — firmalar (onay, kurulum, kurulum linki, pasife al / aktif et, düzenle, sil), paketler, aylık ödeme takibi ve tahsilat grafiği.',

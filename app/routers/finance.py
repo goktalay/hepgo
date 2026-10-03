@@ -1,5 +1,6 @@
-"""Finans / Ön-Muhasebe — 1. sürüm: hesaplar (kasa/banka/cari), hareketler, cari ekstre, nakit pozisyonu özeti.
-Mikro ERP entegrasyonu için kanca (cari/hesap okuma). Sonraki sürümler: nakit akışı takvimi, çek/senet, mizan, bordro.
+"""Finans / Ön-Muhasebe: kasa & banka hesapları, cariler, hareketler, cari ekstre, nakit pozisyonu özeti.
+Cariler = Firma Yönetimi'ndeki firmalar ve Satın Alma'daki tedarikçiler (ayrı cari listesi yok); firmanın finans hesabı
+ilk hareket/ekstrede otomatik açılır. Mikro ERP aktarımı modülde değil, Program Ayarları › Entegrasyonlar'dadır.
 """
 from typing import Optional
 
@@ -46,8 +47,8 @@ def accounts(kind: str = '', user=Depends(fin_user), conn=db.DB):
 
 @router.post('/accounts')
 def add_account(body: AccountIn, user=Depends(fin_user), conn=db.DB):
-    if body.kind not in KINDS:
-        raise HTTPException(400, 'Geçersiz hesap türü')
+    if body.kind not in ('kasa', 'banka'):
+        raise HTTPException(400, 'Buradan yalnızca kasa / banka hesabı açılır; cariler Firma Yönetimi’ndeki firmalardır')
     cur = conn.execute('''INSERT INTO fin_accounts (kind,name,currency,iban,bank,company_id,opening,mikro_code,note,active,created_at)
                           VALUES (?,?,?,?,?,?,?,?,?,1,?)''',
                        (body.kind, body.name.strip()[:120], body.currency[:3].upper(), body.iban, body.bank,
@@ -181,16 +182,40 @@ def summary(user=Depends(fin_user), conn=db.DB):
             'accounts': len(accs)}
 
 
-@router.get('/mikro/accounts')
-def mikro_accounts(user=Depends(fin_user), conn=db.DB):
-    """Mikro ERP'den cari hesapları okur (entegrasyon). Mikro tanımlı değilse boş döner."""
-    from .. import config
-    if not (config.MIKRO_HOST and config.MIKRO_DB and config.MIKRO_USER):
-        return {'ok': False, 'reason': 'Mikro ERP tanımlı değil', 'accounts': []}
-    try:
-        from .. import mikro
-        rows = mikro.query(
-            "SELECT TOP 500 cari_kod AS code, cari_unvan1 AS name FROM CARI_HESAPLAR WHERE cari_iptal=0 ORDER BY cari_unvan1")
-        return {'ok': True, 'accounts': rows}
-    except Exception as e:   # noqa: BLE001
-        return {'ok': False, 'reason': str(e), 'accounts': []}
+# ---------------- Cariler = firmalar / tedarikçiler ----------------
+def _cari_account(conn, company_id):
+    """Firmanın cari finans hesabı (yoksa oluşturulur)."""
+    r = conn.execute("SELECT id FROM fin_accounts WHERE kind='cari' AND company_id=? AND active=1", (company_id,)).fetchone()
+    if r:
+        return r[0]
+    c = conn.execute('SELECT name FROM companies WHERE id=?', (company_id,)).fetchone()
+    if not c:
+        raise HTTPException(404, 'Firma bulunamadı')
+    cur = conn.execute("INSERT INTO fin_accounts (kind,name,company_id,opening,active,created_at) VALUES ('cari',?,?,0,1,?)",
+                       (c[0], company_id, db.now()))
+    conn.commit()
+    return cur.lastrowid
+
+
+@router.get('/cari')
+def cari_list(supplier: int = -1, user=Depends(fin_user), conn=db.DB):
+    """Firmalar (müşteri) ve tedarikçiler, cari bakiyeleriyle. supplier: 1 tedarikçi, 0 müşteri, -1 hepsi."""
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(companies)')}
+    sup = 'c.is_supplier' if 'is_supplier' in cols else '0'
+    where = ['c.active=1']
+    if supplier in (0, 1):
+        where.append(f'COALESCE({sup},0)=?')
+    rows = db.rows(conn.execute(
+        f'''SELECT c.id, c.name, c.phone, c.tax_no, COALESCE({sup},0) AS is_supplier, a.id AS account_id, a.opening,
+                   (SELECT MAX(t.date) FROM fin_txns t WHERE t.account_id=a.id) AS last_date
+            FROM companies c LEFT JOIN fin_accounts a ON a.kind='cari' AND a.company_id=c.id AND a.active=1
+            WHERE {" AND ".join(where)} ORDER BY c.name COLLATE NOCASE''', (supplier,) if supplier in (0, 1) else ()))
+    for r in rows:
+        r['balance'] = _balance_row(conn, r['account_id'], r['opening']) if r['account_id'] else 0.0
+    return rows
+
+
+@router.get('/cari/{company_id}')
+def cari_statement(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+    """Firmanın cari ekstresi (hesap yoksa açılır)."""
+    return statement(_cari_account(conn, company_id), date_from, date_to, user, conn)

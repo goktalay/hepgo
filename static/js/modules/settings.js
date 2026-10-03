@@ -7,7 +7,7 @@ import { DEFAULTS, EVENTS, SOUND_NAMES, playSound } from '../sounds.js';
 import { segIconByKey } from '../segicons.js';
 import { disablePush, enablePush, pushState, pushSupport } from '../push.js';
 import { CALL_BACKGROUNDS, CALL_BG_LABELS } from './voice.js';
-import { MASCOT_LIST, mascotSvg, setMascot } from './mascot.js';
+import { MASCOT_LIST, mascotSvg, setMascot, applyMascotHidden } from './mascot.js';
 import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
 
@@ -397,7 +397,13 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
           ['sakaci', 'Şakacı'], ['alayci', 'Alaycı (iğneleyici)'], ['coskulu', 'Coşkulu'], ['bilgic', 'Bilgiç / akademik']]
           .map(([v, l]) => h('option', { value: v, selected: s.mascotStyle === v }, l)));
         styleSel.addEventListener('change', () => { s.mascotStyle = styleSel.value; save('Konuşma tarzı güncellendi'); });
+        const showChk = h('input', { type: 'checkbox', checked: !s.mascotOff });
+        showChk.addEventListener('change', () => {
+          s.mascotOff = !showChk.checked; applyMascotHidden(s.mascotOff); save(showChk.checked ? 'Maskot açıldı' : 'Maskot gizlendi');
+        });
         return card('Maskot', 'Ekranın köşesinde duran, sürekli hareket eden ve tıklayınca yapay zekayla sohbet açan asistanınızı seçin. Maskotu köşede sürükleyerek istediğiniz yere taşıyabilirsiniz.',
+          h('label', { class: 'set-toggle' }, showChk, h('span', null, h('b', null, 'Maskotu göster'), h('small', null, 'Köşedeki yapay zeka asistanını gösterir ya da gizler'))),
+          h('h4', { class: 'set-sub' }, 'Karakter'),
           grid,
           h('h4', { class: 'set-sub' }, 'Konuşma tarzı'),
           line('Asistanın üslubu', 'Cevapların tonu bu seçime göre değişir', styleSel));
@@ -479,7 +485,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       if (sub) clear(view, pageHead(g.title, { back: '#/settings', sub: g.desc }), h('div', { class: 'set-detail set-detail-solo' }, g.body()));
       else clear(view, masterList());   // mobil ana liste: başlık / geri / açıklama gösterilmez (iOS tarzı)
     } else {
-      clear(view, pageHead('Ayarlar', { back: '#/', sub: SUBTITLE }),
+      clear(view, pageHead('Kişisel Ayarlar', { back: '#/', sub: SUBTITLE }),
         h('div', { class: 'set-layout' },
           h('nav', { class: 'card set-nav' }, GROUPS.map(x => h('a', { href: `#/settings/${x.key}`, class: x === g ? 'on' : '' },
             h('span', { class: 'set-ico' }, segIconByKey(x.icon)), h('span', null, h('b', null, x.title), h('small', null, x.desc))))),

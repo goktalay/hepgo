@@ -951,10 +951,13 @@ const GROUPS = [
   { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },
   { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
   { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
+  // Modül olarak var; Program Ayarları altından açılır (link). Veri & Yedek yalnızca sistem sahibi (MASTER).
+  { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar, roller ve yetkiler', icon: 'users', link: '#/users' },
+  { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
 ];
 
-const SC_COLORS = { security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500' };
-const SC_SECTIONS = [['security', 'ai'], ['ai-changes'], ['modules', 'integrations']];
+const SC_COLORS = { security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
+const SC_SECTIONS = [['security', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'master']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {
@@ -962,7 +965,7 @@ export async function render(view, params, ctx) {
     return;
   }
   // Claude API anahtarı girilmemişse yapay zeka bölümleri gizli (anahtar Entegrasyonlar'dan girilir)
-  const groups = GROUPS.filter(x => !x.needs || ctx.user[x.needs]);
+  const groups = GROUPS.filter(x => (!x.needs || ctx.user[x.needs]) && (!x.master || ctx.user.master));
   const SUBTITLE = 'Sistem geneli ayarlar · yalnızca sistem yöneticisi';
   // Mobilde iOS Ayarlar gibi gruplanmış ana liste; masaüstünde iki sütun.
   const used = new Set(SC_SECTIONS.flat());
@@ -970,7 +973,7 @@ export async function render(view, params, ctx) {
   const allSections = rest.length ? [...SC_SECTIONS, rest] : SC_SECTIONS;
   const masterList = () => h('div', { class: 'set-ios' }, allSections.map(keys => {
     const rows = keys.map(k => groups.find(gr => gr.key === k)).filter(Boolean);
-    return rows.length ? h('div', { class: 'ios-group' }, rows.map(gr => h('a', { class: 'ios-row', href: `#/sysconfig/${gr.key}` },
+    return rows.length ? h('div', { class: 'ios-group' }, rows.map(gr => h('a', { class: 'ios-row', href: gr.link || `#/sysconfig/${gr.key}` },
       h('span', { class: 'ios-ico', style: { background: SC_COLORS[gr.key] || '#8e8e93' } }, segIconByKey(gr.icon)),
       h('span', { class: 'ios-label' }, h('b', null, gr.title), h('small', null, gr.desc)),
       h('span', { class: 'ios-chev' })))) : null;
@@ -978,13 +981,14 @@ export async function render(view, params, ctx) {
 
   const draw = () => {
     const g = groups.find(x => x.key === params[0]) || groups[0];
+    if (g.link) { location.replace(g.link); return; }   // Kullanıcı Yönetimi / Veri & Yedek ayrı modül sayfasına gider
     if (SC_MQ.matches) {
       if (params[0]) clear(view, pageHead(g.title, { back: '#/sysconfig', sub: g.desc }), h('div', { class: 'set-detail set-detail-solo' }, g.body(view, ctx)));
       else clear(view, masterList());   // mobil ana liste: başlık / geri / açıklama gösterilmez (iOS tarzı)
     } else {
       clear(view, pageHead('Program Ayarları', { back: '#/', sub: SUBTITLE }),
         h('div', { class: 'set-layout' },
-          h('nav', { class: 'card set-nav' }, groups.map(x => h('a', { href: `#/sysconfig/${x.key}`, class: x === g ? 'on' : '' },
+          h('nav', { class: 'card set-nav' }, groups.map(x => h('a', { href: x.link || `#/sysconfig/${x.key}`, class: x === g ? 'on' : '' },
             h('span', { class: 'set-ico' }, segIconByKey(x.icon)), h('span', null, h('b', null, x.title), h('small', null, x.desc))))),
           h('div', { class: 'set-detail' }, g.body(view, ctx))));
     }

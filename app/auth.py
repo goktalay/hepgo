@@ -49,7 +49,7 @@ MODULE_ROLES = {
     'field':      [ADMIN, FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT],                            # M6 Saha
     'printers':   [ADMIN, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER],           # M7 Yazıcı
     'products':   [ADMIN],                                                                    # M8 Ürün
-    'tools':      [r for r in ROLES if r not in (SECURITY, INTERN, CLEANER)],                 # M9 Araçlar
+    'tools':      [r for r in ROLES if r not in (SECURITY, CAMERA, INTERN, CLEANER)],         # M9 Araçlar
     'users':      [ADMIN],                                                                    # M10 Kullanıcı
     'companies':  [ADMIN, ADMIN_STAFF],                                                       # M11 Firma
     'documents':  [ADMIN, ADMIN_STAFF],                                                       # M12 Evrak
@@ -60,7 +60,7 @@ MODULE_ROLES = {
     'hr':         [ADMIN, HR],                                                                # M17 İnsan Kaynakları
     'purchasing': [ADMIN, PURCHASING],                                                        # M19 Satın Alma
     'sales':      [ADMIN, SALES],                                                             # M21 Satış Yönetimi
-    'reports':    [r for r in ROLES if r not in (SECURITY, INTERN, CLEANER)],                 # M15 Raporlar (içerik modül yetkisine göre)
+    'reports':    [r for r in ROLES if r not in (SECURITY, CAMERA, INTERN, CLEANER)],         # M15 Raporlar (içerik modül yetkisine göre)
     'announcements': list(ROLES),                                                             # M16 Duyurular (yazan: Sistem Yöneticisi)
     'cleaning':   [ADMIN, CLEANER],                                                           # M22 Temizlik (günlük çeklist)
     'design':     [ADMIN, DESIGNER],                                                          # M23 Endüstriyel Tasarım (proje + çizim + sürüm)

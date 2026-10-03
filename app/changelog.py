@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.88.0'
+VERSION = '2.89.0'
 
 CHANGELOG = [
+    {'version': '2.89.0', 'date': '2026-10-03', 'title': 'Menü sadeleştirme + maskotu gizleme',
+     'changes': [
+         'Kullanıcı Yönetimi ve Veri & Yedek artık Program Ayarları altında (Veri & Yedek yalnızca sistem sahibi).',
+         'Araçlar, modül ızgarasında Sistem Yönetimi grubuna taşındı.',
+         '“Ayarlar” → “Kişisel Ayarlar”; Şifremi Değiştir kullanıcı menüsünden kaldırıldı (Kişisel Ayarlar › Hesap’ta).',
+         'Maskot (köşedeki asistan) Kişisel Ayarlar › Maskot’tan gizlenebilir.',
+     ]},
     {'version': '2.88.0', 'date': '2026-10-03', 'title': 'Rehber modülü + “Kamera Yetkilisi” rolü',
      'changes': [
          'Yeni “Rehber” modülü: sistemdeki tüm kişiler (personel, firma kişileri, aile üyeleri) tek rehberde. Kişi detayında bilgiler, evraklar, yüz tanıma kayıtları, görüntülü görüşmeler, toplantılar ve telefon notları (yetkiye göre).',

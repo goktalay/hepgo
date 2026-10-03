@@ -68,7 +68,7 @@ import { enableHeadGroup } from './headgroup.js';
 // menu: true → ana ekranda ve modül menüsünde değil, sağ üstteki kullanıcı menüsünde gösterilir.
 // sub: 'x' → x modülüne erişimi olan kullanıcıda ızgarada ayrı görünmez (x'in alt sekmesidir).
 const MODULES = [
-  { key: 'master', title: 'Veri & Yedek', mod: master, tone: 'purple', menu: true },   // yalnızca sistem sahibi; KVKK: veri göstermez, yalnız indir/yedek
+  { key: 'master', title: 'Veri & Yedek', mod: master, tone: 'purple', hidden: true },   // yalnızca sistem sahibi; Program Ayarları altından açılır (KVKK: veri göstermez, yalnız indir/yedek)
   { key: 'admin', title: 'Yönetim', mod: admin, tone: 'red' },
   { key: 'production', title: 'Üretim Yönetimi', mod: production },
   { key: 'orders', title: 'İş Emri Yönetimi', mod: orders, hidden: true },   // Üretim Yönetimi'nin alt modülü (Yarı Mamul'ün yanında); ızgarada ayrı görünmez
@@ -93,8 +93,8 @@ const MODULES = [
   { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
   { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },
   { key: 'cleaning', title: 'Temizlik', mod: cleaning, group: 'system' },
-  { key: 'tools', title: 'Araçlar', mod: tools, menu: true },
-  { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', menu: true },
+  { key: 'tools', title: 'Araçlar', mod: tools, group: 'system' },   // Modül ızgarası › Sistem Yönetimi
+  { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', hidden: true },   // Program Ayarları altından açılır
 ];
 
 // Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?
@@ -463,14 +463,13 @@ function renderShell() {
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
   const menu = h('div', { class: 'dropdown', role: 'menu' },
     h('a', { class: 'menu-link', href: '#/personal', onclick: () => { menu.hidden = true; } }, svgIcon(icons.person), 'Kişisel', menuCount('personal')),
-    h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Ayarlar'),
+    h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Kişisel Ayarlar'),
     securityOnly() ? null : h('a', { class: 'menu-link', href: '#/meet', onclick: () => { menu.hidden = true; } }, svgIcon(icons.phone), 'Görüntülü Toplantı'),
     menuModules.map(m => h('a', { class: `menu-link ${m.tone ? `tone-${m.tone}` : ''}`, href: `#/${m.key}`,
       onclick: () => { menu.hidden = true; } }, svgIcon(icons[m.key]), m.title)),
     menuModules.length ? h('div', { class: 'menu-sep' }) : null,
     installButton(),
     (u.master || u.roles.includes('Sistem Yöneticisi')) ? h('a', { class: 'menu-link', href: '#/sysconfig', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Program Ayarları') : null,
-    h('button', { onclick: () => { menu.hidden = true; changePassword(); } }, 'Şifremi Değiştir'),
     h('button', { onclick: () => { menu.hidden = true; aboutModal(); } }, 'Program Hakkında'),
     h('button', { onclick: logout }, 'Çıkış Yap'));
   const userBtn = h('button', { class: 'user-btn', 'aria-haspopup': 'menu' },

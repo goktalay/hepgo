@@ -116,6 +116,13 @@ let mounted = false;
 let convo = [];        // {role, content}
 let curId = DEFAULT_ID;
 let els = null;        // { fig, btn }
+let _btn = null, _panel = null;   // kullanıcı maskotu kapatınca gizlemek için
+
+// Kullanıcı maskotu kapatıp açabilir (Ayarlar › Maskot). Gizliyken panel de kapanır.
+export function applyMascotHidden(hidden) {
+  if (_btn) _btn.style.display = hidden ? 'none' : '';
+  if (hidden && _panel) { _panel.hidden = true; _btn?.classList.remove('open'); }
+}
 
 // Kişisel ayarlardan canlı karakter değişimi (maskot + sohbet başlığı/avatarı)
 export function setMascot(id) {
@@ -138,6 +145,8 @@ export async function mountMascot(ctx) {
   const btn = h('button', { class: 'mascot', type: 'button', title: 'Asistana sor (sürükleyip taşıyabilirsin)', 'aria-label': 'Yapay zeka asistanı' },
     fig, h('span', { class: 'mascot-badge' }, svgIcon(icons.chat)));
   document.body.append(btn);
+  _btn = btn;
+  if (ctx?.user?.prefs?.settings?.mascotOff) btn.style.display = 'none';   // kullanıcı kapatmışsa gizli başla
   els = { fig, btn };
 
   // Kayıtlı konum (bu cihaz)
@@ -189,6 +198,7 @@ export async function mountMascot(ctx) {
     h('div', { class: 'mchat-head' }, headAva, h('div', { class: 'grow' }, headName, h('small', null, 'Yapay zeka asistanı')), closeBtn),
     log, h('div', { class: 'mchat-bar' }, input, sendBtn));
   document.body.append(panel);
+  _panel = panel;
   els.headAva = headAva; els.headName = headName;
 
   function bubble(role, text, cls = '') {

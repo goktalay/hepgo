@@ -15,11 +15,11 @@ from ..files import FILE_GUARDS
 
 router = APIRouter(prefix='/api/cameras')
 faces_router = APIRouter(prefix='/api/faces')
-cam_user = auth.require_sysadmin()   # Kameralar modülü yalnızca sistem yöneticisine açık (Sistem Yönetimi)
+cam_user = auth.require_module('cameras')   # Kameralar modülü: Sistem Yöneticisi + "Kamera Yetkilisi" rolü
 LIVE_DIR = config.DATA_DIR / 'cameras' / 'live'
 
-# Kamera yüz medyası: sistem yöneticisi/master + İK (aile üyelerinin tanınan yüzlerini personel detayında görür)
-_cam_access = lambda user, name: auth.ADMIN in user['roles'] or bool(user.get('master')) or 'hr' in user['modules']
+# Kamera yüz medyası: Kameralar modülü (admin/kamera yetkilisi) + İK (aile üyelerinin tanınan yüzleri personel detayında)
+_cam_access = lambda user, name: bool({'cameras', 'hr'} & set(user['modules'])) or bool(user.get('master'))
 FILE_GUARDS['camfaces'] = _cam_access
 FILE_GUARDS['faces_enroll'] = _cam_access   # yüz tanıma eğitimi kırpıkları
 FILE_GUARDS['camclips'] = _cam_access        # görülme anı video klipleri (lokal)

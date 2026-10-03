@@ -38,6 +38,7 @@ import * as signPage from './modules/sign.js';
 import * as secretariat from './modules/secretariat.js';
 import * as security from './modules/security.js';
 import * as cammgmt from './modules/cammgmt.js';
+import * as directory from './modules/directory.js';
 import * as reportsMod from './modules/reports.js';
 import * as announcements from './modules/announcements.js';
 import * as cleaning from './modules/cleaning.js';
@@ -84,9 +85,10 @@ const MODULES = [
   { key: 'documents', title: 'Evrak Yönetimi', mod: documents, sub: 'crm' },
   { key: 'secretariat', title: 'Sekreterya', mod: secretariat, group: 'system' },
   { key: 'security', title: 'Güvenlik', mod: security, group: 'system' },
-  // Kameralar: yalnızca sistem yöneticisi (admin/MASTER) ve NVR entegrasyonu aktifse görünür (Sistem Yönetimi)
+  // Kameralar: "Kamera Yetkilisi" rolü (ya da Sistem Yöneticisi) ve NVR entegrasyonu aktifse görünür (Sistem Yönetimi)
   { key: 'cameras', title: 'Kameralar', mod: cammgmt, group: 'system',
-    show: u => (u.master || u.modules.includes('admin')) && u.nvr },
+    show: u => u.modules.includes('cameras') && u.nvr },
+  { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
   { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },

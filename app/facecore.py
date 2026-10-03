@@ -163,6 +163,22 @@ def family_shots(conn, family_ids, per=6):
     return {'shots': out}
 
 
+def subject_shots(conn, kind, id, limit=12):
+    """Bir kişiye (user/person/family) ATANMIŞ kamera gruplarından görülmeler + özet. Rehber/yüz tanıma kaydı için."""
+    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id'}.get(kind)
+    if not col:
+        return {'shots': [], 'sightings': 0, 'groups': 0}
+    grp = db.rows(conn.execute(f'SELECT id, samples, first_seen, last_seen FROM face_groups WHERE {col} = ?', (int(id),)))
+    shots = db.rows(conn.execute(
+        f'''SELECT s.crop, s.frame, s.at, s.threshold, c.name AS camera_name
+            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+            WHERE g.{col} = ? ORDER BY s.at DESC LIMIT ?''', (int(id), int(limit))))
+    total = conn.execute(f'SELECT COUNT(*) FROM face_sightings s JOIN face_groups g ON g.id = s.group_id WHERE g.{col} = ?', (int(id),)).fetchone()[0]
+    return {'shots': shots, 'sightings': total, 'groups': len(grp),
+            'first_seen': min((g['first_seen'] for g in grp), default=None),
+            'last_seen': max((g['last_seen'] for g in grp), default=None)}
+
+
 def cameras_list(conn):
     """Kamera listesi (şifre hariç) — Kameralar sekmesi. Canlı kare yaşı yerel live dizininden."""
     import time
@@ -236,6 +252,8 @@ def rpc(conn, method, args):
         return overlays(conn, a.get('ids') or [])
     if method == 'family_shots':
         return family_shots(conn, a.get('family_ids') or [], a.get('per', 6))
+    if method == 'subject_shots':
+        return subject_shots(conn, a.get('kind'), a.get('id'), a.get('limit', 12))
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')

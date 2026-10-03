@@ -1851,6 +1851,11 @@ def _migrate(conn):
         conn.execute('ALTER TABLE face_sightings ADD COLUMN clip TEXT')
     if 'threshold' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anındaki tanıma hassasiyeti (eşik)
         conn.execute('ALTER TABLE face_sightings ADD COLUMN threshold REAL')
+    # (bir kez) mevcut Güvenlik personeline "Kamera Yetkilisi" rolü ver (Kameralar modülünü görsünler)
+    if not conn.execute("SELECT 1 FROM app_kv WHERE k = 'camera_role_seeded'").fetchone():
+        conn.execute('''INSERT OR IGNORE INTO user_roles (user_id, role)
+                        SELECT DISTINCT user_id, 'Kamera Yetkilisi' FROM user_roles WHERE role = 'Güvenlik' ''')
+        conn.execute("INSERT OR REPLACE INTO app_kv (k, v) VALUES ('camera_role_seeded', '1')")
     # Personel aile üyeleri + yüz tanımada eğitilebilirlik
     conn.execute('''CREATE TABLE IF NOT EXISTS family_members (
         id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

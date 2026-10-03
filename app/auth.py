@@ -22,6 +22,7 @@ ELECTRONICS = 'Elektronik Personeli'
 ADMIN_STAFF = 'İdari Personel'
 SECRETARY = 'Sekreter'
 SECURITY = 'Güvenlik'   # fabrika girişi: yalnızca araç giriş / çıkış kaydı; başka hiçbir modülü görmez
+CAMERA = 'Kamera Yetkilisi'   # Kameralar modülü (izleme, yüz tanıma, tanımlanmayan kişiler) — NVR aktifse görünür
 MASTER = 'MASTER'          # sistem sahibi (owner); ROLES'e eklenmez, atanamaz; yalnızca config.MASTER_USERNAMES
 MRP_LEAD = 'MRP Sorumlusu'   # Malzeme İhtiyaç Planlaması: malzemeler, depolar, stok hareketleri, yarı mamul stoğu
 PURCHASING = 'Satın Alma'   # tedarikçiler, satın alma talepleri, fatura / irsaliye (depo girişi), teklifler
@@ -32,7 +33,7 @@ CLEANER = 'Temizlik Görevlisi'   # yalnızca Temizlik modülü (günlük temizl
 DESIGNER = 'Endüstriyel Tasarımcı'   # Endüstriyel Tasarım modülü: proje + çizim / montaj çizimi + sürüm geçmişi
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
-         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, CLEANER, INTERN]
+         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, CLEANER, INTERN]
 # Yardımcı personel rolleri: bu rollerin seçim listelerinde stajerler de çıkar ("Stajer" etiketiyle) ve seçilebilir
 HELPER_ROLES = (ASSEMBLER, ELECTRONICS, FIELD_STAFF)
 
@@ -54,6 +55,8 @@ MODULE_ROLES = {
     'documents':  [ADMIN, ADMIN_STAFF],                                                       # M12 Evrak
     'secretariat': [ADMIN, SECRETARY],                                                        # M13 Sekreterya
     'security':   [ADMIN, SECURITY],                                                          # M14 Güvenlik
+    'cameras':    [ADMIN, CAMERA],                                                            # M24 Kameralar (izleme + yüz tanıma; NVR aktifse görünür)
+    'rehber':     [r for r in ROLES if r not in (SECURITY, CAMERA, INTERN, CLEANER)],         # M25 Rehber (birleşik kişi rehberi)
     'hr':         [ADMIN, HR],                                                                # M17 İnsan Kaynakları
     'purchasing': [ADMIN, PURCHASING],                                                        # M19 Satın Alma
     'sales':      [ADMIN, SALES],                                                             # M21 Satış Yönetimi

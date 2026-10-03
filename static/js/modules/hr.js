@@ -890,24 +890,34 @@ function addressForm(e, m, a = null) {
 // ---------- Ailesi: aile üyeleri + yakınlık; yüz tanımada eğitilebilir
 const RELATIONS = ['Eş', 'Çocuk', 'Anne', 'Baba', 'Kardeş', 'Nişanlı', 'Diğer'];
 function familyTab(e) {
+  const wrap = h('div', { class: 'card card-pad' });
+  let recognized = {};   // family_id → kamera görülme kırpıkları
   const remove = async f => {
     if (!await confirmDialog('Aile üyesini sil', t('{n} silinsin mi? Yüz tanıma eğitim verisi de silinir.', { n: f.full_name }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/hr/employees/${e.id}/family/${f.id}`); toast('Aile üyesi silindi'); reload(); } catch (err) { toastError(err); }
   };
-  return h('div', { class: 'card card-pad' },
+  const draw = () => clear(wrap,
     h('div', { class: 'tv-bar' }, h('b', null, 'Ailesi'), h('span', { class: 'small muted' }, 'Aile üyeleri ve yakınlık derecesi; yüz tanımada eğitilebilir'),
       h('span', { class: 'spacer' }), h('button', { class: 'btn sm primary', onclick: () => familyForm(e) }, '＋ Aile Üyesi Ekle')),
-    e.family?.length ? h('div', { class: 'addr-grid' }, e.family.map(f => h('div', { class: 'addr-card' },
-      h('div', { class: 'addr-head' }, h('b', null, f.full_name), f.relation ? h('span', { class: 'badge blue' }, f.relation) : null,
-        f.face_count ? h('span', { class: 'badge green' }, t('{n} yüz', { n: f.face_count })) : null),
-      f.birth_date ? h('div', { class: 'small' }, t('Doğum: {d}', { d: fmtDate(f.birth_date) })) : null,
-      f.phone ? h('div', { class: 'small' }, f.phone) : null,
-      f.note ? h('div', { class: 'small muted' }, f.note) : null,
-      h('div', { class: 'addr-actions' },
-        h('button', { class: 'btn sm', onclick: () => familyForm(e, f) }, 'Düzelt'),
-        h('button', { class: 'btn sm', onclick: () => familyFaceModal(e, f) }, 'Yüz Tanıma Eğit'),
-        h('button', { class: 'btn sm ghost danger-text', onclick: () => remove(f) }, 'Sil')))))
+    e.family?.length ? h('div', { class: 'addr-grid' }, e.family.map(f => {
+      const shots = recognized[f.id] || [];
+      return h('div', { class: 'addr-card' },
+        h('div', { class: 'addr-head' }, h('b', null, f.full_name), f.relation ? h('span', { class: 'badge blue' }, f.relation) : null,
+          f.face_count ? h('span', { class: 'badge green' }, t('{n} eğitim', { n: f.face_count })) : null,
+          shots.length ? h('span', { class: 'badge' }, t('{n} tanınma', { n: shots.length })) : null),
+        f.birth_date ? h('div', { class: 'small' }, t('Doğum: {d}', { d: fmtDate(f.birth_date) })) : null,
+        f.phone ? h('div', { class: 'small' }, f.phone) : null,
+        f.note ? h('div', { class: 'small muted' }, f.note) : null,
+        shots.length ? h('div', { class: 'fg-recognized' }, shots.slice(0, 5).map(s => h('img', { src: fileUrl(s.crop, 160), alt: '', loading: 'lazy', title: s.camera_name || '' }))) : null,
+        h('div', { class: 'addr-actions' },
+          h('button', { class: 'btn sm', onclick: () => familyForm(e, f) }, 'Düzelt'),
+          h('button', { class: 'btn sm', onclick: () => familyFaceModal(e, f, recognized[f.id] || []) }, 'Yüz Tanıma Eğit'),
+          h('button', { class: 'btn sm ghost danger-text', onclick: () => remove(f) }, 'Sil')));
+    }))
       : h('div', { class: 'empty small' }, 'Aile üyesi eklenmemiş. “Aile Üyesi Ekle” ile ekleyin.'));
+  draw();
+  if (e.family?.length) api.get(`/api/hr/employees/${e.id}/family-recognized`).then(r => { recognized = r.shots || {}; draw(); }).catch(() => {});
+  return wrap;
 }
 
 function familyForm(e, f = null) {
@@ -930,7 +940,7 @@ function familyForm(e, f = null) {
   name.focus();
 }
 
-function familyFaceModal(e, f) {
+function familyFaceModal(e, f, recognized = []) {
   const grid = h('div', { class: 'fr-crops' });
   const status = h('span', { class: 'small muted' });
   const fileInp = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
@@ -958,7 +968,11 @@ function familyFaceModal(e, f) {
     body: h('div', null,
       h('p', { class: 'small muted' }, 'Kişinin net, önden çekilmiş fotoğraflarını yükleyin. Kameralarda tanındığında adıyla görünür. Veri fabrikada (lokal) tutulur.'),
       h('div', { class: 'tv-bar' }, h('button', { class: 'btn sm primary', type: 'button', onclick: () => fileInp.click() }, '＋ Fotoğraf yükle'), fileInp, status),
-      grid),
+      grid,
+      recognized.length ? h('div', { style: { marginTop: '14px' } },
+        h('b', null, t('Kameradan tanınan yüzler ({n})', { n: recognized.length })),
+        h('p', { class: 'small muted' }, 'Tanımlanmayan kişilerden bu kişiye atanan kamera görülmeleri.'),
+        h('div', { class: 'fg-recognized' }, recognized.map(s => h('img', { src: fileUrl(s.crop, 160), alt: '', loading: 'lazy', title: `${s.camera_name || ''} ${s.at ? fmtDateTime(s.at) : ''}` })))) : null),
     actions: [{ label: 'Kapat' }], onClose: reload });
   draw();
 }

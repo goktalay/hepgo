@@ -1301,7 +1301,8 @@ CREATE TABLE IF NOT EXISTS face_sightings (
     crop      TEXT NOT NULL,
     frame     TEXT NOT NULL,
     embedding BLOB NOT NULL,
-    score     REAL NOT NULL DEFAULT 0
+    score     REAL NOT NULL DEFAULT 0,
+    threshold REAL                          -- görülme anında etkin tanıma hassasiyeti (eşik)
 );
 CREATE INDEX IF NOT EXISTS ix_face_sightings_group ON face_sightings(group_id, at);
 CREATE INDEX IF NOT EXISTS ix_face_sightings_at ON face_sightings(at);
@@ -1848,6 +1849,8 @@ def _migrate(conn):
     conn.execute('UPDATE orders SET product_id = ? WHERE product_id IS NULL', (default,))
     if 'clip' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anının kısa videosu (lokal)
         conn.execute('ALTER TABLE face_sightings ADD COLUMN clip TEXT')
+    if 'threshold' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anındaki tanıma hassasiyeti (eşik)
+        conn.execute('ALTER TABLE face_sightings ADD COLUMN threshold REAL')
     # Personel aile üyeleri + yüz tanımada eğitilebilirlik
     conn.execute('''CREATE TABLE IF NOT EXISTS family_members (
         id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

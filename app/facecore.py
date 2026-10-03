@@ -39,7 +39,7 @@ def group(conn, gid):
     if not g:
         raise NotFound('Yüz grubu bulunamadı')
     g['items'] = db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name FROM face_sightings s
+        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, c.name AS camera_name FROM face_sightings s
            LEFT JOIN cameras c ON c.id = s.camera_id WHERE s.group_id = ? ORDER BY s.at DESC LIMIT 400''', (gid,)))
     return g
 
@@ -122,7 +122,7 @@ def events(conn, date_from, date_to, kind='known', limit=500):
     if kind == 'known':
         where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL)"
     return {'events': db.rows(conn.execute(
-        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
                    u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name
             FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
             LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
@@ -148,6 +148,19 @@ def overlays(conn, ids):
             continue
         out[str(int(cid))] = d.get('boxes', [])
     return {'overlays': out}
+
+
+def family_shots(conn, family_ids, per=6):
+    """Aile üyelerine ATANMIŞ kamera gruplarından son görülme kırpıkları. {family_id: [{crop, frame, at, threshold, camera_name}]}."""
+    out = {}
+    for fid in family_ids or []:
+        rows = db.rows(conn.execute(
+            '''SELECT s.crop, s.frame, s.at, s.threshold, c.name AS camera_name
+               FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+               WHERE g.family_id = ? ORDER BY s.at DESC LIMIT ?''', (int(fid), int(per))))
+        if rows:
+            out[str(int(fid))] = rows
+    return {'shots': out}
 
 
 def cameras_list(conn):
@@ -221,6 +234,8 @@ def rpc(conn, method, args):
         return cameras_list(conn)
     if method == 'overlays':
         return overlays(conn, a.get('ids') or [])
+    if method == 'family_shots':
+        return family_shots(conn, a.get('family_ids') or [], a.get('per', 6))
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')

@@ -18,7 +18,8 @@ faces_router = APIRouter(prefix='/api/faces')
 cam_user = auth.require_sysadmin()   # Kameralar modülü yalnızca sistem yöneticisine açık (Sistem Yönetimi)
 LIVE_DIR = config.DATA_DIR / 'cameras' / 'live'
 
-_cam_access = lambda user, name: auth.ADMIN in user['roles'] or bool(user.get('master'))
+# Kamera yüz medyası: sistem yöneticisi/master + İK (aile üyelerinin tanınan yüzlerini personel detayında görür)
+_cam_access = lambda user, name: auth.ADMIN in user['roles'] or bool(user.get('master')) or 'hr' in user['modules']
 FILE_GUARDS['camfaces'] = _cam_access
 FILE_GUARDS['faces_enroll'] = _cam_access   # yüz tanıma eğitimi kırpıkları
 FILE_GUARDS['camclips'] = _cam_access        # görülme anı video klipleri (lokal)

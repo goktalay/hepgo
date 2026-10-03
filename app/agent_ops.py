@@ -83,6 +83,7 @@ def _face_rpc(args):
     from . import db, facecore
     try:
         with db.connect() as conn:
+            conn.execute('PRAGMA foreign_keys = OFF')   # fabrika aynası: bulut id'leri (user/person/family) yerel parent olmadan taşınır
             res = facecore.rpc(conn, args['method'], args.get('args') or {})
             conn.commit()
         return res

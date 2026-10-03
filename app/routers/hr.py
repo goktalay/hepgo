@@ -686,6 +686,18 @@ async def family_face_add(eid: int, fid: int, file: UploadFile = File(...), user
     return {'ok': True, 'face': res}
 
 
+@router.get('/employees/{eid}/family-recognized')
+def family_recognized(eid: int, user=Depends(hr_user), conn=db.DB):
+    """Personelin aile üyelerine atanmış kamera gruplarından son görülme kırpıkları. {family_id: [shots]}."""
+    fids = [r[0] for r in conn.execute('SELECT id FROM family_members WHERE employee_id = ?', (eid,)).fetchall()]
+    if not fids:
+        return {'shots': {}}
+    from .. import facebridge, facecore
+    if facebridge.remote():
+        return facebridge.rpc('family_shots', family_ids=fids, per=6)
+    return facecore.family_shots(conn, fids, 6)
+
+
 @router.delete('/employees/{eid}/family/{fid}/faces/{enroll_id}')
 def family_face_del(eid: int, fid: int, enroll_id: int, user=Depends(hr_user), conn=db.DB):
     _family(conn, eid, fid)

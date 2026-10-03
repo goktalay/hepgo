@@ -3,9 +3,19 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.86.0'
+VERSION = '2.87.0'
 
 CHANGELOG = [
+    {'version': '2.87.0', 'date': '2026-10-03', 'title': 'Hassasiyet toolbarda + görülmede eşik + aile tanınan yüzler',
+     'changes': [
+         'Tanımlanmayan Kişiler araç çubuğuna yüz tanıma hassasiyeti (eşik) eklendi — anında uygulanır.',
+         'Her görülme hangi hassasiyette (eşik) yapıldıysa kayda işlenir; grup ve olay detayında görünür.',
+         'Aile üyesine kameradan atanan görülmeler artık personel detayında ve Yüz Tanıma Eğitimi penceresinde görünür (son örnekler).',
+     ]},
+    {'version': '2.86.1', 'date': '2026-10-03', 'title': 'Düzeltme: aile üyesine atama 500 hatası',
+     'changes': [
+         'Henüz yüz eğitimi olmayan aile üyesine (ya da fabrikada bulunmayan kişiye) atama 500 hatası veriyordu; fabrika ayna veritabanında yüz kayıtları için referans kısıtı kaldırıldı (isimler zaten bulutta çözülür).',
+     ]},
     {'version': '2.86.0', 'date': '2026-10-03', 'title': 'Tanımlanmayan kişiler: aileye atama + seçilenleri kaldır',
      'changes': [
          'Tanımlanmayan kişiler › Kişiye Ata’ya personel aile üyeleri de eklendi (kullanıcı / firma personeli / aile üyeleri).',

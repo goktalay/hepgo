@@ -105,7 +105,7 @@ async function renderEvents(wrap) {
         h('b', null, e.user_name || e.person_name || e.family_name || "Tanımlanamayan",
           e.person_company ? h('span', { class: 'small muted' }, ` · ${e.person_company}`) : null),
         h('div', { class: 'small muted' }, e.camera_name || '—'),
-        h('div', { class: 'small muted' }, fmtDateTime(e.at))))))
+        h('div', { class: 'small muted' }, fmtDateTime(e.at), e.threshold != null ? ` · hassasiyet ${e.threshold}` : '')))))
       : h('div', { class: 'card empty' }, 'Bu tarih aralığında görülme yok. Kameralarda yüz tanıma açık olmalı ve kişi eğitilmiş olmalı.'));
   };
   function showFrame(e) {

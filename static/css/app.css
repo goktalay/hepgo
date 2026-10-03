@@ -270,6 +270,9 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 }
 .back:hover { background: var(--surface-2); text-decoration: none; }
 
+.fc-sens { display: inline-flex; align-items: center; gap: 6px; }
+.fg-recognized { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.fg-recognized img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
 .filters {
   display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px;

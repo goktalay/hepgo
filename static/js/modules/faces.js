@@ -11,6 +11,16 @@ export async function renderFaces(body) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Kamera, kişi ara…', style: { width: '200px' } });
   const mergeBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => mergeSelected() }, 'Seçilenleri Birleştir');
   const delBtn = h('button', { class: 'btn danger', type: 'button', disabled: true, onclick: () => deleteSelected() }, 'Seçilenleri Kaldır');
+  // Yüz tanıma hassasiyeti (eşik) — düşük = daha çok yüz yakalar; anında fabrikaya uygulanır
+  let facerecCfg = { score: 0.6, min_face: 36 };
+  const sens = h('input', { type: 'number', class: 'input', min: '0.3', max: '0.95', step: '0.05', style: { width: '86px' },
+    title: 'Yüz tanıma hassasiyeti: düşük değer daha çok yüz yakalar (yanlış tespit artabilir)' });
+  const sensWrap = h('label', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Hassasiyet'), sens);
+  api.get('/api/system/nvr/facerec').then(c => { facerecCfg = c; sens.value = c.score; }).catch(() => {});
+  sens.addEventListener('change', async () => {
+    try { const r = await api.put('/api/system/nvr/facerec', { score: Number(sens.value), min_face: facerecCfg.min_face || 36 }); facerecCfg = r; sens.value = r.score; toast('Hassasiyet kaydedildi · anında geçerli', 'success'); }
+    catch (err) { toastError(err); }
+  });
   const info = h('span', { class: 'small muted' });
   const out = h('div');
   const selected = new Set();
@@ -73,7 +83,8 @@ export async function renderFaces(body) {
             h('p', { class: 'small muted' }, 'Yüze tıklayınca görüldüğü anın tam karesi açılır.'))),
         h('div', { class: 'fg-shots' }, g.items.map(s => h('button', { class: 'fg-shot', type: 'button', onclick: () => showFrame(s) },
           h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' }),
-          h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'))))),
+          h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'),
+          s.threshold != null ? h('span', { class: 'muted' }, t('hassasiyet {v}', { v: s.threshold })) : null)))),
       actions: [
         { label: 'Grubu Sil', class: 'danger', onClick: async () => {
           if (!await confirmDialog('Grubu sil', 'Bu gruptaki tüm yüz ve kare resimleri silinsin mi? (yanlış tespitler için)', { okLabel: 'Sil', danger: true })) return true;
@@ -122,7 +133,7 @@ export async function renderFaces(body) {
   }
 
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), delBtn, mergeBtn), h('p', null, info), out);
+  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), sensWrap, delBtn, mergeBtn), h('p', null, info), out);
   await load();
   every(15000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
 }

@@ -198,12 +198,13 @@ def _write_clip(frames, out_path):
     return True
 
 
-def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso):
+def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso, threshold=None):
     """Grubu günceller ya da yeni grup açar; 20 sn kuralına göre görülmeyi (kırpık + tam kare) saklar."""
     gid, who = ident.assign(emb)
     now = time.time()
     FACE_DIR.mkdir(parents=True, exist_ok=True)
     with db.connect() as conn:
+        conn.execute('PRAGMA foreign_keys = OFF')   # fabrika aynası: eşleşen kişi/aile id'si yerelde olmayabilir
         if gid is None:
             name = uuid.uuid4().hex
             _write_jpg(FACE_DIR / f'{name}.jpg', crop, 88)
@@ -236,8 +237,8 @@ def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso):
                 conn.execute('UPDATE face_groups SET best_crop = ?, best_score = ? WHERE id = ?', (crop_path, score, gid))
         fname = uuid.uuid4().hex
         _write_jpg(FACE_DIR / f'{fname}.jpg', frame, 85)
-        cur = conn.execute('INSERT INTO face_sightings (group_id, camera_id, at, crop, frame, embedding, score) VALUES (?,?,?,?,?,?,?)',
-                           (gid, cam_id, now_iso, crop_path, f'camfaces/{fname}.jpg', emb.astype(np.float32).tobytes(), score))
+        cur = conn.execute('INSERT INTO face_sightings (group_id, camera_id, at, crop, frame, embedding, score, threshold) VALUES (?,?,?,?,?,?,?,?)',
+                           (gid, cam_id, now_iso, crop_path, f'camfaces/{fname}.jpg', emb.astype(np.float32).tobytes(), score, threshold))
         return cur.lastrowid
 
 
@@ -341,7 +342,7 @@ class Camera:
                                   'w': round(float(f[2]) / w, 4), 'h': round(float(f[3]) / h, 4),
                                   'kind': who[0] if who else None, 'id': who[1] if who else None})
                     full = full if full is not None else _resize(frame, FRAME_WIDTH)
-                    sid = _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso)
+                    sid = _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso, round(score_thr, 2))
                     if sid:
                         self._save_clip(sid)
                 _write_overlay(self.row['id'], boxes)   # yüz yoksa boş → çerçeveler temizlenir

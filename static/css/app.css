@@ -275,6 +275,10 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .feed-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .feed-bar .spacer { flex: 1; }
 .feed-body { max-height: 420px; overflow: auto; }
+.db-head-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.db-head-actions .seg-tabs { font-size: 12px; }
+.w-company_news .db-head { flex-wrap: wrap; row-gap: 6px; }
+.w-company_news .db-head h3 { flex: 1 1 100%; }
 .feed-composer { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; margin-bottom: 10px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2, rgba(127,127,127,.05)); cursor: pointer; }
 .feed-composer:hover { background: var(--surface-2, rgba(127,127,127,.1)); }

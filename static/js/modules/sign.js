@@ -1,6 +1,6 @@
 // İmza talepleri: bana gelenler / gönderdiklerim ve talep ekranı (evrakı gör → İmzala / Reddet / Vazgeç).
 // Modül değildir; her kullanıcı yalnızca kendisine gelen ve kendi gönderdiği talepleri görür.
-import { api, fileUrl } from '../api.js';
+import { api, fileUrl, videoUrl } from '../api.js';
 import { clear, fmtDateTime, h, modal, pageHead, segmented, statStrip, t, toast, toastError } from '../ui.js';
 import { thumbOf } from './documents.js';
 
@@ -66,7 +66,7 @@ async function renderRequest(view, sid, ctx) {
   const s = await api.get(`/api/signatures/${sid}`);
   const url = fileUrl(s.file);
   const ext = s.file_name.split('.').pop().toLowerCase();
-  const preview = s.kind === 'VIDEO' ? h('video', { src: url, controls: true, playsinline: true, class: 'doc-preview' })
+  const preview = s.kind === 'VIDEO' ? h('video', { src: url + '#t=0.1', controls: true, playsinline: true, preload: 'metadata', class: 'doc-preview' })
     : s.kind === 'RESIM' && !['heic', 'heif'].includes(ext) ? h('img', { src: fileUrl(s.file, 1600), class: 'doc-preview', alt: s.document_title })
       : ext === 'pdf' ? h('iframe', { src: url, class: 'doc-preview pdf', title: s.document_title })
         : h('div', { class: 'doc-preview none' }, thumbOf(s, 'doc-thumb big'), h('a', { class: 'btn primary', href: url, download: s.file_name }, 'Dosyayı İndir'));

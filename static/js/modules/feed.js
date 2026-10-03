@@ -1,6 +1,6 @@
 // Şirketten Haberler: pano akışı (Facebook tarzı) — sistem olayları + kullanıcı paylaşımları (resim/video/ses + konum).
 // İki görünüm: Akış ve Harita. Sistem olaylarında şirket logosu, kullanıcı paylaşımında kişinin fotoğrafı.
-import { api, fileUrl, upload } from '../api.js';
+import { api, fileUrl, upload, videoUrl } from '../api.js';
 import { loadMaps } from '../maps.js';
 import { avatar, clear, confirmDialog, fmtDateTime, h, modal, segmented, t, toast, toastError } from '../ui.js';
 
@@ -10,15 +10,16 @@ const KIND_BADGE = {
 };
 const LOGO = '/static/img/logo-mark.png';
 
-export function renderFeed(container, ctx) {
-  let view = 'feed', posts = [];
+export function renderFeed(container, ctx, opts = {}) {
+  let view = opts.view || 'feed', posts = [];
   const body = h('div', { class: 'feed-body' });
-  const seg = segmented([['feed', 'Akış'], ['map', 'Harita']], view, v => { view = v; draw(); }, { tabs: true });
+  const seg = segmented([['feed', 'Akış'], ['map', 'Harita']], view, v => { view = v; opts.onView?.(v); draw(); }, { tabs: true });
   const shareBtn = h('button', { class: 'btn sm primary', type: 'button', onclick: () => compose(load) }, '＋ Paylaş');
-  clear(container, h('div', { class: 'feed-bar' }, seg, h('span', { class: 'spacer' }), shareBtn), body);
+  if (opts.header) { clear(opts.header, seg, shareBtn); clear(container, body); }   // kontroller widget başlığında
+  else clear(container, h('div', { class: 'feed-bar' }, seg, h('span', { class: 'spacer' }), shareBtn), body);
 
   const mediaEl = m => {
-    if (m.type === 'video') return h('video', { class: 'feed-media', src: fileUrl(m.path), controls: true, preload: 'metadata', playsinline: true });
+    if (m.type === 'video') return h('video', { class: 'feed-media', src: videoUrl(m.path), controls: true, preload: 'metadata', playsinline: true });
     if (m.type === 'audio') return h('audio', { class: 'feed-audio', src: fileUrl(m.path), controls: true, preload: 'none' });
     return h('img', { class: 'feed-media', src: fileUrl(m.path, 1000), alt: '', loading: 'lazy', onclick: () => modal({ title: '', wide: true, body: h('img', { class: 'feed-media-full', src: fileUrl(m.path) }), actions: [{ label: 'Kapat' }] }) });
   };

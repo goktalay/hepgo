@@ -1,6 +1,6 @@
 // Güvenlik → Yüz Tanıma: (1) Eğitim — bir kişi için fotoğraf yükleyip yüzünü eğit; (2) Olaylar — seçilen tarih
 // aralığında kameralarda tanınan kişilerin görülmeleri. Yüz verisi ve kayıtlar fabrikada (lokal) tutulur; buluta taşınmaz.
-import { api, fileUrl } from '../api.js';
+import { api, fileUrl, videoUrl } from '../api.js';
 import { clear, confirmDialog, fmtDateTime, h, matches, modal, moduleToolbar, segmented, t, toast, toastError } from '../ui.js';
 
 export async function renderFaceRec(body, ctx, params) {
@@ -110,7 +110,7 @@ async function renderEvents(wrap) {
   };
   function showFrame(e) {
     const media = e.clip
-      ? h('video', { class: 'fr-clip', src: fileUrl(e.clip), controls: true, autoplay: true, loop: true, muted: true, playsinline: true })
+      ? h('video', { class: 'fr-clip', src: videoUrl(e.clip), controls: true, loop: true, muted: true, playsinline: true, preload: 'metadata' })
       : (e.frame ? h('img', { src: fileUrl(e.frame), alt: '' }) : h('div', { class: 'muted' }, 'Görüntü yok'));
     modal({ title: `${e.user_name || e.person_name || e.family_name || "Görülme"} · ${fmtDateTime(e.at)}`, wide: true,
       body: h('div', { class: 'fr-frame' }, media,

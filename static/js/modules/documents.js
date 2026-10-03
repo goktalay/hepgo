@@ -2,7 +2,7 @@
 // (yüz tanıma, kişiye bağlama); firma/kişi ilişkilendirme;
 // görünürlük (herkes / seçili roller / yalnızca yükleyen).
 import { crmNav } from './crmhub.js';
-import { api, fileUrl, uploadLarge } from '../api.js';
+import { api, fileUrl, uploadLarge, videoUrl } from '../api.js';
 import { icons } from '../icons.js';
 import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, segmented, selectInput,
@@ -242,7 +242,7 @@ async function renderDetail(view, id, ctx) {
   const d = await api.get(`/api/documents/${id}`);
   const url = fileUrl(d.file);
   const ext = d.file_name.split('.').pop().toLowerCase();
-  const preview = d.kind === 'VIDEO' ? h('video', { src: url, controls: true, playsinline: true, preload: 'metadata', class: 'doc-preview' })
+  const preview = d.kind === 'VIDEO' ? h('video', { src: url + '#t=0.1', controls: true, playsinline: true, preload: 'metadata', class: 'doc-preview' })
     : d.kind === 'SES' ? h('div', { class: 'doc-preview audio' }, thumbOf(d, 'doc-thumb big'),
       h('audio', { src: url, controls: true, preload: 'metadata' }))
     : d.kind === 'RESIM' && ext !== 'heic' && ext !== 'heif' ? h('img', { src: fileUrl(d.file, 1600), class: 'doc-preview', alt: d.title })

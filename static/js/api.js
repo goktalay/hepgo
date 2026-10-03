@@ -79,6 +79,8 @@ export async function upload(url, formData, onProgress) {
 
 // w verilirse sunucu resmi o genişliğe küçültüp gönderir (liste, kart, avatar); aslı için w verilmez
 export const fileUrl = (path, w) => (path ? `/api/files/${path}${w ? `?w=${w}` : ''}` : null);
+// Video kaynağı: ilk kareyi poster olarak göstermek için #t=0.1 (siyah ekran yerine). Yüklenen videolar her yerde böyle.
+export const videoUrl = path => (path ? `${fileUrl(path)}#t=0.1` : null);
 
 // Hareket kaydı (sayfa girişi/çıkışı, yazdırma vb.). beacon: sekme kapanırken de gönderilir.
 export function logActivity(events, { beacon = false } = {}) {

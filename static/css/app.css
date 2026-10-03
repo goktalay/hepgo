@@ -5732,10 +5732,6 @@ html[data-theme="dark"] .ct-paper:not(.ct-prev) { background: #fdfdfb; }
 .fin-trial tbody tr:hover td { background: var(--surface-2); }
 .fin-trial tr.grp td { font-weight: 700; }
 .fin-trial tr.d1 td { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
-.fin-trial tr.d2 td:nth-child(2) { padding-left: 18px; }
-.fin-trial tr.d3 td:nth-child(2) { padding-left: 30px; }
-.fin-trial tr.d4 td:nth-child(2) { padding-left: 42px; font-weight: 400; }
-.fin-trial tr.d5 td:nth-child(2) { padding-left: 54px; font-weight: 400; color: var(--muted); }
 .fin-trial tfoot td { border-top: 2px solid var(--border); }
 .fin-is td { padding: 6px 8px; }
 .fin-is tr.tot td { font-weight: 800; border-top: 1px solid var(--border); background: var(--surface-2); }
@@ -5748,3 +5744,16 @@ html[data-theme="dark"] .ct-paper:not(.ct-prev) { background: #fdfdfb; }
 .fin-stack { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .fin-stack .fin-is { max-width: 900px; }
 .stat .s { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Mizan ağacı */
+.fin-tree { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.fin-tree-cell { white-space: nowrap; }
+.fin-caret { width: 22px; height: 22px; flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 6px; font-size: 12px;
+  display: inline-grid; place-items: center; transition: transform .15s ease, background .15s ease; }
+.fin-caret:hover { background: var(--surface-2); color: var(--text); }
+.fin-caret.open { transform: rotate(90deg); color: var(--primary); }
+.fin-caret.leaf { cursor: default; }
+.fin-code { min-width: 54px; color: var(--muted); font-size: 12.5px; }
+.fin-trial tr.grp .fin-code { color: var(--text); }
+.fin-name { overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+.fin-trial tr.d4 td, .fin-trial tr.d5 td { font-weight: 400; }
+.fin-trial tr.d5 .fin-name { color: var(--muted); }

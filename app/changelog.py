@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.108.0'
+VERSION = '2.108.1'
 
 CHANGELOG = [
+    {'version': '2.108.1', 'date': '2026-10-04', 'title': 'Mizan ağaç görünümü',
+     'changes': [
+         'Finans › Mizan artık ağaç şeklinde: her hesap ▸ / ▾ ile açılıp kapanır (sınıf → grup → ana hesap → alt hesap → detay).',
+         '“Aç” seçimiyle istenen seviyeye kadar açma, “Tümünü aç / kapat”; aramada eşleşen hesaplar üst hesaplarıyla birlikte gösterilir; satıra dokununca hesap ekstresi.',
+     ]},
     {'version': '2.108.0', 'date': '2026-10-03', 'title': 'Finans v2: nakit akışı, çek/senet, mizan, mali tablolar',
      'changes': [
          'Mizan: Mikro muhasebe fişlerinden; dönem ve seviye (sınıf / grup / ana hesap / alt hesap / tüm detay), borç-alacak toplamları ve bakiyeler, dengeli kontrolü; satıra dokununca hesap ekstresi (yürüyen bakiye).',

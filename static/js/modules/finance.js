@@ -373,32 +373,67 @@ function instrForm(r, firms, ST, done) {
       field('Durum', status), field('Not', note)), actions });
 }
 
-// ---------- Mizan ----------
+// ---------- Mizan (ağaç) ----------
+// Tekdüzen hiyerarşi: 1 → 10 → 100 → 100.01 → 100.01.0001. ▸/▾ ile açılıp kapanır; seviye seçimi o derinliğe kadar açar;
+// arama eşleşen hesapları üst hesaplarıyla birlikte gösterir; satıra dokununca hesap ekstresi.
+const ancestorsOf = code => {
+  const [head, ...rest] = String(code).split('.');
+  const out = [];
+  for (let i = 1; i <= Math.min(3, head.length); i++) out.push(head.slice(0, i));
+  if (head.length > 3) out.push(head);
+  let cur = head;
+  for (const seg of rest) { cur = `${cur}.${seg}`; out.push(cur); }
+  return out;
+};
 async function trialView(view) {
-  let from = yearStart(), to = today(), level = 3, q = '';
-  const levelSel = h('select', { class: 'input', style: { width: 'auto' } }, [[1, 'Sınıf'], [2, 'Grup'], [3, 'Ana hesap'], [4, 'Alt hesap'], [9, 'Tüm detay']]
-    .map(([v, l]) => h('option', { value: v, selected: v === 3 }, l)));
+  let from = yearStart(), to = today(), q = '', d = null;
+  let expanded = new Set();
+  const levelSel = h('select', { class: 'input', style: { width: 'auto' } }, [[1, 'Sınıflar'], [2, 'Gruplar'], [3, 'Ana hesaplar'], [4, 'Alt hesaplar'], [9, 'Tüm detay']]
+    .map(([v, l]) => h('option', { value: v, selected: v === 2 }, l)));
   const search = h('input', { class: 'input', type: 'search', placeholder: 'Hesap kodu / adı ara…', style: { maxWidth: '220px' } });
   const out = h('div');
+  const openTo = lvl => { expanded = new Set(d.rows.filter(r => r.depth < lvl && r.has_children).map(r => r.code)); };
+  function draw() {
+    if (!d) return;
+    let rows;
+    if (q) {   // arama: eşleşenler + üst hesapları
+      const keep = new Set();
+      d.rows.filter(r => matches(q, r.code, r.name)).forEach(r => ancestorsOf(r.code).forEach(c => keep.add(c)));
+      rows = d.rows.filter(r => keep.has(r.code));
+    } else {
+      rows = d.rows.filter(r => ancestorsOf(r.code).slice(0, -1).every(c => expanded.has(c)));
+    }
+    const tbody = h('tbody', null, rows.map(r => {
+      const open = q || expanded.has(r.code);
+      const caret = r.has_children ? h('button', { class: `fin-caret ${open ? 'open' : ''}`, type: 'button', title: open ? 'Kapat' : 'Aç',
+        onclick: e => { e.stopPropagation(); if (q) return; expanded.has(r.code) ? expanded.delete(r.code) : expanded.add(r.code); draw(); } }, '▸')
+        : h('span', { class: 'fin-caret leaf' });
+      return h('tr', { class: `d${Math.min(r.depth, 5)} ${r.has_children ? 'grp' : ''}`, onclick: () => ledgerModal(r.code, r.name, from, to) },
+        h('td', { class: 'fin-tree-cell' }, h('span', { class: 'fin-tree', style: { paddingLeft: `${(r.depth - 1) * 18}px` } }, caret,
+          h('span', { class: 'mono fin-code' }, r.code), h('span', { class: 'fin-name' }, r.name || '—'))),
+        h('td', { class: 'num' }, num0(r.debit)), h('td', { class: 'num' }, num0(r.credit)),
+        h('td', { class: 'num' }, r.bal_debit ? num0(r.bal_debit) : ''), h('td', { class: 'num' }, r.bal_credit ? num0(r.bal_credit) : ''));
+    }));
+    clear(out, h('div', { class: 'card table-wrap' }, h('table', { class: 'table fin-trial' },
+      h('thead', null, h('tr', null, h('th', null, 'Hesap'), h('th', { class: 'num' }, 'Borç'), h('th', { class: 'num' }, 'Alacak'),
+        h('th', { class: 'num' }, 'Borç bakiye'), h('th', { class: 'num' }, 'Alacak bakiye'))),
+      tbody,
+      h('tfoot', null, h('tr', null, h('td', null, h('b', null, 'Toplam'), d.balanced ? h('span', { class: 'badge green', style: { marginLeft: '8px' } }, 'Dengeli') : h('span', { class: 'badge red', style: { marginLeft: '8px' } }, 'Dengesiz')),
+        ...['debit', 'credit', 'bal_debit', 'bal_credit'].map(k => h('td', { class: 'num' }, h('b', null, num0(d.total[k])))))))));
+  }
   const load = async () => {
     clear(out, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
-    let d;
-    try { d = await api.get(`/api/finance/trial?date_from=${from}&date_to=${to}&level=${level}`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
-    if (!d.has_ledger) return clear(out, noLedger());
-    const rows = d.rows.filter(r => matches(q, r.code, r.name));
-    clear(out, h('div', { class: 'card table-wrap' }, h('table', { class: 'table fin-trial' },
-      h('thead', null, h('tr', null, h('th', null, 'Hesap'), h('th', null, 'Hesap adı'), h('th', { class: 'num' }, 'Borç'), h('th', { class: 'num' }, 'Alacak'),
-        h('th', { class: 'num' }, 'Borç bakiye'), h('th', { class: 'num' }, 'Alacak bakiye'))),
-      h('tbody', null, rows.map(r => h('tr', { class: `d${Math.min(r.depth, 5)} ${r.has_children ? 'grp' : ''}`, onclick: () => ledgerModal(r.code, r.name, from, to) },
-        h('td', { class: 'mono' }, r.code), h('td', null, r.name || '—'), h('td', { class: 'num' }, num0(r.debit)), h('td', { class: 'num' }, num0(r.credit)),
-        h('td', { class: 'num' }, r.bal_debit ? num0(r.bal_debit) : ''), h('td', { class: 'num' }, r.bal_credit ? num0(r.bal_credit) : '')))),
-      h('tfoot', null, h('tr', null, h('td', { colspan: 2 }, h('b', null, 'Toplam'), d.balanced ? h('span', { class: 'badge green', style: { marginLeft: '8px' } }, 'Dengeli') : h('span', { class: 'badge red', style: { marginLeft: '8px' } }, 'Dengesiz')),
-        ...['debit', 'credit', 'bal_debit', 'bal_credit'].map(k => h('td', { class: 'num' }, h('b', null, num0(d.total[k])))))))));
+    try { d = await api.get(`/api/finance/trial?date_from=${from}&date_to=${to}&level=9`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
+    if (!d.has_ledger) { d = null; return clear(out, noLedger()); }
+    if (!expanded.size) openTo(Number(levelSel.value));
+    draw();
   };
-  levelSel.addEventListener('change', () => { level = Number(levelSel.value); load(); });
-  let st; search.addEventListener('input', () => { clearTimeout(st); st = setTimeout(() => { q = search.value.trim(); load(); }, 300); });
+  levelSel.addEventListener('change', () => { if (d) { openTo(Number(levelSel.value)); draw(); } });
+  let st; search.addEventListener('input', () => { clearTimeout(st); st = setTimeout(() => { q = search.value.trim(); draw(); }, 250); });
+  const allBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => { if (d) { openTo(99); draw(); } } }, 'Tümünü aç');
+  const noneBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => { if (d) { expanded = new Set(); draw(); } } }, 'Tümünü kapat');
   clear(view, h('div', { class: 'filters' }, h('span', { class: 'small muted' }, 'Dönem'), dt(from, e => { from = e.target.value; load(); }), dt(to, e => { to = e.target.value; load(); }),
-    h('span', { class: 'small muted' }, 'Seviye'), levelSel, search, h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, 'Satıra dokunun: hesap ekstresi')), out);
+    h('span', { class: 'small muted' }, 'Aç'), levelSel, allBtn, noneBtn, search, h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, 'Satıra dokunun: hesap ekstresi')), out);
   load();
 }
 

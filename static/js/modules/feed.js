@@ -6,7 +6,7 @@ import { avatar, clear, confirmDialog, fmtDate, fmtDateTime, h, modal, onLeave, 
 
 const KIND_BADGE = {
   HIRE: ['green', 'İşe alım'], TERMINATION: ['', 'Ayrılış'], FLIGHT: ['blue', 'Uçuş'],
-  ORDER: ['blue', 'Sipariş'], MEETING: ['yellow', 'Toplantı'], ANNOUNCE: ['red', 'Duyuru'], USER: ['', ''],
+  ORDER: ['blue', 'Sipariş'], MEETING: ['yellow', 'Toplantı'], ANNOUNCE: ['red', 'Duyuru'], USER: ['', ''], LIVE: ['red', '🔴 Canlı yayın'],
 };
 const LOGO = '/static/img/logo-mark.png';
 // Tepki simgesi → etiket + renk (beğen düğmesi ve etiketi için)
@@ -352,8 +352,25 @@ export function renderFeed(container, ctx, opts = {}) {
         avatar(ctx.user, 36),
         h('span', { class: 'feed-composer-pill' }, 'Bir şeyler paylaş…'),
         h('span', { class: 'feed-composer-ic', title: 'Foto / Video / Ses' }, svgSpan(IG.image))),
+    onlySaved ? null : h('button', { class: 'feed-livebtn', type: 'button', title: 'Canlı yayın başlat', 'aria-label': 'Canlı yayın başlat',
+      onclick: () => import('./live.js').then(m => m.startBroadcast(ctx)) }, h('span', { class: 'feed-live-dot' }), 'Canlı'),
     onlySaved ? null : h('button', { class: 'feed-savedbtn', type: 'button', title: 'Kaydedilenler', 'aria-label': 'Kaydedilenler',
       onclick: () => { onlySaved = true; load(); } }, svgSpan(IG.save)));
+
+  // Şu an canlı yayında olanlar: akışın en üstünde halkalı avatarlar (Instagram hikâye şeridi gibi); dokununca katıl
+  const liveBox = h('div', { class: 'feed-lives', hidden: true });
+  async function drawLives() {
+    let list = [];
+    try { list = await api.get('/api/live/active'); } catch { /* */ }
+    list = list.filter(x => x.user_id !== ctx.user.id);
+    liveBox.hidden = !list.length;
+    clear(liveBox, list.map(x => h('a', { class: 'feed-live', href: `#/live/${x.id}`, title: x.title || `${x.name} canlı yayında` },
+      h('span', { class: 'feed-live-ring' }, avatar({ full_name: x.name, photo: x.photo }, 52), h('span', { class: 'feed-live-tag' }, 'CANLI')),
+      h('span', { class: 'feed-live-name' }, x.name.split(' ')[0]))));
+  }
+  const onLive = () => { if (container.isConnected) drawLives(); };
+  window.addEventListener('caymaz:live', onLive);
+  onLeave(() => window.removeEventListener('caymaz:live', onLive));
 
   // Arka planda süren paylaşım yüklemeleri: form hemen kapanır, akışın üstünde ilerleme çubuğu
   const upBox = h('div', { class: 'feed-uploads' });
@@ -421,7 +438,8 @@ export function renderFeed(container, ctx, opts = {}) {
       : h('div', { class: 'feed-empty muted' }, onlySaved ? 'Henüz kaydettiğin paylaşım yok. Paylaşımların altındaki kaydet simgesiyle favorilerine ekleyebilirsin.'
         : 'Henüz paylaşım yok. İlk paylaşımı sen ekle!');
     sentinel.hidden = !hasMore;
-    clear(body, topBar(), onlySaved ? null : upBox, list, sentinel);
+    clear(body, onlySaved ? null : liveBox, topBar(), onlySaved ? null : upBox, list, sentinel);
+    if (!onlySaved) drawLives();
     drawUploads();
     requestAnimationFrame(watchEnd);
   }

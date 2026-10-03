@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.105.0'
+VERSION = '2.106.0'
 
 CHANGELOG = [
+    {'version': '2.106.0', 'date': '2026-10-03', 'title': 'Canlı yayın',
+     'changes': [
+         'Şirketten Haberler › “Canlı” düğmesi: sahadan / her yerden telefonla canlı yayın (Instagram / TikTok Live tarzı). Başlık, kamera çevirme, mikrofon aç/kapa.',
+         'Yayın başlayınca herkese anlık bildirim ve telefon bildirimi gider; zildeki “Canlı yayın” bildirimi yayın bitene kadar kalır, tıklayan yayına katılır.',
+         'Akışın en üstünde canlı yayında olanlar halkalı avatarla görünür; dokununca katılınır.',
+         'İzlerken yorum yazma, kalp (düğme ya da çift dokunuş) — kalpler sağda uçuşur; sol altta katılımcılar ve yorumlar; izleyici sayısı ve yayın süresi.',
+         'Yayın bitince kayıt Şirketten Haberler’e video olarak düşer (süre, izleyici, beğeni, yorum sayısıyla).',
+     ]},
     {'version': '2.105.0', 'date': '2026-10-03', 'title': 'Mikro ERP → Finans senkronu: banka, kasa, finansal hareketler',
      'changes': [
          'Mikro ERP › “Finans · Banka · Kasa” sekmesi: Mikro’daki banka hesapları (IBAN, şube, döviz bakiyesi) ve kasalar Mikro bakiyesi ile Finans bakiyesi yan yana.',

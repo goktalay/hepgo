@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 
 from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, printer_driver, production, push, sync, sysstat
-from .routers import directory, feed, federation, screenshare, finance, central, membership
+from .routers import directory, feed, federation, screenshare, finance, central, membership, live as live_router
 from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, console, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
                       announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, system, users, warehouse)
 
@@ -45,6 +45,7 @@ async def lifespan(app):
     asyncio.get_running_loop().create_task(push.notify_loop())   # arka plan bildirimleri (Web Push)
     asyncio.get_running_loop().create_task(sync.loop())   # entegrasyon otomatik senkronizasyonu (Mikro / PDKS)
     asyncio.get_running_loop().create_task(meet_router.end_stale_on_startup())   # yeniden başlamada asılı kalan 'canlı' toplantılar
+    asyncio.get_running_loop().create_task(live_router.start_reaper())   # yarım kalan canlı yayınlar (yayıncı dönmezse kapanır)
     yield
 
 
@@ -69,7 +70,7 @@ app.add_middleware(_AssetGZip)
 for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
-          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, console.ws_router, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router,
+          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, console.ws_router, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router, live_router.router, live_router.ws_router,
           central.router, central.fed_router, membership.router):
     app.include_router(r)
 

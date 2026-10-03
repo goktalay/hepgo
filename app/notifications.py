@@ -358,6 +358,17 @@ def tickets_waiting(conn, user):
     return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], '#/tickets', 'Yanıtlamak için açın')
 
 
+def live_now(conn, user):
+    """Şu an canlı yayın yapanlar (kendi yayını hariç) — yayın bitene kadar kalır; tıklayan yayına katılır."""
+    from . import feed
+    if not feed.can_see_home(user.get('modules', [])):
+        return _result([], [], '#/home')
+    rows = db.rows(conn.execute('''SELECT s.id, s.title, u.full_name FROM live_streams s JOIN users u ON u.id = s.user_id
+                                   WHERE s.status = 'live' AND s.user_id != ? ORDER BY s.started_at DESC''', (user['id'],)))
+    names = [f"🔴 {r['full_name']}" + (f": {r['title']}" if r['title'] else ' canlı yayında') for r in rows]
+    return _result(rows, names, f"#/live/{rows[0]['id']}" if rows else '#/home', 'Katılmak için dokunun')
+
+
 def feed_new(conn, user):
     """Şirketten Haberler: görmediğiniz yeni paylaşımlar (tıklayınca ana ekran; ana ekranda görünce kalkar)."""
     from . import feed
@@ -417,6 +428,8 @@ NOTIFICATIONS = [
     # Sonda: dakikalık push taramasında önemli bildirimlerin önüne geçmesin. push=False: telefon bildirimini paylaşım
     # anında routers/feed._announce atar; tarama aynı artış için ikinci kez atmasın (çift bildirim olmasın).
     {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
+    # Telefon bildirimini yayın başlarken routers/live atar (aynı etiketle bitince günceller); tarama ikinci kez atmasın
+    {'key': 'live-now', 'roles': None, 'fn': live_now, 'title': 'Canlı yayın', 'push': False},
 ]
 
 

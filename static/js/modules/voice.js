@@ -158,6 +158,7 @@ function handle(m) {
     case 'rec_stopped': return onRecStopped(m);
     case 'rec_denied': return onRecDenied(m);
     case 'feed': return window.dispatchEvent(new CustomEvent('caymaz:feed', { detail: m }));   // Şirketten Haberler: yeni paylaşım
+    case 'live': return window.dispatchEvent(new CustomEvent('caymaz:live', { detail: m }));   // canlı yayın başladı / bitti
   }
 }
 

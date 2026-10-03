@@ -358,6 +358,7 @@ const onHomeVisible = () => {
 };
 window.addEventListener('caymaz:feed', () => { if (!onHomeVisible()) refreshNotify(); });   // başka ekrandaysa zil + kutu hemen
 window.addEventListener('caymaz:feed-seen', () => refreshNotify());                       // ana ekranda görüldü → zilden düşsün
+window.addEventListener('caymaz:live', () => refreshNotify());   // canlı yayın başladı / bitti → zil ve kutu hemen
 // Cihaz bildirimi (Web Push) açıksa yeni paylaşımın OS bildirimini sunucu atar; masaüstü bildirimi ikinci kez gösterilmez.
 let devicePush = false;
 const checkDevicePush = () => import('./push.js').then(m => m.pushState()).then(v => { devicePush = v === 'on'; }).catch(() => {});
@@ -373,7 +374,7 @@ function announce(kind, items) {
     playEvent(kind === 'alerts' ? (i.critical ? 'critical' : 'alert') : eventOfNotification(i.key));
     const names = fresh.length ? fresh : i.names;
     if (flashOn()) flash(kind, i, names);
-    if (!(i.key === 'feed-new' && devicePush)) desktopNotify(i.title, names.slice(0, 3).join(', '), () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; });
+    if (!((i.key === 'feed-new' || i.key === 'live-now') && devicePush)) desktopNotify(i.title, names.slice(0, 3).join(', '), () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; });
   }
 }
 function flash(kind, item, names) {
@@ -871,6 +872,11 @@ async function route() {
   if (key === 'sysconfig') {   // Program Ayarları (sistem yöneticisi / MASTER)
     view.className = '';
     return sysconfig.render(view, params, ctx).catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
+  }
+  if (key === 'live' && params[0]) {   // canlı yayın izle: ana ekranın üstünde tam ekran
+    view.className = '';
+    await renderHome();
+    return import('./modules/live.js').then(lv => lv.watch(Number(params[0]), ctx)).catch(err => toastError(err));
   }
   if (key === 'meet') {   // Görüntülü online toplantı (herkese açık)
     view.className = '';

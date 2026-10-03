@@ -254,7 +254,7 @@ def can_see_home(modules):
     return bool(mods) and not all(m in ('security', 'announcements') for m in mods)
 
 
-def push_recipients(conn, author_id, exclude=()):
+def push_recipients(conn, author_id, exclude=(), mute_key='feed-new'):
     """Yeni paylaşımın telefon/OS bildirimi alıcıları: aktif, silinmemiş, izinli/raporlu olmayan (master hariç), 'yeni paylaşım'
     bildirimini kapatmamış ve ana ekranı görebilen kullanıcılar. Süresi bitmiş merkez-destek temsil hesapları ve uygulaması şu an
     ekranda açık olanlar (exclude: uygulama içi bildirim yeter) hariç."""
@@ -275,7 +275,7 @@ def push_recipients(conn, author_id, exclude=()):
             continue
         if r['id'] in absent and not master:
             continue
-        if 'feed-new' in notifications._muted(r):
+        if mute_key in notifications._muted(r):
             continue
         mods = list(auth.MODULE_ROLES.keys()) if master else auth.allowed_modules(roles.get(r['id'], []))
         if config.MODULES is not None:

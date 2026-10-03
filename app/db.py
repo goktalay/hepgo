@@ -146,6 +146,37 @@ CREATE TABLE IF NOT EXISTS feed_comments (
     deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_feed_comments_post ON feed_comments(post_id);
+-- Canlı yayın (sahadan / her yerden): yayın bitince kayıt Şirketten Haberler'e paylaşılır
+CREATE TABLE IF NOT EXISTS live_streams (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title         TEXT,
+    status        TEXT NOT NULL DEFAULT 'live',   -- live | ended
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    viewers_peak  INTEGER NOT NULL DEFAULT 0,
+    viewers_total INTEGER NOT NULL DEFAULT 0,
+    likes         INTEGER NOT NULL DEFAULT 0,
+    comments      INTEGER NOT NULL DEFAULT 0,
+    recording     TEXT,                           -- uploads içindeki yol (feed/live_<id>.mp4)
+    post_id       INTEGER,
+    lat           REAL,
+    lng           REAL
+);
+CREATE INDEX IF NOT EXISTS ix_live_status ON live_streams(status);
+CREATE TABLE IF NOT EXISTS live_comments (
+    id         INTEGER PRIMARY KEY,
+    stream_id  INTEGER NOT NULL REFERENCES live_streams(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS live_viewers (
+    stream_id  INTEGER NOT NULL REFERENCES live_streams(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at  TEXT NOT NULL,
+    PRIMARY KEY (stream_id, user_id)
+);
 -- Şirketten Haberler: kullanıcının favorilere kaydettiği paylaşımlar (Instagram "Kaydet")
 CREATE TABLE IF NOT EXISTS feed_saves (
     post_id    INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,

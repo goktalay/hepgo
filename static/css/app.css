@@ -5963,3 +5963,28 @@ tr.clickable { cursor: pointer; }
 .fl-body > .fl-plate { align-self: flex-start; }
 .fl-who.big { flex-wrap: nowrap; align-items: flex-start; }
 .fl-who.big > div { flex: 1; min-width: 0; }
+/* ===== Finans: hesap / cari detayı, hareket tabloları (finmoves.js) ===== */
+.fin-dhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.fin-dtitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fin-dtitle h2 { margin: 0; font-size: 19px; }
+.fin-h3 { margin: 4px 0 8px; font-size: 14.5px; }
+.fm-table td { vertical-align: top; }
+.fm-person { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface)); color: var(--primary); text-decoration: none; white-space: nowrap; }
+.linkish { background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; font: inherit; text-decoration: underline dotted; }
+.fm-h { margin: 12px 0 6px; font-size: 13.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.fm-tabs { margin: 10px 0; }
+.fm-links { margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.fm-links-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fm-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fm-link { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 5px 6px 5px 10px; background: var(--surface-2); }
+.fm-link small { color: var(--muted); text-transform: uppercase; font-size: 10px; font-weight: 700; }
+.fm-link em { font-style: normal; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--muted); }
+.fm-link .x { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 4px; }
+.fm-sugg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fm-sugg-b { border: 1.5px dashed color-mix(in srgb, var(--primary) 45%, var(--border)); background: none; border-radius: 10px; padding: 4px 10px; cursor: pointer;
+  color: var(--primary); font-weight: 600; font-size: 12.5px; display: inline-flex; gap: 6px; align-items: center; }
+.fm-sugg-b small { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.fm-pick { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
+.fm-pick-row { display: flex; gap: 8px; align-items: center; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.fm-pick-row:hover { border-color: var(--primary); }

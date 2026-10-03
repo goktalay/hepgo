@@ -3,6 +3,7 @@
 import { api, fileUrl, upload } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
 import { renderSuppliers } from './companies.js';
+import { docMovesByNumber } from './finmoves.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   t, toast, toastError, periodFilter
@@ -211,6 +212,7 @@ async function renderInvoices(view) {
         d.request_code ? h('a', { class: 'small', href: `#/purchasing/requests/${d.request_id}` }, t('Talep {code}', { code: d.request_code })) : null,
         h('span', { class: 'spacer' }),
         h('span', { class: 'small muted' }, `→ ${d.warehouse_name || '—'}`),
+        d.kind === 'FATURA' && d.number ? h('button', { class: 'btn sm', type: 'button', title: 'Fatura no ile bağlı cari hareketleri ve muhasebe fişi', onclick: () => docMoves(d) }, 'Hareketler') : null,
         d.file ? h('a', { class: 'btn sm', href: fileUrl(d.file), target: '_blank', rel: 'noopener' }, 'Belge') : h('button', { class: 'btn sm danger-text', onclick: () => attachFile(d) }, 'Belge dosyası ekle')),
       h('table', { class: 'table compact' }, h('tbody', null, d.lines.map(l => h('tr', null,
         h('td', null, h('a', { href: `#/mrp/materials/${l.product_id}` }, h('b', { class: 'mono' }, l.code)), ` ${l.name}`),
@@ -226,6 +228,13 @@ async function renderInvoices(view) {
     moduleToolbar(h('button', { class: 'btn primary', onclick: () => invoiceForm({}) }, '＋ Fatura / İrsaliye Gir')),
     stats, h('div', { class: 'filters' }, q, kind, period.el), body);
   draw();
+}
+
+// Faturanın finans hareketleri (belge no ile bağlı cari hareketleri + muhasebe fişi) — Finans'ta ayrı liste yok, burada görünür
+function docMoves(d) {
+  const pane = h('div');
+  modal({ title: t('{n} · Hareketler', { n: d.number }), wide: true, body: pane, actions: [{ label: 'Kapat', class: 'primary' }] });
+  docMovesByNumber(pane, d.number);
 }
 
 function attachFile(d) {

@@ -343,6 +343,17 @@ CREATE TABLE IF NOT EXISTS vehicle_docs (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_vehicle_docs ON vehicle_docs(vehicle_id);
+-- Personel ↔ finans bağlantısı: isimle otomatik eşleşmeye ek olarak personel bir cariye (firma), kasa/banka hesabına
+-- (ör. şirket kredi kartı) ya da muhasebe hesabına (ör. 331 ortaklara borçlar alt hesabı) elle bağlanır.
+CREATE TABLE IF NOT EXISTS employee_fin_links (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,                 -- company | account | ledger
+    ref         TEXT NOT NULL,                 -- companies.id | fin_accounts.id | fin_coa.code
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE (employee_id, kind, ref)
+);
 -- Araçla ilgisi olmadığı işaretlenen muhasebe / finans hareketleri (etiketleme listesinde gizlenir)
 CREATE TABLE IF NOT EXISTS vehicle_ignored (
     ref        TEXT PRIMARY KEY,

@@ -3,7 +3,8 @@
 import { crmNav } from './crmhub.js';
 import { api } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
-import { clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, t, toast, toastError, periodFilter } from '../ui.js';
+import { clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError, periodFilter } from '../ui.js';
+import { docMovesByNumber, setFinanceAccess } from './finmoves.js';
 
 const money = v => (v == null ? '—' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺');
 const num = v => (v == null ? '' : (Math.round(Number(v) * 1000) / 1000).toLocaleString('tr-TR'));
@@ -142,6 +143,12 @@ async function invoiceForm(ctx, id) {
 async function openInvoice(id, ctx) {
   const x = await api.get(`/api/sales/${id}`);
   const [sl, st] = SRC[x.source] || SRC.manual;
+  setFinanceAccess(!!ctx?.user?.modules?.includes('finance'));
+  // Alt bölümler: Kalemler · Hareketler (fatura no ile bağlı cari hareketleri + muhasebe fişi)
+  const pane = h('div');
+  const show = k => (k === 'moves' ? docMovesByNumber(pane, x.number) : clear(pane, invoiceTable(x)));
+  const tabs = segmented([['items', t('Kalemler ({n})', { n: x.items.length })], ['moves', 'Hareketler']], 'items', show, { tabs: true });
+  show('items');
   modal({
     title: `${x.number || 'Satış Faturası'}`, wide: true,
     body: h('div', null,
@@ -150,7 +157,7 @@ async function openInvoice(id, ctx) {
         h('dt', null, 'Tarih'), h('dd', null, x.invoice_date ? fmtDate(x.invoice_date) : fmtDateTime(x.created_at)),
         h('dt', null, 'Kaynak'), h('dd', null, h('span', { class: `badge ${st}` }, sl), x.stock_applied ? h('span', { class: 'badge green', style: { marginLeft: '6px' } }, 'Stoktan düşüldü') : null),
         x.note ? [h('dt', null, 'Not'), h('dd', { class: 'pre' }, x.note)] : null),
-      invoiceTable(x)),
+      h('div', { class: 'fm-tabs' }, tabs), pane),
     actions: [
       x.source === 'manual' ? { label: 'Düzenle', onClick: () => invoiceForm(ctx, id) } : null,
       { label: '🖨 Yazdır', onClick: () => printInvoice(id) },

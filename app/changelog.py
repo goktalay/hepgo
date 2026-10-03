@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.110.0'
+VERSION = '2.111.0'
 
 CHANGELOG = [
+    {'version': '2.111.0', 'date': '2026-10-04', 'title': 'Hareketler ilgili kaydın detayında',
+     'changes': [
+         'Finans’taki ayrı “Hareketler” listesi kaldırıldı; hareketler ait olduğu kaydın detayında görünür.',
+         'Kasa & Banka: hesaba tıklayınca hesap detayı — bakiye, toplam / bu ay giriş-çıkış, tarih aralığı ve aramalı hareketler (yürüyen bakiye), ＋ Hareket.',
+         'Cariler: cariye tıklayınca cari detayı — bakiye, toplam borç / alacak, açık kalem ve vadesi geçen tutar; Hareketler (ekstre), Faturalar, Açık kalemler (vade ve gecikme günüyle), Çek / Senet sekmeleri.',
+         'Fatura detayında “Hareketler”: fatura numarasına bağlı cari hareketleri ve muhasebe fişi satırları (Satış faturası penceresi, Satın Alma › Fatura İrsaliye kartı, cari detayındaki faturalar). Hareket listelerinde belge no faturaya bağlantıdır.',
+         'Personel detayında “Hesap Hareketleri”: açıklamasında personelin adı geçen ödemeler (ör. maaş havaleleri) otomatik gelir; personel ayrıca bir cariye, kasa / banka hesabına (ör. şirket kartı) ya da muhasebe hesabına bağlanabilir, adıyla eşleşen hesaplar öneri olarak çıkar. Toplam ödeme, maaş ödemeleri ve son maaş tarihi özetlenir.',
+         'Özet kartları ekran genişliğini tam doldurur; uzun tutarlar kutuya sığacak şekilde küçülür.',
+     ]},
     {'version': '2.110.0', 'date': '2026-10-04', 'title': 'Araç Yönetimi modülü',
      'changes': [
          'Yeni modül: Araç Yönetimi — satın alınan ve kiralanan şirket araçları (Saha modülündeki araç listesiyle ortak): marka / model / yıl / şasi, fotoğraf, satın alma bedeli ve satıcı ya da kiralayan firma, sözleşme tarihleri, aylık kira, km limiti, kiraya dahil hizmetler.',

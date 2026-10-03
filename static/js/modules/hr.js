@@ -4,6 +4,7 @@
 import { setListExport } from '../listexport.js';
 import { idCard } from '../idcard.js';
 import { api, fileUrl, upload } from '../api.js';
+import { personPane } from './finmoves.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
@@ -465,6 +466,7 @@ async function renderDetail(view, id, ctx) {
       ['leaves', 'İzinler', 'İzin talepleri ve imzalı formlar', cnt(e.unsigned_leaves, ' imzasız')],
       ['health', 'Sağlık Raporları', 'Rapor süresince raporlu; sisteme giremez', cnt(e.health_reports?.length)]] },
     attendance: { label: 'Giriş-Çıkış' },
+    finance: { label: 'Hesap Hareketleri' },   // maaş ödemeleri vb. (isimle eşleşen + bağlanan cari / hesap hareketleri)
     history: { label: 'Geçmiş' },
   } : { general: { label: 'Genel' }, personnel: { label: 'Adresler', subs: [['addresses', 'Adresler', '', cnt(e.addresses.length)]] }, history: { label: 'Geçmiş' } };
   const OLD = { duties: 'isg', ppe: 'isg', trainings: 'isg', hazards: 'isg', files: 'personnel', contracts: 'personnel', addresses: 'personnel', leaves: 'absence' };
@@ -490,6 +492,7 @@ async function renderDetail(view, id, ctx) {
     if (tab === 'general') return clear(stage, generalTab(e, m, ctx));
     if (tab === 'history') return clear(stage, historyTab(e, { ...m.personnel_files, ...m.contracts }));
     if (tab === 'attendance') return clear(stage, attendanceDetailTab(e));
+    if (tab === 'finance') { const box = h('div', { class: 'hr-sub-detail' }); clear(stage, box); return personPane(box, e.id); }
     if (!g.subs.some(s => s[0] === sub)) sub = g.subs[0][0];
     const detail = h('div', { class: 'hr-sub-detail' }, panel(sub));
     clear(stage, g.subs.length === 1 ? detail : h('div', { class: 'set-layout hr-sub' },

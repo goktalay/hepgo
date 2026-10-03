@@ -173,8 +173,8 @@ def summary(user=Depends(fin_user), conn=db.DB):
     month = db.now()[:7]
     mi = conn.execute("SELECT COALESCE(SUM(amount),0) FROM fin_txns WHERE direction='in' AND substr(date,1,7)=?", (month,)).fetchone()[0]
     mo = conn.execute("SELECT COALESCE(SUM(amount),0) FROM fin_txns WHERE direction='out' AND substr(date,1,7)=?", (month,)).fetchone()[0]
-    recent = db.rows(conn.execute('''SELECT t.*, a.name AS account_name FROM fin_txns t JOIN fin_accounts a ON a.id=t.account_id
-                                     ORDER BY t.id DESC LIMIT 12'''))
+    recent = db.rows(conn.execute('''SELECT t.*, a.name AS account_name, a.kind AS account_kind, a.company_id FROM fin_txns t JOIN fin_accounts a ON a.id=t.account_id
+                                     ORDER BY t.date DESC, t.id DESC LIMIT 12'''))
     # son 6 ay giriş/çıkış (grafik)
     series = db.rows(conn.execute('''SELECT substr(date,1,7) AS ay,
                                      SUM(CASE WHEN direction='in' THEN amount ELSE 0 END) AS giris,
@@ -368,3 +368,141 @@ def plan_del(pid: int, user=Depends(fin_user), conn=db.DB):
     conn.execute('DELETE FROM fin_plans WHERE id=?', (pid,))
     conn.commit()
     return {'ok': True}
+
+
+# ================= Hareketler ilgili kaydın detayında: hesap / cari detayı, fatura ve personel hareketleri =================
+from datetime import date as _date   # noqa: E402
+
+from .. import fin_links   # noqa: E402
+
+
+def _any_module(*mods):
+    def dep(user=Depends(auth.current_user)):
+        if user.get('master') or set(mods) & set(user.get('modules', [])):
+            return user
+        raise HTTPException(403, 'Bu işlem için yetkiniz yok')
+    return dep
+
+
+doc_user = _any_module('finance', 'sales', 'purchasing')     # fatura detayındaki "Hareketler"
+person_user = _any_module('finance', 'hr')                    # personel detayındaki "Hesap Hareketleri"
+
+
+def _sums(rows):
+    t_in = sum(r['amount'] for r in rows if r['direction'] == 'in')
+    t_out = sum(r['amount'] for r in rows if r['direction'] == 'out')
+    return round(t_in, 2), round(t_out, 2)
+
+
+@router.get('/accounts/{aid}/detail')
+def account_detail(aid: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+    """Kasa / banka hesabı detayı: hesap bilgisi, özet ve hareketler (yeni → eski, yürüyen bakiyeli, fatura / personel bağlantılı)."""
+    st = statement(aid, date_from, date_to, user, conn)
+    st['rows'] = fin_links.annotate(conn, st['rows'][::-1])
+    month = db.now()[:7]
+    t_in, t_out = _sums(st['rows'])
+    m_in, m_out = _sums([r for r in st['rows'] if r['date'][:7] == month])
+    st['kpi'] = {'in': t_in, 'out': t_out, 'month_in': m_in, 'month_out': m_out, 'count': len(st['rows'])}
+    return st
+
+
+@router.get('/cari/{company_id}/detail')
+def cari_detail(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+    """Cari detayı: firma, bakiye, hareketler (ekstre), faturalar, açık kalemler (FIFO, vadeli) ve çek / senetler."""
+    c = db.row(conn.execute('SELECT id, name, phone, email, tax_office, tax_no, COALESCE(is_supplier, 0) AS is_supplier FROM companies WHERE id = ?', (company_id,)))
+    if not c:
+        raise HTTPException(404, 'Firma bulunamadı')
+    aid = _cari_account(conn, company_id)
+    st = statement(aid, date_from, date_to, user, conn)
+    st['rows'] = fin_links.annotate(conn, st['rows'][::-1])
+    rec, pay = fr.open_items(conn)
+    today = _date.today().isoformat()
+    items = [dict(i, side='rec') for i in rec if i['account_id'] == aid] + [dict(i, side='pay') for i in pay if i['account_id'] == aid]
+    for i in items:
+        try:
+            i['late'] = (_date.today() - _date.fromisoformat(i['due'][:10])).days
+        except ValueError:
+            i['late'] = 0
+    items.sort(key=lambda i: i['due'])
+    invoices = db.rows(conn.execute('''SELECT id, kind, source, number, invoice_date AS date, total, currency, 'invoice' AS src FROM invoices
+                                       WHERE company_id = ? OR (company_id IS NULL AND company_name = ?)''', (company_id, c['name'])))
+    invoices += db.rows(conn.execute('''SELECT id, kind, 'manual' AS source, number, COALESCE(doc_date, substr(created_at, 1, 10)) AS date, amount AS total,
+                                        'TRY' AS currency, 'material_doc' AS src FROM material_docs WHERE company_id = ?''', (company_id,)))
+    invoices.sort(key=lambda r: r['date'] or '', reverse=True)
+    docs_with_moves = {r[0] for r in conn.execute('SELECT DISTINCT doc_no FROM fin_txns WHERE account_id = ? AND doc_no IS NOT NULL', (aid,))}
+    for r in invoices:
+        r['has_moves'] = r['number'] in docs_with_moves   # bu carideki hareketi olan faturalar işaretlenir
+    instruments = db.rows(conn.execute('SELECT * FROM fin_instruments WHERE company_id = ? ORDER BY due_date DESC', (company_id,)))
+    t_in, t_out = _sums(st['rows'])
+    st.update(company=c, open_items=items, invoices=invoices, instruments=instruments, instr_status=INSTR_STATUS,
+              kpi={'in': t_in, 'out': t_out, 'count': len(st['rows']), 'open_rec': round(sum(i['amount'] for i in items if i['side'] == 'rec'), 2),
+                   'open_pay': round(sum(i['amount'] for i in items if i['side'] == 'pay'), 2),
+                   'overdue': round(sum(i['amount'] for i in items if i['due'][:10] < today), 2)})
+    return st
+
+
+@router.get('/docs/moves')
+def doc_moves(number: str, user=Depends(doc_user), conn=db.DB):
+    """Fatura / belge numarasına bağlı cari-kasa-banka hareketleri ve muhasebe fişi satırları (fatura detayındaki Hareketler)."""
+    return fin_links.doc_moves(conn, number.strip())
+
+
+@router.get('/invoices/{iid}')
+def invoice_detail(iid: int, src: str = 'invoice', user=Depends(fin_user), conn=db.DB):
+    """Cari detayından açılan fatura: başlık, kalemler ve hareketler."""
+    if src == 'material_doc':
+        inv = db.row(conn.execute('''SELECT d.id, d.kind, d.number, COALESCE(d.doc_date, substr(d.created_at, 1, 10)) AS invoice_date, d.amount AS total,
+                                     c.name AS company_name, d.note FROM material_docs d LEFT JOIN companies c ON c.id = d.company_id WHERE d.id = ?''', (iid,)))
+        items = db.rows(conn.execute('''SELECT m.qty, m.unit_price, p.name AS description, p.unit FROM material_moves m LEFT JOIN products p ON p.id = m.product_id
+                                        WHERE m.doc_id = ? ORDER BY m.id''', (iid,))) if inv else []
+    else:
+        inv = db.row(conn.execute('SELECT * FROM invoices WHERE id = ?', (iid,)))
+        items = db.rows(conn.execute('SELECT description, qty, unit, unit_price, vat_rate, line_total FROM invoice_items WHERE invoice_id = ? ORDER BY id', (iid,))) if inv else []
+    if not inv:
+        raise HTTPException(404, 'Fatura bulunamadı')
+    inv['items'] = items
+    inv['moves'] = fin_links.doc_moves(conn, inv['number'])
+    return inv
+
+
+@router.get('/person/{eid}')
+def person(eid: int, user=Depends(person_user), conn=db.DB):
+    emp = db.row(conn.execute('SELECT id, first_name, last_name FROM employees WHERE id = ?', (eid,)))
+    if not emp:
+        raise HTTPException(404, 'Personel bulunamadı')
+    d = fin_links.person_moves(conn, emp)
+    d['kinds'] = fin_links.LINK_KINDS
+    d['can_finance'] = bool(user.get('master') or 'finance' in user.get('modules', []))
+    return d
+
+
+class LinkIn(BaseModel):
+    kind: str
+    ref: str
+
+
+@router.post('/person/{eid}/links')
+def person_link(eid: int, body: LinkIn, user=Depends(person_user), conn=db.DB):
+    if not conn.execute('SELECT 1 FROM employees WHERE id = ?', (eid,)).fetchone():
+        raise HTTPException(404, 'Personel bulunamadı')
+    ok = {'company': 'SELECT 1 FROM companies WHERE id = ?', 'account': 'SELECT 1 FROM fin_accounts WHERE id = ?',
+          'ledger': 'SELECT 1 FROM fin_coa WHERE code = ?'}.get(body.kind)
+    if not ok or not conn.execute(ok, (body.ref,)).fetchone():
+        raise HTTPException(400, 'Bağlanacak kayıt bulunamadı')
+    conn.execute('INSERT OR IGNORE INTO employee_fin_links (employee_id, kind, ref, created_by, created_at) VALUES (?,?,?,?,?)',
+                 (eid, body.kind, body.ref, user['id'], db.now()))
+    db.audit(conn, user['id'], 'Personeli finans hesabına bağladı', 'employee', eid, f'{body.kind}:{body.ref}')
+    conn.commit()
+    return {'ok': True}
+
+
+@router.delete('/person/{eid}/links/{lid}')
+def person_unlink(eid: int, lid: int, user=Depends(person_user), conn=db.DB):
+    conn.execute('DELETE FROM employee_fin_links WHERE id = ? AND employee_id = ?', (lid, eid))
+    conn.commit()
+    return {'ok': True}
+
+
+@router.get('/person-link-options')
+def person_link_options(q: str = '', user=Depends(person_user), conn=db.DB):
+    return fin_links.link_options(conn, q)

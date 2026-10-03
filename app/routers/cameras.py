@@ -228,6 +228,7 @@ def overlays(ids: str = '', user=Depends(cam_user), conn=db.DB):
 class AssignIn(BaseModel):
     user_id: Optional[int] = None
     person_id: Optional[int] = None
+    family_id: Optional[int] = None
 
 
 class MergeIn(BaseModel):
@@ -271,15 +272,18 @@ def group(gid: int, user=Depends(cam_user), conn=db.DB):
 def assign(gid: int, body: AssignIn, user=Depends(cam_user), conn=db.DB):
     """Gruptaki tüm yüzler kişiye (kullanıcı ya da firma kişisi) atanır; o kişinin grubu varsa ikisi birleşir.
     Kullanıcı/kişi varlığı BULUT veritabanında doğrulanır; grup fabrikada olabilir."""
-    if bool(body.user_id) == bool(body.person_id):
-        raise HTTPException(400, 'Bir kullanıcı ya da firma kişisi seçin')
+    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id)) != 1:
+        raise HTTPException(400, 'Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
     if body.user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (body.user_id,)).fetchone():
         raise HTTPException(400, 'Kullanıcı bulunamadı')
     if body.person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (body.person_id,)).fetchone():
         raise HTTPException(400, 'Kişi bulunamadı')
-    r = _face(conn, 'assign', gid=gid, user_id=body.user_id, person_id=body.person_id, by=user['id'], validate=False)
+    if body.family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (body.family_id,)).fetchone():
+        raise HTTPException(400, 'Aile üyesi bulunamadı')
+    r = _face(conn, 'assign', gid=gid, user_id=body.user_id, person_id=body.person_id, family_id=body.family_id, by=user['id'], validate=False)
+    kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
     db.audit(conn, user['id'], 'Kamera yüz grubunu kişiye atadı', 'face_group', r.get('id', gid),
-             f"{'user' if body.user_id else 'person'}={body.user_id or body.person_id}")
+             f"{kind}={body.user_id or body.person_id or body.family_id}")
     return r
 
 
@@ -306,11 +310,13 @@ def delete_group(gid: int, user=Depends(cam_user), conn=db.DB):
 
 @faces_router.get('/people')
 def people(user=Depends(cam_user), conn=db.DB):
-    """Atama seçimi: kullanıcılar ve firma kişileri (Firma modülü olmadan)."""
+    """Atama seçimi: kullanıcılar, firma kişileri ve personel aile üyeleri (Firma modülü olmadan)."""
     return {
         'users': db.rows(conn.execute('SELECT id, full_name, photo FROM users WHERE active = 1 AND deleted_at IS NULL ORDER BY full_name')),
         'people': db.rows(conn.execute('''SELECT p.id, p.full_name, p.title, c.name AS company_name FROM company_people p
                                           JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')),
+        'family': db.rows(conn.execute('''SELECT fm.id, fm.full_name, fm.relation, (e.first_name || ' ' || e.last_name) AS employee_name
+                                          FROM family_members fm JOIN employees e ON e.id = fm.employee_id ORDER BY fm.full_name''')),
     }
 
 

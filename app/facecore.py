@@ -61,23 +61,25 @@ def _merge(conn, target, sources):
     conn.execute(f'DELETE FROM face_groups WHERE id IN ({",".join("?" * len(sources))})', sources)
 
 
-def assign(conn, gid, user_id, person_id, by, validate=True):
-    if bool(user_id) == bool(person_id):
-        raise ValueError('Bir kullanıcı ya da firma kişisi seçin')
-    # Dağıtık kurulumda kullanıcı/kişi varlığı BULUTTA doğrulanır (fabrika DB'si eski olabilir); validate=False gelir.
+def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None):
+    if sum(bool(x) for x in (user_id, person_id, family_id)) != 1:
+        raise ValueError('Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    # Dağıtık kurulumda varlık BULUTTA doğrulanır (fabrika DB'si eski olabilir); validate=False gelir.
     if validate and user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (user_id,)).fetchone():
         raise ValueError('Kullanıcı bulunamadı')
     if validate and person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (person_id,)).fetchone():
         raise ValueError('Kişi bulunamadı')
+    if validate and family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (family_id,)).fetchone():
+        raise ValueError('Aile üyesi bulunamadı')
     if not conn.execute('SELECT 1 FROM face_groups WHERE id = ?', (gid,)).fetchone():
         raise NotFound('Yüz grubu bulunamadı')
-    col, val = ('user_id', user_id) if user_id else ('person_id', person_id)
+    col, val = ('user_id', user_id) if user_id else ('person_id', person_id) if person_id else ('family_id', family_id)
     existing = conn.execute(f'SELECT id FROM face_groups WHERE {col} = ? AND id != ? ORDER BY samples DESC LIMIT 1', (val, gid)).fetchone()
     target = existing[0] if existing else gid
     if existing:
         _merge(conn, target, [gid])
-    conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
-                 (person_id, user_id, by, db.now(), target))
+    conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, family_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
+                 (person_id, user_id, family_id, by, db.now(), target))
     return {'id': target}
 
 
@@ -90,7 +92,7 @@ def merge(conn, ids):
 
 
 def unassign(conn, gid):
-    conn.execute('UPDATE face_groups SET person_id = NULL, user_id = NULL, assigned_by = NULL, assigned_at = NULL WHERE id = ?', (gid,))
+    conn.execute('UPDATE face_groups SET person_id = NULL, user_id = NULL, family_id = NULL, assigned_by = NULL, assigned_at = NULL WHERE id = ?', (gid,))
     return {'ok': True}
 
 
@@ -204,7 +206,7 @@ def rpc(conn, method, args):
     if method == 'group':
         return group(conn, a['gid'])
     if method == 'assign':
-        return assign(conn, a['gid'], a.get('user_id'), a.get('person_id'), a.get('by'), a.get('validate', True))
+        return assign(conn, a['gid'], a.get('user_id'), a.get('person_id'), a.get('by'), a.get('validate', True), a.get('family_id'))
     if method == 'merge':
         return merge(conn, a['ids'])
     if method == 'unassign':

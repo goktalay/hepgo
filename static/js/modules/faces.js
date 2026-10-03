@@ -10,11 +10,15 @@ export async function renderFaces(body) {
   nav.addEventListener('change', () => { state = nav.value; selected.clear(); load(); });
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Kamera, kişi ara…', style: { width: '200px' } });
   const mergeBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => mergeSelected() }, 'Seçilenleri Birleştir');
+  const delBtn = h('button', { class: 'btn danger', type: 'button', disabled: true, onclick: () => deleteSelected() }, 'Seçilenleri Kaldır');
   const info = h('span', { class: 'small muted' });
   const out = h('div');
   const selected = new Set();
   let rows = [];
-  const syncBtn = () => { mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = t('Seçilenleri Birleştir{n}', { n: selected.size ? ` (${selected.size})` : '' }); };
+  const syncBtn = () => {
+    mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = t('Seçilenleri Birleştir{n}', { n: selected.size ? ` (${selected.size})` : '' });
+    delBtn.disabled = selected.size < 1; delBtn.textContent = t('Seçilenleri Kaldır{n}', { n: selected.size ? ` (${selected.size})` : '' });
+  };
 
   const draw = () => {
     const list = rows.filter(g => matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
@@ -41,12 +45,19 @@ export async function renderFaces(body) {
     rows = await api.get(`/api/faces/groups?state=${state}`);
     for (const id of [...selected]) if (!rows.some(g => g.id === id)) selected.delete(id);
     syncBtn();
-    mergeBtn.hidden = state !== 'unknown';
+    mergeBtn.hidden = delBtn.hidden = state !== 'unknown';
     draw();
   }
   async function mergeSelected() {
     if (!await confirmDialog('Grupları birleştir', t('{n} grup aynı kişi olarak birleştirilsin mi?', { n: selected.size }), { okLabel: 'Birleştir' })) return;
     try { await api.post('/api/faces/merge', { ids: [...selected] }); selected.clear(); toast('Gruplar birleştirildi'); load(); } catch (err) { toastError(err); }
+  }
+  async function deleteSelected() {
+    if (!await confirmDialog('Seçilenleri kaldır', t('Seçili {n} grup ve tüm yüz / kare resimleri silinsin mi? (gereksiz tespitler için)', { n: selected.size }), { okLabel: 'Kaldır', danger: true })) return;
+    try {
+      for (const id of [...selected]) await api.del(`/api/faces/groups/${id}`);
+      toast(t('{n} grup kaldırıldı', { n: selected.size })); selected.clear(); load();
+    } catch (err) { toastError(err); }
   }
 
   async function openGroup(id) {
@@ -83,24 +94,27 @@ export async function renderFaces(body) {
   }
 
   async function assign(id, done) {
-    const { users, people } = await api.get('/api/faces/people');
+    const { users, people, family = [] } = await api.get('/api/faces/people');
     let kind = 'user';
     const q2 = h('input', { class: 'input', type: 'search', placeholder: 'Ad ara…' });
     const list = h('div', { class: 'pick-list' });
     const fill = () => {
-      const src = kind === 'user' ? users : people;
-      clear(list, src.filter(p => matches(q2.value, p.full_name, p.company_name, p.title)).slice(0, 60).map(p =>
+      const src = kind === 'user' ? users : kind === 'person' ? people : family;
+      clear(list, src.filter(p => matches(q2.value, p.full_name, p.company_name, p.title, p.relation, p.employee_name)).slice(0, 60).map(p =>
         h('button', { class: 'pick', type: 'button', onclick: async () => {
           try {
-            await api.post(`/api/faces/groups/${id}/assign`, kind === 'user' ? { user_id: p.id } : { person_id: p.id });
+            const body = kind === 'user' ? { user_id: p.id } : kind === 'person' ? { person_id: p.id } : { family_id: p.id };
+            await api.post(`/api/faces/groups/${id}/assign`, body);
             toast(t('Gruptaki tüm yüzler {name} kişisine atandı', { name: p.full_name }));
             m.close();
             done();
           } catch (err) { toastError(err); }
         } }, h('div', { class: 'grow' }, h('b', null, p.full_name),
-          h('span', { class: 'small muted' }, kind === 'user' ? ' Personel' : ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`)))));
+          h('span', { class: 'small muted' }, kind === 'user' ? ' Personel'
+            : kind === 'person' ? ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`
+              : ` ${[p.relation, p.employee_name && t('{n} ailesi', { n: p.employee_name })].filter(Boolean).join(' · ')}`)))));
     };
-    const seg = segmented([['user', 'Kullanıcılar (personel)'], ['person', 'Firma personeli']], kind, v => { kind = v; fill(); });
+    const seg = segmented([['user', 'Personel'], ['person', 'Firma personeli'], ['family', 'Aile üyeleri']], kind, v => { kind = v; fill(); });
     q2.addEventListener('input', fill);
     fill();
     const m = modal({ title: 'Kişiye Ata', body: h('div', null, seg, h('div', { style: { margin: '10px 0' } }, q2), list), actions: [{ label: 'Vazgeç' }] });
@@ -108,7 +122,7 @@ export async function renderFaces(body) {
   }
 
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), mergeBtn), h('p', null, info), out);
+  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), delBtn, mergeBtn), h('p', null, info), out);
   await load();
   every(15000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
 }

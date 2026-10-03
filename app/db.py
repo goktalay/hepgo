@@ -128,6 +128,24 @@ CREATE TABLE IF NOT EXISTS feed_posts (
     deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_feed_posts_at ON feed_posts(created_at);
+-- Şirketten Haberler: paylaşıma beğeni / tepki (kullanıcı başına bir tepki; emoji değiştirilebilir)
+CREATE TABLE IF NOT EXISTS feed_reactions (
+    post_id    INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji      TEXT NOT NULL DEFAULT '👍',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, user_id)
+);
+-- Şirketten Haberler: paylaşıma yorum
+CREATE TABLE IF NOT EXISTS feed_comments (
+    id         INTEGER PRIMARY KEY,
+    post_id    INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_feed_comments_post ON feed_comments(post_id);
 -- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
 CREATE TABLE IF NOT EXISTS family_members (
     id          INTEGER PRIMARY KEY,

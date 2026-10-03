@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.94.1'
+VERSION = '2.95.0'
 
 CHANGELOG = [
+    {'version': '2.95.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: beğeni / tepki + yorumlar',
+     'changes': [
+         'Paylaşımlara beğeni ve tepki eklenebilir (👍 ❤️ 😂 😮 😢 👏 🎉); kimin ne verdiği sayısıyla görünür.',
+         'Paylaşımlara yorum yazılabilir, yorumlar listelenir; kendi yorumunuzu (ya da yönetici tüm yorumları) silebilir.',
+     ]},
     {'version': '2.94.1', 'date': '2026-10-03', 'title': 'Kameralar: anlamlı ad verme (yeniden adlandırma)',
      'changes': [
          'Kamera Listesi’nde “Yeniden Adlandır” ile kameraya anlamlı ad verebilirsiniz (ör. “Giriş Kapısı”); ad canlı görünümde görünür.',

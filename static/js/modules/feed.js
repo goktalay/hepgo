@@ -17,6 +17,7 @@ export function renderFeed(container, ctx, opts = {}) {
   const body = h('div', { class: 'feed-body' });
   clear(container, body);
 
+  let reactionList = ['👍', '❤️', '😂', '😮', '😢', '👏', '🎉'];   // sunucudan güncellenir
   let visual = [];   // akıştaki tüm resim + videolar (tam ekran kaydırmalı görüntüleyici için)
   const mediaEl = m => {
     if (m.type === 'audio') return h('audio', { class: 'feed-audio', src: fileUrl(m.path), controls: true, preload: 'none' });
@@ -26,10 +27,11 @@ export function renderFeed(container, ctx, opts = {}) {
     return h('button', { class: 'feed-media', type: 'button', title: 'Tam ekran aç', onclick: () => openViewer(visual.slice(), idx) },
       h('img', { src: fileUrl(m.path, 1000), alt: '', loading: 'lazy' }));
   };
+  const isAdmin = () => ctx.user.master || ctx.user.modules.includes('admin');
   const postCard = p => {
     const badge = KIND_BADGE[p.kind] || KIND_BADGE.USER;
-    const canDel = p.author_id === ctx.user.id || ctx.user.master || ctx.user.modules.includes('admin');
-    return h('div', { class: 'feed-post' },
+    const canDel = p.author_id === ctx.user.id || isAdmin();
+    const card = h('div', { class: 'feed-post' },
       h('div', { class: 'feed-ph' },
         p.system ? h('img', { class: 'feed-ava', src: LOGO, alt: '' }) : avatar({ full_name: p.author_name, photo: p.author_photo }, 40),
         h('div', { class: 'grow' }, h('b', null, p.system ? (ctx.meta?.company || 'Şirket') : (p.author_name || 'Kullanıcı')),
@@ -37,8 +39,90 @@ export function renderFeed(container, ctx, opts = {}) {
         badge[1] ? h('span', { class: `badge ${badge[0]}` }, badge[1]) : null,
         canDel ? h('button', { class: 'feed-x', type: 'button', title: 'Sil', onclick: () => del(p) }, '×') : null),
       p.text ? h('div', { class: 'feed-text' }, p.ref_link ? h('a', { href: p.ref_link }, p.text) : p.text) : null,
-      p.media?.length ? h('div', { class: `feed-medias n${Math.min(p.media.length, 4)}` }, p.media.map(mediaEl)) : null);
+      p.media?.length ? h('div', { class: `feed-medias n${Math.min(p.media.length, 4)}` }, p.media.map(mediaEl)) : null,
+      footer(p, c => reCard(p, c)));
+    p._card = card;
+    return card;
   };
+
+  // Tepki (beğeni/kalp) + yorum ayağı; değişince kart yerinde yeniden çizilir (yorum açıklığı korunur)
+  function reCard(p, oldCard) {
+    const fresh = postCard(p);
+    oldCard.replaceWith(fresh);
+  }
+  function footer(p, rerender) {
+    const counts = p.reactions || {};
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]).join('');
+    const stat = h('div', { class: 'feed-stat' },
+      total ? h('span', { class: 'feed-stat-r' }, top, ' ', String(total)) : h('span'),
+      p.comment_count ? h('button', { class: 'feed-stat-c', type: 'button', onclick: () => toggleComments(p, rerender) }, `${p.comment_count} yorum`) : h('span'));
+
+    const picker = h('div', { class: 'feed-picker', hidden: true }, (reactionList).map(em =>
+      h('button', { class: 'feed-pick', type: 'button', title: em, onclick: () => { picker.hidden = true; doReact(p, em, rerender); } }, em)));
+    const likeLabel = p.my_reaction ? `${p.my_reaction} Beğenildi` : '👍 Beğen';
+    const likeBtn = h('button', { class: `feed-act ${p.my_reaction ? 'on' : ''}`, type: 'button',
+      onclick: () => { if (p.my_reaction) doReact(p, p.my_reaction, rerender); else picker.hidden = !picker.hidden; } }, likeLabel);
+    const likeWrap = h('div', { class: 'feed-like-wrap' }, picker, likeBtn);
+    const cmtBtn = h('button', { class: 'feed-act', type: 'button', onclick: () => toggleComments(p, rerender, true) }, '💬 Yorum');
+    const bar = h('div', { class: 'feed-actions' }, likeWrap, cmtBtn);
+
+    const box = h('div', { class: 'feed-comments' });
+    const wrap = h('div', { class: 'feed-foot' }, (total || p.comment_count) ? stat : null, bar, box);
+    if (p._open) renderComments(p, box, rerender);
+    return wrap;
+  }
+
+  async function doReact(p, emoji, rerender) {
+    const prev = p.my_reaction;
+    const c = { ...(p.reactions || {}) };
+    if (prev) { c[prev] = (c[prev] || 1) - 1; if (!c[prev]) delete c[prev]; }
+    const next = prev === emoji ? null : emoji;
+    if (next) c[next] = (c[next] || 0) + 1;
+    p.reactions = c; p.my_reaction = next;
+    rerender(p._card);
+    try { await api.post(`/api/feed/${p.id}/react`, { emoji }); }
+    catch (err) { toastError(err); }
+  }
+
+  function toggleComments(p, rerender, open) {
+    p._open = open ? true : !p._open;
+    rerender(p._card);
+  }
+
+  async function renderComments(p, box, rerender) {
+    clear(box, h('div', { class: 'small muted' }, 'Yükleniyor…'));
+    let list = p._comments;
+    if (!list) {
+      try { list = p._comments = (await api.get(`/api/feed/${p.id}/comments`)).comments; }
+      catch (err) { return clear(box, h('div', { class: 'small muted' }, err.message)); }
+    }
+    const input = h('input', { class: 'input feed-cinput', type: 'text', placeholder: 'Yorum yaz…', maxlength: 1000 });
+    const send = async () => {
+      const text = input.value.trim(); if (!text) return;
+      input.value = '';
+      try {
+        const r = await api.post(`/api/feed/${p.id}/comments`, { text });
+        p._comments = [...(p._comments || []), { id: r.id, user_id: ctx.user.id, text, created_at: new Date().toISOString(),
+          author_name: ctx.user.full_name, author_photo: ctx.user.photo }];
+        p.comment_count = (p.comment_count || 0) + 1;
+        rerender(p._card);
+      } catch (err) { toastError(err); }
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
+    clear(box,
+      h('div', { class: 'feed-clist' }, list.map(c => h('div', { class: 'feed-cmt' },
+        avatar({ full_name: c.author_name, photo: c.author_photo }, 28),
+        h('div', { class: 'feed-cbody' },
+          h('div', null, h('b', null, c.author_name || 'Kullanıcı'), ' ', h('span', null, c.text)),
+          h('small', { class: 'muted' }, fmtDateTime(c.created_at))),
+        (c.user_id === ctx.user.id || isAdmin()) ? h('button', { class: 'feed-cx', type: 'button', title: 'Sil', onclick: async () => {
+          try { await api.del(`/api/feed/comments/${c.id}`); p._comments = p._comments.filter(x => x.id !== c.id); p.comment_count = Math.max(0, (p.comment_count || 1) - 1); rerender(p._card); }
+          catch (err) { toastError(err); }
+        } }, '×') : null))),
+      h('div', { class: 'feed-cadd' }, avatar(ctx.user, 28), input,
+        h('button', { class: 'btn sm primary', type: 'button', onclick: send }, 'Gönder')));
+  }
 
   const composer = () => h('button', { class: 'feed-composer', type: 'button', onclick: () => compose(load) },
     avatar(ctx.user, 36),
@@ -77,8 +161,11 @@ export function renderFeed(container, ctx, opts = {}) {
     try { await api.del(`/api/feed/${p.id}`); load(); } catch (err) { toastError(err); }
   }
   async function load() {
-    try { posts = (await api.get('/api/feed')).posts; draw(); }
-    catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); }
+    try {
+      const d = await api.get('/api/feed');
+      posts = d.posts; if (Array.isArray(d.reactions) && d.reactions.length) reactionList = d.reactions;
+      draw();
+    } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); }
   }
   load();
   return { reload: load };

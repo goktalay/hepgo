@@ -317,6 +317,28 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .feed-picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .feed-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2, #eee); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
 .feed-chip-x { border: none; background: none; cursor: pointer; font-size: 14px; }
+/* Tepki (beğeni/kalp) + yorumlar */
+.feed-foot { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 4px; }
+.feed-stat { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 2px 6px; min-height: 18px; }
+.feed-stat-c { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 12px; }
+.feed-stat-c:hover { text-decoration: underline; }
+.feed-actions { display: flex; gap: 6px; }
+.feed-like-wrap { position: relative; flex: 1; display: flex; }
+.feed-act { flex: 1; border: 1px solid var(--border); background: var(--surface-2, rgba(127,127,127,.04)); border-radius: 8px; padding: 6px 8px; cursor: pointer; font-size: 13px; color: var(--text, inherit); }
+.feed-act:hover { background: var(--surface-2, rgba(127,127,127,.12)); }
+.feed-act.on { color: var(--primary); border-color: var(--primary); font-weight: 600; }
+.feed-picker { position: absolute; bottom: calc(100% + 6px); left: 0; display: flex; gap: 2px; background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px; box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 6; }
+.feed-pick { border: none; background: none; cursor: pointer; font-size: 22px; line-height: 1; padding: 2px; border-radius: 50%; transition: transform .1s; }
+.feed-pick:hover { transform: scale(1.35); }
+.feed-comments:empty { display: none; }
+.feed-clist { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; }
+.feed-cmt { display: flex; gap: 8px; align-items: flex-start; }
+.feed-cbody { flex: 1; min-width: 0; background: var(--surface-2, rgba(127,127,127,.07)); border-radius: 10px; padding: 6px 10px; }
+.feed-cbody b { font-size: 13px; }
+.feed-cbody span { word-break: break-word; }
+.feed-cx { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 16px; align-self: center; }
+.feed-cadd { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.feed-cinput { flex: 1; min-width: 0; }
 .btn.on { outline: 2px solid var(--primary); }
 /* Pano: GridStack sürükle-bırak */
 .grid-stack { margin: 0 -4px; }

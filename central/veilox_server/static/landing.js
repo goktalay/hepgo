@@ -79,18 +79,26 @@ const ROWS = [
     h: { tr: 'Zoom tarzı toplantı, ekibinizin içinde', en: 'Zoom-style meetings, inside your team' },
     p: { tr: 'Davet koduyla görüntülü toplantı; şirket dışından katılımcılar yalnızca bir linkle, giriş yapmadan katılır. Bekleme odası, ekran paylaşımı, el kaldırma sırası, toplantı içi sohbet ve kayıtların metne çevrilmesi.', en: 'Video meetings by invite code; external guests join with just a link, no sign-in. Waiting room, screen share, raise-hand queue, in-meeting chat and transcript of recordings.' },
     ticks: { tr: ['Bekleme odası ve katılımcı kabulü', 'Ekran paylaşımı ve el kaldırma', 'Kayıtların metne çevrilmesi'], en: ['Waiting room & admit guests', 'Screen share & raise hand', 'Transcripts of recordings'] } },
-  { eye: { tr: 'Yazıcı odası', en: 'Printer room' }, img: ['/static/img/landing/shots/printers.webp'], solo: true, rev: true,
+  { eye: { tr: 'Şirket içi sosyal ağ', en: 'Company social network' }, img: ['/static/img/landing/shots/m-live.webp', '/static/img/landing/shots/dashboard.webp'], solo: false, rev: true,
+    h: { tr: 'Şirketten haberler, sahadan canlı yayın', en: 'Company news, live from the field' },
+    p: { tr: 'Instagram kadar tanıdık bir akış: fotoğraf ve video paylaşımı, kalp ve yorumlar, kaydetme. Sahadaki ekip tek dokunuşla canlı yayın açar; herkese anında bildirim düşer, izleyenler yorum ve kalp gönderir, yayın bitince kayıt akışta paylaşılır.', en: 'A feed as familiar as Instagram: photo and video posts, hearts and comments, saves. Field teams go live with one tap; everyone is notified instantly, viewers send comments and hearts, and the recording is posted when the stream ends.' },
+    ticks: { tr: ['Fotoğraf / video, kalp, yorum ve yanıt', 'Tek dokunuşla canlı yayın + anlık bildirim', 'Tam ekran, kaydırarak gezinme'], en: ['Photo / video, hearts, comments & replies', 'One-tap live streaming + instant alerts', 'Full-screen, swipe to browse'] } },
+  { eye: { tr: 'Yazıcı odası', en: 'Printer room' }, img: ['/static/img/landing/shots/printers.webp'], solo: true,
     h: { tr: 'Onlarca 3B yazıcı, tek bakışta', en: 'Dozens of 3D printers, at a glance' },
     p: { tr: 'Yazıcılar ağdan otomatik bulunur, durumları saniyeler içinde okunur. Kayıtsız baskı ya da hata anında uyarı düşer; yazıcıya doğrudan G-code gönderilir.', en: 'Printers are auto-discovered on the network and polled within seconds. Unregistered prints or errors raise instant alerts; send G-code straight to the printer.' },
     ticks: { tr: ['Liste ve 3B oda görünümü', 'Doğrudan G-code gönderimi', 'Hata ve uyumsuzluk uyarıları'], en: ['List & 3D room view', 'Direct G-code dispatch', 'Error & mismatch alerts'] } },
+  { eye: { tr: 'Finans', en: 'Finance' }, img: ['/static/img/landing/shots/finance-statements.webp'], solo: true, rev: true,
+    h: { tr: 'Patronun görmesi gereken her şey, tek ekranda', en: 'Everything the owner needs to see, on one screen' },
+    p: { tr: 'Kasa, banka ve cari hesaplar; 12 haftalık nakit akışı tahmini, alacak ve borç yaşlandırma, çek / senet portföyü. Muhasebe programınızla senkron mizan, gelir tablosu ve bilanço özeti.', en: 'Cash, bank and customer accounts; a 12-week cash-flow forecast, receivable and payable aging, cheque / note portfolio. Trial balance, income statement and balance sheet in sync with your accounting software.' },
+    ticks: { tr: ['Nakit akışı tahmini ve yaşlandırma', 'Mizan, gelir tablosu, bilanço', 'Muhasebe programıyla tek yönlü senkron'], en: ['Cash-flow forecast & aging', 'Trial balance, P&L, balance sheet', 'One-way sync with accounting'] } },
   { eye: { tr: 'Ofis belgeleri', en: 'Office documents' }, img: ['/static/img/landing/shots/belge-word.webp'], solo: true,
     h: { tr: 'Excel, Word ve Sunum — uygulama içinde', en: 'Excel, Word & Slides — in the app' },
     p: { tr: 'Dış programa gerek yok. Belgelerinizi oluşturun, otomatik kaydedin; kime görüntüleme, kime düzenleme izni vereceğinizi seçin. Her kaydetmede sürüm geçmişi tutulur.', en: 'No external apps needed. Create documents, auto-save; choose who can view and who can edit. Version history is kept on every save.' },
     ticks: { tr: ['Excel / Word / Sunum', 'Görüntüleme & düzenleme izni', 'Sürüm geçmişi ve geri yükleme'], en: ['Excel / Word / Slides', 'View & edit permissions', 'Version history & restore'] } },
-  { eye: { tr: 'Yapay zeka', en: 'Artificial intelligence' }, img: ['/static/img/landing/mob-assistant.webp'], solo: true, rev: true,
+  { eye: { tr: 'Yapay zeka', en: 'Artificial intelligence' }, img: ['/static/img/landing/shots/mascot3d.webp'], solo: true, rev: true,
     h: { tr: 'Sorun, sistem cevaplasın', en: 'Ask, the system answers' },
     p: { tr: 'Köşedeki asistana “bugün kaç parça teslim edildi?” diye sorun; yalnızca sizin yetkili olduğunuz verilerle cevap verir. Bir kaydın değişmesini isterseniz talebi yöneticinin onayına gönderir.', en: 'Ask the corner assistant “how many parts shipped today?”; it answers only with data you are allowed to see. Want a record changed? It routes the request to admin approval.' },
-    ticks: { tr: ['Yetkiye göre salt-okunur sorgular', 'Değişiklikler yönetici onayıyla', 'Kişiye özel karakter'], en: ['Permission-scoped read-only queries', 'Changes via admin approval', 'Personalized character'] } },
+    ticks: { tr: ['Yetkiye göre salt-okunur sorgular', 'Değişiklikler yönetici onayıyla', '6 farklı 3D karakter'], en: ['Permission-scoped read-only queries', 'Changes via admin approval', '6 animated 3D characters'] } },
 ];
 
 // Gerçek ekran görüntüleri galerisi (tüm özellikler)
@@ -104,6 +112,8 @@ const GALLERY = [
   { img: S + 'belge-excel.webp', tr: 'Uygulama içi Excel', en: 'In-app spreadsheet' },
   { img: S + 'meet.webp', tr: 'Görüntülü toplantı', en: 'Video meetings' },
   { img: S + 'field.webp', tr: 'Saha yönetimi', en: 'Field management' },
+  { img: S + 'finance-cash.webp', tr: 'Nakit akışı ve yaşlandırma', en: 'Cash flow & aging' },
+  { img: S + 'finance-trial.webp', tr: 'Mizan', en: 'Trial balance' },
 ];
 
 // Tüm modüller — kategorilere göre (ikon, trAd, trAçıklama, enAd, enAçıklama)
@@ -117,7 +127,9 @@ const ic = {
   guard: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>', clean: '<path d="M19 3l-6 6M8 14l-4 7 7-4M8 14l5-5 2 2-5 5z"/>', micro: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 15V9l3 3 3-3v6"/>',
   admin: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', users: '<circle cx="8" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M2 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 7 0"/>', ann: '<path d="M3 11v2a1 1 0 0 0 1 1h3l6 5V5L7 10H4a1 1 0 0 0-1 1z"/><path d="M17 8a5 5 0 0 1 0 8"/>',
   rep: '<path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-8"/>', tools: '<path d="M14 7l3 3M3 21l9-9M13 3a4 4 0 0 0 5 5l3-3-2-2-2 2-1-1 2-2-3-1z"/>',
-  meet: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>', ai: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>', cam: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>', screen: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  meet: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>', fin: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/>',
+  live: '<circle cx="12" cy="12" r="2.5"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>',
+  feed: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/>', ai: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>', cam: '<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>', screen: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
 };
 const MOD_CATS = [
   ['Üretim', 'Production', '#2f6fed', [
@@ -145,6 +157,7 @@ const MOD_CATS = [
     [ic.guard, 'Güvenlik', 'Araç giriş/çıkış, bina kontrol', 'Security', 'Vehicle gate, building patrol'],
     [ic.clean, 'Temizlik', 'Günlük temizlik çeklisti', 'Cleaning', 'Daily cleaning checklist'],
     [ic.micro, 'Mikro ERP', 'Tek yönlü muhasebe entegrasyonu', 'Micro ERP', 'One-way accounting sync'],
+    [ic.fin, 'Finans / Ön Muhasebe', 'Nakit akışı, çek-senet, mizan, gelir tablosu', 'Finance', 'Cash flow, cheques, trial balance, P&L'],
   ]],
   ['Sistem & Yönetim', 'System', '#7c5cf5', [
     [ic.admin, 'Yönetim', 'Canlı durum paneli, grafikler', 'Admin', 'Live dashboard, charts'],
@@ -159,6 +172,8 @@ const MOD_CATS = [
     [ic.ai, 'Yapay Zeka Asistanı', 'Yetkiye göre sorgu, onaylı değişiklik', 'AI assistant', 'Scoped queries, approvals'],
     [ic.cam, 'Kameralar & Yüz Tanıma', 'NVR, canlı izleme, yüz tanıma', 'Cameras & faces', 'NVR, live view, face ID'],
     [ic.screen, 'Ekran Paylaşımı', 'Uzaktan destek: izle + müdahale + sesli', 'Screen sharing', 'Remote support + control'],
+    [ic.feed, 'Şirketten Haberler', 'Instagram tarzı akış, kalp, yorum, kaydet', 'Company feed', 'Instagram-style feed, hearts, comments'],
+    [ic.live, 'Canlı Yayın', 'Sahadan canlı yayın, anlık bildirim, kayıt', 'Live streaming', 'Go live from the field, alerts, replay'],
   ]],
 ];
 
@@ -210,7 +225,7 @@ function page() {
       </div>
       <div class="hero-visual reveal">
         <div class="laptop"><div class="laptop-screen"><img class="shot" src="/static/img/landing/shots/dashboard.webp" alt="" loading="eager"></div><div class="laptop-base"></div></div>
-        <div class="phone phone-hero"><div class="phone-screen"><img class="shot" src="/static/img/landing/mob-meet.webp" alt=""></div></div>
+        <div class="phone phone-hero"><div class="phone-screen"><img class="shot" src="/static/img/landing/shots/m-live.webp" alt=""></div></div>
       </div>
     </div></section>
 

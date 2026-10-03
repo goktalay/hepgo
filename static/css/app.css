@@ -5225,3 +5225,16 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .ss-remote-cursor { position: fixed; z-index: 2147483000; pointer-events: none; transform: translate(-2px, -2px); transition: left .06s linear, top .06s linear; }
 .ss-rc-dot { display: block; width: 14px; height: 14px; border-radius: 50% 50% 50% 0; background: #4a8ae0; box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,.4); transform: rotate(-45deg); }
 .ss-rc-name { position: absolute; left: 16px; top: 10px; background: #4a8ae0; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+
+/* Finans modülü */
+.fin-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.fin-acc { text-align: left; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+.fin-acc:hover { border-color: var(--primary); }
+.fin-acc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fin-acc-top b { font-size: 15px; }
+.fin-bal { font-size: 20px; font-weight: 700; margin-top: 6px; }
+.fin-total { text-align: right; padding: 12px 4px 0; color: var(--muted); font-size: 15px; }
+.fin-stmt-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.fin-mikro { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.fin-mikro-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; }
+.fin-mikro-row:hover { background: var(--surface-2, rgba(127,127,127,.08)); }

@@ -19,6 +19,7 @@ import * as printers from './modules/printers.js';
 import * as tools from './modules/tools.js';
 import * as products from './modules/products.js';
 import * as admin from './modules/admin.js';
+import * as finance from './modules/finance.js';
 import * as alertsPage from './modules/alerts.js';
 import { renderDashboard } from './modules/dashboard.js';
 import { renderMyCalls } from './modules/calls.js';
@@ -91,6 +92,7 @@ const MODULES = [
     show: u => u.modules.includes('cameras') && u.nvr },
   { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
+  { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
   { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
   { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },
   { key: 'cleaning', title: 'Temizlik', mod: cleaning, group: 'system' },

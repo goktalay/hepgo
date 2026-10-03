@@ -31,10 +31,11 @@ HR = 'İnsan Kaynakları'   # personel kayıtları, iş başvuruları, özlük d
 INTERN = 'Stajer'       # hiçbir modüle yetkili değil; genel yapıyı (pano, Kişisel, mesaj, duyurular) kullanır
 CLEANER = 'Temizlik Görevlisi'   # yalnızca Temizlik modülü (günlük temizlik çeklisti)
 DESIGNER = 'Endüstriyel Tasarımcı'   # Endüstriyel Tasarım modülü: proje + çizim / montaj çizimi + sürüm geçmişi
+FINANCE = 'Finans'   # Finans / ön-muhasebe: kasa-banka, cari, nakit akışı, ödeme/tahsilat, mizan, bordro
 SUPPORT_ROLE = 'Merkez Destek'   # YALNIZCA merkez (Veilox) instance'ında atanır; müşteri firmalarına çapraz (destek) giriş yetkisi verir
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
-         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, CLEANER, INTERN]
+         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, CLEANER, INTERN]
 # Yardımcı personel rolleri: bu rollerin seçim listelerinde stajerler de çıkar ("Stajer" etiketiyle) ve seçilebilir
 HELPER_ROLES = (ASSEMBLER, ELECTRONICS, FIELD_STAFF)
 
@@ -65,6 +66,7 @@ MODULE_ROLES = {
     'announcements': list(ROLES),                                                             # M16 Duyurular (yazan: Sistem Yöneticisi)
     'cleaning':   [ADMIN, CLEANER],                                                           # M22 Temizlik (günlük çeklist)
     'design':     [ADMIN, DESIGNER],                                                          # M23 Endüstriyel Tasarım (proje + çizim + sürüm)
+    'finance':    [ADMIN, FINANCE],                                                           # M24 Finans / ön-muhasebe
 }
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler
 MODULE_ROLES['mrp'] = sorted(set(MODULE_ROLES['stock']) | set(MODULE_ROLES['warehouse']), key=ROLES.index)

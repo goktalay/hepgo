@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.99.0'
+VERSION = '2.100.0'
 
 CHANGELOG = [
+    {'version': '2.100.0', 'date': '2026-10-03', 'title': 'Finans / Ön-Muhasebe modülü (1. sürüm)',
+     'changes': [
+         'Yeni “Finans” modülü (Finans rolü + yönetici): Özet (nakit pozisyonu + 6 ay giriş/çıkış grafiği), Kasa & Banka, Cari Hesaplar, Hareketler.',
+         'Cari / hesap ekstresi yürüyen bakiyeyle; kasa↔banka virman otomatik karşı kayıt; gelir/gider kategorisi.',
+         'Mikro ERP’den cari hesapları içe aktarma (Mikro tanımlıysa).',
+         'Sonraki sürümler: nakit akışı takvimi, çek/senet, ödeme/tahsilat, mizan, bordro/maaş.',
+     ]},
     {'version': '2.99.0', 'date': '2026-10-03', 'title': 'Ekran paylaşımı / uzaktan destek',
      'changes': [
          'Kullanıcı menüsü › “Ekranı Paylaş”: uygulama ekranınız bir link ile (isteğe bağlı şifre) karşı tarafa birebir yansır — paylaşanın kendi boyutlarında (mobil dâhil).',

@@ -163,6 +163,38 @@ CREATE TABLE IF NOT EXISTS crosslogin_requests (
     decided_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_crosslogin_status ON crosslogin_requests(status, created_at);
+-- Finans / ön-muhasebe: hesaplar (kasa/banka/cari) + hareketler. Mikro entegrasyonu için kod/ref alanları.
+CREATE TABLE IF NOT EXISTS fin_accounts (
+    id          INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL,                 -- kasa | banka | cari
+    name        TEXT NOT NULL,
+    currency    TEXT NOT NULL DEFAULT 'TRY',
+    iban        TEXT,
+    bank        TEXT,
+    company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL,   -- cari ise firma bağı
+    opening     REAL NOT NULL DEFAULT 0,        -- açılış bakiyesi
+    mikro_code  TEXT,                           -- Mikro cari/hesap kodu
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_fin_accounts_kind ON fin_accounts(kind, active);
+CREATE TABLE IF NOT EXISTS fin_txns (
+    id            INTEGER PRIMARY KEY,
+    account_id    INTEGER NOT NULL REFERENCES fin_accounts(id) ON DELETE CASCADE,
+    date          TEXT NOT NULL,                 -- YYYY-MM-DD
+    direction     TEXT NOT NULL,                 -- in (tahsilat/giriş) | out (ödeme/çıkış)
+    amount        REAL NOT NULL,                 -- pozitif tutar
+    currency      TEXT NOT NULL DEFAULT 'TRY',
+    category      TEXT,                          -- gelir/gider kategorisi
+    counter_id    INTEGER REFERENCES fin_accounts(id) ON DELETE SET NULL,  -- virman karşı hesap
+    description   TEXT,
+    doc_no        TEXT,
+    mikro_ref     TEXT,                          -- Mikro'dan aktarıldıysa referans
+    created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_fin_txns_acc ON fin_txns(account_id, date);
 -- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
 CREATE TABLE IF NOT EXISTS family_members (
     id          INTEGER PRIMARY KEY,

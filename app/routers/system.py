@@ -174,6 +174,9 @@ def put_integrations(group: str, body: IntegrationIn, user=Depends(auth.current_
         raise HTTPException(400, str(e))
     if changed:   # değerler loglanmaz, yalnızca hangi alanların değiştiği
         db.audit(conn, user['id'], f'Entegrasyon ayarlarını güncelledi: {integrations.GROUPS[group]["title"]} ({", ".join(changed)})', 'settings', None)
+    if group == 'nvr':
+        conn.commit()
+        _push_face_config(conn)   # NVR kimlik bilgilerini fabrika yüz-tanıma servisine aktar
     return {'groups': integrations.view(conn), 'changed': changed}
 
 
@@ -216,6 +219,15 @@ async def run_sync(group: str, user=Depends(auth.current_user)):
     return {'ok': ok, 'message': msg}
 
 
+def _push_face_config(conn):
+    """NVR/kanal/vardiya/eğitim ayarını fabrika yüz-tanıma servisine aktarır (en iyi çaba; fabrika kapalıysa sessiz)."""
+    try:
+        from .. import facebridge
+        facebridge.push(conn)
+    except Exception:   # noqa: BLE001 — fabrika çevrimdışıysa istek yine de başarılı
+        pass
+
+
 @router.post('/integrations/{group}/test')
 def test_integration(group: str, user=Depends(auth.current_user)):
     if not _is_sysadmin(user):
@@ -252,6 +264,7 @@ def put_nvr_channels(body: NvrChannelsIn, user=Depends(auth.current_user), conn=
     except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(400, f'Geçersiz kanal ayarı: {e}')
     conn.commit()
+    _push_face_config(conn)   # ayarları fabrika yüz-tanıma servisine aktar
     active = len(nvr.active_channels(conn))
     db.audit(conn, user['id'], f'NVR kanal yüz-tanıma ayarı güncellendi ({active} kanal açık)', 'settings', None)
     return {'saved': n, 'active': active, 'gpu': nvr.gpu_capacity(conn)}
@@ -328,6 +341,7 @@ def put_shift(body: ShiftIn, user=Depends(auth.current_user), conn=db.DB):
     except ValueError as e:
         raise HTTPException(400, str(e))
     conn.commit()
+    _push_face_config(conn)   # vardiyayı fabrika yüz-tanıma servisine aktar
     db.audit(conn, user['id'], 'Fabrika vardiya ayarı güncellendi', 'settings', None,
              f"gündüz={cur['day']} gece={cur['night']}")
     return {'shift': cur}

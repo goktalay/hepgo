@@ -62,6 +62,9 @@ def _get(conn, cid):
 
 @router.get('')
 def list_cameras(user=Depends(cam_user), conn=db.DB):
+    from .. import facebridge
+    if facebridge.remote():   # dağıtık: kamera listesi + canlı durum fabrikadan (ID'ler fabrikayla tutarlı)
+        return _face(conn, 'cameras_list')
     return [_public(r) for r in db.rows(conn.execute('SELECT * FROM cameras ORDER BY name COLLATE NOCASE, id'))]
 
 
@@ -178,6 +181,14 @@ def frame(cid: int, request: Request, user=Depends(cam_user)):
     """İzleme ekranı: kameranın son karesi (kamera servisi yazar). Değişmediyse 304."""
     path = LIVE_DIR / f'{cid}.jpg'
     if not path.exists():
+        # Dağıtık kurulum: canlı kare fabrikada; talep üzerine ajandan getirilir
+        if config.AGENT_MODE == 'remote':
+            from .. import facebridge
+            try:
+                data, ctype = facebridge.media(f'cameras/live/{cid}.jpg')
+            except HTTPException:
+                raise HTTPException(404, 'Görüntü yok')
+            return Response(data, media_type=ctype, headers={'Cache-Control': 'no-store'})
         raise HTTPException(404, 'Görüntü yok')
     st = path.stat()
     etag = hashlib.md5(f'{st.st_mtime_ns}-{st.st_size}'.encode()).hexdigest()
@@ -198,98 +209,74 @@ class MergeIn(BaseModel):
     ids: list[int]
 
 
-GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
-       u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, c.name AS last_camera_name,
-       (SELECT COUNT(*) FROM face_sightings s WHERE s.group_id = g.id) AS sightings,
-       (SELECT group_concat(DISTINCT cc.name) FROM face_sightings s JOIN cameras cc ON cc.id = s.camera_id WHERE s.group_id = g.id) AS cameras
-FROM face_groups g LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
-LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN cameras c ON c.id = g.last_camera'''
+# Yüz grupları / görülmeler: dağıtık kurulumda (AGENT_MODE=remote) fabrika yerel DB'sinden (facebridge) çekilir,
+# isimler bulut DB'sinde çözülür; yerelde doğrudan facecore. İşlem fonksiyonları app/facecore.py'de.
+def _face(conn, method, **args):
+    from .. import facebridge, facecore
+    if facebridge.remote():
+        return facebridge.rpc(method, **args)
+    try:
+        r = facecore.rpc(conn, method, args)
+        conn.commit()
+        return r
+    except facecore.NotFound as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _resolve_names(conn, rows):
+    from .. import facebridge
+    if facebridge.remote():
+        facebridge.resolve_names(conn, rows)
+    return rows
 
 
 @faces_router.get('/groups')
 def groups(state: str = 'unknown', user=Depends(cam_user), conn=db.DB):
-    where = 'g.person_id IS NULL AND g.user_id IS NULL' if state == 'unknown' else 'g.person_id IS NOT NULL OR g.user_id IS NOT NULL'
-    return db.rows(conn.execute(GROUP_SELECT + f' WHERE {where} ORDER BY g.last_seen DESC LIMIT 500'))
+    return _resolve_names(conn, _face(conn, 'groups', state=state))
 
 
 @faces_router.get('/groups/{gid}')
 def group(gid: int, user=Depends(cam_user), conn=db.DB):
-    g = db.row(conn.execute(GROUP_SELECT + ' WHERE g.id = ?', (gid,)))
-    if not g:
-        raise HTTPException(404, 'Yüz grubu bulunamadı')
-    g['items'] = db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, s.score, c.name AS camera_name FROM face_sightings s
-           LEFT JOIN cameras c ON c.id = s.camera_id WHERE s.group_id = ? ORDER BY s.at DESC LIMIT 400''', (gid,)))
-    return g
-
-
-def _merge(conn, target, sources):
-    """Kaynak grupları hedefe taşır: görülmeler, ağırlık merkezi (örnek sayısıyla), sayılar, ilk / son görülme."""
-    rows = {r['id']: r for r in db.rows(conn.execute(
-        f'SELECT * FROM face_groups WHERE id IN ({",".join("?" * (len(sources) + 1))})', (target, *sources)))}
-    if target not in rows or any(s not in rows for s in sources):
-        raise HTTPException(404, 'Yüz grubu bulunamadı')
-    acc = np.zeros(128, np.float32)
-    for r in rows.values():
-        acc += np.frombuffer(r['centroid'], dtype=np.float32) * max(1, r['samples'])
-    best = max(rows.values(), key=lambda r: r['best_score'])
-    conn.execute(f'UPDATE face_sightings SET group_id = ? WHERE group_id IN ({",".join("?" * len(sources))})', (target, *sources))
-    conn.execute('''UPDATE face_groups SET centroid = ?, samples = ?, best_crop = ?, best_score = ?, first_seen = ?, last_seen = ?
-                    WHERE id = ?''',
-                 (_norm(acc).astype(np.float32).tobytes(), sum(r['samples'] for r in rows.values()), best['best_crop'], best['best_score'],
-                  min(r['first_seen'] for r in rows.values()), max(r['last_seen'] for r in rows.values()), target))
-    conn.execute(f'DELETE FROM face_groups WHERE id IN ({",".join("?" * len(sources))})', sources)
+    return _resolve_names(conn, _face(conn, 'group', gid=gid))
 
 
 @faces_router.post('/groups/{gid}/assign')
 def assign(gid: int, body: AssignIn, user=Depends(cam_user), conn=db.DB):
-    """Gruptaki tüm yüzler kişiye (kullanıcı ya da firma kişisi) atanır; o kişinin grubu varsa ikisi birleşir."""
+    """Gruptaki tüm yüzler kişiye (kullanıcı ya da firma kişisi) atanır; o kişinin grubu varsa ikisi birleşir.
+    Kullanıcı/kişi varlığı BULUT veritabanında doğrulanır; grup fabrikada olabilir."""
     if bool(body.user_id) == bool(body.person_id):
         raise HTTPException(400, 'Bir kullanıcı ya da firma kişisi seçin')
     if body.user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (body.user_id,)).fetchone():
         raise HTTPException(400, 'Kullanıcı bulunamadı')
     if body.person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (body.person_id,)).fetchone():
         raise HTTPException(400, 'Kişi bulunamadı')
-    if not conn.execute('SELECT 1 FROM face_groups WHERE id = ?', (gid,)).fetchone():
-        raise HTTPException(404, 'Yüz grubu bulunamadı')
-    col, val = ('user_id', body.user_id) if body.user_id else ('person_id', body.person_id)
-    existing = conn.execute(f'SELECT id FROM face_groups WHERE {col} = ? AND id != ? ORDER BY samples DESC LIMIT 1', (val, gid)).fetchone()
-    target = existing[0] if existing else gid
-    if existing:
-        _merge(conn, target, [gid])
-    conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
-                 (body.person_id, body.user_id, user['id'], db.now(), target))
-    db.audit(conn, user['id'], 'Kamera yüz grubunu kişiye atadı', 'face_group', target, f'{col}={val}')
-    return {'id': target}
+    r = _face(conn, 'assign', gid=gid, user_id=body.user_id, person_id=body.person_id, by=user['id'], validate=False)
+    db.audit(conn, user['id'], 'Kamera yüz grubunu kişiye atadı', 'face_group', r.get('id', gid),
+             f"{'user' if body.user_id else 'person'}={body.user_id or body.person_id}")
+    return r
 
 
 @faces_router.post('/groups/{gid}/unassign')
 def unassign(gid: int, user=Depends(cam_user), conn=db.DB):
-    conn.execute('UPDATE face_groups SET person_id = NULL, user_id = NULL, assigned_by = NULL, assigned_at = NULL WHERE id = ?', (gid,))
-    return {'ok': True}
+    return _face(conn, 'unassign', gid=gid)
 
 
 @faces_router.post('/merge')
 def merge(body: MergeIn, user=Depends(cam_user), conn=db.DB):
     """Aynı kişiye ait olduğu görülen grupları birleştirir (ilk seçilen hedef)."""
-    ids = list(dict.fromkeys(body.ids))
-    if len(ids) < 2:
-        raise HTTPException(400, 'En az iki grup seçin')
-    _merge(conn, ids[0], ids[1:])
-    db.audit(conn, user['id'], 'Kamera yüz gruplarını birleştirdi', 'face_group', ids[0], f'{len(ids)} grup')
-    return {'id': ids[0]}
+    r = _face(conn, 'merge', ids=list(dict.fromkeys(body.ids)))
+    db.audit(conn, user['id'], 'Kamera yüz gruplarını birleştirdi', 'face_group', r['id'], f'{len(body.ids)} grup')
+    return r
 
 
 @faces_router.delete('/groups/{gid}')
 def delete_group(gid: int, user=Depends(cam_user), conn=db.DB):
     """Yanlış tespit: grup, görülmeleri ve resimleri silinir."""
-    files = [r[0] for r in conn.execute('SELECT crop FROM face_sightings WHERE group_id = ? UNION SELECT frame FROM face_sightings WHERE group_id = ? '
-                                        'UNION SELECT best_crop FROM face_groups WHERE id = ?', (gid, gid, gid)) if r[0]]
-    conn.execute('DELETE FROM face_groups WHERE id = ?', (gid,))
-    for f in files:
-        (config.UPLOAD_DIR / f).unlink(missing_ok=True)
-    db.audit(conn, user['id'], 'Kamera yüz grubunu sildi', 'face_group', gid, f'{len(files)} resim')
-    return {'ok': True}
+    r = _face(conn, 'delete_group', gid=gid)
+    db.audit(conn, user['id'], 'Kamera yüz grubunu sildi', 'face_group', gid, f"{r.get('files', 0)} resim")
+    return r
 
 
 @faces_router.get('/people')
@@ -305,12 +292,7 @@ def people(user=Depends(cam_user), conn=db.DB):
 @faces_router.get('/recent')
 def recent(user=Depends(cam_user), conn=db.DB):
     """Son tanınan kişi görülmeleri (kişiye atanmış gruplar)."""
-    return db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, c.name AS camera_name, g.id AS group_id, u.full_name AS user_name,
-                  p.full_name AS person_name, pc.name AS person_company
-           FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
-           LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id LEFT JOIN companies pc ON pc.id = p.company_id
-           WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
+    return _resolve_names(conn, _face(conn, 'recent'))
 
 
 @faces_router.get('/events')
@@ -318,17 +300,9 @@ def events(date_from: str, date_to: str, kind: str = 'known', limit: int = 500,
            user=Depends(cam_user), conn=db.DB):
     """Belirli tarih aralığındaki görülmeler (Olay görüntüleme). kind='known' yalnız tanınanlar, 'all' hepsi.
     Yüz verisi/videolar fabrikada tutulur; bu liste yalnız seçilen aralık için çekilir."""
-    where = "s.at >= ? AND s.at < ?"
-    args = [date_from, date_to + '~']   # 'YYYY-MM-DD' → o günün sonuna kadar (ISO karşılaştırma)
-    if kind == 'known':
-        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL)"
-    return {'events': db.rows(conn.execute(
-        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name, g.id AS group_id,
-                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company
-            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
-            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
-            LEFT JOIN companies pc ON pc.id = p.company_id
-            WHERE {where} ORDER BY s.at DESC LIMIT ?''', (*args, min(limit, 2000))))}
+    r = _face(conn, 'events', date_from=date_from, date_to=date_to, kind=kind, limit=limit)
+    _resolve_names(conn, r["events"])
+    return r
 
 
 @faces_router.get('/enroll')
@@ -367,6 +341,7 @@ async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...)
     if not ok:
         raise HTTPException(422, res)
     conn.commit()
+    _push_enroll(conn)   # eğitim izlerini fabrika yüz-tanıma servisine aktar
     db.audit(conn, user['id'], 'Yüz tanıma eğitimi: fotoğraf eklendi', 'face_enroll', res['id'], subject_type)
     return {'ok': True, 'face': res}
 
@@ -376,4 +351,14 @@ def enroll_delete(enroll_id: int, user=Depends(cam_user), conn=db.DB):
     from .. import faceenroll
     if faceenroll.delete(conn, enroll_id):
         conn.commit()
+        _push_enroll(conn)
     return {'ok': True}
+
+
+def _push_enroll(conn):
+    """Eğitim izlerini (ve güncel ayarı) fabrika yüz-tanıma servisine aktarır (en iyi çaba)."""
+    try:
+        from .. import facebridge
+        facebridge.push(conn)
+    except Exception:   # noqa: BLE001
+        pass

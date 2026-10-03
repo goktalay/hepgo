@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.81.0'
+VERSION = '2.82.0'
 
 CHANGELOG = [
+    {'version': '2.82.0', 'date': '2026-10-03', 'title': 'Yüz tanıma motoru: fabrikada çalışır, bulut tarih aralığıyla görür',
+     'changes': [
+         'Yüz tanıma artık fabrikada (GPU) çalışır; görülmeler, yüz kayıtları ve kısa videolar fabrikada (lokal) tutulur (KVKK).',
+         'Bulut Kameralar modülü verileri fabrikadan çeker: kamera listesi/canlı kare, tanımlanmayan kişiler, olaylar ve medya ajan üzerinden; kişi adları bulutta çözülür.',
+         'NVR kimlik bilgileri, kanal/zamanlama, vardiya ve yüz eğitim izleri değiştikçe fabrikaya otomatik aktarılır.',
+         'Kanalların zamanlaması (tüm gün/gündüz/akşam/özel) ve vardiya, fabrika tanıma servisinde uygulanır; görülme anının kısa videosu kaydedilir.',
+     ]},
     {'version': '2.81.0', 'date': '2026-10-03', 'title': 'NVR entegrasyonu, yüz tanıma eğitimi ve Kameralar modülü',
      'changes': [
          'Program Ayarları › Entegrasyonlar › NVR: yerel IP, kullanıcı ve şifre ile bağlanılır (fabrika ajanı üzerinden ONVIF/RTSP).',

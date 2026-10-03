@@ -78,6 +78,28 @@ def _nvr_snapshot(args):
     return nvr._snapshot_direct(args)
 
 
+# --- Yüz tanıma (fabrika-yerel DB) — bulut bu op'larla görülme/grup/olay verisini çeker ve config iter ---
+def _face_rpc(args):
+    from . import db, facecore
+    try:
+        with db.connect() as conn:
+            res = facecore.rpc(conn, args['method'], args.get('args') or {})
+            conn.commit()
+        return res
+    except facecore.NotFound as e:
+        return {'_err': 'notfound', 'msg': str(e)}
+    except ValueError as e:
+        return {'_err': 'bad', 'msg': str(e)}
+
+
+def _face_media(args):
+    from . import facecore
+    try:
+        return facecore.media_bytes(args['path'])
+    except facecore.NotFound as e:
+        return {'_err': 'notfound', 'msg': str(e)}
+
+
 # --- Entegrasyon makinesi (fabrika) kaynak grafiği — merkez sunucu DEĞİL ---
 def _sysstat(args):
     from . import sysstat
@@ -98,6 +120,8 @@ OPS = {
     'nvr.channels': _nvr_channels,
     'nvr.gpu': _nvr_gpu,
     'nvr.snapshot': _nvr_snapshot,
+    'face.rpc': _face_rpc,
+    'face.media': _face_media,
     'sysstat': _sysstat,
 }
 

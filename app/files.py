@@ -2,7 +2,7 @@ import secrets
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -19,6 +19,8 @@ KINDS = {
     'logos': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},
     'cargo': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'},
     'camfaces': {'.jpg'},
+    'camclips': {'.mp4'},           # görülme anı video klipleri (kamera servisi yazar; dağıtık kurulumda fabrikada)
+    'faces_enroll': {'.jpg'},       # yüz tanıma eğitimi kırpıkları (bulutta)
     'gcode': {'.gcode', '.png', '.bin'},
     # İnsan Kaynakları: CV, özlük dosyaları, sözleşmeler (yalnızca İK modülü indirir)
     'hr': {'.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.doc', '.docx', '.odt', '.txt', '.rtf', '.zip'},
@@ -226,12 +228,20 @@ def get_file(kind: str, name: str, w: int = 0, user=Depends(current_user)):
         raise HTTPException(404)
     if kind == 'design' and not user.get('master'):   # tasarım dosyalarına ham erişim yalnızca Master; diğerleri /api/design/file (önizleme) kullanır
         raise HTTPException(403, 'Tasarım dosyaları yalnızca uygulama içinden önizlenir')
-    path = config.UPLOAD_DIR / kind / name
-    if not path.is_file():
-        raise HTTPException(404)
     guard = FILE_GUARDS.get(kind)
     if guard and not guard(user, name):
         raise HTTPException(404)   # yetkisiz: dosyanın varlığı da belli edilmez
+    path = config.UPLOAD_DIR / kind / name
+    if not path.is_file():
+        # Dağıtık kurulum: kamera medyası (kırpık/kare/klip) fabrikada tutulur; talep üzerine ajandan getirilir
+        if kind in ('camfaces', 'camclips') and config.AGENT_MODE == 'remote':
+            from . import facebridge
+            try:
+                data, ctype = facebridge.media(f'{kind}/{name}')
+            except HTTPException:
+                raise HTTPException(404)
+            return Response(content=data, media_type=ctype, headers=FILE_CACHE)
+        raise HTTPException(404)
     if w:
         size = next((x for x in THUMB_WIDTHS if x >= w), THUMB_WIDTHS[-1])
         thumb = thumbnail(path, kind, name, size)

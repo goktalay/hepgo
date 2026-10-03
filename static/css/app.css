@@ -275,6 +275,12 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .feed-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .feed-bar .spacer { flex: 1; }
 .feed-body { max-height: 420px; overflow: auto; }
+.feed-composer { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2, rgba(127,127,127,.05)); cursor: pointer; }
+.feed-composer:hover { background: var(--surface-2, rgba(127,127,127,.1)); }
+.feed-composer-pill { flex: 1; text-align: left; color: var(--muted); }
+.feed-composer-ic { font-size: 18px; }
+.feed-empty { text-align: center; padding: 20px; }
 .feed-list { display: flex; flex-direction: column; gap: 10px; }
 .feed-post { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .feed-ph { display: flex; align-items: center; gap: 8px; }

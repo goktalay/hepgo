@@ -165,6 +165,7 @@ export async function renderDashboard(view, ctx, modules) {
     const kpis = arr => clear(body, h('div', { class: 'db-kpis' }, arr.map(k => h(k.href ? 'a' : 'div', { class: `db-kpi ${k.tone || ''}`, href: k.href },
       h('b', null, k.value ?? '—'), h('span', null, k.label), k.sub ? h('small', null, k.sub) : null))));
     switch (it.k) {
+      case 'company_news': return renderFeed(body, ctx);
       case 'clock': return clock(body, it.o?.style || 'digital');
       case 'weather': return weather(body, it.o || { mode: 'auto' });
       case 'modules': return clear(body, h('div', { class: 'db-modules' }, modules.map(m => h('a', { href: `#/${m.key}`, class: m.tone ? `tone-${m.tone}` : '' },

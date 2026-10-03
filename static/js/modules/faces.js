@@ -30,7 +30,7 @@ export async function renderFaces(body) {
     h('option', { value: 'last' }, 'Son görülme'), h('option', { value: 'count' }, 'Görülme sayısı'), h('option', { value: 'camera' }, 'Kamera'));
   let dir = -1;   // -1 azalan (yeni/çok önce), 1 artan
   const dirBtn = h('button', { class: 'btn', type: 'button', title: 'Yön', onclick: () => { dir = -dir; dirBtn.textContent = dir < 0 ? '↓' : '↑'; draw(); } }, '↓');
-  sortSel.addEventListener('change', draw);
+  sortSel.addEventListener('change', () => draw());
   const sortKey = g => sortSel.value === 'count' ? (g.sightings || 0)
     : sortSel.value === 'camera' ? (g.last_camera_name || g.cameras || '').toLocaleLowerCase('tr')
       : (g.last_seen || '');

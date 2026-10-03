@@ -36,12 +36,16 @@ export function renderFeed(container, ctx) {
       p.media?.length ? h('div', { class: `feed-medias n${Math.min(p.media.length, 4)}` }, p.media.map(mediaEl)) : null);
   };
 
+  const composer = () => h('button', { class: 'feed-composer', type: 'button', onclick: () => compose(load) },
+    avatar(ctx.user, 36),
+    h('span', { class: 'feed-composer-pill' }, 'Bir şeyler paylaş…'),
+    h('span', { class: 'feed-composer-ic', title: 'Foto / Video / Ses' }, '📷'));
   let drawMap;
   function draw() {
     seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', ['feed', 'map'][i] === view));
     if (view === 'map') return drawMap();
-    clear(body, posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
-      : h('div', { class: 'card empty' }, 'Henüz paylaşım yok. İlk paylaşımı sen ekle!'));
+    clear(body, composer(), posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
+      : h('div', { class: 'feed-empty muted' }, 'Henüz paylaşım yok. İlk paylaşımı sen ekle!'));
   }
   drawMap = async () => {
     clear(body, h('div', { class: 'feed-map' }));

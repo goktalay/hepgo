@@ -3,9 +3,19 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.102.1'
+VERSION = '2.103.0'
 
 CHANGELOG = [
+    {'version': '2.103.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: Instagram tarzı kart, yorum yanıtı + kalp, kaydedilenler, arka planda yükleme',
+     'changes': [
+         'Kart yeniden tasarlandı: paylaşan kişi medyanın üstünde; × yerine “⋯” menüsü (kaydet, paylaş, indir, metni kopyala, konumu aç, kimler beğendi, kendi paylaşımında sil).',
+         'Alt çubuk: solda kalp + sayı (uzun bas: diğer tepkiler), yorum + sayı, paylaş; sağda favorilere kaydet. Altında “Ad metin… devamı”, “N yorumun tümünü gör”, “34 dakika önce”.',
+         'Kaydedilenler: paylaşım kutusunun yanındaki simgeyle yalnız kaydettiklerin.',
+         'Yorumlara kalp ve yanıt: yanıtlar ana yorumun altında; 2’den çok yanıt katlanır; yanıta yanıtta @ad otomatik; yorum sahibi kimlerin beğendiğini görür. Silinen yorumun yanıtları kaybolmaz.',
+         'Akış 10’ar paylaşım yüklenir, aşağı indikçe devamı gelir.',
+         'Yeni paylaşım formu: ekli dosyalar küçük önizleme kareleri; “Paylaş” formu hemen kapatır, yükleme arka planda sürer, akışın üstünde ilerleme çubuğu; bitince paylaşım düşer (hata olursa “Tekrar dene”).',
+         'Tam ekranda “Kaydet” düğmesi; yorum paneli sayısı güncel.',
+     ]},
     {'version': '2.102.1', 'date': '2026-10-03', 'title': 'Sürüm notları yalnızca MASTER’a',
      'changes': [
          'Program Hakkında’daki sürüm geçmişi ve “Neler değişti?” notlarını yalnızca MASTER kullanıcıları görür; diğer kullanıcılar yalnız sürüm numarasını görür.',

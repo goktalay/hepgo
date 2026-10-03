@@ -24,9 +24,22 @@ def _media_type(ext):
 
 
 @router.get('')
-def list_feed(since: str = '', located: int = 0, user=Depends(auth.current_user), conn=db.DB):
-    return {'posts': feed.list_posts(conn, since or None, located=bool(located), viewer_id=user['id']),
+def list_feed(since: str = '', located: int = 0, saved: int = 0, limit: int = 60, before_at: str = '', before_id: int = 0,
+              after: int = 0, user=Depends(auth.current_user), conn=db.DB):
+    """Akış sayfa sayfa: limit + before_at/before_id (sonraki sayfa), after (canlı: bu id'den yeniler)."""
+    before = (before_at, before_id) if before_at and before_id else None
+    return {'posts': feed.list_posts(conn, since or None, limit=max(1, min(limit, 300)), located=bool(located), viewer_id=user['id'],
+                                     saved=bool(saved), before=before, after=after or None),
             'reactions': list(feed.REACTIONS)}
+
+
+@router.post('/{post_id}/save')
+def save(post_id: int, user=Depends(auth.current_user), conn=db.DB):
+    r = feed.toggle_save(conn, post_id, user['id'])
+    if r is None:
+        raise HTTPException(404, 'Paylaşım bulunamadı')
+    conn.commit()
+    return {'ok': True, 'saved': r}
 
 
 class ReactIn(BaseModel):
@@ -42,16 +55,37 @@ def react(post_id: int, body: ReactIn, user=Depends(auth.current_user), conn=db.
 
 class CommentIn(BaseModel):
     text: str
+    parent_id: Optional[int] = None   # yanıt: hangi yoruma
 
 
 @router.get('/{post_id}/comments')
 def comments(post_id: int, user=Depends(auth.current_user), conn=db.DB):
-    return {'comments': feed.list_comments(conn, post_id)}
+    return {'comments': feed.list_comments(conn, post_id, user['id'])}
+
+
+@router.post('/comments/{comment_id}/like')
+def like_comment(comment_id: int, user=Depends(auth.current_user), conn=db.DB):
+    r = feed.like_comment(conn, comment_id, user['id'])
+    if r is None:
+        raise HTTPException(404, 'Yorum bulunamadı')
+    conn.commit()
+    return {'ok': True, 'liked': r[0], 'like_count': r[1]}
+
+
+@router.get('/comments/{comment_id}/likes')
+def comment_likes(comment_id: int, user=Depends(auth.current_user), conn=db.DB):
+    """Yorumu kimlerin beğendiği — yalnızca yorumun sahibi görür (paylaşım tepkileriyle aynı mantık)."""
+    row = conn.execute('SELECT user_id FROM feed_comments WHERE id=? AND deleted_at IS NULL', (comment_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, 'Yorum bulunamadı')
+    if row[0] != user['id'] and not user.get('master') and 'admin' not in user.get('modules', []):
+        raise HTTPException(403, 'Beğenenleri yalnızca yorum sahibi görebilir')
+    return {'likes': feed.comment_likers(conn, comment_id)}
 
 
 @router.post('/{post_id}/comments')
 def add_comment(post_id: int, body: CommentIn, user=Depends(auth.current_user), conn=db.DB):
-    cid = feed.add_comment(conn, post_id, user['id'], body.text)
+    cid = feed.add_comment(conn, post_id, user['id'], body.text, body.parent_id)
     if not cid:
         raise HTTPException(400, 'Yorum eklenemedi')
     conn.commit()
@@ -89,8 +123,8 @@ async def add(text: str = Form(''), lat: Optional[float] = Form(None), lng: Opti
         (feed_dir / name).write_bytes(data)
         media.append({'type': mtype, 'path': f'feed/{name}'})
     pid = feed.add_post(conn, user['id'], text, media, lat, lng)
-    conn.commit()
     db.audit(conn, user['id'], 'Şirketten Haberler paylaşımı', 'feed', pid, f'{len(media)} medya')
+    conn.commit()   # yazma kilidi bırakılmadan await edilmesin (aksi halde eşzamanlı istekler kilide takılır)
     await _announce(conn, pid, user, text, media)
     return {'ok': True, 'id': pid}
 

@@ -146,6 +146,20 @@ CREATE TABLE IF NOT EXISTS feed_comments (
     deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_feed_comments_post ON feed_comments(post_id);
+-- Şirketten Haberler: kullanıcının favorilere kaydettiği paylaşımlar (Instagram "Kaydet")
+CREATE TABLE IF NOT EXISTS feed_saves (
+    post_id    INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, post_id)
+);
+-- Şirketten Haberler: yoruma kalp (kullanıcı başına bir beğeni)
+CREATE TABLE IF NOT EXISTS feed_comment_likes (
+    comment_id INTEGER NOT NULL REFERENCES feed_comments(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (comment_id, user_id)
+);
 -- Merkez (Veilox) destek girişi: müşteri instance'ında bekleyen çapraz-giriş onayları
 CREATE TABLE IF NOT EXISTS crosslogin_requests (
     id          INTEGER PRIMARY KEY,
@@ -1739,6 +1753,11 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    fc_cols = {r[1] for r in conn.execute('PRAGMA table_info(feed_comments)')}
+    if fc_cols and 'parent_id' not in fc_cols:   # yoruma yanıt (tek seviye: yanıtlar ana yorumun altında)
+        conn.execute('ALTER TABLE feed_comments ADD COLUMN parent_id INTEGER REFERENCES feed_comments(id) ON DELETE CASCADE')
+    if fc_cols:
+        conn.execute('CREATE INDEX IF NOT EXISTS ix_feed_comments_parent ON feed_comments(parent_id)')
     if 'password_changed_at' not in user_cols:   # şifre geçerlilik süresi (Program Ayarları → Güvenlik) için son değişim
         conn.execute('ALTER TABLE users ADD COLUMN password_changed_at TEXT')
     if 'delivered_at' not in {r[1] for r in conn.execute('PRAGMA table_info(chat_messages)')}:   # WhatsApp tarzı "iletildi" (✓✓)

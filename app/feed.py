@@ -45,9 +45,19 @@ def _row(r):
     return d
 
 
-def list_posts(conn, since=None, limit=60, located=False, viewer_id=None):
+def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=False, before=None, after=None):
+    """before=(created_at, id): bu paylaşımdan eskiler (sonsuz kaydırmada sonraki sayfa); after=id: bundan yeniler (canlı ekleme)."""
     where = 'f.deleted_at IS NULL'
     args = []
+    if before:
+        where += ' AND (f.created_at < ? OR (f.created_at = ? AND f.id < ?))'
+        args += [before[0], before[0], before[1]]
+    if after:
+        where += ' AND f.id > ?'
+        args.append(after)
+    if saved:   # yalnız izleyenin favorilere kaydettikleri
+        where += ' AND f.id IN (SELECT post_id FROM feed_saves WHERE user_id = ?)'
+        args.append(viewer_id or 0)
     if located:
         where += ' AND f.lat IS NOT NULL AND f.lng IS NOT NULL'
     if since:
@@ -68,14 +78,16 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None):
             counts.setdefault(pid, {})[emoji] = n
         comments = {pid: n for pid, n in conn.execute(
             f'SELECT post_id, COUNT(*) FROM feed_comments WHERE post_id IN ({ph}) AND deleted_at IS NULL GROUP BY post_id', ids)}
-        mine = {}
+        mine, saves = {}, set()
         if viewer_id:
             mine = {pid: emoji for pid, emoji in conn.execute(
                 f'SELECT post_id, emoji FROM feed_reactions WHERE user_id = ? AND post_id IN ({ph})', (viewer_id, *ids))}
+            saves = {r[0] for r in conn.execute(f'SELECT post_id FROM feed_saves WHERE user_id = ? AND post_id IN ({ph})', (viewer_id, *ids))}
         for p in posts:
             p['reactions'] = counts.get(p['id'], {})
             p['comment_count'] = comments.get(p['id'], 0)
             p['my_reaction'] = mine.get(p['id'])
+            p['saved'] = p['id'] in saves
     return posts
 
 
@@ -95,23 +107,77 @@ def react(conn, post_id, user_id, emoji):
     return emoji
 
 
-def list_comments(conn, post_id):
+def toggle_save(conn, post_id, user_id):
+    """Favorilere kaydet / çıkar (yalnız kullanıcının kendisi görür). Paylaşım yoksa None."""
+    if not conn.execute('SELECT 1 FROM feed_posts WHERE id = ? AND deleted_at IS NULL', (post_id,)).fetchone():
+        return None
+    if conn.execute('DELETE FROM feed_saves WHERE post_id = ? AND user_id = ?', (post_id, user_id)).rowcount:
+        return False
+    conn.execute('INSERT INTO feed_saves (post_id, user_id, created_at) VALUES (?,?,?)', (post_id, user_id, db.now()))
+    return True
+
+
+def list_comments(conn, post_id, viewer_id=None):
+    """Yorumlar + yanıtlar (tek seviye, parent_id) + kalp sayısı / benim kalbim. Yanıtı olan silinmiş ana yorum, yanıtlar
+    kopmasın diye metinsiz yer tutucu olarak döner (başkasının yanıtı silinmez — bkz. delete_comment)."""
     rows = db.rows(conn.execute(
-        '''SELECT c.id, c.user_id, c.text, c.created_at, u.full_name AS author_name, u.photo AS author_photo
+        """SELECT c.id, c.user_id, c.parent_id, c.text, c.created_at, c.deleted_at, u.full_name AS author_name, u.photo AS author_photo
            FROM feed_comments c LEFT JOIN users u ON u.id = c.user_id
-           WHERE c.post_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at, c.id''', (post_id,)))
-    return rows
+           WHERE c.post_id = ? ORDER BY c.created_at, c.id""", (post_id,)))
+    live_parents = {r['parent_id'] for r in rows if r['parent_id'] and not r['deleted_at']}
+    out = []
+    for r in rows:
+        if r['deleted_at']:
+            if r['parent_id'] or r['id'] not in live_parents:
+                continue
+            r.update(text='', user_id=None, author_name=None, author_photo=None, deleted=True)
+        r.pop('deleted_at', None)
+        out.append(r)
+    if out:
+        ids = [r['id'] for r in out]
+        ph = ','.join('?' * len(ids))
+        likes = dict(conn.execute(f'SELECT comment_id, COUNT(*) FROM feed_comment_likes WHERE comment_id IN ({ph}) GROUP BY comment_id', ids).fetchall())
+        mine = {x[0] for x in conn.execute(f'SELECT comment_id FROM feed_comment_likes WHERE user_id = ? AND comment_id IN ({ph})', (viewer_id or 0, *ids))}
+        for r in out:
+            r['like_count'] = likes.get(r['id'], 0)
+            r['liked'] = r['id'] in mine
+    return out
 
 
-def add_comment(conn, post_id, user_id, text):
+def add_comment(conn, post_id, user_id, text, parent_id=None):
+    """Yorum ya da yanıt. Yanıta yanıt da ana yorumun altına bağlanır (tek seviye, Instagram gibi)."""
     text = (text or '').strip()[:1000]
     if not text:
         return None
     if not conn.execute('SELECT 1 FROM feed_posts WHERE id = ? AND deleted_at IS NULL', (post_id,)).fetchone():
         return None
-    cur = conn.execute('INSERT INTO feed_comments (post_id, user_id, text, created_at) VALUES (?,?,?,?)',
-                       (post_id, user_id, text, db.now()))
+    if parent_id:
+        par = conn.execute('SELECT id, parent_id, post_id FROM feed_comments WHERE id = ?', (parent_id,)).fetchone()
+        if not par or par[2] != post_id:
+            return None
+        parent_id = par[1] or par[0]
+    cur = conn.execute('INSERT INTO feed_comments (post_id, user_id, text, created_at, parent_id) VALUES (?,?,?,?,?)',
+                       (post_id, user_id, text, db.now(), parent_id or None))
     return cur.lastrowid
+
+
+def like_comment(conn, comment_id, user_id):
+    """Yoruma kalp: aç / kapat. (beğenildi mi, toplam) döner; yorum yoksa None."""
+    if not conn.execute('SELECT 1 FROM feed_comments WHERE id = ? AND deleted_at IS NULL', (comment_id,)).fetchone():
+        return None
+    if conn.execute('DELETE FROM feed_comment_likes WHERE comment_id = ? AND user_id = ?', (comment_id, user_id)).rowcount:
+        liked = False
+    else:
+        conn.execute('INSERT INTO feed_comment_likes (comment_id, user_id, created_at) VALUES (?,?,?)', (comment_id, user_id, db.now()))
+        liked = True
+    n = conn.execute('SELECT COUNT(*) FROM feed_comment_likes WHERE comment_id = ?', (comment_id,)).fetchone()[0]
+    return liked, n
+
+
+def comment_likers(conn, comment_id):
+    return db.rows(conn.execute(
+        """SELECT l.created_at, u.id AS user_id, u.full_name, u.photo FROM feed_comment_likes l JOIN users u ON u.id = l.user_id
+           WHERE l.comment_id = ? ORDER BY l.created_at DESC""", (comment_id,)))
 
 
 def delete_comment(conn, comment_id, viewer):

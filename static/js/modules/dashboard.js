@@ -43,7 +43,7 @@ export async function renderDashboard(view, ctx, modules) {
   for (const it of layout) { const w = byKey[it.k]; if (w?.fixed) it.w = (w.size || 1) * 4; }   // sabit kutucuk genişliği sabit (1/3)
 
   let editing = false, data = {}, grid = null;
-  const charts = [], timers = [], bodies = {};
+  const charts = [], timers = [], bodies = {}, feeds = {};   // feeds: company_news kutucuğunun yeniden yükleyicisi
   let refreshTimer = null;
   onLeave(() => { charts.forEach(c => c.destroy()); timers.forEach(clearInterval); clearInterval(refreshTimer); try { grid?.destroy(false); } catch { /* */ } });
   const gridEl = h('div', { class: 'grid-stack' });
@@ -76,7 +76,7 @@ export async function renderDashboard(view, ctx, modules) {
     if (it.y != null) el.setAttribute('gs-y', it.y);
     if (w.fixed) el.setAttribute('gs-no-resize', 'true');
     if (it.k === 'company_news') {   // görünüm (Akış/Harita) Kişisel Ayarlar › Pano'dan seçilir
-      try { renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' }); }
+      try { feeds[it.id] = renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' })?.reload; }
       catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     } else {
       try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
@@ -97,7 +97,11 @@ export async function renderDashboard(view, ctx, modules) {
   function refill() {   // içeriği yenile (grid yapısına dokunmadan)
     charts.splice(0).forEach(c => c.destroy());
     timers.splice(0).forEach(clearInterval);
-    for (const it of layout) { const b = bodies[it.id]; if (b) { try { fill(it, b); } catch { /* */ } } }
+    for (const it of layout) {
+      const b = bodies[it.id]; if (!b) continue;
+      if (it.k === 'company_news') { feeds[it.id]?.(); continue; }   // kendi yükleyicisiyle tazelenir; fill() ile silinmesin
+      try { fill(it, b); } catch { /* */ }
+    }
   }
 
   function setEdit(on) {

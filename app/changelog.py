@@ -3,9 +3,13 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.93.0'
+VERSION = '2.93.1'
 
 CHANGELOG = [
+    {'version': '2.93.1', 'date': '2026-10-03', 'title': 'Düzeltme: Şirketten Haberler içeriğinin kaybolması',
+     'changes': [
+         'Pano 60 sn’de bir içeriği tazelerken Şirketten Haberler kutucuğunu yanlışlıkla boşaltıyordu (“—”); artık kutucuk kendi yükleyicisiyle tazeleniyor, içerik kalıcı.',
+     ]},
     {'version': '2.93.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: tam ekran medya + görünüm Kişisel Ayarlar’da',
      'changes': [
          'Şirketten Haberler kutucuğundaki “Paylaş” düğmesi ve Akış/Harita sekmesi kaldırıldı; paylaşım yine gövdedeki “Bir şeyler paylaş…” kutusundan yapılır.',

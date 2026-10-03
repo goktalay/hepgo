@@ -100,10 +100,28 @@ def delete_group(conn, gid):
     files = [r[0] for r in conn.execute('SELECT crop FROM face_sightings WHERE group_id = ? UNION SELECT frame FROM face_sightings WHERE group_id = ? '
                                         'UNION SELECT clip FROM face_sightings WHERE group_id = ? UNION SELECT best_crop FROM face_groups WHERE id = ?',
                                         (gid, gid, gid, gid)) if r[0]]
+    cen = conn.execute('SELECT centroid FROM face_groups WHERE id = ?', (gid,)).fetchone()
+    if cen and cen[0]:   # bu yüze benzeyen yeni görülmeler tekrar listeye alınmaz
+        conn.execute('INSERT INTO face_ignored (centroid, created_at) VALUES (?, ?)', (cen[0], db.now()))
     conn.execute('DELETE FROM face_groups WHERE id = ?', (gid,))
     for f in files:
         (config.UPLOAD_DIR / f).unlink(missing_ok=True)
     return {'ok': True, 'files': len(files)}
+
+
+def delete_sighting(conn, sid):
+    """Bir gruptan tek bir görülme (resim) çıkarır — kalanlar kalır. Grup boşalırsa grubu da siler."""
+    row = conn.execute('SELECT crop, frame, clip, group_id FROM face_sightings WHERE id = ?', (sid,)).fetchone()
+    if not row:
+        raise NotFound('Görülme bulunamadı')
+    conn.execute('DELETE FROM face_sightings WHERE id = ?', (sid,))
+    for f in (row[0], row[1], row[2]):
+        if f:
+            (config.UPLOAD_DIR / f).unlink(missing_ok=True)
+    left = conn.execute('SELECT COUNT(*) FROM face_sightings WHERE group_id = ?', (row[3],)).fetchone()[0]
+    if left == 0:   # grupta görülme kalmadı → grubu kaldır
+        conn.execute('DELETE FROM face_groups WHERE id = ?', (row[3],))
+    return {'ok': True, 'group_id': row[3], 'left': left}
 
 
 def recent(conn):
@@ -256,6 +274,8 @@ def rpc(conn, method, args):
         return unassign(conn, a['gid'])
     if method == 'delete_group':
         return delete_group(conn, a['gid'])
+    if method == 'delete_sighting':
+        return delete_sighting(conn, a['sid'])
     if method == 'recent':
         return recent(conn)
     if method == 'events':

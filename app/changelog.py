@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.91.0'
+VERSION = '2.92.0'
 
 CHANGELOG = [
+    {'version': '2.92.0', 'date': '2026-10-03', 'title': 'Tanımlanmayan kişiler: sıralama, resim çıkarma, kara liste',
+     'changes': [
+         'Tanımlanmayan/tanınan kişilerde sıralama: görülme sayısı, kamera ya da son görülme + artan/azalan yön.',
+         'Grup detayından tek tek görülme (resim) çıkarılabilir; atanmış kişiden de yanlış yüz kaldırılabilir.',
+         'Gereksiz bir grubu sildiğinizde o yüze benzeyen yeni görülmeler bir daha listeye alınmaz (kara liste).',
+     ]},
     {'version': '2.91.0', 'date': '2026-10-03', 'title': 'Pano GridStack ile yeniden: sürükle-bırak + serbest boyut',
      'changes': [
          'Pano kutucukları artık serbestçe sürüklenip boyutlandırılabilir (GridStack). “Panoyu Düzenle” ile taşı, boyutlandır, ekle, kaldır.',

@@ -47,7 +47,7 @@ export async function renderDashboard(view, ctx, modules) {
   let refreshTimer = null;
   onLeave(() => { charts.forEach(c => c.destroy()); timers.forEach(clearInterval); clearInterval(refreshTimer); try { grid?.destroy(false); } catch { /* */ } });
   const gridEl = h('div', { class: 'grid-stack' });
-  const editBtn = h('button', { class: 'btn', type: 'button', onclick: () => setEdit(!editing) });
+  const editBtn = h('button', { class: 'btn', type: 'button', onclick: () => setEdit(!editing) }, 'Panoyu Düzenle');
   const addBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => addWidget() }, '＋ Kutucuk Ekle');
 
   const loadData = async () => {
@@ -85,7 +85,7 @@ export async function renderDashboard(view, ctx, modules) {
     if (grid) { try { grid.off('change added removed'); grid.destroy(false); } catch { /* */ } }
     clear(gridEl, layout.map(itemEl));
     if (!GridStack) return;
-    grid = GridStack.init({ column: 12, cellHeight: 76, margin: 6, float: true, handle: '.db-head', staticGrid: !editing }, gridEl);
+    grid = GridStack.init({ column: 12, cellHeight: 76, margin: 6, float: false, handle: '.db-head', staticGrid: !editing }, gridEl);
     grid.on('change added removed', persist);
   }
 

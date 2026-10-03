@@ -301,6 +301,14 @@ def merge(body: MergeIn, user=Depends(cam_user), conn=db.DB):
     return r
 
 
+@faces_router.delete('/sightings/{sid}')
+def delete_sighting(sid: int, user=Depends(cam_user), conn=db.DB):
+    """Bir gruptan tek görülme (resim) çıkarır. Grup/kişi atanmış olabilir; kalanlar kalır."""
+    r = _face(conn, 'delete_sighting', sid=sid)
+    db.audit(conn, user['id'], 'Kamera yüz görülmesini kaldırdı', 'face_sighting', sid, None)
+    return r
+
+
 @faces_router.delete('/groups/{gid}')
 def delete_group(gid: int, user=Depends(cam_user), conn=db.DB):
     """Yanlış tespit: grup, görülmeleri ve resimleri silinir."""

@@ -36,6 +36,7 @@ FACE_EVERY, FACE_WIDTH = 0.5, 1600       # yüz arama (giriş kameralarında uza
 FRAME_WIDTH = 1920                       # saklanan tam kare
 MIN_FACE, MIN_SCORE = 36, 0.6            # yürüyen/açılı yüzler 0.9'u geçemiyordu; 0.6 daha çok yakalar
 SAME_GROUP = 0.40                        # SFace kosinüs: aynı kişinin grubu
+IGNORE_SIM = 0.42                        # silinmiş yüze bu kadar benzeyen yeni görülme listeye alınmaz
 STORE_EVERY = 20                         # sn: aynı grup, aynı kamera için görülme saklama aralığı
 RELOAD_EVERY = 10                        # sn: kamera listesi ve gruplar
 
@@ -62,6 +63,7 @@ class Identities:
         self.lock = threading.Lock()
         self.groups = {}      # id → {'c': ndarray, 'n', 'person_id', 'user_id'}
         self.known = []       # [(('person'|'user', id), iz)] evraklardan
+        self.ignored = []     # silinen grupların izleri (kara liste)
         self.last_store = {}  # (grup, kamera) → zaman
         self.loaded = 0
 
@@ -69,11 +71,21 @@ class Identities:
         with db.connect() as conn:
             rows = conn.execute('SELECT id, centroid, samples, person_id, user_id, family_id FROM face_groups').fetchall()
             known = known_identities(conn)
+            try:
+                ign = [np.frombuffer(r[0], dtype=np.float32) for r in conn.execute('SELECT centroid FROM face_ignored')]
+            except Exception:   # noqa: BLE001 — tablo yoksa
+                ign = []
         with self.lock:
             self.groups = {r[0]: {'c': np.frombuffer(r[1], dtype=np.float32).copy(), 'n': r[2], 'person_id': r[3], 'user_id': r[4], 'family_id': r[5]}
                            for r in rows}
             self.known = known
+            self.ignored = ign
             self.loaded = time.time()
+
+    def is_ignored(self, emb):
+        """Silinmiş (gereksiz) bir yüze benziyor mu? Benziyorsa yeni görülme listeye alınmaz."""
+        with self.lock:
+            return any(float(np.dot(v, emb)) >= IGNORE_SIM for v in getattr(self, 'ignored', ()))
 
     def assign(self, emb):
         """Yüzün grubu: (grup id, yeni mi). Önce en benzer grup, sonra evraklardan bilinen kişi, yoksa yeni grup."""
@@ -201,6 +213,8 @@ def _write_clip(frames, out_path):
 def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso, threshold=None):
     """Grubu günceller ya da yeni grup açar; 20 sn kuralına göre görülmeyi (kırpık + tam kare) saklar."""
     gid, who = ident.assign(emb)
+    if gid is None and not who and ident.is_ignored(emb):   # silinmiş (gereksiz) yüze benziyor → listeye alma
+        return None
     now = time.time()
     FACE_DIR.mkdir(parents=True, exist_ok=True)
     with db.connect() as conn:

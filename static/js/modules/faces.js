@@ -25,6 +25,15 @@ export async function renderFaces(body) {
   const out = h('div');
   const selected = new Set();
   let rows = [];
+  // Sıralama: görülme sayısı / son görülme / kamera + yön (↑/↓)
+  const sortSel = h('select', { class: 'input', title: 'Sırala', style: { maxWidth: '170px' } },
+    h('option', { value: 'last' }, 'Son görülme'), h('option', { value: 'count' }, 'Görülme sayısı'), h('option', { value: 'camera' }, 'Kamera'));
+  let dir = -1;   // -1 azalan (yeni/çok önce), 1 artan
+  const dirBtn = h('button', { class: 'btn', type: 'button', title: 'Yön', onclick: () => { dir = -dir; dirBtn.textContent = dir < 0 ? '↓' : '↑'; draw(); } }, '↓');
+  sortSel.addEventListener('change', draw);
+  const sortKey = g => sortSel.value === 'count' ? (g.sightings || 0)
+    : sortSel.value === 'camera' ? (g.last_camera_name || g.cameras || '').toLocaleLowerCase('tr')
+      : (g.last_seen || '');
   const syncBtn = () => {
     mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = t('Seçilenleri Birleştir{n}', { n: selected.size ? ` (${selected.size})` : '' });
     delBtn.disabled = selected.size < 1; delBtn.textContent = t('Seçilenleri Kaldır{n}', { n: selected.size ? ` (${selected.size})` : '' });
@@ -32,6 +41,7 @@ export async function renderFaces(body) {
 
   const draw = () => {
     const list = rows.filter(g => matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
+    list.sort((a, b) => { const ka = sortKey(a), kb = sortKey(b); return (ka < kb ? -1 : ka > kb ? 1 : 0) * dir; });
     info.textContent = state === 'unknown'
       ? t('{n} tanımlanamayan kişi grubu · aynı kişiye ait grupları seçip birleştirebilirsiniz', { n: list.length })
       : t('{n} tanınan kişi', { n: list.length });
@@ -81,8 +91,13 @@ export async function renderFaces(body) {
             h('div', { class: 'small muted' }, t('İlk {a} · Son {b}', { a: fmtDateTime(g.first_seen), b: fmtDateTime(g.last_seen) })),
             h('div', { class: 'small muted' }, t('Kameralar: {c}', { c: g.cameras || '—' })),
             h('p', { class: 'small muted' }, 'Yüze tıklayınca görüldüğü anın tam karesi açılır.'))),
-        h('div', { class: 'fg-shots' }, g.items.map(s => h('button', { class: 'fg-shot', type: 'button', onclick: () => showFrame(s) },
-          h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' }),
+        h('div', { class: 'fg-shots' }, g.items.map(s => h('div', { class: 'fg-shot' },
+          h('button', { class: 'fg-shot-x', type: 'button', title: 'Bu resmi gruptan çıkar', onclick: async e => {
+            e.stopPropagation();
+            if (!await confirmDialog('Resmi çıkar', 'Bu görülme gruptan çıkarılsın mı?', { okLabel: 'Çıkar', danger: true })) return;
+            try { const r = await api.del(`/api/faces/sightings/${s.id}`); m.close(); if (r.left) openGroup(id); else load(); } catch (err) { toastError(err); }
+          } }, '×'),
+          h('button', { class: 'fg-shot-img', type: 'button', onclick: () => showFrame(s) }, h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' })),
           h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'),
           s.threshold != null ? h('span', { class: 'muted' }, t('hassasiyet {v}', { v: s.threshold })) : null)))),
       actions: [
@@ -133,7 +148,7 @@ export async function renderFaces(body) {
   }
 
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'spacer' }), sensWrap, delBtn, mergeBtn), h('p', null, info), out);
+  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Sırala'), sortSel, dirBtn), h('span', { class: 'spacer' }), sensWrap, delBtn, mergeBtn), h('p', null, info), out);
   await load();
   every(15000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
 }

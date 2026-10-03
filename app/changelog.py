@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.106.0'
+VERSION = '2.107.0'
 
 CHANGELOG = [
+    {'version': '2.107.0', 'date': '2026-10-03', 'title': 'Üyelik sözleşmeleri (Merkez + firma paneli)',
+     'changes': [
+         'Merkez › Üyelik Yönetimi › Sözleşmeler: Abonelik ve Hizmet Sözleşmesi, KVKK Veri İşleme Sözleşmesi, Hizmet Seviyesi Taahhüdü (SLA) ve Kabul Edilebilir Kullanım Politikası taslakları; düzenleme (firma alanları + canlı önizleme), yayınlama, yeni sürüm, yayından kaldırma.',
+         'Metinler her firmaya özel doldurulur (unvan, paket, aylık ücret, başlangıç tarihi, sağlayıcı bilgileri, yetkili mahkeme).',
+         'Firma › Üyeliğim & Destek › Sözleşmelerim: okuma, yetkili adı/ünvanı ve beyanla elektronik onay; onay kaydı (zaman, IP, tarayıcı, metnin SHA-256 parmak izi, onaylanan metnin birebir kopyası), yazdır / PDF, onay geçmişi.',
+         'Yeni sürüm yayınlanınca firmalardan yeniden onay istenir; onay bekleyen zorunlu sözleşme için firma yöneticisine bildirim.',
+         'Merkez her sözleşme için firma bazında onay durumu ve kanıtı (metin bütünlüğü doğrulamasıyla) görür.',
+     ]},
     {'version': '2.106.0', 'date': '2026-10-03', 'title': 'Canlı yayın',
      'changes': [
          'Şirketten Haberler › “Canlı” düğmesi: sahadan / her yerden telefonla canlı yayın (Instagram / TikTok Live tarzı). Başlık, kamera çevirme, mikrofon aç/kapa.',

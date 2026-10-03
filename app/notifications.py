@@ -358,6 +358,15 @@ def tickets_waiting(conn, user):
     return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], '#/tickets', 'Yanıtlamak için açın')
 
 
+def contracts_pending(conn, user):
+    """Firma: Merkez'in yayınladığı, onay bekleyen zorunlu üyelik sözleşmeleri (firma yöneticisine)."""
+    from . import central_client, config
+    if config.FEDERATION_CENTRAL or 'uyelik' not in user.get('modules', []):
+        return _result([], [], '#/uyelik/contracts')
+    rows = central_client.pending_contracts()
+    return _result(rows, [f"{r['title']} (v{r['version']})" for r in rows], '#/uyelik/contracts', 'Okuyup onaylamak için açın')
+
+
 def live_now(conn, user):
     """Şu an canlı yayın yapanlar (kendi yayını hariç) — yayın bitene kadar kalır; tıklayan yayına katılır."""
     from . import feed
@@ -430,6 +439,7 @@ NOTIFICATIONS = [
     {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
     # Telefon bildirimini yayın başlarken routers/live atar (aynı etiketle bitince günceller); tarama ikinci kez atmasın
     {'key': 'live-now', 'roles': None, 'fn': live_now, 'title': 'Canlı yayın', 'push': False},
+    {'key': 'contracts-pending', 'roles': None, 'fn': contracts_pending, 'title': 'Onayınızı bekleyen üyelik sözleşmesi'},
 ]
 
 

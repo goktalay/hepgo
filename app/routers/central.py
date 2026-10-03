@@ -601,3 +601,251 @@ def fed_ticket_reply(tid: int, body: MsgIn, request: Request, slug: str = '', co
     push.send(_staff_ids(conn), {'type': 'ticket', 'title': f'Destek talebine yanıt · {t["company_name"]}', 'body': t['subject'],
                                  'url': f'/app#/tickets/{tid}', 'tag': f'ticket-{tid}'})
     return _fed_ticket(conn, slug, tid)
+
+
+# ---------------- Üyelik sözleşmeleri (Merkez) ----------------
+from .. import contracts as ct   # noqa: E402
+
+DOC_STATUS = ('draft', 'published', 'archived')
+
+
+def _firm_ctx(conn, slug, comps=None, pkgs=None):
+    """Firmanın sözleşme alanları için kayıt, paket ve ücret."""
+    if comps is None:
+        try:
+            comps = _companies()
+        except HTTPException:
+            comps = []
+    c = next((x for x in comps if x.get('slug') == slug), None) or {'slug': slug, 'name': slug}
+    if pkgs is None:
+        try:
+            pkgs = _packages()
+        except HTTPException:
+            pkgs = []
+    pkg = next((p for p in pkgs if p.get('id') == c.get('package_id')), None)
+    return c, pkg, _fee(c, pkgs)
+
+
+def _rendered(conn, doc, slug, comps=None, pkgs=None):
+    c, pkg, fee = _firm_ctx(conn, slug, comps, pkgs)
+    text = ct.render(doc['body'], ct.values(conn, c, pkg, fee))
+    return text, ct.fingerprint(doc['title'], doc['version'], text), c
+
+
+@router.get('/contracts')
+def contracts_list(user=Depends(members_user), conn=db.DB):
+    ct.seed(conn, user['id'])
+    docs = db.rows(conn.execute('''SELECT id, kind, title, version, summary, required, status, published_at, created_at, updated_at
+                                   FROM contract_docs ORDER BY CASE status WHEN 'published' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, kind, id DESC'''))
+    try:
+        firms = [c for c in _companies() if c.get('status') not in ('pending', 'rejected')]
+    except HTTPException:
+        firms = []
+    for d in docs:
+        d['accepted'] = conn.execute('SELECT COUNT(*) FROM contract_acceptances WHERE doc_id=?', (d['id'],)).fetchone()[0]
+        d['firms'] = len(firms)
+    return {'docs': docs, 'kinds': ct.KINDS, 'fields': ct.FIELDS, 'provider': ct.provider(conn)}
+
+
+class DocIn(BaseModel):
+    kind: str
+    title: str
+    version: str
+    summary: str = ''
+    body: str
+    required: bool = True
+
+
+def _doc(conn, did):
+    d = db.row(conn.execute('SELECT * FROM contract_docs WHERE id=?', (did,)))
+    if not d:
+        raise HTTPException(404, 'Sözleşme bulunamadı')
+    return d
+
+
+@router.post('/contracts')
+def contract_create(body: DocIn, user=Depends(members_user), conn=db.DB):
+    if not body.title.strip() or not body.body.strip() or not body.version.strip():
+        raise HTTPException(400, 'Başlık, sürüm ve metin gerekli')
+    now = db.now()
+    cur = conn.execute('''INSERT INTO contract_docs (kind, title, version, summary, body, required, status, created_by, created_at, updated_at)
+                          VALUES (?,?,?,?,?,?, 'draft', ?,?,?)''',
+                       (body.kind if body.kind in ct.KINDS else 'diger', body.title.strip()[:160], body.version.strip()[:20], body.summary.strip()[:400],
+                        body.body.strip(), 1 if body.required else 0, user['id'], now, now))
+    db.audit(conn, user['id'], 'Sözleşme taslağı oluşturdu', 'contract', cur.lastrowid, body.title[:80])
+    conn.commit()
+    return {'id': cur.lastrowid}
+
+
+@router.put('/contracts/{did}')
+def contract_update(did: int, body: DocIn, user=Depends(members_user), conn=db.DB):
+    d = _doc(conn, did)
+    if d['status'] != 'draft':
+        raise HTTPException(409, 'Yayınlanmış sözleşme değiştirilemez; yeni sürüm (taslak) oluşturun')
+    conn.execute('UPDATE contract_docs SET kind=?, title=?, version=?, summary=?, body=?, required=?, updated_at=? WHERE id=?',
+                 (body.kind if body.kind in ct.KINDS else 'diger', body.title.strip()[:160], body.version.strip()[:20], body.summary.strip()[:400],
+                  body.body.strip(), 1 if body.required else 0, db.now(), did))
+    conn.commit()
+    return {'ok': True}
+
+
+@router.delete('/contracts/{did}')
+def contract_delete(did: int, user=Depends(members_user), conn=db.DB):
+    d = _doc(conn, did)
+    if d['status'] != 'draft':
+        raise HTTPException(409, 'Yalnızca taslak silinebilir (yayınlanmış sözleşmeler ve onay kanıtları saklanır)')
+    conn.execute('DELETE FROM contract_docs WHERE id=?', (did,))
+    conn.commit()
+    return {'ok': True}
+
+
+@router.post('/contracts/{did}/new-version')
+def contract_new_version(did: int, user=Depends(members_user), conn=db.DB):
+    """Yayındaki sözleşmeden yeni sürüm taslağı (sürüm numarası bir artar)."""
+    d = _doc(conn, did)
+    parts = d['version'].split('.')
+    try:
+        parts[-1] = str(int(parts[-1]) + 1)
+        ver = '.'.join(parts)
+    except ValueError:
+        ver = d['version'] + '.1'
+    now = db.now()
+    cur = conn.execute('''INSERT INTO contract_docs (kind, title, version, summary, body, required, status, created_by, created_at, updated_at)
+                          VALUES (?,?,?,?,?,?,'draft',?,?,?)''', (d['kind'], d['title'], ver, '', d['body'], d['required'], user['id'], now, now))
+    conn.commit()
+    return {'id': cur.lastrowid, 'version': ver}
+
+
+@router.post('/contracts/{did}/publish')
+def contract_publish(did: int, user=Depends(members_user), conn=db.DB):
+    """Yayınla: aynı türdeki önceki yayın arşivlenir; firmalardan bu sürüm için onay beklenir."""
+    d = _doc(conn, did)
+    if d['status'] != 'draft':
+        raise HTTPException(409, 'Yalnızca taslak yayınlanabilir')
+    now = db.now()
+    conn.execute("UPDATE contract_docs SET status='archived' WHERE kind=? AND status='published' AND kind != 'diger'", (d['kind'],))
+    conn.execute("UPDATE contract_docs SET status='published', published_at=?, updated_at=? WHERE id=?", (now, now, did))
+    db.audit(conn, user['id'], 'Sözleşme yayınladı', 'contract', did, f"{d['title']} v{d['version']}")
+    conn.commit()
+    return {'ok': True}
+
+
+@router.post('/contracts/{did}/archive')
+def contract_archive(did: int, user=Depends(members_user), conn=db.DB):
+    d = _doc(conn, did)
+    if d['status'] != 'published':
+        raise HTTPException(409, 'Yalnızca yayındaki sözleşme yayından kaldırılabilir')
+    conn.execute("UPDATE contract_docs SET status='archived', updated_at=? WHERE id=?", (db.now(), did))
+    db.audit(conn, user['id'], 'Sözleşmeyi yayından kaldırdı', 'contract', did, d['title'])
+    conn.commit()
+    return {'ok': True}
+
+
+@router.get('/contracts/{did}')
+def contract_detail(did: int, slug: str = '', user=Depends(members_user), conn=db.DB):
+    """Şablon + (slug verilirse) o firmaya göre doldurulmuş önizleme + firma bazında onay durumu."""
+    d = _doc(conn, did)
+    try:
+        comps, pkgs = _companies(), _packages()
+    except HTTPException:
+        comps, pkgs = [], []
+    firms = [c for c in comps if c.get('status') not in ('pending', 'rejected')]
+    acc = {r['slug']: r for r in db.rows(conn.execute(
+        'SELECT slug, company_name, signer_name, signer_title, signer_email, doc_hash, ip, accepted_at FROM contract_acceptances WHERE doc_id=?', (did,)))}
+    d['firms'] = [{'slug': c['slug'], 'name': c.get('name'), 'status': c.get('status'), 'acceptance': acc.get(c['slug'])} for c in firms]
+    target = slug or (firms[0]['slug'] if firms else '')
+    if target:
+        d['preview'], d['preview_hash'], c = _rendered(conn, d, target, comps, pkgs)
+        d['preview_firm'] = c.get('name') or target
+    return d
+
+
+@router.get('/contracts/{did}/acceptance/{slug}')
+def contract_acceptance(did: int, slug: str, user=Depends(members_user), conn=db.DB):
+    """Onay kanıtı: onaylanan metnin birebir kopyası + parmak izi + imzalayan + IP + tarayıcı."""
+    r = db.row(conn.execute('''SELECT a.*, d.title, d.version FROM contract_acceptances a JOIN contract_docs d ON d.id=a.doc_id
+                               WHERE a.doc_id=? AND a.slug=?''', (did, slug)))
+    if not r:
+        raise HTTPException(404, 'Onay kaydı yok')
+    r['hash_ok'] = ct.fingerprint(r['title'], r['version'], r['body']) == r['doc_hash']
+    return r
+
+
+class ProviderIn(BaseModel):
+    saglayici: str = ''
+    saglayici_adres: str = ''
+    saglayici_vergi: str = ''
+    saglayici_mersis: str = ''
+    saglayici_eposta: str = ''
+    saglayici_kep: str = ''
+    mahkeme: str = ''
+
+
+@router.put('/contracts-provider')
+def contracts_provider(body: ProviderIn, user=Depends(members_user), conn=db.DB):
+    v = {k: (getattr(body, k) or '').strip()[:300] for k in ct.PROVIDER_DEFAULT}
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (ct.PROVIDER_KEY, json.dumps(v, ensure_ascii=False)))
+    conn.commit()
+    return ct.provider(conn)
+
+
+# ---- Firma → Merkez: sözleşmeler (federasyon)
+@fed_router.get('/contracts')
+def fed_contracts(request: Request, slug: str = '', conn=db.DB):
+    slug, _ = _fed(request, slug)
+    docs = db.rows(conn.execute("SELECT id, kind, title, version, summary, required, published_at FROM contract_docs WHERE status='published' ORDER BY kind"))
+    acc = {r['doc_id']: r for r in db.rows(conn.execute(
+        'SELECT doc_id, signer_name, signer_title, accepted_at FROM contract_acceptances WHERE slug=?', (slug,)))}
+    for d in docs:
+        d['acceptance'] = acc.get(d['id'])
+        prev = db.row(conn.execute('''SELECT d.version, a.accepted_at FROM contract_acceptances a JOIN contract_docs d ON d.id=a.doc_id
+                                      WHERE a.slug=? AND d.kind=? AND d.id != ? ORDER BY a.accepted_at DESC LIMIT 1''', (slug, d['kind'], d['id'])))
+        d['previous'] = prev
+    history = db.rows(conn.execute('''SELECT a.doc_id, d.title, d.version, d.status, a.signer_name, a.signer_title, a.accepted_at
+                                      FROM contract_acceptances a JOIN contract_docs d ON d.id=a.doc_id WHERE a.slug=? ORDER BY a.accepted_at DESC''', (slug,)))
+    return {'docs': docs, 'pending': sum(1 for d in docs if d['required'] and not d['acceptance']), 'history': history}
+
+
+@fed_router.get('/contracts/{did}')
+def fed_contract(did: int, request: Request, slug: str = '', conn=db.DB):
+    slug, _ = _fed(request, slug)
+    d = _doc(conn, did)
+    a = db.row(conn.execute('SELECT signer_name, signer_title, signer_email, doc_hash, body, ip, user_agent, accepted_at FROM contract_acceptances WHERE doc_id=? AND slug=?', (did, slug)))
+    if d['status'] != 'published' and not a:
+        raise HTTPException(404, 'Sözleşme bulunamadı')
+    if a:   # onaylanmış: o gün onaylanan metin birebir
+        text, h = a.pop('body'), a['doc_hash']
+    else:
+        text, h, _c = _rendered(conn, d, slug)
+    return {'id': d['id'], 'kind': d['kind'], 'title': d['title'], 'version': d['version'], 'summary': d['summary'], 'required': d['required'],
+            'status': d['status'], 'published_at': d['published_at'], 'body': text, 'hash': h, 'acceptance': a}
+
+
+class FedAcceptIn(BaseModel):
+    hash: str
+    signer_name: str
+    signer_title: str = ''
+    signer_email: str = ''
+    ip: str = ''
+    user_agent: str = ''
+
+
+@fed_router.post('/contracts/{did}/accept')
+def fed_contract_accept(did: int, body: FedAcceptIn, request: Request, slug: str = '', conn=db.DB):
+    slug, _ = _fed(request, slug)
+    d = _doc(conn, did)
+    if d['status'] != 'published':
+        raise HTTPException(409, 'Bu sözleşme yayında değil')
+    if conn.execute('SELECT 1 FROM contract_acceptances WHERE doc_id=? AND slug=?', (did, slug)).fetchone():
+        raise HTTPException(409, 'Bu sözleşme zaten onaylanmış')
+    if len(body.signer_name.strip()) < 3:
+        raise HTTPException(400, 'İmzalayan yetkilinin adı soyadı gerekli')
+    text, h, c = _rendered(conn, d, slug)
+    if not hmac.compare_digest(h, (body.hash or '').strip()):
+        raise HTTPException(409, 'Sözleşme metni siz okurken güncellendi; lütfen sayfayı yenileyip tekrar okuyun')
+    now = db.now()
+    conn.execute('''INSERT INTO contract_acceptances (doc_id, slug, company_name, signer_name, signer_title, signer_email, doc_hash, body, ip, user_agent, accepted_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (did, slug, c.get('name'), body.signer_name.strip()[:120], body.signer_title.strip()[:120],
+                                                         body.signer_email.strip()[:160], h, text, body.ip[:64], body.user_agent[:300], now))
+    conn.commit()
+    return {'ok': True, 'accepted_at': now, 'hash': h}

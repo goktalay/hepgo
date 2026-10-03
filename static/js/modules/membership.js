@@ -3,19 +3,22 @@
 import { api } from '../api.js';
 import { clear, every, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, statStrip, toast } from '../ui.js';
 import { CATEGORY, PRIORITY, STATUS, badge, composer, threadView } from './tickets.js';
+import { docView, printDoc, proofRows } from './contractdoc.js';
 
 const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n || 0);
-const SUBS = [['overview', 'Üyeliğim'], ['tickets', 'Destek Taleplerim'], ['payments', 'Ödemelerim']];
+const SUBS = [['overview', 'Üyeliğim'], ['tickets', 'Destek Taleplerim'], ['payments', 'Ödemelerim'], ['contracts', 'Sözleşmelerim']];
 const PAY = { odendi: ['green', 'Ödendi'], kismi: ['yellow', 'Kısmi ödendi'], bekliyor: ['', 'Ödeme bekleniyor'], gecikti: ['red', 'Gecikmiş'], ucretsiz: ['', 'Ücretsiz'] };
 
 export async function render(view, params, ctx) {
   if (params[0] === 'tickets' && /^\d+$/.test(params[1] || '')) return ticketDetail(view, Number(params[1]));
+  if (params[0] === 'contracts' && /^\d+$/.test(params[1] || '')) return contractPage(view, Number(params[1]), ctx);
   const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'overview';
   const nav = segmented(SUBS, sub, v => { location.hash = `#/uyelik/${v}`; }, { tabs: true });
   const body = h('div');
   clear(view, pageHead('Üyeliğim & Destek', { back: '#/', sub: 'Paketiniz, ödemeleriniz ve bizimle destek kayıtlarınız', tabs: nav }), body);
   if (sub === 'tickets') return ticketsView(body, ctx);
   if (sub === 'payments') return paymentsView(body);
+  if (sub === 'contracts') return contractsList(body);
   return overview(body);
 }
 
@@ -107,4 +110,71 @@ async function paymentsView(view) {
       h('tbody', null, d.payments.map(p => h('tr', null, h('td', null, p.period), h('td', null, fmtDate(p.paid_at)),
         h('td', { class: 'num' }, money(p.amount)), h('td', null, p.method || '—'), h('td', { class: 'muted' }, p.note || '—'))))))) :
       h('div', { class: 'card empty' }, 'Kayıtlı ödeme yok.'));
+}
+
+// ---------------- Sözleşmelerim ----------------
+async function contractsList(view) {
+  clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let d;
+  try { d = await api.get('/api/membership/contracts'); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  const card = x => {
+    const a = x.acceptance;
+    return h('a', { class: `card ct-card ct-link ${!a && x.required ? 'pending' : ''}`, href: `#/uyelik/contracts/${x.id}` },
+      h('div', { class: 'ct-card-h' }, h('div', { class: 'grow' }, h('b', { class: 'ct-title' }, x.title),
+        h('div', { class: 'small muted' }, `Sürüm ${x.version}`, x.published_at ? ` · ${fmtDate(x.published_at)}` : '', x.required ? ' · zorunlu' : ' · isteğe bağlı')),
+        a ? h('span', { class: 'badge green' }, 'Onaylandı') : h('span', { class: `badge ${x.required ? 'yellow' : ''}` }, x.required ? 'Onayınızı bekliyor' : 'Onaylanmadı')),
+      x.summary ? h('p', { class: 'small ct-sum' }, x.summary) : null,
+      a ? h('div', { class: 'small muted' }, `${fmtDateTime(a.accepted_at)} · ${[a.signer_name, a.signer_title].filter(Boolean).join(' · ')}`)
+        : x.previous ? h('div', { class: 'small muted' }, `Önceki sürüm (v${x.previous.version}) ${fmtDate(x.previous.accepted_at)} tarihinde onaylanmıştı; bu sürüm için yeniden onay gerekiyor.`) : null,
+      h('span', { class: 'ct-go' }, a ? 'Görüntüle →' : 'Oku ve onayla →'));
+  };
+  clear(view,
+    d.pending ? h('div', { class: 'card card-pad ct-note warn' }, h('b', null, `Onayınızı bekleyen ${d.pending} zorunlu sözleşme var. `),
+      'Hizmetin kesintisiz sürmesi için firmanız adına yetkili kişinin okuyup onaylaması gerekir.') : null,
+    d.docs.length ? h('div', { class: 'ct-grid' }, d.docs.map(card)) : h('div', { class: 'card empty' }, 'Henüz yayınlanmış bir sözleşme yok.'),
+    d.history?.length ? h('section', { class: 'card table-wrap', style: { marginTop: '14px' } }, h('div', { class: 'mk-fin-h' }, h('b', null, 'Onay geçmişi')),
+      h('table', { class: 'table' }, h('thead', null, h('tr', null, ['Sözleşme', 'Sürüm', 'İmzalayan', 'Tarih'].map(x => h('th', null, x)))),
+        h('tbody', null, d.history.map(r => h('tr', null, h('td', null, h('a', { href: `#/uyelik/contracts/${r.doc_id}` }, r.title)), h('td', null, `v${r.version}`),
+          h('td', null, [r.signer_name, r.signer_title].filter(Boolean).join(' · ')), h('td', null, fmtDateTime(r.accepted_at))))))) : null);
+}
+
+async function contractPage(view, id, ctx) {
+  clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  let d;
+  try { d = await api.get(`/api/membership/contracts/${id}`); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  const company = ctx.meta?.company || '';
+  const a = d.acceptance;
+  const printBtn = h('button', { class: 'btn', type: 'button', onclick: () => printDoc({ title: d.title, sub: `Sürüm ${d.version}`, text: d.body, proof: a ? { ...a, hash: d.hash } : null, company }) }, 'Yazdır / PDF');
+  let foot;
+  if (a) {
+    foot = h('div', { class: 'ct-proof ok' }, h('b', null, '✓ Elektronik onay kaydı'),
+      h('table', null, proofRows({ ...a, doc_hash: a.doc_hash || d.hash }).map(([k, v]) => h('tr', null, h('td', null, k), h('td', { class: /SHA/.test(k) ? 'mono' : '' }, v)))));
+  } else if (d.status === 'published') {
+    const name = h('input', { class: 'input', value: ctx.user.full_name || '', placeholder: 'Adı soyadı' });
+    const title = h('input', { class: 'input', placeholder: 'Ünvanı (ör. Genel Müdür)' });
+    const agree = h('input', { type: 'checkbox' });
+    const btn = h('button', { class: 'btn primary', type: 'button', disabled: true }, 'Sözleşmeyi onayla');
+    agree.addEventListener('change', () => { btn.disabled = !agree.checked; });
+    btn.addEventListener('click', async () => {
+      if (name.value.trim().length < 3) { toast('İmzalayan yetkilinin adı soyadını yazın', 'err'); name.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Onaylanıyor…';
+      try {
+        await api.post(`/api/membership/contracts/${id}/accept`, { hash: d.hash, signer_name: name.value, signer_title: title.value, agree: agree.checked });
+        toast('Sözleşme onaylandı', 'success');
+        contractPage(view, id, ctx);
+      } catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = 'Sözleşmeyi onayla'; }
+    });
+    foot = h('div', { class: 'ct-accept card card-pad' }, h('b', null, 'Elektronik onay'),
+      h('p', { class: 'small muted' }, 'Onayınız; adınız, ünvanınız, tarih-saat, IP adresi ve yukarıdaki metnin SHA-256 parmak izi ile kayıt altına alınır. Onaylanan metnin bire bir kopyası saklanır.'),
+      h('div', { class: 'ct-edit-row' }, field('İmzalayan yetkili', name), field('Ünvan', title)),
+      h('label', { class: 'ct-agree' }, agree, h('span', null, `Sözleşmeyi okudum ve anladım; ${company || 'firmam'} adına onaylamaya yetkili olduğumu beyan ederek kabul ediyorum.`)),
+      h('div', { class: 'ct-acts' }, btn));
+  }
+  clear(view,
+    h('div', { class: 'ct-head card card-pad' }, h('a', { class: 'small', href: '#/uyelik/contracts' }, '← Sözleşmelerim'),
+      h('h3', null, d.title), h('div', { class: 'small muted' }, `Sürüm ${d.version}`, d.published_at ? ` · yayın ${fmtDate(d.published_at)}` : '',
+        a ? ' · onaylandı' : d.required ? ' · onayınızı bekliyor' : ''), h('div', { class: 'ct-acts' }, printBtn)),
+    h('div', { class: 'ct-paper' }, docView(d.body)),
+    h('div', { class: 'small muted mono ct-hash' }, `Metin parmak izi (SHA-256): ${d.hash}`),
+    foot || null);
 }

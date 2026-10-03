@@ -291,6 +291,36 @@ CREATE TABLE IF NOT EXISTS member_payments (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_member_payments ON member_payments(slug, period);
+-- Merkez: üyelik sözleşmeleri (sürümlü şablonlar) + firmaların elektronik onay kanıtları
+CREATE TABLE IF NOT EXISTS contract_docs (
+    id           INTEGER PRIMARY KEY,
+    kind         TEXT NOT NULL,                     -- abonelik | kvkk | sla | aup | diger
+    title        TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    summary      TEXT,                              -- kısa açıklama / değişiklik özeti
+    body         TEXT NOT NULL,                     -- alanlı metin ({{firma}} …)
+    required     INTEGER NOT NULL DEFAULT 1,        -- firmaların onayı zorunlu mu
+    status       TEXT NOT NULL DEFAULT 'draft',     -- draft | published | archived
+    published_at TEXT,
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS contract_acceptances (
+    id           INTEGER PRIMARY KEY,
+    doc_id       INTEGER NOT NULL REFERENCES contract_docs(id) ON DELETE CASCADE,
+    slug         TEXT NOT NULL,
+    company_name TEXT,
+    signer_name  TEXT NOT NULL,
+    signer_title TEXT,
+    signer_email TEXT,
+    doc_hash     TEXT NOT NULL,                     -- SHA-256 (firmaya özel doldurulmuş metin)
+    body         TEXT NOT NULL,                     -- onaylanan metnin birebir kopyası
+    ip           TEXT,
+    user_agent   TEXT,
+    accepted_at  TEXT NOT NULL,
+    UNIQUE (doc_id, slug)
+);
 -- Merkez: toplu SMS gönderim kaydı
 CREATE TABLE IF NOT EXISTS sms_log (
     id          INTEGER PRIMARY KEY,

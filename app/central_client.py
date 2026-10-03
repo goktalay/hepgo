@@ -26,7 +26,7 @@ def call(method, path, json=None, params=None, timeout=10):
             detail = r.json().get('detail')
         except ValueError:
             detail = None
-        raise HTTPException(r.status_code if r.status_code < 500 else 502, detail or 'Merkez isteği başarısız')
+        raise HTTPException(r.status_code if r.status_code < 500 else 503, detail or 'Merkez isteği başarısız')   # 502 Cloudflare'de mesajı yutar
     return r.json()
 
 
@@ -54,3 +54,27 @@ def suspended_message(s):
     if s.get('reason'):
         msg += f' ({s["reason"]})'
     return msg + ' Lütfen firma yöneticinizle iletişime geçin.'
+
+
+_CT = {'at': 0.0, 'data': []}
+
+
+def pending_contracts():
+    """Onay bekleyen zorunlu sözleşmeler (5 dk önbellek; bildirim zili her yoklamada merkeze gitmesin)."""
+    if not enabled():
+        return []
+    now = time.monotonic()
+    if now - _CT['at'] < 300:
+        return _CT['data']
+    try:
+        d = call('GET', '/contracts', timeout=5)
+        _CT['data'] = [{'id': x['id'], 'title': x['title'], 'version': x['version']} for x in d.get('docs', [])
+                       if x.get('required') and not x.get('acceptance')]
+    except HTTPException:
+        pass
+    _CT['at'] = now
+    return _CT['data']
+
+
+def forget_contracts():
+    _CT['at'] = 0.0

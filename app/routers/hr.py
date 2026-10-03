@@ -1452,7 +1452,7 @@ async def parse_application(eid: int, user=Depends(hr_user)):
     try:
         r = await run_in_threadpool(application_form.extract, config.UPLOAD_DIR / f['path'])
     except Exception as e:   # noqa: BLE001
-        raise HTTPException(502, f'Form okunamadı: {type(e).__name__} · {str(e)[:150]}')
+        raise HTTPException(422, f'Form okunamadı: {type(e).__name__} · {str(e)[:150]}')
     return {'fields': r['fields'], 'labels': application_form.FIELDS, 'file_name': f['file_name'], 'tokens': r['tokens']}
 
 

@@ -12,6 +12,8 @@ CHANGELOG = [
          'PDKS (personel giriş-çıkış) için de aynı düzeltme.',
          'Program Ayarları › Entegrasyonlar › Mikro “Test et” bulutta fabrika ajanı üzerinden dener.',
          'Alış / satış faturaları listesi ve aktarımı “502” veriyordu: tarih alanları ajan kanalında taşınamıyordu; düzeltildi.',
+         'Satış faturaları: daha önce fatura aktarılmışsa liste açılmıyordu (eşleştirme alan adı hatası); düzeltildi.',
+         'Mikro okuma hataları artık ekranda açıklamasıyla görünür (Cloudflare 502 sayfası mesajı gizliyordu).',
      ]},
     {'version': '2.103.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: Instagram tarzı kart, yorum yanıtı + kalp, kaydedilenler, arka planda yükleme',
      'changes': [

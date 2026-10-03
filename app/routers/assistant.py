@@ -248,7 +248,7 @@ async def chat(body: ChatIn, user=Depends(auth.current_user), conn=db.DB):
     try:
         text, tin, tout = await run_in_threadpool(_reply, _system(user, offtopic), msgs, user)
     except Exception:
-        raise HTTPException(502, 'Asistana şu an ulaşılamadı, birazdan tekrar deneyin.')
+        raise HTTPException(503, 'Asistana şu an ulaşılamadı, birazdan tekrar deneyin.')
     conn.execute('INSERT INTO ai_usage (user_id, at, ym, model, in_tokens, out_tokens) VALUES (?,?,?,?,?,?)',
                  (user['id'], db.now(), _month(), config.AI_MODEL, tin, tout))
     return {'reply': text or 'Bir şey diyemedim, tekrar sorar mısın?'}

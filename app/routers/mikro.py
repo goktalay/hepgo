@@ -6,15 +6,30 @@ Cari → firmalar/tedarikçiler (companies), stok → MRP malzemeleri (products)
 """
 from typing import Optional
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, bom, db, invoices, mikro, spares
+from .. import config, auth, bom, db, invoices, mikro, spares
 
 router = APIRouter(prefix='/api/mikro')
 mikro_user = auth.require_module('mikro')
 UNITS = set(bom.UNITS)
 STOK_TYPES = (spares.SPARE, spares.RAW, spares.FIXTURE, spares.CONSUMABLE)
+
+
+_log = logging.getLogger('caymaz.mikro')
+
+
+def _read_error(err):
+    """Mikro okuma hatası: günlüğe yazılır, kullanıcıya açıklamasıyla döner. 502 yerine 424: Cloudflare 502 yanıtının
+    gövdesini kendi hata sayfasıyla değiştirdiği için gerçek mesaj ekrana ulaşmıyordu."""
+    _log.warning('Mikro ERP okunamadı: %s', err)
+    msg = str(err)
+    if config.MIKRO_PASSWORD:
+        msg = msg.replace(config.MIKRO_PASSWORD, '***')
+    return HTTPException(424, f'Mikro ERP okunamadı: {msg[:300]}')
 
 
 def _norm_unit(u):
@@ -44,7 +59,7 @@ def cari(q: str = '', show_imported: bool = False, user=Depends(mikro_user), con
     try:
         rows = mikro.list_cari(q, 1000)
     except Exception as err:
-        raise HTTPException(502, f'Mikro ERP okunamadı: {err}')
+        raise _read_error(err)
     links = _links(conn, 'cari')
     for r in rows:
         lk = links.get(r['cari_kod'])
@@ -62,7 +77,7 @@ def stok(q: str = '', show_imported: bool = False, user=Depends(mikro_user), con
     try:
         rows = mikro.list_stok(q, 1000)
     except Exception as err:
-        raise HTTPException(502, f'Mikro ERP okunamadı: {err}')
+        raise _read_error(err)
     links = _links(conn, 'stok')
     for r in rows:
         lk = links.get(r['sto_kod'])
@@ -224,7 +239,7 @@ def _fat_list(kind, q, conn, show_imported=False):
         links = {r['mikro_code']: r for r in db.rows(conn.execute(
             "SELECT mikro_code, local_id AS lid, imported_at, updated_at FROM mikro_links WHERE kind = 'alis_fat'"))}
     else:                # satış faturaları Satış Yönetimi (invoices) altında
-        links = {r['mikro_evrak']: r for r in db.rows(conn.execute(
+        links = {r['mikro_code']: r for r in db.rows(conn.execute(
             "SELECT mikro_evrak AS mikro_code, id AS lid, imported_at, updated_at FROM "
             "(SELECT mikro_evrak, id, created_at AS imported_at, updated_at FROM invoices WHERE source = 'mikro' AND kind = 'satis')"))}
     for d in docs:
@@ -242,7 +257,7 @@ def alis(q: str = '', show_imported: bool = False, user=Depends(mikro_user), con
     try:
         return _fat_list('alis', q, conn, show_imported)
     except Exception as err:
-        raise HTTPException(502, f'Mikro ERP okunamadı: {err}')
+        raise _read_error(err)
 
 
 @router.get('/satis')
@@ -252,7 +267,7 @@ def satis(q: str = '', show_imported: bool = False, user=Depends(mikro_user), co
     try:
         return _fat_list('satis', q, conn, show_imported)
     except Exception as err:
-        raise HTTPException(502, f'Mikro ERP okunamadı: {err}')
+        raise _read_error(err)
 
 
 def _resolve_company(conn, cari, names):

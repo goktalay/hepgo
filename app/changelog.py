@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.103.1'
+VERSION = '2.104.0'
 
 CHANGELOG = [
+    {'version': '2.104.0', 'date': '2026-10-03', 'title': '3D maskot',
+     'changes': [
+         'Köşedeki yapay zeka asistanı artık 3 boyutlu: 6 karakter (Kubbe, Robo, Pati, Boo, Pinti, Zog) parlak oyuncak görünümünde yeniden yapıldı.',
+         'Canlı: nefes alır, göz kırpar, gözleri ve başı imleci izler; el sallar, zıplar, döner, dans eder, kafası şişip kıvılcımla patlar.',
+         'Sohbette soru sorulunca eli çenesinde düşünür, cevap gelince konuşur gibi ağzını oynatır; üzerine gelince sevinir.',
+         'Ayarlar › Maskot › “3D maskot” ile açılıp kapatılır; WebGL olmayan cihazlarda ve “Hareketleri azalt” açıkken klasik çizim kullanılır. Görünmezken çizim durur, boştayken pil dostu çalışır.',
+         'Düzeltme: maskotu gizleyen kullanıcı başka bir ayarı değiştirince maskot yeniden görünüyordu.',
+     ]},
     {'version': '2.103.1', 'date': '2026-10-03', 'title': 'Düzeltme: Mikro ERP ve PDKS bağlantısı (bulut + fabrika ajanı)',
      'changes': [
          'Mikro ERP “Bağlanılamadı (20002)” hatası giderildi: Entegrasyonlar’da kayıtlı bağlantı bilgileri artık her istekle fabrikadaki ajana iletiliyor (bulut kurulumunda ajan bu bilgileri bilmiyordu).',

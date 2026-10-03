@@ -3717,6 +3717,17 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 .set-mascot:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .set-mascot.on { border-color: var(--primary); background: var(--primary-soft); }
 .set-mascot-fig { width: 60px; height: 68px; } .set-mascot-fig svg { width: 100%; height: 100%; overflow: visible; }
+/* 3D maskot */
+.mascot-fig.m3d { animation: none; }
+.mascot.is3d { filter: none; }
+.mascot-3d { position: absolute; left: 50%; bottom: -6px; width: 150%; height: 138%; transform: translateX(-50%); pointer-events: none; display: block; }
+.mascot.is3d .m-burst { display: none; }
+.mascot-prev { display: flex; width: 100%; height: 100%; align-items: flex-end; justify-content: center; }
+.mascot-prev > svg { width: 100%; height: 100%; overflow: visible; }
+.mascot-snap { width: 100%; height: 100%; object-fit: contain; display: block; animation: fvIn .25s ease; }
+.set-mascot-fig .mascot-snap { transform: scale(1.18); transform-origin: 50% 90%; }
+.mchat-head .mchat-ava .mascot-prev { width: 34px; height: 40px; }
+.mchat-head .mchat-ava .mascot-snap { transform: scale(1.35) translateY(6%); }
 .set-mascot b { font-size: 13px; } .set-mascot small { color: var(--muted); font-size: 11px; }
 .set-mascot-on { position: absolute; top: 6px; right: 8px; color: var(--primary); font-weight: 700; }
 

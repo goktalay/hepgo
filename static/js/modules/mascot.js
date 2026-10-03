@@ -4,6 +4,7 @@
 import { api } from '../api.js';
 import { h, clear, svgIcon, t } from '../ui.js';
 import { icons } from '../icons.js';
+import { createMascot3D, mascot3dSnapshot, webglOK } from './mascot3d.js';
 
 // ---- Maskot karakterleri (SVG). Ortak sınıf kancaları: .m-pop (kafa → şişip patlama), .m-wavearm (el sallama). ----
 const MASCOTS = {
@@ -109,6 +110,19 @@ function figSvg(id) {
 // Ayarlar önizlemesi için dışa açık
 export const mascotSvg = figSvg;
 
+// 3D maskot: kullanıcı kapatmadıysa, cihaz WebGL destekliyorsa ve "hareketleri azalt" kapalıysa (aksi halde klasik 2D çizim)
+const reduceMotion = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+let want3d = true;
+const can3d = () => want3d && webglOK() && !reduceMotion();
+// Önizleme (ayarlar kartı, sohbet başlığı): 3D'de anlık görüntü, hazır olana dek 2D çizim
+export function mascotPreview(id, threeD = can3d()) {
+  const box = h('span', { class: 'mascot-prev' }, figSvg(id));
+  if (threeD && webglOK()) {
+    mascot3dSnapshot(id).then(url => clear(box, h('img', { class: 'mascot-snap', src: url, alt: '' }))).catch(() => {});
+  }
+  return box;
+}
+
 const TRICKS = ['wave', 'jump', 'wobble', 'spin', 'pop', 'dance', 'peek'];
 const POS_KEY = 'caymaz.mascotPos';
 
@@ -116,6 +130,7 @@ let mounted = false;
 let convo = [];        // {role, content}
 let curId = DEFAULT_ID;
 let els = null;        // { fig, btn }
+let ctl = null;        // 3D maskot denetleyicisi (yoksa 2D SVG)
 let _btn = null, _panel = null;   // kullanıcı maskotu kapatınca gizlemek için
 
 // Kullanıcı maskotu kapatıp açabilir (Ayarlar › Maskot). Gizliyken panel de kapanır.
@@ -128,9 +143,32 @@ export function applyMascotHidden(hidden) {
 export function setMascot(id) {
   curId = MASCOTS[id] ? id : DEFAULT_ID;
   if (!els) return;
-  clear(els.fig, [figSvg(curId), h('span', { class: 'm-burst' })]);
-  if (els.headAva) clear(els.headAva, figSvg(curId));
+  if (ctl) ctl.setCharacter(curId);
+  else clear(els.fig, [figSvg(curId), h('span', { class: 'm-burst' })]);
+  if (els.headAva) clear(els.headAva, mascotPreview(curId, !!ctl));
   if (els.headName) els.headName.textContent = MASCOTS[curId].name;
+}
+
+// Ayarlar › Maskot › "3D maskot" anahtarı: canlı aç / kapat
+export async function setMascot3D(on) {
+  want3d = on !== false;
+  if (!els) return;
+  if (can3d() && !ctl) await start3d();
+  else if (!can3d() && ctl) {
+    ctl.destroy(); ctl = null;
+    els.fig.classList.remove('m3d'); els.btn.classList.remove('is3d');
+    clear(els.fig, [figSvg(curId), h('span', { class: 'm-burst' })]);
+  }
+  if (els.headAva) clear(els.headAva, mascotPreview(curId, !!ctl));
+}
+async function start3d() {
+  try {
+    const c = await createMascot3D(els.fig, curId);
+    if (ctl) { c.destroy(); return; }
+    ctl = c;
+    els.fig.querySelector('.mascot-svg')?.remove();
+    els.fig.classList.add('m3d'); els.btn.classList.add('is3d');
+  } catch { /* WebGL açılamadı: 2D kalır */ }
 }
 
 export async function mountMascot(ctx) {
@@ -140,6 +178,7 @@ export async function mountMascot(ctx) {
   if (!status?.enabled) return;
   mounted = true;
   curId = ctx?.user?.prefs?.settings?.mascot && MASCOTS[ctx.user.prefs.settings.mascot] ? ctx.user.prefs.settings.mascot : DEFAULT_ID;
+  want3d = ctx?.user?.prefs?.settings?.mascot3d !== false;
 
   const fig = h('div', { class: 'mascot-fig' }, figSvg(curId), h('span', { class: 'm-burst' }));
   const btn = h('button', { class: 'mascot', type: 'button', title: 'Asistana sor (sürükleyip taşıyabilirsin)', 'aria-label': 'Yapay zeka asistanı' },
@@ -151,6 +190,15 @@ export async function mountMascot(ctx) {
 
   // Kayıtlı konum (bu cihaz)
   applyPos(loadPos());
+  if (can3d()) start3d();
+  // 3D: gözler / baş imleci izler, üzerine gelince sevinir
+  let lookRaf = 0;
+  window.addEventListener('pointermove', e => {
+    if (!ctl || lookRaf) return;
+    lookRaf = requestAnimationFrame(() => { lookRaf = 0; ctl?.lookAt(e.clientX, e.clientY); });
+  }, { passive: true });
+  btn.addEventListener('pointerenter', () => ctl?.happy(true));
+  btn.addEventListener('pointerleave', () => ctl?.happy(false));
 
   // Sürükle-taşı (tıklamadan ayırt et)
   let drag = null;
@@ -181,6 +229,7 @@ export async function mountMascot(ctx) {
   const doTrick = () => {
     if (!panel.hidden || btn.classList.contains('dragging')) return;
     const t = TRICKS[Math.floor(Math.random() * TRICKS.length)];
+    if (ctl) return ctl.play(t);
     fig.classList.add(`trick-${t}`);
     setTimeout(() => fig.classList.remove(`trick-${t}`), 1700);
   };
@@ -192,7 +241,7 @@ export async function mountMascot(ctx) {
   const input = h('textarea', { class: 'mchat-input', rows: 1, placeholder: 'Bir şey sor…' });
   const sendBtn = h('button', { class: 'mchat-send', type: 'button', title: 'Gönder' }, svgIcon(icons.send));
   const closeBtn = h('button', { class: 'mchat-x', type: 'button', title: 'Kapat', onclick: () => toggle(false) }, '✕');
-  const headAva = h('span', { class: 'mchat-ava' }, figSvg(curId));
+  const headAva = h('span', { class: 'mchat-ava' }, mascotPreview(curId, can3d()));
   const headName = h('b', null, MASCOTS[curId].name);
   const panel = h('div', { class: 'mchat', hidden: true },
     h('div', { class: 'mchat-head' }, headAva, h('div', { class: 'grow' }, headName, h('small', null, 'Yapay zeka asistanı')), closeBtn),
@@ -218,11 +267,14 @@ export async function mountMascot(ctx) {
     bubble('user', text);
     const typing = bubble('assistant', '', 'typing');
     clear(typing.querySelector('.mchat-bubble'), h('span', { class: 'mchat-dots' }, h('i'), h('i'), h('i')));
+    ctl?.setState('thinking');   // 3D: el çenede, yukarı bakar
     try {
       const d = await api.post('/api/assistant/chat', { messages: convo });
       typing.remove(); convo.push({ role: 'assistant', content: d.reply }); bubble('assistant', d.reply);
+      ctl?.setState('idle'); ctl?.talk(String(d.reply || '').length * 0.04);   // cevabı "söyler"
     } catch (err) {
       typing.remove(); bubble('assistant', err?.message || 'Şu an cevap veremedim, birazdan tekrar dene.', 'err'); convo.pop();
+      ctl?.setState('idle'); ctl?.play('wobble');
     } finally { busy = false; sendBtn.disabled = false; input.focus(); }
   }
   const autosize = () => { input.style.height = 'auto'; input.style.height = `${Math.min(96, input.scrollHeight)}px`; };
@@ -255,6 +307,8 @@ export async function mountMascot(ctx) {
     const show = open ?? panel.hidden;
     if (show) positionPanel();
     panel.hidden = !show; btn.classList.toggle('open', show);
+    ctl?.poke();
+    if (show) ctl?.play('wave');
     if (show) { setTimeout(() => input.focus(), 50); showDecisions().then(() => { log.scrollTop = log.scrollHeight; }); }
   }
 }

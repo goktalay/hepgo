@@ -9,7 +9,7 @@ import { partInPrinter } from '../gcode3d.js';
 import { ORDER_STATES, PART_STATES, PRINTER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
   clear, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fmtMinutes, h, matches, modal, moduleToolbar, pageHead, pref,
-  multiSelect, peoplePicker, progressBar, secondsBetween, secondsSince, segmented, selectInput, setPref, shortCompany, svgIcon, toast, toastError,
+  multiSelect, peoplePicker, progressBar, secondsBetween, secondsSince, segmented, selectInput, setPref, shortCompany, svgIcon, t, toast, toastError,
 } from '../ui.js';
 
 const BOARD_COLUMNS = ['SIPARIS', 'URETIM', 'HATA', 'DEPO', 'MONTAJ', 'SAHADA_MONTAJ', 'KALIBRASYON', 'SAHA_ONAY'];
@@ -111,7 +111,7 @@ function orderCard(o) {
     h('div', { class: 'top' }, h('span', { class: 'code' }, o.code), orderBadge(o)),
     companyTag(o),
     h('div', { class: 'small muted' }, o.product_stocked
-      ? `Parça baskısı · ${o.product_name} · ${o.per_print} adet` : `${o.product_name} · ${o.product_serial}`),
+      ? t('Parça baskısı · {name} · {n} adet', { name: o.product_name, n: o.per_print }) : `${o.product_name} · ${o.product_serial}`),
     h('dl', null,
       h('dt', null, 'Siparişi veren'), h('dd', null, o.created_by_name || '—'),
       h('dt', null, 'Sipariş'), h('dd', null, fmtDate(o.created_at)),
@@ -119,7 +119,7 @@ function orderCard(o) {
       h('dt', null, 'Bitiş'), h('dd', null, fmtDate(o.end_date)),
       o.queue_no ? [h('dt', null, 'Kuyruk no'), h('dd', null, queuePlate(o.queue_no))] : null),
     progressBar(o.progress),
-    o.counts.HATA ? h('div', { class: 'small', style: { color: 'var(--danger)' } }, `${o.counts.HATA} parçada hata`) : null);
+    o.counts.HATA ? h('div', { class: 'small', style: { color: 'var(--danger)' } }, t('{n} parçada hata', { n: o.counts.HATA })) : null);
 }
 
 function kanban(list, columns) {
@@ -175,12 +175,12 @@ async function renderOrder(view, id, ctx) {
       const op = byPart.get(part.id);
       const sec = !spare && part.section && part.group !== 'cover' ? secState(part.section) : null;
       return [
-        sec === 'ready' ? h('b', { style: { color: 'var(--warning)' } }, `${order.assembly.sections[part.section]} montaja hazır — tıklayın`) : null,
-        sec === 'done' ? h('b', { style: { color: 'var(--success)' } }, `${order.assembly.sections[part.section]} montajı tamamlandı`) : null,
+        sec === 'ready' ? h('b', { style: { color: 'var(--warning)' } }, t('{name} montaja hazır — tıklayın', { name: order.assembly.sections[part.section] })) : null,
+        sec === 'done' ? h('b', { style: { color: 'var(--success)' } }, t('{name} montajı tamamlandı', { name: order.assembly.sections[part.section] })) : null,
         h('span', null, 'Durum: ', h('b', null, PART_STATES[op.state].label)),
-        op.printer_name && op.state === 'URETIMDE' ? `Yazıcı: ${op.printer_name}` : null,
-        op.state === 'URETIMDE' ? `Yazdırma: ${fmtDuration(op.print_seconds ?? (op.printer_started_at
-          ? secondsBetween(op.printer_started_at, op.printer_done_at || new Date().toISOString()) : secondsSince(op.started_at)))}`
+        op.printer_name && op.state === 'URETIMDE' ? t('Yazıcı: {name}', { name: op.printer_name }) : null,
+        op.state === 'URETIMDE' ? t('Yazdırma: {d}', { d: fmtDuration(op.print_seconds ?? (op.printer_started_at
+          ? secondsBetween(op.printer_started_at, op.printer_done_at || new Date().toISOString()) : secondsSince(op.started_at))) })
           + (part.print_minutes ? ` / ${fmtMinutes(part.print_minutes)}` : '') : null,
         ...waitLines(op),
         op.direct_pending ? 'Doğrudan depo ekleme: onay bekliyor' : null,
@@ -210,7 +210,7 @@ async function renderOrder(view, id, ctx) {
             h('b', null, name),
             st === 'done' ? h('span', { class: 'badge green' }, 'Tamamlandı')
               : st === 'ready' ? h('button', { class: 'btn sm success', onclick: () => sectionModal(order, k, name, refresh) }, 'Montajı Tamamla')
-                : h('span', { class: 'badge gray' }, `${sp.ready}/${sp.total} parça depoda`)),
+                : h('span', { class: 'badge gray' }, t('{ready}/{total} parça depoda', { ready: sp.ready, total: sp.total }))),
           st === 'done' ? h('div', { class: 'small muted' }, [fmtDateTime(asm.steps[k].at), staffNames(asm.steps[k])].filter(Boolean).join(' · '))
             : st === 'ready' ? h('div', { class: 'small muted' }, 'Tüm parçalar depoda; montaja başlanabilir') : null);
       }),
@@ -224,7 +224,7 @@ async function renderOrder(view, id, ctx) {
       asm.covers ? h('div', { class: 'row-step todo' },
         h('div', { class: 'top', style: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' } },
           h('b', null, 'Kapak montajı'),
-          h('span', { class: 'badge gray' }, `${asm.covers.ready}/${asm.covers.total} kapak depoda`)),
+          h('span', { class: 'badge gray' }, t('{ready}/{total} kapak depoda', { ready: asm.covers.ready, total: asm.covers.total }))),
         h('div', { class: 'small muted' }, 'Kapaklar en son, birleştirmeden sonra takılır')) : null));
   }
 
@@ -261,8 +261,8 @@ async function renderOrder(view, id, ctx) {
       h('div', { class: 'card card-pad' },
         h('h2', { style: { fontSize: '15px', marginBottom: '8px' } }, 'Parça durumu'),
         spare ? h('div', { class: 'alert info' }, order.status === 'TAMAMLANDI'
-          ? `Bu baskı stoğa girdi: ${order.per_print} adet ${order.product_name}.`
-          : `Yedek parça siparişi (tek baskı). Depo onaylayınca ${order.per_print} adet ${order.product_name} stoğa girer.`) : null,
+          ? t('Bu baskı stoğa girdi: {n} adet {name}.', { n: order.per_print, name: order.product_name })
+          : t('Yedek parça siparişi (tek baskı). Depo onaylayınca {n} adet {name} stoğa girer.', { n: order.per_print, name: order.product_name })) : null,
         stats,
         sectionsBox,
         h('p', { class: 'small muted', style: { marginBottom: 0 } }, (canOperate
@@ -278,9 +278,9 @@ const rerender = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
 // ---------- Baskı süresi ve yazıcıda bekleme (yazıcının "tamamlandı" dediği an → "Üretim Tamamlandı")
 function waitLines(op) {
   if (!op?.printer_done_at) return [];
-  if (op.state === 'URETIMDE') return [`Yazıcıda bitti: ${fmtDateTime(op.printer_done_at)}`,
-    h('span', { style: { color: 'var(--danger)' } }, `Yazıcıda bekliyor: ${fmtDuration(secondsSince(op.printer_done_at))}`)];
-  return op.finished_at ? [`Yazıcıda bekledi: ${fmtDuration(secondsBetween(op.printer_done_at, op.finished_at))}`] : [];
+  if (op.state === 'URETIMDE') return [t('Yazıcıda bitti: {at}', { at: fmtDateTime(op.printer_done_at) }),
+    h('span', { style: { color: 'var(--danger)' } }, t('Yazıcıda bekliyor: {d}', { d: fmtDuration(secondsSince(op.printer_done_at)) }))];
+  return op.finished_at ? [t('Yazıcıda bekledi: {d}', { d: fmtDuration(secondsBetween(op.printer_done_at, op.finished_at)) })] : [];
 }
 
 // Parçaların baskı sürelerinin toplamı gösterilmez: yazıcılar paralel çalıştığı için gerçekte yaşanmayan bir süredir
@@ -288,7 +288,7 @@ function printStats(order) {
   const waits = order.parts.filter(op => op.printer_done_at && op.finished_at).map(op => secondsBetween(op.printer_done_at, op.finished_at));
   const waiting = order.parts.filter(op => op.state === 'URETIMDE' && op.printer_done_at).length;
   return [
-    waits.length ? h('li', null, h('span', { class: 'muted' }, `Yazıcıda ort. bekleme (${waits.length} parça)`),
+    waits.length ? h('li', null, h('span', { class: 'muted' }, t('Yazıcıda ort. bekleme ({n} parça)', { n: waits.length })),
       h('b', null, fmtDuration(waits.reduce((a, x) => a + x, 0) / waits.length))) : null,
     waiting ? h('li', null, h('span', { style: { color: 'var(--danger)' } }, 'Yazıcıda bitmiş, teslim bekleyen'), h('b', null, waiting)) : null,
   ];
@@ -301,11 +301,11 @@ function printBlock(part, detail) {
     part.print_minutes ? ['Baskı süresi', fmtMinutes(part.print_minutes)] : null,
     detail?.printer_started_at ? ['Yazıcıda başladı', fmtDateTime(detail.printer_started_at)] : null,
     detail?.printer_done_at ? ['Yazıcıda bitti', `${fmtDateTime(detail.printer_done_at)}`
-      + (detail.print_seconds != null ? ` · net baskı ${fmtDuration(detail.print_seconds)}`
-        : detail.printer_started_at ? ` · gerçek baskı ${fmtDuration(secondsBetween(detail.printer_started_at, detail.printer_done_at))}` : '')] : null,
+      + (detail.print_seconds != null ? t(' · net baskı {d}', { d: fmtDuration(detail.print_seconds) })
+        : detail.printer_started_at ? t(' · gerçek baskı {d}', { d: fmtDuration(secondsBetween(detail.printer_started_at, detail.printer_done_at)) }) : '')] : null,
     detail?.printer_done_at && detail.finished_at ? ['Yazıcıda bekleme', h('b', null, fmtDuration(secondsBetween(detail.printer_done_at, detail.finished_at)))] : null,
     detail?.printer_done_at && detail.state === 'URETIMDE' ? ['Yazıcıda bekleme', h('b', { style: { color: 'var(--danger)' } },
-      `${fmtDuration(secondsSince(detail.printer_done_at))} (sürüyor)`)] : null,
+      t('{d} (sürüyor)', { d: fmtDuration(secondsSince(detail.printer_done_at)) }))] : null,
   ].filter(Boolean);
   return rows.length ? h('dl', { class: 'kv print-kv' }, rows.map(([k, v]) => [h('dt', null, k), h('dd', null, v)])) : null;
 }
@@ -320,9 +320,9 @@ function orderHead(order, plane, ctx) {
       order.company_name ? h('b', { title: order.company_name }, `${shortCompany(order.company_name)} · `) : null,
       `${order.product_name} (${order.product_serial}) · `,
       order.queue_no ? [queuePlate(order.queue_no), ' · '] : null,
-      `Siparişi veren: ${order.created_by_name || '—'}`,
+      t('Siparişi veren: {name}', { name: order.created_by_name || '—' }),
       order.note ? h('span', { class: 'muted' }, ` · ${order.note}`) : null,
-      order.field_task ? h('a', { href: `#/field/task/${order.field_task.id}`, style: { marginLeft: '6px' } }, ` · Saha görevi ${order.field_task.code}`) : null),
+      order.field_task ? h('a', { href: `#/field/task/${order.field_task.id}`, style: { marginLeft: '6px' } }, t(' · Saha görevi {code}', { code: order.field_task.code })) : null),
   }),
   moduleToolbar(h('button', { class: 'btn lg', onclick: () => printWipReport(order, plane, ctx.meta.company) }, 'Yarı Mamul Raporu'))];
 }
@@ -350,7 +350,7 @@ async function renderAssemblyOrder(view, order, plane, ctx) {
       const done = asm.electronics.filter(e => steps[e.step]).length;
       items.ELEKTRONIK = done === asm.electronics.length
         ? { state: 'done', label: ['Elektronik', { text: 'Montaj tamamlandı', class: 'sub' }] }
-        : { state: 'todo', label: ['Elektronik', { text: `Montaj ${done}/${asm.electronics.length}`, class: 'sub' }, { text: 'Parçaya tıklayın', class: 'muted' }] };
+        : { state: 'todo', label: ['Elektronik', { text: t('Montaj {done}/{total}', { done, total: asm.electronics.length }), class: 'sub' }, { text: 'Parçaya tıklayın', class: 'muted' }] };
     }
   } else if (order.status === 'KALIBRASYON') {
     items.ALL = { state: 'todo', label: [order.code, { text: 'Kalibrasyon bekliyor', class: 'sub' }, { text: 'Tıklayın', class: 'muted' }] };
@@ -382,8 +382,8 @@ async function renderAssemblyOrder(view, order, plane, ctx) {
   });
 
   const rows = [
-    ...Object.entries(asm.sections).map(([k, name]) => [k, `${name} montajı`]),
-    ...asm.electronics.map(e => [e.step, `Elektronik montajı: ${e.name}`]),
+    ...Object.entries(asm.sections).map(([k, name]) => [k, t('{name} montajı', { name })]),
+    ...asm.electronics.map(e => [e.step, t('Elektronik montajı: {name}', { name: e.name })]),
     [asm.final.step, 'Birleştirme montajı'],
     // kapak adımı öncesi montajı bitmiş eski siparişlerde kapak satırı gösterilmez
     ...(asm.covers && (!whole || steps[asm.covers.step]) ? [[asm.covers.step, 'Kapak montajı']] : []),
@@ -400,7 +400,7 @@ async function renderAssemblyOrder(view, order, plane, ctx) {
     MONTAJ: coverTodo
       ? 'Birleştirme tamamlandı. Kapakları takıp "Kapak Montajı" ile onaylayın; uçak kalibrasyona geçer.'
       : asm.final.ready
-      ? `Bölümler ve elektronik montajlar tamamlandı. Kanatları ve elektronik parçaları gövdeye takıp "Birleştirme Montajı" ile onaylayın${asm.covers ? '; ardından kapaklar takılır' : '; uçak kalibrasyona geçer'}.`
+      ? t('Bölümler ve elektronik montajlar tamamlandı. Kanatları ve elektronik parçaları gövdeye takıp "Birleştirme Montajı" ile onaylayın{tail}.', { tail: asm.covers ? t('; ardından kapaklar takılır') : t('; uçak kalibrasyona geçer') })
       : Object.keys(asm.sections).every(k => steps[k])
         ? 'Montaj bölümleri tamamlandı. Elektronik montajlar (elektronik kat ve K04) bitince birleştirme montajı yapılabilir.'
         : 'Sarı çerçeveli bölüme tıklayıp montajı tamamlayın. Üç bölüm ve elektronik yapının montajları bitince birleştirme montajı yapılır, ardından kalibrasyon.',
@@ -460,17 +460,17 @@ async function electronicsModal(order, partId, refresh) {
     title: `${order.code} — ${info?.name || partId}`,
     body: h('div', null,
       h('p', { style: { marginTop: 0 } }, h('b', null, 'Elektronik komponentler monte edildi mi?')),
-      field(`Montajı yapan elektronik personeli (en az ${min})`, picker),
+      field(t('Montajı yapan elektronik personeli (en az {min})', { min }), picker),
       field('Montaj zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
       {
         label: 'Monte Edildi', class: 'success', onClick: async () => {
           const ids = picker.getIds();
-          if (ids.length < min) throw new Error(`En az ${min} elektronik personeli seçin`);
+          if (ids.length < min) throw new Error(t('En az {min} elektronik personeli seçin', { min }));
           const r = await api.post(`/api/orders/${order.id}/electronics/${encodeURIComponent(partId)}`, { staff_ids: ids, at: when.getValue() });
           if (r.status === 'KALIBRASYON') queueNoticeModal(order, r.queue_no);
-          else toast(`${info?.name || partId}: elektronik montaj tamamlandı`);
+          else toast(t('{name}: elektronik montaj tamamlandı', { name: info?.name || partId }));
           await refresh();
         },
       },
@@ -485,18 +485,18 @@ async function sectionModal(order, key, name, refresh, { url = `/api/orders/${or
   modal({
     title: `${order.code} — ${name}`,
     body: h('div', null,
-      h('p', { style: { marginTop: 0 } }, h('b', null, `${name} montajı tamamlandı mı?`)),
-      field(`Montajda çalışan personel (en az ${min})`, picker),
+      h('p', { style: { marginTop: 0 } }, h('b', null, t('{name} montajı tamamlandı mı?', { name }))),
+      field(t('Montajda çalışan personel (en az {min})', { min }), picker),
       field('Tamamlanma zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
       {
         label: 'Tamamlandı', class: 'success', onClick: async () => {
           const ids = picker.getIds();
-          if (ids.length < min) throw new Error(`En az ${min} montaj personeli seçin`);
+          if (ids.length < min) throw new Error(t('En az {min} montaj personeli seçin', { min }));
           const r = await api.post(url, { staff_ids: ids, at: when.getValue() });
           if (r.status === 'KALIBRASYON') queueNoticeModal(order, r.queue_no);
-          else toast(`${name} montajı tamamlandı`);
+          else toast(t('{name} montajı tamamlandı', { name }));
           refresh();
         },
       },
@@ -523,7 +523,7 @@ async function checklistModal({ title, checks, minStaff, submit, done }) {
     title,
     body: h('div', null,
       h('div', { class: 'checklist' }, rows.map(c => c[2])),
-      field(`Çalışan montaj personeli (en az ${minStaff})`, picker),
+      field(t('Çalışan montaj personeli (en az {min})', { min: minStaff }), picker),
       field('Tamamlanma zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
@@ -531,7 +531,7 @@ async function checklistModal({ title, checks, minStaff, submit, done }) {
         label: 'Tamamlandı', class: 'success', onClick: async () => {
           if (rows.some(c => !c[1].checked)) throw new Error('Tamamlamak için tüm maddeler işaretlenmeli');
           const ids = picker.getIds();
-          if (ids.length < minStaff) throw new Error(`En az ${minStaff} montaj personeli seçin`);
+          if (ids.length < minStaff) throw new Error(t('En az {min} montaj personeli seçin', { min: minStaff }));
           await submit({ staff_ids: ids, at: when.getValue(), checklist: Object.fromEntries(rows.map(c => [c[0], c[1].checked])) });
           done();
         },
@@ -544,7 +544,7 @@ async function checklistModal({ title, checks, minStaff, submit, done }) {
 function queueNoticeModal(order, queueNo) {
   if (!queueNo) { toast('Montaj tamamlandı, uçak kalibrasyona geçti'); return; }
   modal({
-    title: `${order.code} — Montaj tamamlandı`,
+    title: t('{code} — Montaj tamamlandı', { code: order.code }),
     body: h('div', { class: 'queue-notice' },
       h('p', null, 'Uçak kalibrasyona geçti ve kuyruk numarası atandı. Bu numarayı metal etikete yazıp uçağa takın:'),
       h('div', { style: { margin: '10px 0 14px' } }, queuePlate(queueNo, 'lg')),
@@ -555,7 +555,7 @@ function queueNoticeModal(order, queueNo) {
 
 function finalModal(order, asm, refresh) {
   return checklistModal({
-    title: `${order.code} — Birleştirme montajı`, checks: asm.final.checks, minStaff: asm.min_staff,
+    title: t('{code} — Birleştirme montajı', { code: order.code }), checks: asm.final.checks, minStaff: asm.min_staff,
     submit: async body => {
       const r = await api.post(`/api/orders/${order.id}/final`, body);
       if (r.status === 'KALIBRASYON') queueNoticeModal(order, r.queue_no);
@@ -576,10 +576,10 @@ async function calibrationModal(order, asm, refresh) {
     return [k, cb, label];
   });
   modal({
-    title: `${order.code} — Kalibrasyon`,
+    title: t('{code} — Kalibrasyon', { code: order.code }),
     body: h('div', null,
       h('div', { class: 'checklist' }, checks.map(c => c[2])),
-      field(`Çalışan montaj personeli (en az ${asm.min_staff})`, picker),
+      field(t('Çalışan montaj personeli (en az {min})', { min: asm.min_staff }), picker),
       field('Tamamlanma zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
@@ -587,7 +587,7 @@ async function calibrationModal(order, asm, refresh) {
         label: 'Tamamlandı', class: 'success', onClick: async () => {
           if (checks.some(c => !c[1].checked)) throw new Error('Tamamlamak için tüm maddeler işaretlenmeli');
           const ids = picker.getIds();
-          if (ids.length < asm.min_staff) throw new Error(`En az ${asm.min_staff} montaj personeli seçin`);
+          if (ids.length < asm.min_staff) throw new Error(t('En az {min} montaj personeli seçin', { min: asm.min_staff }));
           await api.post(`/api/orders/${order.id}/calibration`, {
             staff_ids: ids, at: when.getValue(), checklist: Object.fromEntries(checks.map(c => [c[0], c[1].checked])),
           });
@@ -601,16 +601,16 @@ async function calibrationModal(order, asm, refresh) {
 
 function stepInfo(order, asm, key) {
   const keys = key ? [key] : [...Object.keys(asm.sections), ...asm.electronics.map(e => e.step), asm.final.step, 'KAPAK', 'KALIBRASYON', 'SAHA_DEPO'];
-  const title = k => asm.sections[k] ? `${asm.sections[k]} montajı`
-    : asm.electronics.find(e => e.step === k) ? `Elektronik montajı: ${asm.electronics.find(e => e.step === k).name}`
+  const title = k => asm.sections[k] ? t('{name} montajı', { name: asm.sections[k] })
+    : asm.electronics.find(e => e.step === k) ? t('Elektronik montajı: {name}', { name: asm.electronics.find(e => e.step === k).name })
       : { BIRLESTIRME: 'Birleştirme montajı', KAPAK: 'Kapak montajı', KALIBRASYON: 'Kalibrasyon', SAHA_DEPO: 'Saha deposu onayı' }[k];
   modal({
-    title: key ? `${order.code} — ${asm.sections[key]}` : `${order.queue_no || order.code} — Montaj geçmişi`,
+    title: key ? `${order.code} — ${asm.sections[key]}` : t('{code} — Montaj geçmişi', { code: order.queue_no || order.code }),
     body: h('ul', { class: 'timeline' }, keys.filter(k => asm.steps[k]).map(k => {
       const st = asm.steps[k];
       return h('li', null, h('b', null, title(k)),
-        h('div', { class: 'when' }, [fmtDateTime(st.at), `kaydeden: ${st.recorded_by_name || '—'}`].join(' · ')),
-        st.staff.length ? h('div', { class: 'small' }, `Personel: ${staffNames(st)}`) : null,
+        h('div', { class: 'when' }, [fmtDateTime(st.at), t('kaydeden: {name}', { name: st.recorded_by_name || '—' })].join(' · ')),
+        st.staff.length ? h('div', { class: 'small' }, t('Personel: {names}', { names: staffNames(st) })) : null,
         st.checklist ? h('div', { class: 'small' }, Object.entries(k === asm.final.step ? asm.final.checks : asm.checks)
           .map(([c, q]) => `${st.checklist[c] ? '✓' : '✗'} ${q}`).join(' · ')) : null);
     })),
@@ -643,7 +643,7 @@ async function choosePrinter(order, op, part, refresh) {
       const el = h('div', { class: `pick ${busy ? 'disabled' : ''} ${p.id === selected ? 'on' : ''}` },
         h('input', { type: 'radio', name: 'printer', disabled: busy, checked: p.id === selected }),
         h('div', { class: 'grow' }, h('b', null, p.name),
-          h('span', { class: 'small muted' }, busy ? `Meşgul: ${p.current_order} / ${p.current_part}` : p.ip)),
+          h('span', { class: 'small muted' }, busy ? t('Meşgul: {order} / {part}', { order: p.current_order, part: p.current_part }) : p.ip)),
         p.live_state ? badge(PRINTER_STATES, p.live_state) : null);
       if (!busy) {
         el.addEventListener('click', () => {
@@ -663,14 +663,14 @@ async function choosePrinter(order, op, part, refresh) {
   }, 5000);
 
   modal({
-    title: `${part.id} — Yazıcı seçin`,
+    title: t('{id} — Yazıcı seçin', { id: part.id }),
     onClose: () => clearInterval(poll),
     body: h('div', null,
       lastError ? h('div', { class: 'alert err' },
-        h('b', null, `Önceki hata: ${lastError.error_code}`), lastError.note ? ` — ${lastError.note}` : '',
+        h('b', null, t('Önceki hata: {code}', { code: lastError.error_code })), lastError.note ? ` — ${lastError.note}` : '',
         h('div', { class: 'small' }, `${fmtDateTime(lastError.at)} · ${lastError.user_name || ''}`)) : null,
       part.print_file ? h('div', { class: 'alert info' }, 'Yazıcıya verilecek dosya: ', h('b', { class: 'mono' }, part.print_file),
-        part.print_minutes ? ` · baskı süresi ${fmtMinutes(part.print_minutes)}` : '') : null,
+        part.print_minutes ? t(' · baskı süresi {d}', { d: fmtMinutes(part.print_minutes) }) : '') : null,
       h('p', { class: 'muted', style: { marginTop: 0 } }, 'Seçtiğiniz yazıcıda, seçtiğiniz zamandan itibaren üretimde görünecek.'),
       list,
       field('Üretime başlama zamanı', when)),
@@ -695,7 +695,7 @@ async function choosePrinter(order, op, part, refresh) {
         label: 'Üretime Al', class: 'primary', onClick: async () => {
           if (!selected) throw new Error('Bir yazıcı seçin');
           await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/start`, { printer_id: selected, at: when.getValue() });
-          toast(`${part.id} üretime alındı`);
+          toast(t('{id} üretime alındı', { id: part.id }));
           await refresh();
         },
       },
@@ -714,11 +714,11 @@ function directReview(order, op, part, detail, refresh) {
     await refresh();
   };
   modal({
-    title: `${part.id} — Doğrudan depo ekleme`,
+    title: t('{id} — Doğrudan depo ekleme', { id: part.id }),
     body: h('div', null,
       h('div', { class: 'alert info' }, h('b', null, 'Basılmış kabul edilip doğrudan depoya eklenecek.'),
         h('div', { class: 'small', style: { marginTop: '4px' } },
-          `Yazıcı: ${d.printer_name || '—'} · Talep: ${fmtDateTime(d.requested_at)} · ${d.requested_by_name || ''}`)),
+          t('Yazıcı: {printer} · Talep: {at} · {by}', { printer: d.printer_name || '—', at: fmtDateTime(d.requested_at), by: d.requested_by_name || '' }))),
       admin ? h('p', { class: 'muted', style: { marginBottom: 0 } }, 'Onaylarsanız parça, seçili yazıcıdan çıkmış gibi depo onayına gider.')
         : h('p', { class: 'muted', style: { marginBottom: 0 } }, 'Sistem Yöneticisi onayı bekleniyor.'),
       admin ? field('Not', note) : null),
@@ -737,7 +737,7 @@ function sendProgress(order, op, part, refresh) {
   const label = h('div', { class: 'small muted', style: { textAlign: 'center' } }, 'Bağlanıyor…');
   const stage = h('div', { class: 'send3d g3d-view' }, h('div', { class: 'loading' }, '3B hazırlanıyor…'));
   const box = h('div', null, stage,
-    h('p', { class: 'small muted', style: { textAlign: 'center', margin: '8px 0 6px' } }, `${part.id} · ${part.print_file || 'G-code'} yazıcıya gönderiliyor`),
+    h('p', { class: 'small muted', style: { textAlign: 'center', margin: '8px 0 6px' } }, t('{id} · {file} yazıcıya gönderiliyor', { id: part.id, file: part.print_file || 'G-code' })),
     track, label);
   let closed = false, done = false, v3 = null;
   // Yazıcının 3B hali ve parçanın yazıcı içinde dolan 3B görünümü
@@ -746,7 +746,7 @@ function sendProgress(order, op, part, refresh) {
       .catch(() => clear(stage, h('div', { class: 'empty small' }, '3B görünüm yüklenemedi')));
   } else { clear(stage, h('div', { class: 'empty small' }, 'Bu parçanın 3B önizlemesi yok')); }
   const m = modal({
-    title: `${part.id} — Yazıcıya gönderiliyor`,
+    title: t('{id} — Yazıcıya gönderiliyor', { id: part.id }),
     body: box,
     onClose: () => { closed = true; v3?.destroy(); if (done) refresh(); },
     actions: [{ label: 'Arka planda sürdür' }],
@@ -759,15 +759,15 @@ function sendProgress(order, op, part, refresh) {
     if (st.status === 'uploading') {
       bar.style.width = `${st.percent}%`;
       v3?.setProgress(st.percent / 100);   // parça yükleme yüzdesi kadar dolar
-      label.textContent = `Yükleniyor… %${Math.floor(st.percent)} (${mb(st.sent)} / ${mb(st.total)}) · ${st.printer}`;
+      label.textContent = t('Yükleniyor… %{percent} ({sent} / {total}) · {printer}', { percent: Math.floor(st.percent), sent: mb(st.sent), total: mb(st.total), printer: st.printer });
     } else if (st.status === 'starting') {
       bar.style.width = '100%'; v3?.done();
       label.textContent = 'Yükleme bitti, baskı başlatılıyor…';
     } else if (st.status === 'done') {
       done = true;
       bar.style.width = '100%'; bar.classList.add('ok'); v3?.done();
-      label.textContent = `Gönderildi. ${part.id} ${st.printer} yazıcısında üretime alındı.`;
-      toast(`${part.id} yazıcıya gönderildi, baskı başladı`);
+      label.textContent = t('Gönderildi. {id} {printer} yazıcısında üretime alındı.', { id: part.id, printer: st.printer });
+      toast(t('{id} yazıcıya gönderildi, baskı başladı', { id: part.id }));
       setTimeout(() => { if (!closed) m.close(); refresh(); }, 1600);
       return;
     } else if (st.status === 'error') {
@@ -833,7 +833,7 @@ async function inProduction(order, op, part, refresh) {
   }, 15000);
   const stateText = { YAZDIRIYOR: 'Basıyor', DURAKLADI: 'Duraklatıldı', TAMAMLANDI: 'Baskı bitti', HAZIR: 'Boşta', HATA: 'Hata', CEVRIMDISI: 'Çevrimdışı' };
   modal({
-    title: `${part.id} — Üretimde`,
+    title: t('{id} — Üretimde', { id: part.id }),
     onClose: () => { clearInterval(tick); clearInterval(poll); v3closed = true; v3?.destroy(); },
     body: h('div', null,
       stage,
@@ -847,7 +847,7 @@ async function inProduction(order, op, part, refresh) {
         h('dt', null, 'Yazıcı'), h('dd', null, detail.printer_name || '—'),
         live ? [h('dt', null, 'Yazıcı durumu'), h('dd', null,
           `${stateText[live.state] || live.state || '—'}${live.progress != null && live.state !== 'TAMAMLANDI' ? ` · %${Math.round(live.progress)}` : ''}`)] : null,
-        h('dt', null, 'Üretime alındı'), h('dd', null, `${fmtDateTime(detail.started_at)} · ${fmtDuration(secondsSince(detail.started_at))} önce`),
+        h('dt', null, 'Üretime alındı'), h('dd', null, t('{at} · {ago} önce', { at: fmtDateTime(detail.started_at), ago: fmtDuration(secondsSince(detail.started_at)) })),
         h('dt', null, 'Sipariş'), h('dd', null, order.code)),
       printBlock(part, detail)),
     actions: [
@@ -875,7 +875,7 @@ async function deliver(order, op, part, refresh) {
   }) : h('div', { class: 'empty' }, 'Depo yöneticisi rolünde kullanıcı yok'));
   const when = dateTimeInput({ min: op.started_at });
   modal({
-    title: `${part.id} — Kime teslim ettiniz?`,
+    title: t('{id} — Kime teslim ettiniz?', { id: part.id }),
     body: h('div', null, list, field('Teslim zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
@@ -883,7 +883,7 @@ async function deliver(order, op, part, refresh) {
         label: 'Depoya Teslim Et', class: 'success', onClick: async () => {
           if (!selected) throw new Error('Teslim alan depocuyu seçin');
           await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/finish`, { warehouse_user_id: selected, at: when.getValue() });
-          toast(`${part.id} depoya teslim edildi`);
+          toast(t('{id} depoya teslim edildi', { id: part.id }));
           await refresh();
         },
       },
@@ -903,7 +903,7 @@ function reportError(order, op, part, refresh) {
   });
   const when = dateTimeInput({ min: op.started_at });
   modal({
-    title: `${part.id} — Hata bildir`,
+    title: t('{id} — Hata bildir', { id: part.id }),
     body: h('div', null,
       field('Hata kodu', code),
       field('Açıklama', desc),
@@ -922,7 +922,7 @@ function reportError(order, op, part, refresh) {
           if (photo.files[0]) fd.append('photo', photo.files[0]);
           if (when.getValue()) fd.append('at', when.getValue());
           await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/error`, fd);
-          toast(`${part.id} hata durumuna alındı`, 'err');
+          toast(t('{id} hata durumuna alındı', { id: part.id }), 'err');
           await refresh();
         },
       },
@@ -933,7 +933,7 @@ function reportError(order, op, part, refresh) {
 async function showHistory(order, op, part) {
   const detail = await api.get(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}`);
   modal({
-    title: `${part.id} — İşlem geçmişi`,
+    title: t('{id} — İşlem geçmişi', { id: part.id }),
     wide: true,
     body: h('div', null,
       h('div', { style: { marginBottom: '14px' } }, badge(PART_STATES, detail.state),
@@ -949,7 +949,7 @@ export function timeline(events) {
   return h('ul', { class: 'timeline' }, events.map(e => h('li', { class: e.event === 'HATA' ? 'err' : '' },
     h('b', null, e.text),
     h('div', { class: 'when' }, [fmtDateTime(e.at), e.user_name, e.printer_name].filter(Boolean).join(' · ')),
-    e.target_name ? h('div', { class: 'small' }, `Teslim alan: ${e.target_name}`) : null,
-    e.error_code ? h('div', { class: 'small' }, `Hata kodu: ${e.error_code}${e.note ? ` — ${e.note}` : ''}`) : null,
+    e.target_name ? h('div', { class: 'small' }, t('Teslim alan: {name}', { name: e.target_name })) : null,
+    e.error_code ? h('div', { class: 'small' }, t('Hata kodu: {code}{note}', { code: e.error_code, note: e.note ? ` — ${e.note}` : '' })) : null,
     e.photo ? h('a', { href: fileUrl(e.photo), target: '_blank' }, h('img', { src: fileUrl(e.photo, 512), alt: 'Hata fotoğrafı' })) : null)));
 }

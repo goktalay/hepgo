@@ -1,7 +1,7 @@
 // İmza talepleri: bana gelenler / gönderdiklerim ve talep ekranı (evrakı gör → İmzala / Reddet / Vazgeç).
 // Modül değildir; her kullanıcı yalnızca kendisine gelen ve kendi gönderdiği talepleri görür.
 import { api, fileUrl } from '../api.js';
-import { clear, fmtDateTime, h, modal, pageHead, segmented, statStrip, toast, toastError } from '../ui.js';
+import { clear, fmtDateTime, h, modal, pageHead, segmented, statStrip, t, toast, toastError } from '../ui.js';
 import { thumbOf } from './documents.js';
 
 export const SIGN_STATES = {
@@ -29,10 +29,10 @@ export async function render(view, params, ctx) {
       thumbOf(s),
       h('div', { class: 'grow' },
         h('div', { class: 'doc-title' }, h('b', null, s.document_title), ' ', signBadge(s.status)),
-        h('div', { class: 'small muted' }, box === 'inbox' ? `Gönderen: ${s.requested_by_name || '—'} · ${fmtDateTime(s.requested_at)}`
-          : `İmzalayacak: ${s.signer_name || '—'} · ${fmtDateTime(s.requested_at)}`),
+        h('div', { class: 'small muted' }, box === 'inbox' ? t('Gönderen: {name} · {date}', { name: s.requested_by_name || '—', date: fmtDateTime(s.requested_at) })
+          : t('İmzalayacak: {name} · {date}', { name: s.signer_name || '—', date: fmtDateTime(s.requested_at) })),
         s.message ? h('div', { class: 'doc-snippet' }, s.message) : null,
-        s.status === 'REDDEDILDI' && s.reason ? h('div', { class: 'small', style: { color: 'var(--danger)', marginTop: '4px' } }, `Red gerekçesi: ${s.reason}`) : null),
+        s.status === 'REDDEDILDI' && s.reason ? h('div', { class: 'small', style: { color: 'var(--danger)', marginTop: '4px' } }, t('Red gerekçesi: {reason}', { reason: s.reason })) : null),
       h('div', { class: 'doc-side' }, s.decided_at ? fmtDateTime(s.decided_at) : ''))))
       : h('div', { class: 'card empty' }, box === 'inbox' ? 'Size gelen imza talebi yok' : 'Gönderdiğiniz imza talebi yok'));
   };
@@ -55,9 +55,9 @@ export function signatureBlock(s) {
     } catch (err) { toastError(err); }
   };
   return h('div', { class: 'sign-block' },
-    h('div', null, h('b', null, `Dijital olarak imzalandı: ${s.signer_name}`), ` · ${fmtDateTime(s.decided_at)}`),
-    h('div', { class: 'small mono' }, `İmza kodu: ${code(s.signature)}`),
-    h('div', { class: 'small mono muted' }, `Evrak özeti (SHA-256): ${s.file_sha256}`),
+    h('div', null, h('b', null, t('Dijital olarak imzalandı: {name}', { name: s.signer_name })), ` · ${fmtDateTime(s.decided_at)}`),
+    h('div', { class: 'small mono' }, t('İmza kodu: {code}', { code: code(s.signature) })),
+    h('div', { class: 'small mono muted' }, t('Evrak özeti (SHA-256): {hash}', { hash: s.file_sha256 })),
     h('div', { style: { marginTop: '6px', display: 'flex', gap: '8px', alignItems: 'center' } },
       h('button', { class: 'btn sm', type: 'button', onclick: check }, 'İmzayı doğrula'), result));
 }
@@ -79,7 +79,7 @@ async function renderRequest(view, sid, ctx) {
     const reason = h('textarea', { class: 'input', rows: 3, placeholder: 'Neden reddettiğinizi yazın' });
     modal({
       title: 'İmza talebini reddet',
-      body: h('div', null, h('p', { style: { marginTop: 0 } }, `${s.document_title} evrakını imzalamayı reddediyorsunuz.`), reason),
+      body: h('div', null, h('p', { style: { marginTop: 0 } }, t('{title} evrakını imzalamayı reddediyorsunuz.', { title: s.document_title })), reason),
       actions: [{ label: 'Vazgeç' }, {
         label: 'Reddet', class: 'danger', onClick: async () => {
           if (!reason.value.trim()) throw new Error('Red açıklaması zorunlu');
@@ -95,7 +95,7 @@ async function renderRequest(view, sid, ctx) {
   };
   const kv = (k, v) => [h('dt', null, k), h('dd', null, v)];
   clear(view,
-    pageHead(s.document_title, { back: '#/sign', sub: `İmza talebi · ${s.file_name}` }),
+    pageHead(s.document_title, { back: '#/sign', sub: t('İmza talebi · {file}', { file: s.file_name }) }),
     h('div', { class: 'doc-layout' },
       h('div', { class: 'card doc-stage' }, preview),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px' } },

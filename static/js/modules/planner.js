@@ -2,7 +2,7 @@
 // Yazıcıların anlık durumu dikkate alınır (boştakiler hemen, baskıdakiler kalan süreden sonra; çevrimdışı / hatalı hariç).
 import { api } from '../api.js';
 import { foot, head, printPage, sign } from '../print.js';
-import { fmtMinutes, h, clear, field, fmtDateTime, pageHead, segmented, statStrip, toastError } from '../ui.js';
+import { fmtMinutes, h, clear, field, fmtDateTime, pageHead, segmented, statStrip, t, toastError } from '../ui.js';
 
 const COLORS = ['#1f6feb', '#16a34a', '#d97706', '#9333ea', '#dc2626', '#0891b2', '#db2777', '#65a30d', '#7c3aed', '#ea580c'];
 const colorOf = n => COLORS[(n - 1) % COLORS.length];
@@ -14,7 +14,7 @@ const hhmm = iso => new Date(iso).toLocaleString('tr-TR', { day: '2-digit', mont
 export async function renderPlanner(view, ctx) {
   const products = await api.get('/api/planner/products');
   const product = h('select', { class: 'input' }, products.map(p => h('option', { value: p.id },
-    `${p.name} (${p.serial}) · ${p.part_count} parça`)));
+    t('{name} ({serial}) · {count} parça', { name: p.name, serial: p.serial, count: p.part_count }))));
   const qty = h('input', { class: 'input', type: 'number', min: 1, max: 50, value: 1, style: { width: '110px' } });
   const change = h('input', { class: 'input', type: 'number', min: 0, max: 240, value: 15, style: { width: '110px' },
     title: 'İki baskı arasında tabla boşaltma ve temizlik için ayrılan süre' });
@@ -48,33 +48,33 @@ export async function renderPlanner(view, ctx) {
       { label: 'Uçak', value: r.quantity },
       { label: 'Basılacak parça', value: r.jobs },
       { label: 'Kullanılabilir yazıcı', value: r.printers.length,
-        sub: r.assume_idle ? 'hepsi boş varsayıldı' : `${r.printers.filter(p => !p.busy).length} boşta` },
+        sub: r.assume_idle ? 'hepsi boş varsayıldı' : t('{n} boşta', { n: r.printers.filter(p => !p.busy).length }) },
       { label: 'Şimdi yüklenecek', value: r.first_loads.length, tone: 'ok' },
       { label: 'Tahmini bitiş', value: r.end ? hhmm(r.end) : '—', tone: 'alert' },
       { label: 'Tahmini toplam süre', value: span(r), sub: 'şimdiden son parçanın bitişine', tone: 'alert' },
     ]);
     clear(out,
       stats,
-      r.unknown_parts.length ? h('div', { class: 'alert warn' }, `${r.unknown_parts.length} parçanın baskı süresi tanımlı değil (${r.unknown_parts.slice(0, 8).join(', ')}${r.unknown_parts.length > 8 ? '…' : ''}); `
-        + `plan için ${fmtMinutes(r.fallback_minutes)} varsayıldı. Süreleri Ürün Yönetimi'nden girin.`) : null,
+      r.unknown_parts.length ? h('div', { class: 'alert warn' }, t('{n} parçanın baskı süresi tanımlı değil ({list}{more}); ', { n: r.unknown_parts.length, list: r.unknown_parts.slice(0, 8).join(', '), more: r.unknown_parts.length > 8 ? '…' : '' })
+        + t("plan için {mins} varsayıldı. Süreleri Ürün Yönetimi'nden girin.", { mins: fmtMinutes(r.fallback_minutes) })) : null,
       r.assume_idle ? h('div', { class: 'alert info' }, 'Varsayımsal plan: yazıcıların anlık durumu yok sayıldı; '
         + 'sistemdeki tüm yazıcılar şu an boş kabul edildi.') : null,
-      r.unusable.length ? h('div', { class: 'alert warn' }, `Plana alınmayan ${r.unusable.length} yazıcı (çevrimdışı / hata): `
+      r.unusable.length ? h('div', { class: 'alert warn' }, t('Plana alınmayan {n} yazıcı (çevrimdışı / hata): ', { n: r.unusable.length })
         + r.unusable.map(p => p.name).join(', ')) : null,
       h('div', { class: 'card card-pad' },
         h('div', { class: 'pl-head' }, h('h2', null, 'Gantt şeması'), h('span', { class: 'grow' }),
           h('span', { class: 'pl-legend' },
-            Array.from({ length: Math.min(r.quantity, COLORS.length) }, (_, i) => h('span', null, h('i', { style: { background: colorOf(i + 1) } }), `${i + 1}. uçak`)),
+            Array.from({ length: Math.min(r.quantity, COLORS.length) }, (_, i) => h('span', null, h('i', { style: { background: colorOf(i + 1) } }), t('{n}. uçak', { n: i + 1 }))),
             h('span', null, h('i', { class: 'busy' }), 'Yazıcıdaki mevcut iş')),
           segmented([['8', 'Uzak'], ['18', 'Orta'], ['40', 'Yakın']], String(zoomLevel), v => { zoomLevel = Number(v); draw(); })),
         gantt(r)),
       h('div', { class: 'card card-pad', style: { marginTop: '16px' } },
-        h('h2', { style: { fontSize: '15px', marginBottom: '8px' } }, `Şimdi yükleyin (${r.first_loads.length} yazıcı)`),
+        h('h2', { style: { fontSize: '15px', marginBottom: '8px' } }, t('Şimdi yükleyin ({n} yazıcı)', { n: r.first_loads.length })),
         r.first_loads.length ? h('div', { class: 'table-wrap' }, h('table', null,
           h('thead', null, h('tr', null, ['Yazıcı', 'Uçak', 'Parça', 'Yazıcıya verilecek dosya', 'Süre', 'Bitiş'].map(c => h('th', null, c)))),
           h('tbody', null, r.first_loads.map(j => h('tr', null,
             h('td', null, h('b', null, j.printer)),
-            h('td', null, h('span', { class: 'pl-dot', style: { background: colorOf(j.aircraft) } }), `${j.aircraft}. uçak`),
+            h('td', null, h('span', { class: 'pl-dot', style: { background: colorOf(j.aircraft) } }), t('{n}. uçak', { n: j.aircraft })),
             h('td', { class: 'mono' }, j.part),
             h('td', { class: 'mono' }, j.file || h('span', { class: 'muted' }, 'tanımsız')),
             h('td', null, fmtMinutes(j.minutes), j.estimated ? h('span', { class: 'muted' }, ' (varsayım)') : null),
@@ -83,7 +83,7 @@ export async function renderPlanner(view, ctx) {
       h('div', { class: 'card card-pad', style: { marginTop: '16px' } },
         h('h2', { style: { fontSize: '15px', marginBottom: '8px' } }, 'Uçakların tahmini bitişi'),
         h('ul', { class: 'stat-list' }, r.aircraft_done.map(a => h('li', null,
-          h('span', null, h('span', { class: 'pl-dot', style: { background: colorOf(a.aircraft) } }), `${a.aircraft}. uçak — son parça`),
+          h('span', null, h('span', { class: 'pl-dot', style: { background: colorOf(a.aircraft) } }), t('{n}. uçak — son parça', { n: a.aircraft })),
           h('b', null, hhmm(a.end))))),
       h('div', { class: 'card card-pad', style: { marginTop: '16px' } },
         h('div', { class: 'pl-head' }, h('h2', null, 'Yazıcı yazıcı yükleme sırası'), h('span', { class: 'grow' }),
@@ -92,13 +92,13 @@ export async function renderPlanner(view, ctx) {
   }
 
   const printers = r => r.printers.filter(p => p.jobs.length);
-  const busyText = b => `Önce mevcut iş: ${b.part || b.file || 'bilinmeyen iş'}${b.order ? ` (${b.order})` : ''} · tahmini boşalma ${hhmm(b.until)}`;
+  const busyText = b => t('Önce mevcut iş: {part}{order} · tahmini boşalma {until}', { part: b.part || b.file || 'bilinmeyen iş', order: b.order ? ` (${b.order})` : '', until: hhmm(b.until) });
 
   // Her yazıcı için sıralı dosya listesi; ekranda tıklanabilir kutucuk, çıktıda boş / işaretli kare
   function loadLists(r, print) {
     return printers(r).map(p => h('section', { class: 'pl-list' },
       h('div', { class: 'pl-list-head' }, h('b', null, p.name),
-        h('span', null, `${p.jobs.length} baskı · bitiş ${hhmm(p.jobs[p.jobs.length - 1].end)}`)),
+        h('span', null, t('{n} baskı · bitiş {end}', { n: p.jobs.length, end: hhmm(p.jobs[p.jobs.length - 1].end) }))),
       p.busy ? h('div', { class: 'pl-list-note' }, busyText(p.busy)) : null,
       p.note ? h('div', { class: 'pl-list-note warn' }, p.note) : null,
       h('table', { class: print ? 'pf-table pf-list pl-ptable' : 'pl-table' },
@@ -112,7 +112,7 @@ export async function renderPlanner(view, ctx) {
           return h('tr', { class: checked.has(key) && !print ? 'done' : '' },
             h('td', { class: 'pl-cbcell' }, box),
             h('td', null, `${i + 1}`),
-            h('td', null, h('span', { class: 'pl-dot', style: { background: colorOf(j.aircraft) } }), `${j.aircraft}. uçak`),
+            h('td', null, h('span', { class: 'pl-dot', style: { background: colorOf(j.aircraft) } }), t('{n}. uçak', { n: j.aircraft })),
             h('td', { class: 'mono' }, j.part),
             h('td', { class: 'mono' }, j.file || 'tanımsız'),
             h('td', null, fmtMinutes(j.minutes), j.estimated ? ' (varsayım)' : ''),
@@ -130,19 +130,19 @@ export async function renderPlanner(view, ctx) {
     printPage(h('div', { class: 'pf-page pf-flow pl-print' },
       head(company, 'ÜRETİM PLANI', [['Mamul', r.product.name], ['Adet', String(r.quantity)], ['Plan zamanı', hhmm(r.now)]]),
       kv([
-        [['Öncelik', modeText], ['Hazırlık süresi', `${r.change_minutes} dk`]],
+        [['Öncelik', modeText], ['Hazırlık süresi', t('{n} dk', { n: r.change_minutes })]],
         [['Yazıcı durumu', r.assume_idle ? 'Hepsi boş varsayıldı (varsayımsal plan)' : 'Mevcut durum'],
-          ['Kullanılabilir yazıcı', `${r.printers.length} (${r.printers.filter(p => !p.busy).length} boşta)`]],
+          ['Kullanılabilir yazıcı', t('{total} ({idle} boşta)', { total: r.printers.length, idle: r.printers.filter(p => !p.busy).length })]],
         [['Basılacak parça', String(r.jobs)], ['Mamul', `${r.product.name} × ${r.quantity}`]],
         [['Tahmini bitiş', r.end ? hhmm(r.end) : '—'], ['Tahmini toplam süre', span(r)]],
-        [['Uçak bitişleri', r.aircraft_done.map(a => `${a.aircraft}. uçak ${hhmm(a.end)}`).join(' · ')],
+        [['Uçak bitişleri', r.aircraft_done.map(a => t('{n}. uçak {end}', { n: a.aircraft, end: hhmm(a.end) })).join(' · ')],
           ['Plana alınmayan', r.unusable.map(p => p.name).join(', ') || '—']],
       ]),
-      r.unknown_parts.length ? h('p', { class: 'pf-empty' }, `Baskı süresi tanımsız ${r.unknown_parts.length} parça için ${fmtMinutes(r.fallback_minutes)} varsayıldı: `
+      r.unknown_parts.length ? h('p', { class: 'pf-empty' }, t('Baskı süresi tanımsız {n} parça için {mins} varsayıldı: ', { n: r.unknown_parts.length, mins: fmtMinutes(r.fallback_minutes) })
         + r.unknown_parts.join(', ')) : null,
       h('h2', { class: 'pf-h2' }, 'Gantt şeması'),
       h('div', { class: 'pl-legend' },
-        Array.from({ length: Math.min(r.quantity, COLORS.length) }, (_, i) => h('span', null, h('i', { style: { background: colorOf(i + 1) } }), `${i + 1}. uçak`)),
+        Array.from({ length: Math.min(r.quantity, COLORS.length) }, (_, i) => h('span', null, h('i', { style: { background: colorOf(i + 1) } }), t('{n}. uçak', { n: i + 1 }))),
         h('span', null, h('i', { class: 'busy' }), 'Yazıcıdaki mevcut iş')),
       gantt(r, 600),
       h('h2', { class: 'pf-h2 pl-pbreak' }, 'Yazıcı yazıcı yükleme sırası'),
@@ -150,7 +150,7 @@ export async function renderPlanner(view, ctx) {
         + 'gerçek süreler değişirse planı yeniden hesaplayın.'),
       loadLists(r, true),
       h('div', { class: 'pf-signs' }, sign('Planı Hazırlayan', ctx?.user?.full_name || ''), sign('Kontrol Eden', ''), sign('Onaylayan', '')),
-      foot(company, `Yazdırma: ${fmtDateTime(new Date().toISOString())}`)), `Üretim planı ${r.product.name} × ${r.quantity}`);
+      foot(company, t('Yazdırma: {dt}', { dt: fmtDateTime(new Date().toISOString()) }))), `Üretim planı ${r.product.name} × ${r.quantity}`);
   }
 
   // fit: verilirse şema bu genişliğe sığdırılır (çıktı)
@@ -182,15 +182,15 @@ export async function renderPlanner(view, ctx) {
       h('div', { class: 'pl-name', title: p.note || '' }, h('b', null, p.name), p.note && !fit ? h('span', { class: 'pl-warn' }, '!') : null),
       h('div', { class: 'pl-track', style: { width: `${width}px` } },
         p.busy ? h('div', { class: 'pl-bar busy', style: { left: '0px', width: `${Math.max(3, x(ms(p.busy.until)))}px` },
-          title: `Yazıcıda şu an: ${p.busy.part || p.busy.file || 'bilinmeyen iş'}${p.busy.order ? ` (${p.busy.order})` : ' — sistemde kayıtsız'}`
-            + `\nTahmini boşalma: ${hhmm(p.busy.until)}${p.busy.estimated ? ' (süre bilinmiyor, 1 sa varsayıldı)' : ''}` },
+          title: t('Yazıcıda şu an: {part}{order}', { part: p.busy.part || p.busy.file || 'bilinmeyen iş', order: p.busy.order ? ` (${p.busy.order})` : ' — sistemde kayıtsız' })
+            + t('\nTahmini boşalma: {until}{est}', { until: hhmm(p.busy.until), est: p.busy.estimated ? ' (süre bilinmiyor, 1 sa varsayıldı)' : '' }) },
           h('span', null, p.busy.part || 'meşgul')) : null,
         p.jobs.map(j => h('div', { class: `pl-bar ${j.estimated ? 'est' : ''}`,
           style: { left: `${x(ms(j.start))}px`, width: `${Math.max(3, x(ms(j.end)) - x(ms(j.start)))}px`, background: colorOf(j.aircraft) },
-          title: `${j.aircraft}. uçak · ${j.part}\n${j.file || 'dosya tanımsız'}\n${hhmm(j.start)} → ${hhmm(j.end)} (${fmtMinutes(j.minutes)})` },
+          title: t('{n}. uçak · {part}\n{file}\n{start} → {end} ({mins})', { n: j.aircraft, part: j.part, file: j.file || 'dosya tanımsız', start: hhmm(j.start), end: hhmm(j.end), mins: fmtMinutes(j.minutes) }) },
           h('span', null, j.part))))));
     const marks = r.aircraft_done.map(a => h('div', { class: 'pl-done', style: { left: `${x(ms(a.end))}px`, borderColor: colorOf(a.aircraft) },
-      title: `${a.aircraft}. uçağın son parçası: ${hhmm(a.end)}` }, h('span', { style: { background: colorOf(a.aircraft) } }, `${a.aircraft}`)));
+      title: t('{n}. uçağın son parçası: {end}', { n: a.aircraft, end: hhmm(a.end) }) }, h('span', { style: { background: colorOf(a.aircraft) } }, `${a.aircraft}`)));
     return h('div', { class: 'pl-gantt' },
       h('div', { class: 'pl-inner', style: { width: `${width + 110}px` } },
         h('div', { class: 'pl-axis' }, h('div', { class: 'pl-name' }, 'Yazıcı'), h('div', { class: 'pl-track', style: { width: `${width}px` } },

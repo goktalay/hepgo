@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { loadPath, partObject } from '../gcode3d.js';
 import { PRINTER_STATES, badge } from '../status.js';
-import { clear, field, fmtDateTime, h, modal, onLeave, segmented, toast } from '../ui.js';
+import { clear, field, fmtDateTime, h, modal, onLeave, segmented, t, toast } from '../ui.js';
 
 const LIB = '/static/vendor/three/';
 let libs;
@@ -28,7 +28,7 @@ const SIDE_TEXT = { L: 'Sol raf', R: 'Sağ raf' };
 const LEVEL_TEXT = { 1: 'Alt kat', 2: 'Üst kat' };
 // Basılan parça: sistemdeki sipariş parçası; yoksa yazıcıdaki dosya adından tanınan parça (sunucu: file_part)
 export const partOf = p => p.current_part || p.file_part || null;
-export const placeText = p => (p.rack_side ? `${SIDE_TEXT[p.rack_side]} · ${LEVEL_TEXT[p.rack_level]} · ${p.rack_slot}. sıra` : 'Yeri yok');
+export const placeText = p => (p.rack_side ? t('{side} · {level} · {slot}. sıra', { side: SIDE_TEXT[p.rack_side], level: LEVEL_TEXT[p.rack_level], slot: p.rack_slot }) : 'Yeri yok');
 
 /**
  * @returns {{ el, update(printers), destroy() }}
@@ -74,7 +74,7 @@ export function printerRoom(opts) {
         h('dt', null, 'Dosya'), h('dd', { class: 'mono small' }, p.live_file || '—'),
         h('dt', null, 'Sistemde'), h('dd', null, p.current_part
           ? (opts.canOpen ? h('a', { href: `#/production/${p.current_order_id}` }, `${p.current_order} / ${p.current_part}`) : `${p.current_order} / ${p.current_part}`)
-          : p.file_part ? `${p.file_part} (dosya adından; sistemde siparişi yok)` : 'İş yok'),
+          : p.file_part ? t('{part} (dosya adından; sistemde siparişi yok)', { part: p.file_part }) : 'İş yok'),
         h('dt', null, 'Son görülme'), h('dd', null, fmtDateTime(p.last_seen))));
   };
   function openInfo(id) {
@@ -109,10 +109,10 @@ export function printerRoom(opts) {
       const cur = slot.value || p.rack_slot;
       clear(slot, Array.from({ length: perRow + 1 }, (_, i) => i + 1).map(n => {
         const o = printers.find(x => x.id !== p.id && x.rack_side === side.value && x.rack_level === Number(level.value) && x.rack_slot === n);
-        return h('option', { value: n, selected: n === Number(cur) }, `${n}. sıra${o ? ` — ${o.name}` : ' — boş'}`);
+        return h('option', { value: n, selected: n === Number(cur) }, t('{n}. sıra{extra}', { n, extra: o ? ` — ${o.name}` : t(' — boş') }));
       }));
       const o = occupant();
-      info.textContent = o ? `Bu rafta ${o.name} var; iki yazıcının yeri değiştirilecek.` : 'Boş raf.';
+      info.textContent = o ? t('Bu rafta {name} var; iki yazıcının yeri değiştirilecek.', { name: o.name }) : 'Boş raf.';
     };
     const occupant = () => printers.find(x => x.id !== p.id && x.rack_side === side.value && x.rack_level === Number(level.value) && x.rack_slot === Number(slot.value));
     side.addEventListener('change', fill);
@@ -120,8 +120,8 @@ export function printerRoom(opts) {
     slot.addEventListener('change', fill);
     fill();
     modal({
-      title: `${p.name} — Yerini değiştir`,
-      body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, `Şu an: ${placeText(p)}`),
+      title: t('{name} — Yerini değiştir', { name: p.name }),
+      body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, t('Şu an: {place}', { place: placeText(p) })),
         h('div', { class: 'row' }, field('Taraf', side), field('Kat', level)), field('Sıra (1 = girişe en yakın)', slot), info),
       actions: [
         { label: 'Vazgeç' },
@@ -131,7 +131,7 @@ export function printerRoom(opts) {
             const items = [{ id: p.id, side: side.value, level: Number(level.value), slot: Number(slot.value) }];
             if (o) items.push({ id: o.id, side: p.rack_side, level: p.rack_level, slot: p.rack_slot });
             await api.put('/api/printers/layout', { items });
-            toast(o ? `${p.name} ile ${o.name} yer değiştirdi` : `${p.name} taşındı`);
+            toast(o ? t('{a} ile {b} yer değiştirdi', { a: p.name, b: o.name }) : t('{name} taşındı', { name: p.name }));
             opts.reload();
           },
         },
@@ -143,7 +143,7 @@ export function printerRoom(opts) {
     if (dead) return;
     room = buildRoom(stage, mods, openInfo);
     room.set(printers);
-  }).catch(err => clear(stage, h('div', { class: 'alert err', style: { margin: '16px' } }, `3B görünüm yüklenemedi: ${err.message}`)));
+  }).catch(err => clear(stage, h('div', { class: 'alert err', style: { margin: '16px' } }, t('3B görünüm yüklenemedi: {msg}', { msg: err.message }))));
 
   const api3d = {
     el,

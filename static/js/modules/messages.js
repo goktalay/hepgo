@@ -6,7 +6,7 @@ import { icons } from '../icons.js';
 import { playEvent } from '../sounds.js';
 import { emojiPicker, groupForm, pushToTalk } from '../chat.js';
 import * as voice from './voice.js';
-import { avatar, clear, confirmDialog, fmtDateTime, h, matches, modal, svgIcon, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, fmtDateTime, h, matches, modal, svgIcon, t, toast, toastError } from '../ui.js';
 
 let me = null, ctx = null;
 const hm = iso => (iso || '').slice(11, 16);
@@ -184,11 +184,11 @@ function conversation(container, target) {
   }
 
   function startCall() {
-    if (!peer.online) { toast(`${peer.full_name} çevrimiçi değil`, 'err'); return; }
+    if (!peer.online) { toast(t('{name} çevrimiçi değil', { name: peer.full_name }), 'err'); return; }
     voice.startCall([target.id], { [target.id]: peer.full_name }, { [target.id]: peer.photo });
   }
   function startVideoCall() {
-    if (!peer.online) { toast(`${peer.full_name} çevrimiçi değil`, 'err'); return; }
+    if (!peer.online) { toast(t('{name} çevrimiçi değil', { name: peer.full_name }), 'err'); return; }
     voice.startCall([target.id], { [target.id]: peer.full_name }, { [target.id]: peer.photo }, { video: true });
   }
 
@@ -196,8 +196,8 @@ function conversation(container, target) {
     peer = p;
     clear(av, convAvatar(group ? p : { kind: 'user', ...p }, 'md'));
     nameEl.textContent = group ? p.name : p.full_name;
-    if (group) { statusEl.textContent = p.is_company ? `Şirket kanalı · ${p.member_count} kişi` : `${p.member_count} üye`; input.disabled = !p.can_post; }
-    else { statusEl.textContent = p.absence ? `${p.absence.label} · ${p.absence.until.split('-').reverse().join('.')} tarihine kadar` : p.online ? 'çevrimiçi' : p.last_seen ? `son görülme ${fmtDateTime(p.last_seen)}` : 'çevrimdışı'; statusEl.classList.toggle('on', p.online); callBtn.disabled = !p.online; callBtn.classList.toggle('dim', !p.online); videoBtn.disabled = !p.online; videoBtn.classList.toggle('dim', !p.online); }
+    if (group) { statusEl.textContent = p.is_company ? t('Şirket kanalı · {n} kişi', { n: p.member_count }) : t('{n} üye', { n: p.member_count }); input.disabled = !p.can_post; }
+    else { statusEl.textContent = p.absence ? t('{label} · {date} tarihine kadar', { label: p.absence.label, date: p.absence.until.split('-').reverse().join('.') }) : p.online ? 'çevrimiçi' : p.last_seen ? t('son görülme {d}', { d: fmtDateTime(p.last_seen) }) : 'çevrimdışı'; statusEl.classList.toggle('on', p.online); callBtn.disabled = !p.online; callBtn.classList.toggle('dim', !p.online); videoBtn.disabled = !p.online; videoBtn.classList.toggle('dim', !p.online); }
   }
 
   // Zaman çizelgesi: mesajlar + arama kayıtları + transkript balonları (zamana göre)
@@ -384,7 +384,7 @@ function conversation(container, target) {
     const sendBtnRef = {};
     const upd = () => {
       const n = pickU.size + pickG.size;
-      chosen.textContent = n ? `${n} alıcı seçildi` : 'Alıcı seçin';
+      chosen.textContent = n ? t('{n} alıcı seçildi', { n }) : 'Alıcı seçin';
       if (sendBtnRef.el) sendBtnRef.el.disabled = !n;
     };
     const row = (key, set, id, av, name, sub) => {
@@ -395,12 +395,12 @@ function conversation(container, target) {
       ...groups.filter(g => g.kind === 'group' && matches(q.value, g.name)).map(g => row('g', pickG, g.id, convAvatar(g, 'sm'), g.name, g.is_company ? 'Şirket kanalı' : 'Grup')),
       ...users.filter(u => u.id !== me.id && matches(q.value, u.full_name)).map(u => row('u', pickU, u.id, avatar(u, 'sm'), u.full_name, recent.includes(u.id) ? 'son sohbet' : '')));
     q.addEventListener('input', draw); draw(); upd();
-    const dlg = modal({ title: items.length > 1 ? `${items.length} mesajı ilet` : 'Mesajı ilet', body: h('div', { class: 'msg-fwd' },
-      h('div', { class: 'msg-info-quote' }, items.length > 1 ? `${items.length} mesaj` : snippet(items[0])), q, list, chosen),
+    const dlg = modal({ title: items.length > 1 ? t('{n} mesajı ilet', { n: items.length }) : 'Mesajı ilet', body: h('div', { class: 'msg-fwd' },
+      h('div', { class: 'msg-info-quote' }, items.length > 1 ? t('{n} mesaj', { n: items.length }) : snippet(items[0])), q, list, chosen),
       actions: ['spacer', { label: 'Vazgeç' }, { label: 'İlet', class: 'primary', onClick: async () => {
         if (!pickU.size && !pickG.size) { toast('Alıcı seçin', 'err'); return true; }
         const r = await api.post('/api/chat/forward', { items: items.map(m => ({ kind: kindCode, id: m.id })), users: [...pickU], groups: [...pickG] });
-        toast(r.skipped?.length ? `${r.sent} alıcıya iletildi · gönderilemedi: ${r.skipped.join(', ')}` : `${r.sent} alıcıya iletildi`, r.skipped?.length ? '' : 'success');
+        toast(r.skipped?.length ? t('{n} alıcıya iletildi · gönderilemedi: {who}', { n: r.sent, who: r.skipped.join(', ') }) : t('{n} alıcıya iletildi', { n: r.sent }), r.skipped?.length ? '' : 'success');
         loadList().catch(() => {});
         if (pickU.has(target.id) && !group || pickG.has(target.id) && group) poll();
       } }] });
@@ -423,12 +423,12 @@ function conversation(container, target) {
   }
   // "Yazıyor…": başlıkta durum + sohbetin altında üç noktalı balon
   const typingBubble = h('div', { class: 'chat-msg msg-typing' }, h('div', { class: 'chat-bubble' }, h('span', { class: 'msg-typing-who' }), h('span', { class: 'msg-dots' }, h('i'), h('i'), h('i'))));
-  function applyTyping(t) {
-    const who = group ? (t && t.length ? t : null) : (t ? [peer.full_name] : null);
+  function applyTyping(tp) {
+    const who = group ? (tp && tp.length ? tp : null) : (tp ? [peer.full_name] : null);
     const changed = JSON.stringify(who) !== JSON.stringify(typingNow);
     typingNow = who;
     if (who) {
-      statusEl.textContent = group ? `${who.map(n => n.split(' ')[0]).join(', ')} yazıyor…` : 'yazıyor…';
+      statusEl.textContent = group ? t('{who} yazıyor…', { who: who.map(n => n.split(' ')[0]).join(', ') }) : 'yazıyor…';
       statusEl.classList.add('typing');
       typingBubble.querySelector('.msg-typing-who').textContent = group ? `${who.map(n => n.split(' ')[0]).join(', ')}` : '';
     } else statusEl.classList.remove('typing');
@@ -447,7 +447,7 @@ function conversation(container, target) {
     const processing = c.recorded && c.process_status !== 'TAMAM' && c.process_status !== 'HATA';
     const failed = c.recorded && c.process_status === 'HATA';
     const tag = !c.recorded ? null
-      : hasText ? `🎧 ${c.segments.length} konuşma · aç` : processing ? '🎧 işleniyor…' : failed ? 'kayıt hatası' : '🎧 kayıt · aç';
+      : hasText ? t('🎧 {n} konuşma · aç', { n: c.segments.length }) : processing ? '🎧 işleniyor…' : failed ? 'kayıt hatası' : '🎧 kayıt · aç';
     const panel = h('div', { class: 'msg-call-panel', hidden: true });
     let built = false;
     const buildPanel = () => {
@@ -471,7 +471,7 @@ function conversation(container, target) {
               h('div', { class: `tr-who ${s.speaker_user ? '' : 'unknown'}` }, s.speaker_label || 'Konuşmacı'),
               h('div', { class: 'chat-text' }, s.text), h('span', { class: 'chat-meta' }, mmss(s.t0), ' ▶')))));
       } else if (failed) {
-        clear(panel, h('div', { class: 'msg-tr-note err' }, `Kayıt işlenemedi: ${c.process_error || 'bilinmeyen hata'}`));
+        clear(panel, h('div', { class: 'msg-tr-note err' }, t('Kayıt işlenemedi: {err}', { err: c.process_error || 'bilinmeyen hata' })));
       } else if (c.process_status === 'TAMAM') {
         const audio = audios[c.id] || (audios[c.id] = h('audio', { class: 'msg-tr-audio', src: `/api/voice/calls/${c.id}/audio`, controls: true, preload: 'none' }));
         clear(panel, h('div', { class: 'msg-tr-head' }, 'Anlaşılır konuşma bulunamadı — kaydı dinleyebilirsiniz'), audio);
@@ -483,7 +483,7 @@ function conversation(container, target) {
     const toggle = () => { if (!c.recorded) return; const open = panel.hidden; openCalls[open ? 'add' : 'delete'](c.id); apply(open); };
     const log = h('div', { class: `msg-callog ${c.recorded ? 'clickable' : ''}`, onclick: toggle },
       h('span', { class: 'msg-callog-ic' }, svgIcon(icons.phone)),
-      h('span', { class: 'grow' }, h('b', null, `${mine ? 'Giden' : 'Gelen'} arama`), h('small', null, `${st}${dur} · ${hm(c.started_at)}`)),
+      h('span', { class: 'grow' }, h('b', null, t('{dir} arama', { dir: mine ? 'Giden' : 'Gelen' })), h('small', null, `${st}${dur} · ${hm(c.started_at)}`)),
       tag ? h('span', { class: `msg-callog-tag ${processing ? 'proc' : ''}` }, tag) : null,
       c.recorded ? h('span', { class: 'msg-callog-chev' }, '▾') : null);
     if (c.recorded && openCalls.has(c.id)) apply(true);   // rebuild sonrası açık kalsın
@@ -514,7 +514,7 @@ function conversation(container, target) {
     catch (err) { tmp.remove(); toastError(err); }
   }
   const sendText = () => { const t = input.value.trim(); if (!t) return; input.value = ''; autosize(); const fd = new FormData(); fd.append('body', t); send(fd, t); };
-  const sendFiles = files => { for (const f of files) { if (f.size > 25 * 1024 * 1024) { toast(`${f.name}: 25 MB üstü`, 'err'); continue; } const fd = new FormData(); fd.append('file', f); send(fd, `📎 ${f.name}`); } };
+  const sendFiles = files => { for (const f of files) { if (f.size > 25 * 1024 * 1024) { toast(t('{name}: 25 MB üstü', { name: f.name }), 'err'); continue; } const fd = new FormData(); fd.append('file', f); send(fd, `📎 ${f.name}`); } };
   const autosize = () => { input.style.height = 'auto'; input.style.height = `${Math.min(120, input.scrollHeight)}px`; };
   input.addEventListener('input', autosize);
   input.addEventListener('input', () => {   // karşı tarafa "yazıyor…" (en fazla ~2,5 sn'de bir)

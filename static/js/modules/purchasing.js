@@ -5,7 +5,7 @@ import { foot, head as printHead, printPage } from '../print.js';
 import { renderSuppliers } from './companies.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
-  toast, toastError, periodFilter
+  t, toast, toastError, periodFilter
 } from '../ui.js';
 
 const SUBS = [
@@ -103,7 +103,7 @@ function requestForm(r) {
   const needed = h('input', { class: 'input', type: 'date', value: r?.needed_by || '' });
   const note = h('textarea', { class: 'input', rows: 3 }, r?.note || '');
   modal({
-    title: r ? `${r.code} · Düzenle` : 'Yeni Satın Alma Talebi',
+    title: r ? t('{code} · Düzenle', { code: r.code }) : 'Yeni Satın Alma Talebi',
     body: h('div', null, field('Talep başlığı *', title), field('İhtiyaç tarihi', needed), field('Açıklama', note)),
     actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
       const body = { title: title.value, needed_by: needed.value || null, note: note.value };
@@ -154,7 +154,7 @@ async function renderRequest(view, id, isAdmin) {
     r.status === 'ONAYLANDI' ? [h('button', { class: 'btn', onclick: () => quoteForm(null, r) }, 'Teklif Al'),
       remaining.length ? h('button', { class: 'btn primary', onclick: () => invoiceForm({ request: r, lines: remaining.map(i => ({ product_id: i.product_id, qty: i.left })) }) }, 'Fatura / İrsaliye Gir') : null] : null,
     !['TAMAMLANDI', 'IPTAL'].includes(r.status) ? h('button', { class: 'btn ghost danger-text', onclick: async () => {
-      if (await confirmDialog('Talebi iptal et', `${r.code} iptal edilsin mi?`, { okLabel: 'İptal Et', danger: true })) act(`/api/purchasing/requests/${id}/cancel`, 'Talep iptal edildi');
+      if (await confirmDialog('Talebi iptal et', t('{code} iptal edilsin mi?', { code: r.code }), { okLabel: 'İptal Et', danger: true })) act(`/api/purchasing/requests/${id}/cancel`, 'Talep iptal edildi');
     } }, 'İptal Et') : null,
   ];
   clear(view,
@@ -171,7 +171,7 @@ async function renderRequest(view, id, isAdmin) {
         r.invoices.length ? [h('dt', null, 'Faturalar'), h('dd', null, r.invoices.map(d => `${d.kind === 'FATURA' ? 'Fatura' : 'İrsaliye'} ${d.number || ''} (${d.company_name || ''})`).join(', '))] : null),
       r.status === 'REDDEDILDI' ? h('div', { class: 'hr-alert' }, 'Talep reddedildi. Kalemleri düzeltip yeniden onaya gönderebilirsiniz.') : null),
     h('div', { class: 'card card-pad' },
-      h('div', { class: 'tv-bar' }, h('b', null, `Kalemler (${r.items.length})`), h('span', { class: 'spacer' }),
+      h('div', { class: 'tv-bar' }, h('b', null, t('Kalemler ({n})', { n: r.items.length })), h('span', { class: 'spacer' }),
         editable ? h('button', { class: 'btn sm primary', onclick: () => itemForm(null) }, '＋ Kalem Ekle') : null),
       r.items.length ? h('table', { class: 'table' },
         h('thead', null, h('tr', null, h('th', null, 'Malzeme'), h('th', null, 'Tip'), h('th', { class: 'num' }, 'Talep'), h('th', { class: 'num' }, 'Teslim alınan'),
@@ -208,7 +208,7 @@ async function renderInvoices(view) {
       h('div', { class: 'tv-bar' },
         h('span', { class: `badge ${d.kind === 'FATURA' ? 'blue' : 'purple'}` }, d.kind === 'FATURA' ? 'Fatura' : 'İrsaliye'),
         h('b', { class: 'mono' }, d.number || '—'), h('span', null, d.company_name || d.supplier || ''), h('span', { class: 'small muted' }, fmtDate(d.doc_date)),
-        d.request_code ? h('a', { class: 'small', href: `#/purchasing/requests/${d.request_id}` }, `Talep ${d.request_code}`) : null,
+        d.request_code ? h('a', { class: 'small', href: `#/purchasing/requests/${d.request_id}` }, t('Talep {code}', { code: d.request_code })) : null,
         h('span', { class: 'spacer' }),
         h('span', { class: 'small muted' }, `→ ${d.warehouse_name || '—'}`),
         d.file ? h('a', { class: 'btn sm', href: fileUrl(d.file), target: '_blank', rel: 'noopener' }, 'Belge') : h('button', { class: 'btn sm danger-text', onclick: () => attachFile(d) }, 'Belge dosyası ekle')),
@@ -217,7 +217,7 @@ async function renderInvoices(view) {
         h('td', null, typeTag(l.type)), h('td', { class: 'num' }, `${num(l.qty)} ${l.unit || ''}`),
         h('td', { class: 'num small muted' }, l.unit_price != null ? `${money(l.unit_price)} / ${l.unit || 'adet'}` : ''),
         h('td', { class: 'num' }, l.unit_price != null ? money(l.qty * l.unit_price) : ''))))),
-      h('div', { class: 'pu-inv-total' }, d.amount ? `Belge tutarı: ${money(d.amount)}` : d.lines_total ? `Kalemler toplamı: ${money(d.lines_total)}` : '',
+      h('div', { class: 'pu-inv-total' }, d.amount ? t('Belge tutarı: {v}', { v: money(d.amount) }) : d.lines_total ? t('Kalemler toplamı: {v}', { v: money(d.lines_total) }) : '',
         h('span', { class: 'small muted' }, ` · ${d.user_name || ''} · ${fmtDateTime(d.created_at)}`)))))
       : h('div', { class: 'card empty' }, list.length ? 'Filtreye uyan belge yok' : 'Henüz fatura / irsaliye girilmedi'));
   };
@@ -287,7 +287,7 @@ async function invoiceForm({ request = null, lines = [] }) {
       const { id } = await api.post('/api/purchasing/invoices', { kind: kind.value, number: number.value, doc_date: date.value, company_id: sup.value ? Number(sup.value) : null,
         warehouse_id: Number(dep.value), request_id: req.value ? Number(req.value) : null, amount: amount.value === '' ? null : Number(amount.value), note: note.value, lines: lns });
       if (file.files[0]) { const fd = new FormData(); fd.append('file', file.files[0]); await upload(`/api/purchasing/invoices/${id}/file`, fd).catch(toastError); }
-      toast(`${lns.length} kalem ${dep.selectedOptions[0].textContent} deposuna girdi`);
+      toast(t('{n} kalem {depot} deposuna girdi', { n: lns.length, depot: dep.selectedOptions[0].textContent }));
       location.hash = '#/purchasing/invoices';
       reload();
     } }],
@@ -309,8 +309,8 @@ async function renderQuotes(view) {
       h('div', { class: 'tv-bar' }, h('b', { class: 'mono' }, x.code), h('span', { class: 'badge gray' }, `Rev. ${x.revision}`), h('span', { class: 'spacer' }),
         h('span', { class: `badge ${QUOTE_TONE[x.status]}` }, x.status_label)),
       h('div', { class: 'pu-quote-title' }, x.title), h('div', { class: 'small muted' }, x.company_name || ''),
-      h('div', { class: 'pu-quote-total' }, money(x.total, x.currency), h('small', null, `${x.items.length} kalem · KDV dahil`)),
-      h('div', { class: 'small muted' }, x.sent_at ? `İletildi ${fmtDateTime(x.sent_at)}` : `Oluşturuldu ${fmtDate(x.created_at)}`, x.revision_count ? ` · ${x.revision_count} eski revizyon` : ''))))
+      h('div', { class: 'pu-quote-total' }, money(x.total, x.currency), h('small', null, t('{n} kalem · KDV dahil', { n: x.items.length }))),
+      h('div', { class: 'small muted' }, x.sent_at ? t('İletildi {at}', { at: fmtDateTime(x.sent_at) }) : t('Oluşturuldu {at}', { at: fmtDate(x.created_at) }), x.revision_count ? t(' · {n} eski revizyon', { n: x.revision_count }) : ''))))
       : h('div', { class: 'card table-wrap' }, h('table', { class: 'table' },
         h('thead', null, h('tr', null, h('th', null, 'Teklif'), h('th', null, 'Konu'), h('th', null, 'Tedarikçi'), h('th', null, 'Rev.'), h('th', { class: 'num' }, 'Toplam'), h('th', null, 'Durum'))),
         h('tbody', null, rows.map(x => h('tr', { class: 'click', onclick: () => { location.hash = `#/purchasing/quotes/${x.id}`; } },
@@ -335,7 +335,7 @@ async function quoteForm(x, request = null) {
   const valid = h('input', { class: 'input', type: 'date', value: x?.valid_until || '' });
   const note = h('textarea', { class: 'input', rows: 3 }, x?.note || '');
   modal({
-    title: x ? `${x.code} · Düzenle` : request ? `${request.code} için teklif` : 'Yeni Teklif',
+    title: x ? t('{code} · Düzenle', { code: x.code }) : request ? t('{code} için teklif', { code: request.code }) : 'Yeni Teklif',
     body: h('div', null, h('div', { class: 'form-grid' }, field('Tedarikçi *', sup), field('Teklif konusu *', title), field('Para birimi', cur),
       field('KDV (%)', vat), field('Geçerlilik tarihi', valid)), field('Açıklama / koşullar', note),
       request ? h('div', { class: 'small muted' }, 'Talebin kalemleri teklife aktarılır; fiyatları teklif ekranında girin.') : null),
@@ -364,7 +364,7 @@ async function renderQuote(view, id, ctx) {
     modal({
       title: it ? 'Kalemi Düzenle' : 'Teklife Kalem Ekle', wide: true,
       body: h('div', null, field('Malzeme', mat), field('Açıklama', desc),
-        h('div', { class: 'form-grid' }, field('Miktar', qty), field('Birim', unit), field(`Birim fiyat (${x.currency})`, price)), field('Not', note)),
+        h('div', { class: 'form-grid' }, field('Miktar', qty), field('Birim', unit), field(t('Birim fiyat ({cur})', { cur: x.currency }), price)), field('Not', note)),
       actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
         const body = { product_id: mat.value ? Number(mat.value) : null, description: desc.value, qty: Number(qty.value), unit: unit.value, unit_price: price.value === '' ? null : Number(price.value), note: note.value };
         if (it) await api.put(`/api/purchasing/quotes/${id}/items/${it.id}`, body); else await api.post(`/api/purchasing/quotes/${id}/items`, body);
@@ -375,7 +375,7 @@ async function renderQuote(view, id, ctx) {
   const revise = () => {
     const reason = h('input', { class: 'input', placeholder: 'ör. Tedarikçi fiyat güncelledi, miktar değişti' });
     modal({
-      title: `${x.code} · Revize Et`, body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, `Rev. ${x.revision} saklanır; teklif Rev. ${x.revision + 1} olarak yeniden düzenlenebilir.`), field('Revizyon sebebi', reason)),
+      title: t('{code} · Revize Et', { code: x.code }), body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, t('Rev. {rev} saklanır; teklif Rev. {rev2} olarak yeniden düzenlenebilir.', { rev: x.revision, rev2: x.revision + 1 })), field('Revizyon sebebi', reason)),
       actions: [{ label: 'Vazgeç' }, { label: 'Revize Et', class: 'primary', onClick: async () => { await api.post(`/api/purchasing/quotes/${id}/revise`, { reason: reason.value }); toast('Yeni revizyon açıldı'); reload(); } }],
     });
   };
@@ -388,7 +388,7 @@ async function renderQuote(view, id, ctx) {
     !draft ? h('button', { class: 'btn primary', onclick: revise }, 'Revize Et') : null,
   ];
   clear(view,
-    pageHead(`${x.code} · ${x.title}`, { back: '#/purchasing/quotes', sub: `Satın Alma · Teklif Yönetimi · Rev. ${x.revision}` }),
+    pageHead(`${x.code} · ${x.title}`, { back: '#/purchasing/quotes', sub: t('Satın Alma · Teklif Yönetimi · Rev. {rev}', { rev: x.revision }) }),
     moduleToolbar(actions),
     h('div', { class: 'card card-pad pu-head' }, h('dl', { class: 'hr-kv' },
       h('dt', null, 'Durum'), h('dd', null, h('span', { class: `badge ${QUOTE_TONE[x.status]}` }, x.status_label), x.sent_to ? ` · ${x.sent_to}` : '', x.sent_at ? ` · ${fmtDateTime(x.sent_at)}` : ''),
@@ -400,7 +400,7 @@ async function renderQuote(view, id, ctx) {
       h('dt', null, 'Hazırlayan'), h('dd', null, `${x.created_by_name || ''} · ${fmtDateTime(x.created_at)}`)),
     !draft ? h('div', { class: 'small muted', style: { marginTop: '8px' } }, 'Firmaya iletilen teklif değiştirilemez; değişiklik için “Revize Et”.') : null),
     h('div', { class: 'card card-pad' },
-      h('div', { class: 'tv-bar' }, h('b', null, `Kalemler (${x.items.length})`), h('span', { class: 'spacer' }),
+      h('div', { class: 'tv-bar' }, h('b', null, t('Kalemler ({n})', { n: x.items.length })), h('span', { class: 'spacer' }),
         draft ? h('button', { class: 'btn sm primary', onclick: () => itemForm(null) }, '＋ Kalem Ekle') : null),
       quoteTable(x, draft ? { edit: itemForm, del: async it => { await api.del(`/api/purchasing/quotes/${id}/items/${it.id}`); reload(); } } : null)),
     x.revisions.length ? h('div', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Eski revizyonlar'),
@@ -430,7 +430,7 @@ async function showRevision(x, r) {
   modal({
     title: `${x.code} · Rev. ${d.revision}`, wide: true,
     body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } },
-      `${d.title} · ${d.company_name || ''} · ${d.status_label}${d.sent_at ? ` · iletildi ${fmtDateTime(d.sent_at)}${d.sent_to ? ` (${d.sent_to})` : ''}` : ''} · revize edildi ${fmtDateTime(d.revised_at)}${d.revision_reason ? ` — ${d.revision_reason}` : ''}`),
+      t('{title} · {company} · {status}{sent} · revize edildi {at}{reason}', { title: d.title, company: d.company_name || '', status: d.status_label, sent: d.sent_at ? t(' · iletildi {at}{to}', { at: fmtDateTime(d.sent_at), to: d.sent_to ? ` (${d.sent_to})` : '' }) : '', at: fmtDateTime(d.revised_at), reason: d.revision_reason ? ` — ${d.revision_reason}` : '' })),
     quoteTable({ ...d, items: d.items }, null), d.note ? h('p', { class: 'pre small' }, d.note) : null),
     actions: [{ label: 'Kapat' }],
   });
@@ -460,7 +460,7 @@ async function sendQuote(x) {
   const msg = h('textarea', { class: 'input', rows: 5 }, `Merhaba,\n\n${x.title} konulu teklifimiz ektedir.\n\nSaygılarımızla,\n${company}`);
   const markOnly = async () => { await api.post(`/api/purchasing/quotes/${x.id}/sent`, { sent_to: to.value || 'elden / yazdırılarak' }); toast('Teklif firmaya iletildi olarak işaretlendi'); reload(); };
   modal({
-    title: `${x.code} · Firmaya İlet`, wide: true,
+    title: t('{code} · Firmaya İlet', { code: x.code }), wide: true,
     body: h('div', null, field('Alıcı e-posta', to), field('Konu', subject), field('Mesaj', msg),
       h('div', { class: 'small muted' }, 'E-posta, Kişisel › Mail’e bağlı hesabınızdan teklif belgesi (HTML) ekiyle gönderilir. İletildikten sonra teklif değiştirilemez; değişiklik revizyonla yapılır.')),
     actions: [{ label: 'Vazgeç' }, 'spacer', { label: 'Gönderildi Olarak İşaretle', onClick: markOnly },

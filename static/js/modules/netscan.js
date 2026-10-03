@@ -1,7 +1,7 @@
 // Araçlar › Ağ Tarayıcı: sunucunun yerel ağındaki cihazlar (IP, bilgisayar adı, MAC, üretici, açık portlar, tür).
 // Tarama sunucuda arka planda çalışır; sayfa ilerlemeyi saniyede bir okur. Yalnızca Sistem Yöneticisi.
 import { api } from '../api.js';
-import { clear, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, selectInput, setPref, statStrip, toast, toastError } from '../ui.js';
+import { clear, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, selectInput, setPref, statStrip, t, toast, toastError } from '../ui.js';
 
 const ipKey = ip => (ip || '').split('.').map(n => n.padStart(3, '0')).join('.');
 const WEB = { 80: 'http', 8080: 'http', 443: 'https', 7125: 'http' };
@@ -38,8 +38,8 @@ export async function renderNetscan(view) {
     const cur = kind.value;
     clear(kind, h('option', { value: '' }, 'Tüm cihaz türleri'), kinds.map(k => h('option', { value: k, selected: k === cur }, k)));
     const l = data.last;
-    info.textContent = l ? `Son tarama ${fmtDateTime(l.at)} · ${l.networks.map(x => `${x.cidr} (${x.iface})`).join(', ')}${l.gateway ? ` · ağ geçidi ${l.gateway}` : ''} · ${l.count} IP`
-      : `Henüz tarama yapılmadı · ${data.networks.map(x => x.cidr).join(', ') || 'yerel ağ bulunamadı'}`;
+    info.textContent = l ? t('Son tarama {at} · {nets}{gw} · {count} IP', { at: fmtDateTime(l.at), nets: l.networks.map(x => `${x.cidr} (${x.iface})`).join(', '), gw: l.gateway ? ` · ağ geçidi ${l.gateway}` : '', count: l.count })
+      : t('Henüz tarama yapılmadı · {nets}', { nets: data.networks.map(x => x.cidr).join(', ') || 'yerel ağ bulunamadı' });
     const rows = shown();
     clear(body, rows.length ? h('div', { class: 'card table-wrap' }, h('table', { class: 'table ns-table' },
       h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'IP'), h('th', null, 'Bilgisayar adı'), h('th', null, 'Tür'),
@@ -49,14 +49,14 @@ export async function renderNetscan(view) {
         h('td', { class: 'mono' }, h('b', null, d.ip), d.is_server ? h('div', { class: 'small muted' }, 'bu sunucu') : d.is_gateway ? h('div', { class: 'small muted' }, 'ağ geçidi') : null),
         h('td', null, d.label ? h('b', null, d.label) : null, d.hostname ? h('div', { class: d.label ? 'small muted' : '' }, d.hostname) : (d.label ? null : h('span', { class: 'muted' }, '—')),
           d.known ? h('div', { class: 'small ns-known' }, d.known) : null,
-          d.workgroup ? h('div', { class: 'small muted' }, `Çalışma grubu: ${d.workgroup}`) : null,
+          d.workgroup ? h('div', { class: 'small muted' }, t('Çalışma grubu: {wg}', { wg: d.workgroup })) : null,
           d.note ? h('div', { class: 'small muted' }, d.note) : null),
         h('td', null, h('span', { class: 'badge gray' }, d.kind || '—')),
         h('td', null, h('div', { class: 'mono small' }, d.mac || '—'), h('div', { class: 'small muted' }, d.vendor || '')),
         h('td', null, h('div', { class: 'ns-ports' }, d.ports.map(p => WEB[p.port] && d.online
-          ? h('a', { class: 'chip', href: `${WEB[p.port]}://${d.ip}${[80, 443].includes(p.port) ? '' : `:${p.port}`}/`, target: '_blank', rel: 'noopener', title: `${p.name} arayüzünü aç` }, p.name)
+          ? h('a', { class: 'chip', href: `${WEB[p.port]}://${d.ip}${[80, 443].includes(p.port) ? '' : `:${p.port}`}/`, target: '_blank', rel: 'noopener', title: t('{name} arayüzünü aç', { name: p.name }) }, p.name)
           : h('span', { class: 'chip', title: `Port ${p.port}` }, p.name)))),
-        h('td', { class: 'small muted' }, `Son: ${fmtDateTime(d.last_seen)}`, h('div', null, `İlk: ${fmtDateTime(d.first_seen)}`)),
+        h('td', { class: 'small muted' }, t('Son: {dt}', { dt: fmtDateTime(d.last_seen) }), h('div', null, t('İlk: {dt}', { dt: fmtDateTime(d.first_seen) }))),
         h('td', { class: 'actions' },
           h('button', { class: 'btn sm', onclick: () => labelModal(d) }, 'Ad Ver'),
           d.online ? null : h('button', { class: 'btn sm ghost', onclick: () => forget(d) }, 'Sil')))))))
@@ -82,7 +82,7 @@ export async function renderNetscan(view) {
       if (!st.running) {
         wasRunning = false;
         await reload();
-        if (st.error) toastError(new Error(st.error)); else toast(`Tarama tamamlandı: ${data.devices.filter(d => d.online).length} cihaz`);
+        if (st.error) toastError(new Error(st.error)); else toast(t('Tarama tamamlandı: {n} cihaz', { n: data.devices.filter(d => d.online).length }));
       }
     } catch { /* sayfa değişti */ }
   });
@@ -103,7 +103,7 @@ export async function renderNetscan(view) {
     const label = h('input', { class: 'input', value: d.label || '', placeholder: 'ör. Muhasebe PC, Toplantı odası TV' });
     const note = h('input', { class: 'input', value: d.note || '' });
     modal({
-      title: `${d.ip} · Ad Ver`,
+      title: t('{ip} · Ad Ver', { ip: d.ip }),
       body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, `${d.hostname || 'Adı bulunamadı'} · ${d.mac || 'MAC yok'} · ${d.vendor || ''}`),
         field('Ad', label, 'Cihaz MAC adresiyle izlenir; IP değişse de ad korunur'), field('Not', note)),
       actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {

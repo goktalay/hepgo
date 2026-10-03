@@ -8,7 +8,7 @@ import { buildFlightReport, printFlightReport } from '../flightreport.js';
 import { icons } from '../icons.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, pageHead, progressBar, selectInput, statStrip,
-  svgIcon, toast, uploadPanel,
+  svgIcon, t, toast, uploadPanel,
   toastError,
 } from '../ui.js';
 import { clock } from '../chart.js';
@@ -94,7 +94,7 @@ async function renderFlightLogs(view, ctx) {
     const signal = progress.start();
     try {
       // Büyük loglar parça parça gönderilir; "Yüklemeyi İptal Et" ile durdurulabilir
-      const uploadId = await uploadLarge(f, 'flightlogs', pct => progress.set(`${f.name} yükleniyor…`, pct), signal);
+      const uploadId = await uploadLarge(f, 'flightlogs', pct => progress.set(t('{name} yükleniyor…', { name: f.name }), pct), signal);
       const { id } = await api.post('/api/tools/flight-logs/chunked', { upload_id: uploadId, ...meta });
       toast('Log yüklendi, analiz ediliyor');
       location.hash = `#/tools/flight-log/${id}`;
@@ -121,7 +121,7 @@ async function renderFlightLogs(view, ctx) {
         h('td', { style: { whiteSpace: 'normal' } }, l.pilot || '—'),
         h('td', null, fmtDateTime(l.takeoff_utc || l.start_utc)),
         h('td', null, l.flight_s != null ? clock(l.flight_s) : '—'),
-        h('td', null, l.task_code ? `Saha görevi ${l.task_code}` : 'Araçlar'),
+        h('td', null, l.task_code ? t('Saha görevi {code}', { code: l.task_code }) : 'Araçlar'),
         h('td', null, logBadge(l.status), l.error ? h('div', { class: 'small', style: { color: 'var(--danger)', whiteSpace: 'normal', maxWidth: '260px' } }, l.error) : null),
         h('td', { class: 'muted' }, l.uploaded_by_name || '—', h('div', { class: 'small' }, fmtDateTime(l.uploaded_at))),
         h('td', { class: 'num' },
@@ -150,7 +150,7 @@ async function renderFlightLogs(view, ctx) {
 }
 
 async function remove(l, reload) {
-  if (!await confirmDialog('Uçuş logunu sil', `${l.file_name} ve raporu silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+  if (!await confirmDialog('Uçuş logunu sil', t('{name} ve raporu silinsin mi?', { name: l.file_name }), { okLabel: 'Sil', danger: true })) return;
   try {
     await api.del(`/api/tools/flight-logs/${l.id}`);
     toast('Silindi');
@@ -161,7 +161,7 @@ async function remove(l, reload) {
 // ---------- Rapor görünümü (Araçlar ve Saha Yönetimi ortak) ----------
 export async function renderReportView(view, id, back, ctx) {
   const log = await api.get(`/api/flight-logs/${id}`);
-  const title = `Uçuş Raporu — ${log.file_name}`;
+  const title = t('Uçuş Raporu — {name}', { name: log.file_name });
   if (log.status === 'ISLENIYOR') {
     clear(view, pageHead(title, { back }),
       h('div', { class: 'card empty' }, h('b', null, 'Log analiz ediliyor…'),

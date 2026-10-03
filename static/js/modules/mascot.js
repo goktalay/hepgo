@@ -2,7 +2,7 @@
 // tıklanınca Claude API sohbet penceresi açılır. Sürüklenip taşınabilir (yeri cihazda saklanır) ve orada oynamaya
 // devam eder. Karakter Kişisel Ayarlar → Maskot'tan seçilir (kullanıcıya kayıtlı). Anahtar tanımlı değilse gösterilmez.
 import { api } from '../api.js';
-import { h, clear, svgIcon } from '../ui.js';
+import { h, clear, svgIcon, t } from '../ui.js';
 import { icons } from '../icons.js';
 
 // ---- Maskot karakterleri (SVG). Ortak sınıf kancaları: .m-pop (kafa → şişip patlama), .m-wavearm (el sallama). ----
@@ -196,7 +196,7 @@ export async function mountMascot(ctx) {
     log.append(b); log.scrollTop = log.scrollHeight;
     return b;
   }
-  const greet = () => bubble('assistant', `Merhaba! Ben ${MASCOTS[curId].name} 👋 Sana nasıl yardımcı olabilirim?`);
+  const greet = () => bubble('assistant', t('Merhaba! Ben {name} 👋 Sana nasıl yardımcı olabilirim?', { name: MASCOTS[curId].name }));
   if (!convo.length) greet(); else for (const m of convo) bubble(m.role, m.content);
 
   let busy = false;
@@ -233,10 +233,10 @@ export async function mountMascot(ctx) {
       const d = await api.get('/api/assistant/changes');
       if (!d.unseen?.length) return;
       for (const r of d.unseen) {
-        const t = r.status === 'ONAYLANDI' ? `✅ İsteğin onaylandı ve uygulandı: “${r.summary}”${r.affected != null ? ` (${r.affected} kayıt)` : ''}`
-          : r.status === 'RED' ? `❌ İsteğin reddedildi: “${r.summary}”${r.note ? ` — ${r.note}` : ''}`
-          : `⚠️ İsteğin onaylandı ama uygulanamadı: “${r.summary}”${r.note ? ` — ${r.note}` : ''}`;
-        bubble('assistant', t);
+        const msg = r.status === 'ONAYLANDI' ? t('✅ İsteğin onaylandı ve uygulandı: “{summary}”{extra}', { summary: r.summary, extra: r.affected != null ? t(' ({n} kayıt)', { n: r.affected }) : '' })
+          : r.status === 'RED' ? t('❌ İsteğin reddedildi: “{summary}”{note}', { summary: r.summary, note: r.note ? ` — ${r.note}` : '' })
+          : t('⚠️ İsteğin onaylandı ama uygulanamadı: “{summary}”{note}', { summary: r.summary, note: r.note ? ` — ${r.note}` : '' });
+        bubble('assistant', msg);
       }
       api.post('/api/assistant/changes/ack', {}).catch(() => {});
     } catch { /* */ }

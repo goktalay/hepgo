@@ -8,7 +8,7 @@ import { stockPicker } from '../stockpick.js';
 import {
   clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
-  internTag, nameWithIntern, periodFilter
+  internTag, nameWithIntern, periodFilter, t as tr
 } from '../ui.js';
 import { clock } from '../chart.js';
 import { render3D } from './replay3d.js';
@@ -71,7 +71,7 @@ async function renderList(view, ctx) {
       { label: 'Başlangıçta bekleyen', value: n('BASLANGIC') },
       { label: 'Görevde', value: n('GOREVDE'), tone: n('GOREVDE') ? 'ok' : '' },
       { label: 'Rapor bekleyen', value: n('GOREV_TAMAMLANDI') + n('BASARISIZ'), tone: n('GOREV_TAMAMLANDI') + n('BASARISIZ') ? 'alert' : '' },
-      { label: 'Toplam uçuş', value: tasks.reduce((a, t) => a + t.flights.length, 0), sub: `raporu hazır: ${tasks.reduce((a, t) => a + t.logs_ready, 0)}` },
+      { label: 'Toplam uçuş', value: tasks.reduce((a, t) => a + t.flights.length, 0), sub: tr('raporu hazır: {n}', { n: tasks.reduce((a, t) => a + t.logs_ready, 0) }) },
       { label: 'Toplam masraf', value: tl(tasks.reduce((a, t) => a + t.expense_total, 0)) },
       { label: 'Toplam yol', value: km(tasks.reduce((a, t) => a + (t.distance_km || 0), 0)) },
       { label: 'Benim açık görevlerim', value: open.filter(mine).length },
@@ -92,7 +92,7 @@ async function renderList(view, ctx) {
         .map(c => h('th', null, c)))),
       h('tbody', null, list.map(t => h('tr', { class: 'click', onclick: () => { location.hash = `#/field/task/${t.id}`; } },
         h('td', null, h('b', { class: 'mono' }, t.code), h('div', { style: { marginTop: '4px' } }, badge(TASK_STATES, t.status))),
-        h('td', null, h('b', { class: 'mono' }, t.aircraft || '—'), h('div', { class: 'task-sub' }, `${t.flights.length} uçuş`)),
+        h('td', null, h('b', { class: 'mono' }, t.aircraft || '—'), h('div', { class: 'task-sub' }, tr('{n} uçuş', { n: t.flights.length }))),
         h('td', null,
           h('b', null, t.lead_name || '—'), h('span', { class: 'small muted' }, ' · saha sorumlusu'),
           line('Pilot', t.pilot_name),
@@ -158,7 +158,7 @@ async function renderFlightsList(view, ctx) {
         h('td', null, f.location_name || '—', h('div', { class: 'small muted' }, f.pilot_name || '')),
         h('td', null, f.log_status ? logBadge(f.log_status) : h('span', { class: 'muted' }, 'Yüklenmedi')),
         h('td', null, f.flight_s != null ? clock(f.flight_s) : '—'),
-        h('td', { class: 'small' }, `${f.note_count} not · ${f.media_count} dosya`))))))
+        h('td', { class: 'small' }, tr('{notes} not · {files} dosya', { notes: f.note_count, files: f.media_count })))))))
       : h('div', { class: 'card empty' }, mode === 'ready' ? 'Uçuşa hazır uçak yok. Saha görevine eklenen, montajı bitmiş uçaklar burada görünür.'
         : 'Kayıt yok'));
   };
@@ -192,7 +192,7 @@ async function newTask(ctx, done) {
       h('span', { class: `badge ${USAGE_TYPES[a.usage_type]?.badge || 'gray'}`,
         title: a.usage_type === 'TEK' ? 'Uçtuktan sonra hurdaya ayrılır, yeniden sahaya gidemez' : 'Görev bittikten sonra yeniden sahaya gidebilir' },
         USAGE_TYPES[a.usage_type]?.label || a.usage_type),
-      a.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti (uçmadı ya da çoklu kullanım)' }, `${a.past_tasks} görev yaptı`) : null,
+      a.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti (uçmadı ya da çoklu kullanım)' }, tr('{n} görev yaptı', { n: a.past_tasks })) : null,
       a.status === 'MONTAJ' ? h('span', { class: 'badge yellow', title: 'Montajı sahada tamamlanacak' }, 'Montajda')
         : h('span', { class: 'badge green' }, 'Saha deposu'));
     cb.addEventListener('change', () => { cb.checked ? picked.add(a.id) : picked.delete(a.id); el.classList.toggle('on', cb.checked); });
@@ -243,7 +243,7 @@ async function newTask(ctx, done) {
             order_ids: [...picked], lead_id: Number(lead.value), pilot_id: Number(pilot.value),
             staff_ids: [...chosen.keys()], location_id: place.value ? Number(place.value) : null, note: note.value.trim() || null,
           });
-          toast(`${code} görev kodu ile oluşturuldu`);
+          toast(tr('{code} görev kodu ile oluşturuldu', { code }));
           done?.();
           location.hash = `#/field/task/${id}`;
         },
@@ -306,14 +306,14 @@ async function renderTask(view, id, ctx) {
       catch (err) { toastError(err); } finally { repBtn.disabled = false; }
     });
     actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Belgeler' }, formBtn, repBtn));
-    clear(head, pageHead(`Saha görevi ${t.code}`, {
+    clear(head, pageHead(tr('Saha görevi {code}', { code: t.code }), {
       back: '#/field',
-      sub: h('span', null, badge(TASK_STATES, t.status), '  ', `Saha sorumlusu: ${t.lead_name || '—'}`),
+      sub: h('span', null, badge(TASK_STATES, t.status), '  ', tr('Saha sorumlusu: {name}', { name: t.lead_name || '—' })),
     }), moduleToolbar(actions));
     stats.set([
       { label: 'Uçuş', value: t.flights.length },
       { label: 'Raporu hazır uçuş', value: `${t.logs_ready}/${t.flights.length}`, tone: t.logs_ready === t.flights.length && t.flights.length ? 'ok' : '' },
-      { label: 'Toplam masraf', value: tl(t.expense_total), sub: `${t.expense_count} kalem` },
+      { label: 'Toplam masraf', value: tl(t.expense_total), sub: tr('{n} kalem', { n: t.expense_count }) },
       { label: 'Gidilen yol', value: km(t.distance_km), sub: t.vehicle_plate || 'plaka girilmedi' },
       { label: 'Görev süresi', value: t.started_at ? fmtDuration(t.duration_seconds) : '—' },
       { label: 'Toplam havada', value: clock(t.flights.reduce((a, f) => a + (f.flight_s || 0), 0)), sub: 'hazır raporlardan' },
@@ -402,11 +402,11 @@ async function renderTask(view, id, ctx) {
       h('div', { class: 'grow' }, h('b', null, v.file_name),
         h('div', { class: 'small muted' }, `${(v.size / 1048576).toFixed(1)} MB · ${v.uploaded_by_name || ''} · ${fmtDateTime(v.uploaded_at)}`)),
       (t.can.manage || v.uploaded_by === ctx.user.id) ? h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
-        if (!await confirmDialog('Videoyu sil', `${v.file_name} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+        if (!await confirmDialog('Videoyu sil', tr('{name} silinsin mi?', { name: v.file_name }), { okLabel: 'Sil', danger: true })) return;
         try { await api.del(`/api/field/videos/${v.id}`); toast('Video silindi'); await load(); } catch (err) { toastError(err); }
       } }, 'Sil') : null)) : h('div', { class: 'small muted' }, 'Henüz video yüklenmedi'));
     modal({
-      title: `Uçuş — ${f.queue_no || f.order_code}`,
+      title: tr('Uçuş — {id}', { id: f.queue_no || f.order_code }),
       onClose: () => { progress.abort(); videoProgress.abort(); },   // pencere kapanırsa süren yükleme iptal edilir
       body: h('div', null,
         field('Fırlatma sistemi', choice),
@@ -417,7 +417,7 @@ async function renderTask(view, id, ctx) {
           canUpload ? (remote ? localUploadNotice(ctx.meta, 'Uçuş logu') : [file, progress]) : h('div', { class: 'small muted' },
             t.status === 'BASLANGIC' ? 'Log, görev başladıktan sonra yüklenebilir.' : f.log_status === 'ISLENIYOR' ? 'Log analiz ediliyor…' : 'Log yükleme yetkiniz yok.')),
         canUpload ? 'Yeni log yüklerseniz bu uçuşun raporu yeniden oluşturulur. En fazla 2 GB.' : null),
-        field(`Uçuş videoları (${f.videos.length})`, h('div', null, videoList,
+        field(tr('Uçuş videoları ({n})', { n: f.videos.length }), h('div', null, videoList,
           canVideo ? h('div', { style: { marginTop: '8px' } }, remote ? localUploadNotice(ctx.meta, 'Uçuş videosu') : [videoInput, videoProgress]) : null),
           canVideo ? 'Birden fazla video seçebilirsiniz; boyut sınırı yoktur, büyük dosyalar parça parça yüklenir.' : null)),
       actions: can ? [
@@ -431,14 +431,14 @@ async function renderTask(view, id, ctx) {
                 const signal = videoProgress.start();
                 for (const [i, v] of vids.entries()) {
                   await uploadChunked(v, `/api/field/flights/${f.id}/videos`,
-                    pct => videoProgress.set(`${v.name} (${i + 1}/${vids.length}) yükleniyor…`, pct), signal);
+                    pct => videoProgress.set(tr('{name} ({i}/{total}) yükleniyor…', { name: v.name, i: i + 1, total: vids.length }), pct), signal);
                 }
                 videoProgress.done();
-                toast(`${vids.length} video yüklendi`);
+                toast(tr('{n} video yüklendi', { n: vids.length }));
               }
               if (!remote && file.files?.[0]) {
                 const signal = progress.start();
-                const uploadId = await uploadLarge(file.files[0], 'flightlogs', pct => progress.set(`${file.files[0].name} yükleniyor…`, pct), signal);
+                const uploadId = await uploadLarge(file.files[0], 'flightlogs', pct => progress.set(tr('{name} yükleniyor…', { name: file.files[0].name }), pct), signal);
                 progress.done();
                 await api.post(`/api/field/flights/${f.id}/flight-log/chunked`, { upload_id: uploadId });
                 toast('Log yüklendi, analiz ediliyor');
@@ -512,7 +512,7 @@ async function renderTask(view, id, ctx) {
     clear(body,
       Object.keys(byCat).length ? h('div', { class: 'chips', style: { justifyContent: 'flex-start', margin: '0 0 10px' } },
         Object.entries(byCat).map(([k, v]) => h('span', { class: 'chip' }, `${k}: ${tl(v)}`)),
-        h('span', { class: 'chip', style: { fontWeight: 700 } }, `Toplam: ${tl(t.expense_total)}`)) : null,
+        h('span', { class: 'chip', style: { fontWeight: 700 } }, tr('Toplam: {amount}', { amount: tl(t.expense_total) }))) : null,
       Object.keys(byPerson).length > 1 ? h('div', { class: 'chips', style: { justifyContent: 'flex-start', margin: '0 0 10px' } },
         Object.entries(byPerson).map(([k, v]) => h('span', { class: 'chip' }, `${k}: ${tl(v)}`))) : null,
       t.expenses.length ? h('div', { class: 'table-wrap' }, h('table', null,
@@ -527,7 +527,7 @@ async function renderTask(view, id, ctx) {
           h('td', { class: 'muted' }, e.created_by_name || '—'),
           h('td', { class: 'num' }, (t.can.manage || e.created_by === ctx.user.id)
             ? h('button', { class: 'btn sm ghost', onclick: async () => {
-              if (!await confirmDialog('Masrafı sil', `${e.category} · ${tl(e.amount)} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+              if (!await confirmDialog('Masrafı sil', tr('{cat} · {amount} silinsin mi?', { cat: e.category, amount: tl(e.amount) }), { okLabel: 'Sil', danger: true })) return;
               try { await api.del(`/api/field/expenses/${e.id}`); toast('Silindi'); await load(); } catch (err) { toastError(err); }
             } }, 'Sil') : null))))))
         : h('div', { class: 'card empty' }, 'Bu görev için masraf girilmedi'));
@@ -546,7 +546,7 @@ async function renderTask(view, id, ctx) {
     const render = () => {
       const total = list.reduce((a, p) => a + p.ppe.length, 0), done = list.reduce((a, p) => a + p.ppe.filter(x => x.status).length, 0);
       clear(body, h('div', { class: 'isgc' },
-        h('div', { class: 'card card-pad isgc-head' }, h('b', null, `İSG Kontrolü · ${done}/${total} madde işaretlendi`),
+        h('div', { class: 'card card-pad isgc-head' }, h('b', null, tr('İSG Kontrolü · {done}/{total} madde işaretlendi', { done, total })),
           h('span', { class: 'small muted' }, can ? 'Her kişinin KKD maddeleri için sahada “Yaptı” ya da “Yapmadı” işaretleyin. Görev raporunda görünür.'
             : 'İşaretlemeyi saha sorumlusu yapar.')),
         list.map(p => h('section', { class: 'card card-pad isgc-person' },
@@ -554,8 +554,8 @@ async function renderTask(view, id, ctx) {
             p.position ? h('span', { class: 'badge blue' }, p.position) : null),
           p.emergency ? h('div', { class: 'isgc-em' }, h('b', null, 'Acil durum görevi: '), p.emergency) : null,
           p.trainings_expired.length || p.trainings_missing.length ? h('div', { class: 'isgc-warn' },
-            p.trainings_expired.length ? `Süresi dolan eğitim: ${p.trainings_expired.join(', ')}. ` : '',
-            p.trainings_missing.length ? `Alındığı tarihi girilmemiş eğitim: ${p.trainings_missing.length}` : '') : null,
+            p.trainings_expired.length ? tr('Süresi dolan eğitim: {list}. ', { list: p.trainings_expired.join(', ') }) : '',
+            p.trainings_missing.length ? tr('Alındığı tarihi girilmemiş eğitim: {n}', { n: p.trainings_missing.length }) : '') : null,
           p.ppe.length ? h('table', { class: 'table isgc-table' },
             h('thead', null, h('tr', null, ['KKD', 'Kullanım yeri / zamanı', 'Durum'].map(c => h('th', null, c)))),
             h('tbody', null, p.ppe.map(x => h('tr', { class: x.status === 'YAPMADI' ? 'no' : x.status === 'YAPTI' ? 'yes' : '' },
@@ -611,7 +611,7 @@ async function renderTask(view, id, ctx) {
       } }, 'Standart Liste')),
       h('button', { class: 'btn primary', type: 'button', onclick: addModal }, svgIcon(icons.plus), 'Ekipman Ekle'));
     clear(body, h('div', { class: 'card card-pad' },
-      h('div', { class: 'eq-head' }, h('div', null, h('b', null, `Ekipman Listesi (${list.length} kalem)`),
+      h('div', { class: 'eq-head' }, h('div', null, h('b', null, tr('Ekipman Listesi ({n} kalem)', { n: list.length })),
         h('div', { class: 'small muted' }, 'Program Ayarları › Modül Ayarları › Saha Yönetimi’ndeki standart liste her göreve otomatik eklenir. Bu görev için çıkarabilir, ekleyebilir ve miktarları değiştirebilirsiniz.'))),
       list.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'eq-table' },
         h('thead', null, h('tr', null, ['#', 'Ekipman', 'Miktar', ''].map(c => h('th', null, c)))), h('tbody', null, rows)))
@@ -654,12 +654,12 @@ async function renderTask(view, id, ctx) {
       const save = h('button', { class: 'btn sm primary', onclick: async () => {
         try {
           await api.put(`/api/field/task-vehicles/${v.id}`, { driver_id: drv.value ? Number(drv.value) : null, start_km: num(s0.value), end_km: num(s1.value), note: v.note });
-          toast(`${v.plate} kaydedildi`);
+          toast(tr('{plate} kaydedildi', { plate: v.plate }));
           await load();
         } catch (err) { toastError(err); }
       } }, 'Kaydet');
       const del = h('button', { class: 'btn sm danger', onclick: async () => {
-        if (!await confirmDialog('Aracı çıkar', `${v.plate} bu görevden çıkarılsın mı?`, { okLabel: 'Çıkar', danger: true })) return;
+        if (!await confirmDialog('Aracı çıkar', tr('{plate} bu görevden çıkarılsın mı?', { plate: v.plate }), { okLabel: 'Çıkar', danger: true })) return;
         try { await api.del(`/api/field/task-vehicles/${v.id}`); toast('Araç çıkarıldı'); await load(); } catch (err) { toastError(err); }
       } }, 'Çıkar');
       return h('tr', null,
@@ -696,7 +696,7 @@ async function renderTask(view, id, ctx) {
         can ? h('div', { style: { display: 'flex', justifyContent: 'flex-end' } }, saveTask) : null),
       h('div', { class: 'card card-pad' },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' } },
-          h('h2', { style: { fontSize: '15px', margin: 0 } }, `Göreve giden araçlar (${t.vehicles.length})`),
+          h('h2', { style: { fontSize: '15px', margin: 0 } }, tr('Göreve giden araçlar ({n})', { n: t.vehicles.length })),
           h('span', { style: { flex: 1 } }),
           h('span', null, 'Toplam gidilen yol: ', h('b', null, km(t.distance_km)))),
         t.vehicles.length ? h('div', { class: 'table-wrap' }, h('table', null,
@@ -712,7 +712,7 @@ async function renderTask(view, id, ctx) {
   async function start() {
     const when = dateTimeInput({ min: t.created_at });
     modal({
-      title: `Göreve başlat — ${t.code}`,
+      title: tr('Göreve başlat — {code}', { code: t.code }),
       body: h('div', null, h('div', { class: 'alert warn' }, h('b', null, 'Başlamadan önce'), h('ul', null, START_WARNINGS.map(w => h('li', null, w)))),
         field('Başlama zamanı', when)),
       actions: [{ label: 'Vazgeç' }, {
@@ -722,7 +722,7 @@ async function renderTask(view, id, ctx) {
     });
   }
   async function cancel() {
-    if (!await confirmDialog('Görevi iptal et', `${t.code} iptal edilsin mi? Uçaklar depoya geri döner.`, { okLabel: 'İptal Et', danger: true })) return;
+    if (!await confirmDialog('Görevi iptal et', tr('{code} iptal edilsin mi? Uçaklar depoya geri döner.', { code: t.code }), { okLabel: 'İptal Et', danger: true })) return;
     try { await api.post(`/api/field/tasks/${id}/cancel`); toast('Görev iptal edildi'); await load(); } catch (err) { toastError(err); }
   }
   function finish(success) {
@@ -730,8 +730,8 @@ async function renderTask(view, id, ctx) {
     modal({
       title: success ? 'Başarılı tamamla' : 'Başarısız tamamla',
       body: h('div', null,
-        h('p', { style: { marginTop: 0 } }, `${t.code} görevi ${success ? 'başarılı' : 'başarısız'} olarak kapatılsın mı? `
-          + `Şu ana kadarki süre: ${fmtDuration(secondsSince(t.started_at))}`),
+        h('p', { style: { marginTop: 0 } }, tr('{code} görevi {result} olarak kapatılsın mı? ', { code: t.code, result: success ? 'başarılı' : 'başarısız' })
+          + tr('Şu ana kadarki süre: {dur}', { dur: fmtDuration(secondsSince(t.started_at)) })),
         field('Bitiş zamanı', when)),
       actions: [{ label: 'Vazgeç' }, {
         label: 'Tamamla', class: success ? 'success' : 'danger',
@@ -756,8 +756,8 @@ async function renderPlaces(view, ctx) {
     [locations, vehicles] = await Promise.all([api.get('/api/field/locations'), api.get('/api/field/vehicles')]);
     const top = [...locations].sort((a, b) => b.task_count - a.task_count)[0];
     stats.set([
-      { label: 'Görev yeri', value: locations.length, sub: `aktif ${locations.filter(l => l.active).length}` },
-      { label: 'Araç', value: vehicles.length, sub: `aktif ${vehicles.filter(v => v.active).length}` },
+      { label: 'Görev yeri', value: locations.length, sub: tr('aktif {n}', { n: locations.filter(l => l.active).length }) },
+      { label: 'Araç', value: vehicles.length, sub: tr('aktif {n}', { n: vehicles.filter(v => v.active).length }) },
       { label: 'En çok gidilen yer', value: top?.task_count || 0, sub: top?.name || '—' },
     ]);
     drawList(locBox, 'Görev yerleri', locations, { key: 'name', label: 'Görev yeri adı', path: 'locations', noun: 'görev yeri' });
@@ -766,21 +766,21 @@ async function renderPlaces(view, ctx) {
   function drawList(box, title, rows, o) {
     const name = h('input', { class: `input ${o.mono ? 'mono' : ''}`, placeholder: o.label });
     const desc = h('input', { class: 'input', placeholder: 'Açıklama (isteğe bağlı)' });
-    const q = h('input', { class: 'input', type: 'search', placeholder: `${title} içinde ara…` });
+    const q = h('input', { class: 'input', type: 'search', placeholder: tr('{title} içinde ara…', { title }) });
     const tbody = h('tbody');
     const payload = r => ({ [o.key]: r[o.key], description: r.description, active: !!r.active });
     const toggle = async r => {
       try { await api.put(`/api/field/${o.path}/${r.id}`, { ...payload(r), active: !r.active }); await load(); } catch (err) { toastError(err); }
     };
     const remove = async r => {
-      if (!await confirmDialog('Sil', `${r[o.key]} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+      if (!await confirmDialog('Sil', tr('{name} silinsin mi?', { name: r[o.key] }), { okLabel: 'Sil', danger: true })) return;
       try { await api.del(`/api/field/${o.path}/${r.id}`); toast('Silindi'); await load(); } catch (err) { toastError(err); }
     };
     const edit = r => {
       const n = h('input', { class: `input ${o.mono ? 'mono' : ''}`, value: r[o.key] });
       const d = h('input', { class: 'input', value: r.description || '' });
       modal({
-        title: `${r[o.key]} — düzenle`,
+        title: tr('{name} — düzenle', { name: r[o.key] }),
         body: h('div', null, field(o.label, n), field('Açıklama', d)),
         actions: [{ label: 'Vazgeç' }, {
           label: 'Kaydet', class: 'primary',
@@ -814,7 +814,7 @@ async function renderPlaces(view, ctx) {
         h('div', { style: { flex: '0 0 auto' } }, add)) : null,
       rows.length ? [h('div', { style: { marginBottom: '8px' } }, q), h('div', { class: 'table-wrap' }, h('table', null,
         h('thead', null, h('tr', null, [o.label, 'Durum', 'Görev', ''].map(c => h('th', null, c)))), tbody))]
-        : h('div', { class: 'empty' }, `Kayıtlı ${o.noun} yok`));
+        : h('div', { class: 'empty' }, tr('Kayıtlı {noun} yok', { noun: o.noun })));
     draw();
   }
   clear(view, pageHead('Görev Yerleri ve Araçlar', { back: '#/field', sub: 'Görev yerleri ve araçlar' }),

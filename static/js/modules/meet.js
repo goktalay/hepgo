@@ -2,7 +2,7 @@
 // #/meet (ana ekran: sıradaki toplantı kartı + program listesi), #/meet/{id} (oda). Dış katılımcı: /m/{code} → guestEntry.
 // Arayüz: açık/ferah tema, yumuşak mavi kartlar, avatar yığınları, videonun üstünde yüzen hap kontrol çubuğu.
 import { api } from '../api.js';
-import { avatar, clear, confirmDialog, h, modal, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, h, modal, t, toast, toastError } from '../ui.js';
 
 const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 const wsBase = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
@@ -60,7 +60,7 @@ let histOpen = false;
 const durText = m => {
   if (!m.started_at || !m.ended_at) return m.started_at ? '' : 'Başlamadan bitti';
   const min = Math.max(1, Math.round((new Date(m.ended_at) - new Date(m.started_at)) / 60000));
-  return min >= 60 ? `${Math.floor(min / 60)} sa ${min % 60} dk` : `${min} dk`;
+  return min >= 60 ? t('{h} sa {m} dk', { h: Math.floor(min / 60), m: min % 60 }) : t('{m} dk', { m: min });
 };
 
 // Bitmiş toplantı özeti: süre, katılımcılar, varsa kayıt / transkript
@@ -78,7 +78,7 @@ async function pastModal(m) {
       h('span', null, h('small', null, 'Bitti'), h('b', null, fmt(m.ended_at))),
       h('span', null, h('small', null, 'Süre'), h('b', null, durText(m) || '—')),
       h('span', null, h('small', null, 'Sahibi'), h('b', null, m.host_name || '—'))),
-    h('div', { class: 'vm-sec' }, `Katılımcılar (${joined.length})`),
+    h('div', { class: 'vm-sec' }, t('Katılımcılar ({n})', { n: joined.length })),
     h('div', { class: 'vm-past-people' }, joined.map(p => h('span', { class: 'vm-past-p' }, avatar({ full_name: p.name, photo: p.photo }, 'sm'),
       h('span', null, p.name), p.is_external ? h('small', null, 'misafir') : null))),
     d.has_audio ? h('audio', { class: 'vm-past-audio', controls: true, preload: 'none', src: `/api/meet/${m.id}/audio` }) : null,
@@ -120,7 +120,7 @@ async function renderHome(view, ctx) {
           h('div', { class: 'vm-past-meta' }, stack(m.people, m.joined_count),
             h('small', null, [durText(m), m.segment_count ? 'Transkript var' : m.record ? 'Kayıtlı' : null].filter(Boolean).join(' · ')))),
         h('div', { class: 'vm-item-when' }, dp ? [h('b', null, dp.day), h('small', null, dp.time)] : null));
-    }), old.length > 8 && !histOpen ? h('button', { class: 'vm-more', type: 'button', onclick: () => { histOpen = true; renderHome(view, ctx); } }, `Tümünü göster (${old.length})`) : null);
+    }), old.length > 8 && !histOpen ? h('button', { class: 'vm-more', type: 'button', onclick: () => { histOpen = true; renderHome(view, ctx); } }, t('Tümünü göster ({n})', { n: old.length })) : null);
   }).catch(() => {});
 
   let rows = [];
@@ -194,7 +194,7 @@ function newMeetingModal(ctx, done) {
         }).filter(x => x.name);
         const d = await api.post('/api/meet', { title: title.value.trim(), scheduled_at: when.value || null,
           waiting_room: wr.checked, record: rec.checked, user_ids: [...picked], externals });
-        toast(`Toplantı oluşturuldu · Kod: ${d.code}`, 'success');
+        toast(t('Toplantı oluşturuldu · Kod: {code}', { code: d.code }), 'success');
         done?.();
         createdModal(d);
       },
@@ -211,7 +211,7 @@ function createdModal(d) {
     body: h('div', { class: 'vm-created' },
       h('div', { class: 'vm-created-ic' }, ic('video')),
       row('Davet kodu', d.code), row('Toplantı linki', d.link),
-      ...(d.externals || []).map(e => row(`${e.name} için özel link`, e.link))),
+      ...(d.externals || []).map(e => row(t('{name} için özel link', { name: e.name }), e.link))),
     actions: ['spacer', { label: 'Tamam', class: 'primary', onClick: () => {} }],
   });
 }
@@ -482,7 +482,7 @@ export async function openRoom(view, opts) {
     e.t.setMuted(m.muted); e.t.setHand(m.hand);
     e.t.setCam(m.cam || m.sharing);
     e.t.el.classList.toggle('sharing', !!m.sharing);
-    if (m.hand && !wasHand) toast(`${e.info.name || 'Bir katılımcı'} el kaldırdı ✋`);
+    if (m.hand && !wasHand) toast(t('{name} el kaldırdı ✋', { name: e.info.name || 'Bir katılımcı' }));
     layout(); renderPeople();
   }
   function layout() {
@@ -560,16 +560,16 @@ export async function openRoom(view, opts) {
   function renderPeople() {
     // El kaldırma sırası (hand_seq'e göre)
     const queue = [];
-    if (hand) queue.push({ name: `${myName} (siz)`, seq: selfHandSeq || 1e9, me: true });
+    if (hand) queue.push({ name: t('{name} (siz)', { name: myName }), seq: selfHandSeq || 1e9, me: true });
     for (const [, e] of peers) if (e.info.hand) queue.push({ name: e.info.name, seq: e.info.hand_seq || 1e9 });
     queue.sort((a, b) => a.seq - b.seq);
     const queueBox = queue.length ? h('div', { class: 'vm-handq' },
-      h('div', { class: 'vm-handq-h' }, ic('hand'), `Söz sırası · ${queue.length}`),
+      h('div', { class: 'vm-handq-h' }, ic('hand'), t('Söz sırası · {n}', { n: queue.length })),
       ...queue.map((q, i) => h('div', { class: `vm-handq-row ${q.me ? 'me' : ''}` },
         h('span', { class: 'vm-handq-n' }, String(i + 1)), h('span', { class: 'grow' }, q.name)))) : null;
     const addBtn = isHost ? h('button', { class: 'btn sm primary vm-addppl', type: 'button', onclick: addStaffModal }, ic('plus'), 'Personel ekle') : null;
     const rows = [h('div', { class: 'vm-person' }, avatar({ full_name: myName, photo: myPhoto }, 'sm'),
-      h('span', { class: 'grow' }, `${myName} (siz)`), isHost ? h('span', { class: 'vm-tag' }, 'Sahip') : null)];
+      h('span', { class: 'grow' }, t('{name} (siz)', { name: myName })), isHost ? h('span', { class: 'vm-tag' }, 'Sahip') : null)];
     for (const [cid, e] of peers) {
       const p = e.info;
       rows.push(h('div', { class: 'vm-person' }, avatar({ full_name: p.name, photo: p.photo }, 'sm'),
@@ -579,20 +579,20 @@ export async function openRoom(view, opts) {
         h('button', { class: `vm-round sm ${pinned.has(cid) ? 'on' : ''}`, type: 'button', title: pinned.has(cid) ? 'Sabitlemeyi kaldır' : 'Sabitle · özel sohbet', onclick: () => togglePin(cid) }, ic('pin')),
         isHost ? h('button', { class: 'vm-round sm', type: 'button', title: 'Sessize al', onclick: () => send({ t: 'mute_peer', cid }) }, ic('micOff')) : null,
         isHost ? h('button', { class: 'vm-round sm danger', type: 'button', title: 'Toplantıdan çıkar', onclick: async () => {
-          if (await confirmDialog('Katılımcıyı çıkar', `${p.name} toplantıdan çıkarılsın mı?`, { okLabel: 'Çıkar', danger: true })) send({ t: 'kick', cid });
+          if (await confirmDialog('Katılımcıyı çıkar', t('{name} toplantıdan çıkarılsın mı?', { name: p.name }), { okLabel: 'Çıkar', danger: true })) send({ t: 'kick', cid });
         } }, ic('close')) : null));
     }
     clear(peopleList, addBtn, queueBox, rows);
   }
   function renderWaitList(list) {
     if (!isHost || !list?.length) { clear(waitBox); delete btnPeople.dataset.badge; return; }
-    clear(waitBox, h('div', { class: 'vm-wait-h' }, `Bekleme odası · ${list.length}`),
+    clear(waitBox, h('div', { class: 'vm-wait-h' }, t('Bekleme odası · {n}', { n: list.length })),
       ...list.map(w => h('div', { class: 'vm-wait-row' }, avatar({ full_name: w.name }, 'sm'),
         h('span', { class: 'grow' }, w.name, w.is_external ? h('small', null, ' · misafir') : null),
         h('button', { class: 'vm-mini primary', type: 'button', onclick: () => send({ t: 'admit', cid: w.cid }) }, 'Kabul et'),
         h('button', { class: 'vm-mini', type: 'button', onclick: () => send({ t: 'deny', cid: w.cid }) }, 'Reddet'))));
     btnPeople.dataset.badge = String(list.length);
-    toast(`${list[list.length - 1].name} toplantıya katılmak istiyor`);
+    toast(t('{name} toplantıya katılmak istiyor', { name: list[list.length - 1].name }));
   }
   const PANELS = () => ({ chat: chatPanel.el, people: peoplePanel.el, files: filesPanel.el, dm: dmPanel.el });
   function togglePanel(which) {
@@ -624,7 +624,7 @@ export async function openRoom(view, opts) {
       actions: [{ label: 'Vazgeç' }, { label: 'Davet et', class: 'primary', onClick: async () => {
         if (!picked.size) throw new Error('En az bir kişi seçin');
         const r = await api.post(`/api/meet/${mid}/invite`, { user_ids: [...picked] });
-        toast(`${r.added} kişi davet edildi`, 'success');
+        toast(t('{n} kişi davet edildi', { n: r.added }), 'success');
       } }] });
   }
 
@@ -662,7 +662,7 @@ export async function openRoom(view, opts) {
     clear(pinBubbles, [...pinned].map(cid => {
       const e = peers.get(cid); if (!e) { pinned.delete(cid); return null; }
       const n = dmUnread.get(cid) || 0;
-      const b = h('button', { class: 'vm-pin', type: 'button', title: `${e.info.name} · özel sohbet`, onclick: () => openDm(cid) },
+      const b = h('button', { class: 'vm-pin', type: 'button', title: t('{name} · özel sohbet', { name: e.info.name }), onclick: () => openDm(cid) },
         avatar({ full_name: e.info.name, photo: e.info.photo }, 'sm'),
         n ? h('span', { class: 'vm-pin-badge' }, String(n)) : null,
         h('button', { class: 'vm-pin-x', type: 'button', title: 'Kaldır', onclick: ev => { ev.stopPropagation(); togglePin(cid); } }, ic('close')));
@@ -672,7 +672,7 @@ export async function openRoom(view, opts) {
   function openDm(cid) {
     const e = peers.get(cid); if (!e) return;
     dmPeer = cid; dmUnread.set(cid, 0); renderPins();
-    dmTitle.textContent = `${e.info.name} · özel`;
+    dmTitle.textContent = t('{name} · özel', { name: e.info.name });
     const msgs = dmThreads.get(cid) || [];
     clear(dmList, msgs.map(x => dmBubble(x)));
     for (const k in PANELS()) PANELS()[k].hidden = PANELS()[k] !== dmPanel.el;
@@ -696,7 +696,7 @@ export async function openRoom(view, opts) {
     pushDm(m.from, x);
     if (!pinned.has(m.from)) { pinned.add(m.from); }   // yazan kişi otomatik sabitlenir
     if (dmPeer === m.from && !dmPanel.el.hidden) { dmList.append(dmBubble(x)); dmList.scrollTop = dmList.scrollHeight; }
-    else { dmUnread.set(m.from, (dmUnread.get(m.from) || 0) + 1); toast(`${m.name}: özel mesaj`); }
+    else { dmUnread.set(m.from, (dmUnread.get(m.from) || 0) + 1); toast(t('{name}: özel mesaj', { name: m.name })); }
     renderPins();
   }
 

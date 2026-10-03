@@ -2,7 +2,7 @@
 // Üstte kendi resminize BASILI TUTARAK konuşursunuz; altta kanal üyeleri. Ses /ws/radio üzerinden kanalın çevrimiçi
 // herkesine onaysız, canlı çalınır; aynı anda konuşanların sesleri ayrı ayrı gelir ve alıcıda karışır.
 // Görsel standart sesli görüşmeyle aynı: arka plan teması ve avatar çevresinde ses halkası.
-import { avatar, clear, h, svgIcon, toast } from '../ui.js';
+import { avatar, clear, h, svgIcon, t, toast } from '../ui.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { CALL_BACKGROUNDS } from './voice.js';
@@ -350,7 +350,7 @@ function renderList() {
   btn.classList.toggle('live', live);
   count.hidden = !live;
   const mt = muted();
-  const deskBtns = desks.filter(d => !staffOf.has(d.id)).map(d => tinted(h('button', { class: 'rd-deskbtn', type: 'button', title: `${d.name} birimine seslen (${d.online} çevrimiçi görevli)`,
+  const deskBtns = desks.filter(d => !staffOf.has(d.id)).map(d => tinted(h('button', { class: 'rd-deskbtn', type: 'button', title: t('{name} birimine seslen ({n} çevrimiçi görevli)', { name: d.name, n: d.online }),
     onclick: () => { menu.hidden = true; openPanel(d.id); } }, h('i'), d.name), d.color));
   clear(menu, h('div', { class: 'alerts-head rd-menu-head' }, h('span', null, 'Telsiz kanalları'), h('span', { class: 'rd-deskbtns' }, ...deskBtns)),
     channels.length ? channels.map(c => {
@@ -359,7 +359,7 @@ function renderList() {
         h('button', { class: 'rd-item-main', type: 'button', onclick: () => { menu.hidden = true; openPanel(c.id); } },
           h('span', { class: 'rd-dot', style: { background: c.color || '#2f6fed' } }),
           h('span', { class: 'rd-item-txt' }, h('b', null, c.name),
-            h('small', null, speakers.length ? `${speakers[0].split(' ')[0]} konuşuyor…` : `${c.online}/${c.members.length} çevrimiçi`)),
+            h('small', null, speakers.length ? t('{name} konuşuyor…', { name: speakers[0].split(' ')[0] }) : t('{online}/{total} çevrimiçi', { online: c.online, total: c.members.length }))),
           h('span', { class: 'rd-stack' }, ...c.members.slice(0, 4).map(m => h('span', { class: m.online ? '' : 'off' }, avatar(m, 'sm'))))),
         h('button', { class: `rd-mute ${mt.has(c.id) ? 'on' : ''}`, type: 'button', title: mt.has(c.id) ? 'Sesi aç' : 'Sessize al (bu cihaz)',
           onclick: e => { e.stopPropagation(); toggleMute(c.id); } }, svgIcon(mt.has(c.id) ? SPK_OFF : SPK)));
@@ -447,7 +447,7 @@ function renderPanel() {
   const others = c.members.filter(m => m.id !== me.id);
   const members = others.map(m => {
     const r = ring(72);
-    const el = h('div', { class: `rd-m ${m.online ? '' : 'off'}`, title: m.online ? m.full_name : `${m.full_name} · çevrimdışı` },
+    const el = h('div', { class: `rd-m ${m.online ? '' : 'off'}`, title: m.online ? m.full_name : t('{name} · çevrimdışı', { name: m.full_name }) },
       h('div', { class: 'rd-m-av' }, r, avatar(m, 'md')), h('span', null, m.full_name.split(' ')[0]));
     return { id: m.id, el, ring: r };
   });
@@ -455,7 +455,7 @@ function renderPanel() {
     h('div', { class: 'rd-head' },
       h('span', { class: 'rd-dot', style: { background: c.color || '#2f6fed' } }),
       h('div', { class: 'rd-title' }, h('b', null, c.name),
-        h('small', null, c.is_desk ? (c.online ? `${c.online} görevli çevrimiçi` : 'Şu an çevrimiçi görevli yok') : `${c.online} çevrimiçi · ${c.members.length} üye`)),
+        h('small', null, c.is_desk ? (c.online ? t('{n} görevli çevrimiçi', { n: c.online }) : 'Şu an çevrimiçi görevli yok') : t('{online} çevrimiçi · {total} üye', { online: c.online, total: c.members.length }))),
       c.is_desk ? null : h('button', { class: `rd-hbtn ${mt ? 'on' : ''}`, type: 'button', title: mt ? 'Sesi aç' : 'Sessize al', onclick: () => toggleMute(c.id) }, svgIcon(mt ? SPK_OFF : SPK)),
       h('button', { class: 'rd-hbtn', type: 'button', title: 'Kapat', onclick: () => closePanel() }, '✕')),
     h('div', { class: 'rd-me' }, meAv, hint),
@@ -472,7 +472,7 @@ function markTalking() {
   for (const m of panel.refs.members) m.el.classList.toggle('talking', s.has(m.id));
   const speakers = [...s].filter(u => u !== ctx.user.id).map(u => c?.members.find(m => m.id === u)?.full_name).filter(Boolean);
   panel.refs.hint.textContent = meTalking ? 'Konuşuyorsunuz — bırakınca biter'
-    : speakers.length ? `${speakers.join(', ')} konuşuyor…`
+    : speakers.length ? t('{who} konuşuyor…', { who: speakers.join(', ') })
       : talk ? 'Mikrofon hazırlanıyor…' : 'Konuşmak için resminize basılı tutun';
   panel.refs.hint.classList.toggle('live', meTalking || speakers.length > 0);
 }
@@ -547,12 +547,12 @@ function queueTouch(uid, deskCh) {
   if (fresh) renderDock(true);
 }
 function dockHint() {
-  return talk && isPriv(talk.ch) && talk.timer ? `${person(talk.ch & 0xFFFFFF).full_name.split(' ')[0]} ile konuşuyorsunuz — bırakınca biter`
+  return talk && isPriv(talk.ch) && talk.timer ? t('{name} ile konuşuyorsunuz — bırakınca biter', { name: person(talk.ch & 0xFFFFFF).full_name.split(' ')[0] })
     : 'Cevap vermek için kişinin resmine basılı tutun';
 }
-function ago(t) {
-  const s = Math.round((Date.now() - t) / 1000);
-  return s < 45 ? 'şimdi' : s < 3600 ? `${Math.round(s / 60)} dk önce` : `${Math.round(s / 3600)} sa önce`;
+function ago(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  return s < 45 ? 'şimdi' : s < 3600 ? t('{n} dk önce', { n: Math.round(s / 60) }) : t('{n} sa önce', { n: Math.round(s / 3600) });
 }
 function openDock(user) {
   if (!staffOf.size) return;
@@ -608,7 +608,7 @@ function renderDock(full) {
   const cards = entries.map(q => {
     const m = person(q.uid), d = desks.find(x => x.id === q.desk);
     const r = ring(96);
-    const av = h('button', { class: 'rd-q-av', type: 'button', 'aria-label': `${m.full_name} ile konuşmak için basılı tutun` }, r, avatar(m, 'lg'));
+    const av = h('button', { class: 'rd-q-av', type: 'button', 'aria-label': t('{name} ile konuşmak için basılı tutun', { name: m.full_name }) }, r, avatar(m, 'lg'));
     const press = () => {
       q.unread = false; saveQueue(); el.classList.remove('unread');
       startTalk(privCh(q.desk, q.uid)).then(() => renderDock());

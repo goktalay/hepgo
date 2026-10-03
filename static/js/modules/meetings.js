@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import { renderRoom, renderSummary } from './meeting_room.js';
 import { icons } from '../icons.js';
-import { avatar, clear, confirmDialog, dateTimeInput, every, field, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, setPref, svgIcon, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, dateTimeInput, every, field, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, setPref, svgIcon, t, toast, toastError } from '../ui.js';
 
 export const STATUS = {
   BEKLIYOR: ['gray', 'Yanıt bekleniyor', '⏳'], KATILIYOR: ['green', 'Katılıyor', '✓'], BELKI: ['yellow', 'Belki', '?'],
@@ -23,10 +23,10 @@ const when = m => {
 const relative = iso => {
   const min = Math.round((new Date(iso) - Date.now()) / 60000);
   if (min < -5) return null;
-  if (min <= 0) return 'başlıyor';
-  if (min < 60) return `${min} dk sonra`;
-  if (min < 1440) return `${Math.floor(min / 60)} sa ${min % 60 ? `${min % 60} dk ` : ''}sonra`;
-  return `${Math.round(min / 1440)} gün sonra`;
+  if (min <= 0) return t('başlıyor');
+  if (min < 60) return t('{min} dk sonra', { min });
+  if (min < 1440) return t('{h} sa {m}sonra', { h: Math.floor(min / 60), m: min % 60 ? t('{m} dk ', { m: min % 60 }) : '' });
+  return t('{n} gün sonra', { n: Math.round(min / 1440) });
 };
 
 export async function renderMeetings(view, params = []) {
@@ -51,7 +51,7 @@ export async function renderMeetings(view, params = []) {
       h('div', { class: 'mt-body' },
         h('div', { class: 'mt-top' }, h('b', { class: 'mt-title' }, m.title), m.cancelled_at ? h('span', { class: 'badge red' }, 'İptal edildi') : badge(m.my_status)),
         h('div', { class: 'small muted' }, when(m), m.location ? ` · 📍 ${m.location}` : '', rel ? h('span', { class: 'mt-rel' }, ` · ${rel}`) : null),
-        h('div', { class: 'small muted' }, `Düzenleyen: ${m.organizer}`),
+        h('div', { class: 'small muted' }, t('Düzenleyen: {org}', { org: m.organizer })),
         h('div', { class: 'mt-people' }, m.invites.slice(0, 8).map(i => h('span', { class: `mt-av st-${i.status}`, title: `${i.full_name} · ${STATUS[i.status][1]}` }, avatar(i, 'sm'))),
           m.invites.length > 8 ? h('span', { class: 'small muted' }, `+${m.invites.length - 8}`) : null,
           h('span', { class: 'mt-counts small' }, ['KATILIYOR', 'BELKI', 'KATILMIYOR', 'BEKLIYOR'].map(s => m.counts[s] ? h('span', { class: `mt-c ${s}` }, `${STATUS[s][2]} ${m.counts[s]}`) : null))),
@@ -64,7 +64,7 @@ export async function renderMeetings(view, params = []) {
     const pend = list.filter(m => m.my_status === 'BEKLIYOR' && !m.cancelled_at && new Date(m.starts_at) > new Date());
     const rest = list.filter(m => !pend.includes(m));
     clear(out,
-      pend.length ? [h('h3', { class: 'mt-h' }, `Yanıt bekleyen davetler (${pend.length})`), h('div', { class: 'mt-grid' }, pend.map(card))] : null,
+      pend.length ? [h('h3', { class: 'mt-h' }, t('Yanıt bekleyen davetler ({n})', { n: pend.length })), h('div', { class: 'mt-grid' }, pend.map(card))] : null,
       rest.length ? [pend.length ? h('h3', { class: 'mt-h' }, scope === 'past' ? 'Geçmiş toplantılar' : 'Toplantılar') : null, h('div', { class: 'mt-grid' }, rest.map(card))] : null,
       !list.length ? h('div', { class: 'card empty' }, scope === 'past' ? 'Geçmiş toplantı yok' : 'Yaklaşan toplantınız yok. "Yeni Toplantı" ile oluşturup kişileri davet edin.') : null);
   };
@@ -93,7 +93,7 @@ export async function openMeeting(id, done) {
         h('dt', null, 'Düzenleyen'), h('dd', null, m.organizer),
         h('dt', null, 'Hatırlatma'), h('dd', null, (REMIND.find(r => r[0] === m.remind_min) || [0, '—'])[1])),
       m.note ? h('div', { class: 'call-msg' }, h('small', null, 'Talep notu'), m.note) : null,
-      h('h4', null, `Katılımcılar (${m.invites.length})`),
+      h('h4', null, t('Katılımcılar ({n})', { n: m.invites.length })),
       h('ul', { class: 'mt-list' }, m.invites.map(i => h('li', null, avatar(i, 'sm'),
         h('div', { class: 'grow' }, h('b', null, i.full_name), i.response ? h('div', { class: 'small muted' }, `“${i.response}”`) : null),
         badge(i.status)))),
@@ -106,7 +106,7 @@ export async function openMeeting(id, done) {
           } }, { KATILIYOR: '✓ Katılıyorum', BELKI: '? Belki', KATILMIYOR: '✗ Katılmıyorum' }[s])))) : null),
     actions: [
       m.can_edit && !m.cancelled_at && !m.started_at ? { label: 'İptal Et', class: 'danger', onClick: async () => {
-        if (!await confirmDialog('Toplantıyı iptal et', `"${m.title}" iptal edilsin mi? Davetliler listesinde iptal olarak görür.`, { okLabel: 'İptal Et', danger: true })) return true;
+        if (!await confirmDialog('Toplantıyı iptal et', t('"{title}" iptal edilsin mi? Davetliler listesinde iptal olarak görür.', { title: m.title }), { okLabel: 'İptal Et', danger: true })) return true;
         await api.post(`/api/meetings/${id}/cancel`); toast('Toplantı iptal edildi');
       } } : null,
       m.can_edit && !m.cancelled_at && !m.started_at ? { label: 'Düzenle', onClick: () => { box.close(); meetingForm(m, done); return true; } } : null,
@@ -148,10 +148,10 @@ async function meetingForm(m, done) {
   const drawPick = () => {
     const list = others.filter(u => matches(q.value, u.full_name, u.username));
     const p = peoplePicker(list, { selected: [...chosen], sub: u => u.username });
-    p.addEventListener('click', () => { list.forEach(u => chosen.delete(u.id)); p.getIds().forEach(id => chosen.add(id)); count.textContent = `${chosen.size} kişi seçildi`; });
+    p.addEventListener('click', () => { list.forEach(u => chosen.delete(u.id)); p.getIds().forEach(id => chosen.add(id)); count.textContent = t('{n} kişi seçildi', { n: chosen.size }); });
     clear(pickBox, p);
   };
-  const count = h('span', { class: 'small muted' }, `${chosen.size} kişi seçildi`);
+  const count = h('span', { class: 'small muted' }, t('{n} kişi seçildi', { n: chosen.size }));
   q.addEventListener('input', drawPick);
   drawPick();
   modal({
@@ -165,7 +165,7 @@ async function meetingForm(m, done) {
       const body = { title: title.value, starts_at: start.getValue(), ends_at: end.getValue(), location: loc.value, note: note.value,
         remind_min: Number(remind.value), user_ids: [...chosen] };
       if (m) await api.put(`/api/meetings/${m.id}`, body); else await api.post('/api/meetings', body);
-      toast(m ? 'Toplantı güncellendi' : `Toplantı oluşturuldu, ${chosen.size} kişiye davet gitti`);
+      toast(m ? 'Toplantı güncellendi' : t('Toplantı oluşturuldu, {n} kişiye davet gitti', { n: chosen.size }));
       done?.();
     } }],
   });

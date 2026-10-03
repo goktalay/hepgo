@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import {
   avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref, secondsSince,
-  segmented, setPref, toast, toastError,
+  segmented, setPref, t, toast, toastError,
 } from '../ui.js';
 
 export const RESULTS = { BAGLANDI: ['green', 'Bağlandı'], ULASILAMADI: ['red', 'Ulaşılamadı'], MESAJ: ['yellow', 'Mesaj bırakıldı'] };
@@ -62,7 +62,7 @@ export async function renderCalls(body, addBtn, head) {
     const today = new Date().toISOString().slice(0, 10);
     const list = rows.filter(k => (scope.value === 'all' || (scope.value === 'open' ? !k.done_at && k.target_id : k.created_at.slice(0, 10) === today))
       && matches(q.value, k.caller_name, k.caller_phone, k.caller_company, k.company_name, k.subject, k.note, k.target_name));
-    info.textContent = `${list.length} arama`;
+    info.textContent = t('{n} arama', { n: list.length });
     if (!list.length) { clear(out, h('div', { class: 'card empty' }, rows.length ? 'Bu filtrede arama yok' : 'Henüz arama kaydı yok. Gelen telefonu sağ üstteki "Yeni Arama" ile not edin.')); return; }
     drawCalls(out, list, vt.get(), id => openCall(id, load), false);
   };
@@ -93,16 +93,16 @@ async function callForm(k, done) {
   const sugg = h('div', { class: 'call-sugg', hidden: true });
   const pickCaller = (n, p, c, pid) => { name.value = n; phone.value = p || ''; comp.value = c || ''; personId = pid || null; sugg.hidden = true; subject.focus(); };
   const suggest = () => {
-    const t = name.value.trim().length >= 2 ? name.value : phone.value.replace(/\D/g, '').length >= 4 ? phone.value : '';
-    if (!t) { sugg.hidden = true; return; }
-    const digits = t.replace(/\D/g, '');
-    const hit = (n, p, c) => matches(t, n, c) || (digits.length >= 4 && (p || '').replace(/\D/g, '').includes(digits));
+    const term = name.value.trim().length >= 2 ? name.value : phone.value.replace(/\D/g, '').length >= 4 ? phone.value : '';
+    if (!term) { sugg.hidden = true; return; }
+    const digits = term.replace(/\D/g, '');
+    const hit = (n, p, c) => matches(term, n, c) || (digits.length >= 4 && (p || '').replace(/\D/g, '').includes(digits));
     const a = people.filter(p => hit(p.full_name, p.phone, p.company_name)).slice(0, 6)
       .map(p => h('button', { type: 'button', onclick: () => pickCaller(p.full_name, p.phone, p.company_name, p.id) },
         h('b', null, p.full_name), h('span', null, [p.title, p.company_name, p.phone].filter(Boolean).join(' · '))));
     const b = callers.filter(c => hit(c.caller_name, c.caller_phone, c.caller_company)).slice(0, 6)
       .map(c => h('button', { type: 'button', onclick: () => pickCaller(c.caller_name, c.caller_phone, c.caller_company, c.person_id) },
-        h('b', null, c.caller_name), h('span', null, [c.caller_company, c.caller_phone, `${c.n} kez aradı`].filter(Boolean).join(' · '))));
+        h('b', null, c.caller_name), h('span', null, [c.caller_company, c.caller_phone, t('{n} kez aradı', { n: c.n })].filter(Boolean).join(' · '))));
     clear(sugg, a.length ? h('div', { class: 'call-sugg-h' }, 'Firmalarda kayıtlı') : null, a, b.length ? h('div', { class: 'call-sugg-h' }, 'Daha önce arayanlar') : null, b);
     sugg.hidden = !(a.length || b.length);
   };
@@ -157,7 +157,7 @@ export async function openCall(id, done) {
           k.done_at ? ['Tamamlandı', `${fmtDateTime(k.done_at)}${k.done_by_name ? ` · ${k.done_by_name}` : ''}`] : null]
           .filter(Boolean).map(([a, b]) => [h('dt', null, a), h('dd', null, b)]).flat()),
       k.note ? h('div', { class: 'call-msg' }, h('small', null, 'Sekreteryanın notu'), k.note) : null,
-      h('h4', null, `Notlar (${k.notes.length})`),
+      h('h4', null, t('Notlar ({n})', { n: k.notes.length })),
       k.notes.length ? h('ul', { class: 'call-notes' }, k.notes.map(n => h('li', null, avatar(n, 'sm'),
         h('div', null, h('div', { class: 'small muted' }, `${n.full_name || '—'} · ${fmtDateTime(n.at)}`), h('div', { class: 'call-nbody' }, n.body)))))
         : h('div', { class: 'small muted' }, 'Henüz not yok'),
@@ -169,7 +169,7 @@ export async function openCall(id, done) {
     title: 'Arama', wide: true, body: box, onClose: () => done?.(),
     actions: [
       k.can_edit ? { label: 'Sil', class: 'danger', onClick: async () => {
-        if (!await confirmDialog('Aramayı sil', `${k.caller_name} araması silinsin mi?`, { okLabel: 'Sil', danger: true })) return true;
+        if (!await confirmDialog('Aramayı sil', t('{name} araması silinsin mi?', { name: k.caller_name }), { okLabel: 'Sil', danger: true })) return true;
         await api.del(`/api/secretariat/calls/${id}`); toast('Arama silindi');
       } } : null,
       k.can_edit ? { label: 'Düzenle', onClick: () => { m.close(); callForm(k, () => done?.()); return true; } } : null,

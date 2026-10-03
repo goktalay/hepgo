@@ -1,7 +1,7 @@
 // Endüstriyel Tasarım: projeler → çizim / montaj çizimi ağacı → alt çizimler (parçalar) → her çizimin sürüm geçmişi.
 // Her yeni dosya yüklemesi yeni sürümdür; eski sürümler (dosya + açıklama) geçmişte kalır ve açılıp görülebilir.
 import { api, upload } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, pageHead, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, pageHead, t, toast, toastError } from '../ui.js';
 import { isStep, viewStep } from '../step3d.js';
 
 const KIND = { assembly: 'Montaj Çizimi', drawing: 'Çizim', part: 'Parça' };
@@ -42,7 +42,7 @@ function projCard(p) {
     h('div', { class: 'dz-proj-body' },
       h('b', { class: 'dz-proj-name' }, p.name),
       p.description ? h('div', { class: 'small muted dz-proj-desc' }, p.description) : null,
-      h('div', { class: 'small muted dz-proj-meta' }, `${p.drawing_count} çizim · ${p.created_by_name || ''} · ${fmtDateTime(p.created_at)}`)));
+      h('div', { class: 'small muted dz-proj-meta' }, t('{n} çizim · {by} · {d}', { n: p.drawing_count, by: p.created_by_name || '', d: fmtDateTime(p.created_at) }))));
 }
 
 async function renderProjects(view, ctx) {
@@ -106,11 +106,11 @@ function montajCard(d, pid, acts) {
         h('span', { class: `badge ${KIND_BADGE[d.kind] || 'gray'}` }, KIND[d.kind] || 'Çizim'),
         h('b', { class: 'dz-mcard-name' }, d.name),
         cur ? h('span', { class: 'dz-ver' }, `v${cur.version}`) : h('span', { class: 'small muted' }, 'sürüm yok'),
-        h('div', { class: 'small muted' }, `${kids} alt çizim${d.prod_count ? ` · ${d.prod_count} parça` : ''}`),
+        h('div', { class: 'small muted' }, t('{n} alt çizim{parts}', { n: kids, parts: d.prod_count ? t(' · {p} parça', { p: d.prod_count }) : '' })),
         h('span', { class: 'dz-mcard-open' }, 'Ağacı aç →'))),
     h('div', { class: 'dz-acts' },
       h('button', { class: 'btn sm primary', type: 'button', onclick: () => acts.newVersion(d) }, cur ? 'Yeni Sürüm' : 'Dosya Yükle'),
-      d.version_count ? h('button', { class: 'btn sm', type: 'button', onclick: () => acts.history(d) }, `Geçmiş (${d.version_count})`) : null,
+      d.version_count ? h('button', { class: 'btn sm', type: 'button', onclick: () => acts.history(d) }, t('Geçmiş ({n})', { n: d.version_count })) : null,
       h('button', { class: 'btn sm', type: 'button', title: 'Notlar', onclick: () => acts.notesModal(d) }, `📝${d.note_count ? ` ${d.note_count}` : ''}`),
       h('button', { class: 'btn sm', type: 'button', title: 'Üretim Parçaları', onclick: () => acts.partsModal(d) }, `🔩${d.prod_count ? ` ${d.prod_count}` : ''}`),
       h('button', { class: 'btn sm', type: 'button', onclick: () => acts.addDrawing(d) }, '+ Alt'),
@@ -145,7 +145,7 @@ function designActions(pid, reload, isMaster) {
       h('option', { value: 'drawing', selected: !!parent }, 'Çizim'),
       h('option', { value: 'part' }, 'Parça'));
     modal({
-      title: parent ? `${parent.name} · Alt Çizim Ekle` : 'Montaj / Çizim Ekle',
+      title: parent ? t('{name} · Alt Çizim Ekle', { name: parent.name }) : 'Montaj / Çizim Ekle',
       body: h('div', null, field('Ad', name), field('Tür', kind)),
       actions: [{ label: 'Vazgeç' }, { label: 'Ekle', class: 'primary', onClick: async () => {
         if (!name.value.trim()) throw new Error('Ad girin');
@@ -161,7 +161,7 @@ function designActions(pid, reload, isMaster) {
     modal({
       title: `${d.name} · ${d.version_count ? 'Yeni Sürüm' : 'Dosya Yükle'}`,
       body: h('div', null,
-        d.version_count ? h('p', { class: 'small muted', style: { marginTop: 0 } }, `Mevcut sürüm v${d.current ? d.current.version : d.version_count} geçmişte saklanır; bu yükleme v${(d.current ? d.current.version : d.version_count) + 1} olur.`) : null,
+        d.version_count ? h('p', { class: 'small muted', style: { marginTop: 0 } }, t('Mevcut sürüm v{a} geçmişte saklanır; bu yükleme v{b} olur.', { a: d.current ? d.current.version : d.version_count, b: (d.current ? d.current.version : d.version_count) + 1 })) : null,
         field('Çizim dosyası', fileIn), field('Açıklama', note)),
       actions: [{ label: 'Vazgeç' }, { label: 'Yükle', class: 'primary', onClick: async () => {
         if (!fileIn.files[0]) throw new Error('Dosya seçin');
@@ -176,7 +176,7 @@ function designActions(pid, reload, isMaster) {
     let vs;
     try { vs = await api.get(`/api/design/drawings/${d.id}/versions`); } catch (err) { return toastError(err); }
     modal({
-      title: `${d.name} · Sürüm Geçmişi`, wide: true,
+      title: t('{name} · Sürüm Geçmişi', { name: d.name }), wide: true,
       body: h('div', { class: 'dz-history' }, vs.map(v => h('div', { class: 'dz-hrow' },
         h('span', { class: 'dz-hver' }, `v${v.version}`),
         h('div', { class: 'grow' },
@@ -197,7 +197,7 @@ function designActions(pid, reload, isMaster) {
       } }] });
   }
   async function del(d) {
-    const msg = isMaster ? `“${d.name}” ve altındaki tüm alt çizimler ile sürümleri silinsin mi?` : `“${d.name}” için silme talebi Master onayına gönderilsin mi?`;
+    const msg = isMaster ? t('“{name}” ve altındaki tüm alt çizimler ile sürümleri silinsin mi?', { name: d.name }) : t('“{name}” için silme talebi Master onayına gönderilsin mi?', { name: d.name });
     if (!await confirmDialog(isMaster ? 'Çizimi sil' : 'Silme talebi', msg, { okLabel: isMaster ? 'Sil' : 'Talep Gönder', danger: true })) return;
     try { const r = await api.del(`/api/design/drawings/${d.id}`); toast(r.requested ? 'Silme talebi Master onayına gönderildi' : 'Silindi'); reload(); } catch (err) { toastError(err); }
   }
@@ -215,7 +215,7 @@ function designActions(pid, reload, isMaster) {
     };
     const add = async () => { if (!ta.value.trim()) return; try { await api.post(`/api/design/drawings/${d.id}/notes`, { note: ta.value }); ta.value = ''; draw(); reload(); } catch (err) { toastError(err); } };
     draw();
-    modal({ title: `${d.name} · Notlar`, wide: true, body: h('div', null, list, h('div', { class: 'cl-set-add', style: { marginTop: '10px' } }, ta, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))), actions: [{ label: 'Kapat' }] });
+    modal({ title: t('{name} · Notlar', { name: d.name }), wide: true, body: h('div', null, list, h('div', { class: 'cl-set-add', style: { marginTop: '10px' } }, ta, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))), actions: [{ label: 'Kapat' }] });
   }
 
   // Montaj üretim parçaları (G-code dosyaları)
@@ -224,11 +224,11 @@ function designActions(pid, reload, isMaster) {
     const draw = async () => {
       let ps; try { ps = await api.get(`/api/design/drawings/${d.id}/parts`); } catch (err) { return; }
       clear(list, ps.length ? ps.map(pp => h('div', { class: 'dz-part-row' },
-        h('div', { class: 'grow' }, h('b', null, pp.name), pp.qty != null ? h('span', { class: 'small muted' }, ` · ${pp.qty} adet`) : null,
+        h('div', { class: 'grow' }, h('b', null, pp.name), pp.qty != null ? h('span', { class: 'small muted' }, t(' · {q} adet', { q: pp.qty })) : null,
           pp.note ? h('div', { class: 'small dz-note' }, pp.note) : null,
           h('div', { class: 'small muted' }, `${fmtDateTime(pp.created_at)} · ${pp.by_name || ''}`)),
         pp.file_path ? h('div', { class: 'dz-file-row' }, dzFileLinks('p', pp.id, pp.file_name || pp.name, isMaster)) : null,
-        h('button', { class: 'btn xs ghost danger-text', type: 'button', title: isMaster ? 'Sil' : 'Silme talebi', onclick: async () => { if (await confirmDialog(isMaster ? 'Parçayı sil' : 'Silme talebi', isMaster ? `“${pp.name}” silinsin mi?` : `“${pp.name}” için silme talebi Master onayına gönderilsin mi?`, { okLabel: isMaster ? 'Sil' : 'Talep Gönder', danger: true })) { const r = await api.del(`/api/design/parts/${pp.id}`); toast(r.requested ? 'Silme talebi gönderildi' : 'Silindi'); draw(); reload(); } } }, '×')))
+        h('button', { class: 'btn xs ghost danger-text', type: 'button', title: isMaster ? 'Sil' : 'Silme talebi', onclick: async () => { if (await confirmDialog(isMaster ? 'Parçayı sil' : 'Silme talebi', isMaster ? t('“{name}” silinsin mi?', { name: pp.name }) : t('“{name}” için silme talebi Master onayına gönderilsin mi?', { name: pp.name }), { okLabel: isMaster ? 'Sil' : 'Talep Gönder', danger: true })) { const r = await api.del(`/api/design/parts/${pp.id}`); toast(r.requested ? 'Silme talebi gönderildi' : 'Silindi'); draw(); reload(); } } }, '×')))
         : h('div', { class: 'muted' }, 'Henüz üretim parçası yok.'));
     };
     const fileIn = h('input', { type: 'file', class: 'input', accept: '.gcode,.nc,.tap,.ngc,.cnc,.txt' });
@@ -241,7 +241,7 @@ function designActions(pid, reload, isMaster) {
       try { await upload(`/api/design/drawings/${d.id}/parts`, fd); fileIn.value = ''; nm.value = ''; qty.value = ''; note.value = ''; draw(); reload(); } catch (err) { toastError(err); }
     };
     draw();
-    modal({ title: `${d.name} · Üretim Parçaları (G-code)`, wide: true,
+    modal({ title: t('{name} · Üretim Parçaları (G-code)', { name: d.name }), wide: true,
       body: h('div', null, list,
         h('div', { class: 'dz-part-add' }, h('b', null, 'Yeni G-code parçası'),
           field('G-code dosyası', fileIn), h('div', { class: 'dz-part-fields' }, field('Parça adı', nm), field('Adet', qty)), field('Açıklama', note),
@@ -263,7 +263,7 @@ function designActions(pid, reload, isMaster) {
     };
     projSel.addEventListener('change', loadParents);
     await loadParents();
-    modal({ title: `${d.name} · Kopyala`,
+    modal({ title: t('{name} · Kopyala', { name: d.name }),
       body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, 'Çizim; alt parçaları ve tüm sürüm geçmişiyle birlikte kopyalanır.'),
         field('Hedef proje', projSel), field('Hedef montaj / konum', parentSel)),
       actions: [{ label: 'Vazgeç' }, { label: 'Kopyala', class: 'primary', onClick: async () => {
@@ -281,7 +281,7 @@ function designActions(pid, reload, isMaster) {
 async function stepModal(vid, name) {
   const wrap = h('div', { class: 'step3d-wrap' }, h('div', { class: 'loading', style: { padding: '24px' } }, '3B model yükleniyor… (ilk açılışta CAD çekirdeği iner)'));
   let viewer = null;
-  modal({ title: `${name} · 3B Önizleme`, wide: true, body: wrap, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
+  modal({ title: t('{name} · 3B Önizleme', { name }), wide: true, body: wrap, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
   try {
     const resp = await fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' });
     if (!resp.ok) throw new Error('Dosya alınamadı');
@@ -381,11 +381,11 @@ async function renderAssembly(view, pid, nodeId, ctx) {
     const cur = node.current;
     const items = [
       [cur ? 'Yeni Sürüm' : 'Dosya Yükle', () => acts.newVersion(node), false],
-      node.version_count ? [`Sürüm Geçmişi (${node.version_count})`, () => acts.history(node), false] : null,
+      node.version_count ? [t('Sürüm Geçmişi ({n})', { n: node.version_count }), () => acts.history(node), false] : null,
       cur ? ['Dosyayı Önizle', () => window.open(`/api/design/file?v=${cur.id}`, '_blank', 'noopener'), false] : null,
       (cur && isStep(cur.file_name)) ? ['🧊 3B Önizle', () => stepModal(cur.id, cur.file_name), false] : null,
-      [`📝 Notlar${node.note_count ? ` (${node.note_count})` : ''}`, () => acts.notesModal(node), false],
-      [`🔩 Üretim Parçaları${node.prod_count ? ` (${node.prod_count})` : ''}`, () => acts.partsModal(node), false],
+      [t('📝 Notlar{c}', { c: node.note_count ? ` (${node.note_count})` : '' }), () => acts.notesModal(node), false],
+      [t('🔩 Üretim Parçaları{c}', { c: node.prod_count ? ` (${node.prod_count})` : '' }), () => acts.partsModal(node), false],
       ['+ Alt Çizim', () => acts.addDrawing(node), false],
       ['⧉ Kopyala', () => acts.copyModal(node), false],
       ['✎ Yeniden Adlandır', () => acts.rename(node), false],

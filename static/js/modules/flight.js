@@ -6,7 +6,7 @@ import { buildFlightReport, printFlightReport } from '../flightreport.js';
 import { icons } from '../icons.js';
 import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../status.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, modal, pageHead, svgIcon, toast, toastError,
+  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, modal, pageHead, svgIcon, t as tr, toast, toastError,
   uploadPanel,
 } from '../ui.js';
 import { tabView } from './crm.js';
@@ -36,7 +36,7 @@ export async function renderFlight(view, id, ctx, tab) {
       send.disabled = true;
       try {
         const signal = progress.start();
-        const uploadId = await uploadLarge(file, 'flightlogs', pct => progress.set(`${file.name} yükleniyor…`, pct), signal);
+        const uploadId = await uploadLarge(file, 'flightlogs', pct => progress.set(tr('{name} yükleniyor…', { name: file.name }), pct), signal);
         progress.done();
         await api.post(`/api/field/flights/${id}/flight-log/chunked`, { upload_id: uploadId });
         toast('Log yüklendi, analiz ediliyor');
@@ -66,7 +66,7 @@ export async function renderFlight(view, id, ctx, tab) {
     if (!d.can.manage || o.usage_type !== 'TEK') return null;
     if (o.status === 'TAMAMLANDI') {
       return h('div', { class: 'fl-scrap' }, h('button', { class: 'btn sm danger', onclick: async () => {
-        if (!await confirmDialog('Uçtu — hurdaya ayır', `${o.queue_no || o.code} tek kullanımlık; uçtuğu için hurdaya ayrılsın mı? Bir daha sahaya gidemez.`,
+        if (!await confirmDialog('Uçtu — hurdaya ayır', tr('{id} tek kullanımlık; uçtuğu için hurdaya ayrılsın mı? Bir daha sahaya gidemez.', { id: o.queue_no || o.code }),
           { okLabel: 'Hurdaya Ayır', danger: true })) return;
         try {
           await api.post(`/api/field/flights/${id}/scrap`);
@@ -78,7 +78,7 @@ export async function renderFlight(view, id, ctx, tab) {
     if (o.status === 'HURDA') {
       return h('div', { class: 'fl-scrap' }, o.material_pending ? h('button', { class: 'btn sm danger', onclick: () => aircraftReviewModal(o.id, reload).catch(toastError) },
         'Malzemeleri Değerlendir') : null, h('button', { class: 'btn sm', onclick: async () => {
-        if (!await confirmDialog('Hurdadan geri al', `${o.queue_no || o.code} yeniden saha deposuna alınsın mı?`, { okLabel: 'Geri Al' })) return;
+        if (!await confirmDialog('Hurdadan geri al', tr('{id} yeniden saha deposuna alınsın mı?', { id: o.queue_no || o.code }), { okLabel: 'Geri Al' })) return;
         try { await api.post(`/api/field/flights/${id}/unscrap`); toast('Uçak saha deposuna geri alındı'); reload(); } catch (err) { toastError(err); }
       } }, 'Hurdadan Geri Al'));
     }
@@ -87,7 +87,7 @@ export async function renderFlight(view, id, ctx, tab) {
 
   // ---- Sekmeler
   const needLog = what => h('div', { class: 'empty' }, log?.status === 'ISLENIYOR' ? 'Log analiz ediliyor…'
-    : log?.status === 'HATA' ? 'Log analiz edilemedi; yeni log yükleyin.' : `${what} için önce uçuş logunu (.bin) yükleyin.`);
+    : log?.status === 'HATA' ? 'Log analiz edilemedi; yeni log yükleyin.' : tr('{what} için önce uçuş logunu (.bin) yükleyin.', { what }));
   const report = async () => {
     if (log?.status !== 'TAMAM') return needLog('Uçuş raporu');
     const full = await api.get(`/api/flight-logs/${log.id}`);
@@ -156,17 +156,17 @@ export async function renderFlight(view, id, ctx, tab) {
       const files = [...(input.files || [])];
       if (!files.length) { toastError(new Error('Video ya da resim seçin')); return; }
       if (ctx.meta.remote && files.some(fl => VIDEO_EXT.test(fl.name))) {
-        toastError(new Error(`Videolar yalnızca yerel ağdan yüklenebilir: ${ctx.meta.local_url}`));
+        toastError(new Error(tr('Videolar yalnızca yerel ağdan yüklenebilir: {url}', { url: ctx.meta.local_url })));
         return;
       }
       send.disabled = true;
       try {
         const signal = progress.start();
         for (const [i, fl] of files.entries()) {
-          await uploadChunked(fl, `/api/field/flights/${id}/videos`, pct => progress.set(`${fl.name} (${i + 1}/${files.length}) yükleniyor…`, pct), signal);
+          await uploadChunked(fl, `/api/field/flights/${id}/videos`, pct => progress.set(tr('{name} ({i}/{total}) yükleniyor…', { name: fl.name, i: i + 1, total: files.length }), pct), signal);
         }
         progress.done();
-        toast(`${files.length} dosya yüklendi`);
+        toast(tr('{n} dosya yüklendi', { n: files.length }));
         reload();
       } catch (err) {
         progress.done();
@@ -181,7 +181,7 @@ export async function renderFlight(view, id, ctx, tab) {
         onClose: () => { if (el.pause) { el.pause(); el.removeAttribute('src'); el.load(); } } });
     };
     const del = async m => {
-      if (!await confirmDialog('Dosyayı sil', `${m.file_name} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+      if (!await confirmDialog('Dosyayı sil', tr('{name} silinsin mi?', { name: m.file_name }), { okLabel: 'Sil', danger: true })) return;
       try { await api.del(`/api/field/videos/${m.id}`); toast('Silindi'); reload(); } catch (err) { toastError(err); }
     };
     return h('div', null,
@@ -199,7 +199,7 @@ export async function renderFlight(view, id, ctx, tab) {
   };
 
   clear(view,
-    pageHead(`Uçuş — ${o.queue_no || o.code}`, { back: `#/field/task/${t.id}`, sub: `${t.code} · ${o.product_name || ''}` }),
+    pageHead(tr('Uçuş — {id}', { id: o.queue_no || o.code }), { back: `#/field/task/${t.id}`, sub: `${t.code} · ${o.product_name || ''}` }),
     h('div', { class: 'fl-top' },
       h('div', { class: 'card card-pad' },
         h('h2', { class: 'fl-h' }, 'Uçak'),

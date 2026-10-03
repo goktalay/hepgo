@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { PART_STATES, badge, queuePlate } from '../status.js';
 import {
-  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, pageHead, segmented, statStrip, toast, toastError, periodFilter
+  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, pageHead, segmented, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -56,7 +56,7 @@ export async function render(view, params, ctx) {
       clear(body, rows.length ? historyTable(rows) : h('div', { class: 'card empty' }, 'Filtreye uyan kayıt yok'));
     }
     period.el.hidden = tab !== 'history';   // dönem yalnızca geçmişte
-    approveBtn.textContent = selected.size ? `Seçilenleri Onayla (${selected.size})` : 'Seçilenleri Onayla';
+    approveBtn.textContent = selected.size ? t('Seçilenleri Onayla ({n})', { n: selected.size }) : 'Seçilenleri Onayla';
   };
   const period = periodFilter('whHistory', () => load().catch(toastError), { title: 'Depo Geçmişi: onay tarihi' });
   const load = async () => {
@@ -115,7 +115,7 @@ export async function render(view, params, ctx) {
   function approveAircraft(o) {
     const when = dateTimeInput({ min: o.steps.KALIBRASYON?.at });
     modal({
-      title: `${o.code} — Saha deposuna al`,
+      title: t('{code} — Saha deposuna al', { code: o.code }),
       body: h('div', null,
         h('p', { style: { marginTop: 0 } }, 'Kalibrasyonu tamamlanan uçağı teslim aldınız mı? Onaylanınca uçağa kuyruk numarası verilir ve sahaya gönderilebilir.'),
         field('Teslim alma zamanı', when)),
@@ -124,7 +124,7 @@ export async function render(view, params, ctx) {
         {
           label: 'Onayla', class: 'success', onClick: async () => {
             const { queue_no } = await api.post(`/api/warehouse/aircraft/${o.id}/approve`, { at: when.getValue() });
-            toast(`${o.code} saha deposunda · kuyruk no ${queue_no}`);
+            toast(t('{code} saha deposunda · kuyruk no {queue}', { code: o.code, queue: queue_no }));
             await load();
           },
         },
@@ -138,13 +138,13 @@ export async function render(view, params, ctx) {
     const when = dateTimeInput();
     modal({
       title: 'Depo girişini onayla',
-      body: h('div', null, h('p', { style: { marginTop: 0 } }, `${ids.length} parça depoya alınacak.`), field('Onay zamanı', when)),
+      body: h('div', null, h('p', { style: { marginTop: 0 } }, t('{n} parça depoya alınacak.', { n: ids.length })), field('Onay zamanı', when)),
       actions: [
         { label: 'Vazgeç' },
         {
           label: 'Onayla', class: 'success', onClick: async () => {
             const { approved } = await api.post('/api/warehouse/approve', { ids, at: when.getValue() });
-            toast(`${approved} parça depoya alındı`);
+            toast(t('{n} parça depoya alındı', { n: approved }));
             selected.clear();
             await load();
           },

@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
-import { avatar, clear, confirmDialog, every, fmtDateTime, h, modal, pageHead, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SC_MQ = matchMedia('(max-width: 800px)');
@@ -56,7 +56,7 @@ function integServerCard(view) {
         diskVal.textContent = pct(u);
         diskBar.querySelector('i').style.width = `${u.toFixed(1)}%`;
         diskBar.querySelector('i').className = u >= 92 ? 'bad' : u >= 80 ? 'warn' : '';
-        diskSub.textContent = `${gb(s.disk_used)} dolu · ${gb(s.disk_free)} boş`;
+        diskSub.textContent = t('{used} dolu · {free} boş', { used: gb(s.disk_used), free: gb(s.disk_free) });
       }
     } catch { /* */ }
   };
@@ -140,7 +140,7 @@ function integrationsBody(view, ctx) {
       saveBtn.disabled = true;
       try {
         await api.put(`/api/system/integrations/${grp.key}`, { values, clear: [...clear] });
-        toast(`${grp.title} kaydedildi`, 'success');
+        toast(t('{title} kaydedildi', { title: grp.title }), 'success');
         if (grp.key !== 'general') { const r = await api.post(`/api/system/integrations/${grp.key}/test`, {}); say(r.ok, r.message); }
         await reload(grp.key);
       } catch (err) { toastError(err); } finally { saveBtn.disabled = false; }
@@ -316,7 +316,7 @@ function cleaningSettingsBody() {
         h('button', { class: 'btn sm', type: 'button', title: 'Yukarı', disabled: i === 0, onclick: () => mv('up') }, '↑'),
         h('button', { class: 'btn sm', type: 'button', title: 'Aşağı', disabled: i === active.length - 1, onclick: () => mv('down') }, '↓'),
         h('button', { class: 'btn sm danger', type: 'button', title: 'Kaldır', onclick: async () => {
-          if (await confirmDialog('İşi kaldır', `“${it.label}” listeden kaldırılsın mı? (geçmiş kayıtlar korunur)`, { okLabel: 'Kaldır', danger: true })) { try { await api.del(`/api/cleaning/items/${it.id}`); load(); } catch (err) { toastError(err); } }
+          if (await confirmDialog('İşi kaldır', t('“{label}” listeden kaldırılsın mı? (geçmiş kayıtlar korunur)', { label: it.label }), { okLabel: 'Kaldır', danger: true })) { try { await api.del(`/api/cleaning/items/${it.id}`); load(); } catch (err) { toastError(err); } }
         } }, '×'));
     };
     clear(wrap, h('section', { class: 'card card-pad' },
@@ -641,9 +641,9 @@ function usageModal(u) {
     }
     clear(body,
       h('div', { class: 'sc-ai-stats' },
-        stat('Bu ay', kTok(d.month), d.quota ? `kota ${kTok(d.quota)} · %${Math.round((d.month / d.quota) * 100)}` : 'kota sınırsız'),
-        stat('Toplam', kTok(d.total), `${trNum(d.calls)} istek`),
-        stat('Girdi', kTok(d.in_total), `çıktı ${kTok(d.out_total)}`),
+        stat('Bu ay', kTok(d.month), d.quota ? t('kota {q} · %{pct}', { q: kTok(d.quota), pct: Math.round((d.month / d.quota) * 100) }) : 'kota sınırsız'),
+        stat('Toplam', kTok(d.total), t('{n} istek', { n: trNum(d.calls) })),
+        stat('Girdi', kTok(d.in_total), t('çıktı {n}', { n: kTok(d.out_total) })),
         stat('Son kullanım', d.last_at ? fmtDay(d.last_at) : '—', d.last_at ? `${d.last_at.slice(11, 16)}${d.first_at ? ` · ilk ${fmtDay(d.first_at)}` : ''}` : null)),
       h('div', { class: 'sc-ai-chart-h' }, h('b', null, 'Zamana göre kullanım'), seg),
       chartBox,
@@ -661,7 +661,7 @@ function aiBody() {
     const qInputs = {};
     const cards = d.users.map(u => {
       const inp = h('input', { class: 'input sc-num', type: 'number', min: 0, step: 1000, placeholder: 'varsayılan',
-        value: u.custom ? u.quota : '', 'aria-label': `${u.full_name} aylık kota` });
+        value: u.custom ? u.quota : '', 'aria-label': t('{name} aylık kota', { name: u.full_name }) });
       qInputs[u.id] = inp;
       const over = u.quota && u.used_month >= u.quota;
       const ratio = u.quota ? Math.min(1, u.used_month / u.quota) : 0;
@@ -686,7 +686,7 @@ function aiBody() {
     });
     clear(wrap,
       h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Yapay Zeka Asistanı'),
-        h('p', { class: 'small muted' }, d.enabled ? `Model: ${d.model} · Kotalar aylık token (girdi+çıktı) toplamıdır; 0 = sınırsız. Ay: ${d.month}` : 'Asistan anahtarı tanımlı değil (maskot gizli).'),
+        h('p', { class: 'small muted' }, d.enabled ? t('Model: {model} · Kotalar aylık token (girdi+çıktı) toplamıdır; 0 = sınırsız. Ay: {month}', { model: d.model, month: d.month }) : 'Asistan anahtarı tanımlı değil (maskot gizli).'),
         h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, 'Varsayılan aylık kota'), h('small', null, 'Kişiye özel kota konmayan herkes için (0 = sınırsız)')),
           numBox(defIn, 'token'))),
       h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Kullanıcılar (bu ay)'),
@@ -715,10 +715,10 @@ function aiChangesBody() {
       edit.addEventListener('click', () => {
         const ta = h('textarea', { class: 'input sc-sql-edit', rows: 10, spellcheck: 'false' }, r.sql);
         const msg = h('div', { class: 'small muted' }, 'Kaydetmeden önce SQL geri alınabilir şekilde denenir; hata verirse kaydedilmez.');
-        modal({ title: `Talep #${r.id} · SQL`, wide: true, body: h('div', null, h('p', { class: 'small' }, r.summary), ta, msg), actions: ['spacer',
+        modal({ title: t('Talep #{id} · SQL', { id: r.id }), wide: true, body: h('div', null, h('p', { class: 'small' }, r.summary), ta, msg), actions: ['spacer',
           { label: 'Vazgeç' },
           { label: 'Dene ve Kaydet', class: 'primary', onClick: async () => {
-            try { const res = await api.put(`/api/system/ai-changes/${r.id}`, { sql: ta.value }); toast(`Ön deneme başarılı · ${res.affected} satır. Talep onay bekliyor.`, 'success'); load(); return false; }
+            try { const res = await api.put(`/api/system/ai-changes/${r.id}`, { sql: ta.value }); toast(t('Ön deneme başarılı · {n} satır. Talep onay bekliyor.', { n: res.affected }), 'success'); load(); return false; }
             catch (err) { msg.textContent = err.message; msg.className = 'sc-integ-msg err'; return true; }   // hata: pencere açık kalsın
           } }] });
       });
@@ -728,16 +728,16 @@ function aiChangesBody() {
         try { pre = await api.post(`/api/system/ai-changes/${r.id}/preview`, {}); } catch (err) { pre = { ok: false, error: err.message }; }
         appr.disabled = false;
         if (!pre.ok) {
-          toast(`Bu SQL şu an uygulanamaz: ${pre.error}. “SQL’i Düzenle” ile düzeltebilirsiniz.`, 'err');
+          toast(t('Bu SQL şu an uygulanamaz: {err}. “SQL’i Düzenle” ile düzeltebilirsiniz.', { err: pre.error }), 'err');
           return;
         }
-        if (!await confirmDialog('Değişikliği onayla', `Ön deneme: ${pre.affected} satır etkilenecek${pre.each.length > 1 ? ` (${pre.each.join(' + ')})` : ''}.\n\n${r.sql}\n\nUygulansın mı?`, { okLabel: 'Onayla ve Uygula', danger: true })) return;
+        if (!await confirmDialog('Değişikliği onayla', t('Ön deneme: {n} satır etkilenecek{each}.\n\n{sql}\n\nUygulansın mı?', { n: pre.affected, each: pre.each.length > 1 ? ` (${pre.each.join(' + ')})` : '', sql: r.sql }), { okLabel: 'Onayla ve Uygula', danger: true })) return;
         appr.disabled = rej.disabled = true;
-        try { const res = await api.post(`/api/system/ai-changes/${r.id}/approve`, {}); res.ok ? toast(`Uygulandı (${res.affected} satır)`, 'success') : toast(res.error || 'Uygulanamadı', 'err'); load(); }
+        try { const res = await api.post(`/api/system/ai-changes/${r.id}/approve`, {}); res.ok ? toast(t('Uygulandı ({n} satır)', { n: res.affected }), 'success') : toast(res.error || 'Uygulanamadı', 'err'); load(); }
         catch (err) { toastError(err); appr.disabled = rej.disabled = false; }
       });
       rej.addEventListener('click', async () => {
-        if (!await confirmDialog('Talebi reddet', `“${r.summary}” talebi reddedilsin mi?`, { okLabel: 'Reddet' })) return;
+        if (!await confirmDialog('Talebi reddet', t('“{summary}” talebi reddedilsin mi?', { summary: r.summary }), { okLabel: 'Reddet' })) return;
         rej.disabled = appr.disabled = true;
         try { await api.post(`/api/system/ai-changes/${r.id}/reject`, { note: '' }); toast('Reddedildi'); load(); }
         catch (err) { toastError(err); rej.disabled = appr.disabled = false; }
@@ -747,16 +747,16 @@ function aiChangesBody() {
           h('span', { class: 'small muted', style: { marginLeft: 'auto' } }, (r.created_at || '').slice(0, 16).replace('T', ' '))),
         h('div', { class: 'sc-change-sum' }, r.summary),
         h('pre', { class: 'sc-change-sql' }, r.sql),
-        pending && pv ? h('div', { class: 'small muted' }, `Ön deneme: ${pv.affected} satır etkilenecek`) : null,
-        r.note ? h('div', { class: 'small muted' }, `Not: ${r.note}${r.affected != null ? ` · ${r.affected} satır` : ''}`) : null,
-        r.status === 'ONAYLANDI' && r.affected != null ? h('div', { class: 'small muted' }, `Uygulandı · ${r.affected} satır`) : null,
+        pending && pv ? h('div', { class: 'small muted' }, t('Ön deneme: {n} satır etkilenecek', { n: pv.affected })) : null,
+        r.note ? h('div', { class: 'small muted' }, t('Not: {note}{extra}', { note: r.note, extra: r.affected != null ? ` · ${r.affected} satır` : '' })) : null,
+        r.status === 'ONAYLANDI' && r.affected != null ? h('div', { class: 'small muted' }, t('Uygulandı · {n} satır', { n: r.affected })) : null,
         editable ? h('div', { class: 'set-actions left' }, pending ? appr : null, edit, pending ? rej : null) : null);
     };
     const pend = d.items.filter(r => r.status === 'BEKLIYOR');
     const done = d.items.filter(r => r.status !== 'BEKLIYOR');
     clear(wrap,
       h('p', { class: 'small muted' }, 'Yapay zekanın kullanıcı adına önerdiği kayıt değişiklikleri. Onayladığınızda SQL, ilgili kullanıcının yetkisiyle çalıştırılır ve kullanıcıya bildirim gider.'),
-      h('h3', null, `Onay bekleyen (${pend.length})`),
+      h('h3', null, t('Onay bekleyen ({n})', { n: pend.length })),
       pend.length ? h('div', { class: 'sc-change-list' }, ...pend.map(card)) : h('div', { class: 'empty small' }, 'Bekleyen talep yok.'),
       done.length ? h('h3', null, 'Son kararlar') : null,
       done.length ? h('div', { class: 'sc-change-list' }, ...done.map(card)) : null);

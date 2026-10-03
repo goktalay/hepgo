@@ -5,7 +5,7 @@
 // yapılacaklar / sorular, notlar ve konuşmacı adlı tam döküm; yazdırılabilir.
 import { api } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
-import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, onLeave, pageHead, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, moduleToolbar, onLeave, pageHead, t, toast, toastError } from '../ui.js';
 
 const STATUS_TEXT = { DUZENLEYEN: 'Düzenleyen', KATILIYOR: 'Katılıyor', BELKI: 'Belki', KATILMIYOR: 'Katılmıyor', BEKLIYOR: 'Yanıt bekleniyor' };
 const clock = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -87,7 +87,7 @@ export async function renderRoom(view, id) {
       h('h3', null, 'Ses kaydı'),
       on ? h('div', { class: 'mr-recon' }, h('span', { class: 'chat-rec-dot' }), h('b', { class: 'mr-rectime' }, '0:00'), ' kaydediliyor', level)
         : r.recording ? h('div', { class: 'mr-recon' }, h('span', { class: 'chat-rec-dot' }), ' Kayıt yapılıyor (düzenleyenin cihazından)')
-          : h('div', { class: 'small muted' }, r.recordings ? `${r.recordings} kayıt alındı` : 'Kayıt alınmadı'),
+          : h('div', { class: 'small muted' }, r.recordings ? t('{n} kayıt alındı', { n: r.recordings }) : 'Kayıt alınmadı'),
       org && r.state === 'DEVAM' ? h('button', { class: `btn ${on ? 'danger' : 'primary'}`, type: 'button', style: { marginTop: '10px' },
         onclick: async e => { e.target.disabled = true; try { on ? await stopRec() : await startRec(); } finally { e.target.disabled = false; } refresh(); } },
       on ? '⏹ Kaydı Durdur' : '⏺ Kaydı Başlat') : null,
@@ -116,7 +116,7 @@ export async function renderRoom(view, id) {
     saved.textContent = 'yazılıyor…';
     clearTimeout(noteTimer);
     noteTimer = setTimeout(async () => {
-      try { await api.put(`/api/meetings/${id}/notes`, { body: note.value }); saved.textContent = `kaydedildi ${new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`; }
+      try { await api.put(`/api/meetings/${id}/notes`, { body: note.value }); saved.textContent = t('kaydedildi {time}', { time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }); }
       catch (err) { saved.textContent = err.message; }
     }, 1500);
   });
@@ -151,7 +151,7 @@ export async function renderRoom(view, id) {
   const tick = () => {
     if (r.state === 'DEVAM') timer.textContent = clock(since(r.started_at));
     else if (r.state === 'BITTI') timer.textContent = '';
-    else timer.textContent = `· planlanan ${fmtDateTime(r.starts_at)}`;
+    else timer.textContent = t('· planlanan {d}', { d: fmtDateTime(r.starts_at) });
   };
   async function refresh() {
     try {
@@ -198,7 +198,7 @@ export async function renderSummary(view, id) {
     };
     const spRow = sp => h('div', { class: 'ms-sp' },
       h('i', { class: 'ms-sw', style: { background: colorOf.get(sp.id) } }),
-      h('div', { class: 'grow' }, h('b', null, nameOf(sp)), h('small', null, `${clock(sp.seconds)} konuşma · %${sp.share}${sp.auto ? ' · sesinden tanındı' : ''}`)),
+      h('div', { class: 'grow' }, h('b', null, nameOf(sp)), h('small', null, t('{d} konuşma · %{share}{auto}', { d: clock(sp.seconds), share: sp.share, auto: sp.auto ? t(' · sesinden tanındı') : '' }))),
       h('button', { class: 'btn sm', type: 'button', title: 'Sesinden örnek dinle', onclick: () => play(`/api/meetings/${id}/speakers/${sp.id}/sample`) }, '▶ Dinle'),
       org ? (users ? assignSel(sp) : h('button', { class: 'btn sm', type: 'button', onclick: async () => { users = await api.get('/api/people'); draw(); } }, 'Kişiye ata')) : null);
     const pointList = (title, items, empty) => h('section', { class: 'card card-pad ms-points' }, h('h3', null, title),
@@ -206,10 +206,10 @@ export async function renderSummary(view, id) {
         : h('div', { class: 'small muted' }, empty));
     const processing = s.process_status === 'ISLENIYOR';
     clear(view,
-      pageHead(`Toplantı özeti · ${s.title}`, { back: '#/meetings', sub: `${fmtDateTime(s.started_at)} – ${s.ended_at ? s.ended_at.slice(11, 16) : ''} · ${clock(dur)} · düzenleyen ${s.organizer}` }),
+      pageHead(t('Toplantı özeti · {title}', { title: s.title }), { back: '#/meetings', sub: t('{start} – {end} · {dur} · düzenleyen {org}', { start: fmtDateTime(s.started_at), end: s.ended_at ? s.ended_at.slice(11, 16) : '', dur: clock(dur), org: s.organizer }) }),
       moduleToolbar(h('button', { class: 'btn', type: 'button', onclick: () => printSummary(s, dur).catch(toastError) }, '🖨 Yazdır')),
       processing ? h('div', { class: 'alert info ms-proc' }, h('span', { class: 'chat-rec-dot' }), ' Ses kaydı metne çevriliyor ve konuşmacılara ayrılıyor… Bu sayfa kendiliğinden yenilenir.') : null,
-      s.process_status === 'HATA' ? h('div', { class: 'alert warn' }, `Ses işlenemedi: ${s.process_error || ''} `,
+      s.process_status === 'HATA' ? h('div', { class: 'alert warn' }, t('Ses işlenemedi: {err} ', { err: s.process_error || '' }),
         org ? h('button', { class: 'btn sm', type: 'button', onclick: async () => { await api.post(`/api/meetings/${id}/reprocess`); await load(); draw(); watch(); } }, 'Yeniden dene') : null) : null,
       h('div', { class: 'db-kpis ms-kpis' },
         [['Süre', clock(dur)], ['Katılımcı', s.people.length], ['Konuşmacı', s.speakers.length], ['Kayıt', clock(s.recorded_seconds)],
@@ -219,7 +219,7 @@ export async function renderSummary(view, id) {
           s.speakers.length ? [
             known.length ? h('div', { class: 'ms-bar' }, s.speakers.map(sp => h('i', { title: `${nameOf(sp)} %${sp.share}`, style: { width: `${sp.share}%`, background: colorOf.get(sp.id) } }))) : null,
             known.map(spRow),
-            unknown.length ? h('div', { class: 'ms-unknown' }, h('h4', null, `Tanımsız kişiler (${unknown.length})`),
+            unknown.length ? h('div', { class: 'ms-unknown' }, h('h4', null, t('Tanımsız kişiler ({n})', { n: unknown.length })),
               h('p', { class: 'small muted' }, org ? 'Sesini dinleyip kişiye atayın; kişinin ses profili öğrenilir ve sonraki toplantılarda otomatik tanınır. Aynı kişiyi iki gruba atarsanız birleşir.'
                 : 'Düzenleyen bu sesleri kişilere atayabilir.'), unknown.map(spRow)) : null]
             : h('div', { class: 'small muted' }, processing ? 'Hazırlanıyor…' : 'Ses kaydı yok')),
@@ -236,9 +236,9 @@ export async function renderSummary(view, id) {
           h('div', { class: 'ms-note-top' }, h('b', null, n.full_name),
             n.user_id === s.me || org ? h('button', { class: 'link-btn small', type: 'button', onclick: () => editNote(n) }, 'Düzenle') : null),
           h('div', { class: 'ms-note-body' }, n.body),
-          n.edited_by_name ? h('div', { class: 'small muted' }, `Toplantıdan sonra ${n.edited_by_name} düzenledi · ${fmtDateTime(n.updated_at)}`) : null)))
+          n.edited_by_name ? h('div', { class: 'small muted' }, t('Toplantıdan sonra {name} düzenledi · {d}', { name: n.edited_by_name, d: fmtDateTime(n.updated_at) })) : null)))
           : h('div', { class: 'small muted' }, 'Not alınmadı')),
-      h('section', { class: 'card card-pad' }, h('h3', null, `Konuşma dökümü (${s.segments.length})`),
+      h('section', { class: 'card card-pad' }, h('h3', null, t('Konuşma dökümü ({n})', { n: s.segments.length })),
         s.segments.length ? h('div', { class: 'ms-transcript' }, s.segments.map(g => h('div', { class: 'ms-line' },
           h('button', { class: 'ms-play', type: 'button', title: 'Dinle', onclick: () => play(`/api/meetings/${id}/segments/${g.id}/audio`) }, '▶'),
           h('span', { class: 'ms-time' }, (g.at || '').slice(11, 16)),
@@ -251,7 +251,7 @@ export async function renderSummary(view, id) {
   function editNote(n) {
     const body = h('textarea', { class: 'input', rows: 12 }, n?.body || '');
     modal({
-      title: n ? `${n.full_name} · Notu Düzenle` : 'Notumu Ekle', wide: true,
+      title: n ? t('{name} · Notu Düzenle', { name: n.full_name }) : 'Notumu Ekle', wide: true,
       body: h('div', null, field('Not', body, 'Madde satırları (- ile başlayan) kararlar ve yapılacaklar arasına da alınır')),
       actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
         await api.put(`/api/meetings/${id}/notes`, { body: body.value, user_id: n && n.user_id !== s.me ? n.user_id : null });
@@ -274,7 +274,7 @@ export async function renderSummary(view, id) {
 async function printSummary(s, dur) {
   const meta = await api.get('/api/meta').catch(() => ({}));
   const company = meta.company || '';
-  const clockTxt = sec => { const m = Math.round((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} sa ${m % 60} dk` : `${m} dk`; };
+  const clockTxt = sec => { const m = Math.round((sec || 0) / 60); return m >= 60 ? t('{h} sa {m} dk', { h: Math.floor(m / 60), m: m % 60 }) : t('{m} dk', { m }); };
   const list = (title, items, empty) => h('section', { class: 'mp-sec' }, h('h2', null, title),
     items.length ? h('ul', null, items.map(p => h('li', null, p.text, h('small', null, ` — ${p.speaker}`)))) : h('p', { class: 'mp-empty' }, empty));
   const page = h('div', { class: 'mp-doc' },
@@ -291,6 +291,6 @@ async function printSummary(s, dur) {
       s.notes.length ? s.notes.map(n => h('div', { class: 'mp-note' }, h('b', null, n.full_name), h('div', { class: 'mp-pre' }, n.body))) : h('p', { class: 'mp-empty' }, 'Not alınmadı')),
     s.segments.length ? h('section', { class: 'mp-sec' }, h('h2', null, 'Konuşma dökümü'),
       s.segments.map(g => h('div', { class: 'mp-line' }, h('span', { class: 'mp-time' }, (g.at || '').slice(11, 16)), h('b', null, `${g.speaker}: `), g.text))) : null,
-    foot(company, `Toplantı özeti · Yazdırma: ${fmtDateTime(new Date().toISOString())}`));
+    foot(company, t('Toplantı özeti · Yazdırma: {d}', { d: fmtDateTime(new Date().toISOString()) })));
   printPage(page, `Toplantı özeti ${s.title}`);
 }

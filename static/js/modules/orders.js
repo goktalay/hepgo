@@ -7,7 +7,7 @@ import { logoOf } from './companies.js';
 import { ORDER_STATES, badge, orderBadge, queuePlate } from '../status.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref, progressBar, secondsBetween, segmented,
-  selectInput, setPref, shortCompany, statStrip, svgIcon, toast, toastError, periodFilter
+  selectInput, setPref, shortCompany, statStrip, svgIcon, t, toast, toastError, periodFilter
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -84,7 +84,7 @@ function table(list, reload, ctx) {
         h('div', { class: 'order-co-line' }, h('button', { class: 'link-btn', title: 'Firmayı değiştir', onclick: () => changeCompany(o, reload) },
           companyTag(o, 'xs') || h('span', { class: 'small muted' }, 'Firma seçin')))),
       h('td', null, o.product_name, o.product_stocked
-        ? h('div', { class: 'small muted' }, `Parça baskısı · 1 baskı = ${o.per_print} adet`)
+        ? h('div', { class: 'small muted' }, t('Parça baskısı · 1 baskı = {n} adet', { n: o.per_print }))
         : h('div', { class: 'small muted mono' }, o.product_serial)),
       h('td', { class: 'muted' }, fmtDateTime(o.created_at)),
       h('td', null, fmtDate(o.start_date)),
@@ -106,7 +106,7 @@ const companySelect = (list, value) => h('select', { class: 'input' },
 async function changeCompany(o, reload) {
   const sel = companySelect(await companies(), o.company_id);
   modal({
-    title: `${o.code} — Firma`,
+    title: t('{code} — Firma', { code: o.code }),
     body: field('Firma', sel),
     actions: [
       { label: 'Vazgeç' },
@@ -122,7 +122,7 @@ async function changeCompany(o, reload) {
 }
 
 async function remove(o, reload) {
-  if (!await confirmDialog('Siparişi sil', `${o.code} silinsin mi? Bu işlem geri alınamaz.`, { okLabel: 'Sil', danger: true })) return;
+  if (!await confirmDialog('Siparişi sil', t('{code} silinsin mi? Bu işlem geri alınamaz.', { code: o.code }), { okLabel: 'Sil', danger: true })) return;
   try {
     await api.del(`/api/orders/${o.id}`);
     toast('Sipariş silindi');
@@ -134,22 +134,22 @@ async function newOrder(done) {
   const products = (await api.get('/api/products?active_only=true')).filter(p => p.orderable);   // ürün ayarı
   const company = companySelect(await companies(), null);
   const group = (label, list) => (list.length ? h('optgroup', { label }, list.map(p => h('option', { value: p.id },
-    p.stocked ? `${p.code} — ${p.name} (1 baskı = ${p.per_print} adet · stok ${p.stock})`
-      : `${p.name} — seri no ${p.serial} (${p.part_count} parça)`))) : null);
+    p.stocked ? t('{code} — {name} (1 baskı = {n} adet · stok {stock})', { code: p.code, name: p.name, n: p.per_print, stock: p.stock })
+      : t('{name} — seri no {serial} ({n} parça)', { name: p.name, serial: p.serial, n: p.part_count })))) : null);
   const product = h('select', { class: 'input' },
     group('Mamul', products.filter(p => p.role === 'mamul')),
     group('Montaj sarfı', products.filter(p => p.role === 'sarf')),
     // Parça yedekleri: ait oldukları yarı mamule göre (Sol Kanat, Sağ Kanat, Gövde, Elektronik)
     [...new Set(products.filter(p => p.part_spare).sort((a, b) => (a.parent?.id || 0) - (b.parent?.id || 0))
       .map(p => p.parent?.name || '—'))].map(name =>
-      group(`Parça yedeği · ${name}`, products.filter(p => p.part_spare && (p.parent?.name || '—') === name))));
+      group(t('Parça yedeği · {name}', { name }), products.filter(p => p.part_spare && (p.parent?.name || '—') === name))));
   const today = new Date().toISOString().slice(0, 10);
   // Her sipariş tek üretimdir: bir uçak ya da bir baskı (yedek parçada bir baskıdaki adet stoğa girer)
   const hint = h('div', { class: 'small muted', style: { marginTop: '-6px', marginBottom: '10px' } });
   const syncHint = () => {
     const p = products.find(x => String(x.id) === product.value);
     hint.textContent = p?.stocked
-      ? `Tek baskı: depo onayından sonra ${p.per_print} adet ${p.name} stoğa girer.`
+      ? t('Tek baskı: depo onayından sonra {n} adet {name} stoğa girer.', { n: p.per_print, name: p.name })
       : 'Sipariş tek uçaktır; birden fazla uçak için ayrı sipariş açın.';
   };
   product.addEventListener('change', syncHint);
@@ -175,7 +175,7 @@ async function newOrder(done) {
             start_date: start.value || null, end_date: end.value || null,
             note: note.value.trim() || null,
           });
-          toast(`${created[0].code} oluşturuldu`);
+          toast(t('{code} oluşturuldu', { code: created[0].code }));
           location.hash = `#/orders/${created[0].id}`;
           done();
         },
@@ -207,7 +207,7 @@ async function renderDetail(view, id, ctx) {
     pageHead(h('span', { class: 'order-title' }, o.company_name ? logoOf({ name: o.company_name, logo: o.company_logo }, 'co-logo md') : null, o.code), {
       back: '#/orders',
       sub: h('span', null, orderBadge(o), '  ', o.company_name ? h('b', { title: o.company_name }, `${shortCompany(o.company_name)} · `) : null,
-        `${o.product_name}`, lastDone?.at ? ` · son aşama ${fmtDateTime(lastDone.at)}` : ''),
+        `${o.product_name}`, lastDone?.at ? t(' · son aşama {at}', { at: fmtDateTime(lastDone.at) }) : ''),
     }),
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => printOrderForm(o, ctx.meta.company) }, 'Formu Yazdır'),
@@ -228,14 +228,14 @@ function stageCard(s, i, stages, o, canProd) {
     h('div', { class: 'card od-card' },
       h('div', { class: 'od-top' }, h('b', null, s.title), h('span', { class: `badge ${cls}` }, label)),
       s.at ? h('div', { class: 'small muted' }, fmtDateTime(s.at), s.by ? ` · ${s.by}` : '',
-        took != null && took > 0 && i > 0 ? ` · önceki aşamadan ${fmtDuration(took)} sonra` : '') : null,
+        took != null && took > 0 && i > 0 ? t(' · önceki aşamadan {d} sonra', { d: fmtDuration(took) }) : '') : null,
       s.lines.length ? h('ul', { class: 'od-lines' }, s.lines.map(l => h('li', null, l))) : null,
       s.key === 'MONTAJ' && s.steps.length ? h('div', { class: 'od-steps' }, s.steps.map(st => h('div', { class: `od-step ${st.done ? 'done' : ''}` },
         h('span', { class: 'od-dot' }, st.done ? '✓' : ''), h('span', { class: 'grow' }, st.title),
         h('span', { class: 'small muted' }, st.done ? `${fmtDateTime(st.at)}${st.by ? ` · ${st.by}` : ''}` : 'Bekliyor')))) : null,
-      s.key === 'SAHA' && s.steps.length ? h('div', { class: 'od-links' }, s.steps.map(t =>
-        h('a', { class: 'btn sm', href: `#/field/task/${t.task_id}` }, `${t.title} görevi`))) : null,
+      s.key === 'SAHA' && s.steps.length ? h('div', { class: 'od-links' }, s.steps.map(st =>
+        h('a', { class: 'btn sm', href: `#/field/task/${st.task_id}` }, t('{title} görevi', { title: st.title })))) : null,
       s.key === 'UCUS' && s.steps.length ? h('div', { class: 'od-links' }, s.steps.map(f =>
-        h('a', { class: 'btn sm primary', href: `#/field/flight/${f.flight_id}` }, `Uçuş detayı (${f.title})`))) : null,
+        h('a', { class: 'btn sm primary', href: `#/field/flight/${f.flight_id}` }, t('Uçuş detayı ({title})', { title: f.title })))) : null,
             s.key === 'URETIM' && canProd && s.state !== 'todo' ? h('a', { class: 'btn sm', href: `#/production/${o.id}` }, 'Parçaları gör') : null));
 }

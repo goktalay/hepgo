@@ -2,7 +2,7 @@
 // Gruba tıklanınca tüm görülmeler (yüz ve görüldüğü anın tam karesi); "Kişiye Ata" ile gruptaki tüm yüzler bir kullanıcıya
 // ya da firma personeline atanır ve sonraki görülmelerde o kişi tanınır. Aynı kişinin grupları birleştirilebilir.
 import { api, fileUrl } from '../api.js';
-import { clear, confirmDialog, every, fmtDateTime, h, matches, modal, segmented, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, every, fmtDateTime, h, matches, modal, segmented, t, toast, toastError } from '../ui.js';
 
 export async function renderFaces(body) {
   let state = 'unknown';
@@ -14,13 +14,13 @@ export async function renderFaces(body) {
   const out = h('div');
   const selected = new Set();
   let rows = [];
-  const syncBtn = () => { mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = `Seçilenleri Birleştir${selected.size ? ` (${selected.size})` : ''}`; };
+  const syncBtn = () => { mergeBtn.disabled = selected.size < 2; mergeBtn.textContent = t('Seçilenleri Birleştir{n}', { n: selected.size ? ` (${selected.size})` : '' }); };
 
   const draw = () => {
     const list = rows.filter(g => matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
     info.textContent = state === 'unknown'
-      ? `${list.length} tanımlanamayan kişi grubu · aynı kişiye ait grupları seçip birleştirebilirsiniz`
-      : `${list.length} tanınan kişi`;
+      ? t('{n} tanımlanamayan kişi grubu · aynı kişiye ait grupları seçip birleştirebilirsiniz', { n: list.length })
+      : t('{n} tanınan kişi', { n: list.length });
     clear(out, list.length ? h('div', { class: 'fg-grid' }, list.map(g => {
       const cb = h('input', { type: 'checkbox', checked: selected.has(g.id), onclick: e => e.stopPropagation(),
         onchange: e => { e.target.checked ? selected.add(g.id) : selected.delete(g.id); card.classList.toggle('on', e.target.checked); syncBtn(); } });
@@ -30,9 +30,9 @@ export async function renderFaces(body) {
         h('div', { class: 'fg-body' },
           state === 'known' ? h('b', null, g.user_name || g.person_name, g.person_company ? h('span', { class: 'small muted' }, ` · ${g.person_company}`) : null)
             : h('b', null, 'Tanımlanamayan kişi'),
-          h('div', { class: 'small' }, `${g.sightings} görülme`),
-          h('div', { class: 'small muted' }, `Son: ${fmtDateTime(g.last_seen)}${g.last_camera_name ? ` · ${g.last_camera_name}` : ''}`),
-          h('div', { class: 'small muted' }, `İlk: ${fmtDateTime(g.first_seen)}`)));
+          h('div', { class: 'small' }, t('{n} görülme', { n: g.sightings })),
+          h('div', { class: 'small muted' }, t('Son: {d}{cam}', { d: fmtDateTime(g.last_seen), cam: g.last_camera_name ? ` · ${g.last_camera_name}` : '' })),
+          h('div', { class: 'small muted' }, t('İlk: {d}', { d: fmtDateTime(g.first_seen) }))));
       return card;
     })) : h('div', { class: 'card empty' }, state === 'unknown'
       ? 'Tanımlanamayan kişi yok. Kameralarda yüz tanıma açıksa görülen yüzler burada gruplanır.' : 'Henüz kişiye atanmış yüz yok'));
@@ -45,7 +45,7 @@ export async function renderFaces(body) {
     draw();
   }
   async function mergeSelected() {
-    if (!await confirmDialog('Grupları birleştir', `${selected.size} grup aynı kişi olarak birleştirilsin mi?`, { okLabel: 'Birleştir' })) return;
+    if (!await confirmDialog('Grupları birleştir', t('{n} grup aynı kişi olarak birleştirilsin mi?', { n: selected.size }), { okLabel: 'Birleştir' })) return;
     try { await api.post('/api/faces/merge', { ids: [...selected] }); selected.clear(); toast('Gruplar birleştirildi'); load(); } catch (err) { toastError(err); }
   }
 
@@ -56,9 +56,9 @@ export async function renderFaces(body) {
       title: who ? `${who}${g.person_company ? ` · ${g.person_company}` : ''}` : 'Tanımlanamayan kişi', wide: true,
       body: h('div', null,
         h('div', { class: 'fg-head' }, g.best_crop ? h('img', { src: fileUrl(g.best_crop, 256), alt: '' }) : null,
-          h('div', null, h('div', null, h('b', null, `${g.sightings} görülme`), ` · ${g.samples} yüz örneği`),
-            h('div', { class: 'small muted' }, `İlk ${fmtDateTime(g.first_seen)} · Son ${fmtDateTime(g.last_seen)}`),
-            h('div', { class: 'small muted' }, `Kameralar: ${g.cameras || '—'}`),
+          h('div', null, h('div', null, h('b', null, t('{n} görülme', { n: g.sightings })), t(' · {n} yüz örneği', { n: g.samples })),
+            h('div', { class: 'small muted' }, t('İlk {a} · Son {b}', { a: fmtDateTime(g.first_seen), b: fmtDateTime(g.last_seen) })),
+            h('div', { class: 'small muted' }, t('Kameralar: {c}', { c: g.cameras || '—' })),
             h('p', { class: 'small muted' }, 'Yüze tıklayınca görüldüğü anın tam karesi açılır.'))),
         h('div', { class: 'fg-shots' }, g.items.map(s => h('button', { class: 'fg-shot', type: 'button', onclick: () => showFrame(s) },
           h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' }),
@@ -93,7 +93,7 @@ export async function renderFaces(body) {
         h('button', { class: 'pick', type: 'button', onclick: async () => {
           try {
             await api.post(`/api/faces/groups/${id}/assign`, kind === 'user' ? { user_id: p.id } : { person_id: p.id });
-            toast(`Gruptaki tüm yüzler ${p.full_name} kişisine atandı`);
+            toast(t('Gruptaki tüm yüzler {name} kişisine atandı', { name: p.full_name }));
             m.close();
             done();
           } catch (err) { toastError(err); }

@@ -2,7 +2,7 @@
 // Ses akışı uçtan uca (peer-to-peer). Kayıt yalnızca tüm katılımcı onaylayınca; karışık sesi başlatan kaydeder,
 // bitince yükler. Görüşmelerim: geçmiş + konuşmacı tanımalı transkript + özet.
 import { api } from '../api.js';
-import { avatar, clear, confirmDialog, fmtDateTime, fmtDuration, h, modal, pageHead, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, fmtDateTime, fmtDuration, h, modal, pageHead, t, toast, toastError } from '../ui.js';
 import { playEvent } from '../sounds.js';
 
 const RTC = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
@@ -208,7 +208,7 @@ function onRing(m) {
   if (call || ring) { send({ t: 'reject', call_id: m.call_id }); return; }   // meşgul
   startRing('in');
   const sub = m.kind === 'grup'
-    ? `Grup görüşmesi${m.members?.length ? ` · ${m.members.filter(Boolean).join(', ')}` : ''}`
+    ? t('Grup görüşmesi{extra}', { extra: m.members?.length ? ` · ${m.members.filter(Boolean).join(', ')}` : '' })
     : m.video ? 'Görüntülü görüşme · sizi arıyor…' : 'Sesli görüşme · sizi arıyor…';
   const reject = () => { send({ t: 'reject', call_id: m.call_id }); closeRing(); };
   const slider = makeSlider(() => accept(m), reject);
@@ -280,7 +280,7 @@ function onCalling(m) {
   for (const t of m.targets) { call.names[t.id] = t.name; if (t.photo) call.photos[t.id] = t.photo; }
   renderPeers();
   const offline = m.targets.filter(t => !t.online).map(t => t.name);
-  setCallStatus(offline.length ? `Aranıyor… (${offline.join(', ')} çevrimdışı olabilir)` : 'Aranıyor…');
+  setCallStatus(offline.length ? t('Aranıyor… ({names} çevrimdışı olabilir)', { names: offline.join(', ') }) : t('Aranıyor…'));
 }
 function onJoined(m) {   // ben yeni katıldım; mevcut üyeler bana offer gönderecek
   if (!call) return;
@@ -328,7 +328,7 @@ function onPeerLeft(m) {
 function onRejected(m) {
   if (!call || call.id !== m.call_id) return;
   const name = call.names[m.user_id] || 'Kişi';
-  setCallStatus(`${name} reddetti`);
+  setCallStatus(t('{name} reddetti', { name }));
 }
 function onEnded(m) {
   if (ring && ring.call_id === m.call_id) return closeRing();
@@ -446,7 +446,7 @@ function renderPeers() {
   ids.delete(ctx.user.id);
   const list = [...ids];
   ui.title.textContent = call.kind === 'grup'
-    ? `Grup · ${list.length} kişi` : (call.names[list[0]] || (call.video ? 'Görüntülü görüşme' : 'Sesli görüşme'));
+    ? t('Grup · {n} kişi', { n: list.length }) : (call.names[list[0]] || (call.video ? t('Görüntülü görüşme') : t('Sesli görüşme')));
   if (ui.miniName) ui.miniName.textContent = ui.title.textContent;
   if (call.video) return renderVideoPeers(list);
   ui.stage.className = `vc-stage n${Math.min(list.length, 4)}`;
@@ -714,7 +714,7 @@ async function renderDetail(view, cid) {
 
   if (c.recorded) {
     if (c.process_status === 'ISLENIYOR') parts.push(h('div', { class: 'card card-pad loading' }, 'Kayıt metne çevriliyor, konuşmacılar tanınıyor…'));
-    else if (c.process_status === 'HATA') parts.push(h('div', { class: 'card empty' }, `İşlenemedi: ${c.process_error || ''}`));
+    else if (c.process_status === 'HATA') parts.push(h('div', { class: 'card empty' }, t('İşlenemedi: {err}', { err: c.process_error || '' })));
     else if (c.segments?.length) { parts.push(speakersCard(c, cid, reload)); parts.push(transcriptCard(c)); }
     else if (c.process_status === 'TAMAM') parts.push(h('div', { class: 'card empty' }, 'Kayıtta anlaşılır konuşma bulunamadı.'));
     else parts.push(h('div', { class: 'card empty' }, 'Kayıt onaylandı ama ses dosyası alınamadı (tarayıcı kaydı desteklemiyor olabilir).'));
@@ -740,11 +740,11 @@ function speakersCard(c, cid, reload) {
       avatar({ full_name: sp.label, photo: (opts.find(u => u.id === sp.user_id) || {}).photo }, 'sm'),
       h('div', { class: 'vc-spk-info' },
         h('b', null, sp.label),
-        h('small', { class: 'muted' }, `${mmss(sp.seconds)} konuşma${known ? (sp.auto ? ' · otomatik tanındı' : ' · elle atandı') : ' · tanınmadı'}`)),
+        h('small', { class: 'muted' }, t('{time} konuşma{how}', { time: mmss(sp.seconds), how: known ? (sp.auto ? t(' · otomatik tanındı') : t(' · elle atandı')) : t(' · tanınmadı') }))),
       sel);
   };
   return h('div', { class: 'card card-pad' },
-    h('h3', { style: { marginTop: 0 } }, `Konuşmacılar (${c.speakers.length})`),
+    h('h3', { style: { marginTop: 0 } }, t('Konuşmacılar ({n})', { n: c.speakers.length })),
     h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Tanınmayan konuşmacıyı kişiye atayın; sistem o kişinin sesini öğrenir ve sonraki görüşmelerde tekrar sormaz.'),
     h('div', { class: 'vc-spk-list' }, c.speakers.map(row)));
 }

@@ -2,13 +2,13 @@
 import { api } from '../api.js';
 import { layerToggle, loadPlane, partInfoLines, renderPlane } from '../plane.js';
 import { ORDER_STATES, badge, queuePlate } from '../status.js';
-import { clear, field, fmtDateTime, h, matches, modal, pageHead, selectInput, statStrip, toast } from '../ui.js';
+import { clear, field, fmtDateTime, h, matches, modal, pageHead, selectInput, statStrip, t, toast } from '../ui.js';
 
 // ---------- Yedek parça stoğu (kamera tutucu, klipsler): hareketler ve sayım düzeltmesi
 export async function spareMovesModal(p) {
   const moves = await api.get(`/api/products/${p.id}/moves`);
   modal({
-    title: `${p.code} — ${p.name}: stok hareketleri`,
+    title: t('{code} — {name}: stok hareketleri', { code: p.code, name: p.name }),
     wide: true,
     body: moves.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Tarih', 'Hareket', 'Adet', 'Sipariş', 'Kişi'].map(t => h('th', null, t)))),
@@ -27,15 +27,15 @@ export function spareAdjustModal(p, done) {
   const qty = h('input', { class: 'input', type: 'number', placeholder: 'Ör. 12 ya da -3' });
   const reason = h('input', { class: 'input', placeholder: 'Ör. Sayım farkı, hurda' });
   modal({
-    title: `${p.code} — sayım düzeltmesi`,
-    body: h('div', null, h('p', { style: { marginTop: 0 } }, `Şu anki stok: ${p.stock} adet. Eklemek için artı, düşmek için eksi adet girin.`),
+    title: t('{code} — sayım düzeltmesi', { code: p.code }),
+    body: h('div', null, h('p', { style: { marginTop: 0 } }, t('Şu anki stok: {n} adet. Eklemek için artı, düşmek için eksi adet girin.', { n: p.stock })),
       h('div', { class: 'row' }, field('Adet', qty), field('Açıklama', reason))),
     actions: [{ label: 'Vazgeç' }, {
       label: 'Kaydet', class: 'primary', onClick: async () => {
         const n = Number(qty.value);
         if (!n || !reason.value.trim()) throw new Error('Adet (sıfırdan farklı) ve açıklama zorunlu');
         const r = await api.post(`/api/products/${p.id}/adjust`, { qty: n, reason: reason.value.trim() });
-        toast(`Yeni stok: ${r.stock} adet`);
+        toast(t('Yeni stok: {n} adet', { n: r.stock }));
         (done || (() => window.dispatchEvent(new HashChangeEvent('hashchange'))))();
       },
     }],
@@ -51,17 +51,17 @@ function sparesCard(spares, ctx, partSpares = []) {
       const low = sp.per_aircraft && sp.stock < sp.per_aircraft;
       return h('div', { class: `spare-row ${low ? 'low' : ''}` },
         h('div', { class: 'grow' }, h('b', null, `${sp.code} · ${sp.name}`),
-          h('div', { class: 'small muted' }, `CAYMAZ başına ${sp.per_aircraft} · baskıda ${sp.per_print}`
-            + (sp.open_orders ? ` · ${sp.open_orders} açık sipariş` : ''))),
+          h('div', { class: 'small muted' }, t('CAYMAZ başına {per} · baskıda {print}', { per: sp.per_aircraft, print: sp.per_print })
+            + (sp.open_orders ? t(' · {n} açık sipariş', { n: sp.open_orders }) : ''))),
         h('div', { class: 'spare-num' }, h('b', null, sp.stock),
-          h('span', null, sp.enough_for == null ? 'adet' : `${sp.enough_for} uçağa yeter`)),
+          h('span', null, sp.enough_for == null ? 'adet' : t('{n} uçağa yeter', { n: sp.enough_for }))),
         h('div', { class: 'spare-btns' },
           h('button', { class: 'btn sm', onclick: () => spareMovesModal(sp) }, 'Hareketler'),
           canAdjust ? h('button', { class: 'btn sm', onclick: () => spareAdjustModal(sp) }, 'Düzelt') : null));
     })) : h('div', { class: 'muted small' }, 'Yedek parça tanımlı değil'),
     partSpares.length ? h('a', { class: 'spare-row', href: '#/products', style: { marginTop: '8px', color: 'inherit' } },
       h('div', { class: 'grow' }, h('b', null, 'Parça yedekleri'),
-        h('div', { class: 'small muted' }, `${partSpares.length} parça tanımlı · ${inStock.length} çeşidi stokta`)),
+        h('div', { class: 'small muted' }, t('{n} parça tanımlı · {m} çeşidi stokta', { n: partSpares.length, m: inStock.length }))),
       h('div', { class: 'spare-num' }, h('b', null, inStock.reduce((a, x) => a + x.stock, 0)), h('span', null, 'adet'))) : null);
 }
 
@@ -90,8 +90,8 @@ export async function render(view, params, ctx) {
     label: part => String(counts[part.id]),
     labelClass: part => `count ${counts[part.id] ? '' : 'zero'} ${shown(part) ? '' : 'faded'}`,
     tooltip: part => [
-      h('span', null, 'Yarı mamul stok: ', h('b', null, `${counts[part.id]} adet`)),
-      pending[part.id] ? `Depo onayı bekleyen: ${pending[part.id]} adet` : null,
+      h('span', null, 'Yarı mamul stok: ', h('b', null, t('{n} adet', { n: counts[part.id] }))),
+      pending[part.id] ? t('Depo onayı bekleyen: {n} adet', { n: pending[part.id] }) : null,
       ...partInfoLines(part, plane.groups),
     ],
   });
@@ -120,7 +120,7 @@ export async function render(view, params, ctx) {
   inStock.addEventListener('change', redraw);
 
   clear(view,
-    pageHead('Yarı Mamül', { back: '#/', sub: `${stock.product.name} · seri no ${stock.product.serial}` }),
+    pageHead('Yarı Mamül', { back: '#/', sub: t('{name} · seri no {serial}', { name: stock.product.name, serial: stock.product.serial }) }),
     stats,
     h('div', { class: 'filters' }, picker, q, group, h('label', { class: 'check' }, inStock, 'Sadece stokta olanlar')),
     h('div', { class: 'plane-layout stock-layout' },

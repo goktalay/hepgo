@@ -1,7 +1,7 @@
 // Araçlar → Üretim Hataları: üretimde parçalara girilen hata kayıtları; filtre, en çok hata verenler, fotoğraflı detay, CSV.
 import { api, fileUrl } from '../api.js';
 import { PART_STATES, badge } from '../status.js';
-import { clear, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, toastError, periodFilter } from '../ui.js';
+import { clear, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, t, toastError, periodFilter } from '../ui.js';
 import { companyTag } from './production.js';
 
 const day = iso => (iso || '').slice(0, 10);
@@ -10,7 +10,7 @@ const codeKey = c => {
   const k = (c || '').trim().toLocaleUpperCase('tr').replace(/\s+/g, ' ');
   return !k || /^[.\-0]+$/.test(k) || /^(KOD YOK|HATA KODU YOK)/.test(k) ? 'Kodsuz' : k;
 };
-const printerLabel = r => (r.printer_name ? (/^\d+$/.test(r.printer_name) ? `Yazıcı ${r.printer_name}` : r.printer_name) : '—');
+const printerLabel = r => (r.printer_name ? (/^\d+$/.test(r.printer_name) ? t('Yazıcı {name}', { name: r.printer_name }) : r.printer_name) : '—');
 
 export async function renderProductionErrors(view, ctx) {
   let rows;
@@ -71,7 +71,7 @@ export async function renderProductionErrors(view, ctx) {
       { label: 'Hata kaydı', value: list.length, tone: list.length ? 'alert' : '' },
       { label: 'Bugün', value: list.filter(r => day(r.at) === today).length },
       { label: 'Son 7 gün', value: list.filter(r => day(r.at) >= week).length },
-      { label: 'Hatalı parça', value: parts.size, sub: `${repeated.size} tekrarlayan` },
+      { label: 'Hatalı parça', value: parts.size, sub: t('{n} tekrarlayan', { n: repeated.size }) },
       { label: 'Hata veren yazıcı', value: new Set(list.map(r => r.printer_id).filter(Boolean)).size },
       { label: 'Resimli kayıt', value: list.filter(r => r.photo).length },
     ]);
@@ -118,7 +118,7 @@ export async function renderProductionErrors(view, ctx) {
 
   function detail(r) {
     modal({
-      title: `${r.order_code} / ${r.part_id} — Hata`,
+      title: t('{order} / {part} — Hata', { order: r.order_code, part: r.part_id }),
       body: h('div', { class: 'pe-detail' },
         r.photo ? h('a', { href: fileUrl(r.photo), target: '_blank', rel: 'noopener' },
           h('img', { class: 'pe-photo', src: fileUrl(r.photo, 1600), alt: 'Hata resmi' })) : h('div', { class: 'pe-img none' }, 'Resim yok'),

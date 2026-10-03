@@ -4,7 +4,7 @@ import { segIcon } from '../segicons.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  clear, companyName, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, modal, peoplePicker, pref, segmented, setPref, shortCompany, svgIcon,
+  clear, companyName, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, modal, peoplePicker, pref, segmented, setPref, shortCompany, svgIcon, t,
   toast, toastError,
 } from '../ui.js';
 import { KINDS, OCR, badgeOf, size, thumbOf } from './documents.js';
@@ -74,7 +74,7 @@ export function notesPanel(subject, subjectId, ctx) {
       };
       return h('div', { class: 'note-item' },
         h('div', { class: 'note-meta' }, h('b', null, n.created_by_name || '—'), ` · ${fmtDateTime(n.created_at)}`,
-          n.updated_at ? h('span', { class: 'muted' }, ` · düzenlendi ${fmtDateTime(n.updated_at)}`) : null,
+          n.updated_at ? h('span', { class: 'muted' }, t(' · düzenlendi {d}', { d: fmtDateTime(n.updated_at) })) : null,
           h('span', { class: 'grow' }),
           mine ? h('button', { class: 'btn sm ghost', onclick: edit }, 'Düzenle') : null,
           mine ? h('button', { class: 'btn sm ghost', onclick: del }, 'Sil') : null),
@@ -186,7 +186,7 @@ function eventInfo(subject, subjectId, e, ctx, reload) {
       h('dt', null, 'Ekleyen'), h('dd', null, `${e.created_by_name || '—'} · ${fmtDateTime(e.created_at)}`)),
     actions: [
       mine ? { label: 'Sil', class: 'danger', onClick: async () => {
-        if (!await confirmDialog('Kaydı sil', `${e.title} silinsin mi?`, { okLabel: 'Sil', danger: true })) return false;
+        if (!await confirmDialog('Kaydı sil', t('{title} silinsin mi?', { title: e.title }), { okLabel: 'Sil', danger: true })) return false;
         await api.del(`/api/crm/events/${e.id}`); toast('Takvim kaydı silindi'); reload();
       } } : null,
       'spacer',
@@ -245,7 +245,7 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
         : `${s0.getDate()} ${MONTHS[s0.getMonth()].slice(0, 3)} – ${e0.getDate()} ${MONTHS[e0.getMonth()].slice(0, 3)} ${e0.getFullYear()}`;
     }
     if (mode === 'year') return String(d.getFullYear());
-    if (mode === 'agenda') return `${fmtDate(ymd(d))} itibarıyla 60 gün`;
+    if (mode === 'agenda') return t('{d} itibarıyla 60 gün', { d: fmtDate(ymd(d)) });
     return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
   };
   const byDayOf = events => {
@@ -263,7 +263,7 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
       const cell = h('div', { class: `cal-cell ${d.getMonth() !== anchor.getMonth() ? 'out' : ''} ${key === ymd(today) ? 'today' : ''}`, title: 'Bu güne kayıt eklemek için tıklayın' },
         h('button', { type: 'button', class: 'cal-day', title: 'Gün görünümü', onclick: ev => { ev.stopPropagation(); anchor = d; setMode('day'); } }, d.getDate()),
         list.slice(0, 3).map(chip),
-        list.length > 3 ? h('button', { type: 'button', class: 'cal-more', onclick: ev => { ev.stopPropagation(); anchor = d; setMode('day'); } }, `+${list.length - 3} kayıt daha`) : null);
+        list.length > 3 ? h('button', { type: 'button', class: 'cal-more', onclick: ev => { ev.stopPropagation(); anchor = d; setMode('day'); } }, t('+{n} kayıt daha', { n: list.length - 3 })) : null);
       cell.addEventListener('click', () => newEvent({ starts_at: `${key}T09:00:00` }));
       cells.push(cell);
     }
@@ -335,7 +335,7 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
       for (let i = 0; i < 42; i++) {
         const d = addDays(s0, i), key = ymd(d), n = d.getMonth() === mi ? (byDay.get(key) || []).length : 0;
         cells.push(h('button', { type: 'button', class: `cal-yd ${d.getMonth() !== mi ? 'out' : ''} ${key === ymd(today) ? 'today' : ''} ${n ? 'has' : ''}`,
-          title: n ? `${n} kayıt` : '', disabled: d.getMonth() !== mi, onclick: () => { anchor = d; setMode('day'); } }, d.getDate()));
+          title: n ? t('{n} kayıt', { n }) : '', disabled: d.getMonth() !== mi, onclick: () => { anchor = d; setMode('day'); } }, d.getDate()));
       }
       return h('div', { class: 'cal-ym' }, h('button', { type: 'button', class: 'cal-ym-title', onclick: () => { anchor = first; setMode('month'); } }, mn),
         h('div', { class: 'cal-ygrid' }, DAYS.map(d => h('span', null, d[0])), cells));

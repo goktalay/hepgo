@@ -9,7 +9,7 @@ import * as stock from './stock.js';
 import * as warehouse from './warehouse.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
-  toast, toastError,
+  t, toast, toastError,
 } from '../ui.js';
 
 const TYPE = { YEDEK_PARCA: ['Yedek parça', 'spare'], HAMMADDE: ['Hammadde', 'raw'], DEMIRBAS: ['Demirbaş', 'fixture'], SARF: ['Sarf malzeme', 'consumable'] };
@@ -112,7 +112,7 @@ function materialCard(m) {
     h('div', { class: 'product-info' },
       h('div', { class: 'top' }, h('b', null, m.name), h('span', { class: 'grow' }), typeTag(m.type), m.active ? null : h('span', { class: 'badge gray' }, 'Pasif')),
       h('div', { class: 'mrp-card-stock' }, h('b', null, num(m.stock)), h('span', null, m.unit || 'adet'),
-        m.critical ? h('span', { class: 'badge red' }, `Kritik: ${num(m.min_stock)}`) : null),
+        m.critical ? h('span', { class: 'badge red' }, t('Kritik: {min}', { min: num(m.min_stock) })) : null),
       h('dl', null,
         h('dt', null, 'Stok kodu'), h('dd', { class: 'mono' }, m.code),
         m.barcode ? [h('dt', null, 'Barkod'), h('dd', { class: 'mono' }, m.barcode)] : null,
@@ -172,14 +172,14 @@ async function renderMaterial(view, id, ctx) {
   const top = h('div', { class: `card card-pad mrp-top ${m.critical ? 'critical' : ''}` },
     h('div', { class: 'mrp-top-img' }, m.cover ? h('img', { src: fileUrl(m.cover, 480), alt: '' }) : h('div', { class: 'product-ph' }, h('span', null, m.code))),
     h('div', { class: 'mrp-top-body' },
-      h('div', { class: 'mrp-top-stock' }, h('b', null, num(m.stock)), h('span', null, `${m.unit || 'adet'} toplam stok`),
-        m.critical ? h('span', { class: 'badge red' }, `Kritik stok (${num(m.min_stock)}) altında`) : null),
+      h('div', { class: 'mrp-top-stock' }, h('b', null, num(m.stock)), h('span', null, t('{unit} toplam stok', { unit: m.unit || 'adet' })),
+        m.critical ? h('span', { class: 'badge red' }, t('Kritik stok ({min}) altında', { min: num(m.min_stock) })) : null),
       h('div', { class: 'form-grid' }, field('Stok kodu', f.code), field('Barkod', f.barcode), field('Marka', f.brand), field('Model', f.model),
         field('Malzeme adı', f.name), field('Tipi', f.type), field('Birim', f.unit), field('Kritik stok', f.min)),
       field('Açıklama', f.desc),
       edit ? h('div', { class: 'pd-info-foot' }, h('label', { class: 'check' }, f.active, 'Aktif'), h('span', { class: 'spacer' }), save) : null));
-  const tabs = [['physical', 'Fiziksel Özellikler'], ['moves', 'Stok Hareketi'], ['depots', 'Depo'], ['3d', '3B'], ['images', `Resimler${m.images.length ? ` (${m.images.length})` : ''}`],
-    ['docs', 'Fatura İrsaliye'], ['scrap', 'Hurda ve Kullanım'], ['used', `Kullanıldığı Ürünler${m.used_in.length ? ` (${m.used_in.length})` : ''}`]];
+  const tabs = [['physical', 'Fiziksel Özellikler'], ['moves', 'Stok Hareketi'], ['depots', 'Depo'], ['3d', '3B'], ['images', t('Resimler{count}', { count: m.images.length ? ` (${m.images.length})` : '' })],
+    ['docs', 'Fatura İrsaliye'], ['scrap', 'Hurda ve Kullanım'], ['used', t('Kullanıldığı Ürünler{count}', { count: m.used_in.length ? ` (${m.used_in.length})` : '' })]];
   let tab = pref('mrp.tab', 'physical');
   if (!tabs.some(t => t[0] === tab)) tab = 'physical';
   const stage = h('div');
@@ -227,7 +227,7 @@ function physicalTab(m) {
       h('div', { class: 'form-grid' },
         field('Renk', h('div', { class: 'row-inline' }, swatch, color)),
         field('Genişlik (mm)', w), field('Yükseklik (mm)', hh), field('Derinlik (mm)', d), field('Ağırlık (g)', g)),
-      m.width_mm && m.height_mm && m.depth_mm ? h('div', { class: 'small muted' }, `Hacim: ${num(m.width_mm * m.height_mm * m.depth_mm / 1000)} cm³`) : null,
+      m.width_mm && m.height_mm && m.depth_mm ? h('div', { class: 'small muted' }, t('Hacim: {v} cm³', { v: num(m.width_mm * m.height_mm * m.depth_mm / 1000) })) : null,
       m.can_edit ? h('div', { class: 'hr-save' }, save) : null),
     h('div', { class: 'card card-pad' }, h('h3', null, 'Tanımlama resmi'),
       m.image ? h('a', { class: 'pd-image', href: fileUrl(m.image), target: '_blank', rel: 'noopener' }, h('img', { src: fileUrl(m.image, 800), alt: '' }))
@@ -248,7 +248,7 @@ const moveTable = (rows, { product = false } = {}) => h('div', { class: 'card ta
     h('td', null, r.warehouse_name || h('span', { class: 'muted' }, 'Stok dışı')),
     h('td', { class: `num ${r.qty < 0 ? 'neg' : 'pos'}` }, h('b', null, `${r.qty > 0 ? '+' : ''}${num(r.qty)}`), ` ${r.unit || ''}`,
       r.unit_price ? h('div', { class: 'small muted' }, `${money(r.unit_price)} / ${r.unit || 'adet'}`) : null),
-    h('td', { class: 'small' }, r.reason || '', r.order_code ? h('div', { class: 'muted' }, `Uçak: ${r.queue_no || r.order_code}`) : null),
+    h('td', { class: 'small' }, r.reason || '', r.order_code ? h('div', { class: 'muted' }, t('Uçak: {code}', { code: r.queue_no || r.order_code })) : null),
     h('td', { class: 'small' }, r.doc_number || r.doc_kind ? (r.doc_file ? h('a', { href: fileUrl(r.doc_file), target: '_blank', rel: 'noopener' }, `${r.doc_kind === 'FATURA' ? 'Fatura' : 'İrsaliye'} ${r.doc_number || ''}`)
       : `${r.doc_kind === 'FATURA' ? 'Fatura' : 'İrsaliye'} ${r.doc_number || ''}`) : '—'),
     h('td', { class: 'small muted' }, r.user_name || '—'))))));
@@ -266,7 +266,7 @@ function depotsTab(m) {
   return h('div', { class: 'mrp-depots' }, m.warehouses.length ? m.warehouses.map(w => h('div', { class: `card mrp-depot ${w.qty > 0 ? '' : 'empty'}` },
     h('div', { class: 'mrp-depot-name' }, h('b', null, w.name), w.code ? h('span', { class: 'mono small muted' }, w.code) : null),
     h('div', { class: 'mrp-depot-qty' }, num(w.qty), h('small', null, m.unit || 'adet')),
-    h('div', { class: 'small muted' }, [w.location, w.responsible_name ? `Sorumlu: ${w.responsible_name}` : null].filter(Boolean).join(' · ') || ' '),
+    h('div', { class: 'small muted' }, [w.location, w.responsible_name ? t('Sorumlu: {name}', { name: w.responsible_name }) : null].filter(Boolean).join(' · ') || ' '),
     m.can_edit ? h('div', { class: 'row-inline' }, h('button', { class: 'btn sm', onclick: () => moveModal(m, 'GIRIS', w.id) }, 'Giriş'),
       w.qty > 0 ? h('button', { class: 'btn sm', onclick: () => moveModal(m, 'TRANSFER', w.id) }, 'Transfer') : null) : null))
     : h('div', { class: 'card empty' }, 'Depo tanımlı değil. Depo Yönetimi’nden depo ekleyin.'));
@@ -278,10 +278,10 @@ function imagesTab(m) {
     if (!input.files.length) return;
     const fd = new FormData();
     for (const f of input.files) fd.append('files', f);
-    try { await upload(`/api/mrp/materials/${m.id}/images`, fd); toast(`${input.files.length} resim yüklendi`); reload(); } catch (err) { toastError(err); }
+    try { await upload(`/api/mrp/materials/${m.id}/images`, fd); toast(t('{n} resim yüklendi', { n: input.files.length })); reload(); } catch (err) { toastError(err); }
   });
   const remove = async i => {
-    if (!await confirmDialog('Resmi sil', `${i.file_name || 'Resim'} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Resmi sil', t('{name} silinsin mi?', { name: i.file_name || 'Resim' }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/mrp/materials/${m.id}/images/${i.id}`); reload(); } catch (err) { toastError(err); }
   };
   return h('div', { class: 'card card-pad' },
@@ -365,7 +365,7 @@ async function moveModal(m, kind, depotId) {
     body: h('div', null,
       h('div', { class: 'form-grid' },
         field(kind === 'TRANSFER' ? 'Kaynak depo' : 'Depo', dep), kind === 'TRANSFER' ? field('Hedef depo', to) : null,
-        field(kind === 'SAYIM' ? `Sayılan miktar (${m.unit || 'adet'})` : `Miktar (${m.unit || 'adet'})`, qty),
+        field(kind === 'SAYIM' ? t('Sayılan miktar ({unit})', { unit: m.unit || 'adet' }) : t('Miktar ({unit})', { unit: m.unit || 'adet' }), qty),
         kind === 'GIRIS' ? field('Birim fiyat', price) : null),
       field(['CIKIS', 'KULLANIM', 'HURDA'].includes(kind) ? 'Açıklama *' : 'Açıklama', reason),
       kind === 'GIRIS' ? [field('Fatura / İrsaliye', docKind), docBox] : null),
@@ -381,7 +381,7 @@ async function moveModal(m, kind, depotId) {
       }
       await api.post(`/api/mrp/materials/${m.id}/moves`, { kind, warehouse_id: Number(dep.value), to_warehouse_id: kind === 'TRANSFER' ? Number(to.value) : null,
         qty: Number(qty.value), unit_price: price.value === '' ? null : Number(price.value), reason: reason.value, doc_id: docId });
-      toast(`${titles[kind]} kaydedildi`);
+      toast(t('{title} kaydedildi', { title: titles[kind] }));
       reload();
     } }],
   });
@@ -400,7 +400,7 @@ async function renderDepots(view, ctx) {
     const note = h('input', { class: 'input', value: w?.note || '' });
     const active = h('input', { type: 'checkbox', checked: w ? !!w.active : true });
     modal({
-      title: w ? `${w.name} · Düzenle` : 'Yeni Depo',
+      title: w ? t('{name} · Düzenle', { name: w.name }) : 'Yeni Depo',
       body: h('div', null, h('div', { class: 'form-grid' }, field('Depo adı *', name), field('Kod', code), field('Konum', loc), field('Depo sorumlusu', resp)),
         field('Not', note), h('label', { class: 'check' }, active, 'Aktif')),
       actions: [
@@ -440,7 +440,7 @@ export async function aircraftReviewModal(orderId, done) {
     return { i, scrap, good, dep };
   });
   modal({
-    title: `${d.queue_no || d.code} · İçindeki malzemeler`, wide: true,
+    title: t('{code} · İçindeki malzemeler', { code: d.queue_no || d.code }), wide: true,
     body: h('div', null,
       h('p', { class: 'small muted', style: { marginTop: 0 } }, 'Uçak hurdaya ayrıldı. Reçetesindeki malzemelerden hurda olanları ve sağlam çıkıp depoya geri alınacakları girin. Hurda, uçuş kaynaklı hurda olarak kaydedilir.'),
       h('table', { class: 'table mrp-review' },

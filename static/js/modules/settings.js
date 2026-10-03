@@ -8,7 +8,7 @@ import { segIconByKey } from '../segicons.js';
 import { disablePush, enablePush, pushState, pushSupport } from '../push.js';
 import { CALL_BACKGROUNDS, CALL_BG_LABELS } from './voice.js';
 import { MASCOT_LIST, mascotSvg, setMascot } from './mascot.js';
-import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
 
 // Mobilde (≤800px) Ayarlar iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
@@ -108,9 +108,9 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       tile.addEventListener('click', () => { s.background = key; save(); bgGrid.querySelectorAll('.set-bg-tile').forEach(t => t.classList.toggle('on', t.getAttribute('data-p') === key)); });
       return tile;
     }));
-    const resetAll = h('button', { class: 'btn sm', type: 'button', onclick: () => { resets.forEach(f => f()); save('Renkler sıfırlandı'); } }, `${tk === 'dark' ? 'Koyu' : 'Açık'} tema renklerini sıfırla`);
+    const resetAll = h('button', { class: 'btn sm', type: 'button', onclick: () => { resets.forEach(f => f()); save('Renkler sıfırlandı'); } }, t('{theme} tema renklerini sıfırla', { theme: tk === 'dark' ? 'Koyu' : 'Açık' }));
     return card('Görünüm & Renkler',
-      `Renkler yalnızca ŞU AN AKTİF temayı (${tk === 'dark' ? 'Koyu' : 'Açık'}) etkiler. Diğer temayı düzenlemek için temayı değiştirip bu sayfaya dönün. Değişiklikler merkezidir; modüllerin kendi içeriğine dokunmaz.`,
+      t('Renkler yalnızca ŞU AN AKTİF temayı ({theme}) etkiler. Diğer temayı düzenlemek için temayı değiştirip bu sayfaya dönün. Değişiklikler merkezidir; modüllerin kendi içeriğine dokunmaz.', { theme: tk === 'dark' ? 'Koyu' : 'Açık' }),
       line('Araç çubuğu hizası', 'Alt-modül işlem düğmelerinin (toolbar) yatay konumu', alignSeg),
       h('h4', { class: 'set-sub' }, 'Merkezi renkler'),
       ...rows,
@@ -121,7 +121,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   }
 
   // ---------- Bildirimler
-  const flashSel = h('select', { class: 'input' }, [3, 5, 8, 12].map(n => h('option', { value: n, selected: s.flashSec === n }, `${n} saniye`)));
+  const flashSel = h('select', { class: 'input' }, [3, 5, 8, 12].map(n => h('option', { value: n, selected: s.flashSec === n }, t('{n} saniye', { n }))));
   flashSel.addEventListener('change', () => { s.flashSec = Number(flashSel.value); save(); });
   const deskState = h('small', { class: 'set-state' });
   const syncDesk = () => {
@@ -150,7 +150,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   const rows = h('div', { class: 'set-sounds' });
   for (const [key, label, desc] of EVENTS) {
     const sel = h('select', { class: 'input' }, SOUND_NAMES.map(n => h('option', { value: n, selected: (s.sound.map[key] || DEFAULTS[key]) === n },
-      n === DEFAULTS[key] ? `${n} (varsayılan)` : n)));
+      n === DEFAULTS[key] ? t('{n} (varsayılan)', { n }) : n)));
     sel.addEventListener('change', () => { s.sound.map[key] = sel.value; save(); playSound(sel.value, s.sound.volume || 0.7); });
     rows.append(h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, label), h('small', null, desc)), sel,
       h('button', { class: 'btn set-play', type: 'button', title: 'Dinle', onclick: () => playSound(sel.value, s.sound.volume || 0.7) }, '▶')));
@@ -313,8 +313,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
           const dot = c => h('span', { class: 'sr-dot', style: { background: c } });
           const invites = d.invites.length ? card('Davetler', 'Sizi telsiz kanalına davet edenler. Onaylarsanız kanal telsiz menünüzde görünür.',
             ...d.invites.map(i => h('div', { class: 'sr-row invite' }, dot(i.color),
-              h('div', { class: 'grow' }, h('b', null, i.name), h('small', null, `${i.invited_by_name || 'Bir kullanıcı'} davet etti`)),
-              h('button', { class: 'btn primary xs', type: 'button', onclick: async () => { try { await api.post(`/api/radio/channels/${i.id}/accept`, {}); toast(`“${i.name}” kanalına katıldınız`, 'success'); refreshRadio(); load(); } catch (e) { err(e); } } }, 'Katıl'),
+              h('div', { class: 'grow' }, h('b', null, i.name), h('small', null, t('{name} davet etti', { name: i.invited_by_name || 'Bir kullanıcı' }))),
+              h('button', { class: 'btn primary xs', type: 'button', onclick: async () => { try { await api.post(`/api/radio/channels/${i.id}/accept`, {}); toast(t('“{name}” kanalına katıldınız', { name: i.name }), 'success'); refreshRadio(); load(); } catch (e) { err(e); } } }, 'Katıl'),
               h('button', { class: 'btn xs', type: 'button', onclick: async () => { try { await api.post(`/api/radio/channels/${i.id}/decline`, {}); toast('Davet reddedildi'); load(); } catch (e) { err(e); } } }, 'Reddet')))) : null;
           const owned = card('Kanallarım', 'Oluşturduğunuz kanallar. Eklediğiniz kişilere onay bildirimi gider; onaylayan kanala üye olur.',
             h('div', { class: 'set-actions left' }, h('button', { class: 'btn primary', type: 'button', onclick: () => editor(null, d) }, '+ Yeni kanal')),
@@ -322,19 +322,19 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
               const ok = c.people.filter(p => p.status === 'UYE'), wait = c.people.filter(p => p.status === 'DAVET');
               return h('div', { class: 'sr-row' }, dot(c.color),
                 h('div', { class: 'grow' }, h('b', null, c.name),
-                  h('small', null, `${ok.length + 1} üye${wait.length ? ` · ${wait.length} onay bekliyor` : ''}`),
+                  h('small', null, t('{a} üye', { a: ok.length + 1 }) + (wait.length ? t(' · {n} onay bekliyor', { n: wait.length }) : '')),
                   h('div', { class: 'sr-avs' }, ...ok.map(p => h('span', { title: p.full_name }, avatar(p, 'sm'))),
-                    ...wait.map(p => h('span', { class: 'wait', title: `${p.full_name} · onay bekliyor` }, avatar(p, 'sm'))))),
+                    ...wait.map(p => h('span', { class: 'wait', title: t('{name} · onay bekliyor', { name: p.full_name }) }, avatar(p, 'sm'))))),
                 h('button', { class: 'btn xs', type: 'button', onclick: () => editor(c, d) }, 'Düzenle'),
                 h('button', { class: 'btn xs danger', type: 'button', onclick: async () => {
-                  if (!await confirmDialog('Kanalı sil', `“${c.name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.`, { okLabel: 'Sil', danger: true })) return;
+                  if (!await confirmDialog('Kanalı sil', t('“{name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.', { name: c.name }), { okLabel: 'Sil', danger: true })) return;
                   try { await api.del(`/api/radio/channels/${c.id}`); toast('Kanal silindi'); refreshRadio(); load(); } catch (e) { err(e); }
                 } }, 'Sil'));
             }) : [h('p', { class: 'small muted' }, 'Henüz kanal oluşturmadınız.')]));
           const member = d.member.length ? card('Üyesi olduğum kanallar', null, ...d.member.map(c => h('div', { class: 'sr-row' }, dot(c.color),
-            h('div', { class: 'grow' }, h('b', null, c.name), h('small', null, `${c.owner_name || '—'} · ${c.member_count} üye`)),
+            h('div', { class: 'grow' }, h('b', null, c.name), h('small', null, t('{owner} · {n} üye', { owner: c.owner_name || '—', n: c.member_count }))),
             h('button', { class: 'btn xs', type: 'button', onclick: async () => {
-              if (!await confirmDialog('Kanaldan ayrıl', `“${c.name}” kanalından ayrılmak istiyor musunuz?`, { okLabel: 'Ayrıl' })) return;
+              if (!await confirmDialog('Kanaldan ayrıl', t('“{name}” kanalından ayrılmak istiyor musunuz?', { name: c.name }), { okLabel: 'Ayrıl' })) return;
               try { await api.post(`/api/radio/channels/${c.id}/leave`, {}); toast('Kanaldan ayrıldınız'); refreshRadio(); load(); } catch (e) { err(e); }
             } }, 'Ayrıl')))) : null;
           clear(wrap, invites, owned, member,
@@ -353,9 +353,9 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
           const cnt = h('small', { class: 'muted' });
           const drawUsers = () => {
             const f = q.value.trim().toLocaleLowerCase('tr');
-            cnt.textContent = `${picked.size} kişi`;
+            cnt.textContent = t('{n} kişi', { n: picked.size });
             clear(list, d.users.filter(u => !f || u.full_name.toLocaleLowerCase('tr').includes(f)).map(u => {
-              const cb = h('input', { type: 'checkbox', checked: picked.has(u.id), onchange: e => { e.target.checked ? picked.add(u.id) : picked.delete(u.id); cnt.textContent = `${picked.size} kişi`; } });
+              const cb = h('input', { type: 'checkbox', checked: picked.has(u.id), onchange: e => { e.target.checked ? picked.add(u.id) : picked.delete(u.id); cnt.textContent = t('{n} kişi', { n: picked.size }); } });
               const st = status.get(u.id);
               return h('label', { class: 'sr-user' }, cb, avatar(u, 'sm'), h('span', { class: 'grow' }, u.full_name),
                 st === 'DAVET' ? h('small', { class: 'sr-tag' }, 'onay bekliyor') : st === 'UYE' ? h('small', { class: 'sr-tag ok' }, 'üye') : null);
@@ -410,7 +410,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
           const ch = [s.dnd.calls ? 'aramalar' : null, s.dnd.messages ? 'mesajlar' : null].filter(Boolean).join(' ve ');
           status.className = `set-dnd-status ${active ? 'on' : ''}`;
           status.textContent = !active ? '🟢 Şu an herkese açıksınız.'
-            : `🔕 ${ch[0].toUpperCase() + ch.slice(1)} kapalı — ${s.dnd.until ? 'bitiş: ' + fmtDateTime(s.dnd.until) : 'sürekli (siz açana kadar)'}`;
+            : t('🔕 {ch} kapalı — {rest}', { ch: ch[0].toUpperCase() + ch.slice(1), rest: s.dnd.until ? 'bitiş: ' + fmtDateTime(s.dnd.until) : 'sürekli (siz açana kadar)' });
         };
         const onDnd = () => { s.dnd.until = (s.dnd.calls || s.dnd.messages) ? dndUntil(s.dnd.dur || 'always') : null; refresh(); };
         const durSel = h('select', { class: 'input' }, [['always', 'Sürekli (ben açana kadar)'], ['1', '1 saat'], ['2', '2 saat'],

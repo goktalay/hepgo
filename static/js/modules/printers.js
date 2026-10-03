@@ -6,7 +6,7 @@ import { printerRoom } from './printers3d.js';
 import { subnav } from './production.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref,
-  svgIcon, toast, toastError,
+  svgIcon, t, toast, toastError,
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -69,15 +69,15 @@ export async function render(view, params, ctx) {
   namesBtn.addEventListener('click', () => busy(namesBtn, async () => {
     const r = await api.post('/api/printers/refresh-names');
     await load();
-    if (r.changed.length) toast(`${r.changed.length} yazıcının adı güncellendi: ${r.changed.map(c => `${c.old} → ${c.new}`).slice(0, 4).join(', ')}${r.changed.length > 4 ? '…' : ''}`);
-    else toast(`Değişen ad yok · ${r.no_name}/${r.total} yazıcının ekranında ad girilmemiş ya da ulaşılamadı`, r.no_name ? '' : 'ok');
+    if (r.changed.length) toast(t('{n} yazıcının adı güncellendi: {list}{more}', { n: r.changed.length, list: r.changed.map(c => `${c.old} → ${c.new}`).slice(0, 4).join(', '), more: r.changed.length > 4 ? '…' : '' }));
+    else toast(t('Değişen ad yok · {noName}/{total} yazıcının ekranında ad girilmemiş ya da ulaşılamadı', { noName: r.no_name, total: r.total }), r.no_name ? '' : 'ok');
   }));
   const discoverBtn = h('button', { class: 'btn' }, svgIcon(icons.radar), 'Otomatik Ekle');
   discoverBtn.addEventListener('click', () => busy(discoverBtn, async () => {
     toast('Ağ taranıyor, bu işlem birkaç saniye sürebilir…');
     const res = await api.post('/api/printers/discover');
     await load();
-    if (res.added.length) toast(`${res.added.length} yazıcı eklendi: ${res.added.map(a => a.ip).join(', ')}`);
+    if (res.added.length) toast(t('{n} yazıcı eklendi: {ips}', { n: res.added.length, ips: res.added.map(a => a.ip).join(', ') }));
     else toast(res.found ? 'Ağdaki yazıcıların hepsi zaten kayıtlı' : 'Ağda yazıcı bulunamadı', res.found ? '' : 'err');
   }));
 
@@ -118,7 +118,7 @@ function rackBoard(printers, onSaved) {
   };
   const renumber = () => lists.forEach((l, i) => {
     [...l.querySelectorAll('.rack-item')].forEach((el, n) => { el.querySelector('.rack-no').textContent = n + 1; });
-    counts[i].textContent = `${l.querySelectorAll('.rack-item').length} yazıcı`;
+    counts[i].textContent = t('{n} yazıcı', { n: l.querySelectorAll('.rack-item').length });
   });
   const save = h('button', { class: 'btn primary', disabled: true }, 'Kaydet');
   const undo = h('button', { class: 'btn', disabled: true }, 'Değişiklikleri Geri Al');
@@ -222,7 +222,7 @@ function table(printers, reload, canOpen) {
         p.current_part ? h('div', { class: 'small' }, 'Sistemde: ', canOpen
           ? h('a', { href: `#/production/${p.current_order_id}` }, `${p.current_order} / ${p.current_part}`)
           : `${p.current_order} / ${p.current_part}`)
-          : p.file_part ? h('div', { class: 'small muted', title: 'Yazıcıdaki dosya adından tanındı; sistemde siparişi yok' }, `Parça: ${p.file_part} (dosyadan)`) : null,
+          : p.file_part ? h('div', { class: 'small muted', title: 'Yazıcıdaki dosya adından tanındı; sistemde siparişi yok' }, t('Parça: {part} (dosyadan)', { part: p.file_part })) : null,
         p.live_file ? h('div', { class: 'small muted' }, p.live_file) : null),
       h('td', null, p.last_job || '—'),
       h('td', { class: 'muted' }, fmtDateTime(p.last_job_start)),
@@ -258,7 +258,7 @@ function printerForm(p, done) {
 }
 
 async function remove(p, reload) {
-  if (!await confirmDialog('Yazıcıyı sil', `${p.name} (${p.ip}) listeden silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+  if (!await confirmDialog('Yazıcıyı sil', t('{name} ({ip}) listeden silinsin mi?', { name: p.name, ip: p.ip }), { okLabel: 'Sil', danger: true })) return;
   try {
     await api.del(`/api/printers/${p.id}`);
     toast('Yazıcı silindi');

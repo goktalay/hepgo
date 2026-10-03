@@ -3,7 +3,7 @@
 // uzak resimler istenirse yüklenir. Yeni / Yanıtla / Tümünü yanıtla / İlet penceresi ekleriyle.
 import { api } from '../api.js';
 import { icons } from '../icons.js';
-import { clear, confirmDialog, field, h, modal, moduleToolbar, pageHead, svgIcon, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, h, modal, moduleToolbar, pageHead, svgIcon, t, toast, toastError } from '../ui.js';
 
 const FOLDER_ICONS = { inbox: '📥', starred: '⭐', important: '🏷️', sent: '📤', drafts: '📝', all: '🗂️', spam: '⚠️', trash: '🗑️' };
 const size = b => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
@@ -54,7 +54,7 @@ export async function renderMail(view, params = []) {
   const drawBulk = () => {
     const n = selected.size;
     const b = (label, act, title) => h('button', { type: 'button', class: 'btn sm', title, onclick: () => doAction([...selected], act) }, label);
-    clear(bulk, n ? [h('span', { class: 'small muted' }, `${n} seçili`), b('Okundu', 'read'), b('Okunmadı', 'unread'),
+    clear(bulk, n ? [h('span', { class: 'small muted' }, t('{n} seçili', { n })), b('Okundu', 'read'), b('Okunmadı', 'unread'),
       folder === 'inbox' ? b('Arşivle', 'archive') : null, ['spam', 'trash'].includes(folder) ? b('Gelen kutusuna', 'inbox') : null,
       b(folder === 'trash' ? 'Kalıcı sil' : 'Sil', 'trash')]
       : h('button', { type: 'button', class: 'btn sm ghost', title: 'Yenile', onclick: () => { loadList(); loadFolders(); } }, svgIcon(icons.refresh)));
@@ -64,7 +64,7 @@ export async function renderMail(view, params = []) {
       onchange: e => { e.target.checked ? selected.add(m.uid) : selected.delete(m.uid); drawBulk(); } });
     const star = h('button', { type: 'button', class: `mail-star ${m.starred ? 'on' : ''}`, title: 'Yıldız',
       onclick: e => { e.stopPropagation(); m.starred = !m.starred; star.classList.toggle('on', m.starred); doAction([m.uid], m.starred ? 'star' : 'unstar', true); } }, m.starred ? '★' : '☆');
-    const who = folder === 'sent' || folder === 'drafts' ? `Kime: ${m.to?.name || m.to?.email || ''}` : (m.from?.name || m.from?.email);
+    const who = folder === 'sent' || folder === 'drafts' ? t('Kime: {name}', { name: m.to?.name || m.to?.email || '' }) : (m.from?.name || m.from?.email);
     return h('div', { class: `mail-row ${m.seen ? '' : 'unread'} ${current?.uid === m.uid ? 'on' : ''}`, 'data-uid': m.uid, onclick: () => openMsg(m) },
       cb, star, h('div', { class: 'mail-who' }, who), h('div', { class: 'mail-subj' }, m.subject, m.attach ? h('span', { class: 'mail-clip', title: 'Ekli' }, '📎') : null),
       h('div', { class: 'mail-date', title: full(m.date) }, when(m.date)));
@@ -131,7 +131,7 @@ export async function renderMail(view, params = []) {
           acc.can_import && d.attachments.length ? act('📄 Ekleri Evraklara Kaydet', async () => {
             try {
               const r = await api.post('/api/mail/import', { folder, uid: d.uid });
-              toast(r.imported ? `${r.imported} ek evraklara kaydedildi (yalnızca siz görürsünüz, metni okunuyor)` : 'Ekler zaten kayıtlı ya da desteklenmeyen türde');
+              toast(r.imported ? t('{n} ek evraklara kaydedildi (yalnızca siz görürsünüz, metni okunuyor)', { n: r.imported }) : 'Ekler zaten kayıtlı ya da desteklenmeyen türde');
             } catch (err) { toastError(err); }
           }, 'Ekleri Evrak Yönetimi\'ne yalnızca sizin görebileceğiniz şekilde kaydeder') : null,
           folder === 'inbox' ? act('Arşivle', () => doAction([d.uid], 'archive')) : null,
@@ -142,7 +142,7 @@ export async function renderMail(view, params = []) {
           }))),
       h('div', { class: 'mail-from' }, h('span', { class: 'mail-av' }, initials(d.from)),
         h('div', { class: 'grow' }, h('b', null, d.from.name), h('span', { class: 'small muted' }, ` <${d.from.email}>`),
-          h('div', { class: 'small muted' }, `Kime: ${d.to.map(person).join(', ') || '—'}`, d.cc.length ? ` · Bilgi: ${d.cc.map(person).join(', ')}` : '')),
+          h('div', { class: 'small muted' }, t('Kime: {list}', { list: d.to.map(person).join(', ') || '—' }), d.cc.length ? t(' · Bilgi: {list}', { list: d.cc.map(person).join(', ') }) : '')),
         h('div', { class: 'small muted' }, full(d.date))),
       remoteBar,
       d.attachments.length ? h('div', { class: 'mail-atts' }, d.attachments.map(a => h('a', {
@@ -167,11 +167,11 @@ export async function renderMail(view, params = []) {
     const ccRow = h('div', { class: 'row', hidden: mode !== 'all' }, field('Bilgi (Cc)', cc), field('Gizli (Bcc)', bcc));
     modal({
       title: { new: 'Yeni E-posta', reply: 'Yanıtla', all: 'Tümünü Yanıtla', forward: 'İlet' }[mode], wide: true,
-      body: h('div', { class: 'mail-compose' }, h('div', { class: 'small muted' }, `Kimden: ${acc.name ? `${acc.name} <${acc.email}>` : acc.email}`),
+      body: h('div', { class: 'mail-compose' }, h('div', { class: 'small muted' }, t('Kimden: {from}', { from: acc.name ? `${acc.name} <${acc.email}>` : acc.email })),
         field('Kime', to), ccRow,
         mode !== 'all' ? h('button', { class: 'btn sm ghost', type: 'button', onclick: e => { ccRow.hidden = false; e.target.remove(); } }, '+ Bilgi / Gizli alıcı') : null,
         field('Konu', subject), body, field('Ekler (en çok 25 MB)', files),
-        mode === 'forward' && msg.attachments.length ? h('div', { class: 'small muted' }, `Orijinal ${msg.attachments.length} ek de iletilecek`) : null,
+        mode === 'forward' && msg.attachments.length ? h('div', { class: 'small muted' }, t('Orijinal {n} ek de iletilecek', { n: msg.attachments.length })) : null,
         acc.signature ? h('div', { class: 'small muted' }, 'İmzanız otomatik eklenir') : null),
       actions: [{ label: 'Vazgeç' }, { label: 'Gönder', class: 'primary', onClick: async () => {
         if (!to.value.trim()) throw new Error('Alıcı girin');
@@ -196,10 +196,10 @@ export async function renderMail(view, params = []) {
     const auto = h('input', { type: 'checkbox', checked: acc.auto_import });
     modal({
       title: 'Mail Ayarları',
-      body: h('div', null, h('p', { class: 'small muted' }, `Bağlı hesap: ${acc.email} · ${acc.auth_type === 'oauth' ? 'Google ile bağlı' : 'uygulama şifresiyle'}`), field('Gönderen adı', name), field('İmza', sig),
+      body: h('div', null, h('p', { class: 'small muted' }, t('Bağlı hesap: {email} · {how}', { email: acc.email, how: acc.auth_type === 'oauth' ? t('Google ile bağlı') : t('uygulama şifresiyle') })), field('Gönderen adı', name), field('İmza', sig),
         acc.can_import ? h('label', { class: 'set-toggle' }, auto, h('span', null, h('b', null, 'Gelen eklerini Evrak Yönetimi\'ne kaydet'),
           h('small', null, 'Gelen kutusuna yeni düşen e-postaların ekleri yalnızca sizin görebileceğiniz evrak olarak kaydedilir ve metni okunur (OCR)'))) : null,
-        acc.last_error ? h('div', { class: 'alert warn small' }, `Son aktarım hatası: ${acc.last_error}`) : null),
+        acc.last_error ? h('div', { class: 'alert warn small' }, t('Son aktarım hatası: {err}', { err: acc.last_error })) : null),
       actions: [
         { label: 'Hesabı Ayır', class: 'danger', onClick: async () => {
           if (!await confirmDialog('Hesabı ayır', 'Gmail hesabınız sistemden ayrılsın mı? (Gmail\'deki postalarınız silinmez)', { okLabel: 'Ayır', danger: true })) return true;

@@ -5,7 +5,7 @@ import { setListExport } from '../listexport.js';
 import { idCard } from '../idcard.js';
 import { api, fileUrl, upload } from '../api.js';
 import {
-  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, toast, toastError, periodFilter
+  clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
 
 const LEAVE_STATUS = { BEKLIYOR: ['Onay bekliyor', 'yellow'], ONAYLANDI: ['Onaylandı', 'green'], REDDEDILDI: ['Reddedildi', 'red'], IPTAL: ['Geri çekildi', 'gray'] };
@@ -16,7 +16,7 @@ const money = v => (v || v === 0 ? Number(v).toLocaleString('tr-TR', { style: 'c
 const today = () => new Date().toLocaleDateString('sv');
 const dateIn = (value = '', attrs = {}) => h('input', { class: 'input', type: 'date', value: value || '', ...attrs });
 const days = (a, b) => (a && b ? Math.round((new Date(b) - new Date(a)) / 86400000) + 1 : null);
-const range = (a, b) => (a ? `${fmtDate(a)} – ${fmtDate(b)} (${days(a, b)} gün)` : '—');
+const range = (a, b) => (a ? t('{a} – {b} ({n} gün)', { a: fmtDate(a), b: fmtDate(b), n: days(a, b) }) : '—');
 let META = null;
 
 // treeSpider (organizasyon şeması) tembel yüklenir: ~1 MB bundle yalnızca şema sekmesi açılınca indirilir.
@@ -116,11 +116,11 @@ function card(e) {
     h('div', { class: 'hr-card-body' },
       h('b', null, e.name),
       h('div', { class: 'small muted' }, [e.title, e.department].filter(Boolean).join(' · ') || 'Görev girilmemiş'),
-      h('div', { class: 'small muted' }, e.start_date ? `İşe başlama ${fmtDate(e.start_date)}` : ''),
+      h('div', { class: 'small muted' }, e.start_date ? t('İşe başlama {d}', { d: fmtDate(e.start_date) }) : ''),
       h('div', { class: 'hr-tags' }, tags),
-      e.missing.length ? h('div', { class: 'hr-missing' }, `${e.missing.length} evrak eksik`,
-        h('span', null, [e.missing_personnel ? `${e.missing_personnel} özlük` : null, e.missing_contracts ? `${e.missing_contracts} sözleşme` : null].filter(Boolean).join(' · '))) : null,
-      e.unsigned_leaves ? h('div', { class: 'hr-missing' }, `${e.unsigned_leaves} izin formu imzasız`) : null));
+      e.missing.length ? h('div', { class: 'hr-missing' }, t('{n} evrak eksik', { n: e.missing.length }),
+        h('span', null, [e.missing_personnel ? t('{n} özlük', { n: e.missing_personnel }) : null, e.missing_contracts ? t('{n} sözleşme', { n: e.missing_contracts }) : null].filter(Boolean).join(' · '))) : null,
+      e.unsigned_leaves ? h('div', { class: 'hr-missing' }, t('{n} izin formu imzasız', { n: e.unsigned_leaves })) : null));
 }
 
 // Personel Ekle: iş başvurusu formu (TC, kişisel bilgiler, başvuru kaynağı, CV)
@@ -164,7 +164,7 @@ function applicationForm(m) {
         if (f.cv.files[0]) {
           const fd = new FormData();
           fd.append('file', f.cv.files[0]);
-          await upload(`/api/hr/employees/${id}/cv`, fd).catch(err => toast(`Başvuru kaydedildi ama CV yüklenemedi: ${err.message}`, 'err'));
+          await upload(`/api/hr/employees/${id}/cv`, fd).catch(err => toast(t('Başvuru kaydedildi ama CV yüklenemedi: {msg}', { msg: err.message }), 'err'));
         }
         toast('İş başvurusu kaydedildi');
         location.hash = `#/hr/${id}`;
@@ -199,7 +199,7 @@ function renderApplications(view, head, list, m) {
           : h('button', { class: 'btn sm', onclick: () => reopen(e) }, 'Yeniden Değerlendir')))))))
       : h('div', { class: 'card empty' }, show === 'BASVURU' ? 'Bekleyen iş başvurusu yok' : 'Reddedilen başvuru yok'));
   };
-  const seg = segmented([['BASVURU', `Bekleyenler (${apps.filter(e => e.status === 'BASVURU').length})`], ['REDDEDILDI', 'Reddedilenler']], show,
+  const seg = segmented([['BASVURU', t('Bekleyenler ({n})', { n: apps.filter(e => e.status === 'BASVURU').length })], ['REDDEDILDI', 'Reddedilenler']], show,
     v => { show = v; setPref('hr.apps', v); draw(); });
   q.addEventListener('input', draw);
   src.addEventListener('change', draw);
@@ -217,13 +217,13 @@ function acceptModal(e) {
   const salary = h('input', { class: 'input', type: 'number', min: 0, step: '0.01', placeholder: 'Brüt / net, ₺' });
   const start = dateIn();
   modal({
-    title: `${e.name} · Kabul Et`,
+    title: t('{name} · Kabul Et', { name: e.name }),
     body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, 'Aday personel olur; özlük dosyaları ve sözleşmeler ardından girilir.'),
       field('Görevi *', title), field('Departman', dept), field('Maaşı (₺)', salary), field('Resmi işe başlama tarihi *', start)),
     actions: [{ label: 'Vazgeç' }, {
       label: 'Kabul Et', class: 'primary', onClick: async () => {
         await api.post(`/api/hr/employees/${e.id}/accept`, { title: title.value, department: dept.value, salary: salary.value === '' ? null : Number(salary.value), start_date: start.value });
-        toast(`${e.name} personel olarak kaydedildi`);
+        toast(t('{name} personel olarak kaydedildi', { name: e.name }));
         location.hash = `#/hr/${e.id}`;
         reload();
       },
@@ -234,7 +234,7 @@ function acceptModal(e) {
 function rejectModal(e) {
   const reason = h('textarea', { class: 'input', rows: 3, placeholder: 'ör. Deneyim yetersiz, maaş beklentisi uyuşmadı…' });
   modal({
-    title: `${e.name} · Reddet`,
+    title: t('{name} · Reddet', { name: e.name }),
     body: field('Reddetme sebebi *', reason),
     actions: [{ label: 'Vazgeç' }, { label: 'Reddet', class: 'danger', onClick: async () => {
       await api.post(`/api/hr/employees/${e.id}/reject`, { reason: reason.value });
@@ -266,8 +266,8 @@ async function renderLeaves(view, head) {
     clear(body, h('div', { class: 'leave-view-bar' }, v.seg), v.box);
   };
   const unsignedN = all.filter(l => l.unsigned).length;
-  const seg = segmented([['BEKLIYOR', `Onay Bekleyenler (${all.filter(l => l.status === 'BEKLIYOR').length})`],
-    ['UNSIGNED', `İmzalı Form Bekleyen (${unsignedN})`], ['FUTURE', 'Yaklaşan ve Süren'], ['ALL', 'Tüm Geçmiş']], show,
+  const seg = segmented([['BEKLIYOR', t('Onay Bekleyenler ({n})', { n: all.filter(l => l.status === 'BEKLIYOR').length })],
+    ['UNSIGNED', t('İmzalı Form Bekleyen ({n})', { n: unsignedN })], ['FUTURE', 'Yaklaşan ve Süren'], ['ALL', 'Tüm Geçmiş']], show,
   v => { show = v; setPref('hr.leaves', v); draw(); });
   q.addEventListener('input', draw);
   kind.addEventListener('change', draw);
@@ -359,7 +359,7 @@ function leaveTable(rows, { hr = false, showEmployee = false, mine = false } = {
     h('tbody', null, rows.map(l => h('tr', { class: `${l.status === 'BEKLIYOR' ? 'pending' : ''} ${l.unsigned && !mine ? 'unsigned' : ''}` },
       showEmployee ? h('td', null, h('a', { href: `#/hr/${l.employee_id}` }, h('b', null, l.employee_name)), h('div', { class: 'small muted' }, l.employee_title || '')) : null,
       h('td', null, LEAVE_KINDS[l.kind] || l.kind),
-      h('td', null, range(l.req_start, l.req_end), h('div', { class: 'small muted' }, `Talep: ${fmtDateTime(l.created_at)}${l.requested_by_name && showEmployee ? ` · ${l.requested_by_name}` : ''}`)),
+      h('td', null, range(l.req_start, l.req_end), h('div', { class: 'small muted' }, t('Talep: {d}', { d: fmtDateTime(l.created_at) }) + (l.requested_by_name && showEmployee ? ` · ${l.requested_by_name}` : ''))),
       h('td', { class: l.changed ? 'leave-changed' : '' }, l.start_date ? range(l.start_date, l.end_date) : '—',
         l.changed ? h('div', { class: 'small' }, 'İK tarafından değiştirildi') : null),
       h('td', { class: 'small' }, l.reason, h('div', { class: 'muted' }, `📍 ${l.location || '—'}`)),
@@ -388,10 +388,10 @@ function approveModal(l) {
   const start = dateIn(l.req_start), end = dateIn(l.req_end);
   const note = h('input', { class: 'input', placeholder: 'Tarih değiştiyse sebebi (isteğe bağlı)' });
   const info = h('div', { class: 'small muted' });
-  const sync = () => { info.textContent = `Verilecek: ${days(start.value, end.value) || '—'} gün · İstenen: ${l.req_days} gün (${fmtDate(l.req_start)} – ${fmtDate(l.req_end)})`; };
+  const sync = () => { info.textContent = t('Verilecek: {a} gün · İstenen: {b} gün ({c} – {d})', { a: days(start.value, end.value) || '—', b: l.req_days, c: fmtDate(l.req_start), d: fmtDate(l.req_end) }); };
   start.addEventListener('input', sync); end.addEventListener('input', sync); sync();
   modal({
-    title: `${l.employee_name} · İzni Onayla`,
+    title: t('{name} · İzni Onayla', { name: l.employee_name }),
     body: h('div', null, h('p', { style: { marginTop: 0 } }, `${LEAVE_KINDS[l.kind]} · ${l.reason} · 📍 ${l.location}`),
       h('div', { class: 'row' }, field('Başlangıç', start), field('Bitiş', end)), info, field('Not', note)),
     actions: [{ label: 'Vazgeç' }, { label: 'Onayla', class: 'primary', onClick: async () => {
@@ -404,7 +404,7 @@ function approveModal(l) {
 function rejectLeave(l) {
   const note = h('textarea', { class: 'input', rows: 3 });
   modal({
-    title: `${l.employee_name} · İzni Reddet`, body: field('Reddetme sebebi *', note),
+    title: t('{name} · İzni Reddet', { name: l.employee_name }), body: field('Reddetme sebebi *', note),
     actions: [{ label: 'Vazgeç' }, { label: 'Reddet', class: 'danger', onClick: async () => {
       await api.post(`/api/hr/leaves/${l.id}/reject`, { note: note.value }); toast('İzin talebi reddedildi'); reload();
     } }],
@@ -412,7 +412,7 @@ function rejectLeave(l) {
 }
 
 async function cancelLeave(l) {
-  if (!await confirmDialog('Talebi geri çek', `${range(l.req_start, l.req_end)} tarihli ${LEAVE_KINDS[l.kind].toLocaleLowerCase('tr')} talebiniz geri çekilsin mi?`,
+  if (!await confirmDialog('Talebi geri çek', t('{range} tarihli {kind} talebiniz geri çekilsin mi?', { range: range(l.req_start, l.req_end), kind: LEAVE_KINDS[l.kind].toLocaleLowerCase('tr') }),
     { okLabel: 'Geri Çek', danger: true })) return;
   try { await api.del(`/api/me/leaves/${l.id}`); toast('Talep geri çekildi'); reload(); } catch (err) { toastError(err); }
 }
@@ -425,7 +425,7 @@ function leaveForm({ title, url, hint }) {
   start.addEventListener('change', () => { if (!end.value || end.value < start.value) end.value = start.value; sync(); });
   end.addEventListener('change', () => sync());
   const count = h('div', { class: 'small muted' });
-  const sync = () => { count.textContent = start.value && end.value ? `${days(start.value, end.value)} gün` : ''; };
+  const sync = () => { count.textContent = start.value && end.value ? t('{n} gün', { n: days(start.value, end.value) }) : ''; };
   const reason = h('textarea', { class: 'input', rows: 2, placeholder: 'ör. Yıllık izin, aile ziyareti, sağlık…' });
   const location = h('input', { class: 'input', placeholder: 'ör. Ankara, Kızılay · telefonla ulaşılabilir' });
   modal({
@@ -499,7 +499,7 @@ async function renderDetail(view, id, ctx) {
   seg.classList.add('hr-tabs', 'seg-tabs');
   const actions = e.status === 'BASVURU' ? [h('button', { class: 'btn primary', onclick: () => acceptModal(e) }, 'Kabul Et'), h('button', { class: 'btn', onclick: () => rejectModal(e) }, 'Reddet')]
     : e.status === 'REDDEDILDI' ? [h('button', { class: 'btn', onclick: () => reopen(e) }, 'Yeniden Değerlendir')]
-      : e.status === 'AKTIF' ? [h('button', { class: 'btn sm primary', onclick: () => leaveForm({ title: `${e.name} · İzin Gir`, url: `/api/hr/employees/${e.id}/leaves`, hint: 'İK tarafından girilen izin onaylı kaydedilir.' }) }, 'İzin Gir'),
+      : e.status === 'AKTIF' ? [h('button', { class: 'btn sm primary', onclick: () => leaveForm({ title: t('{name} · İzin Gir', { name: e.name }), url: `/api/hr/employees/${e.id}/leaves`, hint: 'İK tarafından girilen izin onaylı kaydedilir.' }) }, 'İzin Gir'),
         h('button', { class: 'btn sm danger-text', onclick: () => leaveJobModal(e) }, 'İşten Ayrılış')]
         : [h('button', { class: 'btn', onclick: async () => { try { await api.post(`/api/hr/employees/${e.id}/rehire`); reload(); } catch (err) { toastError(err); } } }, 'Yeniden İşe Al')];
   const printCard = h('button', { class: 'btn sm', type: 'button', onclick: () => printIdCard(e) }, '🪪 Kartı Yazdır');
@@ -509,8 +509,8 @@ async function renderDetail(view, id, ctx) {
     h('div', { class: 'card card-pad hr-top-side' },
       h('div', { class: 'hr-top-name' }, badge(EMP_STATUS, e.status),
         e.absence ? h('span', { class: `badge ${e.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: 'Bu sürede sisteme giriş yapamaz' },
-          `${e.absence.label} · ${e.absence.until.split('-').reverse().join('.')} tarihine kadar`) : null,
-        e.status === 'BASVURU' ? h('span', { class: 'muted' }, `Başvurduğu pozisyon: ${e.position || '—'}`) : null,
+          t('{label} · {d} tarihine kadar', { label: e.absence.label, d: e.absence.until.split('-').reverse().join('.') })) : null,
+        e.status === 'BASVURU' ? h('span', { class: 'muted' }, t('Başvurduğu pozisyon: {p}', { p: e.position || '—' })) : null,
         h('span', { class: 'spacer', style: { flex: 1 } }), h('div', { class: 'hr-side-actions' }, actions)),
       h('dl', { class: 'hr-kv' },
         h('dt', null, e.is_foreign ? 'Yabancı Kimlik No' : 'TC Kimlik No'), h('dd', { class: 'mono' }, e.tc_no || h('span', { class: 'badge yellow' }, 'Girilmemiş')),
@@ -522,15 +522,15 @@ async function renderDetail(view, id, ctx) {
         h('dt', null, 'Kişi Güvenlik Kodu'), h('dd', { class: 'mono' }, e.security_code || h('span', { class: 'badge yellow' }, 'Girilmemiş')),
         h('dt', null, 'Kullanıcı'), h('dd', null, e.user_id ? `${e.username}${e.user_active ? '' : ' (pasif)'}` : 'Sistem kullanıcısı değil')),
       e.status === 'REDDEDILDI' ? h('div', { class: 'hr-alert' }, h('b', null, 'Ret sebebi: '), e.reject_reason, h('div', { class: 'small' }, `${e.decided_by_name || ''} · ${fmtDateTime(e.decided_at)}`)) : null,
-      e.missing.length ? h('div', { class: 'hr-alert' }, h('b', null, `Eksik evrak (${e.missing.length}): `), e.missing.join(', ')) : null,
-      e.unsigned_leaves ? h('div', { class: 'hr-alert' }, h('b', null, `${e.unsigned_leaves} onaylı iznin ıslak imzalı formu yüklenmemiş`), ' · İzinler sekmesinden yükleyin') : null,
-      e.pending_files ? h('div', { class: 'hr-alert' }, h('b', null, `${e.pending_files} evrak onay bekliyor`), ' · Özlük Dosyaları / Sözleşmeler sekmesinden açıp onaylayın') : null,
+      e.missing.length ? h('div', { class: 'hr-alert' }, h('b', null, t('Eksik evrak ({n}): ', { n: e.missing.length })), e.missing.join(', ')) : null,
+      e.unsigned_leaves ? h('div', { class: 'hr-alert' }, h('b', null, t('{n} onaylı iznin ıslak imzalı formu yüklenmemiş', { n: e.unsigned_leaves })), ' · İzinler sekmesinden yükleyin') : null,
+      e.pending_files ? h('div', { class: 'hr-alert' }, h('b', null, t('{n} evrak onay bekliyor', { n: e.pending_files })), ' · Özlük Dosyaları / Sözleşmeler sekmesinden açıp onaylayın') : null,
       e.org_path && e.org_path.length ? h('div', { class: 'org-path' }, e.org_path.map((n, i) => [
         i ? h('span', { class: 'org-path-sep' }, '›') : null,
         h('span', { class: `org-path-item ${n.self ? 'self' : ''}` }, h('b', null, n.name), n.title ? h('small', null, n.title) : null),
       ]).flat().filter(Boolean)) : null));
   clear(view,
-    pageHead(e.name, { back: staff ? '#/hr' : '#/hr/applications', sub: `İnsan Kaynakları · ${EMP_STATUS[e.status][0]}` }),
+    pageHead(e.name, { back: staff ? '#/hr' : '#/hr/applications', sub: t('İnsan Kaynakları · {s}', { s: EMP_STATUS[e.status][0] }) }),
     top, h('div', { class: 'module-tabs' }, seg), stage);
   show();
 }
@@ -583,7 +583,7 @@ function dutiesTab(e, m) {
         fld('Doküman no', f.duty_doc_no), fld('Revizyon / tarih', f.duty_rev)),
       h('div', { class: 'duty-sign' },
         i.duty_signed_file
-          ? [h('span', { class: 'badge green' }, `İmzalı (tebellüğ) · ${fmtDate(i.duty_signed_at)}`),
+          ? [h('span', { class: 'badge green' }, t('İmzalı (tebellüğ) · {d}', { d: fmtDate(i.duty_signed_at) })),
             h('a', { class: 'btn sm', href: fileUrl(i.duty_signed_file), target: '_blank', rel: 'noopener' }, 'Taramayı Aç'),
             h('button', { class: 'btn sm ghost danger-text', type: 'button', onclick: async () => {
               if (!await confirmDialog('İmzalı belgeyi kaldır', 'İmzalı görev tanımı taraması kaldırılsın mı?', { okLabel: 'Kaldır', danger: true })) return;
@@ -629,7 +629,7 @@ function dutiesTab(e, m) {
       } }] });
   };
   const remove = async d => {
-    if (!await confirmDialog('Maddeyi sil', `“${d.text.slice(0, 80)}” silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Maddeyi sil', t('“{text}” silinsin mi?', { text: d.text.slice(0, 80) }), { okLabel: 'Sil', danger: true })) return;
     save(`/api/hr/employees/${e.id}/duties/${d.id}`, 'del');
   };
 
@@ -665,7 +665,7 @@ function dutiesTab(e, m) {
     text.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) add(); });
     clear(box, infoCard(),
       h('div', { class: 'card card-pad duty-card' },
-        h('div', { class: 'tv-bar' }, h('b', null, `Görev Tanımı Maddeleri (${all.length})`),
+        h('div', { class: 'tv-bar' }, h('b', null, t('Görev Tanımı Maddeleri ({n})', { n: all.length })),
           h('span', { class: 'small muted' }, 'Genel ve Kurum İçi maddeler saha görev raporunda kullanılır; Gizli / Çok Gizli maddeler yalnızca burada görünür.')),
         blocks.length ? blocks : h('div', { class: 'empty small' }, 'Henüz görev tanımı yok. Aşağıdan madde ekleyin.'),
         h('div', { class: 'duty-add' }, text, h('div', { class: 'duty-add-row' }, ss, role, phase, lvl,
@@ -697,7 +697,7 @@ function healthTab(e) {
   const draw = () => {
     const rows = e.health_reports || [];
     clear(box,
-      h('div', { class: 'tv-bar' }, h('b', null, `Sağlık Raporları (${rows.length})`),
+      h('div', { class: 'tv-bar' }, h('b', null, t('Sağlık Raporları ({n})', { n: rows.length })),
         h('span', { class: 'small muted' }, 'Rapor süresince personel raporlu görünür ve sisteme giremez.'),
         h('span', { class: 'spacer' }), h('button', { class: 'btn sm primary', onclick: add }, '＋ Rapor Ekle')),
       rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
@@ -710,7 +710,7 @@ function healthTab(e) {
             h('td', null, r.file ? h('a', { href: fileUrl(r.file), target: '_blank', rel: 'noopener' }, r.file_name || 'Aç') : '—'),
             h('td', { class: 'wrap small' }, r.note || ''), h('td', { class: 'small muted' }, r.created_by_name || ''),
             h('td', null, h('button', { class: 'btn xs ghost danger-text', onclick: async () => {
-              if (!await confirmDialog('Raporu sil', `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)} raporu silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+              if (!await confirmDialog('Raporu sil', t('{a} – {b} raporu silinsin mi?', { a: fmtDate(r.start_date), b: fmtDate(r.end_date) }), { okLabel: 'Sil', danger: true })) return;
               try { e.health_reports = await api.del(`/api/hr/employees/${e.id}/health-reports/${r.id}`); draw(); } catch (err) { toastError(err); }
             } }, 'Sil')));
         }))))
@@ -758,7 +758,7 @@ function isgListTab(e, kind) {
             cfg.cols.map(([k, , t]) => h('td', { class: t === 'long' ? 'wrap' : '' }, t === 'date' ? (r[k] ? fmtDate(r[k]) : '—') : (r[k] || '—'))),
             h('td', { class: 'nowrap' }, h('button', { class: 'btn xs', onclick: () => form(r) }, 'Düzenle'),
               h('button', { class: 'btn xs ghost danger-text', onclick: async () => {
-                if (!await confirmDialog('Kaydı sil', `“${(r[cfg.cols[0][0]] || '').slice(0, 60)}” silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+                if (!await confirmDialog('Kaydı sil', t('“{text}” silinsin mi?', { text: (r[cfg.cols[0][0]] || '').slice(0, 60) }), { okLabel: 'Sil', danger: true })) return;
                 try { e.isg = await api.del(`/api/hr/employees/${e.id}/isg/${kind}/${r.id}`); draw(); } catch (err) { toastError(err); }
               } }, 'Sil')));
         }))))
@@ -842,7 +842,7 @@ function addressesTab(e, m) {
     try { await api.put(`/api/hr/employees/${e.id}/addresses/${a.id}`, { ...a, is_primary: true }); toast('Birincil adres değişti'); reload(); } catch (err) { toastError(err); }
   };
   const remove = async a => {
-    if (!await confirmDialog('Adresi sil', `${a.label} adresi silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Adresi sil', t('{label} adresi silinsin mi?', { label: a.label }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/hr/employees/${e.id}/addresses/${a.id}`); toast('Adres silindi'); reload(); } catch (err) { toastError(err); }
   };
   return h('div', { class: 'card card-pad' },
@@ -889,7 +889,7 @@ function leaveJobModal(e) {
   const end = dateIn(today());
   const reason = h('input', { class: 'input', placeholder: 'ör. İstifa, sözleşme bitişi' });
   modal({
-    title: `${e.name} · İşten Ayrılış`, body: h('div', null, field('Ayrılış tarihi', end), field('Sebep', reason)),
+    title: t('{name} · İşten Ayrılış', { name: e.name }), body: h('div', null, field('Ayrılış tarihi', end), field('Sebep', reason)),
     actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'danger', onClick: async () => {
       await api.post(`/api/hr/employees/${e.id}/leave-job`, { end_date: end.value, reason: reason.value }); reload();
     } }],
@@ -973,14 +973,14 @@ function filesTab(e, kinds, title) {
     const input = h('input', { type: 'file', hidden: true, accept: k === 'VESIKALIK' ? 'image/*' : '.pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.odt,.zip' });
     input.addEventListener('change', async () => {
       const fd = new FormData(); fd.append('file', input.files[0]);
-      try { await upload(`/api/hr/employees/${e.id}/files/${k}`, fd); toast(`${label} yüklendi`); reload(); } catch (err) { toastError(err); }
+      try { await upload(`/api/hr/employees/${e.id}/files/${k}`, fd); toast(t('{label} yüklendi', { label })); reload(); } catch (err) { toastError(err); }
     });
     const remove = async () => {
-      if (!confirm(`${label} ${f && !f.approved ? 'reddedilsin' : 'kaldırılsın'} mı?`)) return;
+      if (!confirm(t('{label} {act} mı?', { label, act: f && !f.approved ? 'reddedilsin' : 'kaldırılsın' }))) return;
       try { await api.del(`/api/hr/employees/${e.id}/files/${f.id}`); reload(); } catch (err) { toastError(err); }
     };
     const approve = async () => {
-      try { await api.post(`/api/hr/employees/${e.id}/files/${f.id}/approve`); toast(`${label} onaylandı`); reload(); } catch (err) { toastError(err); }
+      try { await api.post(`/api/hr/employees/${e.id}/files/${f.id}/approve`); toast(t('{label} onaylandı', { label })); reload(); } catch (err) { toastError(err); }
     };
     const pending = f && !f.approved;   // personelin yüklediği, İK onayı bekleyen evrak
     return h('div', { class: `hr-doc ${pending ? 'pending' : f ? 'ok' : needed ? 'miss' : 'na'}` },
@@ -997,8 +997,8 @@ function filesTab(e, kinds, title) {
   const pendingN = Object.keys(kinds).filter(k => e.files[k] && !e.files[k].approved).length;
   return h('div', { class: 'card card-pad' },
     h('div', { class: 'tv-bar' }, h('b', null, title),
-      pendingN ? h('span', { class: 'badge yellow' }, `${pendingN} onay bekliyor`) : null,
-      missing ? h('span', { class: 'badge red' }, `${missing} eksik`) : h('span', { class: 'badge green' }, 'Tamam')),
+      pendingN ? h('span', { class: 'badge yellow' }, t('{n} onay bekliyor', { n: pendingN })) : null,
+      missing ? h('span', { class: 'badge red' }, t('{n} eksik', { n: missing })) : h('span', { class: 'badge green' }, 'Tamam')),
     rows);
 }
 
@@ -1007,8 +1007,8 @@ function leavesTab(e) {
   const used = k => e.leaves.filter(l => l.status === 'ONAYLANDI' && l.kind === k && (l.start_date || '').startsWith(year)).reduce((a, l) => a + (l.days || 0), 0);
   return h('div', null,
     h('div', { class: 'stat-strip' },
-      h('div', { class: 'stat' }, h('span', { class: 'v' }, used('UCRETLI')), h('span', { class: 'l' }, `${year} ücretli izin (gün)`)),
-      h('div', { class: 'stat' }, h('span', { class: 'v' }, used('UCRETSIZ')), h('span', { class: 'l' }, `${year} ücretsiz izin (gün)`)),
+      h('div', { class: 'stat' }, h('span', { class: 'v' }, used('UCRETLI')), h('span', { class: 'l' }, t('{year} ücretli izin (gün)', { year }))),
+      h('div', { class: 'stat' }, h('span', { class: 'v' }, used('UCRETSIZ')), h('span', { class: 'l' }, t('{year} ücretsiz izin (gün)', { year }))),
       h('div', { class: 'stat' }, h('span', { class: 'v' }, e.leaves.filter(l => l.status === 'BEKLIYOR').length), h('span', { class: 'l' }, 'Onay bekleyen')),
       h('div', { class: `stat ${e.unsigned_leaves ? 'alert' : ''}` }, h('span', { class: 'v' }, e.unsigned_leaves), h('span', { class: 'l' }, 'İmzalı formu eksik'))),
     e.leaves.length ? (() => { const v = leaveViews(e.leaves, { hr: true }); return h('div', null, h('div', { class: 'leave-view-bar' }, v.seg), v.box); })()
@@ -1036,7 +1036,7 @@ export async function renderMyLeaves(view) {
     pageHead('İzinlerim', { back: '#/', sub: 'İzin talepleri ve İK kararları' }),
     moduleToolbar(add),
     h('div', { class: 'stat-strip' },
-      h('div', { class: 'stat' }, h('span', { class: 'v' }, data.used_paid_this_year), h('span', { class: 'l' }, `${new Date().getFullYear()} kullanılan ücretli izin (gün)`)),
+      h('div', { class: 'stat' }, h('span', { class: 'v' }, data.used_paid_this_year), h('span', { class: 'l' }, t('{year} kullanılan ücretli izin (gün)', { year: new Date().getFullYear() }))),
       h('div', { class: 'stat' }, h('span', { class: 'v' }, pending), h('span', { class: 'l' }, 'Onay bekleyen talep'))),
     data.items.length ? leaveTable(data.items, { mine: true }) : h('div', { class: 'card empty' }, 'Henüz izin talebiniz yok. “İzin Talebi” ile oluşturun.'));
 }
@@ -1056,7 +1056,7 @@ export async function renderMyDocuments(view) {
       const fd = new FormData(); fd.append('file', inp.files[0]);
       try {
         await upload(`/api/me/documents/${kind}`, fd);
-        toast(`${label} yüklendi`, 'success');
+        toast(t('{label} yüklendi', { label }), 'success');
         window.dispatchEvent(new Event('caymaz:docs'));   // başlıktaki geri sayım ve bildirim tazelensin
         renderMyDocuments(view);
       } catch (err) { toastError(err); }
@@ -1066,14 +1066,14 @@ export async function renderMyDocuments(view) {
     setTimeout(() => inp.remove(), 60000);
   };
   const left = data.deadline ? new Date(data.deadline) - new Date() : 0;
-  const cd = left > 0 ? (() => { const m = Math.floor(left / 60000); return `${Math.floor(m / 1440)} gün ${Math.floor((m % 1440) / 60)} saat ${m % 60} dakika`; })() : null;
+  const cd = left > 0 ? (() => { const m = Math.floor(left / 60000); return t('{d} gün {h} saat {m} dakika', { d: Math.floor(m / 1440), h: Math.floor((m % 1440) / 60), m: m % 60 }); })() : null;
   const extra = h('select', { class: 'input', style: { maxWidth: '260px' } }, h('option', { value: '' }, 'Diğer evrak türü seçin…'),
     Object.entries(data.optional || {}).map(([k, l]) => h('option', { value: k }, l)));
   clear(view,
-    pageHead('Evraklarım', { back: '#/', sub: `${data.employee.name} · özlük dosyası` }),
+    pageHead('Evraklarım', { back: '#/', sub: t('{name} · özlük dosyası', { name: data.employee.name }) }),
     data.missing ? h('div', { class: 'alert err docs-alert' },
-      h('b', null, `${data.missing} adet zorunlu evrakınız eksik.`),
-      cd ? h('span', null, ` Tamamlamak için kalan süre: ${cd} (son gün ${fmtDateTime(data.deadline)}).`) : h('span', null, ' Süre doldu; lütfen hemen yükleyin.'),
+      h('b', null, t('{n} adet zorunlu evrakınız eksik.', { n: data.missing })),
+      cd ? h('span', null, t(' Tamamlamak için kalan süre: {cd} (son gün {d}).', { cd, d: fmtDateTime(data.deadline) })) : h('span', null, ' Süre doldu; lütfen hemen yükleyin.'),
       h('div', { class: 'small' }, 'Her satırdaki “Yükle” ile telefonunuzdan fotoğraf ya da PDF seçebilirsiniz. Yüklenen evrak İnsan Kaynakları’na iletilir.'))
       : h('div', { class: 'alert ok' }, 'Zorunlu evraklarınız tamam. Teşekkürler.'),
     h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
@@ -1121,7 +1121,7 @@ async function renderAttendance(view, head, ctx) {
       })));
     clear(body,
       d.unmatched.length ? h('div', { class: 'alert warn', style: { margin: '0 0 12px' } },
-        `PDKS’te eşleşmeyen ${d.unmatched.length} personel: ${d.unmatched.join(', ')}. Her satırdaki “Eşleşmedi” yanından personel seçerek bağlayın.`) : null,
+        t('PDKS’te eşleşmeyen {n} personel: {list}. Her satırdaki “Eşleşmedi” yanından personel seçerek bağlayın.', { n: d.unmatched.length, list: d.unmatched.join(', ') })) : null,
       h('div', { class: 'table-wrap' }, h('table', { class: 'att-table' },
         h('thead', null, h('tr', null, h('th', null, 'Personel'),
           ...d.days.map(day => h('th', null, fmtd(day), h('div', { class: 'small muted' }, dow[(new Date(day + 'T12:00')).getDay()]))))),
@@ -1214,7 +1214,7 @@ function attendanceDetailTab(e) {
     const top = Math.max(0, (g - H0 * 60) / SPAN) * (SPAN / 60 * PXH);
     const hgt = Math.max(16, ((c - g) / SPAN) * (SPAN / 60 * PXH));
     const dur = v.dakika != null ? `${Math.floor(v.dakika / 60)}s ${String(v.dakika % 60).padStart(2, '0')}d` : '';
-    return h('div', { class: 'cal-ev', style: { top: top + 'px', height: hgt + 'px' }, title: `${v.giris} – ${v.cikis || 'çıkış yok'} · ${v.okuma} okuma` },
+    return h('div', { class: 'cal-ev', style: { top: top + 'px', height: hgt + 'px' }, title: t('{giris} – {cikis} · {n} okuma', { giris: v.giris, cikis: v.cikis || 'çıkış yok', n: v.okuma }) },
       h('b', null, v.giris), v.cikis ? h('span', null, ' – ' + v.cikis) : h('span', { class: 'cal-nx' }, ' çıkış yok'), dur ? h('small', null, dur) : null);
   };
   const hoursCol = () => h('div', { class: 'cal-hours' }, Array.from({ length: H1 - H0 + 1 }, (_, i) => h('div', { class: 'cal-h', style: { height: PXH + 'px' } }, `${String(H0 + i).padStart(2, '0')}:00`)));
@@ -1327,7 +1327,7 @@ async function renderOrg(view, head) {
   };
   const del = async node => {
     const n = (function count(x) { return 1 + x.children.reduce((a, c) => a + count(c), 0); })(node) - 1;
-    if (!await confirmDialog('Kartı sil', `${node.name} kartı${n ? ` ve altındaki ${n} kart` : ''} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Kartı sil', t('{name} kartı{extra} silinsin mi?', { name: node.name, extra: n ? t(' ve altındaki {n} kart', { n }) : '' }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/hr/org/${node.id}`); toast('Silindi'); load(); } catch (err) { toastError(err); }
   };
   // Tıklanan kişiye göre işlem menüsü (treeSpider düğümü tıklama olayı sunmadığından kendi menümüzü açarız)

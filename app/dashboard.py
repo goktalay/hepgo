@@ -54,7 +54,7 @@ def w_modules(conn, user):
     return {}
 
 
-@widget('company_news', 'Şirketten Haberler', 'Günün olayları ve paylaşımlar (akış + harita)', size=3, default=True, fixed=True)
+@widget('company_news', 'Şirketten Haberler', 'Günün olayları ve paylaşımlar (akış + harita)', size=1, default=True, fixed=True)
 def w_company_news(conn, user):
     return {}   # içerik istemcide /api/feed'den gelir (akış + harita + paylaşım)
 

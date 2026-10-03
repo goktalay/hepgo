@@ -19,8 +19,9 @@ export async function renderDashboard(view, ctx, modules) {
   try { layout = JSON.parse(saved.value || 'null'); } catch { layout = null; }
   if (!Array.isArray(layout)) layout = avail.filter(w => w.default).sort((a, b) => a.default - b.default).map(w => ({ k: w.key, s: w.size }));
   layout = layout.filter(it => byKey[it.k]);
-  // Sabit kutucuklar (ör. Şirketten Haberler) her zaman panoda; kullanıcı kaldıramaz (taşıyabilir)
+  // Sabit kutucuklar (ör. Şirketten Haberler) her zaman panoda; kullanıcı kaldıramaz/boyutlandıramaz (taşıyabilir), boyutu katalogdan
   for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ k: w.key, s: w.size });
+  for (const it of layout) { const w = byKey[it.k]; if (w?.fixed) it.s = w.size; }   // sabit kutucuk boyutu sabit (1/3)
   let editing = false;
   let data = {};
   const charts = [];
@@ -51,7 +52,7 @@ export async function renderDashboard(view, ctx, modules) {
     const tools = editing ? h('div', { class: 'db-tools' },
       h('button', { type: 'button', title: 'Sola / yukarı taşı', disabled: i === 0, onclick: () => move(i, -1) }, '←'),
       h('button', { type: 'button', title: 'Sağa / aşağı taşı', disabled: i === layout.length - 1, onclick: () => move(i, 1) }, '→'),
-      h('button', { type: 'button', title: 'Genişlik', onclick: () => { it.s = (it.s % 3) + 1; save(); draw(); } }, ['⅓', '⅔', '▭'][it.s - 1]),
+      w.fixed ? null : h('button', { type: 'button', title: 'Genişlik', onclick: () => { it.s = (it.s % 3) + 1; save(); draw(); } }, ['⅓', '⅔', '▭'][it.s - 1]),
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
       w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => { layout.splice(i, 1); save(); draw(); } }, '✕')) : null;
     const el = h('section', { class: `card db-tile s${it.s || 1} w-${it.k}` },

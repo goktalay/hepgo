@@ -271,6 +271,33 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .back:hover { background: var(--surface-2); text-decoration: none; }
 
 .fc-sens { display: inline-flex; align-items: center; gap: 6px; }
+/* Şirketten Haberler (pano akışı) */
+.feed-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.feed-bar .spacer { flex: 1; }
+.feed-body { max-height: 420px; overflow: auto; }
+.feed-list { display: flex; flex-direction: column; gap: 10px; }
+.feed-post { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.feed-ph { display: flex; align-items: center; gap: 8px; }
+.feed-ph .grow { min-width: 0; flex: 1; }
+.feed-ph b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.feed-ava { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; background: var(--surface-2, #eee); padding: 4px; }
+.feed-x { margin-left: auto; border: none; background: none; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; }
+.feed-text { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; }
+.feed-text a { color: var(--primary); }
+.feed-medias { display: grid; gap: 4px; margin-top: 8px; }
+.feed-medias.n1 { grid-template-columns: 1fr; }
+.feed-medias.n2, .feed-medias.n4 { grid-template-columns: 1fr 1fr; }
+.feed-medias.n3 { grid-template-columns: 1fr 1fr 1fr; }
+.feed-media { width: 100%; max-height: 320px; object-fit: cover; border-radius: 8px; background: #000; cursor: pointer; }
+.feed-audio { width: 100%; margin-top: 8px; }
+.feed-media-full { width: 100%; max-height: 80vh; object-fit: contain; }
+.feed-map { width: 100%; height: 380px; border-radius: 12px; overflow: hidden; }
+.feed-compose textarea { width: 100%; }
+.feed-compose-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.feed-picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.feed-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2, #eee); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
+.feed-chip-x { border: none; background: none; cursor: pointer; font-size: 14px; }
+.btn.on { outline: 2px solid var(--primary); }
 /* Rehber */
 .dir-groups { display: flex; flex-direction: column; gap: 14px; }
 .dir-group { display: flex; gap: 12px; align-items: flex-start; }

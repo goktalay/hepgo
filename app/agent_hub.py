@@ -6,12 +6,23 @@ Fabrikadaki ajan buraya DIŞA DOĞRU (WSS) bağlanır; merkez bu bağlantı üze
 Kimlik: ajan ilk mesajda paylaşılan anahtarı (config.AGENT_KEY) yollar. Bağlı değilse agent_call hata verir.
 """
 import asyncio
+import datetime
 import json
 import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import config, db
+
+
+def _dec(d):
+    """Ajanın işaretli taşıdığı tarihleri (agent._enc) yerel moddaki gibi datetime/date nesnesine geri çevirir."""
+    if len(d) == 1:
+        if '__dt__' in d:
+            return datetime.datetime.fromisoformat(d['__dt__'])
+        if '__d__' in d:
+            return datetime.date.fromisoformat(d['__d__'])
+    return d
 
 ws_router = APIRouter()
 
@@ -115,7 +126,7 @@ async def ws_agent(ws: WebSocket):
 
     try:
         while True:
-            m = json.loads(await ws.receive_text())
+            m = json.loads(await ws.receive_text(), object_hook=_dec)
             t = m.get('t')
             if t == 'res':
                 fut = _pending.get(m.get('id'))

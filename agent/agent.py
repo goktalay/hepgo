@@ -25,6 +25,23 @@ os.environ['CAYMAZ_AGENT_MODE'] = 'local'   # ajan op'ları doğrudan çalışt�
 os.environ.setdefault('CAYMAZ_PRINTER_POLL', '0')  # ajan yoklama döngüsü çalıştırmaz; merkez tetikler
 
 import websockets   # noqa: E402
+import datetime as _dt   # noqa: E402
+import decimal as _dec   # noqa: E402
+
+
+def _enc(o):
+    """JSON'a sığmayan veritabanı tipleri (Mikro/PDKS): tarih işaretli taşınır, merkez (agent_hub) geri çevirir."""
+    if isinstance(o, _dt.datetime):
+        return {'__dt__': o.isoformat()}
+    if isinstance(o, _dt.date):
+        return {'__d__': o.isoformat()}
+    if isinstance(o, _dt.time):
+        return o.isoformat()
+    if isinstance(o, _dec.Decimal):
+        return float(o)
+    if isinstance(o, (bytes, bytearray, memoryview)):
+        return bytes(o).hex()
+    return str(o)
 from app import agent_ops, config, sysstat   # noqa: E402
 
 sysstat.start()   # entegrasyon makinesinin (fabrika) kaynak grafiği için örnekleme
@@ -40,7 +57,7 @@ async def _handle(ws, m):
         if not fn:
             raise RuntimeError(f'bilinmeyen op: {op}')
         result = await asyncio.to_thread(fn, m.get('args') or {})
-        await ws.send(json.dumps({'t': 'res', 'id': rid, 'ok': True, 'result': result}))
+        await ws.send(json.dumps({'t': 'res', 'id': rid, 'ok': True, 'result': result}, default=_enc))
     except Exception as e:   # noqa: BLE001
         await ws.send(json.dumps({'t': 'res', 'id': rid, 'ok': False, 'error': str(e)}))
 

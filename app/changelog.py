@@ -11,6 +11,7 @@ CHANGELOG = [
          'Mikro ERP “Bağlanılamadı (20002)” hatası giderildi: Entegrasyonlar’da kayıtlı bağlantı bilgileri artık her istekle fabrikadaki ajana iletiliyor (bulut kurulumunda ajan bu bilgileri bilmiyordu).',
          'PDKS (personel giriş-çıkış) için de aynı düzeltme.',
          'Program Ayarları › Entegrasyonlar › Mikro “Test et” bulutta fabrika ajanı üzerinden dener.',
+         'Alış / satış faturaları listesi ve aktarımı “502” veriyordu: tarih alanları ajan kanalında taşınamıyordu; düzeltildi.',
      ]},
     {'version': '2.103.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: Instagram tarzı kart, yorum yanıtı + kalp, kaydedilenler, arka planda yükleme',
      'changes': [

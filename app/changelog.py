@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.101.1'
+VERSION = '2.101.2'
 
 CHANGELOG = [
+    {'version': '2.101.2', 'date': '2026-10-03', 'title': 'Bağlantı önizlemesinde firma adı (HEPGO görünmez)',
+     'changes': [
+         'Firma adresi (ör. caymaz.app) WhatsApp / iMessage / Slack vb. ile paylaşılınca önizlemede firmanın adı ve simgesi görünür; beyaz etikette HEPGO hiç görünmez.',
+         'Toplantı daveti ve ekran paylaşımı linkleri de “… · Firma adı” başlığıyla önizlenir.',
+     ]},
     {'version': '2.101.1', 'date': '2026-10-03', 'title': 'Finans: cariler = firmalar; Mikro yalnız Entegrasyonlar’da',
      'changes': [
          'Finans › Cariler artık Firma Yönetimi’ndeki firmalar ve Satın Alma’daki tedarikçilerdir (ayrı cari listesi yok); müşteri/tedarikçi filtresi, bakiye ve ekstre.',

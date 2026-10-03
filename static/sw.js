@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
 // ---------- Arka plan bildirimleri (Web Push): uygulama kapalı / ekran kilitliyken arama, mesaj, telsiz, bildirim
 self.addEventListener('push', e => {
   let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'HEPGO ERP', body: e.data && e.data.text() }; }
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Bildirim', body: e.data && e.data.text() }; }
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     // Uygulama ön planda ve görünürse kendi zil / arama ekranını zaten gösterir
@@ -29,7 +29,7 @@ self.addEventListener('push', e => {
     const safari = /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Android/.test(navigator.userAgent);
     if (!safari && wins.some(w => w.visibilityState === 'visible' && w.focused)) return;
     const call = d.type === 'call';
-    await self.registration.showNotification(d.title || 'HEPGO ERP', {
+    await self.registration.showNotification(d.title || 'Bildirim', {
       body: d.body || '', tag: d.tag || undefined, renotify: true,
       icon: '/static/icons/icon-192.png', badge: '/static/icons/icon-192.png',
       requireInteraction: call, vibrate: call ? [400, 200, 400, 200, 400, 200, 400] : [150, 80, 150],

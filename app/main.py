@@ -1,9 +1,10 @@
 import hashlib
+import os
 from contextlib import asynccontextmanager
 
 import re
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -190,12 +191,39 @@ def _splash_logo():
     return _splash_cache[key]
 
 
-def _spa():
+def _brand_head(html, request, page_title=None, description=None):
+    """Bağlantı önizlemesi (WhatsApp, iMessage, Slack…) ve uygulama adları: beyaz etikette yalnızca firmanın adı (HEPGO
+    görünmez). Tarayıcılar JS çalıştırmadığı için başlık / Open Graph etiketleri sunucuda firmaya göre yazılır."""
+    import html as _h
+    wl = config.WHITE_LABEL
+    company = (config.COMPANY_NAME or '').strip()
+    brand = company if (wl and company) else 'HEPGO ERP'
+    title = f'{page_title} · {brand}' if page_title else brand
+    desc = description or (f'{company} yönetim sistemi' if wl and company else 'Fabrikanızı tek platformdan yönetin.')
+    host = request.headers.get('x-forwarded-host') or request.headers.get('host') or ''
+    local = host.startswith(('127.', 'localhost', '192.168.', '10.')) or not host
+    base = (os.environ.get('CAYMAZ_PUBLIC_URL') or (f"{'http' if local else 'https'}://{host}" if host else '')).rstrip('/')
+    e = lambda v: _h.escape(v, quote=True)
+    html = re.sub(r'<title>[^<]*</title>', f'<title>{e(title)}</title>', html, count=1)
+    html = html.replace('<meta name="apple-mobile-web-app-title" content="HEPGO">', f'<meta name="apple-mobile-web-app-title" content="{e(brand[:30])}">')
+    html = html.replace('<meta name="application-name" content="HEPGO ERP">', f'<meta name="application-name" content="{e(brand)}">')
+    og = (f'<meta name="description" content="{e(desc)}">\n'
+          f'<meta property="og:type" content="website">\n<meta property="og:site_name" content="{e(brand)}">\n'
+          f'<meta property="og:title" content="{e(title)}">\n<meta property="og:description" content="{e(desc)}">\n'
+          + (f'<meta property="og:url" content="{e(base + request.url.path)}">\n'
+             f'<meta property="og:image" content="{e(base)}/static/icons/icon-512.png">\n' if base else '')
+          + f'<meta name="twitter:card" content="summary">\n<meta name="twitter:title" content="{e(title)}">\n'
+          f'<meta name="twitter:description" content="{e(desc)}">\n')
+    return html.replace('</head>', og + '</head>', 1)
+
+
+def _spa(request, page_title=None, description=None):
     html = (config.STATIC_DIR / 'index.html').read_text(encoding='utf-8')
     try:
         html = html.replace('class="sp-logo" src="/static/img/logo.png"', f'class="sp-logo" src="{_splash_logo()}"')
     except Exception:   # noqa: BLE001 — logo işlenemezse normal adresten yüklenir
         pass
+    html = _brand_head(html, request, page_title, description)
     ver = asset_version()
     links = '\n'.join(f'<link rel="modulepreload" href="/sv/{ver}/{p}">' for p in _module_graph(ver))
     html = html.replace('<!--MODULEPRELOAD-->', links)
@@ -212,17 +240,19 @@ def index():
 
 @app.get('/app')
 @app.get('/app/')
-def app_shell():
-    return _spa()
+def app_shell(request: Request):
+    return _spa(request)
 
 
 @app.get('/m/{code}')
-def meeting_join_page(code: str):
+def meeting_join_page(code: str, request: Request):
     """Dış katılımcı toplantı giriş sayfası: aynı uygulama kabuğu; app.js guest moduna geçer."""
-    return _spa()
+    return _spa(request, 'Görüntülü toplantı daveti', 'Toplantıya katılmak için bağlantıya dokunun.')
 
 
 @app.get('/s/{code}')
-def screen_view_page(code: str):
+def screen_view_page(code: str, request: Request):
     """Ekran paylaşımı izleyici sayfası (bağımsız, hafif): rrweb replay + imleç/kontrol + sesli-görüntülü."""
-    return FileResponse(config.STATIC_DIR / 'screen.html', headers={'Cache-Control': 'no-cache'})
+    html = (config.STATIC_DIR / 'screen.html').read_text(encoding='utf-8')
+    return HTMLResponse(_brand_head(html, request, 'Ekran paylaşımı', 'Ekranı izlemek ve destek olmak için bağlantıya dokunun.'),
+                        headers={'Cache-Control': 'no-cache'})

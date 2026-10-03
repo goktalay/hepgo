@@ -66,18 +66,17 @@ export async function renderDashboard(view, ctx, modules) {
     const w = byKey[it.k];
     const body = h('div', { class: 'db-body' });
     bodies[it.id] = body;
-    const headActions = it.k === 'company_news' ? h('span', { class: 'db-head-actions' }) : null;
     const tools = h('div', { class: 'db-tools' },
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
       w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => removeItem(it) }, '✕'));
     const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': it.h },
       h('div', { class: `grid-stack-item-content card db-tile w-${it.k}` },
-        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), headActions, tools), body));
+        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body));
     if (it.x != null) el.setAttribute('gs-x', it.x);
     if (it.y != null) el.setAttribute('gs-y', it.y);
     if (w.fixed) el.setAttribute('gs-no-resize', 'true');
-    if (it.k === 'company_news') {   // kontroller (Akış/Harita + Paylaş) başlıkta; görünüm widget ayarı olarak hatırlanır
-      try { renderFeed(body, ctx, { header: headActions, view: it.o?.view || 'feed', onView: v => { it.o = { ...it.o, view: v }; persist(); } }); }
+    if (it.k === 'company_news') {   // görünüm (Akış/Harita) Kişisel Ayarlar › Pano'dan seçilir
+      try { renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' }); }
       catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     } else {
       try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }

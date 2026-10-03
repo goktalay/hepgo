@@ -2,7 +2,7 @@
 // İki görünüm: Akış ve Harita. Sistem olaylarında şirket logosu, kullanıcı paylaşımında kişinin fotoğrafı.
 import { api, fileUrl, upload, videoUrl } from '../api.js';
 import { loadMaps } from '../maps.js';
-import { avatar, clear, confirmDialog, fmtDateTime, h, modal, segmented, t, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, fmtDateTime, h, modal, toast, toastError } from '../ui.js';
 
 const KIND_BADGE = {
   HIRE: ['green', 'İşe alım'], TERMINATION: ['', 'Ayrılış'], FLIGHT: ['blue', 'Uçuş'],
@@ -11,17 +11,20 @@ const KIND_BADGE = {
 const LOGO = '/static/img/logo-mark.png';
 
 export function renderFeed(container, ctx, opts = {}) {
-  let view = opts.view || 'feed', posts = [];
+  // Görünüm (Akış / Harita) Kişisel Ayarlar › Pano'dan seçilir; burada sabittir. Paylaşım gövdedeki kutudan yapılır.
+  const view = opts.view === 'map' ? 'map' : 'feed';
+  let posts = [];
   const body = h('div', { class: 'feed-body' });
-  const seg = segmented([['feed', 'Akış'], ['map', 'Harita']], view, v => { view = v; opts.onView?.(v); draw(); }, { tabs: true });
-  const shareBtn = h('button', { class: 'btn sm primary', type: 'button', onclick: () => compose(load) }, '＋ Paylaş');
-  if (opts.header) { clear(opts.header, seg, shareBtn); clear(container, body); }   // kontroller widget başlığında
-  else clear(container, h('div', { class: 'feed-bar' }, seg, h('span', { class: 'spacer' }), shareBtn), body);
+  clear(container, body);
 
+  let visual = [];   // akıştaki tüm resim + videolar (tam ekran kaydırmalı görüntüleyici için)
   const mediaEl = m => {
-    if (m.type === 'video') return h('video', { class: 'feed-media', src: videoUrl(m.path), controls: true, preload: 'metadata', playsinline: true });
     if (m.type === 'audio') return h('audio', { class: 'feed-audio', src: fileUrl(m.path), controls: true, preload: 'none' });
-    return h('img', { class: 'feed-media', src: fileUrl(m.path, 1000), alt: '', loading: 'lazy', onclick: () => modal({ title: '', wide: true, body: h('img', { class: 'feed-media-full', src: fileUrl(m.path) }), actions: [{ label: 'Kapat' }] }) });
+    const idx = visual.length; visual.push(m);
+    if (m.type === 'video') return h('button', { class: 'feed-media feed-vid', type: 'button', title: 'Tam ekran aç', onclick: () => openViewer(visual.slice(), idx) },
+      h('video', { src: videoUrl(m.path), preload: 'metadata', muted: true, playsinline: true, tabindex: -1 }), h('span', { class: 'feed-play' }, '▶'));
+    return h('button', { class: 'feed-media', type: 'button', title: 'Tam ekran aç', onclick: () => openViewer(visual.slice(), idx) },
+      h('img', { src: fileUrl(m.path, 1000), alt: '', loading: 'lazy' }));
   };
   const postCard = p => {
     const badge = KIND_BADGE[p.kind] || KIND_BADGE.USER;
@@ -43,10 +46,11 @@ export function renderFeed(container, ctx, opts = {}) {
     h('span', { class: 'feed-composer-ic', title: 'Foto / Video / Ses' }, '📷'));
   let drawMap;
   function draw() {
-    seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', ['feed', 'map'][i] === view));
     if (view === 'map') return drawMap();
-    clear(body, composer(), posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
-      : h('div', { class: 'feed-empty muted' }, 'Henüz paylaşım yok. İlk paylaşımı sen ekle!'));
+    visual = [];
+    const list = posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
+      : h('div', { class: 'feed-empty muted' }, 'Henüz paylaşım yok. İlk paylaşımı sen ekle!');
+    clear(body, composer(), list);
   }
   drawMap = async () => {
     clear(body, h('div', { class: 'feed-map' }));
@@ -78,6 +82,61 @@ export function renderFeed(container, ctx, opts = {}) {
   }
   load();
   return { reload: load };
+}
+
+// Tam ekran medya görüntüleyici: resim/video arasında parmak ya da mouse ile yukarı/aşağı kaydırarak gezinilir.
+function openViewer(items, start) {
+  items = items.filter(m => m.type === 'image' || m.type === 'video');
+  if (!items.length) return;
+  let i = Math.max(0, Math.min(start, items.length - 1));
+  const stage = h('div', { class: 'fv-stage' });
+  const counter = h('div', { class: 'fv-count' });
+  const upBtn = h('button', { class: 'fv-nav up', type: 'button', title: 'Önceki', onclick: () => go(i - 1) }, '▲');
+  const downBtn = h('button', { class: 'fv-nav down', type: 'button', title: 'Sonraki', onclick: () => go(i + 1) }, '▼');
+  const overlay = h('div', { class: 'fv-overlay' },
+    h('button', { class: 'fv-x', type: 'button', title: 'Kapat', onclick: close }, '✕'),
+    counter, upBtn, stage, downBtn,
+    h('div', { class: 'fv-hint' }, 'Gezinmek için yukarı/aşağı kaydırın'));
+
+  function render() {
+    const m = items[i];
+    counter.textContent = `${i + 1} / ${items.length}`;
+    upBtn.disabled = i <= 0; downBtn.disabled = i >= items.length - 1;
+    const el = m.type === 'video'
+      ? h('video', { class: 'fv-media', src: fileUrl(m.path), controls: true, autoplay: true, playsinline: true })
+      : h('img', { class: 'fv-media', src: fileUrl(m.path), alt: '' });
+    clear(stage, el);
+  }
+  function go(n) { if (n < 0 || n >= items.length) return; i = n; render(); }
+  function close() {
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+  }
+  const onKey = e => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(i + 1); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+  };
+  document.addEventListener('keydown', onKey);
+
+  // Parmak / mouse ile dikey kaydırma
+  let p0 = null;
+  overlay.addEventListener('pointerdown', e => { p0 = { x: e.clientX, y: e.clientY }; });
+  overlay.addEventListener('pointerup', e => {
+    if (!p0) return;
+    const dy = e.clientY - p0.y, dx = e.clientX - p0.x; p0 = null;
+    if (Math.abs(dy) > 48 && Math.abs(dy) > Math.abs(dx)) { dy < 0 ? go(i + 1) : go(i - 1); }
+    else if (Math.abs(dy) < 6 && Math.abs(dx) < 6 && (e.target === overlay || e.target === stage)) close();   // boşluğa dokunma = kapat
+  });
+  let wlock = 0;
+  overlay.addEventListener('wheel', e => {
+    e.preventDefault();
+    const now = Date.now(); if (now - wlock < 350) return; wlock = now;
+    go(i + (e.deltaY > 0 ? 1 : -1));
+  }, { passive: false });
+
+  document.body.append(overlay);
+  render();
 }
 
 // Paylaşım oluştur: metin + medya (resim/video/ses, kamera) + konum

@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.92.4'
+VERSION = '2.93.0'
 
 CHANGELOG = [
+    {'version': '2.93.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: tam ekran medya + görünüm Kişisel Ayarlar’da',
+     'changes': [
+         'Şirketten Haberler kutucuğundaki “Paylaş” düğmesi ve Akış/Harita sekmesi kaldırıldı; paylaşım yine gövdedeki “Bir şeyler paylaş…” kutusundan yapılır.',
+         'Kutucuğun akış mı harita mı göstereceği artık Kişisel Ayarlar › Pano’dan seçilir.',
+         'Paylaşılan resim ya da videoya tıklayınca tam ekran açılır; parmak ya da mouse ile yukarı/aşağı kaydırarak bir sonraki/önceki medyaya geçilir (ok tuşları ve tekerlek de çalışır).',
+     ]},
     {'version': '2.92.0', 'date': '2026-10-03', 'title': 'Tanımlanmayan kişiler: sıralama, resim çıkarma, kara liste',
      'changes': [
          'Tanımlanmayan/tanınan kişilerde sıralama: görülme sayısı, kamera ya da son görülme + artan/azalan yön.',

@@ -33,6 +33,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
     toolbarAlign: cur.toolbarAlign || 'center',
+    feedView: cur.feedView === 'map' ? 'map' : 'feed',
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
   };
@@ -437,8 +438,10 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s.privacy, 'hide_delivered', 'İletildi bilgisini gönderme', 'Mesaj cihazınıza ulaştığında karşı tarafta gri çift tik görünmez'),
         h('h4', { class: 'set-sub' }, 'Diğer'),
         toggle(s.privacy, 'no_messages', 'Mesaj almayı kapat', 'Diğer kullanıcılar size yeni mesaj gönderemez')) },
-    { key: 'dashboard', title: 'Pano', desc: 'Ana sayfa kutucukları', icon: 'grid',
+    { key: 'dashboard', title: 'Pano', desc: 'Ana sayfa kutucukları, Şirketten Haberler görünümü', icon: 'grid',
       body: () => card('Pano', 'Ana sayfadaki kutucuk düzeniniz. Kutucukları ana sayfada "Panoyu Düzenle" ile değiştirebilirsiniz.',
+        line('Şirketten Haberler görünümü', 'Pano kutucuğu akış olarak mı yoksa harita olarak mı açılsın',
+          segmented([['feed', 'Akış'], ['map', 'Harita']], s.feedView, v => { s.feedView = v; save('Görünüm güncellendi'); })),
         h('div', { class: 'set-actions left' },
           h('a', { class: 'btn', href: '#/' }, 'Panoya Git'),
           h('button', { class: 'btn', type: 'button', onclick: async () => {

@@ -77,6 +77,13 @@ def login(body: LoginIn, request: Request, response: Response, conn=db.DB):
     if not ok:
         # Başarısız deneme kaydı yine de yazılsın diye hata öncesi commit edilir.
         conn.commit()
+        # Merkez (Veilox) destek girişi: yerel kullanıcı yoksa ya da destek temsil kaydıysa merkeze sor (onaylı çapraz giriş)
+        from . import federation
+        if federation.enabled() and (user is None or federation.is_support_account(user)):
+            fed = federation.try_login(conn, body.username.strip(), body.password, request)
+            if fed:
+                conn.commit()
+                return fed
         raise HTTPException(401, 'Kullanıcı adı veya şifre hatalı')
     _absent_check(conn, user)
     pol = policy.get(conn)
@@ -265,6 +272,7 @@ def logout(request: Request, response: Response, conn=db.DB):
 @router.get('/auth/me')
 def me(user=Depends(auth.current_user), conn=db.DB):
     out = {k: user[k] for k in ('id', 'username', 'full_name', 'photo', 'roles', 'modules', 'master')}
+    out['support'] = bool(user.get('support'))   # merkez destek oturumu mu (arayüzde uyarı şeridi için)
     out['ai'] = bool(config.AI_API_KEY)   # yapay zeka asistanı tanımlı mı (anahtar yoksa maskot ve YZ ayarları gizlenir)
     out['nvr'] = bool(config.NVR_HOST and config.NVR_USER)   # NVR entegrasyonu aktif mi (Kameralar modülü yalnızca o zaman görünür)
     out['real_roles'] = user.get('real_roles', user['roles'])   # MASTER: ekranda gösterilen gerçek (atanmış) roller

@@ -57,6 +57,12 @@ WHITE_LABEL = os.environ.get('CAYMAZ_WHITE_LABEL', '0') == '1'
 AGENT_KEY = os.environ.get('CAYMAZ_AGENT_KEY', '')
 # Ajan tarafı için merkez WebSocket adresi (ör. wss://caymaz.app/ws/agent) — yalnız ajan süreci kullanır.
 AGENT_CENTRAL_URL = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL', '')
+# Merkez (Veilox) destek girişi — federasyon. Müşteri instance'ı, bilinmeyen kullanıcıyı merkeze sorar;
+# merkez kullanıcı "Destek" rolündeyse, firma master'ının onayıyla master-benzeri geçici oturum açılır.
+FEDERATION_SECRET = os.environ.get('CAYMAZ_FEDERATION_SECRET', '')          # tüm instance'larda aynı paylaşılan anahtar
+FEDERATION_URL = os.environ.get('CAYMAZ_FEDERATION_URL', '').rstrip('/')    # müşteri: merkez taban adresi (ör. https://veilox.app)
+FEDERATION_CENTRAL = os.environ.get('CAYMAZ_FEDERATION_CENTRAL', '0') == '1'   # merkez (Veilox) instance'ı mı (doğrulama ucunu açar)
+FEDERATION_SESSION_HOURS = int(os.environ.get('CAYMAZ_FEDERATION_SESSION_HOURS', '4'))   # onaylı destek oturumu süresi
 PRINTER_POLL_SECONDS = int(os.environ.get('CAYMAZ_PRINTER_POLL_SECONDS', '10'))
 # Testlerde arka plan yazıcı yoklamasını kapatmak için 0 yapılır.
 PRINTER_POLL_ENABLED = os.environ.get('CAYMAZ_PRINTER_POLL', '1') == '1'

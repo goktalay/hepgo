@@ -31,6 +31,7 @@ HR = 'İnsan Kaynakları'   # personel kayıtları, iş başvuruları, özlük d
 INTERN = 'Stajer'       # hiçbir modüle yetkili değil; genel yapıyı (pano, Kişisel, mesaj, duyurular) kullanır
 CLEANER = 'Temizlik Görevlisi'   # yalnızca Temizlik modülü (günlük temizlik çeklisti)
 DESIGNER = 'Endüstriyel Tasarımcı'   # Endüstriyel Tasarım modülü: proje + çizim / montaj çizimi + sürüm geçmişi
+SUPPORT_ROLE = 'Merkez Destek'   # YALNIZCA merkez (Veilox) instance'ında atanır; müşteri firmalarına çapraz (destek) giriş yetkisi verir
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
          FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, CLEANER, INTERN]
@@ -68,6 +69,10 @@ MODULE_ROLES = {
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler
 MODULE_ROLES['mrp'] = sorted(set(MODULE_ROLES['stock']) | set(MODULE_ROLES['warehouse']), key=ROLES.index)
 MODULE_ROLES['mikro'] = []   # M20 Mikro ERP: YALNIZCA MASTER (sistem sahibi). Hiçbir role verilmez; master tüm modülleri MODULE_ROLES.keys()'ten alır.
+# Merkez destek rolü yalnızca merkez (Veilox) instance'ında ATANABİLİR olsun; MODULE_ROLES'tan SONRA eklenir ki
+# hiçbir modül yetkisi vermesin (yalnızca çapraz-giriş yetkisinin işareti). Müşteri instance'larında listede görünmez.
+if config.FEDERATION_CENTRAL and SUPPORT_ROLE not in ROLES:
+    ROLES.append(SUPPORT_ROLE)
 MRP_MANAGERS = [ADMIN, WAREHOUSE_MANAGER, MRP_LEAD]   # malzeme / depo kaydı, stok hareketi
 # Modül içinde değişiklik yapabilen roller (okuma MODULE_ROLES ile).
 # Montaj Personeli (2026-09-26) Üretim'e montaj/kalibrasyon, Elektronik Personeli elektronik kat montajı için
@@ -204,7 +209,7 @@ def current_user(request: Request, conn=db.DB):
     if not token:
         raise HTTPException(401, 'Oturum açılmamış')
     user = db.row(conn.execute(
-        '''SELECT u.id, u.username, u.full_name, u.photo, u.active, u.last_seen, u.prefs, u.must_change_password, s.expires_at
+        '''SELECT u.id, u.username, u.full_name, u.photo, u.active, u.last_seen, u.prefs, u.must_change_password, u.support_until, s.expires_at
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?''', (token,)))
     now = db.now()
     if not user or user['expires_at'] < now or not user['active']:
@@ -218,8 +223,10 @@ def current_user(request: Request, conn=db.DB):
         raise HTTPException(428, 'Devam etmek için önce şifrenizi değiştirin')
     real = user_roles(conn, user['id'])   # DB'deki gerçek roller (bildirim / katılım bunlara göre)
     user['master'] = is_master(user['username'])
-    # İzinli / raporlu personelin açık oturumu da kapanır (sistem sahibi hariç); sonuç 60 sn önbellekte
-    if not user['master']:
+    # Merkez (Veilox) destek oturumu: firma master'ının onayıyla, süre dolana kadar master-benzeri (tüm işlevsel modüller)
+    user['support'] = bool(user.get('support_until') and user['support_until'] > now) and not user['master']
+    # İzinli / raporlu personelin açık oturumu da kapanır (sistem sahibi ve destek hariç); sonuç 60 sn önbellekte
+    if not user['master'] and not user['support']:
         import time as _t
         hit = _absence_cache.get(user['id'])
         if not hit or _t.monotonic() - hit[0] > 60:
@@ -233,6 +240,10 @@ def current_user(request: Request, conn=db.DB):
         user['real_roles'] = real
         user['roles'] = [*ROLES, MASTER]
         user['modules'] = [*MODULE_ROLES.keys(), 'master']
+    elif user['support']:   # merkez destek: tüm işlevsel modüller (sahibe özel 'master' paneli hariç); süreli, onaylı, iz kaydı tutulur
+        user['real_roles'] = real
+        user['roles'] = real
+        user['modules'] = [*MODULE_ROLES.keys()]
     else:
         user['real_roles'] = real
         user['roles'] = real

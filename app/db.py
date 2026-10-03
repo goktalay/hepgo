@@ -146,6 +146,23 @@ CREATE TABLE IF NOT EXISTS feed_comments (
     deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_feed_comments_post ON feed_comments(post_id);
+-- Merkez (Veilox) destek girişi: müşteri instance'ında bekleyen çapraz-giriş onayları
+CREATE TABLE IF NOT EXISTS crosslogin_requests (
+    id          INTEGER PRIMARY KEY,
+    token       TEXT NOT NULL UNIQUE,            -- giriş ekranının yoklama jetonu
+    username    TEXT NOT NULL,                   -- merkez destek kullanıcısı (e-posta)
+    full_name   TEXT,
+    ip          TEXT,
+    user_agent  TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected | expired
+    session_token TEXT,                          -- onaylanınca oluşan oturum jetonu (giriş ekranı bununla girer)
+    local_user_id INTEGER,                       -- bu instance'ta destek kullanıcısını temsil eden yerel kayıt
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    decided_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_crosslogin_status ON crosslogin_requests(status, created_at);
 -- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
 CREATE TABLE IF NOT EXISTS family_members (
     id          INTEGER PRIMARY KEY,
@@ -1626,6 +1643,8 @@ def _migrate(conn):
                         (SELECT user_id FROM audit_logs WHERE action = 'Şifresini değiştirdi' AND user_id IS NOT NULL)''')
     if 'pin_hash' not in user_cols:     # 4 haneli giriş PIN'i (Ayarlar → Hesap)
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
+    if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
+        conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
     if 'password_changed_at' not in user_cols:   # şifre geçerlilik süresi (Program Ayarları → Güvenlik) için son değişim
         conn.execute('ALTER TABLE users ADD COLUMN password_changed_at TEXT')
     if 'delivered_at' not in {r[1] for r in conn.execute('PRAGMA table_info(chat_messages)')}:   # WhatsApp tarzı "iletildi" (✓✓)

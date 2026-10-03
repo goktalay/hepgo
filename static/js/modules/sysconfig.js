@@ -945,8 +945,37 @@ function aiChangesBody() {
   return wrap;
 }
 
+// Merkez (Veilox) destek girişleri: onay bekleyenler + aktif oturumlar (yalnız MASTER)
+function supportBody(view, ctx) {
+  const wrap = h('div');
+  const sec = (title, sub, ...kids) => h('section', { class: 'card card-pad set-card' }, h('h3', null, title), sub ? h('p', { class: 'small muted' }, sub) : null, ...kids);
+  const load = async () => {
+    let d;
+    try { d = await api.get('/api/auth/crosslogin/pending'); }
+    catch (e) { return clear(wrap, sec('Merkez Destek', null, h('p', { class: 'muted' }, e.message))); }
+    const pend = (d.pending || []).map(p => h('div', { class: 'set-row' },
+      h('div', { class: 'grow' }, h('b', null, p.full_name || p.username), h('small', { class: 'muted' }, `${p.username} · IP ${p.ip}`)),
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { await api.post(`/api/auth/crosslogin/${p.id}/decision`, { approve: false }); toast('Reddedildi'); load(); } catch (e2) { toastError(e2); } } }, 'Reddet'),
+      h('button', { class: 'btn sm primary', type: 'button', onclick: async () => { try { await api.post(`/api/auth/crosslogin/${p.id}/decision`, { approve: true }); toast('Onaylandı'); load(); } catch (e2) { toastError(e2); } } }, 'Onayla')));
+    const active = (d.active || []).map(a => h('div', { class: 'set-row' },
+      h('div', { class: 'grow' }, h('b', null, a.full_name || a.username), h('small', { class: 'muted' }, t('{u} · bitiş: {d}', { u: a.username, d: fmtDateTime(a.support_until) }))),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+        if (!await confirmDialog('Oturumu sonlandır', t('{name} destek oturumu sonlandırılsın mı?', { name: a.full_name || a.username }), { okLabel: 'Sonlandır', danger: true })) return;
+        try { await api.post(`/api/auth/crosslogin/end/${a.user_id}`); toast('Oturum sonlandırıldı'); load(); } catch (e2) { toastError(e2); }
+      } }, 'Sonlandır')));
+    clear(wrap, sec('Merkez Destek Oturumları',
+      'Veilox destek görevlilerinin firmanıza çapraz girişleri. Onaylarsanız süreli ve kayıt altında, master-benzeri yetkiyle girerler; dilediğinizde sonlandırabilirsiniz.',
+      pend.length ? h('div', null, h('h4', { class: 'set-sub' }, 'Onay bekleyen'), ...pend) : null,
+      active.length ? h('div', null, h('h4', { class: 'set-sub' }, 'Aktif oturumlar'), ...active) : null,
+      (!pend.length && !active.length) ? h('p', { class: 'muted' }, 'Bekleyen talep ya da aktif destek oturumu yok.') : null));
+  };
+  load();
+  return wrap;
+}
+
 const GROUPS = [
   { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
+  { key: 'support', title: 'Merkez Destek', desc: 'Veilox destek girişleri: onay ve aktif oturumlar', icon: 'lock', body: supportBody, master: true },
   { key: 'ai', title: 'Yapay Zeka', desc: 'Maskot asistanı: token kullanımı ve kotalar', icon: 'bolt', body: aiBody, needs: 'ai' },
   { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },
   { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
@@ -956,8 +985,8 @@ const GROUPS = [
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
 ];
 
-const SC_COLORS = { security: '#ff3b30', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
-const SC_SECTIONS = [['security', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'master']];
+const SC_COLORS = { security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
+const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'master']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {

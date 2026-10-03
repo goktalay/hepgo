@@ -8,7 +8,7 @@ import { applySettings, desktopNotify, flashMs, flashOn } from './prefs.js';
 import { renderSettings } from './modules/settings.js';
 import { calendarPanel } from './modules/crm.js';
 import { enableDictation } from './dictation.js';
-import { avatar, clear, field, h, modal, onLeave, pageHead, pref, setPref, stopTimers, svgIcon, toast, toastError } from './ui.js';
+import { avatar, clear, field, h, modal, onLeave, pageHead, pref, setPref, stopTimers, svgIcon, t, toast, toastError } from './ui.js';
 import { createGlobe } from './globe.js';
 import { hideTip } from './plane.js';
 import * as users from './modules/users.js';
@@ -144,6 +144,8 @@ function renderLogin() {
   stopTimers();
   clearInterval(alertTimer);
   clearInterval(notifyTimer);
+  clearInterval(supportWatch);
+  document.querySelector('.support-pill')?.remove();
   const username = h('input', { class: 'input', type: 'email', autocomplete: 'username', required: true });
   const password = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
   const submit = h('button', { class: 'btn primary lg', type: 'submit' }, 'Giriş Yap');
@@ -169,6 +171,7 @@ function renderLogin() {
     submit.disabled = true;
     try {
       const r = await api.post('/api/auth/login', { username: username.value, password: password.value, device_token: accountToken(username.value.trim()) });
+      if (r.pending) { waitApproval(r); return; }   // merkez destek girişi: firma yöneticisinin onayı bekleniyor
       await done(r.device_token);
     } catch (err) {
       toastError(err);
@@ -176,6 +179,31 @@ function renderLogin() {
       submit.disabled = false;
     }
   });
+  // Merkez (Veilox) destek girişi: onay beklenirken ekran; onaylanınca otomatik giriş
+  function waitApproval(r) {
+    let left = r.expires_in || 120, done2 = false;
+    const info = h('p', { class: 'small muted', style: { textAlign: 'center' } });
+    const tick = () => { info.textContent = t('Kalan süre: {s} sn', { s: left }); };
+    tick();
+    clear(body,
+      h('div', { class: 'login-wait' },
+        h('div', { class: 'loading' }),
+        h('h3', null, 'Onay bekleniyor'),
+        h('p', null, t('{name} için firma yöneticisinden giriş onayı bekleniyor…', { name: r.full_name || '' })),
+        info),
+      h('button', { class: 'btn', type: 'button', onclick: () => { done2 = true; clearInterval(iv); showForm(); } }, 'Vazgeç'));
+    const iv = setInterval(async () => {
+      left -= 2;
+      if (left <= 0 || done2) { clearInterval(iv); if (!done2) { toast('Onay süresi doldu', 'err'); showForm(); } return; }
+      tick();
+      try {
+        const s = await api.get(`/api/auth/crosslogin/status/${r.token}`);
+        if (s.status === 'approved') { clearInterval(iv); done2 = true; await done(null); }
+        else if (s.status === 'rejected') { clearInterval(iv); done2 = true; toast('Giriş reddedildi', 'err'); showForm(); }
+        else if (s.status === 'expired') { clearInterval(iv); done2 = true; toast('Onay süresi doldu', 'err'); showForm(); }
+      } catch { /* yoklama hatası: sürdür */ }
+    }, 2000);
+  }
   const canvas = h('canvas', { class: 'globe-bg', 'aria-hidden': 'true' });
   clear(root, h('div', { class: 'login-wrap' }, canvas, form));
   const globe = createGlobe(canvas, { size: 0.46, speed: 7 });
@@ -191,7 +219,12 @@ function enterApp() {
     import('./modules/tvroom.js').then(m => m.renderTv(root, ctx));
     return;
   }
-  renderShell(); checkWhatsNew();
+  renderShell(); checkWhatsNew(); startSupportWatch();
+  document.querySelector('.support-pill')?.remove();
+  if (ctx.user?.support) {   // merkez destek oturumu göstergesi
+    document.body.append(h('div', { class: 'support-pill' }, '🛟 ',
+      h('b', null, 'Destek oturumu'), h('span', null, ` · ${ctx.meta?.company || ''}`)));
+  }
 }
 window.addEventListener('caymaz:mustchange', () => { if (ctx.user) { ctx.user.must_change_password = true; renderForcePassword(); } });
 
@@ -361,6 +394,30 @@ function syncMenuCounts(items) {
 // Birleşik bildirim düğmesi: üretim/yazıcı UYARILARI + kişiye özel BİLDİRİMLER tek zilde (mobilde yer kazanır).
 // Rozet toplamı gösterir; rengi en önemli kayda göre: kritik (yanıp söner) > hata (kırmızı) > uyarı (turuncu) > bildirim (mavi).
 let alertTimer, notifyTimer;
+let supportWatch, supportReq = null;   // merkez destek girişi: master onay bekleyen talebi izler
+function startSupportWatch() {
+  clearInterval(supportWatch); supportReq = null;
+  if (!ctx.user?.master) return;
+  const check = async () => {
+    let d; try { d = await api.get('/api/auth/crosslogin/pending'); } catch { return; }
+    const ids = new Set((d.pending || []).map(r => r.id));
+    if (supportReq && !ids.has(supportReq)) supportReq = null;   // yanıtlandı / süre doldu → tekrar açılabilir
+    if (supportReq || !d.pending?.length) return;
+    const req = d.pending[0]; supportReq = req.id;
+    modal({
+      title: 'Merkez destek girişi onayı',
+      body: h('div', null,
+        h('p', null, t('{name} ({user}) firmanıza destek için giriş yapmak istiyor.', { name: req.full_name, user: req.username })),
+        h('p', { class: 'small muted' }, `IP: ${req.ip}`),
+        h('p', { class: 'small muted' }, 'Onaylarsanız destek görevlisi süreli ve kayıt altında, master-benzeri yetkiyle girer. Oturumu dilediğinizde Program Ayarları’ndan sonlandırabilirsiniz.')),
+      actions: [
+        { label: 'Reddet', class: 'danger', onClick: async () => { try { await api.post(`/api/auth/crosslogin/${req.id}/decision`, { approve: false }); toast('Giriş reddedildi'); } catch (e) { toastError(e); } supportReq = null; } },
+        { label: 'Onayla', class: 'primary', onClick: async () => { try { await api.post(`/api/auth/crosslogin/${req.id}/decision`, { approve: true }); toast('Onaylandı — destek girişi açıldı'); } catch (e) { toastError(e); } supportReq = null; } },
+      ],
+    });
+  };
+  supportWatch = setInterval(check, 5000); check();
+}
 let refreshNotify = () => {};   // bildirimleri hemen yeniden oku (ör. Kişisel sayfası görüldü sayınca)
 // Eksik özlük evrakı geri sayımı (zilin solunda, küçük): gün / saat / dakika; tıklayınca Evraklarım. Evrak tamamlanınca kaybolur.
 function docsCountdown() {

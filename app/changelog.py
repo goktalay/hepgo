@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.96.3'
+VERSION = '2.97.0'
 
 CHANGELOG = [
+    {'version': '2.97.0', 'date': '2026-10-03', 'title': 'Merkez (Veilox) destek girişi — onaylı çapraz giriş',
+     'changes': [
+         'Veilox destek görevlisi, müşteri firmanın giriş ekranından kendi kullanıcı adı/şifresiyle girebilir; firma MASTER’ının onayıyla süreli, kayıt altında, master-benzeri (işlevsel modüller) oturum açılır.',
+         'Onay ~2 dk içinde gelmezse iptal; firma MASTER’ı Program Ayarları › Merkez Destek’ten onaylar/reddeder ve aktif oturumu sonlandırabilir.',
+         'Ekranda “Destek oturumu” göstergesi; tüm işlemler iz kaydına yazılır.',
+     ]},
     {'version': '2.96.3', 'date': '2026-10-03', 'title': 'Düzeltme: mobilde pano tek sütun (tam genişlik)',
      'changes': [
          'Mobilde (≤768px) pano kutucukları artık tek sütunda tam genişlik görünür; dar ekranda sıkışma düzeltildi.',

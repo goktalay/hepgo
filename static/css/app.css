@@ -5194,3 +5194,14 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 :root[data-textcase] input, :root[data-textcase] textarea, :root[data-textcase] select,
 :root[data-textcase] code, :root[data-textcase] pre, :root[data-textcase] .mono,
 :root[data-textcase] kbd, :root[data-textcase] .db-matrix, :root[data-textcase] .mono small { text-transform: none; }
+
+/* Merkez destek girişi: onay bekleme ekranı */
+.login-wait { text-align: center; padding: 10px 4px 16px; }
+.login-wait h3 { margin: 10px 0 6px; }
+.login-wait p { margin: 4px 0; color: var(--muted); }
+
+/* Merkez destek oturumu göstergesi */
+.support-pill { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1200;
+  display: inline-flex; align-items: center; gap: 4px; background: #0f766e; color: #fff; border-radius: 999px;
+  padding: 7px 14px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.support-pill b { font-weight: 700; }

@@ -115,22 +115,111 @@ def add_comment(conn, post_id, user_id, text):
 
 
 def delete_comment(conn, comment_id, viewer):
+    """Yorumu yalnızca yazan siler — başkasının yorumunu kimse (yönetici / sistem sahibi dahil) silemez."""
     row = conn.execute('SELECT user_id FROM feed_comments WHERE id = ? AND deleted_at IS NULL', (comment_id,)).fetchone()
-    if not row:
-        return False
-    is_admin = ('admin' in viewer.get('modules', [])) or viewer.get('master')
-    if row[0] != viewer['id'] and not is_admin:
+    if not row or row[0] != viewer['id']:
         return False
     conn.execute('UPDATE feed_comments SET deleted_at = ? WHERE id = ?', (db.now(), comment_id))
     return True
 
 
 def delete(conn, post_id, viewer):
+    """Paylaşımı yalnızca sahibi siler — başkasının paylaşımını kimse (yönetici / sistem sahibi / merkez destek dahil)
+    silemez. Sistem olayları (yazarı yok) yöneticice kaldırılabilir."""
     row = conn.execute('SELECT author_id, media FROM feed_posts WHERE id = ? AND deleted_at IS NULL', (post_id,)).fetchone()
     if not row:
         return False
-    is_admin = ('admin' in viewer.get('modules', [])) or viewer.get('master')
-    if row[0] != viewer['id'] and not is_admin:
+    if row[0] is None:
+        if not (('admin' in viewer.get('modules', [])) or viewer.get('master')):
+            return False
+    elif row[0] != viewer['id']:
         return False
     conn.execute('UPDATE feed_posts SET deleted_at = ? WHERE id = ?', (db.now(), post_id))
     return True
+
+
+# ---------- Görülme (ana ekranda akışı gören kullanıcı) + bildirim ----------
+SEEN_KEY = 'feed_seen'
+
+
+def seen_id(conn, user_id):
+    r = conn.execute('SELECT value FROM user_prefs WHERE user_id=? AND key=?', (user_id, SEEN_KEY)).fetchone()
+    try:
+        return int(r[0]) if r and r[0] else None
+    except (TypeError, ValueError):
+        return None
+
+
+def mark_seen(conn, user_id, last_id):
+    """Akışı gördü: en son görülen paylaşım id'si (yalnızca ileri gider)."""
+    cur = seen_id(conn, user_id) or 0
+    top = conn.execute('SELECT COALESCE(MAX(id),0) FROM feed_posts').fetchone()[0]
+    val = max(cur, min(int(last_id or 0), top))
+    conn.execute('INSERT INTO user_prefs (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value',
+                 (user_id, SEEN_KEY, str(val)))
+    return val
+
+
+def unseen_posts(conn, user_id):
+    """Kullanıcının henüz görmediği, başkalarının paylaşımları (sistem olayları hariç). Hiç görmediyse son 2 gün."""
+    seen = seen_id(conn, user_id)
+    base = """SELECT f.id, f.text, f.media, u.full_name AS author_name FROM feed_posts f LEFT JOIN users u ON u.id=f.author_id
+              WHERE f.kind='USER' AND f.deleted_at IS NULL AND f.author_id IS NOT NULL AND f.author_id != ?"""
+    if seen is None:
+        return db.rows(conn.execute(base + " AND f.created_at >= strftime('%Y-%m-%dT%H:%M:%S','now','localtime','-2 days') ORDER BY f.id DESC LIMIT 20", (user_id,)))
+    return db.rows(conn.execute(base + ' AND f.id > ? ORDER BY f.id DESC LIMIT 20', (user_id, seen)))
+
+
+def snippet(text, media=None):
+    t = ' '.join((text or '').split())
+    if t:
+        return t[:70] + ('…' if len(t) > 70 else '')
+    try:
+        m = json.loads(media) if isinstance(media, str) else (media or [])
+    except ValueError:
+        m = []
+    kinds = {x.get('type') for x in m}
+    return '🎬 video paylaştı' if 'video' in kinds else '🖼 fotoğraf paylaştı' if 'image' in kinds else '🎤 ses paylaştı' if 'audio' in kinds else 'paylaşım yaptı'
+
+
+def can_see_home(modules):
+    """Ana ekranı (pano / haber akışı) görebilen kullanıcı mı? Rolsüz ve yalnız-Güvenlik hesaplar göremez (istemci: securityOnly)."""
+    mods = list(modules or [])
+    return bool(mods) and not all(m in ('security', 'announcements') for m in mods)
+
+
+def push_recipients(conn, author_id, exclude=()):
+    """Yeni paylaşımın telefon/OS bildirimi alıcıları: aktif, silinmemiş, izinli/raporlu olmayan (master hariç), 'yeni paylaşım'
+    bildirimini kapatmamış ve ana ekranı görebilen kullanıcılar. Süresi bitmiş merkez-destek temsil hesapları ve uygulaması şu an
+    ekranda açık olanlar (exclude: uygulama içi bildirim yeter) hariç."""
+    from . import auth, config, notifications
+    absent = auth.absent_map(conn)
+    roles = {}
+    for uid, role in conn.execute('SELECT user_id, role FROM user_roles'):
+        roles.setdefault(uid, []).append(role)
+    now = db.now()
+    out = []
+    rows = db.rows(conn.execute('SELECT id, username, prefs, password_hash, support_until FROM users '
+                                'WHERE active=1 AND deleted_at IS NULL AND id != ?', (author_id,)))
+    for r in rows:
+        if r['id'] in exclude:
+            continue
+        master = auth.is_master(r['username'])
+        if r['password_hash'] == '*FEDERATED*' and not (r['support_until'] and r['support_until'] > now):
+            continue
+        if r['id'] in absent and not master:
+            continue
+        if 'feed-new' in notifications._muted(r):
+            continue
+        mods = list(auth.MODULE_ROLES.keys()) if master else auth.allowed_modules(roles.get(r['id'], []))
+        if config.MODULES is not None:
+            mods = [m for m in mods if m in config.MODULES]
+        if can_see_home(mods):
+            out.append(r['id'])
+    return out
+
+
+def reactors(conn, post_id):
+    return db.rows(conn.execute(
+        """SELECT r.emoji, r.created_at, u.id AS user_id, u.full_name, u.photo FROM feed_reactions r
+           JOIN users u ON u.id=r.user_id WHERE r.post_id=? ORDER BY r.created_at DESC""", (post_id,)))

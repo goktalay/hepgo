@@ -64,7 +64,7 @@ def delete_comment(comment_id: int, user=Depends(auth.current_user), conn=db.DB)
     if feed.delete_comment(conn, comment_id, user):
         conn.commit()
         return {'ok': True}
-    raise HTTPException(404, 'Yorum bulunamadı ya da silme yetkiniz yok')
+    raise HTTPException(403, 'Yalnızca kendi yorumunuzu silebilirsiniz')
 
 
 @router.post('')
@@ -91,7 +91,50 @@ async def add(text: str = Form(''), lat: Optional[float] = Form(None), lng: Opti
     pid = feed.add_post(conn, user['id'], text, media, lat, lng)
     conn.commit()
     db.audit(conn, user['id'], 'Şirketten Haberler paylaşımı', 'feed', pid, f'{len(media)} medya')
+    await _announce(conn, pid, user, text, media)
     return {'ok': True, 'id': pid}
+
+
+async def _announce(conn, pid, user, text, media):
+    """Yeni paylaşım: bağlı herkese anlık olay (ana ekrandaysa akışa düşer, değilse zil/kutu bildirimi tetiklenir);
+    uygulaması kapalı/arka planda olanlara telefon bildirimi (tıklayınca ana ekran). Hata akışı bozmaz."""
+    visible = set()
+    try:   # yalnız tetik: içerik (yazar, metin) oturumlu GET /api/feed ile alınır — kapanmış oturumlara veri sızmaz
+        from . import voice
+        visible = voice.visible_uids()
+        await voice.broadcast_users({'t': 'feed', 'id': pid})
+    except Exception:   # noqa: BLE001
+        pass
+    try:   # tek push kaynağı (dakikalık tarama 'feed-new' için push atmaz: notifications push=False)
+        from .. import push
+        ids = feed.push_recipients(conn, user['id'], exclude=visible)
+        push.send(ids, {'type': 'notif', 'title': 'Şirketten Haberler: yeni paylaşım', 'tag': 'notif-feed-new',
+                        'body': f"{user['full_name']}: {feed.snippet(text, media)}", 'url': '/app#/home'})
+    except Exception:   # noqa: BLE001
+        pass
+
+
+class SeenIn(BaseModel):
+    last_id: int
+
+
+@router.post('/seen')
+def seen(body: SeenIn, user=Depends(auth.current_user), conn=db.DB):
+    """Kullanıcı akışı ana ekranda gördü: yeni paylaşım bildirimi kalkar."""
+    v = feed.mark_seen(conn, user['id'], body.last_id)
+    conn.commit()
+    return {'ok': True, 'seen': v}
+
+
+@router.get('/{post_id}/reactions')
+def reactions(post_id: int, user=Depends(auth.current_user), conn=db.DB):
+    """Paylaşıma kimlerin tepki verdiği — yalnızca paylaşım sahibi ve yönetici/sistem sahibi görür."""
+    row = conn.execute('SELECT author_id FROM feed_posts WHERE id=? AND deleted_at IS NULL', (post_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, 'Paylaşım bulunamadı')
+    if row[0] != user['id'] and not user.get('master') and 'admin' not in user.get('modules', []):
+        raise HTTPException(403, 'Tepki verenleri yalnızca paylaşım sahibi görebilir')
+    return {'reactions': feed.reactors(conn, post_id)}
 
 
 @router.delete('/{post_id}')
@@ -99,4 +142,4 @@ def remove(post_id: int, user=Depends(auth.current_user), conn=db.DB):
     if feed.delete(conn, post_id, user):
         conn.commit()
         return {'ok': True}
-    raise HTTPException(404, 'Paylaşım bulunamadı ya da silme yetkiniz yok')
+    raise HTTPException(403, 'Yalnızca kendi paylaşımınızı silebilirsiniz')

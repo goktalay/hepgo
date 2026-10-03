@@ -2,7 +2,7 @@
 // İki görünüm: Akış ve Harita. Sistem olaylarında şirket logosu, kullanıcı paylaşımında kişinin fotoğrafı.
 import { api, fileUrl, upload, videoUrl } from '../api.js';
 import { loadMaps } from '../maps.js';
-import { avatar, clear, confirmDialog, fmtDateTime, h, modal, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, fmtDateTime, h, modal, onLeave, segmented, toast, toastError } from '../ui.js';
 
 const KIND_BADGE = {
   HIRE: ['green', 'İşe alım'], TERMINATION: ['', 'Ayrılış'], FLIGHT: ['blue', 'Uçuş'],
@@ -29,19 +29,24 @@ export function renderFeed(container, ctx, opts = {}) {
   clear(container, body);
 
   let reactionList = ['👍', '❤️', '😂', '😮', '😢', '👏', '🎉'];   // sunucudan güncellenir
-  let visual = [];   // akıştaki tüm resim + videolar (tam ekran kaydırmalı görüntüleyici için)
-  const mediaEl = m => {
+  // Tam ekran: akıştaki tüm resim + videolar ekrandaki sırayla (paylaşımıyla birlikte → sağ şeritte kalp / yorum / paylaş)
+  const viewerItems = () => posts.flatMap(q => (q.media || []).filter(x => x.type === 'image' || x.type === 'video').map(x => ({ ...x, post: q })));
+  const openAt = (m, p) => {
+    const items = viewerItems();
+    openViewer(items, Math.max(0, items.findIndex(x => x.post === p && x.path === m.path)), viewerActs);
+  };
+  const mediaEl = (m, p) => {
     if (m.type === 'audio') return h('audio', { class: 'feed-audio', src: fileUrl(m.path), controls: true, preload: 'none' });
-    const idx = visual.length; visual.push(m);
-    if (m.type === 'video') return h('button', { class: 'feed-media feed-vid', type: 'button', title: 'Tam ekran aç', onclick: () => openViewer(visual.slice(), idx) },
+    if (m.type === 'video') return h('button', { class: 'feed-media feed-vid', type: 'button', title: 'Tam ekran aç', onclick: () => openAt(m, p) },
       h('video', { src: videoUrl(m.path), preload: 'metadata', muted: true, playsinline: true, tabindex: -1 }), h('span', { class: 'feed-play' }, '▶'));
-    return h('button', { class: 'feed-media', type: 'button', title: 'Tam ekran aç', onclick: () => openViewer(visual.slice(), idx) },
+    return h('button', { class: 'feed-media', type: 'button', title: 'Tam ekran aç', onclick: () => openAt(m, p) },
       h('img', { src: fileUrl(m.path, 1000), alt: '', loading: 'lazy' }));
   };
   const isAdmin = () => ctx.user.master || ctx.user.modules.includes('admin');
   const postCard = p => {
     const badge = KIND_BADGE[p.kind] || KIND_BADGE.USER;
-    const canDel = p.author_id === ctx.user.id || isAdmin();
+    // Başkasının paylaşımını kimse silemez (yönetici / sistem sahibi dahil); sistem olaylarını yönetici kaldırabilir
+    const canDel = p.system ? isAdmin() : p.author_id === ctx.user.id;
     const card = h('div', { class: 'feed-post' },
       h('div', { class: 'feed-ph' },
         p.system ? h('img', { class: 'feed-ava', src: LOGO, alt: '' }) : avatar({ full_name: p.author_name, photo: p.author_photo }, 40),
@@ -50,7 +55,7 @@ export function renderFeed(container, ctx, opts = {}) {
         badge[1] ? h('span', { class: `badge ${badge[0]}` }, badge[1]) : null,
         canDel ? h('button', { class: 'feed-x', type: 'button', title: 'Sil', onclick: () => del(p) }, '×') : null),
       p.text ? h('div', { class: 'feed-text' }, p.ref_link ? h('a', { href: p.ref_link }, p.text) : p.text) : null,
-      p.media?.length ? h('div', { class: `feed-medias n${Math.min(p.media.length, 4)}` }, p.media.map(mediaEl)) : null,
+      p.media?.length ? h('div', { class: `feed-medias n${Math.min(p.media.length, 4)}` }, p.media.map(m => mediaEl(m, p))) : null,
       footer(p, c => reCard(p, c)));
     p._card = card;
     return card;
@@ -66,7 +71,8 @@ export function renderFeed(container, ctx, opts = {}) {
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
     const stat = h('div', { class: 'feed-stat' },
-      total ? h('span', { class: 'feed-rsum' },
+      total ? h(canSeeReactors(p) ? 'button' : 'span', { class: `feed-rsum ${canSeeReactors(p) ? 'clickable' : ''}`, type: 'button',
+        title: canSeeReactors(p) ? 'Kimler tepki verdi' : null, onclick: canSeeReactors(p) ? () => showReactors(p) : null },
         h('span', { class: 'feed-rbubbles' }, topEmojis.map(em => h('span', { class: 'feed-rb' }, em))),
         h('span', { class: 'feed-rcount' }, String(total))) : h('span'),
       p.comment_count ? h('button', { class: 'feed-stat-c', type: 'button', onclick: () => toggleComments(p, rerender) }, `${p.comment_count} yorum`) : h('span'));
@@ -110,6 +116,26 @@ export function renderFeed(container, ctx, opts = {}) {
     catch (err) { toastError(err); }
   }
 
+  // Paylaşım sahibi (ve yönetici) kimlerin tepki verdiğini görür
+  const canSeeReactors = p => !p.system && (p.author_id === ctx.user.id || isAdmin());
+  async function showReactors(p) {
+    let d;
+    try { d = await api.get(`/api/feed/${p.id}/reactions`); } catch (e) { return toastError(e); }
+    const list = d.reactions || [];
+    const byEmoji = {};
+    list.forEach(r => { byEmoji[r.emoji] = (byEmoji[r.emoji] || 0) + 1; });
+    let cur = 'all';
+    const box = h('div', { class: 'feed-rx-list' });
+    const drawList = () => clear(box, list.filter(r => cur === 'all' || r.emoji === cur).map(r => h('div', { class: 'feed-rx-row' },
+      h('span', { class: 'feed-rx-ava' }, avatar({ full_name: r.full_name, photo: r.photo }, 38), h('span', { class: 'feed-rx-em' }, r.emoji)),
+      h('div', { class: 'grow' }, h('b', null, r.full_name), h('small', { class: 'muted' }, fmtDateTime(r.created_at))))));
+    const tabs = segmented([['all', `Tümü ${list.length}`], ...Object.entries(byEmoji).sort((a, b) => b[1] - a[1]).map(([em, n]) => [em, `${em} ${n}`])],
+      'all', v => { cur = v; drawList(); }, { tabs: true });
+    drawList();
+    modal({ title: 'Tepki verenler', body: h('div', { class: 'feed-rx' }, tabs, list.length ? box : h('div', { class: 'empty small' }, 'Henüz tepki yok.')),
+      actions: [{ label: 'Kapat' }] });
+  }
+
   function toggleComments(p, rerender, open) {
     p._open = open ? true : !p._open;
     rerender(p._card);
@@ -143,7 +169,7 @@ export function renderFeed(container, ctx, opts = {}) {
             h('div', { class: 'feed-cname' }, c.author_name || 'Kullanıcı'),
             h('div', { class: 'feed-ctext' }, c.text)),
           h('div', { class: 'feed-cmeta' }, h('span', { class: 'muted' }, fmtDateTime(c.created_at)),
-            (c.user_id === ctx.user.id || isAdmin()) ? h('button', { class: 'feed-cdel', type: 'button', onclick: async () => {
+            c.user_id === ctx.user.id ? h('button', { class: 'feed-cdel', type: 'button', onclick: async () => {
               try { await api.del(`/api/feed/comments/${c.id}`); p._comments = p._comments.filter(x => x.id !== c.id); p.comment_count = Math.max(0, (p.comment_count || 1) - 1); rerender(p._card); }
               catch (err) { toastError(err); }
             } }, 'Sil') : null))))),
@@ -159,7 +185,6 @@ export function renderFeed(container, ctx, opts = {}) {
   let drawMap;
   function draw() {
     if (view === 'map') return drawMap();
-    visual = [];
     const list = posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
       : h('div', { class: 'feed-empty muted' }, 'Henüz paylaşım yok. İlk paylaşımı sen ekle!');
     clear(body, composer(), list);
@@ -177,7 +202,9 @@ export function renderFeed(container, ctx, opts = {}) {
       const pos = { lat: p.lat, lng: p.lng }; bounds.extend(pos);
       const thumb = (p.media || []).find(m => m.type === 'image');
       const mk = new maps.Marker({ position: pos, map, title: p.text || '' });
-      const info = new maps.InfoWindow({ content: `<div style="max-width:200px">${thumb ? `<img src="${fileUrl(thumb.path, 200)}" style="width:100%;border-radius:6px">` : ''}<div>${(p.text || '').slice(0, 120)}</div></div>` });
+      const info = new maps.InfoWindow({ content: h('div', { style: 'max-width:200px' },
+        thumb ? h('img', { src: fileUrl(thumb.path, 200), style: 'width:100%;border-radius:6px', alt: '' }) : null,
+        h('div', null, (p.text || '').slice(0, 120))) });
       mk.addListener('click', () => info.open(map, mk));
     }
     map.fitBounds(bounds, 48);
@@ -193,65 +220,373 @@ export function renderFeed(container, ctx, opts = {}) {
       const d = await api.get('/api/feed');
       posts = d.posts; if (Array.isArray(d.reactions) && d.reactions.length) reactionList = d.reactions;
       draw();
+      markSeen();
     } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); }
   }
+  // Yeni paylaşım anında: mevcut kartlara (açık yorum, yazılan metin) dokunmadan yenileri en üste ekle
+  async function addNew() {
+    if (view === 'map') return load();
+    let d;
+    try { d = await api.get('/api/feed'); } catch { return; }
+    const top = posts.reduce((m, p) => Math.max(m, p.id || 0), 0);
+    const fresh = (d.posts || []).filter(p => p.id > top);
+    if (!fresh.length) return;
+    const list = body.querySelector('.feed-list');
+    if (!list) {   // akış boştu: tam çiz, gelenleri yine vurgula
+      posts = d.posts; draw(); markSeen();
+      const ids = new Set(fresh.map(p => p.id));
+      posts.forEach(p => { if (ids.has(p.id)) p._card?.classList.add('feed-fresh'); });
+      return;
+    }
+    posts = [...fresh, ...posts];
+    for (const p of fresh.slice().reverse()) {   // en yeni en üstte kalsın
+      const card = postCard(p);
+      card.classList.add('feed-fresh');
+      list.prepend(card);
+    }
+    markSeen();
+  }
+  // Ana ekranda görüldü: yeni paylaşım bildirimi kalkar (sekme arka plandaysa görünür olunca)
+  let pendingSeen = 0;
+  function markSeen() {
+    const top = posts.reduce((m, p) => Math.max(m, p.id || 0), 0);
+    if (!top || !container.isConnected || view === 'map') return;
+    if (document.visibilityState !== 'visible') { pendingSeen = top; return; }
+    pendingSeen = 0;
+    api.post('/api/feed/seen', { last_id: top }).then(() => window.dispatchEvent(new Event('caymaz:feed-seen'))).catch(() => {});
+  }
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible' || !container.isConnected) return;
+    if (pendingSeen) markSeen();
+    if (view === 'feed') addNew();
+  };
+  const onFeed = () => { if (container.isConnected) addNew(); };
+  window.addEventListener('caymaz:feed', onFeed);
+  document.addEventListener('visibilitychange', onVisible);
+  onLeave(() => { window.removeEventListener('caymaz:feed', onFeed); document.removeEventListener('visibilitychange', onVisible); });
+  // Tam ekran görüntüleyicinin sağ şeridi akıştaki aynı işlemleri kullanır; değişiklik akıştaki karta da yansır
+  const refreshCard = p => { if (p._card?.isConnected) reCard(p, p._card); };
+  const viewerActs = {
+    company: () => ctx.meta?.company || 'Şirket',
+    reactions: () => reactionList,
+    react: (p, em) => doReact(p, em, () => refreshCard(p)),
+    comments: (p, box, after) => renderComments(p, box, () => { refreshCard(p); after(); }),
+    canSeeReactors: p => canSeeReactors(p),
+    showReactors: p => showReactors(p),
+  };
+  // Pano dakikalık yenilemesi: kullanıcı yorum yazıyor / açık yorum varsa yalnız yenileri ekle, yoksa tam yenile
+  const busy = () => posts.some(p => p._open) || body.contains(document.activeElement);
   load();
-  return { reload: load };
+  return { reload: () => (busy() ? addNew() : load()) };
 }
 
-// Tam ekran medya görüntüleyici: resim/video arasında parmak ya da mouse ile yukarı/aşağı kaydırarak gezinilir.
-function openViewer(items, start) {
+// Tam ekran medya görüntüleyici (TikTok / Reels tarzı):
+//  · yukarı / aşağı kaydırınca parmağı izleyerek bir sonrakine KAYARAK geçer (tekerlek, ok tuşları, ▲▼ de aynı)
+//  · iki parmakla (ya da Ctrl+tekerlek / izleme dörtgeni) yakınlaştırma, çift dokunuşla 2,5× ↔ 1×, büyükken sürükleyerek gezme
+//  · sağ şerit: paylaşan, kalp + sayı (uzun bas: diğer tepkiler), yorumlar, cihazın paylaşma menüsü, indir
+//  · alt sol: paylaşan adı + zaman + metin
+const SVG = {
+  heart: '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3 4.5 6.7 4.5c2.1 0 3.6 1.2 4.3 2.4h2c.7-1.2 2.2-2.4 4.3-2.4 3.7 0 5.8 3.8 4.3 7.2C19.5 16.4 12 21 12 21z" fill="currentColor"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M12 3.5c5 0 9 3.4 9 7.7s-4 7.7-9 7.7c-1 0-2-.1-2.9-.4L4.4 20.4l1.3-3.7C4 15.3 3 13.4 3 11.2 3 6.9 7 3.5 12 3.5z" fill="currentColor"/><circle cx="8" cy="11.3" r="1.3" fill="#111"/><circle cx="12" cy="11.3" r="1.3" fill="#111"/><circle cx="16" cy="11.3" r="1.3" fill="#111"/></svg>',
+  share: '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M13.5 4.3v4.1C6.6 9.2 3.6 13.6 3 19.6c2.3-3.2 5.6-4.8 10.5-4.8v4.1l7.6-7.3z" fill="currentColor"/></svg>',
+  dl: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10.5l5 5 5-5"/><path d="M5 20h14"/></svg>',
+};
+const ico = markup => { const s = document.createElement('span'); s.className = 'fv-ic'; s.innerHTML = markup; return s; };
+const shareFiles = new Map();   // dosya yolu → File (paylaşım menüsü kullanıcı dokunuşuyla hemen açılabilsin diye önceden indirilir)
+async function shareFile(m) {
+  if (shareFiles.has(m.path)) return shareFiles.get(m.path);
+  const r = await fetch(fileUrl(m.path), { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Dosya alınamadı');
+  const b = await r.blob();
+  const f = new File([b], m.path.split('/').pop() || 'paylasim', { type: b.type || (m.type === 'video' ? 'video/mp4' : 'image/jpeg') });
+  shareFiles.set(m.path, f);
+  if (shareFiles.size > 12) shareFiles.delete(shareFiles.keys().next().value);
+  return f;
+}
+
+function openViewer(items, start, act) {
   items = items.filter(m => m.type === 'image' || m.type === 'video');
   if (!items.length) return;
   let i = Math.max(0, Math.min(start, items.length - 1));
-  const stage = h('div', { class: 'fv-stage' });
+  const track = h('div', { class: 'fv-track' });
+  const stage = h('div', { class: 'fv-stage' }, track);
   const counter = h('div', { class: 'fv-count' });
-  const upBtn = h('button', { class: 'fv-nav up', type: 'button', title: 'Önceki', onclick: () => go(i - 1) }, '▲');
-  const downBtn = h('button', { class: 'fv-nav down', type: 'button', title: 'Sonraki', onclick: () => go(i + 1) }, '▼');
+  const upBtn = h('button', { class: 'fv-nav up', type: 'button', title: 'Önceki', onclick: () => slide(-1) }, '▲');
+  const downBtn = h('button', { class: 'fv-nav down', type: 'button', title: 'Sonraki', onclick: () => slide(1) }, '▼');
+  const rail = h('div', { class: 'fv-rail' });
+  const cap = h('div', { class: 'fv-cap' });
+  const sheet = h('div', { class: 'fv-sheet', hidden: true });
   const overlay = h('div', { class: 'fv-overlay' },
-    h('button', { class: 'fv-x', type: 'button', title: 'Kapat', onclick: close }, '✕'),
-    counter, upBtn, stage, downBtn,
-    h('div', { class: 'fv-hint' }, 'Gezinmek için yukarı/aşağı kaydırın'));
+    stage, h('button', { class: 'fv-x', type: 'button', title: 'Kapat', onclick: close }, '✕'),
+    counter, upBtn, downBtn, rail, cap, sheet);
 
-  function render() {
+  // ---- kayan şerit: önceki / şimdiki / sonraki slayt (geçişte öğeler yeniden yüklenmez) ----
+  const make = k => {
+    const m = items[k];
+    if (!m) return null;
+    const media = m.type === 'video'
+      ? h('video', { class: 'fv-media', src: videoUrl(m.path), controls: true, playsinline: true, preload: 'metadata' })
+      : h('img', { class: 'fv-media', src: fileUrl(m.path), alt: '', draggable: false });
+    return { el: h('div', { class: 'fv-slide' }, media), media };
+  };
+  let sl = { prev: make(i - 1), cur: make(i), next: make(i + 1) };
+  const place = () => [[-1, sl.prev], [0, sl.cur], [1, sl.next]].forEach(([k, x]) => {
+    if (!x) return;
+    x.el.style.transform = `translateY(${k * 100}%)`;
+    if (!x.el.isConnected) track.append(x.el);
+  });
+  const setTrack = (y, anim) => {
+    track.style.transition = anim ? 'transform .3s cubic-bezier(.2,.75,.25,1)' : 'none';
+    track.style.transform = `translateY(${y})`;
+  };
+  let busy = false;
+  function slide(d) {   // d: +1 sonraki, -1 önceki — kayarak geç
+    if (busy || zoomed()) return;
+    if (!(d > 0 ? sl.next : sl.prev)) return setTrack('0px', true);   // uçta: geri yaylan
+    busy = true;
+    setTrack(`${-d * 100}%`, true);
+    setTimeout(() => {
+      if (d > 0) { sl.prev?.el.remove(); sl = { prev: sl.cur, cur: sl.next, next: make(i + 2) }; }
+      else { sl.next?.el.remove(); sl = { next: sl.cur, cur: sl.prev, prev: make(i - 2) }; }
+      i += d;
+      place(); setTrack('0px', false); activate();
+      busy = false;
+    }, 300);
+  }
+
+  // ---- yakınlaştırma ----
+  let z = { s: 1, x: 0, y: 0 };
+  const MAX = 5;
+  const media = () => sl.cur?.media;
+  const zoomed = () => z.s > 1.01;
+  function clampPan() {
+    const m = media(); if (!m) return;
+    const mx = m.offsetWidth * (z.s - 1) / 2, my = m.offsetHeight * (z.s - 1) / 2;
+    z.x = Math.max(-mx, Math.min(mx, z.x)); z.y = Math.max(-my, Math.min(my, z.y));
+  }
+  function apply(anim) {
+    const m = media(); if (!m) return;
+    m.style.transition = anim ? 'transform .18s ease' : 'none';
+    m.style.transform = zoomed() ? `translate(${z.x}px, ${z.y}px) scale(${z.s})` : '';
+    overlay.classList.toggle('zoomed', zoomed());
+    if (m.tagName === 'VIDEO') m.controls = !zoomed();   // büyükken denetimler taşmasın
+  }
+  function zoomTo(ns, cx, cy, anim) {   // ekrandaki (cx, cy) noktası yerinde kalır
+    ns = Math.max(1, Math.min(MAX, ns));
+    const r = stage.getBoundingClientRect();
+    const px = cx - (r.left + r.width / 2), py = cy - (r.top + r.height / 2);
+    const qx = (px - z.x) / z.s, qy = (py - z.y) / z.s;
+    z = ns <= 1.01 ? { s: 1, x: 0, y: 0 } : { s: ns, x: px - ns * qx, y: py - ns * qy };
+    clampPan(); apply(anim);
+  }
+  const resetZoom = () => { z = { s: 1, x: 0, y: 0 }; apply(true); };
+
+  // ---- sağ şerit + alt yazı ----
+  const post = () => items[i].post;
+  let dlLink;
+  function drawRail() {
+    const p = post(), m = items[i];
+    if (!p) return clear(rail);
+    const total = Object.values(p.reactions || {}).reduce((a, b) => a + b, 0);
+    const mine = p.my_reaction;
+    const heart = h('button', { class: `fv-rb fv-heart ${mine ? 'on' : ''}`, type: 'button', title: mine ? 'Tepkiyi kaldır' : 'Beğen',
+      onclick: () => { act.react(p, mine || '❤️'); drawRail(); } },
+      mine && mine !== '❤️' ? h('span', { class: 'fv-em' }, mine) : ico(SVG.heart));
+    let lp;   // uzun bas / sağ tık: diğer tepkiler
+    const pick = () => {
+      const row = h('div', { class: 'fv-picker' }, act.reactions().map(em => h('button', { type: 'button',
+        onclick: e => { e.stopPropagation(); act.react(p, em); drawRail(); } }, em)));
+      rail.querySelector('.fv-picker')?.remove();
+      heartWrap.append(row);
+      setTimeout(() => document.addEventListener('pointerdown', ev => { if (!row.contains(ev.target)) row.remove(); }, { once: true }), 0);
+    };
+    heart.addEventListener('pointerdown', () => { lp = setTimeout(() => { lp = 'fired'; pick(); }, 450); });
+    heart.addEventListener('pointerup', () => { if (lp !== 'fired') clearTimeout(lp); });
+    heart.addEventListener('pointerleave', () => { if (lp !== 'fired') clearTimeout(lp); });
+    heart.addEventListener('click', e => { if (lp === 'fired') { e.stopImmediatePropagation(); lp = null; } }, true);
+    heart.addEventListener('contextmenu', e => { e.preventDefault(); pick(); });
+    const who = act.canSeeReactors(p) && total;
+    const heartWrap = h('div', { class: 'fv-ri' }, heart,
+      h(who ? 'button' : 'span', { class: `fv-n ${who ? 'link' : ''}`, type: who ? 'button' : null, title: who ? 'Kimler beğendi' : null,
+        onclick: who ? () => act.showReactors(p) : null }, String(total)));
+    dlLink = h('a', { class: 'fv-rb', title: 'İndir', 'aria-label': 'İndir', href: `${fileUrl(m.path)}?dl=1`, download: m.path.split('/').pop() || '' }, ico(SVG.dl));
+    clear(rail,
+      h('div', { class: 'fv-ava' }, p.system ? h('img', { src: LOGO, alt: '' }) : avatar({ full_name: p.author_name, photo: p.author_photo }, 46)),
+      heartWrap,
+      h('div', { class: 'fv-ri' }, h('button', { class: 'fv-rb', type: 'button', title: 'Yorumlar', onclick: () => openSheet() }, ico(SVG.chat)),
+        h('span', { class: 'fv-n' }, String(p.comment_count || 0))),
+      h('div', { class: 'fv-ri' }, h('button', { class: 'fv-rb fv-share', type: 'button', title: 'Paylaş', onclick: e => share(e.currentTarget) }, ico(SVG.share)),
+        h('span', { class: 'fv-n' }, 'Paylaş')),
+      h('div', { class: 'fv-ri' }, dlLink, h('span', { class: 'fv-n' }, 'İndir')));
+  }
+  function drawCap() {
+    const p = post();
+    if (!p) return clear(cap);
+    const txt = h('div', { class: 'fv-ctext', onclick: () => txt.classList.toggle('open') }, p.text || '');
+    clear(cap, h('div', { class: 'fv-cname' }, p.system ? act.company() : (p.author_name || 'Kullanıcı'),
+      h('small', null, ` · ${fmtDateTime(p.created_at)}`)), p.text ? txt : null);
+  }
+
+  // ---- yorumlar: alttan açılan panel ----
+  function openSheet() {
+    const p = post(); if (!p) return;
+    const body = h('div', { class: 'fv-sheet-b' });
+    const head = h('div', { class: 'fv-sheet-h' }, h('b', null, `Yorumlar (${p.comment_count || 0})`),
+      h('button', { class: 'fv-sheet-x', type: 'button', title: 'Kapat', onclick: closeSheet }, '✕'));
+    clear(sheet, head, body);
+    sheet.hidden = false;
+    requestAnimationFrame(() => sheet.classList.add('open'));
+    const redraw = () => { head.firstChild.textContent = `Yorumlar (${p.comment_count || 0})`; drawRail(); act.comments(p, body, redraw); };
+    act.comments(p, body, redraw);
+  }
+  function closeSheet() { sheet.classList.remove('open'); setTimeout(() => { sheet.hidden = true; clear(sheet); }, 220); }
+
+  // ---- paylaş: cihazın paylaşma menüsü (WhatsApp, Mesajlar, Posta…) — dosyanın kendisi gönderilir ----
+  async function share(btn) {
+    const p = post(), m = items[i];
+    const text = [p?.system ? act.company() : p?.author_name, p?.text].filter(Boolean).join(': ').slice(0, 400);
+    if (navigator.share) {
+      let f = shareFiles.get(m.path);
+      try {
+        if (!f) { btn.classList.add('busy'); f = await shareFile(m).catch(() => null); btn.classList.remove('busy'); }
+        if (f && navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], text });
+        else await navigator.share({ text });
+        return;
+      } catch (e) {
+        btn.classList.remove('busy');
+        if (e?.name === 'AbortError') return;   // kullanıcı vazgeçti
+        if (e?.name === 'NotAllowedError' && shareFiles.has(m.path)) return toast('Paylaşım hazır — Paylaş’a tekrar dokunun');
+      }
+    }
+    dlLink?.click();   // paylaşma menüsü olmayan cihaz (masaüstü tarayıcı): indir
+    toast('Bu cihazda paylaşma menüsü yok; dosya indirildi');
+  }
+
+  function activate() {
     const m = items[i];
     counter.textContent = `${i + 1} / ${items.length}`;
     upBtn.disabled = i <= 0; downBtn.disabled = i >= items.length - 1;
-    const el = m.type === 'video'
-      ? h('video', { class: 'fv-media', src: fileUrl(m.path), controls: true, autoplay: true, playsinline: true })
-      : h('img', { class: 'fv-media', src: fileUrl(m.path), alt: '' });
-    clear(stage, el);
+    z = { s: 1, x: 0, y: 0 };
+    overlay.classList.remove('zoomed');
+    for (const x of [sl.prev, sl.next]) if (x?.media.tagName === 'VIDEO') { x.media.pause(); x.media.style.transform = ''; }
+    if (sl.cur?.media.tagName === 'VIDEO') { sl.cur.media.controls = true; sl.cur.media.play().catch(() => {}); }
+    if (sl.cur) sl.cur.media.style.transform = '';
+    if (!sheet.hidden) closeSheet();
+    drawRail(); drawCap();
+    if (navigator.share && m.type === 'image') shareFile(m).catch(() => {});   // resim: paylaşım menüsü anında açılsın
   }
-  function go(n) { if (n < 0 || n >= items.length) return; i = n; render(); }
+
+  const noGesture = e => e.preventDefault();   // iOS Safari: sayfanın kendisi yakınlaşmasın
   function close() {
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('gesturestart', noGesture);
+    document.body.classList.remove('fv-open');
+    overlay.querySelectorAll('video').forEach(v => v.pause());
     overlay.remove();
   }
+  const typing = t => t?.closest?.('input, textarea, [contenteditable="true"]');
   const onKey = e => {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(i + 1); }
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+    if (e.key === 'Escape') { if (!sheet.hidden) closeSheet(); else if (zoomed()) resetZoom(); else close(); return; }
+    if (typing(e.target) || !sheet.hidden) return;
+    const r = stage.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (e.key === '+' || e.key === '=') return zoomTo(z.s * 1.5, cx, cy, true);
+    if (e.key === '-') return zoomTo(z.s / 1.5, cx, cy, true);
+    if (e.key === '0') return resetZoom();
+    if (zoomed()) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); slide(1); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); slide(-1); }
   };
   document.addEventListener('keydown', onKey);
+  document.addEventListener('gesturestart', noGesture);
 
-  // Parmak / mouse ile dikey kaydırma
-  let p0 = null;
-  overlay.addEventListener('pointerdown', e => { p0 = { x: e.clientX, y: e.clientY }; });
-  overlay.addEventListener('pointerup', e => {
-    if (!p0) return;
-    const dy = e.clientY - p0.y, dx = e.clientX - p0.x; p0 = null;
-    if (Math.abs(dy) > 48 && Math.abs(dy) > Math.abs(dx)) { dy < 0 ? go(i + 1) : go(i - 1); }
-    else if (Math.abs(dy) < 6 && Math.abs(dx) < 6 && (e.target === overlay || e.target === stage)) close();   // boşluğa dokunma = kapat
+  // ---- dokunma / mouse: tek parmak = kaydır (büyükken: sürükle), iki parmak = yakınlaştır ----
+  const pts = new Map();
+  let g = null, pinched = false, lastTap = null;
+  const ignore = t => !!t.closest?.('button, a, .fv-rail, .fv-cap, .fv-sheet');
+  const mid = () => { const [a, b] = [...pts.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 }; };
+  overlay.addEventListener('pointerdown', e => {
+    if (ignore(e.target) || busy) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {   // iki parmak: başlangıçtaki orta noktanın altındaki yer parmakları izler
+      if (g?.drag) setTrack('0px', true);
+      const m = mid(), r = stage.getBoundingClientRect();
+      const px = m.x - (r.left + r.width / 2), py = m.y - (r.top + r.height / 2);
+      g = { pinch: true, d0: m.d, s0: z.s, qx: (px - z.x) / z.s, qy: (py - z.y) / z.s };
+      pinched = true;
+    } else if (pts.size === 1) {
+      g = { x: e.clientX, y: e.clientY, panX: z.x, panY: z.y, t: e.timeStamp, drag: false };
+      pinched = false;
+    }
   });
+  overlay.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId) || !g) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (g.pinch && pts.size >= 2) {
+      const m = mid(), r = stage.getBoundingClientRect();
+      const ns = Math.max(1, Math.min(MAX, g.s0 * m.d / g.d0));
+      const px = m.x - (r.left + r.width / 2), py = m.y - (r.top + r.height / 2);
+      z = ns <= 1.01 ? { s: 1, x: 0, y: 0 } : { s: ns, x: px - ns * g.qx, y: py - ns * g.qy };
+      clampPan(); apply(false);
+    } else if (!g.pinch && zoomed()) {   // büyükken: resmi sürükle
+      z.x = g.panX + (e.clientX - g.x); z.y = g.panY + (e.clientY - g.y);
+      clampPan(); apply(false);
+    } else if (!g.pinch) {   // kaydırma: şerit parmağı izler (uçta yaylanarak)
+      const dy = e.clientY - g.y, dx = e.clientX - g.x;
+      if (!g.drag && Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) g.drag = true;
+      if (g.drag) {
+        const edge = (dy < 0 && !sl.next) || (dy > 0 && !sl.prev);
+        setTrack(`${edge ? dy * 0.25 : dy}px`, false);
+      }
+    }
+  });
+  const up = e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (pts.size === 1 && g?.pinch) {   // bir parmak kaldı: oradan sürüklemeye devam
+      const [q] = [...pts.values()];
+      g = { x: q.x, y: q.y, panX: z.x, panY: z.y, t: e.timeStamp, after: true };
+      return;
+    }
+    if (pts.size || !g) return;
+    const s0 = g; g = null;
+    if (pinched || s0.after || e.type === 'pointercancel') { pinched = false; if (!zoomed()) setTrack('0px', true); return; }
+    const dy = e.clientY - s0.y, dx = e.clientX - s0.x;
+    if (s0.drag) {   // bırakınca: yeterince çekildiyse (ya da hızlı fırlatıldıysa) kayarak geç, değilse yerine dön
+      const v = dy / Math.max(1, e.timeStamp - s0.t);
+      const h0 = stage.clientHeight || 600;
+      if (dy < -h0 * 0.18 || (dy < -30 && v < -0.45)) return slide(1);
+      if (dy > h0 * 0.18 || (dy > 30 && v > 0.45)) return slide(-1);
+      return setTrack('0px', true);
+    }
+    const tap = Math.abs(dy) < 8 && Math.abs(dx) < 8;
+    const m = media();
+    if (tap && m && (e.target === m || m.contains(e.target))) {   // medyaya çift dokunuş: büyüt / küçült
+      if (lastTap && e.timeStamp - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        lastTap = null;
+        zoomed() ? resetZoom() : zoomTo(2.5, e.clientX, e.clientY, true);
+      } else lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+      return;
+    }
+    if (tap && !zoomed() && e.target.closest?.('.fv-slide, .fv-track, .fv-stage') && sheet.hidden) close();   // boşluğa dokunma = kapat
+    else if (tap && !sheet.hidden) closeSheet();
+  };
+  overlay.addEventListener('pointerup', up);
+  overlay.addEventListener('pointercancel', up);
+  overlay.addEventListener('dblclick', e => e.preventDefault());
   let wlock = 0;
   overlay.addEventListener('wheel', e => {
+    if (e.target.closest?.('.fv-sheet')) return;   // yorum panelinde tekerlek listeyi kaydırır
     e.preventDefault();
-    const now = Date.now(); if (now - wlock < 350) return; wlock = now;
-    go(i + (e.deltaY > 0 ? 1 : -1));
+    if (e.ctrlKey) return zoomTo(z.s * Math.exp(-e.deltaY / 120), e.clientX, e.clientY, false);   // izleme dörtgeni kıstırma / Ctrl+tekerlek
+    if (zoomed()) { z.x -= e.deltaX; z.y -= e.deltaY; clampPan(); return apply(false); }
+    if (Math.abs(e.deltaY) < 4) return;
+    const now = Date.now(); if (now - wlock < 450) return; wlock = now;
+    slide(e.deltaY > 0 ? 1 : -1);
   }, { passive: false });
 
+  document.body.classList.add('fv-open');
   document.body.append(overlay);
-  render();
+  place(); activate();
 }
 
 // Paylaşım oluştur: metin + medya (resim/video/ses, kamera) + konum

@@ -132,6 +132,7 @@ _last = {}   # uid → {key: count}
 def _scan():
     from . import notifications
     out = []
+    nopush = {n['key'] for n in notifications.NOTIFICATIONS if n.get('push') is False}   # telefon bildirimini kendi yerinde atanlar
     with db.connect() as conn:
         uids = [r[0] for r in conn.execute('SELECT DISTINCT user_id FROM push_subs')]
         absent = auth.absent_map(conn)
@@ -149,7 +150,7 @@ def _scan():
             _last[uid] = now
             if prev is None:
                 continue   # ilk tarama: yalnızca durum al
-            new = [n for n in items if n['count'] > prev.get(n['key'], 0)]
+            new = [n for n in items if n['count'] > prev.get(n['key'], 0) and n['key'] not in nopush]
             if new:
                 n = new[0]
                 more = f' (+{len(new) - 1} bildirim daha)' if len(new) > 1 else ''

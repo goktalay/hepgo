@@ -358,6 +358,15 @@ def tickets_waiting(conn, user):
     return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], '#/tickets', 'Yanıtlamak için açın')
 
 
+def feed_new(conn, user):
+    """Şirketten Haberler: görmediğiniz yeni paylaşımlar (tıklayınca ana ekran; ana ekranda görünce kalkar)."""
+    from . import feed
+    if not feed.can_see_home(user.get('modules', [])):   # yalnız-Güvenlik / rolsüz: ana ekranı göremez → temizlenemeyen bildirim olmasın
+        return _result([], [], '#/home')
+    rows = feed.unseen_posts(conn, user['id'])
+    return _result(rows, [f'{r["author_name"]}: {feed.snippet(r["text"], r["media"])}' for r in rows], '#/home', 'Ana ekranda görmek için açın')
+
+
 NOTIFICATIONS = [
     {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
@@ -405,6 +414,9 @@ NOTIFICATIONS = [
      'title': 'Yol bilgisi girilmemiş görev'},
     {'key': 'field-assigned', 'roles': None, 'fn': field_assigned,
      'title': 'Size atanan saha görevi'},
+    # Sonda: dakikalık push taramasında önemli bildirimlerin önüne geçmesin. push=False: telefon bildirimini paylaşım
+    # anında routers/feed._announce atar; tarama aynı artış için ikinci kez atmasın (çift bildirim olmasın).
+    {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
 ]
 
 

@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.101.2'
+VERSION = '2.102.0'
 
 CHANGELOG = [
+    {'version': '2.102.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: canlı akış, TikTok tarzı tam ekran, silme kuralı',
+     'changes': [
+         'Yeni paylaşım anında düşer: ana ekrandaysanız akışın en üstüne vurgulu gelir; başka ekrandaysanız bildirim çıkar, tıklayınca ana ekrana gider. Uygulama kapalıysa telefona bildirim gelir.',
+         'Paylaşım sahibi kimlerin beğendiğini (tepki türüne göre) görebilir.',
+         'Başkasının paylaşımını ve yorumunu kimse silemez (yönetici / sistem sahibi dahil); herkes yalnızca kendi paylaşımını ve yorumunu siler.',
+         'Tam ekran: yukarı / aşağı kaydırınca bir sonrakine kayarak geçer; sağda paylaşan, kalp + sayı (uzun basınca diğer tepkiler), yorumlar, Paylaş (telefonun kendi paylaşma menüsü) ve İndir.',
+         'Tam ekranda iki parmakla yakınlaştırma, çift dokunuşla büyütme / küçültme, büyükken sürükleyerek gezme.',
+         'Ayarlar: Dil ve Metin biçimi seçimleri telefonda üst üste binmeden ızgara olarak görünür.',
+     ]},
     {'version': '2.101.2', 'date': '2026-10-03', 'title': 'Bağlantı önizlemesinde firma adı (HEPGO görünmez)',
      'changes': [
          'Firma adresi (ör. caymaz.app) WhatsApp / iMessage / Slack vb. ile paylaşılınca önizlemede firmanın adı ve simgesi görünür; beyaz etikette HEPGO hiç görünmez.',

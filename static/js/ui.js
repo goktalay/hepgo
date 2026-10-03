@@ -195,6 +195,10 @@ export function field(label, control, hint) {
 
 export function segmented(options, value, onChange, opts = {}) {
   const el = h('div', { class: `seg ${opts.tabs ? 'seg-tabs' : ''}`.trim() });
+  // Telefonda tek satıra sığmayacak seçimler (çok ya da uzun seçenek: Dil, Metin biçimi…) ızgaraya dönsün (CSS: .seg-long/.seg-many)
+  const chars = options.reduce((n, [, l]) => n + (typeof l === 'string' ? l.length : 4), 0);
+  if (options.length >= 5) el.classList.add('seg-long', 'seg-many');
+  else if ((options.length === 4 && chars > 30) || (options.length === 3 && chars > 36)) el.classList.add('seg-long');
   const render = v => {
     el.replaceChildren(...options.map(([key, label]) =>
       h('button', { class: key === v ? 'on' : '', type: 'button', onclick: () => { render(key); onChange(key); } }, segIcon(label), label)));

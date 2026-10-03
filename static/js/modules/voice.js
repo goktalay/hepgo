@@ -111,12 +111,17 @@ function drawRing(cv, an, muted) {
 }
 
 // ---------- WebSocket ----------
+let everOpened = false;
+const sendPresence = () => send({ t: 'presence', visible: document.visibilityState === 'visible' });   // görünürken telefon bildirimi gelmesin
 export function connect(context) {
   ctx = context;
+  everOpened = false;
+  document.addEventListener('visibilitychange', sendPresence);
   open();
 }
 export function disconnect() {
   clearInterval(pingTimer);
+  document.removeEventListener('visibilitychange', sendPresence);
   if (ws) { ws.onclose = null; try { ws.close(); } catch { /* */ } ws = null; }
   endLocal();
 }
@@ -124,7 +129,13 @@ function open() {
   if (ws) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws/voice`);
-  ws.onopen = () => { backoff = 1000; clearInterval(pingTimer); pingTimer = setInterval(() => send({ t: 'ping' }), 25000); };   // çevrimiçi kal (arka planda da)
+  ws.onopen = () => {
+    backoff = 1000; clearInterval(pingTimer); pingTimer = setInterval(() => send({ t: 'ping' }), 25000);   // çevrimiçi kal (arka planda da)
+    sendPresence();
+    // yeniden bağlanınca: kopukken kaçan paylaşımları akış/bildirim tazelesin
+    if (everOpened) window.dispatchEvent(new CustomEvent('caymaz:feed', { detail: { t: 'feed', resync: true } }));
+    everOpened = true;
+  };
   ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch { /* */ } };
   ws.onclose = () => { ws = null; clearInterval(pingTimer); setTimeout(open, backoff); backoff = Math.min(backoff * 2, 15000); };
   ws.onerror = () => { try { ws.close(); } catch { /* */ } };
@@ -146,6 +157,7 @@ function handle(m) {
     case 'rec_start': return onRecStart(m);
     case 'rec_stopped': return onRecStopped(m);
     case 'rec_denied': return onRecDenied(m);
+    case 'feed': return window.dispatchEvent(new CustomEvent('caymaz:feed', { detail: m }));   // Şirketten Haberler: yeni paylaşım
   }
 }
 

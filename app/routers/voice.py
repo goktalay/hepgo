@@ -21,6 +21,7 @@ router = APIRouter(prefix='/api/voice')
 ws_router = APIRouter()
 
 PEERS = {}      # user_id -> set[WebSocket]  (aynı kullanıcının birden çok sekmesi olabilir)
+VISIBLE = {}    # WebSocket -> bool  (sekme şu an ekranda görünür mü; görünürse OS bildirimi gereksiz)
 CALL_MEMBERS = {}   # call_id -> set[user_id]  (o an bağlı katılımcılar)
 
 
@@ -38,6 +39,18 @@ async def _send(user_id, msg):
             dead.append(ws)
     for ws in dead:
         PEERS.get(user_id, set()).discard(ws)
+
+
+def visible_uids():
+    """Uygulaması şu an ekranda görünür olan kullanıcılar (uygulama içi bildirim yeter, telefon bildirimi gerekmez)."""
+    return {uid for uid, socks in list(PEERS.items()) if any(VISIBLE.get(w) for w in list(socks))}
+
+
+async def broadcast_users(msg, exclude=None):
+    """Bağlı (oturum açmış) tüm kullanıcılara olay — ör. Şirketten Haberler'e yeni paylaşım."""
+    for uid in list(PEERS):
+        if uid != exclude:
+            await _send(uid, msg)
 
 
 async def _broadcast(call_id, msg, exclude=None):
@@ -128,12 +141,16 @@ async def ws_voice(ws: WebSocket):
             if m.get('t') == 'ping':   # istemci ~25 sn'de bir yollar → çevrimiçi kal
                 _touch(uid)
                 continue
+            if m.get('t') == 'presence':   # sekme görünürlüğü (görünürken yeni paylaşım için OS bildirimi atılmaz)
+                VISIBLE[ws] = bool(m.get('visible'))
+                continue
             await _handle(conn_none=None, user=user, m=m, ws=ws)
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
+        VISIBLE.pop(ws, None)
         PEERS.get(uid, set()).discard(ws)
         if not PEERS.get(uid):
             PEERS.pop(uid, None)

@@ -64,6 +64,8 @@ export function syncPush() {
 // Bildirime tıklanınca açık pencere ilgili sayfaya gider
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', e => {
-    if (e.data?.t === 'push-open' && e.data.hash) location.hash = e.data.hash;
+    if (e.data?.t !== 'push-open' || !e.data.hash) return;
+    if (location.hash === e.data.hash) window.dispatchEvent(new HashChangeEvent('hashchange'));   // zaten oradaysa yeniden çiz (yeni paylaşım gelsin)
+    else location.hash = e.data.hash;
   });
 }

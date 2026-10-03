@@ -143,6 +143,8 @@ async function boot() {
 window.addEventListener('caymaz:unauthorized', e => {
   if (ctx.user) {
     ctx.user = null;
+    try { voice.disconnect(); radio.disconnect(); } catch { /* */ }   // oturum bitti: canlı kanallar (arama, akış olayları, telsiz) kapanır
+    for (const k of Object.keys(seen)) delete seen[k];
     // İzinli / raporlu personelin oturumu kapanınca sunucunun açıklaması gösterilir; diğer durumlarda genel mesaj
     const why = e?.detail && /izinli|rapor/i.test(e.detail) ? e.detail : 'Oturum süreniz doldu, lütfen tekrar giriş yapın';
     toast(why, 'err');
@@ -231,7 +233,7 @@ function enterApp() {
     import('./modules/tvroom.js').then(m => m.renderTv(root, ctx));
     return;
   }
-  renderShell(); checkWhatsNew(); startSupportWatch();
+  renderShell(); checkWhatsNew(); startSupportWatch(); checkDevicePush();
   document.querySelector('.support-pill')?.remove();
   if (ctx.user?.support) {   // merkez destek oturumu göstergesi
     document.body.append(h('div', { class: 'support-pill' }, '🛟 ',
@@ -347,18 +349,31 @@ function appsLauncher() {
 // sonra yeni bir başlık, artan sayı ya da listede yeni bir ad gelirse gösterilir. Kutuya tıklanınca ilgili sayfa açılır.
 const seen = {};
 let flashBox;
+// Ana ekran (pano / tam ekran haber akışı) açık ve görünür mü? Yeni paylaşım orada doğrudan akışa düşer, bildirim kutusu gerekmez.
+// Harita görünümünde akış listesi yok → orada da bildirim gösterilir.
+const onHomeVisible = () => {
+  const k = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  return (!k.length || (k.length === 1 && k[0] === 'home')) && document.visibilityState === 'visible'
+    && ctx.user?.prefs?.settings?.feedView !== 'map';
+};
+window.addEventListener('caymaz:feed', () => { if (!onHomeVisible()) refreshNotify(); });   // başka ekrandaysa zil + kutu hemen
+window.addEventListener('caymaz:feed-seen', () => refreshNotify());                       // ana ekranda görüldü → zilden düşsün
+// Cihaz bildirimi (Web Push) açıksa yeni paylaşımın OS bildirimini sunucu atar; masaüstü bildirimi ikinci kez gösterilmez.
+let devicePush = false;
+const checkDevicePush = () => import('./push.js').then(m => m.pushState()).then(v => { devicePush = v === 'on'; }).catch(() => {});
 function announce(kind, items) {
   const prev = seen[kind];
   seen[kind] = new Map(items.map(i => [i.key, { count: i.count, names: new Set(i.names) }]));
   if (!prev) return;
   for (const i of items) {
+    if (i.key === 'feed-new' && onHomeVisible()) continue;   // ana ekrandaysa paylaşım zaten akışa düştü
     const p = prev.get(i.key);
     const fresh = p ? i.names.filter(n => !p.names.has(n)) : i.names;
     if (p && i.count <= p.count && !fresh.length) continue;
     playEvent(kind === 'alerts' ? (i.critical ? 'critical' : 'alert') : eventOfNotification(i.key));
     const names = fresh.length ? fresh : i.names;
     if (flashOn()) flash(kind, i, names);
-    desktopNotify(i.title, names.slice(0, 3).join(', '), () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; });
+    if (!(i.key === 'feed-new' && devicePush)) desktopNotify(i.title, names.slice(0, 3).join(', '), () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; });
   }
 }
 function flash(kind, item, names) {

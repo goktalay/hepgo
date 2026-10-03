@@ -225,7 +225,7 @@ def thumbnail(path: Path, kind: str, name: str, w: int):
 
 
 @router.get('/api/files/{kind}/{name}')
-def get_file(kind: str, name: str, w: int = 0, user=Depends(current_user)):
+def get_file(kind: str, name: str, w: int = 0, dl: int = 0, user=Depends(current_user)):
     if kind not in KINDS or '/' in name or '..' in name:
         raise HTTPException(404)
     if kind == 'design' and not user.get('master'):   # tasarım dosyalarına ham erişim yalnızca Master; diğerleri /api/design/file (önizleme) kullanır
@@ -244,6 +244,8 @@ def get_file(kind: str, name: str, w: int = 0, user=Depends(current_user)):
                 raise HTTPException(404)
             return Response(content=data, media_type=ctype, headers=FILE_CACHE)
         raise HTTPException(404)
+    if dl:   # indir: tarayıcı göstermek yerine dosya olarak kaydetsin (ör. Şirketten Haberler tam ekran › İndir)
+        return FileResponse(path, filename=name, headers=FILE_CACHE)
     if w:
         size = next((x for x in THUMB_WIDTHS if x >= w), THUMB_WIDTHS[-1])
         thumb = thumbnail(path, kind, name, size)

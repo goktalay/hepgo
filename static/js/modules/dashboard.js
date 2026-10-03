@@ -29,6 +29,14 @@ const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
 export async function renderDashboard(view, ctx, modules) {
+  // Mobilde (ayar açıksa) pano yerine tam ekran Şirketten Haberler akışı (üst menü + alt bilgi kalır)
+  if (ctx.user.prefs?.settings?.feedFullMobile && matchMedia('(max-width: 768px)').matches) {
+    const box = h('div', { class: 'feed-full' });
+    clear(view, box);
+    try { renderFeed(box, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' }); }
+    catch (err) { clear(box, h('div', { class: 'card empty' }, err.message)); }
+    return;
+  }
   const [avail, saved] = await Promise.all([api.get('/api/dashboard/widgets'), api.get('/api/me/prefs/dashboard').catch(() => ({}))]);
   const byKey = Object.fromEntries(avail.map(w => [w.key, w]));
   const GridStack = await loadGridStack().catch(() => null);

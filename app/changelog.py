@@ -3,9 +3,13 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.97.0'
+VERSION = '2.98.0'
 
 CHANGELOG = [
+    {'version': '2.98.0', 'date': '2026-10-03', 'title': 'Mobilde tam ekran Şirketten Haberler (kişisel ayar)',
+     'changes': [
+         'Kişisel Ayarlar › Pano: “Mobilde Şirketten Haberler tam ekran” seçeneği. Açıkken telefonda ana ekran, pano yerine tam ekran haber akışıyla açılır (üst menü ve alt bilgi kalır). Masaüstünü etkilemez.',
+     ]},
     {'version': '2.97.0', 'date': '2026-10-03', 'title': 'Merkez (Veilox) destek girişi — onaylı çapraz giriş',
      'changes': [
          'Veilox destek görevlisi, müşteri firmanın giriş ekranından kendi kullanıcı adı/şifresiyle girebilir; firma MASTER’ının onayıyla süreli, kayıt altında, master-benzeri (işlevsel modüller) oturum açılır.',

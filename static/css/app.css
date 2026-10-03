@@ -5205,3 +5205,8 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
   display: inline-flex; align-items: center; gap: 4px; background: #0f766e; color: #fff; border-radius: 999px;
   padding: 7px 14px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .support-pill b { font-weight: 700; }
+
+/* Mobilde tam ekran Şirketten Haberler (ayar açıkken ana ekran) */
+.feed-full { padding: 0; }
+.feed-full .feed-body { max-height: none; overflow: visible; }
+.feed-full .feed-composer { position: sticky; top: 0; z-index: 2; }

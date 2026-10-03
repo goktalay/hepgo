@@ -35,6 +35,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     toolbarAlign: cur.toolbarAlign || 'center',
     textCase: ['title', 'upper', 'lower'].includes(cur.textCase) ? cur.textCase : 'original',
     feedView: cur.feedView === 'map' ? 'map' : 'feed',
+    feedFullMobile: !!cur.feedFullMobile,
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
   };
@@ -446,6 +447,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       body: () => card('Pano', 'Ana sayfadaki kutucuk düzeniniz. Kutucukları ana sayfada "Panoyu Düzenle" ile değiştirebilirsiniz.',
         line('Şirketten Haberler görünümü', 'Pano kutucuğu akış olarak mı yoksa harita olarak mı açılsın',
           segmented([['feed', 'Akış'], ['map', 'Harita']], s.feedView, v => { s.feedView = v; save('Görünüm güncellendi'); })),
+        toggle(s, 'feedFullMobile', 'Mobilde Şirketten Haberler tam ekran', 'Yalnızca telefonda: ana ekran, pano yerine tam ekran haber akışıyla açılır (üst menü ve alt bilgi kalır)'),
         h('div', { class: 'set-actions left' },
           h('a', { class: 'btn', href: '#/' }, 'Panoya Git'),
           h('button', { class: 'btn', type: 'button', onclick: async () => {

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ekran Paylaşımı · HEPGO</title>
+<link rel="stylesheet" href="/static/vendor/rrweb/rrweb.min.css">
+<style>
+  :root { --bg:#0f141c; --panel:#171e29; --fg:#e8edf3; --muted:#9fb0c3; --primary:#4a8ae0; --line:#2a3443; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .sv-gate { max-width:360px; margin:12vh auto; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; }
+  .sv-gate h1 { font-size:18px; margin:0 0 4px; } .sv-gate p { color:var(--muted); font-size:13px; margin:0 0 16px; }
+  .sv-gate label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  .sv-input { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#0c1016; color:var(--fg); font-size:14px; }
+  .sv-btn { width:100%; margin-top:16px; padding:11px; border:none; border-radius:10px; background:var(--primary); color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  .sv-btn.sm { width:auto; margin:0; padding:7px 12px; font-size:13px; }
+  .sv-btn.ghost { background:#222c3a; } .sv-btn.danger { background:#c0392b; }
+  .sv-err { color:#ff6b6b; font-size:13px; margin-top:10px; min-height:16px; }
+  .sv-app { display:none; height:100%; flex-direction:column; }
+  .sv-bar { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex:none; flex-wrap:wrap; }
+  .sv-bar .grow { flex:1; min-width:0; } .sv-bar b { font-size:14px; } .sv-bar small { color:var(--muted); display:block; }
+  .sv-stage-wrap { flex:1; min-height:0; overflow:hidden; display:flex; align-items:flex-start; justify-content:center; background:#06090d; position:relative; }
+  .sv-scaler { position:relative; transform-origin:top left; }
+  .sv-overlay { position:absolute; inset:0; z-index:5; cursor:crosshair; }
+  .sv-overlay.readonly { cursor:not-allowed; }
+  .sv-hint { position:absolute; left:0; right:0; bottom:10px; text-align:center; color:var(--muted); font-size:12px; pointer-events:none; }
+  .sv-dot { width:9px; height:9px; border-radius:50%; background:#2ecc71; display:inline-block; animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .sv-off { color:#f1c40f; }
+  video.sv-cam { width:150px; border-radius:10px; background:#000; }
+  .rr-block { display:none !important; }
+</style>
+</head>
+<body>
+  <div class="sv-gate" id="gate">
+    <h1 id="gate-title">Ekran Paylaşımına Katıl</h1>
+    <p id="gate-sub">Bağlanmak için bilgileri girin.</p>
+    <label>Adınız</label>
+    <input class="sv-input" id="g-name" placeholder="Adınız (destek için)">
+    <div id="pw-wrap" style="display:none">
+      <label>Şifre</label>
+      <input class="sv-input" id="g-pw" type="password" placeholder="Link şifresi">
+    </div>
+    <button class="sv-btn" id="g-join">Bağlan</button>
+    <div class="sv-err" id="g-err"></div>
+  </div>
+
+  <div class="sv-app" id="app">
+    <div class="sv-bar">
+      <span class="sv-dot" id="live-dot"></span>
+      <div class="grow"><b id="host-name">—</b><small id="status">bağlanıyor…</small></div>
+      <button class="sv-btn sm ghost" id="btn-call">🎙 Konuş</button>
+      <button class="sv-btn sm ghost" id="btn-cam" style="display:none">🎥 Kamera</button>
+      <video class="sv-cam" id="remote-cam" autoplay playsinline style="display:none"></video>
+      <audio id="remote-audio" autoplay></audio>
+    </div>
+    <div class="sv-stage-wrap" id="stage-wrap">
+      <div class="sv-scaler" id="scaler"><div id="stage"></div><div class="sv-overlay" id="overlay"></div></div>
+      <div class="sv-hint" id="hint"></div>
+    </div>
+  </div>
+
+  <script src="/static/vendor/rrweb/rrweb.min.js"></script>
+  <script type="module" src="/static/js/screen-viewer.js"></script>
+</body>
+</html>

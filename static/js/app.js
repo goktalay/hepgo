@@ -523,6 +523,7 @@ function renderShell() {
     h('a', { class: 'menu-link', href: '#/personal', onclick: () => { menu.hidden = true; } }, svgIcon(icons.person), 'Kişisel', menuCount('personal')),
     h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Kişisel Ayarlar'),
     securityOnly() ? null : h('a', { class: 'menu-link', href: '#/meet', onclick: () => { menu.hidden = true; } }, svgIcon(icons.phone), 'Görüntülü Toplantı'),
+    h('button', { onclick: () => { menu.hidden = true; import('./modules/screenshare.js').then(m => m.startScreenShare(ctx)); } }, svgIcon(icons.screen || icons.phone), 'Ekranı Paylaş'),
     menuModules.map(m => h('a', { class: `menu-link ${m.tone ? `tone-${m.tone}` : ''}`, href: `#/${m.key}`,
       onclick: () => { menu.hidden = true; } }, svgIcon(icons[m.key]), m.title)),
     menuModules.length ? h('div', { class: 'menu-sep' }) : null,

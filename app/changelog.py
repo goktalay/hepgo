@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.98.0'
+VERSION = '2.99.0'
 
 CHANGELOG = [
+    {'version': '2.99.0', 'date': '2026-10-03', 'title': 'Ekran paylaşımı / uzaktan destek',
+     'changes': [
+         'Kullanıcı menüsü › “Ekranı Paylaş”: uygulama ekranınız bir link ile (isteğe bağlı şifre) karşı tarafa birebir yansır — paylaşanın kendi boyutlarında (mobil dâhil).',
+         'Bağlanan kişi imleçle yol gösterir; izin verirseniz tıklama/kaydırma/yazma ile müdahale eder.',
+         'Paylaşım sırasında sesli / görüntülü konuşma (WebRTC). “Nereye tıklayacağımı bilemiyorum” durumları için uzaktan destek.',
+     ]},
     {'version': '2.98.0', 'date': '2026-10-03', 'title': 'Mobilde tam ekran Şirketten Haberler (kişisel ayar)',
      'changes': [
          'Kişisel Ayarlar › Pano: “Mobilde Şirketten Haberler tam ekran” seçeneği. Açıkken telefonda ana ekran, pano yerine tam ekran haber akışıyla açılır (üst menü ve alt bilgi kalır). Masaüstünü etkilemez.',

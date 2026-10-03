@@ -385,6 +385,23 @@ def _signature(r):
     return (r['stream_url'], r['username'], r['password_enc'], r['faces'])
 
 
+def _watched_ids():
+    """Canlı izleme talebi olan kamera id'leri (app_kv['live_watch'], süresi dolmamış). Bulut, kare çektikçe tazeler."""
+    try:
+        with db.connect() as conn:
+            row = conn.execute("SELECT v FROM app_kv WHERE k = 'live_watch'").fetchone()
+        if not row:
+            return set()
+        d = json.loads(row[0]) or {}
+        now = time.time()
+        return {int(k) for k, v in d.items() if float(v) > now}
+    except Exception:
+        return set()
+
+
+WATCH_TICK = 2   # sn: canlı izleme talebini hızlı yakalamak için döngü sıklığı (ağır yenileme RELOAD_EVERY'de)
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     cv2.setNumThreads(2)
@@ -392,27 +409,42 @@ def main():
     ident = Identities()
     sched = Schedule()
     running = {}   # id → (imza, Camera)
+    last_heavy = 0
     log.info('kamera servisi başladı (%s)', config.DATA_DIR)
     while True:
         try:
-            ident.reload()
-            sched.reload()
+            now = time.time()
+            if now - last_heavy >= RELOAD_EVERY:   # yüz grupları + zamanlama ağır; seyrek yenile
+                last_heavy = now
+                ident.reload()
+                sched.reload()
+            watched = _watched_ids()
             with db.connect() as conn:
-                rows = {r['id']: r for r in db.rows(conn.execute(
-                    "SELECT * FROM cameras WHERE active = 1 AND stream_url IS NOT NULL AND stream_url != ''"))}
+                allrows = {r['id']: r for r in db.rows(conn.execute(
+                    "SELECT * FROM cameras WHERE stream_url IS NOT NULL AND stream_url != ''"))}
+            want = {}
+            for cid, r in allrows.items():
+                if r['active']:                 # yüz tanıma açık kanal: canlı + yüz
+                    want[cid] = r
+                elif cid in watched:            # yüz tanıma kapalı ama izleniyor: yalnız canlı
+                    rr = dict(r)
+                    rr['faces'] = 0
+                    want[cid] = rr
             for cid in list(running):
-                if cid not in rows or _signature(rows[cid]) != running[cid][0]:
+                if cid not in want or _signature(want[cid]) != running[cid][0]:
                     running.pop(cid)[1].close()
                     log.info('kamera %s durduruldu', cid)
-            for cid, r in rows.items():
+            for cid, r in want.items():
                 if cid not in running:
                     running[cid] = (_signature(r), Camera(r, ident, sched))
-                    log.info('kamera %s (%s) başlatıldı', cid, r['name'])
-            with db.connect() as conn:   # kapatılan kameraların durumu
-                conn.execute("UPDATE cameras SET status = 'KAPALI' WHERE active = 0 AND COALESCE(status, '') != 'KAPALI'")
+                    log.info('kamera %s (%s) başlatıldı%s', cid, r['name'], '' if r['faces'] else ' (yalnız izleme)')
+            with db.connect() as conn:   # çalışmayan (pasif + izlenmeyen) kameraları KAPALI işaretle
+                keep = tuple(want) or (-1,)
+                conn.execute(f"UPDATE cameras SET status = 'KAPALI' WHERE active = 0 AND COALESCE(status, '') != 'KAPALI' "
+                             f"AND id NOT IN ({','.join('?' * len(keep))})", keep)
         except Exception:
             log.exception('kamera döngüsü hatası')
-        time.sleep(RELOAD_EVERY)
+        time.sleep(WATCH_TICK)
 
 
 if __name__ == '__main__':

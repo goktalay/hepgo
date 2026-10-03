@@ -3,9 +3,13 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.93.1'
+VERSION = '2.93.2'
 
 CHANGELOG = [
+    {'version': '2.93.2', 'date': '2026-10-03', 'title': 'Düzeltme: kameralar yüz tanıma kapalıyken de canlı izlenir',
+     'changes': [
+         'Canlı izleme artık yüz tanımadan bağımsız: bir kamerayı açtığınızda fabrika o kamerayı talep üzerine canlı yakalar (yüz tanıma kapalı olsa bile). İzleme bırakılınca yakalama durur.',
+     ]},
     {'version': '2.93.1', 'date': '2026-10-03', 'title': 'Düzeltme: Şirketten Haberler içeriğinin kaybolması',
      'changes': [
          'Pano 60 sn’de bir içeriği tazelerken Şirketten Haberler kutucuğunu yanlışlıkla boşaltıyordu (“—”); artık kutucuk kendi yükleyicisiyle tazeleniyor, içerik kalıcı.',

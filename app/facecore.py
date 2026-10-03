@@ -292,7 +292,27 @@ def rpc(conn, method, args):
         return avatars(conn, a.get('keys') or [])
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
+    if method == 'watch':
+        return watch_live(conn, a['cid'], a.get('ttl', 25))
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')
+
+
+def watch_live(conn, cid, ttl=25):
+    """Canlı izleme talebi: kamera servisinin, yüz tanıma kapalı olsa bile bu kamerayı canlı yakalaması için
+    app_kv['live_watch'] = {cid: bitiş_zamanı}. Tarayıcı kareyi çektikçe tazelenir; süre dolunca yakalama durur."""
+    import time as _t
+    row = conn.execute("SELECT v FROM app_kv WHERE k = 'live_watch'").fetchone()
+    d = {}
+    if row:
+        try:
+            d = json.loads(row[0]) or {}
+        except Exception:
+            d = {}
+    now = _t.time()
+    d = {k: v for k, v in d.items() if float(v) > now}   # süresi geçenleri temizle
+    d[str(int(cid))] = now + float(ttl)
+    conn.execute("INSERT OR REPLACE INTO app_kv (k, v) VALUES ('live_watch', ?)", (json.dumps(d),))
+    return {'ok': True, 'until': d[str(int(cid))]}
 
 
 def media_bytes(path):

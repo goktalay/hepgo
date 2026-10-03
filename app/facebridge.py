@@ -17,9 +17,9 @@ def remote():
     return config.AGENT_MODE == 'remote'
 
 
-def rpc(method, **args):
+def rpc(method, _timeout=25, **args):
     """Fabrika ajanında facecore.<method> çalıştırır. Hata payload'ını HTTP'ye çevirir."""
-    r = devices.call_sync('face.rpc', {'method': method, 'args': args})
+    r = devices.call_sync('face.rpc', {'method': method, 'args': args}, timeout=_timeout)
     if isinstance(r, dict) and r.get('_err'):
         raise HTTPException(404 if r['_err'] == 'notfound' else 400, r.get('msg') or 'Hata')
     return r

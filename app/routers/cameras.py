@@ -177,14 +177,32 @@ async def add_discovered(body: DiscoveredIn, user=Depends(cam_user)):
     return await run_in_threadpool(work)
 
 
+_last_watch: dict[int, float] = {}   # cid → son "izleniyor" sinyali zamanı (fabrikaya throttle'lı gönderilir)
+WATCH_PING = 6                       # sn: izleme sinyalini en çok bu sıklıkta gönder
+
+
+def _ping_watch(cid: int):
+    """Canlı izleme: fabrikaya 'bu kamerayı izliyorum' de ki yüz tanıma kapalı olsa bile canlı yakalasın."""
+    from .. import facebridge
+    now = time.time()
+    if now - _last_watch.get(cid, 0) < WATCH_PING:
+        return
+    _last_watch[cid] = now
+    try:
+        facebridge.rpc('watch', _timeout=8, cid=cid, ttl=25)
+    except Exception:
+        _last_watch[cid] = 0   # başarısızsa bir sonraki karede tekrar dene
+
+
 @router.get('/{cid}/frame')
 def frame(cid: int, request: Request, user=Depends(cam_user)):
     """İzleme ekranı: kameranın son karesi (kamera servisi yazar). Değişmediyse 304."""
     path = LIVE_DIR / f'{cid}.jpg'
     if not path.exists():
-        # Dağıtık kurulum: canlı kare fabrikada; talep üzerine ajandan getirilir
+        # Dağıtık kurulum: canlı kare fabrikada; talep üzerine ajandan getirilir (+ izleme sinyali)
         if config.AGENT_MODE == 'remote':
             from .. import facebridge
+            _ping_watch(cid)
             try:
                 data, ctype = facebridge.media(f'cameras/live/{cid}.jpg')
             except HTTPException:

@@ -62,6 +62,7 @@ import './i18n.ru.js';   // Rusça
 import { enableSegSelect } from './segselect.js';
 import { enableListExport } from './listexport.js';
 import { enableHeadGroup } from './headgroup.js';
+import { enableToolbarMerge } from './toolbarmerge.js';
 
 // Ana sayfadaki modül düğmeleri; yeni modül eklemek için bu listeye bir satır eklenir.
 // tone: 'red' → yalnızca yöneticilere açık modüller kırmızı tonlarda gösterilir.
@@ -847,6 +848,7 @@ enableDictation();   // tüm çok satırlı metin kutularında mikrofon (sesle y
   fit();
 })();
 enableSegSelect();   // telefonda düğme grupları (sekme / görünüm / filtre) açılır listeye dönüşür
+enableToolbarMerge();   // alt-modül eylem düğmelerini (Yeni/Excel/görünüm) filtre satırına taşır (boşuna satır olmasın)
 enableListExport();  // tüm listelerde başlığın en sağında Excel indirme düğmesi
 enableHeadGroup();   // başlıktaki bağımsız eylem düğmelerini (ör. "+ Yeni" + "Excel") tek kapsülde toplar
 window.addEventListener('caymaz:toast', e => toast(e.detail));

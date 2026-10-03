@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.93.2'
+VERSION = '2.94.0'
 
 CHANGELOG = [
+    {'version': '2.94.0', 'date': '2026-10-03', 'title': 'Pano kutucuk boyutlandırma + toolbar sadeleştirme',
+     'changes': [
+         'Şirketten Haberler kutucuğu artık kaldırılamaz ama serbestçe boyutlandırılabilir.',
+         'Tüm modüllerde eylem düğmeleri (Yeni, Excel, görünüm seçici) ayrı bir satır yerine filtre/arama satırına taşındı; Kart/Liste seçicisinin soluna grubtlanır (boşuna satır kalktı).',
+     ]},
     {'version': '2.93.2', 'date': '2026-10-03', 'title': 'Düzeltme: kameralar yüz tanıma kapalıyken de canlı izlenir',
      'changes': [
          'Canlı izleme artık yüz tanımadan bağımsız: bir kamerayı açtığınızda fabrika o kamerayı talep üzerine canlı yakalar (yüz tanıma kapalı olsa bile). İzleme bırakılınca yakalama durur.',

@@ -69,8 +69,10 @@ function sweep() {
   const ex = headEl ? exporter(view) : null;
   let btn = view.querySelector('.xl-btn');
   if (!ex || !headEl) { btn?.remove(); return; }
-  // Excel, alt-modül toolbar'ındaki düğme baloncuğuna (pill-group) girer; o yoksa toolbar'a; o da yoksa başlık bandına.
-  const host = view.querySelector('.module-toolbar .module-pills') || view.querySelector('.module-toolbar') || headEl;
+  // Excel, düğme baloncuğuna (pill-group) girer: önce filtre satırına taşınmış baloncuk, sonra toolbar baloncuğu,
+  // sonra toolbar, en son başlık bandı (toolbarmerge.js düğmeleri filtre satırına almış olabilir).
+  const host = view.querySelector('.filters .module-pills') || view.querySelector('.module-toolbar .module-pills')
+    || view.querySelector('.module-toolbar') || headEl;
   if (btn && btn.parentElement === host) return;
   btn?.remove();
   btn = document.createElement('button');

@@ -40,7 +40,6 @@ export async function renderDashboard(view, ctx, modules) {
     id: it.id || dbUid(), k: it.k, o: it.o,
     w: it.w || (it.s ? it.s * 4 : 4), h: it.h || DEF_H[it.k] || 4, x: it.x, y: it.y }));
   for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 6 });
-  for (const it of layout) { const w = byKey[it.k]; if (w?.fixed) it.w = (w.size || 1) * 4; }   // sabit kutucuk genişliği sabit (1/3)
 
   let editing = false, data = {}, grid = null;
   const charts = [], timers = [], bodies = {}, feeds = {};   // feeds: company_news kutucuğunun yeniden yükleyicisi
@@ -74,7 +73,7 @@ export async function renderDashboard(view, ctx, modules) {
         h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body));
     if (it.x != null) el.setAttribute('gs-x', it.x);
     if (it.y != null) el.setAttribute('gs-y', it.y);
-    if (w.fixed) el.setAttribute('gs-no-resize', 'true');
+    // w.fixed: kaldırılamaz (✕ yok) ama boyutlandırılabilir — gs-no-resize konmaz
     if (it.k === 'company_news') {   // görünüm (Akış/Harita) Kişisel Ayarlar › Pano'dan seçilir
       try { feeds[it.id] = renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' })?.reload; }
       catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }

@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.79.0'
+VERSION = '2.80.0'
 
 CHANGELOG = [
+    {'version': '2.80.0', 'date': '2026-10-03', 'title': '5 yeni dil (Almanca, Fransızca, İspanyolca, Arapça, Rusça) + dikte dili',
+     'changes': [
+         'Arayüz dili olarak Almanca, Fransızca, İspanyolca, Arapça ve Rusça eklendi (her biri ~3157 metin). Ayarlar › Arayüz › Dil.',
+         'Arapça için sağdan-sola (RTL) düzen otomatik.',
+         'Sesten yazıya (dikte) dili arayüz diline göre ayarlanır: tr/en/de/fr/es/ar/ru (Whisper).',
+     ]},
     {'version': '2.79.0', 'date': '2026-10-03', 'title': 'İngilizce: dinamik metinler de çevrildi',
      'changes': [
          'Sayı/tarih/isim yerleşen dinamik metinler (ör. “5 kişi”, “3 dk önce”, “X silinsin mi?”) tüm modüllerde t() ile çevrilebilir yapıldı.',

@@ -402,7 +402,7 @@ async def dictate(file: UploadFile, lang: str = 'tr', user=Depends(auth.current_
     ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
     if ext not in DICTATE_EXT:
         raise HTTPException(400, 'Desteklenmeyen ses biçimi')
-    if lang not in ('tr', 'en', 'auto'):
+    if lang not in ('tr', 'en', 'de', 'fr', 'es', 'ar', 'ru', 'auto'):
         raise HTTPException(400, 'Geçersiz dil')
     data = await file.read(DICTATE_MAX + 1)
     if len(data) > DICTATE_MAX:

@@ -4,6 +4,9 @@
 let LANG = 'tr';
 const CAT = {};   // { 'en': { 'Türkçe': 'English', ... }, ... }
 const listeners = new Set();
+const RTL = new Set(['ar', 'fa', 'he', 'ur']);   // sağdan-sola diller
+export function isRTL(lang) { return RTL.has(lang || LANG); }
+function applyDir() { try { document.documentElement.dir = RTL.has(LANG) ? 'rtl' : 'ltr'; } catch { /* */ } }
 
 export function registerCatalog(lang, obj) { CAT[lang] = Object.assign(CAT[lang] || {}, obj); }
 export function availableLangs() { return ['tr', ...Object.keys(CAT)]; }
@@ -16,11 +19,13 @@ export function initLang(lang) {
   LANG = (lang && (lang === 'tr' || CAT[lang])) ? lang : readStored();
   if (LANG !== 'tr' && !CAT[LANG]) LANG = 'tr';
   try { document.documentElement.lang = LANG; } catch { /* */ }
+  applyDir();
 }
 export function setLang(lang) {
   LANG = (lang === 'tr' || CAT[lang]) ? lang : 'tr';
   try { localStorage.setItem('caymaz.lang', LANG); } catch { /* */ }
   try { document.documentElement.lang = LANG; } catch { /* */ }
+  applyDir();
   listeners.forEach(fn => { try { fn(LANG); } catch { /* */ } });
 }
 export function onLangChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }

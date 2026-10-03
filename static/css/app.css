@@ -200,6 +200,9 @@ main#view > .globe-bg.faint ~ * { position: relative; z-index: 1; }
 .page-head > .seg.seg-tabs button:hover { background: var(--surface); color: var(--text); }
 .page-head > .seg.seg-tabs button.on { background: var(--surface); color: var(--primary); border-bottom: 0;
   box-shadow: 0 1px 2px rgba(15, 23, 42, .12); }
+/* Sağdan-sola (Arapça): banttaki seçici ve geri oku yönü */
+html[dir="rtl"] .page-head > .seg.seg-tabs { margin-left: 0; margin-right: auto; }
+html[dir="rtl"] .back { transform: scaleX(-1); }
 /* Alt-modüle ait eylem düğmeleri: başlığın altında ayrı toolbar; hiza kişisel ayardan (varsayılan orta) */
 .module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; justify-content: center; }
 html[data-toolbar-align="left"] .module-toolbar { justify-content: flex-start; }

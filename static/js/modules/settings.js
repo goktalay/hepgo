@@ -59,7 +59,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   // ---------- Arayüz
   const themeSeg = segmented([['light', 'Açık tema'], ['dark', 'Koyu tema'], ['system', 'Sisteme göre']], s.theme, v => { s.theme = v; save(); });
   // Dil: arayüz ve yazdırma şablonları seçilen dilde görünür. Şimdilik Türkçe + İngilizce.
-  const langSeg = segmented([['tr', 'Türkçe'], ['en', 'English']], s.lang, v => { s.lang = v; setLang(v); save('Dil güncellendi'); });
+  const langSeg = segmented([['tr', 'Türkçe'], ['en', 'English'], ['de', 'Deutsch'], ['fr', 'Français'], ['es', 'Español'], ['ar', 'العربية'], ['ru', 'Русский']], s.lang, v => { s.lang = v; setLang(v); save('Dil güncellendi'); });
   const scaleSeg = segmented([['0.9', 'Küçük'], ['1', 'Normal'], ['1.1', 'Büyük'], ['1.25', 'Çok büyük']], String(s.scale), v => { s.scale = Number(v); save(); });
   const startSel = h('select', { class: 'input' }, h('option', { value: 'dashboard' }, 'Kişisel pano'),
     modules.map(m => h('option', { value: m.key, selected: s.start === m.key }, m.title)));

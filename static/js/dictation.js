@@ -3,7 +3,12 @@
 // bulunduğu yere yazılır. Ses sunucuda saklanmaz. Bir kutuda istenmiyorsa: data-no-mic.
 import { api } from './api.js';
 import { icons } from './icons.js';
+import { getLang } from './i18n.js';
 import { h, svgIcon, toast, toastError } from './ui.js';
+
+// Sesten yazıya dili arayüz diliyle aynı (Whisper dil kodları birebir). Desteklenmeyen dilde otomatik algıla.
+const STT_LANGS = ['tr', 'en', 'de', 'fr', 'es', 'ar', 'ru'];
+const sttLang = () => (STT_LANGS.includes(getLang()) ? getLang() : 'auto');
 
 const MAX_SECONDS = 300;   // tek kayıt en çok 5 dakika
 let active = null;         // aynı anda tek kayıt
@@ -75,6 +80,7 @@ function attach(ta) {
       try {
         const form = new FormData();
         form.append('file', blob, `dikte${extOf(blob.type)}`);
+        form.append('lang', sttLang());   // arayüz diline göre konuşma tanıma
         const r = await api.post('/api/system/dictate', form);
         if (r.text?.trim()) insertText(ta, r.text.trim());
         else toast('Konuşma anlaşılamadı; biraz daha yüksek sesle tekrar deneyin');

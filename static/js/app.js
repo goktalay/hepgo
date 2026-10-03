@@ -52,6 +52,11 @@ import { initLang, onLangChange, getLang } from './i18n.js';
 import './i18n.en.js';   // İngilizce kataloğu kaydeder (registerCatalog('en', …))
 import './i18n.en.extra.js';   // ek İngilizce katalog (modül içi statik metinler)
 import './i18n.en.extra2.js';   // ek İngilizce katalog (dinamik/şablon metinler)
+import './i18n.de.js';   // Almanca
+import './i18n.fr.js';   // Fransızca
+import './i18n.es.js';   // İspanyolca
+import './i18n.ar.js';   // Arapça (RTL)
+import './i18n.ru.js';   // Rusça
 import { enableSegSelect } from './segselect.js';
 import { enableListExport } from './listexport.js';
 import { enableHeadGroup } from './headgroup.js';

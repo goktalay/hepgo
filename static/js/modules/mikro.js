@@ -2,7 +2,7 @@
 // Kullanıcı Mikro'daki kayıtları arar, seçtiklerini "Aktar" der. Daha önce aktarılanlar işaretli gelir;
 // tekrar aktarılınca eşleşen yerel kayıt güncellenir. Sistem Mikro'ya HİÇBİR ŞEY yazmaz (yalnızca okur).
 import { api } from '../api.js';
-import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, pageHead, pref, setPref, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, pageHead, pref, setPref, t, toast, toastError } from '../ui.js';
 
 const STOK_TYPES = [['SARF', 'Sarf malzeme'], ['YEDEK_PARCA', 'Yedek parça'], ['HAMMADDE', 'Hammadde'], ['DEMIRBAS', 'Demirbaş']];
 const CARI_TIP = { tedarikci: ['Tedarikçi', 'green'], musteri: ['Müşteri', 'blue'], diger: ['Diğer', 'gray'] };
@@ -24,12 +24,12 @@ export async function render(view, params, ctx) {
   const canImport = !!status.can_import;
 
   const count = h('span', { class: 'small muted', style: { marginLeft: 'auto' } });
-  const setCount = s => { count.textContent = `Aktarılmış: ${s.imported?.cari || 0} cari · ${s.imported?.stok || 0} stok`; };
+  const setCount = s => { count.textContent = t('Aktarılmış: {cari} cari · {stok} stok', { cari: s.imported?.cari || 0, stok: s.imported?.stok || 0 }); };
   if (status.ok) setCount(status);
   const refreshCount = async () => { try { setCount(await api.get('/api/mikro/status')); } catch { /* sessizce geç */ } };
   const banner = status.ok
-    ? h('div', { class: 'mk-conn ok' }, h('span', { class: 'dot' }), `Bağlı · ${status.db || 'Mikro ERP'}`, count)
-    : h('div', { class: 'mk-conn err' }, h('span', { class: 'dot' }), `Bağlanılamadı: ${status.error || 'bilinmeyen hata'}`);
+    ? h('div', { class: 'mk-conn ok' }, h('span', { class: 'dot' }), t('Bağlı · {db}', { db: status.db || 'Mikro ERP' }), count)
+    : h('div', { class: 'mk-conn err' }, h('span', { class: 'dot' }), t('Bağlanılamadı: {err}', { err: status.error || 'bilinmeyen hata' }));
 
   const TABS = [['cari', 'Cari'], ['stok', 'Stok'], ['alis', 'Alış Faturaları'], ['satis', 'Satış Faturaları']];
   const RENDER = { cari: cariTab, stok: stokTab, alis: r => faturaTab(r, 'alis'), satis: r => faturaTab(r, 'satis') };
@@ -46,7 +46,7 @@ export async function render(view, params, ctx) {
   const resetBtn = h('button', { class: 'btn ghost sm', type: 'button', title: 'Stok Aktarımı’nda yazılan Mikro senkron sayım hareketlerini siler (fatura hareketlerine dokunmaz)' }, 'Senkron stoğu sıfırla');
   resetBtn.addEventListener('click', async () => {
     if (!await confirmDialog('Senkron stoğu sıfırla', 'Daha önce “Stok Aktarımı” ile yazılan Mikro senkron stok miktarları (sayım hareketleri) silinecek. Fatura kaynaklı stok hareketleri korunur. Devam edilsin mi?', { okLabel: 'Sıfırla', danger: true })) return;
-    try { const r = await api.post('/api/mikro/reset-stock', {}); toast(`${r.deleted} senkron stok hareketi silindi.`, 'success'); await refreshCount(); }
+    try { const r = await api.post('/api/mikro/reset-stock', {}); toast(t('{n} senkron stok hareketi silindi.', { n: r.deleted }), 'success'); await refreshCount(); }
     catch (err) { toastError(err); }
   });
 
@@ -77,7 +77,7 @@ function tableScreen(root, cfg, canImport) {
 
   const updateBtn = () => {
     btn.disabled = !canImport || selected.size === 0;
-    btn.textContent = selected.size ? `Aktar (${selected.size})` : 'Aktar';
+    btn.textContent = selected.size ? t('Aktar ({n})', { n: selected.size }) : 'Aktar';
   };
   const draw = () => {
     const q = search.value.trim();
@@ -85,16 +85,16 @@ function tableScreen(root, cfg, canImport) {
     clear(body, shown.length ? shown.map(r => rowEl(r)) : [h('tr', null, h('td', { class: 'muted', colspan: cfg.head.length + 1, style: { padding: '18px', textAlign: 'center' } }, 'Kayıt yok'))]);
     const codes = shown.map(cfg.key);
     selAll.checked = codes.length > 0 && codes.every(c => selected.has(c));
-    info.textContent = `${shown.length} kayıt${selected.size ? ` · ${selected.size} seçili` : ''}`
-      + (hidden && !showImported ? ` · ${hidden} aktarılmış gizli` : '');
+    info.textContent = t('{n} kayıt{sel}', { n: shown.length, sel: selected.size ? t(' · {n} seçili', { n: selected.size }) : '' })
+      + (hidden && !showImported ? t(' · {n} aktarılmış gizli', { n: hidden }) : '');
     updateBtn();
   };
   const rowEl = r => {
     const code = cfg.key(r);
     const chk = h('input', { type: 'checkbox', checked: selected.has(code),
-      onchange: e => { e.target.checked ? selected.add(code) : selected.delete(code); tr.classList.toggle('sel', e.target.checked); selAll.checked = false; info.textContent = `${rows.length} kayıt · ${selected.size} seçili`; updateBtn(); } });
+      onchange: e => { e.target.checked ? selected.add(code) : selected.delete(code); tr.classList.toggle('sel', e.target.checked); selAll.checked = false; info.textContent = t('{n} kayıt · {sel} seçili', { n: rows.length, sel: selected.size }); updateBtn(); } });
     const badge = r.imported
-      ? h('span', { class: 'badge green', title: r.imported_at ? `Aktarım: ${fmtDateTime(r.imported_at)}` : '' }, 'Aktarıldı')
+      ? h('span', { class: 'badge green', title: r.imported_at ? t('Aktarım: {d}', { d: fmtDateTime(r.imported_at) }) : '' }, 'Aktarıldı')
       : h('span', { class: 'badge gray' }, 'Yeni');
     const tr = h('tr', { class: selected.has(code) ? 'sel' : '' }, h('td', { class: 'mk-chk' }, chk), ...cfg.columns(r), h('td', null, badge));
     return tr;
@@ -104,7 +104,7 @@ function tableScreen(root, cfg, canImport) {
     rows.filter(r => matches(q, ...cfg.searchFields(r))).forEach(r => { const c = cfg.key(r); selAll.checked ? selected.add(c) : selected.delete(c); });
     draw();
   });
-  let t;
+  let searchT;
   const run = async () => {
     clear(body, h('tr', null, h('td', { class: 'loading', colspan: cfg.head.length + 1, style: { padding: '18px' } }, 'Yükleniyor…')));
     try {
@@ -115,19 +115,19 @@ function tableScreen(root, cfg, canImport) {
       draw();
     } catch (err) { clear(body, h('tr', null, h('td', { colspan: cfg.head.length + 1, style: { padding: '18px' } }, h('span', { class: 'muted' }, err.message)))); }
   };
-  search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 350); });
+  search.addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(run, 350); });
 
   btn.addEventListener('click', async () => {
     if (!selected.size) return;
     const codes = [...selected];
     const already = rows.filter(r => selected.has(cfg.key(r)) && r.imported).length;
-    const msg = `${codes.length} kayıt aktarılacak${already ? ` (${already} tanesi daha önce aktarılmış, güncellenecek)` : ''}. ${cfg.confirmExtra ? cfg.confirmExtra() : ''}`;
+    const msg = t('{n} kayıt aktarılacak{extra}. {more}', { n: codes.length, extra: already ? t(' ({n} tanesi daha önce aktarılmış, güncellenecek)', { n: already }) : '', more: cfg.confirmExtra ? cfg.confirmExtra() : '' });
     const ok = await confirmDialog('Aktarımı onayla', msg, { okLabel: 'Aktar' });
     if (!ok) return;
     btn.disabled = true; btn.textContent = 'Aktarılıyor…';
     try {
       const res = await cfg.doImport(codes);
-      toast(`${res.added} yeni, ${res.updated} güncellendi.${res.unmapped ? ` (${res.unmapped} satır eşleşmedi, stok işlenmedi)` : ''}`, 'success');
+      toast(t('{added} yeni, {updated} güncellendi.{extra}', { added: res.added, updated: res.updated, extra: res.unmapped ? t(' ({n} satır eşleşmedi, stok işlenmedi)', { n: res.unmapped }) : '' }), 'success');
       selected.clear();
       await run();
       cfg.onImported?.();
@@ -179,7 +179,7 @@ function stokTab(root, { canImport, onImported }) {
       h('td', { class: 'small' }, (r.sto_marka_kodu || '').trim() || '—'),
       h('td', { class: 'mono small' }, (r.barkod || '').trim() || '—'),
       h('td', { class: 'right' }, num(r.miktar))],
-    confirmExtra: () => `Malzeme tipi: ${STOK_TYPES.find(t => t[0] === typeSel.value)[1]}.` + (setStock.checked ? ' Güncel stok miktarı Ana Depo’ya yazılacak.' : ''),
+    confirmExtra: () => t('Malzeme tipi: {tip}.', { tip: STOK_TYPES.find(t => t[0] === typeSel.value)[1] }) + (setStock.checked ? ' Güncel stok miktarı Ana Depo’ya yazılacak.' : ''),
     fetch: (q, si) => api.get(`/api/mikro/stok?q=${encodeURIComponent(q)}&show_imported=${si ? 1 : 0}`),
     doImport: codes => api.post('/api/mikro/import/stok', { codes, type: typeSel.value, set_stock: setStock.checked }),
   }, canImport);
@@ -202,7 +202,7 @@ function faturaTab(root, kind) {
       h('td', { class: 'small' }, shortDate(r.tarih)),
       h('td', { class: 'right small' }, num(r.satir)),
       h('td', { class: 'right' }, money(r.tutar))],
-    confirmExtra: () => `Aktarım, eşleşen malzemeler için ${yon} (Ana Depo).`,
+    confirmExtra: () => t('Aktarım, eşleşen malzemeler için {yon} (Ana Depo).', { yon }),
     fetch: (q, si) => api.get(`/api/mikro/${kind}?q=${encodeURIComponent(q)}&show_imported=${si ? 1 : 0}`),
     doImport: evraks => api.post(`/api/mikro/import/${kind}`, { evraks }),
   }, true);

@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
-  toast, toastError, periodFilter
+  t, toast, toastError, periodFilter
 } from '../ui.js';
 import { renderCameras } from './cameras.js';
 import { renderFaces } from './faces.js';
@@ -33,20 +33,20 @@ async function renderVehicles(body, addBtn) {
   let list = [];
   const draw = () => clear(grid, list.length ? list.map(v => h('div', { class: 'card veh-card' },
     plateEl(v.plate),
-    h('div', { class: 'veh-time' }, `Giriş ${fmtDateTime(v.entered_at)}`),
-    h('div', { class: 'veh-dur' }, `${fmtDuration(secondsSince(v.entered_at))} içeride`),
+    h('div', { class: 'veh-time' }, t('Giriş {d}', { d: fmtDateTime(v.entered_at) })),
+    h('div', { class: 'veh-dur' }, t('{d} içeride', { d: fmtDuration(secondsSince(v.entered_at)) })),
     v.note ? h('div', { class: 'small muted' }, v.note) : null,
-    v.visit_code ? h('span', { class: 'badge blue' }, `Misafir ${v.visit_code}`) : null,
+    v.visit_code ? h('span', { class: 'badge blue' }, t('Misafir {code}', { code: v.visit_code })) : null,
     h('div', { class: 'veh-acts' },
       v.visit_code ? null : h('button', { class: 'btn sm', type: 'button', title: 'Hatalı plakayı düzelt', onclick: () => vehicleForm(v) }, '✎ Düzelt'),
       h('button', { class: 'btn sm primary', type: 'button', onclick: () => exit(v) }, 'Çıkış Yaptı →'))))
     : h('div', { class: 'card empty' }, 'İçeride kayıtlı araç yok. Gelen araç için sağ üstteki "Yeni Araç Girişi"ni kullanın.'));
   const load = async () => { list = await api.get('/api/security/vehicles'); draw(); };
   async function exit(v) {
-    if (!await confirmDialog('Araç çıkışı', `${v.plate} çıkış yaptı mı?`, { okLabel: 'Çıkış Yaptı' })) return;
+    if (!await confirmDialog('Araç çıkışı', t('{plate} çıkış yaptı mı?', { plate: v.plate }), { okLabel: 'Çıkış Yaptı' })) return;
     try {
       await api.post(`/api/security/vehicles/${v.id}/exit`);
-      toast(`${v.plate} çıkış yaptı`);
+      toast(t('{plate} çıkış yaptı', { plate: v.plate }));
       await load();
     } catch (err) { toastError(err); }
   }
@@ -57,8 +57,8 @@ async function renderVehicles(body, addBtn) {
       autocapitalize: 'characters', spellcheck: false, 'aria-label': 'Plaka', style: { width: '100%' } });
     const note = h('input', { class: 'input', value: edit ? (v.note || '') : '', placeholder: 'Not (isteğe bağlı): sürücü, firma…' });
     const submit = async () => {
-      if (edit) { const r = await api.put(`/api/security/vehicles/${v.id}`, { plate: plate.value, note: note.value }); toast(`Plaka güncellendi: ${r.plate}`); }
-      else { const r = await api.post('/api/security/vehicles', { plate: plate.value, note: note.value }); toast(`${r.plate} giriş yaptı`); }
+      if (edit) { const r = await api.put(`/api/security/vehicles/${v.id}`, { plate: plate.value, note: note.value }); toast(t('Plaka güncellendi: {plate}', { plate: r.plate })); }
+      else { const r = await api.post('/api/security/vehicles', { plate: plate.value, note: note.value }); toast(t('{plate} giriş yaptı', { plate: r.plate })); }
       await load();
     };
     const m = modal({
@@ -148,7 +148,7 @@ async function renderBuilding(body) {
     clear(active, h('div', { class: 'bc-active' },
       h('span', { class: 'bc-rec-dot' }),
       h('div', { class: 'grow' }, h('b', null, 'Bina turu kaydediliyor…'),
-        h('div', { class: 'small' }, `${patrol.posted || 0} konum · ${elapsedText()}`)),
+        h('div', { class: 'small' }, t('{n} konum · {e}', { n: patrol.posted || 0, e: elapsedText() }))),
       h('button', { class: 'btn', type: 'button', onclick: () => bcNotes(patrol.id, 'tur') }, '📝 Sorun/Not'),
       h('button', { class: 'btn danger', type: 'button', onclick: () => finishPatrol() }, 'Turu Bitir · ' + elapsedText())));
   }
@@ -186,8 +186,8 @@ async function renderBuilding(body) {
       const acts = [];
       if (c.status === 'BEKLIYOR') acts.push(h('button', { class: `btn sm ${due && !patrol ? 'primary' : ''}`, type: 'button', disabled: !!patrol, title: patrol ? 'Süren bir kontrol var; önce onu bitirin' : '', onclick: () => startPatrol(day, c.slot) }, 'Başlat'));
       else if (c.status === 'DEVAM') acts.push(h('button', { class: 'btn sm danger bc-stop-live', type: 'button', onclick: () => finishPatrol(c.id) }, 'Bitir · ' + elapsedText()));
-      else { acts.push(h('span', { class: 'small muted' }, `${c.points} konum`)); if (c.points) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => openTrack(c.id) }, '🗺 Harita')); }
-      if (c.id) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => bcNotes(c.id, c.slot || bHM(c.started_at)) }, `📝 Sorun/Not${c.notes ? ` (${c.notes})` : ''}`));
+      else { acts.push(h('span', { class: 'small muted' }, t('{n} konum', { n: c.points }))); if (c.points) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => openTrack(c.id) }, '🗺 Harita')); }
+      if (c.id) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => bcNotes(c.id, c.slot || bHM(c.started_at)) }, t('📝 Sorun/Not{extra}', { extra: c.notes ? ` (${c.notes})` : '' })));
       return h('div', { class: `bc-item ${c.status === 'BITTI' ? 'done' : ''} ${due ? 'due' : ''}` },
         h('div', { class: 'bc-slot' }, c.slot || '—'),
         h('div', { class: 'grow' },
@@ -232,9 +232,9 @@ async function renderBuilding(body) {
   async function openTrack(cid) {
     let d;
     try { d = await api.get(`/api/security/building/${cid}/track`); } catch (err) { return toastError(err); }
-    modal({ title: `Bina turu · ${d.slot || bHM(d.started_at)}`, wide: true,
+    modal({ title: t('Bina turu · {slot}', { slot: d.slot || bHM(d.started_at) }), wide: true,
       body: h('div', null,
-        h('p', { class: 'small muted', style: { marginTop: 0 } }, `${bHM(d.started_at)} – ${bHM(d.finished_at)} · ${d.started_by_name || ''} · ${d.points.length} konum`),
+        h('p', { class: 'small muted', style: { marginTop: 0 } }, t('{a} – {b} · {by} · {n} konum', { a: bHM(d.started_at), b: bHM(d.finished_at), by: d.started_by_name || '', n: d.points.length })),
         trackMap(d.points)),
       actions: [{ label: 'Kapat' }] });
   }
@@ -267,7 +267,7 @@ async function renderBuilding(body) {
     };
     const add = async () => { if (!ta.value.trim()) return; try { await api.post(`/api/security/building/${cid}/note`, { note: ta.value }); ta.value = ''; draw(); load(); } catch (err) { toastError(err); } };
     draw();
-    modal({ title: `Bina turu · ${lbl} · Sorun / Notlar`, wide: true,
+    modal({ title: t('Bina turu · {lbl} · Sorun / Notlar', { lbl }), wide: true,
       body: h('div', null, nlist, h('div', { class: 'cl-set-add', style: { marginTop: '10px' } }, ta, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))),
       actions: [{ label: 'Kapat' }] });
   }

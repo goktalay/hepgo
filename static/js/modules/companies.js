@@ -4,7 +4,7 @@ import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import {
   clear, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, segmented,
-  selectInput, setPref, statStrip, svgIcon, toast, toastError,
+  selectInput, setPref, statStrip, svgIcon, t, toast, toastError,
 } from '../ui.js';
 import { calendarPanel, docList, notesPanel, tabView } from './crm.js';
 import { crmNav } from './crmhub.js';
@@ -109,8 +109,8 @@ async function renderList(view, ctx) {
       h('div', { class: 'grow' },
         h('b', null, c.name), c.active ? null : h('span', { class: 'badge gray', style: { marginLeft: '6px' } }, 'Pasif'),
         h('div', { class: 'small muted' }, [c.city, c.tax_no ? `VN ${c.tax_no}` : null, c.phone].filter(Boolean).join(' · ') || '—'),
-        h('div', { class: 'co-counts' }, h('span', null, `${c.address_count} adres`), h('span', null, `${c.people_count} kişi`),
-          h('span', null, `${c.document_count} evrak`))))))
+        h('div', { class: 'co-counts' }, h('span', null, t('{n} adres', { n: c.address_count })), h('span', null, t('{n} kişi', { n: c.people_count })),
+          h('span', null, t('{n} evrak', { n: c.document_count })))))))
       : h('div', { class: 'card empty' }, companies.length ? 'Filtreye uyan firma yok' : 'Henüz firma eklenmedi'));
   };
   q.addEventListener('input', draw);
@@ -251,7 +251,7 @@ async function renderContact(view, ctx, kind, id, tab) {
       const co = await getCompany();
       const cm = { ...co, meetings: x.meetings };
       return h('div', null,
-        h('div', { class: 'co-section-head' }, h('h2', null, `${c.full_name} katıldığı toplantılar`),
+        h('div', { class: 'co-section-head' }, h('h2', null, t('{name} katıldığı toplantılar', { name: c.full_name })),
           h('button', { class: 'btn sm primary', onclick: () => meetingForm(co, { people: [{ id }] }, reload) }, svgIcon(icons.plus), 'Toplantı Ekle')),
         meetingList(cm, reload));
     }
@@ -269,7 +269,7 @@ async function renderContact(view, ctx, kind, id, tab) {
     docList(x.documents, kind === 'person' ? 'Bu kişiye bağlı (görebildiğiniz) evrak yok' : 'Yüklediği ya da imzaladığı (görebildiğiniz) evrak yok'));
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   clear(view,
-    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? `Rehber · ${c.company_name}` : 'Rehber · Kullanıcı' }),
+    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? t('Rehber · {co}', { co: c.company_name }) : 'Rehber · Kullanıcı' }),
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => vcard(c) }, 'Kaydet .vcf'),
       kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null),
@@ -363,7 +363,7 @@ function addressList(c, reload) {
       href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addrText(a))}` }, 'Harita'),
     h('button', { class: 'btn sm', onclick: () => addressForm(c.id, a, reload) }, 'Düzenle'),
     h('button', { class: 'btn sm ghost', onclick: async () => {
-      if (!await confirmDialog('Adresi sil', `${a.label} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+      if (!await confirmDialog('Adresi sil', t('{label} silinsin mi?', { label: a.label }), { okLabel: 'Sil', danger: true })) return;
       try { await api.del(`/api/companies/addresses/${a.id}`); toast('Adres silindi'); reload(); } catch (err) { toastError(err); }
     } }, 'Sil'))));
 }
@@ -382,14 +382,14 @@ async function meetingForm(c, m = {}, done) {
   const others = h('input', { class: 'input', value: m.other_attendees || '', placeholder: 'Listede olmayan katılımcılar (isteğe bağlı)' });
   const notes = h('textarea', { class: 'input', rows: 5, placeholder: 'Görüşülen konular, kararlar, yapılacaklar…' }, m.notes || '');
   modal({
-    title: m.id ? 'Toplantıyı düzenle' : `${c.name} — Yeni toplantı`,
+    title: m.id ? 'Toplantıyı düzenle' : t('{name} — Yeni toplantı', { name: c.name }),
     wide: true,
     body: h('div', null,
       field('Konu', subject),
       h('div', { class: 'row' }, field('Tarih ve saat', when), field('Adres', address)),
       field('Yer / açıklama', location, 'Adres dışında yer bilgisi ya da çevrim içi toplantı'),
       h('div', { class: 'row meet-sides' },
-        field(`Karşı taraftan katılanlar (${c.name})`, theirs),
+        field(t('Karşı taraftan katılanlar ({name})', { name: c.name }), theirs),
         field('Bizden katılanlar', ours)),
       field('Diğer katılımcılar', others),
       field('Toplantı notları / tutanak', notes)),
@@ -422,7 +422,7 @@ function meetingList(c, reload) {
         h('div', { class: 'grow' }, h('b', null, m.subject), m.location ? h('span', { class: 'small muted' }, ` · ${m.location}`) : null),
         h('button', { class: 'btn sm', onclick: () => meetingForm(c, m, reload) }, 'Düzenle'),
         h('button', { class: 'btn sm ghost', onclick: async () => {
-          if (!await confirmDialog('Toplantıyı sil', `${m.subject} silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+          if (!await confirmDialog('Toplantıyı sil', t('{subject} silinsin mi?', { subject: m.subject }), { okLabel: 'Sil', danger: true })) return;
           try { await api.del(`/api/companies/meetings/${m.id}`); toast('Toplantı silindi'); reload(); } catch (err) { toastError(err); }
         } }, 'Sil')),
       m.address_id ? h('div', { class: 'meet-sub' }, h('span', null, 'Adres: '),
@@ -440,18 +440,18 @@ async function renderDetail(view, id, ctx, tab) {
   const c = await api.get(`/api/companies/${id}`);
   const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
   const remove = async () => {
-    if (!await confirmDialog('Firmayı sil', `${c.name} silinsin mi? Kişileri, notları ve takvim kayıtları da silinir.`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Firmayı sil', t('{name} silinsin mi? Kişileri, notları ve takvim kayıtları da silinir.', { name: c.name }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/companies/${id}`); toast(SUP ? 'Tedarikçi silindi' : 'Firma silindi'); location.hash = BASE; } catch (err) { toastError(err); }
   };
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   const people = () => h('div', null,
-    h('div', { class: 'co-section-head' }, h('h2', null, `Kişiler (${c.people.length})`),
+    h('div', { class: 'co-section-head' }, h('h2', null, t('Kişiler ({n})', { n: c.people.length })),
       h('button', { class: 'btn sm primary', onclick: () => personForm(id, {}, reload) }, svgIcon(icons.plus), 'Kişi Ekle')),
     c.people.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Ad soyad', 'Görevi', 'Telefon', 'E-posta', ''].map(t => h('th', null, t)))),
       h('tbody', null, c.people.map(p => h('tr', null,
         h('td', null, h('a', { href: `${BASE}/rehber/person/${p.id}` }, h('b', null, p.full_name)),
-          p.user_id ? h('span', { class: `badge ${p.user_active ? 'blue' : 'gray'}`, style: { marginLeft: '6px' }, title: `Sistem hesabı: ${p.user_username || ''}` }, 'Sistem kullanıcısı') : null,
+          p.user_id ? h('span', { class: `badge ${p.user_active ? 'blue' : 'gray'}`, style: { marginLeft: '6px' }, title: t('Sistem hesabı: {u}', { u: p.user_username || '' }) }, 'Sistem kullanıcısı') : null,
           p.note ? h('div', { class: 'small muted' }, p.note) : null),
         h('td', null, p.title || '—'),
         h('td', null, p.phone ? h('a', { href: `tel:${p.phone}` }, p.phone) : '—'),
@@ -459,22 +459,22 @@ async function renderDetail(view, id, ctx, tab) {
         h('td', { class: 'num', style: { whiteSpace: 'nowrap' } },
           h('button', { class: 'btn sm', onclick: () => personForm(id, p, reload) }, 'Düzenle'), ' ',
           h('button', { class: 'btn sm ghost', onclick: async () => {
-            if (!await confirmDialog('Kişiyi sil', `${p.full_name} silinsin mi? Notları ve takvim kayıtları da silinir.`, { okLabel: 'Sil', danger: true })) return;
+            if (!await confirmDialog('Kişiyi sil', t('{name} silinsin mi? Notları ve takvim kayıtları da silinir.', { name: p.full_name }), { okLabel: 'Sil', danger: true })) return;
             try { await api.del(`/api/companies/people/${p.id}`); toast('Kişi silindi'); reload(); } catch (err) { toastError(err); }
           } }, 'Sil')))))))
       : h('div', { class: 'empty small' }, 'Henüz kişi eklenmedi'));
   const addresses = () => h('div', null,
-    h('div', { class: 'co-section-head' }, h('h2', null, `Adresler (${c.addresses.length})`),
+    h('div', { class: 'co-section-head' }, h('h2', null, t('Adresler ({n})', { n: c.addresses.length })),
       h('button', { class: 'btn sm primary', onclick: () => addressForm(id, {}, reload) }, svgIcon(icons.plus), 'Adres Ekle')),
     addressList(c, reload));
   const docs = () => h('div', null,
-    h('div', { class: 'co-section-head' }, h('h2', null, `Evraklar (${c.documents.length})`),
+    h('div', { class: 'co-section-head' }, h('h2', null, t('Evraklar ({n})', { n: c.documents.length })),
       ctx.user.modules.includes('documents')
         ? h('button', { class: 'btn sm primary', onclick: () => openUpload(ctx, { company_ids: [id] }, reload) }, svgIcon(icons.upload), 'Evrak Yükle')
         : null),
     docList(c.documents, 'Bu firmaya bağlı (görebildiğiniz) evrak yok'));
   const meetings = () => h('div', null,
-    h('div', { class: 'co-section-head' }, h('h2', null, `Toplantılar (${c.meetings.length})`),
+    h('div', { class: 'co-section-head' }, h('h2', null, t('Toplantılar ({n})', { n: c.meetings.length })),
       h('button', { class: 'btn sm primary', onclick: () => meetingForm(c, {}, reload) }, svgIcon(icons.plus), 'Toplantı Ekle')),
     meetingList(c, reload));
   clear(view,

@@ -8,7 +8,7 @@ import { mountAssembly } from '../assembly3d.js';
 import { layerToggle, loadPlane, partInfoLines, renderAssembly, renderPlane } from '../plane.js';
 import {
   clear, confirmDialog, field, fmtMinutes, h, matches, modal, moduleToolbar, onLeave, pageHead, pref, segmented, selectInput, setPref, statStrip,
-  toast, toastError,
+  t, toast, toastError,
 } from '../ui.js';
 import { spareMovesModal, spareAdjustModal } from './stock.js';
 
@@ -72,21 +72,21 @@ function productCard(p, plane) {
   else if (plane) preview = renderPlane(plane, { fill: () => 'var(--part-fill)', label: () => null }).svg;
   else preview = h('div', { class: 'product-ph' }, h('span', null, p.code));
   const info = p.role === 'part' ? dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Ait olduğu', usedIn],
-    ['Baskı süresi', fmtMinutes(p.print_minutes)], ['Stok', h('b', null, `${p.stock} adet`)],
-    ['Sipariş', `${p.order_count} (tamamlanan ${p.completed_count})`])
+    ['Baskı süresi', fmtMinutes(p.print_minutes)], ['Stok', h('b', null, t('{n} adet', { n: p.stock }))],
+    ['Sipariş', t('{a} (tamamlanan {b})', { a: p.order_count, b: p.completed_count })])
     : p.role === 'section' ? dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Ait olduğu', p.parent?.name || '—'],
       ['Parça', p.part_count], ['İçerik', Object.entries(p.groups).map(([g, n]) => `${g} ${n}`).join(' · ')])
-      : p.role === 'sarf' ? dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Bir baskıda', `${p.per_print} adet`],
-        ['CAYMAZ başına', `${num(p.usages.reduce((a, u) => a + u.qty, 0))} adet`],
+      : p.role === 'sarf' ? dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Bir baskıda', t('{n} adet', { n: p.per_print })],
+        ['CAYMAZ başına', t('{n} adet', { n: num(p.usages.reduce((a, u) => a + u.qty, 0)) })],
         ['Kullanım', p.usages.map(u => `${u.parent_name} ${num(u.qty)}`).join(' · ') || '—'],
-        ['Stok', h('b', null, `${p.stock} adet`)], ['Sipariş', `${p.order_count} (tamamlanan ${p.completed_count})`])
+        ['Stok', h('b', null, t('{n} adet', { n: p.stock }))], ['Sipariş', t('{a} (tamamlanan {b})', { a: p.order_count, b: p.completed_count })])
         : p.role === 'mamul' ? dl(['Seri no', h('span', { class: 'mono' }, p.serial)], ['Ürün kodu', h('span', { class: 'mono' }, p.code)],
           ['Parça', p.part_count], ['Kullanım', p.usage_type === 'COKLU' ? 'Çoklu kullanım' : 'Tek kullanımlık'],
-          ['Sipariş', `${p.order_count} (üretimde ${p.wip_count}, tamamlanan ${p.completed_count})`])
+          ['Sipariş', t('{a} (üretimde {b}, tamamlanan {c})', { a: p.order_count, b: p.wip_count, c: p.completed_count })])
           : MATERIAL_TYPES.includes(p.type) ? dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Birim', p.unit || 'adet'],
-            ['Reçetelerde', `${p.used_in_recipes?.length || 0} üründe`])
-            : dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Ürün ağacı', `${p.bom_count} alt ürün`],
-              ['Reçete', `${p.recipe_count} kalem`], ['Kullanıldığı', usedIn]);
+            ['Reçetelerde', t('{n} üründe', { n: p.used_in_recipes?.length || 0 })])
+            : dl(['Kod', h('span', { class: 'mono' }, p.code)], ['Ürün ağacı', t('{n} alt ürün', { n: p.bom_count })],
+              ['Reçete', t('{n} kalem', { n: p.recipe_count })], ['Kullanıldığı', usedIn]);
   return h('a', { class: `card product-card ${cls}`, href: `#/products/${p.id}` },
     h('div', { class: `product-preview ${p.image || p.gcode_preview ? 'g3d' : ''}` }, preview),
     h('div', { class: 'product-info' },
@@ -151,7 +151,7 @@ function gcodeCard(p) {
   let m = {};
   try { m = JSON.parse(p.gcode_meta || '{}'); } catch { /* yok */ }
   const name = p.gcode_file.split('/').pop();
-  const hms = s => (s ? `${Math.floor(s / 3600)} sa ${Math.round((s % 3600) / 60)} dk` : '—');
+  const hms = s => (s ? t('{h} sa {m} dk', { h: Math.floor(s / 3600), m: Math.round((s % 3600) / 60) }) : '—');
   const row = (k, v) => (v == null || v === '' ? null : [h('dt', null, k), h('dd', null, v)]);
   return h('div', { class: 'gcode-card' },
     h('div', { class: 'gcode-head' }, p.gcode_thumb ? h('img', { src: fileUrl(p.gcode_thumb), alt: '' }) : null,
@@ -160,8 +160,8 @@ function gcodeCard(p) {
       row('Tahmini süre', hms(m.seconds)), row('Filament', m.filament_g ? `${m.filament_g.toFixed(0)} g · ${(m.filament_mm / 1000).toFixed(1)} m` : null),
       row('Malzeme', [m.material, m.filament_profile].filter(Boolean).join(' · ')), row('Maliyet', m.cost ? `${m.cost.toFixed(2)}` : null),
       row('Katman', m.layers ? `${m.layers} × ${m.layer_height} mm` : null), row('Yükseklik', m.max_z ? `${m.max_z} mm` : null),
-      row('Sıcaklık', m.nozzle_temp ? `Nozül ${m.nozzle_temp}°C${m.bed_temp ? ` · Tabla ${m.bed_temp}°C` : ''}` : null),
-      row('Yazıcı', [m.printer, m.nozzle ? `${m.nozzle} mm nozül` : null].filter(Boolean).join(' · ')), row('Dilimleyici', m.slicer)),
+      row('Sıcaklık', m.nozzle_temp ? t('Nozül {temp}°C{bed}', { temp: m.nozzle_temp, bed: m.bed_temp ? t(' · Tabla {bt}°C', { bt: m.bed_temp }) : '' }) : null),
+      row('Yazıcı', [m.printer, m.nozzle ? t('{n} mm nozül', { n: m.nozzle }) : null].filter(Boolean).join(' · ')), row('Dilimleyici', m.slicer)),
     h('a', { class: 'btn', href: fileUrl(p.gcode_file), download: name }, '⬇ G-code İndir'));
 }
 
@@ -220,7 +220,7 @@ async function renderDetail(view, id, ctx) {
     }
   });
   const del = custom && canEdit ? h('button', { class: 'btn ghost danger-text', onclick: async () => {
-    if (!await confirmDialog('Ürünü sil', `${p.code} — ${p.name} silinsin mi? Ürün ağacı ve reçete bağlantıları da kaldırılır.`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Ürünü sil', t('{code} — {name} silinsin mi? Ürün ağacı ve reçete bağlantıları da kaldırılır.', { code: p.code, name: p.name }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/products/${id}`); toast('Ürün silindi'); location.hash = '#/products'; } catch (err) { toastError(err); }
   } }, 'Sil') : null;
 
@@ -239,7 +239,7 @@ async function renderDetail(view, id, ctx) {
     h('div', { class: 'pd-info-foot' },
       h('label', { class: 'check' }, f.active, 'Aktif'),
       custom ? h('span', { class: 'small muted' }, 'Ürün ağacı ve reçeteyle tanımlı; üretim siparişi açılmaz') : h('label', { class: 'check' }, f.orderable, 'Sipariş verilebilir'),
-      section ? h('span', { class: 'small muted' }, `Montajda ${p.parent?.name || 'mamul'} siparişiyle birleştirilir`) : null,
+      section ? h('span', { class: 'small muted' }, t('Montajda {name} siparişiyle birleştirilir', { name: p.parent?.name || 'mamul' })) : null,
       h('span', { class: 'spacer' }), del, canEdit ? save : null));
 
   const sideCard = h('div', { class: 'card card-pad pd-side' },
@@ -256,7 +256,7 @@ async function renderDetail(view, id, ctx) {
         (p.used_in || []).map(x => h('li', null, h('a', { href: `#/products/${x.id}` }, `${x.code} — ${x.name}`), h('b', null, `×${num(x.qty)}`))),
         (p.used_in_recipes || []).map(x => h('li', null, h('a', { href: `#/products/${x.id}` }, `${x.code} — ${x.name}`), h('b', null, `${num(x.qty)} ${p.unit || ''}`))))
       : h('div', { class: 'small muted' }, 'Başka bir ürünün ağacında ya da reçetesinde yok'),
-    p.order_count ? h('div', { class: 'small muted', style: { marginTop: '10px' } }, `${p.order_count} sipariş · üretimde ${p.wip_count} · tamamlanan ${p.completed_count}`) : null);
+    p.order_count ? h('div', { class: 'small muted', style: { marginTop: '10px' } }, t('{a} sipariş · üretimde {b} · tamamlanan {c}', { a: p.order_count, b: p.wip_count, c: p.completed_count })) : null);
 
   // Alt modüller
   const tabs = MATERIAL_TYPES.includes(p.type) ? [['image', 'Resim'], ['3d', '3B']] : [['tree', 'Ürün Ağacı'], ['recipe', 'Reçete'], ['image', 'Resim'], ['3d', '3B']];
@@ -296,15 +296,15 @@ async function treeTab(stage, p, canEdit) {
   const refresh = () => treeTab(stage, p, canEdit).catch(toastError);
   const canHold = t => t === 'MAMUL' || t === 'YARI_MAMUL';
   const addUnder = node => pickModal({
-    title: `${node.code} altına yarı mamul ekle`, options: options.filter(o => o.type === 'YARI_MAMUL' && o.id !== node.id && !node.children.some(c => c.id === o.id)),
+    title: t('{code} altına yarı mamul ekle', { code: node.code }), options: options.filter(o => o.type === 'YARI_MAMUL' && o.id !== node.id && !node.children.some(c => c.id === o.id)),
     newType: 'YARI_MAMUL', qtyLabel: 'Adet', unitOf: () => 'adet',
     onPick: async (item, qty) => { await api.post(`/api/products/${node.id}/bom`, { child_id: item.id, qty }); open.add(`${node.path}`); remember(); toast('Ürün ağacına eklendi'); refresh(); },
   });
-  const editQty = (parent, node) => qtyModal(`${parent.code} içinde ${node.code} adedi`, node.qty, 'adet', async qty => {
+  const editQty = (parent, node) => qtyModal(t('{p} içinde {c} adedi', { p: parent.code, c: node.code }), node.qty, 'adet', async qty => {
     await api.put(`/api/products/${parent.id}/bom/${node.id}`, { qty }); refresh();
   });
   const remove = async (parent, node) => {
-    if (!await confirmDialog('Ağaçtan çıkar', `${node.code} — ${node.name}, ${parent.code} ağacından çıkarılsın mı? Ürünün kendisi silinmez.`, { okLabel: 'Çıkar', danger: true })) return;
+    if (!await confirmDialog('Ağaçtan çıkar', t('{code} — {name}, {parent} ağacından çıkarılsın mı? Ürünün kendisi silinmez.', { code: node.code, name: node.name, parent: parent.code }), { okLabel: 'Çıkar', danger: true })) return;
     try { await api.del(`/api/products/${parent.id}/bom/${node.id}`); toast('Ağaçtan çıkarıldı'); refresh(); } catch (err) { toastError(err); }
   };
   let rows = 0;
@@ -325,7 +325,7 @@ async function treeTab(stage, p, canEdit) {
     });
     if (isOpen) kids.append(...node.children.map(c => row(c, node, depth + 1, `${path}/${c.id}`)));
     const meta = [
-      node.children.length ? h('span', { class: 'tv-meta' }, `${node.children.length} alt`) : null,
+      node.children.length ? h('span', { class: 'tv-meta' }, t('{n} alt', { n: node.children.length })) : null,
       node.recipe_count ? h('span', { class: 'tv-meta', title: 'Reçete kalemi' }, `🧾 ${node.recipe_count}`) : null,
       node.has_3d ? h('span', { class: 'tv-meta', title: '3B görünüm var' }, '3B') : null,
       node.stock != null ? h('span', { class: `tree-stock ${node.stock > 0 ? 'on' : ''}`, title: 'Stok' }, node.stock) : null,
@@ -375,7 +375,7 @@ async function recipeTab(stage, p, canEdit) {
     await api.post(`/api/products/${p.id}/recipe`, { item_id: r.item_id, qty, note }); refresh();
   }, r.note);
   const remove = async r => {
-    if (!await confirmDialog('Reçeteden çıkar', `${r.code} — ${r.name} reçeteden çıkarılsın mı?`, { okLabel: 'Çıkar', danger: true })) return;
+    if (!await confirmDialog('Reçeteden çıkar', t('{code} — {name} reçeteden çıkarılsın mı?', { code: r.code, name: r.name }), { okLabel: 'Çıkar', danger: true })) return;
     try { await api.del(`/api/products/${p.id}/recipe/${r.item_id}`); refresh(); } catch (err) { toastError(err); }
   };
   const table = (list, editable) => h('table', { class: 'table' },
@@ -392,7 +392,7 @@ async function recipeTab(stage, p, canEdit) {
   const rolled = recipe.total.length && recipe.total.map(r => `${r.item_id}:${r.qty}`).sort().join() !== recipe.items.map(r => `${r.item_id}:${r.qty}`).sort().join();
   clear(stage,
     h('div', { class: 'card card-pad' },
-      h('div', { class: 'tv-bar' }, h('b', null, 'Reçete'), h('span', { class: 'small muted' }, `${p.name} için kullanılan yedek parça ve hammaddeler`),
+      h('div', { class: 'tv-bar' }, h('b', null, 'Reçete'), h('span', { class: 'small muted' }, t('{name} için kullanılan yedek parça ve hammaddeler', { name: p.name })),
         h('span', { class: 'spacer' }), canEdit ? h('button', { class: 'btn sm primary', onclick: add }, '＋ Kalem ekle') : null),
       recipe.items.length ? table(recipe.items, true) : h('div', { class: 'empty small' }, 'Reçetede kalem yok')),
     rolled ? h('div', { class: 'card card-pad', style: { marginTop: '14px' } },
@@ -433,7 +433,7 @@ async function imageTab(stage, p, canEdit) {
     h('div', { class: 'tv-bar' }, h('b', null, '2B üstten görünüm'), h('span', { class: 'spacer' }),
       canEdit && p.image ? [h('button', { class: 'btn sm', onclick: pick }, 'Değiştir'), h('button', { class: 'btn sm ghost', onclick: remove }, 'Kaldır')] : null),
     p.image
-      ? drop(h('a', { class: 'pd-image', href: fileUrl(p.image), target: '_blank', rel: 'noopener' }, h('img', { src: fileUrl(p.image, 1600), alt: `${p.name} üstten görünüm` })))
+      ? drop(h('a', { class: 'pd-image', href: fileUrl(p.image), target: '_blank', rel: 'noopener' }, h('img', { src: fileUrl(p.image, 1600), alt: t('{name} üstten görünüm', { name: p.name }) })))
       : drop(h('div', { class: 'drop-zone', onclick: canEdit ? pick : null },
         h('div', { class: 'dz-ico' }, '🖼'), h('b', null, canEdit ? 'Üstten görünüm resmini yükleyin' : 'Resim yüklenmemiş'),
         canEdit ? h('span', { class: 'small muted' }, 'Tıklayın ya da resmi buraya sürükleyin · PNG, JPG, WEBP') : null)),
@@ -458,13 +458,13 @@ async function imageTab(stage, p, canEdit) {
       if (mode === 'YEDEK_PARCA') return clear(schemaStage, vb, layerToggle(pl, 'plane.layer', plane), pl.svg);
       if (mode === 'MAMUL') {
         const a = renderAssembly(plane, { whole: true, items: { ALL: { state: 'info',
-          label: [p.name, { text: 'Mamul', class: 'sub' }, { text: `${p.serial} · ${p.part_count} parça`, class: 'muted' }] } } });
+          label: [p.name, { text: 'Mamul', class: 'sub' }, { text: t('{serial} · {n} parça', { serial: p.serial, n: p.part_count }), class: 'muted' }] } } });
         return clear(schemaStage, vb, a.svg);
       }
       const semis = tree.children.filter(n => n.section);
       const bySection = Object.fromEntries(semis.map(n => [n.section, n]));
       const items = Object.fromEntries(semis.map(n => [n.section, { state: 'info',
-        label: [n.name, { text: `${n.code} · ${n.children.filter(c => c.part_spare).length} parça`, class: 'sub' }, { text: 'Açmak için tıklayın', class: 'muted' }] }]));
+        label: [n.name, { text: t('{code} · {n} parça', { code: n.code, n: n.children.filter(c => c.part_spare).length }), class: 'sub' }, { text: 'Açmak için tıklayın', class: 'muted' }] }]));
       const a = renderAssembly(plane, {
         whole: false, items,
         extra: { fill: () => 'var(--part-fill)', label: part => (part.name ? part.name.split(' ') : [part.id]),
@@ -500,7 +500,7 @@ export async function gcodeTab(stage, p, canEdit, base = `/api/products/${p.id}`
     bar.hidden = false;
     status.textContent = 'Yükleniyor…';
     try {
-      const uid = await uploadLarge(f, 'gcode', pct => { bar.firstChild.style.width = `${pct}%`; status.textContent = `Yükleniyor… %${pct}`; });
+      const uid = await uploadLarge(f, 'gcode', pct => { bar.firstChild.style.width = `${pct}%`; status.textContent = t('Yükleniyor… %{p}', { p: pct }); });
       status.textContent = 'G-code işleniyor (bilgiler ve 3B yol çıkarılıyor)…';
       await api.post(`${base}/gcode`, { upload_id: uid });
       toast('G-code yüklendi');

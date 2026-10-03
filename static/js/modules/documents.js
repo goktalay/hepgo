@@ -6,7 +6,7 @@ import { api, fileUrl, uploadLarge } from '../api.js';
 import { icons } from '../icons.js';
 import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, segmented, selectInput,
-  statStrip, svgIcon, toast, toastError, uploadPanel, companyName, shortCompany, periodFilter
+  statStrip, svgIcon, t, toast, toastError, uploadPanel, companyName, shortCompany, periodFilter
 } from '../ui.js';
 import { signBadge, signatureBlock } from './sign.js';
 
@@ -65,7 +65,7 @@ async function renderList(view, ctx) {
         h('div', { class: 'grow' },
           h('div', { class: 'doc-title' }, h('b', null, d.title), ' ', badgeOf(KINDS, d.kind),
             d.visibility !== 'ALL' ? h('span', { class: 'badge gray', title: 'Görünürlük kısıtlı' }, `🔒 ${VIS[d.visibility]}`) : null),
-          h('div', { class: 'small muted' }, [d.file_name, size(d.size), d.pages ? `${d.pages} sayfa` : null].filter(Boolean).join(' · ')),
+          h('div', { class: 'small muted' }, [d.file_name, size(d.size), d.pages ? t('{n} sayfa', { n: d.pages }) : null].filter(Boolean).join(' · ')),
           snippetEl(d.snippet),
           d.companies.length || d.people.length ? h('div', { class: 'chips doc-chips' },
             d.companies.map(c => h('span', { class: 'chip', title: c.name }, shortCompany(c.name))),
@@ -208,7 +208,7 @@ export async function openUpload(ctx, preset = {}, done) {
         label: 'Yükle', class: 'primary', onClick: async () => {
           if (!files.length) throw new Error('Dosya seçin');
           if (ctx.meta.remote && files.some(f => VIDEO_EXT.test(f.name))) {
-            throw new Error(`Videolar yalnızca yerel ağdan yüklenebilir: ${ctx.meta.local_url}`);
+            throw new Error(t('Videolar yalnızca yerel ağdan yüklenebilir: {url}', { url: ctx.meta.local_url }));
           }
           const vis = visibility.value();
           if (vis.visibility === 'ROLES' && !vis.roles.length) throw new Error('Görebilecek en az bir rol seçin');
@@ -216,14 +216,14 @@ export async function openUpload(ctx, preset = {}, done) {
           try {
             const ids = [];
             for (const [i, f] of files.entries()) {
-              ids.push(await uploadLarge(f, 'documents', pct => progress.set(`${f.name} (${i + 1}/${files.length}) yükleniyor…`, pct), signal));
+              ids.push(await uploadLarge(f, 'documents', pct => progress.set(t('{name} ({i}/{total}) yükleniyor…', { name: f.name, i: i + 1, total: files.length }), pct), signal));
             }
             progress.done();
             const r = await api.post('/api/documents', {
               upload_ids: ids, merge_images: merge.checked, title: title.value.trim() || null, doc_date: date.value || null,
               note: note.value.trim() || null, company_ids: companyPick.getIds(), person_ids: personPick.getIds(), ...vis,
             });
-            toast(`${r.ids.length} evrak yüklendi; metin okunuyor`);
+            toast(t('{n} evrak yüklendi; metin okunuyor', { n: r.ids.length }));
             done?.(r.ids);
           } catch (err) {
             progress.done();
@@ -278,7 +278,7 @@ async function renderDetail(view, id, ctx) {
 
   const edit = () => editDocument(ctx, d);
   const remove = async () => {
-    if (!await confirmDialog('Evrakı sil', `${d.title} kalıcı olarak silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+    if (!await confirmDialog('Evrakı sil', t('{title} kalıcı olarak silinsin mi?', { title: d.title }), { okLabel: 'Sil', danger: true })) return;
     try { await api.del(`/api/documents/${id}`); toast('Evrak silindi'); location.hash = '#/documents'; } catch (err) { toastError(err); }
   };
   const rerun = async () => {
@@ -299,9 +299,9 @@ async function renderDetail(view, id, ctx) {
           h('dl', { class: 'kv' },
             kv('Tür', badgeOf(KINDS, d.kind)),
             kv('Evrak tarihi', fmtDate(d.doc_date)),
-            kv('Boyut', `${size(d.size)}${d.pages ? ` · ${d.pages} sayfa` : ''}${d.duration ? ` · ${fmtClock(d.duration)}` : ''}`),
+            kv('Boyut', `${size(d.size)}${d.pages ? t(' · {n} sayfa', { n: d.pages }) : ''}${d.duration ? ` · ${fmtClock(d.duration)}` : ''}`),
             kv('Yükleyen', `${d.uploaded_by_name || '—'} · ${fmtDateTime(d.uploaded_at)}`),
-            kv('Görünürlük', d.visibility === 'ROLES' ? `Seçili roller: ${d.roles.join(', ')}` : VIS[d.visibility]),
+            kv('Görünürlük', d.visibility === 'ROLES' ? t('Seçili roller: {roles}', { roles: d.roles.join(', ') }) : VIS[d.visibility]),
             kv('Firmalar', d.companies.length ? h('div', { class: 'chips', style: { justifyContent: 'flex-start' } },
               d.companies.map(c => h('a', { class: 'chip', href: `#/companies/${c.id}`, title: c.name }, shortCompany(c.name)))) : '—'),
             kv('Kişiler', d.people.length ? h('span', null, d.people.map((p, i) => [i ? ', ' : '', p.full_name, ' (',
@@ -343,8 +343,8 @@ function facesCard(d, seek) {
     const unknown = faces.filter(f => !f.person_id && !f.user_id).length;
     clear(box,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' } },
-        h('h2', { style: { fontSize: '15px', margin: 0 } }, `${where} kişiler (${faces.length})`),
-        unknown ? h('span', { class: 'badge yellow' }, `${unknown} tanımsız`) : null),
+        h('h2', { style: { fontSize: '15px', margin: 0 } }, t('{where} kişiler ({n})', { where, n: faces.length })),
+        unknown ? h('span', { class: 'badge yellow' }, t('{n} tanımsız', { n: unknown })) : null),
       faces.length ? h('div', { class: 'face-grid' }, faces.map(f => {
         const known = f.person_id || f.user_id;
         return h('button', { type: 'button', class: `face ${known ? 'known' : 'unknown'} ${f.auto ? 'auto' : ''}`,
@@ -352,7 +352,7 @@ function facesCard(d, seek) {
           h('img', { src: fileUrl(f.crop, 256), alt: '', loading: 'lazy' }),
           h('b', null, f.person_name || f.user_name || 'Tanımsız kişi'),
           h('span', { class: 'small muted', title: f.person_id ? f.company_name : '' }, f.person_id ? shortCompany(f.company_name) : f.user_id ? 'Personel'
-            : d.kind === 'VIDEO' ? `${f.samples} karede görüldü` : 'Kim olduğunu seçin'),
+            : d.kind === 'VIDEO' ? t('{n} karede görüldü', { n: f.samples }) : 'Kim olduğunu seçin'),
           f.auto ? h('span', { class: 'face-auto' }, 'Otomatik öneri') : null);
       })) : h('div', { class: 'empty small' }, d.kind === 'VIDEO' ? 'Videoda yüz bulunamadı' : 'Resimde yüz bulunamadı'),
       faces.length ? h('div', { class: 'small muted', style: { marginTop: '8px' } },
@@ -394,7 +394,7 @@ async function assignFace(d, f, draw, seek) {
     wide: true,
     body: h('div', { class: 'face-assign' },
       h('div', { class: 'face-assign-img' }, h('img', { src: fileUrl(f.crop, 256), alt: '' }),
-        f.first_at != null ? h('button', { class: 'btn sm', type: 'button', onclick: () => seek(f.first_at) }, `Videoda göster (${fmtClock(f.first_at)})`) : null,
+        f.first_at != null ? h('button', { class: 'btn sm', type: 'button', onclick: () => seek(f.first_at) }, t('Videoda göster ({t})', { t: fmtClock(f.first_at) })) : null,
         f.auto ? h('div', { class: 'small muted' }, 'Bu kişi daha önce tanımlanan bir yüze benzediği için otomatik önerildi; doğru değilse değiştirin.') : null),
       h('div', { class: 'grow' }, q, list)),
     actions: [
@@ -421,7 +421,7 @@ function signaturesCard(d, ctx) {
     const picker = peoplePicker(users, { selected: [] });
     const message = h('textarea', { class: 'input', rows: 2, placeholder: 'İmzalayacak kişiye not (isteğe bağlı)' });
     modal({
-      title: `${d.title} — İmzaya gönder`,
+      title: t('{title} — İmzaya gönder', { title: d.title }),
       body: h('div', null, field('İmzalayacak kişiler', picker, 'Her kişiye ayrı talep açılır; bildirimler panelinde görünür.'),
         field('Mesaj', message)),
       actions: [{ label: 'Vazgeç' }, {
@@ -429,7 +429,7 @@ function signaturesCard(d, ctx) {
           const ids = picker.getIds();
           if (!ids.length) throw new Error('İmzalayacak en az bir kişi seçin');
           const r = await api.post(`/api/documents/${d.id}/signatures`, { user_ids: ids, message: message.value.trim() || null });
-          toast(`${r.created.length} kişiye imza talebi gönderildi${r.skipped.length ? ` (${r.skipped.join(', ')}: zaten bekliyor)` : ''}`);
+          toast(t('{n} kişiye imza talebi gönderildi{extra}', { n: r.created.length, extra: r.skipped.length ? t(' ({list}: zaten bekliyor)', { list: r.skipped.join(', ') }) : '' }));
           reload();
         },
       }],
@@ -437,14 +437,14 @@ function signaturesCard(d, ctx) {
   };
   const sigs = d.signatures || [];
   return h('div', { class: 'card card-pad' },
-    h('div', { class: 'co-section-head' }, h('h2', null, `İmzalar (${sigs.length})`),
+    h('div', { class: 'co-section-head' }, h('h2', null, t('İmzalar ({n})', { n: sigs.length })),
       h('button', { class: 'btn sm primary', onclick: request }, '✍ İmzaya Gönder')),
     sigs.length ? h('div', { class: 'meet-list' }, sigs.map(s => h('div', { class: 'meet-item' },
       h('div', { class: 'meet-head' }, h('div', { class: 'grow' }, h('b', null, s.signer_name || '—'),
-        h('span', { class: 'small muted' }, ` · gönderen ${s.requested_by_name || '—'}, ${fmtDateTime(s.requested_at)}`)),
+        h('span', { class: 'small muted' }, t(' · gönderen {name}, {d}', { name: s.requested_by_name || '—', d: fmtDateTime(s.requested_at) }))),
         signBadge(s.status), h('a', { class: 'btn sm', href: `#/sign/${s.id}` }, 'Aç')),
       s.status === 'IMZALANDI' ? signatureBlock(s) : null,
-      s.status === 'REDDEDILDI' ? h('div', { class: 'meet-sub', style: { color: 'var(--danger)' } }, `Red gerekçesi: ${s.reason || '—'}`) : null)))
+      s.status === 'REDDEDILDI' ? h('div', { class: 'meet-sub', style: { color: 'var(--danger)' } }, t('Red gerekçesi: {r}', { r: s.reason || '—' })) : null)))
       : h('div', { class: 'empty small' }, 'Bu evrak için imza talebi yok'));
 }
 

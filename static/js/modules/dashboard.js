@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
-import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, toastError } from '../ui.js';
+import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toastError } from '../ui.js';
 import { LEVELS } from './announcements.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
@@ -52,7 +52,7 @@ export async function renderDashboard(view, ctx, modules) {
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
       h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => { layout.splice(i, 1); save(); draw(); } }, '✕')) : null;
     const el = h('section', { class: `card db-tile s${it.s || 1} w-${it.k}` },
-      h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? `Hava durumu · ${it.o.name}` : w.title), tools), body);
+      h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body);
     try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     return el;
   }
@@ -183,12 +183,12 @@ export async function renderDashboard(view, ctx, modules) {
       const ss = el('line', { x1: 100, y1: 114, x2: 100, y2: 24, class: 'hand s' });
       el('circle', { cx: 100, cy: 100, r: 5, class: 'pin' });
       const tick = () => {
-        const t = new Date();
-        const s = t.getSeconds(), m = t.getMinutes() + s / 60, hr = (t.getHours() % 12) + m / 60;
+        const now = new Date();
+        const s = now.getSeconds(), m = now.getMinutes() + s / 60, hr = (now.getHours() % 12) + m / 60;
         hh.setAttribute('transform', `rotate(${hr * 30} 100 100)`);
         mm.setAttribute('transform', `rotate(${m * 6} 100 100)`);
         ss.setAttribute('transform', `rotate(${s * 6} 100 100)`);
-        dateEl.textContent = `${days[t.getDay()]}, ${t.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} · ${week(t)}. hafta`;
+        dateEl.textContent = t('{d}, {date} · {w}. hafta', { d: days[now.getDay()], date: now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }), w: week(now) });
       };
       tick();
       timers.push(setInterval(tick, 1000));
@@ -198,11 +198,11 @@ export async function renderDashboard(view, ctx, modules) {
     const hhmm = dotMatrix(5), sec = dotMatrix(2);
     const time = h('div', { class: 'db-dots' }, hhmm.el, h('div', { class: 'db-dots-sec' }, sec.el));
     const tick = () => {
-      const t = new Date();
+      const now = new Date();
       const p2 = n => String(n).padStart(2, '0');
-      hhmm.set(`${p2(t.getHours())}${t.getSeconds() % 2 ? ' ' : ':'}${p2(t.getMinutes())}`);
-      sec.set(p2(t.getSeconds()));
-      dateEl.textContent = `${days[t.getDay()]}, ${t.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} · ${week(t)}. hafta`;
+      hhmm.set(`${p2(now.getHours())}${now.getSeconds() % 2 ? ' ' : ':'}${p2(now.getMinutes())}`);
+      sec.set(p2(now.getSeconds()));
+      dateEl.textContent = t('{d}, {date} · {w}. hafta', { d: days[now.getDay()], date: now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }), w: week(now) });
     };
     tick();
     timers.push(setInterval(tick, 1000));
@@ -237,7 +237,7 @@ export async function renderDashboard(view, ctx, modules) {
             h('div', { class: 'wx-place' }, name || 'Konum'),
             h('div', { class: 'wx-temp' }, `${Math.round(c.temperature_2m)}`, h('sup', null, '°C')),
             h('div', { class: 'wx-cond' }, text),
-            h('div', { class: 'wx-hl' }, `En yüksek ${Math.round(d.temperature_2m_max[0])}° · En düşük ${Math.round(d.temperature_2m_min[0])}°`)),
+            h('div', { class: 'wx-hl' }, t('En yüksek {a}° · En düşük {b}°', { a: Math.round(d.temperature_2m_max[0]), b: Math.round(d.temperature_2m_min[0]) }))),
           h('div', { class: 'wx-art' }, svgEl(wxIcon(c.weather_code, c.is_day)))),
         h('div', { class: 'wx-stats' },
           stat('feel', 'Hissedilen', `${Math.round(c.apparent_temperature)}°`),

@@ -4,14 +4,14 @@ import { api } from '../api.js';
 import { chartConfig, heatEl, loadChart, theme } from './reports.js';
 import { loadPlane, renderPlane } from '../plane.js';
 import { PRINTER_STATES } from '../status.js';
-import { avatar, clear, every, fmtDateTime, fmtDuration, h, matches, moduleToolbar, onLeave, pageHead, segmented, selectInput } from '../ui.js';
+import { avatar, clear, every, fmtDateTime, fmtDuration, h, matches, moduleToolbar, onLeave, pageHead, segmented, selectInput, t } from '../ui.js';
 
 const REFRESH_MS = 5000;
 
 // Seçilebilir özet rakamlar: [anahtar, başlık, alt bilgi, düzey(s) → 'alert' | 'danger' | '']
 const TILES = [
   ['online_users', 'Çevrimiçi personel'],
-  ['printers_printing', 'Yazdıran yazıcı', s => `${s.printers_total} yazıcıdan`],
+  ['printers_printing', 'Yazdıran yazıcı', s => t('{n} yazıcıdan', { n: s.printers_total })],
   ['printers_really_idle', 'Gerçekten boştaki yazıcı', () => 'yazdırmıyor, sistemde işi yok'],
   ['printers_stale', 'Boşta ama sistemde üretimde',
     s => (s.printers_stale ? s.stale_printers.slice(0, 3).map(p => p.name).join(', ') + (s.printers_stale > 3 ? '…' : '')
@@ -92,7 +92,7 @@ async function renderLive(view, params, ctx) {
   async function refresh() {
     const d = await api.get('/api/admin/dashboard');
     last = d;
-    stamp.textContent = `Son güncelleme ${d.at.slice(11)}`;
+    stamp.textContent = t('Son güncelleme {at}', { at: d.at.slice(11) });
     drawTiles(tiles, d.summary, chosen);
     await drawPlanes(planesBox, planes, d.products);
     redrawSide();
@@ -117,7 +117,7 @@ function tilePicker(get, set) {
   const label = h('span');
   const btn = h('button', { class: 'btn', 'aria-haspopup': 'true' }, label, h('span', { 'aria-hidden': 'true' }, '▾'));
   const panel = h('div', { class: 'dropdown tile-picker', hidden: true });
-  const sync = () => { label.textContent = `Gösterilen rakamlar (${get().length}/${TILES.length})`; };
+  const sync = () => { label.textContent = t('Gösterilen rakamlar ({a}/{b})', { a: get().length, b: TILES.length }); };
   const fill = () => {
     const cur = new Set(get());
     clear(panel,
@@ -163,9 +163,9 @@ async function drawPlanes(box, planes, products) {
           const lines = [];
           for (const j of jobs.slice(0, 2)) {
             lines.push({ text: j.printer || '?', class: 'pn' });
-            lines.push({ text: j.remaining === null ? 'kalan: —' : `%${j.remaining} kaldı`, class: 'pr' });
+            lines.push({ text: j.remaining === null ? 'kalan: —' : t('%{n} kaldı', { n: j.remaining }), class: 'pr' });
           }
-          if (jobs.length > 2) lines.push({ text: `+${jobs.length - 2} yazıcı`, class: 'pr' });
+          if (jobs.length > 2) lines.push({ text: t('+{n} yazıcı', { n: jobs.length - 2 }), class: 'pr' });
           return lines;
         },
         tooltip: part => {
@@ -173,8 +173,8 @@ async function drawPlanes(box, planes, products) {
           if (!jobs) return ['Yazıcıda değil'];
           return jobs.flatMap(j => [
             h('span', null, h('b', null, j.printer || '?'), ` · ${j.order_code}`),
-            `Kalan: ${j.remaining === null ? 'bilinmiyor (yazıcıdan canlı veri yok)' : `%${j.remaining}`}`,
-            `Süre: ${fmtDuration(j.elapsed_seconds)}`,
+            t('Kalan: {n}', { n: j.remaining === null ? 'bilinmiyor (yazıcıdan canlı veri yok)' : `%${j.remaining}` }),
+            t('Süre: {d}', { d: fmtDuration(j.elapsed_seconds) }),
           ]);
         },
       });
@@ -192,8 +192,8 @@ async function drawPlanes(box, planes, products) {
     clear(entry.title,
       h('b', null, `${p.name} `), h('span', { class: 'mono small muted' }, p.serial),
       h('span', { class: 'spacer' }),
-      h('span', { class: 'badge blue' }, `${p.printing.length} parça yazıcıda`),
-      h('span', { class: 'badge gray' }, `${p.open_orders} açık sipariş`));
+      h('span', { class: 'badge blue' }, t('{n} parça yazıcıda', { n: p.printing.length })),
+      h('span', { class: 'badge gray' }, t('{n} açık sipariş', { n: p.open_orders })));
     entry.pl.update();
   }
   box.classList.toggle('two', planes.size > 1);
@@ -201,11 +201,11 @@ async function drawPlanes(box, planes, products) {
 
 function drawOnline(box, users) {
   clear(box,
-    h('h2', { class: 'side-title' }, `Çevrimiçi personel (${users.length})`),
+    h('h2', { class: 'side-title' }, t('Çevrimiçi personel ({n})', { n: users.length })),
     users.length ? h('ul', { class: 'online-list' }, users.map(u => h('li', null,
       h('span', { class: 'avatar-wrap' }, avatar(u), h('i', { class: 'online-dot' })),
       h('div', { class: 'grow' }, h('b', null, u.full_name), h('div', { class: 'small muted' }, u.roles.join(', ') || '—')),
-      h('span', { class: 'small muted' }, u.seconds_ago < 30 ? 'şimdi' : `${Math.round(u.seconds_ago / 60) || 1} dk önce`))))
+      h('span', { class: 'small muted' }, u.seconds_ago < 30 ? 'şimdi' : t('{n} dk önce', { n: Math.round(u.seconds_ago / 60) || 1 })))))
       : h('div', { class: 'muted small' }, 'Şu an çevrimiçi kimse yok'));
 }
 
@@ -214,15 +214,15 @@ function drawPrinters(box, printers) {
   const rank = p => (p.stale ? 0 : p.outside ? 0.5 : order[p.live_state] ?? 7);   // uyumsuz olanlar en başta
   const list = [...printers].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'tr'));
   clear(box,
-    h('h2', { class: 'side-title' }, `Yazıcılar (${printers.length})`),
+    h('h2', { class: 'side-title' }, t('Yazıcılar ({n})', { n: printers.length })),
     printers.length ? null : h('div', { class: 'muted small' }, 'Filtreye uyan yazıcı yok'),
     h('div', { class: 'printer-grid' }, list.map(p => {
       const st = PRINTER_STATES[p.live_state] || { label: 'Bilinmiyor', badge: 'gray' };
       const pct = p.live_state === 'YAZDIRIYOR' && p.live_progress != null ? Math.round(p.live_progress) : null;
-      return h('div', { class: `pcell ${st.badge} ${p.stale ? 'stale' : ''} ${p.outside ? 'outside' : ''}`, title: [p.name, p.ip, st.label, p.current_part ? `Sistemde: ${p.current_order} / ${p.current_part}` : p.live_file].filter(Boolean).join('\n') },
+      return h('div', { class: `pcell ${st.badge} ${p.stale ? 'stale' : ''} ${p.outside ? 'outside' : ''}`, title: [p.name, p.ip, st.label, p.current_part ? t('Sistemde: {a} / {b}', { a: p.current_order, b: p.current_part }) : p.live_file].filter(Boolean).join('\n') },
         h('b', null, p.name),
-        h('span', null, pct !== null ? `%${100 - pct} kaldı` : st.label),
-        p.stale ? h('em', null, `Sistemde üretimde: ${p.current_part}`) : null,
+        h('span', null, pct !== null ? t('%{n} kaldı', { n: 100 - pct }) : st.label),
+        p.stale ? h('em', null, t('Sistemde üretimde: {name}', { name: p.current_part })) : null,
         p.outside ? h('em', { class: 'out' }, 'Sistemde kaydı yok') : null,
         pct !== null ? h('i', { class: 'pbar' }, h('i', { style: { width: `${pct}%` } })) : null);
     })));
@@ -233,7 +233,7 @@ const GB = 1024 ** 3;
 const fmtBytes = b => (b == null ? '—' : b >= GB ? `${(b / GB).toFixed(b >= 100 * GB ? 0 : 1)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB`
   : `${Math.round(b / 1024)} KB`);
 const fmtUp = s => { if (s == null) return '—'; const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-  return d ? `${d} gün ${hh} sa` : hh ? `${hh} sa ${m} dk` : `${m} dk`; };
+  return d ? t('{d} gün {hh} sa', { d, hh }) : hh ? t('{hh} sa {m} dk', { hh, m }) : t('{m} dk', { m }); };
 const KIND_NAMES = { camfaces: 'Kamera yüz kayıtları', cargo: 'Kargo fotoğrafları', documents: 'Evraklar', errors: 'Üretim hata fotoğrafları',
   flightlogs: 'Uçuş logları', logos: 'Firma logoları', videos: 'Uçuş videoları', avatars: 'Profil fotoğrafları', media: 'Medya' };
 const TABLE_NAMES = { users: 'Kullanıcı', orders: 'Sipariş', order_parts: 'Sipariş parçası', part_events: 'Parça olayı', printers: 'Yazıcı',
@@ -262,15 +262,15 @@ async function renderSystem(view) {
 
   async function load() {
     const d = await api.get('/api/admin/system');
-    stamp.textContent = `Son güncelleme ${d.at.slice(11)}`;
+    stamp.textContent = t('Son güncelleme {at}', { at: d.at.slice(11) });
     charts.splice(0).forEach(c => c.destroy());
     const s = d.server, sec = d.security, b = d.backups;
     const down = d.services.filter(x => x.state !== 'active');
     const problems = [
-      down.length ? `${down.length} servis çalışmıyor: ${down.map(x => x.label).join(', ')}` : null,
-      !b.ok ? (b.nightly_age_h == null ? 'Gece yedeği bulunamadı' : `Son gece yedeği ${b.nightly_age_h} saat önce alınmış`) : null,
-      sec.suspicious.length ? `Şüpheli giriş denemesi: ${sec.suspicious.map(x => `${x.key} (${x.n})`).join(', ')}` : null,
-      d.errors.count ? `Son 24 saatte ${d.errors.count} sunucu hatası kaydı` : null,
+      down.length ? t('{n} servis çalışmıyor: {list}', { n: down.length, list: down.map(x => x.label).join(', ') }) : null,
+      !b.ok ? (b.nightly_age_h == null ? 'Gece yedeği bulunamadı' : t('Son gece yedeği {h} saat önce alınmış', { h: b.nightly_age_h })) : null,
+      sec.suspicious.length ? t('Şüpheli giriş denemesi: {list}', { list: sec.suspicious.map(x => `${x.key} (${x.n})`).join(', ') }) : null,
+      d.errors.count ? t('Son 24 saatte {n} sunucu hatası kaydı', { n: d.errors.count }) : null,
       s.disk_total && s.disk_used / s.disk_total > 0.9 ? 'Disk %90 üzerinde dolu' : null,
       ...d.integrations.filter(i => !i.ok).map(i => `${i.name}: ${i.detail}`),
     ].filter(Boolean);
@@ -278,13 +278,13 @@ async function renderSystem(view) {
     const actCanvas = h('canvas'), growCanvas = h('canvas');
     clear(body,
       h('div', { class: `sys-banner ${problems.length ? 'bad' : 'good'}` },
-        h('b', null, problems.length ? `${problems.length} konu dikkat istiyor` : 'Her şey yolunda'),
+        h('b', null, problems.length ? t('{n} konu dikkat istiyor', { n: problems.length }) : 'Her şey yolunda'),
         problems.length ? h('ul', null, problems.map(p => h('li', null, p))) : h('span', null, ' · servisler çalışıyor, yedek güncel, şüpheli giriş yok')),
 
       h('div', { class: 'sys-gauges card card-pad' },
-        gauge('İşlemci', s.cpu, `${s.cpus} çekirdek · yük ${s.load.map(x => x.toFixed(2)).join(' / ')}`),
+        gauge('İşlemci', s.cpu, t('{n} çekirdek · yük {load}', { n: s.cpus, load: s.load.map(x => x.toFixed(2)).join(' / ') })),
         gauge('Bellek', s.ram_total ? 100 * s.ram_used / s.ram_total : 0, `${fmtBytes(s.ram_used)} / ${fmtBytes(s.ram_total)}`),
-        gauge('Disk', s.disk_total ? 100 * s.disk_used / s.disk_total : 0, `${fmtBytes(s.disk_free)} boş / ${fmtBytes(s.disk_total)}`),
+        gauge('Disk', s.disk_total ? 100 * s.disk_used / s.disk_total : 0, t('{free} boş / {total}', { free: fmtBytes(s.disk_free), total: fmtBytes(s.disk_total) })),
         s.gpu_name ? gauge('Ekran kartı', s.gpu, `${s.gpu_name}${s.gpu_temp != null ? ` · ${s.gpu_temp}°C` : ''}`) : null,
         h('div', { class: 'sys-up' }, h('span', null, 'Sunucu açık'), h('b', null, fmtUp(s.uptime_s)), h('span', null, 'Uygulama'), h('b', null, fmtUp(s.app_uptime_s)),
           h('small', null, d.host))),
@@ -294,11 +294,11 @@ async function renderSystem(view) {
           h('i'), h('div', null, h('b', null, x.label), h('small', null, `${x.unit} · ${x.state === 'active' ? 'çalışıyor' : x.state}${x.since ? ` · ${x.since}` : ''}`)))))),
         card('Yedekleme', kv([
           ['Durum', h('span', { class: `badge ${b.ok ? 'green' : 'red'}` }, b.ok ? 'Güncel' : 'Eski / yok')],
-          ['Son gece yedeği', b.nightly_last ? `${b.nightly_last} (${b.nightly_age_h} sa önce)` : '—'],
+          ['Son gece yedeği', b.nightly_last ? t('{last} ({h} sa önce)', { last: b.nightly_last, h: b.nightly_age_h }) : '—'],
           ['Yedek boyutu', fmtBytes(b.nightly_size)],
           ['Saklanan gece yedeği', b.nightly_count],
           ['Dosya anlık görüntüsü', b.uploads_snapshots],
-          ['Elle alınan yedek', `${b.manual_count}${b.manual_last ? ` · son: ${b.manual_last}` : ''}`],
+          ['Elle alınan yedek', `${b.manual_count}${b.manual_last ? t(' · son: {last}', { last: b.manual_last }) : ''}`],
           ['Kamera anahtarı yedekte', b.camera_key_backed ? 'Evet' : h('b', { class: 'text-danger' }, 'Hayır')],
           ['Yedek klasörü', fmtBytes(d.storage.backups_size)],
         ])),
@@ -311,16 +311,16 @@ async function renderSystem(view) {
               ['Bugün giriş', sec.logins_today], ['Başarısız giriş (24 sa)', sec.fails_24h, sec.fails_24h >= 5 ? 'alert' : '']]
               .map(([l, v, t]) => h('div', { class: `db-kpi ${t || ''}` }, h('b', null, v), h('span', null, l)))),
           h('h4', null, 'Rollere göre'), h('div', { class: 'sys-names' }, sec.roles.map(([r, n]) => h('span', null, `${r} `, h('b', null, n)))),
-          h('h4', null, `Rolü olmayan (${sec.no_role.length})`), names(sec.no_role, 'Yok'),
-          h('h4', null, `Hiç giriş yapmamış (${sec.never_logged.length})`), names(sec.never_logged, 'Yok'),
-          h('h4', null, `30 gündür girmeyen (${sec.inactive_30d.length})`), names(sec.inactive_30d, 'Yok')),
+          h('h4', null, t('Rolü olmayan ({n})', { n: sec.no_role.length })), names(sec.no_role, 'Yok'),
+          h('h4', null, t('Hiç giriş yapmamış ({n})', { n: sec.never_logged.length })), names(sec.never_logged, 'Yok'),
+          h('h4', null, t('30 gündür girmeyen ({n})', { n: sec.inactive_30d.length })), names(sec.inactive_30d, 'Yok')),
         card('Güvenlik',
           sec.suspicious.length ? h('div', { class: 'sys-alert' }, h('b', null, 'Şüpheli deneme (24 saatte 5+ başarısız)'),
-            h('ul', null, sec.suspicious.map(x => h('li', null, `${x.what}: ${x.key} — ${x.n} deneme`)))) : h('div', { class: 'sys-okline' }, '✓ Şüpheli giriş denemesi yok'),
+            h('ul', null, sec.suspicious.map(x => h('li', null, t('{what}: {key} — {n} deneme', { what: x.what, key: x.key, n: x.n }))))) : h('div', { class: 'sys-okline' }, '✓ Şüpheli giriş denemesi yok'),
           h('h4', null, 'Son başarısız girişler'),
           sec.recent_fails.length ? h('table', { class: 'table compact' }, h('tbody', null, sec.recent_fails.map(f => h('tr', null,
             h('td', null, fmtDateTime(f.at)), h('td', null, f.username), h('td', { class: 'muted' }, f.ip || '—'))))) : h('div', { class: 'small muted' }, 'Yok'),
-          h('h4', null, `Sunucu hataları (24 sa): ${d.errors.count}`),
+          h('h4', null, t('Sunucu hataları (24 sa): {n}', { n: d.errors.count })),
           d.errors.last.length ? h('pre', { class: 'sys-log' }, d.errors.last.join('\n')) : h('div', { class: 'sys-okline' }, '✓ Hata kaydı yok')),
 
         card('Veritabanı', kv([['Boyut', fmtBytes(d.database.size)], ['WAL günlüğü', fmtBytes(d.database.wal)]]),
@@ -328,7 +328,7 @@ async function renderSystem(view) {
             h('tr', null, h('td', null, TABLE_NAMES[t] || t), h('td', { class: 'num' }, n.toLocaleString('tr-TR'))))))),
         card('Dosya depolama', kv([['Yüklenen dosyalar', fmtBytes(d.storage.uploads_total)]]),
           h('div', { class: 'sys-bars' }, d.storage.uploads.sort((a, c) => c.size - a.size).map(k => h('div', null,
-            h('span', null, KIND_NAMES[k.kind] || k.kind, h('small', null, ` · ${k.files} dosya`)), h('b', null, fmtBytes(k.size)),
+            h('span', null, KIND_NAMES[k.kind] || k.kind, h('small', null, t(' · {n} dosya', { n: k.files }))), h('b', null, fmtBytes(k.size)),
             h('i', { style: { width: `${d.storage.uploads_total ? Math.max(1, 100 * k.size / d.storage.uploads_total) : 0}%` } }))))),
 
         h('section', { class: 'card card-pad sys-card s2' }, h('h3', null, 'Kullanım · son 14 gün (işlem ve giriş)'), h('div', { class: 'sys-chart' }, actCanvas)),

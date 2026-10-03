@@ -1,7 +1,7 @@
 // Duyurular: Sistem Yöneticisi yazar, herkes okur. Açınca okundu sayılır ve "Okunmamış" listesinden düşer;
 // yönetici her duyuruyu kimin okuduğunu ve okumadığını görür.
 import { api } from '../api.js';
-import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, pref, segmented, setPref, toast } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, pref, segmented, setPref, t, toast } from '../ui.js';
 
 export const LEVELS = { BILGI: ['blue', 'Bilgi'], ONEMLI: ['yellow', 'Önemli'], KRITIK: ['red', 'Kritik'] };
 
@@ -25,8 +25,8 @@ export async function render(view, params, ctx) {
         h('span', { class: `badge ${cls}` }, label)),
       h('div', { class: 'ann-snip' }, a.body.length > 220 ? `${a.body.slice(0, 220)}…` : a.body),
       h('div', { class: 'small muted' }, `${fmtDateTime(a.created_at)} · ${a.created_by_name || 'Yönetim'}`,
-        a.expires_at ? ` · ${a.expired ? 'süresi doldu' : `${fmtDate(a.expires_at)} tarihine kadar`}` : '',
-        data.can_edit ? ` · ${a.read_count} / ${a.user_total} kişi okudu` : ''));
+        a.expires_at ? ` · ${a.expired ? 'süresi doldu' : t('{d} tarihine kadar', { d: fmtDate(a.expires_at) })}` : '',
+        data.can_edit ? t(' · {n} / {tot} kişi okudu', { n: a.read_count, tot: a.user_total }) : ''));
   };
   const load = async () => { data = await api.get('/api/announcements'); draw(); };
   await load();
@@ -43,22 +43,22 @@ async function renderDetail(view, id, ctx) {
   const total = admin ? a.readers.length + a.unread.length : 0;
   clear(view,
     pageHead(a.title, { back: '#/announcements', sub: h('span', null, h('span', { class: `badge ${cls}` }, label), `  ${fmtDateTime(a.created_at)} · ${a.created_by_name || 'Yönetim'}`,
-      a.updated_at ? ` · düzenlendi ${fmtDateTime(a.updated_at)}` : '') }),
+      a.updated_at ? t(' · düzenlendi {d}', { d: fmtDateTime(a.updated_at) }) : '') }),
     moduleToolbar(admin ? [
       h('button', { class: 'btn', onclick: () => annForm(a, () => renderDetail(view, id, ctx)) }, 'Düzenle'),
       h('button', { class: 'btn ghost', onclick: async () => {
-        if (!await confirmDialog('Duyuruyu sil', `"${a.title}" silinsin mi?`, { okLabel: 'Sil', danger: true })) return;
+        if (!await confirmDialog('Duyuruyu sil', t('"{title}" silinsin mi?', { title: a.title }), { okLabel: 'Sil', danger: true })) return;
         await api.del(`/api/announcements/${id}`); toast('Duyuru silindi'); location.hash = '#/announcements';
       } }, 'Sil')] : null),
     h('div', { class: `card card-pad ann-body lv-${a.level}` }, a.body),
     admin ? h('div', { class: 'ann-reads' },
       h('div', { class: 'card card-pad' },
-        h('h3', null, `Okuyanlar (${a.readers.length} / ${total})`),
+        h('h3', null, t('Okuyanlar ({n} / {total})', { n: a.readers.length, total })),
         h('div', { class: 'ann-prog' }, h('i', { style: { width: `${total ? Math.round(100 * a.readers.length / total) : 0}%` } })),
         a.readers.length ? h('ul', { class: 'ann-people' }, a.readers.map(u => h('li', null, avatar(u), h('span', { class: 'grow' }, u.full_name),
           h('span', { class: 'small muted' }, fmtDateTime(u.read_at))))) : h('div', { class: 'empty small' }, 'Henüz okuyan yok')),
       h('div', { class: 'card card-pad' },
-        h('h3', null, `Okumayanlar (${a.unread.length})`),
+        h('h3', null, t('Okumayanlar ({n})', { n: a.unread.length })),
         a.unread.length ? h('ul', { class: 'ann-people' }, a.unread.map(u => h('li', null, avatar(u), h('span', { class: 'grow' }, u.full_name))))
           : h('div', { class: 'empty small' }, 'Herkes okudu'))) : null);
 }

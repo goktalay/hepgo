@@ -2,6 +2,7 @@
 import { fileUrl } from './api.js';
 import { segIcon } from './segicons.js';
 import { t } from './i18n.js';
+export { t };   // modüller dinamik metinleri t('{n} ... ', { n }) ile sarabilsin
 
 // Dil desteği: metin çocukları ve bazı öznitelikler (placeholder/title/aria-label)
 // merkezi olarak katalogdan çevrilir. Böylece tüm arayüz + yazdırma şablonları

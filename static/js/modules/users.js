@@ -4,7 +4,7 @@ import { segIcon } from '../segicons.js';
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon,
+  avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon, t,
   toast, toastError, periodRange
 } from '../ui.js';
 
@@ -51,8 +51,8 @@ function cards(users) {
       h('div', { class: 'uname' }, u.username),
       h('div', { class: 'chips' }, u.roles.map(r => h('span', { class: `chip ${r === 'Stajer' ? 'intern' : ''}` }, r))),
       u.active ? null : h('span', { class: 'badge red' }, 'Pasif'),
-      u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: `${u.absence.until} tarihine kadar` }, u.absence.label) : null,
-      u.external ? h('a', { class: 'badge purple', href: u.external.href, title: 'Dış firma personeli (İK personeli değil)' }, `Dış firma: ${u.external.company_name}`) : null)));
+      u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: t('{d} tarihine kadar', { d: u.absence.until }) }, u.absence.label) : null,
+      u.external ? h('a', { class: 'badge purple', href: u.external.href, title: 'Dış firma personeli (İK personeli değil)' }, t('Dış firma: {name}', { name: u.external.company_name })) : null)));
 }
 
 // WhatsApp tarzı satır listesi: çevrimiçi ise avatar etrafında yeşil halka, pasif kullanıcıda tüm satır gri. Tutarlı satır yükseklikleri.
@@ -63,8 +63,8 @@ function table(users) {
       h('div', { class: 'u-row-mid' },
         h('div', { class: 'u-row-top' }, h('b', null, u.full_name),
           u.active ? null : h('span', { class: 'u-pill' }, 'Pasif'),
-          u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: `${u.absence.until} tarihine kadar` }, u.absence.label) : null,
-          u.external ? h('span', { class: 'badge purple' }, `Dış: ${u.external.company_name}`) : null),
+          u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: t('{d} tarihine kadar', { d: u.absence.until }) }, u.absence.label) : null,
+          u.external ? h('span', { class: 'badge purple' }, t('Dış: {name}', { name: u.external.company_name })) : null),
         h('div', { class: 'u-row-sub' }, u.username)),
       h('div', { class: 'u-row-end' },
         h('span', { class: 'u-row-roles' }, u.roles.join(', ') || '—'),
@@ -190,12 +190,12 @@ function renderEdit(content, user, ctx) {
 
 async function removeUser(user) {
   if (!await confirmDialog('Kullanıcıyı sil',
-    `${user.full_name} (${user.username}) silinsin mi? Kullanıcı sisteme giriş yapamaz ve listeden kaldırılır. `
+    t('{name} ({u}) silinsin mi? Kullanıcı sisteme giriş yapamaz ve listeden kaldırılır. ', { name: user.full_name, u: user.username })
     + 'Üretim, depo veya saha kayıtlarında adı geçiyorsa bu geçmiş kayıtlarda adı görünmeye devam eder.',
     { okLabel: 'Sil', danger: true })) return;
   try {
     const { mode } = await api.del(`/api/users/${user.id}`);
-    toast(mode === 'archived' ? `${user.full_name} silindi (geçmiş kayıtlardaki adı korundu)` : `${user.full_name} silindi`);
+    toast(mode === 'archived' ? t('{name} silindi (geçmiş kayıtlardaki adı korundu)', { name: user.full_name }) : t('{name} silindi', { name: user.full_name }));
     location.hash = '#/users';
   } catch (err) { toastError(err); }
 }
@@ -227,9 +227,9 @@ async function renderLogs(content, id) {
       { label: 'Bugünkü kayıt', value: s.today },
       { label: 'İlk kayıt', value: s.first ? fmtDateTime(s.first).slice(0, 10) : '—', sub: s.first ? fmtDateTime(s.first).slice(11) : '' },
       { label: 'Son kayıt', value: s.last ? fmtDateTime(s.last).slice(11) : '—', sub: s.last ? fmtDateTime(s.last).slice(0, 10) : '' },
-      ...s.top_pages.map((t, i) => ({ label: `En çok girilen ${i + 1}.`, value: t.n, sub: t.page })),
+      ...s.top_pages.map((tp, i) => ({ label: t('En çok girilen {n}.', { n: i + 1 }), value: tp.n, sub: tp.page })),
     ]);
-    count.textContent = d.total > d.rows.length ? `${d.rows.length} / ${d.total} kayıt gösteriliyor` : `${d.total} kayıt`;
+    count.textContent = d.total > d.rows.length ? t('{a} / {b} kayıt gösteriliyor', { a: d.rows.length, b: d.total }) : t('{n} kayıt', { n: d.total });
     clear(body, d.rows.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Zaman', 'Tür', 'Hareket', 'Sayfa / detay'].map(t => h('th', null, t)))),
       h('tbody', null, d.rows.map(l => h('tr', null,
@@ -240,8 +240,8 @@ async function renderLogs(content, id) {
           l.entity === 'page' && l.entity_id ? h('div', { class: 'small muted mono' }, l.entity_id) : null))))))
       : h('div', { class: 'empty' }, 'Filtreye uyan kayıt yok'));
   };
-  let t;
-  q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 300); });
+  let qTimer;
+  q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(load, 300); });
   [kind, from, to, limit].forEach(el => el.addEventListener('change', load));
   clear(content,
     h('h2', { style: { fontSize: '16px', marginBottom: '12px' } }, 'Kullanıcı Logları'),

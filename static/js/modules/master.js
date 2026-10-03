@@ -1,7 +1,7 @@
 // MASTER (sistem sahibi) modülü — "Veri & Yedek".
 // KVKK: kişisel veri gösterilmez. Sistem sahibi şirketin tüm verisini tek ZIP'te indirir ve yedekleri görür/indirir.
 import { api } from '../api.js';
-import { clear, fmtDateTime, h, pageHead, toastError } from '../ui.js';
+import { clear, fmtDateTime, h, pageHead, t, toastError } from '../ui.js';
 
 const bytes = b => (b == null ? '—' : b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${Math.round(b / 1e3)} KB` : `${b} B`);
 
@@ -17,7 +17,7 @@ export async function render(view, params, ctx) {
   // Tüm veriyi indir
   const exportCard = h('section', { class: 'card card-pad' },
     h('h3', null, 'Tüm veriyi indir'),
-    h('p', { class: 'small muted' }, `${ov.company} şirketinin tüm verisi tek pakette (veritabanı + yüklenen dosyalar + anahtarlar).`),
+    h('p', { class: 'small muted' }, t('{company} şirketinin tüm verisi tek pakette (veritabanı + yüklenen dosyalar + anahtarlar).', { company: ov.company })),
     h('div', { class: 'stats mv-stats' },
       stat('Veritabanı', bytes(ov.db_bytes)),
       stat('Dosyalar', bytes(ov.uploads_bytes)),
@@ -27,7 +27,7 @@ export async function render(view, params, ctx) {
 
   // Yedekler
   const ageTxt = ov.last_backup_age_h == null ? 'Henüz otomatik yedek yok'
-    : `Son yedek: ${fmtDateTime(ov.last_backup.at)} · ${ov.last_backup_age_h} saat önce`;
+    : t('Son yedek: {d} · {h} saat önce', { d: fmtDateTime(ov.last_backup.at), h: ov.last_backup_age_h });
   const backupCard = h('section', { class: 'card card-pad' },
     h('h3', null, 'Yedekler'),
     h('div', { class: `mv-backup-status ${ov.backup_ok ? 'ok' : 'warn'}` },

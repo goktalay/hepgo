@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { foot, head, printPage } from '../print.js';
-import { clear, fmtDateTime, h, matches, moduleToolbar, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, toastError, periodRange } from '../ui.js';
+import { clear, fmtDateTime, h, matches, moduleToolbar, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, t, toastError, periodRange } from '../ui.js';
 
 export const MODULE_NAMES = {
   production: 'Üretim Yönetimi', orders: 'İş Emri Yönetimi', warehouse: 'Depo Yönetimi', stock: 'Stok Yönetimi', printers: 'Yazıcı Yönetimi',
@@ -56,7 +56,7 @@ export async function render(view, params, ctx) {
   };
   q.addEventListener('input', draw);
   const viewSeg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('reports.view', v); draw(); });
-  clear(view, pageHead('Raporlar', { back: '#/', sub: `${list.length} rapor · modül raporları` }),
+  clear(view, pageHead('Raporlar', { back: '#/', sub: t('{n} rapor · modül raporları', { n: list.length }) }),
     moduleToolbar(viewSeg),
     h('div', { class: 'filters' }, modSel, q), out);
   drawChips();
@@ -171,7 +171,7 @@ async function renderReport(view, key, ctx) {
       h('p', { class: 'pr-desc' }, d.desc), kpis, ins,
       type === 'chart' ? h('div', { class: 'pr-charts' }, chartImgs) : d.tables.map(t => h('div', { class: 'pr-table' },
         h('h2', { class: 'pf-h2' }, t.title), t.sub ? h('p', { class: 'pr-sub' }, t.sub) : null, tableEl(t, true))),
-      foot(ctx.meta.company, `${data.title} · ${type === 'chart' ? 'Grafik' : 'Baskı'} · Yazdırma: ${fmtDateTime(new Date().toISOString())}`)),
+      foot(ctx.meta.company, t('{title} · {mode} · Yazdırma: {date}', { title: data.title, mode: type === 'chart' ? 'Grafik' : 'Baskı', date: fmtDateTime(new Date().toISOString()) }))),
     `Rapor: ${data.title}`);
   }
 
@@ -181,10 +181,10 @@ async function renderReport(view, key, ctx) {
 
 const hasData = c => c.datasets?.some(ds => ds.data?.some(v => v));
 
-function tableCard(t) {
-  return h('div', { class: 'card rp-table' }, h('div', { class: 'rp-table-head' }, h('h3', null, t.title), h('span', { class: 'small muted' }, `${t.rows.length} satır`)),
-    t.sub ? h('p', { class: 'small muted', style: { margin: '0 14px 8px' } }, t.sub) : null,
-    t.rows.length ? h('div', { class: 'table-wrap' }, tableEl(t)) : h('div', { class: 'empty small' }, 'Bu dönemde kayıt yok'));
+function tableCard(tc) {
+  return h('div', { class: 'card rp-table' }, h('div', { class: 'rp-table-head' }, h('h3', null, tc.title), h('span', { class: 'small muted' }, t('{n} satır', { n: tc.rows.length }))),
+    tc.sub ? h('p', { class: 'small muted', style: { margin: '0 14px 8px' } }, tc.sub) : null,
+    tc.rows.length ? h('div', { class: 'table-wrap' }, tableEl(tc)) : h('div', { class: 'empty small' }, 'Bu dönemde kayıt yok'));
 }
 
 function tableEl(t, print = false) {

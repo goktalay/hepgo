@@ -2,7 +2,7 @@
 // sunucuda saklanır) ve kamera listesi (ONVIF ile ağda bulma, elle ekleme). Görüntü, kamera servisinin yazdığı son kare
 // (/api/cameras/<id>/frame) kısa aralıklarla çekilerek gösterilir; değişmeyen kare için sunucu 304 döner.
 import { api } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, segmented, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, segmented, t, toast, toastError } from '../ui.js';
 
 const LAYOUTS = [1, 4, 6, 9, 12, 16];
 const STATUS = { CANLI: ['green', 'Canlı'], HATA: ['red', 'Bağlanamıyor'], KOPTU: ['yellow', 'Koptu'], KAPALI: ['gray', 'Kapalı'] };
@@ -115,7 +115,7 @@ async function renderList(box) {
         h('td', { class: 'num' },
           h('button', { class: 'btn sm ghost', onclick: () => cameraForm(c, load) }, 'Düzenle'),
           h('button', { class: 'btn sm ghost', onclick: async () => {
-            if (!await confirmDialog('Kamerayı sil', `${c.name} silinsin mi? Yüz kayıtları silinmez.`, { okLabel: 'Sil', danger: true })) return;
+            if (!await confirmDialog('Kamerayı sil', t('{name} silinsin mi? Yüz kayıtları silinmez.', { name: c.name }), { okLabel: 'Sil', danger: true })) return;
             try { await api.del(`/api/cameras/${c.id}`); toast('Kamera silindi'); load(); } catch (err) { toastError(err); }
           } }, 'Sil'))))))))
       : h('div', { class: 'card empty' }, 'Kayıtlı kamera yok'));
@@ -140,7 +140,7 @@ function cameraForm(c, done) {
     active: h('input', { type: 'checkbox', checked: c ? !!c.active : true }),
   };
   modal({
-    title: c ? `${c.name} — Düzenle` : 'Kamera Ekle', wide: true,
+    title: c ? t('{name} — Düzenle', { name: c.name }) : 'Kamera Ekle', wide: true,
     body: h('div', null,
       h('div', { class: 'row' }, field('Kamera adı', f.name), field('Yeri', f.location)),
       h('div', { class: 'row' }, field('IP adresi', f.ip), field('ONVIF portu (isteğe bağlı)', f.port)),
@@ -171,7 +171,7 @@ async function discover(done) {
       const res = await api.post('/api/cameras/add-discovered', { items: [...chosen.values()], username: user.value, password: pass.value });
       const ok = res.filter(r => r.ok).length;
       const bad = res.filter(r => !r.ok);
-      toast(`${ok} kamera eklendi${bad.length ? `; ${bad.length} eklenemedi: ${bad.map(b => `${b.ip} (${b.error})`).join(', ')}` : ''}`, bad.length ? 'err' : '');
+      toast(t('{ok} kamera eklendi{rest}', { ok, rest: bad.length ? t('; {n} eklenemedi: {list}', { n: bad.length, list: bad.map(b => `${b.ip} (${b.error})`).join(', ') }) : '' }), bad.length ? 'err' : '');
       done();
       return bad.length ? true : undefined;   // hata varsa pencere açık kalır
     } }],

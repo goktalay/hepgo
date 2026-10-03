@@ -1,7 +1,7 @@
 // Uyarı ayrıntı sayfası (#/alerts/<tür>) — tüm kullanıcılara açık, 5 sn'de bir yenilenir.
 import { api } from '../api.js';
 import { PRINTER_STATES, badge } from '../status.js';
-import { clear, every, fmtDateTime, fmtDuration, h, pageHead, toast, toastError } from '../ui.js';
+import { clear, every, fmtDateTime, fmtDuration, h, pageHead, t, toast, toastError } from '../ui.js';
 
 export async function render(view, params, ctx) {
   const key = params[0];
@@ -12,7 +12,7 @@ export async function render(view, params, ctx) {
   async function load() {
     const d = await api.get(`/api/alerts/${encodeURIComponent(key)}`);
     clear(head, pageHead(d.title, {
-      back: '#/', sub: h('span', null, h('span', { class: 'live-dot' }), ' 5 saniyede bir yenilenir · ', `${d.items.length} kayıt`),
+      back: '#/', sub: h('span', null, h('span', { class: 'live-dot' }), ' 5 saniyede bir yenilenir · ', t('{n} kayıt', { n: d.items.length })),
     }), h('div', { class: `alert ${d.level === 'danger' ? 'err' : 'warn'} ${d.critical ? 'critical' : ''}` }, d.hint));
     if (!d.items.length) return clear(body, h('div', { class: 'card empty' }, 'Bu uyarı şu an yok — yazıcı durumları ile sistem uyumlu.'));
     const filePart = r => (r.file_parts?.length ? h('b', null, r.file_parts.join(', '))
@@ -31,12 +31,12 @@ export async function render(view, params, ctx) {
       'printer-stale': [r.started_at ? fmtDateTime(r.started_at) : '—', fmtDuration(r.elapsed_seconds),
         r.waiting_seconds != null ? h('b', { style: { color: 'var(--danger)' } }, fmtDuration(r.waiting_seconds)) : h('span', { class: 'muted' }, 'bilinmiyor')],
       'printer-outside': [r.live_file || '—', filePart(r),
-        r.live_progress != null ? `%${Math.round(r.live_progress)} (kalan %${100 - Math.round(r.live_progress)})` : '—'],
+        r.live_progress != null ? t('%{a} (kalan %{b})', { a: Math.round(r.live_progress), b: 100 - Math.round(r.live_progress) }) : '—'],
       'printer-wrong-file': [h('span', { class: 'mono' }, r.expected_file),
         h('span', null, h('span', { class: 'mono' }, r.live_file), ' ', filePart(r))],
       'printer-error': [r.live_file || '—', orderCell(r)],
       'printer-unrecorded-abort': [h('span', null, h('span', { class: 'mono' }, r.live_file || '—'), ' ', filePart(r)),
-        h('span', null, r.live_progress != null ? `%${Math.round(r.live_progress)} basılmıştı` : '—',
+        h('span', null, r.live_progress != null ? t('%{n} basılmıştı', { n: Math.round(r.live_progress) }) : '—',
           h('div', { class: 'small muted' }, r.end_state === 'HATA' ? 'hata ile durdu' : 'iptal edildi')),
         r.started_at ? fmtDateTime(r.started_at) : '—', h('b', { style: { color: 'var(--danger)' } }, fmtDateTime(r.ended_at))],
     }[d.key] || []);

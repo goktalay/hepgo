@@ -3,7 +3,7 @@
 import { crmNav } from './crmhub.js';
 import { api } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
-import { clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, toast, toastError, periodFilter } from '../ui.js';
+import { clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, t, toast, toastError, periodFilter } from '../ui.js';
 
 const money = v => (v == null ? '—' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺');
 const num = v => (v == null ? '' : (Math.round(Number(v) * 1000) / 1000).toLocaleString('tr-TR'));
@@ -37,7 +37,7 @@ export async function render(view, params, ctx) {
     clear(body, h('div', { class: 'card card-pad loading' }, 'Yükleniyor…'));
     try {
       const rows = await api.get(`/api/sales?q=${encodeURIComponent(q.value.trim())}&${period.qs()}`);
-      if (!rows.length) { clear(body, h('div', { class: 'card empty' }, `${period.label()} için satış faturası yok. Dönemi değiştirin ya da “Yeni Fatura” ile oluşturun.`)); return; }
+      if (!rows.length) { clear(body, h('div', { class: 'card empty' }, t('{label} için satış faturası yok. Dönemi değiştirin ya da “Yeni Fatura” ile oluşturun.', { label: period.label() }))); return; }
       clear(body, h('div', { class: 'card table-wrap' }, h('table', { class: 'table' },
         h('thead', null, h('tr', null, h('th', null, 'Fatura No'), h('th', null, 'Firma'), h('th', null, 'Tarih'),
           h('th', { class: 'num' }, 'Ara Toplam'), h('th', { class: 'num' }, 'Toplam'), h('th', null, 'Kaynak'), h('th', null, 'Stok'), h('th', null, ''))),
@@ -57,7 +57,7 @@ export async function render(view, params, ctx) {
         })))));
     } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); }
   };
-  let t; q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 300); });
+  let searchT; q.addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(draw, 300); });
 
   clear(view, pageHead('Satış Yönetimi', { back: '#/', sub: 'Firmalar için satış faturası',
     tabs: crmNav('sales', ctx),
@@ -113,7 +113,7 @@ async function invoiceForm(ctx, id) {
   sync();
 
   modal({
-    title: existing ? `${existing.number || 'Fatura'} · Düzenle` : 'Yeni Satış Faturası', wide: true,
+    title: existing ? t('{num} · Düzenle', { num: existing.number || 'Fatura' }) : 'Yeni Satış Faturası', wide: true,
     body: h('div', null,
       h('div', { class: 'form-grid' }, field('Firma *', comp), field('Fatura no', number), field('Tarih', date)),
       h('table', { class: 'table sl-lines' }, h('thead', null, h('tr', null, h('th', null, 'Ürün / Açıklama'), h('th', null, 'Miktar'),
@@ -155,7 +155,7 @@ async function openInvoice(id, ctx) {
       x.source === 'manual' ? { label: 'Düzenle', onClick: () => invoiceForm(ctx, id) } : null,
       { label: '🖨 Yazdır', onClick: () => printInvoice(id) },
       x.source === 'manual' ? { label: 'Sil', class: 'danger', onClick: async () => {
-        if (!await confirmDialog('Faturayı sil', `${x.number || 'Fatura'} silinsin mi? Stoktan düşülmüşse stok geri alınır.`, { okLabel: 'Sil', danger: true })) return;
+        if (!await confirmDialog('Faturayı sil', t('{num} silinsin mi? Stoktan düşülmüşse stok geri alınır.', { num: x.number || 'Fatura' }), { okLabel: 'Sil', danger: true })) return;
         await api.del(`/api/sales/${id}`); toast('Fatura silindi'); reloadList();
       } } : null,
     ].filter(Boolean),

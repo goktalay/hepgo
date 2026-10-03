@@ -6,7 +6,7 @@ import { tabView } from './crm.js';
 import { plateEl } from './security.js';
 import {
   avatar, clear, companyName, confirmDialog, every, field, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, peoplePicker,
-  secondsBetween, secondsSince, segmented, toast, toastError, periodFilter
+  secondsBetween, secondsSince, segmented, t, toast, toastError, periodFilter
 } from '../ui.js';
 
 const TABS = [['', 'Misafirler'], ['cargo', 'Kargolar'], ['calls', 'Aramalar']];
@@ -41,9 +41,9 @@ export async function render(view, params, ctx) {
 const visitCard = r => h('a', { class: 'card visit-card', href: `#/secretariat/visit/${r.id}` },
   h('div', { class: 'visit-top' }, h('b', null, r.code), h('span', { class: 'badge green' }, 'İçeride')),
   r.purpose ? h('div', { class: 'visit-purpose' }, r.purpose) : null,
-  h('div', { class: 'small' }, h('b', null, `${r.people_count} kişi: `), r.people_names || 'kişi eklenmedi'),
-  h('div', { class: 'small muted' }, `Görüşülecek: ${r.host_names || '—'}`),
-  r.plates ? h('div', { class: 'small muted' }, `Araç: ${r.plates}`) : null,
+  h('div', { class: 'small' }, h('b', null, t('{n} kişi: ', { n: r.people_count })), r.people_names || 'kişi eklenmedi'),
+  h('div', { class: 'small muted' }, t('Görüşülecek: {h}', { h: r.host_names || '—' })),
+  r.plates ? h('div', { class: 'small muted' }, t('Araç: {p}', { p: r.plates })) : null,
   h('div', { class: 'small muted' }, `${fmtDateTime(r.arrived_at)} · ${fmtDuration(secondsSince(r.arrived_at))}`));
 
 async function renderVisits(body) {
@@ -73,7 +73,7 @@ async function renderHistory(body) {
       : h('div', { class: 'card empty' }, rows.length ? 'Aramaya uyan kayıt yok' : 'Eski kayıt yok'));
   };
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
+  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, t('{n} kayıt', { n: rows.length }))), out);
   draw();
 }
 
@@ -88,7 +88,7 @@ function newVisit() {
     actions: [{ label: 'Vazgeç' }, {
       label: 'Kaydı Aç', class: 'primary', onClick: async () => {
         const r = await api.post('/api/secretariat/visits', { purpose: purpose.value, note: note.value });
-        toast(`${r.code} açıldı`);
+        toast(t('{code} açıldı', { code: r.code }));
         location.hash = `#/secretariat/visit/${r.id}`;
       },
     }],
@@ -103,8 +103,8 @@ async function renderVisit(view, id, ctx, sub) {
     pageHead(`${v.code}${v.purpose ? ` — ${v.purpose}` : ''}`, {
       back: '#/secretariat',
       sub: h('span', null, v.left_at ? h('span', { class: 'badge gray' }, 'Çıkış yaptı') : h('span', { class: 'badge green' }, 'İçeride'),
-        `  Geliş ${fmtDateTime(v.arrived_at)}`, v.left_at ? ` · Çıkış ${fmtDateTime(v.left_at)} · ${fmtDuration(secondsBetween(v.arrived_at, v.left_at))}` : '',
-        ` · Kaydeden: ${v.created_by_name || '—'}`),
+        t('  Geliş {d}', { d: fmtDateTime(v.arrived_at) }), v.left_at ? t(' · Çıkış {d} · {dur}', { d: fmtDateTime(v.left_at), dur: fmtDuration(secondsBetween(v.arrived_at, v.left_at)) }) : '',
+        t(' · Kaydeden: {name}', { name: v.created_by_name || '—' })),
     }),
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => editVisit() }, 'Düzenle'),
@@ -112,13 +112,13 @@ async function renderVisit(view, id, ctx, sub) {
     v.note ? h('div', { class: 'alert info' }, v.note) : null);
   const set = nv => { v = nv; drawHead(); tabs = buildTabs(); clear(tabBox, tabs); };
   async function leave() {
-    if (!await confirmDialog('Misafir çıkışı', `${v.code} misafirleri çıkış yaptı mı?`, { okLabel: 'Çıkış Yaptı' })) return;
+    if (!await confirmDialog('Misafir çıkışı', t('{code} misafirleri çıkış yaptı mı?', { code: v.code }), { okLabel: 'Çıkış Yaptı' })) return;
     try { set(await api.post(`/api/secretariat/visits/${id}/leave`)); toast('Misafir çıkışı kaydedildi'); } catch (err) { toastError(err); }
   }
   function editVisit() {
     const purpose = h('input', { class: 'input', value: v.purpose || '' });
     const note = h('textarea', { class: 'input', rows: 2 }, v.note || '');
-    modal({ title: `${v.code} — Düzenle`, body: h('div', null, field('Ziyaret amacı', purpose), field('Not', note)),
+    modal({ title: t('{code} — Düzenle', { code: v.code }), body: h('div', null, field('Ziyaret amacı', purpose), field('Not', note)),
       actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
         set(await api.put(`/api/secretariat/visits/${id}`, { purpose: purpose.value, note: note.value }));
       } }] });
@@ -165,7 +165,7 @@ async function renderVisit(view, id, ctx, sub) {
       const hits = people.filter(p => matches(q.value, p.full_name, p.company_name, p.title)).slice(0, 30);
       clear(results, q.value.trim().length < 2 ? h('div', { class: 'empty small' }, 'Aramak için en az 2 harf yazın')
         : hits.length ? hits.map(p => h('button', { class: 'pick', type: 'button', onclick: async () => {
-          try { set(await api.post(`/api/secretariat/visits/${id}/people`, { person_id: p.id })); toast(`${p.full_name} eklendi`); m.close(); }
+          try { set(await api.post(`/api/secretariat/visits/${id}/people`, { person_id: p.id })); toast(t('{name} eklendi', { name: p.full_name })); m.close(); }
           catch (err) { toastError(err); }
         } }, h('div', { class: 'grow' }, h('b', null, p.full_name), h('span', { class: 'small muted' },
           [p.title, p.company_name].filter(Boolean).join(' · ')))))
@@ -187,7 +187,7 @@ async function renderVisit(view, id, ctx, sub) {
           full_name: name.value, title: title.value, phone: phone.value,
           company_id: company.value ? Number(company.value) : null, company_text: company.value ? null : companyText.value,
         }));
-        toast(`${name.value} eklendi`);
+        toast(t('{name} eklendi', { name: name.value }));
       } }],
     });
     q.focus();
@@ -198,7 +198,7 @@ async function renderVisit(view, id, ctx, sub) {
       h('div', { class: 'row-actions', style: { marginBottom: '10px' } }, h('button', { class: 'btn primary', onclick: () => pickVehicles() }, '+ Araç Seç')),
       v.vehicles.length ? h('div', { class: 'guest-list' }, v.vehicles.map(x => h('div', { class: 'guest-row' },
         plateEl(x.plate, 'sm'),
-        h('div', { class: 'grow small muted' }, `Giriş ${fmtDateTime(x.entered_at)}`, x.exited_at ? ` · Çıkış ${fmtDateTime(x.exited_at)}` : ' · Parkta',
+        h('div', { class: 'grow small muted' }, t('Giriş {d}', { d: fmtDateTime(x.entered_at) }), x.exited_at ? t(' · Çıkış {d}', { d: fmtDateTime(x.exited_at) }) : ' · Parkta',
           x.note ? ` · ${x.note}` : ''),
         h('button', { class: 'btn sm ghost', onclick: () => del(`/api/secretariat/visits/${id}/vehicles/${x.id}`, 'Araç çıkarıldı') }, 'Çıkar'))))
         : h('div', { class: 'empty' }, 'Araç eklenmedi'));
@@ -210,7 +210,7 @@ async function renderVisit(view, id, ctx, sub) {
     const list = h('div', { class: 'pick-list multi' }, parked.length ? parked.map(x => {
       const cb = h('input', { type: 'checkbox' });
       const row = h('div', { class: 'pick' }, cb, plateEl(x.plate, 'sm'),
-        h('span', { class: 'small muted grow' }, `Giriş ${fmtDateTime(x.entered_at)}${x.note ? ` · ${x.note}` : ''}${x.visit_code ? ` · ${x.visit_code}` : ''}`));
+        h('span', { class: 'small muted grow' }, t('Giriş {d}{note}{code}', { d: fmtDateTime(x.entered_at), note: x.note ? ` · ${x.note}` : '', code: x.visit_code ? ` · ${x.visit_code}` : '' })));
       row.addEventListener('click', e => {
         if (e.target !== cb) cb.checked = !cb.checked;
         cb.checked ? chosen.add(x.id) : chosen.delete(x.id);
@@ -231,7 +231,7 @@ async function renderVisit(view, id, ctx, sub) {
       h('div', { class: 'row-actions', style: { marginBottom: '10px' } }, h('button', { class: 'btn primary', onclick: () => pickHosts() }, '+ Kişi Seç')),
       h('p', { class: 'small muted' }, 'Seçilen firma kullanıcılarına "Misafiriniz geldi" bildirimi gider.'),
       v.hosts.length ? h('div', { class: 'guest-list' }, v.hosts.map(u => h('div', { class: 'guest-row' },
-        avatar(u), h('div', { class: 'grow' }, h('b', null, u.full_name), h('div', { class: 'small muted' }, `Bildirildi ${fmtDateTime(u.added_at)}`)),
+        avatar(u), h('div', { class: 'grow' }, h('b', null, u.full_name), h('div', { class: 'small muted' }, t('Bildirildi {d}', { d: fmtDateTime(u.added_at) }))),
         h('button', { class: 'btn sm ghost', onclick: () => del(`/api/secretariat/visits/${id}/hosts/${u.id}`, 'Kişi çıkarıldı') }, 'Çıkar'))))
         : h('div', { class: 'empty' }, 'Görüşülecek kişi seçilmedi'));
   }
@@ -268,12 +268,12 @@ async function renderCargo(body, addBtn) {
       h('div', { class: 'cargo-body' },
         h('b', null, k.recipient_name), h('div', { class: 'small' }, [k.carrier, k.tracking_no].filter(Boolean).join(' · ') || 'Kargo'),
         k.description ? h('div', { class: 'small muted' }, k.description) : null,
-        h('div', { class: 'small muted' }, `${fmtDateTime(k.created_at)} · ${fmtDuration(secondsSince(k.created_at))} bekliyor`),
+        h('div', { class: 'small muted' }, t('{d} · {dur} bekliyor', { d: fmtDateTime(k.created_at), dur: fmtDuration(secondsSince(k.created_at)) })),
         h('button', { class: 'btn sm', onclick: () => deliver(k) }, 'Elden Teslim Edildi')))))
       : h('div', { class: 'card empty' }, 'Bekleyen kargo yok. Gelen kargo için sağ üstteki "Kargo Kaydet"i kullanın.'));
   };
   async function deliver(k) {
-    if (!await confirmDialog('Kargo teslimi', `${k.recipient_name} kargosunu elden teslim aldı mı?`, { okLabel: 'Teslim Edildi' })) return;
+    if (!await confirmDialog('Kargo teslimi', t('{name} kargosunu elden teslim aldı mı?', { name: k.recipient_name }), { okLabel: 'Teslim Edildi' })) return;
     try { await api.post(`/api/secretariat/cargo/${k.id}/deliver`); toast('Teslim edildi'); await load(); } catch (err) { toastError(err); }
   }
   addBtn.onclick = () => newCargo(load);
@@ -294,12 +294,12 @@ async function renderDelivered(body) {
         h('td', null, fmtDateTime(k.created_at)), h('td', null, k.recipient_name),
         h('td', null, [k.carrier, k.tracking_no].filter(Boolean).join(' · ') || '—'), h('td', { class: 'wrap' }, k.description || '—'),
         h('td', null, fmtDateTime(k.delivered_at)),
-        h('td', { class: 'small' }, k.delivered_by === k.recipient_id ? 'Kendisi teslim aldı' : `Elden teslim (${k.delivered_by_name || 'sekreterya'})`),
+        h('td', { class: 'small' }, k.delivered_by === k.recipient_id ? 'Kendisi teslim aldı' : t('Elden teslim ({name})', { name: k.delivered_by_name || 'sekreterya' })),
         h('td', null, k.photo ? h('a', { href: fileUrl(k.photo), target: '_blank', rel: 'noopener' }, 'Aç') : '—')))))))
       : h('div', { class: 'card empty' }, rows.length ? 'Aramaya uyan kayıt yok' : 'Teslim edilmiş kargo yok'));
   };
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, `${rows.length} kayıt`)), out);
+  clear(body, h('div', { class: 'filters' }, q, period.el, h('span', { class: 'small muted' }, t('{n} kayıt', { n: rows.length }))), out);
   draw();
 }
 
@@ -358,7 +358,7 @@ export async function renderMyCargo(view, params = []) {
         h('td', { class: 'wrap' }, k.description || '—'),
         h('td', null, fmtDateTime(k.created_at)),
         h('td', null, fmtDateTime(k.delivered_at)),
-        h('td', { class: 'small' }, k.delivered_by === k.recipient_id ? 'Kendim teslim aldım' : `Elden teslim (${k.delivered_by_name || 'sekreterya'})`));
+        h('td', { class: 'small' }, k.delivered_by === k.recipient_id ? 'Kendim teslim aldım' : t('Elden teslim ({name})', { name: k.delivered_by_name || 'sekreterya' })));
       const table = h('table', null,
         h('thead', null, h('tr', null, ['Resim', 'Kargo', 'Açıklama', 'Geldi', 'Teslim', 'Teslim şekli'].map(t => h('th', null, t)))),
         h('tbody', null, done.map(row)));
@@ -371,8 +371,8 @@ export async function renderMyCargo(view, params = []) {
       h('div', { class: 'cargo-body' },
         h('b', null, [k.carrier, k.tracking_no].filter(Boolean).join(' · ') || 'Kargo'),
         k.description ? h('div', { class: 'small' }, k.description) : null,
-        h('div', { class: 'small muted' }, `${fmtDateTime(k.created_at)} · kaydeden ${k.created_by_name || '—'}`),
-        h('div', { class: 'small muted' }, `${fmtDuration(secondsSince(k.created_at))} bekliyor`),
+        h('div', { class: 'small muted' }, t('{d} · kaydeden {name}', { d: fmtDateTime(k.created_at), name: k.created_by_name || '—' })),
+        h('div', { class: 'small muted' }, t('{dur} bekliyor', { dur: fmtDuration(secondsSince(k.created_at)) })),
         h('button', { class: 'btn success', onclick: async () => {
           try { await api.post(`/api/me/cargo/${k.id}/receive`); toast('Teslim aldınız'); await load(); } catch (err) { toastError(err); }
         } }, 'Teslim Aldım')))))
@@ -392,7 +392,7 @@ export async function renderMyGuests(view) {
       h('ul', { class: 'guest-mini' }, r.people.map(p => h('li', null, h('b', null, p.full_name),
         h('span', { class: 'small muted' }, ` ${[p.title, p.company_name ? null : p.company_text].filter(Boolean).join(' · ')} `),
         p.company_name ? companyName(p.company_name, { class: 'small muted' }) : null))),
-      r.plates ? h('div', { class: 'small muted' }, `Araç: ${r.plates}`) : null,
-      h('div', { class: 'small muted' }, `Geliş ${fmtDateTime(r.arrived_at)}${r.left_at ? ` · Çıkış ${fmtDateTime(r.left_at)}` : ''}`))))
+      r.plates ? h('div', { class: 'small muted' }, t('Araç: {p}', { p: r.plates })) : null,
+      h('div', { class: 'small muted' }, t('Geliş {a}{left}', { a: fmtDateTime(r.arrived_at), left: r.left_at ? t(' · Çıkış {d}', { d: fmtDateTime(r.left_at) }) : '' })))))
       : h('div', { class: 'card empty' }, 'Size bildirilmiş misafir yok'));
 }

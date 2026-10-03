@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.77.0'
+VERSION = '2.78.0'
 
 CHANGELOG = [
+    {'version': '2.78.0', 'date': '2026-10-03', 'title': 'İngilizce dil desteği tamamlandı',
+     'changes': [
+         'Arayüz metinlerinin İngilizce çevirisi tüm modüllere yayıldı (~2400 ek metin); Ayarlar › Arayüz › Dil = English.',
+         'Çeviri katalog tabanlı ve güvenli: karşılığı olmayan metin Türkçe kalır, uygulama mantığı etkilenmez.',
+     ]},
     {'version': '2.77.0', 'date': '2026-10-02', 'title': 'İşlem düğmeleri baloncukta (Excel dahil) + sadeleştirmeler',
      'changes': [
          'Tüm modüllerde alt-modül eylem düğmeleri (Excel dahil) tek baloncuk (pill) içinde toplanır; görünüm seçici ve filtreler ayrı kalır.',

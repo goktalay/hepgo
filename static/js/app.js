@@ -50,6 +50,7 @@ import * as sales from './modules/sales.js';
 import * as crmHub from './modules/crmhub.js';
 import { initLang, onLangChange, getLang } from './i18n.js';
 import './i18n.en.js';   // İngilizce kataloğu kaydeder (registerCatalog('en', …))
+import './i18n.en.extra.js';   // ek İngilizce katalog (modül içi metinler)
 import { enableSegSelect } from './segselect.js';
 import { enableListExport } from './listexport.js';
 import { enableHeadGroup } from './headgroup.js';

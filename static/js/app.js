@@ -21,6 +21,7 @@ import * as products from './modules/products.js';
 import * as admin from './modules/admin.js';
 import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
+import * as fleet from './modules/fleet.js';
 import * as members from './modules/members.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
@@ -99,6 +100,7 @@ const MODULES = [
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
   { key: 'certs', title: 'Sertifikasyon', mod: certs },
+  { key: 'fleet', title: 'Araç Yönetimi', mod: fleet },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
   { key: 'tickets', title: 'Destek Talepleri', mod: ticketsMod },
@@ -752,6 +754,7 @@ function renderHome() {
 
 // ---------- Hareket kaydı: her sayfaya giriş ve çıkış (kalınan süreyle) loglanır ----------
 const SUB_PAGES = {
+  fleet: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Araç #${k}` : ({ moves: 'Gider Etiketleme', report: 'Rapor', settings: 'Zimmet Formu' }[k] || k); },
   production: p => `İş Emri #${p[0]}`,
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,
@@ -773,6 +776,7 @@ function pageTitle(key, params) {
   if (key === 'my-calls') return 'Kişisel › Aramalarım';
   if (key === 'mail') return 'Kişisel › Mail';
   if (key === 'my-leaves') return 'Kişisel › İzinlerim';
+  if (key === 'my-vehicles') return 'Kişisel › Araç Zimmetim';
   if (key === 'master') return `MASTER${params[0] ? ` › Kullanıcı #${params[0]}` : ''}`;
   if (key === 'purchasing') return `Satın Alma${params.length ? ` › ${{ requests: 'Talep Yönetimi', suppliers: 'Tedarikçi Yönetimi', invoices: 'Fatura İrsaliye', quotes: 'Teklif Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
   if (key === 'mrp') return `MRP${params.length ? ` › ${{ materials: 'Malzeme Yönetimi', semi: 'Yarı Mamül', approvals: 'Onay Yönetimi', depots: 'Depo Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
@@ -823,6 +827,7 @@ const PERSONAL = [
   { key: 'mail', route: 'mail', title: 'Mail', notify: 'mail-unread', render: params => renderMail(view, params) },
   { key: 'leaves', route: 'my-leaves', title: 'İzinlerim', notify: 'leave-decided', render: () => hr.renderMyLeaves(view) },
   { key: 'docs', route: 'my-documents', title: 'Evraklarım', notify: 'docs-missing', render: () => hr.renderMyDocuments(view) },
+  { key: 'vehicles', route: 'my-vehicles', title: 'Araç Zimmetim', notify: 'vehicle-assign-pending', render: () => fleet.renderMine(view) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

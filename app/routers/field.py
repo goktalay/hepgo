@@ -606,6 +606,9 @@ def delete_vehicle(vid: int, user=Depends(field_user), conn=db.DB):
         raise HTTPException(404, 'Araç bulunamadı')
     if conn.execute('SELECT 1 FROM field_task_vehicles WHERE vehicle_id = ?', (vid,)).fetchone():
         raise HTTPException(400, 'Görevlerde kullanılan araç silinemez; pasife alabilirsiniz')
+    if conn.execute('''SELECT 1 FROM vehicle_assignments WHERE vehicle_id = :v UNION ALL SELECT 1 FROM vehicle_expenses WHERE vehicle_id = :v
+                       UNION ALL SELECT 1 FROM vehicle_docs WHERE vehicle_id = :v''', {'v': vid}).fetchone():
+        raise HTTPException(400, 'Aracın Araç Yönetimi kayıtları (zimmet, gider, belge) var; pasife alabilirsiniz')
     conn.execute('DELETE FROM field_vehicles WHERE id = ?', (vid,))
     db.audit(conn, user['id'], 'Araç sildi', 'field_vehicle', vid, v['plate'])
     return {'ok': True}

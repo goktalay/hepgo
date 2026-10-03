@@ -63,8 +63,8 @@ def main():
         assert admin.post('/api/auth/login', json={'username': 'admin@test', 'password': 'x'}).status_code == 401
         login(admin, 'admin@test', 'admin-sifre-1')
         me = ok(admin.get('/api/auth/me'))
-        assert set(me['modules']) == {'admin', 'production', 'orders', 'warehouse', 'stock', 'field', 'printers',
-                                      'products', 'tools', 'users', 'companies', 'documents', 'secretariat', 'security', 'reports', 'announcements', 'hr', 'mrp', 'purchasing', 'sales', 'cleaning', 'design'}
+        from app import auth as _auth   # yönetici: rolünün geçtiği tüm modüller (yeni modüller eklendikçe liste elle güncellenmesin)
+        assert set(me['modules']) == {m for m, rs in _auth.MODULE_ROLES.items() if _auth.ADMIN in rs}, me['modules']
         assert admin.get('/api/printers').status_code == 200
 
         def mk(name, roles):

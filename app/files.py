@@ -43,6 +43,9 @@ KINDS = {
     'certs': {'.pdf', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp', '.gif', '.heic', '.heif',
               '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.txt', '.csv', '.rtf', '.zip', '.rar', '.7z',
               '.mp4', '.mov', '.m4v', '.webm', '.mp3', '.m4a', '.wav'},
+    # Araç Yönetimi: araç fotoğrafı, ruhsat / poliçe / kira sözleşmesi / imzalı zimmet formu, gider fişleri
+    'fleet': {'.pdf', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp', '.gif', '.heic', '.heif',
+              '.doc', '.docx', '.xls', '.xlsx', '.odt', '.ods', '.txt', '.csv', '.rtf', '.zip', '.mp4', '.mov', '.m4v', '.webm'},
 }
 DOCUMENT_MAX_BYTES = 4 * 1024 ** 3
 # Dosya indirme ek kontrolü: tür → fonksiyon(kullanıcı, dosya adı) → bool (ör. evrak görünürlüğü)
@@ -69,7 +72,7 @@ def local_only(request: Request):
 # Cloudflare tüneli tek istekte ~100 MB'tan büyük gövdeyi kabul etmez. Büyük dosyalar istemcide parçalara bölünür:
 # POST /api/uploads ile başlatılır, PUT /api/uploads/<jeton>?offset= ile parçalar sırayla eklenir; dosyayı kullanan
 # uç nokta (ör. uçuş logu) jetonu take_upload ile alır.
-CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES, 'gcode': 2 * 1024 ** 3, 'certs': DOCUMENT_MAX_BYTES}
+CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES, 'gcode': 2 * 1024 ** 3, 'certs': DOCUMENT_MAX_BYTES, 'fleet': 512 * 1024 ** 2}
 LOCAL_ONLY_EXT = KINDS['videos']   # video her türde yalnızca yerel ağdan
 CHUNK_SIZE = 16 * 1024 * 1024
 CHUNK_MAX = 64 * 1024 * 1024

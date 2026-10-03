@@ -392,6 +392,31 @@ def audits_upcoming(conn, user):
                    f"#/certs/{rows[0]['cert_id']}" if len(rows) == 1 else '#/certs/audits', 'Denetim hazırlığı')
 
 
+def fleet_due(conn, user):
+    """Araç Yönetimi: 30 gün içinde (ya da geçmiş) muayene, trafik sigortası, kasko, kira bitişi, periyodik bakım (tarih / km)."""
+    if 'fleet' not in user.get('modules', []):
+        return _result([], [], '#/fleet')
+    from . import fleet
+    rows, names = [], []
+    for v in db.rows(conn.execute('SELECT * FROM field_vehicles WHERE active = 1 ORDER BY plate')):
+        for d in fleet.dues(v, fleet.km_now(conn, v['id']) if v['next_service_km'] else None):
+            rows.append({'id': v['id'], 'key': d['key']})
+            if 'km' in d:
+                when = f"{d['left_km']} km kaldı" if d['left_km'] > 0 else 'km doldu'
+            else:
+                when = 'geçti' if d['days'] < 0 else f"{d['date'][8:10]}.{d['date'][5:7]}.{d['date'][:4]}"
+            names.append(f"{v['plate']} · {d['label']} — {when}")
+    ids = {r['id'] for r in rows}
+    return _result(rows, names, f"#/fleet/{rows[0]['id']}" if len(ids) == 1 else '#/fleet', 'Randevu / yenileme planlayın')
+
+
+def vehicle_assign_pending(conn, user):
+    """Personele zimmetlenen ve henüz uygulamada teslim alındığı onaylanmamış araç."""
+    rows = db.rows(conn.execute('''SELECT a.id, v.plate FROM vehicle_assignments a JOIN field_vehicles v ON v.id = a.vehicle_id
+                                   WHERE a.user_id = ? AND a.end_date IS NULL AND a.accepted_at IS NULL''', (user['id'],)))
+    return _result(rows, [f"{r['plate']} — zimmet formunu okuyup onaylayın" for r in rows], '#/my-vehicles', 'Teslim aldığınızı onaylayın')
+
+
 def live_now(conn, user):
     """Şu an canlı yayın yapanlar (kendi yayını hariç) — yayın bitene kadar kalır; tıklayan yayına katılır."""
     from . import feed
@@ -467,6 +492,8 @@ NOTIFICATIONS = [
     {'key': 'certs-expiring', 'roles': None, 'fn': certs_expiring, 'title': 'Süresi yaklaşan / dolan sertifika'},
     {'key': 'audits-upcoming', 'roles': None, 'fn': audits_upcoming, 'title': 'Yaklaşan sertifika denetimi'},
     {'key': 'contracts-pending', 'roles': None, 'fn': contracts_pending, 'title': 'Onayınızı bekleyen üyelik sözleşmesi'},
+    {'key': 'fleet-due', 'roles': None, 'fn': fleet_due, 'title': 'Araç: yaklaşan muayene / sigorta / bakım'},
+    {'key': 'vehicle-assign-pending', 'roles': None, 'fn': vehicle_assign_pending, 'title': 'Onayınızı bekleyen araç zimmeti'},
 ]
 
 

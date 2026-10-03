@@ -289,6 +289,66 @@ CREATE TABLE IF NOT EXISTS cert_docs (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_cert_docs ON cert_docs(cert_id, audit_id);
+-- Araç Yönetimi: araçlar field_vehicles'tadır (Saha ile ortak; ek sütunlar _migrate'te). Zimmet, gider, belge.
+CREATE TABLE IF NOT EXISTS vehicle_assignments (
+    id          INTEGER PRIMARY KEY,
+    vehicle_id  INTEGER NOT NULL REFERENCES field_vehicles(id) ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    start_date  TEXT NOT NULL,
+    start_km    REAL,
+    start_fuel  TEXT,                          -- bos | 1/4 | 1/2 | 3/4 | dolu
+    equipment   TEXT,                          -- JSON: teslim edilen ekipman listesi
+    condition   TEXT,                          -- teslimdeki hasar / durum notu
+    note        TEXT,
+    end_date    TEXT,                          -- NULL: zimmet sürüyor
+    end_km      REAL,
+    end_fuel    TEXT,
+    end_note    TEXT,
+    accepted_at TEXT,                          -- personelin uygulama içi teslim alma onayı
+    accepted_ip TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_vehicle_assign ON vehicle_assignments(vehicle_id, end_date);
+CREATE INDEX IF NOT EXISTS ix_vehicle_assign_user ON vehicle_assignments(user_id, end_date);
+CREATE TABLE IF NOT EXISTS vehicle_expenses (
+    id          INTEGER PRIMARY KEY,
+    vehicle_id  INTEGER NOT NULL REFERENCES field_vehicles(id) ON DELETE CASCADE,
+    date        TEXT NOT NULL,
+    category    TEXT NOT NULL,                 -- yakit | bakim | lastik | sigorta | vergi | otoyol | otopark | kira | ceza | yikama | diger
+    amount      REAL NOT NULL,
+    liters      REAL,
+    km          REAL,
+    vendor      TEXT,
+    description TEXT,
+    source      TEXT NOT NULL DEFAULT 'manual',  -- manual | mikro (muhasebe gider satırı) | finans (kasa/banka çıkışı)
+    ref         TEXT,                          -- kaynak hareket anahtarı (bir hareket birden çok araca bölünebilir)
+    ref_total   REAL,                          -- kaynak hareketin toplam tutarı
+    receipt     TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_vehicle_exp ON vehicle_expenses(vehicle_id, date);
+CREATE INDEX IF NOT EXISTS ix_vehicle_exp_ref ON vehicle_expenses(ref);
+CREATE TABLE IF NOT EXISTS vehicle_docs (
+    id            INTEGER PRIMARY KEY,
+    vehicle_id    INTEGER NOT NULL REFERENCES field_vehicles(id) ON DELETE CASCADE,
+    assignment_id INTEGER REFERENCES vehicle_assignments(id) ON DELETE SET NULL,
+    kind          TEXT NOT NULL DEFAULT 'diger',
+    name          TEXT NOT NULL,
+    path          TEXT NOT NULL,
+    size          INTEGER,
+    expires       TEXT,
+    uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_vehicle_docs ON vehicle_docs(vehicle_id);
+-- Araçla ilgisi olmadığı işaretlenen muhasebe / finans hareketleri (etiketleme listesinde gizlenir)
+CREATE TABLE IF NOT EXISTS vehicle_ignored (
+    ref        TEXT PRIMARY KEY,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
 -- Finans v2: Mikro muhasebe (hesap planı + yevmiye satırları) → mizan / mali tablolar
 CREATE TABLE IF NOT EXISTS fin_coa (
     code        TEXT PRIMARY KEY,
@@ -1886,6 +1946,21 @@ def _rebuild_field_flights(conn):
     conn.execute('PRAGMA foreign_keys = ON')
 
 
+VEHICLE_COLS = [
+    ('brand', 'TEXT'), ('model', 'TEXT'), ('year', 'INTEGER'), ('body_type', 'TEXT'), ('fuel_type', 'TEXT'), ('color', 'TEXT'),
+    ('vin', 'TEXT'), ('engine_no', 'TEXT'), ('photo', 'TEXT'),
+    ('ownership', "TEXT NOT NULL DEFAULT 'owned'"),            # owned (satın alındı) | leased (kiralık)
+    ('purchase_date', 'TEXT'), ('purchase_price', 'REAL'), ('seller_id', 'INTEGER'), ('purchase_doc', 'TEXT'),
+    ('asset_account', 'TEXT'),                                  # muhasebe sabit kıymet hesabı (254.xx)
+    ('lessor_id', 'INTEGER'), ('lease_no', 'TEXT'), ('lease_start', 'TEXT'), ('lease_end', 'TEXT'),
+    ('lease_monthly', 'REAL'), ('lease_currency', "TEXT DEFAULT 'TRY'"), ('lease_km_limit', 'REAL'), ('lease_includes', 'TEXT'),
+    ('start_km', 'REAL'), ('inspection_date', 'TEXT'), ('traffic_ins_date', 'TEXT'), ('kasko_date', 'TEXT'),
+    ('next_service_date', 'TEXT'), ('next_service_km', 'REAL'),
+    ('match_keys', 'TEXT'),                                     # muhasebe hareketi eşleştirme anahtar kelimeleri (virgülle)
+    ('exit_date', 'TEXT'), ('exit_reason', 'TEXT'), ('note', 'TEXT'), ('updated_at', 'TEXT'),
+]
+
+
 def _migrate(conn):
     """Eski veritabanlarını güncel şemaya taşır (ürünlerden önce açılmış siparişler CAYMAZ'a bağlanır)."""
     user_cols = {r[1] for r in conn.execute('PRAGMA table_info(users)')}
@@ -1917,6 +1992,10 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    fv_cols = {r[1] for r in conn.execute('PRAGMA table_info(field_vehicles)')}
+    for col, ddl in VEHICLE_COLS:   # Araç Yönetimi: satın alma / kiralama, teknik bilgi, hatırlatma tarihleri
+        if fv_cols and col not in fv_cols:
+            conn.execute(f'ALTER TABLE field_vehicles ADD COLUMN {col} {ddl}')
     ft_cols = {r[1] for r in conn.execute('PRAGMA table_info(fin_txns)')}
     if ft_cols and 'due_date' not in ft_cols:   # vade (Mikro cha_vade) — nakit akışı / yaşlandırma
         conn.execute('ALTER TABLE fin_txns ADD COLUMN due_date TEXT')

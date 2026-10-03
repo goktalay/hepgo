@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.109.0'
+VERSION = '2.110.0'
 
 CHANGELOG = [
+    {'version': '2.110.0', 'date': '2026-10-04', 'title': 'Araç Yönetimi modülü',
+     'changes': [
+         'Yeni modül: Araç Yönetimi — satın alınan ve kiralanan şirket araçları (Saha modülündeki araç listesiyle ortak): marka / model / yıl / şasi, fotoğraf, satın alma bedeli ve satıcı ya da kiralayan firma, sözleşme tarihleri, aylık kira, km limiti, kiraya dahil hizmetler.',
+         'Zimmet: araç personele zimmetlenir (teslim km, yakıt seviyesi, ekipman listesi, hasar notu), devredilir, iade alınır. A4 Araç Zimmet Tutanağı yazdırılır; personel Kişisel › Araç Zimmetim ekranından tutanağı okuyup teslim aldığını uygulamada onaylar. İmzalı tutanak taraması yüklenebilir.',
+         'Gider etiketleme: muhasebedeki (Mikro senkronu) araç gider hesaplarına yazılan yakıt, bakım, kira, HGS, MTV, sigorta… hareketleri ve araçla ilgili kasa / banka çıkışları listelenir; plaka ya da kiralayan firmaya göre araç önerilir, tek tıkla etiketlenir, gerekirse birden çok araca bölünür. Elle gider ve fiş de eklenebilir.',
+         'Araç başına toplam / yıllık gider, kategori ve aylara göre grafik, km başına maliyet; filo raporu (araç × kategori).',
+         'Belgeler: ruhsat, kira sözleşmesi, poliçeler, muayene, servis formları (geçerlilik tarihiyle). Hatırlatmalar: muayene, trafik sigortası, kasko, kira bitişi ve periyodik bakım (tarih / km) bildirimi.',
+         'Muhasebedeki 254 Taşıtlar hesabında olup sistemde olmayan araçlar önerilir. Yeni rol: “Araç / Filo Sorumlusu” (İdari Personel de erişir).',
+     ]},
     {'version': '2.109.0', 'date': '2026-10-04', 'title': 'Sertifikasyon modülü',
      'changes': [
          'Yeni modül: Sertifikasyon — şirketin sahip olduğu ve almaya çalıştığı sertifikalar (ISO 9001, ISO 14001, Tesis Güvenlik, Üretim İzni…) A4 dikey kartlar olarak; taranmış belge görseliyle.',

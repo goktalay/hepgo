@@ -84,7 +84,7 @@ export function statusBar() {
       diskText.textContent = `${gb(s.disk_used)} dolu · ${gb(s.disk_free)} boş`;
     }
     last = s;
-    long = long.concat(s.history).slice(-300);
+    long = long.concat(s.history || []).filter(Boolean).slice(-300);
     history = long.slice(-N);
     if (history.length) since = history[history.length - 1].t;
     cpuVal.textContent = pct(s.cpu);

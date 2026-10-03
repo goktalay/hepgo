@@ -346,7 +346,8 @@ def meta(request: Request):
     # yüklemeye izin verilir → remote=false raporlanır (arayüzdeki "yalnızca yerel ağ" engelleri kalkar).
     remote = is_remote(request) and config.LOCAL_UPLOAD_REQUIRED
     return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': remote, 'local_url': config.LOCAL_URL,
-            'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED}
+            'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED,
+            'maps_key': config.GOOGLE_MAPS_API_KEY}   # Google Haritalar (istemci tarafı; yoksa harita OSM'e düşer
 
 
 @router.get('/plane')

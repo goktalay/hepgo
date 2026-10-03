@@ -150,10 +150,12 @@ function nvrPanel() {
     face.addEventListener('change', () => { syncState(); draw(); });
     sched.addEventListener('change', () => { syncState(); customWrap.hidden = sched.value !== 'custom'; refreshCap(); });
     [c0, c1].forEach(x => x.addEventListener('change', syncState));
-    const watch = h('button', { class: 'btn sm nvr-watch', type: 'button', title: 'Canlı izle', onclick: () => watchChannel(c.ch, c.name) }, segIconByKey('eye'), 'İzle');
+    const nameInp = h('input', { class: 'input nvr-name', value: c.name || '', placeholder: `Kanal ${c.ch}`, title: 'Kamera adı (düzenlenebilir)' });
+    nameInp.addEventListener('input', () => { c.name = nameInp.value; });
+    const watch = h('button', { class: 'btn sm nvr-watch', type: 'button', title: 'Canlı izle', onclick: () => watchChannel(c.ch, c.name || `Kanal ${c.ch}`) }, segIconByKey('eye'), 'İzle');
     return h('div', { class: `nvr-ch ${c._face ? 'on' : ''}` },
       h('label', { class: 'nvr-ch-sw' }, face, h('span', { class: 'nvr-slider' })),
-      h('div', { class: 'grow' }, h('b', null, c.name), h('small', { class: 'muted' }, `Kanal ${c.ch}`)),
+      h('div', { class: 'grow' }, nameInp, h('small', { class: 'muted' }, `Kanal ${c.ch}`)),
       h('div', { class: 'nvr-ch-sched' }, c._face ? sched : h('span', { class: 'muted small' }, 'Kapalı'), c._face ? customWrap : null),
       watch);
   };
@@ -236,7 +238,7 @@ function numBox(inp, suffix) {
 
 // ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
 // Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
-const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', general: 'gear' };
+const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', maps: 'globe', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
 const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
 function integrationsBody(view, ctx) {
@@ -351,6 +353,9 @@ const INTEG_LOGO = {
     <rect x="14" y="20" width="36" height="24" rx="3" fill="none" stroke="#fff" stroke-width="3"/>
     <circle cx="32" cy="32" r="6.5" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="32" r="1.8" fill="#fff"/>
     <circle cx="43" cy="25" r="1.6" fill="#22c55e"/></svg>`),
+  maps: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Google Haritalar"><rect width="64" height="64" rx="16" fill="#fff"/>
+    <path d="M32 14c-7 0-12 5.4-12 12 0 8.4 12 22 12 22s12-13.6 12-22c0-6.6-5-12-12-12z" fill="#34A853"/>
+    <circle cx="32" cy="26" r="5" fill="#fff"/><path d="M20 26c0-6.6 5-12 12-12 3.4 0 6.4 1.3 8.6 3.6L24 34c-2.5-2.2-4-5-4-8z" fill="#4285F4"/></svg>`),
   general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
 };
 const INTEG_INFO = {
@@ -398,6 +403,15 @@ const INTEG_INFO = {
         'Yetkili yönlendirme adresi: [internet adresi]/api/mail/oauth/callback (Genel ayarlardaki internet adresi).',
         'Gmail API’yi etkinleştirin; oluşan Client ID ve Client Secret’ı buraya girin.']],
       ['Bilinmesi gerekenler', ['Bilgiler eksikse kullanıcılar Gmail bağlayamaz.', 'Client Secret şifreli saklanır.']],
+    ] },
+  maps: { short: 'Google Haritalar', tag: 'Harita görünümleri',
+    lead: 'Harita gösterilen ekranlar (ör. Güvenlik › Bina Kontrol) Google Haritalar kullanır; anahtar yoksa açık kaynak haritaya (OpenStreetMap) düşülür.',
+    sections: [
+      ['Anahtar nasıl alınır?', ['Google Cloud Console › API’ler ve Hizmetler › "Maps JavaScript API"yi etkinleştirin.',
+        'Kimlik Bilgileri › API anahtarı oluşturun (AIza… ile başlar).',
+        'Güvenlik için anahtara HTTP yönlendiren (web sitesi) kısıtı ekleyin: alan adınız (ör. caymaz.app).']],
+      ['Bilinmesi gerekenler', ['Bu anahtar istemci tarafında (tarayıcıda) kullanılır; yönlendiren kısıtı ile korunur.',
+        'Anahtar tanımlı değilse haritalar OpenStreetMap ile gösterilir.']],
     ] },
   general: { short: 'Genel', tag: 'Firma adı ve adresler',
     lead: 'Sistemin kimliği: başlıklarda ve yazdırılan belgelerde görünen firma adı, davet ve e-posta bağlantılarında kullanılan adresler.',

@@ -14,7 +14,7 @@ const statusBadge = c => {
 export async function renderCameras(body, ctx, params) {
   const sub = params[0] === 'list' ? 'list' : 'watch';
   const nav = segmented([['watch', 'İzleme'], ['list', 'Kamera Listesi']], sub,
-    v => { location.hash = v === 'list' ? '#/security/cameras/list' : '#/security/cameras'; }, { tabs: true });
+    v => { location.hash = v === 'list' ? '#/cameras/list' : '#/cameras'; }, { tabs: true });
   const box = h('div');
   clear(body, h('div', { class: 'filters' }, nav), box);
   return sub === 'list' ? renderList(box) : renderWall(box);

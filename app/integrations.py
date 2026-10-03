@@ -64,6 +64,14 @@ GROUPS = {
             ('GOOGLE_CLIENT_SECRET', 'Client Secret', 'secret', 'GOCSPX-…'),
         ],
     },
+    'maps': {
+        'title': 'Google Haritalar',
+        'desc': 'Harita görünümleri (ör. Güvenlik › Bina Kontrol) Google Haritalar ile gösterilir. Anahtar Google Cloud '
+                'Console › Maps JavaScript API’den alınır; güvenlik için HTTP yönlendiren (domain) kısıtı eklenmelidir.',
+        'fields': [
+            ('GOOGLE_MAPS_API_KEY', 'Maps API anahtarı', 'text', 'AIza… ile başlar'),
+        ],
+    },
     'general': {
         'title': 'Genel',
         'desc': 'Davet / e-posta bağlantılarında kullanılan adresler ve firma adı.',
@@ -219,6 +227,9 @@ def test(group):
     if group == 'nvr':
         from . import nvr
         return nvr.test()
+    if group == 'maps':
+        ok = bool(config.GOOGLE_MAPS_API_KEY)
+        return ok, 'Harita anahtarı tanımlı; harita görünümleri Google Haritalar kullanır.' if ok else 'Maps API anahtarı girilmeli.'
     if group == 'google':
         ok = bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET)
         return ok, 'Bilgiler tanımlı; kullanıcılar E-posta bölümünden Gmail bağlayabilir.' if ok else 'Client ID ve Secret girilmeli.'

@@ -15,5 +15,5 @@ export async function render(view, params, ctx) {
     moduleToolbar(), body);
   if (tab === 'facerec') return renderFaceRec(body, ctx, params.slice(1));
   if (tab === 'unknown') return renderFaces(body, ctx);
-  return renderCameras(body, ctx, params.slice(1));
+  return renderCameras(body, ctx, params);   // Kameralar: alt sekmesini (İzleme/Liste) params[0]'dan okur
 }

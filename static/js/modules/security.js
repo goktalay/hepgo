@@ -1,6 +1,7 @@
 // Güvenlik (fabrika girişi): gelen aracın plakası kaydedilir; parktaki araçlar plaka kartı olarak görünür, karta
 // tıklanınca "çıkış yaptı" denir. Giriş / çıkış kayıtları ayrı sekmede. Kameralar ve tanımlanamayan yüzler de burada.
 import { api } from '../api.js';
+import { loadMaps } from '../maps.js';
 import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
   t, toast, toastError, periodFilter
@@ -235,6 +236,29 @@ async function renderBuilding(body) {
   }
   function trackMap(points) {
     if (!points.length) return h('div', { class: 'card empty' }, 'Konum kaydı yok (GPS izni verilmemiş olabilir).');
+    // Google Haritalar (terrain) üzerinde rota; anahtar yoksa / yüklenemezse SVG'ye düşülür.
+    const wrap = h('div', { class: 'bc-map-wrap' }, trackSvg(points));
+    loadMaps().then(maps => {
+      if (!maps) return;   // anahtar yok → SVG kalır
+      const mapEl = h('div', { class: 'bc-gmap' });
+      clear(wrap, mapEl);
+      const bounds = new maps.LatLngBounds();
+      points.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+      const map = new maps.Map(mapEl, { mapTypeId: 'terrain', mapTypeControl: true, streetViewControl: false,
+        fullscreenControl: true, gestureHandling: 'cooperative' });
+      map.fitBounds(bounds, 40);
+      if (points.length === 1) map.setZoom(19);
+      new maps.Polyline({ path: points.map(p => ({ lat: p.lat, lng: p.lng })), map, strokeColor: '#2563eb', strokeWeight: 4, strokeOpacity: 0.9 });
+      const a = points[0], b = points[points.length - 1];
+      new maps.Marker({ position: { lat: a.lat, lng: a.lng }, map, title: 'Başlangıç',
+        icon: { path: maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#16a34a', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
+      new maps.Marker({ position: { lat: b.lat, lng: b.lng }, map, title: 'Bitiş',
+        icon: { path: maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#dc2626', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
+    }).catch(() => { /* anahtar/yükleme hatası → SVG kalır */ });
+    return wrap;
+  }
+
+  function trackSvg(points) {
     const W = 580, H = 380, pad = 26;
     const las = points.map(p => p.lat), lns = points.map(p => p.lng);
     const minLa = Math.min(...las), maxLa = Math.max(...las), minLn = Math.min(...lns), maxLn = Math.max(...lns);

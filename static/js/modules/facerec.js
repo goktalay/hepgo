@@ -6,7 +6,7 @@ import { clear, confirmDialog, fmtDateTime, h, matches, modal, moduleToolbar, se
 export async function renderFaceRec(body, ctx, params) {
   const sub = ['train', 'events'].includes(params[0]) ? params[0] : 'train';
   const nav = segmented([['train', 'Eğitim'], ['events', 'Olaylar']], sub,
-    v => { location.hash = `#/security/facerec/${v}`; }, { tabs: true });
+    v => { location.hash = `#/cameras/facerec/${v}`; }, { tabs: true });
   const inner = h('div');
   clear(body, moduleToolbar(nav), inner);
   if (sub === 'events') return renderEvents(inner);

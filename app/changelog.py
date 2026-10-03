@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.82.0'
+VERSION = '2.83.0'
 
 CHANGELOG = [
+    {'version': '2.83.0', 'date': '2026-10-03', 'title': 'Google Haritalar entegrasyonu + Kameralar düzeltmeleri',
+     'changes': [
+         'Entegrasyonlar’a Google Haritalar API anahtarı eklendi; Güvenlik › Bina Kontrol haritası artık Google Haritalar (arazi/terrain) görünümünde — bina tanınır (anahtar yoksa açık kaynak haritaya düşer).',
+         'Kameralar modülü alt sekme yönlendirmesi düzeltildi (Kamera Listesi artık Güvenlik’e atmıyor).',
+         'Fabrika yüz-tanıma servisi, fabrika ajanı her bağlandığında güncel ayarla (NVR/kanal/vardiya/eğitim) otomatik eşitlenir.',
+         'NVR kanal adları panelden düzenlenebilir (anlamlı isim verilebilir).',
+     ]},
     {'version': '2.82.0', 'date': '2026-10-03', 'title': 'Yüz tanıma motoru: fabrikada çalışır, bulut tarih aralığıyla görür',
      'changes': [
          'Yüz tanıma artık fabrikada (GPU) çalışır; görülmeler, yüz kayıtları ve kısa videolar fabrikada (lokal) tutulur (KVKK).',

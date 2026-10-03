@@ -57,6 +57,21 @@ async def agent_call(op, args=None, timeout=25):
         _pending.pop(rid, None)
 
 
+async def _push_face_config():
+    """Ajan bağlanınca bulut yüz-tanıma ayarını fabrikaya aktarır (fabrika yeniden başlasa da senkron kalır)."""
+    await asyncio.sleep(1.0)   # bağlantının oturması
+    try:
+        from fastapi.concurrency import run_in_threadpool
+        from . import facebridge
+
+        def work():
+            with db.connect() as conn:
+                return facebridge.push(conn)
+        await run_in_threadpool(work)
+    except Exception:   # noqa: BLE001
+        pass
+
+
 async def _on_event(event, data):
     """Ajandan gelen itme (push) olayları — ör. yazıcı durum güncellemesi. İleride DB'ye yazılır."""
     # Harita sonrası: 'printer.status' vb. burada işlenecek.
@@ -96,6 +111,7 @@ async def ws_agent(ws: WebSocket):
             conn.commit()
     except Exception:   # noqa: BLE001
         pass
+    asyncio.create_task(_push_face_config())   # bağlanınca yüz-tanıma ayarını (NVR/kanal/vardiya/eğitim) fabrikaya aktar
 
     try:
         while True:

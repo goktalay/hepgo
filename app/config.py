@@ -86,6 +86,8 @@ NVR_PASSWORD = os.environ.get('CAYMAZ_NVR_PASSWORD', '')
 
 GOOGLE_CLIENT_ID = os.environ.get('CAYMAZ_GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('CAYMAZ_GOOGLE_CLIENT_SECRET', '')
+# Google Haritalar JavaScript API anahtarı (istemci tarafında kullanılır; HTTP yönlendiren kısıtıyla korunur).
+GOOGLE_MAPS_API_KEY = os.environ.get('CAYMAZ_GOOGLE_MAPS_API_KEY', '')
 PUBLIC_URL = os.environ.get('CAYMAZ_PUBLIC_URL', '').rstrip('/')   # ör. https://caymaz.app
 
 # Yapay zeka asistanı (maskot sohbeti) — Claude API. Anahtar .env'de tutulur (asla loglanmaz).

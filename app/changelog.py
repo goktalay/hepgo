@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.108.1'
+VERSION = '2.109.0'
 
 CHANGELOG = [
+    {'version': '2.109.0', 'date': '2026-10-04', 'title': 'Sertifikasyon modülü',
+     'changes': [
+         'Yeni modül: Sertifikasyon — şirketin sahip olduğu ve almaya çalıştığı sertifikalar (ISO 9001, ISO 14001, Tesis Güvenlik, Üretim İzni…) A4 dikey kartlar olarak; taranmış belge görseliyle.',
+         'Her sertifika: standart, belge no, kuruluş, durum (hazırlık / başvuru / geçerli / askıda / süresi doldu / iptal), başvuru – belge – geçerlilik bitiş tarihleri, kapsam; kalan gün göstergesi.',
+         'Dokümanlar: sertifika başına sınırsız doküman, klasörler, sürükle-bırak toplu yükleme (büyük dosya desteği, ilerleme çubuğu), arama, indirme.',
+         'Denetimler: ilk belgelendirme, gözetim, yeniden belgelendirme, iç ve müşteri denetimleri; sonuç, majör/minör uygunsuzluk ve gözlem sayıları, düzeltici faaliyet son tarihi, denetime özel dokümanlar; sonraki denetim tarihi girilince otomatik planlanır. Modülde tüm denetimler listesi.',
+         'Bildirimler: süresi 60 gün içinde dolacak / dolmuş sertifika ve 14 gün içindeki denetimler. Yeni rol: “Kalite / Sertifikasyon”.',
+     ]},
     {'version': '2.108.1', 'date': '2026-10-04', 'title': 'Mizan ağaç görünümü',
      'changes': [
          'Finans › Mizan artık ağaç şeklinde: her hesap ▸ / ▾ ile açılıp kapanır (sınıf → grup → ana hesap → alt hesap → detay).',

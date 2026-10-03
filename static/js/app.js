@@ -20,6 +20,7 @@ import * as tools from './modules/tools.js';
 import * as products from './modules/products.js';
 import * as admin from './modules/admin.js';
 import * as finance from './modules/finance.js';
+import * as certs from './modules/certs.js';
 import * as members from './modules/members.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
@@ -97,6 +98,7 @@ const MODULES = [
   { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
+  { key: 'certs', title: 'Sertifikasyon', mod: certs },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
   { key: 'tickets', title: 'Destek Talepleri', mod: ticketsMod },

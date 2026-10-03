@@ -240,6 +240,55 @@ CREATE TABLE IF NOT EXISTS fin_txns (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_fin_txns_acc ON fin_txns(account_id, date);
+-- Sertifikasyon: şirketin sahip olduğu / almaya çalıştığı sertifikalar, dokümanları ve denetimleri
+CREATE TABLE IF NOT EXISTS certs (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    standard    TEXT,                          -- ör. ISO 9001:2015
+    issuer      TEXT,                          -- belgelendirme kuruluşu / kurum
+    cert_no     TEXT,
+    status      TEXT NOT NULL DEFAULT 'gecerli',   -- hazirlik | basvuru | gecerli | askida | suresi_doldu | iptal
+    apply_date  TEXT,
+    issue_date  TEXT,
+    expiry_date TEXT,
+    scope       TEXT,
+    note        TEXT,
+    image       TEXT,                          -- taranmış sertifika (A4 dikey)
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS cert_audits (
+    id           INTEGER PRIMARY KEY,
+    cert_id      INTEGER NOT NULL REFERENCES certs(id) ON DELETE CASCADE,
+    date         TEXT NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'gozetim',  -- ilk | gozetim | yeniden | ic | musteri | ozel
+    body         TEXT,                          -- denetleyen kuruluş
+    auditor      TEXT,                          -- denetçi(ler)
+    result       TEXT NOT NULL DEFAULT 'planlandi', -- planlandi | basarili | sartli | basarisiz | iptal
+    major        INTEGER NOT NULL DEFAULT 0,    -- majör uygunsuzluk
+    minor        INTEGER NOT NULL DEFAULT 0,    -- minör uygunsuzluk
+    observations INTEGER NOT NULL DEFAULT 0,    -- gözlem / iyileştirme fırsatı
+    capa_due     TEXT,                          -- düzeltici faaliyet son tarihi
+    next_date    TEXT,                          -- bir sonraki denetim
+    notes        TEXT,
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_cert_audits ON cert_audits(cert_id, date);
+CREATE TABLE IF NOT EXISTS cert_docs (
+    id          INTEGER PRIMARY KEY,
+    cert_id     INTEGER NOT NULL REFERENCES certs(id) ON DELETE CASCADE,
+    audit_id    INTEGER REFERENCES cert_audits(id) ON DELETE CASCADE,
+    folder      TEXT,
+    name        TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    size        INTEGER,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_cert_docs ON cert_docs(cert_id, audit_id);
 -- Finans v2: Mikro muhasebe (hesap planı + yevmiye satırları) → mizan / mali tablolar
 CREATE TABLE IF NOT EXISTS fin_coa (
     code        TEXT PRIMARY KEY,

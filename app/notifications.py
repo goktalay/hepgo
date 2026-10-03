@@ -367,6 +367,31 @@ def contracts_pending(conn, user):
     return _result(rows, [f"{r['title']} (v{r['version']})" for r in rows], '#/uyelik/contracts', 'Okuyup onaylamak için açın')
 
 
+def certs_expiring(conn, user):
+    """Sertifikasyon: geçerlilik süresi 60 gün içinde dolacak ya da dolmuş (durumu hâlâ geçerli/askıda) sertifikalar."""
+    if 'certs' not in user.get('modules', []):
+        return _result([], [], '#/certs')
+    from datetime import date, timedelta
+    lim = (date.today() + timedelta(days=60)).isoformat()
+    rows = db.rows(conn.execute("""SELECT id, name, expiry_date FROM certs WHERE status IN ('gecerli','askida')
+                                   AND expiry_date IS NOT NULL AND expiry_date != '' AND expiry_date <= ? ORDER BY expiry_date""", (lim,)))
+    today = date.today().isoformat()
+    names = [f"{r['name']} — {'süresi doldu' if r['expiry_date'] < today else 'bitiş ' + r['expiry_date'][8:10] + '.' + r['expiry_date'][5:7] + '.' + r['expiry_date'][:4]}" for r in rows]
+    return _result(rows, names, f"#/certs/{rows[0]['id']}" if len(rows) == 1 else '#/certs', 'Yenileme sürecini başlatın')
+
+
+def audits_upcoming(conn, user):
+    """Sertifikasyon: 14 gün içindeki planlı denetimler."""
+    if 'certs' not in user.get('modules', []):
+        return _result([], [], '#/certs/audits')
+    from datetime import date, timedelta
+    t0, t1 = date.today().isoformat(), (date.today() + timedelta(days=14)).isoformat()
+    rows = db.rows(conn.execute("""SELECT a.id, a.date, a.cert_id, c.name FROM cert_audits a JOIN certs c ON c.id=a.cert_id
+                                   WHERE a.result='planlandi' AND a.date BETWEEN ? AND ? ORDER BY a.date""", (t0, t1)))
+    return _result(rows, [f"{r['name']} · {r['date'][8:10]}.{r['date'][5:7]}" for r in rows],
+                   f"#/certs/{rows[0]['cert_id']}" if len(rows) == 1 else '#/certs/audits', 'Denetim hazırlığı')
+
+
 def live_now(conn, user):
     """Şu an canlı yayın yapanlar (kendi yayını hariç) — yayın bitene kadar kalır; tıklayan yayına katılır."""
     from . import feed
@@ -439,6 +464,8 @@ NOTIFICATIONS = [
     {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
     # Telefon bildirimini yayın başlarken routers/live atar (aynı etiketle bitince günceller); tarama ikinci kez atmasın
     {'key': 'live-now', 'roles': None, 'fn': live_now, 'title': 'Canlı yayın', 'push': False},
+    {'key': 'certs-expiring', 'roles': None, 'fn': certs_expiring, 'title': 'Süresi yaklaşan / dolan sertifika'},
+    {'key': 'audits-upcoming', 'roles': None, 'fn': audits_upcoming, 'title': 'Yaklaşan sertifika denetimi'},
     {'key': 'contracts-pending', 'roles': None, 'fn': contracts_pending, 'title': 'Onayınızı bekleyen üyelik sözleşmesi'},
 ]
 

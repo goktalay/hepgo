@@ -69,5 +69,6 @@ export const icons = {
   videocam: svg('<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10l5-3v10l-5-3z"/>'),
   cleaning: svg('<path d="M15 3l4 4-7 7-4-4z"/><path d="M8 10l-4 8 8-4"/><path d="M4 18l2 2"/>'),
   design: svg('<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M12 3v18M3 8l9 5 9-5"/><circle cx="12" cy="13" r="2"/>'),
+  certs: svg('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><circle cx="12" cy="13" r="3"/><path d="M10.5 15.5 9.5 20l2.5-1.3 2.5 1.3-1-4.5"/>'),
   finance: svg('<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 6V4h12v2M5 10h.01M19 15h.01"/>'),
 };

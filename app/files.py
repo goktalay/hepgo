@@ -39,6 +39,10 @@ KINDS = {
                   '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.3gp', '.ts',
                   '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.txt', '.csv', '.rtf', '.zip',
                   '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.flac', '.wma', '.amr', '.3ga', '.weba', '.mka'},
+    # Sertifikasyon: sertifika taramaları (resim) + sertifikaya / denetime ait dokümanlar
+    'certs': {'.pdf', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp', '.gif', '.heic', '.heif',
+              '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.txt', '.csv', '.rtf', '.zip', '.rar', '.7z',
+              '.mp4', '.mov', '.m4v', '.webm', '.mp3', '.m4a', '.wav'},
 }
 DOCUMENT_MAX_BYTES = 4 * 1024 ** 3
 # Dosya indirme ek kontrolü: tür → fonksiyon(kullanıcı, dosya adı) → bool (ör. evrak görünürlüğü)
@@ -65,7 +69,7 @@ def local_only(request: Request):
 # Cloudflare tüneli tek istekte ~100 MB'tan büyük gövdeyi kabul etmez. Büyük dosyalar istemcide parçalara bölünür:
 # POST /api/uploads ile başlatılır, PUT /api/uploads/<jeton>?offset= ile parçalar sırayla eklenir; dosyayı kullanan
 # uç nokta (ör. uçuş logu) jetonu take_upload ile alır.
-CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES, 'gcode': 2 * 1024 ** 3}
+CHUNK_KINDS = {'flightlogs': FLIGHT_LOG_MAX_BYTES, 'documents': DOCUMENT_MAX_BYTES, 'gcode': 2 * 1024 ** 3, 'certs': DOCUMENT_MAX_BYTES}
 LOCAL_ONLY_EXT = KINDS['videos']   # video her türde yalnızca yerel ağdan
 CHUNK_SIZE = 16 * 1024 * 1024
 CHUNK_MAX = 64 * 1024 * 1024

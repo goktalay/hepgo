@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 
-from .. import auth, db
+from .. import auth, config, db
 
 router = APIRouter(prefix='/api/admin')
 admin_user = auth.require_module('admin')
@@ -241,10 +241,16 @@ def system(user=Depends(admin_user), conn=db.DB):
     d14 = [(now.date() - timedelta(days=i)).isoformat() for i in range(13, -1, -1)]
     acts = Counter(r[0] for r in conn.execute('SELECT substr(at, 1, 10) FROM audit_logs WHERE at >= ?', (d14[0],)))
     logins = Counter(r[0] for r in conn.execute('SELECT substr(at, 1, 10) FROM login_logs WHERE success = 1 AND at >= ?', (d14[0],)))
-    top = db.rows(conn.execute('''SELECT u.full_name AS name, COUNT(*) AS n FROM audit_logs a JOIN users u ON u.id = a.user_id
-                                  WHERE a.at >= ? GROUP BY a.user_id ORDER BY n DESC LIMIT 10''', (since7,)))
-    recent = db.rows(conn.execute('''SELECT a.at, a.action, a.detail, u.full_name AS who FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
-                                     WHERE a.action NOT IN ('Rapor görüntüledi') ORDER BY a.id DESC LIMIT 25'''))
+    # Master (sistem sahibi) hareketleri yalnızca master'a görünür; sistem yöneticisi raporlarında gizlenir
+    masters = tuple(config.MASTER_USERNAMES)
+    hide = bool(masters) and not user.get('master')
+    mph = ','.join('?' * len(masters))
+    top_x = f' AND LOWER(u.username) NOT IN ({mph})' if hide else ''
+    rec_x = f' AND (u.username IS NULL OR LOWER(u.username) NOT IN ({mph}))' if hide else ''
+    top = db.rows(conn.execute(f'''SELECT u.full_name AS name, COUNT(*) AS n FROM audit_logs a JOIN users u ON u.id = a.user_id
+                                  WHERE a.at >= ?{top_x} GROUP BY a.user_id ORDER BY n DESC LIMIT 10''', (since7, *(masters if hide else ()))))
+    recent = db.rows(conn.execute(f'''SELECT a.at, a.action, a.detail, u.full_name AS who FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
+                                     WHERE a.action NOT IN ('Rapor görüntüledi'){rec_x} ORDER BY a.id DESC LIMIT 25''', (masters if hide else ())))
     grid = [[0] * 24 for _ in range(7)]
     for (at,) in conn.execute('SELECT at FROM audit_logs WHERE at >= ?', (since7,)):
         try:

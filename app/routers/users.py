@@ -190,10 +190,20 @@ async def upload_photo(uid: int, file: UploadFile, user=Depends(admin_only), con
     return {'photo': path}
 
 
+def _guard_master_logs(conn, uid, viewer):
+    """Master (sistem sahibi) kullanıcının kayıtlarını yalnızca master görebilir."""
+    if viewer.get('master'):
+        return
+    row = conn.execute('SELECT username FROM users WHERE id = ?', (uid,)).fetchone()
+    if row and auth.is_master(row[0]):
+        raise HTTPException(403, 'Bu kullanıcının kayıtlarını görüntüleme yetkiniz yok')
+
+
 @router.get('/{uid}/logs')
 def user_logs(uid: int, kind: str = '', q: str = '', date_from: str = '', date_to: str = '', limit: int = 1000,
               user=Depends(admin_only), conn=db.DB):
     """Kullanıcının tüm hareketleri. kind: 'page' (sayfa hareketleri) | 'action' (işlemler) | '' (tümü)."""
+    _guard_master_logs(conn, uid, user)
     where, args = ['user_id = ?'], [uid]
     if kind == 'page':
         where.append("entity = 'page'")
@@ -227,6 +237,7 @@ def user_logs(uid: int, kind: str = '', q: str = '', date_from: str = '', date_t
 
 @router.get('/{uid}/logins')
 def user_logins(uid: int, user=Depends(admin_only), conn=db.DB):
+    _guard_master_logs(conn, uid, user)
     return db.rows(conn.execute(
         'SELECT id, success, ip, user_agent, at FROM login_logs WHERE user_id = ? ORDER BY id DESC LIMIT 500',
         (uid,)))

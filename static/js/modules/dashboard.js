@@ -56,6 +56,7 @@ export async function renderDashboard(view, ctx, modules) {
 
   function persist() {
     if (!grid) return;
+    if (grid.getColumn && grid.getColumn() !== 12) return;   // mobil tek-sütun reflow'u kayıtlı 12-sütun düzenini bozmasın
     const byId = Object.fromEntries(layout.map(it => [it.id, it]));
     layout = grid.save(false).map(n => { const it = byId[String(n.id)] || byId[n.id] || {}; return { id: n.id, k: it.k, o: it.o, x: n.x, y: n.y, w: n.w, h: n.h }; }).filter(it => it.k);
     api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout) }).catch(() => {});
@@ -89,7 +90,9 @@ export async function renderDashboard(view, ctx, modules) {
     if (grid) { try { grid.off('change added removed'); grid.destroy(false); } catch { /* */ } }
     clear(gridEl, layout.map(itemEl));
     if (!GridStack) return;
-    grid = GridStack.init({ column: 12, cellHeight: 76, margin: 6, float: false, handle: '.db-head', staticGrid: !editing }, gridEl);
+    // Mobilde (≤768px) tek sütun: her kutucuk tam genişlik. Masaüstünde 12 sütun.
+    grid = GridStack.init({ column: 12, columnOpts: { breakpointForWindow: true, layout: 'list', breakpoints: [{ w: 768, c: 1 }] },
+      cellHeight: 76, margin: 6, float: false, handle: '.db-head', staticGrid: !editing }, gridEl);
     grid.on('change added removed', persist);
   }
 

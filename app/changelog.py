@@ -3,9 +3,13 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.96.2'
+VERSION = '2.96.3'
 
 CHANGELOG = [
+    {'version': '2.96.3', 'date': '2026-10-03', 'title': 'Düzeltme: mobilde pano tek sütun (tam genişlik)',
+     'changes': [
+         'Mobilde (≤768px) pano kutucukları artık tek sütunda tam genişlik görünür; dar ekranda sıkışma düzeltildi.',
+     ]},
     {'version': '2.96.2', 'date': '2026-10-03', 'title': 'Master log gizliliği',
      'changes': [
          'Sistem sahibinin (MASTER) hareket/kullanım kayıtları yalnızca MASTER tarafından görülebilir; sistem yöneticisinin kullanım raporunda (en aktif kullanıcılar, son işlemler, kullanıcı log detayı) MASTER verileri gizlenir.',

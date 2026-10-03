@@ -5543,3 +5543,11 @@ button.feed-rsum { border: none; background: none; padding: 0; font: inherit; co
 .feed-c-tool .feed-ic { display: flex; }
 /* tam ekran: kaydet */
 .fv-save.on { color: #f7b125; }
+/* Mikro ERP › Finans sekmesi */
+.mk-fin-sum { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.mk-fin-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mk-fin-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-fin-cat { padding: 4px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; }
+.mk-fin-last { line-height: 1.5; }
+.mk-fin-card { margin-bottom: 12px; }
+.mk-fin-h { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 14px 4px; }

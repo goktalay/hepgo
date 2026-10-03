@@ -83,14 +83,18 @@ def _sync_pdks(conn):
 
 
 def _sync_mikro(conn):
-    """Güvenli otomatik aktarım: yalnızca henüz bağlanmamış YENİ cari ve stok kartları (ek niteliğinde).
-    Faturalar finansal olduğundan otomatik aktarılmaz; Satış / Satın Alma’dan elle aktarılır."""
+    """Güvenli otomatik aktarım: henüz bağlanmamış YENİ cari kartları + Finans senkronu (banka/kasa hesapları ve
+    finansal hareketler, tek yönlü yansıtma). Faturalar stok hareketi doğurduğundan otomatik aktarılmaz."""
     from . import mikro
     from .routers import mikro as mikro_routes
     if not mikro.configured():
         return False, 'Mikro bağlantısı tanımlı değil'
     n_cari = mikro_routes.auto_import_new(conn, 'cari')
-    return True, f'{n_cari} yeni cari aktarıldı (stok ve faturalar elle aktarılır)'
+    # Finans: banka/kasa hesapları ve finansal hareketler (salt yansıtma; Mikro'da silinen yerelden de kalkar)
+    from . import mikro_finance
+    st = mikro_finance.sync(conn, include_cari=True)
+    return True, (f"{n_cari} yeni cari; finans: {st['eklenen']} yeni, {st['guncellenen']} güncel, {st['silinen']} silinen hareket "
+                  f"(stok ve faturalar elle aktarılır)")
 
 
 JOBS = {'pdks': _sync_pdks, 'mikro': _sync_mikro}

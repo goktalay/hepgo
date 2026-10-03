@@ -31,8 +31,8 @@ export async function render(view, params, ctx) {
     ? h('div', { class: 'mk-conn ok' }, h('span', { class: 'dot' }), t('Bağlı · {db}', { db: status.db || 'Mikro ERP' }), count)
     : h('div', { class: 'mk-conn err' }, h('span', { class: 'dot' }), t('Bağlanılamadı: {err}', { err: status.error || 'bilinmeyen hata' }));
 
-  const TABS = [['cari', 'Cari'], ['stok', 'Stok'], ['alis', 'Alış Faturaları'], ['satis', 'Satış Faturaları']];
-  const RENDER = { cari: cariTab, stok: stokTab, alis: r => faturaTab(r, 'alis'), satis: r => faturaTab(r, 'satis') };
+  const TABS = [['cari', 'Cari'], ['stok', 'Stok'], ['alis', 'Alış Faturaları'], ['satis', 'Satış Faturaları'], ['finans', 'Finans · Banka · Kasa']];
+  const RENDER = { cari: cariTab, stok: stokTab, alis: r => faturaTab(r, 'alis'), satis: r => faturaTab(r, 'satis'), finans: finansTab };
   let tab = pref('mikro.tab', 'cari');
   if (!TABS.some(([k]) => k === tab)) tab = 'cari';
   const seg = h('div', { class: 'seg wrap' });
@@ -40,7 +40,7 @@ export async function render(view, params, ctx) {
   const drawTabs = () => clear(seg, TABS.map(([k, l]) =>
     h('button', { class: k === tab ? 'on' : '', type: 'button', onclick: () => { tab = k; setPref('mikro.tab', k); drawTabs(); load(); } }, l)));
 
-  const load = () => { clear(stage); RENDER[tab](stage, { canImport, onImported: refreshCount }); };
+  const load = () => { clear(stage); RENDER[tab](stage, { canImport, onImported: refreshCount, resetBtn: canImport ? resetBtn : null }); };
 
   // Senkron stoğunu sıfırla: eski "Stok Aktarımı" sayım hareketlerini siler; stok artık fatura hareketlerinden oluşur.
   const resetBtn = h('button', { class: 'btn ghost sm', type: 'button', title: 'Stok Aktarımı’nda yazılan Mikro senkron sayım hareketlerini siler (fatura hareketlerine dokunmaz)' }, 'Senkron stoğu sıfırla');
@@ -50,7 +50,7 @@ export async function render(view, params, ctx) {
     catch (err) { toastError(err); }
   });
 
-  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü', right: canImport ? resetBtn : null }),
+  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü' }),
     banner, h('div', { class: 'mk-tabs', style: { margin: '12px 0' } }, seg), stage);
   drawTabs();
   load();
@@ -160,7 +160,7 @@ function cariTab(root, { canImport, onImported }) {
   }, canImport);
 }
 
-function stokTab(root, { canImport, onImported }) {
+function stokTab(root, { canImport, onImported, resetBtn }) {
   const typeSel = h('select', { class: 'input', style: { width: 'auto' } }, STOK_TYPES.map(([v, l]) => h('option', { value: v }, l)));
   typeSel.value = pref('mikro.stokType', 'SARF');
   typeSel.addEventListener('change', () => setPref('mikro.stokType', typeSel.value));
@@ -171,7 +171,7 @@ function stokTab(root, { canImport, onImported }) {
   tableScreen(root, {
     onImported,
     placeholder: 'Stok kodu, isim veya marka ara…',
-    controls: [h('label', { class: 'small muted', style: { alignSelf: 'center' } }, 'Tip:'), typeSel, setStockLbl],
+    controls: [h('label', { class: 'small muted', style: { alignSelf: 'center' } }, 'Tip:'), typeSel, setStockLbl, resetBtn],
     head: [h('th', null, 'Kod'), h('th', null, 'İsim'), h('th', null, 'Marka'), h('th', null, 'Barkod'), h('th', { class: 'right' }, 'Miktar'), h('th', null, 'Durum')],
     searchFields: r => [r.sto_kod, r.sto_isim, r.sto_marka_kodu, r.barkod],
     key: r => r.sto_kod,
@@ -207,4 +207,61 @@ function faturaTab(root, kind) {
     doImport: evraks => api.post(`/api/mikro/import/${kind}`, { evraks }),
   }, true);
   clear(root, note, wrap);
+}
+
+// Finans: Mikro'daki banka hesapları ve kasalar (Mikro / Finans bakiyesi), hareket özeti; "Finans'a senkronize et".
+// Tek yönlü yansıtma: tekrar çalıştırılabilir, Mikro'da silinen hareket Finans'tan da kalkar; elle girilenlere dokunmaz.
+async function finansTab(root, { canImport }) {
+  clear(root, h('div', { class: 'loading' }, 'Mikro finans verisi okunuyor…'));
+  let d;
+  try { d = await api.get('/api/mikro/finans'); } catch (err) { clear(root, h('div', { class: 'card empty' }, err.message)); return; }
+  const cariChk = h('input', { type: 'checkbox', checked: true });
+  const btn = h('button', { class: 'btn primary', type: 'button', disabled: !canImport }, 'Finans’a senkronize et');
+  if (!canImport) btn.title = 'Senkron yalnızca sistem sahibine (MASTER) açıktır';
+  const last = d.son_senkron;
+  const lastTxt = last ? t('Son senkron: {at} · {e} yeni, {g} güncel, {s} silinen', { at: fmtDateTime(last.at), e: last.eklenen, g: last.guncellenen, s: last.silinen })
+    : 'Henüz senkronize edilmedi';
+  btn.addEventListener('click', async () => {
+    const ok = await confirmDialog('Finans senkronu', t('Mikro’daki {b} banka, {k} kasa hesabı ve {n} finansal hareket Finans modülüne işlenecek{c}. Mikro’ya hiçbir şey yazılmaz; tekrar çalıştırılabilir.',
+      { b: d.bankalar.length, k: d.kasalar.length, n: d.hareket.toplam, c: cariChk.checked ? t(' (eşleşen firmaların cari hareketleri dahil)') : '' }), { okLabel: 'Senkronize et' });
+    if (!ok) return;
+    btn.disabled = true; btn.textContent = 'Senkronize ediliyor…';
+    try {
+      const r = await api.post('/api/mikro/sync/finans', { cari: cariChk.checked });
+      toast(t('Finans senkronu tamam: {e} yeni, {g} güncel, {s} silinen hareket{u}', { e: r.eklenen, g: r.guncellenen, s: r.silinen,
+        u: r.cari_eslesmeyen ? t(' · {n} cari eşleşmedi (önce Cari sekmesinden aktarın)', { n: r.cari_eslesmeyen }) : '' }), 'success');
+      finansTab(root, { canImport });
+    } catch (err) { toastError(err); btn.disabled = false; btn.textContent = 'Finans’a senkronize et'; }
+  });
+  const accTable = (title, list, isBank) => h('div', { class: 'card table-wrap mk-fin-card' },
+    h('div', { class: 'mk-fin-h' }, h('b', null, title), h('span', { class: 'small muted' }, t('{n} hesap', { n: list.length }))),
+    h('table', { class: 'table mk-table' },
+      h('thead', null, h('tr', null, h('th', null, 'Kod'), h('th', null, isBank ? 'Banka' : 'Kasa'), isBank ? h('th', null, 'IBAN') : null,
+        h('th', { class: 'right' }, 'Hareket'), h('th', { class: 'right' }, 'Mikro bakiye'), h('th', { class: 'right' }, 'Finans bakiye'), h('th', null, 'Durum'))),
+      h('tbody', null, list.length ? list.map(a => {
+        const same = a.linked && Math.abs((a.finans_bakiye || 0) - a.mikro_bakiye) < 0.01;
+        return h('tr', null, h('td', { class: 'mono small' }, a.kod),
+          h('td', { class: 'mk-name', title: [a.ad, a.sube].filter(Boolean).join(' · ') }, a.ad || '—', a.sube ? h('div', { class: 'small muted' }, a.sube) : null),
+          isBank ? h('td', { class: 'mono small' }, a.iban || '—') : null,
+          h('td', { class: 'right small' }, num(a.hareket)),
+          h('td', { class: 'right' }, money(a.mikro_bakiye), a.doviz_bakiye != null ? h('div', { class: 'small muted' }, `${num(a.doviz_bakiye)} ${a.doviz}`) : null),
+          h('td', { class: 'right' }, a.linked ? money(a.finans_bakiye) : '—'),
+          h('td', null, a.iptal ? h('span', { class: 'badge gray' }, 'İptal') : !a.linked ? h('span', { class: 'badge gray' }, 'Yeni')
+            : same ? h('span', { class: 'badge green' }, 'Eşit') : h('span', { class: 'badge yellow' }, 'Senkron gerekli')));
+      }) : h('tr', null, h('td', { colspan: isBank ? 7 : 6, class: 'muted', style: { padding: '14px', textAlign: 'center' } }, 'Kayıt yok')))));
+  const hr = d.hareket;
+  const cats = h('div', { class: 'mk-fin-cats' }, hr.kategoriler.map(c => h('span', { class: 'mk-fin-cat' }, h('b', null, num(c.adet)), ` ${c.kategori}`)));
+  clear(root,
+    h('div', { class: 'card card-pad mk-fin-sum' },
+      h('div', { class: 'mk-fin-row' },
+        h('div', null, h('b', null, t('{n} finansal hareket', { n: num(hr.toplam) })),
+          h('div', { class: 'small muted' }, hr.ilk ? t('{a} – {b} arası · {c} cari satırı{u}', { a: shortDate(hr.ilk), b: shortDate(hr.son), c: num(hr.cari_satir),
+            u: hr.cari_eslesmeyen ? t(' ({n} cari henüz aktarılmamış)', { n: hr.cari_eslesmeyen }) : '' }) : '')),
+        h('div', { class: 'spacer' }),
+        h('label', { class: 'mk-check', title: 'Cari sekmesinden aktarılmış firmaların borç/alacak hareketleri Finans › Cariler ekstresine işlenir' }, cariChk, h('span', null, 'Cari hareketleri dahil')),
+        btn),
+      cats,
+      h('div', { class: 'small muted mk-fin-last' }, lastTxt, ' · ', 'Otomatik senkron açıksa (Program Ayarları › Entegrasyonlar) finans da düzenli güncellenir. Tutarlar TL karşılığıdır.')),
+    accTable('Banka hesapları', d.bankalar, true),
+    accTable('Kasalar', d.kasalar, false));
 }

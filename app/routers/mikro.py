@@ -387,6 +387,40 @@ def import_satis(body: FatImportIn, user=Depends(mikro_user), conn=db.DB):
     return _import_faturalar('satis', body, user, conn)
 
 
+# ---------- Finans: banka hesapları, kasalar, finansal hareketler (Mikro → Finans, tek yönlü) ----------
+class FinSyncIn(BaseModel):
+    cari: bool = True   # eşleşen firmaların cari hareketleri de Finans'a işlensin
+
+
+@router.get('/finans')
+def finans(user=Depends(mikro_user), conn=db.DB):
+    """Mikro'daki banka / kasa hesapları (Mikro ve Finans bakiyesiyle) ve hareket özeti."""
+    if not mikro.configured():
+        raise HTTPException(400, 'Mikro ERP bağlantısı tanımlı değil')
+    from .. import mikro_finance
+    try:
+        return mikro_finance.preview(conn)
+    except Exception as err:   # noqa: BLE001
+        raise _read_error(err)
+
+
+@router.post('/sync/finans')
+def sync_finans(body: FinSyncIn, user=Depends(mikro_user), conn=db.DB):
+    """Banka/kasa hesaplarını ve finansal hareketleri Finans modülüne senkronize eder (tekrar çalıştırılabilir)."""
+    _manager(user)
+    if not mikro.configured():
+        raise HTTPException(400, 'Mikro ERP bağlantısı tanımlı değil')
+    from .. import mikro_finance
+    try:
+        st = mikro_finance.sync(conn, include_cari=body.cari, user_id=user['id'])
+    except Exception as err:   # noqa: BLE001
+        raise _read_error(err)
+    db.audit(conn, user['id'], 'Mikro ERP finans senkronu', 'finance', None,
+             f"{st['eklenen']} yeni, {st['guncellenen']} güncel, {st['silinen']} silinen hareket")
+    conn.commit()
+    return st
+
+
 @router.post('/reset-stock')
 def reset_stock(user=Depends(mikro_user), conn=db.DB):
     """Daha önce 'Stok Aktarımı'nda sayım olarak yazılan Mikro senkron stok hareketlerini siler (stok sıfırlanır),

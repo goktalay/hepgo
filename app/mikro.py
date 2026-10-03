@@ -196,3 +196,29 @@ def fatura_lines(kind, evraks):
                                         'tarih': r['tarih'], 'cari': r['cari']}, 'lines': []})
         d['lines'].append(r)
     return out
+
+
+# ---------- Finans: banka hesapları, kasalar ve finansal hareketler (yalnızca okuma) ----------
+DOVIZ = {0: 'TRY', 1: 'USD', 2: 'EUR', 3: 'GBP'}   # Mikro döviz cinsi (0 = ana döviz TL)
+
+
+def list_bankalar():
+    return query("""SELECT ban_kod AS kod, ban_ismi AS ad, ban_sube AS sube, ban_IBANKodu AS iban, ban_hesapno AS hesapno,
+            ban_doviz_cinsi AS doviz, ban_iptal AS iptal FROM BANKALAR ORDER BY ban_kod""")
+
+
+def list_kasalar():
+    return query("SELECT kas_kod AS kod, kas_isim AS ad, kas_doviz_cinsi AS doviz, kas_iptal AS iptal FROM KASALAR ORDER BY kas_kod")
+
+
+def list_fin_hareket():
+    """Banka / kasa / cari hareketleri (iptaller hariç). cins: hareketin kendi hesabı (0 cari, 2 banka, 4 kasa…);
+    kh/khkod: karşı hesap (havale ve kredi kartı ödemelerinde banka/kasa karşı taraftadır). tip: 0 borç, 1 alacak.
+    Tutar: dc (döviz cinsi) 0 ise TL; dövizli satırda tutar dövizdir, TL karşılığı = tutar × kur (bkz. mikro_finance._tl)."""
+    return query("""SELECT CAST(cha_Guid AS varchar(40)) AS guid, cha_tarihi AS tarih, cha_cari_cins AS cins, cha_kod AS kod,
+            cha_kasa_hizmet AS kh, cha_kasa_hizkod AS khkod, cha_tip AS tip, cha_meblag AS tutar, cha_evrak_tip AS ev,
+            cha_cinsi AS ci, cha_evrakno_seri AS seri, cha_evrakno_sira AS sira, cha_belge_no AS belge, cha_aciklama AS aciklama,
+            cha_d_cins AS dc, cha_d_kur AS kur
+        FROM CARI_HESAP_HAREKETLERI
+        WHERE cha_iptal = 0 AND (cha_cari_cins IN (0, 2, 4) OR cha_kasa_hizmet IN (2, 4))
+        ORDER BY cha_tarihi, cha_evrakno_sira""")

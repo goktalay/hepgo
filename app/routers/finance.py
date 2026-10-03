@@ -127,6 +127,9 @@ def add_txn(body: TxnIn, user=Depends(fin_user), conn=db.DB):
 
 @router.delete('/txns/{tid}')
 def del_txn(tid: int, user=Depends(fin_user), conn=db.DB):
+    r = conn.execute('SELECT mikro_ref FROM fin_txns WHERE id=?', (tid,)).fetchone()
+    if r and r[0]:   # Mikro'dan yansıyan hareket: bir sonraki senkronda geri gelirdi — kaynağında düzeltilmeli
+        raise HTTPException(409, 'Bu hareket Mikro ERP’den senkronize edildi; düzeltmeyi Mikro’da yapın (sonraki senkronda yansır).')
     conn.execute('DELETE FROM fin_txns WHERE id=?', (tid,))
     conn.commit()
     return {'ok': True}

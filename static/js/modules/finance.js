@@ -147,7 +147,7 @@ async function statementModal(acc, done) {
     h('div', { class: 'fin-stmt-head' }, h('div', null, acc.cari ? h('div', { class: 'muted' }, 'Cari ekstre') : null,
       h('div', null, 'Güncel bakiye: ', h('b', { style: { color: b >= 0 ? 'var(--text)' : 'var(--danger,#dc2626)' } }, money(b))))),
     d.rows.length ? h('div', { class: 'table-wrap' }, h('table', null,
-      h('thead', null, h('tr', null, ['Tarih', 'Açıklama', 'Giriş', 'Çıkış', 'Bakiye', ''].map(x => h('th', null, x)))),
+      h('thead', null, h('tr', null, ['Tarih', 'Açıklama', acc.cari ? 'Borç' : 'Giriş', acc.cari ? 'Alacak' : 'Çıkış', 'Bakiye', ''].map(x => h('th', null, x)))),
       h('tbody', null, [h('tr', { class: 'muted' }, h('td', null, '—'), h('td', null, 'Açılış'), h('td', null, ''), h('td', null, ''), h('td', { class: 'num' }, money(d.opening)), h('td', null, '')),
         ...d.rows.map(t => h('tr', null,
           h('td', null, fmtDate(t.date)), h('td', null, t.description || t.category || '—'),
@@ -169,7 +169,9 @@ async function statementModal(acc, done) {
 
 function txnForm(acc, done) {
   let dirVal = 'in';
-  const dir = segmented([['in', acc?.kind === 'cari' ? 'Tahsilat' : 'Giriş'], ['out', acc?.kind === 'cari' ? 'Ödeme' : 'Çıkış']], 'in', v => { dirVal = v; });
+  // Cari: bakiye + = firmanın bize borcu (alacağımız). Borç = fatura kestik / ödeme yaptık; Alacak = tahsilat / fatura aldık.
+  const isCari = acc?.kind === 'cari' || acc?.cari;
+  const dir = segmented([['in', isCari ? 'Borç (satış faturası / ödeme yaptık)' : 'Giriş'], ['out', isCari ? 'Alacak (tahsilat / alış faturası)' : 'Çıkış']], 'in', v => { dirVal = v; });
   const date = h('input', { class: 'input', type: 'date', value: new Date().toISOString().slice(0, 10) });
   const amount = h('input', { class: 'input', type: 'number', step: '0.01', placeholder: '0,00' });
   const desc = h('input', { class: 'input', placeholder: 'Açıklama' });

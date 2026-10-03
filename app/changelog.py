@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.104.0'
+VERSION = '2.105.0'
 
 CHANGELOG = [
+    {'version': '2.105.0', 'date': '2026-10-03', 'title': 'Mikro ERP → Finans senkronu: banka, kasa, finansal hareketler',
+     'changes': [
+         'Mikro ERP › “Finans · Banka · Kasa” sekmesi: Mikro’daki banka hesapları (IBAN, şube, döviz bakiyesi) ve kasalar Mikro bakiyesi ile Finans bakiyesi yan yana.',
+         '“Finans’a senkronize et”: banka/kasa hesapları açılır; dekont, gelen/giden havale, kredi kartı, devir, kredi ödemesi, kasadan ödenen faturalar ve (aktarılmış firmaların) cari borç/alacak hareketleri Finans’a işlenir. Bakiyeler Mikro ile birebir.',
+         'Tek yönlü ve tekrarlanabilir: değişen hareket güncellenir, Mikro’da silinen/iptal edilen Finans’tan da kalkar; elle girilen Finans hareketlerine dokunulmaz. Mikro’dan gelen hareket Finans’ta elle silinemez.',
+         'Otomatik Mikro senkronu (Program Ayarları › Entegrasyonlar) açıksa finans da düzenli güncellenir.',
+         'Finans › cari hareket türleri “Borç / Alacak” olarak düzeltildi (önceki “Tahsilat” etiketi ters yöndeydi).',
+         'Mikro ERP: “Senkron stoğu sıfırla” Stok sekmesine taşındı (telefonda başlıktaki düğmeyle çakışıyordu).',
+     ]},
     {'version': '2.104.0', 'date': '2026-10-03', 'title': '3D maskot',
      'changes': [
          'Köşedeki yapay zeka asistanı artık 3 boyutlu: 6 karakter (Kubbe, Robo, Pati, Boo, Pinti, Zog) parlak oyuncak görünümünde yeniden yapıldı.',

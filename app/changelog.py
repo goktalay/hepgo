@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.102.0'
+VERSION = '2.102.1'
 
 CHANGELOG = [
+    {'version': '2.102.1', 'date': '2026-10-03', 'title': 'Sürüm notları yalnızca MASTER’a',
+     'changes': [
+         'Program Hakkında’daki sürüm geçmişi ve “Neler değişti?” notlarını yalnızca MASTER kullanıcıları görür; diğer kullanıcılar yalnız sürüm numarasını görür.',
+         '“Yeni sürüm hazır — Güncelle” uyarısı herkese gelmeye devam eder (notlar düğmesi yalnız MASTER’da).',
+     ]},
     {'version': '2.102.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: canlı akış, TikTok tarzı tam ekran, silme kuralı',
      'changes': [
          'Yeni paylaşım anında düşer: ana ekrandaysanız akışın en üstüne vurgulu gelir; başka ekrandaysanız bildirim çıkar, tıklayınca ana ekrana gider. Uygulama kapalıysa telefona bildirim gelir.',

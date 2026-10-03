@@ -631,6 +631,9 @@ function brandBadge(ctx) {
 async function aboutModal() {
   let d;
   try { d = await api.get('/api/system/about'); } catch (err) { return toastError(err); }
+  if (!d.entries?.length) {   // sürüm notları yalnızca MASTER'a açık; diğerleri yalnız sürüm numarasını görür
+    return modal({ title: 'Program Hakkında', body: h('div', { class: 'about-plain' }, h('b', null, `Sürüm ${d.version}`)), actions: [{ label: 'Kapat' }] });
+  }
   let sel = d.entries[0];
   const list = h('div', { class: 'about-vers' });
   const detail = h('div', { class: 'about-detail' });
@@ -649,6 +652,7 @@ async function aboutModal() {
 const verCmp = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
 let loadedVersion = null;   // bu sayfa açıldığında çalışan sürüm
 async function whatsNewModal(since) {
+  if (!ctx.user?.master) return;   // sürüm notları yalnızca MASTER
   let d;
   try { d = await api.get('/api/system/about'); } catch (err) { return toastError(err); }
   const fresh = since ? d.entries.filter(e => verCmp(e.version, since) > 0) : [];
@@ -667,7 +671,7 @@ async function checkWhatsNew() {
   loadedVersion = d.version;
   let seen = null; try { seen = localStorage.getItem('caymaz.seenVersion'); } catch { /* */ }
   try { localStorage.setItem('caymaz.seenVersion', d.version); } catch { /* */ }
-  if (!seen || verCmp(d.version, seen) <= 0 || document.getElementById('wn-chip')) return;
+  if (!ctx.user?.master || !seen || verCmp(d.version, seen) <= 0 || document.getElementById('wn-chip')) return;   // "Neler değişti?" yalnız MASTER
   const chip = h('div', { id: 'wn-chip', class: 'wn-chip' },
     h('span', null, `✨ Sürüm ${d.version} yüklendi`),
     h('button', { class: 'btn sm', type: 'button', onclick: () => { chip.remove(); whatsNewModal(seen); } }, 'Neler değişti?'),
@@ -685,7 +689,7 @@ window.addEventListener('caymaz:build', e => {
 function showVersionBanner() {
   const bar = h('div', { id: 'ver-banner', class: 'ver-banner' },
     h('span', null, '🎉 Yeni sürüm hazır — güncellemek için dokunun'),
-    h('button', { class: 'btn sm ghost-light', type: 'button', onclick: () => whatsNewModal(loadedVersion) }, 'Neler değişti?'),
+    ctx.user?.master ? h('button', { class: 'btn sm ghost-light', type: 'button', onclick: () => whatsNewModal(loadedVersion) }, 'Neler değişti?') : null,
     h('button', { class: 'btn sm', type: 'button', onclick: hardReload }, 'Güncelle'),
     h('button', { class: 'ver-x', type: 'button', title: 'Şimdilik kapat', onclick: () => bar.remove() }, '×'));
   document.body.append(bar);

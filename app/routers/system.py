@@ -606,9 +606,9 @@ def status(since: int = 0, user=Depends(auth.current_user), conn=db.DB):
 
 @router.get('/about')
 def about(user=Depends(auth.current_user)):
-    """Program Hakkında: sürüm numarası ve değişiklik geçmişi (tarihçe)."""
+    """Program Hakkında: sürüm numarası herkese; değişiklik notları (sürüm tarihçesi) yalnızca MASTER'a."""
     from .. import changelog
-    return {'version': changelog.VERSION, 'entries': changelog.CHANGELOG}
+    return {'version': changelog.VERSION, 'entries': changelog.CHANGELOG if user.get('master') else []}
 
 
 @router.get('/details')

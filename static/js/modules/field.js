@@ -361,9 +361,9 @@ async function renderTask(view, id, ctx) {
           f.log_error ? h('div', { class: 'small', style: { color: 'var(--danger)', whiteSpace: 'normal' } }, f.log_error) : null),
         h('td', null, f.flight_s != null ? clock(f.flight_s) : '—'),
         h('td', null, f.videos.length ? h('span', { class: 'badge blue' }, `${f.videos.length} video`) : h('span', { class: 'muted' }, '—')),
-        h('td', { class: 'num' },
+        h('td', { class: 'num' }, h('div', { class: 'pill-group' },
           f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}` }, 'Uçuş Raporu') : null,
-          t.can.flights ? h('button', { class: 'btn sm primary', onclick: () => flightModal(f) }, 'Düzenle') : null))))),
+          t.can.flights ? h('button', { class: 'btn sm primary', onclick: () => flightModal(f) }, 'Düzenle') : null)))))),
       h('p', { class: 'small muted', style: { margin: '8px 2px 0' } },
         'Uçağa tıklayınca uçuş detayı açılır (rapor, 3B izleme, notlar, video ve resimler); sahada montajdaki uçak montaj detayına gider. "Düzenle" ile fırlatma sistemi ve log. Görev bittiğinde tüm uçuşların raporu hazırsa görev "Rapor Tamamlandı" olur.')));
   }

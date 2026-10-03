@@ -5165,3 +5165,11 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 /* Beyaz etiket: başlıkta firma adı (HEPGO yerine) */
 .product.wl b { font-size: 15px; letter-spacing: normal; line-height: 1.1; }
 .product.wl { font-size: 0; }
+
+/* Kişisel Ayarlar › Metin biçimi: tüm görünen metinler (kod ve giriş alanları hariç) */
+:root[data-textcase="upper"] body { text-transform: uppercase; }
+:root[data-textcase="lower"] body { text-transform: lowercase; }
+:root[data-textcase="title"] body { text-transform: capitalize; }
+:root[data-textcase] input, :root[data-textcase] textarea, :root[data-textcase] select,
+:root[data-textcase] code, :root[data-textcase] pre, :root[data-textcase] .mono,
+:root[data-textcase] kbd, :root[data-textcase] .db-matrix, :root[data-textcase] .mono small { text-transform: none; }

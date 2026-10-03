@@ -61,6 +61,8 @@ export function applySettings(s, user) {
   root.classList.toggle('ui-scaled', (current.scale || 1) !== 1);
   root.classList.toggle('reduce-motion', !!current.motion);
   root.classList.toggle('compact', !!current.compact);
+  const tc = ['title', 'upper', 'lower'].includes(current.textCase) ? current.textCase : '';
+  if (tc) root.dataset.textcase = tc; else delete root.dataset.textcase;   // metin yazım biçimi (Orijinal/Yazım Düzeni/Büyük/Küçük)
   setSoundSettings(current.sound);
   setScreensaver(current.screensaver, currentUser);
 }

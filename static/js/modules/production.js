@@ -38,20 +38,17 @@ export function subnav(active, ctx) {
 // ---------- Pano ----------
 async function renderBoard(view, ctx) {
   let mode = pref('production.view', 'todo');
-  const showDone = h('input', { type: 'checkbox' });
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Sipariş, firma, kişi, kuyruk no ara…', style: { width: '220px' } });
   const status = selectInput(BOARD_COLUMNS.map(k => [k, ORDER_STATES[k].label]), { all: 'Tüm durumlar' });
   const product = h('select', { class: 'input' });
-  const onlyErrors = h('input', { type: 'checkbox' });
   const body = h('div');
   let orders = [];
 
   const draw = () => {
     const list = orders.filter(o =>
-      (showDone.checked || o.status !== 'TAMAMLANDI') &&
+      o.status !== 'TAMAMLANDI' &&
       (!status.value || o.status === status.value) &&
       (!product.value || String(o.product_id) === product.value) &&
-      (!onlyErrors.checked || o.counts.HATA) &&
       matches(q.value, o.code, o.created_by_name, o.queue_no, o.product_name, o.product_serial, o.company_name));
     setListExport(() => ({ columns: ['Sipariş', 'Kuyruk no', 'Firma', 'Ürün', 'Durum', 'Siparişi veren', 'Sipariş tarihi', 'Başlama', 'Bitiş', 'İlerleme %'],
       rows: list.map(o => [o.code, o.queue_no || '', o.company_name || '', o.product_name || '', ORDER_STATES[o.status]?.label || o.status, o.created_by_name || '', o.created_at, o.start_date || '', o.end_date || '',
@@ -71,7 +68,7 @@ async function renderBoard(view, ctx) {
     draw();
   };
   q.addEventListener('input', draw);
-  [showDone, status, product, onlyErrors].forEach(el => el.addEventListener('change', draw));
+  [status, product].forEach(el => el.addEventListener('change', draw));
 
   // Sütun seçimi: her aşama bir düğme; açık olanlar panoda sütun olarak görünür
   let columns = String(pref('production.columns.v2', DEFAULT_COLUMNS.join(','))).split(',').filter(c => BOARD_COLUMNS.includes(c));
@@ -84,15 +81,13 @@ async function renderBoard(view, ctx) {
   });
   function drawColBar(list) { colBar.set(columns, colOptions(list)); }
 
+  const viewSeg = segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); });
   clear(view,
     pageHead('Üretim Yönetimi', { back: '#/', sub: 'Yarı Mamul', tabs: subnav('room', ctx) }),
-    moduleToolbar(segmented([['todo', 'Todo'], ['list', 'Liste'], ['cards', 'Kart']], mode, v => { mode = v; setPref('production.view', v); draw(); })),
     h('div', { class: 'filters' },
       q, status, product, colBar,
-      h('label', { class: 'check' }, onlyErrors, 'Hatalı parçası olanlar'),
-      h('label', { class: 'check' }, showDone, 'Saha deposundakileri göster'),
       h('span', { class: 'spacer' }),
-      h('span', { class: 'small muted' }, 'Her 30 sn yenilenir')),
+      viewSeg, h('div', { class: 'pill-group module-pills' })),   // Excel bu gruba (görünüm seçicisinin sağına) düşer
     body);
   await load();
   every(30000, () => load().catch(() => {}));

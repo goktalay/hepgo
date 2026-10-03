@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.95.0'
+VERSION = '2.96.0'
 
 CHANGELOG = [
+    {'version': '2.96.0', 'date': '2026-10-03', 'title': 'Üretim sadeleştirme + metin biçimi ayarı + küçük düzenler',
+     'changes': [
+         'Üretim Yönetimi: “Hatalı parçası olanlar” ve “Saha deposundakileri göster” filtreleri ve “Her 30 sn yenilenir” yazısı kaldırıldı; Excel düğmesi görünüm seçicisinin sağına alındı (başlıktan çıktı).',
+         'Kişisel Ayarlar › Arayüz › Metin biçimi: tüm görünen metinleri Orijinal / Yazım Düzeni / Tamamı Büyük / Tamamı Küçük gösterme (kod ve giriş alanları hariç).',
+         'Saha: “Uçuş Raporu” ve “Düzenle” düğmeleri aynı grupta.',
+     ]},
     {'version': '2.95.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: beğeni / tepki + yorumlar',
      'changes': [
          'Paylaşımlara beğeni ve tepki eklenebilir (👍 ❤️ 😂 😮 😢 👏 🎉); kimin ne verdiği sayısıyla görünür.',

@@ -33,6 +33,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
     toolbarAlign: cur.toolbarAlign || 'center',
+    textCase: ['title', 'upper', 'lower'].includes(cur.textCase) ? cur.textCase : 'original',
     feedView: cur.feedView === 'map' ? 'map' : 'feed',
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
@@ -65,6 +66,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   const startSel = h('select', { class: 'input' }, h('option', { value: 'dashboard' }, 'Kişisel pano'),
     modules.map(m => h('option', { value: m.key, selected: s.start === m.key }, m.title)));
   startSel.addEventListener('change', () => { s.start = startSel.value; save(); });
+  const textCaseSeg = segmented([['original', 'Orijinal'], ['title', 'Yazım Düzeni'], ['upper', 'Tamamı Büyük'], ['lower', 'Tamamı Küçük']],
+    s.textCase, v => { s.textCase = v; save('Metin biçimi güncellendi'); });
 
   // ---------- Görünüm & Renkler (MERKEZİ: üst bar, alt bar, footer, zemin — aktif temaya göre; modül içeriğine dokunulmaz)
   const alignSeg = segmented([['left', 'Sol'], ['center', 'Orta'], ['right', 'Sağ']], s.toolbarAlign || 'center', v => { s.toolbarAlign = v; save(); });
@@ -267,6 +270,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         line('Yazı ve öğe boyutu', 'Sayfa içeriğini büyütür / küçültür', scaleSeg),
         toggle(s, 'compact', 'Sıkı görünüm', 'Kart ve tablo boşluklarını azaltır, ekrana daha çok bilgi sığar'),
         toggle(s, 'motion', 'Hareketleri azalt', 'Geçiş ve animasyonları kapatır'),
+        line('Metin biçimi', 'Tüm görünen metinlerin yazımı (kodlar ve giriş alanları hariç)', textCaseSeg),
         line('Açılış sayfası', 'Giriş yapınca açılacak sayfa', startSel)) },
     { key: 'appearance', title: 'Görünüm & Renkler', desc: 'Üst/alt bar, footer, zemin renkleri; gövde arka planı; toolbar hizası', icon: 'card', body: appearanceBody },
     { key: 'notifications', title: 'Bildirimler', desc: 'Bildirim kutusu, masaüstü bildirimi', icon: 'bell',

@@ -153,6 +153,7 @@ async function renderList(box) {
         h('td', { class: 'muted' }, c.live_age != null ? (c.live_age < 15 ? 'şimdi' : fmtDateTime(c.last_frame_at)) : '—'),
         h('td', null, c.faces ? 'Açık' : 'Kapalı'),
         h('td', { class: 'num' },
+          h('button', { class: 'btn sm ghost', onclick: () => renameCamera(c, load) }, 'Yeniden Adlandır'),
           h('button', { class: 'btn sm ghost', onclick: () => cameraForm(c, load) }, 'Düzenle'),
           h('button', { class: 'btn sm ghost', onclick: async () => {
             if (!await confirmDialog('Kamerayı sil', t('{name} silinsin mi? Yüz kayıtları silinmez.', { name: c.name }), { okLabel: 'Sil', danger: true })) return;
@@ -166,6 +167,22 @@ async function renderList(box) {
     h('button', { class: 'btn', type: 'button', onclick: () => discover(load) }, 'Ağda Bul (ONVIF)'),
     h('button', { class: 'btn primary', type: 'button', onclick: () => cameraForm(null, load) }, '+ Kamera Ekle')), out);
   await load();
+}
+
+// Kamerayı yeniden adlandır (NVR kanalı için ad kalıcı olur ve canlı görünümde görünür)
+function renameCamera(c, done) {
+  const inp = h('input', { class: 'input', value: c.name || '', placeholder: 'Ör. Giriş kapısı, Üretim hattı, Depo' });
+  modal({
+    title: 'Kamerayı yeniden adlandır',
+    body: field('Kamera adı', inp),
+    actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
+      const name = inp.value.trim();
+      if (!name) throw new Error('Ad boş olamaz');
+      await api.put(`/api/cameras/${c.id}/name`, { name });
+      toast('Kamera adı güncellendi'); done?.();
+    } }],
+  });
+  setTimeout(() => inp.focus(), 50);
 }
 
 function cameraForm(c, done) {

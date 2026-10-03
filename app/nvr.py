@@ -286,31 +286,32 @@ def active_channels(conn):
 
 
 def sync_cameras(conn):
-    """Yüz tanıma açık NVR kanallarını `cameras` tablosuna köprüler (mevcut yüz-tanıma servisi bunları işler).
-    Kapatılan kanal pasifleştirilir (görülme geçmişi silinmez). NVR kameraları stream_url ile tanınır."""
+    """NVR kanallarını `cameras` tablosuna köprüler. Yüz tanıma açık kanallar faces=1/active=1 olur ve otomatik eklenir;
+    kapalı kanallar faces=0/active=0 (canlı izleme ayrıca live_watch ile yakalanır). Kanal ADI ve kimlik bilgileri,
+    yüz tanıma açık/kapalı fark etmeksizin mevcut tüm NVR kameralarında güncellenir (panelden yeniden adlandırma yansısın)."""
     from . import cameras as camlib
     if not configured():
         return 0
     base = f'rtsp://{config.NVR_HOST}:554/unicast/'   # NVR kanallarının ortak öneki
     pw = camlib.encrypt(config.NVR_PASSWORD) if config.NVR_PASSWORD else None
-    want = {}
-    for c in active_channels(conn):
-        want[rtsp_url(c['ch'], with_credentials=False)] = c
-    # Mevcut NVR kameraları
+    cfg = {rtsp_url(c['ch'], with_credentials=False): c for c in channel_config(conn)['channels']}   # TÜM kanallar (ad + face)
     existing = {r[1]: r[0] for r in conn.execute(
         "SELECT id, stream_url FROM cameras WHERE stream_url LIKE ?", (base + '%',)).fetchall()}
-    for url, c in want.items():
-        if url in existing:
-            conn.execute('UPDATE cameras SET name = ?, username = ?, password_enc = ?, faces = 1, active = 1 WHERE id = ?',
-                         (c['name'], config.NVR_USER, pw, existing[url]))
-        else:
+    face_n = 0
+    for url, c in cfg.items():
+        face = 1 if c['face'] else 0
+        face_n += face
+        if url in existing:   # ad / kimlik / yüz-aktif durumunu güncelle (ad her durumda)
+            conn.execute('UPDATE cameras SET name = ?, username = ?, password_enc = ?, faces = ?, active = ? WHERE id = ?',
+                         (c['name'], config.NVR_USER, pw, face, face, existing[url]))
+        elif face:            # yeni kamera yalnızca yüz tanıma açıkken otomatik eklenir
             conn.execute('''INSERT INTO cameras (name, ip, port, username, password_enc, stream_url, location, faces, active, auto_added, created_at)
                             VALUES (?,?,?,?,?,?,?,1,1,1,?)''',
                          (c['name'], config.NVR_HOST, 554, config.NVR_USER, pw, url, f'NVR kanal {c["ch"]}', db.now()))
-    for url, cid in existing.items():        # artık yüz tanıma açık olmayanları pasifleştir
-        if url not in want:
+    for url, cid in existing.items():        # NVR'dan kalkmış kanalları pasifleştir
+        if url not in cfg:
             conn.execute('UPDATE cameras SET active = 0 WHERE id = ?', (cid,))
-    return len(want)
+    return face_n
 
 
 # --- GPU kapasite ölçümü — kaç kameraya aynı anda yüz tanıma yapılabilir ---

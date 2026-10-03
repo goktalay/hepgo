@@ -217,6 +217,52 @@ def frame(cid: int, request: Request, user=Depends(cam_user)):
     return Response(path.read_bytes(), media_type='image/jpeg', headers=headers)
 
 
+class NameIn(BaseModel):
+    name: str
+
+
+_CHAN_RE = None
+
+
+def _chan_of(stream_url):
+    """RTSP adresinden NVR kanal numarası (…/unicast/c28/…) → 28; NVR dışıysa None."""
+    import re
+    m = re.search(r'/unicast/c(\d+)/', stream_url or '')
+    return int(m.group(1)) if m else None
+
+
+@router.put('/{cid}/name')
+def rename_camera(cid: int, body: NameIn, user=Depends(cam_user), conn=db.DB):
+    """Kamerayı yeniden adlandır. NVR kanalıysa ad kanal ayarına yazılır (kalıcı; sync ezmez) ve fabrikaya aktarılır;
+    NVR dışıysa doğrudan kamera tablosunda güncellenir. Dağıtık kurulumda da ad fabrikadaki listeye yansır."""
+    from .. import facebridge, nvr
+    name = (body.name or '').strip()[:60]
+    if not name:
+        raise HTTPException(400, 'Ad boş olamaz')
+    ch = None
+    if facebridge.remote():
+        for c in _face(conn, 'cameras_list'):
+            if c['id'] == cid:
+                ch = _chan_of(c.get('stream_url'))
+                break
+    else:
+        ch = _chan_of(_get(conn, cid)['stream_url'])
+    if ch:
+        import json
+        store = nvr._ch_store(conn)
+        rec = store.get(str(ch), {})
+        rec['name'] = name
+        store[str(ch)] = rec
+        conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (nvr.CH_KEY, json.dumps(store)))
+        conn.commit()
+        from .system import _push_face_config
+        _push_face_config(conn)   # fabrikaya aktar → sync_cameras adı kamera tablosuna yazar
+    else:
+        conn.execute('UPDATE cameras SET name = ? WHERE id = ?', (name, cid))
+        conn.commit()
+    return {'ok': True, 'name': name}
+
+
 @router.get('/overlays')
 def overlays(ids: str = '', user=Depends(cam_user), conn=db.DB):
     """Canlı izleme çerçeveleri: verilen kamera id'leri için yüz kutuları + kimlik (bilinen=ad, bilinmeyen=boş)."""

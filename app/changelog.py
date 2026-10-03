@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.84.0'
+VERSION = '2.85.0'
 
 CHANGELOG = [
+    {'version': '2.85.0', 'date': '2026-10-03', 'title': 'Personel “Ailesi” alt modülü + doğum günleri',
+     'changes': [
+         'Personel detayına “Ailesi” sekmesi: aile üyeleri ve yakınlık derecesi eklenir; her üye yüz tanımada eğitilebilir (kameralarda adıyla tanınır).',
+         'Ana ekran panosuna “Doğum Günleri” kutucuğu ve kişisel takvime personel doğum günleri eklendi.',
+     ]},
     {'version': '2.84.0', 'date': '2026-10-03', 'title': 'Canlı yüz çerçeveleri + ayarlanabilir tanıma hassasiyeti',
      'changes': [
          'İzleme ekranında yüzlerin etrafına çerçeve: bilinen kişi yeşil + adı altında yazılı, bilinmeyen kırmızı.',

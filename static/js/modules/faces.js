@@ -28,7 +28,7 @@ export async function renderFaces(body) {
         h('div', { class: 'fg-img' }, g.best_crop ? h('img', { src: fileUrl(g.best_crop, 256), alt: '', loading: 'lazy' }) : null,
           state === 'unknown' ? h('label', { class: 'fg-check', onclick: e => e.stopPropagation() }, cb) : null),
         h('div', { class: 'fg-body' },
-          state === 'known' ? h('b', null, g.user_name || g.person_name, g.person_company ? h('span', { class: 'small muted' }, ` · ${g.person_company}`) : null)
+          state === 'known' ? h('b', null, g.user_name || g.person_name || g.family_name, g.person_company ? h('span', { class: 'small muted' }, ` · ${g.person_company}`) : null)
             : h('b', null, 'Tanımlanamayan kişi'),
           h('div', { class: 'small' }, t('{n} görülme', { n: g.sightings })),
           h('div', { class: 'small muted' }, t('Son: {d}{cam}', { d: fmtDateTime(g.last_seen), cam: g.last_camera_name ? ` · ${g.last_camera_name}` : '' })),
@@ -51,7 +51,7 @@ export async function renderFaces(body) {
 
   async function openGroup(id) {
     const g = await api.get(`/api/faces/groups/${id}`);
-    const who = g.user_name || g.person_name;
+    const who = g.user_name || g.person_name || g.family_name;
     const m = modal({
       title: who ? `${who}${g.person_company ? ` · ${g.person_company}` : ''}` : 'Tanımlanamayan kişi', wide: true,
       body: h('div', null,

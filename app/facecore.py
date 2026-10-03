@@ -20,16 +20,17 @@ class NotFound(Exception):
     pass
 
 
-GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
-       u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, c.name AS last_camera_name,
+GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.family_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
+       u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name, c.name AS last_camera_name,
        (SELECT COUNT(*) FROM face_sightings s WHERE s.group_id = g.id) AS sightings,
        (SELECT group_concat(DISTINCT cc.name) FROM face_sightings s JOIN cameras cc ON cc.id = s.camera_id WHERE s.group_id = g.id) AS cameras
 FROM face_groups g LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
-LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN cameras c ON c.id = g.last_camera'''
+LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN family_members fm ON fm.id = g.family_id LEFT JOIN cameras c ON c.id = g.last_camera'''
 
 
 def groups(conn, state='unknown'):
-    where = 'g.person_id IS NULL AND g.user_id IS NULL' if state == 'unknown' else 'g.person_id IS NOT NULL OR g.user_id IS NOT NULL'
+    where = ('g.person_id IS NULL AND g.user_id IS NULL AND g.family_id IS NULL' if state == 'unknown'
+             else 'g.person_id IS NOT NULL OR g.user_id IS NOT NULL OR g.family_id IS NOT NULL')
     return db.rows(conn.execute(GROUP_SELECT + f' WHERE {where} ORDER BY g.last_seen DESC LIMIT 500'))
 
 
@@ -105,24 +106,25 @@ def delete_group(conn, gid):
 
 def recent(conn):
     return db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id,
-                  u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company
+        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
+                  u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name
            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id LEFT JOIN companies pc ON pc.id = p.company_id
-           WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
+           LEFT JOIN family_members fm ON fm.id = g.family_id
+           WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
 
 
 def events(conn, date_from, date_to, kind='known', limit=500):
     where = "s.at >= ? AND s.at < ?"
     args = [date_from, date_to + '~']
     if kind == 'known':
-        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL)"
+        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL)"
     return {'events': db.rows(conn.execute(
-        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id,
-                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
+                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name
             FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
             LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
-            LEFT JOIN companies pc ON pc.id = p.company_id
+            LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN family_members fm ON fm.id = g.family_id
             WHERE {where} ORDER BY s.at DESC LIMIT ?''', (*args, min(limit, 2000))))}
 
 
@@ -165,6 +167,11 @@ def push_config(conn, cfg):
     """Fabrika-yerel: NVR kimlik bilgileri + kanal/zamanlama + vardiya + eğitim izleri yerel DB'ye yazılır.
     camera_service bunları okuyarak çalışır. Eğitim izleri (embedding) yalnızca eşleştirme için; kırpık bulutta kalır."""
     from . import nvr
+    conn.execute('PRAGMA foreign_keys = OFF')   # fabrika aynası: bulut id'leri (employee/family) yerel parent olmadan taşınır
+    # Eğitilmiş aile üyesi stub'ları (face_groups.family_id FK'si + ad için)
+    for fmrow in cfg.get('family') or []:
+        conn.execute('INSERT OR REPLACE INTO family_members (id, employee_id, full_name, created_at) VALUES (?,?,?,?)',
+                     (fmrow['id'], fmrow.get('employee_id'), fmrow.get('full_name') or '(aile)', db.now()))
     nv = cfg.get('nvr') or {}
     for k, attr in (('host', 'NVR_HOST'), ('user', 'NVR_USER'), ('password', 'NVR_PASSWORD')):
         if nv.get(k) is not None:
@@ -180,9 +187,9 @@ def push_config(conn, cfg):
     n = 0
     for e in cfg.get('enroll') or []:
         emb = base64.b64decode(e['embedding'])
-        conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, crop, embedding, created_at)
-                        VALUES (?,?,?,?,?,?)''',
-                     (e['subject_type'], e.get('user_id'), e.get('person_id'), '(bulut)', emb, db.now()))
+        conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, crop, embedding, created_at)
+                        VALUES (?,?,?,?,?,?,?)''',
+                     (e['subject_type'], e.get('user_id'), e.get('person_id'), e.get('family_id'), '(bulut)', emb, db.now()))
         n += 1
     cams = nvr.sync_cameras(conn)   # yüz tanıma açık kanalları kamera listesine köprüle
     conn.commit()

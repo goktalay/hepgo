@@ -111,6 +111,18 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at   TEXT NOT NULL,
     created_by   INTEGER REFERENCES users(id)
 );
+-- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
+CREATE TABLE IF NOT EXISTS family_members (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    full_name   TEXT NOT NULL,
+    relation    TEXT,                -- yakınlık: Eş, Çocuk, Anne, Baba, Kardeş, Diğer
+    birth_date  TEXT,
+    phone       TEXT,
+    note        TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_family_members_emp ON family_members(employee_id);
 -- MRP › Depo Yönetimi: depolar ve sorumluları
 CREATE TABLE IF NOT EXISTS warehouses (
     id             INTEGER PRIMARY KEY,
@@ -1268,6 +1280,7 @@ CREATE TABLE IF NOT EXISTS face_groups (
     id          INTEGER PRIMARY KEY,
     person_id   INTEGER REFERENCES company_people(id) ON DELETE SET NULL,
     user_id     INTEGER REFERENCES users(id),
+    family_id   INTEGER REFERENCES family_members(id) ON DELETE SET NULL,
     centroid    BLOB NOT NULL,
     samples     INTEGER NOT NULL DEFAULT 0,
     best_crop   TEXT,
@@ -1299,6 +1312,7 @@ CREATE TABLE IF NOT EXISTS face_enroll (
     subject_type TEXT NOT NULL,
     user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
     person_id    INTEGER REFERENCES company_people(id) ON DELETE CASCADE,
+    family_id    INTEGER REFERENCES family_members(id) ON DELETE CASCADE,
     name         TEXT,                       -- subject_type='visitor' için serbest ad
     crop         TEXT NOT NULL,              -- yüz kırpığı (uploads altında göreli yol)
     embedding    BLOB NOT NULL,
@@ -1834,6 +1848,15 @@ def _migrate(conn):
     conn.execute('UPDATE orders SET product_id = ? WHERE product_id IS NULL', (default,))
     if 'clip' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anının kısa videosu (lokal)
         conn.execute('ALTER TABLE face_sightings ADD COLUMN clip TEXT')
+    # Personel aile üyeleri + yüz tanımada eğitilebilirlik
+    conn.execute('''CREATE TABLE IF NOT EXISTS family_members (
+        id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        full_name TEXT NOT NULL, relation TEXT, birth_date TEXT, phone TEXT, note TEXT, created_at TEXT NOT NULL)''')
+    conn.execute('CREATE INDEX IF NOT EXISTS ix_family_members_emp ON family_members(employee_id)')
+    if 'family_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_enroll)')}:
+        conn.execute('ALTER TABLE face_enroll ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE CASCADE')
+    if 'family_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_groups)')}:
+        conn.execute('ALTER TABLE face_groups ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE SET NULL')
 
 
 def get_db():

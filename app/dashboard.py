@@ -20,7 +20,7 @@ def widget(key, title, desc, module=None, size=1, default=False, modules=None):
 
 
 # Yeni kullanıcının panosu (sırasıyla); yetkisi olmayan kutucuk atlanır. Değer: sıra (1'den başlar), yoksa 0.
-DEFAULT_LAYOUT = ['clock', 'calendar', 'announcements', 'kpi_production', 'chart_production']
+DEFAULT_LAYOUT = ['clock', 'calendar', 'birthdays', 'announcements', 'kpi_production', 'chart_production']
 
 
 def available(user):
@@ -51,6 +51,12 @@ today = lambda: date.today().isoformat()
 @widget('modules', 'Modüller', 'Girebildiğiniz modüllere kısayollar', size=3)
 def w_modules(conn, user):
     return {}
+
+
+@widget('birthdays', 'Doğum Günleri', 'Yaklaşan personel doğum günleri', size=1)
+def w_birthdays(conn, user):
+    from .routers.hr import upcoming_birthdays
+    return {'items': upcoming_birthdays(conn, days=45, limit=12)}
 
 
 @widget('calendar', 'Takvimim', 'Bugünkü ve yaklaşan randevular, hatırlatmalar ve toplantılar', size=1)

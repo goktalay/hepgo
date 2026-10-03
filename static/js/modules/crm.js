@@ -219,13 +219,15 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
   const label = e => (e.subject_name ? `${e.title} · ${e.subject_name}` : e.kind === 'TOPLANTI' && mine ? `${e.title} · ${shortCompany(e.company_name)}` : e.title);
   const open = (e, ev) => {
     ev?.stopPropagation();
+    if (e.birthday) return;   // doğum günü: salt bilgi, düzenlenmez
     if (e.link) { location.hash = e.link; return; }   // şirket içi toplantı: Kişisel → Toplantılar ayrıntısı
     eventInfo(subject, subjectId, e, ctx, load);
   };
   const chip = e => {
     const full = e.kind === 'TOPLANTI' && mine && !e.subject_name ? `${e.title} · ${e.company_name}` : label(e);
+    const noTime = e.kind === 'HATIRLATMA' || e.kind === 'DOGUMGUNU';
     return h('button', { type: 'button', class: `cal-chip ${e.kind.toLowerCase()} ${e.done_at ? 'done' : ''}`, title: full, onclick: ev => open(e, ev) },
-      e.kind !== 'HATIRLATMA' || hm(e.starts_at) !== '00:00' ? h('span', { class: 'cal-time' }, hm(e.starts_at)) : null, label(e));
+      !noTime || hm(e.starts_at) !== '00:00' ? h('span', { class: 'cal-time' }, hm(e.starts_at)) : null, label(e));
   };
   const range = () => {
     if (mode === 'day') return [anchor, addDays(anchor, 1)];
@@ -362,7 +364,18 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
       ? [api.get(`/api/crm/my/events?start=${ymd(start)}&end=${ymd(end)}`), api.get('/api/crm/my/upcoming')]
       : [api.get(`/api/crm/events?subject=${subject}&subject_id=${subjectId}&start=${ymd(start)}&end=${ymd(end)}`),
         api.get(`/api/crm/events/upcoming?subject=${subject}&subject_id=${subjectId}`)]);
-    const byDay = byDayOf(events);
+    let all = events;
+    if (mine) {   // personel doğum günleri (yıllık tekrar) kişisel takvimde görünür
+      try {
+        const s = ymd(start), e = ymd(end);
+        const bdays = ((await api.get('/api/hr/birthdays?days=400')).items || [])
+          .filter(b => b.date >= s && b.date < e)
+          .map(b => ({ id: null, birthday: true, kind: 'DOGUMGUNU', starts_at: `${b.date}T00:00:00`,
+            title: `🎂 ${b.name}${b.age ? ` (${b.age})` : ''}`, done_at: null }));
+        all = events.concat(bdays);
+      } catch { /* doğum günü alınamazsa takvim yine çalışır */ }
+    }
+    const byDay = byDayOf(all);
     if (mode === 'day') drawTime(byDay, start, 1);
     else if (mode === 'week') drawTime(byDay, start, 7);
     else if (mode === 'year') drawYear(byDay);

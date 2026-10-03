@@ -15,12 +15,48 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, config, db
 from ..files import FILE_GUARDS, save_upload
 
 router = APIRouter(prefix='/api/hr')
 me_router = APIRouter(prefix='/api/me/leaves')
 hr_user = auth.require_module('hr')
+
+
+def upcoming_birthdays(conn, days=30, limit=100):
+    """Yaklaşan personel doğum günleri (aktif personel). [{name, date, days, age, today, user_id, photo}]."""
+    rows = db.rows(conn.execute(
+        '''SELECT e.first_name || ' ' || e.last_name AS name, e.birth_date, e.user_id, u.photo
+           FROM employees e LEFT JOIN users u ON u.id = e.user_id
+           WHERE e.status = 'AKTIF' AND e.birth_date IS NOT NULL AND e.birth_date != '' '''))
+    today = date.today()
+    out = []
+    for r in rows:
+        bd = (r['birth_date'] or '').strip()
+        if len(bd) < 10:
+            continue
+        try:
+            yr, mo, dy = int(bd[0:4]), int(bd[5:7]), int(bd[8:10])
+            try:
+                nxt = date(today.year, mo, dy)
+            except ValueError:            # 29 Şubat → 28'ine denk getir
+                nxt = date(today.year, mo, 28)
+            if nxt < today:
+                nxt = nxt.replace(year=today.year + 1)
+            delta = (nxt - today).days
+            if delta <= days:
+                out.append({'name': r['name'], 'date': nxt.isoformat(), 'days': delta,
+                            'age': nxt.year - yr, 'today': delta == 0, 'user_id': r['user_id'], 'photo': r['photo']})
+        except (ValueError, TypeError):
+            continue
+    out.sort(key=lambda x: (x['days'], x['name']))
+    return out[:limit]
+
+
+@router.get('/birthdays')
+def birthdays(days: int = 30, user=Depends(auth.current_user), conn=db.DB):
+    """Yaklaşan doğum günleri — herkese açık (iş arkadaşlarının doğum günleri panoda/takvimde görünür)."""
+    return {'items': upcoming_birthdays(conn, days=max(1, min(days, 366)), limit=100)}
 
 SOURCES = ['Kariyer.net', 'Eleman Online', 'LinkedIn', 'Referans', 'İŞKUR', 'Şirket web sitesi', 'Doğrudan başvuru', 'Diğer']
 # Zorunlu özlük dosyaları (askerlik yalnızca erkek personelde) ve sözleşmeler
@@ -328,6 +364,9 @@ def get_employee(eid: int, user=Depends(hr_user), conn=db.DB):
     e['unsigned_leaves'] = sum(1 for l in e['leaves'] if l['status'] == 'ONAYLANDI' and not l['signed_file'])
     e['addresses'] = db.rows(conn.execute(
         'SELECT * FROM employee_addresses WHERE employee_id = ? ORDER BY is_primary DESC, id', (eid,)))
+    e['family'] = db.rows(conn.execute(
+        '''SELECT fm.*, (SELECT COUNT(*) FROM face_enroll WHERE family_id = fm.id) AS face_count
+           FROM family_members fm WHERE fm.employee_id = ? ORDER BY fm.id''', (eid,)))
     e['duties'] = _duties(conn, eid)
     e['isg'] = _isg(conn, e)
     e['health_reports'] = _health(conn, eid)
@@ -543,6 +582,121 @@ def delete_address(eid: int, aid: int, user=Depends(hr_user), conn=db.DB):
         conn.execute('UPDATE employee_addresses SET is_primary = 1 WHERE id = '
                      '(SELECT id FROM employee_addresses WHERE employee_id = ? ORDER BY id LIMIT 1)', (eid,))
     event(conn, eid, user['id'], 'Adres silindi', f'{a["label"]}: {a["address"]}')
+    return {'ok': True}
+
+
+# ---------- Aile üyeleri (personel detayı › Ailesi) — yüz tanımada eğitilebilir
+
+RELATIONS = ['Eş', 'Çocuk', 'Anne', 'Baba', 'Kardeş', 'Nişanlı', 'Diğer']
+
+
+class FamilyIn(BaseModel):
+    full_name: str
+    relation: Optional[str] = None
+    birth_date: Optional[str] = None
+    phone: Optional[str] = None
+    note: Optional[str] = None
+
+
+def _family_fields(body):
+    name = (body.full_name or '').strip()
+    if not name:
+        raise HTTPException(400, 'Ad soyad girilmeli')
+    rel = (body.relation or '').strip()[:40] or None
+    return {'full_name': name[:120], 'relation': rel, 'birth_date': _date(body.birth_date, 'Doğum tarihi'),
+            'phone': (body.phone or '').strip()[:40] or None, 'note': (body.note or '').strip()[:500] or None}
+
+
+@router.post('/employees/{eid}/family')
+def add_family(eid: int, body: FamilyIn, user=Depends(hr_user), conn=db.DB):
+    _get(conn, eid)
+    f = _family_fields(body)
+    fid = conn.execute(f'INSERT INTO family_members ({", ".join(f)}, employee_id, created_at) VALUES ({",".join("?" * len(f))}, ?, ?)',
+                       (*f.values(), eid, db.now())).lastrowid
+    event(conn, eid, user['id'], 'Aile üyesi eklendi', f'{f["full_name"]} ({f["relation"] or "yakın"})')
+    return {'id': fid}
+
+
+@router.put('/employees/{eid}/family/{fid}')
+def update_family(eid: int, fid: int, body: FamilyIn, user=Depends(hr_user), conn=db.DB):
+    if not conn.execute('SELECT 1 FROM family_members WHERE id = ? AND employee_id = ?', (fid, eid)).fetchone():
+        raise HTTPException(404, 'Aile üyesi bulunamadı')
+    f = _family_fields(body)
+    conn.execute(f'UPDATE family_members SET {", ".join(f"{k} = ?" for k in f)} WHERE id = ?', (*f.values(), fid))
+    return {'ok': True}
+
+
+@router.delete('/employees/{eid}/family/{fid}')
+def delete_family(eid: int, fid: int, user=Depends(hr_user), conn=db.DB):
+    row = conn.execute('SELECT full_name FROM family_members WHERE id = ? AND employee_id = ?', (fid, eid)).fetchone()
+    if not row:
+        raise HTTPException(404, 'Aile üyesi bulunamadı')
+    conn.execute('DELETE FROM family_members WHERE id = ?', (fid,))   # face_enroll CASCADE ile silinir
+    event(conn, eid, user['id'], 'Aile üyesi silindi', row[0])
+    try:
+        from .. import facebridge
+        facebridge.push(conn)   # silinen yüz izleri fabrikadan da düşsün
+    except Exception:   # noqa: BLE001
+        pass
+    return {'ok': True}
+
+
+def _family(conn, eid, fid):
+    if not conn.execute('SELECT 1 FROM family_members WHERE id = ? AND employee_id = ?', (fid, eid)).fetchone():
+        raise HTTPException(404, 'Aile üyesi bulunamadı')
+
+
+@router.get('/employees/{eid}/family/{fid}/faces')
+def family_faces(eid: int, fid: int, user=Depends(hr_user), conn=db.DB):
+    """Aile üyesinin yüz tanıma eğitim fotoğrafları."""
+    _family(conn, eid, fid)
+    from .. import faceenroll
+    return {'faces': faceenroll.list_for(conn, 'family', family_id=fid)}
+
+
+@router.post('/employees/{eid}/family/{fid}/faces')
+async def family_face_add(eid: int, fid: int, file: UploadFile = File(...), user=Depends(hr_user), conn=db.DB):
+    """Aile üyesini yüz tanımada eğit: fotoğraf yükle."""
+    _family(conn, eid, fid)
+    from fastapi.concurrency import run_in_threadpool
+
+    from .. import faceenroll
+    import os
+    import tempfile
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(413, 'Fotoğraf çok büyük (en çok 15 MB)')
+    fd, tmp = tempfile.mkstemp(suffix='.jpg', dir=str(config.UPLOAD_DIR))
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        ok, res = await run_in_threadpool(faceenroll.enroll, conn, 'family', None, None, tmp, user['id'], fid)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    finally:
+        os.unlink(tmp)
+    if not ok:
+        raise HTTPException(422, res)
+    conn.commit()
+    try:
+        from .. import facebridge
+        facebridge.push(conn)
+    except Exception:   # noqa: BLE001
+        pass
+    return {'ok': True, 'face': res}
+
+
+@router.delete('/employees/{eid}/family/{fid}/faces/{enroll_id}')
+def family_face_del(eid: int, fid: int, enroll_id: int, user=Depends(hr_user), conn=db.DB):
+    _family(conn, eid, fid)
+    from .. import faceenroll
+    if faceenroll.delete(conn, enroll_id):
+        conn.commit()
+        try:
+            from .. import facebridge
+            facebridge.push(conn)
+        except Exception:   # noqa: BLE001
+            pass
     return {'ok': True}
 
 

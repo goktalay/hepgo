@@ -129,6 +129,10 @@ export async function renderDashboard(view, ctx, modules) {
         e.kind === 'TOPLANTI' ? h('small', null, e.live ? h('span', { class: 'badge green' }, 'Devam ediyor') : 'Toplantı',
           e.pending ? [' · ', h('span', { class: 'badge yellow' }, 'Yanıt bekliyor')] : null, e.location ? ` · ${e.location}` : '')
           : h('small', null, e.kind === 'HATIRLATMA' ? 'Hatırlatma' : 'Randevu')), 'Yaklaşan randevu ya da toplantı yok');
+      case 'birthdays': return list(d.items, b => h('li', { class: b.today ? 'db-bday-today' : '' },
+        h('span', null, h('span', { class: 'db-bday-ico' }, '🎂'), h('b', null, b.name), b.age ? h('small', { class: 'muted' }, ` · ${b.age}`) : null),
+        h('small', null, b.today ? '🎉 Bugün!' : (b.days === 1 ? 'Yarın' : t('{n} gün sonra', { n: b.days })) + ` · ${b.date.slice(8, 10)}.${b.date.slice(5, 7)}`)),
+      'Yaklaşan doğum günü yok');
       case 'my_cargo': return list(d.items, k => h('li', null, h('a', { href: '#/my-cargo' }, h('b', null, k.carrier || 'Kargo'), k.description ? ` · ${k.description}` : ''),
         h('small', null, fmtDateTime(k.created_at))), 'Bekleyen kargonuz yok');
       case 'my_calls': return list(d.items, c => h('li', null, h('a', { href: '#/my-calls' }, h('b', null, c.caller_name),

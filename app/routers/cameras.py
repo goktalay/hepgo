@@ -208,14 +208,18 @@ def overlays(ids: str = '', user=Depends(cam_user), conn=db.DB):
     ov = r.get('overlays', {})
     uids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'user' and b.get('id')}
     pids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'person' and b.get('id')}
+    fids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'family' and b.get('id')}
     users = {x[0]: x[1] for x in conn.execute(
         f'SELECT id, full_name FROM users WHERE id IN ({",".join("?" * len(uids))})', tuple(uids))} if uids else {}
     people = {x[0]: x[1] for x in conn.execute(
         f'SELECT id, full_name FROM company_people WHERE id IN ({",".join("?" * len(pids))})', tuple(pids))} if pids else {}
+    family = {x[0]: x[1] for x in conn.execute(
+        f'SELECT id, full_name FROM family_members WHERE id IN ({",".join("?" * len(fids))})', tuple(fids))} if fids else {}
     for bs in ov.values():
         for b in bs:
             b['known'] = bool(b.get('kind'))
-            b['label'] = users.get(b['id']) if b.get('kind') == 'user' else (people.get(b['id']) if b.get('kind') == 'person' else None)
+            b['label'] = (users.get(b['id']) if b.get('kind') == 'user' else people.get(b['id']) if b.get('kind') == 'person'
+                          else family.get(b['id']) if b.get('kind') == 'family' else None)
     return {'overlays': ov}
 
 
@@ -328,11 +332,11 @@ def events(date_from: str, date_to: str, kind: str = 'known', limit: int = 500,
 
 @faces_router.get('/enroll')
 def enroll_list(subject_type: str, user_id: Optional[int] = None, person_id: Optional[int] = None,
-                user=Depends(cam_user), conn=db.DB):
+                family_id: Optional[int] = None, user=Depends(cam_user), conn=db.DB):
     """Bir kişinin eğitim fotoğrafları (yüz kırpıkları)."""
     from .. import faceenroll
     try:
-        return {'faces': faceenroll.list_for(conn, subject_type, user_id, person_id)}
+        return {'faces': faceenroll.list_for(conn, subject_type, user_id, person_id, family_id)}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -340,7 +344,7 @@ def enroll_list(subject_type: str, user_id: Optional[int] = None, person_id: Opt
 @faces_router.post('/enroll')
 async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...),
                      user_id: Optional[int] = Form(None), person_id: Optional[int] = Form(None),
-                     user=Depends(cam_user), conn=db.DB):
+                     family_id: Optional[int] = Form(None), user=Depends(cam_user), conn=db.DB):
     """Yüz tanıma eğitimi: bir fotoğraf yükle → kişinin yüzü eğitilsin."""
     from .. import faceenroll
     import os
@@ -352,7 +356,7 @@ async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...)
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        ok, res = await run_in_threadpool(faceenroll.enroll, conn, subject_type, user_id, person_id, tmp, user['id'])
+        ok, res = await run_in_threadpool(faceenroll.enroll, conn, subject_type, user_id, person_id, tmp, user['id'], family_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:

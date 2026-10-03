@@ -102,7 +102,7 @@ async function renderEvents(wrap) {
     },
       h('div', { class: 'fr-ev-img' }, e.crop ? h('img', { src: fileUrl(e.crop, 160), alt: '', loading: 'lazy' }) : null),
       h('div', { class: 'fr-ev-body' },
-        h('b', null, e.user_name || e.person_name || 'Tanımlanamayan',
+        h('b', null, e.user_name || e.person_name || e.family_name || "Tanımlanamayan",
           e.person_company ? h('span', { class: 'small muted' }, ` · ${e.person_company}`) : null),
         h('div', { class: 'small muted' }, e.camera_name || '—'),
         h('div', { class: 'small muted' }, fmtDateTime(e.at))))))
@@ -112,7 +112,7 @@ async function renderEvents(wrap) {
     const media = e.clip
       ? h('video', { class: 'fr-clip', src: fileUrl(e.clip), controls: true, autoplay: true, loop: true, muted: true, playsinline: true })
       : (e.frame ? h('img', { src: fileUrl(e.frame), alt: '' }) : h('div', { class: 'muted' }, 'Görüntü yok'));
-    modal({ title: `${e.user_name || e.person_name || 'Görülme'} · ${fmtDateTime(e.at)}`, wide: true,
+    modal({ title: `${e.user_name || e.person_name || e.family_name || "Görülme"} · ${fmtDateTime(e.at)}`, wide: true,
       body: h('div', { class: 'fr-frame' }, media,
         h('div', { class: 'small muted' }, [e.camera_name, e.clip ? 'video' : null].filter(Boolean).join(' · '))),
       actions: [{ label: 'Kapat' }] });

@@ -330,11 +330,35 @@ export function peoplePicker(people, { empty = 'Kişi yok', selected = [], sub =
 
 export function statStrip() {
   const el = h('div', { class: 'stat-strip' });
-  el.set = stats => clear(el, stats.filter(Boolean).map(s =>
-    h('div', { class: `stat ${s.tone || ''}` },
-      h('span', { class: 'v' }, s.value ?? '—'),
-      h('span', { class: 'l' }, s.label),
-      s.sub ? h('span', { class: 's' }, s.sub) : null)));
+  el.set = stats => {
+    clear(el, stats.filter(Boolean).map(s =>
+      h('div', { class: `stat ${s.tone || ''}` },
+        h('span', { class: 'v' }, s.value ?? '—'),
+        h('span', { class: 'l' }, s.label),
+        s.sub ? h('span', { class: 's' }, s.sub) : null)));
+    lastW = -1;
+    requestAnimationFrame(fit);
+    document.fonts?.ready.then(() => { lastW = -1; fit(); });   // yazı tipi geç yüklenirse genişlik değişir
+  };
+  // Uzun tutar (ör. ₺85.681.256,12) dar kartta taşmasın: sığana kadar yazı boyutu küçülür; genişlik değişince yeniden hesaplanır
+  let lastW = -1;
+  const fit = () => {
+    if (!el.isConnected || el.clientWidth === lastW) return;
+    lastW = el.clientWidth;
+    const range = document.createRange();
+    // scrollWidth tam sayıya yuvarlanır; yarım piksellik taşma da "…" gösterir — metin genişliği Range ile kesirli ölçülür
+    const over = v => { range.selectNodeContents(v); return range.getBoundingClientRect().width > v.clientWidth - 0.5; };
+    const vs = [...el.querySelectorAll('.stat > .v')];
+    let min = Infinity;
+    for (const v of vs) {
+      v.style.fontSize = '';
+      let fs = parseFloat(getComputedStyle(v).fontSize);
+      while (over(v) && fs > 12) { fs -= 1; v.style.fontSize = `${fs}px`; }
+      min = Math.min(min, fs);
+    }
+    if (vs.some(v => v.style.fontSize)) vs.forEach(v => { v.style.fontSize = `${min}px`; });   // şeritte tüm tutarlar aynı boyda
+  };
+  if (window.ResizeObserver) new ResizeObserver(() => requestAnimationFrame(fit)).observe(el);
   return el;
 }
 

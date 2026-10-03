@@ -1027,12 +1027,14 @@ main#view.tone-red .card { border-color: #f1d9d6; }
 .alerts-panel .empty { padding: 16px; }
 
 /* Modül üstü özet şeridi */
-.stat-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; margin-bottom: 12px; }
+/* auto-fit: kart sayısı ne olursa olsun şerit tüm genişliği doldurur (sağda boş sütun kalmaz) */
+.stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; display: flex; flex-direction: column; box-shadow: var(--shadow); min-width: 0; }
-.stat .v { font-size: 22px; font-weight: 800; color: var(--primary); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat .v { font-size: 22px; font-weight: 800; color: var(--primary); line-height: 1.15; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* sığmayan tutar statStrip'te küçültülür (fitStats) */
 .stat .l { font-size: 12px; color: var(--muted); line-height: 1.25; }
 .stat .s { font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stat.alert { background: #fff4f2; border-color: #f5c2bd; }
+.stat.alert { background: #fff4f2; border-color: #f5c2bd; margin: 0; }   /* genel .alert'in alt boşluğu kartı kısaltmasın */
 .stat.alert .v { color: var(--danger); }
 .stat.ok .v { color: var(--success); }
 .stat.muted .v { color: var(--muted); }
@@ -1081,6 +1083,7 @@ img, svg, video, canvas { max-width: 100%; }
   /* Mobilde modül/alt-modül açılışlarındaki ana sayfaya dönen geri oku gizlenir (global başlıktan erişilir); detay→liste geri okları kalır */
   .page-head > .back[href="#/"] { display: none; }
   .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .stat-strip > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* tek kalan kart satırı doldursun */
   .stat .v { font-size: 19px; }
   .modal-back { padding: 12px 8px; }
   .modal-body { padding: 14px; }

@@ -441,7 +441,7 @@ def set_pref(key: str, body: PrefIn, user=Depends(auth.current_user), conn=db.DB
 @router.get('/dashboard/widgets')
 def dashboard_widgets(user=Depends(auth.current_user)):
     from .. import dashboard
-    return [{k: w[k] for k in ('key', 'title', 'desc', 'module', 'size', 'default')} for w in dashboard.available(user)]
+    return [{k: w[k] for k in ('key', 'title', 'desc', 'module', 'size', 'default', 'fixed')} for w in dashboard.available(user)]
 
 
 @router.get('/dashboard/data')

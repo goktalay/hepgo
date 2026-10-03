@@ -116,6 +116,13 @@ def new_orders(body: OrderIn, user=Depends(orders_user), conn=db.DB):
         oid, code = create_order(conn, user['id'], product, body.start_date, body.end_date, body.note, body.company_id)
         db.audit(conn, user['id'], 'Sipariş oluşturdu', 'order', oid, code)
         created.append({'id': oid, 'code': code})
+        try:
+            from .. import feed
+            img = product['image'] if 'image' in product.keys() and product['image'] else None
+            media = [{'type': 'image', 'path': img if '/' in str(img) else f'products/{img}'}] if img else None
+            feed.add_event(conn, 'ORDER', f'Yeni sipariş: {code} · {product["name"]}', 'order', oid, f'#/orders/{oid}', media=media)
+        except Exception:   # noqa: BLE001
+            pass
     return created
 
 

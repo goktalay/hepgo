@@ -6,6 +6,7 @@ import { icons } from '../icons.js';
 import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
 import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toastError } from '../ui.js';
 import { LEVELS } from './announcements.js';
+import { renderFeed } from './feed.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const MULTI = new Set(['clock', 'weather']);   // birden çok eklenebilen (ör. iki şehir)
@@ -18,6 +19,8 @@ export async function renderDashboard(view, ctx, modules) {
   try { layout = JSON.parse(saved.value || 'null'); } catch { layout = null; }
   if (!Array.isArray(layout)) layout = avail.filter(w => w.default).sort((a, b) => a.default - b.default).map(w => ({ k: w.key, s: w.size }));
   layout = layout.filter(it => byKey[it.k]);
+  // Sabit kutucuklar (ör. Şirketten Haberler) her zaman panoda; kullanıcı kaldıramaz (taşıyabilir)
+  for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ k: w.key, s: w.size });
   let editing = false;
   let data = {};
   const charts = [];
@@ -50,7 +53,7 @@ export async function renderDashboard(view, ctx, modules) {
       h('button', { type: 'button', title: 'Sağa / aşağı taşı', disabled: i === layout.length - 1, onclick: () => move(i, 1) }, '→'),
       h('button', { type: 'button', title: 'Genişlik', onclick: () => { it.s = (it.s % 3) + 1; save(); draw(); } }, ['⅓', '⅔', '▭'][it.s - 1]),
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
-      h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => { layout.splice(i, 1); save(); draw(); } }, '✕')) : null;
+      w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => { layout.splice(i, 1); save(); draw(); } }, '✕')) : null;
     const el = h('section', { class: `card db-tile s${it.s || 1} w-${it.k}` },
       h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body);
     try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }

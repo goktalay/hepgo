@@ -98,6 +98,11 @@ def create(body: MeetingIn, user=Depends(auth.current_user), conn=db.DB):
                           VALUES (?,?,?,?,?,?,?,?)''', (title, start, end, loc, note, body.remind_min, user['id'], now)).lastrowid
     conn.executemany('INSERT INTO team_meeting_invites (meeting_id, user_id, invited_at) VALUES (?,?,?)', [(mid, u, now) for u in users])
     db.audit(conn, user['id'], 'Toplantı oluşturdu', 'meeting', mid, f'{title} · {len(users)} davetli')
+    try:
+        from .. import feed
+        feed.add_event(conn, 'MEETING', f'Toplantı planlandı: {title}', 'meeting', mid, f'#/meetings/{mid}')
+    except Exception:   # noqa: BLE001
+        pass
     return _get(conn, mid, user)
 
 

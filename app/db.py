@@ -111,6 +111,23 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at   TEXT NOT NULL,
     created_by   INTEGER REFERENCES users(id)
 );
+-- Şirketten Haberler (pano akışı, Facebook tarzı): sistem olayları (işe alım, çıkış, uçuş, sipariş, toplantı…) ve
+-- kullanıcı paylaşımları (resim / video / ses + konum). author_id NULL = sistem (şirket logosu); doluysa kişinin fotoğrafı.
+CREATE TABLE IF NOT EXISTS feed_posts (
+    id         INTEGER PRIMARY KEY,
+    kind       TEXT NOT NULL DEFAULT 'USER',   -- USER | HIRE | TERMINATION | FLIGHT | ORDER | MEETING | ANNOUNCE | ...
+    author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    text       TEXT,
+    media      TEXT,                            -- JSON: [{type:image|video|audio, path, thumb?}]
+    lat        REAL,
+    lng        REAL,
+    ref_type   TEXT,                            -- bağlı kayıt türü (order|flight|employee|meeting…)
+    ref_id     INTEGER,
+    ref_link   TEXT,                            -- tıklanınca gidilecek hash (ör. #/orders/12)
+    created_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_feed_posts_at ON feed_posts(created_at);
 -- Personel aile üyeleri (İK › personel detayı › Ailesi). Yüz tanımada eğitilebilir (face_enroll.family_id).
 CREATE TABLE IF NOT EXISTS family_members (
     id          INTEGER PRIMARY KEY,

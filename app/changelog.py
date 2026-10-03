@@ -3,9 +3,16 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.89.0'
+VERSION = '2.90.0'
 
 CHANGELOG = [
+    {'version': '2.90.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler akışı + Rehber iyileştirmeleri',
+     'changes': [
+         'Panoya “Şirketten Haberler” kutucuğu (kaldırılamaz, taşınabilir): işe alım, ayrılış, sipariş, toplantı gibi olaylar ve kullanıcı paylaşımları Facebook tarzı akışta.',
+         'Paylaşıma resim / video / ses ve kamera ile çekim + konum eklenebilir; iki görünüm: Akış ve Harita (konumlu paylaşımlar haritada).',
+         'Rehber: kartlar alfabetik gruplanır (sol harf), fotoğraf / ad / görev / telefon tek düzen; uzun metin tek satır kısaltılır.',
+         'Rehberde her şey Yazım Düzeni (ilk harf büyük); fotoğrafı olmayan kişide eğitilen / tanınan yüz kırpığı avatar olur.',
+     ]},
     {'version': '2.89.0', 'date': '2026-10-03', 'title': 'Menü sadeleştirme + maskotu gizleme',
      'changes': [
          'Kullanıcı Yönetimi ve Veri & Yedek artık Program Ayarları altında (Veri & Yedek yalnızca sistem sahibi).',

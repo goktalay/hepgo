@@ -19,6 +19,8 @@ KINDS = {
     'logos': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},
     'cargo': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'},
     'camfaces': {'.jpg'},
+    'feed': {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.mp4', '.webm', '.mov', '.m4v',
+             '.ogg', '.oga', '.opus', '.m4a', '.mp3', '.wav', '.weba'},   # Şirketten Haberler medyası
     'camclips': {'.mp4'},           # görülme anı video klipleri (kamera servisi yazar; dağıtık kurulumda fabrikada)
     'faces_enroll': {'.jpg'},       # yüz tanıma eğitimi kırpıkları (bulutta)
     'gcode': {'.gcode', '.png', '.bin'},

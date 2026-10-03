@@ -39,7 +39,36 @@ def people(conn, q='', kind='all'):
         out = [p for p in out if q in (p['name'] or '').lower() or q in (p['subtitle'] or '').lower()
                or q in (p['phone'] or '').lower() or q in (p['email'] or '').lower()]
     out.sort(key=lambda p: (p['name'] or '').lower())
+    _fill_avatars(conn, out)
     return out
+
+
+def _fill_avatars(conn, people):
+    """Fotoğrafı olmayanlara yüz kırpığı ata: önce eğitim fotoğrafı (face_enroll, bulutta), yoksa tanınan en iyi kırpık (fabrikada)."""
+    missing = [p for p in people if not p.get('photo')]
+    if not missing:
+        return
+    # Eğitim kırpıkları (bulut) — en yeni
+    enroll = {}
+    for r in conn.execute('SELECT subject_type, user_id, person_id, family_id, crop FROM face_enroll ORDER BY id DESC'):
+        key = f'{r[0]}:{r[1] or r[2] or r[3]}'
+        enroll.setdefault(key, r[4])
+    for p in missing:
+        if enroll.get(p['key']):
+            p['photo'] = enroll[p['key']]
+    # Kalanlar için tanınan en iyi kırpık (fabrika)
+    rest = [p for p in missing if not p.get('photo')]
+    if not rest:
+        return
+    from . import facebridge, facecore
+    keys = [p['key'] for p in rest]
+    try:
+        av = (facebridge.rpc('avatars', keys=keys) if facebridge.remote() else facecore.avatars(conn, keys)).get('avatars', {})
+    except Exception:   # noqa: BLE001
+        av = {}
+    for p in rest:
+        if av.get(p['key']):
+            p['photo'] = av[p['key']]
 
 
 TYPE_LABEL = {'user': 'Personel', 'person': 'Firma kişisi', 'family': 'Aile üyesi'}

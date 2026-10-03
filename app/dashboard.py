@@ -12,15 +12,16 @@ from . import db
 WIDGETS = []
 
 
-def widget(key, title, desc, module=None, size=1, default=False, modules=None):
+def widget(key, title, desc, module=None, size=1, default=False, modules=None, fixed=False):
     def deco(fn):
-        WIDGETS.append({'key': key, 'title': title, 'desc': desc, 'module': module, 'modules': modules, 'size': size, 'default': default, 'fn': fn})
+        WIDGETS.append({'key': key, 'title': title, 'desc': desc, 'module': module, 'modules': modules, 'size': size,
+                        'default': default, 'fixed': fixed, 'fn': fn})
         return fn
     return deco
 
 
 # Yeni kullanıcının panosu (sırasıyla); yetkisi olmayan kutucuk atlanır. Değer: sıra (1'den başlar), yoksa 0.
-DEFAULT_LAYOUT = ['clock', 'calendar', 'birthdays', 'announcements', 'kpi_production', 'chart_production']
+DEFAULT_LAYOUT = ['company_news', 'clock', 'calendar', 'birthdays', 'announcements', 'kpi_production', 'chart_production']
 
 
 def available(user):
@@ -51,6 +52,11 @@ today = lambda: date.today().isoformat()
 @widget('modules', 'Modüller', 'Girebildiğiniz modüllere kısayollar', size=3)
 def w_modules(conn, user):
     return {}
+
+
+@widget('company_news', 'Şirketten Haberler', 'Günün olayları ve paylaşımlar (akış + harita)', size=3, default=True, fixed=True)
+def w_company_news(conn, user):
+    return {}   # içerik istemcide /api/feed'den gelir (akış + harita + paylaşım)
 
 
 @widget('birthdays', 'Doğum Günleri', 'Yaklaşan personel doğum günleri', size=1)

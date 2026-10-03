@@ -179,6 +179,20 @@ def subject_shots(conn, kind, id, limit=12):
             'last_seen': max((g['last_seen'] for g in grp), default=None)}
 
 
+def avatars(conn, keys):
+    """Kişiler için tanınan en iyi yüz kırpığı (fotoğrafı olmayanlara avatar). keys: ['family:3','user:5',...] → {key: crop}."""
+    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id'}
+    out = {}
+    for k in keys or []:
+        kind, _, sid = str(k).partition(':')
+        if kind not in col or not sid.isdigit():
+            continue
+        r = conn.execute(f'SELECT best_crop FROM face_groups WHERE {col[kind]} = ? AND best_crop IS NOT NULL ORDER BY best_score DESC LIMIT 1', (int(sid),)).fetchone()
+        if r and r[0]:
+            out[k] = r[0]
+    return {'avatars': out}
+
+
 def cameras_list(conn):
     """Kamera listesi (şifre hariç) — Kameralar sekmesi. Canlı kare yaşı yerel live dizininden."""
     import time
@@ -254,6 +268,8 @@ def rpc(conn, method, args):
         return family_shots(conn, a.get('family_ids') or [], a.get('per', 6))
     if method == 'subject_shots':
         return subject_shots(conn, a.get('kind'), a.get('id'), a.get('limit', 12))
+    if method == 'avatars':
+        return avatars(conn, a.get('keys') or [])
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
     raise ValueError(f'Bilinmeyen yüz işlemi: {method}')

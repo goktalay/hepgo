@@ -457,6 +457,7 @@ def accept(eid: int, body: AcceptIn, user=Depends(hr_user), conn=db.DB):
     event(conn, eid, user['id'], 'Başvuru kabul edildi, personel oldu',
           f'Görev: {title} · İşe başlama: {_fmt("start_date", start)}' + (f' · Maaş: {_fmt("salary", body.salary)}' if body.salary else ''))
     db.audit(conn, user['id'], 'İş başvurusunu kabul etti', 'employee', eid, title)
+    _feed(conn, 'HIRE', f'{e["first_name"]} {e["last_name"]} ekibimize katıldı · {title}', 'employee', eid)
     return {'ok': True}
 
 
@@ -469,6 +470,7 @@ def leave_job(eid: int, body: LeaveJobIn, user=Depends(hr_user), conn=db.DB):
     conn.execute("UPDATE employees SET status = 'AYRILDI', end_date = ?, end_reason = ? WHERE id = ?",
                  (end, (body.reason or '').strip()[:500] or None, eid))
     event(conn, eid, user['id'], 'İşten ayrıldı', f'{_fmt("start_date", end)}' + (f' · {body.reason.strip()}' if (body.reason or '').strip() else ''))
+    _feed(conn, 'TERMINATION', f'{e["first_name"]} {e["last_name"]} aramızdan ayrıldı')
     return {'ok': True}
 
 
@@ -479,7 +481,17 @@ def rehire(eid: int, user=Depends(hr_user), conn=db.DB):
         raise HTTPException(400, 'Yalnızca ayrılan personel yeniden aktif yapılır')
     conn.execute("UPDATE employees SET status = 'AKTIF', end_date = NULL, end_reason = NULL WHERE id = ?", (eid,))
     event(conn, eid, user['id'], 'Yeniden işe alındı')
+    _feed(conn, 'HIRE', f'{e["first_name"]} {e["last_name"]} yeniden ekibimizde', 'employee', eid)
     return {'ok': True}
+
+
+def _feed(conn, kind, text, ref_type=None, ref_id=None):
+    """Şirketten Haberler akışına sistem olayı ekler (akışı bozmaz)."""
+    try:
+        from .. import feed
+        feed.add_event(conn, kind, text, ref_type, ref_id)
+    except Exception:   # noqa: BLE001
+        pass
 
 
 @router.get('/users')

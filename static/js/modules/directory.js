@@ -4,6 +4,8 @@ import { api, fileUrl } from '../api.js';
 import { avatar, clear, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, t } from '../ui.js';
 
 const TYPE_BADGE = { user: ['blue', 'Personel'], person: ['', 'Firma kişisi'], family: ['green', 'Aile'] };
+// Türkçe Yazım Düzeni (Title Case): her kelimenin ilk harfi büyük, kalanı küçük (İ/ı duyarlı)
+const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(\p{L})/gu, (m, p, c) => p + c.toLocaleUpperCase('tr'));
 
 export async function render(view, params, ctx) {
   if (params[0] && params[1]) return detail(view, params[0], params[1], ctx);
@@ -15,19 +17,29 @@ async function list(view) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'İsim, telefon, firma ara…', style: { maxWidth: '280px' } });
   const seg = segmented([['all', 'Tümü'], ['user', 'Personel'], ['person', 'Firma kişileri'], ['family', 'Aile']], kind,
     v => { kind = v; load(); });
-  const grid = h('div', { class: 'dir-grid' });
+  const grid = h('div', { class: 'dir-groups' });
   const info = h('span', { class: 'small muted' });
+  const card = p => h('a', { class: `card dir-card ${TYPE_BADGE[p.type][0] === 'green' ? 'fam' : ''}`, href: `#/rehber/${p.type}/${p.id}` },
+    avatar({ full_name: tc(p.name), photo: p.photo }, 44),
+    h('div', { class: 'dir-info' },
+      h('b', { title: tc(p.name) }, tc(p.name)),
+      p.subtitle ? h('small', { class: 'muted', title: tc(p.subtitle) }, tc(p.subtitle)) : null,
+      p.phone ? h('small', { class: 'muted' }, p.phone) : null),
+    h('span', { class: `badge ${TYPE_BADGE[p.type][0]}` }, TYPE_BADGE[p.type][1]));
   const draw = () => {
-    const term = q.value.trim().toLowerCase();
-    const shown = term ? people.filter(p => [p.name, p.subtitle, p.phone, p.email].some(x => (x || '').toLowerCase().includes(term))) : people;
+    const term = q.value.trim().toLocaleLowerCase('tr');
+    const shown = term ? people.filter(p => [p.name, p.subtitle, p.phone, p.email].some(x => (x || '').toLocaleLowerCase('tr').includes(term))) : people;
     info.textContent = t('{n} kişi', { n: shown.length });
-    clear(grid, shown.length ? shown.map(p => h('a', { class: 'card dir-card', href: `#/rehber/${p.type}/${p.id}` },
-      avatar({ full_name: p.name, photo: p.photo }, 44),
-      h('div', { class: 'dir-info' }, h('b', null, p.name),
-        h('small', { class: 'muted' }, p.subtitle || ''),
-        p.phone ? h('small', { class: 'muted' }, p.phone) : null),
-      h('span', { class: `badge ${TYPE_BADGE[p.type][0]}` }, TYPE_BADGE[p.type][1])))
-      : h('div', { class: 'card empty' }, 'Kişi bulunamadı.'));
+    if (!shown.length) return clear(grid, h('div', { class: 'card empty' }, 'Kişi bulunamadı.'));
+    const groups = new Map();   // ilk harf → kişiler (alfabetik)
+    for (const p of shown) {
+      const L = (tc(p.name)[0] || '#').toLocaleUpperCase('tr');
+      if (!groups.has(L)) groups.set(L, []);
+      groups.get(L).push(p);
+    }
+    clear(grid, [...groups.entries()].map(([L, list]) => h('div', { class: 'dir-group' },
+      h('div', { class: 'dir-letter' }, L),
+      h('div', { class: 'dir-grid' }, list.map(card)))));
   };
   const load = async () => {
     clear(grid, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
@@ -46,11 +58,11 @@ async function detail(view, type, id, ctx) {
   const s = d.sections || {};
   const row = (label, val) => val ? h('div', { class: 'dir-row' }, h('span', { class: 'muted' }, label), h('b', null, val)) : null;
   const info = h('section', { class: 'card card-pad' },
-    h('div', { class: 'dir-head' }, avatar({ full_name: d.full_name, photo: d.photo }, 64),
-      h('div', null, h('h2', { style: { margin: 0 } }, d.full_name), h('span', { class: `badge ${TYPE_BADGE[type][0]}` }, d.type_label))),
+    h('div', { class: 'dir-head' }, avatar({ full_name: tc(d.full_name), photo: d.photo }, 64),
+      h('div', null, h('h2', { style: { margin: 0 } }, tc(d.full_name)), h('span', { class: `badge ${TYPE_BADGE[type][0]}` }, d.type_label))),
     h('div', { class: 'dir-rows' },
-      row('Görev', d.title), row('Departman', d.department), row('Firma', d.company), row('Yakınlık', d.relation),
-      row('Ailesi', d.employee_name && t('{n} ailesi', { n: d.employee_name })),
+      row('Görev', tc(d.title)), row('Departman', tc(d.department)), row('Firma', tc(d.company)), row('Yakınlık', tc(d.relation)),
+      row('Ailesi', d.employee_name && t('{n} ailesi', { n: tc(d.employee_name) })),
       row('Telefon', d.phone), row('E-posta', d.email), row('Doğum', d.birth_date && fmtDate(d.birth_date)),
       row('Roller', (d.roles || []).join(', ')), d.note ? row('Not', d.note) : null));
 
@@ -78,5 +90,5 @@ async function detail(view, type, id, ctx) {
   if (s.phone_calls) blocks.push(sec('Telefon Notları', s.phone_calls, pc => h('div', { class: 'dir-li' },
     h('b', null, pc.caller_name), h('small', { class: 'muted' }, [pc.subject, pc.created_at && fmtDateTime(pc.created_at)].filter(Boolean).join(' · '))), 'Telefon notu yok.'));
 
-  clear(view, pageHead(d.full_name, { back: '#/rehber', sub: d.type_label }), h('div', { class: 'dir-detail' }, ...blocks));
+  clear(view, pageHead(tc(d.full_name), { back: '#/rehber', sub: d.type_label }), h('div', { class: 'dir-detail' }, ...blocks));
 }

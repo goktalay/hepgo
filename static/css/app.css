@@ -272,11 +272,17 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 
 .fc-sens { display: inline-flex; align-items: center; gap: 6px; }
 /* Rehber */
-.dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-.dir-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-decoration: none; color: inherit; }
+.dir-groups { display: flex; flex-direction: column; gap: 14px; }
+.dir-group { display: flex; gap: 12px; align-items: flex-start; }
+.dir-letter { flex: 0 0 34px; position: sticky; top: 8px; font-size: 20px; font-weight: 800; color: var(--primary); text-align: center;
+  padding-top: 8px; align-self: flex-start; }
+.dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; flex: 1; min-width: 0; }
+.dir-card { display: flex; align-items: center; gap: 12px; padding: 12px 16px; text-decoration: none; color: inherit; min-width: 0; }
 .dir-card:hover { background: var(--surface-2, rgba(127,127,127,.06)); }
-.dir-info { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.dir-info b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dir-card.fam { border-left: 3px solid #16a34a; }
+.dir-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.dir-info b, .dir-info small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 100%; }
+@media (max-width: 640px) { .dir-letter { flex-basis: 22px; font-size: 16px; } .dir-grid { grid-template-columns: 1fr; } }
 .dir-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
 .dir-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .dir-rows { display: flex; flex-direction: column; gap: 4px; }

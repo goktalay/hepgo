@@ -9,6 +9,17 @@ const KIND_BADGE = {
   ORDER: ['blue', 'Sipariş'], MEETING: ['yellow', 'Toplantı'], ANNOUNCE: ['red', 'Duyuru'], USER: ['', ''],
 };
 const LOGO = '/static/img/logo-mark.png';
+// Tepki simgesi → etiket + renk (beğen düğmesi ve etiketi için)
+const REACTION_META = {
+  '👍': { label: 'Beğen', color: '#2563eb' }, '❤️': { label: 'Sevdim', color: '#e0245e' },
+  '😂': { label: 'Güldüm', color: '#f7b125' }, '😮': { label: 'Şaşırdım', color: '#f7b125' },
+  '😢': { label: 'Üzüldüm', color: '#f7b125' }, '👏': { label: 'Alkış', color: '#f7b125' },
+  '🎉': { label: 'Kutlama', color: '#f7b125' },
+};
+const THUMB_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v10H4V10z"/><path d="M7 10l4.2-7a1.8 1.8 0 0 1 3.3 1.1V9h4.4a2 2 0 0 1 2 2.4l-1.3 6.2A2 2 0 0 1 17.6 20H7"/></svg>';
+const CHAT_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-10.9 6.7L4 20l1.8-5.1A7.5 7.5 0 1 1 21 11.5z"/></svg>';
+const SEND_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3.4 20.4l17.4-7.5c.8-.3.8-1.5 0-1.8L3.4 3.6c-.7-.3-1.4.3-1.3 1l.9 5.3c.1.4.4.7.8.8l7.7 1.3-7.7 1.3c-.4.1-.7.4-.8.8l-.9 5.3c-.1.7.6 1.3 1.3 1z"/></svg>';
+const svgSpan = markup => { const s = document.createElement('span'); s.className = 'feed-ic'; s.innerHTML = markup; return s; };
 
 export function renderFeed(container, ctx, opts = {}) {
   // Görünüm (Akış / Harita) Kişisel Ayarlar › Pano'dan seçilir; burada sabittir. Paylaşım gövdedeki kutudan yapılır.
@@ -53,18 +64,32 @@ export function renderFeed(container, ctx, opts = {}) {
   function footer(p, rerender) {
     const counts = p.reactions || {};
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]).join('');
+    const topEmojis = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
     const stat = h('div', { class: 'feed-stat' },
-      total ? h('span', { class: 'feed-stat-r' }, top, ' ', String(total)) : h('span'),
+      total ? h('span', { class: 'feed-rsum' },
+        h('span', { class: 'feed-rbubbles' }, topEmojis.map(em => h('span', { class: 'feed-rb' }, em))),
+        h('span', { class: 'feed-rcount' }, String(total))) : h('span'),
       p.comment_count ? h('button', { class: 'feed-stat-c', type: 'button', onclick: () => toggleComments(p, rerender) }, `${p.comment_count} yorum`) : h('span'));
 
-    const picker = h('div', { class: 'feed-picker', hidden: true }, (reactionList).map(em =>
-      h('button', { class: 'feed-pick', type: 'button', title: em, onclick: () => { picker.hidden = true; doReact(p, em, rerender); } }, em)));
-    const likeLabel = p.my_reaction ? `${p.my_reaction} Beğenildi` : '👍 Beğen';
-    const likeBtn = h('button', { class: `feed-act ${p.my_reaction ? 'on' : ''}`, type: 'button',
-      onclick: () => { if (p.my_reaction) doReact(p, p.my_reaction, rerender); else picker.hidden = !picker.hidden; } }, likeLabel);
-    const likeWrap = h('div', { class: 'feed-like-wrap' }, picker, likeBtn);
-    const cmtBtn = h('button', { class: 'feed-act', type: 'button', onclick: () => toggleComments(p, rerender, true) }, '💬 Yorum');
+    const picker = h('div', { class: 'feed-picker' }, reactionList.map(em =>
+      h('button', { class: 'feed-pick', type: 'button', title: (REACTION_META[em]?.label || em),
+        onclick: () => { hidePicker(); doReact(p, em, rerender); } }, em)));
+    const meta = p.my_reaction ? REACTION_META[p.my_reaction] : null;
+    const likeBtn = h('button', { class: `feed-act feed-like ${p.my_reaction ? 'on' : ''}`, type: 'button',
+      style: meta ? { color: meta.color } : null,
+      onclick: () => doReact(p, p.my_reaction || '👍', rerender) },
+      p.my_reaction ? h('span', { class: 'feed-like-em' }, p.my_reaction) : svgSpan(THUMB_SVG),
+      h('span', null, meta ? meta.label : 'Beğen'));
+    let hideT, lpT;
+    const showPicker = () => { clearTimeout(hideT); likeWrap.classList.add('show-picker'); };
+    const hidePicker = () => likeWrap.classList.remove('show-picker');
+    const likeWrap = h('div', { class: 'feed-like-wrap',
+      onmouseenter: showPicker, onmouseleave: () => { hideT = setTimeout(hidePicker, 220); } }, picker, likeBtn);
+    likeBtn.addEventListener('touchstart', () => { lpT = setTimeout(showPicker, 350); }, { passive: true });
+    likeBtn.addEventListener('touchend', () => clearTimeout(lpT));
+
+    const cmtBtn = h('button', { class: 'feed-act', type: 'button', onclick: () => toggleComments(p, rerender, true) },
+      svgSpan(CHAT_SVG), h('span', null, 'Yorum'));
     const bar = h('div', { class: 'feed-actions' }, likeWrap, cmtBtn);
 
     const box = h('div', { class: 'feed-comments' });
@@ -97,7 +122,7 @@ export function renderFeed(container, ctx, opts = {}) {
       try { list = p._comments = (await api.get(`/api/feed/${p.id}/comments`)).comments; }
       catch (err) { return clear(box, h('div', { class: 'small muted' }, err.message)); }
     }
-    const input = h('input', { class: 'input feed-cinput', type: 'text', placeholder: 'Yorum yaz…', maxlength: 1000 });
+    const input = h('input', { class: 'feed-cinput', type: 'text', placeholder: 'Yorum yaz…', maxlength: 1000 });
     const send = async () => {
       const text = input.value.trim(); if (!text) return;
       input.value = '';
@@ -112,16 +137,19 @@ export function renderFeed(container, ctx, opts = {}) {
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
     clear(box,
       h('div', { class: 'feed-clist' }, list.map(c => h('div', { class: 'feed-cmt' },
-        avatar({ full_name: c.author_name, photo: c.author_photo }, 28),
-        h('div', { class: 'feed-cbody' },
-          h('div', null, h('b', null, c.author_name || 'Kullanıcı'), ' ', h('span', null, c.text)),
-          h('small', { class: 'muted' }, fmtDateTime(c.created_at))),
-        (c.user_id === ctx.user.id || isAdmin()) ? h('button', { class: 'feed-cx', type: 'button', title: 'Sil', onclick: async () => {
-          try { await api.del(`/api/feed/comments/${c.id}`); p._comments = p._comments.filter(x => x.id !== c.id); p.comment_count = Math.max(0, (p.comment_count || 1) - 1); rerender(p._card); }
-          catch (err) { toastError(err); }
-        } }, '×') : null))),
-      h('div', { class: 'feed-cadd' }, avatar(ctx.user, 28), input,
-        h('button', { class: 'btn sm primary', type: 'button', onclick: send }, 'Gönder')));
+        avatar({ full_name: c.author_name, photo: c.author_photo }, 32),
+        h('div', { class: 'feed-cmain' },
+          h('div', { class: 'feed-cbody' },
+            h('div', { class: 'feed-cname' }, c.author_name || 'Kullanıcı'),
+            h('div', { class: 'feed-ctext' }, c.text)),
+          h('div', { class: 'feed-cmeta' }, h('span', { class: 'muted' }, fmtDateTime(c.created_at)),
+            (c.user_id === ctx.user.id || isAdmin()) ? h('button', { class: 'feed-cdel', type: 'button', onclick: async () => {
+              try { await api.del(`/api/feed/comments/${c.id}`); p._comments = p._comments.filter(x => x.id !== c.id); p.comment_count = Math.max(0, (p.comment_count || 1) - 1); rerender(p._card); }
+              catch (err) { toastError(err); }
+            } }, 'Sil') : null))))),
+      h('div', { class: 'feed-cadd' }, avatar(ctx.user, 32),
+        h('div', { class: 'feed-cinput-wrap' }, input,
+          h('button', { class: 'feed-csend', type: 'button', title: 'Gönder', onclick: send }, svgSpan(SEND_SVG)))));
   }
 
   const composer = () => h('button', { class: 'feed-composer', type: 'button', onclick: () => compose(load) },

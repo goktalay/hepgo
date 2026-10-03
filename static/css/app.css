@@ -317,28 +317,49 @@ html.reduce-motion[data-bg="waves"] .scroller::before { animation: none; }
 .feed-picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .feed-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-2, #eee); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
 .feed-chip-x { border: none; background: none; cursor: pointer; font-size: 14px; }
-/* Tepki (beğeni/kalp) + yorumlar */
-.feed-foot { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 4px; }
-.feed-stat { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 2px 6px; min-height: 18px; }
-.feed-stat-c { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 12px; }
+/* Tepki (beğeni/kalp) + yorumlar — Facebook/Instagram tarzı */
+.feed-foot { margin-top: 10px; }
+.feed-ic { display: inline-flex; align-items: center; }
+.feed-stat { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); padding: 0 2px 8px; min-height: 20px; }
+.feed-rsum { display: inline-flex; align-items: center; gap: 6px; }
+.feed-rbubbles { display: inline-flex; }
+.feed-rb { width: 22px; height: 22px; border-radius: 50%; background: var(--surface, #fff); display: inline-flex; align-items: center;
+  justify-content: center; font-size: 12px; margin-left: -6px; box-shadow: 0 0 0 1.5px var(--surface, #fff); border: 1px solid var(--border); }
+.feed-rb:first-child { margin-left: 0; }
+.feed-rcount { font-weight: 500; }
+.feed-stat-c { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 0; }
 .feed-stat-c:hover { text-decoration: underline; }
-.feed-actions { display: flex; gap: 6px; }
+.feed-actions { display: flex; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
 .feed-like-wrap { position: relative; flex: 1; display: flex; }
-.feed-act { flex: 1; border: 1px solid var(--border); background: var(--surface-2, rgba(127,127,127,.04)); border-radius: 8px; padding: 6px 8px; cursor: pointer; font-size: 13px; color: var(--text, inherit); }
-.feed-act:hover { background: var(--surface-2, rgba(127,127,127,.12)); }
-.feed-act.on { color: var(--primary); border-color: var(--primary); font-weight: 600; }
-.feed-picker { position: absolute; bottom: calc(100% + 6px); left: 0; display: flex; gap: 2px; background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px; box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 6; }
-.feed-pick { border: none; background: none; cursor: pointer; font-size: 22px; line-height: 1; padding: 2px; border-radius: 50%; transition: transform .1s; }
-.feed-pick:hover { transform: scale(1.35); }
+.feed-act { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: none; background: none;
+  border-radius: 8px; padding: 9px 8px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); transition: background .12s; }
+.feed-act:hover { background: var(--surface-2, rgba(127,127,127,.1)); }
+.feed-act.on { color: var(--primary); }
+.feed-like-em { font-size: 17px; line-height: 1; }
+/* Tepki seçici: hover ile açılan yüzen çubuk (FB tarzı) */
+.feed-picker { position: absolute; bottom: calc(100% + 8px); left: 0; display: flex; gap: 4px; background: var(--surface, #fff);
+  border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; box-shadow: 0 8px 28px rgba(0,0,0,.22);
+  z-index: 6; opacity: 0; transform: translateY(6px) scale(.9); transform-origin: bottom left; pointer-events: none; transition: opacity .15s, transform .15s; }
+.feed-like-wrap.show-picker .feed-picker { opacity: 1; transform: none; pointer-events: auto; }
+.feed-pick { border: none; background: none; cursor: pointer; font-size: 28px; line-height: 1; padding: 0 2px; border-radius: 50%;
+  transition: transform .12s ease; transform-origin: bottom center; }
+.feed-pick:hover { transform: translateY(-8px) scale(1.4); }
 .feed-comments:empty { display: none; }
-.feed-clist { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; }
+.feed-comments { margin-top: 6px; }
+.feed-clist { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 6px; }
 .feed-cmt { display: flex; gap: 8px; align-items: flex-start; }
-.feed-cbody { flex: 1; min-width: 0; background: var(--surface-2, rgba(127,127,127,.07)); border-radius: 10px; padding: 6px 10px; }
-.feed-cbody b { font-size: 13px; }
-.feed-cbody span { word-break: break-word; }
-.feed-cx { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 16px; align-self: center; }
-.feed-cadd { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
-.feed-cinput { flex: 1; min-width: 0; }
+.feed-cmain { flex: 1; min-width: 0; }
+.feed-cbody { display: inline-block; max-width: 100%; background: var(--surface-2, rgba(127,127,127,.09)); border-radius: 18px; padding: 8px 12px; }
+.feed-cname { font-weight: 600; font-size: 13px; line-height: 1.2; }
+.feed-ctext { font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+.feed-cmeta { display: flex; gap: 14px; align-items: center; padding: 3px 12px 0; font-size: 12px; }
+.feed-cdel { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; padding: 0; }
+.feed-cdel:hover { color: var(--danger, #e0245e); text-decoration: underline; }
+.feed-cadd { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.feed-cinput-wrap { flex: 1; min-width: 0; display: flex; align-items: center; background: var(--surface-2, rgba(127,127,127,.09)); border-radius: 999px; padding: 2px 6px 2px 2px; }
+.feed-cinput { flex: 1; min-width: 0; border: none; background: none; padding: 8px 12px; outline: none; font-size: 14px; color: inherit; }
+.feed-csend { border: none; background: none; cursor: pointer; color: var(--primary); display: inline-flex; align-items: center; justify-content: center; padding: 6px; border-radius: 50%; }
+.feed-csend:hover { background: rgba(127,127,127,.15); }
 .btn.on { outline: 2px solid var(--primary); }
 /* Pano: GridStack sürükle-bırak */
 .grid-stack { margin: 0 -4px; }

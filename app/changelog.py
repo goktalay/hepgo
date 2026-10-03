@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.96.0'
+VERSION = '2.96.1'
 
 CHANGELOG = [
+    {'version': '2.96.1', 'date': '2026-10-03', 'title': 'Şirketten Haberler: beğeni/yorum tasarımı yenilendi (Facebook/Instagram tarzı)',
+     'changes': [
+         'Beğen düğmesine gelince açılan yüzen tepki çubuğu (büyüyen emojiler); seçilen tepki renkli etiketle gösterilir.',
+         'Tepki özeti üst üste binen simge balonları + sayı; yorumlar yuvarlak balonlarda, ad üstte; yorum kutusu hap biçiminde gönder ikonuyla.',
+     ]},
     {'version': '2.96.0', 'date': '2026-10-03', 'title': 'Üretim sadeleştirme + metin biçimi ayarı + küçük düzenler',
      'changes': [
          'Üretim Yönetimi: “Hatalı parçası olanlar” ve “Saha deposundakileri göster” filtreleri ve “Her 30 sn yenilenir” yazısı kaldırıldı; Excel düğmesi görünüm seçicisinin sağına alındı (başlıktan çıktı).',

@@ -13,12 +13,14 @@ export async function renderFaces(body) {
   const delBtn = h('button', { class: 'btn danger', type: 'button', disabled: true, onclick: () => deleteSelected() }, 'Seçilenleri Kaldır');
   // Yüz tanıma hassasiyeti (eşik) — düşük = daha çok yüz yakalar; anında fabrikaya uygulanır
   let facerecCfg = { score: 0.6, min_face: 36 };
-  const sens = h('input', { type: 'number', class: 'input', min: '0.3', max: '0.95', step: '0.05', style: { width: '86px' },
+  const sens = h('input', { type: 'range', min: '0.3', max: '0.95', step: '0.05', value: '0.6', style: { width: '120px' },
     title: 'Yüz tanıma hassasiyeti: düşük değer daha çok yüz yakalar (yanlış tespit artabilir)' });
-  const sensWrap = h('label', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Hassasiyet'), sens);
-  api.get('/api/system/nvr/facerec').then(c => { facerecCfg = c; sens.value = c.score; }).catch(() => {});
+  const sensVal = h('b', { style: { minWidth: '34px', textAlign: 'right' } }, '0.60');
+  const sensWrap = h('label', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Hassasiyet'), sens, sensVal);
+  api.get('/api/system/nvr/facerec').then(c => { facerecCfg = c; sens.value = c.score; sensVal.textContent = Number(c.score).toFixed(2); }).catch(() => {});
+  sens.addEventListener('input', () => { sensVal.textContent = Number(sens.value).toFixed(2); });
   sens.addEventListener('change', async () => {
-    try { const r = await api.put('/api/system/nvr/facerec', { score: Number(sens.value), min_face: facerecCfg.min_face || 36 }); facerecCfg = r; sens.value = r.score; toast('Hassasiyet kaydedildi · anında geçerli', 'success'); }
+    try { const r = await api.put('/api/system/nvr/facerec', { score: Number(sens.value), min_face: facerecCfg.min_face || 36 }); facerecCfg = r; sens.value = r.score; sensVal.textContent = Number(r.score).toFixed(2); toast('Hassasiyet kaydedildi · anında geçerli', 'success'); }
     catch (err) { toastError(err); }
   });
   const info = h('span', { class: 'small muted' });

@@ -3,9 +3,15 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.103.0'
+VERSION = '2.103.1'
 
 CHANGELOG = [
+    {'version': '2.103.1', 'date': '2026-10-03', 'title': 'Düzeltme: Mikro ERP ve PDKS bağlantısı (bulut + fabrika ajanı)',
+     'changes': [
+         'Mikro ERP “Bağlanılamadı (20002)” hatası giderildi: Entegrasyonlar’da kayıtlı bağlantı bilgileri artık her istekle fabrikadaki ajana iletiliyor (bulut kurulumunda ajan bu bilgileri bilmiyordu).',
+         'PDKS (personel giriş-çıkış) için de aynı düzeltme.',
+         'Program Ayarları › Entegrasyonlar › Mikro “Test et” bulutta fabrika ajanı üzerinden dener.',
+     ]},
     {'version': '2.103.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler: Instagram tarzı kart, yorum yanıtı + kalp, kaydedilenler, arka planda yükleme',
      'changes': [
          'Kart yeniden tasarlandı: paylaşan kişi medyanın üstünde; × yerine “⋯” menüsü (kaydet, paylaş, indir, metni kopyala, konumu aç, kimler beğendi, kendi paylaşımında sil).',

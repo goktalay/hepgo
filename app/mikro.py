@@ -26,11 +26,17 @@ def _query_direct(sql, params=None, db=None):
         return cur.fetchall()
 
 
+def creds():
+    """Bağlantı bilgileri (Program Ayarları › Entegrasyonlar'da merkezde saklanır). Uzak modda her istekle, kimliği
+    doğrulanmış şifreli ajan kanalından fabrikadaki ajana iletilir (NVR ile aynı yöntem) — ajanın kendi .env'ine gerek kalmaz."""
+    return {k: getattr(config, k) for k in ('MIKRO_HOST', 'MIKRO_PORT', 'MIKRO_DB', 'MIKRO_USER', 'MIKRO_PASSWORD')}
+
+
 def query(sql, params=None, db=None):
     """Tüm Mikro okumalarının tek geçiş noktası. Uzak modda fabrikadaki ajana iletilir (merkez MSSQL'e bağlanmaz)."""
     if config.AGENT_MODE == 'remote':
         from . import devices
-        return devices.call_sync('mikro.query', {'sql': sql, 'params': list(params) if params else None, 'db': db})
+        return devices.call_sync('mikro.query', {'sql': sql, 'params': list(params) if params else None, 'db': db, 'cfg': creds()})
     return _query_direct(sql, params, db)
 
 

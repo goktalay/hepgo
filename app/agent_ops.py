@@ -6,6 +6,7 @@ Her op, ilgili modülün DOĞRUDAN (_..._direct) implementasyonunu çağırır �
 
 Her op: fn(args: dict) -> JSON-serileştirilebilir sonuç. Bloklayıcı olabilir (ağ/DB).
 """
+from . import config
 import time
 
 
@@ -14,33 +15,47 @@ def _ping(args):
 
 
 # --- Mikro ERP (MSSQL) ---
+def _cfg(args):
+    """Merkezden gelen bağlantı bilgileri (Program Ayarları › Entegrasyonlar) ajanda geçerli olur. Yalnız MIKRO_/PDKS_
+    alanları kabul edilir; boş değer mevcut (ajan .env) değerini ezmez."""
+    for k, v in (args.get('cfg') or {}).items():
+        if k.startswith(('MIKRO_', 'PDKS_')) and hasattr(config, k) and v not in (None, ''):
+            setattr(config, k, int(v) if k.endswith('_PORT') else v)
+
+
 def _mikro_query(args):
+    _cfg(args)
     from . import mikro
     return mikro._query_direct(args['sql'], args.get('params'), args.get('db'))
 
 
 def _mikro_ping(args):
+    _cfg(args)
     from . import mikro
     return mikro.ping()          # query() üstüne kurulu; ajanda yerel çalışır
 
 
 def _mikro_databases(args):
+    _cfg(args)
     from . import mikro
     return mikro.databases()
 
 
 # --- PDKS (Firebird) ---
 def _pdks_personnel(args):
+    _cfg(args)
     from . import pdks
     return pdks._fetch_personnel_direct()
 
 
 def _pdks_attendance(args):
+    _cfg(args)
     from . import pdks
     return pdks._daily_attendance_direct(args.get('date_from'), args.get('date_to'))
 
 
 def _pdks_test(args):
+    _cfg(args)
     from . import pdks
     ok, msg = pdks._test_direct()
     return {'ok': ok, 'message': msg}

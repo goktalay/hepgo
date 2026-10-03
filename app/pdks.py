@@ -48,6 +48,11 @@ def configured():
     return bool(config.PDKS_HOST and config.PDKS_DB and config.PDKS_USER and config.PDKS_PASSWORD)
 
 
+def creds():
+    """Merkezde (Entegrasyonlar) saklanan bağlantı bilgileri; uzak modda her istekle fabrika ajanına iletilir."""
+    return {k: getattr(config, k) for k in ('PDKS_HOST', 'PDKS_PORT', 'PDKS_DB', 'PDKS_USER', 'PDKS_PASSWORD')}
+
+
 # --- Dağıtık mod: uzak modda PDKS okumaları fabrikadaki ajana iletilir (merkez Firebird'e bağlanmaz) ---
 def _remote():
     return config.AGENT_MODE == 'remote'
@@ -56,7 +61,7 @@ def _remote():
 def test():
     if _remote():
         from . import devices
-        r = devices.call_sync('pdks.test', {})
+        r = devices.call_sync('pdks.test', {'cfg': creds()})
         return bool(r.get('ok')), r.get('message', '')
     return _test_direct()
 
@@ -64,14 +69,14 @@ def test():
 def fetch_personnel():
     if _remote():
         from . import devices
-        return devices.call_sync('pdks.personnel', {})
+        return devices.call_sync('pdks.personnel', {'cfg': creds()})
     return _fetch_personnel_direct()
 
 
 def daily_attendance(date_from, date_to):
     if _remote():
         from . import devices
-        return devices.call_sync('pdks.attendance', {'date_from': date_from, 'date_to': date_to})
+        return devices.call_sync('pdks.attendance', {'date_from': date_from, 'date_to': date_to, 'cfg': creds()})
     return _daily_attendance_direct(date_from, date_to)
 
 

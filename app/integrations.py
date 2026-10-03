@@ -203,10 +203,16 @@ def test(group):
         if not mikro.configured():
             return False, 'Sunucu, veritabanı, kullanıcı ve şifre girilmeli.'
         try:
-            with mikro.connect() as c:
-                cur = c.cursor()
-                cur.execute('SELECT DB_NAME() AS db')
-                name = cur.fetchone()['db']
+            if config.AGENT_MODE == 'remote':   # Mikro fabrika ağında: deneme fabrikadaki ajan üzerinden
+                p = mikro.ping()
+                if not p.get('ok'):
+                    raise RuntimeError(p.get('error') or 'bağlantı kurulamadı')
+                name = p.get('db')
+            else:
+                with mikro.connect() as c:
+                    cur = c.cursor()
+                    cur.execute('SELECT DB_NAME() AS db')
+                    name = cur.fetchone()['db']
             return True, f'Bağlantı başarılı · veritabanı: {name}'
         except Exception as e:   # noqa: BLE001
             msg = str(e)
@@ -216,7 +222,7 @@ def test(group):
                 return False, 'Kullanıcı adı veya şifre hatalı.'
             if '4060' in msg or 'Cannot open database' in msg:
                 return False, f'Veritabanı bulunamadı ya da bu kullanıcının erişimi yok: {config.MIKRO_DB}'
-            if '20009' in msg or 'timed out' in msg or 'unavailable' in msg:
+            if '20009' in msg or '20002' in msg or 'timed out' in msg or 'unavailable' in msg:
                 return False, f'Sunucuya ulaşılamadı ({config.MIKRO_HOST}:{config.MIKRO_PORT}). IP / port, ağ bağlantısı ya da güvenlik duvarını kontrol edin.'
             return False, f'Bağlanılamadı: {msg[:160]}'
     if group == 'pdks':

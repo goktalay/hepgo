@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.100.0'
+VERSION = '2.100.1'
 
 CHANGELOG = [
+    {'version': '2.100.1', 'date': '2026-10-03', 'title': 'Düzeltme: kullanıcı menüsü ikonları',
+     'changes': [
+         'Kullanıcı menüsündeki “Ekranı Paylaş” öğesinde aşırı büyük görünen ikon düzeltildi; ekran paylaşımı için ekran ikonu kullanılıyor.',
+         '“Görüntülü Toplantı” öğesinde telefon yerine video ikonu.',
+     ]},
     {'version': '2.100.0', 'date': '2026-10-03', 'title': 'Finans / Ön-Muhasebe modülü (1. sürüm)',
      'changes': [
          'Yeni “Finans” modülü (Finans rolü + yönetici): Özet (nakit pozisyonu + 6 ay giriş/çıkış grafiği), Kasa & Banka, Cari Hesaplar, Hareketler.',

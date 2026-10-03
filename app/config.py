@@ -78,6 +78,12 @@ PDKS_DB = os.environ.get('CAYMAZ_PDKS_DB', r'\\192.168.1.100\MPremium\PDKS.GDB')
 PDKS_USER = os.environ.get('CAYMAZ_PDKS_USER', 'SYSDBA')
 PDKS_PASSWORD = os.environ.get('CAYMAZ_PDKS_PASSWORD', '')
 
+# NVR (ağ kayıt cihazı — kameralar NVR arkasında; ONVIF + RTSP). Uzak modda fabrika ajanı üzerinden erişilir.
+NVR_HOST = os.environ.get('CAYMAZ_NVR_HOST', '')
+NVR_PORT = int(os.environ.get('CAYMAZ_NVR_PORT', '80'))
+NVR_USER = os.environ.get('CAYMAZ_NVR_USER', 'admin')
+NVR_PASSWORD = os.environ.get('CAYMAZ_NVR_PASSWORD', '')
+
 GOOGLE_CLIENT_ID = os.environ.get('CAYMAZ_GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('CAYMAZ_GOOGLE_CLIENT_SECRET', '')
 PUBLIC_URL = os.environ.get('CAYMAZ_PUBLIC_URL', '').rstrip('/')   # ör. https://caymaz.app

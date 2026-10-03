@@ -5,7 +5,7 @@ import time
 from typing import Optional
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
@@ -15,10 +15,13 @@ from ..files import FILE_GUARDS
 
 router = APIRouter(prefix='/api/cameras')
 faces_router = APIRouter(prefix='/api/faces')
-cam_user = auth.require_module('security')
+cam_user = auth.require_sysadmin()   # Kameralar modülü yalnızca sistem yöneticisine açık (Sistem Yönetimi)
 LIVE_DIR = config.DATA_DIR / 'cameras' / 'live'
 
-FILE_GUARDS['camfaces'] = lambda user, name: 'security' in user['modules']
+_cam_access = lambda user, name: auth.ADMIN in user['roles'] or bool(user.get('master'))
+FILE_GUARDS['camfaces'] = _cam_access
+FILE_GUARDS['faces_enroll'] = _cam_access   # yüz tanıma eğitimi kırpıkları
+FILE_GUARDS['camclips'] = _cam_access        # görülme anı video klipleri (lokal)
 
 
 class CameraIn(BaseModel):
@@ -308,3 +311,69 @@ def recent(user=Depends(cam_user), conn=db.DB):
            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id LEFT JOIN companies pc ON pc.id = p.company_id
            WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
+
+
+@faces_router.get('/events')
+def events(date_from: str, date_to: str, kind: str = 'known', limit: int = 500,
+           user=Depends(cam_user), conn=db.DB):
+    """Belirli tarih aralığındaki görülmeler (Olay görüntüleme). kind='known' yalnız tanınanlar, 'all' hepsi.
+    Yüz verisi/videolar fabrikada tutulur; bu liste yalnız seçilen aralık için çekilir."""
+    where = "s.at >= ? AND s.at < ?"
+    args = [date_from, date_to + '~']   # 'YYYY-MM-DD' → o günün sonuna kadar (ISO karşılaştırma)
+    if kind == 'known':
+        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL)"
+    return {'events': db.rows(conn.execute(
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, c.name AS camera_name, g.id AS group_id,
+                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company
+            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
+            LEFT JOIN companies pc ON pc.id = p.company_id
+            WHERE {where} ORDER BY s.at DESC LIMIT ?''', (*args, min(limit, 2000))))}
+
+
+@faces_router.get('/enroll')
+def enroll_list(subject_type: str, user_id: Optional[int] = None, person_id: Optional[int] = None,
+                user=Depends(cam_user), conn=db.DB):
+    """Bir kişinin eğitim fotoğrafları (yüz kırpıkları)."""
+    from .. import faceenroll
+    try:
+        return {'faces': faceenroll.list_for(conn, subject_type, user_id, person_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@faces_router.post('/enroll')
+async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...),
+                     user_id: Optional[int] = Form(None), person_id: Optional[int] = Form(None),
+                     user=Depends(cam_user), conn=db.DB):
+    """Yüz tanıma eğitimi: bir fotoğraf yükle → kişinin yüzü eğitilsin."""
+    from .. import faceenroll
+    import os
+    import tempfile
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(413, 'Fotoğraf çok büyük (en çok 15 MB)')
+    fd, tmp = tempfile.mkstemp(suffix='.jpg', dir=str(config.UPLOAD_DIR))
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        ok, res = await run_in_threadpool(faceenroll.enroll, conn, subject_type, user_id, person_id, tmp, user['id'])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    finally:
+        os.unlink(tmp)
+    if not ok:
+        raise HTTPException(422, res)
+    conn.commit()
+    db.audit(conn, user['id'], 'Yüz tanıma eğitimi: fotoğraf eklendi', 'face_enroll', res['id'], subject_type)
+    return {'ok': True, 'face': res}
+
+
+@faces_router.delete('/enroll/{enroll_id}')
+def enroll_delete(enroll_id: int, user=Depends(cam_user), conn=db.DB):
+    from .. import faceenroll
+    if faceenroll.delete(conn, enroll_id):
+        conn.commit()
+    return {'ok': True}

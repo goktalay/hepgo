@@ -57,6 +57,27 @@ def _printer_send(args):
     return printer_send.agent_send(args)
 
 
+# --- NVR (ağ kayıt cihazı — kameralar arkasında; ONVIF/RTSP, fabrika LAN'ında) ---
+def _nvr_probe(args):
+    from . import nvr
+    return nvr._probe_direct(args)
+
+
+def _nvr_channels(args):
+    from . import nvr
+    return nvr._channels_direct(args)
+
+
+def _nvr_gpu(args):
+    from . import nvr
+    return nvr._gpu_capacity_direct(args)
+
+
+def _nvr_snapshot(args):
+    from . import nvr
+    return nvr._snapshot_direct(args)
+
+
 # --- Entegrasyon makinesi (fabrika) kaynak grafiği — merkez sunucu DEĞİL ---
 def _sysstat(args):
     from . import sysstat
@@ -73,6 +94,10 @@ OPS = {
     'pdks.test': _pdks_test,
     'printer.probe': _printer_probe,
     'printer.send': _printer_send,
+    'nvr.probe': _nvr_probe,
+    'nvr.channels': _nvr_channels,
+    'nvr.gpu': _nvr_gpu,
+    'nvr.snapshot': _nvr_snapshot,
     'sysstat': _sysstat,
 }
 

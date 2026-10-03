@@ -44,6 +44,18 @@ GROUPS = {
             ('PDKS_PASSWORD', 'Şifre', 'secret', 'Firebird şifresi'),
         ],
     },
+    'nvr': {
+        'title': 'NVR (Kamera Kayıt Cihazı)',
+        'desc': 'Kameralar NVR arkasındadır; bağlantı fabrikadaki ajan üzerinden kurulur (ONVIF/RTSP). Bağlandıktan '
+                'sonra kanallar listelenir, her kanal için yüz tanıma açılıp zamanlanabilir. Video ve yüz verisi '
+                'yalnızca fabrikada (lokal) saklanır.',
+        'fields': [
+            ('NVR_HOST', 'Yerel IP', 'text', 'ör. 192.168.1.250'),
+            ('NVR_PORT', 'ONVIF portu', 'int', 'Genelde 80'),
+            ('NVR_USER', 'Kullanıcı adı', 'text', 'ör. admin'),
+            ('NVR_PASSWORD', 'Şifre', 'secret', 'NVR yönetici şifresi'),
+        ],
+    },
     'google': {
         'title': 'Google E-posta (Gmail)',
         'desc': 'Kullanıcıların Gmail hesaplarını bağlaması için Google Cloud OAuth istemcisi.',
@@ -204,6 +216,9 @@ def test(group):
         if not pdks.configured():
             return False, 'Sunucu, veritabanı yolu, kullanıcı ve şifre girilmeli.'
         return pdks.test()
+    if group == 'nvr':
+        from . import nvr
+        return nvr.test()
     if group == 'google':
         ok = bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET)
         return ok, 'Bilgiler tanımlı; kullanıcılar E-posta bölümünden Gmail bağlayabilir.' if ok else 'Client ID ve Secret girilmeli.'

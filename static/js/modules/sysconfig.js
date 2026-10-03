@@ -85,6 +85,140 @@ function integServerCard(view) {
     agentBody);
 }
 
+// Tek kamera canlı izleme (talep üzerine): fabrikadan anlık kareleri kısa aralıkla yenileyerek akıcı görüntü
+function watchChannel(ch, name) {
+  const img = h('img', { class: 'nvr-live-img', alt: name });
+  const note = h('div', { class: 'nvr-live-note muted small' }, 'Bağlanıyor…');
+  let stop = false, timer = null;
+  const tick = () => {
+    if (stop) return;
+    const next = new Image();
+    next.onload = () => { if (stop) return; img.src = next.src; note.textContent = name + ' · canlı'; timer = setTimeout(tick, 120); };
+    next.onerror = () => { if (stop) return; note.textContent = 'Kare alınamadı — kanal yayında olmayabilir. Yeniden deneniyor…'; timer = setTimeout(tick, 1500); };
+    next.src = `/api/system/nvr/snapshot/${ch}?sub=1&t=${Date.now()}`;
+  };
+  tick();
+  modal({ title: `${name} (Kanal ${ch})`, wide: true,
+    body: h('div', { class: 'nvr-live' }, img, note),
+    actions: [{ label: 'Kapat' }],
+    onClose: () => { stop = true; if (timer) clearTimeout(timer); } });
+}
+
+// NVR paneli: GPU kapasitesi (kaç kameraya yüz tanıma) + kanal listesi (her kanal: yüz tanıma aç/kapa + zamanlama)
+const SCHED_LABEL = { all: 'Tüm gün', day: 'Sadece gündüz', night: 'Sadece akşam', custom: 'Özel saat' };
+function nvrPanel() {
+  const wrap = h('section', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Kanallar yükleniyor…'));
+  let data = null;
+
+  const gpuCard = () => {
+    const g = data.gpu || {};
+    const eff = g.effective_max || 0;
+    const active = data.channels.filter(c => c._face).length;
+    const over = active > eff && eff > 0;
+    const manual = h('input', { class: 'input', type: 'number', min: '0', style: { maxWidth: '110px' },
+      value: g.manual_max != null ? String(g.manual_max) : '', placeholder: 'Oto' });
+    const saveCap = h('button', { class: 'btn sm', type: 'button' }, 'Uygula');
+    saveCap.addEventListener('click', async () => {
+      saveCap.disabled = true;
+      try { const r = await api.put('/api/system/nvr/capacity', { manual_max: Number(manual.value) || null }); data.gpu = r.gpu; draw(); toast('Kapasite ayarı kaydedildi', 'success'); }
+      catch (err) { toastError(err); } finally { saveCap.disabled = false; }
+    });
+    return h('section', { class: 'card card-pad' },
+      h('h3', { style: { marginTop: 0 } }, 'Yüz Tanıma Kapasitesi'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } },
+        g.gpu_name ? `GPU: ${g.gpu_name}${g.vram_mb ? ' · ' + Math.round(g.vram_mb / 1024) + ' GB' : ''}` : 'GPU bulunamadı — yüz tanıma için NVIDIA GPU gerekir.'),
+      h('div', { class: 'nvr-cap' },
+        h('div', { class: 'nvr-cap-box' }, h('span', { class: 'muted' }, 'Sistem desteği'), h('b', null, g.est_max ? `${g.est_max} kamera` : '—')),
+        h('div', { class: 'nvr-cap-box' }, h('span', { class: 'muted' }, 'Etkin sınır'), h('b', null, eff ? `${eff} kamera` : '—')),
+        h('div', { class: `nvr-cap-box ${over ? 'over' : ''}` }, h('span', { class: 'muted' }, 'Şu an açık'), h('b', null, `${active} kamera`))),
+      h('p', { class: 'small muted' }, g.basis ? `Tahmin: ${g.basis}.` : '', ' Sınırı elle değiştirebilirsiniz; boş = otomatik.'),
+      h('label', { class: 'sc-field', style: { maxWidth: '260px' } }, h('span', { class: 'sc-f-label' }, 'Elle max kamera'),
+        h('div', { style: { display: 'flex', gap: '8px' } }, manual, saveCap)),
+      over ? h('div', { class: 'sc-integ-msg err', style: { marginTop: '8px' } },
+        `Açık kamera sayısı sistem sınırını (${eff}) aşıyor — performans düşebilir.`) : null);
+  };
+
+  const channelRow = c => {
+    const face = h('input', { type: 'checkbox', class: 'nvr-switch' });
+    face.checked = !!c._face;
+    const sched = h('select', { class: 'input', style: { maxWidth: '160px' } },
+      ...Object.entries(SCHED_LABEL).map(([v, l]) => h('option', { value: v, selected: c._sched === v }, l)));
+    const c0 = h('input', { type: 'time', class: 'input', style: { maxWidth: '120px' }, value: (c._custom?.[0]?.[0]) || '' });
+    const c1 = h('input', { type: 'time', class: 'input', style: { maxWidth: '120px' }, value: (c._custom?.[0]?.[1]) || '' });
+    const customWrap = h('span', { class: 'nvr-custom', hidden: c._sched !== 'custom' }, c0, h('span', { class: 'muted' }, '–'), c1);
+    const syncState = () => { c._face = face.checked; c._sched = sched.value; c._custom = [[c0.value, c1.value]]; customWrap.hidden = sched.value !== 'custom'; };
+    face.addEventListener('change', () => { syncState(); draw(); });
+    sched.addEventListener('change', () => { syncState(); customWrap.hidden = sched.value !== 'custom'; refreshCap(); });
+    [c0, c1].forEach(x => x.addEventListener('change', syncState));
+    const watch = h('button', { class: 'btn sm nvr-watch', type: 'button', title: 'Canlı izle', onclick: () => watchChannel(c.ch, c.name) }, segIconByKey('eye'), 'İzle');
+    return h('div', { class: `nvr-ch ${c._face ? 'on' : ''}` },
+      h('label', { class: 'nvr-ch-sw' }, face, h('span', { class: 'nvr-slider' })),
+      h('div', { class: 'grow' }, h('b', null, c.name), h('small', { class: 'muted' }, `Kanal ${c.ch}`)),
+      h('div', { class: 'nvr-ch-sched' }, c._face ? sched : h('span', { class: 'muted small' }, 'Kapalı'), c._face ? customWrap : null),
+      watch);
+  };
+
+  let draw, refreshCap;
+  draw = () => {
+    const rows = data.channels.map(channelRow);
+    clear(wrap,
+      gpuCard(),
+      h('section', { class: 'card card-pad' },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+          h('h3', { style: { margin: 0, flex: 1 } }, `Kanallar (${data.channels.length})`),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => { data.channels.forEach(c => c._face = false); draw(); } }, 'Tümünü kapat')),
+        data.error ? h('p', { class: 'sc-integ-msg err' }, `NVR'a ulaşılamadı: ${data.error}. Önce bağlantıyı kurun.`) : null,
+        data.channels.length ? h('div', { class: 'nvr-chs' }, ...rows) : h('div', { class: 'muted', style: { padding: '8px 0' } }, 'Kanal bulunamadı.'),
+        h('div', { class: 'sc-integ-foot', style: { marginTop: '10px' } }, h('span', { class: 'spacer' }),
+          h('button', { class: 'btn primary', type: 'button', onclick: saveChannels }, 'Kanal ayarlarını kaydet'))));
+  };
+  refreshCap = () => draw();   // kapasite kutusunu (açık kamera sayısı) güncelle
+
+  async function saveChannels() {
+    const payload = data.channels.map(c => ({ ch: c.ch, name: c.name, face: !!c._face, schedule: c._sched,
+      custom: c._sched === 'custom' ? c._custom : [] }));
+    try {
+      const r = await api.put('/api/system/nvr/channels', { channels: payload });
+      data.gpu = r.gpu; draw();
+      toast(t('{n} kanal açık olarak kaydedildi', { n: r.active }), 'success');
+    } catch (err) { toastError(err); }
+  }
+
+  (async () => {
+    try {
+      const d = await api.get('/api/system/nvr/channels');
+      d.channels.forEach(c => { c._face = !!c.face; c._sched = c.schedule || 'all'; c._custom = c.custom?.length ? c.custom : [['', '']]; });
+      data = d; draw();
+    } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); }
+  })();
+  return wrap;
+}
+
+// Fabrika vardiya ayarı (Genel ayarlar içinde): gündüz/gece mesai saatleri (24s). NVR "sadece gündüz/akşam" bunu kullanır.
+function shiftCard() {
+  const wrap = h('section', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  const mk = () => ({ s: h('input', { type: 'time', class: 'input', style: { maxWidth: '130px' } }), e: h('input', { type: 'time', class: 'input', style: { maxWidth: '130px' } }) });
+  const day = mk(), night = mk();
+  const draw = s => {
+    day.s.value = s.day[0]; day.e.value = s.day[1]; night.s.value = s.night[0]; night.e.value = s.night[1];
+    clear(wrap,
+      h('h3', { style: { marginTop: 0 } }, 'Fabrika Vardiyası'),
+      h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Gündüz ve gece mesai saatleri (24 saat). Kameralarda “sadece gündüz / sadece akşam” yüz tanıma bu saatlere göre çalışır.'),
+      h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, 'Gündüz mesaisi'),
+        h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, day.s, h('span', { class: 'muted' }, '–'), day.e)),
+      h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, 'Gece mesaisi'),
+        h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, night.s, h('span', { class: 'muted' }, '–'), night.e)),
+      h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }),
+        h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Vardiyayı kaydet')));
+  };
+  async function save() {
+    try { const r = await api.put('/api/system/shift', { day: [day.s.value, day.e.value], night: [night.s.value, night.e.value] }); draw(r.shift); toast('Vardiya kaydedildi', 'success'); }
+    catch (err) { toastError(err); }
+  }
+  (async () => { try { draw((await api.get('/api/system/shift')).shift); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); } })();
+  return wrap;
+}
+
 // Sayı kutusu: sabit genişlikte tek parça kontrol (− değer birim +); birim yazısının uzunluğu kutuyu kaydırmaz
 function numBox(inp, suffix) {
   const step = Number(inp.step) || 1;
@@ -102,9 +236,9 @@ function numBox(inp, suffix) {
 
 // ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
 // Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
-const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', google: 'mailDot', general: 'gear' };
+const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
-const SERVER_INTEGRATIONS = ['mikro', 'pdks'];
+const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
 function integrationsBody(view, ctx) {
   const wrap = h('div', { class: 'sc-integ-list' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   const card = grp => {
@@ -180,6 +314,8 @@ function integrationsBody(view, ctx) {
           info.sections.map(([t, items]) => h('div', { class: 'integ-info-sec' }, h('h4', null, t), h('ul', null, items.map(x => h('li', null, x)))))) : null,
         h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
         ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null,
+        grp.key === 'nvr' ? nvrPanel() : null,
+        grp.key === 'general' ? shiftCard() : null,
         SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null);
       return;
     }
@@ -211,6 +347,10 @@ const INTEG_LOGO = {
     <rect width="64" height="64" rx="16" fill="url(#mk)"/><text x="32" y="40" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800" fill="#fff" letter-spacing="-.5">mikro</text></svg>`),
   pdks: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="PDKS"><rect width="64" height="64" rx="16" fill="#0e7490"/>
     <circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="3.2"/><path d="M32 23v10l7 4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
+  nvr: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="NVR"><rect width="64" height="64" rx="16" fill="#1f2937"/>
+    <rect x="14" y="20" width="36" height="24" rx="3" fill="none" stroke="#fff" stroke-width="3"/>
+    <circle cx="32" cy="32" r="6.5" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="32" r="1.8" fill="#fff"/>
+    <circle cx="43" cy="25" r="1.6" fill="#22c55e"/></svg>`),
   general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
 };
 const INTEG_INFO = {

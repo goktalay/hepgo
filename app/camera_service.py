@@ -8,23 +8,29 @@ Her etkin kamera için iki iş parçacığı:
   aynı kamerada en fazla 20 sn'de bir görülme (face_sightings) saklanır: yüz kırpığı ve yüzün görüldüğü anın tam karesi.
 Kamera listesi ve grup atamaları (web'den yapılan kişiye atama / birleştirme) periyodik olarak veritabanından okunur.
 """
+import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
+from collections import deque
 
 os.environ.setdefault('OPENCV_FFMPEG_CAPTURE_OPTIONS', 'rtsp_transport;tcp|stimeout;5000000')
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
-from . import cameras as camlib, config, db  # noqa: E402
+from . import cameras as camlib, config, db, shifts  # noqa: E402
 from .document_media import KNOWN_PERSON, SFACE, YUNET, _face_crop, _norm, known_identities  # noqa: E402
 
 log = logging.getLogger('camera_service')
 LIVE_DIR = config.DATA_DIR / 'cameras' / 'live'
+CLIP_DIR = config.UPLOAD_DIR / 'camclips'       # görülme anının kısa videosu (lokal)
 FACE_DIR = config.UPLOAD_DIR / 'camfaces'
+CLIP_SECONDS, CLIP_FPS = 6, 5                    # kaydedilen klip: görülme öncesi ~6 sn, 5 kare/sn
+_CH_RE = re.compile(r'/unicast/c(\d+)/')         # NVR kanal numarası (stream_url'den)
 LIVE_EVERY, LIVE_WIDTH = 0.2, 960        # izleme karesi
 FACE_EVERY, FACE_WIDTH = 0.5, 1280       # yüz arama
 FRAME_WIDTH = 1920                       # saklanan tam kare
@@ -95,6 +101,63 @@ class Identities:
             return None, who
 
 
+def _channel_of(stream_url):
+    m = _CH_RE.search(stream_url or '')
+    return int(m.group(1)) if m else None
+
+
+class Schedule:
+    """NVR kanallarının yüz-tanıma zamanlaması (tüm gün / gündüz / gece / özel) + fabrika vardiyası. app_kv'den okunur."""
+
+    def __init__(self):
+        self.ch = {}
+        self.shift = {k: list(v) for k, v in shifts.DEFAULT.items()}
+
+    def reload(self):
+        try:
+            with db.connect() as conn:
+                self.shift = shifts.get(conn)
+                row = conn.execute("SELECT v FROM app_kv WHERE k = 'nvr_channels'").fetchone()
+                self.ch = json.loads(row[0]) if row else {}
+        except Exception:   # noqa: BLE001 — okunamazsa hepsi aktif sayılır
+            self.ch = {}
+
+    def active(self, channel):
+        """Bu kanalda şu an yüz tanıma çalışmalı mı? NVR dışı kameralar (channel None) daima aktif."""
+        if channel is None:
+            return True
+        c = self.ch.get(str(channel))
+        if not c:
+            return True
+        sched = c.get('schedule', 'all')
+        if sched == 'all':
+            return True
+        now = time.strftime('%H:%M')
+        if sched == 'day':
+            return shifts.in_window(now, *self.shift['day'])
+        if sched == 'night':
+            return shifts.in_window(now, *self.shift['night'])
+        if sched == 'custom':
+            return any(a and b and shifts.in_window(now, a, b) for a, b in c.get('custom', []))
+        return True
+
+
+def _write_clip(frames, out_path):
+    """Tampondaki kareleri küçük bir MP4 olarak yazar (lokal). En büyük kareye göre boyutlandırır."""
+    if not frames:
+        return False
+    h, w = frames[0].shape[:2]
+    writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*'mp4v'), CLIP_FPS, (w, h))
+    if not writer.isOpened():
+        return False
+    try:
+        for fr in frames:
+            writer.write(fr if fr.shape[:2] == (h, w) else cv2.resize(fr, (w, h)))
+    finally:
+        writer.release()
+    return True
+
+
 def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso):
     """Grubu günceller ya da yeni grup açar; 20 sn kuralına göre görülmeyi (kırpık + tam kare) saklar."""
     gid, who = ident.assign(emb)
@@ -122,7 +185,7 @@ def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso):
             crop_path = None
         key = (gid, cam_id)
         if now - ident.last_store.get(key, 0) < STORE_EVERY:
-            return
+            return None
         ident.last_store[key] = now
         if crop_path is None:
             name = uuid.uuid4().hex
@@ -133,15 +196,19 @@ def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso):
                 conn.execute('UPDATE face_groups SET best_crop = ?, best_score = ? WHERE id = ?', (crop_path, score, gid))
         fname = uuid.uuid4().hex
         _write_jpg(FACE_DIR / f'{fname}.jpg', frame, 85)
-        conn.execute('INSERT INTO face_sightings (group_id, camera_id, at, crop, frame, embedding, score) VALUES (?,?,?,?,?,?,?)',
-                     (gid, cam_id, now_iso, crop_path, f'camfaces/{fname}.jpg', emb.astype(np.float32).tobytes(), score))
+        cur = conn.execute('INSERT INTO face_sightings (group_id, camera_id, at, crop, frame, embedding, score) VALUES (?,?,?,?,?,?,?)',
+                           (gid, cam_id, now_iso, crop_path, f'camfaces/{fname}.jpg', emb.astype(np.float32).tobytes(), score))
+        return cur.lastrowid
 
 
 class Camera:
-    def __init__(self, row, ident):
-        self.row, self.ident = row, ident
+    def __init__(self, row, ident, sched=None):
+        self.row, self.ident, self.sched = row, ident, sched
+        self.channel = _channel_of(row['stream_url'])   # NVR kanalı (zamanlama için); NVR dışı ise None
         self.stop = threading.Event()
         self.latest = None   # (zaman, kare)
+        self.clipbuf = deque(maxlen=CLIP_SECONDS * CLIP_FPS)   # son ~6 sn küçük kare (klip için)
+        self._last_buf = 0
         self.status = None
         self.threads = [threading.Thread(target=self._read, daemon=True, name=f'cam{row["id"]}-read')]
         if row['faces']:
@@ -187,6 +254,9 @@ class Camera:
                 fails = 0
                 now = time.time()
                 self.latest = (now, img)
+                if now - self._last_buf >= 1 / CLIP_FPS:   # klip tamponu (küçük kare)
+                    self._last_buf = now
+                    self.clipbuf.append(_resize(img, 640))
                 if now - last_live >= LIVE_EVERY:
                     last_live = now
                     _write_jpg(live, _resize(img, LIVE_WIDTH), 72)
@@ -208,6 +278,8 @@ class Camera:
             self.stop.wait(FACE_EVERY)
             if not self.latest or self.latest[0] == seen_at:
                 continue
+            if self.sched is not None and not self.sched.active(self.channel):
+                continue   # kanalın zamanlaması dışında (ör. sadece gündüz) — yüz tanıma atlanır
             seen_at, frame = self.latest
             try:
                 img = _resize(frame, FACE_WIDTH)
@@ -223,9 +295,25 @@ class Camera:
                         continue
                     emb = _norm(recognizer.feature(recognizer.alignCrop(img, f)).flatten().astype(np.float32))
                     full = full if full is not None else _resize(frame, FRAME_WIDTH)
-                    _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso)
+                    sid = _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso)
+                    if sid:
+                        self._save_clip(sid)
             except Exception:
                 log.exception('yüz işleme hatası (kamera %s)', self.row['id'])
+
+    def _save_clip(self, sighting_id):
+        """Görülme anının kısa videosunu (tampondaki son ~6 sn) lokal olarak kaydeder ve kayda bağlar. En iyi çaba."""
+        try:
+            frames = list(self.clipbuf)
+            if len(frames) < CLIP_FPS:   # en az ~1 sn
+                return
+            CLIP_DIR.mkdir(parents=True, exist_ok=True)
+            name = f'{uuid.uuid4().hex}.mp4'
+            if _write_clip(frames, CLIP_DIR / name):
+                with db.connect() as conn:
+                    conn.execute('UPDATE face_sightings SET clip = ? WHERE id = ?', (f'camclips/{name}', sighting_id))
+        except Exception:   # noqa: BLE001 — klip kaydı başarısız olsa da tanıma sürer
+            log.exception('klip kaydedilemedi (kamera %s)', self.row['id'])
 
     def close(self):
         self.stop.set()
@@ -240,11 +328,13 @@ def main():
     cv2.setNumThreads(2)
     db.init()
     ident = Identities()
+    sched = Schedule()
     running = {}   # id → (imza, Camera)
     log.info('kamera servisi başladı (%s)', config.DATA_DIR)
     while True:
         try:
             ident.reload()
+            sched.reload()
             with db.connect() as conn:
                 rows = {r['id']: r for r in db.rows(conn.execute(
                     "SELECT * FROM cameras WHERE active = 1 AND stream_url IS NOT NULL AND stream_url != ''"))}
@@ -254,7 +344,7 @@ def main():
                     log.info('kamera %s durduruldu', cid)
             for cid, r in rows.items():
                 if cid not in running:
-                    running[cid] = (_signature(r), Camera(r, ident))
+                    running[cid] = (_signature(r), Camera(r, ident, sched))
                     log.info('kamera %s (%s) başlatıldı', cid, r['name'])
             with db.connect() as conn:   # kapatılan kameraların durumu
                 conn.execute("UPDATE cameras SET status = 'KAPALI' WHERE active = 0 AND COALESCE(status, '') != 'KAPALI'")

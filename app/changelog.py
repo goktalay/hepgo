@@ -3,9 +3,21 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.80.0'
+VERSION = '2.81.0'
 
 CHANGELOG = [
+    {'version': '2.81.0', 'date': '2026-10-03', 'title': 'NVR entegrasyonu, yüz tanıma eğitimi ve Kameralar modülü',
+     'changes': [
+         'Program Ayarları › Entegrasyonlar › NVR: yerel IP, kullanıcı ve şifre ile bağlanılır (fabrika ajanı üzerinden ONVIF/RTSP).',
+         'Bağlandıktan sonra tüm kanallar listelenir; her kanal için yüz tanıma açılıp zamanlanabilir (tüm gün / sadece gündüz / sadece akşam / özel). Varsayılan: tümü kapalı, yalnız 1 kanal açık.',
+         'Çalıştığı makinenin GPU’su ölçülür ve kaç kameraya aynı anda yüz tanıma yapılabileceği otomatik hesaplanır; yönetici elle değiştirebilir, sistemin desteğini görür.',
+         'NVR eklentisinde fabrika makinesinin canlı CPU / GPU / RAM grafiği gösterilir; her kamera talep üzerine tek tek canlı izlenebilir.',
+         'Genel Ayarlar’a fabrika vardiyası eklendi (24 saat): varsayılan gündüz 08:30–17:30, gece 17:30–08:30.',
+         'Yeni “Kameralar” modülü (Sistem Yönetimi, yalnızca sistem yöneticisi, NVR aktifse görünür): Kameralar, Yüz Tanıma ve Tanımlanmayan Kişiler bir arada. Bu alt bölümler Güvenlik modülünden çıkarıldı.',
+         'Yüz Tanıma › Eğitim: bir kişi (personel ya da firma personeli) için fotoğraf yüklenip yüzü eğitilir; kameralarda tanınır.',
+         'Yüz Tanıma › Olaylar: seçilen tarih aralığında tanınan kişilerin görülmeleri ve görülme anının kısa videosu.',
+         'Yüz verisi ve kayıtlar yalnızca fabrikada (lokal) tutulur; buluta taşınmaz (KVKK).',
+     ]},
     {'version': '2.80.0', 'date': '2026-10-03', 'title': '5 yeni dil (Almanca, Fransızca, İspanyolca, Arapça, Rusça) + dikte dili',
      'changes': [
          'Arayüz dili olarak Almanca, Fransızca, İspanyolca, Arapça ve Rusça eklendi (her biri ~3157 metin). Ayarlar › Arayüz › Dil.',

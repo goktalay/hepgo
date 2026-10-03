@@ -45,8 +45,8 @@ def main():
         rok = ok(a.post('/api/companies', json={'name': 'Roketsan'}))['id']
         mehmet = ok(a.post(f'/api/companies/{rok}/people', json={'full_name': 'Mehmet Kaya'}))['id']
 
-    with TestClient(app) as g:
-        ok(g.post('/api/auth/login', json={'username': 'guv', 'password': 'sifre-1234'}))
+    with TestClient(app) as g:   # Kameralar yalnızca sistem yöneticisine açık (Sistem Yönetimi)
+        ok(g.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
         assert g.post('/api/cameras', json={'name': 'X', 'stream_url': '/etc/passwd'}).status_code == 400   # dosya yolu yok
         assert g.post('/api/cameras', json={'name': 'X'}).status_code == 400
         cid = ok(g.post('/api/cameras', json={'name': 'Giriş', 'stream_url': 'rtsp://10.0.0.5/s1', 'username': 'admin',
@@ -124,10 +124,12 @@ def main():
         assert all(not (config.UPLOAD_DIR / s['crop']).exists() for s in files)
         assert g.get(f'/api/faces/groups/{r["id"]}').status_code == 404
 
-    with TestClient(app) as s:   # Sekreter kameraları ve yüzleri göremez
-        ok(s.post('/api/auth/login', json={'username': 'sek', 'password': 'sifre-1234'}))
-        assert s.get('/api/cameras').status_code == 403 and s.get('/api/faces/groups').status_code == 403
-        assert s.get(f'/api/files/{grp["items"][0]["crop"]}').status_code == 404
+    # Kameralar modülü yalnızca sistem yöneticisine açık: Sekreter de Güvenlik kullanıcısı da göremez
+    for uname in ('sek', 'guv'):
+        with TestClient(app) as s:
+            ok(s.post('/api/auth/login', json={'username': uname, 'password': 'sifre-1234'}))
+            assert s.get('/api/cameras').status_code == 403 and s.get('/api/faces/groups').status_code == 403
+            assert s.get(f'/api/files/{grp["items"][0]["crop"]}').status_code == 404
     print('Kamera ve yüz tanıma testleri geçti.')
 
 

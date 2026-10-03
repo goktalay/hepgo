@@ -225,6 +225,114 @@ def test_integration(group: str, user=Depends(auth.current_user)):
     return {'ok': ok, 'message': msg}
 
 
+# --- NVR: kanal listesi + yüz tanıma ayarı + GPU kapasitesi + canlı grafik ---
+@router.get('/nvr/channels')
+def nvr_channels(user=Depends(auth.current_user), conn=db.DB):
+    """NVR kanalları (yüz-tanıma ayarıyla) + GPU kapasitesi + vardiya. Yalnızca sistem yöneticisine."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import nvr, shifts
+    cfg = nvr.channel_config(conn)
+    return {'channels': cfg['channels'], 'ok': cfg['ok'], 'error': cfg.get('error'),
+            'gpu': nvr.gpu_capacity(conn), 'shift': shifts.get(conn)}
+
+
+class NvrChannelsIn(BaseModel):
+    channels: list = []
+
+
+@router.put('/nvr/channels')
+def put_nvr_channels(body: NvrChannelsIn, user=Depends(auth.current_user), conn=db.DB):
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import nvr
+    try:
+        n = nvr.save_channel_config(conn, body.channels)
+        nvr.sync_cameras(conn)   # yüz tanıma açık kanalları kamera listesine köprüle
+    except (ValueError, KeyError, TypeError) as e:
+        raise HTTPException(400, f'Geçersiz kanal ayarı: {e}')
+    conn.commit()
+    active = len(nvr.active_channels(conn))
+    db.audit(conn, user['id'], f'NVR kanal yüz-tanıma ayarı güncellendi ({active} kanal açık)', 'settings', None)
+    return {'saved': n, 'active': active, 'gpu': nvr.gpu_capacity(conn)}
+
+
+class NvrCapacityIn(BaseModel):
+    manual_max: Optional[int] = None
+
+
+@router.put('/nvr/capacity')
+def put_nvr_capacity(body: NvrCapacityIn, user=Depends(auth.current_user), conn=db.DB):
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import nvr
+    cap = nvr.save_capacity(conn, body.manual_max)
+    conn.commit()
+    return {'gpu': cap}
+
+
+@router.get('/nvr/stat')
+def nvr_stat(user=Depends(auth.current_user)):
+    """NVR'ın çalıştığı fabrika makinesinin canlı CPU/GPU/RAM grafiği (yüz-tanıma yükü)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import devices
+    if config.AGENT_MODE == 'remote':
+        try:
+            snap = devices.call_sync('sysstat', timeout=8)
+            snap['host'] = 'factory'
+        except Exception as e:   # noqa: BLE001
+            return {'history': [], 'unavailable': str(e)}
+    else:
+        snap = sysstat.snapshot()
+    return snap
+
+
+@router.get('/nvr/snapshot/{channel}')
+def nvr_snapshot(channel: int, sub: int = 1, user=Depends(auth.current_user)):
+    """Bir NVR kanalından anlık canlı kare (JPEG). Tarayıcı bunu kısa aralıklarla yenileyerek canlı izler."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from fastapi import Response
+    from .. import nvr
+    try:
+        r = nvr.snapshot(channel, sub=bool(sub))
+    except Exception as e:   # noqa: BLE001
+        raise HTTPException(503, f'Kamera karesi alınamadı: {e}')
+    if not r.get('ok'):
+        raise HTTPException(503, r.get('error') or 'Kare alınamadı')
+    import base64 as _b64
+    return Response(content=_b64.b64decode(r['jpg']), media_type='image/jpeg',
+                    headers={'Cache-Control': 'no-store'})
+
+
+@router.get('/shift')
+def get_shift(user=Depends(auth.current_user), conn=db.DB):
+    """Fabrika vardiyası (gündüz/gece saatleri, 24s). Genel ayar."""
+    from .. import shifts
+    return {'shift': shifts.get(conn)}
+
+
+class ShiftIn(BaseModel):
+    day: Optional[list] = None
+    night: Optional[list] = None
+
+
+@router.put('/shift')
+def put_shift(body: ShiftIn, user=Depends(auth.current_user), conn=db.DB):
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import shifts
+    try:
+        cur = shifts.save(conn, body.day, body.night)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    conn.commit()
+    db.audit(conn, user['id'], 'Fabrika vardiya ayarı güncellendi', 'settings', None,
+             f"gündüz={cur['day']} gece={cur['night']}")
+    return {'shift': cur}
+
+
 class AiQuotaIn(BaseModel):
     default: int = 0
     users: dict = {}

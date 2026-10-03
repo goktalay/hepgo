@@ -4385,6 +4385,55 @@ html[data-theme="dark"] .sc-integ-status.ok { background: rgba(34, 197, 94, .15)
 .sc-integ-foot .sc-integ-msg[hidden] + .spacer { display: block; }
 @media (max-width: 900px) { .sc-integ .sc-fields, .sc-integ[data-g] .sc-fields { grid-template-columns: 1fr; } .sc-integ[data-g] .sc-field { grid-column: auto !important; } }
 @media (max-width: 640px) { .sc-integ-foot .btn { flex: 1 1 auto; } .sc-integ-foot .spacer { display: none; } }
+/* NVR entegrasyonu: kapasite + kanal listesi + canlı izleme */
+.nvr-cap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.nvr-cap-box { background: var(--surface-2, rgba(127,127,127,.08)); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; text-align: center; }
+.nvr-cap-box span { display: block; font-size: 12px; }
+.nvr-cap-box b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.nvr-cap-box.over { border-color: #e11d48; color: #e11d48; }
+.nvr-cap-box.over b { color: #e11d48; }
+.nvr-chs { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.nvr-ch { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.nvr-ch.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.nvr-ch .grow b { display: block; }
+.nvr-ch-sched { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nvr-custom { display: inline-flex; align-items: center; gap: 6px; }
+.nvr-watch { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.nvr-watch svg { width: 15px; height: 15px; }
+/* aç/kapa anahtarı */
+.nvr-ch-sw { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; cursor: pointer; }
+.nvr-ch-sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+.nvr-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; transition: background .15s; }
+.nvr-slider::before { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: transform .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.nvr-ch-sw input:checked + .nvr-slider { background: var(--primary); }
+.nvr-ch-sw input:checked + .nvr-slider::before { transform: translateX(18px); }
+/* canlı izleme */
+.nvr-live { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nvr-live-img { width: 100%; max-height: 72vh; object-fit: contain; background: #000; border-radius: 10px; min-height: 240px; }
+.nvr-live-note { text-align: center; }
+@media (max-width: 640px) { .nvr-cap { grid-template-columns: 1fr; } .nvr-ch { flex-wrap: wrap; } }
+/* Güvenlik › Yüz Tanıma (eğitim + olaylar) */
+.fr-train { display: grid; grid-template-columns: 300px 1fr; gap: 14px; align-items: start; }
+.fr-list-card { display: flex; flex-direction: column; gap: 10px; }
+.fr-people { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; }
+.fr-person { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: none; cursor: pointer; }
+.fr-person:hover { background: var(--surface-2, rgba(127,127,127,.08)); }
+.fr-person.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.fr-person b { font-size: 14px; }
+.fr-subject-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fr-crops { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.fr-crop { position: relative; width: 96px; height: 96px; border-radius: 10px; overflow: hidden; }
+.fr-crop img { width: 100%; height: 100%; object-fit: cover; }
+.fr-crop-x { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border: none; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; line-height: 1; font-size: 15px; }
+.fr-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 8px; }
+.fr-ev { display: flex; gap: 10px; padding: 8px; text-align: left; cursor: pointer; align-items: center; border: 1px solid var(--border); }
+.fr-ev-img { width: 56px; height: 56px; border-radius: 8px; overflow: hidden; flex: none; background: var(--surface-2, rgba(127,127,127,.08)); }
+.fr-ev-img img { width: 100%; height: 100%; object-fit: cover; }
+.fr-ev-body { min-width: 0; }
+.fr-ev-body b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fr-range { display: inline-flex; align-items: center; gap: 6px; }
+.fr-frame img, .fr-clip { width: 100%; max-height: 72vh; object-fit: contain; background: #000; border-radius: 10px; }
+@media (max-width: 760px) { .fr-train { grid-template-columns: 1fr; } .fr-people { max-height: 240px; } }
 /* İK › Görev Tanımı (İSG yapısı) */
 .duty-wrap { display: flex; flex-direction: column; gap: 12px; }
 .duty-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; margin-top: 8px; }

@@ -230,14 +230,22 @@ def detect_faces(path, duration):
 
 
 def known_identities(conn):
-    """Elle kişiye bağlanmış yüzlerden kimlik izleri: [(('person'|'user', id), ortalama iz)]."""
+    """Kimlik izleri: elle evrağa bağlanan yüzler + Yüz Tanıma Eğitimi fotoğrafları. [(('person'|'user', id), ortalama iz)]."""
+    import numpy as np
     sums = {}
     for r in conn.execute('''SELECT person_id, user_id, embedding FROM document_faces
                              WHERE (person_id IS NOT NULL OR user_id IS NOT NULL) AND auto = 0'''):
-        import numpy as np
         key = ('person', r[0]) if r[0] else ('user', r[1])
-        v = np.frombuffer(r[2], dtype=np.float32)
-        sums[key] = sums.get(key, 0) + v
+        sums[key] = sums.get(key, 0) + np.frombuffer(r[2], dtype=np.float32)
+    # Yüz Tanıma Eğitimi (faceenroll) izleri — tablo yoksa sorun değil (eski kurulum)
+    try:
+        for r in conn.execute("SELECT subject_type, user_id, person_id, embedding FROM face_enroll"):
+            if r[0] not in ('user', 'person'):
+                continue
+            key = ('user', r[1]) if r[0] == 'user' else ('person', r[2])
+            sums[key] = sums.get(key, 0) + np.frombuffer(r[3], dtype=np.float32)
+    except Exception:   # noqa: BLE001 — face_enroll yoksa yalnızca evrak yüzleri
+        pass
     return [(k, _norm(v)) for k, v in sums.items()]
 
 

@@ -37,6 +37,7 @@ import * as documents from './modules/documents.js';
 import * as signPage from './modules/sign.js';
 import * as secretariat from './modules/secretariat.js';
 import * as security from './modules/security.js';
+import * as cammgmt from './modules/cammgmt.js';
 import * as reportsMod from './modules/reports.js';
 import * as announcements from './modules/announcements.js';
 import * as cleaning from './modules/cleaning.js';
@@ -83,6 +84,9 @@ const MODULES = [
   { key: 'documents', title: 'Evrak Yönetimi', mod: documents, sub: 'crm' },
   { key: 'secretariat', title: 'Sekreterya', mod: secretariat, group: 'system' },
   { key: 'security', title: 'Güvenlik', mod: security, group: 'system' },
+  // Kameralar: yalnızca sistem yöneticisi (admin/MASTER) ve NVR entegrasyonu aktifse görünür (Sistem Yönetimi)
+  { key: 'cameras', title: 'Kameralar', mod: cammgmt, group: 'system',
+    show: u => (u.master || u.modules.includes('admin')) && u.nvr },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'reports', title: 'Raporlar', mod: reportsMod, group: 'system' },
   { key: 'announcements', title: 'Duyurular', mod: announcements, group: 'system' },
@@ -93,7 +97,9 @@ const MODULES = [
 
 // Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?
 const hasModule = (u, key) => (key === 'crm' ? crmHub.hasCrm(u) : u.modules.includes(key));
-const inGrid = (m, u) => !m.menu && !m.hidden && hasModule(u, m.key) && !(m.sub && hasModule(u, m.sub));
+// Modül erişimi: özel 'show' varsa onu kullan (ör. Kameralar = sistem yöneticisi + NVR aktif), yoksa modül listesi
+const canAccess = (m, u) => (m.show ? m.show(u) : hasModule(u, m.key));
+const inGrid = (m, u) => !m.menu && !m.hidden && canAccess(m, u) && !(m.sub && hasModule(u, m.sub));
 
 const root = document.getElementById('app');
 const ctx = { user: null, meta: null };
@@ -809,7 +815,7 @@ async function route() {
   // Ton her geçişte yeniden ayarlanır; aksi halde kırmızı modülden dönünce ana sayfa kırmızı kalır
   view.className = m?.tone ? `tone-${m.tone}` : '';
   if (!m) return renderHome();
-  if (!hasModule(ctx.user, key)) {
+  if (!canAccess(m, ctx.user)) {
     clear(view, h('div', { class: 'card empty' }, 'Bu modüle erişim yetkiniz yok.'));
     return;
   }

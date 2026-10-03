@@ -1292,6 +1292,21 @@ CREATE TABLE IF NOT EXISTS face_sightings (
 );
 CREATE INDEX IF NOT EXISTS ix_face_sightings_group ON face_sightings(group_id, at);
 CREATE INDEX IF NOT EXISTS ix_face_sightings_at ON face_sightings(at);
+-- Yüz tanıma eğitimi: bir kişi için (personel ya da firma personeli) yüklenen eğitim fotoğraflarından çıkarılan yüz izleri.
+-- Kameralarda görülen yüzler bu izlerle eşleştirilir. subject_type: 'user' (personel) | 'person' (firma kişisi) | 'visitor'.
+CREATE TABLE IF NOT EXISTS face_enroll (
+    id           INTEGER PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    person_id    INTEGER REFERENCES company_people(id) ON DELETE CASCADE,
+    name         TEXT,                       -- subject_type='visitor' için serbest ad
+    crop         TEXT NOT NULL,              -- yüz kırpığı (uploads altında göreli yol)
+    embedding    BLOB NOT NULL,
+    created_by   INTEGER REFERENCES users(id),
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_face_enroll_user ON face_enroll(user_id);
+CREATE INDEX IF NOT EXISTS ix_face_enroll_person ON face_enroll(person_id);
 -- Kullanıcı tercihleri (sunucuda; ör. kamera izleme düzeni)
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1817,6 +1832,8 @@ def _migrate(conn):
     conn.execute("UPDATE products SET orderable = 0 WHERE (schema LIKE 'semi-%' OR schema = 'custom') AND orderable = 1")
     default = conn.execute('SELECT id FROM products ORDER BY id LIMIT 1').fetchone()[0]
     conn.execute('UPDATE orders SET product_id = ? WHERE product_id IS NULL', (default,))
+    if 'clip' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anının kısa videosu (lokal)
+        conn.execute('ALTER TABLE face_sightings ADD COLUMN clip TEXT')
 
 
 def get_db():

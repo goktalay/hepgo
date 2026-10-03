@@ -5,10 +5,7 @@ import {
   clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
   t, toast, toastError, periodFilter
 } from '../ui.js';
-import { renderCameras } from './cameras.js';
-import { renderFaces } from './faces.js';
-
-const TABS = [['', 'Araçlar'], ['log', 'Giriş / Çıkış Kayıtları'], ['building', 'Bina Kontrol'], ['cameras', 'Kameralar'], ['faces', 'Tanımlanamayan Kişiler']];
+const TABS = [['', 'Araçlar'], ['log', 'Giriş / Çıkış Kayıtları'], ['building', 'Bina Kontrol']];
 
 export async function render(view, params, ctx) {
   const tab = TABS.some(t => t[0] === params[0]) ? params[0] || '' : '';
@@ -16,12 +13,10 @@ export async function render(view, params, ctx) {
   const body = h('div');
   // Araçlar sekmesinde yeni giriş düğmesi başlığın sağında (popup)
   const addBtn = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Araç Girişi');
-  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Araç giriş/çıkış ve kameralar', tabs: nav }),
+  clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Araç giriş/çıkış, bina kontrol', tabs: nav }),
     moduleToolbar(tab === '' ? addBtn : null), body);
   if (tab === 'log') return renderLog(body);
   if (tab === 'building') return renderBuilding(body);
-  if (tab === 'cameras') return renderCameras(body, ctx, params.slice(1));
-  if (tab === 'faces') return renderFaces(body, ctx);
   return renderVehicles(body, addBtn);
 }
 

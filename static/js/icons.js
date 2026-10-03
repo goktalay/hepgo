@@ -58,6 +58,7 @@ export const icons = {
   calendar: svg('<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/>'),
   mic: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M8.5 21h7"/>'),
   camera: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+  cameras: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
   videocam: svg('<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10l5-3v10l-5-3z"/>'),
   cleaning: svg('<path d="M15 3l4 4-7 7-4-4z"/><path d="M8 10l-4 8 8-4"/><path d="M4 18l2 2"/>'),
   design: svg('<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M12 3v18M3 8l9 5 9-5"/><circle cx="12" cy="13" r="2"/>'),

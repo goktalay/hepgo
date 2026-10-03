@@ -264,6 +264,15 @@ def require_roles(*roles):
     return dep
 
 
+def require_sysadmin():
+    """Yalnızca sistem yöneticisi (ADMIN rolü) ya da sistem sahibi (MASTER). Kameralar modülü gibi yönetim araçları için."""
+    def dep(user=Depends(current_user)):
+        if ADMIN not in user['roles'] and not user.get('master'):
+            raise HTTPException(403, 'Bu işlem yalnızca sistem yöneticisine açıktır')
+        return user
+    return dep
+
+
 def seed_admin():
     """İlk çalıştırmada .env'deki sistem yöneticisini oluşturur."""
     if not config.ADMIN_USERNAME or not config.ADMIN_PASSWORD:

@@ -8,6 +8,6 @@ cd "$(dirname "$0")"
 if [ -n "${CAYMAZ_UDS:-}" ]; then
   mkdir -p "$(dirname "$CAYMAZ_UDS")"
   rm -f "$CAYMAZ_UDS"   # eski soket dosyasını temizle (EADDRINUSE olmasın)
-  exec .venv/bin/uvicorn app.main:app --uds "$CAYMAZ_UDS"
+  exec .venv/bin/uvicorn app.main:app --uds "$CAYMAZ_UDS" --timeout-graceful-shutdown 3
 fi
-exec .venv/bin/uvicorn app.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}"
+exec .venv/bin/uvicorn app.main:app --host "${HOST:-0.0.0.0}" --port "${PORT:-8000}" --timeout-graceful-shutdown 3

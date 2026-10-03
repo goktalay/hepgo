@@ -3,9 +3,14 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.90.1'
+VERSION = '2.91.0'
 
 CHANGELOG = [
+    {'version': '2.91.0', 'date': '2026-10-03', 'title': 'Pano GridStack ile yeniden: sürükle-bırak + serbest boyut',
+     'changes': [
+         'Pano kutucukları artık serbestçe sürüklenip boyutlandırılabilir (GridStack). “Panoyu Düzenle” ile taşı, boyutlandır, ekle, kaldır.',
+         'Şirketten Haberler kutucuğu sabit (kaldırılamaz) ama taşınabilir.',
+     ]},
     {'version': '2.90.0', 'date': '2026-10-03', 'title': 'Şirketten Haberler akışı + Rehber iyileştirmeleri',
      'changes': [
          'Panoya “Şirketten Haberler” kutucuğu (kaldırılamaz, taşınabilir): işe alım, ayrılış, sipariş, toplantı gibi olaylar ve kullanıcı paylaşımları Facebook tarzı akışta.',

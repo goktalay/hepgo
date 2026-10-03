@@ -10,58 +10,105 @@ import { renderFeed } from './feed.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const MULTI = new Set(['clock', 'weather']);   // birden çok eklenebilen (ör. iki şehir)
+// GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
+let gridLib;
+function loadGridStack() {
+  return gridLib ??= new Promise((resolve, reject) => {
+    if (window.GridStack) return resolve(window.GridStack);
+    if (!document.querySelector('link[data-gridstack]')) {
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '/static/vendor/gridstack/gridstack.min.css'; l.dataset.gridstack = '1'; document.head.append(l);
+    }
+    const s = document.createElement('script'); s.src = '/static/vendor/gridstack/gridstack-all.js';
+    s.onload = () => resolve(window.GridStack);
+    s.onerror = () => { gridLib = null; reject(new Error('Pano bileşeni yüklenemedi')); };
+    document.head.append(s);
+  });
+}
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3 };
+const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
 export async function renderDashboard(view, ctx, modules) {
   const [avail, saved] = await Promise.all([api.get('/api/dashboard/widgets'), api.get('/api/me/prefs/dashboard').catch(() => ({}))]);
   const byKey = Object.fromEntries(avail.map(w => [w.key, w]));
+  const GridStack = await loadGridStack().catch(() => null);
   let layout;
   try { layout = JSON.parse(saved.value || 'null'); } catch { layout = null; }
-  if (!Array.isArray(layout)) layout = avail.filter(w => w.default).sort((a, b) => a.default - b.default).map(w => ({ k: w.key, s: w.size }));
-  layout = layout.filter(it => byKey[it.k]);
-  // Sabit kutucuklar (ör. Şirketten Haberler) her zaman panoda; kullanıcı kaldıramaz/boyutlandıramaz (taşıyabilir), boyutu katalogdan
-  for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ k: w.key, s: w.size });
-  for (const it of layout) { const w = byKey[it.k]; if (w?.fixed) it.s = w.size; }   // sabit kutucuk boyutu sabit (1/3)
-  let editing = false;
-  let data = {};
-  const charts = [];
-  const timers = [];
-  onLeave(() => { charts.forEach(c => c.destroy()); timers.forEach(clearInterval); });
-  const grid = h('div', { class: 'db-grid' });
-  const editBtn = h('button', { class: 'btn', type: 'button', onclick: () => { editing = !editing; draw(); } });
-  const save = () => api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout) }).catch(() => {});
+  if (!Array.isArray(layout)) layout = avail.filter(w => w.default).map(w => ({ k: w.key }));
+  // Eski {k,s} → {k,w}; id/boyut/yükseklik tamamla (GridStack 12 sütun: 1/3=4, 2/3=8, tam=12)
+  layout = layout.filter(it => byKey[it.k]).map(it => ({
+    id: it.id || dbUid(), k: it.k, o: it.o,
+    w: it.w || (it.s ? it.s * 4 : 4), h: it.h || DEF_H[it.k] || 4, x: it.x, y: it.y }));
+  for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 6 });
+  for (const it of layout) { const w = byKey[it.k]; if (w?.fixed) it.w = (w.size || 1) * 4; }   // sabit kutucuk genişliği sabit (1/3)
+
+  let editing = false, data = {}, grid = null;
+  const charts = [], timers = [], bodies = {};
+  let refreshTimer = null;
+  onLeave(() => { charts.forEach(c => c.destroy()); timers.forEach(clearInterval); clearInterval(refreshTimer); try { grid?.destroy(false); } catch { /* */ } });
+  const gridEl = h('div', { class: 'grid-stack' });
+  const editBtn = h('button', { class: 'btn', type: 'button', onclick: () => setEdit(!editing) });
+  const addBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => addWidget() }, '＋ Kutucuk Ekle');
 
   const loadData = async () => {
     const keys = [...new Set(layout.map(it => it.k))].filter(k => !['clock', 'weather', 'modules'].includes(k));
     data = keys.length ? await api.get(`/api/dashboard/data?keys=${keys.join(',')}`) : {};
   };
 
-  function draw() {
-    charts.splice(0).forEach(c => c.destroy());
-    timers.splice(0).forEach(clearInterval);
-    editBtn.textContent = editing ? 'Düzenlemeyi Bitir' : 'Panoyu Düzenle';
-    grid.classList.toggle('editing', editing);
-    clear(grid, layout.map((it, i) => tile(it, i)),
-      editing ? h('button', { class: 'db-add', type: 'button', onclick: addWidget }, h('span', null, '+'), 'Kutucuk Ekle') : null,
-      !layout.length && !editing ? h('div', { class: 'card empty db-empty' }, 'Panonuz boş. "Panoyu Düzenle" ile kutucuk ekleyin.') : null);
+  function persist() {
+    if (!grid) return;
+    const byId = Object.fromEntries(layout.map(it => [it.id, it]));
+    layout = grid.save(false).map(n => { const it = byId[String(n.id)] || byId[n.id] || {}; return { id: n.id, k: it.k, o: it.o, x: n.x, y: n.y, w: n.w, h: n.h }; }).filter(it => it.k);
+    api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout) }).catch(() => {});
   }
 
-  function tile(it, i) {
+  function itemEl(it) {
     const w = byKey[it.k];
     const body = h('div', { class: 'db-body' });
-    const tools = editing ? h('div', { class: 'db-tools' },
-      h('button', { type: 'button', title: 'Sola / yukarı taşı', disabled: i === 0, onclick: () => move(i, -1) }, '←'),
-      h('button', { type: 'button', title: 'Sağa / aşağı taşı', disabled: i === layout.length - 1, onclick: () => move(i, 1) }, '→'),
-      w.fixed ? null : h('button', { type: 'button', title: 'Genişlik', onclick: () => { it.s = (it.s % 3) + 1; save(); draw(); } }, ['⅓', '⅔', '▭'][it.s - 1]),
+    bodies[it.id] = body;
+    const tools = h('div', { class: 'db-tools' },
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
-      w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => { layout.splice(i, 1); save(); draw(); } }, '✕')) : null;
-    const el = h('section', { class: `card db-tile s${it.s || 1} w-${it.k}` },
-      h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body);
+      w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => removeItem(it) }, '✕'));
+    const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': it.h },
+      h('div', { class: `grid-stack-item-content card db-tile w-${it.k}` },
+        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body));
+    if (it.x != null) el.setAttribute('gs-x', it.x);
+    if (it.y != null) el.setAttribute('gs-y', it.y);
+    if (w.fixed) el.setAttribute('gs-no-resize', 'true');
     try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     return el;
   }
 
-  const move = (i, d) => { const [x] = layout.splice(i, 1); layout.splice(i + d, 0, x); save(); draw(); };
+  function build() {
+    charts.splice(0).forEach(c => c.destroy());
+    timers.splice(0).forEach(clearInterval);
+    if (grid) { try { grid.off('change added removed'); grid.destroy(false); } catch { /* */ } }
+    clear(gridEl, layout.map(itemEl));
+    if (!GridStack) return;
+    grid = GridStack.init({ column: 12, cellHeight: 76, margin: 6, float: true, handle: '.db-head', staticGrid: !editing }, gridEl);
+    grid.on('change added removed', persist);
+  }
+
+  function refill() {   // içeriği yenile (grid yapısına dokunmadan)
+    charts.splice(0).forEach(c => c.destroy());
+    timers.splice(0).forEach(clearInterval);
+    for (const it of layout) { const b = bodies[it.id]; if (b) { try { fill(it, b); } catch { /* */ } } }
+  }
+
+  function setEdit(on) {
+    editing = on;
+    editBtn.textContent = on ? 'Düzenlemeyi Bitir' : 'Panoyu Düzenle';
+    addBtn.hidden = !on;
+    gridEl.classList.toggle('editing', on);
+    grid?.setStatic(!on);
+  }
+
+  function removeItem(it) {
+    const el = gridEl.querySelector(`.grid-stack-item[gs-id="${it.id}"]`);
+    layout = layout.filter(x => x.id !== it.id);
+    if (el && grid) grid.removeWidget(el); else build();
+    persist();
+  }
 
   function addWidget() {
     const used = new Set(layout.map(it => it.k));
@@ -69,12 +116,13 @@ export async function renderDashboard(view, ctx, modules) {
     const m = modal({
       title: 'Kutucuk Ekle', wide: true,
       body: list.length ? h('div', { class: 'db-pick' }, list.map(w => h('button', { type: 'button', class: 'db-pick-item', onclick: async () => {
-        layout.push({ k: w.key, s: w.size });
-        save();
+        const it = { id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 4 };
+        layout.push(it);
         m.close();
         await loadData().catch(() => {});
-        draw();
-        if (MULTI.has(w.key)) settings(layout[layout.length - 1]);
+        build();
+        persist();
+        if (MULTI.has(w.key)) settings(it);
       } }, h('b', null, w.title), h('span', null, w.desc)))) : h('div', { class: 'empty' }, 'Eklenebilecek başka kutucuk yok'),
       actions: [{ label: 'Kapat' }],
     });
@@ -84,14 +132,14 @@ export async function renderDashboard(view, ctx, modules) {
     if (it.k === 'clock') {
       let style = it.o?.style || 'digital';
       modal({ title: 'Saat', body: h('div', null, field('Görünüm', segmented([['digital', 'Dijital'], ['analog', 'Analog']], style, v => { style = v; }))),
-        actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, style }; save(); draw(); } }] });
+        actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, style }; persist(); build(); } }] });
       return;
     }
     // Hava durumu: bulunduğum konum (tarayıcı izni) ya da şehir arama
     const q = h('input', { class: 'input', type: 'search', placeholder: 'Şehir ya da ilçe ara… (ör. Kalecik)' });
     const results = h('div', { class: 'pick-list' });
     const m = modal({ title: 'Hava durumu konumu', body: h('div', null,
-      h('button', { class: 'btn', type: 'button', style: { marginBottom: '12px' }, onclick: () => { it.o = { mode: 'auto' }; save(); m.close(); draw(); } },
+      h('button', { class: 'btn', type: 'button', style: { marginBottom: '12px' }, onclick: () => { it.o = { mode: 'auto' }; m.close(); build(); persist(); } },
         '📍 Bulunduğum konumu kullan'),
       field('Ya da şehir seçin', q), results), actions: [{ label: 'Kapat' }] });
     let timer;
@@ -102,7 +150,7 @@ export async function renderDashboard(view, ctx, modules) {
         try {
           const r = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q.value.trim())}&count=8&language=tr&format=json`)).json();
           clear(results, (r.results || []).map(c => h('button', { class: 'pick', type: 'button', onclick: () => {
-            it.o = { mode: 'city', name: c.name, lat: c.latitude, lon: c.longitude }; save(); m.close(); draw();
+            it.o = { mode: 'city', name: c.name, lat: c.latitude, lon: c.longitude }; m.close(); build(); persist();
           } }, h('div', { class: 'grow' }, h('b', null, c.name), h('span', { class: 'small muted' }, [c.admin1, c.country].filter(Boolean).join(', '))))));
         } catch { clear(results, h('div', { class: 'empty small' }, 'Şehir araması yapılamadı (internet bağlantısı?)')); }
       }, 300);
@@ -260,10 +308,10 @@ export async function renderDashboard(view, ctx, modules) {
   const hour = new Date().getHours();
   const greet = hour < 6 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
   clear(view, h('div', { class: 'db-headline' },
-    h('div', null, h('h1', null, `${greet}, ${ctx.user.full_name.split(' ')[0]}`), h('p', { class: 'muted' }, 'Kişisel panonuz · kutucukları dilediğiniz gibi düzenleyebilirsiniz')),
-    editBtn), grid);
-  draw();
-  timers.push(setInterval(async () => { if (!editing && !document.querySelector('.modal-back')) { await loadData().catch(() => {}); draw(); } }, 60000));
+    h('div', null, h('h1', null, `${greet}, ${ctx.user.full_name.split(' ')[0]}`), h('p', { class: 'muted' }, 'Kişisel panonuz · kutucukları sürükleyip boyutlandırabilirsiniz')),
+    h('div', { style: { display: 'flex', gap: '8px' } }, addBtn, editBtn)), gridEl);
+  build();
+  refreshTimer = setInterval(async () => { if (!editing && !document.querySelector('.modal-back')) { await loadData().catch(() => {}); refill(); } }, 60000);
 }
 
 // 5×7 nokta matris karakterleri (her satır 5 bit); ':' ve ' ' 3 sütun genişliğinde

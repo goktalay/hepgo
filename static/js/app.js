@@ -7,7 +7,7 @@ import { eventOfNotification, playEvent } from './sounds.js';
 import { applySettings, desktopNotify, flashMs, flashOn } from './prefs.js';
 import { renderSettings } from './modules/settings.js';
 import { calendarPanel } from './modules/crm.js';
-import { enableDictation } from './dictation.js';
+import { enableDictation, setDictationEnabled } from './dictation.js';
 import { avatar, clear, field, h, modal, onLeave, pageHead, pref, setPref, stopTimers, svgIcon, t, toast, toastError } from './ui.js';
 import { createGlobe } from './globe.js';
 import { hideTip } from './plane.js';
@@ -548,6 +548,7 @@ function fullscreenButton() {
 }
 
 function renderShell() {
+  setDictationEnabled(ctx.user.speech);   // sesle yazdırma yalnız Konuşma Tanıma entegrasyonu açıkken
   popups.clear();
   menuCounts.clear();
   applySettings(ctx.user.prefs?.settings, ctx.user);

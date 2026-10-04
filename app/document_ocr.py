@@ -157,6 +157,13 @@ def _media(path, thumb):
                 faces = m.detect_faces(path, duration)
             except Exception:
                 faces = None
+    if not m.whisper_available():   # konuşma tanıma kapalı: yalnız kayıt (süre / küçük resim / yüzler)
+        if duration is None:
+            try:
+                duration = m.video_duration(path)
+            except Exception:
+                duration = None
+        return None, None, thumb.exists(), faces, duration
     text, seconds = m.transcribe(path)
     return (text or None), None, thumb.exists(), faces, duration or seconds
 

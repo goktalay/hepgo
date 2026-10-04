@@ -549,7 +549,7 @@ DICTATE_EXT = {'.webm', '.ogg', '.oga', '.opus', '.mp4', '.m4a', '.mp3', '.wav',
 async def dictate(file: UploadFile, lang: str = 'tr', user=Depends(auth.current_user)):
     """Sesle yazdırma: kayıt → düz metin (varsayılan dil Türkçe)."""
     if not document_media.whisper_available():
-        raise HTTPException(503, 'Konuşma tanıma bu sunucuda kurulu değil')
+        raise HTTPException(503, 'Konuşma tanıma kapalı (Program Ayarları › Entegrasyonlar › Konuşma Tanıma)')
     ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
     if ext not in DICTATE_EXT:
         raise HTTPException(400, 'Desteklenmeyen ses biçimi')

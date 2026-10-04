@@ -91,7 +91,7 @@ export async function renderRoom(view, id) {
       org && r.state === 'DEVAM' ? h('button', { class: `btn ${on ? 'danger' : 'primary'}`, type: 'button', style: { marginTop: '10px' },
         onclick: async e => { e.target.disabled = true; try { on ? await stopRec() : await startRec(); } finally { e.target.disabled = false; } refresh(); } },
       on ? '⏹ Kaydı Durdur' : '⏺ Kaydı Başlat') : null,
-      org && r.state === 'DEVAM' && !r.audio_available ? h('p', { class: 'small muted' }, 'Konuşma tanıma bu sunucuda kurulu değil; kayıt saklanır ama metne çevrilmez.') : null,
+      org && r.state === 'DEVAM' && !r.audio_available ? h('p', { class: 'small muted' }, 'Konuşma tanıma kapalı; kayıt saklanır ama metne çevrilmez (Program Ayarları › Entegrasyonlar › Konuşma Tanıma).') : null,
       org && r.state === 'DEVAM' ? h('p', { class: 'small muted' }, 'Kayıt bu cihazın mikrofonundan alınır; sayfa açık kalmalıdır. Toplantı bitince konuşmacılara göre ayrılıp metne çevrilir.') : null));
     if (on && rec.analyser) {
       const data = new Uint8Array(rec.analyser.fftSize);

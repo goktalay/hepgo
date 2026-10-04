@@ -40,7 +40,8 @@ _gpu = threading.Lock()   # aynı anda tek Whisper işi
 
 
 def whisper_available():
-    return WHISPER.exists() and WHISPER_MODEL.exists()
+    """Konuşma tanıma kullanılabilir mi: entegrasyon açık (config.SPEECH_ENABLED) ve Whisper + model kurulu."""
+    return config.SPEECH_ENABLED and WHISPER.exists() and WHISPER_MODEL.exists()
 
 
 def faces_available():
@@ -87,7 +88,7 @@ def transcribe(path, lang='auto', stamps=True):
         if not seconds or seconds < 0.5:
             return '', seconds
         if not whisper_available():
-            raise RuntimeError('Konuşma tanıma (Whisper) kurulu değil')
+            raise RuntimeError('Konuşma tanıma kapalı ya da kurulu değil (Program Ayarları › Entegrasyonlar › Konuşma Tanıma)')
         out = Path(tmp) / 'out'
         with _gpu:
             r = subprocess.run([str(WHISPER), '-m', str(WHISPER_MODEL), '-f', str(wav), '-l', lang, '-oj', '-of', str(out),

@@ -513,9 +513,8 @@ async def upload_recording(cid: int, file: UploadFile = File(...), user=Depends(
         conn.execute("UPDATE voice_calls SET process_status = 'ISLENIYOR' WHERE id = ?", (cid,))
         conn.commit()
         voice_audio.schedule(cid)   # kısa gecikme: diğer katılımcının kaydı da gelsin, tek işlemede toplansın
-    else:
-        conn.execute("UPDATE voice_calls SET process_status = 'HATA', process_error = ? WHERE id = ?",
-                     ('Ses işleme (Whisper / ses modeli) sunucuda kurulu değil', cid))
+    else:   # konuşma tanıma kapalı / kurulu değil: kayıt saklanır, metne çevrilmez
+        conn.execute("UPDATE voice_calls SET process_status = 'TAMAM', process_error = NULL WHERE id = ?", (cid,))
     db.audit(conn, user['id'], 'Görüşme kaydı yükledi', 'voice_call', cid)
     return {'ok': True, 'processing': voice_audio.available()}
 

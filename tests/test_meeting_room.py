@@ -11,7 +11,7 @@ import wave
 from datetime import datetime, timedelta
 
 tmp = tempfile.mkdtemp()
-os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0',
+os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0', CAYMAZ_SPEECH='1',
                   CAYMAZ_ADMIN_USERNAME='admin@test', CAYMAZ_ADMIN_PASSWORD='admin-sifre-1')
 
 import numpy as np  # noqa: E402

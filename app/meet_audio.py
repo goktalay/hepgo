@@ -40,13 +40,18 @@ def _summary(conn, mid):
 
 
 def process(mid):
+    if not available():   # konuşma tanıma kapalı: yalnız kayıt saklanır, metin / konuşmacı yok
+        with db.connect() as conn:
+            conn.execute("UPDATE online_meetings SET process_status = 'TAMAM', process_error = NULL WHERE id = ?", (mid,))
+            conn.commit()
+        return
     with db.connect() as conn:
         try:
             conn.execute("UPDATE online_meetings SET process_status='ISLENIYOR', process_error=NULL WHERE id=?", (mid,))
             conn.commit()
             audios = db.rows(conn.execute('SELECT * FROM online_meeting_audio WHERE meeting_id = ? ORDER BY id', (mid,)))
-            conn.execute('DELETE FROM online_meeting_segments WHERE meeting_id = ?', (mid,))
-            conn.execute('DELETE FROM online_meeting_speakers WHERE meeting_id = ?', (mid,))
+            # 1) Uzun iş (WAV, Whisper, ses kimliği) YAZMA İŞLEMİ AÇILMADAN — veritabanı döküm boyunca kilitlenmez
+            done = []   # (ses kaydı, wav yolu, süre, konuşmacı adı, [(t0, t1, at, metin)], toplam süre, gömüler)
             for a in audios:
                 src = config.UPLOAD_DIR / a['file']
                 if not src.exists() or src.stat().st_size < 2000:
@@ -55,30 +60,33 @@ def process(mid):
                 seconds = _to_wav(src, wav)
                 if not seconds or seconds < 1:
                     continue
-                conn.execute('UPDATE online_meeting_audio SET wav=?, seconds=? WHERE id=?',
-                             (str(wav.relative_to(config.UPLOAD_DIR)), seconds, a['id']))
                 sig = read_wav(wav)
                 label = a['speaker_name'] or (f"Kullanıcı {a['user_id']}" if a['user_id'] else 'Konuşmacı')
-                sid = conn.execute('''INSERT INTO online_meeting_speakers (meeting_id, label, user_id, auto, score, seconds)
-                                      VALUES (?,?,?,1,1.0,0)''', (mid, label, a['user_id'])).lastrowid
                 start = datetime.fromisoformat(a['started_at'])
                 total = 0.0
-                embs = []
+                embs, segs = [], []
                 for s in whisper_segments(wav, seconds):
                     t0, t1 = max(0.0, s['t0']), min(seconds, max(s['t1'], s['t0'] + 0.3))
                     piece = sig[int(t0 * SR):int(t1 * SR)]
                     if HALLUCINATIONS.search(s['text']) or not len(piece) or float(np.sqrt(np.mean(piece ** 2))) < MIN_RMS:
                         continue
-                    at = (start + timedelta(seconds=t0)).isoformat(timespec='seconds')
-                    conn.execute('INSERT INTO online_meeting_segments (meeting_id, audio_id, speaker_id, t0, t1, at, text) VALUES (?,?,?,?,?,?,?)',
-                                 (mid, a['id'], sid, round(t0, 2), round(t1, 2), at, s['text']))
+                    segs.append((t0, t1, (start + timedelta(seconds=t0)).isoformat(timespec='seconds'), s['text']))
                     total += t1 - t0
                     if a['user_id']:
                         clip = piece if len(piece) <= 12 * SR else piece[len(piece) // 2 - 6 * SR: len(piece) // 2 + 6 * SR]
                         e = _safe_embed(clip) if len(clip) >= int(0.6 * SR) else None
                         if e is not None:
                             embs.append(e)
-                conn.execute('UPDATE online_meeting_speakers SET seconds=? WHERE id=?', (round(total, 1), sid))
+                done.append((a, str(wav.relative_to(config.UPLOAD_DIR)), seconds, label, segs, total, embs))
+            # 2) Yazmalar tek ve kısa işlemde
+            conn.execute('DELETE FROM online_meeting_segments WHERE meeting_id = ?', (mid,))
+            conn.execute('DELETE FROM online_meeting_speakers WHERE meeting_id = ?', (mid,))
+            for a, wav_rel, seconds, label, segs, total, embs in done:
+                conn.execute('UPDATE online_meeting_audio SET wav=?, seconds=? WHERE id=?', (wav_rel, seconds, a['id']))
+                sid = conn.execute('''INSERT INTO online_meeting_speakers (meeting_id, label, user_id, auto, score, seconds)
+                                      VALUES (?,?,?,1,1.0,?)''', (mid, label, a['user_id'], round(total, 1))).lastrowid
+                conn.executemany('INSERT INTO online_meeting_segments (meeting_id, audio_id, speaker_id, t0, t1, at, text) VALUES (?,?,?,?,?,?,?)',
+                                 [(mid, a['id'], sid, round(t0, 2), round(t1, 2), at, text) for t0, t1, at, text in segs])
                 if a['user_id'] and embs:   # ses kimliği eğitimi (arka plan, en iyi çaba)
                     try:
                         learn(conn, a['user_id'], _unit(np.mean(embs, axis=0)).tolist(), max(1, int(total)))

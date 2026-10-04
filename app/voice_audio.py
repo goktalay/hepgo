@@ -45,13 +45,18 @@ def _summary(conn, call_id):
 
 def process(call_id):
     """Arka plan: görüşme kaydını metne çevir, konuşmacılara ayır, ses profilleriyle eşleştir, özetle."""
+    if not available():   # konuşma tanıma kapalı: yalnız kayıt saklanır, metin / konuşmacı yok
+        with db.connect() as conn:
+            conn.execute("UPDATE voice_calls SET process_status = 'TAMAM', process_error = NULL WHERE id = ?", (call_id,))
+            conn.commit()
+        return
     with db.connect() as conn:
         try:
             conn.execute("UPDATE voice_calls SET process_status = 'ISLENIYOR', process_error = NULL WHERE id = ?", (call_id,))
             conn.commit()
             audios = db.rows(conn.execute('SELECT * FROM voice_call_audio WHERE call_id = ? ORDER BY id', (call_id,)))
-            conn.execute('DELETE FROM voice_call_segments WHERE call_id = ?', (call_id,))
-            conn.execute('DELETE FROM voice_call_speakers WHERE call_id = ?', (call_id,))
+            # 1) Uzun iş (WAV, Whisper, ses kimliği) YAZMA İŞLEMİ AÇILMADAN — veritabanı döküm boyunca kilitlenmez
+            audio_upd = []
             tagged = []      # kişiye ait dosya (uploader belli): (audio_id, t0, t1, at, text, user_id, emb, dur)
             untagged = []    # kimliksiz karışık ses (eski): (audio_id, t0, t1, at, text, emb, dur)
             for a in audios:
@@ -62,8 +67,7 @@ def process(call_id):
                 seconds = _to_wav(src, wav)
                 if not seconds or seconds < 1:
                     continue
-                conn.execute('UPDATE voice_call_audio SET wav = ?, seconds = ? WHERE id = ?',
-                             (str(wav.relative_to(config.UPLOAD_DIR)), seconds, a['id']))
+                audio_upd.append((str(wav.relative_to(config.UPLOAD_DIR)), seconds, a['id']))
                 sig = read_wav(wav)
                 start = datetime.fromisoformat(a['started_at'])
                 for s in whisper_segments(wav, seconds):
@@ -79,6 +83,10 @@ def process(call_id):
                     else:
                         untagged.append((a['id'], t0, t1, at, s['text'], emb, t1 - t0))
 
+            # 2) Yazmalar tek ve kısa işlemde
+            conn.execute('DELETE FROM voice_call_segments WHERE call_id = ?', (call_id,))
+            conn.execute('DELETE FROM voice_call_speakers WHERE call_id = ?', (call_id,))
+            conn.executemany('UPDATE voice_call_audio SET wav = ?, seconds = ? WHERE id = ?', audio_upd)
             # Kişiye ait dosyalar: her uploader = tek konuşmacı (kesin tanıma). Ses profili de öğrenilir.
             user_speaker = {}
             for uid in dict.fromkeys(it[5] for it in tagged):

@@ -265,7 +265,7 @@ function numBox(inp, suffix) {
 
 // ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
 // Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
-const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', social: 'globe', maps: 'globe', general: 'gear' };
+const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', meta: 'globe', x: 'globe', tiktok: 'globe', speech: 'mic', maps: 'globe', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
 const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
 function integrationsBody(view, ctx) {
@@ -274,6 +274,11 @@ function integrationsBody(view, ctx) {
     const ctl = {};
     const clear = new Set();
     const rows = grp.fields.map(f => {
+      if (f.kind === 'bool') {   // aç / kapa
+        const cb = h('input', { type: 'checkbox', checked: !!f.value });
+        ctl[f.key] = { get value() { return cb.checked ? '1' : '0'; } };
+        return h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, f.label), h('small', null, f.hint)));
+      }
       const secret = f.kind === 'secret';
       const inp = h('input', {
         class: 'input', type: secret ? 'password' : f.kind === 'int' ? 'number' : 'text', autocomplete: secret ? 'new-password' : 'off',
@@ -364,6 +369,17 @@ function integrationsBody(view, ctx) {
 // Entegrasyon logoları (arayüzde tanıtım amaçlı; her biri kendi markasının uygulama ikonu)
 const svgEl = markup => { const t = document.createElement('template'); t.innerHTML = markup.trim(); return t.content.firstElementChild; };
 const INTEG_LOGO = {
+  speech: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Konuşma Tanıma"><rect width="64" height="64" rx="16" fill="#76b900"/>
+    <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><rect x="25" y="13" width="14" height="25" rx="7" fill="#fff"/>
+    <path d="M18 31a14 14 0 0 0 28 0M32 45v7M24 52h16"/></g></svg>`),
+  x: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="X"><rect width="64" height="64" rx="16" fill="#000"/>
+    <path transform="translate(14 14) scale(1.5)" fill="#fff" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`),
+  meta: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Meta"><rect width="64" height="64" rx="16" fill="#0866ff"/>
+    <text x="32" y="44" text-anchor="middle" font-size="36" font-weight="700" fill="#fff" font-family="system-ui, sans-serif">∞</text></svg>`),
+  tiktok: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="TikTok"><rect width="64" height="64" rx="16" fill="#010101"/>
+    <text x="34" y="45" text-anchor="middle" font-size="34" fill="#25f4ee" font-family="system-ui, sans-serif">♪</text>
+    <text x="31" y="43" text-anchor="middle" font-size="34" fill="#fe2c55" font-family="system-ui, sans-serif">♪</text>
+    <text x="32.5" y="44" text-anchor="middle" font-size="34" fill="#fff" font-family="system-ui, sans-serif">♪</text></svg>`),
   ai: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Claude"><rect width="64" height="64" rx="16" fill="#D97757"/>
     <g fill="#fff" transform="translate(32 32)">${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a, i) =>
       `<rect x="-2.6" y="-21" width="5.2" height="${i % 2 ? 15 : 19}" rx="2.6" transform="rotate(${a})"/>`).join('')}<circle r="4.2"/></g></svg>`),
@@ -434,6 +450,35 @@ const INTEG_INFO = {
       ['Bilinmesi gerekenler', ['“redirect_uri_mismatch” hatası, yukarıdaki adresin Google’da birebir kayıtlı olmadığı anlamına gelir (https, alan adı ve yol dahil). Google’daki değişikliğin etkinleşmesi birkaç dakika sürebilir.',
         'Bilgiler eksikse kullanıcılar “Google ile bağlan”ı kullanamaz; uygulama şifresiyle Gmail eklemek yine mümkündür.', 'Client Secret şifreli saklanır.']],
     ] },
+  x: { short: 'X (Twitter)', tag: 'Kişisel X hesabı bağlama',
+    lead: 'Kullanıcılar Kişisel Ayarlar › Sosyal Medya’dan “X (Twitter) ile bağlan” diyerek kendi X hesaplarını bağlar; paylaşımları Şirketten Haberler akışında yalnızca kendilerine görünür.',
+    sections: [
+      ['Nasıl ayarlanır?', ['developer.x.com › Developer Portal’da bir Proje ve içinde bir Uygulama (App) oluşturun.',
+        'Uygulama › “User authentication settings” › Set up: App permissions “Read”, Type of App “Web App, Automated App or Bot”.',
+        `“Callback URI / Redirect URL” alanına şu adresi BİREBİR ekleyin: ${location.origin}/api/social/oauth/x/callback`,
+        'Sisteme başka adreslerden de giriliyorsa (ör. caymaz.app ve gokkubbe.hepgo.com) her biri için aynı yolu ayrıca ekleyin.',
+        '“Website URL” alanına şirket sitenizi yazıp kaydedin.',
+        'Keys and tokens › “OAuth 2.0 Client ID and Client Secret” bölümündeki Client ID ve Client Secret’ı buraya girin.']],
+      ['Bilinmesi gerekenler', ['“API Key / API Secret” (OAuth 1.0a) ile “OAuth 2.0 Client ID / Secret” farklıdır; burada OAuth 2.0 bilgileri kullanılır.',
+        'X’in ücretsiz paketinde okuma kotası çok düşüktür; paylaşımların düzenli gelmesi için ücretli paket (Basic ve üstü) gerekebilir.',
+        'Kotayı korumak için X hesapları 6 saatte bir yenilenir (CAYMAZ_X_POLL_HOURS); kullanıcı “⟳ Yenile” ile hemen çekebilir. Yalnızca yeni paylaşımlar istenir.',
+        '“Kaydet ve dene” istemci bilgilerinin geçerli olup olmadığını kota harcamadan kontrol eder. Client Secret şifreli saklanır.']],
+    ] },
+  speech: { short: 'Konuşma Tanıma', tag: 'Ses → metin, konuşmacı ayırma',
+    lead: 'Toplantı, görüşme ve evrak seslerini metne çevirir, konuşanları ayırır ve tanır; metin kutularında “sesle yazdır” mikrofonunu açar. Kapalıyken sesler yalnızca kaydedilir.',
+    sections: [
+      ['Kapalıyken', ['Toplantı / görüşme / evrak sesleri kaydedilir ve dinlenebilir; metin, konuşmacı ve ses kimliği çıkarılmaz.',
+        'Metin kutularındaki mikrofon (sesle yazdırma) görünmez.']],
+      ['Bilinmesi gerekenler', ['Bu sunucuda ekran kartı yoktur; açılırsa ses, süresinin yaklaşık 2 katı sürede işlenir (1 saatlik toplantı ≈ 2 saat).',
+        'Fabrikadaki GX10 (NVIDIA GB10) üzerinde çalışacak konuşma tanıma servisi hazır olduğunda bu entegrasyondan bağlanacak; işlem saniyeler içinde biter.',
+        'Açılmadan önce kaydedilen sesler, toplantı ekranındaki “Yeniden işle” ile sonradan metne çevrilebilir.']],
+    ] },
+  meta: { short: 'Meta', tag: 'Instagram / Facebook',
+    lead: 'Instagram ve Facebook hesaplarının bağlanması için Meta uygulama bilgileri. Bilgiler kaydedilebilir; bu platformlar için hesap bağlama akışı henüz hazır değildir.',
+    sections: [['Durum', ['Instagram Graph API ve Facebook Login için Meta uygulama incelemesi (App Review) gerekir; akış hazırlandığında bu bilgiler kullanılacak.']]] },
+  tiktok: { short: 'TikTok', tag: 'TikTok hesabı',
+    lead: 'TikTok hesaplarının bağlanması için TikTok geliştirici uygulama bilgileri. Bilgiler kaydedilebilir; hesap bağlama akışı henüz hazır değildir.',
+    sections: [['Durum', ['TikTok Login Kit ve Display API için uygulama incelemesi gerekir; akış hazırlandığında bu bilgiler kullanılacak.']]] },
   maps: { short: 'Google Haritalar', tag: 'Harita görünümleri',
     lead: 'Harita gösterilen ekranlar (ör. Güvenlik › Bina Kontrol) Google Haritalar kullanır; anahtar yoksa açık kaynak haritaya (OpenStreetMap) düşülür.',
     sections: [

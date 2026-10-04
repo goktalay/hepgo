@@ -176,14 +176,20 @@ def clip_wav(path, t0, t1):
 # ---------- toplantının tüm kayıtlarını işle
 def process(meeting_id):
     """Arka plan: kayıtları metne çevir, konuşmacılara ayır, ses profilleriyle eşleştir. Durum team_meetings.process_status."""
+    if not available():   # konuşma tanıma kapalı: yalnız kayıt saklanır, metin / konuşmacı yok
+        with db.connect() as conn:
+            conn.execute("UPDATE team_meetings SET process_status = 'TAMAM', process_error = NULL WHERE id = ?", (meeting_id,))
+            conn.commit()
+        return
     with db.connect() as conn:
         try:
             conn.execute("UPDATE team_meetings SET process_status = 'ISLENIYOR', process_error = NULL WHERE id = ?", (meeting_id,))
             conn.commit()
             audios = db.rows(conn.execute('SELECT * FROM team_meeting_audio WHERE meeting_id = ? ORDER BY id', (meeting_id,)))
-            conn.execute('DELETE FROM team_meeting_segments WHERE meeting_id = ?', (meeting_id,))
-            conn.execute('DELETE FROM team_meeting_speakers WHERE meeting_id = ?', (meeting_id,))
+            # 1) Uzun iş (WAV, Whisper, ses kimliği) YAZMA İŞLEMİ AÇILMADAN: yalnız okuma — veritabanı kilitlenmez.
+            #    (Önceden silme ile başlayan işlem döküm boyunca açık kalıyor, her yazma 'database is locked' alıyordu.)
             items = []   # (audio_id, t0, t1, at, text, emb, dur)
+            audio_upd = []
             for a in audios:
                 src = config.UPLOAD_DIR / a['file']
                 if not src.exists() or src.stat().st_size < 2000:
@@ -192,8 +198,7 @@ def process(meeting_id):
                 seconds = _to_wav(src, wav)
                 if not seconds or seconds < 1:
                     continue
-                conn.execute('UPDATE team_meeting_audio SET wav = ?, seconds = ? WHERE id = ?',
-                             (str(wav.relative_to(config.UPLOAD_DIR)), seconds, a['id']))
+                audio_upd.append((str(wav.relative_to(config.UPLOAD_DIR)), seconds, a['id']))
                 sig = read_wav(wav)
                 start = datetime.fromisoformat(a['started_at'])
                 for s in whisper_segments(wav, seconds):
@@ -209,8 +214,14 @@ def process(meeting_id):
             usable = [i for i, it in enumerate(items) if it[5] is not None and it[6] >= 1.0]
             labels = {}
             speakers = []
+            lab = cents = None
             if usable:
                 lab, cents = cluster([items[i][5] for i in usable], [min(items[i][6], 10) for i in usable])
+            # 2) Yazmalar tek ve kısa işlemde
+            conn.execute('DELETE FROM team_meeting_segments WHERE meeting_id = ?', (meeting_id,))
+            conn.execute('DELETE FROM team_meeting_speakers WHERE meeting_id = ?', (meeting_id,))
+            conn.executemany('UPDATE team_meeting_audio SET wav = ?, seconds = ? WHERE id = ?', audio_upd)
+            if usable:
                 for k, i in enumerate(usable):
                     labels[i] = lab[k]
                 # kısa parçalar: en yakın konuşmacıya (yoksa önceki parçanınkine)

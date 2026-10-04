@@ -33,8 +33,16 @@ function insertText(ta, text) {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// Konuşma tanıma entegrasyonu kapalıysa (me.speech) mikrofon hiç eklenmez; açılınca sayfa yeniden taranır.
+let speechOn = false;
+export function setDictationEnabled(on) {
+  const was = speechOn;
+  speechOn = !!on;
+  if (speechOn && !was) document.querySelectorAll('textarea.input').forEach(attach);
+}
+
 function attach(ta) {
-  if (ta.dataset.mic || ta.hasAttribute('data-no-mic') || ta.disabled || ta.readOnly) return;
+  if (!speechOn || ta.dataset.mic || ta.hasAttribute('data-no-mic') || ta.disabled || ta.readOnly) return;
   ta.dataset.mic = '1';
   const btn = h('button', { type: 'button', class: 'dict-btn', title: 'Sesle yazdır (konuşun, tekrar basınca metne çevrilir)',
     'aria-label': 'Sesle yazdır' }, svgIcon(icons.mic));

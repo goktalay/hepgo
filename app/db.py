@@ -343,6 +343,30 @@ CREATE TABLE IF NOT EXISTS vehicle_docs (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_vehicle_docs ON vehicle_docs(vehicle_id);
+-- Rol Yönetimi (Program Ayarları): roller ağaç şeklinde (parent'tan yetki mirası), rol × düğüm (modül / alt modül) × yetenek
+-- (open: aç · read: veri oku · write: veri yaz) → allow 1 / deny 0; kayıt yoksa miras. Sistem rolleri koddaki ROLES'tan gelir.
+CREATE TABLE IF NOT EXISTS roles (
+    name        TEXT PRIMARY KEY,
+    description TEXT,
+    parent      TEXT,
+    system      INTEGER NOT NULL DEFAULT 0,
+    sort        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS role_perms (
+    role   TEXT NOT NULL,
+    node   TEXT NOT NULL,
+    cap    TEXT NOT NULL,
+    allow  INTEGER NOT NULL,
+    PRIMARY KEY (role, node, cap)
+);
+-- Görev ayrılığı: aynı kişide birlikte bulunmaması gereken roller (atamada uyarı)
+CREATE TABLE IF NOT EXISTS role_conflicts (
+    a TEXT NOT NULL,
+    b TEXT NOT NULL,
+    PRIMARY KEY (a, b)
+);
 -- Personel ↔ finans bağlantısı: isimle otomatik eşleşmeye ek olarak personel bir cariye (firma), kasa/banka hesabına
 -- (ör. şirket kredi kartı) ya da muhasebe hesabına (ör. 331 ortaklara borçlar alt hesabı) elle bağlanır.
 CREATE TABLE IF NOT EXISTS employee_fin_links (

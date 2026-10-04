@@ -7,6 +7,10 @@ import {
   avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, svgIcon, t,
   toast, toastError, periodRange
 } from '../ui.js';
+import { conflictModal } from './roles.js';
+
+// Rol Yönetimi: atanan roller arasında izin / yasak çakışması ya da görev ayrılığı varsa uyar (yasak geçerlidir)
+const warnConflicts = (name, c) => { if (c && (c.perm?.length || c.sod?.length)) conflictModal([{ user: name, ...c }]); };
 
 export async function render(view, params, ctx) {
   if (params[0]) return renderDetail(view, Number(params[0]), params[1] || 'edit', ctx);
@@ -121,8 +125,9 @@ function userForm(user, ctx, done) {
       { label: 'Vazgeç' },
       {
         label: 'Kaydet', class: 'primary', onClick: async () => {
-          const { id } = await api.post('/api/users', form.value());
+          const { id, conflicts } = await api.post('/api/users', form.value());
           toast('Kullanıcı oluşturuldu');
+          warnConflicts(form.value().full_name, conflicts);
           location.hash = `#/users/${id}`;
           done?.();
         },
@@ -168,8 +173,9 @@ function renderEdit(content, user, ctx) {
   save.addEventListener('click', async () => {
     save.disabled = true;
     try {
-      await api.put(`/api/users/${user.id}`, form.value());
+      const res = await api.put(`/api/users/${user.id}`, form.value());
       toast('Bilgiler kaydedildi');
+      warnConflicts(form.value().full_name, res?.conflicts);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (err) {
       toastError(err);

@@ -39,6 +39,18 @@ SUPPORT_ROLE = 'Merkez Destek'   # YALNIZCA merkez (Veilox) instance'ında atan�
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
          FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, QUALITY, FLEET, BOSS, CLEANER, INTERN]
+# Sistem rollerinin açıklaması (Rol Yönetimi'nde görünür; yönetici değiştirebilir)
+ROLE_DESC = {
+    ADMIN: 'Tüm modüller ve sistem ayarları', WAREHOUSE_MANAGER: 'Depo, stok ve onay işlemleri', PRODUCTION_MANAGER: 'Üretim ve iş emirleri yönetimi',
+    PRODUCTION_LEAD: 'Üretim operasyonu', PRINTER_MAINTAINER: 'Yazıcı bakım ve takibi', FIELD_LEAD: 'Saha görevlerinin yönetimi',
+    FIELD_STAFF: 'Saha görevlerinde çalışan personel', DRIVER: 'Saha görevi araç / yol bilgisi', PILOT: 'Uçuş ve uçuş raporları',
+    ASSEMBLER: 'Montaj ve kalibrasyon', ELECTRONICS: 'Elektronik kat montajı', ADMIN_STAFF: 'İdari işler: firmalar, evrak, araçlar',
+    SECRETARY: 'Misafir ve kargo kayıtları', SECURITY: 'Fabrika girişi: araç giriş / çıkış', CAMERA: 'Kameralar ve yüz tanıma',
+    HR: 'Personel, izin, özlük', PURCHASING: 'Tedarikçi, talep, fatura / irsaliye', SALES: 'Satış faturaları', MRP_LEAD: 'Malzeme ihtiyaç planlaması',
+    DESIGNER: 'Endüstriyel tasarım projeleri', FINANCE: 'Finans ve ön muhasebe', QUALITY: 'Sertifikalar ve denetimler',
+    FLEET: 'Araçlar, zimmet ve araç giderleri', BOSS: 'Üst yönetim özeti (Patron ekranı)', CLEANER: 'Günlük temizlik çeklisti',
+    INTERN: 'Modül yetkisi yok; genel alanları kullanır', SUPPORT_ROLE: 'Merkez destek: müşteri firmalara çapraz giriş',
+}
 # Yardımcı personel rolleri: bu rollerin seçim listelerinde stajerler de çıkar ("Stajer" etiketiyle) ve seçilebilir
 HELPER_ROLES = (ASSEMBLER, ELECTRONICS, FIELD_STAFF)
 
@@ -136,7 +148,20 @@ def is_master(username):
 
 
 def allowed_modules(roles):
-    return [m for m, rs in MODULE_ROLES.items() if set(rs) & set(roles)]
+    """Rollerin okuyabildiği modüller (Rol Yönetimi: veritabanı izinleri, miras ve yasak kuralıyla)."""
+    from . import rbac
+    return rbac.allowed(roles)
+
+
+def all_roles():
+    """Atanabilir roller: sistem rolleri + Rol Yönetimi'nde eklenen roller."""
+    from . import rbac
+    return rbac.role_names()
+
+
+def all_nodes():
+    from . import rbac
+    return rbac.node_keys()
 
 
 def dnd_state(prefs):
@@ -256,18 +281,24 @@ def current_user(request: Request, conn=db.DB):
         s = central_client.suspension()
         if s.get('suspended'):
             raise HTTPException(401, central_client.suspended_message(s))
+    from . import rbac
     if user['master']:   # sistem sahibi: her şeye erişir (rol iptal edilse bile) ama role bağlı bildirim/katılım gerçek rollerine göre
         user['real_roles'] = real
         user['roles'] = [*ROLES, MASTER]
-        user['modules'] = [*MODULE_ROLES.keys(), 'master']
+        user['modules'] = [*dict.fromkeys([*MODULE_ROLES.keys(), *rbac.node_keys()]), 'master']
+        user['write_modules'] = list(user['modules'])
     elif user['support']:   # merkez destek: tüm işlevsel modüller (sahibe özel 'master' paneli hariç); süreli, onaylı, iz kaydı tutulur
         user['real_roles'] = real
         user['roles'] = real
-        user['modules'] = [*MODULE_ROLES.keys()]
+        user['modules'] = [*dict.fromkeys([*MODULE_ROLES.keys(), *rbac.node_keys()])]
+        user['write_modules'] = list(user['modules'])
     else:
+        # Rol Yönetimi: roller üst rollerinden miras alır (koddaki rol adı kontrolleri de üst rolle geçer);
+        # modüller rol izinlerinden (aç + oku), yazma ayrı listede. Yasak izni yener.
         user['real_roles'] = real
-        user['roles'] = real
-        user['modules'] = allowed_modules(real)
+        user['roles'] = rbac.expand(real)
+        user['modules'] = rbac.allowed(real)
+        user['write_modules'] = rbac.writable(real)
     # Mikro ERP bu tenant'ta tanımlı değilse (ör. Türkbey) modülü hiç gösterme — boş ekran / yanlış firma verisi olmasın.
     if 'mikro' in user['modules'] and not (config.MIKRO_HOST and config.MIKRO_DB and config.MIKRO_USER and config.MIKRO_PASSWORD):
         user['modules'] = [m for m in user['modules'] if m != 'mikro']
@@ -275,17 +306,25 @@ def current_user(request: Request, conn=db.DB):
     # 'master' modülü (sistem sahibi aracı) her zaman kalır; CAYMAZ_MODULES tanımsızsa kısıtlama yoktur.
     if config.MODULES is not None:
         allow = set(config.MODULES) | {'master', 'uyelik'}   # Üyeliğim & Destek: paketten bağımsız, her firmada destek kanalı
-        user['modules'] = [m for m in user['modules'] if m in allow]
+        user['modules'] = [m for m in user['modules'] if m.split('.')[0] in allow]
+    user['write_modules'] = [m for m in user.get('write_modules', []) if m in user['modules']]
     return user
 
 
 PASSWORD_FREE_PATHS = {'/api/auth/me', '/api/auth/password', '/api/auth/logout', '/api/system/status', '/api/activity'}
 
 
+READ_METHODS = {'GET', 'HEAD', 'OPTIONS'}
+
+
 def require_module(module):
-    def dep(user=Depends(current_user)):
+    """Modül (ya da 'finance.trial' gibi alt modül) erişimi: okuma için 'oku', diğer yöntemler (POST/PUT/DELETE) için
+    'yaz' yetkisi gerekir (Rol Yönetimi)."""
+    def dep(request: Request, user=Depends(current_user)):
         if module not in user['modules']:
             raise HTTPException(403, 'Bu modüle erişim yetkiniz yok')
+        if request.method not in READ_METHODS and module not in user.get('write_modules', user['modules']):
+            raise HTTPException(403, 'Bu modülde yalnızca görüntüleme yetkiniz var (veri yazma yetkisi yok)')
         return user
     return dep
 

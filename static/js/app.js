@@ -928,6 +928,10 @@ async function route() {
   clear(view, h('div', { class: 'loading' }, 'Yükleniyor…'));
   try {
     await m.mod.render(view, params, ctx);
+    // Rol Yönetimi: bu modülde yalnızca okuma yetkisi varsa üstte bilgi şeridi (kaydetme istekleri sunucuda reddedilir)
+    if (!ctx.user.master && ctx.user.write_modules && !ctx.user.write_modules.includes(key) && key === location.hash.slice(2).split('/')[0]) {
+      view.prepend(h('div', { class: 'ro-banner' }, '👁 ', t('Bu modülde yalnızca görüntüleme yetkiniz var; değişiklikler kaydedilmez.')));
+    }
   } catch (err) {
     if (err?.status === 401) return;
     clear(view, h('div', { class: 'card empty' }, err.message || 'Bir hata oluştu'));

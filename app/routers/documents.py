@@ -210,7 +210,7 @@ def _check_links(conn, body):
     roles = sorted(set(body.roles)) if body.visibility == 'ROLES' else []
     if body.visibility == 'ROLES' and not roles:
         raise HTTPException(400, 'Görebilecek en az bir rol seçin')
-    if any(r not in auth.ROLES for r in roles):
+    if any(r not in auth.all_roles() for r in roles):
         raise HTTPException(400, 'Geçersiz rol')
     for cid in set(body.company_ids):
         if not conn.execute('SELECT 1 FROM companies WHERE id = ?', (cid,)).fetchone():

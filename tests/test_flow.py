@@ -64,7 +64,7 @@ def main():
         login(admin, 'admin@test', 'admin-sifre-1')
         me = ok(admin.get('/api/auth/me'))
         from app import auth as _auth   # yönetici: rolünün geçtiği tüm modüller (yeni modüller eklendikçe liste elle güncellenmesin)
-        assert set(me['modules']) == {m for m, rs in _auth.MODULE_ROLES.items() if _auth.ADMIN in rs}, me['modules']
+        assert {m for m in me['modules'] if '.' not in m} == {m for m, rs in _auth.MODULE_ROLES.items() if _auth.ADMIN in rs}, me['modules']   # alt modüller (finance.trial …) hariç
         assert admin.get('/api/printers').status_code == 200
 
         def mk(name, roles):

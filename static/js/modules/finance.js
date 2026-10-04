@@ -14,9 +14,12 @@ const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cariler'
 export async function render(view, params, ctx) {
   if (params[0] === 'txns') { location.replace('#/finance/bank'); return; }   // eski adres: hareketler artık hesap / cari detayında
   setFinanceAccess(true);
-  const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'summary';
+  // Rol Yönetimi: yetkisi olmayan alt modül sekmeleri görünmez (ör. Mizan / Mali Tablolar yasak)
+  const NODE = { bank: 'bank', cari: 'cari', cash: 'cash', instruments: 'instruments', trial: 'trial', statements: 'statements' };
+  const tabs = SUBS.filter(([k]) => !NODE[k] || ctx.user.master || ctx.user.modules.includes(`finance.${NODE[k]}`));
+  const sub = tabs.some(s => s[0] === params[0]) ? params[0] : 'summary';
   const id = /^\d+$/.test(params[1] || '') ? Number(params[1]) : null;
-  const nav = segmented(SUBS, sub, v => { location.hash = `#/finance/${v}`; }, { tabs: true });
+  const nav = segmented(tabs, sub, v => { location.hash = `#/finance/${v}`; }, { tabs: true });
   const body = h('div');
   clear(view, pageHead('Finans', { back: '#/', sub: 'Ön muhasebe · kasa-banka, cari, nakit akışı', tabs: nav }), body);
   if (sub === 'bank') return id ? accountDetail(body, id) : accountsView(body, 'bank');

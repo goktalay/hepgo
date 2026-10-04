@@ -278,6 +278,7 @@ def logout(request: Request, response: Response, conn=db.DB):
 @router.get('/auth/me')
 def me(user=Depends(auth.current_user), conn=db.DB):
     out = {k: user[k] for k in ('id', 'username', 'full_name', 'photo', 'roles', 'modules', 'master')}
+    out['write_modules'] = user.get('write_modules', user['modules'])   # Rol Yönetimi: yazma yetkisi olan modüller
     out['support'] = bool(user.get('support'))   # merkez destek oturumu mu (arayüzde uyarı şeridi için)
     out['ai'] = bool(config.AI_API_KEY)   # yapay zeka asistanı tanımlı mı (anahtar yoksa maskot ve YZ ayarları gizlenir)
     out['nvr'] = bool(config.NVR_HOST and config.NVR_USER)   # NVR entegrasyonu aktif mi (Kameralar modülü yalnızca o zaman görünür)
@@ -359,7 +360,7 @@ def meta(request: Request):
     # remote: büyük dosya yükleme engeli için. Yerel-yükleme zorunluluğu kapalıysa (bulut kurulum) her yerden
     # yüklemeye izin verilir → remote=false raporlanır (arayüzdeki "yalnızca yerel ağ" engelleri kalkar).
     remote = is_remote(request) and config.LOCAL_UPLOAD_REQUIRED
-    return {'company': config.COMPANY_NAME, 'roles': auth.ROLES, 'remote': remote, 'local_url': config.LOCAL_URL,
+    return {'company': config.COMPANY_NAME, 'roles': auth.all_roles(), 'remote': remote, 'local_url': config.LOCAL_URL,
             'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED,
             'maps_key': config.GOOGLE_MAPS_API_KEY}   # Google Haritalar (istemci tarafı; yoksa harita OSM'e düşer
 

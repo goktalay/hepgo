@@ -11,6 +11,13 @@ from .. import auth, db
 
 router = APIRouter(prefix='/api/finance')
 fin_user = auth.require_module('finance')
+# Rol Yönetimi alt modülleri: her sekmenin uçları kendi düğümüyle korunur (ayar yoksa 'finance'tan miras)
+fin_bank = auth.require_module('finance.bank')
+fin_cari = auth.require_module('finance.cari')
+fin_cash = auth.require_module('finance.cash')
+fin_instr = auth.require_module('finance.instruments')
+fin_trial = auth.require_module('finance.trial')
+fin_stmt = auth.require_module('finance.statements')
 KINDS = ('kasa', 'banka', 'cari')
 
 
@@ -32,7 +39,7 @@ class AccountIn(BaseModel):
 
 
 @router.get('/accounts')
-def accounts(kind: str = '', user=Depends(fin_user), conn=db.DB):
+def accounts(kind: str = '', user=Depends(fin_bank), conn=db.DB):
     where, args = ['a.active=1'], []
     if kind in KINDS:
         where.append('a.kind=?'); args.append(kind)
@@ -46,7 +53,7 @@ def accounts(kind: str = '', user=Depends(fin_user), conn=db.DB):
 
 
 @router.post('/accounts')
-def add_account(body: AccountIn, user=Depends(fin_user), conn=db.DB):
+def add_account(body: AccountIn, user=Depends(fin_bank), conn=db.DB):
     if body.kind not in ('kasa', 'banka'):
         raise HTTPException(400, 'Buradan yalnızca kasa / banka hesabı açılır; cariler Firma Yönetimi’ndeki firmalardır')
     cur = conn.execute('''INSERT INTO fin_accounts (kind,name,currency,iban,bank,company_id,opening,mikro_code,note,active,created_at)
@@ -59,7 +66,7 @@ def add_account(body: AccountIn, user=Depends(fin_user), conn=db.DB):
 
 
 @router.put('/accounts/{aid}')
-def edit_account(aid: int, body: AccountIn, user=Depends(fin_user), conn=db.DB):
+def edit_account(aid: int, body: AccountIn, user=Depends(fin_bank), conn=db.DB):
     if not conn.execute('SELECT 1 FROM fin_accounts WHERE id=?', (aid,)).fetchone():
         raise HTTPException(404, 'Hesap yok')
     conn.execute('''UPDATE fin_accounts SET name=?,currency=?,iban=?,bank=?,company_id=?,opening=?,mikro_code=?,note=? WHERE id=?''',
@@ -70,7 +77,7 @@ def edit_account(aid: int, body: AccountIn, user=Depends(fin_user), conn=db.DB):
 
 
 @router.delete('/accounts/{aid}')
-def del_account(aid: int, user=Depends(fin_user), conn=db.DB):
+def del_account(aid: int, user=Depends(fin_bank), conn=db.DB):
     conn.execute('UPDATE fin_accounts SET active=0 WHERE id=?', (aid,))
     conn.commit()
     return {'ok': True}
@@ -104,8 +111,18 @@ def txns(account_id: int = 0, date_from: str = '', date_to: str = '', limit: int
     return rows
 
 
+def _txn_scope(conn, user, account_id):
+    k = conn.execute('SELECT kind FROM fin_accounts WHERE id = ?', (account_id,)).fetchone()
+    node = 'finance.cari' if k and k[0] == 'cari' else 'finance.bank'
+    if node not in user.get('write_modules', user['modules']):
+        raise HTTPException(403, 'Bu hesapta hareket yazma yetkiniz yok')
+
+
 @router.post('/txns')
 def add_txn(body: TxnIn, user=Depends(fin_user), conn=db.DB):
+    _txn_scope(conn, user, body.account_id)
+    if body.counter_id:
+        _txn_scope(conn, user, body.counter_id)
     if body.direction not in ('in', 'out'):
         raise HTTPException(400, 'Yön in/out olmalı')
     if body.amount <= 0:
@@ -127,7 +144,9 @@ def add_txn(body: TxnIn, user=Depends(fin_user), conn=db.DB):
 
 @router.delete('/txns/{tid}')
 def del_txn(tid: int, user=Depends(fin_user), conn=db.DB):
-    r = conn.execute('SELECT mikro_ref FROM fin_txns WHERE id=?', (tid,)).fetchone()
+    r = conn.execute('SELECT mikro_ref, account_id FROM fin_txns WHERE id=?', (tid,)).fetchone()
+    if r:
+        _txn_scope(conn, user, r[1])
     if r and r[0]:   # Mikro'dan yansıyan hareket: bir sonraki senkronda geri gelirdi — kaynağında düzeltilmeli
         raise HTTPException(409, 'Bu hareket Mikro ERP’den senkronize edildi; düzeltmeyi Mikro’da yapın (sonraki senkronda yansır).')
     conn.execute('DELETE FROM fin_txns WHERE id=?', (tid,))
@@ -136,7 +155,7 @@ def del_txn(tid: int, user=Depends(fin_user), conn=db.DB):
 
 
 @router.get('/accounts/{aid}/statement')
-def statement(aid: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def statement(aid: int, date_from: str = '', date_to: str = '', user=Depends(fin_bank), conn=db.DB):
     """Cari / hesap ekstresi: hareketler + yürüyen bakiye."""
     acc = db.row(conn.execute('''SELECT a.*, c.name AS company_name FROM fin_accounts a
                                  LEFT JOIN companies c ON c.id=a.company_id WHERE a.id=?''', (aid,)))
@@ -201,7 +220,7 @@ def _cari_account(conn, company_id):
 
 
 @router.get('/cari')
-def cari_list(supplier: int = -1, user=Depends(fin_user), conn=db.DB):
+def cari_list(supplier: int = -1, user=Depends(fin_cari), conn=db.DB):
     """Firmalar (müşteri) ve tedarikçiler, cari bakiyeleriyle. supplier: 1 tedarikçi, 0 müşteri, -1 hepsi."""
     cols = {r[1] for r in conn.execute('PRAGMA table_info(companies)')}
     sup = 'c.is_supplier' if 'is_supplier' in cols else '0'
@@ -219,7 +238,7 @@ def cari_list(supplier: int = -1, user=Depends(fin_user), conn=db.DB):
 
 
 @router.get('/cari/{company_id}')
-def cari_statement(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def cari_statement(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_cari), conn=db.DB):
     """Firmanın cari ekstresi (hesap yoksa açılır)."""
     return statement(_cari_account(conn, company_id), date_from, date_to, user, conn)
 
@@ -242,23 +261,23 @@ def _settings(conn):
 
 
 @router.get('/trial')
-def trial(date_from: str = '', date_to: str = '', level: int = 3, user=Depends(fin_user), conn=db.DB):
+def trial(date_from: str = '', date_to: str = '', level: int = 3, user=Depends(fin_trial), conn=db.DB):
     """Mizan (Mikro muhasebe fişlerinden)."""
     return {**fr.trial_balance(conn, date_from, date_to, max(1, min(level, 9))), 'has_ledger': fr.has_ledger(conn)}
 
 
 @router.get('/ledger')
-def ledger(account: str, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def ledger(account: str, date_from: str = '', date_to: str = '', user=Depends(fin_trial), conn=db.DB):
     return fr.account_ledger(conn, account.strip(), date_from, date_to)
 
 
 @router.get('/statements')
-def fin_statements(date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def fin_statements(date_from: str = '', date_to: str = '', user=Depends(fin_stmt), conn=db.DB):
     return {**fr.statements(conn, date_from, date_to), 'has_ledger': fr.has_ledger(conn)}
 
 
 @router.get('/cashflow')
-def fin_cashflow(weeks: int = 12, user=Depends(fin_user), conn=db.DB):
+def fin_cashflow(weeks: int = 12, user=Depends(fin_cash), conn=db.DB):
     st = _settings(conn)
     return {**fr.cashflow(conn, max(4, min(weeks, 52)), st['payday'], st['salaries']), 'settings': st}
 
@@ -269,7 +288,7 @@ class FinSettingsIn(BaseModel):
 
 
 @router.put('/settings')
-def fin_settings(body: FinSettingsIn, user=Depends(fin_user), conn=db.DB):
+def fin_settings(body: FinSettingsIn, user=Depends(fin_cash), conn=db.DB):
     v = {'payday': max(0, min(body.payday, 28)), 'salaries': body.salaries}
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (SET_KEY, _json.dumps(v)))
     conn.commit()
@@ -305,14 +324,14 @@ def _instr_clean(b: InstrIn):
 
 
 @router.get('/instruments')
-def instruments(status: str = '', user=Depends(fin_user), conn=db.DB):
+def instruments(status: str = '', user=Depends(fin_instr), conn=db.DB):
     rows = db.rows(conn.execute('''SELECT i.*, c.name AS company FROM fin_instruments i LEFT JOIN companies c ON c.id=i.company_id
                                    ORDER BY CASE WHEN i.status IN ('portfoy','tahsilde','teminatta') THEN 0 ELSE 1 END, i.due_date'''))
     return {'rows': rows, 'statuses': INSTR_STATUS}
 
 
 @router.post('/instruments')
-def instrument_add(body: InstrIn, user=Depends(fin_user), conn=db.DB):
+def instrument_add(body: InstrIn, user=Depends(fin_instr), conn=db.DB):
     now = db.now()
     cur = conn.execute('''INSERT INTO fin_instruments (kind, direction, number, bank, drawer, company_id, amount, issue_date, due_date, status, note,
                           created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (*_instr_clean(body), user['id'], now, now))
@@ -322,7 +341,7 @@ def instrument_add(body: InstrIn, user=Depends(fin_user), conn=db.DB):
 
 
 @router.put('/instruments/{iid}')
-def instrument_edit(iid: int, body: InstrIn, user=Depends(fin_user), conn=db.DB):
+def instrument_edit(iid: int, body: InstrIn, user=Depends(fin_instr), conn=db.DB):
     conn.execute('''UPDATE fin_instruments SET kind=?, direction=?, number=?, bank=?, drawer=?, company_id=?, amount=?, issue_date=?, due_date=?,
                     status=?, note=?, updated_at=? WHERE id=?''', (*_instr_clean(body), db.now(), iid))
     conn.commit()
@@ -330,7 +349,7 @@ def instrument_edit(iid: int, body: InstrIn, user=Depends(fin_user), conn=db.DB)
 
 
 @router.delete('/instruments/{iid}')
-def instrument_del(iid: int, user=Depends(fin_user), conn=db.DB):
+def instrument_del(iid: int, user=Depends(fin_instr), conn=db.DB):
     conn.execute('DELETE FROM fin_instruments WHERE id=?', (iid,))
     conn.commit()
     return {'ok': True}
@@ -348,12 +367,12 @@ class PlanIn(BaseModel):
 
 
 @router.get('/plans')
-def plans(user=Depends(fin_user), conn=db.DB):
+def plans(user=Depends(fin_cash), conn=db.DB):
     return db.rows(conn.execute('SELECT * FROM fin_plans ORDER BY date'))
 
 
 @router.post('/plans')
-def plan_add(body: PlanIn, user=Depends(fin_user), conn=db.DB):
+def plan_add(body: PlanIn, user=Depends(fin_cash), conn=db.DB):
     if body.direction not in ('in', 'out') or body.amount <= 0 or not body.description.strip() or not body.date:
         raise HTTPException(400, 'Tarih, yön, tutar ve açıklama gerekli')
     cur = conn.execute('INSERT INTO fin_plans (date, direction, amount, description, category, repeat, until, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -364,7 +383,7 @@ def plan_add(body: PlanIn, user=Depends(fin_user), conn=db.DB):
 
 
 @router.delete('/plans/{pid}')
-def plan_del(pid: int, user=Depends(fin_user), conn=db.DB):
+def plan_del(pid: int, user=Depends(fin_cash), conn=db.DB):
     conn.execute('DELETE FROM fin_plans WHERE id=?', (pid,))
     conn.commit()
     return {'ok': True}
@@ -395,7 +414,7 @@ def _sums(rows):
 
 
 @router.get('/accounts/{aid}/detail')
-def account_detail(aid: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def account_detail(aid: int, date_from: str = '', date_to: str = '', user=Depends(fin_bank), conn=db.DB):
     """Kasa / banka hesabı detayı: hesap bilgisi, özet ve hareketler (yeni → eski, yürüyen bakiyeli, fatura / personel bağlantılı)."""
     st = statement(aid, date_from, date_to, user, conn)
     st['rows'] = fin_links.annotate(conn, st['rows'][::-1])
@@ -407,7 +426,7 @@ def account_detail(aid: int, date_from: str = '', date_to: str = '', user=Depend
 
 
 @router.get('/cari/{company_id}/detail')
-def cari_detail(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_user), conn=db.DB):
+def cari_detail(company_id: int, date_from: str = '', date_to: str = '', user=Depends(fin_cari), conn=db.DB):
     """Cari detayı: firma, bakiye, hareketler (ekstre), faturalar, açık kalemler (FIFO, vadeli) ve çek / senetler."""
     c = db.row(conn.execute('SELECT id, name, phone, email, tax_office, tax_no, COALESCE(is_supplier, 0) AS is_supplier FROM companies WHERE id = ?', (company_id,)))
     if not c:
@@ -448,7 +467,7 @@ def doc_moves(number: str, user=Depends(doc_user), conn=db.DB):
 
 
 @router.get('/invoices/{iid}')
-def invoice_detail(iid: int, src: str = 'invoice', user=Depends(fin_user), conn=db.DB):
+def invoice_detail(iid: int, src: str = 'invoice', user=Depends(fin_cari), conn=db.DB):
     """Cari detayından açılan fatura: başlık, kalemler ve hareketler."""
     if src == 'material_doc':
         inv = db.row(conn.execute('''SELECT d.id, d.kind, d.number, COALESCE(d.doc_date, substr(d.created_at, 1, 10)) AS invoice_date, d.amount AS total,

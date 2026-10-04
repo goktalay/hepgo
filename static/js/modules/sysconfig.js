@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
+import { rolesBody } from './roles.js';
 import { avatar, clear, confirmDialog, every, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
@@ -981,12 +982,13 @@ const GROUPS = [
   { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
   { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
   // Modül olarak var; Program Ayarları altından açılır (link). Veri & Yedek yalnızca sistem sahibi (MASTER).
-  { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar, roller ve yetkiler', icon: 'users', link: '#/users' },
+  { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar ve rol atamaları', icon: 'users', link: '#/users' },
+  { key: 'roles', title: 'Rol Yönetimi', desc: 'Roller, modül yetkileri (aç / oku / yaz), miras ve çakışmalar', icon: 'lock', body: rolesBody },
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
 ];
 
-const SC_COLORS = { security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
-const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'master']];
+const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
+const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'roles', 'master']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {

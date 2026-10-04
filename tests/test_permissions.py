@@ -1,8 +1,15 @@
 """Yetki matrisi: rol → görebildiği modüller (kullanıcının 2026-09-25 tablosu).
 
+Rol Yönetimi (2026-10): izinler veritabanındadır; test geçici veritabanında koddaki rolleri / MODULE_ROLES'u tohumlayıp
+(rbac.sync) aynı matrisin çıktığını, ayrıca miras / yasak / yazma kurallarını doğrular.
+
 Çalıştırma: .venv/bin/python -m tests.test_permissions
 """
-from app import auth
+import os
+import tempfile
+
+os.environ['CAYMAZ_DATA_DIR'] = tempfile.mkdtemp()
+from app import auth, db, rbac  # noqa: E402
 
 M = {'M1': 'admin', 'M2': 'production', 'M3': 'orders', 'M4': 'warehouse', 'M5': 'stock', 'M6': 'field',
      'M7': 'printers', 'M8': 'products', 'M9': 'tools', 'M10': 'users', 'M11': 'companies', 'M12': 'documents',
@@ -41,14 +48,47 @@ EXPECTED = {
 }
 
 
+def top(mods):
+    return {m for m in mods if '.' not in m}   # alt modüller (finance.trial …) matriste yok
+
+
 def main():
+    db.init()
+    with db.connect() as conn:
+        rbac.sync(conn)
     for code, role in R.items():
-        got = set(auth.allowed_modules([role]))
+        got = top(auth.allowed_modules([role]))
         want = {M[m] for m in EXPECTED[code].split()}
         assert got == want, (code, role, sorted(got ^ want))
-    assert set(auth.allowed_modules([auth.PRODUCTION_LEAD, auth.PRINTER_MAINTAINER])) == {
+    assert top(auth.allowed_modules([auth.PRODUCTION_LEAD, auth.PRINTER_MAINTAINER])) == {
         'production', 'stock', 'printers', 'tools', 'reports', 'announcements', 'mrp', 'rehber'}
+    rules()
     print('Yetki matrisi testi geçti.')
+
+
+def rules():
+    """Miras, alt modül, yasak > izin, yazma zinciri ve çakışma raporu."""
+    with db.connect() as conn:
+        now = db.now()
+        conn.execute("INSERT INTO roles (name, parent, system, created_at) VALUES ('Muhasebe Şefi', ?, 0, ?)", (auth.FINANCE, now))
+        conn.execute("INSERT INTO roles (name, parent, system, created_at) VALUES ('Okur Finans', NULL, 0, ?)", (now,))
+        conn.executemany('INSERT INTO role_perms (role, node, cap, allow) VALUES (?,?,?,?)', [
+            ('Muhasebe Şefi', 'finance.trial', 'read', 0),                 # alt modül yasak
+            ('Okur Finans', 'finance', 'open', 1), ('Okur Finans', 'finance', 'read', 1), ('Okur Finans', 'finance', 'write', 0),
+            ('Okur Finans', 'fleet', 'open', 1), ('Okur Finans', 'fleet', 'read', 1)])
+        conn.commit()
+    rbac.bump()
+    m = set(auth.allowed_modules(['Muhasebe Şefi']))
+    assert 'finance' in m and 'finance.bank' in m and 'finance.trial' not in m, m           # miras + alt modül yasağı
+    assert 'Finans' in rbac.expand(['Muhasebe Şefi'])                                      # üst rol adı kontrollerde geçer
+    w = set(rbac.writable(['Okur Finans']))
+    assert 'finance' not in w and 'finance' in set(auth.allowed_modules(['Okur Finans']))   # salt okunur
+    assert 'fleet' not in w                                                               # yazma ayarı yok → yazamaz
+    both = rbac.writable([auth.FINANCE, 'Okur Finans'])
+    assert 'finance' not in both, 'yasak izni yenmeli'
+    c = rbac.conflicts([auth.FINANCE, 'Okur Finans'])
+    assert any(x['node'] == 'finance' and x['cap'] == 'write' for x in c['perm']), c
+    assert 'admin' in auth.allowed_modules([auth.ADMIN]) and 'finance.trial' in auth.allowed_modules([auth.ADMIN])
 
 
 if __name__ == '__main__':

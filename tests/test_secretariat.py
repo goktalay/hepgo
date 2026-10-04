@@ -54,7 +54,7 @@ def main():
 
     with TestClient(app) as s:   # Sekreterya: misafir kaydı ve kargo
         login(s, 'sek')
-        assert set(ok(s.get('/api/auth/me'))['modules']) == {'secretariat', 'tools', 'reports', 'announcements'}
+        assert set(ok(s.get('/api/auth/me'))['modules']) == {'secretariat', 'tools', 'reports', 'announcements', 'rehber'}
         assert s.get('/api/security/vehicles').status_code == 403
         visit = ok(s.post('/api/secretariat/visits', json={'purpose': 'Proje toplantısı'}))
         assert visit['code'] == 'MS-0001'

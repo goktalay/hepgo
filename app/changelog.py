@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.112.0'
+VERSION = '2.113.0'
 
 CHANGELOG = [
+    {'version': '2.113.0', 'date': '2026-10-04', 'title': 'Rol Yönetimi',
+     'changes': [
+         'Program Ayarları › Rol Yönetimi: tüm roller (mevcut sistem rolleri + yeni eklenen özel roller) tek ekranda; rol ekle, kopyala, yeniden adlandır, sil.',
+         'Her rol için modül ve alt modül bazında üç yetki: Aç, Veri oku, Veri yaz — her biri İzin / Yasak ya da Miras. Hazır kalıplar: Tam, Salt oku, Yasak, Mirasa dön. Finans’ın sekmeleri (Kasa & Banka, Cariler, Nakit Akışı, Çek / Senet, Mizan, Mali Tablolar) ayrı alt modüldür.',
+         'Roller ağaç şeklindedir: alt rol üst rolün yetkilerini miras alır, kendi ayarı önceliklidir. Matriste mirasla gelen değer ve kaynağı görünür.',
+         'Rolün kullanıcıları yönetilir (ekle / çıkar); bir personel birden çok role atanabilir. İzin ile yasak çakışırsa YASAK geçerlidir ve uyarı verilir; görev ayrılığı için “çakışan roller” tanımlanabilir.',
+         'Yalnızca okuma yetkisi olan modülde ekranın üstünde bilgi şeridi çıkar, kayıt işlemleri sunucuda reddedilir. Yetkisi olmayan alt modül sekmeleri gizlenir.',
+         'Mevcut roller ve modül yetkileri otomatik aktarıldı; kimsenin erişimi değişmedi. Sistem Yöneticisi rolü kilitlidir (tüm yetkiler).',
+     ]},
     {'version': '2.112.0', 'date': '2026-10-04', 'title': 'Patron ekranı',
      'changes': [
          'Yeni modül: Patron — üst yönetimin tek bakışta görmesi gerekenler: nakit (kasa + banka), alacak ve borçlar (vadesi geçenlerle), yılbaşından bu yana net kâr ve geçen yılın aynı dönemine göre değişim.',

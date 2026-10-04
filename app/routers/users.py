@@ -25,7 +25,7 @@ class UserIn(BaseModel):
 def _validate(conn, body, user_id=None):
     if not body.username.strip() or not body.full_name.strip():
         raise HTTPException(400, 'Kullanıcı adı ve ad soyad zorunlu')
-    bad = [r for r in body.roles if r not in auth.ROLES]
+    bad = [r for r in body.roles if r not in auth.all_roles()]
     if bad:
         raise HTTPException(400, f'Geçersiz rol: {", ".join(bad)}')
     dup = conn.execute('SELECT id FROM users WHERE username = ? AND id IS NOT ?',
@@ -92,7 +92,8 @@ def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
     policy.record_history(conn, uid, conn.execute('SELECT password_hash FROM users WHERE id = ?', (uid,)).fetchone()[0])
     conn.executemany('INSERT INTO user_roles (user_id, role) VALUES (?,?)', [(uid, r) for r in set(body.roles)])
     db.audit(conn, user['id'], 'Kullanıcı oluşturdu', 'user', uid, body.username)
-    return {'id': uid}
+    from .. import rbac
+    return {'id': uid, 'conflicts': rbac.conflicts(sorted(set(body.roles)))}
 
 
 @router.get('/{uid}')
@@ -129,7 +130,8 @@ def update_user(uid: int, body: UserIn, user=Depends(admin_only), conn=db.DB):
         conn.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))
     db.audit(conn, user['id'], 'Kullanıcı bilgilerini düzenledi', 'user', uid,
              body.username + (' (şifre sıfırlandı)' if body.password else ''))
-    return {'ok': True}
+    from .. import rbac
+    return {'ok': True, 'conflicts': rbac.conflicts(sorted(set(body.roles)))}   # rol çakışması uyarısı (yasak geçerli)
 
 
 # Kullanıcının adının geçtiği iş kayıtları: varsa kullanıcı tamamen silinmez, geçmiş bozulmasın diye arşivlenir

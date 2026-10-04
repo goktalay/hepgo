@@ -1,6 +1,7 @@
 // Merkez › Üyelik Yönetimi: firmalar (onay, kurulum, kurulum linki, pasife al/aktif et, düzenle, sil), paketler, ödeme takibi.
 // Kurulum kayıtları Veilox kurulum servisinde; Merkez onu iç anahtarla yönetir. "Pasife al" yumuşaktır: firma instance'ı
 // ~5 dk içinde girişleri durdurur (master hariç), veri ve servis korunur; "Aktif et" ile anında geri döner.
+import { moduleName } from '../modulenames.js';
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDate, h, matches, modal, moduleToolbar, pageHead, segmented, selectInput, statStrip, toast, toastError } from '../ui.js';
 import { chartConfig, loadChart, theme } from './reports.js';
@@ -158,7 +159,7 @@ async function packagesView(view) {
         h('div', { class: 'mb-pkg-fee' }, money(p.monthly_fee), h('small', null, ' /ay')),
         h('div', { class: 'small muted' }, { online: 'Bulut', offline: 'Kendi sunucusu', both: 'Bulut / kendi sunucusu' }[p.mode] || p.mode, p.white_label ? ' · Beyaz etiket' : ''),
         p.description ? h('p', { class: 'small' }, p.description) : null,
-        h('div', { class: 'mb-chips' }, (p.modules || []).map(k => h('span', { class: 'mb-chip' }, title[k] || k))),
+        h('div', { class: 'mb-chips' }, (p.modules || []).map(k => h('span', { class: 'mb-chip' }, title[k] || moduleName(k)))),
         h('div', { class: 'pill-group', style: { marginTop: '10px' } },
           h('button', { class: 'btn sm', type: 'button', onclick: () => editPkg(p, pk, load) }, 'Düzenle'),
           h('button', { class: 'btn sm danger', type: 'button', onclick: async () => {

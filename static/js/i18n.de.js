@@ -3158,5 +3158,20 @@ registerCatalog('de', {
 "“{name}” için silme talebi Master onayına gönderilsin mi?": "Soll der Löschantrag für „{name}“ zur Genehmigung an den Master gesendet werden?",
 "“{name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.": "Soll der Funkkanal „{name}“ gelöscht werden? Alle Mitglieder verlassen den Kanal.",
 "✅ İsteğin onaylandı ve uygulandı: “{summary}”{extra}": "✅ Ihre Anfrage wurde genehmigt und ausgeführt: „{summary}“{extra}",
-"🔕 {ch} kapalı — {rest}": "🔕 {ch} aus — {rest}"
+"🔕 {ch} kapalı — {rest}": "🔕 {ch} aus — {rest}",
+"Patron": "Chefansicht",
+"Yarı Mamül / Stok": "Halbfertigware / Lager",
+"Onay / Depo": "Freigabe / Lager",
+"Finans": "Finanzen",
+"Proje Yönetimi": "Projektmanagement",
+"Araç Yönetimi": "Fuhrparkverwaltung",
+"Sertifikasyon": "Zertifizierung",
+"Kameralar": "Kameras",
+"Rehber": "Adressbuch",
+"Üyelik Yönetimi": "Mitgliederverwaltung",
+"Destek Merkezi": "Support-Center",
+"Toplu SMS": "Massen-SMS",
+"Üyeliğim & Destek": "Meine Mitgliedschaft & Support",
+"Veri & Yedek": "Daten & Sicherung",
+"Paketinizdeki modüller ({n})": "Module in Ihrem Paket ({n})"
 });

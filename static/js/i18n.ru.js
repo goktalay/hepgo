@@ -3158,5 +3158,20 @@ registerCatalog('ru', {
 "“{name}” için silme talebi Master onayına gönderilsin mi?": "Отправить запрос на удаление «{name}» на подтверждение Master?",
 "“{name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.": "Удалить канал рации «{name}»? Все участники будут удалены из канала.",
 "✅ İsteğin onaylandı ve uygulandı: “{summary}”{extra}": "✅ Ваш запрос одобрен и выполнен: «{summary}»{extra}",
-"🔕 {ch} kapalı — {rest}": "🔕 {ch} выключен — {rest}"
+"🔕 {ch} kapalı — {rest}": "🔕 {ch} выключен — {rest}",
+"Patron": "Руководитель",
+"Yarı Mamül / Stok": "Полуфабрикаты / Склад",
+"Onay / Depo": "Утверждение / Склад",
+"Finans": "Финансы",
+"Proje Yönetimi": "Управление проектами",
+"Araç Yönetimi": "Управление автопарком",
+"Sertifikasyon": "Сертификация",
+"Kameralar": "Камеры",
+"Rehber": "Справочник",
+"Üyelik Yönetimi": "Управление членством",
+"Destek Merkezi": "Центр поддержки",
+"Toplu SMS": "Массовые SMS",
+"Üyeliğim & Destek": "Моё членство и поддержка",
+"Veri & Yedek": "Данные и резервные копии",
+"Paketinizdeki modüller ({n})": "Модули в вашем пакете ({n})"
 });

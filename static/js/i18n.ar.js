@@ -3158,5 +3158,20 @@ registerCatalog('ar', {
 "“{name}” için silme talebi Master onayına gönderilsin mi?": "هل تريد إرسال طلب حذف لـ \"{name}\" إلى موافقة Master؟",
 "“{name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.": "هل تُحذف قناة اللاسلكي “{name}”؟ سيخرج جميع الأعضاء من القناة.",
 "✅ İsteğin onaylandı ve uygulandı: “{summary}”{extra}": "✅ تمت الموافقة على طلبك وتطبيقه: “{summary}”{extra}",
-"🔕 {ch} kapalı — {rest}": "🔕 {ch} مغلق — {rest}"
+"🔕 {ch} kapalı — {rest}": "🔕 {ch} مغلق — {rest}",
+"Patron": "المدير",
+"Yarı Mamül / Stok": "نصف مصنّع / المخزون",
+"Onay / Depo": "الموافقة / المستودع",
+"Finans": "المالية",
+"Proje Yönetimi": "إدارة المشاريع",
+"Araç Yönetimi": "إدارة الأسطول",
+"Sertifikasyon": "الشهادات",
+"Kameralar": "الكاميرات",
+"Rehber": "الدليل",
+"Üyelik Yönetimi": "إدارة العضويات",
+"Destek Merkezi": "مركز الدعم",
+"Toplu SMS": "رسائل SMS جماعية",
+"Üyeliğim & Destek": "عضويتي والدعم",
+"Veri & Yedek": "البيانات والنسخ الاحتياطي",
+"Paketinizdeki modüller ({n})": "الوحدات في باقتك ({n})"
 });

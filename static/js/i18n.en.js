@@ -22,7 +22,7 @@ registerCatalog('en', {
   'Temizlik': 'Cleaning',
   'Güvenlik': 'Security',
   'Sekreterya': 'Secretariat',
-  'Mikro ERP': 'Micro ERP',
+  'Mikro ERP': 'Mikro ERP',
   'Endüstriyel Tasarım': 'Industrial Design',
   'Firma Yönetimi': 'Company Management',
   'Kullanıcı Yönetimi': 'User Management',

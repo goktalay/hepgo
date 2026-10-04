@@ -4614,17 +4614,47 @@ html[data-theme="dark"] .sc-integ-status.ok { background: rgba(34, 197, 94, .15)
 .emails-row .input { flex: 1; }
 .emails-row.primary .input { font-weight: 600; }
 .emails-row.primary::after { content: 'birincil'; font-size: 11px; color: var(--muted); }
-.co-mails { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.co-mail { display: grid; grid-template-columns: 22px minmax(120px, 200px) 1fr auto auto; gap: 10px; align-items: center; padding: 9px 12px;
-  color: inherit; text-decoration: none; border-bottom: 1px solid var(--border); font-size: 14px; }
+.co-mails { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.co-mail { display: flex; align-items: center; gap: 12px; padding: 0 16px 0 12px; min-height: 44px; border-bottom: 1px solid var(--border);
+  color: var(--text); text-decoration: none; background: var(--surface-2); }
+.co-mail.unread { background: var(--surface); }
 .co-mail:last-child { border-bottom: 0; }
-.co-mail:hover { background: var(--surface-2); }
-.co-mail.unread .co-mail-who, .co-mail.unread .co-mail-sub b { font-weight: 700; }
-.co-mail-who, .co-mail-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.co-mail-sub b { font-weight: 500; }
-.co-mail-dir { color: var(--muted); text-align: center; }
+.co-mail:hover { text-decoration: none; box-shadow: inset 1px 0 0 var(--border), inset -1px 0 0 var(--border), 0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15); position: relative; z-index: 1; }
+.co-av { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--av, #757575); color: #fff; font-size: 13px; font-weight: 500; }
+.co-mail-main { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) auto; column-gap: 16px; align-items: center; }
+.co-l1 { display: contents; }
+.co-mail-who { grid-column: 1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.co-mail-to { color: var(--muted); font-weight: 400; }
+.co-mail-date { grid-column: 3; grid-row: 1; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.co-l2 { grid-column: 2; grid-row: 1; min-width: 0; display: flex; align-items: center; gap: 0; font-size: 14px; white-space: nowrap; overflow: hidden; }
+.co-mail-subj { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
+.co-l2 .co-mail-snip { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.co-mail-main { text-align: left; }
+.co-l2 .co-mail-snip { padding-left: 6px; }   /* flex öğesinin baştaki boşluğu silinir */
+.co-mail-att { flex: none; display: inline-flex; color: var(--muted); margin-left: 8px; }
+.co-mail-att svg { width: 16px; height: 16px; }
+.co-l3 { display: none; }
+.co-mail.unread .co-mail-who, .co-mail.unread .co-mail-subj, .co-mail.unread .co-mail-date { font-weight: 700; color: var(--text); }
 .co-mails > .btn { margin: 8px auto; }
-@media (max-width: 700px) { .co-mail { grid-template-columns: 18px 1fr auto; } .co-mail-sub, .co-mail-att { grid-column: 2 / -1; } }
+@media (max-width: 760px) {
+  .co-mails { border: 0; border-radius: 0; background: transparent; margin: 0 -12px; }
+  .co-mail { align-items: flex-start; gap: 14px; padding: 10px 16px; min-height: 0; border-bottom: 0; background: transparent; }
+  .co-mail.unread { background: transparent; }
+  .co-mail:hover { box-shadow: none; }
+  .co-mail:active { background: var(--surface-2); }
+  .co-av { width: 40px; height: 40px; font-size: 18px; margin-top: 2px; }
+  .co-mail-main { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+  .co-mail-main > div { min-width: 0; max-width: 100%; overflow: hidden; }
+  .co-l1 { display: flex; align-items: baseline; gap: 8px; }
+  .co-mail-who { flex: 1; font-size: 16px; color: var(--muted); }
+  .co-mail-date { color: var(--muted); }
+  .co-l2 { font-size: 14px; color: var(--muted); }
+  .co-l2 .co-mail-snip, .co-l2 .co-mail-att { display: none; }
+  .co-mail-subj { max-width: 100%; }
+  .co-l3 { display: flex; align-items: center; gap: 8px; min-height: 20px; }
+  .co-l3 .co-mail-snip { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .co-l3 .co-mail-att { margin-left: 0; }
+}
 .sc-integ-status.err { color: #b42318; background: #fdecea; }
 html[data-theme="dark"] .sc-integ-status.err { background: rgba(239, 68, 68, .16); color: #fca5a5; }
 .sc-integ-status.wait { color: #92400e; background: #fef3c7; }

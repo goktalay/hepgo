@@ -2,6 +2,7 @@
 // paylaşımıyla), destek talepleri (dosya ekli, değerlendirme), ödeme takibi ve ödeme bildirimi, üyelik sözleşmeleri.
 // Veriler merkezdedir; burası güvenli federasyon bağlantısıyla okur / yazar. Aktif canlı sohbet başka sayfadayken de köşede görünür.
 import { api } from '../api.js';
+import { moduleName } from '../modulenames.js';
 import { clear, every, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, statStrip, t, toast, toastError } from '../ui.js';
 import { CATEGORY, PRIORITY, STATUS_FIRM, badge, chatMessage, composer, fmtM, formData, ratingBox, starsOf, threadView } from './supportkit.js';
 import { docView, printDoc, proofRows } from './contractdoc.js';
@@ -91,7 +92,7 @@ async function overview(view, ctx) {
           h('b', null, m.period.slice(5)), h('small', null, m.period.slice(0, 4))))) : h('p', { class: 'small muted' }, 'Paketiniz ücretsiz.'),
         d.fee ? h('div', { class: 'mb2-legend small muted' }, ...['odendi', 'kismi', 'bekliyor', 'gecikti'].map(k => h('span', { class: `mb2-lg ${k}` }, PAY[k][1]))) : null),
       mods.length ? h('section', { class: 'card card-pad mb2-mods' }, h('h3', null, t('Paketinizdeki modüller ({n})', { n: mods.length })),
-        h('div', { class: 'mb2-chips' }, mods.map(m => h('span', { class: 'sk-tagchip' }, m)))) : null));
+        h('div', { class: 'mb2-chips' }, mods.map(m => h('span', { class: 'sk-tagchip', title: m }, t(moduleName(m)))))) : null));
 }
 
 // ---------------- Destek talepleri ----------------

@@ -542,19 +542,38 @@ async function renderDetail(view, id, ctx, tab) {
     ], tab || pref('company.tab', 'people'), k => setPref('company.tab', k)));
 }
 
+// Mail listesi yardımcıları (Mail modülüyle aynı: avatar rengi, kısa tarih — bugün saat, bu yıl gün ay, değilse tam tarih)
+const MAIL_PALETTE = ['#DB4437', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5', '#4285F4', '#039BE5', '#0097A7', '#009688', '#0F9D58', '#689F38', '#EF6C00', '#FF5722', '#757575'];
+const mailColor = v => { let x = 0; for (const c of String(v || '').toLowerCase()) x = (x * 31 + c.charCodeAt(0)) >>> 0; return MAIL_PALETTE[x % MAIL_PALETTE.length]; };
+const mailWhen = iso => {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
 // Firmanın mailleri: yalnız bu kullanıcının kendi mail hesaplarında, firmanın kişileri / alan adıyla yazışılanlar
 function companyMails(id) {
   const wrap = h('div', null, h('div', { class: 'loading' }, 'Yükleniyor…'));
   let items = [], offset = 0, more = false, boxes = 0, domains = [];
+  // Gmail düzeni: masaüstünde tek satır (kişi · konu — önizleme · tarih); mobilde avatar + ad/tarih, konu, önizleme/ek
   const row = m => {
     const out = m.folder === 'sent';
-    const who = out ? (m.to?.name || m.to?.email) : (m.from?.name || m.from?.email);
-    return h('a', { class: `co-mail ${m.seen ? '' : 'unread'}`, href: `#/mail/${m.box_id}/m/${m.uid}/${encodeURIComponent(m.folder)}` },
-      h('span', { class: 'co-mail-dir', title: out ? t('Gönderilen') : t('Gelen') }, out ? '↗' : '↙'),
-      h('span', { class: 'co-mail-who' }, who || '—'),
-      h('span', { class: 'co-mail-sub' }, h('b', null, m.subject || t('(konu yok)')), m.snippet ? h('span', { class: 'muted' }, ` — ${m.snippet}`) : null),
-      m.attach ? h('span', { class: 'co-mail-att', title: t('Ek var') }, '📎') : null,
-      h('span', { class: 'co-mail-date small muted' }, m.date ? fmtDateTime(m.date) : ''));
+    const a = out ? m.to : m.from;
+    const who = a?.name && a.name !== a.email ? a.name : a?.email || '';
+    const av = h('span', { class: 'co-av', 'aria-hidden': 'true' }, (who.replace(/["'(<]/g, '').trim()[0] || '?').toLocaleUpperCase('tr'));
+    av.style.setProperty('--av', mailColor(a?.email || who));
+    const att = m.attach ? h('span', { class: 'co-mail-att', title: t('Ek var') }, svgIcon(icons.paperclip)) : null;
+    return h('a', { class: `co-mail ${m.seen ? '' : 'unread'}`, href: `#/mail/${m.box_id}/m/${m.uid}/${encodeURIComponent(m.folder)}`,
+      title: m.date ? fmtDateTime(m.date) : '' }, av,
+      h('div', { class: 'co-mail-main' },
+        h('div', { class: 'co-l1' },
+          h('span', { class: 'co-mail-who' }, out ? h('span', { class: 'co-mail-to' }, t('Kime:') + ' ') : null, who || t('(gönderen yok)')),
+          h('span', { class: 'co-mail-date' }, mailWhen(m.date))),
+        h('div', { class: 'co-l2' }, h('span', { class: 'co-mail-subj' }, m.subject || t('(konu yok)')),
+          m.snippet ? h('span', { class: 'co-mail-snip' }, `— ${m.snippet}`) : null, att),
+        h('div', { class: 'co-l3' }, h('span', { class: 'co-mail-snip' }, m.snippet || ''), att?.cloneNode(true))));
   };
   const draw = () => clear(wrap,
     h('div', { class: 'co-section-head' }, h('h2', null, 'Mailler'),

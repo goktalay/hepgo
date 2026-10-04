@@ -425,5 +425,20 @@ registerCatalog('en', {
 "“{name}” için silme talebi Master onayına gönderilsin mi?": "Send the delete request for “{name}” to Master approval?",
 "“{name}” telsiz kanalı silinsin mi? Tüm üyeler kanaldan çıkar.": "Delete the “{name}” radio channel? All members leave the channel.",
 "✅ İsteğin onaylandı ve uygulandı: “{summary}”{extra}": "✅ Your request was approved and applied: “{summary}”{extra}",
-"🔕 {ch} kapalı — {rest}": "🔕 {ch} off — {rest}"
+"🔕 {ch} kapalı — {rest}": "🔕 {ch} off — {rest}",
+"Patron": "Boss",
+"Yarı Mamül / Stok": "Semi-finished / Stock",
+"Onay / Depo": "Approval / Warehouse",
+"Finans": "Finance",
+"Proje Yönetimi": "Project Management",
+"Araç Yönetimi": "Fleet Management",
+"Sertifikasyon": "Certification",
+"Kameralar": "Cameras",
+"Rehber": "Directory",
+"Üyelik Yönetimi": "Membership Management",
+"Destek Merkezi": "Support Center",
+"Toplu SMS": "Bulk SMS",
+"Üyeliğim & Destek": "My Membership & Support",
+"Veri & Yedek": "Data & Backup",
+"Paketinizdeki modüller ({n})": "Modules in your package ({n})"
 });

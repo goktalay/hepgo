@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import tempfile
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 os.environ.update(CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYMAZ_PRINTER_POLL='0', CAYMAZ_ADMIN_USERNAME='admin@test',
                   CAYMAZ_ADMIN_PASSWORD='admin-sifre-1', CAYMAZ_FORCE_PASSWORD_CHANGE='0', CAYMAZ_X_CLIENT_ID='',
@@ -117,6 +117,22 @@ def main():
         q2 = {k: v[0] for k, v in parse_qs(urlparse(ok(c.get('/api/social/oauth/x/start'))['url']).query).items()}
         c.get('/api/social/oauth/x/callback', params={'state': q2['state'], 'code': 'kod-2'}, follow_redirects=False)
         assert len(ok(c.get('/api/social/accounts'))['accounts']) == 1
+
+        # X ücretli erişim yoksa (402): anlaşılır Türkçe hata hesapta görünür
+        orig = social.httpx.get
+        social.httpx.get = lambda url, **kw: Resp(402, {'title': 'Payment Required'})
+        ok(c.post(f'/api/social/accounts/{aid}/refresh', json={}))
+        err = ok(c.get('/api/social/accounts'))['accounts'][0]['last_error']
+        assert 'ücretli erişim' in err and 'http' not in err, err
+        social.httpx.get = orig
+        # X izin ekranında hata → açıklaması gösterilir; kullanıcı vazgeçerse "İzin verilmedi"
+        q3 = {k: v[0] for k, v in parse_qs(urlparse(ok(c.get('/api/social/oauth/x/start'))['url']).query).items()}
+        loc = c.get('/api/social/oauth/x/callback', params={'state': q3['state'], 'error': 'invalid_request', 'error_description': 'Value passed for the redirect uri did not match'},
+                    follow_redirects=False).headers['location']
+        assert 'redirect%20uri' in loc, loc
+        q4 = {k: v[0] for k, v in parse_qs(urlparse(ok(c.get('/api/social/oauth/x/start'))['url']).query).items()}
+        loc = c.get('/api/social/oauth/x/callback', params={'state': q4['state'], 'error': 'access_denied'}, follow_redirects=False).headers['location']
+        assert loc.endswith(quote('İzin verilmedi', safe='')), loc
 
         ok(c.delete(f'/api/social/accounts/{aid}'))
         assert calls[-1][1] == social.X_REVOKE and calls[-1][2]['token'].startswith('yenileme')

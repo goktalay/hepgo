@@ -149,14 +149,14 @@ def oauth_start(prov: str, request: Request, user=Depends(auth.current_user)):
 
 
 @router.get('/oauth/{prov}/callback')
-def oauth_callback(prov: str, request: Request, state: str = '', code: str = '', error: str = '',
+def oauth_callback(prov: str, request: Request, state: str = '', code: str = '', error: str = '', error_description: str = '',
                    user=Depends(auth.current_user), conn=db.DB):
     back = lambda msg: RedirectResponse(f'/app#/settings/social?msg={quote(msg, safe="")}', status_code=303)  # noqa: E731
     st = _states.pop(state, None)
     if not st or st[0] != user['id'] or st[1] != prov or time.time() - st[3] > 600:
         return back('Bağlantı isteği geçersiz ya da süresi doldu; yeniden deneyin')
-    if error or not code:
-        return back('İzin verilmedi')
+    if error or not code:   # X'in verdiği açıklama gösterilir (ör. access_denied, invalid_request: redirect_uri…)
+        return back(f"X izin vermedi: {error_description or error}"[:200] if error and error != 'access_denied' else 'İzin verilmedi')
     try:
         tok = social.x_exchange(code, st[2], _redirect_uri(request, prov))
         uid, username, name, avatar = social.x_me(tok['access'])

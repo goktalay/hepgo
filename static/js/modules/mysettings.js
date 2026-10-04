@@ -210,7 +210,7 @@ export function socialSection(query = '') {
               try { await api.del(`/api/social/accounts/${a.id}`); toast('Kaldırıldı'); load(); } catch (e) { toastError(e); }
             } }, 'Kaldır')));
       })) : h('p', { class: 'small muted' }, 'Henüz bağlı hesap yok.'),
-      h('p', { class: 'small muted' }, 'Paylaşımlar yaklaşık 30 dakikada bir yenilenir.')));
+      h('p', { class: 'small muted' }, 'Paylaşımlar yaklaşık 30 dakikada bir yenilenir (X hesapları okuma kotası nedeniyle 6 saatte bir; “Yenile” ile hemen).')));
   };
   function addAcc() {
     let prov = 'youtube';

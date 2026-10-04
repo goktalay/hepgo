@@ -106,9 +106,13 @@ def _x_get(path, access, **params):
     r = httpx.get(f'{X_API}{path}', params=params, headers={'Authorization': f'Bearer {access}', **UA}, timeout=TIMEOUT)
     if r.status_code == 429:
         raise SocialError('X okuma sınırı doldu (429); daha sonra yeniden denenecek')
+    if r.status_code == 402:
+        raise SocialError('X paylaşımlarını okumak için X geliştirici hesabında ücretli erişim gerekiyor (402). '
+                          'developer.x.com › uygulamanın hesabına okuma paketi / kredi tanımlanınca “Yenile” ile çekilir.')
     if r.status_code in (401, 403):
         raise SocialError(f'X erişimi reddedildi ({r.status_code}); hesabı yeniden bağlayın ya da X paketinizi kontrol edin')
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise SocialError(f'X isteği başarısız ({r.status_code})')
     return r.json()
 
 

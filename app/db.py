@@ -2286,6 +2286,14 @@ def _company_people_free(conn):
     indexes = [r[0] for r in conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'company_people' AND sql IS NOT NULL")]
     before = conn.execute('SELECT COUNT(*) FROM company_people').fetchone()[0]
     conn.commit()
+    # Tablo yeniden kurulmadan önce tam veritabanı yedeği (servis kullanıcısıyla; her firma kendi veri klasörüne)
+    bdir = config.DATA_DIR / 'backups' / 'migration'
+    bdir.mkdir(parents=True, exist_ok=True)
+    dst = sqlite3.connect(bdir / f'before-company-people-{datetime.now():%Y%m%d-%H%M%S}.db')
+    try:
+        conn.backup(dst)
+    finally:
+        dst.close()
     conn.execute('PRAGMA foreign_keys = OFF')
     try:
         conn.executescript('BEGIN;\n' + new_sql + ';\n'

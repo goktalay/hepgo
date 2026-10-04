@@ -132,7 +132,8 @@ export async function renderMail(view, params = []) {
   view.classList.add('gm-view');
   const boxOf = id => boxes.find(b => b.id === Number(id));
   // ---- durum
-  const deep = params[1] === 'm' && /^\d+$/.test(params[2] || '') ? { box: Number(params[0]), uid: Number(params[2]) } : null;
+  const deep = params[1] === 'm' && /^\d+$/.test(params[2] || '')
+    ? { box: Number(params[0]), uid: Number(params[2]), folder: params[3] ? decodeURIComponent(params[3]) : 'inbox' } : null;
   let cur = { box: deep ? deep.box : (params[0] && params[0] !== 'all' && boxOf(params[0]) ? Number(params[0]) : (boxes.length > 1 ? 'all' : boxes[0].id)), folder: 'inbox' };
   if (cur.box !== 'all' && !boxOf(cur.box)) cur.box = boxes[0].id;
   let q = '', items = [], total = 0, loading = false, loadSeq = 0, openKey = null, msgCur = null;
@@ -751,7 +752,7 @@ export async function renderMail(view, params = []) {
   closeReader();
   refreshFolders();
   await loadList();
-  if (deep) openMsg(items.find(x => keyOf(x) === `${deep.box}:${deep.uid}`) || { uid: deep.uid, seen: false, box_id: deep.box }, 'inbox');
+  if (deep) openMsg(items.find(x => keyOf(x) === `${deep.box}:${deep.uid}`) || { uid: deep.uid, seen: false, box_id: deep.box }, deep.folder);
   const tick = setInterval(() => {   // dakikada bir: yeni ileti ve klasör sayıları (seçim / okuma yokken liste yenilenir)
     if (!root.isConnected) { clearInterval(tick); return; }
     if (document.visibilityState !== 'visible') return;

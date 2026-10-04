@@ -24,7 +24,7 @@ from email.utils import formataddr, format_datetime, getaddresses, make_msgid, p
 
 import httpx
 
-from . import config
+from . import config, db, mail_cache
 from .cameras import decrypt
 
 TIMEOUT = 20
@@ -211,6 +211,7 @@ class _Conn:
         self.used = 0
         self.folders = None
         self.selected = None
+        self.uidv = {}   # klasör anahtarı → UIDVALIDITY (önbellek geçerliliği)
 
     def get(self):
         now = time.time()
@@ -353,6 +354,12 @@ def _select(c, m, folder, readonly=True):
         if typ != 'OK':
             raise MailError('Klasör açılamadı')
         c.selected = (box, readonly)
+        try:
+            _, uv = m.response('UIDVALIDITY')
+            if uv and uv[0]:
+                c.uidv[folder] = int(uv[0])
+        except (ValueError, TypeError, imaplib.IMAP4.error):
+            pass
     return box
 
 
@@ -470,8 +477,9 @@ def _summary(uid, hdr_bytes, flags=(), size=0, text=None):
 
 
 # ---------------- IMAP: liste / okuma / işlemler ----------------
-def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PAGE, offset=None):
-    """offset verilirse sayfa yerine o sıradan başlar (sonsuz kaydırma: arşivle / sil sonrası ileti atlanmasın)."""
+def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PAGE, offset=None, cache_stats=False):
+    """offset verilirse sayfa yerine o sıradan başlar (sonsuz kaydırma: arşivle / sil sonrası ileti atlanmasın).
+    Önbellekli (mail_cache): sunucudan UID listesi + bayraklar; başlık / önizleme yalnız önbellekte olmayanlar için."""
     start = max(0, offset) if offset is not None else page * limit
     if settings(box)['is_pop']:
         return pop_list(box, q, page, unread_only, offset=start)
@@ -496,9 +504,33 @@ def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PA
         total = len(uids)
         chunk = uids[start:start + limit]
         if not chunk:
-            return {'items': [], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
-        typ, data = m.uid('FETCH', ','.join(map(str, chunk)),
-                          f'(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT]<0.{SNIPPET_BYTES}>)')
+            return {'items': [], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE)), 'fetched': 0}
+        uv = c.uidv.get(folder)   # None: sunucu bildirmedi → önbellek durumuna dokunulmaz
+        with db.connect() as conn:   # istek içinde yalnız OKUMA; yazmalar mail_cache.submit ile arka planda
+            st = mail_cache.state(conn, box['id'], folder, uv) if uv is not None else 'ok'
+            cached = mail_cache.get_many(conn, box['id'], folder, chunk) if st != 'changed' else {}
+        if st != 'ok':
+            mail_cache.submit(mail_cache.set_state, box['id'], folder, uv)
+        if cached:   # önbellektekilerin yalnız bayrakları tazelenir (okundu / yıldız başka cihazda değişmiş olabilir)
+            typ, fl = m.uid('FETCH', ','.join(map(str, cached)), '(UID FLAGS)')
+            flags = {}
+            for part in fl or []:
+                line = (part[0] if isinstance(part, tuple) else part or b'').decode(errors='replace')
+                mu, mf = re.search(r'UID (\d+)', line), re.search(r'FLAGS \(([^)]*)\)', line)
+                if mu and mf and int(mu.group(1)) in cached:
+                    f = mf.group(1).split()
+                    flags[int(mu.group(1))] = ('\\Seen' in f, '\\Flagged' in f)
+            for u, (seen, star) in flags.items():
+                cached[u].update(seen=seen, starred=star)
+            mail_cache.submit(mail_cache.set_flags, box['id'], folder, flags)
+        if not q and not unread_only:   # sayfa aralığında sunucuda olmayanlar (silinen / taşınan) önbellekten düşer
+            mail_cache.submit(mail_cache.prune, box['id'], folder, chunk[-1], chunk[0], set(chunk))
+        missing = [u for u in chunk if u not in cached]
+        if not missing:
+            out = {'items': [cached[u] for u in chunk], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+            return dict(out, fetched=0) if cache_stats else out
+        typ, data = m.uid('FETCH', ','.join(map(str, missing)),
+                          f'(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT]<0.{SNIPPET_BYTES}>)')
         got, cur = {}, None   # uid → {hdr, text, flags, size}; gövde parçası UID taşımayabilir → son görülen UID'ye aittir
         for part in data or []:
             if not isinstance(part, tuple):
@@ -519,8 +551,17 @@ def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PA
             else:
                 got[cur]['hdr'] = payload
         items = {u: _summary(u, d['hdr'], d['flags'], d['size'], d['text']) for u, d in got.items() if d['hdr']}
-        return {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+        mail_cache.submit(mail_cache.put_many, box['id'], folder, [(items[u], _participants(got[u]['hdr'])) for u in items])
+        items.update(cached)
+        out = {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+        return dict(out, fetched=len(missing)) if cache_stats else out
     return _run(c, fn)
+
+
+def _participants(hdr_bytes):
+    """Başlıktaki tüm e-posta adresleri (kimden / kime / bilgi) — CRM araması için."""
+    h = email.message_from_bytes(hdr_bytes, policy=default_policy)
+    return [a for _, a in getaddresses([_dec(x) for k in ('From', 'To', 'Cc') for x in h.get_all(k, [])]) if a]
 
 
 def _fetch_raw(c, m, folder, uid):
@@ -585,6 +626,13 @@ def read(box, folder, uid):
     if settings(box)['is_pop']:
         return pop_read(box, uid)
     c = conn_for(box)
+    with db.connect() as conn:
+        hit = mail_cache.get_body(conn, box['id'], folder, uid)
+    if hit:   # önbellekten anında; okunmadıysa sunucuda okundu işareti arka planda
+        rendered, seen = hit
+        if not seen and folder != 'drafts':
+            threading.Thread(target=_mark_seen, args=(box, folder, uid), daemon=True).start()
+        return rendered
 
     def fn(m):
         msg, flags = _fetch_raw(c, m, folder, uid)
@@ -594,8 +642,21 @@ def read(box, folder, uid):
                 m.uid('STORE', str(uid), '+FLAGS', '(\\Seen)')
             except Exception:
                 pass
-        return _render(msg, uid, folder, flags)
+        out = _render(msg, uid, folder, flags)
+        if folder != 'drafts':   # taslak düzenlenebilir: önbelleğe alınmaz
+            if c.uidv.get(folder) is not None:
+                mail_cache.submit(mail_cache.set_state, box['id'], folder, c.uidv[folder])
+            mail_cache.submit(mail_cache.put_body, box['id'], folder, uid, out,
+                              [out['from'].get('email'), *[a['email'] for a in out['to'] + out['cc']]])
+        return out
     return _run(c, fn)
+
+
+def _mark_seen(box, folder, uid):
+    try:
+        action(box, folder, [uid], 'read')
+    except Exception:
+        pass
 
 
 def raw_message(box, folder, uid):
@@ -661,8 +722,19 @@ def action(box, folder, uids, act, target=None):
             move(m, mp[target])
         else:
             raise MailError('Geçersiz işlem')
+        _cache_after(box, folder, uids, act)
         return {'ok': True}
     return _run(c, fn)
+
+
+def _cache_after(box, folder, uids, act):
+    """Sunucudaki işlemi önbelleğe yansıtır: bayrak değişimi güncellenir, taşınan / silinen ileti klasörün önbelleğinden düşer."""
+    if act in ('read', 'unread', 'star', 'unstar'):
+        col, val = ('seen', act == 'read') if act in ('read', 'unread') else ('starred', act == 'star')
+        mail_cache.submit(lambda conn, rows: conn.executemany(f'UPDATE mail_cache SET {col} = ? WHERE box_id = ? AND folder = ? AND uid = ?', rows),
+                          [(int(val), box['id'], folder, int(u)) for u in uids])
+    else:
+        mail_cache.submit(mail_cache.forget, box['id'], folder, list(uids))
 
 
 # ---------------- Gönderme / taslak ----------------

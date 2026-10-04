@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, integration_health, printer_driver, production, push, sync, sysstat
+from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, integration_health, mail_cache, printer_driver, production, push, sync, sysstat
 from .routers import directory, feed, federation, screenshare, finance, central, membership, live as live_router, certs as certs_router, fleet as fleet_router, boss as boss_router, roles as roles_router, projects as projects_router, social as social_router, contacts as contacts_router, support as support_router
 from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, console, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
                       announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, system, users, warehouse)
@@ -34,6 +34,7 @@ async def lifespan(app):
     document_ocr.resume_pending()
     from . import mail_import
     mail_import.start()   # mail ekleri → Evrak Yönetimi
+    mail_cache.start()    # mail önbelleği: gelen kutusu + gönderilenler başlıkları (CRM › firma › Mailler)
     from . import social
     social.start()   # kişisel sosyal medya akışları (RSS / YouTube / Bluesky / Mastodon)
     from . import meeting_audio

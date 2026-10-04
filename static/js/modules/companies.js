@@ -498,5 +498,39 @@ async function renderDetail(view, id, ctx, tab) {
       { key: 'notes', label: 'Notlar', render: () => notesPanel('company', id, ctx) },
       { key: 'meetings', label: 'Toplantı Yönetimi', count: c.meetings.length, render: meetings },
       { key: 'calendar', label: 'Takvim', render: () => calendarPanel('company', id, ctx) },
+      { key: 'mails', label: 'Mailler', render: () => companyMails(id) },
     ], tab || pref('company.tab', 'people'), k => setPref('company.tab', k)));
+}
+
+// Firmanın mailleri: yalnız bu kullanıcının kendi mail hesaplarında, firmanın kişileri / alan adıyla yazışılanlar
+function companyMails(id) {
+  const wrap = h('div', null, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  let items = [], offset = 0, more = false, boxes = 0, domains = [];
+  const row = m => {
+    const out = m.folder === 'sent';
+    const who = out ? (m.to?.name || m.to?.email) : (m.from?.name || m.from?.email);
+    return h('a', { class: `co-mail ${m.seen ? '' : 'unread'}`, href: `#/mail/${m.box_id}/m/${m.uid}/${encodeURIComponent(m.folder)}` },
+      h('span', { class: 'co-mail-dir', title: out ? t('Gönderilen') : t('Gelen') }, out ? '↗' : '↙'),
+      h('span', { class: 'co-mail-who' }, who || '—'),
+      h('span', { class: 'co-mail-sub' }, h('b', null, m.subject || t('(konu yok)')), m.snippet ? h('span', { class: 'muted' }, ` — ${m.snippet}`) : null),
+      m.attach ? h('span', { class: 'co-mail-att', title: t('Ek var') }, '📎') : null,
+      h('span', { class: 'co-mail-date small muted' }, m.date ? fmtDateTime(m.date) : ''));
+  };
+  const draw = () => clear(wrap,
+    h('div', { class: 'co-section-head' }, h('h2', null, 'Mailler'),
+      h('span', { class: 'small muted' }, domains.length ? t('Alan adı: {d}', { d: domains.join(', ') }) : '')),
+    h('p', { class: 'small muted' }, 'Yalnızca sizin bağlı mail hesaplarınızdaki, bu firmanın kişileriyle ya da alan adıyla yazışmalar. Başkaları sizin maillerinizi göremez.'),
+    !boxes ? h('div', { class: 'empty small' }, h('span', null, 'Bağlı mail hesabınız yok. '), h('a', { href: '#/settings/mailboxes' }, 'Mail hesabı bağla →'))
+      : items.length ? h('div', { class: 'co-mails' }, items.map(row),
+        more ? h('button', { class: 'btn sm', type: 'button', onclick: load }, 'Daha fazla') : null)
+        : h('div', { class: 'empty small' }, 'Bu firmayla yazışma bulunamadı. Yeni bağlanan hesapların mailleri birkaç dakika içinde taranır.'));
+  async function load() {
+    try {
+      const r = await api.get(`/api/mail/company/${id}?offset=${offset}`);
+      items = items.concat(r.items); offset += r.items.length; more = r.more; boxes = r.boxes; domains = r.domains;
+      draw();
+    } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); }
+  }
+  load();
+  return wrap;
 }

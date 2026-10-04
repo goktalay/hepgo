@@ -1,6 +1,7 @@
 """Kişisel → Mail API'si (v2, çok hesaplı). Yalnızca kullanıcının kendi hesapları; yönetici dahil kimse başkasının postalarını
-göremez. Şifre / jeton hiçbir yanıtta dönmez. İçerik sunucuda saklanmaz (posta sunucusundan anlık okunur); yalnızca hesap
-bağlama / ayırma ve gönderim sayısı loglanır. Klasör anahtarı '/' içerebildiği için ?folder= ile taşınır."""
+göremez. Şifre / jeton hiçbir yanıtta dönmez. Hız için liste özetleri ve açılan iletiler hesap sahibine özel önbellekte
+(mail_cache) tutulur; hesap kaldırılınca önbelleği de silinir. Yalnızca hesap bağlama / ayırma ve gönderim sayısı loglanır. Klasör anahtarı '/' içerebildiği için ?folder= ile taşınır."""
+import re
 import secrets
 import time
 from typing import List, Optional
@@ -12,7 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
-from .. import auth, config, db, mail, mail_import, personal
+from .. import auth, config, db, mail, mail_cache, mail_import, personal
 from ..cameras import decrypt, encrypt
 
 router = APIRouter(prefix='/api/mail')
@@ -663,6 +664,37 @@ def unassign_person(person_id: int, email: str, auto: bool = False, user=Depends
         db.audit(conn, user['id'], 'E-posta kişisinin firma bağlantısını kaldırdı', 'company', r['company_id'], f"{r['full_name']} <{em}>")
     conn.commit()
     return {'company': company_map(conn, [em]).get(em)}   # adres başka bir firmada da kayıtlıysa artık o görünür
+
+
+@router.get('/company/{cid}')
+def company_mails(cid: int, offset: int = 0, user=Depends(auth.current_user), conn=db.DB):
+    """CRM › firma › Mailler: YALNIZ bu kullanıcının kendi mail hesaplarında, firmanın kişileriyle ya da firmanın alan adıyla
+    yazışılan iletiler (önbellekten: gelen kutusu + gönderilenler arka planda eşitlenir; açılan her ileti de eklenir)."""
+    c = db.row(conn.execute('SELECT id, name, email, website, is_supplier FROM companies WHERE id = ?', (cid,)))
+    if not c:
+        raise HTTPException(404, 'Firma bulunamadı')
+    if ('purchasing' if c['is_supplier'] else 'companies') not in user['modules']:
+        raise HTTPException(403, 'Bu firmayı görme yetkiniz yok')
+    boxes = [b['id'] for b in _boxes(conn, user) if b['provider'] != 'pop3']
+    emails = {(r[0] or '').strip().lower() for r in conn.execute(
+        "SELECT email FROM company_people WHERE company_id = ? AND email LIKE '%@%'", (cid,))}
+    if c['email'] and '@' in c['email']:
+        emails.add(c['email'].strip().lower())
+    emails.discard('')
+    skip = PUBLIC_DOMAINS | _own_domains(conn)
+    domains = {_domain(e) for e in emails} - skip - {''}
+    web = re.sub(r'^https?://', '', (c['website'] or '').strip().lower()).split('/')[0].removeprefix('www.')
+    if web and '.' in web and web not in skip:
+        domains.add(web)
+    # alan adı ile eşleşen adresler zaten kapsanır; yalnız alan adı dışındaki (ör. gmail'deki) kişiler ayrıca aranır
+    emails = {e for e in emails if _domain(e) not in domains}
+    items = mail_cache.company_mails(conn, boxes, sorted(emails), sorted(domains), limit=mail.PAGE, offset=max(0, offset))
+    bmap = {b['id']: b for b in _boxes(conn, user)}
+    for it in items:
+        b = bmap.get(it['box_id']) or {}
+        it.update(box_email=b.get('email'), box_color=b.get('color'))
+    return {'items': _annotate(conn, items), 'boxes': len(boxes), 'domains': sorted(domains),
+            'more': len(items) == mail.PAGE}
 
 
 @router.get('/contacts/suggest')

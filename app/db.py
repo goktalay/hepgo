@@ -1717,6 +1717,27 @@ CREATE TABLE IF NOT EXISTS mail_accounts (
 );
 -- Mail v2 (Outlook gibi): kullanıcı başına birden çok hesap — Gmail / Outlook / Yandex / iCloud / Yahoo / özel IMAP / POP3.
 -- auth_type: password (uygulama şifresi) | google | microsoft (OAuth yenileme jetonu). secret şifreli saklanır.
+-- Mail önbelleği (app/mail_cache.py): liste özeti, okunan ileti ve katılımcılar (CRM › firma › Mailler)
+CREATE TABLE IF NOT EXISTS mail_cache_state (
+    box_id      INTEGER NOT NULL REFERENCES mail_boxes(id) ON DELETE CASCADE,
+    folder      TEXT NOT NULL,
+    uidvalidity INTEGER NOT NULL,
+    PRIMARY KEY (box_id, folder)
+);
+CREATE TABLE IF NOT EXISTS mail_cache (
+    box_id    INTEGER NOT NULL REFERENCES mail_boxes(id) ON DELETE CASCADE,
+    folder    TEXT NOT NULL,
+    uid       INTEGER NOT NULL,
+    date      TEXT,
+    seen      INTEGER NOT NULL DEFAULT 0,
+    starred   INTEGER NOT NULL DEFAULT 0,
+    addrs     TEXT NOT NULL DEFAULT '',      -- ' a@x.com b@y.com ' tüm katılımcılar (küçük harf)
+    summary   TEXT NOT NULL,                 -- liste satırı (JSON)
+    body      TEXT,                          -- okunmuş ileti (JSON), 2 MB'a kadar
+    cached_at TEXT NOT NULL,
+    PRIMARY KEY (box_id, folder, uid)
+);
+CREATE INDEX IF NOT EXISTS mail_cache_date ON mail_cache (box_id, date);
 CREATE TABLE IF NOT EXISTS mail_boxes (
     id            INTEGER PRIMARY KEY,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

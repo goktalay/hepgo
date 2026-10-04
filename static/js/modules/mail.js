@@ -640,28 +640,46 @@ export async function renderMail(view, params = []) {
       const res = h('div', { class: 'gm-colist' });
       const chosen = h('div', { class: 'gm-cochosen' });
       const drawChosen = () => clear(chosen, picked ? [ic('check'), h('b', null, picked.name)] : h('small', { class: 'muted' }, t('Listeden bir firma seçin')));
+      // Aynı kişinin başka bir adresi mi? Firmanın kişilerinden biri seçilirse adres ona EK ADRES olarak eklenir (yeni kişi açılmaz)
+      const who = h('select', { class: 'input' }, h('option', { value: '' }, t('— Yeni kişi olarak ekle —')));
+      const newFields = h('div', null);
+      newFields.append(
+        h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, t('Ad soyad')), nm), h('label', { class: 'field' }, h('span', null, t('Ünvan')), title)),
+        h('label', { class: 'field' }, h('span', null, t('Telefon (isteğe bağlı)')), phone));
+      who.addEventListener('change', () => { newFields.hidden = !!who.value; });
+      const loadPeople = async () => {
+        clear(who, h('option', { value: '' }, t('— Yeni kişi olarak ekle —')));
+        newFields.hidden = false;
+        if (!picked) return;
+        try {
+          const ps = await api.get(`/api/mail/companies/${picked.id}/people`);
+          ps.forEach(p => who.append(h('option', { value: p.id }, `${p.full_name}${p.emails.length ? ` (${p.emails.join(', ')})` : ''}`)));
+        } catch { /* kişiler yüklenemezse yalnız yeni kişi */ }
+      };
       let tm;
       const search = async () => {
         try {
           const rows = await api.get(`/api/mail/companies?q=${encodeURIComponent(qIn.value.trim())}`);
-          clear(res, rows.length ? rows.map(c => h('button', { type: 'button', class: `gm-coitem ${picked?.id === c.id ? 'on' : ''}`, onclick: () => { picked = { id: c.id, name: c.name }; drawChosen(); search(); } },
+          clear(res, rows.length ? rows.map(c => h('button', { type: 'button', class: `gm-coitem ${picked?.id === c.id ? 'on' : ''}`, onclick: () => { picked = { id: c.id, name: c.name }; drawChosen(); search(); loadPeople(); } },
             h('span', { class: 'grow' }, c.name), c.is_supplier ? h('small', { class: 'gm-co-sup' }, t('Tedarikçi')) : null, h('small', null, t('{n} kişi', { n: c.people })))) :h('div', { class: 'small muted', style: 'padding:8px' }, t('Firma bulunamadı (Firma Yönetimi’nden ekleyin)')));
         } catch (e) { clear(res, h('div', { class: 'small muted' }, e.message)); }
       };
       qIn.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(search, 200); });
-      drawChosen(); search();
+      drawChosen(); search(); loadPeople();
       modal({ title: t('Firmaya personel olarak ata'), body: h('div', { class: 'gm-assign' },
         h('div', { class: 'gm-assign-who' }, avatarEl(a), h('div', null, h('b', null, nameOf(a) || a.email), h('small', null, a.email))),
         h('label', { class: 'field' }, h('span', null, t('Firma')), qIn), res, chosen,
-        h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, t('Ad soyad')), nm), h('label', { class: 'field' }, h('span', null, t('Ünvan')), title)),
-        h('label', { class: 'field' }, h('span', null, t('Telefon (isteğe bağlı)')), phone),
+        h('label', { class: 'field' }, h('span', null, t('Kişi')), who,
+          h('small', { class: 'hint' }, t('Bu adres firmadaki birinin ikinci adresiyse onu seçin: adres o kişiye eklenir.'))),
+        newFields,
         h('p', { class: 'small muted' }, t('Kişi seçilen firmanın kişileri arasına kalıcı olarak kaydedilir; bu adresten gelen e-postalarda firma adı görünür. Adres başka bir firmada da kayıtlıysa oradaki kişiye dokunulmaz.'))),
       actions: [{ label: t('Vazgeç') }, { label: t('Kaydet'), class: 'primary', onClick: async () => {
         if (!picked) throw new Error(t('Bir firma seçin'));
         // maildeki diğer kişiler: aynı alan adından bilinmeyenler sunucuda aynı firmaya otomatik eklenir (sihirbaz açılmaz)
         const others = [msg.from, ...msg.to, ...msg.cc, ...msg.reply_to]
           .filter(x => x?.email && x.email.toLowerCase() !== a.email.toLowerCase()).map(x => ({ email: x.email, name: x.name || null }));
-        const r = await api.post('/api/mail/people/assign', { email: a.email, full_name: nm.value.trim(), company_id: picked.id, title: title.value, phone: phone.value, others });
+        const r = await api.post('/api/mail/people/assign', { email: a.email, full_name: nm.value.trim(), company_id: picked.id, title: title.value, phone: phone.value,
+          person_id: who.value ? Number(who.value) : null, others });
         const also = r.also || [];
         delete r.also;
         applyCo(a.email, r);

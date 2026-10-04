@@ -5,7 +5,7 @@ import { setListExport } from '../listexport.js';
 import { idCard } from '../idcard.js';
 import { api, fileUrl, upload } from '../api.js';
 import { personPane } from './finmoves.js';
-import {
+import { emailsInput,
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
 
@@ -130,7 +130,7 @@ function applicationForm(m) {
     tc: h('input', { class: 'input mono', inputmode: 'numeric', maxlength: 11, placeholder: '11 haneli TC Kimlik No' }),
     first: h('input', { class: 'input' }), last: h('input', { class: 'input' }),
     gender: h('select', { class: 'input' }, h('option', { value: '' }, 'Seçin'), h('option', { value: 'E' }, 'Erkek'), h('option', { value: 'K' }, 'Kadın')),
-    birth: dateIn(), phone: h('input', { class: 'input', type: 'tel' }), email: h('input', { class: 'input', type: 'email' }),
+    birth: dateIn(), phone: h('input', { class: 'input', type: 'tel' }), email: emailsInput([]),
     position: h('input', { class: 'input', placeholder: 'ör. Montaj Teknisyeni' }),
     source: h('select', { class: 'input' }, h('option', { value: '' }, 'Seçin'), m.sources.map(s => h('option', { value: s }, s))),
     sourceNote: h('input', { class: 'input' }),
@@ -159,7 +159,7 @@ function applicationForm(m) {
       label: 'Başvuruyu Kaydet', class: 'primary', onClick: async () => {
         const { id } = await api.post('/api/hr/applications', {
           tc_no: f.tc.value, first_name: f.first.value, last_name: f.last.value, gender: f.gender.value || null, birth_date: f.birth.value || null,
-          phone: f.phone.value, email: f.email.value, position: f.position.value, source: f.source.value || null, source_note: f.sourceNote.value,
+          phone: f.phone.value, email: f.email.value, emails: f.email.values, position: f.position.value, source: f.source.value || null, source_note: f.sourceNote.value,
           applied_at: f.applied.value || null, note: f.note.value,
         });
         if (f.cv.files[0]) {
@@ -997,7 +997,7 @@ function generalTab(e, m, ctx) {
     tc: h('input', { class: 'input mono', value: e.tc_no || '', inputmode: 'numeric', maxlength: 11 }),
     first: h('input', { class: 'input', value: e.first_name }), last: h('input', { class: 'input', value: e.last_name }),
     gender: h('select', { class: 'input' }, [['', 'Seçin'], ['E', 'Erkek'], ['K', 'Kadın']].map(([v, l]) => h('option', { value: v, selected: (e.gender || '') === v }, l))),
-    birth: dateIn(e.birth_date), phone: h('input', { class: 'input', value: e.phone || '' }), email: h('input', { class: 'input', value: e.email || '' }),
+    birth: dateIn(e.birth_date), phone: h('input', { class: 'input', value: e.phone || '' }), email: emailsInput(e.emails || (e.email ? [e.email] : [])),
     position: h('input', { class: 'input', value: e.position || '' }),
     source: h('select', { class: 'input' }, h('option', { value: '' }, '—'), m.sources.map(s => h('option', { value: s, selected: s === e.source }, s))),
     sourceNote: h('input', { class: 'input', value: e.source_note || '' }), applied: dateIn(e.applied_at),
@@ -1019,7 +1019,7 @@ function generalTab(e, m, ctx) {
       await api.put(`/api/hr/employees/${e.id}`, {
         tc_no: f.tc.value, first_name: f.first.value, last_name: f.last.value, gender: f.gender.value || null, birth_date: f.birth.value || null,
         is_foreign: f.foreign.checked, nationality: f.nationality.value, security_code: f.security.value,
-        phone: f.phone.value, email: f.email.value, position: f.position.value, source: f.source.value || null,
+        phone: f.phone.value, email: f.email.value, emails: f.email.values, position: f.position.value, source: f.source.value || null,
         source_note: f.sourceNote.value, applied_at: f.applied.value || null, note: f.note.value,
         title: f.title.value, department: f.dept.value, salary: f.salary.value === '' ? null : Number(f.salary.value), start_date: f.start.value || null,
       });

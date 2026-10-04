@@ -2,13 +2,13 @@
 (görünürlük kurallarıyla) gelir. Tedarikçiler (is_supplier) aynı yapıdadır ama yalnızca Satın Alma › Tedarikçi Yönetimi'nde
 görünür: tedarikçiye Satın Alma modülü, diğer firmalara Firma Yönetimi modülü erişir."""
 import re
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, db, person_emails
 from ..document_ocr import fold
 from ..files import save_upload
 
@@ -66,6 +66,7 @@ class PersonIn(BaseModel):
     title: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    emails: Optional[List[str]] = None   # birden çok adres: ilki birincil (verilirse email alanının yerine geçer)
     note: Optional[str] = None
 
 
@@ -158,9 +159,9 @@ def add_company(body: CompanyIn, supplier: bool = False, user=Depends(company_us
 @router.get('/{cid}')
 def get_company(cid: int, user=Depends(company_user), conn=db.DB):
     c = _get(conn, cid, user)
-    c['people'] = db.rows(conn.execute(
+    c['people'] = person_emails.attach(conn, 'company', db.rows(conn.execute(
         '''SELECT p.*, u.full_name AS user_name, u.username AS user_username, u.active AS user_active
-           FROM company_people p LEFT JOIN users u ON u.id = p.user_id WHERE p.company_id = ? ORDER BY p.full_name''', (cid,)))
+           FROM company_people p LEFT JOIN users u ON u.id = p.user_id WHERE p.company_id = ? ORDER BY p.full_name''', (cid,))))
     c['addresses'] = db.rows(conn.execute('SELECT * FROM company_addresses WHERE company_id = ? ORDER BY id', (cid,)))
     from .documents import list_for_company
     c['documents'] = list_for_company(conn, user, cid)
@@ -196,6 +197,7 @@ def delete_company(cid: int, user=Depends(company_user), conn=db.DB):
     person_ids = [r[0] for r in conn.execute('SELECT id FROM company_people WHERE company_id = ?', (cid,))]
     _drop_crm(conn, 'company', [cid])
     _drop_crm(conn, 'person', person_ids)
+    person_emails.drop(conn, 'company', person_ids)
     conn.execute('DELETE FROM companies WHERE id = ?', (cid,))
     db.audit(conn, user['id'], 'Firma sildi', 'company', cid, c['name'])
     return {'ok': True}
@@ -224,10 +226,21 @@ def add_person(cid: int, body: PersonIn, user=Depends(company_user), conn=db.DB)
                           VALUES (?,?,?,?,?,?,?)''',
                        (cid, body.full_name.strip(), _clean(body.title), _clean(body.phone), _clean(body.email),
                         _clean(body.note), db.now()))
+    _set_emails(conn, cur.lastrowid, body)
     if body.link_user:
         _link_user(conn, user, cur.lastrowid, body.user_id)
     db.audit(conn, user['id'], 'Firmaya kişi ekledi', 'company', cid, f'{c["name"]}: {body.full_name.strip()}')
     return {'id': cur.lastrowid}
+
+
+def _set_emails(conn, pid, body):
+    """emails verildiyse kişinin tüm adresleri (ilki birincil); verilmediyse yalnız birincil (email) güncellenmiş olur."""
+    if body.emails is None:
+        return
+    try:
+        person_emails.set_all(conn, 'company', pid, body.emails, db.now())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _person(conn, pid):
@@ -246,6 +259,7 @@ def update_person(pid: int, body: PersonIn, user=Depends(company_user), conn=db.
         raise HTTPException(400, 'Ad soyad zorunlu')
     conn.execute('UPDATE company_people SET full_name = ?, title = ?, phone = ?, email = ?, note = ? WHERE id = ?',
                  (body.full_name.strip(), _clean(body.title), _clean(body.phone), _clean(body.email), _clean(body.note), pid))
+    _set_emails(conn, pid, body)
     if body.link_user:
         _link_user(conn, user, pid, body.user_id)
     db.audit(conn, user['id'], 'Firma kişisini düzenledi', 'company', p['company_id'], f'{p["company_name"]}: {body.full_name.strip()}')
@@ -282,6 +296,7 @@ def delete_person(pid: int, user=Depends(company_user), conn=db.DB):
     if conn.execute('SELECT 1 FROM document_people WHERE person_id = ?', (pid,)).fetchone():
         raise HTTPException(400, 'Bu kişiye bağlı evrak var; önce evraktaki ilişkiyi kaldırın')
     _drop_crm(conn, 'person', [pid])
+    person_emails.drop(conn, 'company', [pid])
     conn.execute('DELETE FROM company_people WHERE id = ?', (pid,))
     db.audit(conn, user['id'], 'Firma kişisini sildi', 'company', p['company_id'], f'{p["company_name"]}: {p["full_name"]}')
     return {'ok': True}

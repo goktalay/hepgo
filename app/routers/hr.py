@@ -10,12 +10,12 @@ istenen ve verilen tarihler ayrı saklanır.
 import json
 import re
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from .. import auth, config, db
+from .. import auth, config, db, person_emails
 from ..files import FILE_GUARDS, save_upload
 
 router = APIRouter(prefix='/api/hr')
@@ -237,6 +237,7 @@ class PersonIn(BaseModel):
     security_code: Optional[str] = None   # Kişi Güvenlik Kodu (MSB Tesis Güvenlik Belgesi)
     phone: Optional[str] = None
     email: Optional[str] = None
+    emails: Optional[List[str]] = None   # birden çok adres: ilki birincil (verilirse email alanının yerine geçer)
     address: Optional[str] = None
     position: Optional[str] = None
     source: Optional[str] = None
@@ -268,6 +269,16 @@ class LeaveJobIn(BaseModel):
 
 class LinkIn(BaseModel):
     user_id: Optional[int] = None
+
+
+def _set_emails(conn, eid, body):
+    """emails verildiyse personelin tüm adresleri (ilki birincil); verilmediyse yalnız birincil (email) güncellenmiş olur."""
+    if body.emails is None:
+        return
+    try:
+        person_emails.set_all(conn, 'employee', eid, body.emails, db.now())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _person_fields(conn, body, eid=None):
@@ -341,6 +352,7 @@ def create_application(body: PersonIn, user=Depends(hr_user), conn=db.DB):
     cols = ', '.join(f)
     eid = conn.execute(f'INSERT INTO employees ({cols}, status, created_at, created_by) VALUES ({",".join("?" * len(f))}, ?, ?, ?)',
                        (*f.values(), 'BASVURU', db.now(), user['id'])).lastrowid
+    _set_emails(conn, eid, body)
     event(conn, eid, user['id'], 'İş başvurusu açıldı', f'{f["source"]}{" · " + f["source_note"] if f["source_note"] else ""}'
           f'{" · " + f["position"] if f["position"] else ""}')
     db.audit(conn, user['id'], 'İş başvurusu açtı', 'employee', eid, f'{f["first_name"]} {f["last_name"]}')
@@ -350,6 +362,7 @@ def create_application(body: PersonIn, user=Depends(hr_user), conn=db.DB):
 @router.get('/employees/{eid}')
 def get_employee(eid: int, user=Depends(hr_user), conn=db.DB):
     e = _get(conn, eid)
+    person_emails.attach(conn, 'employee', [e])
     files = current_files(conn, eid)
     _enrich(conn, e, files)
     e['files'] = files
@@ -410,6 +423,7 @@ def update_employee(eid: int, body: PersonIn, user=Depends(hr_user), conn=db.DB)
     if not e['tc_no'] and f['tc_no']:
         event(conn, eid, user['id'], 'TC Kimlik Numarası girildi')
     conn.execute(f'UPDATE employees SET {", ".join(f"{k} = ?" for k in f)} WHERE id = ?', (*f.values(), eid))
+    _set_emails(conn, eid, body)
     db.audit(conn, user['id'], 'Personel bilgilerini düzenledi', 'employee', eid, f'{f["first_name"]} {f["last_name"]}')
     return {'ok': True}
 
@@ -520,6 +534,7 @@ def link_user(eid: int, body: LinkIn, user=Depends(hr_user), conn=db.DB):
         if used:
             raise HTTPException(400, f'{u["full_name"]} başka bir personel kaydına bağlı (#{other["id"]}); önce o kaydın bağlantısını kaldırın')
         conn.execute('DELETE FROM employee_events WHERE employee_id = ?', (other['id'],))
+        person_emails.drop(conn, 'employee', [other['id']])
         conn.execute('DELETE FROM employees WHERE id = ?', (other['id'],))
     conn.execute('UPDATE employees SET user_id = ? WHERE id = ?', (u['id'], eid))
     event(conn, eid, user['id'], 'Kullanıcıyla eşleştirildi', u['full_name'])

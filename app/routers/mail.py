@@ -13,7 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
-from .. import auth, config, db, mail, mail_cache, mail_import, personal
+from .. import auth, config, db, mail, mail_cache, mail_import, person_emails, personal
 from ..cameras import decrypt, encrypt
 
 router = APIRouter(prefix='/api/mail')
@@ -344,8 +344,15 @@ def company_map(conn, emails):
     out = {}
     for i in range(0, len(ems), 400):
         part = ems[i:i + 400]
-        for r in conn.execute(f'''SELECT lower(trim(p.email)), p.id, p.full_name, p.title, c.id, c.name FROM company_people p JOIN companies c ON c.id = p.company_id
-                                  WHERE lower(trim(p.email)) IN ({",".join("?" * len(part))}) ORDER BY p.id DESC''', part):   # en son atanan geçerli
+        q = ",".join("?" * len(part))
+        for r in conn.execute(f'''SELECT e, pid, full_name, title, cid, cname FROM (
+                                    SELECT lower(trim(p.email)) AS e, p.id AS pid, p.full_name, p.title, c.id AS cid, c.name AS cname
+                                    FROM company_people p JOIN companies c ON c.id = p.company_id WHERE lower(trim(p.email)) IN ({q})
+                                    UNION ALL
+                                    SELECT x.email, p.id, p.full_name, p.title, c.id, c.name FROM person_emails x
+                                    JOIN company_people p ON p.id = x.ref_id JOIN companies c ON c.id = p.company_id
+                                    WHERE x.kind = 'company' AND x.email IN ({q}))
+                                  ORDER BY pid DESC''', (*part, *part)):   # en son atanan geçerli; ek adresler de tanınır
             out.setdefault(r[0], {'person_id': r[1], 'person_name': r[2], 'title': r[3], 'company_id': r[4], 'company_name': r[5]})
     return out
 
@@ -537,6 +544,15 @@ def sync(box_id: int, user=Depends(auth.current_user), conn=db.DB):
     return r
 
 
+@router.get('/companies/{cid}/people')
+def company_people(cid: int, user=Depends(auth.current_user), conn=db.DB):
+    """Atama penceresi: firmanın kişileri (adres "mevcut kişiye ek adres" olarak eklenebilsin)."""
+    if not _can_assign(user):
+        raise HTTPException(403, 'Kişiyi firmaya atamak için Firma Yönetimi yetkisi gerekir')
+    rows = db.rows(conn.execute('SELECT id, full_name, title, email FROM company_people WHERE company_id = ? ORDER BY full_name', (cid,)))
+    return person_emails.attach(conn, 'company', rows)
+
+
 @router.get('/companies')
 def companies(q: str = '', user=Depends(auth.current_user), conn=db.DB):
     """Kişiyi firmaya atama için firma arama (Firmalar yetkisi gerekir)."""
@@ -559,6 +575,7 @@ class AssignIn(BaseModel):
     company_id: int
     title: Optional[str] = None
     phone: Optional[str] = None
+    person_id: Optional[int] = None   # verilirse adres bu firmadaki MEVCUT kişiye ek adres olarak eklenir (yeni kişi açılmaz)
     others: List[AddrIn] = []   # maildeki diğer kişiler: aynı alan adındaki bilinmeyenler aynı firmaya otomatik eklenir
 
 
@@ -609,13 +626,25 @@ def assign_person(body: AssignIn, user=Depends(auth.current_user), conn=db.DB):
     if not _co_write(user, comp['is_supplier']):
         raise HTTPException(403, 'Bu firmaya kişi ekleme yetkiniz yok')
     t = lambda v, n: ((v or '').strip()[:n] or None)
-    ex = db.row(conn.execute('SELECT id FROM company_people WHERE company_id = ? AND lower(trim(email)) = ? ORDER BY id LIMIT 1', (comp['id'], em)))
-    if ex:
-        conn.execute('UPDATE company_people SET full_name = ?, title = COALESCE(?, title), phone = COALESCE(?, phone) WHERE id = ?',
-                     (name, t(body.title, 120), t(body.phone, 40), ex['id']))
+    if body.person_id:   # aynı kişinin başka bir adresi: mevcut kişiye ek adres olarak eklenir (yeni kişi açılmaz)
+        tgt = db.row(conn.execute('SELECT id, full_name FROM company_people WHERE id = ? AND company_id = ?', (body.person_id, comp['id'])))
+        if not tgt:
+            raise HTTPException(404, 'Kişi bu firmada bulunamadı')
+        try:
+            person_emails.add(conn, 'company', tgt['id'], em, db.now())
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        name = tgt['full_name']
     else:
-        conn.execute('''INSERT INTO company_people (company_id, full_name, title, phone, email, note, created_at) VALUES (?,?,?,?,?,?,?)''',
-                     (comp['id'], name, t(body.title, 120), t(body.phone, 40), em, 'E-postadan eklendi', db.now()))
+        ex = db.row(conn.execute('''SELECT id FROM company_people WHERE company_id = ? AND (lower(trim(email)) = ? OR id IN
+                                    (SELECT ref_id FROM person_emails WHERE kind = 'company' AND email = ?)) ORDER BY id LIMIT 1''',
+                                 (comp['id'], em, em)))
+        if ex:
+            conn.execute('UPDATE company_people SET full_name = ?, title = COALESCE(?, title), phone = COALESCE(?, phone) WHERE id = ?',
+                         (name, t(body.title, 120), t(body.phone, 40), ex['id']))
+        else:
+            conn.execute('''INSERT INTO company_people (company_id, full_name, title, phone, email, note, created_at) VALUES (?,?,?,?,?,?,?)''',
+                         (comp['id'], name, t(body.title, 120), t(body.phone, 40), em, 'E-postadan eklendi', db.now()))
     db.audit(conn, user['id'], 'E-posta kişisini firmaya atadı', 'company', comp['id'], f"{comp['name']}: {name} <{em}>")
     # Aynı alan adından, hiçbir firmada kayıtlı olmayan diğer kişiler de bu firmaya (sihirbazsız). Herkese açık servisler
     # (gmail, hotmail…) ve kendi alan adlarımız hariç.
@@ -650,17 +679,20 @@ def unassign_person(person_id: int, email: str, auto: bool = False, user=Depends
     """Atamayı kaldır: yalnız o firma kişisinin e-posta adresi silinir (kişi firmada kalır; başka firmalardaki kayıtlara dokunulmaz)."""
     em = email.strip().lower()
     r = db.row(conn.execute('''SELECT p.id, p.company_id, p.full_name, c.is_supplier FROM company_people p JOIN companies c ON c.id = p.company_id
-                               WHERE p.id = ? AND lower(trim(p.email)) = ?''', (person_id, em)))
+                               WHERE p.id = ?''', (person_id,)))
+    if r and not person_emails.has(conn, 'company', r['id'], em):
+        r = None
     if not r or '@' not in em:
         raise HTTPException(404, 'Kişi bulunamadı')
     if not _co_write(user, r['is_supplier']):
         raise HTTPException(403, 'Bu firmanın kişilerini değiştirme yetkiniz yok')
     note = conn.execute('SELECT note FROM company_people WHERE id = ?', (r['id'],)).fetchone()[0]
     if auto and note == AUTO_NOTE:   # "geri al": aynı alan adından otomatik eklenen kişi tamamen silinir
+        person_emails.drop(conn, 'company', [r['id']])
         conn.execute('DELETE FROM company_people WHERE id = ?', (r['id'],))
         db.audit(conn, user['id'], 'Otomatik eklenen e-posta kişisini geri aldı', 'company', r['company_id'], f"{r['full_name']} <{em}>")
     else:
-        conn.execute('UPDATE company_people SET email = NULL WHERE id = ?', (r['id'],))
+        person_emails.remove(conn, 'company', r['id'], em)   # birincilse sıradaki ek adres birincil olur
         db.audit(conn, user['id'], 'E-posta kişisinin firma bağlantısını kaldırdı', 'company', r['company_id'], f"{r['full_name']} <{em}>")
     conn.commit()
     return {'company': company_map(conn, [em]).get(em)}   # adres başka bir firmada da kayıtlıysa artık o görünür
@@ -677,7 +709,9 @@ def company_mails(cid: int, offset: int = 0, user=Depends(auth.current_user), co
         raise HTTPException(403, 'Bu firmayı görme yetkiniz yok')
     boxes = [b['id'] for b in _boxes(conn, user) if b['provider'] != 'pop3']
     emails = {(r[0] or '').strip().lower() for r in conn.execute(
-        "SELECT email FROM company_people WHERE company_id = ? AND email LIKE '%@%'", (cid,))}
+        '''SELECT email FROM company_people WHERE company_id = ? AND email LIKE '%@%' UNION
+           SELECT x.email FROM person_emails x JOIN company_people p ON p.id = x.ref_id WHERE x.kind = 'company' AND p.company_id = ?''',
+        (cid, cid))}
     if c['email'] and '@' in c['email']:
         emails.add(c['email'].strip().lower())
     emails.discard('')

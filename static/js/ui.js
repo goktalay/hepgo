@@ -46,6 +46,26 @@ function append(el, children) {
   }
 }
 
+// Birden çok e-posta: satır satır; ilki birincil. el.values → adresler, el.value → birincil (eski kodla uyum)
+export function emailsInput(values = []) {
+  const list = h('div', { class: 'emails-in' });
+  const row = (v = '') => {
+    const inp = h('input', { class: 'input', type: 'email', value: v, placeholder: 'ad@firma.com', autocomplete: 'off' });
+    const r = h('div', { class: 'emails-row' }, inp,
+      h('button', { class: 'btn sm ghost', type: 'button', title: t('Kaldır'), onclick: () => { r.remove(); mark(); } }, '×'));
+    return r;
+  };
+  const mark = () => [...list.children].forEach((r, i) => r.classList.toggle('primary', i === 0));
+  const add = h('button', { class: 'btn sm', type: 'button', onclick: () => { list.append(row()); mark(); list.lastChild.querySelector('input').focus(); } },
+    t('＋ E-posta ekle'));
+  (values.length ? values : ['']).forEach(v => list.append(row(v)));
+  mark();
+  const el = h('div', { class: 'emails-wrap' }, list, add);
+  Object.defineProperty(el, 'values', { get: () => [...list.querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean) });
+  Object.defineProperty(el, 'value', { get: () => el.values[0] || '' });
+  return el;
+}
+
 export function svgIcon(markup) {
   const wrap = document.createElement('span');
   wrap.style.display = 'contents';

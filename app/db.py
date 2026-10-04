@@ -1373,6 +1373,16 @@ CREATE TABLE IF NOT EXISTS company_addresses (
     note        TEXT,
     created_at  TEXT NOT NULL
 );
+-- Kişinin ek e-posta adresleri (birincil adres kişinin kendi email alanında) — app/person_emails.py
+CREATE TABLE IF NOT EXISTS person_emails (
+    id         INTEGER PRIMARY KEY,
+    kind       TEXT NOT NULL,              -- company (company_people) | employee (employees)
+    ref_id     INTEGER NOT NULL,
+    email      TEXT NOT NULL,              -- küçük harf
+    created_at TEXT NOT NULL,
+    UNIQUE (kind, ref_id, email)
+);
+CREATE INDEX IF NOT EXISTS person_emails_email ON person_emails (email);
 CREATE TABLE IF NOT EXISTS company_people (
     id          INTEGER PRIMARY KEY,
     company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

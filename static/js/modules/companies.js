@@ -3,7 +3,7 @@ import { setListExport } from '../listexport.js';
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import {
-  clear, confirmDialog, dateTimeInput, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, segmented,
+  clear, confirmDialog, dateTimeInput, emailsInput, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, peoplePicker, pref, segmented,
   selectInput, setPref, statStrip, svgIcon, t, toast, toastError,
 } from '../ui.js';
 import { calendarPanel, docList, notesPanel, tabView } from './crm.js';
@@ -295,7 +295,7 @@ async function renderContact(view, ctx, kind, id, tab) {
 // ---------- Kişi formu
 function personForm(cid, p = {}, done) {
   const inp = k => h('input', { class: 'input', value: p[k] || '' });
-  const f = { full_name: inp('full_name'), title: inp('title'), phone: inp('phone'), email: inp('email'),
+  const f = { full_name: inp('full_name'), title: inp('title'), phone: inp('phone'), email: emailsInput(p.emails || (p.email ? [p.email] : [])),
     note: h('textarea', { class: 'input', rows: 2 }, p.note || '') };
   // Dış firma personeli (ör. kiralık güvenlik): sisteme giriş yapacaksa kullanıcı hesabı bu kişiye bağlanır; İK'da personel açılmaz
   const userSel = canLinkUsers ? h('select', { class: 'input' }, h('option', { value: '' }, '— Sistem kullanıcısı yok —'),
@@ -308,7 +308,7 @@ function personForm(cid, p = {}, done) {
   modal({
     title: p.id ? 'Kişiyi düzenle' : 'Kişi ekle',
     body: h('div', null, field('Ad soyad', f.full_name), field('Görevi / ünvanı', f.title),
-      h('div', { class: 'row' }, field('Telefon', f.phone), field('E-posta', f.email)), field('Not', f.note),
+      field('Telefon', f.phone), field('E-posta adresleri', f.email, 'Birden çok adres eklenebilir; ilki birincil. Bu adreslerden gelen mailler kişiyle eşleşir.'), field('Not', f.note),
       userSel ? field('Sistem kullanıcısı', userSel,
         'Firmanın bize çalışan personeli (ör. kiralık güvenlik) sisteme giriş yapacaksa hesabını seçin. Bağlanan kullanıcı İK’da personel olarak görünmez; firma başka birini gönderirse yeni kişiyi ekleyip hesabı ona bağlayın.') : null),
     actions: [
@@ -316,6 +316,7 @@ function personForm(cid, p = {}, done) {
       {
         label: 'Kaydet', class: 'primary', onClick: async () => {
           const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim() || null]));
+          body.emails = f.email.values;
           if (userSel) { body.link_user = true; body.user_id = userSel.value ? Number(userSel.value) : null; }
           if (!body.full_name) throw new Error('Ad soyad zorunlu');
           if (p.id) await api.put(`/api/companies/people/${p.id}`, body); else await api.post(`/api/companies/${cid}/people`, body);
@@ -455,7 +456,7 @@ async function renderDetail(view, id, ctx, tab) {
           p.note ? h('div', { class: 'small muted' }, p.note) : null),
         h('td', null, p.title || '—'),
         h('td', null, p.phone ? h('a', { href: `tel:${p.phone}` }, p.phone) : '—'),
-        h('td', null, p.email ? h('a', { href: `mailto:${p.email}` }, p.email) : '—'),
+        h('td', null, (p.emails || []).length ? p.emails.map(e => h('div', null, h('a', { href: `mailto:${e}` }, e))) : '—'),
         h('td', { class: 'num', style: { whiteSpace: 'nowrap' } },
           h('button', { class: 'btn sm', onclick: () => personForm(id, p, reload) }, 'Düzenle'), ' ',
           h('button', { class: 'btn sm ghost', onclick: async () => {

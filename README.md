@@ -270,6 +270,9 @@ Tümü bu sunucuda işlenir, hiçbir veri dışarı gönderilmez (`app/document_
 ## Güvenlik ve yedek
 
 - Giriş koruması: aynı kullanıcı adına 5, aynı IP'den 20 hatalı denemeden sonra giriş 15 dakika kilitlenir.
+- Web terminal (Araçlar › Terminal): sunucuda gerçek bir kabuk açtığı için varsayılan **kapalı**; yalnız fabrikadaki
+  yerel kurulumda `.env` içinde `CAYMAZ_CONSOLE=1` ile açılır ve yalnız MASTER kullanabilir. Çok firmalı sunucuda açılmaz
+  (kabuk diğer firmaların `.env`/veritabanına erişebilir); Veilox kurulumu `CAYMAZ_CONSOLE=0` yazar.
 - Gece yedeği: `backup.sh`, systemd zamanlayıcısı `caymaz-backup.timer` ile her gece 03:00'te çalışır;
   `data/backups/nightly/` altına veritabanı ve yüklenen dosyaların anlık görüntüsü alınır, 30 gün saklanır.
 

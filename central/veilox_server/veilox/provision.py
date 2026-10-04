@@ -114,6 +114,7 @@ def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modu
         f'CAYMAZ_MODULES={mods}\n'
         f'CAYMAZ_WHITE_LABEL={"1" if white_label else "0"}\n'
         'CAYMAZ_SEED_SPARE_STOCK=0\n'
+        'CAYMAZ_CONSOLE=0\n'   # web terminal: çok firmalı sunucuda kapalı
     )
 
 

@@ -279,6 +279,7 @@ def logout(request: Request, response: Response, conn=db.DB):
 def me(user=Depends(auth.current_user), conn=db.DB):
     out = {k: user[k] for k in ('id', 'username', 'full_name', 'photo', 'roles', 'modules', 'master')}
     out['write_modules'] = user.get('write_modules', user['modules'])   # Rol Yönetimi: yazma yetkisi olan modüller
+    out['console'] = config.CONSOLE_ENABLED and bool(user['master'])   # web terminal açık mı (Araçlar › Terminal)
     out['support'] = bool(user.get('support'))   # merkez destek oturumu mu (arayüzde uyarı şeridi için)
     out['ai'] = bool(config.AI_API_KEY)   # yapay zeka asistanı tanımlı mı (anahtar yoksa maskot ve YZ ayarları gizlenir)
     out['nvr'] = bool(config.NVR_HOST and config.NVR_USER)   # NVR entegrasyonu aktif mi (Kameralar modülü yalnızca o zaman görünür)

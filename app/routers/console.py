@@ -18,7 +18,7 @@ import termios
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from .. import auth, db
+from .. import auth, config, db
 
 ws_router = APIRouter()
 
@@ -37,7 +37,7 @@ async def ws_console(ws: WebSocket):
     def who():
         with db.connect() as conn:
             u = auth.user_by_token(conn, ws.cookies.get(auth.COOKIE))
-            if u and auth.is_master(u['username']):
+            if config.CONSOLE_ENABLED and u and auth.is_master(u['username']):
                 db.audit(conn, u['id'], 'MASTER web konsol açtı', 'console', None, '')
                 conn.commit()
                 return u
@@ -46,7 +46,9 @@ async def ws_console(ws: WebSocket):
     user = await asyncio.to_thread(who)
     if not user:
         try:
-            await ws.send_text('\x1b[31mYetkisiz: bu konsol yalnızca sistem sahibine (MASTER) açıktır.\x1b[0m\r\n')
+            msg = ('Yetkisiz: bu konsol yalnızca sistem sahibine (MASTER) açıktır.' if config.CONSOLE_ENABLED else
+                   'Web terminal bu kurulumda kapalı (CAYMAZ_CONSOLE=1 ile yalnız yerel kurulumda açılır).')
+            await ws.send_text(f'\x1b[31m{msg}\x1b[0m\r\n')
         except Exception:   # noqa: BLE001
             pass
         await ws.close(code=4403)

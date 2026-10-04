@@ -23,7 +23,7 @@ const TOOLS = [
   { key: 'terminal', title: 'Terminal', icon: 'terminal', desc: 'Sistem sahibi için yerel kabuk (SSH benzeri) — sahada olmadan komut çalıştırın', master: true },
 ];
 // Kullanıcının görebileceği araçlar (modül koşulu olanlar o modüllerden birine sahip olana; master koşulu yalnız sistem sahibine)
-const visibleTools = ctx => TOOLS.filter(t => (t.master ? ctx.user.master : (!t.modules || t.modules.some(m => ctx.user.modules.includes(m)))));
+const visibleTools = ctx => TOOLS.filter(t => (t.master ? (t.key === 'terminal' ? ctx.user.console : ctx.user.master) : (!t.modules || t.modules.some(m => ctx.user.modules.includes(m)))));
 
 export async function render(view, params, ctx) {
   if (params[0] === 'planner') return renderPlanner(view, ctx);

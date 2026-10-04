@@ -453,7 +453,7 @@ def test():
     except PermissionError:
         return False, 'NVR kullanıcı adı veya şifre hatalı.'
     except Exception as e:   # noqa: BLE001
-        return False, f'NVR’a ulaşılamadı: {type(e).__name__}'
+        return False, f'NVR’a ulaşılamadı: {str(e)[:150] or type(e).__name__}'
     if not r.get('ok'):
         return False, r.get('error') or 'NVR bağlantısı başarısız.'
     man, mod = (r.get('manufacturer') or '').strip(), (r.get('model') or '').strip()

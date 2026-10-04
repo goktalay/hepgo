@@ -61,7 +61,10 @@ def _remote():
 def test():
     if _remote():
         from . import devices
-        r = devices.call_sync('pdks.test', {'cfg': creds()})
+        try:
+            r = devices.call_sync('pdks.test', {'cfg': creds()})
+        except Exception as e:   # noqa: BLE001 — ör. fabrika ajanı bağlı değil
+            return False, f'Bağlanılamadı: {str(e)[:150] or type(e).__name__}'
         return bool(r.get('ok')), r.get('message', '')
     return _test_direct()
 

@@ -87,7 +87,7 @@ def check(conn, group):
     try:
         ok, message = integrations.test(group)
     except Exception as e:   # noqa: BLE001 — denetim hiçbir zaman çökmez; hata çevrimdışı sayılır
-        ok, message = False, f'Denetim hatası: {type(e).__name__}'
+        ok, message = False, f'Denetim hatası: {str(e)[:150] or type(e).__name__}'
     return record(conn, group, ok, message)
 
 

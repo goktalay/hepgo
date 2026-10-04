@@ -31,6 +31,12 @@ MODULES = [
     ('cleaning',     'Temizlik',              'ofis'),
     ('finance',      'Finans / Ön Muhasebe',  'ofis'),
     ('mikro',        'Mikro ERP (entegrasyon)', 'ofis'),
+    ('projects',     'Proje Yönetimi',        'ofis'),
+    ('boss',         'Patron',                'ofis'),
+    ('rehber',       'Rehber',                'crm'),
+    ('certs',        'Sertifikasyon',         'ofis'),
+    ('fleet',        'Araç Yönetimi',         'saha'),
+    ('cameras',      'Kameralar',             'ofis'),
 ]
 
 MODULE_KEYS = [m[0] for m in MODULES]

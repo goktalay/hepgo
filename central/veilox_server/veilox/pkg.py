@@ -9,6 +9,8 @@ import os
 import time
 import zipfile
 from pathlib import Path
+from . import settings
+settings.load()   # .env, aşağıdaki ayarlar okunmadan önce (bkz. settings.py)
 
 APP_DIR = Path(os.environ.get('VEILOX_TENANT_APP_DIR', '/home/mkaderoglu/caymazbuild'))
 

@@ -9,6 +9,8 @@ import os
 import sqlite3
 import time
 from pathlib import Path
+from . import settings
+settings.load()   # .env, aşağıdaki ayarlar okunmadan önce (bkz. settings.py)
 
 BASE = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get('VEILOX_DATA_DIR', BASE / 'data'))

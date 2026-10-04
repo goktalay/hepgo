@@ -17,3 +17,23 @@ e-posta + şifreyle firma bulma ve başvuru durumu, adım adım yeni firma başv
 
 Testler (bu klasörde): `../../.venv/bin/python -m tests.test_veilox` ve `../../.venv/bin/python -m tests.test_public`.
 
+
+## Sunucuda firma kurulumu (sistem servisleri + native cloudflared)
+
+Veilox `hepgo` kullanıcısıyla çalışır; `/etc/systemd/system`'e yazamaz. Birimi root'a ait yardımcı kurar:
+
+    install -o root -g root -m 0755 deploy/hepgo-tenant /usr/local/sbin/hepgo-tenant
+    install -o root -g root -m 0440 deploy/sudoers-hepgo-veilox /etc/sudoers.d/hepgo-veilox
+    visudo -cf /etc/sudoers.d/hepgo-veilox
+
+`hepgo-tenant install|remove <slug>` birimi kendi şablonundan üretir (`hepgo-<slug>.service`, soket
+`/run/hepgo/<slug>.sock`); firma adı birime girmez, elle kurulmuş birimlere dokunmaz. `.env`:
+
+    VEILOX_TENANT_APP_DIR=/opt/hepgo/caymazbuild
+    VEILOX_UNIT_HELPER=/usr/local/sbin/hepgo-tenant
+    VEILOX_SOCK_DIR=/run/hepgo
+    VEILOX_CF_HOME_CONTAINER=          # boş: tünel konteynerde değil, soket yolu doğrudan
+    VEILOX_CF_BACKUP_DIR=/opt/hepgo/veilox/data/cf-backups
+
+Her yeni firma (ve askıya alma) `cloudflared`'ı yeniden başlatır: tüm siteler birkaç saniye kesilir.
+`.env` alt modüllerden önce yüklenir (`veilox/settings.py`); test: `tests/test_provision_server.py`.

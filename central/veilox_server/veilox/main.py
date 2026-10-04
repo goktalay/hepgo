@@ -20,25 +20,19 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db
-from .modules_catalog import MODULES, valid_modules
-from .passwd import make_hash, verify_password
-from . import provision, pkg
-
 BASE = Path(__file__).resolve().parent.parent
 STATIC = BASE / 'static'
 
 
-def _load_env(path):
-    if path.exists():
-        for line in path.read_text(encoding='utf-8').splitlines():
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                k, v = line.split('=', 1)
-                os.environ.setdefault(k.strip(), v.strip())
+# .env, alt modüllerden ÖNCE yüklenmeli: db/provision/cloudflare/pkg ayarlarını içe aktarılırken okur
+# (önceden sonra yükleniyordu → VEILOX_CF_*, VEILOX_TENANT_APP_DIR vb. sessizce yok sayılıyordu).
+from . import settings  # noqa: E402
+settings.load()
 
-
-_load_env(Path(os.environ.get('VEILOX_ENV_FILE', BASE / '.env')))
+from . import db  # noqa: E402
+from .modules_catalog import MODULES, valid_modules  # noqa: E402
+from .passwd import make_hash, verify_password  # noqa: E402
+from . import provision, pkg  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
 PASSWORD_HASH = os.environ.get('VEILOX_PASSWORD_HASH', '')
 SESSION_HOURS = 12

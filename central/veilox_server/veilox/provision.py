@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 
 from .passwd import make_hash  # noqa: F401  (merkez kaydı için PBKDF2 özet)
+from . import settings
+settings.load()   # .env, aşağıdaki ayarlar okunmadan önce (bkz. settings.py)
 
 APP_DIR = Path(os.environ.get('VEILOX_TENANT_APP_DIR', '/home/mkaderoglu/caymazbuild'))
 TENANTS_DIR = Path(os.environ.get('VEILOX_TENANTS_DIR', APP_DIR / 'tenants'))
@@ -26,7 +28,11 @@ EXEC = os.environ.get('VEILOX_PROVISION_EXEC', '1') != '0'
 # Soket ~/.cloudflared/sockets/ altında tutulur; bu klasör tünel konteynerine /cfhome/.cloudflared altında mount'ludur.
 CF_HOME = Path(os.environ.get('VEILOX_CF_HOME', Path.home() / '.cloudflared'))
 CF_HOME_CONTAINER = os.environ.get('VEILOX_CF_HOME_CONTAINER', '/cfhome/.cloudflared')
-SOCK_DIR = CF_HOME / 'sockets'
+SOCK_DIR = Path(os.environ.get('VEILOX_SOCK_DIR', CF_HOME / 'sockets'))
+# Sunucu modu (native cloudflared + sistem servisleri): birim dosyasını root'a ait yardımcı yazar/kaldırır
+# (deploy/hepgo-tenant; hepgo kullanıcısı yalnız onu sudo ile çalıştırabilir). Boşsa fabrika modu: kullanıcı servisi.
+UNIT_HELPER = os.environ.get('VEILOX_UNIT_HELPER', '').strip()
+UNIT_HELPER_SUDO = os.environ.get('VEILOX_UNIT_HELPER_SUDO', '1') != '0'   # test: 0
 USE_SOCKET = os.environ.get('VEILOX_USE_SOCKET', '1') != '0'
 
 SLUG_RE = re.compile(r'[^a-z0-9-]+')
@@ -148,6 +154,14 @@ def _systemctl(*args):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
 
+def _helper(action, slug):
+    cmd = (['sudo', '-n'] if UNIT_HELPER_SUDO else []) + [UNIT_HELPER, action, slug]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        raise RuntimeError(f'{Path(UNIT_HELPER).name} {action} başarısız: {(r.stderr or r.stdout).strip()[:300]}')
+    return r
+
+
 def provision_online(conn, company):
     """company: companies satırı (dict). Dosyaları üretir, servisi başlatır, DB'yi günceller. (ok, detail) döner."""
     import json
@@ -165,12 +179,13 @@ def provision_online(conn, company):
     data_dir = tdir / 'data'
     brand_dir = tdir / 'brand'
     env_file = tdir / '.env'
-    service = f'caymaz-{slug}'
+    service = f'hepgo-{slug}' if UNIT_HELPER else f'caymaz-{slug}'
 
     # Bağlanma: Unix soket (tercih — port açılmaz) ya da (fallback) 127.0.0.1 portu
     if USE_SOCKET:
         host_sock = SOCK_DIR / f'{slug}.sock'
-        cont_sock = f'{CF_HOME_CONTAINER}/sockets/{slug}.sock'
+        # Tünel konteynerdeyse soket onun içindeki yoldan görülür; native cloudflared'da (sunucu) doğrudan
+        cont_sock = f'{CF_HOME_CONTAINER}/sockets/{slug}.sock' if CF_HOME_CONTAINER else str(host_sock)
         bind_env = ('CAYMAZ_UDS', str(host_sock))
         cf_service = f'unix:{cont_sock}'
         port = None
@@ -193,7 +208,9 @@ def provision_online(conn, company):
                                       white_label=bool(company.get('white_label'))), encoding='utf-8')
         os.chmod(env_file, 0o600)
 
-        if EXEC:
+        if EXEC and UNIT_HELPER:
+            _helper('install', slug)   # birim root şablonundan; firma adı birime girmez
+        elif EXEC:
             unit_path = SYSTEMD_DIR / f'{service}.service'
             SYSTEMD_DIR.mkdir(parents=True, exist_ok=True)
             unit_path.write_text(_unit_text(name, url, bind_env, env_file, data_dir, brand_dir), encoding='utf-8')
@@ -229,9 +246,15 @@ def provision_online(conn, company):
 
 def deprovision(conn, company):
     """Firmayı durdurur ve servisi kaldırır (veri klasörü korunur)."""
-    service = company.get('service_name') or f"caymaz-{company['slug']}"
+    service = company.get('service_name') or (f"hepgo-{company['slug']}" if UNIT_HELPER else f"caymaz-{company['slug']}")
     detail = {}
-    if EXEC:
+    if EXEC and UNIT_HELPER:
+        try:
+            _helper('remove', company['slug'])
+            detail['unit_removed'] = True
+        except RuntimeError as e:
+            detail['unit_error'] = str(e)
+    elif EXEC:
         _systemctl('disable', '--now', service)
         unit = SYSTEMD_DIR / f'{service}.service'
         try:

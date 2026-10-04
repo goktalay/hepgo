@@ -15,6 +15,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from . import settings
+settings.load()   # .env, aşağıdaki ayarlar okunmadan önce (bkz. settings.py)
 
 ENABLED = os.environ.get('VEILOX_CF_ENABLE', '0') == '1'
 BASE = os.environ.get('VEILOX_CF_BASE', 'veilox.app')
@@ -32,8 +34,14 @@ def _read_lines(path=None):
     return (path or CONFIG).read_text(encoding='utf-8').splitlines()
 
 
+BACKUP_DIR = os.environ.get('VEILOX_CF_BACKUP_DIR', '').strip()   # boş: config.yml'nin yanına (sunucuda /etc'e yazılamaz)
+
+
 def _backup(path):
-    bak = path.with_name(path.name + '.bak-' + time.strftime('%Y%m%d%H%M%S'))
+    name = path.name + '.bak-' + time.strftime('%Y%m%d%H%M%S')
+    if BACKUP_DIR:
+        Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
+    bak = Path(BACKUP_DIR) / name if BACKUP_DIR else path.with_name(name)
     bak.write_text(path.read_text(encoding='utf-8'), encoding='utf-8')
     return bak
 

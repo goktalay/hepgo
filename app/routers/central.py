@@ -273,108 +273,6 @@ def payment_delete(pid: int, user=Depends(members_user), conn=db.DB):
     return {'ok': True}
 
 
-# ---------------- Destek talepleri (merkez ekibi) ----------------
-STATUSES = ('acik', 'yanit_bekliyor', 'cozuldu', 'kapali')
-PRIORITIES = ('dusuk', 'normal', 'yuksek', 'acil')
-
-
-def _staff_ids(conn):
-    roles = (auth.ADMIN, auth.SUPPORT_ROLE)
-    ids = {r[0] for r in conn.execute(f'SELECT user_id FROM user_roles WHERE role IN ({",".join("?" * len(roles))})', roles)}
-    ids |= {r[0] for r in conn.execute('SELECT id, username FROM users WHERE active=1') if auth.is_master(r[1])}
-    return ids
-
-
-def _ticket(conn, tid):
-    t = db.row(conn.execute('''SELECT t.*, u.full_name AS assignee_name FROM tickets t
-                               LEFT JOIN users u ON u.id=t.assignee_id WHERE t.id=?''', (tid,)))
-    if not t:
-        raise HTTPException(404, 'Talep bulunamadı')
-    t['messages'] = db.rows(conn.execute('SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id', (tid,)))
-    return t
-
-
-@router.get('/tickets')
-def tickets(status: str = '', q: str = '', slug: str = '', user=Depends(tickets_user), conn=db.DB):
-    where, args = ['1=1'], []
-    if status == 'open':
-        where.append("t.status NOT IN ('cozuldu','kapali')")
-    elif status in STATUSES:
-        where.append('t.status=?'); args.append(status)
-    if slug:
-        where.append('t.slug=?'); args.append(slug)
-    if q:
-        where.append('(t.subject LIKE ? OR t.company_name LIKE ? OR t.code LIKE ?)'); args += [f'%{q}%'] * 3
-    rows = db.rows(conn.execute(f'''SELECT t.*, u.full_name AS assignee_name,
-                                     (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id) AS msg_count
-                                     FROM tickets t LEFT JOIN users u ON u.id=t.assignee_id
-                                     WHERE {" AND ".join(where)} ORDER BY t.support_unread DESC, t.updated_at DESC LIMIT 500''', args))
-    stats = {r[0]: r[1] for r in conn.execute('SELECT status, COUNT(*) FROM tickets GROUP BY status')}
-    return {'tickets': rows, 'stats': stats}
-
-
-@router.get('/tickets/{tid}')
-def ticket_detail(tid: int, user=Depends(tickets_user), conn=db.DB):
-    t = _ticket(conn, tid)
-    if t['support_unread']:
-        conn.execute('UPDATE tickets SET support_unread=0 WHERE id=?', (tid,)); conn.commit()
-    return t
-
-
-class MsgIn(BaseModel):
-    body: str
-    name: str = ''
-
-
-@router.post('/tickets/{tid}/messages')
-def ticket_reply(tid: int, body: MsgIn, user=Depends(tickets_user), conn=db.DB):
-    text = body.body.strip()[:5000]
-    if not text:
-        raise HTTPException(400, 'Mesaj boş olamaz')
-    _ticket(conn, tid)
-    conn.execute('INSERT INTO ticket_messages (ticket_id,author_kind,author_name,body,created_at) VALUES (?,?,?,?,?)',
-                 (tid, 'support', user['full_name'], text, db.now()))
-    conn.execute("""UPDATE tickets SET status=CASE WHEN status IN ('acik','yanit_bekliyor') THEN 'yanit_bekliyor' ELSE status END,
-                    company_unread=company_unread+1, support_unread=0, updated_at=?,
-                    assignee_id=COALESCE(assignee_id, ?) WHERE id=?""", (db.now(), user['id'], tid))
-    db.audit(conn, user['id'], 'Merkez: destek talebini yanıtladı', 'ticket', tid)
-    conn.commit()
-    return _ticket(conn, tid)
-
-
-class TicketUpd(BaseModel):
-    status: Optional[str] = None
-    priority: Optional[str] = None
-    assignee_id: Optional[int] = None
-
-
-@router.put('/tickets/{tid}')
-def ticket_update(tid: int, body: TicketUpd, user=Depends(tickets_user), conn=db.DB):
-    t = _ticket(conn, tid)
-    if body.status and body.status in STATUSES and body.status != t['status']:
-        conn.execute('UPDATE tickets SET status=?, updated_at=? WHERE id=?', (body.status, db.now(), tid))
-        label = {'acik': 'açık', 'yanit_bekliyor': 'yanıt bekliyor', 'cozuldu': 'çözüldü', 'kapali': 'kapalı'}[body.status]
-        conn.execute('INSERT INTO ticket_messages (ticket_id,author_kind,author_name,body,created_at) VALUES (?,?,?,?,?)',
-                     (tid, 'system', user['full_name'], f'Durum “{label}” olarak değiştirildi.', db.now()))
-        if body.status in ('cozuldu', 'kapali'):
-            conn.execute('UPDATE tickets SET company_unread=company_unread+1 WHERE id=?', (tid,))
-    if body.priority and body.priority in PRIORITIES:
-        conn.execute('UPDATE tickets SET priority=?, updated_at=? WHERE id=?', (body.priority, db.now(), tid))
-    if body.assignee_id is not None:
-        conn.execute('UPDATE tickets SET assignee_id=?, updated_at=? WHERE id=?', (body.assignee_id or None, db.now(), tid))
-    conn.commit()
-    return _ticket(conn, tid)
-
-
-@router.get('/staff')
-def staff(user=Depends(tickets_user), conn=db.DB):
-    ids = _staff_ids(conn)
-    if not ids:
-        return []
-    return db.rows(conn.execute(f'SELECT id, full_name FROM users WHERE active=1 AND id IN ({",".join("?" * len(ids))}) ORDER BY full_name',
-                                tuple(ids)))
-
-
 # ---------------- Toplu SMS ----------------
 SMS_KEY = 'sms_config'
 
@@ -520,87 +418,30 @@ def fed_membership(request: Request, slug: str = '', conn=db.DB):
     per = _period()
     paid_now = sum(p['amount'] for p in pays if p['period'] == per)
     f = db.row(conn.execute('SELECT suspended, reason FROM member_flags WHERE slug=?', (slug,))) or {}
+    # son 12 dönemin ödeme durumu (üyelik başlangıcından önceki aylar gösterilmez)
+    start = ((c or {}).get('provisioned_at') or (c or {}).get('created_at') or '')[:7]
+    months, y, m = [], int(per[:4]), int(per[5:7])
+    for _ in range(12):
+        p_ = f'{y:04d}-{m:02d}'
+        if start and p_ < start:
+            break
+        paid = sum(x['amount'] for x in pays if x['period'] == p_)
+        months.append({'period': p_, 'paid': paid, 'status': _pay_status(fee, paid, p_)})
+        m -= 1
+        if not m:
+            y, m = y - 1, 12
+    from .. import support
+    notices = db.rows(conn.execute('''SELECT id, period, amount, paid_at, method, reference, status, decision_note, created_at FROM payment_notices
+                                      WHERE slug=? ORDER BY created_at DESC LIMIT 30''', (slug,)))
     return {
         'company': {k: (c or {}).get(k) for k in ('name', 'slug', 'url', 'status', 'mode', 'modules', 'master_username', 'created_at', 'provisioned_at')},
-        'package': {'name': pkg['name'], 'description': pkg.get('description', '')} if pkg else None,
+        'package': {'name': pkg['name'], 'description': pkg.get('description', ''), 'modules': pkg.get('modules', [])} if pkg else None,
         'fee': fee, 'period': per, 'paid_this_month': paid_now, 'pay_status': _pay_status(fee, paid_now, per),
-        'payments': pays, 'suspended': bool(f.get('suspended')), 'suspend_reason': f.get('reason') or '',
+        'payments': pays, 'months': months, 'notices': notices, 'suspended': bool(f.get('suspended')), 'suspend_reason': f.get('reason') or '',
+        'open_tickets': conn.execute("SELECT COUNT(*) FROM tickets WHERE slug=? AND status IN ('acik','yanit_bekliyor')", (slug,)).fetchone()[0],
+        'unread_tickets': conn.execute('SELECT COUNT(*) FROM tickets WHERE slug=? AND company_unread > 0', (slug,)).fetchone()[0],
+        'support': support.public_status(conn),
     }
-
-
-@fed_router.get('/tickets')
-def fed_tickets(request: Request, slug: str = '', conn=db.DB):
-    slug, _ = _fed(request, slug)
-    return db.rows(conn.execute('''SELECT id, code, subject, category, priority, status, company_unread, created_at, updated_at,
-                                   (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id) AS msg_count
-                                   FROM tickets t WHERE slug=? ORDER BY updated_at DESC LIMIT 300''', (slug,)))
-
-
-class FedTicketIn(BaseModel):
-    subject: str
-    body: str
-    category: str = 'teknik'
-    priority: str = 'normal'
-    name: str = ''
-    email: str = ''
-    company_name: str = ''
-
-
-@fed_router.post('/tickets')
-def fed_ticket_create(body: FedTicketIn, request: Request, slug: str = '', conn=db.DB):
-    slug, c = _fed(request, slug)
-    subj, text = body.subject.strip()[:200], body.body.strip()[:5000]
-    if not subj or not text:
-        raise HTTPException(400, 'Konu ve açıklama gerekli')
-    pr = body.priority if body.priority in PRIORITIES else 'normal'
-    cname = (c or {}).get('name') or body.company_name[:120] or slug
-    now = db.now()
-    cur = conn.execute('''INSERT INTO tickets (slug,company_name,subject,category,priority,status,opened_by_name,opened_by_email,
-                          company_unread,support_unread,created_at,updated_at) VALUES (?,?,?,?,?,'acik',?,?,0,1,?,?)''',
-                       (slug, cname, subj, body.category[:30], pr, body.name[:120], body.email[:160], now, now))
-    tid = cur.lastrowid
-    conn.execute('UPDATE tickets SET code=? WHERE id=?', (f'T-{tid:04d}', tid))
-    conn.execute('INSERT INTO ticket_messages (ticket_id,author_kind,author_name,body,created_at) VALUES (?,?,?,?,?)',
-                 (tid, 'company', body.name[:120] or cname, text, now))
-    conn.commit()
-    push.send(_staff_ids(conn), {'type': 'ticket', 'title': f'Yeni destek talebi · {cname}', 'body': subj,
-                                 'url': f'/app#/tickets/{tid}', 'tag': f'ticket-{tid}'})
-    return {'id': tid, 'code': f'T-{tid:04d}'}
-
-
-def _fed_ticket(conn, slug, tid):
-    t = db.row(conn.execute('SELECT * FROM tickets WHERE id=? AND slug=?', (tid, slug)))
-    if not t:
-        raise HTTPException(404, 'Talep bulunamadı')
-    t['messages'] = db.rows(conn.execute('SELECT author_kind, author_name, body, created_at FROM ticket_messages WHERE ticket_id=? ORDER BY id', (tid,)))
-    return t
-
-
-@fed_router.get('/tickets/{tid}')
-def fed_ticket_detail(tid: int, request: Request, slug: str = '', conn=db.DB):
-    slug, _ = _fed(request, slug)
-    t = _fed_ticket(conn, slug, tid)
-    if t['company_unread']:
-        conn.execute('UPDATE tickets SET company_unread=0 WHERE id=?', (tid,)); conn.commit()
-    t.pop('assignee_id', None)
-    return t
-
-
-@fed_router.post('/tickets/{tid}/messages')
-def fed_ticket_reply(tid: int, body: MsgIn, request: Request, slug: str = '', conn=db.DB):
-    slug, _ = _fed(request, slug)
-    t = _fed_ticket(conn, slug, tid)
-    text = body.body.strip()[:5000]
-    if not text:
-        raise HTTPException(400, 'Mesaj boş olamaz')
-    now = db.now()
-    conn.execute('INSERT INTO ticket_messages (ticket_id,author_kind,author_name,body,created_at) VALUES (?,?,?,?,?)',
-                 (tid, 'company', body.name[:120] or t['company_name'], text, now))
-    conn.execute("UPDATE tickets SET status='acik', support_unread=support_unread+1, company_unread=0, updated_at=? WHERE id=?", (now, tid))
-    conn.commit()
-    push.send(_staff_ids(conn), {'type': 'ticket', 'title': f'Destek talebine yanıt · {t["company_name"]}', 'body': t['subject'],
-                                 'url': f'/app#/tickets/{tid}', 'tag': f'ticket-{tid}'})
-    return _fed_ticket(conn, slug, tid)
 
 
 # ---------------- Üyelik sözleşmeleri (Merkez) ----------------

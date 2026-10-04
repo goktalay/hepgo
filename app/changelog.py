@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.115.0'
+VERSION = '2.116.0'
 
 CHANGELOG = [
+    {'version': '2.116.0', 'date': '2026-10-04', 'title': 'Destek Merkezi, canlı destek ve yeni firma paneli',
+     'changes': [
+         'Merkez › Destek Merkezi: pano (bekleyen sohbet, açık / SLA aşan / atanmamış talepler, ortalama ilk yanıt ve çözüm süresi, memnuniyet, SLA uyumu, 14 günlük grafik), talep kuyrukları (bana atanan, atanmamış, destek / firma yanıtı bekleyen, SLA aşan), toplu atama ve durum değiştirme.',
+         'Talepler: önceliğe göre ilk yanıt ve çözüm hedefi (SLA) ve kalan süre, otomatik atama (müsait, uzmanlığı uygun, en az yüklü kişiye), yalnız ekibin gördüğü iç notlar, dosya ve ekran görüntüsü ekleri, hazır yanıtlar (/kısayol), etiket, firma özeti (paket, ödeme durumu, son talepler).',
+         'Canlı destek: firma sohbet başlatır; destek uzmanı kuyruktan alır (ya da otomatik atanır), yazıyor göstergesi, dosya gönderme, başka uzmana aktarma, sohbeti talebe dönüştürme. Firma tek tıkla ekranını paylaşır; bağlantı sohbete düşer. Kimse almazsa sohbet talebe dönüşür; ekip çevrimdışıyken mesaj talep olarak kaydedilir.',
+         'Destek ekibi: destek personeli ekleme (yeni hesap ya da mevcut kullanıcı), uzmanlık, aynı anda en çok sohbet, durum (müsait / meşgul / molada / çevrimdışı), kişi bazında çözülen talep, sohbet ve memnuniyet. Ayarlar: SLA saatleri, çalışma saatleri, karşılama ve çevrimdışı mesajı, firmalara görünen iletişim ve ödeme bilgileri.',
+         'Firma › Üyeliğim & Destek yenilendi: genel bakış (üyelik, paket, destek ekibinin çevrimiçi durumu, son talepler, ödeme takvimi), Canlı Destek (ekran paylaşımıyla; başka sayfadayken köşede gösterge), dosyalı destek talepleri, “Sorunum çözüldü” ve yıldızlı değerlendirme, Ödemelerim (IBAN, son 12 ay, ödeme bildirimi). Merkez ödeme bildirimini onaylayınca ödeme kaydı oluşur.',
+         'hepgo.com: “Merkez girişi” kaldırıldı (merkez girişi yalnız veilox.app’te). “Firmanı oluştur” yerine “Firma girişi”: firma adresiyle kendi paneline giriş, adresini unutana e-posta ve şifreyle firma bulma ve başvuru durumu, adım adım yeni firma başvurusu (paket → firma → yönetici → özet). Türkçe firma adları sade adrese çevrilir (Örnek Çelik → ornek-celik).',
+     ]},
     {'version': '2.115.0', 'date': '2026-10-04', 'title': 'Mail (Outlook gibi) ve Sosyal Medya',
      'changes': [
          'Kişisel Ayarlar › Mail Hesaplarım: birden çok hesap bağlanır — “Google ile bağlan” / “Microsoft ile bağlan” (Gmail, Outlook, Hotmail, Microsoft 365 / Exchange Online; şifre gerekmez), uygulama şifresiyle Gmail, Yandex, iCloud, Yahoo, şirket / hosting sunucusu (IMAP / Exchange + SMTP) ve POP3.',

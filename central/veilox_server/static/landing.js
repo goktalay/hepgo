@@ -7,15 +7,16 @@ const nf = new Intl.NumberFormat('tr-TR');
 
 let lang = (() => { try { return localStorage.getItem('veilox.lang') || (navigator.language || '').startsWith('en') ? localStorage.getItem('veilox.lang') || 'tr' : 'tr'; } catch { return 'tr'; } })();
 if (lang !== 'en') lang = 'tr';
+let site = { central: false, merkez_url: null };   // merkez girişi yalnız veilox.app'te (sunucu da hepgo.com'da /panel'i kapatır)
 let theme = (() => { try { return localStorage.getItem('veilox.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch { return 'light'; } })();
 
 const T = {
   tr: {
-    nav: ['Özellikler', 'Toplantı', 'Fiyatlar', 'Güvenlik'], login: 'Merkez girişi', create: 'Firmanı oluştur',
+    nav: ['Özellikler', 'Toplantı', 'Fiyatlar', 'Güvenlik'], login: 'Merkez girişi', create: 'Firma girişi', apply: 'Hemen başvurun',
     heroPill: 'Üretimden sahaya, toplantıdan ofise tek platform',
     heroH: ['Fabrikanızı ', 'tek ekrandan', ' yönetin.'],
     heroLead: 'Üretim, iş emri, stok, satın alma, saha ve uçuş; görüntülü toplantı, mesajlaşma, telsiz ve yapay zeka asistanı; hatta uygulama içi ofis belgeleri — hepsi gerçek zamanlı ve tek yerde. Bulutta barındırın ya da kendi sunucunuza kurun.',
-    heroCta: ['Firmanı oluştur', 'Özellikleri gör'],
+    heroCta: ['Hemen başvurun', 'Özellikleri gör'],
     heroPoints: ['Canlı üretim ve yazıcı takibi', 'Görüntülü toplantı ve telsiz', 'Yapay zeka asistanı'],
     stats: [['20+', 'modül tek çatı altında'], ['Canlı', 'üretim, yazıcı ve sunucu durumu'], ['Online / Offline', 'bulut ya da kendi sunucunuz'], ['TR / EN', 'çok dilli arayüz']],
     featEye: 'Özellikler', featH: 'Fabrikanın her köşesi için bir modül',
@@ -35,11 +36,11 @@ const T = {
     foot: 'HEPGO ERP',
   },
   en: {
-    nav: ['Features', 'Meetings', 'Pricing', 'Security'], login: 'Console sign-in', create: 'Create your company',
+    nav: ['Features', 'Meetings', 'Pricing', 'Security'], login: 'Console sign-in', create: 'Company sign-in', apply: 'Apply now',
     heroPill: 'From production to the field, meetings to the office — one platform',
     heroH: ['Run your factory ', 'from one screen', '.'],
     heroLead: 'Production, work orders, stock, purchasing, field & flight; video meetings, chat, push-to-talk radio and an AI assistant; even in-app office documents — all real-time, in one place. Host it in the cloud or on your own server.',
-    heroCta: ['Create your company', 'See features'],
+    heroCta: ['Apply now', 'See features'],
     heroPoints: ['Live production & printer tracking', 'Video meetings & radio', 'AI assistant'],
     stats: [['20+', 'modules under one roof'], ['Live', 'production, printer & server status'], ['Online / Offline', 'cloud or your own server'], ['TR / EN', 'multilingual interface']],
     featEye: 'Features', featH: 'A module for every corner of the factory',
@@ -210,8 +211,8 @@ function page() {
     <div class="nav-ctl">
       <button class="icon-btn" id="langBtn" title="Dil / Language">${lang === 'tr' ? 'EN' : 'TR'}</button>
       <button class="icon-btn" id="themeBtn" title="Tema">${theme === 'dark' ? sun : moon}</button>
-      <a class="btn btn-ghost" href="/panel">${esc(t.login)}</a>
-      <button class="btn btn-primary" id="createBtn">${esc(t.create)}</button>
+      ${site.central ? `<a class="btn btn-ghost" href="${esc(site.merkez_url)}">${esc(t.login)}</a>` : ''}
+      <a class="btn btn-primary" href="/giris">${esc(t.create)}</a>
     </div>
   </div></header>
   <main>
@@ -220,7 +221,7 @@ function page() {
         <span class="pill"><i></i> ${esc(t.heroPill)}</span>
         <h1>${esc(t.heroH[0])}<span class="grad">${esc(t.heroH[1])}</span>${esc(t.heroH[2])}</h1>
         <p class="lead">${esc(t.heroLead)}</p>
-        <div class="hero-cta"><button class="btn btn-primary btn-lg" id="createBtn2">${esc(t.heroCta[0])}</button><a class="btn btn-ghost btn-lg" href="#ozellikler">${esc(t.heroCta[1])}</a></div>
+        <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(t.heroCta[0])}</a><a class="btn btn-ghost btn-lg" href="#ozellikler">${esc(t.heroCta[1])}</a></div>
         <ul class="hero-points">${t.heroPoints.map(p => `<li>${svg('<path d="M5 12l4 4 10-10"/>')}${esc(p)}</li>`).join('')}</ul>
       </div>
       <div class="hero-visual reveal">
@@ -262,7 +263,7 @@ function page() {
     </div></section>
 
     <section class="cta wrap reveal"><div class="cta-card"><div><h2>${esc(t.ctaH)}</h2><p>${esc(t.ctaP)}</p></div>
-      <button class="btn btn-white btn-lg" id="createBtn3">${esc(t.create)}</button></div></section>
+      <a class="btn btn-white btn-lg" href="/giris#kayit">${esc(t.apply)}</a></div></section>
   </main>
   <footer class="foot"><div class="wrap foot-in">
     <div class="foot-brand"><img src="/static/img/hepgo-mark.png" alt=""><span>HEPGO</span></div>
@@ -285,42 +286,9 @@ async function fillPricing() {
     <span class="price-mode">${esc(modeLabel(p.mode))}</span>
     <p class="price-desc">${esc(p.description || '')}</p>
     <div class="price-mods">${esc(T[lang].modsN(p.modules.length))}</div>
-    <button class="btn btn-primary" data-pkg="${esc(p.slug)}" data-pkgname="${esc(p.name)}">${esc(T[lang].start)}</button>
+    <a class="btn btn-primary" href="/giris?paket=${encodeURIComponent(p.slug)}#kayit">${esc(T[lang].start)}</a>
   </div>`).join('');
-  grid.querySelectorAll('[data-pkg]').forEach(b => b.addEventListener('click', () => registerModal(b.dataset.pkg, b.dataset.pkgname)));
   $('#nav') && revealAll();
-}
-
-function registerModal(slug, pkgName) {
-  const t = T[lang];
-  const wrap = document.createElement('div');
-  wrap.className = 'vx-modal-wrap';
-  wrap.innerHTML = `<div class="vx-modal">
-    <button class="vx-x" type="button" aria-label="×">×</button>
-    <h3>${esc(t.regTitle)}</h3>
-    <p class="price-desc">${esc(t.regSub(pkgName))}</p>
-    <form><label class="vx-field"><span>${esc(t.regName)}</span><input class="vx-input" name="company" required></label>
-    <label class="vx-field"><span>${esc(t.regMail)}</span><input class="vx-input" type="email" name="email" required><small class="muted">${esc(t.regMailHint)}</small></label>
-    <label class="vx-field"><span>${esc(t.regFull)}</span><input class="vx-input" name="full"></label>
-    <label class="vx-field"><span>${esc(t.regPass)}</span><input class="vx-input" type="password" name="pass" minlength="10" required></label>
-    <div class="vx-err"></div><button class="btn btn-primary btn-lg vx-submit" type="submit">${esc(t.regBtn)}</button></form></div>`;
-  document.body.appendChild(wrap);
-  const box = $('.vx-modal', wrap), close = () => wrap.remove();
-  $('.vx-x', wrap).addEventListener('click', close);
-  wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
-  const form = $('form', wrap), err = $('.vx-err', wrap), btn = $('button[type=submit]', wrap);
-  form.addEventListener('submit', async e => {
-    e.preventDefault(); btn.disabled = true; err.textContent = '';
-    try {
-      const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_name: form.company.value, master_username: form.email.value, master_name: form.full.value, password: form.pass.value, package_slug: slug || '' }) });
-      const d = await r.json().catch(() => null);
-      if (!r.ok) throw new Error(d?.detail || 'Hata');
-      box.innerHTML = `<button class="vx-x" type="button">×</button><h3>${esc(t.regOk)}</h3><p class="price-desc">${esc(d.message || t.regOkP)}</p><p class="muted">${esc(t.regOkP)}</p><button class="btn btn-primary btn-lg vx-submit">${esc(t.close)}</button>`;
-      box.querySelector('.btn-primary').addEventListener('click', close);
-      box.querySelector('.vx-x').addEventListener('click', close);
-    } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
-  });
 }
 
 function revealAll() {
@@ -332,7 +300,6 @@ function render() {
   document.documentElement.lang = lang;
   document.documentElement.dataset.theme = theme;
   $('#app').innerHTML = page();
-  ['createBtn', 'createBtn2', 'createBtn3'].forEach(id => { const b = document.getElementById(id); if (b) b.addEventListener('click', () => registerModal('', '')); });
   $('#langBtn').addEventListener('click', () => { lang = lang === 'tr' ? 'en' : 'tr'; try { localStorage.setItem('veilox.lang', lang); } catch { /* */ } render(); });
   $('#themeBtn').addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('veilox.theme', theme); } catch { /* */ } render(); });
   const nav = $('#nav'); const onScroll = () => nav.classList.toggle('scrolled', scrollY > 8);
@@ -341,4 +308,4 @@ function render() {
   fillPricing();
 }
 
-render();
+fetch('/api/public/site').then(r => r.json()).then(x => { site = x; }).catch(() => {}).finally(render);

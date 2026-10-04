@@ -10,3 +10,10 @@ Sunucuda `/opt/hepgo/veilox` altında `uvicorn veilox.main:app --uds /run/hepgo/
 
 Dağıtım: `rsync -a central/veilox_server/{veilox,static} root@sunucu:/opt/hepgo/veilox/` → `systemctl restart hepgo-veilox`.
 Gizli bilgiler (`.env`, `data/central.db`) repoda yoktur.
+
+**Alan adları:** Merkez (yönetim) girişi yalnız `veilox.app`'tedir (`VEILOX_CENTRAL_HOSTS`); `hepgo.com`'da `/panel` → `/giris`
+yönlenir ve `/api/login` yoktur. `/giris` firma girişi sayfasıdır: firma adresiyle kendi paneline giriş, adresini unutan yönetici için
+e-posta + şifreyle firma bulma ve başvuru durumu, adım adım yeni firma başvurusu.
+
+Testler (bu klasörde): `../../.venv/bin/python -m tests.test_veilox` ve `../../.venv/bin/python -m tests.test_public`.
+

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -43,6 +43,18 @@ USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
 PASSWORD_HASH = os.environ.get('VEILOX_PASSWORD_HASH', '')
 SESSION_HOURS = 12
 COOKIE = 'veilox_session'
+# Merkez (yönetim) girişi YALNIZCA bu alan adlarında: hepgo.com'da merkez girişi yoktur, firmalar "Firma girişi"ni kullanır.
+CENTRAL_HOSTS = {h.strip().lower() for h in os.environ.get('VEILOX_CENTRAL_HOSTS', 'veilox.app,www.veilox.app,localhost,127.0.0.1,testserver').split(',') if h.strip()}
+FIRM_BASE = os.environ.get('VEILOX_CF_BASE', 'hepgo.com').strip().lower() or 'hepgo.com'
+MERKEZ_URL = os.environ.get('VEILOX_MERKEZ_URL', 'https://merkez.veilox.app/app')
+
+
+def _host(request):
+    return (request.headers.get('host') or '').split(':')[0].strip().lower()
+
+
+def central_host(request):
+    return _host(request) in CENTRAL_HOSTS
 
 app = FastAPI(title='Veilox', docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -110,6 +122,8 @@ class LoginIn(BaseModel):
 
 @app.post('/api/login')
 def login(body: LoginIn, request: Request, response: Response):
+    if not central_host(request):
+        raise HTTPException(404, 'Bulunamadı')
     ip = _ip(request)
     if _locked(ip):
         raise HTTPException(429, 'Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.')
@@ -198,12 +212,109 @@ def modules():
     return [{'key': k, 'title': t, 'group': g} for k, t, g in MODULES]
 
 
+@app.get('/api/public/site')
+def site(request: Request):
+    """Tanıtım sayfası: merkez girişi düğmesi yalnız merkez alan adında (veilox.app) gösterilir."""
+    return {'central': central_host(request), 'merkez_url': MERKEZ_URL if central_host(request) else None, 'firm_base': FIRM_BASE}
+
+
+_look = {}   # ip → [zamanlar] (firma adresi sorgusu)
+_find_fails = {}   # ip → [zamanlar] (e-posta + şifre ile firma bulma)
+
+
+def _throttle(store, ip, limit, window):
+    now = time.time()
+    store[ip] = [t for t in store.get(ip, []) if now - t < window]
+    if len(store[ip]) >= limit:
+        raise HTTPException(429, 'Çok fazla deneme. Biraz sonra tekrar deneyin.')
+    store[ip].append(now)
+
+
+def _firm_url(c):
+    return (c.get('url') or '').strip() or f"https://{c['slug']}.{FIRM_BASE}"
+
+
+def _firm_state(c):
+    """Firma girişinde gösterilecek durum (veri içermez)."""
+    st = c.get('status')
+    if st == 'active':
+        return {'status': 'active', 'url': _firm_url(c) + '/app'}
+    if st in ('pending', 'approved', 'provisioning'):
+        return {'status': 'pending', 'message': 'Başvurunuz alındı ve inceleniyor. Kurulum tamamlanınca firma adresinizden giriş yapabileceksiniz.'}
+    if st == 'offline':
+        return {'status': 'offline', 'message': 'Bu firma kendi sunucusunda çalışıyor; kendi sunucu adresinizden giriş yapın.'}
+    return {'status': 'unavailable', 'message': 'Bu firma hesabı şu an kullanılamıyor. Lütfen destek ekibimizle iletişime geçin.'}
+
+
+class LookupIn(BaseModel):
+    address: str
+
+
+@app.post('/api/public/firm-lookup')
+def firm_lookup(body: LookupIn, request: Request):
+    """Firma girişi: firma adresi (ör. acme ya da acme.hepgo.com) → panel adresi. Ad ya da kişisel bilgi döndürmez."""
+    _throttle(_look, _ip(request), 30, 600)
+    raw = body.address.strip().lower()
+    raw = raw.split('://', 1)[-1].split('/', 1)[0].split('?', 1)[0]
+    if not raw or len(raw) > 120:
+        raise HTTPException(400, 'Firma adresinizi yazın')
+    slug = raw[:-len(FIRM_BASE) - 1] if raw.endswith('.' + FIRM_BASE) else (raw if '.' not in raw else None)
+    with db.connect() as conn:
+        c = db.row(conn, 'SELECT slug, url, status FROM companies WHERE slug=?', (provision.slugify(slug),)) if slug else None
+        if not c:
+            for r in db.rows(conn, 'SELECT slug, url, status FROM companies WHERE url != ""'):
+                host = (r['url'] or '').split('://', 1)[-1].split('/', 1)[0].lower()
+                if host and host in (raw, 'www.' + raw):
+                    c = r
+                    break
+    if not c:
+        raise HTTPException(404, 'Bu adreste kayıtlı bir firma bulunamadı. Adresi kontrol edin ya da e-postanızla arayın.')
+    return _firm_state(c)
+
+
+class FindIn(BaseModel):
+    email: str
+    password: str
+
+
+@app.post('/api/public/firm-find')
+def firm_find(body: FindIn, request: Request):
+    """Adresini hatırlamayan firma yöneticisi: kayıt e-postası + şifresiyle firmasını (ve başvuru durumunu) bulur."""
+    ip = _ip(request)
+    now = time.time()
+    _find_fails[ip] = [t for t in _find_fails.get(ip, []) if now - t < LOCK_SECONDS]
+    if len(_find_fails[ip]) >= LOCK_AFTER:
+        raise HTTPException(429, 'Çok fazla hatalı deneme. 15 dakika sonra tekrar deneyin.')
+    email = body.email.strip().lower()
+    with db.connect() as conn:
+        rows = db.rows(conn, 'SELECT slug, name, url, status, master_password_hash, created_at FROM companies WHERE lower(master_username)=?', (email,))
+    found = [r for r in rows if r.get('master_password_hash') and verify_password(body.password, r['master_password_hash'])]
+    if not found:
+        _find_fails[ip].append(now)
+        time.sleep(0.6)
+        raise HTTPException(401, 'E-posta ya da şifre hatalı. Şifrenizi firma panelinizde değiştirdiyseniz destek ekibimizle iletişime geçin.')
+    _find_fails.pop(ip, None)
+    return {'firms': [{'name': r['name'], 'created_at': r['created_at'], **_firm_state(r)} for r in found]}
+
+
+@app.get('/api/public/slug-preview')
+def slug_preview(name: str = ''):
+    base = provision.slugify(name)[:40].strip('-') or 'firma'
+    with db.connect() as conn:
+        slug = _unique_slug(conn, base)
+    return {'slug': slug, 'domain': f'{slug}.{FIRM_BASE}'}
+
+
 class RegisterIn(BaseModel):
     company_name: str
     master_username: str
     master_name: str = ''
     password: str
     package_slug: str = ''
+    phone: str = ''
+    tax_no: str = ''
+    city: str = ''
+    accept: bool = True
 
 
 @app.post('/api/register')
@@ -221,7 +332,11 @@ def register(body: RegisterIn, request: Request):
         raise HTTPException(400, 'Geçerli bir e-posta girin')
     if len(body.password) < 10:
         raise HTTPException(400, 'Şifre en az 10 karakter olmalı')
+    if not body.accept:
+        raise HTTPException(400, 'Devam etmek için başvuru koşullarını onaylayın')
     with db.connect() as conn:
+        if conn.execute("SELECT 1 FROM companies WHERE lower(master_username)=? AND status IN ('pending','approved')", (user,)).fetchone():
+            raise HTTPException(409, 'Bu e-posta ile onay bekleyen bir başvurunuz zaten var. Durumunu “Firma girişi” ekranından sorgulayabilirsiniz.')
         pkg_row = db.row(conn, 'SELECT * FROM packages WHERE slug=? AND visible=1', (body.package_slug,)) \
             if body.package_slug else None
         mods = db.package_public(pkg_row)['modules'] if pkg_row else []
@@ -232,15 +347,16 @@ def register(body: RegisterIn, request: Request):
         wl = int(pkg_row['white_label']) if pkg_row else 0
         slug = _unique_slug(conn, provision.slugify(name))
         _reg[ip].append(now)
-        conn.execute(
+        cur = conn.execute(
             'INSERT INTO companies(slug,name,package_id,mode,modules,white_label,master_username,master_name,'
-            'master_password_hash,master_secret,monthly_fee,status,self_registered,created_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,created_at) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (slug, name, (pkg_row['id'] if pkg_row else None), mode, _j(mods), wl,
              user, body.master_name.strip(), make_hash(body.password), body.password, fee,
-             'pending', 1, db.now()))
+             'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None, body.city.strip()[:60] or None, db.now()))
         conn.commit()
-    return {'ok': True, 'message': 'Kaydınız alındı. Onaylandığında bilgilendirileceksiniz.'}
+    return {'ok': True, 'application_no': f'B-{cur.lastrowid:05d}', 'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
+            'message': 'Başvurunuz alındı. Onaylandığında firmanız kurulacak ve giriş adresiniz e-postanıza iletilecek.'}
 
 
 # ---------- Panel (yetki gerekli): paketler
@@ -523,8 +639,15 @@ def index():
 
 
 @app.get('/panel')
-def panel():
+def panel(request: Request):
+    if not central_host(request):   # hepgo.com'da merkez paneli yok
+        return RedirectResponse('/giris', status_code=307)
     return FileResponse(STATIC / 'index.html')
+
+
+@app.get('/giris')
+def firm_login_page():
+    return FileResponse(STATIC / 'giris.html')
 
 
 @app.get('/kur/{token}')

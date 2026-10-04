@@ -355,7 +355,29 @@ def tickets_waiting(conn, user):
         return _result([], [], '#/tickets')
     rows = db.rows(conn.execute(
         "SELECT id, code, company_name, subject FROM tickets WHERE support_unread > 0 AND status NOT IN ('kapali') ORDER BY updated_at DESC"))
-    return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], '#/tickets', 'Yanıtlamak için açın')
+    href = f'#/tickets/t/{rows[0]["id"]}' if len(rows) == 1 else '#/tickets/list'
+    return _result(rows, [f'{r["company_name"] or ""}: {r["subject"]}' for r in rows], href, 'Yanıtlamak için açın')
+
+
+def chats_waiting(conn, user):
+    """Merkez: canlı destekte sırada bekleyen firmalar (destek ekibine)."""
+    from . import config
+    if not config.FEDERATION_CENTRAL or 'tickets' not in user.get('modules', []):
+        return _result([], [], '#/tickets/live')
+    rows = db.rows(conn.execute("SELECT id, code, company_name, topic FROM support_chats WHERE status = 'waiting' ORDER BY created_at"))
+    return _result(rows, [f'{r["company_name"] or ""}: {r["topic"] or "Canlı destek"}' for r in rows], '#/tickets/live', 'Sohbeti almak için açın')
+
+
+def support_replies(conn, user):
+    """Firma: merkezden gelen, okunmamış destek yanıtları ve canlı destek mesajları."""
+    from . import central_client, config
+    if config.FEDERATION_CENTRAL or 'uyelik' not in user.get('modules', []):
+        return _result([], [], '#/uyelik/tickets')
+    d = central_client.support_unread()
+    rows = d['tickets'] + d['chats']
+    names = [f'{t["code"]}: {t["subject"]}' for t in d['tickets']] + [f'Canlı destek: {c.get("assignee_name") or "Destek"}' for c in d['chats']]
+    href = f'#/uyelik/live/{d["chats"][0]["id"]}' if d['chats'] else (f'#/uyelik/tickets/{d["tickets"][0]["id"]}' if len(d['tickets']) == 1 else '#/uyelik/tickets')
+    return _result(rows, names, href, 'Yanıtı okumak için açın')
 
 
 def contracts_pending(conn, user):
@@ -492,6 +514,8 @@ NOTIFICATIONS = [
     {'key': 'certs-expiring', 'roles': None, 'fn': certs_expiring, 'title': 'Süresi yaklaşan / dolan sertifika'},
     {'key': 'audits-upcoming', 'roles': None, 'fn': audits_upcoming, 'title': 'Yaklaşan sertifika denetimi'},
     {'key': 'contracts-pending', 'roles': None, 'fn': contracts_pending, 'title': 'Onayınızı bekleyen üyelik sözleşmesi'},
+    {'key': 'support-reply', 'roles': None, 'fn': support_replies, 'title': 'Destek ekibinden yanıt'},
+    {'key': 'chat-waiting', 'roles': None, 'fn': chats_waiting, 'title': 'Canlı destekte bekleyen firma'},
     {'key': 'fleet-due', 'roles': None, 'fn': fleet_due, 'title': 'Araç: yaklaşan muayene / sigorta / bakım'},
     {'key': 'vehicle-assign-pending', 'roles': None, 'fn': vehicle_assign_pending, 'title': 'Onayınızı bekleyen araç zimmeti'},
 ]

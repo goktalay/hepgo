@@ -519,6 +519,96 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_ticket_messages_t ON ticket_messages(ticket_id, id);
+-- Merkez Destek Merkezi: canlı destek (sohbet), destek ekibi, hazır yanıtlar, dosya ekleri, ödeme bildirimleri
+CREATE TABLE IF NOT EXISTS support_staff (
+    user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    status      TEXT NOT NULL DEFAULT 'offline',   -- online | busy | away | offline
+    skills      TEXT NOT NULL DEFAULT '[]',        -- JSON: talep kategorileri (teknik, fatura, egitim…)
+    max_chats   INTEGER NOT NULL DEFAULT 3,        -- aynı anda en çok canlı sohbet
+    title       TEXT,                              -- ör. Teknik Destek Uzmanı
+    last_seen   TEXT,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS support_chats (
+    id              INTEGER PRIMARY KEY,
+    code            TEXT,                          -- C-0001
+    slug            TEXT NOT NULL,
+    company_name    TEXT,
+    user_name       TEXT,
+    user_email      TEXT,
+    topic           TEXT,
+    category        TEXT,
+    status          TEXT NOT NULL DEFAULT 'waiting',  -- waiting | active | ended | missed
+    assignee_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    company_unread  INTEGER NOT NULL DEFAULT 0,
+    support_unread  INTEGER NOT NULL DEFAULT 0,
+    rating          INTEGER,
+    rating_note     TEXT,
+    ticket_id       INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+    ended_by        TEXT,
+    created_at      TEXT NOT NULL,
+    accepted_at     TEXT,
+    ended_at        TEXT,
+    last_msg_at     TEXT,
+    company_seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_support_chats ON support_chats(status, created_at);
+CREATE INDEX IF NOT EXISTS ix_support_chats_slug ON support_chats(slug, created_at);
+CREATE TABLE IF NOT EXISTS support_chat_messages (
+    id          INTEGER PRIMARY KEY,
+    chat_id     INTEGER NOT NULL REFERENCES support_chats(id) ON DELETE CASCADE,
+    author_kind TEXT NOT NULL,                     -- company | support | system
+    author_name TEXT,
+    body        TEXT,
+    kind        TEXT NOT NULL DEFAULT 'text',      -- text | file | screen
+    file_id     INTEGER,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_support_chat_msgs ON support_chat_messages(chat_id, id);
+CREATE TABLE IF NOT EXISTS support_canned (
+    id          INTEGER PRIMARY KEY,
+    shortcut    TEXT,
+    title       TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS support_files (
+    id          INTEGER PRIMARY KEY,
+    token       TEXT UNIQUE NOT NULL,
+    slug        TEXT NOT NULL,
+    ticket_id   INTEGER,
+    message_id  INTEGER,
+    chat_id     INTEGER,
+    name        TEXT NOT NULL,
+    mime        TEXT,
+    size        INTEGER NOT NULL DEFAULT 0,
+    path        TEXT NOT NULL,
+    uploaded_by TEXT,                              -- company | support
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_support_files_t ON support_files(ticket_id, message_id);
+CREATE TABLE IF NOT EXISTS payment_notices (
+    id            INTEGER PRIMARY KEY,
+    slug          TEXT NOT NULL,
+    company_name  TEXT,
+    period        TEXT,                            -- YYYY-AA
+    amount        REAL NOT NULL,
+    paid_at       TEXT,
+    method        TEXT,
+    reference     TEXT,                            -- dekont / işlem no
+    note          TEXT,
+    by_name       TEXT,
+    by_email      TEXT,
+    status        TEXT NOT NULL DEFAULT 'bekliyor',  -- bekliyor | onaylandi | reddedildi
+    payment_id    INTEGER,
+    decided_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at    TEXT,
+    decision_note TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_payment_notices ON payment_notices(slug, created_at);
 -- Merkez: firma bayrakları (yumuşak askı, iletişim telefonu) — kurulum kayıtları Veilox'ta, bunlar merkezde
 CREATE TABLE IF NOT EXISTS member_flags (
     slug        TEXT PRIMARY KEY,
@@ -2175,6 +2265,12 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    tk_cols = {r[1] for r in conn.execute('PRAGMA table_info(tickets)')}
+    for col, ddl in (('first_response_at', 'TEXT'), ('resolved_at', 'TEXT'), ('due_at', 'TEXT'), ('resolve_due_at', 'TEXT'),
+                     ('rating', 'INTEGER'), ('rating_note', 'TEXT'), ('tags', 'TEXT'), ('channel', "TEXT NOT NULL DEFAULT 'ticket'"),
+                     ('chat_id', 'INTEGER')):   # Destek Merkezi: SLA, memnuniyet, etiket, kanal
+        if tk_cols and col not in tk_cols:
+            conn.execute(f'ALTER TABLE tickets ADD COLUMN {col} {ddl}')
     # Mail v2: eski tek Gmail hesabı (mail_accounts) çok hesaplı mail_boxes'a bir kez taşınır
     if conn.execute("SELECT name FROM sqlite_master WHERE name = 'mail_boxes'").fetchone():
         conn.execute('''INSERT INTO mail_boxes (user_id, email, name, provider, auth_type, secret, imap_host, imap_port, smtp_host, smtp_port,

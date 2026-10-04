@@ -16,7 +16,7 @@ function loadRrweb() {
 
 const wsUrl = (code) => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/screen/${code}?role=host`;
 
-export async function startScreenShare(ctx) {
+export async function startScreenShare(ctx, opts = {}) {   // opts.onStarted(sess): paylaşım başlayınca (ör. canlı destek sohbetine link gönder)
   if (active) { active.panel?.classList.add('flash'); setTimeout(() => active.panel?.classList.remove('flash'), 600); return; }
   const pw = h('input', { class: 'input', type: 'text', placeholder: '(isteğe bağlı)' });
   const ctrlCb = h('input', { type: 'checkbox', checked: true });
@@ -26,14 +26,15 @@ export async function startScreenShare(ctx) {
       h('p', { class: 'small muted' }, 'Uygulama ekranınız bir link üzerinden karşı tarafa birebir yansır. Bağlanan kişi imleçle yol gösterir, izin verirseniz müdahale edebilir ve sizinle sesli/görüntülü konuşabilir.'),
       field('Link şifresi', pw),
       h('label', { class: 'set-toggle' }, ctrlCb, h('span', null, h('b', null, 'Müdahaleye izin ver'), h('small', null, 'Karşı taraf tıklayıp yazabilir. Kapalıysa yalnızca izler ve yol gösterir.')))),
-    actions: [{ label: 'Vazgeç' }, { label: 'Paylaşımı Başlat', class: 'primary', onClick: () => begin(ctx, pw.value.trim(), ctrlCb.checked) }],
+    actions: [{ label: 'Vazgeç' }, { label: 'Paylaşımı Başlat', class: 'primary', onClick: () => begin(ctx, pw.value.trim(), ctrlCb.checked, opts) }],
   });
 }
 
-async function begin(ctx, password, control) {
+async function begin(ctx, password, control, opts = {}) {
   let rrweb, sess;
   try { rrweb = await loadRrweb(); } catch (e) { toastError(e); return; }
   try { sess = await api.post('/api/screen', { password, control }); } catch (e) { toastError(e); return; }
+  try { await opts.onStarted?.(sess); } catch (e) { toastError(e); }
   const ws = new WebSocket(wsUrl(sess.code));
   const state = { code: sess.code, ws, stopRecord: null, pc: null, localStream: null, remoteAudio: null, viewers: 0, panel: null };
   active = state;

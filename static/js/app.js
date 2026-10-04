@@ -107,7 +107,7 @@ const MODULES = [
   { key: 'projects', title: 'Proje Yönetimi', mod: projectsMod },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
-  { key: 'tickets', title: 'Destek Talepleri', mod: ticketsMod },
+  { key: 'tickets', title: 'Destek Merkezi', mod: ticketsMod },
   { key: 'sms', title: 'Toplu SMS', mod: smsMod, group: 'system' },
   // Firma paneli: merkezle ilişki (paket, ödemeler, destek talepleri) — firma instance'ında
   { key: 'uyelik', title: 'Üyeliğim & Destek', mod: membershipMod, group: 'system' },
@@ -554,12 +554,14 @@ function renderShell() {
   radio.connect(ctx);   // telsiz: kanallardaki canlı konuşmalar her ekranda duyulur
   syncPush();          // arka plan bildirimi aboneliğini tazele (izin önceden verildiyse)
   mountMascot(ctx);     // köşedeki yapay zeka maskotu (anahtar tanımlıysa görünür)
+  membershipMod.initSupportDock?.(ctx);   // firma: aktif canlı destek sohbeti başka sayfadayken köşede görünür
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
   const menu = h('div', { class: 'dropdown', role: 'menu' },
     h('a', { class: 'menu-link', href: '#/personal', onclick: () => { menu.hidden = true; } }, svgIcon(icons.person), 'Kişisel', menuCount('personal')),
     h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Kişisel Ayarlar'),
     securityOnly() ? null : h('a', { class: 'menu-link', href: '#/meet', onclick: () => { menu.hidden = true; } }, svgIcon(icons.video), 'Görüntülü Toplantı'),
     h('a', { class: 'menu-link', href: '#', onclick: e => { e.preventDefault(); menu.hidden = true; import('./modules/screenshare.js').then(m => m.startScreenShare(ctx)); } }, svgIcon(icons.screen), 'Ekranı Paylaş'),
+    u.modules.includes('uyelik') ? h('a', { class: 'menu-link', href: '#/uyelik/live', onclick: () => { menu.hidden = true; } }, svgIcon(icons.message || icons.chat || icons.person), 'Canlı Destek') : null,
     menuModules.map(m => h('a', { class: `menu-link ${m.tone ? `tone-${m.tone}` : ''}`, href: `#/${m.key}`,
       onclick: () => { menu.hidden = true; } }, svgIcon(icons[m.key]), m.title)),
     menuModules.length ? h('div', { class: 'menu-sep' }) : null,
@@ -758,6 +760,10 @@ function renderHome() {
 
 // ---------- Hareket kaydı: her sayfaya giriş ve çıkış (kalınan süreyle) loglanır ----------
 const SUB_PAGES = {
+  tickets: p => { const k = (p[0] || '').split('?')[0]; return k === 't' ? `Talep #${p[1]}` : k === 'live' ? (p[1] ? `Canlı Destek › Sohbet #${p[1]}` : 'Canlı Destek')
+    : ({ list: 'Talepler', team: 'Ekip', canned: 'Hazır Yanıtlar', settings: 'Ayarlar' }[k] || k); },
+  uyelik: p => { const k = (p[0] || '').split('?')[0]; const lbl = { overview: 'Genel Bakış', live: 'Canlı Destek', tickets: 'Destek Taleplerim', payments: 'Ödemelerim', contracts: 'Sözleşmelerim' }[k] || k;
+    return p[1] ? `${lbl} #${p[1]}` : lbl; },
   projects: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Proje #${k}` : ({ queue: 'Hareketlere Proje', scan: 'Proje Taraması' }[k] || k); },
   fleet: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Araç #${k}` : ({ moves: 'Gider Etiketleme', report: 'Rapor', settings: 'Zimmet Formu' }[k] || k); },
   production: p => `İş Emri #${p[0]}`,

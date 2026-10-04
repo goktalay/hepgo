@@ -32,8 +32,13 @@ USE_SOCKET = os.environ.get('VEILOX_USE_SOCKET', '1') != '0'
 SLUG_RE = re.compile(r'[^a-z0-9-]+')
 
 
+_TR = str.maketrans({'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'â': 'a', 'î': 'i', 'û': 'u', 'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'I': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u'})
+
+
 def slugify(name):
-    s = SLUG_RE.sub('-', (name or '').strip().lower()).strip('-')
+    """Firma adı → alt alan adı (Türkçe harfler sadeleşir: “Örnek Çelik A.Ş.” → ornek-celik-a-s)."""
+    s = SLUG_RE.sub('-', (name or '').strip().translate(_TR).lower()).strip('-')
+    s = re.sub(r'-{2,}', '-', s)[:40].strip('-')
     return s or 'firma'
 
 

@@ -1,12 +1,41 @@
-"""Firma paneli — Üyeliğim & Destek: merkezle (Veilox) ilişki. Paket/modüller, aylık ücret ve ödeme geçmişi,
-destek talepleri (aç, yanıtla, takip et). Veriler merkezde; burası federasyon üzerinden okur/yazar (central_client)."""
+"""Firma paneli — Üyeliğim & Destek: merkezle (HEPGO / Veilox) ilişki. Paket ve modüller, aylık ücret, ödeme geçmişi ve
+ödeme bildirimi, destek talepleri (dosya ekli; değerlendirme, kapatma), canlı destek sohbeti (ekran paylaşımıyla), üyelik
+sözleşmeleri. Veriler merkezdedir; burası federasyon üzerinden okur / yazar (central_client). Merkezin iç notları buraya gelmez."""
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import auth, central_client, config, db
 
 router = APIRouter(prefix='/api/membership')
 member_user = auth.require_module('uyelik')
+MAX_FILES, MAX_TOTAL = 5, 25 * 1024 * 1024
+
+
+async def _form(request: Request):
+    """Çok parçalı (dosyalı) ya da JSON gövde → (alanlar, [(ad, tür, bayt)])."""
+    if request.headers.get('content-type', '').startswith(('multipart/form-data', 'application/x-www-form-urlencoded')):
+        form = await request.form()
+        fields, files, total = {}, [], 0
+        for k, v in form.multi_items():
+            if hasattr(v, 'filename'):
+                if v.filename and len(files) < MAX_FILES:
+                    data = await v.read()
+                    total += len(data)
+                    if total > MAX_TOTAL:
+                        raise HTTPException(400, 'Ekler toplam 25 MB sınırını aşıyor')
+                    files.append((v.filename, data, v.content_type or 'application/octet-stream'))
+            else:
+                fields[k] = v
+        return fields, files
+    try:
+        return (await request.json()) or {}, []
+    except ValueError:
+        return {}, []
+
+
+def _who(user):
+    return {'name': user['full_name'], 'email': user['username'] if '@' in (user.get('username') or '') else ''}
 
 
 @router.get('')
@@ -14,38 +43,130 @@ def overview(user=Depends(member_user)):
     return central_client.call('GET', '/membership')
 
 
+@router.get('/support-status')
+def support_status(user=Depends(member_user)):
+    return central_client.call('GET', '/support/status', timeout=6)
+
+
+# ---------------- destek talepleri ----------------
 @router.get('/tickets')
 def tickets(user=Depends(member_user)):
     return central_client.call('GET', '/tickets')
 
 
-class TicketIn(BaseModel):
-    subject: str
-    body: str
-    category: str = 'teknik'
-    priority: str = 'normal'
-
-
 @router.post('/tickets')
-def ticket_create(body: TicketIn, user=Depends(member_user), conn=db.DB):
-    r = central_client.call('POST', '/tickets', json={**body.model_dump(), 'name': user['full_name'], 'email': user['username'],
-                                                      'company_name': config.COMPANY_NAME})
-    db.audit(conn, user['id'], 'Merkeze destek talebi açtı', 'ticket', r.get('code'), body.subject[:80])
+async def ticket_create(request: Request, user=Depends(member_user), conn=db.DB):
+    f, files = await _form(request)
+    data = {'subject': f.get('subject', ''), 'body': f.get('body', ''), 'category': f.get('category', 'teknik'),
+            'priority': f.get('priority', 'normal'), 'company_name': config.COMPANY_NAME, **_who(user)}
+    r = central_client.call('POST', '/tickets', data=data, files=files, timeout=60)
+    db.audit(conn, user['id'], 'Merkeze destek talebi açtı', 'ticket', r.get('code'), str(data['subject'])[:80])
+    central_client.forget_unread()
     return r
 
 
 @router.get('/tickets/{tid}')
 def ticket_detail(tid: int, user=Depends(member_user)):
+    central_client.forget_unread()
     return central_client.call('GET', f'/tickets/{tid}')
 
 
-class MsgIn(BaseModel):
-    body: str
-
-
 @router.post('/tickets/{tid}/messages')
-def ticket_reply(tid: int, body: MsgIn, user=Depends(member_user)):
-    return central_client.call('POST', f'/tickets/{tid}/messages', json={'body': body.body, 'name': user['full_name']})
+async def ticket_reply(tid: int, request: Request, user=Depends(member_user)):
+    f, files = await _form(request)
+    return central_client.call('POST', f'/tickets/{tid}/messages', data={'body': f.get('body', ''), 'name': user['full_name']}, files=files, timeout=60)
+
+
+class RateIn(BaseModel):
+    rating: int
+    note: str = ''
+
+
+@router.post('/tickets/{tid}/rate')
+def ticket_rate(tid: int, body: RateIn, user=Depends(member_user)):
+    return central_client.call('POST', f'/tickets/{tid}/rate', json=body.model_dump())
+
+
+@router.post('/tickets/{tid}/close')
+def ticket_close(tid: int, user=Depends(member_user), conn=db.DB):
+    r = central_client.call('POST', f'/tickets/{tid}/close', json={'name': user['full_name']})
+    db.audit(conn, user['id'], 'Destek talebini çözüldü olarak kapattı', 'ticket', tid)
+    return r
+
+
+@router.get('/files/{token}')
+def file(token: str, user=Depends(member_user)):
+    r = central_client.call('GET', f'/files/{token}', raw=True, timeout=60)
+    keep = {k: v for k, v in r.headers.items() if k.lower() in ('content-disposition', 'content-security-policy', 'x-content-type-options')}
+    return Response(r.content, media_type=r.headers.get('content-type', 'application/octet-stream'), headers={**keep, 'Cache-Control': 'private, max-age=3600'})
+
+
+# ---------------- canlı destek ----------------
+@router.get('/chats')
+def chats(user=Depends(member_user)):
+    return central_client.call('GET', '/chats')
+
+
+class ChatIn(BaseModel):
+    topic: str = ''
+    category: str = 'teknik'
+    message: str
+
+
+@router.post('/chats')
+def chat_start(body: ChatIn, user=Depends(member_user), conn=db.DB):
+    r = central_client.call('POST', '/chats', json={**body.model_dump(), 'company_name': config.COMPANY_NAME, **_who(user)})
+    db.audit(conn, user['id'], 'Canlı destek başlattı' if not r.get('offline') else 'Canlı destek mesajı bıraktı (talep)', 'chat', r.get('id'))
+    return r
+
+
+@router.get('/chats/{cid}')
+def chat(cid: int, after: int = 0, user=Depends(member_user)):
+    return central_client.call('GET', f'/chats/{cid}', params={'after': after}, timeout=8)
+
+
+@router.post('/chats/{cid}/messages')
+async def chat_send(cid: int, request: Request, user=Depends(member_user)):
+    f, files = await _form(request)
+    data = {'body': f.get('body', ''), 'kind': f.get('kind', 'text'), 'name': user['full_name']}
+    if files:
+        return central_client.call('POST', f'/chats/{cid}/messages', data=data, files=files, timeout=60)
+    return central_client.call('POST', f'/chats/{cid}/messages', data=data)
+
+
+@router.post('/chats/{cid}/typing')
+def chat_typing(cid: int, user=Depends(member_user)):
+    try:
+        return central_client.call('POST', f'/chats/{cid}/typing', timeout=4)
+    except HTTPException:
+        return {'ok': False}
+
+
+@router.post('/chats/{cid}/end')
+def chat_end(cid: int, user=Depends(member_user)):
+    return central_client.call('POST', f'/chats/{cid}/end', json={'name': user['full_name']})
+
+
+@router.post('/chats/{cid}/rate')
+def chat_rate(cid: int, body: RateIn, user=Depends(member_user)):
+    return central_client.call('POST', f'/chats/{cid}/rate', json=body.model_dump())
+
+
+# ---------------- ödeme bildirimi ----------------
+class NoticeIn(BaseModel):
+    period: str = ''
+    amount: float
+    paid_at: str = ''
+    method: str = 'havale'
+    reference: str = ''
+    note: str = ''
+
+
+@router.post('/payment-notices')
+def notice(body: NoticeIn, user=Depends(member_user), conn=db.DB):
+    r = central_client.call('POST', '/payment-notices', json={**body.model_dump(), **_who(user)})
+    db.audit(conn, user['id'], 'Merkeze ödeme bildirdi', 'payment_notice', r.get('id'), f'{body.amount} {body.period}')
+    return r
 
 
 # ---- Sözleşmeler: Merkez'in yayınladığı üyelik sözleşmeleri; yetkili kişi okuyup elektronik olarak onaylar

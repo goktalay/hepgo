@@ -225,9 +225,34 @@ async function paymentsView(view) {
       chart = new Chart(canvas, chartConfig({ type: 'bar', labels: d.history.map(x => x.period), datasets: [{ label: 'Tahsilat', data: d.history.map(x => x.total) }] }, theme(), true));
     }).catch(() => {});
   };
+  // Firmaların “Ödeme bildir” ile ilettiği ödemeler: kontrol edilip onaylanınca ödeme kaydı oluşur
+  const notices = h('div');
+  const loadNotices = async () => {
+    let rows = [];
+    try { rows = await api.get('/api/central/support/payment-notices'); } catch { return; }
+    clear(notices, rows.length ? h('section', { class: 'card mm-notices' }, h('div', { class: 'mk-fin-h' }, h('b', null, `Onay bekleyen ödeme bildirimleri (${rows.length})`)),
+      h('div', { class: 'table-wrap' }, h('table', null,
+        h('thead', null, h('tr', null, ['Firma', 'Dönem', 'Tutar', 'Ödeme tarihi', 'Yöntem / ref.', 'Bildiren', ''].map(x => h('th', null, x)))),
+        h('tbody', null, rows.map(n => h('tr', null, h('td', null, h('b', null, n.company_name || n.slug)), h('td', null, n.period || '—'), h('td', { class: 'num' }, money(n.amount)),
+          h('td', null, fmtDate(n.paid_at)), h('td', null, [n.method, n.reference].filter(Boolean).join(' · ') || '—', n.note ? h('div', { class: 'small muted' }, n.note) : null),
+          h('td', { class: 'small' }, n.by_name || '—', n.by_email ? h('div', { class: 'muted' }, n.by_email) : null),
+          h('td', { class: 'num' }, h('button', { class: 'btn sm success', type: 'button', onclick: () => decide(n, true) }, 'Onayla'), ' ',
+            h('button', { class: 'btn sm', type: 'button', onclick: () => decide(n, false) }, 'Reddet')))))))) : null);
+  };
+  const decide = (n, approve) => {
+    const period = h('input', { class: 'input', type: 'month', value: n.period || per.value });
+    const amount = h('input', { class: 'input', type: 'number', step: '0.01', value: n.amount });
+    const note = h('input', { class: 'input', placeholder: approve ? 'Not (isteğe bağlı)' : 'Ret nedeni (firmaya görünür)' });
+    modal({ title: `${n.company_name || n.slug} · ödeme bildirimi`, body: h('div', null,
+      approve ? h('div', { class: 'row' }, field('Dönem', period), field('Tutar (₺)', amount)) : null, field('Not', note)),
+    actions: [{ label: 'Vazgeç' }, { label: approve ? 'Onayla ve ödemeye işle' : 'Reddet', class: approve ? 'primary' : 'danger', onClick: async () => {
+      await api.post(`/api/central/support/payment-notices/${n.id}/decide`, { approve, period: period.value, amount: Number(amount.value), note: note.value });
+      toast(approve ? 'Ödeme kaydedildi' : 'Bildirim reddedildi'); loadNotices(); load();
+    } }] });
+  };
   per.addEventListener('change', load);
-  clear(view, strip, h('div', { class: 'filters' }, h('label', { class: 'small muted' }, 'Dönem '), per), out, chartCard);
-  await load();
+  clear(view, notices, strip, h('div', { class: 'filters' }, h('label', { class: 'small muted' }, 'Dönem '), per), out, chartCard);
+  await Promise.all([load(), loadNotices()]);
 }
 
 function payModal(r, period, reload) {

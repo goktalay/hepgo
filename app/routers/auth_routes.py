@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import alerts, auth, catalogs, config, db, document_media, notifications, policy, push
+from .. import alerts, auth, catalogs, config, db, notifications, policy, push, speech
 from ..files import is_remote
 
 router = APIRouter(prefix='/api')
@@ -281,7 +281,7 @@ def me(user=Depends(auth.current_user), conn=db.DB):
     out['console'] = config.CONSOLE_ENABLED and bool(user['master'])   # web terminal açık mı (Araçlar › Terminal)
     out['support'] = bool(user.get('support'))   # merkez destek oturumu mu (arayüzde uyarı şeridi için)
     out['ai'] = bool(config.AI_API_KEY)   # yapay zeka asistanı tanımlı mı (anahtar yoksa maskot ve YZ ayarları gizlenir)
-    out['speech'] = document_media.whisper_available()   # Konuşma Tanıma entegrasyonu açık mı (sesle yazdırma, metne çevirme)
+    out['speech'] = speech.enabled('dictation', conn)   # sesle yazdırma: Konuşma Tanıma entegrasyonu + modül anahtarı
     out['nvr'] = bool(config.NVR_HOST and config.NVR_USER)   # NVR entegrasyonu aktif mi (Kameralar modülü yalnızca o zaman görünür)
     out['real_roles'] = user.get('real_roles', user['roles'])   # MASTER: ekranda gösterilen gerçek (atanmış) roller
     out['prefs'] = json.loads(user['prefs']) if user['prefs'] else {}

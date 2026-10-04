@@ -64,11 +64,29 @@ def main():
             time.sleep(0.2)
         assert d['ocr_status'] in ('TAMAM', 'YOK') and d['duration'] and not d.get('ocr_text') and not d.get('ocr_error'), d
 
+        # Modül Ayarları: entegrasyon çalışmıyorken hiçbir modülde açılamaz
+        v = ok(a.get('/api/system/speech'))
+        assert v['integration'] is False and {f['key'] for f in v['features']} == {'meetings', 'meet', 'calls', 'documents', 'dictation'}
+        assert not any(f['active'] for f in v['features'])
+        r = a.put('/api/system/speech/meetings', json={'on': True})
+        assert r.status_code == 400 and 'entegrasyonu çalışmıyor' in r.json()['detail']
+        assert a.put('/api/system/speech/yok', json={'on': False}).status_code == 404
+        ok(a.put('/api/system/speech/meetings', json={'on': False}))   # kapatmak her zaman serbest
+
         # Açılınca: me.speech (Whisper kuruluysa) true
         ok(a.put('/api/system/integrations/speech', json={'values': {'SPEECH_ENABLED': '1'}}))
         assert config.SPEECH_ENABLED is True
         installed = document_media.WHISPER.exists() and document_media.WHISPER_MODEL.exists()
         assert ok(a.get('/api/auth/me'))['speech'] is installed
+        if installed:   # modül anahtarları entegrasyondan bağımsız kapatılır / açılır
+            assert meeting_audio.available() is False   # toplantılar az önce kapatıldı
+            ok(a.put('/api/system/speech/meetings', json={'on': True}))
+            assert meeting_audio.available() == meeting_audio.MODEL.exists()
+            ok(a.put('/api/system/speech/dictation', json={'on': False}))
+            assert ok(a.get('/api/auth/me'))['speech'] is False
+            assert a.post('/api/system/dictate?lang=tr', files={'file': ('d.mp3', MP3, 'audio/mpeg')}).status_code == 503
+            ok(a.put('/api/system/speech/dictation', json={'on': True}))
+            assert ok(a.get('/api/auth/me'))['speech'] is True
         ok(a.put('/api/system/integrations/speech', json={'values': {'SPEECH_ENABLED': '0'}}))
         assert ok(a.get('/api/auth/me'))['speech'] is False
     assert not calls

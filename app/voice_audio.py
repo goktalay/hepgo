@@ -11,14 +11,15 @@ import numpy as np
 
 from . import config, db
 from .meeting_audio import (HALLUCINATIONS, MIN_RMS, SR, _to_wav, _unit, best_profile, cluster, embed,
-                            learn, profiles, read_wav, whisper_available, whisper_segments)
+                            learn, profiles, read_wav, whisper_segments)
 
 __all__ = ['process', 'start', 'schedule', 'resume_pending', 'available']
 
 
 def available():
     """Görüşme kaydı için yalnızca konuşma→metin (Whisper) yeterli. Ses kimliği (konuşmacı) modeli isteğe bağlıdır."""
-    return whisper_available()
+    from . import speech   # entegrasyon + Modül Ayarları › Sesli Görüşmeler anahtarı
+    return speech.enabled('calls')
 
 
 def _safe_embed(clip):

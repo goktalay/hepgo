@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config, db
-from .document_media import WHISPER, WHISPER_MODEL, _gpu, _to_wav, whisper_available
+from .document_media import WHISPER, WHISPER_MODEL, _gpu, _to_wav
 
 MODEL = config.BASE_DIR / 'vendor' / 'models' / 'wespeaker_resnet34_LM.onnx'
 SR = 16000
@@ -36,7 +36,8 @@ _lock = threading.Lock()
 
 
 def available():
-    return MODEL.exists() and whisper_available()
+    from . import speech   # entegrasyon + Modül Ayarları › Toplantılar anahtarı
+    return MODEL.exists() and speech.enabled('meetings')
 
 
 # ---------- ses kimliği

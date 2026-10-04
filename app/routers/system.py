@@ -158,6 +158,35 @@ def get_integrations(user=Depends(auth.current_user), conn=db.DB):
     return {'groups': integrations.view(conn)}
 
 
+@router.get('/speech')
+def get_speech(user=Depends(auth.current_user), conn=db.DB):
+    """Modül Ayarları: konuşma tanımanın modül bazında açık/kapalı durumu (+ entegrasyon çalışıyor mu)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu ayarlar yalnızca sistem yöneticisine açıktır')
+    from .. import speech
+    return speech.view(conn)
+
+
+class SpeechIn(BaseModel):
+    on: bool
+
+
+@router.put('/speech/{feature}')
+def put_speech(feature: str, body: SpeechIn, user=Depends(auth.current_user), conn=db.DB):
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import speech
+    try:
+        speech.set_flag(conn, feature, body.on)
+    except KeyError:
+        raise HTTPException(404, 'Bilinmeyen özellik')
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.audit(conn, user['id'], f"Konuşma tanıma {'açtı' if body.on else 'kapattı'}", 'speech', None, feature)
+    conn.commit()
+    return speech.view(conn)
+
+
 class IntegrationIn(BaseModel):
     values: dict = {}
     clear: list = []
@@ -548,8 +577,9 @@ DICTATE_EXT = {'.webm', '.ogg', '.oga', '.opus', '.mp4', '.m4a', '.mp3', '.wav',
 @router.post('/dictate')
 async def dictate(file: UploadFile, lang: str = 'tr', user=Depends(auth.current_user)):
     """Sesle yazdırma: kayıt → düz metin (varsayılan dil Türkçe)."""
-    if not document_media.whisper_available():
-        raise HTTPException(503, 'Konuşma tanıma kapalı (Program Ayarları › Entegrasyonlar › Konuşma Tanıma)')
+    from .. import speech
+    if not speech.enabled('dictation'):
+        raise HTTPException(503, 'Sesle yazdırma kapalı (Program Ayarları › Entegrasyonlar / Modül Ayarları › Sesle Yazdırma)')
     ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
     if ext not in DICTATE_EXT:
         raise HTTPException(400, 'Desteklenmeyen ses biçimi')

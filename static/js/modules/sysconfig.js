@@ -503,7 +503,36 @@ const MODULE_SETTINGS = [
   { key: 'hr', title: 'İnsan Kaynakları · İSG', desc: 'Görev tanımı belgelerinin genel hükümleri', icon: 'person', body: isgGeneralBody },
   { key: 'cleaning', title: 'Temizlik', desc: 'Günlük temizlik çeklisti maddeleri', icon: 'grid', body: cleaningSettingsBody },
   { key: 'building', title: 'Güvenlik · Bina Kontrol', desc: 'Günlük bina kontrol (tur) saatleri', icon: 'lock', body: buildingSettingsBody },
+  // Konuşma tanımanın geçtiği modüller: her birinde aç / kapa (entegrasyon çalışmıyorsa açılamaz)
+  { key: 'speech-meetings', title: 'Toplantılar', desc: 'Toplantı kaydını metne çevirme, konuşmacı tanıma', icon: 'grid', body: () => speechSettingsBody('meetings') },
+  { key: 'speech-meet', title: 'Online Toplantı', desc: 'Online toplantı kaydını metne çevirme', icon: 'grid', body: () => speechSettingsBody('meet') },
+  { key: 'speech-calls', title: 'Sesli Görüşmeler', desc: 'Görüşme kaydını metne çevirme', icon: 'grid', body: () => speechSettingsBody('calls') },
+  { key: 'speech-documents', title: 'Evrak Yönetimi', desc: 'Ses / video evrakının konuşmasını metne çevirme', icon: 'grid', body: () => speechSettingsBody('documents') },
+  { key: 'speech-dictation', title: 'Sesle Yazdırma', desc: 'Metin kutularında mikrofon', icon: 'grid', body: () => speechSettingsBody('dictation') },
 ];
+
+// Konuşma tanıma (modül bazında): entegrasyon açık ve çalışıyorsa açılabilir; kapalıyken sesler yalnız kaydedilir
+function speechSettingsBody(key) {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const draw = d => {
+    const f = d.features.find(x => x.key === key);
+    const cb = h('input', { type: 'checkbox', checked: f.on && d.integration, disabled: !d.integration });
+    cb.addEventListener('change', async () => {
+      cb.disabled = true;
+      try { draw(await api.put(`/api/system/speech/${key}`, { on: cb.checked })); toast(cb.checked ? 'Konuşma tanıma açıldı' : 'Konuşma tanıma kapatıldı'); }
+      catch (err) { toastError(err); cb.checked = !cb.checked; cb.disabled = false; }
+    });
+    clear(wrap, h('section', { class: 'card card-pad' },
+      h('h3', { style: { marginTop: 0 } }, `Konuşma Tanıma · ${f.title}`),
+      h('p', { class: 'small muted' }, f.desc),
+      h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, 'Bu modülde konuşma tanımayı kullan'),
+        h('small', null, d.integration ? (f.active ? 'Açık: sesler metne çevriliyor.' : 'Kapalı: sesler yalnız kaydediliyor.')
+          : 'Açılamaz: Konuşma Tanıma entegrasyonu kapalı ya da çalışmıyor. Kapalıyken sesler yalnız kaydedilir.'))),
+      d.integration ? null : h('p', { class: 'small' }, h('a', { href: '#/sysconfig/integrations' }, 'Program Ayarları › Entegrasyonlar › Konuşma Tanıma →'))));
+  };
+  (async () => { try { draw(await api.get('/api/system/speech')); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); } })();
+  return wrap;
+}
 
 // Bina kontrol saatleri: her gün güvenlik personelinin bina turu atacağı saatler
 function buildingSettingsBody() {

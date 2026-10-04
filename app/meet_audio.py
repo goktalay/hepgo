@@ -11,13 +11,14 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from . import config, db
-from .meeting_audio import HALLUCINATIONS, MIN_RMS, SR, _to_wav, _unit, learn, read_wav, whisper_available, whisper_segments
+from .meeting_audio import HALLUCINATIONS, MIN_RMS, SR, _to_wav, _unit, learn, read_wav, whisper_segments
 
 __all__ = ['process', 'schedule', 'resume_pending', 'available']
 
 
 def available():
-    return whisper_available()
+    from . import speech   # entegrasyon + Modül Ayarları › Online Toplantı anahtarı
+    return speech.enabled('meet')
 
 
 def _safe_embed(clip):

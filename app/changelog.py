@@ -3,9 +3,19 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.116.0'
+VERSION = '2.117.0'
 
 CHANGELOG = [
+    {'version': '2.117.0', 'date': '2026-10-04', 'title': 'Mail yeniden tasarlandı (Gmail gibi)',
+     'changes': [
+         'Mail ekranı Gmail uygulaması gibi baştan tasarlandı: tam ekran liste, renkli baş harf avatarları, gönderen / konu / içerikten iki satır özet, ek simgesi, yıldız; üstte yuvarlak arama çubuğu, solda çekmece menü (hesaplar ve klasörler), sağ altta “Yeni e-posta” düğmesi.',
+         'Mobilde: aşağı kaydırınca üst çubuk gizlenir, yukarı çekince yenilenir; satırı sağa / sola kaydırarak arşivle ya da sil (5 saniye “Geri al”); avatara dokunarak ya da basılı tutarak çoklu seçim ve toplu işlem. Telefonun geri tuşu okuma / yazma ekranını kapatır, Mail’den çıkmaz.',
+         'Okuma ekranı: tam genişlikte, geniş bültenler ekrana sığdırılır, karanlık temada düz metin okunur; altta Yanıtla / Tümünü yanıtla / Yönlendir. Uzak resimler isteğe bağlı gösterilir.',
+         '“Mail bilgileri” kartı (açılır / kapanır): Kişiler sekmesinde gönderen, alıcılar ve Bilgi’deki kişiler düğme olarak; kişiye tıklayıp bir firmanın personeli olarak atanır (Firmalar’a kalıcı kaydedilir). Aynı kişiden gelen sonraki maillerde liste ve okuma ekranında firma adı görünür. Ekler sekmesinde ekler düğme olarak; tek tıkla aç, tümünü Evraklara kaydet.',
+         'Yeni e-posta penceresi: masaüstünde sağ altta küçültülüp büyütülebilen pencere, mobilde tam ekran; alıcı kutucukları ve öneriler, hatalı adres uyarısı, kapatınca taslak otomatik kaydedilir, gönderdikten sonra 5 saniye “Geri al”.',
+         'Mail bildirimlerinde gönderen, konu ve mail içeriğinden kısa bir özet görünür (uygulama içi bildirim, masaüstü ve telefon bildirimi); tek mail varsa bildirime tıklayınca doğrudan o mail açılır. Bildirim için mail okunmuş sayılmaz.',
+         'Klavye kısayolları (masaüstü): c yeni e-posta, / ara, e arşivle, # sil, u listeye dön, Esc kapat.',
+     ]},
     {'version': '2.116.0', 'date': '2026-10-04', 'title': 'Destek Merkezi, canlı destek ve yeni firma paneli',
      'changes': [
          'Merkez › Destek Merkezi: pano (bekleyen sohbet, açık / SLA aşan / atanmamış talepler, ortalama ilk yanıt ve çözüm süresi, memnuniyet, SLA uyumu, 14 günlük grafik), talep kuyrukları (bana atanan, atanmamış, destek / firma yanıtı bekleyen, SLA aşan), toplu atama ve durum değiştirme.',

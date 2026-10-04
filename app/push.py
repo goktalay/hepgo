@@ -154,8 +154,9 @@ def _scan():
             if new:
                 n = new[0]
                 more = f' (+{len(new) - 1} bildirim daha)' if len(new) > 1 else ''
-                out.append((uid, {'type': 'notif', 'title': n['title'], 'tag': f'notif-{n["key"]}',
-                                  'body': (', '.join(n['names'][:3]) or n.get('detail') or '') + more,
+                own = n.get('push') or {}   # tür kendi başlık / gövdesini verdiyse (ör. e-posta: gönderen + konu + özet)
+                out.append((uid, {'type': 'notif', 'title': (own.get('title') or n['title'])[:120], 'tag': f'notif-{n["key"]}',
+                                  'body': (own.get('body') or ', '.join(n['names'][:3]) or n.get('detail') or '')[:600] + more,
                                   'url': '/app' + (n['href'] or '#/')}))
     return out
 

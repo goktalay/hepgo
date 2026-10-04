@@ -382,7 +382,9 @@ function announce(kind, items) {
     playEvent(kind === 'alerts' ? (i.critical ? 'critical' : 'alert') : eventOfNotification(i.key));
     const names = fresh.length ? fresh : i.names;
     if (flashOn()) flash(kind, i, names);
-    if (!((i.key === 'feed-new' || i.key === 'live-now') && devicePush)) desktopNotify(i.title, names.slice(0, 3).join(', '), () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; });
+    const go = () => { location.hash = kind === 'alerts' ? `#/alerts/${i.key}` : i.href; };
+    if (i.key === 'mail-unread' && devicePush) continue;   // e-posta: telefon / masaüstü bildirimini sunucu (özetiyle) atar
+    if (!((i.key === 'feed-new' || i.key === 'live-now') && devicePush)) desktopNotify(i.push?.title || i.title, i.push?.body || names.slice(0, 3).join(', '), go);
   }
 }
 function flash(kind, item, names) {
@@ -394,8 +396,9 @@ function flash(kind, item, names) {
     h('span', { class: 'flash-ico' }, svgIcon(alert ? icons.warning : icons.bell)),
     h('div', null,
       h('div', { class: 'flash-kind' }, alert ? (item.critical ? 'Yeni kritik uyarı' : 'Yeni uyarı') : 'Yeni bildirim'),
-      h('b', null, item.title),
-      names.length ? h('div', { class: 'small' }, names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '')) : null));
+      h('b', null, item.push?.title || item.title),
+      item.push?.body ? h('div', { class: 'small flash-body' }, item.push.body)
+        : names.length ? h('div', { class: 'small' }, names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '')) : null));
   flashBox.append(box);
   setTimeout(() => box.classList.add('out'), flashMs());
   setTimeout(() => box.remove(), flashMs() + 400);

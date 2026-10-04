@@ -11,8 +11,8 @@ from datetime import date
 from . import auth, catalogs, db
 
 
-def _result(rows, names, href, detail=None):
-    return {'rows': rows, 'names': names, 'href': href, 'detail': detail}
+def _result(rows, names, href, detail=None, push=None):
+    return {'rows': rows, 'names': names, 'href': href, 'detail': detail, 'push': push}
 
 
 def _field_tasks(conn, where, args=()):
@@ -257,11 +257,23 @@ def meeting_soon(conn, user):
 
 
 def mail_unread(conn, user):
-    """Gmail gelen kutusundaki okunmamış e-postalar (hesap bağlıysa)."""
-    from .routers.mail import unread_count
-    n = unread_count(conn, user)
+    """Bağlı mail hesaplarının gelen kutularındaki okunmamış e-postalar: gönderen, konu ve içerikten kısa özet."""
+    from .routers.mail import unread_preview
+    n, items = unread_preview(conn, user)
     rows = [{'id': i} for i in range(n)]
-    return _result(rows, [f'{n} okunmamış e-posta'] if n else [], '#/mail', 'Gelen kutusunu açın')
+    if not n:
+        return _result(rows, [], '#/mail')
+    who = lambda x: (x['from'].get('name') or x['from'].get('email') or '').strip()[:80]   # gönderen belirler → sınırlı (push en çok ~4 KB)
+    names = [f"{who(x)}: {x['subject'][:200]}" + (f" — {x['snippet'][:100]}" if x.get('snippet') else '') for x in items]
+    if n > len(items):
+        names.append(f'+{n - len(items)} okunmamış e-posta daha')
+    href = f"#/mail/{items[0]['box_id']}/m/{items[0]['uid']}" if n == 1 and items else '#/mail'
+    push = None
+    if items:
+        x = items[0]
+        push = {'title': f"✉️ {who(x)}" + (f' (+{n - 1})' if n > 1 else ''),
+                'body': x['subject'][:200] + (f"\n{x['snippet'][:160]}" if x.get('snippet') else '')}
+    return _result(rows, names or [f'{n} okunmamış e-posta'], href, 'Okumak için açın', push=push)
 
 
 def announcements_unread(conn, user):
@@ -557,7 +569,7 @@ def for_user(conn, user):
         r = n['fn'](conn, user)
         if r['rows']:
             out.append({'key': n['key'], 'title': n['title'], 'href': r['href'], 'count': len(r['rows']),
-                        'names': r['names'][:5], 'detail': r['detail']})
+                        'names': r['names'][:6], 'detail': r['detail'], 'push': r.get('push')})
     return out
 
 

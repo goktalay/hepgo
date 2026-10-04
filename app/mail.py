@@ -9,6 +9,7 @@ yaygın adlardan (Sent Items, Gönderilmiş Öğeler…) bulunur; diğer klasör
 import base64
 import email
 import hashlib
+import html as _html
 import imaplib
 import poplib
 import re
@@ -30,6 +31,7 @@ TIMEOUT = 20
 IDLE_CLOSE = 300
 PAGE = 50
 imaplib._MAXLINE = 10_000_000   # büyük klasör listeleri
+poplib._MAXLINE = 200_000        # HTML gövdelerde tek satır uzun olabilir (önizleme için TOP n 30)
 
 PROVIDERS = {   # anahtar: (başlık, imap, smtp(host, port, güvenlik), oauth, gönderileni sunucu kendisi kaydeder mi, not)
     'gmail': {'title': 'Gmail / Google Workspace', 'imap': ('imap.gmail.com', 993), 'smtp': ('smtp.gmail.com', 465, 'ssl'), 'oauth': 'google',
@@ -412,18 +414,67 @@ def _date(v):
         return None
 
 
-def _summary(uid, hdr_bytes, flags=(), size=0):
+SNIPPET_BYTES = 6000   # liste önizlemesi için gövdenin yalnız başı okunur (Gmail'deki tek satırlık özet)
+
+
+def _snippet(hdr_bytes, text, n=180):
+    """Kısmi gövdeden (ilk birkaç KB) okunabilir tek satırlık önizleme: ilk düz metin (yoksa HTML) bölüm, alıntılar atılır."""
+    if not text:
+        return ''
+    try:
+        msg = email.message_from_bytes(hdr_bytes.rstrip(b'\r\n') + b'\r\n\r\n' + text)
+        target = None
+        for part in msg.walk():
+            if part.is_multipart() or part.get_filename():
+                continue
+            ct = part.get_content_type()
+            if ct == 'text/plain':
+                target = part
+                break
+            if ct == 'text/html' and target is None:
+                target = part
+        if target is None:
+            return ''
+        cte = (target.get('Content-Transfer-Encoding') or '').strip().lower()
+        if cte == 'base64':   # kesilmiş base64: 4'ün katına indirip çöz
+            b = re.sub(r'[^A-Za-z0-9+/=]', '', target.get_payload(decode=False) or '').rstrip('=')
+            b = b[:len(b) // 4 * 4]
+            data = base64.b64decode(b + '=' * (-len(b) % 4)) if b else b''
+        else:
+            data = target.get_payload(decode=True) or b''
+        cs = target.get_content_charset() or 'utf-8'
+        try:
+            txt = data.decode(cs, 'replace')
+        except LookupError:
+            txt = data.decode('utf-8', 'replace')
+        if target.get_content_type() == 'text/html':
+            txt = re.sub(r'(?is)<(style|script|head|title)[^>]*>.*?(</\1>|$)', ' ', txt)
+            txt = re.sub(r'(?s)<!--.*?(-->|$)', ' ', txt)
+            txt = re.sub(r'(?s)<[^>]*>?', ' ', txt)
+            txt = _html.unescape(txt)
+        lines = [ln for ln in txt.splitlines() if not ln.lstrip().startswith('>')]
+        txt = re.sub(r'\s+', ' ', ' '.join(lines)).strip()
+        txt = re.sub(r'[\u200b-\u200f\u034f\u00ad\ufeff]+', '', txt)
+        return txt[:n]
+    except Exception:
+        return ''
+
+
+def _summary(uid, hdr_bytes, flags=(), size=0, text=None):
     h = email.message_from_bytes(hdr_bytes, policy=default_policy)
     ctype = (h.get('Content-Type') or '').lower()
     return {'uid': uid, 'from': _addr(h['From']), 'to': _addr(h['To'] or ''), 'subject': _dec(h['Subject']) or '(konu yok)',
             'date': _date(h['Date']), 'seen': '\\Seen' in flags, 'starred': '\\Flagged' in flags,
-            'attach': 'multipart/mixed' in ctype, 'invite': 'text/calendar' in ctype, 'size': size}
+            'attach': 'multipart/mixed' in ctype, 'invite': 'text/calendar' in ctype, 'size': size,
+            'snippet': _snippet(hdr_bytes, text)}
 
 
 # ---------------- IMAP: liste / okuma / işlemler ----------------
-def list_messages(box, folder='inbox', q='', page=0, unread_only=False):
+def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PAGE, offset=None):
+    """offset verilirse sayfa yerine o sıradan başlar (sonsuz kaydırma: arşivle / sil sonrası ileti atlanmasın)."""
+    start = max(0, offset) if offset is not None else page * limit
     if settings(box)['is_pop']:
-        return pop_list(box, q, page, unread_only)
+        return pop_list(box, q, page, unread_only, offset=start)
     c = conn_for(box)
     gm = settings(box)['gmail']
 
@@ -443,22 +494,31 @@ def list_messages(box, folder='inbox', q='', page=0, unread_only=False):
         uids = [int(x) for x in (d[0] or b'').split()] if typ == 'OK' else []
         uids.sort(reverse=True)
         total = len(uids)
-        chunk = uids[page * PAGE:(page + 1) * PAGE]
+        chunk = uids[start:start + limit]
         if not chunk:
             return {'items': [], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
-        typ, data = m.uid('FETCH', ','.join(map(str, chunk)), '(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE)])')
-        items = {}
+        typ, data = m.uid('FETCH', ','.join(map(str, chunk)),
+                          f'(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT]<0.{SNIPPET_BYTES}>)')
+        got, cur = {}, None   # uid → {hdr, text, flags, size}; gövde parçası UID taşımayabilir → son görülen UID'ye aittir
         for part in data or []:
             if not isinstance(part, tuple):
                 continue
-            meta, hdr = part[0].decode(errors='replace'), part[1]
+            meta, payload = part[0].decode(errors='replace'), part[1]
             mu = re.search(r'UID (\d+)', meta)
-            if not mu:
+            if mu:
+                cur = int(mu.group(1))
+                d = got.setdefault(cur, {'hdr': b'', 'text': None, 'flags': [], 'size': 0})
+                fl = re.search(r'FLAGS \(([^)]*)\)', meta)
+                size = re.search(r'RFC822\.SIZE (\d+)', meta)
+                d['flags'] = fl.group(1).split() if fl else d['flags']
+                d['size'] = int(size.group(1)) if size else d['size']
+            if cur is None:
                 continue
-            uid = int(mu.group(1))
-            fl = re.search(r'FLAGS \(([^)]*)\)', meta)
-            size = re.search(r'RFC822\.SIZE (\d+)', meta)
-            items[uid] = _summary(uid, hdr, fl.group(1).split() if fl else [], int(size.group(1)) if size else 0)
+            if 'BODY[TEXT]' in meta.upper():
+                got[cur]['text'] = payload
+            else:
+                got[cur]['hdr'] = payload
+        items = {u: _summary(u, d['hdr'], d['flags'], d['size'], d['text']) for u, d in got.items() if d['hdr']}
         return {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
     return _run(c, fn)
 
@@ -714,6 +774,7 @@ def save_draft(box, *, to='', cc='', bcc='', subject='', body='', html=None, fil
 
 # ---------------- POP3 ----------------
 _pop_cache = {}   # box id → (zaman, [(uidl, no, başlık özeti)])
+_pop_locks = {}
 
 
 def pop_connect(box):
@@ -735,27 +796,45 @@ def pop_connect(box):
 
 
 def _pop_index(box, fresh=False):
-    hit = _pop_cache.get(box['id'])
-    if hit and not fresh and time.time() - hit[0] < 60:
-        return hit[1]
-    p = pop_connect(box)
-    try:
-        resp, lines, _ = p.uidl()
-        idx = []
-        for ln in lines:
-            no, uidl = ln.decode(errors='replace').split(' ', 1)
-            idx.append((uidl.strip(), int(no)))
-        out = []
-        for uidl, no in idx[-300:]:   # son 300 ileti
-            _, hl, _ = p.top(no, 0)
-            out.append((uidl, no, b'\r\n'.join(hl) + b'\r\n\r\n'))
-    finally:
+    """Son 300 ileti: (uidl, no, başlık + gövdenin ilk 30 satırı). Önceki dizindeki iletiler yeniden indirilmez (UIDL değişmez);
+    aynı hesap için eşzamanlı istekler tek dizini paylaşır."""
+    def cached():
+        hit = _pop_cache.get(box['id'])
+        return hit[1] if hit and not fresh and time.time() - hit[0] < 60 else None
+    if (out := cached()) is not None:
+        return out
+    with _pop_locks.setdefault(box['id'], threading.Lock()):
+        if (out := cached()) is not None:   # başka istek az önce tazeledi
+            return out
+        old = {u: top for u, _, top in (_pop_cache.get(box['id']) or (0, []))[1]}
+        p = pop_connect(box)
         try:
-            p.quit()
-        except Exception:
-            pass
-    _pop_cache[box['id']] = (time.time(), out)
-    return out
+            resp, lines, _ = p.uidl()
+            idx = []
+            for ln in lines:
+                no, uidl = ln.decode(errors='replace').split(' ', 1)
+                idx.append((uidl.strip(), int(no)))
+            out = []
+            for uidl, no in idx[-300:]:
+                top = old.get(uidl)
+                if top is None:
+                    try:
+                        _, hl, _ = p.top(no, 30)
+                    except poplib.error_proto:   # aşırı uzun satır: bağlantı yanıtın ortasında kalır → yeniden bağlan, yalnız başlık
+                        p.close()
+                        p = pop_connect(box)
+                        _, hl, _ = p.top(no, 0)
+                    top = b'\r\n'.join(hl) + b'\r\n'
+                out.append((uidl, no, top))
+        except (poplib.error_proto, OSError) as e:
+            raise MailError(f'POP3 sunucusu yanıtı okunamadı: {e}') from e
+        finally:
+            try:
+                p.quit()
+            except Exception:
+                pass
+        _pop_cache[box['id']] = (time.time(), out)
+        return out
 
 
 def _pop_seen(box):
@@ -776,18 +855,19 @@ def pop_folders(box):
     return [{'key': 'inbox', 'title': 'Gelen Kutusu', 'unseen': sum(1 for u, _, _ in _pop_index(box) if u not in seen)}]
 
 
-def pop_list(box, q='', page=0, unread_only=False):
+def pop_list(box, q='', page=0, unread_only=False, offset=None):
     seen = _pop_seen(box)
     items = []
-    for uidl, no, hdr in reversed(_pop_index(box)):
-        s = _summary(_pop_uid(uidl), hdr, ['\\Seen'] if uidl in seen else [])
+    for uidl, no, top in reversed(_pop_index(box)):
+        hdr, _, text = top.partition(b'\r\n\r\n')
+        s = _summary(_pop_uid(uidl), hdr + b'\r\n\r\n', ['\\Seen'] if uidl in seen else [], text=text)
         if q and q.lower() not in f"{s['subject']} {s['from']['name']} {s['from']['email']}".lower():
             continue
         if unread_only and s['seen']:
             continue
         items.append(s)
-    total = len(items)
-    return {'items': items[page * PAGE:(page + 1) * PAGE], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+    total, start = len(items), (page * PAGE if offset is None else offset)
+    return {'items': items[start:start + PAGE], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
 
 
 def _pop_find(box, uid):

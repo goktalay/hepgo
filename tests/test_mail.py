@@ -89,15 +89,22 @@ class FakeIMAP:
                 ids = list(b)
             return 'OK', [' '.join(map(str, ids)).encode()]
         ids = [int(x) for x in args[0].split(',')]
-        if cmd == 'FETCH':
+        if cmd == 'FETCH':   # gerçek sunucu gibi: liste isteğinde başlık ve kısmi gövde ayrı literal olarak döner
             out = []
             for u in ids:
                 m = b.get(u)
                 if not m:
                     continue
-                meta = f'{u} (UID {u} FLAGS ({" ".join(m["flags"])}) RFC822.SIZE {len(m["raw"])} BODY[] {{1}}'.encode()
-                data = m['raw'] if 'HEADER.FIELDS' not in args[1] else m['raw'].split(b'\n\n')[0] + b'\n\n'
-                out += [(meta, data), b')']
+                head = f'{u} (UID {u} FLAGS ({" ".join(m["flags"])}) RFC822.SIZE {len(m["raw"])}'
+                if 'HEADER.FIELDS' in args[1]:
+                    hdr, _, body = m['raw'].partition(b'\n\n')
+                    lim = re.search(r'TEXT\]<0\.(\d+)>', args[1])
+                    out.append((f'{head} BODY[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE)] {{{len(hdr) + 2}}}'.encode(), hdr + b'\n\n'))
+                    if lim:
+                        out.append((f' BODY[TEXT]<0> {{{min(len(body), int(lim.group(1)))}}}'.encode(), body[:int(lim.group(1))]))
+                else:
+                    out.append((f'{head} BODY[] {{{len(m["raw"])}}}'.encode(), m['raw']))
+                out.append(b')')
             return 'OK', out
         if cmd == 'STORE':
             for u in ids:
@@ -135,7 +142,9 @@ class FakePOP:
         if p != GOOD:
             raise mail.poplib.error_proto(b'-ERR authentication failed')
     def uidl(self): return b'+OK', [f'{i + 1} pop-{i}'.encode() for i in range(len(self.msgs))], 0
-    def top(self, no, n): return b'+OK', self.msgs[no - 1].split(b'\n\n')[0].split(b'\n'), 0
+    def top(self, no, n):
+        hdr, _, body = self.msgs[no - 1].partition(b'\n\n')
+        return b'+OK', hdr.split(b'\n') + [b''] + body.split(b'\n')[:n], 0
     def retr(self, no): return b'+OK', self.msgs[no - 1].split(b'\n'), 0
     def dele(self, no): self.msgs[no - 1] = None
     def quit(self): FakePOP.msgs = [m for m in self.msgs if m]
@@ -196,6 +205,50 @@ def main():
         assert {'inbox', 'sent', 'drafts', 'trash'} <= set(keys) and 'x:Projeler' in keys and keys['x:Projeler']['title'] == 'Projeler', f
         fg = {x['key'] for x in ok(u.get(f"/api/mail/{g['id']}/folders"))}
         assert {'inbox', 'sent', 'trash', 'drafts'} <= fg
+        # Liste önizlemesi (snippet): düz metin / HTML (betik ve stil atılır) / POP3
+        lst = ok(u.get(f"/api/mail/{g['id']}/list?folder=inbox"))['items']
+        snip = {x['subject']: x['snippet'] for x in lst}
+        assert snip['Teklif'].startswith('Merhaba 1'), snip
+        assert all('alert' not in v and '<' not in v for v in snip.values()), snip
+        assert ok(u.get(f"/api/mail/{p['id']}/list?folder=inbox"))['items'][0]['snippet'].startswith('Merhaba'), 'POP3 önizleme'
+        # Bildirim: okunmamış e-postalar gönderen + konu + içerik özetiyle; okundu işaretlenmez
+        nt = next(x for x in ok(u.get('/api/notifications'))['items'] if x['key'] == 'mail-unread')
+        assert nt['count'] >= 2 and any('Teklif — Merhaba 1' in x for x in nt['names']), nt
+        assert nt['push']['title'].startswith('✉️') and nt['push']['body'], nt
+        assert SEEN not in FakeIMAP.servers['imap.gmail.com']['INBOX'][1]['flags'], 'önizleme okundu işaretlememeli'
+        # Kişi → firma: gönderen bir firmaya personel olarak atanır; sonraki listede / okumada firma adı görünür
+        from app import db as _db
+        with _db.connect() as cc_:
+            comp_id = cc_.execute("INSERT INTO companies (name, active, created_at) VALUES ('Müşteri A.Ş.', 1, '2026-01-01T00:00:00')").lastrowid
+            cc_.commit()
+        assert any(c['id'] == comp_id for c in ok(u.get('/api/mail/companies?q=Müşteri')))
+        r = ok(u.post('/api/mail/people/assign', json={'email': 'Veli@Musteri.com', 'full_name': 'Veli Kaya', 'company_id': comp_id, 'title': 'Satın Alma'}))
+        assert r['company_name'] == 'Müşteri A.Ş.' and r['title'] == 'Satın Alma', r
+        row_ = next(x for x in ok(u.get(f"/api/mail/{g['id']}/list?folder=inbox"))['items'] if x['subject'] == 'Teklif')
+        assert row_['company'] == 'Müşteri A.Ş.', row_
+        assert v.post('/api/mail/people/assign', json={'email': 'x@y.com', 'full_name': 'X', 'company_id': comp_id}).status_code in (403, 200)
+        # Adres başka firmada kayıtlıysa oradaki kişiye dokunulmaz; seçilen firmaya yeni kişi eklenir, en son atanan görünür
+        with _db.connect() as cc_:
+            b_id = cc_.execute("INSERT INTO companies (name, active, created_at) VALUES ('Bayi B', 1, '2026-01-01T00:00:00')").lastrowid
+            rana = cc_.execute("INSERT INTO company_people (company_id, full_name, email, created_at) VALUES (?, 'Rana', 'rana@b.com', '2026-01-01')", (b_id,)).lastrowid
+            sup_id = cc_.execute("INSERT INTO companies (name, active, is_supplier, created_at) VALUES ('Tedarikçi T', 1, 1, '2026-01-01T00:00:00')").lastrowid
+            cc_.commit()
+        r = ok(u.post('/api/mail/people/assign', json={'email': 'rana@b.com', 'full_name': 'Rana Yılmaz', 'company_id': comp_id}))
+        assert r['company_id'] == comp_id and r['person_id'] != rana, r
+        with _db.connect() as cc_:
+            assert tuple(cc_.execute('SELECT company_id, full_name, email FROM company_people WHERE id = ?', (rana,)).fetchone()) == (b_id, 'Rana', 'rana@b.com')
+        r = ok(u.delete(f"/api/mail/people/assign?person_id={r['person_id']}&email=rana@b.com"))
+        assert r['company']['company_id'] == b_id, r   # yalnız o kişiden kaldırıldı; B'deki kayıt yerinde
+        assert u.delete(f'/api/mail/people/assign?person_id={rana}&email=baska@b.com').status_code == 404
+        # Tedarikçi firmalar Satın Alma yetkisi ister (Firmalar'daki kural)
+        from app.routers.mail import _co_write
+        only_co = {'modules': ['companies'], 'write_modules': ['companies']}
+        assert _co_write(only_co, False) and not _co_write(only_co, True)
+        assert not _co_write({'modules': ['companies'], 'write_modules': []}, False), 'salt okunur Firmalar yetkisi atayamaz'
+        assert not any(c['id'] == sup_id for c in ok(u.get('/api/mail/companies?q=Tedarik'))), 'İdari Personel tedarikçiyi görmez'
+        assert u.post('/api/mail/people/assign', json={'email': 'z@t.com', 'full_name': 'Z', 'company_id': sup_id}).status_code == 403
+        # Sonsuz kaydırma: sıra konumuyla (offset) sonraki parça
+        assert [x['uid'] for x in ok(u.get(f"/api/mail/{g['id']}/list?folder=inbox&offset=1"))['items']] == [2, 1]
         # Liste, arama, okuma + davet takvime, kişi rehbere
         lst = ok(u.get(f"/api/mail/{g['id']}/list?folder=inbox"))
         assert [x['uid'] for x in lst['items']] == [3, 2, 1] and lst['items'][2]['attach']

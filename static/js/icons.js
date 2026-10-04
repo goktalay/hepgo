@@ -69,6 +69,7 @@ export const icons = {
   videocam: svg('<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10l5-3v10l-5-3z"/>'),
   cleaning: svg('<path d="M15 3l4 4-7 7-4-4z"/><path d="M8 10l-4 8 8-4"/><path d="M4 18l2 2"/>'),
   design: svg('<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M12 3v18M3 8l9 5 9-5"/><circle cx="12" cy="13" r="2"/>'),
+  projects: svg('<path d="M3 7.5h7l2 2.5h9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M8 14.5h3M8 17h6"/><circle cx="17" cy="15.5" r="2"/>'),
   boss: svg('<path d="M3 17.5h18"/><path d="M4 17.5 3 7.5l5 3.5 4-6 4 6 5-3.5-1 10"/><circle cx="12" cy="5" r=".6"/><path d="M5 20.5h14"/>'),
   fleet: svg('<path d="M3 16.5v-4.3l2-5.1c.3-.8 1.1-1.3 1.9-1.3h10.2c.8 0 1.6.5 1.9 1.3l2 5.1v4.3"/><path d="M3 12.2h18"/><path d="M2.5 16.5h19"/><circle cx="7" cy="16.8" r="1.8"/><circle cx="17" cy="16.8" r="1.8"/><path d="M5.6 14.4h1.6M16.8 14.4h1.6"/>'),
   certs: svg('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><circle cx="12" cy="13" r="3"/><path d="M10.5 15.5 9.5 20l2.5-1.3 2.5 1.3-1-4.5"/>'),

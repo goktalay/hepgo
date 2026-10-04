@@ -186,6 +186,45 @@ def preview(conn):
             'son_senkron': json.loads(last[0]) if last else None}
 
 
+def sync_projects(conn):
+    """Mikro proje kartları ve hareketlerdeki proje kodları (Proje Yönetimi taraması için). Her sorgu ayrı korunur:
+    kurulumdaki Mikro sürümünde tablo / kolon yoksa yalnızca o adım atlanır, sonuç app_kv 'mikro_projects_probe'a yazılır."""
+    import json as _j
+    st = {'at': db.now()}
+    try:
+        rows = mikro.query("SELECT pro_kodu AS kod, pro_adi AS ad FROM PROJELER")
+        conn.execute('DELETE FROM mikro_projects')
+        conn.executemany('INSERT OR REPLACE INTO mikro_projects (code, name) VALUES (?,?)',
+                         [((r.get('kod') or '').strip(), (r.get('ad') or '').strip() or None) for r in rows if (r.get('kod') or '').strip()])
+        st['projeler'] = len(rows)
+    except Exception as e:   # noqa: BLE001 — tablo yoksa senkronun geri kalanı sürsün
+        st['projeler'] = f'okunamadı: {str(e)[:160]}'
+    try:
+        rows = mikro.query("""SELECT CAST(cha_Guid AS varchar(40)) AS guid, cha_projekodu AS kod FROM CARI_HESAP_HAREKETLERI
+                              WHERE cha_iptal = 0 AND ISNULL(cha_projekodu, '') <> ''""")
+        ids = {}
+        for ref, tid in conn.execute("SELECT mikro_ref, id FROM fin_txns WHERE mikro_ref LIKE 'cha:%'"):
+            ids.setdefault(ref.split(':')[1], []).append(tid)
+        conn.execute('UPDATE fin_txns SET mikro_project = NULL WHERE mikro_project IS NOT NULL')
+        conn.executemany('UPDATE fin_txns SET mikro_project = ? WHERE id = ?',
+                         [((r['kod'] or '').strip(), tid) for r in rows for tid in ids.get(str(r['guid']).lower(), ids.get(str(r['guid']), []))])
+        st['cari_hareket'] = len(rows)
+    except Exception as e:   # noqa: BLE001
+        st['cari_hareket'] = f'okunamadı: {str(e)[:160]}'
+    try:
+        rows = mikro.query("SELECT CAST(fis_Guid AS varchar(40)) AS guid, fis_proje_kodu AS kod FROM MUHASEBE_FISLERI WHERE ISNULL(fis_proje_kodu, '') <> ''")
+        conn.execute('UPDATE fin_ledger SET mikro_project = NULL WHERE mikro_project IS NOT NULL')
+        conn.executemany('UPDATE fin_ledger SET mikro_project = ? WHERE guid = ?', [((r['kod'] or '').strip(), str(r['guid'])) for r in rows])
+        st['muhasebe'] = len(rows)
+    except Exception as e:   # noqa: BLE001
+        st['muhasebe'] = f'okunamadı: {str(e)[:160]}'
+    # Mikro'dan silinen hareketlerin proje etiketleri (öksüz) temizlenir
+    conn.execute("DELETE FROM project_tags WHERE source = 'txn' AND ref NOT IN (SELECT id FROM fin_txns)")
+    conn.execute("INSERT INTO app_kv (k, v) VALUES ('mikro_projects_probe', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", (_j.dumps(st, ensure_ascii=False),))
+    conn.commit()
+    return st
+
+
 def sync(conn, include_cari=True, user_id=None):
     """Banka/kasa hesaplarını ve hareketleri Finans'a işler. Özet sözlük döner (commit edilir)."""
     banks, kasas, rows = mikro.list_bankalar(), mikro.list_kasalar(), mikro.list_fin_hareket()

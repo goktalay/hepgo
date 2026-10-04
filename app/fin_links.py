@@ -49,12 +49,20 @@ def invoice_map(conn, docs):
 
 
 def annotate(conn, rows, people=True):
-    """Hareket satırlarına fatura (belge no) ve personel (açıklamadaki ad) bağlantısı ekler."""
+    """Hareket satırlarına fatura (belge no), personel (açıklamadaki ad) ve proje kararı bilgisini ekler."""
+    from . import projects as P
     inv = invoice_map(conn, [r.get('doc_no') for r in rows])
     idx = employees_index(conn) if people else []
+    tags = P.tags_by_source(conn)
+    cari_docs, inv_numbers = P._cari_docs(conn), P._invoice_numbers(conn)
+    kinds = {r[0]: (r[1], r[2]) for r in conn.execute('SELECT id, kind, name FROM fin_accounts')}
     for r in rows:
         r['invoice'] = inv.get(r.get('doc_no'))
         r['person'] = match_person(r.get('description'), idx) if idx else None
+        if 'id' in r and r.get('account_id') in kinds:
+            k = dict(r, account_kind=r.get('account_kind') or kinds[r['account_id']][0])
+            r['p_nature'] = P.txn_nature(k, cari_docs, inv_numbers)
+            r['ptags'] = [{'project_id': x['project_id'], 'name': x['project_name'], 'code': x['project_code']} for x in tags.get(('txn', r['id']), [])]
     return rows
 
 

@@ -142,7 +142,7 @@ export async function uploadChunked(file, initUrl, onProgress, signal) {
 // Büyük dosya (ör. uçuş logu): /api/uploads ile parça parça yüklenir; dönen jeton dosyayı kullanan uca verilir
 export async function uploadLarge(file, kind, onProgress, signal) {
   // evrakta OCR okunabilsin diye biraz daha büyük bırakılır
-  file = await optimizeImage(file, kind === 'documents' || kind === 'certs' || kind === 'fleet' ? { maxSide: 3200, quality: 0.85 } : undefined);
+  file = await optimizeImage(file, kind === 'documents' || kind === 'certs' || kind === 'fleet' || kind === 'projects' ? { maxSide: 3200, quality: 0.85 } : undefined);
   const { upload_id: id, chunk_size: size } = await request('POST', '/api/uploads', { kind, file_name: file.name, size: file.size });
   await withCancel(`/api/uploads/${id}`, () => sendChunks(file, `/api/uploads/${id}`, size, onProgress, signal));
   return id;

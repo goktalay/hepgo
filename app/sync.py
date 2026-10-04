@@ -93,6 +93,10 @@ def _sync_mikro(conn):
     # Finans: banka/kasa hesapları ve finansal hareketler (salt yansıtma; Mikro'da silinen yerelden de kalkar)
     from . import mikro_finance
     st = mikro_finance.sync(conn, include_cari=True)
+    try:   # Proje Yönetimi: Mikro proje kartları / hareket proje kodları (kurulumda yoksa atlanır)
+        mikro_finance.sync_projects(conn)
+    except Exception:   # noqa: BLE001
+        pass
     return True, (f"{n_cari} yeni cari; finans: {st['eklenen']} yeni, {st['guncellenen']} güncel, {st['silinen']} silinen hareket "
                   f"(stok ve faturalar elle aktarılır)")
 

@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDate, h, matches, modal, moduleToolbar, pageHead, segmented, statStrip, t, toast, toastError } from '../ui.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 import { invoiceModal, movesTable, setFinanceAccess } from './finmoves.js';
+import { projectSelect } from './projdecide.js';
 
 const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n || 0);
 const SUBS = [['summary', 'Özet'], ['bank', 'Kasa & Banka'], ['cari', 'Cariler'], ['cash', 'Nakit Akışı'],
@@ -184,7 +185,7 @@ async function accountDetail(view, id) {
   }
   function draw() {
     const rows = d.rows.filter(r => matches(pb.q, r.description, r.category, r.doc_no, r.person?.name));
-    clear(out, h('h3', { class: 'fin-h3' }, t('Hareketler ({n})', { n: rows.length })), movesTable(rows, { running: true, onDelete: load, empty: 'Bu dönemde hareket yok.' }));
+    clear(out, h('h3', { class: 'fin-h3' }, t('Hareketler ({n})', { n: rows.length })), movesTable(rows, { running: true, onDelete: load, onChange: load, empty: 'Bu dönemde hareket yok.' }));
   }
   clear(view, head, out);
   await load();
@@ -243,14 +244,15 @@ async function cariDetail(view, cid) {
           h('td', { class: 'num' }, money(i.amount))))))) : h('div', { class: 'card empty' }, 'Bu cariye ait çek / senet yok.'));
     }
     const rows = d.rows.filter(r => matches(pb.q, r.description, r.category, r.doc_no));
-    clear(out, movesTable(rows, { cari: true, running: true, onDelete: load, empty: 'Bu dönemde hareket yok.' }));
+    clear(out, movesTable(rows, { cari: true, running: true, onDelete: load, onChange: load, empty: 'Bu dönemde hareket yok.' }));
   }
   clear(view, head, pb.el, out);
   await load();
 }
 
-function txnForm(acc, done) {
+async function txnForm(acc, done) {
   let dirVal = 'in';
+  const proj = await projectSelect(true);   // Proje Yönetimi: her harekette proje sorulur (proje ya da "Projesiz")
   // Cari: bakiye + = firmanın bize borcu (alacağımız). Borç = fatura kestik / ödeme yaptık; Alacak = tahsilat / fatura aldık.
   const isCari = acc?.kind === 'cari' || acc?.cari;
   const dir = segmented([['in', isCari ? 'Borç (satış faturası / ödeme yaptık)' : 'Giriş'], ['out', isCari ? 'Alacak (tahsilat / alış faturası)' : 'Çıkış']], 'in', v => { dirVal = v; });
@@ -260,11 +262,12 @@ function txnForm(acc, done) {
   const cat = h('input', { class: 'input', placeholder: 'Kategori (ops.)' });
   modal({
     title: `${acc.name} · Hareket`,
-    body: h('div', null, field('Tür', dir), field('Tarih', date), field('Tutar', amount), field('Açıklama', desc), field('Kategori', cat)),
+    body: h('div', null, field('Tür', dir), field('Tarih', date), field('Tutar', amount), field('Açıklama', desc), field('Kategori', cat), proj ? field('Proje', proj) : null),
     actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
       const a = Number(amount.value);
       if (!a || a <= 0) throw new Error('Tutar girin');
-      await api.post('/api/finance/txns', { account_id: acc.id, date: date.value, direction: dirVal, amount: a, description: desc.value || null, category: cat.value || null });
+      const p = proj ? proj.payload() : {};
+      await api.post('/api/finance/txns', { account_id: acc.id, date: date.value, direction: dirVal, amount: a, description: desc.value || null, category: cat.value || null, ...p });
       toast('Hareket eklendi'); done?.();
     } }],
   });

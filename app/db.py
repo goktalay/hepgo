@@ -343,6 +343,58 @@ CREATE TABLE IF NOT EXISTS vehicle_docs (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_vehicle_docs ON vehicle_docs(vehicle_id);
+-- Proje Yönetimi (Ar-Ge): proje bir GRUPLAMADIR — hareket / fatura / kalem projeye etiketlenir (project_tags); proje
+-- silinince yalnız etiketler kalkar, finansal veri silinmez. project_id NULL etiket = bilinçli "projesiz" kararı.
+CREATE TABLE IF NOT EXISTS projects (
+    id          INTEGER PRIMARY KEY,
+    code        TEXT UNIQUE,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'arge',      -- arge | musteri | ic | destek
+    status      TEXT NOT NULL DEFAULT 'devam',     -- fikir | planlama | devam | beklemede | tamamlandi | iptal
+    manager_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL,   -- müşteri / destek kurumu
+    start_date  TEXT,
+    end_date    TEXT,
+    budget      REAL,
+    image       TEXT,
+    summary     TEXT,
+    description TEXT,
+    keywords    TEXT,                              -- tarama / eşleştirme anahtar kelimeleri (virgülle)
+    mikro_code  TEXT,                              -- Mikro proje kodu (senkronla eşleşme)
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS mikro_projects (     -- Mikro PROJELER (Entegrasyonlar › Mikro senkronu)
+    code TEXT PRIMARY KEY,
+    name TEXT
+);
+CREATE TABLE IF NOT EXISTS project_images (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    path        TEXT NOT NULL,
+    caption     TEXT,
+    sort        INTEGER NOT NULL DEFAULT 0,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_tags (
+    id          INTEGER PRIMARY KEY,
+    source      TEXT NOT NULL,                     -- txn (fin_txns) | invoice (invoices) | mdoc (material_docs)
+    ref         INTEGER NOT NULL,
+    project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,   -- NULL: projesiz
+    nature      TEXT NOT NULL,                     -- gelir | gider | odeme (tahsilat / ödeme: kâr-zarar dışı)
+    amount      REAL NOT NULL,                     -- dilimin brüt tutarı
+    net         REAL NOT NULL,                     -- KDV hariç (kâr-zarar bununla)
+    line_ref    TEXT,                              -- kalem bazında ayırma: 'item:ID' | 'mline:ID' | 'ledger:GUID'
+    line_desc   TEXT,
+    note        TEXT,
+    auto        INTEGER NOT NULL DEFAULT 0,        -- tarama / kural ile otomatik
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_project_tags_src ON project_tags(source, ref);
+CREATE INDEX IF NOT EXISTS ix_project_tags_prj ON project_tags(project_id);
 -- Rol Yönetimi (Program Ayarları): roller ağaç şeklinde (parent'tan yetki mirası), rol × düğüm (modül / alt modül) × yetenek
 -- (open: aç · read: veri oku · write: veri yaz) → allow 1 / deny 0; kayıt yoksa miras. Sistem rolleri koddaki ROLES'tan gelir.
 CREATE TABLE IF NOT EXISTS roles (
@@ -2032,6 +2084,11 @@ def _migrate(conn):
         if fv_cols and col not in fv_cols:
             conn.execute(f'ALTER TABLE field_vehicles ADD COLUMN {col} {ddl}')
     ft_cols = {r[1] for r in conn.execute('PRAGMA table_info(fin_txns)')}
+    if ft_cols and 'mikro_project' not in ft_cols:   # Mikro hareketindeki proje kodu (cha_projekodu)
+        conn.execute('ALTER TABLE fin_txns ADD COLUMN mikro_project TEXT')
+    fl_cols = {r[1] for r in conn.execute('PRAGMA table_info(fin_ledger)')}
+    if fl_cols and 'mikro_project' not in fl_cols:   # Mikro muhasebe fişi satırındaki proje kodu (fis_proje_kodu)
+        conn.execute('ALTER TABLE fin_ledger ADD COLUMN mikro_project TEXT')
     if ft_cols and 'due_date' not in ft_cols:   # vade (Mikro cha_vade) — nakit akışı / yaşlandırma
         conn.execute('ALTER TABLE fin_txns ADD COLUMN due_date TEXT')
     fc_cols = {r[1] for r in conn.execute('PRAGMA table_info(feed_comments)')}

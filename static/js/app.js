@@ -23,6 +23,7 @@ import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
 import * as fleet from './modules/fleet.js';
 import * as boss from './modules/boss.js';
+import * as projectsMod from './modules/projects.js';
 import * as members from './modules/members.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
@@ -103,6 +104,7 @@ const MODULES = [
   { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
   { key: 'certs', title: 'Sertifikasyon', mod: certs },
   { key: 'fleet', title: 'Araç Yönetimi', mod: fleet },
+  { key: 'projects', title: 'Proje Yönetimi', mod: projectsMod },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
   { key: 'tickets', title: 'Destek Talepleri', mod: ticketsMod },
@@ -756,6 +758,7 @@ function renderHome() {
 
 // ---------- Hareket kaydı: her sayfaya giriş ve çıkış (kalınan süreyle) loglanır ----------
 const SUB_PAGES = {
+  projects: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Proje #${k}` : ({ queue: 'Hareketlere Proje', scan: 'Proje Taraması' }[k] || k); },
   fleet: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Araç #${k}` : ({ moves: 'Gider Etiketleme', report: 'Rapor', settings: 'Zimmet Formu' }[k] || k); },
   production: p => `İş Emri #${p[0]}`,
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,

@@ -93,6 +93,8 @@ class TxnIn(BaseModel):
     counter_id: Optional[int] = None
     description: Optional[str] = None
     doc_no: Optional[str] = None
+    project_id: Optional[int] = None     # Proje Yönetimi: elle girilen harekette proje sorulur
+    project_none: bool = False           # bilinçli "projesiz"
 
 
 @router.get('/txns')
@@ -137,6 +139,11 @@ def add_txn(body: TxnIn, user=Depends(fin_user), conn=db.DB):
                         VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
                      (body.counter_id, body.date[:10], 'in' if body.direction == 'out' else 'out', abs(body.amount),
                       body.currency[:3].upper(), 'Virman', body.account_id, body.description or 'Virman', body.doc_no, user['id'], db.now()))
+    if body.project_id or body.project_none:
+        from .. import projects as P
+        m = P.movement(conn, 'txn', cur.lastrowid)
+        if m:
+            P.decide(conn, user['id'], m, [{'project_id': body.project_id if not body.project_none else None}])
     conn.commit()
     db.audit(conn, user['id'], 'Finans hareketi ekledi', 'fin_txn', cur.lastrowid, f'{body.direction} {body.amount}')
     return {'id': cur.lastrowid}

@@ -33,12 +33,13 @@ CLEANER = 'Temizlik Görevlisi'   # yalnızca Temizlik modülü (günlük temizl
 DESIGNER = 'Endüstriyel Tasarımcı'   # Endüstriyel Tasarım modülü: proje + çizim / montaj çizimi + sürüm geçmişi
 FINANCE = 'Finans'   # Finans / ön-muhasebe: kasa-banka, cari, nakit akışı, ödeme/tahsilat, mizan, bordro
 QUALITY = 'Kalite / Sertifikasyon'   # Sertifikasyon: sertifikalar (ISO 9001, tesis güvenlik, üretim izni…), dokümanlar, denetimler
+PROJECT = 'Proje / Ar-Ge Sorumlusu'   # Proje Yönetimi: projeler, proje kâr-zararı, harekete proje atama
 BOSS = 'Patron / Üst Yönetim'   # Patron ekranı: şirketin tüm özet göstergeleri (yalnızca okunur)
 FLEET = 'Araç / Filo Sorumlusu'   # Araç Yönetimi: araçlar, zimmet, belgeler, giderler (muhasebe hareketi etiketleme)
 SUPPORT_ROLE = 'Merkez Destek'   # YALNIZCA merkez (Veilox) instance'ında atanır; müşteri firmalarına çapraz (destek) giriş yetkisi verir
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
-         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, QUALITY, FLEET, BOSS, CLEANER, INTERN]
+         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, QUALITY, FLEET, PROJECT, BOSS, CLEANER, INTERN]
 # Sistem rollerinin açıklaması (Rol Yönetimi'nde görünür; yönetici değiştirebilir)
 ROLE_DESC = {
     ADMIN: 'Tüm modüller ve sistem ayarları', WAREHOUSE_MANAGER: 'Depo, stok ve onay işlemleri', PRODUCTION_MANAGER: 'Üretim ve iş emirleri yönetimi',
@@ -48,7 +49,7 @@ ROLE_DESC = {
     SECRETARY: 'Misafir ve kargo kayıtları', SECURITY: 'Fabrika girişi: araç giriş / çıkış', CAMERA: 'Kameralar ve yüz tanıma',
     HR: 'Personel, izin, özlük', PURCHASING: 'Tedarikçi, talep, fatura / irsaliye', SALES: 'Satış faturaları', MRP_LEAD: 'Malzeme ihtiyaç planlaması',
     DESIGNER: 'Endüstriyel tasarım projeleri', FINANCE: 'Finans ve ön muhasebe', QUALITY: 'Sertifikalar ve denetimler',
-    FLEET: 'Araçlar, zimmet ve araç giderleri', BOSS: 'Üst yönetim özeti (Patron ekranı)', CLEANER: 'Günlük temizlik çeklisti',
+    FLEET: 'Araçlar, zimmet ve araç giderleri', PROJECT: 'Projeler ve proje kâr-zararı', BOSS: 'Üst yönetim özeti (Patron ekranı)', CLEANER: 'Günlük temizlik çeklisti',
     INTERN: 'Modül yetkisi yok; genel alanları kullanır', SUPPORT_ROLE: 'Merkez destek: müşteri firmalara çapraz giriş',
 }
 # Yardımcı personel rolleri: bu rollerin seçim listelerinde stajerler de çıkar ("Stajer" etiketiyle) ve seçilebilir
@@ -85,6 +86,7 @@ MODULE_ROLES = {
     'certs':      [ADMIN, QUALITY],                                                           # M27 Sertifikasyon (sertifika + doküman + denetim)
     'fleet':      [ADMIN, ADMIN_STAFF, FLEET],                                                # M28 Araç Yönetimi (araç, zimmet, belge, gider)
     'boss':       [ADMIN, BOSS],                                                              # M29 Patron ekranı (üst yönetim özeti)
+    'projects':   [ADMIN, PROJECT],                                                           # M30 Proje Yönetimi (Ar-Ge projeleri, proje kâr-zararı)
 }
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler
 MODULE_ROLES['mrp'] = sorted(set(MODULE_ROLES['stock']) | set(MODULE_ROLES['warehouse']), key=ROLES.index)

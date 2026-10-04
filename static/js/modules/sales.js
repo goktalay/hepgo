@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
 import { clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError, periodFilter } from '../ui.js';
 import { docMovesByNumber, setFinanceAccess } from './finmoves.js';
+import { projectSelect } from './projdecide.js';
 
 const money = v => (v == null ? '—' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺');
 const num = v => (v == null ? '' : (Math.round(Number(v) * 1000) / 1000).toLocaleString('tr-TR'));
@@ -113,10 +114,11 @@ async function invoiceForm(ctx, id) {
   (existing?.items?.length ? existing.items : [{}]).forEach(addRow);
   sync();
 
+  const proj = await projectSelect(true);   // Proje Yönetimi: satış faturası projeye bağlanır (ya da Projesiz)
   modal({
     title: existing ? t('{num} · Düzenle', { num: existing.number || 'Fatura' }) : 'Yeni Satış Faturası', wide: true,
     body: h('div', null,
-      h('div', { class: 'form-grid' }, field('Firma *', comp), field('Fatura no', number), field('Tarih', date)),
+      h('div', { class: 'form-grid' }, field('Firma *', comp), field('Fatura no', number), field('Tarih', date), proj ? field('Proje *', proj) : null),
       h('table', { class: 'table sl-lines' }, h('thead', null, h('tr', null, h('th', null, 'Ürün / Açıklama'), h('th', null, 'Miktar'),
         h('th', null, 'Birim'), h('th', null, 'Birim fiyat'), h('th', null, 'KDV %'), h('th', null, ''))), rows),
       h('div', { class: 'row-inline', style: { margin: '6px 0 12px' } }, h('button', { class: 'btn sm', type: 'button', onclick: () => { addRow(); sync(); } }, '＋ Satır')),
@@ -133,7 +135,10 @@ async function invoiceForm(ctx, id) {
       const payload = { company_id: Number(comp.value) || 0, number: number.value.trim() || null, invoice_date: date.value || null,
         note: note.value, reduce_stock: reduce.checked, warehouse_id: reduce.checked ? Number(dep.value) : null, items };
       if (!payload.company_id) throw new Error('Firma seçin');
-      if (existing) await api.put(`/api/sales/${id}`, payload); else await api.post('/api/sales', payload);
+      const pp = proj ? proj.payload() : null;
+      let iid = id;
+      if (existing) await api.put(`/api/sales/${id}`, payload); else iid = (await api.post('/api/sales', payload)).id;
+      if (pp && iid) await api.put('/api/projects/decide-doc', { source: 'invoice', ref: iid, ...pp }).catch(toastError);
       toast(existing ? 'Fatura güncellendi' : 'Satış faturası oluşturuldu', 'success');
       reloadList();
     } }],

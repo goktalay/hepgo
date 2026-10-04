@@ -3,6 +3,7 @@
 // muhasebe fişi satırları) ve personel detayındaki "Hesap Hareketleri" (açıklamada adı geçenler + elle bağlanan cari / hesaplar).
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDate, h, matches, modal, segmented, statStrip, t, toast, toastError } from '../ui.js';
+import { decideModal, projectChip } from './projdecide.js';
 
 export const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n || 0);
 const IN = 'var(--ok,#16a34a)', OUT = 'var(--danger,#dc2626)';
@@ -10,10 +11,11 @@ const KIND_LABEL = { satis: 'Satış faturası', alis: 'Alış faturası', FATUR
 const ACC_KIND = { kasa: 'Kasa', banka: 'Banka', cari: 'Cari' };
 
 // Hareket tablosu. cari: Borç/Alacak başlıkları; running: yürüyen bakiye; account: hesap sütunu; onDelete: elle girilen hareket silinir.
-export function movesTable(rows, { cari = false, running = false, account = false, onDelete = null, empty = 'Hareket yok.' } = {}) {
+export function movesTable(rows, { cari = false, running = false, account = false, onDelete = null, onChange = null, empty = 'Hareket yok.' } = {}) {
   if (!rows.length) return h('div', { class: 'card empty' }, empty);
+  const proj = rows.some(r => 'p_nature' in r);   // Proje Yönetimi: her harekette proje kararı
   const head = ['Tarih', account ? 'Hesap' : null, 'Belge', 'Açıklama', cari ? 'Vade' : null, cari ? 'Borç' : 'Giriş', cari ? 'Alacak' : 'Çıkış',
-    running ? 'Bakiye' : null, onDelete ? '' : null].filter(x => x !== null);
+    running ? 'Bakiye' : null, proj ? 'Proje' : null, onDelete ? '' : null].filter(x => x !== null);
   return h('div', { class: 'card table-wrap' }, h('table', { class: 'table fm-table' },
     h('thead', null, h('tr', null, head.map(x => h('th', { class: /Giriş|Çıkış|Borç|Alacak|Bakiye/.test(x) ? 'num' : '' }, x)))),
     h('tbody', null, rows.map(r => h('tr', null,
@@ -28,6 +30,7 @@ export function movesTable(rows, { cari = false, running = false, account = fals
       h('td', { class: 'num', style: { color: IN } }, r.direction === 'in' ? money(r.amount) : ''),
       h('td', { class: 'num', style: { color: OUT } }, r.direction === 'out' ? money(r.amount) : ''),
       running ? h('td', { class: 'num', style: { fontWeight: 600, color: r.balance < 0 ? OUT : '' } }, money(r.balance)) : null,
+      proj ? h('td', null, r.p_nature ? projectChip(r.ptags, () => decideModal('txn', r.id, onChange || onDelete)) : h('span', { class: 'small muted' }, '—')) : null,
       onDelete ? h('td', null, r.mikro_ref ? null : h('button', { class: 'btn xs ghost', type: 'button', title: 'Sil', onclick: async () => {
         if (!await confirmDialog('Hareketi sil', 'Hareket silinsin mi?', { okLabel: 'Sil', danger: true })) return;
         try { await api.del(`/api/finance/txns/${r.id}`); onDelete(); } catch (e) { toastError(e); }

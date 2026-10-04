@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.113.0'
+VERSION = '2.114.0'
 
 CHANGELOG = [
+    {'version': '2.114.0', 'date': '2026-10-04', 'title': 'Proje Yönetimi',
+     'changes': [
+         'Yeni modül: Proje Yönetimi (Ar-Ge ve şirket projeleri) — kapak resmi ve resimli detaylı tanım, proje sorumlusu, başlama / hedef bitiş tarihi, bütçe, müşteri / destek kurumu, anahtar kelimeler.',
+         'Proje kâr-zararı: projeye bağlanan gelir ve giderler KDV hariç (faturanın muhasebe fişinden) hesaplanır; aylara göre grafik, gider dağılımı (malzeme, hizmet / fatura, doğrudan gider, personel), bütçe kullanımı, tahsilat / ödeme.',
+         'Her finansal harekette proje sorulur: elle hareket girişinde, satış faturasında ve Satın Alma faturasında proje seçimi (ya da “Projesiz”) zorunludur; hesap ve cari detayındaki hareket tablolarında proje sütunu vardır. Mikro’dan gelen hareketler “Hareketlere Proje” ekranında tek tek ya da toplu olarak projeye bağlanır.',
+         'Karar türleri: projesiz, tek proje, tutarı projelere bölme ve kalem bazında — alış faturasından yalnız projeye alınan malzemeler ayrılır, kalan kısım projesiz sayılır. Tahsilat / ödemeler kâr-zarara girmez (aynı tutar iki kez sayılmaz).',
+         'Proje taraması: proje anahtar kelimeleri ve Mikro proje kodlarıyla eşleşen hareketler önerilir / toplu bağlanır; açıklamalarda farklı aylarda tekrar eden ifadelerden proje adayları çıkarılır.',
+         'Proje silinince bağlı hareketler, faturalar ve malzemeler silinmez; yalnız proje bağlantıları kalkar ve yeniden proje kararı bekler. Yeni rol: “Proje / Ar-Ge Sorumlusu”.',
+     ]},
     {'version': '2.113.0', 'date': '2026-10-04', 'title': 'Rol Yönetimi',
      'changes': [
          'Program Ayarları › Rol Yönetimi: tüm roller (mevcut sistem rolleri + yeni eklenen özel roller) tek ekranda; rol ekle, kopyala, yeniden adlandır, sil.',

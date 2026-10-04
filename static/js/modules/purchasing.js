@@ -4,6 +4,7 @@ import { api, fileUrl, upload } from '../api.js';
 import { foot, head as printHead, printPage } from '../print.js';
 import { renderSuppliers } from './companies.js';
 import { docMovesByNumber } from './finmoves.js';
+import { projectSelect } from './projdecide.js';
 import {
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip,
   t, toast, toastError, periodFilter
@@ -262,6 +263,8 @@ async function invoiceForm({ request = null, lines = [] }) {
   const file = h('input', { class: 'input', type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.webp,.heic,.xml,.zip' });
   const rows = h('tbody');
   const total = h('b');
+  const proj = await projectSelect(true);   // Proje Yönetimi: belgenin projesi; kalemde ayrıca proje seçilebilir
+  const projList = proj ? [...proj.options].filter(o => /^\d+$/.test(o.value)).map(o => [o.value, o.textContent]) : [];
   const syncTotal = () => {
     const t = [...rows.children].reduce((a, tr) => a + (Number(tr._qty.value) || 0) * (Number(tr._price.value) || 0), 0);
     total.textContent = money(t);
@@ -272,9 +275,12 @@ async function invoiceForm({ request = null, lines = [] }) {
     const price = h('input', { class: 'input', type: 'number', min: 0, step: '0.01', value: l.unit_price ?? '' });
     const unit = h('span', { class: 'muted small' }, l.product_id ? unitOf(l.product_id) : '');
     mat.addEventListener('change', () => { unit.textContent = mat.value ? unitOf(mat.value) : ''; });
+    const lp = projList.length ? h('select', { class: 'input', title: 'Bu kalem başka bir proje için alındıysa seçin' },
+      h('option', { value: '' }, 'Belgedeki proje'), projList.map(([v, l]) => h('option', { value: v }, l))) : null;
     const tr = h('tr', null, h('td', null, mat), h('td', null, h('div', { class: 'row-inline' }, qty, unit)), h('td', null, price),
+      lp ? h('td', null, lp) : null,
       h('td', null, h('button', { class: 'btn xs ghost', type: 'button', onclick: () => { tr.remove(); syncTotal(); } }, '✕')));
-    tr._mat = mat; tr._qty = qty; tr._price = price;
+    tr._mat = mat; tr._qty = qty; tr._price = price; tr._proj = lp;
     [qty, price].forEach(i => i.addEventListener('input', syncTotal));
     rows.append(tr);
   };
@@ -284,8 +290,8 @@ async function invoiceForm({ request = null, lines = [] }) {
     title: 'Fatura / İrsaliye Gir', wide: true,
     body: h('div', null,
       h('div', { class: 'form-grid' }, field('Belge türü', kind), field('Belge no', number), field('Belge tarihi', date), field('Tedarikçi *', sup),
-        field('Giriş deposu', dep, 'Kalemler bu depoya stok girişi olarak işlenir'), field('Satın alma talebi', req)),
-      h('table', { class: 'table pu-lines' }, h('thead', null, h('tr', null, h('th', null, 'Malzeme'), h('th', null, 'Miktar'), h('th', null, 'Birim fiyat (₺)'), h('th', null, ''))), rows),
+        field('Giriş deposu', dep, 'Kalemler bu depoya stok girişi olarak işlenir'), field('Satın alma talebi', req), proj ? field('Proje *', proj, 'Kalemlerde ayrıca proje seçerek malzemeleri projelere ayırabilirsiniz') : null),
+      h('table', { class: 'table pu-lines' }, h('thead', null, h('tr', null, h('th', null, 'Malzeme'), h('th', null, 'Miktar'), h('th', null, 'Birim fiyat (₺)'), projList.length ? h('th', null, 'Proje') : null, h('th', null, ''))), rows),
       h('div', { class: 'row-inline', style: { justifyContent: 'space-between', margin: '6px 0 12px' } },
         h('button', { class: 'btn sm', type: 'button', onclick: () => addRow() }, '＋ Kalem'), h('span', null, 'Kalemler toplamı: ', total)),
       h('div', { class: 'form-grid' }, field('Belge tutarı', amount), field('Belge dosyası', file), field('Not', note))),
@@ -293,9 +299,12 @@ async function invoiceForm({ request = null, lines = [] }) {
       const lns = [...rows.children].map(tr => ({ product_id: Number(tr._mat.value), qty: Number(tr._qty.value), unit_price: tr._price.value === '' ? null : Number(tr._price.value) }))
         .filter(l => l.product_id || l.qty);
       if (lns.some(l => !l.product_id)) throw new Error('Her kalemde malzeme seçin');
+      const pp = proj && kind.value === 'FATURA' ? proj.payload() : null;
+      const lineProj = [...rows.children].filter(tr => Number(tr._mat.value) || Number(tr._qty.value)).map(tr => (tr._proj?.value ? Number(tr._proj.value) : null));
       const { id } = await api.post('/api/purchasing/invoices', { kind: kind.value, number: number.value, doc_date: date.value, company_id: sup.value ? Number(sup.value) : null,
         warehouse_id: Number(dep.value), request_id: req.value ? Number(req.value) : null, amount: amount.value === '' ? null : Number(amount.value), note: note.value, lines: lns });
       if (file.files[0]) { const fd = new FormData(); fd.append('file', file.files[0]); await upload(`/api/purchasing/invoices/${id}/file`, fd).catch(toastError); }
+      if (pp) await api.put('/api/projects/decide-doc', { source: 'mdoc', ref: id, ...pp, lines: lineProj }).catch(toastError);
       toast(t('{n} kalem {depot} deposuna girdi', { n: lns.length, depot: dep.selectedOptions[0].textContent }));
       location.hash = '#/purchasing/invoices';
       reload();

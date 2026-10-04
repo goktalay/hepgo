@@ -37,8 +37,9 @@ def _page_png(path: Path):
         return path.read_bytes(), 'image/png' if ext == '.png' else 'image/jpeg'
     with tempfile.TemporaryDirectory() as t:
         out = Path(t) / 'p'
-        subprocess.run(['pdftoppm', '-f', '1', '-l', '1', '-r', '200', '-png', '-singlefile', str(path), str(out)],
-                       capture_output=True, timeout=120, check=True)
+        from .document_ocr import TESS_ENV, tool
+        subprocess.run([tool('pdftoppm'), '-f', '1', '-l', '1', '-r', '200', '-png', '-singlefile', str(path), str(out)],
+                       env=TESS_ENV, capture_output=True, timeout=120, check=True)
         return (out.with_suffix('.png')).read_bytes(), 'image/png'
 
 

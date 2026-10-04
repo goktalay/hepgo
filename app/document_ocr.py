@@ -8,6 +8,7 @@ Ses dosyası ve videonun sesi metne çevrilir, videoda yüzler bulunur (app/docu
 Tesseract sistem paketi değildir: Ubuntu paketlerinden vendor/ocr/root altına açılmıştır (bkz. README).
 """
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -21,12 +22,21 @@ from .document_media import AUDIO_EXT
 
 OCR_ROOT = config.BASE_DIR / 'vendor' / 'ocr' / 'root'
 TESSERACT = OCR_ROOT / 'usr' / 'bin' / 'tesseract'
-TESS_ENV = {**os.environ, 'LD_LIBRARY_PATH': str(OCR_ROOT / 'usr' / 'lib' / 'aarch64-linux-gnu'),
+# Kütüphane klasörü işlemci mimarisine göre (x86_64-linux-gnu / aarch64-linux-gnu)
+_ARCH = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine())
+TESS_ENV = {**os.environ, 'LD_LIBRARY_PATH': str(OCR_ROOT / 'usr' / 'lib' / f'{_ARCH}-linux-gnu'),
             'TESSDATA_PREFIX': str(OCR_ROOT / 'usr' / 'share' / 'tesseract-ocr' / '5' / 'tessdata'),
             'OMP_THREAD_LIMIT': '2'}
 LANGS = 'tur+eng'
 MAX_PAGES = 300
 IMAGE_EXT = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp', '.gif'}
+def tool(name):
+    """Poppler aracı (pdftoppm, pdftotext, pdfinfo): vendor/ocr/root içinde varsa o (sistem paketi gerekmez),
+    yoksa PATH'teki. Vendor aracı TESS_ENV ile çalıştırılmalı (LD_LIBRARY_PATH)."""
+    p = OCR_ROOT / 'usr' / 'bin' / name
+    return str(p) if p.exists() else (shutil.which(name) or name)
+
+
 VIDEO_EXT = {'.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.3gp', '.ts'}
 
 # ---------- Türkçe arama normalleştirmesi (her karakter tek karaktere eşlenir: konumlar korunur)
@@ -77,19 +87,20 @@ def _tesseract(image_path):
 
 
 def _pdf(path, thumb):
-    info = subprocess.run(['pdfinfo', str(path)], capture_output=True, timeout=60).stdout.decode(errors='replace')
+    info = subprocess.run([tool('pdfinfo'), str(path)], env=TESS_ENV, capture_output=True, timeout=60).stdout.decode(errors='replace')
     m = re.search(r'Pages:\s+(\d+)', info)
     pages = int(m.group(1)) if m else None
-    subprocess.run(['pdftoppm', '-f', '1', '-l', '1', '-r', '50', '-png', '-singlefile', str(path),
-                    str(thumb.with_suffix(''))], capture_output=True, timeout=120)
-    text = subprocess.run(['pdftotext', '-layout', str(path), '-'], capture_output=True, timeout=300).stdout.decode(
+    subprocess.run([tool('pdftoppm'), '-f', '1', '-l', '1', '-r', '50', '-png', '-singlefile', str(path),
+                    str(thumb.with_suffix(''))], env=TESS_ENV, capture_output=True, timeout=120)
+    text = subprocess.run([tool('pdftotext'), '-layout', str(path), '-'], env=TESS_ENV, capture_output=True,
+                          timeout=300).stdout.decode(
         'utf-8', errors='replace')
     # Metin katmanı yeterliyse (dijital PDF) OCR gerekmez; taranmış PDF'te sayfalar resim olarak okunur
     if len(text.strip()) >= 40 * max(1, pages or 1):
         return text, pages
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(['pdftoppm', '-r', '300', '-gray', '-png', '-l', str(MAX_PAGES), str(path), f'{tmp}/p'],
-                       capture_output=True, timeout=3600, check=True)
+        subprocess.run([tool('pdftoppm'), '-r', '300', '-gray', '-png', '-l', str(MAX_PAGES), str(path), f'{tmp}/p'],
+                       env=TESS_ENV, capture_output=True, timeout=3600, check=True)
         parts = [_tesseract(p) for p in sorted(Path(tmp).glob('p*.png'))]
     return '\f'.join(parts), pages
 
@@ -222,4 +233,4 @@ def resume_pending():
 
 
 def available():
-    return TESSERACT.exists() and shutil.which('pdftoppm') is not None
+    return TESSERACT.exists() and Path(tool('pdftoppm')).is_absolute()

@@ -189,9 +189,15 @@ reddeder (`db.pick_time`).
   evrağı görür; İmzala → dosyanın SHA-256 özeti + talep/evrak/imzalayan/zaman sunucu anahtarıyla HMAC-SHA256
   (`data/signing.key`, gece yedeğine dahil); Reddet → açıklama zorunlu; Vazgeç → işlem yok. "İmzayı doğrula" dosyayı
   yeniden özetler: dosya değiştiyse ya da kayıt oynandıysa geçersiz der.
-- **Tesseract:** sistem paketi değil; Ubuntu paketleri `vendor/ocr/root` altına açıldı (yönetici yetkisi gerekmez):
-  `apt-get download tesseract-ocr libtesseract5 liblept5 tesseract-ocr-tur tesseract-ocr-eng tesseract-ocr-osd`
-  ve her paket için `dpkg -x <paket>.deb vendor/ocr/root`.
+- **Tesseract + Poppler:** sistem paketi değil; Ubuntu paketleri `vendor/ocr/root` altına açıldı (yönetici yetkisi gerekmez):
+  `apt-get download tesseract-ocr libtesseract5 liblept5 tesseract-ocr-tur tesseract-ocr-eng tesseract-ocr-osd
+  poppler-utils libpoppler134 libgif7 libwebpmux3 libopenjp2-7 liblcms2-2` ve her paket için
+  `dpkg -x <paket>.deb vendor/ocr/root`. Paketler sunucunun mimarisine göre indirilmeli (x86_64 sunucuya arm64 paketi
+  çalışmaz); kütüphane klasörü (`usr/lib/<mimari>-linux-gnu`) otomatik seçilir. `pdftoppm`/`pdftotext`/`pdfinfo`
+  önce `vendor/ocr/root/usr/bin`'de, yoksa sistemde aranır. Eksik kütüphane kontrolü:
+  `LD_LIBRARY_PATH=vendor/ocr/root/usr/lib/x86_64-linux-gnu ldd vendor/ocr/root/usr/bin/{tesseract,pdftoppm}`.
+- **Mikro / PDKS / NVR / yüz tanıma** merkez sunucuda değil, fabrikadaki ajanda çalışır (`agent/README.md`);
+  sürücüleri `agent/requirements.txt` ile yalnız orada kurulur.
 
 ## Ses ve video evrakları: konuşma metni ve yüz tanıma
 

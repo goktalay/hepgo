@@ -1,0 +1,5 @@
+# Fabrika ajanı (lokal makine): ana uygulamanın bağımlılıkları + yalnız fabrikada gereken veritabanı sürücüleri.
+# Merkez sunucuya kurulmaz; Mikro/PDKS bağlantısı yalnız fabrikadan, dışa doğru tek yönlü kurulur.
+-r ../requirements.txt
+pymssql>=2.2          # Mikro ERP (MSSQL)
+firebird-driver>=1.10 # PDKS (Firebird; istemci kütüphanesi vendor/firebird/lib)

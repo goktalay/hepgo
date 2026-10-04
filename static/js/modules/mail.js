@@ -43,6 +43,8 @@ const P = {
   home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
   add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
   sort: 'M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z',
+  person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  business: 'M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z',
   personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   unfoldLess: 'M7.41 18.59 8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z',
   unfoldMore: 'M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z',
@@ -147,6 +149,11 @@ export async function renderMail(view, params = []) {
   const SORTS = [['date', 'Tarih (yeniden eskiye)'], ['date_asc', 'Tarih (eskiden yeniye)'], ['from', 'Gönderene göre (A→Z)'],
     ['subject', 'Konuya göre (A→Z)'], ['size', 'Boyuta göre (büyükten)']];
   const FILTERS = [['', 'Tüm postalar', 'allMail'], ['unread', 'Yalnız okunmamışlar', 'unread'], ['starred', 'Yalnız yıldızlılar', 'star'], ['attach', 'Yalnız ekli olanlar', 'attach']];
+  // Görünüm: Klasörler (Gmail gibi) · Kişiler (Rehber solda) · Cariler (firmalar solda); seçilen kişi / carinin mailleri adrese göre gruplu
+  const VIEWS = [['folders', 'Klasörler', 'inbox'], ['people', 'Kişiler', 'person'], ['cari', 'Cariler', 'business']];
+  let vmode = params[1] === 'm' ? 'folders' : (localStorage.getItem('gm.mode') || 'folders');
+  if (!VIEWS.some(v => v[0] === vmode)) vmode = 'folders';
+  const pv = { data: null, kind: null, sel: null, q: '', seq: 0 };
   let lv;
   try { lv = { sort: 'date', filter: '', ...JSON.parse(localStorage.getItem('gm.view') || '{}') }; } catch { lv = { sort: 'date', filter: '' }; }
   const setLv = patch => { lv = { ...lv, ...patch }; try { localStorage.setItem('gm.view', JSON.stringify(lv)); } catch { /* */ } drawListHead(); loadList(); };
@@ -213,7 +220,14 @@ export async function renderMail(view, params = []) {
   const fab = h('button', { class: 'gm-fab', type: 'button', onclick: () => compose() }, ic('edit'), h('span', null, t('Oluştur')));
   const listPane = h('section', { class: 'gm-listpane' }, scroll, fab);
   const reader = h('section', { class: 'gm-read', 'aria-live': 'polite' });
-  const root = h('div', { class: 'gm' }, nav, scrim, listPane, reader);
+  const pplQ = h('input', { class: 'gm-ppl-q', type: 'search', placeholder: t('Ad, e-posta ya da firma…'), autocomplete: 'off' });
+  pplQ.addEventListener('input', () => { pv.q = pplQ.value; drawPeople(); });
+  const pplList = h('div', { class: 'gm-ppl-list' });
+  const pplHead = h('div', { class: 'gm-ppl-h' });
+  const ppl = h('section', { class: 'gm-ppl' }, pplHead, h('div', { class: 'gm-ppl-s' }, ic('search'), pplQ), pplList);
+  const pickHead = h('div', { class: 'gm-pickhead' });   // Kişiler / Cariler: seçilen kişi ya da cari (mobilde geri düğmesiyle)
+  bars.insertBefore(pickHead, listHead);
+  const root = h('div', { class: 'gm' }, nav, scrim, ppl, listPane, reader);
   clear(view, root);
   const onKey = e => keys(e);
   // Geri: varılan geçmiş kaydına göre karar (yazma penceresi kapanıp okuma kaydına dönüldüyse okuma açık kalır)
@@ -221,11 +235,129 @@ export async function renderMail(view, params = []) {
     const s = e.state?.gm;
     if (root.classList.contains('drawer') && s !== 'drawer') closeDrawer(true);
     if (root.classList.contains('reading') && s !== 'read' && s !== 'compose') closeReader(true);
+    if (root.classList.contains('picked') && !['picked', 'read', 'compose'].includes(s) && !wide2()) unpick(true);
   };
   document.addEventListener('keydown', onKey);
   window.addEventListener('popstate', onPop);
   const cleanup = () => { document.removeEventListener('keydown', onKey); window.removeEventListener('popstate', onPop); flush(); composeWin?.close(); document.querySelectorAll('.gm-pop,.gm-snack').forEach(x => x.remove()); };
   window.addEventListener('hashchange', cleanup, { once: true });
+
+  // ---- görünümler: Klasörler / Kişiler / Cariler
+  const wide2 = () => matchMedia('(min-width: 761px)').matches;
+  const modeSwitch = () => h('div', { class: 'gm-modes', role: 'tablist' }, VIEWS.map(([k, l, i]) =>
+    h('button', { type: 'button', role: 'tab', class: `gm-mode ${vmode === k ? 'on' : ''}`, 'aria-selected': String(vmode === k),
+      onclick: () => { closeDrawer(); setMode(k); } }, ic(i), h('span', null, t(l)))));
+  function setMode(k) {
+    flush();
+    vmode = k;
+    try { localStorage.setItem('gm.mode', k); } catch { /* */ }
+    root.classList.toggle('mode-p', k !== 'folders');
+    root.dataset.mode = k;
+    closeReader(); sel.clear(); syncSel();
+    if (k === 'folders') { root.classList.remove('picked'); pv.sel = null; drawNav(); loadList(); syncFolder(); return; }
+    syncSeq++; syncBar.hidden = true;
+    if (pv.kind !== k) { pv.data = null; pv.sel = null; pv.kind = k; root.classList.remove('picked'); }
+    drawNav(); loadPeople();
+  }
+  async function loadPeople() {
+    const k = vmode, seq = ++pv.seq;
+    clear(pplHead, modeSwitch());
+    if (!pv.data) clear(pplList, h('div', { class: 'gm-loading' }, h('div', { class: 'gm-spin' })));
+    try { pv.data = await api.get(k === 'cari' ? '/api/mail/view/cari' : '/api/mail/view/people'); }
+    catch (e) { if (seq === pv.seq) clear(pplList, h('div', { class: 'gm-empty' }, ic('spam'), h('b', null, e.message))); return; }
+    if (seq !== pv.seq || vmode !== k) return;
+    drawPeople();
+    if (pv.sel) loadList(); else drawList();
+  }
+  const fold = x => String(x || '').toLocaleLowerCase('tr').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i');
+  const lastWhen = iso => (iso ? when(iso) : '');
+  const avSpan = a => { const el = h('span', { class: 'gm-av gm-av-s' }, h('span', { class: 'gm-av-l' }, letter(a))); el.style.setProperty('--av', colorOf(a?.email || a?.name)); return el; };
+  function drawPeople() {
+    if (!pv.data) return;
+    const qq = fold(pv.q).split(/\s+/).filter(Boolean);
+    const hit = (...xs) => { const hay = fold(xs.flat().join(' ')); return qq.every(w => hay.includes(w)); };
+    const isOn = e => pv.sel && pv.sel.key === e.key;
+    const entry = (e, main, sub, n, last, avatarOf, cls = '') => {
+      const r = h('button', { type: 'button', class: `gm-pr ${isOn(e) ? 'on' : ''} ${cls}`, onclick: () => pick(e) },
+        avSpan(avatarOf), h('span', { class: 'gm-pr-t' }, h('b', null, main), sub ? h('small', null, sub) : null),
+        h('span', { class: 'gm-pr-r' }, last ? h('small', null, lastWhen(last)) : null, n ? h('span', { class: 'gm-pr-n' }, n) : null));
+      return r;
+    };
+    const head = (txt, n) => h('div', { class: 'gm-pr-h' }, h('span', { class: 'grow' }, txt), h('small', null, n));
+    if (vmode === 'people') {
+      const known = pv.data.known.filter(p => hit(p.name, p.companies, p.emails.map(x => x.email)))
+        .map(p => ({ ...p, key: `${p.kind}:${p.id}`, title: p.name, emails: p.emails.map(x => x.email), labels: {} }));
+      const unknown = pv.data.unknown.filter(u => hit(u.name, u.email))
+        .map(u => ({ ...u, key: `addr:${u.email}`, title: u.name || u.email, emails: [u.email], labels: {} }));
+      clear(pplList,
+        head(t('Rehberde kayıtlı'), known.length),
+        known.length ? known.map(p => entry(p, p.name, p.companies.join(' · ') || p.emails.join(', '), p.count, p.last, { name: p.name, email: p.emails[0] }))
+          : h('div', { class: 'gm-pr-empty' }, t('Eşleşen kişi yok')),
+        head(t('Bilinmeyen adresler'), pv.data.unknown_total > unknown.length && !qq.length ? `${unknown.length} / ${pv.data.unknown_total}` : unknown.length),
+        unknown.slice(0, 400).map(u => entry(u, u.name || u.email, u.name ? u.email : null, u.count, u.last, { name: u.name, email: u.email }, 'unk')));
+    } else {
+      const cos = pv.data.filter(c => hit(c.name, c.people.map(x => [x.name, x.email])))
+        .map(c => ({ ...c, key: `cari:${c.id}`, title: c.name, emails: c.people.map(x => x.email),
+          labels: Object.fromEntries(c.people.map(x => [x.email, x.name])) }));
+      const withMail = cos.filter(c => c.count), without = cos.filter(c => !c.count);
+      clear(pplList,
+        head(t('Yazışılan cariler'), withMail.length),
+        withMail.length ? withMail.map(c => entry(c, c.name, t('{n} kişi', { n: c.people.length }) + (c.supplier ? ` · ${t('tedarikçi')}` : ''), c.count, c.last, { name: c.name, email: c.name }))
+          : h('div', { class: 'gm-pr-empty' }, t('Kayıtlı maillerde carilerle yazışma yok')),
+        without.length ? [head(t('Yazışma olmayan cariler'), without.length),
+          without.map(c => entry(c, c.name, t('{n} kişi', { n: c.people.length }), 0, null, { name: c.name, email: c.name }, 'unk'))] : null);
+    }
+    if (!pv.data || (vmode === 'people' ? !pv.data.known.length && !pv.data.unknown.length : !pv.data.length))
+      pplList.append(h('div', { class: 'gm-pr-empty' }, t('Mailler sisteme kaydedildikçe burada görünür. Klasörler görünümünde Gelen Kutusu’nu bir kez açın.')));
+  }
+  function pick(e) {
+    pv.sel = e;
+    closeReader();
+    if (!root.classList.contains('picked')) { root.classList.add('picked'); if (!wide2()) history.pushState({ gm: 'picked' }, ''); }
+    pplList.querySelectorAll('.gm-pr').forEach(r => r.classList.remove('on'));
+    drawPeople();
+    scroll.scrollTop = 0;
+    loadList();
+  }
+  function unpick(fromPop) {
+    if (!root.classList.contains('picked')) return;
+    root.classList.remove('picked'); closeReader(true);
+    if (!fromPop && history.state?.gm === 'picked') history.back();
+  }
+  function drawPickHead() {
+    const e = pv.sel;
+    clear(pickHead, ibtn('back', 'Geri', () => unpick(), 'gm-pick-back'),
+      e ? [avSpan({ name: e.title, email: e.emails[0] }), h('div', { class: 'gm-pick-ti' }, h('b', null, e.title),
+        h('small', null, vmode === 'cari' ? t('{n} çalışanın adresleri', { n: e.emails.length }) : e.emails.join(' · ')))]
+        : h('div', { class: 'gm-pick-ti' }, h('b', null, t(vmode === 'cari' ? 'Soldan bir cari seçin' : 'Soldan bir kişi seçin'))),
+      h('span', { class: 'grow' }), e ? h('span', { class: 'gm-count' }, t('{n} ileti', { n: items.length })) : null,
+      e ? ibtn('edit', 'Yeni ileti', () => compose({ to: e.kind === 'cari' ? [] : [{ name: e.title, email: e.emails[0] }] })) : null);
+  }
+  function drawGrouped() {
+    drawPickHead();
+    clear(subWrap); clear(more);
+    if (!pv.sel) { clear(list, h('div', { class: 'gm-empty' }, ic(vmode === 'cari' ? 'business' : 'person'), h('b', null, t(vmode === 'cari' ? 'Bir cari seçin' : 'Bir kişi seçin')),
+      h('small', null, t('Mailleri adreslerine göre gruplu görünür')))); return; }
+    if (!items.length) { clear(list, h('div', { class: 'gm-empty' }, ic('allMail'), h('b', null, t('Kayıtlı maillerde yazışma yok')))); return; }
+    const groups = new Map(pv.sel.emails.map(e => [e, []]));
+    items.forEach(m => (groups.get(m.match) || groups.set(m.match, []).get(m.match)).push(m));
+    clear(list, [...groups].filter(([, ms]) => ms.length).map(([e, ms]) => h('section', { class: 'gm-grp' },
+      h('div', { class: 'gm-substrip' }, ic(pv.sel.kind === 'cari' ? 'person' : 'allMail'),
+        h('b', { class: 'grow' }, pv.sel.labels[e] ? `${pv.sel.labels[e]} · ${e}` : e), h('span', { class: 'gm-sub-n' }, t('{n} ileti', { n: ms.length }))),
+      ms.map(row))));
+  }
+  async function loadPicked() {
+    const e = pv.sel, seq = ++loadSeq;
+    if (!e) { items = []; total = 0; drawList(); return; }
+    clear(list, h('div', { class: 'gm-skel' }, Array.from({ length: 6 }, () => h('div', { class: 'gm-skel-row' }, h('i'), h('span', null, h('b'), h('em'), h('em'))))));
+    drawPickHead();
+    try {
+      const r = await api.get(`/api/mail/view/mails?emails=${encodeURIComponent(e.emails.join(','))}`);
+      if (seq !== loadSeq || pv.sel !== e) return;
+      items = r.items; total = r.total;
+    } catch (err) { if (seq !== loadSeq) return; items = []; total = 0; toastError(err); }
+    drawList(); syncSel();
+  }
 
   // ---- çekmece / klasörler
   const openDrawer = () => { root.classList.add('drawer'); history.pushState({ gm: 'drawer' }, ''); };
@@ -272,6 +404,7 @@ export async function renderMail(view, params = []) {
     clear(nav,
       h('div', { class: 'gm-nav-brand' }, h('span', { class: 'gm-nav-logo' }, ic('allMail')), h('b', null, t('Mail'))),
       h('button', { class: 'gm-compose-btn', type: 'button', onclick: () => closeDrawerThen(() => compose()) }, ic('edit'), t('Oluştur')),
+      modeSwitch(),
       h('div', { class: 'gm-nav-scroll' },
         boxes.length > 1 ? item(cur.box === 'all', 'inboxes', t('Tüm gelen kutuları'), totalUnseen, go('all', 'inbox'), 'strong') : null,
         boxes.map(b => {
@@ -302,6 +435,7 @@ export async function renderMail(view, params = []) {
       '-', { icon: 'add', label: t('Başka hesap ekle'), run: () => { location.hash = '#/settings/mailboxes'; } }]);
   }
   function select(box, folder) {
+    if (vmode !== 'folders') { vmode = 'folders'; try { localStorage.setItem('gm.mode', 'folders'); } catch { /* */ } root.classList.remove('mode-p', 'picked'); root.dataset.mode = 'folders'; }
     flush();
     cur = { box, folder }; q = ''; search.value = ''; sel.clear();
     collapsed.delete(box);
@@ -312,7 +446,7 @@ export async function renderMail(view, params = []) {
   async function syncFolder() {
     const seq = ++syncSeq, bid = cur.box, folder = cur.folder;
     syncBar.hidden = true;
-    if (bid === 'all' || isPop(bid)) return;
+    if (bid === 'all' || isPop(bid) || vmode !== 'folders') return;
     let st, was = false;
     try { st = await api.post(`/api/mail/${bid}/cache-sync?folder=${encodeURIComponent(folder)}`, {}); } catch { return; }
     while (seq === syncSeq && st && st.running && root.isConnected) {
@@ -390,6 +524,7 @@ export async function renderMail(view, params = []) {
     return r;
   }
   function drawList() {
+    if (vmode !== 'folders') { drawGrouped(); return; }
     drawLabel(); drawListHead();
     if (!items.length) {
       clear(list, h('div', { class: 'gm-empty' }, ic(q ? 'search' : (FOLDER_ICON[folderOfList()] || 'inbox')),
@@ -406,7 +541,7 @@ export async function renderMail(view, params = []) {
       clear(more, hasMore() ? h('div', { class: 'gm-spin' }) : null);
     }
   }
-  const hasMore = () => cur.box !== 'all' && items.length < total && !subsHere().length;
+  const hasMore = () => vmode === 'folders' && cur.box !== 'all' && items.length < total && !subsHere().length;
   // Alt klasör bölümleri: her alt klasör için kalın şerit + en yeni 20 ileti + "klasörü aç". İletiye tıklayınca kendi
   // klasöründe açılır (okuma ekranındaki işlemler o klasöre uygulanır).
   const subCache = {};   // `${hesap}|${klasör}` → { items, total, at }
@@ -451,6 +586,7 @@ export async function renderMail(view, params = []) {
   // Her yükleme bir sıra numarası alır: klasör / arama değişince eski yanıt yeni listenin yerine çizilmez.
   // Sonraki sayfa sıra konumuyla (offset) istenir: arşivle / sil sonrası ileti atlanmaz.
   async function loadList(append = false) {
+    if (vmode !== 'folders') { if (!append) loadPicked(); return; }
     if (append && loading) return;
     const seq = ++loadSeq, key = `${cur.box}|${cur.folder}|${q}|${lv.sort}|${lv.filter}`;
     loading = true;
@@ -546,7 +682,10 @@ export async function renderMail(view, params = []) {
   }
   function act(ms, action, target) {
     if (!ms.length) return;
-    const folder = folderOfList();
+    const fOf = m => m.folder || folderOfList();
+    const fs = [...new Set(ms.map(fOf))];
+    if (fs.length > 1) { fs.forEach(f => act(ms.filter(m => fOf(m) === f), action, target)); return; }   // Kişiler / Cariler: farklı klasörler
+    const folder = fOf(ms[0]);
     const removes = ['archive', 'trash', 'inbox', 'spam', 'move'].includes(action);
     const permanent = action === 'trash' && (folder === 'trash' || ms.some(m => isPop(bidOf(m))));
     if (permanent) {
@@ -610,7 +749,7 @@ export async function renderMail(view, params = []) {
   }
 
   // ---- okuma
-  async function openMsg(m, folder = folderOfList()) {
+  async function openMsg(m, folder = m.folder || folderOfList()) {
     flush();
     const bid = bidOf(m);
     openKey = `${bid}:${m.uid}`;
@@ -927,13 +1066,14 @@ export async function renderMail(view, params = []) {
   drawNav(); drawAcct();
   closeReader();
   refreshFolders();
-  await loadList();
-  syncFolder();   // açılan klasörün tamamı kaydedilir (üstte ilerleme)
+  if (vmode !== 'folders') setMode(vmode);
+  else { await loadList(); syncFolder(); }   // açılan klasörün tamamı kaydedilir (üstte ilerleme)
   if (deep) openMsg(items.find(x => keyOf(x) === `${deep.box}:${deep.uid}`) || { uid: deep.uid, seen: false, box_id: deep.box }, deep.folder);
   const tick = setInterval(() => {   // dakikada bir: yeni ileti ve klasör sayıları (seçim / okuma yokken liste yenilenir)
     if (!root.isConnected) { clearInterval(tick); return; }
     if (document.visibilityState !== 'visible') return;
     refreshFolders();
+    if (vmode !== 'folders') { if (!root.classList.contains('reading')) loadPeople(); return; }
     if (!sel.size && !pending && scroll.scrollTop < 200 && !q) loadList();
   }, 60000);
 }

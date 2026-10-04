@@ -173,6 +173,58 @@ def company_mails(conn, box_ids, emails, domains, limit=50, offset=0):
     return out
 
 
+# ---------------- Kişiler / Cariler görünümü: kayıtlı mailler adrese göre ----------------
+def addr_stats(conn, box_ids, own=()):
+    """Kayıtlı maillerdeki her katılımcı adresi → [ileti sayısı, son tarih, mailde görünen ad]. Kendi adreslerimiz hariç.
+    Aynı ileti birden çok klasörde (ör. Gmail Tüm Postalar) olsa da bir kez sayılır."""
+    own = {e.lower() for e in own}
+    out, seen = {}, set()
+    if not box_ids:
+        return out
+    for addrs, date, fe, fn, subj in conn.execute(
+            f"""SELECT addrs, date, json_extract(summary, '$.from.email'), json_extract(summary, '$.from.name'),
+                       json_extract(summary, '$.subject') FROM mail_cache WHERE box_id IN ({",".join("?" * len(box_ids))})""", box_ids):
+        k = (date, subj, fe)
+        if k in seen:
+            continue
+        seen.add(k)
+        fe = (fe or '').lower()
+        for e in (addrs or '').split():
+            if e in own or '@' not in e:
+                continue
+            st = out.setdefault(e, [0, '', None])
+            st[0] += 1
+            if (date or '') > st[1]:
+                st[1] = date or ''
+            if e == fe and fn and fn.lower() != fe and '@' not in fn:
+                st[2] = fn
+    return out
+
+
+def mails_for(conn, box_ids, emails, limit=300):
+    """Verilen adreslerden birinin katıldığı iletiler (yeni → eski); her iletiye eşleşen adres ('match', verilen sırayla ilki).
+    Aynı ileti birden çok klasördeyse bir kez (gelen / gönderilen klasörü tercih edilir)."""
+    emails = [e.lower() for e in emails if e and '@' in e][:200]
+    if not box_ids or not emails:
+        return []
+    rows = conn.execute(f"""SELECT box_id, folder, uid, summary, seen, starred, addrs FROM mail_cache
+                            WHERE box_id IN ({",".join("?" * len(box_ids))}) AND ({" OR ".join(["addrs LIKE ?"] * len(emails))})
+                            ORDER BY date DESC LIMIT ?""", (*box_ids, *[f'% {e} %' for e in emails], limit * 2)).fetchall()
+    rank = {'inbox': 0, 'sent': 1}
+    best = {}
+    for box_id, folder, uid, summary, seen, starred, addrs in rows:
+        d = json.loads(summary)
+        k = (d.get('date'), d.get('subject'), (d.get('from') or {}).get('email'))
+        have = best.get(k)
+        if have and rank.get(have['folder'], 5) <= rank.get(folder, 5):
+            continue
+        parts = set((addrs or '').split())
+        d.update(box_id=box_id, folder=folder, uid=uid, seen=bool(seen), starred=bool(starred),
+                 match=next((e for e in emails if e in parts), emails[0]))
+        best[k] = d
+    return sorted(best.values(), key=lambda d: d.get('date') or '', reverse=True)[:limit]
+
+
 # ---------------- Arka plan eşitlemesi ----------------
 def sync_box(box):
     """Gelen kutusu + gönderilenler: klasörün tamamı önbelleğe (yalnız eksikler indirilir; bayraklar tazelenir)."""

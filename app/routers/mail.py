@@ -659,6 +659,103 @@ def recipients_companies(emails: str = '', user=Depends(auth.current_user), conn
     return sorted(seen.values(), key=lambda c: c['name'] or '')
 
 
+# ---------------- Kişiler / Cariler görünümü (kayıtlı mailler) ----------------
+_stats_cache = {}   # kullanıcı → (zaman, istatistik)
+
+
+def _view_boxes(conn, user):
+    bs = [b for b in _boxes(conn, user) if not mail.settings(b)['is_pop']]
+    return [b['id'] for b in bs], [b['email'] for b in _boxes(conn, user)]
+
+
+def _stats(conn, user):
+    hit = _stats_cache.get(user['id'])
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    ids, own = _view_boxes(conn, user)
+    st = mail_cache.addr_stats(conn, ids, own)
+    _stats_cache[user['id']] = (time.time(), st)
+    return st
+
+
+@router.get('/view/people')
+def view_people(user=Depends(auth.current_user), conn=db.DB):
+    """Mail › Kişiler: maillerdeki adresler. Rehber'de bilinenler (firma kişisi — firmasız dahil — ya da sistem kullanıcısı; bir
+    kişinin bütün adresleri tek satırda) üstte ada göre; bilinmeyen adresler altta, son yazışmaya göre."""
+    from ..document_ocr import fold
+    st = _stats(conn, user)
+    owner = {}   # adres → ('person' | 'user', id)
+    if {'companies', 'purchasing'} & set(user['modules']):
+        for e, pid in conn.execute("""SELECT lower(trim(email)), id FROM company_people WHERE email LIKE '%@%'
+                                      UNION ALL SELECT email, ref_id FROM person_emails WHERE kind = 'company'"""):
+            if e in st:
+                owner.setdefault(e, ('person', pid))
+    for uid, e in conn.execute("SELECT id, lower(username) FROM users WHERE deleted_at IS NULL AND username LIKE '%@%'"):
+        if e in st:
+            owner.setdefault(e, ('user', uid))
+    pids = sorted({i for k, i in owner.values() if k == 'person'})
+    people = {r['id']: r for r in person_emails.attach(conn, 'company', db.rows(conn.execute(
+        f'SELECT id, full_name, email, company_id FROM company_people WHERE id IN ({",".join("?" * len(pids))})', pids)))} if pids else {}
+    users = dict(conn.execute('SELECT id, full_name FROM users'))
+    known = {}
+    for e, k in owner.items():
+        if k not in known:
+            if k[0] == 'person':
+                p = people.get(k[1])
+                if not p:
+                    continue
+                known[k] = {'kind': 'person', 'id': k[1], 'name': p['full_name'], 'companies': [c['name'] for c in p['companies']],
+                            'emails': [], 'count': 0, 'last': ''}
+            else:
+                known[k] = {'kind': 'user', 'id': k[1], 'name': users.get(k[1]) or e, 'companies': [config.COMPANY_NAME],
+                            'emails': [], 'count': 0, 'last': ''}
+        n, last, _ = st[e]
+        r = known[k]
+        r['emails'].append({'email': e, 'count': n})
+        r['count'] += n
+        r['last'] = max(r['last'], last)
+    for r in known.values():
+        r['emails'].sort(key=lambda x: -x['count'])
+    used = set(owner)
+    unknown = [{'kind': 'addr', 'email': e, 'name': v[2] or '', 'count': v[0], 'last': v[1]} for e, v in st.items() if e not in used]
+    unknown.sort(key=lambda r: r['last'], reverse=True)
+    return {'known': sorted(known.values(), key=lambda r: fold(r['name'])), 'unknown': unknown[:1500], 'unknown_total': len(unknown)}
+
+
+@router.get('/view/cari')
+def view_cari(user=Depends(auth.current_user), conn=db.DB):
+    """Mail › Cariler: firmalar (müşteri / tedarikçi yetkisine göre) ve çalışanlarının adresleri; ileti sayıları kayıtlı maillerden."""
+    from .companies import people_of
+    st = _stats(conn, user)
+    cos = {}
+    for sup, mod in ((False, 'companies'), (True, 'purchasing')):
+        if mod not in user['modules']:
+            continue
+        for p in people_of(conn, sup):
+            for e in p.get('email_list') or []:
+                if not e.get('company_id'):
+                    continue
+                c = cos.setdefault(e['company_id'], {'id': e['company_id'], 'name': e.get('company_name') or '', 'supplier': sup,
+                                                      'people': [], 'count': 0, 'last': ''})
+                n, last, _ = st.get(e['email'], (0, '', None))
+                c['people'].append({'id': p['id'], 'name': p['full_name'], 'email': e['email'], 'count': n})
+                c['count'] += n
+                c['last'] = max(c['last'], last)
+    from ..document_ocr import fold
+    out = sorted(cos.values(), key=lambda c: (c['count'] == 0, fold(c['name'])))
+    for c in out:
+        c['people'].sort(key=lambda x: (-x['count'], fold(x['name'])))
+    return out
+
+
+@router.get('/view/mails')
+def view_mails(emails: str = '', user=Depends(auth.current_user), conn=db.DB):
+    """Seçilen kişinin / carinin adresleriyle yazışmalar (kayıtlı mailler); her iletide eşleşen adres (match)."""
+    ids, _ = _view_boxes(conn, user)
+    items = mail_cache.mails_for(conn, ids, [e.strip() for e in emails.split(',')])
+    return {'items': _annotate(conn, items), 'total': len(items)}
+
+
 @router.get('/people/search')
 def people_search(q: str = '', user=Depends(auth.current_user), conn=db.DB):
     """Atama penceresi: "bu adres şu kişiye ait" — Rehber'deki tüm kişiler arasında (firmasızlar ve başka firmalardakiler dahil)."""

@@ -21,7 +21,7 @@ MAX_ATTACH = 25 * 1024 * 1024
 _unread_cache = {}   # user_id → (zaman, sayı)
 PUBLIC = ('id', 'email', 'login', 'name', 'provider', 'auth_type', 'imap_host', 'imap_port', 'pop_host', 'pop_port', 'smtp_host', 'smtp_port',
           'smtp_security', 'save_sent', 'signature', 'color', 'sort', 'auto_import', 'sync_calendar', 'sync_contacts', 'last_ok', 'last_error',
-          'last_sync', 'created_at')
+          'last_sync', 'sync_error', 'created_at')
 
 
 def _wrap(fn):
@@ -228,7 +228,7 @@ def delete_box(box_id: int, user=Depends(auth.current_user), conn=db.DB):
 _states = {}   # durum jetonu → (kullanıcı, sağlayıcı, zaman)
 G_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth'
 G_SCOPES = ('https://mail.google.com/ openid email https://www.googleapis.com/auth/calendar.readonly '
-            'https://www.googleapis.com/auth/contacts.readonly')
+            'https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly')
 
 
 def _base(request):

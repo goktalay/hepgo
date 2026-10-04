@@ -64,12 +64,57 @@ def _gtime(t):
         return None, False
 
 
+def _gerr(r, what):
+    """Google API hatası → anlaşılır Türkçe neden."""
+    try:
+        e = r.json().get('error') or {}
+    except ValueError:
+        e = {}
+    msg = (e.get('message') or '').strip()
+    reasons = ' '.join(str(d.get('reason', '')) for d in e.get('details', []) if isinstance(d, dict)) + ' ' + str(e.get('status', ''))
+    if r.status_code == 403 and ('SERVICE_DISABLED' in reasons or 'has not been used' in msg or 'is disabled' in msg):
+        api = 'People API' if 'people' in str(r.url) else 'Google Calendar API'
+        return f'{what}: Google Cloud Console’da {api} kapalı — API’ler ve Hizmetler › Kütüphane’den etkinleştirin'
+    if r.status_code == 403 and ('SCOPE' in reasons or 'insufficient' in msg.lower()):
+        return f'{what}: bu izin verilmemiş — hesabı “Google ile yeniden bağlan” ile tekrar bağlayın'
+    return f'{what}: Google hatası {r.status_code}{(" — " + msg[:160]) if msg else ""}'
+
+
+def _google_pages(url, params, hdr, key):
+    """Sayfalı Google listesi (nextPageToken) → (öğeler, hata yanıtı ya da None)."""
+    items, token = [], None
+    for _ in range(50):   # en çok 50 sayfa (50 000 kişi)
+        r = httpx.get(url, params={**params, **({'pageToken': token} if token else {})}, headers=hdr, timeout=30)
+        if r.status_code != 200:
+            return items, r
+        d = r.json()
+        items += d.get(key, [])
+        token = d.get('nextPageToken')
+        if not token:
+            break
+    return items, None
+
+
+def _google_contact(conn, user_id, p, source='google'):
+    """Bir Google kişisi → rehber: kişinin HER e-posta adresi ayrı satır (kaynak kimliği adresle birlikte)."""
+    name = ((p.get('names') or [{}])[0]).get('displayName')
+    phone = ((p.get('phoneNumbers') or [{}])[0]).get('value')
+    org = (p.get('organizations') or [{}])[0]
+    rid = p.get('resourceName') or name or ''
+    emails = [e.get('value') for e in (p.get('emailAddresses') or []) if e.get('value')]
+    for i, email in enumerate(emails or [None]):
+        _upsert_contact(conn, user_id, source, rid if i == 0 else f'{rid}#{email.lower()}', name, email, phone, org.get('name'), org.get('title'))
+    return 1
+
+
 def sync_google(conn, box):
-    """Google Takvim (birincil) + Google Kişiler → kişisel takvim / rehber."""
+    """Google Takvim (birincil) + Google Kişiler (Kişilerim + Gmail'in otomatik kaydettiği "Diğer kişiler") → takvim / rehber.
+    Hatalar sessizce yutulmaz: (takvim, kişi, [hatalar]) döner; hesapta gösterilir."""
     tok = mail.access_token(decrypt(box['secret']), 'google')
     hdr = {'Authorization': f'Bearer {tok}'}
     a, b = _window()
     n_ev = n_ct = 0
+    errors = []
     if box['sync_calendar']:
         url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
         params = {'timeMin': a.isoformat() + 'Z', 'timeMax': b.isoformat() + 'Z', 'singleEvents': 'true', 'orderBy': 'startTime', 'maxResults': 2500}
@@ -84,19 +129,22 @@ def sync_google(conn, box):
                                                                         'all_day': all_day, 'location': it.get('location'), 'description': it.get('description'),
                                                                         'organizer': (it.get('organizer') or {}).get('email'), 'status': it.get('status')})
                 n_ev += 1
+        else:
+            errors.append(_gerr(r, 'Takvim'))
     if box['sync_contacts']:
-        url = 'https://people.googleapis.com/v1/people/me/connections'
-        params = {'personFields': 'names,emailAddresses,phoneNumbers,organizations', 'pageSize': 1000}
-        r = httpx.get(url, params=params, headers=hdr, timeout=30)
-        if r.status_code == 200:
-            for p in r.json().get('connections', []):
-                name = ((p.get('names') or [{}])[0]).get('displayName')
-                email = ((p.get('emailAddresses') or [{}])[0]).get('value')
-                phone = ((p.get('phoneNumbers') or [{}])[0]).get('value')
-                org = (p.get('organizations') or [{}])[0]
-                _upsert_contact(conn, box['user_id'], 'google', p.get('resourceName') or email or name, name, email, phone, org.get('name'), org.get('title'))
-                n_ct += 1
-    return n_ev, n_ct
+        people, bad = _google_pages('https://people.googleapis.com/v1/people/me/connections',
+                                    {'personFields': 'names,emailAddresses,phoneNumbers,organizations', 'pageSize': 1000}, hdr, 'connections')
+        if bad is not None:
+            errors.append(_gerr(bad, 'Kişiler'))
+        for p in people:
+            n_ct += _google_contact(conn, box['user_id'], p)
+        others, bad = _google_pages('https://people.googleapis.com/v1/otherContacts',
+                                    {'readMask': 'names,emailAddresses,phoneNumbers', 'pageSize': 1000}, hdr, 'otherContacts')
+        if bad is not None:
+            errors.append(_gerr(bad, 'Diğer kişiler'))
+        for p in others:
+            n_ct += _google_contact(conn, box['user_id'], p, 'google-other')
+    return n_ev, n_ct, errors
 
 
 def sync_microsoft(conn, box):
@@ -105,6 +153,7 @@ def sync_microsoft(conn, box):
     hdr = {'Authorization': f'Bearer {tok}', 'Prefer': 'outlook.timezone="Turkey Standard Time"'}
     a, b = _window()
     n_ev = n_ct = 0
+    errors = []
     if box['sync_calendar']:
         r = httpx.get('https://graph.microsoft.com/v1.0/me/calendarView', params={'startDateTime': a.isoformat(), 'endDateTime': b.isoformat(), '$top': 500},
                       headers=hdr, timeout=30)
@@ -120,15 +169,37 @@ def sync_microsoft(conn, box):
                     'organizer': ((it.get('organizer') or {}).get('emailAddress') or {}).get('address'),
                     'status': 'cancelled' if it.get('isCancelled') else 'confirmed'})
                 n_ev += 1
+        else:
+            errors.append(_merr(r, 'Takvim'))
     if box['sync_contacts']:
-        r = httpx.get('https://graph.microsoft.com/v1.0/me/contacts', params={'$top': 1000}, headers=hdr, timeout=30)
-        if r.status_code == 200:
-            for p in r.json().get('value', []):
-                email = ((p.get('emailAddresses') or [{}])[0]).get('address')
+        url, params = 'https://graph.microsoft.com/v1.0/me/contacts', {'$top': 1000}
+        for _ in range(50):   # sayfalı (@odata.nextLink)
+            r = httpx.get(url, params=params, headers=hdr, timeout=30)
+            if r.status_code != 200:
+                errors.append(_merr(r, 'Kişiler'))
+                break
+            d = r.json()
+            for p in d.get('value', []):
                 phone = (p.get('mobilePhone') or (p.get('businessPhones') or [None])[0])
-                _upsert_contact(conn, box['user_id'], 'microsoft', p['id'], p.get('displayName'), email, phone, p.get('companyName'), p.get('jobTitle'))
+                emails = [e.get('address') for e in (p.get('emailAddresses') or []) if e.get('address')]
+                for i, email in enumerate(emails or [None]):   # kişinin her adresi
+                    _upsert_contact(conn, box['user_id'], 'microsoft', p['id'] if i == 0 else f"{p['id']}#{email.lower()}",
+                                    p.get('displayName'), email, phone, p.get('companyName'), p.get('jobTitle'))
                 n_ct += 1
-    return n_ev, n_ct
+            url, params = d.get('@odata.nextLink'), None
+            if not url:
+                break
+    return n_ev, n_ct, errors
+
+
+def _merr(r, what):
+    try:
+        msg = ((r.json().get('error') or {}).get('message') or '').strip()
+    except ValueError:
+        msg = ''
+    if r.status_code in (401, 403):
+        return f'{what}: izin yok ({r.status_code}) — hesabı “Microsoft ile yeniden bağlan” ile tekrar bağlayın'
+    return f'{what}: Microsoft hatası {r.status_code}{(" — " + msg[:160]) if msg else ""}'
 
 
 def _upsert_contact(conn, user_id, source, ext_id, name, email, phone, company, title):
@@ -148,6 +219,7 @@ def sync_box(conn, box):
         r = sync_microsoft(conn, box)
     else:
         return None
-    conn.execute('UPDATE mail_boxes SET last_sync = ? WHERE id = ?', (db.now(), box['id']))
+    errors = r[2]
+    conn.execute('UPDATE mail_boxes SET last_sync = ?, sync_error = ? WHERE id = ?', (db.now(), '; '.join(errors)[:500] or None, box['id']))
     conn.commit()
-    return {'events': r[0], 'contacts': r[1]}
+    return {'events': r[0], 'contacts': r[1], 'errors': errors}

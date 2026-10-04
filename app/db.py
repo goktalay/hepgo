@@ -1769,6 +1769,7 @@ CREATE TABLE IF NOT EXISTS mail_boxes (
     sync_contacts INTEGER NOT NULL DEFAULT 1,
     last_uid      INTEGER, uid_validity TEXT,
     last_ok       TEXT, last_error TEXT,
+    sync_error  TEXT,                      -- takvim / kişi eşitlemesinin son hatası (Google / Microsoft)
     last_sync     TEXT,
     created_at    TEXT NOT NULL
 );
@@ -2282,6 +2283,9 @@ def _migrate(conn):
     for col in ('joined_at', 'last_seen'):   # toplantı ekranına katılım
         if inv_cols and col not in inv_cols:
             conn.execute(f'ALTER TABLE team_meeting_invites ADD COLUMN {col} TEXT')
+    mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
+    if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün
+        conn.execute('ALTER TABLE mail_boxes ADD COLUMN sync_error TEXT')
     mail_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_accounts)')}
     for col, ddl in (('auto_import', 'INTEGER NOT NULL DEFAULT 1'), ('last_uid', 'INTEGER'), ('uid_validity', 'TEXT'),
                      ('auth_type', "TEXT NOT NULL DEFAULT 'password'")):

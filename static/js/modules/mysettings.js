@@ -43,7 +43,8 @@ export function mailboxesSection(query = '') {
             b.name].filter(Boolean).join(' · ')),
           b.last_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.last_error}`)
             : h('div', { class: 'small muted' }, b.last_ok ? t('Son erişim: {d}', { d: fmtDateTime(b.last_ok) }) : '',
-              b.last_sync ? t(' · Takvim/kişi eşitleme: {d}', { d: fmtDateTime(b.last_sync) }) : '')),
+              b.last_sync ? t(' · Takvim/kişi eşitleme: {d}', { d: fmtDateTime(b.last_sync) }) : ''),
+          b.sync_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.sync_error}`) : null),
         h('div', { class: 'mbx-acts' },
           i > 0 ? h('button', { class: 'btn xs ghost', type: 'button', title: 'Yukarı taşı', onclick: async () => {
             const ids = d.boxes.map(x => x.id); [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
@@ -51,7 +52,12 @@ export function mailboxesSection(query = '') {
           } }, '↑') : null,
           b.auth_type !== 'password' ? h('button', { class: 'btn xs', type: 'button', title: 'Takvim ve kişileri şimdi eşitle', onclick: async e => {
             e.currentTarget.disabled = true;
-            try { const r = await api.post(`/api/mail/${b.id}/sync`, {}); toast(t('{e} takvim öğesi, {c} kişi eşitlendi', { e: r.events, c: r.contacts }), 'success'); load(); } catch (err) { toastError(err); load(); }
+            try {
+              const r = await api.post(`/api/mail/${b.id}/sync`, {});
+              if (r.errors?.length) toast(r.errors.join(' · '), 'err');
+              else toast(t('{e} takvim öğesi, {c} kişi eşitlendi', { e: r.events, c: r.contacts }), 'success');
+              load();
+            } catch (err) { toastError(err); load(); }
           } }, '⟳ Eşitle') : null,
           h('button', { class: 'btn xs', type: 'button', onclick: () => editBox(b) }, 'Düzenle'),
           h('button', { class: 'btn xs danger', type: 'button', onclick: async () => {

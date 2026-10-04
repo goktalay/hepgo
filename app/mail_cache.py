@@ -189,6 +189,32 @@ def sync_box(box):
             time.sleep(0.5)
 
 
+CONTACTS_INTERVAL = 6 * 3600   # Google / Microsoft takvim ve kişileri bu aralıkla kendiliğinden eşitlenir
+
+
+def _contacts_due(b):
+    if b.get('auth_type') not in ('google', 'microsoft') or not (b.get('sync_contacts') or b.get('sync_calendar')):
+        return
+    try:
+        from datetime import datetime
+        last = datetime.fromisoformat(b['last_sync']).timestamp() if b.get('last_sync') else 0
+    except ValueError:
+        last = 0
+    if time.time() - last < CONTACTS_INTERVAL:
+        return
+    from . import personal
+    try:
+        with db.connect() as conn:
+            personal.sync_box(conn, b)
+    except Exception as e:   # noqa: BLE001 — erişim jetonu vb.: hata hesapta görünsün
+        try:
+            with db.connect() as conn:
+                conn.execute('UPDATE mail_boxes SET sync_error = ?, last_sync = ? WHERE id = ?', (str(e)[:500], db.now(), b['id']))
+                conn.commit()
+        except Exception:   # noqa: BLE001
+            pass
+
+
 def _loop():
     time.sleep(90)
     while True:
@@ -202,6 +228,7 @@ def _loop():
                         sync_box(b)
                     except Exception:   # noqa: BLE001
                         pass
+                _contacts_due(b)
         except Exception:   # noqa: BLE001
             pass
         time.sleep(SYNC_INTERVAL)

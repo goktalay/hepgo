@@ -657,9 +657,25 @@ export async function renderMail(view, params = []) {
         h('p', { class: 'small muted' }, t('Kişi seçilen firmanın kişileri arasına kalıcı olarak kaydedilir; bu adresten gelen e-postalarda firma adı görünür. Adres başka bir firmada da kayıtlıysa oradaki kişiye dokunulmaz.'))),
       actions: [{ label: t('Vazgeç') }, { label: t('Kaydet'), class: 'primary', onClick: async () => {
         if (!picked) throw new Error(t('Bir firma seçin'));
-        const r = await api.post('/api/mail/people/assign', { email: a.email, full_name: nm.value.trim() || a.email, company_id: picked.id, title: title.value, phone: phone.value });
+        // maildeki diğer kişiler: aynı alan adından bilinmeyenler sunucuda aynı firmaya otomatik eklenir (sihirbaz açılmaz)
+        const others = [msg.from, ...msg.to, ...msg.cc, ...msg.reply_to]
+          .filter(x => x?.email && x.email.toLowerCase() !== a.email.toLowerCase()).map(x => ({ email: x.email, name: x.name || null }));
+        const r = await api.post('/api/mail/people/assign', { email: a.email, full_name: nm.value.trim(), company_id: picked.id, title: title.value, phone: phone.value, others });
+        const also = r.also || [];
+        delete r.also;
         applyCo(a.email, r);
-        snack(t('{n}, {c} firmasına eklendi', { n: nm.value.trim() || a.email, c: picked.name }));
+        also.forEach(x => applyCo(x.email, x));
+        const who = r.person_name || nm.value.trim() || a.email;
+        if (!also.length) snack(t('{n}, {c} firmasına eklendi', { n: who, c: picked.name }));
+        else snack(t('{n} ve aynı alan adından {k} kişi daha {c} firmasına eklendi', { n: who, k: also.length, c: picked.name }), async () => {
+          try {   // geri al: otomatik eklenen kişiler silinir (elle eklenen kişiye dokunulmaz)
+            for (const x of also) {
+              const u = await api.del(`/api/mail/people/assign?person_id=${x.person_id}&email=${encodeURIComponent(x.email)}&auto=1`);
+              applyCo(x.email, u.company || null);
+            }
+            snack(t('Otomatik eklenen {k} kişi geri alındı', { k: also.length }));
+          } catch (e) { toastError(e); }
+        }, 8000);
       } }] });
       setTimeout(() => qIn.focus(), 50);
     }

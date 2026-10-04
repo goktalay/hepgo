@@ -353,6 +353,38 @@ function appsLauncher() {
   return h('div', { class: 'menu-anchor' }, btn, panel);
 }
 
+// Kişisel alt modülleri (Takvim, Toplantılar, Mail, İzinlerim…): modül ızgarasıyla aynı görünümde ayrı düğme.
+// Düğmedeki sayı = alt modüllerdeki bekleyen işlerin toplamı (kullanıcı menüsündeki "Kişisel" sayısıyla aynı).
+const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
+  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet' };
+const personalTileCounts = new Set();
+function personalLauncher() {
+  const btn = h('button', { class: 'icon-btn notify-btn personal-btn', 'aria-label': 'Kişisel', title: 'Kişisel', 'aria-haspopup': 'menu' },
+    svgIcon(icons.person), menuCount('personal'));
+  const panel = h('div', { class: 'dropdown apps-panel personal-panel', role: 'menu' });
+  const current = () => location.hash.replace(/^#\/?/, '').split('/')[0];
+  const fill = () => {
+    personalTileCounts.clear();
+    const tile = p => {
+      const n = h('span', { class: 'tile-count', hidden: true });
+      const upd = () => { const c = notifyCounts.get(p.notify) || 0; n.hidden = !c; n.textContent = c > 99 ? '99+' : c; };
+      upd(); personalTileCounts.add(upd);
+      return h('a', { class: `app-tile ${current() === p.route ? 'on' : ''}`, href: `#/${p.route}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
+        h('span', { class: 'ico' }, svgIcon(icons[PERSONAL_ICONS[p.key]] || icons.person), n), h('span', null, p.title));
+    };
+    clear(panel, h('div', { class: 'apps-group' },
+      h('div', { class: 'apps-group-h static' }, h('span', { class: 'gi' }, svgIcon(icons.person)), h('span', { class: 'gt' }, 'Kişisel'),
+        h('span', { class: 'gn' }, PERSONAL.length)),
+      h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, PERSONAL.map(tile)))));
+  };
+  btn.addEventListener('click', () => {
+    fill();
+    if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Kişisel menüsü' });
+  });
+  popup(btn, panel);
+  return h('div', { class: 'menu-anchor' }, btn, panel);
+}
+
 // Yeni uyarı / bildirim: sağ üst köşede kısa kutu, 3 sn sonra gizlenir. İlk yüklemede var olanlar "görüldü" sayılır;
 // sonra yeni bir başlık, artan sayı ya da listede yeni bir ad gelirse gösterilir. Kutuya tıklanınca ilgili sayfa açılır.
 const seen = {};
@@ -410,17 +442,18 @@ const settingsTheme = () => ctx.user?.prefs?.settings?.theme;
 const menuCounts = new Map();
 function menuCount(key) {
   const el = h('span', { class: 'menu-count', hidden: true });
-  menuCounts.set(key, el);
+  if (!menuCounts.has(key)) menuCounts.set(key, new Set());
+  menuCounts.get(key).add(el);   // aynı sayı birden çok yerde (ör. Kişisel: kullanıcı menüsü + üst bardaki düğme)
   return el;
 }
 function syncMenuCounts(items) {
   const by = new Map(items.map(n => [n.key, n.count]));
   notifyCounts = by;
   by.set('personal', PERSONAL.reduce((a, p) => a + (by.get(p.notify) || 0), 0));
-  for (const [key, el] of menuCounts) {
+  for (const t of personalTileCounts) t();   // Kişisel paneli açıksa kutucuk sayıları
+  for (const [key, els] of menuCounts) {
     const n = by.get(key) || 0;
-    el.hidden = !n;
-    el.textContent = n > 99 ? '99+' : n;
+    for (const el of els) { el.hidden = !n; el.textContent = n > 99 ? '99+' : n; }
   }
   // Kişisel alt modül seçicisindeki sayılar da güncel kalsın
   for (const o of view?.querySelectorAll('.personal-sel option') || []) {
@@ -588,7 +621,7 @@ function renderShell() {
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       h('div', { class: 'header-right' }, radio.button(popup), securityOnly() ? null : chatButton(popup),
-        docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+        docsCountdown(), inboxButton(), fullscreenButton(), personalLauncher(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),

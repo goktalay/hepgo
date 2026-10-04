@@ -335,9 +335,10 @@ def _mailbox_map(c, m):
         if key and key not in out:
             out[key] = name
         elif not key:
-            extra[f'x:{bare}'] = (name, utf7_decode(bare))
+            extra[f'x:{bare}'] = (name, utf7_decode(bare), mt['sep'] or '')
     c.folders = {**out, **{k: v[0] for k, v in extra.items()}}
     c.extra_titles = {k: v[1] for k, v in extra.items()}
+    c.extra_seps = {k: v[2] for k, v in extra.items()}   # hiyerarşi ayırıcısı (Gmail '/', çoğu sunucu '.'): arayüzde ağaç
     return c.folders
 
 
@@ -383,8 +384,9 @@ def folders(box):
                 except Exception:
                     unseen = None
             out.append({'key': key, 'title': title, 'unseen': unseen})
+        seps = getattr(c, 'extra_seps', {})
         for key, title in sorted(getattr(c, 'extra_titles', {}).items(), key=lambda x: x[1].lower()):
-            out.append({'key': key, 'title': title, 'unseen': None, 'custom': True})
+            out.append({'key': key, 'title': title, 'unseen': None, 'custom': True, 'sep': seps.get(key, '')})
         return out
     return _run(c, fn)
 

@@ -24,12 +24,15 @@ EXCL=(--exclude=/.git/ --exclude=/.venv/ --exclude=/data/ --exclude=/tenants/
       --exclude='.env*' --exclude=__pycache__/ --exclude='*.pyc' --exclude=/.deployed-rev
       --exclude=/vendor/models/ --exclude=/vendor/ocr/ --exclude=/vendor/whisper/)
 [ "$TARGET" = app ] && EXCL+=(--exclude=/central/)
+# veilox: canlıdaki yapılandırma (tenants.json) korunur; depoda olmayan eski dosyalar silinmez (yalnız güncelleme/ekleme)
+DELETE=(--delete)
+if [ "$TARGET" = veilox ]; then EXCL+=(--exclude=/tenants.json); DELETE=(); fi
 
 # Yalnız içerik karşılaştırılır (--checksum); sahiplik/izin/zaman taşınmaz, çünkü hepgo'ya ait
 # dosyalarda chmod/utime yapılamaz. Değişen dosya yeniden yazılır (sahibi gelistirici olur, okunabilir kalır);
 # yeni dosyalar kaynak iznini umask ile alır (run.sh çalıştırılabilir kalır).
 STAMP=$(date +%Y%m%d-%H%M%S)
-OPTS=(-rl --checksum --delete --itemize-changes
+OPTS=(-rl --checksum "${DELETE[@]}" --itemize-changes
       --backup --backup-dir=/opt/hepgo/deploy-backups/$TARGET-$STAMP "${EXCL[@]}")
 
 if [ "$APPLY" != --apply ]; then

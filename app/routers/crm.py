@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, db, person_emails
 
 router = APIRouter(prefix='/api/crm')
 
@@ -56,9 +56,8 @@ def contacts(supplier: bool = False, user=Depends(crm_user), conn=db.DB):
     """Rehber: firma kişileri + sistem kullanıcıları (aktif, silinmemiş). supplier=1: tedarikçi kişileri."""
     if ('purchasing' if supplier else 'companies') not in user['modules']:
         raise HTTPException(403, 'Bu modüle erişim yetkiniz yok')
-    people = db.rows(conn.execute(
-        '''SELECT p.*, c.name AS company_name, c.logo AS company_logo, c.active AS company_active
-           FROM company_people p JOIN companies c ON c.id = p.company_id WHERE c.is_supplier = ? ORDER BY p.full_name''', (int(supplier),)))
+    from .companies import people_of
+    people = people_of(conn, supplier)
     users = db.rows(conn.execute(
         '''SELECT id, username AS email, full_name, phone, photo FROM users
            WHERE deleted_at IS NULL AND active = 1 ORDER BY full_name'''))
@@ -87,9 +86,20 @@ def _person_meetings(conn, where, args):
 def person_detail(pid: int, user=Depends(crm_user), conn=db.DB):
     p = db.row(conn.execute(
         '''SELECT p.*, c.name AS company_name, c.logo AS company_logo FROM company_people p
-           JOIN companies c ON c.id = p.company_id WHERE p.id = ?''', (pid,)))
+           LEFT JOIN companies c ON c.id = p.company_id WHERE p.id = ?''', (pid,)))
     if not p:
         raise HTTPException(404, 'Kişi bulunamadı')
+    person_emails.attach(conn, 'company', [p])
+    if not p['company_id'] and p['companies']:
+        p['company_id'], p['company_name'] = p['companies'][0]['id'], p['companies'][0]['name']
+    # olası kopyalar (birleştirme önerisi): aynı ad ya da ortak e-posta adresi
+    ems = p['emails']
+    q = ','.join('?' * len(ems)) or "''"
+    p['duplicates'] = db.rows(conn.execute(
+        f'''SELECT DISTINCT d.id, d.full_name, c.name AS company_name FROM company_people d LEFT JOIN companies c ON c.id = d.company_id
+            WHERE d.id != ? AND (lower(trim(d.full_name)) = lower(trim(?)) OR lower(trim(d.email)) IN ({q})
+                 OR d.id IN (SELECT ref_id FROM person_emails WHERE kind = 'company' AND email IN ({q})))
+            ORDER BY d.full_name LIMIT 20''', (pid, p['full_name'], *ems, *ems)))
     from .documents import list_for_person
     p['documents'] = list_for_person(conn, user, pid)
     p['meetings'] = _person_meetings(conn, 'm.id IN (SELECT meeting_id FROM meeting_people WHERE person_id = ?)', (pid,))

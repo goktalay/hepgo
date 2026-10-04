@@ -46,11 +46,12 @@ def main():
         ok(c.post('/api/mail/people/assign', json={'email': 'ayse.k@gmail.com', 'full_name': 'Ayşe Kaya', 'company_id': cid}))
         assert len(ok(c.get(f'/api/companies/{cid}'))['people']) == 1
 
-        # Bağlantı kaldırma: ek adres → yalnız o; birincil → ilk ek adres birincil olur
+        # Bağlantı kaldırma: adres kişide kalır, yalnız o adres firmadan ayrılır; kişi başka adresiyle firmada kalır
         ok(c.request('DELETE', f'/api/mail/people/assign?person_id={pid}&email=ayse@ev.net'))
         ok(c.request('DELETE', f'/api/mail/people/assign?person_id={pid}&email=ayse@acme.com'))
         p = ok(c.get(f'/api/companies/{cid}'))['people'][0]
-        assert p['email'] == 'ayse.k@gmail.com' and p['emails'] == ['ayse.k@gmail.com'], p
+        assert p['emails'] == ['ayse@acme.com', 'ayse.k@gmail.com', 'ayse@ev.net'], p
+        assert {e['email']: e['company_id'] for e in p['email_list']} == {'ayse@acme.com': None, 'ayse.k@gmail.com': cid, 'ayse@ev.net': None}
 
         # İK personeli
         eid = ok(c.post('/api/hr/applications', json={'tc_no': '12345678950', 'first_name': 'Mehmet', 'last_name': 'Demir', 'source': ok(c.get('/api/hr/meta'))['sources'][0],

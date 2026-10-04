@@ -8,7 +8,10 @@ const MINE_SRC = { mail: 'Yazışma', google: 'Google Kişiler', microsoft: 'Out
 // Türkçe Yazım Düzeni (Title Case): her kelimenin ilk harfi büyük, kalanı küçük (İ/ı duyarlı)
 const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(\p{L})/gu, (m, p, c) => p + c.toLocaleUpperCase('tr'));
 
+let canShare = false;   // Kişilerim'den paylaşılan Rehber'e ekleyebilir mi (Firma Yönetimi yazma yetkisi)
+
 export async function render(view, params, ctx) {
+  canShare = (ctx.user.write_modules || ctx.user.modules || []).includes('companies');
   if (params[0] && params[1]) return detail(view, params[0], params[1], ctx);
   return list(view, ctx);
 }
@@ -81,7 +84,14 @@ function editMine(c, done) {
       field('Unvan', f.title), field('Not', note),
       c?.email ? h('div', { class: 'set-actions left' }, h('a', { class: 'btn sm', href: `mailto:${c.email}` }, '✉ E-posta'),
         c.phone ? h('a', { class: 'btn sm', href: `tel:${c.phone}` }, '📞 Ara') : null) : null),
-    actions: [c ? { label: 'Sil', class: 'danger', onClick: async () => {
+    actions: [c && canShare ? { label: 'Rehbere ekle', onClick: async () => {
+      // Google / Outlook / yazışma kişisi → paylaşılan Rehber (firmasız; adresi bir firmaya atanınca o firmanın kişisi olur)
+      const r = await api.post('/api/companies/people', { full_name: f.name.value.trim() || f.email.value.trim(), title: f.title.value.trim() || null,
+        phone: f.phone.value.trim() || null, emails: f.email.value.trim() ? [f.email.value.trim()] : [],
+        note: [note.value.trim(), f.company.value.trim() ? t('Firma (Kişilerim): {c}', { c: f.company.value.trim() }) : ''].filter(Boolean).join('\n') || null });
+      toast('Rehbere eklendi', 'success');
+      location.hash = `#/companies/rehber/person/${r.id}`;
+    } } : null, c ? { label: 'Sil', class: 'danger', onClick: async () => {
       if (!await confirmDialog('Kişiyi sil', 'Bu kişi rehberinizden silinsin mi?', { okLabel: 'Sil', danger: true })) return true;
       await api.del(`/api/my/contacts/${c.id}`); toast('Kişi silindi'); done();
     } } : null, 'spacer', { label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {

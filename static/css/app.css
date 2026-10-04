@@ -4595,6 +4595,11 @@ html, body { overflow: hidden; height: 100%; }
 .sc-integ-status { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 4px 10px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
 .sc-integ-status.ok { color: #1f8a4c; background: #e8f6ee; }
 html[data-theme="dark"] .sc-integ-status.ok { background: rgba(34, 197, 94, .15); color: #86efac; }
+.dir-companies { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.dup-hint { border-left: 3px solid var(--warn, #f59e0b); margin-top: 10px; }
+.dup-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.dup-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dup-row .btn { margin-left: auto; }
 .emails-wrap { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .emails-in { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .emails-row { display: flex; gap: 6px; align-items: center; }

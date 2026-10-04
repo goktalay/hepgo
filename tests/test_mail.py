@@ -227,18 +227,20 @@ def main():
         row_ = next(x for x in ok(u.get(f"/api/mail/{g['id']}/list?folder=inbox"))['items'] if x['subject'] == 'Teklif')
         assert row_['company'] == 'Müşteri A.Ş.', row_
         assert v.post('/api/mail/people/assign', json={'email': 'x@y.com', 'full_name': 'X', 'company_id': comp_id}).status_code in (403, 200)
-        # Adres başka firmada kayıtlıysa oradaki kişiye dokunulmaz; seçilen firmaya yeni kişi eklenir, en son atanan görünür
+        # Firma ataması adres üzerinden: adres başka firmada kayıtlı bir kişiye aitse YENİ kişi açılmaz, adresin firması değişir
         with _db.connect() as cc_:
             b_id = cc_.execute("INSERT INTO companies (name, active, created_at) VALUES ('Bayi B', 1, '2026-01-01T00:00:00')").lastrowid
             rana = cc_.execute("INSERT INTO company_people (company_id, full_name, email, created_at) VALUES (?, 'Rana', 'rana@b.com', '2026-01-01')", (b_id,)).lastrowid
             sup_id = cc_.execute("INSERT INTO companies (name, active, is_supplier, created_at) VALUES ('Tedarikçi T', 1, 1, '2026-01-01T00:00:00')").lastrowid
             cc_.commit()
         r = ok(u.post('/api/mail/people/assign', json={'email': 'rana@b.com', 'full_name': 'Rana Yılmaz', 'company_id': comp_id}))
-        assert r['company_id'] == comp_id and r['person_id'] != rana, r
+        assert r['company_id'] == comp_id and r['person_id'] == rana, r
         with _db.connect() as cc_:
-            assert tuple(cc_.execute('SELECT company_id, full_name, email FROM company_people WHERE id = ?', (rana,)).fetchone()) == (b_id, 'Rana', 'rana@b.com')
+            assert tuple(cc_.execute('SELECT company_id, full_name, email FROM company_people WHERE id = ?', (rana,)).fetchone()) == (comp_id, 'Rana Yılmaz', 'rana@b.com')
         r = ok(u.delete(f"/api/mail/people/assign?person_id={r['person_id']}&email=rana@b.com"))
-        assert r['company']['company_id'] == b_id, r   # yalnız o kişiden kaldırıldı; B'deki kayıt yerinde
+        assert r['company'] is None, r   # bağlantı kaldırıldı: adres kişide kalır, firmasız
+        with _db.connect() as cc_:
+            assert tuple(cc_.execute('SELECT company_id, email FROM company_people WHERE id = ?', (rana,)).fetchone()) == (None, 'rana@b.com')
         assert u.delete(f'/api/mail/people/assign?person_id={rana}&email=baska@b.com').status_code == 404
         # Tedarikçi firmalar Satın Alma yetkisi ister (Firmalar'daki kural)
         from app.routers.mail import _co_write

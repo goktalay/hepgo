@@ -643,6 +643,20 @@ export async function renderMail(view, params = []) {
       // Aynı kişinin başka bir adresi mi? Firmanın kişilerinden biri seçilirse adres ona EK ADRES olarak eklenir (yeni kişi açılmaz)
       const who = h('select', { class: 'input' }, h('option', { value: '' }, t('— Yeni kişi olarak ekle —')));
       const newFields = h('div', null);
+      // Rehber'deki herhangi bir kişi (başka firmadaki ya da firmasız): seçilince "Kişi" listesine eklenip seçilir
+      const pq = h('input', { class: 'input', type: 'search', placeholder: t('Ad ya da e-posta…') });
+      const pres = h('div', { class: 'gm-colist' });
+      let ptm;
+      pq.addEventListener('input', () => { clearTimeout(ptm); ptm = setTimeout(async () => {
+        if (!pq.value.trim()) { clear(pres); return; }
+        try {
+          const ps = await api.get(`/api/mail/people/search?q=${encodeURIComponent(pq.value.trim())}`);
+          clear(pres, ps.map(p => h('button', { type: 'button', class: 'gm-coitem', onclick: () => {
+            if (![...who.options].some(o => o.value === String(p.id))) who.append(h('option', { value: p.id }, p.full_name));
+            who.value = String(p.id); newFields.hidden = true; clear(pres); pq.value = '';
+          } }, h('span', { class: 'grow' }, p.full_name), h('small', null, (p.companies || []).map(z => z.name).join(', ') || t('firmasız')))));
+        } catch { clear(pres); }
+      }, 200); });
       newFields.append(
         h('div', { class: 'row' }, h('label', { class: 'field' }, h('span', null, t('Ad soyad')), nm), h('label', { class: 'field' }, h('span', null, t('Ünvan')), title)),
         h('label', { class: 'field' }, h('span', null, t('Telefon (isteğe bağlı)')), phone));
@@ -670,7 +684,8 @@ export async function renderMail(view, params = []) {
         h('div', { class: 'gm-assign-who' }, avatarEl(a), h('div', null, h('b', null, nameOf(a) || a.email), h('small', null, a.email))),
         h('label', { class: 'field' }, h('span', null, t('Firma')), qIn), res, chosen,
         h('label', { class: 'field' }, h('span', null, t('Kişi')), who,
-          h('small', { class: 'hint' }, t('Bu adres firmadaki birinin ikinci adresiyse onu seçin: adres o kişiye eklenir.'))),
+          h('small', { class: 'hint' }, t('Bu adres zaten tanıdığınız birine aitse (başka firmadaki adresiyle bile) onu seçin: adres o kişiye bu firmayla eklenir.'))),
+        h('label', { class: 'field' }, h('span', null, t('Rehber’de ara')), pq, pres),
         newFields,
         h('p', { class: 'small muted' }, t('Kişi seçilen firmanın kişileri arasına kalıcı olarak kaydedilir; bu adresten gelen e-postalarda firma adı görünür. Adres başka bir firmada da kayıtlıysa oradaki kişiye dokunulmaz.'))),
       actions: [{ label: t('Vazgeç') }, { label: t('Kaydet'), class: 'primary', onClick: async () => {

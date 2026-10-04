@@ -68,10 +68,12 @@ def main():
         assert people(c, acme) == {'ali@acme.com.tr': 'Ali Can'}
         names = [p['full_name'] for p in ok(c.get(f'/api/companies/{acme}'))['people']]
         assert names == ['Ali Can'], names                                           # kayıt tamamen silindi
-        # auto=1 elle eklenen kişiyi silmez, yalnız bağlantıyı kaldırır
+        # auto=1 elle eklenen kişiyi silmez, yalnız adresin firma bağlantısını kaldırır (kişi Rehber'de firmasız kalır)
         ali = r['person_id']
         ok(c.request('DELETE', f'/api/mail/people/assign?person_id={ali}&email=ali@acme.com.tr&auto=1'))
-        assert [p['full_name'] for p in ok(c.get(f'/api/companies/{acme}'))['people']] == ['Ali Can']
+        assert ok(c.get(f'/api/companies/{acme}'))['people'] == []
+        a = ok(c.get(f'/api/crm/person/{ali}'))
+        assert a['full_name'] == 'Ali Can' and a['emails'] == ['ali@acme.com.tr'] and a['companies'] == []
     print('Mail kişi atama testleri geçti.')
 
 

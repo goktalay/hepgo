@@ -23,7 +23,7 @@ def people(q: str = '', user=Depends(sec_user), conn=db.DB):
     """Firmalarda kayıtlı kişiler (gelen kişi araması)."""
     return db.rows(conn.execute(
         '''SELECT p.id, p.full_name, p.title, p.phone, p.company_id, c.name AS company_name, c.logo AS company_logo
-           FROM company_people p JOIN companies c ON c.id = p.company_id ORDER BY p.full_name'''))
+           FROM company_people p LEFT JOIN companies c ON c.id = p.company_id ORDER BY p.full_name'''))
 
 
 @router.get('/companies')
@@ -138,7 +138,7 @@ def add_guest(vid: int, body: GuestIn, user=Depends(sec_user), conn=db.DB):
     """Gelen kişi: kayıtlı kişi (person_id), bir firmaya yeni kişi (company_id + ad) ya da serbest giriş (ad + firma adı)."""
     v = _visit(conn, vid)
     if body.person_id:
-        p = db.row(conn.execute('SELECT p.*, c.name AS company_name FROM company_people p JOIN companies c ON c.id = p.company_id '
+        p = db.row(conn.execute('SELECT p.*, c.name AS company_name FROM company_people p LEFT JOIN companies c ON c.id = p.company_id '
                                 'WHERE p.id = ?', (body.person_id,)))
         if not p:
             raise HTTPException(404, 'Kişi bulunamadı')

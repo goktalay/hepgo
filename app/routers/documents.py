@@ -78,7 +78,7 @@ def _decorate(conn, docs):
             'ORDER BY c.name', (d['id'],)))
         d['people'] = db.rows(conn.execute(
             '''SELECT p.id, p.full_name, p.company_id, c.name AS company_name FROM document_people dp
-               JOIN company_people p ON p.id = dp.person_id JOIN companies c ON c.id = p.company_id
+               JOIN company_people p ON p.id = dp.person_id LEFT JOIN companies c ON c.id = p.company_id
                WHERE dp.document_id = ? ORDER BY p.full_name''', (d['id'],)))
         d['roles'] = [r[0] for r in conn.execute('SELECT role FROM document_roles WHERE document_id = ? ORDER BY role', (d['id'],))]
     return docs

@@ -22,12 +22,14 @@ def people(conn, q='', kind='all'):
             out.append({'key': f'user:{r["id"]}', 'type': 'user', 'id': r['id'], 'name': r['full_name'],
                         'subtitle': r['title'] or 'Personel', 'photo': r['photo'], 'phone': r['phone'], 'email': r['email']})
     if kind in ('all', 'person'):
-        for r in db.rows(conn.execute(
-                '''SELECT p.id, p.full_name, p.title, p.phone, p.email, c.name AS company FROM company_people p
-                   JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')):
+        from . import person_emails
+        rows = person_emails.attach(conn, 'company', db.rows(conn.execute(
+            '''SELECT p.id, p.full_name, p.title, p.phone, p.email, p.company_id FROM company_people p ORDER BY p.full_name''')))
+        for r in rows:   # firmasız kişiler de; birden çok firması olan kişi tek satır
+            cos = ', '.join(c['name'] for c in r['companies'] if c['name']) or 'Firmasız'
             out.append({'key': f'person:{r["id"]}', 'type': 'person', 'id': r['id'], 'name': r['full_name'],
-                        'subtitle': ' · '.join([x for x in (r['title'], r['company']) if x]) or 'Firma kişisi',
-                        'photo': None, 'phone': r['phone'], 'email': r['email']})
+                        'subtitle': ' · '.join([x for x in (r['title'], cos) if x]),
+                        'photo': None, 'phone': r['phone'], 'email': ' '.join(r['emails']) or None})
     if kind in ('all', 'family'):
         for r in db.rows(conn.execute(
                 '''SELECT fm.id, fm.full_name, fm.relation, fm.phone, (e.first_name || ' ' || e.last_name) AS emp
@@ -109,7 +111,7 @@ def _person(conn, type, id):
         return r
     if type == 'person':
         return db.row(conn.execute('''SELECT p.id, p.full_name, p.title, p.phone, p.email, p.note, c.id AS company_id, c.name AS company
-                                      FROM company_people p JOIN companies c ON c.id = p.company_id WHERE p.id = ?''', (id,)))
+                                      FROM company_people p LEFT JOIN companies c ON c.id = p.company_id WHERE p.id = ?''', (id,)))
     if type == 'family':
         return db.row(conn.execute('''SELECT fm.id, fm.full_name, fm.relation, fm.birth_date, fm.phone, fm.note,
                                       fm.employee_id, (e.first_name || ' ' || e.last_name) AS employee_name

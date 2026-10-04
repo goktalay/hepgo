@@ -350,7 +350,7 @@ def company_map(conn, emails):
                                     FROM company_people p JOIN companies c ON c.id = p.company_id WHERE lower(trim(p.email)) IN ({q})
                                     UNION ALL
                                     SELECT x.email, p.id, p.full_name, p.title, c.id, c.name FROM person_emails x
-                                    JOIN company_people p ON p.id = x.ref_id JOIN companies c ON c.id = p.company_id
+                                    JOIN company_people p ON p.id = x.ref_id JOIN companies c ON c.id = x.company_id
                                     WHERE x.kind = 'company' AND x.email IN ({q}))
                                   ORDER BY pid DESC''', (*part, *part)):   # en son atanan geçerli; ek adresler de tanınır
             out.setdefault(r[0], {'person_id': r[1], 'person_name': r[2], 'title': r[3], 'company_id': r[4], 'company_name': r[5]})
@@ -549,7 +549,20 @@ def company_people(cid: int, user=Depends(auth.current_user), conn=db.DB):
     """Atama penceresi: firmanın kişileri (adres "mevcut kişiye ek adres" olarak eklenebilsin)."""
     if not _can_assign(user):
         raise HTTPException(403, 'Kişiyi firmaya atamak için Firma Yönetimi yetkisi gerekir')
-    rows = db.rows(conn.execute('SELECT id, full_name, title, email FROM company_people WHERE company_id = ? ORDER BY full_name', (cid,)))
+    rows = db.rows(conn.execute(f'SELECT id, full_name, title, email, company_id FROM company_people p WHERE {person_emails.member_sql()} '
+                                'ORDER BY full_name', (cid, cid)))
+    return person_emails.attach(conn, 'company', rows)
+
+
+@router.get('/people/search')
+def people_search(q: str = '', user=Depends(auth.current_user), conn=db.DB):
+    """Atama penceresi: "bu adres şu kişiye ait" — Rehber'deki tüm kişiler arasında (firmasızlar ve başka firmalardakiler dahil)."""
+    if not _can_assign(user):
+        raise HTTPException(403, 'Kişiyi firmaya atamak için Firma Yönetimi yetkisi gerekir')
+    t = f'%{q.strip().lower()}%'
+    rows = db.rows(conn.execute('''SELECT id, full_name, title, email, company_id FROM company_people
+                                   WHERE lower(full_name) LIKE ? OR lower(COALESCE(email, '')) LIKE ? OR id IN
+                                   (SELECT ref_id FROM person_emails WHERE kind = 'company' AND email LIKE ?) ORDER BY full_name LIMIT 20''', (t, t, t)))
     return person_emails.attach(conn, 'company', rows)
 
 
@@ -611,9 +624,10 @@ def _known_name(conn, user, email, given=None):
 
 @router.post('/people/assign')
 def assign_person(body: AssignIn, user=Depends(auth.current_user), conn=db.DB):
-    """E-posta adresini bir firmanın kişisi (personeli) olarak kalıcı kaydeder. Adres o firmada zaten varsa kişi güncellenir;
-    başka bir firmadaysa oradaki kayda dokunulmaz, seçilen firmaya yeni kişi eklenir (en son atanan geçerli olur).
-    Sonraki e-postalarda gönderenin yanında firma adı görünür."""
+    """E-posta adresini bir firmaya atar. Firma ataması ADRES üzerindendir; kişi firmadan bağımsızdır:
+    - adres bir kişiye kayıtlıysa (hangi firmada olursa olsun ya da firmasız) o adresin firması seçilen firma olur — kişi aynı kalır;
+    - person_id verilirse adres o kişiye (seçilen firmayla) eklenir — aynı kişinin başka firmadaki adresi (ör. Burak: ASG + Gökkubbe);
+    - değilse yeni kişi açılır. Aynı alan adından bilinmeyen kişiler de aynı firmaya otomatik eklenir (genel servisler hariç)."""
     if not _can_assign(user):
         raise HTTPException(403, 'Kişiyi firmaya atamak için Firma Yönetimi yetkisi gerekir')
     em = body.email.strip().lower()
@@ -625,29 +639,31 @@ def assign_person(body: AssignIn, user=Depends(auth.current_user), conn=db.DB):
         raise HTTPException(404, 'Firma bulunamadı')
     if not _co_write(user, comp['is_supplier']):
         raise HTTPException(403, 'Bu firmaya kişi ekleme yetkiniz yok')
-    t = lambda v, n: ((v or '').strip()[:n] or None)
-    if body.person_id:   # aynı kişinin başka bir adresi: mevcut kişiye ek adres olarak eklenir (yeni kişi açılmaz)
-        tgt = db.row(conn.execute('SELECT id, full_name FROM company_people WHERE id = ? AND company_id = ?', (body.person_id, comp['id'])))
-        if not tgt:
-            raise HTTPException(404, 'Kişi bu firmada bulunamadı')
-        try:
-            person_emails.add(conn, 'company', tgt['id'], em, db.now())
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from e
-        name = tgt['full_name']
-    else:
-        ex = db.row(conn.execute('''SELECT id FROM company_people WHERE company_id = ? AND (lower(trim(email)) = ? OR id IN
-                                    (SELECT ref_id FROM person_emails WHERE kind = 'company' AND email = ?)) ORDER BY id LIMIT 1''',
-                                 (comp['id'], em, em)))
-        if ex:
-            conn.execute('UPDATE company_people SET full_name = ?, title = COALESCE(?, title), phone = COALESCE(?, phone) WHERE id = ?',
-                         (name, t(body.title, 120), t(body.phone, 40), ex['id']))
+    t = lambda v, n: ((v or '').strip()[:n] or None)  # noqa: E731
+    own = person_emails.owner(conn, em)
+    try:
+        if body.person_id:
+            tgt = db.row(conn.execute('SELECT id, full_name FROM company_people WHERE id = ?', (body.person_id,)))
+            if not tgt:
+                raise HTTPException(404, 'Kişi bulunamadı')
+            if own and own[0] != tgt['id']:
+                raise HTTPException(400, 'Bu adres başka bir kişiye kayıtlı; önce iki kişiyi Rehber’den birleştirin')
+            person_emails.add(conn, 'company', tgt['id'], em, db.now(), comp['id'])
+            name = tgt['full_name']
+        elif own:
+            person_emails.set_company(conn, own[0], em, comp['id'])
+            conn.execute('UPDATE company_people SET title = COALESCE(title, ?), phone = COALESCE(phone, ?) WHERE id = ?',
+                         (t(body.title, 120), t(body.phone, 40), own[0]))
+            if body.full_name and body.full_name.strip() and '@' not in body.full_name:
+                conn.execute('UPDATE company_people SET full_name = ? WHERE id = ?', (name, own[0]))
         else:
             conn.execute('''INSERT INTO company_people (company_id, full_name, title, phone, email, note, created_at) VALUES (?,?,?,?,?,?,?)''',
                          (comp['id'], name, t(body.title, 120), t(body.phone, 40), em, 'E-postadan eklendi', db.now()))
-    db.audit(conn, user['id'], 'E-posta kişisini firmaya atadı', 'company', comp['id'], f"{comp['name']}: {name} <{em}>")
-    # Aynı alan adından, hiçbir firmada kayıtlı olmayan diğer kişiler de bu firmaya (sihirbazsız). Herkese açık servisler
-    # (gmail, hotmail…) ve kendi alan adlarımız hariç.
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    db.audit(conn, user['id'], 'E-posta adresini firmaya atadı', 'company', comp['id'], f"{comp['name']}: {name} <{em}>")
+    # Aynı alan adından firması olmayan diğer adresler de bu firmaya (sihirbazsız). Kişisi varsa adresi firmaya bağlanır,
+    # yoksa yeni kişi açılır. Herkese açık servisler (gmail, hotmail…) ve kendi alan adlarımız hariç.
     also = []
     dom = _domain(em)
     if dom and dom not in PUBLIC_DOMAINS and dom not in _own_domains(conn):
@@ -656,16 +672,18 @@ def assign_person(body: AssignIn, user=Depends(auth.current_user), conn=db.DB):
             oe = (o.email or '').strip().lower()
             if oe != em and '@' in oe and _domain(oe) == dom:
                 cand.setdefault(oe, o.name)
-        known = company_map(conn, list(cand))
         for oe, on in cand.items():
-            if oe in known:
-                continue
-            onm = _known_name(conn, user, oe, on) or oe
-            conn.execute('INSERT INTO company_people (company_id, full_name, email, note, created_at) VALUES (?,?,?,?,?)',
-                         (comp['id'], onm, oe, AUTO_NOTE, db.now()))
+            o_own = person_emails.owner(conn, oe)
+            if o_own and o_own[1]:
+                continue   # zaten bir firmada
+            if o_own:
+                person_emails.set_company(conn, o_own[0], oe, comp['id'])
+            else:
+                conn.execute('INSERT INTO company_people (company_id, full_name, email, note, created_at) VALUES (?,?,?,?,?)',
+                             (comp['id'], _known_name(conn, user, oe, on) or oe, oe, AUTO_NOTE, db.now()))
             also.append(oe)
         if also:
-            db.audit(conn, user['id'], 'Aynı alan adındaki e-posta kişilerini firmaya ekledi', 'company', comp['id'],
+            db.audit(conn, user['id'], 'Aynı alan adındaki e-posta adreslerini firmaya ekledi', 'company', comp['id'],
                      f"{comp['name']}: {', '.join(also)}")
     conn.commit()
     out = dict(company_map(conn, [em]).get(em) or {})
@@ -676,26 +694,26 @@ def assign_person(body: AssignIn, user=Depends(auth.current_user), conn=db.DB):
 
 @router.delete('/people/assign')
 def unassign_person(person_id: int, email: str, auto: bool = False, user=Depends(auth.current_user), conn=db.DB):
-    """Atamayı kaldır: yalnız o firma kişisinin e-posta adresi silinir (kişi firmada kalır; başka firmalardaki kayıtlara dokunulmaz)."""
+    """Firma bağlantısını kaldır: adres kişide kalır, yalnız firmayla bağı kopar (kişi firmasız kalabilir, başka adresleriyle
+    başka firmalarda olabilir). auto=1 ("geri al"): yalnız bu adresle otomatik açılmış kişi tamamen silinir."""
     em = email.strip().lower()
-    r = db.row(conn.execute('''SELECT p.id, p.company_id, p.full_name, c.is_supplier FROM company_people p JOIN companies c ON c.id = p.company_id
-                               WHERE p.id = ?''', (person_id,)))
-    if r and not person_emails.has(conn, 'company', r['id'], em):
-        r = None
-    if not r or '@' not in em:
+    own = person_emails.owner(conn, em) if '@' in em else None
+    if not own or own[0] != person_id:
         raise HTTPException(404, 'Kişi bulunamadı')
-    if not _co_write(user, r['is_supplier']):
+    r = db.row(conn.execute('SELECT id, full_name, note, email FROM company_people WHERE id = ?', (person_id,)))
+    comp = db.row(conn.execute('SELECT id, name, is_supplier FROM companies WHERE id = ?', (own[1],))) if own[1] else None
+    if comp and not _co_write(user, comp['is_supplier']):
         raise HTTPException(403, 'Bu firmanın kişilerini değiştirme yetkiniz yok')
-    note = conn.execute('SELECT note FROM company_people WHERE id = ?', (r['id'],)).fetchone()[0]
-    if auto and note == AUTO_NOTE:   # "geri al": aynı alan adından otomatik eklenen kişi tamamen silinir
-        person_emails.drop(conn, 'company', [r['id']])
-        conn.execute('DELETE FROM company_people WHERE id = ?', (r['id'],))
-        db.audit(conn, user['id'], 'Otomatik eklenen e-posta kişisini geri aldı', 'company', r['company_id'], f"{r['full_name']} <{em}>")
+    only = not conn.execute("SELECT 1 FROM person_emails WHERE kind = 'company' AND ref_id = ?", (person_id,)).fetchone()
+    if auto and r['note'] == AUTO_NOTE and only:
+        person_emails.drop(conn, 'company', [person_id])
+        conn.execute('DELETE FROM company_people WHERE id = ?', (person_id,))
+        db.audit(conn, user['id'], 'Otomatik eklenen e-posta kişisini geri aldı', 'company', own[1], f"{r['full_name']} <{em}>")
     else:
-        person_emails.remove(conn, 'company', r['id'], em)   # birincilse sıradaki ek adres birincil olur
-        db.audit(conn, user['id'], 'E-posta kişisinin firma bağlantısını kaldırdı', 'company', r['company_id'], f"{r['full_name']} <{em}>")
+        person_emails.set_company(conn, person_id, em, None)
+        db.audit(conn, user['id'], 'E-posta adresinin firma bağlantısını kaldırdı', 'company', own[1], f"{r['full_name']} <{em}>")
     conn.commit()
-    return {'company': company_map(conn, [em]).get(em)}   # adres başka bir firmada da kayıtlıysa artık o görünür
+    return {'company': company_map(conn, [em]).get(em)}
 
 
 @router.get('/company/{cid}')
@@ -710,7 +728,7 @@ def company_mails(cid: int, offset: int = 0, user=Depends(auth.current_user), co
     boxes = [b['id'] for b in _boxes(conn, user) if b['provider'] != 'pop3']
     emails = {(r[0] or '').strip().lower() for r in conn.execute(
         '''SELECT email FROM company_people WHERE company_id = ? AND email LIKE '%@%' UNION
-           SELECT x.email FROM person_emails x JOIN company_people p ON p.id = x.ref_id WHERE x.kind = 'company' AND p.company_id = ?''',
+           SELECT email FROM person_emails WHERE kind = 'company' AND company_id = ?''',
         (cid, cid))}
     if c['email'] and '@' in c['email']:
         emails.add(c['email'].strip().lower())

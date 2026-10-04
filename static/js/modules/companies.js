@@ -149,7 +149,8 @@ function vcard(p) {
 // Rehber kaydı: firma kişisi (person) ya da sistem kullanıcısı (user) tek biçimde
 const contactOf = (kind, x, ctx) => (kind === 'person'
   ? { kind, id: x.id, full_name: x.full_name, title: x.title, phone: x.phone, email: x.email, note: x.note,
-    company_id: x.company_id, company_name: x.company_name, company_logo: x.company_logo, href: `${BASE}/rehber/person/${x.id}` }
+    company_id: x.company_id, company_name: x.company_name, company_logo: x.company_logo, href: `${BASE}/rehber/person/${x.id}`,
+    companies: x.companies || (x.company_id ? [{ id: x.company_id, name: x.company_name }] : []), emails: x.emails || (x.email ? [x.email] : []) }
   : { kind, id: x.id, full_name: x.full_name, title: (x.roles || []).join(', '), phone: x.phone, email: x.email, photo: x.photo,
     company_name: ctx.meta?.company || 'Personel', href: `${BASE}/rehber/user/${x.id}` });
 
@@ -162,13 +163,15 @@ const contactLinks = c => [
   c.email ? h('a', { href: `mailto:${c.email}`, class: 'dir-link', onclick: stop }, svgIcon(icons.mail), c.email) : null,
 ];
 const orgLine = c => (c.kind === 'person'
-  ? h('span', { class: 'dir-company' }, logoOf({ name: c.company_name, logo: c.company_logo }, 'co-logo xs'), c.company_name)
+  ? (c.companies.length > 1 ? h('span', { class: 'dir-company' }, c.companies.map(x => x.name).join(' · '))
+    : c.companies.length ? h('span', { class: 'dir-company' }, logoOf({ name: c.company_name, logo: c.company_logo }, 'co-logo xs'), c.company_name)
+      : h('span', { class: 'dir-company muted' }, t('Firmasız')))
   : h('span', { class: 'dir-company' }, h('span', { class: 'dir-kind' }, 'Kullanıcı'), h('span', { class: 'dir-org' }, c.company_name)));
 
 async function renderDirectory(view, ctx) {
   let data = await api.get(`/api/crm/contacts${Q()}`);
-  const companies = [...new Map(data.people.map(p => [p.company_id, p.company_name])).entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], 'tr'));
+  const companies = [...new Map(data.people.flatMap(p => (p.companies || []).map(x => [x.id, x.name]))).entries()]
+    .sort((a, b) => (a[1] || '').localeCompare(b[1] || '', 'tr'));
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad, ünvan, firma, telefon, e-posta ara…', style: { width: '260px' } });
   const kindSel = selectInput([['person', 'Firma kişileri'], ['user', 'Kullanıcılar']], { all: 'Tüm kişiler' });
   const co = selectInput(companies.map(([id, name]) => [String(id), name]), { all: 'Tüm firmalar' });
@@ -177,12 +180,12 @@ async function renderDirectory(view, ctx) {
   const body = h('div');
   const reload = async () => { data = await api.get(`/api/crm/contacts${Q()}`); draw(); };
   const addPerson = () => {
-    const pick = selectInput(companies.map(([id, name]) => [String(id), name]), { all: null });
+    const pick = selectInput(companies.map(([id, name]) => [String(id), name]), { all: 'Firmasız' });
     if (co.value) pick.value = co.value;
     modal({
       title: 'Rehbere kişi ekle',
-      body: h('div', null, field('Firma', pick), h('div', { class: 'small muted' }, 'Kişi seçilen firmanın kişilerine eklenir. Kullanıcılar Kullanıcı Yönetimi\'nden eklenir.')),
-      actions: [{ label: 'Vazgeç' }, { label: 'Devam', class: 'primary', onClick: () => { setTimeout(() => personForm(Number(pick.value), {}, reload)); } }],
+      body: h('div', null, field('Firma', pick), h('div', { class: 'small muted' }, 'Firmasız eklenen kişi, e-posta adresi bir firmaya atanınca o firmanın kişisi olur. Bir kişi farklı adresleriyle birden çok firmada olabilir. Kullanıcılar Kullanıcı Yönetimi\'nden eklenir.')),
+      actions: [{ label: 'Vazgeç' }, { label: 'Devam', class: 'primary', onClick: () => { setTimeout(() => personForm(pick.value ? Number(pick.value) : null, {}, reload)); } }],
     });
   };
   const draw = () => {
@@ -195,8 +198,8 @@ async function renderDirectory(view, ctx) {
       { label: 'Telefonu olan', value: all.filter(c => c.phone).length },
     ]);
     const list = all.filter(c => (!kindSel.value || c.kind === kindSel.value)
-      && (!co.value || kindSel.value === 'user' || (c.kind === 'person' && String(c.company_id) === co.value))
-      && matches(q.value, c.full_name, c.title, c.company_name, c.phone, c.email, c.note))
+      && (!co.value || kindSel.value === 'user' || (c.kind === 'person' && c.companies.some(x => String(x.id) === co.value)))
+      && matches(q.value, c.full_name, c.title, (c.companies || []).map(x => x.name).join(' '), c.phone, (c.emails || [c.email]).join(' '), c.note))
       .sort((a, b) => a.full_name.localeCompare(b.full_name, 'tr'));
     setListExport(() => ({ columns: ['Ad Soyad', 'Tür', 'Ünvan', 'Firma', 'Telefon', 'E-posta', 'Not'],
       rows: list.map(c => [c.full_name, c.kind === 'user' ? 'Kullanıcı' : 'Firma kişisi', c.title || '', c.company_name || '', c.phone || '', c.email || '', c.note || '']) }));
@@ -247,6 +250,7 @@ async function renderContact(view, ctx, kind, id, tab) {
   let company = null;   // kişinin firması (toplantı formu için gerekir)
   const getCompany = async () => (company ||= await api.get(`/api/companies/${x.company_id}`));
   const meetings = async () => {
+    if (kind === 'person' && !x.company_id) return h('div', { class: 'empty small' }, 'Firmasız kişi: toplantı eklemek için önce bir e-posta adresini bir firmaya bağlayın.');
     if (kind === 'person') {
       const co = await getCompany();
       const cm = { ...co, meetings: x.meetings };
@@ -264,32 +268,66 @@ async function renderContact(view, ctx, kind, id, tab) {
   };
   const docs = () => h('div', null,
     kind === 'person' && ctx.user.modules.includes('documents') ? h('div', { class: 'co-section-head' }, h('h2', null, 'Evraklar'),
-      h('button', { class: 'btn sm primary', onclick: () => openUpload(ctx, { company_ids: [x.company_id], person_ids: [id] }, reload) },
+      h('button', { class: 'btn sm primary', onclick: () => openUpload(ctx, { company_ids: x.company_id ? [x.company_id] : [], person_ids: [id] }, reload) },
         svgIcon(icons.upload), 'Evrak Yükle')) : null,
     docList(x.documents, kind === 'person' ? 'Bu kişiye bağlı (görebildiğiniz) evrak yok' : 'Yüklediği ya da imzaladığı (görebildiğiniz) evrak yok'));
   const kv = (k, v) => (v ? [h('dt', null, k), h('dd', null, v)] : null);
   clear(view,
-    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? t('Rehber · {co}', { co: c.company_name }) : 'Rehber · Kullanıcı' }),
+    pageHead(c.full_name, { back: `${BASE}/rehber`, sub: kind === 'person' ? t('Rehber · {co}', { co: c.companies.map(z => z.name).join(', ') || t('Firmasız') }) : 'Rehber · Kullanıcı' }),
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => vcard(c) }, 'Kaydet .vcf'),
-      kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null),
+      kind === 'person' ? h('button', { class: 'btn', onclick: () => personForm(x.company_id, x, reload) }, 'Düzenle') : null,
+      kind === 'person' ? h('button', { class: 'btn', onclick: () => mergePick(x, reload) }, 'Kişiyle birleştir') : null),
     h('div', { class: 'card card-pad contact-head' },
       contactAvatar(c, 'dir-avatar xl'),
       h('div', { class: 'grow' },
         h('h2', null, c.full_name),
         c.title ? h('div', { class: 'muted' }, c.title) : null,
-        kind === 'person' ? h('a', { class: 'dir-company', href: `${BASE}/${x.company_id}` },
-          logoOf({ name: x.company_name, logo: x.company_logo }, 'co-logo xs'), x.company_name) : orgLine(c)),
+        kind === 'person' ? (c.companies.length ? h('div', { class: 'dir-companies' }, c.companies.map(z => h('a', { class: 'dir-company', href: `${BASE}/${z.id}` }, z.name)))
+          : h('span', { class: 'dir-company muted' }, t('Firmasız'))) : orgLine(c)),
       h('dl', { class: 'kv contact-kv' },
         kv('Telefon', c.phone ? h('a', { href: telHref(c.phone) }, c.phone) : null),
-        kv('E-posta', c.email ? h('a', { href: `mailto:${c.email}` }, c.email) : null),
+        kind === 'person' && (x.email_list || []).length
+          ? kv('E-posta', h('div', null, x.email_list.map(e => h('div', null, h('a', { href: `mailto:${e.email}` }, e.email),
+            h('span', { class: 'small muted' }, ` · ${e.company_name || t('firmasız')}`)))))
+          : kv('E-posta', c.email ? h('a', { href: `mailto:${c.email}` }, c.email) : null),
         kv('Not', c.note))),
+    kind === 'person' && (x.duplicates || []).length ? h('div', { class: 'card card-pad dup-hint' },
+      h('b', null, 'Olası aynı kişi'), h('span', { class: 'small muted' }, ' — aynı ad ya da ortak e-posta adresi. Birleştirince adresler, firmalar, evraklar, toplantılar ve notlar tek kişide toplanır.'),
+      h('div', { class: 'dup-list' }, x.duplicates.map(d => h('div', { class: 'dup-row' },
+        h('a', { href: `${BASE}/rehber/person/${d.id}` }, d.full_name), h('span', { class: 'small muted' }, ` · ${d.company_name || t('firmasız')}`),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => mergeInto(x, d, reload) }, 'Bu kişiyle birleştir'))))) : null,
     tabView([
       { key: 'documents', label: 'Evrak Yönetimi', count: x.documents.length, render: docs },
       { key: 'notes', label: 'Notlar', render: () => notesPanel(kind, id, ctx) },
       { key: 'meetings', label: 'Toplantı Yönetimi', count: x.meetings.length, render: meetings },
       { key: 'calendar', label: 'Takvim', render: () => calendarPanel(kind, id, ctx) },
     ], tab || pref('contact.tab', 'documents'), k => setPref('contact.tab', k)));
+}
+
+// ---------- Kişi birleştirme: other → x (x kalır)
+async function mergeInto(x, other, done) {
+  if (!await confirmDialog('Kişileri birleştir', t('{b} kaydı {a} ile birleştirilsin mi? {b} kaydının adresleri, firmaları, evrakları, toplantıları, notları ve takvimi {a} kaydına taşınır; {b} kaydı silinir.',
+    { a: x.full_name, b: other.full_name }), { okLabel: 'Birleştir' })) return;
+  try { await api.post(`/api/companies/people/${x.id}/merge`, { other_id: other.id }); toast('Kişiler birleştirildi', 'success'); done?.(); } catch (err) { toastError(err); }
+}
+
+function mergePick(x, done) {
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad ya da e-posta ile arayın…' });
+  const res = h('div', { class: 'dup-list' });
+  let tm;
+  const search = async () => {
+    try {
+      const rows = (await api.get(`/api/mail/people/search?q=${encodeURIComponent(q.value.trim())}`)).filter(p => p.id !== x.id);
+      clear(res, rows.length ? rows.map(p => h('div', { class: 'dup-row' }, h('b', null, p.full_name),
+        h('span', { class: 'small muted' }, ` · ${(p.companies || []).map(z => z.name).join(', ') || t('firmasız')}${p.emails.length ? ` · ${p.emails.join(', ')}` : ''}`),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { m.close(); mergeInto(x, p, done); } }, 'Seç'))) : h('div', { class: 'small muted' }, 'Kişi bulunamadı'));
+    } catch (err) { clear(res, h('div', { class: 'small muted' }, err.message)); }
+  };
+  q.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(search, 200); });
+  const m = modal({ title: t('{n} ile birleştirilecek kişi', { n: x.full_name }), body: h('div', null, q, res), actions: [{ label: 'Vazgeç' }] });
+  search();
+  setTimeout(() => q.focus(), 50);
 }
 
 // ---------- Kişi formu
@@ -319,7 +357,8 @@ function personForm(cid, p = {}, done) {
           body.emails = f.email.values;
           if (userSel) { body.link_user = true; body.user_id = userSel.value ? Number(userSel.value) : null; }
           if (!body.full_name) throw new Error('Ad soyad zorunlu');
-          if (p.id) await api.put(`/api/companies/people/${p.id}`, body); else await api.post(`/api/companies/${cid}/people`, body);
+          if (p.id) await api.put(`/api/companies/people/${p.id}`, body);
+          else await api.post(cid ? `/api/companies/${cid}/people` : '/api/companies/people', body);   // firmasız kişi
           toast('Kişi kaydedildi');
           done?.();
         },

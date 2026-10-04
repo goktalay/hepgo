@@ -1379,13 +1379,14 @@ CREATE TABLE IF NOT EXISTS person_emails (
     kind       TEXT NOT NULL,              -- company (company_people) | employee (employees)
     ref_id     INTEGER NOT NULL,
     email      TEXT NOT NULL,              -- küçük harf
+    company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,   -- bu adresin firması (yalnız kind=company; boş: firmasız)
     created_at TEXT NOT NULL,
     UNIQUE (kind, ref_id, email)
 );
 CREATE INDEX IF NOT EXISTS person_emails_email ON person_emails (email);
 CREATE TABLE IF NOT EXISTS company_people (
     id          INTEGER PRIMARY KEY,
-    company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL,   -- birincil adresin firması; boş: firmasız kişi
     full_name   TEXT NOT NULL,
     title       TEXT,
     phone       TEXT,
@@ -2196,6 +2197,8 @@ def init():
         conn.executescript(SCHEMA)
         _rebuild_field_flights(conn)
         _migrate(conn)
+        conn.commit()
+        _company_people_free(conn)
 
 
 def _migrate_field_tasks(conn):
@@ -2264,6 +2267,38 @@ VEHICLE_COLS = [
     ('match_keys', 'TEXT'),                                     # muhasebe hareketi eşleştirme anahtar kelimeleri (virgülle)
     ('exit_date', 'TEXT'), ('exit_reason', 'TEXT'), ('note', 'TEXT'), ('updated_at', 'TEXT'),
 ]
+
+
+def _company_people_free(conn):
+    """Kişi firmadan bağımsız: company_people.company_id isteğe bağlı (firmasız kişi) ve firma silinince kişi silinmez
+    (ON DELETE SET NULL). SQLite sütun kısıtını değiştiremediği için tablo yeniden kurulur (veriler, dizinler ve diğer
+    tabloların bu tabloya bağları korunur). Bir kez çalışır."""
+    import re
+    cols = {r[1]: r for r in conn.execute('PRAGMA table_info(company_people)')}
+    if not cols or not cols['company_id'][3]:   # notnull değilse zaten taşınmış
+        return
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'company_people'").fetchone()[0]
+    new_sql, n = re.subn(r'company_id\s+INTEGER\s+NOT\s+NULL\s+REFERENCES\s+companies\(id\)\s+ON\s+DELETE\s+CASCADE',
+                         'company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL', sql)
+    if n != 1:
+        raise RuntimeError('company_people taşınamadı: beklenmeyen tablo tanımı')
+    new_sql = new_sql.replace('CREATE TABLE company_people', 'CREATE TABLE company_people_yeni', 1)
+    indexes = [r[0] for r in conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'company_people' AND sql IS NOT NULL")]
+    before = conn.execute('SELECT COUNT(*) FROM company_people').fetchone()[0]
+    conn.commit()
+    conn.execute('PRAGMA foreign_keys = OFF')
+    try:
+        conn.executescript('BEGIN;\n' + new_sql + ';\n'
+                           'INSERT INTO company_people_yeni SELECT * FROM company_people;\n'
+                           'DROP TABLE company_people;\n'
+                           'ALTER TABLE company_people_yeni RENAME TO company_people;\n'
+                           + ''.join(f'{i};\n' for i in indexes) + 'COMMIT;')
+    finally:
+        conn.execute('PRAGMA foreign_keys = ON')
+    after = conn.execute('SELECT COUNT(*) FROM company_people').fetchone()[0]
+    bad = conn.execute('PRAGMA foreign_key_check').fetchall()
+    if after != before or bad:
+        raise RuntimeError(f'company_people taşıma denetimi başarısız: {before} → {after}, bağ hatası {len(bad)}')
 
 
 def _migrate(conn):
@@ -2398,6 +2433,11 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_fte_task ON field_task_equipment(task_id);
     ''')
     # Dış firma personeli (ör. kiralık güvenlik): firmanın Kişiler kaydı bir sistem kullanıcısına bağlanabilir; personel kaydı açılmaz
+    pe_cols = {r[1] for r in conn.execute('PRAGMA table_info(person_emails)')}
+    if pe_cols and 'company_id' not in pe_cols:   # her e-posta adresinin firması (kişi birden çok firmada olabilir)
+        conn.execute('ALTER TABLE person_emails ADD COLUMN company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL')
+        conn.execute('''UPDATE person_emails SET company_id = (SELECT company_id FROM company_people p WHERE p.id = person_emails.ref_id)
+                        WHERE kind = 'company' ''')
     if 'user_id' not in {r[1] for r in conn.execute('PRAGMA table_info(company_people)')}:
         conn.execute('ALTER TABLE company_people ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS ux_company_people_user ON company_people(user_id) WHERE user_id IS NOT NULL')

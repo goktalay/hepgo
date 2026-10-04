@@ -387,7 +387,7 @@ def people(user=Depends(cam_user), conn=db.DB):
     return {
         'users': db.rows(conn.execute('SELECT id, full_name, photo FROM users WHERE active = 1 AND deleted_at IS NULL ORDER BY full_name')),
         'people': db.rows(conn.execute('''SELECT p.id, p.full_name, p.title, c.name AS company_name FROM company_people p
-                                          JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')),
+                                          LEFT JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')),
         'family': db.rows(conn.execute('''SELECT fm.id, fm.full_name, fm.relation, (e.first_name || ' ' || e.last_name) AS employee_name
                                           FROM family_members fm JOIN employees e ON e.id = fm.employee_id ORDER BY fm.full_name''')),
     }

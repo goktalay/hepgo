@@ -111,7 +111,8 @@ def list_companies(supplier: bool = False, user=Depends(auth.current_user), conn
     """supplier=1: tedarikçiler (Satın Alma); aksi halde müşteri / diğer firmalar."""
     _reader(user, supplier)
     rows = db.rows(conn.execute(
-        '''SELECT c.*, (SELECT COUNT(*) FROM company_people p WHERE p.company_id = c.id) AS people_count,
+        '''SELECT c.*, (SELECT COUNT(*) FROM company_people p WHERE p.company_id = c.id OR p.id IN
+                          (SELECT ref_id FROM person_emails x WHERE x.kind = 'company' AND x.company_id = c.id)) AS people_count,
                   (SELECT COUNT(*) FROM company_addresses a WHERE a.company_id = c.id) AS address_count,
                   (SELECT a.city FROM company_addresses a WHERE a.company_id = c.id ORDER BY a.id LIMIT 1) AS city
            FROM companies c WHERE c.is_supplier = ? ORDER BY c.active DESC, c.name''', (int(supplier),)))
@@ -130,10 +131,24 @@ def list_companies(supplier: bool = False, user=Depends(auth.current_user), conn
 def list_people(supplier: bool = False, user=Depends(auth.current_user), conn=db.DB):
     """Tüm firmaların kişileri (Rehber görünümü ve evrak ilişkilendirme seçimi için)."""
     _reader(user, supplier)
-    return db.rows(conn.execute(
+    return people_of(conn, supplier)
+
+
+def people_of(conn, supplier):
+    """Rehber kişileri: her kişi bir kez, bütün firmalarıyla (attach → companies / email_list). supplier: en az bir firması
+    tedarikçi olanlar; değilse en az bir müşteri firması olan ya da firmasız kişiler."""
+    rows = person_emails.attach(conn, 'company', db.rows(conn.execute(
         '''SELECT p.*, c.name AS company_name, c.logo AS company_logo, c.active AS company_active
-           FROM company_people p JOIN companies c ON c.id = p.company_id WHERE c.is_supplier = ?
-           ORDER BY c.name, p.full_name''', (int(supplier),)))
+           FROM company_people p LEFT JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')))
+    sup = {r[0]: r[1] for r in conn.execute('SELECT id, is_supplier FROM companies')}
+    out = []
+    for r in rows:
+        flags = {sup.get(c['id']) for c in r['companies']}
+        if (1 in flags) if supplier else (0 in flags or not r['companies']):
+            if not r.get('company_id') and r['companies']:   # adressiz birincil firma yoksa ilk firması görünür
+                r['company_id'], r['company_name'] = r['companies'][0]['id'], r['companies'][0]['name']
+            out.append(r)
+    return out
 
 
 @router.post('')
@@ -160,8 +175,9 @@ def add_company(body: CompanyIn, supplier: bool = False, user=Depends(company_us
 def get_company(cid: int, user=Depends(company_user), conn=db.DB):
     c = _get(conn, cid, user)
     c['people'] = person_emails.attach(conn, 'company', db.rows(conn.execute(
-        '''SELECT p.*, u.full_name AS user_name, u.username AS user_username, u.active AS user_active
-           FROM company_people p LEFT JOIN users u ON u.id = p.user_id WHERE p.company_id = ? ORDER BY p.full_name''', (cid,))))
+        f'''SELECT p.*, u.full_name AS user_name, u.username AS user_username, u.active AS user_active
+            FROM company_people p LEFT JOIN users u ON u.id = p.user_id WHERE {person_emails.member_sql()} ORDER BY p.full_name''',
+        (cid, cid))))
     c['addresses'] = db.rows(conn.execute('SELECT * FROM company_addresses WHERE company_id = ? ORDER BY id', (cid,)))
     from .documents import list_for_company
     c['documents'] = list_for_company(conn, user, cid)
@@ -194,10 +210,8 @@ def delete_company(cid: int, user=Depends(company_user), conn=db.DB):
         (cid,)).fetchone()[0]
     if linked:
         raise HTTPException(400, 'Firmaya bağlı evrak var; silmek yerine pasife alın')
-    person_ids = [r[0] for r in conn.execute('SELECT id FROM company_people WHERE company_id = ?', (cid,))]
     _drop_crm(conn, 'company', [cid])
-    _drop_crm(conn, 'person', person_ids)
-    person_emails.drop(conn, 'company', person_ids)
+    # kişiler firmadan bağımsızdır: silinmez, bu firmaya bağlı adresleri firmasız kalır (ON DELETE SET NULL)
     conn.execute('DELETE FROM companies WHERE id = ?', (cid,))
     db.audit(conn, user['id'], 'Firma sildi', 'company', cid, c['name'])
     return {'ok': True}
@@ -216,6 +230,57 @@ async def upload_logo(cid: int, file: UploadFile, user=Depends(company_user), co
 
 
 # ---------- Kişiler
+
+@router.post('/people')
+def add_free_person(body: PersonIn, user=Depends(company_user), conn=db.DB):
+    """Firmasız kişi (Rehber › Kişi Ekle ya da Kişilerim'den / Google'dan "Rehbere ekle"). Firması sonradan e-posta
+    adresi bir firmaya atanınca olur."""
+    if not body.full_name.strip():
+        raise HTTPException(400, 'Ad soyad zorunlu')
+    pid = conn.execute('''INSERT INTO company_people (company_id, full_name, title, phone, email, note, created_at)
+                          VALUES (NULL,?,?,?,?,?,?)''',
+                       (body.full_name.strip(), _clean(body.title), _clean(body.phone), _clean(body.email), _clean(body.note), db.now())).lastrowid
+    _set_emails(conn, pid, body)
+    db.audit(conn, user['id'], 'Rehbere firmasız kişi ekledi', 'person', pid, body.full_name.strip())
+    return {'id': pid}
+
+
+class MergeIn(BaseModel):
+    other_id: int
+
+
+@router.post('/people/{pid}/merge')
+def merge_people(pid: int, body: MergeIn, user=Depends(company_user), conn=db.DB):
+    """Kişi birleştirme: other → pid. Adresleri (firmalarıyla), boş alanları, sistem kullanıcısı bağı ve kişiye bağlı HER
+    kayıt (evrak, toplantı, yüz, ziyaret, telefon, not, takvim…) pid'e taşınır; other silinir. Bağlı tablolar şemadan bulunur."""
+    if pid == body.other_id:
+        raise HTTPException(400, 'Kişi kendisiyle birleştirilemez')
+    a, b = _person(conn, pid), _person(conn, body.other_id)
+    for p in (a, b):
+        if p['company_id']:
+            _get(conn, p['company_id'], user)
+    now = db.now()
+    for e, cid in ([(b['email'], b['company_id'])] if b['email'] else []) + [
+            (r[0], r[1]) for r in conn.execute("SELECT email, company_id FROM person_emails WHERE kind = 'company' AND ref_id = ?", (b['id'],))]:
+        person_emails.add(conn, 'company', pid, e, now, cid)
+    conn.execute('''UPDATE company_people SET title = COALESCE(title, ?), phone = COALESCE(phone, ?), company_id = COALESCE(company_id, ?),
+                    note = CASE WHEN ? IS NULL THEN note WHEN note IS NULL THEN ? ELSE note || char(10) || ? END WHERE id = ?''',
+                 (b['title'], b['phone'], b['company_id'], b['note'], b['note'], b['note'], pid))
+    if b.get('user_id') and not a.get('user_id'):
+        conn.execute('UPDATE company_people SET user_id = NULL WHERE id = ?', (b['id'],))
+        conn.execute('UPDATE company_people SET user_id = ? WHERE id = ?', (b['user_id'], pid))
+    refs = [(t, f['from']) for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            for f in db.rows(conn.execute(f'PRAGMA foreign_key_list("{t}")')) if f['table'] == 'company_people']
+    for t, col in refs:   # aynı bağ ikisinde de varsa (benzersizlik çakışması) kopyası silinir
+        conn.execute(f'UPDATE OR IGNORE "{t}" SET "{col}" = ? WHERE "{col}" = ?', (pid, b['id']))
+        conn.execute(f'DELETE FROM "{t}" WHERE "{col}" = ?', (b['id'],))
+    for t in ('crm_notes', 'crm_events'):
+        conn.execute(f"UPDATE {t} SET subject_id = ? WHERE subject_type = 'person' AND subject_id = ?", (pid, b['id']))
+    person_emails.drop(conn, 'company', [b['id']])
+    conn.execute('DELETE FROM company_people WHERE id = ?', (b['id'],))
+    db.audit(conn, user['id'], 'Kişileri birleştirdi', 'person', pid, f"{b['full_name']} (#{b['id']}) → {a['full_name']} (#{pid})")
+    return {'ok': True, 'id': pid}
+
 
 @router.post('/{cid}/people')
 def add_person(cid: int, body: PersonIn, user=Depends(company_user), conn=db.DB):
@@ -237,14 +302,15 @@ def _set_emails(conn, pid, body):
     """emails verildiyse kişinin tüm adresleri (ilki birincil); verilmediyse yalnız birincil (email) güncellenmiş olur."""
     if body.emails is None:
         return
+    cid = conn.execute('SELECT company_id FROM company_people WHERE id = ?', (pid,)).fetchone()[0]
     try:
-        person_emails.set_all(conn, 'company', pid, body.emails, db.now())
+        person_emails.set_all(conn, 'company', pid, body.emails, db.now(), cid)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
 
 def _person(conn, pid):
-    p = db.row(conn.execute('SELECT p.*, c.name AS company_name FROM company_people p JOIN companies c ON c.id = p.company_id '
+    p = db.row(conn.execute('SELECT p.*, c.name AS company_name FROM company_people p LEFT JOIN companies c ON c.id = p.company_id '
                             'WHERE p.id = ?', (pid,)))
     if not p:
         raise HTTPException(404, 'Kişi bulunamadı')
@@ -254,7 +320,8 @@ def _person(conn, pid):
 @router.put('/people/{pid}')
 def update_person(pid: int, body: PersonIn, user=Depends(company_user), conn=db.DB):
     p = _person(conn, pid)
-    _get(conn, p['company_id'], user)
+    if p['company_id']:
+        _get(conn, p['company_id'], user)
     if not body.full_name.strip():
         raise HTTPException(400, 'Ad soyad zorunlu')
     conn.execute('UPDATE company_people SET full_name = ?, title = ?, phone = ?, email = ?, note = ? WHERE id = ?',
@@ -274,7 +341,7 @@ def _link_user(conn, user, pid, uid):
         u = db.row(conn.execute('SELECT id, full_name FROM users WHERE id = ? AND deleted_at IS NULL', (uid,)))
         if not u:
             raise HTTPException(400, 'Kullanıcı bulunamadı')
-        other = conn.execute('SELECT p.full_name, c.name FROM company_people p JOIN companies c ON c.id = p.company_id WHERE p.user_id = ? AND p.id != ?',
+        other = conn.execute("SELECT p.full_name, COALESCE(c.name, 'firmasız') FROM company_people p LEFT JOIN companies c ON c.id = p.company_id WHERE p.user_id = ? AND p.id != ?",
                              (uid, pid)).fetchone()
         if other:
             raise HTTPException(400, f'{u["full_name"]} zaten {other[1]} firmasında “{other[0]}” kişisine bağlı')
@@ -292,7 +359,8 @@ def _link_user(conn, user, pid, uid):
 @router.delete('/people/{pid}')
 def delete_person(pid: int, user=Depends(company_user), conn=db.DB):
     p = _person(conn, pid)
-    _get(conn, p['company_id'], user)
+    if p['company_id']:
+        _get(conn, p['company_id'], user)
     if conn.execute('SELECT 1 FROM document_people WHERE person_id = ?', (pid,)).fetchone():
         raise HTTPException(400, 'Bu kişiye bağlı evrak var; önce evraktaki ilişkiyi kaldırın')
     _drop_crm(conn, 'person', [pid])

@@ -390,7 +390,7 @@ def messages(box_id: int, folder: str = 'inbox', q: str = '', page: int = 0, off
     return r
 
 
-@router.post('/{box_id}/sync')
+@router.post('/{box_id}/cache-sync')
 def folder_sync(box_id: int, folder: str = 'inbox', user=Depends(auth.current_user), conn=db.DB):
     """Klasörün bütün iletilerini önbelleğe almayı başlatır (sürüyorsa yenisini başlatmaz) ve ilerlemeyi döner."""
     b = _box(conn, user, box_id)
@@ -401,7 +401,7 @@ def folder_sync(box_id: int, folder: str = 'inbox', user=Depends(auth.current_us
     return _sync_view(b['id'], folder)
 
 
-@router.get('/{box_id}/sync')
+@router.get('/{box_id}/cache-sync')
 def folder_sync_state(box_id: int, folder: str = 'inbox', user=Depends(auth.current_user), conn=db.DB):
     b = _box(conn, user, box_id)
     return _sync_view(b['id'], folder)
@@ -536,12 +536,38 @@ async def _files(files):
     return parts
 
 
+def _doc_files(conn, user, doc_ids, have=0):
+    """Sistemdeki evraklardan ek: yalnız kullanıcının görebildiği evraklar (Evrak Yönetimi görünürlük kuralları).
+    doc_ids: '12,15' → [(dosya adı, tür, bayt)]; toplam ek sınırı dosyalarla birlikte uygulanır."""
+    ids = [int(x) for x in str(doc_ids or '').replace(' ', '').split(',') if x.isdigit()][:20]
+    if not ids:
+        return []
+    from .documents import visible_ids
+    ok = visible_ids(conn, user)
+    if any(i not in ok for i in ids):
+        raise HTTPException(403, 'Eklemek istediğiniz evraklardan birini görme yetkiniz yok')
+    import mimetypes
+    out, total = [], have
+    for d in db.rows(conn.execute(f'SELECT id, file, file_name FROM documents WHERE id IN ({",".join("?" * len(ids))})', ids)):
+        path = (config.UPLOAD_DIR / d['file']).resolve()
+        if config.UPLOAD_DIR.resolve() not in path.parents or not path.is_file():
+            raise HTTPException(404, f"Evrak dosyası bulunamadı: {d['file_name']}")
+        data = path.read_bytes()
+        total += len(data)
+        if total > MAX_ATTACH:
+            raise HTTPException(400, 'Ekler toplam 25 MB sınırını aşıyor')
+        out.append((d['file_name'], mimetypes.guess_type(d['file_name'])[0] or 'application/octet-stream', data))
+    return out
+
+
 @router.post('/{box_id}/send')
 async def send(box_id: int, to: str = Form(''), cc: str = Form(''), bcc: str = Form(''), subject: str = Form(''), body: str = Form(''),
                html: str = Form(''), reply_id: str = Form(''), references: str = Form(''), fwd_folder: str = Form(''), fwd_uid: int = Form(0),
-               draft_uid: int = Form(0), files: list[UploadFile] = File(default=[]), user=Depends(auth.current_user), conn=db.DB):
+               draft_uid: int = Form(0), doc_ids: str = Form(''), files: list[UploadFile] = File(default=[]),
+               user=Depends(auth.current_user), conn=db.DB):
     b = _box(conn, user, box_id)
     parts = await _files(files)
+    parts += _doc_files(conn, user, doc_ids, sum(len(x[2]) for x in parts))
 
     def go():
         return mail.send(b, to=to, cc=cc, bcc=bcc, subject=subject, body=body, html=html or None, files=parts,
@@ -550,7 +576,8 @@ async def send(box_id: int, to: str = Form(''), cc: str = Form(''), bcc: str = F
     r = await run_in_threadpool(lambda: _wrap(go))
     from email.utils import getaddresses
     personal.collect(conn, user['id'], getaddresses([x for x in (to, cc, bcc) if x]), own=[x['email'] for x in _boxes(conn, user)])
-    db.audit(conn, user['id'], 'E-posta gönderdi', 'mail', box_id, f'{r["recipients"]} alıcı')   # içerik loglanmaz
+    db.audit(conn, user['id'], 'E-posta gönderdi', 'mail', box_id,
+             f'{r["recipients"]} alıcı' + (f' · evrak eki: {doc_ids}' if doc_ids else ''))   # içerik loglanmaz; eklenen evrak numaraları kayıtlı
     conn.commit()
     r.pop('rcpts', None)
     return r
@@ -559,9 +586,10 @@ async def send(box_id: int, to: str = Form(''), cc: str = Form(''), bcc: str = F
 @router.post('/{box_id}/draft')
 async def draft(box_id: int, to: str = Form(''), cc: str = Form(''), bcc: str = Form(''), subject: str = Form(''), body: str = Form(''),
                 html: str = Form(''), reply_id: str = Form(''), references: str = Form(''), replace_uid: int = Form(0),
-                files: list[UploadFile] = File(default=[]), user=Depends(auth.current_user), conn=db.DB):
+                doc_ids: str = Form(''), files: list[UploadFile] = File(default=[]), user=Depends(auth.current_user), conn=db.DB):
     b = _box(conn, user, box_id)
     parts = await _files(files)
+    parts += _doc_files(conn, user, doc_ids, sum(len(x[2]) for x in parts))
     return await run_in_threadpool(lambda: _wrap(lambda: mail.save_draft(b, to=to, cc=cc, bcc=bcc, subject=subject, body=body, html=html or None, files=parts,
                                                                           reply={'message_id': reply_id, 'references': references} if reply_id else None,
                                                                           replace_uid=replace_uid or None)))
@@ -588,6 +616,47 @@ def company_people(cid: int, user=Depends(auth.current_user), conn=db.DB):
     rows = db.rows(conn.execute(f'SELECT id, full_name, title, email, company_id FROM company_people p WHERE {person_emails.member_sql()} '
                                 'ORDER BY full_name', (cid, cid)))
     return person_emails.attach(conn, 'company', rows)
+
+
+@router.get('/people/pick')
+def people_pick(q: str = '', user=Depends(auth.current_user), conn=db.DB):
+    """Yeni mail › Kişi ekle: Rehber'de erişilebilen, e-postası olan kişiler (firma kişileri — müşteri / tedarikçi yetkisine
+    göre — ve sistem kullanıcıları). Ad, e-posta ya da FİRMA ADIYLA aranır; her adres kendi firmasıyla ayrı satır."""
+    from .companies import people_of
+    from ..document_ocr import fold
+    words = fold(q).split()
+    out = []
+    for sup, mod in ((False, 'companies'), (True, 'purchasing')):
+        if mod not in user['modules']:
+            continue
+        for p in people_of(conn, sup):
+            for e in p.get('email_list') or []:
+                out.append({'kind': 'person', 'id': p['id'], 'name': p['full_name'], 'email': e['email'], 'title': p.get('title'),
+                            'company': e.get('company_name') or '', 'supplier': sup})
+    for u in conn.execute("SELECT id, full_name, username FROM users WHERE deleted_at IS NULL AND active = 1 AND username LIKE '%@%'"):
+        out.append({'kind': 'user', 'id': u[0], 'name': u[1], 'email': u[2].lower(), 'title': None, 'company': config.COMPANY_NAME, 'supplier': False})
+    seen, res = set(), []
+    for r in out:
+        key = (r['email'], r['company'])
+        if key in seen:
+            continue
+        hay = fold(f"{r['name']} {r['email']} {r['company']}")
+        if all(w in hay for w in words):
+            seen.add(key)
+            res.append(r)
+    res.sort(key=lambda r: (fold(r['name']), r['company']))
+    return res[:60]
+
+
+@router.get('/people/companies')
+def recipients_companies(emails: str = '', user=Depends(auth.current_user), conn=db.DB):
+    """Yeni mail › Evrak ekle: alıcıların bağlı olduğu firmalar ("seçili firmaya etiketli evraklar" için)."""
+    cm = company_map(conn, [e.strip() for e in emails.split(',')][:50])
+    seen = {}
+    for v in cm.values():
+        if v.get('company_id'):
+            seen.setdefault(v['company_id'], {'id': v['company_id'], 'name': v['company_name']})
+    return sorted(seen.values(), key=lambda c: c['name'] or '')
 
 
 @router.get('/people/search')

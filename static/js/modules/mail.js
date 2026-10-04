@@ -4,7 +4,7 @@
 // okuma bölmesi, sağ altta yüzen yazma penceresi. İçerik güvenli kutuda (betik çalışmaz); uzak resimler istenirse yüklenir.
 import { api } from '../api.js';
 import { cleanHtml } from '../sanitize.js';
-import { clear, confirmDialog, h, modal, t, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, h, modal, segmented, t, toast, toastError } from '../ui.js';
 
 // ---------------- simgeler (Material) ----------------
 const P = {
@@ -43,6 +43,7 @@ const P = {
   home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
   add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
   sort: 'M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z',
+  personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   unfoldLess: 'M7.41 18.59 8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z',
   unfoldMore: 'M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z',
   minimize: 'M6 19h12v2H6z',
@@ -313,7 +314,7 @@ export async function renderMail(view, params = []) {
     syncBar.hidden = true;
     if (bid === 'all' || isPop(bid)) return;
     let st, was = false;
-    try { st = await api.post(`/api/mail/${bid}/sync?folder=${encodeURIComponent(folder)}`, {}); } catch { return; }
+    try { st = await api.post(`/api/mail/${bid}/cache-sync?folder=${encodeURIComponent(folder)}`, {}); } catch { return; }
     while (seq === syncSeq && st && st.running && root.isConnected) {
       was = true;
       const pct = st.total ? Math.floor((st.done / st.total) * 100) : 0;
@@ -323,7 +324,7 @@ export async function renderMail(view, params = []) {
         h('div', { class: 'gm-sync-bar' }, h('i', { style: { width: `${pct}%` } })));
       await new Promise(r => setTimeout(r, 1200));
       if (seq !== syncSeq) return;
-      try { st = await api.get(`/api/mail/${bid}/sync?folder=${encodeURIComponent(folder)}`); } catch { break; }
+      try { st = await api.get(`/api/mail/${bid}/cache-sync?folder=${encodeURIComponent(folder)}`); } catch { break; }
     }
     if (seq !== syncSeq) return;
     syncBar.hidden = true;
@@ -966,10 +967,15 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
     h('button', { type: 'button', class: 'gm-fmt-b', title: t('Bağlantı'), onmousedown: e => e.preventDefault(), onclick: () => { const u = prompt(t('Bağlantı adresi')); if (u) cmd('createLink', u)(); } }, '🔗'),
     tb('⌫', 'removeFormat', null, 'Biçimi temizle'));
   const files = [];
+  const docs = [];   // sistemdeki evraklardan ekler (gönderirken sunucu görme yetkisini yeniden denetler)
   const fileIn = h('input', { type: 'file', multiple: true, hidden: true });
   const attBox = h('div', { class: 'gm-c-atts' });
-  const drawAtts = () => clear(attBox, files.map((f, i) => h('span', { class: 'gm-c-att' }, ic('attach'), h('span', { class: 'grow' }, f.name), h('small', null, size(f.size)),
-    h('button', { type: 'button', title: t('Kaldır'), onclick: () => { files.splice(i, 1); touch(); drawAtts(); } }, ic('close')))));
+  const drawAtts = () => clear(attBox,
+    files.map((f, i) => h('span', { class: 'gm-c-att' }, ic('attach'), h('span', { class: 'grow' }, f.name), h('small', null, size(f.size)),
+      h('button', { type: 'button', title: t('Kaldır'), onclick: () => { files.splice(i, 1); touch(); drawAtts(); } }, ic('close')))),
+    docs.map((d, i) => h('span', { class: 'gm-c-att doc', title: t('Evrak Yönetimi’nden') }, ic('doc'), h('span', { class: 'grow' }, d.file_name || d.title),
+      d.size ? h('small', null, size(d.size)) : null,
+      h('button', { type: 'button', title: t('Kaldır'), onclick: () => { docs.splice(i, 1); touch(); drawAtts(); } }, ic('close')))));
   const addFiles = fl => { [...fl].forEach(f => files.push(f)); if (fl.length) touch(); drawAtts(); };
   fileIn.addEventListener('change', () => { addFiles(fileIn.files); fileIn.value = ''; });
   let ccOpen = !!(cc.value() || (mode === 'draft' && msg.cc.length));
@@ -981,7 +987,7 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
   const pushHist = () => { if (!mobile()) return; history.pushState({ gm: 'compose' }, ''); ownsHist = true; window.addEventListener('popstate', onPop); };
   const dropHist = () => { window.removeEventListener('popstate', onPop); if (ownsHist) { ownsHist = false; if (history.state?.gm === 'compose') history.back(); } };
   const reattach = () => { onReopen?.(); pushHist(); };
-  const hasContent = () => to.value() || cc.value() || subject.value.trim() || editor.innerText.trim() || files.length;
+  const hasContent = () => to.value() || cc.value() || subject.value.trim() || editor.innerText.trim() || files.length || docs.length;
   const form = () => {
     const fd = new FormData();
     fd.append('to', to.value()); fd.append('cc', cc.value()); fd.append('bcc', bcc.value());
@@ -989,6 +995,7 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
     if (msg && (mode === 'reply' || mode === 'all')) { fd.append('reply_id', msg.message_id || ''); fd.append('references', msg.references || ''); }
     if (msg && mode === 'forward') { fd.append('fwd_folder', msg.folder); fd.append('fwd_uid', String(msg.uid)); }
     files.forEach(f => fd.append('files', f));
+    if (docs.length) fd.append('doc_ids', docs.map(d => d.id).join(','));
     return fd;
   };
   const send = async () => {
@@ -1059,7 +1066,10 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
     fmt,
     h('div', { class: 'gm-c-foot' }, sendD,
       h('button', { type: 'button', class: 'gm-ib', title: t('Biçimlendirme seçenekleri'), onclick: e => { fmt.hidden = !fmt.hidden; e.currentTarget.classList.toggle('on', !fmt.hidden); } }, ic('text')),
-      ibtn('attach', 'Dosya ekle', () => fileIn.click()), fileIn, h('span', { class: 'grow' }), ibtn('delete', 'Taslağı sil', discard)));
+      ibtn('attach', 'Dosya ekle', () => fileIn.click()), fileIn,
+      ibtn('doc', 'Evrak ekle (Evrak Yönetimi)', () => pickDocs({ recipients: () => [...to.emails(), ...cc.emails(), ...bcc.emails()], picked: docs, onPick: ds => { ds.forEach(d => { if (!docs.some(x => x.id === d.id)) docs.push(d); }); touch(); drawAtts(); } })),
+      ibtn('personAdd', 'Kişi ekle (Rehber)', () => pickPeople({ to, cc, bcc, openCc: () => { ccRows.hidden = false; ccToggle.hidden = true; }, onPick: touch })),
+      h('span', { class: 'grow' }), ibtn('delete', 'Taslağı sil', discard)));
   win.addEventListener('dragover', e => { e.preventDefault(); win.classList.add('drop'); });
   win.addEventListener('dragleave', e => { if (e.target === win) win.classList.remove('drop'); });
   win.addEventListener('drop', e => { e.preventDefault(); win.classList.remove('drop'); addFiles(e.dataTransfer.files); });
@@ -1072,6 +1082,89 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
   if ((mode === 'new' && !toInit) || mode === 'forward') to.focus();
   else { editor.focus(); const r = document.createRange(); r.setStart(editor, 0); r.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(r); }
   return { close: f => close(f), focus: () => { win.classList.remove('min'); win.classList.add('flash'); setTimeout(() => win.classList.remove('flash'), 600); } };
+}
+
+// Yeni mail › Kişi ekle: Rehber'de erişilebilen e-postalı kişiler (ad, e-posta ya da firma adıyla); bağlı firma görünür
+function pickPeople({ to, cc, bcc, openCc, onPick }) {
+  let target = 'to';
+  const q = h('input', { class: 'input', type: 'search', placeholder: t('Ad, e-posta ya da firma adı…'), autocomplete: 'off' });
+  const res = h('div', { class: 'gm-pick-list' });
+  const added = new Set([...to.emails(), ...cc.emails(), ...bcc.emails()].map(e => e.toLowerCase()));
+  const tgt = segmented([['to', t('Kime')], ['cc', t('Bilgi')], ['bcc', t('Gizli')]], target, v => { target = v; });
+  let tm, seq = 0;
+  const search = async () => {
+    const my = ++seq;
+    let rows;
+    try { rows = await api.get(`/api/mail/people/pick?q=${encodeURIComponent(q.value.trim())}`); } catch (e) { clear(res, h('div', { class: 'small muted' }, e.message)); return; }
+    if (my !== seq) return;
+    clear(res, rows.length ? rows.map(r => {
+      const on = added.has(r.email.toLowerCase());
+      const row = h('button', { type: 'button', class: `gm-pick-row ${on ? 'on' : ''}`, onclick: () => {
+        if (added.has(r.email.toLowerCase())) return;
+        ({ to, cc, bcc })[target].add({ name: r.name, email: r.email });
+        if (target !== 'to') openCc();
+        added.add(r.email.toLowerCase()); row.classList.add('on'); onPick?.();
+      } },
+      h('span', { class: 'gm-chip-av' }, letter(r)),
+      h('span', { class: 'gm-pick-t' }, h('b', null, r.name), h('small', null, r.email)),
+      r.company ? h('span', { class: `gm-pick-co ${r.kind === 'user' ? 'us' : ''}` }, r.company) : h('span', { class: 'gm-pick-co none' }, t('Firmasız')),
+      h('span', { class: 'gm-pick-ok' }, ic('check')));
+      return row;
+    }) : h('div', { class: 'small muted gm-pick-empty' }, q.value.trim() ? t('Eşleşen kişi yok') : t('Rehberde e-postası olan kişi yok')));
+  };
+  q.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(search, 180); });
+  modal({ title: t('Rehberden kişi ekle'), wide: true,
+    body: h('div', { class: 'gm-pick' }, h('div', { class: 'gm-pick-top' }, q, tgt),
+      h('div', { class: 'small muted' }, t('Yalnızca Rehber’de görebildiğiniz ve e-postası olan kişiler. Firma adıyla da arayabilirsiniz; dokunduğunuz kişi seçili alana eklenir.')), res),
+    actions: [{ label: t('Tamam'), class: 'primary' }] });
+  search();
+  setTimeout(() => q.focus(), 50);
+}
+
+// Yeni mail › Evrak ekle: Evrak Yönetimi'nde görebildiğiniz evraklar; tümü ya da alıcıların firmasına etiketli olanlar
+async function pickDocs({ recipients, picked, onPick }) {
+  let comps = [];
+  try { const em = recipients(); if (em.length) comps = await api.get(`/api/mail/people/companies?emails=${encodeURIComponent(em.join(','))}`); } catch { /* */ }
+  let scope = comps.length ? 'company' : 'all', cid = comps[0]?.id || null;
+  const chosen = new Map(picked.map(d => [d.id, d]));
+  const q = h('input', { class: 'input', type: 'search', placeholder: t('Evrak adı ya da içeriğinde ara…'), autocomplete: 'off' });
+  const coSel = h('select', { class: 'input gm-pick-cosel', hidden: scope !== 'company' || comps.length < 2, onchange: e => { cid = Number(e.target.value); search(); } },
+    comps.map(c => h('option', { value: c.id }, c.name)));
+  const res = h('div', { class: 'gm-pick-list' });
+  const countEl = h('b');
+  const syncCount = () => { countEl.textContent = chosen.size ? t('{n} evrak seçili', { n: chosen.size }) : ''; };
+  const seg = segmented([['all', t('Tüm evraklar')], ['company', comps.length === 1 ? t('{c} evrakları', { c: comps[0].name }) : t('Seçili firmaya etiketli evraklar')]], scope, v => {
+    if (v === 'company' && !comps.length) { toast(t('Alıcılar arasında bir firmaya bağlı kişi yok; önce firmadan bir kişi ekleyin'), 'err'); return; }
+    scope = v; coSel.hidden = v !== 'company' || comps.length < 2; search();
+  });
+  let tm, seq = 0;
+  const search = async () => {
+    const my = ++seq;
+    let r;
+    try {
+      r = await api.get(`/api/documents?limit=200&q=${encodeURIComponent(q.value.trim())}${scope === 'company' && cid ? `&company_id=${cid}` : ''}`);
+    } catch (e) { clear(res, h('div', { class: 'small muted gm-pick-empty' }, e.status === 403 ? t('Evrak Yönetimi yetkiniz yok') : e.message)); return; }
+    if (my !== seq) return;
+    const docsL = r.documents || [];
+    clear(res, docsL.length ? docsL.map(d => {
+      const row = h('button', { type: 'button', class: `gm-pick-row ${chosen.has(d.id) ? 'on' : ''}`, onclick: () => {
+        if (chosen.has(d.id)) chosen.delete(d.id); else chosen.set(d.id, d);
+        row.classList.toggle('on', chosen.has(d.id)); syncCount();
+      } },
+      h('span', { class: 'gm-pick-ic' }, ic('doc')),
+      h('span', { class: 'gm-pick-t' }, h('b', null, d.title || d.file_name), h('small', null, [d.file_name, d.doc_date || (d.uploaded_at || '').slice(0, 10), d.size ? size(d.size) : null].filter(Boolean).join(' · '))),
+      (d.companies || []).length ? h('span', { class: 'gm-pick-co' }, d.companies.map(c => c.name).join(', ')) : null,
+      h('span', { class: 'gm-pick-ok' }, ic('check')));
+      return row;
+    }) : h('div', { class: 'small muted gm-pick-empty' }, t('Bu ölçütlere uyan, görebildiğiniz evrak yok')));
+  };
+  q.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(search, 220); });
+  modal({ title: t('Evraklardan ekle'), wide: true,
+    body: h('div', { class: 'gm-pick' }, h('div', { class: 'gm-pick-top' }, seg, coSel), q,
+      h('div', { class: 'gm-pick-info small muted' }, h('span', { class: 'grow' }, t('Yalnızca görme yetkiniz olan evraklar listelenir. Toplam ek sınırı 25 MB.')), countEl), res),
+    actions: [{ label: t('Vazgeç') }, 'spacer', { label: t('Seçilenleri ekle'), class: 'primary', onClick: () => { onPick([...chosen.values()]); } }] });
+  syncCount();
+  search();
 }
 
 // Alıcılar: Gmail gibi çipler; virgül / Enter / boşlukla ayrılır, yazdıkça kişisel rehber + şirket önerisi
@@ -1135,7 +1228,10 @@ function chips(initial = [], onChange) {
   inp.addEventListener('paste', e => { const txt = e.clipboardData?.getData('text') || ''; if (/[,;\n]/.test(txt)) { e.preventDefault(); inp.value = txt; commit(); } });
   draw(); ready = true;
   const fmt = a => (a.name ? `"${a.name.replace(/["\\]/g, '\\$&')}" <${a.email}>` : a.email);   // ad tırnaklı: virgüllü adlar bozulmaz
-  return { el: h('div', { class: 'gm-chips-wrap' }, wrap), invalid: () => [...list, ...(inp.value.trim() ? [parse(inp.value)] : [])].filter(a => !valid(a.email)).map(a => a.email), value: () => [...list, ...(inp.value.trim() ? [parse(inp.value)] : [])].map(fmt).join(', '), focus: () => inp.focus() };
+  return { el: h('div', { class: 'gm-chips-wrap' }, wrap),
+    add: a => { if (a?.email && !list.some(x => x.email.toLowerCase() === a.email.toLowerCase())) { list.push({ name: a.name && a.name !== a.email ? a.name : '', email: a.email }); draw(); } },
+    emails: () => list.map(a => a.email),
+    invalid: () => [...list, ...(inp.value.trim() ? [parse(inp.value)] : [])].filter(a => !valid(a.email)).map(a => a.email), value: () => [...list, ...(inp.value.trim() ? [parse(inp.value)] : [])].map(fmt).join(', '), focus: () => inp.focus() };
 }
 
 // Uzak resimler açılınca: bu sitenin kendi adresine (ya da göreli adrese) giden kaynaklar atılır — okuma çerçevesi aynı kökenli

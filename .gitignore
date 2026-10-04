@@ -15,6 +15,9 @@ __pycache__/
 .env.*
 
 # Büyük ikili dosyalar (GitHub'a konmaz; README → "Harici bileşenler")
-vendor/models/
-vendor/ocr/
-vendor/whisper/
+vendor/models
+vendor/ocr
+vendor/whisper
+
+# Claude Code yerel ayarları (izinler)
+.claude/settings.local.json

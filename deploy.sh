@@ -22,7 +22,8 @@ git fetch -q origin main
 
 EXCL=(--exclude=/.git/ --exclude=/.venv/ --exclude=/data/ --exclude=/tenants/
       --exclude='.env*' --exclude=__pycache__/ --exclude='*.pyc' --exclude=/.deployed-rev
-      --exclude=/vendor/models/ --exclude=/vendor/ocr/ --exclude=/vendor/whisper/)
+      --exclude=/vendor/models --exclude=/vendor/ocr --exclude=/vendor/whisper --exclude=/.claude)
+# (sondaki / yok: klasör olsun ya da kısayol (symlink), canlıdaki gerçek klasörün yerine hiçbir şey geçmesin)
 [ "$TARGET" = app ] && EXCL+=(--exclude=/central/)
 # veilox: canlıdaki yapılandırma (tenants.json) korunur; depoda olmayan eski dosyalar silinmez (yalnız güncelleme/ekleme)
 DELETE=(--delete)

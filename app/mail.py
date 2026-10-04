@@ -479,30 +479,167 @@ def _summary(uid, hdr_bytes, flags=(), size=0, text=None):
 
 
 # ---------------- IMAP: liste / okuma / işlemler ----------------
-def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PAGE, offset=None, cache_stats=False):
+# Liste filtresi ve sıralaması (bütün klasöre uygulanır, yalnız ekrandaki sayfaya değil)
+FILTERS = ('unread', 'starred', 'attach')
+SORTS = ('date', 'date_asc', 'from', 'subject', 'size')
+SORT_MAX = 5000   # sunucu SORT desteklemezse (Gmail) en yeni bu kadar iletinin başlığıyla sıralanır; eskiler tarih sırasıyla sonda
+_GM_FILTER = {'unread': 'is:unread', 'starred': 'is:starred', 'attach': 'has:attachment'}
+_IMAP_FILTER = {'unread': ['UNSEEN'], 'starred': ['FLAGGED'], 'attach': ['HEADER', 'Content-Type', '"multipart/mixed"']}
+_sortkeys = {}   # (hesap, klasör, UIDVALIDITY) → {uid: (gönderen, konu, boyut)} — aynı klasör yeniden sıralanınca tekrar çekilmez
+_RE_PREFIX = re.compile(r'^\s*((re|fw|fwd|ynt|ilt|aw|wg|tr)\s*(\[\d+\])?\s*:\s*)+', re.I)
+
+
+def _search(m, q, gm, filt):
+    """Arama + filtre → UID listesi. Gmail: X-GM-RAW (Gmail arama dili); diğerleri: standart IMAP ölçütleri."""
+    if gm and (q or filt == 'attach'):   # Gmail arama dili yalnız metin araması / ek için; bayraklar standart IMAP ile
+        raw = ' '.join(x for x in (q.replace('"', ' ').strip(), _GM_FILTER.get(filt, '')) if x)
+        typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'X-GM-RAW', f'"{raw}"'.encode())
+    else:
+        crit = _IMAP_FILTER.get(filt, [])
+        if q:   # konu / gönderen / içerik
+            try:
+                m.literal = q.encode('utf-8')
+                typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', *crit, 'TEXT')
+            except imaplib.IMAP4.error:
+                typ, d = m.uid('SEARCH', None, *crit, 'TEXT', f'"{q.encode("ascii", "ignore").decode()}"')
+        else:
+            typ, d = m.uid('SEARCH', None, *(crit or ['ALL']))
+    return [int(x) for x in (d[0] or b'').split()] if typ == 'OK' else []
+
+
+def _sort_key_from(v):
+    name, a = parseaddr(_dec(v))
+    return (name.strip(' "\'') or a).casefold()
+
+
+def _keys_for(c, m, box, folder, uids):
+    """Gönderen / konu / boyut sıralama anahtarları; eksikler 500'erli tek FETCH ile (yalnız iki başlık alanı)."""
+    ck = (box['id'], folder, c.uidv.get(folder))
+    if len(_sortkeys) > 64:
+        _sortkeys.clear()
+    have = _sortkeys.setdefault(ck, {})
+    need = [u for u in uids if u not in have]
+    for i in range(0, len(need), 500):
+        typ, data = m.uid('FETCH', ','.join(map(str, need[i:i + 500])), '(UID RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])')
+        for part in data or []:
+            if not isinstance(part, tuple):
+                continue
+            meta = part[0].decode(errors='replace')
+            mu, sz = re.search(r'UID (\d+)', meta), re.search(r'RFC822\.SIZE (\d+)', meta)
+            if not mu:
+                continue
+            h = email.message_from_bytes(part[1] or b'', policy=default_policy)
+            subj = _RE_PREFIX.sub('', _dec(h['Subject'])).strip().casefold()
+            have[int(mu.group(1))] = (_sort_key_from(h['From']), subj, int(sz.group(1)) if sz else 0)
+    return have
+
+
+def _order(c, m, box, folder, uids, sort, q, gm, filt):
+    """UID'leri istenen sıraya koyar → (sıralı UID'ler, yalnız en yeni SORT_MAX içinde mi sıralandı)."""
+    if sort == 'date_asc':
+        return sorted(uids), False
+    newest = sorted(uids, reverse=True)
+    if sort not in ('from', 'subject', 'size'):
+        return newest, False
+    if not gm and not q and 'SORT' in getattr(m, 'capabilities', ()):   # sunucu sıralar (RFC 5256): bütün klasör
+        try:
+            typ, d = m.uid('SORT', {'from': '(FROM)', 'subject': '(SUBJECT)', 'size': '(REVERSE SIZE)'}[sort], 'UTF-8',
+                           *(_IMAP_FILTER.get(filt) or ['ALL']))
+            if typ == 'OK':
+                ok = set(uids)
+                got = [u for u in (int(x) for x in (d[0] or b'').split()) if u in ok]
+                if len(got) == len(ok):
+                    return got, False
+        except imaplib.IMAP4.error:
+            pass
+    head, rest = newest[:SORT_MAX], newest[SORT_MAX:]
+    keys = _keys_for(c, m, box, folder, head)
+    if sort == 'size':
+        head.sort(key=lambda u: -(keys.get(u) or ('', '', 0))[2])   # kararlı sıralama: eşitlerde yeni önce
+    else:
+        i = 0 if sort == 'from' else 1
+        head.sort(key=lambda u: (keys.get(u) or ('\uffff', '\uffff', 0))[i] or '\uffff')   # boş ad / konu sonda
+    return head + rest, bool(rest)
+
+
+def _fetch_summaries(m, uids):
+    """Seçili klasörde UID'lerin liste özetleri → ({uid: özet}, {uid: katılımcı adresleri})."""
+    typ, data = m.uid('FETCH', ','.join(map(str, uids)),
+                      f'(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT]<0.{SNIPPET_BYTES}>)')
+    got, cur = {}, None   # uid → {hdr, text, flags, size}; gövde parçası UID taşımayabilir → son görülen UID'ye aittir
+    for part in data or []:
+        if not isinstance(part, tuple):
+            continue
+        meta, payload = part[0].decode(errors='replace'), part[1]
+        mu = re.search(r'UID (\d+)', meta)
+        if mu:
+            cur = int(mu.group(1))
+            d = got.setdefault(cur, {'hdr': b'', 'text': None, 'flags': [], 'size': 0})
+            fl = re.search(r'FLAGS \(([^)]*)\)', meta)
+            size = re.search(r'RFC822\.SIZE (\d+)', meta)
+            d['flags'] = fl.group(1).split() if fl else d['flags']
+            d['size'] = int(size.group(1)) if size else d['size']
+        if cur is None:
+            continue
+        if 'BODY[TEXT]' in meta.upper():
+            got[cur]['text'] = payload
+        else:
+            got[cur]['hdr'] = payload
+    items = {u: _summary(u, d['hdr'], d['flags'], d['size'], d['text']) for u, d in got.items() if d['hdr']}
+    return items, {u: _participants(got[u]['hdr']) for u in items}
+
+
+def folder_index(box, folder):
+    """Klasördeki bütün UID'ler ve bayrakları (tam eşitleme için) → ({uid: (okundu, yıldızlı)}, UIDVALIDITY)."""
+    c = conn_for(box)
+
+    def fn(m):
+        _select(c, m, folder)
+        typ, d = m.uid('SEARCH', None, 'ALL')
+        uids = [int(x) for x in (d[0] or b'').split()] if typ == 'OK' else []
+        flags = {}
+        for i in range(0, len(uids), 1000):
+            typ, fl = m.uid('FETCH', ','.join(map(str, uids[i:i + 1000])), '(UID FLAGS)')
+            for line in fl or []:
+                line = (line[0] if isinstance(line, tuple) else line or b'').decode(errors='replace')
+                mu, mf = re.search(r'UID (\d+)', line), re.search(r'FLAGS \(([^)]*)\)', line)
+                if mu and mf:
+                    f = mf.group(1).split()
+                    flags[int(mu.group(1))] = ('\\Seen' in f, '\\Flagged' in f)
+        return {u: flags.get(u, (False, False)) for u in uids}, c.uidv.get(folder)
+    return _run(c, fn)
+
+
+def fetch_into_cache(box, folder, uids):
+    """Verilen UID'lerin özetlerini sunucudan alıp önbelleğe yazar (tam eşitleme). Yazılan özet sayısı döner."""
+    c = conn_for(box)
+
+    def fn(m):
+        _select(c, m, folder)
+        items, parts = _fetch_summaries(m, uids)
+        mail_cache.submit(mail_cache.put_many, box['id'], folder, [(items[u], parts[u]) for u in items])
+        return len(items)
+    return _run(c, fn)
+
+
+def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PAGE, offset=None, cache_stats=False, filt=None, sort='date'):
     """offset verilirse sayfa yerine o sıradan başlar (sonsuz kaydırma: arşivle / sil sonrası ileti atlanmasın).
-    Önbellekli (mail_cache): sunucudan UID listesi + bayraklar; başlık / önizleme yalnız önbellekte olmayanlar için."""
+    Önbellekli (mail_cache): sunucudan UID listesi + bayraklar; başlık / önizleme yalnız önbellekte olmayanlar için.
+    filt: unread | starred | attach; sort: date | date_asc | from | subject | size (bütün klasöre uygulanır)."""
     start = max(0, offset) if offset is not None else page * limit
+    filt = filt if filt in FILTERS else ('unread' if unread_only else None)
+    sort = sort if sort in SORTS else 'date'
     if settings(box)['is_pop']:
-        return pop_list(box, q, page, unread_only, offset=start)
+        return pop_list(box, q, page, filt == 'unread', offset=start)
+    if (filt or sort != 'date') and not q and mail_cache.complete(box['id'], folder):   # kayıtlı mailler arasında
+        with db.connect() as conn:
+            return mail_cache.list_cached(conn, box['id'], folder, filt, sort, start, limit)
     c = conn_for(box)
     gm = settings(box)['gmail']
 
     def fn(m):
         _select(c, m, folder)
-        if q:
-            if gm:
-                typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'X-GM-RAW', f'"{q.replace(chr(34), " ")}"'.encode())
-            else:   # standart IMAP: konu / gönderen / içerik
-                try:
-                    m.literal = q.encode('utf-8')
-                    typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'TEXT')
-                except imaplib.IMAP4.error:
-                    typ, d = m.uid('SEARCH', None, 'TEXT', f'"{q.encode("ascii", "ignore").decode()}"')
-        else:
-            typ, d = m.uid('SEARCH', None, 'UNSEEN' if unread_only else 'ALL')
-        uids = [int(x) for x in (d[0] or b'').split()] if typ == 'OK' else []
-        uids.sort(reverse=True)
+        uids, limited = _order(c, m, box, folder, _search(m, q, gm, filt), sort, q, gm, filt)
         total = len(uids)
         chunk = uids[start:start + limit]
         if not chunk:
@@ -525,37 +662,17 @@ def list_messages(box, folder='inbox', q='', page=0, unread_only=False, limit=PA
             for u, (seen, star) in flags.items():
                 cached[u].update(seen=seen, starred=star)
             mail_cache.submit(mail_cache.set_flags, box['id'], folder, flags)
-        if not q and not unread_only:   # sayfa aralığında sunucuda olmayanlar (silinen / taşınan) önbellekten düşer
+        if not q and not filt and sort == 'date':   # sayfa aralığında sunucuda olmayanlar (silinen / taşınan) önbellekten düşer
             mail_cache.submit(mail_cache.prune, box['id'], folder, chunk[-1], chunk[0], set(chunk))
         missing = [u for u in chunk if u not in cached]
         if not missing:
-            out = {'items': [cached[u] for u in chunk], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+            out = {'items': [cached[u] for u in chunk], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE)), 'sort_limited': limited}
             return dict(out, fetched=0) if cache_stats else out
-        typ, data = m.uid('FETCH', ','.join(map(str, missing)),
-                          f'(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT]<0.{SNIPPET_BYTES}>)')
-        got, cur = {}, None   # uid → {hdr, text, flags, size}; gövde parçası UID taşımayabilir → son görülen UID'ye aittir
-        for part in data or []:
-            if not isinstance(part, tuple):
-                continue
-            meta, payload = part[0].decode(errors='replace'), part[1]
-            mu = re.search(r'UID (\d+)', meta)
-            if mu:
-                cur = int(mu.group(1))
-                d = got.setdefault(cur, {'hdr': b'', 'text': None, 'flags': [], 'size': 0})
-                fl = re.search(r'FLAGS \(([^)]*)\)', meta)
-                size = re.search(r'RFC822\.SIZE (\d+)', meta)
-                d['flags'] = fl.group(1).split() if fl else d['flags']
-                d['size'] = int(size.group(1)) if size else d['size']
-            if cur is None:
-                continue
-            if 'BODY[TEXT]' in meta.upper():
-                got[cur]['text'] = payload
-            else:
-                got[cur]['hdr'] = payload
-        items = {u: _summary(u, d['hdr'], d['flags'], d['size'], d['text']) for u, d in got.items() if d['hdr']}
-        mail_cache.submit(mail_cache.put_many, box['id'], folder, [(items[u], _participants(got[u]['hdr'])) for u in items])
+        items, parts = _fetch_summaries(m, missing)
+        mail_cache.submit(mail_cache.put_many, box['id'], folder, [(items[u], parts[u]) for u in items])
         items.update(cached)
-        out = {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+        out = {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE)),
+               'sort_limited': limited}
         return dict(out, fetched=len(missing)) if cache_stats else out
     return _run(c, fn)
 

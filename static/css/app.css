@@ -6641,6 +6641,20 @@ main#view.gm-view { height: 100%; padding: 0; margin: 0; max-width: none; overfl
 .gm.selecting .gm-top { display: none; }
 .gm-lhead { display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 8px 0 14px; margin-top: 8px; background: var(--gm-surface); border-radius: 16px 16px 0 0; border-bottom: 1px solid var(--gm-div); }
 .gm-count { font-size: 12px; color: var(--gm-on3); padding-right: 8px; font-variant-numeric: tabular-nums; }
+.gm-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; margin-left: 6px; padding: 0 6px 0 12px; border-radius: 14px; border: 0;
+  background: var(--gm-sel, #c2e7ff); color: var(--gm-on); font: 500 12.5px var(--gm-font); cursor: pointer; white-space: nowrap; }
+.gm-chip svg { width: 16px; height: 16px; opacity: .7; }
+.gm-chip:hover svg { opacity: 1; }
+.gm-sync { margin: 8px 0 0; padding: 8px 14px 10px; border-radius: 12px; background: var(--gm-surface); border: 1px solid var(--gm-div); }
+.gm-sync-t { display: flex; justify-content: space-between; gap: 10px; font: 400 13px var(--gm-font); color: var(--gm-on2); margin-bottom: 6px; }
+.gm-sync-t b { color: var(--gm-on); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gm-sync-bar { height: 4px; border-radius: 2px; background: var(--gm-div); overflow: hidden; }
+.gm-sync-bar i { display: block; height: 100%; background: #1a73e8; border-radius: 2px; transition: width .4s ease; }
+.gm-tree-h { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+.gm-tree-all { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; color: var(--gm-on3); cursor: pointer;
+  font: 500 11px var(--gm-font); text-transform: none; letter-spacing: 0; padding: 2px 6px; border-radius: 10px; }
+.gm-tree-all:hover { background: var(--gm-high, rgba(0,0,0,.06)); color: var(--gm-on); }
+.gm-tree-all svg { width: 16px; height: 16px; }
 .gm-card { background: var(--gm-surface); border-radius: 0 0 16px 16px; min-height: calc(100% - 112px); overflow: hidden; }
 input[type="checkbox"].gm-cb { appearance: none; -webkit-appearance: none; width: 18px !important; height: 18px !important; margin: 0 11px; border: 2px solid var(--gm-on2); border-radius: 2px;
   background: transparent !important; display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: none; transition: none; }

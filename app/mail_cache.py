@@ -12,6 +12,7 @@ Yazmalar (submit) TEK arka plan yazıcısında sırayla yapılır: istek içinde
 yazma işlemine takılıp beklerdi ("database is locked"). İstekler yalnız okur (WAL: okuma kilide takılmaz).
 """
 import json
+import re
 import queue
 import sqlite3
 import threading
@@ -174,19 +175,119 @@ def company_mails(conn, box_ids, emails, domains, limit=50, offset=0):
 
 # ---------------- Arka plan eşitlemesi ----------------
 def sync_box(box):
-    """Gelen kutusu + gönderilenler: en yeniden geriye, önbellekte olmayan başlıklar indirilir (sayfa tamamen önbellekteyse durur)."""
-    from . import mail
+    """Gelen kutusu + gönderilenler: klasörün tamamı önbelleğe (yalnız eksikler indirilir; bayraklar tazelenir)."""
     for folder in SYNC_FOLDERS:
-        offset = 0
-        while offset < SYNC_MAX:
-            try:
-                r = mail.list_messages(box, folder, offset=offset, cache_stats=True)
-            except Exception:   # noqa: BLE001 — klasör yok / hesap hatası: diğer klasöre geç
-                break
-            if not r['items'] or r.get('fetched', 0) == 0:
-                break
-            offset += len(r['items'])
-            time.sleep(0.5)
+        try:
+            full_sync(box, folder)
+        except Exception:   # noqa: BLE001 — klasör yok / hesap hatası: diğer klasöre geç
+            pass
+
+
+# ---------------- Tam eşitleme: klasördeki bütün iletiler önbelleğe (sıralama / filtre kayıtlı mailler arasında) ----------------
+FULL_MAX = 20000      # klasör başına en çok bu kadar ileti (en yeniden geriye)
+FULL_BATCH = 200      # sunucudan tek seferde alınan özet sayısı
+COMPLETE_TTL = 3 * 3600   # tamamlanan eşitleme bu süre "tam" sayılır (arka plan eşitlemesi yeniler)
+_progress = {}        # (hesap, klasör) → {total, done, running, error, finished}
+_plock = threading.Lock()
+
+
+def progress(box_id, folder):
+    with _plock:
+        return dict(_progress.get((box_id, folder)) or {'total': 0, 'done': 0, 'running': False, 'finished': None})
+
+
+def complete(box_id, folder):
+    p = progress(box_id, folder)
+    return bool(p.get('finished')) and not p.get('error') and time.time() - p['finished'] < COMPLETE_TTL
+
+
+def _set(box_id, folder, **kw):
+    with _plock:
+        _progress.setdefault((box_id, folder), {'total': 0, 'done': 0, 'running': False, 'finished': None}).update(kw)
+
+
+def full_sync(box, folder):
+    """Klasörün tamamını önbelleğe alır: sunucudaki UID listesi + bayraklar; önbellekte olmayanlar FULL_BATCH'lik paketlerle
+    (en yeniden geriye), sunucuda artık olmayanlar önbellekten düşer. İlerleme progress() ile izlenir."""
+    from . import mail
+    key = (box['id'], folder)
+    with _plock:
+        if (_progress.get(key) or {}).get('running'):
+            return
+        _progress[key] = {'total': 0, 'done': 0, 'running': True, 'finished': None, 'error': None}
+    try:
+        flags, uv = mail.folder_index(box, folder)
+        with db.connect() as conn:
+            if uv is not None and state(conn, box['id'], folder, uv) != 'ok':
+                set_state(conn, box['id'], folder, uv)
+                conn.commit()
+            have = {u for (u,) in conn.execute('SELECT uid FROM mail_cache WHERE box_id = ? AND folder = ?', (box['id'], folder))}
+        want = sorted(flags, reverse=True)[:FULL_MAX]
+        gone = [u for u in have if u not in flags]
+        if gone:
+            submit(forget, box['id'], folder, gone)
+        submit(set_flags, box['id'], folder, {u: flags[u] for u in want if u in have})
+        missing = [u for u in want if u not in have]
+        _set(*key, total=len(want), done=len(want) - len(missing))
+        for i in range(0, len(missing), FULL_BATCH):
+            part = missing[i:i + FULL_BATCH]
+            mail.fetch_into_cache(box, folder, part)
+            _set(*key, done=len(want) - len(missing) + i + len(part))
+        flush()
+        _set(*key, running=False, finished=time.time(), done=len(want))
+    except Exception as e:   # noqa: BLE001 — hata ilerlemede görünür; liste IMAP'tan devam eder
+        _set(*key, running=False, error=str(e)[:200])
+        raise
+
+
+def start_full_sync(box, folder):
+    """Arka planda tam eşitleme (zaten sürüyorsa yeni başlatmaz)."""
+    if progress(box['id'], folder).get('running'):
+        return
+    threading.Thread(target=lambda: _quiet(full_sync, box, folder), daemon=True, name=f'mail-full-{box["id"]}').start()
+
+
+def _quiet(fn, *a):
+    try:
+        fn(*a)
+    except Exception:   # noqa: BLE001
+        pass
+
+
+_TR = str.maketrans({'ç': 'c~', 'ğ': 'g~', 'ı': 'h~', 'i': 'i', 'ö': 'o~', 'ş': 's~', 'ü': 'u~'})
+_PREFIX = re.compile(r'^\s*((re|fw|fwd|ynt|ilt|aw|wg|tr)\s*(\[\d+\])?\s*:\s*)+', re.I)
+
+
+def _tr_key(v):
+    """Türkçe alfabe sırası (ç c'den, ı h'den sonra…); boş değerler sonda."""
+    v = (v or '').strip().strip('"\'').replace('I', 'ı').replace('İ', 'i').lower()
+    return v.translate(_TR) if v else '\uffff'
+
+
+def list_cached(conn, box_id, folder, filt, sort, start, limit):
+    """Kayıtlı (önbellekteki) iletiler arasında filtre + sıralama → list_messages ile aynı biçim."""
+    where = ['box_id = ?', 'folder = ?']
+    if filt == 'unread':
+        where.append('seen = 0')
+    elif filt == 'starred':
+        where.append('starred = 1')
+    elif filt == 'attach':
+        where.append("json_extract(summary, '$.attach') = 1")
+    rows = conn.execute(f"""SELECT uid, date, json_extract(summary, '$.from.name'), json_extract(summary, '$.from.email'),
+                                   json_extract(summary, '$.subject'), json_extract(summary, '$.size')
+                            FROM mail_cache WHERE {' AND '.join(where)}""", (box_id, folder)).fetchall()
+    rows.sort(key=lambda r: (r[1] or '', r[0]), reverse=sort != 'date_asc')   # tarih (eşitse UID); diğer sıralamalarda ikincil
+    if sort == 'from':
+        rows.sort(key=lambda r: _tr_key(r[2] if r[2] and r[2] != r[3] else r[3]))
+    elif sort == 'subject':
+        rows.sort(key=lambda r: _tr_key(_PREFIX.sub('', r[4] or '')))
+    elif sort == 'size':
+        rows.sort(key=lambda r: -(r[5] or 0))
+    chunk = [r[0] for r in rows[start:start + limit]]
+    got = get_many(conn, box_id, folder, chunk)
+    total = len(rows)
+    return {'items': [got[u] for u in chunk if u in got], 'total': total, 'page': start // max(1, limit),
+            'pages': max(1, -(-total // limit)), 'cached': True}
 
 
 CONTACTS_INTERVAL = 6 * 3600   # Google / Microsoft takvim ve kişileri bu aralıkla kendiliğinden eşitlenir

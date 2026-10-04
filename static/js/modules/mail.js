@@ -42,6 +42,9 @@ const P = {
   settings: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
   home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
   add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  sort: 'M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z',
+  unfoldLess: 'M7.41 18.59 8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z',
+  unfoldMore: 'M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z',
   minimize: 'M6 19h12v2H6z',
   maximize: 'M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z',
   image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
@@ -139,6 +142,14 @@ export async function renderMail(view, params = []) {
   let q = '', items = [], total = 0, loading = false, loadSeq = 0, openKey = null, msgCur = null;
   const folderCache = {};
   const collapsed = new Set();
+  // Liste sıralaması ve filtresi: bütün klasöre uygulanır (klasör kaydedildiyse kayıtlı mailler arasında, hızlı)
+  const SORTS = [['date', 'Tarih (yeniden eskiye)'], ['date_asc', 'Tarih (eskiden yeniye)'], ['from', 'Gönderene göre (A→Z)'],
+    ['subject', 'Konuya göre (A→Z)'], ['size', 'Boyuta göre (büyükten)']];
+  const FILTERS = [['', 'Tüm postalar', 'allMail'], ['unread', 'Yalnız okunmamışlar', 'unread'], ['starred', 'Yalnız yıldızlılar', 'star'], ['attach', 'Yalnız ekli olanlar', 'attach']];
+  let lv;
+  try { lv = { sort: 'date', filter: '', ...JSON.parse(localStorage.getItem('gm.view') || '{}') }; } catch { lv = { sort: 'date', filter: '' }; }
+  const setLv = patch => { lv = { ...lv, ...patch }; try { localStorage.setItem('gm.view', JSON.stringify(lv)); } catch { /* */ } drawListHead(); loadList(); };
+  const lvQuery = () => `&sort=${lv.sort}&filter=${lv.filter}`;
   // Klasör ağacı (ör. Gmail etiketleri "Bankalar/Akbank"): ayırıcıya göre hiyerarşi; kapalı dallar hatırlanır
   let treeClosed;
   try { treeClosed = new Set(JSON.parse(localStorage.getItem('gm.tree') || '[]')); } catch { treeClosed = new Set(); }
@@ -179,15 +190,23 @@ export async function renderMail(view, params = []) {
   const topbar = h('div', { class: 'gm-top' },
     ibtn('menu', 'Menü', () => openDrawer(), 'gm-menu-btn'),
     h('form', { class: 'gm-search', onsubmit: e => { e.preventDefault(); search.blur(); setQ(search.value.trim()); } }, ic('search'), search, clearQ),
+    ibtn('sort', 'Sırala ve filtrele', e => viewMenu(e.currentTarget), 'gm-sort-btn'),
     acctBtn);
+  function viewMenu(anchor) {
+    popMenu(anchor, [{ head: t('Sırala') },
+      ...SORTS.map(([k, l]) => ({ icon: lv.sort === k ? 'check' : null, label: t(l), on: lv.sort === k, run: () => setLv({ sort: k }) })),
+      '-', { head: t('Göster') },
+      ...FILTERS.map(([k, l, i]) => ({ icon: i, label: t(l), on: lv.filter === k, run: () => setLv({ filter: k }) }))]);
+  }
   const selbar = h('div', { class: 'gm-selbar', hidden: true });
   const listHead = h('div', { class: 'gm-lhead' });
+  const syncBar = h('div', { class: 'gm-sync', hidden: true });   // klasör kaydedilirken ilerleme
   const label = h('div', { class: 'gm-label' });
   const ptr = h('div', { class: 'gm-ptr' }, ic('refresh'));
   const list = h('div', { class: 'gm-list', role: 'list' });
   const more = h('div', { class: 'gm-more' });
   const subWrap = h('div', { class: 'gm-subs' });   // üst klasörde alt klasörlerin postaları (kalın şeritlerle)
-  const bars = h('div', { class: 'gm-bars' }, topbar, selbar, listHead);
+  const bars = h('div', { class: 'gm-bars' }, topbar, selbar, syncBar, listHead);
   const card = h('div', { class: 'gm-card' }, label, list, more, subWrap);
   const scroll = h('div', { class: 'gm-scroll' }, bars, ptr, card);
   const fab = h('button', { class: 'gm-fab', type: 'button', onclick: () => compose() }, ic('edit'), h('span', null, t('Oluştur')));
@@ -225,6 +244,17 @@ export async function renderMail(view, params = []) {
     const item = (on, icon, title, n, onclick, cls = '') => h('button', { type: 'button', class: `gm-nf ${on ? 'on' : ''} ${cls}`, onclick },
       ic(icon), h('span', { class: 'grow' }, title), n ? h('b', { class: 'gm-nf-n' }, n) : null);
     const go = (box, folder) => () => { closeDrawer(); select(box, folder); };
+    // Klasörler başlığı: alt klasörü olan bütün dalları tek dokunuşla kapat / aç
+    const treeHead = (b, custom) => {
+      const parents = [];
+      const walk = kids => kids.forEach(n => { if (n.kids.size) { parents.push(`${b.id}|${n.path}`); walk(n.kids); } });
+      walk(folderTree(custom).kids);
+      const anyOpen = parents.some(k => !treeClosed.has(k));
+      return h('div', { class: 'gm-nav-sub gm-tree-h' }, h('span', { class: 'grow' }, t('Klasörler')),
+        parents.length ? h('button', { type: 'button', class: 'gm-tree-all', title: t(anyOpen ? 'Tümünü kapat' : 'Tümünü aç'),
+          onclick: e => { e.stopPropagation(); parents.forEach(k => (anyOpen ? treeClosed.add(k) : treeClosed.delete(k))); saveTree(); drawNav(); } },
+        ic(anyOpen ? 'unfoldLess' : 'unfoldMore'), h('span', null, t(anyOpen ? 'Tümünü kapat' : 'Tümünü aç'))) : null);
+    };
     const treeItems = (b, kids, depth) => [...kids.values()].sort((x, y) => x.name.localeCompare(y.name, 'tr')).map(n => {
       const ck = `${b.id}|${n.path}`, has = n.kids.size > 0, closed = treeClosed.has(ck);
       const toggle = e => { e?.stopPropagation(); closed ? treeClosed.delete(ck) : treeClosed.add(ck); saveTree(); drawNav(); };
@@ -253,7 +283,7 @@ export async function renderMail(view, params = []) {
               dot, h('span', { class: 'grow' }, b.email), b.last_error ? h('span', { class: 'gm-nav-err' }, '!') : null, ic('expand')),
             open ? [fs.length ? std.map(f => item(cur.box === b.id && cur.folder === f.key, FOLDER_ICON[f.key] || 'folder', f.title, f.key === 'drafts' ? f.unseen && null : f.unseen, go(b.id, f.key)))
               : h('div', { class: 'gm-nav-note' }, b.last_error || t('Yükleniyor…')),
-            custom.length ? [h('div', { class: 'gm-nav-sub' }, t('Klasörler')), treeItems(b, folderTree(custom).kids, 0)] : null] : null);
+            custom.length ? [treeHead(b, custom), treeItems(b, folderTree(custom).kids, 0)] : null] : null);
         })),
       h('div', { class: 'gm-nav-foot' },
         h('a', { class: 'gm-nf', href: '#/settings/mailboxes' }, ic('settings'), h('span', { class: 'grow' }, t('Hesapları yönet'))),
@@ -275,7 +305,30 @@ export async function renderMail(view, params = []) {
     cur = { box, folder }; q = ''; search.value = ''; sel.clear();
     collapsed.delete(box);
     if (box !== 'all' && !folderCache[box]) loadFolders(box);
-    drawNav(); drawAcct(); closeReader(); loadList();
+    drawNav(); drawAcct(); closeReader(); loadList(); syncFolder();
+  }
+  let syncSeq = 0;
+  async function syncFolder() {
+    const seq = ++syncSeq, bid = cur.box, folder = cur.folder;
+    syncBar.hidden = true;
+    if (bid === 'all' || isPop(bid)) return;
+    let st, was = false;
+    try { st = await api.post(`/api/mail/${bid}/sync?folder=${encodeURIComponent(folder)}`, {}); } catch { return; }
+    while (seq === syncSeq && st && st.running && root.isConnected) {
+      was = true;
+      const pct = st.total ? Math.floor((st.done / st.total) * 100) : 0;
+      syncBar.hidden = false;
+      clear(syncBar, h('div', { class: 'gm-sync-t' }, h('span', null, t('Mailler sisteme kaydediliyor')),
+        h('b', null, st.total ? t('{d} / {n} · %{p}', { d: st.done.toLocaleString('tr-TR'), n: st.total.toLocaleString('tr-TR'), p: pct }) : t('hazırlanıyor…'))),
+        h('div', { class: 'gm-sync-bar' }, h('i', { style: { width: `${pct}%` } })));
+      await new Promise(r => setTimeout(r, 1200));
+      if (seq !== syncSeq) return;
+      try { st = await api.get(`/api/mail/${bid}/sync?folder=${encodeURIComponent(folder)}`); } catch { break; }
+    }
+    if (seq !== syncSeq) return;
+    syncBar.hidden = true;
+    if (st?.error) toast(t('Klasör kaydedilemedi: {e}', { e: st.error }), 'err');
+    else if (was && (lv.sort !== 'date' || lv.filter)) loadList();   // artık kayıtlı mailler arasında sıralanır
   }
   function drawLabel() {
     const b = cur.box === 'all' ? null : boxOf(cur.box);
@@ -288,7 +341,10 @@ export async function renderMail(view, params = []) {
     const allOn = items.length && items.every(m => sel.has(keyOf(m)));
     const cb = h('input', { type: 'checkbox', class: 'gm-cb', checked: !!allOn, title: t('Tümünü seç'),
       onchange: e => { items.forEach(m => (e.target.checked ? sel.set(keyOf(m), m) : sel.delete(keyOf(m)))); syncSel(); } });
+    const chip = (label, reset) => h('button', { type: 'button', class: 'gm-chip', title: t('Kaldır'), onclick: reset }, h('span', null, label), ic('close'));
     clear(listHead, cb, ibtn('refresh', 'Yenile', () => { loadList(); refreshFolders(); }),
+      lv.filter ? chip(t(FILTERS.find(f => f[0] === lv.filter)?.[1] || ''), () => setLv({ filter: '' })) : null,
+      lv.sort !== 'date' ? chip(t(SORTS.find(x => x[0] === lv.sort)?.[1] || ''), () => setLv({ sort: 'date' })) : null,
       h('span', { class: 'grow' }),
       total ? h('span', { class: 'gm-count' }, `${Math.min(items.length, total)} / ${total}`) : null);
   }
@@ -395,18 +451,18 @@ export async function renderMail(view, params = []) {
   // Sonraki sayfa sıra konumuyla (offset) istenir: arşivle / sil sonrası ileti atlanmaz.
   async function loadList(append = false) {
     if (append && loading) return;
-    const seq = ++loadSeq, key = `${cur.box}|${cur.folder}|${q}`;
+    const seq = ++loadSeq, key = `${cur.box}|${cur.folder}|${q}|${lv.sort}|${lv.filter}`;
     loading = true;
     if (!append && (!items.length || root.dataset.k !== key)) clear(list, h('div', { class: 'gm-skel' }, Array.from({ length: 8 }, () => h('div', { class: 'gm-skel-row' }, h('i'), h('span', null, h('b'), h('em'), h('em'))))));
     root.dataset.k = key;
     try {
       if (cur.box === 'all') {
-        const r = await api.get(`/api/mail/unified/inbox?q=${encodeURIComponent(q)}`);
+        const r = await api.get(`/api/mail/unified/inbox?q=${encodeURIComponent(q)}${lvQuery()}`);
         if (seq !== loadSeq) return;
         items = r.items; total = r.items.length;
         r.errors.forEach(e => { const b = boxOf(e.box_id); if (b) b.last_error = e.error; });
       } else {
-        const r = await api.get(`/api/mail/${cur.box}/list?folder=${encodeURIComponent(cur.folder)}&offset=${append ? items.length : 0}&q=${encodeURIComponent(q)}`);
+        const r = await api.get(`/api/mail/${cur.box}/list?folder=${encodeURIComponent(cur.folder)}&offset=${append ? items.length : 0}&q=${encodeURIComponent(q)}${lvQuery()}`);
         if (seq !== loadSeq) return;
         if (append) { const have = new Set(items.map(keyOf)); items = items.concat(r.items.filter(m => !have.has(keyOf(m)))); }
         else items = r.items;
@@ -871,6 +927,7 @@ export async function renderMail(view, params = []) {
   closeReader();
   refreshFolders();
   await loadList();
+  syncFolder();   // açılan klasörün tamamı kaydedilir (üstte ilerleme)
   if (deep) openMsg(items.find(x => keyOf(x) === `${deep.box}:${deep.uid}`) || { uid: deep.uid, seen: false, box_id: deep.box }, deep.folder);
   const tick = setInterval(() => {   // dakikada bir: yeni ileti ve klasör sayıları (seçim / okuma yokken liste yenilenir)
     if (!root.isConnected) { clearInterval(tick); return; }

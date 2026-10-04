@@ -380,24 +380,56 @@ def _can_assign(user):
 
 @router.get('/{box_id}/list')
 def messages(box_id: int, folder: str = 'inbox', q: str = '', page: int = 0, offset: Optional[int] = None, unread: bool = False,
-             user=Depends(auth.current_user), conn=db.DB):
+             filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
+    """filter: unread | starred | attach; sort: date | date_asc | from | subject | size. Klasör önbellekte tamsa sıralama /
+    filtre kayıtlı mailler arasında yapılır (hızlı); değilse sunucudan."""
     b = _box(conn, user, box_id)
-    r = _wrap(lambda: mail.list_messages(b, folder, q.strip()[:300], max(0, page), unread, offset=offset))
+    r = _wrap(lambda: mail.list_messages(b, folder, q.strip()[:300], max(0, page), unread, offset=offset,
+                                         filt=filter or None, sort=sort))
     _annotate(conn, r['items'])
     return r
 
 
+@router.post('/{box_id}/sync')
+def folder_sync(box_id: int, folder: str = 'inbox', user=Depends(auth.current_user), conn=db.DB):
+    """Klasörün bütün iletilerini önbelleğe almayı başlatır (sürüyorsa yenisini başlatmaz) ve ilerlemeyi döner."""
+    b = _box(conn, user, box_id)
+    if mail.settings(b)['is_pop']:
+        return {'total': 0, 'done': 0, 'running': False, 'pop': True}
+    if not mail_cache.complete(b['id'], folder):
+        mail_cache.start_full_sync(b, folder)
+    return _sync_view(b['id'], folder)
+
+
+@router.get('/{box_id}/sync')
+def folder_sync_state(box_id: int, folder: str = 'inbox', user=Depends(auth.current_user), conn=db.DB):
+    b = _box(conn, user, box_id)
+    return _sync_view(b['id'], folder)
+
+
+def _sync_view(box_id, folder):
+    p = mail_cache.progress(box_id, folder)
+    return {'total': p.get('total', 0), 'done': p.get('done', 0), 'running': bool(p.get('running')),
+            'complete': mail_cache.complete(box_id, folder), 'error': p.get('error')}
+
+
 @router.get('/unified/inbox')
-def unified(q: str = '', user=Depends(auth.current_user), conn=db.DB):
+def unified(q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
     """Tüm hesapların gelen kutuları birlikte (en yeni 50); hatalı hesap atlanır ve bildirilir."""
     items, errors = [], []
     for b in _boxes(conn, user):
         try:
-            r = mail.list_messages(b, 'inbox', q.strip()[:300], 0, False)
+            r = mail.list_messages(b, 'inbox', q.strip()[:300], 0, False, filt=filter or None, sort=sort)
             items += [dict(it, box_id=b['id'], box_email=b['email'], box_color=b['color']) for it in r['items']]
         except Exception as e:
             errors.append({'box_id': b['id'], 'email': b['email'], 'error': str(e)[:200]})
-    items.sort(key=lambda x: x.get('date') or '', reverse=True)
+    items.sort(key=lambda x: x.get('date') or '', reverse=sort != 'date_asc')
+    if sort == 'from':
+        items.sort(key=lambda x: mail_cache._tr_key((x.get('from') or {}).get('name') or (x.get('from') or {}).get('email')))
+    elif sort == 'subject':
+        items.sort(key=lambda x: mail_cache._tr_key(mail_cache._PREFIX.sub('', x.get('subject') or '')))
+    elif sort == 'size':
+        items.sort(key=lambda x: -(x.get('size') or 0))
     return {'items': _annotate(conn, items[:mail.PAGE]), 'errors': errors}
 
 

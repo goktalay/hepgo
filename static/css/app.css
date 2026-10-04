@@ -6179,8 +6179,12 @@ tr.clickable { cursor: pointer; }
 .rl-chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; color: var(--text); }
 .rl-chip.on { border-color: var(--primary); color: var(--primary); font-weight: 700; }
 .rl-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 0 0 8px; }
+.rl-matrix { overflow-x: auto; }   /* dar ekranda tablo kartın içinde kayar, dışarı taşmaz */
 .rl-matrix table { width: 100%; }
-.rl-matrix th.c, .rl-matrix td.c { text-align: center; width: 84px; }
+.rl-matrix th.c, .rl-matrix td.c { text-align: center; width: 54px; padding-left: 3px; padding-right: 3px; }
+.rl-matrix th, .rl-matrix td { white-space: nowrap; }
+.rl-matrix td:first-child { white-space: normal; min-width: 120px; }
+.rl-matrix th { font-size: 11px; }
 .rl-matrix tr.rl-group td { background: var(--surface-2); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .rl-matrix tr.rl-sub td:first-child { padding-left: 26px; color: var(--muted); }
 .rl-cell { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 900; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
@@ -6194,7 +6198,7 @@ tr.clickable { cursor: pointer; }
 .rl-res.w { background: #d1fae5; color: #065f46; } .rl-res.r { background: #dbeafe; color: #1e40af; } .rl-res.o { background: #fef3c7; color: #92400e; } .rl-res.none { color: var(--faint); }
 .rl-pre { display: flex; gap: 3px; justify-content: flex-end; opacity: .35; transition: opacity .15s ease; }
 .rl-matrix tr:hover .rl-pre { opacity: 1; }
-.rl-pre button { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; font-size: 11px; padding: 2px 6px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+.rl-pre button { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; font-size: 11px; padding: 2px 5px; cursor: pointer; color: var(--muted); white-space: nowrap; }
 .rl-pre button:hover { border-color: var(--primary); color: var(--primary); }
 .rl-pick { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
 .rl-pick-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }

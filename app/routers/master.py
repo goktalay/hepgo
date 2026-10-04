@@ -6,6 +6,7 @@ Veri yalnızca indirilir; bu modülden hiçbir veri değiştirilmez.
 """
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -14,6 +15,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from .. import auth, config
 
@@ -128,4 +130,6 @@ def export_all(user=Depends(master_only)):
                    f'Oluşturma: {time.strftime("%Y-%m-%d %H:%M:%S")}\n'
                    'İçerik: caymaz.db (veritabanı), uploads/ (yüklenen dosyalar), *.key (imza/kamera anahtarları).\n'
                    'Geri yükleme: bu dosyaları yeni kurulumun data/ klasörüne koyun.\n')
-    return FileResponse(out, filename=out.name, media_type='application/zip')
+    # Gönderildikten sonra geçici kopya (veritabanı + anahtarlar) silinir; /tmp'de kalmaz
+    return FileResponse(out, filename=out.name, media_type='application/zip',
+                        background=BackgroundTask(shutil.rmtree, tmpdir, ignore_errors=True))

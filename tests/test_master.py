@@ -1,10 +1,14 @@
 """MASTER (sistem sahibi): yalnızca config.MASTER_USERNAMES; her şeye erişir (admin rolü olmasa da); başkası MASTER olamaz;
-diğer yöneticiler sistem sahibini sıradan Sistem Yöneticisi olarak görür; hesabı korunur; kullanıcı verileri bölümleri.
+diğer yöneticiler sistem sahibini sıradan Sistem Yöneticisi olarak görür; hesabı korunur; Veri & Yedek (özet, yedek
+indirme, tam veri paketi; KVKK gereği kişisel veri gösterilmez).
 
 Çalıştırma: .venv/bin/python -m tests.test_master
 """
+import io
 import os
 import tempfile
+import zipfile
+from pathlib import Path
 
 tmp = tempfile.mkdtemp()
 os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0', CAYMAZ_MASTER_USERNAME='boss@sahibi.com',
@@ -43,21 +47,32 @@ def main():
         ok(m.post('/api/users', json={'username': 'pilot1', 'full_name': 'Pilot Bir', 'roles': ['Pilot'], 'password': 'sifre-1234'}))
         # MASTER rolü kullanıcıya atanamaz (ROLES'te yok)
         assert m.post('/api/users', json={'username': 'x', 'full_name': 'X', 'roles': ['MASTER'], 'password': 'sifre-1234'}).status_code == 400
-        # MASTER modülü: kullanıcı listesi ve bölümler
-        users = ok(m.get('/api/master/users'))
-        boss = next(u for u in users if u['username'] == 'boss@sahibi.com')
-        assert boss['is_master'] is True
-        d = ok(m.get(f'/api/master/users/{me["id"]}'))
-        assert d['is_master'] and any(s['key'] == 'logins' for s in d['sections'])
-        logins = ok(m.get(f'/api/master/users/{me["id"]}/section/logins'))
-        assert logins['count'] >= 1 and 'ip' in logins['columns']
-        # tarih filtresi: gelecekte kayıt yok
-        assert ok(m.get(f'/api/master/users/{me["id"]}/section/logins?date_from=2099-01-01'))['count'] == 0
-        assert m.get(f'/api/master/users/{me["id"]}/section/yok').status_code == 404
+        # MASTER modülü "Veri & Yedek" (KVKK: kişisel veri göstermez): özet, yedekler, tam veri paketi
+        ov = ok(m.get('/api/master/overview'))
+        assert {'db_bytes', 'uploads_bytes', 'backup_count', 'last_backup', 'backup_ok'} <= set(ov) and 'users' not in ov
+        assert ov['backup_count'] == 0 and ov['backup_ok'] is False
+        nightly = Path(tmp) / 'backups' / 'nightly'
+        nightly.mkdir(parents=True)
+        (nightly / 'caymaz-20260101.db').write_bytes(b'SQLite format 3\x00')
+        ov = ok(m.get('/api/master/overview'))
+        assert ov['nightly_count'] == 1 and ov['last_backup']['name'] == 'caymaz-20260101.db' and ov['backup_ok'] is True
+        assert [b['name'] for b in ok(m.get('/api/master/backups'))] == ['caymaz-20260101.db']
+        r = m.get('/api/master/backups/download', params={'name': 'caymaz-20260101.db'})
+        assert r.status_code == 200 and r.content.startswith(b'SQLite format 3')
+        for bad in ('../caymaz.db', '../../signing.key', 'caymaz-x.db/../../caymaz.db', 'signing.key'):   # yol kaçışı / ad
+            assert m.get('/api/master/backups/download', params={'name': bad}).status_code in (400, 404), bad
+        assert m.get('/api/master/backups/download', params={'name': 'caymaz-yok.db'}).status_code == 404
+        before = set(Path(tempfile.gettempdir()).glob('caymaz-export-*'))
+        r = m.get('/api/master/export')
+        assert r.status_code == 200 and r.headers['content-type'] == 'application/zip'
+        names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+        assert 'caymaz.db' in names and 'BILGI.txt' in names, names
+        assert set(Path(tempfile.gettempdir()).glob('caymaz-export-*')) == before   # geçici kopya silindi
     with TestClient(app) as a:   # normal Sistem Yöneticisi
         login(a, 'admin2', 'sifre-1234')
         assert ok(a.get('/api/auth/me'))['master'] is False
-        assert a.get('/api/master/users').status_code == 403   # MASTER modülü kapalı
+        for u in ('/api/master/overview', '/api/master/backups', '/api/master/export'):   # MASTER modülü kapalı
+            assert a.get(u).status_code == 403, u
         # sistem sahibini sıradan Sistem Yöneticisi olarak görür (MASTER gizli)
         users = ok(a.get('/api/users'))
         boss = next(u for u in users if u['username'] == 'boss@sahibi.com')
@@ -70,7 +85,7 @@ def main():
     with TestClient(app) as p:   # pilot: master alanı yok
         login(p, 'pilot1', 'sifre-1234')
         assert ok(p.get('/api/auth/me'))['master'] is False and 'master' not in ok(p.get('/api/auth/me'))['modules']
-        assert p.get('/api/master/users').status_code == 403
+        assert p.get('/api/master/overview').status_code == 403
     print('MASTER testleri geçti.')
 
 

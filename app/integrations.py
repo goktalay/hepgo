@@ -11,7 +11,7 @@ from . import cameras, config
 
 KV_KEY = 'integrations'
 
-# grup → başlık, açıklama, alanlar: (config adı, etiket, tür: text | secret | int | url, ipucu)
+# grup → başlık, açıklama, alanlar: (config adı, etiket, tür: text | secret | int | url | bool, ipucu)
 GROUPS = {
     'ai': {
         'title': 'Claude API (Yapay Zeka)',
@@ -76,17 +76,41 @@ GROUPS = {
             ('MS_TENANT', 'Tenant', 'text', 'common (kişisel + kurumsal) ya da Directory (tenant) ID'),
         ],
     },
-    'social': {
-        'title': 'Sosyal Medya Uygulamaları',
-        'desc': 'Kişisel Ayarlar › Sosyal Medya’da OAuth gerektiren hesaplar (Instagram / Facebook, X, TikTok). RSS, YouTube kanalı, '
-                'Bluesky ve Mastodon anahtar gerektirmez. Yönlendirme adresi: <alan-adı>/api/social/oauth/<sağlayıcı>/callback',
+    'meta': {
+        'title': 'Meta (Instagram / Facebook)',
+        'desc': 'Kişisel Ayarlar › Sosyal Medya’da Instagram ve Facebook hesaplarını bağlama. developers.facebook.com › Uygulamalar; '
+                'yönlendirme adresi: <alan-adı>/api/social/oauth/meta/callback',
         'fields': [
-            ('META_APP_ID', 'Meta App ID (Instagram / Facebook)', 'text', ''),
-            ('META_APP_SECRET', 'Meta App Secret', 'secret', ''),
-            ('X_CLIENT_ID', 'X (Twitter) Client ID', 'text', ''),
-            ('X_CLIENT_SECRET', 'X Client Secret', 'secret', ''),
-            ('TIKTOK_CLIENT_KEY', 'TikTok Client key', 'text', ''),
-            ('TIKTOK_CLIENT_SECRET', 'TikTok Client secret', 'secret', ''),
+            ('META_APP_ID', 'App ID', 'text', 'Uygulama Kimliği'),
+            ('META_APP_SECRET', 'App Secret', 'secret', 'Uygulama Gizli Anahtarı'),
+        ],
+    },
+    'x': {
+        'title': 'X (Twitter)',
+        'desc': 'Kişisel Ayarlar › Sosyal Medya’da “X ile bağlan”: kullanıcının kendi paylaşımları Şirketten Haberler’e gelir. '
+                'developer.x.com › Proje › Uygulama › User authentication settings: OAuth 2.0, Web App; yönlendirme adresi: '
+                '<alan-adı>/api/social/oauth/x/callback. OAuth 2.0 Client ID / Secret girilir (API Key / Secret DEĞİL).',
+        'fields': [
+            ('X_CLIENT_ID', 'OAuth 2.0 Client ID', 'text', 'Keys and tokens › OAuth 2.0 Client ID and Client Secret'),
+            ('X_CLIENT_SECRET', 'OAuth 2.0 Client Secret', 'secret', 'Yalnız oluşturulurken bir kez gösterilir'),
+        ],
+    },
+    'tiktok': {
+        'title': 'TikTok',
+        'desc': 'Kişisel Ayarlar › Sosyal Medya’da TikTok hesabı bağlama. developers.tiktok.com › Uygulama; yönlendirme adresi: '
+                '<alan-adı>/api/social/oauth/tiktok/callback',
+        'fields': [
+            ('TIKTOK_CLIENT_KEY', 'Client key', 'text', ''),
+            ('TIKTOK_CLIENT_SECRET', 'Client secret', 'secret', ''),
+        ],
+    },
+    'speech': {
+        'title': 'Konuşma Tanıma (ses → metin)',
+        'desc': 'Toplantı, görüşme ve evrak seslerinin metne çevrilmesi, konuşmacıların ayrılması ve ses kimliği, sesle yazdırma. '
+                'Kapalıyken sesler yalnız KAYDEDİLİR. Bu sunucuda ekran kartı yok (ses, süresinin ~2 katında işlenir); '
+                'fabrikadaki GX10 (NVIDIA GB10) üzerinde çalışacak servis hazır olunca buradan bağlanacak.',
+        'fields': [
+            ('SPEECH_ENABLED', 'Konuşma tanımayı aç', 'bool', 'Kapalıyken sesler yalnız kaydedilir; metin ve konuşmacı çıkarılmaz'),
         ],
     },
     'maps': {
@@ -125,6 +149,8 @@ def _cast(key, value):
         return int(value)
     if kind == 'url':
         return str(value).strip().rstrip('/')
+    if kind == 'bool':
+        return str(value).strip().lower() in ('1', 'true', 'on', 'evet')
     return str(value).strip()
 
 
@@ -184,6 +210,8 @@ def save(conn, group, values, clear=()):
             if not val:
                 continue
             data[key] = cameras.encrypt(val)
+        elif kind == 'bool':
+            data[key] = '1' if _cast(key, val) else '0'
         else:
             if val == '':
                 data.pop(key, None)
@@ -267,10 +295,16 @@ def test(group):
     if group == 'microsoft':
         ok = bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET)
         return ok, 'Bilgiler tanımlı; kullanıcılar Outlook / Microsoft 365 hesabı bağlayabilir.' if ok else 'Client ID ve secret girilmeli.'
-    if group == 'social':
-        n = sum(bool(a and b) for a, b in ((config.META_APP_ID, config.META_APP_SECRET), (config.X_CLIENT_ID, config.X_CLIENT_SECRET),
-                                            (config.TIKTOK_CLIENT_KEY, config.TIKTOK_CLIENT_SECRET)))
-        return n > 0, f'{n} sosyal medya uygulaması tanımlı.' if n else 'Henüz anahtar girilmedi (RSS, YouTube, Bluesky, Mastodon anahtarsız çalışır).'
+    if group == 'speech':
+        from . import document_media as m
+        if not config.SPEECH_ENABLED:
+            return False, 'Kapalı: toplantı, görüşme ve evrak sesleri yalnız kaydediliyor (metne çevrilmiyor).'
+        if not (m.WHISPER.exists() and m.WHISPER_MODEL.exists()):
+            return False, 'Açık, ancak bu sunucuda Whisper ya da modeli kurulu değil.'
+        return True, 'Açık: sesler metne çevriliyor (bu sunucuda işlemci ile; yavaş).'
+    if group in ('meta', 'x', 'tiktok'):
+        from . import social
+        return social.integration_test(group)
     if group == 'general':
         return True, 'Genel ayarlar kaydedildi.'
     return False, 'Bilinmeyen bölüm'

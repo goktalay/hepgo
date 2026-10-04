@@ -112,6 +112,11 @@ META_APP_ID = os.environ.get('CAYMAZ_META_APP_ID', '')
 META_APP_SECRET = os.environ.get('CAYMAZ_META_APP_SECRET', '')
 X_CLIENT_ID = os.environ.get('CAYMAZ_X_CLIENT_ID', '')
 X_CLIENT_SECRET = os.environ.get('CAYMAZ_X_CLIENT_SECRET', '')
+# Konuşma tanıma (ses → metin, konuşmacı / ses kimliği): Program Ayarları › Entegrasyonlar › Konuşma Tanıma. Kapalıyken
+# toplantı / görüşme / evrak sesleri yalnız KAYDEDİLİR; metne çevrilmez, konuşmacı tanınmaz, sesle yazdırma görünmez.
+SPEECH_ENABLED = os.environ.get('CAYMAZ_SPEECH', '0') == '1'
+# X (Twitter) paylaşımları kaç saatte bir çekilsin (okuma kotası ücretli/sınırlı; elle yenileme her zaman çalışır)
+X_POLL_HOURS = float(os.environ.get('CAYMAZ_X_POLL_HOURS', '6') or 6)
 TIKTOK_CLIENT_KEY = os.environ.get('CAYMAZ_TIKTOK_CLIENT_KEY', '')
 TIKTOK_CLIENT_SECRET = os.environ.get('CAYMAZ_TIKTOK_CLIENT_SECRET', '')
 # Google Haritalar JavaScript API anahtarı (istemci tarafında kullanılır; HTTP yönlendiren kısıtıyla korunur).

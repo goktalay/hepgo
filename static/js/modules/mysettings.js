@@ -170,8 +170,13 @@ const SOC_COLOR = { rss: '#f97316', youtube: '#ff0000', bluesky: '#0085ff', mast
 const SOC_ICON = { rss: 'RSS', youtube: '▶', bluesky: '🦋', mastodon: 'M', instagram: 'IG', facebook: 'f', x: '𝕏', tiktok: '♪' };
 export const socialBadge = p => h('span', { class: 'prov-ic soc-ic', style: { background: SOC_COLOR[p] || '#475569' } }, SOC_ICON[p] || '•');
 
-export function socialSection() {
+export function socialSection(query = '') {
   const wrap = h('div', null, h('section', { class: 'card card-pad set-card' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const msg = new URLSearchParams(query).get('msg');   // OAuth dönüşü (X ile bağlan)
+  if (msg) {
+    if (msg === 'ok') toast('Hesap bağlandı', 'success'); else toast(msg, 'err');
+    history.replaceState(null, '', '#/settings/social');
+  }
   let d;
   const load = async () => {
     try { d = await api.get('/api/social/accounts'); } catch (e) { clear(wrap, h('div', { class: 'card empty' }, e.message)); return; }
@@ -214,17 +219,29 @@ export function socialSection() {
     const grid = h('div', { class: 'prov-grid' });
     const drawGrid = () => {
       clear(grid, Object.entries(d.providers).map(([k, p]) => h('button', { class: `prov ${k === prov ? 'on' : ''}`, type: 'button', disabled: !d.available[k],
-        title: d.available[k] ? '' : 'Anahtar gerekli: yönetici Program Ayarları › Entegrasyonlar › Sosyal Medya’dan girer',
+        title: d.available[k] ? '' : `Henüz kullanılamıyor: yönetici Program Ayarları › Entegrasyonlar › ${p.title}’ı ayarlamalı`,
         onclick: () => { prov = k; drawGrid(); handle.focus(); } },
         socialBadge(k), h('b', null, p.title), h('small', null, d.available[k] ? p.hint : 'Yakında · anahtar gerekli'))));
+      const oauth = !!d.providers[prov].oauth;
+      field.hidden = oauth;
+      connect.hidden = !oauth;
+      connect.textContent = t('{n} ile bağlan', { n: d.providers[prov].title });
       handle.placeholder = d.providers[prov].hint;
       hint.textContent = d.providers[prov].hint;
     };
+    // OAuth sağlayıcı (X): kullanıcı adı girilmez; sağlayıcının izin ekranına gidilir, dönüşte hesap eklenir
+    const connect = h('button', { class: 'btn primary', type: 'button', hidden: true, style: { marginTop: '12px' }, onclick: async e => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try { location.href = (await api.get(`/api/social/oauth/${prov}/start`)).url; } catch (err) { btn.disabled = false; toastError(err); }
+    } });
+    const field = h('div', { class: 'field', style: { marginTop: '12px' } }, h('span', null, 'Hesap / adres'), handle, hint);
     drawGrid();
     modal({
       title: 'Sosyal medya hesabı bağla', wide: true,
-      body: h('div', null, grid, h('div', { class: 'field', style: { marginTop: '12px' } }, h('span', null, 'Hesap / adres'), handle, hint)),
+      body: h('div', null, grid, field, connect),
       actions: [{ label: 'Vazgeç' }, 'spacer', { label: 'Bağla', class: 'primary', onClick: async () => {
+        if (d.providers[prov].oauth) { connect.click(); return true; }   // yönlendirilene dek açık kalsın
         const r = await api.post('/api/social/accounts', { provider: prov, handle: handle.value.trim() });
         toast(t('{n} bağlandı', { n: r.display_name || r.handle }), 'success');
         load();

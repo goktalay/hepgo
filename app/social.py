@@ -1,9 +1,15 @@
 """Kişisel sosyal medya akışı: kullanıcının bağladığı hesapların paylaşımları Şirketten Haberler'de YALNIZCA kendisine görünür.
 
 Anahtarsız kaynaklar (hemen çalışır): RSS / Atom adresi, YouTube kanalı (kanalın herkese açık akışı), Bluesky (herkese açık
-API), Mastodon (herkese açık API). OAuth gerektirenler (Instagram / Facebook, X, TikTok) Program Ayarları › Entegrasyonlar'a
-uygulama anahtarı girildiğinde açılır. Paylaşımlar 30 dakikada bir çekilir; son 60 paylaşım saklanır.
+API), Mastodon (herkese açık API). X (Twitter): Program Ayarları › Entegrasyonlar › X'e OAuth 2.0 istemcisi girilince
+kullanıcı “X ile bağlan” der (OAuth 2.0 + PKCE); jeton şifreli saklanır, süresi dolunca yenilenir. Instagram / Facebook ve
+TikTok için bağlantı akışı henüz yok. Paylaşımlar 30 dakikada bir (X: CAYMAZ_X_POLL_HOURS saatte bir — okuma kotası ücretli) çekilir;
+son 60 paylaşım saklanır.
 """
+import base64
+import hashlib
+import json
+import secrets
 import html as _html
 import re
 import threading
@@ -11,10 +17,12 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from urllib.parse import urlencode
 
 import httpx
 
 from . import config, db
+from .cameras import decrypt, encrypt
 
 UA = {'User-Agent': 'Mozilla/5.0 (compatible; HepgoERP/2.1; +https://veilox.app)'}
 TIMEOUT = 15
@@ -27,7 +35,7 @@ PROVIDERS = {
     'mastodon': {'title': 'Mastodon', 'hint': 'kullanici@sunucu.social', 'needs': None},
     'instagram': {'title': 'Instagram', 'hint': 'Meta uygulama anahtarı gerekir', 'needs': ('META_APP_ID', 'META_APP_SECRET')},
     'facebook': {'title': 'Facebook', 'hint': 'Meta uygulama anahtarı gerekir', 'needs': ('META_APP_ID', 'META_APP_SECRET')},
-    'x': {'title': 'X (Twitter)', 'hint': 'X geliştirici anahtarı gerekir (ücretli paket)', 'needs': ('X_CLIENT_ID', 'X_CLIENT_SECRET')},
+    'x': {'title': 'X (Twitter)', 'hint': 'X hesabınızla giriş yapıp izin verin', 'needs': ('X_CLIENT_ID', 'X_CLIENT_SECRET'), 'oauth': True},
     'tiktok': {'title': 'TikTok', 'hint': 'TikTok geliştirici anahtarı gerekir', 'needs': ('TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET')},
 }
 
@@ -36,9 +44,118 @@ class SocialError(Exception):
     pass
 
 
+IMPLEMENTED = {'x'}   # bağlantı akışı yazılmış OAuth sağlayıcıları (Instagram / Facebook / TikTok henüz yok)
+
+
 def available():
-    """{sağlayıcı: kullanılabilir mi} — OAuth sağlayıcıları anahtar girilince açılır (bağlantı akışı anahtarla birlikte devreye alınır)."""
-    return {k: (p['needs'] is None) for k, p in PROVIDERS.items()}
+    """{sağlayıcı: kullanılabilir mi} — anahtarsızlar her zaman; OAuth sağlayıcıları akışı varsa ve anahtar girildiyse."""
+    return {k: p['needs'] is None or (k in IMPLEMENTED and all(getattr(config, n) for n in p['needs']))
+            for k, p in PROVIDERS.items()}
+
+
+def integration_test(group):
+    """Program Ayarları › Entegrasyonlar › Meta / X / TikTok denemesi → (ok, mesaj). Anahtar mesajda yer almaz."""
+    if group == 'x':
+        if not (config.X_CLIENT_ID and config.X_CLIENT_SECRET):
+            return False, 'OAuth 2.0 Client ID ve Client Secret girilmeli.'
+        try:   # istemci bilgisi doğru mu: geçersiz bir jetonu iptal etmeyi dene (X istemciyi doğrular, kota harcamaz)
+            r = httpx.post(X_REVOKE, data={'token': 'deneme', 'token_type_hint': 'access_token', 'client_id': config.X_CLIENT_ID},
+                           auth=(config.X_CLIENT_ID, config.X_CLIENT_SECRET), timeout=TIMEOUT)
+        except httpx.HTTPError:
+            return False, 'X’e ulaşılamadı.'
+        if r.status_code == 401:
+            return False, 'Client ID / Secret geçersiz (401). OAuth 2.0 Client ID ve Secret’ı girin (API Key / Secret değil).'
+        return True, 'İstemci bilgileri geçerli; kullanıcılar Kişisel Ayarlar › Sosyal Medya’dan “X ile bağlan” yapabilir.'
+    names = {'meta': ('META_APP_ID', 'META_APP_SECRET'), 'tiktok': ('TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET')}[group]
+    if not all(getattr(config, n) for n in names):
+        return False, 'Uygulama kimliği ve gizli anahtar girilmeli.'
+    return False, 'Bilgiler kaydedildi; bu platform için hesap bağlama akışı henüz hazır değil.'
+
+
+# ---------------- X (Twitter): OAuth 2.0 + PKCE ----------------
+X_AUTH = 'https://x.com/i/oauth2/authorize'
+X_TOKEN = 'https://api.x.com/2/oauth2/token'
+X_REVOKE = 'https://api.x.com/2/oauth2/revoke'
+X_API = 'https://api.x.com/2'
+X_SCOPES = 'tweet.read users.read offline.access'
+
+
+def x_auth_url(redirect_uri, state):
+    """→ (yetki adresi, code_verifier). verifier durumla birlikte sunucuda saklanır, dönüşte jeton alınırken gönderilir."""
+    verifier = secrets.token_urlsafe(64)[:96]
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+    q = {'response_type': 'code', 'client_id': config.X_CLIENT_ID, 'redirect_uri': redirect_uri, 'scope': X_SCOPES,
+         'state': state, 'code_challenge': challenge, 'code_challenge_method': 'S256'}
+    return f'{X_AUTH}?{urlencode(q)}', verifier
+
+
+def _x_token(data):
+    r = httpx.post(X_TOKEN, data={**data, 'client_id': config.X_CLIENT_ID}, auth=(config.X_CLIENT_ID, config.X_CLIENT_SECRET),
+                   timeout=TIMEOUT)
+    tok = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+    if r.status_code != 200 or 'access_token' not in tok:
+        raise SocialError(f"X jetonu alınamadı: {tok.get('error_description') or tok.get('error') or r.status_code}")
+    return {'access': tok['access_token'], 'refresh': tok.get('refresh_token'), 'exp': time.time() + int(tok.get('expires_in') or 7200) - 120}
+
+
+def x_exchange(code, verifier, redirect_uri):
+    return _x_token({'grant_type': 'authorization_code', 'code': code, 'code_verifier': verifier, 'redirect_uri': redirect_uri})
+
+
+def _x_get(path, access, **params):
+    r = httpx.get(f'{X_API}{path}', params=params, headers={'Authorization': f'Bearer {access}', **UA}, timeout=TIMEOUT)
+    if r.status_code == 429:
+        raise SocialError('X okuma sınırı doldu (429); daha sonra yeniden denenecek')
+    if r.status_code in (401, 403):
+        raise SocialError(f'X erişimi reddedildi ({r.status_code}); hesabı yeniden bağlayın ya da X paketinizi kontrol edin')
+    r.raise_for_status()
+    return r.json()
+
+
+def x_me(access):
+    u = _x_get('/users/me', access, **{'user.fields': 'profile_image_url,name,username'})['data']
+    return u['id'], u['username'], u.get('name') or u['username'], u.get('profile_image_url')
+
+
+def x_posts(user_id, username, access, since_id=None):
+    params = {'max_results': 10, 'exclude': 'retweets,replies', 'tweet.fields': 'created_at,attachments',
+              'expansions': 'attachments.media_keys', 'media.fields': 'type,url,preview_image_url'}
+    if since_id:
+        params['since_id'] = since_id
+    d = _x_get(f'/users/{user_id}/tweets', access, **params)
+    media = {m['media_key']: m for m in (d.get('includes') or {}).get('media', [])}
+    out = []
+    for t in d.get('data') or []:
+        m = next((media.get(k) for k in (t.get('attachments') or {}).get('media_keys', []) if k in media), None) or {}
+        img = m.get('url') or m.get('preview_image_url')
+        out.append({'ext_id': t['id'], 'text': _text(t.get('text')), 'url': f'https://x.com/{username}/status/{t["id"]}',
+                    'media': img, 'media_kind': ('video' if m.get('type') in ('video', 'animated_gif') else 'image') if img else None,
+                    'posted_at': _iso(t.get('created_at'))})
+    return out
+
+
+def x_token_for(conn, acc):
+    """Hesabın geçerli erişim jetonu; süresi dolduysa yenilenir (X yenileme jetonu tek kullanımlık: yenisi kaydedilir)."""
+    tok = json.loads(decrypt(acc['token']))
+    if time.time() < tok.get('exp', 0):
+        return tok
+    if not tok.get('refresh'):
+        raise SocialError('X oturumu sona erdi; hesabı yeniden bağlayın')
+    new = _x_token({'grant_type': 'refresh_token', 'refresh_token': tok['refresh']})
+    new['uid'] = tok.get('uid')
+    new['refresh'] = new.get('refresh') or tok['refresh']
+    conn.execute('UPDATE social_accounts SET token = ? WHERE id = ?', (encrypt(json.dumps(new)), acc['id']))
+    conn.commit()
+    return new
+
+
+def x_revoke(acc):
+    try:
+        tok = json.loads(decrypt(acc['token']))
+        httpx.post(X_REVOKE, data={'token': tok.get('refresh') or tok['access'], 'client_id': config.X_CLIENT_ID},
+                   auth=(config.X_CLIENT_ID, config.X_CLIENT_SECRET), timeout=TIMEOUT)
+    except Exception:   # noqa: BLE001 — iptal edilemese de yerel kayıt silinir
+        pass
 
 
 def _get(url, **kw):
@@ -178,7 +295,12 @@ def resolve(provider, handle):
     raise SocialError(f"{PROVIDERS.get(provider, {}).get('title', provider)} için Program Ayarları › Entegrasyonlar'a uygulama anahtarı girilmeli")
 
 
-def fetch(acc):
+def fetch(acc, conn=None):
+    if acc['provider'] == 'x':
+        tok = x_token_for(conn, acc)
+        last = conn.execute('SELECT ext_id FROM social_posts WHERE account_id = ? ORDER BY CAST(ext_id AS INTEGER) DESC LIMIT 1',
+                            (acc['id'],)).fetchone()
+        return x_posts(tok['uid'], acc['handle'].lstrip('@'), tok['access'], since_id=last[0] if last else None)
     if acc['provider'] in ('rss', 'youtube'):
         return parse_feed(_get(acc['feed_url']).content)[1]
     if acc['provider'] == 'bluesky':
@@ -206,7 +328,7 @@ def store(conn, acc_id, posts):
 
 def refresh(conn, acc):
     try:
-        n = store(conn, acc['id'], fetch(acc))
+        n = store(conn, acc['id'], fetch(acc, conn))
         conn.execute('UPDATE social_accounts SET last_sync = ?, last_error = NULL WHERE id = ?', (db.now(), acc['id']))
     except Exception as e:   # bir hesabın hatası diğerlerini durdurmasın
         n = 0
@@ -220,11 +342,22 @@ def _loop():
     while True:
         try:
             with db.connect() as conn:
-                for acc in db.rows(conn.execute("SELECT * FROM social_accounts WHERE provider IN ('rss','youtube','bluesky','mastodon')")):
+                for acc in db.rows(conn.execute("SELECT * FROM social_accounts WHERE provider IN ('rss','youtube','bluesky','mastodon','x')")):
+                    if acc['provider'] == 'x' and not _x_due(acc):
+                        continue
                     refresh(conn, acc)
         except Exception:
             pass
         time.sleep(INTERVAL)
+
+
+def _x_due(acc):
+    """X okuma kotası ücretli/sınırlı: hesap en çok CAYMAZ_X_POLL_HOURS saatte bir çekilir (elle ⟳ Yenile her zaman çalışır)."""
+    try:
+        last = datetime.fromisoformat(acc['last_sync']).timestamp() if acc['last_sync'] else 0
+    except ValueError:
+        last = 0
+    return time.time() - last >= config.X_POLL_HOURS * 3600
 
 
 _started = False

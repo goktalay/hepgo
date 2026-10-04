@@ -395,7 +395,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       } },
     { key: 'mailboxes', title: 'Mail Hesaplarım', desc: 'Gmail, Outlook / Microsoft 365, IMAP / Exchange, POP3', icon: 'inbox',
       body: () => { const q = subQuery; subQuery = ''; return mailboxesSection(q); } },
-    { key: 'social', title: 'Sosyal Medya', desc: 'Hesaplarınızın paylaşımları Şirketten Haberler’de (yalnız size)', icon: 'globe', body: socialSection },
+    { key: 'social', title: 'Sosyal Medya', desc: 'Hesaplarınızın paylaşımları Şirketten Haberler’de (yalnız size)', icon: 'globe', body: () => { const q = subQuery; subQuery = ''; return socialSection(q); } },
     { key: 'mascot', title: 'Maskot', desc: 'Köşedeki yapay zeka asistanı karakteri', icon: 'card',
       body: () => {
         const grid = h('div', { class: 'set-mascot-grid' });

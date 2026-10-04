@@ -10,13 +10,15 @@ import { CALL_BACKGROUNDS, CALL_BG_LABELS } from './voice.js';
 import { MASCOT_LIST, mascotPreview, setMascot, setMascot3D, applyMascotHidden } from './mascot.js';
 import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
+import { mailboxesSection, socialSection } from './mysettings.js';
 
 // Mobilde (≤800px) Ayarlar iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SET_MQ = matchMedia('(max-width: 800px)');
 let _setRedraw = null;
 SET_MQ.addEventListener('change', () => { if (_setRedraw && location.hash.startsWith('#/settings')) _setRedraw(); });
 
-export async function renderSettings(view, ctx, { changePassword, modules }, sub) {
+export async function renderSettings(view, ctx, { changePassword, modules }, sub0) {
+  let [sub, subQuery = ''] = (sub0 || '').split('?');   // OAuth dönüşü: #/settings/mailboxes?msg=…
   const cur = ctx.user.prefs?.settings || {};
   let theme0;
   try { theme0 = localStorage.getItem('caymaz.theme') || 'light'; } catch { theme0 = 'light'; }
@@ -391,6 +393,9 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         load();
         return wrap;
       } },
+    { key: 'mailboxes', title: 'Mail Hesaplarım', desc: 'Gmail, Outlook / Microsoft 365, IMAP / Exchange, POP3', icon: 'inbox',
+      body: () => { const q = subQuery; subQuery = ''; return mailboxesSection(q); } },
+    { key: 'social', title: 'Sosyal Medya', desc: 'Hesaplarınızın paylaşımları Şirketten Haberler’de (yalnız size)', icon: 'globe', body: socialSection },
     { key: 'mascot', title: 'Maskot', desc: 'Köşedeki yapay zeka asistanı karakteri', icon: 'card',
       body: () => {
         const grid = h('div', { class: 'set-mascot-grid' });
@@ -475,8 +480,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   ]).filter(x => x.key !== 'mascot' || ctx.user.ai);   // Claude API anahtarı yoksa maskot ayarı da gizli
   // Mobilde iOS Ayarlar gibi: gruplanmış renkli ikonlu satır listesi; kategoriye dokununca alt-sayfa açılır.
   const COLORS = { ui: '#0a84ff', notifications: '#ff3b30', sounds: '#ff2d55', screensaver: '#5856d6', voice: '#34c759',
-    radio: '#ff9500', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', dashboard: '#30b0c7', account: '#007aff' };
-  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy'], ['voice', 'radio'], ['dashboard']];
+    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', dashboard: '#30b0c7', account: '#007aff' };
+  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard']];
   const used = new Set([...SECTIONS.flat(), 'account']);   // hesap, en üstte iPhone tarzı kart olarak gösterilir
   const rest = GROUPS.filter(gr => !used.has(gr.key)).map(gr => gr.key);
   const allSections = rest.length ? [...SECTIONS, rest] : SECTIONS;

@@ -1,9 +1,10 @@
 // Rehber: sistemde kaynağına bakılmaksızın kayıtlı tüm kişiler (personel, firma kişileri, aile üyeleri) tek rehberde.
 // Kişiye tıklayınca detay: bilgiler, evraklar, yüz tanıma kayıtları, görüntülü görüşmeler, toplantılar, telefon notları.
 import { api, fileUrl } from '../api.js';
-import { avatar, clear, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, t } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, t, toast } from '../ui.js';
 
-const TYPE_BADGE = { user: ['blue', 'Personel'], person: ['', 'Firma kişisi'], family: ['green', 'Aile'] };
+const TYPE_BADGE = { user: ['blue', 'Personel'], person: ['', 'Firma kişisi'], family: ['green', 'Aile'], mine: ['yellow', 'Kişilerim'] };
+const MINE_SRC = { mail: 'Yazışma', google: 'Google Kişiler', microsoft: 'Outlook Kişileri', manual: 'Elle eklendi' };
 // Türkçe Yazım Düzeni (Title Case): her kelimenin ilk harfi büyük, kalanı küçük (İ/ı duyarlı)
 const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(\p{L})/gu, (m, p, c) => p + c.toLocaleUpperCase('tr'));
 
@@ -15,11 +16,19 @@ export async function render(view, params, ctx) {
 async function list(view) {
   let kind = 'all', people = [];
   const q = h('input', { class: 'input', type: 'search', placeholder: 'İsim, telefon, firma ara…', style: { maxWidth: '280px' } });
-  const seg = segmented([['all', 'Tümü'], ['user', 'Personel'], ['person', 'Firma kişileri'], ['family', 'Aile']], kind,
+  const seg = segmented([['all', 'Tümü'], ['user', 'Personel'], ['person', 'Firma kişileri'], ['family', 'Aile'], ['mine', '🔒 Kişilerim']], kind,
     v => { kind = v; load(); });
+  const addBtn = h('button', { class: 'btn primary', type: 'button', hidden: true, onclick: () => editMine(null, load) }, '＋ Kişi ekle');
   const grid = h('div', { class: 'dir-groups' });
   const info = h('span', { class: 'small muted' });
-  const card = p => h('a', { class: `card dir-card ${TYPE_BADGE[p.type][0] === 'green' ? 'fam' : ''}`, href: `#/rehber/${p.type}/${p.id}` },
+  const card = p => p.type === 'mine' ? h('button', { class: 'card dir-card mine', type: 'button', onclick: () => editMine(p, load) },
+    avatar({ full_name: tc(p.name) }, 44),
+    h('div', { class: 'dir-info' },
+      h('b', { title: p.name }, p.name),
+      p.subtitle ? h('small', { class: 'muted', title: p.subtitle }, p.subtitle) : null,
+      p.phone ? h('small', { class: 'muted' }, p.phone) : null),
+    h('span', { class: 'badge yellow', title: 'Yalnızca siz görürsünüz' }, MINE_SRC[p.source] || 'Kişilerim'))
+    : h('a', { class: `card dir-card ${TYPE_BADGE[p.type][0] === 'green' ? 'fam' : ''}`, href: `#/rehber/${p.type}/${p.id}` },
     avatar({ full_name: tc(p.name), photo: p.photo }, 44),
     h('div', { class: 'dir-info' },
       h('b', { title: tc(p.name) }, tc(p.name)),
@@ -43,12 +52,45 @@ async function list(view) {
   };
   const load = async () => {
     clear(grid, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
-    try { people = (await api.get(`/api/directory?kind=${kind}`)).people; draw(); }
+    addBtn.hidden = kind !== 'mine';
+    try {
+      if (kind === 'mine') {
+        people = (await api.get('/api/my/contacts')).contacts.map(c => ({ ...c, type: 'mine', name: c.name || c.email || c.phone,
+          subtitle: [c.name ? c.email : null, c.company, c.title].filter(Boolean).join(' · ') }));
+      } else people = (await api.get(`/api/directory?kind=${kind}`)).people;
+      draw();
+    }
     catch (err) { clear(grid, h('div', { class: 'card empty' }, err.message)); }
   };
   q.addEventListener('input', draw);
-  clear(view, pageHead('Rehber', { back: '#/', sub: 'Sistemdeki tüm kişiler' }), moduleToolbar(seg, q), h('p', null, info), grid);
+  clear(view, pageHead('Rehber', { back: '#/', sub: 'Sistemdeki tüm kişiler · Kişilerim yalnızca size özeldir' }), moduleToolbar(seg, [q, addBtn]), h('p', null, info), grid);
   load();
+}
+
+// Kişilerim: mail yazışmaları, Google / Outlook kişileri ve elle eklenenler — yalnızca sahibi görür / düzenler
+function editMine(c, done) {
+  const inp = (k, ph, type = 'text') => h('input', { class: 'input', type, value: c?.[k] || '', placeholder: ph || '' });
+  const f = { name: inp('name'), email: inp('email', 'ad@firma.com', 'email'), phone: inp('phone', '+90 …', 'tel'), company: inp('company'), title: inp('title') };
+  const note = h('textarea', { class: 'input', rows: 3 }, c?.note || '');
+  modal({
+    title: c ? (c.name || c.email) : 'Kişi ekle',
+    body: h('div', null,
+      c ? h('p', { class: 'small muted' }, t('Kaynak: {s} · yalnızca siz görürsünüz', { s: MINE_SRC[c.source] || c.source })) : h('p', { class: 'small muted' }, 'Bu kişiyi yalnızca siz görürsünüz.'),
+      h('div', { class: 'row' }, field('Ad Soyad', f.name), field('E-posta', f.email)),
+      h('div', { class: 'row' }, field('Telefon', f.phone), field('Firma', f.company)),
+      field('Unvan', f.title), field('Not', note),
+      c?.email ? h('div', { class: 'set-actions left' }, h('a', { class: 'btn sm', href: `mailto:${c.email}` }, '✉ E-posta'),
+        c.phone ? h('a', { class: 'btn sm', href: `tel:${c.phone}` }, '📞 Ara') : null) : null),
+    actions: [c ? { label: 'Sil', class: 'danger', onClick: async () => {
+      if (!await confirmDialog('Kişiyi sil', 'Bu kişi rehberinizden silinsin mi?', { okLabel: 'Sil', danger: true })) return true;
+      await api.del(`/api/my/contacts/${c.id}`); toast('Kişi silindi'); done();
+    } } : null, 'spacer', { label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
+      const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim() || null]));
+      body.note = note.value.trim() || null;
+      if (c) await api.put(`/api/my/contacts/${c.id}`, body); else await api.post('/api/my/contacts', body);
+      toast('Kaydedildi', 'success'); done();
+    } }].filter(Boolean),
+  });
 }
 
 async function detail(view, type, id, ctx) {

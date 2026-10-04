@@ -1,46 +1,105 @@
-"""Kişisel → Mail: kullanıcının Gmail hesabına IMAP (okuma) ve SMTP (gönderme) ile bağlanır.
+"""Kişisel → Mail (v2, Outlook gibi): kullanıcı başına birden çok hesap — Gmail / Google Workspace, Outlook / Microsoft 365,
+Yandex, iCloud, Yahoo, şirket içi Exchange ve diğer IMAP sunucuları, ayrıca POP3. Okuma IMAP (ya da POP3), gönderme SMTP.
 
-Kimlik iki türlüdür: (1) "Google ile bağlan" (OAuth, kurumsal Google Workspace hesapları için): Google'ın izin ekranından
-alınan yenileme jetonu saklanır, IMAP/SMTP'ye XOAUTH2 ile girilir; (2) kişisel Gmail için 16 haneli "Uygulama şifresi".
-Jeton / şifre cameras.encrypt ile şifrelenmiş saklanır. Her kullanıcı için bir IMAP bağlantısı açık tutulur (5 dk boşta kalınca kapanır);
-aynı kullanıcının istekleri sırayla işlenir. Klasörler Gmail'in özel kullanım işaretlerinden (\\Sent, \\Trash…) bulunur,
-böylece Türkçe arayüzlü hesaplarda da çalışır. Arama Gmail sözdizimiyle yapılır (X-GM-RAW; ör. from:ali has:attachment).
+Kimlik: uygulama şifresi (password) ya da OAuth yenileme jetonu (google | microsoft) — XOAUTH2 ile girilir. Şifre / jeton
+cameras.encrypt ile şifreli saklanır, hiçbir yanıtta dönmez. Her hesap için bir IMAP bağlantısı açık tutulur (5 dk boşta
+kalınca kapanır); aynı hesabın istekleri sırayla işlenir. Klasörler özel kullanım işaretlerinden (\\Sent, \\Trash…) ya da
+yaygın adlardan (Sent Items, Gönderilmiş Öğeler…) bulunur; diğer klasörler de listelenir. İçerik sunucuda saklanmaz.
 """
 import base64
 import email
+import hashlib
 import imaplib
+import poplib
 import re
 import smtplib
 import threading
 import time
+from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.policy import default as default_policy
-from email.utils import formataddr, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
+from email.utils import formataddr, format_datetime, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 
 import httpx
 
 from . import config
 from .cameras import decrypt
 
-TOKEN_URL = 'https://oauth2.googleapis.com/token'
-_tokens = {}   # yenileme jetonu özeti → (erişim jetonu, bitiş)
+TIMEOUT = 20
+IDLE_CLOSE = 300
+PAGE = 50
+imaplib._MAXLINE = 10_000_000   # büyük klasör listeleri
+
+PROVIDERS = {   # anahtar: (başlık, imap, smtp(host, port, güvenlik), oauth, gönderileni sunucu kendisi kaydeder mi, not)
+    'gmail': {'title': 'Gmail / Google Workspace', 'imap': ('imap.gmail.com', 993), 'smtp': ('smtp.gmail.com', 465, 'ssl'), 'oauth': 'google',
+              'autosent': True, 'help': 'Google hesabında 2 adımlı doğrulama açıkken alınan 16 haneli uygulama şifresi ya da “Google ile bağlan”.'},
+    'outlook': {'title': 'Outlook / Microsoft 365', 'imap': ('outlook.office365.com', 993), 'smtp': ('smtp.office365.com', 587, 'starttls'),
+                'oauth': 'microsoft', 'autosent': True, 'oauth_only': True,
+                'help': 'Microsoft şifreyle IMAP girişini kapattı; “Microsoft ile bağlan” kullanılır.'},
+    'yandex': {'title': 'Yandex Mail', 'imap': ('imap.yandex.com', 993), 'smtp': ('smtp.yandex.com', 465, 'ssl'), 'autosent': False,
+               'help': 'Yandex ID › Güvenlik › Uygulama şifreleri bölümünden “Mail” için şifre oluşturun.'},
+    'icloud': {'title': 'iCloud Mail', 'imap': ('imap.mail.me.com', 993), 'smtp': ('smtp.mail.me.com', 587, 'starttls'), 'autosent': False,
+               'help': 'appleid.apple.com › Uygulamaya özel parola.'},
+    'yahoo': {'title': 'Yahoo Mail', 'imap': ('imap.mail.yahoo.com', 993), 'smtp': ('smtp.mail.yahoo.com', 465, 'ssl'), 'autosent': True,
+              'help': 'Yahoo hesap güvenliği › Uygulama şifresi oluştur.'},
+    'imap': {'title': 'Diğer IMAP / Exchange', 'custom': True, 'autosent': False,
+             'help': 'Şirket ya da hosting sunucunuzun IMAP ve SMTP bilgileri (Exchange sunucularında IMAP açık olmalı).'},
+    'pop3': {'title': 'POP3', 'custom': True, 'pop': True, 'autosent': False,
+             'help': 'POP3 yalnızca gelen kutusunu indirir; klasör ve okundu bilgisi sunucuda tutulmaz.'},
+}
+FOLDERS = [   # anahtar, başlık, özel kullanım işareti, yaygın adlar
+    ('inbox', 'Gelen Kutusu', None, ()),
+    ('starred', 'Yıldızlı', '\\Flagged', ()),
+    ('important', 'Önemli', '\\Important', ()),
+    ('drafts', 'Taslaklar', '\\Drafts', ('drafts', 'draft', 'taslaklar', 'inbox.drafts')),
+    ('sent', 'Gönderilenler', '\\Sent', ('sent', 'sent items', 'sent mail', 'sent messages', 'gönderilmiş öğeler', 'gönderilenler', 'giden', 'inbox.sent')),
+    ('archive', 'Arşiv', '\\Archive', ('archive', 'arşiv', 'arsiv', 'inbox.archive')),
+    ('all', 'Tüm Postalar', '\\All', ()),
+    ('spam', 'Gereksiz', '\\Junk', ('junk', 'junk e-mail', 'junk email', 'spam', 'gereksiz e-posta', 'istenmeyen', 'inbox.spam', 'inbox.junk')),
+    ('trash', 'Çöp Kutusu', '\\Trash', ('trash', 'deleted items', 'deleted messages', 'silinmiş öğeler', 'çöp kutusu', 'cop kutusu', 'inbox.trash', 'bin')),
+]
+FOLDER_TITLE = {k: t for k, t, _, _ in FOLDERS}
 
 
-def access_token(refresh):
-    """OAuth yenileme jetonundan erişim jetonu (süresi dolmadan önbellekten)."""
-    import hashlib
-    key = hashlib.sha256(refresh.encode()).hexdigest()
+class MailError(Exception):
+    pass
+
+
+# ---------------- OAuth erişim jetonları ----------------
+_tokens = {}   # (sağlayıcı, kaynak, jeton özeti) → (erişim jetonu, bitiş)
+GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+TOKEN_URL = GOOGLE_TOKEN_URL   # geriye uyum
+
+
+def ms_token_url():
+    return f'https://login.microsoftonline.com/{config.MS_TENANT or "common"}/oauth2/v2.0/token'
+
+
+MS_MAIL_SCOPE = 'https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access'
+MS_GRAPH_SCOPE = 'https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read offline_access'
+
+
+def access_token(refresh, kind='google', scope=None):
+    """Yenileme jetonundan erişim jetonu (süresi dolmadan önbellekten). Microsoft'ta kaynak (Outlook / Graph) kapsamla seçilir."""
+    key = (kind, scope or '', hashlib.sha256(refresh.encode()).hexdigest())
     hit = _tokens.get(key)
     if hit and hit[1] - time.time() > 120:
         return hit[0]
+    if kind == 'microsoft':
+        url, data = ms_token_url(), {'client_id': config.MS_CLIENT_ID, 'client_secret': config.MS_CLIENT_SECRET, 'refresh_token': refresh,
+                                     'grant_type': 'refresh_token', 'scope': scope or MS_MAIL_SCOPE}
+        who = 'Microsoft'
+    else:
+        url, data = GOOGLE_TOKEN_URL, {'client_id': config.GOOGLE_CLIENT_ID, 'client_secret': config.GOOGLE_CLIENT_SECRET,
+                                       'refresh_token': refresh, 'grant_type': 'refresh_token'}
+        who = 'Google'
     try:
-        r = httpx.post(TOKEN_URL, data={'client_id': config.GOOGLE_CLIENT_ID, 'client_secret': config.GOOGLE_CLIENT_SECRET,
-                                        'refresh_token': refresh, 'grant_type': 'refresh_token'}, timeout=TIMEOUT)
+        r = httpx.post(url, data=data, timeout=TIMEOUT)
     except httpx.HTTPError as e:
-        raise MailError(f'Google\'a bağlanılamadı: {e}') from e
+        raise MailError(f'{who}\'a bağlanılamadı: {e}') from e
     if r.status_code != 200:
-        raise MailError('Google bağlantısının süresi doldu ya da izin geri alındı; Mail ayarlarından yeniden "Google ile bağlan" yapın.')
+        raise MailError(f'{who} bağlantısının süresi doldu ya da izin geri alındı; Mail Hesaplarım’dan yeniden bağlayın.')
     d = r.json()
     _tokens[key] = (d['access_token'], time.time() + int(d.get('expires_in', 3600)))
     return d['access_token']
@@ -50,69 +109,101 @@ def _xoauth(addr, token):
     return f'user={addr}\x01auth=Bearer {token}\x01\x01'
 
 
+# ---------------- Hesap / bağlantı ----------------
+def settings(box):
+    """Hesabın sunucu ayarları (hazır sağlayıcı ya da özel)."""
+    p = PROVIDERS.get(box.get('provider') or 'imap', PROVIDERS['imap'])
+    imap = (box.get('imap_host') or (p.get('imap') or (None, None))[0], int(box.get('imap_port') or (p.get('imap') or (None, 993))[1] or 993))
+    smtp = (box.get('smtp_host') or (p.get('smtp') or (None,))[0], int(box.get('smtp_port') or (p.get('smtp') or (None, 465))[1] or 465),
+            box.get('smtp_security') or (p.get('smtp') or (None, None, 'ssl'))[2] or 'ssl')
+    return {'imap': imap, 'smtp': smtp, 'pop': (box.get('pop_host'), int(box.get('pop_port') or 995)), 'is_pop': (box.get('provider') == 'pop3'),
+            'gmail': (box.get('provider') == 'gmail') or (imap[0] or '').endswith('gmail.com')}
+
+
 class Creds:
     """Hesabın giriş bilgisi: uygulama şifresi ya da OAuth yenileme jetonu."""
-    def __init__(self, account):
-        self.addr = account['email']
-        self.kind = account.get('auth_type') or 'password'
-        self.secret = decrypt(account['secret'])
+    def __init__(self, box):
+        self.addr = box['email']
+        self.login = (box.get('login') or '').strip() or box['email']
+        self.kind = box.get('auth_type') or 'password'
+        if self.kind == 'oauth':
+            self.kind = 'google'
+        self.secret = decrypt(box['secret'])
+
+    def token(self):
+        return access_token(self.secret, self.kind)
 
     def imap_login(self, m):
-        if self.kind == 'oauth':
-            tok = access_token(self.secret)
+        if self.kind in ('google', 'microsoft'):
+            tok = self.token()
             m.authenticate('XOAUTH2', lambda _: _xoauth(self.addr, tok).encode())
         else:
-            m.login(self.addr, self.secret)
+            m.login(self.login, self.secret)
 
     def smtp_login(self, s):
-        if self.kind == 'oauth':
+        if self.kind in ('google', 'microsoft'):
             s.ehlo()
-            code, resp = s.docmd('AUTH', 'XOAUTH2 ' + base64.b64encode(_xoauth(self.addr, access_token(self.secret)).encode()).decode())
+            code, resp = s.docmd('AUTH', 'XOAUTH2 ' + base64.b64encode(_xoauth(self.addr, self.token()).encode()).decode())
             if code != 235:
                 raise smtplib.SMTPAuthenticationError(code, resp)
         else:
-            s.login(self.addr, self.secret)
+            s.login(self.login, self.secret)
 
     def __eq__(self, other):
-        return isinstance(other, Creds) and (self.addr, self.kind, self.secret) == (other.addr, other.kind, other.secret)
-
-IMAP_HOST, SMTP_HOST = 'imap.gmail.com', 'smtp.gmail.com'
-TIMEOUT = 20
-IDLE_CLOSE = 300
-PAGE = 50
-FOLDERS = [   # anahtar, başlık, özel kullanım işareti
-    ('inbox', 'Gelen Kutusu', None), ('starred', 'Yıldızlı', '\\Flagged'), ('important', 'Önemli', '\\Important'),
-    ('sent', 'Gönderilenler', '\\Sent'), ('drafts', 'Taslaklar', '\\Drafts'), ('all', 'Tüm Postalar', '\\All'),
-    ('spam', 'Spam', '\\Junk'), ('trash', 'Çöp Kutusu', '\\Trash'),
-]
-imaplib._MAXLINE = 10_000_000   # büyük klasör listeleri
+        return isinstance(other, Creds) and (self.addr, self.login, self.kind, self.secret) == (other.addr, other.login, other.kind, other.secret)
 
 
-class MailError(Exception):
-    pass
-
-
-def friendly(exc):
+def friendly(exc, box=None):
     s = str(exc)
-    if 'AUTHENTICATIONFAILED' in s or 'Invalid credentials' in s or 'Username and Password not accepted' in s or '535' in s:
-        return ('Gmail girişi reddedildi. Adresi ve 16 haneli uygulama şifresini kontrol edin (normal Gmail şifresi çalışmaz; '
-                'Google hesabında 2 adımlı doğrulama açık olmalı).')
+    if 'AUTHENTICATIONFAILED' in s or 'Invalid credentials' in s or 'not accepted' in s or '535' in s or 'LOGIN failed' in s or 'authentication failed' in s.lower():
+        hint = PROVIDERS.get((box or {}).get('provider') or 'imap', {}).get('help', '')
+        return f'Giriş reddedildi. Adresi ve şifreyi kontrol edin. {hint}'.strip()
     if 'IMAP access is disabled' in s or 'Web login required' in s:
-        return 'Gmail ayarlarında IMAP erişimi kapalı; Gmail → Ayarlar → Yönlendirme ve POP/IMAP bölümünden açın.'
-    return f'Gmail bağlantı hatası: {s[:200]}'
+        return 'Hesapta IMAP erişimi kapalı; posta ayarlarından IMAP’i açın.'
+    return f'Posta sunucusu hatası: {s[:200]}'
 
 
-def _dec(v):
+def imap_connect(box):
+    st = settings(box)
+    host, port = st['imap']
+    if not host:
+        raise MailError('IMAP sunucusu girilmemiş')
     try:
-        return str(make_header(decode_header(v or '')))
-    except Exception:
-        return v or ''
+        m = imaplib.IMAP4_SSL(host, port, timeout=TIMEOUT) if port != 143 else imaplib.IMAP4(host, port, timeout=TIMEOUT)
+        if port == 143:
+            m.starttls()
+        Creds(box).imap_login(m)
+        return m
+    except imaplib.IMAP4.error as e:
+        raise MailError(friendly(e, box)) from e
+    except OSError as e:
+        raise MailError(f'Posta sunucusuna bağlanılamadı ({host}): {e}') from e
 
 
-# ---------- IMAP bağlantı havuzu
+def smtp_connect(box):
+    st = settings(box)
+    host, port, sec = st['smtp']
+    if not host:
+        raise MailError('SMTP sunucusu girilmemiş')
+    try:
+        if sec == 'ssl':
+            s = smtplib.SMTP_SSL(host, port, timeout=TIMEOUT)
+        else:
+            s = smtplib.SMTP(host, port, timeout=TIMEOUT)
+            s.ehlo()
+            s.starttls()
+        Creds(box).smtp_login(s)
+        return s
+    except smtplib.SMTPException as e:
+        raise MailError(friendly(e, box)) from e
+    except OSError as e:
+        raise MailError(f'Gönderim sunucusuna bağlanılamadı ({host}): {e}') from e
+
+
 class _Conn:
-    def __init__(self, creds):
-        self.creds = creds
+    def __init__(self, box):
+        self.box = box
+        self.creds = Creds(box)
         self.lock = threading.RLock()
         self.imap = None
         self.used = 0
@@ -127,14 +218,7 @@ class _Conn:
             except Exception:
                 self.imap = None
         if not self.imap:
-            try:
-                m = imaplib.IMAP4_SSL(IMAP_HOST, 993, timeout=TIMEOUT)
-                self.creds.imap_login(m)
-            except imaplib.IMAP4.error as e:
-                raise MailError(friendly(e)) from e
-            except OSError as e:
-                raise MailError(f'Gmail sunucusuna bağlanılamadı: {e}') from e
-            self.imap, self.selected = m, None
+            self.imap, self.selected, self.folders = imap_connect(self.box), None, None
         self.used = now
         return self.imap
 
@@ -153,11 +237,11 @@ def _reaper():
     while True:
         time.sleep(60)
         with _pool_lock:
-            for uid, c in list(_pool.items()):
+            for k, c in list(_pool.items()):
                 if time.time() - c.used > IDLE_CLOSE and c.lock.acquire(blocking=False):
                     try:
                         c.close()
-                        del _pool[uid]
+                        del _pool[k]
                     finally:
                         c.lock.release()
 
@@ -165,20 +249,21 @@ def _reaper():
 threading.Thread(target=_reaper, daemon=True, name='mail-reaper').start()
 
 
-def conn_for(account):
+def conn_for(box):
     with _pool_lock:
-        c = _pool.get(account['user_id'])
-        creds = Creds(account)
-        if not c or c.creds != creds:
+        c = _pool.get(box['id'])
+        creds = Creds(box)
+        if not c or c.creds != creds or settings(c.box) != settings(box):
             if c:
                 c.close()
-            c = _pool[account['user_id']] = _Conn(creds)
+            c = _pool[box['id']] = _Conn(box)
+        c.box = box
         return c
 
 
-def drop(user_id):
+def drop(box_id):
     with _pool_lock:
-        c = _pool.pop(user_id, None)
+        c = _pool.pop(box_id, None)
     if c:
         c.close()
 
@@ -193,46 +278,64 @@ def _run(c, fn):
             except (imaplib.IMAP4.abort, OSError, ConnectionError):
                 c.imap = None
                 if attempt:
-                    raise MailError('Gmail bağlantısı koptu; tekrar deneyin')
+                    raise MailError('Posta sunucusu bağlantısı koptu; tekrar deneyin')
 
 
-# ---------- test (hesap bağlama)
-def verify(account):
-    """account: {'email', 'secret' (şifreli), 'auth_type'} — IMAP ve SMTP girişini dener."""
-    creds = Creds(account)
-    try:
-        m = imaplib.IMAP4_SSL(IMAP_HOST, 993, timeout=TIMEOUT)
-        creds.imap_login(m)
-        m.logout()
-        s = smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=TIMEOUT)
-        creds.smtp_login(s)
-        s.quit()
-    except (imaplib.IMAP4.error, smtplib.SMTPException) as e:
-        raise MailError(friendly(e)) from e
-    except OSError as e:
-        raise MailError(f'Gmail sunucusuna bağlanılamadı: {e}') from e
+def verify(box):
+    """Hesap eklenirken giriş denemesi: IMAP (ya da POP3) + SMTP."""
+    if settings(box)['is_pop']:
+        p = pop_connect(box)
+        p.quit()
+    else:
+        imap_connect(box).logout()
+    smtp_connect(box).quit()
 
 
-# ---------- klasörler
-_LIST_RE = re.compile(r'\((?P<flags>[^)]*)\) "(?P<sep>[^"]*)" (?P<name>.+)')
+# ---------------- IMAP: klasörler ----------------
+_LIST_RE = re.compile(r'\((?P<flags>[^)]*)\) (?:"(?P<sep>[^"]*)"|NIL) (?P<name>.+)')
+
+
+def utf7_decode(s):
+    """IMAP değiştirilmiş UTF-7 klasör adı → okunur metin (ör. G&APY-nderilmi&AV8- → Gönderilmiş)."""
+    def dec(mt):
+        x = mt.group(1)
+        if not x:
+            return '&'
+        b = x.replace(',', '/')
+        b += '=' * (-len(b) % 4)
+        try:
+            return base64.b64decode(b).decode('utf-16-be')
+        except Exception:
+            return mt.group(0)
+    return re.sub(r'&([^-]*)-', dec, s)
 
 
 def _mailbox_map(c, m):
+    """{anahtar: sunucudaki ad}; özel klasörler 'x:<ad>' anahtarıyla (görünen ad çözülmüş)."""
     if c.folders:
         return c.folders
     typ, data = m.list()
-    out = {'inbox': 'INBOX'}
+    out, extra = {'inbox': 'INBOX'}, {}
     for raw in data or []:
         line = raw.decode(errors='replace') if isinstance(raw, bytes) else str(raw)
         mt = _LIST_RE.match(line)
         if not mt:
             continue
         flags, name = mt['flags'], mt['name'].strip()
-        for key, _, flag in FOLDERS:
-            if flag and flag in flags.split():
-                out[key] = name
-    c.folders = out
-    return out
+        bare = name.strip('"')
+        if '\\Noselect' in flags or '\\NonExistent' in flags or bare.upper() == 'INBOX':
+            continue
+        key = next((k for k, _, flag, _ in FOLDERS if flag and flag in flags.split()), None)
+        if not key:
+            low = utf7_decode(bare).lower().rsplit(mt['sep'] or '/', 1)[-1] if mt['sep'] else utf7_decode(bare).lower()
+            key = next((k for k, _, _, names in FOLDERS if low in names or utf7_decode(bare).lower() in names), None)
+        if key and key not in out:
+            out[key] = name
+        elif not key:
+            extra[f'x:{bare}'] = (name, utf7_decode(bare))
+    c.folders = {**out, **{k: v[0] for k, v in extra.items()}}
+    c.extra_titles = {k: v[1] for k, v in extra.items()}
+    return c.folders
 
 
 def _q(name):
@@ -251,27 +354,36 @@ def _select(c, m, folder, readonly=True):
     return box
 
 
-def folders(account):
-    c = conn_for(account)
+def folders(box):
+    if settings(box)['is_pop']:
+        return pop_folders(box)
+    c = conn_for(box)
 
     def fn(m):
         mp = _mailbox_map(c, m)
         out = []
-        for key, title, _ in FOLDERS:
+        for key, title, _, _ in FOLDERS:
             if key not in mp:
                 continue
             unseen = None
             if key in ('inbox', 'spam', 'drafts'):
-                typ, d = m.status(_q(mp[key]), '(UNSEEN MESSAGES)')
-                mt = re.search(rb'UNSEEN (\d+)', d[0] or b'') if typ == 'OK' else None
-                unseen = int(mt.group(1)) if mt else None
+                try:
+                    typ, d = m.status(_q(mp[key]), '(UNSEEN MESSAGES)')
+                    mt = re.search(rb'UNSEEN (\d+)', d[0] or b'') if typ == 'OK' else None
+                    unseen = int(mt.group(1)) if mt else None
+                except Exception:
+                    unseen = None
             out.append({'key': key, 'title': title, 'unseen': unseen})
+        for key, title in sorted(getattr(c, 'extra_titles', {}).items(), key=lambda x: x[1].lower()):
+            out.append({'key': key, 'title': title, 'unseen': None, 'custom': True})
         return out
     return _run(c, fn)
 
 
-def unread(account):
-    c = conn_for(account)
+def unread(box):
+    if settings(box)['is_pop']:
+        return 0
+    c = conn_for(box)
 
     def fn(m):
         typ, d = m.status('INBOX', '(UNSEEN)')
@@ -280,19 +392,52 @@ def unread(account):
     return _run(c, fn)
 
 
-# ---------- liste
+# ---------------- ortak yardımcılar ----------------
+def _dec(v):
+    try:
+        return str(make_header(decode_header(v or '')))
+    except Exception:
+        return v or ''
+
+
 def _addr(v):
     name, a = parseaddr(_dec(v))
     return {'name': name or a.split('@')[0], 'email': a}
 
 
-def list_messages(account, folder='inbox', q='', page=0, unread_only=False):
-    c = conn_for(account)
+def _date(v):
+    try:
+        return parsedate_to_datetime(v).astimezone().isoformat(timespec='seconds') if v else None
+    except Exception:
+        return None
+
+
+def _summary(uid, hdr_bytes, flags=(), size=0):
+    h = email.message_from_bytes(hdr_bytes, policy=default_policy)
+    ctype = (h.get('Content-Type') or '').lower()
+    return {'uid': uid, 'from': _addr(h['From']), 'to': _addr(h['To'] or ''), 'subject': _dec(h['Subject']) or '(konu yok)',
+            'date': _date(h['Date']), 'seen': '\\Seen' in flags, 'starred': '\\Flagged' in flags,
+            'attach': 'multipart/mixed' in ctype, 'invite': 'text/calendar' in ctype, 'size': size}
+
+
+# ---------------- IMAP: liste / okuma / işlemler ----------------
+def list_messages(box, folder='inbox', q='', page=0, unread_only=False):
+    if settings(box)['is_pop']:
+        return pop_list(box, q, page, unread_only)
+    c = conn_for(box)
+    gm = settings(box)['gmail']
 
     def fn(m):
         _select(c, m, folder)
         if q:
-            typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'X-GM-RAW', f'"{q.replace(chr(34), " ")}"'.encode())
+            if gm:
+                typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'X-GM-RAW', f'"{q.replace(chr(34), " ")}"'.encode())
+            else:   # standart IMAP: konu / gönderen / içerik
+                try:
+                    m.literal = q.encode('utf-8')
+                    typ, d = m.uid('SEARCH', 'CHARSET', 'UTF-8', 'TEXT')
+                except imaplib.IMAP4.error:
+                    typ, d = m.uid('SEARCH', None, 'TEXT', f'"{q.encode("ascii", "ignore").decode()}"')
         else:
             typ, d = m.uid('SEARCH', None, 'UNSEEN' if unread_only else 'ALL')
         uids = [int(x) for x in (d[0] or b'').split()] if typ == 'OK' else []
@@ -301,32 +446,23 @@ def list_messages(account, folder='inbox', q='', page=0, unread_only=False):
         chunk = uids[page * PAGE:(page + 1) * PAGE]
         if not chunk:
             return {'items': [], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
-        typ, data = m.uid('FETCH', ','.join(map(str, chunk)),
-                          '(UID FLAGS RFC822.SIZE X-GM-THRID BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE)])')
+        typ, data = m.uid('FETCH', ','.join(map(str, chunk)), '(UID FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE CONTENT-TYPE)])')
         items = {}
         for part in data or []:
             if not isinstance(part, tuple):
                 continue
             meta, hdr = part[0].decode(errors='replace'), part[1]
-            uid = int(re.search(r'UID (\d+)', meta).group(1))
-            flags = re.search(r'FLAGS \(([^)]*)\)', meta)
-            flags = flags.group(1).split() if flags else []
+            mu = re.search(r'UID (\d+)', meta)
+            if not mu:
+                continue
+            uid = int(mu.group(1))
+            fl = re.search(r'FLAGS \(([^)]*)\)', meta)
             size = re.search(r'RFC822\.SIZE (\d+)', meta)
-            h = email.message_from_bytes(hdr, policy=default_policy)
-            try:
-                dt = parsedate_to_datetime(h['Date']).astimezone().isoformat(timespec='seconds') if h['Date'] else None
-            except Exception:
-                dt = None
-            ctype = (h.get('Content-Type') or '').lower()
-            items[uid] = {'uid': uid, 'from': _addr(h['From']), 'to': [_addr(x) for x in [h['To'] or '']][0],
-                          'subject': _dec(h['Subject']) or '(konu yok)', 'date': dt,
-                          'seen': '\\Seen' in flags, 'starred': '\\Flagged' in flags,
-                          'attach': 'multipart/mixed' in ctype, 'size': int(size.group(1)) if size else 0}
+            items[uid] = _summary(uid, hdr, fl.group(1).split() if fl else [], int(size.group(1)) if size else 0)
         return {'items': [items[u] for u in chunk if u in items], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
     return _run(c, fn)
 
 
-# ---------- okuma
 def _fetch_raw(c, m, folder, uid):
     _select(c, m, folder)
     typ, data = m.uid('FETCH', str(uid), '(FLAGS BODY.PEEK[])')
@@ -351,68 +487,86 @@ def _attachments(msg):
     return out
 
 
-def read(account, folder, uid):
-    import base64
-    c = conn_for(account)
+def _render(msg, uid, folder, flags=''):
+    html = text = None
+    body = msg.get_body(preferencelist=('html', 'plain'))
+    if body is not None:
+        try:
+            content = body.get_content()
+        except Exception:
+            content = (body.get_payload(decode=True) or b'').decode('utf-8', 'replace')
+        if body.get_content_type() == 'text/html':
+            html = content
+            plain = msg.get_body(preferencelist=('plain',))
+            try:
+                text = plain.get_content() if plain is not None else None
+            except Exception:
+                text = None
+        else:
+            text = content
+    files = []
+    for i, (part, info) in enumerate(_attachments(msg)):
+        payload = part.get_payload(decode=True) or b''
+        info = {**info, 'idx': i, 'size': len(payload)}
+        if html and info['cid'] and len(payload) < 3_000_000:   # satır içi resim: veri adresi olarak gömülür
+            html = html.replace(f'cid:{info["cid"]}', f'data:{info["type"]};base64,{base64.b64encode(payload).decode()}')
+        if not info['inline']:
+            files.append(info)
+    if html:
+        html = re.sub(r'(?is)<script.*?</script>', '', html)
+    addrs = lambda k: [{'name': n or a, 'email': a} for n, a in getaddresses([_dec(x) for x in msg.get_all(k, [])]) if a]
+    return {'uid': uid, 'folder': folder, 'subject': _dec(msg['Subject']) or '(konu yok)', 'date': _date(msg['Date']),
+            'from': _addr(msg['From']), 'to': addrs('To'), 'cc': addrs('Cc'), 'reply_to': addrs('Reply-To'),
+            'message_id': msg['Message-ID'], 'references': msg['References'],
+            'html': html, 'text': text, 'attachments': files, 'starred': '\\Flagged' in flags, 'invite': parse_invite(msg)}
+
+
+def read(box, folder, uid):
+    if settings(box)['is_pop']:
+        return pop_read(box, uid)
+    c = conn_for(box)
 
     def fn(m):
         msg, flags = _fetch_raw(c, m, folder, uid)
-        html = text = None
-        body = msg.get_body(preferencelist=('html', 'plain'))
-        if body is not None:
-            content = body.get_content()
-            if body.get_content_type() == 'text/html':
-                html = content
-                plain = msg.get_body(preferencelist=('plain',))
-                text = plain.get_content() if plain is not None else None
-            else:
-                text = content
-        atts = _attachments(msg)
-        files = []
-        for i, (part, info) in enumerate(atts):
-            payload = part.get_payload(decode=True) or b''
-            info = {**info, 'idx': i, 'size': len(payload)}
-            if html and info['cid'] and len(payload) < 3_000_000:   # satır içi resim: veri adresi olarak gömülür
-                html = html.replace(f'cid:{info["cid"]}', f'data:{info["type"]};base64,{base64.b64encode(payload).decode()}')
-            if not info['inline']:
-                files.append(info)
-        if html:
-            html = re.sub(r'(?is)<script.*?</script>', '', html)
         if '\\Seen' not in flags and folder != 'drafts':   # açınca okundu
             try:
                 _select(c, m, folder, readonly=False)
                 m.uid('STORE', str(uid), '+FLAGS', '(\\Seen)')
             except Exception:
                 pass
-        try:
-            dt = parsedate_to_datetime(msg['Date']).astimezone().isoformat(timespec='seconds') if msg['Date'] else None
-        except Exception:
-            dt = None
-        addrs = lambda k: [{'name': n or a, 'email': a} for n, a in getaddresses([_dec(x) for x in msg.get_all(k, [])]) if a]
-        return {'uid': uid, 'folder': folder, 'subject': _dec(msg['Subject']) or '(konu yok)', 'date': dt,
-                'from': _addr(msg['From']), 'to': addrs('To'), 'cc': addrs('Cc'), 'reply_to': addrs('Reply-To'),
-                'message_id': msg['Message-ID'], 'references': msg['References'],
-                'html': html, 'text': text, 'attachments': files, 'starred': '\\Flagged' in flags}
+        return _render(msg, uid, folder, flags)
     return _run(c, fn)
 
 
-def attachment(account, folder, uid, idx):
-    c = conn_for(account)
-
-    def fn(m):
-        msg, _ = _fetch_raw(c, m, folder, uid)
-        atts = _attachments(msg)
-        if not 0 <= idx < len(atts):
-            raise MailError('Ek bulunamadı')
-        part, info = atts[idx]
-        return info['name'], info['type'], part.get_payload(decode=True) or b''
-    return _run(c, fn)
+def raw_message(box, folder, uid):
+    if settings(box)['is_pop']:
+        return pop_raw(box, uid)
+    c = conn_for(box)
+    return _run(c, lambda m: _fetch_raw(c, m, folder, uid)[0])
 
 
-# ---------- işlemler
-def action(account, folder, uids, act):
-    c = conn_for(account)
+def attachment(box, folder, uid, idx):
+    msg = raw_message(box, folder, uid)
+    atts = _attachments(msg)
+    if not 0 <= idx < len(atts):
+        raise MailError('Ek bulunamadı')
+    part, info = atts[idx]
+    return info['name'], info['type'], part.get_payload(decode=True) or b''
+
+
+def action(box, folder, uids, act, target=None):
+    if settings(box)['is_pop']:
+        return pop_action(box, uids, act)
+    c = conn_for(box)
     ids = ','.join(str(int(u)) for u in uids)
+    gm = settings(box)['gmail']
+
+    def move(m, dest):
+        typ, _ = m.uid('MOVE', ids, _q(dest))
+        if typ != 'OK':   # MOVE desteklemeyen sunucu: kopyala + sil
+            m.uid('COPY', ids, _q(dest))
+            m.uid('STORE', ids, '+FLAGS', '(\\Deleted)')
+            m.expunge()
 
     def fn(m):
         mp = _mailbox_map(c, m)
@@ -422,72 +576,332 @@ def action(account, folder, uids, act):
         elif act in ('star', 'unstar'):
             m.uid('STORE', ids, '+FLAGS' if act == 'star' else '-FLAGS', '(\\Flagged)')
         elif act == 'trash':
-            if folder == 'trash':   # çöpteyse kalıcı sil
+            if folder == 'trash' or 'trash' not in mp:   # çöpteyse (ya da çöp klasörü yoksa) kalıcı sil
                 m.uid('STORE', ids, '+FLAGS', '(\\Deleted)')
                 m.expunge()
             else:
-                typ, _ = m.uid('MOVE', ids, _q(mp['trash']))
-                if typ != 'OK':
-                    m.uid('COPY', ids, _q(mp['trash']))
-                    m.uid('STORE', ids, '+FLAGS', '(\\Deleted)')
-                    m.expunge()
-        elif act == 'archive':   # Gmail: gelen kutusundan kaldırmak = arşivlemek
-            if folder != 'inbox':
-                raise MailError('Yalnızca gelen kutusundaki e-posta arşivlenir')
-            m.uid('STORE', ids, '+FLAGS', '(\\Deleted)')
-            m.expunge()
+                move(m, mp['trash'])
+        elif act == 'archive':
+            if gm and folder == 'inbox':   # Gmail: gelen kutusundan kaldırmak = arşivlemek
+                m.uid('STORE', ids, '+FLAGS', '(\\Deleted)')
+                m.expunge()
+            elif 'archive' in mp:
+                move(m, mp['archive'])
+            else:
+                raise MailError('Bu hesapta arşiv klasörü yok')
         elif act == 'spam':
-            m.uid('MOVE', ids, _q(mp['spam']))
-        elif act == 'inbox':   # spam / çöpten gelen kutusuna geri al
-            m.uid('MOVE', ids, 'INBOX')
+            if 'spam' not in mp:
+                raise MailError('Bu hesapta gereksiz klasörü yok')
+            move(m, mp['spam'])
+        elif act == 'inbox':
+            move(m, 'INBOX')
+        elif act == 'move':
+            if target not in mp:
+                raise MailError('Hedef klasör bulunamadı')
+            move(m, mp[target])
         else:
             raise MailError('Geçersiz işlem')
         return {'ok': True}
     return _run(c, fn)
 
 
-# ---------- gönderme
-def send(account, *, to, cc='', bcc='', subject='', body='', files=(), reply=None, forward=None):
-    """files: [(ad, tür, bayt)]; reply: {message_id, references}; forward: {folder, uid} → orijinal ekler eklenir."""
-    addr = account['email']
+# ---------------- Gönderme / taslak ----------------
+def build(box, *, to, cc='', bcc='', subject='', body='', html=None, files=(), reply=None):
+    addr = box['email']
     msg = EmailMessage()
-    msg['From'] = formataddr((account.get('name') or '', addr))
-    creds = Creds(account)
-    msg['To'] = to
+    msg['From'] = formataddr((box.get('name') or '', addr))
+    if to:
+        msg['To'] = to
     if cc:
         msg['Cc'] = cc
+    if bcc:
+        msg['Bcc'] = bcc
     msg['Subject'] = subject
+    msg['Date'] = format_datetime(datetime.now(timezone.utc).astimezone())
     msg['Message-ID'] = make_msgid(domain=addr.split('@')[-1])
     if reply and reply.get('message_id'):
         msg['In-Reply-To'] = reply['message_id']
         msg['References'] = f"{reply.get('references') or ''} {reply['message_id']}".strip()
-    text = body or ''
-    if account.get('signature'):
-        text = f'{text}\n\n-- \n{account["signature"]}'
+    sig = (box.get('signature') or '').strip()
+    text = body or (re.sub(r'<[^>]+>', '', re.sub(r'(?i)<br\s*/?>|</p>|</div>', '\n', html or '')) if html else '')
+    if sig:
+        text = f'{text}\n\n-- \n{sig}'
     msg.set_content(text)
     esc = lambda s: s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    msg.add_alternative(f'<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">{esc(text)}</div>', subtype='html')
-    extra = list(files)
-    if forward:
-        c = conn_for(account)
-
-        def fwd(m):
-            orig, _ = _fetch_raw(c, m, forward['folder'], int(forward['uid']))
-            return [(info['name'], info['type'], part.get_payload(decode=True) or b'') for part, info in _attachments(orig) if not info['inline']]
-        extra += _run(c, fwd)
-    for name, ctype, data in extra:
+    if html:
+        safe = re.sub(r'(?is)<script.*?</script>', '', html)
+        if sig:
+            safe += f'<br><div style="color:#555;white-space:pre-wrap">-- <br>{esc(sig)}</div>'
+        msg.add_alternative(f'<div style="font-family:Arial,sans-serif;font-size:14px">{safe}</div>', subtype='html')
+    else:
+        msg.add_alternative(f'<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">{esc(text)}</div>', subtype='html')
+    for name, ctype, data in files:
         maintype, _, subtype = (ctype or 'application/octet-stream').partition('/')
         msg.add_attachment(data, maintype=maintype, subtype=subtype or 'octet-stream', filename=name)
+    return msg
+
+
+def _append(box, folder_key, msg, flags='(\\Seen)'):
+    """IMAP klasörüne ileti ekler (Gönderilenler / Taslaklar). Klasör yoksa sessizce geçer."""
+    if settings(box)['is_pop']:
+        return False
+    c = conn_for(box)
+
+    def fn(m):
+        mp = _mailbox_map(c, m)
+        if folder_key not in mp:
+            return False
+        bcc = msg['Bcc']
+        raw = msg.as_bytes() if not bcc else _without_bcc(msg)
+        typ, _ = m.append(_q(mp[folder_key]), flags, imaplib.Time2Internaldate(time.time()), raw)
+        c.selected = None
+        return typ == 'OK'
+    try:
+        return _run(c, fn)
+    except Exception:
+        return False
+
+
+def _without_bcc(msg):
+    import copy
+    m2 = copy.deepcopy(msg)
+    del m2['Bcc']
+    return m2.as_bytes()
+
+
+def send(box, *, to, cc='', bcc='', subject='', body='', html=None, files=(), reply=None, forward=None, draft_uid=None):
+    """files: [(ad, tür, bayt)]; reply: {message_id, references}; forward: {folder, uid} → orijinal ekler eklenir."""
+    extra = list(files)
+    if forward:
+        orig = raw_message(box, forward['folder'], int(forward['uid']))
+        extra += [(info['name'], info['type'], part.get_payload(decode=True) or b'') for part, info in _attachments(orig) if not info['inline']]
+    msg = build(box, to=to, cc=cc, bcc=bcc, subject=subject, body=body, html=html, files=extra, reply=reply)
     rcpts = [a for _, a in getaddresses([x for x in (to, cc, bcc) if x and x.strip()]) if a]   # boş alan ayrıştırmayı bozar
     if not rcpts:
         raise MailError('Alıcı adresi girin')
+    s = smtp_connect(box)
     try:
-        s = smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=TIMEOUT)
-        creds.smtp_login(s)
-        s.send_message(msg, from_addr=addr, to_addrs=rcpts)
+        sendable = email.message_from_bytes(_without_bcc(msg), policy=default_policy)
+        s.send_message(sendable, from_addr=box['email'], to_addrs=rcpts)
         s.quit()
     except smtplib.SMTPException as e:
-        raise MailError(friendly(e)) from e
+        raise MailError(friendly(e, box)) from e
     except OSError as e:
-        raise MailError(f'Gmail sunucusuna bağlanılamadı: {e}') from e
-    return {'ok': True, 'recipients': len(rcpts)}
+        raise MailError(f'Gönderim sunucusuna bağlanılamadı: {e}') from e
+    saved = False
+    if box.get('save_sent') and not PROVIDERS.get(box.get('provider') or 'imap', {}).get('autosent'):
+        saved = _append(box, 'sent', msg)
+    if draft_uid:
+        try:
+            action(box, 'drafts', [draft_uid], 'trash')
+        except Exception:
+            pass
+    return {'ok': True, 'recipients': len(rcpts), 'saved_to_sent': saved, 'rcpts': rcpts}
+
+
+def save_draft(box, *, to='', cc='', bcc='', subject='', body='', html=None, files=(), reply=None, replace_uid=None):
+    msg = build(box, to=to, cc=cc, bcc=bcc, subject=subject, body=body, html=html, files=files, reply=reply)
+    ok = _append(box, 'drafts', msg, '(\\Draft \\Seen)')
+    if not ok:
+        raise MailError('Bu hesapta taslak klasörü bulunamadı')
+    if replace_uid:
+        try:
+            action(box, 'drafts', [replace_uid], 'trash')
+        except Exception:
+            pass
+    return {'ok': True}
+
+
+# ---------------- POP3 ----------------
+_pop_cache = {}   # box id → (zaman, [(uidl, no, başlık özeti)])
+
+
+def pop_connect(box):
+    host, port = settings(box)['pop']
+    if not host:
+        raise MailError('POP3 sunucusu girilmemiş')
+    try:
+        p = poplib.POP3_SSL(host, port, timeout=TIMEOUT) if port != 110 else poplib.POP3(host, port, timeout=TIMEOUT)
+        if port == 110:
+            p.stls()
+        cr = Creds(box)
+        p.user(cr.login)
+        p.pass_(cr.secret)
+        return p
+    except poplib.error_proto as e:
+        raise MailError(friendly(e, box)) from e
+    except OSError as e:
+        raise MailError(f'POP3 sunucusuna bağlanılamadı ({host}): {e}') from e
+
+
+def _pop_index(box, fresh=False):
+    hit = _pop_cache.get(box['id'])
+    if hit and not fresh and time.time() - hit[0] < 60:
+        return hit[1]
+    p = pop_connect(box)
+    try:
+        resp, lines, _ = p.uidl()
+        idx = []
+        for ln in lines:
+            no, uidl = ln.decode(errors='replace').split(' ', 1)
+            idx.append((uidl.strip(), int(no)))
+        out = []
+        for uidl, no in idx[-300:]:   # son 300 ileti
+            _, hl, _ = p.top(no, 0)
+            out.append((uidl, no, b'\r\n'.join(hl) + b'\r\n\r\n'))
+    finally:
+        try:
+            p.quit()
+        except Exception:
+            pass
+    _pop_cache[box['id']] = (time.time(), out)
+    return out
+
+
+def _pop_seen(box):
+    from . import db
+    conn = db.connect()
+    try:
+        return {r[0] for r in conn.execute('SELECT uidl FROM mail_pop_seen WHERE box_id = ?', (box['id'],))}
+    finally:
+        conn.close()
+
+
+def _pop_uid(uidl):
+    return int(hashlib.sha1(uidl.encode()).hexdigest()[:12], 16)   # istemciye sayısal kimlik
+
+
+def pop_folders(box):
+    seen = _pop_seen(box)
+    return [{'key': 'inbox', 'title': 'Gelen Kutusu', 'unseen': sum(1 for u, _, _ in _pop_index(box) if u not in seen)}]
+
+
+def pop_list(box, q='', page=0, unread_only=False):
+    seen = _pop_seen(box)
+    items = []
+    for uidl, no, hdr in reversed(_pop_index(box)):
+        s = _summary(_pop_uid(uidl), hdr, ['\\Seen'] if uidl in seen else [])
+        if q and q.lower() not in f"{s['subject']} {s['from']['name']} {s['from']['email']}".lower():
+            continue
+        if unread_only and s['seen']:
+            continue
+        items.append(s)
+    total = len(items)
+    return {'items': items[page * PAGE:(page + 1) * PAGE], 'total': total, 'page': page, 'pages': max(1, -(-total // PAGE))}
+
+
+def _pop_find(box, uid):
+    for uidl, no, _ in _pop_index(box):
+        if _pop_uid(uidl) == uid:
+            return uidl, no
+    raise MailError('E-posta bulunamadı')
+
+
+def pop_raw(box, uid):
+    uidl, no = _pop_find(box, uid)
+    p = pop_connect(box)
+    try:
+        _, lines, _ = p.retr(no)
+    finally:
+        try:
+            p.quit()
+        except Exception:
+            pass
+    return email.message_from_bytes(b'\r\n'.join(lines), policy=default_policy)
+
+
+def pop_read(box, uid):
+    from . import db
+    msg = pop_raw(box, uid)
+    uidl, _ = _pop_find(box, uid)
+    conn = db.connect()
+    try:
+        conn.execute('INSERT OR IGNORE INTO mail_pop_seen (box_id, uidl) VALUES (?,?)', (box['id'], uidl))
+        conn.commit()
+    finally:
+        conn.close()
+    return _render(msg, uid, 'inbox', '\\Seen')
+
+
+def pop_action(box, uids, act):
+    from . import db
+    found = [_pop_find(box, u) for u in uids]
+    if act in ('read', 'unread'):
+        conn = db.connect()
+        try:
+            for uidl, _ in found:
+                if act == 'read':
+                    conn.execute('INSERT OR IGNORE INTO mail_pop_seen (box_id, uidl) VALUES (?,?)', (box['id'], uidl))
+                else:
+                    conn.execute('DELETE FROM mail_pop_seen WHERE box_id = ? AND uidl = ?', (box['id'], uidl))
+            conn.commit()
+        finally:
+            conn.close()
+        return {'ok': True}
+    if act == 'trash':   # POP3: sunucudan kalıcı silinir
+        p = pop_connect(box)
+        try:
+            for _, no in found:
+                p.dele(no)
+        finally:
+            p.quit()
+        _pop_cache.pop(box['id'], None)
+        return {'ok': True}
+    raise MailError('POP3 hesabında bu işlem yapılamaz')
+
+
+# ---------------- Takvim daveti (ICS) ----------------
+def _ics_unfold(text):
+    return re.sub(r'\r?\n[ \t]', '', text)
+
+
+def _ics_dt(v, params=''):
+    """ICS tarih → (ISO yerel, tüm gün mü)."""
+    v = v.strip()
+    try:
+        if 'VALUE=DATE' in params or re.fullmatch(r'\d{8}', v):
+            return f'{v[:4]}-{v[4:6]}-{v[6:8]}T00:00:00', True
+        if v.endswith('Z'):
+            dt = datetime.strptime(v, '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc).astimezone()
+            return dt.replace(tzinfo=None).isoformat(timespec='seconds'), False
+        dt = datetime.strptime(v[:15], '%Y%m%dT%H%M%S')
+        return dt.isoformat(timespec='seconds'), False
+    except ValueError:
+        return None, False
+
+
+def parse_ics(text):
+    """İlk VEVENT: {uid, title, starts_at, ends_at, all_day, location, description, organizer, method, status}."""
+    t = _ics_unfold(text)
+    method = (re.search(r'(?m)^METHOD:(.+)$', t) or [None, ''])[1].strip().upper()
+    ev = re.search(r'(?s)BEGIN:VEVENT(.*?)END:VEVENT', t)
+    if not ev:
+        return None
+    props = {}
+    for line in ev.group(1).splitlines():
+        if ':' not in line:
+            continue
+        k, v = line.split(':', 1)
+        name, _, params = k.partition(';')
+        props.setdefault(name.upper(), (params, v))
+    get = lambda n: props.get(n, ('', ''))[1].replace('\\n', '\n').replace('\\,', ',').replace('\\;', ';').strip()
+    start, all_day = _ics_dt(*reversed(props.get('DTSTART', ('', '')))) if 'DTSTART' in props else (None, False)
+    end, _ = _ics_dt(*reversed(props.get('DTEND', ('', '')))) if 'DTEND' in props else (None, False)
+    if not start:
+        return None
+    org = get('ORGANIZER')
+    return {'uid': get('UID') or hashlib.sha1(t.encode()).hexdigest(), 'title': get('SUMMARY') or '(başlıksız etkinlik)', 'starts_at': start,
+            'ends_at': end, 'all_day': all_day, 'location': get('LOCATION') or None, 'description': get('DESCRIPTION')[:2000] or None,
+            'organizer': org.replace('mailto:', '').replace('MAILTO:', '') or None, 'method': method or 'PUBLISH',
+            'status': 'cancelled' if method == 'CANCEL' or get('STATUS').upper() == 'CANCELLED' else ('tentative' if method == 'REQUEST' else 'confirmed')}
+
+
+def parse_invite(msg):
+    for part in msg.walk():
+        if part.get_content_type() == 'text/calendar' or (part.get_filename() or '').lower().endswith('.ics'):
+            try:
+                raw = part.get_payload(decode=True) or b''
+                return parse_ics(raw.decode('utf-8', 'replace'))
+            except Exception:
+                return None
+    return None

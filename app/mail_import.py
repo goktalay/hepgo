@@ -61,10 +61,9 @@ def _start_ocr(ids):
         document_ocr.start(i)
 
 
-def import_message(conn, user, account, folder, uid):
+def import_message(conn, user, box, folder, uid):
     """Tek e-postanın eklerini aktarır (okuma ekranındaki düğme)."""
-    c = mail.conn_for(account)
-    msg = mail._run(c, lambda m: mail._fetch_raw(c, m, folder, uid)[0])
+    msg = mail.raw_message(box, folder, uid)
     ids = _save(conn, user['id'], msg, {'uid': uid}, folder)
     conn.commit()
     _start_ocr(ids)
@@ -98,7 +97,7 @@ def sync_account(conn, a):
     ids = []
     for msg in msgs:
         ids += _save(conn, a['user_id'], msg, {}, 'inbox')
-    conn.execute('UPDATE mail_accounts SET last_uid = ?, uid_validity = ? WHERE user_id = ?', (last, validity, a['user_id']))
+    conn.execute('UPDATE mail_boxes SET last_uid = ?, uid_validity = ? WHERE id = ?', (last, validity, a['id']))
     conn.commit()
     _start_ocr(ids)
     return len(ids)
@@ -109,16 +108,16 @@ def _loop():
     while True:
         try:
             with db.connect() as conn:
-                accounts = db.rows(conn.execute('SELECT * FROM mail_accounts WHERE auto_import = 1'))
+                accounts = db.rows(conn.execute("SELECT * FROM mail_boxes WHERE auto_import = 1 AND provider != 'pop3'"))
                 for a in accounts:
                     roles = auth.user_roles(conn, a['user_id'])
                     if 'documents' not in auth.allowed_modules(roles):
                         continue
                     try:
                         sync_account(conn, a)
-                        conn.execute('UPDATE mail_accounts SET last_error = NULL WHERE user_id = ?', (a['user_id'],))
+                        conn.execute('UPDATE mail_boxes SET last_error = NULL WHERE id = ?', (a['id'],))
                     except Exception as e:   # bir hesabın hatası diğerlerini durdurmasın
-                        conn.execute('UPDATE mail_accounts SET last_error = ? WHERE user_id = ?', (str(e)[:300], a['user_id']))
+                        conn.execute('UPDATE mail_boxes SET last_error = ? WHERE id = ?', (str(e)[:300], a['id']))
                     conn.commit()
         except Exception:
             pass

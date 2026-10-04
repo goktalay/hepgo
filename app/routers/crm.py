@@ -343,7 +343,9 @@ def my_events(start: str, end: str, user=Depends(auth.current_user), conn=db.DB)
     where, args = _mine(user['id'])
     rows = _label(conn, _event_rows(conn, f'{where} AND e.starts_at >= ? AND e.starts_at < ?', (*args, start, end)), user)
     from .meetings import calendar_items   # şirket içi toplantılar (Kişisel → Toplantılar)
-    return rows + _meeting_events(conn, 'user', user['id'], start, end) + calendar_items(conn, user['id'], start, end)
+    from .. import personal   # mail daveti / Google Takvim / Outlook öğeleri (yalnız sahibi)
+    return (rows + _meeting_events(conn, 'user', user['id'], start, end) + calendar_items(conn, user['id'], start, end)
+            + personal.calendar_items(conn, user['id'], start, end))
 
 
 @router.get('/my/upcoming')

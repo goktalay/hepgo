@@ -57,11 +57,36 @@ GROUPS = {
         ],
     },
     'google': {
-        'title': 'Google E-posta (Gmail)',
-        'desc': 'Kullanıcıların Gmail hesaplarını bağlaması için Google Cloud OAuth istemcisi.',
+        'title': 'Google (Gmail, Takvim, Kişiler, YouTube)',
+        'desc': 'Kullanıcıların Gmail hesabını “Google ile bağlan” ile eklemesi; Google Takvim ve Kişiler eşitlemesi. Google Cloud '
+                'Console’da Gmail API, Calendar API, People API etkinleştirilir; OAuth istemcisinin yönlendirme adresi: '
+                '<alan-adı>/api/mail/oauth/google/callback',
         'fields': [
             ('GOOGLE_CLIENT_ID', 'OAuth Client ID', 'text', '….apps.googleusercontent.com'),
             ('GOOGLE_CLIENT_SECRET', 'Client Secret', 'secret', 'GOCSPX-…'),
+        ],
+    },
+    'microsoft': {
+        'title': 'Microsoft (Outlook / Microsoft 365)',
+        'desc': 'Outlook.com, Hotmail ve Microsoft 365 / Exchange Online hesaplarını bağlama; Outlook takvimi ve kişileri. '
+                'Azure Portal › Entra ID › App registrations; yönlendirme adresi: <alan-adı>/api/mail/oauth/microsoft/callback',
+        'fields': [
+            ('MS_CLIENT_ID', 'Application (client) ID', 'text', '00000000-0000-…'),
+            ('MS_CLIENT_SECRET', 'Client secret', 'secret', 'Değer (Value)'),
+            ('MS_TENANT', 'Tenant', 'text', 'common (kişisel + kurumsal) ya da Directory (tenant) ID'),
+        ],
+    },
+    'social': {
+        'title': 'Sosyal Medya Uygulamaları',
+        'desc': 'Kişisel Ayarlar › Sosyal Medya’da OAuth gerektiren hesaplar (Instagram / Facebook, X, TikTok). RSS, YouTube kanalı, '
+                'Bluesky ve Mastodon anahtar gerektirmez. Yönlendirme adresi: <alan-adı>/api/social/oauth/<sağlayıcı>/callback',
+        'fields': [
+            ('META_APP_ID', 'Meta App ID (Instagram / Facebook)', 'text', ''),
+            ('META_APP_SECRET', 'Meta App Secret', 'secret', ''),
+            ('X_CLIENT_ID', 'X (Twitter) Client ID', 'text', ''),
+            ('X_CLIENT_SECRET', 'X Client Secret', 'secret', ''),
+            ('TIKTOK_CLIENT_KEY', 'TikTok Client key', 'text', ''),
+            ('TIKTOK_CLIENT_SECRET', 'TikTok Client secret', 'secret', ''),
         ],
     },
     'maps': {
@@ -238,7 +263,14 @@ def test(group):
         return ok, 'Harita anahtarı tanımlı; harita görünümleri Google Haritalar kullanır.' if ok else 'Maps API anahtarı girilmeli.'
     if group == 'google':
         ok = bool(config.GOOGLE_CLIENT_ID and config.GOOGLE_CLIENT_SECRET)
-        return ok, 'Bilgiler tanımlı; kullanıcılar E-posta bölümünden Gmail bağlayabilir.' if ok else 'Client ID ve Secret girilmeli.'
+        return ok, 'Bilgiler tanımlı; kullanıcılar Mail Hesaplarım’dan “Google ile bağlan” yapabilir.' if ok else 'Client ID ve Secret girilmeli.'
+    if group == 'microsoft':
+        ok = bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET)
+        return ok, 'Bilgiler tanımlı; kullanıcılar Outlook / Microsoft 365 hesabı bağlayabilir.' if ok else 'Client ID ve secret girilmeli.'
+    if group == 'social':
+        n = sum(bool(a and b) for a, b in ((config.META_APP_ID, config.META_APP_SECRET), (config.X_CLIENT_ID, config.X_CLIENT_SECRET),
+                                            (config.TIKTOK_CLIENT_KEY, config.TIKTOK_CLIENT_SECRET)))
+        return n > 0, f'{n} sosyal medya uygulaması tanımlı.' if n else 'Henüz anahtar girilmedi (RSS, YouTube, Bluesky, Mastodon anahtarsız çalışır).'
     if group == 'general':
         return True, 'Genel ayarlar kaydedildi.'
     return False, 'Bilinmeyen bölüm'

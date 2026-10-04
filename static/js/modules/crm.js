@@ -102,7 +102,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 const DAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-export const EVENT_KINDS = { RANDEVU: ['Randevu', 'blue'], HATIRLATMA: ['Hatırlatma', 'yellow'], TOPLANTI: ['Toplantı', 'purple'] };
+export const EVENT_KINDS = { RANDEVU: ['Randevu', 'blue'], HATIRLATMA: ['Hatırlatma', 'yellow'], TOPLANTI: ['Toplantı', 'purple'], KISISEL: ['Mail / Hesap takvimi', 'green'] };
 const kindBadge = k => h('span', { class: `badge ${EVENT_KINDS[k][1]}` }, EVENT_KINDS[k][0]);
 const hm = iso => (iso ? iso.slice(11, 16) : '');
 
@@ -153,6 +153,16 @@ function eventInfo(subject, subjectId, e, ctx, reload) {
   const crm = ctx.user.modules.includes('companies');
   const personLink = p => (crm ? h('a', { href: `#/companies/rehber/person/${p.id}` }, p.full_name) : p.full_name);
   const joinEls = els => els.flatMap((el, i) => (i ? [', ', el] : [el]));
+  if (e.kind === 'KISISEL') {   // mail daveti / Google Takvim / Outlook: yalnız sahibi görür, kaynağında düzenlenir
+    return modal({
+      title: e.title,
+      body: h('dl', { class: 'kv event-kv' }, h('dt', null, 'Kaynak'), h('dd', null, kindBadge('KISISEL'), ' ', e.source || ''),
+        h('dt', null, 'Zaman'), h('dd', null, e.all_day ? `${fmtDateTime(e.starts_at).slice(0, 10)} · tüm gün` : fmtDateTime(e.starts_at) + (e.ends_at ? ` – ${hm(e.ends_at)}` : '')),
+        e.location ? [h('dt', null, 'Yer'), h('dd', null, e.location)] : null,
+        e.note ? [h('dt', null, 'Açıklama'), h('dd', { class: 'event-note' }, e.note)] : null),
+      actions: [{ label: 'Kapat', class: 'primary' }],
+    });
+  }
   if (e.readonly) {   // toplantı: Firma Yönetimi'nde düzenlenir
     return modal({
       title: e.title,
@@ -411,7 +421,7 @@ export function calendarPanel(subject, subjectId, ctx, { mine = false } = {}) {
       title,
       h('span', { class: 'grow' }),
       seg,
-      h('span', { class: 'cal-legend' }, Object.entries(EVENT_KINDS).map(([k, [lbl]]) => h('span', { class: `cal-dot ${k.toLowerCase()}` }, lbl))),
+      h('span', { class: 'cal-legend' }, Object.entries(EVENT_KINDS).filter(([k]) => mine || k !== 'KISISEL').map(([k, [lbl]]) => h('span', { class: `cal-dot ${k.toLowerCase()}` }, lbl))),
       h('button', { class: 'btn sm primary', type: 'button', onclick: () => newEvent(mode === 'day' ? { starts_at: `${ymd(anchor)}T09:00:00` } : {}) }, svgIcon(icons.plus), 'Randevu / Hatırlatma')),
     body,
     upcoming);

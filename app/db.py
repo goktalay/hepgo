@@ -1625,6 +1625,102 @@ CREATE TABLE IF NOT EXISTS mail_accounts (
     uid_validity TEXT,
     auth_type  TEXT NOT NULL DEFAULT 'password'   -- password: uygulama şifresi · oauth: Google ile bağlan (secret = yenileme jetonu)
 );
+-- Mail v2 (Outlook gibi): kullanıcı başına birden çok hesap — Gmail / Outlook / Yandex / iCloud / Yahoo / özel IMAP / POP3.
+-- auth_type: password (uygulama şifresi) | google | microsoft (OAuth yenileme jetonu). secret şifreli saklanır.
+CREATE TABLE IF NOT EXISTS mail_boxes (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email         TEXT NOT NULL,
+    login         TEXT,                          -- sunucu kullanıcı adı (boşsa e-posta)
+    name          TEXT,                          -- gönderen adı
+    provider      TEXT NOT NULL DEFAULT 'imap',  -- gmail | outlook | yandex | icloud | yahoo | imap | pop3
+    auth_type     TEXT NOT NULL DEFAULT 'password',
+    secret        TEXT NOT NULL,
+    imap_host     TEXT, imap_port INTEGER,
+    pop_host      TEXT, pop_port INTEGER,
+    smtp_host     TEXT, smtp_port INTEGER, smtp_security TEXT,   -- ssl | starttls
+    save_sent     INTEGER NOT NULL DEFAULT 1,    -- gönderileni sunucudaki Gönderilenler'e kaydet (Gmail / Outlook kendisi kaydeder)
+    signature     TEXT,
+    color         TEXT,
+    sort          INTEGER NOT NULL DEFAULT 0,
+    auto_import   INTEGER NOT NULL DEFAULT 0,    -- gelen eklerini Evrak Yönetimi'ne kaydet
+    sync_calendar INTEGER NOT NULL DEFAULT 1,
+    sync_contacts INTEGER NOT NULL DEFAULT 1,
+    last_uid      INTEGER, uid_validity TEXT,
+    last_ok       TEXT, last_error TEXT,
+    last_sync     TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mail_boxes_user ON mail_boxes(user_id, sort);
+CREATE TABLE IF NOT EXISTS mail_pop_seen (       -- POP3: sunucuda bayrak olmadığı için okundu bilgisi yerelde
+    box_id INTEGER NOT NULL REFERENCES mail_boxes(id) ON DELETE CASCADE,
+    uidl   TEXT NOT NULL,
+    PRIMARY KEY (box_id, uidl)
+);
+-- Kişisel rehber (Rehber › Kişilerim): yalnız sahibi görür. Kaynak: mail yazışmaları, Google / Outlook kişileri, elle.
+CREATE TABLE IF NOT EXISTS personal_contacts (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL DEFAULT 'manual',   -- mail | google | microsoft | manual
+    ext_id     TEXT NOT NULL,                    -- kaynaktaki kimlik (mail: e-posta adresi)
+    name       TEXT,
+    email      TEXT,
+    phone      TEXT,
+    company    TEXT,
+    title      TEXT,
+    note       TEXT,
+    hits       INTEGER NOT NULL DEFAULT 0,       -- yazışma sayısı (otomatik tamamlama sırası)
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    UNIQUE (user_id, source, ext_id)
+);
+-- Kişisel takvime mail hesaplarından gelen öğeler (davet ICS, Google / Outlook takvimi) — yalnız sahibi görür
+CREATE TABLE IF NOT EXISTS personal_events (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    box_id      INTEGER REFERENCES mail_boxes(id) ON DELETE CASCADE,
+    source      TEXT NOT NULL,                  -- ics | google | microsoft
+    ext_id      TEXT NOT NULL,
+    title       TEXT,
+    starts_at   TEXT NOT NULL,
+    ends_at     TEXT,
+    all_day     INTEGER NOT NULL DEFAULT 0,
+    location    TEXT,
+    description TEXT,
+    organizer   TEXT,
+    status      TEXT,                           -- confirmed | tentative | cancelled
+    updated_at  TEXT NOT NULL,
+    UNIQUE (user_id, source, ext_id)
+);
+CREATE INDEX IF NOT EXISTS ix_personal_events ON personal_events(user_id, starts_at);
+-- Sosyal medya (Kişisel Ayarlar › Sosyal Medya): bağlanan hesapların paylaşımları Şirketten Haberler'de yalnız sahibine görünür
+CREATE TABLE IF NOT EXISTS social_accounts (
+    id           INTEGER PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider     TEXT NOT NULL,                 -- rss | youtube | bluesky | mastodon | instagram | x | facebook | tiktok
+    handle       TEXT NOT NULL,                 -- kullanıcı adı / kanal / adres
+    feed_url     TEXT,
+    display_name TEXT,
+    avatar       TEXT,
+    token        TEXT,                          -- OAuth (şifreli)
+    show_in_feed INTEGER NOT NULL DEFAULT 1,
+    last_sync    TEXT,
+    last_error   TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS social_posts (
+    id         INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES social_accounts(id) ON DELETE CASCADE,
+    ext_id     TEXT NOT NULL,
+    text       TEXT,
+    url        TEXT,
+    media      TEXT,                            -- resim / küçük resim adresi
+    media_kind TEXT,                            -- image | video
+    posted_at  TEXT,
+    fetched_at TEXT NOT NULL,
+    UNIQUE (account_id, ext_id)
+);
+CREATE INDEX IF NOT EXISTS ix_social_posts ON social_posts(account_id, posted_at);
 -- Evraklara aktarılan mail ekleri (aynı ek iki kez aktarılmaz)
 CREATE TABLE IF NOT EXISTS mail_imports (
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2079,6 +2175,13 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    # Mail v2: eski tek Gmail hesabı (mail_accounts) çok hesaplı mail_boxes'a bir kez taşınır
+    if conn.execute("SELECT name FROM sqlite_master WHERE name = 'mail_boxes'").fetchone():
+        conn.execute('''INSERT INTO mail_boxes (user_id, email, name, provider, auth_type, secret, imap_host, imap_port, smtp_host, smtp_port,
+                        smtp_security, save_sent, signature, auto_import, last_uid, uid_validity, last_ok, last_error, created_at)
+                        SELECT user_id, email, name, 'gmail', CASE auth_type WHEN 'oauth' THEN 'google' ELSE 'password' END, secret,
+                        'imap.gmail.com', 993, 'smtp.gmail.com', 465, 'ssl', 0, signature, auto_import, last_uid, uid_validity, last_ok, last_error, created_at
+                        FROM mail_accounts a WHERE NOT EXISTS (SELECT 1 FROM mail_boxes b WHERE b.user_id = a.user_id AND b.email = a.email)''')
     fv_cols = {r[1] for r in conn.execute('PRAGMA table_info(field_vehicles)')}
     for col, ddl in VEHICLE_COLS:   # Araç Yönetimi: satın alma / kiralama, teknik bilgi, hatırlatma tarihleri
         if fv_cols and col not in fv_cols:

@@ -3,9 +3,18 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.114.0'
+VERSION = '2.115.0'
 
 CHANGELOG = [
+    {'version': '2.115.0', 'date': '2026-10-04', 'title': 'Mail (Outlook gibi) ve Sosyal Medya',
+     'changes': [
+         'Kişisel Ayarlar › Mail Hesaplarım: birden çok hesap bağlanır — “Google ile bağlan” / “Microsoft ile bağlan” (Gmail, Outlook, Hotmail, Microsoft 365 / Exchange Online; şifre gerekmez), uygulama şifresiyle Gmail, Yandex, iCloud, Yahoo, şirket / hosting sunucusu (IMAP / Exchange + SMTP) ve POP3.',
+         'Mail ekranı Outlook gibi: solda “Tüm gelen kutuları” ve hesap ağacı (Gelen, Gönderilenler, Taslaklar, Arşiv, Gereksiz, Çöp ve kendi klasörleriniz), ortada liste ve arama, sağda okuma bölmesi. Okundu / okunmadı, yıldız, arşivle, gereksiz, klasöre taşı, sil; toplu işlem.',
+         'Yeni e-posta: gönderen hesabı seçimi, alıcı otomatik tamamlama (rehberiniz ve şirket), Bilgi / Gizli alıcı, kalın / italik / liste / bağlantı, sürükle-bırak ek (25 MB), imza, taslak kaydet, Ctrl+Enter ile gönder; yanıtla, tümünü yanıtla, ilet (ekleriyle). Gönderilenler sunucudaki klasöre kaydedilir.',
+         'Takvim: mail davetleri (toplantı istekleri) Kişisel Takvim’e eklenir; Google / Microsoft ile bağlanan hesaplarda Google Takvim ve Outlook takvimi de gelir.',
+         'Rehber › Kişilerim: yazıştığınız kişiler, Google / Outlook kişileri ve elle eklediğiniz kişiler. Yalnızca siz görürsünüz; yönetici dahil kimse sizin rehberinizi ve postalarınızı göremez.',
+         'Kişisel Ayarlar › Sosyal Medya: YouTube kanalı, Bluesky, Mastodon, blog / haber (RSS) hesapları bağlanır; yeni paylaşımlar Şirketten Haberler akışında tarihine göre araya karışır ve yalnızca size görünür. Hesap bazında ve tümden açılıp kapatılır. Instagram, Facebook, X ve TikTok için geliştirici anahtarları Program Ayarları › Entegrasyonlar’a girilince açılır.',
+     ]},
     {'version': '2.114.0', 'date': '2026-10-04', 'title': 'Proje Yönetimi',
      'changes': [
          'Yeni modül: Proje Yönetimi (Ar-Ge ve şirket projeleri) — kapak resmi ve resimli detaylı tanım, proje sorumlusu, başlama / hedef bitiş tarihi, bütçe, müşteri / destek kurumu, anahtar kelimeler.',

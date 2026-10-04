@@ -786,7 +786,7 @@ function pageTitle(key, params) {
   if (key === 'purchasing') return `Satın Alma${params.length ? ` › ${{ requests: 'Talep Yönetimi', suppliers: 'Tedarikçi Yönetimi', invoices: 'Fatura İrsaliye', quotes: 'Teklif Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
   if (key === 'mrp') return `MRP${params.length ? ` › ${{ materials: 'Malzeme Yönetimi', semi: 'Yarı Mamül', approvals: 'Onay Yönetimi', depots: 'Depo Yönetimi' }[params[0]] || params[0]}${params[1] ? ` #${params[1]}` : ''}` : ''}`;
   if (key === 'meetings') return params[0] ? `Kişisel › Toplantı #${params[0]}` : 'Kişisel › Toplantılar';
-  if (key === 'settings') return params[0] ? `Ayarlar › ${params[0]}` : 'Ayarlar';
+  if (key === 'settings') return params[0] ? `Ayarlar › ${params[0].split('?')[0]}` : 'Ayarlar';
   const m = MODULES.find(x => x.key === key);
   const base = m ? m.title : key;
   return params.length ? `${base} › ${(SUB_PAGES[key] || (p => p.join('/')))(params)}` : base;

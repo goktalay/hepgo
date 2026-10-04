@@ -3,6 +3,7 @@
 import { api, fileUrl, upload, videoUrl } from '../api.js';
 import { loadMaps } from '../maps.js';
 import { avatar, clear, confirmDialog, fmtDate, fmtDateTime, h, modal, onLeave, segmented, toast, toastError } from '../ui.js';
+import { socialBadge } from './mysettings.js';
 
 const KIND_BADGE = {
   HIRE: ['green', 'İşe alım'], TERMINATION: ['', 'Ayrılış'], FLIGHT: ['blue', 'Uçuş'],
@@ -423,8 +424,9 @@ export function renderFeed(container, ctx, opts = {}) {
       const more = (d.posts || []).filter(x => !have.has(x.id));
       hasMore = (d.posts || []).length >= PAGE;
       posts = [...posts, ...more];
+      await socialMore(hasMore ? posts[posts.length - 1].created_at : '');
       const list = body.querySelector('.feed-list');
-      more.forEach(x => list?.append(postCard(x)));
+      if (list) weave(list, more, !hasMore);
     } catch { /* bir sonraki kaydırmada yeniden denenir */ }
     loadingMore = false;
     sentinel.hidden = !hasMore;
@@ -432,10 +434,60 @@ export function renderFeed(container, ctx, opts = {}) {
   }
 
   let drawMap;
+  // Kişisel sosyal medya paylaşımları (Kişisel Ayarlar › Sosyal Medya): yalnızca bu kullanıcının ekranında, tarihine göre
+  // şirket paylaşımlarının arasına karışır. Şirket sırası bozulmaz; her şirket kartından önce ondan yeni olanlar yerleşir.
+  let social = [], socialOn = true, socialFloor = '';
+  async function socialMore(after) {   // (after, socialFloor] aralığını getirir; after boşsa kalan en eski 50
+    if (!socialOn || onlySaved || view === 'map') return;
+    try {
+      const q = `${after ? `&after=${encodeURIComponent(after)}` : ''}${socialFloor ? `&before=${encodeURIComponent(socialFloor)}` : ''}`;
+      const d = await api.get(`/api/social/feed?limit=50${q}`);
+      socialOn = d.on !== false;
+      const have = new Set(social.map(x => x.id));
+      social.push(...(d.posts || []).filter(x => !have.has(x.id)));
+      if (after) socialFloor = after;
+      else socialOn = false;   // hepsi alındı
+    } catch { /* sosyal akış isteğe bağlı; hata akışı bozmaz */ }
+  }
+  function weave(list, items, final) {
+    const q = social.filter(x => !x._placed).sort((a, b) => (b.posted_at || '').localeCompare(a.posted_at || ''));
+    let i = 0;
+    const put = () => { list.append(socialCard(q[i])); q[i]._placed = true; i++; };
+    for (const p of items) {
+      while (i < q.length && (q[i].posted_at || '') > (p.created_at || '')) put();
+      list.append(postCard(p));
+    }
+    if (final) while (i < q.length) put();
+  }
+  const SOC_NAME = { rss: 'RSS', youtube: 'YouTube', bluesky: 'Bluesky', mastodon: 'Mastodon', instagram: 'Instagram', facebook: 'Facebook', x: 'X', tiktok: 'TikTok' };
+  function socialCard(sp) {
+    const text = sp.text || '';
+    const long = text.length > 220;
+    const tx = h('span', { class: 'feed-tx' }, long ? `${text.slice(0, 200).trimEnd()}… ` : text);
+    const more = long ? h('button', { class: 'feed-moretx', type: 'button', onclick: () => { tx.textContent = text; more.remove(); } }, 'devamı') : null;
+    const open = sp.url ? { href: sp.url, target: '_blank', rel: 'noopener noreferrer' } : null;
+    return h('div', { class: 'feed-post soc-post' },
+      h('div', { class: 'feed-who' },
+        sp.avatar ? h('img', { class: 'feed-ava soc-av', src: sp.avatar, alt: '', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(socialBadge(sp.provider)) }) : socialBadge(sp.provider),
+        h('div', { class: 'grow' }, h('b', null, sp.display_name || sp.handle),
+          h('small', null, [SOC_NAME[sp.provider] || sp.provider, ago(sp.posted_at)].filter(Boolean).join(' · '))),
+        h('a', { class: 'soc-only', href: '#/settings/social', title: 'Bu paylaşımı yalnızca siz görüyorsunuz · Sosyal medya ayarları' }, '🔒 Yalnız siz')),
+      sp.media ? h('a', { class: `soc-media ${sp.media_kind === 'video' ? 'vid' : ''}`, ...open },
+        h('img', { src: sp.media, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.parentElement.remove() }),
+        sp.media_kind === 'video' ? h('span', { class: 'feed-play' }, '▶') : null) : null,
+      text ? h('div', { class: 'feed-text' }, tx, more) : null,
+      sp.url ? h('div', { class: 'soc-foot' }, h('a', { ...open }, 'Kaynağında aç ↗')) : null);
+  }
+
   function draw() {
     if (view === 'map') return drawMap();
-    const list = posts.length ? h('div', { class: 'feed-list' }, posts.map(postCard))
-      : h('div', { class: 'feed-empty muted' }, onlySaved ? 'Henüz kaydettiğin paylaşım yok. Paylaşımların altındaki kaydet simgesiyle favorilerine ekleyebilirsin.'
+    social.forEach(x => { x._placed = false; });
+    let list = null;
+    if (posts.length || (social.length && !onlySaved)) {
+      list = h('div', { class: 'feed-list' });
+      if (onlySaved) posts.forEach(p => list.append(postCard(p))); else weave(list, posts, !hasMore);
+    }
+    list = list || h('div', { class: 'feed-empty muted' }, onlySaved ? 'Henüz kaydettiğin paylaşım yok. Paylaşımların altındaki kaydet simgesiyle favorilerine ekleyebilirsin.'
         : 'Henüz paylaşım yok. İlk paylaşımı sen ekle!');
     sentinel.hidden = !hasMore;
     clear(body, onlySaved ? null : liveBox, topBar(), onlySaved ? null : upBox, list, sentinel);
@@ -480,6 +532,8 @@ export function renderFeed(container, ctx, opts = {}) {
       const d = await api.get(view === 'map' ? '/api/feed?located=1&limit=300' : pageUrl());
       posts = d.posts; if (Array.isArray(d.reactions) && d.reactions.length) reactionList = d.reactions;
       hasMore = view !== 'map' && posts.length >= PAGE;
+      social = []; socialOn = true; socialFloor = '';
+      await socialMore(hasMore ? posts[posts.length - 1].created_at : '');
       draw();
       if (!onlySaved) markSeen();
     } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); }

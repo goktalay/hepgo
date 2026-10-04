@@ -97,6 +97,17 @@ NVR_PASSWORD = os.environ.get('CAYMAZ_NVR_PASSWORD', '')
 
 GOOGLE_CLIENT_ID = os.environ.get('CAYMAZ_GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('CAYMAZ_GOOGLE_CLIENT_SECRET', '')
+# Microsoft (Outlook.com / Microsoft 365 / Exchange Online) OAuth — Azure › Entra ID › App registrations
+MS_CLIENT_ID = os.environ.get('CAYMAZ_MS_CLIENT_ID', '')
+MS_CLIENT_SECRET = os.environ.get('CAYMAZ_MS_CLIENT_SECRET', '')
+MS_TENANT = os.environ.get('CAYMAZ_MS_TENANT', 'common')
+# Sosyal medya OAuth uygulamaları (anahtar girilince ilgili sağlayıcı Kişisel Ayarlar › Sosyal Medya'da açılır)
+META_APP_ID = os.environ.get('CAYMAZ_META_APP_ID', '')
+META_APP_SECRET = os.environ.get('CAYMAZ_META_APP_SECRET', '')
+X_CLIENT_ID = os.environ.get('CAYMAZ_X_CLIENT_ID', '')
+X_CLIENT_SECRET = os.environ.get('CAYMAZ_X_CLIENT_SECRET', '')
+TIKTOK_CLIENT_KEY = os.environ.get('CAYMAZ_TIKTOK_CLIENT_KEY', '')
+TIKTOK_CLIENT_SECRET = os.environ.get('CAYMAZ_TIKTOK_CLIENT_SECRET', '')
 # Google Haritalar JavaScript API anahtarı (istemci tarafında kullanılır; HTTP yönlendiren kısıtıyla korunur).
 GOOGLE_MAPS_API_KEY = os.environ.get('CAYMAZ_GOOGLE_MAPS_API_KEY', '')
 PUBLIC_URL = os.environ.get('CAYMAZ_PUBLIC_URL', '').rstrip('/')   # ör. https://caymaz.app

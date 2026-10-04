@@ -277,6 +277,8 @@ Tümü bu sunucuda işlenir, hiçbir veri dışarı gönderilmez (`app/document_
   `.env`'ine kendi türetilmiş anahtarı yazılır: merkez .env'iyle `python -m app.fedauth <slug>` → firmada
   `CAYMAZ_FEDERATION_SECRET=<çıktı>` ve `CAYMAZ_TENANT_SLUG=<slug>`. Bir firmanın anahtarı başka firmanın verisine
   erişemez. Tüm firmalar geçince merkezde `CAYMAZ_FEDERATION_ALLOW_SHARED=0` yapılır (o zamana kadar ortak anahtar da geçer).
+- WebSocket'ler (toplantı, telsiz, canlı yayın, ekran paylaşımı, konsol…) yalnız aynı adresten açılır: tarayıcının Origin'i
+  Host'la ya da `CAYMAZ_PUBLIC_URL` / `CAYMAZ_LOCAL_URL` / `CAYMAZ_WS_ORIGINS` (virgülle) ile eşleşmezse el sıkışma reddedilir.
 - Gece yedeği: `backup.sh`, systemd zamanlayıcısı `caymaz-backup.timer` ile her gece 03:00'te çalışır;
   `data/backups/nightly/` altına veritabanı ve yüklenen dosyaların anlık görüntüsü alınır, 30 gün saklanır.
 

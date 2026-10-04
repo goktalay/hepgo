@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 import re
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -72,6 +73,35 @@ class _AssetGZip:
 
 
 app.add_middleware(_AssetGZip)
+
+
+class _WsOriginGuard:
+    """WebSocket'lerde siteler arası ele geçirmeye (CSWSH) karşı: tarayıcı Origin gönderir; Origin, bağlanılan adresle
+    (Host) ya da tanımlı adreslerle (CAYMAZ_PUBLIC_URL, CAYMAZ_LOCAL_URL, CAYMAZ_WS_ORIGINS) eşleşmiyorsa el sıkışma
+    reddedilir. Firmalar aynı üst alan adını paylaştığından (SameSite çerez) başka firmanın sayfası bağlanamaz.
+    Origin göndermeyen tarayıcı dışı istemciler (fabrika ajanı) etkilenmez; onlar kendi anahtarıyla doğrulanır."""
+    def __init__(self, app):
+        self.app = app
+
+    @staticmethod
+    def _allowed(scope):
+        h = {k.decode('latin-1').lower(): v.decode('latin-1') for k, v in scope.get('headers') or []}
+        origin = h.get('origin')
+        if origin is None:
+            return True
+        host = urlsplit(origin).netloc.lower()
+        extra = {urlsplit(u.strip()).netloc.lower() for u in
+                 (config.PUBLIC_URL, config.LOCAL_URL, *os.environ.get('CAYMAZ_WS_ORIGINS', '').split(',')) if u.strip()}
+        return bool(host) and (host == h.get('host', '').lower() or host in extra)
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'websocket' and not self._allowed(scope):
+            await receive()   # websocket.connect
+            return await send({'type': 'websocket.close', 'code': 4403})   # kabul edilmeden → HTTP 403
+        return await self.app(scope, receive, send)
+
+
+app.add_middleware(_WsOriginGuard)
 for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,

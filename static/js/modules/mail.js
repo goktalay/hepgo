@@ -3,6 +3,7 @@
 // sağ altta "Oluştur", tam ekran okuma ve yazma. Masaüstü: solda klasörler, ortada liste (üzerine gelince işlemler), genişse sağda
 // okuma bölmesi, sağ altta yüzen yazma penceresi. İçerik güvenli kutuda (betik çalışmaz); uzak resimler istenirse yüklenir.
 import { api } from '../api.js';
+import { cleanHtml } from '../sanitize.js';
 import { clear, confirmDialog, h, modal, t, toast, toastError } from '../ui.js';
 
 // ---------------- simgeler (Material) ----------------
@@ -763,7 +764,7 @@ function composer({ mode, msg, box, boxes, onSent, onClose, onReopen, to: toInit
   const editor = h('div', { class: 'gm-c-body', contenteditable: 'true', spellcheck: 'true', 'aria-label': t('İleti metni'), 'data-ph': t('E-posta oluşturun') });
   const syncPh = () => editor.classList.toggle('ph', !editor.innerText.trim() && !editor.querySelector('img,blockquote'));
   editor.addEventListener('input', syncPh);
-  editor.innerHTML = mode === 'draft' ? (msg.html || esc(msg.text || '').replace(/\n/g, '<br>')) : (msg ? `<div><br></div><div><br></div>${head}<blockquote class="gm-quote">${sanitize(quoted)}</blockquote>` : '<div><br></div>');
+  editor.innerHTML = mode === 'draft' ? (msg.html ? sanitize(msg.html) : esc(msg.text || '').replace(/\n/g, '<br>')) : (msg ? `<div><br></div><div><br></div>${head}<blockquote class="gm-quote">${sanitize(quoted)}</blockquote>` : '<div><br></div>');
   syncPh();
   const cmd = (c, v) => () => { editor.focus(); document.execCommand(c, false, v); };
   const tb = (label, c, v, title) => h('button', { type: 'button', class: 'gm-fmt-b', title: t(title), onmousedown: e => e.preventDefault(), onclick: cmd(c, v) }, label);
@@ -962,10 +963,8 @@ function stripSelf(html) {
 }
 
 // Alıntılanan HTML: betik / olay öznitelikleri / dış kaynaklar ayıklanır (yazma alanında çalışmasın)
+// Yanıtlanan / iletilen / taslak HTML'i düzenleyiciye (contenteditable, innerHTML) girmeden önce izin listesiyle temizlenir
+// (sanitize.js — Belge Yönetim ile aynı kural): betik, olay öznitelikleri, javascript:/data: bağlantılar ve uzak resimler atılır.
 function sanitize(html) {
-  const doc = new DOMParser().parseFromString(`<div>${html || ''}</div>`, 'text/html');
-  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form').forEach(n => n.remove());
-  doc.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => { if (/^on/i.test(a.name) || (/^(src|href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name); }));
-  doc.querySelectorAll('img[src^="http"]').forEach(n => n.removeAttribute('src'));
-  return doc.body.firstChild.innerHTML;
+  return cleanHtml(html || '');
 }

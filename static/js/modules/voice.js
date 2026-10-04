@@ -428,6 +428,7 @@ function showCallUI(status) {
     h('div', { class: 'vc-controls' }, ui.muteBtn, ui.camBtn, ui.recBtn, ui.endBtn),
     ui.mini);
   document.body.append(ui.el);
+  if (!isPhone()) bigWindowDrag();
   window.addEventListener('beforeunload', beforeUnload);   // F5 / sekme kapatmada uyar
   renderPeers();
   startBars();
@@ -545,11 +546,50 @@ function applyMiniPos(p) {
   el.style.top = `${Math.min(Math.max(6, p.top), window.innerHeight - hh - 6)}px`;
   el.style.right = 'auto'; el.style.bottom = 'auto';
 }
+// Bilgisayarda köşe penceresi: boş bir yerinden tutulup taşınır (konum hatırlanır), çift tıklayınca küçülür.
+// Düğmeler, video ve kayıt onayı kutusu sürüklemeyi başlatmaz.
+const BIG_POS = 'caymaz.callPos';
+function placeWindow(el, p) {
+  if (!el || !p || typeof p.left !== 'number') return;
+  const w = el.offsetWidth || 340, hh = el.offsetHeight || 420;
+  el.style.left = `${Math.min(Math.max(6, p.left), window.innerWidth - w - 6)}px`;
+  el.style.top = `${Math.min(Math.max(6, p.top), window.innerHeight - hh - 6)}px`;
+  el.style.right = 'auto'; el.style.bottom = 'auto';
+}
+function bigWindowDrag() {
+  const el = ui.el;
+  const skip = e => el.classList.contains('minimized') || !!e.target.closest('button, a, input, video, .vc-consent');
+  let d = null;
+  el.addEventListener('pointerdown', e => {
+    if (skip(e) || (e.button != null && e.button !== 0)) return;
+    const r = el.getBoundingClientRect();
+    d = { dx: e.clientX - r.left, dy: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved: false, id: e.pointerId };
+    try { el.setPointerCapture(e.pointerId); } catch { /* */ }   // hızlı çekişte imleç pencereden çıksa da olaylar gelsin
+  });
+  el.addEventListener('pointermove', e => {
+    if (!d) return;
+    if (!d.moved) {
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+      d.moved = true; el.classList.add('dragging');
+    }
+    placeWindow(el, { left: e.clientX - d.dx, top: e.clientY - d.dy });
+  });
+  const end = () => {
+    if (!d) return;
+    const moved = d.moved; d = null; el.classList.remove('dragging');
+    if (moved) { try { localStorage.setItem(BIG_POS, JSON.stringify({ left: el.offsetLeft, top: el.offsetTop })); } catch { /* */ } }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('dblclick', e => { if (!skip(e)) { e.preventDefault(); minimizeCall(); } });
+  try { placeWindow(el, JSON.parse(localStorage.getItem(BIG_POS) || 'null')); } catch { /* */ }
+}
 function minimizeCall() { if (!ui) return; ui.el.classList.add('minimized'); const p = loadMiniPos(); if (p) applyMiniPos(p); }
 function restoreCall() {
   if (!ui) return;
   ui.el.classList.remove('minimized');
   const s = ui.el.style; s.left = s.top = s.right = s.bottom = '';   // tam ekran/köşe CSS'i geri gelsin
+  if (!isPhone()) { try { placeWindow(ui.el, JSON.parse(localStorage.getItem(BIG_POS) || 'null')); } catch { /* */ } }   // bilgisayarda taşındığı yere
 }
 function hangup() { if (call) { send({ t: 'end', call_id: call.id }); endLocal(true); } }
 

@@ -3404,7 +3404,9 @@ main#view.msg-view { height: 100%; padding: 0; max-width: none; margin: 0; }
 .vc-ring.compact .vc-slide { display: none; }   /* köşede kaydırma yerine düğmeler */
 .vc-ring.compact .vc-ring-btns { gap: 40px; }
 .vc-ring.compact .vc-rbtn { width: 58px; height: 58px; }
-.vc-call.compact { }
+.vc-call.compact:not(.minimized) { cursor: grab; user-select: none; -webkit-user-select: none; }
+.vc-call.compact:not(.minimized) :is(button, video, .vc-consent) { cursor: pointer; }
+.vc-call.compact.dragging { cursor: grabbing; transition: none; }
 .vc-call.compact .vc-call-top { padding: 14px 14px 4px; }
 .vc-call.compact .vc-ct-name { font-size: 16px; }
 .vc-call.compact .vc-stage { padding: 12px; min-height: 150px; }

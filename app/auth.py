@@ -122,6 +122,19 @@ def interns(conn):
 
 
 COOKIE = 'caymaz_session'
+
+
+def is_https(request):
+    """İstek tarayıcıdan HTTPS ile mi geldi? Doğrudan ya da Cloudflare tüneli üzerinden (uygulama tünele düz HTTP/soket
+    ile bağlanır; asıl şema X-Forwarded-Proto / CF-Visitor başlığındadır)."""
+    proto = request.headers.get('x-forwarded-proto', '').split(',')[0].strip().lower()
+    return request.url.scheme == 'https' or proto == 'https' or '"scheme":"https"' in request.headers.get('cf-visitor', '').replace(' ', '')
+
+
+def set_session_cookie(response, request, token, hours):
+    """Oturum çerezi: HttpOnly, SameSite=Lax; HTTPS'te Secure (çerez düz HTTP'den hiç gönderilmez). Yerel ağdan http://
+    ile girişte Secure konmaz — konsa tarayıcı çerezi saklamaz."""
+    response.set_cookie(COOKIE, token, httponly=True, samesite='lax', max_age=int(hours * 3600), secure=is_https(request))
 _ITERATIONS = 240_000
 
 

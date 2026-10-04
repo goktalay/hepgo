@@ -97,8 +97,7 @@ def login(body: LoginIn, request: Request, response: Response, conn=db.DB):
     token = auth.create_session(conn, user['id'], pol['session_hours'])
     conn.execute('UPDATE users SET last_seen = ? WHERE id = ?', (db.now(), user['id']))
     db.audit(conn, user['id'], 'Sisteme giriş yaptı', 'session', None, _client_ip(request))
-    response.set_cookie(auth.COOKIE, token, httponly=True, samesite='lax',
-                        max_age=pol['session_hours'] * 3600)
+    auth.set_session_cookie(response, request, token, pol['session_hours'])
     return {'ok': True, 'device_token': _trust_device(conn, user['id'], request, body.device_token)}
 
 
@@ -194,7 +193,7 @@ def login_pin(body: PinLoginIn, request: Request, response: Response, conn=db.DB
     conn.execute('UPDATE users SET last_seen = ? WHERE id = ?', (db.now(), u['id']))
     conn.execute('UPDATE trusted_devices SET last_used = ? WHERE id = ?', (db.now(), u['device_id']))
     db.audit(conn, u['id'], 'Sisteme PIN ile giriş yaptı', 'session', None, ip)
-    response.set_cookie(auth.COOKIE, token, httponly=True, samesite='lax', max_age=pol['session_hours'] * 3600)
+    auth.set_session_cookie(response, request, token, pol['session_hours'])
     return {'ok': True}
 
 

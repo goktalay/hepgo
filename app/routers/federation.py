@@ -92,7 +92,7 @@ def _expire_old(conn):
 
 
 @router.get('/auth/crosslogin/status/{token}')
-def poll(token: str, response: Response, conn=db.DB):
+def poll(token: str, request: Request, response: Response, conn=db.DB):
     """Giriş ekranı yoklaması. Onaylandıysa oturum çerezi kurulur ve otomatik giriş sağlanır."""
     _expire_old(conn)
     conn.commit()
@@ -101,8 +101,7 @@ def poll(token: str, response: Response, conn=db.DB):
         raise HTTPException(404, 'Talep bulunamadı')
     out = {'status': row['status'], 'full_name': row['full_name']}
     if row['status'] == 'approved' and row['session_token']:
-        response.set_cookie(auth.COOKIE, row['session_token'], httponly=True, samesite='lax',
-                            max_age=config.FEDERATION_SESSION_HOURS * 3600)
+        auth.set_session_cookie(response, request, row['session_token'], config.FEDERATION_SESSION_HOURS)
     return out
 
 

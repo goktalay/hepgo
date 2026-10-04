@@ -22,6 +22,7 @@ import * as admin from './modules/admin.js';
 import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
 import * as fleet from './modules/fleet.js';
+import * as boss from './modules/boss.js';
 import * as members from './modules/members.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
@@ -77,6 +78,7 @@ import { enableToolbarMerge } from './toolbarmerge.js';
 // sub: 'x' → x modülüne erişimi olan kullanıcıda ızgarada ayrı görünmez (x'in alt sekmesidir).
 const MODULES = [
   { key: 'master', title: 'Veri & Yedek', mod: master, tone: 'purple', hidden: true },   // yalnızca sistem sahibi; Program Ayarları altından açılır (KVKK: veri göstermez, yalnız indir/yedek)
+  { key: 'boss', title: 'Patron', mod: boss },   // Patron ekranı: üst yönetim özeti (ızgarada ilk sırada)
   { key: 'admin', title: 'Yönetim', mod: admin, tone: 'red' },
   { key: 'production', title: 'Üretim Yönetimi', mod: production },
   { key: 'orders', title: 'İş Emri Yönetimi', mod: orders, hidden: true },   // Üretim Yönetimi'nin alt modülü (Yarı Mamul'ün yanında); ızgarada ayrı görünmez

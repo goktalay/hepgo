@@ -33,11 +33,12 @@ CLEANER = 'Temizlik Görevlisi'   # yalnızca Temizlik modülü (günlük temizl
 DESIGNER = 'Endüstriyel Tasarımcı'   # Endüstriyel Tasarım modülü: proje + çizim / montaj çizimi + sürüm geçmişi
 FINANCE = 'Finans'   # Finans / ön-muhasebe: kasa-banka, cari, nakit akışı, ödeme/tahsilat, mizan, bordro
 QUALITY = 'Kalite / Sertifikasyon'   # Sertifikasyon: sertifikalar (ISO 9001, tesis güvenlik, üretim izni…), dokümanlar, denetimler
+BOSS = 'Patron / Üst Yönetim'   # Patron ekranı: şirketin tüm özet göstergeleri (yalnızca okunur)
 FLEET = 'Araç / Filo Sorumlusu'   # Araç Yönetimi: araçlar, zimmet, belgeler, giderler (muhasebe hareketi etiketleme)
 SUPPORT_ROLE = 'Merkez Destek'   # YALNIZCA merkez (Veilox) instance'ında atanır; müşteri firmalarına çapraz (destek) giriş yetkisi verir
 
 ROLES = [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER,
-         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, QUALITY, FLEET, CLEANER, INTERN]
+         FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT, ASSEMBLER, ELECTRONICS, ADMIN_STAFF, SECRETARY, SECURITY, CAMERA, HR, PURCHASING, SALES, MRP_LEAD, DESIGNER, FINANCE, QUALITY, FLEET, BOSS, CLEANER, INTERN]
 # Yardımcı personel rolleri: bu rollerin seçim listelerinde stajerler de çıkar ("Stajer" etiketiyle) ve seçilebilir
 HELPER_ROLES = (ASSEMBLER, ELECTRONICS, FIELD_STAFF)
 
@@ -71,6 +72,7 @@ MODULE_ROLES = {
     'finance':    [ADMIN, FINANCE],                                                           # M24 Finans / ön-muhasebe
     'certs':      [ADMIN, QUALITY],                                                           # M27 Sertifikasyon (sertifika + doküman + denetim)
     'fleet':      [ADMIN, ADMIN_STAFF, FLEET],                                                # M28 Araç Yönetimi (araç, zimmet, belge, gider)
+    'boss':       [ADMIN, BOSS],                                                              # M29 Patron ekranı (üst yönetim özeti)
 }
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler
 MODULE_ROLES['mrp'] = sorted(set(MODULE_ROLES['stock']) | set(MODULE_ROLES['warehouse']), key=ROLES.index)

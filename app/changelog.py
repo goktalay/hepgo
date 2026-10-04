@@ -3,9 +3,17 @@
 Her anlamlı değişiklikte VERSION ilerletilir ve en üste yeni bir kayıt eklenir.
 Not: 1.0.0–2.2.0 arası tarihler, özelliklerin eklendiği döneme göre yaklaşıktır (ayrıntılı git geçmişi tutulmadan önce).
 """
-VERSION = '2.111.0'
+VERSION = '2.112.0'
 
 CHANGELOG = [
+    {'version': '2.112.0', 'date': '2026-10-04', 'title': 'Patron ekranı',
+     'changes': [
+         'Yeni modül: Patron — üst yönetimin tek bakışta görmesi gerekenler: nakit (kasa + banka), alacak ve borçlar (vadesi geçenlerle), yılbaşından bu yana net kâr ve geçen yılın aynı dönemine göre değişim.',
+         '“Dikkat gerektirenler”: nakit projeksiyonunun eksiye düştüğü hafta, vadesi geçmiş alacak / borç, hatadaki yazıcı, yüksek üretim hata oranı, süresi dolan sertifika, yaklaşan denetim, onay bekleyen satın alma ve araç muayene / sigorta / bakım.',
+         'Kartlar: ciro ve kârlılık (12 ay net satış + net kâr grafiği, brüt / net marj), 12 haftalık nakit projeksiyonu, alacak yaşlandırma, satış ve en büyük müşteriler, üretim (çalışan yazıcı oranı, iş emirleri, bitenler, hata oranı), insan kaynakları (aktif personel, izinli / raporlu, aylık maaş yükü), operasyon (araç, sertifika, denetim, satın alma).',
+         'Her karta tıklayınca sağdan ayrıntı paneli açılır (hesap bakiyeleri, cari bazında açık / vadesi geçen tutarlar, gelir tablosu, aylık satışlar, yazıcı durumları, izinli personel, araç giderleri…); yetkisi olan için ilgili modüle geçiş.',
+         'Yeni rol: “Patron / Üst Yönetim” (Sistem Yöneticisi de erişir). Veriler 5 dakikada bir tazelenir.',
+     ]},
     {'version': '2.111.0', 'date': '2026-10-04', 'title': 'Hareketler ilgili kaydın detayında',
      'changes': [
          'Finans’taki ayrı “Hareketler” listesi kaldırıldı; hareketler ait olduğu kaydın detayında görünür.',

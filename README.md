@@ -282,6 +282,17 @@ Tümü bu sunucuda işlenir, hiçbir veri dışarı gönderilmez (`app/document_
 - Gece yedeği: `backup.sh`, systemd zamanlayıcısı `caymaz-backup.timer` ile her gece 03:00'te çalışır;
   `data/backups/nightly/` altına veritabanı ve yüklenen dosyaların anlık görüntüsü alınır, 30 gün saklanır.
 
+- Sunucu dışı yedek (`offsite.sh`): gece yedeğinden sonra veritabanını (günlük, 30 gün), anahtarları ve yüklenen dosyaların
+  güncel aynasını (değişen/silinenler `uploads-eski/<gün>` altında 30 gün) **şifreli** olarak Google Drive'a gönderir
+  (rclone `crypt`: içerik ve adlar sunucuda şifrelenir). Kurulum (root, bir kez):
+  1. `apt install rclone`; tarayıcılı bir bilgisayarda `rclone authorize "drive" --drive-scope drive.file` → çıkan jetonu kopyala.
+  2. `sudo -u hepgo rclone config create gdrive drive scope=drive.file token='<jeton>'`
+  3. İki şifre üret (`openssl rand -base64 32` ×2) ve **sunucu dışında güvenli bir yere kaydet** (kaybolursa yedek açılmaz):
+     `sudo -u hepgo rclone config create hepgo-yedek crypt remote=gdrive:hepgo-yedek password=$(rclone obscure '<şifre1>') password2=$(rclone obscure '<şifre2>')`
+  4. hepgo crontab'ına (gece yedeğinden sonra): `15 1 * * * /opt/hepgo/caymazbuild/offsite.sh >> /opt/hepgo/caymazbuild/data/backups/offsite.log 2>&1`
+  Geri yükleme: aynı iki şifreyle `hepgo-yedek` tanımlı herhangi bir makinede
+  `rclone copy hepgo-yedek:<firma>/db/caymaz-GGAAYYYY.db .` ve `rclone copy hepgo-yedek:<firma>/uploads ./uploads`.
+
 ## Saha Yönetimi görünümleri, kullanım durumu ve HURDA
 
 - Saha Yönetimi'nde iki görünüm: **Saha Görevi** (görev listesi) ve **Uçuş Yönetimi** (`#/field/flights`): saha

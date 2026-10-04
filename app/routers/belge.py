@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import auth, db
+from ..htmlclean import clean_office
 
 router = APIRouter(prefix='/api/belge')
 belge_user = auth.require_module('documents')
@@ -88,7 +89,7 @@ def get_doc(did: int, user=Depends(belge_user), conn=db.DB):
     d = _doc(conn, did)
     out = _public(conn, d, user)
     try:
-        out['content'] = json.loads(d['content'] or '{}')
+        out['content'] = clean_office(json.loads(d['content'] or '{}'))   # eski kayıtlar da temiz gelir (XSS)
     except ValueError:
         out['content'] = DEFAULT.get(d['kind'], {})
     if out['my_perm'] == 'owner':
@@ -118,7 +119,7 @@ def save_doc(did: int, body: SaveIn, user=Depends(belge_user), conn=db.DB):
             conn.execute('''DELETE FROM office_versions WHERE doc_id=? AND id NOT IN
                             (SELECT id FROM office_versions WHERE doc_id=? ORDER BY id DESC LIMIT 50)''', (did, did))
         conn.execute('UPDATE office_docs SET content=?, updated_at=?, updated_by=? WHERE id=?',
-                     (json.dumps(body.content), now, user['id'], did))
+                     (json.dumps(clean_office(body.content)), now, user['id'], did))
     if body.title is not None and body.title.strip():
         conn.execute('UPDATE office_docs SET title=?, updated_at=? WHERE id=?', (body.title.strip()[:200], now, did))
     conn.commit()
@@ -152,7 +153,7 @@ def version_content(did: int, vid: int, user=Depends(belge_user), conn=db.DB):
     if not v:
         raise HTTPException(404, 'Sürüm bulunamadı')
     try:
-        content = json.loads(v['content'] or '{}')
+        content = clean_office(json.loads(v['content'] or '{}'))
     except ValueError:
         content = {}
     return {'id': v['id'], 'saved_at': v['saved_at'], 'content': content}

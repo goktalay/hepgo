@@ -1,6 +1,7 @@
 // Evrak › Belge Yönetim: uygulama içi Excel/Word/Sunum. Sahip paylaşım izni verir (görüntüle/düzenle),
 // her kaydetmede sürüm geçmişi tutulur. Dış programsız, tarayıcı içinde.
 import { api } from '../api.js';
+import { cleanHtml } from '../sanitize.js';
 import { clear, confirmDialog, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, svgIcon, toast, toastError } from '../ui.js';
 import { icons } from '../icons.js';
 
@@ -110,10 +111,10 @@ function mountWord(root, content, canWrite, mark) {
     tbtn('•', () => cmd('insertUnorderedList')), tbtn('1.', () => cmd('insertOrderedList')),
     sep(),
     tbtn('⯇', () => cmd('justifyLeft')), tbtn('≡', () => cmd('justifyCenter')), tbtn('⯈', () => cmd('justifyRight')));
-  const ed = h('div', { class: 'bz-word', contenteditable: canWrite ? 'true' : 'false', html: content.html || '' });
+  const ed = h('div', { class: 'bz-word', contenteditable: canWrite ? 'true' : 'false', html: cleanHtml(content.html) });
   ed.addEventListener('input', mark);
   clear(root, canWrite ? tb : null, ed);
-  return () => ({ html: ed.innerHTML });
+  return () => ({ html: cleanHtml(ed.innerHTML) });
 }
 const tbtn = (label, on, title, tag) => h('button', { class: 'bz-tb', type: 'button', title: title || label, onmousedown: e => e.preventDefault(), onclick: on }, tag ? h(tag, null, label) : label);
 const sep = () => h('span', { class: 'bz-sep' });
@@ -146,7 +147,7 @@ function mountExcel(root, content, canWrite, mark) {
 
 // ---------- SUNUM (slaytlar)
 function mountSunum(root, content, canWrite, mark) {
-  let slides = (content.slides && content.slides.length) ? content.slides.map(s => ({ html: s.html || '' })) : [{ html: '' }];
+  let slides = (content.slides && content.slides.length) ? content.slides.map(s => ({ html: cleanHtml(s && s.html) })) : [{ html: '' }];
   let cur = 0;
   const strip = h('div', { class: 'bz-slides' });
   const stage = h('div', { class: 'bz-stage' });
@@ -156,7 +157,7 @@ function mountSunum(root, content, canWrite, mark) {
       canWrite ? h('button', { class: 'bz-slideadd', type: 'button', title: 'Slayt ekle',
         onclick: () => { slides.splice(cur + 1, 0, { html: '' }); cur++; draw(); mark(); } }, '+') : null);
     const ed = h('div', { class: 'bz-slide-edit', contenteditable: canWrite ? 'true' : 'false', html: slides[cur]?.html || '' });
-    ed.addEventListener('input', () => { slides[cur].html = ed.innerHTML; mark(); });
+    ed.addEventListener('input', () => { slides[cur].html = cleanHtml(ed.innerHTML); mark(); });
     const tools = canWrite ? h('div', { class: 'bz-slide-tools' },
       h('button', { class: 'btn sm', type: 'button', onclick: () => { if (slides.length > 1) { slides.splice(cur, 1); cur = Math.max(0, cur - 1); draw(); mark(); } } }, 'Slaytı sil'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => { if (cur > 0) { [slides[cur - 1], slides[cur]] = [slides[cur], slides[cur - 1]]; cur--; draw(); mark(); } } }, '↑'),

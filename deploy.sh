@@ -25,10 +25,11 @@ EXCL=(--exclude=/.git/ --exclude=/.venv/ --exclude=/data/ --exclude=/tenants/
       --exclude=/vendor/models/ --exclude=/vendor/ocr/ --exclude=/vendor/whisper/)
 [ "$TARGET" = app ] && EXCL+=(--exclude=/central/)
 
-# -rlpt: sahiplik korunmaz (hepgo dosyaları değişince sahibi gelistirici olur, okunabilir kalır)
-# --omit-dir-times: hepgo'ya ait klasörlerde "failed to set times" hatası çıkmasın
+# Yalnız içerik karşılaştırılır (--checksum); sahiplik/izin/zaman taşınmaz, çünkü hepgo'ya ait
+# dosyalarda chmod/utime yapılamaz. Değişen dosya yeniden yazılır (sahibi gelistirici olur, okunabilir kalır);
+# yeni dosyalar kaynak iznini umask ile alır (run.sh çalıştırılabilir kalır).
 STAMP=$(date +%Y%m%d-%H%M%S)
-OPTS=(-rlpt --checksum --omit-dir-times --delete --itemize-changes
+OPTS=(-rl --checksum --delete --itemize-changes
       --backup --backup-dir=/opt/hepgo/deploy-backups/$TARGET-$STAMP "${EXCL[@]}")
 
 if [ "$APPLY" != --apply ]; then

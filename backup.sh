@@ -13,8 +13,9 @@ DATA=$(readlink -f "${1:-data}")
 DEST=$DATA/backups/nightly
 DAY=$(date +%Y%m%d)
 GRP=$(stat -c %G "$DATA")
-# setgid: içeride oluşan her dosya veri klasörünün grubunu alır
-install -d -m 2750 -g "$GRP" "$DATA/backups" "$DEST"
+# setgid + grup yazma: içeride oluşan her dosya veri klasörünün grubunu alır; servis kullanıcısı ve gruptaki
+# kullanıcılar (cron) aynı yedek klasörüne yazabilir. Var olan klasörün iznine dokunulmaz (sahibi başkası olabilir).
+for d in "$DATA/backups" "$DEST"; do [ -d "$d" ] || install -d -m 2770 -g "$GRP" "$d"; done
 
 sqlite3 "file:$DATA/caymaz.db?mode=ro" ".backup '$DEST/caymaz-$DAY.db.tmp'"
 [ "$(sqlite3 "$DEST/caymaz-$DAY.db.tmp" 'PRAGMA quick_check;')" = ok ] || { echo "HATA: yedek bozuk ($DEST/caymaz-$DAY.db.tmp)"; exit 1; }
@@ -30,7 +31,7 @@ for k in signing.key camera.key; do
 done
 
 PREV=$(ls -d "$DEST"/uploads-* 2>/dev/null | grep -v "uploads-$DAY$" | sort | tail -1 || true)
-rsync -a --chmod=o-rwx,g-w --delete ${PREV:+--link-dest="$PREV"} "$DATA/uploads/" "$DEST/uploads-$DAY/"
+rsync -a --chmod=o-rwx,Fg-w,Dg+w --delete ${PREV:+--link-dest="$PREV"} "$DATA/uploads/" "$DEST/uploads-$DAY/"
 
 find "$DEST" -maxdepth 1 -name 'caymaz-*.db' -mtime +"$KEEP_DAYS" -delete
 find "$DEST" -maxdepth 1 -name 'uploads-*' -type d -mtime +"$KEEP_DAYS" -exec rm -rf {} +

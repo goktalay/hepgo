@@ -7,11 +7,12 @@ Kimlik: ajan ilk mesajda paylaşılan anahtarı (config.AGENT_KEY) yollar. Bağl
 """
 import asyncio
 import datetime
+import hmac
 import json
 import secrets
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 
 from . import config, db
 
@@ -29,7 +30,8 @@ ws_router = APIRouter()
 
 _agent = None            # bağlı ajanın WebSocket'i (süreç başına tek)
 _pending = {}            # istek id -> asyncio.Future
-_info = {'connected_at': None, 'host': None}
+_info = {'connected_at': None, 'host': None, 'version': None, 'bundle': None, 'caps': []}
+_terms = {}               # terminal oturumu -> asyncio.Queue (ajandan gelen çıktı; None = kapandı)
 _loop = None             # ana olay döngüsü (senkron cihaz kodundan ajana köprü için)
 
 
@@ -90,6 +92,60 @@ async def _on_event(event, data):
     return
 
 
+async def send(msg):
+    """Ajana tek yönlü mesaj (terminal girdisi vb.)."""
+    ws = _agent
+    if ws is None:
+        raise RuntimeError('Fabrika ajanı bağlı değil')
+    await ws.send_text(json.dumps(msg))
+
+
+# ---------------- Ajan kod paketi (uzaktan güncelleme) ----------------
+_bundle = {'key': None, 'data': None, 'sha': None}
+
+
+def bundle():
+    """Merkezde çalışan kodun ajan için paketi (app/, agent/, requirements.txt) → (tar.gz baytları, sha256).
+    Dosyalar değişmedikçe aynı paket (aynı özet) döner — ajanın güncel olup olmadığı bu özetle anlaşılır."""
+    import hashlib
+    import io
+    import tarfile
+    base = config.BASE_DIR
+    files = sorted(p for d in ('app', 'agent') for p in (base / d).rglob('*')
+                   if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc') + [base / 'requirements.txt']
+    key = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files)
+    if _bundle['key'] != key:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode='w:gz', compresslevel=6) as tar:
+            for p in files:
+                info = tar.gettarinfo(str(p), arcname=str(p.relative_to(base)))
+                info.uid = info.gid = 0
+                info.uname = info.gname = ''
+                info.mtime = 0   # aynı içerik → aynı özet
+                with open(p, 'rb') as f:
+                    tar.addfile(info, f)
+        data = buf.getvalue()
+        _bundle.update(key=key, data=data, sha=hashlib.sha256(data).hexdigest())
+    return _bundle['data'], _bundle['sha']
+
+
+@ws_router.get('/api/agent/bundle')
+def agent_bundle(request: Request):
+    """Ajanın kendini güncellemek için indirdiği kod paketi. Yalnız ajan anahtarıyla (X-Agent-Key)."""
+    key = request.headers.get('x-agent-key', '')
+    if not config.AGENT_KEY or not hmac.compare_digest(key.encode(), config.AGENT_KEY.encode()):
+        raise HTTPException(403)
+    data, sha = bundle()
+    return Response(data, media_type='application/gzip', headers={'X-Bundle-SHA256': sha, 'Cache-Control': 'no-store'})
+
+
+@ws_router.get('/api/agent/bootstrap.sh')
+def agent_bootstrap():
+    """Fabrikadaki makinede ajanı İLK KEZ güncellemek için betik (gizli bilgi içermez; anahtar makinenin .env'inden okunur)."""
+    return FileResponse(config.BASE_DIR / 'agent' / 'bootstrap.sh', media_type='text/x-shellscript',
+                        headers={'Cache-Control': 'no-store'})
+
+
 @ws_router.get('/api/agent/media/{token}')
 def agent_media(token: str):
     """Fabrika ajanının konuşma tanıma için indirdiği ses (16 kHz WAV). Oturum gerekmez: jeton tahmin edilemez
@@ -110,7 +166,8 @@ async def ws_agent(ws: WebSocket):
     except Exception:   # noqa: BLE001
         await ws.close(code=4400)
         return
-    if first.get('t') != 'auth' or not config.AGENT_KEY or first.get('key') != config.AGENT_KEY:
+    if (first.get('t') != 'auth' or not config.AGENT_KEY
+            or not hmac.compare_digest(str(first.get('key') or '').encode(), config.AGENT_KEY.encode())):
         try:
             await ws.send_text(json.dumps({'t': 'auth', 'ok': False}))
         except Exception:   # noqa: BLE001
@@ -121,7 +178,8 @@ async def ws_agent(ws: WebSocket):
     global _agent
     prev = _agent
     _agent = ws
-    _info.update(connected_at=db.now(), host=str(first.get('host') or ''))
+    _info.update(connected_at=db.now(), host=str(first.get('host') or ''), version=first.get('version'),
+                 bundle=first.get('bundle'), caps=[c for c in (first.get('caps') or []) if isinstance(c, str)])
     if prev is not None:
         try:
             await prev.close()
@@ -151,6 +209,10 @@ async def ws_agent(ws: WebSocket):
                 await _on_event(m.get('event'), m.get('data'))
             elif t == 'ping':
                 await ws.send_text(json.dumps({'t': 'pong'}))
+            elif t in ('term.out', 'term.exit'):
+                q = _terms.get(m.get('sid'))
+                if q is not None:
+                    q.put_nowait(m.get('d') if t == 'term.out' else None)
     except (WebSocketDisconnect, Exception):   # noqa: BLE001
         pass
     finally:
@@ -159,3 +221,5 @@ async def ws_agent(ws: WebSocket):
         for fut in list(_pending.values()):
             if not fut.done():
                 fut.set_exception(RuntimeError('Fabrika ajanı bağlantısı koptu'))
+        for q in list(_terms.values()):
+            q.put_nowait(None)

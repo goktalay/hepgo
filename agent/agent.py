@@ -10,6 +10,7 @@ app.agent_ops.OPS[op](args) çalıştırıp {t:'res',id,ok,result/error} döner.
   .venv/bin/python -m agent.agent
 Fabrika cihaz bağlantı bilgileri (MIKRO_*, PDKS_*) ajanın .env'inde / ortamında olmalı; ajan AGENT_MODE=local
 çalışır (op'ları doğrudan yürütür).
+Uzaktan terminal ve kendini güncelleme: agent/remote.py (yalnız bu makinenin .env'inde açıkça izin verilirse).
 """
 import asyncio
 import json
@@ -42,7 +43,8 @@ def _enc(o):
     if isinstance(o, (bytes, bytearray, memoryview)):
         return bytes(o).hex()
     return str(o)
-from app import agent_ops, config, sysstat   # noqa: E402
+from app import agent_ops, changelog, config, sysstat   # noqa: E402
+from agent import remote   # noqa: E402
 
 sysstat.start()   # entegrasyon makinesinin (fabrika) kaynak grafiği için örnekleme
 
@@ -50,8 +52,78 @@ URL = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL') or config.AGENT_CENTRAL_URL
 KEY = os.environ.get('CAYMAZ_AGENT_KEY') or config.AGENT_KEY
 
 
+_terms = {}   # oturum → remote.Term (Araçlar › Terminal › Fabrika)
+_restart = False
+
+
+async def _term_open(ws, m):
+    sid = str(m.get('sid'))
+    if not remote.allowed('CAYMAZ_AGENT_TERMINAL'):
+        await ws.send(json.dumps({'t': 'term.out', 'sid': sid, 'd': '\x1b[31mBu makinede uzaktan terminal izni yok '
+                                  '(.env: CAYMAZ_AGENT_TERMINAL=1).\x1b[0m\r\n'}))
+        await ws.send(json.dumps({'t': 'term.exit', 'sid': sid}))
+        return
+    term = remote.Term(m.get('rows') or 24, m.get('cols') or 80)
+    _terms[sid] = term
+    print(f'Uzaktan terminal açıldı ({sid[:6]})')
+    try:
+        while True:
+            data = await asyncio.to_thread(term.read)
+            if not data:
+                break
+            await ws.send(json.dumps({'t': 'term.out', 'sid': sid, 'd': data.decode('utf-8', 'replace')}))
+    finally:
+        _terms.pop(sid, None)
+        await asyncio.to_thread(term.close)
+        try:
+            await ws.send(json.dumps({'t': 'term.exit', 'sid': sid}))
+        except Exception:   # noqa: BLE001
+            pass
+
+
+def _term_msg(m):
+    term = _terms.get(str(m.get('sid')))
+    if not term:
+        return
+    if m['t'] == 'term.in':
+        term.write(m.get('d') or '')
+    elif m['t'] == 'term.resize':
+        term.resize(m.get('rows') or 24, m.get('cols') or 80)
+    elif m['t'] == 'term.close':
+        term.close()
+
+
+def _update(args):
+    """Merkezden kod paketi indir, doğrula, uygula; yanıt gönderildikten sonra ajan yeniden başlar."""
+    global _restart
+    if not remote.allowed('CAYMAZ_AGENT_UPDATE'):
+        raise RuntimeError('Bu makinede uzaktan güncelleme izni yok (.env: CAYMAZ_AGENT_UPDATE=1)')
+    import httpx
+    url = agent_ops._central_base() + '/api/agent/bundle'
+    r = httpx.get(url, headers={'X-Agent-Key': KEY}, timeout=120)
+    r.raise_for_status()
+    out = remote.apply_bundle(r.content, args['sha256'])
+    _restart = True
+    return out
+
+
 async def _handle(ws, m):
     rid, op = m.get('id'), m.get('op')
+    if op == 'agent.update':
+        try:
+            result = await asyncio.to_thread(_update, m.get('args') or {})
+            await ws.send(json.dumps({'t': 'res', 'id': rid, 'ok': True, 'result': result}))
+        except Exception as e:   # noqa: BLE001
+            await ws.send(json.dumps({'t': 'res', 'id': rid, 'ok': False, 'error': str(e)}))
+        if _restart:
+            print('Kod güncellendi; ajan yeniden başlıyor.')
+            await asyncio.sleep(0.5)
+            for term in list(_terms.values()):
+                term.close()
+            await ws.close()
+            os.chdir(remote.ROOT)
+            os.execv(sys.executable, [sys.executable, '-m', 'agent.agent'])
+        return
     try:
         fn = agent_ops.OPS.get(op)
         if not fn:
@@ -69,7 +141,8 @@ async def run():
     while True:
         try:
             async with websockets.connect(URL, max_size=None, ping_interval=20, ping_timeout=20) as ws:
-                await ws.send(json.dumps({'t': 'auth', 'key': KEY, 'host': socket.gethostname()}))
+                await ws.send(json.dumps({'t': 'auth', 'key': KEY, 'host': socket.gethostname(), 'version': changelog.VERSION,
+                                          'bundle': remote.bundle_id(), 'caps': remote.caps()}))
                 ack = json.loads(await ws.recv())
                 if not ack.get('ok'):
                     print('Kimlik reddedildi (anahtar yanlış?). 15 sn sonra tekrar.')
@@ -81,8 +154,13 @@ async def run():
                         m = json.loads(raw)
                     except ValueError:
                         continue
-                    if m.get('t') == 'req':
+                    t = m.get('t')
+                    if t == 'req':
                         asyncio.create_task(_handle(ws, m))
+                    elif t == 'term.open':
+                        asyncio.create_task(_term_open(ws, m))
+                    elif t in ('term.in', 'term.resize', 'term.close'):
+                        _term_msg(m)
         except Exception as e:   # noqa: BLE001
             print(f'Bağlantı koptu/başarısız ({e}); 5 sn sonra yeniden denenecek.')
             await asyncio.sleep(5)

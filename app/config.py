@@ -45,6 +45,9 @@ MASTER_USERNAMES = {u.strip().lower() for u in os.environ.get(
 # Web terminal (Araçlar › Terminal, /ws/console): sunucuda gerçek bir kabuk açar. Yalnız fabrikadaki yerel kurulum
 # için; çok firmalı sunucuda kabuk diğer firmaların verisine erişebileceğinden varsayılan KAPALI (açmak: CAYMAZ_CONSOLE=1).
 CONSOLE_ENABLED = os.environ.get('CAYMAZ_CONSOLE', '0') == '1'
+# Araçlar › Terminal › Fabrika: kabuk fabrika ajanının makinesinde (GX10) açılır. Program Ayarları › Entegrasyonlar ›
+# Fabrika Ajanı'ndan açılır; ayrıca ajanın kendi .env'inde CAYMAZ_AGENT_TERMINAL=1 gerekir (agent/remote.py).
+AGENT_TERMINAL_ENABLED = os.environ.get('CAYMAZ_AGENT_TERMINAL_UI', '0') == '1'
 # Yedek parçaların başlangıç stoğu (GÖKKUBBE sayımı); yeni firmada 0 yapılır, stok sıfırdan başlar
 SEED_SPARE_STOCK = os.environ.get('CAYMAZ_SEED_SPARE_STOCK', '1') == '1'
 # Firma logosu ve uygulama simgeleri: bu klasördeki img/ ve icons/ dosyaları static/ içindekilerin yerine sunulur

@@ -81,7 +81,7 @@ LOCAL_UPLOAD_REQUIRED = os.environ.get('CAYMAZ_LOCAL_UPLOAD', '1') == '1'
 FORCE_PASSWORD_CHANGE = os.environ.get('CAYMAZ_FORCE_PASSWORD_CHANGE', '1') == '1'
 
 # Kişisel → Mail: kurumsal Gmail (Google Workspace) için "Google ile bağlan" (OAuth). Google Cloud'da oluşturulan
-# OAuth istemcisi (Web uygulaması); yönlendirme adresi PUBLIC_URL + /api/mail/oauth/callback olarak eklenmelidir.
+# OAuth istemcisi (Web uygulaması); yönlendirme adresi https://<alan-adı>/api/mail/oauth/google/callback olarak eklenmelidir.
 # PDKS (personel devam kontrol — Firebird veritabanı, ör. Fixap / ZKTeco tabanlı)
 PDKS_HOST = os.environ.get('CAYMAZ_PDKS_HOST', '192.168.1.100')
 PDKS_PORT = int(os.environ.get('CAYMAZ_PDKS_PORT', '3050'))

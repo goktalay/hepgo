@@ -205,7 +205,13 @@ G_SCOPES = ('https://mail.google.com/ openid email https://www.googleapis.com/au
 
 
 def _base(request):
-    return config.PUBLIC_URL or f"{request.headers.get('x-forwarded-proto', request.url.scheme)}://{request.headers.get('host')}"
+    """OAuth dönüş adresinin tabanı: kullanıcının girdiği alan adı (oturum çerezi o alan adında). Yerel / IP erişiminde PUBLIC_URL."""
+    host = (request.headers.get('x-forwarded-host') or request.headers.get('host') or '').split(',')[0].strip()
+    name = host.split(':')[0]
+    if not host or name in ('localhost', '127.0.0.1', 'testserver') or name.replace('.', '').isdigit():
+        return config.PUBLIC_URL or f"{request.url.scheme}://{host}"
+    proto = request.headers.get('x-forwarded-proto', '').split(',')[0].strip() or ('https' if '.' in name else request.url.scheme)
+    return f'{proto}://{host}'
 
 
 def _redirect_uri(request, prov):

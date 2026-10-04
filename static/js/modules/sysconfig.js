@@ -268,6 +268,32 @@ function numBox(inp, suffix) {
 const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', meta: 'globe', x: 'globe', tiktok: 'globe', speech: 'mic', maps: 'globe', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
 const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
+// Entegrasyon durumu: ayarlı mı + (denetleniyorsa) son denemesi başarılı mı. "Bağlı" yalnız gerçekten ulaşılabiliyorsa.
+const integState = g => !g.configured ? ['', 'Ayarlanmadı']
+  : g.checked && !g.health ? ['wait', 'Denetleniyor…']
+  : g.checked && !g.health.ok ? ['err', 'Çevrimdışı'] : ['ok', 'Bağlı'];
+const integBadge = g => { const [cls, text] = integState(g); return h('span', { class: `sc-integ-status ${cls}`, title: g.health?.message || '' }, text); };
+const INTERVALS = [[30, '30 sn'], [60, '1 dk'], [120, '2 dk'], [300, '5 dk'], [600, '10 dk'], [900, '15 dk'], [1800, '30 dk'], [3600, '1 saat']];
+function integHealthCard(grp, reload) {
+  if (!grp.checked) return null;
+  const sel = h('select', { class: 'input', style: { maxWidth: '140px' } },
+    (INTERVALS.some(([v]) => v === grp.interval) ? INTERVALS : [...INTERVALS, [grp.interval, `${grp.interval} sn`]])
+      .map(([v, l]) => h('option', { value: v, selected: v === grp.interval }, l)));
+  sel.addEventListener('change', async () => {
+    try { await api.put(`/api/system/integrations/${grp.key}/interval`, { seconds: Number(sel.value) }); toast('Kontrol sıklığı kaydedildi'); reload(grp.key); }
+    catch (err) { toastError(err); }
+  });
+  const hl = grp.health;
+  return h('section', { class: 'card card-pad integ-health' },
+    h('h3', { style: { marginTop: 0 } }, 'Bağlantı durumu'),
+    !grp.configured ? h('p', { class: 'small muted' }, 'Ayarlar girilince bağlantı düzenli olarak denetlenir.')
+      : hl ? h('p', null, integBadge(grp), ' ', h('span', { class: 'small' }, hl.message),
+        h('div', { class: 'small muted' }, t('Son kontrol: {a} · bu durumda: {b} tarihinden beri', { a: fmtDateTime(hl.checked_at), b: fmtDateTime(hl.since) })))
+        : h('p', { class: 'small muted' }, 'Henüz denetlenmedi; ilk kontrol birkaç saniye içinde yapılır.'),
+    h('label', { class: 'field', style: { maxWidth: '360px' } }, h('span', null, 'Kontrol sıklığı'), sel,
+      h('small', { class: 'hint' }, 'Bağlantı bu aralıkla denenir; ulaşılamazsa “Çevrimdışı” görünür ve sistem yöneticisine bildirim düşer.')));
+}
+
 function integrationsBody(view, ctx) {
   const wrap = h('div', { class: 'sc-integ-list' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   const card = grp => {
@@ -297,7 +323,7 @@ function integrationsBody(view, ctx) {
       return h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, f.label), inp,
         h('span', { class: 'sc-f-meta' }, state, clr));
     });
-    const status = h('span', { class: `sc-integ-status ${grp.configured ? 'ok' : ''}` }, grp.configured ? 'Bağlı' : 'Ayarlanmadı');
+    const status = integBadge(grp);
     const msg = h('div', { class: 'sc-integ-msg', hidden: true });
     const say = (ok, text) => { msg.hidden = false; msg.className = `sc-integ-msg ${ok ? 'ok' : 'err'}`; msg.textContent = text; };
     const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
@@ -339,13 +365,14 @@ function integrationsBody(view, ctx) {
       const info = INTEG_INFO[grp.key] || {};
       clear(wrap,
         h('button', { class: 'btn sm integ-back', type: 'button', onclick: () => { open = null; reload(); } }, '← Tüm entegrasyonlar'),
-        h('section', { class: `card integ-hero ${grp.configured ? 'on' : ''}`, 'data-g': grp.key },
+        h('section', { class: `card integ-hero ${grp.online ? 'on' : ''}`, 'data-g': grp.key },
           h('span', { class: 'integ-logo lg' }, INTEG_LOGO[grp.key]?.() || segIconByKey('grid')),
           h('div', { class: 'grow' },
             h('h2', null, grp.title), h('p', null, info.lead || grp.desc),
-            h('span', { class: `sc-integ-status ${grp.configured ? 'ok' : ''}` }, grp.configured ? 'Bağlı' : 'Ayarlanmadı'))),
+            integBadge(grp))),
         info.sections?.length ? h('section', { class: 'card card-pad integ-info' },
           info.sections.map(([t, items]) => h('div', { class: 'integ-info-sec' }, h('h4', null, t), h('ul', null, items.map(x => h('li', null, x)))))) : null,
+        integHealthCard(grp, reload),
         h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
         ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null,
         grp.key === 'nvr' ? nvrPanel() : null,
@@ -355,12 +382,12 @@ function integrationsBody(view, ctx) {
     }
     clear(wrap,
       h('p', { class: 'small muted' }, 'Sistemin bağlandığı dış servisler. Ayarlamak ya da ayrıntılı bilgi almak için bir entegrasyona dokunun. Anahtar ve şifreler şifreli saklanır; ayarı eksik olan özellik kullanıcılara görünmez.'),
-      h('div', { class: 'integ-gallery' }, d.groups.map(g => h('button', { class: `integ-tile ${g.configured ? 'on' : ''}`, type: 'button', 'data-g': g.key,
+      h('div', { class: 'integ-gallery' }, d.groups.map(g => h('button', { class: `integ-tile ${g.online ? 'on' : g.configured && g.checked && g.health && !g.health.ok ? 'off' : ''}`, type: 'button', 'data-g': g.key,
         onclick: () => { open = g.key; reload(); } },
         h('span', { class: 'integ-logo' }, INTEG_LOGO[g.key]?.() || segIconByKey('grid')),
         h('b', null, INTEG_INFO[g.key]?.short || g.title),
         h('small', null, INTEG_INFO[g.key]?.tag || ''),
-        h('span', { class: `sc-integ-status ${g.configured ? 'ok' : ''}` }, g.configured ? 'Bağlı' : 'Ayarlanmadı')))));
+        integBadge(g)))));
   };
   reload();
   return wrap;

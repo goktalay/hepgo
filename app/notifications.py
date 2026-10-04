@@ -471,9 +471,18 @@ def feed_new(conn, user):
     return _result(rows, [f'{r["author_name"]}: {feed.snippet(r["text"], r["media"])}' for r in rows], '#/home', 'Ana ekranda görmek için açın')
 
 
+def integrations_offline(conn, user):
+    """Ayarlı ama ulaşılamayan entegrasyonlar (düzenli denetim: integration_health)."""
+    from . import integration_health
+    rows = [{'id': g, 'title': t, 'message': m, 'since': s} for g, t, m, s in integration_health.offline(conn)]
+    return _result(rows, [r['title'] for r in rows], '#/sysconfig/integrations',
+                   '; '.join(f"{r['title']}: {r['message']}" for r in rows)[:300] or None)
+
+
 NOTIFICATIONS = [
     {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
+    {'key': 'integrations-offline', 'roles': [auth.ADMIN], 'fn': integrations_offline, 'title': 'Çevrimdışı entegrasyon'},
     {'key': 'ai-change-pending', 'roles': [auth.ADMIN], 'fn': ai_change_pending, 'title': 'Yapay zeka değişiklik talebi onay bekliyor'},
     {'key': 'ai-change-decided', 'roles': None, 'fn': ai_change_decided, 'title': 'Yapay zeka değişiklik talebin sonuçlandı'},
     {'key': 'direct-part-pending', 'roles': [auth.ADMIN], 'fn': direct_part_pending, 'title': 'Doğrudan depo ekleme onayı bekliyor'},

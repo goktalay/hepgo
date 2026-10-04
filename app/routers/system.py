@@ -258,12 +258,38 @@ def _push_face_config(conn):
 
 
 @router.post('/integrations/{group}/test')
-def test_integration(group: str, user=Depends(auth.current_user)):
+def test_integration(group: str, user=Depends(auth.current_user), conn=db.DB):
     if not _is_sysadmin(user):
         raise HTTPException(403, 'Yetkiniz yok')
-    from .. import integrations
+    from .. import integration_health, integrations
     ok, msg = integrations.test(group)
+    if group in integration_health.CHECKED:   # elle deneme de sağlık durumunu günceller
+        if any(g['key'] == group and g['configured'] for g in integrations.view(conn)):
+            integration_health.record(conn, group, ok, msg)
+        else:
+            integration_health.forget(conn, group)
     return {'ok': ok, 'message': msg}
+
+
+class IntervalIn(BaseModel):
+    seconds: int
+
+
+@router.put('/integrations/{group}/interval')
+def put_integration_interval(group: str, body: IntervalIn, user=Depends(auth.current_user), conn=db.DB):
+    """Entegrasyonun ne sıklıkla denetleneceği (varsayılan 5 dk, en az 30 sn)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import integration_health
+    try:
+        integration_health.set_interval(conn, group, body.seconds)
+    except KeyError:
+        raise HTTPException(404, 'Bu entegrasyon denetlenmiyor')
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.audit(conn, user['id'], f'Entegrasyon denetim aralığı: {group}', 'settings', None, f'{body.seconds} sn')
+    conn.commit()
+    return {'interval': body.seconds}
 
 
 # --- NVR: kanal listesi + yüz tanıma ayarı + GPU kapasitesi + canlı grafik ---

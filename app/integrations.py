@@ -172,8 +172,8 @@ def apply(conn):
         setattr(config, key, ENV[key])
 
 
-def view(conn, group_keys=None):
-    """Panel için durum. Gizli alanların değeri asla dönmez."""
+def view(conn, group_keys=None, health=True):
+    """Panel için durum. Gizli alanların değeri asla dönmez. health: son denetim sonucu ve aralık (integration_health)."""
     data = _load(conn)
     out = []
     for g, grp in GROUPS.items():
@@ -191,6 +191,15 @@ def view(conn, group_keys=None):
         out.append({'key': g, 'title': grp['title'], 'desc': grp['desc'], 'fields': fields,
                     'configured': bool(config.COMPANY_NAME) if g == 'general'
                     else all(f['set'] for f in fields if f['key'] not in ('AI_WORKSPACE_ID',))})
+    if health:
+        from . import integration_health as ih
+        st, iv = ih.states(conn), ih.intervals(conn)
+        for g in out:
+            g['checked'] = g['key'] in ih.CHECKED
+            g['health'] = st.get(g['key']) if g['checked'] and g['configured'] else None
+            g['interval'] = iv.get(g['key'])
+            # "Bağlı" yalnız ayarlı VE (denetlenmiyorsa ya da son denemesi başarılıysa)
+            g['online'] = g['configured'] and (not g['checked'] or bool(g['health'] and g['health']['ok']))
     return out
 
 

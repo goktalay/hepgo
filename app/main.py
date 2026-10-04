@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, printer_driver, production, push, sync, sysstat
+from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, integration_health, printer_driver, production, push, sync, sysstat
 from .routers import directory, feed, federation, screenshare, finance, central, membership, live as live_router, certs as certs_router, fleet as fleet_router, boss as boss_router, roles as roles_router, projects as projects_router, social as social_router, contacts as contacts_router, support as support_router
 from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, console, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
                       announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, system, users, warehouse)
@@ -46,6 +46,7 @@ async def lifespan(app):
     from . import agent_hub
     agent_hub.set_loop(asyncio.get_running_loop())   # dağıtık mod: senkron cihaz kodundan ajana köprü
     from . import watchdog
+    integration_health.start()   # entegrasyonlar düzenli denenir; çevrimdışıysa sistem yöneticisine bildirim
     watchdog.start()   # olay döngüsü donarsa yığın izini kaydeder
     from .routers import meet as meet_router
     asyncio.get_running_loop().create_task(push.notify_loop())   # arka plan bildirimleri (Web Push)

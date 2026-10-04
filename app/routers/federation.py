@@ -8,7 +8,6 @@ Akış (müşteri firma instance'ında):
 
 Merkez (Veilox) instance'ı (FEDERATION_CENTRAL=1) yalnızca /api/federation/verify ucunu açar; paylaşılan gizli anahtarla korunur.
 """
-import hmac
 import secrets
 from datetime import datetime, timedelta
 
@@ -16,7 +15,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from .. import auth, config, db
+from .. import auth, config, db, fedauth
 
 router = APIRouter(prefix='/api')
 
@@ -31,12 +30,11 @@ class VerifyIn(BaseModel):
 
 
 @router.post('/federation/verify')
-def verify(body: VerifyIn, request: Request, conn=db.DB):
+def verify(body: VerifyIn, request: Request, slug: str = '', conn=db.DB):
     """Merkez doğrulama: kullanıcı+şifre geçerli ve 'Merkez Destek' rolündeyse kimliğini döner. Paylaşılan anahtarla korunur."""
     if not config.FEDERATION_CENTRAL:
         raise HTTPException(404, 'Bulunamadı')
-    secret = request.headers.get('x-fed-secret', '')
-    if not config.FEDERATION_SECRET or not hmac.compare_digest(secret, config.FEDERATION_SECRET):
+    if not fedauth.check(request.headers.get('x-fed-secret', ''), (slug or '').strip().lower()):
         raise HTTPException(403, 'Yetkisiz')
     user = db.row(conn.execute('SELECT * FROM users WHERE username = ? AND deleted_at IS NULL', (body.username.strip(),)))
     ok = bool(user and user['active'] and auth.verify_password(body.password, user['password_hash']))
@@ -69,7 +67,7 @@ def try_login(conn, username, password, request):
     if not enabled():
         return None
     try:
-        r = httpx.post(f'{config.FEDERATION_URL}/api/federation/verify',
+        r = httpx.post(f'{config.FEDERATION_URL}/api/federation/verify', params={'slug': config.TENANT_SLUG},
                        json={'username': username, 'password': password},
                        headers={'X-Fed-Secret': config.FEDERATION_SECRET}, timeout=12)
         data = r.json() if r.status_code == 200 else {}

@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import auth, cameras as camlib, config, db, push
+from .. import auth, cameras as camlib, config, db, fedauth, push
 
 router = APIRouter(prefix='/api/central')
 fed_router = APIRouter(prefix='/api/federation')
@@ -379,10 +379,9 @@ def sms_recipients(user=Depends(sms_user), conn=db.DB):
 def _fed(request: Request, slug: str):
     if not config.FEDERATION_CENTRAL:
         raise HTTPException(404, 'Bulunamadı')
-    secret = request.headers.get('x-fed-secret', '')
-    if not config.FEDERATION_SECRET or not hmac.compare_digest(secret, config.FEDERATION_SECRET):
-        raise HTTPException(403, 'Yetkisiz')
     slug = (slug or '').strip().lower()
+    if not fedauth.check(request.headers.get('x-fed-secret', ''), slug):   # firmanın kendi anahtarı (bkz. fedauth)
+        raise HTTPException(403, 'Yetkisiz')
     if not re.fullmatch(r'[a-z0-9-]{2,60}', slug):
         raise HTTPException(400, 'Geçersiz firma kimliği')
     try:   # kurulum servisine ulaşılabiliyorsa firmanın gerçekten kayıtlı olduğunu doğrula

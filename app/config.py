@@ -62,7 +62,10 @@ AGENT_KEY = os.environ.get('CAYMAZ_AGENT_KEY', '')
 AGENT_CENTRAL_URL = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL', '')
 # Merkez (Veilox) destek girişi — federasyon. Müşteri instance'ı, bilinmeyen kullanıcıyı merkeze sorar;
 # merkez kullanıcı "Destek" rolündeyse, firma master'ının onayıyla master-benzeri geçici oturum açılır.
-FEDERATION_SECRET = os.environ.get('CAYMAZ_FEDERATION_SECRET', '')          # tüm instance'larda aynı paylaşılan anahtar
+# Merkezde: ana anahtar. Firmada: o firmaya türetilmiş anahtar (python -m app.fedauth <slug>; bkz. app/fedauth.py)
+FEDERATION_SECRET = os.environ.get('CAYMAZ_FEDERATION_SECRET', '')
+# Merkez, geçiş döneminde eski ortak (ana) anahtarı da kabul etsin mi? Tüm firmalara türetilmiş anahtar verilince 0.
+FEDERATION_ALLOW_SHARED = os.environ.get('CAYMAZ_FEDERATION_ALLOW_SHARED', '1') == '1'
 FEDERATION_URL = os.environ.get('CAYMAZ_FEDERATION_URL', '').rstrip('/')    # müşteri: merkez taban adresi (ör. https://veilox.app)
 FEDERATION_CENTRAL = os.environ.get('CAYMAZ_FEDERATION_CENTRAL', '0') == '1'   # merkez (Veilox) instance'ı mı (doğrulama ucunu açar)
 FEDERATION_SESSION_HOURS = int(os.environ.get('CAYMAZ_FEDERATION_SESSION_HOURS', '4'))   # onaylı destek oturumu süresi

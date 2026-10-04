@@ -273,6 +273,10 @@ Tümü bu sunucuda işlenir, hiçbir veri dışarı gönderilmez (`app/document_
 - Web terminal (Araçlar › Terminal): sunucuda gerçek bir kabuk açtığı için varsayılan **kapalı**; yalnız fabrikadaki
   yerel kurulumda `.env` içinde `CAYMAZ_CONSOLE=1` ile açılır ve yalnız MASTER kullanabilir. Çok firmalı sunucuda açılmaz
   (kabuk diğer firmaların `.env`/veritabanına erişebilir); Veilox kurulumu `CAYMAZ_CONSOLE=0` yazar.
+- Federasyon anahtarı (merkez ↔ firma): ana anahtar (`CAYMAZ_FEDERATION_SECRET`) yalnız merkezde durur. Her firmanın
+  `.env`'ine kendi türetilmiş anahtarı yazılır: merkez .env'iyle `python -m app.fedauth <slug>` → firmada
+  `CAYMAZ_FEDERATION_SECRET=<çıktı>` ve `CAYMAZ_TENANT_SLUG=<slug>`. Bir firmanın anahtarı başka firmanın verisine
+  erişemez. Tüm firmalar geçince merkezde `CAYMAZ_FEDERATION_ALLOW_SHARED=0` yapılır (o zamana kadar ortak anahtar da geçer).
 - Gece yedeği: `backup.sh`, systemd zamanlayıcısı `caymaz-backup.timer` ile her gece 03:00'te çalışır;
   `data/backups/nightly/` altına veritabanı ve yüklenen dosyaların anlık görüntüsü alınır, 30 gün saklanır.
 

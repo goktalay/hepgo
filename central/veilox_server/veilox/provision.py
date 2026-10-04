@@ -85,8 +85,24 @@ def free_port(conn):
     raise RuntimeError('Boş port bulunamadı')
 
 
+# Satır sonu / kontrol karakteri (Unicode satır ayırıcıları dahil). .env ve systemd birimi satır tabanlıdır:
+# değerin içindeki bir satır sonu yeni bir ayar (ör. ExecStartPre=…) ekleyebilir.
+_CTRL = re.compile(r'[\x00-\x1f\x7f\x85\u2028\u2029]')
+
+
+def has_ctrl(value):
+    return bool(_CTRL.search(str(value or '')))
+
+
+def one_line(value):
+    """.env / systemd birimine yazılacak değer: kontrol karakterleri boşluğa çevrilir, tek satır kalır."""
+    return _CTRL.sub(' ', str(value or '')).strip()
+
+
 def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modules, white_label=False):
-    mods = ','.join(modules)
+    admin_user, admin_pass, full_name, company_name, master_user = map(
+        one_line, (admin_user, admin_pass, full_name, company_name, master_user))
+    mods = ','.join(one_line(m) for m in modules)
     return (
         f'# {company_name} — HEPGO ERP (merkez tarafından oluşturuldu)\n'
         '# Yönetici bilgileri yalnızca ilk kurulumda okunur; sonra şifre uygulamadan değiştirilir.\n'
@@ -103,9 +119,11 @@ def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modu
 
 def _unit_text(name, url, bind_env, env_file, data_dir, brand_dir):
     """bind_env: ('CAYMAZ_UDS', soket_yolu) ya da ('PORT', '8091')."""
+    # Tek satır; '%' systemd belirtecidir (%%), satır sonundaki '\' bir sonraki satırı birleştirir
+    desc = one_line(f'{name}{(" (" + url + ")") if url else ""}').replace('%', '%%').rstrip('\\')
     return (
         '[Unit]\n'
-        f'Description=Fabrika Yönetim Sistemi — {name}{(" (" + url + ")") if url else ""}\n'
+        f'Description=Fabrika Yönetim Sistemi — {desc}\n'
         'After=network-online.target\n\n'
         '[Service]\n'
         f'WorkingDirectory={APP_DIR}\n'

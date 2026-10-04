@@ -305,6 +305,13 @@ def slug_preview(name: str = ''):
     return {'slug': slug, 'domain': f'{slug}.{FIRM_BASE}'}
 
 
+def _single_line(body, *fields):
+    """Kurulumda .env / systemd birimine yazılan alanlar tek satır olmalı (satır sonuyla yeni ayar eklenemesin)."""
+    for f in fields:
+        if provision.has_ctrl(getattr(body, f, '')):
+            raise HTTPException(400, 'Alanlarda satır sonu veya kontrol karakteri kullanılamaz')
+
+
 class RegisterIn(BaseModel):
     company_name: str
     master_username: str
@@ -324,6 +331,7 @@ def register(body: RegisterIn, request: Request):
     _reg[ip] = [t for t in _reg.get(ip, []) if now - t < REG_WINDOW]
     if len(_reg[ip]) >= REG_LIMIT:
         raise HTTPException(429, 'Çok fazla kayıt denemesi. Daha sonra tekrar deneyin.')
+    _single_line(body, 'company_name', 'master_username', 'master_name', 'password', 'phone', 'tax_no', 'city')
     name = body.company_name.strip()
     user = body.master_username.strip().lower()
     if len(name) < 2:
@@ -447,6 +455,7 @@ def company_get(cid: int, request: Request):
 @app.post('/api/companies')
 def company_create(body: CompanyIn, request: Request):
     current(request)
+    _single_line(body, 'name', 'master_username', 'master_name', 'url', 'password')
     user = body.master_username.strip().lower()
     if '@' not in user:
         raise HTTPException(400, 'Geçerli bir master e-postası girin')
@@ -470,6 +479,7 @@ def company_create(body: CompanyIn, request: Request):
 @app.put('/api/companies/{cid}')
 def company_update(cid: int, body: CompanyIn, request: Request):
     current(request)
+    _single_line(body, 'name', 'master_username', 'master_name', 'url', 'password')
     with db.connect() as conn:
         c = db.row(conn, 'SELECT * FROM companies WHERE id=?', (cid,))
         if not c:

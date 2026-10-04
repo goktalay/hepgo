@@ -202,7 +202,14 @@ async def save_upload_stream(kind, upload: UploadFile, max_bytes):
 # Yüklenen dosyaların adı rastgele ve değişmez olduğundan tarayıcı da uzun süre önbelleğe alır.
 THUMB_WIDTHS = (64, 128, 256, 512, 1024, 1600)
 THUMB_EXT = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif'}
-FILE_CACHE = {'Cache-Control': 'private, max-age=2592000, immutable'}
+FILE_CACHE = {'Cache-Control': 'private, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff'}
+# Tarayıcıda betik çalıştırabilen türler (ör. firma logosu .svg): doğrudan açılınca betikler kapalı (sandbox), dış kaynak yok
+ACTIVE_EXT = {'.svg', '.svgz', '.html', '.htm', '.xhtml', '.xml'}
+ACTIVE_HEADERS = {**FILE_CACHE, 'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"}
+
+
+def _headers(path):
+    return ACTIVE_HEADERS if Path(str(path)).suffix.lower() in ACTIVE_EXT else FILE_CACHE
 _thumb_lock = threading.Lock()
 
 
@@ -254,10 +261,10 @@ def get_file(kind: str, name: str, w: int = 0, dl: int = 0, user=Depends(current
             return Response(content=data, media_type=ctype, headers=FILE_CACHE)
         raise HTTPException(404)
     if dl:   # indir: tarayıcı göstermek yerine dosya olarak kaydetsin (ör. Şirketten Haberler tam ekran › İndir)
-        return FileResponse(path, filename=name, headers=FILE_CACHE)
+        return FileResponse(path, filename=name, headers=_headers(path))
     if w:
         size = next((x for x in THUMB_WIDTHS if x >= w), THUMB_WIDTHS[-1])
         thumb = thumbnail(path, kind, name, size)
         if thumb:
             return FileResponse(thumb, media_type='image/webp', headers=FILE_CACHE)
-    return FileResponse(path, headers=FILE_CACHE)
+    return FileResponse(path, headers=_headers(path))

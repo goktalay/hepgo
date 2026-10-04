@@ -1,6 +1,7 @@
 """Firma Yönetimi: firmalar, logoları ve firmada çalışan / ilişkili kişiler. Firmanın evrakları Evrak Yönetimi'nden
 (görünürlük kurallarıyla) gelir. Tedarikçiler (is_supplier) aynı yapıdadır ama yalnızca Satın Alma › Tedarikçi Yönetimi'nde
 görünür: tedarikçiye Satın Alma modülü, diğer firmalara Firma Yönetimi modülü erişir."""
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -72,6 +73,17 @@ def _clean(v):
     return (v or '').strip() or None
 
 
+def _url(v):
+    """Web sitesi: şemasızsa https:// eklenir; http / https dışı şema (javascript:, data: …) kabul edilmez (XSS)."""
+    v = _clean(v)
+    if not v:
+        return v
+    if re.match(r'^[a-z][a-z0-9+.-]*:', v, re.I) and not re.match(r'^https?://', v, re.I):
+        raise HTTPException(400, 'Web sitesi http:// ya da https:// ile başlamalı')
+    return v if re.match(r'^https?://', v, re.I) else f'https://{v}'
+
+
+
 def _duplicate(conn, name, exclude=None):
     """Aynı ad (Türkçe harf ve büyük/küçük harf farkı yok sayılarak) başka firmada var mı?"""
     return any(fold(r[1]) == fold(name) for r in conn.execute('SELECT id, name FROM companies') if r[0] != exclude)
@@ -134,7 +146,7 @@ def add_company(body: CompanyIn, supplier: bool = False, user=Depends(company_us
     cur = conn.execute(
         '''INSERT INTO companies (name, tax_office, tax_no, phone, email, website, note, active, created_by, created_at, is_supplier)
            VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-        (name, _clean(body.tax_office), _clean(body.tax_no), _clean(body.phone), _clean(body.email), _clean(body.website),
+        (name, _clean(body.tax_office), _clean(body.tax_no), _clean(body.phone), _clean(body.email), _url(body.website),
          _clean(body.note), int(body.active), user['id'], db.now(), int(supplier)))
     if _clean(body.address):   # yeni firmada girilen adres "Merkez" olarak kaydedilir
         conn.execute('INSERT INTO company_addresses (company_id, label, address, created_at) VALUES (?,?,?,?)',
@@ -167,7 +179,7 @@ def update_company(cid: int, body: CompanyIn, user=Depends(company_user), conn=d
     conn.execute('''UPDATE companies SET name = ?, tax_office = ?, tax_no = ?, phone = ?, email = ?, website = ?,
                     note = ?, active = ? WHERE id = ?''',
                  (name, _clean(body.tax_office), _clean(body.tax_no), _clean(body.phone), _clean(body.email),
-                  _clean(body.website), _clean(body.note), int(body.active), cid))
+                  _url(body.website), _clean(body.note), int(body.active), cid))
     db.audit(conn, user['id'], 'Firma bilgilerini düzenledi', 'company', cid, name)
     return {'ok': True}
 

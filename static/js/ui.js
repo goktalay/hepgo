@@ -8,6 +8,17 @@ export { t };   // modüller dinamik metinleri t('{n} ... ', { n }) ile sarabils
 // merkezi olarak katalogdan çevrilir. Böylece tüm arayüz + yazdırma şablonları
 // (hepsi h() kullanır) tek noktadan çevrilir; karşılığı yoksa Türkçe kalır.
 const I18N_ATTRS = new Set(['placeholder', 'title', 'aria-label']);
+// Adres öznitelikleri: kullanıcı verisinden gelen javascript: / vbscript: (bağlantıda data: de) tıklanınca kod çalıştırır
+// (XSS) → zararsız adrese çevrilir. Arayüzün kendi sabit "javascript:void 0" bağlantıları serbest.
+const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href']);
+const BAD_SRC = /^(javascript|vbscript):/i;
+const BAD_HREF = /^(javascript|vbscript|data):/i;
+export function safeUrl(k, v) {
+  const raw = String(v);
+  if (/^javascript:void(\s*0|\(0\));?$/i.test(raw.trim())) return raw;
+  const s = raw.replace(/[\x00-\x20\x7f]+/g, '');
+  return (k === 'src' ? BAD_SRC : BAD_HREF).test(s) ? (k === 'src' ? 'about:blank' : '#') : raw;
+}
 
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -19,6 +30,7 @@ export function h(tag, attrs, ...children) {
     else if (k === 'html') el.innerHTML = v;
     else if (v === true) el.setAttribute(k, '');
     else if (I18N_ATTRS.has(k) && typeof v === 'string') el.setAttribute(k, t(v));
+    else if (URL_ATTRS.has(k)) el.setAttribute(k, safeUrl(k, v));
     else el.setAttribute(k, v);
   }
   append(el, children);

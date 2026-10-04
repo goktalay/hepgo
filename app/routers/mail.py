@@ -217,6 +217,10 @@ def delete_box(box_id: int, user=Depends(auth.current_user), conn=db.DB):
             pass
     conn.execute('DELETE FROM personal_events WHERE box_id = ?', (box_id,))
     conn.execute('DELETE FROM mail_boxes WHERE id = ?', (box_id,))
+    # Bu sağlayıcıya bağlı başka hesabı kalmadıysa oradan alınan rehber kişileri de silinir (Google API veri politikası)
+    if b['auth_type'] in ('google', 'microsoft') and not conn.execute(
+            'SELECT 1 FROM mail_boxes WHERE user_id = ? AND auth_type = ?', (user['id'], b['auth_type'])).fetchone():
+        conn.execute('DELETE FROM personal_contacts WHERE user_id = ? AND source = ?', (user['id'], b['auth_type']))
     mail.drop(box_id)
     _unread_cache.pop(user['id'], None)
     db.audit(conn, user['id'], 'Mail hesabını ayırdı', 'mail', box_id, b['email'])

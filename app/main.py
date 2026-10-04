@@ -1,4 +1,5 @@
 import hashlib
+import html as htmlmod
 import os
 from contextlib import asynccontextmanager
 
@@ -286,6 +287,32 @@ def app_shell(request: Request):
 def meeting_join_page(code: str, request: Request):
     """Dış katılımcı toplantı giriş sayfası: aynı uygulama kabuğu; app.js guest moduna geçer."""
     return _spa(request, 'Görüntülü toplantı daveti', 'Toplantıya katılmak için bağlantıya dokunun.')
+
+
+# Herkese açık yasal sayfalar (Google / Microsoft OAuth onay ekranı bunlara bağlantı ister): oturum gerektirmez.
+LEGAL_UPDATED = '4 Ekim 2026'
+LEGAL_PROVIDER = 'GÖKKUBBE Teknoloji'
+LEGAL_EMAIL = os.environ.get('CAYMAZ_LEGAL_EMAIL', 'destek@gokkubbetech.com')
+
+
+def _legal(request, name):
+    host = (request.headers.get('x-forwarded-host') or request.headers.get('host') or '').split(',')[0].strip()
+    html = (config.STATIC_DIR / 'legal' / f'{name}.html').read_text(encoding='utf-8')
+    for k, v in (('DATE', LEGAL_UPDATED), ('PROVIDER', LEGAL_PROVIDER), ('EMAIL', LEGAL_EMAIL), ('HOST', host or 'HEPGO')):
+        html = html.replace('{{' + k + '}}', htmlmod.escape(v))
+    return HTMLResponse(html, headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/gizlilik')
+@app.get('/privacy')
+def privacy_page(request: Request):
+    return _legal(request, 'privacy')
+
+
+@app.get('/kullanim-sartlari')
+@app.get('/terms')
+def terms_page(request: Request):
+    return _legal(request, 'terms')
 
 
 @app.get('/s/{code}')

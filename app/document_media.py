@@ -1,7 +1,9 @@
 """Ses, video ve resim evrakları: konuşmayı metne çevirme (Whisper) ve videoda / resimde yüz bulma / tanıma.
 
-Tümü bu sunucuda çalışır; ses ve görüntü dışarı gönderilmez.
-- Ses / video sesi: PyAV ile 16 kHz tek kanal WAV'a çevrilir, whisper.cpp (GB10 ekran kartı) ile metne dökülür.
+Ses ve görüntü şirket dışına (bulut servislerine) gönderilmez.
+- Ses / video sesi: PyAV ile 16 kHz tek kanal WAV'a çevrilir, whisper.cpp ile metne dökülür. Çalışma yeri Program Ayarları ›
+  Entegrasyonlar › Konuşma Tanıma'dan seçilir: bu sunucu (işlemci) ya da fabrikadaki GX10 (NVIDIA GB10, fabrika ajanı
+  üzerinden: ajan WAV'ı kısa ömürlü bağlantıyla /api/agent/media'dan indirir, yalnız metin geri gelir).
   Metin "[dd:ss] cümle" satırları olarak documents.ocr_text'e yazılır (evrak aramasında bulunur).
 - Video yüzleri: saniyede bir kare alınır; OpenCV YuNet ile yüzler bulunur, SFace ile 128 boyutlu yüz izi çıkarılır.
   Aynı kişiye ait yüzler (kosinüs benzerliği) gruplanır; her grup için en net yüz kırpılıp kaydedilir
@@ -13,9 +15,11 @@ Araçlar: vendor/whisper/whisper-cli, vendor/models/*.onnx ve ggml-large-v3-turb
 """
 import json
 import os
+import secrets
 import subprocess
 import tempfile
 import threading
+import time
 import wave
 from pathlib import Path
 
@@ -39,9 +43,105 @@ MIN_FACE = 40          # piksel (1280 px'e küçültülmüş karede)
 _gpu = threading.Lock()   # aynı anda tek Whisper işi
 
 
+def on_agent():
+    """Konuşma tanıma fabrikadaki ajanda (GX10) mı yapılıyor?"""
+    return bool(config.SPEECH_ON_AGENT) and config.AGENT_MODE == 'remote'
+
+
 def whisper_available():
-    """Konuşma tanıma kullanılabilir mi: entegrasyon açık (config.SPEECH_ENABLED) ve Whisper + model kurulu."""
-    return config.SPEECH_ENABLED and WHISPER.exists() and WHISPER_MODEL.exists()
+    """Konuşma tanıma kullanılabilir mi: entegrasyon açık (config.SPEECH_ENABLED) ve Whisper + model kurulu
+    (ajanda işleniyorsa: ajan bağlı ve orada kurulu — son bilinen durum, bekletmez)."""
+    if not config.SPEECH_ENABLED:
+        return False
+    if on_agent():
+        return agent_speech_status()['ok']
+    return WHISPER.exists() and WHISPER_MODEL.exists()
+
+
+# ---------- Ajan (GX10) durumu: istekleri bekletmemek için son bilinen durum; eskiyince arka planda yenilenir
+AGENT_STATUS_TTL = 120
+_agent_state = {'ok': False, 'message': 'Henüz denetlenmedi', 'at': 0.0, 'busy': False}
+_agent_lock = threading.Lock()
+
+
+def _agent_probe():
+    from . import devices
+    try:
+        if not devices.online():
+            ok, msg = False, 'Fabrika ajanı bağlı değil'
+        else:
+            st = devices.call_sync('speech.status', {}, timeout=15)
+            ok = bool(st.get('whisper') and st.get('model'))
+            msg = (f"GX10 hazır · {st.get('gpu') or 'ekran kartı bilgisi yok'} · {st.get('host') or ''}".rstrip(' ·') if ok
+                   else 'Ajanda Whisper ya da model kurulu değil (vendor/whisper, vendor/models)')
+    except Exception as e:   # noqa: BLE001 — eski ajan: "bilinmeyen op"
+        msg = str(e)
+        ok, msg = False, ('Ajan güncel değil: GX10’daki kodu güncelleyip ajanı yeniden başlatın' if 'bilinmeyen op' in msg
+                          else f'Ajana ulaşılamadı: {msg[:150]}')
+    with _agent_lock:
+        _agent_state.update(ok=ok, message=msg, at=time.time(), busy=False)
+    return dict(_agent_state)
+
+
+def agent_speech_status(refresh=False):
+    """{'ok', 'message'} — refresh: hemen dene (entegrasyon denetimi); değilse eskiyse arka planda yenile."""
+    if refresh:
+        return _agent_probe()
+    with _agent_lock:
+        stale = time.time() - _agent_state['at'] > AGENT_STATUS_TTL and not _agent_state['busy']
+        if stale:
+            _agent_state['busy'] = True
+    if stale:
+        threading.Thread(target=_agent_probe, daemon=True, name='speech-agent-probe').start()
+    return dict(_agent_state)
+
+
+# ---------- Ajanın indireceği ses: tek kullanımlık değil, kısa ömürlü ve tahmin edilemez bağlantı
+MEDIA_TTL = 1800
+_media = {}   # jeton → (dosya yolu, son geçerlilik)
+
+
+def share_media(path):
+    now = time.time()
+    for k in [k for k, (_, exp) in _media.items() if exp < now]:
+        _media.pop(k, None)
+    token = secrets.token_urlsafe(32)
+    _media[token] = (Path(path), now + MEDIA_TTL)
+    return token
+
+
+def shared_media(token):
+    item = _media.get(token)
+    return item[0] if item and item[1] >= time.time() and item[0].is_file() else None
+
+
+def unshare_media(token):
+    _media.pop(token, None)
+
+
+def run_whisper(wav, lang, seconds):
+    """Bu makinede whisper-cli → whisper JSON (transcription + result). Ajanda da aynı fonksiyon çalışır."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / 'out'
+        with _gpu:
+            r = subprocess.run([str(WHISPER), '-m', str(WHISPER_MODEL), '-f', str(wav), '-l', lang, '-oj', '-of', str(out),
+                                '-np', '-t', '8'], capture_output=True, timeout=max(900, int(seconds * 3)))
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.decode(errors='replace')[-300:] or 'Whisper hatası')
+        return json.loads(out.with_suffix('.json').read_text(encoding='utf-8', errors='replace'))
+
+
+def whisper_data(wav, lang, seconds):
+    """16 kHz WAV → whisper JSON. Entegrasyon “GX10’da işle” ise fabrikadaki ajan (ekran kartı), değilse bu sunucu."""
+    if not on_agent():
+        return run_whisper(wav, lang, seconds)
+    from . import devices
+    token = share_media(wav)
+    try:
+        return devices.call_sync('speech.transcribe', {'url': f'/api/agent/media/{token}', 'lang': lang, 'seconds': seconds},
+                                 timeout=max(180, int(seconds) // 2 + 120))
+    finally:
+        unshare_media(token)
 
 
 def faces_available():
@@ -89,13 +189,7 @@ def transcribe(path, lang='auto', stamps=True):
             return '', seconds
         if not whisper_available():
             raise RuntimeError('Konuşma tanıma kapalı ya da kurulu değil (Program Ayarları › Entegrasyonlar › Konuşma Tanıma)')
-        out = Path(tmp) / 'out'
-        with _gpu:
-            r = subprocess.run([str(WHISPER), '-m', str(WHISPER_MODEL), '-f', str(wav), '-l', lang, '-oj', '-of', str(out),
-                                '-np', '-t', '8'], capture_output=True, timeout=max(600, int(seconds * 2)))
-        if r.returncode != 0:
-            raise RuntimeError(r.stderr.decode(errors='replace')[-300:] or 'Whisper hatası')
-        data = json.loads(out.with_suffix('.json').read_text(encoding='utf-8', errors='replace'))
+        data = whisper_data(wav, lang, seconds)
         lines = []
         for seg in data.get('transcription', []):
             text = (seg.get('text') or '').strip()

@@ -10,7 +10,8 @@ import datetime
 import json
 import secrets
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 
 from . import config, db
 
@@ -87,6 +88,17 @@ async def _on_event(event, data):
     """Ajandan gelen itme (push) olayları — ör. yazıcı durum güncellemesi. İleride DB'ye yazılır."""
     # Harita sonrası: 'printer.status' vb. burada işlenecek.
     return
+
+
+@ws_router.get('/api/agent/media/{token}')
+def agent_media(token: str):
+    """Fabrika ajanının konuşma tanıma için indirdiği ses (16 kHz WAV). Oturum gerekmez: jeton tahmin edilemez
+    (32 bayt), yalnız iş sürerken ve en çok 30 dk geçerli (document_media.share_media)."""
+    from . import document_media
+    path = document_media.shared_media(token)
+    if not path:
+        raise HTTPException(404)
+    return FileResponse(path, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
 
 
 @ws_router.websocket('/ws/agent')

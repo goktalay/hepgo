@@ -115,6 +115,8 @@ X_CLIENT_SECRET = os.environ.get('CAYMAZ_X_CLIENT_SECRET', '')
 # Konuşma tanıma (ses → metin, konuşmacı / ses kimliği): Program Ayarları › Entegrasyonlar › Konuşma Tanıma. Kapalıyken
 # toplantı / görüşme / evrak sesleri yalnız KAYDEDİLİR; metne çevrilmez, konuşmacı tanınmaz, sesle yazdırma görünmez.
 SPEECH_ENABLED = os.environ.get('CAYMAZ_SPEECH', '0') == '1'
+# Konuşma tanıma fabrikadaki ajanda (GX10, NVIDIA GB10) mı yapılsın (yalnız AGENT_MODE=remote iken geçerli)
+SPEECH_ON_AGENT = os.environ.get('CAYMAZ_SPEECH_AGENT', '0') == '1'
 # X (Twitter) paylaşımları kaç saatte bir çekilsin (okuma kotası ücretli/sınırlı; elle yenileme her zaman çalışır)
 X_POLL_HOURS = float(os.environ.get('CAYMAZ_X_POLL_HOURS', '6') or 6)
 TIKTOK_CLIENT_KEY = os.environ.get('CAYMAZ_TIKTOK_CLIENT_KEY', '')

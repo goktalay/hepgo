@@ -108,9 +108,11 @@ GROUPS = {
         'title': 'Konuşma Tanıma (ses → metin)',
         'desc': 'Toplantı, görüşme ve evrak seslerinin metne çevrilmesi, konuşmacıların ayrılması ve ses kimliği, sesle yazdırma. '
                 'Kapalıyken sesler yalnız KAYDEDİLİR. Bu sunucuda ekran kartı yok (ses, süresinin ~2 katında işlenir); '
-                'fabrikadaki GX10 (NVIDIA GB10) üzerinde çalışacak servis hazır olunca buradan bağlanacak.',
+                'fabrikadaki GX10 (NVIDIA GB10) seçilirse ajan üzerinden ekran kartıyla saniyeler içinde işlenir.',
         'fields': [
             ('SPEECH_ENABLED', 'Konuşma tanımayı aç', 'bool', 'Kapalıyken sesler yalnız kaydedilir; metin ve konuşmacı çıkarılmaz'),
+            ('SPEECH_ON_AGENT', 'Fabrikadaki GX10’da işle (ajan üzerinden)', 'bool',
+             'Ekran kartıyla hızlı; fabrika ajanı bağlı olmalı. Kapalıyken bu sunucuda (yavaş) işlenir'),
         ],
     },
     'maps': {
@@ -190,7 +192,7 @@ def view(conn, group_keys=None, health=True):
             fields.append(f)
         out.append({'key': g, 'title': grp['title'], 'desc': grp['desc'], 'fields': fields,
                     'configured': bool(config.COMPANY_NAME) if g == 'general'
-                    else all(f['set'] for f in fields if f['key'] not in ('AI_WORKSPACE_ID',))})
+                    else all(f['set'] for f in fields if f['key'] not in ('AI_WORKSPACE_ID', 'SPEECH_ON_AGENT'))})
     if health:
         from . import integration_health as ih
         st, iv = ih.states(conn), ih.intervals(conn)
@@ -308,6 +310,11 @@ def test(group):
         from . import document_media as m
         if not config.SPEECH_ENABLED:
             return False, 'Kapalı: toplantı, görüşme ve evrak sesleri yalnız kaydediliyor (metne çevrilmiyor).'
+        if config.SPEECH_ON_AGENT and config.AGENT_MODE != 'remote':
+            return False, 'GX10’da işleme seçili, ancak bu kurulum fabrika ajanı modunda değil (CAYMAZ_AGENT_MODE=remote).'
+        if m.on_agent():
+            st = m.agent_speech_status(refresh=True)
+            return st['ok'], st['message']
         if not (m.WHISPER.exists() and m.WHISPER_MODEL.exists()):
             return False, 'Açık, ancak bu sunucuda Whisper ya da modeli kurulu değil.'
         return True, 'Açık: sesler metne çevriliyor (bu sunucuda işlemci ile; yavaş).'

@@ -496,8 +496,10 @@ const INTEG_INFO = {
     sections: [
       ['Kapalıyken', ['Toplantı / görüşme / evrak sesleri kaydedilir ve dinlenebilir; metin, konuşmacı ve ses kimliği çıkarılmaz.',
         'Metin kutularındaki mikrofon (sesle yazdırma) görünmez.']],
-      ['Bilinmesi gerekenler', ['Bu sunucuda ekran kartı yoktur; açılırsa ses, süresinin yaklaşık 2 katı sürede işlenir (1 saatlik toplantı ≈ 2 saat).',
-        'Fabrikadaki GX10 (NVIDIA GB10) üzerinde çalışacak konuşma tanıma servisi hazır olduğunda bu entegrasyondan bağlanacak; işlem saniyeler içinde biter.',
+      ['Çalışma yeri', ['“Fabrikadaki GX10’da işle” açıkken sesler fabrika ajanı üzerinden GX10’un ekran kartıyla (NVIDIA GB10) saniyeler içinde metne çevrilir. Ajan sesi kısa ömürlü bir bağlantıyla indirir; yalnızca metin geri gelir, ses fabrikada saklanmaz.',
+        'Kapalıyken bu sunucuda işlenir: ekran kartı olmadığından ses, süresinin yaklaşık 2 katı sürede çevrilir (1 saatlik toplantı ≈ 2 saat).',
+        'Ajan bağlı değilse ya da GX10’daki kod güncel değilse entegrasyon “Çevrimdışı” görünür ve nedeni yazılır.']],
+      ['Bilinmesi gerekenler', [
         'Açılmadan önce kaydedilen sesler, toplantı ekranındaki “Yeniden işle” ile sonradan metne çevrilebilir.']],
     ] },
   meta: { short: 'Meta', tag: 'Instagram / Facebook',

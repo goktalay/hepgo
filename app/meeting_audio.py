@@ -12,17 +12,14 @@ Ses ve metin sunucu dışına çıkmaz.
 """
 import json
 import re
-import subprocess
-import tempfile
 import threading
 import wave
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 
 from . import config, db
-from .document_media import WHISPER, WHISPER_MODEL, _gpu, _to_wav
+from .document_media import _to_wav, whisper_data
 
 MODEL = config.BASE_DIR / 'vendor' / 'models' / 'wespeaker_resnet34_LM.onnx'
 SR = 16000
@@ -138,14 +135,7 @@ def learn(conn, user_id, vec, weight=1):
 
 # ---------- konuşma → metin (zaman damgalı parçalar)
 def whisper_segments(wav, seconds, lang='tr'):
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / 'out'
-        with _gpu:
-            r = subprocess.run([str(WHISPER), '-m', str(WHISPER_MODEL), '-f', str(wav), '-l', lang, '-oj', '-of', str(out),
-                                '-np', '-t', '8'], capture_output=True, timeout=max(900, int(seconds * 3)))
-        if r.returncode != 0:
-            raise RuntimeError(r.stderr.decode(errors='replace')[-300:] or 'Whisper hatası')
-        data = json.loads(out.with_suffix('.json').read_text(encoding='utf-8', errors='replace'))
+    data = whisper_data(wav, lang, seconds)   # bu sunucu ya da fabrikadaki GX10 (entegrasyon ayarı)
     segs = []
     for s in data.get('transcription', []):
         text = (s.get('text') or '').strip()

@@ -116,6 +116,55 @@ def _face_media(args):
         return {'_err': 'notfound', 'msg': str(e)}
 
 
+# --- Konuşma tanıma (GX10 ekran kartı): merkez WAV'ı kısa ömürlü bağlantıyla paylaşır, ajan indirip işler, metni döner ---
+def _speech_status(args):
+    import shutil
+    import socket
+    import subprocess
+    from . import document_media as m
+    gpu = None
+    if shutil.which('nvidia-smi'):
+        try:
+            gpu = subprocess.run(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], capture_output=True, text=True,
+                                 timeout=10).stdout.strip().splitlines()[0] or None
+        except Exception:   # noqa: BLE001
+            gpu = None
+    return {'whisper': m.WHISPER.exists(), 'model': m.WHISPER_MODEL.exists(), 'gpu': gpu, 'host': socket.gethostname()}
+
+
+def _central_base():
+    """Merkez adresi ajanın bağlandığı WS adresinden: wss://caymaz.app/ws/agent → https://caymaz.app"""
+    import os
+    url = os.environ.get('CAYMAZ_AGENT_CENTRAL_URL') or config.AGENT_CENTRAL_URL
+    url = url.replace('wss://', 'https://', 1).replace('ws://', 'http://', 1)
+    return url.split('/ws/', 1)[0].rstrip('/')
+
+
+def _download(url, dest):
+    import httpx
+    with httpx.stream('GET', url, timeout=httpx.Timeout(60, read=300), follow_redirects=False) as r:
+        r.raise_for_status()
+        with open(dest, 'wb') as f:
+            for chunk in r.iter_bytes(1 << 20):
+                f.write(chunk)
+
+
+def _speech_transcribe(args):
+    import tempfile
+    from pathlib import Path
+    from . import document_media as m
+    url = args['url']
+    if not url.startswith('/api/agent/media/'):
+        raise RuntimeError('geçersiz ses adresi')
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / 'a.wav'
+        _download(_central_base() + url, wav)
+        data = m.run_whisper(wav, args.get('lang') or 'auto', float(args.get('seconds') or 60))
+    # yalnız gereken alanlar geri gönderilir (WS mesajı küçük kalsın)
+    return {'result': {'language': (data.get('result') or {}).get('language')},
+            'transcription': [{'text': s.get('text'), 'offsets': s.get('offsets')} for s in data.get('transcription', [])]}
+
+
 # --- Entegrasyon makinesi (fabrika) kaynak grafiği — merkez sunucu DEĞİL ---
 def _sysstat(args):
     from . import sysstat
@@ -139,6 +188,8 @@ OPS = {
     'face.rpc': _face_rpc,
     'face.media': _face_media,
     'sysstat': _sysstat,
+    'speech.status': _speech_status,
+    'speech.transcribe': _speech_transcribe,
 }
 
 

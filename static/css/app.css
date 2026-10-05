@@ -7278,3 +7278,12 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-cal-wd.today { border-color: var(--primary); background: var(--primary-soft); }
 .db-cal-wd-h { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 2px; }
 .db-cal-empty { color: var(--faint); font-size: 12px; }
+
+/* Bildirimde e-posta: satır + Okundu/Sil düğmeleri */
+.ntf-mail { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; }
+.ntf-mail-t { flex: 1; min-width: 0; display: block; }
+.ntf-mail-acts { display: flex; gap: 2px; flex: none; }
+.ntf-mb { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 7px; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
+.ntf-mb:hover { background: var(--primary-soft); color: var(--primary); }
+.ntf-mb.del:hover { background: #fde8e8; color: #dc2626; }
+.ntf-mb svg { width: 17px; height: 17px; }

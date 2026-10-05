@@ -11,8 +11,8 @@ from datetime import date
 from . import auth, catalogs, db
 
 
-def _result(rows, names, href, detail=None, push=None):
-    return {'rows': rows, 'names': names, 'href': href, 'detail': detail, 'push': push}
+def _result(rows, names, href, detail=None, push=None, mails=None):
+    return {'rows': rows, 'names': names, 'href': href, 'detail': detail, 'push': push, 'mails': mails}
 
 
 def _field_tasks(conn, where, args=()):
@@ -266,6 +266,8 @@ def mail_unread(conn, user):
         return _result(rows, [], '#/mail')
     who = lambda x: (x['from'].get('name') or x['from'].get('email') or '').strip()[:80]
     names = [f"{who(x)}\n{x['subject'][:200]}" for x in items]   # gönderen + konu; içerik YOK
+    mails = [{'box_id': x['box_id'], 'uid': x['uid'], 'folder': x.get('folder') or 'inbox',
+              'from': who(x), 'subject': (x['subject'] or '')[:200]} for x in items]
     if n > len(items):
         names.append(f'+{n - len(items)} okunmamış e-posta daha')
     href = f"#/mail/{items[0]['box_id']}/m/{items[0]['uid']}" if n == 1 and items else '#/mail'
@@ -273,7 +275,7 @@ def mail_unread(conn, user):
     if items:
         x = items[0]
         push = {'title': f"✉️ {who(x)}" + (f' (+{n - 1})' if n > 1 else ''), 'body': x['subject'][:200]}   # içerik YOK
-    return _result(rows, names or [f'{n} okunmamış e-posta'], href, 'Okumak için açın', push=push)
+    return _result(rows, names or [f'{n} okunmamış e-posta'], href, 'Okumak için açın', push=push, mails=mails)
 
 
 def announcements_unread(conn, user):
@@ -578,7 +580,8 @@ def for_user(conn, user):
         r = n['fn'](conn, user)
         if r['rows']:
             out.append({'key': n['key'], 'title': n['title'], 'href': r['href'], 'count': len(r['rows']),
-                        'names': r['names'][:6], 'detail': r['detail'], 'push': r.get('push')})
+                        'names': r['names'][:6], 'detail': r['detail'], 'push': r.get('push'),
+                        **({'mails': r['mails']} if r.get('mails') else {})})
     return out
 
 

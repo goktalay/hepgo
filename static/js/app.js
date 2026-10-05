@@ -543,9 +543,33 @@ function docsCountdown() {
   return el;
 }
 
-// Bildirim satır(lar)ı: ad "kimden\nkonu" içeriyorsa iki satır (üstte kimden, altında konu); her satır taşarsa … ile kesilir
+// Bildirim satır(lar)ı: ad "kimden\nkonu" içeriyorsa iki satır (üstte kimden, altında konu); her satır taşarsa … ile kesilir.
+// E-posta bildiriminde (n.mails) her satırda "Okundu" ve "Sil" düğmeleri: maile girmeden doğrudan işlenir.
 function notifNames(n) {
   const wrap = h('div', { class: 'ntf-names' });
+  if (n.key === 'mail-unread' && Array.isArray(n.mails) && n.mails.length) {
+    for (const m of n.mails) {
+      const row = h('div', { class: 'ntf-mail' });
+      const act = async (action, e) => {
+        e.preventDefault(); e.stopPropagation();
+        try {
+          await api.post(`/api/mail/${m.box_id}/action`, { folder: m.folder || 'inbox', uids: [m.uid], action });
+          row.remove();
+          toast(action === 'trash' ? 'E-posta silindi' : 'Okundu olarak işaretlendi');
+          refreshNotify();
+        } catch (err) { toastError(err); }
+      };
+      row.append(
+        h('a', { class: 'ntf-mail-t', href: `#/mail/${m.box_id}/m/${m.uid}/${encodeURIComponent(m.folder || 'inbox')}` },
+          h('div', { class: 'ntf-from' }, m.from || '(gönderen yok)'), h('div', { class: 'ntf-sub' }, m.subject || '(konu yok)')),
+        h('div', { class: 'ntf-mail-acts' },
+          h('button', { class: 'ntf-mb', type: 'button', title: 'Okundu işaretle', onclick: e => act('read', e) }, svgIcon(icons.read)),
+          h('button', { class: 'ntf-mb del', type: 'button', title: 'Sil', onclick: e => act('trash', e) }, svgIcon(icons.delete))));
+      wrap.append(row);
+    }
+    if (n.count > n.mails.length) wrap.append(h('div', { class: 'ntf-line muted' }, t('+{k} okunmamış e-posta daha', { k: n.count - n.mails.length })));
+    return wrap;
+  }
   for (const name of n.names) {
     const nl = name.indexOf('\n');
     if (nl >= 0) wrap.append(h('div', { class: 'ntf-item' },

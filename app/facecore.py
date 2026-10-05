@@ -364,6 +364,8 @@ def push_config(conn, cfg):
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('shift_config', json.dumps(cfg.get('shift') or {})))
     if cfg.get('facerec') is not None:
         conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('facerec_config', json.dumps(cfg.get('facerec'))))
+    if cfg.get('ppe_required') is not None:   # İSG/KKD: kişi başına zorunlu KKD ("type:id" → ['kask',...])
+        conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', ('ppe_required', json.dumps(cfg.get('ppe_required'))))
     # Eğitim izleri (bulut face_enroll aynası) — eşleştirme için embedding yeterli; kırpık yer tutucu
     conn.execute('DELETE FROM face_enroll')
     n = 0

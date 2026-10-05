@@ -78,8 +78,18 @@ def push(conn):
     # Eğitilmiş ziyaretçilerin stub kayıtları (fabrikada face_groups.visitor_id FK'si için + ad çözümü)
     visitors = [{'id': r[0], 'full_name': r[1], 'company': r[2]} for r in conn.execute(
         'SELECT id, full_name, company FROM visitors WHERE id IN (SELECT DISTINCT visitor_id FROM face_enroll WHERE visitor_id IS NOT NULL)')]
+    # İSG/KKD: kişi başına zorunlu KKD (kamerayla denetim). Personel = user; anahtar "user:<id>".
+    ppe_required = {}
+    for r in conn.execute("SELECT user_id, ppe_required FROM employees WHERE user_id IS NOT NULL AND ppe_required IS NOT NULL AND ppe_required != '' AND ppe_required != '[]'"):
+        try:
+            items = json.loads(r[1]) or []
+        except (ValueError, TypeError):
+            items = []
+        if items:
+            ppe_required[f'user:{r[0]}'] = items
     cfg = {
         'nvr': {'host': config.NVR_HOST, 'port': config.NVR_PORT, 'user': config.NVR_USER, 'password': config.NVR_PASSWORD},
         'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll, 'facerec': facerec, 'family': family, 'visitors': visitors,
+        'ppe_required': ppe_required,
     }
     return rpc('push_config', cfg=cfg)

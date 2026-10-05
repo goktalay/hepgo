@@ -38,6 +38,8 @@ MIN_FACE, MIN_SCORE = 36, 0.6            # yürüyen/açılı yüzler 0.9'u geç
 SAME_GROUP = 0.40                        # SFace kosinüs: aynı kişinin grubu
 IGNORE_SIM = 0.42                        # silinmiş yüze bu kadar benzeyen yeni görülme listeye alınmaz
 STORE_EVERY = 20                         # sn: aynı grup, aynı kamera için görülme saklama aralığı
+ISG_EVERY = 90                           # sn: aynı kişi + kamera için İSG/KKD alarmı tekrar aralığı (spam engeli)
+_isg_last = {}                           # (cam_id, kind, id) → son alarm zamanı
 RELOAD_EVERY = 10                        # sn: kamera listesi ve gruplar
 
 
@@ -160,6 +162,7 @@ class Schedule:
         self.shift = {k: list(v) for k, v in shifts.DEFAULT.items()}
         self.score = MIN_SCORE      # yüz tanıma eşiği (eklenti ayarlarından değişir)
         self.min_face = MIN_FACE
+        self.ppe_req = {}           # İSG/KKD: "type:id" → ['kask',...] (kamerayla denetlenecek zorunlu KKD)
 
     def reload(self):
         try:
@@ -172,6 +175,8 @@ class Schedule:
                     d = json.loads(cfg[0])
                     self.score = float(d.get('score', MIN_SCORE))
                     self.min_face = int(d.get('min_face', MIN_FACE))
+                prow = conn.execute("SELECT v FROM app_kv WHERE k = 'ppe_required'").fetchone()
+                self.ppe_req = (json.loads(prow[0]) if prow else {}) or {}
         except Exception:   # noqa: BLE001 — okunamazsa varsayılanlar
             self.ch = {}
 
@@ -348,6 +353,7 @@ class Camera:
                 _, faces = detector.detect(img)
                 boxes = []
                 full = None
+                idfaces = []   # (f, who) — kabul edilen yüzler; İSG/KKD denetimi için
                 now_iso = db.now()
                 for f in (faces if faces is not None else []):
                     if min(f[2], f[3]) < min_face:
@@ -357,13 +363,70 @@ class Camera:
                     boxes.append({'x': round(float(f[0]) / w, 4), 'y': round(float(f[1]) / h, 4),
                                   'w': round(float(f[2]) / w, 4), 'h': round(float(f[3]) / h, 4),
                                   'kind': who[0] if who else None, 'id': who[1] if who else None})
+                    idfaces.append((f, who))
                     full = full if full is not None else _resize(frame, FRAME_WIDTH)
                     sid = _store_sighting(self.ident, self.row['id'], emb, _face_crop(img, f), full, float(f[2] * f[3] * f[14]), now_iso, round(score_thr, 2))
                     if sid:
                         self._save_clip(sid)
                 _write_overlay(self.row['id'], boxes)   # yüz yoksa boş → çerçeveler temizlenir
+                self._isg_check(img, w, h, idfaces, now_iso)   # İSG/KKD denetimi (model yoksa anında döner)
             except Exception:
                 log.exception('yüz işleme hatası (kamera %s)', self.row['id'])
+
+    def _isg_check(self, img, w, h, idfaces, now_iso):
+        """İSG/KKD denetimi: tanınan + zorunlu KKD'si olan kişiler için kask/eldiven vb. eksikse isg_alarms üretir.
+        KKD modeli yoksa (ppe.available()=False) ya da denetlenecek kişi yoksa hiçbir iş yapmaz (yüz tanımayı etkilemez)."""
+        try:
+            req_map = self.sched.ppe_req if self.sched else {}
+            if not req_map or not idfaces:
+                return
+            targets = []   # (f, who, required)
+            for f, who in idfaces:
+                if not who:
+                    continue
+                required = req_map.get(f'{who[0]}:{who[1]}')
+                if required:
+                    targets.append((f, who, required))
+            if not targets:
+                return
+            from . import ppe
+            if not ppe.available():
+                return
+            dets = ppe.detect(img)
+            for f, who, required in targets:
+                missing = ppe.missing_for(required, dets, [float(f[0]), float(f[1]), float(f[2]), float(f[3])], w, h)
+                if missing:
+                    self._store_isg_alarm(who, missing, _face_crop(img, f), now_iso)
+        except Exception:   # noqa: BLE001 — İSG denetim hatası yüz tanımayı durdurmamalı
+            log.exception('İSG/KKD denetim hatası (kamera %s)', self.row['id'])
+
+    def _store_isg_alarm(self, who, missing, crop, now_iso):
+        """İSG alarmını yerel DB'ye yazar (spam engelli). Bulut facecore.isg_alarms ile çeker, isimleri çözer."""
+        key = (self.row['id'], who[0], who[1])
+        now = time.time()
+        if now - _isg_last.get(key, 0) < ISG_EVERY:
+            return
+        _isg_last[key] = now
+        col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id', 'visitor': 'visitor_id'}.get(who[0])
+        if not col:
+            return
+        FACE_DIR.mkdir(parents=True, exist_ok=True)
+        name = uuid.uuid4().hex
+        try:
+            _write_jpg(FACE_DIR / f'{name}.jpg', crop, 88)
+            crop_path = f'camfaces/{name}.jpg'
+        except Exception:   # noqa: BLE001
+            crop_path = None
+        try:
+            cam_name = self.row['name']
+        except Exception:   # noqa: BLE001
+            cam_name = None
+        with db.connect() as conn:
+            conn.execute('PRAGMA foreign_keys = OFF')
+            conn.execute(
+                f'''INSERT INTO isg_alarms (camera_id, camera_name, subject_type, {col}, missing, at, crop, created_at)
+                    VALUES (?,?,?,?,?,?,?,?)''',
+                (self.row['id'], cam_name, who[0], who[1], json.dumps(missing), now_iso, crop_path, now_iso))
 
     def _save_clip(self, sighting_id):
         """Görülme anının kısa videosunu (tampondaki son ~6 sn) lokal olarak kaydeder ve kayda bağlar. En iyi çaba."""

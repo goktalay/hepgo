@@ -54,12 +54,10 @@ async function dashboard(view) {
   try { d = await api.get('/api/central/support/overview'); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
   const strip = statStrip();
   strip.set([
-    { label: 'Canlı destekte bekleyen', value: d.waiting_chats, tone: d.waiting_chats ? 'alert' : '' },
-    { label: 'Açık talep', value: d.open, sub: t('{a} destek · {b} firma bekliyor', { a: d.awaiting_support, b: d.awaiting_company }) },
-    { label: 'SLA aşan', value: d.overdue, tone: d.overdue ? 'alert' : 'ok' },
-    { label: 'Atanmamış', value: d.unassigned, tone: d.unassigned ? 'warn' : '' },
-    { label: 'Bana atanan', value: d.mine },
-    { label: 'Bugün çözülen', value: d.resolved_today, sub: t('{n} yeni', { n: d.new_today }), tone: 'ok' }]);
+    { icon: 'chat', label: 'Canlı destekte bekleyen', value: d.waiting_chats, tone: d.waiting_chats ? 'alert' : '' },
+    { icon: 'tickets', label: 'Açık talep', value: d.open, sub: t('{a} destek · {b} firma bekliyor', { a: d.awaiting_support, b: d.awaiting_company }) },
+    { icon: 'warning', label: 'SLA aşan', value: d.overdue, tone: d.overdue ? 'alert' : 'ok' },
+    { icon: 'person', label: 'Atanmamış', value: d.unassigned, tone: d.unassigned ? 'warn' : '' }]);
   const kpi = (label, value, sub, cls = '') => h('div', { class: `card dm-kpi ${cls}` }, h('small', null, label), h('b', null, value), sub ? h('span', { class: 'small muted' }, sub) : null);
   const chartBox = h('canvas', { height: 220 });
   const link = (href, ...kids) => h('a', { class: 'dm-link', href }, ...kids);

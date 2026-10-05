@@ -28,13 +28,10 @@ export async function render(view, params, ctx) {
     const today = new Date().toISOString().slice(0, 10);
     const mineRows = pending.filter(r => r.delivered_to_name === ctx.user.full_name);
     stats.set([
-      { label: 'Onay bekleyen parça', value: pending.length, tone: pending.length ? 'alert' : '' },
-      { label: 'Bana teslim edilen', value: mineRows.length },
-      { label: 'Bugün onaylanan', value: history.filter(r => (r.approved_at || '').startsWith(today)).length, tone: 'ok' },
-      { label: 'Bekleyen sipariş', value: new Set(pending.map(r => r.order_code)).size, sub: 'onay bekleyen parçası olan' },
-      { label: 'Depoda (onaylı)', value: history.filter(r => r.state === 'DEPO').length },
-      { label: 'Montajda', value: history.filter(r => r.state === 'MONTAJ').length },
-      { label: 'Saha deposu onayı bekleyen uçak', value: aircraft.pending.length, tone: aircraft.pending.length ? 'alert' : '' },
+      { icon: 'warehouse', label: 'Onay bekleyen parça', value: pending.length, tone: pending.length ? 'alert' : '' },
+      { icon: 'person', label: 'Bana teslim edilen', value: mineRows.length },
+      { icon: 'stock', label: 'Bugün onaylanan', value: history.filter(r => (r.approved_at || '').startsWith(today)).length, tone: 'ok' },
+      { icon: 'flightlog', label: 'Saha deposu onayı bekleyen uçak', value: aircraft.pending.length, tone: aircraft.pending.length ? 'alert' : '' },
     ]);
     const codes = [...new Set([...pending, ...history].map(r => r.order_code).concat(
       [...aircraft.pending, ...aircraft.approved].map(o => o.code)))].sort();

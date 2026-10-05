@@ -104,15 +104,10 @@ export async function render(view, params, ctx) {
   const fullSets = Math.min(...ids.map(id => counts[id] || 0));
   const stats = statStrip();
   stats.set([
-    { label: 'Saha deposundaki uçak', value: stock.ready_aircraft.length, tone: 'ok' },
-    { label: 'Yarı mamuldeki uçak', value: stock.wip_aircraft.length },
-    { label: 'Yarı mamul parça (depoda)', value: totalParts },
-    { label: 'Depo onayı bekleyen parça', value: totalPending, tone: totalPending ? 'alert' : '' },
-    { label: 'Stokta olan parça çeşidi', value: `${ids.filter(id => counts[id] > 0).length}/${ids.length}` },
-    { label: 'Stokta olmayan parça', value: ids.filter(id => !counts[id]).length },
-    { label: 'Tam takım (uçak) adedi', value: fullSets, sub: 'depodaki parçalardan' },
-    spares.length ? { label: 'Yedek parçanın yettiği uçak', value: Math.min(...spares.map(x => x.enough_for ?? Infinity)),
-      tone: spares.some(x => x.per_aircraft && x.stock < x.per_aircraft) ? 'alert' : 'ok', sub: 'klips + kamera tutucu' } : null,
+    { icon: 'warehouse', label: 'Saha deposundaki uçak', value: stock.ready_aircraft.length, tone: 'ok' },
+    { icon: 'stock', label: 'Yarı mamul parça (depoda)', value: totalParts },
+    { icon: 'warning', label: 'Depo onayı bekleyen parça', value: totalPending, tone: totalPending ? 'alert' : '' },
+    { icon: 'stock', label: 'Stokta olan parça çeşidi', value: `${ids.filter(id => counts[id] > 0).length}/${ids.length}` },
   ]);
   const redraw = () => pl.update();
   q.addEventListener('input', redraw);

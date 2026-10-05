@@ -19,11 +19,10 @@ export async function render(view, params, ctx) {
     const [inbox, sent] = await Promise.all([api.get('/api/signatures?box=inbox'), api.get('/api/signatures?box=sent')]);
     const rows = box === 'inbox' ? inbox : sent;
     stats.set([
-      { label: 'İmzamı bekleyen', value: inbox.filter(s => s.status === 'BEKLIYOR').length, tone: inbox.some(s => s.status === 'BEKLIYOR') ? 'alert' : '' },
-      { label: 'İmzaladığım', value: inbox.filter(s => s.status === 'IMZALANDI').length, tone: 'ok' },
-      { label: 'Reddettiğim', value: inbox.filter(s => s.status === 'REDDEDILDI').length },
-      { label: 'Gönderdiğim, bekleyen', value: sent.filter(s => s.status === 'BEKLIYOR').length },
-      { label: 'Gönderdiğim, reddedilen', value: sent.filter(s => s.status === 'REDDEDILDI').length, tone: sent.some(s => s.status === 'REDDEDILDI') ? 'alert' : '' },
+      { icon: 'certs', label: 'İmzamı bekleyen', value: inbox.filter(s => s.status === 'BEKLIYOR').length, tone: inbox.some(s => s.status === 'BEKLIYOR') ? 'alert' : '' },
+      { icon: 'documents', label: 'İmzaladığım', value: inbox.filter(s => s.status === 'IMZALANDI').length, tone: 'ok' },
+      { icon: 'send', label: 'Gönderdiğim, bekleyen', value: sent.filter(s => s.status === 'BEKLIYOR').length },
+      { icon: 'warning', label: 'Gönderdiğim, reddedilen', value: sent.filter(s => s.status === 'REDDEDILDI').length, tone: sent.some(s => s.status === 'REDDEDILDI') ? 'alert' : '' },
     ]);
     clear(body, rows.length ? h('div', { class: 'doc-list' }, rows.map(s => h('a', { class: 'card doc-row', href: `#/sign/${s.id}` },
       thumbOf(s),

@@ -30,13 +30,10 @@ export async function render(view, params, ctx) {
     const open = list.filter(o => o.status !== 'TAMAMLANDI');
     const month = new Date().toISOString().slice(0, 7);
     stats.set([
-      { label: 'Listelenen sipariş', value: list.length },
-      { label: 'Açık sipariş', value: open.length },
-      { label: 'Tamamlanan', value: list.length - open.length, tone: 'ok', sub: period.label().toLocaleLowerCase('tr') },
-      { label: 'Bu ay açılan', value: list.filter(o => o.created_at.startsWith(month)).length },
-      { label: 'Hatalı sipariş', value: list.filter(o => o.status === 'HATA').length, tone: list.some(o => o.status === 'HATA') ? 'alert' : '' },
-      { label: 'Montaja hazır', value: list.filter(o => o.status === 'MONTAJ').length },
-      { label: 'Ortalama ilerleme', value: open.length ? `%${Math.round(open.reduce((a, o) => a + o.progress, 0) / open.length)}` : '—', sub: 'açık siparişlerde' },
+      { icon: 'orders', label: 'Listelenen sipariş', value: list.length },
+      { icon: 'orders', label: 'Açık sipariş', value: open.length },
+      { icon: 'orders', label: 'Tamamlanan', value: list.length - open.length, tone: 'ok', sub: period.label().toLocaleLowerCase('tr') },
+      { icon: 'warning', label: 'Hatalı sipariş', value: list.filter(o => o.status === 'HATA').length, tone: list.some(o => o.status === 'HATA') ? 'alert' : '' },
     ]);
     clear(body, !list.length ? h('div', { class: 'card empty' }, 'Filtreye uyan sipariş yok')
       : mode === 'card' ? h('div', { class: 'oc-grid' }, list.map(orderCard)) : table(list, load, ctx));

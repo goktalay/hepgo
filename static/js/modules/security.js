@@ -86,9 +86,9 @@ async function renderLog(body) {
   const load = async () => {
     rows = await api.get(`/api/security/log?${period.qs()}&q=${encodeURIComponent(q.value)}`);
     stats.set([
-      { label: 'Giriş', value: rows.length },
-      { label: 'Çıkış', value: rows.filter(r => r.exited_at).length },
-      { label: 'Hâlâ içeride', value: rows.filter(r => !r.exited_at).length, tone: 'ok' },
+      { icon: 'security', label: 'Giriş', value: rows.length },
+      { icon: 'person', label: 'Çıkış', value: rows.filter(r => r.exited_at).length },
+      { icon: 'users', label: 'Hâlâ içeride', value: rows.filter(r => !r.exited_at).length, tone: 'ok' },
     ]);
     clear(out, rows.length ? h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Plaka', 'Giriş', 'Kaydeden', 'Çıkış', 'Kaydeden', 'Süre', 'Not', 'Misafir'].map(t => h('th', null, t)))),

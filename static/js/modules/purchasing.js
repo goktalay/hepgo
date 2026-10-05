@@ -73,11 +73,10 @@ async function renderRequests(view) {
   const stats = statStrip();
   const n = s => list.filter(r => r.status === s).length;
   stats.set([
-    { label: 'Taslak', value: n('TASLAK') },
-    { label: 'Onay bekleyen', value: n('ONAY_BEKLIYOR'), tone: n('ONAY_BEKLIYOR') ? 'alert' : '' },
-    { label: 'Onaylanan (teslim bekliyor)', value: n('ONAYLANDI') },
-    { label: 'Tamamlanan', value: n('TAMAMLANDI'), tone: 'ok' },
-    { label: 'Reddedilen', value: n('REDDEDILDI') },
+    { icon: 'note', label: 'Taslak', value: n('TASLAK') },
+    { icon: 'warning', label: 'Onay bekleyen', value: n('ONAY_BEKLIYOR'), tone: n('ONAY_BEKLIYOR') ? 'alert' : '' },
+    { icon: 'orders', label: 'Onaylanan (teslim bekliyor)', value: n('ONAYLANDI') },
+    { icon: 'purchasing', label: 'Tamamlanan', value: n('TAMAMLANDI'), tone: 'ok' },
   ]);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Talep no, başlık ara…', style: { width: '220px' } });
   const st = selectInput(Object.entries({ TASLAK: 'Taslak', ONAY_BEKLIYOR: 'Onay bekliyor', ONAYLANDI: 'Onaylandı', TAMAMLANDI: 'Tamamlandı', REDDEDILDI: 'Reddedildi', IPTAL: 'İptal' }), { all: 'Tüm durumlar' });
@@ -198,10 +197,10 @@ async function renderInvoices(view) {
   const month = new Date().toISOString().slice(0, 7);
   const stats = statStrip();
   stats.set([
-    { label: 'Belge', value: list.length },
-    { label: 'Bu ay', value: list.filter(d => (d.doc_date || '').startsWith(month)).length },
-    { label: 'Bu ay tutar', value: money(list.filter(d => (d.doc_date || '').startsWith(month)).reduce((a, d) => a + (d.amount || d.lines_total || 0), 0)) },
-    { label: 'Dosyası eksik', value: list.filter(d => !d.file).length, tone: list.some(d => !d.file) ? 'alert' : '' },
+    { icon: 'documents', label: 'Belge', value: list.length },
+    { icon: 'calendar', label: 'Bu ay', value: list.filter(d => (d.doc_date || '').startsWith(month)).length },
+    { icon: 'finance', label: 'Bu ay tutar', value: money(list.filter(d => (d.doc_date || '').startsWith(month)).reduce((a, d) => a + (d.amount || d.lines_total || 0), 0)) },
+    { icon: 'warning', label: 'Dosyası eksik', value: list.filter(d => !d.file).length, tone: list.some(d => !d.file) ? 'alert' : '' },
   ]);
   const draw = () => {
     const rows = list.filter(d => (!kind.value || d.kind === kind.value)

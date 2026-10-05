@@ -68,12 +68,10 @@ export async function renderProductionErrors(view, ctx) {
     const parts = new Set(list.map(r => `${r.order_id}:${r.part_id}`));
     const repeated = new Set(list.filter(r => r.part_errors > 1).map(r => `${r.order_id}:${r.part_id}`));
     stats.set([
-      { label: 'Hata kaydı', value: list.length, tone: list.length ? 'alert' : '' },
-      { label: 'Bugün', value: list.filter(r => day(r.at) === today).length },
-      { label: 'Son 7 gün', value: list.filter(r => day(r.at) >= week).length },
-      { label: 'Hatalı parça', value: parts.size, sub: t('{n} tekrarlayan', { n: repeated.size }) },
-      { label: 'Hata veren yazıcı', value: new Set(list.map(r => r.printer_id).filter(Boolean)).size },
-      { label: 'Resimli kayıt', value: list.filter(r => r.photo).length },
+      { icon: 'warning', label: 'Hata kaydı', value: list.length, tone: list.length ? 'alert' : '' },
+      { icon: 'calendar', label: 'Bugün', value: list.filter(r => day(r.at) === today).length },
+      { icon: 'products', label: 'Hatalı parça', value: parts.size, sub: t('{n} tekrarlayan', { n: repeated.size }) },
+      { icon: 'printers', label: 'Hata veren yazıcı', value: new Set(list.map(r => r.printer_id).filter(Boolean)).size },
     ]);
     clear(tops,
       topBox('En çok hata veren yazıcılar', count(r => r.printer_id, printerLabel), k => { printer.value = String(k); draw(); }),

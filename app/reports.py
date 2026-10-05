@@ -157,11 +157,9 @@ def uretim_performans(conn, p):
     if waits:
         ins.append(f'Biten parça yazıcıda ortalama {dur(sum(waits) / len(waits))} bekledi; bu süre yazıcı kapasitesinden kayıp demektir.')
     return {
-        'kpis': [{'label': 'Başlatılan baskı', 'value': started}, {'label': 'Depoya teslim', 'value': done, 'tone': 'ok'},
-                 {'label': 'Hata', 'value': errs, 'tone': 'alert' if errs else ''},
-                 {'label': 'Hata oranı', 'value': f'%{pct(errs, started)}'},
-                 {'label': 'Ort. net baskı', 'value': dur(sum(net) / len(net)) if net else '—', 'sub': 'yazıcının bildirdiği'},
-                 {'label': 'Ort. yazıcıda bekleme', 'value': dur(sum(waits) / len(waits)) if waits else '—'}],
+        'kpis': [{'icon': 'production', 'label': 'Başlatılan baskı', 'value': started}, {'icon': 'warehouse', 'label': 'Depoya teslim', 'value': done, 'tone': 'ok'},
+                 {'icon': 'warning', 'label': 'Hata', 'value': errs, 'tone': 'alert' if errs else ''},
+                 {'icon': 'warning', 'label': 'Hata oranı', 'value': f'%{pct(errs, started)}'}],
         'insights': ins,
         'charts': [
             {'title': 'Günlük üretim ve hata', 'type': 'combo', 'wide': True, 'labels': day_labels(ds),
@@ -219,9 +217,8 @@ def hata_analizi(conn, p):
     else:
         ins.append('Bu dönemde hata kaydı yok.')
     return {
-        'kpis': [{'label': 'Hata', 'value': total, 'tone': 'alert' if total else ''}, {'label': 'Hata oranı', 'value': f'%{pct(total, starts)}', 'sub': f'{starts} baskıda'},
-                 {'label': 'Farklı hata kodu', 'value': len(codes)}, {'label': 'Hata veren yazıcı', 'value': len(printers)},
-                 {'label': 'Hatalı parça türü', 'value': len(parts)}],
+        'kpis': [{'icon': 'warning', 'label': 'Hata', 'value': total, 'tone': 'alert' if total else ''}, {'icon': 'warning', 'label': 'Hata oranı', 'value': f'%{pct(total, starts)}', 'sub': f'{starts} baskıda'},
+                 {'icon': 'tag', 'label': 'Farklı hata kodu', 'value': len(codes)}, {'icon': 'printers', 'label': 'Hata veren yazıcı', 'value': len(printers)}],
         'insights': ins,
         'charts': [
             {'title': 'Hata kodları — Pareto', 'type': 'combo', 'wide': True, 'labels': pk, 'pareto': True,
@@ -268,9 +265,9 @@ def baski_sapma(conn, p):
     ins.append('Net baskı süresi (duraklamalar hariç) 28.09.2026\'dan itibaren yazıcıdan ölçülüyor; veri biriktikçe rapor güçlenir.')
     top_rows = with_plan[:15]
     return {
-        'kpis': [{'label': 'Ölçülen baskı', 'value': len(rows)}, {'label': 'Parça türü', 'value': len(out)},
-                 {'label': 'Toplam plan', 'value': dur(tp)}, {'label': 'Toplam gerçek', 'value': dur(tr)},
-                 {'label': 'Genel sapma', 'value': f'%{pct(tr - tp, tp):+}' if tp else '—', 'tone': 'alert' if tp and tr > tp * 1.1 else ''}],
+        'kpis': [{'icon': 'production', 'label': 'Ölçülen baskı', 'value': len(rows)}, {'icon': 'products', 'label': 'Parça türü', 'value': len(out)},
+                 {'icon': 'calendar', 'label': 'Toplam gerçek', 'value': dur(tr)},
+                 {'icon': 'warning', 'label': 'Genel sapma', 'value': f'%{pct(tr - tp, tp):+}' if tp else '—', 'tone': 'alert' if tp and tr > tp * 1.1 else ''}],
         'insights': ins,
         'charts': [{'title': 'Plan ve gerçek net baskı (en çok sapan 15 parça, dakika)', 'type': 'bar', 'wide': True, 'labels': [r['part'] for r in top_rows],
                     'datasets': [{'label': 'Plan', 'data': [r['plan'] for r in top_rows]}, {'label': 'Gerçek ort.', 'data': [round(r['real']) for r in top_rows]}]}],
@@ -315,9 +312,9 @@ def yazicida_bekleme(conn, p):
     else:
         ins.append('Bu dönemde yazıcının "bitti" bildirdiği ve teslim edilen parça yok.')
     return {
-        'kpis': [{'label': 'Ölçülen parça', 'value': len(w)}, {'label': 'Ortalama', 'value': dur(sum(w) / len(w)) if w else '—'},
-                 {'label': 'Medyan', 'value': dur(median(w))}, {'label': '%90 dilim', 'value': dur(quantile(w, .9))},
-                 {'label': 'Toplam kayıp', 'value': dur(lost), 'tone': 'alert' if lost > 600 else ''}],
+        'kpis': [{'icon': 'products', 'label': 'Ölçülen parça', 'value': len(w)}, {'icon': 'calendar', 'label': 'Ortalama', 'value': dur(sum(w) / len(w)) if w else '—'},
+                 {'icon': 'calendar', 'label': 'Medyan', 'value': dur(median(w))},
+                 {'icon': 'warning', 'label': 'Toplam kayıp', 'value': dur(lost), 'tone': 'alert' if lost > 600 else ''}],
         'insights': ins,
         'charts': [
             {'title': 'Bekleme süresi dağılımı', 'type': 'bar', 'labels': [x[0] for x in buckets], 'datasets': [{'label': 'Parça', 'data': hist}]},
@@ -366,9 +363,9 @@ def montaj_performans(conn, p):
     else:
         ins.append('Bu dönemde montaj adımı yok.')
     return {
-        'kpis': [{'label': 'Montaj adımı', 'value': len(steps)}, {'label': 'Uçak', 'value': len(per_order)},
-                 {'label': 'Kalibrasyonu biten', 'value': sum(1 for s in steps if s['step'] == 'KALIBRASYON'), 'tone': 'ok'},
-                 {'label': 'Görev alan personel', 'value': len(staff)}],
+        'kpis': [{'icon': 'tools', 'label': 'Montaj adımı', 'value': len(steps)}, {'icon': 'flightlog', 'label': 'Uçak', 'value': len(per_order)},
+                 {'icon': 'settings', 'label': 'Kalibrasyonu biten', 'value': sum(1 for s in steps if s['step'] == 'KALIBRASYON'), 'tone': 'ok'},
+                 {'icon': 'users', 'label': 'Görev alan personel', 'value': len(staff)}],
         'insights': ins,
         'charts': [
             {'title': 'Personel katkısı (adım türüne göre)', 'type': 'hbar', 'stacked': True, 'wide': True, 'labels': people,
@@ -433,10 +430,10 @@ def kapasite_tahmin(conn, p):
     if late:
         ins.append(f'{len(late)} siparişin tahmini bitişi planlanan bitiş tarihini aşıyor (en çok {max(f["late"] for f in late)} gün). Yazıcı sayısı ya da vardiya artırılmalı.')
     return {
-        'kpis': [{'label': 'Kalan parça', 'value': left}, {'label': 'Günlük hız (7 gün)', 'value': round(rate, 1)},
-                 {'label': 'Tahmini bitiş', 'value': (today + timedelta(eta_days)).strftime('%d.%m') if eta_days else '—',
+        'kpis': [{'icon': 'stock', 'label': 'Kalan parça', 'value': left}, {'icon': 'production', 'label': 'Günlük hız (7 gün)', 'value': round(rate, 1)},
+                 {'icon': 'calendar', 'label': 'Tahmini bitiş', 'value': (today + timedelta(eta_days)).strftime('%d.%m') if eta_days else '—',
                   'sub': str((today + timedelta(eta_days)).year) if eta_days else None, 'tone': 'ok'},
-                 {'label': 'Gecikecek sipariş', 'value': len(late), 'tone': 'alert' if late else ''}],
+                 {'icon': 'warning', 'label': 'Gecikecek sipariş', 'value': len(late), 'tone': 'alert' if late else ''}],
         'insights': ins,
         'charts': [{'title': 'Kalan parça — gerçekleşen ve tahmin', 'type': 'line', 'wide': True, 'labels': labels,
                     'datasets': [{'label': 'Kalan (gerçekleşen)', 'data': remaining + [None] * len(proj)},
@@ -471,10 +468,9 @@ def siparis_durum(conn, p):
         c = comp.most_common(1)[0]
         ins.append(f'Siparişlerin %{pct(c[1], len(orders))} kadarı {c[0]} için.')
     return {
-        'kpis': [{'label': 'Sipariş', 'value': len(orders)}, {'label': 'Açık', 'value': len(open_)},
-                 {'label': 'Tamamlanan', 'value': sum(o['status'] == 'TAMAMLANDI' for o in orders), 'tone': 'ok'},
-                 {'label': 'Geciken', 'value': len(late), 'tone': 'alert' if late else ''},
-                 {'label': 'Ort. ilerleme (açık)', 'value': f'%{round(sum(o["progress"] for o in open_) / len(open_)) if open_ else 0}'}],
+        'kpis': [{'icon': 'orders', 'label': 'Sipariş', 'value': len(orders)}, {'icon': 'orders', 'label': 'Açık', 'value': len(open_)},
+                 {'icon': 'production', 'label': 'Tamamlanan', 'value': sum(o['status'] == 'TAMAMLANDI' for o in orders), 'tone': 'ok'},
+                 {'icon': 'warning', 'label': 'Geciken', 'value': len(late), 'tone': 'alert' if late else ''}],
         'insights': ins,
         'charts': [
             {'title': 'Durumlara göre', 'type': 'doughnut', 'labels': list(st), 'datasets': [{'label': 'Sipariş', 'data': list(st.values())}]},
@@ -526,9 +522,8 @@ def cevrim_suresi(conn, p):
     else:
         ins.append('Bu dönemde açılmış ve üretimi başlamış mamul siparişi yok.')
     return {
-        'kpis': [{'label': 'Uçak', 'value': len(out)}, {'label': 'Saha deposuna ulaşan', 'value': len(done), 'tone': 'ok'},
-                 {'label': 'Darboğaz', 'value': bott or '—'}, {'label': 'Ort. üretim', 'value': dur(avg[1] * 60) if out else '—'},
-                 {'label': 'Ort. montaj', 'value': dur(avg[3] * 60) if out else '—'}],
+        'kpis': [{'icon': 'flightlog', 'label': 'Uçak', 'value': len(out)}, {'icon': 'warehouse', 'label': 'Saha deposuna ulaşan', 'value': len(done), 'tone': 'ok'},
+                 {'icon': 'warning', 'label': 'Darboğaz', 'value': bott or '—'}, {'icon': 'production', 'label': 'Ort. üretim', 'value': dur(avg[1] * 60) if out else '—'}],
         'insights': ins,
         'charts': [
             {'title': 'Uçak bazında aşama süreleri (saat)', 'type': 'hbar', 'stacked': True, 'wide': True, 'labels': [r['code'] for r in out],
@@ -559,8 +554,8 @@ def depo_onay(conn, p):
     users = Counter(r['user'] or '—' for r in rows)
     pending = conn.execute("SELECT COUNT(*) FROM order_parts WHERE state = 'DEPO' AND approved_at IS NULL").fetchone()[0]
     return {
-        'kpis': [{'label': 'Onaylanan parça', 'value': len(rows), 'tone': 'ok'}, {'label': 'Ort. onay süresi', 'value': dur(sum(lag) / len(lag)) if lag else '—'},
-                 {'label': 'Medyan', 'value': dur(median(lag))}, {'label': 'Şu an onay bekleyen', 'value': pending, 'tone': 'alert' if pending else ''}],
+        'kpis': [{'icon': 'warehouse', 'label': 'Onaylanan parça', 'value': len(rows), 'tone': 'ok'}, {'icon': 'calendar', 'label': 'Ort. onay süresi', 'value': dur(sum(lag) / len(lag)) if lag else '—'},
+                 {'icon': 'calendar', 'label': 'Medyan', 'value': dur(median(lag))}, {'icon': 'warning', 'label': 'Şu an onay bekleyen', 'value': pending, 'tone': 'alert' if pending else ''}],
         'insights': [f'Teslim edilen parça ortalama {dur(sum(lag) / len(lag))} sonra depoda onaylandı.' if lag else 'Bu dönemde depo onayı yok.']
         + ([f'Şu an {pending} parça depo onayı bekliyor.'] if pending else []),
         'charts': [
@@ -594,8 +589,8 @@ def stok_durum(conn, p):
     used = Counter(m['created_at'][:10] for m in moves for _ in range(max(0, -m['qty'])))
     made = Counter(m['created_at'][:10] for m in moves for _ in range(max(0, m['qty'])))
     return {
-        'kpis': [{'label': 'Sarf yedek parça', 'value': len(rows)}, {'label': 'Stok yeter (uçak)', 'value': cap if cap is not None else '—', 'tone': 'alert' if cap == 0 else 'ok'},
-                 {'label': 'Kısıtlayan parça', 'value': limit['code'] if limit else '—'}, {'label': 'Hareket', 'value': len(moves)}],
+        'kpis': [{'icon': 'stock', 'label': 'Sarf yedek parça', 'value': len(rows)}, {'icon': 'warehouse', 'label': 'Stok yeter (uçak)', 'value': cap if cap is not None else '—', 'tone': 'alert' if cap == 0 else 'ok'},
+                 {'icon': 'warning', 'label': 'Kısıtlayan parça', 'value': limit['code'] if limit else '—'}, {'icon': 'refresh', 'label': 'Hareket', 'value': len(moves)}],
         'insights': [f'Mevcut stokla {cap} uçak daha monte edilebilir; kısıtlayan parça {limit["code"]} ({limit["stock"]} adet, uçak başına {limit["per_aircraft"]}).'
                      if limit else 'Uçak başına kullanımı tanımlı yedek parça yok.'],
         'charts': [
@@ -659,9 +654,9 @@ def yazici_verim(conn, p):
         ins.append(f'{len(idle)} yazıcı dönem boyunca hiç kullanılmadı: {", ".join(idle[:10])}{"…" if len(idle) > 10 else ""}.')
     top_rows = rows[:20]
     return {
-        'kpis': [{'label': 'Yazıcı', 'value': len(rows)}, {'label': 'Kullanılan', 'value': len(used), 'tone': 'ok'},
-                 {'label': 'Filo doluluğu', 'value': f'%{fleet}'}, {'label': 'Toplam baskı', 'value': f'{round(sum(r["hours"] for r in rows))} sa'},
-                 {'label': 'Hiç kullanılmayan', 'value': len(idle), 'tone': 'alert' if idle else ''}],
+        'kpis': [{'icon': 'printers', 'label': 'Yazıcı', 'value': len(rows)}, {'icon': 'production', 'label': 'Kullanılan', 'value': len(used), 'tone': 'ok'},
+                 {'icon': 'fleet', 'label': 'Filo doluluğu', 'value': f'%{fleet}'},
+                 {'icon': 'warning', 'label': 'Hiç kullanılmayan', 'value': len(idle), 'tone': 'alert' if idle else ''}],
         'insights': ins,
         'charts': [
             {'title': 'Doluluk oranı (%, en yoğun 20)', 'type': 'hbar', 'wide': True, 'labels': [r['name'] for r in top_rows],
@@ -704,10 +699,8 @@ def ucus_performans(conn, p):
     tot_min, tot_km = sum(r['min'] for r in rows), sum(r['km'] for r in rows)
     longest = max(rows, key=lambda r: r['min']) if rows else None
     return {
-        'kpis': [{'label': 'Uçuş', 'value': len(rows)}, {'label': 'Toplam uçuş', 'value': dur(tot_min)}, {'label': 'Toplam mesafe', 'value': f'{round(tot_km, 1)} km'},
-                 {'label': 'En uzun', 'value': dur(longest['min']) if longest else '—'},
-                 {'label': 'En yüksek irtifa', 'value': f'{max((r["alt"] for r in rows), default=0)} m'},
-                 {'label': 'En uzak mesafe', 'value': f'{max((r["range"] for r in rows), default=0)} km'}],
+        'kpis': [{'icon': 'flightlog', 'label': 'Uçuş', 'value': len(rows)}, {'icon': 'calendar', 'label': 'Toplam uçuş', 'value': dur(tot_min)}, {'icon': 'radar', 'label': 'Toplam mesafe', 'value': f'{round(tot_km, 1)} km'},
+                 {'icon': 'flightlog', 'label': 'En uzun', 'value': dur(longest['min']) if longest else '—'}],
         'insights': ([f'{len(rows)} uçuşta toplam {dur(tot_min)} havada kalındı ve {round(tot_km, 1)} km yol alındı; uçuş başına ortalama {dur(tot_min / len(rows))}.',
                       f'En uzun uçuş {longest["name"]} ({dur(longest["min"])}, {longest["km"]} km).'] if rows else ['Bu dönemde analiz edilmiş uçuş yok.']),
         'charts': [
@@ -738,9 +731,8 @@ def saha_masraf(conn, p):
     km = sum(t['km'] or 0 for t in tasks)
     money = lambda v: f'{v:,.2f} ₺'.replace(',', 'X').replace('.', ',').replace('X', '.')
     return {
-        'kpis': [{'label': 'Görev', 'value': len(tasks)}, {'label': 'Uçuş', 'value': sum(t['flights'] for t in tasks)},
-                 {'label': 'Gidilen yol', 'value': f'{round(km)} km'}, {'label': 'Toplam masraf', 'value': money(total)},
-                 {'label': 'Görev başına', 'value': money(total / len(tasks)) if tasks else '—'}],
+        'kpis': [{'icon': 'field', 'label': 'Görev', 'value': len(tasks)}, {'icon': 'flightlog', 'label': 'Uçuş', 'value': sum(t['flights'] for t in tasks)},
+                 {'icon': 'fleet', 'label': 'Gidilen yol', 'value': f'{round(km)} km'}, {'icon': 'finance', 'label': 'Toplam masraf', 'value': money(total)}],
         'insights': ([f'Masrafların %{pct(cat.most_common(1)[0][1], total)} kadarı "{cat.most_common(1)[0][0]}".'] if total else ['Bu dönemde masraf yok.'])
         + ([f'Kilometre başına masraf {money(total / km)}.'] if km and total else []),
         'charts': [
@@ -780,9 +772,9 @@ def firma_iliski(conn, p):
     cold = [r['name'] for r in rows if not r['score'] and r['people']]
     t10 = active[:10]
     return {
-        'kpis': [{'label': 'Firma', 'value': len(rows)}, {'label': 'Dönemde etkileşim', 'value': len(active), 'tone': 'ok'},
-                 {'label': 'Toplantı', 'value': sum(r['meet'] for r in rows)}, {'label': 'Misafir ziyareti', 'value': sum(r['visits'] for r in rows)},
-                 {'label': 'Sipariş', 'value': sum(r['orders'] for r in rows)}],
+        'kpis': [{'icon': 'companies', 'label': 'Firma', 'value': len(rows)}, {'icon': 'crm', 'label': 'Dönemde etkileşim', 'value': len(active), 'tone': 'ok'},
+                 {'icon': 'calendar', 'label': 'Toplantı', 'value': sum(r['meet'] for r in rows)},
+                 {'icon': 'orders', 'label': 'Sipariş', 'value': sum(r['orders'] for r in rows)}],
         'insights': ([f'En yoğun ilişki {active[0]["name"]} (puan {active[0]["score"]}).'] if active else ['Bu dönemde firma etkileşimi yok.'])
         + ([f'Rehberde kişisi olup bu dönemde hiç etkileşim olmayan {len(cold)} firma var: {", ".join(cold[:6])}{"…" if len(cold) > 6 else ""}.'] if cold else []),
         'charts': [{'title': 'İlişki puanı (en yüksek 10)', 'type': 'hbar', 'stacked': True, 'wide': True, 'labels': [r['name'] for r in t10],
@@ -808,9 +800,9 @@ def evrak(conn, p):
     lags = [mins(s['requested_at'], s['decided_at']) for s in sig if s['decided_at']]
     st_text = {'BEKLIYOR': 'Bekliyor', 'IMZALANDI': 'İmzalandı', 'REDDEDILDI': 'Reddedildi'}
     return {
-        'kpis': [{'label': 'Yüklenen evrak', 'value': len(docs)}, {'label': 'Toplam boyut', 'value': f'{round(sum(d["size"] or 0 for d in docs) / 1024 ** 2)} MB'},
-                 {'label': 'Bekleyen imza', 'value': len(pend), 'tone': 'alert' if pend else ''},
-                 {'label': 'Ort. imza süresi', 'value': dur(sum(lags) / len(lags)) if lags else '—'}],
+        'kpis': [{'icon': 'documents', 'label': 'Yüklenen evrak', 'value': len(docs)}, {'icon': 'upload', 'label': 'Toplam boyut', 'value': f'{round(sum(d["size"] or 0 for d in docs) / 1024 ** 2)} MB'},
+                 {'icon': 'warning', 'label': 'Bekleyen imza', 'value': len(pend), 'tone': 'alert' if pend else ''},
+                 {'icon': 'calendar', 'label': 'Ort. imza süresi', 'value': dur(sum(lags) / len(lags)) if lags else '—'}],
         'insights': [f'En çok yüklenen tür: {kinds.most_common(1)[0][0]} ({kinds.most_common(1)[0][1]}).' if kinds else 'Bu dönemde evrak yüklenmedi.']
         + ([f'{len(pend)} imza talebi bekliyor; en eskisi {fmt_dt(min(s["requested_at"] for s in pend))}.'] if pend else []),
         'charts': [{'title': 'Evrak türleri', 'type': 'doughnut', 'labels': list(kinds), 'datasets': [{'label': 'Evrak', 'data': list(kinds.values())}]},
@@ -841,9 +833,9 @@ def misafir(conn, p):
     stays = [mins(v['arrived_at'], v['left_at']) for v in visits if v['left_at']]
     hours = Counter(int(v['arrived_at'][11:13]) for v in visits)
     return {
-        'kpis': [{'label': 'Ziyaret (grup)', 'value': len(visits)}, {'label': 'Misafir kişi', 'value': sum(v['n'] for v in visits)},
-                 {'label': 'Ort. ziyaret süresi', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
-                 {'label': 'Farklı firma', 'value': len(comp)}, {'label': 'En çok ziyaret edilen', 'value': hosts.most_common(1)[0][0] if hosts else '—'}],
+        'kpis': [{'icon': 'guest', 'label': 'Ziyaret (grup)', 'value': len(visits)}, {'icon': 'person', 'label': 'Misafir kişi', 'value': sum(v['n'] for v in visits)},
+                 {'icon': 'calendar', 'label': 'Ort. ziyaret süresi', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
+                 {'icon': 'companies', 'label': 'Farklı firma', 'value': len(comp)}],
         'insights': ([f'En yoğun geliş saati {hours.most_common(1)[0][0]:02d}:00; en çok gelen firma {comp.most_common(1)[0][0]}.'] if visits and comp else
                      ['Bu dönemde misafir kaydı yok.']),
         'charts': [{'title': 'Günlük misafir (kişi)', 'type': 'bar', 'wide': True, 'labels': day_labels(ds), 'datasets': [{'label': 'Kişi', 'data': series(ds, ppl)}]},
@@ -868,8 +860,8 @@ def kargo(conn, p):
     daily = Counter(r['created_at'][:10] for r in rows)
     waiting = sum(1 for r in rows if not r['delivered_at'])
     return {
-        'kpis': [{'label': 'Kargo', 'value': len(rows)}, {'label': 'Bekleyen', 'value': waiting, 'tone': 'alert' if waiting else ''},
-                 {'label': 'Ort. teslim alma', 'value': dur(sum(lag) / len(lag)) if lag else '—'}, {'label': 'Kargo firması', 'value': len(car)}],
+        'kpis': [{'icon': 'cargo', 'label': 'Kargo', 'value': len(rows)}, {'icon': 'warning', 'label': 'Bekleyen', 'value': waiting, 'tone': 'alert' if waiting else ''},
+                 {'icon': 'calendar', 'label': 'Ort. teslim alma', 'value': dur(sum(lag) / len(lag)) if lag else '—'}, {'icon': 'companies', 'label': 'Kargo firması', 'value': len(car)}],
         'insights': [f'En çok kargo {car.most_common(1)[0][0]} ile geldi; en çok kargosu olan {who.most_common(1)[0][0]}.'] if rows else ['Bu dönemde kargo yok.'],
         'charts': [{'title': 'Kargo firmaları', 'type': 'doughnut', 'labels': list(car), 'datasets': [{'label': 'Kargo', 'data': list(car.values())}]},
                    {'title': 'Kişiler', 'type': 'hbar', 'labels': [k for k, _ in top(who, 10)], 'datasets': [{'label': 'Kargo', 'data': [v for _, v in top(who, 10)]}]},
@@ -890,10 +882,9 @@ def arac_giris(conn, p):
     pk = peak_of(hm)
     long_ = [r for r in rows if r['exited_at'] and (mins(r['entered_at'], r['exited_at']) or 0) > 8 * 60]
     return {
-        'kpis': [{'label': 'Giriş', 'value': len(rows)}, {'label': 'Farklı araç', 'value': len(plates)},
-                 {'label': 'Ort. kalış', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
-                 {'label': 'Hâlâ içeride', 'value': sum(1 for r in rows if not r['exited_at'])},
-                 {'label': 'Düzenli gelen (3+)', 'value': sum(1 for v in plates.values() if v >= 3)}],
+        'kpis': [{'icon': 'fleet', 'label': 'Giriş', 'value': len(rows)}, {'icon': 'fleet', 'label': 'Farklı araç', 'value': len(plates)},
+                 {'icon': 'calendar', 'label': 'Ort. kalış', 'value': dur(sum(stays) / len(stays)) if stays else '—'},
+                 {'icon': 'warning', 'label': 'Hâlâ içeride', 'value': sum(1 for r in rows if not r['exited_at'])}],
         'insights': ([f'En yoğun zaman {DAYS_TR[pk[1]]} {pk[2]:02d}:00 ({pk[0]} giriş).',
                       f'En sık gelen araç {plates.most_common(1)[0][0]} ({plates.most_common(1)[0][1]} kez).']
                      + ([f'{len(long_)} araç 8 saatten uzun içeride kaldı.'] if long_ else [])) if rows else ['Bu dönemde araç kaydı yok.'],
@@ -928,8 +919,8 @@ def kamera_yoklama(conn, p):
              for k, v in sorted(att.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
     unknown_groups = len({r['gid'] for r in rows if not r['who']})
     return {
-        'kpis': [{'label': 'Görülme', 'value': len(rows)}, {'label': 'Tanınan kişi', 'value': len({r['who'] for r in rows if r['who']}), 'tone': 'ok'},
-                 {'label': 'Tanımsız kişi grubu', 'value': unknown_groups, 'tone': 'alert' if unknown_groups else ''}, {'label': 'Kamera', 'value': len(cams)}],
+        'kpis': [{'icon': 'camera', 'label': 'Görülme', 'value': len(rows)}, {'icon': 'person', 'label': 'Tanınan kişi', 'value': len({r['who'] for r in rows if r['who']}), 'tone': 'ok'},
+                 {'icon': 'warning', 'label': 'Tanımsız kişi grubu', 'value': unknown_groups, 'tone': 'alert' if unknown_groups else ''}, {'icon': 'cameras', 'label': 'Kamera', 'value': len(cams)}],
         'insights': [f'{unknown_groups} tanımsız kişi grubu var; Güvenlik → Tanımlanamayan Kişiler\'den kişiye atanırsa yoklama tablosuna girer.'] if rows else
         ['Bu dönemde kamera yüz kaydı yok (kamera eklenmemiş ya da yüz tanıma kapalı).'],
         'charts': [{'title': 'Günlük görülme', 'type': 'bar', 'stacked': True, 'wide': True, 'labels': day_labels(ds),
@@ -955,8 +946,8 @@ def kullanici_aktivite(conn, p):
     action = Counter(x['action'] for x in acts)
     fails = Counter(l['username'] for l in logins if not l['success'])
     return {
-        'kpis': [{'label': 'Başarılı giriş', 'value': sum(ok.values()), 'tone': 'ok'}, {'label': 'Başarısız giriş', 'value': sum(bad.values()), 'tone': 'alert' if bad else ''},
-                 {'label': 'İşlem', 'value': len(acts)}, {'label': 'Aktif kullanıcı', 'value': len({x['who'] for x in acts if x['who']})}],
+        'kpis': [{'icon': 'security', 'label': 'Başarılı giriş', 'value': sum(ok.values()), 'tone': 'ok'}, {'icon': 'warning', 'label': 'Başarısız giriş', 'value': sum(bad.values()), 'tone': 'alert' if bad else ''},
+                 {'icon': 'terminal', 'label': 'İşlem', 'value': len(acts)}, {'icon': 'users', 'label': 'Aktif kullanıcı', 'value': len({x['who'] for x in acts if x['who']})}],
         'insights': ([f'En çok işlem yapan {who.most_common(1)[0][0]} ({who.most_common(1)[0][1]} işlem).'] if acts else [])
         + ([f'Başarısız girişlerin çoğu "{fails.most_common(1)[0][0]}" kullanıcı adıyla ({fails.most_common(1)[0][1]}); şifre unutulmuş ya da deneme olabilir.'] if fails else []),
         'charts': [{'title': 'Günlük giriş', 'type': 'bar', 'stacked': True, 'wide': True, 'labels': day_labels(ds),
@@ -995,7 +986,7 @@ def personel_karne(conn, p):
     else:
         ins.append('Bu dönemde kayıt yok.')
     return {
-        'kpis': [{'label': 'Katkı veren kişi', 'value': len(rows)}] + [{'label': label, 'value': sum(c.values())} for _, label, c in cols],
+        'kpis': [{'icon': 'users', 'label': 'Katkı veren kişi', 'value': len(rows)}] + [{'icon': 'production', 'label': label, 'value': sum(c.values())} for _, label, c in cols[:3]],
         'insights': ins[:6],
         'charts': [{'title': 'Kişi başına katkı (en yüksek 15)', 'type': 'hbar', 'stacked': True, 'wide': True, 'labels': [r['name'] for r in t15],
                     'datasets': [{'label': label, 'data': [r[k] for r in t15]} for k, label, _ in cols]}],
@@ -1024,7 +1015,7 @@ def urun_baski_listesi(conn, p):
         data.append(round(max((r['min'] or 0) for r in rows) / 60, 1) if rows else 0)
         tables.append({'title': f'{name} — {len(rows)} parça', 'sub': f'En uzun parça {longest["part"]} ({longest["min_t"]}); tek uçağın en kısa baskı süresi bu parçayla sınırlıdır.' if longest else None,
                        'columns': [col('part', 'Parça'), col('file', 'Yazıcı dosyası'), col('min_t', 'Baskı süresi', 'num'), col('stock', 'Yedek stok', 'num')], 'rows': rows})
-    return {'kpis': [{'label': 'Mamul', 'value': len(tables)}], 'insights': ['Paralel yazıcılarla bir uçağın en kısa baskı süresi, en uzun parçanın süresidir.'],
+    return {'kpis': [{'icon': 'products', 'label': 'Mamul', 'value': len(tables)}], 'insights': ['Paralel yazıcılarla bir uçağın en kısa baskı süresi, en uzun parçanın süresidir.'],
             'charts': [{'title': 'En uzun parça baskı süresi (saat)', 'type': 'bar', 'labels': labels, 'datasets': [{'label': 'Saat', 'data': data}]}], 'tables': tables}
 
 

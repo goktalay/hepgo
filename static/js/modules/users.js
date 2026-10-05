@@ -227,13 +227,10 @@ async function renderLogs(content, id) {
     const d = await api.get(`/api/users/${id}/logs?${qs}`);
     const s = d.summary;
     stats.set([
-      { label: 'Toplam kayıt', value: s.all },
-      { label: 'Sayfa girişi', value: s.page_views },
-      { label: 'İşlem', value: s.actions },
-      { label: 'Bugünkü kayıt', value: s.today },
-      { label: 'İlk kayıt', value: s.first ? fmtDateTime(s.first).slice(0, 10) : '—', sub: s.first ? fmtDateTime(s.first).slice(11) : '' },
-      { label: 'Son kayıt', value: s.last ? fmtDateTime(s.last).slice(11) : '—', sub: s.last ? fmtDateTime(s.last).slice(0, 10) : '' },
-      ...s.top_pages.map((tp, i) => ({ label: t('En çok girilen {n}.', { n: i + 1 }), value: tp.n, sub: tp.page })),
+      { icon: 'documents', label: 'Toplam kayıt', value: s.all },
+      { icon: 'read', label: 'Sayfa girişi', value: s.page_views },
+      { icon: 'terminal', label: 'İşlem', value: s.actions },
+      { icon: 'calendar', label: 'Bugünkü kayıt', value: s.today },
     ]);
     count.textContent = d.total > d.rows.length ? t('{a} / {b} kayıt gösteriliyor', { a: d.rows.length, b: d.total }) : t('{n} kayıt', { n: d.total });
     clear(body, d.rows.length ? h('div', { class: 'table-wrap' }, h('table', null,
@@ -268,11 +265,10 @@ async function renderLogins(content, id) {
   const body = h('div');
   const ok = logs.filter(l => l.success);
   stats.set([
-    { label: 'Toplam giriş denemesi', value: logs.length },
-    { label: 'Başarılı', value: ok.length, tone: 'ok' },
-    { label: 'Hatalı şifre', value: logs.length - ok.length, tone: logs.length - ok.length ? 'alert' : '' },
-    { label: 'Farklı IP adresi', value: new Set(logs.map(l => l.ip)).size },
-    { label: 'Son başarılı giriş', value: ok[0] ? fmtDateTime(ok[0].at).slice(11) : '—', sub: ok[0] ? fmtDateTime(ok[0].at).slice(0, 10) : '' },
+    { icon: 'person', label: 'Toplam giriş denemesi', value: logs.length },
+    { icon: 'security', label: 'Başarılı', value: ok.length, tone: 'ok' },
+    { icon: 'warning', label: 'Hatalı şifre', value: logs.length - ok.length, tone: logs.length - ok.length ? 'alert' : '' },
+    { icon: 'network', label: 'Farklı IP adresi', value: new Set(logs.map(l => l.ip)).size },
   ]);
   const draw = () => {
     const rows = logs.filter(l => (!result.value || String(l.success) === result.value) &&

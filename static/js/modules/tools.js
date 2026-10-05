@@ -48,14 +48,10 @@ function logStats(logs, toolCount) {
   const month = new Date().toISOString().slice(0, 7);
   const air = done.reduce((a, l) => a + (l.flight_s || 0), 0);
   return [
-    toolCount ? { label: 'Araç', value: toolCount } : null,
-    { label: 'Analiz edilen log', value: logs.length },
-    { label: 'Rapor hazır', value: done.length, tone: 'ok' },
-    { label: 'Analiz ediliyor', value: logs.filter(l => l.status === 'ISLENIYOR').length },
-    { label: 'Hatalı log', value: logs.filter(l => l.status === 'HATA').length, tone: logs.some(l => l.status === 'HATA') ? 'alert' : '' },
-    { label: 'Toplam uçuş süresi', value: clock(air), sub: 'hazır raporlarda' },
-    { label: 'Saha görevi raporu', value: logs.filter(l => l.task_id).length },
-    { label: 'Bu ay yüklenen', value: logs.filter(l => (l.uploaded_at || '').startsWith(month)).length },
+    { icon: 'flightlog', label: 'Analiz edilen log', value: logs.length },
+    { icon: 'reports', label: 'Rapor hazır', value: done.length, tone: 'ok' },
+    { icon: 'warning', label: 'Hatalı log', value: logs.filter(l => l.status === 'HATA').length, tone: logs.some(l => l.status === 'HATA') ? 'alert' : '' },
+    { icon: 'calendar', label: 'Toplam uçuş süresi', value: clock(air), sub: 'hazır raporlarda' },
   ];
 }
 

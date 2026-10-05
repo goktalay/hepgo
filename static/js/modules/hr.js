@@ -78,13 +78,10 @@ function renderPersonnel(view, head, list, m) {
   const active = staff.filter(e => e.status === 'AKTIF');
   const stats = statStrip();
   stats.set([
-    { label: 'Aktif personel', value: active.length },
-    { label: 'Evrakı eksik', value: active.filter(e => e.missing.length || e.unsigned_leaves).length, tone: active.some(e => e.missing.length || e.unsigned_leaves) ? 'alert' : 'ok' },
-    { label: 'Bugün izinde / raporlu', value: active.filter(e => e.on_leave || e.on_report).length },
-    { label: 'İmzasız izin formu', value: staff.reduce((a, e) => a + (e.unsigned_leaves || 0), 0), tone: staff.some(e => e.unsigned_leaves) ? 'alert' : '' },
-    { label: 'TC girilmemiş', value: active.filter(e => !e.tc_no).length, tone: active.some(e => !e.tc_no) ? 'alert' : '' },
-    { label: 'Bekleyen başvuru', value: list.filter(e => e.status === 'BASVURU').length },
-    { label: 'Ayrılan', value: staff.length - active.length, tone: 'muted' },
+    { icon: 'hr', label: 'Aktif personel', value: active.length },
+    { icon: 'warning', label: 'Evrakı eksik', value: active.filter(e => e.missing.length || e.unsigned_leaves).length, tone: active.some(e => e.missing.length || e.unsigned_leaves) ? 'alert' : 'ok' },
+    { icon: 'calendar', label: 'Bugün izinde / raporlu', value: active.filter(e => e.on_leave || e.on_report).length },
+    { icon: 'person', label: 'Bekleyen başvuru', value: list.filter(e => e.status === 'BASVURU').length },
   ]);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad, TC, görev ara…', style: { width: '220px' } });
   const st = selectInput([['AKTIF', 'Aktif personel'], ['AYRILDI', 'Ayrılan personel'], ['MISSING', 'Evrakı eksik olanlar']], { all: 'Tüm personel', value: pref('hr.filter', 'AKTIF') });

@@ -26,13 +26,10 @@ export async function renderNetscan(view) {
     const on = data.devices.filter(d => d.online);
     const n = k => on.filter(d => d.kind === k).length;
     stats.set([
-      { label: 'Çevrimiçi cihaz', value: on.length, tone: 'ok' },
-      { label: 'Bilgisayar', value: n('Windows bilgisayar') + n('Bilgisayar') + n('Mac') + n('Linux / sunucu') },
-      { label: 'Telefon / tablet', value: n('Telefon / tablet') },
-      { label: '3B yazıcı', value: n('3B yazıcı') },
-      { label: 'Kamera', value: n('Kamera') },
-      { label: 'Adı bulunan', value: on.filter(d => d.label || d.hostname).length },
-      { label: 'Çevrimdışı (bilinen)', value: data.devices.length - on.length, tone: 'muted' },
+      { icon: 'network', label: 'Çevrimiçi cihaz', value: on.length, tone: 'ok' },
+      { icon: 'network', label: 'Bilgisayar', value: n('Windows bilgisayar') + n('Bilgisayar') + n('Mac') + n('Linux / sunucu') },
+      { icon: 'phone', label: 'Telefon / tablet', value: n('Telefon / tablet') },
+      { icon: 'network', label: 'Çevrimdışı (bilinen)', value: data.devices.length - on.length, tone: 'muted' },
     ]);
     const kinds = [...new Set(data.devices.map(d => d.kind).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'tr'));
     const cur = kind.value;

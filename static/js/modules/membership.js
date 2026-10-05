@@ -62,10 +62,10 @@ async function overview(view, ctx) {
   const c = d.company || {};
   const [, pl] = PAY[d.pay_status] || ['', d.pay_status];
   const strip = statStrip();
-  strip.set([{ label: 'Paket', value: d.package?.name || '—' }, { label: 'Aylık ücret', value: d.fee ? money(d.fee) : 'Ücretsiz' },
-    { label: t('Bu ay ({p})', { p: d.period }), value: pl, tone: d.pay_status === 'gecikti' ? 'alert' : d.pay_status === 'odendi' ? 'ok' : '' },
-    { label: 'Açık destek talebi', value: d.open_tickets ?? 0, sub: d.unread_tickets ? t('{n} yeni yanıt', { n: d.unread_tickets }) : null, tone: d.unread_tickets ? 'alert' : '' },
-    { label: 'Onay bekleyen sözleşme', value: ct?.pending ?? 0, tone: ct?.pending ? 'alert' : 'ok' }]);
+  strip.set([{ icon: 'uyelik', label: 'Paket', value: d.package?.name || '—' },
+    { icon: 'finance', label: t('Bu ay ({p})', { p: d.period }), value: pl, tone: d.pay_status === 'gecikti' ? 'alert' : d.pay_status === 'odendi' ? 'ok' : '' },
+    { icon: 'tickets', label: 'Açık destek talebi', value: d.open_tickets ?? 0, sub: d.unread_tickets ? t('{n} yeni yanıt', { n: d.unread_tickets }) : null, tone: d.unread_tickets ? 'alert' : '' },
+    { icon: 'documents', label: 'Onay bekleyen sözleşme', value: ct?.pending ?? 0, tone: ct?.pending ? 'alert' : 'ok' }]);
   const recent = tickets.slice(0, 5);
   const mods = d.package?.modules || c.modules || [];
   clear(view,

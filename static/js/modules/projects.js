@@ -42,9 +42,9 @@ async function listView(root) {
   const act = rows.filter(p => ['devam', 'planlama'].includes(p.status));
   const sum = k => rows.reduce((a, p) => a + (p.fin[k] || 0), 0);
   const strip = statStrip();
-  strip.set([{ label: 'Aktif proje', value: act.length, sub: t('toplam {n}', { n: rows.length }) }, { label: 'Proje gelirleri', value: money(sum('gelir')) },
-    { label: 'Proje giderleri', value: money(sum('gider')) }, { label: 'Proje kârı', value: money(sum('kar')), tone: sum('kar') < 0 ? 'alert' : 'ok' },
-    { label: 'Proje bekleyen hareket', value: d.pending, tone: d.pending ? 'alert' : '' }]);
+  strip.set([{ icon: 'projects', label: 'Aktif proje', value: act.length, sub: t('toplam {n}', { n: rows.length }) }, { icon: 'finance', label: 'Proje gelirleri', value: money(sum('gelir')) },
+    { icon: 'finance', label: 'Proje kârı', value: money(sum('kar')), tone: sum('kar') < 0 ? 'alert' : 'ok' },
+    { icon: 'calendar', label: 'Proje bekleyen hareket', value: d.pending, tone: d.pending ? 'alert' : '' }]);
   let filter = 'active', q = '';
   const grid = h('div', { class: 'pj-grid' });
   const pass = p => ({ active: !['tamamlandi', 'iptal'].includes(p.status), done: p.status === 'tamamlandi', all: true }[filter]);
@@ -135,10 +135,9 @@ async function detail(view, id, ctx) {
   });
   const used = p.budget ? Math.min(100, (F.gider / p.budget) * 100) : null;
   const strip = statStrip();
-  strip.set([{ label: 'Gelir (KDV hariç)', value: money(F.gelir) }, { label: 'Gider (KDV hariç)', value: money(F.gider) },
-    { label: 'Kâr / zarar', value: money(F.kar), tone: F.kar < 0 ? 'alert' : 'ok', sub: F.marj != null ? t('marj %{m}', { m: F.marj }) : null },
-    p.budget ? { label: 'Bütçe kullanımı', value: `%${Math.round(used)}`, sub: t('{g} / {b}', { g: money(F.gider), b: money(p.budget) }), tone: used >= 90 ? 'alert' : '' } : null,
-    { label: 'Tahsilat / ödeme', value: `${money(F.tahsilat)} / ${money(F.odeme)}` }]);
+  strip.set([{ icon: 'finance', label: 'Gelir (KDV hariç)', value: money(F.gelir) }, { icon: 'finance', label: 'Gider (KDV hariç)', value: money(F.gider) },
+    { icon: 'finance', label: 'Kâr / zarar', value: money(F.kar), tone: F.kar < 0 ? 'alert' : 'ok', sub: F.marj != null ? t('marj %{m}', { m: F.marj }) : null },
+    p.budget ? { icon: 'finance', label: 'Bütçe kullanımı', value: `%${Math.round(used)}`, sub: t('{g} / {b}', { g: money(F.gider), b: money(p.budget) }), tone: used >= 90 ? 'alert' : '' } : null]);
   clear(view,
     h('div', { class: 'cf-head' }, h('a', { class: 'small', href: '#/projects' }, '← Projeler')),
     h('section', { class: 'pj-hero' }, cover(p, 'big'),

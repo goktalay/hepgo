@@ -28,10 +28,9 @@ export async function render(view, params, ctx) {
   const sum = k => products.reduce((a, p) => a + (p[k] || 0), 0);
   const stats = statStrip();
   stats.set([
-    ...Object.entries(TYPE_LABELS).map(([t, label]) => ({ label, value: products.filter(p => p.type === t).length })),
-    { label: 'Aktif ürün', value: products.filter(p => p.active).length, tone: 'ok' },
-    { label: 'Toplam sipariş', value: sum('order_count') },
-    { label: 'Üretimdeki sipariş', value: sum('wip_count') },
+    { icon: 'products', label: 'Aktif ürün', value: products.filter(p => p.active).length, tone: 'ok' },
+    { icon: 'orders', label: 'Toplam sipariş', value: sum('order_count') },
+    { icon: 'production', label: 'Üretimdeki sipariş', value: sum('wip_count') },
   ]);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ürün adı, kod ara…', style: { width: '220px' } });
   const act = selectInput([['1', 'Aktif'], ['0', 'Pasif']], { all: 'Aktif ve pasif' });

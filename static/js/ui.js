@@ -1,6 +1,7 @@
 // Küçük DOM yardımcıları: öğe oluşturma, modal, bildirim, biçimlendirme.
 import { fileUrl } from './api.js';
 import { segIcon } from './segicons.js';
+import { icons } from './icons.js';
 import { t } from './i18n.js';
 export { t };   // modüller dinamik metinleri t('{n} ... ', { n }) ile sarabilsin
 
@@ -364,10 +365,12 @@ export function statStrip() {
   const el = h('div', { class: 'stat-strip' });
   el.set = stats => {
     clear(el, stats.filter(Boolean).map(s =>
-      h('div', { class: `stat ${s.tone || ''}` },
-        h('span', { class: 'v' }, s.value ?? '—'),
-        h('span', { class: 'l' }, s.label),
-        s.sub ? h('span', { class: 's' }, s.sub) : null)));
+      h('div', { class: `stat ${s.tone || ''}${s.icon && icons[s.icon] ? ' has-ic' : ''}` },
+        s.icon && icons[s.icon] ? h('span', { class: 'stat-ic' }, svgIcon(icons[s.icon])) : null,
+        h('div', { class: 'stat-main' },
+          h('span', { class: 'v' }, s.value ?? '—'),
+          h('span', { class: 'l' }, s.label),
+          s.sub ? h('span', { class: 's' }, s.sub) : null))));
     lastW = -1;
     requestAnimationFrame(fit);
     document.fonts?.ready.then(() => { lastW = -1; fit(); });   // yazı tipi geç yüklenirse genişlik değişir
@@ -380,7 +383,7 @@ export function statStrip() {
     const range = document.createRange();
     // scrollWidth tam sayıya yuvarlanır; yarım piksellik taşma da "…" gösterir — metin genişliği Range ile kesirli ölçülür
     const over = v => { range.selectNodeContents(v); return range.getBoundingClientRect().width > v.clientWidth - 0.5; };
-    const vs = [...el.querySelectorAll('.stat > .v')];
+    const vs = [...el.querySelectorAll('.stat .v')];
     let min = Infinity;
     for (const v of vs) {
       v.style.fontSize = '';

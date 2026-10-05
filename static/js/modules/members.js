@@ -41,10 +41,9 @@ async function firmsView(view) {
   };
   const draw = () => {
     const M = d.members;
-    strip.set([{ label: 'Firma', value: M.length }, { label: 'Yayında', value: M.filter(m => m.status === 'active' && !m.suspended).length, tone: 'ok' },
-      { label: 'Pasif', value: M.filter(m => m.suspended).length, tone: M.some(m => m.suspended) ? 'alert' : '' },
-      { label: 'Onay/kurulum bekleyen', value: M.filter(m => ['pending', 'approved'].includes(m.status)).length },
-      { label: `Bu ay tahsilat (${d.period})`, value: money(M.reduce((s, m) => s + (m.paid_this_month || 0), 0)), sub: `beklenen ${money(M.reduce((s, m) => s + (m.fee || 0), 0))}` }]);
+    strip.set([{ icon: 'members', label: 'Firma', value: M.length }, { icon: 'companies', label: 'Yayında', value: M.filter(m => m.status === 'active' && !m.suspended).length, tone: 'ok' },
+      { icon: 'warning', label: 'Pasif', value: M.filter(m => m.suspended).length, tone: M.some(m => m.suspended) ? 'alert' : '' },
+      { icon: 'finance', label: `Bu ay tahsilat (${d.period})`, value: money(M.reduce((s, m) => s + (m.paid_this_month || 0), 0)), sub: `beklenen ${money(M.reduce((s, m) => s + (m.fee || 0), 0))}` }]);
     const rows = M.filter(m => matches(q.value, m.name, m.master_username, m.slug, m.url))
       .filter(m => !st.value || (st.value === 'active' && m.status === 'active' && !m.suspended) || (st.value === 'passive' && m.suspended)
         || (st.value === 'pending' && ['pending', 'approved'].includes(m.status)) || (st.value === 'late' && m.pay_status === 'gecikti'));
@@ -207,9 +206,9 @@ async function paymentsView(view) {
     let d;
     try { d = await api.get(`/api/central/payments?period=${per.value}`); } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
     const late = d.rows.filter(r => r.pay_status === 'gecikti').length;
-    strip.set([{ label: 'Beklenen', value: money(d.total_fee) }, { label: 'Tahsil edilen', value: money(d.total_paid), tone: 'ok' },
-      { label: 'Kalan', value: money(Math.max(0, d.total_fee - d.total_paid)), tone: d.total_fee > d.total_paid ? 'alert' : '' },
-      { label: 'Geciken firma', value: late, tone: late ? 'alert' : '' }]);
+    strip.set([{ icon: 'finance', label: 'Beklenen', value: money(d.total_fee) }, { icon: 'finance', label: 'Tahsil edilen', value: money(d.total_paid), tone: 'ok' },
+      { icon: 'finance', label: 'Kalan', value: money(Math.max(0, d.total_fee - d.total_paid)), tone: d.total_fee > d.total_paid ? 'alert' : '' },
+      { icon: 'warning', label: 'Geciken firma', value: late, tone: late ? 'alert' : '' }]);
     clear(out, h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Firma', 'Aylık ücret', 'Ödenen', 'Durum', 'Ödemeler', ''].map(x => h('th', null, x)))),
       h('tbody', null, d.rows.map(r => h('tr', null,
@@ -278,8 +277,8 @@ async function contractsView(view) {
   const reload = () => contractsView(view);
   const pub = d.docs.filter(x => x.status === 'published'), drafts = d.docs.filter(x => x.status === 'draft');
   const strip = statStrip();
-  strip.set([{ label: 'Yayındaki sözleşme', value: pub.length }, { label: 'Taslak', value: drafts.length },
-    { label: 'Tam onaylı firma', value: pub.length ? `${Math.min(...pub.map(x => x.accepted))} / ${pub[0]?.firms || 0}` : '—' }]);
+  strip.set([{ icon: 'documents', label: 'Yayındaki sözleşme', value: pub.length }, { icon: 'documents', label: 'Taslak', value: drafts.length },
+    { icon: 'companies', label: 'Tam onaylı firma', value: pub.length ? `${Math.min(...pub.map(x => x.accepted))} / ${pub[0]?.firms || 0}` : '—' }]);
   const act = (label, cls, fn) => h('button', { class: `btn sm ${cls || ''}`, type: 'button', onclick: fn }, label);
   const call = async (method, url, msg) => { try { await api[method](url, {}); toast(msg, 'success'); reload(); } catch (e) { toastError(e); } };
   const card = x => {

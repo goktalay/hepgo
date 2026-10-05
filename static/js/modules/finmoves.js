@@ -97,10 +97,10 @@ export async function personPane(root, empId) {
   setFinanceAccess(d.can_finance);
   const reload = () => personPane(root, empId);
   const strip = statStrip();
-  strip.set([{ label: 'Kişiye ödenen (kasa / banka)', value: money(d.totals.paid) },
-    { label: 'Maaş ödemeleri', value: money(d.totals.salary), sub: d.totals.salary_count ? t('{n} ödeme', { n: d.totals.salary_count }) : null },
-    { label: 'Son maaş ödemesi', value: d.totals.last_salary ? fmtDate(d.totals.last_salary) : '—' },
-    { label: 'Bağlı cari / hesap', value: d.links.length }]);
+  strip.set([{ icon: 'finance', label: 'Kişiye ödenen (kasa / banka)', value: money(d.totals.paid) },
+    { icon: 'finance', label: 'Maaş ödemeleri', value: money(d.totals.salary), sub: d.totals.salary_count ? t('{n} ödeme', { n: d.totals.salary_count }) : null },
+    { icon: 'calendar', label: 'Son maaş ödemesi', value: d.totals.last_salary ? fmtDate(d.totals.last_salary) : '—' },
+    { icon: 'companies', label: 'Bağlı cari / hesap', value: d.links.length }]);
   const linkHref = l => (!d.can_finance ? null : l.kind === 'company' ? `#/finance/cari/${l.ref}` : l.kind === 'account' ? `#/finance/bank/${l.ref}` : null);
   const chip = l => h('span', { class: 'fm-link' }, h('small', null, l.sub || d.kinds[l.kind]),
     linkHref(l) ? h('a', { href: linkHref(l) }, l.label) : h('b', null, l.label),

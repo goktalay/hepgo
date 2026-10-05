@@ -95,10 +95,10 @@ async function renderList(view, ctx) {
   const grid = h('div');
   const draw = () => {
     stats.set([
-      { label: SUP ? 'Tedarikçi' : 'Firma', value: companies.length },
-      { label: 'Aktif', value: companies.filter(c => c.active).length, tone: 'ok' },
-      { label: 'Kişi', value: companies.reduce((a, c) => a + c.people_count, 0) },
-      { label: 'Evrak', value: companies.reduce((a, c) => a + c.document_count, 0), sub: 'görebildiğiniz' },
+      { icon: 'companies', label: SUP ? 'Tedarikçi' : 'Firma', value: companies.length },
+      { icon: 'production', label: 'Aktif', value: companies.filter(c => c.active).length, tone: 'ok' },
+      { icon: 'users', label: 'Kişi', value: companies.reduce((a, c) => a + c.people_count, 0) },
+      { icon: 'documents', label: 'Evrak', value: companies.reduce((a, c) => a + c.document_count, 0), sub: 'görebildiğiniz' },
     ]);
     const list = companies.filter(c => (!act.value || String(c.active) === act.value)
       && matches(q.value, c.name, c.tax_no, c.phone, c.email, c.tax_office));
@@ -192,10 +192,10 @@ async function renderDirectory(view, ctx) {
     const all = [...data.people.map(p => contactOf('person', p, ctx)), ...data.users.map(u => contactOf('user', u, ctx))];
     co.hidden = kindSel.value === 'user';
     stats.set([
-      { label: 'Kişi', value: all.length },
-      { label: 'Firma kişisi', value: data.people.length },
-      { label: 'Kullanıcı', value: data.users.length },
-      { label: 'Telefonu olan', value: all.filter(c => c.phone).length },
+      { icon: 'users', label: 'Kişi', value: all.length },
+      { icon: 'companies', label: 'Firma kişisi', value: data.people.length },
+      { icon: 'person', label: 'Kullanıcı', value: data.users.length },
+      { icon: 'phone', label: 'Telefonu olan', value: all.filter(c => c.phone).length },
     ]);
     const list = all.filter(c => (!kindSel.value || c.kind === kindSel.value)
       && (!co.value || kindSel.value === 'user' || (c.kind === 'person' && c.companies.some(x => String(x.id) === co.value)))

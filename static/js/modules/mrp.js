@@ -64,13 +64,10 @@ async function renderMaterials(view) {
   const list = await api.get('/api/mrp/materials');
   const stats = statStrip();
   stats.set([
-    { label: 'Malzeme', value: list.length },
-    { label: 'Yedek parça', value: list.filter(m => m.type === 'YEDEK_PARCA').length },
-    { label: 'Hammadde', value: list.filter(m => m.type === 'HAMMADDE').length },
-    { label: 'Demirbaş', value: list.filter(m => m.type === 'DEMIRBAS').length },
-    { label: 'Sarf malzeme', value: list.filter(m => m.type === 'SARF').length },
-    { label: 'Kritik stok altında', value: list.filter(m => m.critical).length, tone: list.some(m => m.critical) ? 'alert' : 'ok' },
-    { label: 'Stokta olmayan', value: list.filter(m => !m.stock).length },
+    { icon: 'mrp', label: 'Malzeme', value: list.length },
+    { icon: 'tools', label: 'Yedek parça', value: list.filter(m => m.type === 'YEDEK_PARCA').length },
+    { icon: 'warning', label: 'Kritik stok altında', value: list.filter(m => m.critical).length, tone: list.some(m => m.critical) ? 'alert' : 'ok' },
+    { icon: 'stock', label: 'Stokta olmayan', value: list.filter(m => !m.stock).length },
   ]);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Stok kodu, ad, barkod, marka ara…', style: { width: '240px' } });
   const kind = selectInput(Object.entries(TYPE).map(([k, v]) => [k, v[0]]), { all: 'Tüm malzeme tipleri', value: pref('mrp.kind', '') });

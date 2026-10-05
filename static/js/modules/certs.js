@@ -40,11 +40,10 @@ async function listView(view) {
   const rows = d.rows;
   const soon = r => ['gecerli', 'askida'].includes(r.status) && r.days_left != null && r.days_left <= 90;
   const strip = statStrip();
-  strip.set([{ label: 'Toplam sertifika', value: rows.length },
-    { label: 'Geçerli', value: rows.filter(r => r.status === 'gecerli').length, tone: 'ok' },
-    { label: 'Başvuru / hazırlık', value: rows.filter(r => ['basvuru', 'hazirlik'].includes(r.status)).length },
-    { label: '90 gün içinde dolacak', value: rows.filter(r => soon(r) && r.days_left >= 0).length, tone: rows.some(r => soon(r) && r.days_left >= 0) ? 'alert' : '' },
-    { label: 'Yaklaşan denetim', value: rows.filter(r => r.next_audit).length }]);
+  strip.set([{ icon: 'certs', label: 'Toplam sertifika', value: rows.length },
+    { icon: 'production', label: 'Geçerli', value: rows.filter(r => r.status === 'gecerli').length, tone: 'ok' },
+    { icon: 'calendar', label: 'Başvuru / hazırlık', value: rows.filter(r => ['basvuru', 'hazirlik'].includes(r.status)).length },
+    { icon: 'warning', label: '90 gün içinde dolacak', value: rows.filter(r => soon(r) && r.days_left >= 0).length, tone: rows.some(r => soon(r) && r.days_left >= 0) ? 'alert' : '' }]);
   const grid = h('div', { class: 'cf-grid' });
   const draw = () => {
     const shown = rows.filter(r => (filter === 'all' || (filter === 'gecerli' && r.status === 'gecerli') || (filter === 'surec' && ['basvuru', 'hazirlik'].includes(r.status))

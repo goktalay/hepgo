@@ -172,8 +172,8 @@ async function accountDetail(view, id) {
     try { d = await api.get(`/api/finance/accounts/${id}/detail?${pb.qs()}`); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
     const a = d.account;
     const strip = statStrip();
-    strip.set([{ label: 'Bakiye', value: money(a.balance), tone: a.balance < 0 ? 'alert' : 'ok' }, { label: 'Toplam giriş', value: money(d.kpi.in) },
-      { label: 'Toplam çıkış', value: money(d.kpi.out) }, { label: 'Bu ay giriş', value: money(d.kpi.month_in) }, { label: 'Bu ay çıkış', value: money(d.kpi.month_out) }]);
+    strip.set([{ icon: 'finance', label: 'Bakiye', value: money(a.balance), tone: a.balance < 0 ? 'alert' : 'ok' }, { icon: 'finance', label: 'Toplam giriş', value: money(d.kpi.in) },
+      { icon: 'finance', label: 'Toplam çıkış', value: money(d.kpi.out) }]);
     clear(head, h('div', { class: 'cf-head' }, h('a', { class: 'small', href: '#/finance/bank' }, '← Kasa & Banka')),
       h('section', { class: 'card card-pad fin-dhead' },
         h('div', null, h('div', { class: 'fin-dtitle' }, h('h2', null, a.name), h('span', { class: `badge ${a.kind === 'kasa' ? 'green' : 'blue'}` }, a.kind)),
@@ -201,10 +201,9 @@ async function cariDetail(view, cid) {
     try { d = await api.get(`/api/finance/cari/${cid}/detail?${pb.qs()}`); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
     const c = d.company, b = d.account.balance;
     const strip = statStrip();
-    strip.set([{ label: b > 0 ? 'Bakiye (alacaklıyız)' : b < 0 ? 'Bakiye (borçluyuz)' : 'Bakiye', value: money(Math.abs(b)), tone: b < 0 ? 'alert' : b > 0 ? 'ok' : '' },
-      { label: 'Toplam borç', value: money(d.kpi.in) }, { label: 'Toplam alacak', value: money(d.kpi.out) },
-      { label: 'Açık kalem', value: money(d.kpi.open_rec + d.kpi.open_pay), sub: t('{n} kalem', { n: d.open_items.length }) },
-      { label: 'Vadesi geçen', value: money(d.kpi.overdue), tone: d.kpi.overdue > 0 ? 'alert' : '' }]);
+    strip.set([{ icon: 'finance', label: b > 0 ? 'Bakiye (alacaklıyız)' : b < 0 ? 'Bakiye (borçluyuz)' : 'Bakiye', value: money(Math.abs(b)), tone: b < 0 ? 'alert' : b > 0 ? 'ok' : '' },
+      { icon: 'finance', label: 'Toplam borç', value: money(d.kpi.in) }, { icon: 'finance', label: 'Toplam alacak', value: money(d.kpi.out) },
+      { icon: 'warning', label: 'Vadesi geçen', value: money(d.kpi.overdue), tone: d.kpi.overdue > 0 ? 'alert' : '' }]);
     const tabs = segmented([['moves', t('Hareketler ({n})', { n: d.rows.length })], ['invoices', t('Faturalar ({n})', { n: d.invoices.length })],
       ['open', t('Açık kalemler ({n})', { n: d.open_items.length })], ['instruments', t('Çek / Senet ({n})', { n: d.instruments.length })]], tab, v => { tab = v; draw(); }, { tabs: true });
     clear(head, h('div', { class: 'cf-head' }, h('a', { class: 'small', href: '#/finance/cari' }, '← Cariler')),
@@ -297,9 +296,8 @@ async function cashView(view) {
   const reload = () => cashView(view);
   const strip = statStrip();
   const min = Math.min(...d.weeks.map(w => w.balance), d.cash);
-  strip.set([kpi('Bugünkü nakit (kasa + banka)', d.cash, d.cash >= 0 ? 'ok' : 'alert'), kpi('Vadesi geçmiş alacak', d.overdue.in, d.overdue.in ? 'alert' : ''),
-    kpi('Vadesi geçmiş borç', d.overdue.out, d.overdue.out ? 'alert' : ''), kpi('12 hafta sonu tahmini', d.end_balance, d.end_balance >= 0 ? 'ok' : 'alert'),
-    kpi('En düşük nokta', min, min < 0 ? 'alert' : '')]);
+  strip.set([{ icon: 'finance', ...kpi('Bugünkü nakit (kasa + banka)', d.cash, d.cash >= 0 ? 'ok' : 'alert') }, { icon: 'warning', ...kpi('Vadesi geçmiş alacak', d.overdue.in, d.overdue.in ? 'alert' : '') },
+    { icon: 'warning', ...kpi('Vadesi geçmiş borç', d.overdue.out, d.overdue.out ? 'alert' : '') }, { icon: 'calendar', ...kpi('12 hafta sonu tahmini', d.end_balance, d.end_balance >= 0 ? 'ok' : 'alert') }]);
   const canvas = h('canvas', { height: 120 });
   const items = d.items.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
     h('thead', null, h('tr', null, ['Tarih', 'Tür', 'Kim / Ne', 'Açıklama', 'Giriş', 'Çıkış'].map(x => h('th', null, x)))),
@@ -371,8 +369,8 @@ async function instrumentsView(view) {
   const open = d.rows.filter(r => ['portfoy', 'tahsilde', 'teminatta'].includes(r.status));
   const sum = (dir) => open.filter(r => r.direction === dir).reduce((a, r) => a + r.amount, 0);
   const strip = statStrip();
-  strip.set([kpi('Portföydeki alınan çek/senet', sum('alinan')), kpi('Ödenecek verilen çek/senet', sum('verilen'), sum('verilen') ? 'alert' : ''),
-    kpi('Bu ay vadesi gelen', open.filter(r => r.due_date.slice(0, 7) === today().slice(0, 7)).reduce((a, r) => a + r.amount, 0))]);
+  strip.set([{ icon: 'finance', ...kpi('Portföydeki alınan çek/senet', sum('alinan')) }, { icon: 'warning', ...kpi('Ödenecek verilen çek/senet', sum('verilen'), sum('verilen') ? 'alert' : '') },
+    { icon: 'calendar', ...kpi('Bu ay vadesi gelen', open.filter(r => r.due_date.slice(0, 7) === today().slice(0, 7)).reduce((a, r) => a + r.amount, 0)) }]);
   const ST = d.statuses;
   const tone = { portfoy: 'blue', tahsilde: 'yellow', teminatta: 'yellow', ciro: '', tahsil: 'green', odendi: 'green', karsiliksiz: 'red', iade: '' };
   clear(view,
@@ -506,9 +504,8 @@ async function statementsView(view) {
     if (!d.has_ledger) return clear(out, noLedger());
     const k = d.kpi;
     const strip = statStrip();
-    strip.set([kpi('Net satışlar', k.net_satis), kpi('Brüt kâr', k.brut_kar, k.brut_kar >= 0 ? 'ok' : 'alert'),
-      kpi('Faaliyet kârı', k.faaliyet_kar, k.faaliyet_kar >= 0 ? 'ok' : 'alert'), kpi('Net kâr', k.net_kar, k.net_kar >= 0 ? 'ok' : 'alert'),
-      { label: 'Brüt / net marj', value: k.brut_marj == null ? '—' : `%${k.brut_marj} / %${k.net_marj}` }]);
+    strip.set([{ icon: 'sales', ...kpi('Net satışlar', k.net_satis) }, { icon: 'finance', ...kpi('Brüt kâr', k.brut_kar, k.brut_kar >= 0 ? 'ok' : 'alert') },
+      { icon: 'finance', ...kpi('Faaliyet kârı', k.faaliyet_kar, k.faaliyet_kar >= 0 ? 'ok' : 'alert') }, { icon: 'finance', ...kpi('Net kâr', k.net_kar, k.net_kar >= 0 ? 'ok' : 'alert') }]);
     const income = h('section', { class: 'card card-pad' }, h('h3', null, 'Gelir tablosu'), h('div', { class: 'small muted' }, `${fmtDate(d.date_from)} – ${fmtDate(d.date_to)}`),
       h('table', { class: 'table fin-is' }, h('tbody', null, d.income.map(r => h('tr', { class: r.total ? 'tot' : '' }, h('td', { class: 'muted' }, r.code),
         h('td', null, r.label), h('td', { class: `num ${r.amount < 0 ? 'neg' : ''}` }, num0(r.amount)))))),

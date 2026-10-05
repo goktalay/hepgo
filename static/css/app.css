@@ -1050,6 +1050,15 @@ main#view.tone-red .card { border-color: #f1d9d6; }
 .stat.alert .v { color: var(--danger); }
 .stat.ok .v { color: var(--success); }
 .stat.muted .v { color: var(--muted); }
+/* Sol büyük ikonlu kart: ikon solda, değer/etiket sağda dikey */
+.stat.has-ic { flex-direction: row; align-items: center; gap: 12px; }
+.stat.has-ic .stat-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.stat-ic { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px;
+  background: var(--primary-soft, rgba(37,99,235,.1)); color: var(--primary); }
+.stat-ic svg { width: 26px; height: 26px; }
+.stat.alert .stat-ic { background: var(--danger-soft, #fde8e6); color: var(--danger); }
+.stat.ok .stat-ic { background: var(--success-soft, #e6f6ec); color: var(--success); }
+.stat.muted .stat-ic { background: var(--border); color: var(--muted); }
 .filters .input[type="date"] { width: 150px; }
 .filters .lbl { font-size: 12px; color: var(--muted); }
 .plane-label.faded { opacity: .25; }

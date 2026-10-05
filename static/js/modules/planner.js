@@ -45,13 +45,11 @@ export async function renderPlanner(view, ctx) {
     const r = last;
     const stats = statStrip();
     stats.set([
-      { label: 'Uçak', value: r.quantity },
-      { label: 'Basılacak parça', value: r.jobs },
-      { label: 'Kullanılabilir yazıcı', value: r.printers.length,
+      { icon: 'planner', label: 'Uçak', value: r.quantity },
+      { icon: 'production', label: 'Basılacak parça', value: r.jobs },
+      { icon: 'printers', label: 'Kullanılabilir yazıcı', value: r.printers.length,
         sub: r.assume_idle ? 'hepsi boş varsayıldı' : t('{n} boşta', { n: r.printers.filter(p => !p.busy).length }) },
-      { label: 'Şimdi yüklenecek', value: r.first_loads.length, tone: 'ok' },
-      { label: 'Tahmini bitiş', value: r.end ? hhmm(r.end) : '—', tone: 'alert' },
-      { label: 'Tahmini toplam süre', value: span(r), sub: 'şimdiden son parçanın bitişine', tone: 'alert' },
+      { icon: 'calendar', label: 'Tahmini bitiş', value: r.end ? hhmm(r.end) : '—', tone: 'alert' },
     ]);
     clear(out,
       stats,

@@ -67,15 +67,10 @@ async function renderList(view, ctx) {
     const n = k => tasks.filter(t => t.status === k).length;
     const open = tasks.filter(t => !['RAPOR_TAMAMLANDI', 'IPTAL'].includes(t.status));
     stats.set([
-      { label: 'Toplam görev', value: tasks.length },
-      { label: 'Başlangıçta bekleyen', value: n('BASLANGIC') },
-      { label: 'Görevde', value: n('GOREVDE'), tone: n('GOREVDE') ? 'ok' : '' },
-      { label: 'Rapor bekleyen', value: n('GOREV_TAMAMLANDI') + n('BASARISIZ'), tone: n('GOREV_TAMAMLANDI') + n('BASARISIZ') ? 'alert' : '' },
-      { label: 'Toplam uçuş', value: tasks.reduce((a, t) => a + t.flights.length, 0), sub: tr('raporu hazır: {n}', { n: tasks.reduce((a, t) => a + t.logs_ready, 0) }) },
-      { label: 'Toplam masraf', value: tl(tasks.reduce((a, t) => a + t.expense_total, 0)) },
-      { label: 'Toplam yol', value: km(tasks.reduce((a, t) => a + (t.distance_km || 0), 0)) },
-      { label: 'Benim açık görevlerim', value: open.filter(mine).length },
-      manager ? { label: 'Göreve götürülebilir uçak', value: available ?? '—', sub: 'saha deposu + montajda' } : null,
+      { icon: 'field', label: 'Toplam görev', value: tasks.length },
+      { icon: 'production', label: 'Görevde', value: n('GOREVDE'), tone: n('GOREVDE') ? 'ok' : '' },
+      { icon: 'warning', label: 'Rapor bekleyen', value: n('GOREV_TAMAMLANDI') + n('BASARISIZ'), tone: n('GOREV_TAMAMLANDI') + n('BASARISIZ') ? 'alert' : '' },
+      { icon: 'finance', label: 'Toplam masraf', value: tl(tasks.reduce((a, t) => a + t.expense_total, 0)) },
     ]);
     refill(driver, [...new Map(tasks.flatMap(driverPairs))], 'Tüm şoförler');
     refill(place, [...new Map(tasks.filter(t => t.location_id).map(t => [t.location_id, t.location_name]))], 'Tüm görev yerleri');
@@ -142,10 +137,10 @@ async function renderFlightsList(view, ctx) {
   const draw = () => {
     const list = rows.filter(f => matches(q.value, f.queue_no, f.order_code, f.product_name, f.task_code, f.location_name, f.pilot_name));
     stats.set([
-      { label: mode === 'ready' ? 'Uçuşa hazır uçak' : mode === 'flown' ? 'Uçmuş uçak' : 'Görevlerdeki uçak', value: rows.length },
-      { label: 'Raporu hazır', value: rows.filter(f => f.log_status === 'TAMAM').length, tone: 'ok' },
-      { label: 'Hurda (uçtu)', value: rows.filter(f => f.order_status === 'HURDA').length },
-      { label: 'Uçuş notu', value: rows.reduce((a, f) => a + f.note_count, 0) },
+      { icon: 'fleet', label: mode === 'ready' ? 'Uçuşa hazır uçak' : mode === 'flown' ? 'Uçmuş uçak' : 'Görevlerdeki uçak', value: rows.length },
+      { icon: 'documents', label: 'Raporu hazır', value: rows.filter(f => f.log_status === 'TAMAM').length, tone: 'ok' },
+      { icon: 'warning', label: 'Hurda (uçtu)', value: rows.filter(f => f.order_status === 'HURDA').length },
+      { icon: 'note', label: 'Uçuş notu', value: rows.reduce((a, f) => a + f.note_count, 0) },
     ]);
     clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Saha görevi', 'Görev yeri / pilot', 'Uçuş logu', 'Havada', 'Not / medya'].map(c => h('th', null, c)))),
@@ -311,12 +306,10 @@ async function renderTask(view, id, ctx) {
       sub: h('span', null, badge(TASK_STATES, t.status), '  ', tr('Saha sorumlusu: {name}', { name: t.lead_name || '—' })),
     }), moduleToolbar(actions));
     stats.set([
-      { label: 'Uçuş', value: t.flights.length },
-      { label: 'Raporu hazır uçuş', value: `${t.logs_ready}/${t.flights.length}`, tone: t.logs_ready === t.flights.length && t.flights.length ? 'ok' : '' },
-      { label: 'Toplam masraf', value: tl(t.expense_total), sub: tr('{n} kalem', { n: t.expense_count }) },
-      { label: 'Gidilen yol', value: km(t.distance_km), sub: t.vehicle_plate || 'plaka girilmedi' },
-      { label: 'Görev süresi', value: t.started_at ? fmtDuration(t.duration_seconds) : '—' },
-      { label: 'Toplam havada', value: clock(t.flights.reduce((a, f) => a + (f.flight_s || 0), 0)), sub: 'hazır raporlardan' },
+      { icon: 'flightlog', label: 'Uçuş', value: t.flights.length },
+      { icon: 'documents', label: 'Raporu hazır uçuş', value: `${t.logs_ready}/${t.flights.length}`, tone: t.logs_ready === t.flights.length && t.flights.length ? 'ok' : '' },
+      { icon: 'finance', label: 'Toplam masraf', value: tl(t.expense_total), sub: tr('{n} kalem', { n: t.expense_count }) },
+      { icon: 'calendar', label: 'Görev süresi', value: t.started_at ? fmtDuration(t.duration_seconds) : '—' },
     ]);
     const plates = t.flights.length ? h('span', { class: 'task-plates' }, t.flights.map(f => f.queue_no ? queuePlate(f.queue_no) : h('span', { class: 'mono' }, f.order_code))) : '—';
     const kv = (k, v) => h('div', { class: 'task-kv' }, h('span', null, k), h('b', null, v || '—'));
@@ -756,9 +749,9 @@ async function renderPlaces(view, ctx) {
     [locations, vehicles] = await Promise.all([api.get('/api/field/locations'), api.get('/api/field/vehicles')]);
     const top = [...locations].sort((a, b) => b.task_count - a.task_count)[0];
     stats.set([
-      { label: 'Görev yeri', value: locations.length, sub: tr('aktif {n}', { n: locations.filter(l => l.active).length }) },
-      { label: 'Araç', value: vehicles.length, sub: tr('aktif {n}', { n: vehicles.filter(v => v.active).length }) },
-      { label: 'En çok gidilen yer', value: top?.task_count || 0, sub: top?.name || '—' },
+      { icon: 'field', label: 'Görev yeri', value: locations.length, sub: tr('aktif {n}', { n: locations.filter(l => l.active).length }) },
+      { icon: 'fleet', label: 'Araç', value: vehicles.length, sub: tr('aktif {n}', { n: vehicles.filter(v => v.active).length }) },
+      { icon: 'radar', label: 'En çok gidilen yer', value: top?.task_count || 0, sub: top?.name || '—' },
     ]);
     drawList(locBox, 'Görev yerleri', locations, { key: 'name', label: 'Görev yeri adı', path: 'locations', noun: 'görev yeri' });
     drawList(vehBox, 'Araçlar', vehicles, { key: 'plate', label: 'Plaka', path: 'vehicles', noun: 'araç', mono: true });

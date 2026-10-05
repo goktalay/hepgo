@@ -55,11 +55,10 @@ async function listView(root) {
   const dueN = act.reduce((n, r) => n + r.dues.length, 0);
   const strip = statStrip();
   strip.set([
-    { label: 'Aktif araç', value: act.length, sub: t('{a} mal · {b} kiralık', { a: act.filter(r => r.ownership !== 'leased').length, b: act.filter(r => r.ownership === 'leased').length }) },
-    { label: 'Zimmetli', value: act.filter(r => r.assignee).length, sub: t('{n} boşta', { n: act.filter(r => !r.assignee).length }) },
-    { label: t('{y} gideri', { y: d.year }), value: money0(sum(rows, 'spend_year')) },
-    { label: 'Toplam gider', value: money0(sum(rows, 'spend_total')) },
-    { label: 'Yaklaşan işlem', value: dueN, tone: dueN ? 'alert' : '' }]);
+    { icon: 'fleet', label: 'Aktif araç', value: act.length, sub: t('{a} mal · {b} kiralık', { a: act.filter(r => r.ownership !== 'leased').length, b: act.filter(r => r.ownership === 'leased').length }) },
+    { icon: 'users', label: 'Zimmetli', value: act.filter(r => r.assignee).length, sub: t('{n} boşta', { n: act.filter(r => !r.assignee).length }) },
+    { icon: 'finance', label: 'Toplam gider', value: money0(sum(rows, 'spend_total')) },
+    { icon: 'calendar', label: 'Yaklaşan işlem', value: dueN, tone: dueN ? 'alert' : '' }]);
   const banners = [];
   if (d.open_moves) {
     banners.push(h('a', { class: 'fl-banner', href: '#/fleet/moves' }, h('span', { class: 'fl-banner-i' }, '₺'),
@@ -222,11 +221,10 @@ async function detail(view, id, ctx) {
     try { await upload(`/api/fleet/${id}/photo`, fd); toast('Fotoğraf güncellendi', 'success'); reload(); } catch (e) { toastError(e); }
   });
   const strip = statStrip();
-  strip.set([{ label: 'Toplam gider', value: money0(v.spend_total) },
-    { label: t('{y} gideri', { y: year }), value: money0(sum(v.expenses.filter(e => e.date.startsWith(year)), 'amount')) },
-    { label: 'Güncel km', value: kmTxt(v.km_now) },
-    { label: 'Km başına maliyet', value: v.cost_per_km != null ? money(v.cost_per_km) : '—' },
-    v.field.tasks ? { label: 'Saha görevi', value: v.field.tasks, sub: v.field.km ? kmTxt(v.field.km) : null } : null]);
+  strip.set([{ icon: 'finance', label: 'Toplam gider', value: money0(v.spend_total) },
+    { icon: 'fleet', label: 'Güncel km', value: kmTxt(v.km_now) },
+    { icon: 'finance', label: 'Km başına maliyet', value: v.cost_per_km != null ? money(v.cost_per_km) : '—' },
+    v.field.tasks ? { icon: 'field', label: 'Saha görevi', value: v.field.tasks, sub: v.field.km ? kmTxt(v.field.km) : null } : null]);
   const acts = [h('button', { class: 'btn sm primary', type: 'button', onclick: () => vehicleForm(v, reload) }, 'Düzenle')];
   if (v.active && !cur) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => assignForm(v, null, reload) }, 'Zimmetle'));
   if (cur) acts.push(h('button', { class: 'btn sm', type: 'button', onclick: () => openForm(cur.id) }, 'Zimmet formu'),

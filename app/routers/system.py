@@ -158,6 +158,52 @@ def get_integrations(user=Depends(auth.current_user), conn=db.DB):
     return {'groups': integrations.view(conn)}
 
 
+@router.get('/integrations/catalog')
+def get_integrations_catalog(user=Depends(auth.current_user), conn=db.DB):
+    """Birleşik entegrasyon kataloğu: konu-bazlı tüm entegrasyonlar + her biri için eklendi/bağlı/indirilebilir/
+    lisans durumu. "Entegrasyon Ekle" akışı ve eklenmiş entegrasyon listesi bunu kullanır. Ortak domain de döner."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu ayarlar yalnızca sistem yöneticisine açıktır')
+    from .. import agent_hub, agentkeys, integrations
+    dom = agentkeys.domain(conn)
+    return {'topics': [{'key': k, 'label': l} for k, l in integrations.TOPICS],
+            'items': integrations.catalog(conn),
+            'domain': dom, 'central_url': agentkeys.central_url(dom),
+            'agent_online': agent_hub.online(), 'mode': config.AGENT_MODE,
+            'master': bool(user.get('master'))}
+
+
+class IntegAddIn(BaseModel):
+    integ: str
+
+
+@router.post('/integrations/add')
+def add_integration(body: IntegAddIn, user=Depends(auth.current_user), conn=db.DB):
+    """Bir entegrasyonu firmanın listesine ekler (gri / bağlı değil olarak başlar)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import integrations
+    try:
+        lst = integrations.add_integration(conn, body.integ)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    conn.commit()
+    db.audit(conn, user['id'], f'Entegrasyon ekledi: {body.integ}', 'settings', None, body.integ)
+    return {'added': lst}
+
+
+@router.post('/integrations/remove')
+def remove_integration(body: IntegAddIn, user=Depends(auth.current_user), conn=db.DB):
+    """Bir entegrasyonu firmanın listesinden çıkarır (ayarlar/anahtar silinmez; yalnız listeden kaldırılır)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import integrations
+    lst = integrations.remove_integration(conn, body.integ)
+    conn.commit()
+    db.audit(conn, user['id'], f'Entegrasyonu listeden kaldırdı: {body.integ}', 'settings', None, body.integ)
+    return {'added': lst}
+
+
 @router.get('/speech')
 def get_speech(user=Depends(auth.current_user), conn=db.DB):
     """Modül Ayarları: konuşma tanımanın modül bazında açık/kapalı durumu (+ entegrasyon çalışıyor mu)."""
@@ -367,7 +413,7 @@ def put_integration_interval(group: str, body: IntervalIn, user=Depends(auth.cur
     return {'interval': body.seconds}
 
 
-# --- Fabrika Entegrasyonları: ajan-tabanlı ürünler (anahtar + lisans + indirme). YALNIZCA MASTER ---------------
+# --- Ajan-tabanlı (indirilebilir) ürünler: anahtar + lisans + indirme. Her entegrasyonun detayından kullanılır. YALNIZCA MASTER ---
 # Her ajan-tabanlı entegrasyon ayrı bir üründür: kendi API anahtarı, kendi lisansı ve kendi kurulum dosyası.
 # Depo app_kv['agent_integrations']'tedir (app/agentkeys.py). agent_hub kimlik/op yönlendirmesi DEĞİŞMEZ (Aşama 2).
 _AGENT_PLATFORMS = {'windows': 'exe', 'linux': 'sh'}

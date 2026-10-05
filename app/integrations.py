@@ -25,7 +25,7 @@ GROUPS = {
     'mikro': {
         'title': 'Mikro ERP',
         'desc': 'Cari, stok ve fatura içe aktarımı için Mikro SQL Server bağlantısı.',
-        # Ajan-tabanlı ürün (Fabrika Entegrasyonları): ayrıntılı bağlantı formu yalnız ajan bağlı VE lisanslıyken görünür.
+        # Ajan-tabanlı (indirilebilir) ürün: ayarlar yalnız entegrasyon bağlandıktan sonra görünür (katalog: DOWNLOADABLE).
         'needs_agent': True,
         'fields': [
             ('MIKRO_HOST', 'Sunucu IP / adı', 'text', 'ör. 192.168.1.100'),
@@ -153,6 +153,131 @@ GROUPS = {
 }
 FIELDS = {k: (g, kind) for g, grp in GROUPS.items() for k, _, kind, _ in grp['fields']}
 ENV = {k: getattr(config, k) for k in FIELDS}   # .env / varsayılan değerler (panelden silinince geri dönülür)
+
+# ---- Birleşik katalog (Entegrasyon Ekle akışı) ----------------------------------------------------------
+# Entegrasyonlar artık TEK listede yaşar. Yeni firma boş başlar; "Entegrasyon Ekle" ile konu-bazlı katalogdan
+# seçilen entegrasyon firmanın listesine eklenir. Eklenen entegrasyonlar app_kv['added_integrations']'te tutulur.
+ADDED_KEY = 'added_integrations'
+
+# Katalog konuları (sırayla gösterilir).
+TOPICS = [
+    ('ai', 'Yapay Zeka'),
+    ('erp', 'ERP / Muhasebe'),
+    ('personel', 'Personel'),
+    ('kamera', 'Kamera / Güvenlik'),
+    ('yazici', 'Yazıcılar'),
+    ('mail', 'Mail / İletişim'),
+    ('sosyal', 'Sosyal Medya'),
+    ('ses', 'Ses / Konuşma'),
+    ('harita', 'Haritalar'),
+]
+# Her entegrasyon (grup) → konu.
+GROUP_TOPIC = {
+    'ai': 'ai', 'mikro': 'erp', 'pdks': 'personel', 'nvr': 'kamera',
+    'printer': 'yazici', 'face': 'kamera',
+    'google': 'mail', 'microsoft': 'mail',
+    'meta': 'sosyal', 'x': 'sosyal', 'tiktok': 'sosyal', 'spotify': 'sosyal',
+    'speech': 'ses', 'maps': 'harita',
+}
+# İndirilebilir (ajan-tabanlı) entegrasyon → agentkeys ürün adı. Bu ürünler indirme + "API key üret" ile gelir;
+# kurulan ajan API anahtarıyla merkeze bağlanır. Diğerleri (OAuth/kimlik) kodu doğrudan burada girilir.
+DOWNLOADABLE = {'mikro': 'mikro', 'pdks': 'pdks', 'nvr': 'camera', 'printer': 'printer', 'face': 'face'}
+# GROUPS'ta ayar alanı bulunmayan, yalnız ajan-tabanlı katalog kalemleri (indirme + anahtar; ayrı ayar yok).
+AGENT_ONLY = {
+    'printer': {'title': 'Yazıcılar',
+                'desc': 'Fabrikadaki ağ / USB yazıcılarına fabrika ajanı üzerinden erişim; etiket ve belge çıktısı.'},
+    'face': {'title': 'Yüz Tanıma',
+             'desc': 'Kamera görüntülerinde yüz tanıma; fabrikadaki ekran kartıyla (GPU) çalışır. Kamera / NVR ile birlikte kullanılır.'},
+}
+# Katalogda görünen tüm entegrasyon anahtarları (firma kimliği olan 'general' katalogda yer almaz).
+CATALOG_KEYS = [k for k in GROUPS if k != 'general'] + list(AGENT_ONLY)
+
+
+def catalog(conn):
+    """Birleşik katalog: her entegrasyon için başlık/konu + eklendi mi (added) + bağlı mı (connected) +
+    indirilebilir mi (downloadable) + lisans/anahtar durumu. Bağlanırlık tek ve birleşik:
+    indirilebilir ürün uzaktaysa agent_hub.online_integ, yerelse grup sağlığı; diğerleri grup sağlığı."""
+    from . import agent_hub, agentkeys
+    gv = {g['key']: g for g in view(conn)}                       # kimlik/sağlık (GROUPS)
+    ak = {it['integ']: it for it in agentkeys.get_all(conn)['items']}
+    remote = config.AGENT_MODE == 'remote'
+    added_set = set(_added(conn))
+    items = []
+    for key in CATALOG_KEYS:
+        prod = DOWNLOADABLE.get(key)
+        dl = prod is not None
+        g = gv.get(key)
+        meta = AGENT_ONLY.get(key, {})
+        akit = ak.get(prod) if prod else None
+        if dl:
+            connected = agent_hub.online_integ(prod) if remote else bool(g and g.get('online'))
+        else:
+            connected = bool(g and g.get('online'))
+        items.append({
+            'key': key,
+            'title': g['title'] if g else meta.get('title', key),
+            'desc': g['desc'] if g else meta.get('desc', ''),
+            'topic': GROUP_TOPIC.get(key, 'harita'),
+            'downloadable': dl,
+            'agent_integ': prod,
+            'licensed': bool(akit['licensed']) if akit else None,
+            'key_set': bool(akit['key_set']) if akit else None,
+            'configured': bool(g['configured']) if g else None,
+            'connected': connected,
+            'added': key in added_set,
+        })
+    return items
+
+
+def _derive_added(conn):
+    """Mevcut firmalar için tohum: ayarlı / bağlı / anahtarı üretilmiş her entegrasyon zaten EKLENMİŞ sayılır
+    (böylece canlı firma boş görünmez). added_set'e bakmadan ham durumdan türetilir."""
+    from . import agent_hub, agentkeys
+    gv = {g['key']: g for g in view(conn)}
+    ak = {it['integ']: it for it in agentkeys.get_all(conn)['items']}
+    remote = config.AGENT_MODE == 'remote'
+    out = []
+    for key in CATALOG_KEYS:
+        prod = DOWNLOADABLE.get(key)
+        g = gv.get(key)
+        akit = ak.get(prod) if prod else None
+        connected = (agent_hub.online_integ(prod) if remote else bool(g and g.get('online'))) if prod else bool(g and g.get('online'))
+        configured = bool(g['configured']) if g else False
+        key_set = bool(akit['key_set']) if akit else False
+        if configured or connected or (prod and key_set):
+            out.append(key)
+    return out
+
+
+def _added(conn):
+    """Firmaya eklenmiş entegrasyon anahtarları. İlk okumada (kayıt yoksa) mevcut durumdan tohumlanır ve saklanır."""
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (ADDED_KEY,)).fetchone()
+    if row is not None:
+        try:
+            lst = json.loads(row[0])
+            if isinstance(lst, list):
+                return [k for k in lst if k in set(CATALOG_KEYS)]
+        except ValueError:
+            pass
+    seed = _derive_added(conn)
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (ADDED_KEY, json.dumps(seed)))
+    return seed
+
+
+def add_integration(conn, integ):
+    if integ not in set(CATALOG_KEYS):
+        raise ValueError('Bilinmeyen entegrasyon')
+    lst = _added(conn)
+    if integ not in lst:
+        lst = lst + [integ]
+        conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (ADDED_KEY, json.dumps(lst)))
+    return lst
+
+
+def remove_integration(conn, integ):
+    lst = [x for x in _added(conn) if x != integ]
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (ADDED_KEY, json.dumps(lst)))
+    return lst
 
 
 def _load(conn):

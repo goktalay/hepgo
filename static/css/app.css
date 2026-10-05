@@ -4945,6 +4945,30 @@ html[data-theme="dark"] .sc-integ-status.wait { background: rgba(245, 158, 11, .
 .integ-back { align-self: flex-start; }
 .integ-form > h3 { margin: 6px 2px 8px; font-size: 15px; }
 .integ-form .sc-integ-h { display: none; }   /* başlık üstteki tanıtımda var */
+/* Entegrasyonlar: birleşik "Entegrasyon Ekle" akışı (üst bar, ekleme kataloğu, kurulum/indirme paneli) */
+.integ-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.integ-top .grow { flex: 1; min-width: 180px; margin: 0; }
+.integ-add { display: flex; flex-direction: column; gap: 18px; }
+.integ-add-sec h4 { margin: 0 0 8px; font-size: 14px; color: var(--primary); }
+.integ-add-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.integ-add-tile { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.integ-add-tile:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15, 23, 42, .12); border-color: var(--primary); }
+.integ-add-tile .integ-logo { width: 40px; height: 40px; flex: none; }
+.integ-add-tile b { font-size: 14.5px; display: block; }
+.integ-add-tile small { font-size: 12px; color: var(--muted); }
+.integ-dl h3 { margin-top: 0; }
+.integ-dl-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.integ-howto { margin: 8px 0; padding-left: 20px; line-height: 1.6; color: var(--text); }
+.integ-gate { text-align: center; color: var(--muted); }
+.integ-remove { display: flex; justify-content: flex-end; margin-top: 4px; }
+.fab-dl { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.fab-keybox:not(:empty) { margin-top: 10px; }
+.fab-key { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
+.fab-key.new { border-color: #f5b5ae; }
+.fab-key-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.fab-key-val { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 6px 10px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border); word-break: break-all; }
 /* Alt alta duran paneller arasında tutarlı boşluk (ızgara / yan yana dizilimler etkilenmez: yalnızca blok akışlı kaplar) */
 :is(main#view, .set-detail, .set-detail > div, .hr-sub-detail, .tab-body, div:not([class]), section:not([class])) > .card + .card,
 :is(main#view, .set-detail, .set-detail > div, .hr-sub-detail, div:not([class])) > .card + :is(.filters, .table-wrap.card, .stat-strip),

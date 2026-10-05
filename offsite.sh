@@ -11,6 +11,9 @@
 set -uo pipefail
 umask 077
 cd "$(dirname "$0")"
+# Aynı anda tek kopya (cron'da satır çift yazılsa da iki gönderim aynı Drive klasörüne birlikte yazmasın)
+exec 9>"${TMPDIR:-/tmp}/hepgo-offsite-$(id -u).lock"
+flock -n 9 || { echo "$(date '+%F %T') Sunucu dışı yedek zaten çalışıyor; bu kopya atlandı"; exit 0; }
 REMOTE=${OFFSITE_REMOTE:-hepgo-yedek:}
 KEEP_DAYS=${KEEP_DAYS:-30}
 RCLONE=${RCLONE:-rclone}

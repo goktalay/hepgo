@@ -22,7 +22,7 @@ DEFAULTS = {
     'reuse_block': 0,          # son N şifre yeniden kullanılamaz; 0 = kapalı
     'force_first_change': True,# yöneticinin verdiği şifreyle ilk girişte değiştirme zorunlu
     'lockout_fails': 5,        # aynı kullanıcıya art arda hatalı deneme sınırı
-    'ip_fails': 20,            # aynı IP'den hatalı deneme sınırı
+    'ip_fails': 20,            # aynı IP'den FARKLI hesaplara (hesap taraması) hatalı deneme sınırı; 0 = kapalı
     'lockout_minutes': 15,     # kilit süresi (dakika)
     'session_hours': 12,       # oturum geçerlilik süresi (saat)
     'pin_enabled': True,       # PIN ile girişe izin ver
@@ -34,7 +34,7 @@ COMMON = {'12345678', '123456789', '1234567890', 'password', 'password1', 'parol
           'deneme', 'deneme123', 'abc123', '1q2w3e4r', 'asdasd', '123123', 'gokkubbe', 'caymaz'}
 
 _INT = {'min_length': (4, 64), 'expire_days': (0, 3650), 'reuse_block': (0, 24), 'lockout_fails': (3, 100),
-        'ip_fails': (5, 500), 'lockout_minutes': (1, 1440), 'session_hours': (1, 720), 'pin_length': (4, 8)}
+        'ip_fails': (0, 500), 'lockout_minutes': (1, 1440), 'session_hours': (1, 720), 'pin_length': (4, 8)}
 
 
 def get(conn):

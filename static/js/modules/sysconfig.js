@@ -874,7 +874,7 @@ function securityBody(view) {
         tog('force_first_change', 'İlk girişte şifre değiştirmeyi zorunlu tut', 'Yöneticinin verdiği/sıfırladığı şifreyle giren kullanıcı devam etmeden önce şifresini değiştirir')),
       card('Giriş güvenliği', 'Kaba kuvvet koruması ve oturum.',
         num('lockout_fails', 'Kullanıcı deneme sınırı', 'Art arda bu kadar hatalı denemeden sonra hesap geçici kilitlenir', { min: 3, max: 100, suffix: 'deneme' }),
-        num('ip_fails', 'IP deneme sınırı', 'Aynı ağ adresinden toplam hatalı deneme sınırı', { min: 5, max: 500, suffix: 'deneme' }),
+        num('ip_fails', 'IP deneme sınırı', 'Aynı ağ adresinden FARKLI hesaplara (hesap taraması) hatalı deneme sınırı. Tek işyeri tek internet (ortak IP) arkasındaysa 0 = kapalı önerilir.', { min: 0, max: 500, suffix: 'deneme' }),
         num('lockout_minutes', 'Kilit süresi', 'Sınır aşılınca bu süre boyunca giriş engellenir', { min: 1, max: 1440, suffix: 'dakika' }),
         num('session_hours', 'Oturum süresi', 'Giriş sonrası oturumun geçerli kalacağı süre', { min: 1, max: 720, suffix: 'saat' })),
       card('PIN ile giriş', 'Cihazda 4+ haneli PIN ile hızlı giriş.',

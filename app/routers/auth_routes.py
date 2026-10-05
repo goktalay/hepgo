@@ -41,15 +41,22 @@ def _locked(conn, username, ip):
     pol = policy.get(conn)
     lock_min, user_fails, ip_fails = pol['lockout_minutes'], pol['lockout_fails'], pol['ip_fails']
     since = (datetime.now() - timedelta(minutes=lock_min)).isoformat(timespec='seconds')
+    # 1) Kullanıcı bazlı: aynı kullanıcıya SON BAŞARILI girişten sonra art arda hatalı deneme sınırı aşıldıysa.
     last_ok = conn.execute('SELECT MAX(id) FROM login_logs WHERE username = ? AND success = 1',
                            (username,)).fetchone()[0] or 0
-    for where, args, limit in (('username = ? AND id > ?', (username, last_ok), user_fails),
-                               ('ip = ?', (ip,), ip_fails)):
-        rows = conn.execute(f'SELECT at FROM login_logs WHERE success = 0 AND at > ? AND {where} '
-                            'ORDER BY id DESC LIMIT ?', (since, *args, limit)).fetchall()
-        if len(rows) >= limit:
-            until = datetime.fromisoformat(rows[-1][0]) + timedelta(minutes=lock_min)
-            return max(1, -(-int((until - datetime.now()).total_seconds()) // 60))
+    rows = conn.execute('SELECT at FROM login_logs WHERE success = 0 AND at > ? AND username = ? AND id > ? '
+                        'ORDER BY id DESC LIMIT ?', (since, username, last_ok, user_fails)).fetchall()
+    if len(rows) >= user_fails:
+        until = datetime.fromisoformat(rows[-1][0]) + timedelta(minutes=lock_min)
+        return max(1, -(-int((until - datetime.now()).total_seconds()) // 60))
+    # 2) IP bazlı (hesap taraması): aynı IP, BAŞKA hesaplara deniyorsa. Kullanıcının kendi hataları (1) kapsamında.
+    #    Not: Tek işyeri/fabrika tek genel IP (Cloudflare cf-connecting-ip) arkasında olabilir; bu yüzden sabah toplu
+    #    girişlerde herkesin kilitlenmemesi için farklı HESAP sayısına bakılır (ip_fails=0 ise IP kuralı kapalı).
+    if ip and ip_fails > 0:
+        n = conn.execute('SELECT COUNT(DISTINCT username) FROM login_logs WHERE success = 0 AND at > ? AND ip = ? AND username <> ?',
+                         (since, ip, username)).fetchone()[0] or 0
+        if n >= ip_fails:
+            return lock_min
     return 0
 
 

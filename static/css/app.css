@@ -7532,6 +7532,30 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .fm-xl th, .fm-xl td { border: 1px solid var(--border); padding: 4px 8px; white-space: nowrap; text-align: left; }
 .fm-xl th, .fm-xl tr:first-child td { background: var(--surface-2); font-weight: 600; position: sticky; top: 0; }
 
+/* Çoklu (paralel) yükleme paneli */
+.fm-up { display: flex; flex-direction: column; gap: 12px; }
+.fm-up-ctl { display: flex; flex-wrap: wrap; gap: 14px; }
+.fm-up-ctl-f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.fm-up-ctl-f .input { font-weight: 600; }
+.fm-up-conc { width: 72px; }
+.fm-up-speed { width: 130px; }
+.fm-up-hint { margin: -4px 0 0; }
+.fm-up-overall { display: flex; align-items: center; gap: 10px; }
+.fm-up-obar { flex: 1 1 auto; height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.fm-up-obar-in { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width .2s ease; }
+.fm-up-otxt { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; color: var(--muted); flex: 0 0 auto; }
+.fm-up-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; }
+.fm-up-row { display: flex; align-items: center; gap: 10px; }
+.fm-up-name { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.fm-up-bar { flex: 1 1 40%; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.fm-up-bar-in { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width .2s ease; }
+.fm-up-pct { flex: 0 0 auto; width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+.fm-up-row.ok .fm-up-bar-in { background: var(--ok, #16a34a); }
+.fm-up-row.ok .fm-up-pct { color: var(--ok, #16a34a); }
+.fm-up-row.err .fm-up-bar-in { background: var(--danger, #dc2626); }
+.fm-up-row.err .fm-up-pct { color: var(--danger, #dc2626); }
+.fm-up-row.canceled { opacity: .55; }
+
 /* Pano kutucuğu bağlantısı */
 .db-n-link { display: inline-flex; align-items: center; gap: 4px; background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; text-decoration: none; }
 .db-n-link svg { width: 13px; height: 13px; }

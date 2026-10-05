@@ -59,20 +59,27 @@ export const api = {
 };
 
 // Büyük dosyalar için ilerleme bildiren yükleme (fetch yükleme ilerlemesi vermez).
-export async function upload(url, formData, onProgress) {
+// signal (isteğe bağlı): AbortSignal ile yükleme iptal edilebilir (paralel çoklu yüklemede hepsini durdurmak için).
+export async function upload(url, formData, onProgress, { signal } = {}) {
   formData = await optimizeForm(formData);
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('İptal', 'AbortError')); return; }
     const xhr = new XMLHttpRequest();
+    const onAbort = () => xhr.abort();
+    const cleanup = () => signal?.removeEventListener('abort', onAbort);
     xhr.open('POST', url);
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(Math.round(e.loaded * 100 / e.total)); };
     xhr.onload = () => {
+      cleanup();
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* boş yanıt */ }
       if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
       if (xhr.status === 401) window.dispatchEvent(new Event('caymaz:unauthorized'));
       reject(new ApiError(xhr.status, (data && typeof data.detail === 'string' && data.detail) || `Yükleme başarısız (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new ApiError(0, 'Bağlantı hatası, yükleme tamamlanamadı'));
+    xhr.onerror = () => { cleanup(); reject(new ApiError(0, 'Bağlantı hatası, yükleme tamamlanamadı')); };
+    xhr.onabort = () => { cleanup(); reject(new DOMException('İptal', 'AbortError')); };
+    signal?.addEventListener('abort', onAbort, { once: true });
     xhr.send(formData);
   });
 }
@@ -93,11 +100,102 @@ export function logActivity(events, { beacon = false } = {}) {
     headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
 }
 
+// ---------- Yükleme ayarları + genel hız sınırı (toplu aktarım hattı tıkamasın) ----------
+// Cihaz-bazlı ayar (localStorage): concurrency = aynı anda en çok kaç yükleme, rateKBps = toplam üst hız (0 = sınırsız).
+// TÜM eşzamanlı yüklemeler TEK bir jeton kovasını paylaşır; böylece 3 paralel yükleme bile toplamda rateKBps*1024 B/s'yi
+// aşmaz. Ayar canlı değişir: slider oynatılınca sürmekte olan yükleme de yeni hıza anında uyar.
+const UPLOAD_CFG_KEY = 'upload.cfg';
+const UPLOAD_CFG_DEFAULTS = { concurrency: 3, rateKBps: 0 };
+const clampConc = v => Math.min(6, Math.max(1, Math.round(Number(v)) || UPLOAD_CFG_DEFAULTS.concurrency));
+const clampRate = v => Math.max(0, Math.round(Number(v)) || 0);
+let uploadCfg = { ...UPLOAD_CFG_DEFAULTS };
+try {
+  const raw = JSON.parse(localStorage.getItem(UPLOAD_CFG_KEY) || '{}');
+  if (raw && typeof raw === 'object') uploadCfg = { concurrency: clampConc(raw.concurrency), rateKBps: clampRate(raw.rateKBps) };
+} catch { /* gizli pencere / bozuk değer: varsayılan kalır */ }
+
+export function getUploadCfg() { return { ...uploadCfg }; }
+export function setUploadCfg(partial) {
+  if (partial && typeof partial === 'object') {
+    if ('concurrency' in partial) uploadCfg.concurrency = clampConc(partial.concurrency);
+    if ('rateKBps' in partial) uploadCfg.rateKBps = clampRate(partial.rateKBps);
+  }
+  try { localStorage.setItem(UPLOAD_CFG_KEY, JSON.stringify(uploadCfg)); } catch { /* */ }
+  uploadThrottle.setRate(uploadCfg.rateKBps * 1024);   // canlı: sürmekte olan yüklemeler yeni hıza anında uyar
+  window.dispatchEvent(new CustomEvent('caymaz:upload-cfg', { detail: { ...uploadCfg } }));
+  return { ...uploadCfg };
+}
+
+// Jeton kovası (token bucket): saniyede rate bayt dolar, kapasite ~1 sn'lik. take(bytes) kovada yeterli jeton olana dek
+// bekler; rate 0 (sınırsız) ise hemen döner. Tek parça kovadan büyük olsa bile (ör. 16 MB parça, 1 MB/sn) birden çok
+// dolum turunda tüketilir — böylece ortalama hız rate'i aşmaz. Hepsi aynı kovayı paylaştığından sınır eşzamanlılıkla birleşir.
+const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const uploadThrottle = {
+  rate: uploadCfg.rateKBps * 1024,   // B/sn (0 = sınırsız)
+  tokens: 0,
+  last: _now(),
+  _refill() {
+    const now = _now();
+    const dt = (now - this.last) / 1000;
+    this.last = now;
+    if (this.rate > 0) this.tokens = Math.min(this.rate, this.tokens + dt * this.rate);   // kapasite = 1 sn'lik
+    else this.tokens = 0;
+  },
+  setRate(bps) {
+    this._refill();
+    this.rate = Math.max(0, Math.round(bps) || 0);
+    this.tokens = Math.min(this.tokens, this.rate);
+  },
+  async take(bytes, signal) {
+    bytes = Math.max(0, bytes || 0);
+    while (bytes > 0) {
+      if (signal?.aborted) throw new DOMException('İptal', 'AbortError');
+      if (!this.rate) return;   // sınırsız (sınır arada kaldırılmış olabilir)
+      this._refill();
+      const avail = Math.min(bytes, this.tokens);
+      if (avail > 0) { this.tokens -= avail; bytes -= avail; }
+      if (bytes <= 0) return;
+      const waitMs = Math.min(1000, Math.max(20, (bytes / this.rate) * 1000));
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  },
+};
+// Genel hız sınırına göre `bytes` bayt için bütçe bekler (tek-XHR yüklemelerinde gönderim öncesi kaba hız sınırı için).
+export function throttleBytes(bytes, signal) { return uploadThrottle.take(bytes, signal); }
+
+// Eşzamanlılık havuzu: items üzerinde worker'ı aynı anda en çok `concurrency` çalıştırır (biri patlasa diğerleri sürer).
+// concurrency verilmezse her yeni iş başlarken getUploadCfg().concurrency CANLI okunur (ayar yükleme sırasında artarsa
+// boşalan slotlar yeni sınıra göre dolar). signal ile hepsi iptal edilir. Dönüş: { ok:[sonuç…], failed:[{item,err}…] }.
+export function uploadMany(items, worker, { concurrency, onItem, signal } = {}) {
+  const list = [...items];
+  const getN = () => (concurrency != null ? clampConc(concurrency) : clampConc(getUploadCfg().concurrency));
+  return new Promise(resolve => {
+    const ok = [], failed = [];
+    let idx = 0, running = 0, settled = false;
+    const finish = () => { if (!settled) { settled = true; resolve({ ok, failed }); } };
+    const pump = () => {
+      if (settled) return;
+      while (running < getN() && idx < list.length && !signal?.aborted) {
+        const i = idx++; const item = list[i]; running++;
+        Promise.resolve().then(() => worker(item, i)).then(
+          res => { ok.push(res); try { onItem?.(item, i, null, res); } catch { /* */ } },
+          err => { failed.push({ item, err }); try { onItem?.(item, i, err); } catch { /* */ } },
+        ).finally(() => { running--; pump(); });
+      }
+      if (running === 0 && (idx >= list.length || signal?.aborted)) finish();
+    };
+    if (!list.length) return finish();
+    pump();
+  });
+}
+
 // Dosyayı parçalar halinde sırayla gönderir (bağlantı koparsa parça yeniden denenir). signal ile iptal edilebilir.
+// Her parçadan önce genel jeton kovasından bütçe alınır (uploadThrottle): toplam hız rateKBps üst sınırını aşmaz.
 async function sendChunks(file, chunkUrl, size, onProgress, signal) {
   let offset = 0;
   while (offset < file.size) {
     const blob = file.slice(offset, offset + size);
+    await uploadThrottle.take(blob.size, signal);   // genel hız sınırı (paralel yüklemeler tek kovayı paylaşır)
     let tries = 0;
     for (;;) {
       if (signal?.aborted) throw new DOMException('İptal', 'AbortError');

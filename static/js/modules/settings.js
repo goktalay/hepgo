@@ -1,6 +1,6 @@
 // Ayarlar (kullanıcı menüsü): kişisel tercihler. Sunucuda kullanıcıya bağlı saklanır (users.prefs.settings) ve her cihazda
 // aynı uygulanır. Bölümler: Arayüz, Bildirimler, Sesler, Gizlilik, Pano, Hesap. Değişiklik anında uygulanır ve kaydedilir.
-import { api } from '../api.js';
+import { api, getUploadCfg, setUploadCfg } from '../api.js';
 import { applySettings, deviceNotify, setDeviceNotify } from '../prefs.js';
 import { ANIMATIONS, showScreensaver } from '../screensaver.js';
 import { DEFAULTS, EVENTS, SOUND_NAMES, playSound } from '../sounds.js';
@@ -473,6 +473,18 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
             await api.put('/api/me/prefs/dashboard', { value: 'null' });
             toast('Pano varsayılana döndü');
           } }, 'Panoyu Varsayılana Döndür'))) },
+    { key: 'upload', title: 'Yükleme', desc: 'Paralel yükleme sayısı ve en yüksek yükleme hızı (bu cihaz)', icon: 'card',
+      body: () => {
+        // Cihaz-bazlı (localStorage; api.js). Dosya Yöneticisi ve büyük-dosya yüklemeleri bu VARSAYILANLARI kullanır.
+        const u = getUploadCfg();
+        const concSel = h('select', { class: 'input' }, [1, 2, 3, 4, 5, 6].map(n => h('option', { value: n, selected: u.concurrency === n }, String(n))));
+        concSel.addEventListener('change', () => { setUploadCfg({ concurrency: Number(concSel.value) }); toast('Yükleme ayarı kaydedildi'); });
+        const speed = h('input', { class: 'input', type: 'number', min: '0', step: '64', value: String(u.rateKBps), style: { maxWidth: '160px' } });
+        speed.addEventListener('change', () => { const v = Math.max(0, Number(speed.value) || 0); speed.value = String(v); setUploadCfg({ rateKBps: v }); toast(v ? t('Üst hız: {v} KB/sn', { v }) : 'Yükleme hızı sınırsız'); });
+        return card('Yükleme', 'Bu cihazdan yapılan dosya yüklemeleri için varsayılanlar. Aynı anda birden çok dosya paralel yüklenir; toplam hız sınırını tüm yüklemeler paylaşır.',
+          line('Paralel yükleme sayısı', 'Aynı anda en çok kaç dosya yüklensin (1–6)', concSel),
+          line('Maksimum yükleme hızı (KB/sn, 0 = sınırsız)', 'Tüm yüklemelerin toplam üst hızı', speed),
+          h('p', { class: 'small muted' }, 'Hızı sınırlamak, büyük bir toplu aktarımın tüm bağlantıyı doldurup fabrika cihazlarını (ör. saha ajanı) çevrimdışı bırakmasını önler. Yükleme penceresinden de aktarım sürerken değiştirebilirsiniz.')); } },
     { key: 'account', title: 'Hesap', desc: 'Kullanıcı bilgileri, şifre, PIN', icon: 'person',
       body: () => card('Hesap', null,
         h('div', { class: 'set-account' }, avatar(ctx.user, 'lg'), h('div', null, h('b', null, ctx.user.full_name), h('div', { class: 'small muted' }, ctx.user.username))),
@@ -486,8 +498,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   ]).filter(x => x.key !== 'mascot' || ctx.user.ai);   // Claude API anahtarı yoksa maskot ayarı da gizli
   // Mobilde iOS Ayarlar gibi: gruplanmış renkli ikonlu satır listesi; kategoriye dokununca alt-sayfa açılır.
   const COLORS = { ui: '#0a84ff', notifications: '#ff3b30', sounds: '#ff2d55', screensaver: '#5856d6', voice: '#34c759',
-    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', dashboard: '#30b0c7', account: '#007aff' };
-  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard']];
+    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', dashboard: '#30b0c7', upload: '#5ac8fa', account: '#007aff' };
+  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard', 'upload']];
   const used = new Set([...SECTIONS.flat(), 'account']);   // hesap, en üstte iPhone tarzı kart olarak gösterilir
   const rest = GROUPS.filter(gr => !used.has(gr.key)).map(gr => gr.key);
   const allSections = rest.length ? [...SECTIONS, rest] : SECTIONS;

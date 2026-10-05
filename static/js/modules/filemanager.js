@@ -1,7 +1,7 @@
 // Dosya Yöneticisi (Kişisel): Windows Gezgini benzeri klasör/dosya yönetimi + paylaşım.
 // Sol kenar çubuğu: "Paylaşılanlar" düğmesi + klasör ağacı. Sağ ana bölme: içerik ızgarası.
 // Yalnızca sahibi düzenler; paylaşılan öğeler yetkiye (Görüntüleme/Düzenleme) göre açılır.
-import { api, upload } from '../api.js';
+import { api, upload, uploadMany, throttleBytes, getUploadCfg, setUploadCfg } from '../api.js';
 import { icons } from '../icons.js';
 import { clear, confirmDialog, fmtDateTime, h, modal, onLeave, pageHead, segmented, svgIcon, toast, toastError } from '../ui.js';
 
@@ -231,20 +231,91 @@ export async function render(view, params, ctx) {
     });
   }
 
+  // Çoklu yükleme: dosyalar PARALEL yüklenir (eşzamanlılık = Yükleme ayarı). Genel hız sınırı tüm yüklemelerce paylaşılır;
+  // böylece toplu aktarım hattı tıkamaz. Panelde her dosyanın yüzdesi + genel ilerleme ve yükleme SIRASINDA değiştirilebilen
+  // canlı denetim (paralel sayısı + hız) bulunur. Tek dosya da aynı yoldan gider (davranış korunur).
   async function doUpload(files) {
+    const parent = curParent;   // panel açıkken klasör değişebilir; yükleme başlangıçtaki klasöre gider
     const total = files.length;
-    let done = 0;
-    for (const file of files) {
-      try {
-        const fd = new FormData();
-        fd.append('parent_id', curParent == null ? '' : String(curParent));
-        fd.append('file', file);
-        await upload('/api/fm/upload', fd);
-        done++;
-        toast(total > 1 ? `${file.name} yüklendi (${done}/${total})` : `${file.name} yüklendi`);
-      } catch (e) { toastError(e); }
-    }
-    if (mode === 'folder') await openFolder(curParent);
+    const ctrl = new AbortController();
+
+    // --- panel gövdesi
+    const cfg0 = getUploadCfg();
+    const concSel = h('select', { class: 'input fm-up-conc' },
+      [1, 2, 3, 4, 5, 6].map(n => h('option', { value: n, selected: cfg0.concurrency === n }, String(n))));
+    concSel.addEventListener('change', () => setUploadCfg({ concurrency: Number(concSel.value) }));
+    const speedInp = h('input', { class: 'input fm-up-speed', type: 'number', min: '0', step: '64',
+      value: String(cfg0.rateKBps), title: '0 = Sınırsız' });
+    const applySpeed = () => setUploadCfg({ rateKBps: Math.max(0, Number(speedInp.value) || 0) });
+    speedInp.addEventListener('change', applySpeed);
+    // Ayar başka yerden (ör. Ayarlar kartı) değişirse panel de güncellensin
+    const onCfg = e => { const c = e.detail || getUploadCfg(); concSel.value = String(c.concurrency); if (document.activeElement !== speedInp) speedInp.value = String(c.rateKBps); };
+    window.addEventListener('caymaz:upload-cfg', onCfg);
+
+    const overallBar = h('div', { class: 'fm-up-obar-in' });
+    const overallTxt = h('span', { class: 'fm-up-otxt' }, `0 / ${total}`);
+    const listBox = h('div', { class: 'fm-up-list' });
+    const rows = new Map();   // file -> { pct eleman, çubuk eleman, durum eleman }
+    files.forEach(file => {
+      const barIn = h('div', { class: 'fm-up-bar-in' });
+      const pct = h('span', { class: 'fm-up-pct' }, '0%');
+      const row = h('div', { class: 'fm-up-row' },
+        h('div', { class: 'fm-up-name', title: file.name }, file.name),
+        h('div', { class: 'fm-up-bar' }, barIn), pct);
+      rows.set(file, { barIn, pct, row });
+      listBox.append(row);
+    });
+    const setPct = (file, p) => { const r = rows.get(file); if (r) { r.barIn.style.width = `${p}%`; r.pct.textContent = `${p}%`; } };
+    const setState = (file, cls, label) => {
+      const r = rows.get(file); if (!r) return;
+      r.row.classList.add(cls);
+      r.pct.textContent = label;
+      if (cls === 'ok') r.barIn.style.width = '100%';
+    };
+
+    const body = h('div', { class: 'fm-up' },
+      h('div', { class: 'fm-up-ctl' },
+        h('label', { class: 'fm-up-ctl-f' }, h('span', null, 'Paralel yükleme'), concSel),
+        h('label', { class: 'fm-up-ctl-f' }, h('span', null, 'Hız (KB/sn, 0 = Sınırsız)'), speedInp)),
+      h('div', { class: 'hint fm-up-hint' }, 'Hızı sınırlayarak bağlantının dolup saha cihazlarının kopmasını önlersiniz. Değişiklikler yükleme sürerken anında geçerli olur.'),
+      h('div', { class: 'fm-up-overall' }, h('div', { class: 'fm-up-obar' }, overallBar), overallTxt),
+      listBox);
+
+    let done = 0, failed = 0;
+    const bump = () => { overallBar.style.width = `${Math.round((done + failed) * 100 / total)}%`; overallTxt.textContent = `${done + failed} / ${total}`; };
+
+    const m = modal({
+      title: total > 1 ? `${total} dosya yükleniyor` : 'Dosya yükleniyor', wide: true, body,
+      actions: ['spacer', { label: 'İptal', class: 'danger', onClick: () => { ctrl.abort(); return true; } }],
+      onClose: () => { ctrl.abort(); window.removeEventListener('caymaz:upload-cfg', onCfg); },
+    });
+
+    await uploadMany(files, async file => {
+      // FM yüklemeleri tek-XHR'dir (sunucuda parça parça uç yok): genel hız sınırı gönderim öncesi bütçe alarak kabaca
+      // uygulanır (bayt-başı gerçek sınırlama parça parça büyük-dosya yollarındadır: uploadLarge/uploadChunked).
+      await throttleBytes(file.size, ctrl.signal);
+      const fd = new FormData();
+      fd.append('parent_id', parent == null ? '' : String(parent));
+      fd.append('file', file);
+      return upload('/api/fm/upload', fd, p => setPct(file, p), { signal: ctrl.signal });
+    }, {
+      signal: ctrl.signal,
+      onItem: (file, i, err) => {
+        if (err) {
+          if (err.name === 'AbortError') { setState(file, 'canceled', 'İptal'); }
+          else { failed++; setState(file, 'err', 'Hata'); }
+        } else { done++; setState(file, 'ok', '✓'); }
+        bump();
+      },
+    });
+
+    window.removeEventListener('caymaz:upload-cfg', onCfg);
+    const wasAborted = ctrl.signal.aborted;   // m.close() → onClose → ctrl.abort(); durum kapatmadan ÖNCE okunmalı
+    m.close();
+    if (wasAborted) toast('Yükleme iptal edildi');
+    else if (failed) toast(`${done} yüklendi, ${failed} başarısız`, failed === total ? 'err' : undefined);
+    else toast(total > 1 ? `${total} dosya yüklendi` : `${files[0].name} yüklendi`, 'success');
+    if (mode === 'folder' && curParent === parent) await openFolder(parent);
   }
 
   function renameItem(it, kind) {

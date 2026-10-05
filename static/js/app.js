@@ -22,6 +22,7 @@ import * as admin from './modules/admin.js';
 import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
 import * as fleet from './modules/fleet.js';
+import * as notesMod from './modules/notes.js';
 import * as boss from './modules/boss.js';
 import * as projectsMod from './modules/projects.js';
 import * as members from './modules/members.js';
@@ -356,7 +357,7 @@ function appsLauncher() {
 // Kişisel alt modülleri (Takvim, Toplantılar, Mail, İzinlerim…): modül ızgarasıyla aynı görünümde ayrı düğme.
 // Düğmedeki sayı = alt modüllerdeki bekleyen işlerin toplamı (kullanıcı menüsündeki "Kişisel" sayısıyla aynı).
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
-  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet' };
+  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note' };
 const personalTileCounts = new Set();
 window.addEventListener('caymaz:chat-summary', () => { for (const fn of personalTileCounts) { try { fn(); } catch { /* */ } } });
 function personalLauncher() {
@@ -632,6 +633,7 @@ function renderShell() {
   radio.connect(ctx);   // telsiz: kanallardaki canlı konuşmalar her ekranda duyulur
   syncPush();          // arka plan bildirimi aboneliğini tazele (izin önceden verildiyse)
   mountMascot(ctx);     // köşedeki yapay zeka maskotu (anahtar tanımlıysa görünür)
+  notesMod.initNotePins(ctx);   // ekrana iğnelenen notlar her sayfada görünür
   membershipMod.initSupportDock?.(ctx);   // firma: aktif canlı destek sohbeti başka sayfadayken köşede görünür
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
   const menu = h('div', { class: 'dropdown', role: 'menu' },
@@ -918,6 +920,7 @@ const PERSONAL = [
   { key: 'leaves', route: 'my-leaves', title: 'İzinlerim', notify: 'leave-decided', render: () => hr.renderMyLeaves(view) },
   { key: 'docs', route: 'my-documents', title: 'Evraklarım', notify: 'docs-missing', render: () => hr.renderMyDocuments(view) },
   { key: 'vehicles', route: 'my-vehicles', title: 'Araç Zimmetim', notify: 'vehicle-assign-pending', render: () => fleet.renderMine(view) },
+  { key: 'notes', route: 'my-notes', title: 'Notlar', notify: null, render: () => notesMod.render(view, ctx) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

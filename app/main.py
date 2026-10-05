@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import agent_hub, auth, config, db, document_ocr, files, flight_analysis, integration_health, mail_cache, printer_driver, production, push, sync, sysstat
 from .routers import directory, feed, federation, screenshare, finance, central, membership, live as live_router, certs as certs_router, fleet as fleet_router, boss as boss_router, roles as roles_router, projects as projects_router, social as social_router, contacts as contacts_router, support as support_router
 from .routers import (admin, assistant, auth_routes, belge, cleaning, companies, console, crm, design, documents, hr, master, meet, mikro, radio, mrp, netscan, purchasing, sales, voice, planner, field, flightlogs, orders, printers, products,
-                      announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, ssh_hosts, system, users, warehouse)
+                      announcements, calls, cameras, chat, mail, meeting_room, meetings, production_errors, reports, secretariat, security, signatures, notes, ssh_hosts, system, users, warehouse)
 
 
 @asynccontextmanager
@@ -108,7 +108,7 @@ app.add_middleware(_WsOriginGuard)
 for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
-          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, console.ws_router, ssh_hosts.router, ssh_hosts.ws_router, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router, live_router.router, live_router.ws_router, certs_router.router, fleet_router.router, boss_router.router, roles_router.router, projects_router.router, social_router.router, contacts_router.router,
+          cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, design.router, console.ws_router, ssh_hosts.router, ssh_hosts.ws_router, notes.router, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router, live_router.router, live_router.ws_router, certs_router.router, fleet_router.router, boss_router.router, roles_router.router, projects_router.router, social_router.router, contacts_router.router,
           central.router, central.fed_router, support_router.router, support_router.fed, membership.router):
     app.include_router(r)
 

@@ -7190,3 +7190,40 @@ input[type="checkbox"].gm-cb:indeterminate::after { width: 10px; height: 0; bord
 .db-qd-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); }
 .db-qd-ic:hover { background: var(--primary-soft); }
 .db-qd-ic svg { width: 18px; height: 18px; }
+
+/* ===== Kişisel Notlar (yapışkan not) — modül, pano kutusu ve ekrana iğnelenen notlar ===== */
+.note-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+.note-card { --nc: #fff7b0; --ncb: #e9d94e; background: var(--nc); border: 1px solid var(--ncb); border-radius: 10px; padding: 8px 10px 10px;
+  box-shadow: 0 3px 10px rgba(0,0,0,.1); display: flex; flex-direction: column; min-height: 120px; color: #3a3410; transition: transform .12s, box-shadow .12s; }
+.note-card.yellow { --nc: #fff7b0; --ncb: #e9d94e; }
+.note-card.green  { --nc: #c9f7cf; --ncb: #7fd98c; color: #163f20; }
+.note-card.blue   { --nc: #cfe6ff; --ncb: #7fb6f0; color: #123055; }
+.note-card.pink   { --nc: #ffd6e7; --ncb: #f090b6; color: #5a1136; }
+.note-card.orange { --nc: #ffe0b8; --ncb: #f0b060; color: #5a3410; }
+.note-card.purple { --nc: #e6d6ff; --ncb: #b690f0; color: #361055; }
+.note-bar { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; opacity: .55; transition: opacity .12s; }
+.note-card:hover .note-bar { opacity: 1; }
+.note-bar button { border: 0; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px; color: inherit; }
+.note-bar button:hover { background: rgba(0,0,0,.08); }
+.note-del { font-size: 20px !important; }
+.note-color { width: 16px; height: 16px; border-radius: 50%; background: var(--ncb) !important; border: 1px solid rgba(0,0,0,.2) !important; padding: 0 !important; }
+.note-pin.on { filter: none; }
+.note-txt { flex: 1; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; outline: none; min-height: 48px; }
+.note-txt:empty::before { content: attr(data-ph); color: rgba(0,0,0,.35); }
+.note-colors { position: absolute; margin-top: 24px; display: flex; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px 9px; box-shadow: var(--shadow-lg); z-index: 5; }
+.note-sw { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); cursor: pointer; }
+.note-sw.yellow { background: #fff7b0; } .note-sw.green { background: #c9f7cf; } .note-sw.blue { background: #cfe6ff; }
+.note-sw.pink { background: #ffd6e7; } .note-sw.orange { background: #ffe0b8; } .note-sw.purple { background: #e6d6ff; }
+/* pano kutusu */
+.db-note-add { align-self: flex-start; border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 10px; cursor: pointer; margin-bottom: 8px; font: inherit; }
+.db-note-add:hover { border-color: var(--primary); color: var(--primary); }
+.db-note-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; align-content: start; }
+.db-note-grid .note-card { min-height: 90px; font-size: 13px; }
+.db-note-grid .note-card:hover { transform: scale(1.04); box-shadow: 0 8px 22px rgba(0,0,0,.18); z-index: 3; position: relative; }
+/* ekrana iğnelenen notlar (global) */
+.note-pins { position: fixed; inset: 0; pointer-events: none; z-index: 1200; }
+.note-pinned { position: fixed; width: 210px; max-height: 240px; overflow: auto; pointer-events: auto; box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.note-pinned.dragging { opacity: .9; }
+.note-drag { cursor: grab; touch-action: none; }
+.note-pinned.dragging .note-drag { cursor: grabbing; }
+.note-handle { opacity: .5; font-size: 14px; }

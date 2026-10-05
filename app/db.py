@@ -831,6 +831,21 @@ CREATE TABLE IF NOT EXISTS app_kv (
 );
 -- SSH erişim (yalnız sistem sahibi / MASTER): kayıtlı uzak sunucular (ör. fabrikadaki GX10). Parola / özel anahtar
 -- cameras.encrypt ile ŞİFRELİ saklanır, hiçbir yanıtta dönmez. Yalnız dışa doğru bağlantı (merkez sunucuda kabuk AÇMAZ).
+-- Kişisel notlar (yapışkan not): yalnız sahibi görür. pinned=1 ise ekrana iğnelenir (pin_x/pin_y oranı 0–1),
+-- hangi modüle gidilirse gidilsin ekranda kalır. color: sarı/yeşil/mavi/pembe vb.
+CREATE TABLE IF NOT EXISTS personal_notes (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body       TEXT NOT NULL DEFAULT '',
+    color      TEXT NOT NULL DEFAULT 'yellow',
+    pinned     INTEGER NOT NULL DEFAULT 0,
+    pin_x      REAL,
+    pin_y      REAL,
+    sort       INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notes_user ON personal_notes(user_id);
 CREATE TABLE IF NOT EXISTS ssh_hosts (
     id         INTEGER PRIMARY KEY,
     label      TEXT NOT NULL,

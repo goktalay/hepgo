@@ -7,6 +7,7 @@ import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
 import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toastError } from '../ui.js';
 import { LEVELS } from './announcements.js';
 import { renderFeed } from './feed.js';
+import { noteCard } from './notes.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const dbInitials = n => (n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toLocaleUpperCase('tr');
@@ -29,7 +30,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
@@ -280,6 +281,7 @@ export async function renderDashboard(view, ctx, modules) {
             h('span', { class: 'db-meet-main' }, h('b', null, mt.title || 'Toplantı'),
               h('small', null, [mt.host_name, mt.participants ? `${mt.participants} katılımcı` : null].filter(Boolean).join(' · '))),
             mt.status === 'DEVAM' ? h('span', { class: 'badge green' }, '● Devam ediyor') : h('span', { class: 'badge' }, 'Bekliyor'))))));
+      case 'notes': { dbNotes(body); return; }
       case 'quick_directory': {
         const ppl = it.o?.people || [];
         return clear(body, !ppl.length ? h('div', { class: 'db-none' }, h('span', null, 'Kişi ekleyin: '), h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙'))
@@ -388,6 +390,19 @@ export async function renderDashboard(view, ctx, modules) {
   }
 
   // Hava durumu (Open-Meteo, anahtar gerektirmez): anlık + 4 günlük
+  async function dbNotes(body) {
+    const addBtn = h('button', { class: 'db-note-add', type: 'button', title: 'Yeni not' }, '＋ Yeni not');
+    const grid = h('div', { class: 'db-note-grid' });
+    clear(body, addBtn, grid);
+    const load = async () => {
+      let notes = [];
+      try { notes = await api.get('/api/notes'); } catch { clear(grid, h('div', { class: 'db-none' }, 'Notlar yüklenemedi')); return; }
+      clear(grid, notes.length ? notes.map(n => noteCard(n, { onDelete: load, onChange: () => {} })) : h('div', { class: 'db-none' }, 'Not yok. “Yeni not” ekleyin.'));
+    };
+    addBtn.onclick = async () => { try { await api.post('/api/notes', { body: '', color: 'yellow' }); await load(); setTimeout(() => grid.querySelector('.note-txt')?.focus(), 30); } catch (e) { toastError(e); } };
+    await load();
+  }
+
   function worldClock(body, it) {
     const cities = it.o?.cities || [];
     if (!cities.length) return clear(body, h('div', { class: 'db-none' }, h('span', null, 'Şehir ekleyin: '),

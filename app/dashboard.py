@@ -164,6 +164,12 @@ def w_world_clock(conn, user):
     return {}   # şehirler istemcide (kutucuk ayarı): ad + zaman dilimi
 
 
+@widget('notes', 'Notlar', 'Yapışkan notlarınız; ekrana iğneleyebilirsiniz', size=1, group='Kişisel')
+def w_notes(conn, user):
+    rows = db.rows(conn.execute('SELECT id, body, color, pinned FROM personal_notes WHERE user_id = ? ORDER BY sort, id DESC LIMIT 40', (user['id'],)))
+    return {'count': len(rows)}
+
+
 @widget('quick_directory', 'Hızlı Rehber', 'Sık ulaştığınız kişiler; mesaj ve e-posta kısayolu', size=1, group='Kişisel')
 def w_quick_directory(conn, user):
     return {}   # kişiler istemcide (kutucuk ayarı)

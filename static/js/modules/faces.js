@@ -41,8 +41,10 @@ export async function renderFaces(body) {
     delBtn.disabled = selected.size < 1; delBtn.textContent = t('Seçilenleri Kaldır{n}', { n: selected.size ? ` (${selected.size})` : '' });
   };
 
+  const MIN_SIGHTINGS = 10;   // Tanımlanamayan gruplarda görülme sayısı bundan azsa gösterme (gürültü/tek-tük tespitler gizli)
   const draw = () => {
-    const list = rows.filter(g => matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
+    const list = rows.filter(g => (state !== 'unknown' || (g.sightings || 0) >= MIN_SIGHTINGS)
+      && matches(q.value, g.cameras, g.user_name, g.person_name, g.person_company, g.last_camera_name));
     list.sort((a, b) => { const ka = sortKey(a), kb = sortKey(b); return (ka < kb ? -1 : ka > kb ? 1 : 0) * dir; });
     info.textContent = state === 'unknown'
       ? t('{n} tanımlanamayan kişi grubu · aynı kişiye ait grupları seçip birleştirebilirsiniz', { n: list.length })

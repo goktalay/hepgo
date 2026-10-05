@@ -20,6 +20,39 @@ class NotFound(Exception):
     pass
 
 
+ENROLL_CAP = 8   # bir atamadan eğitime en çok bu kadar yüz aktarılır (eğitim verisini şişirmemek için)
+
+
+def _select_diverse(rows, cap=ENROLL_CAP, sim_max=0.95):
+    """Eğitime aktarılacak görülmeleri seçer: en yüksek skorlu + birbirine çok benzemeyen (çeşitli) en çok `cap` adet.
+    Neredeyse aynı kare (kosinüs > sim_max) atlanır; embedding/kırpığı eksik satırlar elenir."""
+    ranked = sorted(rows, key=lambda r: r.get('score') or 0, reverse=True)
+    picked, vecs = [], []
+    for r in ranked:
+        emb, crop = r.get('embedding'), r.get('crop')
+        if not emb or not crop:
+            continue
+        v = _norm(np.frombuffer(emb, dtype=np.float32).astype(np.float32))
+        if any(float(np.dot(v, p)) > sim_max for p in vecs):
+            continue
+        picked.append(r)
+        vecs.append(v)
+        if len(picked) >= cap:
+            break
+    return picked
+
+
+def _enroll_payload(rows):
+    """Atanan görülmelerin eğitim yükü: merkezin YENİDEN TESPİT olmadan enroll edebilmesi için
+    [{embedding: base64(128 float32 bayt), crop: dosya yolu, score}]. Embedding ajan sınırında base64 ile taşınır
+    (push_config / push ile aynı biçim)."""
+    out = []
+    for r in _select_diverse(rows):
+        out.append({'embedding': base64.b64encode(r['embedding']).decode(),
+                    'crop': r['crop'], 'score': r.get('score') or 0})
+    return out
+
+
 GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.family_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
        u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name, c.name AS last_camera_name,
        (SELECT COUNT(*) FROM face_sightings s WHERE s.group_id = g.id) AS sightings,
@@ -73,6 +106,8 @@ def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None):
         raise ValueError('Aile üyesi bulunamadı')
     if not conn.execute('SELECT 1 FROM face_groups WHERE id = ?', (gid,)).fetchone():
         raise NotFound('Yüz grubu bulunamadı')
+    # Atanan grubun görülmelerini eğitime aktarmak için — birleşmeden ÖNCE, yalnız bu grubun yüzleri (en iyi N / çeşitli)
+    enroll_rows = db.rows(conn.execute('SELECT crop, embedding, score FROM face_sightings WHERE group_id = ?', (gid,)))
     col, val = ('user_id', user_id) if user_id else ('person_id', person_id) if person_id else ('family_id', family_id)
     existing = conn.execute(f'SELECT id FROM face_groups WHERE {col} = ? AND id != ? ORDER BY samples DESC LIMIT 1', (val, gid)).fetchone()
     target = existing[0] if existing else gid
@@ -80,7 +115,7 @@ def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None):
         _merge(conn, target, [gid])
     conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, family_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
                  (person_id, user_id, family_id, by, db.now(), target))
-    return {'id': target}
+    return {'id': target, 'enroll_faces': _enroll_payload(enroll_rows)}
 
 
 def merge(conn, ids):

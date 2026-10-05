@@ -360,6 +360,12 @@ def assign(gid: int, body: AssignIn, user=Depends(cam_user), conn=db.DB):
     kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
     db.audit(conn, user['id'], 'Kamera yüz grubunu kişiye atadı', 'face_group', r.get('id', gid),
              f"{kind}={body.user_id or body.person_id or body.family_id}")
+    try:   # atanan yüzleri eğitime de ekle (en iyi çaba — atama yine başarılı sayılır)
+        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'])
+        if n:
+            db.audit(conn, user['id'], f'Atanan yüzler eğitime eklendi: {n}', 'face_enroll', r.get('id', gid), kind)
+    except Exception:   # noqa: BLE001
+        pass
     return r
 
 
@@ -409,6 +415,12 @@ def assign_sightings(body: SightingAssignIn, user=Depends(cam_user), conn=db.DB)
     kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
     db.audit(conn, user['id'], 'Kamera yüz görülmelerini kişiye atadı', 'face_group', r.get('id'),
              f"{kind}={body.user_id or body.person_id or body.family_id} · {len(body.ids)} görülme")
+    try:   # atanan görülmeleri eğitime de ekle (en iyi çaba — atama yine başarılı sayılır)
+        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'])
+        if n:
+            db.audit(conn, user['id'], f'Atanan yüzler eğitime eklendi: {n}', 'face_enroll', r.get('id'), kind)
+    except Exception:   # noqa: BLE001
+        pass
     return r
 
 
@@ -505,3 +517,32 @@ def _push_enroll(conn):
         facebridge.push(conn)
     except Exception:   # noqa: BLE001
         pass
+
+
+def _enroll_assigned(conn, r, subject_type, user_id, person_id, family_id, by):
+    """Atama sonucunda gelen `enroll_faces` yükünü (facecore'dan) YENİDEN TESPİT olmadan eğitim verisine ekler:
+    her yüz için kırpık görüntüsü getirilir (dağıtık: facebridge.media; yerel: UPLOAD_DIR'den okunur) ve
+    faceenroll.enroll_precomputed ile kaydedilir (dedupe'lu). Eklenen yüz varsa eğitim izleri fabrika servisine
+    aktarılır (_push_enroll). En iyi çaba: atama başarılı olduktan sonra çalışır, hata atmaz. Eklenen yüz sayısını döner."""
+    import base64
+    from .. import facebridge, faceenroll
+    faces = (r or {}).get('enroll_faces') or []
+    added = 0
+    for f in faces:
+        try:
+            crop_path, emb_b64 = f.get('crop'), f.get('embedding')
+            if not crop_path or not emb_b64:
+                continue
+            if facebridge.remote():
+                crop_bytes, _ = facebridge.media(crop_path)
+            else:
+                crop_bytes = (config.UPLOAD_DIR / crop_path).read_bytes()
+            if faceenroll.enroll_precomputed(conn, subject_type, user_id, person_id, family_id,
+                                             crop_bytes, base64.b64decode(emb_b64), by):
+                added += 1
+        except Exception:   # noqa: BLE001
+            continue
+    if added:
+        conn.commit()
+        _push_enroll(conn)   # yeni eğitim izleri gerçek zamanlı tanımaya ulaşsın
+    return added

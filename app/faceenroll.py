@@ -47,6 +47,34 @@ def enroll(conn, subject_type, user_id, person_id, image_path, created_by, famil
     return True, {'id': cur.lastrowid, 'crop': f'faces_enroll/{name}'}
 
 
+def enroll_precomputed(conn, subject_type, user_id, person_id, family_id, crop_bytes, embedding_bytes, created_by):
+    """Kameradan ATANAN bir yüzü YENİDEN TESPİT ETMEDEN eğitim izine ekler: görülmenin mevcut kırpığı (crop_bytes) ve
+    embedding'i (128 float32 bayt) olduğu gibi kullanılır. Böylece atanan yüzler hem 'eğitim verisi' görünümünde çıkar
+    hem de gerçek zamanlı tanımaya beslenir (push ile fabrika servisine). DEDUPE: aynı kişinin mevcut eğitim izlerinden
+    birine kosinüs benzerliği > 0.92 ise (yakın kopya) eklemez. Eklenen kaydın id'sini, kopyaysa None döner."""
+    import uuid
+
+    import numpy as np
+    st, uid, pid, fid = _subject(subject_type, user_id, person_id, family_id)
+    emb = np.frombuffer(embedding_bytes, dtype=np.float32)
+    if emb.size != 128:
+        raise ValueError('Geçersiz yüz izi (128 boyutlu embedding bekleniyor)')
+    nv = document_media._norm(emb)
+    col, val = _COL[st], (uid or pid or fid)
+    # DEDUPE: aynı kişinin eğitim izlerinden birine çok benziyorsa atla (yakın kopya kırpıkla eğitimi şişirme)
+    for row in conn.execute(f'SELECT embedding FROM face_enroll WHERE subject_type = ? AND {col} = ?', (st, val)):
+        ev = np.frombuffer(row[0], dtype=np.float32)
+        if ev.size == 128 and float(np.dot(nv, document_media._norm(ev))) > 0.92:
+            return None
+    ENROLL_DIR.mkdir(parents=True, exist_ok=True)
+    name = f'{st}_{val}_{db.now().replace(":", "").replace("-", "").replace(" ", "_")[:15]}_{uuid.uuid4().hex[:8]}.jpg'
+    (ENROLL_DIR / name).write_bytes(crop_bytes)
+    cur = conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, crop, embedding, created_by, created_at)
+                          VALUES (?,?,?,?,?,?,?,?)''',
+                       (st, uid, pid, fid, f'faces_enroll/{name}', emb.astype('float32').tobytes(), created_by, db.now()))
+    return cur.lastrowid
+
+
 def list_for(conn, subject_type, user_id=None, person_id=None, family_id=None):
     st, uid, pid, fid = _subject(subject_type, user_id, person_id, family_id)
     col, val = _COL[st], (uid or pid or fid)

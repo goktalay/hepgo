@@ -541,6 +541,18 @@ function docsCountdown() {
   return el;
 }
 
+// Bildirim satır(lar)ı: ad "kimden\nkonu" içeriyorsa iki satır (üstte kimden, altında konu); her satır taşarsa … ile kesilir
+function notifNames(n) {
+  const wrap = h('div', { class: 'ntf-names' });
+  for (const name of n.names) {
+    const nl = name.indexOf('\n');
+    if (nl >= 0) wrap.append(h('div', { class: 'ntf-item' },
+      h('div', { class: 'ntf-from' }, name.slice(0, nl)), h('div', { class: 'ntf-sub' }, name.slice(nl + 1))));
+    else wrap.append(h('div', { class: 'ntf-line' }, name));
+  }
+  if (n.count > n.names.length) wrap.append(h('div', { class: 'ntf-line muted' }, '…'));
+  return wrap;
+}
 function inboxButton() {
   const count = h('span', { class: 'alert-count', hidden: true });
   const btn = h('button', { class: 'icon-btn notify-btn alert-btn inbox-btn', title: 'Bildirimler ve uyarılar', 'aria-label': 'Bildirimler ve uyarılar', 'aria-haspopup': 'menu' },
@@ -568,9 +580,9 @@ function inboxButton() {
       nt.items.length ? [alerts.length ? sec('Bildirimler', nt.total, 'info') : null,
         ...nt.items.map(n => h('a', { class: `alert-item ${n.critical ? 'danger critical' : 'info'}`, href: n.href, onclick: close },
           h('span', { class: 'n' }, n.count),
-          h('div', null, h('b', null, n.title),
+          h('div', { class: 'grow', style: { minWidth: '0' } }, h('b', null, n.title),
             n.detail ? h('div', { class: 'small', style: { color: 'var(--primary)', fontWeight: 600 } }, n.detail) : null,
-            h('div', { class: 'small muted' }, n.names.join(', ') + (n.count > n.names.length ? '…' : '')))))] : null,
+            notifNames(n))))] : null,
       !alerts.length && !nt.items.length ? h('div', { class: 'empty small' }, 'Uyarı ya da bildiriminiz yok') : null);
   };
   const loadAlerts = async () => {

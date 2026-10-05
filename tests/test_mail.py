@@ -213,8 +213,10 @@ def main():
         assert ok(u.get(f"/api/mail/{p['id']}/list?folder=inbox"))['items'][0]['snippet'].startswith('Merhaba'), 'POP3 önizleme'
         # Bildirim: okunmamış e-postalar gönderen + konu + içerik özetiyle; okundu işaretlenmez
         nt = next(x for x in ok(u.get('/api/notifications'))['items'] if x['key'] == 'mail-unread')
-        assert nt['count'] >= 2 and any('Teklif — Merhaba 1' in x for x in nt['names']), nt
-        assert nt['push']['title'].startswith('✉️') and nt['push']['body'], nt
+        # Bildirimde YALNIZ gönderen + konu ('gönderen\nkonu'); mail içeriği (Merhaba …) GÖSTERİLMEZ
+        assert nt['count'] >= 2 and any(x.endswith('\nTeklif') for x in nt['names']), nt
+        assert all('Merhaba' not in x for x in nt['names']), ('içerik sızmamalı', nt['names'])
+        assert nt['push']['title'].startswith('✉️') and nt['push']['body'] and 'Merhaba' not in nt['push']['body'], nt
         assert SEEN not in FakeIMAP.servers['imap.gmail.com']['INBOX'][1]['flags'], 'önizleme okundu işaretlememeli'
         # Kişi → firma: gönderen bir firmaya personel olarak atanır; sonraki listede / okumada firma adı görünür
         from app import db as _db

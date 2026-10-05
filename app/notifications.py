@@ -257,22 +257,22 @@ def meeting_soon(conn, user):
 
 
 def mail_unread(conn, user):
-    """Bağlı mail hesaplarının gelen kutularındaki okunmamış e-postalar: gönderen, konu ve içerikten kısa özet."""
+    """Bağlı mail hesaplarının gelen kutularındaki okunmamış e-postalar. Bildirimde YALNIZ gönderen + konu gösterilir
+    (mail içeriği / önizleme gösterilmez). names: 'gönderen\\nkonu' (arayüz iki satır: üstte kimden, altında konu)."""
     from .routers.mail import unread_preview
     n, items = unread_preview(conn, user)
     rows = [{'id': i} for i in range(n)]
     if not n:
         return _result(rows, [], '#/mail')
-    who = lambda x: (x['from'].get('name') or x['from'].get('email') or '').strip()[:80]   # gönderen belirler → sınırlı (push en çok ~4 KB)
-    names = [f"{who(x)}: {x['subject'][:200]}" + (f" — {x['snippet'][:100]}" if x.get('snippet') else '') for x in items]
+    who = lambda x: (x['from'].get('name') or x['from'].get('email') or '').strip()[:80]
+    names = [f"{who(x)}\n{x['subject'][:200]}" for x in items]   # gönderen + konu; içerik YOK
     if n > len(items):
         names.append(f'+{n - len(items)} okunmamış e-posta daha')
     href = f"#/mail/{items[0]['box_id']}/m/{items[0]['uid']}" if n == 1 and items else '#/mail'
     push = None
     if items:
         x = items[0]
-        push = {'title': f"✉️ {who(x)}" + (f' (+{n - 1})' if n > 1 else ''),
-                'body': x['subject'][:200] + (f"\n{x['snippet'][:160]}" if x.get('snippet') else '')}
+        push = {'title': f"✉️ {who(x)}" + (f' (+{n - 1})' if n > 1 else ''), 'body': x['subject'][:200]}   # içerik YOK
     return _result(rows, names or [f'{n} okunmamış e-posta'], href, 'Okumak için açın', push=push)
 
 

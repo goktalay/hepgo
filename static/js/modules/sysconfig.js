@@ -694,7 +694,7 @@ const INTEG_LOGO = {
     <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
     <path d="M21 25V15h22v10"/><rect x="14" y="25" width="36" height="17" rx="2.5"/><path d="M21 42v7h22v-7"/><path d="M24 36h16"/></g>
     <circle cx="43" cy="30.5" r="2" fill="#22c55e"/></svg>`),
-  face: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Yüz Tanıma"><rect width="64" height="64" rx="16" fill="#6d28d9"/>
+  face: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Görüntü İşleme"><rect width="64" height="64" rx="16" fill="#6d28d9"/>
     <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
     <path d="M18 25v-4a3 3 0 0 1 3-3h4M46 25v-4a3 3 0 0 0-3-3h-4M18 39v4a3 3 0 0 0 3 3h4M46 39v4a3 3 0 0 0-3 3h-4"/>
     <path d="M28 40c2.4 1.6 5.6 1.6 8 0M32 29v5"/></g>
@@ -702,6 +702,18 @@ const INTEG_LOGO = {
   general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
 };
 const INTEG_INFO = {
+  face: { short: 'Görüntü İşleme', tag: 'Yüz Tanıma + İSG/KKD',
+    lead: 'Fabrika kamerası görüntülerine çoklu görüntü-işleme uygular. Şu an iki özellik: (1) Yüz Tanıma — kişileri tanıyıp görülme/hareket üretir; (2) İSG/KKD — kask, eldiven gibi zorunlu koruyucuları gerçekten takıyor mu denetler, eksikse alarm üretir. Fabrikadaki ekran kartıyla (GPU) çalışır.',
+    sections: [
+      ['Ne işe yarar?', ['Yüz Tanıma: kameradaki kişileri eğitilmiş yüzlerle eşleştirir (personel/kişi/aile/ziyaretçi).',
+        'İSG/KKD: her personel için belirlenen zorunlu koruyucu donanımı (kask/eldiven…) kamera üzerinden denetler.',
+        'Zorunlu KKD eksikse ilgili kişiye bağlı İSG alarmı üretilir ve yetkililere bildirilir.']],
+      ['Kurulum', ['İndirip fabrika makinesine kurun; üretilen API anahtarıyla merkeze bağlanır.',
+        'Yüz tanıma GPU ile çok daha hızlıdır (NVIDIA önerilir).',
+        'İSG/KKD denetimi için fabrika makinesine KKD tespit modeli (ONNX) yüklenir; model yoksa yalnız Yüz Tanıma çalışır.']],
+      ['Bilinmesi gerekenler', ['Kamera/NVR entegrasyonu ile birlikte kullanılır.', 'Kişi başına zorunlu KKD ayarı İnsan Kaynakları › personel detayı › İSG sekmesindedir.',
+        'Biyometrik veri ve video fabrikada yerelde kalır (KVKK).']],
+    ] },
   ai: { short: 'Claude', tag: 'Yapay zeka asistanı',
     lead: 'Anthropic’in Claude modeli, sistemdeki maskot asistan “Kubbe”yi çalıştırır: kullanıcıların sorularını yetkileri dahilindeki verilerle yanıtlar, kayıt değişikliklerini yönetici onayına gönderir.',
     sections: [

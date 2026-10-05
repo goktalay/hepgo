@@ -100,7 +100,7 @@ INTEGRATIONS = {
         ],
     },
     'face': {
-        'name': 'Yüz Tanıma',
+        'name': 'Görüntü İşleme (Yüz Tanıma + İSG)',
         'op_prefixes': ['face'],
         'pip': [_FASTAPI, 'opencv-python-headless>=4.8', 'onnxruntime', 'numpy>=1.26'],
         'hw_note': 'ASGARİ DONANIM: yüz tanıma çıkarımı CPU-yoğundur. En az 4 çekirdek CPU + 8 GB RAM '

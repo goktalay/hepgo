@@ -846,7 +846,29 @@ def _isg(conn, e):
     out['deputy_name'] = (conn.execute("SELECT first_name || ' ' || last_name FROM employees WHERE id = ?", (e['deputy_id'],)).fetchone() or [None])[0] if e.get('deputy_id') else None
     for kind, (table, cols) in ISG_LISTS.items():
         out[kind] = db.rows(conn.execute(f'SELECT id, {", ".join(cols)} FROM {table} WHERE employee_id = ? ORDER BY sort, id', (e['id'],)))
+    try:
+        out['ppe_required'] = json.loads(e.get('ppe_required') or '[]')   # kamerayla denetlenecek zorunlu KKD
+    except (ValueError, TypeError):
+        out['ppe_required'] = []
     return out
+
+
+# Kamerayla (Görüntü İşleme/İSG) denetlenebilen zorunlu KKD kalemleri. Anahtarlar sabit; etiketler arayüzde.
+PPE_ITEMS = ('kask', 'eldiven', 'gozluk', 'yelek', 'maske', 'kulaklik', 'ayakkabi', 'tulum')
+
+
+class PpeRequiredIn(BaseModel):
+    items: Optional[list] = None
+
+
+@router.put('/employees/{eid}/ppe-required')
+def update_ppe_required(eid: int, body: PpeRequiredIn, user=Depends(hr_user), conn=db.DB):
+    """Bu personel için kamerayla denetlenecek zorunlu KKD listesi (kask/eldiven…). Görüntü İşleme/İSG kullanır."""
+    _get(conn, eid)
+    items = [x for x in dict.fromkeys(body.items or []) if x in PPE_ITEMS]
+    conn.execute('UPDATE employees SET ppe_required = ? WHERE id = ?', (json.dumps(items), eid))
+    event(conn, eid, user['id'], 'Zorunlu KKD (kamera denetimi) güncellendi', ', '.join(items) or '—')
+    return {'ppe_required': items}
 
 
 class IsgIn(BaseModel):

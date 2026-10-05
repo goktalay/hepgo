@@ -186,8 +186,9 @@ DOWNLOADABLE = {'mikro': 'mikro', 'pdks': 'pdks', 'nvr': 'camera', 'printer': 'p
 AGENT_ONLY = {
     'printer': {'title': 'Yazıcılar',
                 'desc': 'Fabrikadaki ağ / USB yazıcılarına fabrika ajanı üzerinden erişim; etiket ve belge çıktısı.'},
-    'face': {'title': 'Yüz Tanıma',
-             'desc': 'Kamera görüntülerinde yüz tanıma; fabrikadaki ekran kartıyla (GPU) çalışır. Kamera / NVR ile birlikte kullanılır.'},
+    'face': {'title': 'Görüntü İşleme',
+             'desc': 'Kamera görüntülerine çoklu görüntü-işleme: Yüz Tanıma + İSG/KKD denetimi (kask, eldiven). '
+                     'Fabrikadaki ekran kartıyla (GPU) çalışır; Kamera / NVR ile birlikte kullanılır.'},
 }
 # Katalogda görünen tüm entegrasyon anahtarları (firma kimliği olan 'general' katalogda yer almaz).
 CATALOG_KEYS = [k for k in GROUPS if k != 'general'] + list(AGENT_ONLY)

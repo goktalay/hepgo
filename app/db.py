@@ -2558,6 +2558,14 @@ def _migrate(conn):
         CREATE TABLE IF NOT EXISTS employee_hazards (
             id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
             hazard TEXT NOT NULL, control TEXT, sort INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+        -- İSG/KKD kamera denetimi alarmları (Görüntü İşleme entegrasyonu): zorunlu KKD eksik yakalandığında.
+        -- FK yok: dağıtık kurulumda fabrika (gx10) yerel DB'sinde de üretilir; isimler bulutta çözülür.
+        CREATE TABLE IF NOT EXISTS isg_alarms (
+            id INTEGER PRIMARY KEY, camera_id INTEGER, camera_name TEXT,
+            subject_type TEXT, user_id INTEGER, person_id INTEGER, family_id INTEGER, visitor_id INTEGER,
+            missing TEXT, at TEXT NOT NULL, crop TEXT, frame TEXT,
+            acknowledged_by INTEGER, acknowledged_at TEXT, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_isg_alarms_at ON isg_alarms(at);
     ''')
     dcols = {r[1] for r in conn.execute('PRAGMA table_info(employee_duties)')}
     for col in ('section', 'role', 'phase'):   # görev tanımı bölümü (AMAC / POZISYON / ROL / YETKI / DIGER), rol ve aşama
@@ -2597,6 +2605,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE employees ADD COLUMN application_info TEXT')
     if 'nationality' not in emp_cols:
         conn.execute('ALTER TABLE employees ADD COLUMN nationality TEXT')
+    if 'ppe_required' not in emp_cols:   # kamerayla denetlenecek zorunlu KKD (JSON dizi: ['kask','eldiven',...])
+        conn.execute('ALTER TABLE employees ADD COLUMN ppe_required TEXT')
     ef_cols = {r[1] for r in conn.execute('PRAGMA table_info(employee_files)')}
     if 'approved' not in ef_cols:   # personelin kendi yüklediği özlük evrakı İK onayında bekler (mevcutlar onaylı sayılır)
         conn.execute('ALTER TABLE employee_files ADD COLUMN approved INTEGER NOT NULL DEFAULT 1')

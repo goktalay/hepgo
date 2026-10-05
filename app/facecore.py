@@ -426,11 +426,40 @@ def recognize_frame(conn, args):
     return {'w': w, 'h': h, 'faces': out}
 
 
+def isg_alarms(conn, limit=200, since=None):
+    """İSG/KKD alarmları (Görüntü İşleme). Dağıtık kurulumda fabrika yerel DB'sinde üretilir; isimler bulutta çözülür."""
+    q = ('SELECT id, camera_id, camera_name, subject_type, user_id, person_id, family_id, visitor_id, '
+         'missing, at, crop, frame, acknowledged_by, acknowledged_at FROM isg_alarms')
+    args = []
+    if since:
+        q += ' WHERE at >= ?'
+        args.append(since)
+    q += ' ORDER BY id DESC LIMIT ?'
+    args.append(int(limit or 200))
+    rows = db.rows(conn.execute(q, args))
+    for r in rows:
+        try:
+            r['missing'] = json.loads(r['missing'] or '[]')
+        except Exception:   # noqa: BLE001
+            r['missing'] = []
+    return rows
+
+
+def isg_ack(conn, aid, by=None):
+    """Alarmı 'görüldü' işaretler."""
+    conn.execute('UPDATE isg_alarms SET acknowledged_by = ?, acknowledged_at = ? WHERE id = ?', (by, db.now(), aid))
+    return {'ok': True}
+
+
 def rpc(conn, method, args):
     """face.rpc dağıtıcısı: bulutun istediği yüz işlemini yerel bağlantıyla çalıştırır."""
     a = args or {}
     if method == 'recognize_frame':
         return recognize_frame(conn, a)
+    if method == 'isg_alarms':
+        return isg_alarms(conn, a.get('limit', 200), a.get('since'))
+    if method == 'isg_ack':
+        return isg_ack(conn, a['aid'], a.get('by'))
     if method == 'groups':
         return groups(conn, a.get('state', 'unknown'))
     if method == 'group':

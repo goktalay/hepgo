@@ -30,7 +30,7 @@ INTEGRATIONS = {
     'printer': {'title': 'Yazıcılar'},
     'camera':  {'title': 'Kameralar / NVR'},
     'face': {
-        'title': 'Yüz Tanıma',
+        'title': 'Görüntü İşleme',
         'min_req': 'En az gereksinimler: NVIDIA ekran kartı (önerilir) · en az 8 çekirdekli işlemci (CPU) · '
                    '16 GB RAM · ~5 GB boş disk. Yüz tanıma yoğun kaynak kullanan bir üründür; ekran kartı '
                    'olmayan makinelerde çalışır ancak başarım düşer. Fabrika makinesi bu değerleri karşılamalıdır.',

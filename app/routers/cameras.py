@@ -364,6 +364,18 @@ def recognize_frame(body: FrameIn, user=Depends(cam_user), conn=db.DB):
     return res
 
 
+@faces_router.get('/isg-alarms')
+def isg_alarms(limit: int = 200, user=Depends(cam_user), conn=db.DB):
+    """İSG/KKD alarm listesi (Görüntü İşleme). Zorunlu KKD eksik yakalanınca üretilir; isimler bulutta çözülür."""
+    return _resolve_names(conn, _face(conn, 'isg_alarms', limit=limit))
+
+
+@faces_router.post('/isg-alarms/{aid}/ack')
+def isg_ack(aid: int, user=Depends(cam_user), conn=db.DB):
+    """Alarmı 'görüldü' işaretler."""
+    return _face(conn, 'isg_ack', aid=aid, by=user['id'])
+
+
 @faces_router.get('/groups')
 def groups(state: str = 'unknown', user=Depends(cam_user), conn=db.DB):
     return _resolve_names(conn, _face(conn, 'groups', state=state))

@@ -505,7 +505,8 @@ async function renderDetail(view, id, ctx) {
     if (key === 'addresses') return addressesTab(e, m);
     if (key === 'family') return familyTab(e, m, ctx);
     if (key === 'duties') return dutiesTab(e, m);
-    if (key === 'ppe' || key === 'trainings' || key === 'hazards') return isgListTab(e, key);
+    if (key === 'ppe') return ppeTab(e);
+    if (key === 'trainings' || key === 'hazards') return isgListTab(e, key);
     if (key === 'files') return filesTab(e, m.personnel_files, 'Özlük Dosyaları');
     if (key === 'contracts') return filesTab(e, m.contracts, 'Sözleşmeler');
     if (key === 'application') return applicationTab(e);
@@ -760,6 +761,39 @@ const ISG_TABS = {
   hazards: { title: 'Göreve Özgü Tehlikeler ve Kontrol Tedbirleri', hint: 'Kişinin görevinde karşılaşabileceği tehlikeler ve uygulanacak kontrol tedbirleri.',
     cols: [['hazard', 'Tehlike'], ['control', 'Uygulanacak kontrol tedbiri', 'long']] },
 };
+// Kamerayla (Görüntü İşleme / İSG) denetlenecek zorunlu KKD. Anahtarlar backend PPE_ITEMS ile birebir.
+const PPE_LABELS = [
+  ['kask', '⛑️ Kask (baret)'], ['eldiven', '🧤 Eldiven'], ['gozluk', '🥽 Koruyucu gözlük'],
+  ['yelek', '🦺 Reflektörlü yelek'], ['maske', '😷 Maske'], ['kulaklik', '🎧 Kulak koruyucu'],
+  ['ayakkabi', '🥾 Çelik burun ayakkabı'], ['tulum', '🧥 İş tulumu / önlük'],
+];
+// KKD sekmesi = kamera denetim ayarı (zorunlu KKD) + mevcut KKD zimmet listesi.
+function ppeTab(e) {
+  return h('div', null, ppeRequiredCard(e), isgListTab(e, 'ppe'));
+}
+function ppeRequiredCard(e) {
+  const cur = new Set(e.isg?.ppe_required || []);
+  const boxes = PPE_LABELS.map(([k, lbl]) => {
+    const cb = h('input', { type: 'checkbox' }); cb.checked = cur.has(k); cb.dataset.k = k;
+    return h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', border: '1px solid var(--line,#e5e7eb)', borderRadius: '9px', cursor: 'pointer' } }, cb, h('span', null, lbl));
+  });
+  const save = h('button', { class: 'btn primary sm' }, 'Kaydet');
+  save.addEventListener('click', async () => {
+    const items = boxes.map(l => l.querySelector('input')).filter(c => c.checked).map(c => c.dataset.k);
+    save.disabled = true;
+    try {
+      const r = await api.put(`/api/hr/employees/${e.id}/ppe-required`, { items });
+      e.isg.ppe_required = r.ppe_required || items;
+      toast('Zorunlu KKD (kamera denetimi) kaydedildi', 'success');
+    } catch (err) { toastError(err); } finally { save.disabled = false; }
+  });
+  return h('div', { class: 'card card-pad', style: { marginBottom: '12px' } },
+    h('div', { class: 'tv-bar' }, h('b', null, 'Kamerayla denetlenecek zorunlu KKD'),
+      h('span', { class: 'small muted' }, 'Görüntü İşleme (İSG) bu kişiyi kamerada tanıdığında seçili donanımları takıp takmadığını denetler; eksikse alarm üretir.')),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '8px', marginTop: '8px' } }, boxes),
+    h('div', { style: { marginTop: '10px', textAlign: 'right' } }, save));
+}
+
 function isgListTab(e, kind) {
   const cfg = ISG_TABS[kind];
   const box = h('div', { class: 'card card-pad' });

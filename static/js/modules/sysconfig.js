@@ -294,6 +294,68 @@ function integHealthCard(grp, reload) {
       h('small', { class: 'hint' }, 'Bağlantı bu aralıkla denenir; ulaşılamazsa “Çevrimdışı” görünür ve sistem yöneticisine bildirim düşer.')));
 }
 
+// Firma Kimliği (yalnızca MASTER): ünvan (kısa + resmî) ve logo. Ünvanlar Entegrasyonlar'ın 'general' grubunda
+// saklanır (COMPANY_NAME / COMPANY_LEGAL_NAME); logo tenant'a özel UPLOAD_DIR'e yüklenir (/api/system/brand/logo).
+function identityBody(view, ctx) {
+  const wrap = h('div', { class: 'sc-identity' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+
+  const draw = (shortV, legalV) => {
+    const shortInp = h('input', { class: 'input', type: 'text', spellcheck: 'false', value: shortV || '', placeholder: 'ör. GÖKKUBBE Teknoloji' });
+    const legalInp = h('input', { class: 'input', type: 'text', spellcheck: 'false', value: legalV || '', placeholder: 'ör. GÖKKUBBE TEKNOLOJİ ANONİM ŞİRKETİ' });
+    const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      try {
+        await api.put('/api/system/integrations/general', { values: { COMPANY_NAME: shortInp.value.trim(), COMPANY_LEGAL_NAME: legalInp.value.trim() } });
+        toast('Firma ünvanı kaydedildi · anında geçerli', 'success');
+      } catch (err) { toastError(err); } finally { saveBtn.disabled = false; }
+    });
+
+    const preview = h('img', { class: 'sc-logo-preview', alt: 'Logo', src: ctx.meta?.logo_url || '/static/img/logo.png' });
+    const fileInp = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/svg+xml,image/gif', hidden: true });
+    fileInp.addEventListener('change', async () => {
+      const file = fileInp.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const r = await api.post('/api/system/brand/logo', fd);
+        if (r?.logo_url && ctx.meta) ctx.meta.logo_url = r.logo_url;
+        preview.src = r?.logo_url || preview.src;
+        toast('Logo yüklendi · anında geçerli (yeniden giriş sonrası her yerde görünür)', 'success');
+      } catch (err) { toastError(err); } finally { fileInp.value = ''; }
+    });
+    const upBtn = h('button', { class: 'btn', type: 'button', onclick: () => fileInp.click() }, 'Logo Yükle');
+    const rmBtn = h('button', { class: 'btn', type: 'button', onclick: async () => {
+      try { await api.del('/api/system/brand/logo'); if (ctx.meta) ctx.meta.logo_url = null; preview.src = '/static/img/logo.png'; toast('Logo kaldırıldı · varsayılana dönüldü'); }
+      catch (err) { toastError(err); }
+    } }, 'Varsayılana Döndür');
+
+    clear(wrap,
+      h('section', { class: 'card card-pad set-card' },
+        h('h3', null, 'Firma Ünvanı'),
+        h('p', { class: 'small muted' }, 'Kısa ad başlıklarda ve asistanda; resmî ünvan personel kimlik kartlarında kullanılır. Değişiklik anında geçerli olur.'),
+        h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, 'Ünvan (başlıklarda)'), shortInp),
+        h('label', { class: 'sc-field' }, h('span', { class: 'sc-f-label' }, 'Resmî ünvan (kartlarda)'), legalInp),
+        h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }), saveBtn)),
+      h('section', { class: 'card card-pad set-card' },
+        h('h3', null, 'Logo'),
+        h('p', { class: 'small muted' }, 'Başlık, giriş ekranı ve kimlik kartında görünür. PNG, JPG, WEBP, SVG veya GIF.'),
+        h('div', { class: 'sc-logo-row' }, preview, fileInp, upBtn, rmBtn)));
+  };
+
+  (async () => {
+    try {
+      const d = await api.get('/api/system/integrations');
+      const g = d.groups.find(x => x.key === 'general');
+      const val = k => (g && g.fields.find(f => f.key === k)?.value) || '';
+      draw(val('COMPANY_NAME'), val('COMPANY_LEGAL_NAME'));
+    } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); }
+  })();
+
+  return wrap;
+}
+
 function integrationsBody(view, ctx) {
   const wrap = h('div', { class: 'sc-integ-list' }, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   const card = grp => {
@@ -1087,14 +1149,15 @@ const GROUPS = [
   { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },
   { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
   { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
+  { key: 'identity', title: 'Firma Kimliği', desc: 'Ünvan ve logo', icon: 'building', body: identityBody, master: true },
   // Modül olarak var; Program Ayarları altından açılır (link). Veri & Yedek yalnızca sistem sahibi (MASTER).
   { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar ve rol atamaları', icon: 'users', link: '#/users' },
   { key: 'roles', title: 'Rol Yönetimi', desc: 'Roller, modül yetkileri (aç / oku / yaz), miras ve çakışmalar', icon: 'lock', body: rolesBody },
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
 ];
 
-const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', users: '#ff3b30', master: '#af52de' };
-const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations'], ['users', 'roles', 'master']];
+const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', users: '#ff3b30', master: '#af52de' };
+const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations', 'identity'], ['users', 'roles', 'master']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {

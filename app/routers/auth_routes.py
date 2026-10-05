@@ -356,12 +356,14 @@ def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.D
 
 
 @router.get('/meta')
-def meta(request: Request):
+def meta(request: Request, conn=db.DB):
     # remote: internetten (caymaz.app) bağlanıldı; video/log yükleme için yerel adres gösterilir
     # remote: büyük dosya yükleme engeli için. Yerel-yükleme zorunluluğu kapalıysa (bulut kurulum) her yerden
     # yüklemeye izin verilir → remote=false raporlanır (arayüzdeki "yalnızca yerel ağ" engelleri kalkar).
     remote = is_remote(request) and config.LOCAL_UPLOAD_REQUIRED
-    return {'company': config.COMPANY_NAME, 'roles': auth.all_roles(), 'remote': remote, 'local_url': config.LOCAL_URL,
+    from .system import brand_logo_url   # firma kimliği: yüklenmiş logo (tenant'a özel), yoksa None
+    return {'company': config.COMPANY_NAME, 'company_legal': config.COMPANY_LEGAL_NAME,
+            'logo_url': brand_logo_url(conn), 'roles': auth.all_roles(), 'remote': remote, 'local_url': config.LOCAL_URL,
             'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED,
             'maps_key': config.GOOGLE_MAPS_API_KEY}   # Google Haritalar (istemci tarafı; yoksa harita OSM'e düşer
 

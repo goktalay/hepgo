@@ -30,6 +30,9 @@ ADMIN_PASSWORD = os.environ.get('CAYMAZ_ADMIN_PASSWORD', '')
 ADMIN_FULL_NAME = os.environ.get('CAYMAZ_ADMIN_FULL_NAME', 'Sistem Yöneticisi')
 
 COMPANY_NAME = os.environ.get('CAYMAZ_COMPANY_NAME', 'GÖKKUBBE Teknoloji')
+# Resmî / yasal ünvan: kimlik kartlarında tam ünvan gösterilir (başlıklarda kısa COMPANY_NAME kullanılır).
+# Boşsa kartlarda COMPANY_NAME'e düşülür. Panelden (Program Ayarları › Firma Kimliği) canlı değiştirilebilir.
+COMPANY_LEGAL_NAME = os.environ.get('CAYMAZ_COMPANY_LEGAL_NAME', '')
 # Bu tenant'a merkez (Veilox) tarafından verilen modüller (virgüllü). Boşsa tüm modüller açıktır.
 _mods = os.environ.get('CAYMAZ_MODULES', '').strip()
 MODULES = [m.strip() for m in _mods.split(',') if m.strip()] if _mods else None

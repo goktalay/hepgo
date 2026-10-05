@@ -300,6 +300,17 @@ class MergeIn(BaseModel):
     ids: list[int]
 
 
+class SightingIdsIn(BaseModel):
+    ids: list[int]
+
+
+class SightingAssignIn(BaseModel):
+    ids: list[int]
+    user_id: Optional[int] = None
+    person_id: Optional[int] = None
+    family_id: Optional[int] = None
+
+
 # Yüz grupları / görülmeler: dağıtık kurulumda (AGENT_MODE=remote) fabrika yerel DB'sinden (facebridge) çekilir,
 # isimler bulut DB'sinde çözülür; yerelde doğrudan facecore. İşlem fonksiyonları app/facecore.py'de.
 def _face(conn, method, **args):
@@ -370,6 +381,34 @@ def delete_sighting(sid: int, user=Depends(cam_user), conn=db.DB):
     """Bir gruptan tek görülme (resim) çıkarır. Grup/kişi atanmış olabilir; kalanlar kalır."""
     r = _face(conn, 'delete_sighting', sid=sid)
     db.audit(conn, user['id'], 'Kamera yüz görülmesini kaldırdı', 'face_sighting', sid, None)
+    return r
+
+
+@faces_router.post('/sightings/delete')
+def delete_sightings(body: SightingIdsIn, user=Depends(cam_user), conn=db.DB):
+    """Birden çok görülmeyi (resmi) toplu kaldırır. Kalanlar kalır; boşalan grup silinir."""
+    r = _face(conn, 'delete_sightings', ids=list(dict.fromkeys(body.ids)))
+    db.audit(conn, user['id'], 'Kamera yüz görülmelerini kaldırdı', 'face_sighting', None, f"{r.get('deleted', 0)} görülme")
+    return r
+
+
+@faces_router.post('/sightings/assign')
+def assign_sightings(body: SightingAssignIn, user=Depends(cam_user), conn=db.DB):
+    """Seçili görülmeleri mevcut gruptan çıkarıp yalnız onları bir kişiye (kullanıcı / firma kişisi / aile üyesi) atar.
+    Kişinin grubu varsa birleşir. Varlık BULUT veritabanında doğrulanır; görülme fabrikada olabilir."""
+    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id)) != 1:
+        raise HTTPException(400, 'Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    if body.user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (body.user_id,)).fetchone():
+        raise HTTPException(400, 'Kullanıcı bulunamadı')
+    if body.person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (body.person_id,)).fetchone():
+        raise HTTPException(400, 'Kişi bulunamadı')
+    if body.family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (body.family_id,)).fetchone():
+        raise HTTPException(400, 'Aile üyesi bulunamadı')
+    r = _face(conn, 'assign_sightings', ids=list(dict.fromkeys(body.ids)), user_id=body.user_id,
+              person_id=body.person_id, family_id=body.family_id, by=user['id'], validate=False)
+    kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
+    db.audit(conn, user['id'], 'Kamera yüz görülmelerini kişiye atadı', 'face_group', r.get('id'),
+             f"{kind}={body.user_id or body.person_id or body.family_id} · {len(body.ids)} görülme")
     return r
 
 

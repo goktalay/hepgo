@@ -85,6 +85,34 @@ export async function renderFaces(body) {
   async function openGroup(id) {
     const g = await api.get(`/api/faces/groups/${id}`);
     const who = g.user_name || g.person_name || g.family_name;
+    const sel = new Set();   // bu grupta seçili görülme id'leri (iPhone tarzı seçim)
+    const selDelBtn = h('button', { class: 'btn danger', type: 'button', disabled: true, onclick: () => removeSelected() }, 'Seçilenleri Kaldır');
+    const selAssignBtn = h('button', { class: 'btn primary', type: 'button', disabled: true, onclick: () => assignSelected() }, 'Seçilenleri Kaldır ve Kişiye Ata');
+    const selInfo = h('span', { class: 'small muted' });
+    const syncSel = () => {
+      const n = sel.size;
+      selDelBtn.disabled = selAssignBtn.disabled = n < 1;
+      selDelBtn.textContent = t('Seçilenleri Kaldır{n}', { n: n ? ` (${n})` : '' });
+      selAssignBtn.textContent = t('Seçilenleri Kaldır ve Kişiye Ata{n}', { n: n ? ` (${n})` : '' });
+      selInfo.textContent = n ? t('{n} resim seçili', { n }) : 'Resimleri seçmek için her resmin sağ üstündeki kutucuğa dokunun.';
+    };
+    const shots = h('div', { class: 'fg-shots' }, g.items.map(s => {
+      const pick = h('button', { class: 'fg-pick', type: 'button', title: 'Seç', 'aria-pressed': 'false' });
+      const shot = h('div', { class: 'fg-shot' }, pick,
+        h('button', { class: 'fg-shot-img', type: 'button', onclick: () => showFrame(s) }, h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' })),
+        h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'),
+        s.threshold != null ? h('span', { class: 'muted' }, t('hassasiyet {v}', { v: s.threshold })) : null);
+      pick.addEventListener('click', e => {
+        e.stopPropagation();
+        sel.has(s.id) ? sel.delete(s.id) : sel.add(s.id);
+        const on = sel.has(s.id);
+        shot.classList.toggle('selected', on);
+        pick.setAttribute('aria-pressed', on ? 'true' : 'false');
+        syncSel();
+      });
+      return shot;
+    }));
+    syncSel();
     const m = modal({
       title: who ? `${who}${g.person_company ? ` · ${g.person_company}` : ''}` : 'Tanımlanamayan kişi', wide: true,
       body: h('div', null,
@@ -93,15 +121,8 @@ export async function renderFaces(body) {
             h('div', { class: 'small muted' }, t('İlk {a} · Son {b}', { a: fmtDateTime(g.first_seen), b: fmtDateTime(g.last_seen) })),
             h('div', { class: 'small muted' }, t('Kameralar: {c}', { c: g.cameras || '—' })),
             h('p', { class: 'small muted' }, 'Yüze tıklayınca görüldüğü anın tam karesi açılır.'))),
-        h('div', { class: 'fg-shots' }, g.items.map(s => h('div', { class: 'fg-shot' },
-          h('button', { class: 'fg-shot-x', type: 'button', title: 'Bu resmi gruptan çıkar', onclick: async e => {
-            e.stopPropagation();
-            if (!await confirmDialog('Resmi çıkar', 'Bu görülme gruptan çıkarılsın mı?', { okLabel: 'Çıkar', danger: true })) return;
-            try { const r = await api.del(`/api/faces/sightings/${s.id}`); m.close(); if (r.left) openGroup(id); else load(); } catch (err) { toastError(err); }
-          } }, '×'),
-          h('button', { class: 'fg-shot-img', type: 'button', onclick: () => showFrame(s) }, h('img', { src: fileUrl(s.crop, 256), alt: '', loading: 'lazy' })),
-          h('span', null, fmtDateTime(s.at)), h('span', { class: 'muted' }, s.camera_name || '—'),
-          s.threshold != null ? h('span', { class: 'muted' }, t('hassasiyet {v}', { v: s.threshold })) : null)))),
+        h('div', { class: 'fg-seltools' }, selInfo, h('span', { class: 'spacer' }), selDelBtn, selAssignBtn),
+        shots),
       actions: [
         { label: 'Grubu Sil', class: 'danger', onClick: async () => {
           if (!await confirmDialog('Grubu sil', 'Bu gruptaki tüm yüz ve kare resimleri silinsin mi? (yanlış tespitler için)', { okLabel: 'Sil', danger: true })) return true;
@@ -113,6 +134,31 @@ export async function renderFaces(body) {
         { label: who ? 'Başka Kişiye Ata' : 'Kişiye Ata', class: 'primary', onClick: () => { assign(id, () => { m.close(); load(); }); return true; } },
       ].filter(Boolean),
     });
+
+    async function reopen() {   // kaynak grup kaldıysa yeniden aç, boşaldıysa listeye dön
+      m.close();
+      try { await openGroup(id); } catch { load(); }
+    }
+    async function removeSelected() {
+      if (!sel.size) return;
+      if (!await confirmDialog('Seçilenleri kaldır', t('Seçili {n} görülme (yüz / kare resimleri) silinsin mi? (gereksiz tespitler için)', { n: sel.size }), { okLabel: 'Kaldır', danger: true })) return;
+      try {
+        const r = await api.post('/api/faces/sightings/delete', { ids: [...sel] });
+        toast(t('{n} görülme kaldırıldı', { n: r.deleted ?? sel.size }));
+        if (r.left) reopen(); else { m.close(); load(); }
+      } catch (err) { toastError(err); }
+    }
+    function assignSelected() {
+      if (!sel.size) return;
+      const ids = [...sel];
+      pickPerson(async (p, pm) => {
+        try {
+          await api.post('/api/faces/sightings/assign', { ids, ...bodyFor(p.kind, p.id) });
+          toast(t('Seçili {n} yüz {name} kişisine atandı', { n: ids.length, name: p.name }));
+          pm.close(); reopen();
+        } catch (err) { toastError(err); }
+      });
+    }
   }
 
   function showFrame(s) {
@@ -121,7 +167,13 @@ export async function renderFaces(body) {
       actions: [{ label: 'Kapat', class: 'primary' }] });
   }
 
-  async function assign(id, done) {
+  // Atama hedefi gövdesi: seçilen türe göre { user_id | person_id | family_id }
+  function bodyFor(kind, id) {
+    return kind === 'user' ? { user_id: id } : kind === 'person' ? { person_id: id } : { family_id: id };
+  }
+
+  // Yeniden kullanılabilir kişi seçici (personel / firma kişisi / aile üyesi). Seçimde onPick({ kind, id, name }, modal) çağrılır.
+  async function pickPerson(onPick) {
     const { users, people, family = [] } = await api.get('/api/faces/people');
     let kind = 'user';
     const q2 = h('input', { class: 'input', type: 'search', placeholder: 'Ad ara…' });
@@ -129,24 +181,30 @@ export async function renderFaces(body) {
     const fill = () => {
       const src = kind === 'user' ? users : kind === 'person' ? people : family;
       clear(list, src.filter(p => matches(q2.value, p.full_name, p.company_name, p.title, p.relation, p.employee_name)).slice(0, 60).map(p =>
-        h('button', { class: 'pick', type: 'button', onclick: async () => {
-          try {
-            const body = kind === 'user' ? { user_id: p.id } : kind === 'person' ? { person_id: p.id } : { family_id: p.id };
-            await api.post(`/api/faces/groups/${id}/assign`, body);
-            toast(t('Gruptaki tüm yüzler {name} kişisine atandı', { name: p.full_name }));
-            m.close();
-            done();
-          } catch (err) { toastError(err); }
-        } }, h('div', { class: 'grow' }, h('b', null, p.full_name),
-          h('span', { class: 'small muted' }, kind === 'user' ? ' Personel'
-            : kind === 'person' ? ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`
-              : ` ${[p.relation, p.employee_name && t('{n} ailesi', { n: p.employee_name })].filter(Boolean).join(' · ')}`)))));
+        h('button', { class: 'pick', type: 'button', onclick: () => onPick({ kind, id: p.id, name: p.full_name }, m) },
+          h('div', { class: 'grow' }, h('b', null, p.full_name),
+            h('span', { class: 'small muted' }, kind === 'user' ? ' Personel'
+              : kind === 'person' ? ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`
+                : ` ${[p.relation, p.employee_name && t('{n} ailesi', { n: p.employee_name })].filter(Boolean).join(' · ')}`)))));
     };
     const seg = segmented([['user', 'Personel'], ['person', 'Firma personeli'], ['family', 'Aile üyeleri']], kind, v => { kind = v; fill(); });
     q2.addEventListener('input', fill);
     fill();
     const m = modal({ title: 'Kişiye Ata', body: h('div', null, seg, h('div', { style: { margin: '10px 0' } }, q2), list), actions: [{ label: 'Vazgeç' }] });
     q2.focus();
+    return m;
+  }
+
+  // Grup düzeyinde atama (gruptaki tüm yüzler) — eskiden olduğu gibi.
+  function assign(id, done) {
+    pickPerson(async (p, m) => {
+      try {
+        await api.post(`/api/faces/groups/${id}/assign`, bodyFor(p.kind, p.id));
+        toast(t('Gruptaki tüm yüzler {name} kişisine atandı', { name: p.name }));
+        m.close();
+        done();
+      } catch (err) { toastError(err); }
+    });
   }
 
   q.addEventListener('input', draw);

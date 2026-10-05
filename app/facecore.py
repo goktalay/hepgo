@@ -124,6 +124,78 @@ def delete_sighting(conn, sid):
     return {'ok': True, 'group_id': row[3], 'left': left}
 
 
+def _sighting_rows(conn, ids):
+    """Seçili görülme satırları (geçersiz / yinelenen id'ler elenir)."""
+    ids = [int(i) for i in dict.fromkeys(ids or [])]
+    if not ids:
+        raise ValueError('Görülme seçin')
+    rows = db.rows(conn.execute(
+        f'SELECT id, group_id, camera_id, at, crop, frame, clip, embedding, score FROM face_sightings '
+        f'WHERE id IN ({",".join("?" * len(ids))})', ids))
+    if not rows:
+        raise NotFound('Görülme bulunamadı')
+    return rows
+
+
+def _recompute_group(conn, gid):
+    """Grubun özetini (centroid, samples, best_crop, first/last) KALAN görülmelerinden yeniden hesaplar.
+    Görülme kalmazsa grubu siler. Döner: kalan görülme sayısı."""
+    rows = db.rows(conn.execute('SELECT at, crop, embedding, score FROM face_sightings WHERE group_id = ?', (gid,)))
+    if not rows:
+        conn.execute('DELETE FROM face_groups WHERE id = ?', (gid,))
+        return 0
+    acc = np.zeros(128, np.float32)
+    for r in rows:
+        acc += np.frombuffer(r['embedding'], dtype=np.float32)
+    best = max(rows, key=lambda r: r['score'] or 0)
+    ats = [r['at'] for r in rows]
+    conn.execute('''UPDATE face_groups SET centroid = ?, samples = ?, best_crop = ?, best_score = ?, first_seen = ?, last_seen = ?
+                    WHERE id = ?''',
+                 (_norm(acc).astype(np.float32).tobytes(), len(rows), best['crop'], best['score'] or 0, min(ats), max(ats), gid))
+    return len(rows)
+
+
+def delete_sightings(conn, ids):
+    """Birden çok görülmeyi (resmi) toplu siler; kaynak grupların özeti kalanlardan yeniden hesaplanır,
+    boşalan grup silinir. Döner: {ok, deleted, left} (left: dokunulan gruplarda kalan görülme sayısı)."""
+    rows = _sighting_rows(conn, ids)
+    gids = {r['group_id'] for r in rows}
+    files = [f for r in rows for f in (r['crop'], r['frame'], r['clip'])]
+    conn.execute(f'DELETE FROM face_sightings WHERE id IN ({",".join("?" * len(rows))})', [r['id'] for r in rows])
+    left = sum(_recompute_group(conn, gid) for gid in gids)
+    for f in files:
+        if f:
+            (config.UPLOAD_DIR / f).unlink(missing_ok=True)
+    return {'ok': True, 'deleted': len(rows), 'left': left}
+
+
+def assign_sightings(conn, ids, user_id, person_id, by, validate=True, family_id=None):
+    """Seçili görülmeleri mevcut gruplarından ÇIKARIP yalnız onlardan yeni bir grup oluşturur ve o grubu kişiye atar
+    (kişinin grubu zaten varsa `assign` ile birleşir). Kaynak gruplar kalanlardan yeniden hesaplanır / boşalırsa silinir.
+    Yeni grubun centroid'i seçili görülmelerin embedding'lerinden kurulur."""
+    if sum(bool(x) for x in (user_id, person_id, family_id)) != 1:
+        raise ValueError('Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    rows = _sighting_rows(conn, ids)
+    src_gids = {r['group_id'] for r in rows}
+    acc = np.zeros(128, np.float32)
+    for r in rows:
+        acc += np.frombuffer(r['embedding'], dtype=np.float32)
+    best = max(rows, key=lambda r: r['score'] or 0)
+    ats = [r['at'] for r in rows]
+    last_cam = next((r['camera_id'] for r in sorted(rows, key=lambda r: r['at'], reverse=True) if r['camera_id']), None)
+    cur = conn.execute(
+        '''INSERT INTO face_groups (centroid, samples, best_crop, best_score, first_seen, last_seen, last_camera)
+           VALUES (?,?,?,?,?,?,?)''',
+        (_norm(acc).astype(np.float32).tobytes(), len(rows), best['crop'], best['score'] or 0, min(ats), max(ats), last_cam))
+    new_gid = cur.lastrowid
+    conn.execute(f'UPDATE face_sightings SET group_id = ? WHERE id IN ({",".join("?" * len(rows))})',
+                 (new_gid, *[r['id'] for r in rows]))
+    for gid in src_gids:   # seçilenler çıkınca kaynak grupları tazele / boşalanı sil
+        if gid != new_gid:
+            _recompute_group(conn, gid)
+    return assign(conn, new_gid, user_id, person_id, by, validate, family_id)
+
+
 def recent(conn):
     return db.rows(conn.execute(
         '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
@@ -276,6 +348,11 @@ def rpc(conn, method, args):
         return delete_group(conn, a['gid'])
     if method == 'delete_sighting':
         return delete_sighting(conn, a['sid'])
+    if method == 'delete_sightings':
+        return delete_sightings(conn, a.get('ids') or [])
+    if method == 'assign_sightings':
+        return assign_sightings(conn, a.get('ids') or [], a.get('user_id'), a.get('person_id'), a.get('by'),
+                                a.get('validate', True), a.get('family_id'))
     if method == 'recent':
         return recent(conn)
     if method == 'events':

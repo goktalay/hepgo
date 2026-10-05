@@ -209,6 +209,81 @@ def put_integrations(group: str, body: IntegrationIn, user=Depends(auth.current_
     return {'groups': integrations.view(conn), 'changed': changed}
 
 
+# --- Firma Kimliği: logo (tenant'a özel; UPLOAD_DIR'de saklanır, /api/system/brand/logo ile sunulur) ---
+# Logo /static'e YAZILMAZ (üç tenant /static'i paylaşır); her tenant'ın kendi UPLOAD_DIR'ine yüklenir.
+BRAND_KV = 'brand'
+_BRAND_LOGO_EXT = {'.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'}
+
+
+def _brand(conn):
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (BRAND_KV,)).fetchone()
+    try:
+        return json.loads(row[0]) if row else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def brand_logo_url(conn):
+    """/api/meta için: saklı firma logosu varsa önbellek-kırıcılı URL, yoksa None (istemci varsayılana düşer)."""
+    b = _brand(conn)
+    return f"/api/system/brand/logo?v={b.get('ts', 0)}" if b.get('logo') else None
+
+
+@router.get('/brand/logo')
+def get_brand_logo(conn=db.DB):
+    """Firma logosu — giriş ekranı dahil her yerde kullanıldığı için herkese açık (oturum gerekmez)."""
+    from fastapi.responses import FileResponse
+    from .. import files
+    rel = _brand(conn).get('logo')
+    if not rel or '..' in rel:
+        raise HTTPException(404)
+    path = config.UPLOAD_DIR / rel
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, headers=files._headers(path))
+
+
+@router.post('/brand/logo')
+async def upload_brand_logo(file: UploadFile, user=Depends(auth.current_user), conn=db.DB):
+    """Firma logosu yükle (yalnızca Sistem Yöneticisi / MASTER). Tenant'ın UPLOAD_DIR'ine yazılır."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu ayar yalnızca sistem yöneticisine açıktır')
+    from .. import files
+    ext = Path(file.filename or '').suffix.lower()
+    if ext not in _BRAND_LOGO_EXT:
+        raise HTTPException(400, 'Logo PNG, JPG, WEBP, SVG veya GIF olmalı')
+    ctype = (file.content_type or '').lower()
+    if ctype and not (ctype.startswith('image/') or ctype == 'application/octet-stream'):
+        raise HTTPException(400, 'Geçersiz dosya türü (resim olmalı)')
+    path = await files.save_upload('brand', file)   # 'brand/<rastgele>.<ext>'
+    ts = int(_time.time())
+    old = _brand(conn).get('logo')
+
+    def write():
+        conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)',
+                     (BRAND_KV, json.dumps({'logo': path, 'ts': ts})))
+        db.audit(conn, user['id'], 'Firma logosunu güncelledi', 'settings', None)
+        conn.commit()
+        if old and old != path and '..' not in old:   # eski logo dosyasını temizle
+            (config.UPLOAD_DIR / old).unlink(missing_ok=True)
+    await run_in_threadpool(write)
+    return {'logo_url': f'/api/system/brand/logo?v={ts}'}
+
+
+@router.delete('/brand/logo')
+def delete_brand_logo(user=Depends(auth.current_user), conn=db.DB):
+    """Yüklenen firma logosunu kaldır; arayüz varsayılan logoya döner."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    old = _brand(conn).get('logo')
+    conn.execute('DELETE FROM app_kv WHERE k = ?', (BRAND_KV,))
+    db.audit(conn, user['id'], 'Firma logosunu kaldırdı', 'settings', None)
+    conn.commit()
+    if old and '..' not in old:
+        (config.UPLOAD_DIR / old).unlink(missing_ok=True)
+    return {'logo_url': None}
+
+
 @router.get('/sync')
 def sync_status(user=Depends(auth.current_user), conn=db.DB):
     if not _is_sysadmin(user):

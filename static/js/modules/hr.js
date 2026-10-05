@@ -43,6 +43,8 @@ function initialsAvatar(name, placeholder) {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 let COMPANY = '';
+let COMPANY_LEGAL = '';   // kimlik kartında tam/yasal ünvan (yoksa kısa ada düşer)
+let COMPANY_LOGO = '';    // kimlik kartında firma logosu (yoksa varsayılan)
 const meta = async () => (META ??= await api.get('/api/hr/meta'));
 
 function photoOf(e, size = 'lg') {
@@ -53,6 +55,8 @@ function photoOf(e, size = 'lg') {
 
 export async function render(view, params, ctx) {
   COMPANY = ctx.meta?.company || '';
+  COMPANY_LEGAL = ctx.meta?.company_legal || ctx.meta?.company || '';
+  COMPANY_LOGO = ctx.meta?.logo_url || '';
   if (/^\d+$/.test(params[0] || '')) return renderDetail(view, Number(params[0]), ctx);
   const tab = ['applications', 'leaves', 'matrix', 'attendance', 'org'].includes(params[0]) ? params[0] : 'personnel';
   // "Takip" üst sekmesi: İzinler ve Giriş-Çıkış onun altında ikincil seçici olarak toplanır
@@ -505,7 +509,7 @@ async function renderDetail(view, id, ctx) {
         h('button', { class: 'btn sm danger-text', onclick: () => leaveJobModal(e) }, 'İşten Ayrılış')]
         : [h('button', { class: 'btn', onclick: async () => { try { await api.post(`/api/hr/employees/${e.id}/rehire`); reload(); } catch (err) { toastError(err); } } }, 'Yeniden İşe Al')];
   const printCard = h('button', { class: 'btn sm', type: 'button', onclick: () => printIdCard(e) }, '🪪 Kartı Yazdır');
-  const card = idCard(e, { company: COMPANY, action: printCard });
+  const card = idCard(e, { company: COMPANY_LEGAL, action: printCard, logoUrl: COMPANY_LOGO });
   const top = h('div', { class: `hr-detail-top ${e.missing.length || e.unsigned_leaves ? 'missing' : ''}` },
     h('div', { class: 'idc-wrap' }, card),
     h('div', { class: 'card card-pad hr-top-side' },
@@ -1517,7 +1521,7 @@ async function renderOrg(view, head) {
 
 // Kimlik kartını yazdır: kartı tek başına yazdırma alanında aç
 function printIdCard(e) {
-  const card = idCard(e, { company: COMPANY });
+  const card = idCard(e, { company: COMPANY_LEGAL, logoUrl: COMPANY_LOGO });
   const area = h('div', { class: 'idc-print' }, card);
   document.body.append(area);
   const done = () => { area.remove(); window.removeEventListener('afterprint', done); };

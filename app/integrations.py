@@ -128,6 +128,7 @@ GROUPS = {
         'desc': 'Davet / e-posta bağlantılarında kullanılan adresler ve firma adı.',
         'fields': [
             ('COMPANY_NAME', 'Firma adı', 'text', 'Başlıklarda ve asistanda görünür'),
+            ('COMPANY_LEGAL_NAME', 'Resmî ünvan (kartlarda)', 'text', 'Kimlik kartında görünen tam/yasal ünvan'),
             ('PUBLIC_URL', 'İnternet adresi', 'url', 'ör. https://caymaz.app'),
             ('LOCAL_URL', 'Yerel ağ adresi', 'url', 'ör. http://192.168.1.189:8080'),
         ],

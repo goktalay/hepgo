@@ -50,8 +50,8 @@ function mkeLogo() {
   return h('img', { class: 'idc-mke-img', src: `/static/img/${file}.png`, alt: 'MKE İŞTİRAKİDİR' });
 }
 
-/** idCard(e, {company, action}) → kimlik kartı DOM'u. action verilirse kartın içinde, alt çizginin hemen üstünde ortada gösterilir (yazdırmada verilmez). */
-export function idCard(e, { company, action } = {}) {
+/** idCard(e, {company, action, logoUrl}) → kimlik kartı DOM'u. action verilirse kartın içinde, alt çizginin hemen üstünde ortada gösterilir (yazdırmada verilmez). logoUrl: firma logosu (yoksa varsayılan). */
+export function idCard(e, { company, action, logoUrl } = {}) {
   const name = `${e.first_name || ''} ${e.last_name || ''}`.trim().toLocaleUpperCase('tr');
   const title = (e.title || e.emp_title || '').toLocaleUpperCase('tr');
   const email = e.email || (e.username && /@/.test(e.username) ? e.username : '') || '';
@@ -78,7 +78,7 @@ export function idCard(e, { company, action } = {}) {
     h('div', { class: 'idc-foot' },
       h('div', { class: 'idc-mke' }, mkeLogo()),
       action ? h('div', { class: 'idc-foot-action' }, action) : null,
-      h('img', { class: 'idc-logo', src: '/static/img/logo.png', alt: 'Gökkubbe' })));
+      h('img', { class: 'idc-logo', src: logoUrl || '/static/img/logo.png', alt: 'Gökkubbe' })));
 }
 
 export { barcodeSvg };

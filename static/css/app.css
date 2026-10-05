@@ -7513,3 +7513,17 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-duty-timer { flex: none; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 .db-duty-time { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--primary); }
 .db-duty-timer small { font-size: 10px; }
+
+/* Avatar çerçevesinde kişi durumu (Hızlı Rehber + Mesajlarım): yeşil=çevrimiçi, turuncu=görevde, mavi=izinde, gri=çevrimdışı */
+.db-avwrap { position: relative; display: inline-flex; border-radius: 50%; flex: none; }
+.db-avwrap .db-av { display: block; }
+.db-avwrap.st-online { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #22c55e; }
+.db-avwrap.st-duty   { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #f59e0b; }
+.db-avwrap.st-leave  { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #3b82f6; }
+.db-avwrap.st-off    { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #cbd5e1; }
+.db-stdot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--surface); }
+.db-avwrap.st-online .db-stdot { background: #22c55e; }
+.db-avwrap.st-duty   .db-stdot { background: #f59e0b; }
+.db-avwrap.st-leave  .db-stdot { background: #3b82f6; }
+.db-avwrap.st-off    .db-stdot { background: #cbd5e1; }
+.db-qd-main, .db-msglist a { gap: 10px; }   /* halka için biraz nefes payı */

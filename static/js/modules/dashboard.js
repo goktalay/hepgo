@@ -15,6 +15,13 @@ const dbInitials = n => (n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]
 const dbAvatar = (name, photo, cls = '') => (photo
   ? h('img', { class: `db-av ${cls}`, src: fileUrl(photo, 64), alt: '', loading: 'lazy' })
   : h('span', { class: `db-av ph ${cls}` }, dbInitials(name)));
+// Kişi durumu (kullanıcı id'si → görevde / izinde / çevrimiçi / çevrimdışı); avatar çerçevesinde gösterilir
+const presenceOf = (id, d) => (d?.on_duty?.includes(id) ? 'duty' : d?.on_leave?.includes(id) ? 'leave' : d?.online?.includes(id) ? 'online' : 'off');
+const ST_TITLE = { duty: 'Görevde', leave: 'İzinde', online: 'Çevrimiçi', off: 'Çevrimdışı' };
+const dbAvatarSt = (name, photo, id, d, cls = '') => {
+  const st = presenceOf(id, d);
+  return h('span', { class: `db-avwrap st-${st}`, title: ST_TITLE[st] }, dbAvatar(name, photo, cls), h('i', { class: 'db-stdot' }));
+};
 
 const MULTI = new Set(['clock', 'weather', 'world_clock', 'quick_directory']);   // birden çok eklenebilen / ayarlı
 // GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
@@ -286,7 +293,7 @@ export async function renderDashboard(view, ctx, modules) {
       case 'my_messages': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Henüz mesajınız yok')
         : h('ul', { class: 'db-list db-msglist' }, d.items.map(mi => h('li', { class: mi.unread ? 'unread' : '' },
           h('a', { href: `#/messages/u${mi.peer_id}` },
-            dbAvatar(mi.name, mi.photo),
+            dbAvatarSt(mi.name, mi.photo, mi.peer_id, d),
             h('span', { class: 'db-msg-main' }, h('b', null, mi.name), h('span', { class: 'db-msg-prev' }, mi.preview || '')),
             mi.unread ? h('span', { class: 'db-n' }, mi.unread) : h('small', null, mi.at ? fmtDateTime(mi.at).replace(/\.\d{4}/, '') : ''))))));
       case 'my_meetings': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Aktif ya da bekleyen toplantı yok')
@@ -303,7 +310,7 @@ export async function renderDashboard(view, ctx, modules) {
         const ppl = it.o?.people || [];
         return clear(body, !ppl.length ? h('div', { class: 'db-none' }, h('span', null, 'Kişi ekleyin: '), h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙'))
           : h('ul', { class: 'db-list db-qdlist' }, ppl.map(c => h('li', null,
-            h('a', { class: 'db-qd-main', href: `#/messages/u${c.id}`, title: 'Mesaj gönder' }, dbAvatar(c.name, c.photo), h('b', null, c.name)),
+            h('a', { class: 'db-qd-main', href: `#/messages/u${c.id}`, title: 'Mesaj gönder' }, dbAvatarSt(c.name, c.photo, c.id, d), h('b', null, c.name)),
             h('span', { class: 'db-qd-acts' },
               h('a', { class: 'db-qd-ic', href: `#/messages/u${c.id}`, title: 'Mesaj' }, svgIcon(icons.chat)),
               h('button', { class: 'db-qd-ic', type: 'button', title: 'Sesli Arama',

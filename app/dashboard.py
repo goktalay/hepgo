@@ -201,8 +201,28 @@ def w_files(conn, user):
 
 
 @widget('quick_directory', 'Hızlı Rehber', 'Sık ulaştığınız kişiler; mesaj ve e-posta kısayolu', size=1, group='Kişisel')
+def _presence(conn):
+    """Kişi durum setleri (kullanıcı id'leri): çevrimiçi / görevde / izinde. Rehber ve Mesajlar kutularında
+    avatar çerçevesinde durum göstermek için."""
+    from .routers.admin import ONLINE_WINDOW
+    cut = (datetime.now() - ONLINE_WINDOW).isoformat(timespec='seconds')
+    today = date.today().isoformat()
+    online = [r[0] for r in conn.execute('SELECT id FROM users WHERE last_seen >= ?', (cut,))]
+    duty = [r[0] for r in conn.execute(
+        """SELECT DISTINCT e.user_id FROM duty_requests d JOIN duty_people dp ON dp.duty_id = d.id
+             JOIN employees e ON e.id = dp.employee_id
+            WHERE e.user_id IS NOT NULL AND d.status = 'ONAYLANDI' AND substr(d.depart_at, 1, 10) <= ?
+              AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)""", (today, today))]
+    leave = [r[0] for r in conn.execute(
+        """SELECT DISTINCT e.user_id FROM leave_requests l JOIN employees e ON e.id = l.employee_id
+            WHERE e.user_id IS NOT NULL AND l.status = 'ONAYLANDI'
+              AND substr(COALESCE(l.start_date, l.req_start), 1, 10) <= ?
+              AND substr(COALESCE(l.end_date, l.req_end), 1, 10) >= ?""", (today, today))]
+    return {'online': online, 'on_duty': duty, 'on_leave': leave}
+
+
 def w_quick_directory(conn, user):
-    return {}   # kişiler istemcide (kutucuk ayarı)
+    return _presence(conn)   # kişiler istemcide (kutucuk ayarı); durum setleri burada
 
 
 @widget('my_messages', 'Mesajlarım', 'Size gelen son mesajlar', size=1, group='Kişisel')
@@ -224,7 +244,7 @@ def w_my_messages(conn, user):
         items.append({'peer_id': r['peer_id'], 'name': r['full_name'], 'photo': r['photo'],
                       'preview': (('Siz: ' if r['from_id'] == me else '') + (prev or '')).strip()[:90],
                       'at': r['created_at'], 'unread': r['unread']})
-    return {'items': items, 'unread': sum(i['unread'] for i in items)}
+    return {'items': items, 'unread': sum(i['unread'] for i in items), **_presence(conn)}
 
 
 @widget('my_meetings', 'Toplantılarım', 'Aktif ve bekleyen görüntülü toplantılarınız', size=1, group='Kişisel')

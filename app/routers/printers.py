@@ -242,7 +242,10 @@ async def discover(user=Depends(printer_admin)):
         found = await run_in_threadpool(printer_driver.discover)
     except Exception as e:   # noqa: BLE001 — uzak modda ajan bağlı değil / eski ajan: anlaşılır mesaj
         msg = str(e)
-        if 'ajan' in msg.lower() or 'agent' in msg.lower():
+        if 'bilinmeyen op' in msg.lower():
+            raise HTTPException(503, 'Fabrikadaki ajan güncel değil (yazıcı taraması bu sürümde yok). GX10’da ajanı güncelleyin: '
+                                     'cd ~/caymazbuild && git pull && systemctl --user restart hepgo-agent') from e
+        if 'bağlı değil' in msg.lower() or 'ajan' in msg.lower() or 'agent' in msg.lower():
             raise HTTPException(503, 'Fabrikadaki ajana ulaşılamadı; yazıcı taraması yapılamadı. Ajanın çevrimiçi ve güncel olduğundan emin olun.') from e
         raise HTTPException(502, f'Yazıcı taraması başarısız: {msg}') from e
     return await run_in_threadpool(_add_discovered, found, user)

@@ -7524,3 +7524,13 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-avwrap.st-duty   .db-av { border-color: #f59e0b; }
 .db-avwrap.st-leave  .db-av { border-color: #3b82f6; }
 .db-avwrap.st-off    .db-av { border-color: #cbd5e1; }
+
+/* Görevdeki Personel: görev/araç bazında grup — üstte ortada plaka, solda personel(ler), sağda tek ileri sayaç */
+.db-dutygrps { display: flex; flex-direction: column; gap: 10px; }
+.db-dutygrp { border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; background: var(--surface-2, rgba(127,127,127,.04)); }
+.db-dutygrp-plate { text-align: center; margin-bottom: 9px; }
+.db-dutygrp-row { display: flex; align-items: center; gap: 12px; }
+.db-dutygrp-people { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.db-dutyp { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.db-dutyp .db-av { width: 38px; height: 38px; flex: none; font-size: 15px; }
+.db-dutyp > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

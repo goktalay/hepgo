@@ -263,11 +263,14 @@ async def discover(user=Depends(printer_admin)):
 
 
 def _add_discovered(found, user):
-    """Bulunan yazıcıları ekler. Kimlik olarak kalıcı donanım kimliği (Moonraker seri-adı) kullanılır: aynı cihaz
-    IP değiştirmiş olsa bile ikinci kez eklenmez; yalnızca IP'si güncellenir. Kimliği okunamayan cihazlar IP'ye göre eklenir."""
+    """Tarama sonuçlarını GEÇİCİ bir tabloya (_scan) alır, mevcut yazıcılarla FİZİKSEL ADRESE (kalıcı donanım kimliği —
+    Moonraker seri-adı) göre eşleştirir ve yeni bilgileri (IP + canlı durum) eskinin ÜZERİNE yazar. Donanım kimliği sabit
+    olduğundan, elektrik kesintisinde IP'ler değişse hatta takas olsa bile kayıt silinmez; yalnız IP güncellenir.
+    IP benzersizlik çakışmasını (A↔B takası ya da IP'yi hâlâ tutan eski kayıt) iki aşamalı yazımla aşar: önce çakışanlar
+    geçici bir değere park edilir, sonra gerçek IP yazılır. Kimliği okunamayan (hw yok) cihazlar IP'ye göre eklenir."""
     from concurrent.futures import ThreadPoolExecutor
     added, moved = [], []
-    # Donanım kimliği (IP değişimini tanımak için) taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
+    # Donanım kimliği taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
     hwids, missing = {}, []
     for ip, live in found:
         if isinstance(live, dict) and 'hw' in live:
@@ -277,42 +280,84 @@ def _add_discovered(found, user):
     if missing:
         with ThreadPoolExecutor(max_workers=24) as pool:
             hwids.update(zip(missing, pool.map(printer_driver.hardware_id, missing)))
+    # Tarama satırları; aynı cihaz iki IP'de göründüyse (kablolu+Wi-Fi) ilk IP'de bir kez
+    scan, seen_hw = [], set()
+    for ip, live in sorted((f for f in found if isinstance(f[1], dict)), key=lambda f: ipaddress.IPv4Address(f[0])):
+        hw = hwids.get(ip)
+        if hw:
+            if hw in seen_hw:
+                continue
+            seen_hw.add(hw)
+        scan.append({'ip': ip, 'hw': hw, 'live': live})
+
     with db.connect() as conn:
-        rows = db.rows(conn.execute('SELECT id, name, ip, hw_id, hw_alias FROM printers'))
-        by_ip = {r['ip'] for r in rows}
-        by_hw = {}
-        for r in rows:
-            for k in (r['hw_id'], r['hw_alias']):
-                if k:
-                    by_hw[k] = r
+        now = db.now()
+        conn.execute('DROP TABLE IF EXISTS _scan')
+        conn.execute('CREATE TEMP TABLE _scan (ip TEXT, hw TEXT, state TEXT, progress REAL, file TEXT, source TEXT, model TEXT, hostname TEXT)')
+        conn.executemany('INSERT INTO _scan (ip, hw, state, progress, file, source, model, hostname) VALUES (?,?,?,?,?,?,?,?)',
+                         [(s['ip'], s['hw'], s['live'].get('state'), s['live'].get('progress'), s['live'].get('file'),
+                           s['live'].get('source'), s['live'].get('model'), s['live'].get('hostname')) for s in scan])
+        existing = db.rows(conn.execute('SELECT id, name, ip, hw_id, hw_alias FROM printers'))
+
+        # Geçici tabloyu eski tabloyla fiziksel adrese göre eşleştir (her kayıt bir kez): eşleşen → güncelle, yoksa → ekle
+        matched_pid, scan_ip_owner = {}, {}   # pid → tarama satırı ; hedef IP → onu hak eden pid
+        for r in db.rows(conn.execute('''SELECT p.id AS pid, s.ip AS ip FROM _scan s
+                                         JOIN printers p ON s.hw IS NOT NULL AND (s.hw = p.hw_id OR s.hw = p.hw_alias)''')):
+            matched_pid.setdefault(r['pid'], r['ip'])
+            scan_ip_owner.setdefault(r['ip'], r['pid'])
+        # hw ile eşleşmemiş tarama satırı mevcut bir IP'deyse: aynı cihaz say ANCAK kimlikler çelişmiyorsa (tarama kimliksiz
+        # ya da kayıt kimliksiz ya da ikisinin kimliği aynı). Farklı kimlikli bir cihaz aynı IP'deyse eski kayıt feragat eder.
+        by_id = {r['id']: r for r in existing}
+        ip_to_pid = {r['ip']: r['id'] for r in existing}
+        for s in scan:
+            if s['ip'] in scan_ip_owner:
+                continue
+            pid = ip_to_pid.get(s['ip'])
+            if pid is None or pid in matched_pid:
+                continue
+            pr_hw = {by_id[pid]['hw_id'], by_id[pid]['hw_alias']} - {None}
+            if (not s['hw']) or (not pr_hw) or (s['hw'] in pr_hw):
+                matched_pid[pid] = s['ip']
+                scan_ip_owner[s['ip']] = pid
+        live_of = {s['ip']: s['live'] for s in scan}
+        name_of = {r['id']: r['name'] for r in existing}
+
+        # Park: bir tarama IP'sini tutan ama o IP'nin sahibi OLMAYAN kayıtları geçici benzersiz değere çek (çakışmayı kır)
+        scan_ips = {s['ip'] for s in scan}
+        for r in existing:
+            if r['ip'] in scan_ips and scan_ip_owner.get(r['ip']) != r['id']:
+                conn.execute("UPDATE printers SET ip = '#tasima-' || id WHERE id = ?", (r['id'],))
+
+        # Eşleşenler: IP + canlı durum eskinin üzerine yazılır (fiziksel adres aynı → aynı yazıcı)
+        for pid, ip in matched_pid.items():
+            old = next((r['ip'] for r in existing if r['id'] == pid), None)
+            live = live_of.get(ip, {})
+            conn.execute('''UPDATE printers SET ip = ?, live_state = ?, live_progress = ?, live_file = ?, live_source = ?,
+                            last_seen = ? WHERE id = ?''',
+                         (ip, live.get('state'), live.get('progress'), live.get('file'), live.get('source'), now, pid))
+            if old and old != ip:
+                moved.append({'id': pid, 'name': name_of.get(pid), 'old': old, 'ip': ip})
+                db.audit(conn, user['id'], 'Yazıcının IP adresini düzeltti (ağ taraması)', 'printer', pid,
+                         f"{name_of.get(pid) or pid}: {old} → {ip}")
+
+        # Eşleşmeyen tarama satırları: IP artık boşsa yeni yazıcı olarak eklenir
         count = conn.execute('SELECT COUNT(*) FROM printers').fetchone()[0]
-        seen_hw = set()
-        for ip, live in sorted(found, key=lambda f: ipaddress.IPv4Address(f[0])):
-            hw = hwids.get(ip)
-            if hw and hw in by_hw:            # aynı cihaz zaten kayıtlı: yalnızca IP güncellenir (DHCP değişimi)
-                pr = by_hw[hw]
-                if pr['ip'] != ip:
-                    conn.execute('UPDATE printers SET ip = ? WHERE id = ?', (ip, pr['id']))
-                    db.audit(conn, user['id'], 'Yazıcının IP adresini düzeltti (ağ taraması)', 'printer', pr['id'],
-                             f"{pr.get('name') or pr['id']}: {pr['ip']} → {ip}")
-                    moved.append({'id': pr['id'], 'name': pr.get('name'), 'old': pr['ip'], 'ip': ip})
+        for s in scan:
+            if s['ip'] in scan_ip_owner:   # zaten mevcut bir yazıcıya (fiziksel adres) eşleşti
                 continue
-            if hw and hw in seen_hw:           # aynı taramada aynı cihaz iki IP'de göründü: bir kez ekle
-                continue
-            if ip in by_ip:
+            if conn.execute('SELECT 1 FROM printers WHERE ip = ?', (s['ip'],)).fetchone():
                 continue
             count += 1
+            live = s['live']
             name = live.get('hostname') or f'K2 Plus {count:02d}'
-            now = db.now()
             cur = conn.execute(
                 '''INSERT INTO printers (name, ip, hw_id, model, auto_added, created_at, live_state, live_progress,
                    live_file, live_source, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                (name, ip, hw, live['model'] or 'Creality K2 Plus', 1, now, live['state'], live['progress'], live['file'],
-                 live['source'], now))
-            if hw:
-                seen_hw.add(hw)
-                by_hw[hw] = {'id': cur.lastrowid, 'name': name, 'ip': ip, 'hw_id': hw}
-            db.audit(conn, user['id'], 'Yazıcı otomatik ekledi', 'printer', cur.lastrowid, f'{name} ({ip})')
-            added.append({'name': name, 'ip': ip})
+                (name, s['ip'], s['hw'], live.get('model') or 'Creality K2 Plus', 1, now, live.get('state'),
+                 live.get('progress'), live.get('file'), live.get('source'), now))
+            db.audit(conn, user['id'], 'Yazıcı otomatik ekledi', 'printer', cur.lastrowid, f"{name} ({s['ip']})")
+            added.append({'name': name, 'ip': s['ip']})
+
+        conn.execute('DROP TABLE IF EXISTS _scan')
         printer_layout.assign_missing(conn)
     return {'found': len(found), 'added': added, 'moved': moved}

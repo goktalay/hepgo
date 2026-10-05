@@ -406,7 +406,8 @@ async def identify_clip(file: UploadFile, user=Depends(auth.current_user), conn=
     matched False → arayüz 'Tanımsız Kişi' gösterir. Model + ffmpeg sunucuda; voice_profiles bulut DB'sinde."""
     from pathlib import Path
     from .. import meeting_audio
-    if not meeting_audio.available():
+    # available() Toplantılar modül anahtarına bağlıdır; canlı test için yalnız modelin varlığı yeterli.
+    if not meeting_audio.MODEL.exists():
         raise HTTPException(503, 'Konuşmacı tanıma modeli bulunamadı (wespeaker)')
     ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
     if ext not in _ID_CLIP_EXT:

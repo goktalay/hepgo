@@ -279,7 +279,7 @@ def w_recent_orders(conn, user):
 
 @widget('kpi_printers', 'Yazıcılar', 'Yazdıran, boştaki, sorunlu ve çevrimdışı yazıcılar', 'printers')
 def w_kpi_printers(conn, user):
-    st = Counter(r[0] or 'CEVRIMDISI' for r in conn.execute('SELECT live_state FROM printers'))
+    st = Counter(('BAKIM' if r[1] else (r[0] or 'CEVRIMDISI')) for r in conn.execute('SELECT live_state, maint_since FROM printers'))
     return {'states': st, 'total': sum(st.values())}
 
 

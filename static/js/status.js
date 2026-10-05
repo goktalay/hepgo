@@ -40,6 +40,7 @@ export const PRINTER_STATES = {
   TAMAMLANDI: { label: 'Baskı bitti', badge: 'purple' },
   HATA: { label: 'Hata', badge: 'red' },
   CEVRIMDISI: { label: 'Çevrimdışı', badge: 'gray' },
+  BAKIM: { label: 'Bakımda', badge: 'orange' },
 };
 
 // Sipariş durumu: tamamlanan parça baskısı siparişi saha deposuna değil stoğa girer

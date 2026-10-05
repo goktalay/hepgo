@@ -155,6 +155,28 @@ def update_printer(pid: int, body: PrinterIn, user=Depends(printer_admin), conn=
     return {'ok': True}
 
 
+class MaintIn(BaseModel):
+    on: bool
+
+
+@router.post('/{pid}/maintenance')
+def set_maintenance(pid: int, body: MaintIn, user=Depends(printer_admin), conn=db.DB):
+    """Yazıcıyı bakıma al / hatta geri ver. Bakımdaki yazıcı BAKIM durumunda görünür (vurgulu renk) ve arıza/çevrimdışı
+    sayılmaz; bakımda geçen süre takip edilir (maint_since). Üretim yetkisi olan personel yapar."""
+    p = db.row(conn.execute('SELECT id, name, maint_since FROM printers WHERE id = ?', (pid,)))
+    if not p:
+        raise HTTPException(404, 'Yazıcı bulunamadı')
+    if body.on:
+        if not p['maint_since']:
+            conn.execute('UPDATE printers SET maint_since = ? WHERE id = ?', (db.now(), pid))
+        db.audit(conn, user['id'], 'Yazıcıyı bakıma aldı', 'printer', pid, p['name'])
+    else:
+        conn.execute('UPDATE printers SET maint_since = NULL WHERE id = ?', (pid,))
+        db.audit(conn, user['id'], 'Yazıcıyı hatta geri verdi (bakım bitti)', 'printer', pid, p['name'])
+    conn.commit()
+    return {'ok': True, 'maint_since': None if not body.on else (p['maint_since'] or db.now())}
+
+
 @router.delete('/{pid}')
 def delete_printer(pid: int, user=Depends(printer_admin), conn=db.DB):
     p = db.row(conn.execute('SELECT * FROM printers WHERE id = ?', (pid,)))

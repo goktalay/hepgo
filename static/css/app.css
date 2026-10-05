@@ -7260,3 +7260,11 @@ input[type="checkbox"].gm-cb:indeterminate::after { width: 10px; height: 0; bord
 .mc-send { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--primary); color: #fff; cursor: pointer; display: grid; place-items: center; }
 .mc-send svg { width: 18px; height: 18px; fill: currentColor; }
 @media (max-width: 640px) { .mini-chat { right: 8px; left: 8px; width: auto; bottom: 8px; } }
+
+/* Yazıcı BAKIM durumu: vurgulu turuncu badge + satır vurgusu */
+.badge.orange { background: #fff0db; color: #b45309; }
+html[data-theme="dark"] .badge.orange { background: #3a2a12; color: #f0b060; }
+tr.pr-maint { background: color-mix(in srgb, #f59e0b 12%, transparent); }
+tr.pr-maint:hover { background: color-mix(in srgb, #f59e0b 18%, transparent); }
+tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
+.rack-dot.s-bakim { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.3); }

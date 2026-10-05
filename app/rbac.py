@@ -44,6 +44,7 @@ CATALOG = [
     ('cleaning', 'Temizlik', 'Saha & Operasyon'),
     ('secretariat', 'Sekreterya', 'Sistem'), ('security', 'Güvenlik', 'Sistem'), ('cameras', 'Kameralar', 'Sistem'),
     ('rehber', 'Rehber', 'Sistem'), ('tools', 'Araçlar', 'Sistem'),
+    ('factory', 'Fabrika', 'Sistem'),
     ('members', 'Üyelik Yönetimi', 'Merkez'), ('tickets', 'Destek Merkezi', 'Merkez'), ('sms', 'Toplu SMS', 'Merkez'),
     ('uyelik', 'Üyeliğim & Destek', 'Sistem'),
 ]

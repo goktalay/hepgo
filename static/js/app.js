@@ -63,6 +63,7 @@ import * as master from './modules/master.js';
 import * as mikro from './modules/mikro.js';
 import * as sales from './modules/sales.js';
 import * as crmHub from './modules/crmhub.js';
+import * as factory from './modules/factory.js';
 import { initLang, onLangChange, getLang } from './i18n.js';
 import './i18n.en.js';   // İngilizce kataloğu kaydeder (registerCatalog('en', …))
 import './i18n.en.extra.js';   // ek İngilizce katalog (modül içi statik metinler)
@@ -104,6 +105,8 @@ const MODULES = [
   { key: 'cameras', title: 'Kameralar', mod: cammgmt, group: 'system',
     show: u => u.modules.includes('cameras') && u.nvr },
   { key: 'rehber', title: 'Rehber', mod: directory, group: 'system' },
+  // Fabrika dijital ikizi: 2D kat planı + kamera/personel yerleşimi + yüz tanımadan hareket izi (Sistem Yönetimi)
+  { key: 'factory', title: 'Fabrika', mod: factory, group: 'system' },
   { key: 'hr', title: 'İnsan Kaynakları', mod: hr },
   { key: 'finance', title: 'Finans', mod: finance, tone: 'green' },
   { key: 'certs', title: 'Sertifikasyon', mod: certs },

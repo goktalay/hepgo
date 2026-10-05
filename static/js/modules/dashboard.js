@@ -571,21 +571,23 @@ export async function renderDashboard(view, ctx, modules) {
       groups.get(x.id).people.push(x);
     });
     const clocks = [];
+    // Her görev TEK SATIR: en solda araç plakası, en sağda ileri sayan DİJİTAL sayaç.
+    // Satıra tıklayınca altında o görevdeki personel(ler) açılır. Satır = üst-header rengi, içi (personel) beyaz.
     const blocks = [...groups.values()].map(g => {
-      const tEl = h('b', { class: 'db-duty-time' }, elapsed(g.since));
+      const tEl = h('b', { class: 'db-duty-digital' }, elapsed(g.since));
       clocks.push({ tEl, since: g.since });
-      // ÜST: tam genişlik başlık şeridi (ortada plaka; plaka yoksa "Araçsız / kendi aracı")
-      // GÖVDE: solda personel(ler), sağda ileri sayan sayaç · ALT: ince şeritte "dışarıda"
-      return h('div', { class: 'db-dutygrp' },
-        h('div', { class: 'db-dutygrp-head' }, g.plate
-          ? g.plate : h('span', { class: 'db-dutygrp-noveh' }, 'Araçsız / kendi aracı')),
-        h('div', { class: 'db-dutygrp-body' },
-          h('div', { class: 'db-dutygrp-people' }, g.people.map(p => h('div', { class: 'db-dutyp' },
-            dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name)))),
-          h('div', { class: 'db-duty-timer' }, tEl)),
-        h('div', { class: 'db-dutygrp-foot' }, 'dışarıda'));
+      const row = h('button', { class: 'db-duty-row', type: 'button' },
+        h('span', { class: `db-duty-plate${g.plate ? '' : ' noveh'}` }, g.plate || 'Araçsız'),
+        h('span', { class: 'db-duty-n' }, String(g.people.length)),
+        h('span', { class: 'db-duty-caret', 'aria-hidden': 'true' }),
+        tEl);
+      const people = h('div', { class: 'db-duty-people' }, g.people.map(p => h('div', { class: 'db-dutyp' },
+        dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name))));
+      const item = h('div', { class: 'db-duty-item' }, row, people);
+      row.addEventListener('click', () => item.classList.toggle('open'));
+      return item;
     });
-    clear(body, h('div', { class: 'db-dutygrps' }, blocks));
+    clear(body, h('div', { class: 'db-duty-rows' }, blocks));
     const tick = () => clocks.forEach(c => { c.tEl.textContent = elapsed(c.since); });
     timers.push(setInterval(tick, 1000));
   }

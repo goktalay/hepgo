@@ -3703,6 +3703,99 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 @keyframes m-pop { 0% { transform: scale(1); } 35% { transform: scale(1.55); } 46% { transform: scale(1.68); } 50% { transform: scale(.05); opacity: 0; } 58% { opacity: 0; transform: scale(.05); } 72% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
 @keyframes m-burstfx { 0%, 40% { opacity: 0; transform: scale(.3); } 50% { opacity: 1; transform: scale(1); } 70% { opacity: 0; transform: scale(1.8); } 100% { opacity: 0; } }
 
+/* ==== Yeni maskotlar (yalnız 2D): renkler ==== */
+/* Drone (Pervane) */
+.m-drone-arm { fill: #64748b; }
+.m-drone-rotor { fill: rgba(148, 163, 184, .55); }
+.m-drone-hub { fill: #475569; }
+.m-drone-body { fill: var(--primary); }
+.m-drone-lens { fill: #1e293b; }
+.m-drone .m-eye { fill: #5ef0ff; }
+.m-drone-glint { fill: #e6fbff; }
+.m-drone-leg { stroke: #64748b; stroke-width: 4; stroke-linecap: round; }
+.m-drone .m-smile { stroke: #5ef0ff; stroke-width: 2.6; }
+.m-drone .m-prop { animation: m-spinfast 1.4s linear infinite; }   /* boşta yavaş dönen pervaneler */
+/* Slime (Jölo) */
+.m-slime-body { fill: #4ade80; stroke: #22c55e; stroke-width: 1.5; }
+.m-slime-shine { fill: rgba(255, 255, 255, .4); }
+.m-slime .m-eye { fill: #14532d; }
+.m-slime-glint { fill: #eafff2; }
+.m-slime .m-smile { stroke: #14532d; }
+.m-slime .m-cheek { fill: #86efac; opacity: .85; }
+/* Büyücü (Merlin) */
+.m-wiz-robe { fill: #6d4bd1; }
+.m-wiz-hat { fill: #5a39b8; }
+.m-wiz-brim { fill: #5a39b8; }
+.m-wiz-star { fill: #ffd166; }
+.m-wiz-beard { fill: #eef2fb; }
+.m-wiz-wand { stroke: #7c5a33; stroke-width: 3; stroke-linecap: round; }
+.m-wiz-spark { fill: #ffd166; }
+.m-buyucu .m-head { fill: #f5c49d; }
+.m-buyucu .m-arm path { fill: none; stroke: #6d4bd1; }
+.m-buyucu .m-eye { fill: #26313f; }
+/* Dino (Riko) */
+.m-dino-body { fill: #43b36b; }
+.m-dino-belly { fill: #bdf0cf; }
+.m-dino-head { fill: #43b36b; }
+.m-dino-snout { fill: #3aa15f; }
+.m-dino-spike { fill: #2f8f52; }
+.m-dino-leg { fill: #3aa15f; }
+.m-dino-tail { stroke: #43b36b; stroke-width: 12; stroke-linecap: round; }
+.m-dino-nostril { fill: #216b3c; }
+.m-dino-mouth { stroke: #216b3c; stroke-width: 2.4; stroke-linecap: round; }
+.m-dino .m-arm rect { fill: #3aa15f; }
+.m-dino .m-eye { fill: #1a2e20; }
+/* Arı (Vızıl) */
+.m-ari-body { fill: #ffca28; }
+.m-ari-stripe { fill: #2b2b2b; }
+.m-ari-wing { fill: rgba(191, 219, 254, .75); stroke: #93c5fd; stroke-width: 1.2; }
+.m-ari-sting { fill: #2b2b2b; }
+.m-ari .m-eye { fill: #26313f; }
+.m-ari .m-smile { stroke: #26313f; }
+.m-ari .m-cheek { fill: #ff8fa3; opacity: .6; }
+.m-ari .m-wing { animation: m-flap-slow 1.6s ease-in-out infinite; }   /* boşta hafif kanat çırpma */
+
+/* ==== Yeni maskot numaraları (imza animasyonları) ==== */
+.m-prop { transform-box: fill-box; transform-origin: 50% 50%; }
+.m-wing { transform-box: fill-box; }
+.m-wing-l { transform-origin: 82% 88%; } .m-wing-r { transform-origin: 18% 88%; }
+.m-dino-head-g { transform-box: fill-box; transform-origin: 50% 100%; }
+/* Drone: süzülme / pervane / yana eğilme */
+.trick-hover { animation: m-hover 1.7s ease-in-out; }
+.trick-tilt { animation: m-tilt 1.7s ease-in-out; }
+.trick-propeller { animation: m-hover 1.7s ease-in-out; }
+.trick-propeller .m-prop { animation: m-spinfast .3s linear infinite; }
+@keyframes m-hover { 0%, 100% { transform: translateY(0) rotate(0); } 25% { transform: translateY(-8px) rotate(-3deg); } 50% { transform: translateY(-3px); } 75% { transform: translateY(-9px) rotate(3deg); } }
+@keyframes m-tilt { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-16deg) translateX(-4px); } 60% { transform: rotate(14deg) translateX(4px); } }
+@keyframes m-spinfast { to { transform: rotate(360deg); } }
+/* Slime: ezilme / jöle zıplaması */
+.trick-squish { animation: m-squish 1.1s ease; }
+.trick-blobjump { animation: m-blobjump 1.3s cubic-bezier(.3, .7, .4, 1); }
+@keyframes m-squish { 0%, 100% { transform: scaleY(1) scaleX(1); } 25% { transform: scaleY(.6) scaleX(1.26); } 55% { transform: scaleY(1.16) scaleX(.86); } 80% { transform: scaleY(.96) scaleX(1.04); } }
+@keyframes m-blobjump { 0% { transform: translateY(0) scaleY(1) scaleX(1); } 15% { transform: translateY(0) scaleY(.64) scaleX(1.22); } 40% { transform: translateY(-26px) scaleY(1.2) scaleX(.84); } 70% { transform: translateY(0) scaleY(.7) scaleX(1.2); } 85% { transform: translateY(0) scaleY(1.08) scaleX(.95); } 100% { transform: translateY(0) scaleY(1) scaleX(1); } }
+/* Büyücü: büyü yapma / havada süzülme */
+.trick-cast { animation: m-cast 1.2s ease; }
+.trick-levitate { animation: m-levitate 1.7s ease-in-out; }
+.trick-cast .m-wiz-spark { animation: m-sparkle 1.2s ease; transform-box: fill-box; transform-origin: 50% 50%; }
+@keyframes m-cast { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-8deg) translateY(2px); } 45% { transform: rotate(10deg) translateX(4px); } 70% { transform: rotate(-4deg); } }
+@keyframes m-levitate { 0%, 100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-14px) rotate(-4deg); } 60% { transform: translateY(-16px) rotate(4deg); } }
+@keyframes m-sparkle { 0% { transform: scale(.4); opacity: .3; } 50% { transform: scale(1.9); opacity: 1; } 100% { transform: scale(.8); opacity: .8; } }
+/* Dino: güm güm basma / kükreme */
+.trick-stomp { animation: m-stomp 1.2s ease; }
+.trick-roar { animation: m-roarshake 1.3s ease; }
+.trick-roar .m-dino-head-g { animation: m-roar 1.3s ease; }
+@keyframes m-stomp { 0% { transform: translateY(0) scaleY(1); } 20% { transform: translateY(-16px) scaleY(1.06); } 40% { transform: translateY(0) scaleY(.82) scaleX(1.12); } 55% { transform: translateY(0) scaleY(1.04); } 70% { transform: translateY(-8px); } 85% { transform: translateY(0) scaleY(.9) scaleX(1.06); } 100% { transform: translateY(0) scaleY(1); } }
+@keyframes m-roarshake { 0%, 100% { transform: translateX(0) rotate(0); } 15% { transform: rotate(-4deg); } 30%, 50%, 70% { transform: translateX(-2px); } 40%, 60%, 80% { transform: translateX(2px); } }
+@keyframes m-roar { 0%, 100% { transform: scale(1) translateY(0); } 30% { transform: scale(1.12) translateY(-3px); } 60% { transform: scale(1.17) translateY(-4px); } }
+/* Arı: vızıltı / havada tur */
+.trick-buzz { animation: m-buzz .9s ease; }
+.trick-buzz .m-wing { animation: m-flap .12s ease-in-out infinite; }
+.trick-loop { animation: m-loop 1.6s ease-in-out; }
+@keyframes m-buzz { 0%, 100% { transform: translate(0, 0) rotate(0); } 20% { transform: translate(-2px, -1px) rotate(-3deg); } 40% { transform: translate(2px, 1px) rotate(3deg); } 60% { transform: translate(-2px, 1px) rotate(-2deg); } 80% { transform: translate(2px, -1px) rotate(2deg); } }
+@keyframes m-flap { 0%, 100% { transform: scaleY(1) rotate(0); } 50% { transform: scaleY(.6) rotate(8deg); } }
+@keyframes m-flap-slow { 0%, 100% { transform: scaleY(1) rotate(0); } 50% { transform: scaleY(.84) rotate(4deg); } }
+@keyframes m-loop { 0%, 100% { transform: translate(0, 0) rotate(0); } 25% { transform: translate(-8px, -10px) rotate(-10deg); } 50% { transform: translate(0, -16px) rotate(0); } 75% { transform: translate(8px, -10px) rotate(10deg); } }
+
 /* Sohbet penceresi */
 .mchat {
   position: fixed; right: 20px; bottom: 120px; z-index: 61;
@@ -7520,9 +7613,13 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-prow-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .db-plate { display: inline-block; font-weight: 700; font-family: ui-monospace, monospace; letter-spacing: .5px; color: var(--text);
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; font-size: 12px; }
-.db-duty-timer { flex: none; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
-.db-duty-time { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--primary); }
-.db-duty-timer small { font-size: 10px; }
+/* Dijital (LED) sayaç — koyu şerit üzerinde parlayan monospace rakamlar, canlı nabız efekti */
+.db-duty-digital { flex: none; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+  font-weight: 700; font-size: 14px; letter-spacing: 1.5px; color: #16d05a; background: #07140d;
+  padding: 3px 9px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(22, 208, 90, .25), inset 0 1px 6px rgba(0, 0, 0, .6);
+  text-shadow: 0 0 6px rgba(22, 208, 90, .75), 0 0 2px rgba(22, 208, 90, .9); animation: dutyLed 2.4s ease-in-out infinite; }
+@keyframes dutyLed { 0%, 100% { text-shadow: 0 0 6px rgba(22, 208, 90, .75), 0 0 2px rgba(22, 208, 90, .9); }
+  50% { text-shadow: 0 0 10px rgba(22, 208, 90, .95), 0 0 3px rgba(22, 208, 90, 1); } }
 
 /* Avatar çerçevesinde kişi durumu (Hızlı Rehber + Mesajlarım): yeşil=çevrimiçi, turuncu=görevde, mavi=izinde, gri=çevrimdışı.
    Halka doğrudan kare .db-av (34×34) üzerine konur ki tam daire olsun; sarmalayıcı esnek satırda dikeyde esnemesin. */
@@ -7535,20 +7632,25 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-avwrap.st-leave  .db-av { border-color: #3b82f6; }
 .db-avwrap.st-off    .db-av { border-color: #cbd5e1; }
 
-/* Görevdeki Personel: görev/araç bazında grup — üstte tam genişlik plaka başlık şeridi,
-   gövdede solda personel(ler) + sağda tek ileri sayaç, altta ince "dışarıda" şeridi.
-   Başlık/alt şerit koyu tint'i rgba ile verilir ki açık ve koyu temada da çalışsın. */
-.db-dutygrps { display: flex; flex-direction: column; gap: 10px; }
-.db-dutygrp { border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-  background: var(--surface-2, rgba(127,127,127,.04)); }
-.db-dutygrp-head { text-align: center; padding: 6px 11px; font-weight: 700; font-size: 13px;
-  font-family: ui-monospace, monospace; letter-spacing: .5px; color: var(--text);
-  background: rgba(127, 127, 127, .14); border-bottom: 1px solid var(--border); }
-.db-dutygrp-noveh { font-family: system-ui, sans-serif; font-weight: 500; letter-spacing: 0; color: var(--muted); }
-.db-dutygrp-body { display: flex; align-items: center; gap: 12px; padding: 10px 11px; }
-.db-dutygrp-foot { padding: 3px 11px; font-size: 10px; color: var(--muted);
-  background: rgba(127, 127, 127, .14); border-top: 1px solid var(--border); }
-.db-dutygrp-people { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+/* Görevdeki Personel: her görev TEK SATIR — en solda araç plakası, en sağda dijital ileri sayaç.
+   Satıra tıklayınca altında personel(ler) açılır. Satır (header) = üst-header tint'i, açılan içi beyaz/kart zemini. */
+.db-duty-rows { display: flex; flex-direction: column; gap: 8px; }
+.db-duty-item { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card, #fff); }
+.db-duty-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 11px; cursor: pointer;
+  border: 0; text-align: left; background: var(--surface-2, rgba(127, 127, 127, .07)); color: var(--text); }
+.db-duty-row:hover { background: rgba(127, 127, 127, .14); }
+.db-duty-plate { font-weight: 700; font-family: ui-monospace, monospace; letter-spacing: .5px; font-size: 13px; color: var(--text);
+  background: var(--card, #fff); border: 1px solid var(--border); border-radius: 5px; padding: 1px 8px; }
+.db-duty-plate.noveh { font-family: system-ui, sans-serif; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.db-duty-n { flex: none; min-width: 20px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; border-radius: 10px; background: rgba(127, 127, 127, .18); color: var(--muted); }
+.db-duty-caret { flex: 1 1 auto; position: relative; }
+.db-duty-caret::after { content: ''; position: absolute; right: 2px; top: 50%; width: 7px; height: 7px; margin-top: -5px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .18s; }
+.db-duty-item.open .db-duty-caret::after { transform: rotate(-135deg); margin-top: -1px; }
+.db-duty-people { display: none; flex-direction: column; gap: 7px; padding: 10px 11px; background: var(--card, #fff);
+  border-top: 1px solid var(--border); }
+.db-duty-item.open .db-duty-people { display: flex; }
 .db-dutyp { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.db-dutyp .db-av { width: 38px; height: 38px; flex: none; font-size: 15px; }
+.db-dutyp .db-av { width: 36px; height: 36px; flex: none; font-size: 14px; }
 .db-dutyp > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

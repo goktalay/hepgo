@@ -7,7 +7,7 @@ import { DEFAULTS, EVENTS, SOUND_NAMES, playSound } from '../sounds.js';
 import { segIconByKey } from '../segicons.js';
 import { disablePush, enablePush, pushState, pushSupport } from '../push.js';
 import { CALL_BACKGROUNDS, CALL_BG_LABELS } from './voice.js';
-import { MASCOT_LIST, mascotPreview, setMascot, setMascot3D, applyMascotHidden } from './mascot.js';
+import { MASCOT_LIST, mascotPreview, setMascot, setMascot3D, setMascotSound, applyMascotHidden, has3d } from './mascot.js';
 import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
 import { mailboxesSection, socialSection } from './mysettings.js';
@@ -33,6 +33,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     mascotStyle: cur.mascotStyle || 'samimi',
     mascotOff: !!cur.mascotOff,           // başka bir ayar kaydedilince gizli maskot geri gelmesin
     mascot3d: cur.mascot3d !== false,
+    mascotSound: !!cur.mascotSound,       // robotik mırıldanma sesi (varsayılan kapalı)
     dnd: { calls: false, messages: false, until: null, dur: 'always', ...(cur.dnd || {}) },
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
@@ -402,7 +403,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         const draw = () => clear(grid, MASCOT_LIST.map(m => h('button', {
           type: 'button', class: `set-mascot ${s.mascot === m.id ? 'on' : ''}`,
           onclick: () => { s.mascot = m.id; setMascot(m.id); save('Maskot değiştirildi'); draw(); } },
-          h('span', { class: 'set-mascot-fig' }, mascotPreview(m.id, s.mascot3d !== false)),
+          h('span', { class: 'set-mascot-fig' }, mascotPreview(m.id, s.mascot3d !== false && has3d(m.id))),
           h('b', null, m.name), h('small', null, m.desc),
           s.mascot === m.id ? h('span', { class: 'set-mascot-on' }, '✓') : null)));
         draw();
@@ -418,9 +419,14 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         showChk.addEventListener('change', () => {
           s.mascotOff = !showChk.checked; applyMascotHidden(s.mascotOff); save(showChk.checked ? 'Maskot açıldı' : 'Maskot gizlendi');
         });
+        const soundChk = h('input', { type: 'checkbox', checked: !!s.mascotSound });
+        soundChk.addEventListener('change', () => {
+          s.mascotSound = soundChk.checked; setMascotSound(soundChk.checked); save(soundChk.checked ? 'Maskot sesi açıldı' : 'Maskot sesi kapatıldı');
+        });
         return card('Maskot', 'Ekranın köşesinde duran, sürekli hareket eden ve tıklayınca yapay zekayla sohbet açan asistanınızı seçin. Maskotu köşede sürükleyerek istediğiniz yere taşıyabilirsiniz.',
           h('label', { class: 'set-toggle' }, showChk, h('span', null, h('b', null, 'Maskotu göster'), h('small', null, 'Köşedeki yapay zeka asistanını gösterir ya da gizler'))),
           h('label', { class: 'set-toggle' }, d3Chk, h('span', null, h('b', null, '3D maskot'), h('small', null, 'Üç boyutlu, canlı karakter (gözleri imleci izler, düşünür, konuşur). Kapalıysa klasik çizim; “Hareketleri azalt” açıkken de klasik çizim kullanılır.'))),
+          h('label', { class: 'set-toggle' }, soundChk, h('span', null, h('b', null, 'Robotik ses'), h('small', null, 'Maskot arada bir robotik mırıldanma sesi çıkarır'))),
           h('h4', { class: 'set-sub' }, 'Karakter'),
           grid,
           h('h4', { class: 'set-sub' }, 'Konuşma tarzı'),

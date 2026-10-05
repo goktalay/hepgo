@@ -93,7 +93,84 @@ const MASCOTS = {
         <ellipse class="m-eye2" cx="50" cy="40" rx="5" ry="8"/><ellipse class="m-eye2" cx="70" cy="40" rx="5" ry="8"/>
         <path class="m-smile" d="M52 52 Q60 58 68 52"/>
       </g>` },
+  // ---- Yeni maskotlar (yalnız 2D; her birinin kendine özel numaraları var) ----
+  drone: {
+    name: 'Pervane', desc: 'Drone', tricks: ['hover', 'propeller', 'tilt'], svg: `
+      <ellipse class="m-shadow" cx="60" cy="132" rx="28" ry="6"/>
+      <rect class="m-drone-arm" x="14" y="60" width="34" height="7" rx="3.5"/>
+      <rect class="m-drone-arm" x="72" y="60" width="34" height="7" rx="3.5"/>
+      <g class="m-prop"><ellipse class="m-drone-rotor" cx="26" cy="58" rx="19" ry="4"/></g>
+      <g class="m-prop"><ellipse class="m-drone-rotor" cx="94" cy="58" rx="19" ry="4"/></g>
+      <circle class="m-drone-hub" cx="26" cy="58" r="4"/><circle class="m-drone-hub" cx="94" cy="58" r="4"/>
+      <path class="m-drone-leg" d="M46 102 L40 120" fill="none"/><path class="m-drone-leg" d="M74 102 L80 120" fill="none"/>
+      <rect class="m-drone-body" x="36" y="62" width="48" height="44" rx="18"/>
+      <circle class="m-drone-lens" cx="60" cy="84" r="16"/>
+      <circle class="m-eye" cx="60" cy="84" r="9"/>
+      <circle class="m-drone-glint" cx="55" cy="79" r="3"/>
+      <path class="m-smile" d="M50 98 Q60 104 70 98"/>` },
+  slime: {
+    name: 'Jölo', desc: 'Jöle', tricks: ['squish', 'blobjump'], svg: `
+      <ellipse class="m-shadow" cx="60" cy="132" rx="32" ry="6"/>
+      <path class="m-slime-body" d="M18 120 Q10 66 60 52 Q110 66 102 120 Q82 110 62 120 Q42 110 18 120 Z"/>
+      <ellipse class="m-slime-shine" cx="46" cy="80" rx="9" ry="15"/>
+      <circle class="m-eye" cx="50" cy="92" r="5.5"/><circle class="m-eye" cx="72" cy="92" r="5.5"/>
+      <circle class="m-slime-glint" cx="48" cy="90" r="1.8"/><circle class="m-slime-glint" cx="70" cy="90" r="1.8"/>
+      <path class="m-smile" d="M51 104 Q61 113 71 104"/>
+      <circle class="m-cheek" cx="40" cy="102" r="4.5"/><circle class="m-cheek" cx="82" cy="102" r="4.5"/>` },
+  buyucu: {
+    name: 'Merlin', desc: 'Büyücü', tricks: ['cast', 'levitate'], svg: `
+      <ellipse class="m-shadow" cx="60" cy="132" rx="28" ry="6"/>
+      <path class="m-wiz-robe" d="M34 128 L47 86 Q60 80 73 86 L86 128 Z"/>
+      <g class="m-arm m-wavearm"><path d="M72 94 q16 4 12 26" fill="none" stroke-width="11" stroke-linecap="round"/></g>
+      <g class="m-arm"><path d="M48 94 q-16 4 -12 26" fill="none" stroke-width="11" stroke-linecap="round"/></g>
+      <line class="m-wiz-wand" x1="84" y1="118" x2="99" y2="92"/>
+      <circle class="m-wiz-spark" cx="100" cy="90" r="4.5"/>
+      <circle class="m-head" cx="60" cy="72" r="18"/>
+      <circle class="m-eye" cx="53" cy="70" r="3"/><circle class="m-eye" cx="67" cy="70" r="3"/>
+      <path class="m-wiz-beard" d="M45 76 Q60 106 75 76 Q60 86 45 76 Z"/>
+      <ellipse class="m-wiz-brim" cx="60" cy="58" rx="27" ry="6"/>
+      <path class="m-wiz-hat" d="M39 58 L60 12 L81 58 Z"/>
+      <path class="m-wiz-star" d="M60 28 l2.2 5 5.4 .5 -4.1 3.6 1.2 5.3 -4.7-2.8 -4.7 2.8 1.2-5.3 -4.1-3.6 5.4-.5 z"/>` },
+  dino: {
+    name: 'Riko', desc: 'Dino', tricks: ['stomp', 'roar'], svg: `
+      <ellipse class="m-shadow" cx="60" cy="132" rx="34" ry="6"/>
+      <path class="m-dino-tail" d="M90 116 Q114 110 108 86" fill="none"/>
+      <rect class="m-dino-leg" x="46" y="108" width="13" height="22" rx="5"/>
+      <rect class="m-dino-leg" x="61" y="108" width="13" height="22" rx="5"/>
+      <path class="m-dino-spike" d="M33 76 l8 -15 8 15 z"/>
+      <path class="m-dino-spike" d="M50 68 l8 -17 8 17 z"/>
+      <path class="m-dino-spike" d="M67 68 l8 -17 8 17 z"/>
+      <ellipse class="m-dino-body" cx="60" cy="92" rx="34" ry="34"/>
+      <ellipse class="m-dino-belly" cx="60" cy="100" rx="21" ry="20"/>
+      <g class="m-arm m-wavearm"><rect x="86" y="80" width="10" height="22" rx="5"/></g>
+      <g class="m-arm"><rect x="24" y="80" width="10" height="22" rx="5"/></g>
+      <g class="m-dino-head-g">
+        <circle class="m-dino-head" cx="60" cy="46" r="26"/>
+        <ellipse class="m-dino-snout" cx="60" cy="56" rx="18" ry="12"/>
+        <circle class="m-eye" cx="51" cy="40" r="3.6"/><circle class="m-eye" cx="69" cy="40" r="3.6"/>
+        <circle class="m-dino-nostril" cx="54" cy="54" r="1.8"/><circle class="m-dino-nostril" cx="66" cy="54" r="1.8"/>
+        <path class="m-dino-mouth" d="M50 60 q10 6 20 0" fill="none"/>
+      </g>` },
+  ari: {
+    name: 'Vızıl', desc: 'Arı', tricks: ['buzz', 'loop'], svg: `
+      <ellipse class="m-shadow" cx="60" cy="132" rx="26" ry="6"/>
+      <g class="m-wing m-wing-l"><ellipse class="m-ari-wing" cx="38" cy="58" rx="15" ry="22"/></g>
+      <g class="m-wing m-wing-r"><ellipse class="m-ari-wing" cx="82" cy="58" rx="15" ry="22"/></g>
+      <ellipse class="m-ari-body" cx="60" cy="86" rx="27" ry="32"/>
+      <ellipse class="m-ari-stripe" cx="60" cy="74" rx="22" ry="4.5"/>
+      <ellipse class="m-ari-stripe" cx="60" cy="90" rx="24" ry="4.5"/>
+      <ellipse class="m-ari-stripe" cx="60" cy="106" rx="18" ry="4.5"/>
+      <path class="m-ari-sting" d="M60 118 l-5 10 10 0 z"/>
+      <line class="m-ant" x1="52" y1="56" x2="47" y2="44"/><circle class="m-antdot" cx="46" cy="42" r="3"/>
+      <line class="m-ant" x1="68" y1="56" x2="73" y2="44"/><circle class="m-antdot" cx="74" cy="42" r="3"/>
+      <circle class="m-eye" cx="51" cy="70" r="4"/><circle class="m-eye" cx="69" cy="70" r="4"/>
+      <path class="m-smile" d="M52 80 Q60 88 68 80"/>
+      <circle class="m-cheek" cx="42" cy="80" r="4"/><circle class="m-cheek" cx="78" cy="80" r="4"/>` },
 };
+
+// 3D modeli yalnız orijinal 6 karakter için var (mascot3d.buildCharacter). Yeni maskotlar daima 2D çizilir.
+const THREE_D_IDS = new Set(['kubbe', 'robo', 'kedi', 'hayalet', 'penguen', 'uzayli']);
+export const has3d = id => THREE_D_IDS.has(id);
 
 export const MASCOT_LIST = Object.entries(MASCOTS).map(([id, m]) => ({ id, name: m.name, desc: m.desc }));
 const DEFAULT_ID = 'kubbe';
@@ -113,11 +190,12 @@ export const mascotSvg = figSvg;
 // 3D maskot: kullanıcı kapatmadıysa, cihaz WebGL destekliyorsa ve "hareketleri azalt" kapalıysa (aksi halde klasik 2D çizim)
 const reduceMotion = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
 let want3d = true;
-const can3d = () => want3d && webglOK() && !reduceMotion();
-// Önizleme (ayarlar kartı, sohbet başlığı): 3D'de anlık görüntü, hazır olana dek 2D çizim
+const can3d = () => want3d && has3d(curId) && webglOK() && !reduceMotion();
+// Önizleme (ayarlar kartı, sohbet başlığı): 3D'de anlık görüntü, hazır olana dek 2D çizim.
+// Yeni (3D'si olmayan) maskotlar için daima 2D svg gösterilir.
 export function mascotPreview(id, threeD = can3d()) {
   const box = h('span', { class: 'mascot-prev' }, figSvg(id));
-  if (threeD && webglOK()) {
+  if (threeD && has3d(id) && webglOK()) {
     mascot3dSnapshot(id).then(url => clear(box, h('img', { class: 'mascot-snap', src: url, alt: '' }))).catch(() => {});
   }
   return box;
@@ -125,6 +203,50 @@ export function mascotPreview(id, threeD = can3d()) {
 
 const TRICKS = ['wave', 'jump', 'wobble', 'spin', 'pop', 'dance', 'peek'];
 const POS_KEY = 'caymaz.mascotPos';
+
+// ---- Robotik "mırıldanma" sesi (Web Audio ile sentezlenir; dosya yok). Varsayılan KAPALI. ----
+// Tarayıcılar ilk kullanıcı etkileşiminden önce sesi engeller: AudioContext ilk dokunuşta açılır/sürdürülür.
+let mascotSound = false;        // kullanıcı ayarı (users.prefs.settings.mascotSound)
+let audioCtx = null;
+function ensureAudio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  } catch { return null; }
+}
+// Ayarlar › Maskot › "Robotik ses" anahtarı
+export function setMascotSound(on) { mascotSound = on === true; if (mascotSound) ensureAudio(); }
+
+// Kısa, sevimli robotik mırıltı: 2-4 hızlı "blip" (kare/testere dalga), bant-geçiren süzgeç, her blipte kısa zarf.
+function playMumble() {
+  if (!mascotSound || document.hidden) return;
+  const ac = audioCtx;
+  if (!ac || ac.state !== 'running') return;
+  try {
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 850; bp.Q.value = 5;
+    bp.connect(ac.destination);
+    const n = 2 + Math.floor(Math.random() * 3);   // 2-4 blip
+    let tt = ac.currentTime + 0.01;
+    for (let i = 0; i < n; i++) {
+      const dur = 0.07 + Math.random() * 0.06;
+      const osc = ac.createOscillator();
+      osc.type = Math.random() < 0.5 ? 'square' : 'sawtooth';
+      osc.frequency.setValueAtTime(120 + Math.random() * 380, tt);
+      osc.frequency.linearRampToValueAtTime(120 + Math.random() * 380, tt + dur);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.05 + Math.random() * 0.025, tt + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0008, tt + dur);
+      osc.connect(g); g.connect(bp);
+      osc.start(tt); osc.stop(tt + dur + 0.02);
+      tt += dur + 0.03 + Math.random() * 0.05;
+    }
+  } catch { /* ses engellendi: sessizce geç */ }
+}
 
 let mounted = false;
 let convo = [];        // {role, content}
@@ -143,8 +265,16 @@ export function applyMascotHidden(hidden) {
 export function setMascot(id) {
   curId = MASCOTS[id] ? id : DEFAULT_ID;
   if (!els) return;
+  // Yeni maskotun 3D modeli yoksa (ya da 3D kapalıysa) canlı 3D'yi söküp 2D çizime dön
+  if (ctl && !can3d()) {
+    ctl.destroy(); ctl = null;
+    els.fig.classList.remove('m3d'); els.btn.classList.remove('is3d');
+  }
   if (ctl) ctl.setCharacter(curId);
-  else clear(els.fig, [figSvg(curId), h('span', { class: 'm-burst' })]);
+  else {
+    clear(els.fig, [figSvg(curId), h('span', { class: 'm-burst' })]);
+    if (can3d()) start3d();   // 2D'den 3D'si olan bir karaktere geçildiyse canlıya çevir
+  }
   if (els.headAva) clear(els.headAva, mascotPreview(curId, !!ctl));
   if (els.headName) els.headName.textContent = MASCOTS[curId].name;
 }
@@ -179,6 +309,11 @@ export async function mountMascot(ctx) {
   mounted = true;
   curId = ctx?.user?.prefs?.settings?.mascot && MASCOTS[ctx.user.prefs.settings.mascot] ? ctx.user.prefs.settings.mascot : DEFAULT_ID;
   want3d = ctx?.user?.prefs?.settings?.mascot3d !== false;
+  mascotSound = ctx?.user?.prefs?.settings?.mascotSound === true;   // varsayılan kapalı
+  // Otomatik oynatma engeli: ses motorunu ilk kullanıcı etkileşiminde aç/sürdür (hata fırlatmaz)
+  const armAudio = () => { if (mascotSound) ensureAudio(); };
+  window.addEventListener('pointerdown', armAudio, { passive: true });
+  window.addEventListener('click', armAudio, { passive: true });
 
   const fig = h('div', { class: 'mascot-fig' }, figSvg(curId), h('span', { class: 'm-burst' }));
   const btn = h('button', { class: 'mascot', type: 'button', title: 'Asistana sor (sürükleyip taşıyabilirsin)', 'aria-label': 'Yapay zeka asistanı' },
@@ -227,11 +362,13 @@ export async function mountMascot(ctx) {
 
   // Sürekli hareket: sohbet kapalıyken rastgele numaralar
   const doTrick = () => {
-    if (!panel.hidden || btn.classList.contains('dragging')) return;
-    const t = TRICKS[Math.floor(Math.random() * TRICKS.length)];
-    if (ctl) return ctl.play(t);
-    fig.classList.add(`trick-${t}`);
-    setTimeout(() => fig.classList.remove(`trick-${t}`), 1700);
+    if (!panel.hidden || btn.classList.contains('dragging') || btn.style.display === 'none') return;
+    if (Math.random() < 0.3) playMumble();   // arada bir (~%30) robotik mırıltı
+    const list = MASCOTS[curId]?.tricks || TRICKS;   // maskota özel numaralar varsa onlardan seç, yoksa ortak liste
+    const tr = list[Math.floor(Math.random() * list.length)];
+    if (ctl) return ctl.play(tr);
+    fig.classList.add(`trick-${tr}`);
+    setTimeout(() => fig.classList.remove(`trick-${tr}`), 1700);
   };
   const scheduleTrick = () => setTimeout(() => { doTrick(); scheduleTrick(); }, 3200 + Math.random() * 4200);
   scheduleTrick();

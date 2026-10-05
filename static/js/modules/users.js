@@ -47,6 +47,19 @@ async function renderList(view, ctx) {
 
 const open = u => { location.hash = `#/users/${u.id}`; };
 
+// Kaba kuvvet kilidi: kilitliyse kırmızı "Kilitli · Aç" rozeti; tıklayınca (sistem yöneticisi) kilidi açar.
+// <span> kullanılır (satır görünümü <button>, iç içe <button> geçersiz olur).
+function lockInfo(u) {
+  if (!u.locked) return null;
+  return h('span', { class: 'badge red u-unlock', role: 'button', tabindex: '0',
+    title: t('Çok fazla hatalı şifre; {n} dk kilitli. Kilidi açmak için tıklayın.', { n: u.locked }),
+    onclick: async e => {
+      e.stopPropagation(); e.preventDefault();
+      try { await api.post(`/api/users/${u.id}/unlock`); toast(t('{name} kilidi açıldı', { name: u.full_name })); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+      catch (err) { toastError(err); }
+    } }, '🔒 ', t('Kilitli ({n} dk) · Aç', { n: u.locked }));
+}
+
 function cards(users) {
   return h('div', { class: 'grid-cards' }, users.map(u =>
     h('div', { class: 'card user-card', onclick: () => open(u) },
@@ -55,6 +68,7 @@ function cards(users) {
       h('div', { class: 'uname' }, u.username),
       h('div', { class: 'chips' }, u.roles.map(r => h('span', { class: `chip ${r === 'Stajer' ? 'intern' : ''}` }, r))),
       u.active ? null : h('span', { class: 'badge red' }, 'Pasif'),
+      lockInfo(u),
       u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: t('{d} tarihine kadar', { d: u.absence.until }) }, u.absence.label) : null,
       u.external ? h('a', { class: 'badge purple', href: u.external.href, title: 'Dış firma personeli (İK personeli değil)' }, t('Dış firma: {name}', { name: u.external.company_name })) : null)));
 }
@@ -67,6 +81,7 @@ function table(users) {
       h('div', { class: 'u-row-mid' },
         h('div', { class: 'u-row-top' }, h('b', null, u.full_name),
           u.active ? null : h('span', { class: 'u-pill' }, 'Pasif'),
+          lockInfo(u),
           u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: t('{d} tarihine kadar', { d: u.absence.until }) }, u.absence.label) : null,
           u.external ? h('span', { class: 'badge purple' }, t('Dış: {name}', { name: u.external.company_name })) : null),
         h('div', { class: 'u-row-sub' }, u.username)),

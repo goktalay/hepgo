@@ -70,13 +70,30 @@ def list_users(q: str = '', role: str = '', user=Depends(admin_only), conn=db.DB
            for r in conn.execute('SELECT p.user_id, p.id, c.id, c.name, c.is_supplier FROM company_people p JOIN companies c ON c.id = p.company_id '
                                  'WHERE p.user_id IS NOT NULL')}
     from .admin import ONLINE_WINDOW
+    from .auth_routes import _locked   # kaba kuvvet kilidi (kalan dakika) — kilitli kullanıcı listede görünür
     cut = (datetime.now() - ONLINE_WINDOW).isoformat(timespec='seconds')
     for r in rows:
         r['absence'] = absent.get(r['id'])
         r['external'] = ext.get(r['id'])   # dış firma personeli (ör. kiralık güvenlik)
         r['online'] = bool(r['active'] and r.get('last_seen') and r['last_seen'] >= cut)   # WhatsApp tarzı çevrimiçi halkası için
         r['is_foreign'] = bool(r.get('is_foreign'))   # yabancı uyruklu personel (listede açık turuncu arka plan)
+        r['locked'] = _locked(conn, r['username'], None)   # >0 ise kilitli (kalan dakika)
     return rows
+
+
+@router.post('/{uid}/unlock')
+def unlock_user(uid: int, user=Depends(admin_only), conn=db.DB):
+    """Kaba kuvvet kilidini aç (sistem yöneticisi): kullanıcının başarısız deneme serisini temizler.
+    Son başarısız denemeler silinir + bir 'başarı' işareti yazılır, böylece sayaç sıfırlanır."""
+    u = db.row(conn.execute('SELECT username FROM users WHERE id = ? AND deleted_at IS NULL', (uid,)))
+    if not u:
+        raise HTTPException(404, 'Kullanıcı bulunamadı')
+    conn.execute("DELETE FROM login_logs WHERE username = ? AND success = 0", (u['username'],))
+    conn.execute('INSERT INTO login_logs (user_id, username, success, ip, user_agent, at) VALUES (?,?,1,?,?,?)',
+                 (uid, u['username'], None, 'admin-unlock', db.now()))
+    db.audit(conn, user['id'], 'Kullanıcı kilidini açtı', 'user', uid)
+    conn.commit()
+    return {'ok': True}
 
 
 @router.post('')

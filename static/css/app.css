@@ -7405,3 +7405,6 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
   .fm-wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: calc(100vh - 150px); }
   .fm-side { border-right: 0; border-bottom: 1px solid var(--border); max-height: 200px; }
 }
+
+.u-unlock { cursor: pointer; }
+.u-unlock:hover { filter: brightness(1.08); }

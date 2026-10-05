@@ -73,6 +73,8 @@ function saveLayers(l) { try { localStorage.setItem(LAYER_KEY, JSON.stringify(l)
 
 // Photoshop tarzı yüzen ikon araç çubuğu konumu (sürüklenince cihaz başına localStorage'da saklanır)
 const TB_KEY = 'fab.toolbar.pos';
+// Yüzen "Seçenekler" paneli (özellik/katman/hareket) açık mı? (cihaz başına localStorage)
+const PANEL_KEY = 'fab.panel.open';
 // Araç ikonları (24x24 SVG). fill="none" olan şekiller CSS ile stroke'lanır; diğerleri dolu. currentColor ile renklenir.
 const TOOL_ICON = {
   select: () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('path', { d: 'M5 3 L5 19 L9 15 L12 21 L14.5 20 L11.5 14 L17 14 Z' })),
@@ -84,6 +86,8 @@ const TOOL_ICON = {
   stair:  () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('path', { d: 'M4 20 V16 H9 V12 H14 V8 H19 V4', fill: 'none' })),
   bg:     () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('rect', { x: 3, y: 5, width: 18, height: 14, rx: 2, fill: 'none' }), s('circle', { cx: 8, cy: 10, r: 1.7, stroke: 'none' }), s('path', { d: 'M4 18 L10 12 L13 15 L16.5 11 L20 16', fill: 'none' })),
   grip:   () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, [[9, 6], [15, 6], [9, 12], [15, 12], [9, 18], [15, 18]].map(([cx, cy]) => s('circle', { cx, cy, r: 1.5, stroke: 'none' }))),
+  // Seçenekler paneli (sürgü/slider ikonu): özellikler + katmanlar menüsünü açar
+  panel:  () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('path', { d: 'M4 7 H20 M4 12 H20 M4 17 H20', fill: 'none' }), [[9, 7], [15, 12], [7, 17]].map(([cx, cy]) => s('circle', { cx, cy, r: 2.3, stroke: 'none' }))),
 };
 // Poligon ağırlık merkezi (etiket + iz konumu). Dejenere poligonlarda ortalama noktaya düşer.
 function centroid(points) {
@@ -124,6 +128,7 @@ export async function render(view, params, ctx) {
     lineDraft: null,              // çizilmekte olan hat köşeleri [[x,y],...]
     lineKind: 'network',          // "Hat Çiz" aktifken çizilecek hat türü
     layers: loadLayers(),         // katman görünürlükleri (localStorage)
+    panelOpen: (() => { try { return localStorage.getItem(PANEL_KEY) === '1'; } catch { return false; } })(),  // yüzen seçenekler paneli açık mı
     bgEdit: false,                // arka plan "Hizala" modu (resmi sürükle)
     cam: { scale: 1, panX: 60, panY: 60 },   // tuval görünümü (pan/zoom)
     // hareket modu
@@ -152,11 +157,18 @@ export async function render(view, params, ctx) {
     catch (err) { toastError(err); }
     tbBgInp.value = '';
   });
-  stage.append(toolbarEl, tbBgInp);
-  const side = h('div', { class: 'fab-side' });   // sağ panel (özellik/katman/hareket)
+  // Yüzen "Seçenekler" paneli: eski sağ panel yerine tuval üzerinde, araç çubuğu düğmesiyle açılır popover.
+  const sideBody = h('div', { class: 'fab-side-body' });
+  const side = h('div', { class: 'fab-side fab-pop' },
+    h('div', { class: 'fab-pop-hdr' },
+      h('span', { class: 'fab-pop-ttl' }, 'Seçenekler'),
+      h('button', { class: 'fab-pop-x', type: 'button', title: 'Kapat', 'aria-label': 'Kapat', onclick: () => setPanel(false) }, '✕')),
+    sideBody);
+  side.hidden = true;
+  stage.append(toolbarEl, tbBgInp, side);
   const floorBar = h('div', { class: 'fab-floors' });
   const hint = h('div', { class: 'fab-hint' });
-  const wrap = h('div', { class: 'fab-wrap' }, h('div', { class: 'fab-main' }, floorBar, stage, hint), side);
+  const wrap = h('div', { class: 'fab-wrap' }, h('div', { class: 'fab-main' }, floorBar, stage, hint));
 
   injectStyle();
 
@@ -448,11 +460,11 @@ export async function render(view, params, ctx) {
   }
 
   // ==================================================================== seçim yardımcıları
-  const selectRoom = r => { st.sel = { type: 'room', id: r.id }; drawCanvas(); drawSide(); };
-  const selectCam = c => { st.sel = { type: 'cam', id: c.id }; drawCanvas(); drawSide(); };
-  const selectStair = m => { st.sel = { type: 'stair', id: m.id }; drawCanvas(); drawSide(); };
-  const selectMarker = m => { st.sel = { type: 'marker', id: m.id }; drawCanvas(); drawSide(); };
-  const selectLine = ln => { st.sel = { type: 'line', id: ln.id }; drawCanvas(); drawSide(); };
+  const selectRoom = r => { st.sel = { type: 'room', id: r.id }; st.panelOpen = true; drawCanvas(); drawSide(); };
+  const selectCam = c => { st.sel = { type: 'cam', id: c.id }; st.panelOpen = true; drawCanvas(); drawSide(); };
+  const selectStair = m => { st.sel = { type: 'stair', id: m.id }; st.panelOpen = true; drawCanvas(); drawSide(); };
+  const selectMarker = m => { st.sel = { type: 'marker', id: m.id }; st.panelOpen = true; drawCanvas(); drawSide(); };
+  const selectLine = ln => { st.sel = { type: 'line', id: ln.id }; st.panelOpen = true; drawCanvas(); drawSide(); };
 
   // ==================================================================== sürükleme (autosave)
   function drag(onMove, onUp) {
@@ -682,6 +694,7 @@ export async function render(view, params, ctx) {
       x = Math.max(0, Math.min(x, stageR.width - tbR.width));
       y = Math.max(0, Math.min(y, stageR.height - tbR.height));
       toolbarEl.style.left = `${x}px`; toolbarEl.style.top = `${y}px`; toolbarEl.style.right = 'auto';
+      if (!side.hidden) positionPanel();
     };
     const mu = () => {
       window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu);
@@ -694,6 +707,29 @@ export async function render(view, params, ctx) {
     let p = null; try { p = JSON.parse(localStorage.getItem(TB_KEY) || 'null'); } catch { /* yoksa öntanımlı */ }
     if (p && typeof p.x === 'number') { toolbarEl.style.left = `${p.x}px`; toolbarEl.style.top = `${p.y}px`; toolbarEl.style.right = 'auto'; }
   }
+
+  // ---- Yüzen "Seçenekler" paneli: araç çubuğundaki düğmeyle açılır; konumu araç çubuğuna göre hizalanır
+  let panelBtnEl = null;
+  function setPanel(open) {
+    st.panelOpen = !!open;
+    try { localStorage.setItem(PANEL_KEY, st.panelOpen ? '1' : '0'); } catch { /* sessiz */ }
+    applyPanel();
+  }
+  function applyPanel() {
+    side.hidden = !st.panelOpen;
+    if (panelBtnEl) { panelBtnEl.classList.toggle('on', st.panelOpen); panelBtnEl.setAttribute('aria-pressed', st.panelOpen ? 'true' : 'false'); }
+    if (st.panelOpen) positionPanel();
+  }
+  function positionPanel() {
+    if (side.hidden) return;
+    const sr = stage.getBoundingClientRect(), tr = toolbarEl.getBoundingClientRect();
+    const pw = side.offsetWidth || 290, ph = side.offsetHeight || 300;
+    let left = (tr.right - sr.left) + 8;                 // öntanımlı: araç çubuğunun sağına
+    if (left + pw > sr.width - 8) left = (tr.left - sr.left) - pw - 8;   // sığmazsa soluna
+    left = Math.max(8, Math.min(left, sr.width - pw - 8));
+    let top = Math.max(8, Math.min(tr.top - sr.top, sr.height - ph - 8));
+    side.style.left = `${left}px`; side.style.top = `${top}px`;
+  }
   // ---- Yüzen ikon araç çubuğunu kur (aktif araç vurgulanır). Her buton: net ikon + Türkçe title/aria-label.
   function buildToolbar() {
     const grip = h('div', { class: 'fab-tb-grip', title: 'Araç çubuğunu taşı (sürükleyin)', onmousedown: toolbarDrag });
@@ -703,6 +739,10 @@ export async function render(view, params, ctx) {
       b.append(TOOL_ICON[iconKey]());
       return b;
     };
+    // Seçenekler panelini açıp kapatan düğme (her iki modda): basınca sağ paneldeki seçenekler menü olarak gelir.
+    panelBtnEl = btn(st.mode === 'move' ? 'Seçenekler: Hareket & Canlı Durum' : 'Seçenekler: Özellikler & Katmanlar',
+      'panel', () => setPanel(!st.panelOpen), st.panelOpen);
+    if (st.mode === 'move') { clear(toolbarEl, grip, panelBtnEl); return; }
     clear(toolbarEl, grip,
       btn('Seç / Taşı', 'select', () => setTool('select'), st.tool === 'select'),
       btn('Oda Çiz', 'room', () => setTool('room'), st.tool === 'room'),
@@ -713,23 +753,26 @@ export async function render(view, params, ctx) {
       btn('Elektrik Hattı Çiz', 'power', () => setTool('line', { lineKind: 'power' }), st.tool === 'line' && st.lineKind === 'power'),
       h('div', { class: 'fab-tb-sep' }),
       btn('Merdiven Koy', 'stair', () => setTool('stair'), st.tool === 'stair'),
-      btn('Arka Plan Planı Yükle', 'bg', () => { if (!st.floorId) return toast('Önce bir kat seçin', 'err'); tbBgInp.click(); }, false));
+      btn('Arka Plan Planı Yükle', 'bg', () => { if (!st.floorId) return toast('Önce bir kat seçin', 'err'); tbBgInp.click(); }, false),
+      h('div', { class: 'fab-tb-sep' }),
+      panelBtnEl);
   }
 
   function drawSide() {
-    if (st.mode === 'move') { toolbarEl.hidden = true; return drawMoveSide(); }
-    // DÜZEN: araçlar artık YÜZEN ikon çubuğunda; sağ panel = aktif araç notu + seçili öğe özellikleri + katmanlar
     buildToolbar(); toolbarEl.hidden = false;
+    if (st.mode === 'move') { drawMoveSide(); return; }   // hareket içeriğini doldurur, sonunda applyPanel çağırır
+    // DÜZEN: araçlar yüzen ikon çubuğunda; seçenekler paneli = aktif araç notu + seçili öğe özellikleri + katmanlar
     const note = st.tool === 'room' ? 'Köşe eklemek için tıklayın; bitirmek için çift tık ya da Enter. Vazgeç: Esc.'
       : st.tool === 'line' ? 'Hat için noktaları tıklayın; bitirmek için çift tık ya da Enter. Vazgeç: Esc.'
         : st.tool === 'marker' ? 'İşaretçiyi yerleştirmek için plana tıklayın.'
           : st.tool === 'stair' ? 'Merdiven koymak için plana tıklayın.' : null;
-    clear(side,
+    clear(sideBody,
       h('h3', { class: 'fab-side-h' }, 'Özellikler'),
       note ? h('div', { class: 'fab-note' }, note) : h('div', { class: 'fab-note muted' }, 'Araçlar tuval üzerindeki yüzen ikon çubuğundadır.'),
       selProps(),
       layersPanel());
     drawFloorBar();
+    applyPanel();
   }
 
   // Katmanlar paneli: her kategori bağımsız gösterilir/gizlenir (cihaz başına localStorage'da saklanır)
@@ -827,7 +870,7 @@ export async function render(view, params, ctx) {
 
     const liveBtn = h('button', { class: `btn ${st.live ? 'success' : ''}`, type: 'button', onclick: toggleLive }, st.live ? 'Canlı: Açık' : 'Şu An (canlı)');
 
-    clear(side,
+    clear(sideBody,
       h('h3', { class: 'fab-side-h' }, 'Hareket'),
       field('Kişi', sub),
       h('div', { class: 'fab-row' }, field('Başlangıç', from), field('Bitiş', to)),
@@ -838,6 +881,7 @@ export async function render(view, params, ctx) {
       liveBtn,
       livePanel());
     drawFloorBar();
+    applyPanel();
   }
   function optg(label, arr, type, fmt) {
     if (!arr || !arr.length) return null;
@@ -1001,7 +1045,16 @@ function injectStyle() {
   const css = `
   .fab-wrap{display:flex;gap:12px;align-items:stretch;height:calc(100vh - 190px);min-height:460px}
   .fab-main{flex:1;display:flex;flex-direction:column;min-width:0}
-  .fab-side{width:290px;flex:0 0 290px;overflow:auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px}
+  /* Seçenekler paneli artık tuval üzerinde YÜZEN popover (araç çubuğu düğmesiyle açılır) */
+  .fab-side.fab-pop{position:absolute;left:58px;top:12px;z-index:6;width:290px;max-height:calc(100% - 24px);overflow:auto;
+    background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;
+    box-shadow:0 12px 34px rgba(15,23,42,.22)}
+  .fab-side[hidden]{display:none}
+  .fab-pop-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-12px -12px 10px;padding:8px 12px;
+    border-bottom:1px solid var(--line,#e5e7eb);position:sticky;top:-12px;background:var(--card,#fff);border-radius:10px 10px 0 0;z-index:1}
+  .fab-pop-ttl{font-weight:600;font-size:13px;color:var(--muted,#64748b);letter-spacing:.02em}
+  .fab-pop-x{border:none;background:transparent;cursor:pointer;font-size:14px;line-height:1;color:#94a3b8;padding:3px 7px;border-radius:6px}
+  .fab-pop-x:hover{background:var(--bg2,#f1f5f9);color:#1e293b}
   .fab-side-h{margin:4px 0 8px;font-size:15px}
   .fab-floors{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
   .fab-floors-lbl{font-size:12px;color:var(--muted,#6b7280)}

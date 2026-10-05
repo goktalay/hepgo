@@ -52,7 +52,7 @@ export async function render(view, params, ctx) {
     }
     q.hidden = state.hidden = false;
     clear(body, !printers.length
-      ? h('div', { class: 'card empty' }, 'Kayıtlı yazıcı yok. “Yeni Yazıcı” ile ekleyin ya da “Otomatik Ekle” ile ağı tarayın.')
+      ? h('div', { class: 'card empty' }, 'Kayıtlı yazıcı yok. “Yeni Yazıcı” ile ekleyin ya da “Otomatik Ekle / IP Düzelt” ile tüm ağ bloğunu tarayın.')
       : list.length ? table(list, load, canOpen) : h('div', { class: 'card empty' }, 'Filtreye uyan yazıcı yok'));
   };
   const load = async () => { printers = await api.get('/api/printers'); draw(); };
@@ -72,13 +72,17 @@ export async function render(view, params, ctx) {
     if (r.changed.length) toast(t('{n} yazıcının adı güncellendi: {list}{more}', { n: r.changed.length, list: r.changed.map(c => `${c.old} → ${c.new}`).slice(0, 4).join(', '), more: r.changed.length > 4 ? '…' : '' }));
     else toast(t('Değişen ad yok · {noName}/{total} yazıcının ekranında ad girilmemiş ya da ulaşılamadı', { noName: r.no_name, total: r.total }), r.no_name ? '' : 'ok');
   }));
-  const discoverBtn = h('button', { class: 'btn' }, svgIcon(icons.radar), 'Otomatik Ekle');
+  const discoverBtn = h('button', { class: 'btn', title: 'Tüm ağ bloğunu tarar: yeni yazıcıları ekler, elektrik kesintisi gibi sebeplerle IP’si değişen kayıtlı yazıcıların IP’sini düzeltir (cihaz donanım kimliğinden tanınır)' }, svgIcon(icons.radar), 'Otomatik Ekle / IP Düzelt');
   discoverBtn.addEventListener('click', () => busy(discoverBtn, async () => {
-    toast('Ağ taranıyor, bu işlem birkaç saniye sürebilir…');
+    toast('Ağ bloğu taranıyor, bu işlem birkaç saniye sürebilir…');
     const res = await api.post('/api/printers/discover');
     await load();
-    if (res.added.length) toast(t('{n} yazıcı eklendi: {ips}', { n: res.added.length, ips: res.added.map(a => a.ip).join(', ') }));
-    else toast(res.found ? 'Ağdaki yazıcıların hepsi zaten kayıtlı' : 'Ağda yazıcı bulunamadı', res.found ? '' : 'err');
+    const moved = res.moved || [];
+    const msgs = [];
+    if (res.added.length) msgs.push(t('{n} yeni yazıcı eklendi: {ips}', { n: res.added.length, ips: res.added.map(a => a.ip).join(', ') }));
+    if (moved.length) msgs.push(t('{n} yazıcının IP’si düzeltildi: {list}', { n: moved.length, list: moved.map(m => `${m.name || m.ip} → ${m.ip}`).join(', ') }));
+    if (msgs.length) toast(msgs.join(' · '), 'success');
+    else toast(res.found ? 'Ağdaki yazıcıların hepsi zaten kayıtlı ve IP’leri güncel' : 'Ağda yazıcı bulunamadı', res.found ? '' : 'err');
   }));
 
   clear(view,

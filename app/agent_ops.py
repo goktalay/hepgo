@@ -67,6 +67,11 @@ def _printer_probe(args):
     return printer_driver._probe_direct(args['ip'])
 
 
+def _printer_discover(args):
+    from . import printer_driver
+    return printer_driver._discover_local()   # fabrika LAN'ında tüm /24 bloğu taranır (ajan ağda)
+
+
 def _printer_send(args):
     from . import printer_send
     return printer_send.agent_send(args)
@@ -180,6 +185,7 @@ OPS = {
     'pdks.attendance': _pdks_attendance,
     'pdks.test': _pdks_test,
     'printer.probe': _printer_probe,
+    'printer.discover': _printer_discover,
     'printer.send': _printer_send,
     'nvr.probe': _nvr_probe,
     'nvr.channels': _nvr_channels,

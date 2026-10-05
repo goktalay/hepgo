@@ -238,7 +238,13 @@ def _refresh_names(user):
 
 @router.post('/discover')
 async def discover(user=Depends(printer_admin)):
-    found = await run_in_threadpool(printer_driver.discover)
+    try:
+        found = await run_in_threadpool(printer_driver.discover)
+    except Exception as e:   # noqa: BLE001 — uzak modda ajan bağlı değil / eski ajan: anlaşılır mesaj
+        msg = str(e)
+        if 'ajan' in msg.lower() or 'agent' in msg.lower():
+            raise HTTPException(503, 'Fabrikadaki ajana ulaşılamadı; yazıcı taraması yapılamadı. Ajanın çevrimiçi ve güncel olduğundan emin olun.') from e
+        raise HTTPException(502, f'Yazıcı taraması başarısız: {msg}') from e
     return await run_in_threadpool(_add_discovered, found, user)
 
 
@@ -247,11 +253,18 @@ def _add_discovered(found, user):
     IP değiştirmiş olsa bile ikinci kez eklenmez; yalnızca IP'si güncellenir. Kimliği okunamayan cihazlar IP'ye göre eklenir."""
     from concurrent.futures import ThreadPoolExecutor
     added, moved = [], []
-    ips = [f[0] for f in found]
-    with ThreadPoolExecutor(max_workers=24) as pool:
-        hwids = dict(zip(ips, pool.map(printer_driver.hardware_id, ips)))
+    # Donanım kimliği (IP değişimini tanımak için) taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
+    hwids, missing = {}, []
+    for ip, live in found:
+        if isinstance(live, dict) and 'hw' in live:
+            hwids[ip] = live['hw']
+        else:
+            missing.append(ip)
+    if missing:
+        with ThreadPoolExecutor(max_workers=24) as pool:
+            hwids.update(zip(missing, pool.map(printer_driver.hardware_id, missing)))
     with db.connect() as conn:
-        rows = db.rows(conn.execute('SELECT id, ip, hw_id, hw_alias FROM printers'))
+        rows = db.rows(conn.execute('SELECT id, name, ip, hw_id, hw_alias FROM printers'))
         by_ip = {r['ip'] for r in rows}
         by_hw = {}
         for r in rows:
@@ -266,7 +279,9 @@ def _add_discovered(found, user):
                 pr = by_hw[hw]
                 if pr['ip'] != ip:
                     conn.execute('UPDATE printers SET ip = ? WHERE id = ?', (ip, pr['id']))
-                    moved.append({'id': pr['id'], 'ip': ip})
+                    db.audit(conn, user['id'], 'Yazıcının IP adresini düzeltti (ağ taraması)', 'printer', pr['id'],
+                             f"{pr.get('name') or pr['id']}: {pr['ip']} → {ip}")
+                    moved.append({'id': pr['id'], 'name': pr.get('name'), 'old': pr['ip'], 'ip': ip})
                 continue
             if hw and hw in seen_hw:           # aynı taramada aynı cihaz iki IP'de göründü: bir kez ekle
                 continue
@@ -282,8 +297,8 @@ def _add_discovered(found, user):
                  live['source'], now))
             if hw:
                 seen_hw.add(hw)
-                by_hw[hw] = {'id': cur.lastrowid, 'ip': ip, 'hw_id': hw}
+                by_hw[hw] = {'id': cur.lastrowid, 'name': name, 'ip': ip, 'hw_id': hw}
             db.audit(conn, user['id'], 'Yazıcı otomatik ekledi', 'printer', cur.lastrowid, f'{name} ({ip})')
             added.append({'name': name, 'ip': ip})
         printer_layout.assign_missing(conn)
-    return {'found': len(found), 'added': added, 'moved': len(moved)}
+    return {'found': len(found), 'added': added, 'moved': moved}

@@ -240,9 +240,16 @@ def reconcile_ips():
     found = discover()
     if not found:
         return 0
-    ips = [ip for ip, _ in found]
-    with ThreadPoolExecutor(max_workers=24) as pool:
-        hw = dict(zip(ips, pool.map(hardware_id, ips)))
+    # Donanım kimliği taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
+    hw, missing = {}, []
+    for ip, live in found:
+        if isinstance(live, dict) and 'hw' in live:
+            hw[ip] = live['hw']
+        else:
+            missing.append(ip)
+    if missing:
+        with ThreadPoolExecutor(max_workers=24) as pool:
+            hw.update(zip(missing, pool.map(hardware_id, missing)))
     live_by_ip = {ip: live for ip, live in found}
     moved = 0
     now = db.now()
@@ -336,19 +343,28 @@ def _port_open(ip, port):
         return False
 
 
-def discover():
-    """Yerel ağda 9999/7125 portu açık cihazları bulur ve yazıcı olduğunu doğrular."""
+def _discover_local():
+    """Bu makinenin ağ bloğunda (/24) 9999/7125 portu açık cihazları bulur, yazıcı olduğunu doğrular ve her biri için
+    kalıcı donanım kimliğini (hw) de okur. [[ip, live], …] döner (live['hw'] IP değişimini tanımak için)."""
     hosts = [str(h) for net in _local_networks() for h in net.hosts()]
 
     def check(ip):
         if _port_open(ip, MOONRAKER_PORT) or _port_open(ip, CREALITY_WS_PORT):
-            live = probe(ip)
+            live = _probe_direct(ip)
             if live:
-                return ip, live
+                return [ip, dict(live, hw=hardware_id(ip))]
         return None
 
     with ThreadPoolExecutor(max_workers=64) as pool:
         return [r for r in pool.map(check, hosts) if r]
+
+
+def discover():
+    """Yazıcıları bulur (tüm ağ bloğu). Uzak modda tarama fabrikadaki ajanda yapılır — fabrika LAN'ı yalnız oradan görünür."""
+    if config.AGENT_MODE == 'remote':
+        from . import devices
+        return devices.call_sync('printer.discover', {}, timeout=90)
+    return _discover_local()
 
 
 _started = False

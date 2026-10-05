@@ -997,7 +997,7 @@ async function route() {
     view.className = '';
     setPref('personal.last', personal.key);
     return personal.render(params)
-      .then(() => { if (!(personal.key === 'meetings' && params[1])) personalHead(personal); refreshNotify(); })   // toplantı ekranı / özeti kendi başlığıyla
+      .then(() => { if (!(personal.key === 'meetings' && params[1]) && personal.key !== 'files') personalHead(personal); refreshNotify(); })   // toplantı ekranı / özeti + Dosya Yöneticisi kendi başlığıyla (alt-modül seçicisi yok)
       .catch(err => clear(view, h('div', { class: 'card empty' }, err.message)));
   }
   if (key === 'sign') {   // imza talebi ayrıntısı

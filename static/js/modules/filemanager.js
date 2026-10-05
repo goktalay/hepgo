@@ -37,7 +37,15 @@ export async function render(view, params, ctx) {
   const sidebar = h('aside', { class: 'fm-side' }, sharedBtn,
     h('div', { class: 'fm-side-h' }, 'Klasörlerim'), treeBox);
   const main = h('section', { class: 'fm-main' });
-  clear(view, pageHead('Dosya Yöneticisi', { back: '#/', sub: 'Dosyalarım ve paylaşılanlar' }),
+  // Araç çubuğu düğmeleri başlıkta (alt-modül seçicisinin yerinde); açık klasöre göre etkin/pasif olur
+  const fileInput = h('input', { type: 'file', multiple: true, hidden: true });
+  fileInput.addEventListener('change', () => { if (fileInput.files.length) doUpload([...fileInput.files]); fileInput.value = ''; });
+  const newBtn = h('button', { class: 'btn', type: 'button', disabled: true }, '＋ Yeni Klasör');
+  newBtn.addEventListener('click', () => newFolder());
+  const upBtn = h('button', { class: 'btn primary', type: 'button', disabled: true }, svgIcon(icons.upload), ' Yükle');
+  upBtn.addEventListener('click', () => fileInput.click());
+  const headTools = h('div', { class: 'head-right fm-headtools' }, newBtn, upBtn, fileInput);
+  clear(view, pageHead('Dosya Yöneticisi', { back: '#/', sub: 'Dosyalarım ve paylaşılanlar', right: headTools }),
     h('div', { class: 'fm-wrap' }, sidebar, main));
 
   // ---------- ağaç ----------
@@ -107,15 +115,7 @@ export async function render(view, params, ctx) {
 
   function drawFolder() {
     const canEdit = !!curData.can_edit;
-    // araç çubuğu
-    const newBtn = h('button', { class: 'btn', type: 'button', disabled: !canEdit }, '＋ Yeni Klasör');
-    newBtn.addEventListener('click', () => newFolder());
-    const fileInput = h('input', { type: 'file', multiple: true, hidden: true });
-    fileInput.addEventListener('change', () => { if (fileInput.files.length) doUpload([...fileInput.files]); fileInput.value = ''; });
-    const upBtn = h('button', { class: 'btn primary', type: 'button', disabled: !canEdit }, svgIcon(icons.upload), ' Yükle');
-    upBtn.addEventListener('click', () => fileInput.click());
-    const toolbar = h('div', { class: 'fm-toolbar' }, newBtn, upBtn, fileInput, h('span', { class: 'grow' }));
-
+    newBtn.disabled = upBtn.disabled = !canEdit;   // başlıktaki düğmeler açık klasöre göre
     // içerik ızgarası
     const folders = curData.folders || [], files = curData.files || [];
     const grid = h('div', { class: 'fm-grid' });
@@ -123,7 +123,7 @@ export async function render(view, params, ctx) {
     folders.forEach(f => grid.append(itemCard(f, 'folder', canEdit)));
     files.forEach(f => grid.append(itemCard(f, 'file', canEdit)));
 
-    clear(main, crumbs(), toolbar, grid);
+    clear(main, crumbs(), grid);
   }
 
   // Klasör ya da dosya kartı
@@ -351,6 +351,7 @@ export async function render(view, params, ctx) {
   // ---------- paylaşılanlar görünümü ----------
   async function openShared() {
     mode = 'shared'; curParent = null;
+    newBtn.disabled = upBtn.disabled = true;   // paylaşılanlar görünümünde klasör eylemi yok
     drawTree();
     clear(main, h('div', { class: 'empty' }, 'Yükleniyor…'));
     let items;

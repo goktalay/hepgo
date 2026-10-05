@@ -21,10 +21,15 @@ function loadLibs() {
 
 export async function render(view, params, ctx) {
   if (!ctx.user.master) { clear(view, h('div', { class: 'card empty' }, 'Bu araç yalnızca sistem sahibine (MASTER) açıktır.')); return; }
+  return openTerminal(view, { title: 'Terminal', back: '#/tools', sub: 'Sistem sahibi · yerel makinede kabuk', wsUrl: '/ws/console' });
+}
+
+// Ortak xterm + WebSocket terminali (yerel kabuk ve SSH aynı mekanizmayı kullanır). wsUrl'e bağlanır, PTY'yi gösterir.
+export async function openTerminal(view, { title, back, sub, wsUrl }) {
   const host = h('div', { class: 'term-host' });
   const status = h('span', { class: 'term-status small muted' }, 'Bağlanıyor…');
   clear(view,
-    pageHead('Terminal', { back: '#/tools', sub: 'Sistem sahibi · yerel makinede kabuk', right: status }),
+    pageHead(title, { back, sub, right: status }),
     h('div', { class: 'card term-card' }, host));
 
   try { await loadLibs(); } catch (e) { status.textContent = 'xterm yüklenemedi'; return; }
@@ -39,7 +44,7 @@ export async function render(view, params, ctx) {
   try { fit.fit(); } catch { /* */ }
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws/console`);
+  const ws = new WebSocket(`${proto}://${location.host}${wsUrl}`);
   let alive = true;
   const sendResize = () => { try { fit.fit(); ws.readyState === 1 && ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows })); } catch { /* */ } };
 

@@ -7,6 +7,7 @@ const bytes = b => (b == null ? '—' : b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` 
 
 export async function render(view, params, ctx) {
   if (!ctx.user.master) { clear(view, h('div', { class: 'card empty' }, 'Bu modül yalnızca sistem sahibine açıktır.')); return; }
+  if (params[0] === 'ssh') { const m = await import('./ssh.js'); return m.render(view, params.slice(1), ctx); }
   let ov, backups;
   try {
     [ov, backups] = await Promise.all([api.get('/api/master/overview'), api.get('/api/master/backups')]);
@@ -40,6 +41,12 @@ export async function render(view, params, ctx) {
           h('a', { class: 'btn sm', href: `/api/master/backups/download?name=${encodeURIComponent(b.name)}&scope=${b.scope}`, download: '' }, 'İndir'))))
       : h('div', { class: 'empty small muted' }, 'Yedek bulunamadı'));
 
+  // SSH Erişim: kayıtlı uzak sunuculara (ör. fabrikadaki GX10) tarayıcıdan bağlan
+  const sshCard = h('section', { class: 'card card-pad' },
+    h('h3', null, 'SSH Erişim'),
+    h('p', { class: 'small muted' }, t('Kayıtlı uzak sunuculara (ör. fabrikadaki makineler) tarayıcıdan bağlanıp komut çalıştırın. Parola / anahtar şifreli saklanır; her bağlantı denetim kaydına yazılır.')),
+    h('a', { class: 'btn primary', href: '#/master/ssh' }, 'Sunucuları yönet'));
+
   clear(view, pageHead('Veri & Yedek', { back: '#/', sub: 'Sistem sahibi · veri ve yedekler' }),
-    h('div', { class: 'mv-grid' }, exportCard, backupCard));
+    h('div', { class: 'mv-grid' }, exportCard, backupCard, sshCard));
 }

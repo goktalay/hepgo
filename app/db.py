@@ -829,6 +829,21 @@ CREATE TABLE IF NOT EXISTS app_kv (
     k TEXT PRIMARY KEY,
     v TEXT
 );
+-- SSH erişim (yalnız sistem sahibi / MASTER): kayıtlı uzak sunucular (ör. fabrikadaki GX10). Parola / özel anahtar
+-- cameras.encrypt ile ŞİFRELİ saklanır, hiçbir yanıtta dönmez. Yalnız dışa doğru bağlantı (merkez sunucuda kabuk AÇMAZ).
+CREATE TABLE IF NOT EXISTS ssh_hosts (
+    id         INTEGER PRIMARY KEY,
+    label      TEXT NOT NULL,
+    host       TEXT NOT NULL,
+    port       INTEGER NOT NULL DEFAULT 22,
+    username   TEXT NOT NULL,
+    auth_type  TEXT NOT NULL DEFAULT 'password',   -- password | key
+    secret     TEXT,                               -- şifreli parola ya da özel anahtar
+    note       TEXT,
+    sort       INTEGER NOT NULL DEFAULT 0,
+    last_used  TEXT,
+    created_at TEXT NOT NULL
+);
 -- Şifre geçmişi (Program Ayarları → Güvenlik: son N şifre yeniden kullanılamaz kuralı için)
 CREATE TABLE IF NOT EXISTS password_history (
     id INTEGER PRIMARY KEY,

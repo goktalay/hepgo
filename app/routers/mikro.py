@@ -282,6 +282,35 @@ def satis(q: str = '', show_imported: bool = False, user=Depends(mikro_user), co
         raise _read_error(err)
 
 
+@router.get('/hareketler')
+def hareketler(scope: str = 'linked', code: str = '', local_id: Optional[int] = None,
+               date_from: str = '', date_to: str = '', user=Depends(mikro_user), conn=db.DB):
+    """SALT-OKUNUR: eşlenmiş stokların TÜM Mikro hareketlerini (giriş + çıkış) canlı okur; yerele HİÇBİR ŞEY yazmaz.
+    scope='linked': mikro_links('stok') ile eşlenmiş tüm ürünlerin Mikro kodları. code=<sto_kod> veya local_id=<pid>
+    ile tek ürün. Tarih verilmezse son 90 gün. Döner: {rows, ozet:{kod: Mikro bakiye}}."""
+    _manager(user)
+    if not mikro.configured():
+        raise HTTPException(400, 'Mikro ERP bağlantısı tanımlı değil')
+    from datetime import date, timedelta
+    df = (date_from or '').strip() or (date.today() - timedelta(days=90)).isoformat()
+    dt = (date_to or '').strip() or date.today().isoformat()
+    links = _links(conn, 'stok')
+    if code.strip():
+        codes = [code.strip()]
+    elif local_id:
+        codes = [c for c, lk in links.items() if lk['local_id'] == local_id]
+    else:   # scope 'linked': eşlenmiş tüm stoklar
+        codes = list(links.keys())
+    if not codes:
+        return {'rows': [], 'ozet': {}, 'date_from': df, 'date_to': dt, 'codes': 0}
+    try:
+        rows = mikro.stok_hareketleri(codes[:5000], df, dt)
+        ozet = {c: (s.get('miktar') if s else None) for c, s in mikro.stok_by_codes(codes[:5000]).items()}
+    except Exception as err:
+        raise _read_error(err)
+    return {'rows': rows, 'ozet': ozet, 'date_from': df, 'date_to': dt, 'codes': len(codes)}
+
+
 def _resolve_company(conn, cari, names):
     """Mikro cari → yerel firma (varsa) ve anlık ünvan."""
     company_id = None

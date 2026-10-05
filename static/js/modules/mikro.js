@@ -31,8 +31,8 @@ export async function render(view, params, ctx) {
     ? h('div', { class: 'mk-conn ok' }, h('span', { class: 'dot' }), t('Bağlı · {db}', { db: status.db || 'Mikro ERP' }), count)
     : h('div', { class: 'mk-conn err' }, h('span', { class: 'dot' }), t('Bağlanılamadı: {err}', { err: status.error || 'bilinmeyen hata' }));
 
-  const TABS = [['cari', 'Cari'], ['stok', 'Stok'], ['alis', 'Alış Faturaları'], ['satis', 'Satış Faturaları'], ['finans', 'Finans · Banka · Kasa']];
-  const RENDER = { cari: cariTab, stok: stokTab, alis: r => faturaTab(r, 'alis'), satis: r => faturaTab(r, 'satis'), finans: finansTab };
+  const TABS = [['cari', 'Cari'], ['stok', 'Stok'], ['hareketler', 'Stok Hareketleri'], ['alis', 'Alış Faturaları'], ['satis', 'Satış Faturaları'], ['finans', 'Finans · Banka · Kasa']];
+  const RENDER = { cari: cariTab, stok: stokTab, hareketler: hareketlerTab, alis: r => faturaTab(r, 'alis'), satis: r => faturaTab(r, 'satis'), finans: finansTab };
   let tab = pref('mikro.tab', 'cari');
   if (!TABS.some(([k]) => k === tab)) tab = 'cari';
   const seg = h('div', { class: 'seg wrap' });
@@ -241,6 +241,100 @@ function faturaTab(root, kind) {
     doImport: evraks => api.post(`/api/mikro/import/${kind}`, { evraks }),
   }, true);
   clear(root, note, wrap);
+}
+
+// Stok Hareketleri: eşlenmiş stokların TÜM Mikro giriş/çıkış hareketlerini (sarf, üretim, transfer, fatura, iade,
+// sayım…) canlı okur ve gösterir. Salt-okunur — yerele hiçbir şey yazmaz. Mikro'nun yetkili bakiyesi (ozet) ile
+// karşılaştırma için gösterilir. (Yalnız MASTER; sunucu da _manager ile korur.)
+function hareketlerTab(root, { canImport }) {
+  const iso = d => d.toISOString().slice(0, 10);
+  const today = new Date();
+  const d90 = new Date(today.getTime() - 90 * 86400000);
+  const fromI = h('input', { class: 'input', type: 'date', value: iso(d90), style: { width: 'auto' } });
+  const toI = h('input', { class: 'input', type: 'date', value: iso(today), style: { width: 'auto' } });
+  const search = h('input', { class: 'input', type: 'search', placeholder: 'Stok kodu veya isim filtrele…', style: { flex: '1 1 200px', minWidth: '180px' } });
+  const btn = h('button', { class: 'btn primary', type: 'button' }, 'Getir');
+  const info = h('span', { class: 'small muted' });
+  const note = h('div', { class: 'mk-fat-note small muted' },
+    'Mikro’dan canlı okunur; yerele yazılmaz. Tüm giriş/çıkış hareketleri (sarf, üretim, transfer, fatura, iade, sayım…) gösterilir. “Mikro bakiye” Mikro’daki yetkili eldeki miktardır.');
+  const ozetBox = h('div', { class: 'mk-fin-cats', style: { margin: '6px 0' } });
+  const body = h('tbody');
+  const table = h('table', { class: 'table mk-table' },
+    h('thead', null, h('tr', null,
+      h('th', null, 'Tarih'), h('th', null, 'Stok'), h('th', null, 'Evrak tipi'),
+      h('th', null, 'Yön'), h('th', { class: 'right' }, 'Miktar'), h('th', { class: 'right' }, 'Tutar'),
+      h('th', null, 'Cari'), h('th', null, 'İç/Dış'), h('th', null, 'Açıklama'))),
+    body);
+  const wrap = h('div', { class: 'card table-wrap' }, table);
+
+  let rows = [];
+  let ozet = {};
+  const dt = v => (v ? String(v).replace('T', ' ').slice(0, 16) : '—');
+
+  const rowEl = r => {
+    const giris = (r.miktar || 0) >= 0;
+    return h('tr', null,
+      h('td', { class: 'small' }, dt(r.date)),
+      h('td', null, h('span', { class: 'mono small' }, r.code || '—'), r.name ? h('div', { class: 'small muted mk-name', title: r.name }, r.name) : null),
+      h('td', { class: 'small' }, (r.evraktip_ad || '—') + ' ', h('span', { class: 'muted' }, `(${r.evraktip})`)),
+      h('td', null, h('span', { class: `badge ${giris ? 'green' : 'red'}` }, giris ? 'Giriş' : 'Çıkış')),
+      h('td', { class: `right ${giris ? 'mk-pos' : 'mk-neg'}`, style: { fontWeight: '600', color: giris ? 'var(--success)' : 'var(--danger)' } }, (giris ? '+' : '') + num(r.miktar)),
+      h('td', { class: 'right' }, money(r.tutar)),
+      h('td', { class: 'small mono', title: r.cari || '' }, r.cari || '—'),
+      h('td', null, h('span', { class: `badge ${r.dis ? 'blue' : 'gray'}` }, r.dis ? 'Şirket dışı' : 'Şirket içi')),
+      h('td', { class: 'small mk-name', title: r.aciklama || '' }, r.aciklama || '—'));
+  };
+
+  const draw = () => {
+    const q = search.value.trim();
+    const shown = rows.filter(r => matches(q, r.code, r.name));
+    const list = shown.map(rowEl);
+    let gir = 0, cik = 0;
+    shown.forEach(r => { const m = Number(r.miktar) || 0; if (m >= 0) gir += m; else cik += -m; });
+    if (shown.length) {
+      list.push(h('tr', { class: 'mk-sum' },
+        h('td', { colspan: 4, style: { textAlign: 'right', fontWeight: '600' } }, t('Toplam ({n} satır)', { n: shown.length })),
+        h('td', { class: 'right', style: { fontWeight: '600' } }, h('span', { style: { color: 'var(--success)' } }, '+' + num(gir)), ' / ', h('span', { style: { color: 'var(--danger)' } }, '-' + num(cik)), h('div', { class: 'small muted' }, t('net {n}', { n: num(gir - cik) }))),
+        h('td', { colspan: 4 }, '')));
+    }
+    clear(body, list.length ? list : [h('tr', null, h('td', { class: 'muted', colspan: 9, style: { padding: '18px', textAlign: 'center' } }, 'Hareket yok'))]);
+    info.textContent = t('{n} hareket', { n: shown.length });
+  };
+
+  const drawOzet = () => {
+    const codes = Object.keys(ozet);
+    clear(ozetBox, codes.length
+      ? [h('span', { class: 'small muted', style: { alignSelf: 'center' } }, 'Mikro bakiye:'),
+         ...codes.slice(0, 60).map(c => h('span', { class: 'mk-fin-cat' }, h('b', null, num(ozet[c])), ` ${c}`)),
+         codes.length > 60 ? h('span', { class: 'small muted' }, t('+{n} stok daha', { n: codes.length - 60 })) : null]
+      : []);
+  };
+
+  const run = async () => {
+    clear(body, h('tr', null, h('td', { class: 'loading', colspan: 9, style: { padding: '18px' } }, 'Mikro’dan okunuyor…')));
+    btn.disabled = true;
+    try {
+      const res = await api.get(`/api/mikro/hareketler?scope=linked&date_from=${encodeURIComponent(fromI.value)}&date_to=${encodeURIComponent(toI.value)}`);
+      rows = res.rows || [];
+      ozet = res.ozet || {};
+      if (!res.codes) info.textContent = 'Eşlenmiş stok yok — önce Stok sekmesinden stok aktarın.';
+      drawOzet();
+      draw();
+    } catch (err) {
+      clear(body, h('tr', null, h('td', { colspan: 9, style: { padding: '18px' } }, h('span', { class: 'muted' }, err.message))));
+    } finally { btn.disabled = false; }
+  };
+
+  btn.addEventListener('click', run);
+  let searchT;
+  search.addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(draw, 250); });
+
+  const toolbar = h('div', { class: 'mk-toolbar' },
+    h('label', { class: 'small muted', style: { alignSelf: 'center' } }, 'Tarih:'), fromI,
+    h('span', { class: 'small muted', style: { alignSelf: 'center' } }, '–'), toI,
+    search, btn, h('div', { class: 'spacer' }), info);
+  clear(root, note, toolbar, ozetBox, wrap);
+  run();
 }
 
 // Finans: Mikro'daki banka hesapları ve kasalar (Mikro / Finans bakiyesi), hareket özeti; "Finans'a senkronize et".

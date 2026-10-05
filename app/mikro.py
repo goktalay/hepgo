@@ -157,6 +157,57 @@ def hareket_tipleri(gun=1095):
     return rows
 
 
+# ---------- Stok hareketleri (tüm giriş/çıkış — salt-okunur canlı görüntüleyici) ----------
+# Mikro evrak tipi (sth_evraktip) → Türkçe etiket (en iyi çaba; bilinmeyen için "Evrak tipi N").
+# Bu etiketler tahminidir; görüntüleyici ham evraktip değerini de gösterir.
+EVRAKTIP_AD = {
+    3: 'Alış İrsaliyesi', 13: 'Alış Faturası', 4: 'Satış Faturası', 1: 'Satış İrsaliyesi',
+    25: 'Sayım Fazlası', 26: 'Sayım Eksiği', 14: 'Alış İade', 5: 'Satış İade',
+    32: 'Depo Transfer (Çıkış)', 33: 'Depo Transfer (Giriş)', 50: 'Üretimden Giriş',
+    51: 'Üretime Sarf', 70: 'Fire/Zaiyat',
+}
+
+
+def evraktip_ad(n):
+    return EVRAKTIP_AD.get(n, f'Evrak tipi {n}')
+
+
+def stok_hareketleri(codes, date_from=None, date_to=None, limit=5000):
+    """SALT-OKUNUR: verilen Mikro stok kodları ve tarih aralığı için TÜM STOK_HAREKETLERI satırları — giriş ve
+    çıkış (sarf, üretim, transfer, fatura, iade, sayım…). Yerele hiçbir şey yazmaz. Giriş/çıkış ayrımı sth_tip ile
+    (0=giriş, 1=çıkış); miktar işaretli döner (+giriş, -çıkış). Belge: (seri, sıra, evraktip). STOKLAR ile stok adı
+    için birleştirilir. Tarihe göre yeniden eskiye sıralanır, en çok `limit` satır."""
+    if not codes:
+        return []
+    marks = ','.join(['%s'] * len(codes))
+    params = list(codes) + [date_from, date_to]
+    rows = query(f"""SELECT TOP {int(limit)} h.sth_stok_kod AS code, h.sth_tip AS tip, h.sth_evraktip AS evraktip,
+            h.sth_cins AS cins, h.sth_normal_iade AS iade, h.sth_miktar AS miktar, ROUND(h.sth_tutar, 2) AS tutar,
+            CONVERT(varchar(19), h.sth_tarih, 120) AS tarih, h.sth_aciklama AS aciklama, h.sth_cari_kodu AS cari,
+            h.sth_giris_depo_no AS giris_depo, h.sth_cikis_depo_no AS cikis_depo,
+            h.sth_evrakno_seri AS seri, h.sth_evrakno_sira AS sira, s.sto_isim AS name
+        FROM STOK_HAREKETLERI h
+        LEFT JOIN STOKLAR s ON s.sto_kod = h.sth_stok_kod
+        WHERE h.sth_stok_kod IN ({marks}) AND h.sth_tarih >= %s AND h.sth_tarih < DATEADD(day, 1, %s)
+        ORDER BY h.sth_tarih DESC""", tuple(params))
+    out = []
+    for r in rows:
+        cari = (r.get('cari') or '').strip()
+        giris = (r['tip'] == 0)
+        qty = float(r.get('miktar') or 0)
+        out.append({
+            'code': r['code'], 'name': (r.get('name') or '').strip(),
+            'date': r.get('tarih'), 'yon': 'giris' if giris else 'cikis',
+            'evraktip': r['evraktip'], 'evraktip_ad': evraktip_ad(r['evraktip']),
+            'miktar': qty if giris else -qty, 'tutar': r.get('tutar'),
+            'aciklama': (r.get('aciklama') or '').strip(), 'cari': cari,
+            'dis': bool(cari),   # cari kodu var → şirket dışı hareket; yok → şirket içi/üretim
+            'seri': (r.get('seri') or '').strip(), 'sira': r.get('sira'),
+            'giris_depo': r.get('giris_depo'), 'cikis_depo': r.get('cikis_depo'),
+        })
+    return out
+
+
 # ---------- Faturalar (alış / satış) ----------
 # STOK_HAREKETLERI'nde fatura satırları: cins=0, normal (iade değil).
 #   Alış faturası: tip=0 (stok giriş), evraktip IN (3,13) — tedarikçiden.

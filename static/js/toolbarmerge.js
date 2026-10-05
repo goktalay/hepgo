@@ -13,8 +13,11 @@ function sweep() {
   const mt = view.querySelector('.module-toolbar');
   const filters = view.querySelector('.filters');
   if (!mt || !filters) return;                       // ayrı toolbar yoksa ya da filtre satırı yoksa dokunma
-  const movers = [...mt.children].filter(c => c.nodeType === 1);
-  if (!movers.length) { mt.remove(); return; }
+  // Alt-gezinme sekmeleri (.seg-tabs) filtreye taşınmaz; kendi satırında kalır. Yalnızca eylem düğmeleri /
+  // görünüm seçicileri (Kart/Liste = .seg) filtre satırına iner (boşuna satır olmasın).
+  const children = [...mt.children].filter(c => c.nodeType === 1);
+  const movers = children.filter(c => !(c.classList && c.classList.contains('seg-tabs')));
+  if (!movers.length) return;                        // yalnızca sekme var → toolbar kendi satırı olarak kalsın
   // Filtre satırının sonunda bir görünüm seçicisi (Kart/Liste = .seg) varsa, taşınanlar onun SOLUNA girsin.
   const last = filters.lastElementChild;
   const ref = last && last.classList && last.classList.contains('seg') ? last : null;
@@ -22,7 +25,8 @@ function sweep() {
     const sp = document.createElement('span'); sp.className = 'spacer'; filters.append(sp);
   }
   for (const m of movers) filters.insertBefore(m, ref);
-  mt.remove();                                        // boşalan toolbar satırını kaldır
+  // Toolbar'da sekme (.seg-tabs) kaldıysa satır olarak kalsın; tamamen boşaldıysa kaldır.
+  if (![...mt.children].some(c => c.nodeType === 1)) mt.remove();
 }
 
 export function enableToolbarMerge() {

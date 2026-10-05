@@ -345,18 +345,27 @@ export function renderFeed(container, ctx, opts = {}) {
   }
 
   let onlySaved = false;
-  const topBar = () => h('div', { class: 'feed-top' },
-    onlySaved
-      ? h('div', { class: 'feed-saved-h' }, svgSpan(IG.save), h('b', null, 'Kaydedilenler'),
-        h('button', { class: 'btn sm', type: 'button', onclick: () => { onlySaved = false; load(); } }, 'Tüm paylaşımlar'))
-      : h('button', { class: 'feed-composer', type: 'button', onclick: () => compose(ctx) },
-        avatar(ctx.user, 36),
-        h('span', { class: 'feed-composer-pill' }, 'Bir şeyler paylaş…'),
-        h('span', { class: 'feed-composer-ic', title: 'Foto / Video / Ses' }, svgSpan(IG.image))),
-    onlySaved ? null : h('button', { class: 'feed-livebtn', type: 'button', title: 'Canlı yayın başlat', 'aria-label': 'Canlı yayın başlat',
-      onclick: () => import('./live.js').then(m => m.startBroadcast(ctx)) }, h('span', { class: 'feed-live-dot' }), 'Canlı'),
-    onlySaved ? null : h('button', { class: 'feed-savedbtn', type: 'button', title: 'Kaydedilenler', 'aria-label': 'Kaydedilenler',
-      onclick: () => { onlySaved = true; load(); } }, svgSpan(IG.save)));
+  // Pano kutusu bağlamında (opts.headActions) Canlı + Kaydedilenler düğmeleri kutu başlığında, tek kapsülde durur;
+  // başlıkta slot yoksa (bağımsız akış) eskisi gibi composer'ın yanında kalır.
+  const liveBtn = () => h('button', { class: 'feed-livebtn', type: 'button', title: 'Canlı yayın başlat', 'aria-label': 'Canlı yayın başlat',
+    onclick: () => import('./live.js').then(m => m.startBroadcast(ctx)) }, h('span', { class: 'feed-live-dot' }), 'Canlı');
+  const savedBtn = () => h('button', { class: 'feed-savedbtn', type: 'button', title: 'Kaydedilenler', 'aria-label': 'Kaydedilenler',
+    onclick: () => { onlySaved = true; load(); } }, svgSpan(IG.save));
+  const topBar = () => {
+    if (opts.headActions) {   // düğmeleri kutu başlığına koy (2 düğme → tek kapsül)
+      clear(opts.headActions, onlySaved ? null : h('div', { class: 'db-acts-pill' }, liveBtn(), savedBtn()));
+    }
+    return h('div', { class: 'feed-top' },
+      onlySaved
+        ? h('div', { class: 'feed-saved-h' }, svgSpan(IG.save), h('b', null, 'Kaydedilenler'),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => { onlySaved = false; load(); } }, 'Tüm paylaşımlar'))
+        : h('button', { class: 'feed-composer', type: 'button', onclick: () => compose(ctx) },
+          avatar(ctx.user, 36),
+          h('span', { class: 'feed-composer-pill' }, 'Bir şeyler paylaş…'),
+          h('span', { class: 'feed-composer-ic', title: 'Foto / Video / Ses' }, svgSpan(IG.image))),
+      opts.headActions ? null : (onlySaved ? null : liveBtn()),
+      opts.headActions ? null : (onlySaved ? null : savedBtn()));
+  };
 
   // Şu an canlı yayında olanlar: akışın en üstünde halkalı avatarlar (Instagram hikâye şeridi gibi); dokununca katıl
   const liveBox = h('div', { class: 'feed-lives', hidden: true });

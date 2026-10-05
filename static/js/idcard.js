@@ -74,9 +74,10 @@ export function idCard(e, { company, action } = {}) {
         row('Kişi Güvenlik Kodu', code, code ? 'mono' : 'idc-dashed'),
         row('E-Mail', email, 'idc-link'),
         row('Telefon Numarası', phone))),
-    action ? h('div', { class: 'idc-action' }, action) : null,
+    // "Kartı Yazdır" düğmesi ayrı satır açmaz; alttaki iki logonun ARASINA girer (daha yatay görünüm)
     h('div', { class: 'idc-foot' },
       h('div', { class: 'idc-mke' }, mkeLogo()),
+      action ? h('div', { class: 'idc-foot-action' }, action) : null,
       h('img', { class: 'idc-logo', src: '/static/img/logo.png', alt: 'Gökkubbe' })));
 }
 

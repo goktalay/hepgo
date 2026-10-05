@@ -57,7 +57,9 @@ export async function renderDashboard(view, ctx, modules) {
   for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 6 });
 
   let editing = false, data = {}, grid = null;
-  const charts = [], timers = [], bodies = {}, feeds = {};   // feeds: company_news kutucuğunun yeniden yükleyicisi
+  const charts = [], timers = [], bodies = {}, feeds = {}, headActs = {};   // feeds: company_news yeniden yükleyici; headActs: kutu başlık eylem slotu
+  // Kutu başlığındaki eylem düğmeleri: 2+ ise tek kapsülde (pill), değilse tek düğme. Boşsa slot gizli (CSS :empty).
+  const setActs = (acts, ...btns) => { const b = btns.flat().filter(Boolean); if (acts) clear(acts, b.length >= 2 ? h('div', { class: 'db-acts-pill' }, b) : b); };
   let refreshTimer = null;
   onLeave(() => { charts.forEach(c => c.destroy()); timers.forEach(clearInterval); clearInterval(refreshTimer); try { grid?.destroy(false); } catch { /* */ } });
   const gridEl = h('div', { class: 'grid-stack' });
@@ -89,20 +91,22 @@ export async function renderDashboard(view, ctx, modules) {
     const w = byKey[it.k];
     const body = h('div', { class: 'db-body' });
     bodies[it.id] = body;
+    const acts = h('div', { class: 'db-acts' });   // kutuya ait eylem düğmeleri: başlıkta en sağda (2+ ise tek kapsülde)
+    headActs[it.id] = acts;
     const tools = h('div', { class: 'db-tools' },
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
       w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => removeItem(it) }, '✕'));
     const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': it.h },
       h('div', { class: `grid-stack-item-content card db-tile w-${it.k}` },
-        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), tools), body));
+        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools), body));
     if (it.x != null) el.setAttribute('gs-x', it.x);
     if (it.y != null) el.setAttribute('gs-y', it.y);
     // w.fixed: kaldırılamaz (✕ yok) ama boyutlandırılabilir — gs-no-resize konmaz
     if (it.k === 'company_news') {   // görünüm (Akış/Harita) Kişisel Ayarlar › Pano'dan seçilir
-      try { feeds[it.id] = renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed' })?.reload; }
+      try { feeds[it.id] = renderFeed(body, ctx, { view: ctx.user.prefs?.settings?.feedView || 'feed', headActions: acts })?.reload; }
       catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     } else {
-      try { fill(it, body); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
+      try { fill(it, body, acts); } catch (err) { clear(body, h('div', { class: 'empty small' }, err.message)); }
     }
     return el;
   }
@@ -125,7 +129,7 @@ export async function renderDashboard(view, ctx, modules) {
     for (const it of layout) {
       const b = bodies[it.id]; if (!b) continue;
       if (it.k === 'company_news') { feeds[it.id]?.(); continue; }   // kendi yükleyicisiyle tazelenir; fill() ile silinmesin
-      try { fill(it, b); } catch { /* */ }
+      try { fill(it, b, headActs[it.id]); } catch { /* */ }
     }
   }
 
@@ -260,7 +264,8 @@ export async function renderDashboard(view, ctx, modules) {
   }
 
   // ---------- kutucuk içerikleri
-  function fill(it, body) {
+  function fill(it, body, acts) {
+    if (acts) clear(acts);   // başlık eylem slotunu sıfırla (refill'de çoğalmasın); ilgili kutular yeniden doldurur
     const d = data[it.k] || {};
     const list = (items, row, empty) => clear(body, items?.length ? h('ul', { class: 'db-list' }, items.map(row)) : h('div', { class: 'db-none' }, empty));
     const kpis = arr => clear(body, h('div', { class: 'db-kpis' }, arr.map(k => h(k.href ? 'a' : 'div', { class: `db-kpi ${k.tone || ''}`, href: k.href },
@@ -290,8 +295,8 @@ export async function renderDashboard(view, ctx, modules) {
             h('span', { class: 'db-meet-main' }, h('b', null, mt.title || 'Toplantı'),
               h('small', null, [mt.host_name, mt.participants ? `${mt.participants} katılımcı` : null].filter(Boolean).join(' · '))),
             mt.status === 'DEVAM' ? h('span', { class: 'badge green' }, '● Devam ediyor') : h('span', { class: 'badge' }, 'Bekliyor'))))));
-      case 'notes': { dbNotes(body); return; }
-      case 'alarm': { dbAlarms(body); return; }
+      case 'notes': { dbNotes(body, acts); return; }
+      case 'alarm': { dbAlarms(body, acts); return; }
       case 'active_users': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Çevrimiçi başka kullanıcı yok')
         : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0])); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
       case 'quick_directory': {
@@ -301,7 +306,10 @@ export async function renderDashboard(view, ctx, modules) {
             h('a', { class: 'db-qd-main', href: `#/messages/u${c.id}`, title: 'Mesaj gönder' }, dbAvatar(c.name, c.photo), h('b', null, c.name)),
             h('span', { class: 'db-qd-acts' },
               h('a', { class: 'db-qd-ic', href: `#/messages/u${c.id}`, title: 'Mesaj' }, svgIcon(icons.chat)),
-              c.email ? h('a', { class: 'db-qd-ic', href: `mailto:${c.email}`, title: 'E-posta' }, svgIcon(icons.mail)) : null)))));
+              h('button', { class: 'db-qd-ic', type: 'button', title: 'Sesli Arama',
+                onclick: () => import('./voice.js').then(v => v.startCall([c.id], { [c.id]: c.name }, { [c.id]: c.photo })) }, svgIcon(icons.phone)),
+              h('button', { class: 'db-qd-ic', type: 'button', title: 'Görüntülü Arama',
+                onclick: () => import('./voice.js').then(v => v.startCall([c.id], { [c.id]: c.name }, { [c.id]: c.photo }, { video: true })) }, svgIcon(icons.videocam)))))));
       }
       case 'modules': return clear(body, h('div', { class: 'db-modules' }, modules.map(m => h('a', { href: `#/${m.key}`, class: m.tone ? `tone-${m.tone}` : '' },
         h('span', { class: 'ico' }, svgIcon(icons[m.key])), h('span', null, m.title)))));
@@ -462,12 +470,12 @@ export async function renderDashboard(view, ctx, modules) {
   }
   onLeave(() => { miniChatEl?.remove(); clearInterval(miniTimer); });
 
-  function dbAlarms(body) {
+  function dbAlarms(body, acts) {
     const render = () => {
       const alarms = getAlarms().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-      const addBtn = h('button', { class: 'db-note-add', type: 'button', onclick: () => alarmForm(null, render) }, '＋ Yeni alarm');
+      setActs(acts, h('button', { class: 'db-head-btn', type: 'button', onclick: () => alarmForm(null, render) }, '＋ Yeni alarm'));
       const dayLbl = ds => (!ds || !ds.length ? 'Her gün' : (ds.length === 7 ? 'Her gün' : DAYS.filter(([d]) => ds.includes(d)).map(([, l]) => l).join(' ')));
-      clear(body, addBtn, alarms.length ? h('ul', { class: 'db-list db-alarmlist' }, alarms.map(a => h('li', { class: a.enabled === false ? 'off' : '' },
+      clear(body, alarms.length ? h('ul', { class: 'db-list db-alarmlist' }, alarms.map(a => h('li', { class: a.enabled === false ? 'off' : '' },
         h('button', { class: 'alarm-toggle', type: 'button', title: a.enabled === false ? 'Aç' : 'Kapat',
           onclick: () => { a.enabled = a.enabled === false; const all = getAlarms().map(x => x.id === a.id ? a : x); saveAlarms(all); render(); } }, a.enabled === false ? '○' : '●'),
         h('button', { class: 'alarm-main', type: 'button', onclick: () => alarmForm(a, render) },
@@ -480,10 +488,11 @@ export async function renderDashboard(view, ctx, modules) {
     window.addEventListener('caymaz:alarms-changed', onCh);
   }
 
-  async function dbNotes(body) {
-    const addBtn = h('button', { class: 'db-note-add', type: 'button', title: 'Yeni not' }, '＋ Yeni not');
+  async function dbNotes(body, acts) {
+    const addBtn = h('button', { class: 'db-head-btn', type: 'button', title: 'Yeni not' }, '＋ Yeni not');
+    setActs(acts, addBtn);
     const grid = h('div', { class: 'db-note-grid' });
-    clear(body, addBtn, grid);
+    clear(body, grid);
     const load = async () => {
       let notes = [];
       try { notes = await api.get('/api/notes'); } catch { clear(grid, h('div', { class: 'db-none' }, 'Notlar yüklenemedi')); return; }

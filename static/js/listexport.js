@@ -69,10 +69,22 @@ function sweep() {
   const ex = headEl ? exporter(view) : null;
   let btn = view.querySelector('.xl-btn');
   if (!ex || !headEl) { btn?.remove(); return; }
-  // Excel, düğme baloncuğuna (pill-group) girer: önce filtre satırına taşınmış baloncuk, sonra toolbar baloncuğu,
-  // sonra toolbar, en son başlık bandı (toolbarmerge.js düğmeleri filtre satırına almış olabilir).
-  const host = view.querySelector('.filters .module-pills') || view.querySelector('.module-toolbar .module-pills')
-    || view.querySelector('.module-toolbar') || headEl;
+  // Excel her zaman AŞAĞIDA, eylem düğmeleriyle (Yeni vb.) birlikte durur, başlıkta değil:
+  // 1) filtre satırına taşınmış düğme baloncuğu; 2) filtre satırının sağı (spacer ile);
+  // 3) filtre yoksa toolbar baloncuğu / toolbar; 4) hiç toolbar/filtre yoksa son çare başlık bandı.
+  // Not: yalnızca alt-gezinme sekmesi (.seg-tabs) taşıyan toolbar'a Excel konmaz — o kendi satırıdır.
+  let host = view.querySelector('.filters .module-pills');
+  if (!host) {
+    const filters = view.querySelector('.filters');
+    if (filters) {
+      if (!filters.querySelector(':scope > .spacer')) {   // sağa yaslanacak alan yoksa aç
+        const sp = document.createElement('span'); sp.className = 'spacer'; filters.append(sp);
+      }
+      host = filters;
+    } else {
+      host = view.querySelector('.module-toolbar .module-pills') || view.querySelector('.module-toolbar') || headEl;
+    }
+  }
   if (btn && btn.parentElement === host) return;
   btn?.remove();
   btn = document.createElement('button');

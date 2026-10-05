@@ -2168,6 +2168,17 @@ td.num, th.num { text-align: right; }
 .db-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .db-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .db-tools { display: flex; gap: 4px; }
+/* Kutu başlığındaki eylem düğmeleri (Yeni not / Yeni alarm / Canlı+Kaydedilenler): en sağda, standart pill görünümü */
+.db-acts { display: flex; align-items: center; gap: 6px; }
+.db-acts:empty { display: none; }
+.db-head-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.db-head-btn:hover { background: var(--surface-2); }
+/* 2+ düğme tek kapsülde (silindir) */
+.db-acts-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+.db-acts-pill > button { margin: 0; height: 26px; border-radius: 999px; }
+.db-acts-pill .feed-savedbtn { min-width: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.db-acts-pill .feed-savedbtn:hover { color: var(--text); }
 .db-tools button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; min-width: 28px; height: 28px; cursor: pointer; font-size: 13px; }
 .db-tools button:disabled { opacity: .35; cursor: default; }
 .db-tools button.danger { color: var(--danger); }
@@ -5107,8 +5118,8 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .idc-value { font-size: 16px; font-weight: 700; color: #2f4f9b; overflow-wrap: anywhere; }
 .idc-value.idc-link { color: #2f4f9b; } .idc-value.mono { font-family: ui-monospace, monospace; letter-spacing: 1px; }
 .idc-value.idc-dashed, .idc-empty { color: #c0392b; letter-spacing: 2px; }
-.idc-action { display: flex; justify-content: center; padding: 2px 16px 10px; }
-.idc-foot { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px 14px; border-top: 1px solid #e3e8ef; }
+.idc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px 14px; border-top: 1px solid #e3e8ef; }
+.idc-foot-action { flex: 1; display: flex; justify-content: center; }   /* Kartı Yazdır: iki logo arasında ortada */
 .idc-mke { display: flex; align-items: center; }
 .idc-mke-img { height: 36px; width: auto; display: block; }
 .idc-logo { height: 40px; width: auto; }
@@ -7196,7 +7207,7 @@ input[type="checkbox"].gm-cb:indeterminate::after { width: 10px; height: 0; bord
 .db-qd-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .db-qd-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-qd-acts { display: flex; gap: 4px; flex: none; }
-.db-qd-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); }
+.db-qd-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); border: 0; background: transparent; cursor: pointer; }
 .db-qd-ic:hover { background: var(--primary-soft); }
 .db-qd-ic svg { width: 18px; height: 18px; }
 

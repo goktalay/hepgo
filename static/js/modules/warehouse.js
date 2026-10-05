@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { PART_STATES, badge, queuePlate } from '../status.js';
 import {
-  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, pageHead, segmented, statStrip, t, toast, toastError, periodFilter
+  clear, dateTimeInput, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, segmented, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
 
 export async function render(view, params, ctx) {
@@ -151,7 +151,9 @@ export async function render(view, params, ctx) {
   });
 
   clear(view,
-    pageHead('Onay Yönetimi', { back: '#/', tabs: segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); }) }),
+    pageHead('Onay Yönetimi', { back: '#/' }),
+    // Alt sekme seçici başlıkta değil, kendi toolbar satırında (MRP üst sekmeleri başlıkta kalır)
+    moduleToolbar(segmented([['pending', 'Onay Bekleyenler'], ['history', 'Depo Geçmişi'], ['aircraft', 'Saha Deposu Onayı']], tab, v => { tab = v; draw(); }, { tabs: true })),
     stats,
     h('div', { class: 'filters' },
       q, orderSel, period.el,

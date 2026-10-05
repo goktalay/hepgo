@@ -23,6 +23,7 @@ import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
 import * as fleet from './modules/fleet.js';
 import * as notesMod from './modules/notes.js';
+import { initAlarms } from './alarms.js';
 import * as boss from './modules/boss.js';
 import * as projectsMod from './modules/projects.js';
 import * as members from './modules/members.js';
@@ -634,6 +635,7 @@ function renderShell() {
   syncPush();          // arka plan bildirimi aboneliğini tazele (izin önceden verildiyse)
   mountMascot(ctx);     // köşedeki yapay zeka maskotu (anahtar tanımlıysa görünür)
   notesMod.initNotePins(ctx);   // ekrana iğnelenen notlar her sayfada görünür
+  initAlarms();   // alarm denetleyicisi (saat gelince sesle uyarır)
   membershipMod.initSupportDock?.(ctx);   // firma: aktif canlı destek sohbeti başka sayfadayken köşede görünür
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
   const menu = h('div', { class: 'dropdown', role: 'menu' },

@@ -8,6 +8,7 @@ import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, s
 import { LEVELS } from './announcements.js';
 import { renderFeed } from './feed.js';
 import { noteCard } from './notes.js';
+import { getAlarms, saveAlarms, alarmForm, DAYS } from '../alarms.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
 const dbInitials = n => (n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toLocaleUpperCase('tr');
@@ -30,7 +31,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
@@ -282,6 +283,9 @@ export async function renderDashboard(view, ctx, modules) {
               h('small', null, [mt.host_name, mt.participants ? `${mt.participants} katılımcı` : null].filter(Boolean).join(' · '))),
             mt.status === 'DEVAM' ? h('span', { class: 'badge green' }, '● Devam ediyor') : h('span', { class: 'badge' }, 'Bekliyor'))))));
       case 'notes': { dbNotes(body); return; }
+      case 'alarm': { dbAlarms(body); return; }
+      case 'active_users': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Çevrimiçi başka kullanıcı yok')
+        : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0])); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
       case 'quick_directory': {
         const ppl = it.o?.people || [];
         return clear(body, !ppl.length ? h('div', { class: 'db-none' }, h('span', null, 'Kişi ekleyin: '), h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙'))
@@ -390,6 +394,55 @@ export async function renderDashboard(view, ctx, modules) {
   }
 
   // Hava durumu (Open-Meteo, anahtar gerektirmez): anlık + 4 günlük
+  // Hızlı (inline) sohbet: küçük açılır pencere; merkezi Mesajlar ekranına GİTMEDEN burada yazışılır
+  let miniChatEl = null, miniTimer = null;
+  function miniChat(peer, anchor) {
+    if (miniChatEl && miniChatEl.dataset.uid === String(peer.id)) { miniChatEl.remove(); miniChatEl = null; clearInterval(miniTimer); return; }
+    miniChatEl?.remove(); clearInterval(miniTimer);
+    const me = ctx.user.id;
+    const list = h('div', { class: 'mc-list' });
+    const inp = h('textarea', { class: 'mc-inp', rows: 1, placeholder: 'Mesaj yazın…' });
+    const sendBtn = h('button', { class: 'mc-send', type: 'button', title: 'Gönder' }, svgIcon(icons.send));
+    let last = 0;
+    const bubble = m => h('div', { class: `mc-msg ${m.from_id === me ? 'me' : ''}` }, h('span', null, m.body || (m.file_name || '📎 Dosya')));
+    const addMsgs = ms => { const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 30; ms.forEach(m => { list.append(bubble(m)); last = Math.max(last, m.id); }); if (atBottom) list.scrollTop = list.scrollHeight; };
+    const load = async () => { try { const r = await api.get(`/api/chat/${peer.id}`); const arr = r.items || []; clear(list, arr.map(bubble)); last = arr.length ? arr[arr.length - 1].id : 0; list.scrollTop = list.scrollHeight; } catch { clear(list, h('div', { class: 'db-none' }, 'Mesajlar yüklenemedi')); } };
+    const poll = async () => { try { const r = await api.get(`/api/chat/${peer.id}?after=${last}`); if (r.items && r.items.length) addMsgs(r.items); } catch { /* */ } };
+    const send = async () => { const v = inp.value.trim(); if (!v) return; inp.value = ''; inp.style.height = 'auto'; const fd = new FormData(); fd.append('body', v); try { const m = await api.post(`/api/chat/${peer.id}`, fd); addMsgs([m]); } catch (e) { toastError(e); inp.value = v; } };
+    sendBtn.addEventListener('click', send);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+    inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 90) + 'px'; });
+    const close = h('button', { class: 'mc-x', type: 'button', title: 'Kapat' }, '×');
+    close.addEventListener('click', () => { miniChatEl.remove(); miniChatEl = null; clearInterval(miniTimer); });
+    const openFull = h('button', { class: 'mc-full', type: 'button', title: 'Tam ekran Mesajlar' }, '⤢');
+    openFull.addEventListener('click', () => { location.hash = `#/messages/u${peer.id}`; });
+    miniChatEl = h('div', { class: 'mini-chat', 'data-uid': String(peer.id) },
+      h('div', { class: 'mc-head' }, dbAvatar(peer.full_name, peer.photo), h('b', { class: 'grow' }, peer.full_name), openFull, close),
+      list, h('div', { class: 'mc-foot' }, inp, sendBtn));
+    document.body.append(miniChatEl);
+    load(); miniTimer = setInterval(poll, 3000);
+    setTimeout(() => inp.focus(), 50);
+  }
+  onLeave(() => { miniChatEl?.remove(); clearInterval(miniTimer); });
+
+  function dbAlarms(body) {
+    const render = () => {
+      const alarms = getAlarms().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+      const addBtn = h('button', { class: 'db-note-add', type: 'button', onclick: () => alarmForm(null, render) }, '＋ Yeni alarm');
+      const dayLbl = ds => (!ds || !ds.length ? 'Her gün' : (ds.length === 7 ? 'Her gün' : DAYS.filter(([d]) => ds.includes(d)).map(([, l]) => l).join(' ')));
+      clear(body, addBtn, alarms.length ? h('ul', { class: 'db-list db-alarmlist' }, alarms.map(a => h('li', { class: a.enabled === false ? 'off' : '' },
+        h('button', { class: 'alarm-toggle', type: 'button', title: a.enabled === false ? 'Aç' : 'Kapat',
+          onclick: () => { a.enabled = a.enabled === false; const all = getAlarms().map(x => x.id === a.id ? a : x); saveAlarms(all); render(); } }, a.enabled === false ? '○' : '●'),
+        h('button', { class: 'alarm-main', type: 'button', onclick: () => alarmForm(a, render) },
+          h('b', null, a.time), h('span', { class: 'small muted' }, `${dayLbl(a.days)}${a.label ? ' · ' + a.label : ''}`)),
+        h('button', { class: 'alarm-del', type: 'button', title: 'Sil', onclick: () => { saveAlarms(getAlarms().filter(x => x.id !== a.id)); render(); } }, '×'))))
+        : h('div', { class: 'db-none' }, 'Alarm yok. “Yeni alarm” ekleyin.'));
+    };
+    render();
+    const onCh = () => { if (body.isConnected) render(); else window.removeEventListener('caymaz:alarms-changed', onCh); };
+    window.addEventListener('caymaz:alarms-changed', onCh);
+  }
+
   async function dbNotes(body) {
     const addBtn = h('button', { class: 'db-note-add', type: 'button', title: 'Yeni not' }, '＋ Yeni not');
     const grid = h('div', { class: 'db-note-grid' });

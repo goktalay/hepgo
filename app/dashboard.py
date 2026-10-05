@@ -159,9 +159,29 @@ def w_email(conn, user):
     return {'boxes': len(boxes), 'count': len(items), 'items': items}
 
 
+@widget('active_users', 'Kullanıcılar', 'Çevrimiçi kullanıcılar; tıklayınca hızlı mesajlaşma', size=1, group='Genel')
+def w_active_users(conn, user):
+    from datetime import datetime as _dt
+    from .routers.admin import ONLINE_WINDOW
+    cut = (_dt.now() - ONLINE_WINDOW).isoformat(timespec='seconds')
+    admin = 'Sistem Yöneticisi' in (user.get('roles') or [])
+    rows = db.rows(conn.execute(
+        '''SELECT id, full_name, photo FROM users u WHERE active = 1 AND deleted_at IS NULL AND id != ? AND last_seen >= ?
+             AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?)
+             AND (? OR IFNULL(json_extract(u.prefs, '$.settings.privacy.hide_online'), 0) = 0)
+           ORDER BY full_name''',
+        (user['id'], cut, db.now(), admin)))
+    return {'items': rows, 'count': len(rows)}
+
+
 @widget('world_clock', 'Dünya Saati', 'Eklediğiniz şehirlerin saatlerini yan yana gösterir', size=1, group='Genel')
 def w_world_clock(conn, user):
     return {}   # şehirler istemcide (kutucuk ayarı): ad + zaman dilimi
+
+
+@widget('alarm', 'Alarm', 'Saat ve haftanın günlerine alarm; zamanı gelince sesle uyarır', size=1, group='Kişisel')
+def w_alarm(conn, user):
+    return {}   # alarmlar cihazda (localStorage)
 
 
 @widget('notes', 'Notlar', 'Yapışkan notlarınız; ekrana iğneleyebilirsiniz', size=1, group='Kişisel')

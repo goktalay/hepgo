@@ -2,6 +2,7 @@
 // Kişi Güvenlik Kodu, e-posta, telefon, altta ad-görev ve kurum logoları. Hem personel detayında hem kart/yazdırma ekranında kullanılır.
 import { fileUrl } from './api.js';
 import { h } from './ui.js';
+import { getLang } from './i18n.js';
 
 // ---- Code128-B barkod → SVG (harici kütüphane yok). Değer boşsa null döner.
 const C128 = [
@@ -43,20 +44,10 @@ function barcodeSvg(text, { h: height = 54, unit = 1.7 } = {}) {
 
 const svgWrap = markup => { const t = document.createElement('template'); t.innerHTML = markup; return t.content.firstElementChild; };
 
-// Resmî "MKE İŞTİRAKİDİR" logosu (lacivert çift halka + MKE monogramı + metin) — SVG olarak.
-const MKE_NAVY = '#12385c';
+// Resmî "MKE İŞTİRAKİDİR" logosu: sunucuya yüklenen görsel. Arayüz Türkçe ise mke_tr, diğer dillerde mke_en.
 function mkeLogo() {
-  return svgWrap(
-    `<svg viewBox="0 0 250 72" class="idc-mke-svg" role="img" aria-label="MKE İŞTİRAKİDİR">
-      <g fill="none" stroke="${MKE_NAVY}">
-        <circle cx="36" cy="36" r="33" stroke-width="5"/>
-        <circle cx="36" cy="36" r="25" stroke-width="3"/>
-      </g>
-      <text x="36" y="37" text-anchor="middle" dominant-baseline="central" fill="${MKE_NAVY}"
-        font-family="Arial, sans-serif" font-weight="800" font-size="23" letter-spacing="-1">MKE</text>
-      <text x="84" y="37" dominant-baseline="central" fill="${MKE_NAVY}"
-        font-family="Arial, sans-serif" font-weight="800" font-size="30" letter-spacing="0.5">İŞTİRAKİDİR</text>
-    </svg>`);
+  const file = getLang() === 'tr' ? 'mke_tr' : 'mke_en';
+  return h('img', { class: 'idc-mke-img', src: `/static/img/${file}.png`, alt: 'MKE İŞTİRAKİDİR' });
 }
 
 /** idCard(e, {company, action}) → kimlik kartı DOM'u. action verilirse kartın içinde, alt çizginin hemen üstünde ortada gösterilir (yazdırmada verilmez). */

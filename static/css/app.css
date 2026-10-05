@@ -7516,14 +7516,11 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 
 /* Avatar çerçevesinde kişi durumu (Hızlı Rehber + Mesajlarım): yeşil=çevrimiçi, turuncu=görevde, mavi=izinde, gri=çevrimdışı.
    Halka doğrudan kare .db-av (34×34) üzerine konur ki tam daire olsun; sarmalayıcı esnek satırda dikeyde esnemesin. */
-.db-avwrap { position: relative; display: inline-flex; align-self: center; flex: none; border-radius: 50%; line-height: 0; }
-.db-avwrap.st-online .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #22c55e; }
-.db-avwrap.st-duty   .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #f59e0b; }
-.db-avwrap.st-leave  .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #3b82f6; }
-.db-avwrap.st-off    .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px #cbd5e1; }
-.db-stdot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--surface); }
-.db-avwrap.st-online .db-stdot { background: #22c55e; }
-.db-avwrap.st-duty   .db-stdot { background: #f59e0b; }
-.db-avwrap.st-leave  .db-stdot { background: #3b82f6; }
-.db-avwrap.st-off    .db-stdot { background: #cbd5e1; }
-.db-qd-main, .db-msglist a { gap: 11px; }   /* halka için nefes payı */
+.db-avwrap { display: inline-flex; align-self: center; flex: none; border-radius: 50%; line-height: 0; }
+/* Halka, avatarın İÇİNE sığan border olarak çizilir (box-sizing: border-box) — satır kısa olsa / kutu kayarken
+   bile taşmaz, kırpılmaz, her zaman tam daire. Renk = durum. */
+.db-avwrap .db-av { box-sizing: border-box; border: 3px solid transparent; }
+.db-avwrap.st-online .db-av { border-color: #22c55e; }
+.db-avwrap.st-duty   .db-av { border-color: #f59e0b; }
+.db-avwrap.st-leave  .db-av { border-color: #3b82f6; }
+.db-avwrap.st-off    .db-av { border-color: #cbd5e1; }

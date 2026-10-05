@@ -20,7 +20,7 @@ const presenceOf = (id, d) => (d?.on_duty?.includes(id) ? 'duty' : d?.on_leave?.
 const ST_TITLE = { duty: 'Görevde', leave: 'İzinde', online: 'Çevrimiçi', off: 'Çevrimdışı' };
 const dbAvatarSt = (name, photo, id, d, cls = '') => {
   const st = presenceOf(id, d);
-  return h('span', { class: `db-avwrap st-${st}`, title: ST_TITLE[st] }, dbAvatar(name, photo, cls), h('i', { class: 'db-stdot' }));
+  return h('span', { class: `db-avwrap st-${st}`, title: ST_TITLE[st] }, dbAvatar(name, photo, cls));
 };
 
 const MULTI = new Set(['clock', 'weather', 'world_clock', 'quick_directory']);   // birden çok eklenebilen / ayarlı

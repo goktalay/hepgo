@@ -49,4 +49,18 @@ else
     push "$t" "$(basename "$(dirname "$t")")" || fail=1
   done
 fi
+# Veilox paneli: <uzak>/veilox/db/central-GGAAYYYY.db (KEEP_DAYS gün) + veilox.env, tenants.json, cf-backups/ (güncel)
+VD=${VEILOX_DIR:-/opt/hepgo/veilox}/data/backups/nightly
+if [ -z "${1:-}" ] && [ -d "$VD" ]; then
+  if [ ! -f "$VD/central-$DAY.db" ]; then
+    echo "HATA: veilox: bugünün gece yedeği yok ($VD/central-$DAY.db)"; fail=1
+  elif $RCLONE copy "${RC[@]}" "$VD" "${REMOTE}veilox/db" --include "central-$DAY.db" --include veilox.env --include tenants.json --include "cf-backups/**"; then
+    for f in $($RCLONE lsf "${REMOTE}veilox/db" --include 'central-*.db' 2>/dev/null); do
+      [[ "$f" =~ ^central-([0-9]{8})\.db$ ]] && [ "${BASH_REMATCH[1]}" -lt "$CUTOFF" ] && $RCLONE deletefile "${REMOTE}veilox/db/$f"
+    done
+    echo "$(date '+%F %T') Sunucu dışı yedek tamam: veilox"
+  else
+    fail=1
+  fi
+fi
 [ $fail -eq 0 ] || { echo "$(date '+%F %T') UYARI: en az bir firmanın sunucu dışı yedeği alınamadı"; exit 1; }

@@ -46,3 +46,26 @@ if [ -z "${1:-}" ]; then
     if [ -f "$t/caymaz.db" ]; then "$0" "$t" || echo "HATA: $t yedeklenemedi"; fi
   done
 fi
+
+# Veilox paneli (hepgo.com / veilox.app: üyelikler, paketler, ödemeler): tek veritabanı + ayarlar (.env: Cloudflare /
+# federasyon anahtarları — kaybolursa panel yeniden kurulamaz; yalnız sahibi okur) + tenants.json + Cloudflare DNS yedekleri
+VEILOX=${VEILOX_DIR:-/opt/hepgo/veilox}
+if [ -z "${1:-}" ] && [ -f "$VEILOX/data/central.db" ]; then
+  if [ ! -r "$VEILOX/data/central.db" ]; then
+    echo "UYARI: $VEILOX/data/central.db okunamıyor; Veilox servis kullanıcısıyla (hepgo) yedeklenmeli"
+  else
+    VD=$VEILOX/data/backups/nightly
+    install -d -m 2770 "$VEILOX/data/backups" "$VD" 2>/dev/null || mkdir -p "$VD"
+    sqlite3 "file:$VEILOX/data/central.db?mode=ro" ".backup '$VD/central-$DAY.db.tmp'"
+    if [ "$(sqlite3 "$VD/central-$DAY.db.tmp" 'PRAGMA quick_check;')" = ok ]; then
+      mv "$VD/central-$DAY.db.tmp" "$VD/central-$DAY.db"
+      [ -r "$VEILOX/.env" ] && install -m 600 "$VEILOX/.env" "$VD/veilox.env"
+      [ -f "$VEILOX/tenants.json" ] && cp -p "$VEILOX/tenants.json" "$VD/tenants.json"
+      [ -d "$VEILOX/data/cf-backups" ] && rsync -a --delete "$VEILOX/data/cf-backups/" "$VD/cf-backups/"
+      find "$VD" -maxdepth 1 -name 'central-*.db' -mtime +"$KEEP_DAYS" -delete
+      echo "$(date '+%F %T') Yedek tamam: $VD (central-$DAY.db, ayarlar)"
+    else
+      echo "HATA: Veilox yedeği bozuk ($VD/central-$DAY.db.tmp)"; rm -f "$VD/central-$DAY.db.tmp"
+    fi
+  fi
+fi

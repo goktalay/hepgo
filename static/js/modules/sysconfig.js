@@ -647,6 +647,18 @@ const INTEG_LOGO = {
   maps: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Google Haritalar"><rect width="64" height="64" rx="16" fill="#fff"/>
     <path d="M32 14c-7 0-12 5.4-12 12 0 8.4 12 22 12 22s12-13.6 12-22c0-6.6-5-12-12-12z" fill="#34A853"/>
     <circle cx="32" cy="26" r="5" fill="#fff"/><path d="M20 26c0-6.6 5-12 12-12 3.4 0 6.4 1.3 8.6 3.6L24 34c-2.5-2.2-4-5-4-8z" fill="#4285F4"/></svg>`),
+  microsoft: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Microsoft"><rect width="64" height="64" rx="16" fill="#fff"/>
+    <rect x="15" y="15" width="15" height="15" fill="#F25022"/><rect x="34" y="15" width="15" height="15" fill="#7FBA00"/>
+    <rect x="15" y="34" width="15" height="15" fill="#00A4EF"/><rect x="34" y="34" width="15" height="15" fill="#FFB900"/></svg>`),
+  printer: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Yazıcılar"><rect width="64" height="64" rx="16" fill="#334155"/>
+    <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 25V15h22v10"/><rect x="14" y="25" width="36" height="17" rx="2.5"/><path d="M21 42v7h22v-7"/><path d="M24 36h16"/></g>
+    <circle cx="43" cy="30.5" r="2" fill="#22c55e"/></svg>`),
+  face: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Yüz Tanıma"><rect width="64" height="64" rx="16" fill="#6d28d9"/>
+    <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 25v-4a3 3 0 0 1 3-3h4M46 25v-4a3 3 0 0 0-3-3h-4M18 39v4a3 3 0 0 0 3 3h4M46 39v4a3 3 0 0 0-3 3h-4"/>
+    <path d="M28 40c2.4 1.6 5.6 1.6 8 0M32 29v5"/></g>
+    <circle cx="27" cy="30" r="1.8" fill="#fff"/><circle cx="37" cy="30" r="1.8" fill="#fff"/></svg>`),
   general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
 };
 const INTEG_INFO = {

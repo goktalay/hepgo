@@ -11,11 +11,25 @@ from . import db
 
 WIDGETS = []
 
+# Kutucuk Ekle penceresinde KONUYA GÖRE gruplama (sıralı, açılır/kapanır). group verilmezse anahtara göre eşlenir, yoksa 'Genel'.
+GROUP_ORDER = ['Kişisel', 'Genel', 'Üretim', 'Depo & Stok', 'Saha', 'Ofis & Güvenlik', 'Sistem']
+WIDGET_GROUP = {
+    'calendar': 'Kişisel', 'notifications': 'Kişisel', 'my_cargo': 'Kişisel', 'my_guests': 'Kişisel', 'my_calls': 'Kişisel',
+    'birthdays': 'Kişisel', 'announcements': 'Kişisel',
+    'modules': 'Genel', 'clock': 'Genel', 'weather': 'Genel', 'company_news': 'Genel',
+    'alerts': 'Üretim', 'kpi_production': 'Üretim', 'chart_production': 'Üretim', 'forecast': 'Üretim',
+    'recent_orders': 'Üretim', 'kpi_printers': 'Üretim',
+    'kpi_warehouse': 'Depo & Stok', 'kpi_stock': 'Depo & Stok',
+    'kpi_field': 'Saha',
+    'kpi_security': 'Ofis & Güvenlik', 'kpi_secretariat': 'Ofis & Güvenlik', 'kpi_documents': 'Ofis & Güvenlik',
+    'kpi_admin': 'Sistem',
+}
 
-def widget(key, title, desc, module=None, size=1, default=False, modules=None, fixed=False):
+
+def widget(key, title, desc, module=None, size=1, default=False, modules=None, fixed=False, group=None):
     def deco(fn):
         WIDGETS.append({'key': key, 'title': title, 'desc': desc, 'module': module, 'modules': modules, 'size': size,
-                        'default': default, 'fixed': fixed, 'fn': fn})
+                        'default': default, 'fixed': fixed, 'group': group or WIDGET_GROUP.get(key, 'Genel'), 'fn': fn})
         return fn
     return deco
 
@@ -124,6 +138,30 @@ def w_my_calls(conn, user):
 def w_announcements(conn, user):
     from .routers.announcements import unread_for
     return {'items': unread_for(conn, user['id'])}
+
+
+@widget('email', 'E-posta', 'Bağlı hesaplarınızdaki okunmamış e-postaların tümü', size=1, group='Kişisel')
+def w_email(conn, user):
+    """Kişisel › Mail hesaplarındaki okunmamış iletiler (önbellekten, hızlı). Yalnız kullanıcının kendi hesapları."""
+    import json as _json
+    boxes = [r[0] for r in conn.execute('SELECT id FROM mail_boxes WHERE user_id = ?', (user['id'],))]
+    if not boxes:
+        return {'boxes': 0, 'count': 0, 'items': []}
+    q = ','.join('?' * len(boxes))
+    rows = conn.execute(f"SELECT box_id, uid, summary FROM mail_cache WHERE folder = 'inbox' AND seen = 0 AND box_id IN ({q}) "
+                        'ORDER BY date DESC LIMIT 100', boxes).fetchall()
+    items = []
+    for box_id, uid, summary in rows:
+        d = _json.loads(summary)
+        fr = d.get('from') or {}
+        items.append({'box_id': box_id, 'uid': uid, 'folder': 'inbox',
+                      'from': (fr.get('name') or fr.get('email') or '').strip(), 'subject': d.get('subject'), 'date': d.get('date')})
+    return {'boxes': len(boxes), 'count': len(items), 'items': items}
+
+
+@widget('world_clock', 'Dünya Saati', 'Eklediğiniz şehirlerin saatlerini yan yana gösterir', size=1, group='Genel')
+def w_world_clock(conn, user):
+    return {}   # şehirler istemcide (kutucuk ayarı): ad + zaman dilimi
 
 
 @widget('weather', 'Hava durumu', 'Bulunduğunuz konuma ya da seçtiğiniz şehre göre hava durumu', size=1)

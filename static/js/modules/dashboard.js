@@ -9,7 +9,7 @@ import { LEVELS } from './announcements.js';
 import { renderFeed } from './feed.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
-const MULTI = new Set(['clock', 'weather']);   // birden çok eklenebilen (ör. iki şehir)
+const MULTI = new Set(['clock', 'weather', 'world_clock']);   // birden çok eklenebilen / ayarlı (ör. iki şehir)
 // GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
 let gridLib;
 function loadGridStack() {
@@ -24,7 +24,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
@@ -129,20 +129,36 @@ export async function renderDashboard(view, ctx, modules) {
     persist();
   }
 
+  const GROUP_ORDER = ['Kişisel', 'Genel', 'Üretim', 'Depo & Stok', 'Saha', 'Ofis & Güvenlik', 'Sistem'];
+  const pickClosed = () => { try { return new Set(JSON.parse(localStorage.getItem('db.pickClosed') || '[]')); } catch { return new Set(); } };
+  const savePickClosed = s => { try { localStorage.setItem('db.pickClosed', JSON.stringify([...s])); } catch { /* */ } };
   function addWidget() {
     const used = new Set(layout.map(it => it.k));
     const list = avail.filter(w => MULTI.has(w.key) || !used.has(w.key));
+    // Konuya göre grupla (sıralı); grup başlığına tıklayınca açılır/kapanır, durum cihazda hatırlanır
+    const groups = new Map();
+    for (const w of list) { const g = w.group || 'Genel'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(w); }
+    const order = [...groups.keys()].sort((a, b) => (GROUP_ORDER.indexOf(a) + 1 || 99) - (GROUP_ORDER.indexOf(b) + 1 || 99));
+    const closed = pickClosed();
+    const add = w => async () => {
+      const it = { id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 4 };
+      layout.push(it); m.close();
+      await loadData().catch(() => {}); build(); persist();
+      if (MULTI.has(w.key)) settings(it);
+    };
+    const section = g => {
+      const items = groups.get(g);
+      const box = h('div', { class: `db-pick-grp ${closed.has(g) ? 'closed' : ''}` });
+      const head = h('button', { type: 'button', class: 'db-pick-grp-h' },
+        h('span', { class: 'grow' }, g), h('span', { class: 'db-pick-n' }, items.length), h('span', { class: 'db-pick-caret', 'aria-hidden': 'true' }));
+      head.addEventListener('click', () => { const sh = box.classList.toggle('closed'); const s = pickClosed(); sh ? s.add(g) : s.delete(g); savePickClosed(s); });
+      box.append(head, h('div', { class: 'db-pick-body' }, h('div', { class: 'db-pick' }, items.map(w =>
+        h('button', { type: 'button', class: 'db-pick-item', onclick: add(w) }, h('b', null, w.title), h('span', null, w.desc))))));
+      return box;
+    };
     const m = modal({
       title: 'Kutucuk Ekle', wide: true,
-      body: list.length ? h('div', { class: 'db-pick' }, list.map(w => h('button', { type: 'button', class: 'db-pick-item', onclick: async () => {
-        const it = { id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 4 };
-        layout.push(it);
-        m.close();
-        await loadData().catch(() => {});
-        build();
-        persist();
-        if (MULTI.has(w.key)) settings(it);
-      } }, h('b', null, w.title), h('span', null, w.desc)))) : h('div', { class: 'empty' }, 'Eklenebilecek başka kutucuk yok'),
+      body: list.length ? h('div', { class: 'db-pick-groups' }, order.map(section)) : h('div', { class: 'empty' }, 'Eklenebilecek başka kutucuk yok'),
       actions: [{ label: 'Kapat' }],
     });
   }
@@ -152,6 +168,31 @@ export async function renderDashboard(view, ctx, modules) {
       let style = it.o?.style || 'digital';
       modal({ title: 'Saat', body: h('div', null, field('Görünüm', segmented([['digital', 'Dijital'], ['analog', 'Analog']], style, v => { style = v; }))),
         actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, style }; persist(); build(); } }] });
+      return;
+    }
+    if (it.k === 'world_clock') {
+      const cities = [...(it.o?.cities || [])];
+      const listEl = h('div', { class: 'db-wc-edit' });
+      const draw = () => clear(listEl, cities.length ? cities.map((c, i) => h('div', { class: 'db-wc-row' },
+        h('span', { class: 'grow' }, h('b', null, c.name), h('small', { class: 'muted' }, ` · ${c.tz}`)),
+        h('button', { class: 'btn xs', type: 'button', onclick: () => { cities.splice(i, 1); draw(); } }, 'Kaldır')))
+        : h('div', { class: 'empty small' }, 'Henüz şehir eklenmedi'));
+      draw();
+      const q = h('input', { class: 'input', type: 'search', placeholder: 'Şehir ara… (ör. Londra, Tokyo)' });
+      const res = h('div', { class: 'pick-list' });
+      let timer;
+      q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => {
+        if (q.value.trim().length < 2) { clear(res); return; }
+        try {
+          const r = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q.value.trim())}&count=8&language=tr&format=json`)).json();
+          clear(res, (r.results || []).map(c => h('button', { class: 'pick', type: 'button', onclick: () => {
+            if (!cities.some(x => x.name === c.name && x.tz === c.timezone)) cities.push({ name: c.name, tz: c.timezone });
+            q.value = ''; clear(res); draw();
+          } }, h('div', { class: 'grow' }, h('b', null, c.name), h('span', { class: 'small muted' }, [c.admin1, c.country, c.timezone].filter(Boolean).join(' · '))))));
+        } catch { clear(res, h('div', { class: 'empty small' }, 'Şehir araması yapılamadı (internet?)')); }
+      }, 300); });
+      modal({ title: 'Dünya Saati — şehirler', wide: true, body: h('div', null, listEl, field('Şehir ekle', q), res),
+        actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, cities }; persist(); build(); } }] });
       return;
     }
     // Hava durumu: bulunduğum konum (tarayıcı izni) ya da şehir arama
@@ -186,6 +227,16 @@ export async function renderDashboard(view, ctx, modules) {
     switch (it.k) {
       case 'clock': return clock(body, it.o?.style || 'digital');
       case 'weather': return weather(body, it.o || { mode: 'auto' });
+      case 'world_clock': return worldClock(body, it);
+      case 'email': return clear(body, d.boxes === 0
+        ? h('div', { class: 'db-none' }, h('span', null, 'Bağlı mail hesabınız yok. '), h('a', { href: '#/settings/mailboxes' }, 'Hesap bağla →'))
+        : !d.items?.length ? h('div', { class: 'db-none' }, '✓ Okunmamış e-posta yok')
+          : [h('div', { class: 'db-mailhead' }, h('b', null, `${d.count} okunmamış`), h('a', { class: 'small', href: '#/mail' }, 'Tümü →')),
+            h('ul', { class: 'db-list db-maillist' }, d.items.map(mi => h('li', null,
+              h('a', { href: `#/mail/${mi.box_id}/m/${mi.uid}/${encodeURIComponent(mi.folder || 'inbox')}` },
+                h('span', { class: 'db-mail-from' }, mi.from || '(gönderen yok)'),
+                h('span', { class: 'db-mail-subj' }, mi.subject || '(konu yok)')),
+              h('small', null, mi.date ? fmtDateTime(mi.date).replace(/\.\d{4}/, '') : ''))))]);
       case 'modules': return clear(body, h('div', { class: 'db-modules' }, modules.map(m => h('a', { href: `#/${m.key}`, class: m.tone ? `tone-${m.tone}` : '' },
         h('span', { class: 'ico' }, svgIcon(icons[m.key])), h('span', null, m.title)))));
       case 'announcements': return list(d.items, a => h('li', null, h('a', { href: `#/announcements/${a.id}` },
@@ -285,6 +336,28 @@ export async function renderDashboard(view, ctx, modules) {
   }
 
   // Hava durumu (Open-Meteo, anahtar gerektirmez): anlık + 4 günlük
+  function worldClock(body, it) {
+    const cities = it.o?.cities || [];
+    if (!cities.length) return clear(body, h('div', { class: 'db-none' }, h('span', null, 'Şehir ekleyin: '),
+      h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙')));
+    const cells = cities.map(c => {
+      const tEl = h('b', { class: 'db-wc-time' });
+      const dEl = h('small', { class: 'db-wc-sub' });
+      return { c, el: h('div', { class: 'db-wc-cell' }, h('span', { class: 'db-wc-name' }, c.name), tEl, dEl), tEl, dEl };
+    });
+    const tick = () => {
+      const now = new Date();
+      for (const x of cells) {
+        try {
+          x.tEl.textContent = now.toLocaleTimeString('tr-TR', { timeZone: x.c.tz, hour: '2-digit', minute: '2-digit' });
+          x.dEl.textContent = now.toLocaleDateString('tr-TR', { timeZone: x.c.tz, weekday: 'short', day: 'numeric', month: 'short' });
+        } catch { x.tEl.textContent = '—'; x.dEl.textContent = x.c.tz; }
+      }
+    };
+    tick(); timers.push(setInterval(tick, 1000));
+    clear(body, h('div', { class: 'db-wc' }, cells.map(x => x.el)));
+  }
+
   async function weather(body, o) {
     clear(body, h('div', { class: 'db-none' }, 'Hava durumu alınıyor…'));
     let lat = o.lat, lon = o.lon, name = o.name;

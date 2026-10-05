@@ -347,6 +347,23 @@ def _resolve_names(conn, rows):
     return rows
 
 
+class FrameIn(BaseModel):
+    jpg: str                            # base64 JPEG (data: öneki olmadan)
+    min_face: Optional[int] = None      # bu pikselden küçük yüzleri atla (öntanımlı 44)
+    thr: Optional[float] = None         # eşleştirme kosinüs eşiği (öntanımlı KNOWN_PERSON=0.42)
+
+
+@faces_router.post('/recognize-frame')
+def recognize_frame(body: FrameIn, user=Depends(cam_user), conn=db.DB):
+    """CANLI TEST: tarayıcı kamerasından gelen tek kareyi fabrika yüz ajanında EĞİTİLMİŞ izlerle eşleştirir.
+    Dönüş {w,h,faces:[{box:[x,y,w,h], score, *_id, *_name}]}; isimler bulut DB'sinden (resolve_names) çözülür.
+    Eşleşmeyen yüzler de çerçeveyle döner (score None) → arayüz 'Tanımsız Kişi' gösterir."""
+    res = _face(conn, 'recognize_frame', jpg=body.jpg, min_face=body.min_face, thr=body.thr)
+    if isinstance(res, dict):
+        _resolve_names(conn, res.get('faces') or [])
+    return res
+
+
 @faces_router.get('/groups')
 def groups(state: str = 'unknown', user=Depends(cam_user), conn=db.DB):
     return _resolve_names(conn, _face(conn, 'groups', state=state))

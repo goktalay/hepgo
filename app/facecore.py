@@ -378,9 +378,59 @@ def push_config(conn, cfg):
     return {'ok': True, 'enroll': n, 'cameras': cams, 'channels': len(cfg.get('channels') or {})}
 
 
+def recognize_frame(conn, args):
+    """Tek bir kareyi (JPEG, base64) eğitilmiş izlerle eşleştirir — CANLI TEST için.
+
+    Kamera servisiyle AYNI modeli kullanır (YUNET tespit + SFACE iz + document_media.known_identities eşleştirme).
+    Dönüş: {'w','h','faces':[{box:[x,y,w,h], score, user_id|person_id|family_id|visitor_id}]}.
+    Eşleşmeyen yüz: score None, tüm *_id None (çerçeve yine çizilir, 'Tanımsız' etiketlenir). İsim çözümü BULUTTA
+    (facebridge.resolve_names) yapılır; burada yalnız id döner."""
+    import cv2
+    from . import document_media as dm
+    a = args or {}
+    try:
+        buf = base64.b64decode(a.get('jpg') or a.get('b64') or '')
+    except Exception:
+        buf = b''
+    if not buf:
+        return {'w': 0, 'h': 0, 'faces': []}
+    img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return {'w': 0, 'h': 0, 'faces': []}
+    h, w = img.shape[:2]
+    min_face = int(a.get('min_face') or 44)
+    det_thr = float(a.get('det_thr') or 0.8)
+    match_thr = float(a.get('thr') or dm.KNOWN_PERSON)
+    detector = cv2.FaceDetectorYN.create(str(dm.YUNET), '', (w, h), det_thr, 0.3, 50)
+    detector.setInputSize((w, h))
+    recognizer = cv2.FaceRecognizerSF.create(str(dm.SFACE), '')
+    _, faces = detector.detect(img)
+    known = dm.known_identities(conn)
+    out = []
+    for f in faces if faces is not None else []:
+        x, y, fw, fh = float(f[0]), float(f[1]), float(f[2]), float(f[3])
+        if min(fw, fh) < min_face:
+            continue
+        emb = _norm(recognizer.feature(recognizer.alignCrop(img, f)).flatten().astype(np.float32))
+        best, best_sim = None, match_thr
+        for key, v in known:
+            sim = float(np.dot(v, emb))
+            if sim >= best_sim:
+                best, best_sim = key, sim
+        rec = {'box': [round(x), round(y), round(fw), round(fh)],
+               'score': round(best_sim, 3) if best else None,
+               'user_id': None, 'person_id': None, 'family_id': None, 'visitor_id': None}
+        if best:
+            rec[f'{best[0]}_id'] = best[1]
+        out.append(rec)
+    return {'w': w, 'h': h, 'faces': out}
+
+
 def rpc(conn, method, args):
     """face.rpc dağıtıcısı: bulutun istediği yüz işlemini yerel bağlantıyla çalıştırır."""
     a = args or {}
+    if method == 'recognize_frame':
+        return recognize_frame(conn, a)
     if method == 'groups':
         return groups(conn, a.get('state', 'unknown'))
     if method == 'group':

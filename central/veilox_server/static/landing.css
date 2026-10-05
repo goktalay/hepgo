@@ -394,3 +394,24 @@ h3 { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.15; letter-spacing: -.0
 /* tanıtım üst menüsünde firma girişi düğmesi */
 .btn-firm { color: #fff; background: linear-gradient(180deg, var(--blue-2), var(--blue)); box-shadow: 0 10px 24px rgba(47, 111, 237, .32); }
 .gx-form[hidden], .gx-msg[hidden] { display: none; }
+
+/* Fiyatlar: modül karşılaştırma tablosu */
+.price-compare { margin-top: 42px; }
+.pc-h { text-align: center; font-size: 22px; margin: 0 0 4px; color: var(--ink); }
+.pc-p { text-align: center; color: var(--sub); margin: 0 0 20px; }
+.pc-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); -webkit-overflow-scrolling: touch; }
+.pc-table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14.5px; }
+.pc-table th, .pc-table td { padding: 12px 14px; text-align: center; border-bottom: 1px solid var(--line); }
+.pc-table thead th { position: sticky; top: 0; background: var(--soft); z-index: 2; }
+.pc-table thead .pc-name { display: block; font-weight: 700; color: var(--ink); }
+.pc-table thead .pc-fee { display: block; font-size: 12.5px; color: var(--sub); font-weight: 600; }
+.pc-table th[scope="row"] { text-align: left; font-weight: 500; color: var(--ink); white-space: nowrap; }
+.pc-corner, .pc-table th[scope="row"] { position: sticky; left: 0; background: var(--bg); z-index: 1; }
+.pc-table thead .pc-corner { z-index: 3; background: var(--soft); }
+.pc-table tr.pc-grp th { text-align: left; background: #f3f6fb; color: var(--navy); font-size: 12.5px; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase; position: sticky; left: 0; }
+.pc-table td.yes { color: #16a34a; font-weight: 800; font-size: 16px; }
+.pc-table td.no { color: var(--faint); }
+.pc-table tbody tr:hover td, .pc-table tbody tr:hover th[scope="row"] { background: #f7faff; }
+html[data-theme="dark"] .pc-table tbody tr:hover td, html[data-theme="dark"] .pc-table tbody tr:hover th[scope="row"] { background: rgba(255,255,255,.04); }
+html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.05); color: var(--blue-2); }

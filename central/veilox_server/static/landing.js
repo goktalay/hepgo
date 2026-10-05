@@ -25,6 +25,7 @@ const T = {
     rowsEye: 'Yenilikçi sistemler', meetEye: 'Görüntülü toplantı',
     pricingEye: 'Fiyatlandırma', pricingH: 'Size uygun paket', pricingP: 'Aylık, taahhütsüz. İhtiyacınız olan modülleri seçin; bulut ya da kendi sunucunuza kurulum.',
     perMonth: '/ay', free: 'Ücretsiz', start: 'Bu paketle başla', modsN: n => `${n} modül`,
+    compareH: 'Modül karşılaştırması', compareP: 'Hangi paket hangi modülleri içerir', moduleCol: 'Modül', inc: 'var', exc: 'yok',
     modeOnline: 'Bulut (online)', modeOffline: 'Kendi sunucunuz (offline)', modeBoth: 'Bulut veya kendi sunucunuz',
     secEye: 'Güvenlik', secH: 'Veriniz sizde, kontrol sizde',
     secP: 'İsterseniz kendi sunucunuzda çalışır. Her işlem kayıt altındadır; her kullanıcı yalnızca yetkili olduğu bilgiyi görür.',
@@ -49,6 +50,7 @@ const T = {
     rowsEye: 'Innovative systems', meetEye: 'Video meetings',
     pricingEye: 'Pricing', pricingH: 'A plan that fits', pricingP: 'Monthly, no commitment. Pick the modules you need; cloud or on-premise install.',
     perMonth: '/mo', free: 'Free', start: 'Start with this plan', modsN: n => `${n} modules`,
+    compareH: 'Module comparison', compareP: 'Which modules each plan includes', moduleCol: 'Module', inc: 'yes', exc: 'no',
     modeOnline: 'Cloud (online)', modeOffline: 'Your own server (offline)', modeBoth: 'Cloud or your own server',
     secEye: 'Security', secH: 'Your data, your control',
     secP: 'Runs on your own server if you want. Every action is logged; each user sees only what they are authorized to.',
@@ -255,6 +257,7 @@ function page() {
     <section class="pricing section" id="fiyatlar"><div class="wrap">
       <div class="sec-head reveal"><span class="eyebrow">${esc(t.pricingEye)}</span><h2>${esc(t.pricingH)}</h2><p>${esc(t.pricingP)}</p></div>
       <div class="price-grid" id="priceGrid"><p class="muted">…</p></div>
+      <div class="price-compare reveal" id="priceCompare"></div>
     </div></section>
 
     <section class="section section-dark" id="guvenlik"><div class="wrap">
@@ -274,12 +277,25 @@ function page() {
 const modeLabel = m => ({ online: T[lang].modeOnline, offline: T[lang].modeOffline, both: T[lang].modeBoth }[m] || m);
 const money = n => (n ? `${nf.format(n)} ₺` : T[lang].free);
 
+// Modül karşılaştırması: grup adları ve İngilizce modül adları (katalog Türkçe; EN için eşleme, yoksa Türkçe'ye düşer)
+const GROUP_TR = { sistem: 'Sistem', 'üretim': 'Üretim', depo: 'Depo & Satın Alma', saha: 'Saha', crm: 'CRM', ofis: 'Ofis' };
+const GROUP_EN = { sistem: 'System', 'üretim': 'Production', depo: 'Warehouse & Purchasing', saha: 'Field', crm: 'CRM', ofis: 'Office' };
+const MODKEY_EN = {
+  admin: 'Admin', users: 'Users', announcements: 'Announcements', reports: 'Reports', tools: 'Tools',
+  production: 'Production', orders: 'Work orders', printers: 'Printers', products: 'Products', mrp: 'MRP', design: 'Industrial design',
+  warehouse: 'Warehouse', stock: 'Stock', purchasing: 'Purchasing', field: 'Field', companies: 'CRM', sales: 'Sales',
+  secretariat: 'Secretariat', documents: 'Documents', hr: 'HR', security: 'Security', cleaning: 'Cleaning',
+  finance: 'Finance', mikro: 'Micro ERP', projects: 'Projects', boss: 'Boss', rehber: 'Directory', certs: 'Certification',
+  fleet: 'Fleet', cameras: 'Cameras',
+};
+let CATALOG = null;
+
 async function fillPricing() {
   let pkgs = [];
   try { pkgs = await (await fetch('/api/public/packages')).json(); } catch { /* */ }
   const grid = $('#priceGrid');
   if (!grid) return;
-  if (!pkgs.length) { grid.innerHTML = ''; return; }
+  if (!pkgs.length) { grid.innerHTML = ''; const cmp = $('#priceCompare'); if (cmp) cmp.innerHTML = ''; return; }
   grid.innerHTML = pkgs.map(p => `<div class="price-card reveal">
     <h3>${esc(p.name)}</h3>
     <div class="price-amt">${money(p.monthly_fee)}<span>${esc(T[lang].perMonth)}</span></div>
@@ -288,7 +304,43 @@ async function fillPricing() {
     <div class="price-mods">${esc(T[lang].modsN(p.modules.length))}</div>
     <a class="btn btn-primary" href="/giris?paket=${encodeURIComponent(p.slug)}#kayit">${esc(T[lang].start)}</a>
   </div>`).join('');
+  await fillCompare(pkgs);
   $('#nav') && revealAll();
+}
+
+// Karşılaştırma tablosu: satır = modül (gruplu), sütun = paket, hücre = ✓ / –
+async function fillCompare(pkgs) {
+  const box = $('#priceCompare');
+  if (!box) return;
+  if (!CATALOG) { try { CATALOG = await (await fetch('/api/modules')).json(); } catch { CATALOG = []; } }
+  // Yalnızca en az bir pakette geçen modüller gösterilir (katalog sırasıyla, gruba göre)
+  const used = new Set(pkgs.flatMap(p => p.modules));
+  const groups = [];
+  for (const m of CATALOG) {
+    if (!used.has(m.key)) continue;
+    let g = groups.find(x => x.key === m.group);
+    if (!g) { g = { key: m.group, mods: [] }; groups.push(g); }
+    g.mods.push(m);
+  }
+  if (!groups.length) { box.innerHTML = ''; return; }
+  const t = T[lang];
+  const modName = m => (lang === 'tr' ? m.title : (MODKEY_EN[m.key] || m.title));
+  const groupName = g => ((lang === 'tr' ? GROUP_TR[g.key] : GROUP_EN[g.key]) || (g.key.charAt(0).toLocaleUpperCase('tr') + g.key.slice(1)));
+  const cols = pkgs.map(p => `<th scope="col"><span class="pc-name">${esc(p.name)}</span><span class="pc-fee">${money(p.monthly_fee)}</span></th>`).join('');
+  const rows = groups.map(g => {
+    const head = `<tr class="pc-grp"><th scope="colgroup" colspan="${pkgs.length + 1}">${esc(groupName(g))}</th></tr>`;
+    const body = g.mods.map(m => {
+      const cells = pkgs.map(p => p.modules.includes(m.key)
+        ? `<td class="yes" aria-label="${esc(t.inc)}">✓</td>` : `<td class="no" aria-label="${esc(t.exc)}">–</td>`).join('');
+      return `<tr><th scope="row">${esc(modName(m))}</th>${cells}</tr>`;
+    }).join('');
+    return head + body;
+  }).join('');
+  box.innerHTML = `<h3 class="pc-h">${esc(t.compareH)}</h3><p class="pc-p">${esc(t.compareP)}</p>
+    <div class="pc-scroll"><table class="pc-table">
+      <thead><tr><th scope="col" class="pc-corner">${esc(t.moduleCol)}</th>${cols}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 function revealAll() {

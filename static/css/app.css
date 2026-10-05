@@ -7432,13 +7432,14 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .duty-actions:empty { display: none; }
 
 /* Aranabilir tekli seçim */
-.ss { position: relative; }
-.ss-panel { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); max-height: 260px; overflow: auto;
+/* Form içi aranabilir tekli seçim (duty.js searchSelect). Not: '.ss' ekran koruyucuda kullanıldığı için 'fsel' adı seçildi. */
+.fsel { position: relative; }
+.fsel-panel { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); max-height: 260px; overflow: auto;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-lg); }
-.ss-row { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; cursor: pointer; }
-.ss-row:hover { background: var(--primary-soft); }
-.ss-row.muted { color: var(--muted); cursor: default; }
-.ss-row.muted:hover { background: none; }
+.fsel-row { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; cursor: pointer; }
+.fsel-row:hover { background: var(--primary-soft); }
+.fsel-row.muted { color: var(--muted); cursor: default; }
+.fsel-row.muted:hover { background: none; }
 
 /* Güvenlik › Çıkış Kontrol tarayıcı */
 .sec-scan-wrap { display: flex; flex-direction: column; gap: 12px; max-width: 520px; margin: 0 auto; }

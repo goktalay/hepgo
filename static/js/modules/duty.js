@@ -190,16 +190,16 @@ async function loadUsers() {
 function searchSelect(items, { placeholder = 'Ara…' } = {}) {
   let chosen = null;
   const input = h('input', { class: 'input', type: 'text', placeholder, autocomplete: 'off' });
-  const panel = h('div', { class: 'ss-panel', hidden: true });
-  const wrap = h('div', { class: 'ss' }, input, panel);
+  const panel = h('div', { class: 'fsel-panel', hidden: true });
+  const wrap = h('div', { class: 'fsel' }, input, panel);
   const draw = () => {
     const term = input.value.trim().toLocaleLowerCase('tr');
     const rows = items.filter(it => !term || String(it.label).toLocaleLowerCase('tr').includes(term)).slice(0, 50);
-    clear(panel, rows.length ? rows.map(it => h('div', { class: 'ss-row', onmousedown: e => {
+    clear(panel, rows.length ? rows.map(it => h('div', { class: 'fsel-row', onmousedown: e => {
       e.preventDefault();
       chosen = it.id; input.value = it.label; panel.hidden = true;
     } }, h('b', null, it.label), it.sub ? h('span', { class: 'small muted' }, it.sub) : null))
-      : h('div', { class: 'ss-row muted' }, 'Sonuç yok'));
+      : h('div', { class: 'fsel-row muted' }, 'Sonuç yok'));
   };
   input.addEventListener('focus', () => { panel.hidden = false; draw(); });
   input.addEventListener('input', () => { chosen = null; panel.hidden = false; draw(); });

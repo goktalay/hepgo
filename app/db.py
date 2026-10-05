@@ -880,6 +880,24 @@ CREATE TABLE IF NOT EXISTS fm_share_seen (
     seen_at  TEXT NOT NULL,
     PRIMARY KEY (share_id, user_id)
 );
+-- Dosya Yöneticisi DIŞ (herkese açık) paylaşım bağlantısı: oturumsuz ziyaretçi bağlantıyı açar, şifre girer, paylaşılan
+-- dosyayı / klasörü (alt ağaç) görür ve indirir. Bağlantı süreli (expires_at), şifreli (password_hash) ve TEK OTURUMA
+-- bağlıdır: şifreyi ilk doğru giren oturum bağlantıyı sahiplenir (claimed_session), başka oturum reddedilir.
+CREATE TABLE IF NOT EXISTS fm_public_links (
+    id              INTEGER PRIMARY KEY,
+    token           TEXT UNIQUE NOT NULL,
+    node_id         INTEGER NOT NULL REFERENCES fm_nodes(id) ON DELETE CASCADE,
+    password_hash   TEXT NOT NULL,
+    expires_at      TEXT,                      -- NULL = süresiz
+    created_by      INTEGER,
+    created_at      TEXT,
+    claimed_session TEXT,                      -- ilk doğru şifreyi giren oturumun gizli anahtarı (çerez ile eşleşir)
+    claimed_at      TEXT,
+    claimed_ua      TEXT,
+    claimed_ip      TEXT,
+    revoked         INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_fm_public_links_token ON fm_public_links(token);
 CREATE TABLE IF NOT EXISTS ssh_hosts (
     id         INTEGER PRIMARY KEY,
     label      TEXT NOT NULL,

@@ -430,14 +430,66 @@ export async function render(view, params, ctx) {
     const permSeg = segmented([['view', 'Görüntüleme'], ['edit', 'Düzenleme']], perm, v => { perm = v; });
     const tabSeg = segmented([['user', 'Kullanıcılar'], ['role', 'Roller']], tab, v => { tab = v; drawList(); });
 
+    // ---------- Dış (herkese açık) bağlantı ----------
+    let links = [];
+    const extList = h('div', { class: 'fm-ext-list' });
+    const extPw = h('input', { class: 'input', type: 'password', placeholder: 'Bağlantı şifresi (en az 4 karakter)', autocomplete: 'new-password' });
+    const extHours = h('select', { class: 'input' },
+      h('option', { value: '1' }, '1 saat'),
+      h('option', { value: '24', selected: true }, '24 saat'),
+      h('option', { value: '168' }, '7 gün'),
+      h('option', { value: '0' }, 'Süresiz'));
+
+    const drawLinks = () => {
+      clear(extList, links.length ? links.map(l => {
+        const url = location.origin + l.url;
+        const state = l.revoked ? 'İptal edildi' : (l.expired ? 'Süresi doldu' : (l.claimed_at ? 'Kullanımda' : 'Bekliyor'));
+        const when = l.expires_at ? `bitiş: ${fmtDateTime(l.expires_at)}` : 'süresiz';
+        const row = h('div', { class: 'fm-ext-row' },
+          h('div', { class: 'grow' },
+            h('div', { class: 'fm-ext-url' }, url),
+            h('div', { class: 'fm-ext-sub muted small' }, `${state} · ${when}`)),
+          (l.revoked || l.expired) ? null
+            : h('button', { class: 'btn sm', type: 'button', title: 'Kopyala',
+                onclick: () => { navigator.clipboard?.writeText(url).then(() => toast('Bağlantı kopyalandı'), () => toast('Kopyalanamadı', 'err')); } }, 'Kopyala'),
+          l.revoked ? null
+            : h('button', { class: 'x-btn sm', type: 'button', title: 'Bağlantıyı iptal et', onclick: async () => {
+                if (!await confirmDialog('Bağlantıyı iptal et', 'Bu dış bağlantı bir daha açılamaz. Emin misiniz?', { danger: true })) return;
+                try { await api.del(`/api/fm/public-link/${l.id}`); links = links.map(x => x.id === l.id ? { ...x, revoked: true } : x); drawLinks(); toast('Bağlantı iptal edildi'); } catch (e) { toastError(e); }
+              } }, '×'));
+        return row;
+      }) : h('div', { class: 'empty small' }, 'Henüz dış bağlantı yok'));
+    };
+
+    const createExtBtn = h('button', { class: 'btn primary', type: 'button' }, 'Bağlantı oluştur');
+    createExtBtn.addEventListener('click', async () => {
+      const pw = extPw.value.trim();
+      if (pw.length < 4) { toast('Şifre en az 4 karakter olmalı', 'err'); return; }
+      createExtBtn.disabled = true;
+      try {
+        await api.post(`/api/fm/node/${it.id}/public-link`, { password: pw, hours: Number(extHours.value) });
+        extPw.value = '';
+        toast('Dış bağlantı oluşturuldu');
+        links = (await api.get(`/api/fm/node/${it.id}/public-links`)).links || [];
+        drawLinks();
+      } catch (e) { toastError(e); } finally { createExtBtn.disabled = false; }
+    });
+
+    const extBox = h('div', { class: 'fm-ext' },
+      h('h3', { class: 'fm-ext-h' }, 'Dış bağlantı'),
+      h('div', { class: 'muted small' }, 'Bu bağlantıyı ve şifreyi paylaşın; ilk giren kişiye kilitlenir, süre dolunca kapanır.'),
+      h('div', { class: 'fm-ext-form' }, extPw, extHours, createExtBtn),
+      extList);
+
     drawList();
+    drawLinks();
 
     modal({
       title: `Paylaş: ${it.name}`, wide: true,
       body: h('div', { class: 'fm-share' },
         tabSeg, search, listBox,
         h('div', { class: 'field' }, h('label', null, 'Yetki'), permSeg),
-        curBox),
+        curBox, extBox),
       onClose: () => {},
       actions: ['spacer', { label: 'Kapat' }, { label: 'Paylaş', class: 'primary', onClick: async () => {
         const targets = [...chosenUsers].map(id => ({ type: 'user', id, perm })).concat([...chosenRoles].map(role => ({ type: 'role', role, perm })));
@@ -455,6 +507,8 @@ export async function render(view, params, ctx) {
     // mevcut paylaşımları yükle
     try { shares = (await api.get(`/api/fm/node/${it.id}/shares`)).shares || []; } catch { shares = []; }
     drawCur();
+    try { links = (await api.get(`/api/fm/node/${it.id}/public-links`)).links || []; } catch { links = []; }
+    drawLinks();
   }
 
   // ---------- paylaşılanlar görünümü ----------

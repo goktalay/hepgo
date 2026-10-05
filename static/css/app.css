@@ -7504,6 +7504,17 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .fm-share-cur-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
 .fm-share-cur-row .x-btn.sm { font-size: 18px; padding: 2px 6px; }
 
+/* Dış (herkese açık) paylaşım bağlantısı */
+.fm-ext { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.fm-ext-h { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0; }
+.fm-ext-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fm-ext-form .input { flex: 1 1 180px; }
+.fm-ext-form select.input { flex: 0 0 auto; }
+.fm-ext-list { display: flex; flex-direction: column; gap: 6px; }
+.fm-ext-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.fm-ext-url { font-size: 13px; word-break: break-all; font-weight: 600; }
+.fm-ext-row .x-btn.sm { font-size: 18px; padding: 2px 6px; }
+
 /* Dosya önizleme penceresi */
 .fm-prev { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .fm-prev-img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; }

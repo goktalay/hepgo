@@ -2,7 +2,7 @@
 import { api, logActivity } from './api.js';
 import { icons } from './icons.js';
 import { statusBar, stopStatusBar } from './statusbar.js';
-import { chatButton, closeChat, setChatUser } from './chat.js';
+import { chatButton, chatSummary, closeChat, setChatUser } from './chat.js';
 import { eventOfNotification, playEvent } from './sounds.js';
 import { applySettings, desktopNotify, flashMs, flashOn } from './prefs.js';
 import { renderSettings } from './modules/settings.js';
@@ -358,29 +358,58 @@ function appsLauncher() {
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
   mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet' };
 const personalTileCounts = new Set();
+window.addEventListener('caymaz:chat-summary', () => { for (const fn of personalTileCounts) { try { fn(); } catch { /* */ } } });
 function personalLauncher() {
   const btn = h('button', { class: 'icon-btn notify-btn personal-btn', 'aria-label': 'Kişisel', title: 'Kişisel', 'aria-haspopup': 'menu' },
     svgIcon(icons.person), menuCount('personal'));
   const panel = h('div', { class: 'dropdown apps-panel personal-panel', role: 'menu' });
   const current = () => location.hash.replace(/^#\/?/, '').split('/')[0];
+  const tileEl = (route, title, icon, count) => {
+    const n = h('span', { class: 'tile-count', hidden: !count }, count > 99 ? '99+' : count);
+    return h('a', { class: `app-tile ${current() === route ? 'on' : ''}`, href: `#/${route}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
+      h('span', { class: 'ico' }, svgIcon(icon), n), h('span', null, title));
+  };
   const fill = () => {
     personalTileCounts.clear();
     const tile = p => {
-      const n = h('span', { class: 'tile-count', hidden: true });
+      const el = tileEl(p.route, p.title, icons[PERSONAL_ICONS[p.key]] || icons.person, notifyCounts.get(p.notify) || 0);
+      const n = el.querySelector('.tile-count');
       const upd = () => { const c = notifyCounts.get(p.notify) || 0; n.hidden = !c; n.textContent = c > 99 ? '99+' : c; };
-      upd(); personalTileCounts.add(upd);
-      return h('a', { class: `app-tile ${current() === p.route ? 'on' : ''}`, href: `#/${p.route}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
-        h('span', { class: 'ico' }, svgIcon(icons[PERSONAL_ICONS[p.key]] || icons.person), n), h('span', null, p.title));
+      personalTileCounts.add(upd);
+      return el;
     };
+    // Mesajlar da Kişisel panelinde: okunmamış rozeti sohbet özetinden
+    const msgTile = tileEl('messages', 'Mesajlar', icons.chat, chatSummary().people || 0);
+    const msgN = msgTile.querySelector('.tile-count');
+    const updMsg = () => { const c = chatSummary().people || 0; msgN.hidden = !c; msgN.textContent = c > 99 ? '99+' : c; };
+    personalTileCounts.add(updMsg);
     clear(panel, h('div', { class: 'apps-group' },
       h('div', { class: 'apps-group-h static' }, h('span', { class: 'gi' }, svgIcon(icons.person)), h('span', { class: 'gt' }, 'Kişisel'),
-        h('span', { class: 'gn' }, PERSONAL.length)),
-      h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, PERSONAL.map(tile)))));
+        h('span', { class: 'gn' }, PERSONAL.length + 1)),
+      h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, [...PERSONAL.map(tile), msgTile]))));
   };
   btn.addEventListener('click', () => {
     fill();
     if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Kişisel menüsü' });
   });
+  popup(btn, panel);
+  return h('div', { class: 'menu-anchor' }, btn, panel);
+}
+
+// Araçlar: Kişisel ile aynı görünümde üst bar düğmesi (alt araçlar kutucuk olarak). Görünür aracı yoksa düğme çıkmaz.
+function toolsLauncher() {
+  const list = tools.visibleTools(ctx);
+  if (!list.length) return null;
+  const btn = h('button', { class: 'icon-btn tools-btn', 'aria-label': 'Araçlar', title: 'Araçlar', 'aria-haspopup': 'menu' }, svgIcon(icons.tools));
+  const panel = h('div', { class: 'dropdown apps-panel tools-panel', role: 'menu' });
+  const current = () => location.hash.replace(/^#\/?/, '').replace(/^tools\//, '').split('/')[0];
+  const fill = () => clear(panel, h('div', { class: 'apps-group' },
+    h('div', { class: 'apps-group-h static' }, h('span', { class: 'gi' }, svgIcon(icons.tools)), h('span', { class: 'gt' }, 'Araçlar'),
+      h('span', { class: 'gn' }, list.length)),
+    h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, list.map(tl =>
+      h('a', { class: `app-tile ${current() === tl.key ? 'on' : ''}`, href: `#/tools/${tl.key}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
+        h('span', { class: 'ico' }, svgIcon(icons[tl.icon] || icons.tools)), h('span', null, tl.title)))))));
+  btn.addEventListener('click', () => { fill(); if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Araçlar menüsü' }); });
   popup(btn, panel);
   return h('div', { class: 'menu-anchor' }, btn, panel);
 }
@@ -609,6 +638,8 @@ function renderShell() {
     avatar(u),
     h('span', { class: 'who' }, h('b', null, u.full_name), h('span', null, u.master ? 'MASTER · Sistem Sahibi' : (u.roles.join(', ') || 'Rol atanmamış'))));
   popup(userBtn, menu);
+  // Mesajlar artık Kişisel panelinde; yine de sohbet yoklaması + yeni mesaj bildirimleri arka planda sürsün (düğme üst barda değil)
+  if (!securityOnly()) chatButton(popup);
 
   view = h('main', { id: 'view' });
   scroller = h('div', { class: 'scroller' }, view);
@@ -619,8 +650,8 @@ function renderShell() {
         ctx.meta?.white_label   // firma kendi markası: HEPGO yerine firma adı
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
-      h('div', { class: 'header-right' }, radio.button(popup), securityOnly() ? null : chatButton(popup),
-        docsCountdown(), inboxButton(), fullscreenButton(), personalLauncher(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+      h('div', { class: 'header-right' }, radio.button(popup),
+        docsCountdown(), inboxButton(), fullscreenButton(), securityOnly() ? null : toolsLauncher(), personalLauncher(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),

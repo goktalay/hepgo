@@ -12,6 +12,8 @@ import { avatar, clear, confirmDialog, field, fmtDateTime, h, matches, modal, pe
 let me = null;
 let win = null;          // açık sohbet: { uid, el, timer, ... }
 let refreshSummary = () => {};
+let _summary = { people: 0, unread: 0 };   // son okunmamış özeti (Kişisel panelindeki Mesajlar rozeti için)
+export const chatSummary = () => _summary;
 export const setChatUser = u => { me = u; };
 
 const hm = iso => iso.slice(11, 16);
@@ -312,6 +314,8 @@ export function chatButton(popup) {
   const load = async () => {
     try {
       data = await api.get('/api/chat/summary');
+      _summary = { people: data.people || 0, unread: data.unread || 0 };
+      window.dispatchEvent(new CustomEvent('caymaz:chat-summary'));   // Kişisel panelindeki Mesajlar rozeti
       draw();
       // yeni gelen mesaj: sağ üstte kısa bildirim (açık sohbetteki kişi hariç)
       const now = new Map(data.items.map(u => [keyOf(u), u.unread]));

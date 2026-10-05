@@ -172,8 +172,8 @@ export function mailboxesSection(query = '') {
 }
 
 // ---------------- Sosyal Medya ----------------
-const SOC_COLOR = { rss: '#f97316', youtube: '#ff0000', bluesky: '#0085ff', mastodon: '#6364ff', instagram: '#e1306c', facebook: '#1877f2', x: '#111', tiktok: '#010101' };
-const SOC_ICON = { rss: 'RSS', youtube: '▶', bluesky: '🦋', mastodon: 'M', instagram: 'IG', facebook: 'f', x: '𝕏', tiktok: '♪' };
+const SOC_COLOR = { rss: '#f97316', youtube: '#ff0000', bluesky: '#0085ff', mastodon: '#6364ff', instagram: '#e1306c', facebook: '#1877f2', x: '#111', tiktok: '#010101', spotify: '#1DB954' };
+const SOC_ICON = { rss: 'RSS', youtube: '▶', bluesky: '🦋', mastodon: 'M', instagram: 'IG', facebook: 'f', x: '𝕏', tiktok: '♪', spotify: '♫' };
 export const socialBadge = p => h('span', { class: 'prov-ic soc-ic', style: { background: SOC_COLOR[p] || '#475569' } }, SOC_ICON[p] || '•');
 
 export function socialSection(query = '') {
@@ -239,7 +239,9 @@ export function socialSection(query = '') {
     const connect = h('button', { class: 'btn primary', type: 'button', hidden: true, style: { marginTop: '12px' }, onclick: async e => {
       const btn = e.currentTarget;
       btn.disabled = true;
-      try { location.href = (await api.get(`/api/social/oauth/${prov}/start`)).url; } catch (err) { btn.disabled = false; toastError(err); }
+      // Spotify kendi router'ından bağlanır; diğer OAuth sağlayıcıları (X) sosyal router'ından.
+      const startUrl = prov === 'spotify' ? '/api/spotify/oauth/start' : `/api/social/oauth/${prov}/start`;
+      try { location.href = (await api.get(startUrl)).url; } catch (err) { btn.disabled = false; toastError(err); }
     } });
     const field = h('div', { class: 'field', style: { marginTop: '12px' } }, h('span', null, 'Hesap / adres'), handle, hint);
     drawGrid();

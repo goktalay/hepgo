@@ -265,7 +265,7 @@ function numBox(inp, suffix) {
 
 // ---- Entegrasyonlar: API anahtarları ve bağlantı bilgileri (Claude, Mikro ERP, Google, genel) ----------
 // Gizli alanların değeri sunucudan hiç gelmez; yalnızca "tanımlı" bilgisi ve kaynağı (panel / .env) gelir.
-const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', meta: 'globe', x: 'globe', tiktok: 'globe', speech: 'mic', maps: 'globe', general: 'gear' };
+const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', meta: 'globe', x: 'globe', tiktok: 'globe', spotify: 'globe', speech: 'mic', maps: 'globe', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
 const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
 // Entegrasyon durumu: ayarlı mı + (denetleniyorsa) son denemesi başarılı mı. "Bağlı" yalnız gerçekten ulaşılabiliyorsa.
@@ -469,6 +469,8 @@ const INTEG_LOGO = {
     <text x="34" y="45" text-anchor="middle" font-size="34" fill="#25f4ee" font-family="system-ui, sans-serif">♪</text>
     <text x="31" y="43" text-anchor="middle" font-size="34" fill="#fe2c55" font-family="system-ui, sans-serif">♪</text>
     <text x="32.5" y="44" text-anchor="middle" font-size="34" fill="#fff" font-family="system-ui, sans-serif">♪</text></svg>`),
+  spotify: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Spotify"><rect width="64" height="64" rx="16" fill="#1DB954"/>
+    <g fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"><path d="M18 26c10-3 21-1.5 29 3"/><path d="M20 35c8-2.3 17-1 23 2.8"/><path d="M22 43c6-1.6 12.5-.7 17.5 2.2"/></g></svg>`),
   ai: () => svgEl(`<svg viewBox="0 0 64 64" aria-label="Claude"><rect width="64" height="64" rx="16" fill="#D97757"/>
     <g fill="#fff" transform="translate(32 32)">${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((a, i) =>
       `<rect x="-2.6" y="-21" width="5.2" height="${i % 2 ? 15 : 19}" rx="2.6" transform="rotate(${a})"/>`).join('')}<circle r="4.2"/></g></svg>`),
@@ -552,6 +554,19 @@ const INTEG_INFO = {
         'X’in ücretsiz paketinde okuma kotası çok düşüktür; paylaşımların düzenli gelmesi için ücretli paket (Basic ve üstü) gerekebilir.',
         'Kotayı korumak için X hesapları 6 saatte bir yenilenir (CAYMAZ_X_POLL_HOURS); kullanıcı “⟳ Yenile” ile hemen çekebilir. Yalnızca yeni paylaşımlar istenir.',
         '“Kaydet ve dene” istemci bilgilerinin geçerli olup olmadığını kota harcamadan kontrol eder. Client Secret şifreli saklanır.']],
+    ] },
+  spotify: { short: 'Spotify', tag: 'Çalan parça + oynatma kontrolü',
+    lead: 'Kullanıcılar Kişisel Ayarlar › Sosyal Medya’dan “Spotify ile bağlan” diyerek kendi Spotify hesaplarını bağlar; '
+      + 'üst barda ve panodaki Spotify kutucuğunda şu an çalan parça görünür ve oynatma (oynat / duraklat / önceki / sonraki, '
+      + 'çalma listesi, arama) buradan kontrol edilir.',
+    sections: [
+      ['Nasıl ayarlanır?', ['developer.spotify.com › Dashboard › “Create app” ile bir uygulama oluşturun.',
+        `Uygulama ayarlarında “Redirect URI” alanına şu adresi BİREBİR ekleyin: ${location.origin}/api/spotify/oauth/callback`,
+        'Sisteme başka adreslerden de giriliyorsa her biri için aynı yolu ayrıca ekleyin: https://<adres>/api/spotify/oauth/callback',
+        'API olarak “Web API” (ve dilerseniz “Web Playback SDK”) seçin. Oluşan Client ID ve Client Secret’ı buraya girin.']],
+      ['Bilinmesi gerekenler', ['Oynatma kontrolü (oynat/duraklat/geç) için kullanıcının Spotify Premium hesabı gerekir; çalan parçayı görmek ücretsiz hesapta da çalışır.',
+        'Oynatma komutları, kullanıcının o an açık bir Spotify cihazına (telefon / bilgisayar / web oynatıcı) uygulanır; etkin cihaz yoksa anlaşılır bir uyarı gösterilir.',
+        'Client Secret şifreli saklanır. Anahtar tanımlı değilse “Spotify ile bağlan” kullanıcılara görünmez.']],
     ] },
   speech: { short: 'Konuşma Tanıma', tag: 'Ses → metin, konuşmacı ayırma',
     lead: 'Toplantı, görüşme ve evrak seslerini metne çevirir, konuşanları ayırır ve tanır; metin kutularında “sesle yazdır” mikrofonunu açar. Kapalıyken sesler yalnızca kaydedilir.',

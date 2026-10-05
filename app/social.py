@@ -37,6 +37,8 @@ PROVIDERS = {
     'facebook': {'title': 'Facebook', 'hint': 'Meta uygulama anahtarı gerekir', 'needs': ('META_APP_ID', 'META_APP_SECRET')},
     'x': {'title': 'X (Twitter)', 'hint': 'X hesabınızla giriş yapıp izin verin', 'needs': ('X_CLIENT_ID', 'X_CLIENT_SECRET'), 'oauth': True},
     'tiktok': {'title': 'TikTok', 'hint': 'TikTok geliştirici anahtarı gerekir', 'needs': ('TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET')},
+    # Spotify: bağlanma ve tüm oynatma işlemleri app/routers/spotify.py üzerindedir (bu modüldeki akış çekimine karışmaz).
+    'spotify': {'title': 'Spotify', 'hint': 'Spotify hesabınızla giriş yapıp izin verin', 'needs': ('SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET'), 'oauth': True},
 }
 
 
@@ -44,7 +46,9 @@ class SocialError(Exception):
     pass
 
 
-IMPLEMENTED = {'x'}   # bağlantı akışı yazılmış OAuth sağlayıcıları (Instagram / Facebook / TikTok henüz yok)
+IMPLEMENTED = {'x', 'spotify'}   # bağlantı akışı yazılmış OAuth sağlayıcıları (Instagram / Facebook / TikTok henüz yok)
+# OAuth akışı bu modülde (routers/social.py) olan sağlayıcılar. Spotify kendi router'ında (routers/spotify.py) bağlanır.
+SOCIAL_OAUTH = {'x'}
 
 
 def available():

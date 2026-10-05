@@ -115,6 +115,9 @@ META_APP_ID = os.environ.get('CAYMAZ_META_APP_ID', '')
 META_APP_SECRET = os.environ.get('CAYMAZ_META_APP_SECRET', '')
 X_CLIENT_ID = os.environ.get('CAYMAZ_X_CLIENT_ID', '')
 X_CLIENT_SECRET = os.environ.get('CAYMAZ_X_CLIENT_SECRET', '')
+# Spotify (kullanıcı kendi Spotify hesabını bağlar: anlık çalan + oynatma kontrolü). developer.spotify.com › Dashboard
+SPOTIFY_CLIENT_ID = os.environ.get('CAYMAZ_SPOTIFY_CLIENT_ID', '')
+SPOTIFY_CLIENT_SECRET = os.environ.get('CAYMAZ_SPOTIFY_CLIENT_SECRET', '')
 # Konuşma tanıma (ses → metin, konuşmacı / ses kimliği): Program Ayarları › Entegrasyonlar › Konuşma Tanıma. Kapalıyken
 # toplantı / görüşme / evrak sesleri yalnız KAYDEDİLİR; metne çevrilmez, konuşmacı tanınmaz, sesle yazdırma görünmez.
 SPEECH_ENABLED = os.environ.get('CAYMAZ_SPEECH', '0') == '1'

@@ -38,9 +38,15 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4, spotify: 6 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
+// Spotify kutucuğu ikonları (inline SVG; markadan bağımsız basit vektörler)
+const spSvg = markup => { const t = document.createElement('template'); t.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${markup}</svg>`; return t.content.firstElementChild; };
+const SP_PLAY = () => spSvg('<path d="M8 5v14l11-7z"/>');
+const SP_PAUSE = () => spSvg('<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>');
+const SP_ICON = d => spSvg(`<path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
+const SP_LOGO = () => { const t = document.createElement('template'); t.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1DB954"/><g fill="none" stroke="#000" stroke-width="1.8" stroke-linecap="round"><path d="M6 9.5c4-1 8-.6 11 1"/><path d="M6.8 13c3.2-.8 6.4-.4 9 1.1"/><path d="M7.6 16.2c2.4-.6 4.9-.3 7 .9"/></g></svg>'; return t.content.firstElementChild; };
 
 export async function renderDashboard(view, ctx, modules) {
   // Mobilde (ayar açıksa) pano yerine tam ekran Şirketten Haberler akışı (üst menü + alt bilgi kalır)
@@ -363,6 +369,7 @@ export async function renderDashboard(view, ctx, modules) {
             mt.status === 'DEVAM' ? h('span', { class: 'badge green' }, '● Devam ediyor') : h('span', { class: 'badge' }, 'Bekliyor'))))));
       case 'notes': { dbNotes(body, acts); return; }
       case 'alarm': { dbAlarms(body, acts); return; }
+      case 'spotify': { dbSpotify(body, acts, d); return; }
       case 'active_users': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Çevrimiçi başka kullanıcı yok')
         : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0])); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
       case 'quick_directory': {
@@ -608,6 +615,92 @@ export async function renderDashboard(view, ctx, modules) {
     render();
     const onCh = () => { if (body.isConnected) render(); else window.removeEventListener('caymaz:alarms-changed', onCh); };
     window.addEventListener('caymaz:alarms-changed', onCh);
+  }
+
+  // Spotify kutucuğu: anlık çalan parça (albüm kapağı, başlık, sanatçı, ilerleme) + oynatma kontrolü + çalma listeleri + arama.
+  // Bağlı değilse “Spotify’a bağlan” önerisi. Anlık çalan ~5 sn'de bir yenilenir (görünürken; timers ile temizlenir).
+  function dbSpotify(body, acts, d) {
+    if (acts) clear(acts);
+    if (!d.connected) {
+      clear(body, h('div', { class: 'db-none db-sp-connect' },
+        h('div', { class: 'db-sp-logo' }, SP_LOGO()),
+        h('p', null, d.configured ? 'Spotify hesabınızı bağlayın; çalan parça ve kontroller burada görünür.'
+          : 'Spotify bu sunucuda henüz ayarlanmadı.'),
+        d.configured ? h('a', { class: 'btn primary sm', href: '#/settings/social' }, 'Spotify’a bağlan')
+          : h('span', { class: 'small muted' }, 'Yönetici: Program Ayarları › Entegrasyonlar › Spotify')));
+      return;
+    }
+    const art = h('img', { class: 'db-sp-art', alt: '', referrerpolicy: 'no-referrer' });
+    const title = h('b', { class: 'db-sp-title' }, '—');
+    const artist = h('span', { class: 'db-sp-artist muted' }, '');
+    const bar = h('i', { class: 'db-sp-bar-fill' });
+    const curT = h('span', { class: 'db-sp-t' }, '0:00');
+    const durT = h('span', { class: 'db-sp-t' }, '0:00');
+    const eq = h('div', { class: 'db-sp-eq' }, h('i'), h('i'), h('i'), h('i'));
+    const fmt = ms => { const s = Math.max(0, Math.round((ms || 0) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    const playBtn = h('button', { class: 'db-sp-btn db-sp-play', type: 'button', title: 'Oynat / Duraklat' }, SP_PLAY());
+    const act = async (fn) => { try { await fn(); setTimeout(poll, 350); } catch (e) { toastError(e); } };
+    const prevBtn = h('button', { class: 'db-sp-btn', type: 'button', title: 'Önceki', onclick: () => act(() => api.post('/api/spotify/previous')) }, SP_ICON('M7 6v12M19 6l-9 6 9 6V6z'));
+    const nextBtn = h('button', { class: 'db-sp-btn', type: 'button', title: 'Sonraki', onclick: () => act(() => api.post('/api/spotify/next')) }, SP_ICON('M17 6v12M5 6l9 6-9 6V6z'));
+    let playing = false;
+    playBtn.addEventListener('click', () => act(() => api.post(playing ? '/api/spotify/pause' : '/api/spotify/play')));
+    const npWrap = h('div', { class: 'db-sp-np' },
+      h('div', { class: 'db-sp-artwrap' }, art, eq),
+      h('div', { class: 'db-sp-meta' }, title, artist,
+        h('div', { class: 'db-sp-bar' }, curT, h('span', { class: 'db-sp-bar-track' }, bar), durT),
+        h('div', { class: 'db-sp-ctrl' }, prevBtn, playBtn, nextBtn)));
+    const note = h('div', { class: 'db-sp-note muted small' });
+    // Çalma listeleri + arama (açılır-kapanır bölüm)
+    const searchInp = h('input', { class: 'input sm', type: 'search', placeholder: 'Parça ya da çalma listesi ara…' });
+    const results = h('div', { class: 'db-sp-results' });
+    const playUri = uri => act(() => api.post('/api/spotify/play', { uri }));
+    const rowTrack = tr => h('button', { class: 'db-sp-row', type: 'button', title: 'Çal', onclick: () => playUri(tr.uri) },
+      tr.art ? h('img', { class: 'db-sp-row-art', src: tr.art, alt: '', referrerpolicy: 'no-referrer' }) : h('span', { class: 'db-sp-row-art ph' }, '♪'),
+      h('span', { class: 'db-sp-row-main' }, h('b', null, tr.title || '—'), h('small', null, tr.artists || tr.owner || '')));
+    const rowPl = pl => h('button', { class: 'db-sp-row', type: 'button', title: 'Çal', onclick: () => playUri(pl.uri) },
+      pl.art ? h('img', { class: 'db-sp-row-art', src: pl.art, alt: '', referrerpolicy: 'no-referrer' }) : h('span', { class: 'db-sp-row-art ph' }, '≡'),
+      h('span', { class: 'db-sp-row-main' }, h('b', null, pl.name || '—'), h('small', null, [pl.owner, pl.tracks != null ? `${pl.tracks} parça` : null].filter(Boolean).join(' · '))));
+    let searchTimer;
+    const showPlaylists = async () => {
+      try { const r = await api.get('/api/spotify/playlists'); clear(results, r.items?.length ? r.items.map(rowPl) : h('div', { class: 'db-none small' }, 'Çalma listesi yok')); }
+      catch (e) { clear(results, h('div', { class: 'db-none small' }, e.message)); }
+    };
+    searchInp.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const q = searchInp.value.trim();
+      if (!q) { showPlaylists(); return; }
+      searchTimer = setTimeout(async () => {
+        try {
+          const r = await api.get(`/api/spotify/search?q=${encodeURIComponent(q)}`);
+          const items = [...(r.tracks || []).map(rowTrack), ...(r.playlists || []).map(rowPl)];
+          clear(results, items.length ? items : h('div', { class: 'db-none small' }, 'Sonuç yok'));
+        } catch (e) { clear(results, h('div', { class: 'db-none small' }, e.message)); }
+      }, 350);
+    });
+    clear(body, h('div', { class: 'db-sp' }, npWrap, note,
+      h('div', { class: 'db-sp-search' }, searchInp), results));
+    showPlaylists();
+    const poll = async () => {
+      let np;
+      try { np = await api.get('/api/spotify/now-playing'); note.textContent = ''; }
+      catch (e) { note.textContent = e.message || 'Spotify bilgisi alınamadı'; return; }
+      if (!np || !np.playing) {
+        playing = false; npWrap.classList.remove('on');
+        title.textContent = 'Şu an bir şey çalmıyor'; artist.textContent = ''; art.removeAttribute('src');
+        clear(playBtn, SP_PLAY()); bar.style.width = '0%'; curT.textContent = '0:00'; durT.textContent = '0:00';
+        note.textContent = 'Spotify uygulamasını (telefon / bilgisayar / web) açıp bir şey çalın.';
+        return;
+      }
+      playing = !!np.is_playing;
+      npWrap.classList.toggle('on', playing);
+      title.textContent = np.title || '—'; artist.textContent = np.artists || '';
+      if (np.art) art.src = np.art; else art.removeAttribute('src');
+      clear(playBtn, playing ? SP_PAUSE() : SP_PLAY());
+      const pct = np.duration_ms ? Math.min(100, 100 * (np.progress_ms || 0) / np.duration_ms) : 0;
+      bar.style.width = `${pct}%`; curT.textContent = fmt(np.progress_ms); durT.textContent = fmt(np.duration_ms);
+    };
+    poll();
+    timers.push(setInterval(poll, 5000));
   }
 
   async function dbNotes(body, acts) {

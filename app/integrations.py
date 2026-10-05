@@ -95,6 +95,18 @@ GROUPS = {
             ('X_CLIENT_SECRET', 'OAuth 2.0 Client Secret', 'secret', 'Yalnız oluşturulurken bir kez gösterilir'),
         ],
     },
+    'spotify': {
+        'title': 'Spotify',
+        'desc': 'Kişisel Ayarlar › Sosyal Medya’da “Spotify ile bağlan”: kullanıcı kendi Spotify hesabını bağlar; '
+                'üst barda ve panoda “şu an çalıyor” görünür, oynatma kontrol edilir. developer.spotify.com › Dashboard › '
+                'Create App; yönlendirme adresi (Redirect URI): <alan-adı>/api/spotify/oauth/callback. Gerekli izinler '
+                '(scope): user-read-currently-playing, user-read-playback-state, user-modify-playback-state, streaming, '
+                'user-read-email, playlist-read-private.',
+        'fields': [
+            ('SPOTIFY_CLIENT_ID', 'Client ID', 'text', 'Spotify uygulamanızın Client ID’si'),
+            ('SPOTIFY_CLIENT_SECRET', 'Client Secret', 'secret', 'Spotify uygulamanızın Client Secret’ı'),
+        ],
+    },
     'tiktok': {
         'title': 'TikTok',
         'desc': 'Kişisel Ayarlar › Sosyal Medya’da TikTok hesabı bağlama. developers.tiktok.com › Uygulama; yönlendirme adresi: '
@@ -307,6 +319,10 @@ def test(group):
     if group == 'microsoft':
         ok = bool(config.MS_CLIENT_ID and config.MS_CLIENT_SECRET)
         return ok, 'Bilgiler tanımlı; kullanıcılar Outlook / Microsoft 365 hesabı bağlayabilir.' if ok else 'Client ID ve secret girilmeli.'
+    if group == 'spotify':
+        ok = bool(config.SPOTIFY_CLIENT_ID and config.SPOTIFY_CLIENT_SECRET)
+        return ok, ('Bilgiler tanımlı; kullanıcılar Kişisel Ayarlar › Sosyal Medya’dan “Spotify ile bağlan” yapabilir.'
+                    if ok else 'Client ID ve Client Secret girilmeli.')
     if group == 'speech':
         from . import document_media as m
         if not config.SPEECH_ENABLED:

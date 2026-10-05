@@ -170,6 +170,7 @@ function renderLogin() {
   stopTimers();
   clearInterval(alertTimer);
   clearInterval(notifyTimer);
+  clearInterval(spotifyTimer);
   clearInterval(supportWatch);
   document.querySelector('.support-pill')?.remove();
   const username = h('input', { class: 'input', type: 'email', autocomplete: 'username', required: true });
@@ -475,7 +476,37 @@ function syncMenuCounts(items) {
 // Birleşik bildirim düğmesi: üretim/yazıcı UYARILARI + kişiye özel BİLDİRİMLER tek zilde (mobilde yer kazanır).
 // Rozet toplamı gösterir; rengi en önemli kayda göre: kritik (yanıp söner) > hata (kırmızı) > uyarı (turuncu) > bildirim (mavi).
 let alertTimer, notifyTimer;
+let spotifyTimer;   // üst bardaki “şu an çalıyor” şeridi için anlık çalan parça yoklaması
 let supportWatch, supportReq = null;   // merkez destek girişi: master onay bekleyen talebi izler
+
+// Üst barın ORTASINDA “şu an çalıyor” şeridi: yalnız bir parça çalarken görünür (albüm kapağı + ekolayzer + kayan başlık).
+// Spotify bağlı değilse hiç yoklanmaz (konsol kirliliği / gereksiz istek yok). Tıklayınca panoya (Spotify kutucuğu) gider.
+function spotifyStrip() {
+  const art = h('img', { class: 'np-art', alt: '', referrerpolicy: 'no-referrer' });
+  const eq = h('span', { class: 'np-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
+  const textInner = h('span', { class: 'np-text' });
+  const marquee = h('div', { class: 'np-marquee' }, textInner);
+  const strip = h('a', { class: 'np-strip', href: '#/', title: 'Spotify — şu an çalıyor', hidden: true }, art, eq, marquee);
+  let connected = false;
+  const setTrack = np => {
+    if (!np || !np.playing || !np.is_playing) { strip.hidden = true; strip.classList.remove('np-scroll'); return; }
+    const label = [np.title, np.artists].filter(Boolean).join(' · ') || 'Spotify';
+    if (np.art) art.src = np.art; else art.removeAttribute('src');
+    textInner.textContent = label;
+    strip.hidden = false;
+    requestAnimationFrame(() => {   // başlık taşıyorsa nazikçe kaydır (ölçülen taşma kadar)
+      const dx = textInner.scrollWidth - marquee.clientWidth;
+      if (dx > 4) { textInner.style.setProperty('--np-dx', `-${dx}px`); strip.classList.add('np-scroll'); }
+      else strip.classList.remove('np-scroll');
+    });
+  };
+  const poll = async () => { if (!connected) return; try { setTrack(await api.get('/api/spotify/now-playing')); } catch { strip.hidden = true; } };
+  (async () => {
+    try { connected = !!(await api.get('/api/spotify/status')).connected; } catch { connected = false; }
+    if (connected) { poll(); clearInterval(spotifyTimer); spotifyTimer = setInterval(poll, 10000); }
+  })();
+  return strip;
+}
 function startSupportWatch() {
   clearInterval(supportWatch); supportReq = null;
   if (!ctx.user?.master) return;
@@ -668,6 +699,7 @@ function renderShell() {
         ctx.meta?.white_label   // firma kendi markası: HEPGO yerine firma adı
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
+      spotifyStrip(),
       h('div', { class: 'header-right' }, radio.button(popup),
         docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
@@ -799,6 +831,7 @@ async function logout() {
   for (const k of Object.keys(seen)) delete seen[k];   // sonraki oturumda ilk yükleme yine "görüldü" sayılır
   clearInterval(alertTimer);
   clearInterval(notifyTimer);
+  clearInterval(spotifyTimer);
   stopStatusBar();
   voice.disconnect();   // sesli görüşme WebSocket'ini kapat
   radio.disconnect();

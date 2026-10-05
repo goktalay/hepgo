@@ -135,7 +135,9 @@ def _redirect_uri(request, prov):
 
 @router.get('/oauth/{prov}/start')
 def oauth_start(prov: str, request: Request, user=Depends(auth.current_user)):
-    if prov not in social.IMPLEMENTED:
+    if prov == 'spotify':   # Spotify kendi router'ından bağlanır (/api/spotify/oauth/start)
+        raise HTTPException(400, 'Spotify, /api/spotify/oauth/start üzerinden bağlanır')
+    if prov not in social.SOCIAL_OAUTH:
         raise HTTPException(404, 'Bu sağlayıcıyla bağlanma desteklenmiyor')
     if not social.available()[prov]:
         raise HTTPException(400, f"{social.PROVIDERS[prov]['title']} bağlantısı bu sunucuda henüz ayarlanmadı (Program Ayarları › Entegrasyonlar)")

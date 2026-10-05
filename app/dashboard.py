@@ -15,7 +15,7 @@ WIDGETS = []
 GROUP_ORDER = ['Kişisel', 'Genel', 'Üretim', 'Depo & Stok', 'Saha', 'Ofis & Güvenlik', 'Sistem']
 WIDGET_GROUP = {
     'calendar': 'Kişisel', 'notifications': 'Kişisel', 'my_cargo': 'Kişisel', 'my_guests': 'Kişisel', 'my_calls': 'Kişisel',
-    'birthdays': 'Kişisel', 'announcements': 'Kişisel', 'files': 'Kişisel',
+    'birthdays': 'Kişisel', 'announcements': 'Kişisel', 'files': 'Kişisel', 'spotify': 'Kişisel',
     'modules': 'Genel', 'clock': 'Genel', 'weather': 'Genel', 'company_news': 'Genel',
     'alerts': 'Üretim', 'kpi_production': 'Üretim', 'chart_production': 'Üretim', 'forecast': 'Üretim',
     'recent_orders': 'Üretim', 'kpi_printers': 'Üretim',
@@ -259,6 +259,13 @@ def w_my_meetings(conn, user):
            ORDER BY (m.status = 'DEVAM') DESC, COALESCE(m.scheduled_at, m.created_at) LIMIT 10""",
         (user['id'], user['id'])))
     return {'items': rows}
+
+
+@widget('spotify', 'Spotify', 'Şu an çalan parça, oynatma kontrolü, çalma listeleri ve arama', size=1, group='Kişisel')
+def w_spotify(conn, user):
+    """Yalnız durum döner (bağlı mı / anahtar var mı); anlık çalan parça kutucukta /api/spotify/now-playing ile çekilir."""
+    from . import spotify
+    return {'configured': spotify.configured(), 'connected': spotify.connected(conn, user['id'])}
 
 
 @widget('weather', 'Hava durumu', 'Bulunduğunuz konuma ya da seçtiğiniz şehre göre hava durumu', size=1)

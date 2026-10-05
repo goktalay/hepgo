@@ -7665,3 +7665,72 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-dutyp { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .db-dutyp .db-av { width: 36px; height: 36px; flex: none; font-size: 14px; }
 .db-dutyp > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ===== Spotify: üst bar “şu an çalıyor” şeridi (ortada) + pano kutucuğu ===== */
+.np-strip {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 10px; max-width: min(42vw, 460px);
+  padding: 5px 14px 5px 5px; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(29,185,84,.16), rgba(29,185,84,.06));
+  border: 1px solid rgba(29,185,84,.35); color: var(--text);
+  overflow: hidden; z-index: 10; animation: np-in .35s ease;
+}
+.np-strip:hover { text-decoration: none; background: linear-gradient(90deg, rgba(29,185,84,.24), rgba(29,185,84,.1)); }
+.np-strip[hidden] { display: none; }
+@keyframes np-in { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+.np-art { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none;
+  background: #1DB954; box-shadow: 0 0 0 2px rgba(29,185,84,.35); animation: np-spin 7s linear infinite; }
+@keyframes np-spin { to { transform: rotate(360deg); } }
+.np-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 16px; flex: none; }
+.np-eq i { width: 3px; background: #1DB954; border-radius: 2px; height: 40%; animation: np-eq .9s ease-in-out infinite; }
+.np-eq i:nth-child(2) { animation-delay: .25s; }
+.np-eq i:nth-child(3) { animation-delay: .5s; }
+.np-eq i:nth-child(4) { animation-delay: .15s; }
+@keyframes np-eq { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+.np-marquee { overflow: hidden; min-width: 0; flex: 1; }
+.np-text { display: inline-block; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.np-scroll .np-text { animation: np-marq 9s ease-in-out infinite alternate; }
+@keyframes np-marq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(var(--np-dx, 0)); } }
+@media (prefers-reduced-motion: reduce) { .np-art, .np-eq i, .np-scroll .np-text { animation: none; } }
+@media (max-width: 900px) { .np-strip { max-width: 40vw; } .np-text { font-size: 12px; } }
+@media (max-width: 640px) { .np-strip { display: none; } }
+
+/* Pano Spotify kutucuğu */
+.db-sp { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.db-sp-connect { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.db-sp-logo svg, .db-sp-logo { width: 44px; height: 44px; }
+.db-sp-np { display: flex; gap: 12px; align-items: center; }
+.db-sp-artwrap { position: relative; flex: none; }
+.db-sp-art { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--surface-2); display: block; }
+.db-sp-eq { position: absolute; right: 4px; bottom: 4px; display: none; align-items: flex-end; gap: 2px; height: 14px;
+  padding: 2px 3px; border-radius: 4px; background: rgba(0,0,0,.45); }
+.db-sp-np.on .db-sp-eq { display: inline-flex; }
+.db-sp-eq i { width: 3px; background: #1DB954; border-radius: 2px; animation: np-eq .9s ease-in-out infinite; }
+.db-sp-eq i:nth-child(2) { animation-delay: .25s; }
+.db-sp-eq i:nth-child(3) { animation-delay: .5s; }
+.db-sp-eq i:nth-child(4) { animation-delay: .15s; }
+.db-sp-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.db-sp-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-sp-artist { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-sp-bar { display: flex; align-items: center; gap: 6px; }
+.db-sp-bar-track { flex: 1; height: 4px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.db-sp-bar-fill { display: block; height: 100%; width: 0; background: #1DB954; border-radius: 3px; transition: width .4s linear; }
+.db-sp-t { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.db-sp-ctrl { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.db-sp-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.db-sp-btn svg { width: 18px; height: 18px; }
+.db-sp-btn:hover { background: var(--surface-2); }
+.db-sp-play { background: #1DB954; border-color: #1DB954; color: #04210f; }
+.db-sp-play:hover { background: #1ed760; }
+.db-sp-note { min-height: 0; }
+.db-sp-search .input.sm { width: 100%; }
+.db-sp-results { display: flex; flex-direction: column; gap: 4px; overflow: auto; min-height: 0; flex: 1; }
+.db-sp-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 4px 6px;
+  border: 0; background: none; border-radius: 8px; cursor: pointer; color: var(--text); }
+.db-sp-row:hover { background: var(--surface-2); }
+.db-sp-row-art { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex: none; background: var(--surface-2);
+  display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.db-sp-row-main { min-width: 0; display: flex; flex-direction: column; }
+.db-sp-row-main b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.db-sp-row-main small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

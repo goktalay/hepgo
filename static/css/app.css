@@ -2188,6 +2188,10 @@ td.num, th.num { text-align: right; }
 .db-acts-pill > button { margin: 0; height: 26px; border-radius: 999px; }
 .db-acts-pill .feed-savedbtn { min-width: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .db-acts-pill .feed-savedbtn:hover { color: var(--text); }
+.db-acts-pill .feed-sharebtn { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px;
+  background: var(--primary-soft, rgba(37,99,235,.1)); color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; }
+.db-acts-pill .feed-sharebtn:hover { background: var(--primary); color: #fff; }
+.db-acts-pill .feed-sharebtn svg { width: 16px; height: 16px; }
 .db-tools button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; min-width: 28px; height: 28px; cursor: pointer; font-size: 13px; }
 .db-tools button:disabled { opacity: .35; cursor: default; }
 .db-tools button.danger { color: var(--danger); }

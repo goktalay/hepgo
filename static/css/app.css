@@ -7514,16 +7514,16 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-duty-time { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--primary); }
 .db-duty-timer small { font-size: 10px; }
 
-/* Avatar çerçevesinde kişi durumu (Hızlı Rehber + Mesajlarım): yeşil=çevrimiçi, turuncu=görevde, mavi=izinde, gri=çevrimdışı */
-.db-avwrap { position: relative; display: inline-flex; border-radius: 50%; flex: none; }
-.db-avwrap .db-av { display: block; }
-.db-avwrap.st-online { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #22c55e; }
-.db-avwrap.st-duty   { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #f59e0b; }
-.db-avwrap.st-leave  { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #3b82f6; }
-.db-avwrap.st-off    { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #cbd5e1; }
+/* Avatar çerçevesinde kişi durumu (Hızlı Rehber + Mesajlarım): yeşil=çevrimiçi, turuncu=görevde, mavi=izinde, gri=çevrimdışı.
+   Halka doğrudan kare .db-av (34×34) üzerine konur ki tam daire olsun; sarmalayıcı esnek satırda dikeyde esnemesin. */
+.db-avwrap { position: relative; display: inline-flex; align-self: center; flex: none; border-radius: 50%; line-height: 0; }
+.db-avwrap.st-online .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #22c55e; }
+.db-avwrap.st-duty   .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #f59e0b; }
+.db-avwrap.st-leave  .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #3b82f6; }
+.db-avwrap.st-off    .db-av { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px #cbd5e1; }
 .db-stdot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--surface); }
 .db-avwrap.st-online .db-stdot { background: #22c55e; }
 .db-avwrap.st-duty   .db-stdot { background: #f59e0b; }
 .db-avwrap.st-leave  .db-stdot { background: #3b82f6; }
 .db-avwrap.st-off    .db-stdot { background: #cbd5e1; }
-.db-qd-main, .db-msglist a { gap: 10px; }   /* halka için biraz nefes payı */
+.db-qd-main, .db-msglist a { gap: 11px; }   /* halka için nefes payı */

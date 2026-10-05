@@ -1,7 +1,7 @@
 // Kişisel pano (ana sayfa): herkesin kendine göre düzenlediği kutucuklar. Kutucuklar sunucudan (yetkiye göre) gelir;
 // düzen (sıra, genişlik, ayar) kullanıcıya özel sunucuda saklanır (user_prefs: dashboard). "Panoyu Düzenle" ile kutucuk
 // eklenir, çıkarılır, taşınır, genişliği (1/3, 2/3, tam) ve ayarı (saat biçimi, hava durumu konumu) değiştirilir.
-import { api } from '../api.js';
+import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
 import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toastError } from '../ui.js';
@@ -9,7 +9,12 @@ import { LEVELS } from './announcements.js';
 import { renderFeed } from './feed.js';
 import { chartConfig, loadChart, theme } from './reports.js';
 
-const MULTI = new Set(['clock', 'weather', 'world_clock']);   // birden çok eklenebilen / ayarlı (ör. iki şehir)
+const dbInitials = n => (n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toLocaleUpperCase('tr');
+const dbAvatar = (name, photo, cls = '') => (photo
+  ? h('img', { class: `db-av ${cls}`, src: fileUrl(photo, 64), alt: '', loading: 'lazy' })
+  : h('span', { class: `db-av ph ${cls}` }, dbInitials(name)));
+
+const MULTI = new Set(['clock', 'weather', 'world_clock', 'quick_directory']);   // birden çok eklenebilen / ayarlı
 // GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
 let gridLib;
 function loadGridStack() {
@@ -24,7 +29,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
 
@@ -195,6 +200,32 @@ export async function renderDashboard(view, ctx, modules) {
         actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, cities }; persist(); build(); } }] });
       return;
     }
+    if (it.k === 'quick_directory') {
+      const people = [...(it.o?.people || [])];
+      const listEl = h('div', { class: 'db-wc-edit' });
+      const draw = () => clear(listEl, people.length ? people.map((c, i) => h('div', { class: 'db-wc-row' },
+        dbAvatar(c.name, c.photo), h('span', { class: 'grow' }, h('b', null, c.name), c.email ? h('small', { class: 'muted' }, ` · ${c.email}`) : null),
+        h('button', { class: 'btn xs', type: 'button', onclick: () => { people.splice(i, 1); draw(); } }, 'Kaldır')))
+        : h('div', { class: 'empty small' }, 'Henüz kişi eklenmedi'));
+      draw();
+      const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad ya da e-posta ara…' });
+      const res = h('div', { class: 'pick-list' });
+      let all = null, timer;
+      const search = async () => {
+        if (!all) { try { all = await api.get('/api/people'); } catch { all = []; } }
+        const term = q.value.trim().toLocaleLowerCase('tr');
+        clear(res, all.filter(u => !people.some(x => x.id === u.id)
+          && (!term || `${u.full_name} ${u.username || ''}`.toLocaleLowerCase('tr').includes(term))).slice(0, 20).map(u =>
+          h('button', { class: 'pick', type: 'button', onclick: () => {
+            people.push({ id: u.id, name: u.full_name, photo: u.photo, email: (u.username || '').includes('@') ? u.username : null }); q.value = ''; search(); draw();
+          } }, dbAvatar(u.full_name, u.photo), h('div', { class: 'grow' }, h('b', null, u.full_name), u.username ? h('span', { class: 'small muted' }, u.username) : null))));
+      };
+      q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 200); });
+      const m = modal({ title: 'Hızlı Rehber — kişiler', wide: true, body: h('div', null, listEl, field('Kişi ekle', q), res),
+        actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: () => { it.o = { ...it.o, people }; persist(); build(); } }] });
+      search();
+      return;
+    }
     // Hava durumu: bulunduğum konum (tarayıcı izni) ya da şehir arama
     const q = h('input', { class: 'input', type: 'search', placeholder: 'Şehir ya da ilçe ara… (ör. Kalecik)' });
     const results = h('div', { class: 'pick-list' });
@@ -237,6 +268,27 @@ export async function renderDashboard(view, ctx, modules) {
                 h('span', { class: 'db-mail-from' }, mi.from || '(gönderen yok)'),
                 h('span', { class: 'db-mail-subj' }, mi.subject || '(konu yok)')),
               h('small', null, mi.date ? fmtDateTime(mi.date).replace(/\.\d{4}/, '') : ''))))]);
+      case 'my_messages': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Henüz mesajınız yok')
+        : h('ul', { class: 'db-list db-msglist' }, d.items.map(mi => h('li', { class: mi.unread ? 'unread' : '' },
+          h('a', { href: `#/messages/u${mi.peer_id}` },
+            dbAvatar(mi.name, mi.photo),
+            h('span', { class: 'db-msg-main' }, h('b', null, mi.name), h('span', { class: 'db-msg-prev' }, mi.preview || '')),
+            mi.unread ? h('span', { class: 'db-n' }, mi.unread) : h('small', null, mi.at ? fmtDateTime(mi.at).replace(/\.\d{4}/, '') : ''))))));
+      case 'my_meetings': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Aktif ya da bekleyen toplantı yok')
+        : h('ul', { class: 'db-list db-meetlist' }, d.items.map(mt => h('li', null,
+          h('a', { href: `#/meet/${mt.id}` },
+            h('span', { class: 'db-meet-main' }, h('b', null, mt.title || 'Toplantı'),
+              h('small', null, [mt.host_name, mt.participants ? `${mt.participants} katılımcı` : null].filter(Boolean).join(' · '))),
+            mt.status === 'DEVAM' ? h('span', { class: 'badge green' }, '● Devam ediyor') : h('span', { class: 'badge' }, 'Bekliyor'))))));
+      case 'quick_directory': {
+        const ppl = it.o?.people || [];
+        return clear(body, !ppl.length ? h('div', { class: 'db-none' }, h('span', null, 'Kişi ekleyin: '), h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙'))
+          : h('ul', { class: 'db-list db-qdlist' }, ppl.map(c => h('li', null,
+            h('a', { class: 'db-qd-main', href: `#/messages/u${c.id}`, title: 'Mesaj gönder' }, dbAvatar(c.name, c.photo), h('b', null, c.name)),
+            h('span', { class: 'db-qd-acts' },
+              h('a', { class: 'db-qd-ic', href: `#/messages/u${c.id}`, title: 'Mesaj' }, svgIcon(icons.chat)),
+              c.email ? h('a', { class: 'db-qd-ic', href: `mailto:${c.email}`, title: 'E-posta' }, svgIcon(icons.mail)) : null)))));
+      }
       case 'modules': return clear(body, h('div', { class: 'db-modules' }, modules.map(m => h('a', { href: `#/${m.key}`, class: m.tone ? `tone-${m.tone}` : '' },
         h('span', { class: 'ico' }, svgIcon(icons[m.key])), h('span', null, m.title)))));
       case 'announcements': return list(d.items, a => h('li', null, h('a', { href: `#/announcements/${a.id}` },

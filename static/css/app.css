@@ -7171,3 +7171,22 @@ input[type="checkbox"].gm-cb:indeterminate::after { width: 10px; height: 0; bord
 .db-wc-sub { display: block; font-size: 11.5px; color: var(--muted); }
 .db-wc-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .db-wc-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+
+/* Pano: avatar + Mesajlarım + Toplantılarım */
+.db-av { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex: none; }
+.db-av.ph { display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; }
+.db-msglist li a, .db-meetlist li a { display: flex; align-items: center; gap: 10px; }
+.db-msg-main, .db-meet-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.db-msg-main b, .db-meet-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-msg-prev { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-meet-main small { color: var(--muted); font-size: 12px; }
+.db-msglist li.unread b { font-weight: 800; }
+
+/* Pano: Hızlı Rehber */
+.db-qdlist li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.db-qd-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.db-qd-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-qd-acts { display: flex; gap: 4px; flex: none; }
+.db-qd-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); }
+.db-qd-ic:hover { background: var(--primary-soft); }
+.db-qd-ic svg { width: 18px; height: 18px; }

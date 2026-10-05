@@ -164,6 +164,47 @@ def w_world_clock(conn, user):
     return {}   # şehirler istemcide (kutucuk ayarı): ad + zaman dilimi
 
 
+@widget('quick_directory', 'Hızlı Rehber', 'Sık ulaştığınız kişiler; mesaj ve e-posta kısayolu', size=1, group='Kişisel')
+def w_quick_directory(conn, user):
+    return {}   # kişiler istemcide (kutucuk ayarı)
+
+
+@widget('my_messages', 'Mesajlarım', 'Size gelen son mesajlar', size=1, group='Kişisel')
+def w_my_messages(conn, user):
+    """Sistemdeki (uygulama içi) sohbette her kişiyle son ileti; okunmamışlar önce."""
+    me = user['id']
+    rows = db.rows(conn.execute(
+        """WITH last AS (SELECT CASE WHEN from_id = ? THEN to_id ELSE from_id END AS peer, MAX(id) AS mid
+                         FROM chat_messages WHERE from_id = ? OR to_id = ? GROUP BY peer)
+           SELECT u.id AS peer_id, u.full_name, u.photo, m.body, m.file_kind, m.from_id, m.created_at,
+                  (SELECT COUNT(*) FROM chat_messages x WHERE x.from_id = u.id AND x.to_id = ? AND x.read_at IS NULL) AS unread
+           FROM last JOIN chat_messages m ON m.id = last.mid JOIN users u ON u.id = last.peer
+           WHERE u.active = 1 AND u.deleted_at IS NULL
+           ORDER BY unread > 0 DESC, m.id DESC LIMIT 8""", (me, me, me, me)))
+    kinds = {'image': '📷 Fotoğraf', 'video': '🎬 Video', 'audio': '🎤 Ses', 'file': '📎 Dosya'}
+    items = []
+    for r in rows:
+        prev = r['body'] or (kinds.get(r['file_kind'], '📎 Dosya') if r['file_kind'] else '')
+        items.append({'peer_id': r['peer_id'], 'name': r['full_name'], 'photo': r['photo'],
+                      'preview': (('Siz: ' if r['from_id'] == me else '') + (prev or '')).strip()[:90],
+                      'at': r['created_at'], 'unread': r['unread']})
+    return {'items': items, 'unread': sum(i['unread'] for i in items)}
+
+
+@widget('my_meetings', 'Toplantılarım', 'Aktif ve bekleyen görüntülü toplantılarınız', size=1, group='Kişisel')
+def w_my_meetings(conn, user):
+    """Görüntülü toplantılar (meet): devam eden (DEVAM) ve bekleyen (PLANLANDI); tıklayınca toplantıya girilir."""
+    rows = db.rows(conn.execute(
+        """SELECT m.id, m.title, m.status, m.scheduled_at, hu.full_name AS host_name,
+                  (SELECT COUNT(*) FROM online_meeting_participants p WHERE p.meeting_id = m.id) AS participants
+           FROM online_meetings m LEFT JOIN users hu ON hu.id = m.host_id
+           WHERE m.status != 'BITTI' AND (m.host_id = ? OR m.id IN
+                 (SELECT meeting_id FROM online_meeting_participants WHERE user_id = ?))
+           ORDER BY (m.status = 'DEVAM') DESC, COALESCE(m.scheduled_at, m.created_at) LIMIT 10""",
+        (user['id'], user['id'])))
+    return {'items': rows}
+
+
 @widget('weather', 'Hava durumu', 'Bulunduğunuz konuma ya da seçtiğiniz şehre göre hava durumu', size=1)
 def w_weather(conn, user):
     return {}

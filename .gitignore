@@ -21,3 +21,4 @@ vendor/whisper
 
 # Claude Code yerel ayarları (izinler)
 .claude/settings.local.json
+/agent-dist/

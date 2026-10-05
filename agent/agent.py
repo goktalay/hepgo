@@ -21,6 +21,13 @@ from pathlib import Path
 # caymazbuild kökünü yola ekle (app.* içe aktarmak için)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Entegrasyon profili: HEPGO_INTEG=<mikro|pdks|printer|camera|face> ise ajan O entegrasyon için çalışır.
+# Ayarlanmamışsa ESKİ (gx10) davranış: auth'ta integ gönderilmez, legacy merkezle uyumlu kalır.
+from agent import envcfg   # noqa: E402
+
+envcfg.load_into_environ()      # agent-config.env varsa ortama yükle (ortamdaki değerleri EZMEZ)
+INTEG = envcfg.integ_name()     # '' → legacy mod
+
 os.environ['CAYMAZ_AGENT_MODE'] = 'local'   # ajan op'ları doğrudan çalıştırır (merkeze geri yönlendirmez)
 os.environ.setdefault('CAYMAZ_PRINTER_POLL', '0')  # ajan yoklama döngüsü çalıştırmaz; merkez tetikler
 
@@ -69,13 +76,16 @@ async def run():
     while True:
         try:
             async with websockets.connect(URL, max_size=None, ping_interval=20, ping_timeout=20) as ws:
-                await ws.send(json.dumps({'t': 'auth', 'key': KEY, 'host': socket.gethostname()}))
+                auth = {'t': 'auth', 'key': KEY, 'host': socket.gethostname()}
+                if INTEG:
+                    auth['integ'] = INTEG   # merkez bu anahtarı O entegrasyonun slotuna kaydeder
+                await ws.send(json.dumps(auth))
                 ack = json.loads(await ws.recv())
                 if not ack.get('ok'):
                     print('Kimlik reddedildi (anahtar yanlış?). 15 sn sonra tekrar.')
                     await asyncio.sleep(15)
                     continue
-                print(f'Ajan bağlı: {URL}')
+                print(f'Ajan bağlı: {URL}' + (f' [entegrasyon: {INTEG}]' if INTEG else ''))
                 async for raw in ws:
                     try:
                         m = json.loads(raw)

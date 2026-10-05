@@ -30,3 +30,27 @@ systemd servisi olarak da çalıştırılabilir (fabrikadaki makinede).
 Merkez sunucuda `CAYMAZ_AGENT_MODE=remote` ve aynı `CAYMAZ_AGENT_KEY` tanımlı olmalı.
 Mikro/PDKS/yazıcı op'ları otomatik olarak bu ajana yönlenir. Kamera/yüz tanıma ayrı
 (camera_service) yine fabrikada çalışır. Uçuş logu analizi ajan gerektirmez (yüklenen dosya işlenir).
+
+---
+
+## Entegrasyon başına ajan (modüler platform)
+Yukarıdaki `python -m agent.agent` ESKİ (gx10) tek-ajan davranışıdır ve `HEPGO_INTEG` ayarlı
+değilse auth'ta `integ` göndermez — legacy merkezle uyumludur.
+
+Her fabrika entegrasyonu (mikro, pdks, printer, camera, face) **ayrı** kurulur, **ayrı anahtarla**
+çalışır. Ortak çerçeve:
+
+- `agent/profiles.py` — her entegrasyonun görünen adı, op önekleri, ek pip bağımlılıkları ve cihaz
+  alanları (tek kaynak).
+- `agent/service.py` — servis giriş noktası (`python -m agent.service`). Yapılandırma yoksa yerel
+  ayar sayfasını başlatır; varsa ajanı çalıştırır. `HEPGO_INTEG=<integ>` ile çalışır.
+- `agent/localconfig.py` — yalnız stdlib `http.server`, `127.0.0.1:8765`. HEPGO_INTEG'e göre yalnız
+  o entegrasyonun alanlarını (Domain + API Anahtarı + cihaz alanları) gösterir. "Bağlantıyı Test Et"
+  ve "Kaydet ve Bağlan".
+- `agent/envcfg.py` — `agent-config.env` okuma/yazma (chmod 600), Domain → `wss://<domain>/ws/agent`.
+
+Auth el sıkışması (Aşama 2 ile uyumlu):
+`{"t":"auth","key":"<entegrasyon anahtarı>","host":"<makine>","integ":"<mikro|pdks|printer|camera|face>"}`
+
+Kurulum paketleri `tools/` ile üretilir (`tools/README.md`); çıktılar
+`agent-dist/<integ>/hepgo-<integ>-setup-<linux.sh|windows.exe>`.

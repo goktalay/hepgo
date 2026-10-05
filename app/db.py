@@ -1250,6 +1250,7 @@ CREATE TABLE IF NOT EXISTS duty_requests (
     return_kind   TEXT,                                  -- dönüş türü: 'sirket' (şirkete döndü, araç içeri girer) | 'bitir' (görevi bitir, araca dokunulmaz)
     flew          INTEGER,                               -- görevi bitirirken: uçuş yapıldı mı? (1 evet / 0 hayır); stok devri ileride bu veriyi kullanacak
     complete_note TEXT,                                  -- görevi bitirme açıklaması (uçulmadıysa zorunlu)
+    exited_at     TEXT,                                  -- QR ile çıkış yapıldığı an (ilk okutma); dolunca "Görevde"ye geçer
     created_at    TEXT NOT NULL
 );
 -- Görev formunda göreve gidecek personel (çoklu; görev araca/göreve özel, bir araçta birden çok kişi).
@@ -2778,6 +2779,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE duty_requests ADD COLUMN flew INTEGER')
     if 'complete_note' not in duty_cols:   # görevi bitirme açıklaması
         conn.execute('ALTER TABLE duty_requests ADD COLUMN complete_note TEXT')
+    if 'exited_at' not in duty_cols:   # QR ile çıkış yapıldığı an → "Görevde"ye geçer
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN exited_at TEXT')
     # Mikro ERP stok hareketi defter aktarımı: her yerel hareketin Mikro STOK_HAREKETLERI satır kimliği
     # ('mikro:<sth_RECno_RECno>' veya açılış için 'mikro-open:<kod>'). Çift sayımı ve tekrar aktarımı önler.
     if 'mikro_key' not in {r[1] for r in conn.execute('PRAGMA table_info(material_moves)')}:

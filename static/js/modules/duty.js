@@ -6,8 +6,21 @@ import {
 } from '../ui.js';
 import { qrSvg, qrSvgEl } from '../qr.js';
 
-const STATUS = { BEKLIYOR: ['Onay bekliyor', 'gray'], ONAYLANDI: ['Onaylandı', 'green'], REDDEDILDI: ['Reddedildi', 'red'], IPTAL: ['İptal', 'muted'] };
-const badge = s => h('span', { class: `badge ${(STATUS[s] || [])[1] || 'gray'}` }, (STATUS[s] || [s])[0]);
+// Yaşam döngüsü durumu (d.durum): BEKLIYOR → ONAYLANDI → GOREVDE → BITTI, ayrıca REDDEDILDI / IPTAL.
+const DURUM = {
+  BEKLIYOR: ['Onay Bekliyor', 'yellow'],
+  ONAYLANDI: ['Onaylandı', 'green'],
+  GOREVDE: ['Görevde · Çıkış yaptı', 'orange'],
+  BITTI: ['Görev Bitti · Giriş yaptı', 'muted'],
+  REDDEDILDI: ['Reddedildi', 'red'],
+  IPTAL: ['İptal', 'muted'],
+};
+const durumOf = d => d.durum || d.status || '';
+const badge = d => { const m = DURUM[durumOf(d)]; return h('span', { class: `badge ${m ? m[1] : 'gray'}` }, m ? m[0] : durumOf(d)); };
+// Formlarım durum filtresi (üst araç çubuğundaki seçim)
+const FILTERS = [['', 'Tümü'], ['BEKLIYOR', 'Onay Bekleyen'], ['ONAYLANDI', 'Onaylandı'], ['GOREVDE', 'Görevde'],
+  ['BITTI', 'Görev Bitti'], ['IPTAL', 'İptal'], ['REDDEDILDI', 'Reddedildi']];
+let MINE_FILTER = '';
 const TABS = [['mine', 'Formlarım'], ['pending', 'Onay Bekleyenler']];
 
 let COMPANY = '';
@@ -17,9 +30,11 @@ export async function render(view, params, ctx) {
   const tab = TABS.some(x => x[0] === params[0]) ? params[0] : 'mine';
   const nav = moduleTabs(TABS, tab, v => { location.hash = v === 'mine' ? '#/my-duties' : `#/my-duties/${v}`; });
   const addBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => newDutyForm(ctx, () => reload()) }, '＋ Yeni Görev Formu');
+  const filterSel = h('select', { class: 'input', onchange: e => { MINE_FILTER = e.target.value; loadMine(body, ctx); } },
+    FILTERS.map(([v, lbl]) => h('option', { value: v, selected: v === MINE_FILTER }, lbl)));
   const body = h('div');
   clear(view, pageHead('Görev Formu', { back: '#/', sub: 'Personel görevlendirme ve çıkış izni' }),
-    nav, moduleToolbar(tab === 'mine' ? addBtn : null), body);
+    nav, moduleToolbar(tab === 'mine' ? [addBtn, filterSel] : null), body);
 
   const reload = () => (tab === 'pending' ? loadPending(body) : loadMine(body, ctx)).catch(err => clear(body, h('div', { class: 'card empty' }, err.message)));
   return reload();
@@ -27,10 +42,13 @@ export async function render(view, params, ctx) {
 
 async function loadMine(body, ctx) {
   const data = await api.get('/api/me/duties');
-  const items = data.items || [];
+  const all = data.items || [];
+  const items = MINE_FILTER ? all.filter(d => durumOf(d) === MINE_FILTER) : all;
   clear(body, items.length
     ? h('div', { class: 'duty-grid' }, items.map(d => dutyCard(d, { mine: true }, () => loadMine(body, ctx))))
-    : h('div', { class: 'card empty' }, 'Henüz görev formunuz yok. "Yeni Görev Formu" ile oluşturun.'));
+    : h('div', { class: 'card empty' }, all.length
+      ? 'Bu duruma uygun görev formu yok.'
+      : 'Henüz görev formunuz yok. "Yeni Görev Formu" ile oluşturun.'));
 }
 
 async function loadPending(body) {
@@ -43,8 +61,8 @@ async function loadPending(body) {
 
 function dutyCard(d, { mine = false, approve = false } = {}, reload) {
   const whenRow = (lbl, v) => (v ? [h('dt', null, lbl), h('dd', null, fmtDateTime(v))] : null);
-  return h('div', { class: `card duty-card st-${String(d.status || '').toLowerCase()}` },
-    h('div', { class: 'duty-card-head' }, h('b', null, d.people_names || d.employee_name || '—'), badge(d.status)),
+  return h('div', { class: `card duty-card st-${String(durumOf(d)).toLowerCase()}` },
+    h('div', { class: 'duty-card-head' }, h('b', null, d.people_names || d.employee_name || '—'), badge(d)),
     d.employee_title ? h('div', { class: 'small muted' }, d.employee_title) : null,
     h('dl', { class: 'duty-kv' },
       h('dt', null, 'Gideceği yer'), h('dd', null, d.destination || '—'),
@@ -56,7 +74,8 @@ function dutyCard(d, { mine = false, approve = false } = {}, reload) {
       d.decision_note ? [h('dt', null, 'Not'), h('dd', null, d.decision_note)] : null),
     h('div', { class: 'duty-actions' },
       d.status === 'ONAYLANDI' && d.pass_token ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => showPassModal(d) }, 'QR Göster') : null,
-      mine && d.status === 'BEKLIYOR' ? h('button', { class: 'btn sm', type: 'button', onclick: () => cancelDuty(d, reload) }, 'Vazgeç') : null,
+      mine && !['BITTI', 'IPTAL', 'REDDEDILDI'].includes(durumOf(d))
+        ? h('button', { class: 'btn sm', type: 'button', onclick: () => cancelDuty(d, reload) }, 'Görev İptal') : null,
       approve && d.status === 'BEKLIYOR' ? [
         h('button', { class: 'btn sm primary', type: 'button', onclick: () => decideModal(d, 'approve', reload) }, 'Onayla'),
         h('button', { class: 'btn sm', type: 'button', onclick: () => decideModal(d, 'reject', reload) }, 'Reddet'),
@@ -195,8 +214,8 @@ function decideModal(d, action, reload) {
 }
 
 async function cancelDuty(d, reload) {
-  if (!await confirmDialog('Görev formunu geri çek', 'Bu görev formu talebinden vazgeçilsin mi?', { okLabel: 'Vazgeç', danger: true })) return;
-  try { await api.del(`/api/me/duties/${d.id}`); toast('Görev formu geri çekildi'); reload(); } catch (err) { toastError(err); }
+  if (!await confirmDialog('Görev İptal', 'Bu görev formu iptal edilsin mi?', { okLabel: 'Görev İptal', danger: true })) return;
+  try { await api.post(`/api/me/duties/${d.id}/cancel`); toast('Görev formu iptal edildi'); reload(); } catch (err) { toastError(err); }
 }
 
 // ---------- Veri kaynakları ----------

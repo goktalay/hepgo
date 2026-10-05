@@ -2205,6 +2205,11 @@ td.num, th.num { text-align: right; }
 .db-pick-item { text-align: left; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
 .db-pick-item span { font-size: 12px; color: var(--muted); }
 .db-pick-item:hover { border-color: var(--primary); background: var(--primary-soft); }
+.db-preset-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 300px; overflow: auto; }
+.db-preset-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.db-preset-row .grow { display: flex; flex-direction: column; }
+.db-preset-save { display: flex; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.db-preset-save .input { flex: 1; }
 .db-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; overflow: auto; max-height: 240px; }
 .db-list li { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .db-list li:last-child { border-bottom: 0; }

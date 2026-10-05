@@ -4,7 +4,7 @@
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
 import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
-import { clear, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toastError } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toast, toastError } from '../ui.js';
 import { LEVELS } from './announcements.js';
 import { renderFeed } from './feed.js';
 import { noteCard } from './notes.js';
@@ -51,7 +51,7 @@ export async function renderDashboard(view, ctx, modules) {
     catch (err) { clear(box, h('div', { class: 'card empty' }, err.message)); }
     return;
   }
-  const [avail, saved] = await Promise.all([api.get('/api/dashboard/widgets'), api.get('/api/me/prefs/dashboard').catch(() => ({}))]);
+  const [avail, saved, savedPresets] = await Promise.all([api.get('/api/dashboard/widgets'), api.get('/api/me/prefs/dashboard').catch(() => ({})), api.get('/api/me/prefs/dashboard_presets').catch(() => ({}))]);
   const byKey = Object.fromEntries(avail.map(w => [w.key, w]));
   const GridStack = await loadGridStack().catch(() => null);
   let layout;
@@ -63,6 +63,20 @@ export async function renderDashboard(view, ctx, modules) {
     w: it.w || (it.s ? it.s * 4 : 4), h: it.h || DEF_H[it.k] || 4, x: it.x, y: it.y }));
   for (const w of avail) if (w.fixed && !layout.some(it => it.k === w.key)) layout.unshift({ id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 6 });
 
+  // Düzeni kaydedilebilir biçime çevir / ham diziyi normalize et (ekli kutucuk/boyut tamamla) — Yerleşim ön-ayarları için
+  const serializeLayout = arr => (arr || layout).map(it => ({ id: it.id, k: it.k, o: it.o, x: it.x, y: it.y, w: it.w, h: it.h }));
+  const normalizeLayout = arr => {
+    let ly = (Array.isArray(arr) ? arr : []).filter(it => byKey[it.k]).map(it => ({
+      id: it.id || dbUid(), k: it.k, o: it.o,
+      w: it.w || (it.s ? it.s * 4 : 4), h: it.h || DEF_H[it.k] || 4, x: it.x, y: it.y }));
+    for (const w of avail) if (w.fixed && !ly.some(it => it.k === w.key)) ly.unshift({ id: dbUid(), k: w.key, w: (w.size || 1) * 4, h: DEF_H[w.key] || 6 });
+    return ly;
+  };
+  // Kayıtlı yerleşim ön-ayarları (kullanıcıya özel, user_prefs: dashboard_presets)
+  let presets = [];
+  try { presets = JSON.parse(savedPresets.value || '[]'); if (!Array.isArray(presets)) presets = []; } catch { presets = []; }
+  const savePresets = () => api.put('/api/me/prefs/dashboard_presets', { value: JSON.stringify(presets) }).catch(() => {});
+
   let editing = false, data = {}, grid = null;
   const charts = [], timers = [], bodies = {}, feeds = {}, headActs = {};   // feeds: company_news yeniden yükleyici; headActs: kutu başlık eylem slotu
   // Kutu başlığındaki eylem düğmeleri: 2+ ise tek kapsülde (pill), değilse tek düğme. Boşsa slot gizli (CSS :empty).
@@ -72,6 +86,7 @@ export async function renderDashboard(view, ctx, modules) {
   const gridEl = h('div', { class: 'grid-stack' });
   const editBtn = h('button', { class: 'btn', type: 'button', onclick: () => setEdit(!editing) }, 'Panoyu Düzenle');
   const addBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => addWidget() }, '＋ Kutucuk Ekle');
+  const presetsBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => managePresets() }, '🗂 Yerleşimler');
 
   const loadData = async () => {
     const keys = [...new Set(layout.map(it => it.k))].filter(k => !['clock', 'weather', 'modules'].includes(k));
@@ -91,7 +106,7 @@ export async function renderDashboard(view, ctx, modules) {
       order.push(it);
     }
     layout = order;
-    api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout.map(it => ({ id: it.id, k: it.k, o: it.o, x: it.x, y: it.y, w: it.w, h: it.h }))) }).catch(() => {});
+    api.put('/api/me/prefs/dashboard', { value: JSON.stringify(serializeLayout()) }).catch(() => {});
   }
 
   function itemEl(it) {
@@ -144,6 +159,7 @@ export async function renderDashboard(view, ctx, modules) {
     editing = on;
     editBtn.textContent = on ? 'Düzenlemeyi Bitir' : 'Panoyu Düzenle';
     addBtn.hidden = !on;
+    presetsBtn.hidden = !on;
     gridEl.classList.toggle('editing', on);
     grid?.setStatic(!on);
   }
@@ -153,6 +169,49 @@ export async function renderDashboard(view, ctx, modules) {
     layout = layout.filter(x => x.id !== it.id);
     if (el && grid) grid.removeWidget(el); else build();
     persist();
+  }
+
+  // --- Yerleşim ön-ayarları: mevcut pano düzenini adlandırıp kaydet, sonra tek tıkla geri çağır ---
+  async function applyPreset(p) {
+    layout = normalizeLayout(p.layout || []);
+    await loadData().catch(() => {});
+    build(); persist();   // aktif düzen olarak da yaz
+    toast(`“${p.name}” yerleşimi uygulandı`);
+  }
+  function managePresets() {
+    const listEl = h('div', { class: 'db-preset-list' });
+    const draw = () => clear(listEl, presets.length ? presets.map((p, i) => h('div', { class: 'db-preset-row' },
+      h('div', { class: 'grow' }, h('b', null, p.name),
+        h('small', { class: 'muted' }, ` · ${(p.layout || []).length} kutucuk${p.ts ? ' · ' + new Date(p.ts).toLocaleDateString('tr-TR') : ''}`)),
+      h('button', { class: 'btn xs primary', type: 'button', onclick: () => { applyPreset(p); m.close(); } }, 'Çağır'),
+      h('button', { class: 'btn xs', type: 'button', title: 'Üzerine kaydet', onclick: () => {
+        p.layout = serializeLayout(); p.ts = Date.now(); savePresets(); draw(); toast(`“${p.name}” güncellendi`);
+      } }, '↻'),
+      h('button', { class: 'btn xs danger', type: 'button', title: 'Sil', onclick: async () => {
+        if (await confirmDialog('Yerleşimi sil', `“${p.name}” silinsin mi?`, { okLabel: 'Sil', danger: true })) {
+          presets.splice(i, 1); savePresets(); draw();
+        }
+      } }, '✕')))
+      : h('div', { class: 'empty small' }, 'Henüz kayıtlı yerleşim yok. Mevcut düzeni aşağıdan kaydedin.'));
+    draw();
+    const nameInp = h('input', { class: 'input', type: 'text', maxlength: '40', placeholder: 'Yerleşim adı (ör. Üretim görünümü)' });
+    const saveCur = () => {
+      const nm = nameInp.value.trim();
+      if (!nm) { toast('Bir ad girin'); nameInp.focus(); return; }
+      const ex = presets.find(p => p.name.toLowerCase() === nm.toLowerCase());
+      if (ex) { ex.layout = serializeLayout(); ex.ts = Date.now(); }
+      else presets.push({ name: nm, ts: Date.now(), layout: serializeLayout() });
+      savePresets(); nameInp.value = ''; draw(); toast(ex ? `“${nm}” güncellendi` : `“${nm}” kaydedildi`);
+    };
+    const m = modal({
+      title: 'Pano Yerleşimleri', wide: true,
+      body: h('div', null,
+        h('p', { class: 'muted small' }, 'Mevcut pano düzenini kaydedip istediğiniz zaman geri çağırabilirsiniz.'),
+        listEl,
+        h('div', { class: 'db-preset-save' }, nameInp,
+          h('button', { class: 'btn primary', type: 'button', onclick: saveCur }, '💾 Mevcut düzeni kaydet'))),
+      actions: [{ label: 'Kapat' }],
+    });
   }
 
   const GROUP_ORDER = ['Kişisel', 'Genel', 'Üretim', 'Depo & Stok', 'Saha', 'Ofis & Güvenlik', 'Sistem'];
@@ -628,7 +687,7 @@ export async function renderDashboard(view, ctx, modules) {
   const greet = hour < 6 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
   clear(view, h('div', { class: 'db-headline' },
     h('div', null, h('h1', null, `${greet}, ${ctx.user.full_name.split(' ')[0]}`), h('p', { class: 'muted' }, 'Kişisel panonuz · kutucukları sürükleyip boyutlandırabilirsiniz')),
-    h('div', { style: { display: 'flex', gap: '8px' } }, addBtn, editBtn)), gridEl);
+    h('div', { style: { display: 'flex', gap: '8px' } }, addBtn, presetsBtn, editBtn)), gridEl);
   build();
   refreshTimer = setInterval(async () => { if (!editing && !document.querySelector('.modal-back')) { await loadData().catch(() => {}); refill(); } }, 60000);
 }

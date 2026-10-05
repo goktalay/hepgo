@@ -1311,7 +1311,25 @@ def _duty_reqs(conn, where, args=()):
         r['people'] = people.get(r['id']) or ([{'id': r['employee_id'], 'name': r['employee_name'], 'title': r['employee_title']}] if r['employee_id'] else [])
         r['people_names'] = ', '.join(p['name'] for p in r['people'])
         r['pass_token'] = exitpass.make_token(conn, 'duty', r['id'], r['return_at'] or r['depart_at']) if r['status'] == 'ONAYLANDI' else None
+        r['durum'] = _duty_durum(r)   # yaşam döngüsü rozeti (frontend doğrudan kullanır)
     return rows
+
+
+def _duty_durum(r):
+    """Görev formunun yaşam döngüsü durumu (tek anahtar): BEKLIYOR → ONAYLANDI → GOREVDE → BITTI, ayrıca REDDEDILDI / IPTAL."""
+    st = r['status']
+    if st == 'IPTAL':
+        return 'IPTAL'
+    if st == 'REDDEDILDI':
+        return 'REDDEDILDI'
+    if st == 'BEKLIYOR':
+        return 'BEKLIYOR'
+    # ONAYLANDI
+    if r['returned_at']:
+        return 'BITTI'
+    if r['exited_at']:
+        return 'GOREVDE'
+    return 'ONAYLANDI'
 
 
 def _can_approve_duty_reqs(user):
@@ -1399,6 +1417,23 @@ def cancel_duty(did: int, user=Depends(auth.current_user), conn=db.DB):
     return {'ok': True}
 
 
+@duties_me_router.post('/{did}/cancel')
+def cancel_duty_any(did: int, user=Depends(auth.current_user), conn=db.DB):
+    """Görev iptali (onaylanmış / görevdeki formlar dahil): talebi açan, onaylayan, Patron ya da İK iptal edebilir.
+    Görev bitmişse (geri dönüş kaydı var) iptal edilemez; aksi halde status='IPTAL' işaretlenir."""
+    r = db.row(conn.execute('SELECT * FROM duty_requests WHERE id = ?', (did,)))
+    if not r:
+        raise HTTPException(404, 'Görev formu bulunamadı')
+    if not (r['requested_by'] == user['id'] or r['approver_id'] == user['id'] or _can_approve_duty_reqs(user)):
+        raise HTTPException(403, 'Bu görev formunu iptal etme yetkiniz yok')
+    if r['returned_at']:
+        raise HTTPException(400, 'Bitmiş görev formu iptal edilemez')
+    conn.execute("UPDATE duty_requests SET status = 'IPTAL', decided_at = ?, seen_at = ? WHERE id = ?",
+                 (db.now(), db.now(), did))
+    db.audit(conn, user['id'], 'Görev formunu iptal etti', 'duty', did)
+    return {'ok': True}
+
+
 @duties_router.get('/pending')
 def pending_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
     """Onaylayacağım bekleyen görev formları (benim onayımda olanlar; Patron / İK hepsini görür)."""
@@ -1465,7 +1500,9 @@ def on_duty_now(conn):
              JOIN duty_people dp ON dp.duty_id = d.id
              JOIN employees e ON e.id = dp.employee_id
              LEFT JOIN users u ON u.id = e.user_id
-            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL AND substr(d.depart_at, 1, 10) <= ?
+            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL
+              AND (d.exited_at IS NOT NULL OR d.source = 'field')
+              AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
             ORDER BY d.depart_at DESC, name""", (today, today)))
 
@@ -1477,7 +1514,9 @@ def on_duty_groups(conn):
     rows = db.rows(conn.execute(
         """SELECT d.id, d.destination, d.vehicle_plate, d.depart_at, d.return_at, d.source
              FROM duty_requests d
-            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL AND substr(d.depart_at, 1, 10) <= ?
+            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL
+              AND (d.exited_at IS NOT NULL OR d.source = 'field')
+              AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
             ORDER BY d.depart_at DESC, d.id DESC""", (today, today)))
     if not rows:

@@ -180,6 +180,8 @@ def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     if depart and today < depart:
         return {'allow': False, 'reason': f'Görev {depart} tarihinde başlıyor', **info}
     warn = 'Dikkat: tahmini dönüş tarihi geçmiş' if ret and today > ret else None
+    if not r['exited_at']:   # ilk okutma → "Görevde"ye geç (manuel + saha görevleri)
+        conn.execute('UPDATE duty_requests SET exited_at = ? WHERE id = ?', (db.now(), r['id']))
     for nm in people:   # her personel için çıkış kaydı
         _record_exit(conn, nm, 'duty', r['id'], user['id'])
     plate = vehicle_exit(conn, r['vehicle_plate'], user['id'])   # grubun aracını güvenlik araç kaydında dışarı çıkar

@@ -116,6 +116,16 @@ INTEGRATIONS = {
              'help': 'Çıkarım modeli (ONNX). Varsayılan bırakılabilir.'},
         ],
     },
+    'speech': {
+        'name': 'Konuşma Tanıma',
+        'op_prefixes': ['speech'],
+        # NOT: whisper bağımlılıkları ağırdır; kurulum paketi için gerçek paket adı doğrulanmalı
+        # (faster-whisper/ctranslate2 ya da openai-whisper). GX10'da venv zaten whisper içerir.
+        'pip': [_FASTAPI, 'faster-whisper'],
+        'hw_note': 'Konuşma tanıma (whisper) CPU-yoğundur; sürekli kullanımda CUDA GPU (ör. GX10) önerilir. '
+                   'Ses, merkezden ajana iletilir; cihaz bağlantısı gerekmez.',
+        'fields': [],
+    },
 }
 
 # ping ve sysstat her entegrasyonda geçerlidir (durum/teşhis).

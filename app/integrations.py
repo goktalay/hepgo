@@ -181,7 +181,7 @@ GROUP_TOPIC = {
 }
 # İndirilebilir (ajan-tabanlı) entegrasyon → agentkeys ürün adı. Bu ürünler indirme + "API key üret" ile gelir;
 # kurulan ajan API anahtarıyla merkeze bağlanır. Diğerleri (OAuth/kimlik) kodu doğrudan burada girilir.
-DOWNLOADABLE = {'mikro': 'mikro', 'pdks': 'pdks', 'nvr': 'camera', 'printer': 'printer', 'face': 'face'}
+DOWNLOADABLE = {'mikro': 'mikro', 'pdks': 'pdks', 'nvr': 'camera', 'printer': 'printer', 'face': 'face', 'speech': 'speech'}
 # GROUPS'ta ayar alanı bulunmayan, yalnız ajan-tabanlı katalog kalemleri (indirme + anahtar; ayrı ayar yok).
 AGENT_ONLY = {
     'printer': {'title': 'Yazıcılar',

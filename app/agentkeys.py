@@ -35,6 +35,11 @@ INTEGRATIONS = {
                    '16 GB RAM · ~5 GB boş disk. Yüz tanıma yoğun kaynak kullanan bir üründür; ekran kartı '
                    'olmayan makinelerde çalışır ancak başarım düşer. Fabrika makinesi bu değerleri karşılamalıdır.',
     },
+    'speech': {
+        'title': 'Konuşma Tanıma',
+        'min_req': 'En az gereksinimler: en az 4 çekirdekli işlemci (CPU) · 8 GB RAM · ~3 GB boş disk (model). '
+                   'Sürekli/çok kanallı kullanımda CUDA destekli NVIDIA GPU (ör. GX10) önerilir.',
+    },
 }
 
 

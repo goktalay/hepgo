@@ -18,7 +18,7 @@ Kimlik:
 
 Op yönlendirmesi (agent_call/call_sync):
 - op ön-ekine göre entegrasyon bulunur (mikro.* → mikro, pdks.* → pdks, printer.* → printer,
-  nvr.* → camera, face.* → face; ping/sysstat/speech.* gibi genel op'lar → entegrasyon YOK).
+  nvr.* → camera, face.* → face, speech.* → speech; ping/sysstat gibi genel op'lar → entegrasyon YOK).
 - Hedef ws: entegrasyonun kendi slot'u bağlıysa oraya; DEĞİLSE 'legacy' slot'una (geri düşüş — bugünkü
   tek-ajan davranışı korunur); o da yoksa eskisi gibi "Fabrika ajanı bağlı değil" hatası.
 """
@@ -45,11 +45,11 @@ def _dec(d):
 ws_router = APIRouter()
 
 # Entegrasyon-başına slot adları (agentkeys.INTEGRATIONS ile birebir aynı: mikro/pdks/printer/camera/face).
-_INTEG_SLOTS = ('mikro', 'pdks', 'printer', 'camera', 'face')
+_INTEG_SLOTS = ('mikro', 'pdks', 'printer', 'camera', 'face', 'speech')
 # 'legacy' = eski tekil tüm-bir-arada ajan (gx10). Kayıt defterinin tüm olası slot'ları:
 _SLOTS = _INTEG_SLOTS + ('legacy',)
 
-# Op ön-eki (ilk nokta öncesi) → entegrasyon slot'u. Burada OLMAYAN op (ping, sysstat, speech.*) genel
+# Op ön-eki (ilk nokta öncesi) → entegrasyon slot'u. Burada OLMAYAN op (ping, sysstat) genel
 # sayılır ve yalnız 'legacy' ajana gider (tek-ajan davranışının korunması için).
 _OP_INTEG = {
     'mikro':   'mikro',
@@ -57,6 +57,7 @@ _OP_INTEG = {
     'printer': 'printer',
     'nvr':     'camera',   # DİKKAT: op ön-eki 'nvr' ama entegrasyon/slot adı 'camera'
     'face':    'face',
+    'speech':  'speech',
 }
 
 _agents = {}             # slot -> bağlı ajanın WebSocket'i (yalnız CANLI bağlantılar bulunur)

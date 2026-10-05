@@ -473,6 +473,123 @@ def reset_stock(user=Depends(mikro_user), conn=db.DB):
     return {'deleted': n}
 
 
+# ---------- Stok hareketi DEFTER aktarımı (yerel stok = Mikro OZET birebir) ----------
+class MovesImportIn(BaseModel):
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    preview: bool = False
+    warehouse_id: Optional[int] = None
+
+
+def _moves_warehouse(conn, wid):
+    if not wid:
+        row = conn.execute('SELECT id FROM warehouses WHERE active = 1 ORDER BY id LIMIT 1').fetchone()
+        wid = row[0] if row else None
+    if not wid:
+        raise HTTPException(400, 'Depo bulunamadı; önce MRP’de bir depo tanımlayın')
+    return wid
+
+
+def _tip_move(tip, qty):
+    """Mikro sth_tip → (yerel hareket türü, işaretli miktar). 0 giriş (+), 1 çıkış (−), 2 sayım (+)."""
+    if tip == 1:
+        return 'CIKIS', -qty
+    if tip == 2:
+        return 'SAYIM', qty
+    return 'GIRIS', qty   # tip == 0 (ve bilinmeyen) → giriş
+
+
+@router.post('/stok/import-moves')
+def import_moves(body: MovesImportIn, user=Depends(mikro_user), conn=db.DB):
+    """DEFTER AKTARIMI: eşlenmiş her stok için Mikro STOK_HAREKETLERI satırlarını (tarih aralığında) yerel
+    material_moves'a yazar; başa, yerel stok Mikro OZET (yetkili eldeki miktar) ile birebir tutsun diye bir
+    'açılış bakiyesi' SAYIM hareketi ekler. Böylece yalnızca fatura değil, STOK DÜZELTME (çıkış) ve ÜRETİM (giriş)
+    gibi büyük hacimli hareketler de yerele yansır. Çift sayımı önlemek için her ürün+depo'nun önceki Mikro kaynaklı
+    hareketleri (defter + eski senkron sayımı + fatura giriş/çıkışları) silinip yeniden yazılır → idempotent ve
+    tekrar çalıştırılabilir. preview=True iken HİÇBİR ŞEY yazılmaz; yalnız özet hesaplanır.
+
+    Açılış bakiyesi matematiği (ürün başına):
+      OZET  = Mikro eldeki yetkili miktar (stok_by_codes)
+      S     = Σ( +miktar[tip0] , −miktar[tip1] , +miktar[tip2] )  (aralıktaki işaretli toplam)
+      açılış = round(OZET − S, 4)   →   açılış + S == OZET  (yerel net = Mikro OZET)"""
+    _manager(user)
+    if not mikro.configured():
+        raise HTTPException(400, 'Mikro ERP bağlantısı tanımlı değil')
+    from datetime import date
+    df = (body.date_from or '').strip() or date(date.today().year, 1, 1).isoformat()
+    dt = (body.date_to or '').strip() or date.today().isoformat()
+    wid = _moves_warehouse(conn, body.warehouse_id)
+    links = _links(conn, 'stok')
+    prod = {c: lk['local_id'] for c, lk in links.items()
+            if conn.execute('SELECT 1 FROM products WHERE id = ?', (lk['local_id'],)).fetchone()}
+    if not prod:
+        return {'preview': body.preview, 'warehouse_id': wid, 'date_from': df, 'date_to': dt,
+                'products': [], 'totals': {'products': 0, 'moves': 0}}
+    codes = list(prod.keys())
+    try:
+        ozet_map = mikro.stok_by_codes(codes[:5000])
+        ledger = mikro.stok_hareketleri_ledger(codes[:5000], df, dt)
+    except Exception as err:
+        raise _read_error(err)
+    by_code = {}
+    for r in ledger:
+        by_code.setdefault(r['code'], []).append(r)
+    from .mrp import add_move
+    out = []
+    total_moves = 0
+    for code in codes:
+        pid = prod[code]
+        s = ozet_map.get(code)
+        ozet = round(float((s or {}).get('miktar') or 0), 4)
+        rowset = by_code.get(code, [])
+        signed = 0.0
+        for r in rowset:
+            k, q = _tip_move(r.get('tip'), float(r.get('miktar') or 0))
+            signed += q
+        signed = round(signed, 4)
+        opening = round(ozet - signed, 4)
+        name = ((s.get('sto_isim') if s else None) or links[code].get('label') or code or '').strip()[:200]
+        if not body.preview:
+            conn.execute("""DELETE FROM material_moves WHERE product_id = ? AND warehouse_id = ?
+                            AND (mikro_key IS NOT NULL OR reason LIKE 'Mikro %' OR reason LIKE 'Mikro:%')""", (pid, wid))
+            add_move(conn, pid, wid, 'SAYIM', opening, user['id'],
+                     reason=f'Mikro açılış bakiyesi ({df})', created_at=df, mikro_key=f'mikro-open:{code}')
+            for r in rowset:
+                kind, qty = _tip_move(r.get('tip'), float(r.get('miktar') or 0))
+                ev = r.get('evraktip')
+                iade = ' (İade)' if r.get('iade') == 1 else ''
+                acik = (r.get('aciklama') or '').strip()
+                reason = (f'Mikro: {mikro.evraktip_ad(ev)} [{ev}]{iade}' + (f' · {acik}' if acik else ''))[:500]
+                add_move(conn, pid, wid, kind, qty, user['id'],
+                         reason=reason, created_at=r.get('tarih'), mikro_key=f"mikro:{r.get('mikro_rec')}")
+                total_moves += 1
+        else:
+            total_moves += len(rowset)
+        out.append({'code': code, 'name': name, 'local_id': pid, 'ozet': ozet,
+                    'moves_in_range': len(rowset), 'opening': opening, 'net_after': round(opening + signed, 4)})
+    if not body.preview:
+        # Silinen fatura hareketlerine bağlı sarkan referansları temizle (çift sayım artık defterden gelir)
+        conn.execute('UPDATE invoice_items SET move_id = NULL WHERE move_id IS NOT NULL '
+                     'AND move_id NOT IN (SELECT id FROM material_moves)')
+        db.audit(conn, user['id'], 'Mikro ERP stok hareketlerini aktardı (defter)', 'product', None,
+                 f'{len(out)} ürün, {total_moves} hareket ({df} – {dt})')
+    return {'preview': body.preview, 'warehouse_id': wid, 'date_from': df, 'date_to': dt,
+            'products': out, 'totals': {'products': len(out), 'moves': total_moves}}
+
+
+@router.post('/stok/reset-moves')
+def reset_moves(user=Depends(mikro_user), conn=db.DB):
+    """Defter aktarımını geri alır: Mikro kaynaklı tüm defter hareketlerini (mikro_key LIKE 'mikro%' — açılış
+    bakiyesi dahil) siler. Aktarım tekrar çalıştırılabilir / tersine çevrilebilir olsun diye."""
+    _manager(user)
+    n = conn.execute("SELECT COUNT(*) FROM material_moves WHERE mikro_key LIKE 'mikro%'").fetchone()[0]
+    conn.execute("DELETE FROM material_moves WHERE mikro_key LIKE 'mikro%'")
+    conn.execute('UPDATE invoice_items SET move_id = NULL WHERE move_id IS NOT NULL '
+                 'AND move_id NOT IN (SELECT id FROM material_moves)')
+    db.audit(conn, user['id'], 'Mikro ERP defter hareketlerini sıfırladı', 'product', None, f'{n} hareket silindi')
+    return {'deleted': n}
+
+
 def auto_import_new(conn, kind):
     """Zamanlanmış senkronizasyon: Mikro’da olup henüz bağlanmamış YENİ kayıtları aktarır (ek niteliğinde, tek yönlü).
     kind='cari': yeni cariler. Stok ve faturalar malzeme tipi / depo / finansal seçim gerektirdiğinden elle aktarılır."""

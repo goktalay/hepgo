@@ -161,6 +161,7 @@ def hareket_tipleri(gun=1095):
 # Mikro evrak tipi (sth_evraktip) → Türkçe etiket (en iyi çaba; bilinmeyen için "Evrak tipi N").
 # Bu etiketler tahminidir; görüntüleyici ham evraktip değerini de gösterir.
 EVRAKTIP_AD = {
+    0: 'Stok Düzeltme', 2: 'Sayım', 6: 'Devir/Düzeltme', 12: 'Üretim',
     3: 'Alış İrsaliyesi', 13: 'Alış Faturası', 4: 'Satış Faturası', 1: 'Satış İrsaliyesi',
     25: 'Sayım Fazlası', 26: 'Sayım Eksiği', 14: 'Alış İade', 5: 'Satış İade',
     32: 'Depo Transfer (Çıkış)', 33: 'Depo Transfer (Giriş)', 50: 'Üretimden Giriş',
@@ -206,6 +207,25 @@ def stok_hareketleri(codes, date_from=None, date_to=None, limit=5000):
             'giris_depo': r.get('giris_depo'), 'cikis_depo': r.get('cikis_depo'),
         })
     return out
+
+
+def stok_hareketleri_ledger(codes, date_from, date_to):
+    """DEFTER AKTARIMI (salt-okunur): verilen stok kodlarının [date_from, date_to] aralığındaki TÜM STOK_HAREKETLERI
+    satırları — Mikro'nun benzersiz satır anahtarı (sth_RECno_RECno → mikro_rec) ile. İşaret uygulanmamış ham miktar
+    döner; yönü sth_tip belirler (0 giriş, 1 çıkış, 2 sayım). Çağıran taraf (routers/mikro.import_moves) her satırı
+    yerel material_moves'a yazar ve mikro_key='mikro:<mikro_rec>' ile tekilleştirir. Tarihe + satır anahtarına göre
+    artan sıralanır (kronolojik işlem için). NOT: sth_RECno_RECno, STOK_HAREKETLERI'nin PK'sıdır; sütun adı farklıysa
+    sorgu hata verir (bilinçli emniyet davranışı — aktarım yazmadan durur)."""
+    if not codes:
+        return []
+    marks = ','.join(['%s'] * len(codes))
+    params = list(codes) + [date_from, date_to]
+    return query(f"""SELECT h.sth_RECno_RECno AS mikro_rec, h.sth_stok_kod AS code, h.sth_tip AS tip,
+            h.sth_evraktip AS evraktip, h.sth_normal_iade AS iade, h.sth_miktar AS miktar,
+            CONVERT(varchar(19), h.sth_tarih, 120) AS tarih, h.sth_aciklama AS aciklama
+        FROM STOK_HAREKETLERI h
+        WHERE h.sth_stok_kod IN ({marks}) AND h.sth_tarih >= %s AND h.sth_tarih < DATEADD(day, 1, %s)
+        ORDER BY h.sth_tarih, h.sth_RECno_RECno""", tuple(params))
 
 
 # ---------- Faturalar (alış / satış) ----------

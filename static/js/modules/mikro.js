@@ -246,7 +246,7 @@ function faturaTab(root, kind) {
 // Stok Hareketleri: eşlenmiş stokların TÜM Mikro giriş/çıkış hareketlerini (sarf, üretim, transfer, fatura, iade,
 // sayım…) canlı okur ve gösterir. Salt-okunur — yerele hiçbir şey yazmaz. Mikro'nun yetkili bakiyesi (ozet) ile
 // karşılaştırma için gösterilir. (Yalnız MASTER; sunucu da _manager ile korur.)
-function hareketlerTab(root, { canImport }) {
+function hareketlerTab(root, { canImport, onImported }) {
   const iso = d => d.toISOString().slice(0, 10);
   const today = new Date();
   const d90 = new Date(today.getTime() - 90 * 86400000);
@@ -329,10 +329,40 @@ function hareketlerTab(root, { canImport }) {
   let searchT;
   search.addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(draw, 250); });
 
+  // İçeri aktarım: Mikro STOK_HAREKETLERI → yerel stok (açılış bakiyesi + tüm giriş/çıkış). Yerel stok Mikro OZET ile
+  // birebir eşitlenir; tekrar çalıştırılabilir. Önce preview ile özet gösterilir, onaylanınca gerçek aktarım yapılır.
+  const importBtn = canImport ? h('button', { class: 'btn', type: 'button', title: 'Mikro STOK_HAREKETLERI’ni yerel stoğa aktarır (açılış bakiyesi + tüm giriş/çıkış). Yerel stok Mikro OZET ile birebir eşitlenir; tekrar çalıştırılabilir.' }, 'İçeri Aktar (stok hareketleri)') : null;
+  const syncBtn = canImport ? h('button', { class: 'btn ghost sm', type: 'button', title: 'Önce Mikro defter hareketlerini siler, sonra yeniden aktarır (tam eşitleme).' }, 'Mikro ile Eşitle (sıfırla+yeniden)') : null;
+  const doImport = async (reset) => {
+    const body = { date_from: fromI.value, date_to: toI.value };
+    const busy = [importBtn, syncBtn].filter(Boolean);
+    busy.forEach(b => { b.disabled = true; });
+    try {
+      const prev = await api.post('/api/mikro/stok/import-moves', { ...body, preview: true });
+      if (!prev.totals.products) { toast('Eşlenmiş stok yok — önce Stok sekmesinden stok aktarın.', 'err'); return; }
+      const samples = (prev.products || []).slice(0, 6).map(p =>
+        h('div', { class: 'small mono' }, t('{c}: açılış {o} → net {n} (Mikro OZET {z})', { c: p.code, o: num(p.opening), n: num(p.net_after), z: num(p.ozet) })));
+      const msg = h('span', null,
+        t('{p} ürün · {m} hareket aktarılacak ({a} – {b}).', { p: prev.totals.products, m: prev.totals.moves, a: fromI.value, b: toI.value }),
+        reset ? h('div', { class: 'small muted', style: { marginTop: '6px' } }, 'Önce mevcut Mikro defter hareketleri silinecek, sonra yeniden yazılacak.') : null,
+        h('div', { class: 'small muted', style: { marginTop: '6px' } }, 'Yerel stok Mikro OZET ile birebir eşitlenir; tekrar çalıştırılabilir.'),
+        h('div', { style: { margin: '8px 0 4px', fontWeight: '600' } }, 'Örnek açılış bakiyeleri:'), ...samples);
+      if (!await confirmDialog(reset ? 'Mikro ile eşitle' : 'Stok hareketlerini içeri aktar', msg, { okLabel: reset ? 'Eşitle' : 'Aktar' })) return;
+      if (reset) await api.post('/api/mikro/stok/reset-moves', {});
+      const res = await api.post('/api/mikro/stok/import-moves', { ...body, preview: false });
+      toast(t('{p} ürün · {m} hareket aktarıldı. Yerel stok Mikro ile eşitlendi.', { p: res.totals.products, m: res.totals.moves }), 'success');
+      onImported?.();
+      run();
+    } catch (err) { toastError(err); }
+    finally { busy.forEach(b => { b.disabled = false; }); }
+  };
+  if (importBtn) importBtn.addEventListener('click', () => doImport(false));
+  if (syncBtn) syncBtn.addEventListener('click', () => doImport(true));
+
   const toolbar = h('div', { class: 'mk-toolbar' },
     h('label', { class: 'small muted', style: { alignSelf: 'center' } }, 'Tarih:'), fromI,
     h('span', { class: 'small muted', style: { alignSelf: 'center' } }, '–'), toI,
-    search, btn, h('div', { class: 'spacer' }), info);
+    search, btn, h('div', { class: 'spacer' }), info, importBtn, syncBtn);
   clear(root, note, toolbar, ozetBox, wrap);
   run();
 }

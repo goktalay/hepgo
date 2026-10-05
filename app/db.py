@@ -2778,6 +2778,10 @@ def _migrate(conn):
         conn.execute('ALTER TABLE duty_requests ADD COLUMN flew INTEGER')
     if 'complete_note' not in duty_cols:   # görevi bitirme açıklaması
         conn.execute('ALTER TABLE duty_requests ADD COLUMN complete_note TEXT')
+    # Mikro ERP stok hareketi defter aktarımı: her yerel hareketin Mikro STOK_HAREKETLERI satır kimliği
+    # ('mikro:<sth_RECno_RECno>' veya açılış için 'mikro-open:<kod>'). Çift sayımı ve tekrar aktarımı önler.
+    if 'mikro_key' not in {r[1] for r in conn.execute('PRAGMA table_info(material_moves)')}:
+        conn.execute('ALTER TABLE material_moves ADD COLUMN mikro_key TEXT')
 
 
 def get_db():

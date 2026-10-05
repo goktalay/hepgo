@@ -1330,10 +1330,17 @@ def duty_staff(user=Depends(auth.current_user), conn=db.DB):
 
 @duties_me_router.get('/vehicles')
 def duty_vehicles(user=Depends(auth.current_user), conn=db.DB):
-    """Görev formunda / saha araç çıkışında araç plakası seçimi için aktif şirket araçları (Fleet / Saha ortak araç tablosu).
-    Plaka serbest metin yerine bu listeden seçilir. Herkese açık (İK / Fleet yetkisi gerekmez)."""
+    """Görev formunda / saha araç çıkışında araç plakası seçimi için ŞU AN ŞİRKETTE BULUNAN araçlar
+    (güvenlikte girişi yapılmış = vehicle_visits'te çıkışı yapılmamış plakalar). Plaka serbest metin değil,
+    bu listeden seçilir. Model adı varsa Fleet/Saha araç tablosundan eklenir. Herkese açık (yetki gerekmez)."""
     rows = db.rows(conn.execute(
-        'SELECT id, plate, description FROM field_vehicles WHERE active = 1 ORDER BY plate'))
+        """SELECT v.plate AS id, v.plate,
+                  COALESCE((SELECT description FROM field_vehicles f WHERE f.plate = v.plate AND f.active = 1),
+                           MAX(v.note), '') AS description
+             FROM vehicle_visits v
+            WHERE v.exited_at IS NULL
+            GROUP BY v.plate
+            ORDER BY v.plate"""))
     return {'items': rows}
 
 

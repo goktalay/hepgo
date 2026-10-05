@@ -223,6 +223,23 @@ function facerecCard() {
   return wrap;
 }
 
+// Yüz Tanıma CANLI TEST kartı: tarayıcı kamerasını açıp o ana kadar EĞİTİLMİŞ yüzlerle gerçek-zamanlı eşleştirme
+// yapar (yüzen panel; yüz çerçevesi + bulunan kişinin adı). Panel kapatılınca kamera kapanır. Yalnız 'face' bağlıyken.
+function faceLiveTestCard() {
+  const btn = h('button', { class: 'btn primary', type: 'button' }, '📷 Canlı Test Başlat');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try { const m = await import('../livepanels.js'); await m.openFaceTest(); }
+    catch (err) { toastError(err); }
+    finally { btn.disabled = false; }
+  });
+  return h('section', { class: 'card card-pad' },
+    h('h3', { style: { marginTop: 0 } }, 'Canlı Test'),
+    h('p', { class: 'small muted', style: { marginTop: '-4px' } },
+      'Bilgisayarınızın kamerasını açar; eğitilmiş yüzlerle gerçek-zamanlı eşleştirme yapıp yüzün etrafına çerçeve çizer ve bulunan kişinin adını yazar. Küçük yüzen panel — kapatınca kamera kapanır.'),
+    h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }), btn));
+}
+
 // Fabrika vardiya ayarı (Genel ayarlar içinde): gündüz/gece mesai saatleri (24s). NVR "sadece gündüz/akşam" bunu kullanır.
 function shiftCard() {
   const wrap = h('section', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
@@ -586,7 +603,9 @@ function integrationsBody(view, ctx) {
       clear(wrap, back, hero, infoSec,
         downloadPanel(it, agentData, cat),
         it.connected && grp && grp.checked ? integHealthCard(grp, () => reload()) : null,
-        settings, removeSec);
+        settings,
+        it.connected && it.key === 'face' ? faceLiveTestCard() : null,
+        removeSec);
       return;
     }
     // Kimlik / OAuth tabanlı (ya da yerel moddaki doğrudan ürün): "API kodu" doğrudan burada girilir.

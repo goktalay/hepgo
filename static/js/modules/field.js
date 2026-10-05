@@ -182,13 +182,16 @@ async function newTask(ctx, done) {
   const leadList = [...new Map([...leads, ...admins].map(u => [u.id, u])).values()];
   const picked = new Set();
   const planes = h('div', { class: 'pick-list', style: { maxHeight: '220px' } }, aircraft.length ? aircraft.map(a => {
-    const cb = h('input', { type: 'checkbox' });
-    const el = h('label', { class: 'pick' }, cb, h('div', { class: 'grow' }, a.queue_no ? queuePlate(a.queue_no) : h('b', { class: 'mono' }, a.code),
+    // Uçulmadan dönen tek kullanımlık uçak (carry_over): uçuş deposunda kaldı; yeni göreve otomatik devredilir (varsayılan seçili).
+    const cb = h('input', { type: 'checkbox', checked: !!a.carry_over });
+    if (a.carry_over) picked.add(a.id);
+    const el = h('label', { class: `pick${a.carry_over ? ' on' : ''}` }, cb, h('div', { class: 'grow' }, a.queue_no ? queuePlate(a.queue_no) : h('b', { class: 'mono' }, a.code),
       h('span', { class: 'small muted' }, [a.queue_no ? a.code : null, a.product_name, a.note].filter(Boolean).join(' · '))),
       h('span', { class: `badge ${USAGE_TYPES[a.usage_type]?.badge || 'gray'}`,
         title: a.usage_type === 'TEK' ? 'Uçtuktan sonra hurdaya ayrılır, yeniden sahaya gidemez' : 'Görev bittikten sonra yeniden sahaya gidebilir' },
         USAGE_TYPES[a.usage_type]?.label || a.usage_type),
-      a.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti (uçmadı ya da çoklu kullanım)' }, tr('{n} görev yaptı', { n: a.past_tasks })) : null,
+      a.carry_over ? h('span', { class: 'badge blue', title: 'Önceki görevde uçulmadı; uçuş deposunda kaldı ve bu göreve otomatik devredildi (isterseniz seçimi kaldırın)' }, 'Uçulmadı · devredildi')
+        : a.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti (uçmadı ya da çoklu kullanım)' }, tr('{n} görev yaptı', { n: a.past_tasks })) : null,
       a.status === 'MONTAJ' ? h('span', { class: 'badge yellow', title: 'Montajı sahada tamamlanacak' }, 'Montajda')
         : h('span', { class: 'badge green' }, 'Saha deposu'));
     cb.addEventListener('change', () => { cb.checked ? picked.add(a.id) : picked.delete(a.id); el.classList.toggle('on', cb.checked); });

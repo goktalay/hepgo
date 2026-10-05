@@ -111,13 +111,20 @@ def stock(product_id: Optional[int] = None, user=Depends(stock_user), conn=db.DB
     if not product:
         raise HTTPException(404, 'Ürün bulunamadı')
     pid = product['id']
-    # saha deposunda bekleyen: tek kullanımlık bir kez sahaya gittiyse sayılmaz; çoklu kullanım görevden dönünce sayılır
+    # Saha (uçuş) deposunda bekleyen uçaklar. Deposundan düşme kuralı:
+    #  - Açık görevdeki (BASLANGIC/GOREVDE) her uçak fiziksel olarak sahada olduğu için düşer.
+    #  - Çoklu kullanım: görev bitince yeniden deposa döner (sayılır).
+    #  - Tek kullanımlık: UÇARSA tüketilir (uçunca zaten HURDA olur ve status != TAMAMLANDI). Görev bitti ama
+    #    uçulmadıysa ("görevi bitir" + flew=0 işaretlendiyse, flew=1 yoksa) uçuş stoğu deposunda KALIR; yeni göreve devreder.
     ready = db.rows(conn.execute(
         '''SELECT o.id, o.code, o.queue_no, o.completed_at FROM orders o JOIN products p ON p.id = o.product_id
            WHERE o.product_id = ? AND o.status = 'TAMAMLANDI' AND NOT EXISTS (
                SELECT 1 FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                WHERE f.order_id = o.id AND t.status != 'IPTAL'
-                 AND (COALESCE(p.usage_type, 'TEK') != 'COKLU' OR t.status IN ('BASLANGIC', 'GOREVDE')))
+                 AND (t.status IN ('BASLANGIC', 'GOREVDE')
+                      OR (COALESCE(p.usage_type, 'TEK') != 'COKLU'
+                          AND NOT (EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 0)
+                                   AND NOT EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 1)))))
            ORDER BY o.queue_no''', (pid,)))
     # Yarı mamul: üretimi başlamış ama montajı tamamlanmamış uçaklar
     wip = db.rows(conn.execute(

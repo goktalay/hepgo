@@ -250,16 +250,27 @@ def available_aircraft(user=Depends(field_manager), conn=db.DB):
     """Sahaya götürülebilecek uçaklar: saha deposundakiler ve montaj aşamasındakiler (montaj sahada da yapılabilir).
     Açık bir görevde (başlangıç / görevde) olan uçak seçilemez. Kullanım durumu: tek kullanımlık uçak bir kez saha
     görevine gittiyse (uçtuysa HURDA olur) yeniden seçilemez; çoklu kullanım uçağı görev bitince yeniden seçilebilir."""
+    # Deposundan düşme kuralı: açık görevdeki (BASLANGIC/GOREVDE) uçak düşer; çoklu kullanım görev bitince döner;
+    # tek kullanımlık uçak yalnızca UÇARSA tüketilir (uçunca HURDA olur). Görev bitti ama uçulmadıysa ("görevi bitir"
+    # + flew=0, flew=1 yok) uçak deposda KALIR ve yeni göreve devredilir. carry_over: böyle devreden (uçulmamış) uçak.
     return db.rows(conn.execute(
         '''SELECT o.id, o.code, o.queue_no, o.status, o.note, o.completed_at, p.name AS product_name,
                   COALESCE(p.usage_type, 'TEK') AS usage_type,
                   (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
-                   WHERE f.order_id = o.id AND t.status != 'IPTAL') AS past_tasks
+                   WHERE f.order_id = o.id AND t.status != 'IPTAL') AS past_tasks,
+                  EXISTS (SELECT 1 FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
+                          WHERE f.order_id = o.id AND t.status != 'IPTAL'
+                            AND COALESCE(p.usage_type, 'TEK') != 'COKLU'
+                            AND EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 0)
+                            AND NOT EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 1)) AS carry_over
            FROM orders o LEFT JOIN products p ON p.id = o.product_id
            WHERE o.status IN ('TAMAMLANDI', 'MONTAJ') AND p.type = 'MAMUL' AND NOT EXISTS (
                SELECT 1 FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                WHERE f.order_id = o.id AND t.status != 'IPTAL'
-                 AND (COALESCE(p.usage_type, 'TEK') != 'COKLU' OR t.status IN ('BASLANGIC', 'GOREVDE')))
+                 AND (t.status IN ('BASLANGIC', 'GOREVDE')
+                      OR (COALESCE(p.usage_type, 'TEK') != 'COKLU'
+                          AND NOT (EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 0)
+                                   AND NOT EXISTS (SELECT 1 FROM duty_requests dr WHERE dr.field_task_id = t.id AND dr.source = 'field' AND dr.flew = 1)))))
            ORDER BY o.status = 'MONTAJ', o.queue_no, o.code'''))
 
 

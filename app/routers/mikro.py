@@ -52,6 +52,18 @@ def status(user=Depends(mikro_user), conn=db.DB):
             'can_import': bool(user.get('master'))}
 
 
+@router.get('/diag/hareket-tipleri')
+def diag_hareket_tipleri(gun: int = 1095, user=Depends(mikro_user), conn=db.DB):
+    """TEŞHİS (yalnız MASTER, salt-okunur): STOK_HAREKETLERI hareket türleri — sarf çıkış fişlerinin evrak tipini bulmak için."""
+    _manager(user)
+    if not mikro.configured():
+        raise HTTPException(400, 'Mikro ERP bağlantısı tanımlı değil')
+    try:
+        return {'rows': mikro.hareket_tipleri(max(1, min(gun, 3650)))}
+    except Exception as err:
+        raise _read_error(err)
+
+
 @router.get('/cari')
 def cari(q: str = '', show_imported: bool = False, user=Depends(mikro_user), conn=db.DB):
     if not mikro.configured():

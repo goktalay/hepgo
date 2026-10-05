@@ -125,6 +125,38 @@ def stok_by_codes(codes):
     return {r['sto_kod']: r for r in rows}
 
 
+def hareket_tipleri(gun=1095):
+    """TEŞHİS (salt-okunur): STOK_HAREKETLERI'ndeki hareketleri tip/evraktip/cins'e göre gruplar — sarf çıkış fişlerinin
+    hangi evrak tipinde olduğunu bulmak için. Her grup: satır sayısı, toplam miktar, cari var mı, giriş/çıkış deposu,
+    tarih aralığı ve örnek açıklamalar. Son `gun` günle sınırlı (varsayılan ~3 yıl)."""
+    rows = query(f"""SELECT h.sth_tip AS tip, h.sth_evraktip AS evraktip, h.sth_cins AS cins, h.sth_normal_iade AS iade,
+            CASE WHEN h.sth_cari_kodu IS NULL OR h.sth_cari_kodu = '' THEN 0 ELSE 1 END AS cari_var,
+            CASE WHEN h.sth_giris_depo_no > 0 THEN 1 ELSE 0 END AS giris_depo,
+            CASE WHEN h.sth_cikis_depo_no > 0 THEN 1 ELSE 0 END AS cikis_depo,
+            COUNT(*) AS satir, ROUND(SUM(h.sth_miktar), 2) AS toplam_miktar,
+            CONVERT(varchar(10), MIN(h.sth_tarih), 120) AS ilk, CONVERT(varchar(10), MAX(h.sth_tarih), 120) AS son
+        FROM STOK_HAREKETLERI h
+        WHERE h.sth_tarih >= DATEADD(day, -{int(gun)}, GETDATE())
+        GROUP BY h.sth_tip, h.sth_evraktip, h.sth_cins, h.sth_normal_iade,
+            CASE WHEN h.sth_cari_kodu IS NULL OR h.sth_cari_kodu = '' THEN 0 ELSE 1 END,
+            CASE WHEN h.sth_giris_depo_no > 0 THEN 1 ELSE 0 END,
+            CASE WHEN h.sth_cikis_depo_no > 0 THEN 1 ELSE 0 END
+        ORDER BY h.sth_tip, h.sth_evraktip, satir DESC""")
+    # Her (tip, evraktip) için birkaç örnek açıklama — tipin ne olduğunu adlandırmaya yardımcı
+    samples = query(f"""SELECT tip, evraktip, aciklama FROM (
+            SELECT h.sth_tip AS tip, h.sth_evraktip AS evraktip, h.sth_aciklama AS aciklama,
+                   ROW_NUMBER() OVER (PARTITION BY h.sth_tip, h.sth_evraktip ORDER BY h.sth_tarih DESC) AS rn
+            FROM STOK_HAREKETLERI h
+            WHERE h.sth_tarih >= DATEADD(day, -{int(gun)}, GETDATE()) AND h.sth_aciklama <> ''
+        ) t WHERE rn <= 3 ORDER BY tip, evraktip""")
+    ex = {}
+    for sr in samples:
+        ex.setdefault((sr['tip'], sr['evraktip']), []).append((sr['aciklama'] or '').strip()[:60])
+    for r in rows:
+        r['ornek'] = ex.get((r['tip'], r['evraktip']), [])
+    return rows
+
+
 # ---------- Faturalar (alış / satış) ----------
 # STOK_HAREKETLERI'nde fatura satırları: cins=0, normal (iade değil).
 #   Alış faturası: tip=0 (stok giriş), evraktip IN (3,13) — tedarikçiden.

@@ -240,6 +240,26 @@ function faceLiveTestCard() {
     h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }), btn));
 }
 
+// Konuşma Tanıma CANLI TEST kartı: (69) sesten yazıya + (70) konuşmacı tanıma yüzen panelleri. Yalnız 'speech' bağlıyken.
+function speechLiveTestCard() {
+  const mk = (label, fn) => {
+    const b = h('button', { class: 'btn primary', type: 'button', style: { marginRight: '8px' } }, label);
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { const m = await import('../livepanels.js'); await m[fn](); }
+      catch (err) { toastError(err); }
+      finally { b.disabled = false; }
+    });
+    return b;
+  };
+  return h('section', { class: 'card card-pad' },
+    h('h3', { style: { marginTop: 0 } }, 'Canlı Test'),
+    h('p', { class: 'small muted', style: { marginTop: '-4px' } },
+      'Mikrofonu açar — küçük yüzen panelde ses dalgasını gösterir. “Sesten Yazıya” konuştuklarınızı canlı metne çevirir; “Konuşmacı Tanıma” eğitilmiş seslerle eşleştirip kişinin adını/fotoğrafını getirir (tanıyamazsa “Tanımsız Kişi”). Panel kapatılınca mikrofon kapanır.'),
+    h('div', { class: 'sc-integ-foot' }, h('span', { class: 'spacer' }),
+      mk('🎙️ Sesten Yazıya', 'openSpeechToText'), mk('🗣️ Konuşmacı Tanıma', 'openSpeakerId')));
+}
+
 // Fabrika vardiya ayarı (Genel ayarlar içinde): gündüz/gece mesai saatleri (24s). NVR "sadece gündüz/akşam" bunu kullanır.
 function shiftCard() {
   const wrap = h('section', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
@@ -605,6 +625,7 @@ function integrationsBody(view, ctx) {
         it.connected && grp && grp.checked ? integHealthCard(grp, () => reload()) : null,
         settings,
         it.connected && it.key === 'face' ? faceLiveTestCard() : null,
+        it.connected && it.key === 'speech' ? speechLiveTestCard() : null,
         removeSec);
       return;
     }

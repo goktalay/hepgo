@@ -12,6 +12,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from .. import auth, db, voice_audio, push
@@ -392,6 +393,55 @@ async def _check_rec(cid):
         await _db(_sql, 'UPDATE voice_calls SET recorded = 1 WHERE id = ?', (cid,))
         recorder = init[0] if init[0] in members else sorted(members)[0]
         await _broadcast(cid, {'t': 'rec_start', 'call_id': cid, 'recorder': recorder})
+
+
+_ID_CLIP_EXT = {'.webm', '.ogg', '.oga', '.opus', '.mp4', '.m4a', '.mp3', '.wav', '.aac'}
+_ID_CLIP_MAX = 12 * 1024 * 1024   # kısa klip; ~1-2 dk fazlasıyla yeter
+
+
+@router.post('/identify-clip')
+async def identify_clip(file: UploadFile, user=Depends(auth.current_user), conn=db.DB):
+    """Konuşmacı tanıma CANLI TEST: kısa ses klibinden konuşanın ses-izini (WeSpeaker) çıkarıp kayıtlı ses
+    profilleriyle (voice_profiles) eşleştirir. Dönüş {matched, user_id, name, photo, score}. Eşleşme yoksa
+    matched False → arayüz 'Tanımsız Kişi' gösterir. Model + ffmpeg sunucuda; voice_profiles bulut DB'sinde."""
+    from pathlib import Path
+    from .. import meeting_audio
+    if not meeting_audio.available():
+        raise HTTPException(503, 'Konuşmacı tanıma modeli bulunamadı (wespeaker)')
+    ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
+    if ext not in _ID_CLIP_EXT:
+        raise HTTPException(400, 'Desteklenmeyen ses biçimi')
+    data = await file.read(_ID_CLIP_MAX + 1)
+    if len(data) > _ID_CLIP_MAX:
+        raise HTTPException(400, 'Klip çok uzun')
+    if not data:
+        raise HTTPException(400, 'Klip boş')
+    profs = meeting_audio.profiles(conn)
+    if not profs:
+        return {'matched': False, 'user_id': None, 'name': None, 'photo': None, 'score': None, 'no_profiles': True}
+
+    def run():
+        import tempfile
+        from .. import document_media
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / f'clip{ext}'
+            src.write_bytes(data)
+            wav = Path(tmp) / 'clip.wav'
+            document_media._to_wav(src, wav)
+            sig = meeting_audio.read_wav(wav)
+            if sig is None or len(sig) < meeting_audio.SR // 2:   # < 0.5 sn konuşma
+                return 'short'
+            return meeting_audio.best_profile(meeting_audio.embed(sig), profs)
+
+    res = await run_in_threadpool(run)
+    if res == 'short':
+        return {'matched': False, 'user_id': None, 'name': None, 'photo': None, 'score': None, 'short': True}
+    uid, score = (res if res else (None, 0.0))
+    if not uid:
+        return {'matched': False, 'user_id': None, 'name': None, 'photo': None, 'score': round(float(score), 3)}
+    row = db.row(conn.execute('SELECT full_name, photo FROM users WHERE id = ?', (uid,)))
+    return {'matched': True, 'user_id': uid, 'name': row['full_name'] if row else None,
+            'photo': row['photo'] if row else None, 'score': round(float(score), 3)}
 
 
 # ---------- REST: kişiler, geçmiş, transkript ----------

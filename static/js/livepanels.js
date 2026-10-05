@@ -162,3 +162,177 @@ export async function openFaceTest() {
   }
   return panel;
 }
+
+// ---- Ortak ses altyapısı (69/70): mikrofon akışı + canlı dalga çizimi + parçalı (segment) kayıt döngüsü.
+const _MR_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+function _mrType() {
+  const t = (window.MediaRecorder && _MR_TYPES.find(x => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(x))) || '';
+  return { type: t, ext: t.includes('ogg') ? 'ogg' : t.includes('mp4') ? 'm4a' : 'webm' };
+}
+async function _startMic() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  const analyser = ac.createAnalyser(); analyser.fftSize = 1024;
+  ac.createMediaStreamSource(stream).connect(analyser);
+  return { stream, ac, analyser };
+}
+// Osiloskop çizimi; isStopped()=true olunca durur. Dönüş: stopDraw().
+function _waveLoop(canvas, analyser, color, isStopped) {
+  const ctx = canvas.getContext('2d');
+  const data = new Uint8Array(analyser.fftSize);
+  let raf = 0;
+  const draw = () => {
+    if (isStopped()) return;
+    const W = canvas.clientWidth || 360, H = canvas.clientHeight || 68;
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
+    analyser.getByteTimeDomainData(data);
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.beginPath();
+    const step = W / data.length;
+    for (let i = 0; i < data.length; i++) {
+      const y = (data[i] / 255) * H, x = i * step;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    raf = requestAnimationFrame(draw);
+  };
+  raf = requestAnimationFrame(draw);
+  return () => cancelAnimationFrame(raf);
+}
+// Sürekli mikrofonu ~segMs'lik bağımsız kayıt dosyalarına böler → her birini onBlob(blob, ext) ile yollar.
+// (whisper akış değil; kısa parçalar hâlinde çeviri/eşleştirme yapılır.) Dönüş: stopSeg().
+function _segmentLoop(stream, onBlob, segMs, isStopped) {
+  const { type, ext } = _mrType();
+  let mr = null, timer = 0;
+  const startSeg = () => {
+    if (isStopped() || !stream) return;
+    const chunks = [];
+    mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = () => {
+      const blob = new Blob(chunks, { type: type || 'audio/webm' });
+      if (!isStopped()) startSeg();                 // bir sonraki parçayı hemen başlat (boşluğu azalt)
+      if (blob.size >= 1400) onBlob(blob, ext);     // çok küçük/sessiz parçayı atla
+    };
+    try { mr.start(); } catch { return; }
+    timer = setTimeout(() => { try { if (mr && mr.state !== 'inactive') mr.stop(); } catch { /* yut */ } }, segMs);
+  };
+  startSeg();
+  return () => { clearTimeout(timer); try { if (mr && mr.state !== 'inactive') mr.stop(); } catch { /* yut */ } };
+}
+
+// ============================================================ (69) SESTEN YAZIYA CANLI
+export async function openSpeechToText() {
+  injectStyle();
+  const wave = h('canvas', { class: 'lp-wave' });
+  const status = h('div', { class: 'lp-status' }, 'Mikrofon başlatılıyor…');
+  const transcript = h('div', { class: 'lp-transcript' }, 'Konuşmaya başlayın…');
+  const panel = floatPanel({ title: 'Sesten Yazıya · Canlı', sub: 'Mikrofon açık · konuşun, metne çevrilir', width: 410, onClose: stop });
+  panel.body.append(wave, status, transcript);
+
+  let stream = null, ac = null, analyser = null, stopDraw = null, stopSeg = null, stopped = false, finalText = '', pending = 0;
+  function stop() {
+    stopped = true;
+    if (stopSeg) stopSeg();
+    if (stopDraw) stopDraw();
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    try { ac && ac.close(); } catch { /* yut */ }
+    ac = null;
+  }
+  const render = () => { transcript.textContent = finalText || (pending ? '…' : 'Konuşmaya başlayın…'); transcript.scrollTop = transcript.scrollHeight; };
+
+  async function onBlob(blob, ext) {
+    if (stopped) return;
+    pending++; status.textContent = 'Çevriliyor…'; status.className = 'lp-status';
+    try {
+      const fd = new FormData(); fd.append('file', blob, `stt.${ext}`); fd.append('lang', 'tr');
+      const r = await api.post('/api/system/dictate', fd);
+      const txt = ((r && r.text) || '').trim();
+      if (txt && !stopped) { finalText += (finalText ? ' ' : '') + txt; render(); }
+    } catch (err) {
+      if (!stopped) { status.textContent = 'Çeviri hatası: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err'; }
+    } finally {
+      pending = Math.max(0, pending - 1);
+      if (!stopped && status.className !== 'lp-status err') { status.textContent = 'Dinleniyor…'; status.className = 'lp-status ok'; }
+    }
+  }
+
+  try {
+    ({ stream, ac, analyser } = await _startMic());
+    stopDraw = _waveLoop(wave, analyser, '#38bdf8', () => stopped);
+    stopSeg = _segmentLoop(stream, onBlob, 4500, () => stopped);
+    status.textContent = 'Dinleniyor…'; status.className = 'lp-status ok';
+  } catch (err) {
+    status.textContent = 'Mikrofon açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';
+  }
+  return panel;
+}
+
+// ============================================================ (70) KONUŞMACI TANIMA CANLI
+export async function openSpeakerId() {
+  injectStyle();
+  const wave = h('canvas', { class: 'lp-wave' });
+  const status = h('div', { class: 'lp-status' }, 'Mikrofon başlatılıyor…');
+  const ph = h('div', { class: 'lp-sp-ph' }, '🎤');
+  const nameEl = h('div', { class: 'lp-sp-name' }, '—');
+  const metaEl = h('div', { class: 'lp-sp-meta' }, 'Konuşan bekleniyor');
+  const card = h('div', { class: 'lp-speaker' }, ph, h('div', null, nameEl, metaEl));
+  const panel = floatPanel({ title: 'Konuşmacı Tanıma · Canlı', sub: 'Eğitilmiş seslerle eşleştirme', width: 410, onClose: stop });
+  panel.body.append(wave, status, card);
+
+  let stream = null, ac = null, analyser = null, stopDraw = null, stopSeg = null, stopped = false, busy = false;
+  function stop() {
+    stopped = true;
+    if (stopSeg) stopSeg();
+    if (stopDraw) stopDraw();
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    try { ac && ac.close(); } catch { /* yut */ }
+    ac = null;
+  }
+  function showPhoto(path) {
+    if (path) {
+      const img = h('img');
+      img.src = `/api/files/${path}`;
+      img.onerror = () => { card.replaceChild(ph, card.firstChild); };
+      if (card.firstChild !== img) card.replaceChild(img, card.firstChild);
+    } else if (card.firstChild !== ph) {
+      card.replaceChild(ph, card.firstChild);
+    }
+  }
+  async function onBlob(blob, ext) {
+    if (stopped || busy) return;
+    busy = true;
+    try {
+      const fd = new FormData(); fd.append('file', blob, `spk.${ext}`);
+      const r = await api.post('/api/voice/identify-clip', fd);
+      if (stopped) return;
+      if (r && r.no_profiles) {
+        status.textContent = 'Kayıtlı ses profili yok (önce ses eğitimi gerekir)'; status.className = 'lp-status err';
+        nameEl.textContent = '—'; metaEl.textContent = 'Eğitilmiş ses yok'; showPhoto(null);
+      } else if (r && r.matched) {
+        nameEl.textContent = r.name || 'Kişi';
+        metaEl.textContent = r.score != null ? `eşleşme %${Math.round(r.score * 100)}` : 'tanındı';
+        showPhoto(r.photo);
+        status.textContent = 'Tanındı'; status.className = 'lp-status ok';
+      } else {
+        nameEl.textContent = 'Tanımsız Kişi';
+        metaEl.textContent = (r && r.short) ? 'çok kısa konuşma' : (r && r.score != null ? `en yakın %${Math.round(r.score * 100)}` : 'eşleşme yok');
+        showPhoto(null);
+        status.textContent = 'Dinleniyor…'; status.className = 'lp-status';
+      }
+    } catch (err) {
+      if (!stopped) { status.textContent = 'Tanıma hatası: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err'; }
+    } finally { busy = false; }
+  }
+
+  try {
+    ({ stream, ac, analyser } = await _startMic());
+    stopDraw = _waveLoop(wave, analyser, '#a78bfa', () => stopped);
+    stopSeg = _segmentLoop(stream, onBlob, 4000, () => stopped);
+    status.textContent = 'Dinleniyor…'; status.className = 'lp-status ok';
+  } catch (err) {
+    status.textContent = 'Mikrofon açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';
+  }
+  return panel;
+}

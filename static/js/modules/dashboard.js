@@ -321,12 +321,13 @@ export async function renderDashboard(view, ctx, modules) {
       case 'alerts': return list(d.items, a => h('li', { class: a.critical ? 'crit' : '' }, h('a', { href: `#/alerts/${a.key}` }, h('span', { class: `db-n ${a.level}` }, a.count), a.title)),
         'Uyarı yok');
       case 'calendar': { dbCalendar(it, body, d.items || []); return; }
-      case 'on_duty': return list(d.items, x => h('li', null,
-        h('span', null, h('b', null, x.name), x.destination ? h('small', { class: 'muted' }, ` · ${x.destination}`) : null),
-        h('small', { class: 'muted' }, [x.title, x.return_at ? t('dönüş {d}', { d: (x.return_at || '').slice(0, 10) }) : null].filter(Boolean).join(' · '))), 'Şu an görevde personel yok');
-      case 'on_leave': return list(d.items, x => h('li', null,
-        h('span', null, h('b', null, x.name), h('small', { class: 'muted' }, ` · ${x.kind === 'UCRETSIZ' ? 'ücretsiz izin' : 'izinli'}`)),
-        h('small', { class: 'muted' }, [x.title, t('{d} tarihine kadar', { d: (x.end_date || '').slice(0, 10) })].filter(Boolean).join(' · '))), 'Bugün izinli personel yok');
+      case 'on_duty': { dbOnDuty(body, d.items || []); return; }
+      case 'on_leave': return clear(body, (d.items || []).length
+        ? h('ul', { class: 'db-list db-plist' }, d.items.map(x => h('li', { class: 'db-prow' },
+          dbAvatar(x.name, x.photo, 'lg'),
+          h('div', { class: 'db-prow-main' }, h('b', null, x.name),
+            h('span', { class: 'db-prow-sub' }, [x.kind === 'UCRETSIZ' ? 'ücretsiz izin' : 'izinli', t('{d} tarihine kadar', { d: (x.end_date || '').slice(0, 10) })].filter(Boolean).join(' · '))))))
+        : h('div', { class: 'db-none' }, 'Bugün izinli personel yok'));
       case 'birthdays': return list(d.items, b => h('li', { class: b.today ? 'db-bday-today' : '' },
         h('span', null, h('span', { class: 'db-bday-ico' }, '🎂'), h('b', null, b.name), b.age ? h('small', { class: 'muted' }, ` · ${b.age}`) : null),
         h('small', null, b.today ? '🎉 Bugün!' : (b.days === 1 ? 'Yarın' : t('{n} gün sonra', { n: b.days })) + ` · ${b.date.slice(8, 10)}.${b.date.slice(5, 7)}`)),
@@ -486,6 +487,30 @@ export async function renderDashboard(view, ctx, modules) {
     setTimeout(() => inp.focus(), 50);
   }
   onLeave(() => { miniChatEl?.remove(); clearInterval(miniTimer); });
+
+  // Görevdeki personel: sol avatar, isim + altında plaka, en sağda ne kadar süredir dışarıda (ileri sayan sayaç)
+  function dbOnDuty(body, items) {
+    if (!items.length) { clear(body, h('div', { class: 'db-none' }, 'Şu an görevde personel yok')); return; }
+    const pad = n => String(n).padStart(2, '0');
+    const elapsed = since => {
+      const ms = Date.now() - new Date(since).getTime();
+      if (isNaN(ms) || ms < 0) return '00:00:00';
+      const s = Math.floor(ms / 1000);
+      return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+    };
+    const rows = items.map(x => {
+      const tEl = h('b', { class: 'db-duty-time' }, elapsed(x.depart_at));
+      const el = h('li', { class: 'db-prow db-duty' },
+        dbAvatar(x.name, x.photo, 'lg'),
+        h('div', { class: 'db-prow-main' }, h('b', null, x.name),
+          h('span', { class: 'db-prow-sub' }, x.vehicle_plate ? h('span', { class: 'db-plate' }, x.vehicle_plate) : h('span', { class: 'muted' }, 'plaka yok'))),
+        h('div', { class: 'db-duty-timer' }, tEl, h('small', { class: 'muted' }, 'dışarıda')));
+      return { tEl, since: x.depart_at, el };
+    });
+    clear(body, h('ul', { class: 'db-list db-plist db-dutylist' }, rows.map(r => r.el)));
+    const tick = () => rows.forEach(r => { r.tEl.textContent = elapsed(r.since); });
+    timers.push(setInterval(tick, 1000));
+  }
 
   function dbAlarms(body, acts) {
     const render = () => {

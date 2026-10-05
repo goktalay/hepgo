@@ -1443,10 +1443,12 @@ def on_duty_now(conn):
     Görev araca/göreve özel olduğundan her görevdeki HER personel ayrı satır olarak döner."""
     today = db.now()[:10]
     return db.rows(conn.execute(
-        """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, d.destination, d.depart_at, d.return_at
+        """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, u.photo,
+                  d.destination, d.vehicle_plate, d.depart_at, d.return_at
              FROM duty_requests d
              JOIN duty_people dp ON dp.duty_id = d.id
              JOIN employees e ON e.id = dp.employee_id
+             LEFT JOIN users u ON u.id = e.user_id
             WHERE d.status = 'ONAYLANDI' AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
             ORDER BY d.depart_at DESC, name""", (today, today)))

@@ -31,7 +31,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
 
@@ -332,6 +332,17 @@ export async function renderDashboard(view, ctx, modules) {
       h('small', null, fmtDateTime(c.created_at))), 'Bekleyen aramanız yok');
       case 'my_guests': return list(d.items, g => h('li', null, h('a', { href: '#/my-guests' }, h('b', null, g.names || g.code), g.purpose ? ` · ${g.purpose}` : ''),
         h('small', null, g.left_at ? 'çıktı' : 'içeride')), 'Bugün misafiriniz yok');
+      case 'files': {
+        const recent = d.recent || [];
+        return clear(body,
+          h('div', { class: 'db-mailhead' }, h('a', { class: 'small', href: '#/my-files' }, 'Dosyalarım →'),
+            d.shared > 0 ? h('a', { class: 'db-n-link', href: '#/my-files/shared' }, svgIcon(icons.share), t('{n} paylaşılan', { n: d.shared })) : null),
+          recent.length
+            ? h('ul', { class: 'db-list' }, recent.map(f => h('li', null,
+              h('a', { href: '#/my-files' }, svgIcon(icons.file), h('b', null, f.name)),
+              h('small', null, fmtDateTime(f.updated_at).replace(/\.\d{4}/, '')))))
+            : h('div', { class: 'db-none' }, 'Henüz dosyanız yok'));
+      }
       case 'kpi_printers': {
         const tot = d.total || 1;
         return clear(body, h('div', { class: 'db-pbar' }, Object.entries(d.states || {}).map(([k, v]) =>

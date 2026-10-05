@@ -481,6 +481,29 @@ def integrations_offline(conn, user):
                    '; '.join(f"{r['title']}: {r['message']}" for r in rows)[:300] or None)
 
 
+def file_shared(conn, user):
+    """Dosya Yöneticisi: kullanıcıyla (ya da rolüyle) paylaşılmış, henüz "Benimle paylaşılanlar"da görülmemiş dosya /
+    klasörler. Kendi düğümleri sayılmaz. Görüldü işareti /api/fm/shared açılınca konur (fm_share_seen)."""
+    roles = user.get('roles') or []
+    conds = ['(fs.target_type = ? AND fs.target_user_id = ?)']
+    args = ['user', user['id']]
+    if roles:
+        ph = ','.join('?' * len(roles))
+        conds.append(f'(fs.target_type = ? AND fs.target_role IN ({ph}))')
+        args += ['role', *roles]
+    where = ' OR '.join(conds)
+    rows = db.rows(conn.execute(
+        f'''SELECT fs.id, fs.node_id, n.name, u.full_name AS sharer
+            FROM fm_shares fs JOIN fm_nodes n ON n.id = fs.node_id LEFT JOIN users u ON u.id = fs.shared_by
+            WHERE n.owner_id != ? AND ({where})
+              AND NOT EXISTS (SELECT 1 FROM fm_share_seen s WHERE s.share_id = fs.id AND s.user_id = ?)
+            ORDER BY fs.created_at DESC''',
+        (user['id'], *args, user['id'])))
+    if not rows:
+        return _result([], [], '#/my-files')
+    return _result(rows, [f'{r["name"]} · {r["sharer"] or "—"}' for r in rows], '#/my-files')
+
+
 NOTIFICATIONS = [
     {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
@@ -541,6 +564,7 @@ NOTIFICATIONS = [
     {'key': 'chat-waiting', 'roles': None, 'fn': chats_waiting, 'title': 'Canlı destekte bekleyen firma'},
     {'key': 'fleet-due', 'roles': None, 'fn': fleet_due, 'title': 'Araç: yaklaşan muayene / sigorta / bakım'},
     {'key': 'vehicle-assign-pending', 'roles': None, 'fn': vehicle_assign_pending, 'title': 'Onayınızı bekleyen araç zimmeti'},
+    {'key': 'file-shared', 'roles': None, 'fn': file_shared, 'title': 'Sizinle paylaşılan dosya'},
 ]
 
 

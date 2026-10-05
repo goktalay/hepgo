@@ -49,6 +49,15 @@ KINDS = {
     # Araç Yönetimi: araç fotoğrafı, ruhsat / poliçe / kira sözleşmesi / imzalı zimmet formu, gider fişleri
     'fleet': {'.pdf', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp', '.gif', '.heic', '.heif',
               '.doc', '.docx', '.xls', '.xlsx', '.odt', '.ods', '.txt', '.csv', '.rtf', '.zip', '.mp4', '.mov', '.m4v', '.webm'},
+    # Dosya Yöneticisi (app/routers/filemanager.py): kişisel dosya gezgini. Geniş tür kümesi; router ayrıca uzantısız /
+    # bilinmeyen dosyaları da kendi akışlı kaydıyla (save) kabul eder. Ham erişim yalnız /api/fm/download üzerinden (yetkiyle).
+    'fm': {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.txt', '.csv', '.rtf', '.md',
+           '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.svg', '.ico',
+           '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.3gp', '.ts', '.wmv', '.flv',
+           '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.flac', '.wma', '.amr', '.weba',
+           '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+           '.step', '.stp', '.stl', '.3mf', '.igs', '.iges', '.dwg', '.dxf', '.gcode', '.nc', '.tap', '.ngc', '.cnc',
+           '.json', '.xml', '.html', '.htm', '.log', '.bin', '.dat'},
 }
 DOCUMENT_MAX_BYTES = 4 * 1024 ** 3
 # Dosya indirme ek kontrolü: tür → fonksiyon(kullanıcı, dosya adı) → bool (ör. evrak görünürlüğü)

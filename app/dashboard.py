@@ -15,7 +15,7 @@ WIDGETS = []
 GROUP_ORDER = ['Kişisel', 'Genel', 'Üretim', 'Depo & Stok', 'Saha', 'Ofis & Güvenlik', 'Sistem']
 WIDGET_GROUP = {
     'calendar': 'Kişisel', 'notifications': 'Kişisel', 'my_cargo': 'Kişisel', 'my_guests': 'Kişisel', 'my_calls': 'Kişisel',
-    'birthdays': 'Kişisel', 'announcements': 'Kişisel',
+    'birthdays': 'Kişisel', 'announcements': 'Kişisel', 'files': 'Kişisel',
     'modules': 'Genel', 'clock': 'Genel', 'weather': 'Genel', 'company_news': 'Genel',
     'alerts': 'Üretim', 'kpi_production': 'Üretim', 'chart_production': 'Üretim', 'forecast': 'Üretim',
     'recent_orders': 'Üretim', 'kpi_printers': 'Üretim',
@@ -188,6 +188,16 @@ def w_alarm(conn, user):
 def w_notes(conn, user):
     rows = db.rows(conn.execute('SELECT id, body, color, pinned FROM personal_notes WHERE user_id = ? ORDER BY sort, id DESC LIMIT 40', (user['id'],)))
     return {'count': len(rows)}
+
+
+@widget('files', 'Dosyalarım', 'Son dosyalar ve sizinle paylaşılanlar', group='Kişisel')
+def w_files(conn, user):
+    recent = db.rows(conn.execute(
+        "SELECT id, name, updated_at FROM fm_nodes WHERE owner_id = ? AND kind = 'file' ORDER BY updated_at DESC, id DESC LIMIT 6",
+        (user['id'],)))
+    from . import notifications
+    shared = len(notifications.file_shared(conn, user)['rows'])
+    return {'recent': recent, 'shared': shared}
 
 
 @widget('quick_directory', 'Hızlı Rehber', 'Sık ulaştığınız kişiler; mesaj ve e-posta kısayolu', size=1, group='Kişisel')

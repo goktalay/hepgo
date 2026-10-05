@@ -23,6 +23,7 @@ import * as finance from './modules/finance.js';
 import * as certs from './modules/certs.js';
 import * as fleet from './modules/fleet.js';
 import * as notesMod from './modules/notes.js';
+import * as fileManager from './modules/filemanager.js';
 import { initAlarms } from './alarms.js';
 import * as boss from './modules/boss.js';
 import * as projectsMod from './modules/projects.js';
@@ -313,28 +314,37 @@ function popup(button, panel) {
 }
 
 // Google tarzı modül ızgarası: yalnızca kullanıcının girebildiği modüller
+// Tek uygulama (ızgara) ikonu: dört bölüm — Modüller · Sistem Yönetimi · Kişisel · Araçlar.
+// Üst bar sadeleşsin diye ayrı Kişisel / Araçlar düğmeleri burada toplanır. Düğmedeki rozet = Kişisel'deki bekleyen iş sayısı.
 function appsLauncher() {
   const allowed = MODULES.filter(m => inGrid(m, ctx.user));
-  const btn = h('button', { class: 'icon-btn', 'aria-label': 'Modüller', title: 'Modüller', 'aria-haspopup': 'menu' },
-    svgIcon(icons.apps));
+  const btn = h('button', { class: 'icon-btn notify-btn', 'aria-label': 'Uygulamalar', title: 'Uygulamalar', 'aria-haspopup': 'menu' },
+    svgIcon(icons.apps), menuCount('personal'));
   const current = () => location.hash.replace(/^#\/?/, '').split('/')[0];
+  const curTool = () => location.hash.replace(/^#\/?/, '').replace(/^tools\//, '').split('/')[0];
   const panel = h('div', { class: 'dropdown apps-panel', role: 'menu' });
   // Alt modüller (Yazıcı Yönetimi, Firma/Evrak/Satış) da ait oldukları modül açıkken vurgulanır
   const isOn = m => current() === m.key || MODULES.some(x => x.sub === m.key && x.key === current());
-  const tile = m => h('a', { class: `app-tile ${m.tone ? `tone-${m.tone}` : ''} ${isOn(m) ? 'on' : ''}`, href: `#/${m.key}`, role: 'menuitem',
+  const modTile = m => h('a', { class: `app-tile ${m.tone ? `tone-${m.tone}` : ''} ${isOn(m) ? 'on' : ''}`, href: `#/${m.key}`, role: 'menuitem',
     onclick: () => { panel.hidden = true; } },
-    h('span', { class: 'ico' }, svgIcon(icons[m.key])),
-    h('span', null, m.title));
-  // İki grup: Modüller (iş modülleri) ve Sistem Yönetimi (Sekreterya, Güvenlik, Raporlar, Duyurular).
+    h('span', { class: 'ico' }, svgIcon(icons[m.key])), h('span', null, m.title));
+  // Kişisel kutucukları: bekleyen iş sayısı rozetiyle (canlı güncellenir)
+  const countTile = (route, title, icon, count) => {
+    const n = h('span', { class: 'tile-count', hidden: !count }, count > 99 ? '99+' : count);
+    return h('a', { class: `app-tile ${current() === route ? 'on' : ''}`, href: `#/${route}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
+      h('span', { class: 'ico' }, svgIcon(icon), n), h('span', null, title));
+  };
+  const toolTile = tl => h('a', { class: `app-tile ${curTool() === tl.key ? 'on' : ''}`, href: `#/tools/${tl.key}`, role: 'menuitem',
+    onclick: () => { panel.hidden = true; } },
+    h('span', { class: 'ico' }, svgIcon(icons[tl.icon] || icons.tools)), h('span', null, tl.title));
   // Başlığa dokununca grup açılır / kapanır; durum cihazda hatırlanır.
-  const groups = [['mods', 'Modüller', icons.apps, allowed.filter(m => m.group !== 'system')],
-    ['system', 'Sistem Yönetimi', icons.settings, allowed.filter(m => m.group === 'system')]].filter(g => g[3].length);
   const closedKey = 'caymaz.appsClosed';
   const closed = () => { try { return JSON.parse(localStorage.getItem(closedKey) || '[]'); } catch { return []; } };
-  const group = ([key, title, ico, list]) => {
+  const group = (key, title, ico, tiles) => {
+    if (!tiles.length) return null;
     const box = h('div', { class: `apps-group ${closed().includes(key) ? 'closed' : ''}` });
     const head = h('button', { class: 'apps-group-h', type: 'button', 'aria-expanded': String(!box.classList.contains('closed')) },
-      h('span', { class: 'gi' }, svgIcon(ico)), h('span', { class: 'gt' }, title), h('span', { class: 'gn' }, list.length),
+      h('span', { class: 'gi' }, svgIcon(ico)), h('span', { class: 'gt' }, title), h('span', { class: 'gn' }, tiles.length),
       h('span', { class: 'chev', 'aria-hidden': 'true' }));
     head.addEventListener('click', () => {
       const shut = box.classList.toggle('closed');
@@ -342,79 +352,46 @@ function appsLauncher() {
       const set = new Set(closed()); shut ? set.add(key) : set.delete(key);
       try { localStorage.setItem(closedKey, JSON.stringify([...set])); } catch { /* gizli pencere */ }
     });
-    box.append(head, h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, list.map(tile))));
+    box.append(head, h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, tiles)));
     return box;
   };
-  const fill = () => clear(panel,
-    groups.length ? groups.map(group) : h('div', { class: 'empty' }, 'Erişebildiğiniz modül yok'));
+  const fill = () => {
+    // Kişisel kutucukları + Mesajlar; canlı sayaç güncellemeleri personalTileCounts'a kaydedilir
+    personalTileCounts.clear();
+    const personalTiles = PERSONAL.map(p => {
+      const el = countTile(p.route, p.title, icons[PERSONAL_ICONS[p.key]] || icons.person, notifyCounts.get(p.notify) || 0);
+      const n = el.querySelector('.tile-count');
+      personalTileCounts.add(() => { const c = notifyCounts.get(p.notify) || 0; n.hidden = !c; n.textContent = c > 99 ? '99+' : c; });
+      return el;
+    });
+    const msgTile = countTile('messages', 'Mesajlar', icons.chat, chatSummary().people || 0);
+    const msgN = msgTile.querySelector('.tile-count');
+    personalTileCounts.add(() => { const c = chatSummary().people || 0; msgN.hidden = !c; msgN.textContent = c > 99 ? '99+' : c; });
+    personalTiles.push(msgTile);
+    const toolList = tools.visibleTools(ctx);
+    const boxes = [
+      group('mods', 'Modüller', icons.apps, allowed.filter(m => m.group !== 'system').map(modTile)),
+      group('system', 'Sistem Yönetimi', icons.settings, allowed.filter(m => m.group === 'system').map(modTile)),
+      group('personal', 'Kişisel', icons.person, personalTiles),
+      group('tools', 'Araçlar', icons.tools, toolList.map(toolTile)),
+    ].filter(Boolean);
+    clear(panel, boxes.length ? boxes : h('div', { class: 'empty' }, 'Erişebildiğiniz bir şey yok'));
+  };
   btn.addEventListener('click', () => {   // popup'tan önce çalışır: panel henüz gizliyse şimdi açılıyor
     fill();
-    if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Modül menüsü' });
+    if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Uygulamalar menüsü' });
   });
   popup(btn, panel);
   return h('div', { class: 'menu-anchor' }, btn, panel);
 }
 
-// Kişisel alt modülleri (Takvim, Toplantılar, Mail, İzinlerim…): modül ızgarasıyla aynı görünümde ayrı düğme.
-// Düğmedeki sayı = alt modüllerdeki bekleyen işlerin toplamı (kullanıcı menüsündeki "Kişisel" sayısıyla aynı).
+// Kişisel alt modülleri (Takvim, Toplantılar, Mail, İzinlerim…) ve Araçlar artık ayrı üst-bar düğmesi değil;
+// tek "Uygulamalar" (ızgara) ikonunun içinde bölüm olarak gösterilir (bkz. appsLauncher). PERSONAL_ICONS ve
+// personalTileCounts oradan kullanılır (kutucuk bekleyen-iş sayıları canlı güncellenir).
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
-  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note' };
+  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder' };
 const personalTileCounts = new Set();
 window.addEventListener('caymaz:chat-summary', () => { for (const fn of personalTileCounts) { try { fn(); } catch { /* */ } } });
-function personalLauncher() {
-  const btn = h('button', { class: 'icon-btn notify-btn personal-btn', 'aria-label': 'Kişisel', title: 'Kişisel', 'aria-haspopup': 'menu' },
-    svgIcon(icons.person), menuCount('personal'));
-  const panel = h('div', { class: 'dropdown apps-panel personal-panel', role: 'menu' });
-  const current = () => location.hash.replace(/^#\/?/, '').split('/')[0];
-  const tileEl = (route, title, icon, count) => {
-    const n = h('span', { class: 'tile-count', hidden: !count }, count > 99 ? '99+' : count);
-    return h('a', { class: `app-tile ${current() === route ? 'on' : ''}`, href: `#/${route}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
-      h('span', { class: 'ico' }, svgIcon(icon), n), h('span', null, title));
-  };
-  const fill = () => {
-    personalTileCounts.clear();
-    const tile = p => {
-      const el = tileEl(p.route, p.title, icons[PERSONAL_ICONS[p.key]] || icons.person, notifyCounts.get(p.notify) || 0);
-      const n = el.querySelector('.tile-count');
-      const upd = () => { const c = notifyCounts.get(p.notify) || 0; n.hidden = !c; n.textContent = c > 99 ? '99+' : c; };
-      personalTileCounts.add(upd);
-      return el;
-    };
-    // Mesajlar da Kişisel panelinde: okunmamış rozeti sohbet özetinden
-    const msgTile = tileEl('messages', 'Mesajlar', icons.chat, chatSummary().people || 0);
-    const msgN = msgTile.querySelector('.tile-count');
-    const updMsg = () => { const c = chatSummary().people || 0; msgN.hidden = !c; msgN.textContent = c > 99 ? '99+' : c; };
-    personalTileCounts.add(updMsg);
-    clear(panel, h('div', { class: 'apps-group' },
-      h('div', { class: 'apps-group-h static' }, h('span', { class: 'gi' }, svgIcon(icons.person)), h('span', { class: 'gt' }, 'Kişisel'),
-        h('span', { class: 'gn' }, PERSONAL.length + 1)),
-      h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, [...PERSONAL.map(tile), msgTile]))));
-  };
-  btn.addEventListener('click', () => {
-    fill();
-    if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Kişisel menüsü' });
-  });
-  popup(btn, panel);
-  return h('div', { class: 'menu-anchor' }, btn, panel);
-}
-
-// Araçlar: Kişisel ile aynı görünümde üst bar düğmesi (alt araçlar kutucuk olarak). Görünür aracı yoksa düğme çıkmaz.
-function toolsLauncher() {
-  const list = tools.visibleTools(ctx);
-  if (!list.length) return null;
-  const btn = h('button', { class: 'icon-btn tools-btn', 'aria-label': 'Araçlar', title: 'Araçlar', 'aria-haspopup': 'menu' }, svgIcon(icons.tools));
-  const panel = h('div', { class: 'dropdown apps-panel tools-panel', role: 'menu' });
-  const current = () => location.hash.replace(/^#\/?/, '').replace(/^tools\//, '').split('/')[0];
-  const fill = () => clear(panel, h('div', { class: 'apps-group' },
-    h('div', { class: 'apps-group-h static' }, h('span', { class: 'gi' }, svgIcon(icons.tools)), h('span', { class: 'gt' }, 'Araçlar'),
-      h('span', { class: 'gn' }, list.length)),
-    h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, list.map(tl =>
-      h('a', { class: `app-tile ${current() === tl.key ? 'on' : ''}`, href: `#/tools/${tl.key}`, role: 'menuitem', onclick: () => { panel.hidden = true; } },
-        h('span', { class: 'ico' }, svgIcon(icons[tl.icon] || icons.tools)), h('span', null, tl.title)))))));
-  btn.addEventListener('click', () => { fill(); if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Araçlar menüsü' }); });
-  popup(btn, panel);
-  return h('div', { class: 'menu-anchor' }, btn, panel);
-}
 
 // Yeni uyarı / bildirim: sağ üst köşede kısa kutu, 3 sn sonra gizlenir. İlk yüklemede var olanlar "görüldü" sayılır;
 // sonra yeni bir başlık, artan sayı ya da listede yeni bir ad gelirse gösterilir. Kutuya tıklanınca ilgili sayfa açılır.
@@ -691,7 +668,7 @@ function renderShell() {
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       h('div', { class: 'header-right' }, radio.button(popup),
-        docsCountdown(), inboxButton(), fullscreenButton(), securityOnly() ? null : toolsLauncher(), personalLauncher(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+        docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),
@@ -947,6 +924,7 @@ const PERSONAL = [
   { key: 'docs', route: 'my-documents', title: 'Evraklarım', notify: 'docs-missing', render: () => hr.renderMyDocuments(view) },
   { key: 'vehicles', route: 'my-vehicles', title: 'Araç Zimmetim', notify: 'vehicle-assign-pending', render: () => fleet.renderMine(view) },
   { key: 'notes', route: 'my-notes', title: 'Notlar', notify: null, render: () => notesMod.render(view, ctx) },
+  { key: 'files', route: 'my-files', title: 'Dosya Yöneticisi', notify: 'file-shared', render: params => fileManager.render(view, params, ctx) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

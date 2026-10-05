@@ -77,4 +77,9 @@ export const icons = {
   fleet: svg('<path d="M3 16.5v-4.3l2-5.1c.3-.8 1.1-1.3 1.9-1.3h10.2c.8 0 1.6.5 1.9 1.3l2 5.1v4.3"/><path d="M3 12.2h18"/><path d="M2.5 16.5h19"/><circle cx="7" cy="16.8" r="1.8"/><circle cx="17" cy="16.8" r="1.8"/><path d="M5.6 14.4h1.6M16.8 14.4h1.6"/>'),
   certs: svg('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><circle cx="12" cy="13" r="3"/><path d="M10.5 15.5 9.5 20l2.5-1.3 2.5 1.3-1-4.5"/>'),
   finance: svg('<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 6V4h12v2M5 10h.01M19 15h.01"/>'),
+  // Dosya Yöneticisi: klasör, açık klasör, dosya, paylaş
+  folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  folderOpen: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2"/><path d="M3.3 10h17.1a1 1 0 0 1 .97 1.24l-1.5 6A1.5 1.5 0 0 1 18.4 18.5H4.5A1.5 1.5 0 0 1 3 17V8"/>'),
+  file: svg('<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'),
+  share: svg('<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3"/>'),
 };

@@ -846,6 +846,40 @@ CREATE TABLE IF NOT EXISTS personal_notes (
     updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notes_user ON personal_notes(user_id);
+-- Dosya Yöneticisi: kişiye özel dosya gezgini (iç içe klasör + dosya). Her düğüm bir kullanıcıya aittir; kullanıcı
+-- ya da rol ile paylaşılabilir (fm_shares). Klasör paylaşımı alt ağacın tamamını paylaşır. file_path UPLOAD_DIR'e görelidir.
+CREATE TABLE IF NOT EXISTS fm_nodes (
+    id         INTEGER PRIMARY KEY,
+    owner_id   INTEGER NOT NULL REFERENCES users(id),
+    parent_id  INTEGER REFERENCES fm_nodes(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,              -- folder | file
+    name       TEXT NOT NULL,
+    file_path  TEXT,                       -- yalnız dosya: UPLOAD_DIR'e göreli yol (fm/<ad>)
+    size       INTEGER,
+    mime       TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_fm_nodes_parent ON fm_nodes(owner_id, parent_id);
+-- Dosya paylaşımı: bir düğüm (dosya / klasör) bir kullanıcı ya da rol ile paylaşılır (view / edit)
+CREATE TABLE IF NOT EXISTS fm_shares (
+    id             INTEGER PRIMARY KEY,
+    node_id        INTEGER NOT NULL REFERENCES fm_nodes(id) ON DELETE CASCADE,
+    target_type    TEXT NOT NULL,          -- user | role
+    target_user_id INTEGER REFERENCES users(id),
+    target_role    TEXT,
+    perm           TEXT NOT NULL DEFAULT 'view',   -- view | edit
+    shared_by      INTEGER NOT NULL REFERENCES users(id),
+    created_at     TEXT NOT NULL,
+    UNIQUE (node_id, target_type, target_user_id, target_role)
+);
+-- Paylaşım bildirimi okundu kaydı: kullanıcı "Benimle paylaşılanlar"ı açınca bildirim temizlenir
+CREATE TABLE IF NOT EXISTS fm_share_seen (
+    share_id INTEGER NOT NULL REFERENCES fm_shares(id) ON DELETE CASCADE,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    seen_at  TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS ssh_hosts (
     id         INTEGER PRIMARY KEY,
     label      TEXT NOT NULL,

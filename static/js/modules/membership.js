@@ -22,8 +22,10 @@ const hoursText = hs => {
 
 export async function render(view, params, ctx) {
   const p0 = (params[0] || '').split('?')[0];
-  const sub = SUBS.some(s => s[0] === p0) ? p0 : 'overview';
-  const nav = segmented(SUBS, sub, v => { location.hash = `#/uyelik/${v}`; }, { tabs: true });
+  // Fabrika Entegrasyonları / Kurulumlar sekmesi yalnız sistem sahibine (MASTER) görünür.
+  const subs = ctx.user?.master ? [...SUBS, ['kurulumlar', 'Fabrika Kurulumları']] : SUBS;
+  const sub = subs.some(s => s[0] === p0) ? p0 : 'overview';
+  const nav = segmented(subs, sub, v => { location.hash = `#/uyelik/${v}`; }, { tabs: true });
   const body = h('div', { class: 'mb2' });
   clear(view, pageHead('Üyeliğim & Destek', { back: '#/', sub: 'Paketiniz, destek ekibimiz, ödemeleriniz ve sözleşmeleriniz', tabs: nav }), body);
   if (sub === 'tickets' && /^\d+$/.test(params[1] || '')) return ticketDetail(body, Number(params[1]));
@@ -32,7 +34,38 @@ export async function render(view, params, ctx) {
   if (sub === 'tickets') return ticketsView(body);
   if (sub === 'payments') return paymentsView(body);
   if (sub === 'contracts') return contractsList(body);
+  if (sub === 'kurulumlar') return installsView(body, ctx);
   return overview(body, ctx);
+}
+
+// ---------------- Fabrika Entegrasyonları / Kurulumlar (yalnız MASTER) ----------------
+// Lisanslı ve anahtarı üretilmiş her ajan-tabanlı ürünün Windows/Linux kurulum dosyaları + kısa nasıl-yapılır.
+const INSTALL_STEPS = [
+  'Kurulum dosyasını fabrikadaki ilgili makineye indirin.',
+  'Dosyayı çalıştırın (Windows: .exe · Linux: .sh).',
+  'Açılan yerel sayfada domaini ve bu entegrasyonun API anahtarını girin.',
+  'Cihaz bilgilerini (ör. sunucu IP, kullanıcı, şifre) girin.',
+  'Bağlan deyin; ajan merkeze bağlanınca entegrasyon kullanıma açılır.',
+];
+async function installsView(view, ctx) {
+  loading(view);
+  let d;
+  try { d = await api.get('/api/system/integrations/agent'); } catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  const licensed = (d.items || []).filter(it => it.licensed && it.key_set);
+  const card = it => h('section', { class: 'card card-pad mb2-install' },
+    h('div', { class: 'mb-sec-h' }, h('h3', null, it.title),
+      h('div', { class: 'mb2-dl' }, [['windows', '⬇ Windows'], ['linux', '⬇ Linux']].map(([p, label]) =>
+        h('a', { class: 'btn sm', href: it.downloads[p], download: '', title: it.has_installer[p] ? '' : 'Kurulum dosyası henüz hazır değil' },
+          label, it.has_installer[p] ? null : h('small', { class: 'muted' }, ' · yakında'))))),
+    it.min_req ? h('p', { class: 'small warn-text' }, it.min_req) : null,
+    h('ol', { class: 'mb2-howto small' }, INSTALL_STEPS.map(s => h('li', null, s))),
+    d.central_url ? h('p', { class: 'small muted' }, t('Ajan bağlantı adresi: {u}', { u: d.central_url })) : null);
+  clear(view,
+    h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, 'Fabrika Entegrasyonları / Kurulumlar'),
+      h('p', { class: 'small muted' }, 'Lisanslı fabrika ürünlerinin kurulum dosyaları ve kurulum adımları. Anahtar üretimi ve lisans: Program Ayarları › Entegrasyonlar › Fabrika Entegrasyonları.'),
+      d.domain ? h('p', { class: 'small' }, t('Ortak domain: {d}', { d: d.domain })) : h('p', { class: 'small warn-text' }, 'Henüz ortak domain tanımlanmadı. Program Ayarları › Entegrasyonlar’dan domaini girin.')),
+    licensed.length ? h('div', { class: 'mb2-grid' }, licensed.map(card))
+      : h('div', { class: 'card empty' }, 'Henüz lisanslı ve anahtarı üretilmiş bir fabrika entegrasyonu yok. Program Ayarları › Entegrasyonlar › Fabrika Entegrasyonları’ndan bir ürünü lisanslayıp anahtar üretin.'));
 }
 
 const loading = view => clear(view, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));

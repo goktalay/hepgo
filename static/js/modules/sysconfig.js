@@ -268,6 +268,93 @@ function numBox(inp, suffix) {
 const INTEG_ICON = { ai: 'bolt', mikro: 'server', pdks: 'clock', nvr: 'lock', google: 'mailDot', microsoft: 'mailDot', meta: 'globe', x: 'globe', tiktok: 'globe', spotify: 'globe', speech: 'mic', maps: 'globe', general: 'gear' };
 // Bir sunucuda çalışan (bu makinede ya da uzak modda fabrikadaki ajan makinesinde) entegrasyonlar: detayında o sunucunun kaynak grafikleri gösterilir.
 const SERVER_INTEGRATIONS = ['mikro', 'pdks', 'nvr'];
+// Entegrasyon galerisindeki GRUP → ajan-ürünü eşlemesi (ayrıntılı form hangi ürünün lisansına bağlı; kapı/gating).
+const GROUP_AGENT_INTEG = { mikro: 'mikro', pdks: 'pdks', nvr: 'camera' };
+const AGENT_GATE_NAME = { mikro: 'Mikro ERP', pdks: 'PDKS', camera: 'Kamera', face: 'Yüz Tanıma', printer: 'Yazıcı' };
+// Ajan-ürünü logosu: mikro/pdks kendi logosu; camera NVR logosu; printer/face için simge.
+const agentLogo = integ => (INTEG_LOGO[integ === 'camera' ? 'nvr' : integ]?.())
+  || segIconByKey(integ === 'printer' ? 'server' : integ === 'face' ? 'lock' : 'grid');
+// Ajan-tabanlı ürün "kullanılabilir mi": (yerel mod ya da ajan bağlı) VE lisanslı. agentData yoksa (master değil) kapı uygulanmaz.
+function agentUsable(agentData, integ) {
+  if (!agentData) return true;   // durum okunamıyorsa (master değil) eski davranış: formu göster
+  const it = agentData.items.find(x => x.integ === integ);
+  const connected = agentData.mode !== 'remote' || agentData.agent_online;
+  return connected && !!(it && it.licensed);
+}
+// Ayrıntılı ayar yerine gösterilen uyarı (bağlı/lisanslı değilken)
+function agentGateNote(grp, integ) {
+  return h('section', { class: 'card card-pad integ-gate' },
+    h('h3', { style: { marginTop: 0 } }, 'Bu entegrasyon henüz kullanılamıyor'),
+    h('p', null, t('Bu entegrasyon için önce anahtar üretip Fabrika {ad} ajanını kurun ve bağlayın.', { ad: AGENT_GATE_NAME[integ] || grp.title })),
+    h('p', { class: 'small muted' }, 'Anahtar üretimi, lisans (satış/etkinleştirme) ve kurulum dosyaları Entegrasyonlar sayfasının üstündeki “Fabrika Entegrasyonları” alanındadır.'),
+    h('button', { class: 'btn sm', type: 'button', onclick: () => { location.hash = '#/sysconfig/integrations'; } }, '← Fabrika Entegrasyonları'));
+}
+
+// --- Fabrika Entegrasyonları alanı: ajan-tabanlı ürünler (anahtar + lisans + indirme). Yalnız MASTER. ---
+function fabrikaIntegrationsArea(d, reloadAgent) {
+  const domInp = h('input', { class: 'input', type: 'text', spellcheck: 'false', value: d.domain || '', placeholder: 'ör. caymaz.app' });
+  const urlNote = h('small', { class: 'hint' }, d.central_url ? t('Ajan bağlantı adresi: {u}', { u: d.central_url }) : 'Domain girilince ajan adresi (wss://…/ws/agent) oluşur.');
+  const domSave = h('button', { class: 'btn sm primary', type: 'button' }, 'Kaydet');
+  domSave.addEventListener('click', async () => {
+    domSave.disabled = true;
+    try { await api.put('/api/system/integrations/agent/domain', { domain: domInp.value.trim() }); toast('Domain kaydedildi'); reloadAgent(); }
+    catch (err) { toastError(err); domSave.disabled = false; }
+  });
+  const statusCls = d.mode !== 'remote' || d.agent_online ? 'ok' : 'err';
+  const statusTxt = d.mode !== 'remote' ? 'Yerel mod (ajan gerekmez)' : d.agent_online ? 'Fabrika ajanı bağlı' : 'Fabrika ajanı çevrimdışı';
+  return h('section', { class: 'card card-pad fab-integ' },
+    h('div', { class: 'sc-integ-h' },
+      h('span', { class: 'sc-integ-ico' }, segIconByKey('server')),
+      h('div', { class: 'grow' }, h('b', null, 'Fabrika Entegrasyonları'),
+        h('small', null, 'Ajanla çalışan ürünler (Mikro ERP, PDKS, Yazıcılar, Kameralar/NVR, Yüz Tanıma). Her biri ayrı anahtar, lisans ve kurulum dosyasıyla gelir.')),
+      h('span', { class: `sc-integ-status ${statusCls}` }, statusTxt)),
+    h('label', { class: 'sc-field', style: { maxWidth: '460px' } }, h('span', { class: 'sc-f-label' }, 'Ortak domain (tüm ajanlar bu adrese bağlanır)'),
+      domInp, h('span', { class: 'sc-f-meta' }, urlNote, domSave)),
+    h('div', { class: 'fab-grid' }, ...d.items.map(it => fabrikaCard(it, d, reloadAgent))));
+}
+
+function fabrikaCard(it, d, reloadAgent) {
+  const lic = h('input', { type: 'checkbox', checked: it.licensed });
+  lic.addEventListener('change', async () => {
+    lic.disabled = true;
+    try { await api.post(`/api/system/integrations/agent/${it.integ}/license`, { enabled: lic.checked }); toast(lic.checked ? 'Lisans açıldı' : 'Lisans kapatıldı'); reloadAgent(); }
+    catch (err) { toastError(err); lic.checked = !lic.checked; lic.disabled = false; }
+  });
+  const dlLinks = () => h('div', { class: 'fab-dl' },
+    [['windows', '⬇ Windows'], ['linux', '⬇ Linux']].map(([p, label]) =>
+      h('a', { class: 'btn xs', href: it.downloads[p], download: '', title: it.has_installer[p] ? 'Kurulum dosyasını indir' : 'Kurulum dosyası henüz hazır değil' },
+        label, it.has_installer[p] ? null : h('small', { class: 'muted' }, ' · yakında'))),
+    d.central_url ? h('div', { class: 'small muted', style: { marginTop: '4px' } }, t('Ajan adresi: {u}', { u: d.central_url })) : null);
+  const keyBox = h('div', { class: 'fab-keybox' });
+  if (it.key_set) clear(keyBox, h('div', { class: 'fab-key set' }, h('span', { class: 'sc-f-ok' }, 'Anahtar tanımlı'), dlLinks()));
+  const genBtn = h('button', { class: 'btn sm', type: 'button' }, it.key_set ? '🔑 Anahtarı Yeniden Üret' : '🔑 Key Üret');
+  genBtn.addEventListener('click', async () => {
+    if (it.key_set && !await confirmDialog('Anahtarı yeniden üret',
+      'Yeni anahtar üretilince eski anahtar geçersiz olur; kurulu ajanın yeni anahtarla yeniden yapılandırılması gerekir. Devam edilsin mi?',
+      { okLabel: 'Yeniden üret', danger: true })) return;
+    genBtn.disabled = true;
+    try {
+      const r = await api.post(`/api/system/integrations/agent/${it.integ}/genkey`, {});
+      const code = h('code', { class: 'fab-key-val' }, r.key);
+      clear(keyBox, h('div', { class: 'fab-key new' },
+        h('b', null, 'API Anahtarı (yalnızca bir kez gösterilir):'),
+        h('div', { class: 'fab-key-row' }, code,
+          h('button', { class: 'btn xs', type: 'button', onclick: () => { navigator.clipboard?.writeText(r.key); toast('Anahtar kopyalandı'); } }, 'Kopyala')),
+        h('p', { class: 'small warn-text' }, 'Bu anahtarı güvenli bir yere kaydedin; sayfadan ayrıldığınızda bir daha gösterilmez. Ajan kurulumunda domain ve bu anahtar girilir.'),
+        dlLinks()));
+      it.key_set = true; genBtn.textContent = '🔑 Anahtarı Yeniden Üret';
+    } catch (err) { toastError(err); } finally { genBtn.disabled = false; }
+  });
+  return h('div', { class: `fab-card ${it.licensed ? 'on' : ''}` },
+    h('div', { class: 'fab-card-h' }, h('span', { class: 'integ-logo' }, agentLogo(it.integ)),
+      h('div', { class: 'grow' }, h('b', null, it.title),
+        h('small', { class: it.licensed ? 'sc-f-ok' : 'muted' }, it.licensed ? 'Lisanslı' : 'Lisanssız'))),
+    it.min_req ? h('p', { class: 'small muted fab-minreq' }, it.min_req) : null,
+    h('label', { class: 'set-toggle' }, lic, h('span', null, h('b', null, 'Lisans (satışta / etkin)'),
+      h('small', null, 'Açıkken bu ürün kullanıcılarca kullanılabilir'))),
+    h('div', { class: 'fab-acts' }, genBtn),
+    keyBox);
+}
 // Entegrasyon durumu: ayarlı mı + (denetleniyorsa) son denemesi başarılı mı. "Bağlı" yalnız gerçekten ulaşılabiliyorsa.
 const integState = g => !g.configured ? ['', 'Ayarlanmadı']
   : g.checked && !g.health ? ['wait', 'Denetleniyor…']
@@ -419,12 +506,16 @@ function integrationsBody(view, ctx) {
   // Galeri: her entegrasyon büyük ikonlu kart; tıklayınca bilgilendirme + ayar formu açılır
   let open = null;
   const reload = async focus => {
-    let d;
+    let d, agentData = null;
     try { d = await api.get('/api/system/integrations'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    if (ctx.user?.master) { try { agentData = await api.get('/api/system/integrations/agent'); } catch { agentData = null; } }
     if (focus) open = focus;
     const grp = open && d.groups.find(g => g.key === open);
     if (grp) {
       const info = INTEG_INFO[grp.key] || {};
+      // Ajan-tabanlı grupta ayrıntılı ayar yalnız (yerel ya da ajan bağlı) + lisanslıyken görünür.
+      const integ = GROUP_AGENT_INTEG[grp.key];
+      const gated = !!grp.needs_agent && integ && !agentUsable(agentData, integ);
       clear(wrap,
         h('button', { class: 'btn sm integ-back', type: 'button', onclick: () => { open = null; reload(); } }, '← Tüm entegrasyonlar'),
         h('section', { class: `card integ-hero ${grp.online ? 'on' : ''}`, 'data-g': grp.key },
@@ -434,15 +525,16 @@ function integrationsBody(view, ctx) {
             integBadge(grp))),
         info.sections?.length ? h('section', { class: 'card card-pad integ-info' },
           info.sections.map(([t, items]) => h('div', { class: 'integ-info-sec' }, h('h4', null, t), h('ul', null, items.map(x => h('li', null, x)))))) : null,
-        integHealthCard(grp, reload),
-        h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
-        ['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null,
-        grp.key === 'nvr' ? nvrPanel() : null,
+        gated ? agentGateNote(grp, integ) : integHealthCard(grp, reload),
+        gated ? null : h('div', { class: 'integ-form' }, h('h3', null, 'Ayarlar'), card(grp)),
+        gated ? null : (['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null),
+        gated ? null : (grp.key === 'nvr' ? nvrPanel() : null),
         grp.key === 'general' ? shiftCard() : null,
-        SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null);
+        gated ? null : (SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null));
       return;
     }
     clear(wrap,
+      agentData ? fabrikaIntegrationsArea(agentData, () => reload()) : null,
       h('p', { class: 'small muted' }, 'Sistemin bağlandığı dış servisler. Ayarlamak ya da ayrıntılı bilgi almak için bir entegrasyona dokunun. Anahtar ve şifreler şifreli saklanır; ayarı eksik olan özellik kullanıcılara görünmez.'),
       h('div', { class: 'integ-gallery' }, d.groups.map(g => h('button', { class: `integ-tile ${g.online ? 'on' : g.configured && g.checked && g.health && !g.health.ok ? 'off' : ''}`, type: 'button', 'data-g': g.key,
         onclick: () => { open = g.key; reload(); } },

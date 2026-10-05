@@ -367,6 +367,117 @@ def put_integration_interval(group: str, body: IntervalIn, user=Depends(auth.cur
     return {'interval': body.seconds}
 
 
+# --- Fabrika Entegrasyonları: ajan-tabanlı ürünler (anahtar + lisans + indirme). YALNIZCA MASTER ---------------
+# Her ajan-tabanlı entegrasyon ayrı bir üründür: kendi API anahtarı, kendi lisansı ve kendi kurulum dosyası.
+# Depo app_kv['agent_integrations']'tedir (app/agentkeys.py). agent_hub kimlik/op yönlendirmesi DEĞİŞMEZ (Aşama 2).
+_AGENT_PLATFORMS = {'windows': 'exe', 'linux': 'sh'}
+
+
+def _agent_item(conn, integ):
+    for it in agentkeys_all(conn)['items']:
+        if it['integ'] == integ:
+            return it
+    return None
+
+
+def agentkeys_all(conn):
+    from .. import agentkeys
+    return agentkeys.get_all(conn)
+
+
+def _agent_dist_path(integ, platform):
+    ext = _AGENT_PLATFORMS[platform]
+    return config.BASE_DIR / 'agent-dist' / integ / f'hepgo-{integ}-setup-{platform}.{ext}'
+
+
+@router.get('/integrations/agent')
+def agent_integrations(user=Depends(auth.current_user), conn=db.DB):
+    """Ajan-tabanlı entegrasyonların durumu: ortak domain, merkez adresi, ajan bağlı mı + her ürün için
+    lisans/anahtar/indirme durumu. Yalnızca sistem sahibine (MASTER)."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Bu bilgi yalnızca sistem sahibine (MASTER) açıktır')
+    from .. import agent_hub, agentkeys
+    data = agentkeys.get_all(conn)
+    items = []
+    for it in data['items']:
+        integ = it['integ']
+        items.append({**it, 'central_url': data['central_url'],
+                      'downloads': {p: f'/api/system/integrations/agent/{integ}/download/{p}' for p in _AGENT_PLATFORMS},
+                      'has_installer': {p: _agent_dist_path(integ, p).is_file() for p in _AGENT_PLATFORMS}})
+    return {'domain': data['domain'], 'central_url': data['central_url'],
+            'agent_online': agent_hub.online(), 'mode': config.AGENT_MODE, 'items': items}
+
+
+@router.post('/integrations/agent/{integ}/genkey')
+def agent_genkey(integ: str, user=Depends(auth.current_user), conn=db.DB):
+    """Entegrasyon için yeni gizli anahtar üretir ve DÜZ metni bir kez döndürür (bir daha gösterilmez)."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import agentkeys
+    try:
+        key = agentkeys.gen_key(conn, integ)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    db.audit(conn, user['id'], f'Fabrika entegrasyonu için API anahtarı üretti: {agentkeys.INTEGRATIONS[integ]["title"]}', 'settings', None, integ)
+    return {'integ': integ, 'key': key, 'central_url': agentkeys.central_url(agentkeys.domain(conn))}
+
+
+class AgentLicenseIn(BaseModel):
+    enabled: bool
+
+
+@router.post('/integrations/agent/{integ}/license')
+def agent_license(integ: str, body: AgentLicenseIn, user=Depends(auth.current_user), conn=db.DB):
+    """Lisans (satış / etkinleştirme) bayrağını açar/kapatır."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import agentkeys
+    try:
+        enabled = agentkeys.set_enabled(conn, integ, body.enabled)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    db.audit(conn, user['id'],
+             f'Fabrika entegrasyonu lisansını {"açtı" if enabled else "kapattı"}: {agentkeys.INTEGRATIONS[integ]["title"]}',
+             'settings', None, integ)
+    return {'integ': integ, 'licensed': enabled}
+
+
+class AgentDomainIn(BaseModel):
+    domain: str = ''
+
+
+@router.put('/integrations/agent/domain')
+def agent_domain(body: AgentDomainIn, user=Depends(auth.current_user), conn=db.DB):
+    """Ortak domaini saklar (şema ayıklanır); merkez WebSocket adresi bundan türetilir."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import agentkeys
+    dom = agentkeys.set_domain(conn, body.domain)
+    db.audit(conn, user['id'], 'Fabrika entegrasyonları domainini güncelledi', 'settings', None, dom)
+    return {'domain': dom, 'central_url': agentkeys.central_url(dom)}
+
+
+@router.get('/integrations/agent/{integ}/download/{platform}')
+def agent_download(integ: str, platform: str, user=Depends(auth.current_user), conn=db.DB):
+    """Entegrasyonun kurulum dosyasını indirir. Anahtar üretilmiş olmalı (key_set) + MASTER.
+    Kurulum dosyaları Aşama 3'te üretilir; henüz yoksa 404."""
+    from fastapi.responses import FileResponse
+    if not user.get('master'):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import agentkeys
+    if integ not in agentkeys.INTEGRATIONS:
+        raise HTTPException(404, 'Bilinmeyen entegrasyon')
+    if platform not in _AGENT_PLATFORMS:
+        raise HTTPException(404, 'Bilinmeyen platform')
+    it = _agent_item(conn, integ)
+    if not it or not it['key_set']:
+        raise HTTPException(400, 'Önce bu entegrasyon için bir API anahtarı üretin')
+    path = _agent_dist_path(integ, platform)
+    if not path.is_file():
+        raise HTTPException(404, 'Kurulum dosyası henüz hazır değil')
+    return FileResponse(path, filename=path.name, media_type='application/octet-stream')
+
+
 # --- NVR: kanal listesi + yüz tanıma ayarı + GPU kapasitesi + canlı grafik ---
 @router.get('/nvr/channels')
 def nvr_channels(user=Depends(auth.current_user), conn=db.DB):

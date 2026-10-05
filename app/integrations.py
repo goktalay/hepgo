@@ -25,6 +25,8 @@ GROUPS = {
     'mikro': {
         'title': 'Mikro ERP',
         'desc': 'Cari, stok ve fatura içe aktarımı için Mikro SQL Server bağlantısı.',
+        # Ajan-tabanlı ürün (Fabrika Entegrasyonları): ayrıntılı bağlantı formu yalnız ajan bağlı VE lisanslıyken görünür.
+        'needs_agent': True,
         'fields': [
             ('MIKRO_HOST', 'Sunucu IP / adı', 'text', 'ör. 192.168.1.100'),
             ('MIKRO_PORT', 'Port', 'int', 'SQL Server varsayılanı 1433'),
@@ -36,6 +38,7 @@ GROUPS = {
     'pdks': {
         'title': 'PDKS (Personel Giriş-Çıkış)',
         'desc': 'Personel devam kontrol cihazlarının Firebird veritabanı (ör. Fixap). Giriş-çıkış hareketleri yalnızca okunur; cihaza / veritabanına hiçbir şey yazılmaz.',
+        'needs_agent': True,
         'fields': [
             ('PDKS_HOST', 'Sunucu IP / adı', 'text', 'ör. 192.168.1.100'),
             ('PDKS_PORT', 'Port', 'int', 'Firebird varsayılanı 3050'),
@@ -49,6 +52,8 @@ GROUPS = {
         'desc': 'Kameralar NVR arkasındadır; bağlantı fabrikadaki ajan üzerinden kurulur (ONVIF/RTSP). Bağlandıktan '
                 'sonra kanallar listelenir, her kanal için yüz tanıma açılıp zamanlanabilir. Video ve yüz verisi '
                 'yalnızca fabrikada (lokal) saklanır.',
+        # Kamera/NVR ve yüz tanıma ürünleri fabrika ajanı üzerinden çalışır (ayrıntılı ayar ajan bağlı + lisanslıyken).
+        'needs_agent': True,
         'fields': [
             ('NVR_HOST', 'Yerel IP', 'text', 'ör. 192.168.1.250'),
             ('NVR_PORT', 'ONVIF portu', 'int', 'Genelde 80'),
@@ -204,6 +209,7 @@ def view(conn, group_keys=None, health=True):
                 f['value'] = cur if cur is not None else ''
             fields.append(f)
         out.append({'key': g, 'title': grp['title'], 'desc': grp['desc'], 'fields': fields,
+                    'needs_agent': bool(grp.get('needs_agent')),
                     'configured': bool(config.COMPANY_NAME) if g == 'general'
                     else all(f['set'] for f in fields if f['key'] not in ('AI_WORKSPACE_ID', 'SPEECH_ON_AGENT'))})
     if health:

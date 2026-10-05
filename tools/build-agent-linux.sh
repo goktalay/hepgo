@@ -88,17 +88,19 @@ HEAD="${BUILD}/head.sh"
 cat > "${HEAD}" <<HEADEOF
 #!/usr/bin/env bash
 # HEPGO ${NAME} (${INTEG}) — Linux kurulumu. Kendinden çıkartmalı paket.
-#   sudo bash \$0                 → /opt/hepgo-${INTEG} altına kurar + systemd servisini etkinleştirir
+#   sudo bash \$0                 → /opt/hepgo-${INTEG} altına kurar + systemd servisini etkinleştirir (sistem/root)
+#   bash \$0 --user               → sudo YOK; \$HOME altına kurar + systemctl --user servisi (önerilen; gx10 ile aynı düzen)
 #   bash \$0 --dry-run [--extract-to DIR]  → yalnız açar (systemd'ye DOKUNMAZ) — test için
-#   bash \$0 --no-start           → kurar ama servisi başlatmaz
-#   bash \$0 --prefix DIR         → kurulum dizini (varsayılan /opt/hepgo-${INTEG})
+#   bash \$0 --no-start           → kurar ama servisi başlatmaz (sistem veya kullanıcı modu)
+#   bash \$0 --prefix DIR         → kurulum dizini (sistem modu; varsayılan /opt/hepgo-${INTEG})
 set -euo pipefail
 INTEG="${INTEG}"
 NAME="${NAME}"
 PREFIX="/opt/hepgo-${INTEG}"
-DRYRUN=0 ; NOSTART=0 ; EXTRACT_TO=""
+DRYRUN=0 ; NOSTART=0 ; EXTRACT_TO="" ; USERMODE=0
 while [ \$# -gt 0 ]; do
   case "\$1" in
+    --user) USERMODE=1 ;;
     --dry-run) DRYRUN=1 ;;
     --no-start) NOSTART=1 ;;
     --prefix) PREFIX="\$2"; shift ;;
@@ -119,11 +121,102 @@ if [ "\${DRYRUN}" = "1" ]; then
   echo ">> [DRY-RUN] yük açılıyor: \${DEST}"
   tail -n +"\${ARCHIVE_LINE}" "\$SELF" | tar -xzf - -C "\${DEST}"
   echo ">> [DRY-RUN] açıldı. İçerik: \${DEST}/hepgo-${INTEG}"
-  echo ">> [DRY-RUN] systemd / /opt kurulumu YAPILMADI."
+  echo ">> [DRY-RUN] systemd / /opt / \$HOME kurulumu YAPILMADI."
   exit 0
 fi
 
-[ "\$(id -u)" = "0" ] || { echo "HATA: kurulum için kök (sudo) gerekir. Test için --dry-run kullanın." >&2; exit 1; }
+if [ "\${USERMODE}" = "1" ]; then
+  # ========== SUDOSUZ KULLANICI KURULUMU (systemd --user) ==========
+  # Tamamen kullanıcının ev dizinine kurar; root / /opt / sudo KULLANMAZ.
+  INSTALLDIR="\${HOME}/.local/share/hepgo-agent-${INTEG}"
+  CFG="\${INSTALLDIR}/agent-config.env"
+  UNITDIR="\${HOME}/.config/systemd/user"
+  UNIT="\${UNITDIR}/hepgo-${INTEG}.service"
+
+  echo ">> [kullanıcı] kuruluyor: \${INSTALLDIR}  (sudo YOK)"
+  TMP=\$(mktemp -d)
+  tail -n +"\${ARCHIVE_LINE}" "\$SELF" | tar -xzf - -C "\${TMP}"
+  mkdir -p "\${INSTALLDIR}"
+  # Mevcut yapılandırmayı koru (yeniden kurulumda agent-config.env silinmez).
+  SAVED=""
+  if [ -f "\${CFG}" ]; then SAVED=\$(mktemp); cp -a "\${CFG}" "\${SAVED}"; fi
+  rm -rf "\${INSTALLDIR}/python" "\${INSTALLDIR}/app" "\${INSTALLDIR}/agent" "\${INSTALLDIR}/VERSION"
+  # python/ + (code/ içeriği olan) app/ + agent/ doğrudan INSTALLDIR köküne yerleştirilir.
+  cp -a "\${TMP}/hepgo-${INTEG}/python" "\${INSTALLDIR}/"
+  cp -a "\${TMP}/hepgo-${INTEG}/code/." "\${INSTALLDIR}/"
+  [ -f "\${TMP}/hepgo-${INTEG}/VERSION" ] && cp -a "\${TMP}/hepgo-${INTEG}/VERSION" "\${INSTALLDIR}/" || true
+  rm -rf "\${TMP}"
+  if [ -n "\${SAVED}" ]; then cp -a "\${SAVED}" "\${CFG}"; chmod 600 "\${CFG}" 2>/dev/null || true; rm -f "\${SAVED}"; fi
+
+  # python-build-standalone bin/python sağlar; yoksa python3'e düş.
+  PYBIN="\${INSTALLDIR}/python/bin/python"
+  [ -x "\${PYBIN}" ] || PYBIN="\${INSTALLDIR}/python/bin/python3"
+
+  mkdir -p "\${UNITDIR}"
+  cat > "\${UNIT}" <<UNITEOF
+[Unit]
+Description=HEPGO ${NAME} ajanı (${INTEG}) — kullanıcı servisi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=\${INSTALLDIR}
+Environment=HEPGO_INTEG=${INTEG}
+Environment=HEPGO_AGENT_CONFIG=\${CFG}
+Environment=HEPGO_LOCALCONFIG_PORT=8765
+ExecStart=\${PYBIN} -m agent.service
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+UNITEOF
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl --user daemon-reload 2>/dev/null; then
+      if [ "\${NOSTART}" != "1" ]; then
+        if systemctl --user enable --now hepgo-${INTEG}.service 2>/dev/null; then
+          echo ">> kullanıcı servisi etkinleştirildi ve başlatıldı: hepgo-${INTEG}.service"
+        else
+          echo ">> UYARI: 'systemctl --user enable --now' başarısız oldu."
+          echo ">>   Etkin bir kullanıcı oturumu / XDG_RUNTIME_DIR gerekir. Elle:"
+          echo ">>   systemctl --user enable --now hepgo-${INTEG}.service"
+        fi
+      else
+        systemctl --user enable hepgo-${INTEG}.service 2>/dev/null || true
+        echo ">> kullanıcı servisi etkinleştirildi (başlatılmadı): hepgo-${INTEG}.service"
+      fi
+    else
+      echo ">> UYARI: 'systemctl --user' kullanılamadı; birim yazıldı (\${UNIT}) ama etkinleştirilemedi."
+    fi
+  else
+    echo ">> UYARI: systemctl yok; birim yazıldı (\${UNIT}) ama etkinleştirilemedi."
+  fi
+
+  echo ""
+  echo ">> KULLANICI KURULUMU TAMAM (sudo yok)."
+  echo ">>   Kurulum dizini : \${INSTALLDIR}"
+  echo ">>   Servis birimi  : \${UNIT}"
+  echo ">>   Yapılandırma   : \${CFG}"
+  echo ">>   Ayar arayüzü   : http://127.0.0.1:8765  (yapılandırma yoksa ilk açılışta açılır)"
+  echo ">>   Günlük         : journalctl --user -u hepgo-${INTEG} -n 30"
+  echo ""
+  echo ">> BAŞSIZ (headless) NOT: Servisin oturum açmadan da çalışması için 'linger' AÇIK olmalı."
+  echo ">>   Durum:  loginctl show-user \"\$USER\" -p Linger"
+  echo ">>   Açmak (sudo ister; gx10'da zaten açık):  sudo loginctl enable-linger \"\$USER\""
+  echo ""
+  echo ">> BAŞSIZ ÖN-TOHUMLAMA (web arayüzü olmadan): şu dosyayı oluşturun →  \${CFG}"
+  echo ">>   CAYMAZ_AGENT_CENTRAL_URL=wss://<alanadi>/ws/agent"
+  echo ">>   CAYMAZ_AGENT_KEY=<ajan-anahtari>"
+  echo ">>   HEPGO_INTEG=${INTEG}"
+  echo ">>   # + bu entegrasyonun CAYMAZ_* cihaz değişkenleri"
+  echo ">>   (dosya izni 600 önerilir: chmod 600 \"\${CFG}\")"
+  exit 0
+fi
+
+# ========== SİSTEM (root) KURULUMU — varsayılan ==========
+[ "\$(id -u)" = "0" ] || { echo "HATA: sistem kurulumu için kök (sudo) gerekir. Sudosuz için --user, test için --dry-run kullanın." >&2; exit 1; }
 
 echo ">> kuruluyor: \${PREFIX}"
 TMP=\$(mktemp -d)

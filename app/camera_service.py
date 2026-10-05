@@ -69,14 +69,14 @@ class Identities:
 
     def reload(self):
         with db.connect() as conn:
-            rows = conn.execute('SELECT id, centroid, samples, person_id, user_id, family_id FROM face_groups').fetchall()
+            rows = conn.execute('SELECT id, centroid, samples, person_id, user_id, family_id, visitor_id FROM face_groups').fetchall()
             known = known_identities(conn)
             try:
                 ign = [np.frombuffer(r[0], dtype=np.float32) for r in conn.execute('SELECT centroid FROM face_ignored')]
             except Exception:   # noqa: BLE001 — tablo yoksa
                 ign = []
         with self.lock:
-            self.groups = {r[0]: {'c': np.frombuffer(r[1], dtype=np.float32).copy(), 'n': r[2], 'person_id': r[3], 'user_id': r[4], 'family_id': r[5]}
+            self.groups = {r[0]: {'c': np.frombuffer(r[1], dtype=np.float32).copy(), 'n': r[2], 'person_id': r[3], 'user_id': r[4], 'family_id': r[5], 'visitor_id': r[6]}
                            for r in rows}
             self.known = known
             self.ignored = ign
@@ -106,7 +106,7 @@ class Identities:
                 if sim >= who_sim:
                     who, who_sim = key, sim
             if who:   # bilinen kişinin grubu varsa ona
-                col = {'person': 'person_id', 'user': 'user_id', 'family': 'family_id'}[who[0]]
+                col = {'person': 'person_id', 'user': 'user_id', 'family': 'family_id', 'visitor': 'visitor_id'}[who[0]]
                 gid = next((i for i, g in self.groups.items() if g.get(col) == who[1]), None)
                 if gid is not None:
                     return gid, None
@@ -118,11 +118,12 @@ class Identities:
         with self.lock:
             best, sim0 = None, SAME_GROUP
             for g in self.groups.values():
-                if g.get('person_id') or g.get('user_id') or g.get('family_id'):
+                if g.get('person_id') or g.get('user_id') or g.get('family_id') or g.get('visitor_id'):
                     sim = float(np.dot(g['c'], emb))
                     if sim >= sim0:
                         best = (('person', g['person_id']) if g['person_id'] else
-                                ('user', g['user_id']) if g['user_id'] else ('family', g['family_id']))
+                                ('user', g['user_id']) if g['user_id'] else
+                                ('family', g['family_id']) if g['family_id'] else ('visitor', g['visitor_id']))
                         sim0 = sim
             if best:
                 return best
@@ -225,13 +226,14 @@ def _store_sighting(ident, cam_id, emb, crop, frame, score, now_iso, threshold=N
             pid = who[1] if who and who[0] == 'person' else None
             uid = who[1] if who and who[0] == 'user' else None
             fid = who[1] if who and who[0] == 'family' else None
+            vid = who[1] if who and who[0] == 'visitor' else None
             cur = conn.execute(
-                '''INSERT INTO face_groups (person_id, user_id, family_id, centroid, samples, best_crop, best_score, first_seen, last_seen, last_camera)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)''',
-                (pid, uid, fid, emb.astype(np.float32).tobytes(), 1, f'camfaces/{name}.jpg', score, now_iso, now_iso, cam_id))
+                '''INSERT INTO face_groups (person_id, user_id, family_id, visitor_id, centroid, samples, best_crop, best_score, first_seen, last_seen, last_camera)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+                (pid, uid, fid, vid, emb.astype(np.float32).tobytes(), 1, f'camfaces/{name}.jpg', score, now_iso, now_iso, cam_id))
             gid = cur.lastrowid
             with ident.lock:
-                ident.groups[gid] = {'c': emb.astype(np.float32), 'n': 1, 'person_id': pid, 'user_id': uid, 'family_id': fid}
+                ident.groups[gid] = {'c': emb.astype(np.float32), 'n': 1, 'person_id': pid, 'user_id': uid, 'family_id': fid, 'visitor_id': vid}
             crop_path = f'camfaces/{name}.jpg'
         else:
             g = ident.groups.get(gid)

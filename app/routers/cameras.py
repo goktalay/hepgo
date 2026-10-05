@@ -274,17 +274,21 @@ def overlays(ids: str = '', user=Depends(cam_user), conn=db.DB):
     uids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'user' and b.get('id')}
     pids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'person' and b.get('id')}
     fids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'family' and b.get('id')}
+    vids = {b['id'] for bs in ov.values() for b in bs if b.get('kind') == 'visitor' and b.get('id')}
     users = {x[0]: x[1] for x in conn.execute(
         f'SELECT id, full_name FROM users WHERE id IN ({",".join("?" * len(uids))})', tuple(uids))} if uids else {}
     people = {x[0]: x[1] for x in conn.execute(
         f'SELECT id, full_name FROM company_people WHERE id IN ({",".join("?" * len(pids))})', tuple(pids))} if pids else {}
     family = {x[0]: x[1] for x in conn.execute(
         f'SELECT id, full_name FROM family_members WHERE id IN ({",".join("?" * len(fids))})', tuple(fids))} if fids else {}
+    visitors = {x[0]: x[1] for x in conn.execute(
+        f'SELECT id, full_name FROM visitors WHERE id IN ({",".join("?" * len(vids))})', tuple(vids))} if vids else {}
     for bs in ov.values():
         for b in bs:
             b['known'] = bool(b.get('kind'))
             b['label'] = (users.get(b['id']) if b.get('kind') == 'user' else people.get(b['id']) if b.get('kind') == 'person'
-                          else family.get(b['id']) if b.get('kind') == 'family' else None)
+                          else family.get(b['id']) if b.get('kind') == 'family'
+                          else visitors.get(b['id']) if b.get('kind') == 'visitor' else None)
     return {'overlays': ov}
 
 
@@ -294,6 +298,7 @@ class AssignIn(BaseModel):
     user_id: Optional[int] = None
     person_id: Optional[int] = None
     family_id: Optional[int] = None
+    visitor_id: Optional[int] = None
 
 
 class MergeIn(BaseModel):
@@ -309,6 +314,14 @@ class SightingAssignIn(BaseModel):
     user_id: Optional[int] = None
     person_id: Optional[int] = None
     family_id: Optional[int] = None
+    visitor_id: Optional[int] = None
+
+
+class VisitorIn(BaseModel):
+    full_name: str
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    note: Optional[str] = None
 
 
 # Yüz grupları / görülmeler: dağıtık kurulumda (AGENT_MODE=remote) fabrika yerel DB'sinden (facebridge) çekilir,
@@ -348,20 +361,23 @@ def group(gid: int, user=Depends(cam_user), conn=db.DB):
 def assign(gid: int, body: AssignIn, user=Depends(cam_user), conn=db.DB):
     """Gruptaki tüm yüzler kişiye (kullanıcı ya da firma kişisi) atanır; o kişinin grubu varsa ikisi birleşir.
     Kullanıcı/kişi varlığı BULUT veritabanında doğrulanır; grup fabrikada olabilir."""
-    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id)) != 1:
-        raise HTTPException(400, 'Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id, body.visitor_id)) != 1:
+        raise HTTPException(400, 'Bir kullanıcı, firma kişisi, aile üyesi ya da ziyaretçi seçin')
     if body.user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (body.user_id,)).fetchone():
         raise HTTPException(400, 'Kullanıcı bulunamadı')
     if body.person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (body.person_id,)).fetchone():
         raise HTTPException(400, 'Kişi bulunamadı')
     if body.family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (body.family_id,)).fetchone():
         raise HTTPException(400, 'Aile üyesi bulunamadı')
-    r = _face(conn, 'assign', gid=gid, user_id=body.user_id, person_id=body.person_id, family_id=body.family_id, by=user['id'], validate=False)
-    kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
+    if body.visitor_id and not conn.execute('SELECT 1 FROM visitors WHERE id = ?', (body.visitor_id,)).fetchone():
+        raise HTTPException(400, 'Ziyaretçi bulunamadı')
+    r = _face(conn, 'assign', gid=gid, user_id=body.user_id, person_id=body.person_id, family_id=body.family_id,
+              visitor_id=body.visitor_id, by=user['id'], validate=False)
+    kind = 'user' if body.user_id else 'person' if body.person_id else 'family' if body.family_id else 'visitor'
     db.audit(conn, user['id'], 'Kamera yüz grubunu kişiye atadı', 'face_group', r.get('id', gid),
-             f"{kind}={body.user_id or body.person_id or body.family_id}")
+             f"{kind}={body.user_id or body.person_id or body.family_id or body.visitor_id}")
     try:   # atanan yüzleri eğitime de ekle (en iyi çaba — atama yine başarılı sayılır)
-        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'])
+        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'], body.visitor_id)
         if n:
             db.audit(conn, user['id'], f'Atanan yüzler eğitime eklendi: {n}', 'face_enroll', r.get('id', gid), kind)
     except Exception:   # noqa: BLE001
@@ -402,21 +418,23 @@ def delete_sightings(body: SightingIdsIn, user=Depends(cam_user), conn=db.DB):
 def assign_sightings(body: SightingAssignIn, user=Depends(cam_user), conn=db.DB):
     """Seçili görülmeleri mevcut gruptan çıkarıp yalnız onları bir kişiye (kullanıcı / firma kişisi / aile üyesi) atar.
     Kişinin grubu varsa birleşir. Varlık BULUT veritabanında doğrulanır; görülme fabrikada olabilir."""
-    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id)) != 1:
-        raise HTTPException(400, 'Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    if sum(bool(x) for x in (body.user_id, body.person_id, body.family_id, body.visitor_id)) != 1:
+        raise HTTPException(400, 'Bir kullanıcı, firma kişisi, aile üyesi ya da ziyaretçi seçin')
     if body.user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (body.user_id,)).fetchone():
         raise HTTPException(400, 'Kullanıcı bulunamadı')
     if body.person_id and not conn.execute('SELECT 1 FROM company_people WHERE id = ?', (body.person_id,)).fetchone():
         raise HTTPException(400, 'Kişi bulunamadı')
     if body.family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (body.family_id,)).fetchone():
         raise HTTPException(400, 'Aile üyesi bulunamadı')
+    if body.visitor_id and not conn.execute('SELECT 1 FROM visitors WHERE id = ?', (body.visitor_id,)).fetchone():
+        raise HTTPException(400, 'Ziyaretçi bulunamadı')
     r = _face(conn, 'assign_sightings', ids=list(dict.fromkeys(body.ids)), user_id=body.user_id,
-              person_id=body.person_id, family_id=body.family_id, by=user['id'], validate=False)
-    kind = 'user' if body.user_id else 'person' if body.person_id else 'family'
+              person_id=body.person_id, family_id=body.family_id, visitor_id=body.visitor_id, by=user['id'], validate=False)
+    kind = 'user' if body.user_id else 'person' if body.person_id else 'family' if body.family_id else 'visitor'
     db.audit(conn, user['id'], 'Kamera yüz görülmelerini kişiye atadı', 'face_group', r.get('id'),
-             f"{kind}={body.user_id or body.person_id or body.family_id} · {len(body.ids)} görülme")
+             f"{kind}={body.user_id or body.person_id or body.family_id or body.visitor_id} · {len(body.ids)} görülme")
     try:   # atanan görülmeleri eğitime de ekle (en iyi çaba — atama yine başarılı sayılır)
-        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'])
+        n = _enroll_assigned(conn, r, kind, body.user_id, body.person_id, body.family_id, user['id'], body.visitor_id)
         if n:
             db.audit(conn, user['id'], f'Atanan yüzler eğitime eklendi: {n}', 'face_enroll', r.get('id'), kind)
     except Exception:   # noqa: BLE001
@@ -434,14 +452,53 @@ def delete_group(gid: int, user=Depends(cam_user), conn=db.DB):
 
 @faces_router.get('/people')
 def people(user=Depends(cam_user), conn=db.DB):
-    """Atama seçimi: kullanıcılar, firma kişileri ve personel aile üyeleri (Firma modülü olmadan)."""
+    """Atama seçimi: kullanıcılar, firma kişileri, personel aile üyeleri ve ziyaretçiler (Firma modülü olmadan)."""
     return {
         'users': db.rows(conn.execute('SELECT id, full_name, photo FROM users WHERE active = 1 AND deleted_at IS NULL ORDER BY full_name')),
         'people': db.rows(conn.execute('''SELECT p.id, p.full_name, p.title, c.name AS company_name FROM company_people p
                                           LEFT JOIN companies c ON c.id = p.company_id ORDER BY p.full_name''')),
         'family': db.rows(conn.execute('''SELECT fm.id, fm.full_name, fm.relation, (e.first_name || ' ' || e.last_name) AS employee_name
                                           FROM family_members fm JOIN employees e ON e.id = fm.employee_id ORDER BY fm.full_name''')),
+        'visitors': db.rows(conn.execute('SELECT id, full_name, company, phone FROM visitors ORDER BY full_name')),
     }
+
+
+@faces_router.get('/visitors')
+def visitors_list(q: str = '', user=Depends(cam_user), conn=db.DB):
+    """Ziyaretçi arama (atama seçici için): ad ya da firmaya göre."""
+    q = (q or '').strip()
+    if q:
+        like = f'%{q}%'
+        rows = db.rows(conn.execute(
+            '''SELECT id, full_name, company, phone, note FROM visitors
+               WHERE full_name LIKE ? OR company LIKE ? ORDER BY full_name LIMIT 60''', (like, like)))
+    else:
+        rows = db.rows(conn.execute('SELECT id, full_name, company, phone, note FROM visitors ORDER BY full_name LIMIT 60'))
+    return {'visitors': rows}
+
+
+@faces_router.post('/visitors')
+def visitor_create(body: VisitorIn, user=Depends(cam_user), conn=db.DB):
+    """Yeni ziyaretçi oluştur (atama seçicideki satır içi 'Yeni ziyaretçi'). id + ad döner."""
+    name = (body.full_name or '').strip()
+    if not name:
+        raise HTTPException(400, 'Ziyaretçi adı gerekli')
+    cur = conn.execute('INSERT INTO visitors (full_name, company, phone, note, created_by, created_at) VALUES (?,?,?,?,?,?)',
+                       (name, (body.company or '').strip() or None, (body.phone or '').strip() or None,
+                        (body.note or '').strip() or None, user['id'], db.now()))
+    conn.commit()
+    db.audit(conn, user['id'], 'Ziyaretçi eklendi', 'visitor', cur.lastrowid, name)
+    return {'id': cur.lastrowid, 'full_name': name, 'company': (body.company or '').strip() or None}
+
+
+@faces_router.delete('/visitors/{visitor_id}')
+def visitor_delete(visitor_id: int, user=Depends(cam_user), conn=db.DB):
+    """Ziyaretçiyi sil (bağlı eğitim izleri ON DELETE CASCADE, atanmış gruplar ON DELETE SET NULL)."""
+    if conn.execute('SELECT 1 FROM visitors WHERE id = ?', (visitor_id,)).fetchone():
+        conn.execute('DELETE FROM visitors WHERE id = ?', (visitor_id,))
+        conn.commit()
+        db.audit(conn, user['id'], 'Ziyaretçi silindi', 'visitor', visitor_id, None)
+    return {'ok': True}
 
 
 @faces_router.get('/recent')
@@ -462,11 +519,11 @@ def events(date_from: str, date_to: str, kind: str = 'known', limit: int = 500,
 
 @faces_router.get('/enroll')
 def enroll_list(subject_type: str, user_id: Optional[int] = None, person_id: Optional[int] = None,
-                family_id: Optional[int] = None, user=Depends(cam_user), conn=db.DB):
+                family_id: Optional[int] = None, visitor_id: Optional[int] = None, user=Depends(cam_user), conn=db.DB):
     """Bir kişinin eğitim fotoğrafları (yüz kırpıkları)."""
     from .. import faceenroll
     try:
-        return {'faces': faceenroll.list_for(conn, subject_type, user_id, person_id, family_id)}
+        return {'faces': faceenroll.list_for(conn, subject_type, user_id, person_id, family_id, visitor_id)}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -474,7 +531,8 @@ def enroll_list(subject_type: str, user_id: Optional[int] = None, person_id: Opt
 @faces_router.post('/enroll')
 async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...),
                      user_id: Optional[int] = Form(None), person_id: Optional[int] = Form(None),
-                     family_id: Optional[int] = Form(None), user=Depends(cam_user), conn=db.DB):
+                     family_id: Optional[int] = Form(None), visitor_id: Optional[int] = Form(None),
+                     user=Depends(cam_user), conn=db.DB):
     """Yüz tanıma eğitimi: bir fotoğraf yükle → kişinin yüzü eğitilsin."""
     from .. import faceenroll
     import os
@@ -486,7 +544,7 @@ async def enroll_add(file: UploadFile = File(...), subject_type: str = Form(...)
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        ok, res = await run_in_threadpool(faceenroll.enroll, conn, subject_type, user_id, person_id, tmp, user['id'], family_id)
+        ok, res = await run_in_threadpool(faceenroll.enroll, conn, subject_type, user_id, person_id, tmp, user['id'], family_id, visitor_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:
@@ -519,7 +577,7 @@ def _push_enroll(conn):
         pass
 
 
-def _enroll_assigned(conn, r, subject_type, user_id, person_id, family_id, by):
+def _enroll_assigned(conn, r, subject_type, user_id, person_id, family_id, by, visitor_id=None):
     """Atama sonucunda gelen `enroll_faces` yükünü (facecore'dan) YENİDEN TESPİT olmadan eğitim verisine ekler:
     her yüz için kırpık görüntüsü getirilir (dağıtık: facebridge.media; yerel: UPLOAD_DIR'den okunur) ve
     faceenroll.enroll_precomputed ile kaydedilir (dedupe'lu). Eklenen yüz varsa eğitim izleri fabrika servisine
@@ -538,7 +596,7 @@ def _enroll_assigned(conn, r, subject_type, user_id, person_id, family_id, by):
             else:
                 crop_bytes = (config.UPLOAD_DIR / crop_path).read_bytes()
             if faceenroll.enroll_precomputed(conn, subject_type, user_id, person_id, family_id,
-                                             crop_bytes, base64.b64decode(emb_b64), by):
+                                             crop_bytes, base64.b64decode(emb_b64), by, visitor_id):
                 added += 1
         except Exception:   # noqa: BLE001
             continue

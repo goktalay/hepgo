@@ -53,17 +53,19 @@ def _enroll_payload(rows):
     return out
 
 
-GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.family_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
-       u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name, c.name AS last_camera_name,
+GROUP_SELECT = '''SELECT g.id, g.person_id, g.user_id, g.family_id, g.visitor_id, g.samples, g.best_crop, g.first_seen, g.last_seen, g.assigned_at,
+       u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name, vz.full_name AS visitor_name,
+       vz.company AS visitor_company, c.name AS last_camera_name,
        (SELECT COUNT(*) FROM face_sightings s WHERE s.group_id = g.id) AS sightings,
        (SELECT group_concat(DISTINCT cc.name) FROM face_sightings s JOIN cameras cc ON cc.id = s.camera_id WHERE s.group_id = g.id) AS cameras
 FROM face_groups g LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
-LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN family_members fm ON fm.id = g.family_id LEFT JOIN cameras c ON c.id = g.last_camera'''
+LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN family_members fm ON fm.id = g.family_id
+LEFT JOIN visitors vz ON vz.id = g.visitor_id LEFT JOIN cameras c ON c.id = g.last_camera'''
 
 
 def groups(conn, state='unknown'):
-    where = ('g.person_id IS NULL AND g.user_id IS NULL AND g.family_id IS NULL' if state == 'unknown'
-             else 'g.person_id IS NOT NULL OR g.user_id IS NOT NULL OR g.family_id IS NOT NULL')
+    where = ('g.person_id IS NULL AND g.user_id IS NULL AND g.family_id IS NULL AND g.visitor_id IS NULL' if state == 'unknown'
+             else 'g.person_id IS NOT NULL OR g.user_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL')
     return db.rows(conn.execute(GROUP_SELECT + f' WHERE {where} ORDER BY g.last_seen DESC LIMIT 500'))
 
 
@@ -94,9 +96,9 @@ def _merge(conn, target, sources):
     conn.execute(f'DELETE FROM face_groups WHERE id IN ({",".join("?" * len(sources))})', sources)
 
 
-def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None):
-    if sum(bool(x) for x in (user_id, person_id, family_id)) != 1:
-        raise ValueError('Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None, visitor_id=None):
+    if sum(bool(x) for x in (user_id, person_id, family_id, visitor_id)) != 1:
+        raise ValueError('Bir kullanıcı, firma kişisi, aile üyesi ya da ziyaretçi seçin')
     # Dağıtık kurulumda varlık BULUTTA doğrulanır (fabrika DB'si eski olabilir); validate=False gelir.
     if validate and user_id and not conn.execute('SELECT 1 FROM users WHERE id = ?', (user_id,)).fetchone():
         raise ValueError('Kullanıcı bulunamadı')
@@ -104,17 +106,20 @@ def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None):
         raise ValueError('Kişi bulunamadı')
     if validate and family_id and not conn.execute('SELECT 1 FROM family_members WHERE id = ?', (family_id,)).fetchone():
         raise ValueError('Aile üyesi bulunamadı')
+    if validate and visitor_id and not conn.execute('SELECT 1 FROM visitors WHERE id = ?', (visitor_id,)).fetchone():
+        raise ValueError('Ziyaretçi bulunamadı')
     if not conn.execute('SELECT 1 FROM face_groups WHERE id = ?', (gid,)).fetchone():
         raise NotFound('Yüz grubu bulunamadı')
     # Atanan grubun görülmelerini eğitime aktarmak için — birleşmeden ÖNCE, yalnız bu grubun yüzleri (en iyi N / çeşitli)
     enroll_rows = db.rows(conn.execute('SELECT crop, embedding, score FROM face_sightings WHERE group_id = ?', (gid,)))
-    col, val = ('user_id', user_id) if user_id else ('person_id', person_id) if person_id else ('family_id', family_id)
+    col, val = (('user_id', user_id) if user_id else ('person_id', person_id) if person_id
+                else ('family_id', family_id) if family_id else ('visitor_id', visitor_id))
     existing = conn.execute(f'SELECT id FROM face_groups WHERE {col} = ? AND id != ? ORDER BY samples DESC LIMIT 1', (val, gid)).fetchone()
     target = existing[0] if existing else gid
     if existing:
         _merge(conn, target, [gid])
-    conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, family_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
-                 (person_id, user_id, family_id, by, db.now(), target))
+    conn.execute('UPDATE face_groups SET person_id = ?, user_id = ?, family_id = ?, visitor_id = ?, assigned_by = ?, assigned_at = ? WHERE id = ?',
+                 (person_id, user_id, family_id, visitor_id, by, db.now(), target))
     return {'id': target, 'enroll_faces': _enroll_payload(enroll_rows)}
 
 
@@ -127,7 +132,7 @@ def merge(conn, ids):
 
 
 def unassign(conn, gid):
-    conn.execute('UPDATE face_groups SET person_id = NULL, user_id = NULL, family_id = NULL, assigned_by = NULL, assigned_at = NULL WHERE id = ?', (gid,))
+    conn.execute('UPDATE face_groups SET person_id = NULL, user_id = NULL, family_id = NULL, visitor_id = NULL, assigned_by = NULL, assigned_at = NULL WHERE id = ?', (gid,))
     return {'ok': True}
 
 
@@ -204,12 +209,12 @@ def delete_sightings(conn, ids):
     return {'ok': True, 'deleted': len(rows), 'left': left}
 
 
-def assign_sightings(conn, ids, user_id, person_id, by, validate=True, family_id=None):
+def assign_sightings(conn, ids, user_id, person_id, by, validate=True, family_id=None, visitor_id=None):
     """Seçili görülmeleri mevcut gruplarından ÇIKARIP yalnız onlardan yeni bir grup oluşturur ve o grubu kişiye atar
     (kişinin grubu zaten varsa `assign` ile birleşir). Kaynak gruplar kalanlardan yeniden hesaplanır / boşalırsa silinir.
     Yeni grubun centroid'i seçili görülmelerin embedding'lerinden kurulur."""
-    if sum(bool(x) for x in (user_id, person_id, family_id)) != 1:
-        raise ValueError('Bir kullanıcı, firma kişisi ya da aile üyesi seçin')
+    if sum(bool(x) for x in (user_id, person_id, family_id, visitor_id)) != 1:
+        raise ValueError('Bir kullanıcı, firma kişisi, aile üyesi ya da ziyaretçi seçin')
     rows = _sighting_rows(conn, ids)
     src_gids = {r['group_id'] for r in rows}
     acc = np.zeros(128, np.float32)
@@ -228,30 +233,33 @@ def assign_sightings(conn, ids, user_id, person_id, by, validate=True, family_id
     for gid in src_gids:   # seçilenler çıkınca kaynak grupları tazele / boşalanı sil
         if gid != new_gid:
             _recompute_group(conn, gid)
-    return assign(conn, new_gid, user_id, person_id, by, validate, family_id)
+    return assign(conn, new_gid, user_id, person_id, by, validate, family_id, visitor_id)
 
 
 def recent(conn):
     return db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
-                  u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name
+        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
+                  u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name,
+                  vz.full_name AS visitor_name, vz.company AS visitor_company
            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id LEFT JOIN companies pc ON pc.id = p.company_id
-           LEFT JOIN family_members fm ON fm.id = g.family_id
-           WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
+           LEFT JOIN family_members fm ON fm.id = g.family_id LEFT JOIN visitors vz ON vz.id = g.visitor_id
+           WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
 
 
 def events(conn, date_from, date_to, kind='known', limit=500):
     where = "s.at >= ? AND s.at < ?"
     args = [date_from, date_to + '~']
     if kind == 'known':
-        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL)"
+        where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL)"
     return {'events': db.rows(conn.execute(
-        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id,
-                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
+                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name,
+                   vz.full_name AS visitor_name, vz.company AS visitor_company
             FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
             LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id
             LEFT JOIN companies pc ON pc.id = p.company_id LEFT JOIN family_members fm ON fm.id = g.family_id
+            LEFT JOIN visitors vz ON vz.id = g.visitor_id
             WHERE {where} ORDER BY s.at DESC LIMIT ?''', (*args, min(limit, 2000))))}
 
 
@@ -290,7 +298,7 @@ def family_shots(conn, family_ids, per=6):
 
 def subject_shots(conn, kind, id, limit=12):
     """Bir kişiye (user/person/family) ATANMIŞ kamera gruplarından görülmeler + özet. Rehber/yüz tanıma kaydı için."""
-    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id'}.get(kind)
+    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id', 'visitor': 'visitor_id'}.get(kind)
     if not col:
         return {'shots': [], 'sightings': 0, 'groups': 0}
     grp = db.rows(conn.execute(f'SELECT id, samples, first_seen, last_seen FROM face_groups WHERE {col} = ?', (int(id),)))
@@ -305,8 +313,8 @@ def subject_shots(conn, kind, id, limit=12):
 
 
 def avatars(conn, keys):
-    """Kişiler için tanınan en iyi yüz kırpığı (fotoğrafı olmayanlara avatar). keys: ['family:3','user:5',...] → {key: crop}."""
-    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id'}
+    """Kişiler için tanınan en iyi yüz kırpığı (fotoğrafı olmayanlara avatar). keys: ['family:3','user:5','visitor:7',...] → {key: crop}."""
+    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id', 'visitor': 'visitor_id'}
     out = {}
     for k in keys or []:
         kind, _, sid = str(k).partition(':')
@@ -337,11 +345,15 @@ def push_config(conn, cfg):
     """Fabrika-yerel: NVR kimlik bilgileri + kanal/zamanlama + vardiya + eğitim izleri yerel DB'ye yazılır.
     camera_service bunları okuyarak çalışır. Eğitim izleri (embedding) yalnızca eşleştirme için; kırpık bulutta kalır."""
     from . import nvr
-    conn.execute('PRAGMA foreign_keys = OFF')   # fabrika aynası: bulut id'leri (employee/family) yerel parent olmadan taşınır
+    conn.execute('PRAGMA foreign_keys = OFF')   # fabrika aynası: bulut id'leri (employee/family/visitor) yerel parent olmadan taşınır
     # Eğitilmiş aile üyesi stub'ları (face_groups.family_id FK'si + ad için)
     for fmrow in cfg.get('family') or []:
         conn.execute('INSERT OR REPLACE INTO family_members (id, employee_id, full_name, created_at) VALUES (?,?,?,?)',
                      (fmrow['id'], fmrow.get('employee_id'), fmrow.get('full_name') or '(aile)', db.now()))
+    # Eğitilmiş ziyaretçi stub'ları (face_groups.visitor_id FK'si + ad çözümü için)
+    for vzrow in cfg.get('visitors') or []:
+        conn.execute('INSERT OR REPLACE INTO visitors (id, full_name, company, created_at) VALUES (?,?,?,?)',
+                     (vzrow['id'], vzrow.get('full_name') or '(ziyaretçi)', vzrow.get('company'), db.now()))
     nv = cfg.get('nvr') or {}
     for k, attr in (('host', 'NVR_HOST'), ('user', 'NVR_USER'), ('password', 'NVR_PASSWORD')):
         if nv.get(k) is not None:
@@ -357,9 +369,9 @@ def push_config(conn, cfg):
     n = 0
     for e in cfg.get('enroll') or []:
         emb = base64.b64decode(e['embedding'])
-        conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, crop, embedding, created_at)
-                        VALUES (?,?,?,?,?,?,?)''',
-                     (e['subject_type'], e.get('user_id'), e.get('person_id'), e.get('family_id'), '(bulut)', emb, db.now()))
+        conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, visitor_id, crop, embedding, created_at)
+                        VALUES (?,?,?,?,?,?,?,?)''',
+                     (e['subject_type'], e.get('user_id'), e.get('person_id'), e.get('family_id'), e.get('visitor_id'), '(bulut)', emb, db.now()))
         n += 1
     cams = nvr.sync_cameras(conn)   # yüz tanıma açık kanalları kamera listesine köprüle
     conn.commit()
@@ -374,7 +386,7 @@ def rpc(conn, method, args):
     if method == 'group':
         return group(conn, a['gid'])
     if method == 'assign':
-        return assign(conn, a['gid'], a.get('user_id'), a.get('person_id'), a.get('by'), a.get('validate', True), a.get('family_id'))
+        return assign(conn, a['gid'], a.get('user_id'), a.get('person_id'), a.get('by'), a.get('validate', True), a.get('family_id'), a.get('visitor_id'))
     if method == 'merge':
         return merge(conn, a['ids'])
     if method == 'unassign':
@@ -387,7 +399,7 @@ def rpc(conn, method, args):
         return delete_sightings(conn, a.get('ids') or [])
     if method == 'assign_sightings':
         return assign_sightings(conn, a.get('ids') or [], a.get('user_id'), a.get('person_id'), a.get('by'),
-                                a.get('validate', True), a.get('family_id'))
+                                a.get('validate', True), a.get('family_id'), a.get('visitor_id'))
     if method == 'recent':
         return recent(conn)
     if method == 'events':

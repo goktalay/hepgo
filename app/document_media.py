@@ -334,16 +334,18 @@ def known_identities(conn):
         sums[key] = sums.get(key, 0) + np.frombuffer(r[2], dtype=np.float32)
     # Yüz Tanıma Eğitimi (faceenroll) izleri — tablo yoksa sorun değil (eski kurulum)
     try:
-        for r in conn.execute("SELECT subject_type, user_id, person_id, family_id, embedding FROM face_enroll"):
+        for r in conn.execute("SELECT subject_type, user_id, person_id, family_id, visitor_id, embedding FROM face_enroll"):
             if r[0] == 'user':
                 key = ('user', r[1])
             elif r[0] == 'person':
                 key = ('person', r[2])
             elif r[0] == 'family':
                 key = ('family', r[3])
+            elif r[0] == 'visitor':
+                key = ('visitor', r[4])
             else:
                 continue
-            sums[key] = sums.get(key, 0) + np.frombuffer(r[4], dtype=np.float32)
+            sums[key] = sums.get(key, 0) + np.frombuffer(r[5], dtype=np.float32)
     except Exception:   # noqa: BLE001 — face_enroll yoksa yalnızca evrak yüzleri
         pass
     return [(k, _norm(v)) for k, v in sums.items()]

@@ -95,15 +95,16 @@ async function renderEvents(wrap) {
   let rows = [];
 
   const draw = () => {
-    const list = rows.filter(e => matches(q.value, e.user_name, e.person_name, e.person_company, e.camera_name));
+    const list = rows.filter(e => matches(q.value, e.user_name, e.person_name, e.person_company, e.family_name, e.visitor_name, e.visitor_company, e.camera_name));
     info.textContent = t('{n} görülme', { n: list.length });
     clear(out, list.length ? h('div', { class: 'fr-events' }, list.map(e => h('button', {
       class: 'card fr-ev', type: 'button', onclick: () => showFrame(e),
     },
       h('div', { class: 'fr-ev-img' }, e.crop ? h('img', { src: fileUrl(e.crop, 160), alt: '', loading: 'lazy' }) : null),
       h('div', { class: 'fr-ev-body' },
-        h('b', null, e.user_name || e.person_name || e.family_name || "Tanımlanamayan",
-          e.person_company ? h('span', { class: 'small muted' }, ` · ${e.person_company}`) : null),
+        h('b', null, e.user_name || e.person_name || e.family_name || e.visitor_name || "Tanımlanamayan",
+          (e.person_company || e.visitor_company) ? h('span', { class: 'small muted' }, ` · ${e.person_company || e.visitor_company}`) : null,
+          e.visitor_name ? h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'Ziyaretçi') : null),
         h('div', { class: 'small muted' }, e.camera_name || '—'),
         h('div', { class: 'small muted' }, fmtDateTime(e.at), e.threshold != null ? ` · hassasiyet ${e.threshold}` : '')))))
       : h('div', { class: 'card empty' }, 'Bu tarih aralığında görülme yok. Kameralarda yüz tanıma açık olmalı ve kişi eğitilmiş olmalı.'));
@@ -112,7 +113,7 @@ async function renderEvents(wrap) {
     const media = e.clip
       ? h('video', { class: 'fr-clip', src: videoUrl(e.clip), controls: true, loop: true, muted: true, playsinline: true, preload: 'metadata' })
       : (e.frame ? h('img', { src: fileUrl(e.frame), alt: '' }) : h('div', { class: 'muted' }, 'Görüntü yok'));
-    modal({ title: `${e.user_name || e.person_name || e.family_name || "Görülme"} · ${fmtDateTime(e.at)}`, wide: true,
+    modal({ title: `${e.user_name || e.person_name || e.family_name || e.visitor_name || "Görülme"} · ${fmtDateTime(e.at)}`, wide: true,
       body: h('div', { class: 'fr-frame' }, media,
         h('div', { class: 'small muted' }, [e.camera_name, e.clip ? 'video' : null].filter(Boolean).join(' · '))),
       actions: [{ label: 'Kapat' }] });

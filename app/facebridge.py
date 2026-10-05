@@ -39,6 +39,7 @@ def resolve_names(conn, rows):
     uids = {r['user_id'] for r in rows if r.get('user_id')}
     pids = {r['person_id'] for r in rows if r.get('person_id')}
     fids = {r['family_id'] for r in rows if r.get('family_id')}
+    vids = {r['visitor_id'] for r in rows if r.get('visitor_id')}
     users = {r[0]: r[1] for r in conn.execute(
         f'SELECT id, full_name FROM users WHERE id IN ({",".join("?" * len(uids))})', tuple(uids))} if uids else {}
     people = {r[0]: (r[1], r[2]) for r in conn.execute(
@@ -46,6 +47,8 @@ def resolve_names(conn, rows):
             WHERE p.id IN ({",".join("?" * len(pids))})''', tuple(pids))} if pids else {}
     family = {r[0]: r[1] for r in conn.execute(
         f'SELECT id, full_name FROM family_members WHERE id IN ({",".join("?" * len(fids))})', tuple(fids))} if fids else {}
+    visitors = {r[0]: (r[1], r[2]) for r in conn.execute(
+        f'SELECT id, full_name, company FROM visitors WHERE id IN ({",".join("?" * len(vids))})', tuple(vids))} if vids else {}
     for r in rows:
         if r.get('user_id'):
             r['user_name'] = users.get(r['user_id'])
@@ -53,6 +56,8 @@ def resolve_names(conn, rows):
             r['person_name'], r['person_company'] = people.get(r['person_id'], (None, None))
         if r.get('family_id'):
             r['family_name'] = family.get(r['family_id'])
+        if r.get('visitor_id'):
+            r['visitor_name'], r['visitor_company'] = visitors.get(r['visitor_id'], (None, None))
     return rows
 
 
@@ -65,13 +70,16 @@ def push(conn):
     channels = json.loads(row[0]) if row else {}
     frow = conn.execute("SELECT v FROM app_kv WHERE k = 'facerec_config'").fetchone()
     facerec = json.loads(frow[0]) if frow else {'score': 0.6, 'min_face': 36}
-    enroll = [{'subject_type': r[0], 'user_id': r[1], 'person_id': r[2], 'family_id': r[3], 'embedding': base64.b64encode(r[4]).decode()}
-              for r in conn.execute('SELECT subject_type, user_id, person_id, family_id, embedding FROM face_enroll')]
+    enroll = [{'subject_type': r[0], 'user_id': r[1], 'person_id': r[2], 'family_id': r[3], 'visitor_id': r[4], 'embedding': base64.b64encode(r[5]).decode()}
+              for r in conn.execute('SELECT subject_type, user_id, person_id, family_id, visitor_id, embedding FROM face_enroll')]
     # Eğitilmiş aile üyelerinin stub kayıtları (fabrikada face_groups.family_id FK'si için + ad çözümü)
     family = [{'id': r[0], 'full_name': r[1], 'employee_id': r[2]} for r in conn.execute(
         'SELECT id, full_name, employee_id FROM family_members WHERE id IN (SELECT DISTINCT family_id FROM face_enroll WHERE family_id IS NOT NULL)')]
+    # Eğitilmiş ziyaretçilerin stub kayıtları (fabrikada face_groups.visitor_id FK'si için + ad çözümü)
+    visitors = [{'id': r[0], 'full_name': r[1], 'company': r[2]} for r in conn.execute(
+        'SELECT id, full_name, company FROM visitors WHERE id IN (SELECT DISTINCT visitor_id FROM face_enroll WHERE visitor_id IS NOT NULL)')]
     cfg = {
         'nvr': {'host': config.NVR_HOST, 'port': config.NVR_PORT, 'user': config.NVR_USER, 'password': config.NVR_PASSWORD},
-        'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll, 'facerec': facerec, 'family': family,
+        'channels': channels, 'shift': shifts.get(conn), 'enroll': enroll, 'facerec': facerec, 'family': family, 'visitors': visitors,
     }
     return rpc('push_config', cfg=cfg)

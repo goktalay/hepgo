@@ -684,6 +684,17 @@ CREATE TABLE IF NOT EXISTS family_members (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_family_members_emp ON family_members(employee_id);
+-- Ziyaretçiler (firmaya gelen kişiler). Yüz tanımada eğitilebilir (face_enroll.visitor_id) — personel/firma kişisi/aile dışı özne.
+CREATE TABLE IF NOT EXISTS visitors (
+    id          INTEGER PRIMARY KEY,
+    full_name   TEXT NOT NULL,
+    company     TEXT,                -- geldiği firma (ops.)
+    phone       TEXT,
+    note        TEXT,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_visitors_name ON visitors(full_name);
 -- MRP › Depo Yönetimi: depolar ve sorumluları
 CREATE TABLE IF NOT EXISTS warehouses (
     id             INTEGER PRIMARY KEY,
@@ -2096,6 +2107,7 @@ CREATE TABLE IF NOT EXISTS face_groups (
     person_id   INTEGER REFERENCES company_people(id) ON DELETE SET NULL,
     user_id     INTEGER REFERENCES users(id),
     family_id   INTEGER REFERENCES family_members(id) ON DELETE SET NULL,
+    visitor_id  INTEGER REFERENCES visitors(id) ON DELETE SET NULL,
     centroid    BLOB NOT NULL,
     samples     INTEGER NOT NULL DEFAULT 0,
     best_crop   TEXT,
@@ -2122,14 +2134,16 @@ CREATE TABLE IF NOT EXISTS face_sightings (
 CREATE INDEX IF NOT EXISTS ix_face_sightings_group ON face_sightings(group_id, at);
 CREATE INDEX IF NOT EXISTS ix_face_sightings_at ON face_sightings(at);
 -- Yüz tanıma eğitimi: bir kişi için (personel ya da firma personeli) yüklenen eğitim fotoğraflarından çıkarılan yüz izleri.
--- Kameralarda görülen yüzler bu izlerle eşleştirilir. subject_type: 'user' (personel) | 'person' (firma kişisi) | 'visitor'.
+-- Kameralarda görülen yüzler bu izlerle eşleştirilir.
+-- subject_type: 'user' (personel) | 'person' (firma kişisi) | 'family' (aile üyesi) | 'visitor' (ziyaretçi).
 CREATE TABLE IF NOT EXISTS face_enroll (
     id           INTEGER PRIMARY KEY,
     subject_type TEXT NOT NULL,
     user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
     person_id    INTEGER REFERENCES company_people(id) ON DELETE CASCADE,
     family_id    INTEGER REFERENCES family_members(id) ON DELETE CASCADE,
-    name         TEXT,                       -- subject_type='visitor' için serbest ad
+    visitor_id   INTEGER REFERENCES visitors(id) ON DELETE CASCADE,
+    name         TEXT,                       -- (eski) serbest ad yer tutucu
     crop         TEXT NOT NULL,              -- yüz kırpığı (uploads altında göreli yol)
     embedding    BLOB NOT NULL,
     created_by   INTEGER REFERENCES users(id),
@@ -2783,6 +2797,15 @@ def _migrate(conn):
         conn.execute('ALTER TABLE face_enroll ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE CASCADE')
     if 'family_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_groups)')}:
         conn.execute('ALTER TABLE face_groups ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE SET NULL')
+    # Ziyaretçiler + yüz tanımada eğitilebilirlik (face_enroll.visitor_id MERKEZ DB'de, face_groups.visitor_id FABRİKA/gx10 DB'de)
+    conn.execute('''CREATE TABLE IF NOT EXISTS visitors (
+        id INTEGER PRIMARY KEY, full_name TEXT NOT NULL, company TEXT, phone TEXT, note TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL)''')
+    conn.execute('CREATE INDEX IF NOT EXISTS ix_visitors_name ON visitors(full_name)')
+    if 'visitor_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_enroll)')}:
+        conn.execute('ALTER TABLE face_enroll ADD COLUMN visitor_id INTEGER REFERENCES visitors(id) ON DELETE CASCADE')
+    if 'visitor_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_groups)')}:
+        conn.execute('ALTER TABLE face_groups ADD COLUMN visitor_id INTEGER REFERENCES visitors(id) ON DELETE SET NULL')
     # Görev formu kaynağı: 'manual' (Kişisel görev formu) | 'field' (saha görevi araç çıkış grubu; onaysız/otomatik aktif)
     duty_cols = {r[1] for r in conn.execute('PRAGMA table_info(duty_requests)')}
     if 'source' not in duty_cols:

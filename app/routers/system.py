@@ -735,6 +735,30 @@ def status(since: int = 0, user=Depends(auth.current_user), conn=db.DB):
     return out
 
 
+# --- Transfer İzleme (canlı yükleme / indirme) — YALNIZCA MASTER ---
+# Toplu bir aktarım geçmişte yukarı bağlantıyı doyurup fabrika ajanını çevrimdışı bırakmıştı; MASTER buradan
+# tüm kullanıcıların anlık aktarımlarını görür ve kaçak bir YÜKLEMEYİ durdurabilir (indirmeler durdurulamaz).
+# Kapsam: bu işlem (tenant) — her tenant kendi işleminde kendi aktarımlarını izler.
+@router.get('/transfers')
+def transfers_snapshot(user=Depends(auth.current_user)):
+    if not user.get('master'):
+        raise HTTPException(403, 'Bu bilgi yalnızca sistem sahibine (MASTER) açıktır')
+    from .. import transfers
+    return transfers.snapshot()
+
+
+@router.post('/transfers/{tid}/stop')
+def transfers_stop(tid: str, user=Depends(auth.current_user)):
+    if not user.get('master'):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import transfers
+    effective = transfers.cancel(tid)
+    with db.connect() as conn:
+        db.audit(conn, user['id'], 'Transfer durdurdu (Transfer İzleme)', 'transfer', None, tid)
+    return {'ok': True, 'stopped': effective,
+            'note': None if effective else 'Bu aktarım durdurulamaz (indirme ya da tek-istek yükleme) ya da zaten bitti'}
+
+
 @router.get('/about')
 def about(user=Depends(auth.current_user)):
     """Program Hakkında: sürüm numarası herkese; değişiklik notları (sürüm tarihçesi) yalnızca MASTER'a."""

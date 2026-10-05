@@ -105,6 +105,79 @@ class _WsOriginGuard:
 
 
 app.add_middleware(_WsOriginGuard)
+
+
+# Transfer İzleme (MASTER panosu): GET /api/files/* indirmelerini KABA biçimde izler. FileResponse gövdesine
+# DOKUNULMAZ (Range/sendfile ve video ileri-sarma korunur); yalnızca ASGI send olayları gözlenir: yanıt
+# başlarken kayıt açılır (boyut = Content-Length), gövde bitince tamamlanır. Küçültülmüş resim (?w=) istekleri
+# gürültü yapmasın diye izlenmez. Kullanıcı adı oturum çerezinden en iyi çabayla (kısa önbellekli) çözülür.
+_dl_user_cache = {}   # token -> (monotonic, ad)
+
+
+def _down_user(scope):
+    try:
+        raw = {k.decode('latin-1').lower(): v.decode('latin-1') for k, v in scope.get('headers') or []}.get('cookie')
+        if not raw:
+            return '—'
+        from http.cookies import SimpleCookie
+        ck = SimpleCookie()
+        ck.load(raw)
+        m = ck.get(auth.COOKIE)
+        token = m.value if m else None
+        if not token:
+            return '—'
+        import time as _t
+        now = _t.monotonic()
+        hit = _dl_user_cache.get(token)
+        if hit and now - hit[0] < 60:
+            return hit[1]
+        with db.connect() as conn:
+            u = auth.user_by_token(conn, token)
+        name = (u['full_name'] if u else None) or '—'
+        if len(_dl_user_cache) > 500:
+            _dl_user_cache.clear()
+        _dl_user_cache[token] = (now, name)
+        return name
+    except Exception:   # noqa: BLE001 — izleme hiçbir koşulda indirmeyi bozmamalı
+        return '—'
+
+
+class _DownloadTracker:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get('path', '') if scope['type'] == 'http' else ''
+        if (scope.get('method') != 'GET' or not path.startswith('/api/files/')
+                or b'w=' in scope.get('query_string', b'')):   # küçük resim (thumbnail) istekleri izlenmez
+            return await self.app(scope, receive, send)
+        from . import transfers
+        state = {'tid': None}
+        name = path.rsplit('/', 1)[-1]
+
+        async def send_wrap(event):
+            et = event['type']
+            if et == 'http.response.start':
+                if 200 <= event['status'] < 300:
+                    headers = {k.decode('latin-1').lower(): v.decode('latin-1') for k, v in event.get('headers') or []}
+                    try:
+                        size = int(headers.get('content-length') or 0)
+                    except ValueError:
+                        size = 0
+                    state['tid'] = transfers.register('down', None, _down_user(scope), name, size, cancelable=False)
+            elif et == 'http.response.body' and not event.get('more_body', False) and state['tid']:
+                transfers.finish(state['tid'])
+            await send(event)
+
+        try:
+            return await self.app(scope, receive, send_wrap)
+        except BaseException:
+            if state['tid']:
+                transfers.finish(state['tid'])
+            raise
+
+
+app.add_middleware(_DownloadTracker)
 for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.duties_me_router, hr.duties_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,

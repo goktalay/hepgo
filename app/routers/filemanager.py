@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
-from .. import auth, config, db, files
+from .. import auth, config, db, files, transfers
 
 router = APIRouter(prefix='/api/fm')
 public = APIRouter()   # /p/{token}: oturumsuz (herkese açık) dış paylaşım bağlantıları — current_user YOK
@@ -247,12 +247,23 @@ def create_folder(body: FolderIn, user=Depends(auth.current_user), conn=db.DB):
 
 @router.post('/upload')
 async def upload(parent_id: str = Form(''), file: UploadFile = File(...),
-                 user=Depends(auth.current_user), conn=db.DB):
+                 request: Request = None, user=Depends(auth.current_user), conn=db.DB):
     pid = _opt_id(parent_id)
     owner_id = _require_edit_parent(conn, pid, user)
     name = (file.filename or 'dosya').replace('/', '_').replace('\\', '_').strip()[:255] or 'dosya'
     _check_dup(conn, pid, owner_id, name)
-    rel, size = await _save_fm(file)
+    # Transfer İzleme: tek-istek (POST) yükleme — boyut Content-Length'ten (kaba), akış ortasında durdurulamaz
+    try:
+        size_hint = int(request.headers.get('content-length') or 0) if request else 0
+    except (ValueError, TypeError):
+        size_hint = 0
+    tid = transfers.register('up', user['id'], user.get('full_name'), name, size_hint, cancelable=False)
+    try:
+        rel, size = await _save_fm(file)
+    except BaseException:
+        transfers.finish(tid)
+        raise
+    transfers.finish(tid)
     ts = db.now()
     try:
         nid = conn.execute(

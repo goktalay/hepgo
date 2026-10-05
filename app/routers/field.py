@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, config, db, exitpass
+from .. import auth, config, db, exitpass, transfers
 from ..files import KINDS, local_only, save_upload
 
 router = APIRouter(prefix='/api/field')
@@ -933,8 +933,9 @@ def video_init(fid: int, body: VideoInit, request: Request, user=Depends(field_u
     folder.mkdir(parents=True, exist_ok=True)
     name = secrets.token_hex(12) + ext
     (folder / (name + '.part')).touch()
+    tid = transfers.register('up', user['id'], user.get('full_name'), body.file_name, body.size)   # Transfer İzleme
     _uploads[token] = {'flight_id': fid, 'user_id': user['id'], 'file_name': body.file_name[:200], 'size': body.size,
-                       'received': 0, 'name': name}
+                       'received': 0, 'name': name, 'tid': tid}
     return {'upload_id': token, 'chunk_size': 16 * 1024 * 1024}
 
 
@@ -951,13 +952,25 @@ async def video_chunk(token: str, offset: int, request: Request, user=Depends(fi
     if offset != st['received']:
         raise HTTPException(409, f'Beklenen konum {st["received"]}')
     part = config.UPLOAD_DIR / 'videos' / (st['name'] + '.part')
+    tid = st.get('tid')
     written = 0
+    stopped = False
     with open(part, 'ab') as f:
         async for chunk in request.stream():
+            if tid and transfers.is_canceled(tid):   # MASTER "Durdur": yarım dosyayı bırak, iptal et
+                stopped = True
+                break
             written += len(chunk)
             if written > CHUNK_MAX or st['received'] + written > st['size']:
                 raise HTTPException(400, 'Parça boyutu hatalı')
             f.write(chunk)
+            if tid:
+                transfers.update(tid, st['received'] + written)
+    if stopped:
+        part.unlink(missing_ok=True)
+        _uploads.pop(token, None)
+        transfers.finish(tid)
+        raise HTTPException(409, 'Durduruldu')
     st['received'] += written
     return {'received': st['received']}
 
@@ -967,6 +980,8 @@ def video_cancel(token: str, user=Depends(field_user)):
     """Video yüklemesi iptal edildi: yarım dosya silinir."""
     st = _upload_state(token, user)
     (config.UPLOAD_DIR / 'videos' / (st['name'] + '.part')).unlink(missing_ok=True)
+    if st.get('tid'):
+        transfers.finish(st['tid'])
     _uploads.pop(token, None)
     return {'ok': True}
 
@@ -978,6 +993,8 @@ def video_complete(token: str, user=Depends(field_user), conn=db.DB):
         raise HTTPException(400, f'Yükleme eksik ({st["received"]}/{st["size"]} bayt)')
     folder = config.UPLOAD_DIR / 'videos'
     (folder / (st['name'] + '.part')).rename(folder / st['name'])
+    if st.get('tid'):
+        transfers.finish(st['tid'])
     _uploads.pop(token, None)
     cur = conn.execute(
         'INSERT INTO flight_videos (flight_id, file, file_name, size, uploaded_by, uploaded_at, kind) VALUES (?,?,?,?,?,?,?)',

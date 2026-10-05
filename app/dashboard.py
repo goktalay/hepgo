@@ -22,7 +22,7 @@ WIDGET_GROUP = {
     'kpi_warehouse': 'Depo & Stok', 'kpi_stock': 'Depo & Stok',
     'kpi_field': 'Saha',
     'kpi_security': 'Ofis & Güvenlik', 'kpi_secretariat': 'Ofis & Güvenlik', 'kpi_documents': 'Ofis & Güvenlik',
-    'kpi_admin': 'Sistem',
+    'kpi_admin': 'Sistem', 'transfers': 'Sistem',
 }
 
 
@@ -386,6 +386,14 @@ def w_kpi_admin(conn, user):
         {'label': 'Başarısız giriş (24 sa)', 'value': count(conn, 'SELECT COUNT(*) FROM login_logs WHERE success = 0 AND at >= ?', ((now - timedelta(hours=24)).isoformat(timespec='seconds'),)), 'tone': 'alert'},
         {'label': 'Son yedek', 'value': f'{round(b["nightly_age_h"])} sa önce' if b['nightly_age_h'] is not None else 'yok', 'tone': '' if b['ok'] else 'alert'},
     ]}
+
+
+@widget('transfers', 'Transfer İzleme', 'Tüm kullanıcıların canlı yükleme / indirme aktarımları; kaçak yüklemeyi durdur', module='master', size=2, group='Sistem')
+def w_transfers(conn, user):
+    """Canlı dosya aktarımları (yükleme + indirme). YALNIZCA MASTER (module='master'); içerik istemcide
+    /api/system/transfers'ten ~2 sn'de bir çekilir. İlk anlık görüntü burada verilir."""
+    from . import transfers
+    return transfers.snapshot()
 
 
 @widget('on_duty', 'Görevdeki Personel', 'Şu an görevde olan personel', group='Ofis & Güvenlik')

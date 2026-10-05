@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Upload
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import config
+from . import config, transfers
 from .auth import current_user
 
 KINDS = {
@@ -116,8 +116,9 @@ def chunked_init(body: ChunkInit, request: Request, user=Depends(current_user)):
     name = secrets.token_hex(12) + ext
     (folder / (name + '.part')).touch()
     token = secrets.token_hex(16)
+    tid = transfers.register('up', user['id'], user.get('full_name'), body.file_name, body.size)   # Transfer İzleme
     _chunked[token] = {'kind': body.kind, 'user_id': user['id'], 'file_name': body.file_name[:200], 'size': body.size,
-                       'received': 0, 'name': name}
+                       'received': 0, 'name': name, 'tid': tid}
     return {'upload_id': token, 'chunk_size': CHUNK_SIZE}
 
 
@@ -134,13 +135,25 @@ async def chunked_part(token: str, offset: int, request: Request, user=Depends(c
     if offset != st['received']:
         raise HTTPException(409, f'Beklenen konum {st["received"]}')
     part = config.UPLOAD_DIR / st['kind'] / (st['name'] + '.part')
+    tid = st.get('tid')
     written = 0
+    stopped = False
     with open(part, 'ab') as f:
         async for chunk in request.stream():
+            if tid and transfers.is_canceled(tid):   # MASTER "Durdur" dedi: yarım dosyayı bırak, iptal et
+                stopped = True
+                break
             written += len(chunk)
             if written > CHUNK_MAX or st['received'] + written > st['size']:
                 raise HTTPException(400, 'Parça boyutu hatalı')
             f.write(chunk)
+            if tid:
+                transfers.update(tid, st['received'] + written)
+    if stopped:
+        part.unlink(missing_ok=True)
+        _chunked.pop(token, None)
+        transfers.finish(tid)
+        raise HTTPException(409, 'Durduruldu')
     st['received'] += written
     return {'received': st['received']}
 
@@ -150,6 +163,8 @@ def chunked_cancel(token: str, user=Depends(current_user)):
     """Yükleme iptal edildi: yarım dosya silinir."""
     st = _chunk_state(token, user)
     (config.UPLOAD_DIR / st['kind'] / (st['name'] + '.part')).unlink(missing_ok=True)
+    if st.get('tid'):
+        transfers.finish(st['tid'])
     _chunked.pop(token, None)
     return {'ok': True}
 
@@ -163,6 +178,8 @@ def take_upload(token, user, kind):
         raise HTTPException(400, f'Yükleme eksik ({st["received"]}/{st["size"]} bayt)')
     folder = config.UPLOAD_DIR / kind
     (folder / (st['name'] + '.part')).rename(folder / st['name'])
+    if st.get('tid'):
+        transfers.finish(st['tid'])
     _chunked.pop(token, None)
     return f'{kind}/{st["name"]}', st['size'], st['file_name']
 

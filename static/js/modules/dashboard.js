@@ -38,7 +38,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4, spotify: 6 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4, spotify: 6, transfers: 7 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
 // Spotify kutucuğu ikonları (inline SVG; markadan bağımsız basit vektörler)
@@ -370,6 +370,7 @@ export async function renderDashboard(view, ctx, modules) {
       case 'notes': { dbNotes(body, acts); return; }
       case 'alarm': { dbAlarms(body, acts); return; }
       case 'spotify': { dbSpotify(body, acts, d); return; }
+      case 'transfers': { dbTransfers(body, acts, d); return; }
       case 'active_users': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Çevrimiçi başka kullanıcı yok')
         : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0])); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
       case 'quick_directory': {
@@ -701,6 +702,63 @@ export async function renderDashboard(view, ctx, modules) {
     };
     poll();
     timers.push(setInterval(poll, 5000));
+  }
+
+  // Transfer İzleme (YALNIZCA MASTER): tüm kullanıcıların canlı yükleme/indirme aktarımı — throughput grafiği,
+  // aktif aktarım listesi (kullanıcı, dosya, %/hız/kalan, yön) ve süren yüklemeyi "Durdur". ~2 sn'de bir yenilenir.
+  function dbTransfers(body, acts, d) {
+    if (acts) clear(acts);
+    const fmtBytes = n => { n = n || 0; if (n < 1024) return `${n} B`; if (n < 1048576) return `${(n / 1024).toFixed(0)} KB`; if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`; return `${(n / 1073741824).toFixed(2)} GB`; };
+    const fmtRate = bps => { bps = bps || 0; return bps < 1048576 ? `${(bps / 1024).toFixed(0)} KB/s` : `${(bps / 1048576).toFixed(1)} MB/s`; };
+    const fmtEta = s => { if (s == null) return ''; s = Math.round(s); if (s < 60) return `${s} sn`; const m = Math.floor(s / 60); return m < 60 ? `${m}dk ${s % 60}sn` : `${Math.floor(m / 60)}sa ${m % 60}dk`; };
+    const kb = arr => (arr || []).map(v => +((v || 0) / 1024).toFixed(1));
+    const head = h('div', { class: 'db-xfer-head' });
+    const canvas = h('canvas');
+    const listEl = h('div', { class: 'db-xfer-list' });
+    clear(body, h('div', { class: 'db-xfer' }, head, h('div', { class: 'db-chart db-xfer-chart' }, canvas), listEl));
+    let chart = null;
+    const labels = Array.from({ length: 60 }, (_, i) => { const s = 59 - i; return s % 15 === 0 ? `-${s}s` : ''; });
+    loadChart().then(Chart => {
+      chart = new Chart(canvas, chartConfig({ type: 'area', labels,
+        datasets: [{ label: '↑ Yükleme (KB/s)', data: kb(d.hist?.up) }, { label: '↓ İndirme (KB/s)', data: kb(d.hist?.down) }] }, theme(), false));
+      charts.push(chart);
+    }).catch(() => {});
+    const stop = async (id) => {
+      try { const r = await api.post(`/api/system/transfers/${id}/stop`); toast(r.note || 'Aktarım durduruldu'); poll(); }
+      catch (e) { toastError(e); }
+    };
+    const render = (snap) => {
+      const tot = snap.totals || {};
+      clear(head, h('span', { class: 'db-xfer-tot' }, 'Toplam ', h('b', null, `↑ ${fmtRate(tot.up_bps)}`), ' · ',
+        h('b', null, `↓ ${fmtRate(tot.down_bps)}`), ' · ', h('span', { class: 'db-n' }, tot.count || 0), ' aktif'));
+      const items = snap.active || [];
+      clear(listEl, items.length ? items.map(x => h('div', { class: `db-xfer-row ${x.done_state ? 'done' : ''} ${x.canceled ? 'canceled' : ''}` },
+        h('span', { class: `db-xfer-dir ${x.dir}` }, x.dir === 'up' ? '↑' : '↓'),
+        h('div', { class: 'db-xfer-main' },
+          h('div', { class: 'db-xfer-top' }, h('b', { class: 'db-xfer-name', title: x.name }, x.name || '—'),
+            h('span', { class: 'db-xfer-user muted' }, x.user || '—')),
+          h('div', { class: 'db-xfer-bar' }, h('i', { style: { width: `${Math.min(100, x.pct || 0)}%` } })),
+          h('div', { class: 'db-xfer-sub muted' },
+            h('span', null, `${x.pct || 0}%`),
+            h('span', null, `${fmtBytes(x.done)}${x.size ? ' / ' + fmtBytes(x.size) : ''}`),
+            !x.done_state ? h('span', null, fmtRate(x.rate)) : null,
+            (!x.done_state && x.eta != null) ? h('span', null, `kalan ${fmtEta(x.eta)}`) : null,
+            x.done_state ? h('span', { class: 'db-xfer-ok' }, x.canceled ? 'durduruldu' : 'tamamlandı') : null)),
+        x.cancelable ? h('button', { class: 'btn xs danger', type: 'button', onclick: () => stop(x.id) }, 'Durdur') : null))
+        : h('div', { class: 'db-none' }, 'Şu an aktif aktarım yok'));
+      if (chart) {
+        chart.data.datasets[0].data = kb(snap.hist?.up);
+        chart.data.datasets[1].data = kb(snap.hist?.down);
+        chart.update('none');
+      }
+    };
+    const poll = async () => {
+      let snap;
+      try { snap = await api.get('/api/system/transfers'); } catch { return; }
+      render(snap);
+    };
+    render(d);
+    timers.push(setInterval(poll, 2000));
   }
 
   async function dbNotes(body, acts) {

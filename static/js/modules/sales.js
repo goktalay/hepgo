@@ -32,7 +32,7 @@ export async function render(view, params, ctx) {
   await loadOpts();
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Fatura no ya da firma ara…', style: { maxWidth: '280px' } });
   const body = h('div');
-  const period = periodFilter('sales', () => draw());
+  const period = periodFilter('sales', () => draw(), { initial: 'all' });   // Mikro'dan gelen eski tarihli faturalar da görünsün
   reloadList = () => draw();
 
   const draw = async () => {
@@ -61,10 +61,12 @@ export async function render(view, params, ctx) {
   };
   let searchT; q.addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(draw, 300); });
 
-  clear(view, pageHead('Satış Yönetimi', { back: '#/', sub: 'Firmalar için satış faturası',
-    tabs: crmNav('sales', ctx),
-    right: h('button', { class: 'btn primary', type: 'button', onclick: () => invoiceForm(ctx, null) }, '＋ Yeni Fatura') }),
-    h('div', { class: 'filters' }, q, period.el), body);
+  clear(view, pageHead('Satış Yönetimi', { back: '#/', sub: 'Firmalar için satış faturası', tabs: crmNav('sales', ctx) }),
+    // Arama/dönem + Yeni Fatura modülün kendi toolbar'ında (başlıkta değil); düğme sağda
+    h('div', { class: 'filters' }, q, period.el,
+      h('div', { class: 'spacer' }),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => invoiceForm(ctx, null) }, '＋ Yeni Fatura')),
+    body);
   draw();
 }
 

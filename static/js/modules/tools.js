@@ -7,7 +7,7 @@ import { renderNetscan } from './netscan.js';
 import { buildFlightReport, printFlightReport } from '../flightreport.js';
 import { icons } from '../icons.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, pageHead, progressBar, selectInput, statStrip,
+  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, moduleToolbar, pageHead, progressBar, selectInput, statStrip,
   svgIcon, t, toast, uploadPanel,
   toastError,
 } from '../ui.js';
@@ -174,11 +174,9 @@ export async function renderReportView(view, id, back, ctx) {
     return;
   }
   clear(view,
-    pageHead('Uçuş Raporu', {
-      back, sub: log.file_name,
-      right: h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        h('a', { class: 'btn', href: `${location.hash.replace(/\/3d$/, '')}/3d` }, '3B Oynat'),
-        h('button', { class: 'btn primary', onclick: () => printFlightReport(log, ctx.meta.company) }, 'Yazdır / PDF')),
-    }),
+    pageHead('Uçuş Raporu', { back, sub: log.file_name }),
+    moduleToolbar(
+      h('a', { class: 'btn', href: `${location.hash.replace(/\/3d$/, '')}/3d` }, '3B Oynat'),
+      h('button', { class: 'btn primary', onclick: () => printFlightReport(log, ctx.meta.company) }, 'Yazdır / PDF')),
     h('div', { class: 'fr-doc' }, buildFlightReport(log, ctx.meta.company)));
 }

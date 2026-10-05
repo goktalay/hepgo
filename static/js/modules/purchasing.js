@@ -189,7 +189,7 @@ async function renderRequest(view, id, isAdmin) {
 
 // ---------- Fatura İrsaliye
 async function renderInvoices(view) {
-  const period = periodFilter('purchaseInvoices', () => renderInvoices(view));
+  const period = periodFilter('purchaseInvoices', () => renderInvoices(view), { initial: 'all' });   // Mikro'dan gelen eski tarihli faturalar da görünsün
   const [list] = await Promise.all([api.get(`/api/purchasing/invoices?${period.qs()}`), options()]);
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Belge no, tedarikçi, malzeme ara…', style: { width: '240px' } });
   const kind = selectInput([['FATURA', 'Fatura'], ['IRSALIYE', 'İrsaliye']], { all: 'Fatura ve irsaliye' });

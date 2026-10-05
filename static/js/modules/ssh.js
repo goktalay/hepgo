@@ -32,7 +32,8 @@ async function draw(view) {
       h('button', { class: 'btn sm', onclick: () => form(hh, () => draw(view)) }, 'Düzenle'),
       h('button', { class: 'btn sm danger', onclick: () => remove(hh, () => draw(view)) }, 'Sil'))));
   clear(view,
-    pageHead('SSH Erişim', { back: '#/master', sub: 'Sistem sahibi · kayıtlı uzak sunucular', right: addBtn }),
+    pageHead('SSH Erişim', { back: '#/master', sub: 'Sistem sahibi · kayıtlı uzak sunucular' }),
+    h('div', { class: 'filters' }, h('div', { class: 'spacer' }), addBtn),
     h('p', { class: 'small muted ssh-note' }, 'Buradaki bağlantılar sunucudan dışa doğru kurulur (uzak makinede komut çalıştırır); merkez sunucuda kabuk açmaz. Parola ve anahtarlar şifreli saklanır, ekranda bir daha gösterilmez. Her bağlantı denetim kaydına yazılır.'),
     hosts.length ? h('div', { class: 'ssh-list' }, rows) : h('div', { class: 'card empty' }, 'Henüz sunucu eklenmedi.'));
 }

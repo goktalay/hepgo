@@ -246,12 +246,20 @@ export function moduleTabs(options, active, onChange) {
   return h('div', { class: 'module-tabs' }, segmented(options, active, onChange, { tabs: true }));
 }
 
+// Bu oturumda kaç kez adres (hash) değişti — geri tuşunun güvenle history.back() yapıp yapamayacağını belirler.
+let navDepth = 0;
+if (typeof window !== 'undefined') window.addEventListener('hashchange', () => { navDepth++; });
+
 // Sayfa başlığı bandı. `tabs`: alt-modül seçicisi (segmented), başlık bandının sağında üstte durur.
 // `right`: başlıkta kalması gereken öğeler (ör. sekme seçici). Alt-modüle ait EYLEM düğmeleri bantta değil,
 // aşağıdaki ayrı toolbar'da (moduleToolbar) yer almalıdır.
 export function pageHead(title, { back, sub, right, tabs } = {}) {
   return h('div', { class: 'page-head' },
-    back ? h('a', { class: 'back', href: back, 'aria-label': 'Geri' }, '←') : null,
+    back ? h('a', { class: 'back', href: back, 'aria-label': 'Geri', onclick: e => {
+      // Geri tuşu: sabit adrese atlamak yerine geçmişte bir adım geri. Bu oturumda hiç gezinme olmadıysa
+      // (doğrudan derin bağlantı / ilk yükleme) history.back() siteden çıkarabilir → o durumda href'e düş.
+      if (navDepth > 0) { e.preventDefault(); history.back(); }
+    } }, '←') : null,
     h('div', { class: 'page-head-t' }, h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null),
     h('div', { class: 'spacer' }),
     tabs || null,

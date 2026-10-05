@@ -2,7 +2,7 @@
 // Kullanıcı Mikro'daki kayıtları arar, seçtiklerini "Aktar" der. Daha önce aktarılanlar işaretli gelir;
 // tekrar aktarılınca eşleşen yerel kayıt güncellenir. Sistem Mikro'ya HİÇBİR ŞEY yazmaz (yalnızca okur).
 import { api } from '../api.js';
-import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, modal, pageHead, pref, setPref, t, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, setPref, t, toast, toastError } from '../ui.js';
 
 const STOK_TYPES = [['SARF', 'Sarf malzeme'], ['YEDEK_PARCA', 'Yedek parça'], ['HAMMADDE', 'Hammadde'], ['DEMIRBAS', 'Demirbaş']];
 const CARI_TIP = { tedarikci: ['Tedarikçi', 'green'], musteri: ['Müşteri', 'blue'], diger: ['Diğer', 'gray'] };
@@ -53,7 +53,8 @@ export async function render(view, params, ctx) {
   const diagBtn = canImport ? h('button', { class: 'btn ghost sm', type: 'button', title: 'Sarf çıkış fişlerinin evrak tipini bulmak için hareket türleri (salt-okunur teşhis)' }, 'Hareket Türleri (teşhis)') : null;
   if (diagBtn) diagBtn.addEventListener('click', () => showDiag(diagBtn));
 
-  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü', right: diagBtn }),
+  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü' }),
+    moduleToolbar(diagBtn),
     banner, h('div', { class: 'mk-tabs', style: { margin: '12px 0' } }, seg), stage);
   drawTabs();
   load();

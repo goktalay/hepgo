@@ -722,8 +722,8 @@ async function _historyList(view) {
   let calls;
   try { calls = await api.get('/api/voice/calls'); } catch (err) { clear(view, h('div', { class: 'card empty' }, err.message)); return; }
   const outcome = c => (c.status === 'BITTI' ? ['Görüşüldü', 'green'] : c.status === 'KACIRILDI' ? ['Cevapsız', 'red'] : c.status === 'DEVAM' ? ['Sürüyor', 'blue'] : ['—', 'gray']);
-  clear(view, pageHead('Görüşmelerim', { back: '#/', sub: 'Sesli görüşme geçmişi',
-    right: h('button', { class: 'btn primary', type: 'button', onclick: callPicker }, '📞 Yeni Görüşme') }),
+  clear(view, pageHead('Görüşmelerim', { back: '#/', sub: 'Sesli görüşme geçmişi' }),
+    h('div', { class: 'filters' }, h('div', { class: 'spacer' }), h('button', { class: 'btn primary', type: 'button', onclick: callPicker }, '📞 Yeni Görüşme')),
     calls.length ? h('div', { class: 'card table-wrap' }, h('table', { class: 'table' },
       h('thead', null, h('tr', null, h('th', null, 'Kişiler'), h('th', null, 'Yön'), h('th', null, 'Tarih'), h('th', null, 'Süre'), h('th', null, 'Durum'), h('th', null, 'Kayıt'))),
       h('tbody', null, calls.map(c => {

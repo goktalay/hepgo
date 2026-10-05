@@ -53,9 +53,10 @@ export async function render(view, params, ctx) {
   q.addEventListener('input', draw);
   act.addEventListener('change', draw);
   clear(view,
-    pageHead('Ürün Yönetimi', { back: '#/', sub: 'Mamul, yarı mamul ve parçalar', right: h('div', { class: 'head-right' }, q, kind, act) }),
+    pageHead('Ürün Yönetimi', { back: '#/', sub: 'Mamul, yarı mamul ve parçalar' }),
     moduleToolbar(newButton()),
     stats,
+    h('div', { class: 'filters' }, q, kind, act),
     h('div', { class: 'grid-cards product-grid' }, cards.map(c => c[1])),
     empty);
   draw();

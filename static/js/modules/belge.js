@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { cleanHtml } from '../sanitize.js';
 import { clear, confirmDialog, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, svgIcon, toast, toastError } from '../ui.js';
 import { icons } from '../icons.js';
+import { crmNav } from './crmhub.js';
 
 const KIND = { excel: 'Excel', word: 'Word', sunum: 'Sunum' };
 const KIND_ICON = { excel: icons.reports || icons.documents, word: icons.documents, sunum: icons.flight || icons.documents };
@@ -35,8 +36,10 @@ async function list(view, ctx) {
   document.addEventListener('click', () => { newMenu.hidden = true; }, { once: false });
 
   clear(view,
-    pageHead('Evrak Yönetimi', { back: '#/', tabs: subTabs('belge') }),
-    moduleToolbar(h('div', { class: 'bz-newwrap' }, newBtn, newMenu)),
+    pageHead('Evrak Yönetimi', { back: '#/', tabs: crmNav('documents', ctx) }),
+    // Alt sekme seçici kendi satırında; Yeni düğmesi altındaki toolbar'da sağda (başlıkta değil)
+    moduleToolbar(subTabs('belge')),
+    h('div', { class: 'filters' }, h('div', { class: 'spacer' }), h('div', { class: 'bz-newwrap' }, newBtn, newMenu)),
     body);
   draw();
 }

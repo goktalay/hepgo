@@ -43,7 +43,8 @@ export async function render(view, ctx) {
     try { const n = await api.post('/api/notes', { body: '', color: 'yellow' }); notes.unshift(n); draw(); notify();
       setTimeout(() => grid.querySelector('.note-txt')?.focus(), 30); } catch (e) { toastError(e); }
   } }, '＋ Yeni not');
-  clear(view, pageHead('Notlar', { back: '#/', sub: 'Yapışkan notlarınız · yalnız siz görürsünüz', right: addBtn }), grid);
+  clear(view, pageHead('Notlar', { back: '#/', sub: 'Yapışkan notlarınız · yalnız siz görürsünüz' }),
+    h('div', { class: 'filters' }, h('div', { class: 'spacer' }), addBtn), grid);
   try { notes = await api.get('/api/notes'); } catch (e) { clear(grid, h('div', { class: 'card empty' }, e.message)); return; }
   draw();
 }

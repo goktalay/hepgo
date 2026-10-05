@@ -33,7 +33,7 @@ function loadGridStack() {
 }
 const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
-const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280' };
+const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
 
 export async function renderDashboard(view, ctx, modules) {
   // Mobilde (ayar açıksa) pano yerine tam ekran Şirketten Haberler akışı (üst menü + alt bilgi kalır)
@@ -72,9 +72,17 @@ export async function renderDashboard(view, ctx, modules) {
   function persist() {
     if (!grid) return;
     if (grid.getColumn && grid.getColumn() !== 12) return;   // mobil tek-sütun reflow'u kayıtlı 12-sütun düzenini bozmasın
-    const byId = Object.fromEntries(layout.map(it => [it.id, it]));
-    layout = grid.save(false).map(n => { const it = byId[String(n.id)] || byId[n.id] || {}; return { id: n.id, k: it.k, o: it.o, x: n.x, y: n.y, w: n.w, h: n.h }; }).filter(it => it.k);
-    api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout) }).catch(() => {});
+    // Nesne kimliğini KORU: mevcut öğeleri yerinde güncelle (kutucuk içindeki closure'lar — ör. Takvim görünümü — geçerli kalsın)
+    const byId = Object.fromEntries(layout.map(it => [String(it.id), it]));
+    const order = [];
+    for (const n of grid.save(false)) {
+      const it = byId[String(n.id)];
+      if (!it) continue;
+      it.x = n.x; it.y = n.y; it.w = n.w; it.h = n.h;
+      order.push(it);
+    }
+    layout = order;
+    api.put('/api/me/prefs/dashboard', { value: JSON.stringify(layout.map(it => ({ id: it.id, k: it.k, o: it.o, x: it.x, y: it.y, w: it.w, h: it.h }))) }).catch(() => {});
   }
 
   function itemEl(it) {
@@ -304,11 +312,7 @@ export async function renderDashboard(view, ctx, modules) {
         n.detail ? h('small', null, n.detail) : null), 'Bekleyen bildiriminiz yok');
       case 'alerts': return list(d.items, a => h('li', { class: a.critical ? 'crit' : '' }, h('a', { href: `#/alerts/${a.key}` }, h('span', { class: `db-n ${a.level}` }, a.count), a.title)),
         'Uyarı yok');
-      case 'calendar': return list(d.items, e => h('li', { class: e.kind === 'TOPLANTI' ? 'db-meeting' : '' },
-        h('a', { href: e.href || '#/calendar' }, h('span', { class: 'db-time' }, fmtDateTime(e.at).replace(/\.\d{4}/, '')), e.title),
-        e.kind === 'TOPLANTI' ? h('small', null, e.live ? h('span', { class: 'badge green' }, 'Devam ediyor') : 'Toplantı',
-          e.pending ? [' · ', h('span', { class: 'badge yellow' }, 'Yanıt bekliyor')] : null, e.location ? ` · ${e.location}` : '')
-          : h('small', null, e.kind === 'HATIRLATMA' ? 'Hatırlatma' : 'Randevu')), 'Yaklaşan randevu ya da toplantı yok');
+      case 'calendar': { dbCalendar(it, body, d.items || []); return; }
       case 'birthdays': return list(d.items, b => h('li', { class: b.today ? 'db-bday-today' : '' },
         h('span', null, h('span', { class: 'db-bday-ico' }, '🎂'), h('b', null, b.name), b.age ? h('small', { class: 'muted' }, ` · ${b.age}`) : null),
         h('small', null, b.today ? '🎉 Bugün!' : (b.days === 1 ? 'Yarın' : t('{n} gün sonra', { n: b.days })) + ` · ${b.date.slice(8, 10)}.${b.date.slice(5, 7)}`)),
@@ -394,6 +398,39 @@ export async function renderDashboard(view, ctx, modules) {
   }
 
   // Hava durumu (Open-Meteo, anahtar gerektirmez): anlık + 4 günlük
+  // Takvimim: Liste / Gün / Hafta görünümleri (seçim kutucukta hatırlanır)
+  function dbCalendar(it, body, items) {
+    const view = it.o?.view || 'list';
+    const evLine = e => h('li', { class: e.kind === 'TOPLANTI' ? 'db-meeting' : '' },
+      h('a', { href: e.href || '#/calendar' }, h('span', { class: 'db-time' }, fmtDateTime(e.at).replace(/\.\d{4}/, '')), e.title),
+      e.kind === 'TOPLANTI' ? h('small', null, e.live ? h('span', { class: 'badge green' }, 'Devam ediyor') : 'Toplantı',
+        e.pending ? [' · ', h('span', { class: 'badge yellow' }, 'Yanıt bekliyor')] : null, e.location ? ` · ${e.location}` : '')
+        : h('small', null, e.kind === 'HATIRLATMA' ? 'Hatırlatma' : 'Randevu'));
+    const dayKey = at => (at || '').slice(0, 10);
+    const timeOf = at => (at ? new Date(at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '');
+    const today = new Date().toISOString().slice(0, 10);
+    const tabs = segmented([['list', 'Liste'], ['day', 'Gün'], ['week', 'Hafta']], view, v => { it.o = { ...it.o, view: v }; persist(); dbCalendar(it, body, items); });
+    let content;
+    if (view === 'day') {
+      const ev = items.filter(e => dayKey(e.at) === today);
+      content = ev.length ? h('ul', { class: 'db-list db-cal-day' }, ev.map(e => h('li', { class: e.kind === 'TOPLANTI' ? 'db-meeting' : '' },
+        h('a', { href: e.href || '#/calendar' }, h('span', { class: 'db-cal-time' }, timeOf(e.at)), h('b', null, e.title)),
+        e.kind === 'TOPLANTI' && e.live ? h('span', { class: 'badge green' }, 'Devam ediyor') : null))) : h('div', { class: 'db-none' }, 'Bugün için kayıt yok');
+    } else if (view === 'week') {
+      const start = new Date(); const dow = (start.getDay() + 6) % 7; start.setDate(start.getDate() - dow); start.setHours(0, 0, 0, 0);
+      const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d.toISOString().slice(0, 10); });
+      const names = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+      const byDay = {}; items.forEach(e => { const k = dayKey(e.at); if (days.includes(k)) (byDay[k] ||= []).push(e); });
+      content = h('div', { class: 'db-cal-week' }, days.map((dk, i) => h('div', { class: `db-cal-wd ${dk === today ? 'today' : ''}` },
+        h('div', { class: 'db-cal-wd-h' }, h('b', null, names[i]), h('span', { class: 'muted' }, dk.slice(8) + '.' + dk.slice(5, 7))),
+        (byDay[dk] || []).length ? h('ul', { class: 'db-list' }, byDay[dk].map(e => h('li', { class: e.kind === 'TOPLANTI' ? 'db-meeting' : '' },
+          h('a', { href: e.href || '#/calendar' }, h('span', { class: 'db-cal-time' }, timeOf(e.at)), e.title)))) : h('div', { class: 'db-cal-empty' }, '—'))));
+    } else {
+      content = items.length ? h('ul', { class: 'db-list' }, items.map(evLine)) : h('div', { class: 'db-none' }, 'Yaklaşan randevu ya da toplantı yok');
+    }
+    clear(body, h('div', { class: 'db-cal-tabs' }, tabs), content);
+  }
+
   // Hızlı (inline) sohbet: küçük açılır pencere; merkezi Mesajlar ekranına GİTMEDEN burada yazışılır
   let miniChatEl = null, miniTimer = null;
   function miniChat(peer, anchor) {

@@ -7268,3 +7268,13 @@ tr.pr-maint { background: color-mix(in srgb, #f59e0b 12%, transparent); }
 tr.pr-maint:hover { background: color-mix(in srgb, #f59e0b 18%, transparent); }
 tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .rack-dot.s-bakim { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.3); }
+
+/* Pano Takvimim: Liste/Gün/Hafta */
+.db-cal-tabs { margin-bottom: 8px; }
+.db-cal-tabs .seg { font-size: 12px; }
+.db-cal-time { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 8px; font-size: 12.5px; }
+.db-cal-week { display: flex; flex-direction: column; gap: 6px; }
+.db-cal-wd { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+.db-cal-wd.today { border-color: var(--primary); background: var(--primary-soft); }
+.db-cal-wd-h { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 2px; }
+.db-cal-empty { color: var(--faint); font-size: 12px; }

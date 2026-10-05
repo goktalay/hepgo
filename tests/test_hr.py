@@ -52,7 +52,7 @@ def main():
         emps = ok(ik.get('/api/hr/employees'))
         ali = next(e for e in emps if e['username'] == 'ali')
         assert (ali['status'], ali['first_name'], ali['last_name'], ali['tc_no']) == ('AKTIF', 'Ali Veli', 'Yılmaz', None)
-        assert len(ali['missing']) == 10   # 7 özlük (askerlik: cinsiyet girilmemiş) + 3 sözleşme → kırmızı
+        assert len(ali['missing']) == 9   # 6 özlük (askerlik: cinsiyet girilmemiş; banka zorunlu değil) + 3 sözleşme → kırmızı
 
         # İş başvurusu: TC zorunlu ve geçerli, kaynak zorunlu
         app_body = {'tc_no': tc(123456789), 'first_name': 'Ayşe', 'last_name': 'Demir', 'gender': 'K', 'phone': '0555',
@@ -78,7 +78,7 @@ def main():
         ok(ik.post(f'/api/hr/employees/{aid}/accept', json={'title': 'Montaj Teknisyeni', 'salary': 30000, 'start_date': d(3)}))
         e = ok(ik.get(f'/api/hr/employees/{aid}'))
         assert (e['status'], e['title'], e['salary'], e['start_date']) == ('AKTIF', 'Montaj Teknisyeni', 30000, d(3))
-        assert len(e['missing']) == 9 and 'Askerlik Durum Belgesi' not in e['missing']   # kadın: askerlik istenmez
+        assert len(e['missing']) == 8 and 'Askerlik Durum Belgesi' not in e['missing']   # kadın: askerlik istenmez; banka zorunlu değil
         # Maaş / görev değişikliği geçmişe yazılır
         ok(ik.put(f'/api/hr/employees/{aid}', json={**app_body, 'title': 'Montaj Sorumlusu', 'salary': 35000, 'start_date': d(3)}))
         assert any('Maaş' in (ev['detail'] or '') and 'Görev' in ev['detail'] for ev in ok(ik.get(f'/api/hr/employees/{aid}'))['events'])

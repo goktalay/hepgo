@@ -66,9 +66,9 @@ PERSONNEL_FILES = {
     'ASKERLIK': 'Askerlik Durum Belgesi',
     'MEZUNIYET': 'Mezuniyet Belgesi',
     'HIZMET_DOKUMU': '4A Hizmet Dökümü',
-    'BANKA': 'Banka Hesap Bilgi Dokümanı',
     'VESIKALIK': 'Vesikalık Fotoğraf',
     # İsteğe bağlı (eksik sayılmaz)
+    'BANKA': 'Banka Hesap Bilgi Dokümanı',
     'KIMLIK': 'Kimlik Kartı / Nüfus Cüzdanı',
     'IKAMETGAH': 'Yerleşim Yeri (İkametgâh) Belgesi',
     'SGK_GIRIS': 'SGK İşe Giriş Bildirgesi',
@@ -91,7 +91,7 @@ CONTRACTS = {
     'KVKK': 'KVKK Aydınlatma Metni',
 }
 FILE_KINDS = {**PERSONNEL_FILES, **CONTRACTS}
-REQUIRED_KINDS = ('ADLI_SICIL', 'SAGLIK', 'ASKERLIK', 'MEZUNIYET', 'HIZMET_DOKUMU', 'BANKA', 'VESIKALIK', 'GIZLILIK', 'IS_SOZLESMESI', 'ARAC')
+REQUIRED_KINDS = ('ADLI_SICIL', 'SAGLIK', 'ASKERLIK', 'MEZUNIYET', 'HIZMET_DOKUMU', 'VESIKALIK', 'GIZLILIK', 'IS_SOZLESMESI', 'ARAC')
 # Görev tanımı maddelerinin gizlilik dereceleri. Genel ve Kurum İçi maddeler başka belgelerde (ör. saha görev raporu)
 # kullanılabilir; Gizli ve Çok Gizli maddeler yalnızca İK ekranında görünür.
 DUTY_LEVELS = {'GENEL': 'Genel', 'KURUM_ICI': 'Kurum İçi', 'GIZLI': 'Gizli', 'COK_GIZLI': 'Çok Gizli'}

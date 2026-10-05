@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, db, printer_driver, printer_layout
+from .. import auth, config, db, printer_driver, printer_layout
 
 router = APIRouter(prefix='/api/printers')
 printer_admin = auth.require_module('printers')
@@ -248,7 +248,18 @@ async def discover(user=Depends(printer_admin)):
         if 'bağlı değil' in msg.lower() or 'ajan' in msg.lower() or 'agent' in msg.lower():
             raise HTTPException(503, 'Fabrikadaki ajana ulaşılamadı; yazıcı taraması yapılamadı. Ajanın çevrimiçi ve güncel olduğundan emin olun.') from e
         raise HTTPException(502, f'Yazıcı taraması başarısız: {msg}') from e
-    return await run_in_threadpool(_add_discovered, found, user)
+    try:
+        return await run_in_threadpool(_add_discovered, found, user)
+    except HTTPException:
+        raise
+    except Exception as e:   # noqa: BLE001 — beklenmeyen: hata türü + ilk fark edilen sebep yanıtta görünsün
+        import traceback
+        tb = traceback.format_exc()
+        try:   # ayrıntı denetim/log için data'ya yazılır (sahibi okuyabilir)
+            (config.DATA_DIR / 'printer-discover-error.log').write_text(tb)
+        except Exception:   # noqa: BLE001
+            pass
+        raise HTTPException(500, f'Yazıcılar işlenirken hata: {type(e).__name__}: {str(e)[:300]}') from e
 
 
 def _add_discovered(found, user):

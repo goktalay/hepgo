@@ -2,7 +2,7 @@
 // Kullanıcı Mikro'daki kayıtları arar, seçtiklerini "Aktar" der. Daha önce aktarılanlar işaretli gelir;
 // tekrar aktarılınca eşleşen yerel kayıt güncellenir. Sistem Mikro'ya HİÇBİR ŞEY yazmaz (yalnızca okur).
 import { api } from '../api.js';
-import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, pageHead, pref, setPref, t, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, fmtDate, fmtDateTime, h, matches, modal, pageHead, pref, setPref, t, toast, toastError } from '../ui.js';
 
 const STOK_TYPES = [['SARF', 'Sarf malzeme'], ['YEDEK_PARCA', 'Yedek parça'], ['HAMMADDE', 'Hammadde'], ['DEMIRBAS', 'Demirbaş']];
 const CARI_TIP = { tedarikci: ['Tedarikçi', 'green'], musteri: ['Müşteri', 'blue'], diger: ['Diğer', 'gray'] };
@@ -50,10 +50,43 @@ export async function render(view, params, ctx) {
     catch (err) { toastError(err); }
   });
 
-  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü' }),
+  const diagBtn = canImport ? h('button', { class: 'btn ghost sm', type: 'button', title: 'Sarf çıkış fişlerinin evrak tipini bulmak için hareket türleri (salt-okunur teşhis)' }, 'Hareket Türleri (teşhis)') : null;
+  if (diagBtn) diagBtn.addEventListener('click', () => showDiag(diagBtn));
+
+  clear(view, pageHead('Mikro ERP', { back: '#/', sub: 'Veri Aktarımı · tek yönlü', right: diagBtn }),
     banner, h('div', { class: 'mk-tabs', style: { margin: '12px 0' } }, seg), stage);
   drawTabs();
   load();
+}
+
+// Teşhis: STOK_HAREKETLERI hareket türleri (tip/evraktip/cins/depo/cari + örnek açıklama). Sarf çıkış fişlerinin
+// evrak tipini belirlemek için; salt-okunur. JSON'u panoya kopyalanabilir (geliştiriciye göndermek için).
+async function showDiag(btn) {
+  btn.disabled = true;
+  let data;
+  try { data = await api.get('/api/mikro/diag/hareket-tipleri'); } catch (e) { toastError(e); btn.disabled = false; return; }
+  btn.disabled = false;
+  const rows = data.rows || [];
+  const yn = v => (v ? 'E' : 'H');
+  const head = ['tip', 'evraktip', 'cins', 'iade', 'cari', 'giriş depo', 'çıkış depo', 'satır', 'toplam', 'ilk', 'son', 'örnek açıklama'];
+  const table = h('table', { class: 'table mk-table', style: { fontSize: '12px' } },
+    h('thead', null, h('tr', null, head.map(x => h('th', null, x)))),
+    h('tbody', null, rows.map(r => h('tr', null,
+      h('td', null, r.tip === 1 ? 'çıkış' : 'giriş'), h('td', null, String(r.evraktip)), h('td', null, String(r.cins)),
+      h('td', null, yn(r.iade)), h('td', null, yn(r.cari_var)), h('td', null, yn(r.giris_depo)), h('td', null, yn(r.cikis_depo)),
+      h('td', { style: { textAlign: 'right' } }, (r.satir || 0).toLocaleString('tr-TR')),
+      h('td', { style: { textAlign: 'right' } }, Number(r.toplam_miktar || 0).toLocaleString('tr-TR')),
+      h('td', null, r.ilk || ''), h('td', null, r.son || ''), h('td', { style: { maxWidth: '260px' } }, (r.ornek || []).join(' · ')))))));
+  const copyBtn = h('button', { class: 'btn', type: 'button' }, 'JSON’u kopyala');
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(rows)); toast('Kopyalandı — geliştiriciye yapıştırabilirsiniz', 'success'); }
+    catch { toast('Kopyalanamadı; metni elle seçin', 'err'); }
+  });
+  modal({ title: t('Mikro hareket türleri ({n})', { n: rows.length }), wide: true,
+    body: h('div', null,
+      h('p', { class: 'small muted' }, 'Sarf çıkış fişlerinin hangi evrak tipinde olduğunu bulmak için. “çıkış” + cari “H” (müşterisiz) + çıkış deposu “E” satırları sarf/üretim çıkışı olabilir. JSON’u kopyalayıp geliştiriciye gönderin.'),
+      h('div', { class: 'card table-wrap', style: { maxHeight: '60vh', overflow: 'auto' } }, table)),
+    actions: [{ label: 'Kapat' }, { label: copyBtn, class: 'ghost', onClick: () => true }] });
 }
 
 // Ortak: arama + seçim + tablo kabuğu. cfg.columns(row)->hücreler, cfg.fetch(q)->satırlar, cfg.doImport(codes),

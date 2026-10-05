@@ -44,7 +44,7 @@ async function loadPending(body) {
 function dutyCard(d, { mine = false, approve = false } = {}, reload) {
   const whenRow = (lbl, v) => (v ? [h('dt', null, lbl), h('dd', null, fmtDateTime(v))] : null);
   return h('div', { class: `card duty-card st-${String(d.status || '').toLowerCase()}` },
-    h('div', { class: 'duty-card-head' }, h('b', null, d.employee_name || '—'), badge(d.status)),
+    h('div', { class: 'duty-card-head' }, h('b', null, d.people_names || d.employee_name || '—'), badge(d.status)),
     d.employee_title ? h('div', { class: 'small muted' }, d.employee_title) : null,
     h('dl', { class: 'duty-kv' },
       h('dt', null, 'Gideceği yer'), h('dd', null, d.destination || '—'),
@@ -66,7 +66,7 @@ function dutyCard(d, { mine = false, approve = false } = {}, reload) {
 // ---------- QR / çıkış izni gösterimi ----------
 function showPassModal(d) {
   const dates = h('dl', { class: 'duty-kv' },
-    h('dt', null, 'Personel'), h('dd', null, d.employee_name || '—'),
+    h('dt', null, 'Personel'), h('dd', null, d.people_names || d.employee_name || '—'),
     d.employee_title ? [h('dt', null, 'Görev'), h('dd', null, d.employee_title)] : null,
     h('dt', null, 'Gideceği yer'), h('dd', null, d.destination || '—'),
     h('dt', null, 'Çıkış'), h('dd', null, fmtDateTime(d.depart_at)),
@@ -92,7 +92,7 @@ async function printDutyForm(d) {
   const row = (k, v) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`;
   const w = window.open('', '_blank');
   if (!w) { toast('Açılır pencere engellendi; tarayıcıda izin verin', 'err'); return; }
-  w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>GÖREV FORMU · ${esc(d.employee_name)}</title>
+  w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>GÖREV FORMU · ${esc(d.people_names || d.employee_name || '')}</title>
 <style>body{font-family:system-ui,sans-serif;margin:40px;color:#111}
 .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:24px}
 .hd-t h1{font-size:20px;margin:0 0 4px}.hd-t .co{color:#555}
@@ -102,7 +102,7 @@ th,td{border:1px solid #999;padding:9px 12px;text-align:left;font-size:14px}th{w
 .sig{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px}.sig div{border-top:1px solid #333;padding-top:6px;text-align:center;font-size:13px;min-height:70px}
 .note{font-size:12px;color:#555}@media print{body{margin:18mm}}</style></head><body>
 <div class="hd"><div class="hd-t"><h1>GÖREV FORMU</h1><div class="co">${esc(COMPANY || '')}</div></div>${qr ? `<div class="qr">${qr}</div>` : ''}</div>
-<table>${row('Adı Soyadı', d.employee_name)}${row('Görevi', d.employee_title || '')}
+<table>${row('Görevli personel', d.people_names || d.employee_name || '')}
 ${row('Gideceği yer', d.destination)}${row('Çıkış', fmtDateTime(d.depart_at))}${d.return_at ? row('Tahmini dönüş', fmtDateTime(d.return_at)) : ''}
 ${d.vehicle_plate ? row('Araç plakası', d.vehicle_plate) : ''}${row('Görevlendirme açıklaması', d.purpose || '')}
 ${d.approver_name ? row('Onaylayan', d.approver_name) : ''}${d.decision_note ? row('Not', d.decision_note) : ''}</table>
@@ -115,29 +115,29 @@ ${d.approver_name ? row('Onaylayan', d.approver_name) : ''}${d.decision_note ? r
 // ---------- Yeni görev formu ----------
 async function newDutyForm(ctx, reload) {
   const [employees, users] = await Promise.all([loadEmployees(ctx), loadUsers()]);
-  const emp = searchSelect(employees, { placeholder: 'Göreve gidecek personeli ara…' });
+  const emp = multiPersonPicker(employees);   // görev araca/göreve özel: birden fazla personel
   const dest = h('input', { class: 'input', placeholder: 'Gideceği yer (ör. İstanbul · müşteri ziyareti)' });
-  const depart = dateTimeInput();
-  const ret = dateTimeInput();
+  const depart = dateTimeInput({ inModal: true });
+  const ret = dateTimeInput({ inModal: true });
   const purpose = h('textarea', { class: 'input', rows: 3, placeholder: 'Görevlendirme açıklaması' });
-  const plate = h('input', { class: 'input', placeholder: 'Araç plakası (isteğe bağlı)', autocapitalize: 'characters' });
+  const plate = h('input', { class: 'input', placeholder: 'Araç plakası (isteğe bağlı; kişiler kendi araçlarıyla da gidebilir)', autocapitalize: 'characters' });
   const approver = h('select', { class: 'input' }, h('option', { value: '' }, 'Seçilmedi'),
     users.map(u => h('option', { value: u.id }, u.full_name || u.username || `#${u.id}`)));
 
   modal({
     title: 'Yeni Görev Formu', wide: true,
     body: h('div', null,
-      field('Göreve gidecek personel *', emp),
+      field('Göreve gidecek personel *', emp, 'Birden fazla personel ekleyebilirsiniz.'),
       field('Gideceği yer *', dest),
       h('div', { class: 'row' }, field('Çıkış zamanı *', depart), field('Tahmini dönüş', ret)),
       field('Görevlendirme açıklaması', purpose),
       field('Araç plakası', plate),
-      field('Onaylayacak yönetici', approver, 'Boş bırakılırsa yetkili yöneticiye düşer.')),
+      field('Onaylayacak yönetici', approver, 'Boş bırakılırsa formu dolduranın yöneticisine düşer.')),
     actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
-      if (!emp.value) { toast('Göreve gidecek personeli seçin', 'err'); return true; }
+      if (!emp.ids.length) { toast('En az bir görevli personel ekleyin', 'err'); return true; }
       if (!dest.value.trim()) { toast('Gideceği yeri girin', 'err'); return true; }
       await api.post('/api/me/duties', {
-        employee_id: emp.value,
+        employee_ids: emp.ids,
         destination: dest.value.trim(),
         purpose: purpose.value.trim(),
         depart_at: depart.getValue(),
@@ -151,10 +151,33 @@ async function newDutyForm(ctx, reload) {
   });
 }
 
+// Çoklu personel seçici (chip'li); .ids → seçilen employee id listesi
+function multiPersonPicker(items) {
+  const chosen = new Map();
+  const input = h('input', { class: 'input', type: 'text', placeholder: 'Personel ara ve ekle…', autocomplete: 'off' });
+  const panel = h('div', { class: 'fsel-panel', hidden: true });
+  const chips = h('div', { class: 'chips', style: { marginTop: '6px', justifyContent: 'flex-start' } });
+  const drawChips = () => clear(chips, [...chosen].map(([id, label]) =>
+    h('span', { class: 'chip' }, label, h('button', { type: 'button', class: 'chip-x', onclick: () => { chosen.delete(id); drawChips(); } }, '×'))));
+  const draw = () => {
+    const term = input.value.trim().toLocaleLowerCase('tr');
+    const rows = items.filter(it => !chosen.has(it.id) && (!term || String(it.label).toLocaleLowerCase('tr').includes(term))).slice(0, 50);
+    clear(panel, rows.length ? rows.map(it => h('div', { class: 'fsel-row', onmousedown: e => {
+      e.preventDefault(); chosen.set(it.id, it.label); input.value = ''; panel.hidden = true; drawChips();
+    } }, h('b', null, it.label), it.sub ? h('span', { class: 'small muted' }, it.sub) : null)) : h('div', { class: 'fsel-row muted' }, 'Sonuç yok'));
+  };
+  input.addEventListener('focus', () => { panel.hidden = false; draw(); });
+  input.addEventListener('input', () => { panel.hidden = false; draw(); });
+  input.addEventListener('blur', () => setTimeout(() => { panel.hidden = true; }, 150));
+  const wrap = h('div', { class: 'fsel' }, input, panel, chips);
+  Object.defineProperty(wrap, 'ids', { get: () => [...chosen.keys()] });
+  return wrap;
+}
+
 function decideModal(d, action, reload) {
   const note = h('textarea', { class: 'input', rows: 3, placeholder: action === 'reject' ? 'Reddetme sebebi' : 'Not (isteğe bağlı)' });
   modal({
-    title: t('{name} · Görev Formu', { name: d.employee_name || '' }),
+    title: t('{name} · Görev Formu', { name: d.people_names || d.employee_name || '' }),
     body: h('div', null,
       h('p', { style: { marginTop: 0 } }, `${d.destination || ''} · ${fmtDateTime(d.depart_at)}`),
       field(action === 'reject' ? 'Reddetme sebebi *' : 'Not', note)),

@@ -322,7 +322,7 @@ export function stopTimers() {
 // İşlem zamanını kullanıcı serbestçe seçer; varsayılan şimdi. getValue() → 'YYYY-MM-DDTHH:MM+03:00'
 // (cihazın yerel saati ve saat dilimi; sunucu kendi saatine çevirir).
 const isoLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-export function dateTimeInput({ value, min } = {}) {
+export function dateTimeInput({ value, min, inModal } = {}) {
   const input = h('input', { class: 'input', type: window.flatpickr ? 'text' : 'datetime-local' });
   const now = () => new Date();
   let fp = null;
@@ -335,6 +335,8 @@ export function dateTimeInput({ value, min } = {}) {
       enableTime: true, time_24hr: true, locale: 'tr', minuteIncrement: 1,
       dateFormat: 'Y-m-d\\TH:i', altInput: true, altFormat: 'd.m.Y  H:i', altInputClass: 'input dt-alt',
       defaultDate: value ? new Date(value) : now(), minDate: min ? new Date(min) : null,
+      allowInput: true,            // elle de yazılabilsin (takvim açılmasa bile değiştirilebilir)
+      static: !!inModal,           // modal içinde: takvim modalın içinde render edilsin (konum/katman sorunu olmaz)
     });
   } else {
     input.value = isoLocal(value ? new Date(value) : now());

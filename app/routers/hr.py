@@ -1274,8 +1274,8 @@ def decided_unseen(conn, user_id):
 
 # ---------- Görev Formu: personel iş için fabrika dışına çıkar; yönetici onaylar, güvenlik QR kodunu okutur
 
-class DutyIn(BaseModel):
-    employee_id: int
+class DutyReqIn(BaseModel):
+    employee_ids: list[int] = []     # göreve gidecek personel (birden fazla; görev araca/göreve özel)
     destination: str
     purpose: str
     depart_at: str
@@ -1298,7 +1298,18 @@ def _duty_reqs(conn, where, args=()):
             LEFT JOIN users ap ON ap.id = d.approver_id
             LEFT JOIN users dc ON dc.id = d.decided_by
             WHERE {where} ORDER BY d.depart_at DESC, d.id DESC''', args))
+    # Göreve gidecek personel (çoklu). Eski kayıtlarda duty_people boşsa employee_id'ye düşülür.
+    people = {}
+    if rows:
+        ph = ','.join('?' * len(rows))
+        for p in conn.execute(
+                f'''SELECT dp.duty_id, dp.employee_id, e.first_name || ' ' || e.last_name AS name, e.title
+                    FROM duty_people dp JOIN employees e ON e.id = dp.employee_id
+                    WHERE dp.duty_id IN ({ph}) ORDER BY name''', [r['id'] for r in rows]):
+            people.setdefault(p[0], []).append({'id': p[1], 'name': p[2], 'title': p[3]})
     for r in rows:
+        r['people'] = people.get(r['id']) or ([{'id': r['employee_id'], 'name': r['employee_name'], 'title': r['employee_title']}] if r['employee_id'] else [])
+        r['people_names'] = ', '.join(p['name'] for p in r['people'])
         r['pass_token'] = exitpass.make_token(conn, 'duty', r['id'], r['return_at'] or r['depart_at']) if r['status'] == 'ONAYLANDI' else None
     return rows
 
@@ -1327,10 +1338,12 @@ def my_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
 
 
 @duties_me_router.post('')
-def create_duty(body: DutyIn, user=Depends(auth.current_user), conn=db.DB):
-    emp = db.row(conn.execute('SELECT * FROM employees WHERE id = ?', (body.employee_id,)))
-    if not emp:
-        raise HTTPException(404, 'Personel bulunamadı')
+def create_duty(body: DutyReqIn, user=Depends(auth.current_user), conn=db.DB):
+    ids = list(dict.fromkeys(e for e in (body.employee_ids or []) if e))   # tekrarları at
+    emps = db.rows(conn.execute(
+        f"SELECT * FROM employees WHERE id IN ({','.join('?' * len(ids))})", ids)) if ids else []
+    if not emps:
+        raise HTTPException(400, 'En az bir görevli personel seçin')
     destination = (body.destination or '').strip()
     purpose = (body.purpose or '').strip()
     depart_at = (body.depart_at or '').strip()
@@ -1342,16 +1355,20 @@ def create_duty(body: DutyIn, user=Depends(auth.current_user), conn=db.DB):
         raise HTTPException(400, 'Çıkış zamanını girin')
     return_at = (body.return_at or '').strip() or None
     vehicle_plate = (body.vehicle_plate or '').strip() or None
-    approver_id = body.approver_id or emp['manager_id']
+    # Onaylayan = formu dolduranın yöneticisi (yoksa seçilen ilk personelin yöneticisi; o da yoksa boş → Patron/İK)
+    approver_id = body.approver_id
     if not approver_id:
         me = db.row(conn.execute('SELECT manager_id FROM employees WHERE user_id = ?', (user['id'],)))
-        approver_id = me['manager_id'] if me else None
+        approver_id = (me['manager_id'] if me else None) or emps[0]['manager_id']
     did = conn.execute(
         '''INSERT INTO duty_requests (employee_id, requested_by, approver_id, destination, purpose, depart_at, return_at,
                                       vehicle_plate, created_at) VALUES (?,?,?,?,?,?,?,?,?)''',
-        (body.employee_id, user['id'], approver_id, destination[:300], purpose[:1000], depart_at, return_at,
+        (emps[0]['id'], user['id'], approver_id, destination[:300], purpose[:1000], depart_at, return_at,
          vehicle_plate, db.now())).lastrowid
-    db.audit(conn, user['id'], 'Görev formu oluşturdu', 'duty', did, f'{emp["first_name"]} {emp["last_name"]} → {destination}')
+    for e in emps:
+        conn.execute('INSERT OR IGNORE INTO duty_people (duty_id, employee_id) VALUES (?,?)', (did, e['id']))
+    names = ', '.join(f'{e["first_name"]} {e["last_name"]}' for e in emps)
+    db.audit(conn, user['id'], 'Görev formu oluşturdu', 'duty', did, f'{names} → {destination}')
     return {'id': did}
 
 
@@ -1422,14 +1439,17 @@ def on_leave_today(conn):
 
 
 def on_duty_now(conn):
-    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş)."""
+    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş).
+    Görev araca/göreve özel olduğundan her görevdeki HER personel ayrı satır olarak döner."""
     today = db.now()[:10]
     return db.rows(conn.execute(
         """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, d.destination, d.depart_at, d.return_at
-             FROM duty_requests d JOIN employees e ON e.id = d.employee_id
+             FROM duty_requests d
+             JOIN duty_people dp ON dp.duty_id = d.id
+             JOIN employees e ON e.id = dp.employee_id
             WHERE d.status = 'ONAYLANDI' AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
-            ORDER BY d.depart_at DESC""", (today, today)))
+            ORDER BY d.depart_at DESC, name""", (today, today)))
 
 
 def pending_duties_for(conn, user):

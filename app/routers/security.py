@@ -126,22 +126,28 @@ def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
             return {'allow': False, 'reason': 'İzin süresi geçmiş', **info}
         _record_exit(conn, r['name'], 'leave', r['id'], user['id'])
         return {'allow': True, **info}
-    # görev formu
-    r = db.row(conn.execute(
-        '''SELECT d.*, e.first_name || ' ' || e.last_name AS name, e.title AS title
-           FROM duty_requests d LEFT JOIN employees e ON e.id = d.employee_id WHERE d.id = ?''', (v['id'],)))
+    # görev formu (araca/göreve özel; birden çok personel)
+    r = db.row(conn.execute('SELECT * FROM duty_requests d WHERE d.id = ?', (v['id'],)))
     if not r:
         return {'allow': False, 'reason': 'Kayıt bulunamadı'}
+    people = [row[0] for row in conn.execute(
+        """SELECT e.first_name || ' ' || e.last_name FROM duty_people dp JOIN employees e ON e.id = dp.employee_id
+           WHERE dp.duty_id = ? ORDER BY 1""", (v['id'],)).fetchall()]
+    if not people:   # eski kayıt (duty_people yok) → employee_id'ye düş
+        one = db.row(conn.execute("SELECT first_name || ' ' || last_name AS name FROM employees WHERE id = ?", (r['employee_id'],)))
+        people = [one['name']] if one else []
+    names = ', '.join(people) or '—'
     if r['status'] != 'ONAYLANDI':
-        return {'allow': False, 'type': 'duty', 'name': r['name'], 'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
+        return {'allow': False, 'type': 'duty', 'name': names, 'people': people, 'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
     depart = (r['depart_at'] or '')[:10]
     ret = (r['return_at'] or '')[:10] or None
-    info = {'type': 'duty', 'name': r['name'], 'title': r['title'], 'destination': r['destination'],
+    info = {'type': 'duty', 'name': names, 'people': people, 'destination': r['destination'],
             'dates': {'depart': r['depart_at'], 'return': r['return_at']}}
     if depart and today < depart:
         return {'allow': False, 'reason': f'Görev {depart} tarihinde başlıyor', **info}
     warn = 'Dikkat: tahmini dönüş tarihi geçmiş' if ret and today > ret else None
-    _record_exit(conn, r['name'], 'duty', r['id'], user['id'])
+    for nm in people:   # her personel için çıkış kaydı
+        _record_exit(conn, nm, 'duty', r['id'], user['id'])
     return {'allow': True, **info, **({'reason': warn} if warn else {})}
 
 

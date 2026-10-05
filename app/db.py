@@ -1246,6 +1246,13 @@ CREATE TABLE IF NOT EXISTS duty_requests (
     seen_at       TEXT,                                  -- talep eden kararı gördü
     created_at    TEXT NOT NULL
 );
+-- Görev formunda göreve gidecek personel (çoklu; görev araca/göreve özel, bir araçta birden çok kişi).
+CREATE TABLE IF NOT EXISTS duty_people (
+    id          INTEGER PRIMARY KEY,
+    duty_id     INTEGER NOT NULL REFERENCES duty_requests(id) ON DELETE CASCADE,
+    employee_id INTEGER NOT NULL REFERENCES employees(id),
+    UNIQUE (duty_id, employee_id)
+);
 -- Personel çıkışları: güvenlik QR çıkış kodunu okutunca kaydedilen hafif giriş (araç kayıtlarından AYRI).
 CREATE TABLE IF NOT EXISTS person_exits (
     id          INTEGER PRIMARY KEY,

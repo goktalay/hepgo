@@ -1,5 +1,12 @@
 // Çizgi ikonlar (24×24, currentColor)
 const svg = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+// Dolu ikonlar (Windows benzeri klasör / dosya türü rozetleri; renk CSS'ten currentColor)
+const svgF = body => `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${body}</svg>`;
+// Dolu belge gövdesi + köşe kıvrımı + ortada harf/etiket
+const fileGlyph = (label, fs = 7) =>
+  svgF('<path d="M7 2h7l5 5v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/>' +
+    '<path d="M14 2v5h5z" fill="#fff" fill-opacity=".45"/>' +
+    `<text x="11.5" y="18" text-anchor="middle" font-family="system-ui,-apple-system,Arial,sans-serif" font-weight="700" font-size="${fs}" fill="#fff">${label}</text>`);
 
 export const icons = {
   // Güvenlik: bariyerli giriş; Sekreterya: resepsiyon zili; kargo kutusu; misafir kartı
@@ -83,4 +90,14 @@ export const icons = {
   folderOpen: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2"/><path d="M3.3 10h17.1a1 1 0 0 1 .97 1.24l-1.5 6A1.5 1.5 0 0 1 18.4 18.5H4.5A1.5 1.5 0 0 1 3 17V8"/>'),
   file: svg('<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'),
   share: svg('<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3"/>'),
+  // Dolu, sarı Windows klasörü (sekme + gövde) — renk CSS'ten (.fm-item.folder)
+  folderYellow: svgF('<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3a1.5 1.5 0 0 1 1.06.44L11.5 7h8A1.5 1.5 0 0 1 21 8.5V18a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/>'),
+  // Dosya türü ikonları (dolu belge + harf rozeti) — renk CSS'ten (.k-excel vb.)
+  fileExcel: fileGlyph('X'),
+  fileWord: fileGlyph('W'),
+  filePpt: fileGlyph('P'),
+  filePdf: fileGlyph('PDF', 5),
+  fileArchive: svgF('<path d="M7 2h7l5 5v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v5h5z" fill="#fff" fill-opacity=".45"/><rect x="10.3" y="3" width="2" height="2" fill="#fff"/><rect x="12.3" y="5" width="2" height="2" fill="#fff"/><rect x="10.3" y="7" width="2" height="2" fill="#fff"/><rect x="12.3" y="9" width="2" height="2" fill="#fff"/><rect x="10.3" y="11" width="2" height="2" fill="#fff"/>'),
+  fileAudio: svgF('<path d="M9 4.2 18 2.5v11.3a3.2 3.2 0 1 1-2-2.96V7.2l-5 .95v8.07a3.2 3.2 0 1 1-2-2.96z"/>'),
+  fileVideo: svgF('<path d="M3 6a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M17 10l4-2.5v9L17 14z"/><path d="M8 9.5v5l4-2.5z" fill="#fff"/>'),
 };

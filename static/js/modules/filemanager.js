@@ -17,6 +17,46 @@ function fmtSize(bytes) {
 
 const PERM_LABEL = { view: 'Görüntüleme', edit: 'Düzenleme' };
 
+// Dosya baytlarının indirme/önizleme ucu
+const fileUrl = id => `/api/fm/download/${id}`;
+
+// Dosya türü: uzantı (ve mime) → ikon/önizleme sınıfı
+function fileKind(name, mime) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  if (['xls', 'xlsx', 'xlsm', 'csv'].includes(ext)) return 'excel';
+  if (['doc', 'docx'].includes(ext)) return 'word';
+  if (['ppt', 'pptx'].includes(ext)) return 'ppt';
+  if (ext === 'pdf') return 'pdf';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'].includes(ext)) return 'image';
+  if (['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext)) return 'video';
+  if (['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'].includes(ext)) return 'audio';
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)) return 'archive';
+  // uzantı tanınmazsa mime türüne bak
+  const m = (mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  if (m === 'application/pdf') return 'pdf';
+  return 'file';
+}
+const KIND_ICON = {
+  excel: 'fileExcel', word: 'fileWord', ppt: 'filePpt', pdf: 'filePdf',
+  video: 'fileVideo', audio: 'fileAudio', archive: 'fileArchive', file: 'file',
+};
+
+// SheetJS (xlsx) tembel yükleyici — yalnızca Excel önizlemesinde, bir kez
+let xlsxLib;
+function loadXLSX() {
+  return xlsxLib ??= new Promise((resolve, reject) => {
+    if (window.XLSX) return resolve(window.XLSX);
+    const s = document.createElement('script');
+    s.src = '/static/vendor/xlsx/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => { xlsxLib = null; reject(new Error('Tablo bileşeni yüklenemedi')); };
+    document.head.append(s);
+  });
+}
+
 export async function render(view, params, ctx) {
   // ---------- durum ----------
   let treeNodes = [];                 // GET /tree → [{id,name,parent_id}]
@@ -129,16 +169,26 @@ export async function render(view, params, ctx) {
   // Klasör ya da dosya kartı
   function itemCard(it, kind, canEdit) {
     const isFolder = kind === 'folder';
-    const card = h('div', { class: `fm-item ${kind} ${it.shared ? 'shared' : ''}`, tabindex: '0', title: it.name });
-    const ico = h('div', { class: 'fm-item-ico' }, svgIcon(isFolder ? icons.folder : icons.file));
+    const fk = isFolder ? null : fileKind(it.name, it.mime);
+    const card = h('div', { class: `fm-item ${kind} ${isFolder ? '' : `k-${fk}`} ${it.shared ? 'shared' : ''}`, tabindex: '0', title: it.name });
+    // İkon: klasör → sarı; resim → küçük önizleme; diğer → tür ikonu
+    let ico;
+    if (isFolder) ico = h('div', { class: 'fm-item-ico' }, svgIcon(icons.folderYellow));
+    else if (fk === 'image') ico = h('div', { class: 'fm-item-ico' }, h('img', { src: fileUrl(it.id), loading: 'lazy', alt: it.name }));
+    else ico = h('div', { class: 'fm-item-ico' }, svgIcon(icons[KIND_ICON[fk] || 'file']));
     const name = h('div', { class: 'fm-item-name' }, it.name);
     const meta = h('div', { class: 'fm-item-meta' }, isFolder ? 'Klasör' : fmtSize(it.size));
-    if (it.shared) card.append(h('span', { class: 'fm-badge', title: 'Paylaşılıyor' }, svgIcon(icons.share)));
+    if (it.shared) {
+      // Tıklanabilir paylaşım rozeti → paylaşım ayarlarını açar
+      const badge = h('button', { class: 'fm-badge', type: 'button', title: 'Paylaşımı düzenle', 'aria-label': 'Paylaşımı düzenle' }, svgIcon(icons.share));
+      badge.addEventListener('click', e => { e.stopPropagation(); shareDialog(it, kind); });
+      card.append(badge);
+    }
     card.append(ico, name, meta, itemMenu(it, kind, canEdit));
-    const open = () => { if (isFolder) openFolder(it.id); else downloadFile(it); };
+    const open = () => { if (isFolder) openFolder(it.id); else previewFile(it); };
     card.addEventListener('dblclick', open);
     card.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
-    // tek tık klasörü açar (dosyada çift tık / İndir eylemi beklenir)
+    // tek tık klasörü açar (dosyada çift tık önizleme açar)
     if (isFolder) card.addEventListener('click', e => { if (!e.target.closest('.fm-menu')) open(); });
     return card;
   }
@@ -259,8 +309,67 @@ export async function render(view, params, ctx) {
 
   function downloadFile(it) {
     // İndirme ucuna yönlendir (dosya baytları) — tarayıcı indirmeyi başlatır
-    const a = h('a', { href: `/api/fm/download/${it.id}`, download: it.name, style: { display: 'none' } });
+    const a = h('a', { href: fileUrl(it.id), download: it.name, style: { display: 'none' } });
     document.body.append(a); a.click(); a.remove();
+  }
+
+  // ---------- dosya önizleme penceresi ----------
+  function previewFile(it) {
+    const fk = fileKind(it.name, it.mime);
+    const url = fileUrl(it.id);
+    const body = h('div', { class: 'fm-prev' });
+    // Her önizlemede "İndir" eylemi
+    const dlBtn = { label: 'İndir', class: 'primary', onClick: () => { downloadFile(it); return true; } };
+
+    if (fk === 'image') {
+      body.append(h('img', { src: url, alt: it.name, class: 'fm-prev-img' }));
+    } else if (fk === 'pdf') {
+      body.append(h('iframe', { src: url, class: 'fm-prev-pdf', title: it.name }));
+    } else if (fk === 'video') {
+      body.append(h('video', { src: url, controls: true, playsinline: true, class: 'fm-prev-media' }));
+    } else if (fk === 'audio') {
+      body.append(h('audio', { src: url, controls: true, class: 'fm-prev-audio' }));
+    } else if (fk === 'excel') {
+      body.append(h('div', { class: 'empty' }, 'Yükleniyor…'));
+      previewExcel(it, body);
+    } else {
+      body.append(h('div', { class: 'fm-prev-msg' },
+        h('div', null, 'Bu dosya türü tarayıcıda önizlenemiyor.'),
+        h('button', { class: 'btn primary', type: 'button', style: { marginTop: '12px' }, onclick: () => downloadFile(it) }, 'İndir')));
+    }
+
+    modal({ title: it.name, wide: true, body, actions: ['spacer', { label: 'Kapat' }, dlBtn] });
+  }
+
+  // Excel/CSV → SheetJS ile HTML tabloya dönüştür (sayfa sekmeleriyle)
+  async function previewExcel(it, body) {
+    let XLSX;
+    try { XLSX = await loadXLSX(); } catch (e) { clear(body, h('div', { class: 'empty' }, e.message)); return; }
+    let wb;
+    try {
+      const buf = await (await fetch(fileUrl(it.id), { credentials: 'same-origin' })).arrayBuffer();
+      wb = XLSX.read(buf, { type: 'array' });
+    } catch { clear(body, h('div', { class: 'empty' }, 'Tablo okunamadı.')); return; }
+    const names = wb.SheetNames || [];
+    if (!names.length) { clear(body, h('div', { class: 'empty' }, 'Tablo boş.')); return; }
+    const tabBar = h('div', { class: 'fm-xl-tabs' });
+    const sheetBox = h('div', { class: 'fm-xl' });
+    const showSheet = name => {
+      sheetBox.innerHTML = XLSX.utils.sheet_to_html(wb.Sheets[name]);   // yalnızca <table> üretir (script çalıştırmaz)
+      [...tabBar.children].forEach(b => b.classList.toggle('on', b.dataset.name === name));
+    };
+    if (names.length > 1) {
+      names.forEach(name => {
+        const b = h('button', { class: 'fm-xl-tab', type: 'button' }, name);
+        b.dataset.name = name;
+        b.addEventListener('click', () => showSheet(name));
+        tabBar.append(b);
+      });
+      clear(body, tabBar, sheetBox);
+    } else {
+      clear(body, sheetBox);
+    }
+    showSheet(names[0]);
   }
 
   // PATCH yardımcı (api.js'te PATCH yok)
@@ -361,12 +470,17 @@ export async function render(view, params, ctx) {
     const grid = h('div', { class: 'fm-grid fm-shared-grid' });
     items.forEach(s => {
       const isFolder = s.kind === 'folder';
-      const card = h('div', { class: `fm-item ${isFolder ? 'folder' : 'file'}`, tabindex: '0', title: s.name });
-      const open = () => { if (isFolder) openFolder(s.node_id); else downloadFile({ id: s.node_id, name: s.name }); };
+      const fk = isFolder ? null : fileKind(s.name, s.mime);
+      const card = h('div', { class: `fm-item ${isFolder ? 'folder' : `file k-${fk}`}`, tabindex: '0', title: s.name });
+      const open = () => { if (isFolder) openFolder(s.node_id); else previewFile({ id: s.node_id, name: s.name, mime: s.mime }); };
       card.addEventListener('click', open);
       card.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+      let ico;
+      if (isFolder) ico = h('div', { class: 'fm-item-ico' }, svgIcon(icons.folderYellow));
+      else if (fk === 'image') ico = h('div', { class: 'fm-item-ico' }, h('img', { src: fileUrl(s.node_id), loading: 'lazy', alt: s.name }));
+      else ico = h('div', { class: 'fm-item-ico' }, svgIcon(icons[KIND_ICON[fk] || 'file']));
       card.append(
-        h('div', { class: 'fm-item-ico' }, svgIcon(isFolder ? icons.folder : icons.file)),
+        ico,
         h('div', { class: 'fm-item-name' }, s.name),
         h('div', { class: 'fm-item-meta' }, isFolder ? 'Klasör' : 'Dosya'),
         h('div', { class: 'fm-item-sub' }, `paylaşan: ${s.shared_by_name || '—'}`),

@@ -7342,13 +7342,13 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .fm-chev { border: 0; background: none; cursor: pointer; width: 16px; height: 16px; flex: none; color: var(--muted); font-size: 11px; display: grid; place-items: center; transition: transform .12s; }
 .fm-chev.open { transform: rotate(90deg); }
 .fm-chev.none { visibility: hidden; cursor: default; }
-.fm-tico { width: 18px; height: 18px; flex: none; color: var(--primary); display: grid; place-items: center; }
+.fm-tico { width: 18px; height: 18px; flex: none; color: #f4c24a; display: grid; place-items: center; }
 .fm-tico svg { width: 18px; height: 18px; }
 .fm-tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Ana bölme */
 .fm-main { min-width: 0; overflow-y: auto; padding: 14px 16px; }
-.fm-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; font-size: 14px; }
+.fm-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; font-size: 14px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
 .fm-crumb { color: var(--muted); text-decoration: none; padding: 3px 6px; border-radius: 6px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-crumb:hover { background: var(--surface-2); color: var(--text); }
 .fm-crumb.on { color: var(--text); font-weight: 700; }
@@ -7361,13 +7361,23 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .fm-item { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 16px 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color .12s, box-shadow .12s; outline: none; }
 .fm-item:hover, .fm-item:focus-visible { border-color: var(--primary); box-shadow: var(--shadow); }
 .fm-item-ico { width: 48px; height: 48px; display: grid; place-items: center; color: var(--muted); }
-.fm-item.folder .fm-item-ico { color: var(--primary); }
+.fm-item.folder .fm-item-ico { color: #f4c24a; }
 .fm-item-ico svg { width: 44px; height: 44px; }
+.fm-item-ico img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+/* Dosya türü renkleri (dolu belge rozetleri) */
+.fm-item.k-excel .fm-item-ico { color: #1d6f42; }
+.fm-item.k-word .fm-item-ico { color: #2b579a; }
+.fm-item.k-ppt .fm-item-ico { color: #c43e1c; }
+.fm-item.k-pdf .fm-item-ico { color: #c4302b; }
+.fm-item.k-archive .fm-item-ico { color: #b7791f; }
+.fm-item.k-audio .fm-item-ico { color: #8b5cf6; }
+.fm-item.k-video .fm-item-ico { color: #0ea5e9; }
 .fm-item-name { font-size: 13px; font-weight: 600; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-item-meta { font-size: 12px; color: var(--muted); }
 .fm-item-sub { font-size: 11px; color: var(--muted); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-item .fm-perm { margin-top: 4px; }
-.fm-badge { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; }
+.fm-badge { position: absolute; top: 8px; left: 8px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; cursor: pointer; padding: 0; z-index: 4; transition: filter .12s, transform .12s; }
+.fm-badge:hover { filter: brightness(1.08); transform: scale(1.1); }
 .fm-badge svg { width: 13px; height: 13px; }
 
 /* Öğe eylem menüsü */
@@ -7395,6 +7405,23 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .fm-share-cur-h { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
 .fm-share-cur-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
 .fm-share-cur-row .x-btn.sm { font-size: 18px; padding: 2px 6px; }
+
+/* Dosya önizleme penceresi */
+.fm-prev { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.fm-prev-img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; }
+.fm-prev-pdf { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: var(--surface-2); }
+.fm-prev-media { max-width: 100%; max-height: 70vh; border-radius: 8px; background: #000; }
+.fm-prev-audio { width: 100%; }
+.fm-prev-msg { text-align: center; color: var(--muted); padding: 40px 16px; }
+/* Excel/CSV önizleme */
+.fm-xl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; width: 100%; }
+.fm-xl-tab { border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); border-radius: 7px 7px 0 0; padding: 6px 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.fm-xl-tab:hover { color: var(--text); }
+.fm-xl-tab.on { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
+.fm-xl { overflow: auto; max-height: 70vh; width: 100%; border: 1px solid var(--border); border-radius: 8px; }
+.fm-xl table { border-collapse: collapse; font-size: 13px; }
+.fm-xl th, .fm-xl td { border: 1px solid var(--border); padding: 4px 8px; white-space: nowrap; text-align: left; }
+.fm-xl th, .fm-xl tr:first-child td { background: var(--surface-2); font-weight: 600; position: sticky; top: 0; }
 
 /* Pano kutucuğu bağlantısı */
 .db-n-link { display: inline-flex; align-items: center; gap: 4px; background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; text-decoration: none; }

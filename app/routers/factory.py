@@ -20,16 +20,30 @@ YENİDEN KULLANIM:
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from .. import auth, db
+from ..files import FILE_GUARDS, save_upload
 
 router = APIRouter(prefix='/api/factory')
 fab_user = auth.require_module('factory')   # Fabrika modülü: Sistem Yöneticisi + "Kamera Yetkilisi" rolü
 
 # Oda poligonları ve işaretçi koordinatları, plan birimi (ölçeksiz) olarak saklanır; editör SVG'de 1 birim = 1 px.
 _SCHEMA_READY = False
+
+# ALTYAPI İŞARETÇİ PALETİ (allowlist): backend doğrulaması. Frontend (factory.js) aynı anahtarlar için ikon/renk tutar.
+#   ups=UPS/güç kaynağı, power_outlet=priz/elektrik, wifi=WiFi erişim noktası, internet=Internet/Ethernet prizi,
+#   intranet=Intranet noktası, switch=ağ switch'i, cam_indoor/cam_outdoor=planlanan (NVR'a bağlı OLMAYAN) kamera,
+#   note=not/etiket. 'label'/'desk'/'door' eski kayıtlarla uyumluluk için kabul edilir.
+MARKER_KINDS = {'ups', 'power_outlet', 'wifi', 'internet', 'intranet', 'switch',
+                'cam_indoor', 'cam_outdoor', 'note', 'label', 'desk', 'door'}
+# HAT türleri (allowlist): network=ağ hattı, power=elektrik hattı, other=diğer.
+LINE_KINDS = {'network', 'power', 'other'}
+
+# Kat arka plan planı resmi: mevcut dosya yükleme yolu (app/files.py save_upload) YENİDEN KULLANILIR. Yeni bir
+# 'factory' türü files.py KINDS'a eklendi (PNG/JPG/SVG...). Erişim: Fabrika modülü yetkisi (Master dahil).
+FILE_GUARDS['factory'] = lambda user, name: bool(user.get('master')) or 'factory' in user.get('modules', [])
 
 
 def _ensure_schema(conn):
@@ -80,25 +94,52 @@ def _ensure_schema(conn):
             created_at    TEXT
         );
 
-        -- Statik işaretçiler (masa / etiket): hareketten türemez, kullanıcı elle koyar (opsiyonel kolaylık)
+        -- Statik / altyapı işaretçileri (UPS, priz, WiFi, internet/intranet, switch, planlanan kamera, not):
+        -- hareketten türemez, kullanıcı elle koyar. kind = MARKER_KINDS paletinden bir değer.
         CREATE TABLE IF NOT EXISTS factory_markers (
             id         INTEGER PRIMARY KEY,
             floor_id   INTEGER NOT NULL REFERENCES factory_floors(id) ON DELETE CASCADE,
-            kind       TEXT NOT NULL DEFAULT 'label',  -- 'label' | 'desk' | 'door' ...
+            kind       TEXT NOT NULL DEFAULT 'note',   -- MARKER_KINDS paleti (ups/power_outlet/wifi/...)
             label      TEXT NOT NULL DEFAULT '',
             x          REAL NOT NULL DEFAULT 0,
             y          REAL NOT NULL DEFAULT 0,
             created_at TEXT
         );
 
+        -- Hatlar / kablo güzergâhları (ALTYAPI): network (ağ) ve power (elektrik) çizgileri. Bir poli-çizgidir
+        -- (points JSON [[x,y],...]). kind=network mavi kesikli, power kırmızı; editörde "Hat Çiz" aracıyla çizilir.
+        CREATE TABLE IF NOT EXISTS factory_lines (
+            id         INTEGER PRIMARY KEY,
+            floor_id   INTEGER NOT NULL REFERENCES factory_floors(id) ON DELETE CASCADE,
+            kind       TEXT NOT NULL DEFAULT 'network', -- LINE_KINDS: 'network' | 'power' | 'other'
+            points     TEXT NOT NULL DEFAULT '[]',      -- JSON [[x,y],...] poli-çizgi köşeleri
+            color      TEXT,                            -- özel renk (yoksa kind'e göre öntanımlı)
+            label      TEXT NOT NULL DEFAULT '',
+            width      REAL NOT NULL DEFAULT 2.5,
+            created_at TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS ix_factory_rooms_floor   ON factory_rooms(floor_id);
         CREATE INDEX IF NOT EXISTS ix_factory_cameras_floor ON factory_cameras(floor_id);
         CREATE INDEX IF NOT EXISTS ix_factory_markers_floor ON factory_markers(floor_id);
+        CREATE INDEX IF NOT EXISTS ix_factory_lines_floor   ON factory_lines(floor_id);
     ''')
     # Korumalı ALTER (db.py biçimi): ileride sütun eklenirse buraya eklenir, mevcut veritabanı güncellenir.
     cam_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_cameras)')}
     if 'direction' not in cam_cols:
         conn.execute('ALTER TABLE factory_cameras ADD COLUMN direction REAL NOT NULL DEFAULT 0')
+    # ALTYAPI: kat arka plan planı (gerçek kat planı resmi — üzerine çizmek için). UPLOAD_DIR-göreli yol + konum/ölçek.
+    floor_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_floors)')}
+    if 'bg_image' not in floor_cols:
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_image TEXT')          # 'factory/<ad>' (UPLOAD_DIR-göreli)
+    if 'bg_scale' not in floor_cols:
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_scale REAL NOT NULL DEFAULT 1')
+    if 'bg_x' not in floor_cols:
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_x REAL NOT NULL DEFAULT 0')
+    if 'bg_y' not in floor_cols:
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_y REAL NOT NULL DEFAULT 0')
+    if 'bg_opacity' not in floor_cols:
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_opacity REAL NOT NULL DEFAULT 0.6')
     conn.commit()
 
 
@@ -187,6 +228,11 @@ class FloorIn(BaseModel):
 class FloorPatch(BaseModel):
     name: Optional[str] = None
     ordinal: Optional[int] = None
+    # ALTYAPI: arka plan planı resminin konum/ölçek/opaklığı (üzerine çizim hizalaması için)
+    bg_scale: Optional[float] = None
+    bg_x: Optional[float] = None
+    bg_y: Optional[float] = None
+    bg_opacity: Optional[float] = None
 
 
 class ReorderIn(BaseModel):
@@ -219,9 +265,42 @@ def update_floor(fid: int, body: FloorPatch, user=Depends(fab_user), conn=db.DB)
         raise HTTPException(404, 'Kat bulunamadı')
     name = (body.name.strip() if body.name is not None else f['name']) or f['name']
     ordv = body.ordinal if body.ordinal is not None else f['ordinal']
-    conn.execute('UPDATE factory_floors SET name = ?, ordinal = ? WHERE id = ?', (name, ordv, fid))
+    # Arka plan konum/ölçek alanları: gönderilmişse yaz, yoksa mevcut değeri koru (None = "gönderilmedi").
+    bg_scale = body.bg_scale if body.bg_scale is not None else f['bg_scale']
+    bg_x = body.bg_x if body.bg_x is not None else f['bg_x']
+    bg_y = body.bg_y if body.bg_y is not None else f['bg_y']
+    bg_opacity = body.bg_opacity if body.bg_opacity is not None else f['bg_opacity']
+    conn.execute('''UPDATE factory_floors SET name = ?, ordinal = ?, bg_scale = ?, bg_x = ?, bg_y = ?,
+                    bg_opacity = ? WHERE id = ?''', (name, ordv, bg_scale, bg_x, bg_y, bg_opacity, fid))
     db.audit(conn, user['id'], 'Fabrika katını güncelledi', 'factory_floor', fid, name)
     return db.row(conn.execute('SELECT * FROM factory_floors WHERE id = ?', (fid,)))
+
+
+# ----------------------------------------------------------------------------- Kat arka plan planı (background)
+
+@router.post('/floors/{fid}/background')
+async def set_floor_background(fid: int, file: UploadFile = File(...), user=Depends(fab_user), conn=db.DB):
+    """Kat için gerçek plan resmi (PNG/JPG/SVG...) yükler → mevcut dosya yolu (app/files.py save_upload) ile
+    data/uploads/factory/ altına kaydeder, bg_image yoluna yazar. Kullanıcı bu resmi altlık alıp üzerine
+    odaları/işaretçileri/hatları çizer. /api/files/<yol> ile servis edilir (FILE_GUARDS['factory'] korumasıyla)."""
+    _ensure(conn)
+    if not conn.execute('SELECT 1 FROM factory_floors WHERE id = ?', (fid,)).fetchone():
+        raise HTTPException(404, 'Kat bulunamadı')
+    path = await save_upload('factory', file)   # 'factory/<rastgele>.<uzantı>'
+    conn.execute('UPDATE factory_floors SET bg_image = ? WHERE id = ?', (path, fid))
+    db.audit(conn, user['id'], 'Fabrika kat planı (arka plan) yükledi', 'factory_floor', fid, path)
+    return db.row(conn.execute('SELECT * FROM factory_floors WHERE id = ?', (fid,)))
+
+
+@router.delete('/floors/{fid}/background')
+def clear_floor_background(fid: int, user=Depends(fab_user), conn=db.DB):
+    """Kat arka plan planını kaldırır (bg_image = NULL). Yüklenen dosya diskte kalır (zararsız; paylaşımlı olabilir)."""
+    _ensure(conn)
+    if not conn.execute('SELECT 1 FROM factory_floors WHERE id = ?', (fid,)).fetchone():
+        raise HTTPException(404, 'Kat bulunamadı')
+    conn.execute('UPDATE factory_floors SET bg_image = NULL WHERE id = ?', (fid,))
+    db.audit(conn, user['id'], 'Fabrika kat planını (arka plan) kaldırdı', 'factory_floor', fid, None)
+    return {'ok': True}
 
 
 @router.post('/floors/reorder')
@@ -534,9 +613,12 @@ def add_marker(body: MarkerIn, user=Depends(fab_user), conn=db.DB):
     _ensure(conn)
     if not conn.execute('SELECT 1 FROM factory_floors WHERE id = ?', (body.floor_id,)).fetchone():
         raise HTTPException(400, 'Kat bulunamadı')
+    kind = (body.kind or 'note').strip()
+    if kind not in MARKER_KINDS:
+        kind = 'note'   # bilinmeyen tür → güvenli öntanımlı (palet allowlist)
     cur = conn.execute(
         'INSERT INTO factory_markers (floor_id, kind, label, x, y, created_at) VALUES (?,?,?,?,?,?)',
-        (body.floor_id, (body.kind or 'label').strip(), (body.label or '').strip(), body.x, body.y, db.now()))
+        (body.floor_id, kind, (body.label or '').strip(), body.x, body.y, db.now()))
     return db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (cur.lastrowid,)))
 
 
@@ -548,6 +630,8 @@ def update_marker(mid: int, body: MarkerPatch, user=Depends(fab_user), conn=db.D
         raise HTTPException(404, 'İşaretçi bulunamadı')
     vals = {k: (getattr(body, k) if getattr(body, k) is not None else m[k])
             for k in ('kind', 'label', 'x', 'y', 'floor_id')}
+    if vals['kind'] not in MARKER_KINDS:
+        vals['kind'] = m['kind'] if m['kind'] in MARKER_KINDS else 'note'
     conn.execute('UPDATE factory_markers SET kind = ?, label = ?, x = ?, y = ?, floor_id = ? WHERE id = ?',
                  (vals['kind'], vals['label'], vals['x'], vals['y'], vals['floor_id'], mid))
     return db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (mid,)))
@@ -557,6 +641,95 @@ def update_marker(mid: int, body: MarkerPatch, user=Depends(fab_user), conn=db.D
 def delete_marker(mid: int, user=Depends(fab_user), conn=db.DB):
     _ensure(conn)
     conn.execute('DELETE FROM factory_markers WHERE id = ?', (mid,))
+    return {'ok': True}
+
+
+# ----------------------------------------------------------------------------- Hatlar / kablo güzergâhları (lines)
+# ALTYAPI: network (ağ) ve power (elektrik) kablo güzergâhları — poli-çizgi (points JSON [[x,y],...]).
+
+class LineIn(BaseModel):
+    floor_id: int
+    kind: str = 'network'
+    points: list = []          # [[x,y],...]
+    color: Optional[str] = None
+    label: str = ''
+    width: Optional[float] = None
+
+
+class LinePatch(BaseModel):
+    kind: Optional[str] = None
+    points: Optional[list] = None
+    color: Optional[str] = None
+    label: Optional[str] = None
+    width: Optional[float] = None
+    floor_id: Optional[int] = None
+
+
+def _line_out(r):
+    import json
+    d = dict(r)
+    try:
+        d['points'] = json.loads(d.get('points') or '[]')
+    except ValueError:
+        d['points'] = []
+    return d
+
+
+@router.get('/lines')
+def list_lines(floor: Optional[int] = None, user=Depends(fab_user), conn=db.DB):
+    _ensure(conn)
+    if floor is not None:
+        rows = db.rows(conn.execute('SELECT * FROM factory_lines WHERE floor_id = ? ORDER BY id', (floor,)))
+    else:
+        rows = db.rows(conn.execute('SELECT * FROM factory_lines ORDER BY floor_id, id'))
+    return [_line_out(r) for r in rows]
+
+
+@router.post('/lines')
+def add_line(body: LineIn, user=Depends(fab_user), conn=db.DB):
+    _ensure(conn)
+    if not conn.execute('SELECT 1 FROM factory_floors WHERE id = ?', (body.floor_id,)).fetchone():
+        raise HTTPException(400, 'Kat bulunamadı')
+    kind = (body.kind or 'network').strip()
+    if kind not in LINE_KINDS:
+        kind = 'network'
+    width = body.width if body.width is not None else 2.5
+    cur = conn.execute(
+        '''INSERT INTO factory_lines (floor_id, kind, points, color, label, width, created_at)
+           VALUES (?,?,?,?,?,?,?)''',
+        (body.floor_id, kind, _dump_points(body.points), body.color, (body.label or '').strip(), width, db.now()))
+    db.audit(conn, user['id'], 'Fabrika hattı ekledi', 'factory_line', cur.lastrowid, kind)
+    return _line_out(db.row(conn.execute('SELECT * FROM factory_lines WHERE id = ?', (cur.lastrowid,))))
+
+
+@router.patch('/lines/{lid}')
+def update_line(lid: int, body: LinePatch, user=Depends(fab_user), conn=db.DB):
+    _ensure(conn)
+    ln = db.row(conn.execute('SELECT * FROM factory_lines WHERE id = ?', (lid,)))
+    if not ln:
+        raise HTTPException(404, 'Hat bulunamadı')
+    kind = body.kind if body.kind is not None else ln['kind']
+    if kind not in LINE_KINDS:
+        kind = ln['kind'] if ln['kind'] in LINE_KINDS else 'network'
+    points = _dump_points(body.points) if body.points is not None else ln['points']
+    label = (body.label.strip() if body.label is not None else ln['label'])
+    width = body.width if body.width is not None else ln['width']
+    floor_id = body.floor_id if body.floor_id is not None else ln['floor_id']
+    # color: None gönderimi "renk sıfırla" demek olabilir → alan gövdede varsa gelen değeri yaz.
+    color = body.color if 'color' in body.model_fields_set else ln['color']
+    conn.execute('''UPDATE factory_lines SET kind = ?, points = ?, color = ?, label = ?, width = ?, floor_id = ?
+                    WHERE id = ?''', (kind, points, color, label, width, floor_id, lid))
+    db.audit(conn, user['id'], 'Fabrika hattını güncelledi', 'factory_line', lid, kind)
+    return _line_out(db.row(conn.execute('SELECT * FROM factory_lines WHERE id = ?', (lid,))))
+
+
+@router.delete('/lines/{lid}')
+def delete_line(lid: int, user=Depends(fab_user), conn=db.DB):
+    _ensure(conn)
+    if not conn.execute('SELECT 1 FROM factory_lines WHERE id = ?', (lid,)).fetchone():
+        raise HTTPException(404, 'Hat bulunamadı')
+    conn.execute('DELETE FROM factory_lines WHERE id = ?', (lid,))
+    db.audit(conn, user['id'], 'Fabrika hattını sildi', 'factory_line', lid, None)
     return {'ok': True}
 
 

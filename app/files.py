@@ -18,6 +18,7 @@ KINDS = {
     'receipts': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'},
     'logos': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},
     'brand': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},   # firma kimliği: yüklenen logo (tenant'a özel; UPLOAD_DIR)
+    'factory': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},   # Fabrika dijital ikizi: kat planı arka plan resmi (üzerine çizilir)
     'cargo': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'},
     'camfaces': {'.jpg'},
     'feed': {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.mp4', '.webm', '.mov', '.m4v',

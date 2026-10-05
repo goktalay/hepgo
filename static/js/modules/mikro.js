@@ -76,7 +76,7 @@ async function showDiag(btn) {
       h('td', null, yn(r.iade)), h('td', null, yn(r.cari_var)), h('td', null, yn(r.giris_depo)), h('td', null, yn(r.cikis_depo)),
       h('td', { style: { textAlign: 'right' } }, (r.satir || 0).toLocaleString('tr-TR')),
       h('td', { style: { textAlign: 'right' } }, Number(r.toplam_miktar || 0).toLocaleString('tr-TR')),
-      h('td', null, r.ilk || ''), h('td', null, r.son || ''), h('td', { style: { maxWidth: '260px' } }, (r.ornek || []).join(' · ')))))));
+      h('td', null, r.ilk || ''), h('td', null, r.son || ''), h('td', { style: { maxWidth: '260px' } }, (r.ornek || []).join(' · '))))));
   const copyBtn = h('button', { class: 'btn', type: 'button' }, 'JSON’u kopyala');
   copyBtn.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(rows)); toast('Kopyalandı — geliştiriciye yapıştırabilirsiniz', 'success'); }

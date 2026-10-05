@@ -11,6 +11,7 @@ import {
   internTag, nameWithIntern, periodFilter, t as tr
 } from '../ui.js';
 import { clock } from '../chart.js';
+import { qrSvgEl } from '../qr.js';
 import { render3D } from './replay3d.js';
 import { renderFlight } from './flight.js';
 import { logBadge, renderReportView } from './tools.js';
@@ -252,7 +253,7 @@ async function renderTask(view, id, ctx) {
   let tab = pref('field.tab', 'flights');
   const head = h('div');
   // Yerleşim: üstte görev bilgileri (katlanabilir), altında alt modül sekmeleri, en altta seçili alt modül
-  const TABS = [['flights', 'Uçuş Yönetimi'], ['expenses', 'Masraf Yönetimi'], ['road', 'Yol Yönetimi'], ['equipment', 'Ekipman Listesi'], ['isg', 'İSG Kontrol']];
+  const TABS = [['flights', 'Uçuş Yönetimi'], ['expenses', 'Masraf Yönetimi'], ['road', 'Yol Yönetimi'], ['exits', 'Araç Çıkışı (QR)'], ['equipment', 'Ekipman Listesi'], ['isg', 'İSG Kontrol']];
   // Sekme çubuğu: solda alt modüller, en sağda seçili alt modülün işlemleri (Ekle vb.; formlar açılır pencerede)
   const tabList = h('div', { class: 'tabbar', role: 'tablist' });
   const tabActs = h('div', { class: 'task-tab-acts' });
@@ -334,6 +335,7 @@ async function renderTask(view, id, ctx) {
     setTabActions();
     if (tab === 'expenses') return drawExpenses();
     if (tab === 'road') return drawRoad();
+    if (tab === 'exits') return drawExits();
     if (tab === 'equipment') return drawEquipment();
     if (tab === 'isg') return drawIsg();
     return drawFlights();
@@ -700,6 +702,139 @@ async function renderTask(view, id, ctx) {
           h('span', { style: { flex: 1 } }),
           h('span', { class: 'small muted' }, can ? 'Her aracın km bilgisini kendi şoförü de girebilir.'
             : 'Yalnızca şoförü olduğunuz aracın km bilgisini girebilirsiniz.'))));
+  }
+
+  // Araç Çıkışı (QR): saha görevine giden personel araç bazında gruplanır; her grup için onaysız QR çıkış kodu üretilir.
+  // Güvenlikte okutulunca personel "şirket dışında" sayılır (görev formundan farklı olarak yönetici onayı gerekmez).
+  async function drawExits() {
+    const [staffRes, groupsRes, vehRes] = await Promise.all([
+      api.get('/api/me/duties/staff').catch(() => ({ items: [] })),
+      api.get(`/api/field/tasks/${id}/vehicles-exit`).catch(() => ({ items: [] })),
+      api.get('/api/me/duties/vehicles').catch(() => ({ items: [] })),
+    ]);
+    if (tab !== 'exits') return;
+    const employees = staffRes.items || [];
+    const groups = groupsRes.items || [];
+    const vehicles = vehRes.items || [];
+    const can = t.can.manage || t.can.expenses;   // saha sorumlusu/sistem yöneticisi ya da görevdeki kişi
+
+    // Şirkete döndü: grup "Görevde"den düşer VE aracı güvenlik kaydında içeri alınır.
+    const markReturn = async (g) => {
+      if (!await confirmDialog('Şirkete Döndü', tr('{plate} grubu fabrikaya döndü mü? Araç içeri alınacak.',
+        { plate: g.vehicle_plate || 'Araçsız' }), { okLabel: 'Şirkete Döndü' })) return;
+      try { await api.post(`/api/field/vehicles-exit/${g.id}/return`, {}); toast('Şirkete döndü işaretlendi'); await drawExits(); }
+      catch (err) { toastError(err); }
+    };
+    // Görevi Bitir: grubu tamamlar (araca dokunulmaz). Modal: "Uçuş yapıldı mı?" — Hayır ise açıklama zorunlu.
+    const completeGroup = (g) => {
+      let flew = true;
+      const note = h('textarea', { class: 'input', rows: 3, placeholder: 'Görev / uçuş açıklaması' });
+      const noteField = field('Açıklama', note, 'Uçuş yapılmadıysa zorunlu.');
+      const mkRadio = (val, label) => {
+        const r = h('label', { class: 'radio', style: { marginRight: '14px' } },
+          h('input', { type: 'radio', name: 'flew', checked: val, onchange: () => { flew = val; } }), ' ' + label);
+        return r;
+      };
+      modal({
+        title: tr('Görevi Bitir · {plate}', { plate: g.vehicle_plate || 'Araçsız' }),
+        body: h('div', null,
+          field('Uçuş yapıldı mı?', h('div', null, mkRadio(true, 'Evet'), mkRadio(false, 'Hayır'))),
+          noteField),
+        actions: [{ label: 'Vazgeç' }, { label: 'Görevi Bitir', class: 'primary', onClick: async () => {
+          const n = note.value.trim();
+          if (!flew && !n) { toast('Uçuş yapılmadıysa açıklama girin', 'err'); return true; }
+          await api.post(`/api/field/vehicles-exit/${g.id}/complete`, { flew, note: n || null });
+          toast('Görev grubu bitirildi');
+          await drawExits();
+        } }],
+      });
+    };
+
+    // Mevcut çıkış grupları (QR göster / iptal)
+    const groupCards = groups.map(g => {
+      const returned = !!g.returned_at;
+      const retBadge = returned
+        ? h('span', { class: 'badge green' }, g.return_kind === 'bitir'
+          ? (g.flew === 0 ? 'Bitti · uçulmadı' : 'Görev bitti') : 'Şirkete döndü')
+        : null;
+      return h('div', { class: 'card card-pad', style: { marginBottom: '8px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
+          g.vehicle_plate ? h('b', { class: 'mono' }, g.vehicle_plate) : h('span', { class: 'muted' }, 'Araçsız / kendi aracı'),
+          retBadge,
+          h('span', { style: { flex: 1, minWidth: '120px' } }, g.people_names || '—'),
+          g.pass_token && !returned ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => showExitQr(g) }, 'QR Göster') : null,
+          can && !returned ? h('button', { class: 'btn sm', type: 'button', onclick: () => markReturn(g) }, 'Şirkete Döndü') : null,
+          can && !returned ? h('button', { class: 'btn sm', type: 'button', onclick: () => completeGroup(g) }, 'Görevi Bitir') : null,
+          can && !returned ? h('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+            if (!await confirmDialog('Çıkışı iptal et', tr('{plate} çıkış grubu iptal edilsin mi? QR geçersiz olur.',
+              { plate: g.vehicle_plate || 'Araçsız' }), { okLabel: 'İptal Et', danger: true })) return;
+            try { await api.del(`/api/field/vehicles-exit/${g.id}`); toast('Çıkış grubu iptal edildi'); await drawExits(); }
+            catch (err) { toastError(err); }
+          } }, 'İptal') : null));
+    });
+
+    // Yeni araç grupları: her araç için plaka (serbest) + yolcu seçimi; "Araç Ekle" ile satır eklenir
+    const rowsBox = h('div');
+    const vehicleRows = [];
+    const addRow = () => {
+      // Plaka serbest metin değil; şirket araçları (Fleet / Saha) arasından seçilir.
+      const plate = h('select', { class: 'input', style: { maxWidth: '220px' } }, h('option', { value: '' }, 'Araçsız / kendi aracı'),
+        vehicles.map(v => h('option', { value: v.plate }, v.plate + (v.description ? ` · ${v.description}` : ''))));
+      const sel = h('select', { class: 'input', multiple: true, size: Math.min(Math.max(employees.length, 3), 8) },
+        employees.map(e => h('option', { value: e.id }, e.name + (e.title ? ` · ${e.title}` : ''))));
+      const row = { plate, sel, el: null };
+      const rm = h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { row.el.remove(); const i = vehicleRows.indexOf(row); if (i >= 0) vehicleRows.splice(i, 1); } }, 'Kaldır');
+      row.el = h('div', { class: 'card card-pad', style: { marginBottom: '8px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' } },
+          h('b', null, 'Araç'), plate, h('span', { style: { flex: 1 } }), vehicleRows.length ? rm : null),
+        field('Yolcular (birden fazla seçmek için Ctrl/Cmd ile tıklayın)', sel));
+      vehicleRows.push(row);
+      rowsBox.append(row.el);
+    };
+    addRow();
+
+    const save = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+      const vehicles = vehicleRows.map(r => ({
+        plate: r.plate.value.trim() || null,
+        employee_ids: [...r.sel.selectedOptions].map(o => Number(o.value)),
+      })).filter(v => v.employee_ids.length);
+      if (!vehicles.length) { toast('En az bir araç için yolcu seçin', 'err'); return; }
+      save.disabled = true;
+      try {
+        await api.post(`/api/field/tasks/${id}/vehicles-exit`, { vehicles });
+        toast('Araç çıkış grupları oluşturuldu; QR hazır');
+        await drawExits();
+      } catch (err) { toastError(err); } finally { save.disabled = false; }
+    } }, 'Çıkış Gruplarını Oluştur');
+
+    clear(body,
+      h('div', { class: 'card card-pad', style: { marginBottom: '12px' } },
+        h('p', { class: 'small muted', style: { marginTop: 0 } },
+          'Saha görevine giden personel araç bazında gruplanır; her grup için güvenlikte okutulacak QR üretilir. '
+          + 'Görev formundan farklı olarak yönetici onayı gerekmez; QR okutulan personel "şirket dışında" sayılır.'),
+        groups.length ? h('div', null, h('h2', { style: { fontSize: '14px', margin: '4px 0 8px' } }, tr('Oluşturulan çıkış grupları ({n})', { n: groups.length })), groupCards) : null,
+        can ? h('div', null,
+          h('h2', { style: { fontSize: '14px', margin: '12px 0 8px' } }, 'Yeni araç çıkış grupları'),
+          rowsBox,
+          h('div', { style: { display: 'flex', gap: '8px', marginTop: '4px' } },
+            h('button', { class: 'btn', type: 'button', onclick: () => addRow() }, svgIcon(icons.plus), 'Araç Ekle'),
+            h('span', { style: { flex: 1 } }), save))
+          : (groups.length ? null : h('div', { class: 'empty small' }, 'Bu görev için henüz araç çıkışı oluşturulmadı'))));
+  }
+
+  // Saha çıkış grubunun QR kodunu gösterir (güvenlikte okutulur) — Görev Formu QR kalıbı
+  function showExitQr(g) {
+    modal({
+      title: 'Saha Çıkışı · QR',
+      body: h('div', null,
+        h('div', { class: 'qr-box' }, qrSvgEl(g.pass_token, { cell: 5, margin: 2 })),
+        h('p', { class: 'small muted', style: { textAlign: 'center' } }, 'Fabrika çıkışında güvenliğe okutun.'),
+        h('dl', { class: 'duty-kv' },
+          h('dt', null, 'Araç'), h('dd', null, g.vehicle_plate || 'Araçsız / kendi aracı'),
+          h('dt', null, 'Personel'), h('dd', null, g.people_names || '—'),
+          h('dt', null, 'Gideceği yer'), h('dd', null, g.destination || '—'))),
+      actions: [{ label: 'Kapat', class: 'primary' }],
+    });
   }
 
   async function start() {

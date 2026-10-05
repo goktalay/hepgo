@@ -7499,6 +7499,11 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .sec-plist-ul { list-style: none; margin: 0; padding: 0; }
 .sec-plist-ul li { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .sec-plist-ul li:last-child { border-bottom: 0; }
+/* Güvenlik "Görevde" kartları: araç/görev grubu — başta plaka, altında personel, "Giriş Yaptı" düğmesi */
+.sec-duty-list { display: flex; flex-direction: column; gap: 10px; }
+.sec-duty-card { padding: 10px 12px; }
+.sec-duty-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.sec-duty-people { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 
 /* Görevdeki / İzindeki personel pano kartı: avatar + isim/plaka + ileri sayan sayaç */
 .db-plist { list-style: none; margin: 0; padding: 0; }
@@ -7525,11 +7530,19 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-avwrap.st-leave  .db-av { border-color: #3b82f6; }
 .db-avwrap.st-off    .db-av { border-color: #cbd5e1; }
 
-/* Görevdeki Personel: görev/araç bazında grup — üstte ortada plaka, solda personel(ler), sağda tek ileri sayaç */
+/* Görevdeki Personel: görev/araç bazında grup — üstte tam genişlik plaka başlık şeridi,
+   gövdede solda personel(ler) + sağda tek ileri sayaç, altta ince "dışarıda" şeridi.
+   Başlık/alt şerit koyu tint'i rgba ile verilir ki açık ve koyu temada da çalışsın. */
 .db-dutygrps { display: flex; flex-direction: column; gap: 10px; }
-.db-dutygrp { border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; background: var(--surface-2, rgba(127,127,127,.04)); }
-.db-dutygrp-plate { text-align: center; margin-bottom: 9px; }
-.db-dutygrp-row { display: flex; align-items: center; gap: 12px; }
+.db-dutygrp { border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  background: var(--surface-2, rgba(127,127,127,.04)); }
+.db-dutygrp-head { text-align: center; padding: 6px 11px; font-weight: 700; font-size: 13px;
+  font-family: ui-monospace, monospace; letter-spacing: .5px; color: var(--text);
+  background: rgba(127, 127, 127, .14); border-bottom: 1px solid var(--border); }
+.db-dutygrp-noveh { font-family: system-ui, sans-serif; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.db-dutygrp-body { display: flex; align-items: center; gap: 12px; padding: 10px 11px; }
+.db-dutygrp-foot { padding: 3px 11px; font-size: 10px; color: var(--muted);
+  background: rgba(127, 127, 127, .14); border-top: 1px solid var(--border); }
 .db-dutygrp-people { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
 .db-dutyp { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .db-dutyp .db-av { width: 38px; height: 38px; flex: none; font-size: 15px; }

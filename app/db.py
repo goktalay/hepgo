@@ -1244,6 +1244,12 @@ CREATE TABLE IF NOT EXISTS duty_requests (
     decided_at    TEXT,
     decision_note TEXT,
     seen_at       TEXT,                                  -- talep eden kararı gördü
+    source        TEXT NOT NULL DEFAULT 'manual',        -- 'manual' (Kişisel görev formu) | 'field' (saha görevi araç çıkışı; onaysız, otomatik ONAYLANDI)
+    field_task_id INTEGER REFERENCES field_tasks(id),    -- saha görevi araç çıkış grubunun bağlı olduğu saha görevi
+    returned_at   TEXT,                                  -- grup fabrikaya geri döndü (güvenlik giriş yaptı); dolunca "Görevde"den düşer
+    return_kind   TEXT,                                  -- dönüş türü: 'sirket' (şirkete döndü, araç içeri girer) | 'bitir' (görevi bitir, araca dokunulmaz)
+    flew          INTEGER,                               -- görevi bitirirken: uçuş yapıldı mı? (1 evet / 0 hayır); stok devri ileride bu veriyi kullanacak
+    complete_note TEXT,                                  -- görevi bitirme açıklaması (uçulmadıysa zorunlu)
     created_at    TEXT NOT NULL
 );
 -- Görev formunda göreve gidecek personel (çoklu; görev araca/göreve özel, bir araçta birden çok kişi).
@@ -2758,6 +2764,20 @@ def _migrate(conn):
         conn.execute('ALTER TABLE face_enroll ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE CASCADE')
     if 'family_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_groups)')}:
         conn.execute('ALTER TABLE face_groups ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE SET NULL')
+    # Görev formu kaynağı: 'manual' (Kişisel görev formu) | 'field' (saha görevi araç çıkış grubu; onaysız/otomatik aktif)
+    duty_cols = {r[1] for r in conn.execute('PRAGMA table_info(duty_requests)')}
+    if 'source' not in duty_cols:
+        conn.execute("ALTER TABLE duty_requests ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+    if 'field_task_id' not in duty_cols:   # saha görevi araç çıkış grubunun bağlı olduğu saha görevi
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN field_task_id INTEGER REFERENCES field_tasks(id)')
+    if 'returned_at' not in duty_cols:   # grup fabrikaya döndü (güvenlik giriş yaptı) → "Görevde"den düşer
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN returned_at TEXT')
+    if 'return_kind' not in duty_cols:   # dönüş türü: 'sirket' | 'bitir'
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN return_kind TEXT')
+    if 'flew' not in duty_cols:   # görevi bitirirken uçuş yapıldı mı (stok devri için)
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN flew INTEGER')
+    if 'complete_note' not in duty_cols:   # görevi bitirme açıklaması
+        conn.execute('ALTER TABLE duty_requests ADD COLUMN complete_note TEXT')
 
 
 def get_db():

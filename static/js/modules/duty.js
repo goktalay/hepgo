@@ -114,13 +114,15 @@ ${d.approver_name ? row('Onaylayan', d.approver_name) : ''}${d.decision_note ? r
 
 // ---------- Yeni görev formu ----------
 async function newDutyForm(ctx, reload) {
-  const [employees, users] = await Promise.all([loadEmployees(ctx), loadUsers()]);
+  const [employees, users, vehicles] = await Promise.all([loadEmployees(ctx), loadUsers(), loadVehicles()]);
   const emp = multiPersonPicker(employees);   // görev araca/göreve özel: birden fazla personel
   const dest = h('input', { class: 'input', placeholder: 'Gideceği yer (ör. İstanbul · müşteri ziyareti)' });
   const depart = dateTimeInput({ inModal: true });
   const ret = dateTimeInput({ inModal: true });
   const purpose = h('textarea', { class: 'input', rows: 3, placeholder: 'Görevlendirme açıklaması' });
-  const plate = h('input', { class: 'input', placeholder: 'Araç plakası (isteğe bağlı; kişiler kendi araçlarıyla da gidebilir)', autocapitalize: 'characters' });
+  // Araç plakası serbest metin değil; şirket araçları (Fleet / Saha) arasından seçilir.
+  const plate = h('select', { class: 'input' }, h('option', { value: '' }, 'Araçsız / kendi aracı'),
+    vehicles.map(v => h('option', { value: v.plate }, v.plate + (v.description ? ` · ${v.description}` : ''))));
   const approver = h('select', { class: 'input' }, h('option', { value: '' }, 'Seçilmedi'),
     users.map(u => h('option', { value: u.id }, u.full_name || u.username || `#${u.id}`)));
 
@@ -142,7 +144,7 @@ async function newDutyForm(ctx, reload) {
         purpose: purpose.value.trim(),
         depart_at: depart.getValue(),
         return_at: ret.getValue() || null,
-        vehicle_plate: plate.value.trim() || null,
+        vehicle_plate: plate.value || null,
         approver_id: approver.value ? Number(approver.value) : null,
       });
       toast('Görev formu oluşturuldu; onaya gönderildi', 'success');
@@ -207,6 +209,10 @@ async function loadEmployees(ctx) {
 }
 async function loadUsers() {
   try { return await api.get('/api/voice/users'); } catch { return []; }
+}
+// Aktif şirket araçları (Fleet / Saha ortak araç tablosu): plaka serbest metin yerine listeden seçilir.
+async function loadVehicles() {
+  try { const { items } = await api.get('/api/me/duties/vehicles'); return items || []; } catch { return []; }
 }
 
 // Aranabilir tekli seçim: metin girişi + açılır liste. .value → seçilen id (yoksa null).

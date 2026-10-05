@@ -92,19 +92,42 @@ async function renderVehicles(body, addBtn) {
   every(15000, () => load().catch(() => {}));
 }
 
-// Görevde / İzinde: güvenliğin çıkışta görmesi için şu an görevde ve bugün izinli personel.
+// Görevde / İzinde: güvenliğin çıkışta görmesi için şu an görevde (araç/görev grupları) ve bugün izinli personel.
 async function renderPersonnel(body) {
   clear(body, h('div', { class: 'empty' }, 'Yükleniyor…'));
   let d;
   try { d = await api.get('/api/security/personnel'); } catch (e) { clear(body, h('div', { class: 'card empty' }, e.message)); return; }
-  const section = (title, items, rowFn, empty) => h('div', { class: 'card card-pad sec-plist' },
+  // Görevdeki araç/görev grupları: kart başında plaka, altında personel(ler), ne kadardır dışarıda + "Giriş Yaptı"
+  const dutyCard = g => {
+    const since = () => (g.depart_at ? fmtDuration(secondsSince(g.depart_at)) : '—');
+    const enter = h('button', { class: 'btn sm primary', type: 'button', onclick: async () => {
+      if (!await confirmDialog('Giriş Yaptı', t('{plate} grubu fabrikaya giriş yaptı mı? Araç içeri alınacak.',
+        { plate: g.vehicle_plate || 'Araçsız' }), { okLabel: 'Giriş Yaptı' })) return;
+      try {
+        const r = await api.post(`/api/security/duty/${g.id}/return`, {});
+        toast(r.vehicle_entered ? t('{plate} içeri alındı', { plate: r.vehicle_plate }) : 'Giriş kaydedildi');
+        await renderPersonnel(body);
+      } catch (err) { toastError(err); }
+    } }, 'Giriş Yaptı');
+    return h('div', { class: 'card card-pad sec-duty-card' },
+      h('div', { class: 'sec-duty-head' },
+        g.vehicle_plate ? plateEl(g.vehicle_plate, 'sm') : h('span', { class: 'small muted' }, 'Araçsız / kendi aracı'),
+        g.source === 'field' ? h('span', { class: 'badge blue' }, 'Saha') : null,
+        h('span', { style: { flex: 1 } }),
+        h('span', { class: 'small muted' }, since() + ' dışarıda'), enter),
+      h('div', { class: 'sec-duty-people' }, (g.people || []).map(p => h('div', { class: 'small' },
+        h('b', null, p.name), p.title ? h('span', { class: 'muted' }, ' · ' + p.title) : null))),
+      g.destination ? h('div', { class: 'small muted' }, g.destination
+        + (g.return_at ? ' · ' + t('tahmini dönüş {d}', { d: (g.return_at || '').slice(0, 10) }) : '')) : null);
+  };
+  const leaveList = (title, items, rowFn, empty) => h('div', { class: 'card card-pad sec-plist' },
     h('h3', null, title),
     items.length ? h('ul', { class: 'sec-plist-ul' }, items.map(rowFn)) : h('div', { class: 'small muted' }, empty));
   clear(body,
-    section(t('Görevde ({n})', { n: d.on_duty.length }), d.on_duty, x => h('li', null,
-      h('b', null, x.name), ' ', h('span', { class: 'small muted' }, [x.title, x.destination].filter(Boolean).join(' · ')),
-      x.return_at ? h('span', { class: 'small muted' }, ' · ' + t('tahmini dönüş {d}', { d: (x.return_at || '').slice(0, 10) })) : null), 'Şu an görevde personel yok'),
-    section(t('İzinde ({n})', { n: d.on_leave.length }), d.on_leave, x => h('li', null,
+    h('div', { class: 'card card-pad sec-plist' },
+      h('h3', null, t('Görevde ({n})', { n: d.on_duty.length })),
+      d.on_duty.length ? h('div', { class: 'sec-duty-list' }, d.on_duty.map(dutyCard)) : h('div', { class: 'small muted' }, 'Şu an görevde personel yok')),
+    leaveList(t('İzinde ({n})', { n: d.on_leave.length }), d.on_leave, x => h('li', null,
       h('b', null, x.name), ' ', h('span', { class: 'small muted' }, [x.title, x.kind === 'UCRETSIZ' ? 'ücretsiz izin' : 'izinli'].filter(Boolean).join(' · ')),
       h('span', { class: 'small muted' }, ' · ' + t('{d} tarihine kadar', { d: (x.end_date || '').slice(0, 10) }))), 'Bugün izinli personel yok'));
 }

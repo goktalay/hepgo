@@ -102,6 +102,37 @@ def _record_exit(conn, name, kind, ref_id, scanned_by):
     db.audit(conn, scanned_by, 'Personel çıkışı (QR)', 'person_exit', ref_id, f'{name} · {kind}')
 
 
+def vehicle_enter(conn, plate, user_id, note='Görev dönüşü'):
+    """Görev grubunun aracını güvenlik araç kaydında İÇERİ girmiş olarak işaretler.
+    Açık (içeride) bir kayıt varsa kapatılıp yeni giriş açılır; yoksa doğrudan yeni giriş açılır."""
+    if not plate:
+        return None
+    p = norm_plate(plate)
+    open_v = db.row(conn.execute(
+        'SELECT id FROM vehicle_visits WHERE plate = ? AND exited_at IS NULL ORDER BY id DESC LIMIT 1', (p,)))
+    if open_v:
+        conn.execute('UPDATE vehicle_visits SET exited_at = ?, exited_by = ? WHERE id = ?', (db.now(), user_id, open_v['id']))
+    conn.execute('INSERT INTO vehicle_visits (plate, note, entered_at, entered_by) VALUES (?,?,?,?)',
+                 (p, note, db.now(), user_id))
+    return p
+
+
+def vehicle_exit(conn, plate, user_id, note='Görev çıkışı'):
+    """Görev grubunun aracını güvenlik araç kaydında DIŞARI çıkmış olarak işaretler (QR çıkışında).
+    Açık bir giriş kaydı varsa çıkışı işlenir; yoksa (güvenlik girişini yapmadıysa) giriş açılıp hemen çıkış işaretlenir."""
+    if not plate:
+        return None
+    p = norm_plate(plate)
+    open_v = db.row(conn.execute(
+        'SELECT id FROM vehicle_visits WHERE plate = ? AND exited_at IS NULL ORDER BY id DESC LIMIT 1', (p,)))
+    if open_v:
+        conn.execute('UPDATE vehicle_visits SET exited_at = ?, exited_by = ? WHERE id = ?', (db.now(), user_id, open_v['id']))
+    else:
+        conn.execute('INSERT INTO vehicle_visits (plate, note, entered_at, entered_by, exited_at, exited_by) VALUES (?,?,?,?,?,?)',
+                     (p, note, db.now(), user_id, db.now(), user_id))
+    return p
+
+
 @router.post('/verify-pass')
 def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     """QR çıkış kodunu doğrular ve izin verilirse personel çıkışını kaydeder."""
@@ -137,18 +168,23 @@ def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
         one = db.row(conn.execute("SELECT first_name || ' ' || last_name AS name FROM employees WHERE id = ?", (r['employee_id'],)))
         people = [one['name']] if one else []
     names = ', '.join(people) or '—'
+    is_field = r.get('source') == 'field'   # saha görevi araç çıkışı (onaysız/otomatik aktif) → "şirket dışında"
     if r['status'] != 'ONAYLANDI':
-        return {'allow': False, 'type': 'duty', 'name': names, 'people': people, 'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
+        return {'allow': False, 'type': 'duty', 'name': names, 'people': people, 'source': r.get('source'),
+                'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
     depart = (r['depart_at'] or '')[:10]
     ret = (r['return_at'] or '')[:10] or None
-    info = {'type': 'duty', 'name': names, 'people': people, 'destination': r['destination'],
-            'dates': {'depart': r['depart_at'], 'return': r['return_at']}}
+    info = {'type': 'duty', 'name': names, 'people': people, 'destination': r['destination'], 'source': r.get('source'),
+            'dates': {'depart': r['depart_at'], 'return': r['return_at']},
+            **({'note': 'Saha görevi — şirket dışında'} if is_field else {})}
     if depart and today < depart:
         return {'allow': False, 'reason': f'Görev {depart} tarihinde başlıyor', **info}
     warn = 'Dikkat: tahmini dönüş tarihi geçmiş' if ret and today > ret else None
     for nm in people:   # her personel için çıkış kaydı
         _record_exit(conn, nm, 'duty', r['id'], user['id'])
-    return {'allow': True, **info, **({'reason': warn} if warn else {})}
+    plate = vehicle_exit(conn, r['vehicle_plate'], user['id'])   # grubun aracını güvenlik araç kaydında dışarı çıkar
+    veh = {'vehicle_plate': plate, 'vehicle_exited': bool(plate)} if plate else {}
+    return {'allow': True, **info, **veh, **({'reason': warn} if warn else {})}
 
 
 @router.get('/exits')
@@ -161,9 +197,23 @@ def person_exits(user=Depends(security_user), conn=db.DB):
 
 @router.get('/personnel')
 def personnel(user=Depends(security_user), conn=db.DB):
-    """Güvenlik için: şu an görevde ve bugün izinli personel (çıkışta bilgi amaçlı)."""
-    from .hr import on_duty_now, on_leave_today
-    return {'on_duty': on_duty_now(conn), 'on_leave': on_leave_today(conn)}
+    """Güvenlik için: şu an görevde olan araç/görev grupları (kart: plaka + personel + çıkış) ve bugün izinli personel."""
+    from .hr import on_duty_groups, on_leave_today
+    return {'on_duty': on_duty_groups(conn), 'on_leave': on_leave_today(conn)}
+
+
+@router.post('/duty/{did}/return')
+def duty_return(did: int, user=Depends(security_user), conn=db.DB):
+    """Görev grubu fabrikaya döndü (güvenlik "Giriş Yaptı"): grubu "Görevde"den düşürür ve aracını İÇERİ girmiş işaretler."""
+    r = db.row(conn.execute("SELECT * FROM duty_requests WHERE id = ? AND status = 'ONAYLANDI'", (did,)))
+    if not r:
+        raise HTTPException(404, 'Görev grubu bulunamadı')
+    if r['returned_at']:
+        raise HTTPException(400, 'Bu grup zaten giriş yaptı')
+    conn.execute("UPDATE duty_requests SET returned_at = ?, return_kind = 'sirket' WHERE id = ?", (db.now(), did))
+    plate = vehicle_enter(conn, r['vehicle_plate'], user['id'])
+    db.audit(conn, user['id'], 'Görev dönüşü (şirkete giriş)', 'duty', did, plate or '—')
+    return {'ok': True, 'vehicle_plate': plate, 'vehicle_entered': bool(plate)}
 
 
 @router.get('/log')

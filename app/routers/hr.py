@@ -1328,6 +1328,15 @@ def duty_staff(user=Depends(auth.current_user), conn=db.DB):
     return {'items': rows}
 
 
+@duties_me_router.get('/vehicles')
+def duty_vehicles(user=Depends(auth.current_user), conn=db.DB):
+    """Görev formunda / saha araç çıkışında araç plakası seçimi için aktif şirket araçları (Fleet / Saha ortak araç tablosu).
+    Plaka serbest metin yerine bu listeden seçilir. Herkese açık (İK / Fleet yetkisi gerekmez)."""
+    rows = db.rows(conn.execute(
+        'SELECT id, plate, description FROM field_vehicles WHERE active = 1 ORDER BY plate'))
+    return {'items': rows}
+
+
 @duties_me_router.get('')
 def my_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
     """Kişisel › Görevlerim: oluşturduğum ya da göreve gittiğim formlar. Onaylananlar pass_token taşır."""
@@ -1439,19 +1448,45 @@ def on_leave_today(conn):
 
 
 def on_duty_now(conn):
-    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş).
+    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş, henüz geri girmemiş).
     Görev araca/göreve özel olduğundan her görevdeki HER personel ayrı satır olarak döner."""
     today = db.now()[:10]
     return db.rows(conn.execute(
         """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, u.photo,
-                  d.destination, d.vehicle_plate, d.depart_at, d.return_at
+                  d.destination, d.vehicle_plate, d.depart_at, d.return_at, d.source
              FROM duty_requests d
              JOIN duty_people dp ON dp.duty_id = d.id
              JOIN employees e ON e.id = dp.employee_id
              LEFT JOIN users u ON u.id = e.user_id
-            WHERE d.status = 'ONAYLANDI' AND substr(d.depart_at, 1, 10) <= ?
+            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
             ORDER BY d.depart_at DESC, name""", (today, today)))
+
+
+def on_duty_groups(conn):
+    """Şu an görevde olan araç/görev GRUPLARI (güvenlik kartları için): plaka + personel listesi + çıkış zamanı.
+    Onaylı, geri dönmemiş gruplar (manuel görev formu + saha görevi araç çıkışı)."""
+    today = db.now()[:10]
+    rows = db.rows(conn.execute(
+        """SELECT d.id, d.destination, d.vehicle_plate, d.depart_at, d.return_at, d.source
+             FROM duty_requests d
+            WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL AND substr(d.depart_at, 1, 10) <= ?
+              AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
+            ORDER BY d.depart_at DESC, d.id DESC""", (today, today)))
+    if not rows:
+        return []
+    ph = ','.join('?' * len(rows))
+    people = {}
+    for p in conn.execute(
+            f"""SELECT dp.duty_id, e.first_name || ' ' || e.last_name AS name, e.title, u.photo
+                FROM duty_people dp JOIN employees e ON e.id = dp.employee_id
+                LEFT JOIN users u ON u.id = e.user_id
+                WHERE dp.duty_id IN ({ph}) ORDER BY name""", [r['id'] for r in rows]):
+        people.setdefault(p[0], []).append({'name': p[1], 'title': p[2], 'photo': p[3]})
+    for r in rows:
+        r['people'] = people.get(r['id'], [])
+        r['people_names'] = ', '.join(x['name'] for x in r['people'])
+    return rows
 
 
 def pending_duties_for(conn, user):

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, config, db
+from .. import auth, config, db, exitpass
 from ..files import KINDS, local_only, save_upload
 
 router = APIRouter(prefix='/api/field')
@@ -74,6 +74,25 @@ class VehicleIn(BaseModel):
     plate: str
     description: Optional[str] = None
     active: bool = True
+
+
+class ExitGroupIn(BaseModel):
+    plate: Optional[str] = None            # araç plakası (serbest metin, isteğe bağlı; boşsa "araçsız / kendi aracı")
+    employee_ids: list[int] = []           # bu araçtaki yolcular (aktif personel)
+
+
+class VehiclesExitIn(BaseModel):
+    vehicles: list[ExitGroupIn] = []
+
+
+class ExitReturnIn(BaseModel):
+    at: Optional[str] = None               # şirkete dönüş saati (opsiyonel; verilmezse şu an)
+
+
+class ExitCompleteIn(BaseModel):
+    flew: bool = True                      # uçuş yapıldı mı? (Hayır ise açıklama zorunlu)
+    note: Optional[str] = None             # görevi bitirme açıklaması (uçulmadıysa zorunlu)
+    at: Optional[str] = None
 
 
 class LocationIn(BaseModel):
@@ -495,6 +514,128 @@ def delete_task_vehicle(rid: int, user=Depends(field_user), conn=db.DB):
     conn.execute('DELETE FROM field_task_vehicles WHERE id = ?', (rid,))
     db.audit(conn, user['id'], 'Görevden aracı çıkardı', 'field_task', task['id'], f'{task["code"]}: {r["plate"]}')
     return {'ok': True}
+
+
+# ---------- Saha görevi araç çıkışları (QR; ONAYSIZ) ----------
+# Saha görevine giden personel de "Görevdeki Personel"de görünsün ve güvenlikte QR okutup çıkabilsin diye,
+# araç bazında birer görev formu (duty_requests) satırı oluşturulur. Görev formundan FARKLI olarak onay GEREKMEZ:
+# satır doğrudan ONAYLANDI açılır (decided_by = işlemi yapan). on_duty_now() / verify-pass duty_requests üzerinden
+# çalıştığından bu gruplar otomatik olarak görevde listesine girer ve QR ile okutulabilir.
+
+def _can_exit(task, user):
+    """Saha görevi araç çıkış grubunu yöneten: saha sorumlusu/sistem yöneticisi ya da görevdeki bir kişi."""
+    return is_manager(user) or _member(task, user)
+
+
+def _exit_groups(conn, tid):
+    """Bu görevin saha çıkış gruplarını (iptal edilmemiş) personelleri ve QR kodu (pass_token) ile döndürür."""
+    from .hr import _duty_reqs
+    return _duty_reqs(conn, "d.source = 'field' AND d.field_task_id = ? AND d.status != 'IPTAL'", (tid,))
+
+
+@router.get('/tasks/{tid}/vehicles-exit')
+def list_vehicle_exits(tid: int, user=Depends(field_user), conn=db.DB):
+    """Görevin araç bazlı çıkış grupları (QR göstermek/yazdırmak için)."""
+    task = get_task(conn, tid)
+    if not _can_exit(task, user):
+        raise HTTPException(403, 'Bu görevin çıkış gruplarını yalnızca görevdeki kişiler görebilir')
+    return {'items': _exit_groups(conn, tid)}
+
+
+@router.post('/tasks/{tid}/vehicles-exit')
+def create_vehicle_exits(tid: int, body: VehiclesExitIn, user=Depends(field_user), conn=db.DB):
+    """Araç bazlı çıkış grupları oluşturur: her araç için ONAYLI (onaysız/otomatik) bir görev formu + yolcuları.
+    Güvenlikte QR okutulunca personel "şirket dışında" sayılır. Her çağrı yeni grup(lar) ekler."""
+    task = get_task(conn, tid)
+    if not _can_exit(task, user):
+        raise HTTPException(403, 'Saha çıkış grubunu yalnızca görevdeki kişiler oluşturabilir')
+    if task['status'] == 'IPTAL':
+        raise HTTPException(400, 'İptal edilen göreve çıkış grubu eklenemez')
+    groups = [g for g in (body.vehicles or []) if [i for i in g.employee_ids if i]]
+    if not groups:
+        raise HTTPException(400, 'En az bir araç için yolcu seçin')
+    destination = task.get('location_name') or task['code']
+    depart_at = task.get('started_at') or db.now()
+    created = []
+    for g in groups:
+        ids = list(dict.fromkeys(i for i in g.employee_ids if i))   # tekrarları at
+        emps = db.rows(conn.execute(
+            f"SELECT id FROM employees WHERE status = 'AKTIF' AND id IN ({','.join('?' * len(ids))})", ids))
+        if not emps:
+            raise HTTPException(400, 'Araçta geçerli (aktif) personel yok')
+        plate = (g.plate or '').strip().upper()[:40] or None
+        did = conn.execute(
+            '''INSERT INTO duty_requests (employee_id, requested_by, approver_id, destination, purpose, depart_at,
+                                          return_at, vehicle_plate, status, decided_by, decided_at, source, field_task_id,
+                                          created_at)
+               VALUES (?,?,?,?,?,?,?,?,'ONAYLANDI',?,?,'field',?,?)''',
+            (emps[0]['id'], user['id'], None, destination[:300], 'Saha görevi', depart_at, None, plate,
+             user['id'], db.now(), tid, db.now())).lastrowid
+        for e in emps:
+            conn.execute('INSERT OR IGNORE INTO duty_people (duty_id, employee_id) VALUES (?,?)', (did, e['id']))
+        created.append(did)
+    db.audit(conn, user['id'], 'Saha görevi araç çıkışı oluşturdu', 'field_task', tid,
+             f'{task["code"]}: {len(created)} araç')
+    return {'items': _exit_groups(conn, tid)}
+
+
+@router.delete('/vehicles-exit/{did}')
+def delete_vehicle_exit(did: int, user=Depends(field_user), conn=db.DB):
+    """Bir saha çıkış grubunu iptal eder (QR geçersiz olur). duty_people CASCADE ile silinmez; grup IPTAL olur."""
+    r = db.row(conn.execute("SELECT * FROM duty_requests WHERE id = ? AND source = 'field'", (did,)))
+    if not r or not r['field_task_id']:
+        raise HTTPException(404, 'Çıkış grubu bulunamadı')
+    task = get_task(conn, r['field_task_id'])
+    if not _can_exit(task, user):
+        raise HTTPException(403, 'Bu çıkış grubunu iptal etme yetkiniz yok')
+    conn.execute("UPDATE duty_requests SET status = 'IPTAL', decided_at = ? WHERE id = ?", (db.now(), did))
+    db.audit(conn, user['id'], 'Saha görevi araç çıkışını iptal etti', 'field_task', r['field_task_id'],
+             f'{task["code"]}: {r["vehicle_plate"] or "araçsız"}')
+    return {'ok': True}
+
+
+def _exit_group_open(conn, did, user):
+    """Dönüş/bitir işlemleri için aktif (ONAYLANDI, henüz dönmemiş) saha çıkış grubunu yetki denetimiyle getirir."""
+    r = db.row(conn.execute("SELECT * FROM duty_requests WHERE id = ? AND source = 'field'", (did,)))
+    if not r or not r['field_task_id']:
+        raise HTTPException(404, 'Çıkış grubu bulunamadı')
+    task = get_task(conn, r['field_task_id'])
+    if not _can_exit(task, user):
+        raise HTTPException(403, 'Bu grubun dönüşünü işaretleme yetkiniz yok')
+    if r['status'] != 'ONAYLANDI':
+        raise HTTPException(400, 'Bu grup aktif değil')
+    if r['returned_at']:
+        raise HTTPException(400, 'Bu grup zaten döndü / bitti')
+    return r, task
+
+
+@router.post('/vehicles-exit/{did}/return')
+def return_vehicle_exit(did: int, body: ExitReturnIn, user=Depends(field_user), conn=db.DB):
+    """Grup şirkete döndü: grubu "Görevde"den düşürür (returned_at) ve aracını güvenlik kaydında İÇERİ alır."""
+    r, task = _exit_group_open(conn, did, user)
+    at = (body.at or '').strip() or db.now()
+    from .security import vehicle_enter
+    plate = vehicle_enter(conn, r['vehicle_plate'], user['id'])
+    conn.execute("UPDATE duty_requests SET returned_at = ?, return_kind = 'sirket' WHERE id = ?", (at, did))
+    db.audit(conn, user['id'], 'Saha görevi dönüşü (şirkete)', 'field_task', r['field_task_id'],
+             f'{task["code"]}: şirkete döndü · {r["vehicle_plate"] or "araçsız"}')
+    return {'ok': True, 'kind': 'sirket', 'vehicle_plate': plate, 'vehicle_entered': bool(plate)}
+
+
+@router.post('/vehicles-exit/{did}/complete')
+def complete_vehicle_exit(did: int, body: ExitCompleteIn, user=Depends(field_user), conn=db.DB):
+    """Görevi bitir: grubu tamamlar (returned_at) — araç İÇERİ ALINMAZ. "Uçuş yapıldı mı?" (flew) ve açıklama kaydedilir.
+    Uçulmadıysa (flew=False) açıklama zorunludur. (Uçuş stoğu devri ileride bu veriyi kullanacak; burada sadece toplanır.)"""
+    r, task = _exit_group_open(conn, did, user)
+    note = (body.note or '').strip()[:1000]
+    if not body.flew and not note:
+        raise HTTPException(400, 'Uçuş yapılmadıysa bir açıklama girin')
+    at = (body.at or '').strip() or db.now()
+    conn.execute("UPDATE duty_requests SET returned_at = ?, return_kind = 'bitir', flew = ?, complete_note = ? WHERE id = ?",
+                 (at, 1 if body.flew else 0, note or None, did))
+    db.audit(conn, user['id'], 'Saha görevi grubunu bitirdi', 'field_task', r['field_task_id'],
+             f'{task["code"]}: {"uçuldu" if body.flew else "uçulmadı"}{" · " + note if note else ""}')
+    return {'ok': True, 'kind': 'bitir', 'flew': body.flew}
 
 
 # ---------- Görev yerleri ----------

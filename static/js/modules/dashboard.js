@@ -495,7 +495,7 @@ export async function renderDashboard(view, ctx, modules) {
   }
   onLeave(() => { miniChatEl?.remove(); clearInterval(miniTimer); });
 
-  // Görevdeki personel: sol avatar, isim + altında plaka, en sağda ne kadar süredir dışarıda (ileri sayan sayaç)
+  // Görevdeki personel: üstte başlık şeridinde plaka, gövdede solda personel(ler) + sağda ileri sayan sayaç, altta "dışarıda" şeridi
   function dbOnDuty(body, items) {
     if (!items.length) { clear(body, h('div', { class: 'db-none' }, 'Şu an görevde personel yok')); return; }
     const pad = n => String(n).padStart(2, '0');
@@ -515,13 +515,16 @@ export async function renderDashboard(view, ctx, modules) {
     const blocks = [...groups.values()].map(g => {
       const tEl = h('b', { class: 'db-duty-time' }, elapsed(g.since));
       clocks.push({ tEl, since: g.since });
+      // ÜST: tam genişlik başlık şeridi (ortada plaka; plaka yoksa "Araçsız / kendi aracı")
+      // GÖVDE: solda personel(ler), sağda ileri sayan sayaç · ALT: ince şeritte "dışarıda"
       return h('div', { class: 'db-dutygrp' },
-        h('div', { class: 'db-dutygrp-plate' }, g.plate
-          ? h('span', { class: 'db-plate' }, g.plate) : h('span', { class: 'muted small' }, 'kendi aracı / araçsız')),
-        h('div', { class: 'db-dutygrp-row' },
+        h('div', { class: 'db-dutygrp-head' }, g.plate
+          ? g.plate : h('span', { class: 'db-dutygrp-noveh' }, 'Araçsız / kendi aracı')),
+        h('div', { class: 'db-dutygrp-body' },
           h('div', { class: 'db-dutygrp-people' }, g.people.map(p => h('div', { class: 'db-dutyp' },
             dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name)))),
-          h('div', { class: 'db-duty-timer' }, tEl, h('small', { class: 'muted' }, 'dışarıda'))));
+          h('div', { class: 'db-duty-timer' }, tEl)),
+        h('div', { class: 'db-dutygrp-foot' }, 'dışarıda'));
     });
     clear(body, h('div', { class: 'db-dutygrps' }, blocks));
     const tick = () => clocks.forEach(c => { c.tEl.textContent = elapsed(c.since); });

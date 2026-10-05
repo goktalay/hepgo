@@ -7408,3 +7408,66 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 
 .u-unlock { cursor: pointer; }
 .u-unlock:hover { filter: brightness(1.08); }
+
+/* ---------- QR + Çıkış kontrol (Görev Formu / İzin / Güvenlik tarayıcı) ---------- */
+.badge.muted { color: var(--faint); opacity: .8; }
+
+/* QR kutusu: beyaz zemin (okunabilirlik), ortalanmış */
+.qr-box { display: flex; justify-content: center; align-items: center; background: #fff; padding: 12px;
+  border-radius: 12px; border: 1px solid var(--border); margin: 0 auto 10px; width: max-content; max-width: 100%; }
+.qr-box .qr-svg, .qr-box svg { display: block; width: 220px; height: 220px; max-width: 60vw; max-height: 60vw; }
+.qr-svg svg { display: block; width: 100%; height: 100%; }
+
+/* Görev Formu kartları */
+.duty-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.duty-card { padding: 14px; display: flex; flex-direction: column; gap: 6px; border: 2px solid var(--border); }
+.duty-card.st-bekliyor { border-color: var(--warning); }
+.duty-card.st-onaylandi { border-color: var(--success); }
+.duty-card.st-reddedildi, .duty-card.st-iptal { opacity: .78; }
+.duty-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.duty-kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
+.duty-kv dt { color: var(--muted); }
+.duty-kv dd { margin: 0; }
+.duty-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.duty-actions:empty { display: none; }
+
+/* Aranabilir tekli seçim */
+.ss { position: relative; }
+.ss-panel { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); max-height: 260px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-lg); }
+.ss-row { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; cursor: pointer; }
+.ss-row:hover { background: var(--primary-soft); }
+.ss-row.muted { color: var(--muted); cursor: default; }
+.ss-row.muted:hover { background: none; }
+
+/* Güvenlik › Çıkış Kontrol tarayıcı */
+.sec-scan-wrap { display: flex; flex-direction: column; gap: 12px; max-width: 520px; margin: 0 auto; }
+.sec-cam { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 14px; overflow: hidden; border: 1px solid var(--border-strong); }
+.sec-cam.off { background: var(--surface-2); }
+.sec-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sec-cam.off .sec-video { display: none; }
+.sec-reticle { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
+  width: 58%; aspect-ratio: 1; border: 3px solid rgba(255,255,255,.9); border-radius: 18px;
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,.28); pointer-events: none; }
+.sec-cam.off .sec-reticle { display: none; }
+.sec-scan-tools { display: flex; justify-content: center; gap: 8px; }
+.sec-scan-manual { display: flex; gap: 8px; }
+.sec-scan-manual .input { flex: 1; min-width: 0; }
+
+.sec-scan { border-radius: 14px; padding: 22px 18px; text-align: center; border: 2px dashed var(--border-strong);
+  color: var(--muted); font-weight: 600; min-height: 64px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.sec-scan-idle { color: var(--muted); }
+.sec-scan-ok { background: var(--success); border: 2px solid var(--success); color: #fff; }
+.sec-scan-bad { background: var(--danger); border: 2px solid var(--danger); color: #fff; }
+.sec-scan-big { font-size: 26px; font-weight: 800; letter-spacing: .02em; }
+.sec-scan-name { font-size: 20px; font-weight: 700; }
+.sec-scan-sub { font-size: 14px; opacity: .95; }
+.sec-scan-tag { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; opacity: .9; }
+.sec-scan-dates { font-size: 15px; font-weight: 600; }
+.sec-scan-note { font-size: 13px; font-weight: 500; opacity: .95; margin-top: 4px; }
+
+.sec-plist { margin-bottom: 14px; }
+.sec-plist h3 { margin: 0 0 8px; font-size: 14px; }
+.sec-plist-ul { list-style: none; margin: 0; padding: 0; }
+.sec-plist-ul li { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.sec-plist-ul li:last-child { border-bottom: 0; }

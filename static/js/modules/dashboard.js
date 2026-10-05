@@ -31,7 +31,7 @@ function loadGridStack() {
     document.head.append(s);
   });
 }
-const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4 };
+const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
 const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
 
@@ -321,6 +321,12 @@ export async function renderDashboard(view, ctx, modules) {
       case 'alerts': return list(d.items, a => h('li', { class: a.critical ? 'crit' : '' }, h('a', { href: `#/alerts/${a.key}` }, h('span', { class: `db-n ${a.level}` }, a.count), a.title)),
         'Uyarı yok');
       case 'calendar': { dbCalendar(it, body, d.items || []); return; }
+      case 'on_duty': return list(d.items, x => h('li', null,
+        h('span', null, h('b', null, x.name), x.destination ? h('small', { class: 'muted' }, ` · ${x.destination}`) : null),
+        h('small', { class: 'muted' }, [x.title, x.return_at ? t('dönüş {d}', { d: (x.return_at || '').slice(0, 10) }) : null].filter(Boolean).join(' · '))), 'Şu an görevde personel yok');
+      case 'on_leave': return list(d.items, x => h('li', null,
+        h('span', null, h('b', null, x.name), h('small', { class: 'muted' }, ` · ${x.kind === 'UCRETSIZ' ? 'ücretsiz izin' : 'izinli'}`)),
+        h('small', { class: 'muted' }, [x.title, t('{d} tarihine kadar', { d: (x.end_date || '').slice(0, 10) })].filter(Boolean).join(' · '))), 'Bugün izinli personel yok');
       case 'birthdays': return list(d.items, b => h('li', { class: b.today ? 'db-bday-today' : '' },
         h('span', null, h('span', { class: 'db-bday-ico' }, '🎂'), h('b', null, b.name), b.age ? h('small', { class: 'muted' }, ` · ${b.age}`) : null),
         h('small', null, b.today ? '🎉 Bugün!' : (b.days === 1 ? 'Yarın' : t('{n} gün sonra', { n: b.days })) + ` · ${b.date.slice(8, 10)}.${b.date.slice(5, 7)}`)),

@@ -359,3 +359,15 @@ def w_kpi_admin(conn, user):
         {'label': 'Başarısız giriş (24 sa)', 'value': count(conn, 'SELECT COUNT(*) FROM login_logs WHERE success = 0 AND at >= ?', ((now - timedelta(hours=24)).isoformat(timespec='seconds'),)), 'tone': 'alert'},
         {'label': 'Son yedek', 'value': f'{round(b["nightly_age_h"])} sa önce' if b['nightly_age_h'] is not None else 'yok', 'tone': '' if b['ok'] else 'alert'},
     ]}
+
+
+@widget('on_duty', 'Görevdeki Personel', 'Şu an görevde olan personel', group='Ofis & Güvenlik')
+def w_on_duty(conn, user):
+    from .routers.hr import on_duty_now
+    return {'items': on_duty_now(conn)}
+
+
+@widget('on_leave', 'İzindeki Personel', 'Bugün izinli / raporlu personel', group='Ofis & Güvenlik')
+def w_on_leave(conn, user):
+    from .routers.hr import on_leave_today
+    return {'items': on_leave_today(conn)}

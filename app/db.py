@@ -1227,6 +1227,34 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     seen_at       TEXT,               -- talep eden kararı gördü
     created_at    TEXT NOT NULL
 );
+-- Görev Formu: personelin iş için fabrika DIŞINA çıkış talebi. employee_id = göreve gidecek personel,
+-- requested_by = formu dolduran, approver_id = onaylayacak yönetici. Onaylanınca QR çıkış kodu üretilir.
+CREATE TABLE IF NOT EXISTS duty_requests (
+    id            INTEGER PRIMARY KEY,
+    employee_id   INTEGER REFERENCES employees(id),      -- göreve GİDECEK personel
+    requested_by  INTEGER NOT NULL REFERENCES users(id), -- formu dolduran
+    approver_id   INTEGER REFERENCES users(id),          -- onaylayacak yönetici
+    destination   TEXT NOT NULL,
+    purpose       TEXT NOT NULL,
+    depart_at     TEXT NOT NULL,                         -- çıkış (ISO)
+    return_at     TEXT,                                  -- tahmini dönüş (ISO)
+    vehicle_plate TEXT,
+    status        TEXT NOT NULL DEFAULT 'BEKLIYOR',      -- BEKLIYOR | ONAYLANDI | REDDEDILDI | IPTAL
+    decided_by    INTEGER REFERENCES users(id),
+    decided_at    TEXT,
+    decision_note TEXT,
+    seen_at       TEXT,                                  -- talep eden kararı gördü
+    created_at    TEXT NOT NULL
+);
+-- Personel çıkışları: güvenlik QR çıkış kodunu okutunca kaydedilen hafif giriş (araç kayıtlarından AYRI).
+CREATE TABLE IF NOT EXISTS person_exits (
+    id          INTEGER PRIMARY KEY,
+    person_name TEXT,
+    kind        TEXT NOT NULL,                           -- leave | duty
+    ref_id      INTEGER,                                 -- leave_requests / duty_requests id
+    scanned_by  INTEGER REFERENCES users(id),            -- okutan güvenlik görevlisi
+    at          TEXT NOT NULL
+);
 -- Ürün ağacı: üst ürün (mamul / yarı mamul) → alt yarı mamul ve adedi (iç içe; app/bom.py)
 CREATE TABLE IF NOT EXISTS product_bom (
     parent_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -2669,6 +2697,8 @@ def _migrate(conn):
         for col in ('signed_file', 'signed_name', 'signed_at'):
             conn.execute(f'ALTER TABLE leave_requests ADD COLUMN {col} TEXT')
         conn.execute('ALTER TABLE leave_requests ADD COLUMN signed_by INTEGER REFERENCES users(id)')
+    if 'manager_id' not in {r[1] for r in conn.execute('PRAGMA table_info(employees)')}:   # personelin yöneticisi (görev formunda varsayılan onaylayan)
+        conn.execute('ALTER TABLE employees ADD COLUMN manager_id INTEGER REFERENCES users(id)')
     if 'edited_by' not in {r[1] for r in conn.execute('PRAGMA table_info(team_meeting_notes)')}:   # toplantı sonrası düzenleyen
         conn.execute('ALTER TABLE team_meeting_notes ADD COLUMN edited_by INTEGER REFERENCES users(id)')
     if 'seen_at' not in {r[1] for r in conn.execute('PRAGMA table_info(guest_visit_hosts)')}:   # misafir bildirimi görüldü

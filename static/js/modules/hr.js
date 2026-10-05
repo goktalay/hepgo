@@ -5,6 +5,7 @@ import { setListExport } from '../listexport.js';
 import { idCard } from '../idcard.js';
 import { api, fileUrl, upload } from '../api.js';
 import { personPane } from './finmoves.js';
+import { qrSvg, qrSvgEl } from '../qr.js';
 import { emailsInput,
   clear, confirmDialog, field, fmtDate, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref, statStrip, t, toast, toastError, periodFilter
 } from '../ui.js';
@@ -310,19 +311,24 @@ async function removeSigned(l) {
   try { await api.del(`/api/hr/leaves/${l.id}/signed`); reload(); } catch (err) { toastError(err); }
 }
 
-// Islak imza için yazdırılabilir izin formu
-function printLeaveForm(l) {
+// Islak imza için yazdırılabilir izin formu. Onaylı izinde (pass_token) başlığa QR gömülür (güvenlikte okutulur).
+async function printLeaveForm(l) {
+  let qr = '';
+  try { if (l.pass_token) qr = await qrSvg(l.pass_token, { cell: 4, margin: 1 }); } catch { /* QR yoksa form yine de yazdırılır */ }
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const row = (k, v) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`;
   const w = window.open('', '_blank');
   if (!w) { toast('Açılır pencere engellendi; tarayıcıda izin verin', 'err'); return; }
   w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>İzin Formu · ${esc(l.employee_name)}</title>
-<style>body{font-family:system-ui,sans-serif;margin:40px;color:#111}h1{font-size:20px;text-align:center;margin:0 0 4px}
-.co{text-align:center;color:#555;margin-bottom:28px}table{width:100%;border-collapse:collapse;margin-bottom:28px}
+<style>body{font-family:system-ui,sans-serif;margin:40px;color:#111}h1{font-size:20px;margin:0 0 4px}
+.hd{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
+.hd-t{text-align:center;flex:1}.co{color:#555}
+.qr{width:110px;height:110px;flex:0 0 110px}.qr svg{width:100%;height:100%}
+table{width:100%;border-collapse:collapse;margin-bottom:28px}
 th,td{border:1px solid #999;padding:9px 12px;text-align:left;font-size:14px}th{width:34%;background:#f3f3f3}
 .sig{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px}.sig div{border-top:1px solid #333;padding-top:6px;text-align:center;font-size:13px;min-height:70px}
 .note{font-size:12px;color:#555}@media print{body{margin:18mm}}</style></head><body>
-<h1>PERSONEL İZİN FORMU</h1><div class="co">${esc(COMPANY || '')}</div>
+<div class="hd"><div class="hd-t"><h1>PERSONEL İZİN FORMU</h1><div class="co">${esc(COMPANY || '')}</div></div>${qr ? `<div class="qr">${qr}</div>` : ''}</div>
 <table>${row('Adı Soyadı', l.employee_name)}${row('TC Kimlik No', l.employee_tc || '')}${row('Görevi', [l.employee_title, l.employee_department].filter(Boolean).join(' · '))}
 ${row('İzin türü', LEAVE_KINDS[l.kind] || l.kind)}${row('İzin başlangıcı', fmtDate(l.start_date))}${row('İzin bitişi', fmtDate(l.end_date))}
 ${row('Süre', `${l.days} gün`)}${row('İzin sebebi', l.reason)}${row('İzinde bulunacağı yer', l.location)}
@@ -332,6 +338,23 @@ ${row('Onaylayan', `${l.decided_by_name || ''} · ${fmtDate(l.decided_at)}`)}${l
 <div class="sig"><div>Personel<br>İmza</div><div>Birim Amiri<br>İmza</div><div>İnsan Kaynakları<br>İmza</div></div>
 <script>window.onload=()=>window.print()<\/script></body></html>`);
   w.document.close();
+}
+
+// Onaylı izin: çıkış kapısında ekranda gösterilecek QR (güvenlik okutur)
+const leaveQrBtn = l => (l.status === 'ONAYLANDI' && l.pass_token
+  ? h('button', { class: 'btn sm', onclick: () => showLeavePass(l) }, 'QR Göster') : null);
+function showLeavePass(l) {
+  modal({
+    title: 'Çıkış İzni · QR',
+    body: h('div', null,
+      h('div', { class: 'qr-box' }, qrSvgEl(l.pass_token, { cell: 5, margin: 2 })),
+      h('p', { class: 'small muted', style: { textAlign: 'center' } }, 'Fabrika çıkışında güvenliğe okutun.'),
+      h('dl', { class: 'leave-kv' },
+        h('dt', null, 'Personel'), h('dd', null, l.employee_name || '—'),
+        h('dt', null, 'İzin'), h('dd', null, LEAVE_KINDS[l.kind] || l.kind),
+        h('dt', null, 'Tarih'), h('dd', null, range(l.start_date, l.end_date)))),
+    actions: [{ label: 'Kapat', class: 'primary' }],
+  });
 }
 
 function leaveCard(l, { hr = false, showEmployee = false, mine = false } = {}) {
@@ -351,6 +374,7 @@ function leaveCard(l, { hr = false, showEmployee = false, mine = false } = {}) {
       hr && l.status === 'BEKLIYOR' ? [h('button', { class: 'btn sm primary', onclick: () => approveModal(l) }, 'Onayla'),
         h('button', { class: 'btn sm', onclick: () => rejectLeave(l) }, 'Reddet')] : null,
       hr && l.status === 'ONAYLANDI' && l.signed_file ? h('button', { class: 'btn sm', onclick: () => printLeaveForm(l) }, 'Formu Yazdır') : null,
+      leaveQrBtn(l),
       mine && l.status === 'BEKLIYOR' ? h('button', { class: 'btn sm', onclick: () => cancelLeave(l) }, 'Geri Çek') : null));
 }
 
@@ -371,6 +395,7 @@ function leaveTable(rows, { hr = false, showEmployee = false, mine = false } = {
       h('td', { class: 'actions' },
         hr && l.status === 'BEKLIYOR' ? [h('button', { class: 'btn sm primary', onclick: () => approveModal(l) }, 'Onayla'),
           h('button', { class: 'btn sm', onclick: () => rejectLeave(l) }, 'Reddet')] : null,
+        leaveQrBtn(l),
         mine && l.status === 'BEKLIYOR' ? h('button', { class: 'btn sm', onclick: () => cancelLeave(l) }, 'Geri Çek') : null))))));
 }
 
@@ -1004,11 +1029,15 @@ function generalTab(e, m, ctx) {
     sourceNote: h('input', { class: 'input', value: e.source_note || '' }), applied: dateIn(e.applied_at),
     title: h('input', { class: 'input', value: e.title || '' }), dept: h('input', { class: 'input', value: e.department || '' }),
     salary: h('input', { class: 'input', type: 'number', min: 0, step: '0.01', value: e.salary ?? '' }), start: dateIn(e.start_date),
+    manager: h('select', { class: 'input' }, h('option', { value: '' }, 'Yok')),
     note: h('textarea', { class: 'input', rows: 2 }, e.note || ''),
     foreign: h('input', { type: 'checkbox', checked: !!e.is_foreign }),
     nationality: h('input', { class: 'input', value: e.nationality || '', placeholder: 'ör. İran' }),
     security: h('input', { class: 'input mono', value: e.security_code || '', placeholder: 'MSB Tesis Güvenlik Belgesi kapsamında' }),
   };
+  // Yönetici (manager_id) seçenekleri kullanıcı listesinden doldurulur
+  api.get('/api/voice/users').then(list => list.forEach(u => f.manager.append(
+    h('option', { value: u.id, selected: u.id === e.manager_id }, u.full_name || u.username || `#${u.id}`)))).catch(() => {});
   const natField = field('Uyruğu', f.nationality);
   const syncForeign = () => { natField.hidden = !f.foreign.checked; };
   f.foreign.addEventListener('change', syncForeign);
@@ -1023,6 +1052,7 @@ function generalTab(e, m, ctx) {
         phone: f.phone.value, email: f.email.value, emails: f.email.values, position: f.position.value, source: f.source.value || null,
         source_note: f.sourceNote.value, applied_at: f.applied.value || null, note: f.note.value,
         title: f.title.value, department: f.dept.value, salary: f.salary.value === '' ? null : Number(f.salary.value), start_date: f.start.value || null,
+        manager_id: f.manager.value ? Number(f.manager.value) : null,
       });
       toast('Personel bilgileri kaydedildi'); reload();
     } catch (err) { toastError(err); } finally { save.disabled = false; }
@@ -1050,7 +1080,7 @@ function generalTab(e, m, ctx) {
         field('Kişi Güvenlik Kodu', f.security, 'MSB Tesis Güvenlik Belgesi olan firmamızca personel adına başvurularak alınır'),
         field('Doğum tarihi', f.birth), field('Telefon', f.phone), field('E-posta', f.email))),
     staff ? h('div', { class: 'card card-pad' }, h('h3', null, 'Görev ve ücret'),
-      h('div', { class: 'form-grid' }, field('Görevi', f.title), field('Departman', f.dept), field('Maaşı (₺)', f.salary), field('Resmi işe başlama tarihi', f.start)),
+      h('div', { class: 'form-grid' }, field('Görevi', f.title), field('Departman', f.dept), field('Yönetici', f.manager), field('Maaşı (₺)', f.salary), field('Resmi işe başlama tarihi', f.start)),
       h('div', { class: 'small muted' }, 'Görev, maaş ve işe başlama tarihi değişiklikleri Geçmiş sekmesine yazılır.')) : null,
     h('div', { class: 'card card-pad' }, h('h3', null, 'İş başvurusu'),
       h('div', { class: 'form-grid' }, field('Başvurduğu pozisyon', f.position), field('Başvuru kaynağı', f.source), field(f.source.value === 'Referans' ? 'Referans veren' : 'Kaynak açıklaması', f.sourceNote), field('Başvuru tarihi', f.applied)),

@@ -15,11 +15,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from .. import auth, config, db, person_emails
+from .. import auth, config, db, exitpass, person_emails
 from ..files import FILE_GUARDS, save_upload
 
 router = APIRouter(prefix='/api/hr')
 me_router = APIRouter(prefix='/api/me/leaves')
+duties_me_router = APIRouter(prefix='/api/me/duties')   # Kişisel › Görevlerim
+duties_router = APIRouter(prefix='/api/duties')          # onaylayan yönetici / İK yüzeyi
 hr_user = auth.require_module('hr')
 
 
@@ -1100,6 +1102,7 @@ def _leaves(conn, where, args=()):
         r['days'] = leave_days(r['start_date'], r['end_date']) if r['start_date'] else None
         r['unsigned'] = r['status'] == 'ONAYLANDI' and not r['signed_file']
         r['changed'] = r['status'] == 'ONAYLANDI' and (r['start_date'], r['end_date']) != (r['req_start'], r['req_end'])
+        r['pass_token'] = exitpass.make_token(conn, 'leave', r['id'], r['end_date'] or r['req_end']) if r['status'] == 'ONAYLANDI' else None
     return rows
 
 
@@ -1267,6 +1270,178 @@ def pending_leaves(conn):
 
 def decided_unseen(conn, user_id):
     return _leaves(conn, "e.user_id = ? AND l.status IN ('ONAYLANDI', 'REDDEDILDI') AND l.seen_at IS NULL", (user_id,))
+
+
+# ---------- Görev Formu: personel iş için fabrika dışına çıkar; yönetici onaylar, güvenlik QR kodunu okutur
+
+class DutyIn(BaseModel):
+    employee_id: int
+    destination: str
+    purpose: str
+    depart_at: str
+    return_at: Optional[str] = None
+    vehicle_plate: Optional[str] = None
+    approver_id: Optional[int] = None
+
+
+class DutyDecideIn(BaseModel):
+    note: Optional[str] = None
+
+
+def _duty_reqs(conn, where, args=()):
+    rows = db.rows(conn.execute(
+        f'''SELECT d.*, e.first_name || ' ' || e.last_name AS employee_name, e.title AS employee_title,
+                   e.department AS employee_department, e.user_id AS employee_user_id,
+                   rq.full_name AS requested_by_name, ap.full_name AS approver_name, dc.full_name AS decided_by_name
+            FROM duty_requests d LEFT JOIN employees e ON e.id = d.employee_id
+            LEFT JOIN users rq ON rq.id = d.requested_by
+            LEFT JOIN users ap ON ap.id = d.approver_id
+            LEFT JOIN users dc ON dc.id = d.decided_by
+            WHERE {where} ORDER BY d.depart_at DESC, d.id DESC''', args))
+    for r in rows:
+        r['pass_token'] = exitpass.make_token(conn, 'duty', r['id'], r['return_at'] or r['depart_at']) if r['status'] == 'ONAYLANDI' else None
+    return rows
+
+
+def _can_approve_duty_reqs(user):
+    """Her görev formunu onaylayabilenler: Patron / Üst Yönetim rolü ya da İK modülü yetkisi."""
+    return auth.BOSS in user['roles'] or 'hr' in user['modules']
+
+
+@duties_me_router.get('/staff')
+def duty_staff(user=Depends(auth.current_user), conn=db.DB):
+    """Görev formunda 'göreve gidecek personel' seçimi için aktif personel listesi (herkese açık; İK yetkisi gerekmez)."""
+    rows = db.rows(conn.execute(
+        "SELECT id, first_name || ' ' || last_name AS name, title, department FROM employees "
+        "WHERE status = 'AKTIF' ORDER BY first_name, last_name"))
+    return {'items': rows}
+
+
+@duties_me_router.get('')
+def my_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
+    """Kişisel › Görevlerim: oluşturduğum ya da göreve gittiğim formlar. Onaylananlar pass_token taşır."""
+    rows = _duty_reqs(conn, '(d.requested_by = ? OR e.user_id = ?)', (user['id'], user['id']))
+    conn.execute("UPDATE duty_requests SET seen_at = ? WHERE requested_by = ? AND status != 'BEKLIYOR' AND seen_at IS NULL",
+                 (db.now(), user['id']))
+    return {'items': rows}
+
+
+@duties_me_router.post('')
+def create_duty(body: DutyIn, user=Depends(auth.current_user), conn=db.DB):
+    emp = db.row(conn.execute('SELECT * FROM employees WHERE id = ?', (body.employee_id,)))
+    if not emp:
+        raise HTTPException(404, 'Personel bulunamadı')
+    destination = (body.destination or '').strip()
+    purpose = (body.purpose or '').strip()
+    depart_at = (body.depart_at or '').strip()
+    if not destination:
+        raise HTTPException(400, 'Gidilecek yeri yazın')
+    if not purpose:
+        raise HTTPException(400, 'Görevin amacını yazın')
+    if not depart_at:
+        raise HTTPException(400, 'Çıkış zamanını girin')
+    return_at = (body.return_at or '').strip() or None
+    vehicle_plate = (body.vehicle_plate or '').strip() or None
+    approver_id = body.approver_id or emp['manager_id']
+    if not approver_id:
+        me = db.row(conn.execute('SELECT manager_id FROM employees WHERE user_id = ?', (user['id'],)))
+        approver_id = me['manager_id'] if me else None
+    did = conn.execute(
+        '''INSERT INTO duty_requests (employee_id, requested_by, approver_id, destination, purpose, depart_at, return_at,
+                                      vehicle_plate, created_at) VALUES (?,?,?,?,?,?,?,?,?)''',
+        (body.employee_id, user['id'], approver_id, destination[:300], purpose[:1000], depart_at, return_at,
+         vehicle_plate, db.now())).lastrowid
+    db.audit(conn, user['id'], 'Görev formu oluşturdu', 'duty', did, f'{emp["first_name"]} {emp["last_name"]} → {destination}')
+    return {'id': did}
+
+
+@duties_me_router.delete('/{did}')
+def cancel_duty(did: int, user=Depends(auth.current_user), conn=db.DB):
+    r = db.row(conn.execute('SELECT * FROM duty_requests WHERE id = ? AND requested_by = ?', (did, user['id'])))
+    if not r:
+        raise HTTPException(404, 'Görev formu bulunamadı')
+    if r['status'] != 'BEKLIYOR':
+        raise HTTPException(400, 'Sonuçlanmış görev formu geri çekilemez')
+    conn.execute("UPDATE duty_requests SET status = 'IPTAL', decided_at = ?, seen_at = ? WHERE id = ?", (db.now(), db.now(), did))
+    return {'ok': True}
+
+
+@duties_router.get('/pending')
+def pending_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
+    """Onaylayacağım bekleyen görev formları (benim onayımda olanlar; Patron / İK hepsini görür)."""
+    if _can_approve_duty_reqs(user):
+        return {'items': _duty_reqs(conn, "d.status = 'BEKLIYOR'")}
+    return {'items': _duty_reqs(conn, "d.status = 'BEKLIYOR' AND d.approver_id = ?", (user['id'],))}
+
+
+def _duty_pending(conn, did, user):
+    r = db.row(conn.execute('SELECT * FROM duty_requests WHERE id = ?', (did,)))
+    if not r:
+        raise HTTPException(404, 'Görev formu bulunamadı')
+    if r['status'] != 'BEKLIYOR':
+        raise HTTPException(400, 'Bu görev formu zaten sonuçlandı')
+    if not (_can_approve_duty_reqs(user) or r['approver_id'] == user['id']):
+        raise HTTPException(403, 'Bu görev formunu onaylama yetkiniz yok')
+    return r
+
+
+@duties_router.post('/{did}/approve')
+def approve_duty(did: int, body: DutyDecideIn, user=Depends(auth.current_user), conn=db.DB):
+    _duty_pending(conn, did, user)
+    conn.execute('''UPDATE duty_requests SET status = 'ONAYLANDI', decided_by = ?, decided_at = ?, decision_note = ?,
+                    seen_at = NULL WHERE id = ?''',
+                 (user['id'], db.now(), (body.note or '').strip()[:1000] or None, did))
+    db.audit(conn, user['id'], 'Görev formunu onayladı', 'duty', did)
+    return {'ok': True}
+
+
+@duties_router.post('/{did}/reject')
+def reject_duty(did: int, body: DutyDecideIn, user=Depends(auth.current_user), conn=db.DB):
+    _duty_pending(conn, did, user)
+    note = (body.note or '').strip()
+    if not note:
+        raise HTTPException(400, 'Reddetme sebebini yazın')
+    conn.execute('''UPDATE duty_requests SET status = 'REDDEDILDI', decided_by = ?, decided_at = ?, decision_note = ?,
+                    seen_at = NULL WHERE id = ?''', (user['id'], db.now(), note[:1000], did))
+    db.audit(conn, user['id'], 'Görev formunu reddetti', 'duty', did, note[:200])
+    return {'ok': True}
+
+
+# ---------- Görev Formu bildirimleri (app/notifications.py)
+
+def on_leave_today(conn):
+    """Bugün izinde/raporlu olan aktif personel (onaylı izinler)."""
+    today = db.now()[:10]
+    return db.rows(conn.execute(
+        """SELECT l.id, e.first_name || ' ' || e.last_name AS name, e.title, l.kind,
+                  COALESCE(l.start_date, l.req_start) AS start_date, COALESCE(l.end_date, l.req_end) AS end_date
+             FROM leave_requests l JOIN employees e ON e.id = l.employee_id
+            WHERE l.status = 'ONAYLANDI' AND substr(COALESCE(l.start_date, l.req_start), 1, 10) <= ?
+              AND substr(COALESCE(l.end_date, l.req_end), 1, 10) >= ?
+            ORDER BY name""", (today, today)))
+
+
+def on_duty_now(conn):
+    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş)."""
+    today = db.now()[:10]
+    return db.rows(conn.execute(
+        """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, d.destination, d.depart_at, d.return_at
+             FROM duty_requests d JOIN employees e ON e.id = d.employee_id
+            WHERE d.status = 'ONAYLANDI' AND substr(d.depart_at, 1, 10) <= ?
+              AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
+            ORDER BY d.depart_at DESC""", (today, today)))
+
+
+def pending_duties_for(conn, user):
+    """Bu kullanıcının onayını bekleyen görev formları (approver ya da Patron / İK)."""
+    if _can_approve_duty_reqs(user):
+        return _duty_reqs(conn, "d.status = 'BEKLIYOR'")
+    return _duty_reqs(conn, "d.status = 'BEKLIYOR' AND d.approver_id = ?", (user['id'],))
+
+
+def duties_decided_unseen(conn, user_id):
+    """Oluşturanın henüz görmediği sonuçlanmış görev formları."""
+    return _duty_reqs(conn, "d.requested_by = ? AND d.status IN ('ONAYLANDI', 'REDDEDILDI') AND d.seen_at IS NULL", (user_id,))
 
 
 # ---------- Evraklarım: personel kendi eksik özlük evrakını yükler; tamamlanana kadar kırmızı uyarı ve geri sayım

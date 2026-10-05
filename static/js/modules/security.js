@@ -3,10 +3,23 @@
 import { api } from '../api.js';
 import { loadMaps } from '../maps.js';
 import {
-  clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, pageHead, secondsBetween, secondsSince, segmented, statStrip,
+  clear, confirmDialog, every, field, fmtDate, fmtDateTime, fmtDuration, h, modal, moduleToolbar, onLeave, pageHead, secondsBetween, secondsSince, segmented, statStrip,
   t, toast, toastError, periodFilter
 } from '../ui.js';
-const TABS = [['', 'Araçlar'], ['log', 'Giriş / Çıkış Kayıtları'], ['building', 'Bina Kontrol']];
+const TABS = [['', 'Araçlar'], ['personnel', 'Görevde / İzinde'], ['log', 'Giriş / Çıkış Kayıtları'], ['building', 'Bina Kontrol'], ['scan', 'Çıkış Kontrol']];
+
+// jsQR (QR okuma yedeği) yalnızca tarayıcı sekmesi açılınca tembel yüklenir
+let _jsqrLib = null;
+function loadJsQR() {
+  return _jsqrLib ??= new Promise((resolve, reject) => {
+    if (window.jsQR) return resolve(window.jsQR);
+    const s = document.createElement('script');
+    s.src = '/static/vendor/jsqr/jsQR.js';
+    s.onload = () => (window.jsQR ? resolve(window.jsQR) : reject(new Error('QR okuyucu yüklenemedi')));
+    s.onerror = () => { _jsqrLib = null; reject(new Error('QR okuyucu yüklenemedi')); };
+    document.head.append(s);
+  });
+}
 
 export async function render(view, params, ctx) {
   const tab = TABS.some(t => t[0] === params[0]) ? params[0] || '' : '';
@@ -16,8 +29,10 @@ export async function render(view, params, ctx) {
   const addBtn = h('button', { class: 'btn primary', type: 'button' }, '+ Yeni Araç Girişi');
   clear(view, pageHead('Güvenlik', { back: '#/', sub: 'Araç giriş/çıkış, bina kontrol', tabs: nav }),
     moduleToolbar(tab === '' ? addBtn : null), body);
+  if (tab === 'personnel') return renderPersonnel(body);
   if (tab === 'log') return renderLog(body);
   if (tab === 'building') return renderBuilding(body);
+  if (tab === 'scan') return renderScan(body);
   return renderVehicles(body, addBtn);
 }
 
@@ -75,6 +90,23 @@ async function renderVehicles(body, addBtn) {
   clear(body, grid);
   await load();
   every(15000, () => load().catch(() => {}));
+}
+
+// Görevde / İzinde: güvenliğin çıkışta görmesi için şu an görevde ve bugün izinli personel.
+async function renderPersonnel(body) {
+  clear(body, h('div', { class: 'empty' }, 'Yükleniyor…'));
+  let d;
+  try { d = await api.get('/api/security/personnel'); } catch (e) { clear(body, h('div', { class: 'card empty' }, e.message)); return; }
+  const section = (title, items, rowFn, empty) => h('div', { class: 'card card-pad sec-plist' },
+    h('h3', null, title),
+    items.length ? h('ul', { class: 'sec-plist-ul' }, items.map(rowFn)) : h('div', { class: 'small muted' }, empty));
+  clear(body,
+    section(t('Görevde ({n})', { n: d.on_duty.length }), d.on_duty, x => h('li', null,
+      h('b', null, x.name), ' ', h('span', { class: 'small muted' }, [x.title, x.destination].filter(Boolean).join(' · ')),
+      x.return_at ? h('span', { class: 'small muted' }, ' · ' + t('tahmini dönüş {d}', { d: (x.return_at || '').slice(0, 10) })) : null), 'Şu an görevde personel yok'),
+    section(t('İzinde ({n})', { n: d.on_leave.length }), d.on_leave, x => h('li', null,
+      h('b', null, x.name), ' ', h('span', { class: 'small muted' }, [x.title, x.kind === 'UCRETSIZ' ? 'ücretsiz izin' : 'izinli'].filter(Boolean).join(' · ')),
+      h('span', { class: 'small muted' }, ' · ' + t('{d} tarihine kadar', { d: (x.end_date || '').slice(0, 10) }))), 'Bugün izinli personel yok'));
 }
 
 async function renderLog(body) {
@@ -293,4 +325,135 @@ async function renderBuilding(body) {
 
   clear(body, bar, active, list);
   load();
+}
+
+// ---------- Çıkış Kontrol: personelin onaylı izin/görev QR'ı kamerayla okunur, çıkışa izin verilir ----------
+async function renderScan(body) {
+  const video = h('video', { class: 'sec-video', autoplay: true, playsinline: true, muted: true });
+  const frame = h('div', { class: 'sec-cam' }, video, h('div', { class: 'sec-reticle' }));
+  const result = h('div', { class: 'sec-scan' }, h('div', { class: 'sec-scan-idle' }, 'Kamerayı QR koda doğrultun'));
+  const toggle = h('button', { class: 'btn', type: 'button' }, 'Kamerayı Durdur');
+  const manual = h('input', { class: 'input', type: 'text', placeholder: 'QR okunamadıysa kodu elle yazın', autocomplete: 'off' });
+  const manualBtn = h('button', { class: 'btn primary', type: 'button' }, 'Doğrula');
+
+  let stream = null, raf = null, running = false, detector = null, canvas = null, g = null;
+  let lastCode = '', lastAt = 0, busy = false;
+
+  const stopCam = () => {
+    running = false;
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    try { stream?.getTracks().forEach(tr => tr.stop()); } catch { /* */ }
+    stream = null;
+    video.srcObject = null;
+  };
+  onLeave(stopCam);   // sayfadan çıkınca kamerayı serbest bırak
+
+  async function startCam() {
+    if (!navigator.mediaDevices?.getUserMedia) { toast('Bu tarayıcı kamerayı desteklemiyor', 'err'); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    } catch (err) { toastError(new Error('Kameraya erişilemedi: ' + (err.message || 'izin verilmedi'))); return; }
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    running = true;
+    frame.classList.remove('off');
+    toggle.textContent = 'Kamerayı Durdur';
+    if (window.BarcodeDetector) { try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch { detector = null; } }
+    if (!detector) {
+      await loadJsQR().catch(() => toast('QR okuyucu yüklenemedi; kodu elle girebilirsiniz', 'err'));
+      canvas = document.createElement('canvas');
+      g = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    scanLoop();
+  }
+
+  async function scanLoop() {
+    if (!running) return;
+    let code = null;
+    try {
+      if (detector) {
+        const found = await detector.detect(video);
+        if (found && found.length) code = found[0].rawValue;
+      } else if (window.jsQR && video.videoWidth) {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        g.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = g.getImageData(0, 0, canvas.width, canvas.height);
+        const r = window.jsQR(img.data, img.width, img.height);
+        if (r) code = r.data;
+      }
+    } catch { /* kare okunamadı; sonrakinde yeniden dene */ }
+    if (code) onCode(code);
+    raf = requestAnimationFrame(scanLoop);
+  }
+
+  // Aynı kodu ~3 sn içinde yeniden sorma; bir doğrulama sürerken yenisini başlatma
+  function onCode(code) {
+    const now = Date.now();
+    if (busy || (code === lastCode && now - lastAt < 3000)) return;
+    lastCode = code; lastAt = now;
+    verify(code);
+  }
+
+  async function verify(token) {
+    if (!token) return;
+    busy = true;
+    try { showResult(await api.post('/api/security/verify-pass', { token })); }
+    catch (err) { showResult({ allow: false, reason: err.message }); }
+    finally { setTimeout(() => { busy = false; }, 1200); }
+  }
+
+  function beep(ok) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ac = new Ctx();
+      const o = ac.createOscillator(), gain = ac.createGain();
+      o.frequency.value = ok ? 880 : 220;
+      o.connect(gain); gain.connect(ac.destination);
+      gain.gain.setValueAtTime(0.15, ac.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.25);
+      o.start(); o.stop(ac.currentTime + 0.26);
+      setTimeout(() => { try { ac.close(); } catch { /* */ } }, 400);
+    } catch { /* ses zorunlu değil */ }
+  }
+
+  function showResult(r) {
+    if (r.allow) {
+      const d = r.dates || {};
+      const line = r.type === 'duty'
+        ? `${r.destination || ''} · ${fmtDateTime(d.depart)}${d.return ? ' → ' + fmtDateTime(d.return) : ''}`
+        : `${fmtDate(d.start)} – ${fmtDate(d.end)}`;
+      result.className = 'sec-scan sec-scan-ok';
+      clear(result,
+        h('div', { class: 'sec-scan-big' }, '✓ ONAYLI ÇIKIŞ'),
+        h('div', { class: 'sec-scan-name' }, r.name || ''),
+        r.title ? h('div', { class: 'sec-scan-sub' }, r.title) : null,
+        h('div', { class: 'sec-scan-tag' }, r.type === 'duty' ? 'Görev formu' : 'İzin'),
+        h('div', { class: 'sec-scan-dates' }, line));
+      beep(true);
+    } else {
+      result.className = 'sec-scan sec-scan-bad';
+      clear(result,
+        h('div', { class: 'sec-scan-big' }, '✕ ÇIKIŞ YOK'),
+        h('div', { class: 'sec-scan-sub' }, r.reason || 'Geçersiz veya süresi dolmuş'),
+        h('div', { class: 'sec-scan-note' }, 'Çıkış için onaylı izin/görev formu gerekir.'));
+      beep(false);
+    }
+  }
+
+  toggle.addEventListener('click', () => {
+    if (running) { stopCam(); frame.classList.add('off'); toggle.textContent = 'Kamerayı Başlat'; }
+    else startCam();
+  });
+  manualBtn.addEventListener('click', () => { const v = manual.value.trim(); if (v) verify(v); });
+  manual.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const v = manual.value.trim(); if (v) verify(v); } });
+
+  clear(body,
+    h('div', { class: 'sec-scan-wrap' },
+      frame,
+      h('div', { class: 'sec-scan-tools' }, toggle),
+      result,
+      h('div', { class: 'sec-scan-manual' }, manual, manualBtn)));
+  startCam();
 }

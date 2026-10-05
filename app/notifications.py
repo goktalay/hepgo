@@ -302,6 +302,22 @@ def leave_decided(conn, user):
                    '#/my-leaves', 'İzin talebinizin sonucunu görün')
 
 
+def duty_pending(conn, user):
+    """Onayımı bekleyen görev formları (approver ya da Patron / İK)."""
+    from .routers.hr import pending_duties_for
+    rows = pending_duties_for(conn, user)
+    return _result(rows, [f'{r["employee_name"]} · {r["destination"]}' for r in rows],
+                   '#/my-duties/pending', 'Görev formunu onaylayın ya da reddedin')
+
+
+def duty_decided(conn, user):
+    """Oluşturduğum görev formu sonuçlandı (Görevlerim açılınca görüldü sayılır)."""
+    from .routers.hr import duties_decided_unseen
+    rows = duties_decided_unseen(conn, user['id'])
+    return _result(rows, [f'{"Onaylandı" if r["status"] == "ONAYLANDI" else "Reddedildi"} · {r["destination"]}' for r in rows],
+                   '#/my-duties', 'Görev formunuzun sonucunu görün')
+
+
 def material_review(conn, user):
     """Hurdaya ayrılan uçağın içindeki malzemeler değerlendirilmedi (hurda / sağlam)."""
     from .routers.mrp import pending_reviews
@@ -517,6 +533,8 @@ NOTIFICATIONS = [
      'title': 'Hurda uçağın malzemeleri değerlendirilmedi'},
     {'key': 'hr-leave-pending', 'roles': [auth.HR], 'fn': hr_leave_pending, 'title': 'Onay bekleyen izin talebi'},
     {'key': 'leave-decided', 'roles': None, 'fn': leave_decided, 'title': 'İzin talebiniz sonuçlandı'},
+    {'key': 'duty-pending', 'roles': None, 'fn': duty_pending, 'title': 'Onay bekleyen görev formu'},
+    {'key': 'duty-decided', 'roles': None, 'fn': duty_decided, 'title': 'Görev formunuz sonuçlandı'},
     {'key': 'announcements', 'roles': None, 'fn': announcements_unread, 'title': 'Yeni duyuru'},
     {'key': 'guest-visit', 'roles': None, 'fn': guest_visit, 'title': 'Misafiriniz geldi'},
     {'key': 'cargo-waiting', 'roles': None, 'fn': cargo_waiting, 'title': 'Kargonuz var'},

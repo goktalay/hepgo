@@ -56,6 +56,7 @@ import * as announcements from './modules/announcements.js';
 import * as cleaning from './modules/cleaning.js';
 import * as design from './modules/design.js';
 import * as hr from './modules/hr.js';
+import * as duty from './modules/duty.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
@@ -389,7 +390,7 @@ function appsLauncher() {
 // tek "Uygulamalar" (ızgara) ikonunun içinde bölüm olarak gösterilir (bkz. appsLauncher). PERSONAL_ICONS ve
 // personalTileCounts oradan kullanılır (kutucuk bekleyen-iş sayıları canlı güncellenir).
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
-  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder' };
+  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder', duties: 'flightlog' };
 const personalTileCounts = new Set();
 window.addEventListener('caymaz:chat-summary', () => { for (const fn of personalTileCounts) { try { fn(); } catch { /* */ } } });
 
@@ -925,6 +926,7 @@ const PERSONAL = [
   { key: 'vehicles', route: 'my-vehicles', title: 'Araç Zimmetim', notify: 'vehicle-assign-pending', render: () => fleet.renderMine(view) },
   { key: 'notes', route: 'my-notes', title: 'Notlar', notify: null, render: () => notesMod.render(view, ctx) },
   { key: 'files', route: 'my-files', title: 'Dosya Yöneticisi', notify: 'file-shared', render: params => fileManager.render(view, params, ctx) },
+  { key: 'duties', route: 'my-duties', title: 'Görev Formu', notify: 'duty-decided', render: params => duty.render(view, params, ctx) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

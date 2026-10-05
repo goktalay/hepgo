@@ -8,12 +8,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, db, exitpass
 
 router = APIRouter(prefix='/api/security')
 security_user = auth.require_module('security')
 admin_user = auth.require_module('admin')
 BC_KEY = 'building_control'   # app_kv: {'times': ['HH:MM', ...]} günlük bina kontrol saatleri
+# Onaylı olmayan kaydın çıkış kapısında gösterilecek gerekçesi
+_NOT_APPROVED = {'BEKLIYOR': 'Onay bekliyor', 'REDDEDILDI': 'Reddedilmiş', 'IPTAL': 'İptal edilmiş'}
 
 
 class VehicleIn(BaseModel):
@@ -86,6 +88,76 @@ def vehicle_edit(vid: int, body: VehicleIn, user=Depends(security_user), conn=db
                  (plate, (body.note or '').strip() or None, vid))
     db.audit(conn, user['id'], 'Araç plakası düzeltildi', 'vehicle', vid, f"{v['plate']} → {plate}")
     return {'id': vid, 'plate': plate}
+
+
+# ---------- QR çıkış kodu doğrulama: onaylı izin / görev formunun kodu okutulur, personel çıkışı kaydedilir
+
+class PassIn(BaseModel):
+    token: str
+
+
+def _record_exit(conn, name, kind, ref_id, scanned_by):
+    conn.execute('INSERT INTO person_exits (person_name, kind, ref_id, scanned_by, at) VALUES (?,?,?,?,?)',
+                 (name, kind, ref_id, scanned_by, db.now()))
+    db.audit(conn, scanned_by, 'Personel çıkışı (QR)', 'person_exit', ref_id, f'{name} · {kind}')
+
+
+@router.post('/verify-pass')
+def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
+    """QR çıkış kodunu doğrular ve izin verilirse personel çıkışını kaydeder."""
+    v = exitpass.verify_token(conn, body.token)
+    if not v['ok']:
+        return {'allow': False, 'reason': v.get('reason') or 'Geçersiz veya süresi dolmuş kod'}
+    today = _date.today().isoformat()
+    if v['kind'] == 'leave':
+        r = db.row(conn.execute(
+            '''SELECT l.*, e.first_name || ' ' || e.last_name AS name, e.title AS title
+               FROM leave_requests l JOIN employees e ON e.id = l.employee_id WHERE l.id = ?''', (v['id'],)))
+        if not r:
+            return {'allow': False, 'reason': 'Kayıt bulunamadı'}
+        if r['status'] != 'ONAYLANDI':
+            return {'allow': False, 'type': 'leave', 'name': r['name'], 'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
+        start = (r['start_date'] or r['req_start'])[:10]
+        end = (r['end_date'] or r['req_end'])[:10]
+        info = {'type': 'leave', 'name': r['name'], 'title': r['title'], 'dates': {'start': start, 'end': end}}
+        if today < start:
+            return {'allow': False, 'reason': f'İzin {start} tarihinde başlıyor', **info}
+        if today > end:
+            return {'allow': False, 'reason': 'İzin süresi geçmiş', **info}
+        _record_exit(conn, r['name'], 'leave', r['id'], user['id'])
+        return {'allow': True, **info}
+    # görev formu
+    r = db.row(conn.execute(
+        '''SELECT d.*, e.first_name || ' ' || e.last_name AS name, e.title AS title
+           FROM duty_requests d LEFT JOIN employees e ON e.id = d.employee_id WHERE d.id = ?''', (v['id'],)))
+    if not r:
+        return {'allow': False, 'reason': 'Kayıt bulunamadı'}
+    if r['status'] != 'ONAYLANDI':
+        return {'allow': False, 'type': 'duty', 'name': r['name'], 'reason': _NOT_APPROVED.get(r['status'], 'Onaylı değil')}
+    depart = (r['depart_at'] or '')[:10]
+    ret = (r['return_at'] or '')[:10] or None
+    info = {'type': 'duty', 'name': r['name'], 'title': r['title'], 'destination': r['destination'],
+            'dates': {'depart': r['depart_at'], 'return': r['return_at']}}
+    if depart and today < depart:
+        return {'allow': False, 'reason': f'Görev {depart} tarihinde başlıyor', **info}
+    warn = 'Dikkat: tahmini dönüş tarihi geçmiş' if ret and today > ret else None
+    _record_exit(conn, r['name'], 'duty', r['id'], user['id'])
+    return {'allow': True, **info, **({'reason': warn} if warn else {})}
+
+
+@router.get('/exits')
+def person_exits(user=Depends(security_user), conn=db.DB):
+    """Son personel çıkışları (QR ile okutulan izin / görev çıkışları)."""
+    return db.rows(conn.execute(
+        '''SELECT p.*, u.full_name AS scanned_by_name FROM person_exits p
+           LEFT JOIN users u ON u.id = p.scanned_by ORDER BY p.id DESC LIMIT 100'''))
+
+
+@router.get('/personnel')
+def personnel(user=Depends(security_user), conn=db.DB):
+    """Güvenlik için: şu an görevde ve bugün izinli personel (çıkışta bilgi amaçlı)."""
+    from .hr import on_duty_now, on_leave_today
+    return {'on_duty': on_duty_now(conn), 'on_leave': on_leave_today(conn)}
 
 
 @router.get('/log')

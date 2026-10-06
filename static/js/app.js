@@ -125,6 +125,63 @@ const MODULES = [
   { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', hidden: true },   // Program Ayarları altından açılır
 ];
 
+// Türkçe-duyarlı normalizasyon (arama için): küçük harf + aksan sadeleştirme
+const normTr = s => (s || '').toLocaleLowerCase('tr')
+  .replace(/ç/g, 'c').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ü/g, 'u')
+  .replace(/\s+/g, ' ').trim();
+// Modül anahtar kelimeleri (başlık dışında eşanlamlılar) — akıllı arama için
+const MOD_KEYWORDS = {
+  hr: 'insan kaynaklari personel ozluk bordro izin aile maas kadro',
+  cameras: 'kamera nvr yuz tanima isg kkd gorus tanimlanmayan',
+  factory: 'fabrika kat plani kamera yerlesim hareket canli kim nerede dijital ikiz',
+  rehber: 'rehber kisi kisiler telefon adres',
+  companies: 'firma cari musteri tedarikci',
+  documents: 'evrak belge dosya',
+  sales: 'satis fatura teklif crm siparis',
+  purchasing: 'satin alma malzeme stok depo yari mamul',
+  production: 'uretim is emri yari mamul recete',
+  printers: 'yazici 3b baski moonraker',
+  finance: 'finans kasa banka cari hesap odeme tahsilat',
+  fleet: 'arac filo yakit bakim',
+  projects: 'proje gorev',
+  security: 'guvenlik giris cikis ziyaretci nobet',
+  secretariat: 'sekreterya telefon notu randevu',
+  reports: 'rapor',
+  design: 'tasarim endustriyel urun',
+  products: 'urun malzeme recete',
+  certs: 'sertifika belgelendirme',
+  members: 'uyelik abonelik',
+  tickets: 'destek talep ticket',
+};
+// Alt modül / sık yapılan işler indeksi (küratörlü): arama bunları da bulur ve ilgili yere götürür.
+// [anahtar kelimeler, başlık, href, ipucu (yol), gereken modül anahtarı]
+const FEATURES = [
+  ['aile ailesi aile uyesi akraba es cocuk', 'Personel Ailesi — ekle', '#/hr', 'Personel seç › Özlük › Ailesi', 'hr'],
+  ['izin izinler yillik izin izin talebi', 'İzinler', '#/hr', 'Personel seç › İzin ve Sağlık › İzinler', 'hr'],
+  ['saglik raporu rapor', 'Sağlık Raporları', '#/hr', 'Personel seç › İzin ve Sağlık', 'hr'],
+  ['ozluk dosya belge sozlesme', 'Özlük Dosyaları / Sözleşmeler', '#/hr', 'Personel seç › Özlük', 'hr'],
+  ['adres ev tebligat acil', 'Personel Adresleri', '#/hr', 'Personel seç › Özlük › Adresler', 'hr'],
+  ['kkd kask eldiven koruyucu isg zorunlu', 'Zorunlu KKD (İSG)', '#/hr', 'Personel seç › İSG › KKD', 'hr'],
+  ['egitim yeterlilik isg', 'Zorunlu Eğitimler (İSG)', '#/hr', 'Personel seç › İSG › Eğitimler', 'hr'],
+  ['organizasyon sema org', 'Organizasyon Şeması', '#/hr', 'İnsan Kaynakları', 'hr'],
+  ['personel ekle calisan yeni', 'Personel Ekle', '#/hr', 'İnsan Kaynakları › ＋', 'hr'],
+  ['yuz tanima face egitim', 'Yüz Tanıma', '#/cameras/facerec', 'Kameralar › Yüz Tanıma', 'cameras'],
+  ['isg kkd kask eldiven alarm goruntu isleme', 'İSG (KKD denetimi)', '#/cameras/isg', 'Kameralar › İSG', 'cameras'],
+  ['tanimlanmayan kisi bilinmeyen yuz', 'Tanımlanmayan Kişiler', '#/cameras/unknown', 'Kameralar › Tanımlanmayan', 'cameras'],
+  ['kamera ekle nvr onvif', 'Kamera Ekle (NVR)', '#/cameras', 'Kameralar', 'cameras'],
+  ['canli kim nerede konum fabrika', 'Fabrika · Canlı Konum', '#/factory/live', 'Fabrika › Canlı', 'factory'],
+  ['hareket iz yol fabrika', 'Fabrika · Hareket İzi', '#/factory/move', 'Fabrika › Hareket', 'factory'],
+  ['kat plani oda cizim yerlesim', 'Fabrika · Kat Planı Düzenle', '#/factory', 'Fabrika › Düzen', 'factory'],
+  ['ziyaretci misafir', 'Ziyaretçiler', '#/cameras/unknown', 'Kameralar / Rehber', 'cameras'],
+  ['mail eposta gelen kutusu', 'Mail', '#/mail', 'Kişisel › Mail', null],
+  ['firma ekle cari musteri', 'Firma Ekle', '#/companies', 'Firma Yönetimi', 'companies'],
+  ['evrak ekle belge yukle', 'Evrak Ekle', '#/documents', 'Evrak Yönetimi', 'documents'],
+  ['satis faturasi teklif', 'Satış / Fatura', '#/sales', 'Satış Yönetimi', 'sales'],
+  ['arac ekle filo yakit', 'Araç Yönetimi', '#/fleet', 'Araç Yönetimi', 'fleet'],
+  ['ses tanima konusmaci egitim', 'Ses Tanıma Eğitimi', '#/rehber', 'Rehber › kişi › Yapay Zeka', 'rehber'],
+  ['yapay zeka egitim resmi konum', 'Yapay Zeka (yüz/ses eğitimi)', '#/rehber', 'Rehber › kişi › Yapay Zeka', 'rehber'],
+];
+
 // Ana ekran ızgarası / modül menüsü / ayarlardaki modül listesinde gösterilir mi?
 const hasModule = (u, key) => (key === 'crm' ? crmHub.hasCrm(u) : u.modules.includes(key));
 // Modül erişimi: özel 'show' varsa onu kullan (ör. Kameralar = sistem yöneticisi + NVR aktif), yoksa modül listesi
@@ -360,9 +417,27 @@ function appsLauncher() {
     box.append(head, h('div', { class: 'apps-body' }, h('div', { class: 'apps-grid' }, tiles)));
     return box;
   };
+  // AKILLI ARAMA: modülleri VE alt modülleri/işlemleri arar, sonuçları filtreler (Türkçe-duyarlı)
+  const results = h('div', { class: 'apps-results' });
+  const searchInp = h('input', { class: 'apps-search', type: 'search', autocomplete: 'off', spellcheck: 'false',
+    placeholder: 'Ara: modül veya işlem (ör. aile, izin, yüz tanıma, canlı)…', 'aria-label': 'Uygulamalarda ara' });
+  const featTile = f => h('a', { class: 'app-tile feat', href: f[2], role: 'menuitem', onclick: () => { panel.hidden = true; } },
+    h('span', { class: 'ico' }, svgIcon(icons[f[4]] || icons.apps)),
+    h('span', { class: 'feat-txt' }, h('b', null, f[1]), f[3] ? h('small', { class: 'feat-hint' }, f[3]) : null));
   const fill = () => {
-    // Kişisel kutucukları + Mesajlar; canlı sayaç güncellemeleri personalTileCounts'a kaydedilir
+    const q = normTr(searchInp.value);
     personalTileCounts.clear();
+    if (q) {   // arama modu: eşleşen modüller + eşleşen işlemler/alt modüller
+      const mTiles = allowed.filter(m => normTr(`${m.title} ${MOD_KEYWORDS[m.key] || ''}`).includes(q)).map(modTile);
+      const fTiles = FEATURES.filter(f => (!f[4] || canAccess({ key: f[4] }, ctx.user)) && normTr(`${f[0]} ${f[1]} ${f[3] || ''}`).includes(q)).map(featTile);
+      const boxes = [
+        group('mods', 'Modüller', icons.apps, mTiles),
+        group('feat', 'İşlemler / Alt modüller', icons.search || icons.apps, fTiles),
+      ].filter(Boolean);
+      clear(results, boxes.length ? boxes : h('div', { class: 'empty' }, `“${searchInp.value.trim()}” için sonuç yok`));
+      return;
+    }
+    // Normal (aramasız) görünüm: Kişisel kutucukları + Mesajlar; canlı sayaç güncellemeleri personalTileCounts'a kaydedilir
     const personalTiles = PERSONAL.map(p => {
       const el = countTile(p.route, p.title, icons[PERSONAL_ICONS[p.key]] || icons.person, notifyCounts.get(p.notify) || 0);
       const n = el.querySelector('.tile-count');
@@ -380,11 +455,19 @@ function appsLauncher() {
       group('personal', 'Kişisel', icons.person, personalTiles),
       group('tools', 'Araçlar', icons.tools, toolList.map(toolTile)),
     ].filter(Boolean);
-    clear(panel, boxes.length ? boxes : h('div', { class: 'empty' }, 'Erişebildiğiniz bir şey yok'));
+    clear(results, boxes.length ? boxes : h('div', { class: 'empty' }, 'Erişebildiğiniz bir şey yok'));
   };
+  searchInp.addEventListener('input', fill);
+  searchInp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { if (searchInp.value) { searchInp.value = ''; fill(); e.stopPropagation(); } }
+    else if (e.key === 'Enter') { const a = results.querySelector('a.app-tile'); if (a) { location.hash = a.getAttribute('href'); panel.hidden = true; } }
+  });
+  clear(panel, h('div', { class: 'apps-search-wrap' }, searchInp), results);
   btn.addEventListener('click', () => {   // popup'tan önce çalışır: panel henüz gizliyse şimdi açılıyor
+    const opening = panel.hidden;
+    if (opening) { searchInp.value = ''; }
     fill();
-    if (panel.hidden) logActivity({ event: 'open', path: location.hash, title: 'Uygulamalar menüsü' });
+    if (opening) { logActivity({ event: 'open', path: location.hash, title: 'Uygulamalar menüsü' }); setTimeout(() => searchInp.focus(), 60); }
   });
   popup(btn, panel);
   return h('div', { class: 'menu-anchor' }, btn, panel);

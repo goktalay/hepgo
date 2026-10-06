@@ -85,6 +85,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .apps-panel { width: 332px; padding: 12px; border-radius: 16px; }
 .apps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .apps-panel { max-height: calc(100vh - 90px); overflow-y: auto; }
+.apps-search-wrap { position: sticky; top: 0; z-index: 3; background: var(--card, #fff); padding-bottom: 8px; margin: -2px 0 2px; }
+.apps-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); color: var(--text); }
+.apps-search:focus { outline: none; border-color: var(--pri, #2563eb); background: var(--card, #fff); }
+.apps-grid .app-tile.feat { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; padding: 8px 10px; }
+.app-tile.feat .feat-txt { display: flex; flex-direction: column; min-width: 0; }
+.app-tile.feat .feat-txt b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-tile.feat .feat-hint { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .apps-group { border-radius: 14px; background: var(--surface-2); padding: 4px; }
 .apps-group + .apps-group { margin-top: 8px; }
 .dropdown.apps-panel .apps-group-h { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; cursor: pointer;

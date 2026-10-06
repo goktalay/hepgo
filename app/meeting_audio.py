@@ -118,6 +118,55 @@ def best_profile(vec, profs, exclude=()):
     return best if best[1] >= PROFILE_MATCH else (None, best[1])
 
 
+def _emb_from(raw):
+    """voice örneği embedding'ini çöz: JSON liste ya da float32 BLOB olabilir. Başarısızsa None."""
+    if raw is None:
+        return None
+    try:
+        if isinstance(raw, (bytes, bytearray)):
+            try:
+                return _unit(np.asarray(json.loads(raw.decode()), np.float32))
+            except Exception:   # noqa: BLE001
+                return _unit(np.frombuffer(raw, dtype=np.float32))
+        return _unit(np.asarray(json.loads(raw), np.float32))
+    except Exception:   # noqa: BLE001
+        return None
+
+
+def add_sample(conn, user_id, vec, source='manual', clip=None, seconds=None, created_by=None):
+    """Kişiye (user) bir ses izi örneği ekler (voice_samples) ve profilini örneklerden yeniden kurar. vec: 256-d."""
+    v = _unit(vec)
+    conn.execute('''INSERT INTO voice_samples (user_id, embedding, clip, source, seconds, created_by, created_at)
+                    VALUES (?,?,?,?,?,?,?)''',
+                 (int(user_id), json.dumps([round(float(x), 6) for x in v]), clip, source, seconds, created_by, db.now()))
+    return rebuild_profile(conn, user_id)
+
+
+def rebuild_profile(conn, user_id):
+    """Kişinin voice_profiles izini TÜM bilinen örneklerin ortalamasından yeniden kurar: voice_samples (elle/otomatik)
+    + toplantı/arama konuşmacı kümeleri (voice_call_speakers, o kişiye atanmış). Hiç örnek yoksa profili siler."""
+    vecs = []
+    for r in conn.execute('SELECT embedding FROM voice_samples WHERE user_id = ?', (int(user_id),)):
+        v = _emb_from(r[0])
+        if v is not None and v.size == 256:
+            vecs.append(v)
+    try:
+        for r in conn.execute('SELECT embedding FROM voice_call_speakers WHERE user_id = ? AND embedding IS NOT NULL', (int(user_id),)):
+            v = _emb_from(r[0])
+            if v is not None and v.size == 256:
+                vecs.append(v)
+    except Exception:   # noqa: BLE001 — tablo yoksa yalnız voice_samples
+        pass
+    if not vecs:
+        conn.execute('DELETE FROM voice_profiles WHERE user_id = ?', (int(user_id),))
+        return 0
+    mean = _unit(np.sum(vecs, axis=0))
+    conn.execute('''INSERT INTO voice_profiles (user_id, embedding, samples, updated_at) VALUES (?,?,?,?)
+                    ON CONFLICT(user_id) DO UPDATE SET embedding = excluded.embedding, samples = excluded.samples, updated_at = excluded.updated_at''',
+                 (int(user_id), json.dumps([round(float(x), 6) for x in mean]), len(vecs), db.now()))
+    return len(vecs)
+
+
 def learn(conn, user_id, vec, weight=1):
     """Kişinin ses profilini günceller (ağırlıklı ortalama)."""
     r = db.row(conn.execute('SELECT embedding, samples FROM voice_profiles WHERE user_id = ?', (user_id,)))

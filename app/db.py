@@ -2816,6 +2816,18 @@ def _migrate(conn):
         conn.execute('ALTER TABLE face_enroll ADD COLUMN visitor_id INTEGER REFERENCES visitors(id) ON DELETE CASCADE')
     if 'visitor_id' not in {r[1] for r in conn.execute('PRAGMA table_info(face_groups)')}:
         conn.execute('ALTER TABLE face_groups ADD COLUMN visitor_id INTEGER REFERENCES visitors(id) ON DELETE SET NULL')
+    # Yüz eğitim izi kaynağı: 'manual' (elle yüklenen/kameradan eğitim) | 'auto' (kameradan atanan görülmeden). Rehber "Yapay Zeka"da ayrı gruplanır.
+    if 'source' not in {r[1] for r in conn.execute('PRAGMA table_info(face_enroll)')}:
+        conn.execute("ALTER TABLE face_enroll ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+        # Geçmiş kayıtları dosya adından çıkar: auto kırpıklarının adı '..._<8hex>.jpg' ile biter (enroll_precomputed).
+        conn.execute("UPDATE face_enroll SET source = 'auto' WHERE crop GLOB '*_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].jpg'")
+    # Ses tanıma örnekleri: kişi (user) başına katkı sağlayan ses izleri; 'manual' (eğitim) | 'auto' (toplantı/arama tanıması).
+    # voice_profiles bu örneklerin ortalamasıdır; örnek silinince profil yeniden kurulur (meeting_audio.rebuild_profile).
+    conn.execute('''CREATE TABLE IF NOT EXISTS voice_samples (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        embedding TEXT NOT NULL, clip TEXT, source TEXT NOT NULL DEFAULT 'manual', seconds REAL, note TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL)''')
+    conn.execute('CREATE INDEX IF NOT EXISTS ix_voice_samples_user ON voice_samples(user_id, source)')
     # Görev formu kaynağı: 'manual' (Kişisel görev formu) | 'field' (saha görevi araç çıkış grubu; onaysız/otomatik aktif)
     duty_cols = {r[1] for r in conn.execute('PRAGMA table_info(duty_requests)')}
     if 'source' not in duty_cols:

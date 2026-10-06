@@ -445,6 +445,89 @@ async def identify_clip(file: UploadFile, user=Depends(auth.current_user), conn=
             'photo': row['photo'] if row else None, 'score': round(float(score), 3)}
 
 
+# ---------- Yapay Zeka alt modülü: kişinin ses örnekleri (elle eğitim + otomatik tanıma) ----------
+@router.get('/person/{uid}/samples')
+def voice_person_samples(uid: int, user=Depends(auth.current_user), conn=db.DB):
+    """Kişinin ses tanıma kayıtları: ELLE eğitilen (voice_samples) + OTOMATİK (toplantı/arama konuşmacı kümeleri)."""
+    manual = db.rows(conn.execute(
+        "SELECT id, source, seconds, created_at FROM voice_samples WHERE user_id = ? ORDER BY id DESC", (uid,)))
+    auto = []
+    try:
+        auto = db.rows(conn.execute(
+            '''SELECT id, call_id, label, score, seconds FROM voice_call_speakers
+               WHERE user_id = ? AND auto = 1 ORDER BY id DESC LIMIT 200''', (uid,)))
+    except Exception:   # noqa: BLE001 — tablo yoksa
+        auto = []
+    prof = db.row(conn.execute('SELECT samples, updated_at FROM voice_profiles WHERE user_id = ?', (uid,)))
+    return {'manual': manual, 'auto': auto, 'profile': prof}
+
+
+@router.post('/person/{uid}/enroll')
+async def voice_person_enroll(uid: int, file: UploadFile, user=Depends(auth.current_user), conn=db.DB):
+    """Ses eğitimi: kişiye bir ses klibi atar — WeSpeaker izi çıkarılıp örnek olarak kaydedilir, profili güncellenir."""
+    from pathlib import Path
+    from .. import meeting_audio
+    if not meeting_audio.MODEL.exists():
+        raise HTTPException(503, 'Konuşmacı tanıma modeli bulunamadı (wespeaker)')
+    if not conn.execute('SELECT 1 FROM users WHERE id = ?', (uid,)).fetchone():
+        raise HTTPException(404, 'Kullanıcı bulunamadı')
+    ext = Path(file.filename or 'a.webm').suffix.lower() or '.webm'
+    if ext not in _ID_CLIP_EXT:
+        raise HTTPException(400, 'Desteklenmeyen ses biçimi')
+    data = await file.read(_ID_CLIP_MAX + 1)
+    if len(data) > _ID_CLIP_MAX:
+        raise HTTPException(400, 'Klip çok uzun')
+    if not data:
+        raise HTTPException(400, 'Klip boş')
+
+    def run():
+        import tempfile
+        from .. import document_media
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / f'clip{ext}'
+            src.write_bytes(data)
+            wav = Path(tmp) / 'clip.wav'
+            document_media._to_wav(src, wav)
+            sig = meeting_audio.read_wav(wav)
+            if sig is None or len(sig) < meeting_audio.SR:   # < ~1 sn konuşma yetersiz
+                return None, 0.0
+            return meeting_audio.embed(sig), round(len(sig) / meeting_audio.SR, 1)
+
+    vec, secs = await run_in_threadpool(run)
+    if vec is None:
+        raise HTTPException(422, 'Ses çok kısa ya da çözülemedi (en az ~1 sn net konuşma gerekir)')
+    n = meeting_audio.add_sample(conn, uid, vec, source='manual', seconds=secs, created_by=user['id'])
+    conn.commit()
+    return {'ok': True, 'seconds': secs, 'samples': n}
+
+
+@router.delete('/samples/{sid}')
+def voice_sample_delete(sid: int, user=Depends(auth.current_user), conn=db.DB):
+    """Elle eğitilen bir ses örneğini siler; kişinin profili kalan örneklerden yeniden kurulur."""
+    from .. import meeting_audio
+    row = db.row(conn.execute('SELECT user_id FROM voice_samples WHERE id = ?', (sid,)))
+    if not row:
+        raise HTTPException(404, 'Kayıt bulunamadı')
+    conn.execute('DELETE FROM voice_samples WHERE id = ?', (sid,))
+    meeting_audio.rebuild_profile(conn, row['user_id'])
+    conn.commit()
+    return {'ok': True}
+
+
+@router.delete('/samples/auto/{sid}')
+def voice_auto_unassign(sid: int, user=Depends(auth.current_user), conn=db.DB):
+    """Otomatik tanınan bir konuşmacı kaydının kişiyle bağını kaldırır; profil yeniden kurulur."""
+    from .. import meeting_audio
+    row = db.row(conn.execute('SELECT user_id FROM voice_call_speakers WHERE id = ?', (sid,)))
+    if not row or not row['user_id']:
+        raise HTTPException(404, 'Kayıt bulunamadı')
+    uid = row['user_id']
+    conn.execute('UPDATE voice_call_speakers SET user_id = NULL, auto = 0 WHERE id = ?', (sid,))
+    meeting_audio.rebuild_profile(conn, uid)
+    conn.commit()
+    return {'ok': True}
+
+
 # ---------- REST: kişiler, geçmiş, transkript ----------
 @router.get('/users')
 def callable_users(user=Depends(auth.current_user), conn=db.DB):

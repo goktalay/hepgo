@@ -45,13 +45,13 @@ def enroll(conn, subject_type, user_id, person_id, image_path, created_by, famil
     ENROLL_DIR.mkdir(parents=True, exist_ok=True)
     name = f'{st}_{uid or pid or fid or vid}_{db.now().replace(":", "").replace("-", "").replace(" ", "_")[:15]}.jpg'
     cv2.imwrite(str(ENROLL_DIR / name), f['crop'], [cv2.IMWRITE_JPEG_QUALITY, 90])
-    cur = conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, visitor_id, crop, embedding, created_by, created_at)
-                          VALUES (?,?,?,?,?,?,?,?,?)''',
-                       (st, uid, pid, fid, vid, f'faces_enroll/{name}', f['embedding'].astype('float32').tobytes(), created_by, db.now()))
+    cur = conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, visitor_id, crop, embedding, source, created_by, created_at)
+                          VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                       (st, uid, pid, fid, vid, f'faces_enroll/{name}', f['embedding'].astype('float32').tobytes(), 'manual', created_by, db.now()))
     return True, {'id': cur.lastrowid, 'crop': f'faces_enroll/{name}'}
 
 
-def enroll_precomputed(conn, subject_type, user_id, person_id, family_id, crop_bytes, embedding_bytes, created_by, visitor_id=None):
+def enroll_precomputed(conn, subject_type, user_id, person_id, family_id, crop_bytes, embedding_bytes, created_by, visitor_id=None, source='auto'):
     """Kameradan ATANAN bir yüzü YENİDEN TESPİT ETMEDEN eğitim izine ekler: görülmenin mevcut kırpığı (crop_bytes) ve
     embedding'i (128 float32 bayt) olduğu gibi kullanılır. Böylece atanan yüzler hem 'eğitim verisi' görünümünde çıkar
     hem de gerçek zamanlı tanımaya beslenir (push ile fabrika servisine). DEDUPE: aynı kişinin mevcut eğitim izlerinden
@@ -73,9 +73,9 @@ def enroll_precomputed(conn, subject_type, user_id, person_id, family_id, crop_b
     ENROLL_DIR.mkdir(parents=True, exist_ok=True)
     name = f'{st}_{val}_{db.now().replace(":", "").replace("-", "").replace(" ", "_")[:15]}_{uuid.uuid4().hex[:8]}.jpg'
     (ENROLL_DIR / name).write_bytes(crop_bytes)
-    cur = conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, visitor_id, crop, embedding, created_by, created_at)
-                          VALUES (?,?,?,?,?,?,?,?,?)''',
-                       (st, uid, pid, fid, vid, f'faces_enroll/{name}', emb.astype('float32').tobytes(), created_by, db.now()))
+    cur = conn.execute('''INSERT INTO face_enroll (subject_type, user_id, person_id, family_id, visitor_id, crop, embedding, source, created_by, created_at)
+                          VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                       (st, uid, pid, fid, vid, f'faces_enroll/{name}', emb.astype('float32').tobytes(), source, created_by, db.now()))
     return cur.lastrowid
 
 
@@ -83,7 +83,7 @@ def list_for(conn, subject_type, user_id=None, person_id=None, family_id=None, v
     st, uid, pid, fid, vid = _subject(subject_type, user_id, person_id, family_id, visitor_id)
     col, val = _COL[st], (uid or pid or fid or vid)
     return db.rows(conn.execute(
-        f'SELECT id, crop, created_at FROM face_enroll WHERE subject_type = ? AND {col} = ? ORDER BY id DESC', (st, val)))
+        f'SELECT id, crop, source, created_at FROM face_enroll WHERE subject_type = ? AND {col} = ? ORDER BY id DESC', (st, val)))
 
 
 def count_by_subject(conn):

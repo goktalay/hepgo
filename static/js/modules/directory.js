@@ -103,6 +103,110 @@ function editMine(c, done) {
   });
 }
 
+// ---------------------------------------------------------------- Yapay Zeka alt modülü (yüz + ses eğitimi/kayıtları)
+// Rehber kişi detayında, yüz (ctx.user.nvr) ve/veya ses (ctx.user.speech) eklentisi kuruluysa görünür.
+function aiSection(type, id, name, ctx) {
+  const colKey = { user: 'user_id', person: 'person_id', family: 'family_id' }[type];
+  const faceQ = `subject_type=${type}&${colKey}=${id}`;
+  const card = h('section', { class: 'card card-pad' }, h('h3', { style: { marginTop: 0 } }, '🧠 Yapay Zeka'));
+
+  // ---- YÜZ TANIMA
+  if (ctx.user.nvr) {
+    const faceWrap = h('div', { style: { marginTop: '6px' } });
+    card.append(faceWrap);
+    const sel = new Set();
+    const drawFace = async () => {
+      clear(faceWrap, h('div', { class: 'loading' }, 'Yüz kayıtları yükleniyor…'));
+      let faces;
+      try { faces = (await api.get(`/api/faces/enroll?${faceQ}`)).faces || []; }
+      catch (err) { return clear(faceWrap, h('div', { class: 'muted small' }, err.message || 'Yüz kayıtları okunamadı')); }
+      sel.clear();
+      const manual = faces.filter(f => f.source !== 'auto');
+      const auto = faces.filter(f => f.source === 'auto');
+      const trainBtn = h('button', { class: 'btn primary sm', type: 'button' }, '📷 Yüz Tanıma Eğitimi');
+      trainBtn.addEventListener('click', async () => {
+        try { const m = await import('../livepanels.js'); await m.openFaceEnroll({ subject_type: type, user_id: type === 'user' ? id : null, person_id: type === 'person' ? id : null, family_id: type === 'family' ? id : null, name, onDone: drawFace }); }
+        catch (err) { toast(err.message || 'Panel açılamadı', 'err'); }
+      });
+      const bulkBtn = h('button', { class: 'btn sm danger', type: 'button', disabled: true }, 'Seçilenleri sil');
+      const group = (title, rows) => {
+        if (!rows.length) return h('div', { class: 'muted small', style: { margin: '4px 0 10px' } }, `${title}: kayıt yok`);
+        return h('div', { style: { margin: '4px 0 12px' } },
+          h('div', { class: 'small muted', style: { marginBottom: '4px' } }, `${title} (${rows.length})`),
+          h('div', { class: 'fg-recognized' }, rows.map(f => thumb(f))));
+      };
+      const thumb = f => {
+        const img = h('img', { src: fileUrl(f.crop, 120), alt: '', loading: 'lazy', title: f.created_at ? fmtDateTime(f.created_at) : '' });
+        const cb = h('input', { type: 'checkbox', style: { position: 'absolute', top: '3px', left: '3px' } });
+        cb.addEventListener('change', () => { cb.checked ? sel.add(f.id) : sel.delete(f.id); bulkBtn.disabled = !sel.size; bulkBtn.textContent = sel.size ? `Seçilenleri sil (${sel.size})` : 'Seçilenleri sil'; });
+        const del = h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Sil', style: { position: 'absolute', top: '2px', right: '2px', padding: '0 5px' } }, '×');
+        del.addEventListener('click', async () => {
+          if (!await confirmDialog('Eğitim resmini sil', 'Bu yüz eğitim resmi silinsin mi?', { okLabel: 'Sil', danger: true })) return;
+          try { await api.del(`/api/faces/enroll/${f.id}`); drawFace(); } catch (err) { toast(err.message, 'err'); }
+        });
+        return h('div', { style: { position: 'relative' } }, img, cb, del);
+      };
+      bulkBtn.addEventListener('click', async () => {
+        if (!sel.size) return;
+        if (!await confirmDialog('Seçilenleri sil', t('{n} eğitim resmi silinsin mi?', { n: sel.size }), { okLabel: 'Sil', danger: true })) return;
+        try { await api.post('/api/faces/enroll/delete', { ids: [...sel] }); toast('Silindi'); drawFace(); } catch (err) { toast(err.message, 'err'); }
+      });
+      clear(faceWrap,
+        h('div', { class: 'set-actions left', style: { marginBottom: '8px' } }, trainBtn, bulkBtn),
+        h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Yüz eğitim resimleri — elle eklediklerimiz ve kişiye kameradan atananlar ayrı gruplanır. Eğitim düğmesiyle kamera açılır; başınızı yavaşça çevirdikçe otomatik çeker.'),
+        group('Elle eklenen eğitim resimleri', manual),
+        group('Kameradan otomatik atanan', auto));
+    };
+    drawFace();
+  }
+
+  // ---- SES TANIMA (yalnız personel/user; ses profili user_id'ye bağlı)
+  if (ctx.user.speech && type === 'user') {
+    const voiceWrap = h('div', { style: { marginTop: '10px', borderTop: '1px solid var(--line,#e5e7eb)', paddingTop: '10px' } });
+    card.append(voiceWrap);
+    const drawVoice = async () => {
+      clear(voiceWrap, h('div', { class: 'loading' }, 'Ses kayıtları yükleniyor…'));
+      let data;
+      try { data = await api.get(`/api/voice/person/${id}/samples`); }
+      catch (err) { return clear(voiceWrap, h('div', { class: 'muted small' }, err.message || 'Ses kayıtları okunamadı')); }
+      const trainBtn = h('button', { class: 'btn primary sm', type: 'button' }, '🎙️ Ses Tanıma Eğitimi');
+      trainBtn.addEventListener('click', async () => {
+        try { const m = await import('../livepanels.js'); await m.openVoiceEnroll({ user_id: id, name, onDone: drawVoice }); }
+        catch (err) { toast(err.message || 'Panel açılamadı', 'err'); }
+      });
+      const manualRow = r => {
+        const del = h('button', { class: 'btn xs ghost danger-text', type: 'button' }, 'Sil');
+        del.addEventListener('click', async () => {
+          if (!await confirmDialog('Ses kaydını sil', 'Bu ses eğitim kaydı silinsin mi? Profil kalan kayıtlardan yeniden kurulur.', { okLabel: 'Sil', danger: true })) return;
+          try { await api.del(`/api/voice/samples/${r.id}`); toast('Silindi'); drawVoice(); } catch (err) { toast(err.message, 'err'); }
+        });
+        return h('div', { class: 'gd-li' }, h('b', null, `Eğitim kaydı #${r.id}`),
+          h('small', { class: 'muted' }, [r.seconds && t('{n} sn', { n: Math.round(r.seconds) }), r.created_at && fmtDateTime(r.created_at)].filter(Boolean).join(' · ')), del);
+      };
+      const autoRow = r => {
+        const del = h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Bağı kaldır' }, 'Kaldır');
+        del.addEventListener('click', async () => {
+          if (!await confirmDialog('Otomatik kaydı kaldır', 'Bu otomatik tanıma kaydının kişiyle bağı kaldırılsın mı?', { okLabel: 'Kaldır', danger: true })) return;
+          try { await api.del(`/api/voice/samples/auto/${r.id}`); toast('Kaldırıldı'); drawVoice(); } catch (err) { toast(err.message, 'err'); }
+        });
+        return h('div', { class: 'gd-li' }, h('b', null, r.label || `Konuşmacı #${r.id}`),
+          h('small', { class: 'muted' }, ['Arama #' + r.call_id, r.seconds && t('{n} sn', { n: Math.round(r.seconds) }), r.score != null && `%${Math.round(r.score * 100)}`].filter(Boolean).join(' · ')), del);
+      };
+      const grp = (title, rows, fn, empty) => h('div', { style: { margin: '6px 0' } },
+        h('div', { class: 'small muted', style: { marginBottom: '2px' } }, `${title}${rows.length ? ` (${rows.length})` : ''}`),
+        rows.length ? h('div', { class: 'gd-list' }, rows.map(fn)) : h('div', { class: 'muted small' }, empty));
+      clear(voiceWrap,
+        h('h4', { style: { margin: '0 0 6px' } }, 'Ses Tanıma'),
+        h('div', { class: 'set-actions left', style: { marginBottom: '6px' } }, trainBtn,
+          data.profile ? h('span', { class: 'small muted' }, t('Profil: {n} örnek', { n: data.profile.samples || 0 })) : h('span', { class: 'small muted' }, 'Profil yok')),
+        grp('Elle girilen', data.manual || [], manualRow, 'Elle eğitim kaydı yok.'),
+        grp('Otomatik (toplantı/arama)', data.auto || [], autoRow, 'Otomatik tanıma kaydı yok.'));
+    };
+    drawVoice();
+  }
+  return card;
+}
+
 async function detail(view, type, id, ctx) {
   clear(view, pageHead('Rehber', { back: '#/rehber', sub: 'Kişi detayı' }), h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   let d;
@@ -123,6 +227,7 @@ async function detail(view, type, id, ctx) {
     items?.length ? h('div', { class: 'gd-list' }, items.map(rowFn)) : h('div', { class: 'muted small' }, empty));
 
   const blocks = [info];
+  if (ctx.user.nvr || (ctx.user.speech && type === 'user')) blocks.push(aiSection(type, Number(id), tc(d.full_name), ctx));
   if (s.face) {
     blocks.push(h('section', { class: 'card card-pad' },
       h('h3', { style: { marginTop: 0 } }, t('Yüz Tanıma Kayıtları ({n} görülme)', { n: s.face.sightings || 0 })),

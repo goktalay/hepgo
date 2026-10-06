@@ -44,6 +44,19 @@ function injectStyle() {
     justify-content:center;font-size:24px;color:#94a3b8;flex:0 0 auto}
   .lp-sp-name{font-weight:600;font-size:15px}
   .lp-sp-meta{font-size:12px;color:var(--muted,#64748b)}
+  .lp-face-ring{width:230px;height:230px;border-radius:50%;margin:4px auto 2px;padding:9px;box-sizing:border-box;
+    background:conic-gradient(#22c55e 0deg,#334155 0deg);transition:background .25s}
+  .lp-circ{width:100%;height:100%;border-radius:50%;overflow:hidden;background:#0b1220;position:relative}
+  .lp-circ video{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1)}
+  .lp-face-prompt{text-align:center;font-size:13px;color:var(--muted,#64748b);margin-top:6px;min-height:18px}
+  .lp-dirs{display:flex;justify-content:center;gap:10px;margin-top:6px}
+  .lp-dir{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;
+    background:var(--bg2,#f1f5f9);color:#94a3b8}
+  .lp-dir.done{background:#22c55e;color:#fff}
+  .lp-prompt-box{font-size:16px;line-height:1.7;background:var(--bg2,#f8fafc);border:1px solid var(--line,#e5e7eb);
+    border-radius:10px;padding:11px 13px;margin-top:4px}
+  .lp-prompt-box .w{color:var(--muted,#94a3b8);transition:color .2s}
+  .lp-prompt-box .w.ok{color:#16a34a;font-weight:600}
   `;
   document.head.append(st);
 }
@@ -331,6 +344,178 @@ export async function openSpeakerId() {
     stopDraw = _waveLoop(wave, analyser, '#a78bfa', () => stopped);
     stopSeg = _segmentLoop(stream, onBlob, 4000, () => stopped);
     status.textContent = 'Dinleniyor…'; status.className = 'lp-status ok';
+  } catch (err) {
+    status.textContent = 'Mikrofon açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';
+  }
+  return panel;
+}
+
+// ============================================================ YÜZ TANIMA EĞİTİMİ (iPhone Face ID tarzı)
+// subject: {subject_type:'user'|'person'|'family', user_id?, person_id?, family_id?, name, onDone}
+// Kamera açılır; başınızı çevirdikçe kafa açısı (yaw/pitch) kutularını kapsar, halka dolar; her kabul edilen
+// karede sunucuya kare gönderilir, en büyük yüz embedding+kırpık olarak kişiye eğitim izi kaydedilir (sıkıştırılmış).
+const _BUCKETS = ['center', 'left', 'right', 'up', 'down'];
+const _NEED = 2;   // kutu başına hedef örnek
+function _poseBucket(yaw, pitch) {
+  if (pitch < -0.25) return 'up';
+  if (pitch > 0.32) return 'down';
+  if (yaw < -0.28) return 'left';
+  if (yaw > 0.28) return 'right';
+  return 'center';
+}
+export async function openFaceEnroll(subject) {
+  injectStyle();
+  const video = h('video', { autoplay: '', playsinline: '' }); video.muted = true;
+  const ring = h('div', { class: 'lp-face-ring' }, h('div', { class: 'lp-circ' }, video));
+  const prompt = h('div', { class: 'lp-face-prompt' }, 'Kamera başlatılıyor…');
+  const dirIcons = { center: '●', left: '◀', right: '▶', up: '▲', down: '▼' };
+  const dirs = {};
+  const dirRow = h('div', { class: 'lp-dirs' }, _BUCKETS.map(b => (dirs[b] = h('div', { class: 'lp-dir', title: b }, dirIcons[b]))));
+  const status = h('div', { class: 'lp-status' }, '');
+  const panel = floatPanel({ title: 'Yüz Tanıma Eğitimi', sub: subject.name || '', width: 300, onClose: stop });
+  panel.body.append(ring, dirRow, prompt, status);
+
+  const grab = document.createElement('canvas');
+  const counts = { center: 0, left: 0, right: 0, up: 0, down: 0 };
+  let stream = null, timer = null, busy = false, stopped = false, added = 0, done = false;
+
+  function stop() {
+    stopped = true;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  }
+  function progress() { return _BUCKETS.reduce((s, b) => s + Math.min(counts[b], _NEED), 0) / (_NEED * _BUCKETS.length); }
+  function refresh() {
+    const p = progress();
+    ring.style.background = `conic-gradient(#22c55e ${p * 360}deg, #334155 0deg)`;
+    _BUCKETS.forEach(b => dirs[b].classList.toggle('done', counts[b] >= _NEED));
+    const need = _BUCKETS.find(b => counts[b] < _NEED);
+    prompt.textContent = done ? '✓ Eğitim tamamlandı' : need
+      ? ({ center: 'Yüzünüzü ekrana karşı tutun', left: 'Başınızı yavaşça SOLA çevirin', right: 'Başınızı yavaşça SAĞA çevirin', up: 'Başınızı hafifçe YUKARI kaldırın', down: 'Başınızı hafifçe AŞAĞI eğin' })[need]
+      : 'Birkaç saniye daha…';
+    status.textContent = `${added} resim eklendi · %${Math.round(p * 100)}`;
+  }
+  async function tick() {
+    if (stopped || busy || done) return;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.min(1, 480 / vw);
+    grab.width = Math.round(vw * scale); grab.height = Math.round(vh * scale);
+    grab.getContext('2d').drawImage(video, 0, 0, grab.width, grab.height);
+    const jpg = grab.toDataURL('image/jpeg', 0.72).split(',')[1];
+    busy = true;
+    try {
+      const r = await api.post('/api/faces/enroll-frame', { jpg, subject_type: subject.subject_type,
+        user_id: subject.user_id || null, person_id: subject.person_id || null, family_id: subject.family_id || null });
+      if (stopped) return;
+      if (r && r.found) {
+        const b = _poseBucket(r.yaw || 0, r.pitch || 0);
+        if (r.added && counts[b] < _NEED) { counts[b]++; added++; }
+        else if (r.added) { added++; }
+        refresh();
+        if (!done && _BUCKETS.every(x => counts[x] >= _NEED)) {
+          done = true; refresh();
+          setTimeout(() => { stop(); toast(`Yüz eğitimi tamamlandı · ${added} resim eklendi`, 'success'); try { subject.onDone && subject.onDone(); } catch { /* */ } panel.close(); }, 700);
+        }
+      } else if (!done) { prompt.textContent = 'Yüz görünmüyor — kameraya bakın'; }
+    } catch (err) {
+      if (!stopped) { status.textContent = 'Hata: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err'; }
+    } finally { busy = false; }
+  }
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    refresh();
+    timer = setInterval(tick, 550);
+  } catch (err) {
+    prompt.textContent = 'Kamera açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';
+  }
+  return panel;
+}
+
+// ============================================================ SES TANIMA EĞİTİMİ (rehberli metin okuma)
+// opts: {user_id, name, onDone}. Metni okutur; söyledikçe kelimeler yeşile döner; tamamlanınca kayıt kişiye atanır.
+const _ENROLL_PROMPT = 'Bugün hava çok güzel, işe zamanında geldim ve bütün görevlerimi eksiksiz tamamladım.';
+function _norm(s) { return (s || '').toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim(); }
+export async function openVoiceEnroll(opts) {
+  injectStyle();
+  const words = _ENROLL_PROMPT.split(' ');
+  const wEls = words.map(w => h('span', { class: 'w' }, w));
+  const box = h('div', { class: 'lp-prompt-box' }, wEls.flatMap((e, i) => i ? [' ', e] : [e]));
+  const wave = h('canvas', { class: 'lp-wave' });
+  const status = h('div', { class: 'lp-status' }, 'Mikrofon başlatılıyor…');
+  const finishBtn = h('button', { class: 'btn primary sm', type: 'button', disabled: true, style: { marginTop: '8px' } }, 'Kaydı kişiye ata');
+  const panel = floatPanel({ title: 'Ses Tanıma Eğitimi', sub: opts.name || '', width: 430, onClose: stop });
+  panel.body.append(h('div', { class: 'small muted', style: { marginBottom: '6px' } }, 'Aşağıdaki cümleyi doğal bir sesle okuyun:'), box, wave, status, h('div', { style: { textAlign: 'right' } }, finishBtn));
+
+  let stream = null, ac = null, analyser = null, stopDraw = null, stopSeg = null, fullRec = null, chunks = [], stopped = false, matched = 0, finalizing = false;
+  const promptNorm = words.map(_norm);
+  const { type: mrType } = _mrType();
+
+  function stop() {
+    stopped = true;
+    if (stopSeg) stopSeg();
+    if (stopDraw) stopDraw();
+    try { if (fullRec && fullRec.state !== 'inactive') fullRec.stop(); } catch { /* */ }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    try { ac && ac.close(); } catch { /* */ }
+    ac = null;
+  }
+  function applyMatch(transcript) {
+    const toks = _norm(transcript).split(' ').filter(Boolean);
+    let p = matched, ti = 0;
+    while (p < promptNorm.length && ti < toks.length) {
+      const target = promptNorm[p], tok = toks[ti];
+      if (tok === target || (tok.length > 2 && (target.startsWith(tok) || tok.startsWith(target)))) { p++; ti++; }
+      else ti++;
+    }
+    if (p > matched) { matched = p; for (let i = 0; i < matched; i++) wEls[i].classList.add('ok'); }
+    const ratio = matched / promptNorm.length;
+    finishBtn.disabled = ratio < 0.6 || finalizing;
+    if (ratio >= 0.6) { status.textContent = `%${Math.round(ratio * 100)} okundu — bitirebilirsiniz`; status.className = 'lp-status ok'; }
+    if (ratio >= 0.95 && !finalizing) finalize();
+  }
+  async function onBlob(blob, ext) {
+    if (stopped || finalizing) return;
+    try {
+      const fd = new FormData(); fd.append('file', blob, `stt.${ext}`); fd.append('lang', 'tr');
+      const r = await api.post('/api/system/dictate', fd);
+      if (!stopped && r && r.text) applyMatch(words.slice(0, matched).join(' ') + ' ' + r.text);
+    } catch { /* parça atlandı */ }
+  }
+  async function finalize() {
+    if (finalizing || stopped) return;
+    finalizing = true; finishBtn.disabled = true;
+    status.textContent = 'Ses kaydı kişiye atanıyor…'; status.className = 'lp-status';
+    if (stopSeg) stopSeg();
+    // tam kaydı durdur → blob → enroll
+    const blob = await new Promise(res => {
+      if (!fullRec || fullRec.state === 'inactive') return res(new Blob(chunks, { type: mrType || 'audio/webm' }));
+      fullRec.onstop = () => res(new Blob(chunks, { type: mrType || 'audio/webm' }));
+      try { fullRec.stop(); } catch { res(new Blob(chunks, { type: mrType || 'audio/webm' })); }
+    });
+    try {
+      const ext = mrType.includes('ogg') ? 'ogg' : mrType.includes('mp4') ? 'm4a' : 'webm';
+      const fd = new FormData(); fd.append('file', blob, `enroll.${ext}`);
+      const r = await api.post(`/api/voice/person/${opts.user_id}/enroll`, fd);
+      toast(`Ses kaydı atandı · profil ${r.samples} örnek`, 'success');
+      stop(); try { opts.onDone && opts.onDone(); } catch { /* */ } panel.close();
+    } catch (err) {
+      finalizing = false; status.textContent = 'Atama hatası: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err';
+    }
+  }
+  finishBtn.addEventListener('click', finalize);
+
+  try {
+    ({ stream, ac, analyser } = await _startMic());
+    stopDraw = _waveLoop(wave, analyser, '#34d399', () => stopped);
+    fullRec = new MediaRecorder(stream, mrType ? { mimeType: mrType } : undefined);
+    fullRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    fullRec.start();
+    stopSeg = _segmentLoop(stream, onBlob, 3500, () => stopped);
+    status.textContent = 'Okumaya başlayın…'; status.className = 'lp-status ok';
   } catch (err) {
     status.textContent = 'Mikrofon açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';
   }

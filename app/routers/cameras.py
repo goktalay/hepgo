@@ -597,6 +597,58 @@ def enroll_delete(enroll_id: int, user=Depends(cam_user), conn=db.DB):
     return {'ok': True}
 
 
+class EnrollIdsIn(BaseModel):
+    ids: list = []
+
+
+@faces_router.post('/enroll/delete')
+def enroll_delete_bulk(body: EnrollIdsIn, user=Depends(cam_user), conn=db.DB):
+    """Birden çok eğitim izini toplu siler (Yapay Zeka alt modülü)."""
+    from .. import faceenroll
+    n = 0
+    for i in (body.ids or []):
+        try:
+            if faceenroll.delete(conn, int(i)):
+                n += 1
+        except Exception:   # noqa: BLE001
+            continue
+    if n:
+        conn.commit()
+        _push_enroll(conn)
+    return {'ok': True, 'deleted': n}
+
+
+class EnrollFrameIn(BaseModel):
+    jpg: str                            # base64 JPEG (data: öneki olmadan)
+    subject_type: str
+    user_id: Optional[int] = None
+    person_id: Optional[int] = None
+    family_id: Optional[int] = None
+    visitor_id: Optional[int] = None
+
+
+@faces_router.post('/enroll-frame')
+def enroll_frame(body: EnrollFrameIn, user=Depends(cam_user), conn=db.DB):
+    """iPhone tarzı yüz eğitimi: tarayıcıdan gelen tek kareyi fabrika yüz ajanında işler (en büyük yüz → embedding +
+    kırpık + kafa açısı) ve kişiye eğitim izi olarak kaydeder (source='manual', dedupe). Dönüş {found, added, yaw, pitch, box, score}."""
+    import base64
+    from .. import faceenroll
+    res = _face(conn, 'embed_frame', jpg=body.jpg)
+    if not isinstance(res, dict) or not res.get('found'):
+        return {'found': False}
+    try:
+        added = faceenroll.enroll_precomputed(conn, body.subject_type, body.user_id, body.person_id, body.family_id,
+                                              base64.b64decode(res['crop']), base64.b64decode(res['embedding']),
+                                              user['id'], body.visitor_id, source='manual')
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if added:
+        conn.commit()
+        _push_enroll(conn)
+    return {'found': True, 'added': bool(added), 'enroll_id': added,
+            'yaw': res.get('yaw'), 'pitch': res.get('pitch'), 'box': res.get('box'), 'score': res.get('score')}
+
+
 def _push_enroll(conn):
     """Eğitim izlerini (ve güncel ayarı) fabrika yüz-tanıma servisine aktarır (en iyi çaba)."""
     try:

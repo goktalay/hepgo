@@ -428,6 +428,57 @@ def recognize_frame(conn, args):
     return {'w': w, 'h': h, 'faces': out}
 
 
+def _head_pose(f):
+    """YUNET 5 nokta (sağ göz, sol göz, burun, sağ ağız, sol ağız) → kaba yaw/pitch [-1,1]
+    (yaw<0 sola, >0 sağa; pitch<0 yukarı, >0 aşağı). iPhone tarzı eğitimde kapsama halkasını doldurmak için."""
+    rex, rey, lex, ley = float(f[4]), float(f[5]), float(f[6]), float(f[7])
+    nx, ny = float(f[8]), float(f[9])
+    rmy, lmy = float(f[11]), float(f[13])
+    eye_mx, eye_my = (rex + lex) / 2.0, (rey + ley) / 2.0
+    eye_d = ((lex - rex) ** 2 + (ley - rey) ** 2) ** 0.5 or 1.0
+    vert = abs((rmy + lmy) / 2.0 - eye_my) or 1.0
+    yaw = max(-1.0, min(1.0, (nx - eye_mx) / (eye_d * 0.5)))
+    pitch = max(-1.0, min(1.0, ((ny - eye_my) / vert - 0.55) / 0.45))
+    return yaw, pitch
+
+
+def embed_frame(conn, args):
+    """Tek kareden EN BÜYÜK yüzü tespit edip embedding + kırpık + kafa açısını (yaw/pitch) döndürür — DB'ye YAZMAZ.
+    iPhone tarzı yüz eğitimi için: bulut bu çıktıyı faceenroll.enroll_precomputed ile kişiye kaydeder (source='manual')."""
+    import base64 as _b64
+    import cv2
+    from . import document_media as dm
+    a = args or {}
+    try:
+        buf = _b64.b64decode(a.get('jpg') or '')
+    except Exception:   # noqa: BLE001
+        buf = b''
+    if not buf:
+        return {'found': False}
+    img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return {'found': False}
+    h, w = img.shape[:2]
+    det_thr = float(a.get('det_thr') or 0.7)
+    min_face = int(a.get('min_face') or 60)
+    detector = cv2.FaceDetectorYN.create(str(dm.YUNET), '', (w, h), det_thr, 0.3, 50)
+    detector.setInputSize((w, h))
+    recognizer = cv2.FaceRecognizerSF.create(str(dm.SFACE), '')
+    _, faces = detector.detect(img)
+    faces = [f for f in (faces if faces is not None else []) if min(f[2], f[3]) >= min_face]
+    if not faces:
+        return {'found': False, 'w': w, 'h': h}
+    f = max(faces, key=lambda x: x[2] * x[3])   # en büyük (en yakın) yüz
+    emb = _norm(recognizer.feature(recognizer.alignCrop(img, f)).flatten().astype(np.float32))
+    ok, cbuf = cv2.imencode('.jpg', dm._face_crop(img, f), [cv2.IMWRITE_JPEG_QUALITY, 82])
+    yaw, pitch = _head_pose(f)
+    return {'found': True, 'w': w, 'h': h,
+            'box': [round(float(f[0])), round(float(f[1])), round(float(f[2])), round(float(f[3]))],
+            'score': round(float(f[14]), 3), 'yaw': round(yaw, 3), 'pitch': round(pitch, 3),
+            'embedding': _b64.b64encode(emb.astype(np.float32).tobytes()).decode(),
+            'crop': _b64.b64encode(cbuf.tobytes()).decode()}
+
+
 def isg_alarms(conn, limit=200, since=None):
     """İSG/KKD alarmları (Görüntü İşleme). Dağıtık kurulumda fabrika yerel DB'sinde üretilir; isimler bulutta çözülür."""
     q = ('SELECT id, camera_id, camera_name, subject_type, user_id, person_id, family_id, visitor_id, '
@@ -458,6 +509,8 @@ def rpc(conn, method, args):
     a = args or {}
     if method == 'recognize_frame':
         return recognize_frame(conn, a)
+    if method == 'embed_frame':
+        return embed_frame(conn, a)
     if method == 'isg_alarms':
         return isg_alarms(conn, a.get('limit', 200), a.get('since'))
     if method == 'isg_ack':

@@ -185,6 +185,7 @@ function _mrType() {
 async function _startMic() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const ac = new (window.AudioContext || window.webkitAudioContext)();
+  try { if (ac.state === 'suspended') await ac.resume(); } catch { /* iOS: kullanıcı hareketiyle açılır */ }
   const analyser = ac.createAnalyser(); analyser.fftSize = 1024;
   ac.createMediaStreamSource(stream).connect(analyser);
   return { stream, ac, analyser };
@@ -450,71 +451,70 @@ export async function openVoiceEnroll(opts) {
   const panel = floatPanel({ title: 'Ses Tanıma Eğitimi', sub: opts.name || '', width: 430, onClose: stop });
   panel.body.append(h('div', { class: 'small muted', style: { marginBottom: '6px' } }, 'Aşağıdaki cümleyi doğal bir sesle okuyun:'), box, wave, status, h('div', { style: { textAlign: 'right' } }, finishBtn));
 
-  let stream = null, ac = null, analyser = null, stopDraw = null, stopSeg = null, fullRec = null, chunks = [], stopped = false, matched = 0, finalizing = false;
+  // Mobil-güvenli: TEK kayıtçı (segment döngüsü — aynı anda tek MediaRecorder). En iyi (en uzun) parça kişiye atanır.
+  let stream = null, ac = null, analyser = null, stopDraw = null, stopSeg = null, stopped = false, matched = 0, finalizing = false;
+  let best = null, startAt = 0;
   const promptNorm = words.map(_norm);
-  const { type: mrType } = _mrType();
 
   function stop() {
     stopped = true;
     if (stopSeg) stopSeg();
     if (stopDraw) stopDraw();
-    try { if (fullRec && fullRec.state !== 'inactive') fullRec.stop(); } catch { /* */ }
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     try { ac && ac.close(); } catch { /* */ }
     ac = null;
   }
-  function applyMatch(transcript) {
-    const toks = _norm(transcript).split(' ').filter(Boolean);
-    let p = matched, ti = 0;
+  function applyMatch(fullText) {
+    const toks = _norm(fullText).split(' ').filter(Boolean);
+    let p = 0, ti = 0;
     while (p < promptNorm.length && ti < toks.length) {
       const target = promptNorm[p], tok = toks[ti];
       if (tok === target || (tok.length > 2 && (target.startsWith(tok) || tok.startsWith(target)))) { p++; ti++; }
       else ti++;
     }
-    if (p > matched) { matched = p; for (let i = 0; i < matched; i++) wEls[i].classList.add('ok'); }
+    if (p > matched) matched = p;
+    for (let i = 0; i < words.length; i++) wEls[i].classList.toggle('ok', i < matched);
     const ratio = matched / promptNorm.length;
-    finishBtn.disabled = ratio < 0.6 || finalizing;
-    if (ratio >= 0.6) { status.textContent = `%${Math.round(ratio * 100)} okundu — bitirebilirsiniz`; status.className = 'lp-status ok'; }
-    if (ratio >= 0.95 && !finalizing) finalize();
+    if (!finalizing) {
+      status.textContent = best ? `%${Math.round(ratio * 100)} okundu — bitirince kişiye atanır` : 'Okumaya devam edin…';
+      status.className = 'lp-status ok';
+      finishBtn.disabled = !best;
+    }
+    const elapsed = (Date.now() - startAt) / 1000;
+    if (ratio >= 0.85 && best && elapsed >= 5 && !finalizing) finalize();
   }
+  let acc = '';
   async function onBlob(blob, ext) {
     if (stopped || finalizing) return;
+    if (!best || blob.size > best.blob.size) { best = { blob, ext }; finishBtn.disabled = finalizing; }
     try {
       const fd = new FormData(); fd.append('file', blob, `stt.${ext}`); fd.append('lang', 'tr');
       const r = await api.post('/api/system/dictate', fd);
-      if (!stopped && r && r.text) applyMatch(words.slice(0, matched).join(' ') + ' ' + r.text);
+      if (!stopped && r && r.text) { acc = (acc + ' ' + r.text).trim().slice(-400); applyMatch(acc); }
     } catch { /* parça atlandı */ }
   }
   async function finalize() {
-    if (finalizing || stopped) return;
+    if (finalizing || stopped || !best) return;
     finalizing = true; finishBtn.disabled = true;
     status.textContent = 'Ses kaydı kişiye atanıyor…'; status.className = 'lp-status';
     if (stopSeg) stopSeg();
-    // tam kaydı durdur → blob → enroll
-    const blob = await new Promise(res => {
-      if (!fullRec || fullRec.state === 'inactive') return res(new Blob(chunks, { type: mrType || 'audio/webm' }));
-      fullRec.onstop = () => res(new Blob(chunks, { type: mrType || 'audio/webm' }));
-      try { fullRec.stop(); } catch { res(new Blob(chunks, { type: mrType || 'audio/webm' })); }
-    });
     try {
-      const ext = mrType.includes('ogg') ? 'ogg' : mrType.includes('mp4') ? 'm4a' : 'webm';
-      const fd = new FormData(); fd.append('file', blob, `enroll.${ext}`);
+      const fd = new FormData(); fd.append('file', best.blob, `enroll.${best.ext}`);
       const r = await api.post(`/api/voice/person/${opts.user_id}/enroll`, fd);
       toast(`Ses kaydı atandı · profil ${r.samples} örnek`, 'success');
       stop(); try { opts.onDone && opts.onDone(); } catch { /* */ } panel.close();
     } catch (err) {
-      finalizing = false; status.textContent = 'Atama hatası: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err';
+      finalizing = false; finishBtn.disabled = false;
+      status.textContent = 'Atama hatası: ' + ((err && err.message) || 'bağlantı'); status.className = 'lp-status err';
     }
   }
   finishBtn.addEventListener('click', finalize);
 
   try {
     ({ stream, ac, analyser } = await _startMic());
+    startAt = Date.now();
     stopDraw = _waveLoop(wave, analyser, '#34d399', () => stopped);
-    fullRec = new MediaRecorder(stream, mrType ? { mimeType: mrType } : undefined);
-    fullRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    fullRec.start();
-    stopSeg = _segmentLoop(stream, onBlob, 3500, () => stopped);
+    stopSeg = _segmentLoop(stream, onBlob, 3000, () => stopped);
     status.textContent = 'Okumaya başlayın…'; status.className = 'lp-status ok';
   } catch (err) {
     status.textContent = 'Mikrofon açılamadı: ' + ((err && err.message) || err); status.className = 'lp-status err';

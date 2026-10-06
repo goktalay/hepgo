@@ -407,7 +407,7 @@ def recognize_frame(conn, args):
     detector.setInputSize((w, h))
     recognizer = cv2.FaceRecognizerSF.create(str(dm.SFACE), '')
     _, faces = detector.detect(img)
-    known = dm.known_identities(conn)
+    known = _all_identities(conn)
     out = []
     for f in faces if faces is not None else []:
         x, y, fw, fh = float(f[0]), float(f[1]), float(f[2]), float(f[3])
@@ -426,6 +426,25 @@ def recognize_frame(conn, args):
             rec[f'{best[0]}_id'] = best[1]
         out.append(rec)
     return {'w': w, 'h': h, 'faces': out}
+
+
+def _all_identities(conn):
+    """Tanıma için TÜM bilinen kimlikler: eğitim izleri (face_enroll + evrak, document_media.known_identities)
+    + ATANMIŞ kamera grupları (face_groups.user_id/person_id/family_id/visitor_id dolu). Böylece webcam/tek-kare
+    canlı test, canlı kameranın öğrendiği (kişiye atanmış) yüzleri de tanır — yalnız elle yüklenen eğitim değil."""
+    from . import document_media as dm
+    known = list(dm.known_identities(conn))
+    try:
+        for r in conn.execute('''SELECT user_id, person_id, family_id, visitor_id, centroid FROM face_groups
+                                 WHERE user_id IS NOT NULL OR person_id IS NOT NULL OR family_id IS NOT NULL OR visitor_id IS NOT NULL'''):
+            cen = np.frombuffer(r[4], dtype=np.float32)
+            if cen.size != 128:
+                continue
+            key = ('user', r[0]) if r[0] else ('person', r[1]) if r[1] else ('family', r[2]) if r[2] else ('visitor', r[3])
+            known.append((key, _norm(cen)))
+    except Exception:   # noqa: BLE001 — face_groups yoksa (ör. bulut-yerel) yalnız eğitim izleri
+        pass
+    return known
 
 
 def _head_pose(f):

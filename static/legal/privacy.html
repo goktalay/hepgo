@@ -40,6 +40,33 @@ amacıyla kullanılmaz, satılmaz ve üçüncü taraflara aktarılmaz (yasal zor
 tarafından yürütülür. HEPGO bu verileri yalnızca firmanıza hizmet sunmak için işler.</li>
 </ul>
 
+<h2>2.2 Biyometrik veriler — yüz tanıma (özel nitelikli kişisel veri)</h2>
+<p>Firma, güvenlik ve personel devam/geçiş (PDKS) süreçleri için <b>yüz tanıma</b> özelliğini kullanabilir. Yüz verisi,
+6698 sayılı KVKK md. 6 kapsamında <b>özel nitelikli kişisel veridir</b> ve yalnızca <b>açık rıza</b> ile ya da kanunun
+izin verdiği hâllerde işlenir.</p>
+<ul>
+<li><b>Ne işlenir:</b> kayıtlı kişiler için yüzün sayısal temsili (embedding) ve en çok 256 piksel küçük yüz kırpığı;
+kameralarda görülme anları (zaman, kamera, yaklaşık konum). Ham video dışarı çıkarılmaz; yüz verisi firmanın kendi
+sunucusunda / yerel yüz servisinde tutulur.</li>
+<li><b>Kimler:</b> çalışanlar, firma kişileri, aile bireyleri ve <b>ziyaretçiler</b>. Ziyaretçiler uygulama kullanıcısı
+olmadığından, aydınlatma ve açık rıza girişte (kiosk/evrak) firma tarafından alınır.</li>
+<li><b>Dayanak ve rıza:</b> İşyerinde biyometrik takibin hukuki dayanağı ve açık rıza süreci <b>işvereninizin</b> (firmanızın)
+sorumluluğundadır; aydınlatma metni sunulur ve rıza kaydı tutulur. Rızanızı dilediğiniz an geri alabilirsiniz; geri alındığında
+ilgili biyometrik kayıtlar silinir.</li>
+<li><b>Amaç dışı kullanılmaz:</b> yüz verisi reklam/pazarlama için kullanılmaz, satılmaz, üçüncü taraflara aktarılmaz
+(yasal zorunluluk hariç) ve genel yapay zekâ modellerini eğitmek için kullanılmaz.</li>
+</ul>
+
+<h2>2.3 Ses verileri — kayıt, yazıya dökme ve ses tanıma</h2>
+<ul>
+<li><b>Görüşme kaydı ve yazıya dökme:</b> Uygulama içi sesli/görüntülü görüşmeler ve toplantılar, <b>katılımcıların onayıyla</b>
+kaydedilebilir ve not amacıyla metne dökülebilir.</li>
+<li><b>Ses tanıma (ses-izi profili):</b> Konuşmacıyı tanımak için kalıcı bir <b>ses-izi (voiceprint)</b> oluşturulması biyometrik
+nitelikte olup <b>ayrı bir açık rıza</b> gerektirir; bu özellik varsayılan olarak kapalıdır ve yalnızca firma etkinleştirdiğinde
+ve rıza alındığında çalışır.</li>
+<li>Ses verileri reklam amacıyla kullanılmaz, satılmaz ve üçüncü taraflara aktarılmaz (yasal zorunluluk hariç).</li>
+</ul>
+
 <h2>3. Google kullanıcı verileri</h2>
 <p>Kullanıcı “Google ile bağlan” dediğinde açıkça onay vererek şu izinleri verir:</p>
 <ul>
@@ -70,6 +97,17 @@ durumunda ve gerektiği kadar.</li>
 alınan yedekler şifrelenerek saklanır.</li>
 <li>Tüm trafik HTTPS ile şifrelenir; erişim kullanıcı adı / şifre ve rol tabanlı yetkiyle sınırlıdır.</li>
 </ul>
+<p><b>Saklama süreleri (varsayılan):</b> konum kayıtları kişi başına en son 500 kayıtla sınırlıdır; kamera görülme kayıtları
+ve görüşme ses kayıtları yapılandırılan süre sonunda (varsayılan 90 gün) otomatik silinir; giriş/işlem (audit) kayıtları
+en çok 1 yıl tutulur. Biyometrik ve ses verileri amaç ortadan kalkınca ya da rıza geri alınınca silinir. Firma bu süreleri
+Program Ayarları’ndan değiştirebilir. Yasal saklama yükümlülükleri saklıdır.</p>
+
+<h2>4.1 Yurt dışına aktarım ve alt işleyenler</h2>
+<p>Veriler firmanıza hizmet veren barındırma altyapısında işlenir. Bağlantı/altyapı hizmetleri (ör. Cloudflare üzerinden
+güvenli bağlantı) ve kullanıcının kendi bağladığı Google / Microsoft hesapları ile anlık bildirim servisleri
+(Apple APNs / Google FCM) kapsamında sınırlı veri, ilgili sağlayıcının altyapısı üzerinden işlenebilir. Firmanın tercih ettiği
+isteğe bağlı yapay zekâ sağlayıcısı etkinse, yalnızca ilgili işlev için gereken veriler o sağlayıcıya iletilir. Bu aktarımlar
+KVKK’nın yurt dışına aktarım kurallarına uygun olarak ve yalnızca hizmetin gerektirdiği ölçüde yapılır.</p>
 
 <h2>5. Silme ve izni geri alma</h2>
 <ul>
@@ -78,6 +116,8 @@ olarak geri alınır; o hesaba ait önbelleğe alınmış e-postalar, takvim etk
 rehber kişileri silinir.</li>
 <li>İzin ayrıca <a href="https://myaccount.google.com/permissions">Google Hesabı › Üçüncü taraf erişimi</a> sayfasından da geri alınabilir.</li>
 <li>Hesabın ve verilerin tamamen silinmesi için firmanızın sistem yöneticisine ya da aşağıdaki adrese başvurabilirsiniz.</li>
+<li>Uygulama içinden <i>Kişisel Ayarlar › Verilerim (KVKK)</i> bölümünden <b>verilerinizin bir kopyasını isteme</b> ya da
+<b>silinmesi/işlenmesine itiraz</b> talebi oluşturabilirsiniz; talep sistem yöneticinize iletilir ve kayıt altına alınır.</li>
 </ul>
 
 <h2>6. Haklarınız (KVKK md. 11)</h2>
@@ -118,6 +158,32 @@ not used for advertising, not sold, and not shared with third parties (except le
 your employer. HEPGO processes this data solely to provide the service to your company.</li>
 </ul>
 
+<h2>2.2 Biometric data — face recognition (special-category personal data)</h2>
+<p>The company may use <b>face recognition</b> for security and attendance/access (time-and-attendance) processes. Face data is
+<b>special-category personal data</b> under the Turkish Data Protection Law (KVKK art. 6) and is processed only with <b>explicit
+consent</b> or where the law permits.</p>
+<ul>
+<li><b>What is processed:</b> a numerical representation (embedding) of the face and a small crop (max 256 px) for enrolled people;
+sighting events on cameras (time, camera, approximate location). Raw video is not exported; face data is kept on the company’s own
+server / local face service.</li>
+<li><b>Who:</b> employees, company contacts, family members and <b>visitors</b>. As visitors are not app users, their notice and
+explicit consent are collected by the company at entry (kiosk / paper).</li>
+<li><b>Basis and consent:</b> The legal basis and explicit-consent process for workplace biometric tracking are the responsibility of
+<b>your employer</b> (the company); a privacy notice is provided and a consent record is kept. You may withdraw consent at any time;
+on withdrawal the related biometric records are deleted.</li>
+<li><b>No secondary use:</b> face data is not used for advertising/marketing, not sold, not shared with third parties (except legal
+obligation), and not used to train generalized AI models.</li>
+</ul>
+
+<h2>2.3 Voice data — recording, transcription and speaker recognition</h2>
+<ul>
+<li><b>Call recording and transcription:</b> in-app voice/video calls and meetings may be recorded <b>with participants’ consent</b>
+and transcribed for note-taking.</li>
+<li><b>Speaker recognition (voiceprint):</b> building a persistent <b>voiceprint</b> to identify a speaker is biometric in nature and
+requires a <b>separate explicit consent</b>; this feature is off by default and runs only when the company enables it and consent is obtained.</li>
+<li>Voice data is not used for advertising, not sold, and not shared with third parties (except legal obligation).</li>
+</ul>
+
 <h2>3. Google user data</h2>
 <p>When a user chooses “Connect with Google” and explicitly consents, the application requests:</p>
 <ul>
@@ -146,6 +212,17 @@ security, or at the user’s explicit request).</li>
 <li>To load quickly, email summaries and opened messages are cached in the server database; off-site backups are stored encrypted.</li>
 <li>All traffic uses HTTPS; access is restricted by username / password and role-based permissions.</li>
 </ul>
+<p><b>Retention (defaults):</b> location records are capped at the latest 500 per person; camera sightings and call recordings are
+auto-deleted after a configured period (default 90 days); sign-in/action (audit) logs are kept at most 1 year. Biometric and voice
+data are deleted once the purpose ends or consent is withdrawn. The company can change these periods in Program Settings. Statutory
+retention obligations are reserved.</p>
+
+<h2>4.1 International transfer and sub-processors</h2>
+<p>Data is processed on the hosting infrastructure serving your company. Limited data may be processed via the relevant providers for
+connectivity/infrastructure (e.g. secure connection through Cloudflare), the Google / Microsoft accounts a user connects themselves,
+and push-notification services (Apple APNs / Google FCM). If the company’s optional AI provider is enabled, only the data needed for
+that function is sent to it. Such transfers are made in accordance with KVKK’s cross-border transfer rules and only to the extent the
+service requires.</p>
 
 <h2>5. Deletion and revoking access</h2>
 <ul>
@@ -153,9 +230,15 @@ security, or at the user’s explicit request).</li>
 Google grant and deletes that account’s cached emails, calendar events and (if no other Google account remains connected) Google contacts.</li>
 <li>Access can also be revoked at <a href="https://myaccount.google.com/permissions">Google Account › Third-party access</a>.</li>
 <li>To delete your account and all data, contact your company administrator or the address below.</li>
+<li>From within the app under <i>Personal Settings › My data (KVKK)</i> you can file a request to <b>obtain a copy of your data</b>
+or to <b>delete / object to processing</b>; the request is forwarded to your system administrator and recorded.</li>
 </ul>
 
-<h2>6. Contact</h2>
+<h2>6. Your rights (KVKK art. 11 / GDPR)</h2>
+<p>You have the right to learn whether your data is processed, to request information and a copy, to request rectification or erasure,
+to object to processing, and to claim compensation for damages. For requests: <a href="mailto:{{EMAIL}}">{{EMAIL}}</a></p>
+
+<h2>7. Contact</h2>
 <p><a href="mailto:{{EMAIL}}">{{EMAIL}}</a></p>
 </section>
 </main>

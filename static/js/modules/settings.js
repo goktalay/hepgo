@@ -461,6 +461,32 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s.privacy, 'hide_delivered', 'İletildi bilgisini gönderme', 'Mesaj cihazınıza ulaştığında karşı tarafta gri çift tik görünmez'),
         h('h4', { class: 'set-sub' }, 'Diğer'),
         toggle(s.privacy, 'no_messages', 'Mesaj almayı kapat', 'Diğer kullanıcılar size yeni mesaj gönderemez')) },
+    { key: 'mydata', title: 'Verilerim (KVKK)', desc: 'Verilerinizin kopyasını isteyin; silme / itiraz başvurusu', icon: 'lock',
+      body: () => {
+        const wrap = h('div', null);
+        const KIND = { export: 'Verilerimin kopyasını istiyorum', delete: 'Verilerimin silinmesini istiyorum', object: 'İşlenmesine itiraz ediyorum' };
+        const badge = st => h('span', { style: { marginLeft: '8px', fontSize: '12px', padding: '1px 8px', borderRadius: '10px', background: st === 'open' ? '#ffece0' : '#e6f7ec', color: st === 'open' ? '#c2410c' : '#1a7f37' } }, st === 'open' ? 'Açık' : 'Kapatıldı');
+        const draw = async () => {
+          let mine = [];
+          try { mine = await api.get('/api/kvkk/my-requests'); } catch { /* ilk açılışta boş */ }
+          const sel = h('select', { class: 'input' }, Object.entries(KIND).map(([k, v]) => h('option', { value: k }, v)));
+          const note = h('textarea', { class: 'input', rows: 3, placeholder: 'Açıklama (isteğe bağlı)' });
+          const send = h('button', { class: 'btn primary', type: 'button' }, 'Başvuru Gönder');
+          send.addEventListener('click', async () => {
+            send.disabled = true;
+            try { await api.post('/api/kvkk/request', { kind: sel.value, note: note.value }); toast('Başvurunuz alındı, sistem yöneticinize iletildi', 'success'); note.value = ''; draw(); }
+            catch (err) { toastError(err); } finally { send.disabled = false; }
+          });
+          clear(wrap,
+            card('Verilerim (KVKK)', '6698 sayılı KVKK md. 11 kapsamında verilerinizin kopyasını isteyebilir, silinmesini ya da işlenmesine itiraz edebilirsiniz. Başvurunuz sistem yöneticinize iletilir ve kayıt altına alınır.',
+              field('Talep türü', sel), field('Açıklama', note), h('div', { class: 'set-actions left' }, send)),
+            card('Başvurularım', null, mine.length ? h('div', { class: 'ios-group' }, mine.map(r => h('div', { class: 'ios-row', style: { display: 'block' } },
+              h('div', null, h('b', null, KIND[r.kind] || r.kind), badge(r.status)),
+              h('div', { class: 'small muted' }, new Date(r.created_at).toLocaleString('tr') + (r.resolution ? ` · ${r.resolution}` : ''))))) : h('p', { class: 'muted' }, 'Henüz başvuru yok.')));
+        };
+        draw();
+        return wrap;
+      } },
     { key: 'dashboard', title: 'Pano', desc: 'Ana sayfa kutucukları, Şirketten Haberler görünümü', icon: 'grid',
       body: () => card('Pano', 'Ana sayfadaki kutucuk düzeniniz. Kutucukları ana sayfada "Panoyu Düzenle" ile değiştirebilirsiniz.',
         line('Şirketten Haberler görünümü', 'Pano kutucuğu akış olarak mı yoksa harita olarak mı açılsın',
@@ -498,8 +524,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   ]).filter(x => x.key !== 'mascot' || ctx.user.ai);   // Claude API anahtarı yoksa maskot ayarı da gizli
   // Mobilde iOS Ayarlar gibi: gruplanmış renkli ikonlu satır listesi; kategoriye dokununca alt-sayfa açılır.
   const COLORS = { ui: '#0a84ff', notifications: '#ff3b30', sounds: '#ff2d55', screensaver: '#5856d6', voice: '#34c759',
-    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', dashboard: '#30b0c7', upload: '#5ac8fa', account: '#007aff' };
-  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard', 'upload']];
+    radio: '#ff9500', mailboxes: '#1d9bf0', social: '#ff2d55', mascot: '#af52de', dnd: '#ff9f0a', privacy: '#8e8e93', mydata: '#30d158', dashboard: '#30b0c7', upload: '#5ac8fa', account: '#007aff' };
+  const SECTIONS = [['ui', 'sounds', 'screensaver', 'mascot'], ['notifications', 'dnd', 'privacy', 'mydata'], ['voice', 'radio'], ['mailboxes', 'social'], ['dashboard', 'upload']];
   const used = new Set([...SECTIONS.flat(), 'account']);   // hesap, en üstte iPhone tarzı kart olarak gösterilir
   const rest = GROUPS.filter(gr => !used.has(gr.key)).map(gr => gr.key);
   const allSections = rest.length ? [...SECTIONS, rest] : SECTIONS;

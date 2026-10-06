@@ -840,6 +840,31 @@ CREATE TABLE IF NOT EXISTS app_kv (
     k TEXT PRIMARY KEY,
     v TEXT
 );
+-- KVKK açık rıza kayıtları: özellikle biyometrik yüz + ses-izi (özel nitelikli kişisel veri). Denetim modunda canlı
+-- tanıma çalışmaya devam eder; bu tablo rıza durumunu kaydeder/raporlar. subject_type: user/employee/person/visitor/family.
+CREATE TABLE IF NOT EXISTS kvkk_consent (
+    id           INTEGER PRIMARY KEY,
+    kind         TEXT NOT NULL,            -- 'biometric' | 'voice'
+    subject_type TEXT NOT NULL,
+    subject_id   INTEGER NOT NULL,
+    granted      INTEGER NOT NULL DEFAULT 1,
+    note         TEXT,
+    by_user      INTEGER REFERENCES users(id),
+    updated_at   TEXT,
+    UNIQUE (kind, subject_type, subject_id)
+);
+-- KVKK veri sahibi başvuruları (uygulama içi, KVKK md. 11): export / delete / object. status: open/handled.
+CREATE TABLE IF NOT EXISTS kvkk_requests (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,            -- 'export' | 'delete' | 'object'
+    note        TEXT,
+    status      TEXT NOT NULL DEFAULT 'open',
+    created_at  TEXT NOT NULL,
+    handled_by  INTEGER REFERENCES users(id),
+    handled_at  TEXT,
+    resolution  TEXT
+);
 -- SSH erişim (yalnız sistem sahibi / MASTER): kayıtlı uzak sunucular (ör. fabrikadaki GX10). Parola / özel anahtar
 -- cameras.encrypt ile ŞİFRELİ saklanır, hiçbir yanıtta dönmez. Yalnız dışa doğru bağlantı (merkez sunucuda kabuk AÇMAZ).
 -- Kişisel notlar (yapışkan not): yalnız sahibi görür. pinned=1 ise ekrana iğnelenir (pin_x/pin_y oranı 0–1),

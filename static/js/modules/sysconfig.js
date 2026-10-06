@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
 import { rolesBody } from './roles.js';
-import { avatar, clear, confirmDialog, every, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, field, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SC_MQ = matchMedia('(max-width: 800px)');
@@ -1378,6 +1378,70 @@ function supportBody(view, ctx) {
   return wrap;
 }
 
+function kvkkBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const KIND = { export: 'Veri kopyası', delete: 'Silme / unutulma', object: 'İşlemeye itiraz' };
+  const load = async () => {
+    let s, bio, reqs;
+    try {
+      [s, bio, reqs] = await Promise.all([api.get('/api/kvkk/settings'), api.get('/api/kvkk/biometric-status'), api.get('/api/kvkk/requests')]);
+    } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const open = reqs.filter(r => r.status === 'open');
+
+    // 1 - Veri sahibi başvuruları
+    const reqCard = h('div', { class: 'card card-pad' },
+      h('h3', null, 'Veri sahibi başvuruları (KVKK md. 11)'),
+      reqs.length ? h('div', { class: 'ios-group' }, reqs.map(r => h('div', { class: 'ios-row', style: { display: 'block' } },
+        h('div', null, h('b', null, r.user_name), ' — ', KIND[r.kind] || r.kind,
+          h('span', { class: `pill ${r.status === 'open' ? 'warn' : 'ok'}`, style: { marginLeft: '8px' } }, r.status === 'open' ? 'Açık' : 'Kapatıldı')),
+        r.note ? h('div', { class: 'small muted' }, r.note) : null,
+        h('div', { class: 'small muted' }, new Date(r.created_at).toLocaleString('tr') + (r.handler_name ? ` · ${r.handler_name}` : '') + (r.resolution ? ` · ${r.resolution}` : '')),
+        r.status === 'open' ? h('button', { class: 'btn xs primary', style: { marginTop: '6px' }, type: 'button', onclick: async () => {
+          const note = prompt('Kapatma açıklaması (talebe ilişkin yapılan işlem):', '');
+          if (note === null) return;
+          try { await api.post(`/api/kvkk/requests/${r.id}/handle`, { resolution: note }); toast('Başvuru kapatıldı', 'success'); load(); } catch (err) { toastError(err); }
+        } }, 'İncele ve Kapat') : null))) : h('p', { class: 'muted' }, 'Başvuru yok.'));
+
+    // 2 - Biyometrik rıza durumu, denetim
+    const bioCard = h('div', { class: 'card card-pad' },
+      h('h3', null, 'Biyometrik (yüz) rıza durumu'),
+      h('p', { class: 'small muted' }, `Yüz tanımaya atanmış ${bio.enrolled} kişi; açık rızası işaretlenmemiş ${bio.missing_consent} kişi.`),
+      bio.missing_consent ? h('p', { class: 'small', style: { color: '#ff9500' } },
+        'Denetim modunda tanıma çalışmaya devam eder; işveren olarak aydınlatma yapıp açık rıza topladıkça kişi bazında kaydedin. ' +
+        'Açık rıza kaydı için kişi bazlı işaretleme eklenmektedir; acil durumda sistem sahibi API ile de işaretleyebilir.') : null);
+
+    // 3 - Ayarlar
+    const enforce = h('input', { type: 'checkbox', ...(s.biometric_enforce ? { checked: true } : {}) });
+    const rSight = h('input', { class: 'input', type: 'number', min: '1', value: s.retention_sightings_days });
+    const rAudio = h('input', { class: 'input', type: 'number', min: '1', value: s.retention_audio_days });
+    const rAudit = h('input', { class: 'input', type: 'number', min: '1', value: s.retention_audit_days });
+    const save = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        await api.put('/api/kvkk/settings', {
+          biometric_enforce: enforce.checked ? 1 : 0,
+          retention_sightings_days: +rSight.value || 90, retention_audio_days: +rAudio.value || 90, retention_audit_days: +rAudit.value || 365,
+        });
+        toast('KVKK ayarları kaydedildi', 'success');
+      } catch (err) { toastError(err); } finally { save.disabled = false; }
+    });
+    const setCard = h('div', { class: 'card card-pad' },
+      h('h3', null, 'Saklama ve uygulama'),
+      h('label', { class: 'sc-check' }, enforce, ' Rızasız kişilerde biyometriyi işleme (kapalı = denetim modu, tanıma çalışır)'),
+      field('Kamera görülme kayıtlarını sakla (gün)', rSight),
+      field('Görüşme ses kayıtlarını sakla (gün)', rAudio),
+      field('Giriş/işlem (audit) kayıtlarını sakla (gün)', rAudit),
+      h('p', { class: 'small muted' }, 'Süre dolan kayıtlar her gün otomatik silinir. Yasal saklama yükümlülükleri saklıdır.'),
+      save);
+
+    clear(wrap, open.length ? h('div', { class: 'card card-pad', style: { borderLeft: '3px solid #ff9500' } }, `${open.length} açık başvuru bekliyor.`) : null,
+      reqCard, bioCard, setCard);
+  };
+  load();
+  return wrap;
+}
+
 const GROUPS = [
   { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
   { key: 'support', title: 'Merkez Destek', desc: 'Veilox destek girişleri: onay ve aktif oturumlar', icon: 'lock', body: supportBody, master: true },
@@ -1386,14 +1450,15 @@ const GROUPS = [
   { key: 'modules', title: 'Modül Ayarları', desc: 'Modüllere özel ayarlar (Saha Yönetimi…)', icon: 'layers', body: modulesBody },
   { key: 'integrations', title: 'Entegrasyonlar', desc: 'API anahtarları: Claude, Mikro ERP, Google', icon: 'grid', body: integrationsBody },
   { key: 'identity', title: 'Firma Kimliği', desc: 'Ünvan ve logo', icon: 'building', body: identityBody, master: true },
+  { key: 'kvkk', title: 'KVKK / Veri Koruma', desc: 'Açık rıza durumu, veri başvuruları ve saklama süreleri', icon: 'lock', body: kvkkBody },
   // Modül olarak var; Program Ayarları altından açılır (link). Veri & Yedek yalnızca sistem sahibi (MASTER).
   { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar ve rol atamaları', icon: 'users', link: '#/users' },
   { key: 'roles', title: 'Rol Yönetimi', desc: 'Roller, modül yetkileri (aç / oku / yaz), miras ve çakışmalar', icon: 'lock', body: rolesBody },
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
 ];
 
-const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', users: '#ff3b30', master: '#af52de' };
-const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations', 'identity'], ['users', 'roles', 'master']];
+const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', kvkk: '#30d158', users: '#ff3b30', master: '#af52de' };
+const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations', 'identity', 'kvkk'], ['users', 'roles', 'master']];
 
 export async function render(view, params, ctx) {
   if (!(ctx.user.master || (ctx.user.roles || []).includes('Sistem Yöneticisi'))) {

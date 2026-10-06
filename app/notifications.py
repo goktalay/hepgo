@@ -370,6 +370,16 @@ def ai_change_pending(conn, user):
     return _result(rows, [f'{r["full_name"]}: {r["summary"]}' for r in rows], '#/sysconfig/ai-changes', 'Onaylamak için açın')
 
 
+def kvkk_requests_pending(conn, user):
+    """Yönetici: açık KVKK veri sahibi başvuruları (erişim/silme/itiraz)."""
+    rows = db.rows(conn.execute(
+        '''SELECT r.id, r.kind, u.full_name FROM kvkk_requests r JOIN users u ON u.id = r.user_id
+           WHERE r.status = 'open' ORDER BY r.created_at DESC'''))
+    kinds = {'export': 'veri kopyası', 'delete': 'silme', 'object': 'itiraz'}
+    return _result(rows, [f'{r["full_name"]}: {kinds.get(r["kind"], r["kind"])}' for r in rows],
+                   '#/sysconfig/kvkk', 'Başvuruyu inceleyip kapatın')
+
+
 def ai_change_decided(conn, user):
     rows = db.rows(conn.execute(
         '''SELECT id, summary, status FROM ai_change_requests
@@ -525,6 +535,7 @@ NOTIFICATIONS = [
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
     {'key': 'integrations-offline', 'roles': [auth.ADMIN], 'fn': integrations_offline, 'title': 'Çevrimdışı entegrasyon'},
     {'key': 'ai-change-pending', 'roles': [auth.ADMIN], 'fn': ai_change_pending, 'title': 'Yapay zeka değişiklik talebi onay bekliyor'},
+    {'key': 'kvkk-requests', 'roles': [auth.ADMIN], 'fn': kvkk_requests_pending, 'title': 'KVKK veri başvurusu bekliyor'},
     {'key': 'ai-change-decided', 'roles': None, 'fn': ai_change_decided, 'title': 'Yapay zeka değişiklik talebin sonuçlandı'},
     {'key': 'direct-part-pending', 'roles': [auth.ADMIN], 'fn': direct_part_pending, 'title': 'Doğrudan depo ekleme onayı bekliyor'},
     {'key': 'purchase-approval', 'roles': [auth.ADMIN], 'fn': purchase_approval, 'title': 'Onay bekleyen satın alma talebi'},

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, db
+from .. import auth, db, kvkk
 from ..files import FILE_GUARDS, save_upload
 from .security import parked
 
@@ -130,6 +130,32 @@ def leave(vid: int, user=Depends(sec_user), conn=db.DB):
         raise HTTPException(400, 'Misafir çıkışı zaten yapılmış')
     conn.execute('UPDATE guest_visits SET left_at = ? WHERE id = ?', (db.now(), vid))
     db.audit(conn, user['id'], 'Misafir çıkışı', 'guest_visit', vid, v['code'])
+    return _visit(conn, vid)
+
+
+@router.get('/kvkk-text')
+def kvkk_text(user=Depends(sec_user), conn=db.DB):
+    """Misafire gösterilecek KVKK aydınlatma/açık rıza metni (CCTV + yüz tanıma) ve geçerli sürüm."""
+    return {'version': kvkk.terms_version(conn), 'html': kvkk.TERMS_HTML_GUEST}
+
+
+class KvkkSignIn(BaseModel):
+    signature: str   # 'data:image/png;base64,...' (parmakla imza)
+
+
+@router.post('/visits/{vid}/kvkk')
+def kvkk_sign(vid: int, body: KvkkSignIn, user=Depends(sec_user), conn=db.DB):
+    """Misafir KVKK açık rızası: ekranda aydınlatma gösterilir, misafir parmakla imzalar; imza + onay saklanır."""
+    _visit(conn, vid)
+    sig = (body.signature or '').strip()
+    if not sig.startswith('data:image/') or len(sig) > 400_000:
+        raise HTTPException(400, 'Geçersiz imza')
+    ver = kvkk.terms_version(conn)
+    conn.execute('UPDATE guest_visits SET kvkk_signed_at = ?, kvkk_signature = ?, kvkk_version = ? WHERE id = ?',
+                 (db.now(), sig, ver, vid))
+    kvkk.set_consent(conn, 'biometric', 'visit', vid, 1, by_user=user['id'], note='Sekreterya misafir imzası (CCTV/yüz tanıma)', version=ver)
+    db.audit(conn, user['id'], 'Misafir KVKK açık rıza imzası aldı', 'guest_visit', vid, ver)
+    conn.commit()
     return _visit(conn, vid)
 
 

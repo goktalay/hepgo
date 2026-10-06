@@ -11,14 +11,48 @@ from datetime import datetime, timedelta, timezone
 from . import db
 
 KV = 'kvkk'
+
+# Girişte gösterilen KVKK aydınlatma + açık rıza metni (özet; tam metin /gizlilik). İşveren kendi metnini ileride
+# Program Ayarları'ndan değiştirebilir; nihai metin avukat onaylı olmalıdır.
+TERMS_HTML = (
+    '<p>6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında; işvereniniz/firmanız <b>veri sorumlusu</b> '
+    'sıfatıyla, iş ve güvenlik süreçlerinin yürütülmesi amacıyla kişisel verilerinizi işler.</p>'
+    '<ul>'
+    '<li><b>İşlenen veriler:</b> kimlik ve iletişim bilgileri, rol/yetki, oturum ve işlem kayıtları; mobil uygulamada '
+    'açık rızanızla konum; iş yerinde <b>kapalı devre kamera (CCTV) ve yüz tanıma</b> ile görüntü/biyometrik veri; '
+    'uygulama içi görüşmelerde onayla ses kaydı.</li>'
+    '<li><b>Amaç:</b> personel devam/geçiş, iş güvenliği, tesis güvenliği ve yasal yükümlülükler.</li>'
+    '<li><b>Biyometrik veri</b> (yüz) ve <b>ses-izi</b> özel nitelikli veridir; yalnızca açık rıza ile işlenir.</li>'
+    '<li><b>Haklarınız (md.11):</b> bilgi talebi, düzeltme, silme, itiraz. Başvuru: uygulama içi '
+    '<i>Kişisel Ayarlar › Verilerim (KVKK)</i>.</li>'
+    '<li>Ayrıntılı bilgi için <a href="/gizlilik" target="_blank" rel="noopener">Gizlilik Politikası</a>.</li>'
+    '</ul>'
+    '<p>Yukarıdaki aydınlatmayı okudum; kişisel verilerimin bu kapsamda işlenmesini ve iş yerinde kamera/yüz tanıma '
+    'ile görüntü/biyometrik verimin işlenmesini <b>açık rızamla kabul ediyorum.</b></p>'
+)
+TERMS_HTML_GUEST = (
+    '<p>Bu iş yeri, güvenlik amacıyla <b>kapalı devre kamera (CCTV) ve yüz tanıma sistemi</b> ile izlenmektedir. '
+    '6698 sayılı KVKK kapsamında, ziyaretiniz boyunca görüntünüz ve ziyaret bilgileriniz (ad, firma, geliş/çıkış, '
+    'görüşülen kişi) <b>veri sorumlusu</b> firma tarafından güvenlik ve yasal yükümlülükler amacıyla işlenir.</p>'
+    '<ul>'
+    '<li>Görüntü/<b>biyometrik</b> veri yalnızca güvenlik amacıyla ve mevzuatın izin verdiği süreyle saklanır.</li>'
+    '<li>Reklam amacıyla kullanılmaz, satılmaz; yasal zorunluluk dışında üçüncü taraflara aktarılmaz.</li>'
+    '<li>Haklarınız (md.11) için iş yeri yönetimine başvurabilirsiniz.</li>'
+    '<li>Ayrıntı: <a href="/gizlilik" target="_blank" rel="noopener">Gizlilik Politikası</a>.</li>'
+    '</ul>'
+    '<p>Yukarıdaki aydınlatmayı okudum; iş yerinde kamera ve yüz tanıma ile görüntümün/biyometrik verimin işlenmesini '
+    '<b>açık rızamla kabul ediyorum.</b></p>'
+)
 DEFAULTS = {
     'biometric_enforce': 0,          # 0 = denetim modu (engellemez), 1 = rızasız kişide biyometriyi işleme
     'retention_sightings_days': 90,  # kamera görülme kayıtları
     'retention_audio_days': 90,      # görüşme ses kayıtları
     'retention_audit_days': 365,     # giriş/işlem (audit) kayıtları
 }
-CONSENT_KINDS = ('biometric', 'voice')
+CONSENT_KINDS = ('biometric', 'voice', 'terms')
 REQUEST_KINDS = ('export', 'delete', 'object')
+TERMS_VERSION_KEY = 'kvkk_terms_version'
+DEFAULT_TERMS_VERSION = '2026-10'   # metin güncellenince bu değer artırılır → kullanıcılar yeniden onaylar
 
 
 def settings(conn):
@@ -42,15 +76,34 @@ def save_settings(conn, patch):
 
 
 # ---------------- açık rıza ----------------
-def set_consent(conn, kind, subject_type, subject_id, granted, by_user=None, note=None):
+def set_consent(conn, kind, subject_type, subject_id, granted, by_user=None, note=None, version=None):
     if kind not in CONSENT_KINDS:
         raise ValueError('geçersiz rıza türü')
     conn.execute(
-        '''INSERT INTO kvkk_consent (kind, subject_type, subject_id, granted, note, by_user, updated_at)
-           VALUES (?,?,?,?,?,?,?)
+        '''INSERT INTO kvkk_consent (kind, subject_type, subject_id, granted, note, by_user, updated_at, version)
+           VALUES (?,?,?,?,?,?,?,?)
            ON CONFLICT(kind, subject_type, subject_id)
-           DO UPDATE SET granted = excluded.granted, note = excluded.note, by_user = excluded.by_user, updated_at = excluded.updated_at''',
-        (kind, subject_type, int(subject_id), int(bool(granted)), note, by_user, db.now()))
+           DO UPDATE SET granted = excluded.granted, note = excluded.note, by_user = excluded.by_user,
+                         updated_at = excluded.updated_at, version = excluded.version''',
+        (kind, subject_type, int(subject_id), int(bool(granted)), note, by_user, db.now(), version))
+
+
+# ---------------- giriş KVKK onayı (zorunlu) ----------------
+def terms_version(conn):
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (TERMS_VERSION_KEY,)).fetchone()
+    return (row[0] if row and row[0] else DEFAULT_TERMS_VERSION)
+
+
+def user_terms_ok(conn, user_id):
+    """Kullanıcı geçerli KVKK metin sürümünü onaylamış mı? (sürüm değişince yeniden gerekir)"""
+    r = conn.execute("SELECT granted, version FROM kvkk_consent WHERE kind = 'terms' AND subject_type = 'user' AND subject_id = ?",
+                     (int(user_id),)).fetchone()
+    return bool(r and r[0] and r[1] == terms_version(conn))
+
+
+def accept_terms(conn, user_id, note=None):
+    set_consent(conn, 'terms', 'user', user_id, 1, by_user=user_id, note=note, version=terms_version(conn))
+    db.audit(conn, user_id, 'KVKK aydınlatma/açık rıza onayladı', 'kvkk_consent', user_id, terms_version(conn))
 
 
 def has_consent(conn, kind, subject_type, subject_id):

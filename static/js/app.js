@@ -315,6 +315,7 @@ function renderLogin() {
 // Giriş sonrası: şifresini hiç değiştirmemiş kullanıcı önce şifresini değiştirir (sunucu da başka isteğe izin vermez)
 function enterApp() {
   if (ctx.user.must_change_password) { renderForcePassword(); return; }
+  if (ctx.user.kvkk_pending && !/^#\/tv\//.test(location.hash)) { renderKvkkConsent(); return; }   // girişte zorunlu KVKK aydınlatma/açık rıza onayı (TV/kiosk hariç)
   if (/^#\/tv\//.test(location.hash)) {   // TV / kiosk ekranı: kabuk (başlık, alt çubuk, bildirimler) olmadan tam ekran
     import('./modules/tvroom.js').then(m => m.renderTv(root, ctx));
     return;
@@ -358,7 +359,7 @@ function renderForcePassword() {
       await api.post('/api/auth/password', { current: current.value, new: next.value });
       ctx.user = await api.get('/api/auth/me');
       toast('Şifreniz değiştirildi');
-      renderShell();
+      enterApp();   // şifre sonrası varsa KVKK onay gate'ine geç, sonra kabuk
     } catch (err) { toastError(err); } finally { submit.disabled = false; }
   });
   const canvas = h('canvas', { class: 'globe-bg', 'aria-hidden': 'true' });
@@ -366,6 +367,42 @@ function renderForcePassword() {
   const globe = createGlobe(canvas, { size: 0.46, speed: 7 });
   onLeave(() => globe.destroy());
   current.focus();
+}
+
+// Girişte zorunlu KVKK aydınlatma/açık rıza onayı: onaylamadan uygulamaya girilemez.
+async function renderKvkkConsent() {
+  currentPage = null;
+  stopTimers();
+  let d;
+  try { d = await api.get('/api/kvkk/terms'); } catch { ctx.user.kvkk_pending = false; enterApp(); return; }   // metin alınamazsa engelleme
+  if (!d.pending) { ctx.user.kvkk_pending = false; enterApp(); return; }
+  const box = h('div', { class: 'kvkk-text', style: { maxHeight: '46vh', overflow: 'auto', textAlign: 'left', border: '1px solid var(--line)', borderRadius: '10px', padding: '14px', margin: '8px 0', fontSize: '14px', lineHeight: '1.5' } });
+  box.innerHTML = d.html;   // sunucu sabiti (güvenilir metin), kullanıcı girişi değil
+  const chk = h('input', { type: 'checkbox' });
+  const ok = h('button', { class: 'btn primary lg', type: 'button', disabled: true }, 'Onayla ve Devam Et');
+  chk.addEventListener('change', () => { ok.disabled = !chk.checked; });
+  ok.addEventListener('click', async () => {
+    ok.disabled = true;
+    try {
+      await api.post('/api/kvkk/accept-terms', {});
+      ctx.user.kvkk_pending = false;
+      toast('Onayınız alındı, teşekkürler');
+      enterApp();
+    } catch (err) { toastError(err); ok.disabled = false; }
+  });
+  const form = h('div', { class: 'card login force-pw' },
+    h('img', { src: ctx.meta?.logo_url || '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
+    h('h1', null, 'Kişisel Verilerin Korunması'),
+    h('p', { class: 'muted' }, `Merhaba ${(ctx.user.full_name || '').split(' ')[0]}, devam etmeden önce aşağıdaki aydınlatma ve açık rıza metnini onaylamanız gerekiyor.`),
+    box,
+    h('label', { class: 'kvkk-accept', style: { display: 'flex', gap: '8px', alignItems: 'flex-start', textAlign: 'left', margin: '6px 0 14px', cursor: 'pointer' } }, chk,
+      h('span', null, 'Okudum, anladım ve açık rızamla onaylıyorum.')),
+    ok,
+    h('button', { class: 'btn ghost', type: 'button', onclick: () => logout() }, 'Çıkış Yap'));
+  const canvas = h('canvas', { class: 'globe-bg', 'aria-hidden': 'true' });
+  clear(root, h('div', { class: 'login-wrap' }, canvas, form));
+  const globe = createGlobe(canvas, { size: 0.46, speed: 7 });
+  onLeave(() => globe.destroy());
 }
 
 // ---------- Kabuk ----------

@@ -34,6 +34,20 @@ class SettingsIn(BaseModel):
     retention_audit_days: Optional[int] = None
 
 
+# ---- girişte zorunlu KVKK onayı ----
+@router.get('/terms')
+def terms(user=Depends(auth.current_user), conn=db.DB):
+    """Girişte gösterilen KVKK aydınlatma/açık rıza metni + bu kullanıcının onay durumu."""
+    return {'version': kvkk.terms_version(conn), 'pending': not kvkk.user_terms_ok(conn, user['id']), 'html': kvkk.TERMS_HTML}
+
+
+@router.post('/accept-terms')
+def accept_terms(user=Depends(auth.current_user), conn=db.DB):
+    kvkk.accept_terms(conn, user['id'])
+    conn.commit()
+    return {'ok': True, 'version': kvkk.terms_version(conn)}
+
+
 # ---- veri sahibi (her kullanıcı kendi adına) ----
 @router.post('/request')
 def create_request(body: RequestIn, user=Depends(auth.current_user), conn=db.DB):

@@ -2507,6 +2507,15 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN pin_hash TEXT')
     if 'support_until' not in user_cols:   # merkez destek: onaylı geçici master-benzeri oturumun bitiş zamanı
         conn.execute('ALTER TABLE users ADD COLUMN support_until TEXT')
+    # KVKK: açık rıza kaydına sürüm (giriş onayı sürüm değişince yeniden istenir)
+    kc_cols = {r[1] for r in conn.execute('PRAGMA table_info(kvkk_consent)')}
+    if kc_cols and 'version' not in kc_cols:
+        conn.execute('ALTER TABLE kvkk_consent ADD COLUMN version TEXT')
+    # Sekreterya misafir KVKK imzası (parmakla; şirkette video kayıt olduğu için aydınlatma + açık rıza)
+    gv_cols = {r[1] for r in conn.execute('PRAGMA table_info(guest_visits)')}
+    for col in ('kvkk_signed_at', 'kvkk_signature', 'kvkk_version'):
+        if gv_cols and col not in gv_cols:
+            conn.execute(f'ALTER TABLE guest_visits ADD COLUMN {col} TEXT')
     tk_cols = {r[1] for r in conn.execute('PRAGMA table_info(tickets)')}
     for col, ddl in (('first_response_at', 'TEXT'), ('resolved_at', 'TEXT'), ('due_at', 'TEXT'), ('resolve_due_at', 'TEXT'),
                      ('rating', 'INTEGER'), ('rating_note', 'TEXT'), ('tags', 'TEXT'), ('channel', "TEXT NOT NULL DEFAULT 'ticket'"),

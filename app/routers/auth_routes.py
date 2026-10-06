@@ -294,6 +294,8 @@ def me(user=Depends(auth.current_user), conn=db.DB):
     out['prefs'] = json.loads(user['prefs']) if user['prefs'] else {}
     out['has_pin'] = bool(conn.execute('SELECT pin_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0])
     out['must_change_password'] = bool(user['must_change_password']) and config.FORCE_PASSWORD_CHANGE and policy.get(conn)['force_first_change']
+    from .. import kvkk
+    out['kvkk_pending'] = (not user.get('support')) and (not kvkk.user_terms_ok(conn, user['id']))   # girişte zorunlu KVKK onayı (destek oturumu hariç)
     from .hr import my_docs
     d = my_docs(conn, user['id'])   # eksik özlük evrakı → başlıkta geri sayım
     out['docs_due'] = {'missing': len(d['missing']), 'deadline': d['deadline']} if d and d['missing'] else None

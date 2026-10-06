@@ -108,7 +108,11 @@ async function renderVisit(view, id, ctx, sub) {
     }),
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => editVisit() }, 'Düzenle'),
+      v.kvkk_signed_at
+        ? h('button', { class: 'btn ghost', onclick: () => kvkkSign() }, '✓ KVKK imzalı')
+        : h('button', { class: 'btn primary', onclick: () => kvkkSign() }, 'KVKK Sözleşmesi & İmza'),
       !v.left_at ? h('button', { class: 'btn success', onclick: () => leave() }, 'Misafir Çıkışı') : null),
+    !v.kvkk_signed_at ? h('div', { class: 'alert warn' }, 'KVKK aydınlatma/açık rıza imzası alınmadı. Misafire ekranda sözleşmeyi gösterip parmakla imzalatın.') : null,
     v.note ? h('div', { class: 'alert info' }, v.note) : null);
   const set = nv => { v = nv; drawHead(); tabs = buildTabs(); clear(tabBox, tabs); };
   async function leave() {
@@ -122,6 +126,32 @@ async function renderVisit(view, id, ctx, sub) {
       actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
         set(await api.put(`/api/secretariat/visits/${id}`, { purpose: purpose.value, note: note.value }));
       } }] });
+  }
+  // Misafir KVKK: ekranda aydınlatma/açık rıza + parmakla imza (şirkette CCTV/yüz tanıma olduğu için)
+  function kvkkSign() {
+    const textBox = h('div', { class: 'kvkk-text', style: { maxHeight: '34vh', overflow: 'auto', textAlign: 'left', border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', fontSize: '14px', lineHeight: '1.5' } }, 'Yükleniyor…');
+    const canvas = h('canvas', { width: 600, height: 220, style: { width: '100%', maxWidth: '600px', height: '220px', border: '1px dashed var(--line)', borderRadius: '10px', touchAction: 'none', background: '#fff', marginTop: '6px' } });
+    const c2 = canvas.getContext('2d');
+    c2.lineWidth = 2.5; c2.lineCap = 'round'; c2.lineJoin = 'round'; c2.strokeStyle = '#0b1b3a';
+    let drawing = false, dirty = false, last = null;
+    const pos = e => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) }; };
+    canvas.addEventListener('pointerdown', e => { drawing = true; last = pos(e); try { canvas.setPointerCapture(e.pointerId); } catch { /* */ } });
+    canvas.addEventListener('pointermove', e => { if (!drawing) return; const p = pos(e); c2.beginPath(); c2.moveTo(last.x, last.y); c2.lineTo(p.x, p.y); c2.stroke(); last = p; dirty = true; });
+    const end = () => { drawing = false; };
+    canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+    const clearBtn = h('button', { class: 'btn ghost sm', type: 'button', onclick: () => { c2.clearRect(0, 0, canvas.width, canvas.height); dirty = false; } }, 'Temizle');
+    const prev = v.kvkk_signed_at ? h('div', { class: 'small muted', style: { marginBottom: '6px' } },
+      t('Daha önce imzalandı: {d}. Yeniden imzalarsanız öncekinin yerine geçer.', { d: fmtDateTime(v.kvkk_signed_at) })) : null;
+    modal({
+      title: 'KVKK Aydınlatma ve Açık Rıza — Misafir', wide: true,
+      body: h('div', null, prev, textBox, h('p', { class: 'small muted', style: { margin: '10px 0 0' } }, 'Lütfen aşağıdaki alana parmağınızla imzalayın.'), canvas, h('div', { style: { marginTop: '6px' } }, clearBtn)),
+      actions: ['spacer', { label: 'Vazgeç' }, { label: 'Onayla ve Kaydet', class: 'primary', onClick: async () => {
+        if (!dirty) { toast('Lütfen imzalayın', 'err'); return true; }
+        try { set(await api.post(`/api/secretariat/visits/${id}/kvkk`, { signature: canvas.toDataURL('image/png') })); toast('KVKK açık rıza imzası kaydedildi', 'success'); }
+        catch (err) { toastError(err); return true; }
+      } }],
+    });
+    api.get('/api/secretariat/kvkk-text').then(d => { textBox.innerHTML = d.html; }).catch(() => { textBox.textContent = 'Metin yüklenemedi.'; });
   }
   let current = sub || 'people';
   const buildTabs = () => tabView([

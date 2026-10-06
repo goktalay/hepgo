@@ -1194,8 +1194,35 @@ boot();
 
 // Web uygulaması: service worker ve "Uygulamayı Yükle" (tarayıcı destekliyorsa kullanıcı menüsünde görünür)
 if ('serviceWorker' in navigator && window.isSecureContext) {
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('/sw.js').catch(() => {});
+  let swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || swReloaded) return;   // ilk kurulumda değil, yalnız GÜNCELLEMEDE bir kez yenile
+    swReloaded = true; safeReload();
+  });
 }
+// ANINDA GÜNCELLEME: açık uygulama arayüz sürümünü yoklar; sunucuya yeni sürüm deploy edilince kendini yeniler
+// (kullanıcıyı bölmeden: modal/okuma açıkken, yazarken ya da aramada ERTELER; sonraki yoklamada yeniler).
+function safeReload() {
+  try {
+    const ae = document.activeElement, tag = ae && ae.tagName;
+    const busy = document.querySelector('.modal-back, .gm-reader.open, .voice-call, .screen-share, .fv-overlay')
+      || tag === 'INPUT' || tag === 'TEXTAREA' || (ae && ae.isContentEditable) || window.__inCall;
+    if (busy) return false;
+  } catch { /* yut */ }
+  location.reload();
+  return true;
+}
+let verReloaded = false;
+function checkUpdate() {
+  if (verReloaded || !window.__VER) return;
+  fetch('/api/version', { cache: 'no-store' }).then(r => r.json()).then(d => {
+    if (d && d.ver && d.ver !== window.__VER) { if (safeReload()) verReloaded = true; }
+  }).catch(() => {});
+}
+setInterval(checkUpdate, 3 * 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 // iOS/Android uygulama kabuğunda (Capacitor): native köprüyü yükle (push + konum + çevrimdışı kaplaması). Tarayıcıda çalışmaz.
 if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
   const ns = document.createElement('script'); ns.src = '/static/js/native.js'; document.head.appendChild(ns);

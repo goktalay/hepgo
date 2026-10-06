@@ -341,7 +341,14 @@ def _spa(request, page_title=None, description=None):
     html = html.replace('<!--MODULEPRELOAD-->', links)
     for d in ASSET_DIRS:
         html = html.replace(f'"/static/{d}/', f'"/sv/{ver}/{d}/')
+    html = html.replace('</head>', f'<script>window.__VER="{ver}";</script>\n</head>', 1)   # açık uygulamada sürüm karşılaştırması
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/api/version')
+def app_version_api():
+    """Arayüz sürümü (statik dosya damgası). Açık uygulama bunu yoklar; değişince kendini yeniler."""
+    return {'ver': asset_version()}
 
 
 @app.get('/')

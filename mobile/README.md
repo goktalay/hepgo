@@ -102,3 +102,19 @@ Arayüz web olduğu için zaten responsive; native tarafta ikisini de hedefle:
 - HTTPS zorunlu (zaten tünel/CF üzerinden TLS).
 - Marka/isim/ikon hakları sizde olmalı.
 - Çocuklara yönelik değil; "İş" kategorisi.
+
+## 9) İkon & açılış ekranı varlıkları (hazır — mobile/assets/)
+Logodan **vektörize** edilmiş hazır varlıklar `mobile/assets/` içinde:
+- `icon-only.svg` / `icon.svg` — full-bleed uygulama ikonu (mavi-teal gradyan + beyaz HEPGO logosu, vektör).
+- `icon-foreground.svg` + `icon-background.svg` — Android adaptive (ön plan = logo, arka plan = gradyan).
+- `splash.png` (2732×2732, açık zemin + renkli HEPGO wordmark) + `splash-dark.png` (koyu, beyaz logo).
+- `preview/` — telefon/tablet/ikon önizlemeleri (yalnız gösterim).
+
+Tüm boyutları (iOS + Android, telefon + tablet) tek komutla üret:
+```bash
+cd mobile
+npm i -D @capacitor/assets
+npx @capacitor/assets generate --assetPath assets
+npx cap sync
+```
+> SVG kaynak olduğu için her boyutta **net/keskin** çıkar (kırpık görünmez). İkon/splash değişikliği native olduğundan yeni mağaza sürümü gerektirir.

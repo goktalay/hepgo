@@ -166,8 +166,18 @@ def event(conn, eid, user_id, action, detail=None):
                  (eid, user_id, action, detail, db.now()))
 
 
+def _is_intern(conn, user_id):
+    """Kullanıcı 'Stajer' rolünde mi? (stajerlerde zorunlu evrak istenmez)"""
+    if not user_id:
+        return False
+    return conn.execute('SELECT 1 FROM user_roles WHERE user_id = ? AND role = ?', (user_id, auth.INTERN)).fetchone() is not None
+
+
 def required_kinds(e):
-    """Bu personel için zorunlu dosya türleri (askerlik belgesi yalnızca erkekte; cinsiyet girilmemişse istenir)."""
+    """Bu personel için zorunlu dosya türleri (askerlik belgesi yalnızca erkekte; cinsiyet girilmemişse istenir).
+    STAJER (is_intern) ve ŞİRKET DIŞI (is_external) personelde zorunlu özlük evrakı YOKTUR → boş liste."""
+    if e.get('is_external') or e.get('is_intern'):
+        return []
     need = [k for k in REQUIRED_KINDS if not (k == 'ASKERLIK' and e.get('gender') == 'K')]
     if e.get('is_foreign'):   # yabancı uyruklu personel: askerlik yerine pasaport ve çalışma izni
         need = [k for k in need if k != 'ASKERLIK'] + ['PASAPORT', 'CALISMA_IZNI']
@@ -194,6 +204,7 @@ def leave_days(a, b):
 def _enrich(conn, e, files=None):
     files = files if files is not None else current_files(conn, e['id'])
     e['name'] = f'{e["first_name"]} {e["last_name"]}'.strip()
+    e['is_intern'] = _is_intern(conn, e.get('user_id'))   # stajer → zorunlu evrak muaf
     need = required_kinds(e)
     e['missing'] = [FILE_KINDS[k] for k in need if k not in files] if e['status'] == 'AKTIF' else []
     e['missing_personnel'] = sum(1 for k in need if k in PERSONNEL_FILES and k not in files)
@@ -235,6 +246,7 @@ class PersonIn(BaseModel):
     gender: Optional[str] = None
     birth_date: Optional[str] = None
     is_foreign: bool = False          # yabancı uyruklu (TC yerine yabancı kimlik no; pasaport ve çalışma izni zorunlu)
+    is_external: bool = False          # şirket dışı personel (taşeron/kiralık): zorunlu özlük evrakı istenmez
     nationality: Optional[str] = None
     security_code: Optional[str] = None   # Kişi Güvenlik Kodu (MSB Tesis Güvenlik Belgesi)
     phone: Optional[str] = None
@@ -305,7 +317,7 @@ def _person_fields(conn, body, eid=None):
             'birth_date': _date(body.birth_date, 'Doğum tarihi'), 'phone': clean(body.phone, 40), 'email': clean(body.email, 120),
             'position': clean(body.position), 'source': body.source or None,
             'source_note': clean(body.source_note), 'applied_at': _date(body.applied_at, 'Başvuru tarihi'),
-            'note': clean(body.note, 2000), 'is_foreign': 1 if body.is_foreign else 0,
+            'note': clean(body.note, 2000), 'is_foreign': 1 if body.is_foreign else 0, 'is_external': 1 if body.is_external else 0,
             'nationality': clean(body.nationality, 60) if body.is_foreign else None,
             'security_code': clean(body.security_code, 60)}
 
@@ -1591,6 +1603,7 @@ def my_docs(conn, user_id):
     e = db.row(conn.execute("SELECT * FROM employees WHERE user_id = ? AND status = 'AKTIF'", (user_id,)))
     if not e:
         return None
+    e['is_intern'] = _is_intern(conn, user_id)   # stajer/şirket dışı → zorunlu evrak muaf
     files = current_files(conn, e['id'])
     missing = [(k, FILE_KINDS[k]) for k in required_kinds(e) if k not in files]
     start = max(_docs_start(conn), e['created_at'] or '')

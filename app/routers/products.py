@@ -292,9 +292,11 @@ def update_product(pid: int, body: ProductIn, user=Depends(products_admin), conn
         conn.execute('UPDATE products SET usage_type = ? WHERE id = ?', (body.usage_type, pid))
     if body.orderable is not None:
         if body.orderable and spares.is_section(p):
-            raise HTTPException(400, 'Yarı mamul için sipariş verilemez; CAYMAZ siparişinin montajında üretilir')
-        if body.orderable and custom:
-            raise HTTPException(400, 'Bu ürünün üretim şeması yok; siparişi açılamaz')
+            raise HTTPException(400, 'Bu yarı mamul CAYMAZ siparişinin montajında üretilir; ayrı iş emri açılmaz')
+        # Ürün Yönetimi'nden açılan (custom) MAMUL ve YARI_MAMUL için iş emri açılabilir (ürün ağacı/reçeteyle üretilir).
+        # Diğer custom türler (hammadde/yedek parça/sarf/demirbaş) satın alınır; iş emri açılmaz.
+        if body.orderable and custom and (body.type or p['type']) not in (spares.MAMUL, spares.SEMI):
+            raise HTTPException(400, 'Bu tür için iş emri açılamaz (yalnız mamul ve yarı mamul)')
         conn.execute('UPDATE products SET orderable = ? WHERE id = ?', (int(body.orderable), pid))
     if p['stocked']:
         if body.print_minutes is not None and not 0 <= body.print_minutes <= 14 * 1440:

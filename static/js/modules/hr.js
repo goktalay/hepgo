@@ -1066,6 +1066,7 @@ function generalTab(e, m, ctx) {
     manager: h('select', { class: 'input' }, h('option', { value: '' }, 'Yok')),
     note: h('textarea', { class: 'input', rows: 2 }, e.note || ''),
     foreign: h('input', { type: 'checkbox', checked: !!e.is_foreign }),
+    external: h('input', { type: 'checkbox', checked: !!e.is_external }),
     nationality: h('input', { class: 'input', value: e.nationality || '', placeholder: 'ör. İran' }),
     security: h('input', { class: 'input mono', value: e.security_code || '', placeholder: 'MSB Tesis Güvenlik Belgesi kapsamında' }),
   };
@@ -1082,7 +1083,7 @@ function generalTab(e, m, ctx) {
     try {
       await api.put(`/api/hr/employees/${e.id}`, {
         tc_no: f.tc.value, first_name: f.first.value, last_name: f.last.value, gender: f.gender.value || null, birth_date: f.birth.value || null,
-        is_foreign: f.foreign.checked, nationality: f.nationality.value, security_code: f.security.value,
+        is_foreign: f.foreign.checked, is_external: f.external.checked, nationality: f.nationality.value, security_code: f.security.value,
         phone: f.phone.value, email: f.email.value, emails: f.email.values, position: f.position.value, source: f.source.value || null,
         source_note: f.sourceNote.value, applied_at: f.applied.value || null, note: f.note.value,
         title: f.title.value, department: f.dept.value, salary: f.salary.value === '' ? null : Number(f.salary.value), start_date: f.start.value || null,
@@ -1110,7 +1111,8 @@ function generalTab(e, m, ctx) {
   return h('div', { class: 'hr-general' },
     h('div', { class: 'card card-pad' }, h('h3', null, 'Kişisel bilgiler'),
       h('div', { class: 'form-grid' }, field(e.is_foreign ? 'Yabancı Kimlik Numarası' : 'TC Kimlik Numarası', f.tc), field('Ad', f.first), field('Soyad', f.last), field('Cinsiyet', f.gender),
-        h('label', { class: 'field set-toggle', style: { alignSelf: 'end' } }, f.foreign, h('span', null, h('b', null, 'Yabancı uyruklu'), h('small', null, 'Pasaport ve çalışma izni zorunlu olur'))), natField,
+        h('label', { class: 'field set-toggle', style: { alignSelf: 'end' } }, f.foreign, h('span', null, h('b', null, 'Yabancı uyruklu'), h('small', null, 'Pasaport ve çalışma izni zorunlu olur'))),
+        h('label', { class: 'field set-toggle', style: { alignSelf: 'end' } }, f.external, h('span', null, h('b', null, 'Şirket dışı personel'), h('small', null, 'Taşeron/kiralık — zorunlu özlük evrakı istenmez'))), natField,
         field('Kişi Güvenlik Kodu', f.security, 'MSB Tesis Güvenlik Belgesi olan firmamızca personel adına başvurularak alınır'),
         field('Doğum tarihi', f.birth), field('Telefon', f.phone), field('E-posta', f.email))),
     staff ? h('div', { class: 'card card-pad' }, h('h3', null, 'Görev ve ücret'),

@@ -205,7 +205,8 @@ async function renderDetail(view, id, ctx) {
       await api.put(`/api/products/${id}`, {
         name: f.name.value, serial: custom ? f.code.value : f.serial.value, code: f.code.value, queue_prefix: f.prefix.value,
         description: f.desc.value.trim() || null, active: f.active.checked,
-        ...(custom ? { type: f.type.value } : { orderable: f.orderable.checked }),
+        ...(custom ? { type: f.type.value } : {}),
+        ...((!custom || ['MAMUL', 'YARI_MAMUL'].includes(f.type.value)) ? { orderable: f.orderable.checked } : {}),
         ...(MATERIAL_TYPES.includes(f.type.value) ? { unit: f.unit.value } : {}),
         ...(f.type.value === 'MAMUL' ? { usage_type: f.usage.value } : {}),
         ...(stocked ? { per_print: Number(perPrint.value), print_file: printFile.value.trim() || null,
@@ -238,7 +239,9 @@ async function renderDetail(view, id, ctx) {
       partSpare ? 'Parça yedeğinin kodu, uçaktaki parça kodudur; değiştirilemez.' : 'Siparişi olan ürünün kodu değiştirilemez.') : null,
     h('div', { class: 'pd-info-foot' },
       h('label', { class: 'check' }, f.active, 'Aktif'),
-      custom ? h('span', { class: 'small muted' }, 'Ürün ağacı ve reçeteyle tanımlı; üretim siparişi açılmaz') : h('label', { class: 'check' }, f.orderable, 'Sipariş verilebilir'),
+      (custom && !['MAMUL', 'YARI_MAMUL'].includes(p.type))
+        ? h('span', { class: 'small muted' }, 'Ürün ağacı ve reçeteyle tanımlı; üretim siparişi açılmaz')
+        : h('label', { class: 'check', title: 'İşaretlenirse bu ürün için üretim siparişi / iş emri açılabilir' }, f.orderable, 'Sipariş verilebilir (iş emri açılabilir)'),
       section ? h('span', { class: 'small muted' }, t('Montajda {name} siparişiyle birleştirilir', { name: p.parent?.name || 'mamul' })) : null,
       h('span', { class: 'spacer' }), del, canEdit ? save : null));
 

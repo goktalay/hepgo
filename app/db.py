@@ -2607,6 +2607,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE employees ADD COLUMN nationality TEXT')
     if 'ppe_required' not in emp_cols:   # kamerayla denetlenecek zorunlu KKD (JSON dizi: ['kask','eldiven',...])
         conn.execute('ALTER TABLE employees ADD COLUMN ppe_required TEXT')
+    if 'is_external' not in emp_cols:   # şirket dışı personel (taşeron/kiralık): zorunlu özlük evrakı istenmez
+        conn.execute('ALTER TABLE employees ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0')
     ef_cols = {r[1] for r in conn.execute('PRAGMA table_info(employee_files)')}
     if 'approved' not in ef_cols:   # personelin kendi yüklediği özlük evrakı İK onayında bekler (mevcutlar onaylı sayılır)
         conn.execute('ALTER TABLE employee_files ADD COLUMN approved INTEGER NOT NULL DEFAULT 1')

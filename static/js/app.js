@@ -192,6 +192,12 @@ const inGrid = (m, u) => !m.menu && !m.hidden && canAccess(m, u) && !(m.sub && h
 const root = document.getElementById('app');
 const ctx = { user: null, meta: null };
 
+// Native his: iki parmakla SAYFA yakınlaştırmayı (pinch) engelle — arayüz sabit kalsın. Safari, viewport user-scalable=no'yu
+// yok saydığından burada da engellenir. Fabrika krokisi kendi dokunmatik zoom'unu JS touch olaylarıyla yapar (gesture
+// olayı değil), bu yüzden etkilenmez.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+
 async function boot() {
   // Dış katılımcı toplantı linki (/m/{code}): oturum gerektirmeden doğrudan katılım ekranı
   const mm = location.pathname.match(/^\/m\/([^/]+)/);

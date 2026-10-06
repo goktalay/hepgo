@@ -39,17 +39,19 @@ export const hasCompanies = () => read().length > 0;
 // Yalnız GÜVENİLEN firma alan adlarına yönlendirilir (phishing/açık-yönlendirme engeli): capacitor allowNavigation
 // listesiyle aynı köken kümesi. Rastgele bir host (ör. evil.com) girilirse reddedilir — kullanıcı sahte giriş
 // sayfasına yönlendirilip kimlik bilgisi çalınamasın.
-const TRUSTED_SUFFIXES = ['.hepgo.com', '.caymaz.app', '.veilox.app', '.firma.app'];
-const TRUSTED_EXACT = ['hepgo.com', 'caymaz.app', 'veilox.app', 'firma.app'];
+const TRUSTED_SUFFIXES = ['.hepgo.com', '.caymaz.app', '.turkbey.app', '.veilox.app', '.firma.app'];
+const TRUSTED_EXACT = ['hepgo.com', 'caymaz.app', 'turkbey.app', 'veilox.app', 'firma.app'];
 const isTrustedHost = host => TRUSTED_EXACT.includes(host) || TRUSTED_SUFFIXES.some(sfx => host.endsWith(sfx));
+// Bilinen firma kodu → gerçek alan adı (her firmanın alan adı aynı şemada değil: turkbey=turkbey.app, caymaz=caymaz.app).
+const SLUG_HOSTS = { gokkubbe: 'gokkubbe.hepgo.com', caymaz: 'caymaz.app', turkbey: 'turkbey.app', merkez: 'merkez.veilox.app' };
 
-// Girilen adresi/kodu firma adresine çevir: "gokkubbe" → gokkubbe.hepgo.com ; tam adres yalnız güvenilir alan adıysa
+// Girilen adresi/kodu firma adresine çevir. Bilinen kod → gerçek alan adı; tam adres yalnız güvenilir alan adıysa kabul.
 function resolveAddress(raw) {
   let s = (raw || '').trim().toLowerCase();
   if (!s) return null;
   s = s.replace(/^https?:\/\//, '').replace(/[/?#].*$/, '').replace(/\s+/g, '').replace(/:\d+$/, '');
   if (!s) return null;
-  if (!s.includes('.')) s = `${s}.hepgo.com`;   // yalnız kod/slug girildiyse hepgo.com altına
+  if (!s.includes('.')) s = SLUG_HOSTS[s] || `${s}.hepgo.com`;   // bilinen kod → gerçek adres; değilse hepgo.com altına dene
   if (!/^[a-z0-9.-]+$/.test(s) || s.includes('..')) return null;   // geçersiz karakter
   if (!isTrustedHost(s)) return null;           // güvenilmeyen alan adı: reddet
   return s;

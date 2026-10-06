@@ -4,7 +4,7 @@
   "webDir": "www",
   "server": {
     "url": "https://gokkubbe.hepgo.com",
-    "allowNavigation": ["gokkubbe.hepgo.com", "*.hepgo.com", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"],
+    "allowNavigation": ["gokkubbe.hepgo.com", "*.hepgo.com", "caymaz.app", "*.caymaz.app", "turkbey.app", "*.turkbey.app", "veilox.app", "*.veilox.app"],
     "androidScheme": "https",
     "iosScheme": "https",
     "cleartext": false

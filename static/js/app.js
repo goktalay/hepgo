@@ -462,7 +462,9 @@ function appsLauncher() {
     if (e.key === 'Escape') { if (searchInp.value) { searchInp.value = ''; fill(); e.stopPropagation(); } }
     else if (e.key === 'Enter') { const a = results.querySelector('a.app-tile'); if (a) { location.hash = a.getAttribute('href'); panel.hidden = true; } }
   });
-  clear(panel, h('div', { class: 'apps-search-wrap' }, searchInp), results);
+  clear(panel, h('div', { class: 'apps-search-wrap' },
+    h('div', { class: 'apps-search-title' }, svgIcon(icons.search || icons.apps), h('span', null, 'Arama Kutusu')),
+    searchInp), results);
   btn.addEventListener('click', () => {   // popup'tan önce çalışır: panel henüz gizliyse şimdi açılıyor
     const opening = panel.hidden;
     if (opening) { searchInp.value = ''; }

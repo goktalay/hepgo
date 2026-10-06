@@ -540,6 +540,37 @@ export async function render(view, params, ctx) {
     const mu = () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
     window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
   });
+  // DOKUNMATİK: tek parmak kaydırma (pan) + iki parmak yakınlaştırma (pinch zoom). Tap (yerleştirme/seçim) korunur.
+  let touchPan = null, pinch = null;
+  const tDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  svg.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      touchPan = { sx: t.clientX, sy: t.clientY, px: st.cam.panX, py: st.cam.panY, moved: false };
+      pinch = null;
+    } else if (e.touches.length === 2) {
+      e.preventDefault();
+      const r = svg.getBoundingClientRect(), m = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
+      pinch = { d: tDist(e.touches[0], e.touches[1]) || 1, scale: st.cam.scale, panX: st.cam.panX, panY: st.cam.panY, mx: m.x - r.left, my: m.y - r.top };
+      touchPan = null;
+    }
+  }, { passive: false });
+  svg.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      const ns = Math.max(0.2, Math.min(5, pinch.scale * (tDist(e.touches[0], e.touches[1]) / pinch.d)));
+      st.cam.panX = pinch.mx - (pinch.mx - pinch.panX) * (ns / pinch.scale);   // iki parmağın ortası sabit kalsın
+      st.cam.panY = pinch.my - (pinch.my - pinch.panY) * (ns / pinch.scale);
+      st.cam.scale = ns; applyCam();
+    } else if (touchPan && e.touches.length === 1) {
+      const t = e.touches[0], dx = t.clientX - touchPan.sx, dy = t.clientY - touchPan.sy;
+      if (!touchPan.moved && Math.hypot(dx, dy) < 6) return;   // küçük hareket = tap (pan değil) → yerleştirme/seçim bozulmasın
+      touchPan.moved = true; e.preventDefault();
+      st.cam.panX = touchPan.px + dx; st.cam.panY = touchPan.py + dy; applyCam();
+    }
+  }, { passive: false });
+  svg.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; if (e.touches.length === 0) touchPan = null; });
+
   // oda / hat çizimini bitir: çift tık ya da Enter
   svg.addEventListener('dblclick', e => { e.preventDefault(); if (st.tool === 'room') finishRoom(); else if (st.tool === 'line') finishLine(); });
   const onKey = e => {
@@ -687,21 +718,26 @@ export async function render(view, params, ctx) {
   // ---- Yüzen araç çubuğunu sürükle (konumu localStorage'da sakla); pan/zoom'u etkilemez (ayrı DOM katmanı)
   function toolbarDrag(e) {
     e.preventDefault(); e.stopPropagation();
+    const pt = (e.touches && e.touches[0]) || e;
     const stageR = stage.getBoundingClientRect(), tbR = toolbarEl.getBoundingClientRect();
-    const offX = e.clientX - tbR.left, offY = e.clientY - tbR.top;
-    const mm = ev => {
-      let x = ev.clientX - stageR.left - offX, y = ev.clientY - stageR.top - offY;
+    const offX = pt.clientX - tbR.left, offY = pt.clientY - tbR.top;
+    const move = (cx, cy) => {
+      let x = cx - stageR.left - offX, y = cy - stageR.top - offY;
       x = Math.max(0, Math.min(x, stageR.width - tbR.width));
       y = Math.max(0, Math.min(y, stageR.height - tbR.height));
       toolbarEl.style.left = `${x}px`; toolbarEl.style.top = `${y}px`; toolbarEl.style.right = 'auto';
       if (!side.hidden) positionPanel();
     };
-    const mu = () => {
-      window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu);
+    const mm = ev => move(ev.clientX, ev.clientY);
+    const tm = ev => { if (ev.touches[0]) { ev.preventDefault(); move(ev.touches[0].clientX, ev.touches[0].clientY); } };
+    const up = () => {
+      window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', tm); window.removeEventListener('touchend', up);
       const r = toolbarEl.getBoundingClientRect(), sr = stage.getBoundingClientRect();
       try { localStorage.setItem(TB_KEY, JSON.stringify({ x: r.left - sr.left, y: r.top - sr.top })); } catch { /* sessiz */ }
     };
-    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', tm, { passive: false }); window.addEventListener('touchend', up);
   }
   function applyToolbarPos() {
     let p = null; try { p = JSON.parse(localStorage.getItem(TB_KEY) || 'null'); } catch { /* yoksa öntanımlı */ }
@@ -732,7 +768,7 @@ export async function render(view, params, ctx) {
   }
   // ---- Yüzen ikon araç çubuğunu kur (aktif araç vurgulanır). Her buton: net ikon + Türkçe title/aria-label.
   function buildToolbar() {
-    const grip = h('div', { class: 'fab-tb-grip', title: 'Araç çubuğunu taşı (sürükleyin)', onmousedown: toolbarDrag });
+    const grip = h('div', { class: 'fab-tb-grip', title: 'Araç çubuğunu taşı (sürükleyin)', onmousedown: toolbarDrag, ontouchstart: toolbarDrag });
     grip.append(TOOL_ICON.grip());
     const btn = (title, iconKey, onClick, active) => {
       const b = h('button', { class: `fab-tb-btn ${active ? 'on' : ''}`, type: 'button', title, 'aria-label': title, 'aria-pressed': active ? 'true' : 'false', onclick: onClick });
@@ -1046,7 +1082,7 @@ function injectStyle() {
   .fab-wrap{display:flex;gap:12px;align-items:stretch;height:calc(100vh - 190px);min-height:460px}
   .fab-main{flex:1;display:flex;flex-direction:column;min-width:0}
   /* Seçenekler paneli artık tuval üzerinde YÜZEN popover (araç çubuğu düğmesiyle açılır) */
-  .fab-side.fab-pop{position:absolute;left:58px;top:12px;z-index:6;width:290px;max-height:calc(100% - 24px);overflow:auto;
+  .fab-side.fab-pop{position:absolute;left:58px;top:12px;z-index:6;width:290px;max-height:calc(100% - 24px);overflow:auto;touch-action:pan-y;
     background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:12px;
     box-shadow:0 12px 34px rgba(15,23,42,.22)}
   .fab-side[hidden]{display:none}
@@ -1061,7 +1097,7 @@ function injectStyle() {
   .fab-floor{padding:4px 12px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);border-radius:16px;cursor:pointer;font-size:13px}
   .fab-floor.on{background:var(--pri,#2563eb);color:#fff;border-color:var(--pri,#2563eb)}
   .fab-floor.add{border-style:dashed;color:var(--muted,#6b7280)}
-  .fab-stage{flex:1;position:relative;border:1px solid var(--line,#e5e7eb);border-radius:10px;overflow:hidden;background:var(--bg2,#f8fafc)}
+  .fab-stage{flex:1;position:relative;border:1px solid var(--line,#e5e7eb);border-radius:10px;overflow:hidden;background:var(--bg2,#f8fafc);touch-action:none}
   .fab-svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
   .fab-svg:active{cursor:grabbing}
   .fab-grid{stroke:#e2e8f0;stroke-width:1;vector-effect:non-scaling-stroke}
@@ -1158,7 +1194,7 @@ function injectStyle() {
   .fab-toolbar{position:absolute;left:12px;top:12px;z-index:5;display:flex;flex-direction:column;align-items:center;gap:4px;
     padding:5px;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:12px;
     box-shadow:0 6px 20px rgba(15,23,42,.18);user-select:none}
-  .fab-tb-grip{display:flex;align-items:center;justify-content:center;width:34px;height:18px;cursor:grab;color:#94a3b8;border-radius:6px}
+  .fab-tb-grip{display:flex;align-items:center;justify-content:center;width:34px;height:18px;cursor:grab;color:#94a3b8;border-radius:6px;touch-action:none}
   .fab-tb-grip:active{cursor:grabbing}
   .fab-tb-sep{width:22px;height:1px;background:var(--line,#e5e7eb);margin:2px 0}
   .fab-tb-btn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;cursor:pointer;color:#475569}

@@ -22,7 +22,7 @@ const RACK_X = AISLE / 2 + RACK_D / 2;    // raf merkezinin koridor ortasına uz
 // Girişten (−z) içeri (+z) bakana göre: sol raf +x, sağ raf −x tarafında
 const sideX = side => (side === 'L' ? RACK_X : -RACK_X);
 export const STATE_COLORS = {
-  YAZDIRIYOR: 0x3b82f6, HAZIR: 0x22c55e, TAMAMLANDI: 0xa855f7, DURAKLADI: 0xf59e0b, HATA: 0xef4444, CEVRIMDISI: 0x4b5563,
+  YAZDIRIYOR: 0x3b82f6, HAZIR: 0x22c55e, TAMAMLANDI: 0xa855f7, DURAKLADI: 0xf59e0b, HATA: 0xef4444, CEVRIMDISI: 0x4b5563, BAKIM: 0xf97316,
 };
 const SIDE_TEXT = { L: 'Sol raf', R: 'Sağ raf' };
 const LEVEL_TEXT = { 1: 'Alt kat', 2: 'Üst kat' };
@@ -37,7 +37,7 @@ export const placeText = p => (p.rack_side ? t('{side} · {level} · {slot}. sı
 export function printerRoom(opts) {
   const stage = h('div', { class: 'pr3d-stage' }, h('div', { class: 'pr3d-loading' }, '3B oda hazırlanıyor…'));
   const legend = h('div', { class: 'pr3d-legend' }, Object.entries(PRINTER_STATES).map(([k, s]) =>
-    h('span', null, h('i', { style: { background: `#${STATE_COLORS[k].toString(16).padStart(6, '0')}` } }), s.label)));
+    h('span', null, h('i', { style: { background: `#${(STATE_COLORS[k] ?? STATE_COLORS.CEVRIMDISI).toString(16).padStart(6, '0')}` } }), s.label)));
   const views = segmented([['entry', 'Giriş'], ['L', 'Sol raf'], ['R', 'Sağ raf'], ['top', 'Genel']], 'entry', v => room?.view(v));
   // Tam ekran: oda sabit katman olarak tüm ekranı kaplar ve tarayıcı tam ekrana geçer (açılan pencereler görünür kalsın diye
   // odanın kendisi değil sayfa tam ekrana alınır)

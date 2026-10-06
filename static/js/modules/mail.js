@@ -609,7 +609,7 @@ export async function renderMail(view, params = []) {
     root.dataset.k = key;
     try {
       if (cur.box === 'all') {
-        const r = await api.get(`/api/mail/unified/list?folder=${encodeURIComponent(folderOfList())}&q=${encodeURIComponent(q)}${lvQuery()}`);
+        const r = await api.get(`/api/mail/unified/inbox?folder=${encodeURIComponent(folderOfList())}&q=${encodeURIComponent(q)}${lvQuery()}`);
         if (seq !== loadSeq) return;
         items = r.items; total = r.items.length;
         r.errors.forEach(e => { const b = boxOf(e.box_id); if (b) b.last_error = e.error; });

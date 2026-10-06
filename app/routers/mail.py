@@ -437,14 +437,9 @@ def _unified(conn, user, folder, q, filt, sort):
 
 
 @router.get('/unified/inbox')
-def unified(q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
-    """Tüm hesapların gelen kutuları birlikte (geriye uyumlu)."""
-    return _unified(conn, user, 'inbox', q, filter, sort)
-
-
-@router.get('/unified/list')
-def unified_list(folder: str = 'inbox', q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
-    """Tüm hesapların AYNI temel klasörü birlikte (Gelen Kutusu / Gereksiz / Çöp Kutusu / Gönderilmiş / Taslaklar / Arşiv / Yıldızlı)."""
+def unified(folder: str = 'inbox', q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
+    """Tüm hesapların AYNI temel klasörü birlikte (folder: inbox/spam/trash/sent/drafts/archive/starred…).
+    NOT: yol '/unified/list' KULLANMA — '/{box_id}/list' (box_id:int) ile çakışır ve 422 verir; bu uç folder param'ı alır."""
     if folder not in _UNIFIED_FOLDERS:
         folder = 'inbox'
     return _unified(conn, user, folder, q, filter, sort)

@@ -398,6 +398,12 @@ def get_employee(eid: int, user=Depends(hr_user), conn=db.DB):
     e['isg'] = _isg(conn, e)
     e['health_reports'] = _health(conn, eid)
     e['absence'] = auth.absence(conn, e['user_id']) if e.get('user_id') else None
+    if e.get('user_id'):   # KVKK biyometrik/ses açık rıza durumu (kişi bazında işaretlenir)
+        from .. import kvkk
+        e['kvkk_consent'] = {'biometric': kvkk.has_consent(conn, 'biometric', 'user', e['user_id']),
+                             'voice': kvkk.has_consent(conn, 'voice', 'user', e['user_id'])}
+    else:
+        e['kvkk_consent'] = None
     try:
         e['application_info'] = json.loads(e['application_info']) if e.get('application_info') else {}
     except (ValueError, TypeError):
@@ -407,6 +413,26 @@ def get_employee(eid: int, user=Depends(hr_user), conn=db.DB):
     e['card_no'] = e['card_no'][0] if e['card_no'] else None
     e['org_path'] = _org_path(conn, eid)
     return e
+
+
+class KvkkConsentIn(BaseModel):
+    kind: str          # biometric | voice
+    granted: bool
+
+
+@router.post('/employees/{eid}/kvkk')
+def set_employee_kvkk(eid: int, body: KvkkConsentIn, user=Depends(hr_user), conn=db.DB):
+    """Personel için biyometrik (yüz) / ses açık rızası — kişi bazında işaretlenir (KVKK özel nitelikli veri)."""
+    e = _get(conn, eid)
+    if not e.get('user_id'):
+        raise HTTPException(400, 'Bu personelin kullanıcı hesabı yok; biyometrik özne tanımlı değil')
+    if body.kind not in ('biometric', 'voice'):
+        raise HTTPException(400, 'Geçersiz rıza türü')
+    from .. import kvkk
+    kvkk.set_consent(conn, body.kind, 'user', e['user_id'], body.granted, by_user=user['id'], note='İK kişi bazında açık rıza')
+    db.audit(conn, user['id'], 'KVKK açık rıza (personel)', 'employee', eid, f'{body.kind}={int(body.granted)}')
+    conn.commit()
+    return {'ok': True}
 
 
 LOGGED = {'title': 'Görev', 'department': 'Departman', 'salary': 'Maaş', 'start_date': 'İşe başlama tarihi'}

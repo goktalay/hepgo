@@ -1407,8 +1407,8 @@ function kvkkBody() {
       h('h3', null, 'Biyometrik (yüz) rıza durumu'),
       h('p', { class: 'small muted' }, `Yüz tanımaya atanmış ${bio.enrolled} kişi; açık rızası işaretlenmemiş ${bio.missing_consent} kişi.`),
       bio.missing_consent ? h('p', { class: 'small', style: { color: '#ff9500' } },
-        'Denetim modunda tanıma çalışmaya devam eder; işveren olarak aydınlatma yapıp açık rıza topladıkça kişi bazında kaydedin. ' +
-        'Açık rıza kaydı için kişi bazlı işaretleme eklenmektedir; acil durumda sistem sahibi API ile de işaretleyebilir.') : null);
+        'Denetim modunda tanıma çalışmaya devam eder. Açık rıza kişi bazında İnsan Kaynakları › personel › Özlük › ' +
+        '“KVKK Rızası” sekmesinden işaretlenir; aydınlatma yapıp açık rıza topladıkça buradan kaydedin.') : null);
 
     // 3 - Ayarlar
     const enforce = h('input', { type: 'checkbox', ...(s.biometric_enforce ? { checked: true } : {}) });

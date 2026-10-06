@@ -487,7 +487,8 @@ async function renderDetail(view, id, ctx) {
       ['contracts', 'Sözleşmeler', 'İş, gizlilik, araç sözleşmeleri', cnt(e.status === 'AKTIF' && missingCount(m.contracts), ' eksik')],
       ['application', 'Başvuru Bilgileri', 'İş başvuru formundaki bilgiler', cnt(Object.values(e.application_info || {}).filter(Boolean).length)],
       ['addresses', 'Adresler', 'Ev, tebligat, acil durum', cnt(e.addresses.length)],
-      ['family', 'Ailesi', 'Aile üyeleri ve yakınlık', cnt(e.family?.length)]] },
+      ['family', 'Ailesi', 'Aile üyeleri ve yakınlık', cnt(e.family?.length)],
+      ['kvkk', 'KVKK Rızası', 'Biyometrik (yüz) ve ses açık rızası', e.kvkk_consent && !e.kvkk_consent.biometric ? ' ⚠' : '']] },
     absence: { label: 'İzin ve Sağlık', subs: [
       ['leaves', 'İzinler', 'İzin talepleri ve imzalı formlar', cnt(e.unsigned_leaves, ' imzasız')],
       ['health', 'Sağlık Raporları', 'Rapor süresince raporlu; sisteme giremez', cnt(e.health_reports?.length)]] },
@@ -512,6 +513,7 @@ async function renderDetail(view, id, ctx) {
     if (key === 'application') return applicationTab(e);
     if (key === 'leaves') return leavesTab(e);
     if (key === 'health') return healthTab(e);
+    if (key === 'kvkk') return kvkkConsentTab(e);
     return h('div');
   };
   const show = () => {
@@ -708,6 +710,31 @@ function dutiesTab(e, m) {
 }
 
 // Sağlık raporları: dosya + başlama / bitiş tarihi; rapor süresince personel raporlu görünür ve sisteme giriş yapamaz
+// KVKK açık rıza — kişi bazında (biyometrik yüz + ses-izi; özel nitelikli veri). İşaretlenmemiş kişiler denetim raporunda görünür.
+function kvkkConsentTab(e) {
+  if (!e.user_id) return h('div', { class: 'card card-pad' },
+    h('p', { class: 'muted' }, 'Bu personelin kullanıcı hesabı yok; biyometrik/ses öznesi tanımlı değil. Önce Genel sekmesinden bir kullanıcı eşleyin.'));
+  const c = e.kvkk_consent || { biometric: false, voice: false };
+  const row = (kind, label, desc) => {
+    const chk = h('input', { type: 'checkbox', ...(c[kind] ? { checked: true } : {}) });
+    chk.addEventListener('change', async () => {
+      chk.disabled = true;
+      try {
+        await api.post(`/api/hr/employees/${e.id}/kvkk`, { kind, granted: chk.checked });
+        c[kind] = chk.checked; e.kvkk_consent = c;
+        toast(chk.checked ? 'Açık rıza kaydedildi' : 'Açık rıza kaldırıldı');
+      } catch (err) { toastError(err); chk.checked = !chk.checked; } finally { chk.disabled = false; }
+    });
+    return h('label', { style: { display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' } },
+      chk, h('span', null, h('b', null, label), h('div', { class: 'small muted' }, desc)));
+  };
+  return h('div', { class: 'card card-pad' },
+    h('h3', null, 'KVKK Açık Rıza'),
+    h('p', { class: 'small muted' }, 'Biyometrik (yüz) ve ses verisi KVKK’da özel nitelikli veridir ve açık rıza gerektirir. Çalışana aydınlatma yapıp açık rızasını aldıktan sonra işaretleyin. İşaretlenmeyen kişiler Program Ayarları › KVKK denetim raporunda görünür.'),
+    row('biometric', 'Yüz tanıma (biyometrik)', 'Kamera/PDKS yüz tanıma ile görüntü/biyometrik verinin işlenmesine açık rıza'),
+    row('voice', 'Ses tanıma (ses-izi)', 'Konuşmacı tanıma için kalıcı ses-izi profili oluşturulmasına açık rıza'));
+}
+
 function healthTab(e) {
   const box = h('div', { class: 'card card-pad' });
   const today = new Date().toISOString().slice(0, 10);

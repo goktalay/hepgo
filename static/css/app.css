@@ -1,4 +1,11 @@
 /* CAYMAZ Üretim Takip — Gündüz teması */
+/* Native uygulama hissi: arayüz metni SEÇİLEMEZ (yalnız girişlerde yazılabilir/seçilebilir); dokunma vurgusu ve iOS
+   uzun-basma menüsü kapalı; lastik (overscroll) kaydırma kapalı. Kopyalanması gereken yerlere .selectable eklenebilir. */
+* { -webkit-tap-highlight-color: transparent; }
+html, body { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+input, textarea, select, [contenteditable], [contenteditable] *, .selectable, .selectable * {
+  -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
 :root {
   --bg: #f8f9fb;   /* sayfa zemini: kutucuk başlık bandıyla karışmasın diye açık */
   --header-bg: #edf0f5;   /* üst başlık satırı: sayfa zemininden hafif daha kısık (koyu) — ayrım görünsün */

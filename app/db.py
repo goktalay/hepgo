@@ -2537,6 +2537,16 @@ def _migrate(conn):
             id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, ua TEXT, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_push_user ON push_subs(user_id);
+        -- Native mobil bildirim jetonları (Capacitor): Android=FCM, iOS=APNs. Cihaz başına token.
+        CREATE TABLE IF NOT EXISTS push_native (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            platform TEXT NOT NULL, token TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_push_native_user ON push_native(user_id);
+        -- Mobil uygulamadan gelen konum sinyalleri (arkaplan takibi); en son konum kişi başına saklanır
+        CREATE TABLE IF NOT EXISTS location_pings (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            lat REAL NOT NULL, lng REAL NOT NULL, accuracy REAL, at TEXT, platform TEXT, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_location_pings_user ON location_pings(user_id, id);
         -- Saha görevi İSG kontrolü: görevdeki her kişinin KKD maddeleri için saha sorumlusunun Yaptı / Yapmadı işareti
         CREATE TABLE IF NOT EXISTS field_task_isg (
             task_id INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id),

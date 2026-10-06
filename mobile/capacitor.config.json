@@ -1,0 +1,17 @@
+{
+  "appId": "com.gokkubbe.hepgo",
+  "appName": "HEPGO",
+  "webDir": "www",
+  "server": {
+    "url": "https://gokkubbe.hepgo.com",
+    "allowNavigation": ["gokkubbe.hepgo.com", "*.hepgo.com", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"],
+    "androidScheme": "https",
+    "iosScheme": "https"
+  },
+  "backgroundColor": "#0f1d3d",
+  "plugins": {
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] },
+    "Geolocation": {},
+    "Network": {}
+  }
+}

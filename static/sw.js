@@ -1,6 +1,6 @@
 // CAYMAZ web uygulaması service worker'ı: uygulamanın kurulabilmesi ve bağlantı yokken
 // anlamlı bir sayfa gösterilmesi için. Veriler (API) önbelleğe alınmaz; arayüz her zaman güncel sunucudan gelir.
-const CACHE = 'caymaz-shell-v1';
+const CACHE = 'caymaz-shell-v2';
 const OFFLINE = '/static/offline.html';
 
 self.addEventListener('install', e => {

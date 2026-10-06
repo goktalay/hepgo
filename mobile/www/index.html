@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Çevrimiçi bağlantı gerekli</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+         font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #e8eefc; text-align: center;
+         padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+         background: radial-gradient(130% 150% at 0% 0%, #1e3a8a 0%, #0f1d3d 55%, #070d1c 100%); }
+  .wrap { max-width: 420px; width: 100%; }
+  .orb { width: 128px; height: 128px; margin: 0 auto 26px; position: relative; display: grid; place-items: center; }
+  .orb .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(147,197,253,.25); }
+  .orb .ring.r2 { animation: pulse 2.4s ease-out infinite; }
+  .orb .ring.r3 { animation: pulse 2.4s ease-out infinite 1.2s; }
+  @keyframes pulse { 0% { transform: scale(.75); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+  .orb .logo { width: 84px; height: 84px; border-radius: 24px; background: rgba(255,255,255,.06); display: grid; place-items: center;
+               box-shadow: 0 12px 34px rgba(7,13,28,.5); backdrop-filter: blur(6px); }
+  .orb .logo img { width: 56px; height: 56px; border-radius: 14px; }
+  h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: .01em; }
+  p { color: #aebbdc; margin: 0 auto 22px; line-height: 1.55; font-size: 14.5px; max-width: 340px; }
+  .dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #fca5a5; font-weight: 600;
+         background: rgba(239,68,68,.14); padding: 6px 12px; border-radius: 999px; margin-bottom: 18px; }
+  .dot i { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 0 rgba(239,68,68,.6); animation: blip 1.6s infinite; }
+  .dot.on { color: #6ee7b7; background: rgba(16,185,129,.16); }
+  .dot.on i { background: #10b981; animation: none; }
+  @keyframes blip { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.5);} 70% { box-shadow: 0 0 0 7px rgba(239,68,68,0);} 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0);} }
+  button { font: inherit; font-weight: 600; padding: 13px 26px; border-radius: 12px; border: 0; cursor: pointer;
+           background: linear-gradient(135deg, #2563eb, #3b82f6); color: #fff; box-shadow: 0 10px 26px rgba(37,99,235,.35); transition: transform .1s, opacity .2s; }
+  button:active { transform: scale(.97); }
+  button[disabled] { opacity: .6; cursor: default; }
+  .hint { margin-top: 16px; font-size: 12px; color: #6b7a9e; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="orb">
+      <div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
+      <div class="logo"><img src="/static/icons/icon-192.png" alt="HEPGO"></div>
+    </div>
+    <div class="dot" id="st"><i></i><span>Bağlantı yok</span></div>
+    <h1>Çevrimiçi bağlantı gerekli</h1>
+    <p>HEPGO yalnızca çevrimiçi çalışır. İnternet ya da şirket ağı bağlantınız kurulduğunda otomatik olarak devam edilir.</p>
+    <button id="retry" onclick="tryNow()">Tekrar dene</button>
+    <div class="hint">Bağlantı geldiğinde kendiliğinden açılır.</div>
+  </div>
+<script>
+  var st = document.getElementById('st'), btn = document.getElementById('retry'), busy = false;
+  function go() { try { location.replace('/app'); } catch (e) { location.href = '/'; } }
+  function tryNow() {
+    if (busy) return; busy = true; btn.disabled = true; btn.textContent = 'Bağlanılıyor…';
+    fetch('/api/meta', { cache: 'no-store' }).then(function (r) { if (r && r.ok) go(); else fail(); }).catch(fail);
+    function fail() { busy = false; btn.disabled = false; btn.textContent = 'Tekrar dene'; }
+  }
+  function mark(on) {
+    st.className = 'dot' + (on ? ' on' : '');
+    st.querySelector('span').textContent = on ? 'Bağlantı geldi' : 'Bağlantı yok';
+    if (on) setTimeout(tryNow, 400);
+  }
+  window.addEventListener('online', function () { mark(true); });
+  window.addEventListener('offline', function () { mark(false); });
+  if (navigator.onLine) tryNow();                 // SW offline sayfası gösterdi ama ağ gelmiş olabilir
+  setInterval(function () { if (navigator.onLine) tryNow(); }, 5000);   // sessiz otomatik yeniden deneme
+</script>
+</body>
+</html>

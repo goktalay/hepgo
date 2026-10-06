@@ -1196,6 +1196,10 @@ boot();
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+// iOS/Android uygulama kabuğunda (Capacitor): native köprüyü yükle (push + konum + çevrimdışı kaplaması). Tarayıcıda çalışmaz.
+if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+  const ns = document.createElement('script'); ns.src = '/static/js/native.js'; document.head.appendChild(ns);
+}
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();

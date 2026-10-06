@@ -93,23 +93,54 @@ def _deliver(user_ids, payload, ttl):
     return sent
 
 
+def _native(ids, payload):
+    """Native mobil cihazlara (Capacitor; FCM/APNs) dağıt — kimlik bilgisi yoksa sessiz."""
+    try:
+        from . import push_native
+        if push_native.available():
+            with db.connect() as conn:
+                push_native.send(conn, ids, payload)
+    except Exception as e:   # noqa: BLE001 — native push sistemi etkilemesin
+        log.warning('native push hatası: %s', str(e)[:200])
+
+
+def _deliver_all(ids, payload, ttl):
+    if available():
+        try:
+            _deliver(ids, payload, ttl)
+        except Exception as e:   # noqa: BLE001
+            log.warning('web push hatası: %s', str(e)[:200])
+    _native(ids, payload)
+
+
+def _any_push():
+    if available():
+        return True
+    try:
+        from . import push_native
+        return push_native.available()
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def send(user_ids, payload, ttl=300):
-    """Engellemeden gönder (senkron ya da async koddan çağrılabilir). payload: {type, title, body, url, tag}."""
+    """Engellemeden gönder (senkron ya da async koddan çağrılabilir). payload: {type, title, body, url, tag}.
+    Web Push (tarayıcı/PWA) VE native mobil (Capacitor FCM/APNs) cihazların ikisine birden dağıtır."""
     ids = {int(u) for u in (user_ids or []) if u}
-    if not ids or not available():
+    if not ids or not _any_push():
         return
-    _pool.submit(_deliver, ids, payload, ttl)
+    _pool.submit(_deliver_all, ids, payload, ttl)
 
 
 def send_lazy(fn):
     """Yük, iş parçacığında hesaplanacaksa (isim sorgusu vb.): fn() → (user_ids, payload) | None."""
-    if not available():
+    if not _any_push():
         return
 
     def run():
         r = fn()
         if r and r[0]:
-            _deliver({int(u) for u in r[0]}, r[1], 120)
+            _deliver_all({int(u) for u in r[0]}, r[1], 120)
     _pool.submit(run)
 
 

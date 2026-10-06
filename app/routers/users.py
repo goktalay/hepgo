@@ -22,9 +22,13 @@ class UserIn(BaseModel):
     ai_offtopic: bool = True   # yapay zekaya sistem dışı soru sorabilme
 
 
-def _validate(conn, body, user_id=None):
+def _validate(conn, body, user_id=None, actor=None):
     if not body.username.strip() or not body.full_name.strip():
         raise HTTPException(400, 'Kullanıcı adı ve ad soyad zorunlu')
+    # Yetki yükselmesi engeli: yalnız sistem sahibi (MASTER), MASTER kullanıcı adlı bir hesap oluşturabilir/atayabilir.
+    # Aksi halde bir yönetici (ADMIN), kullanıcı adını MASTER e-postasıyla eşit yapıp sahipliğe yükselebilirdi.
+    if auth.is_master(body.username.strip()) and not (actor and auth.is_master(actor.get('username', ''))):
+        raise HTTPException(403, 'Bu kullanıcı adı sistem sahibine ayrılmıştır; oluşturulamaz/atanamaz')
     bad = [r for r in body.roles if r not in auth.all_roles()]
     if bad:
         raise HTTPException(400, f'Geçersiz rol: {", ".join(bad)}')
@@ -98,7 +102,7 @@ def unlock_user(uid: int, user=Depends(admin_only), conn=db.DB):
 
 @router.post('')
 def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
-    _validate(conn, body)
+    _validate(conn, body, actor=user)
     if not body.password:
         raise HTTPException(400, 'Yeni kullanıcı için şifre zorunlu')
     cur = conn.execute(
@@ -129,7 +133,7 @@ def update_user(uid: int, body: UserIn, user=Depends(admin_only), conn=db.DB):
     mu = db.row(conn.execute('SELECT username FROM users WHERE id = ?', (uid,)))
     if mu and auth.is_master(mu['username']) and (body.username.strip().lower() != mu['username'].lower() or not body.active):
         raise HTTPException(400, 'Sistem sahibinin hesabı pasifleştirilemez ve kullanıcı adı değiştirilemez')
-    _validate(conn, body, uid)
+    _validate(conn, body, uid, actor=user)
     if uid == user['id'] and (auth.ADMIN not in body.roles or not body.active):
         raise HTTPException(400, 'Kendi yönetici yetkinizi veya hesabınızı kapatamazsınız')
     conn.execute('UPDATE users SET username = ?, full_name = ?, phone = ?, active = ?, ai_offtopic = ? WHERE id = ?',

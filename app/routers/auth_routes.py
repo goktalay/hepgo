@@ -341,7 +341,7 @@ async def activity(request: Request, user=Depends(auth.current_user)):
 
 
 @router.post('/auth/password')
-def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.DB):
+def change_password(body: PasswordIn, request: Request, user=Depends(auth.current_user), conn=db.DB):
     stored = conn.execute('SELECT password_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0]
     if not auth.verify_password(body.current, stored):
         raise HTTPException(400, 'Mevcut şifre hatalı')
@@ -358,6 +358,9 @@ def change_password(body: PasswordIn, user=Depends(auth.current_user), conn=db.D
     new_hash = auth.hash_password(body.new)
     conn.execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', (new_hash, user['id']))
     policy.record_history(conn, user['id'], new_hash)
+    # Şifre değişince diğer oturumlar iptal (ele geçirilmiş olası saldırgan oturumu kalmasın); mevcut oturum korunur
+    cur_token = request.cookies.get(auth.COOKIE)
+    conn.execute('DELETE FROM sessions WHERE user_id = ? AND token IS NOT ?', (user['id'], cur_token))
     db.audit(conn, user['id'], 'Şifresini değiştirdi', 'user', user['id'])
     return {'ok': True}
 

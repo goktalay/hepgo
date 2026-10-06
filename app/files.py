@@ -295,4 +295,9 @@ def get_file(kind: str, name: str, w: int = 0, dl: int = 0, user=Depends(current
         thumb = thumbnail(path, kind, name, size)
         if thumb:
             return FileResponse(thumb, media_type='image/webp', headers=FILE_CACHE)
+    # Aktif içerik (.svg/.html/.xml…) asla üst-düzey belge olarak inline açılmaz → her zaman indirilir (Content-Disposition:
+    # attachment). <img>/alt kaynak olarak yüklenince tarayıcı bunu yok sayıp görseli çizer (logo bozulmaz), ama adrese
+    # doğrudan gidilince betik çalıştırabilecek şekilde render edilmez (sandbox CSP'ye ek savunma).
+    if Path(str(path)).suffix.lower() in ACTIVE_EXT:
+        return FileResponse(path, filename=name, headers=_headers(path))
     return FileResponse(path, headers=_headers(path))

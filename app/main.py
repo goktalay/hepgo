@@ -1,6 +1,7 @@
 import hashlib
 import html as htmlmod
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 import re
@@ -209,6 +210,56 @@ async def revalidate_static(request, call_next):
     return response
 
 
+# --- Güvenlik başlıkları ---------------------------------------------------
+# Satır içi iki CSS-önyükleme onload işleyicisinin CSP karması (index.html'deki rel-swap).
+_CSP_HASHES = ("'sha256-1jAmyYXcRq6zFldLe/GCgIDJBiOONdXjTLgEFMDnDSM=' "
+               "'sha256-mVP3PTvMv9AYGWNbDo0gms1jqWyGhlU/Iog4lTy7y2I='")
+# Her yanıtta uygulanan güvenli taban: çerçeveleme (clickjacking), object ve base-uri sınırlanır;
+# script/style/img KISITLANMAZ (yardımcı sayfalar — ekran paylaşımı, yasal — kırılmasın). Ana uygulama (_spa)
+# kendi tam/nonce'lu CSP'sini set eder; dosya/mail sandbox yanıtları kendi katı CSP'sini korur.
+_SAFE_CSP = "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
+
+
+def _is_https(request):
+    xf = (request.headers.get('x-forwarded-proto') or '').lower()
+    if xf:
+        return 'https' in xf
+    cf = (request.headers.get('cf-visitor') or '')
+    if '"scheme":"https"' in cf.replace(' ', ''):
+        return True
+    return request.url.scheme == 'https'
+
+
+def _app_csp(nonce):
+    """Ana uygulama (kimlik doğrulamalı arayüz) için katı CSP. Satır içi script yalnız nonce/karma ile çalışır
+    (enjekte edilen script engellenir). Google Haritalar (caymaz'da anahtar var) ve Google Fonts'a izin verilir;
+    img/connect/media https: ile pragmatik (harita döşemeleri, avatar, radyo akışı, hava durumu, OAuth)."""
+    return ("default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self'; "
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' 'unsafe-hashes' {_CSP_HASHES} "
+            "https://maps.googleapis.com https://maps.gstatic.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; "
+            "connect-src 'self' https: wss:; media-src 'self' blob: data: https:; "
+            "worker-src 'self' blob:; child-src 'self' blob: data:; frame-src 'self' blob: data:;")
+
+
+@app.middleware('http')
+async def security_headers(request, call_next):
+    """Tüm yanıtlara güvenlik başlıkları: MIME-sniff kapalı, referrer sızıntısı sınırlı, aynı-köken çerçeveleme
+    (native offline iframe'i için SAMEORIGIN), HTTPS'te HSTS, kullanılmayan güçlü özellikler kapalı. CSP tabanı
+    setdefault ile — yanıt kendi CSP'sini vermişse (ana uygulama / sandbox) dokunulmaz."""
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault('X-Content-Type-Options', 'nosniff')
+    h.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    h.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    h.setdefault('Permissions-Policy', 'payment=(), usb=(), serial=(), bluetooth=(), hid=(), midi=()')
+    if _is_https(request):
+        h.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    h.setdefault('Content-Security-Policy', _SAFE_CSP)
+    return response
+
+
 @app.get('/manifest.webmanifest')
 def manifest():
     # Beyaz etikette uygulama adı firmanın adı olur (HEPGO görünmez); ikonlar BRAND_DIR'den gelir (ayrı middleware).
@@ -341,8 +392,11 @@ def _spa(request, page_title=None, description=None):
     html = html.replace('<!--MODULEPRELOAD-->', links)
     for d in ASSET_DIRS:
         html = html.replace(f'"/static/{d}/', f'"/sv/{ver}/{d}/')
-    html = html.replace('</head>', f'<script>window.__VER="{ver}";</script>\n</head>', 1)   # açık uygulamada sürüm karşılaştırması
-    return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
+    # CSP nonce: satır içi script'lere (tema + açılış ekranı) ekle; enjekte edilen script'ler engellenir
+    nonce = secrets.token_urlsafe(16)
+    html = html.replace('<script>', f'<script nonce="{nonce}">')
+    html = html.replace('</head>', f'<script nonce="{nonce}">window.__VER="{ver}";</script>\n</head>', 1)   # açık uygulamada sürüm karşılaştırması
+    return HTMLResponse(html, headers={'Cache-Control': 'no-cache', 'Content-Security-Policy': _app_csp(nonce)})
 
 
 @app.get('/api/version')

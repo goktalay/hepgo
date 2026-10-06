@@ -77,6 +77,9 @@ def _resolve(body, old=None):
     password = body.password if body.password else (camlib.decrypt(old['password_enc']) if old else '')
     xaddr = (body.xaddr or '').strip() or (f'http://{body.ip.strip()}{":" + str(body.port) if body.port else ""}/onvif/device_service'
                                           if body.ip else None)
+    # ONVIF yalnız http(s) üzerinden konuşur; başka şema (file://, gopher://…) ile sunucudan iç kaynak yoklanamasın
+    if xaddr and not xaddr.lower().startswith(('http://', 'https://')):
+        raise HTTPException(400, 'ONVIF adresi http:// ya da https:// ile başlamalı')
     info = {'manufacturer': old and old['manufacturer'], 'model': old and old['model'], 'stream_url': (body.stream_url or '').strip() or None}
     if not info['stream_url'] or (old and body.stream_url and '***' in body.stream_url):
         if not xaddr:
@@ -85,8 +88,9 @@ def _resolve(body, old=None):
             info = camlib.probe_camera(xaddr, (body.username or '').strip(), password)
         except PermissionError as e:
             raise HTTPException(400, str(e)) from None
-        except Exception as e:
-            raise HTTPException(400, f'Kameraya ONVIF ile ulaşılamadı: {e}') from None
+        except Exception:
+            # Hata detayı dışarı sızdırılmaz (iç ağ yoklama oracle'ı olmasın); kamera yetkilisine genel mesaj
+            raise HTTPException(400, 'Kameraya ONVIF ile ulaşılamadı (adres/kullanıcı/şifre ve ağ erişimini denetleyin)') from None
     return xaddr, password, info
 
 

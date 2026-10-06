@@ -36,14 +36,22 @@ export async function rememberCompany(meta, username) {
 
 export const hasCompanies = () => read().length > 0;
 
-// Girilen adresi/kodu firma adresine çevir: "gokkubbe" → gokkubbe.hepgo.com ; tam adres de kabul
+// Yalnız GÜVENİLEN firma alan adlarına yönlendirilir (phishing/açık-yönlendirme engeli): capacitor allowNavigation
+// listesiyle aynı köken kümesi. Rastgele bir host (ör. evil.com) girilirse reddedilir — kullanıcı sahte giriş
+// sayfasına yönlendirilip kimlik bilgisi çalınamasın.
+const TRUSTED_SUFFIXES = ['.hepgo.com', '.caymaz.app', '.veilox.app', '.firma.app'];
+const TRUSTED_EXACT = ['hepgo.com', 'caymaz.app', 'veilox.app', 'firma.app'];
+const isTrustedHost = host => TRUSTED_EXACT.includes(host) || TRUSTED_SUFFIXES.some(sfx => host.endsWith(sfx));
+
+// Girilen adresi/kodu firma adresine çevir: "gokkubbe" → gokkubbe.hepgo.com ; tam adres yalnız güvenilir alan adıysa
 function resolveAddress(raw) {
   let s = (raw || '').trim().toLowerCase();
   if (!s) return null;
-  s = s.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\s+/g, '');
+  s = s.replace(/^https?:\/\//, '').replace(/[/?#].*$/, '').replace(/\s+/g, '').replace(/:\d+$/, '');
   if (!s) return null;
   if (!s.includes('.')) s = `${s}.hepgo.com`;   // yalnız kod/slug girildiyse hepgo.com altına
-  if (!/^[a-z0-9.-]+$/.test(s)) return null;      // geçersiz karakter
+  if (!/^[a-z0-9.-]+$/.test(s) || s.includes('..')) return null;   // geçersiz karakter
+  if (!isTrustedHost(s)) return null;           // güvenilmeyen alan adı: reddet
   return s;
 }
 
@@ -82,7 +90,7 @@ export function companySwitcher(box, { onBack }) {
     clear(box,
       h('div', { class: 'acc-title' }, 'Kayıtlı firmalarınız'),
       h('div', { class: 'acc-list co-list' }, list.map(c => h('div', { class: 'acc-item' },
-        h('button', { type: 'button', class: 'acc-btn', onclick: () => goto(new URL(c.url).host) },
+        h('button', { type: 'button', class: 'acc-btn', onclick: () => { let hst; try { hst = new URL(c.url).host; } catch { return; } if (isTrustedHost(hst)) goto(hst); } },
           avatarOf(c), h('b', null, c.company), h('small', null, c.username || c.url.replace(/^https?:\/\//, ''))),
         h('button', { type: 'button', class: 'acc-x', title: 'Bu cihazdan kaldır', onclick: () => {
           forgetCompany(c.url); list.splice(list.indexOf(c), 1); showList();

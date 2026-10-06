@@ -21,8 +21,14 @@
       Push.addListener('registration', function (t) { post('/api/push/native-register', { platform: platform, token: t.value }); });
       Push.addListener('registrationError', function () {});
       Push.addListener('pushNotificationActionPerformed', function (ev) {
-        var url = ev && ev.notification && ev.notification.data && ev.notification.data.url;
-        if (url) { try { location.href = url; } catch (e) {} }
+        // Bildirim yük'ündeki url DOĞRULANIR: yalnız AYNI KÖKEN bir yol/adres açılır (kötü amaçlı/bozuk yük
+        // kimlik doğrulamalı WebView'i rastgele bir siteye yönlendirmesin). Aksi halde yok sayılır.
+        var raw = ev && ev.notification && ev.notification.data && ev.notification.data.url;
+        if (!raw) return;
+        try {
+          var u = new URL(raw, location.origin);
+          if (u.origin === location.origin) location.href = u.href;
+        } catch (e) { /* geçersiz url: yok say */ }
       });
       await Push.register();
     } catch (e) { /* ses yok, sessiz geç */ }

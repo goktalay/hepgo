@@ -24,6 +24,7 @@ Op yönlendirmesi (agent_call/call_sync):
 """
 import asyncio
 import datetime
+import hmac
 import json
 import secrets
 
@@ -198,7 +199,7 @@ def _resolve_slot(first):
     Not: istemci 'integ' ipucu yollasa bile ANAHTAR yetkilidir; çelişirlerse anahtara güvenilir
     (integ_for_key zaten anahtardan çözdüğü için ipucu dikkate alınmaz)."""
     key = first.get('key')
-    if key and config.AGENT_KEY and key == config.AGENT_KEY:
+    if key and config.AGENT_KEY and hmac.compare_digest(key, config.AGENT_KEY):
         return 'legacy'
     integ = agentkeys.integ_for_key(key)
     if integ in _INTEG_SLOTS:

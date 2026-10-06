@@ -21,7 +21,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from . import config, db
+from . import config, db, netguard
 from .cameras import decrypt, encrypt
 
 UA = {'User-Agent': 'Mozilla/5.0 (compatible; HepgoERP/2.1; +https://veilox.app)'}
@@ -167,8 +167,11 @@ def x_revoke(acc):
 
 
 def _get(url, **kw):
+    # SSRF koruması: host her adımda GENEL adrese çözülmeli; yönlendirmeler doğrulanarak elle izlenir
     try:
-        r = httpx.get(url, headers=UA, timeout=TIMEOUT, follow_redirects=True, **kw)
+        r = netguard.safe_get(lambda u, **k: httpx.get(u, headers=UA, timeout=TIMEOUT, **k), url, **kw)
+    except netguard.BlockedURLError as e:
+        raise SocialError(f'Güvenli olmayan adres engellendi: {e}') from e
     except httpx.HTTPError as e:
         raise SocialError(f'Bağlanılamadı: {e}') from e
     if r.status_code >= 400:

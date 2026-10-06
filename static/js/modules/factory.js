@@ -106,6 +106,8 @@ const TOOL_ICON = {
   grip:   () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, [[9, 6], [15, 6], [9, 12], [15, 12], [9, 18], [15, 18]].map(([cx, cy]) => s('circle', { cx, cy, r: 1.5, stroke: 'none' }))),
   // Seçenekler paneli (sürgü/slider ikonu): özellikler + katmanlar menüsünü açar
   panel:  () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('path', { d: 'M4 7 H20 M4 12 H20 M4 17 H20', fill: 'none' }), [[9, 7], [15, 12], [7, 17]].map(([cx, cy]) => s('circle', { cx, cy, r: 2.3, stroke: 'none' }))),
+  // Seçili öğeyi sil (çöp kutusu)
+  trash:  () => s('svg', { viewBox: '0 0 24 24', class: 'fab-ti' }, s('path', { d: 'M4 7 H20 M9 7 V5 a1 1 0 0 1 1-1 h4 a1 1 0 0 1 1 1 V7 M6 7 L7 20 a1 1 0 0 0 1 1 h8 a1 1 0 0 0 1-1 L18 7 M10 11 V17 M14 11 V17', fill: 'none' })),
 };
 // Poligon ağırlık merkezi (etiket + iz konumu). Dejenere poligonlarda ortalama noktaya düşer.
 function centroid(points) {
@@ -734,9 +736,11 @@ export async function render(view, params, ctx) {
       marker: ['markers', 'İşaretçi'], line: ['lines', 'Hat'] };
     const [path, label] = map[sel.type];
     if (!await confirmDialog(`${label} sil`, `${label} silinsin mi?`, { danger: true, okLabel: 'Sil' })) return;
-    await api.del(`/api/factory/${path}/${sel.id}`);
-    st.sel = null; if (sel.type === 'cam') await loadAvail();
-    await loadFloorData(); drawCanvas(); drawSide(); toast(`${label} silindi`);
+    try {
+      await api.del(`/api/factory/${path}/${sel.id}`);
+      st.sel = null; if (sel.type === 'cam') await loadAvail();
+      await loadFloorData(); drawCanvas(); drawSide(); toast(`${label} silindi`);
+    } catch (err) { toastError(err); }
   }
 
   // ==================================================================== SAĞ PANEL
@@ -828,7 +832,15 @@ export async function render(view, params, ctx) {
       btn('Merdiven Koy', 'stair', () => setTool('stair'), st.tool === 'stair'),
       btn('Arka Plan Planı Yükle', 'bg', () => { if (!st.floorId) return toast('Önce bir kat seçin', 'err'); tbBgInp.click(); }, false),
       h('div', { class: 'fab-tb-sep' }),
+      delToolBtn(),
       panelBtnEl);
+  }
+  // Seçili öğeyi sil (araç çubuğundan her zaman erişilebilir; seçim yoksa pasif)
+  function delToolBtn() {
+    const b = h('button', { class: `fab-tb-btn ${st.sel ? 'danger' : ''}`, type: 'button', title: st.sel ? 'Seçili öğeyi sil' : 'Silmek için önce bir öğe seçin',
+      'aria-label': 'Seçili öğeyi sil', disabled: !st.sel, onclick: deleteSelected });
+    b.append(TOOL_ICON.trash());
+    return b;
   }
 
   function drawSide() {
@@ -1283,6 +1295,9 @@ function injectStyle() {
   .fab-tb-btn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;cursor:pointer;color:#475569}
   .fab-tb-btn:hover{background:var(--bg2,#f1f5f9);color:#1e293b}
   .fab-tb-btn.on{background:var(--pri,#2563eb);color:#fff}
+  .fab-tb-btn.danger{color:#dc2626}
+  .fab-tb-btn.danger:hover{background:#fee2e2;color:#b91c1c}
+  .fab-tb-btn:disabled{opacity:.35;cursor:not-allowed}
   .fab-ti{width:20px;height:20px;display:block;fill:currentColor;stroke:none}
   .fab-ti [fill="none"]{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
   `;

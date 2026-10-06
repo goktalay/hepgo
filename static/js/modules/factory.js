@@ -486,6 +486,7 @@ export async function render(view, params, ctx) {
     // hareket modu izleri
     if (st.mode === 'move') drawMovementOverlay();
     if (st.mode === 'move' && st.live) drawLiveOverlay();
+    if (st.mode === 'live') drawLivePeople();
   }
 
   // ==================================================================== seçim yardımcıları
@@ -817,9 +818,9 @@ export async function render(view, params, ctx) {
       return b;
     };
     // Seçenekler panelini açıp kapatan düğme (her iki modda): basınca sağ paneldeki seçenekler menü olarak gelir.
-    panelBtnEl = btn(st.mode === 'move' ? 'Seçenekler: Hareket & Canlı Durum' : 'Seçenekler: Özellikler & Katmanlar',
+    panelBtnEl = btn(st.mode === 'edit' ? 'Seçenekler: Özellikler & Katmanlar' : st.mode === 'live' ? 'Canlı: kişi listesi' : 'Seçenekler: Hareket & Canlı Durum',
       'panel', () => setPanel(!st.panelOpen), st.panelOpen);
-    if (st.mode === 'move') { clear(toolbarEl, grip, panelBtnEl); return; }
+    if (st.mode !== 'edit') { clear(toolbarEl, grip, panelBtnEl); return; }   // Hareket/Canlı: düzenleme araçları gizli (salt görünüm)
     clear(toolbarEl, grip,
       btn('Seç / Taşı', 'select', () => setTool('select'), st.tool === 'select'),
       btn('Oda Çiz', 'room', () => setTool('room'), st.tool === 'room'),
@@ -845,6 +846,7 @@ export async function render(view, params, ctx) {
 
   function drawSide() {
     buildToolbar(); toolbarEl.hidden = false;
+    if (st.mode === 'live') { drawLiveSide(); return; }
     if (st.mode === 'move') { drawMoveSide(); return; }   // hareket içeriğini doldurur, sonunda applyPanel çağırır
     // DÜZEN: araçlar yüzen ikon çubuğunda; seçenekler paneli = aktif araç notu + seçili öğe özellikleri + katmanlar
     const note = st.tool === 'room' ? 'Köşe eklemek için tıklayın; bitirmek için çift tık ya da Enter. Vazgeç: Esc.'
@@ -1115,7 +1117,8 @@ export async function render(view, params, ctx) {
   }
   async function refreshLive() {
     st.liveData = await api.get('/api/factory/now?minutes=10');
-    drawMoveSide(); drawOverlay();
+    if (st.mode === 'live') { drawCanvas(); drawLiveSide(); }
+    else { drawMoveSide(); drawOverlay(); }
   }
   function livePanel() {
     if (!st.live) return h('div', { class: 'fab-note muted' }, 'Son 10 dakikada görülen kişileri odalara göre gösterir.');
@@ -1145,17 +1148,76 @@ export async function render(view, params, ctx) {
     });
   }
 
+  // CANLI MOD: salt görünüm; personel fotoğraflarını konumlarında yuvarlak içinde gösterir (zoom/drag serbest).
+  function drawLivePeople() {
+    const ppl = (st.liveData?.people || []).filter(p => p.floor_id === st.floorId);
+    const spots = new Map();   // aynı noktadakileri kümele
+    ppl.forEach(p => {
+      let x = p.x, y = p.y;
+      if ((x == null || y == null) && p.room_id) { const r = st.rooms.find(rr => rr.id === p.room_id); if (r) { const c = centroid(r.points); x = c.x; y = c.y; } }
+      if (x == null || y == null) return;
+      const key = `${Math.round(x)},${Math.round(y)}`;
+      if (!spots.has(key)) spots.set(key, { x, y, list: [] });
+      spots.get(key).list.push(p);
+    });
+    let uid = 0;
+    spots.forEach(spot => spot.list.forEach((p, i) => {
+      const n = spot.list.length, off = n > 1 ? 20 : 0, ang = (i / n) * Math.PI * 2;
+      const px = spot.x + Math.cos(ang) * off, py = spot.y + Math.sin(ang) * off, R = 16;
+      const g = s('g', { class: 'fab-live-person', transform: `translate(${px} ${py})` });
+      g.append(s('circle', { cx: 0, cy: 0, r: R + 2.5, class: 'fab-live-ring' }));
+      if (p.crop) {
+        const cid = `lpclip${uid++}`;
+        g.append(s('clipPath', { id: cid }, s('circle', { cx: 0, cy: 0, r: R })));
+        const href = fileUrl(p.crop, 96);
+        g.append(s('image', { href, 'xlink:href': href, x: -R, y: -R, width: R * 2, height: R * 2, 'clip-path': `url(#${cid})`, preserveAspectRatio: 'xMidYMid slice' }));
+      } else {
+        g.append(s('circle', { cx: 0, cy: 0, r: R, class: 'fab-live-ph' }));
+        g.append(s('text', { x: 0, y: 5, 'text-anchor': 'middle', class: 'fab-live-ini' }, (p.subject_name || '?').slice(0, 1).toLocaleUpperCase('tr')));
+      }
+      g.append(s('rect', { x: -34, y: R + 4, width: 68, height: 15, rx: 4, class: 'fab-live-tag' }));
+      g.append(s('text', { x: 0, y: R + 15, 'text-anchor': 'middle', class: 'fab-live-name' }, (p.subject_name || '—').slice(0, 14)));
+      gOverlay.append(g);
+    }));
+  }
+  function drawLiveSide() {
+    const ppl = st.liveData?.people || [];
+    const byFloor = new Map();
+    ppl.forEach(p => { const k = p.floor_id || 0; if (!byFloor.has(k)) byFloor.set(k, []); byFloor.get(k).push(p); });
+    clear(sideBody,
+      h('h3', { class: 'fab-side-h' }, 'Canlı · Şu an kim nerede'),
+      h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Son 10 dakikada tanınan kişiler plan üzerinde fotoğraflarıyla konumlanır. Plan salt görünümdür; sürükleyip yakınlaştırabilirsiniz.'),
+      !ppl.length ? h('div', { class: 'fab-note muted' }, 'Son 10 dakikada tanınan kişi yok.')
+        : h('div', { class: 'fab-live' }, [...byFloor.entries()].map(([fid, arr]) => {
+          const fl = st.floors.find(f => f.id === fid);
+          return h('div', { class: 'fab-live-floor' },
+            h('h4', { onclick: () => { if (fid && fid !== st.floorId) { st.floorId = fid; loadFloorData().then(() => { drawCanvas(); drawFloorBar(); }); } }, style: { cursor: 'pointer' } },
+              `${fl ? fl.name : 'Bilinmeyen kat'} (${arr.length})`),
+            arr.map(p => h('div', { class: 'fab-live-row' },
+              p.crop ? h('img', { class: 'fab-live-img', src: fileUrl(p.crop, 64), alt: '' }) : h('span', { class: 'fab-live-img ph' }),
+              h('span', null, h('b', null, p.subject_name || '—'), h('br'), h('span', { class: 'muted' }, `${p.room_name || p.camera_name || '—'} · ${fmtDateTime(p.at)}`)))));
+        })));
+    drawFloorBar();
+    applyPanel();
+  }
+
   // ==================================================================== mod geçişi + ilk çizim
+  function startLive() {
+    refreshLive().catch(() => {});
+    if (!st.liveTimer) st.liveTimer = every(10000, () => refreshLive().catch(() => {}));
+  }
   function setMode(mode) {
     st.mode = mode; st.sel = null; st.draft = null; st.tool = 'select';
-    if (mode !== 'move' && st.live && st.liveTimer) { clearInterval(st.liveTimer); st.liveTimer = null; st.live = false; }
+    const wantLive = mode === 'live' || (mode === 'move' && st.live);
+    if (!wantLive && st.liveTimer) { clearInterval(st.liveTimer); st.liveTimer = null; st.live = false; }
     hintText('');
+    if (mode === 'live') { st.panelOpen = true; startLive(); }
     drawCanvas(); drawSide();
   }
   onLeave(() => { if (st.liveTimer) clearInterval(st.liveTimer); if (st.play.raf) cancelAnimationFrame(st.play.raf); });
 
-  const toolbar = moduleToolbar(segmented([['edit', 'Düzen'], ['move', 'Hareket']], st.mode, setMode, { tabs: true }));
-  clear(view, pageHead('Fabrika', { back: '#/', sub: 'Kat planı · kamera/personel yerleşimi · hareket izi' }), toolbar, wrap);
+  const toolbar = moduleToolbar(segmented([['edit', 'Düzen'], ['move', 'Hareket'], ['live', 'Canlı']], st.mode, setMode, { tabs: true }));
+  clear(view, pageHead('Fabrika', { back: '#/', sub: 'Kat planı · kamera/personel yerleşimi · hareket izi · canlı konum' }), toolbar, wrap);
 
   try {
     applyToolbarPos();   // yüzen araç çubuğunun kayıtlı konumunu uygula (varsa)
@@ -1225,6 +1287,12 @@ function injectStyle() {
   .fab-playdot{fill:#16a34a;stroke:#fff;stroke-width:2}
   .fab-live-dot{fill:#16a34a;fill-opacity:.35;stroke:#16a34a;stroke-width:2}
   .fab-live-cnt{font:700 13px system-ui;fill:#065f46;pointer-events:none}
+  .fab-live-person{pointer-events:none}
+  .fab-live-ring{fill:#fff;stroke:#16a34a;stroke-width:2.5}
+  .fab-live-ph{fill:#cbd5e1}
+  .fab-live-ini{font:700 15px system-ui;fill:#475569}
+  .fab-live-tag{fill:#0f172a;fill-opacity:.78}
+  .fab-live-name{font:600 11px system-ui;fill:#fff}
   .fab-tools{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
   .fab-tool{padding:8px 10px;border:1px solid var(--line,#e5e7eb);border-radius:8px;background:var(--card,#fff);cursor:pointer;text-align:left;font-size:13px}
   .fab-tool.on{background:var(--pri,#2563eb);color:#fff;border-color:var(--pri,#2563eb)}

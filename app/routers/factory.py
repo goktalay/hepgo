@@ -928,6 +928,7 @@ def who_is_where(minutes: int = 10, user=Depends(fab_user), conn=db.DB):
             'room_name': (pl.get('room_name') if pl else None),
             'floor_id': pl['floor_id'] if pl else None,
             'floor_name': (pl.get('floor_name') if pl else None),
+            'x': pl['x'] if pl else None, 'y': pl['y'] if pl else None,   # kameranın/işaretçinin plandaki konumu (Canlı görünüm)
             'crop': e.get('crop'),
         }
     people = sorted(latest.values(), key=lambda r: r['at'] or '', reverse=True)

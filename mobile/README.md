@@ -118,3 +118,37 @@ npx @capacitor/assets generate --assetPath assets
 npx cap sync
 ```
 > SVG kaynak olduğu için her boyutta **net/keskin** çıkar (kırpık görünmez). İkon/splash değişikliği native olduğundan yeni mağaza sürümü gerektirir.
+
+## 10) GÜVENLİK SERTLEŞTİRME (native — mağaza öncesi zorunlu)
+`cap add` ile `android/` ve `ios/` üretildikten sonra uygulayın (bu klasörde `templates/` hazır şablonlar var):
+
+**Android (`android/app/src/main/AndroidManifest.xml`):**
+- `<application ... android:usesCleartextTraffic="false" android:networkSecurityConfig="@xml/network_security_config" android:allowBackup="false">`
+  - `templates/android-network_security_config.xml` → `android/app/src/main/res/xml/network_security_config.xml` olarak kopyalayın.
+  - `allowBackup="false"`: cihaz yedeklerinde (ADB/bulut) uygulama yerel deposu (oturum jetonları) alınmasın.
+- Ana `<activity>` ve tüm receiver/service'lerde `android:exported` değeri **açıkça** ayarlı olmalı (Android 12+). Capacitor varsayılanı genelde doğrudur; derleme uyarılarını giderin.
+- `capacitor.config.json` zaten `androidScheme:https` + `cleartext:false` + `allowMixedContent:false`.
+
+**iOS (`ios/App/App/Info.plist`):**
+- `templates/ios-Info-additions.plist` içindeki anahtarları ekleyin: **ATS `NSAllowsArbitraryLoads=false`** (asla true), konum + **mikrofon** (görüşme) + kamera + fotoğraf izin metinleri, `UIBackgroundModes` (location + remote-notification).
+- Signing & Capabilities: Push Notifications + Background Modes (Location updates, Remote notifications).
+
+**İstemci (uygulanmış/canlı):**
+- Şirket-değiştir adresi yalnız güvenilir alan adlarına izinli (açık-yönlendirme engeli); push bildirim url'si yalnız aynı köken.
+- (İleride) cihaz oturum jetonlarını `localStorage` yerine Keychain/Keystore'a taşıyın (Capacitor Preferences güvenli depo).
+
+## 11) MAĞAZA VERİ-GÜVENLİĞİ BEYANLARI (güncellendi — tümü beyan edilmeli)
+Uygulama canlı web'i yüklediğinden erişilebilen TÜM veri türleri beyan edilir. "İzleme (tracking)" = Hayır (reklam kimliği yok, satış/paylaşım yok).
+
+| Veri türü | Apple App Privacy | Google Play Data Safety |
+|---|---|---|
+| Hassas konum (arka plan) | Location → Precise | Location (arka plan beyanı + gerekçe videosu) |
+| Push jetonu / cihaz kimliği | Identifiers → Device ID | Device or other IDs |
+| **Yüz / biyometrik** | **Sensitive Info** | **Other info** (biyometrik — açıkça) |
+| **Ses kaydı + ses-izi** | **Audio Data** + Sensitive Info | **Audio → Voice/sound recordings** |
+| Ad, e-posta, telefon, rol | Contact Info; Identifiers | Personal info (Name/Email/Phone) |
+| İK / özlük verisi | Sensitive Info (employment) | Personal info → Other |
+| Mail içeriği + rehber/takvim (kullanıcı bağlar) | Other User Content; Contacts | Messages → Emails; Contacts; Calendar |
+| Audit / giriş kayıtları | Diagnostics / Usage | App activity; App info & performance |
+
+**Hesap silme / veri talebi:** Uygulama içi *Kişisel Ayarlar › Verilerim (KVKK)* ekranı (veri kopyası / silme / itiraz başvurusu) eklendi; Apple/Google beklentisi karşılanır. Gizlilik politikası `/gizlilik` (biyometrik + ses + yurt dışı + haklar) yayında.

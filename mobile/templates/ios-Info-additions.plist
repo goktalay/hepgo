@@ -1,0 +1,34 @@
+<!-- HEPGO — iOS Info.plist'e EKLENECEK anahtarlar (ios/App/App/Info.plist <dict> içine).
+     ATS: NSAllowsArbitraryLoads KESİNLİKLE true OLMAMALI (tüm trafik HTTPS). İzin metinleri açık ve dürüst olmalı. -->
+
+<!-- App Transport Security: varsayılan (TLS zorunlu) korunur; arbitrary loads kapalı -->
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSAllowsArbitraryLoads</key>
+  <false/>
+</dict>
+
+<!-- Konum (saha/güvenlik; işveren açık rıza süreci ayrı) -->
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Saha ve güvenlik süreçleri için çalışma sırasında konumunuz kullanılır. Rıza vermezseniz konum kaydedilmez.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>Personel saha/güvenlik takibi için konumunuz arka planda da kaydedilebilir. Dilediğiniz an geri alabilirsiniz.</string>
+
+<!-- Mikrofon: uygulama içi sesli/görüntülü görüşme ve toplantılar -->
+<key>NSMicrophoneUsageDescription</key>
+<string>Uygulama içi sesli/görüntülü görüşme ve toplantılar için mikrofon kullanılır.</string>
+
+<!-- Kamera: görüntülü görüşme, belge/QR tarama, yüz tanıma kaydı (kullanılıyorsa) -->
+<key>NSCameraUsageDescription</key>
+<string>Görüntülü görüşme, belge/QR okuma ve (etkinse) yüz tanıma kaydı için kamera kullanılır.</string>
+
+<!-- Fotoğraf (dosya/evrak yükleme, profil fotoğrafı) -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Dosya/evrak ve profil fotoğrafı yüklemek için fotoğraflarınıza erişilir.</string>
+
+<!-- Arka plan modları: konum güncellemeleri + uzaktan bildirim -->
+<key>UIBackgroundModes</key>
+<array>
+  <string>location</string>
+  <string>remote-notification</string>
+</array>

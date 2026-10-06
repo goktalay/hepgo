@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HEPGO — Android ağ güvenliği: cleartext (düz HTTP) tamamen kapalı; tüm trafik yalnız HTTPS.
+     Uygula: android/app/src/main/res/xml/network_security_config.xml olarak kopyala ve AndroidManifest.xml'de
+     <application ... android:networkSecurityConfig="@xml/network_security_config" android:usesCleartextTraffic="false"> -->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+</network-security-config>

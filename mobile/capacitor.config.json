@@ -6,8 +6,10 @@
     "url": "https://gokkubbe.hepgo.com",
     "allowNavigation": ["gokkubbe.hepgo.com", "*.hepgo.com", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"],
     "androidScheme": "https",
-    "iosScheme": "https"
+    "iosScheme": "https",
+    "cleartext": false
   },
+  "android": { "allowMixedContent": false },
   "backgroundColor": "#0f1d3d",
   "plugins": {
     "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] },

@@ -427,7 +427,12 @@ def unassign(gid: int, user=Depends(cam_user), conn=db.DB):
 def rescan(user=Depends(cam_user), conn=db.DB):
     """Tanınmayan kişileri tekrar tara: atanmamış yüz gruplarını genişlemiş kimlik kütüphanesiyle yeniden eşleştirir,
     eşleşenleri otomatik atar (kişiye resim atandıkça kütüphane büyür → daha önce tanınamayan artık tanınabilir)."""
-    res = _face(conn, 'rescan')
+    try:
+        res = _face(conn, 'rescan')
+    except HTTPException as e:
+        if 'Bilinmeyen' in str(getattr(e, 'detail', '')):   # fabrika yüz ajanı henüz güncellenmedi
+            raise HTTPException(503, 'Fabrika yüz ajanının güncellenmesi gerekiyor; Tekrar Tara şimdilik kullanılamıyor.') from None
+        raise
     items = (res or {}).get('items') or []
     for it in items:   # atanan yüzleri eğitime de ekle (mevcut atama akışıyla aynı; en iyi çaba)
         try:

@@ -113,9 +113,11 @@ from pathlib import Path  # noqa: E402
 
 from .. import config, sysstat  # noqa: E402
 
-SERVICES = [('caymaz', 'GÖKKUBBE web (caymaz.app)'), ('caymaz-turkbey', 'Türkbey web (turkbey.app)'), ('veilox', 'Veilox (veilox.app)'),
-            ('caymaz-cameras', 'Kamera ve yüz tanıma (GÖKKUBBE)'), ('caymaz-turkbey-cameras', 'Kamera ve yüz tanıma (Türkbey)'),
-            ('caymaz-backup.timer', 'Gece yedeği zamanlayıcısı (03:00)')]
+# Sistem servisleri (yeni sunucu: system-level `hepgo-*` unit'leri). Kamera/yüz tanıma yerel değil → fabrika ajanı
+# (gx10) üzerinden; aşağıda _services() ajan bağlantısıyla raporlanır. Gece yedeği systemd timer değil, cron ile
+# alınır (durumu YEDEKLEME kartında yedek tazeliğinden görünür).
+SERVICES = [('hepgo-caymaz', 'GÖKKUBBE web (gokkubbe.hepgo.com)'), ('hepgo-turkbey', 'Türkbey web (turkbey.app)'),
+            ('hepgo-merkez', 'Merkez (merkez.veilox.app)'), ('hepgo-veilox', 'Veilox (hepgo.com)')]
 _cache = {}
 _STARTED = time.time()
 
@@ -177,18 +179,33 @@ def _backups():
 def _services():
     out = []
     for unit, label in SERVICES:
-        state = _run(['systemctl', '--user', 'is-active', unit]) or 'bilinmiyor'
-        since = _run(['systemctl', '--user', 'show', unit, '-p', 'ActiveEnterTimestamp', '--value'])
+        state = _run(['systemctl', 'is-active', unit]) or 'bilinmiyor'
+        since = _run(['systemctl', 'show', unit, '-p', 'ActiveEnterTimestamp', '--value'])
         out.append({'unit': unit, 'label': label, 'state': state, 'since': since})
-    tunnel = _run(['docker', 'ps', '--filter', 'name=caymaz-tunnel', '--format', '{{.Status}}'])
-    out.append({'unit': 'caymaz-tunnel', 'label': 'Cloudflare tüneli (internet erişimi)', 'state': 'active' if tunnel.startswith('Up') else (tunnel or 'bilinmiyor'),
-                'since': tunnel})
+    # Cloudflare tüneli: yeni sunucuda sistem servisi (docker değil)
+    tunnel = _run(['systemctl', 'is-active', 'cloudflared']) or 'bilinmiyor'
+    out.append({'unit': 'cloudflared', 'label': 'Cloudflare tüneli (internet erişimi)', 'state': tunnel,
+                'since': _run(['systemctl', 'show', 'cloudflared', '-p', 'ActiveEnterTimestamp', '--value'])})
+    # Kamera + yüz tanıma: fabrika ajanı (gx10) üzerinden; bu firmanın ajanı bağlı mı
+    try:
+        from .. import agent_hub
+        company = config.COMPANY_NAME or 'bu firma'
+        for integ, lbl in (('camera', f'Kamera ajanı — {company}'), ('face', f'Yüz tanıma ajanı — {company}')):
+            out.append({'unit': f'agent-{integ}', 'label': lbl,
+                        'state': 'active' if agent_hub.online_integ(integ) else 'inactive', 'since': ''})
+    except Exception:   # noqa: BLE001 — ajan bilgisi alınamazsa atla
+        pass
     return out
 
 
+def _unit_name():
+    d = str(config.DATA_DIR)
+    slug = 'turkbey' if 'turkbey' in d else ('merkez' if 'merkez' in d else ('veilox' if 'veilox' in d else 'caymaz'))
+    return f'hepgo-{slug}'
+
+
 def _errors():
-    unit = 'caymaz-turkbey' if 'turkbey' in str(config.DATA_DIR) else 'caymaz'
-    txt = _run(['journalctl', '--user', '-u', unit, '-u', f'{unit}-cameras', '-p', 'err', '--since', '24 hours ago', '-o', 'short-iso', '--no-pager'], 6)
+    txt = _run(['journalctl', '-u', _unit_name(), '-p', 'err', '--since', '24 hours ago', '-o', 'short-iso', '--no-pager'], 6)
     lines = [ln for ln in txt.splitlines() if ln and not ln.startswith('--')]
     return {'count': len(lines), 'last': lines[-12:]}
 

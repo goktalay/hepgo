@@ -24,11 +24,13 @@ import subprocess as _sp
 import time as _time
 
 _ver = {'v': None, 't': 0.0}
-_SVC_RE = _re.compile(r'^caymaz[a-z0-9-]*\.service$')
+# Yeni sunucu: system-level `hepgo-*` servisleri + cloudflared (eski `caymaz*` --user servisleri değil).
+_SVC_RE = _re.compile(r'^(hepgo-[a-z0-9-]+|cloudflared)\.service$')
+_RESTARTABLE_RE = _re.compile(r'^hepgo-[a-z0-9-]+\.service$')   # tünel (cloudflared) web'den yeniden başlatılamaz: tüm erişimi düşürür
 _SVC_LABELS = {
-    'caymaz.service': 'Ana Uygulama (GÖKKUBBE)', 'caymaz-turkbey.service': 'Türkbey Uygulaması',
-    'caymaz-cameras.service': 'Kamera Servisi (GÖKKUBBE)', 'caymaz-turkbey-cameras.service': 'Kamera Servisi (Türkbey)',
-    'caymaz-backup.service': 'Gece Yedeği', 'caymaz-backup.timer': 'Yedek Zamanlayıcı',
+    'hepgo-caymaz.service': 'Ana Uygulama (GÖKKUBBE)', 'hepgo-turkbey.service': 'Türkbey Uygulaması',
+    'hepgo-merkez.service': 'Merkez', 'hepgo-veilox.service': 'Veilox (hepgo.com)',
+    'cloudflared.service': 'Cloudflare Tüneli',
 }
 
 
@@ -66,7 +68,7 @@ def services(user=Depends(auth.current_user)):
     if not _is_sysadmin(user):
         raise HTTPException(403, 'Bu bilgi yalnızca sistem yöneticisine açıktır')
     try:
-        out = _sp.run(['systemctl', '--user', 'list-units', '--type=service,timer', '--all', '--plain', '--no-legend', 'caymaz*'],
+        out = _sp.run(['systemctl', 'list-units', '--type=service', '--all', '--plain', '--no-legend', 'hepgo-*', 'cloudflared.service'],
                       capture_output=True, text=True, timeout=8).stdout
     except Exception as e:
         raise HTTPException(500, f'Servisler okunamadı: {e}')
@@ -79,7 +81,7 @@ def services(user=Depends(auth.current_user)):
         active = p[2] if len(p) > 2 else '?'
         sub = p[3] if len(p) > 3 else ''
         rows.append({'name': name, 'label': _SVC_LABELS.get(name, name), 'active': active, 'sub': sub,
-                     'running': sub in ('running', 'waiting'), 'restartable': bool(_SVC_RE.match(name))})
+                     'running': sub in ('running', 'waiting'), 'restartable': bool(_RESTARTABLE_RE.match(name))})
     return rows
 
 
@@ -803,10 +805,11 @@ def reject_change(cid: int, body: DecideIn = None, user=Depends(auth.current_use
 def restart_service(name: str, user=Depends(auth.current_user)):
     if not _is_sysadmin(user):
         raise HTTPException(403, 'Yetkiniz yok')
-    if not _SVC_RE.match(name):
+    if not _RESTARTABLE_RE.match(name):
         raise HTTPException(400, 'Geçersiz servis')
     try:   # gecikmeli: yanıt döndükten sonra başlatır (uygulama kendi servisini de yeniden başlatabilsin)
-        _sp.Popen(['bash', '-c', f'sleep 1; systemctl --user restart {name}'])
+        # Yeni sunucu: system servisleri (polkit kuralı hepgo kullanıcısına hepgo-*/cloudflared yönetimi verir)
+        _sp.Popen(['bash', '-c', f'sleep 1; systemctl restart {name}'])
     except Exception as e:
         raise HTTPException(500, f'Yeniden başlatılamadı: {e}')
     with db.connect() as conn:

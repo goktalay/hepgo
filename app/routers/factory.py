@@ -133,6 +133,8 @@ def _ensure_schema(conn):
     mk_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_markers)')}
     if 'camera_id' not in mk_cols:
         conn.execute('ALTER TABLE factory_markers ADD COLUMN camera_id INTEGER')
+    if 'direction' not in mk_cols:   # kamera işaretçisinin görüş yönü (derece; 0 = sağ/doğu, saat yönü)
+        conn.execute('ALTER TABLE factory_markers ADD COLUMN direction REAL NOT NULL DEFAULT 0')
     # ALTYAPI: kat arka plan planı (gerçek kat planı resmi — üzerine çizmek için). UPLOAD_DIR-göreli yol + konum/ölçek.
     floor_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_floors)')}
     if 'bg_image' not in floor_cols:
@@ -645,6 +647,7 @@ class MarkerPatch(BaseModel):
     x: Optional[float] = None
     y: Optional[float] = None
     floor_id: Optional[int] = None
+    direction: Optional[float] = None   # kamera işaretçisi görüş yönü (derece)
 
 
 @router.get('/markers')
@@ -683,11 +686,11 @@ def update_marker(mid: int, body: MarkerPatch, user=Depends(fab_user), conn=db.D
     if not m:
         raise HTTPException(404, 'İşaretçi bulunamadı')
     vals = {k: (getattr(body, k) if getattr(body, k) is not None else m[k])
-            for k in ('kind', 'label', 'x', 'y', 'floor_id')}
+            for k in ('kind', 'label', 'x', 'y', 'floor_id', 'direction')}
     if vals['kind'] not in MARKER_KINDS:
         vals['kind'] = m['kind'] if m['kind'] in MARKER_KINDS else 'note'
-    conn.execute('UPDATE factory_markers SET kind = ?, label = ?, x = ?, y = ?, floor_id = ? WHERE id = ?',
-                 (vals['kind'], vals['label'], vals['x'], vals['y'], vals['floor_id'], mid))
+    conn.execute('UPDATE factory_markers SET kind = ?, label = ?, x = ?, y = ?, floor_id = ?, direction = ? WHERE id = ?',
+                 (vals['kind'], vals['label'], vals['x'], vals['y'], vals['floor_id'], vals['direction'], mid))
     if vals['kind'] not in ('cam_indoor', 'cam_outdoor'):   # kamera türü değilse atanmış NVR kamerası anlamsız → temizle
         conn.execute('UPDATE factory_markers SET camera_id = NULL WHERE id = ?', (mid,))
     return db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (mid,)))

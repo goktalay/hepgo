@@ -52,6 +52,24 @@ const MARKER_PALETTE = {
 const MARKER_ORDER = ['ups', 'power_outlet', 'wifi', 'internet', 'intranet', 'switch', 'cam_indoor', 'cam_outdoor', 'note'];
 const markerMeta = k => MARKER_PALETTE[k] || { label: k || 'İşaretçi', icon: '📍', color: '#64748b' };
 
+// Kamera görüş kapsaması: ŞEFFAF SEKTÖR (FOV yelpazesi) + YÖN ÜÇGENİ (oka benzer). dir=derece (0=sağ), merkez (0,0).
+// Dönüş: [sektör, üçgen] SVG düğümleri (bir <g transform=translate(x y)> içine eklenir).
+function coverageNodes(dir, len, color, fov = 1.2) {
+  const rad = (dir || 0) * Math.PI / 180, half = fov / 2;
+  const a0 = rad - half, a1 = rad + half;
+  const f = n => n.toFixed(1);
+  const sector = s('path', {
+    d: `M0 0 L${f(Math.cos(a0) * len)} ${f(Math.sin(a0) * len)} A ${len} ${len} 0 0 1 ${f(Math.cos(a1) * len)} ${f(Math.sin(a1) * len)} Z`,
+    class: 'fab-cov', fill: color });
+  const tipD = 24, baseD = 11, hw = 6, px = Math.cos(rad + Math.PI / 2), py = Math.sin(rad + Math.PI / 2);
+  const tri = s('path', {
+    d: `M${f(Math.cos(rad) * tipD)} ${f(Math.sin(rad) * tipD)} `
+     + `L${f(Math.cos(rad) * baseD + px * hw)} ${f(Math.sin(rad) * baseD + py * hw)} `
+     + `L${f(Math.cos(rad) * baseD - px * hw)} ${f(Math.sin(rad) * baseD - py * hw)} Z`,
+    class: 'fab-dir-tri', fill: color });
+  return [sector, tri];
+}
+
 // HAT (kablo güzergâhı) türleri: [anahtar, etiket, öntanımlı renk] — network mavi (kesikli), power kırmızı (düz).
 const LINE_KINDS = [['network', 'Network hattı', '#2563eb'], ['power', 'Elektrik hattı', '#dc2626'], ['other', 'Diğer', '#6b7280']];
 const LINE_DEFAULT = { network: '#2563eb', power: '#dc2626', other: '#6b7280' };
@@ -367,11 +385,8 @@ export async function render(view, params, ctx) {
       const g = s('g', { class: `fab-cam ${st.sel && st.sel.type === 'cam' && st.sel.id === c.id ? 'sel' : ''}`, transform: `translate(${c.x} ${c.y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectCam(c); } },
         onmousedown: e => startDragCam(e, c), ontouchstart: e => startDragCam(e, c) });
-      // görüş konisi (yön = derece)
-      const rad = (c.direction || 0) * Math.PI / 180, spread = 0.55, len = 46;
-      const p1 = [Math.cos(rad - spread) * len, Math.sin(rad - spread) * len];
-      const p2 = [Math.cos(rad + spread) * len, Math.sin(rad + spread) * len];
-      g.append(s('path', { d: `M0 0 L${p1[0]} ${p1[1]} L${p2[0]} ${p2[1]} Z`, class: 'fab-cone' }));
+      // görüş kapsaması (şeffaf sektör) + yön üçgeni
+      coverageNodes(c.direction || 0, 70, '#f59e0b').forEach(n => g.append(n));
       g.append(s('rect', { x: -9, y: -7, width: 18, height: 13, rx: 2.5, class: 'fab-cam-body' }));
       g.append(s('circle', { cx: 0, cy: 0, r: 3.4, class: 'fab-cam-lens' }));
       g.append(s('text', { x: 0, y: -12, class: 'fab-cam-lbl', 'text-anchor': 'middle' }, c.camera_name || `#${c.camera_id}`));
@@ -410,15 +425,24 @@ export async function render(view, params, ctx) {
       if (st.layers[`mk:${m.kind}`] === false) return;   // TÜR BAZLI göster/gizle (ör. sadece kameralar)
       const meta = markerMeta(m.kind);
       const sel = st.sel && st.sel.type === 'marker' && st.sel.id === m.id;
+      const isCam = m.kind === 'cam_indoor' || m.kind === 'cam_outdoor';
       const g = s('g', { class: `fab-marker ${sel ? 'sel' : ''}`, transform: `translate(${m.x} ${m.y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectMarker(m); } },
         onmousedown: e => startDragMarker(e, m), ontouchstart: e => startDragMarker(e, m) });
+      if (isCam) coverageNodes(m.direction || 0, m.kind === 'cam_outdoor' ? 95 : 72, '#38bdf8').forEach(n => g.append(n));
       if (m.camera_id) g.append(s('circle', { cx: 0, cy: 0, r: 13, fill: 'none', stroke: '#22c55e', 'stroke-width': 2 }));   // NVR atanmış
       g.append(s('circle', { cx: 0, cy: 0, r: 11, class: 'fab-marker-badge', fill: meta.color }));
       g.append(s('text', { x: 0, y: 5, class: 'fab-marker-icon', 'text-anchor': 'middle' }, meta.icon));
       const lbl = m.label || (m.camera_id ? (m.camera_name || `Kamera #${m.camera_id}`) : '');
       if (lbl) g.append(s('text', { x: 15, y: 4, class: 'fab-marker-lbl' }, lbl));
       gStatic.append(g);
+      // seçili kamera işaretçisi: yön döndürme kolu (mouse/parmakla döndür)
+      if (isCam && sel) {
+        const rad = (m.direction || 0) * Math.PI / 180, hx = Math.cos(rad) * 58, hy = Math.sin(rad) * 58;
+        gStatic.append(s('line', { x1: m.x, y1: m.y, x2: m.x + hx, y2: m.y + hy, class: 'fab-rot-line' }));
+        gStatic.append(s('circle', { cx: hx, cy: hy, r: 6, class: 'fab-rot', transform: `translate(${m.x} ${m.y})`,
+          onmousedown: e => startRotateMarker(e, m), ontouchstart: e => startRotateMarker(e, m) }));
+      }
     });
 
     drawOverlay();
@@ -506,6 +530,11 @@ export async function render(view, params, ctx) {
     e.stopPropagation();
     drag(w => { m.x = Math.round(w.x); m.y = Math.round(w.y); drawCanvas(); },
       async () => { await api.patch(`/api/factory/markers/${m.id}`, { x: m.x, y: m.y }); });
+  }
+  function startRotateMarker(e, m) {
+    e.stopPropagation();
+    drag(w => { m.direction = Math.round(Math.atan2(w.y - m.y, w.x - m.x) * 180 / Math.PI); drawCanvas(); },
+      async () => { await api.patch(`/api/factory/markers/${m.id}`, { direction: m.direction }); });
   }
   function startDragVertex(e, r, i) {
     e.stopPropagation();
@@ -895,7 +924,12 @@ export async function render(view, params, ctx) {
             toast(cid ? 'NVR kamerası atandı' : 'Atama kaldırıldı', 'success');
           } catch (err) { toastError(err); drawSide(); }
         });
-        camField = h('div', null, field('NVR kamerası', camSel),
+        const dirInp = h('input', { class: 'input', type: 'number', value: Math.round(m.direction || 0) });
+        dirInp.addEventListener('change', async () => { m.direction = Number(dirInp.value) || 0; await api.patch(`/api/factory/markers/${m.id}`, { direction: m.direction }); drawCanvas(); });
+        camField = h('div', null,
+          field('Görüş yönü (derece)', dirInp),
+          h('div', { class: 'fab-note muted' }, 'İpucu: yönü tuval üzerindeki mavi kolu döndürerek de ayarlayabilirsiniz; şeffaf alan kameranın kapsamasını gösterir.'),
+          field('NVR kamerası', camSel),
           h('div', { class: 'fab-note muted' }, m.camera_id
             ? 'Bu işaretçi atanan kameranın GERÇEK KONUMUDUR; yüz tanıma hareketi buraya (oda/kat) eşlenir.'
             : 'Atanmamış kameralardan seçin — kişilerin gerçek konumu için bu eşleme gerekir.'));
@@ -1152,6 +1186,8 @@ function injectStyle() {
   .fab-room-lbl{font:600 13px system-ui;fill:#1e293b;pointer-events:none}
   .fab-empty{font:600 16px system-ui;fill:#94a3b8}
   .fab-cone{fill:#f59e0b;fill-opacity:.25;stroke:none;pointer-events:none}
+  .fab-cov{fill-opacity:.16;stroke:none;pointer-events:none}
+  .fab-dir-tri{fill-opacity:.95;stroke:#fff;stroke-width:.8;pointer-events:none}
   .fab-cam{cursor:move}
   .fab-cam-body{fill:#1e293b;stroke:#fff;stroke-width:1.2}
   .fab-cam.sel .fab-cam-body{stroke:#2563eb;stroke-width:2}

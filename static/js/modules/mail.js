@@ -185,9 +185,15 @@ export async function renderMail(view, params = []) {
   const sel = new Map();   // anahtar → öğe
   const keyOf = m => `${m.box_id || cur.box}:${m.uid}`;
   const bidOf = m => m.box_id || cur.box;
-  const folderOfList = () => (cur.box === 'all' ? 'inbox' : cur.folder);
+  // "Tüm Hesaplar" (box='all') için birleştirilebilen temel klasörler + kanonik başlıklar
+  const UNIFIED_STD = [['inbox', 'Gelen Kutusu'], ['starred', 'Yıldızlı'], ['sent', 'Gönderilmiş'],
+    ['drafts', 'Taslaklar'], ['archive', 'Arşiv'], ['spam', 'Gereksiz'], ['trash', 'Çöp Kutusu']];
+  const STD_TITLE = Object.fromEntries(UNIFIED_STD.concat([['important', 'Önemli'], ['all', 'Tüm Postalar']]));
+  const folderOfList = () => (cur.box === 'all' ? (cur.folder || 'inbox') : cur.folder);
   const isPop = bid => boxOf(bid)?.provider === 'pop3';
-  const folderTitle = () => (cur.box === 'all' ? t('Tüm gelen kutuları') : ((folderCache[cur.box] || []).find(f => f.key === cur.folder)?.title || t('Gelen Kutusu')));
+  const folderTitle = () => (cur.box === 'all'
+    ? (folderOfList() === 'inbox' ? t('Tüm gelen kutuları') : `${t('Tüm Hesaplar')} · ${t(STD_TITLE[folderOfList()] || 'Gelen Kutusu')}`)
+    : ((folderCache[cur.box] || []).find(f => f.key === cur.folder)?.title || t('Gelen Kutusu')));
 
   // ---- iskelet
   const nav = h('aside', { class: 'gm-nav' });
@@ -401,12 +407,21 @@ export async function renderMail(view, params = []) {
       return [row, has && !closed ? treeItems(b, n.kids, depth + 1) : null];
     });
     const totalUnseen = boxes.reduce((a, b) => a + inboxUnseen(b), 0);
+    // "Tüm Hesaplar": birleşik temel klasörler (yalnız en az bir hesapta bulunanlar; inbox her zaman)
+    const unifiedUnseen = key => (key === 'inbox' ? totalUnseen
+      : boxes.reduce((a, b) => a + (((folderCache[b.id] || []).find(f => f.key === key) || {}).unseen || 0), 0));
+    const hasKey = key => key === 'inbox' || boxes.some(b => (folderCache[b.id] || []).some(f => f.key === key));
+    const allGroup = boxes.length > 1 ? h('div', { class: 'gm-nav-acc' },
+      h('div', { class: 'gm-nav-sub gm-tree-h' }, h('span', { class: 'grow' }, t('Tüm Hesaplar'))),
+      UNIFIED_STD.filter(([k]) => hasKey(k)).map(([k, ttl]) =>
+        item(cur.box === 'all' && folderOfList() === k, FOLDER_ICON[k] || 'folder', t(ttl),
+          k === 'drafts' ? null : (unifiedUnseen(k) || null), go('all', k), k === 'inbox' ? 'strong' : ''))) : null;
     clear(nav,
       h('div', { class: 'gm-nav-brand' }, h('span', { class: 'gm-nav-logo' }, ic('allMail')), h('b', null, t('Mail'))),
       h('button', { class: 'gm-compose-btn', type: 'button', onclick: () => closeDrawerThen(() => compose()) }, ic('edit'), t('Oluştur')),
       modeSwitch(),
       h('div', { class: 'gm-nav-scroll' },
-        boxes.length > 1 ? item(cur.box === 'all', 'inboxes', t('Tüm gelen kutuları'), totalUnseen, go('all', 'inbox'), 'strong') : null,
+        allGroup,
         boxes.map(b => {
           const fs = folderCache[b.id] || [];
           const open = !collapsed.has(b.id);
@@ -594,7 +609,7 @@ export async function renderMail(view, params = []) {
     root.dataset.k = key;
     try {
       if (cur.box === 'all') {
-        const r = await api.get(`/api/mail/unified/inbox?q=${encodeURIComponent(q)}${lvQuery()}`);
+        const r = await api.get(`/api/mail/unified/list?folder=${encodeURIComponent(folderOfList())}&q=${encodeURIComponent(q)}${lvQuery()}`);
         if (seq !== loadSeq) return;
         items = r.items; total = r.items.length;
         r.errors.forEach(e => { const b = boxOf(e.box_id); if (b) b.last_error = e.error; });

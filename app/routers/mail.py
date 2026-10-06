@@ -413,15 +413,18 @@ def _sync_view(box_id, folder):
             'complete': mail_cache.complete(box_id, folder), 'error': p.get('error')}
 
 
-@router.get('/unified/inbox')
-def unified(q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
-    """Tüm hesapların gelen kutuları birlikte (en yeni 50); hatalı hesap atlanır ve bildirilir."""
+# "Tüm Hesaplar" birleşik görünümde desteklenen temel klasör anahtarları
+_UNIFIED_FOLDERS = {'inbox', 'starred', 'important', 'sent', 'drafts', 'archive', 'all', 'spam', 'trash'}
+
+
+def _unified(conn, user, folder, q, filt, sort):
+    """Tüm hesapların AYNI temel klasörünü (folder anahtarı) birleştirir (en yeni PAGE); hatalı/klasörü olmayan hesap atlanır."""
     items, errors = [], []
     for b in _boxes(conn, user):
         try:
-            r = mail.list_messages(b, 'inbox', q.strip()[:300], 0, False, filt=filter or None, sort=sort)
+            r = mail.list_messages(b, folder, q.strip()[:300], 0, False, filt=filt or None, sort=sort)
             items += [dict(it, box_id=b['id'], box_email=b['email'], box_color=b['color']) for it in r['items']]
-        except Exception as e:
+        except Exception as e:   # noqa: BLE001 — bu hesapta klasör yoksa / erişilemezse atla, bildir
             errors.append({'box_id': b['id'], 'email': b['email'], 'error': str(e)[:200]})
     items.sort(key=lambda x: x.get('date') or '', reverse=sort != 'date_asc')
     if sort == 'from':
@@ -431,6 +434,20 @@ def unified(q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth
     elif sort == 'size':
         items.sort(key=lambda x: -(x.get('size') or 0))
     return {'items': _annotate(conn, items[:mail.PAGE]), 'errors': errors}
+
+
+@router.get('/unified/inbox')
+def unified(q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
+    """Tüm hesapların gelen kutuları birlikte (geriye uyumlu)."""
+    return _unified(conn, user, 'inbox', q, filter, sort)
+
+
+@router.get('/unified/list')
+def unified_list(folder: str = 'inbox', q: str = '', filter: str = '', sort: str = 'date', user=Depends(auth.current_user), conn=db.DB):
+    """Tüm hesapların AYNI temel klasörü birlikte (Gelen Kutusu / Gereksiz / Çöp Kutusu / Gönderilmiş / Taslaklar / Arşiv / Yıldızlı)."""
+    if folder not in _UNIFIED_FOLDERS:
+        folder = 'inbox'
+    return _unified(conn, user, folder, q, filter, sort)
 
 
 @router.get('/{box_id}/msg')

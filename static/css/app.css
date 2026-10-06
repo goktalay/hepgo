@@ -4241,6 +4241,16 @@ html[data-theme="dark"] .vm-chip { background: rgba(255,255,255,.08); color: #8b
 .login-home { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: var(--muted); }
 .login-home:hover { color: var(--primary); }
 
+/* Çok-şirketli giriş: alt "Şirket değiştir" + firma seçici */
+.login-switch { display: block; width: 100%; margin-top: 10px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
+  background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; }
+.login-switch:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.co-list .acc-av.co-av { background: #fff; border: 1px solid var(--line); }
+.co-av img { object-fit: contain; padding: 4px; }
+.co-other { align-self: stretch; }
+.co-addr { display: flex; flex-direction: column; gap: 12px; }
+.co-hint { font-size: 13px; color: var(--muted); line-height: 1.45; }
+
 /* Birleşik bildirim/uyarı düğmesi (zil) */
 .inbox-btn.warn { color: #c2410c; }
 .inbox-btn.danger { color: #b42318; }

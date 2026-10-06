@@ -44,6 +44,7 @@ import { mountMascot } from './modules/mascot.js';
 import { renderMail } from './modules/mail.js';
 import { renderMeetings } from './modules/meetings.js';
 import { accountChooser, accountToken, rememberAccount } from './accounts.js';
+import { companySwitcher, rememberCompany } from './companies.js';
 import * as companies from './modules/companies.js';
 import * as documents from './modules/documents.js';
 import * as signPage from './modules/sign.js';
@@ -236,21 +237,34 @@ function renderLogin() {
   const username = h('input', { class: 'input', type: 'email', autocomplete: 'username', required: true });
   const password = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
   const submit = h('button', { class: 'btn primary lg', type: 'submit' }, 'Giriş Yap');
-  const done = async deviceToken => {   // giriş başarılı: kabuk açılır, hesap bu cihazda hatırlanır
+  const done = async deviceToken => {   // giriş başarılı: kabuk açılır, hesap + firma bu cihazda hatırlanır
     ctx.user = await api.get('/api/auth/me');
     if (deviceToken) rememberAccount(ctx.user, deviceToken);
+    rememberCompany(ctx.meta, ctx.user.username).catch(() => {});
     enterApp();
   };
   const body = h('div', { class: 'login-body' });
   const wl = ctx.meta?.white_label;
-  const form = h('form', { class: 'card login' },
-    h('img', { src: ctx.meta?.logo_url || '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
-    h('h1', null, wl ? (ctx.meta.company || '') : 'HEPGO ERP'),
-    body,
-    wl ? null : h('a', { class: 'login-home', href: 'https://hepgo.com', target: '_blank', rel: 'noopener' }, 'hepgo.com'));
+  const brandSrc = ctx.meta?.logo_url || '/static/img/logo-login.png';
+  const brandTitle = wl ? (ctx.meta.company || '') : 'HEPGO ERP';
+  const logoImg = h('img', { src: brandSrc, alt: ctx.meta?.company || '' });
+  const titleEl = h('h1', null, brandTitle);
+  const homeLink = wl ? null : h('a', { class: 'login-home', href: 'https://hepgo.com', target: '_blank', rel: 'noopener' }, 'hepgo.com');
+  // Alt bağlantı: başka firmaya geç. Tıklayınca üst logo/başlık HEPGO'ya döner, firma seçici açılır.
+  const switchLink = h('button', { type: 'button', class: 'login-switch', onclick: () => showSwitcher() }, '🏢 Şirket değiştir');
+  const form = h('form', { class: 'card login' }, logoImg, titleEl, body, homeLink, switchLink);
   const showForm = () => {
+    logoImg.src = brandSrc; logoImg.alt = ctx.meta?.company || ''; titleEl.textContent = brandTitle;
+    if (homeLink) homeLink.style.display = ''; switchLink.style.display = '';
     clear(body, field('Kullanıcı adı', username), field('Şifre', password), submit);
     username.focus();
+    accountChooser(body, { onLogin: done, onOther: showForm }).catch(() => {});
+  };
+  // Firma değiştirici: HEPGO markalı başlık + hatırlanan firmalar / adresle giriş
+  const showSwitcher = () => {
+    logoImg.src = '/static/img/logo-login.png'; logoImg.alt = 'HEPGO'; titleEl.textContent = 'Şirket değiştir';
+    if (homeLink) homeLink.style.display = 'none'; switchLink.style.display = 'none';
+    companySwitcher(body, { onBack: showForm });
   };
   form.addEventListener('submit', async e => {
     if (!body.contains(username)) return;   // hesap listesi / PIN kendi formunu yönetir
@@ -296,7 +310,6 @@ function renderLogin() {
   const globe = createGlobe(canvas, { size: 0.46, speed: 7 });
   onLeave(() => globe.destroy());
   showForm();
-  accountChooser(body, { onLogin: done, onOther: showForm }).catch(() => {});
 }
 
 // Giriş sonrası: şifresini hiç değiştirmemiş kullanıcı önce şifresini değiştirir (sunucu da başka isteğe izin vermez)

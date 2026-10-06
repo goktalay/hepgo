@@ -631,7 +631,7 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
   }
 
   return {
-    el, update: set, set, select, view, solo, tour,
+    update: set, set, select, view, solo, tour,
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();

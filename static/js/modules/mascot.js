@@ -248,6 +248,48 @@ function playMumble() {
   } catch { /* ses engellendi: sessizce geç */ }
 }
 
+// ---- Her maskota ÖZGÜ karakteristik ses (Web Audio ile sentez; dosya yok). mascotSound açıkken arada bir çalar.
+function _tone(ac, { type = 'sine', f0, f1, dur, gain = 0.05, when = 0, vib, dest } = {}) {
+  const t0 = ac.currentTime + when;
+  const osc = ac.createOscillator(); osc.type = type;
+  osc.frequency.setValueAtTime(f0, t0);
+  if (f1 != null) osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + Math.min(0.03, dur * 0.3));
+  g.gain.exponentialRampToValueAtTime(0.0006, t0 + dur);
+  osc.connect(g); g.connect(dest || ac.destination);
+  if (vib) { const lfo = ac.createOscillator(); lfo.frequency.value = vib[0]; const lg = ac.createGain(); lg.gain.value = vib[1]; lfo.connect(lg); lg.connect(osc.frequency); lfo.start(t0); lfo.stop(t0 + dur); }
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+function _noise(ac, { dur, gain = 0.05, when = 0, f = 1200, q = 1 } = {}) {
+  const n = Math.max(1, Math.floor(ac.sampleRate * dur)), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+  const g = ac.createGain(), t0 = ac.currentTime + when;
+  g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(gain, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0006, t0 + dur);
+  src.connect(bp); bp.connect(g); g.connect(ac.destination);
+  src.start(t0); src.stop(t0 + dur + 0.02);
+}
+const MASCOT_SOUNDS = {
+  kedi: ac => { _tone(ac, { type: 'triangle', f0: 620, f1: 900, dur: 0.13, gain: 0.06, vib: [12, 20] }); _tone(ac, { type: 'triangle', f0: 880, f1: 500, dur: 0.24, gain: 0.055, when: 0.12, vib: [10, 18] }); },   // miyav
+  drone: ac => { _tone(ac, { type: 'sawtooth', f0: 92, f1: 104, dur: 0.9, gain: 0.045, vib: [22, 8] }); _tone(ac, { type: 'square', f0: 184, dur: 0.9, gain: 0.015, vib: [22, 10] }); },   // pervane vızıltısı
+  ari: ac => _tone(ac, { type: 'sawtooth', f0: 205, f1: 235, dur: 0.7, gain: 0.04, vib: [32, 30] }),   // arı vızıltısı
+  uzayli: ac => _tone(ac, { type: 'sine', f0: 520, f1: 720, dur: 0.75, gain: 0.05, vib: [9, 130] }),   // uzaylı theremin
+  hayalet: ac => _tone(ac, { type: 'sine', f0: 175, f1: 115, dur: 1.05, gain: 0.045, vib: [5, 14] }),   // ürpertici "uuu"
+  penguen: ac => { _noise(ac, { dur: 0.07, gain: 0.05, f: 900, q: 1.5 }); _noise(ac, { dur: 0.06, gain: 0.045, when: 0.1, f: 1500, q: 2 }); },   // cıyak
+  buyucu: ac => [660, 880, 1100, 1320].forEach((f, i) => _tone(ac, { type: 'sine', f0: f, dur: 0.1, gain: 0.045, when: i * 0.07 })),   // büyü ışıltısı
+  dino: ac => { _tone(ac, { type: 'sawtooth', f0: 150, f1: 68, dur: 0.6, gain: 0.06, vib: [7, 10] }); _noise(ac, { dur: 0.5, gain: 0.03, f: 300, q: 0.8 }); },   // kükreme
+  jele: ac => _tone(ac, { type: 'sine', f0: 300, f1: 260, dur: 0.4, gain: 0.05, vib: [18, 60] }),   // jöle "boing"
+};
+function playMascotSound(id) {
+  if (!mascotSound || document.hidden) return;
+  const ac = audioCtx;
+  if (!ac || ac.state !== 'running') return;
+  try { if (MASCOT_SOUNDS[id]) MASCOT_SOUNDS[id](ac); else playMumble(); } catch { /* ses engellendi: sessiz */ }
+}
+
 let mounted = false;
 let convo = [];        // {role, content}
 let curId = DEFAULT_ID;
@@ -363,7 +405,7 @@ export async function mountMascot(ctx) {
   // Sürekli hareket: sohbet kapalıyken rastgele numaralar
   const doTrick = () => {
     if (!panel.hidden || btn.classList.contains('dragging') || btn.style.display === 'none') return;
-    if (Math.random() < 0.3) playMumble();   // arada bir (~%30) robotik mırıltı
+    if (Math.random() < 0.3) playMascotSound(curId);   // arada bir (~%30) maskota özgü ses (dron=vızıltı, kedi=miyav…)
     const list = MASCOTS[curId]?.tricks || TRICKS;   // maskota özel numaralar varsa onlardan seç, yoksa ortak liste
     const tr = list[Math.floor(Math.random() * list.length)];
     if (ctl) return ctl.play(tr);

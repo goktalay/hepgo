@@ -133,9 +133,11 @@ def is_https(request):
 
 
 def set_session_cookie(response, request, token, hours):
-    """Oturum çerezi: HttpOnly, SameSite=Lax; HTTPS'te Secure (çerez düz HTTP'den hiç gönderilmez). Yerel ağdan http://
-    ile girişte Secure konmaz — konsa tarayıcı çerezi saklamaz."""
-    response.set_cookie(COOKIE, token, httponly=True, samesite='lax', max_age=int(hours * 3600), secure=is_https(request))
+    """Oturum çerezi: HttpOnly, SameSite=Lax; Secure (çerez düz HTTP'den hiç gönderilmez). Üretimde her zaman Secure
+    (config.FORCE_SECURE_COOKIE varsayılan açık; tüm trafik CF TLS, açık TCP port yok). Yerel http:// geliştirmede
+    CAYMAZ_FORCE_SECURE_COOKIE=0 ile is_https'e düşer."""
+    secure = config.FORCE_SECURE_COOKIE or is_https(request)
+    response.set_cookie(COOKIE, token, httponly=True, samesite='lax', max_age=int(hours * 3600), secure=secure)
 _ITERATIONS = 240_000
 
 

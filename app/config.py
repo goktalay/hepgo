@@ -53,6 +53,9 @@ SEED_SPARE_STOCK = os.environ.get('CAYMAZ_SEED_SPARE_STOCK', '1') == '1'
 # Firma logosu ve uygulama simgeleri: bu klasördeki img/ ve icons/ dosyaları static/ içindekilerin yerine sunulur
 BRAND_DIR = Path(os.environ['CAYMAZ_BRAND_DIR']) if os.environ.get('CAYMAZ_BRAND_DIR') else None
 SESSION_HOURS = int(os.environ.get('CAYMAZ_SESSION_HOURS', '12'))
+# Oturum çerezi her zaman Secure (yalnız HTTPS'te gönderilir): üretimde tüm trafik Cloudflare TLS üzerinden gelir ve
+# doğrudan açık TCP portu yoktur; bu yüzden varsayılan AÇIK. Yalnız yerel http:// geliştirmede CAYMAZ_FORCE_SECURE_COOKIE=0.
+FORCE_SECURE_COOKIE = os.environ.get('CAYMAZ_FORCE_SECURE_COOKIE', '1') == '1'
 # Dağıtık entegrasyon (fabrika ajanı): 'local' = cihazlara doğrudan erişim (bu makinede; varsayılan),
 # 'remote' = Mikro ERP / PDKS / yazıcılar fabrikadaki ajan üzerinden (merkez bulut sunucuda).
 AGENT_MODE = os.environ.get('CAYMAZ_AGENT_MODE', 'local').strip().lower()

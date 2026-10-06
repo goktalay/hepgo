@@ -1148,6 +1148,16 @@ export async function render(view, params, ctx) {
     });
   }
 
+  // Görülme zamanına göre renk: yeşil çok yakın (<5dk), sarı 1 saat içinde, kırmızı 1 saatten eski
+  const liveAgeColor = at => {
+    const ms = at ? Date.now() - new Date(at).getTime() : Infinity;
+    return ms <= 5 * 60000 ? '#16a34a' : ms <= 60 * 60000 ? '#f59e0b' : '#dc2626';
+  };
+  function toggleFullscreen() {
+    const target = stage;
+    if (!document.fullscreenElement) { (target.requestFullscreen || target.webkitRequestFullscreen)?.call(target); }
+    else { (document.exitFullscreen || document.webkitExitFullscreen)?.call(document); }
+  }
   // CANLI MOD: salt görünüm; personel fotoğraflarını konumlarında yuvarlak içinde gösterir (zoom/drag serbest).
   function drawLivePeople() {
     const ppl = (st.liveData?.people || []).filter(p => p.floor_id === st.floorId);
@@ -1165,7 +1175,8 @@ export async function render(view, params, ctx) {
       const n = spot.list.length, off = n > 1 ? 20 : 0, ang = (i / n) * Math.PI * 2;
       const px = spot.x + Math.cos(ang) * off, py = spot.y + Math.sin(ang) * off, R = 16;
       const g = s('g', { class: 'fab-live-person', transform: `translate(${px} ${py})` });
-      g.append(s('circle', { cx: 0, cy: 0, r: R + 2.5, class: 'fab-live-ring' }));
+      const col = liveAgeColor(p.at);   // görülme zamanına göre: yeşil(<5dk) / sarı(<1s) / kırmızı(>1s)
+      g.append(s('circle', { cx: 0, cy: 0, r: R + 2.5, class: 'fab-live-ring', stroke: col }));
       if (p.crop) {
         const cid = `lpclip${uid++}`;
         g.append(s('clipPath', { id: cid }, s('circle', { cx: 0, cy: 0, r: R })));
@@ -1184,9 +1195,15 @@ export async function render(view, params, ctx) {
     const ppl = st.liveData?.people || [];
     const byFloor = new Map();
     ppl.forEach(p => { const k = p.floor_id || 0; if (!byFloor.has(k)) byFloor.set(k, []); byFloor.get(k).push(p); });
+    const dot = c => h('span', { style: { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: c, marginRight: '4px' } });
     clear(sideBody,
       h('h3', { class: 'fab-side-h' }, 'Canlı · Şu an kim nerede'),
-      h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Son 10 dakikada tanınan kişiler plan üzerinde fotoğraflarıyla konumlanır. Plan salt görünümdür; sürükleyip yakınlaştırabilirsiniz.'),
+      h('div', { class: 'set-actions left', style: { marginBottom: '6px' } },
+        h('button', { class: 'btn sm', type: 'button', onclick: toggleFullscreen }, '⛶ Tam ekran')),
+      h('div', { class: 'small muted', style: { marginBottom: '6px' } },
+        dot('#16a34a'), 'çok yeni ', dot('#f59e0b'), '1 saat içinde ', dot('#dc2626'), '1 saatten eski'),
+      h('div', { class: 'small muted', style: { marginBottom: '8px' } }, 'Kişiler kameraya göre TAHMİNİ konumlarına yerleştirilir. Plan salt görünümdür; sürükleyip yakınlaştırabilirsiniz. Katmanlardan kameraları gösterip gizleyebilirsiniz.'),
+      layersPanel(),
       !ppl.length ? h('div', { class: 'fab-note muted' }, 'Son 10 dakikada tanınan kişi yok.')
         : h('div', { class: 'fab-live' }, [...byFloor.entries()].map(([fid, arr]) => {
           const fl = st.floors.find(f => f.id === fid);

@@ -238,7 +238,7 @@ def assign_sightings(conn, ids, user_id, person_id, by, validate=True, family_id
 
 def recent(conn):
     return db.rows(conn.execute(
-        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
+        '''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.fx, s.fr, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name,
                   vz.full_name AS visitor_name, vz.company AS visitor_company
            FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
@@ -253,7 +253,7 @@ def events(conn, date_from, date_to, kind='known', limit=500):
     if kind == 'known':
         where += " AND (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL)"
     return {'events': db.rows(conn.execute(
-        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.score, s.threshold, s.fx, s.fr, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
                    u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name,
                    vz.full_name AS visitor_name, vz.company AS visitor_company
             FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id

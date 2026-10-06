@@ -2791,6 +2791,11 @@ def _migrate(conn):
         conn.execute('ALTER TABLE face_sightings ADD COLUMN clip TEXT')
     if 'threshold' not in {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}:   # görülme anındaki tanıma hassasiyeti (eşik)
         conn.execute('ALTER TABLE face_sightings ADD COLUMN threshold REAL')
+    _fs_cols = {r[1] for r in conn.execute('PRAGMA table_info(face_sightings)')}
+    if 'fx' not in _fs_cols:   # yüzün karedeki yatay merkezi (0..1) — Canlı görünümde tahmini konum için
+        conn.execute('ALTER TABLE face_sightings ADD COLUMN fx REAL')
+    if 'fr' not in _fs_cols:   # yüz genişliği / kare genişliği (0..1) — uzaklık tahmini (büyük=yakın)
+        conn.execute('ALTER TABLE face_sightings ADD COLUMN fr REAL')
     # Silinen (gereksiz) yüz gruplarının izleri: bu yüzlere benzeyen yeni görülmeler tekrar listeye alınmaz
     conn.execute('CREATE TABLE IF NOT EXISTS face_ignored (id INTEGER PRIMARY KEY, centroid BLOB NOT NULL, created_at TEXT NOT NULL)')
     # (bir kez) mevcut Güvenlik personeline "Kamera Yetkilisi" rolü ver (Kameralar modülünü görsünler)

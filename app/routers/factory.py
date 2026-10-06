@@ -232,7 +232,7 @@ def _placements(conn):
         LEFT JOIN factory_rooms  r ON r.id = fc.room_id
         LEFT JOIN factory_floors f ON f.id = fc.floor_id'''))
     out = {r['camera_id']: r for r in rows}
-    mrows = db.rows(conn.execute('''SELECT m.camera_id, m.floor_id, m.x, m.y, f.name AS floor_name
+    mrows = db.rows(conn.execute('''SELECT m.camera_id, m.floor_id, m.x, m.y, m.direction, f.name AS floor_name
                                     FROM factory_markers m LEFT JOIN factory_floors f ON f.id = m.floor_id
                                     WHERE m.camera_id IS NOT NULL'''))
     if mrows:
@@ -252,8 +252,25 @@ def _placements(conn):
                     room_id, room_name = rm['id'], rm['name']
                     break
             out[mr['camera_id']] = {'camera_id': mr['camera_id'], 'room_id': room_id, 'floor_id': mr['floor_id'],
-                                    'x': mr['x'], 'y': mr['y'], 'direction': 0, 'room_name': room_name, 'floor_name': mr['floor_name']}
+                                    'x': mr['x'], 'y': mr['y'], 'direction': mr['direction'] or 0, 'room_name': room_name, 'floor_name': mr['floor_name']}
     return out
+
+
+def _estimate_pos(pl, fx, fr):
+    """Kamera yerleşimi (x,y,yön) + yüzün karedeki konumundan (fx=yatay merkez 0..1, fr=genişlik oranı) kişinin
+    plandaki TAHMİNİ konumu. fx/fr yoksa kameranın konumu döner. Isıl/kaba tahmin: büyük yüz=yakın, yana kayık=açılı."""
+    import math
+    bx, by = pl.get('x'), pl.get('y')
+    if bx is None or by is None:
+        return None, None
+    if fx is None or fr is None:
+        return bx, by
+    try:
+        ang = math.radians((pl.get('direction') or 0) + (float(fx) - 0.5) * 69.0)
+        dist = 90.0 * max(0.2, min(0.95, 1.0 - float(fr) * 2.5))
+        return round(bx + math.cos(ang) * dist, 1), round(by + math.sin(ang) * dist, 1)
+    except Exception:   # noqa: BLE001
+        return bx, by
 
 
 def _name_to_id(conn):
@@ -921,6 +938,7 @@ def who_is_where(minutes: int = 10, user=Depends(fab_user), conn=db.DB):
             continue
         cid = name2id.get(e.get('camera_name'))
         pl = placed.get(cid) if cid is not None else None
+        ex, ey = _estimate_pos(pl, e.get('fx'), e.get('fr')) if pl else (None, None)
         latest[key] = {
             'subject_type': stype, 'subject_id': sid, 'subject_name': sname,
             'at': e.get('at'), 'camera_id': cid, 'camera_name': e.get('camera_name'),
@@ -928,7 +946,7 @@ def who_is_where(minutes: int = 10, user=Depends(fab_user), conn=db.DB):
             'room_name': (pl.get('room_name') if pl else None),
             'floor_id': pl['floor_id'] if pl else None,
             'floor_name': (pl.get('floor_name') if pl else None),
-            'x': pl['x'] if pl else None, 'y': pl['y'] if pl else None,   # kameranın/işaretçinin plandaki konumu (Canlı görünüm)
+            'x': ex, 'y': ey,   # kişinin plandaki TAHMİNİ konumu (kamera + yüzün karedeki yeri)
             'crop': e.get('crop'),
         }
     people = sorted(latest.values(), key=lambda r: r['at'] or '', reverse=True)

@@ -11,6 +11,21 @@ export async function renderFaces(body) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Kamera, kişi ara…', style: { width: '200px' } });
   const mergeBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => mergeSelected() }, 'Seçilenleri Birleştir');
   const delBtn = h('button', { class: 'btn danger', type: 'button', disabled: true, onclick: () => deleteSelected() }, 'Seçilenleri Kaldır');
+  // Tekrar Tara: kişilere resim atandıkça kimlik kütüphanesi büyür; tanınamayanları genişlemiş kütüphaneyle yeniden dener
+  const rescanBtn = h('button', { class: 'btn', type: 'button', title: 'Genişlemiş kütüphaneyle tanınmayanları yeniden tanımaya çalış', onclick: () => rescanUnknown() }, '🔄 Tekrar Tara');
+  async function rescanUnknown() {
+    const old = rescanBtn.textContent; rescanBtn.disabled = true; rescanBtn.textContent = 'Taranıyor…';
+    try {
+      const r = await api.post('/api/faces/rescan', {});
+      if (r.assigned) {
+        const names = (r.items || []).map(it => it.user_name || it.person_name || it.family_name || it.visitor_name).filter(Boolean);
+        toast(t('{n} kişi tanındı ve atandı{who}', { n: r.assigned, who: names.length ? ': ' + names.slice(0, 5).join(', ') + (names.length > 5 ? '…' : '') : '' }), 'success');
+      } else {
+        toast(t('{n} grup tarandı; yeni tanınan çıkmadı. Kişilere daha çok resim ekleyip tekrar deneyin.', { n: r.scanned || 0 }));
+      }
+      load();
+    } catch (err) { toastError(err); } finally { rescanBtn.disabled = false; rescanBtn.textContent = old; }
+  }
   // Yüz tanıma hassasiyeti (eşik) — düşük = daha çok yüz yakalar; anında fabrikaya uygulanır
   let facerecCfg = { score: 0.6, min_face: 36 };
   const sens = h('input', { type: 'range', min: '0.3', max: '0.95', step: '0.05', value: '0.6', style: { width: '120px' },
@@ -69,7 +84,7 @@ export async function renderFaces(body) {
     rows = await api.get(`/api/faces/groups?state=${state}`);
     for (const id of [...selected]) if (!rows.some(g => g.id === id)) selected.delete(id);
     syncBtn();
-    mergeBtn.hidden = delBtn.hidden = state !== 'unknown';
+    mergeBtn.hidden = delBtn.hidden = rescanBtn.hidden = state !== 'unknown';
     draw();
   }
   async function mergeSelected() {
@@ -233,7 +248,7 @@ export async function renderFaces(body) {
   }
 
   q.addEventListener('input', draw);
-  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Sırala'), sortSel, dirBtn), h('span', { class: 'spacer' }), sensWrap, delBtn, mergeBtn), h('p', null, info), out);
+  clear(body, h('div', { class: 'filters' }, nav, q, h('span', { class: 'fc-sens' }, h('span', { class: 'small muted' }, 'Sırala'), sortSel, dirBtn), h('span', { class: 'spacer' }), sensWrap, rescanBtn, delBtn, mergeBtn), h('p', null, info), out);
   await load();
   every(15000, () => { if (!document.querySelector('.modal-back')) load().catch(() => {}); });
 }

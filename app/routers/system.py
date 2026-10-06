@@ -81,7 +81,7 @@ def services(user=Depends(auth.current_user)):
         active = p[2] if len(p) > 2 else '?'
         sub = p[3] if len(p) > 3 else ''
         rows.append({'name': name, 'label': _SVC_LABELS.get(name, name), 'active': active, 'sub': sub,
-                     'running': sub in ('running', 'waiting'), 'restartable': bool(_RESTARTABLE_RE.match(name))})
+                     'running': sub in ('running', 'waiting'), 'restartable': False})   # web'den servis yeniden başlatma kapalı
     return rows
 
 
@@ -803,18 +803,8 @@ def reject_change(cid: int, body: DecideIn = None, user=Depends(auth.current_use
 
 @router.post('/services/{name}/restart')
 def restart_service(name: str, user=Depends(auth.current_user)):
-    if not _is_sysadmin(user):
-        raise HTTPException(403, 'Yetkiniz yok')
-    if not _RESTARTABLE_RE.match(name):
-        raise HTTPException(400, 'Geçersiz servis')
-    try:   # gecikmeli: yanıt döndükten sonra başlatır (uygulama kendi servisini de yeniden başlatabilsin)
-        # Yeni sunucu: system servisleri (polkit kuralı hepgo kullanıcısına hepgo-*/cloudflared yönetimi verir)
-        _sp.Popen(['bash', '-c', f'sleep 1; systemctl restart {name}'])
-    except Exception as e:
-        raise HTTPException(500, f'Yeniden başlatılamadı: {e}')
-    with db.connect() as conn:
-        db.audit(conn, user['id'], 'Servisi yeniden başlattı', 'service', None, name)
-    return {'ok': True}
+    # Web'den servis yeniden başlatma KAPALI (kullanıcı kararı): servisler ssh/root ile yönetilir.
+    raise HTTPException(403, 'Servis yeniden başlatma bu arayüzden kapalıdır; sunucu yöneticisi tarafından yapılır')
 
 
 def app_version():

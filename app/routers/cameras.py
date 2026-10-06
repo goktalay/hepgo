@@ -423,6 +423,25 @@ def unassign(gid: int, user=Depends(cam_user), conn=db.DB):
     return _face(conn, 'unassign', gid=gid)
 
 
+@faces_router.post('/rescan')
+def rescan(user=Depends(cam_user), conn=db.DB):
+    """Tanınmayan kişileri tekrar tara: atanmamış yüz gruplarını genişlemiş kimlik kütüphanesiyle yeniden eşleştirir,
+    eşleşenleri otomatik atar (kişiye resim atandıkça kütüphane büyür → daha önce tanınamayan artık tanınabilir)."""
+    res = _face(conn, 'rescan')
+    items = (res or {}).get('items') or []
+    for it in items:   # atanan yüzleri eğitime de ekle (mevcut atama akışıyla aynı; en iyi çaba)
+        try:
+            _enroll_assigned(conn, it, it.get('kind'), it.get('user_id'), it.get('person_id'),
+                             it.get('family_id'), user['id'], it.get('visitor_id'))
+        except Exception:   # noqa: BLE001
+            pass
+    if items:
+        db.audit(conn, user['id'], f'Tanınmayan yüzler tekrar tarandı: {len(items)} kişi tanındı', 'face_group', None,
+                 f"{res.get('scanned', 0)} grup tarandı")
+    _resolve_names(conn, items)   # tanınan kişilerin adlarını bulut DB'sinden çöz
+    return {'assigned': res.get('assigned', 0), 'scanned': res.get('scanned', 0), 'items': items}
+
+
 @faces_router.post('/merge')
 def merge(body: MergeIn, user=Depends(cam_user), conn=db.DB):
     """Aynı kişiye ait olduğu görülen grupları birleştirir (ilk seçilen hedef)."""

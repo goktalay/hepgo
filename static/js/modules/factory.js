@@ -267,7 +267,7 @@ export async function render(view, params, ctx) {
       opacity: f.bg_opacity != null ? f.bg_opacity : 0.6,
       preserveAspectRatio: 'none',
       class: `fab-bg-img ${st.bgEdit ? 'edit' : ''}`,
-      onmousedown: e => { if (st.bgEdit) startDragBg(e, f); },
+      onmousedown: e => { if (st.bgEdit) startDragBg(e, f); }, ontouchstart: e => { if (st.bgEdit) startDragBg(e, f); },
     });
     if (!nat) {   // doğal boyut bilinmiyor: yükle, önbelleğe al, yeniden çiz
       const probe = new Image();
@@ -354,7 +354,7 @@ export async function render(view, params, ctx) {
       const x = onThis ? m.x : (m.to_x ?? m.x), y = onThis ? m.y : (m.to_y ?? m.y);
       const g = s('g', { class: `fab-stair ${st.sel && st.sel.type === 'stair' && st.sel.id === m.id ? 'sel' : ''}`, transform: `translate(${x} ${y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectStair(m); } },
-        onmousedown: e => startDragStair(e, m) });
+        onmousedown: e => startDragStair(e, m), ontouchstart: e => startDragStair(e, m) });
       g.append(s('rect', { x: -14, y: -14, width: 28, height: 28, rx: 4, class: 'fab-stair-box' }));
       for (let i = 0; i < 4; i++) g.append(s('line', { x1: -11, y1: -8 + i * 6, x2: 11, y2: -8 + i * 6, class: 'fab-stair-step' }));
       const other = st.floors.find(f => f.id === (onThis ? m.to_floor_id : m.from_floor_id));
@@ -366,7 +366,7 @@ export async function render(view, params, ctx) {
     if (st.layers.cams) st.cams.forEach(c => {
       const g = s('g', { class: `fab-cam ${st.sel && st.sel.type === 'cam' && st.sel.id === c.id ? 'sel' : ''}`, transform: `translate(${c.x} ${c.y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectCam(c); } },
-        onmousedown: e => startDragCam(e, c) });
+        onmousedown: e => startDragCam(e, c), ontouchstart: e => startDragCam(e, c) });
       // görüş konisi (yön = derece)
       const rad = (c.direction || 0) * Math.PI / 180, spread = 0.55, len = 46;
       const p1 = [Math.cos(rad - spread) * len, Math.sin(rad - spread) * len];
@@ -380,7 +380,7 @@ export async function render(view, params, ctx) {
       if (st.sel && st.sel.type === 'cam' && st.sel.id === c.id) {
         const hx = Math.cos(rad) * 60, hy = Math.sin(rad) * 60;
         const handle = s('circle', { cx: hx, cy: hy, r: 6, class: 'fab-rot', transform: `translate(${c.x} ${c.y})`,
-          onmousedown: e => startRotateCam(e, c) });
+          onmousedown: e => startRotateCam(e, c), ontouchstart: e => startRotateCam(e, c) });
         gStatic.append(s('line', { x1: c.x, y1: c.y, x2: c.x + hx, y2: c.y + hy, class: 'fab-rot-line' }));
         gStatic.append(handle);
       }
@@ -412,7 +412,7 @@ export async function render(view, params, ctx) {
       const sel = st.sel && st.sel.type === 'marker' && st.sel.id === m.id;
       const g = s('g', { class: `fab-marker ${sel ? 'sel' : ''}`, transform: `translate(${m.x} ${m.y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectMarker(m); } },
-        onmousedown: e => startDragMarker(e, m) });
+        onmousedown: e => startDragMarker(e, m), ontouchstart: e => startDragMarker(e, m) });
       if (m.camera_id) g.append(s('circle', { cx: 0, cy: 0, r: 13, fill: 'none', stroke: '#22c55e', 'stroke-width': 2 }));   // NVR atanmış
       g.append(s('circle', { cx: 0, cy: 0, r: 11, class: 'fab-marker-badge', fill: meta.color }));
       g.append(s('text', { x: 0, y: 5, class: 'fab-marker-icon', 'text-anchor': 'middle' }, meta.icon));
@@ -442,7 +442,7 @@ export async function render(view, params, ctx) {
     if (st.mode === 'edit' && st.sel && st.sel.type === 'room') {
       const r = st.rooms.find(x => x.id === st.sel.id);
       if (r) r.points.forEach((p, i) => gOverlay.append(s('circle', {
-        cx: p[0], cy: p[1], r: 5, class: 'fab-vertex', onmousedown: e => startDragVertex(e, r, i) })));
+        cx: p[0], cy: p[1], r: 5, class: 'fab-vertex', onmousedown: e => startDragVertex(e, r, i), ontouchstart: e => startDragVertex(e, r, i) })));
     }
     // çizilmekte olan hat taslağı
     if (st.lineDraft && st.lineDraft.length) {
@@ -455,7 +455,7 @@ export async function render(view, params, ctx) {
     if (st.mode === 'edit' && st.sel && st.sel.type === 'line') {
       const ln = st.lines.find(x => x.id === st.sel.id);
       if (ln) (ln.points || []).forEach((p, i) => gOverlay.append(s('circle', {
-        cx: p[0], cy: p[1], r: 5, class: 'fab-vertex', onmousedown: e => startDragLineVertex(e, ln, i) })));
+        cx: p[0], cy: p[1], r: 5, class: 'fab-vertex', onmousedown: e => startDragLineVertex(e, ln, i), ontouchstart: e => startDragLineVertex(e, ln, i) })));
     }
     // hareket modu izleri
     if (st.mode === 'move') drawMovementOverlay();
@@ -471,12 +471,17 @@ export async function render(view, params, ctx) {
 
   // ==================================================================== sürükleme (autosave)
   function drag(onMove, onUp) {
-    const mm = e => onMove(toWorld(e.clientX, e.clientY), e);
-    const mu = async e => {
-      window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu);
-      if (onUp) await onUp(toWorld(e.clientX, e.clientY), e);
+    let moved = false;
+    const pt = e => (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    const mm = e => { const p = pt(e); moved = true; onMove(toWorld(p.clientX, p.clientY), e); };
+    const tm = e => { if (!(e.touches && e.touches[0])) return; e.preventDefault(); mm(e); };
+    const up = async e => {
+      window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', tm); window.removeEventListener('touchend', up);
+      if (onUp && moved) { const p = pt(e); await onUp(toWorld(p.clientX, p.clientY), e); }   // sadece gerçek sürüklemede kaydet (tap'te değil)
     };
-    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', tm, { passive: false }); window.addEventListener('touchend', up);
   }
   function startDragCam(e, c) {
     if (st.mode !== 'edit' || st.tool !== 'select') return;

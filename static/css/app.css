@@ -175,6 +175,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   align-items: center;
   gap: 16px;
 }
+/* Çentik / home-indicator (native uygulama & PWA standalone): üst bar, alt bilgi ve içerik GÜVENLİ ALANA otursun.
+   Normal tarayıcıda env() = 0 → etkisiz; yalnız çentikli cihazda devreye girer. */
+.app-header { padding-top: env(safe-area-inset-top, 0px); height: calc(64px + env(safe-area-inset-top, 0px));
+  padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
+.app-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
+main#view { padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
 .footer-copy { white-space: nowrap; }
 /* Footer marka rozeti: logo-ikon + ünvan; dar ekranda yalnızca ikon kalır, üzerine gelince popup açılır */
 .footer-brand { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 2px 4px; margin: -2px -4px;

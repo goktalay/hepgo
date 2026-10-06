@@ -128,6 +128,11 @@ def _ensure_schema(conn):
     cam_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_cameras)')}
     if 'direction' not in cam_cols:
         conn.execute('ALTER TABLE factory_cameras ADD COLUMN direction REAL NOT NULL DEFAULT 0')
+    # Kamera işaretçisine (cam_indoor/cam_outdoor) atanmış NVR kamerası: işaretçi o kameranın gerçek konumu olur →
+    # yüz olayları bu konuma (oda/kat) eşlenir. FK yok (dağıtık: cameras tablosu merkezde olmayabilir).
+    mk_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_markers)')}
+    if 'camera_id' not in mk_cols:
+        conn.execute('ALTER TABLE factory_markers ADD COLUMN camera_id INTEGER')
     # ALTYAPI: kat arka plan planı (gerçek kat planı resmi — üzerine çizmek için). UPLOAD_DIR-göreli yol + konum/ölçek.
     floor_cols = {r[1] for r in conn.execute('PRAGMA table_info(factory_floors)')}
     if 'bg_image' not in floor_cols:
@@ -197,15 +202,56 @@ def _subject_of(e):
     return None, None, None
 
 
+def _point_in_poly(x, y, pts):
+    """Nokta çokgen içinde mi (ray-casting). pts: [[x,y],...]."""
+    n = len(pts)
+    if n < 3:
+        return False
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i][0], pts[i][1]
+        xj, yj = pts[j][0], pts[j][1]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-9) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
 def _placements(conn):
-    """Yerleştirilmiş kameralar: camera_id → {room_id, floor_id, room_name, floor_name, direction, x, y}."""
+    """Yerleştirilmiş kameralar: camera_id → {room_id, floor_id, room_name, floor_name, direction, x, y}.
+    İki kaynak: (1) factory_cameras (NVR kamerası doğrudan plana konmuş), (2) NVR kamerası ATANMIŞ kamera işaretçileri
+    (factory_markers.camera_id); işaretçinin odası nokta-içinde-poligon ile bulunur. factory_cameras önceliklidir."""
+    import json
     rows = db.rows(conn.execute('''
         SELECT fc.camera_id, fc.room_id, fc.floor_id, fc.x, fc.y, fc.direction,
                r.name AS room_name, f.name AS floor_name
         FROM factory_cameras fc
         LEFT JOIN factory_rooms  r ON r.id = fc.room_id
         LEFT JOIN factory_floors f ON f.id = fc.floor_id'''))
-    return {r['camera_id']: r for r in rows}
+    out = {r['camera_id']: r for r in rows}
+    mrows = db.rows(conn.execute('''SELECT m.camera_id, m.floor_id, m.x, m.y, f.name AS floor_name
+                                    FROM factory_markers m LEFT JOIN factory_floors f ON f.id = m.floor_id
+                                    WHERE m.camera_id IS NOT NULL'''))
+    if mrows:
+        rooms_by_floor = {}
+        for rm in db.rows(conn.execute('SELECT id, floor_id, name, points FROM factory_rooms')):
+            rooms_by_floor.setdefault(rm['floor_id'], []).append(rm)
+        for mr in mrows:
+            if mr['camera_id'] in out:
+                continue   # doğrudan yerleştirme önceliklidir
+            room_id, room_name = None, None
+            for rm in rooms_by_floor.get(mr['floor_id'], []):
+                try:
+                    pts = json.loads(rm['points'] or '[]')
+                except Exception:   # noqa: BLE001
+                    pts = []
+                if _point_in_poly(mr['x'], mr['y'], pts):
+                    room_id, room_name = rm['id'], rm['name']
+                    break
+            out[mr['camera_id']] = {'camera_id': mr['camera_id'], 'room_id': room_id, 'floor_id': mr['floor_id'],
+                                    'x': mr['x'], 'y': mr['y'], 'direction': 0, 'room_name': room_name, 'floor_name': mr['floor_name']}
+    return out
 
 
 def _name_to_id(conn):
@@ -453,6 +499,7 @@ def available_cameras(user=Depends(fab_user), conn=db.DB):
     """Henüz plana yerleştirilmemiş NVR kameraları (seçim listesi)."""
     _ensure(conn)
     placed = {r[0] for r in conn.execute('SELECT camera_id FROM factory_cameras')}
+    placed |= {r[0] for r in conn.execute('SELECT camera_id FROM factory_markers WHERE camera_id IS NOT NULL')}
     out = []
     for c in _nvr_cameras(conn):
         if c.get('id') in placed:
@@ -604,8 +651,15 @@ class MarkerPatch(BaseModel):
 def list_markers(floor: Optional[int] = None, user=Depends(fab_user), conn=db.DB):
     _ensure(conn)
     if floor is not None:
-        return db.rows(conn.execute('SELECT * FROM factory_markers WHERE floor_id = ? ORDER BY id', (floor,)))
-    return db.rows(conn.execute('SELECT * FROM factory_markers ORDER BY floor_id, id'))
+        rows = db.rows(conn.execute('SELECT * FROM factory_markers WHERE floor_id = ? ORDER BY id', (floor,)))
+    else:
+        rows = db.rows(conn.execute('SELECT * FROM factory_markers ORDER BY floor_id, id'))
+    if any(r.get('camera_id') for r in rows):   # atanmış kameraların adını ekle (NVR listesinden)
+        names = {c.get('id'): c.get('name') for c in _nvr_cameras(conn)}
+        for r in rows:
+            if r.get('camera_id'):
+                r['camera_name'] = names.get(r['camera_id'])
+    return rows
 
 
 @router.post('/markers')
@@ -634,7 +688,39 @@ def update_marker(mid: int, body: MarkerPatch, user=Depends(fab_user), conn=db.D
         vals['kind'] = m['kind'] if m['kind'] in MARKER_KINDS else 'note'
     conn.execute('UPDATE factory_markers SET kind = ?, label = ?, x = ?, y = ?, floor_id = ? WHERE id = ?',
                  (vals['kind'], vals['label'], vals['x'], vals['y'], vals['floor_id'], mid))
+    if vals['kind'] not in ('cam_indoor', 'cam_outdoor'):   # kamera türü değilse atanmış NVR kamerası anlamsız → temizle
+        conn.execute('UPDATE factory_markers SET camera_id = NULL WHERE id = ?', (mid,))
     return db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (mid,)))
+
+
+class MarkerCamIn(BaseModel):
+    camera_id: Optional[int] = None   # None/atanmadı → atamayı kaldır
+
+
+@router.post('/markers/{mid}/camera')
+def assign_marker_camera(mid: int, body: MarkerCamIn, user=Depends(fab_user), conn=db.DB):
+    """Kamera işaretçisine (cam_indoor/cam_outdoor) bir NVR kamerası atar (ya da kaldırır). Atanınca işaretçi o
+    kameranın GERÇEK KONUMU olur: yüz olayları bu konuma (oda/kat) eşlenir → kişinin gerçek yeri bulunur."""
+    _ensure(conn)
+    m = db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (mid,)))
+    if not m:
+        raise HTTPException(404, 'İşaretçi bulunamadı')
+    if m['kind'] not in ('cam_indoor', 'cam_outdoor'):
+        raise HTTPException(400, 'Yalnız kamera işaretçisine NVR kamerası atanabilir')
+    cid = body.camera_id
+    if cid is not None:
+        if cid not in {c.get('id') for c in _nvr_cameras(conn)}:
+            raise HTTPException(400, 'Kamera bulunamadı')
+        if conn.execute('SELECT 1 FROM factory_cameras WHERE camera_id = ?', (cid,)).fetchone():
+            raise HTTPException(400, 'Bu kamera zaten plana (NVR kamera aracıyla) yerleştirilmiş')
+        if conn.execute('SELECT 1 FROM factory_markers WHERE camera_id = ? AND id != ?', (cid, mid)).fetchone():
+            raise HTTPException(400, 'Bu kamera başka bir işaretçiye atanmış')
+    conn.execute('UPDATE factory_markers SET camera_id = ? WHERE id = ?', (cid, mid))
+    db.audit(conn, user['id'], 'Kamera işaretçisine NVR kamerası atadı', 'factory_marker', mid, f'camera={cid}')
+    row = db.row(conn.execute('SELECT * FROM factory_markers WHERE id = ?', (mid,)))
+    if row.get('camera_id'):
+        row['camera_name'] = {c.get('id'): c.get('name') for c in _nvr_cameras(conn)}.get(row['camera_id'])
+    return row
 
 
 @router.delete('/markers/{mid}')

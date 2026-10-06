@@ -407,14 +407,17 @@ export async function render(view, params, ctx) {
 
     // ALTYAPI işaretçileri (UPS, priz, WiFi, internet/intranet, switch, planlanan kamera, not) — paletten ikon + renk
     if (st.layers.markers) st.markers.forEach(m => {
+      if (st.layers[`mk:${m.kind}`] === false) return;   // TÜR BAZLI göster/gizle (ör. sadece kameralar)
       const meta = markerMeta(m.kind);
       const sel = st.sel && st.sel.type === 'marker' && st.sel.id === m.id;
       const g = s('g', { class: `fab-marker ${sel ? 'sel' : ''}`, transform: `translate(${m.x} ${m.y})`,
         onclick: e => { if (st.mode === 'edit' && st.tool === 'select') { e.stopPropagation(); selectMarker(m); } },
         onmousedown: e => startDragMarker(e, m) });
+      if (m.camera_id) g.append(s('circle', { cx: 0, cy: 0, r: 13, fill: 'none', stroke: '#22c55e', 'stroke-width': 2 }));   // NVR atanmış
       g.append(s('circle', { cx: 0, cy: 0, r: 11, class: 'fab-marker-badge', fill: meta.color }));
       g.append(s('text', { x: 0, y: 5, class: 'fab-marker-icon', 'text-anchor': 'middle' }, meta.icon));
-      if (m.label) g.append(s('text', { x: 15, y: 4, class: 'fab-marker-lbl' }, m.label));
+      const lbl = m.label || (m.camera_id ? (m.camera_name || `Kamera #${m.camera_id}`) : '');
+      if (lbl) g.append(s('text', { x: 15, y: 4, class: 'fab-marker-lbl' }, lbl));
       gStatic.append(g);
     });
 
@@ -818,7 +821,23 @@ export async function render(view, params, ctx) {
       cb.addEventListener('change', () => { st.layers[k] = cb.checked; saveLayers(st.layers); drawCanvas(); });
       return h('label', { class: 'fab-layer' }, cb, h('span', null, lbl));
     });
-    return h('div', { class: 'fab-layers' }, h('h3', { class: 'fab-side-h' }, 'Katmanlar'), rows);
+    // İşaretçi TÜRLERİ: o katta bulunan türler için ayrı göster/gizle (ör. "sadece kameralar")
+    const present = [...new Set((st.markers || []).map(m => m.kind))];
+    const mkRows = MARKER_ORDER.filter(k => present.includes(k)).map(k => {
+      const cb = h('input', { type: 'checkbox', checked: st.layers[`mk:${k}`] !== false });
+      cb.addEventListener('change', () => { st.layers[`mk:${k}`] = cb.checked; saveLayers(st.layers); drawCanvas(); });
+      return h('label', { class: 'fab-layer' }, cb, h('span', null, `${MARKER_PALETTE[k].icon} ${MARKER_PALETTE[k].label}`));
+    });
+    let mkAll = null;
+    if (mkRows.length) {
+      const setAll = on => { present.forEach(k => { st.layers[`mk:${k}`] = on; }); saveLayers(st.layers); drawSide(); drawCanvas(); };
+      mkAll = h('div', { class: 'fab-mk-all' },
+        h('button', { class: 'btn xs', type: 'button', onclick: () => setAll(true) }, 'Hepsi'),
+        h('button', { class: 'btn xs', type: 'button', onclick: () => setAll(false) }, 'Hiçbiri'));
+    }
+    return h('div', { class: 'fab-layers' }, h('h3', { class: 'fab-side-h' }, 'Katmanlar'), rows,
+      mkRows.length ? h('div', { class: 'fab-mk-h' }, h('span', { class: 'small muted' }, 'İşaretçi türleri'), mkAll) : null,
+      mkRows);
   }
   function selProps() {
     if (!st.sel) return h('div', { class: 'fab-note muted' }, 'Bir öğe seçin (özellikleri burada görünür).');
@@ -855,8 +874,29 @@ export async function render(view, params, ctx) {
       kindSel.addEventListener('change', async () => { m.kind = kindSel.value; await api.patch(`/api/factory/markers/${m.id}`, { kind: m.kind }); drawCanvas(); drawSide(); });
       const lbl = h('input', { class: 'input', value: m.label || '' });
       lbl.addEventListener('change', async () => { m.label = lbl.value.trim(); await api.patch(`/api/factory/markers/${m.id}`, { label: m.label }); drawCanvas(); });
+      // KAMERA işaretçisi → NVR kamerası ata (atanmamış kameralardan). Atanınca işaretçi kameranın gerçek konumu olur.
+      let camField = null;
+      if (m.kind === 'cam_indoor' || m.kind === 'cam_outdoor') {
+        const opts = [h('option', { value: '' }, '(atanmadı)')];
+        if (m.camera_id) opts.push(h('option', { value: String(m.camera_id), selected: true }, `✓ ${m.camera_name || `Kamera #${m.camera_id}`}`));
+        (st.avail || []).forEach(c => opts.push(h('option', { value: String(c.id) }, `${c.name || `Kamera #${c.id}`}${c.location ? ` · ${c.location}` : ''}`)));
+        const camSel = h('select', { class: 'input' }, opts);
+        camSel.addEventListener('change', async () => {
+          const cid = camSel.value ? Number(camSel.value) : null;
+          try {
+            const r = await api.post(`/api/factory/markers/${m.id}/camera`, { camera_id: cid });
+            m.camera_id = r.camera_id; m.camera_name = r.camera_name;
+            await loadAvail(); drawCanvas(); drawSide();
+            toast(cid ? 'NVR kamerası atandı' : 'Atama kaldırıldı', 'success');
+          } catch (err) { toastError(err); drawSide(); }
+        });
+        camField = h('div', null, field('NVR kamerası', camSel),
+          h('div', { class: 'fab-note muted' }, m.camera_id
+            ? 'Bu işaretçi atanan kameranın GERÇEK KONUMUDUR; yüz tanıma hareketi buraya (oda/kat) eşlenir.'
+            : 'Atanmamış kameralardan seçin — kişilerin gerçek konumu için bu eşleme gerekir.'));
+      }
       return h('div', { class: 'fab-props' }, h('h4', null, `${markerMeta(m.kind).icon} ${markerMeta(m.kind).label}`),
-        field('Tür', kindSel), field('Etiket (ör. ad / adet)', lbl),
+        field('Tür', kindSel), field('Etiket (ör. ad / adet)', lbl), camField,
         h('button', { class: 'btn danger sm', type: 'button', onclick: deleteSelected }, 'İşaretçiyi Sil'));
     }
     if (st.sel.type === 'line') {
@@ -1182,6 +1222,8 @@ function injectStyle() {
   /* Katmanlar paneli */
   .fab-layers{margin-top:12px;border-top:1px solid var(--line,#e5e7eb);padding-top:8px}
   .fab-layer{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px;cursor:pointer}
+  .fab-mk-h{display:flex;align-items:center;justify-content:space-between;margin:8px 0 2px;border-top:1px dashed var(--line,#e5e7eb);padding-top:6px}
+  .fab-mk-all{display:flex;gap:4px}
   .fab-layer input{width:15px;height:15px}
   /* Kat çubuğundaki arka plan kontrolleri */
   .fab-bgctl{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}

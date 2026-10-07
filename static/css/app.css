@@ -730,10 +730,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- Modal / toast ---------- */
 .modal-back {
-  position: fixed; inset: 0; background: rgba(16, 24, 40, .45); z-index: 7000;
-  display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; overflow: auto;
+  /* Görünür alana (visualViewport) oturur: mobilde klavye açılınca --app-vh/--app-vt ile küçülür → modal klavyenin
+     arkasında kalmaz. Değişkenler yoksa (eski tarayıcı) tüm ekran. */
+  position: fixed; left: 0; right: 0; top: var(--app-vt, 0px); height: var(--app-vh, 100%);
+  background: rgba(16, 24, 40, .45); z-index: 7000;
+  display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: auto;
 }
-.modal { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); width: 100%; max-width: 520px; display: flex; flex-direction: column; max-height: 88vh; }
+.modal { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); width: 100%; max-width: 520px; display: flex; flex-direction: column; max-height: calc(var(--app-vh, 88vh) - 24px); }
 .modal.wide { max-width: 760px; }
 .modal-head, .modal-foot { flex: none; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }

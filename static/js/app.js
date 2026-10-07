@@ -198,6 +198,32 @@ const ctx = { user: null, meta: null };
 ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
   document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
 
+// Mobil klavye: açılınca modal/alanlar klavyenin arkasında kalmasın. (1) Görünür alanı (visualViewport) CSS
+// değişkenlerine yaz → .modal-back görünür alana oturur. (2) Odaklanan girişi görünür alana kaydır.
+(function () {
+  const vv = window.visualViewport, root = document.documentElement;
+  const sync = () => {
+    root.style.setProperty('--app-vh', (vv ? vv.height : innerHeight) + 'px');
+    root.style.setProperty('--app-vt', (vv ? vv.offsetTop : 0) + 'px');
+  };
+  sync();
+  if (vv) { vv.addEventListener('resize', sync); vv.addEventListener('scroll', sync); } else addEventListener('resize', sync);
+  const editable = el => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+  const scrollable = el => { for (let n = el.parentElement; n; n = n.parentElement) { const s = getComputedStyle(n); if (/(auto|scroll)/.test(s.overflowY) && n.scrollHeight > n.clientHeight + 2) return n; } return null; };
+  const keepInView = el => {
+    if (!editable(el)) return;
+    const top = vv ? vv.offsetTop : 0, bottom = (vv ? vv.offsetTop + vv.height : innerHeight), pad = 20;
+    const r = el.getBoundingClientRect(), sc = scrollable(el) || document.scrollingElement;
+    if (!sc) return;
+    if (r.bottom > bottom - pad) sc.scrollTop += r.bottom - (bottom - pad);
+    else if (r.top < top + pad) sc.scrollTop -= (top + pad) - r.top;
+  };
+  let focused = null;
+  addEventListener('focusin', e => { if (editable(e.target)) { focused = e.target; setTimeout(() => keepInView(e.target), 280); } });
+  addEventListener('focusout', () => { focused = null; });
+  if (vv) vv.addEventListener('resize', () => { if (focused && document.activeElement === focused) setTimeout(() => keepInView(focused), 60); });
+})();
+
 async function boot() {
   // Dış katılımcı toplantı linki (/m/{code}): oturum gerektirmeden doğrudan katılım ekranı
   const mm = location.pathname.match(/^\/m\/([^/]+)/);

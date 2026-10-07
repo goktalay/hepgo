@@ -123,23 +123,25 @@ def assign(conn, gid, user_id, person_id, by, validate=True, family_id=None, vis
     return {'id': target, 'enroll_faces': _enroll_payload(enroll_rows)}
 
 
-def rescan_unknown(conn, thr=None):
+def rescan_unknown(conn, thr=None, after_id=0, limit=40):
     """Tanınmayan (atanmamış) yüz gruplarını, genişlemiş kimlik kütüphanesiyle (eğitim izleri + atanmış gruplar)
     yeniden eşleştirir; eşik üstünde eşleşenleri otomatik atar. Kişilere resim atandıkça kütüphane büyür → daha önce
-    tanınamayanlar artık tanınabilir. Toplu atama olduğundan eşik biraz daha sıkı (öntanımlı 0.5)."""
-    known = _all_identities(conn)
-    if not known:
-        return {'assigned': 0, 'scanned': 0, 'items': []}
-    thr = float(thr or 0.5)
+    tanınamayanlar artık tanınabilir. PARÇALI çalışır (id imleci): istemci ilerleme gösterip iptal edebilsin diye
+    her çağrı en çok `limit` grup işler, kaldığı yeri `last_id` ile döner. İlk çağrıda (after_id=0) `total` döner.
+    Toplu atama olduğundan eşik biraz daha sıkı (öntanımlı 0.5)."""
+    where = 'person_id IS NULL AND user_id IS NULL AND family_id IS NULL AND visitor_id IS NULL'
+    after_id, limit = int(after_id or 0), max(1, min(int(limit or 40), 200))
+    total = conn.execute(f'SELECT COUNT(*) FROM face_groups WHERE {where}').fetchone()[0] if not after_id else None
     rows = db.rows(conn.execute(
-        '''SELECT id, centroid FROM face_groups
-           WHERE person_id IS NULL AND user_id IS NULL AND family_id IS NULL AND visitor_id IS NULL'''))
-    items, scanned = [], 0
+        f'SELECT id, centroid FROM face_groups WHERE {where} AND id > ? ORDER BY id LIMIT ?', (after_id, limit)))
+    known = _all_identities(conn)   # her batch yeniden: önceki batch'lerin atamaları da kütüphaneye katılır (zincirleme)
+    thr = float(thr or 0.5)
+    items, last_id = [], after_id
     for r in rows:
+        last_id = r['id']
         cen = np.frombuffer(r['centroid'], dtype=np.float32)
         if cen.size != 128:
             continue
-        scanned += 1
         cen = _norm(cen)
         best, best_sim = None, thr
         for key, v in known:
@@ -159,7 +161,8 @@ def rescan_unknown(conn, thr=None):
             continue
         items.append({'id': res['id'], 'enroll_faces': res.get('enroll_faces'), 'gid': r['id'], 'kind': kind,
                       'sim': round(best_sim, 3), 'user_id': uid, 'person_id': pid, 'family_id': fid, 'visitor_id': vid})
-    return {'assigned': len(items), 'scanned': scanned, 'items': items}
+    return {'assigned': len(items), 'batch': len(rows), 'items': items, 'last_id': last_id,
+            'done': len(rows) < limit, 'total': total}
 
 
 def merge(conn, ids):
@@ -582,7 +585,7 @@ def rpc(conn, method, args):
     if method == 'merge':
         return merge(conn, a['ids'])
     if method == 'rescan':
-        return rescan_unknown(conn, a.get('thr'))
+        return rescan_unknown(conn, a.get('thr'), a.get('after_id', 0), a.get('limit', 40))
     if method == 'unassign':
         return unassign(conn, a['gid'])
     if method == 'delete_group':

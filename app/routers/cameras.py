@@ -424,11 +424,12 @@ def unassign(gid: int, user=Depends(cam_user), conn=db.DB):
 
 
 @faces_router.post('/rescan')
-def rescan(user=Depends(cam_user), conn=db.DB):
-    """Tanınmayan kişileri tekrar tara: atanmamış yüz gruplarını genişlemiş kimlik kütüphanesiyle yeniden eşleştirir,
-    eşleşenleri otomatik atar (kişiye resim atandıkça kütüphane büyür → daha önce tanınamayan artık tanınabilir)."""
+def rescan(after_id: int = 0, limit: int = 40, user=Depends(cam_user), conn=db.DB):
+    """Tanınmayan kişileri tekrar tara (PARÇALI): atanmamış yüz gruplarını genişlemiş kimlik kütüphanesiyle yeniden
+    eşleştirir, eşleşenleri otomatik atar. İstemci `after_id` imleciyle batch'ler çağırır; ilerleme gösterip iptal
+    edebilir (iptalde o ana kadar atananlar kalır). İlk çağrı (after_id=0) `total` döner."""
     try:
-        res = _face(conn, 'rescan')
+        res = _face(conn, 'rescan', after_id=after_id, limit=limit)
     except HTTPException as e:
         if 'Bilinmeyen' in str(getattr(e, 'detail', '')):   # fabrika yüz ajanı henüz güncellenmedi
             raise HTTPException(503, 'Fabrika yüz ajanının güncellenmesi gerekiyor; Tekrar Tara şimdilik kullanılamıyor.') from None
@@ -442,9 +443,10 @@ def rescan(user=Depends(cam_user), conn=db.DB):
             pass
     if items:
         db.audit(conn, user['id'], f'Tanınmayan yüzler tekrar tarandı: {len(items)} kişi tanındı', 'face_group', None,
-                 f"{res.get('scanned', 0)} grup tarandı")
+                 f"batch {res.get('batch', 0)}")
     _resolve_names(conn, items)   # tanınan kişilerin adlarını bulut DB'sinden çöz
-    return {'assigned': res.get('assigned', 0), 'scanned': res.get('scanned', 0), 'items': items}
+    return {'assigned': res.get('assigned', 0), 'batch': res.get('batch', 0), 'last_id': res.get('last_id', after_id),
+            'done': res.get('done', True), 'total': res.get('total'), 'items': items}
 
 
 @faces_router.post('/merge')

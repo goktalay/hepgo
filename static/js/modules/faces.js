@@ -14,17 +14,45 @@ export async function renderFaces(body) {
   // Tekrar Tara: kişilere resim atandıkça kimlik kütüphanesi büyür; tanınamayanları genişlemiş kütüphaneyle yeniden dener
   const rescanBtn = h('button', { class: 'btn', type: 'button', title: 'Genişlemiş kütüphaneyle tanınmayanları yeniden tanımaya çalış', onclick: () => rescanUnknown() }, '🔄 Tekrar Tara');
   async function rescanUnknown() {
-    const old = rescanBtn.textContent; rescanBtn.disabled = true; rescanBtn.textContent = 'Taranıyor…';
+    rescanBtn.disabled = true;
+    let cancelled = false, after = 0, total = 0, processed = 0, assigned = 0, done = false;
+    const names = [];
+    const bar = h('i', { style: { display: 'block', height: '10px', width: '0%', background: 'var(--primary)', borderRadius: '6px', transition: 'width .25s' } });
+    const barWrap = h('div', { style: { height: '10px', background: 'var(--line)', borderRadius: '6px', overflow: 'hidden', margin: '2px 0 10px' } }, bar);
+    const label = h('div', { class: 'small muted' }, 'Hazırlanıyor…');
+    const namesBox = h('div', { class: 'small', style: { marginTop: '8px', maxHeight: '160px', overflow: 'auto' } });
+    const setBar = () => {
+      const pct = total ? Math.min(100, Math.round(processed / total * 100)) : 0;
+      bar.style.width = pct + '%';
+      label.textContent = t('{p} / {total} grup tarandı · {a} kişi tanındı', { p: processed, total: total || '?', a: assigned });
+    };
+    const m = modal({
+      title: '🔄 Tanınmayanlar tekrar taranıyor',
+      body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, 'Genişlemiş kimlik kütüphanesiyle yeniden deneniyor. İstediğiniz an iptal edebilirsiniz; o ana kadar tanınanlar atanmış kalır.'), barWrap, label, namesBox),
+      actions: [{ label: 'İptal', class: 'danger', onClick: () => { cancelled = true; } }],
+      onClose: () => { cancelled = true; },
+    });
+    setBar();
     try {
-      const r = await api.post('/api/faces/rescan', {});
-      if (r.assigned) {
-        const names = (r.items || []).map(it => it.user_name || it.person_name || it.family_name || it.visitor_name).filter(Boolean);
-        toast(t('{n} kişi tanındı ve atandı{who}', { n: r.assigned, who: names.length ? ': ' + names.slice(0, 5).join(', ') + (names.length > 5 ? '…' : '') : '' }), 'success');
-      } else {
-        toast(t('{n} grup tarandı; yeni tanınan çıkmadı. Kişilere daha çok resim ekleyip tekrar deneyin.', { n: r.scanned || 0 }));
+      while (!done && !cancelled) {
+        const r = await api.post(`/api/faces/rescan?after_id=${after}&limit=40`, {});
+        if (!total && r.total != null) total = r.total;
+        processed += r.batch || 0; after = r.last_id || after; assigned += r.assigned || 0; done = !!r.done;
+        for (const it of (r.items || [])) {
+          const nm = it.user_name || it.person_name || it.family_name || it.visitor_name;
+          if (nm) names.push(nm);
+        }
+        if (names.length) namesBox.textContent = t('Tanınanlar: {list}', { list: names.join(', ') });
+        setBar();
       }
+    } catch (err) { toastError(err); } finally {
+      m.close();
+      if (cancelled && !done) toast(t('Durduruldu · {a} kişi tanındı ({p} grup tarandı)', { a: assigned, p: processed }));
+      else if (assigned) toast(t('{a} kişi tanındı ve atandı', { a: assigned }), 'success');
+      else toast(t('{p} grup tarandı; yeni tanınan çıkmadı. Kişilere daha çok resim ekleyip tekrar deneyin.', { p: processed }));
+      rescanBtn.disabled = false;
       load();
-    } catch (err) { toastError(err); } finally { rescanBtn.disabled = false; rescanBtn.textContent = old; }
+    }
   }
   // Yüz tanıma hassasiyeti (eşik) — düşük = daha çok yüz yakalar; anında fabrikaya uygulanır
   let facerecCfg = { score: 0.6, min_face: 36 };

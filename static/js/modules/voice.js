@@ -218,9 +218,13 @@ function pickRow(u, chosen, draw) {
 }
 
 // ---------- Gelen arama (tam ekran, iPhone tarzı kaydırmalı aç/kapat) ----------
+// Native (Capacitor) gelen arama tam-ekran bildirimi — uygulama arka planda/kilitliyken aramayı öne çıkarır
+const nativeCall = () => { try { return (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.IncomingCall) || null; } catch { return null; } };
+
 function onRing(m) {
   if (call || ring) { send({ t: 'reject', call_id: m.call_id }); return; }   // meşgul
   startRing('in');
+  try { if (document.hidden) nativeCall()?.show({ name: (m.caller && m.caller.full_name) || 'Arama', video: !!m.video }); } catch { /* */ }
   const sub = m.kind === 'grup'
     ? t('Grup görüşmesi{extra}', { extra: m.members?.length ? ` · ${m.members.filter(Boolean).join(', ')}` : '' })
     : m.video ? 'Görüntülü görüşme · sizi arıyor…' : 'Sesli görüşme · sizi arıyor…';
@@ -239,7 +243,7 @@ function onRing(m) {
   document.body.append(el);
   ring = { call_id: m.call_id, caller: m.caller, kind: m.kind, el };
 }
-function closeRing() { stopRing(); if (ring) { ring.el.remove(); ring = null; } }
+function closeRing() { stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ } if (ring) { ring.el.remove(); ring = null; } }
 
 // iPhone tarzı kaydırma: ortadaki tutamağı sağa kaydır → aç, sola → kapat (fare ve dokunma).
 function makeSlider(onAccept, onReject) {

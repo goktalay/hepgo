@@ -202,6 +202,8 @@
     geoReq: async () => { try { return (await P.Geolocation.requestPermissions()).location; } catch (e) { return 'denied'; } },
     camCheck: async () => { try { if (!navigator.permissions) return 'prompt'; const r = await navigator.permissions.query({ name: 'camera' }); return r.state === 'granted' ? 'granted' : r.state === 'denied' ? 'denied' : 'prompt'; } catch (e) { return 'prompt'; } },
     camReq: async () => { try { const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); s.getTracks().forEach(t => t.stop()); return 'granted'; } catch (e) { return 'denied'; } },
+    fsiCheck: async () => { try { const r = await P.IncomingCall.canUseFullScreen(); return r && r.granted ? 'granted' : 'prompt'; } catch (e) { return 'yok'; } },
+    fsiReq: async () => { try { await P.IncomingCall.requestFullScreen(); } catch (e) { /* */ } return 'prompt'; },
   };
   function obStyles() {
     if (document.getElementById('hepgo-ob-style')) return;
@@ -242,6 +244,7 @@
         { key: 'notif', icon: '🔔', title: 'Bildirimler', why: 'Onay bekleyen işler, mesajlar, güvenlik ve üretim uyarıları anında size ulaşsın diye.', check: permApi.notifCheck, req: permApi.notifReq },
         { key: 'geo', icon: '📍', title: 'Konum', why: 'Çalışma saatlerinde saha ve güvenlik yönetimi için kullanılır. <b>KVKK açık rızanıza</b> bağlıdır; dilediğinizde geri alabilirsiniz. Sürekli takip için cihaz ayarından "Her zaman izin ver" gerekir.', check: permApi.geoCheck, req: permApi.geoReq },
         { key: 'cam', icon: '📷', title: 'Kamera ve Mikrofon', why: 'QR okuma, görüntülü/sesli görüşme ve belge/fotoğraf yükleme için gerekir. Yalnızca siz kullandığınızda erişilir.', check: permApi.camCheck, req: permApi.camReq },
+        { key: 'fsi', icon: '📲', title: 'Gelen arama ekranı', why: 'Uygulama kapalı ya da ekran kilitliyken gelen aramaların otomatik <b>tam ekran</b> açılması için izin. (Telefon ayarlarında "Tam ekran bildirim" olarak görünür.)', check: permApi.fsiCheck, req: permApi.fsiReq },
         { done: true, icon: '✅', title: 'Her şey hazır', body: 'Artık giriş yapabilirsiniz. İzinleri daha sonra cihaz ayarlarından da değiştirebilirsiniz.' },
       ];
       const ov = document.createElement('div'); ov.id = 'hepgo-ob';

@@ -45,6 +45,7 @@ public final class CallNotifier {
                     .setCategory(NotificationCompat.CATEGORY_CALL)
                     .setOngoing(true)
                     .setAutoCancel(true)
+                    .setTimeoutAfter(40000)   // güvenlik: 40 sn sonra kendi kapansın (zil/titreşim sonsuza kalmasın)
                     .setFullScreenIntent(pi, true)
                     .setContentIntent(pi);
             NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);

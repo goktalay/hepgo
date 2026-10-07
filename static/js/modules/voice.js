@@ -71,7 +71,7 @@ function ringBeat(kind) {
   if (kind === 'in') { beat(523, 0, 0.35, 0.2); beat(659, 0.4, 0.35, 0.2); }   // gelen: çift tonlu zil
   else beat(420, 0, 0.45, 0.06);   // giden: ringback
 }
-function startRing(kind) { stopRing(); ringBeat(kind); ringTimer = setInterval(() => ringBeat(kind), kind === 'in' ? 2200 : 3200); }
+function startRing(kind) { if (call && call.startedAt) return; stopRing(); ringBeat(kind); ringTimer = setInterval(() => ringBeat(kind), kind === 'in' ? 2200 : 3200); }
 function stopRing() {
   if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
   ringOscs.forEach(o => { try { o.stop(); } catch { /* */ } try { o.disconnect(); } catch { /* */ } });
@@ -237,6 +237,13 @@ function pickRow(u, chosen, draw) {
 // ---------- Gelen arama (tam ekran, iPhone tarzı kaydırmalı aç/kapat) ----------
 // Native (Capacitor) gelen arama tam-ekran bildirimi — uygulama arka planda/kilitliyken aramayı öne çıkarır
 const nativeCall = () => { try { return (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.IncomingCall) || null; } catch { return null; } };
+// Uygulama öne gelince: aktif/kabul edilmiş aramada hâlâ zil/bildirim varsa sustur (arka planda takılı kalmasın)
+try {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (call && call.startedAt) { stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ } }
+  });
+} catch { /* */ }
 
 function onRing(m) {
   if (call || ring) { send({ t: 'reject', call_id: m.call_id }); return; }   // meşgul
@@ -295,7 +302,7 @@ function makeSlider(onAccept, onReject) {
 }
 
 async function accept(m) {
-  stopRing();   // sesi HEMEN durdur (mikrofon izni/akış beklenirken zil çalmaya devam etmesin)
+  stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ }   // sesi + native bildirimi HEMEN durdur
   let video = !!m.video;
   let stream;
   try { stream = await getMedia(video); }
@@ -389,7 +396,7 @@ function makePeer(uid) {
   };
   pc.onicecandidate = e => { if (e.candidate) send({ t: 'signal', call_id: call.id, to: uid, data: { ice: e.candidate } }); };
   pc.onconnectionstatechange = () => {   // her durum değişiminde arayüz güncellenir (Bağlanıyor→Bağlı)
-    if (pc.connectionState === 'connected') { stopRing(); if (!call.startedAt) { call.startedAt = Date.now(); startTimer(); } }
+    if (pc.connectionState === 'connected') { stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ } if (!call.startedAt) { call.startedAt = Date.now(); startTimer(); } }
     renderPeers();
   };
   if (!call.video) document.body.append(media);   // ses: gizli oynatıcı · video: renderPeers karoya yerleştirir
@@ -517,18 +524,30 @@ function toggleMute() {
 async function flipCam() {
   if (!call || !call.video) return;
   const cur = call.local.getVideoTracks()[0];
-  const curFacing = (cur && cur.getSettings && cur.getSettings().facingMode) || call.facing || 'user';
-  const next = curFacing === 'environment' ? 'user' : 'environment';
+  const curSet = (cur && cur.getSettings && cur.getSettings()) || {};
+  let constraints;
   try {
-    const ns = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: next }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    // Önce cihaz listesinden FARKLI bir kamera seç (en güvenilir); yoksa facingMode ters çevir
+    let devs = [];
+    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && d.deviceId); } catch { /* */ }
+    if (devs.length > 1) {
+      const nextDev = devs.find(d => d.deviceId !== curSet.deviceId) || devs[0];
+      constraints = { audio: false, video: { deviceId: { exact: nextDev.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    } else {
+      const next = (curSet.facingMode || call.facing || 'user') === 'environment' ? 'user' : 'environment';
+      constraints = { audio: false, video: { facingMode: { exact: next }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+    }
+    const ns = await navigator.mediaDevices.getUserMedia(constraints);
     const nt = ns.getVideoTracks()[0];
     if (!nt) return;
     if (cur) nt.enabled = cur.enabled;
     call.peers.forEach(p => { const s = p.pc.getSenders().find(x => x.track && x.track.kind === 'video'); if (s) s.replaceTrack(nt).catch(() => {}); });
     if (cur) { try { call.local.removeTrack(cur); } catch { /* */ } cur.stop(); }
     call.local.addTrack(nt);
-    call.facing = next;
-    if (ui.selfVideo) ui.selfVideo.srcObject = call.local;
+    call.facing = (nt.getSettings && nt.getSettings().facingMode) || call.facing;
+    // self önizlemeyi tazele (aynı stream nesnesi → srcObject'i sıfırlayıp yeniden ata)
+    if (ui && ui.selfVideo && !call.swap) { ui.selfVideo.srcObject = null; ui.selfVideo.srcObject = call.local; }
+    if (call.swap) applySwap();
   } catch (e) { toast('Kamera değiştirilemedi', 'err'); }
 }
 function toggleCam() {

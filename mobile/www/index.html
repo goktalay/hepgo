@@ -3,188 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>HEPGO</title>
+<title>Çevrimiçi bağlantı gerekli</title>
 <style>
-  :root { color-scheme: dark; --b1:#1e3a8a; --b2:#0f1d3d; --b3:#070d1c; --accent:#3b82f6; }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; }
-  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #e8eefc;
-    background: radial-gradient(130% 150% at 0% 0%, var(--b1) 0%, var(--b2) 55%, var(--b3) 100%);
-    display: flex; flex-direction: column; overflow: hidden;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-  .wrap { flex: 1; display: flex; flex-direction: column; max-width: 480px; width: 100%; margin: 0 auto; padding: 24px; }
-  .slides { flex: 1; position: relative; overflow: hidden; }
-  .slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; opacity: 0; transform: translateX(40px); transition: opacity .35s ease, transform .35s ease; pointer-events: none; }
-  .slide.on { opacity: 1; transform: none; pointer-events: auto; }
-  .slide.past { transform: translateX(-40px); }
-  .ic { width: 112px; height: 112px; border-radius: 28px; display: grid; place-items: center; font-size: 54px; margin-bottom: 22px;
-    background: rgba(255,255,255,.06); box-shadow: 0 16px 40px rgba(7,13,28,.5); backdrop-filter: blur(6px); }
-  .ic img { width: 76px; height: 76px; border-radius: 18px; }
-  h1 { font-size: 25px; margin: 0 0 10px; letter-spacing: .01em; }
-  h2 { font-size: 22px; margin: 0 0 10px; }
-  p { color: #aebbdc; margin: 0 0 8px; line-height: 1.6; font-size: 15px; max-width: 360px; }
-  .why { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 14px 16px; margin: 14px 0 6px; max-width: 360px; }
-  .why b { color: #dbe6ff; }
-  .perm-btn { margin-top: 18px; min-width: 190px; font: inherit; font-weight: 600; font-size: 15px; padding: 13px 22px; border-radius: 13px; border: 0; cursor: pointer;
-    background: linear-gradient(135deg, #2563eb, #3b82f6); color: #fff; box-shadow: 0 10px 26px rgba(37,99,235,.35); transition: transform .1s, background .2s, opacity .2s; }
-  .perm-btn:active { transform: scale(.97); }
-  .perm-btn.granted { background: linear-gradient(135deg, #16a34a, #22c55e); box-shadow: 0 10px 26px rgba(34,197,94,.3); }
-  .perm-btn.denied { background: linear-gradient(135deg, #b45309, #d97706); }
-  .note { font-size: 12.5px; color: #7f8db0; margin-top: 12px; max-width: 320px; }
-  .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; }
-  .dots { display: flex; gap: 7px; }
-  .dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.22); transition: background .2s, width .2s; }
-  .dots i.on { background: var(--accent); width: 22px; border-radius: 4px; }
-  .btn { font: inherit; font-weight: 600; padding: 12px 22px; border-radius: 12px; border: 0; cursor: pointer; background: rgba(255,255,255,.1); color: #fff; }
-  .btn.primary { background: linear-gradient(135deg, #2563eb, #3b82f6); box-shadow: 0 10px 26px rgba(37,99,235,.35); }
-  .btn:disabled { opacity: .5; }
-  .skip { background: transparent; color: #7f8db0; padding: 12px 6px; }
-  /* Açılış / bağlantı durumu ekranı */
-  #boot { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 24px;
-    background: radial-gradient(130% 150% at 0% 0%, var(--b1) 0%, var(--b2) 55%, var(--b3) 100%); }
-  #boot.on { display: flex; }
-  .spin { width: 42px; height: 42px; border: 3px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: sp 1s linear infinite; margin-bottom: 18px; }
-  @keyframes sp { to { transform: rotate(360deg); } }
-  .dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #fca5a5; font-weight: 600; background: rgba(239,68,68,.14); padding: 6px 12px; border-radius: 999px; margin: 14px 0; }
-  .dot i { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center;
+         font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #e8eefc; text-align: center;
+         padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+         background: radial-gradient(130% 150% at 0% 0%, #1e3a8a 0%, #0f1d3d 55%, #070d1c 100%); }
+  .wrap { max-width: 420px; width: 100%; }
+  .orb { width: 128px; height: 128px; margin: 0 auto 26px; position: relative; display: grid; place-items: center; }
+  .orb .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(147,197,253,.25); }
+  .orb .ring.r2 { animation: pulse 2.4s ease-out infinite; }
+  .orb .ring.r3 { animation: pulse 2.4s ease-out infinite 1.2s; }
+  @keyframes pulse { 0% { transform: scale(.75); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+  .orb .logo { width: 84px; height: 84px; border-radius: 24px; background: rgba(255,255,255,.06); display: grid; place-items: center;
+               box-shadow: 0 12px 34px rgba(7,13,28,.5); backdrop-filter: blur(6px); }
+  .orb .logo img { width: 56px; height: 56px; border-radius: 14px; }
+  h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: .01em; }
+  p { color: #aebbdc; margin: 0 auto 22px; line-height: 1.55; font-size: 14.5px; max-width: 340px; }
+  .dot { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: #fca5a5; font-weight: 600;
+         background: rgba(239,68,68,.14); padding: 6px 12px; border-radius: 999px; margin-bottom: 18px; }
+  .dot i { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 0 rgba(239,68,68,.6); animation: blip 1.6s infinite; }
+  .dot.on { color: #6ee7b7; background: rgba(16,185,129,.16); }
+  .dot.on i { background: #10b981; animation: none; }
+  @keyframes blip { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.5);} 70% { box-shadow: 0 0 0 7px rgba(239,68,68,0);} 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0);} }
+  button { font: inherit; font-weight: 600; padding: 13px 26px; border-radius: 12px; border: 0; cursor: pointer;
+           background: linear-gradient(135deg, #2563eb, #3b82f6); color: #fff; box-shadow: 0 10px 26px rgba(37,99,235,.35); transition: transform .1s, opacity .2s; }
+  button:active { transform: scale(.97); }
+  button[disabled] { opacity: .6; cursor: default; }
+  .hint { margin-top: 16px; font-size: 12px; color: #6b7a9e; }
 </style>
 </head>
 <body>
-  <!-- Açılış / yeniden açılış: bayrak varsa doğrudan siteye; yoksa onboarding. Çevrimdışıysa uyarı. -->
-  <div id="boot" class="on"><div class="spin"></div><div id="boot-msg">Yükleniyor…</div>
-    <div class="dot" id="boot-off" style="display:none"><i></i><span>Bağlantı yok — internet gelince devam eder</span></div>
-    <button class="btn" id="boot-retry" style="display:none;margin-top:8px" onclick="gotoSite()">Tekrar dene</button></div>
-
-  <div class="wrap" id="ob" style="display:none">
-    <div class="slides" id="slides"></div>
-    <div class="foot">
-      <button class="btn skip" id="skip" type="button">Atla</button>
-      <div class="dots" id="dots"></div>
-      <button class="btn primary" id="next" type="button">İleri</button>
+  <div class="wrap">
+    <div class="orb">
+      <div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
+      <div class="logo"><img src="logo.png" alt="HEPGO"></div>
     </div>
+    <div class="dot" id="st"><i></i><span>Bağlantı yok</span></div>
+    <h1>Çevrimiçi bağlantı gerekli</h1>
+    <p>HEPGO yalnızca çevrimiçi çalışır. İnternet ya da şirket ağı bağlantınız kurulduğunda otomatik olarak devam edilir.</p>
+    <button id="retry" onclick="tryNow()">Tekrar dene</button>
+    <div class="hint">Bağlantı geldiğinde kendiliğinden açılır.</div>
   </div>
-
 <script>
-  var SITE = 'https://www.hepgo.com/giris';
-  var FLAG = 'hepgo.onboarded.v1';
-  var Cap = window.Capacitor, P = (Cap && Cap.Plugins) || {};
-  var native = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
-
-  function gotoSite() { location.replace(SITE); }
-
-  // ---- Kalıcı bayrak (native Preferences; yoksa localStorage) ----
-  async function getFlag() {
-    try { if (P.Preferences) { var r = await P.Preferences.get({ key: FLAG }); return r && r.value === '1'; } } catch (e) {}
-    try { return localStorage.getItem(FLAG) === '1'; } catch (e) { return false; }
+  var SITE = 'https://turkbey.app';
+  var btn = document.getElementById('retry'), st = document.getElementById('st'), busy = false;
+  function go() { location.replace(SITE); }
+  function tryNow() {
+    if (busy) return; busy = true; btn.disabled = true; btn.textContent = 'Bağlanılıyor…';
+    fetch(SITE + '/api/meta', { cache: 'no-store', mode: 'no-cors' }).then(function () { go(); }).catch(fail);
+    function fail() { busy = false; btn.disabled = false; btn.textContent = 'Tekrar dene'; }
   }
-  async function setFlag() {
-    try { if (P.Preferences) await P.Preferences.set({ key: FLAG, value: '1' }); } catch (e) {}
-    try { localStorage.setItem(FLAG, '1'); } catch (e) {}
+  function mark(on) {
+    st.className = 'dot' + (on ? ' on' : '');
+    st.querySelector('span').textContent = on ? 'Bağlantı geldi' : 'Bağlantı yok';
+    if (on) setTimeout(tryNow, 400);
   }
-
-  // ---- İzin durum/istek yardımcıları (her biri {check, request} döner) ----
-  var perms = {
-    async notifCheck() { try { if (!P.PushNotifications) return 'yok'; var r = await P.PushNotifications.checkPermissions(); return r.receive; } catch (e) { return 'yok'; } },
-    async notifReq() { try { var r = await P.PushNotifications.requestPermissions(); return r.receive; } catch (e) { return 'denied'; } },
-    async geoCheck() { try { if (!P.Geolocation) return 'yok'; var r = await P.Geolocation.checkPermissions(); return r.location; } catch (e) { return 'yok'; } },
-    async geoReq() { try { var r = await P.Geolocation.requestPermissions(); return r.location; } catch (e) { return 'denied'; } },
-    async camCheck() {
-      try { if (!navigator.permissions) return 'prompt'; var r = await navigator.permissions.query({ name: 'camera' }); return r.state === 'granted' ? 'granted' : r.state === 'denied' ? 'denied' : 'prompt'; } catch (e) { return 'prompt'; }
-    },
-    async camReq() {
-      try { var s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); s.getTracks().forEach(function (t) { t.stop(); }); return 'granted'; } catch (e) { return 'denied'; }
-    },
-  };
-
-  // İzin ekranları tanımı (konuya özel gerekçe)
-  var STEPS = [
-    { intro: true, icon: 'logo', title: 'HEPGO\'ya hoş geldiniz', body: 'Fabrikanızı tek platformdan yönetin — üretim, saha, güvenlik, mesajlaşma ve daha fazlası. Başlamadan önce birkaç izin isteyeceğiz; her birinin nedenini açıklayacağız.' },
-    { key: 'notif', icon: '🔔', title: 'Bildirimler', why: 'Onay bekleyen işler, mesajlar, güvenlik ve üretim uyarıları anında size ulaşsın diye.', check: perms.notifCheck, req: perms.notifReq },
-    { key: 'geo', icon: '📍', title: 'Konum', why: 'Çalışma saatlerinde saha ve güvenlik yönetimi için konumunuz kullanılır. Bu <b>KVKK açık rızanıza</b> bağlıdır; dilediğinizde geri alabilirsiniz. Sürekli takip için cihaz ayarından "Her zaman izin ver" gerekir.', check: perms.geoCheck, req: perms.geoReq },
-    { key: 'cam', icon: '📷', title: 'Kamera ve Mikrofon', why: 'QR kod okuma, görüntülü/sesli görüşme ve belge/fotoğraf yükleme için gerekir. Yalnızca siz kullandığınızda erişilir.', check: perms.camCheck, req: perms.camReq },
-    { done: true, icon: '✅', title: 'Her şey hazır', body: 'Artık giriş yapabilirsiniz. İzinleri daha sonra cihaz ayarlarından da değiştirebilirsiniz.' },
-  ];
-
-  var idx = 0, slideEls = [];
-  function statusLabel(s) { return s === 'granted' ? '✓ İzinli' : s === 'denied' ? 'Ayarlardan izin verin' : 'İzin ver'; }
-  function applyBtn(btn, s) {
-    btn.textContent = statusLabel(s);
-    btn.classList.toggle('granted', s === 'granted');
-    btn.classList.toggle('denied', s === 'denied');
-    btn.disabled = (s === 'granted');
-  }
-
-  function buildSlide(step, i) {
-    var el = document.createElement('div');
-    el.className = 'slide';
-    var ic = document.createElement('div'); ic.className = 'ic';
-    if (step.icon === 'logo') { var im = document.createElement('img'); im.src = 'logo.png'; im.alt = ''; ic.appendChild(im); }
-    else ic.textContent = step.icon;
-    el.appendChild(ic);
-    var h = document.createElement(step.intro ? 'h1' : 'h2'); h.textContent = step.title; el.appendChild(h);
-    if (step.body) { var p = document.createElement('p'); p.textContent = step.body; el.appendChild(p); }
-    if (step.why) { var w = document.createElement('div'); w.className = 'why'; w.innerHTML = '<b>Neden?</b> ' + step.why; el.appendChild(w); }
-    if (step.key && native) {
-      var btn = document.createElement('button'); btn.className = 'perm-btn'; btn.type = 'button'; btn.textContent = 'İzin ver';
-      el.appendChild(btn);
-      step._btn = btn;
-      btn.addEventListener('click', async function () {
-        btn.disabled = true; btn.textContent = '…';
-        var s = await step.req();
-        applyBtn(btn, s);
-      });
-      // başlangıç durumunu yükle
-      step.check().then(function (s) { if (s && s !== 'yok') applyBtn(btn, s); });
-      var note = document.createElement('div'); note.className = 'note'; note.textContent = 'İsterseniz "İleri" ile geçip izni sonra verebilirsiniz.'; el.appendChild(note);
-    } else if (step.key && !native) {
-      var note2 = document.createElement('div'); note2.className = 'note'; note2.textContent = '(İzinler yalnızca mobil uygulamada istenir.)'; el.appendChild(note2);
-    }
-    return el;
-  }
-
-  function renderDots() {
-    var d = document.getElementById('dots'); d.innerHTML = '';
-    STEPS.forEach(function (_, i) { var s = document.createElement('i'); if (i === idx) s.className = 'on'; d.appendChild(s); });
-  }
-  function show(i) {
-    idx = i;
-    slideEls.forEach(function (el, k) { el.classList.toggle('on', k === i); el.classList.toggle('past', k < i); });
-    renderDots();
-    var step = STEPS[i];
-    document.getElementById('next').textContent = step.done ? 'Giriş yap' : 'İleri';
-    document.getElementById('skip').style.visibility = step.done ? 'hidden' : 'visible';
-    // izin ekranına gelince durumu tazele
-    if (step.key && step._btn) step.check().then(function (s) { if (s && s !== 'yok') applyBtn(step._btn, s); });
-  }
-  async function finish() { await setFlag(); gotoSite(); }
-
-  function startOnboarding() {
-    document.getElementById('boot').classList.remove('on');
-    document.getElementById('ob').style.display = 'flex';
-    var slides = document.getElementById('slides');
-    STEPS.forEach(function (step, i) { var el = buildSlide(step, i); slideEls.push(el); slides.appendChild(el); });
-    renderDots();
-    document.getElementById('next').addEventListener('click', function () { if (idx >= STEPS.length - 1) finish(); else show(idx + 1); });
-    document.getElementById('skip').addEventListener('click', finish);
-    show(0);
-  }
-
-  // ---- Önyükleme akışı ----
-  async function boot() {
-    if (!native) { gotoSite(); return; }            // tarayıcı/web: doğrudan siteye
-    var online = navigator.onLine;
-    if (!online) {
-      document.getElementById('boot-msg').textContent = 'Bağlantı bekleniyor';
-      document.getElementById('boot-off').style.display = 'inline-flex';
-      document.getElementById('boot-retry').style.display = 'inline-block';
-      window.addEventListener('online', function () { boot(); }, { once: true });
-      return;
-    }
-    if (await getFlag()) { gotoSite(); return; }      // daha önce tamamlandı → doğrudan giriş
-    startOnboarding();
-  }
-  if (document.readyState !== 'loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
+  window.addEventListener('online', function () { mark(true); });
+  window.addEventListener('offline', function () { mark(false); });
+  if (navigator.onLine) tryNow();
+  setInterval(function () { if (navigator.onLine) tryNow(); }, 5000);
 </script>
 </body>
 </html>

@@ -167,7 +167,111 @@
     } catch (e) { /* yut */ }
   }
 
-  function start() { polish(); initNet(); initPush(); initGeo(); initDevice(); }
+  // ---------------------------------------------------------------- İLK AÇILIŞ: tanıtım + izin ekranları (bir kez)
+  const OB_KEY = 'hepgo.onboarded.v1';
+  async function obGet() {
+    try { if (P.Preferences) { const r = await P.Preferences.get({ key: OB_KEY }); return r && r.value === '1'; } } catch (e) {}
+    try { return localStorage.getItem(OB_KEY) === '1'; } catch (e) { return false; }
+  }
+  async function obSet() {
+    try { if (P.Preferences) await P.Preferences.set({ key: OB_KEY, value: '1' }); } catch (e) {}
+    try { localStorage.setItem(OB_KEY, '1'); } catch (e) {}
+  }
+  const permApi = {
+    notifCheck: async () => { try { return (await P.PushNotifications.checkPermissions()).receive; } catch (e) { return 'prompt'; } },
+    notifReq: async () => { try { return (await P.PushNotifications.requestPermissions()).receive; } catch (e) { return 'denied'; } },
+    geoCheck: async () => { try { return (await P.Geolocation.checkPermissions()).location; } catch (e) { return 'prompt'; } },
+    geoReq: async () => { try { return (await P.Geolocation.requestPermissions()).location; } catch (e) { return 'denied'; } },
+    camCheck: async () => { try { if (!navigator.permissions) return 'prompt'; const r = await navigator.permissions.query({ name: 'camera' }); return r.state === 'granted' ? 'granted' : r.state === 'denied' ? 'denied' : 'prompt'; } catch (e) { return 'prompt'; } },
+    camReq: async () => { try { const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); s.getTracks().forEach(t => t.stop()); return 'granted'; } catch (e) { return 'denied'; } },
+  };
+  function obStyles() {
+    if (document.getElementById('hepgo-ob-style')) return;
+    const st = document.createElement('style'); st.id = 'hepgo-ob-style';
+    st.textContent = `
+      #hepgo-ob{position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;color:#e8eefc;
+        font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:radial-gradient(130% 150% at 0% 0%,#1e3a8a 0%,#0f1d3d 55%,#070d1c 100%);
+        padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+      #hepgo-ob .ob-wrap{flex:1;display:flex;flex-direction:column;max-width:480px;width:100%;margin:0 auto;padding:24px}
+      #hepgo-ob .ob-slides{flex:1;position:relative;overflow:hidden}
+      #hepgo-ob .ob-s{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;opacity:0;transform:translateX(40px);transition:opacity .35s,transform .35s;pointer-events:none}
+      #hepgo-ob .ob-s.on{opacity:1;transform:none;pointer-events:auto}
+      #hepgo-ob .ob-ic{width:108px;height:108px;border-radius:26px;display:grid;place-items:center;font-size:52px;margin-bottom:20px;background:rgba(255,255,255,.06);box-shadow:0 16px 40px rgba(7,13,28,.5)}
+      #hepgo-ob .ob-ic img{width:74px;height:74px;border-radius:18px}
+      #hepgo-ob h2{font-size:23px;margin:0 0 10px}
+      #hepgo-ob p{color:#aebbdc;margin:0 0 8px;line-height:1.6;font-size:15px;max-width:360px}
+      #hepgo-ob .ob-why{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px 16px;margin:14px 0 6px;max-width:360px}
+      #hepgo-ob .ob-why b{color:#dbe6ff}
+      #hepgo-ob .ob-perm{margin-top:18px;min-width:190px;font:inherit;font-weight:600;font-size:15px;padding:13px 22px;border-radius:13px;border:0;cursor:pointer;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 10px 26px rgba(37,99,235,.35)}
+      #hepgo-ob .ob-perm.granted{background:linear-gradient(135deg,#16a34a,#22c55e)}
+      #hepgo-ob .ob-perm.denied{background:linear-gradient(135deg,#b45309,#d97706)}
+      #hepgo-ob .ob-note{font-size:12.5px;color:#7f8db0;margin-top:12px;max-width:320px}
+      #hepgo-ob .ob-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px}
+      #hepgo-ob .ob-dots{display:flex;gap:7px}
+      #hepgo-ob .ob-dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.22);transition:background .2s,width .2s}
+      #hepgo-ob .ob-dots i.on{background:#3b82f6;width:22px;border-radius:4px}
+      #hepgo-ob .ob-btn{font:inherit;font-weight:600;padding:12px 22px;border-radius:12px;border:0;cursor:pointer;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 10px 26px rgba(37,99,235,.35)}
+      #hepgo-ob .ob-skip{background:transparent;color:#7f8db0;padding:12px 6px;box-shadow:none}`;
+    document.head.appendChild(st);
+  }
+  function initOnboarding() {
+    return new Promise(async resolve => {
+      if (await obGet()) return resolve();
+      obStyles();
+      const logo = location.origin + '/static/img/logo-mark.png';
+      const STEPS = [
+        { intro: true, icon: `<img src="${logo}" alt="">`, title: 'HEPGO\'ya hoş geldiniz', body: 'Fabrikanızı tek platformdan yönetin. Başlamadan önce birkaç izin isteyeceğiz; her birinin nedenini açıklayacağız.' },
+        { key: 'notif', icon: '🔔', title: 'Bildirimler', why: 'Onay bekleyen işler, mesajlar, güvenlik ve üretim uyarıları anında size ulaşsın diye.', check: permApi.notifCheck, req: permApi.notifReq },
+        { key: 'geo', icon: '📍', title: 'Konum', why: 'Çalışma saatlerinde saha ve güvenlik yönetimi için kullanılır. <b>KVKK açık rızanıza</b> bağlıdır; dilediğinizde geri alabilirsiniz. Sürekli takip için cihaz ayarından "Her zaman izin ver" gerekir.', check: permApi.geoCheck, req: permApi.geoReq },
+        { key: 'cam', icon: '📷', title: 'Kamera ve Mikrofon', why: 'QR okuma, görüntülü/sesli görüşme ve belge/fotoğraf yükleme için gerekir. Yalnızca siz kullandığınızda erişilir.', check: permApi.camCheck, req: permApi.camReq },
+        { done: true, icon: '✅', title: 'Her şey hazır', body: 'Artık giriş yapabilirsiniz. İzinleri daha sonra cihaz ayarlarından da değiştirebilirsiniz.' },
+      ];
+      const ov = document.createElement('div'); ov.id = 'hepgo-ob';
+      const slides = document.createElement('div'); slides.className = 'ob-slides';
+      const label = s => s === 'granted' ? '✓ İzinli' : s === 'denied' ? 'Ayarlardan izin verin' : 'İzin ver';
+      const apply = (btn, s) => { btn.textContent = label(s); btn.classList.toggle('granted', s === 'granted'); btn.classList.toggle('denied', s === 'denied'); btn.disabled = s === 'granted'; };
+      const els = STEPS.map(step => {
+        const el = document.createElement('div'); el.className = 'ob-s';
+        el.innerHTML = `<div class="ob-ic">${step.icon}</div><h2>${step.title}</h2>` +
+          (step.body ? `<p>${step.body}</p>` : '') + (step.why ? `<div class="ob-why"><b>Neden?</b> ${step.why}</div>` : '');
+        if (step.key) {
+          const btn = document.createElement('button'); btn.className = 'ob-perm'; btn.type = 'button'; btn.textContent = 'İzin ver';
+          btn.addEventListener('click', async () => { btn.disabled = true; btn.textContent = '…'; apply(btn, await step.req()); });
+          step.check().then(s => { if (s && s !== 'yok') apply(btn, s); });
+          el.appendChild(btn);
+          const note = document.createElement('div'); note.className = 'ob-note'; note.textContent = 'İsterseniz "İleri" ile geçip izni sonra verebilirsiniz.'; el.appendChild(note);
+          step._btn = btn;
+        }
+        slides.appendChild(el); return el;
+      });
+      const dots = document.createElement('div'); dots.className = 'ob-dots';
+      STEPS.forEach(() => dots.appendChild(document.createElement('i')));
+      const skip = document.createElement('button'); skip.className = 'ob-btn ob-skip'; skip.type = 'button'; skip.textContent = 'Atla';
+      const next = document.createElement('button'); next.className = 'ob-btn'; next.type = 'button'; next.textContent = 'İleri';
+      const foot = document.createElement('div'); foot.className = 'ob-foot'; foot.append(skip, dots, next);
+      const wrap = document.createElement('div'); wrap.className = 'ob-wrap'; wrap.append(slides, foot);
+      ov.appendChild(wrap); document.body.appendChild(ov);
+      let idx = 0;
+      const show = i => {
+        idx = i;
+        els.forEach((el, k) => el.classList.toggle('on', k === i));
+        [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
+        next.textContent = STEPS[i].done ? 'Giriş yap' : 'İleri';
+        skip.style.visibility = STEPS[i].done ? 'hidden' : 'visible';
+        if (STEPS[i]._btn) STEPS[i].check().then(s => { if (s && s !== 'yok') apply(STEPS[i]._btn, s); });
+      };
+      const finish = async () => { await obSet(); ov.remove(); resolve(); };
+      next.addEventListener('click', () => { if (idx >= STEPS.length - 1) finish(); else show(idx + 1); });
+      skip.addEventListener('click', finish);
+      show(0);
+    });
+  }
+
+  async function start() {
+    polish(); initNet();
+    await initOnboarding();   // ilk açılışta tanıtım + izin ekranları (bir kez)
+    initPush(); initGeo(); initDevice();
+  }
   if (document.readyState === 'complete' || document.readyState === 'interactive') start();
   else document.addEventListener('DOMContentLoaded', start);
 })();

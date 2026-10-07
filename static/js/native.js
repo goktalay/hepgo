@@ -130,9 +130,27 @@
   }
 
   // ---------------------------------------------------------------- Durum çubuğu / açılış ekranı (ufak dokunuşlar)
+  // Durum çubuğunu (saat/ağ) üst header rengine uydur: overlay kapalı (içerik altına girmesin → fazla yükseklik olmaz),
+  // zemin = header rengi, ikonlar zemin açıksa KOYU / koyuysa AÇIK (böylece görünür). Tema/sayfa değişince tazelenir.
+  function rgbHex(m) { return '#' + m.slice(0, 3).map(function (x) { return ('0' + (Math.round(+x)).toString(16)).slice(-2); }).join(''); }
+  function syncStatusBar() {
+    var SB = P.StatusBar; if (!SB) return;
+    try { SB.setOverlaysWebView && SB.setOverlaysWebView({ overlay: false }); } catch (e) {}
+    try {
+      var hdr = document.querySelector('.app-header');
+      var bg = getComputedStyle(hdr || document.body).backgroundColor || '';
+      var m = (bg.match(/\d+(?:\.\d+)?/g) || ['255', '255', '255']).map(Number);
+      if (m.length >= 4 && m[3] === 0) m = [15, 29, 61];   // şeffafsa koyu varsay
+      var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
+      try { SB.setBackgroundColor && SB.setBackgroundColor({ color: rgbHex(m) }); } catch (e) {}
+      try { SB.setStyle && SB.setStyle({ style: lum > 0.55 ? 'LIGHT' : 'DARK' }); } catch (e) {}   // LIGHT=koyu ikon
+    } catch (e) {}
+  }
   function polish() {
-    try { P.StatusBar && P.StatusBar.setStyle && P.StatusBar.setStyle({ style: 'DARK' }); } catch (e) {}
+    syncStatusBar();
     try { P.SplashScreen && P.SplashScreen.hide && P.SplashScreen.hide(); } catch (e) {}
+    try { addEventListener('hashchange', function () { setTimeout(syncStatusBar, 150); }); } catch (e) {}
+    setTimeout(syncStatusBar, 500); setTimeout(syncStatusBar, 1800);   // tema/giriş sonrası yeniden
   }
 
   // ---------------------------------------------------------------- CİHAZ KÜNYESİ (giriş sonrası, yasal/teknik bilgiler)

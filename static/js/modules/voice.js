@@ -56,7 +56,7 @@ function actx() {
   if (_actx.state === 'suspended') _actx.resume().catch(() => {});
   return _actx;
 }
-let ringTimer = null;
+let ringTimer = null, ringOscs = [];
 function ringBeat(kind) {
   const c = actx(); if (!c) return;
   const now = c.currentTime;
@@ -66,12 +66,17 @@ function ringBeat(kind) {
     g.gain.setValueAtTime(0.0001, now + off); g.gain.exponentialRampToValueAtTime(vol, now + off + 0.03);
     g.gain.setValueAtTime(vol, now + off + dur - 0.06); g.gain.exponentialRampToValueAtTime(0.0001, now + off + dur);
     o.start(now + off); o.stop(now + off + dur + 0.02);
+    ringOscs.push(o); o.onended = () => { ringOscs = ringOscs.filter(x => x !== o); };
   };
   if (kind === 'in') { beat(523, 0, 0.35, 0.2); beat(659, 0.4, 0.35, 0.2); }   // gelen: çift tonlu zil
   else beat(420, 0, 0.45, 0.06);   // giden: ringback
 }
 function startRing(kind) { stopRing(); ringBeat(kind); ringTimer = setInterval(() => ringBeat(kind), kind === 'in' ? 2200 : 3200); }
-function stopRing() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
+function stopRing() {
+  if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+  ringOscs.forEach(o => { try { o.stop(); } catch { /* */ } try { o.disconnect(); } catch { /* */ } });
+  ringOscs = [];
+}
 
 function analyserFor(stream) {
   const c = actx(); if (!c || !stream) return null;
@@ -748,7 +753,7 @@ async function uploadRecording(blob, cid) {
 // ---------- Bitiş / temizlik ----------
 let lastCallId = null;
 function endLocal(fromRemote) {
-  stopRing(); clearTimeout(ringTimeoutId);
+  stopRing(); clearTimeout(ringTimeoutId); try { nativeCall()?.dismiss(); } catch { /* */ }
   if (!call) { closeRing(); return; }
   lastCallId = call.id;
   const peer = [...Object.keys(call.names).map(Number), ...call.peers.keys()].find(id => id !== ctx.user.id);

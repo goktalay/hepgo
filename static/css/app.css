@@ -3916,7 +3916,14 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 /* Ayarlar: bildirim/uyarı türleri, rahatsız etmeyin */
 /* Katlanabilir paneller (tüm arayüzler): başlığa tıkla → aç/kapa; durum cihazda hatırlanır. Pano kutucuğu tarzı
    başlık bandı (soft arka plan + ince alt çizgi). */
-.collapsible > .collapse-head { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; justify-content: flex-start; text-align: left; }
+.collapsible > .collapse-head { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none;
+  justify-content: flex-start; text-align: left; flex-wrap: nowrap; overflow: hidden; }
+/* Panel başlığı TEK SATIR: başlık taşarsa kısalır; açıklama sığmazsa kısalır, dar ekranda gizlenir; düğme hep sağda */
+.collapse-head > .collapse-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.collapse-head > .small, .collapse-head > .muted, .collapse-head > span.small.muted {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collapse-head > .btn, .collapse-head > button, .collapse-head > a.btn { flex: none; }
+@media (max-width: 760px) { .collapse-head > .small, .collapse-head > .muted, .collapse-head > span.small.muted { display: none; } }
 /* Başlık (+ varsa açıklama) solda kalır; aksiyon düğmeleri .collapse-push ile en sağa hizalanır */
 .collapse-head > .collapse-title { min-width: 0; text-align: left; }
 .collapse-head > .collapse-push { margin-left: auto; }

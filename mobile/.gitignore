@@ -1,0 +1,16 @@
+# Capacitor mobil — bağımlılıklar ve derleme çıktıları
+node_modules/
+.DS_Store
+*.log
+
+# iOS native proje (gerekince `npx cap add ios` ile üretilir)
+ios/
+
+# Android yerel/derleme (android/ kaynağı commit edilir; bunlar hariç)
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+android/.idea/
+android/app/google-services.json

@@ -13,17 +13,19 @@
     "run:ios": "cap run ios"
   },
   "dependencies": {
-    "@capacitor/core": "^6.1.2",
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^6.1.2",
-    "@capacitor/ios": "^6.1.2",
     "@capacitor/app": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/geolocation": "^6.0.1",
+    "@capacitor/ios": "^6.1.2",
     "@capacitor/network": "^6.0.2",
     "@capacitor/push-notifications": "^6.0.2",
-    "@capacitor/geolocation": "^6.0.1",
-    "@capacitor/status-bar": "^6.0.1",
-    "@capacitor/splash-screen": "^6.0.2"
+    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.1.2"
   },
   "//background": "Gerçek 7/24 arkaplan konumu için ek: npm i @capacitor-community/background-geolocation (Android foreground service + iOS Always). README'ye bakın."

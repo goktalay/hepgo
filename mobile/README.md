@@ -6,6 +6,23 @@ Native eklentiler: **push bildirimleri** (FCM/APNs), **konum** (arkaplan), **ağ
 > Derleme Mac/Android Studio gerektirir; bu klasör hazır Capacitor projesidir. Sunucu tarafı (token kaydı, konum, push)
 > hazır ve canlıdadır. Senin yapacakların aşağıda.
 
+## ✅ Bu repoda HAZIR olanlar (Android)
+`mobile/android/` projesi **üretildi ve yapılandırıldı** (`npm install` + `npx cap add android`):
+- **Eklentiler:** push (FCM), network, geolocation (ön plan) + **@capacitor-community/background-geolocation** (7/24 arkaplan, foreground service).
+- **İzinler (AndroidManifest):** INTERNET, POST_NOTIFICATIONS, konum (FINE/COARSE/**BACKGROUND**) + FOREGROUND_SERVICE(+LOCATION), **CAMERA**, RECORD_AUDIO (WebRTC görüşme), VIBRATE/WAKE_LOCK. Kamera/konum donanımı `required=false` (tablet/kamerasız cihaz da yükler). `resizeableActivity` + `supports-screens` (telefon/tablet/katlanabilir).
+- **Ağ güvenliği:** yalnız HTTPS (`network_security_config.xml`, cleartext kapalı).
+- **Hedef:** compileSdk/targetSdk **35** (Play güncel şartı), minSdk 22. versionCode 1 / versionName 1.0.0.
+- **İkon & açılış:** `@capacitor/assets` ile tüm yoğunluklar üretildi (arka plan #0f1d3d).
+- **Push gradle wiring:** koşullu (`google-services.json` koyunca aktif; yoksa da derlenir).
+- **native.js** güncellendi: arkaplan eklentisi varsa onu kullanır, yoksa ön plan izleyiciye düşer (KVKK açık rıza akışı aynı).
+
+### Senin makinende kalan (derleme)
+1. Android Studio + JDK 17 + SDK 35 kur.
+2. `cd mobile && npm install` (node_modules repoda yok).
+3. (Push istersen) Firebase'den `google-services.json` → `mobile/android/app/` (bkz. §3).
+4. `npx cap open android` → Build > Generate Signed Bundle/APK → `.aab` → Play Console.
+> Not: `android/` kaynağı repoda; yerel derleme dizinleri (`build/`, `.gradle/`, `local.properties`, `google-services.json`) `.gitignore`'da.
+
 ## 0) Gerekli araçlar
 - **Android:** Android Studio + JDK 17. Play Console hesabı ($25, tek sefer).
 - **iOS:** **macOS + Xcode**. Apple Developer hesabı ($99/yıl). (iOS derleme Mac olmadan YAPILAMAZ.)

@@ -54,9 +54,16 @@
 
   // ---------------------------------------------------------------- KONUM (arkaplanda periyodik gönderim)
   var lastSent = 0;
+  function sendPing(lat, lng, acc, ts) {
+    var now = Date.now();
+    if (now - lastSent < 30000) return;   // en çok 30 sn'de bir gönder (pil/veri tasarrufu)
+    lastSent = now;
+    post('/api/location/ping', { lat: lat, lng: lng, acc: acc, at: new Date(ts || now).toISOString(), platform: platform });
+  }
   async function initGeo() {
-    var Geo = P.Geolocation;
-    if (!Geo) return;
+    var BG = P.BackgroundGeolocation;      // 7/24 arkaplan (foreground service) — varsa tercih edilir
+    var Geo = P.Geolocation;               // yoksa ön plan izleyici
+    if (!BG && !Geo) return;
     try {
       // KVKK açık rıza: sunucuda kayıtlı mı? Yoksa sor; reddedilirse konum ALINMAZ.
       var cs = await fetch('/api/location/consent', { credentials: 'include' }).then(function (r) { return r.json(); }).catch(function () { return {}; });
@@ -68,15 +75,29 @@
       } else if (!c.granted) {
         return;   // daha önce reddetmiş
       }
+      if (BG) {
+        // Arkaplan izleyici: ekran kapalı/uygulama arkada iken de kalıcı bildirimle konum gönderir
+        await BG.addWatcher({
+          backgroundMessage: 'Çalışma saatlerinde konum takibi açık',
+          backgroundTitle: 'HEPGO saha/güvenlik takibi',
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 15,
+        }, function (loc, err) {
+          if (err) {
+            if (err.code === 'NOT_AUTHORIZED') { /* kullanıcı reddetti; ayarlardan açabilir */ }
+            return;
+          }
+          if (loc) sendPing(loc.latitude, loc.longitude, loc.accuracy, loc.time);
+        });
+        return;
+      }
+      // Yedek: ön plan izleyici (uygulama açıkken)
       var perm = await Geo.requestPermissions();
       if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') return;
       Geo.watchPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }, function (pos) {
         if (!pos || !pos.coords) return;
-        var now = Date.now();
-        if (now - lastSent < 30000) return;   // en çok 30 sn'de bir gönder (pil/veri tasarrufu)
-        lastSent = now;
-        post('/api/location/ping', { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy,
-          at: new Date(pos.timestamp || now).toISOString(), platform: platform });
+        sendPing(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, pos.timestamp);
       });
     } catch (e) { /* yut */ }
   }

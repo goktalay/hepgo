@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.gokkubbe.hepgo"
+    namespace "com.turkbey.hepgo"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.gokkubbe.hepgo"
+        applicationId "com.turkbey.hepgo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -68,7 +68,7 @@ npx cap sync android
    - Key store path: `%USERPROFILE%\hepgo-release.jks` (GÜVENLİ sakla, kaybetme — kaybolursa uygulamayı güncelleyemezsin!)
    - Parola, alias (ör. `hepgo`), alias parolası belirle, geçerlilik 25+ yıl, ad/kurum bilgisi gir.
 3. **release** variant → Finish. Çıktı: `mobile\android\app\release\app-release.aab`.
-4. **Google Play Console** ($25 tek seferlik): https://play.google.com/console → Uygulama oluştur → paket adı **com.gokkubbe.hepgo** → `.aab` yükle.
+4. **Google Play Console** ($25 tek seferlik): https://play.google.com/console → Uygulama oluştur → paket adı **com.turkbey.hepgo** → `.aab` yükle.
 5. Gerekli: gizlilik politikası URL'si (`https://gokkubbe.hepgo.com/gizlilik`), mağaza açıklaması, ekran görüntüleri (telefon + tablet), içerik derecelendirme formu, **Veri güvenliği** formu (konum + bildirim topladığını beyan et).
 
 ---
@@ -79,7 +79,7 @@ npx cap sync android
 > **çöker**: *"Default FirebaseApp is not initialized"*. İki çözümden biri gerekir:
 
 **Push'u kullanacaksan (önerilen):**
-1. **Firebase Console** (https://console.firebase.google.com) → yeni proje → **Android uygulaması ekle** → paket adı **com.gokkubbe.hepgo**.
+1. **Firebase Console** (https://console.firebase.google.com) → yeni proje → **Android uygulaması ekle** → paket adı **com.turkbey.hepgo**.
 2. `google-services.json` indir → `mobile\android\app\` içine koy.
 3. `cd mobile && npx cap sync android` → Android Studio'da **Run**. Çökme biter, push çalışır.
 4. Firebase → Proje ayarları → Hizmet hesapları → özel anahtar JSON'u bana ver; sunucuya koyunca push gönderimi aktif olur. (Bu olmadan da uygulama çökmez, sadece bildirim gelmez.)
@@ -103,7 +103,7 @@ Geri eklemek: `npm i @capacitor/push-notifications` + google-services.json + `np
 ---
 
 ## Sık sorunlar
-- **Açılışta çökme: "Default FirebaseApp is not initialized in this process com.gokkubbe.hepgo"**
+- **Açılışta çökme: "Default FirebaseApp is not initialized in this process com.turkbey.hepgo"**
   → Push eklentisi var ama `google-services.json` yok. F adımı: ya google-services.json ekle, ya da push eklentisini
   geçici çıkar (`npm uninstall @capacitor/push-notifications && npx cap sync android`).
 - **"Could not read script … capacitor-cordova-android-plugins\cordova.variables.gradle does not exist"**

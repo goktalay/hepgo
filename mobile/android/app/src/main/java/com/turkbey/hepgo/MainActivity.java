@@ -1,4 +1,4 @@
-package com.gokkubbe.hepgo;
+package com.turkbey.hepgo;
 
 import com.getcapacitor.BridgeActivity;
 

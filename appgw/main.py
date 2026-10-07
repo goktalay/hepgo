@@ -134,15 +134,22 @@ async def proxy_to(sock: str, request: Request, path: str) -> Response:
         up = await client.send(req, stream=True)
     except Exception:   # noqa: BLE001
         return Response('Firma sunucusuna ulaşılamadı', status_code=502)
+    # Kod dosyaları (JS/CSS): no-store → Cloudflare önbelleğe almaz, tarayıcı hep tazesini çeker
+    # (Cloudflare Browser Cache TTL 4sa dayatması bu dosyalara uygulanmaz → güncellemeler ANINDA yayılır).
+    code = path.startswith(('/static/js', '/static/css')) or path.endswith(('.js', '.mjs', '.css'))
     resp = StreamingResponse(up.aiter_raw(), status_code=up.status_code, background=BackgroundTask(up.aclose))
     resp.raw_headers.clear()
     for k, v in up.headers.multi_items():
         kl = k.lower()
         if kl in HOP or kl == 'set-cookie':
             continue
+        if code and kl in ('cache-control', 'expires', 'etag', 'last-modified', 'age', 'pragma'):
+            continue   # kod dosyalarında önbellek başlıklarını at → kendi no-store'umuzu koyacağız
         if kl == 'location':
             v = TENANT_HOSTS.sub('https://' + GW_HOST, v)
         resp.raw_headers.append((k.encode('latin-1'), v.encode('latin-1')))
+    if code:
+        resp.raw_headers.append((b'cache-control', b'no-store, must-revalidate'))
     for sc in up.headers.get_list('set-cookie'):
         sc = re.sub(r';\s*[Dd]omain=[^;]+', '', sc)
         resp.raw_headers.append((b'set-cookie', sc.encode('latin-1')))

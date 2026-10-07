@@ -3917,8 +3917,9 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 /* Katlanabilir paneller (tüm arayüzler): başlığa tıkla → aç/kapa; durum cihazda hatırlanır. Pano kutucuğu tarzı
    başlık bandı (soft arka plan + ince alt çizgi). */
 .collapsible > .collapse-head { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; justify-content: flex-start; text-align: left; }
-/* Başlık her zaman sola yaslı büyür → başlıktaki düğmeler en sağa hizalanır (tüm modüllerde) */
-.collapse-head > .collapse-title { flex: 1 1 auto; min-width: 0; text-align: left; }
+/* Başlık (+ varsa açıklama) solda kalır; aksiyon düğmeleri .collapse-push ile en sağa hizalanır */
+.collapse-head > .collapse-title { min-width: 0; text-align: left; }
+.collapse-head > .collapse-push { margin-left: auto; }
 /* Başlıklar bold DEĞİL (yazım düzeni); cümle düzeni JS ile uygulanır */
 .collapse-head { font-weight: 500; }
 .collapse-head > .collapse-title, .collapse-head > b, .collapse-head > strong { font-weight: 500; }

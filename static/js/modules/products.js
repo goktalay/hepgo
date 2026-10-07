@@ -243,6 +243,7 @@ async function renderDetail(view, id, ctx) {
 
   // Üst: girilen bilgiler (kod, ad, tip ve ürüne göre diğer ayarlar)
   const infoCard = h('div', { class: 'card card-pad pd-info' },
+    h('h3', null, 'Ürün Bilgileri'),
     h('div', { class: 'pd-info-grid' },
       field('Parça / Mamul Kodu', f.code), field('Parça / Mamul Adı', f.name), field('Tipi', f.type), unitField,
       custom ? null : field('Seri numarası', f.serial), prefixField,

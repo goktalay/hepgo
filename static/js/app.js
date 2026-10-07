@@ -61,6 +61,7 @@ import * as duty from './modules/duty.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
+import * as usermap from './modules/usermap.js';
 import * as mikro from './modules/mikro.js';
 import * as sales from './modules/sales.js';
 import * as crmHub from './modules/crmhub.js';
@@ -85,6 +86,7 @@ import { enableToolbarMerge } from './toolbarmerge.js';
 // sub: 'x' → x modülüne erişimi olan kullanıcıda ızgarada ayrı görünmez (x'in alt sekmesidir).
 const MODULES = [
   { key: 'master', title: 'Veri & Yedek', mod: master, tone: 'purple', hidden: true },   // yalnızca sistem sahibi; Program Ayarları altından açılır (KVKK: veri göstermez, yalnız indir/yedek)
+  { key: 'konum', title: 'Canlı Konum', mod: usermap, tone: 'purple', show: u => !!u.master },   // MASTER: personelin mobil konumu harita üzerinde (açık rıza ile)
   { key: 'boss', title: 'Patron', mod: boss },   // Patron ekranı: üst yönetim özeti (ızgarada ilk sırada)
   { key: 'admin', title: 'Yönetim', mod: admin, tone: 'red' },
   { key: 'production', title: 'Üretim Yönetimi', mod: production },

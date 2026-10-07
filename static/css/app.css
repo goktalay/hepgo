@@ -7916,3 +7916,35 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-sp-row-main { min-width: 0; display: flex; flex-direction: column; }
 .db-sp-row-main b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .db-sp-row-main small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Canlı Konum (MASTER) haritası ---------- */
+.um-wrap { display: flex; gap: 14px; padding: 0; overflow: hidden; }
+.um-map { flex: 1; min-width: 0; height: min(68vh, 680px); border-radius: var(--radius) 0 0 var(--radius); }
+.um-map.um-nokey { display: grid; place-items: center; background: var(--surface-2, rgba(127,127,127,.05)); }
+.um-nokey-ic { font-size: 40px; text-align: center; }
+.um-list { width: 290px; flex: none; max-width: 42%; overflow-y: auto; height: min(68vh, 680px); border-left: 1px solid var(--border); padding: 10px; }
+.um-list-h { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 6px 10px; }
+.um-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer; font: inherit; color: inherit; padding: 8px 6px; border-radius: 10px; }
+.um-row:hover { background: var(--surface-2, rgba(127,127,127,.08)); }
+.um-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.um-row-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.um-open { width: 16px; height: 16px; flex: none; opacity: .5; background: currentColor;
+  -webkit-mask: center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z'/%3E%3C/svg%3E");
+  mask: center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z'/%3E%3C/svg%3E"); }
+/* Avatar baloncuğu: tazelik rengine göre çerçeve (yeşil<5dk, amber<1sa, gri eski) */
+.um-av { width: 42px; height: 42px; border-radius: 50%; background-size: cover; background-position: center; flex: none;
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  border: 3px solid #9aa5b5; background-color: #64748b; }
+.um-av.sm { width: 34px; height: 34px; font-size: 12px; border-width: 2px; }
+.um-av.fresh { border-color: #22c55e; }
+.um-av.warm { border-color: #f59e0b; }
+.um-av.stale { border-color: #94a3b8; opacity: .85; }
+/* Harita işaretçisi (OverlayView) — ucu konuma denk gelir */
+.um-pin { position: absolute; transform: translate(-50%, -100%); cursor: pointer; display: flex; flex-direction: column; align-items: center; white-space: nowrap; }
+.um-pin-name { margin-top: 2px; font-size: 11px; font-weight: 600; color: #0f172a; background: rgba(255,255,255,.92); padding: 1px 6px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.um-info b { display: block; margin-bottom: 2px; }
+@media (max-width: 760px) {
+  .um-wrap { flex-direction: column; }
+  .um-map { height: 52vh; border-radius: var(--radius) var(--radius) 0 0; }
+  .um-list { width: auto; max-width: none; height: auto; max-height: 36vh; border-left: 0; border-top: 1px solid var(--border); }
+}

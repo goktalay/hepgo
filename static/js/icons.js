@@ -23,6 +23,7 @@ export const icons = {
   field: svg('<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
   printers: svg('<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/><circle cx="17.5" cy="12" r=".8" fill="currentColor"/>'),
   users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>'),
+  konum: svg('<path d="M12 21s-6.5-5.8-6.5-10.8A6.5 6.5 0 0 1 18.5 10.2C18.5 15.2 12 21 12 21z"/><circle cx="12" cy="10" r="2.6"/>'),
   apps: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
     [5, 12, 19].flatMap(y => [5, 12, 19].map(x => `<circle cx="${x}" cy="${y}" r="2.1"/>`)).join('') + '</svg>',
   admin: svg('<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),

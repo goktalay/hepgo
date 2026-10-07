@@ -225,14 +225,23 @@ export async function renderFaces(body) {
     let kind = 'user', visitorRows = [], visReq = 0, deb;
     const q2 = h('input', { class: 'input', type: 'search', placeholder: 'Ad ara…' });
     const list = h('div', { class: 'pick-list' });
+    // Misafir (id yok) seçilince: önce ziyaretçi kaydı oluştur/bul (ensure), sonra ata. Kayıtlı ziyaretçi ise doğrudan ata.
+    const pickRow = async p => {
+      if (kind === 'visitor' && p.id == null) {
+        try { const v = await api.post('/api/faces/visitors/ensure', { full_name: p.full_name, company: p.company }); onPick({ kind: 'visitor', id: v.id, name: p.full_name }, m); }
+        catch (err) { toastError(err); }
+        return;
+      }
+      onPick({ kind, id: p.id, name: p.full_name }, m);
+    };
     const renderList = src => {
       clear(list, src.slice(0, 60).map(p =>
-        h('button', { class: 'pick', type: 'button', onclick: () => onPick({ kind, id: p.id, name: p.full_name }, m) },
+        h('button', { class: 'pick', type: 'button', onclick: () => pickRow(p) },
           h('div', { class: 'grow' }, h('b', null, p.full_name),
             h('span', { class: 'small muted' }, kind === 'user' ? ' Personel'
               : kind === 'person' ? ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`
                 : kind === 'family' ? ` ${[p.relation, p.employee_name && t('{n} ailesi', { n: p.employee_name })].filter(Boolean).join(' · ')}`
-                  : ` ${[p.company, p.phone].filter(Boolean).join(' · ') || 'Ziyaretçi'}`)))));
+                  : ` ${[p.company, p.guest ? 'Sekreterya misafiri' : p.phone].filter(Boolean).join(' · ') || 'Ziyaretçi'}`)))));
       if (!src.length) list.append(h('div', { class: 'small muted', style: { padding: '8px' } }, 'Sonuç yok'));
     };
     const fill = async () => {

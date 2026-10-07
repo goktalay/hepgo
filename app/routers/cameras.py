@@ -524,16 +524,55 @@ def people(user=Depends(cam_user), conn=db.DB):
 
 @faces_router.get('/visitors')
 def visitors_list(q: str = '', user=Depends(cam_user), conn=db.DB):
-    """Ziyaretçi arama (atama seçici için): ad ya da firmaya göre."""
+    """Ziyaretçi arama (atama seçici için): ad ya da firmaya göre. Kayıtlı ziyaretçilerin YANINDA Sekreterya'nın
+    serbest-giriş misafirlerini de (guest_visit_people, person_id NULL) getirir — böylece daha önce misafir olarak
+    gelmiş biri (ör. Rüştü Korkmaz) yüz atamada da seçilebilir. Misafir seçilince /visitors/ensure ile ziyaretçi kaydı
+    oluşturulup atanır. (person_id dolu misafirler firma kişisidir; 'Firma personeli' sekmesinde çıkar.)"""
     q = (q or '').strip()
+    like = f'%{q}%'
     if q:
-        like = f'%{q}%'
         rows = db.rows(conn.execute(
-            '''SELECT id, full_name, company, phone, note FROM visitors
+            '''SELECT id, full_name, company, phone FROM visitors
                WHERE full_name LIKE ? OR company LIKE ? ORDER BY full_name LIMIT 60''', (like, like)))
+        guests = db.rows(conn.execute(
+            '''SELECT full_name, MAX(company_text) AS company FROM guest_visit_people
+               WHERE person_id IS NULL AND full_name IS NOT NULL AND (full_name LIKE ? OR company_text LIKE ?)
+               GROUP BY LOWER(full_name) ORDER BY full_name LIMIT 60''', (like, like)))
     else:
-        rows = db.rows(conn.execute('SELECT id, full_name, company, phone, note FROM visitors ORDER BY full_name LIMIT 60'))
-    return {'visitors': rows}
+        rows = db.rows(conn.execute('SELECT id, full_name, company, phone FROM visitors ORDER BY full_name LIMIT 60'))
+        guests = db.rows(conn.execute(
+            '''SELECT full_name, MAX(company_text) AS company FROM guest_visit_people
+               WHERE person_id IS NULL AND full_name IS NOT NULL GROUP BY LOWER(full_name) ORDER BY full_name LIMIT 60'''))
+    have = {(v['full_name'] or '').strip().lower() for v in rows}
+    for g in guests:
+        if (g['full_name'] or '').strip().lower() in have:
+            continue
+        rows.append({'id': None, 'full_name': g['full_name'], 'company': g['company'], 'phone': None, 'guest': True})
+    rows.sort(key=lambda r: (r['full_name'] or '').lower())
+    return {'visitors': rows[:80]}
+
+
+class EnsureVisitorIn(BaseModel):
+    full_name: str
+    company: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@faces_router.post('/visitors/ensure')
+def visitor_ensure(body: EnsureVisitorIn, user=Depends(cam_user), conn=db.DB):
+    """Adı verilen ziyaretçiyi bul ya da (Sekreterya misafirinden) oluştur; atama için id döner. Yeni rastgele
+    ziyaretçi ekleme DEĞİL — var olan bir misafiri yüz öznesine bağlamak için."""
+    name = (body.full_name or '').strip()
+    if not name:
+        raise HTTPException(400, 'Ad gerekli')
+    row = conn.execute('SELECT id, full_name FROM visitors WHERE LOWER(full_name) = LOWER(?) ORDER BY id LIMIT 1', (name,)).fetchone()
+    if row:
+        return {'id': row[0], 'full_name': row[1], 'created': False}
+    cur = conn.execute('INSERT INTO visitors (full_name, company, phone, created_by, created_at) VALUES (?,?,?,?,?)',
+                       (name, (body.company or '').strip() or None, (body.phone or '').strip() or None, user['id'], db.now()))
+    conn.commit()
+    db.audit(conn, user['id'], 'Ziyaretçi (Sekreterya misafirinden) bağlandı', 'visitor', cur.lastrowid, name)
+    return {'id': cur.lastrowid, 'full_name': name, 'created': True}
 
 
 @faces_router.post('/visitors')

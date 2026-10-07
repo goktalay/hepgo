@@ -219,44 +219,38 @@ export async function renderFaces(body) {
   }
 
   // Yeniden kullanılabilir kişi seçici (personel / firma kişisi / aile üyesi / ziyaretçi). Seçimde onPick({ kind, id, name }, modal) çağrılır.
+  // Ziyaretçi sekmesi SUNUCU araması kullanır (/api/faces/visitors?q=) — tüm ziyaretçilerde arar; bu ekranda yeni ziyaretçi EKLENMEZ.
   async function pickPerson(onPick) {
-    const { users, people, family = [], visitors = [] } = await api.get('/api/faces/people');
-    let kind = 'user';
+    const { users, people, family = [] } = await api.get('/api/faces/people');
+    let kind = 'user', visitorRows = [], visReq = 0, deb;
     const q2 = h('input', { class: 'input', type: 'search', placeholder: 'Ad ara…' });
     const list = h('div', { class: 'pick-list' });
-    // Ziyaretçi için satır içi "Yeni ziyaretçi" oluşturma (ad + ops. firma/telefon) → oluşturulup hemen atanır
-    const newVisitorRow = () => {
-      const name = h('input', { class: 'input', placeholder: 'Ziyaretçi adı' });
-      const comp = h('input', { class: 'input', placeholder: 'Firma (ops.)' });
-      const phone = h('input', { class: 'input', placeholder: 'Telefon (ops.)' });
-      const create = async () => {
-        const full_name = name.value.trim();
-        if (!full_name) { name.focus(); return; }
-        try {
-          const v = await api.post('/api/faces/visitors', { full_name, company: comp.value.trim() || null, phone: phone.value.trim() || null });
-          visitors.push({ id: v.id, full_name: v.full_name, company: v.company });
-          onPick({ kind: 'visitor', id: v.id, name: v.full_name }, m);
-        } catch (err) { toastError(err); }
-      };
-      name.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
-      return h('div', { class: 'card card-pad', style: { margin: '8px 0', display: 'grid', gap: '6px' } },
-        h('div', { class: 'small muted' }, 'Yeni ziyaretçi'),
-        name, comp, phone,
-        h('button', { class: 'btn primary', type: 'button', onclick: create }, '＋ Ekle ve Ata'));
-    };
-    const fill = () => {
-      const src = kind === 'user' ? users : kind === 'person' ? people : kind === 'family' ? family : visitors;
-      clear(list, src.filter(p => matches(q2.value, p.full_name, p.company_name, p.company, p.title, p.relation, p.employee_name, p.phone)).slice(0, 60).map(p =>
+    const renderList = src => {
+      clear(list, src.slice(0, 60).map(p =>
         h('button', { class: 'pick', type: 'button', onclick: () => onPick({ kind, id: p.id, name: p.full_name }, m) },
           h('div', { class: 'grow' }, h('b', null, p.full_name),
             h('span', { class: 'small muted' }, kind === 'user' ? ' Personel'
               : kind === 'person' ? ` ${[p.title, p.company_name].filter(Boolean).join(' · ')}`
                 : kind === 'family' ? ` ${[p.relation, p.employee_name && t('{n} ailesi', { n: p.employee_name })].filter(Boolean).join(' · ')}`
-                  : ` ${[p.company, p.phone].filter(Boolean).join(' · ') || 'Ziyaretçi'}`)))),
-        kind === 'visitor' ? newVisitorRow() : null);
+                  : ` ${[p.company, p.phone].filter(Boolean).join(' · ') || 'Ziyaretçi'}`)))));
+      if (!src.length) list.append(h('div', { class: 'small muted', style: { padding: '8px' } }, 'Sonuç yok'));
     };
-    const seg = segmented([['user', 'Personel'], ['person', 'Firma personeli'], ['family', 'Aile üyeleri'], ['visitor', 'Ziyaretçi']], kind, v => { kind = v; fill(); });
-    q2.addEventListener('input', fill);
+    const fill = async () => {
+      if (kind === 'visitor') {
+        const my = ++visReq;
+        try {
+          const r = await api.get(`/api/faces/visitors?q=${encodeURIComponent(q2.value.trim())}`);
+          if (my !== visReq) return;   // daha yeni bir arama başladı: eski sonucu yoksay
+          visitorRows = r.visitors || [];
+        } catch { visitorRows = []; }
+        renderList(visitorRows);
+      } else {
+        const src = kind === 'user' ? users : kind === 'person' ? people : family;
+        renderList(src.filter(p => matches(q2.value, p.full_name, p.company_name, p.title, p.relation, p.employee_name)));
+      }
+    };
+    const seg = segmented([['user', 'Personel'], ['person', 'Firma personeli'], ['family', 'Aile üyeleri'], ['visitor', 'Ziyaretçi']], kind, v => { kind = v; q2.value = ''; fill(); });
+    q2.addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(fill, kind === 'visitor' ? 180 : 0); });
     fill();
     const m = modal({ title: 'Kişiye Ata', body: h('div', null, seg, h('div', { style: { margin: '10px 0' } }, q2), list), actions: [{ label: 'Vazgeç' }] });
     q2.focus();

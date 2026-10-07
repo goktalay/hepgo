@@ -8,14 +8,17 @@ aynı firmanın giriş ekranı açılır. Firmalar hâlâ ayrı işlem/DB'de (iz
 
 Çalıştırma: uvicorn appgw.main:app --uds /run/hepgo/appgw.sock
 """
+import asyncio
 import re
 
 import httpx
+import websockets
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket
 
 # slug → { ad, soket, alias listesi }. Firma backend'i İŞLEM (soket) ile belirlenir, Host ile değil.
 TENANTS = {
@@ -195,4 +198,60 @@ async def gateway(request: Request) -> Response:
     return await proxy_to(TENANTS[tenant]['sock'], request, path)
 
 
-app = Starlette(routes=[Route('/{path:path}', gateway, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])])
+async def ws_proxy(ws: WebSocket):
+    """WebSocket (arama/telsiz/toplantı/canlı…) şeffaf vekil: firmanın backend soketine aktarır, çerezi iletir."""
+    tenant = ws.cookies.get(COOKIE)
+    if tenant not in TENANTS:
+        await ws.close(code=1008)
+        return
+    sock = TENANTS[tenant]['sock']
+    qs = ws.scope.get('query_string', b'').decode('latin-1')
+    uri = 'ws://x' + ws.scope['path'] + (('?' + qs) if qs else '')
+    subprotos = ws.scope.get('subprotocols') or []
+    try:
+        backend = await websockets.unix_connect(
+            sock, uri,
+            additional_headers={'Cookie': ws.headers.get('cookie', ''), 'Host': GW_HOST},
+            subprotocols=subprotos or None, max_size=None, open_timeout=15)
+    except Exception:   # noqa: BLE001
+        try: await ws.close(code=1011)
+        except Exception: pass   # noqa: BLE001
+        return
+    await ws.accept(subprotocol=getattr(backend, 'subprotocol', None))
+
+    async def c2s():
+        try:
+            while True:
+                m = await ws.receive()
+                if m.get('type') == 'websocket.disconnect':
+                    break
+                if m.get('text') is not None:
+                    await backend.send(m['text'])
+                elif m.get('bytes') is not None:
+                    await backend.send(m['bytes'])
+        except Exception:   # noqa: BLE001
+            pass
+        finally:
+            try: await backend.close()
+            except Exception: pass   # noqa: BLE001
+
+    async def s2c():
+        try:
+            async for msg in backend:
+                if isinstance(msg, (bytes, bytearray)):
+                    await ws.send_bytes(bytes(msg))
+                else:
+                    await ws.send_text(msg)
+        except Exception:   # noqa: BLE001
+            pass
+        finally:
+            try: await ws.close()
+            except Exception: pass   # noqa: BLE001
+
+    await asyncio.gather(c2s(), s2c())
+
+
+app = Starlette(routes=[
+    WebSocketRoute('/{path:path}', ws_proxy),
+    Route('/{path:path}', gateway, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']),
+])

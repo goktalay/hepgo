@@ -638,8 +638,32 @@ def for_user(conn, user):
     return out
 
 
+# Bildirim türünün ayar ekranındaki modül grubu (kişisel ayarlarda modüle göre gruplanır)
+_GROUP = {
+    'tickets-waiting': 'Destek Merkezi', 'support-reply': 'Destek Merkezi',
+    'radio-invite': 'Telsiz', 'integrations-offline': 'Sistem',
+    'ai-change-pending': 'Yapay Zeka', 'ai-change-decided': 'Yapay Zeka',
+    'kvkk-requests': 'KVKK / Veri Koruma',
+    'direct-part-pending': 'Depo', 'spares-low': 'Depo', 'warehouse-pending': 'Depo', 'field-depot-pending': 'Depo',
+    'purchase-approval': 'Satın Alma', 'purchase-decided': 'Satın Alma',
+    'material-review': 'Üretim', 'production-error': 'Üretim', 'assembly-waiting': 'Üretim',
+    'electronics-waiting': 'Üretim', 'calibration-waiting': 'Üretim', 'orders-overdue': 'Üretim',
+    'hr-leave-pending': 'İnsan Kaynakları', 'leave-decided': 'İnsan Kaynakları',
+    'duty-pending': 'İnsan Kaynakları', 'duty-decided': 'İnsan Kaynakları',
+    'announcements': 'Duyurular', 'feed-new': 'Şirketten Haberler',
+    'guest-visit': 'Sekreterya', 'cargo-waiting': 'Sekreterya',
+    'call-waiting': 'Aramalar', 'meeting-soon': 'Toplantılar', 'meeting-invite': 'Toplantılar',
+    'mail-unread': 'Mail', 'calendar-due': 'Takvim', 'chat-waiting': 'Mesajlar',
+    'signature-pending': 'Evrak / İmza', 'printers-down': 'Yazıcılar',
+    'field-report-lead': 'Saha Yönetimi', 'field-report-pilot': 'Saha Yönetimi',
+    'field-road': 'Saha Yönetimi', 'field-assigned': 'Saha Yönetimi',
+    'live-now': 'Canlı Yayın', 'certs-expiring': 'Sertifikalar', 'audits-upcoming': 'Sertifikalar',
+    'contracts-pending': 'Sözleşmeler',
+}
+
+
 def types_for(user):
-    """Kullanıcının rollerine uyan bildirim türleri + o an kapalı olup olmadığı (ayar ekranı için)."""
+    """Kullanıcının rollerine uyan bildirim türleri + o an kapalı olup olmadığı + modül grubu (ayar ekranı için)."""
     muted = _muted(user)
-    return [{'key': n['key'], 'title': n['title'], 'on': n['key'] not in muted}
+    return [{'key': n['key'], 'title': n['title'], 'on': n['key'] not in muted, 'group': _GROUP.get(n['key'], 'Diğer')}
             for n in NOTIFICATIONS if _applies(n, user)]

@@ -3915,6 +3915,9 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 /* Ayarlar: bildirim/uyarı türleri, rahatsız etmeyin */
 .set-types { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
 .set-toggle.dim { opacity: .6; }
+/* Bildirim türleri: modül grubu başlığı (ince etiket) */
+.set-grp { margin: 14px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.set-types > .set-grp:first-child, .set-grp:first-of-type { margin-top: 4px; }
 .set-dnd-status { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; font-weight: 500; }
 .set-dnd-status.on { background: #fff4e5; border-color: #f4d9ad; color: #9a5b0a; }
 

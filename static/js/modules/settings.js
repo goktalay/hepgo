@@ -218,9 +218,20 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       const rows = [h('h4', { class: 'set-sub' }, 'Bildirim türleri'),
         h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Almak istemediğiniz bildirimleri kapatın.')];
       if (!d.notifications.length) rows.push(h('p', { class: 'small muted' }, 'Size uygun bildirim türü yok.'));
-      for (const t of d.notifications) rows.push(typeToggle(t.title, !s.muteNotif.includes(t.key), on => {
-        s.muteNotif = s.muteNotif.filter(k => k !== t.key); if (!on) s.muteNotif.push(t.key); save('Bildirim tercihleri güncellendi');
-      }));
+      // Modüle göre grupla (ilk görülme sırası korunur); her grubun başına ince bir modül başlığı
+      const groups = [];
+      const byGroup = new Map();
+      for (const t of d.notifications) {
+        const g = t.group || 'Diğer';
+        if (!byGroup.has(g)) { byGroup.set(g, []); groups.push(g); }
+        byGroup.get(g).push(t);
+      }
+      for (const g of groups) {
+        rows.push(h('div', { class: 'set-grp' }, g));
+        for (const t of byGroup.get(g)) rows.push(typeToggle(t.title, !s.muteNotif.includes(t.key), on => {
+          s.muteNotif = s.muteNotif.filter(k => k !== t.key); if (!on) s.muteNotif.push(t.key); save('Bildirim tercihleri güncellendi');
+        }));
+      }
       if (d.alerts.length) {
         rows.push(h('h4', { class: 'set-sub' }, 'Uyarı türleri'),
           h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Üretim / yazıcı uyarıları. Kritik güvenlik uyarıları kapatılamaz.'));

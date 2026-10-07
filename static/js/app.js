@@ -910,6 +910,8 @@ function initPanelCollapse(viewEl) {
     el.dataset.collapsible = '1';
     el.classList.add('collapsible');
     head.classList.add('collapse-head');
+    // Başlık satırıysa (düz başlık değil) başlık öğesini işaretle → sola yaslı büyür, düğmeler en sağa gider
+    if (!/^H[2-4]$/.test(head.tagName) && head.firstElementChild) head.firstElementChild.classList.add('collapse-title');
     head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
     if (read().has(keyOf(head))) el.classList.add('collapsed');
     head.addEventListener('click', e => {

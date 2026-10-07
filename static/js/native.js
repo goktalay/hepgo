@@ -162,7 +162,7 @@
       // Uç yalnız ERP (fabrika-yonetim) kökeninde + oturum varken 200 döner; değilse sessizce geçer
       const r = await fetch('/api/location/consent', { credentials: 'include' }).then(x => x.ok, () => false).catch(() => false);
       if (r === false) return;   // oturum yok / farklı köken → gönderme
-      const res = await fetch('/api/mobile/device-info', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await fetch('/api/device-info', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) { try { sessionStorage.setItem('hepgo.devsent', '1'); } catch (e) {} }
     } catch (e) { /* yut */ }
   }

@@ -2208,6 +2208,7 @@ td.num, th.num { text-align: right; }
 .db-grid.editing .db-tile { outline: 2px dashed var(--border-strong); outline-offset: -2px; }
 .db-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .db-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-head h3 > .db-ic { font-size: 14px; margin-right: 5px; opacity: .9; text-transform: none; letter-spacing: normal; }
 /* Pano kutucuğu katlama: başlıktaki ok; katlanınca gövde gizli, kutu kısalır */
 .db-head > .db-chev { width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; opacity: .5; cursor: pointer; flex: none; transition: transform .15s; }
 .db-tile:not(.db-collapsed) > .db-head > .db-chev { transform: rotate(90deg); }
@@ -3947,6 +3948,8 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
   border-bottom: 4px solid transparent; opacity: .5; flex: none; transition: transform .15s ease; }
 .collapsible:not(.collapsed) > .collapse-head > .collapse-chev { transform: rotate(90deg); }
 .collapsible.collapsed > :not(.collapse-head) { display: none !important; }
+/* Konuya özel panel ikonu (chevron ile başlık arasında) */
+.collapse-head > .collapse-ic { flex: none; font-size: 15px; line-height: 1; opacity: .9; margin: 0 1px; filter: saturate(.9); }
 /* İç boşluklu kartlarda (.card-pad / .set-card) başlık tam-genişlik şık bant olur (pano tile header gibi) */
 .card-pad.collapsible > .collapse-head {
   /* !important: bazı başlıklarda inline margin (ör. marginTop:0) var; bandın tam-genişlik negatif margin'ini ezmesin */

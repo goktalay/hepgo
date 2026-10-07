@@ -916,6 +916,78 @@ function initPanelCollapse(viewEl) {
       });
     });
   };
+  // Panel başlığına konuya özel ikon: başlık metnindeki anahtar kelimeye göre (ilk eşleşen kazanır, özelden → genele).
+  const PANEL_ICONS = [
+    [['kvkk', 'aydınlat', 'rıza', 'onam', 'gizlilik'], '🔒'],
+    [['sözleşme', 'şartlar', 'kullanım şart', 'taahhüt'], '📜'],
+    [['imza'], '✍️'],
+    [['ürün ağac', 'reçete', 'ağaç yapı'], '🌳'],
+    [['yazıcı', 'baskı', 'basıl', 'kuyruk'], '🖨️'],
+    [['kamera', 'nvr', 'görüntü kay'], '📹'],
+    [['yüz tanı', 'yüz kay'], '🙂'],
+    [['kkd', 'ppe', 'denetlenecek', 'iş güvenli', 'isg'], '🦺'],
+    [['çıkış kontrol', 'güvenlik', 'nöbet'], '🛡️'],
+    [['qr', 'karekod'], '🔳'],
+    [['uçuş', 'uçak', 'saha', 'drone', 'pervane'], '🛩️'],
+    [['depo', 'ambar', 'stok'], '📦'],
+    [['sipariş'], '🧾'],
+    [['fatura', 'irsaliye'], '🧾'],
+    [['satış'], '💰'],
+    [['satın', 'alım', 'tedarik'], '🛒'],
+    [['üretim', 'iş emri', 'imalat', 'mrp'], '🏭'],
+    [['bakım', 'onarım'], '🔧'],
+    [['araç', 'plaka', 'filo'], '🚗'],
+    [['bordro', 'maaş', 'ücret', 'puantaj'], '💵'],
+    [['izin', 'tatil'], '🌴'],
+    [['personel', 'çalışan', 'özlük', 'insan kaynak', 'görev'], '🧑‍💼'],
+    [['toplantı', 'randevu'], '🤝'],
+    [['takvim', 'etkinlik', 'ajanda'], '📅'],
+    [['e-posta', 'eposta', 'mail', 'posta', 'gelen kutu'], '✉️'],
+    [['mesaj', 'sohbet'], '💬'],
+    [['bildirim', 'uyarı'], '🔔'],
+    [['alarm', 'hatırlat'], '⏰'],
+    [['not'], '📝'],
+    [['evrak', 'belge', 'doküman', 'dokuman'], '📄'],
+    [['dosya', 'klasör'], '📁'],
+    [['rapor', 'istatistik', 'analiz', 'grafik', 'özet'], '📊'],
+    [['entegrasyon'], '🔌'],
+    [['yedek'], '💾'],
+    [['üyelik', 'lisans', 'paket', 'abonelik'], '🎫'],
+    [['yetki', 'rol'], '🗝️'],
+    [['kullanıcı', 'hesap'], '👥'],
+    [['adres', 'konum'], '📍'],
+    [['harita', 'kroki'], '🗺️'],
+    [['hava durum'], '🌤️'],
+    [['dünya saat', 'saat', 'zaman'], '🕐'],
+    [['spotify', 'müzik', 'şarkı', 'çalma list'], '🎵'],
+    [['ssh', 'terminal', 'sunucu'], '🖥️'],
+    [['telsiz'], '📻'],
+    [['banka', 'iban', 'ödeme'], '🏦'],
+    [['firma', 'şirket', 'cari', 'kurum'], '🏢'],
+    [['rehber'], '📇'],
+    [['kişi', 'iletişim', 'müşteri'], '👤'],
+    [['telefon'], '📞'],
+    [['transfer', 'yükleme', 'indirme'], '🔄'],
+    [['maskot'], '🤖'],
+    [['haber', 'duyuru', 'akış'], '📣'],
+    [['ayar', 'tercih', 'konfig', 'seçenek'], '⚙️'],
+    [['şema', 'çizim', 'teknik resim'], '📐'],
+    [['bilgi', 'detay', 'tanım', 'genel', 'künye', 'kimlik'], 'ℹ️'],
+  ];
+  const iconFor = text => {
+    const t = (text || '').toLocaleLowerCase('tr');
+    for (const [keys, ic] of PANEL_ICONS) if (keys.some(k => t.includes(k))) return ic;
+    return '📋';   // eşleşme yoksa nötr panel ikonu (her panel bir ikon alsın)
+  };
+  const addIcon = (head, titleEl) => {
+    if (!titleEl) return;
+    const txt = (titleEl.textContent || '').trim();
+    if (!txt || /^\p{Extended_Pictographic}/u.test(txt)) return;   // başlık zaten ikon/emoji ile başlıyorsa dokunma
+    const span = Object.assign(document.createElement('span'), { className: 'collapse-ic', textContent: iconFor(txt) });
+    span.setAttribute('aria-hidden', 'true');
+    const chev = head.querySelector(':scope > .collapse-chev');
+    head.insertBefore(span, chev ? chev.nextSibling : head.firstChild);   // chevron'dan hemen sonra, başlıktan önce
+  };
   // Panelin başlığı: ya düz başlık (h2-h4) ya da başlık satırı (başta h/b/strong + aksiyon/boşluk içeren satır; ör. .tv-bar)
   const headerOf = card => {
     const f = card.firstElementChild;
@@ -940,13 +1012,15 @@ function initPanelCollapse(viewEl) {
     const isRow = !/^H[2-4]$/.test(head.tagName);
     if (isRow && head.firstElementChild) head.firstElementChild.classList.add('collapse-title');
     // Başlığı yazım düzenine çevir (her kelime ilk harfi büyük); KVKK/İSG/CV gibi kısaltmalar (tümü büyük) korunur
-    sentenceCase(isRow ? (head.querySelector(':scope > .collapse-title') || head) : head);
+    const titleEl = isRow ? (head.querySelector(':scope > .collapse-title') || head) : head;
+    sentenceCase(titleEl);
     // Düğmeleri en sağa it: başlık (+ varsa açıklama) solda, aksiyon düğmeleri sağda. Satırda .spacer varsa dokunma.
     if (isRow && !head.querySelector(':scope > .spacer')) {
       const fa = head.querySelector(':scope > .btn, :scope > button, :scope > a.btn');
       if (fa) fa.classList.add('collapse-push');
     }
     head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
+    addIcon(head, titleEl);   // konuya özel ikon (chevron ile başlık arasına)
     if (read().has(keyOf(head))) el.classList.add('collapsed');
     head.addEventListener('click', e => {
       if (e.target.closest('button, a, input, select, textarea, label')) return;   // aksiyon öğeleri katlamaz
@@ -996,6 +1070,7 @@ function initPanelCollapse(viewEl) {
       hd.classList.add('collapse-head', 'loose-head');
       sentenceCase(hd);
       hd.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), hd.firstChild);
+      addIcon(hd, hd);   // konuya özel ikon
       const k = keyOf(hd);
       const apply = col => { hd.classList.toggle('collapsed', col); sibs.forEach(s => { s.style.display = col ? 'none' : ''; }); };
       if (read().has(k)) apply(true);

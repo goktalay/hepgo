@@ -24,6 +24,16 @@ const dbAvatarSt = (name, photo, id, d, cls = '') => {
 };
 
 const MULTI = new Set(['clock', 'weather', 'world_clock', 'quick_directory']);   // birden çok eklenebilen / ayarlı
+// Pano kutucuk başlığına konuya özel ikon (widget anahtarına göre)
+const DB_ICONS = {
+  modules: '🧩', company_news: '📣', birthdays: '🎂', calendar: '📅', notifications: '🔔', alerts: '⚠️',
+  my_cargo: '📦', my_guests: '🙋', my_calls: '📞', announcements: '📢', email: '✉️', active_users: '👥',
+  world_clock: '🌍', alarm: '⏰', notes: '📝', files: '📁', quick_directory: '📇', my_messages: '💬',
+  my_meetings: '📹', spotify: '🎵', weather: '🌤️', clock: '🕐', kpi_production: '🏭', chart_production: '📈',
+  forecast: '🔮', recent_orders: '🧾', kpi_printers: '🖨️', kpi_warehouse: '🏬', kpi_stock: '📦', kpi_field: '🛩️',
+  kpi_security: '🛡️', kpi_secretariat: '🛎️', kpi_documents: '📄', kpi_admin: '🛠️', transfers: '🔄',
+  on_duty: '🎯', on_leave: '🌴',
+};
 // GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
 let gridLib;
 function loadGridStack() {
@@ -156,8 +166,10 @@ export async function renderDashboard(view, ctx, modules) {
     const isCol = canCollapse && collapsed.has(String(it.id));
     if (isCol) origH[String(it.id)] = it.h;   // orijinal yükseklik korunur (persist bunu yazar)
     const chev = canCollapse ? h('span', { class: 'db-chev', title: 'Aç / kapa' }) : null;
+    const dbIc = DB_ICONS[it.k];
     const head = h('div', { class: `db-head${canCollapse ? ' db-head-collapsible' : ''}` }, chev,
-      h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools);
+      h('h3', null, dbIc ? h('span', { class: 'db-ic', 'aria-hidden': 'true' }, dbIc) : null,
+        it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools);
     if (canCollapse) head.addEventListener('click', e => {   // tüm başlığa tıklama kutuyu açar/kapatır (düğmeler ve sürükleme hariç)
       if (e.target.closest('button, a, .db-acts, .db-tools, input, select')) return;
       e.preventDefault(); toggleCollapse(it, el);

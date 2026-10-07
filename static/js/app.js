@@ -1104,7 +1104,7 @@ function brandBadge(ctx) {
   const company = ctx.meta?.company || 'GÖKKUBBE Teknoloji';
   const year = new Date().getFullYear();
   const badge = h('button', { class: 'footer-brand', type: 'button', 'aria-label': company },
-    h('img', { class: 'fb-mark', src: '/static/img/logo-mark.png', alt: '' }),
+    h('img', { class: 'fb-mark', src: '/static/img/logo-mark.png?v=3', alt: '' }),
     h('span', { class: 'fb-name' }, `© ${year} ${company}`));
   const hover = matchMedia('(hover: hover) and (pointer: fine)').matches;
   let pop = null, closeTimer;

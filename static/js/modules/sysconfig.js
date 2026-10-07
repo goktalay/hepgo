@@ -699,7 +699,7 @@ const INTEG_LOGO = {
     <path d="M18 25v-4a3 3 0 0 1 3-3h4M46 25v-4a3 3 0 0 0-3-3h-4M18 39v4a3 3 0 0 0 3 3h4M46 39v4a3 3 0 0 0-3 3h-4"/>
     <path d="M28 40c2.4 1.6 5.6 1.6 8 0M32 29v5"/></g>
     <circle cx="27" cy="30" r="1.8" fill="#fff"/><circle cx="37" cy="30" r="1.8" fill="#fff"/></svg>`),
-  general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png'; i.alt = 'Gökkubbe'; return i; },
+  general: () => { const i = document.createElement('img'); i.src = '/static/img/logo-mark.png?v=3'; i.alt = 'Gökkubbe'; return i; },
 };
 const INTEG_INFO = {
   face: { short: 'Görüntü İşleme', tag: 'Yüz Tanıma + İSG/KKD',

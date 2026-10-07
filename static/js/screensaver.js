@@ -203,7 +203,7 @@ export function showScreensaver(anim = cfg.anim, { preview = false, unlock = fal
   canvas.className = 'ss-canvas';
   const time = document.createElement('div'); time.className = 'ss-time';
   const date = document.createElement('div'); date.className = 'ss-date';
-  const logo = document.createElement('img'); logo.className = 'ss-logo'; logo.src = '/static/img/logo-mark.png'; logo.alt = '';
+  const logo = document.createElement('img'); logo.className = 'ss-logo'; logo.src = '/static/img/logo-mark.png?v=3'; logo.alt = '';
   const clock = document.createElement('div'); clock.className = 'ss-clock'; clock.append(time, date);
   const hint = document.createElement('div'); hint.className = 'ss-hint';
   hint.textContent = !preview && cfg.lock && user ? '🔒 Kilidi açmak için dokunun' : 'Devam etmek için dokunun';

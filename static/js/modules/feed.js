@@ -9,7 +9,7 @@ const KIND_BADGE = {
   HIRE: ['green', 'İşe alım'], TERMINATION: ['', 'Ayrılış'], FLIGHT: ['blue', 'Uçuş'],
   ORDER: ['blue', 'Sipariş'], MEETING: ['yellow', 'Toplantı'], ANNOUNCE: ['red', 'Duyuru'], USER: ['', ''], LIVE: ['red', '🔴 Canlı yayın'],
 };
-const LOGO = '/static/img/logo-mark.png';
+const LOGO = '/static/img/logo-mark.png?v=3';
 // Tepki simgesi → etiket + renk (beğen düğmesi ve etiketi için)
 const REACTION_META = {
   '👍': { label: 'Beğen', color: '#2563eb' }, '❤️': { label: 'Sevdim', color: '#e0245e' },

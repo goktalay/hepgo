@@ -71,7 +71,7 @@ export function applySettings(s, user) {
 export function desktopNotify(title, body, onClick) {
   if (!current.desktop || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
-    const n = new Notification(title, { body, icon: '/static/img/logo-mark.png', tag: `${title}:${body}` });
+    const n = new Notification(title, { body, icon: '/static/img/logo-mark.png?v=3', tag: `${title}:${body}` });
     n.onclick = () => { window.focus(); onClick?.(); n.close(); };
   } catch { /* bazı tarayıcılar yalnızca service worker ile izin verir */ }
 }

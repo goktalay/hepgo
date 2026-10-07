@@ -236,7 +236,7 @@
     return new Promise(async resolve => {
       if (await obGet()) return resolve();
       obStyles();
-      const logo = location.origin + '/static/img/logo-mark.png';
+      const logo = location.origin + '/static/img/logo-mark.png?v=3';
       const STEPS = [
         { intro: true, icon: `<img src="${logo}" alt="">`, title: 'HEPGO\'ya hoş geldiniz', body: 'Fabrikanızı tek platformdan yönetin. Başlamadan önce birkaç izin isteyeceğiz; her birinin nedenini açıklayacağız.' },
         { key: 'notif', icon: '🔔', title: 'Bildirimler', why: 'Onay bekleyen işler, mesajlar, güvenlik ve üretim uyarıları anında size ulaşsın diye.', check: permApi.notifCheck, req: permApi.notifReq },

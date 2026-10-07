@@ -27,7 +27,7 @@ const secs = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2
 // Sohbet hedefi: kişi { kind: 'user', id, full_name, photo } ya da grup { kind: 'group', id, name, is_company }
 const keyOf = t => `${t.kind === 'group' ? 'g' : 'u'}:${t.id}`;
 const titleOf = t => (t.kind === 'group' ? t.name : t.full_name);
-const COMPANY_LOGO = '/static/img/logo-mark.png';
+const COMPANY_LOGO = '/static/img/logo-mark.png?v=3';
 function convAvatar(t, size = 'sm') {
   if (t.kind !== 'group') return avatar(t, size);
   if (t.is_company) return h('span', { class: `avatar ${size} chat-logo`, title: 'Tüm Şirket' }, h('img', { src: COMPANY_LOGO, alt: '' }));

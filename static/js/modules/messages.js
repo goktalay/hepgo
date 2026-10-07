@@ -13,7 +13,7 @@ const hm = iso => (iso || '').slice(11, 16);
 const size = b => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round((b || 0) / 1024))} KB`);
 const secs = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const mmss = s => `${String(Math.floor((s || 0) / 60)).padStart(2, '0')}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`;
-const COMPANY_LOGO = '/static/img/logo-mark.png';
+const COMPANY_LOGO = '/static/img/logo-mark.png?v=3';
 const keyOf = t => `${t.kind === 'group' ? 'g' : 'u'}${t.id}`;
 const dayLabel = iso => {
   const d = (iso || '').slice(0, 10), t = new Date(), y = new Date(Date.now() - 864e5);

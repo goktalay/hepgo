@@ -6,10 +6,16 @@
 const rnd = (a, b) => a + Math.random() * (b - a);
 const isTransparent = col => !col || col === 'transparent' || /rgba?\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(col);
 
-// Görünür ekrandaki bileşenleri yakala: konum/boyut + renk + köşe + kısa metin. En dıştaki büyük bloklar seçilir
-// (iç içe olanlar elenir), en fazla `max` parça. Overlay DOM'a eklenmeden ÖNCE çağrılmalı (sayfa hâlâ görünürken).
-export function captureShards(max = 46) {
-  const vw = innerWidth, vh = innerHeight;
+// Renkli vurgu paleti (beyaz kartlara kimlik/çeşitlilik verir)
+const ACCENTS = [[10, 132, 255], [52, 199, 89], [255, 159, 10], [255, 55, 95], [94, 92, 230],
+  [100, 210, 255], [191, 90, 242], [255, 100, 130], [48, 209, 88], [255, 214, 10], [50, 173, 230], [255, 112, 67]];
+const parseRGB = s => { const m = (s || '').match(/\d+\.?\d*/g); return m ? m.slice(0, 3).map(Number) : [255, 255, 255]; };
+const lum = ([r, g, b]) => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+// Görünür ekrandaki bileşenleri yakala: konum/boyut + renk + köşe + başlık + vurgu. En dıştaki bloklar seçilir
+// (iç içe elenir), çok büyük bloklar bileşen çocuklarına bölünür. Overlay DOM'a eklenmeden ÖNCE çağrılmalı.
+export function captureShards(max = 48) {
+  const vw = innerWidth, vh = innerHeight, vwh = vw * vh;
   const SEL = '.card, .set-card, .db-tile, .stat, .page-head, .topbar, .btn, .seg-tabs, .filters, .chip, .kpi, table, .empty, h1, h2';
   const bgOf = el => {
     for (let n = el, i = 0; n && i < 4; n = n.parentElement, i++) {
@@ -18,33 +24,45 @@ export function captureShards(max = 46) {
     }
     return null;
   };
+  const visible = (el, r) => r.width >= 26 && r.height >= 16 && r.bottom > 4 && r.top < vh - 4 && r.right > 4 && r.left < vw - 4;
   const cand = [];
   document.querySelectorAll(SEL).forEach(el => {
     if (el.closest('.ss, .modal-back, .ss-panel')) return;
     const r = el.getBoundingClientRect();
-    if (r.width < 26 || r.height < 16) return;
-    if (r.bottom < 4 || r.top > vh - 4 || r.right < 4 || r.left > vw - 4) return;   // ekran dışı
-    if (r.width > vw * 0.985 && r.height > vh * 0.88) return;                        // tüm sayfa kabı
+    if (!visible(el, r)) return;
+    if (r.width > vw * 0.985 && r.height > vh * 0.88) return;   // tüm sayfa kabı
     cand.push({ el, r });
   });
   cand.sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);   // büyükten küçüğe
   const picked = [];
   for (const o of cand) {
-    if (picked.length >= max) break;
     if (picked.some(p => p.el.contains(o.el) || o.el.contains(p.el))) continue;   // iç içe olanı tekrarlama
     picked.push(o);
   }
-  const cs0 = el => getComputedStyle(el);
-  return picked.map(({ el, r }) => {
-    const st = cs0(el);
-    const col = isTransparent(st.backgroundColor) ? (bgOf(el) || 'rgba(148,163,184,.9)') : st.backgroundColor;
-    const radius = Math.min(18, parseFloat(st.borderTopLeftRadius) || 4);
-    const area = r.width * r.height;
-    let text = '';
-    if (area < 52000 && (el.matches('.btn, .stat, .kpi, .chip, h1, h2') || el.children.length === 0)) {
-      text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 22);
+  // Çok büyük seçimleri (yarım ekran gibi) bileşen çocuklarına böl → daha küçük, çeşitli parçalar
+  const KID = '.card, .db-tile, .stat, .kpi, .btn, .chip, .set-card, tr, .list-row, .row, .ba-row, h2, h3';
+  const out = [];
+  for (const o of picked) {
+    const area = o.r.width * o.r.height;
+    if (area > vwh * 0.14) {
+      const kids = [...o.el.querySelectorAll(KID)].map(k => ({ el: k, r: k.getBoundingClientRect() }))
+        .filter(k => visible(k.el, k.r) && k.r.width * k.r.height < area * 0.6);
+      kids.sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
+      const uniq = [];
+      for (const k of kids) { if (uniq.some(u => u.el.contains(k.el) || k.el.contains(u.el))) continue; uniq.push(k); }
+      if (uniq.length >= 2) { out.push(...uniq.slice(0, 12)); continue; }
     }
-    return { x: r.left, y: r.top, w: r.width, h: r.height, color: col, textColor: st.color || '#111', radius, text };
+    out.push(o);
+  }
+  const final = out.slice(0, max);
+  return final.map(({ el, r }, i) => {
+    const st = getComputedStyle(el);
+    const col = isTransparent(st.backgroundColor) ? (bgOf(el) || 'rgb(148,163,184)') : st.backgroundColor;
+    const radius = Math.min(18, parseFloat(st.borderTopLeftRadius) || 6);
+    const hd = el.querySelector('h1,h2,h3,h4,.db-head h3,b,strong,.stat-v,.kpi-v,.set-h');
+    let text = (hd?.textContent || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 26);
+    if (el.matches('table') && !hd) text = '';
+    return { x: r.left, y: r.top, w: r.width, h: r.height, color: col, radius, text, accent: ACCENTS[i % ACCENTS.length] };
   });
 }
 
@@ -67,19 +85,27 @@ export function createGravityScene(canvas, shards, { preview = false } = {}) {
   const FR = 0.84;       // zemin yatay sürtünme
 
   // Yakalanan bileşen yoksa (boş sayfa) dekoratif kutular üret
-  const src = shards && shards.length ? shards : Array.from({ length: 16 }, () => {
-    const w = rnd(70, 180), hh = rnd(44, 120);
-    return { x: rnd(0, W - w), y: rnd(0, H * 0.5), w, h: hh, color: `hsla(${rnd(190, 260)},60%,60%,.9)`, textColor: '#fff', radius: 10, text: '' };
+  const src = shards && shards.length ? shards : Array.from({ length: 16 }, (_, i) => {
+    const w = rnd(80, 190), hh = rnd(50, 130);
+    return { x: rnd(0, W - w), y: rnd(0, H * 0.5), w, h: hh, color: 'rgb(255,255,255)', radius: 12, text: '', accent: ACCENTS[i % ACCENTS.length] };
   });
 
-  // Cisimler: başlangıçta ekrandaki yerlerinde, sonra dışa doğru savrulup düşerler
+  // Cisimler: başlangıçta ekrandaki yerlerinde, sonra dışa doğru savrulup düşerler.
+  // Beyaz/çok açık kartlara vurgu renginden hafif ton katılır (hepsi tek düze beyaz görünmesin).
   const bodies = src.map(s => {
     const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    const accent = s.accent || [120, 140, 170];
+    let rgb = parseRGB(s.color);
+    if (lum(rgb) > 0.86) rgb = rgb.map((v, i) => Math.round(v * 0.82 + accent[i] * 0.18));   // açık kartlara renk tonu
+    const fill = `rgb(${rgb.join(',')})`;
+    const textColor = lum(rgb) > 0.6 ? 'rgba(20,28,45,.92)' : 'rgba(255,255,255,.95)';
     return {
       w: s.w, h: s.h, cx, cy,
       vx: ((cx - W / 2) / Math.max(W, 1)) * rnd(140, 420) + rnd(-90, 90),
       vy: rnd(-280, -30), a: 0, va: rnd(-2.4, 2.4),
-      color: s.color, textColor: s.textColor, radius: s.radius, text: s.text, asleep: false,
+      color: fill, accent: `rgb(${accent.join(',')})`, textColor, lineColor: lum(rgb) > 0.6 ? 'rgba(20,28,45,.14)' : 'rgba(255,255,255,.2)',
+      radius: s.radius, text: s.text, asleep: false,
+      lines: [0.9, 0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4, 0.5 + Math.random() * 0.4],
     };
   });
 
@@ -198,22 +224,37 @@ export function createGravityScene(canvas, shards, { preview = false } = {}) {
   };
 
   const drawBody = b => {
+    const hw = b.w / 2, hh = b.h / 2;
     c.save();
     c.translate(b.cx, b.cy); c.rotate(b.a);
-    c.shadowColor = 'rgba(0,0,0,.45)'; c.shadowBlur = 14; c.shadowOffsetY = 6;
+    // gövde (gölgeli)
+    c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 16; c.shadowOffsetY = 7;
     c.fillStyle = b.color;
-    roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.radius); c.fill();
-    c.shadowColor = 'transparent'; c.shadowBlur = 0;
-    c.strokeStyle = 'rgba(255,255,255,.14)'; c.lineWidth = 1;
-    roundRect(-b.w / 2 + 0.5, -b.h / 2 + 0.5, b.w - 1, b.h - 1, b.radius); c.stroke();
-    if (b.text && b.w > 40 && b.h > 18) {
-      c.fillStyle = b.textColor; c.globalAlpha = 0.92;
-      c.font = `${Math.max(11, Math.min(15, b.h * 0.34))}px system-ui, sans-serif`;
-      c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.save(); roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.radius); c.clip();
-      c.fillText(b.text, 0, 0, b.w - 8); c.restore();
-      c.globalAlpha = 1;
+    roundRect(-hw, -hh, b.w, b.h, b.radius); c.fill();
+    c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0;
+    // içerik yalnız panel içine
+    c.save(); roundRect(-hw, -hh, b.w, b.h, b.radius); c.clip();
+    const strip = Math.max(6, Math.min(14, b.h * 0.16));   // renkli üst vurgu şeridi (başlık bandı)
+    c.fillStyle = b.accent; c.fillRect(-hw, -hh, b.w, strip);
+    const padX = Math.min(12, b.w * 0.08);
+    // başlık metni (vurgu şeridinin altında)
+    if (b.text && b.w > 46 && b.h > strip + 14) {
+      c.fillStyle = b.textColor;
+      c.font = `600 ${Math.max(11, Math.min(16, b.h * 0.2))}px system-ui, -apple-system, sans-serif`;
+      c.textAlign = 'left'; c.textBaseline = 'top';
+      c.fillText(b.text, -hw + padX, -hh + strip + Math.min(10, b.h * 0.1), b.w - padX * 2);
     }
+    // içerik çizgileri (gri placeholder) — yeterince büyük panellerde
+    const lineY0 = -hh + strip + (b.text ? Math.min(10, b.h * 0.1) + 22 : 14);
+    c.fillStyle = b.lineColor;
+    for (let i = 0, y = lineY0; i < 4 && y < hh - 10; i++, y += 14) {
+      const lw = (b.w - padX * 2) * b.lines[i];
+      roundRect(-hw + padX, y, lw, 6, 3); c.fill();
+    }
+    c.restore();
+    // kenarlık
+    c.strokeStyle = 'rgba(0,0,0,.12)'; c.lineWidth = 1;
+    roundRect(-hw + 0.5, -hh + 0.5, b.w - 1, b.h - 1, b.radius); c.stroke();
     c.restore();
   };
 

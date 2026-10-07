@@ -7,6 +7,8 @@ import { playEvent } from '../sounds.js';
 
 const RTC = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 let ws = null, ctx = null, backoff = 1000, pingTimer = null;
+let ringTimeoutId = null;
+const NO_ANSWER_MS = 35000;   // cevap verilmezse "Cevap yok" süresi
 let ring = null;      // gelen arama {call_id, caller, kind, el}
 let call = null;      // aktif görüşme durumu
 
@@ -182,6 +184,15 @@ export async function startCall(targetIds, names = {}, photos = {}, opts = {}) {
   call.localAnalyser = analyserFor(stream);
   showCallUI(video ? 'Görüntülü aranıyor…' : 'Aranıyor…');
   startRing('out');
+  // Belirli süre cevap verilmezse: "Cevap yok" de ve kapat
+  clearTimeout(ringTimeoutId);
+  ringTimeoutId = setTimeout(() => {
+    if (!call || call.startedAt) return;   // bu arada bağlandıysa dokunma
+    setCallStatus('Cevap yok');
+    stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ }
+    if (call.id) send({ t: 'end', call_id: call.id });
+    setTimeout(() => { if (call && !call.startedAt) endLocal(true); }, 1600);
+  }, NO_ANSWER_MS);
 }
 
 // Ses (+ istenirse kamera) akışı al. Eko/uğultu önleme açık (yoksa karşı taraf kendi sesini yankı olarak duyar).
@@ -243,8 +254,11 @@ function onRing(m) {
         h('button', { class: 'vc-rbtn accept', type: 'button', title: 'Kabul et', onclick: () => accept(m) }, iconSvg('accept')))));
   document.body.append(el);
   ring = { call_id: m.call_id, caller: m.caller, kind: m.kind, el };
+  ring.autoClose = setTimeout(() => {   // cevap verilmezse zil sonsuza kadar çalmasın
+    if (ring && ring.call_id === m.call_id) { try { send({ t: 'reject', call_id: m.call_id }); } catch { /* */ } closeRing(); }
+  }, NO_ANSWER_MS + 8000);
 }
-function closeRing() { stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ } if (ring) { ring.el.remove(); ring = null; } }
+function closeRing() { stopRing(); try { nativeCall()?.dismiss(); } catch { /* */ } if (ring) { clearTimeout(ring.autoClose); ring.el.remove(); ring = null; } }
 
 // iPhone tarzı kaydırma: ortadaki tutamağı sağa kaydır → aç, sola → kapat (fare ve dokunma).
 function makeSlider(onAccept, onReject) {
@@ -425,7 +439,7 @@ function showCallUI(status) {
   ui.mini.addEventListener('pointerup', endMiniDrag);
   ui.mini.addEventListener('pointercancel', endMiniDrag);
   const selfBlock = call.video
-    ? h('div', { class: 'vc-self vc-self-video' }, ui.selfVideo, h('span', { class: 'vc-self-label' }, 'Siz'))
+    ? h('div', { class: 'vc-self vc-self-video vc-self-tap', title: 'Büyütmek için dokun', onclick: swapVideos }, ui.selfVideo, h('span', { class: 'vc-self-label' }, 'Siz'))
     : h('div', { class: 'vc-self' }, h('div', { class: 'vc-self-av' }, ui.selfBars, avatar(ctx.user, 'sm')), h('span', { class: 'vc-self-label' }, 'Siz'));
   ui.el = h('div', { class: `vc-call ${isPhone() ? '' : 'compact'} ${call.video ? 'vc-has-video' : ''}`, style: { background: callBg() } },
     h('div', { class: 'vc-call-top' }, minBtn,
@@ -450,6 +464,7 @@ function beforeUnload(e) { if (call) { e.preventDefault(); e.returnValue = 'Gör
 
 function setCallStatus(t) { if (ui && !call?.startedAt) ui.timer.textContent = t; }
 function startTimer() {
+  clearTimeout(ringTimeoutId);   // bağlanıldı → "cevap yok" sayacını iptal et
   if (timerId) return;
   const upd = () => {
     if (!call?.startedAt || !ui) return;
@@ -519,6 +534,30 @@ function toggleCam() {
   if (ui.el) ui.el.classList.toggle('vc-self-off', !t.enabled);
 }
 
+// WhatsApp tarzı: büyük sahnede KARŞI taraf, köşede küçük (PiP) SİZ. Küçük videoya dokununca yer değişir.
+function applySwap() {
+  if (!call || !call.video || !ui || !ui.selfVideo) return;
+  const peers = [...call.peers.values()].filter(p => p.audio);
+  if (peers.length !== 1) return;   // yalnız bire-bir
+  const p = peers[0], remote = p.stream || null;
+  if (call.swap && remote) {
+    p.audio.srcObject = call.local; p.audio.muted = true;        // sahne: SİZ (sessiz)
+    ui.selfVideo.srcObject = remote; ui.selfVideo.muted = false;  // köşe: karşı taraf (sesli)
+  } else {
+    if (remote) p.audio.srcObject = remote;
+    p.audio.muted = false;                                        // sahne: karşı taraf (sesli)
+    ui.selfVideo.srcObject = call.local; ui.selfVideo.muted = true;   // köşe: SİZ (sessiz)
+  }
+  if (ui.el) ui.el.classList.toggle('vc-swapped', !!call.swap);
+}
+function swapVideos() {
+  if (!call || !call.video) return;
+  const peers = [...call.peers.values()].filter(p => p.audio && p.stream);
+  if (peers.length !== 1) return;   // grup değil
+  call.swap = !call.swap;
+  applySwap();
+}
+
 // Görüntülü arama karo düzeni: karşı tarafın videosu büyük, kamera kapalıysa avatar
 function renderVideoPeers(list) {
   ui.stage.className = `vc-stage vc-vstage n${Math.min(list.length, 4)}`;
@@ -535,6 +574,7 @@ function renderVideoPeers(list) {
         connected ? null : h('span', { class: 'vc-vtile-state' }, state === 'ringing' ? 'Aranıyor…' : 'Bağlanıyor…')));
   }));
   if (list.some(uid => call.peers.get(uid)?.pc.connectionState === 'connected') && !call.startedAt) { call.startedAt = Date.now(); startTimer(); stopRing(); }
+  applySwap();   // swap durumunu koru (yeniden çizimde)
 }
 async function addPerson() {
   if (!call) return;
@@ -708,7 +748,7 @@ async function uploadRecording(blob, cid) {
 // ---------- Bitiş / temizlik ----------
 let lastCallId = null;
 function endLocal(fromRemote) {
-  stopRing();
+  stopRing(); clearTimeout(ringTimeoutId);
   if (!call) { closeRing(); return; }
   lastCallId = call.id;
   const peer = [...Object.keys(call.names).map(Number), ...call.peers.keys()].find(id => id !== ctx.user.id);

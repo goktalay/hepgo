@@ -3385,6 +3385,8 @@ html[data-theme="dark"] .module-btn.tone-purple .ico, html[data-theme="dark"] .a
 .vc-bars { height: 30px; }
 .vc-self { position: absolute; left: 20px; bottom: 120px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 2px; opacity: .85; }
 .vc-self-label { font-size: 11px; opacity: .8; }
+.vc-self-tap { cursor: pointer; }
+.vc-self-tap::after { content: '⤢'; position: absolute; top: 4px; right: 6px; font-size: 13px; color: #fff; opacity: .75; text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; }
 .vc-consent { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 3; width: min(420px, 92%);
   background: rgba(20,24,33,.92); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; padding: 14px 16px; }
 .vc-consent-in { display: flex; flex-direction: column; gap: 10px; }

@@ -7917,34 +7917,29 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .db-sp-row-main b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .db-sp-row-main small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ---------- Canlı Konum (MASTER) haritası ---------- */
-.um-wrap { display: flex; gap: 14px; padding: 0; overflow: hidden; }
-.um-map { flex: 1; min-width: 0; height: min(68vh, 680px); border-radius: var(--radius) 0 0 var(--radius); }
-.um-map.um-nokey { display: grid; place-items: center; background: var(--surface-2, rgba(127,127,127,.05)); }
+/* ---------- Canlı Konum (MASTER) — TAM EKRAN harita ---------- */
+.um-full { position: fixed; inset: 0; z-index: 1200; background: #0b0f16; }
+.um-map { position: absolute; inset: 0; }
+.um-map.um-nokey { display: grid; place-items: center; background: #0b0f16; color: #e8eefc; }
 .um-nokey-ic { font-size: 40px; text-align: center; }
-.um-list { width: 290px; flex: none; max-width: 42%; overflow-y: auto; height: min(68vh, 680px); border-left: 1px solid var(--border); padding: 10px; }
-.um-list-h { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 6px 10px; }
-.um-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer; font: inherit; color: inherit; padding: 8px 6px; border-radius: 10px; }
-.um-row:hover { background: var(--surface-2, rgba(127,127,127,.08)); }
-.um-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.um-row-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.um-open { width: 16px; height: 16px; flex: none; opacity: .5; background: currentColor;
-  -webkit-mask: center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z'/%3E%3C/svg%3E");
-  mask: center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z'/%3E%3C/svg%3E"); }
+.um-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; color: #fff;
+  background: linear-gradient(180deg, rgba(5,8,15,.72) 0%, rgba(5,8,15,.4) 60%, transparent 100%); }
+.um-bar .spacer { flex: 1; }
+.um-back { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: rgba(255,255,255,.14); color: #fff;
+  font-size: 20px; cursor: pointer; display: grid; place-items: center; backdrop-filter: blur(6px); }
+.um-back:active { background: rgba(255,255,255,.26); }
+.um-title { font-size: 17px; font-weight: 700; }
+.um-count { font-size: 12.5px; font-weight: 600; background: rgba(255,255,255,.16); padding: 5px 11px; border-radius: 999px; backdrop-filter: blur(6px); }
 /* Avatar baloncuğu: tazelik rengine göre çerçeve (yeşil<5dk, amber<1sa, gri eski) */
-.um-av { width: 42px; height: 42px; border-radius: 50%; background-size: cover; background-position: center; flex: none;
-  display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+.um-av { width: 44px; height: 44px; border-radius: 50%; background-size: cover; background-position: center; flex: none;
+  display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4);
   border: 3px solid #9aa5b5; background-color: #64748b; }
-.um-av.sm { width: 34px; height: 34px; font-size: 12px; border-width: 2px; }
 .um-av.fresh { border-color: #22c55e; }
 .um-av.warm { border-color: #f59e0b; }
 .um-av.stale { border-color: #94a3b8; opacity: .85; }
 /* Harita işaretçisi (OverlayView) — ucu konuma denk gelir */
 .um-pin { position: absolute; transform: translate(-50%, -100%); cursor: pointer; display: flex; flex-direction: column; align-items: center; white-space: nowrap; }
-.um-pin-name { margin-top: 2px; font-size: 11px; font-weight: 600; color: #0f172a; background: rgba(255,255,255,.92); padding: 1px 6px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.um-pin::after { content: ''; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #fff; margin-top: -1px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
+.um-pin-name { margin-top: 2px; font-size: 11px; font-weight: 600; color: #0f172a; background: rgba(255,255,255,.92); padding: 1px 6px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); max-width: 110px; overflow: hidden; text-overflow: ellipsis; order: -1; }
 .um-info b { display: block; margin-bottom: 2px; }
-@media (max-width: 760px) {
-  .um-wrap { flex-direction: column; }
-  .um-map { height: 52vh; border-radius: var(--radius) var(--radius) 0 0; }
-  .um-list { width: auto; max-width: none; height: auto; max-height: 36vh; border-left: 0; border-top: 1px solid var(--border); }
-}

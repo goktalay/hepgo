@@ -41,41 +41,15 @@ public class IncomingCallPlugin extends Plugin {
 
     @PluginMethod
     public void show(PluginCall call) {
-        String name = call.getString("name", "Arama");
+        String name = call.getString("name", "Gelen arama");
         boolean video = call.getBoolean("video", false);
-        try {
-            ensureChannel();
-            Context ctx = getContext();
-            Intent launch = new Intent(ctx, MainActivity.class);
-            launch.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
-            PendingIntent pi = PendingIntent.getActivity(ctx, 0, launch, flags);
-            NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CH)
-                    .setSmallIcon(ctx.getApplicationInfo().icon)
-                    .setContentTitle(name)
-                    .setContentText(video ? "Görüntülü arama…" : "Sesli arama…")
-                    .setPriority(NotificationCompat.PRIORITY_MAX)
-                    .setCategory(NotificationCompat.CATEGORY_CALL)
-                    .setOngoing(true)
-                    .setAutoCancel(true)
-                    .setFullScreenIntent(pi, true)
-                    .setContentIntent(pi);
-            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) nm.notify(NID, b.build());
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("show failed: " + e.getMessage());
-        }
+        CallNotifier.show(getContext(), name, video ? "Görüntülü arama…" : "Sesli arama…");
+        call.resolve();
     }
 
     @PluginMethod
     public void dismiss(PluginCall call) {
-        try {
-            NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) nm.cancel(NID);
-        } catch (Exception ignored) {
-        }
+        CallNotifier.dismiss(getContext());
         call.resolve();
     }
 

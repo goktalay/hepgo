@@ -37,6 +37,7 @@ const ICONS = {
   stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   video: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10l5-3v10l-5-3z"/></g>',
   videoOff: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l5-3v10l-5-3"/><path d="M3 7h9v10H3z"/><path d="M3 3l18 18"/></g>',
+  flipCamera: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="12" rx="2"/><circle cx="12" cy="13" r="2.4"/><path d="M8.5 7l1.2-2h4.6l1.2 2"/><path d="M15.5 13a3.5 3.5 0 0 1-5.6 2.8"/><path d="M8.5 13a3.5 3.5 0 0 1 5.6-2.8"/></g>',
   min: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 14l6 5 6-5"/>',
   more: '<g fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></g>',
 };
@@ -389,6 +390,7 @@ function showCallUI(status) {
   ui.consent = h('div', { class: 'vc-consent', hidden: true });
   ui.muteBtn = ctlBtn('mic', 'Sesi kapat', toggleMute);
   ui.camBtn = call.video ? ctlBtn('video', 'Kamerayı kapat', toggleCam) : null;
+  ui.flipBtn = call.video ? ctlBtn('flipCamera', 'Kamera değiştir (ön/arka)', flipCam) : null;
   ui.recBtn = ctlBtn('record', 'Görüşmeyi kaydet (onaylı)', onRecBtn);
   ui.endBtn = ctlBtn('end', 'Görüşmeyi bitir', hangup, 'end');
   if (call.video) { ui.selfVideo = h('video', { class: 'vc-selfvid', autoplay: true, muted: true, playsinline: true }); ui.selfVideo.srcObject = call.local; }
@@ -431,7 +433,7 @@ function showCallUI(status) {
     ui.stage,
     ui.consent,
     selfBlock,
-    h('div', { class: 'vc-controls' }, ui.muteBtn, ui.camBtn, ui.recBtn, ui.endBtn),
+    h('div', { class: 'vc-controls' }, ui.muteBtn, ui.camBtn, ui.flipBtn, ui.recBtn, ui.endBtn),
     ui.mini);
   document.body.append(ui.el);
   if (!isPhone()) bigWindowDrag();
@@ -491,6 +493,23 @@ function toggleMute() {
   t.enabled = !t.enabled;
   ui.muteBtn.classList.toggle('off', !t.enabled);
   ui.muteBtn.replaceChildren(iconSvg(t.enabled ? 'mic' : 'micOff'));
+}
+async function flipCam() {
+  if (!call || !call.video) return;
+  const cur = call.local.getVideoTracks()[0];
+  const curFacing = (cur && cur.getSettings && cur.getSettings().facingMode) || call.facing || 'user';
+  const next = curFacing === 'environment' ? 'user' : 'environment';
+  try {
+    const ns = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: next }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const nt = ns.getVideoTracks()[0];
+    if (!nt) return;
+    if (cur) nt.enabled = cur.enabled;
+    call.peers.forEach(p => { const s = p.pc.getSenders().find(x => x.track && x.track.kind === 'video'); if (s) s.replaceTrack(nt).catch(() => {}); });
+    if (cur) { try { call.local.removeTrack(cur); } catch { /* */ } cur.stop(); }
+    call.local.addTrack(nt);
+    call.facing = next;
+    if (ui.selfVideo) ui.selfVideo.srcObject = call.local;
+  } catch (e) { toast('Kamera değiştirilemedi', 'err'); }
 }
 function toggleCam() {
   if (!call) return;

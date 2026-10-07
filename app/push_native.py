@@ -117,10 +117,16 @@ def _fcm_send(tokens, payload):
         import httpx
         url = f"https://fcm.googleapis.com/v1/projects/{sa['project_id']}/messages:send"
         data = {k: str(v) for k, v in (payload or {}).items() if v is not None}
+        is_call = (payload or {}).get('type') == 'call'
         with httpx.Client(timeout=15, headers={'Authorization': f'Bearer {at}'}) as cli:
             for tk in tokens:
-                msg = {'message': {'token': tk, 'notification': {'title': payload.get('title') or 'HEPGO', 'body': payload.get('body') or ''},
-                                   'data': data, 'android': {'priority': 'high', 'notification': {'click_action': 'OPEN_URL'}}}}
+                if is_call:
+                    # Arama: DATA-ONLY (notification bloğu YOK) → uygulama tam kapalı olsa da CallMessagingService.onMessageReceived
+                    # tetiklenir ve tam-ekran gelen arama bildirimi kurulur (kilit ekranında otomatik açılır).
+                    msg = {'message': {'token': tk, 'data': data, 'android': {'priority': 'high', 'ttl': '45s'}}}
+                else:
+                    msg = {'message': {'token': tk, 'notification': {'title': payload.get('title') or 'HEPGO', 'body': payload.get('body') or ''},
+                                       'data': data, 'android': {'priority': 'high', 'notification': {'click_action': 'OPEN_URL'}}}}
                 try:
                     resp = cli.post(url, json=msg)
                     if resp.status_code in (400, 404) and 'UNREGISTERED' in resp.text.upper() or resp.status_code == 404:

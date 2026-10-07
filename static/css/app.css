@@ -489,6 +489,8 @@ body.fv-open .toasts { z-index: 4600; }
 .grid-stack-item-content.db-tile { inset: 0; display: flex; flex-direction: column; overflow: hidden; padding: 0; min-height: 0; }
 .grid-stack-item-content.db-tile > .db-head { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2, rgba(127,127,127,.04)); flex: none; cursor: default; }
 .grid-stack.editing .grid-stack-item-content.db-tile > .db-head { cursor: move; }
+.grid-stack-item-content.db-tile > .db-head.db-head-collapsible { cursor: pointer; }
+.grid-stack-item-content.db-tile.db-collapsed { bottom: auto !important; height: auto !important; }   /* katlıyken kart sadece başlık boyu — altta beyaz boşluk kalmaz */
 .grid-stack-item-content.db-tile > .db-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
 /* Şirketten Haberler kutusu: akış kutunun tamamını doldurur ve kendi içinde kayar (420 px sınırı yalnız kutu dışında) */
 .grid-stack-item-content.db-tile > .db-body:has(> .feed-body) { overflow: hidden; display: flex; flex-direction: column; }

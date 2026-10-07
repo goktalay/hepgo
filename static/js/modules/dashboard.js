@@ -93,14 +93,22 @@ export async function renderDashboard(view, ctx, modules) {
   const saveCollapsed = () => { try { localStorage.setItem(COL_KEY, JSON.stringify([...collapsed])); } catch { /* */ } };
   const toggleCollapse = (it, el) => {
     const id = String(it.id), content = el.querySelector('.db-tile');
+    let targetH;
     if (collapsed.has(id)) {
       collapsed.delete(id); content && content.classList.remove('db-collapsed');
-      if (grid) grid.update(el, { h: origH[id] || it.h || 3 });
+      targetH = origH[id] || it.h || 3;
       delete origH[id];
     } else {
       collapsed.add(id); origH[id] = (el.gridstackNode && el.gridstackNode.h) || it.h || 3;
       content && content.classList.add('db-collapsed');
-      if (grid) grid.update(el, { h: 1 });
+      targetH = 1;
+    }
+    if (grid) {
+      const wasStatic = grid.opts.staticGrid;
+      if (wasStatic) grid.setStatic(false);          // statik ızgarada update/compact akmaz
+      grid.update(el, { h: targetH });
+      grid.compact();                                 // katlanan kutunun altında boşluk kalmasın: diğerleri yukarı aksın
+      if (wasStatic) grid.setStatic(true);
     }
     saveCollapsed();
   };
@@ -148,10 +156,14 @@ export async function renderDashboard(view, ctx, modules) {
     const isCol = canCollapse && collapsed.has(String(it.id));
     if (isCol) origH[String(it.id)] = it.h;   // orijinal yükseklik korunur (persist bunu yazar)
     const chev = canCollapse ? h('span', { class: 'db-chev', title: 'Aç / kapa' }) : null;
-    if (chev) chev.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleCollapse(it, el); });
+    const head = h('div', { class: `db-head${canCollapse ? ' db-head-collapsible' : ''}` }, chev,
+      h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools);
+    if (canCollapse) head.addEventListener('click', e => {   // tüm başlığa tıklama kutuyu açar/kapatır (düğmeler ve sürükleme hariç)
+      if (e.target.closest('button, a, .db-acts, .db-tools, input, select')) return;
+      e.preventDefault(); toggleCollapse(it, el);
+    });
     const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': isCol ? 1 : it.h },
-      h('div', { class: `grid-stack-item-content card db-tile w-${it.k}${isCol ? ' db-collapsed' : ''}` },
-        h('div', { class: 'db-head' }, chev, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools), body));
+      h('div', { class: `grid-stack-item-content card db-tile w-${it.k}${isCol ? ' db-collapsed' : ''}` }, head, body));
     if (it.x != null) el.setAttribute('gs-x', it.x);
     if (it.y != null) el.setAttribute('gs-y', it.y);
     // w.fixed: kaldırılamaz (✕ yok) ama boyutlandırılabilir — gs-no-resize konmaz

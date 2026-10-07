@@ -44,7 +44,7 @@ npx cap sync android
 3. Sync bitince sağ üstte cihaz/emülatör seçip **Run ▶** ile çalıştırabilirsin.
    - (Alternatif: `mobile` klasöründe `npx cap open android` komutu projeyi doğrudan Android Studio'da açar.)
 
-> Uygulama **canlı siteyi** (`https://gokkubbe.hepgo.com`) açar; arayüz hep günceldir, APK'yı her seferinde yeniden derlemene gerek olmaz.
+> Uygulama **canlı siteyi** (`https://www.hepgo.com/giris`) açar; arayüz hep günceldir, APK'yı her seferinde yeniden derlemene gerek olmaz.
 
 ---
 
@@ -69,7 +69,7 @@ npx cap sync android
    - Parola, alias (ör. `hepgo`), alias parolası belirle, geçerlilik 25+ yıl, ad/kurum bilgisi gir.
 3. **release** variant → Finish. Çıktı: `mobile\android\app\release\app-release.aab`.
 4. **Google Play Console** ($25 tek seferlik): https://play.google.com/console → Uygulama oluştur → paket adı **com.turkbey.hepgo** → `.aab` yükle.
-5. Gerekli: gizlilik politikası URL'si (`https://gokkubbe.hepgo.com/gizlilik`), mağaza açıklaması, ekran görüntüleri (telefon + tablet), içerik derecelendirme formu, **Veri güvenliği** formu (konum + bildirim topladığını beyan et).
+5. Gerekli: gizlilik politikası URL'si (`https://www.hepgo.com/giris/gizlilik`), mağaza açıklaması, ekran görüntüleri (telefon + tablet), içerik derecelendirme formu, **Veri güvenliği** formu (konum + bildirim topladığını beyan et).
 
 ---
 

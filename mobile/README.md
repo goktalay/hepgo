@@ -1,6 +1,6 @@
 # HEPGO — iOS & Android mağaza paketi (Capacitor)
 
-Tek altyapı, iki native çıktı. Arayüz **canlı web** olarak kalır (uygulama `https://gokkubbe.hepgo.com`'u native WebView'de açar).
+Tek altyapı, iki native çıktı. Arayüz **canlı web** olarak kalır (uygulama `https://www.hepgo.com/giris`'u native WebView'de açar).
 Native eklentiler: **push bildirimleri** (FCM/APNs), **konum** (arkaplan), **ağ durumu** (çevrimdışı şık ekran).
 
 > Derleme Mac/Android Studio gerektirir; bu klasör hazır Capacitor projesidir. Sunucu tarafı (token kaydı, konum, push)
@@ -83,7 +83,7 @@ npx cap open ios             # Xcode → Product > Archive → App Store Connect
 - **Apple 4.2 riski:** "sadece web sitesi" diye reddedebilir. Push + konum + çevrimdışı + (biyometrik/kamera) native özellikler bunu geçmeye yardım eder; mümkün olduğunca native entegrasyon ekleyin.
 
 ## Nasıl çalışıyor (özet)
-- `capacitor.config.json` → `server.url = https://gokkubbe.hepgo.com` (canlı web yüklenir, hep güncel).
+- `capacitor.config.json` → `server.url = https://www.hepgo.com/giris` (canlı web yüklenir, hep güncel).
 - Web uygulaması native kabukta açılınca `static/js/native.js` devreye girer: push kaydı + konum gönderimi + ağ kopunca şık **"yalnızca çevrimiçi"** kaplaması (`static/offline.html`).
 - Çevrimdışı açılışta service worker (`static/sw.js`) önbellekten offline ekranını gösterir.
 
@@ -97,7 +97,7 @@ Arayüz web olduğu için zaten responsive; native tarafta ikisini de hedefle:
 > Bu bir kontrol listesidir; nihai gizlilik ve KVKK metinlerini bir **avukata onaylatın** (özellikle işyeri konum takibi).
 
 **Gizlilik & KVKK**
-- Gizlilik Politikası yayında: `https://gokkubbe.hepgo.com/privacy` (mobil/konum/bildirim bölümü eklendi). Mağaza listelemelerine bu URL girilir.
+- Gizlilik Politikası yayında: `https://www.hepgo.com/giris/privacy` (mobil/konum/bildirim bölümü eklendi). Mağaza listelemelerine bu URL girilir.
 - **Konum açık rızası:** uygulama, konum almadan önce KVKK açık rıza ekranı gösterir; rıza yoksa konum SAKLANMAZ (sunucu da reddeder). Rıza denetlenir (audit).
 - İşyeri konum takibi için çalışanlara **aydınlatma + açık rıza** işveren tarafından sağlanmalı (İş Kanunu + KVKK). Toplu rıza/bilgilendirme metni önerilir.
 

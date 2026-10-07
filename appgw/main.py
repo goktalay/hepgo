@@ -77,8 +77,8 @@ async def gateway(request: Request) -> Response:
 
     tenant = request.cookies.get(COOKIE)
     if tenant not in TENANTS:
-        if request.method in ('GET', 'HEAD') and 'text/html' in request.headers.get('accept', ''):
-            return selection_page()
+        if request.method in ('GET', 'HEAD'):
+            return selection_page()   # çerez yoksa her sayfa isteğinde firma seçimi
         return Response('Firma seçilmedi', status_code=409)
 
     sock = TENANTS[tenant]['sock']

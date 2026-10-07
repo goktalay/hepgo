@@ -20,8 +20,10 @@ STOCKED_SQL = "(schema LIKE 'part-%' OR schema LIKE 'spare-%')"   # basılıp st
 
 
 def is_stocked(p):
-    """Basılıp stokta tutulan parça: parça yedeği (part-*) ya da montaj sarfı (spare-*)."""
-    return (p.get('schema') or '').startswith(('part-', 'spare-'))
+    """Basılıp stokta tutulan parça: parça yedeği (part-*), montaj sarfı (spare-*) ya da Ürün Yönetimi'nden açılıp
+    'Basılıp stokta tutulur' işaretlenen custom ürün (printed=1)."""
+    schema = p.get('schema') or ''
+    return schema.startswith(('part-', 'spare-')) or (schema == CUSTOM and bool(p.get('printed')))
 
 
 def is_sarf(p):

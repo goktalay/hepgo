@@ -118,7 +118,7 @@ def order_summaries(conn, where='1=1', args=()):
     orders = db.rows(conn.execute(
         f'''SELECT o.*, u.full_name AS created_by_name, p.name AS product_name, p.serial AS product_serial,
                    p.code AS product_code, p.schema AS product_schema, p.queue_prefix, p.type AS product_type,
-                   (p.schema LIKE 'part-%' OR p.schema LIKE 'spare-%') AS product_stocked,
+                   (p.schema LIKE 'part-%' OR p.schema LIKE 'spare-%' OR (p.schema = 'custom' AND p.printed = 1)) AS product_stocked,
                    p.per_print, c.name AS company_name, c.logo AS company_logo
             FROM orders o LEFT JOIN users u ON u.id = o.created_by
             LEFT JOIN products p ON p.id = o.product_id

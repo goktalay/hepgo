@@ -27,6 +27,7 @@ class ProductIn(BaseModel):
     description: Optional[str] = None
     active: bool = True
     orderable: Optional[bool] = None     # sipariş verilebilir (yarı mamulde her zaman hayır)
+    printed: Optional[bool] = None       # custom ürün: basılıp stokta tutulur (yerleşik sarf gibi) → baskı alanları + stok
     usage_type: Optional[str] = None     # mamul: TEK (tek kullanımlık, uçunca hurda) | COKLU (çoklu kullanım)
     print_file: Optional[str] = None     # yedek parça: yazıcıya verilen baskı dosyası (gcode adı)
     print_minutes: Optional[int] = None  # yedek parça: bir baskının süresi (dakika)
@@ -259,12 +260,21 @@ def update_product(pid: int, body: ProductIn, user=Depends(products_admin), conn
     code, prefix = body.code.strip().upper(), body.queue_prefix.strip().upper()
     if not name or not serial:
         raise HTTPException(400, 'Ürün adı ve seri numarası zorunlu')
+    # Basılıp stokta tutulur bayrağı (yalnız custom MAMUL/YARI_MAMUL) — işaretli custom ürün yerleşik sarf gibi davranır
+    new_printed = bool(body.printed) if (custom and body.printed is not None) else bool(p.get('printed'))
+    if custom and body.printed is not None and new_printed and (body.type or p['type']) not in (spares.MAMUL, spares.SEMI):
+        raise HTTPException(400, 'Yalnız mamul ve yarı mamul basılıp stokta tutulabilir')
+    stocked_eff = p['stocked'] or (custom and new_printed)
     if semis.is_part_spare(p):   # parça yedeği: kodu parça kodudur, değiştirilemez
         code, prefix = p['code'], p['queue_prefix']
     if custom:
         if not CODE_RE.fullmatch(code):
             raise HTTPException(400, 'Kod 1–24 karakter olmalı (harf, rakam, - _ . /)')
-        prefix = p['queue_prefix']
+        if new_printed:   # basılı custom: yazdırma kuyruğu için kısa kuyruk öneki gerekir
+            if not re.fullmatch(r'[A-Z0-9]{2,6}', prefix):
+                raise HTTPException(400, 'Basılı ürün için kuyruk öneki 2–6 harf/rakam olmalı')
+        else:
+            prefix = p['queue_prefix']
     else:
         for label, v in (('Ürün kodu', code), ('Kuyruk öneki', prefix)):
             if not semis.is_part_spare(p) and not re.fullmatch(r'[A-Z0-9]{2,6}', v):
@@ -298,7 +308,9 @@ def update_product(pid: int, body: ProductIn, user=Depends(products_admin), conn
         if body.orderable and custom and (body.type or p['type']) not in (spares.MAMUL, spares.SEMI):
             raise HTTPException(400, 'Bu tür için iş emri açılamaz (yalnız mamul ve yarı mamul)')
         conn.execute('UPDATE products SET orderable = ? WHERE id = ?', (int(body.orderable), pid))
-    if p['stocked']:
+    if custom and body.printed is not None:
+        conn.execute('UPDATE products SET printed = ? WHERE id = ?', (int(new_printed), pid))
+    if stocked_eff:
         if body.print_minutes is not None and not 0 <= body.print_minutes <= 14 * 1440:
             raise HTTPException(400, 'Baskı süresi 0–14 gün arasında olmalı')
         conn.execute('UPDATE products SET print_file = ?, print_minutes = ? WHERE id = ?',

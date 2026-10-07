@@ -136,6 +136,7 @@ async function newOrder(done) {
   const product = h('select', { class: 'input' },
     group('Mamul', products.filter(p => p.role === 'mamul')),
     group('Montaj sarfı', products.filter(p => p.role === 'sarf')),
+    group('Özel ürün (Ürün Yönetimi)', products.filter(p => p.role === 'custom')),
     // Parça yedekleri: ait oldukları yarı mamule göre (Sol Kanat, Sağ Kanat, Gövde, Elektronik)
     [...new Set(products.filter(p => p.part_spare).sort((a, b) => (a.parent?.id || 0) - (b.parent?.id || 0))
       .map(p => p.parent?.name || '—'))].map(name =>

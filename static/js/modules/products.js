@@ -190,6 +190,21 @@ async function renderDetail(view, id, ctx) {
   const printFile = h('input', { class: 'input mono', value: p.print_file || '', placeholder: 'ör. c5- sol - part 1_ABS_9h16m' });
   const printH = h('input', { class: 'input', type: 'number', min: 0, max: 336, value: p.print_minutes ? Math.floor(p.print_minutes / 60) : '' });
   const printM = h('input', { class: 'input', type: 'number', min: 0, max: 59, value: p.print_minutes ? p.print_minutes % 60 : '' });
+  // Custom MAMUL/YARI_MAMUL: 'Basılıp stokta tutulur' → yerleşik sarf gibi (baskı alanları + kuyruk öneki + stok)
+  const printable = custom && ['MAMUL', 'YARI_MAMUL'].includes(p.type);
+  f.printed = h('input', { type: 'checkbox', checked: !!p.printed });
+  const prefixField = field('Kuyruk öneki', f.prefix);
+  const perPrintField = field('Bir baskıda üretilen adet', perPrint);
+  const printFileField = field('Baskı dosyası (yazıcıya verilen)', printFile);
+  const printTimeField = h('div', { class: 'row' }, field('Baskı süresi (saat)', printH), field('(dakika)', printM));
+  const showPrint = () => stocked || (printable && f.printed.checked);
+  const refreshPrint = () => {
+    if (custom) { prefixField.hidden = !f.printed.checked; f.prefix.disabled = locked || !f.printed.checked; }
+    perPrintField.hidden = printFileField.hidden = printTimeField.hidden = !showPrint();
+  };
+  f.printed.addEventListener('change', refreshPrint);
+  if (printable) f.type.addEventListener('change', () => { if (!['MAMUL', 'YARI_MAMUL'].includes(f.type.value)) { f.printed.checked = false; } refreshPrint(); });
+  refreshPrint();
   const unitField = field('Birim', f.unit);
   const usageField = field('Kullanım durumu', f.usage, 'Tek kullanımlık uçak uçtuktan sonra HURDA olur ve yeniden sahaya gidemez');
   const syncType = () => {
@@ -207,9 +222,10 @@ async function renderDetail(view, id, ctx) {
         description: f.desc.value.trim() || null, active: f.active.checked,
         ...(custom ? { type: f.type.value } : {}),
         ...((!custom || ['MAMUL', 'YARI_MAMUL'].includes(f.type.value)) ? { orderable: f.orderable.checked } : {}),
+        ...(printable ? { printed: f.printed.checked } : {}),
         ...(MATERIAL_TYPES.includes(f.type.value) ? { unit: f.unit.value } : {}),
         ...(f.type.value === 'MAMUL' ? { usage_type: f.usage.value } : {}),
-        ...(stocked ? { per_print: Number(perPrint.value), print_file: printFile.value.trim() || null,
+        ...(showPrint() ? { per_print: Number(perPrint.value), print_file: printFile.value.trim() || null,
           print_minutes: (Number(printH.value) || 0) * 60 + (Number(printM.value) || 0) || null } : {}),
       });
       toast('Ürün bilgileri kaydedildi');
@@ -229,10 +245,8 @@ async function renderDetail(view, id, ctx) {
   const infoCard = h('div', { class: 'card card-pad pd-info' },
     h('div', { class: 'pd-info-grid' },
       field('Parça / Mamul Kodu', f.code), field('Parça / Mamul Adı', f.name), field('Tipi', f.type), unitField,
-      custom ? null : field('Seri numarası', f.serial), custom ? null : field('Kuyruk öneki', f.prefix),
-      stocked ? field('Bir baskıda üretilen adet', perPrint) : null,
-      stocked ? field('Baskı dosyası (yazıcıya verilen)', printFile) : null,
-      stocked ? h('div', { class: 'row' }, field('Baskı süresi (saat)', printH), field('(dakika)', printM)) : null,
+      custom ? null : field('Seri numarası', f.serial), prefixField,
+      perPrintField, printFileField, printTimeField,
       usageField),
     field('Açıklama', f.desc),
     locked ? h('div', { class: 'small muted', style: { marginBottom: '8px' } },
@@ -242,6 +256,7 @@ async function renderDetail(view, id, ctx) {
       (custom && !['MAMUL', 'YARI_MAMUL'].includes(p.type))
         ? h('span', { class: 'small muted' }, 'Ürün ağacı ve reçeteyle tanımlı; üretim siparişi açılmaz')
         : h('label', { class: 'check', title: 'İşaretlenirse bu ürün için üretim siparişi / iş emri açılabilir' }, f.orderable, 'Sipariş verilebilir (iş emri açılabilir)'),
+      printable ? h('label', { class: 'check', title: 'İşaretlenirse bu ürün yazıcıda basılıp stokta tutulur; baskı alanları ve stok açılır (yerleşik yedek parçalar gibi)' }, f.printed, 'Basılıp stokta tutulur') : null,
       section ? h('span', { class: 'small muted' }, t('Montajda {name} siparişiyle birleştirilir', { name: p.parent?.name || 'mamul' })) : null,
       h('span', { class: 'spacer' }), del, canEdit ? save : null));
 

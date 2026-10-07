@@ -2779,6 +2779,8 @@ def _migrate(conn):
     if 'print_file' not in prod_cols:   # yazıcıya verilen baskı dosyası (gcode adı) ve baskı süresi (dakika)
         conn.execute('ALTER TABLE products ADD COLUMN print_file TEXT')
         conn.execute('ALTER TABLE products ADD COLUMN print_minutes INTEGER')
+    if 'printed' not in prod_cols:   # Ürün Yönetimi'nden açılan (custom) ürün BASILIP STOKTA tutulur mu → yerleşik sarf gibi davranır
+        conn.execute('ALTER TABLE products ADD COLUMN printed INTEGER NOT NULL DEFAULT 0')
         # (bir kez) parça yedekleri mamul siparişiyle üretilir: ayrı sipariş kapalı; açık kalanlar KMH/BBK/KBK
         conn.execute("UPDATE products SET orderable = 0 WHERE schema LIKE 'part-%'")
         conn.execute("UPDATE products SET description = 'CAYMAZ parçası · mamul siparişiyle üretilir' "

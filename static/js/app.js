@@ -892,26 +892,59 @@ let _collapseMO = null;
 function initPanelCollapse(viewEl) {
   const KEY = 'hepgo.collapsed';
   const read = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } };
-  const write = s => { try { localStorage.setItem(KEY, JSON.stringify([...s].slice(-500))); } catch { /* gizli pencere */ } };
-  const panelKey = head => (location.hash || '').split('?')[0] + '|' + (head.textContent || '').trim().slice(0, 60);
+  const write = s => { try { localStorage.setItem(KEY, JSON.stringify([...s].slice(-800))); } catch { /* gizli pencere */ } };
+  const keyOf = head => (location.hash || '').split('?')[0] + '|' + (head.textContent || '').trim().slice(0, 50);
+  // Panelin başlığı: ya düz başlık (h2-h4) ya da başlık satırı (başta h/b/strong + aksiyon/boşluk içeren satır; ör. .tv-bar)
+  const headerOf = card => {
+    const f = card.firstElementChild;
+    if (!f || f.classList.contains('collapse-head')) return null;
+    if (/^H[2-4]$/.test(f.tagName)) return f;
+    if (!f.nextElementSibling || f.matches('.filters, .stat-strip, .seg-tabs, .tabs, .pick-list, .guest-list, .acc-list, .set-ios, .toolbar')) return null;
+    const ti = f.firstElementChild;
+    const isTitle = ti && (/^H[2-4]$/.test(ti.tagName) || /^(B|STRONG)$/.test(ti.tagName));
+    const actiony = f.querySelector(':scope > .btn, :scope > button, :scope > a, :scope > .spacer') || /bar|head|title|toolbar/i.test(f.className);
+    return (isTitle && actiony) ? f : null;
+  };
+  const make = (el, head, card) => {
+    if (el.dataset.collapsible) return;
+    el.dataset.collapsible = '1';
+    el.classList.add('collapsible');
+    head.classList.add('collapse-head');
+    head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
+    if (read().has(keyOf(head))) el.classList.add('collapsed');
+    head.addEventListener('click', e => {
+      if (e.target.closest('button, a, input, select, textarea, label')) return;   // aksiyon öğeleri katlamaz
+      const k = keyOf(head), s = read();
+      el.classList.toggle('collapsed') ? s.add(k) : s.delete(k);
+      write(s);
+    });
+    // Footer: son çocuk aksiyon satırı ise header renginde bant yap
+    if (card) {
+      const last = el.lastElementChild;
+      if (last && last !== head && !last.classList.contains('panel-foot')
+          && (last.querySelector(':scope > .btn, :scope > button, :scope > a.btn') || /foot|save|action|sign|actions/i.test(last.className))
+          && (last.tagName === 'DIV' || last.tagName === 'FOOTER') && last.children.length <= 10) {
+        last.classList.add('panel-foot');
+      }
+    }
+  };
   const enhance = () => {
-    const collapsed = read();
     viewEl.querySelectorAll('.card, .set-card').forEach(card => {
-      if (card.dataset.collapsible || card.tagName === 'A') return;
+      if (card.tagName === 'A') return;
       if (['db-tile', 'stat-strip', 'empty', 'loading'].some(c => card.classList.contains(c))) return;
       if (card.closest('.grid-stack, .modal-back')) return;
-      const head = card.firstElementChild;
-      if (!head || !/^H[234]$/.test(head.tagName) || !head.nextElementSibling) return;
-      card.dataset.collapsible = '1';
-      card.classList.add('collapsible');
-      head.classList.add('collapse-head');
-      head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
-      if (collapsed.has(panelKey(head))) card.classList.add('collapsed');
-      head.addEventListener('click', e => {
-        if (e.target.closest('button, a, input, select, textarea')) return;   // başlıktaki aksiyon düğmeleri etkilenmesin
-        const key = panelKey(head), s = read();
-        card.classList.toggle('collapsed') ? s.add(key) : s.delete(key);
-        write(s);
+      if (!card.dataset.collapsible) {
+        const head = headerOf(card);
+        if (head) make(card, head, true);
+      }
+      // İç içe (nested) bölümler: başlıkla (h3/h4) başlayan ve içeriği olan alt bloklar — ör. görev tanımı maddeleri
+      card.querySelectorAll('h3, h4').forEach(hd => {
+        const par = hd.parentElement;
+        if (!par || par === card || par.dataset.collapsible || par.closest('.collapse-head, .panel-foot')) return;
+        if (par.firstElementChild !== hd || !hd.nextElementSibling) return;
+        if (hd.matches('.set-sub, .sub-h, .dd-role')) return;
+        if (par.querySelectorAll(':scope > h2, :scope > h3, :scope > h4').length > 1) return;   // düz başlık listesi değil, tek bölüm olmalı
+        make(par, hd, false);
       });
     });
   };

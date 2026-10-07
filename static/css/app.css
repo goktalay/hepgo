@@ -3932,6 +3932,12 @@ html.compact .card-pad.collapsible.collapsed > .collapse-head { margin-bottom: -
 /* Pad'siz kartlar: sade alt çizgi */
 .card.collapsible:not(.card-pad) > .collapse-head { padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
 .card.collapsible:not(.card-pad).collapsed > .collapse-head { margin-bottom: 0; border-bottom: 0; }
+/* Footer bandı: header rengiyle aynı soft bant (iç boşluklu panelin altına tam genişlik) */
+.card-pad.collapsible > .panel-foot {
+  margin: 14px -16px -16px; padding: 11px 16px; background: var(--surface-2, rgba(127, 127, 127, .045));
+  border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
+}
+html.compact .card-pad.collapsible > .panel-foot { margin: 12px -14px -12px; padding: 9px 14px; }
 
 /* Bölümlü (masonry) panel yerleşimi — pano hissi: yan yana paneller bağımsız akar, biri katlanınca boşluk kalmaz.
    İlgili modül kapsayıcısına .panel-masonry eklenir (tam-genişlik öğeler .full / .hr-save ile tüm sütunlara yayılır). */

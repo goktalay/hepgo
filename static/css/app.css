@@ -2206,6 +2206,11 @@ td.num, th.num { text-align: right; }
 .db-grid.editing .db-tile { outline: 2px dashed var(--border-strong); outline-offset: -2px; }
 .db-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .db-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Pano kutucuğu katlama: başlıktaki ok; katlanınca gövde gizli, kutu kısalır */
+.db-head > .db-chev { width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; opacity: .5; cursor: pointer; flex: none; transition: transform .15s; }
+.db-tile:not(.db-collapsed) > .db-head > .db-chev { transform: rotate(90deg); }
+.db-tile.db-collapsed > .db-head { margin-bottom: 0; }
+.db-tile.db-collapsed > .db-body { display: none !important; }
 .db-tools { display: flex; gap: 4px; }
 /* Kutu başlığındaki eylem düğmeleri (Yeni not / Yeni alarm / Canlı+Kaydedilenler): en sağda, standart pill görünümü */
 .db-acts { display: flex; align-items: center; gap: 6px; }

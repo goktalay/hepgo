@@ -85,6 +85,25 @@ export async function renderDashboard(view, ctx, modules) {
 
   let editing = false, data = {}, grid = null;
   const charts = [], timers = [], bodies = {}, feeds = {}, headActs = {};   // feeds: company_news yeniden yükleyici; headActs: kutu başlık eylem slotu
+  // Pano kutucuğu katlama (cihazda hatırlanır): katlanınca gövde gizlenir + tile yüksekliği 1'e iner; orijinal yükseklik
+  // origH'de saklanır (kayıtlı düzen bozulmaz: persist orijinal h'ı yazar).
+  const COL_KEY = 'hepgo.db-collapsed';
+  const collapsed = (() => { try { return new Set((JSON.parse(localStorage.getItem(COL_KEY) || '[]')).map(String)); } catch { return new Set(); } })();
+  const origH = {};
+  const saveCollapsed = () => { try { localStorage.setItem(COL_KEY, JSON.stringify([...collapsed])); } catch { /* */ } };
+  const toggleCollapse = (it, el) => {
+    const id = String(it.id), content = el.querySelector('.db-tile');
+    if (collapsed.has(id)) {
+      collapsed.delete(id); content && content.classList.remove('db-collapsed');
+      if (grid) grid.update(el, { h: origH[id] || it.h || 3 });
+      delete origH[id];
+    } else {
+      collapsed.add(id); origH[id] = (el.gridstackNode && el.gridstackNode.h) || it.h || 3;
+      content && content.classList.add('db-collapsed');
+      if (grid) grid.update(el, { h: 1 });
+    }
+    saveCollapsed();
+  };
   // Kutu başlığındaki eylem düğmeleri: 2+ ise tek kapsülde (pill), değilse tek düğme. Boşsa slot gizli (CSS :empty).
   const setActs = (acts, ...btns) => { const b = btns.flat().filter(Boolean); if (acts) clear(acts, b.length >= 2 ? h('div', { class: 'db-acts-pill' }, b) : b); };
   let refreshTimer = null;
@@ -108,7 +127,8 @@ export async function renderDashboard(view, ctx, modules) {
     for (const n of grid.save(false)) {
       const it = byId[String(n.id)];
       if (!it) continue;
-      it.x = n.x; it.y = n.y; it.w = n.w; it.h = n.h;
+      it.x = n.x; it.y = n.y; it.w = n.w;
+      it.h = collapsed.has(String(n.id)) ? (origH[String(n.id)] || it.h || n.h) : n.h;   // katlı kutunun kayıtlı yüksekliği orijinal kalır
       order.push(it);
     }
     layout = order;
@@ -124,9 +144,14 @@ export async function renderDashboard(view, ctx, modules) {
     const tools = h('div', { class: 'db-tools' },
       MULTI.has(it.k) ? h('button', { type: 'button', title: 'Ayarlar', onclick: () => settings(it) }, '⚙') : null,
       w.fixed ? null : h('button', { type: 'button', class: 'danger', title: 'Kaldır', onclick: () => removeItem(it) }, '✕'));
-    const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': it.h },
-      h('div', { class: `grid-stack-item-content card db-tile w-${it.k}` },
-        h('div', { class: 'db-head' }, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools), body));
+    const canCollapse = it.k !== 'company_news';   // Şirketten Haberler katlanmaz (akış sürekli görünür)
+    const isCol = canCollapse && collapsed.has(String(it.id));
+    if (isCol) origH[String(it.id)] = it.h;   // orijinal yükseklik korunur (persist bunu yazar)
+    const chev = canCollapse ? h('span', { class: 'db-chev', title: 'Aç / kapa' }) : null;
+    if (chev) chev.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleCollapse(it, el); });
+    const el = h('div', { class: 'grid-stack-item', 'gs-id': it.id, 'gs-w': it.w, 'gs-h': isCol ? 1 : it.h },
+      h('div', { class: `grid-stack-item-content card db-tile w-${it.k}${isCol ? ' db-collapsed' : ''}` },
+        h('div', { class: 'db-head' }, chev, h('h3', null, it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools), body));
     if (it.x != null) el.setAttribute('gs-x', it.x);
     if (it.y != null) el.setAttribute('gs-y', it.y);
     // w.fixed: kaldırılamaz (✕ yok) ama boyutlandırılabilir — gs-no-resize konmaz

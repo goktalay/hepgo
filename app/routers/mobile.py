@@ -83,7 +83,8 @@ def location_ping(body: LocationIn, user=Depends(auth.current_user), conn=db.DB)
         offhours_off = ((json.loads(r[0]) if r and r[0] else {}).get('settings', {}) or {}).get('location_work_hours_only')
     except Exception:   # noqa: BLE001
         offhours_off = False
-    if offhours_off and not worktime.is_work_time_for(conn, user['id']):
+    # Görevde / sahada olan personel konumu KAPATAMAZ → ayara bakılmaksızın takip edilir
+    if offhours_off and not worktime.is_work_time_for(conn, user['id']) and not worktime.is_on_duty(conn, user['id']):
         return {'ok': False, 'offhours': True}
     conn.execute('INSERT INTO location_pings (user_id, lat, lng, accuracy, at, platform, created_at) VALUES (?,?,?,?,?,?,?)',
                  (user['id'], body.lat, body.lng, body.acc, body.at, (body.platform or '')[:20] or None, db.now()))

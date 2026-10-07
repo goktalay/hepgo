@@ -97,3 +97,18 @@ def is_work_time_for(conn, user_id, dt=None):
 def shift_hours(start_time, end_time):
     mins = max(0, _hm(end_time) - _hm(start_time))
     return round(mins / 60.0, 2)
+
+
+def is_on_duty(conn, user_id):
+    """Kullanıcı şu an GÖREVDE / SAHADA mı? (onaylı görev; çıkmış/saha, dönmemiş, bugünü kapsıyor).
+    Görevde olan personel konumunu kapatamaz → konum her zaman takip edilir."""
+    today = datetime.now().date().isoformat()
+    return conn.execute(
+        """SELECT 1 FROM duty_requests d
+             JOIN duty_people dp ON dp.duty_id = d.id
+             JOIN employees e ON e.id = dp.employee_id
+            WHERE e.user_id = ? AND d.status = 'ONAYLANDI' AND d.returned_at IS NULL
+              AND (d.exited_at IS NOT NULL OR d.source = 'field')
+              AND substr(d.depart_at, 1, 10) <= ?
+              AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
+            LIMIT 1""", (user_id, today, today)).fetchone() is not None

@@ -7943,3 +7943,7 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .um-pin::after { content: ''; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #fff; margin-top: -1px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
 .um-pin-name { margin-top: 2px; font-size: 11px; font-weight: 600; color: #0f172a; background: rgba(255,255,255,.92); padding: 1px 6px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); max-width: 110px; overflow: hidden; text-overflow: ellipsis; order: -1; }
 .um-info b { display: block; margin-bottom: 2px; }
+.um-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: #94a3b8; }
+.um-dot.fresh { background: #22c55e; }
+.um-dot.warm { background: #f59e0b; }
+.um-dot.stale { background: #94a3b8; }

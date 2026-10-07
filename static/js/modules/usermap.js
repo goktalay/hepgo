@@ -15,12 +15,16 @@ const ago = iso => {
   if (s < 86400) return `${Math.floor(s / 3600)} sa önce`;
   return `${Math.floor(s / 86400)} gün önce`;
 };
-const freshClass = iso => {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  return s < 300 ? 'fresh' : s < 3600 ? 'warm' : 'stale';   // 5 dk / 1 saat
+// Çerçeve rengi = kullanıcının ONLINE durumu (last_seen): canlı<2dk yeşil, yakın zamanda<30dk turuncu, offline gri
+const presence = lastSeen => {
+  const s = lastSeen ? (Date.now() - new Date(lastSeen).getTime()) / 1000 : 1e12;
+  if (isNaN(s)) return { cls: 'stale', label: 'Çevrimdışı' };
+  if (s < 120) return { cls: 'fresh', label: 'Çevrimiçi' };
+  if (s < 1800) return { cls: 'warm', label: 'Yakın zamanda' };
+  return { cls: 'stale', label: 'Çevrimdışı' };
 };
 function avatarEl(p, cls = '') {
-  const el = h('div', { class: `um-av ${freshClass(p.at)} ${cls}`, title: p.full_name });
+  const el = h('div', { class: `um-av ${presence(p.last_seen).cls} ${cls}`, title: p.full_name });
   if (p.photo) el.style.backgroundImage = `url('${fileUrl(p.photo, 128)}')`;
   else { el.textContent = initials(p.full_name); el.classList.add('noimg'); }
   return el;
@@ -73,9 +77,11 @@ export async function render(view, params, ctx) {
     for (const p of ppl) {
       const pos = new maps.LatLng(p.lat, p.lng); bounds.extend(pos);
       const pin = h('div', { class: 'um-pin' }, avatarEl(p), h('span', { class: 'um-pin-name' }, (p.full_name || '').split(' ')[0]));
+      const pr = presence(p.last_seen);
       const info = new maps.InfoWindow({ content: h('div', { class: 'um-info' },
         h('b', null, p.full_name || 'Kişi'),
-        h('div', { class: 'small muted' }, `${ago(p.at)}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''}`),
+        h('div', { class: 'small' }, h('span', { class: `um-dot ${pr.cls}` }), pr.label),
+        h('div', { class: 'small muted' }, `Konum: ${ago(p.at)}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''}`),
         h('a', { href: `https://www.google.com/maps?q=${p.lat},${p.lng}`, target: '_blank', rel: 'noopener', class: 'small' }, 'Google Haritalar ↗')) });
       pin.addEventListener('click', () => { info.setPosition(pos); info.open(map); });
       const ov = new AvatarOverlay(pos, pin); ov.setMap(map); overlays.push(ov);

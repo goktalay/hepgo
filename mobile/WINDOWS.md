@@ -1,39 +1,48 @@
 # HEPGO Android — Windows'ta adım adım derleme
 
 `mobile/android/` projesi hazır ve yapılandırılmış (izinler, SDK 35, ikon/splash, FCM wiring, arkaplan konum).
-Aşağıdaki adımlar Windows 10/11 içindir. **Sadece APK/AAB üretmek için Android Studio yeterli** (içinde JDK + SDK gelir).
+Aşağıdaki adımlar Windows 10/11 içindir.
+
+> ⚠️ ÖNEMLİ: Bu bir **Capacitor** projesidir. `android/` klasörü eklentileri `node_modules`'tan okur ve
+> `capacitor-cordova-android-plugins/` klasörü `cap sync` ile ÜRETİLİR (repoya girmez). Bu yüzden Android Studio'da
+> açmadan ÖNCE mutlaka **`npm install` + `npx cap sync android`** çalıştırmalısın. Yoksa
+> *"Could not read script … cordova.variables.gradle does not exist"* hatası alırsın.
 
 ---
 
 ## A) Araçları kur (bir kez)
 
-1. **Android Studio** (ücretsiz): https://developer.android.com/studio → indir, kur.
-   - İlk açılışta "Standard" kurulumu seç → Android SDK + JDK otomatik gelir.
-2. **Git for Windows**: https://git-scm.com/download/win (kodu indirmek için).
-3. *(İsteğe bağlı — kodu/eklentileri değiştirip yeniden `cap sync` yapacaksan)* **Node.js 20 LTS**: https://nodejs.org
+1. **Node.js 20 LTS** (ZORUNLU): https://nodejs.org → "LTS" sürümünü indir, kur. (Capacitor CLI + eklenti modülleri için.)
+2. **Android Studio** (ücretsiz): https://developer.android.com/studio → "Standard" kurulum (Android SDK + JDK otomatik gelir).
+3. **Git for Windows**: https://git-scm.com/download/win
 
 > Ayrı JDK kurmana gerek YOK; Android Studio kendi JDK'siyle gelir.
 
 ---
 
-## B) Kodu bilgisayarına al
+## B) Kodu al + eklentileri hazırla (HER yeni klonda / `git pull`'dan sonra)
 
-PowerShell veya Git Bash aç:
+PowerShell aç:
 ```powershell
 cd %USERPROFILE%\Documents
 git clone https://github.com/goktalay/fabrika-yonetim.git
 cd fabrika-yonetim\mobile
+npm install
+npx cap sync android
 ```
-(Daha sonra güncellemek için: `git pull`)
+- `npm install` → `node_modules` (capacitor eklentileri) gelir.
+- `npx cap sync android` → `capacitor-cordova-android-plugins/`, web asset'leri ve plugin bağlantılarını ÜRETİR.
+> Not: Web/eklenti tarafını değiştirmesen de ilk klonda bu iki komut ŞART. Sonradan `git pull` yaptığında da tekrar `npx cap sync android` çalıştır.
 
 ---
 
 ## C) Projeyi Android Studio'da aç
 
-1. Android Studio → **Open** → `fabrika-yonetim\mobile\android` klasörünü seç (içindeki `android` klasörü — `mobile` değil).
+1. Android Studio → **Open** → `fabrika-yonetim\mobile\android` klasörünü seç (içteki `android` — `mobile` değil).
 2. Alt barda **Gradle sync** başlar. Eksik SDK bileşeni isterse (SDK Platform 35, Build-Tools 35) **"Install"** de, kabul et.
    - Takılırsa: **File → Settings → Languages & Frameworks → Android SDK** → "Android 15.0 (API 35)" işaretli olsun.
 3. Sync bitince sağ üstte cihaz/emülatör seçip **Run ▶** ile çalıştırabilirsin.
+   - (Alternatif: `mobile` klasöründe `npx cap open android` komutu projeyi doğrudan Android Studio'da açar.)
 
 > Uygulama **canlı siteyi** (`https://gokkubbe.hepgo.com`) açar; arayüz hep günceldir, APK'yı her seferinde yeniden derlemene gerek olmaz.
 
@@ -82,6 +91,9 @@ cd fabrika-yonetim\mobile
 ---
 
 ## Sık sorunlar
+- **"Could not read script … capacitor-cordova-android-plugins\cordova.variables.gradle does not exist"**
+  → B adımını atlamışsın. `mobile` klasöründe `npm install` sonra `npx cap sync android` çalıştır, ardından
+  Android Studio'da **File → Sync Project with Gradle Files**.
 - **"SDK location not found"** → Android Studio ilk açılışta `local.properties`'i kendi oluşturur; olmazsa
   `mobile\android\local.properties` içine `sdk.dir=C\:\\Users\\<kullanıcı>\\AppData\\Local\\Android\\Sdk` yaz.
 - **Gradle JDK hatası** → File → Settings → Build Tools → Gradle → "Gradle JDK" = 17 (Android Studio'nun gömülü JBR'si uygundur).

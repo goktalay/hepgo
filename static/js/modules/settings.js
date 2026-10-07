@@ -269,6 +269,32 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     return box;
   };
 
+  // Native uygulama (Capacitor): bildirimler işletim sistemi/FCM üzerinden; web-push ayarları yerine OS izin durumu gösterilir
+  const nativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const nativeNotifBox = () => {
+    const box = h('div', { class: 'set-push' });
+    const draw = async () => {
+      let perm = 'prompt';
+      try { const Pn = window.Capacitor.Plugins.PushNotifications; if (Pn) perm = (await Pn.checkPermissions()).receive; } catch (e) { /* */ }
+      const askBtn = h('button', { class: 'btn primary', type: 'button', onclick: async e => {
+        e.currentTarget.disabled = true;
+        try { await window.Capacitor.Plugins.PushNotifications.requestPermissions(); } catch (err) { /* */ }
+        draw();
+      } }, 'İzin iste');
+      clear(box,
+        h('h4', { class: 'set-sub' }, 'Uygulama bildirimleri (bu cihaz)'),
+        h('p', { class: 'small muted', style: { marginTop: '-4px' } },
+          'HEPGO uygulaması; arama, mesaj, telsiz ve uyarı bildirimlerini doğrudan telefonun işletim sistemi üzerinden gösterir. Uygulama kapalı ya da ekran kilitliyken de gelir — ayrı bir "masaüstü bildirimi" ayarı gerekmez.'),
+        h('div', { class: 'set-push-row' },
+          h('span', { class: `badge ${perm === 'granted' ? 'green' : 'gray'}` },
+            perm === 'granted' ? '✓ Bildirim izni verildi' : perm === 'denied' ? '✕ Bildirim izni kapalı' : 'İzin bekleniyor'),
+          perm !== 'granted' ? askBtn : null),
+        perm === 'denied' ? h('p', { class: 'small warn-text' }, 'Telefon Ayarlar › Uygulamalar › HEPGO › Bildirimler bölümünden açabilirsiniz.') : null);
+    };
+    draw();
+    return box;
+  };
+
   // ---------- Rahatsız Etmeyin (arama / mesaj; süreli ya da sürekli)
   const dndUntil = dur => {
     if (dur === 'always') return null;
@@ -294,10 +320,12 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
       body: () => card('Bildirimler', 'Yeni uyarı, bildirim ya da mesaj geldiğinde nasıl haber verileceği.',
         toggle(s, 'flash', 'Sağ üstte bildirim kutusu', 'Yeni uyarı, bildirim ya da mesajda kısa süre görünen kutu'),
         line('Kutu görünme süresi', null, flashSel),
-        h('h4', { class: 'set-sub' }, 'Bu cihaz'),
-        h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Masaüstü bildirimi her cihazda ayrı açılır ve o cihazın tarayıcı iznini gerektirir. Telefonunuzda ayrıca buradan açıp izin vermelisiniz.'),
-        deviceDesk, deskState,
-        pushBox(),
+        nativeApp ? nativeNotifBox() : [
+          h('h4', { class: 'set-sub' }, 'Bu cihaz'),
+          h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Masaüstü bildirimi her cihazda ayrı açılır ve o cihazın tarayıcı iznini gerektirir. Telefonunuzda ayrıca buradan açıp izin vermelisiniz.'),
+          deviceDesk, deskState,
+          pushBox(),
+        ],
         notifTypesBox()) },
     { key: 'sounds', title: 'Sesler', desc: 'Olay sesleri, ses düzeyi, sessiz saatler', icon: 'bell2',
       body: () => card('Sesler', 'Her olay için ayrı ses seçin. Sesler tarayıcıda üretilir; sayfaya ilk dokunuştan sonra çalar.',

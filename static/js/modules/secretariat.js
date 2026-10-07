@@ -174,8 +174,48 @@ async function renderVisit(view, id, ctx, sub) {
         h('div', { class: 'grow' }, h('b', null, p.full_name), p.title ? h('span', { class: 'muted' }, ` · ${p.title}`) : null,
           h('div', { class: 'small muted' }, p.company_name ? companyName(p.company_name) : p.company_text || 'Firma belirtilmedi',
             p.person_id ? ' · Rehberde kayıtlı' : ' · Serbest giriş', p.phone ? ` · ${p.phone}` : '')),
+        !p.person_id ? h('button', { class: 'btn sm', onclick: () => promoteGuest(p) }, 'Rehbere Kaydet') : null,
         h('button', { class: 'btn sm ghost', onclick: () => del(`/api/secretariat/visits/${id}/people/${p.id}`, 'Kişi çıkarıldı') }, 'Çıkar'))))
         : h('div', { class: 'empty' }, 'Henüz kişi eklenmedi'));
+  }
+
+  // Serbest-giriş misafirini sonradan firma kişisi ya da personel ailesi olarak kaydet (ileride tanımak/ilişkilendirmek için)
+  async function promoteGuest(p) {
+    const [companies, employees] = await Promise.all([api.get('/api/secretariat/companies'), api.get('/api/secretariat/employees')]);
+    const company = h('select', { class: 'input' },
+      h('option', { value: '' }, p.company_text ? `"${p.company_text}" (firma oluştur/bağla)` : 'Firmasız kişi'),
+      companies.map(c => h('option', { value: c.id }, c.name)));
+    const emp = h('select', { class: 'input' }, h('option', { value: '' }, 'Personel seçin…'), employees.map(e => h('option', { value: e.id }, e.full_name)));
+    const relation = h('select', { class: 'input' }, ['Eş', 'Çocuk', 'Anne', 'Baba', 'Kardeş', 'Diğer'].map(r => h('option', { value: r }, r)));
+    const toCompany = h('button', { class: 'btn primary', type: 'button' }, 'Firma Kişisi Yap');
+    const toFamily = h('button', { class: 'btn primary', type: 'button' }, 'Personel Ailesi Yap');
+    const m = modal({
+      title: t('{name} — Rehbere Kaydet', { name: p.full_name }), wide: true,
+      body: h('div', null,
+        h('h3', { class: 'sub-h' }, 'Firma kişisi olarak'),
+        field('Firma', company),
+        h('div', { class: 'row-actions', style: { marginBottom: '14px' } }, toCompany),
+        h('h3', { class: 'sub-h' }, 'Personel ailesi olarak'),
+        h('div', { class: 'row' }, field('Personel', emp), field('Yakınlık', relation)),
+        h('div', { class: 'row-actions' }, toFamily)),
+      actions: [{ label: 'Kapat' }],
+    });
+    toCompany.addEventListener('click', async () => {
+      toCompany.disabled = true;
+      try {
+        set(await api.post(`/api/secretariat/visits/${id}/people/${p.id}/to-company`,
+          { company_id: company.value ? Number(company.value) : null, company_text: company.value ? null : (p.company_text || null) }));
+        toast(t('{name} firma kişisi olarak Rehber\'e kaydedildi', { name: p.full_name }), 'success'); m.close();
+      } catch (err) { toastError(err); toCompany.disabled = false; }
+    });
+    toFamily.addEventListener('click', async () => {
+      if (!emp.value) { toast('Personel seçin', 'err'); return; }
+      toFamily.disabled = true;
+      try {
+        set(await api.post(`/api/secretariat/visits/${id}/people/${p.id}/to-family`, { employee_id: Number(emp.value), relation: relation.value }));
+        toast(t('{name} personel ailesine eklendi', { name: p.full_name }), 'success'); m.close();
+      } catch (err) { toastError(err); toFamily.disabled = false; }
+    });
   }
 
   // Gelen kişi: rehberde (firma kişileri) ara; bulunamazsa bir firmaya yeni kişi ya da serbest giriş

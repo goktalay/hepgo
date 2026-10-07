@@ -197,6 +197,70 @@ def remove_guest(vid: int, gid: int, user=Depends(sec_user), conn=db.DB):
     return _visit(conn, vid)
 
 
+# ---------- Serbest-giriş misafirini sonradan Rehber'e / personel ailesine kaydet ----------
+@router.get('/employees')
+def sec_employees(user=Depends(sec_user), conn=db.DB):
+    """Personel ailesine ekleme seçimi için aktif personel listesi."""
+    return db.rows(conn.execute(
+        "SELECT id, (first_name || ' ' || last_name) AS full_name FROM employees WHERE status = 'AKTIF' ORDER BY first_name, last_name"))
+
+
+class ToCompanyIn(BaseModel):
+    company_id: Optional[int] = None
+    company_text: Optional[str] = None
+
+
+class ToFamilyIn(BaseModel):
+    employee_id: int
+    relation: Optional[str] = None
+
+
+def _guest_row(conn, vid, gid):
+    g = db.row(conn.execute('SELECT * FROM guest_visit_people WHERE id = ? AND visit_id = ?', (gid, vid)))
+    if not g:
+        raise HTTPException(404, 'Kişi bulunamadı')
+    return g
+
+
+@router.post('/visits/{vid}/people/{gid}/to-company')
+def guest_to_company(vid: int, gid: int, body: ToCompanyIn, user=Depends(sec_user), conn=db.DB):
+    """Serbest-giriş misafirini bir firmanın kişisi (Rehber) yapar; misafir kaydını ona bağlar. Firma seçilmezse
+    misafirin yazılı firması (company_text) bulunur ya da oluşturulur; o da yoksa firmasız kişi olur."""
+    g = _guest_row(conn, vid, gid)
+    if g['person_id']:
+        raise HTTPException(400, 'Bu kişi zaten Rehber\'de kayıtlı')
+    cid = None
+    if body.company_id:
+        if not conn.execute('SELECT 1 FROM companies WHERE id = ?', (body.company_id,)).fetchone():
+            raise HTTPException(400, 'Firma bulunamadı')
+        cid = body.company_id
+    else:
+        nm = (body.company_text or g['company_text'] or '').strip()
+        if nm:
+            row = conn.execute('SELECT id FROM companies WHERE name = ? COLLATE NOCASE', (nm,)).fetchone()
+            cid = row[0] if row else conn.execute(
+                'INSERT INTO companies (name, active, created_by, created_at) VALUES (?, 1, ?, ?)', (nm, user['id'], db.now())).lastrowid
+    pid = conn.execute('INSERT INTO company_people (company_id, full_name, title, phone, created_at) VALUES (?,?,?,?,?)',
+                       (cid, g['full_name'], g['title'], g['phone'], db.now())).lastrowid
+    conn.execute('UPDATE guest_visit_people SET person_id = ?, company_text = NULL WHERE id = ?', (pid, gid))
+    db.audit(conn, user['id'], 'Misafiri firma kişisine dönüştürdü', 'company_people', pid, g['full_name'])
+    return _visit(conn, vid)
+
+
+@router.post('/visits/{vid}/people/{gid}/to-family')
+def guest_to_family(vid: int, gid: int, body: ToFamilyIn, user=Depends(sec_user), conn=db.DB):
+    """Serbest-giriş misafirini bir personelin aile üyesi yapar (İK aile kaydı oluşur)."""
+    g = _guest_row(conn, vid, gid)
+    emp = db.row(conn.execute('SELECT id, first_name, last_name FROM employees WHERE id = ?', (body.employee_id,)))
+    if not emp:
+        raise HTTPException(400, 'Personel bulunamadı')
+    fid = conn.execute('INSERT INTO family_members (employee_id, full_name, relation, phone, created_at) VALUES (?,?,?,?,?)',
+                       (emp['id'], g['full_name'], (body.relation or '').strip() or None, g['phone'], db.now())).lastrowid
+    db.audit(conn, user['id'], 'Misafiri personel ailesine ekledi', 'family_member', fid,
+             f"{g['full_name']} → {emp['first_name']} {emp['last_name']}")
+    return _visit(conn, vid)
+
+
 @router.post('/visits/{vid}/vehicles')
 def add_vehicles(vid: int, body: IdsIn, user=Depends(sec_user), conn=db.DB):
     _visit(conn, vid)

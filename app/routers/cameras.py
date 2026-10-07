@@ -544,6 +544,9 @@ def visitors_list(q: str = '', user=Depends(cam_user), conn=db.DB):
             '''SELECT full_name, MAX(company_text) AS company FROM guest_visit_people
                WHERE person_id IS NULL AND full_name IS NOT NULL GROUP BY LOWER(full_name) ORDER BY full_name LIMIT 60'''))
     have = {(v['full_name'] or '').strip().lower() for v in rows}
+    # Rehber'e/aileye kaydedilmiş misafirler artık 'Ziyaretçi'de tekrar çıkmasın (ilgili sekmelerinde görünürler)
+    for row in conn.execute('SELECT full_name FROM company_people UNION SELECT full_name FROM family_members'):
+        have.add((row[0] or '').strip().lower())
     for g in guests:
         if (g['full_name'] or '').strip().lower() in have:
             continue

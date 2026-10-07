@@ -2,8 +2,10 @@
 // animasyon, saat ve tarih gösterilir; herhangi bir dokunuşta kapanır (o dokunuş alttaki sayfaya geçmez).
 import { api, fileUrl } from './api.js';
 import { createGlobe } from './globe.js';
+import { captureShards, createGravityScene } from './screensaver-gravity.js';
 
 export const ANIMATIONS = [
+  ['gravity', 'Yıkım (interaktif)', 'Ekrandaki öğeler düşer; telefonda sallayın, bilgisayarda çöp adam fırlatır'],
   ['globe', 'Dünya', 'Yavaşça dönen çizgisel dünya'],
   ['matrix', 'Soft Matrix', 'Yumuşak renklerle akan karakterler'],
   ['wave', 'Soft Ses Dalgası', 'Üst üste dalgalanan ses dalgaları'],
@@ -24,6 +26,7 @@ export function setScreensaver(s, u) {
   user = u || null;
   if (!user) { try { sessionStorage.removeItem(LOCK_KEY); } catch { /* yok say */ } }
   reset();
+  armMotionPrimer();
   // Kilitliyken sayfa yenilendiyse kilit ekranı yeniden açılır
   let locked = false;
   try { locked = sessionStorage.getItem(LOCK_KEY) === '1'; } catch { /* yok say */ }
@@ -33,6 +36,23 @@ export function setScreensaver(s, u) {
 function reset() {
   clearTimeout(idleTimer);
   if (cfg.on && !overlay) idleTimer = setTimeout(() => showScreensaver(), cfg.after * 1000);
+}
+
+// iOS 13+ DeviceMotion iznini bir kullanıcı dokunuşuyla önceden iste (yıkım sahnesi sallama için gerekir; bekleme
+// boşta açıldığından o an jest olmaz). Yalnız dokunmatik + 'gravity' seçiliyken, bir kez.
+let _motionPrimed = false;
+export function primeMotionPermission() {
+  if (_motionPrimed) return Promise.resolve();
+  const DM = window.DeviceMotionEvent;
+  if (!DM || typeof DM.requestPermission !== 'function') { _motionPrimed = true; return Promise.resolve(); }
+  _motionPrimed = true;
+  return DM.requestPermission().catch(() => { _motionPrimed = false; });
+}
+function armMotionPrimer() {
+  const coarse = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+  if (!coarse || !cfg.on || cfg.anim !== 'gravity') return;
+  const h = () => { removeEventListener('pointerdown', h, true); primeMotionPermission(); };
+  addEventListener('pointerdown', h, { capture: true, once: true });
 }
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(ev =>
   addEventListener(ev, () => { if (!overlay) reset(); }, { passive: true, capture: true }));
@@ -172,10 +192,13 @@ const SCENES = {
 
 export function showScreensaver(anim = cfg.anim, { preview = false, unlock = false } = {}) {
   if (overlay) return;
+  if (preview && anim === 'gravity') primeMotionPermission();   // önizleme bir kullanıcı jesti → iOS izni iste
   const lock = !preview && cfg.lock && !!user;
   if (lock) { try { sessionStorage.setItem(LOCK_KEY, '1'); } catch { /* yok say */ } }
   clearTimeout(idleTimer);
   if (anim === 'random') { const list = ANIMATIONS.filter(a => a[0] !== 'random'); anim = list[Math.floor(Math.random() * list.length)][0]; }
+  // Yıkım sahnesi: overlay sayfayı örtmeden ÖNCE mevcut ekran bileşenlerini yakala
+  const shards = anim === 'gravity' ? captureShards() : null;
   const canvas = document.createElement('canvas');
   canvas.className = 'ss-canvas';
   const time = document.createElement('div'); time.className = 'ss-time';
@@ -202,6 +225,9 @@ export function showScreensaver(anim = cfg.anim, { preview = false, unlock = fal
   if (anim === 'globe') {
     const g = createGlobe(canvas, { size: 0.36, speed: 5, color: '120,180,255', land: 0.8, grid: 0.25, back: 0.08 });
     stop = () => g.destroy();
+  } else if (anim === 'gravity') {
+    const scene = createGravityScene(canvas, shards, { preview });
+    stop = () => scene.destroy();
   } else {
     const c = canvas.getContext('2d');
     const draw = (SCENES[anim] || SCENES.wave)();

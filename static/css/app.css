@@ -2685,6 +2685,10 @@ label.check { gap: 10px; }
 .ss.on { opacity: 1; }
 .ss-radar { background: radial-gradient(120% 100% at 50% 50%, #062116 0%, #010805 100%); }
 .ss-stars, .ss-matrix { background: #05080f; }
+.ss-gravity { background: radial-gradient(120% 100% at 50% 20%, #111a2b 0%, #05080f 100%); }
+.ss-gravity .ss-clock { bottom: auto; top: 8vh; opacity: .3; }
+.ss-gravity .ss-time { font-size: clamp(40px, 7vw, 92px); }
+.ss-gravity .ss-logo { opacity: .3; }
 .ss-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .ss-clock { position: absolute; left: 0; right: 0; bottom: 14vh; text-align: center; transition: transform 2s ease; pointer-events: none; text-shadow: 0 2px 20px rgba(0,0,0,.6); }
 .ss-time { font-size: clamp(64px, 12vw, 160px); font-weight: 200; letter-spacing: .02em; line-height: 1; font-variant-numeric: tabular-nums; }

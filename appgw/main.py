@@ -1,8 +1,10 @@
-"""HEPGO Uygulama Geçidi (app.hepgo.com) — tek köken ters-vekil.
+"""HEPGO Uygulama Geçidi (app.hepgo.com) — tek köken ters-vekil + HEPGO logolu merkezî giriş.
 
-Amaç: Mobil (Capacitor) uygulama TEK kökende (app.hepgo.com) kalsın ki native köprü korunsun.
-Giriş sırasında firma SEÇİLİR (çerez hg_tenant), sonrası tüm istekler o firmanın mevcut backend soketine
-şeffafça yönlendirilir. Firmalar hâlâ ayrı işlem/DB'de (izolasyon bozulmaz); SPA olduğu gibi çalışır (yol 1:1).
+Mobil (Capacitor) uygulama TEK kökende (app.hepgo.com) kalır → native köprü korunur.
+Giriş: HEPGO logolu ekran. Firma CİHAZDA hatırlanır (hg_tenant çerezi); ilk sefer firma adresi + kullanıcı + şifre,
+sonrasında yalnız kullanıcı + şifre (firma adı görünür). Kimlik doğrulama firmanın mevcut backend'ine iletilir;
+oturum çerezi (caymaz_session) Domain'i kaldırılarak app.hepgo.com'a yazılır. Logout sonrası firma hatırlandığından
+aynı firmanın giriş ekranı açılır. Firmalar hâlâ ayrı işlem/DB'de (izolasyon korunur).
 
 Çalıştırma: uvicorn appgw.main:app --uds /run/hepgo/appgw.sock
 """
@@ -12,21 +14,24 @@ import httpx
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-# slug → { ad, soket }. Firmalar buradan seçilir; backend tenant'ı İŞLEM (soket) belirler, Host değil.
+# slug → { ad, soket, alias listesi }. Firma backend'i İŞLEM (soket) ile belirlenir, Host ile değil.
 TENANTS = {
-    'gokkubbe': {'name': 'GÖKKUBBE Teknoloji', 'sock': '/run/hepgo/caymaz.sock'},
-    'turkbey': {'name': 'Türkbey Teknoloji A.Ş.', 'sock': '/run/hepgo/turkbey.sock'},
-    'merkez': {'name': 'HEPGO Merkez', 'sock': '/run/hepgo/merkez.sock'},
+    'gokkubbe': {'name': 'GÖKKUBBE Teknoloji', 'sock': '/run/hepgo/caymaz.sock',
+                 'alias': ['gokkubbe', 'gökkubbe', 'caymaz', 'gokkubbe.hepgo.com', 'caymaz.app']},
+    'turkbey': {'name': 'Türkbey Teknoloji A.Ş.', 'sock': '/run/hepgo/turkbey.sock',
+                'alias': ['turkbey', 'türkbey', 'turkbey.app', 'turkbey.hepgo.com']},
+    'merkez': {'name': 'HEPGO Merkez', 'sock': '/run/hepgo/merkez.sock',
+               'alias': ['merkez', 'merkez.veilox.app', 'merkez.hepgo.com']},
 }
 COOKIE = 'hg_tenant'
 GW_HOST = 'app.hepgo.com'
-# Üst akış mutlak yönlendirmelerinde bu hostlar app.hepgo.com'a çevrilir (tek kökende kal)
 TENANT_HOSTS = re.compile(r'https?://(?:www\.)?(?:caymaz\.app|turkbey\.app|veilox\.app|merkez\.veilox\.app|[a-z0-9-]+\.hepgo\.com|hepgo\.com)', re.I)
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade'}
 
+_ALIAS = {a: slug for slug, t in TENANTS.items() for a in t['alias']}
 _clients: dict[str, httpx.AsyncClient] = {}
 
 
@@ -38,52 +43,83 @@ def client_for(sock: str) -> httpx.AsyncClient:
     return c
 
 
-def selection_page() -> HTMLResponse:
-    rows = ''.join(
-        f'<a class="firm" href="/_sel?t={slug}"><span class="nm">{t["name"]}</span><span class="go">Giriş →</span></a>'
-        for slug, t in TENANTS.items())
+def resolve_firm(raw: str):
+    """Kullanıcının yazdığı firma adresi/kodu → slug. 'https://gokkubbe.hepgo.com/' → 'gokkubbe'."""
+    s = (raw or '').strip().lower()
+    s = re.sub(r'^https?://', '', s).split('/')[0]
+    s = re.sub(r'^www\.', '', s)
+    if s in _ALIAS:
+        return _ALIAS[s]
+    s2 = re.sub(r'\.(hepgo\.com|veilox\.app|app)$', '', s)   # son eki at
+    return _ALIAS.get(s2) or _ALIAS.get(s)
+
+
+def login_page(firm_name: str | None) -> HTMLResponse:
+    firm_field = '' if firm_name else (
+        '<label>Firma adresi<input id="firma" autocomplete="organization" autocapitalize="none" '
+        'placeholder="ör. firmaniz" required></label>')
+    firm_hdr = (f'<div class="firm">Firma: <b>{firm_name}</b> · '
+                '<a href="/_firma">değiştir</a></div>') if firm_name else ''
     html = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>HEPGO — Firma seçin</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>HEPGO — Giriş</title>
 <style>:root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;min-height:100dvh;display:flex;
-flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
-color:#e8eefc;padding:max(28px,env(safe-area-inset-top)) 24px max(28px,env(safe-area-inset-bottom));
+align-items:center;justify-content:center;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#e8eefc;
+padding:max(28px,env(safe-area-inset-top)) 22px max(28px,env(safe-area-inset-bottom));
 background:radial-gradient(130% 150% at 0% 0%,#1e3a8a 0%,#0f1d3d 55%,#070d1c 100%)}}
-h1{{font-size:22px;margin:0 0 4px}}p{{color:#aebbdc;margin:0 0 18px;font-size:14px}}
-.firm{{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;max-width:380px;text-decoration:none;
-color:#fff;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:16px 18px;transition:background .15s}}
-.firm:active{{background:rgba(255,255,255,.14)}}.nm{{font-weight:600;font-size:16px}}.go{{color:#9ab7ff;font-size:13px}}
-.logo{{width:72px;height:72px;border-radius:20px;background:rgba(255,255,255,.06);display:grid;place-items:center;margin-bottom:12px}}
-.logo img{{width:48px;height:48px;border-radius:12px}}</style></head>
-<body><div class="logo"><img src="/static/img/logo-mark.png" alt="" onerror="this.style.display='none'"></div>
-<h1>HEPGO</h1><p>Lütfen firmanızı seçin</p>{rows}</body></html>"""
+.card{{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;gap:6px}}
+.logo{{width:84px;height:84px;border-radius:22px;background:rgba(255,255,255,.06);display:grid;place-items:center;margin-bottom:8px;
+box-shadow:0 14px 36px rgba(7,13,28,.5)}}.logo img{{width:56px;height:56px;border-radius:14px}}
+.brand{{font-size:26px;font-weight:800;letter-spacing:.5px;margin:0}}.sub{{color:#aebbdc;font-size:13.5px;margin:0 0 16px}}
+.firm{{font-size:13px;color:#aebbdc;margin:0 0 10px}}.firm a{{color:#9ab7ff}}
+form{{width:100%;display:flex;flex-direction:column;gap:12px}}
+label{{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#cdd9f5}}
+input{{height:46px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.25);color:#fff;
+padding:0 14px;font-size:16px;outline:none}}input:focus{{border-color:rgba(147,183,255,.8)}}
+button{{height:48px;border:0;border-radius:12px;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font:inherit;
+font-weight:700;font-size:16px;cursor:pointer;margin-top:4px;box-shadow:0 10px 26px rgba(37,99,235,.35)}}
+button:disabled{{opacity:.6}}.err{{min-height:18px;color:#ffb4b4;font-size:13px;text-align:center}}</style></head>
+<body><div class="card">
+<div class="logo"><img src="/_logo" alt="" onerror="this.parentElement.textContent='🛰️'"></div>
+<h1 class="brand">HEPGO</h1><p class="sub">Fabrika Yönetim Sistemi</p>
+{firm_hdr}
+<form id="f" autocomplete="on">{firm_field}
+<label>Kullanıcı adı<input id="u" autocapitalize="none" autocomplete="username" required></label>
+<label>Şifre<input id="p" type="password" autocomplete="current-password" required></label>
+<div class="err" id="e"></div>
+<button type="submit" id="b">Giriş yap</button></form></div>
+<script>
+var hasFirm={str(bool(firm_name)).lower()};
+var f=document.getElementById('f'),e=document.getElementById('e'),b=document.getElementById('b');
+f.addEventListener('submit',async function(ev){{ev.preventDefault();e.textContent='';b.disabled=true;b.textContent='…';
+ try{{
+  if(!hasFirm){{
+   var fv=document.getElementById('firma').value.trim();
+   var rs=await fetch('/_sel',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{firma:fv}})}});
+   if(!rs.ok){{e.textContent='Firma bulunamadı. Adresi kontrol edin.';b.disabled=false;b.textContent='Giriş yap';return;}}
+  }}
+  var r=await fetch('/api/auth/login',{{method:'POST',credentials:'include',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{username:document.getElementById('u').value,password:document.getElementById('p').value}})}});
+  if(r.ok){{location.replace('/app');return;}}
+  var d={{}};try{{d=await r.json();}}catch(_e){{}}
+  e.textContent=(d&&d.detail)||'Kullanıcı adı ya da şifre hatalı';
+ }}catch(_e){{e.textContent='Bağlantı hatası';}}
+ b.disabled=false;b.textContent='Giriş yap';}});
+</script></body></html>"""
     return HTMLResponse(html)
 
 
-async def gateway(request: Request) -> Response:
-    path = request.url.path
+async def is_authed(sock: str, cookie: str) -> bool:
+    try:
+        c = client_for(sock)
+        r = await c.get(httpx.URL(scheme='http', host='x', path='/api/auth/me'),
+                        headers=[('cookie', cookie), ('host', GW_HOST)])
+        return r.status_code == 200
+    except Exception:   # noqa: BLE001
+        return False
 
-    # Firma seçimi
-    if path == '/_sel':
-        t = request.query_params.get('t')
-        if t in TENANTS:
-            r = RedirectResponse('/app', status_code=302)
-            r.set_cookie(COOKIE, t, max_age=31536000, secure=True, httponly=True, samesite='lax', path='/')
-            return r
-        return RedirectResponse('/', status_code=302)
-    if path == '/_firma':   # firma değiştir
-        r = RedirectResponse('/', status_code=302)
-        r.delete_cookie(COOKIE, path='/')
-        return r
 
-    tenant = request.cookies.get(COOKIE)
-    if tenant not in TENANTS:
-        if request.method in ('GET', 'HEAD'):
-            return selection_page()   # çerez yoksa her sayfa isteğinde firma seçimi
-        return Response('Firma seçilmedi', status_code=409)
-
-    sock = TENANTS[tenant]['sock']
+async def proxy_to(sock: str, request: Request, path: str) -> Response:
     client = client_for(sock)
-    # Üst akışa ilet: Host=app.hepgo.com (mutlak linkler/çerezler tek köken olsun), hop-by-hop çıkar
     up_headers = [(k, v) for k, v in request.headers.items() if k.lower() not in HOP and k.lower() != 'host']
     up_headers.append(('host', GW_HOST))
     body = await request.body()
@@ -93,9 +129,6 @@ async def gateway(request: Request) -> Response:
         up = await client.send(req, stream=True)
     except Exception:   # noqa: BLE001
         return Response('Firma sunucusuna ulaşılamadı', status_code=502)
-
-    # Yanıt başlıkları: hop-by-hop çıkar, Set-Cookie Domain'ini kaldır (app.hepgo.com'a düşsün),
-    # mutlak Location'ı tek kökene çevir.
     resp = StreamingResponse(up.aiter_raw(), status_code=up.status_code, background=BackgroundTask(up.aclose))
     resp.raw_headers.clear()
     for k, v in up.headers.multi_items():
@@ -106,9 +139,56 @@ async def gateway(request: Request) -> Response:
             v = TENANT_HOSTS.sub('https://' + GW_HOST, v)
         resp.raw_headers.append((k.encode('latin-1'), v.encode('latin-1')))
     for sc in up.headers.get_list('set-cookie'):
-        sc = re.sub(r';\s*[Dd]omain=[^;]+', '', sc)   # Domain kaldır → çerez app.hepgo.com'a yazılır
+        sc = re.sub(r';\s*[Dd]omain=[^;]+', '', sc)
         resp.raw_headers.append((b'set-cookie', sc.encode('latin-1')))
     return resp
+
+
+async def gateway(request: Request) -> Response:
+    path = request.url.path
+    tenant = request.cookies.get(COOKIE)
+    tvalid = tenant in TENANTS
+
+    # Firma değiştir
+    if path == '/_firma':
+        r = RedirectResponse('/', status_code=302)
+        r.delete_cookie(COOKIE, path='/')
+        return r
+    # HEPGO logosu (firma backend'inden al; firma yoksa 404 → sayfa emoji'ye düşer)
+    if path == '/_logo':
+        if tvalid:
+            return await proxy_to(TENANTS[tenant]['sock'], request, '/static/img/logo-mark.png')
+        return Response(status_code=404)
+    # Firma seçimi (login formundan)
+    if path == '/_sel':
+        raw = ''
+        if request.method == 'POST':
+            try:
+                raw = (await request.json()).get('firma', '')
+            except Exception:   # noqa: BLE001
+                raw = (await request.form()).get('firma', '')
+        else:
+            raw = request.query_params.get('t', '')
+        slug = resolve_firm(raw)
+        if not slug:
+            return JSONResponse({'detail': 'Firma bulunamadı'}, status_code=404)
+        r = JSONResponse({'ok': True, 'name': TENANTS[slug]['name']}) if request.method == 'POST' else RedirectResponse('/app', status_code=302)
+        r.set_cookie(COOKIE, slug, max_age=31536000, secure=True, httponly=True, samesite='lax', path='/')
+        return r
+
+    # Sayfa girişi: kimlik yoksa HEPGO logolu giriş ekranı (firma hatırlanıyorsa yalnız kullanıcı+şifre)
+    if request.method == 'GET' and path in ('/', '/app', '/index.html'):
+        if not tvalid:
+            return login_page(None)
+        if not await is_authed(TENANTS[tenant]['sock'], request.headers.get('cookie', '')):
+            return login_page(TENANTS[tenant]['name'])
+        # kimlik var → firma ERP'sine ilet
+        return await proxy_to(TENANTS[tenant]['sock'], request, path)
+
+    # Diğer tüm yollar: şeffaf vekil
+    if not tvalid:
+        return Response('Firma seçilmedi', status_code=409)
+    return await proxy_to(TENANTS[tenant]['sock'], request, path)
 
 
 app = Starlette(routes=[Route('/{path:path}', gateway, methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])])

@@ -894,6 +894,27 @@ function initPanelCollapse(viewEl) {
   const read = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } };
   const write = s => { try { localStorage.setItem(KEY, JSON.stringify([...s].slice(-800))); } catch { /* gizli pencere */ } };
   const keyOf = head => (location.hash || '').split('?')[0] + '|' + (head.textContent || '').trim().slice(0, 50);
+  // Başlığı cümle düzenine çevir: ilk kelime büyük harfle başlar, kalan kelimeler küçük; TÜMÜ BÜYÜK kısaltmalar
+  // (KVKK, İSG, CV, AI, NVR, PDKS…) olduğu gibi korunur. Yalnız başlık öğesinin METİN düğümlerini değiştirir
+  // (rozet/sayaç gibi alt öğeler korunur). Bir kez uygulanır (dataset işareti).
+  const sentenceCase = el => {
+    if (!el || el.dataset.sc) return;
+    el.dataset.sc = '1';
+    let first = true;
+    el.childNodes.forEach(n => {
+      if (n.nodeType !== 3) { if ((n.textContent || '').trim()) first = false; return; }
+      if (!n.nodeValue || !/[\p{L}]/u.test(n.nodeValue)) return;
+      n.nodeValue = n.nodeValue.replace(/\S+/g, w => {
+        if (!/[\p{L}]/u.test(w)) return w;
+        const up = w.toLocaleUpperCase('tr');
+        const acro = w.length >= 2 && w === up;   // tümü büyük → kısaltma, dokunma
+        let out = acro ? w : w.toLocaleLowerCase('tr');
+        if (first && !acro) out = out.charAt(0).toLocaleUpperCase('tr') + out.slice(1);
+        first = false;
+        return out;
+      });
+    });
+  };
   // Panelin başlığı: ya düz başlık (h2-h4) ya da başlık satırı (başta h/b/strong + aksiyon/boşluk içeren satır; ör. .tv-bar)
   const headerOf = card => {
     const f = card.firstElementChild;
@@ -902,8 +923,9 @@ function initPanelCollapse(viewEl) {
     if (!f.nextElementSibling || f.matches('.filters, .stat-strip, .seg-tabs, .tabs, .pick-list, .guest-list, .acc-list, .set-ios, .toolbar')) return null;
     const ti = f.firstElementChild;
     const isTitle = ti && (/^H[2-4]$/.test(ti.tagName) || /^(B|STRONG)$/.test(ti.tagName));
-    const actiony = f.querySelector(':scope > .btn, :scope > button, :scope > a, :scope > .spacer') || /bar|head|title|toolbar/i.test(f.className);
-    return (isTitle && actiony) ? f : null;
+    // Başlık satırı yalnız GERÇEK aksiyon düğmesi içeriyorsa panel başlığıdır (ad/rozet/tarih satırları hariç)
+    const hasBtn = f.querySelector(':scope > .btn, :scope > button, :scope > a.btn');
+    return (isTitle && hasBtn) ? f : null;
   };
   const make = (el, head, card) => {
     if (el.dataset.collapsible) return;
@@ -911,7 +933,10 @@ function initPanelCollapse(viewEl) {
     el.classList.add('collapsible');
     head.classList.add('collapse-head');
     // Başlık satırıysa (düz başlık değil) başlık öğesini işaretle → sola yaslı büyür, düğmeler en sağa gider
-    if (!/^H[2-4]$/.test(head.tagName) && head.firstElementChild) head.firstElementChild.classList.add('collapse-title');
+    const isRow = !/^H[2-4]$/.test(head.tagName);
+    if (isRow && head.firstElementChild) head.firstElementChild.classList.add('collapse-title');
+    // Başlığı cümle düzenine çevir (ilk harf büyük, devamı küçük); KVKK/İSG/CV gibi kısaltmalar (tümü büyük) korunur
+    sentenceCase(isRow ? (head.querySelector(':scope > .collapse-title') || head) : head);
     head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
     if (read().has(keyOf(head))) el.classList.add('collapsed');
     head.addEventListener('click', e => {

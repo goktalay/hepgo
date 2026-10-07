@@ -3,11 +3,11 @@
   "appName": "HEPGO",
   "webDir": "www",
   "server": {
-    "url": "https://turkbey.app",
+    "url": "https://www.hepgo.com/giris",
     "androidScheme": "https",
     "iosScheme": "https",
     "cleartext": false,
-    "allowNavigation": ["turkbey.app", "*.turkbey.app", "hepgo.com", "www.hepgo.com", "gokkubbe.hepgo.com", "*.hepgo.com", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"]
+    "allowNavigation": ["hepgo.com", "www.hepgo.com", "*.hepgo.com", "gokkubbe.hepgo.com", "turkbey.app", "*.turkbey.app", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"]
   },
   "android": { "allowMixedContent": false },
   "backgroundColor": "#0f1d3d",

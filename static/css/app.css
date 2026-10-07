@@ -2703,6 +2703,9 @@ label.check { gap: 10px; }
 /* Bekleme ekranı kilidi: saat yukarı kayar, arka plan bulanıklaşır, şifre kartı yükselir */
 .ss .ss-canvas { transition: filter .5s ease, opacity .5s ease; }
 .ss.ask .ss-canvas { filter: blur(10px) brightness(.55); }
+/* Yıkım sahnesi: kilit (PIN/şifre) açılırken fizik arkada NET sürsün (panelin kendi buzlu-cam arka planı okunur kılar) */
+.ss-gravity.ask .ss-canvas { filter: brightness(.82); }
+.ss-gravity.ask .ss-clock { top: auto; }
 .ss.ask .ss-clock { bottom: 64vh; transform: scale(.55) !important; opacity: .9; transition: bottom .5s ease, transform .5s ease; }
 .ss.ask .ss-hint, .ss.ask .ss-logo { opacity: 0; transition: opacity .3s; }
 .ss-lock { position: absolute; left: 50%; top: 52%; width: min(340px, calc(100vw - 32px)); transform: translate(-50%, 30px) scale(.96); opacity: 0;

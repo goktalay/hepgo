@@ -881,7 +881,45 @@ function renderShell() {
   if (start && start !== 'dashboard' && hasModule(u, start) && !location.hash.replace(/^#\/?/, '')) {
     history.replaceState(null, '', `#/${start}`);
   }
+  initPanelCollapse(view);
   route();
+}
+
+// Tüm arayüzlerde panelleri (başlıkla başlayan .card/.set-card) katlanabilir yapar. Modülleri tek tek değiştirmeden
+// #view'ı gözlemler; başlığa tıklayınca panel katlanır/açılır, durum cihazda hatırlanır. Pano kutucukları (.db-tile),
+// KPI şeritleri, nav kartları ve modal içerikleri hariç.
+let _collapseMO = null;
+function initPanelCollapse(viewEl) {
+  const KEY = 'hepgo.collapsed';
+  const read = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } };
+  const write = s => { try { localStorage.setItem(KEY, JSON.stringify([...s].slice(-500))); } catch { /* gizli pencere */ } };
+  const panelKey = head => (location.hash || '').split('?')[0] + '|' + (head.textContent || '').trim().slice(0, 60);
+  const enhance = () => {
+    const collapsed = read();
+    viewEl.querySelectorAll('.card, .set-card').forEach(card => {
+      if (card.dataset.collapsible || card.tagName === 'A') return;
+      if (['db-tile', 'stat-strip', 'empty', 'loading'].some(c => card.classList.contains(c))) return;
+      if (card.closest('.grid-stack, .modal-back')) return;
+      const head = card.firstElementChild;
+      if (!head || !/^H[234]$/.test(head.tagName) || !head.nextElementSibling) return;
+      card.dataset.collapsible = '1';
+      card.classList.add('collapsible');
+      head.classList.add('collapse-head');
+      head.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), head.firstChild);
+      if (collapsed.has(panelKey(head))) card.classList.add('collapsed');
+      head.addEventListener('click', e => {
+        if (e.target.closest('button, a, input, select, textarea')) return;   // başlıktaki aksiyon düğmeleri etkilenmesin
+        const key = panelKey(head), s = read();
+        card.classList.toggle('collapsed') ? s.add(key) : s.delete(key);
+        write(s);
+      });
+    });
+  };
+  if (_collapseMO) _collapseMO.disconnect();
+  let deb;
+  _collapseMO = new MutationObserver(() => { clearTimeout(deb); deb = setTimeout(enhance, 80); });
+  _collapseMO.observe(viewEl, { childList: true, subtree: true });
+  enhance();
 }
 
 // Kişisel takvim: randevu, hatırlatma ve katıldığım toplantılar

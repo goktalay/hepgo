@@ -3913,6 +3913,14 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 }
 
 /* Ayarlar: bildirim/uyarı türleri, rahatsız etmeyin */
+/* Katlanabilir paneller (tüm arayüzler): başlığa tıkla → aç/kapa; durum cihazda hatırlanır */
+.collapsible > .collapse-head { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; }
+.collapse-chev { width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent; opacity: .5; flex: none; transition: transform .15s ease; }
+.collapsible:not(.collapsed) > .collapse-head > .collapse-chev { transform: rotate(90deg); }
+.collapsible.collapsed > :not(.collapse-head) { display: none !important; }
+.collapsible.collapsed > .collapse-head { margin-bottom: 0; }
+
 .set-types { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
 .set-toggle.dim { opacity: .6; }
 /* Bildirim türleri: modül grubu başlığı (ince etiket) */

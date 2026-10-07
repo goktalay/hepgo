@@ -2589,6 +2589,13 @@ def _migrate(conn):
             screen TEXT, ua TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
             UNIQUE(user_id, device_id));
         CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id);
+        -- Fazla mesai: İK'nın kullanıcıya belirli gün için girdiği ekstra mesai (çarpanla ücretlenir)
+        CREATE TABLE IF NOT EXISTS overtime_shifts (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+            multiplier REAL NOT NULL DEFAULT 1.5, note TEXT,
+            created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_overtime_user ON overtime_shifts(user_id, date);
         -- Saha görevi İSG kontrolü: görevdeki her kişinin KKD maddeleri için saha sorumlusunun Yaptı / Yapmadı işareti
         CREATE TABLE IF NOT EXISTS field_task_isg (
             task_id INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id),

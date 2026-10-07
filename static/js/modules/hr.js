@@ -491,6 +491,7 @@ async function renderDetail(view, id, ctx) {
       ['kvkk', 'KVKK Rızası', 'Biyometrik (yüz) ve ses açık rızası', e.kvkk_consent && !e.kvkk_consent.biometric ? ' ⚠' : '']] },
     absence: { label: 'İzin ve Sağlık', subs: [
       ['leaves', 'İzinler', 'İzin talepleri ve imzalı formlar', cnt(e.unsigned_leaves, ' imzasız')],
+      ['overtime', 'Fazla Mesai', 'Girilen fazla mesai saatleri ve ücreti', ''],
       ['health', 'Sağlık Raporları', 'Rapor süresince raporlu; sisteme giremez', cnt(e.health_reports?.length)]] },
     attendance: { label: 'Giriş-Çıkış' },
     finance: { label: 'Hesap Hareketleri' },   // maaş ödemeleri vb. (isimle eşleşen + bağlanan cari / hesap hareketleri)
@@ -512,6 +513,7 @@ async function renderDetail(view, id, ctx) {
     if (key === 'contracts') return filesTab(e, m.contracts, 'Sözleşmeler');
     if (key === 'application') return applicationTab(e);
     if (key === 'leaves') return leavesTab(e);
+    if (key === 'overtime') return overtimeTab(e);
     if (key === 'health') return healthTab(e);
     if (key === 'kvkk') return kvkkConsentTab(e);
     return h('div');
@@ -1189,6 +1191,53 @@ function filesTab(e, kinds, title) {
       pendingN ? h('span', { class: 'badge yellow' }, t('{n} onay bekliyor', { n: pendingN })) : null,
       missing ? h('span', { class: 'badge red' }, t('{n} eksik', { n: missing })) : h('span', { class: 'badge green' }, 'Tamam')),
     rows);
+}
+
+// Fazla mesai: İK bu personele belirli gün için ekstra mesai girer (çarpanla ücretlenir — çarpan Program Ayarları › Mesai)
+function overtimeTab(e) {
+  const wrap = h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  if (!e.user_id) { clear(wrap, h('div', { class: 'empty small muted' }, 'Bu personelin sistem kullanıcısı yok; fazla mesai girilemez.')); return wrap; }
+  let month = new Date().toISOString().slice(0, 7);
+  const load = async () => {
+    let d;
+    try { d = await api.get(`/api/worktime/overtime?user_id=${e.user_id}&month=${month}`); } catch (err) { clear(wrap, h('div', { class: 'empty' }, err.message)); return; }
+    const items = d.items || [];
+    const dateI = h('input', { type: 'date', class: 'input', value: `${month}-01` });
+    const startI = h('input', { type: 'time', class: 'input', value: '17:30', style: { maxWidth: '120px' } });
+    const endI = h('input', { type: 'time', class: 'input', value: '19:30', style: { maxWidth: '120px' } });
+    const multI = h('input', { type: 'number', class: 'input', min: 1, max: 10, step: 0.1, value: d.default_multiplier, style: { maxWidth: '90px' } });
+    const noteI = h('input', { class: 'input', placeholder: 'Açıklama (isteğe bağlı)' });
+    const monthI = h('input', { type: 'month', class: 'input', value: month, style: { maxWidth: '160px' } });
+    monthI.addEventListener('change', () => { month = monthI.value || month; load(); });
+    const add = async () => {
+      if (!dateI.value) { toast('Tarih seçin', 'err'); return; }
+      try {
+        await api.post('/api/worktime/overtime', { user_id: e.user_id, date: dateI.value, start: startI.value, end: endI.value, multiplier: parseFloat(multI.value) || undefined, note: noteI.value });
+        month = dateI.value.slice(0, 7); load(); toast('Fazla mesai eklendi');
+      } catch (err) { toastError(err); }
+    };
+    const totH = items.reduce((a, x) => a + (x.hours || 0), 0);
+    const totA = items.reduce((a, x) => a + (x.amount || 0), 0);
+    clear(wrap,
+      h('div', { class: 'set-line top' }, h('b', null, 'Fazla Mesai'), monthI),
+      h('p', { class: 'small muted' }, `Toplam ${totH.toFixed(2)} saat` + (totA ? ` · ≈ ${totA.toFixed(2)} ₺` : '') + (e.salary ? '' : ' · (maaş girilmediği için ücret hesaplanmıyor)')),
+      items.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+        h('thead', null, h('tr', null, ['Tarih', 'Saat', 'Süre', 'Çarpan', '≈ Ücret', ''].map(x => h('th', null, x)))),
+        h('tbody', null, items.map(it => h('tr', null,
+          h('td', null, it.date),
+          h('td', null, `${it.start_time}–${it.end_time}`),
+          h('td', null, `${it.hours} s`),
+          h('td', null, `×${it.multiplier}`),
+          h('td', null, it.amount != null ? `${it.amount.toFixed(2)} ₺` : '—'),
+          h('td', null, h('button', { class: 'btn sm danger', type: 'button', title: 'Sil', onclick: async () => { if (await confirmDialog('Sil', 'Bu fazla mesai kaydı silinsin mi?', { okLabel: 'Sil', danger: true })) { try { await api.del(`/api/worktime/overtime/${it.id}`); load(); } catch (err) { toastError(err); } } } }, '×'))))))) : h('div', { class: 'empty small muted' }, 'Bu ay fazla mesai kaydı yok.'),
+      h('div', { class: 'card card-pad', style: { marginTop: '12px' } },
+        h('h4', { style: { marginTop: 0 } }, 'Fazla Mesai Ekle'),
+        h('div', { class: 'hr-ot-add' }, field('Tarih', dateI), field('Başlangıç', startI), field('Bitiş', endI), field('Çarpan', multI)),
+        field('Açıklama', noteI),
+        h('div', { class: 'set-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))));
+  };
+  load();
+  return wrap;
 }
 
 function leavesTab(e) {

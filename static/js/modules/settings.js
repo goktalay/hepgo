@@ -43,6 +43,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     feedFullMobile: !!cur.feedFullMobile,
     colors: (cur.colors && typeof cur.colors === 'object') ? { light: {}, dark: {}, ...cur.colors } : { light: {}, dark: {} },
     background: cur.background || '',
+    location_work_hours_only: !!cur.location_work_hours_only,   // mobil: mesai dışında konumu kapat
   };
   let timer;
   const save = (msg = 'Ayarlar kaydedildi') => {
@@ -499,7 +500,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s.privacy, 'hide_read', 'Okundu bilgisini gönderme', 'Mesajı açtığınızda karşı tarafta mavi çift tik görünmez'),
         toggle(s.privacy, 'hide_delivered', 'İletildi bilgisini gönderme', 'Mesaj cihazınıza ulaştığında karşı tarafta gri çift tik görünmez'),
         h('h4', { class: 'set-sub' }, 'Diğer'),
-        toggle(s.privacy, 'no_messages', 'Mesaj almayı kapat', 'Diğer kullanıcılar size yeni mesaj gönderemez')) },
+        toggle(s.privacy, 'no_messages', 'Mesaj almayı kapat', 'Diğer kullanıcılar size yeni mesaj gönderemez'),
+        toggle(s, 'location_work_hours_only', 'Mesai dışında konumu kapat', 'Mobil uygulamada: yalnızca mesai saatlerinde (ve size girilen fazla mesaide) konumunuz kaydedilir, dışında kapanır')) },
     { key: 'mydata', title: 'Verilerim (KVKK)', desc: 'Verilerinizin kopyasını isteyin; silme / itiraz başvurusu', icon: 'lock',
       body: () => {
         const wrap = h('div', null);

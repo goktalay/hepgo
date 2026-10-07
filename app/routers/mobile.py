@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, db, push_native
+from .. import auth, db, push_native, worktime
 
 router = APIRouter(prefix='/api')
 
@@ -77,6 +77,14 @@ def location_ping(body: LocationIn, user=Depends(auth.current_user), conn=db.DB)
     c = _location_consent(conn, user['id'])   # KVKK: açık rıza yoksa konum SAKLANMAZ
     if not (c and c.get('granted')):
         return {'ok': False, 'consent': False}
+    # Kişisel Ayar: "Mesai dışında konumu kapat" → mesai saati değilse (kişinin fazla mesaisi de dahil) saklanmaz
+    r = conn.execute('SELECT prefs FROM users WHERE id = ?', (user['id'],)).fetchone()
+    try:
+        offhours_off = ((json.loads(r[0]) if r and r[0] else {}).get('settings', {}) or {}).get('location_work_hours_only')
+    except Exception:   # noqa: BLE001
+        offhours_off = False
+    if offhours_off and not worktime.is_work_time_for(conn, user['id']):
+        return {'ok': False, 'offhours': True}
     conn.execute('INSERT INTO location_pings (user_id, lat, lng, accuracy, at, platform, created_at) VALUES (?,?,?,?,?,?,?)',
                  (user['id'], body.lat, body.lng, body.acc, body.at, (body.platform or '')[:20] or None, db.now()))
     conn.execute('''DELETE FROM location_pings WHERE user_id = ? AND id NOT IN

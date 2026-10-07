@@ -7949,3 +7949,13 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .um-dot.fresh { background: #22c55e; }
 .um-dot.warm { background: #f59e0b; }
 .um-dot.stale { background: #94a3b8; }
+
+/* ---------- Mesai Ayarları (Program Ayarları) ---------- */
+.mesai-days { display: flex; flex-direction: column; gap: 8px; }
+.mesai-day { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.mesai-day.off { opacity: .55; }
+.mesai-day-h { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.mesai-day-t { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 560px) { .mesai-day { flex-direction: column; align-items: stretch; } .mesai-day-t { justify-content: space-between; } }
+.hr-ot-add { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.hr-ot-add > * { flex: 0 0 auto; }

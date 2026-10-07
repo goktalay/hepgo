@@ -828,6 +828,7 @@ const INTEG_INFO = {
 const MODULE_SETTINGS = [
   { key: 'field', title: 'Saha Yönetimi', desc: 'Standart saha ekipman listesi ve görev tanımları', icon: 'route3d', body: fieldSettingsBody },
   { key: 'hr', title: 'İnsan Kaynakları · İSG', desc: 'Görev tanımı belgelerinin genel hükümleri', icon: 'person', body: isgGeneralBody },
+  { key: 'mesai', title: 'Mesai Ayarları', desc: 'Haftalık mesai saatleri, tatiller, fazla mesai çarpanı', icon: 'person', body: mesaiBody },
   { key: 'cleaning', title: 'Temizlik', desc: 'Günlük temizlik çeklisti maddeleri', icon: 'grid', body: cleaningSettingsBody },
   { key: 'building', title: 'Güvenlik · Bina Kontrol', desc: 'Günlük bina kontrol (tur) saatleri', icon: 'lock', body: buildingSettingsBody },
   // Konuşma tanımanın geçtiği modüller: her birinde aç / kapa (entegrasyon çalışmıyorsa açılamaz)
@@ -862,6 +863,62 @@ function speechSettingsBody(key) {
 }
 
 // Bina kontrol saatleri: her gün güvenlik personelinin bina turu atacağı saatler
+// Mesai Ayarları: haftalık mesai saatleri + tatil günleri + fazla mesai çarpanı (app_kv work_schedule)
+function mesaiBody() {
+  const DAYS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  (async () => {
+    let sch;
+    try { sch = await api.get('/api/worktime/schedule'); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); return; }
+    const render = () => {
+      const dayEls = [];
+      for (let d = 1; d <= 7; d++) {
+        const day = sch.days[String(d)];
+        const cb = h('input', { type: 'checkbox', checked: day.on });
+        const from = h('input', { type: 'time', class: 'input', value: day.from, style: { maxWidth: '130px' } });
+        const to = h('input', { type: 'time', class: 'input', value: day.to, style: { maxWidth: '130px' } });
+        const row = h('div', { class: `mesai-day ${day.on ? '' : 'off'}` },
+          h('label', { class: 'mesai-day-h' }, cb, h('b', null, DAYS[d])),
+          h('span', { class: 'mesai-day-t' }, from, h('span', { class: 'muted' }, ' – '), to));
+        cb.addEventListener('change', () => { day.on = cb.checked; row.classList.toggle('off', !cb.checked); });
+        from.addEventListener('change', () => { day.from = from.value; });
+        to.addEventListener('change', () => { day.to = to.value; });
+        dayEls.push(row);
+      }
+      const holBox = h('div', { class: 'bc-times' });
+      const drawHol = () => clear(holBox, (sch.holidays || []).length
+        ? sch.holidays.map(dt => h('span', { class: 'bc-time-chip' }, dt, h('button', { class: 'bc-time-x', type: 'button', title: 'Kaldır', onclick: () => { sch.holidays = sch.holidays.filter(x => x !== dt); drawHol(); } }, '×')))
+        : h('span', { class: 'muted' }, 'Tatil günü eklenmedi.'));
+      drawHol();
+      const holAdd = h('input', { type: 'date', class: 'input', style: { maxWidth: '170px' } });
+      const mult = h('input', { type: 'number', class: 'input', min: 1, max: 10, step: 0.1, value: sch.overtime_multiplier, style: { maxWidth: '110px' } });
+      const save = async () => {
+        try {
+          const r = await api.put('/api/worktime/schedule', { days: sch.days, holidays: sch.holidays, overtime_multiplier: parseFloat(mult.value) || 1.5 });
+          sch = r; toast('Mesai ayarları kaydedildi'); render();
+        } catch (err) { toastError(err); }
+      };
+      clear(wrap,
+        h('section', { class: 'card card-pad' },
+          h('h3', { style: { marginTop: 0 } }, 'Haftalık Mesai Saatleri'),
+          h('p', { class: 'small muted' }, 'Her gün için mesai saatlerini belirleyin; kapalı günlerde mesai yoktur. Mesai dışındaki saatlerde (kişi isterse) konum takibi kapatılır; fazla mesai İK’dan girilir.'),
+          h('div', { class: 'mesai-days' }, dayEls)),
+        h('section', { class: 'card card-pad' },
+          h('h3', { style: { marginTop: 0 } }, 'Tatil Günleri'),
+          h('p', { class: 'small muted' }, 'Mesai olmayan özel günler (resmi tatiller vb.) — o günler mesai sayılmaz.'),
+          holBox,
+          h('div', { class: 'cl-set-add' }, holAdd, h('button', { class: 'btn', type: 'button', onclick: () => { if (holAdd.value && !sch.holidays.includes(holAdd.value)) { sch.holidays = [...sch.holidays, holAdd.value].sort(); drawHol(); } } }, 'Ekle'))),
+        h('section', { class: 'card card-pad' },
+          h('h3', { style: { marginTop: 0 } }, 'Fazla Mesai Çarpanı'),
+          h('p', { class: 'small muted' }, 'İK’nın girdiği fazla mesai saatleri bu çarpanla ücretlenir (ör. 1.5 = saat ücretinin 1,5 katı).'),
+          h('div', { class: 'cl-set-add' }, mult, h('span', { class: 'muted' }, t('× · aylık standart ≈ {n} saat', { n: sch.monthly_std_hours || 0 }))),
+          h('div', { class: 'set-actions', style: { marginTop: '12px' } }, h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Kaydet'))));
+    };
+    render();
+  })();
+  return wrap;
+}
+
 function buildingSettingsBody() {
   const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
   let times = [];

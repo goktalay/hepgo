@@ -28,6 +28,8 @@ TENANTS = {
 }
 COOKIE = 'hg_tenant'
 GW_HOST = 'app.hepgo.com'
+DEFAULT_SOCK = '/run/hepgo/caymaz.sock'   # firma seçilmeden önce app-düzeyi statik dosyalar (tüm firmalarda aynı)
+NOSTORE = {'cache-control': 'no-store', 'pragma': 'no-cache'}
 TENANT_HOSTS = re.compile(r'https?://(?:www\.)?(?:caymaz\.app|turkbey\.app|veilox\.app|merkez\.veilox\.app|[a-z0-9-]+\.hepgo\.com|hepgo\.com)', re.I)
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade'}
 
@@ -105,7 +107,7 @@ f.addEventListener('submit',async function(ev){{ev.preventDefault();e.textConten
  }}catch(_e){{e.textContent='Bağlantı hatası';}}
  b.disabled=false;b.textContent='Giriş yap';}});
 </script></body></html>"""
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers=dict(NOSTORE))
 
 
 async def is_authed(sock: str, cookie: str) -> bool:
@@ -154,11 +156,9 @@ async def gateway(request: Request) -> Response:
         r = RedirectResponse('/', status_code=302)
         r.delete_cookie(COOKIE, path='/')
         return r
-    # HEPGO logosu (firma backend'inden al; firma yoksa 404 → sayfa emoji'ye düşer)
+    # HEPGO logosu (app-düzeyi statik; firma seçilmese de varsayılan firmadan sun)
     if path == '/_logo':
-        if tvalid:
-            return await proxy_to(TENANTS[tenant]['sock'], request, '/static/img/logo-mark.png')
-        return Response(status_code=404)
+        return await proxy_to(TENANTS[tenant]['sock'] if tvalid else DEFAULT_SOCK, request, '/static/img/logo-mark.png')
     # Firma seçimi (login formundan)
     if path == '/_sel':
         raw = ''
@@ -174,6 +174,7 @@ async def gateway(request: Request) -> Response:
             return JSONResponse({'detail': 'Firma bulunamadı'}, status_code=404)
         r = JSONResponse({'ok': True, 'name': TENANTS[slug]['name']}) if request.method == 'POST' else RedirectResponse('/app', status_code=302)
         r.set_cookie(COOKIE, slug, max_age=31536000, secure=True, httponly=True, samesite='lax', path='/')
+        r.headers['cache-control'] = 'no-store'
         return r
 
     # Sayfa girişi: kimlik yoksa HEPGO logolu giriş ekranı (firma hatırlanıyorsa yalnız kullanıcı+şifre)
@@ -187,7 +188,10 @@ async def gateway(request: Request) -> Response:
 
     # Diğer tüm yollar: şeffaf vekil
     if not tvalid:
-        return Response('Firma seçilmedi', status_code=409)
+        # app-düzeyi statik dosyalar (tüm firmalarda aynı) firma seçilmeden de sunulur → asla HTML dönmesin
+        if path.startswith('/static/') or path in ('/favicon.ico', '/manifest.json', '/sw.js'):
+            return await proxy_to(DEFAULT_SOCK, request, path)
+        return Response('Firma seçilmedi', status_code=409, headers=dict(NOSTORE))
     return await proxy_to(TENANTS[tenant]['sock'], request, path)
 
 

@@ -81,7 +81,7 @@ button{{height:48px;border:0;border-radius:12px;background:linear-gradient(135de
 font-weight:700;font-size:16px;cursor:pointer;margin-top:4px;box-shadow:0 10px 26px rgba(37,99,235,.35)}}
 button:disabled{{opacity:.6}}.err{{min-height:18px;color:#ffb4b4;font-size:13px;text-align:center}}</style></head>
 <body><div class="card">
-<div class="logo"><img src="/_logo" alt="" onerror="this.parentElement.textContent='🛰️'"></div>
+<div class="logo"><img src="/_logo?v=2" alt="" onerror="this.parentElement.textContent='🛰️'"></div>
 <h1 class="brand">HEPGO</h1><p class="sub">Fabrika Yönetim Sistemi</p>
 {firm_hdr}
 <form id="f" autocomplete="on">{firm_field}

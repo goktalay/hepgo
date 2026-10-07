@@ -183,9 +183,10 @@ export async function startCall(targetIds, names = {}, photos = {}, opts = {}) {
   startRing('out');
 }
 
-// Ses (+ istenirse kamera) akışı al
+// Ses (+ istenirse kamera) akışı al. Eko/uğultu önleme açık (yoksa karşı taraf kendi sesini yankı olarak duyar).
 function getMedia(video) {
-  return navigator.mediaDevices.getUserMedia(video ? { audio: true, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } } : { audio: true });
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  return navigator.mediaDevices.getUserMedia(video ? { audio, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } } : { audio });
 }
 
 export async function callPicker() {
@@ -270,6 +271,7 @@ function makeSlider(onAccept, onReject) {
 }
 
 async function accept(m) {
+  stopRing();   // sesi HEMEN durdur (mikrofon izni/akış beklenirken zil çalmaya devam etmesin)
   let video = !!m.video;
   let stream;
   try { stream = await getMedia(video); }

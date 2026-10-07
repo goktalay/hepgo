@@ -135,7 +135,39 @@
     try { P.SplashScreen && P.SplashScreen.hide && P.SplashScreen.hide(); } catch (e) {}
   }
 
-  function start() { polish(); initNet(); initPush(); initGeo(); }
+  // ---------------------------------------------------------------- CİHAZ KÜNYESİ (giriş sonrası, yasal/teknik bilgiler)
+  async function initDevice() {
+    try { if (sessionStorage.getItem('hepgo.devsent') === '1') return; } catch (e) {}
+    try {
+      const Dev = P.Device;
+      let info = {}, id = {};
+      if (Dev) { try { info = await Dev.getInfo(); } catch (e) {} try { id = await Dev.getId(); } catch (e) {} }
+      let app = {};
+      if (P.App && P.App.getInfo) { try { app = await P.App.getInfo(); } catch (e) {} }
+      const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ''; } })();
+      const body = {
+        device_id: id.identifier || null,
+        platform: info.platform || platform,
+        model: info.model || null,
+        manufacturer: info.manufacturer || null,
+        os_version: [info.operatingSystem, info.osVersion].filter(Boolean).join(' ') || null,
+        app_version: app.version || null,
+        app_build: app.build || null,
+        webview: info.webViewVersion || null,
+        language: navigator.language || null,
+        timezone: tz || null,
+        screen: (screen && screen.width) ? `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}` : null,
+        ua: navigator.userAgent || null,
+      };
+      // Uç yalnız ERP (fabrika-yonetim) kökeninde + oturum varken 200 döner; değilse sessizce geçer
+      const r = await fetch('/api/location/consent', { credentials: 'include' }).then(x => x.ok, () => false).catch(() => false);
+      if (r === false) return;   // oturum yok / farklı köken → gönderme
+      const res = await fetch('/api/mobile/device-info', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.ok) { try { sessionStorage.setItem('hepgo.devsent', '1'); } catch (e) {} }
+    } catch (e) { /* yut */ }
+  }
+
+  function start() { polish(); initNet(); initPush(); initGeo(); initDevice(); }
   if (document.readyState === 'complete' || document.readyState === 'interactive') start();
   else document.addEventListener('DOMContentLoaded', start);
 })();

@@ -97,3 +97,51 @@ def location_latest(user=Depends(auth.current_user), conn=db.DB):
         JOIN users u ON u.id = lp.user_id
         ORDER BY lp.at DESC'''))
     return {'people': rows}
+
+
+class DeviceInfoIn(BaseModel):
+    device_id: Optional[str] = None
+    platform: Optional[str] = None
+    model: Optional[str] = None
+    manufacturer: Optional[str] = None
+    os_version: Optional[str] = None
+    app_version: Optional[str] = None
+    app_build: Optional[str] = None
+    webview: Optional[str] = None
+    language: Optional[str] = None
+    timezone: Optional[str] = None
+    screen: Optional[str] = None
+    ua: Optional[str] = None
+
+
+@router.post('/device-info')
+def device_info(body: DeviceInfoIn, user=Depends(auth.current_user), conn=db.DB):
+    """Giriş sonrası mobil uygulamadan gelen cihaz künyesi (yasal/teknik bilgiler). Kişi+cihaz bazında güncellenir."""
+    def cut(v, n=120):
+        return (v or '')[:n] or None
+    now = db.now()
+    did = cut(body.device_id, 80)
+    row = conn.execute('SELECT id FROM mobile_devices WHERE user_id = ? AND device_id IS ?', (user['id'], did)).fetchone()
+    vals = (body.platform and body.platform[:20], cut(body.model), cut(body.manufacturer), cut(body.os_version, 40),
+            cut(body.app_version, 40), cut(body.app_build, 40), cut(body.webview, 80), cut(body.language, 20),
+            cut(body.timezone, 60), cut(body.screen, 40), cut(body.ua, 400))
+    if row:
+        conn.execute('''UPDATE mobile_devices SET platform=?, model=?, manufacturer=?, os_version=?, app_version=?,
+            app_build=?, webview=?, language=?, timezone=?, screen=?, ua=?, last_seen=? WHERE id=?''', (*vals, now, row[0]))
+    else:
+        conn.execute('''INSERT INTO mobile_devices (user_id, device_id, platform, model, manufacturer, os_version,
+            app_version, app_build, webview, language, timezone, screen, ua, first_seen, last_seen)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (user['id'], did, *vals, now, now))
+    conn.commit()
+    return {'ok': True}
+
+
+@router.get('/devices')
+def list_devices(user=Depends(auth.current_user), conn=db.DB):
+    """Kayıtlı mobil cihaz künyeleri (yönetici görünümü). Yalnız master/admin/İK."""
+    allowed = user.get('master') or any(r in user.get('roles', []) for r in (auth.ADMIN, auth.HR))
+    if not allowed:
+        raise HTTPException(403, 'Yetki yok')
+    rows = db.rows(conn.execute('''SELECT md.*, u.full_name FROM mobile_devices md JOIN users u ON u.id = md.user_id
+        ORDER BY md.last_seen DESC'''))
+    return {'devices': rows}

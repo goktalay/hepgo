@@ -2581,6 +2581,14 @@ def _migrate(conn):
             id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             lat REAL NOT NULL, lng REAL NOT NULL, accuracy REAL, at TEXT, platform TEXT, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_location_pings_user ON location_pings(user_id, id);
+        -- Mobil cihaz künyesi (yasal olarak alınabilen teknik bilgiler; kişi başına cihaz bazında en son durum)
+        CREATE TABLE IF NOT EXISTS mobile_devices (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            device_id TEXT, platform TEXT, model TEXT, manufacturer TEXT, os_version TEXT,
+            app_version TEXT, app_build TEXT, webview TEXT, language TEXT, timezone TEXT,
+            screen TEXT, ua TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+            UNIQUE(user_id, device_id));
+        CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id);
         -- Saha görevi İSG kontrolü: görevdeki her kişinin KKD maddeleri için saha sorumlusunun Yaptı / Yapmadı işareti
         CREATE TABLE IF NOT EXISTS field_task_isg (
             task_id INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id),

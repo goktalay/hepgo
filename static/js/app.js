@@ -924,9 +924,12 @@ function initPanelCollapse(viewEl) {
     if (!f.nextElementSibling || f.matches('.filters, .stat-strip, .seg-tabs, .tabs, .pick-list, .guest-list, .acc-list, .set-ios, .toolbar')) return null;
     const ti = f.firstElementChild;
     const isTitle = ti && (/^H[2-4]$/.test(ti.tagName) || /^(B|STRONG)$/.test(ti.tagName));
-    // Başlık satırı yalnız GERÇEK aksiyon düğmesi içeriyorsa panel başlığıdır (ad/rozet/tarih satırları hariç)
+    // Başlık satırı: gerçek aksiyon düğmesi YA DA .spacer YA DA bar/head/title/toolbar sınıfı içermeli (başlık barı).
+    // Böylece 'ad + rozet + tarih' içerik satırları (ör. sc-change-h) hariç kalır.
     const hasBtn = f.querySelector(':scope > .btn, :scope > button, :scope > a.btn');
-    return (isTitle && hasBtn) ? f : null;
+    const hasSpacer = f.querySelector(':scope > .spacer');
+    const barClass = f.className.split(/[\s-]+/).some(c => ['bar', 'head', 'header', 'heading', 'title', 'toolbar'].includes(c));
+    return (isTitle && (hasBtn || hasSpacer || barClass)) ? f : null;
   };
   const make = (el, head, card) => {
     if (el.dataset.collapsible) return;
@@ -978,6 +981,29 @@ function initPanelCollapse(viewEl) {
         if (hd.matches('.set-sub, .sub-h, .dd-role')) return;
         if (par.querySelectorAll(':scope > h2, :scope > h3, :scope > h4').length > 1) return;   // düz başlık listesi değil, tek bölüm olmalı
         make(par, hd, false);
+      });
+    });
+    // Gevşek bölüm başlıkları (kart içinde DEĞİL): h3/h4 + ardından gelen içerik (ör. "Şema çizimi"). Başlığa tıklayınca
+    // sonraki başlığa kadar olan kardeşler gizlenir. Sayfa başlığı (.page-head) ve bilinen alt-etiketler hariç.
+    viewEl.querySelectorAll('h3, h4').forEach(hd => {
+      if (hd.dataset.collapsible) return;
+      if (hd.closest('.card, .set-card, .collapse-head, .panel-foot, .grid-stack, .page-head, .modal-back')) return;
+      if (hd.matches('.set-sub, .sub-h, .dd-role')) return;
+      const sibs = [];
+      for (let n = hd.nextElementSibling; n; n = n.nextElementSibling) { if (/^H[1-4]$/.test(n.tagName)) break; sibs.push(n); }
+      if (!sibs.length) return;
+      hd.dataset.collapsible = '1';
+      hd.classList.add('collapse-head', 'loose-head');
+      sentenceCase(hd);
+      hd.insertBefore(Object.assign(document.createElement('span'), { className: 'collapse-chev' }), hd.firstChild);
+      const k = keyOf(hd);
+      const apply = col => { hd.classList.toggle('collapsed', col); sibs.forEach(s => { s.style.display = col ? 'none' : ''; }); };
+      if (read().has(k)) apply(true);
+      hd.addEventListener('click', e => {
+        if (e.target.closest('button, a, input, select, textarea, label')) return;
+        const col = !hd.classList.contains('collapsed');
+        apply(col);
+        const s = read(); col ? s.add(k) : s.delete(k); write(s);
       });
     });
   };

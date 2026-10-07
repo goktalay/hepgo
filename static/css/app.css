@@ -3920,9 +3920,15 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 /* Başlık (+ varsa açıklama) solda kalır; aksiyon düğmeleri .collapse-push ile en sağa hizalanır */
 .collapse-head > .collapse-title { min-width: 0; text-align: left; }
 .collapse-head > .collapse-push { margin-left: auto; }
-/* Başlıklar bold DEĞİL (yazım düzeni); cümle düzeni JS ile uygulanır */
-.collapse-head { font-weight: 500; }
-.collapse-head > .collapse-title, .collapse-head > b, .collapse-head > strong { font-weight: 500; }
+/* Başlık fontu TÜM panellerde aynı (h3/b/strong fark etmez): sabit boyut + yarı-kalın. Açıklama (.small) korunur. */
+.collapse-head { font-size: 15px !important; font-weight: 600 !important; line-height: 1.3; }
+.collapse-head > .collapse-title, .collapse-head > b, .collapse-head > strong,
+.collapse-head > h1, .collapse-head > h2, .collapse-head > h3, .collapse-head > h4 { font-size: 15px !important; font-weight: 600 !important; }
+.collapse-head > .small, .collapse-head > .muted, .collapse-head .collapse-chev { font-size: 12px !important; font-weight: 400 !important; }
+/* Gevşek bölüm başlığı (kart dışı): band görünümlü bar */
+.loose-head { display: flex; align-items: center; gap: 8px; cursor: pointer; background: var(--surface-2, rgba(127, 127, 127, .045));
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 16px 0 12px; }
+.loose-head:not(.collapsed) > .collapse-chev { transform: rotate(90deg); }
 .collapse-chev { width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent;
   border-bottom: 4px solid transparent; opacity: .5; flex: none; transition: transform .15s ease; }
 .collapsible:not(.collapsed) > .collapse-head > .collapse-chev { transform: rotate(90deg); }

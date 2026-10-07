@@ -3106,10 +3106,11 @@ main#view .card.hr-card.missing, main#view .card.hr-top.missing { border: 2px so
 .hr-alert { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); font-size: 13px; }
 .hr-top-actions { display: flex; flex-direction: column; gap: 8px; }
 .hr-tabs { margin-bottom: 12px; }
-.hr-general { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
-@media (max-width: 640px) { .hr-general { grid-template-columns: 1fr; } }
+/* Bölümlü (masonry) panel akışı — biri katlanınca boşluk kalmaz, paneller yeniden dengelenir */
+.hr-general { columns: 440px; column-gap: 14px; }
+.hr-general > * { break-inside: avoid; margin: 0 0 14px; }
 .hr-general h3 { margin: 0 0 10px; font-size: 15px; }
-.hr-save { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.hr-save { column-span: all; display: flex; justify-content: flex-end; margin: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0 14px; }
 .hr-cv { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .hr-doc { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -3913,13 +3914,30 @@ html[data-theme="dark"] .sc-integ-msg.err { background: rgba(239, 68, 68, .15); 
 }
 
 /* Ayarlar: bildirim/uyarı türleri, rahatsız etmeyin */
-/* Katlanabilir paneller (tüm arayüzler): başlığa tıkla → aç/kapa; durum cihazda hatırlanır */
+/* Katlanabilir paneller (tüm arayüzler): başlığa tıkla → aç/kapa; durum cihazda hatırlanır. Pano kutucuğu tarzı
+   başlık bandı (soft arka plan + ince alt çizgi). */
 .collapsible > .collapse-head { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; }
 .collapse-chev { width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent;
   border-bottom: 4px solid transparent; opacity: .5; flex: none; transition: transform .15s ease; }
 .collapsible:not(.collapsed) > .collapse-head > .collapse-chev { transform: rotate(90deg); }
 .collapsible.collapsed > :not(.collapse-head) { display: none !important; }
-.collapsible.collapsed > .collapse-head { margin-bottom: 0; }
+/* İç boşluklu kartlarda (.card-pad / .set-card) başlık tam-genişlik şık bant olur (pano tile header gibi) */
+.card-pad.collapsible > .collapse-head {
+  margin: -16px -16px 14px; padding: 11px 16px; background: var(--surface-2, rgba(127, 127, 127, .045));
+  border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0;
+}
+.card-pad.collapsible.collapsed > .collapse-head { margin-bottom: -16px; border-bottom: 0; border-radius: var(--radius); }
+html.compact .card-pad.collapsible > .collapse-head { margin: -12px -14px 12px; padding: 9px 14px; }
+html.compact .card-pad.collapsible.collapsed > .collapse-head { margin-bottom: -12px; }
+/* Pad'siz kartlar: sade alt çizgi */
+.card.collapsible:not(.card-pad) > .collapse-head { padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.card.collapsible:not(.card-pad).collapsed > .collapse-head { margin-bottom: 0; border-bottom: 0; }
+
+/* Bölümlü (masonry) panel yerleşimi — pano hissi: yan yana paneller bağımsız akar, biri katlanınca boşluk kalmaz.
+   İlgili modül kapsayıcısına .panel-masonry eklenir (tam-genişlik öğeler .full / .hr-save ile tüm sütunlara yayılır). */
+.panel-masonry { columns: 440px; column-gap: 14px; }
+.panel-masonry > * { break-inside: avoid; margin: 0 0 14px; }
+.panel-masonry > .full, .panel-masonry > .hr-save { column-span: all; }
 
 .set-types { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
 .set-toggle.dim { opacity: .6; }

@@ -69,8 +69,8 @@ align-items:center;justify-content:center;font-family:system-ui,-apple-system,'S
 padding:max(28px,env(safe-area-inset-top)) 22px max(28px,env(safe-area-inset-bottom));
 background:radial-gradient(130% 150% at 0% 0%,#1e3a8a 0%,#0f1d3d 55%,#070d1c 100%)}}
 .card{{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;gap:6px}}
-.logo{{width:84px;height:84px;border-radius:22px;background:rgba(255,255,255,.06);display:grid;place-items:center;margin-bottom:8px;
-box-shadow:0 14px 36px rgba(7,13,28,.5)}}.logo img{{width:56px;height:56px;border-radius:14px}}
+.logo{{width:96px;height:96px;display:grid;place-items:center;margin-bottom:10px}}
+.logo img{{width:96px;height:96px;border-radius:22px;box-shadow:0 14px 36px rgba(7,13,28,.55)}}
 .brand{{font-size:26px;font-weight:800;letter-spacing:.5px;margin:0}}.sub{{color:#aebbdc;font-size:13.5px;margin:0 0 16px}}
 .firm{{font-size:13px;color:#aebbdc;margin:0 0 10px}}.firm a{{color:#9ab7ff}}
 form{{width:100%;display:flex;flex-direction:column;gap:12px}}
@@ -156,9 +156,9 @@ async def gateway(request: Request) -> Response:
         r = RedirectResponse('/', status_code=302)
         r.delete_cookie(COOKIE, path='/')
         return r
-    # HEPGO logosu (app-düzeyi statik; firma seçilmese de varsayılan firmadan sun)
+    # HEPGO logosu (app-düzeyi statik; firma seçilmese de varsayılan firmadan sun) — HEPGO amblemi (koyu zemine uygun)
     if path == '/_logo':
-        return await proxy_to(TENANTS[tenant]['sock'] if tvalid else DEFAULT_SOCK, request, '/static/img/logo-mark.png')
+        return await proxy_to(TENANTS[tenant]['sock'] if tvalid else DEFAULT_SOCK, request, '/static/img/hepgo-mark.png')
     # Firma seçimi (login formundan)
     if path == '/_sel':
         raw = ''

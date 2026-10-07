@@ -73,12 +73,24 @@ npx cap sync android
 
 ---
 
-## F) Push bildirimleri (FCM) — isteğe bağlı
+## F) Push bildirimleri (FCM) — DİKKAT: push eklentisi varsa google-services.json ŞART
 
+> ⚠️ Uygulama push eklentisiyle derlenir ama `google-services.json` YOKSA, açılışta push kaydı sırasında
+> **çöker**: *"Default FirebaseApp is not initialized"*. İki çözümden biri gerekir:
+
+**Push'u kullanacaksan (önerilen):**
 1. **Firebase Console** (https://console.firebase.google.com) → yeni proje → **Android uygulaması ekle** → paket adı **com.gokkubbe.hepgo**.
 2. `google-services.json` indir → `mobile\android\app\` içine koy.
-3. Android Studio'da yeniden **Sync / Build**. (Dosya yoksa da uygulama derlenir; sadece push çalışmaz.)
-4. Firebase → Proje ayarları → Hizmet hesapları → özel anahtar JSON'u bana ver; sunucuya koyunca push gönderimi aktif olur.
+3. `cd mobile && npx cap sync android` → Android Studio'da **Run**. Çökme biter, push çalışır.
+4. Firebase → Proje ayarları → Hizmet hesapları → özel anahtar JSON'u bana ver; sunucuya koyunca push gönderimi aktif olur. (Bu olmadan da uygulama çökmez, sadece bildirim gelmez.)
+
+**Şimdilik push istemiyorsan (Firebase'siz test):** eklentiyi çıkar — `native.js` otomatik atlar, çökmez:
+```powershell
+cd mobile
+npm uninstall @capacitor/push-notifications
+npx cap sync android
+```
+Geri eklemek: `npm i @capacitor/push-notifications` + google-services.json + `npx cap sync android`.
 
 ---
 
@@ -91,6 +103,9 @@ npx cap sync android
 ---
 
 ## Sık sorunlar
+- **Açılışta çökme: "Default FirebaseApp is not initialized in this process com.gokkubbe.hepgo"**
+  → Push eklentisi var ama `google-services.json` yok. F adımı: ya google-services.json ekle, ya da push eklentisini
+  geçici çıkar (`npm uninstall @capacitor/push-notifications && npx cap sync android`).
 - **"Could not read script … capacitor-cordova-android-plugins\cordova.variables.gradle does not exist"**
   → B adımını atlamışsın. `mobile` klasöründe `npm install` sonra `npx cap sync android` çalıştır, ardından
   Android Studio'da **File → Sync Project with Gradle Files**.

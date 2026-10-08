@@ -5,7 +5,9 @@ import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, mo
 
 const TYPE_BADGE = { user: ['blue', 'Personel'], person: ['', 'Firma kişisi'], family: ['green', 'Aile'], mine: ['yellow', 'Kişilerim'] };
 const MINE_SRC = { mail: 'Yazışma', google: 'Google Kişiler', microsoft: 'Outlook Kişileri', manual: 'Elle eklendi', device: '📱 Telefon' };
-// Mobil uygulama köprüsü (telefon rehberi ↔ sistem); yalnız native kabukta ve contacts eklentisi varsa
+// Mobil uygulama (Capacitor native kabuk) mu? Düğme görünürlüğü buna bağlı (eklenti kontrolü tıklamada yapılır)
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+// Telefon rehberi köprüsü (native.js window.HepgoNative); yoksa null → tıklamada anlaşılır uyarı
 const nativeContacts = () => (window.HepgoNative && window.HepgoNative.hasContacts && window.HepgoNative.hasContacts()) ? window.HepgoNative : null;
 // Türkçe Yazım Düzeni (Title Case): her kelimenin ilk harfi büyük, kalanı küçük (İ/ı duyarlı)
 const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(\p{L})/gu, (m, p, c) => p + c.toLocaleUpperCase('tr'));
@@ -33,9 +35,11 @@ async function list(view) {
     return term ? people.filter(p => [p.name, p.subtitle, p.phone, p.email].some(x => (x || '').toLocaleLowerCase('tr').includes(term))) : people;
   };
   async function importFromPhone() {
+    const nc = nativeContacts();
+    if (!nc) return toast('Telefon rehberi eklentisi bulunamadı — uygulamayı güncelleyip yeniden açın', 'err');
     importBtn.disabled = true; importBtn.textContent = '📱 İçe aktarılıyor…';
     try {
-      const r = await nativeContacts().importDeviceContacts();
+      const r = await nc.importDeviceContacts();
       toast(t('{n} kişi içe aktarıldı (📱 Telefon)', { n: r.total || 0 }), 'success');
       if (kind === 'mine') load();
     } catch (err) {
@@ -43,12 +47,14 @@ async function list(view) {
     } finally { importBtn.disabled = false; importBtn.textContent = '📱 Telefondan içe aktar'; }
   }
   async function exportToPhone() {
+    const nc = nativeContacts();
+    if (!nc) return toast('Telefon rehberi eklentisi bulunamadı — uygulamayı güncelleyip yeniden açın', 'err');
     const shown = filtered().filter(p => p.phone || p.email);
     if (!shown.length) return toast('Aktarılacak telefon/e-posta olan kişi yok', 'err');
     if (!await confirmDialog('Telefona aktar', t('{n} kişi telefonunuzun rehberine eklenecek. Devam edilsin mi?', { n: shown.length }), { okLabel: 'Aktar' })) return;
     exportBtn.disabled = true; exportBtn.textContent = '📱 Aktarılıyor…';
     try {
-      const r = await nativeContacts().addContactsToPhone(shown.map(p => ({
+      const r = await nc.addContactsToPhone(shown.map(p => ({
         name: tc(p.name), phone: p.phone, email: p.email,
         company: p.company || (p.type === 'person' ? p.subtitle : null), title: p.title })));
       toast(t('{n} kişi telefona eklendi', { n: r.count || 0 }), 'success');
@@ -87,7 +93,7 @@ async function list(view) {
   const load = async () => {
     clear(grid, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
     addBtn.hidden = kind !== 'mine';
-    const nat = nativeContacts();
+    const nat = isNativeApp();
     importBtn.hidden = !(nat && kind === 'mine');       // telefon → Kişilerim
     exportBtn.hidden = !(nat && kind !== 'mine');        // sistem rehberi → telefon
     try {
@@ -255,13 +261,15 @@ async function detail(view, type, id, ctx) {
       row('Ailesi', d.employee_name && t('{n} ailesi', { n: tc(d.employee_name) })),
       row('Telefon', d.phone), row('E-posta', d.email), row('Doğum', d.birth_date && fmtDate(d.birth_date)),
       row('Roller', (d.roles || []).join(', ')), d.note ? row('Not', d.note) : null),
-    (nativeContacts() && (d.phone || d.email)) ? h('div', { class: 'set-actions left', style: { marginTop: '10px' } },
+    (isNativeApp() && (d.phone || d.email)) ? h('div', { class: 'set-actions left', style: { marginTop: '10px' } },
       (() => {
         const b = h('button', { class: 'btn sm', type: 'button' }, '📱 Telefona ekle');
         b.addEventListener('click', async () => {
+          const nc = nativeContacts();
+          if (!nc) return toast('Telefon rehberi eklentisi bulunamadı — uygulamayı güncelleyip yeniden açın', 'err');
           b.disabled = true;
           try {
-            const r = await nativeContacts().addContactsToPhone([{ name: tc(d.full_name), phone: d.phone, email: d.email, company: tc(d.company), title: tc(d.title) }]);
+            const r = await nc.addContactsToPhone([{ name: tc(d.full_name), phone: d.phone, email: d.email, company: tc(d.company), title: tc(d.title) }]);
             toast(r.count ? 'Telefona eklendi' : 'Eklenemedi', r.count ? 'success' : 'err');
           } catch (err) { toast(err.message === 'no-perm' ? 'Telefon rehberi izni verilmedi' : 'Telefona eklenemedi', 'err'); }
           finally { b.disabled = false; }

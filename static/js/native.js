@@ -290,7 +290,9 @@
 
   // ---------------------------------------------------------------- KİŞİLER (telefon rehberi ↔ sistem)
   // Web arayüzü (rehber modülü) bu köprüyü window.HepgoNative üzerinden çağırır. @capacitor-community/contacts gerekir.
-  var Contacts = P.Contacts;
+  // ERP canlı-web bu eklentiyi JS'te import etmediği için Capacitor.Plugins.Contacts otomatik oluşmayabilir →
+  // resmî yol registerPlugin('Contacts') ile APK'daki native ContactsPlugin'e köprü proxy oluştur.
+  var Contacts = P.Contacts || (typeof Cap.registerPlugin === 'function' ? Cap.registerPlugin('Contacts') : null);
   async function ensureContactPerm() {
     if (!Contacts) return false;
     try {

@@ -438,7 +438,7 @@ def recognize_frame(conn, args):
         buf = b''
     if not buf:
         return {'w': 0, 'h': 0, 'faces': []}
-    img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imdecode(np.frombuffer(buf, np.uint8).copy(), cv2.IMREAD_COLOR)
     if img is None:
         return {'w': 0, 'h': 0, 'faces': []}
     h, w = img.shape[:2]
@@ -516,7 +516,7 @@ def embed_frame(conn, args):
         buf = b''
     if not buf:
         return {'found': False}
-    img = cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imdecode(np.frombuffer(buf, np.uint8).copy(), cv2.IMREAD_COLOR)
     if img is None:
         return {'found': False}
     h, w = img.shape[:2]

@@ -9,6 +9,9 @@ import { docView, printDoc, proofRows } from './contractdoc.js';
 
 const money = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(n || 0);
 const money2 = n => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(n || 0);
+// AÇIK BETA: üyelik ekranında ücret tutarları gizlenir (fiyatlandırma politikası belirlenince false yapılır).
+const HIDE_PRICES = true;
+const showFee = f => !HIDE_PRICES && f;
 const SUBS = [['overview', 'Genel Bakış'], ['live', 'Canlı Destek'], ['tickets', 'Destek Taleplerim'], ['payments', 'Ödemelerim'], ['contracts', 'Sözleşmelerim']];
 const PAY = { odendi: ['green', 'Ödendi'], kismi: ['yellow', 'Kısmi ödendi'], bekliyor: ['', 'Ödeme bekleniyor'], gecikti: ['red', 'Gecikmiş'], ucretsiz: ['', 'Ücretsiz'] };
 const NOTICE = { bekliyor: ['yellow', 'Onay bekliyor'], onaylandi: ['green', 'Onaylandı'], reddedildi: ['red', 'Reddedildi'] };
@@ -89,9 +92,9 @@ async function overview(view, ctx) {
           h('span', { class: 'mono small muted' }, x.code), x.company_unread ? h('span', { class: 'tk-dot' }) : null, h('span', { class: 'grow' }, x.subject),
           badge(STATUS_FIRM, x.status)))) : h('p', { class: 'small muted' }, 'Henüz destek talebiniz yok. Sorunuz olduğunda canlı destekten ya da talep açarak bize ulaşın.')),
       h('section', { class: 'card card-pad' }, h('div', { class: 'mb-sec-h' }, h('h3', null, 'Ödeme takvimi'), h('a', { class: 'small', href: '#/uyelik/payments' }, 'Ödemelerim →')),
-        d.fee ? h('div', { class: 'mb2-months' }, [...(d.months || [])].reverse().map(m => h('div', { class: `mb2-m ${m.status}`, title: `${m.period} · ${(PAY[m.status] || [])[1] || m.status}${m.paid ? ` · ${money2(m.paid)}` : ''}` },
-          h('b', null, m.period.slice(5)), h('small', null, m.period.slice(0, 4))))) : h('p', { class: 'small muted' }, 'Paketiniz ücretsiz.'),
-        d.fee ? h('div', { class: 'mb2-legend small muted' }, ...['odendi', 'kismi', 'bekliyor', 'gecikti'].map(k => h('span', { class: `mb2-lg ${k}` }, PAY[k][1]))) : null),
+        showFee(d.fee) ? h('div', { class: 'mb2-months' }, [...(d.months || [])].reverse().map(m => h('div', { class: `mb2-m ${m.status}`, title: `${m.period} · ${(PAY[m.status] || [])[1] || m.status}${m.paid ? ` · ${money2(m.paid)}` : ''}` },
+          h('b', null, m.period.slice(5)), h('small', null, m.period.slice(0, 4))))) : h('p', { class: 'small muted' }, HIDE_PRICES ? 'Açık beta döneminde ücretsiz.' : 'Paketiniz ücretsiz.'),
+        showFee(d.fee) ? h('div', { class: 'mb2-legend small muted' }, ...['odendi', 'kismi', 'bekliyor', 'gecikti'].map(k => h('span', { class: `mb2-lg ${k}` }, PAY[k][1]))) : null),
       mods.length ? h('section', { class: 'card card-pad mb2-mods' }, h('h3', null, t('Paketinizdeki modüller ({n})', { n: mods.length })),
         h('div', { class: 'mb2-chips' }, mods.map(m => h('span', { class: 'sk-tagchip', title: m }, t(moduleName(m)))))) : null));
 }
@@ -306,16 +309,16 @@ async function paymentsView(view) {
   const [, pl] = PAY[d.pay_status] || ['', d.pay_status];
   clear(view,
     h('div', { class: 'mb2-pay-top' },
-      h('section', { class: 'card card-pad mb2-pay-sum' }, h('small', { class: 'muted' }, 'Aylık üyelik ücreti'), h('div', { class: 'mb2-big' }, d.fee ? money2(d.fee) : 'Ücretsiz'),
-        h('div', null, t('Bu ay ({p}): ', { p: d.period }), badge(PAY, d.pay_status), d.paid_this_month ? h('span', { class: 'small muted' }, ` · ${money2(d.paid_this_month)} ödendi`) : null),
-        d.fee ? h('button', { class: 'btn primary', type: 'button', onclick: notify }, '＋ Ödeme bildir') : null),
+      h('section', { class: 'card card-pad mb2-pay-sum' }, h('small', { class: 'muted' }, 'Aylık üyelik ücreti'), h('div', { class: 'mb2-big' }, showFee(d.fee) ? money2(d.fee) : (HIDE_PRICES ? 'Açık beta — ücretsiz' : 'Ücretsiz')),
+        showFee(d.fee) ? h('div', null, t('Bu ay ({p}): ', { p: d.period }), badge(PAY, d.pay_status), d.paid_this_month ? h('span', { class: 'small muted' }, ` · ${money2(d.paid_this_month)} ödendi`) : null) : h('div', { class: 'small muted' }, 'Açık beta döneminde tüm modüller ücretsiz açıktır.'),
+        showFee(d.fee) ? h('button', { class: 'btn primary', type: 'button', onclick: notify }, '＋ Ödeme bildir') : null),
       pi.iban ? h('section', { class: 'card card-pad mb2-bank' }, h('h3', null, 'Ödeme bilgileri'),
         h('dl', { class: 'dm-kv' }, pi.bank_name ? [h('dt', null, 'Banka'), h('dd', null, pi.bank_name)] : null,
           pi.account_name ? [h('dt', null, 'Hesap sahibi'), h('dd', null, pi.account_name, ' ', copy(pi.account_name, 'Hesap sahibi'))] : null,
           h('dt', null, 'IBAN'), h('dd', { class: 'mono' }, pi.iban, ' ', copy(pi.iban.replace(/\s/g, ''), 'IBAN'))),
         pi.note ? h('p', { class: 'small muted' }, pi.note) : null,
         h('p', { class: 'small muted' }, t('Açıklamaya firma adınızı ve dönemi yazmanız işlemi hızlandırır ({p}).', { p: pl }))) : null),
-    d.fee && d.months?.length ? h('section', { class: 'card card-pad' }, h('h3', null, 'Son 12 ay'),
+    showFee(d.fee) && d.months?.length ? h('section', { class: 'card card-pad' }, h('h3', null, 'Son 12 ay'),
       h('div', { class: 'mb2-months wide' }, [...d.months].reverse().map(m => h('div', { class: `mb2-m ${m.status}`, title: (PAY[m.status] || [])[1] || m.status },
         h('b', null, m.period.slice(5)), h('small', null, m.period.slice(0, 4)), m.paid ? h('i', null, money(m.paid)) : null)))) : null,
     d.notices?.length ? h('section', { class: 'card table-wrap' }, h('div', { class: 'mk-fin-h' }, h('b', null, 'Ödeme bildirimlerim')), h('table', { class: 'table' },

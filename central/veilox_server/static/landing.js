@@ -12,7 +12,7 @@ let theme = (() => { try { return localStorage.getItem('veilox.theme') || (match
 
 const T = {
   tr: {
-    nav: ['Özellikler', 'Toplantı', 'Fiyatlar', 'Güvenlik'], login: 'Merkez girişi', create: 'Firma girişi', apply: 'Hemen başvurun',
+    nav: ['Özellikler', 'Toplantı', 'Paketler', 'Güvenlik'], login: 'Merkez girişi', create: 'Firma girişi', apply: 'Hemen başvurun',
     heroPill: 'Üretimden sahaya, toplantıdan ofise tek platform',
     heroH: ['Fabrikanızı ', 'tek ekrandan', ' yönetin.'],
     heroLead: 'Üretim, iş emri, stok, satın alma, saha ve uçuş; görüntülü toplantı, mesajlaşma, telsiz ve yapay zeka asistanı; hatta uygulama içi ofis belgeleri — hepsi gerçek zamanlı ve tek yerde. Bulutta barındırın ya da kendi sunucunuza kurun.',
@@ -23,8 +23,8 @@ const T = {
     featP: 'Her kullanıcı yalnızca rolünün gerektirdiği modülleri görür. İster bulutta, ister kendi sunucunuzda.',
     modEye: 'Modüller', modH: 'Fabrikanın her işi için bir modül', modP: 'Yirmiden fazla modül tek platformda, gerçek zamanlı. Her kullanıcı yalnızca rolünün gerektirdiğini görür.',
     rowsEye: 'Yenilikçi sistemler', meetEye: 'Görüntülü toplantı',
-    pricingEye: 'Fiyatlandırma', pricingH: 'Size uygun paket', pricingP: 'Aylık, taahhütsüz. İhtiyacınız olan modülleri seçin; bulut ya da kendi sunucunuza kurulum.',
-    perMonth: '/ay', free: 'Ücretsiz', start: 'Bu paketle başla', modsN: n => `${n} modül`,
+    pricingEye: 'Paketler', pricingH: 'Size uygun paket', pricingP: 'İhtiyacınıza uygun paketi seçin; bulut ya da kendi sunucunuza kurulum. Açık beta döneminde tüm paketler ücretsiz.',
+    perMonth: '/ay', free: 'Ücretsiz', beta: 'Açık beta', start: 'Bu paketle başla', modsN: n => `${n} modül`,
     compareH: 'Modül karşılaştırması', compareP: 'Hangi paket hangi modülleri içerir', moduleCol: 'Modül', inc: 'var', exc: 'yok',
     modeOnline: 'Bulut (online)', modeOffline: 'Kendi sunucunuz (offline)', modeBoth: 'Bulut veya kendi sunucunuz',
     secEye: 'Güvenlik', secH: 'Veriniz sizde, kontrol sizde',
@@ -37,7 +37,7 @@ const T = {
     foot: 'HEPGO ERP',
   },
   en: {
-    nav: ['Features', 'Meetings', 'Pricing', 'Security'], login: 'Console sign-in', create: 'Company sign-in', apply: 'Apply now',
+    nav: ['Features', 'Meetings', 'Packages', 'Security'], login: 'Console sign-in', create: 'Company sign-in', apply: 'Apply now',
     heroPill: 'From production to the field, meetings to the office — one platform',
     heroH: ['Run your factory ', 'from one screen', '.'],
     heroLead: 'Production, work orders, stock, purchasing, field & flight; video meetings, chat, push-to-talk radio and an AI assistant; even in-app office documents — all real-time, in one place. Host it in the cloud or on your own server.',
@@ -48,8 +48,8 @@ const T = {
     featP: 'Each user sees only the modules their role requires. In the cloud or on your own server.',
     modEye: 'Modules', modH: 'A module for every job in the factory', modP: 'Twenty-plus modules on one real-time platform. Each user sees only what their role needs.',
     rowsEye: 'Innovative systems', meetEye: 'Video meetings',
-    pricingEye: 'Pricing', pricingH: 'A plan that fits', pricingP: 'Monthly, no commitment. Pick the modules you need; cloud or on-premise install.',
-    perMonth: '/mo', free: 'Free', start: 'Start with this plan', modsN: n => `${n} modules`,
+    pricingEye: 'Packages', pricingH: 'A plan that fits', pricingP: 'Pick the plan that fits; cloud or on-premise install. All plans are free during open beta.',
+    perMonth: '/mo', free: 'Free', beta: 'Open beta', start: 'Start with this plan', modsN: n => `${n} modules`,
     compareH: 'Module comparison', compareP: 'Which modules each plan includes', moduleCol: 'Module', inc: 'yes', exc: 'no',
     modeOnline: 'Cloud (online)', modeOffline: 'Your own server (offline)', modeBoth: 'Cloud or your own server',
     secEye: 'Security', secH: 'Your data, your control',
@@ -296,9 +296,10 @@ async function fillPricing() {
   const grid = $('#priceGrid');
   if (!grid) return;
   if (!pkgs.length) { grid.innerHTML = ''; const cmp = $('#priceCompare'); if (cmp) cmp.innerHTML = ''; return; }
+  const beta = pkgs.some(p => p.open_beta);   // açık beta: fiyatlar gizlenir
   grid.innerHTML = pkgs.map(p => `<div class="price-card reveal">
     <h3>${esc(p.name)}</h3>
-    <div class="price-amt">${money(p.monthly_fee)}<span>${esc(T[lang].perMonth)}</span></div>
+    <div class="price-amt">${beta ? `<span class="price-beta">${esc(T[lang].beta)}</span>` : `${money(p.monthly_fee)}<span>${esc(T[lang].perMonth)}</span>`}</div>
     <span class="price-mode">${esc(modeLabel(p.mode))}</span>
     <p class="price-desc">${esc(p.description || '')}</p>
     <div class="price-mods">${esc(T[lang].modsN(p.modules.length))}</div>
@@ -326,7 +327,8 @@ async function fillCompare(pkgs) {
   const t = T[lang];
   const modName = m => (lang === 'tr' ? m.title : (MODKEY_EN[m.key] || m.title));
   const groupName = g => ((lang === 'tr' ? GROUP_TR[g.key] : GROUP_EN[g.key]) || (g.key.charAt(0).toLocaleUpperCase('tr') + g.key.slice(1)));
-  const cols = pkgs.map(p => `<th scope="col"><span class="pc-name">${esc(p.name)}</span><span class="pc-fee">${money(p.monthly_fee)}</span></th>`).join('');
+  const beta = pkgs.some(p => p.open_beta);   // açık beta: fiyat sütunu gizlenir
+  const cols = pkgs.map(p => `<th scope="col"><span class="pc-name">${esc(p.name)}</span><span class="pc-fee">${beta ? esc(T[lang].beta) : money(p.monthly_fee)}</span></th>`).join('');
   const rows = groups.map(g => {
     const head = `<tr class="pc-grp"><th scope="colgroup" colspan="${pkgs.length + 1}">${esc(groupName(g))}</th></tr>`;
     const body = g.mods.map(m => {

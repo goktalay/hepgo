@@ -30,7 +30,7 @@ from . import settings  # noqa: E402
 settings.load()
 
 from . import db  # noqa: E402
-from .modules_catalog import MODULES, valid_modules  # noqa: E402
+from .modules_catalog import MODULES, MODULE_KEYS, valid_modules  # noqa: E402
 from .passwd import make_hash, verify_password  # noqa: E402
 from . import provision, pkg  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
@@ -41,6 +41,9 @@ COOKIE = 'veilox_session'
 CENTRAL_HOSTS = {h.strip().lower() for h in os.environ.get('VEILOX_CENTRAL_HOSTS', 'veilox.app,www.veilox.app,localhost,127.0.0.1,testserver').split(',') if h.strip()}
 FIRM_BASE = os.environ.get('VEILOX_CF_BASE', 'hepgo.com').strip().lower() or 'hepgo.com'
 MERKEZ_URL = os.environ.get('VEILOX_MERKEZ_URL', 'https://merkez.veilox.app/app')
+# AÇIK BETA: açıkken fiyatlar gizlenir ve her yeni firma TAM PAKET (tüm modüller) ücretsiz üye olur.
+# Fiyatlandırma politikası belirlenince VEILOX_OPEN_BETA=0 yapılır (kod değişmeden normale döner).
+OPEN_BETA = os.environ.get('VEILOX_OPEN_BETA', '1').strip().lower() not in ('0', 'false', 'no', '')
 
 
 def _host(request):
@@ -197,7 +200,7 @@ def public_packages():
     with db.connect() as conn:
         pkgs = db.rows(conn, 'SELECT * FROM packages WHERE visible=1 ORDER BY sort, id')
     return [{'slug': p['slug'], 'name': p['name'], 'description': p['description'],
-             'monthly_fee': p['monthly_fee'], 'mode': p['mode'],
+             'monthly_fee': p['monthly_fee'], 'mode': p['mode'], 'open_beta': OPEN_BETA,
              'modules': db.package_public(p)['modules']} for p in pkgs]
 
 
@@ -341,12 +344,21 @@ def register(body: RegisterIn, request: Request):
             raise HTTPException(409, 'Bu e-posta ile onay bekleyen bir başvurunuz zaten var. Durumunu “Firma girişi” ekranından sorgulayabilirsiniz.')
         pkg_row = db.row(conn, 'SELECT * FROM packages WHERE slug=? AND visible=1', (body.package_slug,)) \
             if body.package_slug else None
-        mods = db.package_public(pkg_row)['modules'] if pkg_row else []
-        mode = (pkg_row['mode'] if pkg_row else 'online')
-        if mode == 'both':
+        if OPEN_BETA:
+            # Açık beta: paket seçilmiş olsun olmasın, firma TAM PAKET (tüm modüller) ve ücretsiz üye olur.
+            pkg_row = pkg_row or db.row(conn, "SELECT * FROM packages WHERE slug='kurumsal'") \
+                or db.row(conn, 'SELECT * FROM packages ORDER BY sort, id LIMIT 1')
+            mods = list(MODULE_KEYS)
             mode = 'online'
-        fee = pkg_row['monthly_fee'] if pkg_row else 0
-        wl = int(pkg_row['white_label']) if pkg_row else 0
+            fee = 0
+            wl = 0
+        else:
+            mods = db.package_public(pkg_row)['modules'] if pkg_row else []
+            mode = (pkg_row['mode'] if pkg_row else 'online')
+            if mode == 'both':
+                mode = 'online'
+            fee = pkg_row['monthly_fee'] if pkg_row else 0
+            wl = int(pkg_row['white_label']) if pkg_row else 0
         slug = _unique_slug(conn, provision.slugify(name))
         _reg[ip].append(now)
         cur = conn.execute(

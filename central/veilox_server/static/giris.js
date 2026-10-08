@@ -18,8 +18,8 @@ const T = {
     addr: 'Firma adresi', addrPh: 'firmaniz', go: 'Devam', recent: 'Son kullandığınız', forgot: 'Firma adresimi hatırlamıyorum',
     findH: 'Firmanızı bulun', findP: 'Firmayı kaydederken kullandığınız yönetici e-postası ve şifresiyle firmanızı ve başvuru durumunuzu görün.',
     email: 'Yönetici e-postası', pass: 'Şifre', find: 'Firmamı bul', toPanel: 'Panele git', noAcc: 'Henüz firmanız yok mu?', regNow: 'Ücretsiz başvurun',
-    steps: ['Paket', 'Firma', 'Yönetici', 'Tamam'], pickPkg: 'Paketinizi seçin', pickPkgP: 'Aylık, taahhütsüz. Daha sonra değiştirebilirsiniz.', noPkg: 'Paket seçmeden devam et',
-    perMonth: '/ay', free: 'Ücretsiz', mods: n => `${n} modül`, cloud: 'Bulut', onprem: 'Kendi sunucunuz', both: 'Bulut / kendi sunucunuz',
+    steps: ['Paket', 'Firma', 'Yönetici', 'Tamam'], pickPkg: 'Paketinizi seçin', pickPkgP: 'Açık beta döneminde tüm paketler ücretsiz; firmanız tüm modüllere erişir. Daha sonra değiştirebilirsiniz.', noPkg: 'Paket seçmeden devam et',
+    perMonth: '/ay', free: 'Ücretsiz', beta: 'Açık beta', mods: n => `${n} modül`, cloud: 'Bulut', onprem: 'Kendi sunucunuz', both: 'Bulut / kendi sunucunuz',
     firmH: 'Firma bilgileri', cname: 'Firma adı', cnamePh: 'ör. Örnek Makine A.Ş.', yourAddr: 'Firma adresiniz', city: 'Şehir', tax: 'Vergi no (isteğe bağlı)', phone: 'Telefon',
     adminH: 'Yönetici hesabı', adminP: 'Bu hesap firmanızın sahibi (master) olur; kullanıcıları ve yetkileri o yönetir.',
     full: 'Ad soyad', mail: 'E-posta', pw: 'Şifre (en az 10 karakter)', pw2: 'Şifre tekrar',
@@ -38,8 +38,8 @@ const T = {
     addr: 'Company address', addrPh: 'yourcompany', go: 'Continue', recent: 'Recently used', forgot: 'I don’t remember my company address',
     findH: 'Find your company', findP: 'Use the admin email and password you registered with to see your company and application status.',
     email: 'Admin email', pass: 'Password', find: 'Find my company', toPanel: 'Go to panel', noAcc: 'No company yet?', regNow: 'Apply for free',
-    steps: ['Plan', 'Company', 'Admin', 'Done'], pickPkg: 'Choose your plan', pickPkgP: 'Monthly, no commitment. You can change it later.', noPkg: 'Continue without a plan',
-    perMonth: '/mo', free: 'Free', mods: n => `${n} modules`, cloud: 'Cloud', onprem: 'On-premise', both: 'Cloud / on-premise',
+    steps: ['Plan', 'Company', 'Admin', 'Done'], pickPkg: 'Choose your plan', pickPkgP: 'All plans are free during open beta; your company gets every module. You can change it later.', noPkg: 'Continue without a plan',
+    perMonth: '/mo', free: 'Free', beta: 'Open beta', mods: n => `${n} modules`, cloud: 'Cloud', onprem: 'On-premise', both: 'Cloud / on-premise',
     firmH: 'Company details', cname: 'Company name', cnamePh: 'e.g. Acme Machinery Ltd.', yourAddr: 'Your company address', city: 'City', tax: 'Tax no (optional)', phone: 'Phone',
     adminH: 'Admin account', adminP: 'This account becomes your company owner (master) and manages users and permissions.',
     full: 'Full name', mail: 'Email', pw: 'Password (min 10 characters)', pw2: 'Repeat password',
@@ -157,7 +157,7 @@ function regView() {
   if (state.step === 0) {
     body.innerHTML = `<div class="gx-pane">${stepsBar()}<h2>${esc(L.pickPkg)}</h2><p class="gx-sub">${esc(L.pickPkgP)}</p>
       <div class="gx-pkgs">${state.pkgs.map(p => `<button type="button" class="gx-pkg ${p.slug === state.pkg ? 'on' : ''}" data-pkg="${esc(p.slug)}">
-        <b>${esc(p.name)}</b><span class="gx-fee">${p.monthly_fee ? `${nf.format(p.monthly_fee)} ₺<small>${esc(L.perMonth)}</small>` : esc(L.free)}</span>
+        <b>${esc(p.name)}</b><span class="gx-fee">${p.open_beta ? esc(L.beta) : (p.monthly_fee ? `${nf.format(p.monthly_fee)} ₺<small>${esc(L.perMonth)}</small>` : esc(L.free))}</span>
         <small>${esc({ online: L.cloud, offline: L.onprem, both: L.both }[p.mode] || '')} · ${esc(L.mods(p.modules.length))}</small>
         ${p.description ? `<p>${esc(p.description)}</p>` : ''}</button>`).join('') || '<p class="gx-sub">…</p>'}</div>
       <div class="gx-acts"><button type="button" class="gx-link" id="noPkg">${esc(L.noPkg)}</button><button type="button" class="btn btn-primary btn-lg" id="next0">${esc(L.next)} →</button></div></div>`;

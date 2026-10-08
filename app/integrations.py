@@ -281,6 +281,36 @@ def remove_integration(conn, integ):
     return lst
 
 
+# Entegrasyon AÇIK/KAPALI: kapalı olanlar app_kv['integrations.disabled']'da tutulur (varsayılan: hepsi açık).
+# Kapalı entegrasyon denetlenmez (çevrimdışı uyarısı vermez), uygulama onu kullanmaz ve ajan-bağımlı
+# olanlarda (ör. kameralar) ilgili worker işi bırakır.
+DISABLED_KEY = 'integrations.disabled'
+
+
+def disabled_set(conn):
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (DISABLED_KEY,)).fetchone()
+    try:
+        lst = json.loads(row[0]) if row else []
+        return set(lst) if isinstance(lst, list) else set()
+    except ValueError:
+        return set()
+
+
+def is_enabled(conn, group):
+    """Entegrasyon açık mı? (kapalı değilse açık)."""
+    return group not in disabled_set(conn)
+
+
+def set_enabled(conn, group, on):
+    s = disabled_set(conn)
+    if on:
+        s.discard(group)
+    else:
+        s.add(group)
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (DISABLED_KEY, json.dumps(sorted(s))))
+    return group not in s
+
+
 def _load(conn):
     row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (KV_KEY,)).fetchone()
     try:
@@ -340,13 +370,14 @@ def view(conn, group_keys=None, health=True):
                     else all(f['set'] for f in fields if f['key'] not in ('AI_WORKSPACE_ID', 'SPEECH_ON_AGENT'))})
     if health:
         from . import integration_health as ih
-        st, iv = ih.states(conn), ih.intervals(conn)
+        st, iv, dis = ih.states(conn), ih.intervals(conn), disabled_set(conn)
         for g in out:
+            g['enabled'] = g['key'] not in dis                      # arayüz anahtarı
             g['checked'] = g['key'] in ih.CHECKED
-            g['health'] = st.get(g['key']) if g['checked'] and g['configured'] else None
+            g['health'] = st.get(g['key']) if g['checked'] and g['configured'] and g['enabled'] else None
             g['interval'] = iv.get(g['key'])
-            # "Bağlı" yalnız ayarlı VE (denetlenmiyorsa ya da son denemesi başarılıysa)
-            g['online'] = g['configured'] and (not g['checked'] or bool(g['health'] and g['health']['ok']))
+            # "Bağlı" yalnız AÇIK ve ayarlı VE (denetlenmiyorsa ya da son denemesi başarılıysa)
+            g['online'] = g['enabled'] and g['configured'] and (not g['checked'] or bool(g['health'] and g['health']['ok']))
     return out
 
 

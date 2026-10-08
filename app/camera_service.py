@@ -469,6 +469,15 @@ def _watched_ids():
 WATCH_TICK = 2   # sn: canlı izleme talebini hızlı yakalamak için döngü sıklığı (ağır yenileme RELOAD_EVERY'de)
 
 
+def _nvr_disabled(conn):
+    """Entegrasyonlar panelinden "Kameralar" (nvr) KAPATILDI mı? (app_kv['integrations.disabled'])."""
+    try:
+        row = conn.execute("SELECT v FROM app_kv WHERE k = 'integrations.disabled'").fetchone()
+        return bool(row) and 'nvr' in (json.loads(row[0]) or [])
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     cv2.setNumThreads(2)
@@ -491,8 +500,11 @@ def main():
                 sched.reload()
             watched = _watched_ids()
             with db.connect() as conn:
-                allrows = {r['id']: r for r in db.rows(conn.execute(
+                nvr_off = _nvr_disabled(conn)   # Entegrasyonlar'dan "Kameralar" KAPALI ise hiçbir kamera işlenmez
+                allrows = {} if nvr_off else {r['id']: r for r in db.rows(conn.execute(
                     "SELECT * FROM cameras WHERE stream_url IS NOT NULL AND stream_url != ''"))}
+            if nvr_off and running:
+                log.info('Kameralar entegrasyonu kapalı → tüm kameralar durduruluyor')
             want = {}
             for cid, r in allrows.items():
                 if r['active']:                 # yüz tanıma açık kanal: canlı + yüz

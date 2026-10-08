@@ -397,6 +397,27 @@ def test_integration(group: str, user=Depends(auth.current_user), conn=db.DB):
     return {'ok': ok, 'message': msg, 'latency_ms': latency}
 
 
+class EnabledIn(BaseModel):
+    enabled: bool
+
+
+@router.put('/integrations/{group}/enabled')
+def put_integration_enabled(group: str, body: EnabledIn, user=Depends(auth.current_user), conn=db.DB):
+    """Entegrasyonu AÇ/KAPAT. Kapalıyken denetlenmez (çevrimdışı uyarısı vermez), uygulama kullanmaz ve
+    ajan-bağımlı olanlarda (ör. kameralar) ilgili worker işi bırakır."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import integrations, integration_health
+    if group not in {g[0] if isinstance(g, tuple) else g for g in integrations.CATALOG_KEYS}:
+        raise HTTPException(404, 'Bilinmeyen entegrasyon')
+    on = integrations.set_enabled(conn, group, body.enabled)
+    if not on:
+        integration_health.forget(conn, group)   # kapalı → eski durum/uyarı hemen temizlensin
+    db.audit(conn, user['id'], f'Entegrasyon {"açıldı" if on else "kapatıldı"}: {group}', 'settings', None, None)
+    conn.commit()
+    return {'enabled': on}
+
+
 class IntervalIn(BaseModel):
     seconds: int
 

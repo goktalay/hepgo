@@ -376,6 +376,28 @@ const integBadge = g => { const [cls, text] = integState(g); return h('span', { 
 // Katalog kartı durumu (birleşik connected): gri = Bağlı değil, yeşil = Bağlı.
 const catBadge = it => h('span', { class: `sc-integ-status ${it.connected ? 'ok' : ''}` }, it.connected ? 'Bağlı' : 'Bağlı değil');
 const INTERVALS = [[30, '30 sn'], [60, '1 dk'], [120, '2 dk'], [300, '5 dk'], [600, '10 dk'], [900, '15 dk'], [1800, '30 dk'], [3600, '1 saat']];
+// Entegrasyon AÇ/KAPAT kartı — her entegrasyonun detayında. Kapatınca denetlenmez, kullanılmaz,
+// ajan-bağımlıysa (ör. kameralar) ilgili worker işi bırakır (GX10 yükü biter).
+function integEnableCard(grp, reload) {
+  const on = grp.enabled !== false;
+  const btn = h('button', { class: `btn ${on ? 'danger' : 'primary'}`, type: 'button' }, on ? 'Entegrasyonu Kapat' : 'Entegrasyonu Aç');
+  btn.addEventListener('click', async () => {
+    if (on && !await confirmDialog('Entegrasyonu kapat',
+      t('“{t}” kapatılsın mı? Denetlenmez, uygulama kullanmaz; ajan-bağımlıysa (ör. kameralar) ilgili işlem durur. İstediğinizde yeniden açabilirsiniz.', { t: grp.title }),
+      { okLabel: 'Kapat', danger: true })) return;
+    btn.disabled = true;
+    try { await api.put(`/api/system/integrations/${grp.key}/enabled`, { enabled: !on }); toast(on ? 'Entegrasyon kapatıldı' : 'Entegrasyon açıldı', 'success'); reload(grp.key); }
+    catch (err) { toastError(err); btn.disabled = false; }
+  });
+  return h('section', { class: 'card card-pad', style: on ? {} : { borderLeft: '3px solid #d97706' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } },
+      h('div', { class: 'grow' },
+        h('b', { style: { color: on ? '#16a34a' : '#d97706' } }, on ? '● Entegrasyon açık' : '○ Entegrasyon KAPALI'),
+        h('div', { class: 'small muted' }, on
+          ? 'Aktif; düzenli denetlenir. Sorun çıkarırsa (ör. kamera GX10’u yorarsa) buradan kapatabilirsiniz.'
+          : 'Kapalı — denetlenmiyor, uygulama kullanmıyor, ilgili ajan işi durduruldu.')),
+      btn));
+}
 const _dparse = iso => (iso ? Date.parse(String(iso).replace(' ', 'T')) : NaN);
 function ihAgo(iso) {
   const d = _dparse(iso); if (isNaN(d)) return '—';
@@ -691,6 +713,7 @@ function integrationsBody(view, ctx) {
           : h('section', { class: 'card card-pad' }, h('p', { class: 'small muted' }, 'Bu entegrasyon bağlı ve kullanıma hazır.')))
         : h('section', { class: 'card card-pad integ-gate' }, h('p', { class: 'small muted' }, 'Bağlanınca ayarlar burada görünecek.'));
       clear(wrap, back, hero, infoSec,
+        grp ? integEnableCard(grp, () => reload()) : null,
         downloadPanel(it, agentData, cat),
         it.connected && grp && grp.checked ? integHealthCard(grp, () => reload()) : null,
         settings,
@@ -701,6 +724,7 @@ function integrationsBody(view, ctx) {
     }
     // Kimlik / OAuth tabanlı (ya da yerel moddaki doğrudan ürün): "API kodu" doğrudan burada girilir.
     clear(wrap, back, hero, infoSec,
+      grp ? integEnableCard(grp, () => reload()) : null,
       grp && grp.checked ? integHealthCard(grp, () => reload()) : null,
       grp ? h('div', { class: 'integ-form' }, h('h3', null, 'API kodu / bağlantı bilgileri'), card(grp)) : null,
       grp && (['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null),

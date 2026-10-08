@@ -90,7 +90,8 @@ def forget(conn, group):
 
 def _configured(conn):
     from . import integrations
-    return {g['key'] for g in integrations.view(conn, health=False) if g['configured']}
+    dis = integrations.disabled_set(conn)   # KAPALI entegrasyonlar denetlenmez
+    return {g['key'] for g in integrations.view(conn, health=False) if g['configured'] and g['key'] not in dis}
 
 
 def check(conn, group):

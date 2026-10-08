@@ -199,8 +199,9 @@ def server_stats(request: Request):
 def public_packages():
     with db.connect() as conn:
         pkgs = db.rows(conn, 'SELECT * FROM packages WHERE visible=1 ORDER BY sort, id')
+    # Açık betada fiyat API'den HİÇ gönderilmez (0) → önbellekteki eski arayüz bile fiyat gösteremez.
     return [{'slug': p['slug'], 'name': p['name'], 'description': p['description'],
-             'monthly_fee': p['monthly_fee'], 'mode': p['mode'], 'open_beta': OPEN_BETA,
+             'monthly_fee': (0 if OPEN_BETA else p['monthly_fee']), 'mode': p['mode'], 'open_beta': OPEN_BETA,
              'modules': db.package_public(p)['modules']} for p in pkgs]
 
 

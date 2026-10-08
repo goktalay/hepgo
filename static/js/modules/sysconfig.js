@@ -398,6 +398,41 @@ function integEnableCard(grp, reload) {
           : 'Kapalı — denetlenmiyor, uygulama kullanmıyor, ilgili ajan işi durduruldu.')),
       btn));
 }
+// Firmaya ÖZEL kaynak kullanımı: yalnız kendi entegrasyon süreçleri (kamera/ajan) — makinenin tamamı değil.
+function integFirmLoadCard() {
+  const box = h('section', { class: 'card card-pad' },
+    h('h3', { style: { marginTop: 0 } }, 'Entegrasyonunuzun Kaynak Kullanımı'),
+    h('p', { class: 'small muted' }, 'Yalnız sizin entegrasyon süreçleriniz (kamera/ajan). Paylaşımlı makinede diğer uygulamalar dahil değildir.'));
+  const bodyEl = h('div', null, h('div', { class: 'small muted' }, 'Yükleniyor…'));
+  box.append(bodyEl);
+  const cpuH = [], gpuH = [];
+  const fmtMb = m => m == null ? '—' : (m >= 1024 ? `${(m / 1024).toFixed(1)} GB` : `${Math.round(m)} MB`);
+  let timer = null;
+  const tick = async () => {
+    if (!document.body.contains(box)) { clearInterval(timer); return; }
+    let d;
+    try { d = await api.get('/api/system/integration-load'); } catch (e) { d = { unavailable: e.message }; }
+    if (d.unavailable) { clear(bodyEl, h('div', { class: 'small muted' }, t('Ulaşılamadı: {e} (fabrika ajanı çevrimdışı olabilir)', { e: d.unavailable }))); return; }
+    cpuH.push(Math.min(100, Math.round((d.cpu || 0) / (d.cpu_count || 1)))); if (cpuH.length > 60) cpuH.shift();
+    gpuH.push(d.gpu_util == null ? 0 : d.gpu_util); if (gpuH.length > 60) gpuH.shift();
+    const metric = (label, big, sub, hist, color) => h('div', { style: { marginBottom: '10px' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
+        h('b', null, label), h('span', { class: 'small muted' }, sub)),
+      h('div', { class: 'mb2-big', style: { fontSize: '20px' } }, big), spark(hist, color));
+    clear(bodyEl,
+      metric('CPU', `${((d.cpu || 0) / 100).toFixed(1)} çekirdek`, `${d.cpu ?? '—'}% · ${d.cpu_count || '—'} çekirdek içinde`, cpuH, '#3b82f6'),
+      metric(`GPU${d.gpu_name ? ' · ' + d.gpu_name : ''}`,
+        d.gpu_util == null ? '—' : `%${d.gpu_util}`,
+        `${d.gpu_temp != null ? d.gpu_temp + '°C · ' : ''}bellek ${fmtMb(d.gpu_mem_mb)}${d.gpu_mem_total_mb ? ' / ' + fmtMb(d.gpu_mem_total_mb) : ''}`, gpuH, '#16a34a'),
+      h('div', { class: 'small muted', style: { margin: '2px 0 8px' } }, `RAM: ${fmtMb(d.ram_mb)}`),
+      (d.procs && d.procs.length) ? h('table', { class: 'table' },
+        h('thead', null, h('tr', null, ['Süreç', 'CPU', 'RAM'].map(x => h('th', null, x)))),
+        h('tbody', null, d.procs.map(p => h('tr', null, h('td', null, p.name), h('td', { class: 'num' }, `${p.cpu}%`), h('td', { class: 'num' }, fmtMb(p.ram_mb))))))
+        : h('div', { class: 'small muted' }, 'Çalışan entegrasyon süreci bulunamadı.'));
+  };
+  tick(); timer = setInterval(tick, 3000);
+  return box;
+}
 const _dparse = iso => (iso ? Date.parse(String(iso).replace(' ', 'T')) : NaN);
 function ihAgo(iso) {
   const d = _dparse(iso); if (isNaN(d)) return '—';
@@ -709,7 +744,7 @@ function integrationsBody(view, ctx) {
             (['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null),
             (grp.key === 'nvr' ? nvrPanel() : null),
             (grp.key === 'nvr' ? shiftCard() : null),
-            (SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null))
+            (SERVER_INTEGRATIONS.includes(grp.key) ? integFirmLoadCard() : null))
           : h('section', { class: 'card card-pad' }, h('p', { class: 'small muted' }, 'Bu entegrasyon bağlı ve kullanıma hazır.')))
         : h('section', { class: 'card card-pad integ-gate' }, h('p', { class: 'small muted' }, 'Bağlanınca ayarlar burada görünecek.'));
       clear(wrap, back, hero, infoSec,
@@ -730,7 +765,7 @@ function integrationsBody(view, ctx) {
       grp && (['pdks', 'mikro'].includes(grp.key) ? syncBox(grp.key) : null),
       grp && grp.key === 'nvr' ? nvrPanel() : null,
       grp && grp.key === 'nvr' ? shiftCard() : null,
-      grp && SERVER_INTEGRATIONS.includes(grp.key) ? integServerCard(view) : null,
+      grp && SERVER_INTEGRATIONS.includes(grp.key) ? integFirmLoadCard() : null,
       removeSec);
   };
 

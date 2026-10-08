@@ -100,3 +100,118 @@ def start():
 def snapshot():
     with _lock:
         return {**_latest, 'history': list(_history)}
+
+
+# ---- Firmaya özel (süreç-bazlı) kaynak: paylaşımlı makinede firma YALNIZ kendi entegrasyon yükünü görür ----
+FIRM_PATTERNS = ('app.camera_service', 'app.main', 'agent.service', 'agent.agent', 'app.pdks', 'app.mikro', 'app.nvr')
+
+
+def _cmdline(pid):
+    try:
+        with open(f'/proc/{pid}/cmdline', 'rb') as f:
+            return f.read().replace(b'\x00', b' ').decode(errors='replace')
+    except OSError:
+        return ''
+
+
+def _pstat_cpu(pid):
+    try:
+        with open(f'/proc/{pid}/stat') as f:
+            p = f.read().rsplit(')', 1)[1].split()   # ')' sonrası alanlar (isimde boşluk olabilir)
+        return int(p[11]) + int(p[12])               # utime + stime (')' sonrası 12.-13. alan)
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _rss_mb(pid):
+    import os
+    try:
+        with open(f'/proc/{pid}/statm') as f:
+            return int(f.read().split()[1]) * os.sysconf('SC_PAGE_SIZE') / 1e6
+    except (OSError, IndexError, ValueError):
+        return 0.0
+
+
+def _firm_pids():
+    import os
+    out = {}
+    try:
+        entries = os.listdir('/proc')
+    except OSError:
+        return out
+    for d in entries:
+        if not d.isdigit():
+            continue
+        cmd = _cmdline(d)
+        hit = next((p for p in FIRM_PATTERNS if p in cmd), None)
+        if hit:
+            out[int(d)] = hit.split('.')[-1]
+    return out
+
+
+def _gpu_procs(gpu):
+    """NVML: {pid: GPU_bellek_MB} + toplam GPU bellek MB (sürüm farkına dayanıklı)."""
+    out, total_mb = {}, None
+    if not getattr(gpu, 'lib', None):
+        return out, total_mb
+    try:
+        class _Mem(ctypes.Structure):
+            _fields_ = [('total', ctypes.c_ulonglong), ('free', ctypes.c_ulonglong), ('used', ctypes.c_ulonglong)]
+        m = _Mem()
+        if gpu.lib.nvmlDeviceGetMemoryInfo(gpu.handle, ctypes.byref(m)) == 0:
+            total_mb = m.total / 1e6
+    except Exception:   # noqa: BLE001
+        pass
+    for ver, fields in (('_v3', [('pid', ctypes.c_uint), ('used', ctypes.c_ulonglong),
+                                 ('gi', ctypes.c_uint), ('ci', ctypes.c_uint)]),
+                        ('_v2', [('pid', ctypes.c_uint), ('used', ctypes.c_ulonglong),
+                                 ('gi', ctypes.c_uint), ('ci', ctypes.c_uint)]),
+                        ('', [('pid', ctypes.c_uint), ('used', ctypes.c_ulonglong)])):
+        fn = getattr(gpu.lib, 'nvmlDeviceGetComputeRunningProcesses' + ver, None)
+        if not fn:
+            continue
+        try:
+            Proc = type('Proc', (ctypes.Structure,), {'_fields_': fields})
+            cnt = ctypes.c_uint(0)
+            fn(gpu.handle, ctypes.byref(cnt), None)
+            n = max(cnt.value, 1) + 8
+            arr = (Proc * n)()
+            cnt = ctypes.c_uint(n)
+            if fn(gpu.handle, ctypes.byref(cnt), arr) == 0:
+                for i in range(min(cnt.value, n)):
+                    out[arr[i].pid] = arr[i].used / 1e6
+                return out, total_mb
+        except Exception:   # noqa: BLE001
+            continue
+    return out, total_mb
+
+
+def firm_load():
+    """Firmanın entegrasyon süreçlerinin anlık kaynak kullanımı (CPU çekirdek-%, RAM MB, GPU bellek + GPU util).
+    Paylaşımlı makinede diğer uygulamalar (ör. başka servisler) HARİÇ — yalnız HEPGO entegrasyon süreçleri."""
+    import os
+    ncpu = os.cpu_count() or 1
+    pids = _firm_pids()
+    t0 = {p: _pstat_cpu(p) for p in pids}
+    s0 = _cpu_times()[0]
+    time.sleep(0.4)
+    s1 = _cpu_times()[0]
+    dsys = max(1, s1 - s0)
+    procs, cpu_sum, ram_sum = [], 0.0, 0.0
+    for pid, name in pids.items():
+        a, b = t0.get(pid), _pstat_cpu(pid)
+        if a is None or b is None:
+            continue
+        cpu = round(100.0 * ncpu * (b - a) / dsys, 1)   # top tarzı: 100% = 1 çekirdek
+        rss = round(_rss_mb(pid))
+        cpu_sum += cpu
+        ram_sum += rss
+        procs.append({'pid': pid, 'name': name, 'cpu': cpu, 'ram_mb': rss})
+    gpu = _Gpu()
+    util, temp = gpu.sample()
+    gmem, gtotal = _gpu_procs(gpu)
+    gpu_mb = round(sum(v for p, v in gmem.items() if p in pids))
+    return {'cpu': round(cpu_sum, 1), 'cpu_count': ncpu, 'ram_mb': round(ram_sum),
+            'gpu_util': util, 'gpu_temp': temp, 'gpu_name': gpu.name,
+            'gpu_mem_mb': gpu_mb, 'gpu_mem_total_mb': round(gtotal) if gtotal else None,
+            'procs': sorted(procs, key=lambda x: -x['cpu'])[:8], 't': int(time.time())}

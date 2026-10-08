@@ -176,6 +176,12 @@ def _sysstat(args):
     return sysstat.snapshot()
 
 
+def _firmstat(args):
+    """Firmanın entegrasyon süreçlerinin (camera_service/agent/…) kaynak kullanımı — makinenin tamamı değil."""
+    from . import sysstat
+    return sysstat.firm_load()
+
+
 OPS = {
     'ping': _ping,
     'mikro.query': _mikro_query,
@@ -194,6 +200,7 @@ OPS = {
     'face.rpc': _face_rpc,
     'face.media': _face_media,
     'sysstat': _sysstat,
+    'firmstat': _firmstat,
     'speech.status': _speech_status,
     'speech.transcribe': _speech_transcribe,
 }

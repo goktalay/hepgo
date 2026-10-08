@@ -397,6 +397,22 @@ def test_integration(group: str, user=Depends(auth.current_user), conn=db.DB):
     return {'ok': ok, 'message': msg, 'latency_ms': latency}
 
 
+@router.get('/integration-load')
+def integration_load(user=Depends(auth.current_user)):
+    """Firmaya ÖZEL kaynak kullanımı: entegrasyon süreçlerinin (camera_service/agent/…) CPU/GPU/RAM payı.
+    Paylaşımlı makinede makinenin tamamı DEĞİL, yalnız firmanın kendi yükü. Uzak modda fabrika ajanından gelir."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    from .. import config, sysstat
+    if config.AGENT_MODE == 'remote':
+        from .. import devices
+        try:
+            return devices.call_sync('firmstat', timeout=8)
+        except Exception as e:   # noqa: BLE001
+            return {'unavailable': str(e)}
+    return sysstat.firm_load()
+
+
 class EnabledIn(BaseModel):
     enabled: bool
 

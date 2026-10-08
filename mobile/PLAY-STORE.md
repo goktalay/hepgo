@@ -4,11 +4,11 @@ Bu dosya, HEPGO Android uygulamasını **Google Play Console**'da yayınlamak i�
 kopyala‑yapıştır hazır mağaza içeriklerini içerir. Uygulama paketi: **`com.turkbey.hepgo`**.
 
 > Hazır dosyalar:
-> - İmzalı yayın paketi: `mobile/dist/HEPGO-release.aab` (Play'e bu yüklenir)
 > - Mağaza ikonu 512×512: `mobile/store/icon-512.png`
 > - Öne çıkan görsel 1024×500: `mobile/store/feature-graphic-1024x500.png`
 > - Mağaza metinleri (TR): aşağıda + `mobile/store/listing-tr.md`
-> - İmzalama: `mobile/android/keystore.properties` + `mobile/android/app/hepgo-upload.jks` (git'e GİRMEZ; **yedekleyin**)
+> - İmzalı AAB'yi **kendi keystore'unuzla siz üretirsiniz** (Bölüm 1). Repoda hazır AAB tutulmaz;
+>   çünkü imzalama anahtarı yalnız sizde olmalıdır (güvenlik).
 
 ---
 
@@ -27,22 +27,41 @@ kopyala‑yapıştır hazır mağaza içeriklerini içerir. Uygulama paketi: **`
 Uygulama **Play App Signing** ile yayınlanır: Google *uygulama imzalama anahtarını* kendi saklar; siz yalnızca
 *upload key* ile imzalar, Play'e yüklersiniz.
 
-- Upload keystore ZATEN OLUŞTURULDU: `mobile/android/app/hepgo-upload.jks`
-  - Alias: `hepgo`, RSA 2048, 10.000 gün geçerli.
-  - SHA‑256: `44:7F:FC:FF:8F:30:14:6C:AD:84:69:67:70:68:51:27:04:EA:9A:48:30:DD:C5:3F:89:D5:AA:00:FA:38:81:32`
-- Parolalar `mobile/android/keystore.properties` içinde (git'e girmez). **Bu dosyayı ve .jks'i güvenli bir yerde yedekleyin.**
-- Keystore/parola GİT'TE DEĞİLDİR ve oturum kapanınca sunucudan silinebilir → mutlaka indirip saklayın.
+> ⚠️ Repodaki `HEPGO-release.aab` geçici bir **demo** anahtarıyla imzalandı ve o anahtar sizde değil
+> (güvenlik nedeniyle dışarı çıkarılamaz). **Gerçek yayın için AŞAĞIDAKİ adımlarla KENDİ keystore'unuzu oluşturun.**
+> Anahtar böylece hiçbir zaman sizin bilgisayarınızdan çıkmaz. Demo AAB'yi yalnız hızlı iç testte kullanabilirsiniz
+> (ama o anahtar sizde olmadığından onunla prod'a yüklemeyin — sonraki güncellemeleri imzalayamazsınız).
 
-> Kaybederseniz: Play App Signing'de upload key'i Google desteğiyle sıfırlayabilirsiniz, ama yine de kaybetmeyin.
+### 1.1 Kendi upload keystore'unuzu oluşturun (bir kez, kendi makinenizde)
+```bash
+cd mobile/android
+keytool -genkeypair -v -keystore app/hepgo-upload.jks -alias hepgo \
+        -keyalg RSA -keysize 2048 -validity 10000
+# Sorulan parolayı (ve ad/kurum bilgilerini) girin. Parolayı not edin.
+```
+Sonra `mobile/android/keystore.properties` dosyasını oluşturun (`keystore.properties.example`'ı kopyalayın):
+```properties
+storeFile=hepgo-upload.jks
+storePassword=OLUŞTURDUĞUNUZ_PAROLA
+keyAlias=hepgo
+keyPassword=OLUŞTURDUĞUNUZ_PAROLA
+```
+> `app/hepgo-upload.jks` ve `keystore.properties` git'e GİRMEZ (.gitignore). **İkisini de güvenli bir yerde yedekleyin;**
+> kaybederseniz güncellemeleri imzalayamazsınız (Play App Signing'de upload key sıfırlama ile kurtarılabilir ama yine de yedekleyin).
 
-**Yeniden imzalı AAB üretmek** (kod/sürüm değişince):
+### 1.2 İmzalı AAB üretin
 ```bash
 cd mobile
 npm install && npx cap sync android
 cd android
 ./gradlew bundleRelease     # app/build/outputs/bundle/release/app-release.aab
 ```
-`keystore.properties` varsa çıktı otomatik imzalanır.
+`keystore.properties` varsa çıktı otomatik imzalanır. Bu AAB'yi Play'e yükleyin.
+
+### Keystore SHA‑256 parmak izini görmek
+```bash
+keytool -list -v -keystore app/hepgo-upload.jks -alias hepgo
+```
 
 ### Sürüm numarası (her güncelleme için ZORUNLU)
 `mobile/android/app/build.gradle` → `versionCode` her yüklemede **artırılmalı** (1 → 2 → 3 …),
@@ -62,7 +81,7 @@ cd android
 
 Doğrudan prod yerine önce **Internal testing (İç test)** kullanın:
 1. Sol menü → **Test > Internal testing > Create new release**.
-2. **App bundle** olarak `HEPGO-release.aab` yükle (ilk yüklemede Play App Signing'i kabul et).
+2. **App bundle** olarak Bölüm 1'de ürettiğiniz `app-release.aab`'yi yükle (ilk yüklemede Play App Signing'i kabul et).
 3. Testçi e‑postalarını ekle (kendi Google hesabın), test linkini aç, cihazda kur‑dene.
 4. Sorun yoksa aynı sürümü **Production**'a yükselt (Promote release).
 
@@ -165,8 +184,8 @@ Hedef yaş: **18+ / yetişkin (kurumsal çalışanlar)**. Çocuklara yönelik de
 
 ## 9) Hızlı kontrol listesi
 - [ ] Developer hesabı aktif (25$ ödendi)
-- [ ] `HEPGO-release.aab` imzalı ve hazır
-- [ ] Keystore + parolalar güvenle yedeklendi
+- [ ] Kendi keystore'unuzla imzalı `app-release.aab` üretildi
+- [ ] Keystore (.jks) + parolalar (keystore.properties) güvenle yedeklendi
 - [ ] İkon 512 + feature graphic 1024×500 + ≥2 ekran görüntüsü
 - [ ] Kısa + tam açıklama girildi
 - [ ] Gizlilik politikası URL'si

@@ -23,7 +23,7 @@ import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 from . import cameras as camlib, config, db, shifts  # noqa: E402
-from .document_media import KNOWN_PERSON, SFACE, YUNET, _face_crop, _norm, known_identities  # noqa: E402
+from .document_media import KNOWN_PERSON, SFACE, YUNET, _face_crop, _norm, known_identities, make_face_detector, make_face_recognizer, face_on_gpu  # noqa: E402
 
 log = logging.getLogger('camera_service')
 LIVE_DIR = config.DATA_DIR / 'cameras' / 'live'
@@ -333,8 +333,8 @@ class Camera:
                 self.stop.wait(3)
 
     def _faces(self):
-        detector = cv2.FaceDetectorYN.create(str(YUNET), '', (320, 320), MIN_SCORE, 0.3, 50)
-        recognizer = cv2.FaceRecognizerSF.create(str(SFACE), '')
+        detector = make_face_detector((320, 320), score=MIN_SCORE, top_k=50)
+        recognizer = make_face_recognizer()
         seen_at = 0
         while not self.stop.is_set():
             self.stop.wait(FACE_EVERY)
@@ -477,6 +477,10 @@ def main():
     sched = Schedule()
     running = {}   # id → (imza, Camera)
     last_heavy = 0
+    try:
+        log.info('yüz tanıma hesaplama: %s', 'GPU (CUDA)' if face_on_gpu() else 'CPU')
+    except Exception:   # noqa: BLE001
+        pass
     log.info('kamera servisi başladı (%s)', config.DATA_DIR)
     while True:
         try:

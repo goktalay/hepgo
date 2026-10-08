@@ -33,6 +33,43 @@ WHISPER_MODEL = MODELS / 'ggml-large-v3-turbo-q8_0.bin'
 YUNET = MODELS / 'face_detection_yunet_2023mar.onnx'
 SFACE = MODELS / 'face_recognition_sface_2021dec.onnx'
 
+# Yüz tanıma GPU'da mı çalışsın? OpenCV CUDA ile derlenmişse (ör. GX10 / CUDA'lı OpenCV) modeller GPU'da koşar
+# → CPU'yu boşaltır. Normal (pip) OpenCV'de CUDA yoktur → otomatik CPU'ya düşer (davranış değişmez).
+_FACE_BT = None
+
+
+def _face_bt():
+    global _FACE_BT
+    if _FACE_BT is None:
+        import cv2
+        try:
+            if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+                _FACE_BT = (cv2.dnn.DNN_BACKEND_CUDA, cv2.dnn.DNN_TARGET_CUDA)
+            else:
+                _FACE_BT = (cv2.dnn.DNN_BACKEND_DEFAULT, cv2.dnn.DNN_TARGET_CPU)
+        except Exception:   # noqa: BLE001
+            _FACE_BT = (cv2.dnn.DNN_BACKEND_DEFAULT, cv2.dnn.DNN_TARGET_CPU)
+    return _FACE_BT
+
+
+def face_on_gpu():
+    import cv2
+    return _face_bt()[1] == cv2.dnn.DNN_TARGET_CUDA
+
+
+def make_face_detector(size, score=0.88, nms=0.3, top_k=100):
+    """YuNet yüz dedektörü — OpenCV CUDA'lıysa GPU'da."""
+    import cv2
+    be, tg = _face_bt()
+    return cv2.FaceDetectorYN.create(str(YUNET), '', size, score, nms, top_k, be, tg)
+
+
+def make_face_recognizer():
+    """SFace yüz tanıyıcı — OpenCV CUDA'lıysa GPU'da."""
+    import cv2
+    be, tg = _face_bt()
+    return cv2.FaceRecognizerSF.create(str(SFACE), '', be, tg)
+
 AUDIO_EXT = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.flac', '.wma', '.amr', '.3ga', '.weba', '.mka'}
 
 SAME_PERSON = 0.363    # SFace kosinüs eşiği: aynı kişi (videodaki yüzleri gruplama)
@@ -274,8 +311,8 @@ def detect_faces_image(path):
         im.thumbnail((1600, 1600))
         img = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR)
     h, w = img.shape[:2]
-    detector = cv2.FaceDetectorYN.create(str(YUNET), '', (w, h), 0.88, 0.3, 100)
-    recognizer = cv2.FaceRecognizerSF.create(str(SFACE), '')
+    detector = make_face_detector((w, h))
+    recognizer = make_face_recognizer()
     _, faces = detector.detect(img)
     out = []
     for f in faces if faces is not None else []:
@@ -291,8 +328,8 @@ def detect_faces(path, duration):
     import cv2
     import numpy as np
     every = max(1.0, (duration or 0) / MAX_SAMPLES)
-    detector = cv2.FaceDetectorYN.create(str(YUNET), '', (320, 320), 0.88, 0.3, 50)
-    recognizer = cv2.FaceRecognizerSF.create(str(SFACE), '')
+    detector = make_face_detector((320, 320), top_k=50)
+    recognizer = make_face_recognizer()
     clusters = []   # {'sum': ndarray, 'n': int, 'best': (kalite, crop), 'first_at': t}
     frames = 0
     for t, img in _frames(path, every):

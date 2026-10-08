@@ -23,6 +23,8 @@ const T = {
     firmH: 'Firma bilgileri', cname: 'Firma adı', cnamePh: 'ör. Örnek Makine A.Ş.', yourAddr: 'Firma adresiniz', city: 'Şehir', tax: 'Vergi no (isteğe bağlı)', phone: 'Telefon',
     adminH: 'Yönetici hesabı', adminP: 'Bu hesap firmanızın sahibi (master) olur; kullanıcıları ve yetkileri o yönetir.',
     full: 'Ad soyad', mail: 'E-posta', pw: 'Şifre (en az 10 karakter)', pw2: 'Şifre tekrar',
+    sendCode: 'Doğrulama kodu gönder', codeSending: 'Gönderiliyor…', codeL: 'E-posta doğrulama kodu', codeHint: 'E-postanıza gönderilen 6 haneli kodu girin.',
+    codeSent: e => `${e} adresine kod gönderildi.`, resend: 'Tekrar gönder', codeNeed: 'Lütfen e-posta doğrulama kodunu girin.', badEmail: 'Geçerli bir e-posta girin.',
     accept: 'Başvurumun değerlendirilmesi ve benimle iletişime geçilmesi için bilgilerimin kaydedilmesini kabul ediyorum.',
     next: 'Devam', prev: 'Geri', submit: 'Başvuruyu tamamla',
     okH: 'Başvurunuz alındı', okP: 'Ekibimiz başvurunuzu inceleyip firmanızı kuracak. Kurulum tamamlanınca giriş adresiniz e-postanıza iletilecek.',
@@ -43,6 +45,8 @@ const T = {
     firmH: 'Company details', cname: 'Company name', cnamePh: 'e.g. Acme Machinery Ltd.', yourAddr: 'Your company address', city: 'City', tax: 'Tax no (optional)', phone: 'Phone',
     adminH: 'Admin account', adminP: 'This account becomes your company owner (master) and manages users and permissions.',
     full: 'Full name', mail: 'Email', pw: 'Password (min 10 characters)', pw2: 'Repeat password',
+    sendCode: 'Send verification code', codeSending: 'Sending…', codeL: 'Email verification code', codeHint: 'Enter the 6-digit code sent to your email.',
+    codeSent: e => `Code sent to ${e}.`, resend: 'Resend', codeNeed: 'Please enter the email verification code.', badEmail: 'Enter a valid email.',
     accept: 'I agree that my details are stored to evaluate my application and to contact me.',
     next: 'Continue', prev: 'Back', submit: 'Complete application',
     okH: 'Application received', okP: 'Our team will review your application and set up your company. Your sign-in address will be emailed when ready.',
@@ -53,7 +57,7 @@ const T = {
 };
 const t = () => T[lang];
 const qs = new URLSearchParams(location.search);
-const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null };
+const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false };
 const recent = () => { try { return JSON.parse(localStorage.getItem('hepgo.firms') || '[]'); } catch { return []; } };
 const remember = (addr, url) => { try { localStorage.setItem('hepgo.firms', JSON.stringify([{ addr, url }, ...recent().filter(r => r.url !== url)].slice(0, 4))); } catch { /* */ } };
 const post = async (url, body) => {
@@ -200,6 +204,12 @@ function regView() {
       <form id="f2" class="gx-form">
         <label class="vx-field"><span>${esc(L.full)}</span><input class="vx-input" name="full" value="${esc(f.full || '')}" autocomplete="name" required autofocus></label>
         <label class="vx-field"><span>${esc(L.mail)}</span><input class="vx-input" type="email" name="email" value="${esc(f.email || '')}" autocomplete="email" required></label>
+        ${state.emailVerify ? `<div class="gx-verify">
+          <button type="button" class="btn btn-ghost" id="sendCode">${esc(L.sendCode)}</button>
+          <label class="vx-field gx-code" id="codeWrap" hidden><span>${esc(L.codeL)}</span>
+            <input class="vx-input" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="______">
+            <small class="muted" id="codeMsg">${esc(L.codeHint)}</small></label>
+        </div>` : ''}
         <div class="gx-row"><label class="vx-field"><span>${esc(L.pw)}</span><input class="vx-input" type="password" name="pw" minlength="10" autocomplete="new-password" required></label>
           <label class="vx-field"><span>${esc(L.pw2)}</span><input class="vx-input" type="password" name="pw2" minlength="10" autocomplete="new-password" required></label></div>
         <div class="gx-meter"><i id="pwBar"></i><small id="pwTxt"></small></div>
@@ -208,6 +218,7 @@ function regView() {
         <div class="gx-acts"><button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button><button class="btn btn-primary btn-lg" type="submit">${esc(L.submit)}</button></div>
       </form></div>`;
     const form = $('#f2');
+    const err = $('#regErr');
     const meter = () => {
       const v = form.pw.value;
       const sc = [v.length >= 10, /[a-zçğıöşü]/.test(v) && /[A-ZÇĞİÖŞÜ]/.test(v), /\d/.test(v), /[^\wçğıöşüÇĞİÖŞÜ]/.test(v), v.length >= 14].filter(Boolean).length;
@@ -218,15 +229,33 @@ function regView() {
     };
     form.pw.addEventListener('input', meter);
     $('#prev').addEventListener('click', () => { state.form.full = form.full.value; state.form.email = form.email.value; state.step = 1; regView(); });
+    // E-posta doğrulama kodu gönderimi (SMTP yapılandırıldıysa)
+    if (state.emailVerify) {
+      const sendBtn = $('#sendCode'), codeWrap = $('#codeWrap'), codeMsg = $('#codeMsg');
+      let cd = 0, timer = null;
+      const tick = () => { if (cd > 0) { sendBtn.textContent = `${L.resend} (${cd})`; sendBtn.disabled = true; cd--; } else { sendBtn.textContent = state.codeSentOnce ? L.resend : L.sendCode; sendBtn.disabled = false; if (timer) { clearInterval(timer); timer = null; } } };
+      sendBtn.addEventListener('click', async () => {
+        const email = form.email.value.trim();
+        if (!/.+@.+\..+/.test(email)) { err.textContent = L.badEmail; form.email.focus(); return; }
+        err.textContent = ''; sendBtn.disabled = true; sendBtn.textContent = L.codeSending;
+        try {
+          const r = await post('/api/register/send-code', { email });
+          state.codeSentOnce = true; codeWrap.hidden = false; codeMsg.textContent = L.codeSent(r.sent_to || email);
+          form.code.focus(); cd = 60; if (timer) clearInterval(timer); tick(); timer = setInterval(tick, 1000);
+        } catch (ex) { err.textContent = ex.message; sendBtn.disabled = false; sendBtn.textContent = state.codeSentOnce ? L.resend : L.sendCode; }
+      });
+    }
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const err = $('#regErr'); err.textContent = '';
+      err.textContent = '';
       if (form.pw.value !== form.pw2.value) { err.textContent = L.mismatch; return; }
+      const code = (state.emailVerify && form.code) ? form.code.value.trim() : '';
+      if (state.emailVerify && !code) { err.textContent = L.codeNeed; if (form.code) form.code.focus(); return; }
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
       Object.assign(state.form, { full: form.full.value.trim(), email: form.email.value.trim() });
       try {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
-          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked });
+          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: code });
         state.step = 3; regView();
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
     });
@@ -254,7 +283,7 @@ function draw() {
 }
 
 (async () => {
-  try { const s = await (await fetch('/api/public/site')).json(); base = s.firm_base || base; } catch { /* */ }
+  try { const s = await (await fetch('/api/public/site')).json(); base = s.firm_base || base; state.emailVerify = !!s.email_verify; } catch { /* */ }
   draw();
   try { state.pkgs = await (await fetch('/api/public/packages')).json(); } catch { state.pkgs = []; }
   if (state.tab === 'reg' && state.step === 0) regView();

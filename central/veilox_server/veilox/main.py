@@ -32,7 +32,7 @@ settings.load()
 from . import db  # noqa: E402
 from .modules_catalog import MODULES, MODULE_KEYS, valid_modules  # noqa: E402
 from .passwd import make_hash, verify_password  # noqa: E402
-from . import provision, pkg  # noqa: E402
+from . import provision, pkg, mailer  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
 PASSWORD_HASH = os.environ.get('VEILOX_PASSWORD_HASH', '')
 SESSION_HOURS = 12
@@ -212,7 +212,8 @@ def modules():
 @app.get('/api/public/site')
 def site(request: Request):
     """Tanıtım sayfası: merkez girişi düğmesi yalnız merkez alan adında (veilox.app) gösterilir."""
-    return {'central': central_host(request), 'merkez_url': MERKEZ_URL if central_host(request) else None, 'firm_base': FIRM_BASE}
+    return {'central': central_host(request), 'merkez_url': MERKEZ_URL if central_host(request) else None, 'firm_base': FIRM_BASE,
+            'email_verify': mailer.enabled()}
 
 
 _look = {}   # ip → [zamanlar] (firma adresi sorgusu)
@@ -319,6 +320,83 @@ class RegisterIn(BaseModel):
     tax_no: str = ''
     city: str = ''
     accept: bool = True
+    email_code: str = ''        # e-posta doğrulama kodu (SMTP yapılandırıldıysa zorunlu)
+
+
+class SendCodeIn(BaseModel):
+    email: str
+
+
+_code_reg = {}                     # ip → [zamanlar] (kod gönderimi)
+CODE_LIMIT, CODE_WINDOW = 6, 3600  # saatte en çok 6 kod / IP
+CODE_TTL = 600                     # kod 10 dk geçerli
+
+
+def _code_expiry():
+    from datetime import datetime, timedelta
+    return (datetime.now() + timedelta(seconds=CODE_TTL)).strftime('%Y-%m-%dT%H:%M:%S')
+
+
+@app.post('/api/register/send-code')
+def register_send_code(body: SendCodeIn, request: Request):
+    """Kayıt için girilen e-postaya 6 haneli doğrulama kodu gönderir (Zoho SMTP). SMTP yoksa 503."""
+    if not mailer.enabled():
+        raise HTTPException(503, 'E-posta doğrulama henüz yapılandırılmadı.')
+    _single_line(body, 'email')
+    email = body.email.strip().lower()
+    if '@' not in email or len(email) < 5:
+        raise HTTPException(400, 'Geçerli bir e-posta girin')
+    ip = _ip(request)
+    now = time.time()
+    _code_reg[ip] = [t for t in _code_reg.get(ip, []) if now - t < CODE_WINDOW]
+    if len(_code_reg[ip]) >= CODE_LIMIT:
+        raise HTTPException(429, 'Çok fazla kod isteği. Daha sonra tekrar deneyin.')
+    from datetime import datetime
+    code = f'{secrets.randbelow(1000000):06d}'
+    with db.connect() as conn:
+        r = db.row(conn, 'SELECT sent_at FROM email_codes WHERE email=?', (email,))
+        if r and r['sent_at']:
+            try:
+                if (datetime.now() - datetime.fromisoformat(r['sent_at'])).total_seconds() < 50:
+                    raise HTTPException(429, 'Kod az önce gönderildi; lütfen e-postanızı kontrol edin.')
+            except (TypeError, ValueError):
+                pass
+        conn.execute('INSERT OR REPLACE INTO email_codes(email, code_hash, expires_at, attempts, sent_at) VALUES(?,?,?,?,?)',
+                     (email, make_hash(code), _code_expiry(), 0, db.now()))
+        conn.commit()
+    try:
+        mailer.send_code(email, code)
+    except Exception:   # noqa: BLE001
+        raise HTTPException(502, 'E-posta gönderilemedi. Adresi kontrol edin ya da biraz sonra tekrar deneyin.')
+    _code_reg[ip].append(now)
+    m = email.split('@')
+    masked = (m[0][:2] + '***@' + m[1]) if len(m) == 2 else email
+    return {'ok': True, 'sent_to': masked}
+
+
+def _verify_email_code(conn, email, code):
+    """Kayıt sırasında e-posta kodunu doğrular. True=geçerli (kod silinir). Hata → HTTPException."""
+    from datetime import datetime
+    r = db.row(conn, 'SELECT code_hash, expires_at, attempts FROM email_codes WHERE email=?', (email,))
+    if not r:
+        raise HTTPException(400, 'Önce e-posta doğrulama kodunu alın.')
+    try:
+        if datetime.now() > datetime.fromisoformat(r['expires_at']):
+            conn.execute('DELETE FROM email_codes WHERE email=?', (email,))
+            conn.commit()
+            raise HTTPException(400, 'Doğrulama kodunun süresi doldu. Yeni kod isteyin.')
+    except (TypeError, ValueError):
+        pass
+    if (r['attempts'] or 0) >= 5:
+        conn.execute('DELETE FROM email_codes WHERE email=?', (email,))
+        conn.commit()
+        raise HTTPException(429, 'Çok fazla hatalı deneme. Yeni kod isteyin.')
+    if not verify_password((code or '').strip(), r['code_hash']):
+        conn.execute('UPDATE email_codes SET attempts=attempts+1 WHERE email=?', (email,))
+        conn.commit()
+        raise HTTPException(400, 'Doğrulama kodu hatalı.')
+    conn.execute('DELETE FROM email_codes WHERE email=?', (email,))
+    return True
 
 
 @app.post('/api/register')
@@ -342,6 +420,10 @@ def register(body: RegisterIn, request: Request):
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM companies WHERE lower(master_username)=? AND status IN ('pending','approved')", (user,)).fetchone():
             raise HTTPException(409, 'Bu e-posta ile onay bekleyen bir başvurunuz zaten var. Durumunu “Firma girişi” ekranından sorgulayabilirsiniz.')
+        verified = 0
+        if mailer.enabled():   # SMTP yapılandırıldıysa e-posta doğrulaması ZORUNLU
+            _verify_email_code(conn, user, body.email_code)
+            verified = 1
         pkg_row = db.row(conn, 'SELECT * FROM packages WHERE slug=? AND visible=1', (body.package_slug,)) \
             if body.package_slug else None
         if OPEN_BETA:
@@ -363,11 +445,11 @@ def register(body: RegisterIn, request: Request):
         _reg[ip].append(now)
         cur = conn.execute(
             'INSERT INTO companies(slug,name,package_id,mode,modules,white_label,master_username,master_name,'
-            'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,created_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,email_verified,created_at) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (slug, name, (pkg_row['id'] if pkg_row else None), mode, _j(mods), wl,
              user, body.master_name.strip(), make_hash(body.password), body.password, fee,
-             'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None, body.city.strip()[:60] or None, db.now()))
+             'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None, body.city.strip()[:60] or None, verified, db.now()))
         conn.commit()
     return {'ok': True, 'application_no': f'B-{cur.lastrowid:05d}', 'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
             'message': 'Başvurunuz alındı. Onaylandığında firmanız kurulacak ve giriş adresiniz e-postanıza iletilecek.'}

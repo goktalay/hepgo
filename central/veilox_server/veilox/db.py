@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS download_tokens (
     expires_at TEXT NOT NULL,
     downloaded_at TEXT
 );
+
+-- Kayıt e-posta doğrulama kodları (6 haneli, 10 dk geçerli; e-posta başına tek kayıt)
+CREATE TABLE IF NOT EXISTS email_codes (
+    email      TEXT PRIMARY KEY,
+    code_hash  TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    sent_at    TEXT NOT NULL
+);
 """
 
 
@@ -101,6 +110,8 @@ def init():
         for col in ('phone', 'tax_no', 'city'):   # self-kayıt: iletişim / fatura bilgisi
             if col not in cols:
                 conn.execute(f'ALTER TABLE companies ADD COLUMN {col} TEXT')
+        if 'email_verified' not in cols:           # kayıtta e-posta doğrulandı mı
+            conn.execute('ALTER TABLE companies ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0')
         pcols = [r[1] for r in conn.execute('PRAGMA table_info(packages)')]
         if 'white_label' not in pcols:
             conn.execute('ALTER TABLE packages ADD COLUMN white_label INTEGER NOT NULL DEFAULT 0')

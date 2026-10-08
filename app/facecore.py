@@ -16,6 +16,18 @@ from . import config, db
 from .document_media import _norm
 
 
+def _decode_bgr(buf):
+    """JPEG baytlarını BGR numpy dizisine çevirir. cv2.imdecode bazı (CUDA'lı, custom) OpenCV derlemelerinde
+    harici diziyi reddediyor ('Overload resolution failed'); Pillow ile çözülür, sonuç cv2 yüz tespitine uygundur."""
+    try:
+        import io
+        from PIL import Image
+        arr = np.asarray(Image.open(io.BytesIO(buf)).convert('RGB'))   # RGB
+        return np.ascontiguousarray(arr[:, :, ::-1])                   # BGR (bitişik dizi)
+    except Exception:   # noqa: BLE001
+        return None
+
+
 class NotFound(Exception):
     pass
 
@@ -438,7 +450,7 @@ def recognize_frame(conn, args):
         buf = b''
     if not buf:
         return {'w': 0, 'h': 0, 'faces': []}
-    img = cv2.imdecode(np.frombuffer(buf, np.uint8).copy(), cv2.IMREAD_COLOR)
+    img = _decode_bgr(buf)
     if img is None:
         return {'w': 0, 'h': 0, 'faces': []}
     h, w = img.shape[:2]
@@ -516,7 +528,7 @@ def embed_frame(conn, args):
         buf = b''
     if not buf:
         return {'found': False}
-    img = cv2.imdecode(np.frombuffer(buf, np.uint8).copy(), cv2.IMREAD_COLOR)
+    img = _decode_bgr(buf)
     if img is None:
         return {'found': False}
     h, w = img.shape[:2]

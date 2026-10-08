@@ -288,6 +288,56 @@
     });
   }
 
+  // ---------------------------------------------------------------- KİŞİLER (telefon rehberi ↔ sistem)
+  // Web arayüzü (rehber modülü) bu köprüyü window.HepgoNative üzerinden çağırır. @capacitor-community/contacts gerekir.
+  var Contacts = P.Contacts;
+  async function ensureContactPerm() {
+    if (!Contacts) return false;
+    try {
+      var st = await Contacts.checkPermissions();
+      if (!st || st.contacts !== 'granted') st = await Contacts.requestPermissions();
+      return !!st && st.contacts === 'granted';
+    } catch (e) { return false; }
+  }
+  window.HepgoNative = window.HepgoNative || {};
+  window.HepgoNative.platform = platform;
+  window.HepgoNative.hasContacts = function () { return !!Contacts; };
+  // Telefon → sistem: cihaz rehberini içe aktar (yalnız sahibi görür). Dönüş: {added, updated, total}
+  window.HepgoNative.importDeviceContacts = async function () {
+    if (!Contacts) throw new Error('no-plugin');
+    if (!await ensureContactPerm()) throw new Error('no-perm');
+    var res = await Contacts.getContacts({ projection: { name: true, phones: true, emails: true, organization: true } });
+    var list = ((res && res.contacts) || []).map(function (c) {
+      var ph = (c.phones || [])[0] || {};
+      var em = (c.emails || [])[0] || {};
+      var nm = (c.name && (c.name.display || [c.name.given, c.name.middle, c.name.family].filter(Boolean).join(' '))) || '';
+      return { ext_id: String(c.contactId || ''), name: nm || null, phone: ph.number || null, email: em.address || null,
+               company: (c.organization && c.organization.company) || null, title: (c.organization && c.organization.jobTitle) || null };
+    }).filter(function (c) { return c.ext_id && (c.name || c.phone || c.email); });
+    var r = await fetch('/api/my/contacts/import-device', { method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacts: list }) });
+    if (!r.ok) throw new Error('server');
+    return await r.json();
+  };
+  // Sistem → telefon: rehberdeki kişiyi/kişileri cihaza yaz. people: {name, phone, email, company, title}[]. Dönüş: {count}
+  window.HepgoNative.addContactsToPhone = async function (people) {
+    if (!Contacts) throw new Error('no-plugin');
+    if (!await ensureContactPerm()) throw new Error('no-perm');
+    var arr = [].concat(people || []).filter(function (p) { return p && (p.phone || p.email); });
+    var count = 0;
+    for (var i = 0; i < arr.length; i++) {
+      var p = arr[i];
+      var parts = String(p.name || '').trim().split(/\s+/).filter(Boolean);
+      var given = parts.shift() || String(p.name || 'Kişi');
+      var contact = { name: { given: given, family: parts.join(' ') || undefined } };
+      if (p.phone) contact.phones = [{ type: 'mobile', label: 'HEPGO', number: String(p.phone) }];
+      if (p.email) contact.emails = [{ type: 'work', label: 'HEPGO', address: String(p.email) }];
+      if (p.company) contact.organization = { company: String(p.company), jobTitle: p.title ? String(p.title) : undefined };
+      try { await Contacts.createContact({ contact: contact }); count++; } catch (e) { /* tek kişi hatası aktarımı durdurmaz */ }
+    }
+    return { count: count };
+  };
+
   async function start() {
     polish(); initNet();
     await initOnboarding();   // ilk açılışta tanıtım + izin ekranları (bir kez)

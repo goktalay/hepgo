@@ -11,12 +11,16 @@ from datetime import datetime
 
 KV = 'work_schedule'
 
+# Konumu HER ZAMAN açık (kişisel "mesai dışında konumu kapat" ayarını yok sayan) varsayılan roller.
+DEFAULT_ALWAYS_TRACK_ROLES = ['Güvenlik']
+
 
 def _default():
     return {
         'days': {str(d): {'on': d <= 5, 'from': '08:30', 'to': '17:30'} for d in range(1, 8)},
         'holidays': [],
         'overtime_multiplier': 1.5,
+        'always_track_roles': list(DEFAULT_ALWAYS_TRACK_ROLES),
     }
 
 
@@ -36,8 +40,13 @@ def get_schedule(conn):
         data = {}
     d0 = _default()
     days = data.get('days') or {}
+    # always_track_roles: anahtar hiç yoksa (eski kayıt / yeni özellik) varsayılan (Güvenlik); boş liste ise aynen boş
+    atr = data.get('always_track_roles')
+    if atr is None:
+        atr = list(DEFAULT_ALWAYS_TRACK_ROLES)
     out = {'days': {}, 'holidays': [h for h in (data.get('holidays') or []) if h],
-           'overtime_multiplier': float(data.get('overtime_multiplier') or 1.5)}
+           'overtime_multiplier': float(data.get('overtime_multiplier') or 1.5),
+           'always_track_roles': [str(r) for r in atr if r]}
     for d in range(1, 8):
         dd = days.get(str(d)) or {}
         base = d0['days'][str(d)]
@@ -64,6 +73,10 @@ def set_schedule(conn, data):
     except Exception:   # noqa: BLE001
         m = 1.5
     sch['overtime_multiplier'] = max(1.0, min(10.0, m))
+    atr = (data or {}).get('always_track_roles')
+    if atr is None:   # anahtar gönderilmediyse mevcut değeri koru (yanlışlıkla sıfırlamayı önle)
+        atr = get_schedule(conn)['always_track_roles']
+    sch['always_track_roles'] = sorted({str(r)[:80] for r in (atr or []) if r})[:100]
     conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (KV, json.dumps(sch)))
     return sch
 
@@ -97,6 +110,13 @@ def is_work_time_for(conn, user_id, dt=None):
 def shift_hours(start_time, end_time):
     mins = max(0, _hm(end_time) - _hm(start_time))
     return round(mins / 60.0, 2)
+
+
+def is_always_tracked(conn, roles):
+    """Kullanıcının rolleri "konumu her zaman açık" rol listesiyle kesişiyor mu?
+    (ör. Güvenlik) → kişisel "mesai dışında konumu kapat" ayarı yok sayılır, konum hep takip edilir."""
+    always = set(get_schedule(conn).get('always_track_roles') or [])
+    return bool(always and set(roles or []) & always)
 
 
 def is_on_duty(conn, user_id):

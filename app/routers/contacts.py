@@ -1,6 +1,6 @@
 """Rehber › Kişilerim — /api/my/contacts: kişisel rehber (mail yazışmaları, Google / Outlook kişileri, elle eklenenler).
 Yalnızca sahibi görür; yönetici dahil başka hiç kimse erişemez."""
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -44,6 +44,46 @@ def add(b: ContactIn, user=Depends(auth.current_user), conn=db.DB):
                           VALUES (?, 'manual', ?, ?,?,?,?,?,?,?,?)''', (user['id'], secrets.token_hex(8), *v, now, now))
     conn.commit()
     return {'id': cur.lastrowid}
+
+
+class DeviceContact(BaseModel):
+    ext_id: str                       # cihazdaki kişi kimliği (yeniden aktarımda çoğaltmamak için)
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    title: Optional[str] = None
+
+
+class DeviceImportIn(BaseModel):
+    contacts: List[DeviceContact] = []
+
+
+@router.post('/import-device')
+def import_device(b: DeviceImportIn, user=Depends(auth.current_user), conn=db.DB):
+    """Mobil uygulamadan telefon rehberini içe aktarır (source='device'). Yalnız sahibi görür; yönetici dahil kimse erişemez.
+    Aynı cihaz kişisi (ext_id) tekrar gelirse güncellenir, çoğaltılmaz."""
+    cut = lambda v, n=200: ((v or '').strip()[:n] or None)   # noqa: E731
+    now = db.now()
+    added = updated = 0
+    for c in b.contacts[:5000]:
+        ext = (c.ext_id or '').strip()[:120]
+        name, phone = cut(c.name), cut(c.phone, 60)
+        email = (cut(c.email) or '').lower() or None
+        if not ext or not (name or phone or email):
+            continue
+        cur = conn.execute('''UPDATE personal_contacts SET name=?, phone=?, email=?, company=?, title=?, updated_at=?
+                              WHERE user_id=? AND source='device' AND ext_id=?''',
+                           (name, phone, email, cut(c.company), cut(c.title), now, user['id'], ext))
+        if cur.rowcount:
+            updated += 1
+        else:
+            conn.execute('''INSERT OR IGNORE INTO personal_contacts (user_id, source, ext_id, name, email, phone, company, title, created_at, updated_at)
+                            VALUES (?, 'device', ?, ?,?,?,?,?,?,?)''',
+                         (user['id'], ext, name, email, phone, cut(c.company), cut(c.title), now, now))
+            added += 1
+    conn.commit()
+    return {'ok': True, 'added': added, 'updated': updated, 'total': added + updated}
 
 
 def _own(conn, user, cid):

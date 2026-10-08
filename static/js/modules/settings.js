@@ -501,7 +501,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s.privacy, 'hide_delivered', 'İletildi bilgisini gönderme', 'Mesaj cihazınıza ulaştığında karşı tarafta gri çift tik görünmez'),
         h('h4', { class: 'set-sub' }, 'Diğer'),
         toggle(s.privacy, 'no_messages', 'Mesaj almayı kapat', 'Diğer kullanıcılar size yeni mesaj gönderemez'),
-        toggle(s, 'location_work_hours_only', 'Mesai dışında konumu kapat', 'Mobil uygulamada: yalnızca mesai saatlerinde (ve size girilen fazla mesaide) konumunuz kaydedilir. Görevde / sahada olduğunuzda konum yine takip edilir.')) },
+        toggle(s, 'location_work_hours_only', 'Mesai dışında konumu kapat', 'Mobil uygulamada: yalnızca mesai saatlerinde (ve size girilen fazla mesaide) konumunuz kaydedilir. Görevde / sahada olduğunuzda veya konumu her zaman açık bir rolde (ör. Güvenlik) iseniz konum yine takip edilir.')) },
     { key: 'mydata', title: 'Verilerim (KVKK)', desc: 'Verilerinizin kopyasını isteyin; silme / itiraz başvurusu', icon: 'lock',
       body: () => {
         const wrap = h('div', null);

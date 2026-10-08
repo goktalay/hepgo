@@ -31,6 +31,7 @@ def get_schedule(user=Depends(auth.current_user), conn=db.DB):
     sch = worktime.get_schedule(conn)
     sch['monthly_std_hours'] = _monthly_std_hours(sch)
     sch['can_edit'] = _can_edit(user)
+    sch['all_roles'] = auth.all_roles()   # "konumu her zaman açık roller" seçimi için tüm roller
     return sch
 
 
@@ -38,6 +39,7 @@ class ScheduleIn(BaseModel):
     days: dict
     holidays: list = []
     overtime_multiplier: float = 1.5
+    always_track_roles: Optional[list] = None
 
 
 @router.put('/schedule')

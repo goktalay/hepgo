@@ -4,7 +4,9 @@ import { api, fileUrl } from '../api.js';
 import { avatar, clear, confirmDialog, field, fmtDate, fmtDateTime, h, modal, moduleToolbar, pageHead, segmented, t, toast } from '../ui.js';
 
 const TYPE_BADGE = { user: ['blue', 'Personel'], person: ['', 'Firma kişisi'], family: ['green', 'Aile'], mine: ['yellow', 'Kişilerim'] };
-const MINE_SRC = { mail: 'Yazışma', google: 'Google Kişiler', microsoft: 'Outlook Kişileri', manual: 'Elle eklendi' };
+const MINE_SRC = { mail: 'Yazışma', google: 'Google Kişiler', microsoft: 'Outlook Kişileri', manual: 'Elle eklendi', device: '📱 Telefon' };
+// Mobil uygulama köprüsü (telefon rehberi ↔ sistem); yalnız native kabukta ve contacts eklentisi varsa
+const nativeContacts = () => (window.HepgoNative && window.HepgoNative.hasContacts && window.HepgoNative.hasContacts()) ? window.HepgoNative : null;
 // Türkçe Yazım Düzeni (Title Case): her kelimenin ilk harfi büyük, kalanı küçük (İ/ı duyarlı)
 const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(\p{L})/gu, (m, p, c) => p + c.toLocaleUpperCase('tr'));
 
@@ -22,8 +24,38 @@ async function list(view) {
   const seg = segmented([['all', 'Tümü'], ['user', 'Personel'], ['person', 'Firma kişileri'], ['family', 'Aile'], ['mine', '🔒 Kişilerim']], kind,
     v => { kind = v; load(); });
   const addBtn = h('button', { class: 'btn primary', type: 'button', hidden: true, onclick: () => editMine(null, load) }, '＋ Kişi ekle');
+  const importBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => importFromPhone() }, '📱 Telefondan içe aktar');
+  const exportBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => exportToPhone() }, '📱 Telefona aktar');
   const grid = h('div', { class: 'gd-groups' });
   const info = h('span', { class: 'small muted' });
+  const filtered = () => {
+    const term = q.value.trim().toLocaleLowerCase('tr');
+    return term ? people.filter(p => [p.name, p.subtitle, p.phone, p.email].some(x => (x || '').toLocaleLowerCase('tr').includes(term))) : people;
+  };
+  async function importFromPhone() {
+    importBtn.disabled = true; importBtn.textContent = '📱 İçe aktarılıyor…';
+    try {
+      const r = await nativeContacts().importDeviceContacts();
+      toast(t('{n} kişi içe aktarıldı (📱 Telefon)', { n: r.total || 0 }), 'success');
+      if (kind === 'mine') load();
+    } catch (err) {
+      toast(err.message === 'no-perm' ? 'Telefon rehberi izni verilmedi' : (err.message === 'no-plugin' ? 'Bu özellik yalnızca uygulamada çalışır' : 'İçe aktarılamadı'), 'err');
+    } finally { importBtn.disabled = false; importBtn.textContent = '📱 Telefondan içe aktar'; }
+  }
+  async function exportToPhone() {
+    const shown = filtered().filter(p => p.phone || p.email);
+    if (!shown.length) return toast('Aktarılacak telefon/e-posta olan kişi yok', 'err');
+    if (!await confirmDialog('Telefona aktar', t('{n} kişi telefonunuzun rehberine eklenecek. Devam edilsin mi?', { n: shown.length }), { okLabel: 'Aktar' })) return;
+    exportBtn.disabled = true; exportBtn.textContent = '📱 Aktarılıyor…';
+    try {
+      const r = await nativeContacts().addContactsToPhone(shown.map(p => ({
+        name: tc(p.name), phone: p.phone, email: p.email,
+        company: p.company || (p.type === 'person' ? p.subtitle : null), title: p.title })));
+      toast(t('{n} kişi telefona eklendi', { n: r.count || 0 }), 'success');
+    } catch (err) {
+      toast(err.message === 'no-perm' ? 'Telefon rehberi izni verilmedi' : 'Telefona aktarılamadı', 'err');
+    } finally { exportBtn.disabled = false; exportBtn.textContent = '📱 Telefona aktar'; }
+  }
   const card = p => p.type === 'mine' ? h('button', { class: 'card gd-card mine', type: 'button', onclick: () => editMine(p, load) },
     avatar({ full_name: tc(p.name) }, 44),
     h('div', { class: 'gd-info' },
@@ -39,8 +71,7 @@ async function list(view) {
       p.phone ? h('small', { class: 'muted' }, p.phone) : null),
     h('span', { class: `badge ${TYPE_BADGE[p.type][0]}` }, TYPE_BADGE[p.type][1]));
   const draw = () => {
-    const term = q.value.trim().toLocaleLowerCase('tr');
-    const shown = term ? people.filter(p => [p.name, p.subtitle, p.phone, p.email].some(x => (x || '').toLocaleLowerCase('tr').includes(term))) : people;
+    const shown = filtered();
     info.textContent = t('{n} kişi', { n: shown.length });
     if (!shown.length) return clear(grid, h('div', { class: 'card empty' }, 'Kişi bulunamadı.'));
     const groups = new Map();   // ilk harf → kişiler (alfabetik)
@@ -56,6 +87,9 @@ async function list(view) {
   const load = async () => {
     clear(grid, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
     addBtn.hidden = kind !== 'mine';
+    const nat = nativeContacts();
+    importBtn.hidden = !(nat && kind === 'mine');       // telefon → Kişilerim
+    exportBtn.hidden = !(nat && kind !== 'mine');        // sistem rehberi → telefon
     try {
       if (kind === 'mine') {
         people = (await api.get('/api/my/contacts')).contacts.map(c => ({ ...c, type: 'mine', name: c.name || c.email || c.phone,
@@ -66,7 +100,7 @@ async function list(view) {
     catch (err) { clear(grid, h('div', { class: 'card empty' }, err.message)); }
   };
   q.addEventListener('input', draw);
-  clear(view, pageHead('Rehber', { back: '#/', sub: 'Sistemdeki tüm kişiler · Kişilerim yalnızca size özeldir' }), moduleToolbar(seg, [q, addBtn]), h('p', null, info), grid);
+  clear(view, pageHead('Rehber', { back: '#/', sub: 'Sistemdeki tüm kişiler · Kişilerim yalnızca size özeldir' }), moduleToolbar(seg, [q, addBtn, importBtn, exportBtn]), h('p', null, info), grid);
   load();
 }
 
@@ -220,7 +254,20 @@ async function detail(view, type, id, ctx) {
       row('Görev', tc(d.title)), row('Departman', tc(d.department)), row('Firma', tc(d.company)), row('Yakınlık', tc(d.relation)),
       row('Ailesi', d.employee_name && t('{n} ailesi', { n: tc(d.employee_name) })),
       row('Telefon', d.phone), row('E-posta', d.email), row('Doğum', d.birth_date && fmtDate(d.birth_date)),
-      row('Roller', (d.roles || []).join(', ')), d.note ? row('Not', d.note) : null));
+      row('Roller', (d.roles || []).join(', ')), d.note ? row('Not', d.note) : null),
+    (nativeContacts() && (d.phone || d.email)) ? h('div', { class: 'set-actions left', style: { marginTop: '10px' } },
+      (() => {
+        const b = h('button', { class: 'btn sm', type: 'button' }, '📱 Telefona ekle');
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          try {
+            const r = await nativeContacts().addContactsToPhone([{ name: tc(d.full_name), phone: d.phone, email: d.email, company: tc(d.company), title: tc(d.title) }]);
+            toast(r.count ? 'Telefona eklendi' : 'Eklenemedi', r.count ? 'success' : 'err');
+          } catch (err) { toast(err.message === 'no-perm' ? 'Telefon rehberi izni verilmedi' : 'Telefona eklenemedi', 'err'); }
+          finally { b.disabled = false; }
+        });
+        return b;
+      })()) : null);
 
   const sec = (title, items, rowFn, empty) => h('section', { class: 'card card-pad' },
     h('h3', { style: { marginTop: 0 } }, `${title}${items?.length ? ` (${items.length})` : ''}`),

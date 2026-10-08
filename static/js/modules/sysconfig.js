@@ -892,9 +892,16 @@ function mesaiBody() {
       drawHol();
       const holAdd = h('input', { type: 'date', class: 'input', style: { maxWidth: '170px' } });
       const mult = h('input', { type: 'number', class: 'input', min: 1, max: 10, step: 0.1, value: sch.overtime_multiplier, style: { maxWidth: '110px' } });
+      const alwaysSel = new Set(sch.always_track_roles || []);
+      const roleBox = h('div', { class: 'mesai-roles', style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
+        ...(sch.all_roles || []).map(rn => {
+          const rb = h('input', { type: 'checkbox', checked: alwaysSel.has(rn) });
+          rb.addEventListener('change', () => { if (rb.checked) alwaysSel.add(rn); else alwaysSel.delete(rn); });
+          return h('label', { class: 'chk', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', border: '1px solid var(--line)', borderRadius: '8px', padding: '6px 10px' } }, rb, h('span', null, rn));
+        }));
       const save = async () => {
         try {
-          const r = await api.put('/api/worktime/schedule', { days: sch.days, holidays: sch.holidays, overtime_multiplier: parseFloat(mult.value) || 1.5 });
+          const r = await api.put('/api/worktime/schedule', { days: sch.days, holidays: sch.holidays, overtime_multiplier: parseFloat(mult.value) || 1.5, always_track_roles: [...alwaysSel] });
           sch = r; toast('Mesai ayarları kaydedildi'); render();
         } catch (err) { toastError(err); }
       };
@@ -911,7 +918,11 @@ function mesaiBody() {
         h('section', { class: 'card card-pad' },
           h('h3', { style: { marginTop: 0 } }, 'Fazla Mesai Çarpanı'),
           h('p', { class: 'small muted' }, 'İK’nın girdiği fazla mesai saatleri bu çarpanla ücretlenir (ör. 1.5 = saat ücretinin 1,5 katı).'),
-          h('div', { class: 'cl-set-add' }, mult, h('span', { class: 'muted' }, t('× · aylık standart ≈ {n} saat', { n: sch.monthly_std_hours || 0 }))),
+          h('div', { class: 'cl-set-add' }, mult, h('span', { class: 'muted' }, t('× · aylık standart ≈ {n} saat', { n: sch.monthly_std_hours || 0 })))),
+        h('section', { class: 'card card-pad' },
+          h('h3', { style: { marginTop: 0 } }, 'Konumu Her Zaman Açık Roller'),
+          h('p', { class: 'small muted' }, 'Seçili roldeki personel “mesai dışında konumu kapat” ayarını açsa bile konumu daima takip edilir (ör. Güvenlik). Görevde/sahada olan personel de ayara bakılmaksızın takip edilir.'),
+          roleBox,
           h('div', { class: 'set-actions', style: { marginTop: '12px' } }, h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Kaydet'))));
     };
     render();

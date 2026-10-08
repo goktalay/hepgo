@@ -8,8 +8,8 @@ Native eklentiler: **push bildirimleri** (FCM/APNs), **konum** (arkaplan), **ağ
 
 ## ✅ Bu repoda HAZIR olanlar (Android)
 `mobile/android/` projesi **üretildi ve yapılandırıldı** (`npm install` + `npx cap add android`):
-- **Eklentiler:** push (FCM), network, geolocation (ön plan) + **@capacitor-community/background-geolocation** (7/24 arkaplan, foreground service).
-- **İzinler (AndroidManifest):** INTERNET, POST_NOTIFICATIONS, konum (FINE/COARSE/**BACKGROUND**) + FOREGROUND_SERVICE(+LOCATION), **CAMERA**, RECORD_AUDIO (WebRTC görüşme), VIBRATE/WAKE_LOCK. Kamera/konum donanımı `required=false` (tablet/kamerasız cihaz da yükler). `resizeableActivity` + `supports-screens` (telefon/tablet/katlanabilir).
+- **Eklentiler:** push (FCM), network, geolocation (ön plan) + **@capacitor-community/background-geolocation** (7/24 arkaplan, foreground service) + **@capacitor-community/contacts** (telefon rehberi ↔ sistem; Rehber modülünden içe/dışa aktarma).
+- **İzinler (AndroidManifest):** INTERNET, POST_NOTIFICATIONS, konum (FINE/COARSE/**BACKGROUND**) + FOREGROUND_SERVICE(+LOCATION), **CAMERA**, RECORD_AUDIO (WebRTC görüşme), **READ_CONTACTS/WRITE_CONTACTS** (rehber senkronu), VIBRATE/WAKE_LOCK. Kamera/konum donanımı `required=false` (tablet/kamerasız cihaz da yükler). `resizeableActivity` + `supports-screens` (telefon/tablet/katlanabilir).
 - **Ağ güvenliği:** yalnız HTTPS (`network_security_config.xml`, cleartext kapalı).
 - **Hedef:** compileSdk/targetSdk **35** (Play güncel şartı), minSdk 22. versionCode 1 / versionName 1.0.0.
 - **İkon & açılış:** `@capacitor/assets` ile tüm yoğunluklar üretildi (arka plan #0f1d3d).

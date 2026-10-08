@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -339,6 +340,99 @@ async def activity(request: Request, user=Depends(auth.current_user)):
         raise HTTPException(400, 'Geçersiz kayıt')
     # Veritabanı yazımı iş parçacığında: olay döngüsü kilit beklerken bloklanmasın
     await run_in_threadpool(_write_activity, user['id'], body if isinstance(body, list) else [body])
+    return {'ok': True}
+
+
+# ---------- Şifremi unuttum: e-posta ile 6 haneli kod → yeni şifre (oturum gerektirmez) ----------
+class ForgotIn(BaseModel):
+    username: str
+
+
+class ResetIn(BaseModel):
+    username: str
+    code: str
+    password: str
+
+
+_forgot_hits = {}   # ip → [zamanlar]
+FORGOT_LIMIT, FORGOT_WINDOW = 8, 3600
+
+
+def _find_user_by_ident(conn, ident):
+    return db.row(conn.execute(
+        'SELECT id, username, email, active FROM users WHERE username = ? OR (email IS NOT NULL AND lower(email) = lower(?))',
+        (ident, ident)))
+
+
+@router.post('/auth/forgot')
+def forgot_password(body: ForgotIn, request: Request, conn=db.DB):
+    """Kullanıcı adı / e-posta ile şifre sıfırlama kodu ister; kayıtlı e-postaya 6 haneli kod gönderilir."""
+    from .. import sysmail
+    ident = (body.username or '').strip()
+    if not ident:
+        raise HTTPException(400, 'Kullanıcı adı veya e-posta girin')
+    if not sysmail.enabled():
+        raise HTTPException(503, 'E-posta ile sıfırlama bu an kullanılamıyor. Lütfen yöneticinize başvurun.')
+    ip = _client_ip(request)
+    now = time.time()
+    _forgot_hits[ip] = [t for t in _forgot_hits.get(ip, []) if now - t < FORGOT_WINDOW]
+    if len(_forgot_hits[ip]) >= FORGOT_LIMIT:
+        raise HTTPException(429, 'Çok fazla istek. Daha sonra tekrar deneyin.')
+    _forgot_hits[ip].append(now)
+    user = _find_user_by_ident(conn, ident)
+    if not (user and user['active'] and (user['email'] or '').strip()):
+        # Kullanıcı yok ya da e-posta kayıtlı değil → kodu üretmeyiz; kullanıcıyı yönlendiririz
+        return {'ok': True, 'has_email': False}
+    code = f'{secrets.randbelow(1000000):06d}'
+    exp = (datetime.now() + timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M:%S')
+    conn.execute('DELETE FROM password_resets WHERE user_id = ?', (user['id'],))
+    conn.execute('INSERT INTO password_resets (user_id, code_hash, expires_at, attempts, used, created_at) VALUES (?,?,?,?,?,?)',
+                 (user['id'], auth.hash_password(code), exp, 0, 0, db.now()))
+    conn.commit()
+    try:
+        sysmail.send_reset_code(user['email'].strip(), code, user['username'])
+    except Exception:   # noqa: BLE001
+        raise HTTPException(502, 'E-posta gönderilemedi. Biraz sonra tekrar deneyin.')
+    m = user['email'].strip().split('@')
+    masked = (m[0][:2] + '***@' + m[1]) if len(m) == 2 else user['email'].strip()
+    return {'ok': True, 'has_email': True, 'sent_to': masked}
+
+
+@router.post('/auth/reset')
+def reset_password(body: ResetIn, request: Request, conn=db.DB):
+    """Sıfırlama kodu + yeni şifre ile şifreyi değiştirir; tüm oturumları kapatır."""
+    ident = (body.username or '').strip()
+    user = _find_user_by_ident(conn, ident)
+    if not user:
+        raise HTTPException(400, 'Geçersiz istek')
+    r = db.row(conn.execute('SELECT id, code_hash, expires_at, attempts, used FROM password_resets WHERE user_id = ? ORDER BY id DESC LIMIT 1', (user['id'],)))
+    if not r or r['used']:
+        raise HTTPException(400, 'Sıfırlama kodu bulunamadı. Yeni kod isteyin.')
+    try:
+        if datetime.now() > datetime.fromisoformat(r['expires_at']):
+            raise HTTPException(400, 'Kodun süresi doldu. Yeni kod isteyin.')
+    except ValueError:
+        pass
+    if (r['attempts'] or 0) >= 5:
+        raise HTTPException(429, 'Çok fazla hatalı deneme. Yeni kod isteyin.')
+    if not auth.verify_password((body.code or '').strip(), r['code_hash']):
+        conn.execute('UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?', (r['id'],))
+        conn.commit()
+        raise HTTPException(400, 'Kod hatalı')
+    pol = policy.get(conn)
+    try:
+        policy.validate_password(pol, body.password, user['username'])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if pol['reuse_block'] and any(auth.verify_password(body.password, h) for h in policy.recent_hashes(conn, user['id'], pol['reuse_block'])):
+        raise HTTPException(400, f"Son {pol['reuse_block']} şifrenizden birini yeniden kullanamazsınız")
+    new_hash = auth.hash_password(body.password)
+    conn.execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', (new_hash, user['id']))
+    policy.record_history(conn, user['id'], new_hash)
+    conn.execute('UPDATE password_resets SET used = 1 WHERE id = ?', (r['id'],))
+    conn.execute('DELETE FROM sessions WHERE user_id = ?', (user['id'],))   # güvenlik: tüm oturumları kapat
+    db.audit(conn, user['id'], 'Şifresini sıfırladı (e-posta kodu)', 'user', user['id'], _client_ip(request))
+    conn.commit()
     return {'ok': True}
 
 

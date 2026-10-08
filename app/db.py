@@ -2482,6 +2482,23 @@ def _migrate(conn):
         conn.execute('ALTER TABLE users ADD COLUMN prefs TEXT')
     if 'deleted_at' not in user_cols:   # silinen ama geçmiş kayıtlarda adı geçen kullanıcılar
         conn.execute('ALTER TABLE users ADD COLUMN deleted_at TEXT')
+    if 'email' not in user_cols:        # "şifremi unuttum" e-posta sıfırlaması + bildirim için
+        conn.execute('ALTER TABLE users ADD COLUMN email TEXT')
+        try:   # personel kaydındaki e-postadan doldur (varsa)
+            conn.execute("""UPDATE users SET email = (SELECT e.email FROM employees e
+                            WHERE e.user_id = users.id AND e.email IS NOT NULL AND e.email <> '' LIMIT 1)
+                            WHERE email IS NULL""")
+        except Exception:   # noqa: BLE001
+            pass
+    conn.execute('''CREATE TABLE IF NOT EXISTS password_resets (
+        id         INTEGER PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash  TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        attempts   INTEGER NOT NULL DEFAULT 0,
+        used       INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    )''')
     tm_cols = {r[1] for r in conn.execute('PRAGMA table_info(team_meetings)')}
     for col in ('started_at', 'ended_at', 'process_status', 'process_error', 'processed_at'):   # toplantı ekranı ve özet
         if tm_cols and col not in tm_cols:

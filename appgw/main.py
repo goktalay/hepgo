@@ -63,6 +63,8 @@ def login_page(firm_name: str | None) -> HTMLResponse:
     firm_field = '' if firm_name else (
         '<label>Firma adresi<input id="firma" autocomplete="organization" autocapitalize="none" '
         'placeholder="ör. firmaniz" required></label>')
+    firm_field_r = '' if firm_name else (
+        '<label>Firma adresi<input id="rfirma" autocapitalize="none" placeholder="ör. firmaniz" required></label>')
     firm_hdr = (f'<div class="firm">Firma: <b>{firm_name}</b> · '
                 '<a href="/_firma">değiştir</a></div>') if firm_name else ''
     html = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
@@ -82,7 +84,9 @@ input{{height:46px;border-radius:12px;border:1px solid rgba(255,255,255,.22);bac
 padding:0 14px;font-size:16px;outline:none}}input:focus{{border-color:rgba(147,183,255,.8)}}
 button{{height:48px;border:0;border-radius:12px;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font:inherit;
 font-weight:700;font-size:16px;cursor:pointer;margin-top:4px;box-shadow:0 10px 26px rgba(37,99,235,.35)}}
-button:disabled{{opacity:.6}}.err{{min-height:18px;color:#ffb4b4;font-size:13px;text-align:center}}</style></head>
+button:disabled{{opacity:.6}}.err{{min-height:18px;color:#ffb4b4;font-size:13px;text-align:center}}
+.lnk{{color:#9ab7ff;font-size:13px;text-align:center;margin-top:8px;cursor:pointer;background:none;border:0;padding:6px}}
+.ok{{min-height:18px;color:#9ff5c0;font-size:13px;text-align:center}}.hide{{display:none}}</style></head>
 <body><div class="card">
 <div class="logo"><img src="/_logo?v=2" alt="" onerror="this.parentElement.textContent='🛰️'"></div>
 <h1 class="brand">HEPGO</h1><p class="sub">Fabrika Yönetim Sistemi</p>
@@ -91,7 +95,18 @@ button:disabled{{opacity:.6}}.err{{min-height:18px;color:#ffb4b4;font-size:13px;
 <label>Kullanıcı adı<input id="u" autocapitalize="none" autocomplete="username" required></label>
 <label>Şifre<input id="p" type="password" autocomplete="current-password" required></label>
 <div class="err" id="e"></div>
-<button type="submit" id="b">Giriş yap</button></form></div>
+<button type="submit" id="b">Giriş yap</button></form>
+<button type="button" class="lnk" id="fp">Şifremi unuttum?</button>
+<form id="rf" class="hide" autocomplete="off">
+{firm_field_r}
+<label>Kullanıcı adı veya e-posta<input id="ru" autocapitalize="none" required></label>
+<div id="r2" class="hide">
+<label>E-posta kodu<input id="rc" inputmode="numeric" maxlength="6" placeholder="______"></label>
+<label>Yeni şifre (en az 10 karakter)<input id="rp" type="password" minlength="10" autocomplete="new-password"></label>
+</div>
+<div class="err" id="re"></div><div class="ok" id="rok"></div>
+<button type="submit" id="rb">Kod gönder</button>
+<button type="button" class="lnk" id="rback">← Girişe dön</button></form></div>
 <script>
 var hasFirm={str(bool(firm_name)).lower()};
 var f=document.getElementById('f'),e=document.getElementById('e'),b=document.getElementById('b');
@@ -109,6 +124,35 @@ f.addEventListener('submit',async function(ev){{ev.preventDefault();e.textConten
   e.textContent=(d&&d.detail)||'Kullanıcı adı ya da şifre hatalı';
  }}catch(_e){{e.textContent='Bağlantı hatası';}}
  b.disabled=false;b.textContent='Giriş yap';}});
+var rf=document.getElementById('rf'),fp=document.getElementById('fp'),rback=document.getElementById('rback');
+var re=document.getElementById('re'),rok=document.getElementById('rok'),rb=document.getElementById('rb'),r2=document.getElementById('r2');
+var sent=false,ruser='';
+fp.addEventListener('click',function(){{f.classList.add('hide');fp.classList.add('hide');rf.classList.remove('hide');re.textContent='';rok.textContent='';}});
+rback.addEventListener('click',function(){{rf.classList.add('hide');fp.classList.remove('hide');f.classList.remove('hide');}});
+rf.addEventListener('submit',async function(ev){{ev.preventDefault();re.textContent='';rb.disabled=true;var ot=rb.textContent;rb.textContent='…';
+ try{{
+  if(!sent){{
+   if(!hasFirm){{
+    var fv=document.getElementById('rfirma').value.trim();
+    var rs=await fetch('/_sel',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{firma:fv}})}});
+    if(!rs.ok){{re.textContent='Firma bulunamadı. Adresi kontrol edin.';rb.disabled=false;rb.textContent=ot;return;}}
+   }}
+   ruser=document.getElementById('ru').value.trim();
+   var r=await fetch('/api/auth/forgot',{{method:'POST',credentials:'include',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:ruser}})}});
+   var d={{}};try{{d=await r.json();}}catch(_e){{}}
+   if(!r.ok){{re.textContent=(d&&d.detail)||'İşlem yapılamadı';rb.disabled=false;rb.textContent=ot;return;}}
+   if(d.has_email){{sent=true;r2.classList.remove('hide');rb.textContent='Şifreyi sıfırla';rok.textContent=(d.sent_to||'E-postanıza')+' adresine kod gönderildi.';document.getElementById('rc').focus();}}
+   else{{re.textContent='E-postanız sistemde kayıtlı değil. Lütfen yöneticinize başvurun.';}}
+   rb.disabled=false;return;
+  }}
+  var code=document.getElementById('rc').value.trim(),pw=document.getElementById('rp').value;
+  if(code.length<6||pw.length<10){{re.textContent='Kod 6 hane, şifre en az 10 karakter olmalı.';rb.disabled=false;rb.textContent='Şifreyi sıfırla';return;}}
+  var r=await fetch('/api/auth/reset',{{method:'POST',credentials:'include',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{username:ruser,code:code,password:pw}})}});
+  var d={{}};try{{d=await r.json();}}catch(_e){{}}
+  if(r.ok){{r2.classList.add('hide');rb.classList.add('hide');re.textContent='';rok.textContent='Şifreniz güncellendi. "Girişe dön" ile yeni şifrenizle giriş yapın.';}}
+  else{{re.textContent=(d&&d.detail)||'Kod hatalı ya da süresi doldu';rb.disabled=false;rb.textContent='Şifreyi sıfırla';}}
+ }}catch(_e){{re.textContent='Bağlantı hatası';rb.disabled=false;}}
+}});
 </script></body></html>"""
     return HTMLResponse(html, headers=dict(NOSTORE))
 

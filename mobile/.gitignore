@@ -14,3 +14,10 @@ android/captures/
 android/local.properties
 android/.idea/
 android/app/google-services.json
+
+# Release imzalama sırları (ASLA commit edilmez — keystore sahibi saklar)
+android/keystore.properties
+android/*.jks
+android/*.keystore
+android/app/*.jks
+android/app/*.keystore

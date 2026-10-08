@@ -57,14 +57,25 @@ def states(conn):
     return _kv(conn, HEALTH_KEY)
 
 
-def record(conn, group, ok, message):
-    """Bir denemenin sonucunu kaydeder; durum değiştiyse 'since' güncellenir (ne zamandan beri çevrimdışı)."""
+HISTORY_LEN = 60   # son N denetim (grafik + çalışma süresi için)
+
+
+def record(conn, group, ok, message, latency_ms=None):
+    """Bir denemenin sonucunu kaydeder. Ek: art arda hata sayısı (fails), yanıt süresi (latency_ms) ve
+    son HISTORY_LEN denetimin geçmişi (history: [checked_at, ok(0/1), latency_ms]) — detaylı durum + grafik için."""
     now = time.strftime('%Y-%m-%dT%H:%M:%S')
+    ok = bool(ok)
+    lat = int(latency_ms) if latency_ms is not None else None
     with _lock:
         data = _kv(conn, HEALTH_KEY)
         prev = data.get(group) or {}
-        data[group] = {'ok': bool(ok), 'message': (message or '')[:300], 'checked_at': now,
-                       'since': prev.get('since') if prev.get('ok') == bool(ok) and prev.get('since') else now}
+        fails = 0 if ok else int(prev.get('fails') or 0) + 1
+        since = prev.get('since') if prev.get('ok') == ok and prev.get('since') else now
+        hist = list(prev.get('history') or [])
+        hist.append([now, 1 if ok else 0, lat])
+        hist = hist[-HISTORY_LEN:]
+        data[group] = {'ok': ok, 'message': (message or '')[:300], 'checked_at': now,
+                       'since': since, 'fails': fails, 'latency_ms': lat, 'history': hist}
         _put(conn, HEALTH_KEY, data)
     return data[group]
 
@@ -84,11 +95,13 @@ def _configured(conn):
 
 def check(conn, group):
     from . import integrations
+    t0 = time.monotonic()
     try:
         ok, message = integrations.test(group)
     except Exception as e:   # noqa: BLE001 — denetim hiçbir zaman çökmez; hata çevrimdışı sayılır
         ok, message = False, f'Denetim hatası: {str(e)[:150] or type(e).__name__}'
-    return record(conn, group, ok, message)
+    latency = int((time.monotonic() - t0) * 1000)
+    return record(conn, group, ok, message, latency_ms=latency)
 
 
 def check_due(conn, now=None):

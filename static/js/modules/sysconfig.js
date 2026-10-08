@@ -376,6 +376,43 @@ const integBadge = g => { const [cls, text] = integState(g); return h('span', { 
 // Katalog kartı durumu (birleşik connected): gri = Bağlı değil, yeşil = Bağlı.
 const catBadge = it => h('span', { class: `sc-integ-status ${it.connected ? 'ok' : ''}` }, it.connected ? 'Bağlı' : 'Bağlı değil');
 const INTERVALS = [[30, '30 sn'], [60, '1 dk'], [120, '2 dk'], [300, '5 dk'], [600, '10 dk'], [900, '15 dk'], [1800, '30 dk'], [3600, '1 saat']];
+const _dparse = iso => (iso ? Date.parse(String(iso).replace(' ', 'T')) : NaN);
+function ihAgo(iso) {
+  const d = _dparse(iso); if (isNaN(d)) return '—';
+  let s = Math.max(0, Math.floor((Date.now() - d) / 1000));
+  return s < 60 ? `${s} sn önce` : s < 3600 ? `${Math.floor(s / 60)} dk önce` : s < 86400 ? `${Math.floor(s / 3600)} sa önce` : `${Math.floor(s / 86400)} gün önce`;
+}
+function ihDur(iso) {
+  const d = _dparse(iso); if (isNaN(d)) return '—';
+  let s = Math.max(0, Math.floor((Date.now() - d) / 1000));
+  return s < 60 ? `${s} sn` : s < 3600 ? `${Math.floor(s / 60)} dk` : s < 86400 ? `${Math.floor(s / 3600)} sa ${Math.floor((s % 3600) / 60)} dk` : `${Math.floor(s / 86400)} gün`;
+}
+// Son denetimlerin "kalp atışı" şeridi (yeşil=bağlı, kırmızı=çevrimdışı)
+function ihBeats(history) {
+  return h('div', { style: { display: 'flex', gap: '2px', flexWrap: 'wrap', marginTop: '4px' } },
+    ...history.slice(-48).map(x => h('span', {
+      title: `${fmtDateTime(x[0])}${x[2] != null ? ` · ${x[2]} ms` : ''} · ${x[1] ? 'Bağlı' : 'Çevrimdışı'}`,
+      style: { width: '9px', height: '16px', borderRadius: '2px', display: 'inline-block', background: x[1] ? '#22c55e' : '#ef4444', opacity: '0.9' } })));
+}
+// Yanıt süresi (gecikme) kıvılcım grafiği — kendi maksimumuna göre ölçeklenir
+function ihLatencySpark(history) {
+  const lat = history.map(x => x[2]).filter(v => v != null);
+  if (lat.length < 2) return null;
+  const max = Math.max(...lat, 1);
+  return spark(history.map(x => (x[2] == null ? 0 : (x[2] / max) * 100)), '#3b82f6');
+}
+async function ihLoadAgent(el) {
+  try {
+    const a = await api.get('/api/system/agent');
+    clear(el);
+    if (a.mode !== 'remote') { el.append(h('span', { class: 'muted' }, 'Yerel mod: cihazlar bu sunucuda (ayrı ajan gerekmez).')); return; }
+    const ping = a.ping && a.ping.ok ? ` · ping ${a.ping.ms} ms` : '';
+    el.append(
+      h('b', { style: { color: a.online ? '#16a34a' : '#dc2626' } }, a.online ? '● Fabrika ajanı bağlı' : '○ Fabrika ajanı bağlı değil'),
+      a.online ? h('span', { class: 'muted' }, ping + (a.info && a.info.host ? ` · ${a.info.host}` : '')) : null,
+      !a.online ? h('span', { class: 'muted' }, ' — fabrika cihazı (GX10) kapalı/çevrimdışı olabilir') : null);
+  } catch (e) { clear(el); }
+}
 function integHealthCard(grp, reload) {
   if (!grp.checked) return null;
   const sel = h('select', { class: 'input', style: { maxWidth: '140px' } },
@@ -385,14 +422,47 @@ function integHealthCard(grp, reload) {
     try { await api.put(`/api/system/integrations/${grp.key}/interval`, { seconds: Number(sel.value) }); toast('Kontrol sıklığı kaydedildi'); reload(grp.key); }
     catch (err) { toastError(err); }
   });
+  const checkBtn = h('button', { class: 'btn sm', type: 'button' }, '↻ Şimdi Denetle');
+  checkBtn.addEventListener('click', async () => {
+    checkBtn.disabled = true; const o = checkBtn.textContent; checkBtn.textContent = 'Denetleniyor…';
+    try {
+      const r = await api.post(`/api/system/integrations/${grp.key}/test`, {});
+      toast(r.ok ? `Bağlı${r.latency_ms != null ? ` · ${r.latency_ms} ms` : ''}` : (r.message || 'Çevrimdışı'), r.ok ? 'success' : 'err');
+      reload(grp.key);
+    } catch (err) { toastError(err); checkBtn.disabled = false; checkBtn.textContent = o; }
+  });
   const hl = grp.health;
+  const row = (label, val, cls) => h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '3px 0', borderBottom: '1px solid var(--line, #eee)' } },
+    h('span', { class: 'muted small' }, label), h('b', { class: `small ${cls || ''}`, style: cls === 'err' ? { color: '#dc2626' } : cls === 'warn' ? { color: '#d97706' } : {} }, val));
+  let detail = h('p', { class: 'small muted' }, 'Henüz denetlenmedi; ilk kontrol birkaç saniye içinde yapılır.');
+  if (!grp.configured) detail = h('p', { class: 'small muted' }, 'Ayarlar girilince bağlantı düzenli olarak denetlenir.');
+  else if (hl) {
+    const hist = hl.history || [];
+    const okN = hist.filter(x => x[1]).length;
+    const uptime = hist.length ? Math.round((okN / hist.length) * 100) : null;
+    const lats = hist.map(x => x[2]).filter(v => v != null);
+    const avg = lats.length ? Math.round(lats.reduce((a, b) => a + b, 0) / lats.length) : null;
+    const ivLabel = (INTERVALS.find(([v]) => v === grp.interval) || [0, `${grp.interval} sn`])[1];
+    const spk = ihLatencySpark(hist);
+    detail = h('div', null,
+      hl.message ? h('p', { class: 'small', style: hl.ok ? {} : { color: '#dc2626' } }, hl.message) : null,
+      h('div', { style: { margin: '6px 0' } },
+        row('Son kontrol', `${ihAgo(hl.checked_at)} · ${fmtDateTime(hl.checked_at)}`),
+        row(hl.ok ? 'Çevrimiçi süresi' : 'Çevrimdışı süresi', ihDur(hl.since), hl.ok ? '' : 'err'),
+        row('Yanıt süresi', hl.latency_ms != null ? `${hl.latency_ms} ms${avg != null ? ` · ort. ${avg} ms` : ''}` : '—'),
+        row('Çalışma oranı', uptime != null ? `%${uptime} · son ${hist.length} kontrol` : '—', uptime != null && uptime < 90 ? 'warn' : ''),
+        hl.fails ? row('Art arda hata', String(hl.fails), 'err') : null,
+        row('Denetim sıklığı', `~${ivLabel}`)),
+      hist.length ? h('div', null, h('div', { class: 'small muted', style: { marginTop: '6px' } }, 'Son denetimler'), ihBeats(hist)) : null,
+      spk ? h('div', null, h('div', { class: 'small muted', style: { marginTop: '10px', marginBottom: '2px' } }, 'Yanıt süresi (ms)'), spk) : null);
+  }
+  const agentLine = grp.needs_agent ? h('div', { class: 'small', style: { marginTop: '8px' } }, h('span', { class: 'muted' }, 'Fabrika ajanı durumu…')) : null;
+  if (agentLine) ihLoadAgent(agentLine);
   return h('section', { class: 'card card-pad integ-health' },
-    h('h3', { style: { marginTop: 0 } }, 'Bağlantı durumu'),
-    !grp.configured ? h('p', { class: 'small muted' }, 'Ayarlar girilince bağlantı düzenli olarak denetlenir.')
-      : hl ? h('p', null, integBadge(grp), ' ', h('span', { class: 'small' }, hl.message),
-        h('div', { class: 'small muted' }, t('Son kontrol: {a} · bu durumda: {b} tarihinden beri', { a: fmtDateTime(hl.checked_at), b: fmtDateTime(hl.since) })))
-        : h('p', { class: 'small muted' }, 'Henüz denetlenmedi; ilk kontrol birkaç saniye içinde yapılır.'),
-    h('label', { class: 'field', style: { maxWidth: '360px' } }, h('span', null, 'Kontrol sıklığı'), sel,
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' } },
+      h('h3', { style: { margin: 0 } }, 'Bağlantı Durumu'), integBadge(grp), h('span', { style: { flex: '1' } }), checkBtn),
+    detail, agentLine,
+    h('label', { class: 'field', style: { maxWidth: '360px', marginTop: '10px' } }, h('span', null, 'Kontrol sıklığı'), sel,
       h('small', { class: 'hint' }, 'Bağlantı bu aralıkla denenir; ulaşılamazsa “Çevrimdışı” görünür ve sistem yöneticisine bildirim düşer.')));
 }
 

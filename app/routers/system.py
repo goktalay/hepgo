@@ -384,14 +384,17 @@ def _push_face_config(conn):
 def test_integration(group: str, user=Depends(auth.current_user), conn=db.DB):
     if not _is_sysadmin(user):
         raise HTTPException(403, 'Yetkiniz yok')
+    import time as _t
     from .. import integration_health, integrations
+    t0 = _t.monotonic()
     ok, msg = integrations.test(group)
-    if group in integration_health.CHECKED:   # elle deneme de sağlık durumunu günceller
+    latency = int((_t.monotonic() - t0) * 1000)
+    if group in integration_health.CHECKED:   # elle deneme de sağlık durumunu (gecikme + geçmiş dahil) günceller
         if any(g['key'] == group and g['configured'] for g in integrations.view(conn)):
-            integration_health.record(conn, group, ok, msg)
+            integration_health.record(conn, group, ok, msg, latency_ms=latency)
         else:
             integration_health.forget(conn, group)
-    return {'ok': ok, 'message': msg}
+    return {'ok': ok, 'message': msg, 'latency_ms': latency}
 
 
 class IntervalIn(BaseModel):

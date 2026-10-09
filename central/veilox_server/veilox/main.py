@@ -304,6 +304,62 @@ def slug_preview(name: str = ''):
     return {'slug': slug, 'domain': f'{slug}.{FIRM_BASE}'}
 
 
+RESERVED_SLUGS = {'www', 'api', 'app', 'master', 'merkez', 'veilox', 'caymaz', 'gokkubbe', 'turkbey',
+                  'admin', 'mail', 'static', 'cdn', 'support', 'destek', 'hepgo', 'panel', 'kur'}
+
+
+def _slug_valid(s):
+    import re
+    return bool(s) and 3 <= len(s) <= 40 and bool(re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?', s)) and '--' not in s
+
+
+def _slug_status(conn, raw):
+    """Kullanıcının seçtiği firma adresini normalize edip uygunluğunu döner."""
+    s = provision.slugify(raw or '')[:40].strip('-')
+    if not _slug_valid(s):
+        return {'ok': False, 'slug': s, 'reason': 'Adres 3–40 karakter; küçük harf, rakam ve tire içerebilir.'}
+    if s in RESERVED_SLUGS:
+        return {'ok': False, 'slug': s, 'reason': 'Bu adres ayrılmış; başka bir adres seçin.'}
+    taken = conn.execute("SELECT 1 FROM companies WHERE slug=? AND status IN ('pending','approved','provisioning','active','offline')", (s,)).fetchone()
+    if taken:
+        return {'ok': False, 'slug': s, 'reason': 'Bu adres alınmış; başka bir adres seçin.'}
+    return {'ok': True, 'slug': s, 'domain': f'{s}.{FIRM_BASE}'}
+
+
+@app.get('/api/public/slug-check')
+def slug_check(slug: str = ''):
+    """Firma adresi (subdomain) uygun mu? Kullanıcı yazdıkça kontrol edilir."""
+    with db.connect() as conn:
+        return _slug_status(conn, slug)
+
+
+LOGO_MAX_BYTES = 2 * 1024 * 1024   # 2 MB
+_LOGO_EXT = {'png': 'png', 'jpeg': 'jpg', 'jpg': 'jpg', 'webp': 'webp', 'gif': 'gif'}
+
+
+def _save_firm_logo(slug, data_uri):
+    """Kayıt sihirbazından gelen logoyu (data URI) merkez diskine kaydeder; (yol) döner. Kurallı: tür + boyut."""
+    import base64
+    import re
+    m = re.match(r'data:image/([a-z+]+);base64,(.+)$', (data_uri or '').strip(), re.I | re.S)
+    if not m:
+        raise HTTPException(400, 'Logo PNG, JPG, WEBP veya GIF olmalı')
+    ext = _LOGO_EXT.get(m.group(1).lower())
+    if not ext:
+        raise HTTPException(400, 'Logo PNG, JPG, WEBP veya GIF olmalı (SVG desteklenmez)')
+    try:
+        raw = base64.b64decode(m.group(2), validate=True)
+    except Exception:
+        raise HTTPException(400, 'Logo dosyası çözülemedi')
+    if not raw or len(raw) > LOGO_MAX_BYTES:
+        raise HTTPException(400, 'Logo en fazla 2 MB olmalı')
+    d = db.DATA_DIR / 'firm-logos'
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f'{slug}.{ext}'
+    path.write_bytes(raw)
+    return str(path)
+
+
 def _single_line(body, *fields):
     """Kurulumda .env / systemd birimine yazılan alanlar tek satır olmalı (satır sonuyla yeni ayar eklenemesin)."""
     for f in fields:
@@ -322,6 +378,9 @@ class RegisterIn(BaseModel):
     city: str = ''
     accept: bool = True
     email_code: str = ''        # e-posta doğrulama kodu (SMTP yapılandırıldıysa zorunlu)
+    slug: str = ''              # kullanıcının seçtiği firma adresi (boşsa firma adından üretilir)
+    country: str = ''           # ülke kodu (ör. TR)
+    logo: str = ''              # data URI (base64) — isteğe bağlı firma logosu (kurallı)
 
 
 class SendCodeIn(BaseModel):
@@ -442,15 +501,25 @@ def register(body: RegisterIn, request: Request):
                 mode = 'online'
             fee = pkg_row['monthly_fee'] if pkg_row else 0
             wl = int(pkg_row['white_label']) if pkg_row else 0
-        slug = _unique_slug(conn, provision.slugify(name))
+        # Firma adresi: kullanıcı kendi seçtiyse doğrula + benzersizleştir, yoksa firma adından üret
+        if body.slug.strip():
+            st = _slug_status(conn, body.slug)
+            if not st['ok']:
+                raise HTTPException(409, st['reason'])
+            slug = st['slug']
+        else:
+            slug = _unique_slug(conn, provision.slugify(name))
+        country = (body.country or '').strip()[:2].upper() or None
+        logo_path = _save_firm_logo(slug, body.logo) if body.logo.strip() else None   # kurallı (tür+2MB)
         _reg[ip].append(now)
         cur = conn.execute(
             'INSERT INTO companies(slug,name,package_id,mode,modules,white_label,master_username,master_name,'
-            'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,email_verified,created_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,country,logo,email_verified,created_at) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (slug, name, (pkg_row['id'] if pkg_row else None), mode, _j(mods), wl,
              user, body.master_name.strip(), make_hash(body.password), body.password, fee,
-             'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None, body.city.strip()[:60] or None, verified, db.now()))
+             'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None,
+             body.city.strip()[:60] or None, country, logo_path, verified, db.now()))
         conn.commit()
     return {'ok': True, 'application_no': f'B-{cur.lastrowid:05d}', 'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
             'message': 'Başvurunuz alındı. Onaylandığında firmanız kurulacak ve giriş adresiniz e-postanıza iletilecek.'}

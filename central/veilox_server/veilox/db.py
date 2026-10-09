@@ -107,7 +107,7 @@ def init():
             conn.execute('ALTER TABLE companies ADD COLUMN socket TEXT')
         if 'white_label' not in cols:
             conn.execute('ALTER TABLE companies ADD COLUMN white_label INTEGER NOT NULL DEFAULT 0')
-        for col in ('phone', 'tax_no', 'city'):   # self-kayıt: iletişim / fatura bilgisi
+        for col in ('phone', 'tax_no', 'city', 'country', 'logo'):   # self-kayıt: iletişim/fatura + ülke + logo yolu
             if col not in cols:
                 conn.execute(f'ALTER TABLE companies ADD COLUMN {col} TEXT')
         if 'email_verified' not in cols:           # kayıtta e-posta doğrulandı mı

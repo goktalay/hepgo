@@ -21,6 +21,9 @@ const T = {
     steps: ['Paket', 'Firma', 'Yönetici', 'Tamam'], pickPkg: 'Paketinizi seçin', pickPkgP: 'Açık beta döneminde tüm paketler ücretsiz; firmanız tüm modüllere erişir. Daha sonra değiştirebilirsiniz.', noPkg: 'Paket seçmeden devam et',
     perMonth: '/ay', free: 'Ücretsiz', beta: 'Açık beta', mods: n => `${n} modül`, cloud: 'Bulut', onprem: 'Kendi sunucunuz', both: 'Bulut / kendi sunucunuz',
     firmH: 'Firma bilgileri', cname: 'Firma adı', cnamePh: 'ör. Örnek Makine A.Ş.', yourAddr: 'Firma adresiniz', city: 'Şehir', tax: 'Vergi no (isteğe bağlı)', phone: 'Telefon',
+    addrHint: 'Giriş adresiniz bu olur. Değiştirebilirsiniz; yalnız küçük harf, rakam ve tire.', addrCheck: 'Kontrol ediliyor…', addrOk: 'Uygun ✓',
+    countryL: 'Ülke', logoL: 'Logo (isteğe bağlı)', logoHint: 'PNG, JPG, WEBP veya GIF · en fazla 2 MB', logoPick: 'Logo seç', logoChange: 'Logoyu değiştir', logoRemove: 'Kaldır',
+    logoTooBig: 'Logo en fazla 2 MB olmalı.', logoBadType: 'PNG, JPG, WEBP veya GIF seçin.', addrNeeded: 'Lütfen uygun bir firma adresi girin.',
     adminH: 'Yönetici hesabı', adminP: 'Bu hesap firmanızın sahibi (master) olur; kullanıcıları ve yetkileri o yönetir.',
     full: 'Ad soyad', mail: 'E-posta', pw: 'Şifre (en az 10 karakter)', pw2: 'Şifre tekrar',
     sendCode: 'Doğrulama kodu gönder', codeSending: 'Gönderiliyor…', codeL: 'E-posta doğrulama kodu', codeHint: 'E-postanıza gönderilen 6 haneli kodu girin.',
@@ -43,6 +46,9 @@ const T = {
     steps: ['Plan', 'Company', 'Admin', 'Done'], pickPkg: 'Choose your plan', pickPkgP: 'All plans are free during open beta; your company gets every module. You can change it later.', noPkg: 'Continue without a plan',
     perMonth: '/mo', free: 'Free', beta: 'Open beta', mods: n => `${n} modules`, cloud: 'Cloud', onprem: 'On-premise', both: 'Cloud / on-premise',
     firmH: 'Company details', cname: 'Company name', cnamePh: 'e.g. Acme Machinery Ltd.', yourAddr: 'Your company address', city: 'City', tax: 'Tax no (optional)', phone: 'Phone',
+    addrHint: 'This becomes your sign-in address. You can change it; lowercase letters, digits and hyphens only.', addrCheck: 'Checking…', addrOk: 'Available ✓',
+    countryL: 'Country', logoL: 'Logo (optional)', logoHint: 'PNG, JPG, WEBP or GIF · max 2 MB', logoPick: 'Choose logo', logoChange: 'Change logo', logoRemove: 'Remove',
+    logoTooBig: 'Logo must be at most 2 MB.', logoBadType: 'Choose a PNG, JPG, WEBP or GIF.', addrNeeded: 'Please enter an available company address.',
     adminH: 'Admin account', adminP: 'This account becomes your company owner (master) and manages users and permissions.',
     full: 'Full name', mail: 'Email', pw: 'Password (min 10 characters)', pw2: 'Repeat password',
     sendCode: 'Send verification code', codeSending: 'Sending…', codeL: 'Email verification code', codeHint: 'Enter the 6-digit code sent to your email.',
@@ -155,6 +161,10 @@ function stepsBar() {
   return `<ol class="gx-steps">${L.steps.map((s, i) => `<li class="${i < state.step ? 'done' : i === state.step ? 'on' : ''}"><span>${i < state.step ? '✓' : i + 1}</span>${esc(s)}</li>`).join('')}</ol>`;
 }
 
+// Ülkeler (bayrak emoji 2-harf koddan). Türkiye ilk; sonra yaygın ülkeler.
+const COUNTRIES = [['TR', 'Türkiye'], ['DE', 'Almanya'], ['US', 'ABD'], ['GB', 'Birleşik Krallık'], ['FR', 'Fransa'], ['NL', 'Hollanda'], ['IT', 'İtalya'], ['ES', 'İspanya'], ['AZ', 'Azerbaycan'], ['SA', 'Suudi Arabistan'], ['AE', 'BAE'], ['QA', 'Katar'], ['RU', 'Rusya'], ['UA', 'Ukrayna'], ['CN', 'Çin'], ['IN', 'Hindistan'], ['JP', 'Japonya'], ['KR', 'Güney Kore'], ['BR', 'Brezilya'], ['CA', 'Kanada'], ['AU', 'Avustralya'], ['EG', 'Mısır'], ['GR', 'Yunanistan'], ['BG', 'Bulgaristan'], ['RO', 'Romanya'], ['PL', 'Polonya'], ['SE', 'İsveç'], ['CH', 'İsviçre'], ['BE', 'Belçika'], ['AT', 'Avusturya']];
+const cflag = cc => (cc && cc.length === 2) ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : '';
+
 function regView() {
   const L = t();
   const body = $('#gxBody');
@@ -175,25 +185,80 @@ function regView() {
     body.innerHTML = `<div class="gx-pane">${stepsBar()}<h2>${esc(L.firmH)}</h2>
       <form id="f1" class="gx-form">
         <label class="vx-field"><span>${esc(L.cname)}</span><input class="vx-input" name="company" value="${esc(f.company || '')}" placeholder="${esc(L.cnamePh)}" required autofocus></label>
-        <div class="gx-domain" id="dom"><small>${esc(L.yourAddr)}</small><b>—</b></div>
-        <div class="gx-row"><label class="vx-field"><span>${esc(L.city)}</span><input class="vx-input" name="city" value="${esc(f.city || '')}"></label>
-          <label class="vx-field"><span>${esc(L.phone)}</span><input class="vx-input" type="tel" name="phone" value="${esc(f.phone || '')}" placeholder="05xx xxx xx xx" required></label></div>
-        <label class="vx-field"><span>${esc(L.tax)}</span><input class="vx-input" name="tax" value="${esc(f.tax || '')}" inputmode="numeric"></label>
-        <div class="vx-err"></div>
+        <label class="vx-field"><span>${esc(L.yourAddr)}</span>
+          <div class="gx-slug"><input class="vx-input" name="slug" value="${esc(f.slug || '')}" autocapitalize="none" spellcheck="false" placeholder="firmaniz"><span class="gx-slug-suf">.${esc(base)}</span></div>
+          <small class="gx-slug-msg muted" id="slugMsg">${esc(L.addrHint)}</small></label>
+        <div class="gx-row">
+          <label class="vx-field"><span>${esc(L.countryL)}</span>
+            <select class="vx-input" name="country">${COUNTRIES.map(([cc, nm]) => `<option value="${cc}"${(f.country || 'TR') === cc ? ' selected' : ''}>${cflag(cc)} ${esc(nm)}</option>`).join('')}</select></label>
+          <label class="vx-field"><span>${esc(L.city)}</span><input class="vx-input" name="city" value="${esc(f.city || '')}"></label>
+        </div>
+        <div class="gx-row">
+          <label class="vx-field"><span>${esc(L.phone)}</span><input class="vx-input" type="tel" name="phone" value="${esc(f.phone || '')}" placeholder="05xx xxx xx xx" required></label>
+          <label class="vx-field"><span>${esc(L.tax)}</span><input class="vx-input" name="tax" value="${esc(f.tax || '')}" inputmode="numeric"></label>
+        </div>
+        <div class="vx-field"><span>${esc(L.logoL)}</span>
+          <div class="gx-logo">
+            <div class="gx-logo-prev" id="logoPrev">${f.logo ? `<img src="${f.logo}" alt="">` : ''}</div>
+            <div class="gx-logo-ctl">
+              <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+              <button type="button" class="btn btn-ghost" id="logoBtn">${f.logo ? esc(L.logoChange) : esc(L.logoPick)}</button>
+              <button type="button" class="btn btn-ghost" id="logoDel"${f.logo ? '' : ' hidden'}>${esc(L.logoRemove)}</button>
+              <div class="small muted">${esc(L.logoHint)}</div>
+            </div>
+          </div>
+        </div>
+        <div class="vx-err" id="f1err"></div>
         <div class="gx-acts"><button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button><button class="btn btn-primary btn-lg" type="submit">${esc(L.next)} →</button></div>
       </form></div>`;
     const form = $('#f1');
-    let tm;
-    const preview = () => { clearTimeout(tm); tm = setTimeout(async () => {
+    const err = $('#f1err'), slugMsg = $('#slugMsg');
+    let slugEdited = !!f.slug, tm;
+    // Firma adresi (slug) canlı kontrol
+    const checkSlug = () => { clearTimeout(tm); tm = setTimeout(async () => {
+      const v = form.slug.value.trim();
+      if (!v) { slugMsg.textContent = L.addrHint; slugMsg.className = 'gx-slug-msg muted'; state.form.slug = ''; state.form.slugOk = false; return; }
+      slugMsg.textContent = L.addrCheck; slugMsg.className = 'gx-slug-msg muted';
+      try {
+        const r = await (await fetch(`/api/public/slug-check?slug=${encodeURIComponent(v)}`)).json();
+        state.form.slug = r.slug || v; state.form.slugOk = !!r.ok;
+        slugMsg.textContent = r.ok ? `${r.domain} · ${L.addrOk}` : (r.reason || '');
+        slugMsg.className = r.ok ? 'gx-slug-msg ok' : 'gx-slug-msg err';
+      } catch { slugMsg.textContent = ''; }
+    }, 300); };
+    // Firma adından slug öner (kullanıcı adresi elle değiştirmediyse)
+    const fromName = () => { clearTimeout(tm); tm = setTimeout(async () => {
+      if (slugEdited) return;
       const n = form.company.value.trim();
-      if (!n) { $('#dom b').textContent = '—'; return; }
-      try { const r = await (await fetch(`/api/public/slug-preview?name=${encodeURIComponent(n)}`)).json(); $('#dom b').textContent = r.domain; } catch { /* */ }
-    }, 250); };
-    form.company.addEventListener('input', preview); preview();
+      if (!n) { form.slug.value = ''; slugMsg.textContent = L.addrHint; slugMsg.className = 'gx-slug-msg muted'; state.form.slugOk = false; return; }
+      try { const r = await (await fetch(`/api/public/slug-preview?name=${encodeURIComponent(n)}`)).json(); form.slug.value = r.slug; checkSlug(); } catch { /* */ }
+    }, 300); };
+    form.company.addEventListener('input', fromName);
+    form.slug.addEventListener('input', () => { slugEdited = true; checkSlug(); });
+    if (form.slug.value.trim()) checkSlug(); else if (form.company.value.trim()) fromName();
+    // Logo (kurallı)
+    const paintLogo = () => {
+      $('#logoPrev').innerHTML = state.form.logo ? `<img src="${state.form.logo}" alt="">` : '';
+      $('#logoBtn').textContent = state.form.logo ? L.logoChange : L.logoPick;
+      $('#logoDel').hidden = !state.form.logo;
+    };
+    const logoInput = $('#logoInput');
+    $('#logoBtn').addEventListener('click', () => logoInput.click());
+    $('#logoDel').addEventListener('click', () => { state.form.logo = ''; logoInput.value = ''; paintLogo(); });
+    logoInput.addEventListener('change', () => {
+      const file = logoInput.files[0]; if (!file) return;
+      err.textContent = '';
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { err.textContent = L.logoBadType; logoInput.value = ''; return; }
+      if (file.size > 2 * 1024 * 1024) { err.textContent = L.logoTooBig; logoInput.value = ''; return; }
+      const rd = new FileReader();
+      rd.onload = () => { state.form.logo = rd.result; paintLogo(); };
+      rd.readAsDataURL(file);
+    });
     $('#prev').addEventListener('click', () => { state.step = 0; regView(); });
     form.addEventListener('submit', e => {
-      e.preventDefault();
-      Object.assign(state.form, { company: form.company.value.trim(), city: form.city.value.trim(), phone: form.phone.value.trim(), tax: form.tax.value.trim() });
+      e.preventDefault(); err.textContent = '';
+      if (!state.form.slugOk) { err.textContent = L.addrNeeded; form.slug.focus(); return; }
+      Object.assign(state.form, { company: form.company.value.trim(), city: form.city.value.trim(), phone: form.phone.value.trim(), tax: form.tax.value.trim(), country: form.country.value });
       state.step = 2; regView();
     });
     return;
@@ -255,7 +320,8 @@ function regView() {
       Object.assign(state.form, { full: form.full.value.trim(), email: form.email.value.trim() });
       try {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
-          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: code });
+          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: code,
+          slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '' });
         state.step = 3; regView();
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
     });

@@ -272,9 +272,16 @@ def _brand(conn):
 
 
 def brand_logo_url(conn):
-    """/api/meta için: saklı firma logosu varsa önbellek-kırıcılı URL, yoksa None (istemci varsayılana düşer)."""
+    """/api/meta için: saklı firma logosu varsa önbellek-kırıcılı URL, yoksa None (istemci varsayılana düşer).
+    Yüklü logo (app_kv) yoksa kurulumda konan firma logosuna (BRAND_DIR/img/logo.png) düşer."""
     b = _brand(conn)
-    return f"/api/system/brand/logo?v={b.get('ts', 0)}" if b.get('logo') else None
+    if b.get('logo'):
+        return f"/api/system/brand/logo?v={b.get('ts', 0)}"
+    if config.BRAND_DIR:
+        p = config.BRAND_DIR / 'img' / 'logo.png'
+        if p.is_file():
+            return f"/api/system/brand/logo?v={int(p.stat().st_mtime)}"
+    return None
 
 
 @router.get('/brand/logo')
@@ -283,12 +290,15 @@ def get_brand_logo(conn=db.DB):
     from fastapi.responses import FileResponse
     from .. import files
     rel = _brand(conn).get('logo')
-    if not rel or '..' in rel:
-        raise HTTPException(404)
-    path = config.UPLOAD_DIR / rel
-    if not path.is_file():
-        raise HTTPException(404)
-    return FileResponse(path, headers=files._headers(path))
+    if rel and '..' not in rel:
+        path = config.UPLOAD_DIR / rel
+        if path.is_file():
+            return FileResponse(path, headers=files._headers(path))
+    if config.BRAND_DIR:   # kurulumda konan firma logosu (BRAND_DIR/img/logo.png)
+        p = config.BRAND_DIR / 'img' / 'logo.png'
+        if p.is_file():
+            return FileResponse(p, headers=files._headers(p))
+    raise HTTPException(404)
 
 
 @router.post('/brand/logo')

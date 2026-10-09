@@ -208,6 +208,18 @@ def provision_online(conn, company):
                                       white_label=bool(company.get('white_label'))), encoding='utf-8')
         os.chmod(env_file, 0o600)
 
+        # Firma logosu (kayıt sihirbazında yüklendiyse) → tenant markası: brand_dir/img/logo.png
+        logo_src = company.get('logo')
+        if logo_src and os.path.isfile(logo_src):
+            try:
+                from PIL import Image
+                im = Image.open(logo_src).convert('RGBA')
+                if im.width > 512:
+                    im = im.resize((512, max(1, round(im.height * 512 / im.width))))
+                im.save(str(brand_dir / 'img' / 'logo.png'))
+            except Exception:   # noqa: BLE001 — logo başarısızsa kurulum yine devam eder
+                pass
+
         if EXEC and UNIT_HELPER:
             _helper('install', slug)   # birim root şablonundan; firma adı birime girmez
         elif EXEC:

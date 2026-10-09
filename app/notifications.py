@@ -531,6 +531,13 @@ def file_shared(conn, user):
     return _result(rows, [f'{r["name"]} · {r["sharer"] or "—"}' for r in rows], '#/my-files')
 
 
+def task_assigned(conn, user):
+    """Kullanıcıya atanan ve bugün bekleyen (tamamlanmamış) günlük görevler."""
+    from .routers.usertasks import pending_for
+    rows = pending_for(conn, user['id'])
+    return _result(rows, [r['title'] for r in rows], '#/my-tasks', 'Size atanan günlük görevler')
+
+
 NOTIFICATIONS = [
     {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
@@ -595,6 +602,8 @@ NOTIFICATIONS = [
     {'key': 'fleet-due', 'roles': None, 'fn': fleet_due, 'title': 'Araç: yaklaşan muayene / sigorta / bakım'},
     {'key': 'vehicle-assign-pending', 'roles': None, 'fn': vehicle_assign_pending, 'title': 'Onayınızı bekleyen araç zimmeti'},
     {'key': 'file-shared', 'roles': None, 'fn': file_shared, 'title': 'Sizinle paylaşılan dosya'},
+    # Günlük görev: anlık push'u routers/usertasks.create_task atar; tarama aynı artış için ikinci kez atmasın
+    {'key': 'task-assigned', 'roles': None, 'fn': task_assigned, 'title': 'Size yeni görev atandı', 'push': False},
 ]
 
 

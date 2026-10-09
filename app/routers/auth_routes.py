@@ -292,6 +292,9 @@ def me(user=Depends(auth.current_user), conn=db.DB):
     out['speech'] = speech.enabled('dictation', conn)   # sesle yazdırma: Konuşma Tanıma entegrasyonu + modül anahtarı
     out['nvr'] = bool(config.NVR_HOST and config.NVR_USER)   # NVR entegrasyonu aktif mi (Kameralar modülü yalnızca o zaman görünür)
     out['printer'] = integrations.is_added(conn, 'printer') and integrations.is_enabled(conn, 'printer')   # Yazıcı entegrasyonu eklenmiş + açık mı (Yazıcı Yönetimi yalnız o zaman görünür)
+    from .usertasks import pending_for   # günlük görevler: bekleyen ZORUNLU görev → ana ekranda uyarı şeridi
+    _pend = pending_for(conn, user['id'])
+    out['pending_tasks'] = sum(1 for t in _pend if t['mandatory'])
     out['real_roles'] = user.get('real_roles', user['roles'])   # MASTER: ekranda gösterilen gerçek (atanmış) roller
     out['prefs'] = json.loads(user['prefs']) if user['prefs'] else {}
     out['has_pin'] = bool(conn.execute('SELECT pin_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0])

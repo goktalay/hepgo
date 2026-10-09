@@ -1655,6 +1655,7 @@ const GROUPS = [
   { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar ve rol atamaları', icon: 'users', link: '#/users' },
   { key: 'roles', title: 'Rol Yönetimi', desc: 'Roller, modül yetkileri (aç / oku / yaz), miras ve çakışmalar', icon: 'lock', body: rolesBody },
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
+  { key: 'tasks-admin', title: 'Görev Yönetimi', desc: 'Kullanıcılara günlük görev atama (tek seferlik / tekrarlı, zorunlu)', icon: 'documents', link: '#/tasks-admin', master: true },
 ];
 
 const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', kvkk: '#30d158', users: '#ff3b30', master: '#af52de' };

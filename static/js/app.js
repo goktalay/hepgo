@@ -58,6 +58,8 @@ import * as cleaning from './modules/cleaning.js';
 import * as design from './modules/design.js';
 import * as hr from './modules/hr.js';
 import * as duty from './modules/duty.js';
+import * as mytasks from './modules/mytasks.js';
+import * as tasksAdmin from './modules/tasksadmin.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
@@ -127,6 +129,7 @@ const MODULES = [
   { key: 'cleaning', title: 'Temizlik', mod: cleaning, group: 'system' },
   { key: 'tools', title: 'Araçlar', mod: tools, group: 'system' },   // Modül ızgarası › Sistem Yönetimi
   { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', hidden: true },   // Program Ayarları altından açılır
+  { key: 'tasks-admin', title: 'Görev Yönetimi', mod: tasksAdmin, tone: 'red', hidden: true, show: u => !!u.master },   // yalnız Sistem Sahibi; Program Ayarları'ndan açılır
 ];
 
 // Türkçe-duyarlı normalizasyon (arama için): küçük harf + aksan sadeleştirme
@@ -361,7 +364,22 @@ function enterApp() {
     document.body.append(h('div', { class: 'support-pill' }, '🛟 ',
       h('b', null, 'Destek oturumu'), h('span', null, ` · ${ctx.meta?.company || ''}`)));
   }
+  drawTaskPill(ctx.user?.pending_tasks || 0);   // bekleyen ZORUNLU günlük görev uyarı şeridi (üstte)
 }
+
+// Zorunlu günlük görev uyarı şeridi: tamamlanana kadar üstte durur, tıklanınca Görevlerim'e gider
+function drawTaskPill(n) {
+  document.querySelector('.task-pill')?.remove();
+  if (!n) return;
+  const pill = h('button', { class: 'task-pill', type: 'button', title: 'Görevlerim', onclick: () => { location.hash = '#/my-tasks'; } },
+    '⚠️ ', h('b', null, n > 1 ? `${n} zorunlu görev` : 'Zorunlu görev'), h('span', null, ' · yapmanız bekleniyor'));
+  document.body.append(pill);
+}
+async function refreshTaskPill() {
+  try { const d = await api.get('/api/my/tasks'); if (ctx.user) ctx.user.pending_tasks = d.pending_mandatory; drawTaskPill(d.pending_mandatory); }
+  catch { /* sessiz */ }
+}
+window.addEventListener('hepgo:tasks-changed', refreshTaskPill);
 window.addEventListener('caymaz:mustchange', () => { if (ctx.user) { ctx.user.must_change_password = true; renderForcePassword(); } });
 
 function renderForcePassword() {
@@ -564,7 +582,7 @@ function appsLauncher() {
 // tek "Uygulamalar" (ızgara) ikonunun içinde bölüm olarak gösterilir (bkz. appsLauncher). PERSONAL_ICONS ve
 // personalTileCounts oradan kullanılır (kutucuk bekleyen-iş sayıları canlı güncellenir).
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
-  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder', duties: 'flightlog' };
+  mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder', duties: 'flightlog', tasks: 'documents' };
 const personalTileCounts = new Set();
 window.addEventListener('caymaz:chat-summary', () => { for (const fn of personalTileCounts) { try { fn(); } catch { /* */ } } });
 
@@ -1338,6 +1356,7 @@ const PERSONAL = [
   { key: 'notes', route: 'my-notes', title: 'Notlar', notify: null, render: () => notesMod.render(view, ctx) },
   { key: 'files', route: 'my-files', title: 'Dosya Yöneticisi', notify: 'file-shared', render: params => fileManager.render(view, params, ctx) },
   { key: 'duties', route: 'my-duties', title: 'Görev Formu', notify: 'duty-decided', render: params => duty.render(view, params, ctx) },
+  { key: 'tasks', route: 'my-tasks', title: 'Görevlerim', notify: 'task-assigned', render: params => mytasks.render(view, params, ctx) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

@@ -5648,6 +5648,17 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
   display: inline-flex; align-items: center; gap: 4px; background: #0f766e; color: #fff; border-radius: 999px;
   padding: 7px 14px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .support-pill b { font-weight: 700; }
+/* Zorunlu günlük görev uyarı şeridi (üstte, dikkat çekici, tıklanınca Görevlerim) */
+.task-pill { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 1250;
+  display: inline-flex; align-items: center; gap: 5px; background: linear-gradient(180deg, #ef4444, #dc2626); color: #fff;
+  border: none; border-radius: 999px; padding: 8px 18px; font-size: 13.5px; font-family: inherit; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(220,38,38,.4); animation: taskpulse 2s ease-in-out infinite; max-width: calc(100% - 24px); }
+.task-pill b { font-weight: 700; }
+.task-pill:hover { filter: brightness(1.05); }
+@keyframes taskpulse { 0%,100% { box-shadow: 0 8px 24px rgba(220,38,38,.4); } 50% { box-shadow: 0 8px 30px rgba(220,38,38,.7); } }
+/* Görevlerim: zorunlu bekleyen görev vurgusu + tamamlanan */
+.cl-item.task-must { box-shadow: inset 4px 0 0 #dc2626; background: color-mix(in srgb, #dc2626 7%, transparent); }
+.cl-item.done { opacity: .72; }
 
 /* Mobilde tam ekran Şirketten Haberler (ayar açıkken ana ekran) */
 .feed-full { padding: 0; }

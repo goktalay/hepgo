@@ -1078,6 +1078,31 @@ CREATE TABLE IF NOT EXISTS cleaning_log (
     UNIQUE(item_id, day)
 );
 CREATE INDEX IF NOT EXISTS idx_cleaning_log_day ON cleaning_log(day);
+-- Günlük Görevler: Sistem Yöneticisi tarafından belirli bir kullanıcıya atanan görevler (temizlikten bağımsız).
+-- recurring=1 → her gün tekrarlar (günlük tamamlama user_task_log'da); recurring=0 → tek seferlik (done_at tabloda).
+-- mandatory=1 → tamamlanana kadar kullanıcının ana ekranında kalıcı uyarı şeridi gösterilir.
+CREATE TABLE IF NOT EXISTS user_tasks (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    title TEXT NOT NULL,
+    note TEXT,
+    mandatory INTEGER NOT NULL DEFAULT 0,
+    recurring INTEGER NOT NULL DEFAULT 0,
+    due_day TEXT,
+    done_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_tasks_user ON user_tasks(user_id, active);
+CREATE TABLE IF NOT EXISTS user_task_log (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES user_tasks(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    done_at TEXT,
+    note TEXT,
+    UNIQUE(task_id, day)
+);
 -- Güvenlik › Bina Kontrol: günlük bina turu; başlat/bitir ile GPS rotası kaydedilir
 CREATE TABLE IF NOT EXISTS building_checks (
     id INTEGER PRIMARY KEY,

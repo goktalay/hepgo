@@ -108,9 +108,9 @@ def my_tasks(date: str = None, user=Depends(me_user), conn=db.DB):
 
 
 class ActionIn(BaseModel):
-    date: str = None
+    date: str | None = None
     action: str = 'done'   # 'done' | 'reject' | 'undo'
-    reason: str = None
+    reason: str | None = None
 
 
 @router.post('/my/tasks/{task_id}/action')
@@ -140,14 +140,14 @@ def task_action(task_id: int, body: ActionIn, user=Depends(me_user), conn=db.DB)
 
 # ---------- Sistem Yöneticisi: görev atama / yönetim ----------
 class TaskIn(BaseModel):
-    user_id: int = None
+    user_id: int | None = None
     title: str
-    note: str = None
+    note: str | None = None
     mandatory: bool = False
     recurring: bool = False
-    due_day: str = None
-    weekdays: list = None
-    task_time: str = None
+    due_day: str | None = None
+    weekdays: list | None = None
+    task_time: str | None = None
 
 
 def _validate(body, require_user=True):

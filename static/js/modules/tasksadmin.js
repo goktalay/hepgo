@@ -3,12 +3,15 @@
 // Görev ekleme popup form ile. Görev tipi (Zorunlu/Serbest), tek seferlik (tarih) ya da tekrarlı (haftanın günleri),
 // görev saati zorunlu. Geçmişte görevi hangi gün saat kaçta tamamladı / reddetti gösterilir.
 import { api } from '../api.js';
-import { clear, h, pageHead, svgIcon, t, toast, toastError, confirmDialog } from '../ui.js';
+import { avatar, clear, h, pageHead, svgIcon, t, toast, toastError, confirmDialog } from '../ui.js';
 import { icons } from '../icons.js';
 
 const WD = [[1, 'Pzt'], [2, 'Sal'], [3, 'Çar'], [4, 'Per'], [5, 'Cum'], [6, 'Cmt'], [7, 'Paz']];
 const today = () => new Date().toLocaleDateString('sv');
 const fmtDay = d => { const x = new Date((d || '') + 'T00:00'); return isNaN(x) ? (d || '—') : x.toLocaleDateString('tr', { day: 'numeric', month: 'short', year: 'numeric' }); };
+const fmtShort = d => { const x = new Date((d || '') + 'T00:00'); return isNaN(x) ? (d || '—') : x.toLocaleDateString('tr', { day: 'numeric', month: 'short' }); };
+const mondayOf = iso => { const d = new Date(iso + 'T00:00'); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.toLocaleDateString('sv'); };
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv'); };
 const hm = iso => (iso ? new Date(iso).toLocaleTimeString('tr', { hour: '2-digit', minute: '2-digit' }) : '');
 const wdLabel = csv => (csv ? csv.split(',').map(n => (WD.find(w => String(w[0]) === n.trim()) || [0, n])[1]).join(', ') : 'Her gün');
 
@@ -21,13 +24,19 @@ function panel(title, icon, headRight) {
 }
 
 export async function render(view) {
-  const st = { people: [], tasks: [], selUser: null, selTask: null };
+  const st = { people: [], tasks: [], selUser: null, selTask: null, weekStart: mondayOf(today()) };
 
   const pPeople = panel('Personeller', 'users');
   const addBtn = h('button', { class: 'btn sm primary', type: 'button', disabled: true }, '+ Görev Ekle');
   const pTasks = panel('Görevler', 'documents', addBtn);
   const pDetail = panel('Görev Detayı', 'note');
   const pLog = panel('Tamamlama / Red Geçmişi', 'calendar');
+  // Geçmiş paneli başlığına hafta gezinme (tarih aralığı + ileri/geri)
+  const weekLabel = h('b', { class: 'tp-wklabel' }, '');
+  pLog.head.append(h('span', { class: 'tp-wknav' },
+    h('button', { class: 'btn sm', type: 'button', title: 'Önceki hafta', onclick: () => { st.weekStart = addDays(st.weekStart, -7); loadWeek(st.selTask); } }, '‹'),
+    weekLabel,
+    h('button', { class: 'btn sm', type: 'button', title: 'Sonraki hafta', onclick: () => { st.weekStart = addDays(st.weekStart, 7); loadWeek(st.selTask); } }, '›')));
 
   addBtn.addEventListener('click', () => { if (st.selUser) openForm(st.selUser, null); });
 
@@ -35,10 +44,8 @@ export async function render(view) {
   async function loadPeople() {
     try { st.people = await api.get('/api/people'); } catch (err) { return clear(pPeople.body, h('div', { class: 'tp-empty' }, err.message)); }
     clear(pPeople.body, ...st.people.map(p => {
-      const ava = p.photo ? h('img', { class: 'tp-ava', src: p.photo, alt: '' })
-        : h('span', { class: 'tp-ava tp-ava-ph' }, ((p.full_name || '?').trim()[0] || '?'));
       return h('button', { class: `tp-row tp-prow ${st.selUser === p.id ? 'on' : ''}`, type: 'button', onclick: () => selectUser(p.id) },
-        ava,
+        avatar(p, 'sm'),
         h('div', { class: 'tp-prow-txt' },
           h('span', { class: 'tp-name' }, p.full_name),
           h('span', { class: 'small muted tp-mail' }, p.username || '')));
@@ -65,11 +72,11 @@ export async function render(view) {
     pTasks.foot.textContent = t('{n} görev · {who}', { n: st.tasks.length, who });
   }
 
-  function selectTask(id) { st.selTask = id; loadTasks(); loadDetail(id); }
+  function selectTask(id) { st.selTask = id; st.weekStart = mondayOf(today()); loadTasks(); loadDetail(id); }
 
   function clearDetail() {
     clear(pDetail.body, h('div', { class: 'tp-empty' }, 'Bir görev seçin.'));
-    clear(pLog.body, h('div', { class: 'tp-empty' }, '—')); pDetail.foot.textContent = '—'; pLog.foot.textContent = '—';
+    clear(pLog.body, h('div', { class: 'tp-empty' }, 'Bir görev seçin.')); pDetail.foot.textContent = '—'; pLog.foot.textContent = '—'; weekLabel.textContent = '';
   }
 
   // ---- Panel 3: Detay + Panel 4: Geçmiş ----
@@ -88,18 +95,30 @@ export async function render(view) {
           h('button', { class: 'btn sm', type: 'button', onclick: () => openForm(st.selUser, tk) }, 'Düzenle'),
           h('button', { class: 'btn sm danger', type: 'button', onclick: () => removeTask(tk) }, 'Kaldır'))));
     pDetail.foot.textContent = t('Oluşturulma: {d}', { d: fmtDay((tk.created_at || '').slice(0, 10)) });
-    // Geçmiş
+    loadWeek(id);
+  }
+
+  async function loadWeek(id) {
+    if (!id) { weekLabel.textContent = ''; return; }
     clear(pLog.body, h('div', { class: 'loading' }, 'Yükleniyor…'));
-    let log;
-    try { log = await api.get(`/api/tasks/${id}/log`); } catch (err) { return clear(pLog.body, h('div', { class: 'tp-empty' }, err.message)); }
-    if (!log.length) { clear(pLog.body, h('div', { class: 'tp-empty' }, 'Henüz tamamlama/red kaydı yok.')); pLog.foot.textContent = '0 kayıt'; return; }
-    clear(pLog.body, ...log.map(r => h('div', { class: `tp-log ${r.status}` },
-      h('span', { class: `badge ${r.status === 'done' ? 'green' : 'red'}` }, r.status === 'done' ? 'Yaptı' : 'Reddetti'),
-      h('div', { class: 'grow' },
-        h('b', null, fmtDay(r.day)), h('span', { class: 'small muted' }, ' · ' + hm(r.done_at)),
-        r.reason ? h('div', { class: 'small rej-txt' }, 'Neden: ' + r.reason) : null))));
-    const done = log.filter(r => r.status === 'done').length;
-    pLog.foot.textContent = t('{d} tamamlandı · {r} reddedildi', { d: done, r: log.length - done });
+    let data;
+    try { data = await api.get(`/api/tasks/${id}/week?start=${st.weekStart}`); }
+    catch (err) { return clear(pLog.body, h('div', { class: 'tp-empty' }, err.message)); }
+    weekLabel.textContent = `${fmtShort(data.start)} – ${fmtShort(data.end)}`;
+    const td = today();
+    clear(pLog.body, ...data.days.map(d => {
+      const name = WD[d.wd - 1][1];
+      const stat = !d.applies ? h('span', { class: 'small muted' }, 'Görev yok')
+        : d.status === 'done' ? h('span', { class: 'badge green' }, 'Yaptı · ' + hm(d.at))
+          : d.status === 'rejected' ? h('span', { class: 'badge red', title: d.reason || '' }, 'Reddetti' + (d.reason ? ' · ' + d.reason : ''))
+            : h('span', { class: 'small muted' }, d.day > td ? '—' : 'Yapılmadı');
+      return h('div', { class: `tp-wkrow ${d.applies ? '' : 'off'} ${d.day === td ? 'is-today' : ''}` },
+        h('div', { class: 'tp-wkday' }, h('b', null, name), h('span', { class: 'small muted' }, ' ' + fmtShort(d.day))),
+        h('div', { class: 'tp-wkstat' }, stat));
+    }));
+    const done = data.days.filter(d => d.status === 'done').length;
+    const rej = data.days.filter(d => d.status === 'rejected').length;
+    pLog.foot.textContent = t('Bu hafta: {d} tamamlandı · {r} reddedildi', { d: done, r: rej });
   }
 
   async function removeTask(tk) {

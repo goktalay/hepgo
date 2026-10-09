@@ -8059,3 +8059,15 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 .tf-field[hidden] { display: none; }
 .tf-foot { padding: 12px 18px; border-top: 1px solid var(--line, #e5ebf4); display: flex; justify-content: flex-end; }
 [data-theme="dark"] .tp-panel, [data-theme="dark"] .tf-modal { background: #101c30; }
+
+/* Görev Yönetimi: avatar boyutu + haftalık geçmiş */
+.tp-prow .avatar { width: 36px; height: 36px; font-size: 14px; flex: 0 0 auto; }
+.tp-wknav { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; }
+.tp-wknav .btn { padding: 2px 9px; min-height: 0; height: 26px; }
+.tp-wklabel { font-weight: 500; min-width: 96px; text-align: center; }
+.tp-wkrow { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; }
+.tp-wkrow:nth-child(odd) { background: rgba(127, 127, 127, .03); }
+.tp-wkrow.off { opacity: .5; }
+.tp-wkrow.is-today { background: color-mix(in srgb, var(--blue, #2f6fed) 9%, transparent); box-shadow: inset 3px 0 0 var(--blue, #2f6fed); }
+.tp-wkday { flex: 0 0 96px; display: flex; align-items: baseline; gap: 5px; }
+.tp-wkstat { flex: 1; text-align: right; }

@@ -215,6 +215,36 @@ def delete_task(task_id: int, user=Depends(_master), conn=db.DB):
     return {'ok': True}
 
 
+@router.get('/tasks/{task_id}/week')
+def task_week(task_id: int, start: str = None, user=Depends(_master), conn=db.DB):
+    """Görevin bir HAFTASI (Pzt–Paz): her gün için görev geçerli mi + o gün tamamlandı/reddedildi mi."""
+    from datetime import timedelta
+    t = db.row(conn.execute('SELECT * FROM user_tasks WHERE id = ?', (task_id,)))
+    if not t:
+        raise HTTPException(404, 'Görev bulunamadı')
+    base = _date.fromisoformat(_valid_day(start))
+    monday = base - timedelta(days=base.isoweekday() - 1)
+    days = [(monday + timedelta(days=i)).isoformat() for i in range(7)]
+    logs = {r['day']: r for r in db.rows(conn.execute(
+        'SELECT day, status, done_at, reason FROM user_task_log WHERE task_id = ? AND day IN (%s)'
+        % ','.join('?' * 7), (task_id, *days)))}
+    wds = [int(x) for x in (t['weekdays'] or '').split(',') if x.strip().isdigit()]
+    out = []
+    for i, d in enumerate(days):
+        wd = i + 1
+        if t['recurring']:
+            applies = (not wds) or (wd in wds)
+            lg = logs.get(d)
+            status = lg['status'] if lg else None
+            at = lg['done_at'] if lg else None
+            reason = lg['reason'] if lg else None
+        else:
+            applies = (t['due_day'] == d)
+            status, at, reason = (t['status'], t['done_at'], t['reason']) if (applies and t['status']) else (None, None, None)
+        out.append({'day': d, 'wd': wd, 'applies': applies, 'status': status, 'at': at, 'reason': reason})
+    return {'start': monday.isoformat(), 'end': days[-1], 'days': out}
+
+
 @router.get('/tasks/{task_id}/log')
 def task_log(task_id: int, user=Depends(_master), conn=db.DB):
     """Görevin tamamlama/red geçmişi: hangi gün, saat kaçta yaptı ya da reddetti."""

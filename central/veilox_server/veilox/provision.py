@@ -105,16 +105,19 @@ def one_line(value):
     return _CTRL.sub(' ', str(value or '')).strip()
 
 
-def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modules, white_label=False):
+def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modules, white_label=False, must_change=False):
     admin_user, admin_pass, full_name, company_name, master_user = map(
         one_line, (admin_user, admin_pass, full_name, company_name, master_user))
     mods = ','.join(one_line(m) for m in modules)
+    # Şifreyi kullanıcı kendi belirlediyse (kayıt sihirbazı) ilk girişte değiştirmesi İSTENMEZ;
+    # şifre merkez tarafından rastgele üretildiyse ilk girişte değiştirmesi istenir.
     return (
         f'# {company_name} — HEPGO ERP (merkez tarafından oluşturuldu)\n'
         '# Yönetici bilgileri yalnızca ilk kurulumda okunur; sonra şifre uygulamadan değiştirilir.\n'
         f'CAYMAZ_ADMIN_USERNAME={admin_user}\n'
         f'CAYMAZ_ADMIN_PASSWORD={admin_pass}\n'
         f'CAYMAZ_ADMIN_FULL_NAME={full_name}\n'
+        f'CAYMAZ_ADMIN_MUST_CHANGE={"1" if must_change else "0"}\n'
         f'CAYMAZ_COMPANY_NAME={company_name}\n'
         f'CAYMAZ_MASTER_USERNAME={master_user}\n'
         f'CAYMAZ_MODULES={mods}\n'
@@ -205,7 +208,8 @@ def provision_online(conn, company):
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
         env_file.write_text(_env_text(master_user, admin_pass, full_name, name, master_user, modules,
-                                      white_label=bool(company.get('white_label'))), encoding='utf-8')
+                                      white_label=bool(company.get('white_label')),
+                                      must_change=not company.get('master_secret')), encoding='utf-8')
         os.chmod(env_file, 0o600)
 
         # Firma logosu (kayıt sihirbazında yüklendiyse) → tenant markası: brand_dir/img/logo.png

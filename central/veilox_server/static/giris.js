@@ -28,6 +28,10 @@ const T = {
     full: 'Ad soyad', mail: 'E-posta', pw: 'Şifre (en az 10 karakter)', pw2: 'Şifre tekrar',
     sendCode: 'Doğrulama kodu gönder', codeSending: 'Gönderiliyor…', codeL: 'E-posta doğrulama kodu', codeHint: 'E-postanıza gönderilen 6 haneli kodu girin.',
     codeSent: e => `${e} adresine kod gönderildi.`, resend: 'Tekrar gönder', codeNeed: 'Lütfen e-posta doğrulama kodunu girin.', badEmail: 'Geçerli bir e-posta girin.',
+    verifyH: 'E-postanızı doğrulayın', verifyP: e => `${e} adresine 6 haneli bir kod gönderdik. Aşağıya girin.`, verifyBtn: 'Doğrula',
+    expiresIn: 'Kodun süresi', codeExpired: 'Kodun süresi doldu. Yeniden gönderin.', verifying: 'Doğrulanıyor…',
+    emailVerified: 'E-posta doğrulandı', changeMail: 'E-postayı değiştir', closeM: 'Kapat', verifyFirst: 'Devam etmek için e-postanızı doğrulayın.',
+    loginNow: 'Giriş yap', readyH: 'Firmanız hazır!', readyP: 'Hesabınız oluşturuldu ve firmanız kuruldu. Hemen giriş yapabilirsiniz.',
     accept: 'Başvurumun değerlendirilmesi ve benimle iletişime geçilmesi için bilgilerimin kaydedilmesini kabul ediyorum.',
     next: 'Devam', prev: 'Geri', submit: 'Başvuruyu tamamla',
     okH: 'Başvurunuz alındı', okP: 'Ekibimiz başvurunuzu inceleyip firmanızı kuracak. Kurulum tamamlanınca giriş adresiniz e-postanıza iletilecek.',
@@ -53,6 +57,10 @@ const T = {
     full: 'Full name', mail: 'Email', pw: 'Password (min 10 characters)', pw2: 'Repeat password',
     sendCode: 'Send verification code', codeSending: 'Sending…', codeL: 'Email verification code', codeHint: 'Enter the 6-digit code sent to your email.',
     codeSent: e => `Code sent to ${e}.`, resend: 'Resend', codeNeed: 'Please enter the email verification code.', badEmail: 'Enter a valid email.',
+    verifyH: 'Verify your email', verifyP: e => `We sent a 6-digit code to ${e}. Enter it below.`, verifyBtn: 'Verify',
+    expiresIn: 'Code expires in', codeExpired: 'Code expired. Resend it.', verifying: 'Verifying…',
+    emailVerified: 'Email verified', changeMail: 'Change email', closeM: 'Close', verifyFirst: 'Verify your email to continue.',
+    loginNow: 'Sign in', readyH: 'Your company is ready!', readyP: 'Your account was created and your company is set up. You can sign in now.',
     accept: 'I agree that my details are stored to evaluate my application and to contact me.',
     next: 'Continue', prev: 'Back', submit: 'Complete application',
     okH: 'Application received', okP: 'Our team will review your application and set up your company. Your sign-in address will be emailed when ready.',
@@ -63,7 +71,9 @@ const T = {
 };
 const t = () => T[lang];
 const qs = new URLSearchParams(location.search);
-const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false };
+const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false };
+// Açık betada "Paket" adımı yok → ilk adım doğrudan Firma (adım 1). Adım numaraları sabit kalır (1=Firma,2=Yönetici,3=Tamam).
+const firstStep = () => state.openBeta ? 1 : 0;
 const recent = () => { try { return JSON.parse(localStorage.getItem('hepgo.firms') || '[]'); } catch { return []; } };
 const remember = (addr, url) => { try { localStorage.setItem('hepgo.firms', JSON.stringify([{ addr, url }, ...recent().filter(r => r.url !== url)].slice(0, 4))); } catch { /* */ } };
 const post = async (url, body) => {
@@ -158,7 +168,9 @@ function loginView() {
 // ---------------- Yeni firma kaydı ----------------
 function stepsBar() {
   const L = t();
-  return `<ol class="gx-steps">${L.steps.map((s, i) => `<li class="${i < state.step ? 'done' : i === state.step ? 'on' : ''}"><span>${i < state.step ? '✓' : i + 1}</span>${esc(s)}</li>`).join('')}</ol>`;
+  // Açık betada Paket adımı gizli → logical adım no'ları korunur (1=Firma…), yalnız görünümden çıkarılır.
+  const items = L.steps.map((s, i) => [i, s]).filter(([i]) => !(state.openBeta && i === 0));
+  return `<ol class="gx-steps">${items.map(([i, s], k) => `<li class="${i < state.step ? 'done' : i === state.step ? 'on' : ''}"><span>${i < state.step ? '✓' : k + 1}</span>${esc(s)}</li>`).join('')}</ol>`;
 }
 
 // Ülkeler (bayrak emoji 2-harf koddan). Türkiye ilk; sonra yaygın ülkeler.
@@ -168,6 +180,7 @@ const cflag = cc => (cc && cc.length === 2) ? String.fromCodePoint(...[...cc.toU
 function regView() {
   const L = t();
   const body = $('#gxBody');
+  if (state.openBeta && state.step === 0) state.step = 1;   // Paket adımı betada yok
   if (state.step === 0) {
     body.innerHTML = `<div class="gx-pane">${stepsBar()}<h2>${esc(L.pickPkg)}</h2><p class="gx-sub">${esc(L.pickPkgP)}</p>
       <div class="gx-pkgs">${state.pkgs.map(p => `<button type="button" class="gx-pkg ${p.slug === state.pkg ? 'on' : ''}" data-pkg="${esc(p.slug)}">
@@ -198,18 +211,19 @@ function regView() {
           <label class="vx-field"><span>${esc(L.tax)}</span><input class="vx-input" name="tax" value="${esc(f.tax || '')}" inputmode="numeric"></label>
         </div>
         <div class="vx-field"><span>${esc(L.logoL)}</span>
-          <div class="gx-logo">
-            <div class="gx-logo-prev" id="logoPrev">${f.logo ? `<img src="${f.logo}" alt="">` : ''}</div>
-            <div class="gx-logo-ctl">
-              <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
-              <button type="button" class="btn btn-ghost" id="logoBtn">${f.logo ? esc(L.logoChange) : esc(L.logoPick)}</button>
-              <button type="button" class="btn btn-ghost" id="logoDel"${f.logo ? '' : ' hidden'}>${esc(L.logoRemove)}</button>
-              <div class="small muted">${esc(L.logoHint)}</div>
+          <div class="gx-drop${f.logo ? ' has' : ''}" id="logoDrop" tabindex="0" role="button">
+            <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <div class="gx-drop-prev" id="logoPrev">${f.logo ? `<img src="${f.logo}" alt="">` : ''}</div>
+            <div class="gx-drop-cta">
+              <span class="gx-drop-ic">${svg('<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>')}</span>
+              <b id="logoTitle">${f.logo ? esc(L.logoChange) : esc(L.logoPick)}</b>
+              <span class="small muted">${esc(L.logoHint)}</span>
             </div>
+            <button type="button" class="gx-drop-x" id="logoDel"${f.logo ? '' : ' hidden'} aria-label="${esc(L.logoRemove)}">×</button>
           </div>
         </div>
         <div class="vx-err" id="f1err"></div>
-        <div class="gx-acts"><button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button><button class="btn btn-primary btn-lg" type="submit">${esc(L.next)} →</button></div>
+        <div class="gx-acts">${state.openBeta ? '<span></span>' : `<button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button>`}<button class="btn btn-primary btn-lg" type="submit">${esc(L.next)} →</button></div>
       </form></div>`;
     const form = $('#f1');
     const err = $('#f1err'), slugMsg = $('#slugMsg');
@@ -236,25 +250,31 @@ function regView() {
     form.company.addEventListener('input', fromName);
     form.slug.addEventListener('input', () => { slugEdited = true; checkSlug(); });
     if (form.slug.value.trim()) checkSlug(); else if (form.company.value.trim()) fromName();
-    // Logo (kurallı)
+    // Logo (kurallı, şık dropzone — tıkla ya da sürükle-bırak)
+    const drop = $('#logoDrop'), logoInput = $('#logoInput');
     const paintLogo = () => {
       $('#logoPrev').innerHTML = state.form.logo ? `<img src="${state.form.logo}" alt="">` : '';
-      $('#logoBtn').textContent = state.form.logo ? L.logoChange : L.logoPick;
+      $('#logoTitle').textContent = state.form.logo ? L.logoChange : L.logoPick;
       $('#logoDel').hidden = !state.form.logo;
+      drop.classList.toggle('has', !!state.form.logo);
     };
-    const logoInput = $('#logoInput');
-    $('#logoBtn').addEventListener('click', () => logoInput.click());
-    $('#logoDel').addEventListener('click', () => { state.form.logo = ''; logoInput.value = ''; paintLogo(); });
-    logoInput.addEventListener('change', () => {
-      const file = logoInput.files[0]; if (!file) return;
+    const takeFile = (file) => {
+      if (!file) return;
       err.textContent = '';
-      if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { err.textContent = L.logoBadType; logoInput.value = ''; return; }
-      if (file.size > 2 * 1024 * 1024) { err.textContent = L.logoTooBig; logoInput.value = ''; return; }
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { err.textContent = L.logoBadType; return; }
+      if (file.size > 2 * 1024 * 1024) { err.textContent = L.logoTooBig; return; }
       const rd = new FileReader();
       rd.onload = () => { state.form.logo = rd.result; paintLogo(); };
       rd.readAsDataURL(file);
-    });
-    $('#prev').addEventListener('click', () => { state.step = 0; regView(); });
+    };
+    drop.addEventListener('click', e => { if (e.target.id !== 'logoDel') logoInput.click(); });
+    drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); logoInput.click(); } });
+    $('#logoDel').addEventListener('click', e => { e.stopPropagation(); state.form.logo = ''; logoInput.value = ''; paintLogo(); });
+    logoInput.addEventListener('change', () => { takeFile(logoInput.files[0]); logoInput.value = ''; });
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave', 'dragend', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files[0]) takeFile(e.dataTransfer.files[0]); });
+    if ($('#prev')) $('#prev').addEventListener('click', () => { state.step = 0; regView(); });
     form.addEventListener('submit', e => {
       e.preventDefault(); err.textContent = '';
       if (!state.form.slugOk) { err.textContent = L.addrNeeded; form.slug.focus(); return; }
@@ -265,22 +285,30 @@ function regView() {
   }
   if (state.step === 2) {
     const f = state.form;
+    // E-posta doğrulaması gerekli mi, edildi mi? Doğrulanana kadar ŞİFRE alanı görünmez (kullanıcı isteği #3).
+    const needV = state.emailVerify && !state.emailVerified;
     body.innerHTML = `<div class="gx-pane">${stepsBar()}<h2>${esc(L.adminH)}</h2><p class="gx-sub">${esc(L.adminP)}</p>
       <form id="f2" class="gx-form">
         <label class="vx-field"><span>${esc(L.full)}</span><input class="vx-input" name="full" value="${esc(f.full || '')}" autocomplete="name" required autofocus></label>
-        <label class="vx-field"><span>${esc(L.mail)}</span><input class="vx-input" type="email" name="email" value="${esc(f.email || '')}" autocomplete="email" required></label>
-        ${state.emailVerify ? `<div class="gx-verify">
-          <button type="button" class="btn btn-ghost" id="sendCode">${esc(L.sendCode)}</button>
-          <label class="vx-field gx-code" id="codeWrap" hidden><span>${esc(L.codeL)}</span>
-            <input class="vx-input" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="______">
-            <small class="muted" id="codeMsg">${esc(L.codeHint)}</small></label>
-        </div>` : ''}
-        <div class="gx-row"><label class="vx-field"><span>${esc(L.pw)}</span><input class="vx-input" type="password" name="pw" minlength="10" autocomplete="new-password" required></label>
-          <label class="vx-field"><span>${esc(L.pw2)}</span><input class="vx-input" type="password" name="pw2" minlength="10" autocomplete="new-password" required></label></div>
-        <div class="gx-meter"><i id="pwBar"></i><small id="pwTxt"></small></div>
-        <label class="gx-check"><input type="checkbox" name="accept" required><span>${esc(L.accept)}</span></label>
+        <label class="vx-field"><span>${esc(L.mail)}</span>
+          <div class="gx-inint">
+            <input class="vx-input" type="email" name="email" value="${esc(f.email || '')}" autocomplete="email" required${state.emailVerified ? ' disabled' : ''}>
+            ${state.emailVerify ? (state.emailVerified
+              ? `<span class="gx-inint-ok">${svg('<path d="M5 12l4 4 10-10"/>')}${esc(L.emailVerified)}</span>`
+              : `<button type="button" class="gx-inint-btn" id="sendCode">${esc(L.sendCode)}</button>`) : ''}
+          </div>
+          ${state.emailVerify && state.emailVerified ? `<small class="gx-slug-msg"><button type="button" class="gx-link" id="changeMail">${esc(L.changeMail)}</button></small>` : ''}
+        </label>
+        <div id="pwSection"${needV ? ' hidden' : ''}>
+          <div class="gx-row"><label class="vx-field"><span>${esc(L.pw)}</span><input class="vx-input" type="password" name="pw" minlength="10" autocomplete="new-password"${needV ? '' : ' required'}></label>
+            <label class="vx-field"><span>${esc(L.pw2)}</span><input class="vx-input" type="password" name="pw2" minlength="10" autocomplete="new-password"${needV ? '' : ' required'}></label></div>
+          <div class="gx-meter"><i id="pwBar"></i><small id="pwTxt"></small></div>
+          <label class="gx-check"><input type="checkbox" name="accept"${needV ? '' : ' required'}><span>${esc(L.accept)}</span></label>
+        </div>
         <div class="vx-err" id="regErr"></div>
-        <div class="gx-acts"><button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button><button class="btn btn-primary btn-lg" type="submit">${esc(L.submit)}</button></div>
+        ${needV ? `<p class="gx-sub gx-verifyhint">${esc(L.verifyFirst)}</p>` : ''}
+        <div class="gx-acts"><button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button>
+          ${needV ? '' : `<button class="btn btn-primary btn-lg" type="submit">${esc(L.submit)}</button>`}</div>
       </form></div>`;
     const form = $('#f2');
     const err = $('#regErr');
@@ -292,42 +320,53 @@ function regView() {
       bar.style.width = `${Math.min(100, sc * 20)}%`;   // CSSOM (CSP'de satır içi stil değil)
       $('#pwTxt').textContent = v ? (sc <= 2 ? L.pwWeak : sc <= 3 ? L.pwOk : L.pwStrong) : '';
     };
-    form.pw.addEventListener('input', meter);
-    $('#prev').addEventListener('click', () => { state.form.full = form.full.value; state.form.email = form.email.value; state.step = 1; regView(); });
-    // E-posta doğrulama kodu gönderimi (SMTP yapılandırıldıysa)
-    if (state.emailVerify) {
-      const sendBtn = $('#sendCode'), codeWrap = $('#codeWrap'), codeMsg = $('#codeMsg');
-      let cd = 0, timer = null;
-      const tick = () => { if (cd > 0) { sendBtn.textContent = `${L.resend} (${cd})`; sendBtn.disabled = true; cd--; } else { sendBtn.textContent = state.codeSentOnce ? L.resend : L.sendCode; sendBtn.disabled = false; if (timer) { clearInterval(timer); timer = null; } } };
-      sendBtn.addEventListener('click', async () => {
-        const email = form.email.value.trim();
+    if (form.pw) form.pw.addEventListener('input', meter);
+    $('#prev').addEventListener('click', () => { state.form.full = form.full.value; if (form.email && !form.email.disabled) state.form.email = form.email.value; state.step = 1; regView(); });
+    // E-postayı değiştir → doğrulamayı sıfırla, tekrar kod iste
+    if ($('#changeMail')) $('#changeMail').addEventListener('click', () => { state.emailVerified = false; state.codeSentOnce = false; state.form.full = form.full.value; regView(); });
+    // "Doğrulama kodu gönder" (input içinde) → email'i kilitle + modal aç
+    if ($('#sendCode')) {
+      $('#sendCode').addEventListener('click', async () => {
+        const email = form.email.value.trim().toLowerCase();
         if (!/.+@.+\..+/.test(email)) { err.textContent = L.badEmail; form.email.focus(); return; }
-        err.textContent = ''; sendBtn.disabled = true; sendBtn.textContent = L.codeSending;
+        err.textContent = ''; state.form.full = form.full.value; state.form.email = email;
+        const btn = $('#sendCode'); btn.disabled = true; btn.textContent = L.codeSending; form.email.disabled = true;
         try {
           const r = await post('/api/register/send-code', { email });
-          state.codeSentOnce = true; codeWrap.hidden = false; codeMsg.textContent = L.codeSent(r.sent_to || email);
-          form.code.focus(); cd = 60; if (timer) clearInterval(timer); tick(); timer = setInterval(tick, 1000);
-        } catch (ex) { err.textContent = ex.message; sendBtn.disabled = false; sendBtn.textContent = state.codeSentOnce ? L.resend : L.sendCode; }
+          state.codeSentOnce = true;
+          openVerifyModal(email, r.sent_to || email);
+        } catch (ex) { err.textContent = ex.message; form.email.disabled = false; }
+        btn.disabled = false; btn.textContent = L.sendCode;
       });
     }
     form.addEventListener('submit', async e => {
       e.preventDefault();
       err.textContent = '';
+      if (needV) { err.textContent = L.verifyFirst; return; }
       if (form.pw.value !== form.pw2.value) { err.textContent = L.mismatch; return; }
-      const code = (state.emailVerify && form.code) ? form.code.value.trim() : '';
-      if (state.emailVerify && !code) { err.textContent = L.codeNeed; if (form.code) form.code.focus(); return; }
-      const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
-      Object.assign(state.form, { full: form.full.value.trim(), email: form.email.value.trim() });
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      Object.assign(state.form, { full: form.full.value.trim() });
+      if (form.email && !form.email.disabled) state.form.email = form.email.value.trim();
       try {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
-          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: code,
+          package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: '',
           slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '' });
         state.step = 3; regView();
-      } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+      } catch (ex) { err.textContent = ex.message; if (btn) btn.disabled = false; }
     });
     return;
   }
+  // ---- Adım 3: Sonuç ----
   const r = state.result || {};
+  if (r.status === 'active' && r.url) {
+    // Açık beta otomatik kurulum: firma hazır → doğrudan giriş düğmesi (onay/başvuru akışı yok)
+    body.innerHTML = `<div class="gx-pane gx-done">${stepsBar()}
+      <div class="gx-ok">${svg('<path d="M5 12l4 4 10-10"/>')}</div>
+      <h2>${esc(L.readyH)}</h2><p class="gx-sub">${esc(L.readyP)}</p>
+      <dl class="gx-sum"><dt>${esc(L.yourAddr)}</dt><dd>${esc(r.domain || '—')}</dd><dt>${esc(L.mail)}</dt><dd>${esc(state.form.email || '')}</dd></dl>
+      <a class="btn btn-primary btn-lg gx-full" href="${esc(r.url)}">${esc(L.loginNow)} →</a></div>`;
+    return;
+  }
   body.innerHTML = `<div class="gx-pane gx-done">${stepsBar()}
     <div class="gx-ok">${svg('<path d="M5 12l4 4 10-10"/>')}</div>
     <h2>${esc(L.okH)}</h2><p class="gx-sub">${esc(L.okP)}</p>
@@ -335,6 +374,62 @@ function regView() {
       ${r.package ? `<dt>${esc(L.steps[0])}</dt><dd>${esc(r.package)}</dd>` : ''}<dt>${esc(L.mail)}</dt><dd>${esc(state.form.email || '')}</dd></dl>
     <ol class="gx-timeline">${L.timeline.map((x, i) => `<li class="${i === 0 ? 'done' : i === 1 ? 'on' : ''}">${esc(x)}</li>`).join('')}</ol>
     <a class="btn btn-ghost gx-full" href="/">← ${esc(L.back)}</a></div>`;
+}
+
+// E-posta doğrulama modalı (ping/çağrı ekranı tarzı, geri sayımlı). Doğru pin → /api/register/verify-code → şifre adımı açılır.
+function openVerifyModal(email, masked) {
+  const L = t();
+  document.querySelectorAll('.gx-modal-wrap').forEach(n => n.remove());
+  const wrap = document.createElement('div');
+  wrap.className = 'gx-modal-wrap';
+  wrap.innerHTML = `<div class="gx-modal" role="dialog" aria-modal="true">
+    <button type="button" class="gx-modal-x" id="mX" aria-label="${esc(L.closeM)}">×</button>
+    <div class="gx-ping"><span class="gx-ping-ring"></span><span class="gx-ping-ring d2"></span>
+      <span class="gx-ping-core">${svg('<path d="M4 4h16v16H4z" fill="none"/><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2" fill="none"/>')}</span></div>
+    <h3>${esc(L.verifyH)}</h3><p class="gx-sub">${esc(L.verifyP(masked))}</p>
+    <input class="vx-input gx-pin" id="mPin" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="______" aria-label="${esc(L.codeL)}">
+    <div class="gx-count" id="mCount"></div>
+    <div class="vx-err" id="mErr"></div>
+    <button class="btn btn-primary btn-lg gx-full" id="mVerify">${esc(L.verifyBtn)}</button>
+    <button type="button" class="gx-link gx-resend" id="mResend" disabled>${esc(L.resend)}</button>
+  </div>`;
+  document.body.appendChild(wrap);
+  const pin = $('#mPin', wrap), errEl = $('#mErr', wrap), countEl = $('#mCount', wrap);
+  const verifyBtn = $('#mVerify', wrap), resendBtn = $('#mResend', wrap);
+  pin.focus();
+  let left = 600, resendAt = 60, timer = null;           // kod 10 dk geçerli; 60 sn sonra tekrar gönder
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const render = () => {
+    countEl.textContent = left > 0 ? `${L.expiresIn} ${fmt(left)}` : L.codeExpired;
+    countEl.className = left > 0 ? 'gx-count' : 'gx-count exp';
+    resendBtn.disabled = resendAt > 0;
+    resendBtn.textContent = resendAt > 0 ? `${L.resend} (${resendAt})` : L.resend;
+  };
+  render();
+  timer = setInterval(() => { if (left > 0) left--; if (resendAt > 0) resendAt--; render(); if (left <= 0) { clearInterval(timer); } }, 1000);
+  const close = () => { if (timer) clearInterval(timer); wrap.remove(); const e = document.querySelector('#f2 input[name=email]'); if (e) e.disabled = false; };
+  $('#mX', wrap).addEventListener('click', close);
+  wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+  document.addEventListener('keydown', function esc0(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc0); } });
+  pin.addEventListener('input', () => { pin.value = pin.value.replace(/\D/g, '').slice(0, 6); if (pin.value.length === 6) verifyBtn.click(); });
+  const doVerify = async () => {
+    const code = pin.value.trim();
+    if (code.length !== 6) { errEl.textContent = L.codeNeed; return; }
+    errEl.textContent = ''; verifyBtn.disabled = true; verifyBtn.textContent = L.verifying; pin.disabled = true;
+    try {
+      await post('/api/register/verify-code', { email, code });
+      if (timer) clearInterval(timer);
+      state.emailVerified = true; state.form.email = email;
+      wrap.remove();
+      regView();   // şifre adımı artık görünür
+    } catch (ex) { errEl.textContent = ex.message; verifyBtn.disabled = false; verifyBtn.textContent = L.verifyBtn; pin.disabled = false; pin.focus(); pin.select(); }
+  };
+  verifyBtn.addEventListener('click', doVerify);
+  resendBtn.addEventListener('click', async () => {
+    errEl.textContent = ''; resendBtn.disabled = true;
+    try { const r = await post('/api/register/send-code', { email }); left = 600; resendAt = 60; render(); countEl.textContent = L.codeSent(r.sent_to || masked); }
+    catch (ex) { errEl.textContent = ex.message; resendAt = 0; render(); }
+  });
 }
 
 function draw() {
@@ -349,8 +444,11 @@ function draw() {
 }
 
 (async () => {
-  try { const s = await (await fetch('/api/public/site')).json(); base = s.firm_base || base; state.emailVerify = !!s.email_verify; } catch { /* */ }
+  try { const s = await (await fetch('/api/public/site')).json(); base = s.firm_base || base; state.emailVerify = !!s.email_verify; state.openBeta = !!s.open_beta; } catch { /* */ }
+  if (state.openBeta && state.step === 0) state.step = firstStep();   // Paket adımı betada yok
   draw();
-  try { state.pkgs = await (await fetch('/api/public/packages')).json(); } catch { state.pkgs = []; }
-  if (state.tab === 'reg' && state.step === 0) regView();
+  if (!state.openBeta) {
+    try { state.pkgs = await (await fetch('/api/public/packages')).json(); } catch { state.pkgs = []; }
+    if (state.tab === 'reg' && state.step === 0) regView();
+  }
 })();

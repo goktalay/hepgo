@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS email_codes (
     code_hash  TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     attempts   INTEGER NOT NULL DEFAULT 0,
-    sent_at    TEXT NOT NULL
+    sent_at    TEXT NOT NULL,
+    verified_at TEXT
 );
 """
 
@@ -112,6 +113,9 @@ def init():
                 conn.execute(f'ALTER TABLE companies ADD COLUMN {col} TEXT')
         if 'email_verified' not in cols:           # kayıtta e-posta doğrulandı mı
             conn.execute('ALTER TABLE companies ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0')
+        ecols = [r[1] for r in conn.execute('PRAGMA table_info(email_codes)')]
+        if 'verified_at' not in ecols:             # kod modal'da doğrulandıysa (şifre adımından önce)
+            conn.execute('ALTER TABLE email_codes ADD COLUMN verified_at TEXT')
         pcols = [r[1] for r in conn.execute('PRAGMA table_info(packages)')]
         if 'white_label' not in pcols:
             conn.execute('ALTER TABLE packages ADD COLUMN white_label INTEGER NOT NULL DEFAULT 0')

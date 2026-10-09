@@ -374,5 +374,5 @@ def seed_admin():
             return
         cur = conn.execute(
             'INSERT INTO users (username, password_hash, full_name, created_at, must_change_password) VALUES (?,?,?,?,?)',
-            (config.ADMIN_USERNAME, hash_password(config.ADMIN_PASSWORD), config.ADMIN_FULL_NAME, db.now(), 1))
+            (config.ADMIN_USERNAME, hash_password(config.ADMIN_PASSWORD), config.ADMIN_FULL_NAME, db.now(), int(config.ADMIN_MUST_CHANGE)))
         conn.execute('INSERT INTO user_roles (user_id, role) VALUES (?,?)', (cur.lastrowid, ADMIN))

@@ -214,7 +214,7 @@ def modules():
 def site(request: Request):
     """Tanıtım sayfası: merkez girişi düğmesi yalnız merkez alan adında (veilox.app) gösterilir."""
     return {'central': central_host(request), 'merkez_url': MERKEZ_URL if central_host(request) else None, 'firm_base': FIRM_BASE,
-            'email_verify': mailer.enabled()}
+            'email_verify': mailer.enabled(), 'open_beta': OPEN_BETA}
 
 
 _look = {}   # ip → [zamanlar] (firma adresi sorgusu)
@@ -387,6 +387,11 @@ class SendCodeIn(BaseModel):
     email: str
 
 
+class VerifyCodeIn(BaseModel):
+    email: str
+    code: str = ''
+
+
 _code_reg = {}                     # ip → [zamanlar] (kod gönderimi)
 CODE_LIMIT, CODE_WINDOW = 6, 3600  # saatte en çok 6 kod / IP
 CODE_TTL = 600                     # kod 10 dk geçerli
@@ -434,8 +439,8 @@ def register_send_code(body: SendCodeIn, request: Request):
     return {'ok': True, 'sent_to': masked}
 
 
-def _verify_email_code(conn, email, code):
-    """Kayıt sırasında e-posta kodunu doğrular. True=geçerli (kod silinir). Hata → HTTPException."""
+def _check_code(conn, email, code):
+    """Kodu doğrular (silmez). True=geçerli. Hata → HTTPException."""
     from datetime import datetime
     r = db.row(conn, 'SELECT code_hash, expires_at, attempts FROM email_codes WHERE email=?', (email,))
     if not r:
@@ -455,8 +460,34 @@ def _verify_email_code(conn, email, code):
         conn.execute('UPDATE email_codes SET attempts=attempts+1 WHERE email=?', (email,))
         conn.commit()
         raise HTTPException(400, 'Doğrulama kodu hatalı.')
+    return True
+
+
+def _verify_email_code(conn, email, code):
+    """Kayıt sırasında e-posta doğrulamasını zorunlu kılar. Modal'da önceden doğrulandıysa (verified_at)
+    kod istemeden kabul eder; aksi halde kodu doğrular. Her iki durumda satırı siler. True/HTTPException."""
+    from datetime import datetime
+    pre = db.row(conn, 'SELECT verified_at, expires_at FROM email_codes WHERE email=?', (email,))
+    if pre and pre.get('verified_at'):
+        # Modal akışı: kod zaten doğrulanmış; şifre adımında tekrar kod istemeyiz
+        conn.execute('DELETE FROM email_codes WHERE email=?', (email,))
+        return True
+    _check_code(conn, email, code)
     conn.execute('DELETE FROM email_codes WHERE email=?', (email,))
     return True
+
+
+@app.post('/api/register/verify-code')
+def register_verify_code(body: VerifyCodeIn, request: Request):
+    """Modal akışı: pin'i şifre adımından ÖNCE doğrular. Satırı silmez, verified_at işaretler →
+    sonraki /api/register çağrısı kod istemeden kabul eder (şifre o adımda alınır)."""
+    _single_line(body, 'email', 'code')
+    email = body.email.strip().lower()
+    with db.connect() as conn:
+        _check_code(conn, email, body.code)
+        conn.execute('UPDATE email_codes SET verified_at=?, attempts=0 WHERE email=?', (db.now(), email))
+        conn.commit()
+    return {'ok': True, 'verified': True}
 
 
 @app.post('/api/register')
@@ -521,7 +552,24 @@ def register(body: RegisterIn, request: Request):
              'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None,
              body.city.strip()[:60] or None, country, logo_path, verified, db.now()))
         conn.commit()
-    return {'ok': True, 'application_no': f'B-{cur.lastrowid:05d}', 'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
+        cid = cur.lastrowid
+        # Açık beta: sistem yöneticisi onayı YOK → kayıt biter bitmez firma otomatik kurulur ve
+        # kullanıcı doğrudan sisteme girebilir. (Beta dışında klasik "başvuru → onay" akışı.)
+        if OPEN_BETA and mode != 'offline':
+            try:
+                c = db.company_public(db.row(conn, 'SELECT * FROM companies WHERE id=?', (cid,)))
+                c['master_secret'] = body.password          # provisioning için düz şifre
+                ok, detail = provision.provision_online(conn, c)
+                if ok:
+                    return {'ok': True, 'application_no': f'B-{cid:05d}',
+                            'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
+                            'status': 'active', 'url': (detail.get('url') or _firm_url(c)) + '/app',
+                            'message': 'Firmanız hazır! Giriş yapabilirsiniz.'}
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                print(f'[register] open-beta otomatik kurulum başarısız (cid={cid}): {e}', flush=True)
+            # Kurulum anında tamamlanamazsa başvuru bekliyor olarak kalır (arka planda tamamlanır)
+    return {'ok': True, 'application_no': f'B-{cid:05d}', 'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
             'message': 'Başvurunuz alındı. Onaylandığında firmanız kurulacak ve giriş adresiniz e-postanıza iletilecek.'}
 
 

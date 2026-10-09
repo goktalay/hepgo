@@ -316,7 +316,14 @@ def w_recent_orders(conn, user):
 
 @widget('kpi_printers', 'Yazıcılar', 'Yazdıran, boştaki, sorunlu ve çevrimdışı yazıcılar', 'printers')
 def w_kpi_printers(conn, user):
-    st = Counter(('ARGE' if r[2] else ('BAKIM' if r[1] else (r[0] or 'CEVRIMDISI'))) for r in conn.execute('SELECT live_state, maint_since, arge_since FROM printers'))
+    # Bakım: üretim yok → durumu ezer (BAKIM). Ar-Ge: üretim devam → canlı durum korunur; yalnız hata/çevrimdışı Ar-Ge'ye çekilir (alarm sayılmaz).
+    def _pstate(live, maint, arge):
+        if maint:
+            return 'BAKIM'
+        if arge:
+            return live if live in ('YAZDIRIYOR', 'HAZIR', 'DURAKLADI', 'TAMAMLANDI') else 'ARGE'
+        return live or 'CEVRIMDISI'
+    st = Counter(_pstate(r[0], r[1], r[2]) for r in conn.execute('SELECT live_state, maint_since, arge_since FROM printers'))
     return {'states': st, 'total': sum(st.values())}
 
 

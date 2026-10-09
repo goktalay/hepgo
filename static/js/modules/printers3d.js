@@ -61,7 +61,7 @@ export function printerRoom(opts) {
 
   // Yazıcı bilgisi: tıklanınca açılan pencere; açıkken yenilenen durumla güncellenir
   const infoBody = p => {
-    const st = p.arge_since ? 'ARGE' : (p.maint_since ? 'BAKIM' : (p.live_state || 'CEVRIMDISI'));
+    const st = p.maint_since ? 'BAKIM' : (p.arge_since ? (p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI' ? p.live_state : 'ARGE') : (p.live_state || 'CEVRIMDISI'));
     return h('div', null,
       h('div', { class: 'pr3d-title' }, badge(PRINTER_STATES, st)),
       st === 'YAZDIRIYOR' || st === 'DURAKLADI' ? h('div', { class: 'print-progress', style: { margin: '6px 0 12px', maxWidth: 'none' } },
@@ -434,7 +434,7 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
     }
     for (const p of withPlace) {
       const u = units.get(p.id);
-      const st = p.arge_since ? 'ARGE' : (p.maint_since ? 'BAKIM' : (p.live_state || 'CEVRIMDISI'));
+      const st = p.maint_since ? 'BAKIM' : (p.arge_since ? (p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI' ? p.live_state : 'ARGE') : (p.live_state || 'CEVRIMDISI'));
       u.state = st;
       u.light.material = stateMats[st] || stateMats.CEVRIMDISI;
       for (const m of u.shell) m.material = bodyMats[st] || bodyMats.CEVRIMDISI;
@@ -584,7 +584,7 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
     for (const m of u.hit ? [u.hit] : []) m.visible = false;
     sc.add(u.g);
     const upd = pp => {
-      const st = pp.arge_since ? 'ARGE' : (pp.maint_since ? 'BAKIM' : (pp.live_state || 'CEVRIMDISI'));
+      const st = pp.maint_since ? 'BAKIM' : (pp.arge_since ? (pp.live_state && pp.live_state !== 'HATA' && pp.live_state !== 'CEVRIMDISI' ? pp.live_state : 'ARGE') : (pp.live_state || 'CEVRIMDISI'));
       u.state = st;
       u.light.material = stateMats[st] || stateMats.CEVRIMDISI;
       for (const m of u.shell) m.material = bodyMats[st] || bodyMats.CEVRIMDISI;

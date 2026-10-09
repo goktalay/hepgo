@@ -105,7 +105,14 @@ function rackBoard(printers, onSaved) {
   const byId = new Map(printers.map(p => [p.id, p]));
   const lists = RACKS.map(() => h('div', { class: 'rack-list' }));
   const counts = RACKS.map(() => h('span', { class: 'rack-count' }));
-  const dot = p => h('span', { class: `rack-dot s-${p.arge_since ? 'arge' : (p.maint_since ? 'bakim' : (p.live_state || 'none').toLowerCase())}`, title: p.arge_since ? 'Ar-Ge' : (p.maint_since ? 'Bakımda' : (PRINTER_STATES[p.live_state]?.label || 'Bilinmiyor')) });
+  const dot = p => {
+    const prod = p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI';
+    // Bakım: durumu ezer. Ar-Ge: üretimdeyse canlı renk, değilse Ar-Ge rengi.
+    const cls = p.maint_since ? 'bakim' : (p.arge_since ? (prod ? (p.live_state || 'none').toLowerCase() : 'arge') : (p.live_state || 'none').toLowerCase());
+    const label = PRINTER_STATES[p.live_state]?.label || 'Bilinmiyor';
+    const title = p.maint_since ? 'Bakımda' : (p.arge_since ? (prod ? `Ar-Ge · ${label}` : 'Ar-Ge') : label);
+    return h('span', { class: `rack-dot s-${cls}`, title });
+  };
   const item = p => {
     const el = h('div', { class: 'rack-item', 'data-id': p.id },
       h('span', { class: 'rack-grip', 'aria-hidden': 'true' }, '⋮⋮'), h('span', { class: 'rack-no' }), dot(p), h('b', null, p.name),
@@ -214,13 +221,20 @@ function maintDur(since) {
   const d = Math.floor(ms / 86400000), hh = Math.floor(ms / 3600000) % 24, mm = Math.floor(ms / 60000) % 60;
   return d ? `${d} g ${hh} sa` : hh ? `${hh} sa ${mm} dk` : `${mm} dk`;
 }
-function status(p) {
-  if (p.arge_since) return h('span', null, badge(PRINTER_STATES, 'ARGE'), h('span', { class: 'small muted' }, ` · ${maintDur(p.arge_since)}`));
-  if (p.maint_since) return h('span', null, badge(PRINTER_STATES, 'BAKIM'), h('span', { class: 'small muted' }, ` · ${maintDur(p.maint_since)}`));
+const producing = p => p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI';   // Ar-Ge'de üretim sürüyor mu
+function liveBadge(p) {
   if (!p.live_state) return h('span', { class: 'badge gray' }, 'Bilinmiyor');
   const b = badge(PRINTER_STATES, p.live_state);
   return p.live_state === 'YAZDIRIYOR' && p.live_progress != null
     ? h('span', null, b, h('span', { class: 'small muted' }, ` %${Math.round(p.live_progress)}`)) : b;
+}
+function status(p) {
+  // Bakım: üretim yok → durumu ezer. Ar-Ge: üretim devam → canlı durum + "Ar-Ge" etiketi; hata/çevrimdışı alarm değil, Ar-Ge gösterilir.
+  if (p.maint_since) return h('span', null, badge(PRINTER_STATES, 'BAKIM'), h('span', { class: 'small muted' }, ` · ${maintDur(p.maint_since)}`));
+  if (p.arge_since) return producing(p)
+    ? h('span', null, liveBadge(p), ' ', badge(PRINTER_STATES, 'ARGE'))
+    : h('span', null, badge(PRINTER_STATES, 'ARGE'), h('span', { class: 'small muted' }, ` · ${maintDur(p.arge_since)}`));
+  return liveBadge(p);
 }
 async function toggleMaint(p, done) {
   try { await api.post(`/api/printers/${p.id}/maintenance`, { on: !p.maint_since }); toast(p.maint_since ? 'Yazıcı hatta alındı' : 'Yazıcı bakıma alındı'); done(); }

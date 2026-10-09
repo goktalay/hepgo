@@ -136,7 +136,9 @@ export function disconnect() {
 function open() {
   if (ws) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/voice`);
+  // Cihaz tipi: mobil uygulama (Capacitor native) ise 'mobile' — çoklu oturumda gelen arama tek cihaza (tercih mobil) gelir
+  const device = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ? 'mobile' : 'web';
+  ws = new WebSocket(`${proto}://${location.host}/ws/voice?device=${device}`);
   ws.onopen = () => {
     backoff = 1000; clearInterval(pingTimer); pingTimer = setInterval(() => send({ t: 'ping' }), 25000);   // çevrimiçi kal (arka planda da)
     sendPresence();

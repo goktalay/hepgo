@@ -23,6 +23,7 @@ ws_router = APIRouter()
 
 PEERS = {}      # user_id -> set[WebSocket]  (aynı kullanıcının birden çok sekmesi olabilir)
 VISIBLE = {}    # WebSocket -> bool  (sekme şu an ekranda görünür mü; görünürse OS bildirimi gereksiz)
+DEVICE = {}     # WebSocket -> 'mobile' | 'web'  (gelen arama tek cihaza; tercih mobil)
 CALL_MEMBERS = {}   # call_id -> set[user_id]  (o an bağlı katılımcılar)
 
 
@@ -40,6 +41,21 @@ async def _send(user_id, msg):
             dead.append(ws)
     for ws in dead:
         PEERS.get(user_id, set()).discard(ws)
+
+
+async def _send_device(user_id, msg):
+    """Gelen aramayı (ring) kullanıcının TEK cihazına yollar: MOBİL bağlantı(lar) varsa yalnız onlara,
+    hiç mobil yoksa açık web sekmelerinden birine. Böylece iki yerde oturum açıksa arama tek yerde (tercih mobil) çalar."""
+    conns = list(PEERS.get(user_id, ()))
+    if not conns:
+        return
+    mobiles = [w for w in conns if DEVICE.get(w) == 'mobile']
+    chosen = mobiles if mobiles else conns[-1:]   # mobil varsa web'leri atla; yoksa tek web
+    for ws in chosen:
+        try:
+            await ws.send_text(json.dumps(msg))
+        except Exception:
+            PEERS.get(user_id, set()).discard(ws)
 
 
 def visible_uids():
@@ -130,6 +146,7 @@ async def ws_voice(ws: WebSocket):
         return
     uid = user['id']
     PEERS.setdefault(uid, set()).add(ws)
+    DEVICE[ws] = 'mobile' if (ws.query_params.get('device') or '').lower() == 'mobile' else 'web'
     _touch(uid)   # WS bağlıyken çevrimiçi say (uygulama arka planda olsa da, HTTP yoklaması dursa da)
     try:
         await ws.send_text(json.dumps({'t': 'ready', 'user_id': uid}))
@@ -152,6 +169,7 @@ async def ws_voice(ws: WebSocket):
         pass
     finally:
         VISIBLE.pop(ws, None)
+        DEVICE.pop(ws, None)
         PEERS.get(uid, set()).discard(ws)
         if not PEERS.get(uid):
             PEERS.pop(uid, None)
@@ -232,7 +250,7 @@ async def _invite(user, m):
                         'tag': f'call-{cid}', 'url': '/app#/messages'}, ttl=45)   # uygulama kapalı / ekran kilitli olsa da çalsın
     caller = {'id': uid, 'full_name': user['full_name'], 'photo': info.get(uid, {}).get('photo')}
     for t in targets:
-        await _send(t, {'t': 'ring', 'call_id': cid, 'kind': kind, 'video': video, 'caller': caller,
+        await _send_device(t, {'t': 'ring', 'call_id': cid, 'kind': kind, 'video': video, 'caller': caller,
                         'members': [names.get(x) for x in targets if x != t]})
     # arayana bilgi: kimlere ulaşıldı (fotoğrafla)
     await _send(uid, {'t': 'calling', 'call_id': cid, 'kind': kind,
@@ -268,7 +286,7 @@ async def _add(user, m):
                         'tag': f'call-{cid}', 'url': '/app#/messages'}, ttl=45)
     caller = {'id': uid, 'full_name': user['full_name'], 'photo': info.get(uid, {}).get('photo')}
     for t in targets:
-        await _send(t, {'t': 'ring', 'call_id': cid, 'kind': 'grup', 'caller': caller,
+        await _send_device(t, {'t': 'ring', 'call_id': cid, 'kind': 'grup', 'caller': caller,
                         'members': [names.get(x) for x in targets if x != t]})
     await _send(uid, {'t': 'calling', 'call_id': cid, 'kind': 'grup',
                       'targets': [{'id': t, 'name': names.get(t), 'photo': info.get(t, {}).get('photo'), 'online': t in PEERS} for t in targets]})

@@ -106,8 +106,8 @@ function passiveModal(m, reload) {
 }
 
 function deleteModal(m, reload) {
-  const inp = h('input', { class: 'input', placeholder: m.name });
-  modal({ title: 'Firma kaydını sil', body: h('div', null,
+  const inp = h('input', { class: 'input', placeholder: m.name, autofocus: true, style: { width: '100%', boxSizing: 'border-box', display: 'block' } });
+  modal({ title: 'Firma kaydını sil', body: h('div', { style: { width: '100%' } },
     h('p', null, 'Bu işlem merkezdeki firma kaydını siler. Onay için firma adını aynen yazın:'), h('p', null, h('b', null, m.name)), inp),
     actions: [{ label: 'Vazgeç' }, { label: 'Kalıcı olarak sil', class: 'danger', onClick: async () => {
       await api.del(`/api/central/members/${m.id}?confirm=${encodeURIComponent(inp.value)}`); toast('Silindi'); reload();

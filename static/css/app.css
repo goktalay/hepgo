@@ -8071,3 +8071,7 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 .tp-wkrow.is-today { background: color-mix(in srgb, var(--blue, #2f6fed) 9%, transparent); box-shadow: inset 3px 0 0 var(--blue, #2f6fed); }
 .tp-wkday { flex: 0 0 96px; display: flex; align-items: baseline; gap: 5px; }
 .tp-wkstat { flex: 1; text-align: right; }
+
+/* Şirketten Haberler: paylaşılan metindeki tıklanabilir linkler */
+.feed-link { color: var(--blue, #2f6fed); text-decoration: underline; word-break: break-word; cursor: pointer; }
+.feed-link:hover { filter: brightness(1.12); }

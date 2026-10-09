@@ -10,6 +10,22 @@ const KIND_BADGE = {
   ORDER: ['blue', 'Sipariş'], MEETING: ['yellow', 'Toplantı'], ANNOUNCE: ['red', 'Duyuru'], USER: ['', ''], LIVE: ['red', '🔴 Canlı yayın'],
 };
 const LOGO = '/static/img/logo-mark.png?v=3';
+
+// Paylaşılan metindeki URL'leri tıklanabilir bağlantıya çevirir (geri kalanı düz metin node'u).
+function linkify(text) {
+  const out = [];
+  const re = /(https?:\/\/[^\s<>()]+|www\.[^\s<>()]+)/gi;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const raw = m[0];
+    const href = raw.startsWith('http') ? raw : `https://${raw}`;
+    out.push(h('a', { class: 'feed-link', href, target: '_blank', rel: 'noopener', onclick: e => e.stopPropagation() }, raw));
+    last = m.index + raw.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 // Tepki simgesi → etiket + renk (beğen düğmesi ve etiketi için)
 const REACTION_META = {
   '👍': { label: 'Beğen', color: '#2563eb' }, '❤️': { label: 'Sevdim', color: '#e0245e' },
@@ -81,8 +97,12 @@ export function renderFeed(container, ctx, opts = {}) {
     const t = p.text || '';
     const lines = t.split('\n');
     const long = t.length > 160 || lines.length > 3;
-    const span = h('span', { class: 'feed-tx' }, long ? `${lines.slice(0, 3).join('\n').slice(0, 150).trimEnd()}… ` : t);
-    const more = long ? h('button', { class: 'feed-moretx', type: 'button', onclick: () => { span.textContent = t; more.remove(); } }, 'devamı') : null;
+    const shown = long ? `${lines.slice(0, 3).join('\n').slice(0, 150).trimEnd()}… ` : t;
+    const span = h('span', { class: 'feed-tx' });
+    // ref_link'li (sistem) postlarda metin zaten tek link; kullanıcı metninde içindeki URL'leri linkle
+    const fill = s => span.replaceChildren(...(p.ref_link ? [s] : linkify(s)));
+    fill(shown);
+    const more = long ? h('button', { class: 'feed-moretx', type: 'button', onclick: () => { fill(t); more.remove(); } }, 'devamı') : null;
     return [lead || null, p.ref_link ? h('a', { href: p.ref_link }, span) : span, more];
   };
   const postCard = p => {

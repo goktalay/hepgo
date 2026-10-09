@@ -102,7 +102,9 @@ def reload_tunnel():
     """Yeni ingress'i devreye alır. Fabrikada Docker konteyneri restart; sunucuda native cloudflared servisi restart.
     Sunucuda veilox hepgo kullanıcısıyla çalıştığından systemctl için parolasız sudo gerekir (sudoers drop-in)."""
     if RELOAD == 'systemd':
-        r = subprocess.run(['sudo', '-n', 'systemctl', 'restart', CF_SERVICE], capture_output=True, text=True, timeout=60)
+        # RESTART DEĞİL RELOAD (SIGHUP): cloudflared ingress'i tüneli DÜŞÜRMEDEN tazeler → yeni firma eklerken
+        # TÜM siteler kesintiye uğramaz. (cloudflared.service ExecReload=kill -HUP + sudoers 'reload' izni gerekir.)
+        r = subprocess.run(['sudo', '-n', 'systemctl', 'reload', CF_SERVICE], capture_output=True, text=True, timeout=60)
     else:
         r = _docker('restart', CONTAINER)
     if r.returncode != 0:

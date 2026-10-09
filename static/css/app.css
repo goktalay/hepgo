@@ -7959,3 +7959,22 @@ tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 @media (max-width: 560px) { .mesai-day { flex-direction: column; align-items: stretch; } .mesai-day-t { justify-content: space-between; } }
 .hr-ot-add { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .hr-ot-add > * { flex: 0 0 auto; }
+
+/* Modül Ayarları: alt modül seçimi sol dikey liste (bu modüle özel) */
+.ms-wrap { display: flex; gap: 18px; align-items: flex-start; }
+.ms-side { flex: 0 0 230px; position: sticky; top: 8px; }
+.ms-side-h { margin: 0 0 8px; padding: 0 6px; font-weight: 600; }
+.ms-vtabs { display: flex; flex-direction: column; gap: 2px; }
+.ms-vtab { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border: 0;
+  border-radius: 10px; background: transparent; color: var(--text, #1b2130); cursor: pointer; font: inherit; font-size: 14px; line-height: 1.2; }
+.ms-vtab:hover { background: var(--hover, rgba(127,127,127,.08)); }
+.ms-vtab.on { background: var(--accent-soft, rgba(37,99,235,.12)); color: var(--accent, #2563eb); font-weight: 600; }
+.ms-vtab-ic { display: inline-flex; width: 20px; justify-content: center; flex: 0 0 auto; }
+.ms-vtab-ic svg { width: 18px; height: 18px; }
+.ms-main { flex: 1; min-width: 0; }
+@media (max-width: 800px) {
+  .ms-wrap { flex-direction: column; }
+  .ms-side { flex: none; width: 100%; position: static; }
+  .ms-vtabs { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .ms-vtab { width: auto; }
+}

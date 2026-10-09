@@ -1186,16 +1186,19 @@ function syncBox(group) {
 
 function modulesBody(view, ctx) {
   let cur = MODULE_SETTINGS[0].key;
-  const pane = h('div');
-  const tabs = h('div', { class: 'seg wrap ms-tabs' });
+  const pane = h('div', { class: 'ms-main' });
+  const tabs = h('div', { class: 'ms-vtabs' });
   const draw = () => {
-    clear(tabs, MODULE_SETTINGS.map(m => h('button', { type: 'button', class: m.key === cur ? 'on' : '', onclick: () => { cur = m.key; draw(); } },
-      segIconByKey(m.icon), m.title)));
+    clear(tabs, MODULE_SETTINGS.map(m => h('button', { type: 'button', class: `ms-vtab ${m.key === cur ? 'on' : ''}`, onclick: () => { cur = m.key; draw(); pane.scrollIntoView({ block: 'nearest' }); } },
+      h('span', { class: 'ms-vtab-ic' }, segIconByKey(m.icon)), h('span', { class: 'ms-vtab-t' }, m.title))));
     const m = MODULE_SETTINGS.find(x => x.key === cur);
     clear(pane, m.body(view, ctx));
   };
   draw();
-  return h('div', null, h('p', { class: 'small muted' }, 'Modüllere özel ayarlar. Bir modül seçin.'), tabs, pane);
+  // Alt modül çok olduğu için dikey sol liste (bu modüle özel)
+  return h('div', { class: 'ms-wrap' },
+    h('aside', { class: 'ms-side' }, h('div', { class: 'ms-side-h small muted' }, 'Modül seçin'), tabs),
+    pane);
 }
 
 function fieldSettingsBody() {

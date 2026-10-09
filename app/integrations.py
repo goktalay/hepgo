@@ -265,6 +265,11 @@ def _added(conn):
     return seed
 
 
+def is_added(conn, group):
+    """Entegrasyon firmaya eklenmiş mi? (Katalogdan 'Ekle' ile; ayarlı/bağlı olanlar otomatik tohumlanır.)"""
+    return group in set(_added(conn))
+
+
 def add_integration(conn, integ):
     if integ not in set(CATALOG_KEYS):
         raise ValueError('Bilinmeyen entegrasyon')

@@ -31,7 +31,7 @@ export function subnav(active, ctx) {
     svgIcon(icons[ico]), label);
   const tabs = [mk('room', 'Yarı Mamul', '#/production', 'stock')];
   if (ctx.user.modules.includes('orders')) tabs.push(mk('is-emri', 'İş Emri Yönetimi', '#/orders', 'orders'));
-  if (ctx.user.modules.includes('printers')) tabs.push(mk('printers', 'Yazıcı Yönetimi', '#/printers', 'printers'));
+  if (ctx.user.modules.includes('printers') && ctx.user.printer) tabs.push(mk('printers', 'Yazıcı Yönetimi', '#/printers', 'printers'));   // yalnız yazıcı entegrasyonu eklenmiş + açıksa
   return h('div', { class: 'seg seg-tabs' }, tabs);
 }
 

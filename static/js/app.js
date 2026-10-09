@@ -96,7 +96,8 @@ const MODULES = [
   { key: 'sales', title: 'Satış Yönetimi', mod: sales, sub: 'crm' },   // CRM alt modülü   // Firmalar için satış faturası oluşturma
   { key: 'mikro', title: 'Mikro ERP', mod: mikro, hidden: true },   // Program Ayarları › Entegrasyonlar altından açılır (yalnızca MASTER)
   { key: 'field', title: 'Saha Yönetimi', mod: fieldMod },
-  { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers, sub: 'production' },   // Üretim Yönetimi'nin alt modülü; Üretim'e erişimi olmayanda ızgarada kalır
+  { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers, sub: 'production',
+    show: u => u.modules.includes('printers') && u.printer },   // Üretim'in alt modülü; yalnız yazıcı entegrasyonu eklenmiş + açıksa görünür
   { key: 'products', title: 'Ürün Yönetimi', mod: products, tone: 'red' },
   { key: 'design', title: 'Endüstriyel Tasarım', mod: design },
   { key: 'crm', title: 'CRM', mod: crmHub },   // Firma + Evrak + Satış (grup; ayrı yetkisi yok)

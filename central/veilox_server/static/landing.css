@@ -473,3 +473,8 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .gx-count.exp{color:#dc2626}
 .gx-resend{display:inline-block;margin-top:10px}
 [data-theme="dark"] .gx-modal{background:#101c30}
+
+/* ---- Düğme içi yükleniyor göstergesi (kayıt gönderimi) ---- */
+.gx-spin{display:inline-block;width:16px;height:16px;margin-right:8px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-3px;animation:gxspin .7s linear infinite}
+@keyframes gxspin{to{transform:rotate(360deg)}}
+.btn.busy{opacity:.92;cursor:progress;pointer-events:none}

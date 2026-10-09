@@ -509,8 +509,17 @@ def register(body: RegisterIn, request: Request):
     if not body.accept:
         raise HTTPException(400, 'Devam etmek için başvuru koşullarını onaylayın')
     with db.connect() as conn:
-        if conn.execute("SELECT 1 FROM companies WHERE lower(master_username)=? AND status IN ('pending','approved')", (user,)).fetchone():
-            raise HTTPException(409, 'Bu e-posta ile onay bekleyen bir başvurunuz zaten var. Durumunu “Firma girişi” ekranından sorgulayabilirsiniz.')
+        # Aynı e-posta ile zaten bir firma varsa TEKRAR OLUŞTURMA (idempotent) — özellikle çift tıklama/yeniden
+        # göndermede: kuruluysa doğrudan giriş yanıtı döneriz (400 "kodu alın" hatası yerine).
+        exist = db.row(conn, "SELECT * FROM companies WHERE lower(master_username)=? "
+                             "AND status IN ('pending','approved','provisioning','active','error') ORDER BY id DESC LIMIT 1", (user,))
+        if exist:
+            if exist['status'] == 'active':
+                ec = db.company_public(exist)
+                return {'ok': True, 'application_no': f"B-{exist['id']:05d}", 'domain': f"{exist['slug']}.{FIRM_BASE}",
+                        'package': None, 'status': 'active', 'url': _firm_url(ec) + '/app',
+                        'message': 'Bu e-posta ile firmanız zaten kurulu. Giriş yapabilirsiniz.'}
+            raise HTTPException(409, 'Bu e-posta ile bir başvurunuz zaten var. Durumunu “Firma girişi” ekranından sorgulayabilirsiniz.')
         verified = 0
         if mailer.enabled():   # SMTP yapılandırıldıysa e-posta doğrulaması ZORUNLU
             _verify_email_code(conn, user, body.email_code)

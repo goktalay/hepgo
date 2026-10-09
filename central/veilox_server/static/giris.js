@@ -33,7 +33,7 @@ const T = {
     emailVerified: 'E-posta doğrulandı', changeMail: 'E-postayı değiştir', closeM: 'Kapat', verifyFirst: 'Devam etmek için e-postanızı doğrulayın.',
     loginNow: 'Giriş yap', readyH: 'Firmanız hazır!', readyP: 'Hesabınız oluşturuldu ve firmanız kuruldu. Hemen giriş yapabilirsiniz.',
     accept: 'Başvurumun değerlendirilmesi ve benimle iletişime geçilmesi için bilgilerimin kaydedilmesini kabul ediyorum.',
-    next: 'Devam', prev: 'Geri', submit: 'Başvuruyu tamamla',
+    next: 'Devam', prev: 'Geri', submit: 'Başvuruyu tamamla', submitting: 'Gönderiliyor…', provisioning: 'Firmanız kuruluyor…',
     okH: 'Başvurunuz alındı', okP: 'Ekibimiz başvurunuzu inceleyip firmanızı kuracak. Kurulum tamamlanınca giriş adresiniz e-postanıza iletilecek.',
     appNo: 'Başvuru no', timeline: ['Başvuru alındı', 'İnceleme', 'Firma kurulumu', 'Giriş bilgileri e-postanıza'],
     pwWeak: 'Zayıf', pwOk: 'Orta', pwStrong: 'Güçlü', mismatch: 'Şifreler aynı değil', required: 'Bu alanı doldurun',
@@ -62,7 +62,7 @@ const T = {
     emailVerified: 'Email verified', changeMail: 'Change email', closeM: 'Close', verifyFirst: 'Verify your email to continue.',
     loginNow: 'Sign in', readyH: 'Your company is ready!', readyP: 'Your account was created and your company is set up. You can sign in now.',
     accept: 'I agree that my details are stored to evaluate my application and to contact me.',
-    next: 'Continue', prev: 'Back', submit: 'Complete application',
+    next: 'Continue', prev: 'Back', submit: 'Complete application', submitting: 'Submitting…', provisioning: 'Setting up your company…',
     okH: 'Application received', okP: 'Our team will review your application and set up your company. Your sign-in address will be emailed when ready.',
     appNo: 'Application no', timeline: ['Application received', 'Review', 'Company setup', 'Credentials by email'],
     pwWeak: 'Weak', pwOk: 'Fair', pwStrong: 'Strong', mismatch: 'Passwords do not match', required: 'Please fill this in',
@@ -71,7 +71,7 @@ const T = {
 };
 const t = () => T[lang];
 const qs = new URLSearchParams(location.search);
-const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false };
+const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false, submitting: false };
 // Açık betada "Paket" adımı yok → ilk adım doğrudan Firma (adım 1). Adım numaraları sabit kalır (1=Firma,2=Yönetici,3=Tamam).
 const firstStep = () => state.openBeta ? 1 : 0;
 const recent = () => { try { return JSON.parse(localStorage.getItem('hepgo.firms') || '[]'); } catch { return []; } };
@@ -342,17 +342,32 @@ function regView() {
     form.addEventListener('submit', async e => {
       e.preventDefault();
       err.textContent = '';
+      if (state.submitting) return;                       // uçuşta — çift göndermeyi engelle
       if (needV) { err.textContent = L.verifyFirst; return; }
       if (form.pw.value !== form.pw2.value) { err.textContent = L.mismatch; return; }
-      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      const btn = form.querySelector('button[type=submit]');
       Object.assign(state.form, { full: form.full.value.trim() });
       if (form.email && !form.email.disabled) state.form.email = form.email.value.trim();
+      // İlerleme: düğme disable + spinner; kurulum uzun sürebildiği için metni "Gönderiliyor…" → "Firmanız kuruluyor…"
+      state.submitting = true;
+      const orig = btn ? btn.innerHTML : '';
+      const setBtn = txt => { if (btn) btn.innerHTML = `<span class="gx-spin"></span>${esc(txt)}`; };
+      if (btn) { btn.disabled = true; btn.classList.add('busy'); }
+      setBtn(L.submitting);
+      $('#prev') && ($('#prev').disabled = true);
+      const slowTimer = setTimeout(() => setBtn(L.provisioning), 1500);
       try {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
           package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: '',
           slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '' });
+        clearTimeout(slowTimer); state.submitting = false;
         state.step = 3; regView();
-      } catch (ex) { err.textContent = ex.message; if (btn) btn.disabled = false; }
+      } catch (ex) {
+        clearTimeout(slowTimer); state.submitting = false;
+        err.textContent = ex.message;
+        if (btn) { btn.disabled = false; btn.classList.remove('busy'); btn.innerHTML = orig; }
+        if ($('#prev')) $('#prev').disabled = false;
+      }
     });
     return;
   }

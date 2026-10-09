@@ -284,6 +284,18 @@ def building_day(date: str = None, user=Depends(security_user), conn=db.DB):
     return {'date': day, 'times': times, 'checks': out}
 
 
+@router.get('/building/active')
+def building_active(user=Depends(security_user), conn=db.DB):
+    """Süren (DEVAM) bina kontrolü — HANGİ GÜN/OTURUM olursa olsun (tek). Yoksa null.
+    Sistem kapansa / tarih değişse bile kullanıcı bu turu görüp bitirebilsin diye tarihten bağımsızdır."""
+    c = db.row(conn.execute(
+        '''SELECT c.*, u.full_name AS started_by_name,
+                  (SELECT COUNT(*) FROM building_check_points p WHERE p.check_id = c.id) AS points
+           FROM building_checks c LEFT JOIN users u ON u.id = c.started_by
+           WHERE c.status = 'DEVAM' ORDER BY c.id DESC LIMIT 1'''))
+    return {'check': c}
+
+
 @router.post('/building/start')
 def building_start(body: StartIn, user=Depends(security_user), conn=db.DB):
     day = _valid_day(body.date)

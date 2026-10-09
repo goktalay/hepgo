@@ -8075,3 +8075,20 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 /* Şirketten Haberler: paylaşılan metindeki tıklanabilir linkler */
 .feed-link { color: var(--blue, #2f6fed); text-decoration: underline; word-break: break-word; cursor: pointer; }
 .feed-link:hover { filter: brightness(1.12); }
+
+/* Bina Kontrol: devam eden tur sağ panel (saat + canlı süre + canlı harita + Bitir); aktif yoksa liste tam ekran */
+.bc-wrap { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+.bc-wrap.has-active { grid-template-columns: 1fr minmax(300px, 380px); }
+@media (max-width: 820px) { .bc-wrap.has-active { grid-template-columns: 1fr; } }
+.bc-side:empty { display: none; }
+.bc-side { position: sticky; top: 10px; display: flex; flex-direction: column; gap: 12px; background: var(--card, #fff); border: 1px solid var(--line, #e5ebf4); border-radius: 14px; padding: 14px; box-shadow: var(--shadow, 0 6px 20px rgba(22,64,126,.08)); }
+.bc-side-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.bc-side-info { display: flex; flex-direction: column; gap: 7px; }
+.bc-side-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.bc-elapsed { font-variant-numeric: tabular-nums; font-size: 20px; color: var(--blue, #2f6fed); font-weight: 700; }
+.bc-live-map { border-radius: 12px; overflow: hidden; min-height: 240px; border: 1px solid var(--line, #e5ebf4); background: #eef3fb; }
+.bc-live-map .bc-gmap { width: 100%; height: 260px; }
+.bc-live-map .bc-map { width: 100%; height: auto; display: block; }
+.bc-side-acts { display: flex; flex-direction: column; gap: 8px; }
+.bc-finish { width: 100%; }
+[data-theme="dark"] .bc-side { background: #101c30; }

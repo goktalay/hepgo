@@ -189,19 +189,73 @@ async function renderBuilding(body) {
     h('button', { class: 'btn', type: 'button', onclick: () => { day = bToday(); dateInput.value = day; load(); } }, 'Bugün'),
     h('span', { class: 'spacer' }),
     day === bToday() ? h('button', { class: 'btn primary', type: 'button', onclick: () => startPatrol(day, null) }, '+ Kontrol Başlat') : null, label);
-  const active = h('div');
-  const list = h('div', { class: 'cl-list' });
+  const list = h('div', { class: 'cl-list bc-list' });
+  const active = h('aside', { class: 'bc-side' });
+  const wrap = h('div', { class: 'bc-wrap' }, list, active);
 
   const elapsedText = () => (patrol ? fmtDuration(Math.floor((Date.now() - patrol.startedAt) / 1000)) : '');
 
+  let elapEl = null, posEl = null;
+  // Devam eden tur sağ panelde: başlama saati + canlı süre + canlı harita + Bitir. Bittiğinde panel gizlenir, liste tam ekran.
   function drawActive() {
-    if (!patrol) { clear(active); return; }
-    clear(active, h('div', { class: 'bc-active' },
-      h('span', { class: 'bc-rec-dot' }),
-      h('div', { class: 'grow' }, h('b', null, 'Bina turu kaydediliyor…'),
-        h('div', { class: 'small' }, t('{n} konum · {e}', { n: patrol.posted || 0, e: elapsedText() }))),
-      h('button', { class: 'btn', type: 'button', onclick: () => bcNotes(patrol.id, 'tur') }, '📝 Sorun/Not'),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => finishPatrol() }, 'Turu Bitir · ' + elapsedText())));
+    if (!patrol) { clear(active); active.dataset.pid = ''; wrap.classList.remove('has-active'); return; }
+    wrap.classList.add('has-active');
+    if (active.dataset.pid === String(patrol.id)) { tickActive(); return; }   // panel kurulu → haritayı koru, sadece güncelle
+    active.dataset.pid = String(patrol.id);
+    elapEl = h('b', { class: 'bc-elapsed' }, elapsedText());
+    posEl = h('span', null, '');
+    const mapWrap = h('div', { class: 'bc-live-map' });
+    const startedDiff = patrol.day && patrol.day !== bToday() ? ' · ' + fmtDate(patrol.day) : '';
+    clear(active,
+      h('div', { class: 'bc-side-head' }, h('span', { class: 'bc-rec-dot' }), h('b', null, 'Bina turu sürüyor')),
+      h('div', { class: 'bc-side-info' },
+        h('div', { class: 'bc-side-row' }, h('span', { class: 'small muted' }, 'Başlama saati'), h('b', null, bHM(patrol.startedAt) + startedDiff)),
+        h('div', { class: 'bc-side-row' }, h('span', { class: 'small muted' }, 'Geçen süre'), elapEl),
+        h('div', { class: 'bc-side-row' }, h('span', { class: 'small muted' }, 'Kayıtlı konum'), posEl)),
+      mapWrap,
+      h('div', { class: 'bc-side-acts' },
+        h('button', { class: 'btn', type: 'button', onclick: () => bcNotes(patrol.id, 'tur') }, '📝 Sorun / Not'),
+        h('button', { class: 'btn danger btn-lg bc-finish', type: 'button', onclick: () => finishPatrol() }, 'Turu Bitir')));
+    buildLiveMap(mapWrap);
+    tickActive();
+  }
+  function tickActive() {
+    if (!patrol) return;
+    if (elapEl) elapEl.textContent = elapsedText();
+    if (posEl) posEl.textContent = t('{n} nokta', { n: patrol.posted || 0 });
+    updateLiveMap();
+  }
+  // Canlı harita: tur boyunca kaydedilen noktalarla polyline; son nokta kırmızı işaretle merkezlenir. Anahtar yoksa SVG.
+  function buildLiveMap(container) {
+    patrol.livePath = patrol.livePath || [];
+    clear(container, h('div', { class: 'small muted', style: { padding: '12px' } }, 'Harita yükleniyor…'));
+    loadMaps().then(maps => {
+      if (!patrol) return;
+      if (!maps) { renderLiveSvg(container); return; }
+      const mapEl = h('div', { class: 'bc-gmap' });
+      clear(container, mapEl);
+      const start = patrol.livePath[patrol.livePath.length - 1] || patrol.lastPos || { lat: 39, lng: 35 };
+      patrol.liveMap = new maps.Map(mapEl, { mapTypeId: 'terrain', center: { lat: start.lat, lng: start.lng }, zoom: 18, mapTypeControl: true, streetViewControl: false, fullscreenControl: true, gestureHandling: 'cooperative' });
+      patrol.livePoly = new maps.Polyline({ path: patrol.livePath.map(p => ({ lat: p.lat, lng: p.lng })), map: patrol.liveMap, strokeColor: '#2563eb', strokeWeight: 4, strokeOpacity: 0.9 });
+      patrol.liveMarker = new maps.Marker({ position: { lat: start.lat, lng: start.lng }, map: patrol.liveMap, title: 'Şu an', icon: { path: maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#dc2626', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
+      updateLiveMap();
+    }).catch(() => renderLiveSvg(container));
+  }
+  function updateLiveMap() {
+    if (!patrol) return;
+    const path = (patrol.livePath || []).map(p => ({ lat: p.lat, lng: p.lng }));
+    if (patrol.livePoly) {
+      patrol.livePoly.setPath(path);
+      const last = path[path.length - 1] || patrol.lastPos;
+      if (last && patrol.liveMarker) { patrol.liveMarker.setPosition(last); if (patrol.liveMap) patrol.liveMap.panTo(last); }
+    } else if (patrol._svgWrap) {
+      renderLiveSvg(patrol._svgWrap);
+    }
+  }
+  function renderLiveSvg(container) {
+    patrol._svgWrap = container;
+    const pts = patrol.livePath || [];
+    clear(container, pts.length ? trackSvg(pts) : h('div', { class: 'small muted', style: { padding: '14px' } }, 'Konum bekleniyor…'));
   }
 
   // Süren turun "Bitir" düğmelerindeki sayacı (hem banner hem satır) her saniye güncelle
@@ -221,7 +275,7 @@ async function renderBuilding(body) {
         patrol.lastPost = Date.now();
         const p = patrol.lastPos;
         api.post(`/api/security/building/${patrol.id}/point`, { lat: p.lat, lng: p.lng, acc: p.acc })
-          .then(() => { patrol.posted++; }).catch(() => {});
+          .then(() => { patrol.posted++; (patrol.livePath = patrol.livePath || []).push({ lat: p.lat, lng: p.lng }); }).catch(() => {});
       }
       drawActive(); updateStopBtns();
     }, 1000);
@@ -247,14 +301,22 @@ async function renderBuilding(body) {
         h('div', { class: 'bc-acts' }, acts));
     });
     clear(list, rows.length ? rows : h('div', { class: 'card empty' }, 'Bugün için planlı kontrol yok. Saatleri Program Ayarları › Modül Ayarları › Güvenlik’ten ekleyin ya da “Kontrol Başlat” deyin.'));
-    // Sayfa yenilense / program yeniden başlasa bile süren turu sunucudan geri yükle: Bitir düğmesi aktif olur
-    const ongoing = d.checks.find(c => c.status === 'DEVAM');
-    if (ongoing && !patrol) resumePatrol(ongoing);
+    // Süren turu TARİHTEN BAĞIMSIZ geri yükle (sistem kapansa / gün değişse bile Bitir aktif kalsın)
+    checkActive();
+  }
+
+  async function checkActive() {
+    if (patrol) { drawActive(); return; }
+    let a;
+    try { a = await api.get('/api/security/building/active'); } catch { return drawActive(); }
+    if (a.check) resumePatrol(a.check);
     else drawActive();
   }
 
-  function resumePatrol(c) {
-    patrol = { id: c.id, startedAt: new Date(c.started_at).getTime() || Date.now(), posted: c.points || 0, lastPost: 0, lastPos: null };
+  async function resumePatrol(c) {
+    patrol = { id: c.id, day: c.day, startedAt: new Date(c.started_at).getTime() || Date.now(), posted: c.points || 0, lastPost: 0, lastPos: null, livePath: [] };
+    try { const tr = await api.get(`/api/security/building/${c.id}/track`); patrol.livePath = (tr.points || []).map(p => ({ lat: p.lat, lng: p.lng })); } catch { /* */ }
+    if (!patrol) return;
     startTracking();
     drawActive();
   }
@@ -264,7 +326,7 @@ async function renderBuilding(body) {
     if (!navigator.geolocation) { toast('Bu cihaz konum (GPS) desteklemiyor', 'err'); return; }
     let r;
     try { r = await api.post('/api/security/building/start', { date: d, slot }); } catch (err) { return toastError(err); }
-    patrol = { id: r.id, startedAt: Date.now(), posted: 0, lastPost: 0, lastPos: null };
+    patrol = { id: r.id, day: d, startedAt: Date.now(), posted: 0, lastPost: 0, lastPos: null, livePath: [] };
     startTracking();
     toast('Bina turu başladı · telefonla binanın etrafını dolaşın');
     load();
@@ -346,7 +408,7 @@ async function renderBuilding(body) {
       actions: [{ label: 'Kapat' }] });
   }
 
-  clear(body, bar, active, list);
+  clear(body, bar, wrap);
   load();
 }
 

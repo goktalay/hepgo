@@ -74,6 +74,10 @@ def location_ping(body: LocationIn, user=Depends(auth.current_user), conn=db.DB)
     """Mobil uygulamadan (arkaplan) gelen konum. Kişi başına en son ~500 kayıt tutulur."""
     if not (-90 <= body.lat <= 90 and -180 <= body.lng <= 180):
         raise HTTPException(400, 'Geçersiz koordinat')
+    # MASTER kapatması: bu kullanıcının konumu HİÇ alınmaz (mesai/görev/rol/rıza fark etmez, koşulsuz)
+    off = conn.execute('SELECT location_off FROM users WHERE id = ?', (user['id'],)).fetchone()
+    if off and off[0]:
+        return {'ok': False, 'off': True}
     c = _location_consent(conn, user['id'])   # KVKK: açık rıza yoksa konum SAKLANMAZ
     if not (c and c.get('granted')):
         return {'ok': False, 'consent': False}
@@ -106,6 +110,7 @@ def location_latest(user=Depends(auth.current_user), conn=db.DB):
         FROM location_pings lp
         JOIN (SELECT user_id, MAX(id) AS mid FROM location_pings GROUP BY user_id) m ON m.mid = lp.id
         JOIN users u ON u.id = lp.user_id
+        WHERE u.location_off = 0
         ORDER BY lp.at DESC'''))
     return {'people': rows}
 

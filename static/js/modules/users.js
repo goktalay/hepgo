@@ -99,6 +99,7 @@ function formFields(user, ctx) {
     password: h('input', { class: 'input', type: 'password', autocomplete: 'new-password' }),
     active: h('input', { type: 'checkbox', checked: user ? !!user.active : true }),
     ai_offtopic: h('input', { type: 'checkbox', checked: user ? user.ai_offtopic !== 0 : true }),
+    location_off: h('input', { type: 'checkbox', checked: user ? !!user.location_off : false }),
     roles: ctx.meta.roles.map(r => [r, h('input', { type: 'checkbox', checked: !!user?.roles.includes(r) })]),
   };
   const el = h('div', null,
@@ -119,7 +120,13 @@ function formFields(user, ctx) {
       h('p', { class: 'uf-info' },
         'Asistan (Kubbe) sistemle ilgili soruları her kullanıcıya, yalnızca kullanıcının yetkili olduğu veriler üzerinden yanıtlar. ',
         'Bu seçenek açıksa kullanıcı sistem dışı genel sorular da sorabilir (ör. genel bilgi, çeviri, metin yazma); kapalıysa asistan bu tür soruları kibarca geri çevirir. ',
-        'Tüm sorular kullanıcının aylık token kotasından düşer (Program Ayarları › Yapay Zeka).')));
+        'Tüm sorular kullanıcının aylık token kotasından düşer (Program Ayarları › Yapay Zeka).')),
+    h('fieldset', { class: 'uf-group' }, h('legend', null, 'Konum'),
+      h('label', { class: 'check' }, f.location_off, h('b', null, 'Konumu kapat')),
+      h('p', { class: 'uf-info' },
+        'Açıkken bu kullanıcının konum bilgisi HİÇ alınmaz: mesai, görev ya da rol fark etmeksizin konum kaydedilmez ve ',
+        'Canlı Konum haritasında görünmez. Açtığınızda kullanıcının geçmiş konum kayıtları da silinir. ',
+        'Bu, kullanıcının kendi “mesai dışında konumu kapat” ayarından bağımsız, yönetici seviyesinde bir kapatmadır.')));
   const value = () => ({
     username: f.username.value.trim(),
     full_name: f.full_name.value.trim(),
@@ -127,6 +134,7 @@ function formFields(user, ctx) {
     password: f.password.value || null,
     active: f.active.checked,
     ai_offtopic: f.ai_offtopic.checked,
+    location_off: f.location_off.checked,
     roles: f.roles.filter(([, cb]) => cb.checked).map(([r]) => r),
   });
   return { el, value };

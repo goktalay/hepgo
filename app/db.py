@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     active        INTEGER NOT NULL DEFAULT 1,
     last_seen     TEXT,
     prefs         TEXT,
+    location_off  INTEGER NOT NULL DEFAULT 0,   -- MASTER: konum takibi tamamen kapalı (hiç kaydedilmez, haritada görünmez)
     created_at    TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS user_roles (
@@ -2821,6 +2822,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE user_tasks ADD COLUMN status TEXT')
     if utcols and 'reason' not in utcols:           # tek seferlik görev: red nedeni
         conn.execute('ALTER TABLE user_tasks ADD COLUMN reason TEXT')
+    if 'location_off' not in {r[1] for r in conn.execute('PRAGMA table_info(users)')}:   # MASTER: konum takibi tamamen kapalı
+        conn.execute('ALTER TABLE users ADD COLUMN location_off INTEGER NOT NULL DEFAULT 0')
     ulcols = {r[1] for r in conn.execute('PRAGMA table_info(user_task_log)')}
     if ulcols and 'status' not in ulcols:           # görev tamamlama/red durumu
         conn.execute("ALTER TABLE user_task_log ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")

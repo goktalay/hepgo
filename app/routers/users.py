@@ -20,6 +20,7 @@ class UserIn(BaseModel):
     active: bool = True
     password: Optional[str] = None
     ai_offtopic: bool = True   # yapay zekaya sistem dışı soru sorabilme
+    location_off: bool = False   # MASTER: konum takibi tamamen kapalı (hiç kaydedilmez, haritada görünmez)
 
 
 def _validate(conn, body, user_id=None, actor=None):
@@ -106,9 +107,9 @@ def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
     if not body.password:
         raise HTTPException(400, 'Yeni kullanıcı için şifre zorunlu')
     cur = conn.execute(
-        'INSERT INTO users (username, password_hash, full_name, phone, active, created_at, must_change_password) VALUES (?,?,?,?,?,?,1)',
+        'INSERT INTO users (username, password_hash, full_name, phone, active, location_off, created_at, must_change_password) VALUES (?,?,?,?,?,?,?,1)',
         (body.username.strip(), auth.hash_password(body.password), body.full_name.strip(),
-         body.phone, int(body.active), db.now()))
+         body.phone, int(body.active), int(body.location_off), db.now()))
     uid = cur.lastrowid
     policy.record_history(conn, uid, conn.execute('SELECT password_hash FROM users WHERE id = ?', (uid,)).fetchone()[0])
     conn.executemany('INSERT INTO user_roles (user_id, role) VALUES (?,?)', [(uid, r) for r in set(body.roles)])
@@ -119,7 +120,7 @@ def create_user(body: UserIn, user=Depends(admin_only), conn=db.DB):
 
 @router.get('/{uid}')
 def get_user(uid: int, user=Depends(admin_only), conn=db.DB):
-    u = db.row(conn.execute('SELECT id, username, full_name, phone, photo, active, created_at, ai_offtopic FROM users '
+    u = db.row(conn.execute('SELECT id, username, full_name, phone, photo, active, created_at, ai_offtopic, location_off FROM users '
                             'WHERE id = ? AND deleted_at IS NULL', (uid,)))
     if not u:
         raise HTTPException(404, 'Kullanıcı bulunamadı')
@@ -136,8 +137,10 @@ def update_user(uid: int, body: UserIn, user=Depends(admin_only), conn=db.DB):
     _validate(conn, body, uid, actor=user)
     if uid == user['id'] and (auth.ADMIN not in body.roles or not body.active):
         raise HTTPException(400, 'Kendi yönetici yetkinizi veya hesabınızı kapatamazsınız')
-    conn.execute('UPDATE users SET username = ?, full_name = ?, phone = ?, active = ?, ai_offtopic = ? WHERE id = ?',
-                 (body.username.strip(), body.full_name.strip(), body.phone, int(body.active), int(body.ai_offtopic), uid))
+    conn.execute('UPDATE users SET username = ?, full_name = ?, phone = ?, active = ?, ai_offtopic = ?, location_off = ? WHERE id = ?',
+                 (body.username.strip(), body.full_name.strip(), body.phone, int(body.active), int(body.ai_offtopic), int(body.location_off), uid))
+    if body.location_off:   # konum kapatıldıysa geçmiş konum kayıtlarını da sil ("hiç alınmasın")
+        conn.execute('DELETE FROM location_pings WHERE user_id = ?', (uid,))
     conn.execute('DELETE FROM user_roles WHERE user_id = ?', (uid,))
     conn.executemany('INSERT INTO user_roles (user_id, role) VALUES (?,?)', [(uid, r) for r in set(body.roles)])
     if body.password:

@@ -431,8 +431,15 @@ def send_to_printer(oid: int, part_id: str, body: SendIn, user=Depends(part_oper
         busy = db.row(conn.execute('SELECT o.code, op.part_id FROM order_parts op JOIN orders o ON o.id = op.order_id WHERE op.id = ?', (printer['current_part_id'],)))
         if busy:
             raise HTTPException(409, f'{printer["name"]} meşgul: {busy["code"]} / {busy["part_id"]}')
-    gcode = conn.execute('SELECT gcode_file FROM products WHERE schema = ?', (f'part-{part_id}',)).fetchone()
-    gcode_rel = gcode[0] if gcode else None
+    # G-code arama: önce parça yedeği kaydı (CAYMAZ alt-parçaları: schema='part-<part_id>').
+    # Böyle bir kayıt YOKSA bu tek-parçalı bir üründür (yarı mamul / sarf / custom) → G-code siparişin
+    # kendi ürün satırındadır; oraya düşeriz (G-code ürüne id ile yazılıyor, schema'ya göre değil).
+    part_row = db.row(conn.execute('SELECT gcode_file FROM products WHERE schema = ?', (f'part-{part_id}',)))
+    if part_row is not None:
+        gcode_rel = part_row.get('gcode_file')
+    else:
+        prow = db.row(conn.execute('SELECT p.gcode_file FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?', (oid,)))
+        gcode_rel = prow.get('gcode_file') if prow else None
     if not gcode_rel:
         raise HTTPException(400, 'Bu parçanın G-code dosyası sistemde tanımlı değil')
     last = conn.execute('SELECT MAX(at) FROM part_events WHERE order_part_id = ?', (op['id'],)).fetchone()[0]

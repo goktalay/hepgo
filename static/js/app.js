@@ -279,7 +279,7 @@ function renderLogin() {
   };
   const body = h('div', { class: 'login-body' });
   const wl = ctx.meta?.white_label;
-  const brandSrc = ctx.meta?.logo_url || '/static/img/logo-login.png';
+  const brandSrc = ctx.meta?.logo_url || '/static/img/hepgo-logo.png';
   const brandTitle = wl ? (ctx.meta.company || '') : 'HEPGO ERP';
   const logoImg = h('img', { src: brandSrc, alt: ctx.meta?.company || '' });
   const titleEl = h('h1', null, brandTitle);
@@ -296,7 +296,7 @@ function renderLogin() {
   };
   // Firma değiştirici: HEPGO markalı başlık + hatırlanan firmalar / adresle giriş
   const showSwitcher = () => {
-    logoImg.src = '/static/img/logo-login.png'; logoImg.alt = 'HEPGO'; titleEl.textContent = 'Şirket değiştir';
+    logoImg.src = '/static/img/hepgo-logo.png'; logoImg.alt = 'HEPGO'; titleEl.textContent = 'Şirket değiştir';
     if (homeLink) homeLink.style.display = 'none'; switchLink.style.display = 'none';
     companySwitcher(body, { onBack: showForm });
   };
@@ -377,7 +377,7 @@ function renderForcePassword() {
     meter.className = `pw-meter s${score}`;
   });
   const form = h('form', { class: 'card login force-pw' },
-    h('img', { src: ctx.meta?.logo_url || '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
+    h('img', { src: ctx.meta?.logo_url || '/static/img/hepgo-logo.png', alt: ctx.meta?.company || '' }),
     h('h1', null, 'Şifrenizi değiştirin'),
     h('p', { class: 'muted' }, `Merhaba ${ctx.user.full_name.split(' ')[0]}, güvenliğiniz için size verilen şifreyi ilk girişte kendi şifrenizle değiştirmeniz gerekiyor.`),
     field('Mevcut (size verilen) şifre', current),
@@ -425,7 +425,7 @@ async function renderKvkkConsent() {
     } catch (err) { toastError(err); ok.disabled = false; }
   });
   const form = h('div', { class: 'card login force-pw' },
-    h('img', { src: ctx.meta?.logo_url || '/static/img/logo-login.png', alt: ctx.meta?.company || '' }),
+    h('img', { src: ctx.meta?.logo_url || '/static/img/hepgo-logo.png', alt: ctx.meta?.company || '' }),
     h('h1', null, 'Kişisel Verilerin Korunması'),
     h('p', { class: 'muted' }, `Merhaba ${(ctx.user.full_name || '').split(' ')[0]}, devam etmeden önce aşağıdaki aydınlatma ve açık rıza metnini onaylamanız gerekiyor.`),
     box,
@@ -867,7 +867,7 @@ function renderShell() {
   clear(root, h('div', { class: 'shell' },
     h('header', { class: 'app-header' },
       h('a', { class: 'brand', href: '#/' },
-        h('img', { src: ctx.meta?.logo_url || '/static/img/logo.png', alt: ctx.meta?.company || '' }),
+        h('img', { src: ctx.meta?.logo_url || '/static/img/hepgo-logo.png', alt: ctx.meta?.company || '' }),
         ctx.meta?.white_label   // firma kendi markası: HEPGO yerine firma adı
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
@@ -1113,7 +1113,7 @@ function brandBadge(ctx) {
     if (pop) return;
     pop = h('div', { class: 'sb-pop fb-pop', role: 'dialog', onclick: e => e.stopPropagation(),
       onmouseenter: () => clearTimeout(closeTimer), onmouseleave: () => { if (hover) closeTimer = setTimeout(close, 300); } },
-      h('img', { class: 'fb-logo', src: ctx.meta?.logo_url || '/static/img/logo.png', alt: company }),
+      h('img', { class: 'fb-logo', src: ctx.meta?.logo_url || '/static/img/hepgo-logo.png', alt: company }),
       h('div', { class: 'fb-title' }, company),
       h('div', { class: 'fb-by' }, h('span', { class: 'fb-by-label' }, 'Sistemi tasarlayan'), h('b', null, 'Muhammed Kaderoğlu')),
       h('div', { class: 'fb-copy' }, `© ${year} · Tüm hakları saklıdır`));

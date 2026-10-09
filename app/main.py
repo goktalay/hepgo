@@ -337,7 +337,7 @@ _splash_cache = {}
 
 def _splash_logo():
     """Açılış ekranı logosu: firmanın logosundan küçültülmüş WebP, sayfaya gömülü (data URI) → ağ beklemeden ilk anda görünür."""
-    src = config.STATIC_DIR / 'img' / 'logo.png'
+    src = config.STATIC_DIR / 'img' / 'hepgo-logo.png'
     if config.BRAND_DIR and (config.BRAND_DIR / 'img' / 'logo.png').is_file():
         src = config.BRAND_DIR / 'img' / 'logo.png'
     key = (str(src), src.stat().st_mtime_ns)
@@ -384,7 +384,7 @@ def _brand_head(html, request, page_title=None, description=None):
 def _spa(request, page_title=None, description=None):
     html = (config.STATIC_DIR / 'index.html').read_text(encoding='utf-8')
     try:
-        html = html.replace('class="sp-logo" src="/static/img/logo.png"', f'class="sp-logo" src="{_splash_logo()}"')
+        html = html.replace('class="sp-logo" src="/static/img/hepgo-logo.png"', f'class="sp-logo" src="{_splash_logo()}"')
     except Exception:   # noqa: BLE001 — logo işlenemezse normal adresten yüklenir
         pass
     html = _brand_head(html, request, page_title, description)

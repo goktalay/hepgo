@@ -694,11 +694,20 @@ def company_suspend(cid: int, request: Request):
 
 @app.delete('/api/companies/{cid}')
 def company_delete(cid: int, request: Request):
+    """Firmayı siler + OTOMATİK DEPROVISION: servis kaldırılır, soket + Cloudflare ingress/DNS temizlenir
+    (cloudflared reload — kesintisiz). Veri klasörü KORUNUR (elle silinir). Çekirdek firmalar (gokkubbe/turkbey…) korunur."""
     current(request)
+    detail = {}
     with db.connect() as conn:
+        c = db.company_public(db.row(conn, 'SELECT * FROM companies WHERE id=?', (cid,)) or {})
+        if c and c.get('slug') and c['slug'] not in RESERVED_SLUGS:
+            try:
+                _, detail = provision.deprovision(conn, c)   # servis + soket + ingress/DNS (veri korunur)
+            except Exception as e:   # noqa: BLE001 — deprovision hatası silmeyi engellemesin
+                detail = {'deprovision_error': str(e)}
         conn.execute('DELETE FROM companies WHERE id=?', (cid,))
         conn.commit()
-    return {'ok': True}
+    return {'ok': True, 'deprovisioned': detail}
 
 
 @app.get('/api/companies/{cid}/offline-package')

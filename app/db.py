@@ -1400,7 +1400,8 @@ CREATE TABLE IF NOT EXISTS printers (
     live_file       TEXT,
     live_source     TEXT,
     last_seen       TEXT,
-    maint_since     TEXT          -- BAKIM modu: bakıma alındığı an (NULL = hatta); bakımdaki süre arıza/kayıp sayılmaz
+    maint_since     TEXT,         -- BAKIM modu: bakıma alındığı an (NULL = hatta); bakımdaki süre arıza/kayıp sayılmaz
+    arge_since      TEXT          -- AR-GE modu: Ar-Ge'ye alındığı an (NULL = hatta); Ar-Ge'deki süre hata/arıza sayılmaz
 );
 
 -- Saha görevleri. status:
@@ -2778,6 +2779,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE printers ADD COLUMN live_since TEXT')
     if 'maint_since' not in {r[1] for r in conn.execute('PRAGMA table_info(printers)')}:   # BAKIM modu: personel yazıcıyı bakıma aldığı an (NULL = hatta)
         conn.execute('ALTER TABLE printers ADD COLUMN maint_since TEXT')
+    if 'arge_since' not in {r[1] for r in conn.execute('PRAGMA table_info(printers)')}:    # AR-GE modu: yazıcı Ar-Ge'ye alındığı an (NULL = hatta); hata/arıza sayılmaz
+        conn.execute('ALTER TABLE printers ADD COLUMN arge_since TEXT')
     pcols = {r[1] for r in conn.execute('PRAGMA table_info(printers)')}
     if pcols and 'mac' not in pcols:        # yazıcının kablolu ağ MAC'i (kalıcı kimlik; ağ adı K2Plus-XXXX son iki bayttan türer)
         conn.execute('ALTER TABLE printers ADD COLUMN mac TEXT')

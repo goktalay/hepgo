@@ -95,7 +95,7 @@ def printer_error(conn):
            FROM printers p
            LEFT JOIN order_parts op ON op.id = p.current_part_id
            LEFT JOIN orders o ON o.id = op.order_id
-           WHERE p.live_state = 'HATA' ORDER BY p.name'''))
+           WHERE p.live_state = 'HATA' AND p.maint_since IS NULL AND p.arge_since IS NULL ORDER BY p.name'''))
 
 
 def printer_unrecorded_abort(conn):

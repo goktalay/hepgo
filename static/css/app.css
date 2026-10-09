@@ -7559,6 +7559,13 @@ tr.pr-maint { background: color-mix(in srgb, #f59e0b 12%, transparent); }
 tr.pr-maint:hover { background: color-mix(in srgb, #f59e0b 18%, transparent); }
 tr.pr-maint td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .rack-dot.s-bakim { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.3); }
+/* Ar-Ge modu (camgöbeği) — bakım gibi; hata/arıza sayılmaz */
+tr.pr-arge { background: color-mix(in srgb, #14b8a6 12%, transparent); }
+tr.pr-arge:hover { background: color-mix(in srgb, #14b8a6 18%, transparent); }
+tr.pr-arge td:first-child { box-shadow: inset 4px 0 0 #14b8a6; }
+.rack-dot.s-arge { background: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.3); }
+.badge.teal { background: #d7f5f0; border-color: #a7e8df; color: #0f766e; }
+html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54; color: #5eead4; }
 
 /* Pano Takvimim: Liste/Gün/Hafta */
 .db-cal-tabs { margin-bottom: 8px; }

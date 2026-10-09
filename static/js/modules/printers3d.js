@@ -22,7 +22,7 @@ const RACK_X = AISLE / 2 + RACK_D / 2;    // raf merkezinin koridor ortasına uz
 // Girişten (−z) içeri (+z) bakana göre: sol raf +x, sağ raf −x tarafında
 const sideX = side => (side === 'L' ? RACK_X : -RACK_X);
 export const STATE_COLORS = {
-  YAZDIRIYOR: 0x3b82f6, HAZIR: 0x22c55e, TAMAMLANDI: 0xa855f7, DURAKLADI: 0xf59e0b, HATA: 0xef4444, CEVRIMDISI: 0x4b5563, BAKIM: 0xf97316,
+  YAZDIRIYOR: 0x3b82f6, HAZIR: 0x22c55e, TAMAMLANDI: 0xa855f7, DURAKLADI: 0xf59e0b, HATA: 0xef4444, CEVRIMDISI: 0x4b5563, BAKIM: 0xf97316, ARGE: 0x14b8a6,
 };
 const SIDE_TEXT = { L: 'Sol raf', R: 'Sağ raf' };
 const LEVEL_TEXT = { 1: 'Alt kat', 2: 'Üst kat' };
@@ -61,7 +61,7 @@ export function printerRoom(opts) {
 
   // Yazıcı bilgisi: tıklanınca açılan pencere; açıkken yenilenen durumla güncellenir
   const infoBody = p => {
-    const st = p.live_state || 'CEVRIMDISI';
+    const st = p.arge_since ? 'ARGE' : (p.maint_since ? 'BAKIM' : (p.live_state || 'CEVRIMDISI'));
     return h('div', null,
       h('div', { class: 'pr3d-title' }, badge(PRINTER_STATES, st)),
       st === 'YAZDIRIYOR' || st === 'DURAKLADI' ? h('div', { class: 'print-progress', style: { margin: '6px 0 12px', maxWidth: 'none' } },
@@ -434,7 +434,7 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
     }
     for (const p of withPlace) {
       const u = units.get(p.id);
-      const st = p.live_state || 'CEVRIMDISI';
+      const st = p.arge_since ? 'ARGE' : (p.maint_since ? 'BAKIM' : (p.live_state || 'CEVRIMDISI'));
       u.state = st;
       u.light.material = stateMats[st] || stateMats.CEVRIMDISI;
       for (const m of u.shell) m.material = bodyMats[st] || bodyMats.CEVRIMDISI;
@@ -584,7 +584,7 @@ function buildRoom(stage, [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObjec
     for (const m of u.hit ? [u.hit] : []) m.visible = false;
     sc.add(u.g);
     const upd = pp => {
-      const st = pp.live_state || 'CEVRIMDISI';
+      const st = pp.arge_since ? 'ARGE' : (pp.maint_since ? 'BAKIM' : (pp.live_state || 'CEVRIMDISI'));
       u.state = st;
       u.light.material = stateMats[st] || stateMats.CEVRIMDISI;
       for (const m of u.shell) m.material = bodyMats[st] || bodyMats.CEVRIMDISI;

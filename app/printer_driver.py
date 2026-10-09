@@ -172,7 +172,7 @@ def probe(ip):
 def poll_all():
     with db.connect() as conn:
         printers = db.rows(conn.execute(
-            'SELECT id, ip, model, live_state, live_file, live_progress, live_since, current_part_id FROM printers'))
+            'SELECT id, ip, model, live_state, live_file, live_progress, live_since, current_part_id, maint_since, arge_since FROM printers'))
     if not printers:
         return
     with ThreadPoolExecutor(max_workers=16) as pool:
@@ -197,7 +197,9 @@ def detect_unrecorded_abort(conn, before, state, now):
     """Sistemde üretime başlatılmamış (kayıtsız) bir baskı bitmeden durdu: yazdırıyor / duraklatılmış iken yazıcı
     boşa geçti (iptal) ya da hata verdi. Kritik uyarı için olay kaydı açılır. Bağlantı kopması (çevrimdışı) sayılmaz;
     baskı tamamlandıysa (TAMAMLANDI) olay yoktur."""
-    if before['live_state'] not in (PRINTING, PAUSED) or state not in (IDLE, ERROR) or before['current_part_id']:
+    # Bakım / Ar-Ge modundaki yazıcıda deneme baskıları kayıtsız iptal/hata sayılmaz (alarm üretmez)
+    if before['live_state'] not in (PRINTING, PAUSED) or state not in (IDLE, ERROR) or before['current_part_id'] \
+            or before['maint_since'] or before['arge_since']:
         return
     started = before['live_since'] if before['live_state'] == PRINTING else None
     conn.execute('''INSERT INTO printer_incidents (printer_id, kind, file, progress, end_state, started_at, ended_at)

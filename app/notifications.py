@@ -110,7 +110,8 @@ def orders_overdue(conn, user):
 def printers_down(conn, user):
     """Hata bildiren ya da ağdan ulaşılamayan yazıcılar."""
     rows = db.rows(conn.execute(
-        "SELECT id, name, live_state FROM printers WHERE live_state IN ('HATA', 'CEVRIMDISI')"))
+        "SELECT id, name, live_state FROM printers WHERE live_state IN ('HATA', 'CEVRIMDISI') "
+        "AND maint_since IS NULL AND arge_since IS NULL"))
     from . import printer_layout
     rows.sort(key=lambda r: printer_layout.name_key(r['name']))
     errors = sum(r['live_state'] == 'HATA' for r in rows)

@@ -177,6 +177,29 @@ def set_maintenance(pid: int, body: MaintIn, user=Depends(printer_admin), conn=d
     return {'ok': True, 'maint_since': None if not body.on else (p['maint_since'] or db.now())}
 
 
+class ArgeIn(BaseModel):
+    on: bool
+
+
+@router.post('/{pid}/arge')
+def set_arge(pid: int, body: ArgeIn, user=Depends(printer_admin), conn=db.DB):
+    """Yazıcıyı Ar-Ge moduna al / hatta geri ver. Ar-Ge'deki yazıcı AR-GE durumunda görünür (vurgulu renk) ve
+    arıza/çevrimdışı/HATA sayılmaz — Ar-Ge denemelerinde gcode/baskı hatası alarm üretmez (bakım gibi).
+    Ar-Ge'de geçen süre takip edilir (arge_since). Üretim yetkisi olan personel yapar."""
+    p = db.row(conn.execute('SELECT id, name, arge_since FROM printers WHERE id = ?', (pid,)))
+    if not p:
+        raise HTTPException(404, 'Yazıcı bulunamadı')
+    if body.on:
+        if not p['arge_since']:
+            conn.execute('UPDATE printers SET arge_since = ? WHERE id = ?', (db.now(), pid))
+        db.audit(conn, user['id'], 'Yazıcıyı Ar-Ge moduna aldı', 'printer', pid, p['name'])
+    else:
+        conn.execute('UPDATE printers SET arge_since = NULL WHERE id = ?', (pid,))
+        db.audit(conn, user['id'], 'Yazıcıyı hatta geri verdi (Ar-Ge bitti)', 'printer', pid, p['name'])
+    conn.commit()
+    return {'ok': True, 'arge_since': None if not body.on else (p['arge_since'] or db.now())}
+
+
 @router.delete('/{pid}')
 def delete_printer(pid: int, user=Depends(printer_admin), conn=db.DB):
     p = db.row(conn.execute('SELECT * FROM printers WHERE id = ?', (pid,)))

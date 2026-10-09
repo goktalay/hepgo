@@ -50,7 +50,7 @@ function loadGridStack() {
 }
 const DEF_H = { company_news: 6, chart_production: 5, kpi_production: 3, clock: 3, weather: 3, modules: 3, calendar: 5, birthdays: 4, forecast: 3, email: 5, world_clock: 3, my_messages: 5, my_meetings: 4, quick_directory: 4, notes: 5, alarm: 4, active_users: 4, files: 4, on_duty: 4, on_leave: 4, spotify: 6, transfers: 7 };
 const dbUid = () => Math.random().toString(36).slice(2, 9);
-const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b' };
+const PRINTER_COLORS = { YAZDIRIYOR: '#3b82f6', HAZIR: '#22c55e', TAMAMLANDI: '#a855f7', DURAKLADI: '#f59e0b', HATA: '#ef4444', CEVRIMDISI: '#6b7280', BAKIM: '#f59e0b', ARGE: '#14b8a6' };
 // Spotify kutucuğu ikonları (inline SVG; markadan bağımsız basit vektörler)
 const spSvg = markup => { const t = document.createElement('template'); t.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${markup}</svg>`; return t.content.firstElementChild; };
 const SP_PLAY = () => spSvg('<path d="M8 5v14l11-7z"/>');

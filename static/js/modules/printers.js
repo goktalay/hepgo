@@ -105,7 +105,7 @@ function rackBoard(printers, onSaved) {
   const byId = new Map(printers.map(p => [p.id, p]));
   const lists = RACKS.map(() => h('div', { class: 'rack-list' }));
   const counts = RACKS.map(() => h('span', { class: 'rack-count' }));
-  const dot = p => h('span', { class: `rack-dot s-${p.maint_since ? 'bakim' : (p.live_state || 'none').toLowerCase()}`, title: p.maint_since ? 'Bakımda' : (PRINTER_STATES[p.live_state]?.label || 'Bilinmiyor') });
+  const dot = p => h('span', { class: `rack-dot s-${p.arge_since ? 'arge' : (p.maint_since ? 'bakim' : (p.live_state || 'none').toLowerCase())}`, title: p.arge_since ? 'Ar-Ge' : (p.maint_since ? 'Bakımda' : (PRINTER_STATES[p.live_state]?.label || 'Bilinmiyor')) });
   const item = p => {
     const el = h('div', { class: 'rack-item', 'data-id': p.id },
       h('span', { class: 'rack-grip', 'aria-hidden': 'true' }, '⋮⋮'), h('span', { class: 'rack-no' }), dot(p), h('b', null, p.name),
@@ -215,6 +215,7 @@ function maintDur(since) {
   return d ? `${d} g ${hh} sa` : hh ? `${hh} sa ${mm} dk` : `${mm} dk`;
 }
 function status(p) {
+  if (p.arge_since) return h('span', null, badge(PRINTER_STATES, 'ARGE'), h('span', { class: 'small muted' }, ` · ${maintDur(p.arge_since)}`));
   if (p.maint_since) return h('span', null, badge(PRINTER_STATES, 'BAKIM'), h('span', { class: 'small muted' }, ` · ${maintDur(p.maint_since)}`));
   if (!p.live_state) return h('span', { class: 'badge gray' }, 'Bilinmiyor');
   const b = badge(PRINTER_STATES, p.live_state);
@@ -225,12 +226,16 @@ async function toggleMaint(p, done) {
   try { await api.post(`/api/printers/${p.id}/maintenance`, { on: !p.maint_since }); toast(p.maint_since ? 'Yazıcı hatta alındı' : 'Yazıcı bakıma alındı'); done(); }
   catch (e) { toastError(e); }
 }
+async function toggleArge(p, done) {
+  try { await api.post(`/api/printers/${p.id}/arge`, { on: !p.arge_since }); toast(p.arge_since ? 'Yazıcı hatta alındı' : 'Yazıcı Ar-Ge moduna alındı'); done(); }
+  catch (e) { toastError(e); }
+}
 
 function table(printers, reload, canOpen) {
   return h('div', { class: 'table-wrap' }, h('table', null,
     h('thead', null, h('tr', null,
       ['Yazıcı', 'IP adresi', 'Durum', 'Son yüklenen iş', 'İş başlama', 'İş bitiş', 'Son görülme', ''].map(t => h('th', null, t)))),
-    h('tbody', null, printers.map(p => h('tr', { class: p.maint_since ? 'pr-maint' : '' },
+    h('tbody', null, printers.map(p => h('tr', { class: p.arge_since ? 'pr-arge' : (p.maint_since ? 'pr-maint' : '') },
       h('td', null, h('b', null, p.name), h('div', { class: 'small muted' }, [p.model, p.auto_added ? 'otomatik eklendi' : null].filter(Boolean).join(' · ') || '—')),
       h('td', { class: 'mono' }, p.ip),
       h('td', null, status(p),
@@ -245,6 +250,7 @@ function table(printers, reload, canOpen) {
       h('td', { class: 'muted' }, fmtDateTime(p.last_seen)),
       h('td', { class: 'num' },
         h('button', { class: `btn sm ${p.maint_since ? 'primary' : 'ghost'}`, title: p.maint_since ? 'Bakımı bitir, hatta geri ver' : 'Yazıcıyı bakıma al', onclick: () => toggleMaint(p, reload) }, p.maint_since ? 'Hatta Al' : 'Bakıma Al'),
+        h('button', { class: `btn sm ${p.arge_since ? 'primary' : 'ghost'}`, title: p.arge_since ? 'Ar-Ge bitir, hatta geri ver' : 'Yazıcıyı Ar-Ge moduna al (hata vermez)', onclick: () => toggleArge(p, reload) }, p.arge_since ? 'Hatta Al' : 'Ar-Ge'),
         h('button', { class: 'btn sm ghost', onclick: () => printerForm(p, reload) }, 'Düzenle'),
         h('button', { class: 'btn sm ghost', onclick: () => remove(p, reload) }, 'Sil')))))));
 }

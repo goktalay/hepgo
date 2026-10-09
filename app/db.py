@@ -1086,10 +1086,14 @@ CREATE TABLE IF NOT EXISTS user_tasks (
     user_id INTEGER NOT NULL REFERENCES users(id),
     title TEXT NOT NULL,
     note TEXT,
-    mandatory INTEGER NOT NULL DEFAULT 0,
-    recurring INTEGER NOT NULL DEFAULT 0,
-    due_day TEXT,
-    done_at TEXT,
+    mandatory INTEGER NOT NULL DEFAULT 0,     -- 1 = Zorunlu Görev (uyarı şeridi), 0 = Serbest Görev
+    recurring INTEGER NOT NULL DEFAULT 0,     -- 1 = tekrarlı (haftanın günleri), 0 = tek seferlik (due_day)
+    due_day TEXT,                             -- tek seferlik: tarih
+    weekdays TEXT,                            -- tekrarlı: haftanın günleri '1,2,3' (Pzt=1..Paz=7); boş = her gün
+    task_time TEXT,                           -- görev saati 'HH:MM' (zorunlu alan)
+    done_at TEXT,                             -- tek seferlik: işlem anı (tamamlama/red)
+    status TEXT,                              -- tek seferlik: 'done' / 'rejected' (NULL = bekliyor)
+    reason TEXT,                              -- tek seferlik: red nedeni
     active INTEGER NOT NULL DEFAULT 1,
     created_by INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL
@@ -1099,7 +1103,9 @@ CREATE TABLE IF NOT EXISTS user_task_log (
     id INTEGER PRIMARY KEY,
     task_id INTEGER NOT NULL REFERENCES user_tasks(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
-    done_at TEXT,
+    status TEXT NOT NULL DEFAULT 'done',      -- 'done' = yaptım, 'rejected' = reddetti
+    done_at TEXT,                             -- işlem anı (tamamlama ya da red zamanı)
+    reason TEXT,                              -- red nedeni (opsiyonel)
     note TEXT,
     UNIQUE(task_id, day)
 );
@@ -2806,6 +2812,20 @@ def _migrate(conn):
         conn.execute('ALTER TABLE printers ADD COLUMN maint_since TEXT')
     if 'arge_since' not in {r[1] for r in conn.execute('PRAGMA table_info(printers)')}:    # AR-GE modu: yazıcı Ar-Ge'ye alındığı an (NULL = hatta); hata/arıza sayılmaz
         conn.execute('ALTER TABLE printers ADD COLUMN arge_since TEXT')
+    utcols = {r[1] for r in conn.execute('PRAGMA table_info(user_tasks)')}
+    if utcols and 'weekdays' not in utcols:         # günlük görev: haftanın günleri (tekrarlı için)
+        conn.execute('ALTER TABLE user_tasks ADD COLUMN weekdays TEXT')
+    if utcols and 'task_time' not in utcols:        # günlük görev: görev saati HH:MM
+        conn.execute('ALTER TABLE user_tasks ADD COLUMN task_time TEXT')
+    if utcols and 'status' not in utcols:           # tek seferlik görev: done/rejected
+        conn.execute('ALTER TABLE user_tasks ADD COLUMN status TEXT')
+    if utcols and 'reason' not in utcols:           # tek seferlik görev: red nedeni
+        conn.execute('ALTER TABLE user_tasks ADD COLUMN reason TEXT')
+    ulcols = {r[1] for r in conn.execute('PRAGMA table_info(user_task_log)')}
+    if ulcols and 'status' not in ulcols:           # görev tamamlama/red durumu
+        conn.execute("ALTER TABLE user_task_log ADD COLUMN status TEXT NOT NULL DEFAULT 'done'")
+    if ulcols and 'reason' not in ulcols:           # red nedeni
+        conn.execute('ALTER TABLE user_task_log ADD COLUMN reason TEXT')
     pcols = {r[1] for r in conn.execute('PRAGMA table_info(printers)')}
     if pcols and 'mac' not in pcols:        # yazıcının kablolu ağ MAC'i (kalıcı kimlik; ağ adı K2Plus-XXXX son iki bayttan türer)
         conn.execute('ALTER TABLE printers ADD COLUMN mac TEXT')

@@ -1,5 +1,5 @@
-// Görevlerim: Sistem Yöneticisi tarafından bana atanan günlük görevler. "Yaptım" işaretlenene kadar durur;
-// zorunlu görevler ana ekranda ayrıca uyarı şeridiyle hatırlatılır. Tek seferlik + her gün tekrarlı görevler.
+// Görevlerim: bana atanan günlük görevler. "Yaptım" ya da "Reddet" (neden) işaretlenir; yapılana/reddedilene
+// kadar bekler. Zorunlu görevler ana ekranda ayrıca uyarı şeridiyle hatırlatılır. Tek seferlik + tekrarlı (haftanın günleri).
 import { api } from '../api.js';
 import { clear, h, pageHead, t, toastError } from '../ui.js';
 
@@ -21,20 +21,26 @@ export async function render(view) {
     h('button', { class: 'btn', type: 'button', onclick: () => { day = today(); dateInput.value = day; load(); } }, 'Bugün'),
     h('span', { class: 'spacer' }), label);
 
+  const act = async (it, action, reason) => {
+    try { await api.post(`/api/my/tasks/${it.id}/action`, { date: day, action, reason }); await load(); window.dispatchEvent(new Event('hepgo:tasks-changed')); }
+    catch (err) { toastError(err); }
+  };
+
   function row(it) {
-    const mark = async done => {
-      try { await api.post(`/api/my/tasks/${it.id}/done`, { date: day, done }); await load(); window.dispatchEvent(new Event('hepgo:tasks-changed')); }
-      catch (err) { toastError(err); }
-    };
-    return h('div', { class: `cl-item ${it.done ? 'done' : ''} ${it.mandatory && !it.done ? 'task-must' : ''}` },
-      h('button', { class: 'cl-check', type: 'button', title: it.done ? 'Geri al' : 'Yaptım işaretle', onclick: () => mark(!it.done) }, it.done ? '✓' : ''),
+    const stateLine = it.done ? t('Yaptım · {a}', { a: hm(it.at) })
+      : it.rejected ? t('Reddedildi · {a}{r}', { a: hm(it.at), r: it.reason ? ' · ' + it.reason : '' })
+        : 'Bekliyor';
+    return h('div', { class: `cl-item ${it.done ? 'done' : ''} ${it.rejected ? 'rejected' : ''} ${it.mandatory && !it.status ? 'task-must' : ''}` },
+      h('button', { class: 'cl-check', type: 'button', title: it.status ? 'Geri al' : (it.done ? 'Yapıldı' : ''), onclick: () => it.status && act(it, 'undo') }, it.done ? '✓' : (it.rejected ? '✕' : '')),
       h('div', { class: 'grow' },
         h('b', null, it.title),
-        it.mandatory ? h('span', { class: 'badge red', style: { marginLeft: '8px' } }, 'Zorunlu') : null,
-        it.recurring ? h('span', { class: 'small muted', style: { marginLeft: '6px' } }, '· her gün') : null,
+        it.task_time ? h('span', { class: 'badge blue', style: { marginLeft: '8px' } }, '🕑 ' + it.task_time) : null,
+        h('span', { class: `badge ${it.mandatory ? 'red' : 'gray'}`, style: { marginLeft: '6px' } }, it.mandatory ? 'Zorunlu' : 'Serbest'),
         it.note ? h('div', { class: 'small muted' }, it.note) : null,
-        h('div', { class: 'small muted' }, it.done ? t('Yapıldı {a}', { a: hm(it.done_at) }) : 'Bekliyor')),
-      it.done ? null : h('button', { class: 'btn sm primary', type: 'button', onclick: () => mark(true) }, 'Yaptım'));
+        h('div', { class: `small ${it.rejected ? 'rej-txt' : 'muted'}` }, stateLine)),
+      it.status ? null : h('div', { class: 'cl-acts' },
+        h('button', { class: 'btn sm primary', type: 'button', onclick: () => act(it, 'done') }, 'Yaptım'),
+        h('button', { class: 'btn sm danger', type: 'button', onclick: () => { const r = window.prompt('Reddetme nedeni (isteğe bağlı):', ''); if (r !== null) act(it, 'reject', r.trim()); } }, 'Reddet')));
   }
 
   async function load() {
@@ -43,7 +49,7 @@ export async function render(view) {
     try { d = await api.get(`/api/my/tasks?date=${day}`); } catch (err) { return clear(body, h('div', { class: 'card empty' }, err.message)); }
     if (!d.tasks.length) return clear(body, h('div', { class: 'card empty' }, 'Bu gün için size atanmış görev yok.'));
     clear(body,
-      h('div', { class: 'cl-prog' }, t('Bu gün: {a} / {b} görev tamamlandı', { a: d.total - d.pending, b: d.total }),
+      h('div', { class: 'cl-prog' }, t('Bu gün: {a} / {b} görev tamamlandı', { a: d.done, b: d.total }),
         d.pending_mandatory ? h('span', { class: 'badge red', style: { marginLeft: '10px' } }, t('{n} zorunlu bekliyor', { n: d.pending_mandatory })) : null),
       h('div', { class: 'cl-list' }, d.tasks.map(row)));
   }

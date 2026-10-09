@@ -7998,11 +7998,15 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 }
 
 /* ===== Görev Yönetimi: 4 panelli çalışma ekranı ===== */
-.tp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: start; }
-@media (max-width: 1100px) { .tp-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 620px) { .tp-grid { grid-template-columns: 1fr; } }
-.tp-panel { display: flex; flex-direction: column; background: var(--card, #fff); border: 1px solid var(--line, #e5ebf4); border-radius: 14px; overflow: hidden; min-height: 300px; max-height: 72vh; }
-.tp-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid var(--line, #e5ebf4); background: color-mix(in srgb, var(--blue, #2f6fed) 7%, transparent); font-size: 14px; font-weight: 600; }
+.tp-grid { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: 12px; align-items: start; }
+.tp-grid > .tp-panel, .tp-col { height: 72vh; }
+.tp-col { display: flex; flex-direction: column; gap: 12px; }         /* 3. sütun: Detay (üst) + Geçmiş (alt) */
+.tp-col > .tp-panel { flex: 1 1 0; min-height: 0; }                   /* her biri %50 */
+@media (max-width: 1000px) { .tp-grid { grid-template-columns: 1fr; } .tp-grid > .tp-panel, .tp-col { height: auto; } .tp-col > .tp-panel { min-height: 300px; } }
+.tp-panel { display: flex; flex-direction: column; background: var(--card, #fff); border: 1px solid var(--line, #e5ebf4); border-radius: 14px; overflow: hidden; min-height: 0; }
+.tp-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid var(--line, #e5ebf4); background: color-mix(in srgb, var(--blue, #2f6fed) 7%, transparent); font-size: 14px; font-weight: 400; }
+.tp-head svg { width: 17px; height: 17px; opacity: .7; flex: 0 0 auto; }
+.tp-title { font-weight: 400; }
 .tp-head .spacer { flex: 1; }
 .tp-body { flex: 1; overflow: auto; padding: 7px; display: flex; flex-direction: column; gap: 3px; }
 .tp-foot { padding: 7px 13px; border-top: 1px solid var(--line, #e5ebf4); font-size: 12px; color: var(--muted, #6b7280); background: rgba(127, 127, 127, .03); }
@@ -8013,6 +8017,13 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 .tp-row-meta { font-size: 12px; color: var(--muted, #6b7280); display: inline-flex; align-items: center; gap: 5px; }
 .tp-row-meta .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dot.red { background: #dc2626; } .dot.gray { background: #9ca3af; }
+/* Personel satırı: solda avatar, üstte ad, altta e-posta (ad bold DEĞİL) */
+.tp-prow { flex-direction: row; align-items: center; gap: 10px; }
+.tp-ava { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+.tp-ava-ph { display: grid; place-items: center; background: color-mix(in srgb, var(--blue, #2f6fed) 82%, #000); color: #fff; font-weight: 600; text-transform: uppercase; font-size: 15px; }
+.tp-prow-txt { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.tp-name { font-weight: 400; }
+.tp-mail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .tp-detail { padding: 6px 8px; }
 .tp-detail h3 { margin: 2px 0 12px; font-size: 16px; }
 .tp-field { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line, #eef2f7); font-size: 13.5px; }

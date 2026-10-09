@@ -3,7 +3,8 @@
 // Görev ekleme popup form ile. Görev tipi (Zorunlu/Serbest), tek seferlik (tarih) ya da tekrarlı (haftanın günleri),
 // görev saati zorunlu. Geçmişte görevi hangi gün saat kaçta tamamladı / reddetti gösterilir.
 import { api } from '../api.js';
-import { clear, h, pageHead, t, toast, toastError, confirmDialog } from '../ui.js';
+import { clear, h, pageHead, svgIcon, t, toast, toastError, confirmDialog } from '../ui.js';
+import { icons } from '../icons.js';
 
 const WD = [[1, 'Pzt'], [2, 'Sal'], [3, 'Çar'], [4, 'Per'], [5, 'Cum'], [6, 'Cmt'], [7, 'Paz']];
 const today = () => new Date().toLocaleDateString('sv');
@@ -11,10 +12,10 @@ const fmtDay = d => { const x = new Date((d || '') + 'T00:00'); return isNaN(x) 
 const hm = iso => (iso ? new Date(iso).toLocaleTimeString('tr', { hour: '2-digit', minute: '2-digit' }) : '');
 const wdLabel = csv => (csv ? csv.split(',').map(n => (WD.find(w => String(w[0]) === n.trim()) || [0, n])[1]).join(', ') : 'Her gün');
 
-function panel(title, headRight) {
+function panel(title, icon, headRight) {
   const body = h('div', { class: 'tp-body' });
   const foot = h('div', { class: 'tp-foot' }, '—');
-  const head = h('div', { class: 'tp-head' }, h('b', null, title), h('span', { class: 'spacer' }), headRight || null);
+  const head = h('div', { class: 'tp-head' }, svgIcon(icons[icon]), h('span', { class: 'tp-title' }, title), h('span', { class: 'spacer' }), headRight || null);
   const el = h('div', { class: 'tp-panel' }, head, body, foot);
   return { el, body, foot, head };
 }
@@ -22,11 +23,11 @@ function panel(title, headRight) {
 export async function render(view) {
   const st = { people: [], tasks: [], selUser: null, selTask: null };
 
-  const pPeople = panel('Personeller');
+  const pPeople = panel('Personeller', 'users');
   const addBtn = h('button', { class: 'btn sm primary', type: 'button', disabled: true }, '+ Görev Ekle');
-  const pTasks = panel('Görevler', addBtn);
-  const pDetail = panel('Görev Detayı');
-  const pLog = panel('Tamamlama / Red Geçmişi');
+  const pTasks = panel('Görevler', 'documents', addBtn);
+  const pDetail = panel('Görev Detayı', 'note');
+  const pLog = panel('Tamamlama / Red Geçmişi', 'calendar');
 
   addBtn.addEventListener('click', () => { if (st.selUser) openForm(st.selUser, null); });
 
@@ -34,9 +35,13 @@ export async function render(view) {
   async function loadPeople() {
     try { st.people = await api.get('/api/people'); } catch (err) { return clear(pPeople.body, h('div', { class: 'tp-empty' }, err.message)); }
     clear(pPeople.body, ...st.people.map(p => {
-      const el = h('button', { class: `tp-row ${st.selUser === p.id ? 'on' : ''}`, type: 'button', onclick: () => selectUser(p.id) },
-        h('b', null, p.full_name));
-      return el;
+      const ava = p.photo ? h('img', { class: 'tp-ava', src: p.photo, alt: '' })
+        : h('span', { class: 'tp-ava tp-ava-ph' }, ((p.full_name || '?').trim()[0] || '?'));
+      return h('button', { class: `tp-row tp-prow ${st.selUser === p.id ? 'on' : ''}`, type: 'button', onclick: () => selectUser(p.id) },
+        ava,
+        h('div', { class: 'tp-prow-txt' },
+          h('span', { class: 'tp-name' }, p.full_name),
+          h('span', { class: 'small muted tp-mail' }, p.username || '')));
     }));
     pPeople.foot.textContent = t('{n} personel', { n: st.people.length });
   }
@@ -166,7 +171,8 @@ export async function render(view) {
     title.focus();
   }
 
-  const grid = h('div', { class: 'tp-grid' }, pPeople.el, pTasks.el, pDetail.el, pLog.el);
+  const col3 = h('div', { class: 'tp-col' }, pDetail.el, pLog.el);   // Detay (üst %50) + Geçmiş (alt %50)
+  const grid = h('div', { class: 'tp-grid' }, pPeople.el, pTasks.el, col3);
   clear(view, pageHead('Görev Yönetimi', { back: '#/', sub: 'Kullanıcılara günlük görev atama' }), grid);
   clearDetail();
   loadPeople(); loadTasks();

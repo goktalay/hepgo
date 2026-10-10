@@ -15,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -491,7 +491,7 @@ def register_verify_code(body: VerifyCodeIn, request: Request):
 
 
 @app.post('/api/register')
-def register(body: RegisterIn, request: Request):
+def register(body: RegisterIn, request: Request, background: BackgroundTasks):
     ip = _ip(request)
     now = time.time()
     _reg[ip] = [t for t in _reg.get(ip, []) if now - t < REG_WINDOW]
@@ -568,8 +568,14 @@ def register(body: RegisterIn, request: Request):
             try:
                 c = db.company_public(db.row(conn, 'SELECT * FROM companies WHERE id=?', (cid,)))
                 c['master_secret'] = body.password          # provisioning için düz şifre
-                ok, detail = provision.provision_online(conn, c)
+                # Cloudflared reload'u BURADA yapma: reload (SIGHUP) bu register isteğinin KENDİ cloudflared
+                # bağlantısını kesip firma kurulsa bile tarayıcıda yanlış "Hata" gösteriyordu. Reload'u HTTP
+                # yanıtı gönderildikten SONRA (BackgroundTask) tetikliyoruz → yanıt sağlam döner, subdomain
+                # birkaç saniye içinde yayına girer.
+                ok, detail = provision.provision_online(conn, c, do_reload=False)
                 if ok:
+                    from . import cloudflare as _cf
+                    background.add_task(_cf.reload_tunnel)   # tünel tazeleme: yanıttan sonra, kesintisiz
                     return {'ok': True, 'application_no': f'B-{cid:05d}',
                             'domain': f'{slug}.{FIRM_BASE}', 'package': pkg_row['name'] if pkg_row else None,
                             'status': 'active', 'url': (detail.get('url') or _firm_url(c)) + '/app',

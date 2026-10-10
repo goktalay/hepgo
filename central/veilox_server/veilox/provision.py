@@ -165,8 +165,10 @@ def _helper(action, slug):
     return r
 
 
-def provision_online(conn, company):
-    """company: companies satırı (dict). Dosyaları üretir, servisi başlatır, DB'yi günceller. (ok, detail) döner."""
+def provision_online(conn, company, do_reload=True):
+    """company: companies satırı (dict). Dosyaları üretir, servisi başlatır, DB'yi günceller. (ok, detail) döner.
+    do_reload=False → cloudflared tünel RELOAD'u yapılmaz (çağıran, HTTP yanıtından sonra arka planda tetikler;
+    reload bu isteğin kendi bağlantısını keserek yanlış 'Hata' göstermesini önlemek için)."""
     import json
     from . import db
     slug = company['slug']
@@ -239,7 +241,7 @@ def provision_online(conn, company):
         from . import cloudflare as cf
         cf_host, cf_note = None, ''
         try:
-            cf_host, cf_note = cf.publish(slug, cf_service)
+            cf_host, cf_note = cf.publish(slug, cf_service, do_reload=do_reload)
             if cf_host and not url:
                 url = f'https://{cf_host}'
         except Exception as e:   # noqa: BLE001

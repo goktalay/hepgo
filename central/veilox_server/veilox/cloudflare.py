@@ -182,8 +182,9 @@ def route_dns(host):
     return ok, out
 
 
-def publish(slug, service):
+def publish(slug, service, do_reload=True):
     """Online firma için <slug>.BASE alt alan adını yayına alır: ingress (host→service) + tünel yeniden yükleme.
+    do_reload=False → ingress yazılır ama reload atlanır (çağıran reload'u sonra/arka planda yapar).
     service: Unix soket ('unix:/cfhome/.cloudflared/sockets/<slug>.sock') ya da http://127.0.0.1:port.
     DNS: *.BASE wildcard kaydı (Cloudflare panosunda tek sefer) tüm alt alanları kapsar; ayrıca per-firma
     DNS kaydı da BEST-EFFORT denenir. DNS hatası provisioning'i DURDURMAZ.
@@ -192,7 +193,7 @@ def publish(slug, service):
         return None, ''
     host = hostname(slug)
     changed = add_ingress(host, service)
-    if changed:
+    if changed and do_reload:
         reload_tunnel()
     note = ''
     try:

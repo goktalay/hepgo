@@ -179,11 +179,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
    Normal tarayıcıda env() = 0 → etkisiz; yalnız çentikli cihazda devreye girer. */
 .app-header { padding-top: env(safe-area-inset-top, 0px); height: calc(64px + env(safe-area-inset-top, 0px));
   padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
-/* Çentik/durum çubuğu alanı (safe-area top) header'ın AÇIK rengiyle dolup büyük boş beyaz şerit gibi görünmesin:
-   bu bölgeyi koyu marka rengiyle kapla (saat/ikonlar beyaz → native.js durum çubuğu stilini DARK yapar).
-   Normal tarayıcıda env()=0 → yükseklik 0, görünmez; yalnız çentikli native/PWA'da şerit oluşur. */
-.app-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0;
-  height: env(safe-area-inset-top, 0px); background: #0f1d3d; z-index: 0; }
 .app-footer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
 main#view { padding-left: calc(20px + env(safe-area-inset-left, 0px)); padding-right: calc(20px + env(safe-area-inset-right, 0px)); }
@@ -799,9 +794,12 @@ body:has(main#view.gm-view) .toasts, body:has(.gm-c) .toasts { z-index: 2300; } 
 }
 @media (max-width: 640px) {
   main#view { padding: 12px; }
-  .app-header { padding: 0 12px; }
+  /* padding KISAYOLU kullanma: üstteki env(safe-area-inset-top) payını (çentik/durum çubuğu) ezmesin → içerik
+     durum çubuğunun altına düzgün otursun. Yalnız yatay payı daralt. */
+  .app-header { padding-top: env(safe-area-inset-top, 0px); padding-bottom: 0;
+    padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
   .brand .product, .user-btn .who { display: none; }
-  .brand img { height: 40px; }
+  .brand img { height: 44px; }
   .apps-panel { width: min(332px, calc(100vw - 24px)); right: -52px; }
   .modules { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .module-btn { height: 150px; }

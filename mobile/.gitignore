@@ -3,8 +3,19 @@ node_modules/
 .DS_Store
 *.log
 
-# iOS native proje (gerekince `npx cap add ios` ile üretilir)
-ios/
+# iOS native proje: kaynağı commit edilir (CI build eder); build çöpü ios/.gitignore'da hariç tutulur.
+# Derleme çıktıları / imzalama sırları:
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/App/App/public/
+ios/DerivedData/
+ios/**/xcuserdata/
+ios/fastlane/report.xml
+ios/fastlane/Preview.html
+ios/**/*.mobileprovision
+ios/**/*.p12
+ios/**/*.cer
 
 # Android yerel/derleme (android/ kaynağı commit edilir; bunlar hariç)
 android/.gradle/

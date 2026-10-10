@@ -1,0 +1,47 @@
+name: iOS TestFlight
+
+# Elle tetiklenir (macOS dakikaları pahalı; her push'ta çalışmaz).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: JS bağımlılıkları + iOS sync
+        working-directory: mobile
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Ruby + fastlane/cocoapods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: mobile/ios/App
+
+      - name: CocoaPods
+        working-directory: mobile/ios/App
+        run: bundle exec pod install
+
+      - name: Derle ve TestFlight'a yükle
+        working-directory: mobile/ios/App
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_READONLY: 'false'
+        run: bundle exec fastlane ios beta

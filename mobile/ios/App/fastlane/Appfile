@@ -1,0 +1,2 @@
+app_identifier("com.turkbey.hepgo")
+# apple_id / team gereksiz: App Store Connect API Key ile kimlik doğrulanır (CI).

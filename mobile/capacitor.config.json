@@ -10,10 +10,12 @@
     "allowNavigation": ["app.hepgo.com", "*.hepgo.com", "hepgo.com", "www.hepgo.com", "gokkubbe.hepgo.com", "turkbey.app", "*.turkbey.app", "caymaz.app", "*.caymaz.app", "veilox.app", "*.veilox.app"]
   },
   "android": { "allowMixedContent": false },
+  "ios": { "contentInset": "never" },
   "backgroundColor": "#0f1d3d",
   "plugins": {
     "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] },
     "Geolocation": {},
-    "Network": {}
+    "Network": {},
+    "StatusBar": { "overlaysWebView": true, "style": "DARK" }
   }
 }

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HEPGO ERP — Uygulamayı Yükle</title>
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#16407e">
+<link rel="icon" href="/static/icons/favicon-64.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="HEPGO">
+<meta name="apple-mobile-web-app-title" content="HEPGO">
+<meta name="description" content="HEPGO ERP — üretim, depo, stok, saha, uçuş, firma ve evrak yönetimi">
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#e8eefc;text-align:center;
+  padding:28px 22px;background:radial-gradient(130% 150% at 0% 0%,#1e3a8a 0%,#0f1d3d 55%,#070d1c 100%)}
+.card{max-width:380px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.logo{width:96px;height:96px;border-radius:22px;box-shadow:0 14px 36px rgba(7,13,28,.55)}
+.brand{font-size:26px;font-weight:800;letter-spacing:.5px;margin:0}
+.sub{color:#aebbdc;font-size:14px;margin:0}
+a.btn{display:inline-block;height:48px;line-height:48px;padding:0 28px;border-radius:12px;
+  background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-weight:700;font-size:16px;
+  text-decoration:none;box-shadow:0 10px 26px rgba(37,99,235,.35);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="card">
+  <img class="logo" src="/static/icons/icon-192.png" alt="HEPGO">
+  <h1 class="brand">HEPGO ERP</h1>
+  <p class="sub">Fabrika Yönetim Sistemi</p>
+  <p class="sub">Uygulamayı yüklemek için tarayıcınızın menüsünden “Uygulama olarak yükle”yi seçin
+    ya da aşağıdan giriş yapın.</p>
+  <a class="btn" href="/app">Uygulamaya git</a>
+</div>
+<script>
+  // Hizmet çalışanını kaydet (kurulabilirlik + çevrimdışı kabuk)
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js'); } catch (e) {} }
+</script>
+</body>
+</html>

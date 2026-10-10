@@ -489,6 +489,16 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePopups(
 function popup(button, panel) {
   panel.hidden = true;
   popups.add(panel);
+  // Mobilde dışarı dokunma menüyü güvenilir kapatmadığından panele sağ üstte ✕ ekle (CSS ile yalnız mobilde görünür).
+  // Panel içeriği yeniden çizilebildiğinden (ör. bildirim poll'u clear ile) ✕'i MutationObserver ile tekrar ekleriz.
+  const ensureClose = () => {
+    if (panel.querySelector(':scope > .popup-close')) return;
+    const x = h('button', { class: 'popup-close', type: 'button', 'aria-label': 'Kapat',
+      onclick: e => { e.stopPropagation(); panel.hidden = true; button.setAttribute('aria-expanded', 'false'); } }, '✕');
+    panel.prepend(x);
+  };
+  ensureClose();
+  new MutationObserver(ensureClose).observe(panel, { childList: true });
   button.addEventListener('click', e => {
     e.stopPropagation();
     closePopups(panel);

@@ -243,7 +243,7 @@ async def gateway(request: Request) -> Response:
     # Diğer tüm yollar: şeffaf vekil
     if not tvalid:
         # app-düzeyi statik dosyalar (tüm firmalarda aynı) firma seçilmeden de sunulur → asla HTML dönmesin
-        if path.startswith('/static/') or path in ('/favicon.ico', '/manifest.json', '/sw.js'):
+        if path.startswith('/static/') or path in ('/favicon.ico', '/manifest.json', '/manifest.webmanifest', '/sw.js'):
             return await proxy_to(DEFAULT_SOCK, request, path)
         return Response('Firma seçilmedi', status_code=409, headers=dict(NOSTORE))
     return await proxy_to(TENANTS[tenant]['sock'], request, path)

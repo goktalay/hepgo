@@ -1,6 +1,5 @@
 name: iOS TestFlight
 
-# Elle tetiklenir (macOS dakikaları pahalı; her push'ta çalışmaz).
 on:
   workflow_dispatch:
 
@@ -23,14 +22,11 @@ jobs:
           npm ci
           npx cap sync ios
 
-      - name: Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-          bundler-cache: false
-
-      - name: fastlane + cocoapods kur
-        run: gem install fastlane cocoapods --no-document
+      - name: Sürümleri göster
+        run: |
+          ruby --version
+          fastlane --version | tail -2
+          pod --version
 
       - name: CocoaPods
         working-directory: mobile/ios/App

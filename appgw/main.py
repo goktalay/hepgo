@@ -69,6 +69,14 @@ def login_page(firm_name: str | None) -> HTMLResponse:
                 '<a href="/_firma">değiştir</a></div>') if firm_name else ''
     html = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>HEPGO — Giriş</title>
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#16407e">
+<link rel="icon" href="/static/icons/favicon-64.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="HEPGO">
+<meta name="apple-mobile-web-app-title" content="HEPGO">
 <style>:root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;min-height:100dvh;display:flex;
 align-items:center;justify-content:center;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#e8eefc;
 padding:max(28px,env(safe-area-inset-top)) 22px max(28px,env(safe-area-inset-bottom));

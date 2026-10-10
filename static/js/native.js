@@ -135,14 +135,18 @@
   function rgbHex(m) { return '#' + m.slice(0, 3).map(function (x) { return ('0' + (Math.round(+x)).toString(16)).slice(-2); }).join(''); }
   function syncStatusBar() {
     var SB = P.StatusBar; if (!SB) return;
-    try { SB.setOverlaysWebView && SB.setOverlaysWebView({ overlay: false }); } catch (e) {}
+    // iOS: overlay=TRUE → WebView durum çubuğu altına uzanır; CSS .app-header padding-top: env(safe-area-inset-top)
+    //   başlığı güvenli alana iter ve başlık rengi durum çubuğu alanını kaplar (üstteki beyaz BOŞLUK giderilir).
+    // Android: overlay=false + setBackgroundColor ile durum çubuğu başlık rengini alır (iOS'ta setBackgroundColor yok).
+    var isIOS = (Cap.getPlatform && Cap.getPlatform() === 'ios');
+    try { SB.setOverlaysWebView && SB.setOverlaysWebView({ overlay: isIOS }); } catch (e) {}
     try {
       var hdr = document.querySelector('.app-header');
       var bg = getComputedStyle(hdr || document.body).backgroundColor || '';
       var m = (bg.match(/\d+(?:\.\d+)?/g) || ['255', '255', '255']).map(Number);
       if (m.length >= 4 && m[3] === 0) m = [15, 29, 61];   // şeffafsa koyu varsay
       var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
-      try { SB.setBackgroundColor && SB.setBackgroundColor({ color: rgbHex(m) }); } catch (e) {}
+      if (!isIOS) { try { SB.setBackgroundColor && SB.setBackgroundColor({ color: rgbHex(m) }); } catch (e) {} }
       try { SB.setStyle && SB.setStyle({ style: lum > 0.55 ? 'LIGHT' : 'DARK' }); } catch (e) {}   // LIGHT=koyu ikon
     } catch (e) {}
   }

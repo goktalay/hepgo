@@ -478,3 +478,21 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .gx-spin{display:inline-block;width:16px;height:16px;margin-right:8px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;vertical-align:-3px;animation:gxspin .7s linear infinite}
 @keyframes gxspin{to{transform:rotate(360deg)}}
 .btn.busy{opacity:.92;cursor:progress;pointer-events:none}
+
+/* ===== Dil menüsü (7 dil) + RTL (Arapça) ===== */
+.lang-wrap { position: relative; }
+.lang-btn { width: auto; min-width: 44px; padding: 0 12px; }
+.lang-menu { position: absolute; top: calc(100% + 8px); right: 0; min-width: 160px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column; z-index: 60; }
+.lang-menu[hidden] { display: none; }
+.lang-opt { text-align: left; padding: 9px 12px; border: 0; background: none; border-radius: 9px; cursor: pointer;
+  font: inherit; font-size: 14.5px; color: var(--sub); }
+.lang-opt:hover { background: var(--soft); color: var(--ink); }
+.lang-opt.on { color: var(--blue); font-weight: 700; }
+
+/* RTL (dir=rtl): temel yön düzeltmeleri — çoğu flex satırı otomatik döner */
+[dir="rtl"] .nav-links { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .lang-menu { right: auto; left: 0; }
+[dir="rtl"] .lang-opt { text-align: right; }
+[dir="rtl"] .hero-points li, [dir="rtl"] .ticks li { text-align: right; }
+[dir="rtl"] .pc-table th[scope="row"], [dir="rtl"] .pc-corner { text-align: right; }

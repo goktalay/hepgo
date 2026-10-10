@@ -5,7 +5,14 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const svg = d => `<svg viewBox="0 0 24 24">${d}</svg>`;
 const nf = new Intl.NumberFormat('tr-TR');
-let lang = (() => { try { return localStorage.getItem('veilox.lang') === 'en' ? 'en' : 'tr'; } catch { return 'tr'; } })();
+const LANGS = [['tr', 'Türkçe'], ['en', 'English'], ['de', 'Deutsch'], ['fr', 'Français'], ['es', 'Español'], ['ar', 'العربية'], ['ru', 'Русский']];
+const LANG_CODES = LANGS.map(l => l[0]); const RTL = new Set(['ar']);
+let lang = (() => {   // kayıtlı dil → tarayıcı dili (bizim 7 dilden biriyse) → tr; landing ile paylaşılan 'veilox.lang'
+  try {
+    const s = localStorage.getItem('veilox.lang'); if (s && LANG_CODES.includes(s)) return s;
+    for (const n of (navigator.languages || [navigator.language || ''])) { const c = (n || '').slice(0, 2).toLowerCase(); if (LANG_CODES.includes(c)) return c; }
+  } catch { /* */ } return 'tr';
+})();
 let theme = (() => { try { return localStorage.getItem('veilox.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch { return 'light'; } })();
 let base = 'hepgo.com';
 
@@ -68,8 +75,153 @@ const T = {
     pwWeak: 'Weak', pwOk: 'Fair', pwStrong: 'Strong', mismatch: 'Passwords do not match', required: 'Please fill this in',
     pending: 'Under review', offline: 'On-premise', unavailable: 'Unavailable', created: 'Applied',
   },
+  de: {
+    back: 'Startseite', title: 'Firmen-Anmeldung', tabLogin: 'Anmelden', tabReg: 'Firma registrieren',
+    sideH: 'Ihre ganze Firma auf einem Panel', sideP: 'Von der Produktion zum Außendienst, von Finanzen zu Personal; Ihr Team meldet sich mit seiner Rolle an, Sie steuern alles von einem Ort.',
+    sideList: ['Eigene Adresse und Benutzer', 'Live-Support und Bildschirmfreigabe mit unserem Team', 'Mitgliedschaft, Zahlungen und Verträge in Ihrem Panel', 'Ihre Daten gehören Ihnen — die Zentrale sieht sie nicht'],
+    loginH: 'Bei Ihrer Firma anmelden', loginP: 'Geben Sie Ihre Firmenadresse ein, wir leiten Sie zur Anmeldung weiter.',
+    addr: 'Firmenadresse', addrPh: 'ihrefirma', go: 'Weiter', recent: 'Zuletzt verwendet', forgot: 'Ich kenne meine Firmenadresse nicht mehr',
+    findH: 'Firma finden', findP: 'Mit der bei der Registrierung verwendeten Admin-E-Mail und Passwort sehen Sie Ihre Firma und den Antragsstatus.',
+    email: 'Admin-E-Mail', pass: 'Passwort', find: 'Meine Firma finden', toPanel: 'Zum Panel', noAcc: 'Noch keine Firma?', regNow: 'Kostenlos bewerben',
+    steps: ['Paket', 'Firma', 'Admin', 'Fertig'], pickPkg: 'Paket wählen', pickPkgP: 'Während der offenen Beta sind alle Pakete kostenlos; Ihre Firma erhält alle Module. Später änderbar.', noPkg: 'Ohne Paket fortfahren',
+    perMonth: '/Mon.', free: 'Kostenlos', beta: 'Offene Beta', mods: n => `${n} Module`, cloud: 'Cloud', onprem: 'Eigener Server', both: 'Cloud / eigener Server',
+    firmH: 'Firmendaten', cname: 'Firmenname', cnamePh: 'z. B. Beispiel Maschinen GmbH', yourAddr: 'Ihre Firmenadresse', city: 'Stadt', tax: 'Steuernr. (optional)', phone: 'Telefon',
+    addrHint: 'Dies wird Ihre Anmeldeadresse. Änderbar; nur Kleinbuchstaben, Ziffern und Bindestriche.', addrCheck: 'Wird geprüft…', addrOk: 'Verfügbar ✓',
+    countryL: 'Land', logoL: 'Logo (optional)', logoHint: 'PNG, JPG, WEBP oder GIF · max. 2 MB', logoPick: 'Logo wählen', logoChange: 'Logo ändern', logoRemove: 'Entfernen',
+    logoTooBig: 'Logo darf höchstens 2 MB groß sein.', logoBadType: 'Wählen Sie PNG, JPG, WEBP oder GIF.', addrNeeded: 'Bitte geben Sie eine verfügbare Firmenadresse ein.',
+    adminH: 'Admin-Konto', adminP: 'Dieses Konto wird Eigentümer (Master) Ihrer Firma und verwaltet Benutzer und Rechte.',
+    full: 'Vor- und Nachname', mail: 'E-Mail', pw: 'Passwort (mind. 10 Zeichen)', pw2: 'Passwort wiederholen',
+    sendCode: 'Bestätigungscode senden', codeSending: 'Wird gesendet…', codeL: 'E-Mail-Bestätigungscode', codeHint: 'Geben Sie den 6-stelligen Code aus Ihrer E-Mail ein.',
+    codeSent: e => `Code an ${e} gesendet.`, resend: 'Erneut senden', codeNeed: 'Bitte geben Sie den Bestätigungscode ein.', badEmail: 'Geben Sie eine gültige E-Mail ein.',
+    verifyH: 'E-Mail bestätigen', verifyP: e => `Wir haben einen 6-stelligen Code an ${e} gesendet. Bitte unten eingeben.`, verifyBtn: 'Bestätigen',
+    expiresIn: 'Code läuft ab in', codeExpired: 'Code abgelaufen. Erneut senden.', verifying: 'Wird bestätigt…',
+    emailVerified: 'E-Mail bestätigt', changeMail: 'E-Mail ändern', closeM: 'Schließen', verifyFirst: 'Bestätigen Sie Ihre E-Mail, um fortzufahren.',
+    loginNow: 'Anmelden', readyH: 'Ihre Firma ist bereit!', readyP: 'Ihr Konto wurde erstellt und Ihre Firma eingerichtet. Sie können sich jetzt anmelden.',
+    accept: 'Ich stimme zu, dass meine Daten gespeichert werden, um meinen Antrag zu prüfen und mich zu kontaktieren.',
+    next: 'Weiter', prev: 'Zurück', submit: 'Antrag abschließen', submitting: 'Wird gesendet…', provisioning: 'Ihre Firma wird eingerichtet…',
+    okH: 'Antrag erhalten', okP: 'Unser Team prüft Ihren Antrag und richtet Ihre Firma ein. Ihre Anmeldeadresse wird Ihnen per E-Mail mitgeteilt.',
+    appNo: 'Antragsnr.', timeline: ['Antrag erhalten', 'Prüfung', 'Firmeneinrichtung', 'Zugangsdaten per E-Mail'],
+    pwWeak: 'Schwach', pwOk: 'Mittel', pwStrong: 'Stark', mismatch: 'Passwörter stimmen nicht überein', required: 'Bitte ausfüllen',
+    pending: 'In Prüfung', offline: 'Eigener Server', unavailable: 'Nicht verfügbar', created: 'Beworben',
+  },
+  fr: {
+    back: 'Accueil', title: 'Connexion entreprise', tabLogin: 'Se connecter', tabReg: 'Enregistrer une entreprise',
+    sideH: 'Toute votre entreprise sur un seul panneau', sideP: 'De la production au terrain, de la finance aux RH ; votre équipe se connecte avec son rôle, vous gérez tout depuis un seul endroit.',
+    sideList: ['Votre propre adresse et vos utilisateurs', 'Support en direct et partage d’écran avec notre équipe', 'Abonnement, paiements et contrats dans votre panneau', 'Vos données vous appartiennent — la console ne les voit pas'],
+    loginH: 'Connectez-vous à votre entreprise', loginP: 'Saisissez l’adresse de votre entreprise ; nous vous dirigeons vers son écran de connexion.',
+    addr: 'Adresse de l’entreprise', addrPh: 'votreentreprise', go: 'Continuer', recent: 'Récemment utilisé', forgot: 'Je ne me souviens plus de mon adresse',
+    findH: 'Trouvez votre entreprise', findP: 'Utilisez l’e-mail admin et le mot de passe d’inscription pour voir votre entreprise et l’état de la demande.',
+    email: 'E-mail admin', pass: 'Mot de passe', find: 'Trouver mon entreprise', toPanel: 'Aller au panneau', noAcc: 'Pas encore d’entreprise ?', regNow: 'Postuler gratuitement',
+    steps: ['Forfait', 'Entreprise', 'Admin', 'Terminé'], pickPkg: 'Choisissez votre forfait', pickPkgP: 'Tous les forfaits sont gratuits pendant la bêta ouverte ; votre entreprise a tous les modules. Modifiable plus tard.', noPkg: 'Continuer sans forfait',
+    perMonth: '/mois', free: 'Gratuit', beta: 'Bêta ouverte', mods: n => `${n} modules`, cloud: 'Cloud', onprem: 'Sur site', both: 'Cloud / sur site',
+    firmH: 'Détails de l’entreprise', cname: 'Nom de l’entreprise', cnamePh: 'ex. Exemple Machines SARL', yourAddr: 'Adresse de votre entreprise', city: 'Ville', tax: 'N° TVA (facultatif)', phone: 'Téléphone',
+    addrHint: 'Ceci devient votre adresse de connexion. Modifiable ; minuscules, chiffres et tirets uniquement.', addrCheck: 'Vérification…', addrOk: 'Disponible ✓',
+    countryL: 'Pays', logoL: 'Logo (facultatif)', logoHint: 'PNG, JPG, WEBP ou GIF · max 2 Mo', logoPick: 'Choisir un logo', logoChange: 'Changer le logo', logoRemove: 'Retirer',
+    logoTooBig: 'Le logo doit faire au plus 2 Mo.', logoBadType: 'Choisissez un PNG, JPG, WEBP ou GIF.', addrNeeded: 'Veuillez saisir une adresse d’entreprise disponible.',
+    adminH: 'Compte administrateur', adminP: 'Ce compte devient le propriétaire (master) de votre entreprise et gère les utilisateurs et les droits.',
+    full: 'Nom complet', mail: 'E-mail', pw: 'Mot de passe (10 caractères min)', pw2: 'Confirmer le mot de passe',
+    sendCode: 'Envoyer le code', codeSending: 'Envoi…', codeL: 'Code de vérification e-mail', codeHint: 'Saisissez le code à 6 chiffres envoyé à votre e-mail.',
+    codeSent: e => `Code envoyé à ${e}.`, resend: 'Renvoyer', codeNeed: 'Veuillez saisir le code de vérification.', badEmail: 'Saisissez un e-mail valide.',
+    verifyH: 'Vérifiez votre e-mail', verifyP: e => `Nous avons envoyé un code à 6 chiffres à ${e}. Saisissez-le ci-dessous.`, verifyBtn: 'Vérifier',
+    expiresIn: 'Le code expire dans', codeExpired: 'Code expiré. Renvoyez-le.', verifying: 'Vérification…',
+    emailVerified: 'E-mail vérifié', changeMail: 'Changer d’e-mail', closeM: 'Fermer', verifyFirst: 'Vérifiez votre e-mail pour continuer.',
+    loginNow: 'Se connecter', readyH: 'Votre entreprise est prête !', readyP: 'Votre compte a été créé et votre entreprise est configurée. Vous pouvez vous connecter.',
+    accept: 'J’accepte que mes données soient conservées pour évaluer ma demande et me contacter.',
+    next: 'Continuer', prev: 'Retour', submit: 'Terminer la demande', submitting: 'Envoi…', provisioning: 'Configuration de votre entreprise…',
+    okH: 'Demande reçue', okP: 'Notre équipe examinera votre demande et configurera votre entreprise. Votre adresse de connexion vous sera envoyée par e-mail.',
+    appNo: 'N° de demande', timeline: ['Demande reçue', 'Examen', 'Configuration', 'Identifiants par e-mail'],
+    pwWeak: 'Faible', pwOk: 'Moyen', pwStrong: 'Fort', mismatch: 'Les mots de passe ne correspondent pas', required: 'Veuillez remplir ce champ',
+    pending: 'En cours d’examen', offline: 'Sur site', unavailable: 'Indisponible', created: 'Demande',
+  },
+  es: {
+    back: 'Inicio', title: 'Acceso de empresa', tabLogin: 'Acceder', tabReg: 'Registrar empresa',
+    sideH: 'Toda su empresa en un solo panel', sideP: 'De la producción al campo, de las finanzas a RR. HH.; su equipo entra con su rol y usted lo gestiona todo desde un solo lugar.',
+    sideList: ['Su propia dirección y usuarios', 'Soporte en vivo y compartir pantalla con nuestro equipo', 'Suscripción, pagos y contratos en su panel', 'Sus datos son suyos — la consola no los ve'],
+    loginH: 'Acceda a su empresa', loginP: 'Escriba la dirección de su empresa y le llevamos a su pantalla de acceso.',
+    addr: 'Dirección de la empresa', addrPh: 'suempresa', go: 'Continuar', recent: 'Usado recientemente', forgot: 'No recuerdo la dirección de mi empresa',
+    findH: 'Encuentre su empresa', findP: 'Use el correo de administrador y la contraseña de registro para ver su empresa y el estado de la solicitud.',
+    email: 'Correo de administrador', pass: 'Contraseña', find: 'Encontrar mi empresa', toPanel: 'Ir al panel', noAcc: '¿Aún sin empresa?', regNow: 'Solicitar gratis',
+    steps: ['Plan', 'Empresa', 'Admin', 'Listo'], pickPkg: 'Elija su plan', pickPkgP: 'Todos los planes son gratis durante la beta abierta; su empresa accede a todos los módulos. Puede cambiarlo luego.', noPkg: 'Continuar sin plan',
+    perMonth: '/mes', free: 'Gratis', beta: 'Beta abierta', mods: n => `${n} módulos`, cloud: 'Nube', onprem: 'En sus servidores', both: 'Nube / en sus servidores',
+    firmH: 'Datos de la empresa', cname: 'Nombre de la empresa', cnamePh: 'ej. Ejemplo Maquinaria S.L.', yourAddr: 'Dirección de su empresa', city: 'Ciudad', tax: 'NIF (opcional)', phone: 'Teléfono',
+    addrHint: 'Esta será su dirección de acceso. Puede cambiarla; solo minúsculas, dígitos y guiones.', addrCheck: 'Comprobando…', addrOk: 'Disponible ✓',
+    countryL: 'País', logoL: 'Logo (opcional)', logoHint: 'PNG, JPG, WEBP o GIF · máx. 2 MB', logoPick: 'Elegir logo', logoChange: 'Cambiar logo', logoRemove: 'Quitar',
+    logoTooBig: 'El logo debe ser como máximo 2 MB.', logoBadType: 'Elija un PNG, JPG, WEBP o GIF.', addrNeeded: 'Introduzca una dirección de empresa disponible.',
+    adminH: 'Cuenta de administrador', adminP: 'Esta cuenta será la propietaria (master) de su empresa y gestiona usuarios y permisos.',
+    full: 'Nombre completo', mail: 'Correo', pw: 'Contraseña (mín. 10 caracteres)', pw2: 'Repetir contraseña',
+    sendCode: 'Enviar código', codeSending: 'Enviando…', codeL: 'Código de verificación', codeHint: 'Introduzca el código de 6 dígitos enviado a su correo.',
+    codeSent: e => `Código enviado a ${e}.`, resend: 'Reenviar', codeNeed: 'Introduzca el código de verificación.', badEmail: 'Introduzca un correo válido.',
+    verifyH: 'Verifique su correo', verifyP: e => `Enviamos un código de 6 dígitos a ${e}. Introdúzcalo abajo.`, verifyBtn: 'Verificar',
+    expiresIn: 'El código caduca en', codeExpired: 'Código caducado. Reenvíelo.', verifying: 'Verificando…',
+    emailVerified: 'Correo verificado', changeMail: 'Cambiar correo', closeM: 'Cerrar', verifyFirst: 'Verifique su correo para continuar.',
+    loginNow: 'Acceder', readyH: '¡Su empresa está lista!', readyP: 'Su cuenta se creó y su empresa está configurada. Ya puede acceder.',
+    accept: 'Acepto que mis datos se almacenen para evaluar mi solicitud y contactarme.',
+    next: 'Continuar', prev: 'Atrás', submit: 'Completar solicitud', submitting: 'Enviando…', provisioning: 'Configurando su empresa…',
+    okH: 'Solicitud recibida', okP: 'Nuestro equipo revisará su solicitud y configurará su empresa. Su dirección de acceso se enviará por correo.',
+    appNo: 'N.º de solicitud', timeline: ['Solicitud recibida', 'Revisión', 'Configuración', 'Credenciales por correo'],
+    pwWeak: 'Débil', pwOk: 'Media', pwStrong: 'Fuerte', mismatch: 'Las contraseñas no coinciden', required: 'Rellene este campo',
+    pending: 'En revisión', offline: 'En sus servidores', unavailable: 'No disponible', created: 'Solicitado',
+  },
+  ar: {
+    back: 'الصفحة الرئيسية', title: 'دخول الشركة', tabLogin: 'تسجيل الدخول', tabReg: 'تسجيل شركة',
+    sideH: 'شركتك كلها في لوحة واحدة', sideP: 'من الإنتاج إلى الميدان، ومن المالية إلى الموارد البشرية؛ يدخل فريقك بدوره، وتدير أنت كل شيء من مكان واحد.',
+    sideList: ['عنوان ومستخدمون خاصون بك', 'دعم مباشر ومشاركة شاشة مع فريقنا', 'العضوية والمدفوعات والعقود في لوحتك', 'بياناتك ملك لك — المركز لا يراها'],
+    loginH: 'ادخل إلى لوحة شركتك', loginP: 'اكتب عنوان شركتك وسننقلك إلى شاشة الدخول الخاصة بها.',
+    addr: 'عنوان الشركة', addrPh: 'sharikatuka', go: 'متابعة', recent: 'المُستخدَم مؤخراً', forgot: 'لا أتذكر عنوان شركتي',
+    findH: 'اعثر على شركتك', findP: 'استخدم بريد المدير وكلمة المرور اللذين سجّلت بهما لرؤية شركتك وحالة الطلب.',
+    email: 'بريد المدير', pass: 'كلمة المرور', find: 'ابحث عن شركتي', toPanel: 'إلى اللوحة', noAcc: 'لا شركة بعد؟', regNow: 'قدِّم مجاناً',
+    steps: ['الباقة', 'الشركة', 'المدير', 'تم'], pickPkg: 'اختر باقتك', pickPkgP: 'جميع الباقات مجانية خلال الإصدار التجريبي المفتوح؛ تحصل شركتك على كل الوحدات. يمكنك التغيير لاحقاً.', noPkg: 'المتابعة دون باقة',
+    perMonth: '/شهر', free: 'مجاني', beta: 'نسخة تجريبية', mods: n => `${n} وحدة`, cloud: 'سحابة', onprem: 'خادمك الخاص', both: 'سحابة / خادمك الخاص',
+    firmH: 'بيانات الشركة', cname: 'اسم الشركة', cnamePh: 'مثال: شركة نموذج للماكينات', yourAddr: 'عنوان شركتك', city: 'المدينة', tax: 'الرقم الضريبي (اختياري)', phone: 'الهاتف',
+    addrHint: 'سيصبح هذا عنوان دخولك. يمكن تغييره؛ أحرف صغيرة وأرقام وشرطات فقط.', addrCheck: 'جارٍ التحقق…', addrOk: 'متاح ✓',
+    countryL: 'الدولة', logoL: 'الشعار (اختياري)', logoHint: 'PNG أو JPG أو WEBP أو GIF · بحد أقصى 2 ميغابايت', logoPick: 'اختر شعاراً', logoChange: 'تغيير الشعار', logoRemove: 'إزالة',
+    logoTooBig: 'يجب ألا يتجاوز الشعار 2 ميغابايت.', logoBadType: 'اختر PNG أو JPG أو WEBP أو GIF.', addrNeeded: 'يرجى إدخال عنوان شركة متاح.',
+    adminH: 'حساب المدير', adminP: 'يصبح هذا الحساب مالك شركتك (master) ويدير المستخدمين والصلاحيات.',
+    full: 'الاسم الكامل', mail: 'البريد الإلكتروني', pw: 'كلمة المرور (10 أحرف على الأقل)', pw2: 'تأكيد كلمة المرور',
+    sendCode: 'إرسال رمز التحقق', codeSending: 'جارٍ الإرسال…', codeL: 'رمز تحقق البريد', codeHint: 'أدخل الرمز المكوّن من 6 أرقام المُرسَل إلى بريدك.',
+    codeSent: e => `أُرسل الرمز إلى ${e}.`, resend: 'إعادة الإرسال', codeNeed: 'يرجى إدخال رمز التحقق.', badEmail: 'أدخل بريداً صحيحاً.',
+    verifyH: 'تحقق من بريدك', verifyP: e => `أرسلنا رمزاً من 6 أرقام إلى ${e}. أدخله في الأسفل.`, verifyBtn: 'تحقّق',
+    expiresIn: 'تنتهي صلاحية الرمز خلال', codeExpired: 'انتهت صلاحية الرمز. أعد الإرسال.', verifying: 'جارٍ التحقق…',
+    emailVerified: 'تم التحقق من البريد', changeMail: 'تغيير البريد', closeM: 'إغلاق', verifyFirst: 'تحقق من بريدك للمتابعة.',
+    loginNow: 'تسجيل الدخول', readyH: 'شركتك جاهزة!', readyP: 'تم إنشاء حسابك وتجهيز شركتك. يمكنك تسجيل الدخول الآن.',
+    accept: 'أوافق على حفظ بياناتي لتقييم طلبي والتواصل معي.',
+    next: 'متابعة', prev: 'رجوع', submit: 'إتمام الطلب', submitting: 'جارٍ الإرسال…', provisioning: 'جارٍ تجهيز شركتك…',
+    okH: 'تم استلام طلبك', okP: 'سيراجع فريقنا طلبك ويجهّز شركتك. سيُرسل عنوان الدخول إلى بريدك عند الانتهاء.',
+    appNo: 'رقم الطلب', timeline: ['استُلم الطلب', 'المراجعة', 'تجهيز الشركة', 'بيانات الدخول عبر البريد'],
+    pwWeak: 'ضعيفة', pwOk: 'متوسطة', pwStrong: 'قوية', mismatch: 'كلمتا المرور غير متطابقتين', required: 'يرجى ملء هذا الحقل',
+    pending: 'قيد المراجعة', offline: 'خادمك الخاص', unavailable: 'غير متاح', created: 'تم التقديم',
+  },
+  ru: {
+    back: 'На главную', title: 'Вход компании', tabLogin: 'Войти', tabReg: 'Регистрация компании',
+    sideH: 'Вся компания на одной панели', sideP: 'От производства до объекта, от финансов до кадров; команда входит под своей ролью, а вы управляете всем из одного места.',
+    sideList: ['Собственный адрес и пользователи', 'Живая поддержка и демонстрация экрана с нашей командой', 'Подписка, платежи и договоры в вашей панели', 'Ваши данные — ваши; центр их не видит'],
+    loginH: 'Войдите в свою компанию', loginP: 'Введите адрес компании — мы перенаправим вас на её экран входа.',
+    addr: 'Адрес компании', addrPh: 'vashakompaniya', go: 'Продолжить', recent: 'Недавние', forgot: 'Не помню адрес своей компании',
+    findH: 'Найдите свою компанию', findP: 'Используйте e-mail администратора и пароль регистрации, чтобы увидеть компанию и статус заявки.',
+    email: 'E-mail администратора', pass: 'Пароль', find: 'Найти мою компанию', toPanel: 'В панель', noAcc: 'Ещё нет компании?', regNow: 'Подать бесплатно',
+    steps: ['Пакет', 'Компания', 'Админ', 'Готово'], pickPkg: 'Выберите пакет', pickPkgP: 'В период открытой бета-версии все пакеты бесплатны; компания получает все модули. Можно изменить позже.', noPkg: 'Продолжить без пакета',
+    perMonth: '/мес', free: 'Бесплатно', beta: 'Открытая бета', mods: n => `${n} модулей`, cloud: 'Облако', onprem: 'Ваш сервер', both: 'Облако / ваш сервер',
+    firmH: 'Данные компании', cname: 'Название компании', cnamePh: 'напр. Пример Машинери ООО', yourAddr: 'Адрес вашей компании', city: 'Город', tax: 'ИНН (необязательно)', phone: 'Телефон',
+    addrHint: 'Это станет вашим адресом входа. Можно изменить; только строчные буквы, цифры и дефисы.', addrCheck: 'Проверка…', addrOk: 'Доступно ✓',
+    countryL: 'Страна', logoL: 'Логотип (необязательно)', logoHint: 'PNG, JPG, WEBP или GIF · до 2 МБ', logoPick: 'Выбрать логотип', logoChange: 'Сменить логотип', logoRemove: 'Убрать',
+    logoTooBig: 'Логотип должен быть не более 2 МБ.', logoBadType: 'Выберите PNG, JPG, WEBP или GIF.', addrNeeded: 'Введите доступный адрес компании.',
+    adminH: 'Учётная запись администратора', adminP: 'Эта запись становится владельцем (master) компании и управляет пользователями и правами.',
+    full: 'Полное имя', mail: 'E-mail', pw: 'Пароль (не менее 10 символов)', pw2: 'Повторите пароль',
+    sendCode: 'Отправить код', codeSending: 'Отправка…', codeL: 'Код подтверждения e-mail', codeHint: 'Введите 6-значный код, отправленный на вашу почту.',
+    codeSent: e => `Код отправлен на ${e}.`, resend: 'Отправить снова', codeNeed: 'Введите код подтверждения.', badEmail: 'Введите корректный e-mail.',
+    verifyH: 'Подтвердите e-mail', verifyP: e => `Мы отправили 6-значный код на ${e}. Введите его ниже.`, verifyBtn: 'Подтвердить',
+    expiresIn: 'Код истекает через', codeExpired: 'Срок кода истёк. Отправьте снова.', verifying: 'Проверка…',
+    emailVerified: 'E-mail подтверждён', changeMail: 'Сменить e-mail', closeM: 'Закрыть', verifyFirst: 'Подтвердите e-mail, чтобы продолжить.',
+    loginNow: 'Войти', readyH: 'Ваша компания готова!', readyP: 'Учётная запись создана, компания настроена. Можете войти сейчас.',
+    accept: 'Я согласен на хранение моих данных для рассмотрения заявки и связи со мной.',
+    next: 'Продолжить', prev: 'Назад', submit: 'Завершить заявку', submitting: 'Отправка…', provisioning: 'Настройка вашей компании…',
+    okH: 'Заявка получена', okP: 'Наша команда рассмотрит заявку и настроит компанию. Адрес входа будет отправлен на e-mail.',
+    appNo: '№ заявки', timeline: ['Заявка получена', 'Рассмотрение', 'Настройка компании', 'Доступы по e-mail'],
+    pwWeak: 'Слабый', pwOk: 'Средний', pwStrong: 'Сильный', mismatch: 'Пароли не совпадают', required: 'Заполните это поле',
+    pending: 'На рассмотрении', offline: 'Ваш сервер', unavailable: 'Недоступно', created: 'Заявка',
+  },
 };
-const t = () => T[lang];
+const t = () => T[lang] || T.en;   // eksik çeviri güvenli şekilde İngilizce'ye düşer
 const qs = new URLSearchParams(location.search);
 const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false, submitting: false };
 // Açık betada "Paket" adımı yok → ilk adım doğrudan Firma (adım 1). Adım numaraları sabit kalır (1=Firma,2=Yönetici,3=Tamam).
@@ -90,7 +242,8 @@ function shell() {
   return `<header class="nav scrolled"><div class="wrap nav-in">
       <a class="brand" href="/"><img src="/static/img/hepgo-mark.png" alt="" class="brand-logo"><span class="brand-txt"><b>HEPGO</b><span>ERP</span></span></a>
       <div class="nav-ctl gx-navctl"><a class="btn btn-ghost" href="/">← ${esc(L.back)}</a>
-        <button class="icon-btn" id="langBtn" title="Dil / Language">${lang === 'tr' ? 'EN' : 'TR'}</button>
+        <div class="lang-wrap"><button class="icon-btn lang-btn" id="langBtn" title="Dil / Language" aria-haspopup="true">${lang.toUpperCase()}</button>
+          <div class="lang-menu" id="langMenu" hidden>${LANGS.map(([c, name]) => `<button class="lang-opt${c === lang ? ' on' : ''}" data-lang="${c}">${esc(name)}</button>`).join('')}</div></div>
         <button class="icon-btn" id="themeBtn" title="Tema">${theme === 'dark' ? sun : moon}</button></div>
     </div></header>
     <main class="gx-main"><div class="wrap gx-grid">
@@ -449,10 +602,17 @@ function openVerifyModal(email, masked) {
 
 function draw() {
   document.documentElement.lang = lang;
+  document.documentElement.dir = RTL.has(lang) ? 'rtl' : 'ltr';   // Arapça sağdan sola
   document.documentElement.dataset.theme = theme;
   $('#app').innerHTML = shell();
   document.querySelectorAll('.gx-tabs [data-tab]').forEach(b => b.addEventListener('click', () => { state.tab = b.dataset.tab; history.replaceState(null, '', state.tab === 'reg' ? '#kayit' : '#'); draw(); }));
-  $('#langBtn').addEventListener('click', () => { lang = lang === 'tr' ? 'en' : 'tr'; try { localStorage.setItem('veilox.lang', lang); } catch { /* */ } draw(); });
+  const lb = $('#langBtn'); const lm = $('#langMenu');
+  lb.addEventListener('click', e => { e.stopPropagation(); lm.hidden = !lm.hidden; });
+  lm.querySelectorAll('.lang-opt').forEach(b => b.addEventListener('click', () => {
+    const c = b.dataset.lang; if (!LANG_CODES.includes(c) || c === lang) { lm.hidden = true; return; }
+    lang = c; try { localStorage.setItem('veilox.lang', lang); } catch { /* */ } draw();
+  }));
+  document.addEventListener('click', () => { if (lm && !lm.hidden) lm.hidden = true; }, { once: true });
   $('#themeBtn').addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('veilox.theme', theme); } catch { /* */ } draw(); });
   if (state.tab === 'reg') regView(); else loginView();
   document.querySelectorAll('#gxBody [data-tab]').forEach(b => b.addEventListener('click', () => { state.tab = b.dataset.tab; history.replaceState(null, '', '#kayit'); draw(); }));

@@ -501,3 +501,22 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 /* Kayıt onayı altındaki yasal sayfa bağlantıları */
 .gx-legal-links { margin: 8px 0 0; font-size: 12.5px; color: var(--sub); }
 .gx-legal-links a { color: var(--blue); }
+
+/* Kayıt: firma tipi seçimi + KOBİ modül seçimi */
+.gx-ftype { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+.gx-ft { position: relative; text-align: left; padding: 15px; border: 1.5px solid var(--line); border-radius: 14px;
+  background: var(--bg); cursor: pointer; font: inherit; color: var(--ink); display: flex; flex-direction: column; gap: 4px; }
+.gx-ft b { font-size: 15px; } .gx-ft small { color: var(--sub); font-size: 12.5px; }
+.gx-ft.on { border-color: var(--blue); background: rgba(47,111,237,.06); box-shadow: 0 0 0 1px var(--blue); }
+.gx-ft.disabled { opacity: .5; cursor: not-allowed; }
+.gx-ft-soon { position: absolute; top: 9px; right: 9px; font-size: 10px; font-weight: 700; background: var(--blue); color: #fff; padding: 2px 8px; border-radius: 999px; }
+.gx-modsel { margin: 4px 0; }
+.gx-modsel-h b { font-size: 14px; } .gx-modsel-h .gx-sub { margin: 2px 0 10px; }
+.gx-modgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(142px, 1fr)); gap: 8px; }
+.gx-modcard { text-align: left; padding: 11px 12px; border: 1.5px solid var(--line); border-radius: 11px; background: var(--bg);
+  cursor: pointer; font: inherit; color: var(--ink); display: flex; flex-direction: column; gap: 3px; transition: border-color .15s, background .15s; }
+.gx-modcard-t { font-size: 13.5px; font-weight: 600; } .gx-modcard-s { font-size: 11.5px; color: var(--sub); }
+.gx-modcard.on { border-color: var(--blue); background: rgba(47,111,237,.08); }
+.gx-modcard.on .gx-modcard-s { color: var(--blue); font-weight: 600; }
+.gx-modcard.locked { opacity: .7; cursor: default; border-style: dashed; }
+[dir="rtl"] .gx-ft, [dir="rtl"] .gx-modcard { text-align: right; }

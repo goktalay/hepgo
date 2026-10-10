@@ -30,7 +30,7 @@ from . import settings  # noqa: E402
 settings.load()
 
 from . import db  # noqa: E402
-from .modules_catalog import MODULES, MODULE_KEYS, valid_modules  # noqa: E402
+from .modules_catalog import MODULES, MODULE_KEYS, kobi_modules, valid_modules  # noqa: E402
 from .passwd import make_hash, verify_password  # noqa: E402
 from . import provision, pkg, mailer  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
@@ -207,7 +207,8 @@ def public_packages():
 
 @app.get('/api/modules')
 def modules():
-    return [{'key': k, 'title': t, 'group': g} for k, t, g in MODULES]
+    from . import modules_catalog as _mc
+    return [{'key': k, 'title': t, 'group': g, 'tier': _mc.tier(k)} for k, t, g in MODULES]
 
 
 @app.get('/api/public/site')
@@ -382,6 +383,8 @@ class RegisterIn(BaseModel):
     country: str = ''           # ülke kodu (ör. TR)
     logo: str = ''              # data URI (base64) — isteğe bağlı firma logosu (kurallı)
     lang: str = ''              # kayıt dili (tr/en/de/fr/es/ar/ru) → master kullanıcının ERP varsayılan dili olur
+    firm_type: str = 'kobi'     # 'kobi' (modül seçimli) | 'esnaf' (hazır paketler — Faz 2)
+    modules: list = []          # KOBİ: seçilen OPSİYONEL modüller (zorunlular otomatik eklenir; merkez modülleri hariç)
 
 
 class SendCodeIn(BaseModel):
@@ -528,10 +531,14 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
         pkg_row = db.row(conn, 'SELECT * FROM packages WHERE slug=? AND visible=1', (body.package_slug,)) \
             if body.package_slug else None
         if OPEN_BETA:
-            # Açık beta: paket seçilmiş olsun olmasın, firma TAM PAKET (tüm modüller) ve ücretsiz üye olur.
+            # Açık beta: ücretsiz. KOBİ kaydında firma SEÇTİĞİ modüllerle açılır (zorunlu + seçilen opsiyonel;
+            # merkez modülleri hariç). Seçim yoksa (eski akış / esnaf) tüm modüller verilir (geri uyumluluk).
             pkg_row = pkg_row or db.row(conn, "SELECT * FROM packages WHERE slug='kurumsal'") \
                 or db.row(conn, 'SELECT * FROM packages ORDER BY sort, id LIMIT 1')
-            mods = list(MODULE_KEYS)
+            if (body.firm_type or 'kobi') == 'kobi' and body.modules:
+                mods = kobi_modules(body.modules)
+            else:
+                mods = list(MODULE_KEYS)
             mode = 'online'
             fee = 0
             wl = 0
@@ -553,11 +560,12 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
         country = (body.country or '').strip()[:2].upper() or None
         logo_path = _save_firm_logo(slug, body.logo) if body.logo.strip() else None   # kurallı (tür+2MB)
         _reg[ip].append(now)
+        _ftype = 'esnaf' if (body.firm_type or 'kobi') == 'esnaf' else 'kobi'
         cur = conn.execute(
-            'INSERT INTO companies(slug,name,package_id,mode,modules,white_label,master_username,master_name,'
+            'INSERT INTO companies(slug,name,package_id,mode,modules,firm_type,white_label,master_username,master_name,'
             'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,country,logo,email_verified,created_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-            (slug, name, (pkg_row['id'] if pkg_row else None), mode, _j(mods), wl,
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            (slug, name, (pkg_row['id'] if pkg_row else None), mode, _j(mods), _ftype, wl,
              user, body.master_name.strip(), make_hash(body.password), body.password, fee,
              'pending', 1, body.phone.strip()[:40] or None, body.tax_no.strip()[:20] or None,
              body.city.strip()[:60] or None, country, logo_path, verified, db.now()))

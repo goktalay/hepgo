@@ -45,6 +45,29 @@ MODULE_TITLES = {m[0]: m[1] for m in MODULES}
 # Sistem yönetilebilsin diye önerilen çekirdek modüller (seçilebilir ama varsayılan açık).
 CORE_MODULES = ['admin', 'users', 'announcements']
 
+# Modül katmanları (tenant app/modules_tier.py ile BİREBİR senkron):
+# required = KOBİ firmada her zaman açık; optional = kayıtta/sonradan seçilir; central = yalnız merkez açar.
+REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance'}
+OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
+            'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools'}
+CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}
+
+
+def tier(key):
+    k = (key or '').split('.')[0]
+    if k in REQUIRED:
+        return 'required'
+    if k in CENTRAL:
+        return 'central'
+    return 'optional'
+
+
+def kobi_modules(selected):
+    """KOBİ kaydı: zorunlu modüller + seçilen (geçerli) opsiyonel modüller. Merkez (central) modüller DAHİL EDİLMEZ."""
+    sel = {k for k in (selected or []) if k in OPTIONAL}
+    keep = REQUIRED | sel
+    return [k for k in MODULE_KEYS if k in keep]
+
 
 def valid_modules(keys):
     """Verilen listeden yalnızca geçerli modül anahtarlarını, katalog sırasıyla döndürür."""

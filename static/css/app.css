@@ -8287,3 +8287,71 @@ textarea.sv-input { resize: vertical; }
 .pos-cat-p { font-weight: 700; color: var(--primary); text-align: right; }
 .pos-cat-s { color: var(--muted); font-size: 12.5px; }
 @media (max-width: 640px) { .pos-cat-form { grid-template-columns: 1fr 1fr; } .pos-cat-row { grid-template-columns: 1fr auto; row-gap: 4px; } }
+
+/* ---------- Esnaf: Bölümler / Hizmetler / Rezervasyon / Garson ---------- */
+.form-col { display: flex; flex-direction: column; gap: 12px; }
+.form-col > label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.form-col > label > .input, .form-col > label > select, .form-col > label > textarea { font-weight: 400; color: var(--ink); }
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.form-row > label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.row-check { flex-direction: row !important; align-items: center; gap: 8px !important; }
+.chip.warn { background: #fff4e5; color: #b45309; }
+.chip-btn { border: 1.5px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.chip-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+
+.shop-sec { margin-bottom: 12px; }
+.shop-sec-h { display: flex; align-items: center; gap: 8px; }
+.shop-tbls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.shop-tbl-chip { border: 1.5px solid var(--border); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 92px; position: relative; }
+.shop-tbl-chip.round { border-radius: 999px; align-items: center; }
+.shop-tbl-chip b { font-size: 14px; } .shop-tbl-chip small { color: var(--muted); font-size: 11.5px; }
+.shop-tbl-acts { display: flex; gap: 4px; margin-top: 2px; }
+.mini { border: 0; background: var(--surface-2); border-radius: 6px; width: 24px; height: 22px; cursor: pointer; font-size: 13px; line-height: 1; color: var(--muted); }
+.mini.danger:hover { background: var(--danger, #ef4444); color: #fff; }
+
+.shop-svc-list { display: flex; flex-direction: column; gap: 8px; }
+.shop-svc-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.shop-svc-meta { display: flex; align-items: center; gap: 8px; }
+.shop-svc-price { color: var(--primary); font-size: 15px; }
+.shop-svc-acts { display: flex; gap: 6px; }
+.shop-staff-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.shop-rsv-list { display: flex; flex-direction: column; gap: 8px; }
+.shop-rsv-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--primary); }
+.shop-rsv-row.st-TAMAM { border-left-color: #16a34a; opacity: .75; }
+.shop-rsv-row.st-GELMEDI { border-left-color: #d97706; opacity: .7; }
+.shop-rsv-row.st-IPTAL { border-left-color: var(--muted); opacity: .5; text-decoration: line-through; }
+.shop-rsv-time { font-weight: 700; min-width: 64px; } .shop-rsv-time small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.shop-rsv-acts { display: flex; gap: 6px; }
+.st-chip { background: var(--surface-2); color: var(--muted); }
+
+.waiter-sec { margin-bottom: 12px; }
+.waiter-sec-h { margin-bottom: 10px; }
+.waiter-tables { display: flex; flex-wrap: wrap; gap: 12px; }
+.waiter-table { width: 108px; height: 92px; border-radius: 14px; border: 2px solid var(--border); background: var(--surface); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: inherit; color: var(--ink); position: relative; }
+.waiter-table.round { border-radius: 999px; }
+.waiter-table.free { border-style: dashed; color: var(--muted); }
+.waiter-table.busy { border-color: var(--primary); background: var(--primary-soft); }
+.waiter-table b { font-size: 16px; } .waiter-table .wt-total { font-weight: 700; color: var(--primary); }
+.waiter-table .wt-seats, .waiter-table .wt-party { font-size: 11.5px; color: var(--muted); }
+.waiter-table .wt-waiter { position: absolute; bottom: 4px; font-size: 9.5px; color: var(--muted); }
+
+.waiter-order-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.waiter-order { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.waiter-seats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.waiter-seat { border: 1.5px solid var(--border); background: var(--surface); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+.waiter-seat.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.waiter-items { border: 1px solid var(--border); border-radius: 12px; min-height: 180px; padding: 6px; }
+.waiter-item { display: flex; align-items: center; gap: 8px; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+.waiter-item:last-child { border-bottom: 0; }
+.wi-seat { font-size: 10px; background: var(--surface-2); border-radius: 6px; padding: 1px 6px; color: var(--muted); }
+.waiter-order-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--border); }
+.waiter-grand { font-size: 20px; color: var(--primary); margin-right: auto; }
+.waiter-menu-search { width: 100%; margin-bottom: 8px; }
+.waiter-menu { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 420px; overflow: auto; }
+.waiter-menu-b { border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; padding: 10px 8px; display: flex; flex-direction: column; gap: 3px; font: inherit; color: var(--ink); text-align: left; }
+.waiter-menu-b:hover { border-color: var(--primary); }
+.waiter-menu-b small { color: var(--primary); font-weight: 700; }
+.waiter-pay-total { font-size: 15px; margin-bottom: 4px; }
+.btn.lg { padding: 11px 20px; font-size: 15px; }
+@media (max-width: 760px) { .waiter-order { grid-template-columns: 1fr; } .waiter-menu { max-height: 260px; } }

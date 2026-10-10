@@ -2547,6 +2547,57 @@ def _company_people_free(conn):
 
 def _migrate(conn):
     """Eski veritabanlarını güncel şemaya taşır (ürünlerden önce açılmış siparişler CAYMAZ'a bağlanır)."""
+    # Esnaf (bakkal/berber/lokanta) modülleri: bölümler, masalar, hizmetler, rezervasyon, adisyon.
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS shop_sections (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'room',      -- room (berber oda) | hall (lokanta salon/kat)
+            smoking INTEGER NOT NULL DEFAULT 0,     -- lokanta: sigara içilen bölüm
+            sort INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS shop_tables (
+            id INTEGER PRIMARY KEY,
+            section_id INTEGER REFERENCES shop_sections(id) ON DELETE SET NULL,
+            name TEXT NOT NULL, shape TEXT NOT NULL DEFAULT 'square',   -- square | round
+            seats INTEGER NOT NULL DEFAULT 4, pos_x REAL, pos_y REAL,
+            waiter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            sort INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS ix_shop_tables_sec ON shop_tables(section_id);
+        CREATE TABLE IF NOT EXISTS shop_services (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL DEFAULT 0,
+            duration_min INTEGER NOT NULL DEFAULT 30, staff_pct REAL NOT NULL DEFAULT 0,
+            sort INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS shop_service_staff (
+            service_id INTEGER NOT NULL REFERENCES shop_services(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (service_id, user_id));
+        CREATE TABLE IF NOT EXISTS shop_reservations (
+            id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'staff',   -- staff (berber) | table (lokanta)
+            staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            table_id INTEGER REFERENCES shop_tables(id) ON DELETE SET NULL,
+            service_id INTEGER REFERENCES shop_services(id) ON DELETE SET NULL,
+            customer TEXT, phone TEXT, party INTEGER,
+            starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ONAYLI',   -- ONAYLI | GELMEDI | TAMAM | IPTAL
+            note TEXT, source TEXT NOT NULL DEFAULT 'staff',   -- staff | public
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS ix_shop_resv_time ON shop_reservations(starts_at);
+        CREATE TABLE IF NOT EXISTS shop_orders (
+            id INTEGER PRIMARY KEY,
+            table_id INTEGER REFERENCES shop_tables(id) ON DELETE SET NULL,
+            merged_with INTEGER, party INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'OPEN',   -- OPEN | PAID
+            opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            opened_at TEXT NOT NULL, closed_at TEXT);
+        CREATE INDEX IF NOT EXISTS ix_shop_orders_tbl ON shop_orders(table_id, status);
+        CREATE TABLE IF NOT EXISTS shop_order_items (
+            id INTEGER PRIMARY KEY,
+            order_id INTEGER NOT NULL REFERENCES shop_orders(id) ON DELETE CASCADE,
+            seat INTEGER NOT NULL DEFAULT 1,
+            product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+            name TEXT NOT NULL, qty REAL NOT NULL DEFAULT 1, price REAL NOT NULL DEFAULT 0,
+            note TEXT, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS ix_shop_oi_order ON shop_order_items(order_id);
+    ''')
     user_cols = {r[1] for r in conn.execute('PRAGMA table_info(users)')}
     if 'last_seen' not in user_cols:
         conn.execute('ALTER TABLE users ADD COLUMN last_seen TEXT')

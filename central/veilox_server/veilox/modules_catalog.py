@@ -38,6 +38,10 @@ MODULES = [
     ('fleet',        'Araç Yönetimi',         'saha'),
     ('cameras',      'Kameralar',             'ofis'),
     ('pos',          'Esnaf Kasa',            'esnaf'),
+    ('sections',     'Bölümler',              'esnaf'),
+    ('services',     'Hizmetler',             'esnaf'),
+    ('reservations', 'Rezervasyon',           'esnaf'),
+    ('waiter',       'Garson',                'esnaf'),
 ]
 
 MODULE_KEYS = [m[0] for m in MODULES]
@@ -50,7 +54,8 @@ CORE_MODULES = ['admin', 'users', 'announcements']
 # required = KOBİ firmada her zaman açık; optional = kayıtta/sonradan seçilir; central = yalnız merkez açar.
 REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance'}
 OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
-            'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos'}
+            'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos',
+            'sections', 'services', 'reservations', 'waiter'}
 CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}
 
 
@@ -74,3 +79,20 @@ def valid_modules(keys):
     """Verilen listeden yalnızca geçerli modül anahtarlarını, katalog sırasıyla döndürür."""
     s = set(keys or [])
     return [k for k in MODULE_KEYS if k in s]
+
+
+# Esnaf paketleri (firm_type='esnaf'): İK gibi ağır modüller YOK; hafif personel + firma + pakete özel modüller.
+# Ortak: admin, users (çekirdek) + companies (müşteri) + finance (kasa) + pos (yazarkasa).
+ESNAF_PACKAGES = {
+    'bakkal':  ['admin', 'users', 'companies', 'products', 'stock', 'purchasing', 'finance', 'pos'],
+    'berber':  ['admin', 'users', 'companies', 'hr', 'finance', 'pos', 'sections', 'services', 'reservations'],
+    'lokanta': ['admin', 'users', 'companies', 'hr', 'products', 'stock', 'finance', 'pos',
+                'sections', 'reservations', 'waiter'],
+}
+ESNAF_PKGS = tuple(ESNAF_PACKAGES)
+
+
+def esnaf_modules(pkg):
+    """Esnaf kaydı: paket (bakkal/berber/lokanta) → modül listesi (katalog sırasıyla, geçerli anahtarlar)."""
+    keys = set(ESNAF_PACKAGES.get(pkg, ESNAF_PACKAGES['bakkal']))
+    return [k for k in MODULE_KEYS if k in keys]

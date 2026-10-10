@@ -30,7 +30,7 @@ from . import settings  # noqa: E402
 settings.load()
 
 from . import db  # noqa: E402
-from .modules_catalog import MODULES, MODULE_KEYS, kobi_modules, valid_modules  # noqa: E402
+from .modules_catalog import MODULES, MODULE_KEYS, kobi_modules, valid_modules, esnaf_modules, ESNAF_PKGS  # noqa: E402
 from .passwd import make_hash, verify_password  # noqa: E402
 from . import provision, pkg, mailer  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
@@ -383,8 +383,9 @@ class RegisterIn(BaseModel):
     country: str = ''           # ülke kodu (ör. TR)
     logo: str = ''              # data URI (base64) — isteğe bağlı firma logosu (kurallı)
     lang: str = ''              # kayıt dili (tr/en/de/fr/es/ar/ru) → master kullanıcının ERP varsayılan dili olur
-    firm_type: str = 'kobi'     # 'kobi' (modül seçimli) | 'esnaf' (hazır paketler — Faz 2)
+    firm_type: str = 'kobi'     # 'kobi' (modül seçimli) | 'esnaf' (hazır paketler)
     modules: list = []          # KOBİ: seçilen OPSİYONEL modüller (zorunlular otomatik eklenir; merkez modülleri hariç)
+    esnaf_pkg: str = ''         # ESNAF: paket (bakkal/berber/lokanta) → modül seti pakete göre belirlenir
 
 
 class SendCodeIn(BaseModel):
@@ -536,12 +537,15 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
             pkg_row = pkg_row or db.row(conn, "SELECT * FROM packages WHERE slug='kurumsal'") \
                 or db.row(conn, 'SELECT * FROM packages ORDER BY sort, id LIMIT 1')
             ft = body.firm_type or 'kobi'
-            if ft == 'kobi' and body.modules:
-                mods = kobi_modules(body.modules)
-            elif ft == 'esnaf' and body.modules:
-                mods = valid_modules(set(body.modules) | {'admin', 'users'})   # esnaf: seçilen + çekirdek
+            if ft == 'esnaf':
+                pkg = (body.esnaf_pkg or 'bakkal').strip().lower()
+                if pkg not in ESNAF_PKGS:
+                    pkg = 'bakkal'
+                mods = esnaf_modules(pkg)                       # esnaf: pakete göre modül seti (bakkal/berber/lokanta)
+            elif body.modules:
+                mods = kobi_modules(body.modules)              # KOBİ: zorunlu + seçilen opsiyonel
             else:
-                mods = list(MODULE_KEYS)
+                mods = list(MODULE_KEYS)                        # eski akış: tüm modüller (geri uyumluluk)
             mode = 'online'
             fee = 0
             wl = 0
@@ -582,6 +586,9 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
                 c['master_secret'] = body.password          # provisioning için düz şifre
                 _lang = (body.lang or '').strip().lower()   # kayıt dili → master'ın ERP varsayılan dili
                 c['lang'] = _lang if _lang in ('tr', 'en', 'de', 'fr', 'es', 'ar', 'ru') else ''
+                if _ftype == 'esnaf':                        # esnaf paketi → tenant CAYMAZ_ESNAF_PKG (Bölümler/Garson UI)
+                    _pkg = (body.esnaf_pkg or 'bakkal').strip().lower()
+                    c['esnaf_pkg'] = _pkg if _pkg in ESNAF_PKGS else 'bakkal'
                 # Cloudflared reload'u BURADA yapma: reload (SIGHUP) bu register isteğinin KENDİ cloudflared
                 # bağlantısını kesip firma kurulsa bile tarayıcıda yanlış "Hata" gösteriyordu. Reload'u HTTP
                 # yanıtı gönderildikten SONRA (BackgroundTask) tetikliyoruz → yanıt sağlam döner, subdomain

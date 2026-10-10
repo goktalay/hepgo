@@ -88,6 +88,10 @@ MODULE_ROLES = {
     'fleet':      [ADMIN, ADMIN_STAFF, FLEET],                                                # M28 Araç Yönetimi (araç, zimmet, belge, gider)
     'boss':       [ADMIN, BOSS],                                                              # M29 Patron ekranı (üst yönetim özeti)
     'pos':        [ADMIN, SALES],                                                             # Esnaf Kasa (POS): dokunmatik perakende satış
+    'sections':     [ADMIN, SALES],                                                           # Bölümler (berber oda / lokanta salon+masa)
+    'services':     [ADMIN, SALES],                                                           # Hizmetler (berber/kuaför)
+    'reservations': [ADMIN, SALES],                                                           # Rezervasyon (randevu/masa)
+    'waiter':       [ADMIN, SALES],                                                           # Garson (lokanta adisyon)
     'projects':   [ADMIN, PROJECT],                                                           # M30 Proje Yönetimi (Ar-Ge projeleri, proje kâr-zararı)
 }
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler

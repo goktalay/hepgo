@@ -19,6 +19,7 @@ OPTIONAL = {
     'boss', 'production', 'orders', 'printers', 'products', 'design', 'field',
     'certs', 'fleet', 'projects', 'secretariat', 'security', 'rehber',
     'reports', 'announcements', 'cleaning', 'tools', 'pos',
+    'sections', 'services', 'reservations', 'waiter',
 }
 CENTRAL = {
     'cameras', 'mikro', 'factory', 'konum', 'sms',

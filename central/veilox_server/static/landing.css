@@ -510,6 +510,7 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .gx-ft.on { border-color: var(--blue); background: rgba(47,111,237,.06); box-shadow: 0 0 0 1px var(--blue); }
 .gx-ft.disabled { opacity: .5; cursor: not-allowed; }
 .gx-ft-soon { position: absolute; top: 9px; right: 9px; font-size: 10px; font-weight: 700; background: var(--blue); color: #fff; padding: 2px 8px; border-radius: 999px; }
+.gx-pkg3 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .gx-modsel { margin: 4px 0; }
 .gx-modsel-h b { font-size: 14px; } .gx-modsel-h .gx-sub { margin: 2px 0 10px; }
 .gx-modgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(142px, 1fr)); gap: 8px; }

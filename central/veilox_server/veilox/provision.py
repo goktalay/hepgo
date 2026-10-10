@@ -105,12 +105,14 @@ def one_line(value):
     return _CTRL.sub(' ', str(value or '')).strip()
 
 
-def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modules, white_label=False, must_change=False, lang=''):
+def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modules, white_label=False, must_change=False, lang='', esnaf_pkg=''):
     admin_user, admin_pass, full_name, company_name, master_user = map(
         one_line, (admin_user, admin_pass, full_name, company_name, master_user))
     mods = ','.join(one_line(m) for m in modules)
     lang = one_line(lang or '').strip().lower()
     lang_line = f'CAYMAZ_ADMIN_LANG={lang}\n' if lang in ('tr', 'en', 'de', 'fr', 'es', 'ar', 'ru') else ''
+    esnaf_pkg = one_line(esnaf_pkg or '').strip().lower()
+    esnaf_line = f'CAYMAZ_ESNAF_PKG={esnaf_pkg}\n' if esnaf_pkg in ('bakkal', 'berber', 'lokanta') else ''
     # Şifreyi kullanıcı kendi belirlediyse (kayıt sihirbazı) ilk girişte değiştirmesi İSTENMEZ;
     # şifre merkez tarafından rastgele üretildiyse ilk girişte değiştirmesi istenir.
     return (
@@ -121,6 +123,7 @@ def _env_text(admin_user, admin_pass, full_name, company_name, master_user, modu
         f'CAYMAZ_ADMIN_FULL_NAME={full_name}\n'
         f'CAYMAZ_ADMIN_MUST_CHANGE={"1" if must_change else "0"}\n'
         f'{lang_line}'
+        f'{esnaf_line}'
         f'CAYMAZ_COMPANY_NAME={company_name}\n'
         f'CAYMAZ_MASTER_USERNAME={master_user}\n'
         f'CAYMAZ_MODULES={mods}\n'
@@ -215,7 +218,8 @@ def provision_online(conn, company, do_reload=True):
         env_file.write_text(_env_text(master_user, admin_pass, full_name, name, master_user, modules,
                                       white_label=bool(company.get('white_label')),
                                       must_change=not company.get('master_secret'),
-                                      lang=company.get('lang', '')), encoding='utf-8')
+                                      lang=company.get('lang', ''),
+                                      esnaf_pkg=company.get('esnaf_pkg', '')), encoding='utf-8')
         os.chmod(env_file, 0o600)
 
         # Firma logosu (kayıt sihirbazında yüklendiyse) → tenant markası: brand_dir/img/logo.png

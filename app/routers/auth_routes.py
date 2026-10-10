@@ -480,7 +480,8 @@ def meta(request: Request, conn=db.DB):
     return {'company': config.COMPANY_NAME, 'company_legal': config.COMPANY_LEGAL_NAME,
             'logo_url': brand_logo_url(conn), 'roles': auth.all_roles(), 'remote': remote, 'local_url': config.LOCAL_URL,
             'white_label': config.WHITE_LABEL, 'local_upload_required': config.LOCAL_UPLOAD_REQUIRED,
-            'maps_key': config.GOOGLE_MAPS_API_KEY}   # Google Haritalar (istemci tarafı; yoksa harita OSM'e düşer
+            'maps_key': config.GOOGLE_MAPS_API_KEY,   # Google Haritalar (istemci tarafı; yoksa harita OSM'e düşer
+            'esnaf_pkg': config.ESNAF_PKG}            # esnaf paketi (bakkal/berber/lokanta); boşsa KOBİ
 
 
 @router.get('/plane')

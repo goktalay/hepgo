@@ -232,17 +232,17 @@ const LEGAL_L = {
 const legalL = () => LEGAL_L[lang] || LEGAL_L.en;
 // Firma tipi + modül seçimi metinleri (7 dil; eksikse İngilizce'ye düşer)
 const REG2 = {
-  tr: { firmType: 'Firma tipiniz', kobiT: 'KOBİ ve üstü', kobiD: 'İhtiyacınıza göre modülleri seçin', esnafT: 'Esnaf', esnafD: 'Bakkal · Berber · Lokanta', soon: 'Çok yakında', modH: 'Modülleriniz', modP: 'Zorunlu modüller her zaman açıktır. Seçmeli modülleri işaretleyin; sonra Program Ayarları’ndan değiştirebilirsiniz.', modReq: 'Zorunlu', modOpt: 'Seçmeli' },
-  en: { firmType: 'Company type', kobiT: 'SME and up', kobiD: 'Choose the modules you need', esnafT: 'Small business', esnafD: 'Grocery · Barber · Restaurant', soon: 'Coming soon', modH: 'Your modules', modP: 'Required modules are always on. Tick the optional ones; you can change them later in Settings.', modReq: 'Required', modOpt: 'Optional' },
-  de: { firmType: 'Unternehmenstyp', kobiT: 'KMU und größer', kobiD: 'Wählen Sie die benötigten Module', esnafT: 'Kleingewerbe', esnafD: 'Laden · Friseur · Restaurant', soon: 'Demnächst', modH: 'Ihre Module', modP: 'Pflichtmodule sind immer aktiv. Wählen Sie die optionalen; später in den Einstellungen änderbar.', modReq: 'Pflicht', modOpt: 'Optional' },
-  fr: { firmType: 'Type d’entreprise', kobiT: 'PME et plus', kobiD: 'Choisissez les modules nécessaires', esnafT: 'Artisan / commerçant', esnafD: 'Épicerie · Coiffeur · Restaurant', soon: 'Bientôt', modH: 'Vos modules', modP: 'Les modules obligatoires sont toujours actifs. Cochez les optionnels ; modifiables plus tard dans les réglages.', modReq: 'Obligatoire', modOpt: 'Optionnel' },
-  es: { firmType: 'Tipo de empresa', kobiT: 'Pyme y más', kobiD: 'Elija los módulos que necesita', esnafT: 'Autónomo / comercio', esnafD: 'Tienda · Peluquería · Restaurante', soon: 'Muy pronto', modH: 'Sus módulos', modP: 'Los módulos obligatorios siempre están activos. Marque los opcionales; podrá cambiarlos luego en Ajustes.', modReq: 'Obligatorio', modOpt: 'Opcional' },
-  ar: { firmType: 'نوع الشركة', kobiT: 'المنشآت وما فوق', kobiD: 'اختر الوحدات التي تحتاجها', esnafT: 'الحرفيون', esnafD: 'بقالة · حلاق · مطعم', soon: 'قريباً جداً', modH: 'وحداتك', modP: 'الوحدات الإلزامية مفعّلة دائماً. اختر الاختيارية؛ يمكنك تغييرها لاحقاً من الإعدادات.', modReq: 'إلزامي', modOpt: 'اختياري' },
-  ru: { firmType: 'Тип компании', kobiT: 'МСБ и выше', kobiD: 'Выберите нужные модули', esnafT: 'Малый бизнес', esnafD: 'Магазин · Парикмахер · Кафе', soon: 'Скоро', modH: 'Ваши модули', modP: 'Обязательные модули всегда включены. Отметьте необязательные; позже измените в Настройках.', modReq: 'Обязательный', modOpt: 'Необязательный' },
+  tr: { firmType: 'Firma tipiniz', kobiT: 'KOBİ ve üstü', kobiD: 'İhtiyacınıza göre modülleri seçin', esnafT: 'Esnaf', esnafD: 'Bakkal · Berber · Lokanta', soon: 'Çok yakında', modH: 'Modülleriniz', modP: 'Zorunlu modüller her zaman açıktır. Seçmeli modülleri işaretleyin; sonra Program Ayarları’ndan değiştirebilirsiniz.', modReq: 'Zorunlu', modOpt: 'Seçmeli', pkgH: 'Esnaf paketiniz', pkgP: 'İşinize uygun paketi seçin; modüller otomatik kurulur.', p_bakkalT: 'Bakkal · Market', p_bakkalD: 'Dokunmatik yazarkasa, barkod, stok', p_berberT: 'Berber · Kuaför', p_berberD: 'Bölümler, hizmetler, randevu takvimi', p_lokantaT: 'Lokanta · Fastfood', p_lokantaD: 'Masa düzeni, garson, adisyon' },
+  en: { firmType: 'Company type', kobiT: 'SME and up', kobiD: 'Choose the modules you need', esnafT: 'Small business', esnafD: 'Grocery · Barber · Restaurant', soon: 'Coming soon', modH: 'Your modules', modP: 'Required modules are always on. Tick the optional ones; you can change them later in Settings.', modReq: 'Required', modOpt: 'Optional', pkgH: 'Your business package', pkgP: 'Pick the package that fits; modules are set up automatically.', p_bakkalT: 'Grocery · Market', p_bakkalD: 'Touch POS, barcode, stock', p_berberT: 'Barber · Hair salon', p_berberD: 'Sections, services, booking calendar', p_lokantaT: 'Restaurant · Fast food', p_lokantaD: 'Table layout, waiter, checks' },
+  de: { firmType: 'Unternehmenstyp', kobiT: 'KMU und größer', kobiD: 'Wählen Sie die benötigten Module', esnafT: 'Kleingewerbe', esnafD: 'Laden · Friseur · Restaurant', soon: 'Demnächst', modH: 'Ihre Module', modP: 'Pflichtmodule sind immer aktiv. Wählen Sie die optionalen; später in den Einstellungen änderbar.', modReq: 'Pflicht', modOpt: 'Optional', pkgH: 'Ihr Gewerbepaket', pkgP: 'Wählen Sie das passende Paket; Module werden automatisch eingerichtet.', p_bakkalT: 'Laden · Markt', p_bakkalD: 'Touch-Kasse, Barcode, Lager', p_berberT: 'Friseur · Salon', p_berberD: 'Bereiche, Leistungen, Terminkalender', p_lokantaT: 'Restaurant · Fastfood', p_lokantaD: 'Tischplan, Kellner, Rechnungen' },
+  fr: { firmType: 'Type d’entreprise', kobiT: 'PME et plus', kobiD: 'Choisissez les modules nécessaires', esnafT: 'Artisan / commerçant', esnafD: 'Épicerie · Coiffeur · Restaurant', soon: 'Bientôt', modH: 'Vos modules', modP: 'Les modules obligatoires sont toujours actifs. Cochez les optionnels ; modifiables plus tard dans les réglages.', modReq: 'Obligatoire', modOpt: 'Optionnel', pkgH: 'Votre forfait commerce', pkgP: 'Choisissez le forfait adapté ; les modules sont installés automatiquement.', p_bakkalT: 'Épicerie · Marché', p_bakkalD: 'Caisse tactile, code-barres, stock', p_berberT: 'Coiffeur · Salon', p_berberD: 'Espaces, services, agenda de rendez-vous', p_lokantaT: 'Restaurant · Fast-food', p_lokantaD: 'Plan de tables, serveur, additions' },
+  es: { firmType: 'Tipo de empresa', kobiT: 'Pyme y más', kobiD: 'Elija los módulos que necesita', esnafT: 'Autónomo / comercio', esnafD: 'Tienda · Peluquería · Restaurante', soon: 'Muy pronto', modH: 'Sus módulos', modP: 'Los módulos obligatorios siempre están activos. Marque los opcionales; podrá cambiarlos luego en Ajustes.', modReq: 'Obligatorio', modOpt: 'Opcional', pkgH: 'Su paquete de comercio', pkgP: 'Elija el paquete adecuado; los módulos se instalan automáticamente.', p_bakkalT: 'Tienda · Mercado', p_bakkalD: 'TPV táctil, código de barras, stock', p_berberT: 'Peluquería · Salón', p_berberD: 'Secciones, servicios, agenda de citas', p_lokantaT: 'Restaurante · Comida rápida', p_lokantaD: 'Plano de mesas, camarero, cuentas' },
+  ar: { firmType: 'نوع الشركة', kobiT: 'المنشآت وما فوق', kobiD: 'اختر الوحدات التي تحتاجها', esnafT: 'الحرفيون', esnafD: 'بقالة · حلاق · مطعم', soon: 'قريباً جداً', modH: 'وحداتك', modP: 'الوحدات الإلزامية مفعّلة دائماً. اختر الاختيارية؛ يمكنك تغييرها لاحقاً من الإعدادات.', modReq: 'إلزامي', modOpt: 'اختياري', pkgH: 'باقة نشاطك', pkgP: 'اختر الباقة المناسبة؛ تُثبَّت الوحدات تلقائياً.', p_bakkalT: 'بقالة · سوق', p_bakkalD: 'نقطة بيع باللمس، باركود، مخزون', p_berberT: 'حلاق · صالون', p_berberD: 'أقسام، خدمات، تقويم مواعيد', p_lokantaT: 'مطعم · وجبات سريعة', p_lokantaD: 'توزيع الطاولات، نادل، فواتير' },
+  ru: { firmType: 'Тип компании', kobiT: 'МСБ и выше', kobiD: 'Выберите нужные модули', esnafT: 'Малый бизнес', esnafD: 'Магазин · Парикмахер · Кафе', soon: 'Скоро', modH: 'Ваши модули', modP: 'Обязательные модули всегда включены. Отметьте необязательные; позже измените в Настройках.', modReq: 'Обязательный', modOpt: 'Необязательный', pkgH: 'Ваш пакет для бизнеса', pkgP: 'Выберите подходящий пакет; модули установятся автоматически.', p_bakkalT: 'Магазин · Маркет', p_bakkalD: 'Сенсорная касса, штрихкод, склад', p_berberT: 'Парикмахер · Салон', p_berberD: 'Зоны, услуги, календарь записи', p_lokantaT: 'Ресторан · Фастфуд', p_lokantaD: 'План столов, официант, счета' },
 };
 const r2 = () => REG2[lang] || REG2.en;
 const qs = new URLSearchParams(location.search);
-const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: { firm_type: 'kobi', modules: [] }, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false, submitting: false, mods: [] };
+const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: { firm_type: 'kobi', modules: [], esnaf_pkg: 'bakkal' }, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false, submitting: false, mods: [] };
 // Açık betada "Paket" adımı yok → ilk adım doğrudan Firma (adım 1). Adım numaraları sabit kalır (1=Firma,2=Yönetici,3=Tamam).
 const firstStep = () => state.openBeta ? 1 : 0;
 const recent = () => { try { return JSON.parse(localStorage.getItem('hepgo.firms') || '[]'); } catch { return []; } };
@@ -380,7 +380,7 @@ function regView() {
     body.innerHTML = `<div class="gx-pane">${stepsBar()}<h2>${esc(L.firmH)}</h2>
       <div class="gx-ftype">
         <button type="button" class="gx-ft${kobi ? ' on' : ''}" data-ft="kobi"><b>${esc(R.kobiT)}</b><small>${esc(R.kobiD)}</small></button>
-        <button type="button" class="gx-ft disabled" data-ft="esnaf" disabled><span class="gx-ft-soon">${esc(R.soon)}</span><b>${esc(R.esnafT)}</b><small>${esc(R.esnafD)}</small></button>
+        <button type="button" class="gx-ft${kobi ? '' : ' on'}" data-ft="esnaf"><b>${esc(R.esnafT)}</b><small>${esc(R.esnafD)}</small></button>
       </div>
       <form id="f1" class="gx-form">
         <label class="vx-field"><span>${esc(L.cname)}</span><input class="vx-input" name="company" value="${esc(f.company || '')}" placeholder="${esc(L.cnamePh)}" required autofocus></label>
@@ -414,6 +414,12 @@ function regView() {
           <div class="gx-modsel-h" style="margin-top:14px"><small class="muted">${esc(R.modReq)}</small></div>
           <div class="gx-modgrid">${req.map(m => modCard(m, true)).join('')}</div>
         </div>
+        <div class="gx-modsel"${kobi ? ' hidden' : ''} id="esnafSel">
+          <div class="gx-modsel-h"><b>${esc(R.pkgH)}</b><p class="gx-sub">${esc(R.pkgP)}</p></div>
+          <div class="gx-ftype gx-pkg3">
+            ${['bakkal', 'berber', 'lokanta'].map(pk => `<button type="button" class="gx-ft gx-epkg${(f.esnaf_pkg || 'bakkal') === pk ? ' on' : ''}" data-epkg="${pk}"><b>${esc(R['p_' + pk + 'T'])}</b><small>${esc(R['p_' + pk + 'D'])}</small></button>`).join('')}
+          </div>
+        </div>
         <div class="vx-err" id="f1err"></div>
         <div class="gx-acts">${state.openBeta ? '<span></span>' : `<button type="button" class="btn btn-ghost" id="prev">← ${esc(L.prev)}</button>`}<button class="btn btn-primary btn-lg" type="submit">${esc(L.next)} →</button></div>
       </form></div>`;
@@ -422,9 +428,16 @@ function regView() {
     // Firma tipi seçimi (Esnaf şimdilik devre dışı — Faz 2) + modül kartları (KOBİ)
     body.querySelectorAll('.gx-ft[data-ft]').forEach(b => b.addEventListener('click', () => {
       if (b.disabled) return;
+      const esnaf = b.dataset.ft === 'esnaf';
       state.form.firm_type = b.dataset.ft;
-      $('#modSel') && ($('#modSel').hidden = b.dataset.ft === 'esnaf');
-      body.querySelectorAll('.gx-ft').forEach(x => x.classList.toggle('on', x === b));
+      $('#modSel') && ($('#modSel').hidden = esnaf);
+      $('#esnafSel') && ($('#esnafSel').hidden = !esnaf);
+      body.querySelectorAll('.gx-ft[data-ft]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+    // Esnaf paket seçimi (Bakkal / Berber / Lokanta)
+    body.querySelectorAll('.gx-epkg[data-epkg]').forEach(b => b.addEventListener('click', () => {
+      state.form.esnaf_pkg = b.dataset.epkg;
+      body.querySelectorAll('.gx-epkg').forEach(x => x.classList.toggle('on', x === b));
     }));
     body.querySelectorAll('.gx-modcard[data-mod]:not([disabled])').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.mod, arr = state.form.modules || (state.form.modules = []);
@@ -567,7 +580,7 @@ function regView() {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
           package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: '',
           slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '', lang,
-          firm_type: state.form.firm_type || 'kobi', modules: state.form.modules || [] });
+          firm_type: state.form.firm_type || 'kobi', modules: state.form.modules || [], esnaf_pkg: state.form.esnaf_pkg || 'bakkal' });
         clearTimeout(slowTimer); state.submitting = false;
         state.step = 3; regView();
       } catch (ex) {

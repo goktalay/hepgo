@@ -535,8 +535,11 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
             # merkez modülleri hariç). Seçim yoksa (eski akış / esnaf) tüm modüller verilir (geri uyumluluk).
             pkg_row = pkg_row or db.row(conn, "SELECT * FROM packages WHERE slug='kurumsal'") \
                 or db.row(conn, 'SELECT * FROM packages ORDER BY sort, id LIMIT 1')
-            if (body.firm_type or 'kobi') == 'kobi' and body.modules:
+            ft = body.firm_type or 'kobi'
+            if ft == 'kobi' and body.modules:
                 mods = kobi_modules(body.modules)
+            elif ft == 'esnaf' and body.modules:
+                mods = valid_modules(set(body.modules) | {'admin', 'users'})   # esnaf: seçilen + çekirdek
             else:
                 mods = list(MODULE_KEYS)
             mode = 'online'

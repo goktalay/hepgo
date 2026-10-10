@@ -27,6 +27,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
+          bundler-cache: false
 
       - name: fastlane + cocoapods kur
         run: gem install fastlane cocoapods --no-document

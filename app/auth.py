@@ -325,6 +325,17 @@ def current_user(request: Request, conn=db.DB):
     if config.MODULES is not None:
         allow = set(config.MODULES) | {'master', 'uyelik'}   # Üyeliğim & Destek: paketten bağımsız, her firmada destek kanalı
         user['modules'] = [m for m in user['modules'] if m.split('.')[0] in allow]
+    # Master, Program Ayarları › Modül Yönetimi'nden SEÇMELİ (optional) modülleri kapatabilir (app_kv['modules.disabled']).
+    # Zorunlu (required) ve her-zaman (master/uyelik) modüller kapatılamaz.
+    try:
+        from . import modules_tier
+        _row = conn.execute("SELECT v FROM app_kv WHERE k = 'modules.disabled'").fetchone()
+        _off = set(json.loads(_row[0])) if _row and _row[0] else set()
+        if _off:
+            user['modules'] = [m for m in user['modules']
+                               if m.split('.')[0] not in _off or modules_tier.tier(m) in ('required', 'always')]
+    except Exception:   # noqa: BLE001 — modül yönetimi hatası girişi bozmasın
+        pass
     user['write_modules'] = [m for m in user.get('write_modules', []) if m in user['modules']]
     return user
 

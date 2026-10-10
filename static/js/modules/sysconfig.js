@@ -5,6 +5,7 @@ import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
 import { rolesBody } from './roles.js';
 import { avatar, clear, confirmDialog, every, field, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
+import { moduleName } from '../modulenames.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SC_MQ = matchMedia('(max-width: 800px)');
@@ -1642,6 +1643,40 @@ function kvkkBody() {
   return wrap;
 }
 
+// Modül Yönetimi: firmanın seçmeli (optional) modüllerini aç/kapat. Zorunlu modüller kilitli-açık;
+// merkez (central) modüller burada görünmez. Değişiklik sayfa yenilenince (sonraki /auth/me) yansır.
+function moduleMgmtBody(view, ctx) {
+  const wrap = h('div', { class: 'set-card mm-wrap' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
+  view.append(wrap);
+  const off = new Set();
+  const render = data => {
+    clear(wrap);
+    wrap.append(h('p', { class: 'muted mm-hint' }, 'Zorunlu modüller her zaman açıktır. Seçmeli modülleri firmanıza göre açıp kapatabilirsiniz. Listede olmayan modüller için üyelik/merkez ile iletişime geçin.'));
+    const req = data.modules.filter(m => m.tier === 'required');
+    const opt = data.modules.filter(m => m.tier === 'optional');
+    data.modules.filter(m => !m.enabled).forEach(m => off.add(m.key));
+    const rowEl = (m, locked) => {
+      const sw = h('button', { class: 'ios-sw' + (m.enabled ? ' on' : ''), type: 'button', disabled: locked, role: 'switch' }, h('i'));
+      if (!locked) sw.onclick = () => { sw.classList.toggle('on'); sw.classList.contains('on') ? off.delete(m.key) : off.add(m.key); };
+      return h('div', { class: 'mm-row' }, h('span', { class: 'mm-name' }, moduleName(m.key)),
+        locked ? h('span', { class: 'badge' }, 'Zorunlu') : null, sw);
+    };
+    if (req.length) { wrap.append(h('div', { class: 'mm-sec' }, 'Zorunlu modüller')); req.forEach(m => wrap.append(rowEl(m, true))); }
+    if (opt.length) { wrap.append(h('div', { class: 'mm-sec' }, 'Seçmeli modüller')); opt.forEach(m => wrap.append(rowEl(m, false))); }
+    else wrap.append(h('p', { class: 'muted' }, 'Açılabilecek seçmeli modül yok.'));
+    const btn = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try { await api.put('/api/system/modules', { disabled: [...off] }); toast('Kaydedildi · sayfayı yenileyince yansır'); }
+      catch (e) { toastError(e.message || 'Kaydedilemedi'); }
+      btn.disabled = false;
+    };
+    wrap.append(h('div', { class: 'mm-save' }, btn));
+  };
+  api.get('/api/system/modules').then(render).catch(() => clear(wrap, h('p', { class: 'muted' }, 'Modüller yüklenemedi.')));
+  return wrap;
+}
+
 const GROUPS = [
   { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
   { key: 'support', title: 'Merkez Destek', desc: 'Veilox destek girişleri: onay ve aktif oturumlar', icon: 'lock', body: supportBody, master: true },
@@ -1657,6 +1692,7 @@ const GROUPS = [
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
   { key: 'tasks-admin', title: 'Görev Yönetimi', desc: 'Kullanıcılara günlük görev atama (tek seferlik / tekrarlı, zorunlu)', icon: 'documents', link: '#/tasks-admin', master: true },
   { key: 'surveys-admin', title: 'Anket Yönetimi', desc: 'Anket oluştur (soru-cevap), tüm personel zorunlu cevaplar, sonuçları gör', icon: 'documents', link: '#/surveys-admin', master: true },
+  { key: 'modules-mgmt', title: 'Modül Yönetimi', desc: 'Firmanızın seçmeli modüllerini açıp kapatın (zorunlu modüller her zaman açık)', icon: 'apps', master: true, body: moduleMgmtBody },
 ];
 
 const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', kvkk: '#30d158', users: '#ff3b30', master: '#af52de' };

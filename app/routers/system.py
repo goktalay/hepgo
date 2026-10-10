@@ -175,6 +175,42 @@ def get_integrations_catalog(user=Depends(auth.current_user), conn=db.DB):
             'master': bool(user.get('master'))}
 
 
+# ---------- Modül Yönetimi (Program Ayarları › master): seçmeli modülleri aç/kapat ----------
+@router.get('/modules')
+def get_modules(user=Depends(auth.current_user), conn=db.DB):
+    """Firmanın sahip olduğu modüller + tier (zorunlu/seçmeli) + açık/kapalı durumu.
+    Merkez-only (central) modüller burada görünmez (onları Veilox yöneticisi açar)."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu ayarlar yalnızca sistem yöneticisine açıktır')
+    from .. import modules_tier
+    owned = set(config.MODULES) if config.MODULES is not None else None   # None = tümü (merkez kısıt yok)
+    row = conn.execute("SELECT v FROM app_kv WHERE k = 'modules.disabled'").fetchone()
+    off = set(json.loads(row[0])) if row and row[0] else set()
+    out = []
+    for key in sorted(modules_tier.REQUIRED | modules_tier.OPTIONAL):
+        if owned is not None and key not in owned:
+            continue   # merkez bu modülü firmaya vermemiş → yönetilemez
+        t = modules_tier.tier(key)
+        out.append({'key': key, 'tier': t, 'enabled': (t == 'required') or (key not in off)})
+    return {'modules': out}
+
+
+class ModulesIn(BaseModel):
+    disabled: list = []
+
+
+@router.put('/modules')
+def put_modules(body: ModulesIn, user=Depends(auth.current_user), conn=db.DB):
+    """Yalnız SEÇMELİ (optional) modüller kapatılabilir; zorunlu/merkez modüller yok sayılır."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Bu ayarlar yalnızca sistem yöneticisine açıktır')
+    from .. import modules_tier
+    off = sorted({k for k in (body.disabled or []) if modules_tier.tier(k) == 'optional'})
+    conn.execute("INSERT OR REPLACE INTO app_kv (k, v) VALUES ('modules.disabled', ?)", (json.dumps(off),))
+    conn.commit()
+    return {'ok': True, 'disabled': off}
+
+
 class IntegAddIn(BaseModel):
     integ: str
 

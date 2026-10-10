@@ -21,20 +21,34 @@ platform :ios do
       readonly: false
     )
 
+    # Xcode projesini MANUEL imzalamaya + match'in ürettiği profile bağla (varsayılan "otomatik, takımsız" hatasını giderir)
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "App.xcodeproj",
+      team_id: "5RTGKL4F4Z",
+      code_sign_identity: "Apple Distribution",
+      profile_name: "match AppStore com.turkbey.hepgo",
+      targets: ["App"]
+    )
+
     # Build numarası: GitHub run numarası (her yüklemede artan, benzersiz)
     increment_build_number(
       xcodeproj: "App.xcodeproj",
       build_number: ENV["GITHUB_RUN_NUMBER"] || Time.now.to_i.to_s
     )
 
-    # Arşivle (App Store imza yöntemi)
+    # Arşivle (App Store, manuel imza + match profili)
     gym(
       scheme: "App",
       workspace: "App.xcworkspace",
       export_method: "app-store",
       clean: true,
       output_directory: "output",
-      output_name: "HEPGO.ipa"
+      output_name: "HEPGO.ipa",
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: { "com.turkbey.hepgo" => "match AppStore com.turkbey.hepgo" }
+      }
     )
 
     # TestFlight'a yükle (işlemeyi bekleme — Apple tarafı sürer)

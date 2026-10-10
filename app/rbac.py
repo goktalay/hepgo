@@ -42,6 +42,7 @@ CATALOG = [
     ('projects', 'Proje Yönetimi', 'Proje & Ar-Ge'),
     ('field', 'Saha Yönetimi', 'Saha & Operasyon'), ('fleet', 'Araç Yönetimi', 'Saha & Operasyon'), ('certs', 'Sertifikasyon', 'Saha & Operasyon'),
     ('cleaning', 'Temizlik', 'Saha & Operasyon'),
+    ('pos', 'Esnaf Kasa', 'Satış & CRM'),
     ('secretariat', 'Sekreterya', 'Sistem'), ('security', 'Güvenlik', 'Sistem'), ('cameras', 'Kameralar', 'Sistem'),
     ('rehber', 'Rehber', 'Sistem'), ('tools', 'Araçlar', 'Sistem'),
     ('factory', 'Fabrika', 'Sistem'),

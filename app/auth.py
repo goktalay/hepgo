@@ -87,6 +87,7 @@ MODULE_ROLES = {
     'certs':      [ADMIN, QUALITY],                                                           # M27 Sertifikasyon (sertifika + doküman + denetim)
     'fleet':      [ADMIN, ADMIN_STAFF, FLEET],                                                # M28 Araç Yönetimi (araç, zimmet, belge, gider)
     'boss':       [ADMIN, BOSS],                                                              # M29 Patron ekranı (üst yönetim özeti)
+    'pos':        [ADMIN, SALES],                                                             # Esnaf Kasa (POS): dokunmatik perakende satış
     'projects':   [ADMIN, PROJECT],                                                           # M30 Proje Yönetimi (Ar-Ge projeleri, proje kâr-zararı)
 }
 # M18 Malzeme İhtiyaç Planlaması: Yarı Mamül (stock) ve Onay Yönetimi (warehouse) alt modüllerini görenler

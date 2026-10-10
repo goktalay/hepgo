@@ -62,6 +62,7 @@ import * as mytasks from './modules/mytasks.js';
 import * as tasksAdmin from './modules/tasksadmin.js';
 import * as mysurvey from './modules/mysurvey.js';
 import * as surveysAdmin from './modules/surveysadmin.js';
+import * as pos from './modules/pos.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
@@ -98,6 +99,7 @@ const MODULES = [
   { key: 'mrp', title: 'MRP', mod: mrp },
   { key: 'purchasing', title: 'Satın Alma', mod: purchasing },   // Malzeme, Yarı Mamül (eski Stok), Onay (eski Depo), Depo Yönetimi
   { key: 'sales', title: 'Satış Yönetimi', mod: sales, sub: 'crm' },   // CRM alt modülü   // Firmalar için satış faturası oluşturma
+  { key: 'pos', title: 'Esnaf Kasa', mod: pos, tone: 'green' },   // Dokunmatik perakende satış (yazarkasa) — esnaf paketleri
   { key: 'mikro', title: 'Mikro ERP', mod: mikro, hidden: true },   // Program Ayarları › Entegrasyonlar altından açılır (yalnızca MASTER)
   { key: 'field', title: 'Saha Yönetimi', mod: fieldMod },
   { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers, sub: 'production',

@@ -2933,6 +2933,10 @@ def _migrate(conn):
                      ('height_mm', 'REAL'), ('depth_mm', 'REAL'), ('weight_g', 'REAL'), ('min_stock', 'REAL')):   # MRP malzeme bilgileri
         if col not in prod_cols:
             conn.execute(f'ALTER TABLE products ADD COLUMN {col} {typ}')
+    if 'sale_price' not in prod_cols:   # Esnaf Kasa (POS): perakende satış fiyatı (KDV dahil)
+        conn.execute('ALTER TABLE products ADD COLUMN sale_price REAL')
+    if 'is_retail' not in prod_cols:    # Esnaf Kasa: yazarkasada satılan ürün (perakende)
+        conn.execute('ALTER TABLE products ADD COLUMN is_retail INTEGER NOT NULL DEFAULT 0')
     if 'material_review_at' not in {r[1] for r in conn.execute('PRAGMA table_info(orders)')}:   # hurda uçağın malzemeleri değerlendirildi
         conn.execute('ALTER TABLE orders ADD COLUMN material_review_at TEXT')
         conn.execute("UPDATE orders SET material_review_at = scrapped_at WHERE status = 'HURDA'")   # eski hurdalar sorulmaz

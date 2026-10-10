@@ -49,6 +49,7 @@ export const icons = {
   mikro: svg('<ellipse cx="8" cy="5" rx="5" ry="2.2"/><path d="M3 5v6c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2V5"/><path d="M3 11v5c0 1.2 2.2 2.2 5 2.2 1 0 1.9-.1 2.7-.4"/><path d="M14 15h7m0 0-3-3m3 3-3 3"/>'),
   crm: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.3A4.6 4.6 0 0 1 21 18.8"/>'),
   sales: svg('<path d="M6 2h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v4h4"/><path d="M9 13h6M9 17h6M9 9h2"/>'),
+  pos: svg('<rect x="3" y="3" width="18" height="10" rx="2"/><path d="M3 8h18"/><path d="M7 18h10M8 21h8M9 18v3M15 18v3"/>'),
   hr: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2.3"/><path d="M5 16.5a3.5 3.5 0 0 1 7 0M14 10h4M14 13.5h4"/>'),
   person: svg('<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
   rehber: svg('<rect x="5" y="3" width="15" height="18" rx="2"/><path d="M5 7H3M5 12H3M5 17H3"/><circle cx="12" cy="10" r="2.2"/><path d="M9 16a3 3 0 0 1 6 0"/>'),

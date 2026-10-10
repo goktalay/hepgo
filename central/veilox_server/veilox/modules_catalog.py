@@ -37,6 +37,7 @@ MODULES = [
     ('certs',        'Sertifikasyon',         'ofis'),
     ('fleet',        'Araç Yönetimi',         'saha'),
     ('cameras',      'Kameralar',             'ofis'),
+    ('pos',          'Esnaf Kasa',            'esnaf'),
 ]
 
 MODULE_KEYS = [m[0] for m in MODULES]
@@ -49,7 +50,7 @@ CORE_MODULES = ['admin', 'users', 'announcements']
 # required = KOBİ firmada her zaman açık; optional = kayıtta/sonradan seçilir; central = yalnız merkez açar.
 REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance'}
 OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
-            'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools'}
+            'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos'}
 CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}
 
 

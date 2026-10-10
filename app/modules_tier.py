@@ -18,7 +18,7 @@ REQUIRED = {
 OPTIONAL = {
     'boss', 'production', 'orders', 'printers', 'products', 'design', 'field',
     'certs', 'fleet', 'projects', 'secretariat', 'security', 'rehber',
-    'reports', 'announcements', 'cleaning', 'tools',
+    'reports', 'announcements', 'cleaning', 'tools', 'pos',
 }
 CENTRAL = {
     'cameras', 'mikro', 'factory', 'konum', 'sms',

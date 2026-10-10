@@ -23,16 +23,17 @@ jobs:
           npm ci
           npx cap sync ios
 
-      - name: Ruby + fastlane/cocoapods
+      - name: Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
-          bundler-cache: true
-          working-directory: mobile/ios/App
+
+      - name: fastlane + cocoapods kur
+        run: gem install fastlane cocoapods --no-document
 
       - name: CocoaPods
         working-directory: mobile/ios/App
-        run: bundle exec pod install
+        run: pod install
 
       - name: Derle ve TestFlight'a yükle
         working-directory: mobile/ios/App
@@ -44,4 +45,4 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           MATCH_READONLY: 'false'
-        run: bundle exec fastlane ios beta
+        run: fastlane ios beta

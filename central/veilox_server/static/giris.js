@@ -512,7 +512,7 @@ function regView() {
       try {
         state.result = await post('/api/register', { company_name: state.form.company, master_username: state.form.email, master_name: state.form.full, password: form.pw.value,
           package_slug: state.pkg, phone: state.form.phone, tax_no: state.form.tax, city: state.form.city, accept: form.accept.checked, email_code: '',
-          slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '' });
+          slug: state.form.slug || '', country: state.form.country || '', logo: state.form.logo || '', lang });
         clearTimeout(slowTimer); state.submitting = false;
         state.step = 3; regView();
       } catch (ex) {

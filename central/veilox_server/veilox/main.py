@@ -381,6 +381,7 @@ class RegisterIn(BaseModel):
     slug: str = ''              # kullanıcının seçtiği firma adresi (boşsa firma adından üretilir)
     country: str = ''           # ülke kodu (ör. TR)
     logo: str = ''              # data URI (base64) — isteğe bağlı firma logosu (kurallı)
+    lang: str = ''              # kayıt dili (tr/en/de/fr/es/ar/ru) → master kullanıcının ERP varsayılan dili olur
 
 
 class SendCodeIn(BaseModel):
@@ -568,6 +569,8 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
             try:
                 c = db.company_public(db.row(conn, 'SELECT * FROM companies WHERE id=?', (cid,)))
                 c['master_secret'] = body.password          # provisioning için düz şifre
+                _lang = (body.lang or '').strip().lower()   # kayıt dili → master'ın ERP varsayılan dili
+                c['lang'] = _lang if _lang in ('tr', 'en', 'de', 'fr', 'es', 'ar', 'ru') else ''
                 # Cloudflared reload'u BURADA yapma: reload (SIGHUP) bu register isteğinin KENDİ cloudflared
                 # bağlantısını kesip firma kurulsa bile tarayıcıda yanlış "Hata" gösteriyordu. Reload'u HTTP
                 # yanıtı gönderildikten SONRA (BackgroundTask) tetikliyoruz → yanıt sağlam döner, subdomain

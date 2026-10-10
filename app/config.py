@@ -28,6 +28,7 @@ UPLOAD_DIR = DATA_DIR / 'uploads'
 ADMIN_USERNAME = os.environ.get('CAYMAZ_ADMIN_USERNAME', '')
 ADMIN_PASSWORD = os.environ.get('CAYMAZ_ADMIN_PASSWORD', '')
 ADMIN_FULL_NAME = os.environ.get('CAYMAZ_ADMIN_FULL_NAME', 'Sistem Yöneticisi')
+ADMIN_LANG = os.environ.get('CAYMAZ_ADMIN_LANG', '')   # kayıt dili → master'ın ERP varsayılan dili (prefs.settings.lang)
 # İlk admin ilk girişte şifre değiştirmeli mi? Self-kayıtta master şifreyi KENDİ belirlediğinden 0 verilir (zorlanmaz).
 ADMIN_MUST_CHANGE = os.environ.get('CAYMAZ_ADMIN_MUST_CHANGE', '1') != '0'
 

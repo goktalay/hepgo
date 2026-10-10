@@ -372,7 +372,10 @@ def seed_admin():
         exists = conn.execute('SELECT id FROM users WHERE username = ?', (config.ADMIN_USERNAME,)).fetchone()
         if exists:
             return
+        # Kayıt dili varsa master'ın varsayılan arayüz dili olsun (ERP app.js initLang → prefs.settings.lang)
+        _lang = (config.ADMIN_LANG or '').strip().lower()
+        prefs = json.dumps({'settings': {'lang': _lang}}) if _lang in ('tr', 'en', 'de', 'fr', 'es', 'ar', 'ru') else None
         cur = conn.execute(
-            'INSERT INTO users (username, password_hash, full_name, created_at, must_change_password) VALUES (?,?,?,?,?)',
-            (config.ADMIN_USERNAME, hash_password(config.ADMIN_PASSWORD), config.ADMIN_FULL_NAME, db.now(), int(config.ADMIN_MUST_CHANGE)))
+            'INSERT INTO users (username, password_hash, full_name, prefs, created_at, must_change_password) VALUES (?,?,?,?,?,?)',
+            (config.ADMIN_USERNAME, hash_password(config.ADMIN_PASSWORD), config.ADMIN_FULL_NAME, prefs, db.now(), int(config.ADMIN_MUST_CHANGE)))
         conn.execute('INSERT INTO user_roles (user_id, role) VALUES (?,?)', (cur.lastrowid, ADMIN))

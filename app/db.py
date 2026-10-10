@@ -1110,6 +1110,45 @@ CREATE TABLE IF NOT EXISTS user_task_log (
     note TEXT,
     UNIQUE(task_id, day)
 );
+-- Anket modülü: Sistem Yöneticisi anket açar (sorular), TÜM personel zorunlu cevaplar, yönetici cevapları görür.
+-- mandatory=1 → cevaplanana kadar kullanıcının ana ekranında kalıcı uyarı şeridi (zorunlu anket).
+CREATE TABLE IF NOT EXISTS surveys (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    mandatory INTEGER NOT NULL DEFAULT 1,     -- 1 = zorunlu (uyarı şeridi), 0 = gönüllü
+    anonymous INTEGER NOT NULL DEFAULT 0,     -- 1 = yönetici kimi cevapladığını görmez (yalnız toplamlar)
+    active INTEGER NOT NULL DEFAULT 1,         -- 0 = kapalı (yeni cevap alınmaz, sonuç kalır)
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    closed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS survey_questions (
+    id INTEGER PRIMARY KEY,
+    survey_id INTEGER NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+    ord INTEGER NOT NULL DEFAULT 0,            -- soru sırası
+    text TEXT NOT NULL,
+    qtype TEXT NOT NULL DEFAULT 'single',      -- 'text' | 'single' | 'multi' | 'rating' (1-5) | 'yesno'
+    options TEXT,                              -- single/multi: seçenekler JSON dizisi ["A","B"]
+    required INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_survey_q ON survey_questions(survey_id, ord);
+-- Bir kullanıcının bir anketi tamamlaması (UNIQUE → tek kez cevaplanır)
+CREATE TABLE IF NOT EXISTS survey_responses (
+    id INTEGER PRIMARY KEY,
+    survey_id INTEGER NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    submitted_at TEXT NOT NULL,
+    UNIQUE(survey_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_survey_resp ON survey_responses(survey_id);
+CREATE TABLE IF NOT EXISTS survey_answers (
+    id INTEGER PRIMARY KEY,
+    response_id INTEGER NOT NULL REFERENCES survey_responses(id) ON DELETE CASCADE,
+    question_id INTEGER NOT NULL REFERENCES survey_questions(id) ON DELETE CASCADE,
+    value TEXT                                 -- text/rating: düz değer; single: seçenek; multi: JSON dizisi
+);
+CREATE INDEX IF NOT EXISTS idx_survey_ans ON survey_answers(response_id);
 -- Güvenlik › Bina Kontrol: günlük bina turu; başlat/bitir ile GPS rotası kaydedilir
 CREATE TABLE IF NOT EXISTS building_checks (
     id INTEGER PRIMARY KEY,

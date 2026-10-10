@@ -295,6 +295,8 @@ def me(user=Depends(auth.current_user), conn=db.DB):
     from .usertasks import pending_for   # günlük görevler: bekleyen ZORUNLU görev → ana ekranda uyarı şeridi
     _pend = pending_for(conn, user['id'])
     out['pending_tasks'] = sum(1 for t in _pend if t['mandatory'])
+    from .surveys import pending_for as _survey_pending   # zorunlu + cevaplanmamış anket → ana ekranda uyarı şeridi
+    out['pending_surveys'] = len(_survey_pending(conn, user['id']))
     out['real_roles'] = user.get('real_roles', user['roles'])   # MASTER: ekranda gösterilen gerçek (atanmış) roller
     out['prefs'] = json.loads(user['prefs']) if user['prefs'] else {}
     out['has_pin'] = bool(conn.execute('SELECT pin_hash FROM users WHERE id = ?', (user['id'],)).fetchone()[0])

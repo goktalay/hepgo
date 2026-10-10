@@ -60,6 +60,8 @@ import * as hr from './modules/hr.js';
 import * as duty from './modules/duty.js';
 import * as mytasks from './modules/mytasks.js';
 import * as tasksAdmin from './modules/tasksadmin.js';
+import * as mysurvey from './modules/mysurvey.js';
+import * as surveysAdmin from './modules/surveysadmin.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
@@ -130,6 +132,7 @@ const MODULES = [
   { key: 'tools', title: 'Araçlar', mod: tools, group: 'system' },   // Modül ızgarası › Sistem Yönetimi
   { key: 'users', title: 'Kullanıcı Yönetimi', mod: users, tone: 'red', hidden: true },   // Program Ayarları altından açılır
   { key: 'tasks-admin', title: 'Görev Yönetimi', mod: tasksAdmin, tone: 'red', hidden: true, show: u => !!u.master },   // yalnız Sistem Sahibi; Program Ayarları'ndan açılır
+  { key: 'surveys-admin', title: 'Anket Yönetimi', mod: surveysAdmin, tone: 'indigo', hidden: true, show: u => !!u.master },   // yalnız Sistem Yöneticisi; Program Ayarları'ndan açılır
 ];
 
 // Türkçe-duyarlı normalizasyon (arama için): küçük harf + aksan sadeleştirme
@@ -365,6 +368,7 @@ function enterApp() {
       h('b', null, 'Destek oturumu'), h('span', null, ` · ${ctx.meta?.company || ''}`)));
   }
   drawTaskPill(ctx.user?.pending_tasks || 0);   // bekleyen ZORUNLU günlük görev uyarı şeridi (üstte)
+  drawSurveyPill(ctx.user?.pending_surveys || 0);   // bekleyen ZORUNLU anket uyarı şeridi
 }
 
 // Zorunlu günlük görev uyarı şeridi: tamamlanana kadar üstte durur, tıklanınca Görevlerim'e gider
@@ -380,6 +384,20 @@ async function refreshTaskPill() {
   catch { /* sessiz */ }
 }
 window.addEventListener('hepgo:tasks-changed', refreshTaskPill);
+
+// Zorunlu anket uyarı şeridi: cevaplanana kadar üstte durur, tıklanınca Anketlerim'e gider
+function drawSurveyPill(n) {
+  document.querySelector('.survey-pill')?.remove();
+  if (!n) return;
+  const pill = h('button', { class: 'task-pill survey-pill', type: 'button', title: 'Anketlerim', onclick: () => { location.hash = '#/my-surveys'; } },
+    '📋 ', h('b', null, n > 1 ? `${n} zorunlu anket` : 'Zorunlu anket'), h('span', null, ' · cevaplamanız bekleniyor'));
+  document.body.append(pill);
+}
+async function refreshSurveyPill() {
+  try { const d = await api.get('/api/my/surveys'); if (ctx.user) ctx.user.pending_surveys = d.pending_mandatory; drawSurveyPill(d.pending_mandatory); }
+  catch { /* sessiz */ }
+}
+window.addEventListener('hepgo:surveys-changed', refreshSurveyPill);
 window.addEventListener('caymaz:mustchange', () => { if (ctx.user) { ctx.user.must_change_password = true; renderForcePassword(); } });
 
 function renderForcePassword() {
@@ -1357,6 +1375,7 @@ const PERSONAL = [
   { key: 'files', route: 'my-files', title: 'Dosya Yöneticisi', notify: 'file-shared', render: params => fileManager.render(view, params, ctx) },
   { key: 'duties', route: 'my-duties', title: 'Görev Formu', notify: 'duty-decided', render: params => duty.render(view, params, ctx) },
   { key: 'tasks', route: 'my-tasks', title: 'Görevlerim', notify: 'task-assigned', render: params => mytasks.render(view, params, ctx) },
+  { key: 'surveys', route: 'my-surveys', title: 'Anketlerim', notify: 'survey', render: params => mysurvey.render(view, params, ctx) },
 ];
 let notifyCounts = new Map();
 function personalHead(cur) {

@@ -8095,3 +8095,102 @@ html[data-theme="dark"] .badge.teal { background: #103b37; border-color: #1c5c54
 .bc-side-acts { display: flex; flex-direction: column; gap: 8px; }
 .bc-finish { width: 100%; }
 [data-theme="dark"] .bc-side { background: #101c30; }
+
+/* ===== Anket modülü (mysurvey + surveysadmin) ===== */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+/* Zorunlu anket uyarı şeridi: görev şeridinin altında, mor tonlu */
+.survey-pill { top: 52px; background: linear-gradient(180deg, #6366f1, #4f46e5) !important;
+  box-shadow: 0 8px 24px rgba(79,70,229,.4) !important; animation: none !important; }
+.survey-pill:hover { filter: brightness(1.06); }
+
+/* -- Personel: anket listesi + cevaplama -- */
+.sv-sec { font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 14px 2px 8px; }
+.sv-sec:first-child { margin-top: 2px; }
+.sv-card { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--surface, #fff);
+  border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; color: inherit; }
+.sv-card:hover { border-color: var(--primary); }
+.sv-card.answered { opacity: .72; }
+.sv-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sv-card-main b { font-size: 15px; }
+.sv-card-main p { margin: 0; }
+.sv-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.sv-done { color: #16a34a; font-weight: 700; font-size: 13.5px; white-space: nowrap; }
+.sv-title { margin: 0 0 4px; font-size: 19px; }
+.sv-answered-note { background: rgba(22,163,74,.1); color: #16a34a; border-radius: 10px; padding: 8px 12px; font-size: 13.5px; margin: 10px 0; }
+.sv-form { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+.sv-q { border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--surface-2, rgba(0,0,0,.015)); }
+.sv-q-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 15px; }
+.sv-q-no { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 12.5px;
+  font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.sv-q-head .req { color: #ef4444; font-weight: 700; }
+.sv-q-body { padding-left: 32px; }
+.sv-input { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  font: inherit; font-size: 14.5px; background: var(--surface, #fff); color: inherit; }
+.sv-input:focus { outline: none; border-color: var(--primary); }
+textarea.sv-input { resize: vertical; }
+.sv-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.sv-opts.col { flex-direction: column; }
+.sv-opt { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 10px 14px; background: var(--surface, #fff); font: inherit; font-size: 14.5px; cursor: pointer; color: inherit; text-align: left; }
+.sv-opt:hover { border-color: var(--primary); }
+.sv-opt.on { border-color: var(--primary); background: rgba(37,99,235,.1); font-weight: 600; }
+.sv-opt .cb { flex: none; width: 18px; height: 18px; border: 1.5px solid var(--border); border-radius: 5px; display: inline-block; position: relative; }
+.sv-opt.multi.on .cb { background: var(--primary); border-color: var(--primary); }
+.sv-opt.multi.on .cb::after { content: '✓'; position: absolute; inset: 0; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.sv-rate { display: flex; gap: 4px; }
+.sv-star { border: none; background: none; font-size: 30px; line-height: 1; color: var(--border); cursor: pointer; padding: 0 2px; }
+.sv-star.on { color: #f59e0b; }
+.sv-submit { margin-top: 18px; display: flex; justify-content: flex-end; }
+.sv-submit .btn { min-width: 140px; }
+
+/* -- Master: yönetim listesi -- */
+.sv-adminrow { display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 10px; background: var(--surface, #fff); }
+.sv-adminrow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.sv-adminrow-main > b { font-size: 15.5px; }
+.sv-adminrow-main p { margin: 0; }
+.sv-prog { display: flex; align-items: center; gap: 8px; margin-top: 4px; max-width: 320px; }
+.sv-prog-bar { flex: 1; height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.sv-prog-bar i { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); border-radius: 999px; }
+.sv-prog-txt { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sv-row-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+@media (max-width: 640px) { .sv-adminrow { flex-direction: column; } .sv-row-acts { width: 100%; } }
+
+/* -- Editör + modal -- */
+.sv-modal-ov { position: fixed; inset: 0; background: rgba(7,13,28,.55); z-index: 1300; display: flex; align-items: center;
+  justify-content: center; padding: 16px; }
+.sv-modal { width: min(620px, 100%); max-height: 90vh; display: flex; flex-direction: column; background: var(--surface, #fff);
+  border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(7,13,28,.4); }
+.sv-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.sv-modal-head b { font-size: 16px; }
+.sv-modal-x { border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted); }
+.sv-modal-body { padding: 16px 18px; overflow: auto; }
+.sv-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.sv-editor { display: flex; flex-direction: column; gap: 14px; }
+.sv-lbl { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.sv-flags { display: flex; flex-wrap: wrap; gap: 16px; }
+.sv-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text); font-weight: 500; }
+.sv-warn { background: rgba(245,158,11,.12); color: #b45309; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.sv-qlist { display: flex; flex-direction: column; gap: 10px; }
+.sv-qrow { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-2, rgba(0,0,0,.015)); }
+.sv-qrow-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sv-qrow-top input[type=text] { flex: 1 1 180px; }
+.sv-qtype { flex: 0 0 auto; width: auto; max-width: 150px; }
+.sv-optwrap { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+/* -- Sonuçlar -- */
+.sv-results { display: flex; flex-direction: column; gap: 16px; }
+.sv-res-top { display: flex; flex-wrap: wrap; gap: 6px; }
+.sv-resq { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.sv-resq-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sv-barrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.sv-barlbl { flex: 0 0 110px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-bar { flex: 1; height: 18px; background: var(--border); border-radius: 6px; overflow: hidden; }
+.sv-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 6px; min-width: 2px; }
+.sv-barn { flex: 0 0 auto; font-size: 13px; font-weight: 700; min-width: 20px; text-align: right; }
+.sv-textans { background: var(--surface-2, rgba(0,0,0,.02)); border-radius: 8px; padding: 7px 10px; margin: 5px 0; font-size: 13.5px; }
+.sv-people { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.sv-people summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.sv-person { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.sv-person-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sv-person-a { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; border-top: 1px dashed var(--border); font-size: 13.5px; }

@@ -222,6 +222,14 @@ const T = {
   },
 };
 const t = () => T[lang] || T.en;   // eksik çeviri güvenli şekilde İngilizce'ye düşer
+// Yasal sayfa bağlantı metinleri (kayıt onayı altında; sayfalar veilox'ta /gizlilik + /kullanim-sartlari, 7 dilli)
+const LEGAL_L = {
+  tr: ['Gizlilik Politikası', 'Kullanım Şartları'], en: ['Privacy Policy', 'Terms of Use'],
+  de: ['Datenschutzerklärung', 'Nutzungsbedingungen'], fr: ['Politique de confidentialité', 'Conditions d’utilisation'],
+  es: ['Política de privacidad', 'Condiciones de uso'], ar: ['سياسة الخصوصية', 'شروط الاستخدام'],
+  ru: ['Политика конфиденциальности', 'Условия использования'],
+};
+const legalL = () => LEGAL_L[lang] || LEGAL_L.en;
 const qs = new URLSearchParams(location.search);
 const state = { tab: location.hash === '#kayit' ? 'reg' : 'login', step: 0, pkg: qs.get('paket') || '', pkgs: [], form: {}, result: null, emailVerify: false, codeSentOnce: false, openBeta: false, emailVerified: false, submitting: false };
 // Açık betada "Paket" adımı yok → ilk adım doğrudan Firma (adım 1). Adım numaraları sabit kalır (1=Firma,2=Yönetici,3=Tamam).
@@ -457,6 +465,7 @@ function regView() {
             <label class="vx-field"><span>${esc(L.pw2)}</span><input class="vx-input" type="password" name="pw2" minlength="10" autocomplete="new-password"${needV ? '' : ' required'}></label></div>
           <div class="gx-meter"><i id="pwBar"></i><small id="pwTxt"></small></div>
           <label class="gx-check"><input type="checkbox" name="accept"${needV ? '' : ' required'}><span>${esc(L.accept)}</span></label>
+          <p class="gx-legal-links"><a href="/gizlilik" target="_blank" rel="noopener">${esc(legalL()[0])}</a> · <a href="/kullanim-sartlari" target="_blank" rel="noopener">${esc(legalL()[1])}</a></p>
         </div>
         <div class="vx-err" id="regErr"></div>
         ${needV ? `<p class="gx-sub gx-verifyhint">${esc(L.verifyFirst)}</p>` : ''}

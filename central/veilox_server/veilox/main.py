@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -896,6 +896,30 @@ def firm_login_page():
 @app.get('/kur/{token}')
 def kur_page(token: str):
     return FileResponse(STATIC / 'kur.html')
+
+
+# Herkese açık yasal sayfalar (kayıt ekranından linklenir; 7 dil, legal.js kullanıcının dilinde açar).
+import html as _htmlmod   # noqa: E402
+_LEGAL_VALS = {'DATE': '4 Ekim 2026', 'PROVIDER': 'GÖKKUBBE Teknoloji', 'EMAIL': 'destek@gokkubbetech.com', 'HOST': 'HEPGO'}
+
+
+def _legal_page(name):
+    html = (STATIC / 'legal' / f'{name}.html').read_text(encoding='utf-8')
+    for k, v in _LEGAL_VALS.items():
+        html = html.replace('{{' + k + '}}', _htmlmod.escape(v))
+    return HTMLResponse(html, headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/gizlilik')
+@app.get('/privacy')
+def privacy_page():
+    return _legal_page('privacy')
+
+
+@app.get('/kullanim-sartlari')
+@app.get('/terms')
+def terms_page():
+    return _legal_page('terms')
 
 
 # --- Federasyon: müşteri ERP instance'larının merkez destek girişini doğrulaması ---

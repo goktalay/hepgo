@@ -1709,12 +1709,12 @@ const GROUPS = [
   { key: 'users', title: 'Kullanıcı Yönetimi', desc: 'Kullanıcılar ve rol atamaları', icon: 'users', link: '#/users' },
   { key: 'roles', title: 'Rol Yönetimi', desc: 'Roller, modül yetkileri (aç / oku / yaz), miras ve çakışmalar', icon: 'lock', body: rolesBody },
   { key: 'master', title: 'Veri & Yedek', desc: 'KVKK veri indirme ve yedekleme', icon: 'server', link: '#/master', master: true },
-  { key: 'tasks-admin', title: 'Görev Yönetimi', desc: 'Kullanıcılara günlük görev atama (tek seferlik / tekrarlı, zorunlu)', icon: 'documents', link: '#/tasks-admin', master: true },
-  { key: 'surveys-admin', title: 'Anket Yönetimi', desc: 'Anket oluştur (soru-cevap), tüm personel zorunlu cevaplar, sonuçları gör', icon: 'documents', link: '#/surveys-admin', master: true },
-  { key: 'modules-mgmt', title: 'Modül Yönetimi', desc: 'Firmanızın seçmeli modüllerini açıp kapatın (zorunlu modüller her zaman açık)', icon: 'apps', master: true, body: moduleMgmtBody },
+  { key: 'tasks-admin', title: 'Görev Yönetimi', desc: 'Kullanıcılara günlük görev atama (tek seferlik / tekrarlı, zorunlu)', icon: 'list', link: '#/tasks-admin', master: true },
+  { key: 'surveys-admin', title: 'Anket Yönetimi', desc: 'Anket oluştur (soru-cevap), tüm personel zorunlu cevaplar, sonuçları gör', icon: 'report', link: '#/surveys-admin', master: true },
+  { key: 'modules-mgmt', title: 'Modül Yönetimi', desc: 'Firmanızın seçmeli modüllerini açıp kapatın (zorunlu modüller her zaman açık)', icon: 'stack', master: true, body: moduleMgmtBody },
 ];
 
-const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', kvkk: '#30d158', users: '#ff3b30', master: '#af52de' };
+const SC_COLORS = { roles: '#ff2d55', security: '#ff3b30', support: '#34c759', ai: '#af52de', 'ai-changes': '#5856d6', modules: '#0a84ff', integrations: '#ff9500', identity: '#30b0c7', kvkk: '#30d158', users: '#ff3b30', master: '#af52de', 'tasks-admin': '#34c759', 'surveys-admin': '#5856d6', 'modules-mgmt': '#0a84ff' };
 const SC_SECTIONS = [['security', 'support', 'ai'], ['ai-changes'], ['modules', 'integrations', 'identity', 'kvkk'], ['users', 'roles', 'master']];
 
 export async function render(view, params, ctx) {

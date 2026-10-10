@@ -150,7 +150,10 @@
       if (m.length >= 4 && m[3] === 0) m = [15, 29, 61];   // şeffafsa koyu varsay
       var lum = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
       if (!isIOS) { try { SB.setBackgroundColor && SB.setBackgroundColor({ color: rgbHex(m) }); } catch (e) {} }
-      try { SB.setStyle && SB.setStyle({ style: lum > 0.55 ? 'LIGHT' : 'DARK' }); } catch (e) {}   // LIGHT=koyu ikon
+      // iOS: durum çubuğu alanı CSS .app-header::before ile KOYU (#0f1d3d) kaplanır → ikonlar her zaman beyaz (DARK).
+      // Android: zemin başlık rengini aldığından tona göre (açıksa koyu ikon=LIGHT).
+      var st = isIOS ? 'DARK' : (lum > 0.55 ? 'LIGHT' : 'DARK');
+      try { SB.setStyle && SB.setStyle({ style: st }); } catch (e) {}   // LIGHT=koyu ikon, DARK=beyaz ikon
     } catch (e) {}
   }
   function polish() {

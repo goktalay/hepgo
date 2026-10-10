@@ -134,7 +134,10 @@
   // zemin = header rengi, ikonlar zemin açıksa KOYU / koyuysa AÇIK (böylece görünür). Tema/sayfa değişince tazelenir.
   function rgbHex(m) { return '#' + m.slice(0, 3).map(function (x) { return ('0' + (Math.round(+x)).toString(16)).slice(-2); }).join(''); }
   function syncStatusBar() {
-    var SB = P.StatusBar; if (!SB) return;
+    // ERP canlı-web @capacitor/status-bar'ı JS'te import etmediği için Capacitor.Plugins.StatusBar
+    // otomatik oluşmayabilir (Contacts ile aynı durum) → registerPlugin ile native köprüyü kur.
+    var SB = P.StatusBar || (typeof Cap.registerPlugin === 'function' ? Cap.registerPlugin('StatusBar') : null);
+    if (!SB) return;
     // iOS: overlay=TRUE → WebView durum çubuğu altına uzanır; CSS .app-header padding-top: env(safe-area-inset-top)
     //   başlığı güvenli alana iter ve başlık rengi durum çubuğu alanını kaplar (üstteki beyaz BOŞLUK giderilir).
     // Android: overlay=false + setBackgroundColor ile durum çubuğu başlık rengini alır (iOS'ta setBackgroundColor yok).

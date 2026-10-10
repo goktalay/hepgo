@@ -57,6 +57,7 @@ platform :ios do
     # TestFlight'a yükle (işlemeyi bekleme — Apple tarafı sürer). app_identifier: App Store Connect'te app kaydı olmalı.
     pilot(
       api_key: api_key,
+      apple_id: "6821259369",                  # App Store Connect sayısal app ID — Bundle ID arama/takım belirsizliğini atlar
       app_identifier: "com.turkbey.hepgo",
       skip_waiting_for_build_processing: true,
       distribute_external: false

@@ -54,13 +54,14 @@ platform :ios do
       }
     )
 
-    # TestFlight'a yükle (işlemeyi bekleme — Apple tarafı sürer). app_identifier: App Store Connect'te app kaydı olmalı.
-    pilot(
-      api_key: api_key,
-      apple_id: "6821259369",                  # App Store Connect sayısal app ID — Bundle ID arama/takım belirsizliğini atlar
-      app_identifier: "com.turkbey.hepgo",
-      skip_waiting_for_build_processing: true,
-      distribute_external: false
-    )
+    # TestFlight yükleme: API anahtarını altool'un okuduğu konuma yazıp xcrun altool ile DOĞRUDAN yükle
+    # (pilot'un altool sarmalayıcısı API key'i geçirmeyip Apple ID moduna düşüyor → -19000; bunu atlarız).
+    require "base64"
+    require "fileutils"
+    key_dir = File.expand_path("~/.appstoreconnect/private_keys")
+    FileUtils.mkdir_p(key_dir)
+    File.write(File.join(key_dir, "AuthKey_#{ENV['ASC_KEY_ID']}.p8"), Base64.decode64(ENV["ASC_KEY_P8"]))
+    ipa = lane_context[SharedValues::IPA_OUTPUT_PATH]
+    sh("xcrun altool --upload-app --type ios --file '#{ipa}' --apiKey '#{ENV['ASC_KEY_ID']}' --apiIssuer '#{ENV['ASC_ISSUER_ID']}'")
   end
 end

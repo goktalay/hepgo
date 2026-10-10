@@ -13,11 +13,13 @@ PWABuilder'ın manifest'i okuyabilmesi için erişilebilir giriş noktası:
 
 ---
 
-## 1) Microsoft Partner Center hesabı (TEK SEFERLİK — senin yapman gerekir)
+## 1) Microsoft geliştirici hesabı (senin yapman gerekir)
 
-1. https://partner.microsoft.com/dashboard → **Windows & Xbox** programına kaydol.
-2. Kayıt ücreti: bireysel ~**$19**, şirket ~**$99** (tek seferlik).
-3. Onaylanınca "Apps and games" panosuna erişirsin.
+1. https://developer.microsoft.com/store/register → Microsoft hesabıyla giriş.
+2. **Bireysel (Individual)** hesap artık ÜCRETSİZ (2025'ten beri; kredi kartı gerekmez).
+   Şirket (Company) hesabı tek seferlik **$99** + şirket doğrulaması.
+3. Yayıncı görünen adını (publisher display name) belirle (örn. HEPGO / Veilox).
+4. Onaylanınca https://partner.microsoft.com/dashboard → "Apps and games" panosuna erişirsin.
 
 ## 2) Uygulama adını ayır (Partner Center)
 

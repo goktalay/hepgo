@@ -4,8 +4,9 @@ import { api } from '../api.js';
 import { stockPicker } from '../stockpick.js';
 import { segIconByKey } from '../segicons.js';
 import { rolesBody } from './roles.js';
-import { avatar, clear, confirmDialog, every, field, fmtDateTime, h, modal, pageHead, t, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, field, fmtDateTime, h, modal, pageHead, svgIcon, t, toast, toastError } from '../ui.js';
 import { moduleName } from '../modulenames.js';
+import { icons } from '../icons.js';
 
 // Mobilde (≤800px) Program Ayarları iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SC_MQ = matchMedia('(max-width: 800px)');
@@ -1649,21 +1650,39 @@ function moduleMgmtBody(view, ctx) {
   const wrap = h('div', { class: 'set-card mm-wrap' }, h('div', { class: 'loading' }, 'Yükleniyor…'));
   view.append(wrap);
   const off = new Set();
+  const tile = (m, locked) => {
+    const on = () => locked || !off.has(m.key);
+    const el = h('button', {
+      class: 'mm-tile' + (on() ? ' on' : '') + (locked ? ' locked' : ''), type: 'button', disabled: locked,
+      title: locked ? 'Zorunlu modül — her zaman açık' : 'Açmak/kapatmak için basın',
+    },
+      h('span', { class: 'mm-ic' }, svgIcon(icons[m.key] || icons.apps)),
+      h('span', { class: 'mm-t' }, moduleName(m.key)),
+      h('span', { class: 'mm-st' }, locked ? 'Zorunlu' : (on() ? 'Açık' : 'Kapalı')));
+    if (!locked) el.onclick = () => {
+      off.has(m.key) ? off.delete(m.key) : off.add(m.key);
+      const o = !off.has(m.key);
+      el.classList.toggle('on', o);
+      el.querySelector('.mm-st').textContent = o ? 'Açık' : 'Kapalı';
+    };
+    return el;
+  };
   const render = data => {
     clear(wrap);
-    wrap.append(h('p', { class: 'muted mm-hint' }, 'Zorunlu modüller her zaman açıktır. Seçmeli modülleri firmanıza göre açıp kapatabilirsiniz. Listede olmayan modüller için üyelik/merkez ile iletişime geçin.'));
+    data.modules.filter(m => !m.enabled).forEach(m => off.add(m.key));
     const req = data.modules.filter(m => m.tier === 'required');
     const opt = data.modules.filter(m => m.tier === 'optional');
-    data.modules.filter(m => !m.enabled).forEach(m => off.add(m.key));
-    const rowEl = (m, locked) => {
-      const sw = h('button', { class: 'ios-sw' + (m.enabled ? ' on' : ''), type: 'button', disabled: locked, role: 'switch' }, h('i'));
-      if (!locked) sw.onclick = () => { sw.classList.toggle('on'); sw.classList.contains('on') ? off.delete(m.key) : off.add(m.key); };
-      return h('div', { class: 'mm-row' }, h('span', { class: 'mm-name' }, moduleName(m.key)),
-        locked ? h('span', { class: 'badge' }, 'Zorunlu') : null, sw);
-    };
-    if (req.length) { wrap.append(h('div', { class: 'mm-sec' }, 'Zorunlu modüller')); req.forEach(m => wrap.append(rowEl(m, true))); }
-    if (opt.length) { wrap.append(h('div', { class: 'mm-sec' }, 'Seçmeli modüller')); opt.forEach(m => wrap.append(rowEl(m, false))); }
-    else wrap.append(h('p', { class: 'muted' }, 'Açılabilecek seçmeli modül yok.'));
+    wrap.append(h('p', { class: 'muted mm-hint' }, 'Modüle basınca açılır, tekrar basınca kapanır. Zorunlu modüller her zaman açıktır. Listede olmayan modüller için üyelik/merkez ile iletişime geçin.'));
+    if (opt.length) {
+      wrap.append(h('div', { class: 'mm-sec' }, 'Seçmeli modüller'));
+      wrap.append(h('div', { class: 'mm-grid' }, ...opt.map(m => tile(m, false))));
+    } else {
+      wrap.append(h('p', { class: 'muted' }, 'Açılabilecek seçmeli modül yok.'));
+    }
+    if (req.length) {
+      wrap.append(h('div', { class: 'mm-sec' }, 'Zorunlu modüller'));
+      wrap.append(h('div', { class: 'mm-grid' }, ...req.map(m => tile(m, true))));
+    }
     const btn = h('button', { class: 'btn primary', type: 'button' }, 'Kaydet');
     btn.onclick = async () => {
       btn.disabled = true;

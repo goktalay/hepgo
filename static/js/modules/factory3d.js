@@ -23,7 +23,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   const { T, OrbitControls } = await loadLibs();
   _Tref = T;
   const fileUrl = opts.fileUrl || (p => p);
-  let dark = !!opts.dark, floorName = opts.floorName || '';
+  let dark = !!opts.dark, floorName = opts.floorName || '', palette = opts.palette || {};
   let P = dark ? PAL.dark : PAL.light;
 
   // ---------- glass HUD ----------
@@ -69,7 +69,7 @@ export async function createFactory3D(mountEl, opts = {}) {
 
   const gWorld = new T.Group(); scene.add(gWorld);
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, ground, M = {};
+  let grid, ground, gBgMesh = null, M = {};
 
   const makeMats = () => {
     M.ground = new T.MeshStandardMaterial({ color: P.ground, roughness: 0.96, metalness: 0 });
@@ -163,7 +163,37 @@ export async function createFactory3D(mountEl, opts = {}) {
       const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.slab);
       m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m);
     });
+    // altyapı işaretçileri (UPS / WiFi / priz / switch ...) — renkli pin + emoji rozet
+    (markers || []).forEach(m => {
+      if (m.x == null || m.y == null) return;
+      const meta = palette[m.kind] || { color: '#64748b', icon: '•' };
+      const col = new T.Color(meta.color);
+      const pin = new T.Mesh(new T.CylinderGeometry(0.045, 0.045, 0.9, 6), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 }));
+      pin.position.set(px(m.x), 0.45, pz(m.y)); gWorld.add(pin);
+      const head = new T.Mesh(new T.SphereGeometry(0.17, 16, 12), new T.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.2 }));
+      head.position.set(px(m.x), 1.0, pz(m.y)); head.castShadow = true; gWorld.add(head);
+      if (meta.icon) { const em = emojiSprite(meta.icon); em.position.set(px(m.x), 1.0, pz(m.y)); em.userData.bill = false; gWorld.add(em); }
+    });
   };
+
+  // ---------- arka plan kat planı resmi (zemin dokusu) ----------
+  function buildBg(bg) {
+    if (gBgMesh) { gWorld.remove(gBgMesh); gBgMesh.geometry.dispose(); gBgMesh.material.map?.dispose?.(); gBgMesh.material.dispose(); gBgMesh = null; }
+    if (!bg || !bg.url) return;
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const nw = img.naturalWidth || 800, nh = img.naturalHeight || 600, sc = bg.scale || 1;
+      const W = nw * sc * X.s, H = nh * sc * X.s;       // dünya birimi
+      const tex = new T.Texture(img); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; tex.needsUpdate = true;
+      const geo = new T.PlaneGeometry(W, H); geo.rotateX(-Math.PI / 2);
+      const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, opacity: bg.opacity != null ? Math.max(0.6, bg.opacity) : 0.92 });
+      gBgMesh = new T.Mesh(geo, mat);
+      gBgMesh.position.set(px((bg.x || 0) + nw * sc / 2), 0.04, pz((bg.y || 0) + nh * sc / 2));
+      gWorld.add(gBgMesh);
+    };
+    img.onerror = () => {};
+    img.src = bg.url;
+  }
 
   // ---------- canlı personel (her zaman görünür kart + halka + sütun) ----------
   const texLoader = new T.TextureLoader();
@@ -219,9 +249,10 @@ export async function createFactory3D(mountEl, opts = {}) {
   makeMats(); buildBase(); resize(); fit(); start();
 
   return {
-    build({ rooms, cams, markers, stairs, floorName }) {
+    build({ rooms, cams, markers, stairs, floorName, bg, palette: pal }) {
+      if (pal) palette = pal;
       if (floorName != null) setHud(floorName, null);
-      computeTransform(rooms, cams, markers); buildWorld(rooms, cams, markers, stairs); fit();
+      computeTransform(rooms, cams, markers); buildWorld(rooms, cams, markers, stairs); buildBg(bg); fit();
     },
     updateLive,
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
@@ -265,6 +296,15 @@ function makeTextSprite(text, P, accentHex) {
   sp.renderOrder = 12; sp.scale.set(cv.width / cv.height * 0.95, 0.95, 1); return sp;
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function emojiSprite(ch) {
+  const T = _Tref, S = 96, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.font = '64px system-ui,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, S / 2, S / 2 + 4);
+  const tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
+  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
+  sp.renderOrder = 9; sp.scale.set(0.62, 0.62, 1); return sp;
+}
 
 function ensureHudStyle() {
   if (document.getElementById('f3d-hud-style')) return;

@@ -205,11 +205,14 @@ export async function render(view, params, ctx) {
     if (!inst) { el3d.hidden = true; svg.style.display = ''; return; }
     try {
       const fl = st.floors.find(f => f.id === st.floorId);
-      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '' });
+      const bg = (fl && fl.bg_image && st.layers.bg !== false)
+        ? { url: fileUrl(fl.bg_image), x: fl.bg_x || 0, y: fl.bg_y || 0, scale: fl.bg_scale || 1, opacity: fl.bg_opacity != null ? fl.bg_opacity : 0.9 }
+        : null;
+      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE });
       inst.updateLive(st.liveData?.people || []);
       inst.resize();
       requestAnimationFrame(() => { try { inst.resize(); } catch {} });   // el3d yeni görünür oldu; layout oturunca tekrar ölç
-      if (!st.rooms.length) { try { toast('Bu katta oda/duvar tanımlı değil — Düzen modunda kat planını çizin', 'err'); } catch {} }
+      if (!st.rooms.length && !bg && !(st.markers && st.markers.length)) { try { toast('Bu katta kat planı yok — Düzen modunda oda çizin ya da arka plan planı yükleyin', 'err'); } catch {} }
     } catch (e) { console.error('[factory3d] çizim', e); try { toast('3B çizim hatası: ' + (e?.message || e), 'err'); } catch {} }
   }
   const floorBar = h('div', { class: 'fab-floors' });

@@ -382,19 +382,24 @@ export async function createFactory3D(mountEl, opts = {}) {
     const ray = new T.Raycaster(), ground = new T.Plane(new T.Vector3(0, 1, 0), 0), ndc = new T.Vector2(), hit = new T.Vector3();
     let down = null;
     renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
-    renderer.domElement.addEventListener('pointerup', e => {
-      if (!down) return; const d = down; down = null;
-      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || Date.now() - d.t > 400) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-      ray.setFromCamera(ndc, camera);
-      if (!ray.ray.intersectPlane(ground, hit)) return;
-      const zn = zoneAt(hit.x, hit.z);
-      let idx = -1, current = '';
-      if (zn && zn.labelIdx >= 0) { idx = zn.labelIdx; current = zn.name; }
-      else { const near = freeLabels.find(f => Math.hypot(f.x - hit.x, f.z - hit.z) < 0.9); if (near) { idx = near.idx; current = near.name; } }
-      onLabel({ x: hit.x / X.s + X.cx, y: hit.z / X.s + X.cy, zone: zn ? zn.name : null, idx, current });
-    });
+    const onUp = e => {
+      try {
+        if (!down) return; const d = down; down = null;
+        if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || Date.now() - d.t > 400) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        if (!ray.ray.intersectPlane(ground, hit)) { mountEl.dataset.labelErr = 'no-hit'; return; }
+        const zn = zoneAt(hit.x, hit.z);
+        let idx = -1, current = '';
+        if (zn && zn.labelIdx >= 0) { idx = zn.labelIdx; current = zn.name; }
+        else { const near = freeLabels.find(f => Math.hypot(f.x - hit.x, f.z - hit.z) < 0.9); if (near) { idx = near.idx; current = near.name; } }
+        onLabel({ x: hit.x / X.s + X.cx, y: hit.z / X.s + X.cy, zone: zn ? zn.name : null, idx, current });
+      } catch (err) { mountEl.dataset.labelErr = String(err && err.message || err); }
+    };
+    renderer.domElement.addEventListener('pointerup', onUp);
+    // pointer capture / OrbitControls yüzünden pointerup yakalanamazsa click de aynı işi yapsın
+    renderer.domElement.addEventListener('click', e => { if (down) onUp(e); });
   }
   const onVis = () => { if (document.hidden) stop(); else start(); };
   document.addEventListener('visibilitychange', onVis);

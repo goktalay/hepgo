@@ -454,7 +454,7 @@ function page() {
   </div></header>
   <main>
     <section class="world-hero" id="hero3d">
-      <iframe class="hero-globe-frame" id="heroGlobe" src="/static/hero-globe.html?v=20261011e" title="HEPGO" loading="eager" tabindex="-1" aria-hidden="true"></iframe>
+      <div class="hero-globe-stage" id="heroGlobe" aria-hidden="true"></div>
       <div class="world-copy reveal">
         <span class="pill"><i></i> ${esc(t.heroPill)}</span>
         <h1>${esc(wd.h)}</h1>
@@ -668,15 +668,20 @@ function render() {
 
 // Hero'daki premium 3D küre (horizonx Reactive Globe, iframe içinde). Sektör sekmesi iframe'e postMessage
 // ile renk gönderir (fabrika mavi, bakkal yeşil, berber kırmızı, lokanta amber) + başlık altı tanımı değişir.
-let _heroTimer = null;
-function mount3D() {
+let _heroTimer = null, _heroHandle = null;
+async function mount3D() {
   if (_heroTimer) { clearInterval(_heroTimer); _heroTimer = null; }
-  const frame = $('#heroGlobe');
+  if (_heroHandle) { try { _heroHandle.dispose(); } catch { /* */ } _heroHandle = null; }
+  const stage = $('#heroGlobe');
   const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
   if (!tabs) return;
+  if (stage) {
+    const mod = await import('/static/hero-globe.js?v=20261011f').catch(() => null);
+    if (mod && mod.webglOK()) { try { _heroHandle = mod.mountGlobe(stage, 'factory'); } catch { _heroHandle = null; } }
+  }
   let idx = 0;
   const setSec = key => {
-    try { frame && frame.contentWindow && frame.contentWindow.postMessage({ hzSector: key }, '*'); } catch { /* */ }
+    if (_heroHandle) _heroHandle.setSector(key);
     tabs.querySelectorAll('.sector-tab').forEach(b => b.classList.toggle('on', b.dataset.sec === key));
     if (tagEl && sc[key]) tagEl.textContent = sc[key].tag;
   };

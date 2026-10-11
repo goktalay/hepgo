@@ -526,7 +526,8 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .world-hero { position: relative; overflow: hidden; min-height: min(780px, 94vh); padding: 86px 20px 44px;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start; text-align: center;
   background: radial-gradient(130% 95% at 50% 0%, #11223f 0%, #0b1322 58%, #080d18 100%); color: #fff; }
-.scene3d-canvas, .hero-globe-frame { position: absolute; inset: 0; width: 100% !important; height: 100% !important; z-index: 0; display: block; border: 0; }
+.scene3d-canvas, .hero-globe-frame, .hero-globe-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; border: 0; }
+.hero-globe-stage > canvas { display: block; width: 100%; height: 100%; }
 .world-copy { position: relative; z-index: 2; max-width: 860px; pointer-events: none; }
 .world-copy a, .world-copy button, .world-copy .sector-tab { pointer-events: auto; }
 .world-copy h1 { font-size: clamp(30px, 5.2vw, 58px); line-height: 1.05; letter-spacing: -.02em; margin: 16px 0 14px; color: #fff; text-shadow: 0 2px 40px rgba(0, 0, 0, .5); }

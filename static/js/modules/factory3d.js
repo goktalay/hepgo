@@ -810,6 +810,7 @@ function ensureHudStyle() {
   .f3d-card.f3d-min .f3d-bd,.f3d-card.f3d-min .f3d-ft,.f3d-card.f3d-min .f3d-hd>*:not(.f3d-ic){display:none}
   .f3d-card.f3d-min .f3d-hd{border:0;padding:0}
   .f3d-card.f3d-min .f3d-ic{font-size:20px}
+  .f3d-right .f3d-card.f3d-min{align-self:flex-end}   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
   .f3d-dark .f3d-hd{color:#e8edf8;border-color:rgba(130,150,210,.2)}.f3d-dark .f3d-ft{border-color:rgba(130,150,210,.2);background:rgba(255,255,255,.05);color:#9aa6bd}
   /* ince, yumuşak kaydırma çubuğu (bölgeler / kameralar / kişiler) */
   .f3d-scroll,.f3d-list,.f3d-zones,.f3d-cams{scrollbar-width:thin;scrollbar-color:rgba(100,110,140,.28) transparent}

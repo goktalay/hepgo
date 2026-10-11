@@ -44,7 +44,7 @@ const MARKER_PALETTE = {
   cam_outdoor:  { label: 'Dış kamera (planlanan)',    icon: '📹', color: '#475569' },
   note:         { label: 'Not / etiket',              icon: '📝', color: '#64748b' },
 };
-const MARKER_ORDER = ['ups', 'power_outlet', 'wifi', 'internet', 'intranet', 'switch', 'cam_indoor', 'cam_outdoor', 'note'];
+const MARKER_ORDER = ['cam_indoor', 'cam_outdoor', 'note'];   // ups/priz/wifi/internet/intranet/switch kaldırıldı
 const markerMeta = k => MARKER_PALETTE[k] || { label: k || 'İşaretçi', icon: '📍', color: '#64748b' };
 
 // Kamera görüş kapsaması: ŞEFFAF SEKTÖR (FOV yelpazesi) + YÖN ÜÇGENİ (oka benzer). dir=derece (0=sağ), merkez (0,0).
@@ -938,10 +938,10 @@ export async function render(view, params, ctx) {
     });
     // İşaretçi TÜRLERİ: o katta bulunan türler için ayrı göster/gizle (ör. "sadece kameralar")
     const present = [...new Set((st.markers || []).map(m => m.kind))];
-    const mkRows = MARKER_ORDER.filter(k => present.includes(k)).map(k => {
+    const mkRows = MARKER_ORDER.filter(k => present.includes(k) && MARKER_PALETTE[k]).map(k => {
       const cb = h('input', { type: 'checkbox', checked: st.layers[`mk:${k}`] !== false });
       cb.addEventListener('change', () => { st.layers[`mk:${k}`] = cb.checked; saveLayers(st.layers); drawCanvas(); sync3D(); });
-      return h('label', { class: 'fab-layer' }, cb, h('span', null, `${MARKER_PALETTE[k].icon} ${MARKER_PALETTE[k].label}`));
+      return h('label', { class: 'fab-layer' }, cb, h('span', null, `${markerMeta(k).icon} ${markerMeta(k).label}`));
     });
     let mkAll = null;
     if (mkRows.length) {

@@ -22,13 +22,21 @@ def products(q: str = '', user=Depends(pos_user), conn=db.DB):
     """Satılık ürünler + fiyat + barkod + (varsa) stok. q: ad / kod / barkod araması."""
     qq = (q or '').strip()
     like = f'%{qq}%'
-    return db.rows(conn.execute(
+    rows = db.rows(conn.execute(
         '''SELECT p.id, p.code, p.name, p.barcode, p.unit, p.image, COALESCE(p.sale_price, 0) AS sale_price,
                   COALESCE((SELECT SUM(qty) FROM material_moves WHERE product_id = p.id), 0) AS stock
            FROM products p
            WHERE p.is_retail = 1 AND COALESCE(p.active, 1) = 1
              AND (? = '' OR p.name LIKE ? OR p.code LIKE ? OR COALESCE(p.barcode,'') LIKE ?)
            ORDER BY p.name LIMIT 300''', (qq, like, like, like)))
+    # Berber/kuaför: tanımlı hizmetler de kasada "satılabilir öğe" olarak çıkar (stok düşmez).
+    if 'services' in user['modules']:
+        for s in db.rows(conn.execute('SELECT id, name, COALESCE(price, 0) AS price FROM shop_services WHERE active = 1 ORDER BY name')):
+            if qq and qq.lower() not in (s['name'] or '').lower():
+                continue
+            rows.append({'id': f"svc-{s['id']}", 'service_id': s['id'], 'code': '', 'name': s['name'],
+                         'barcode': None, 'unit': 'Hizmet', 'image': None, 'sale_price': s['price'], 'stock': None, 'is_service': True})
+    return rows
 
 
 @router.get('/accounts')
@@ -38,7 +46,8 @@ def accounts(user=Depends(pos_user), conn=db.DB):
 
 
 class SaleItem(BaseModel):
-    product_id: int
+    product_id: int | None = None
+    service_id: int | None = None   # berber/kuaför hizmeti (stok düşmez)
     qty: float = 1
 
 
@@ -61,11 +70,18 @@ def sale(body: SaleIn, user=Depends(pos_user), conn=db.DB):
         raise HTTPException(400, 'Sepet boş')
     items = []
     for it in body.items:
+        if (it.qty or 0) <= 0:
+            continue
+        if it.service_id:   # berber/kuaför hizmeti — stok düşmez
+            s = db.row(conn.execute('SELECT id, name, COALESCE(price, 0) AS price FROM shop_services WHERE id = ?', (it.service_id,)))
+            if not s:
+                raise HTTPException(400, 'Hizmet bulunamadı')
+            items.append({'product_id': None, 'description': s['name'], 'qty': float(it.qty),
+                          'unit': 'Hizmet', 'unit_price': float(s['price'] or 0), 'vat_rate': 20})
+            continue
         p = db.row(conn.execute('SELECT id, name, unit, sale_price FROM products WHERE id = ? AND is_retail = 1', (it.product_id,)))
         if not p:
             raise HTTPException(400, 'Satılık ürün bulunamadı')
-        if (it.qty or 0) <= 0:
-            continue
         items.append({'product_id': p['id'], 'description': p['name'], 'qty': float(it.qty),
                       'unit': p['unit'] or 'Adet', 'unit_price': float(p['sale_price'] or 0), 'vat_rate': 20})
     if not items:

@@ -21,18 +21,22 @@ export async function render(view, params, ctx) {
   function draw() {
     clear(body);
     if (!services.length) { body.append(h('div', { class: 'card empty' }, 'Henüz hizmet yok. “＋ Hizmet” ile ekleyin.')); return; }
-    const tbl = h('div', { class: 'shop-svc-list' });
-    services.forEach(s => tbl.append(h('div', { class: 'card shop-svc-row' },
-      h('div', { class: 'grow' }, h('b', null, s.name),
-        h('div', { class: 'small muted' }, (s.staff || []).map(x => x.name).join(', ') || 'Personel atanmadı')),
-      h('div', { class: 'shop-svc-meta' },
-        h('span', { class: 'chip' }, `${s.duration_min} dk`),
-        h('span', { class: 'chip' }, `%${s.staff_pct} pay`),
-        h('b', { class: 'shop-svc-price' }, TL(s.price))),
-      h('div', { class: 'shop-svc-acts' },
+    const grid = h('div', { class: 'esnaf-grid' });
+    services.forEach(s => grid.append(h('div', { class: 'esnaf-card' },
+      h('div', { class: 'esnaf-card-top' },
+        h('div', { class: 'esnaf-ic' }, '✂️'),
+        h('div', { class: 'esnaf-card-price' }, TL(s.price))),
+      h('h3', { class: 'esnaf-card-title' }, s.name),
+      h('div', { class: 'esnaf-card-meta' },
+        h('span', { class: 'chip' }, `⏱ ${s.duration_min} dk`),
+        h('span', { class: 'chip' }, `%${s.staff_pct} personel payı`)),
+      (s.staff || []).length
+        ? h('div', { class: 'esnaf-card-people' }, s.staff.map(x => h('span', { class: 'av' }, x.name)))
+        : h('p', { class: 'esnaf-card-sub' }, 'Personel atanmadı'),
+      h('div', { class: 'esnaf-card-acts' },
         h('button', { class: 'btn sm', type: 'button', onclick: () => edit(s) }, 'Düzenle'),
         h('button', { class: 'btn sm danger', type: 'button', onclick: () => del(s) }, 'Sil')))));
-    body.append(tbl);
+    body.append(grid);
   }
 
   function edit(s) {

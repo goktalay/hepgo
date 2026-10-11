@@ -31,7 +31,8 @@ export async function render(view, params, ctx) {
   const drawGrid = (list) => {
     clear(grid);
     if (!list.length) { grid.append(h('div', { class: 'empty' }, 'Ürün yok')); return; }
-    list.forEach(p => grid.append(h('button', { class: 'pos-prod', type: 'button', onclick: () => addToCart(p) },
+    list.forEach(p => grid.append(h('button', { class: 'pos-prod' + (p.is_service ? ' svc' : ''), type: 'button', onclick: () => addToCart(p) },
+      p.is_service ? h('span', { class: 'pos-prod-tag' }, '✂️ Hizmet') : null,
       h('span', { class: 'pos-prod-n' }, p.name),
       h('span', { class: 'pos-prod-p' }, TL(p.sale_price)))));
   };
@@ -92,7 +93,7 @@ export async function render(view, params, ctx) {
     const snapshot = [...cart.values()].map(x => ({ name: x.p.name, qty: x.qty, price: x.p.sale_price || 0 }));
     try {
       const r = await api.post('/api/pos/sale', {
-        items: [...cart.values()].map(x => ({ product_id: x.p.id, qty: x.qty })),
+        items: [...cart.values()].map(x => (x.p.is_service ? { service_id: x.p.service_id, qty: x.qty } : { product_id: x.p.id, qty: x.qty })),
         payment: state.payment, account_id: state.account,
       });
       toast(`Satış tamam · ${r.number} · ${TL(r.total)}`);

@@ -20,28 +20,31 @@ export async function render(view, params, ctx) {
   function draw() {
     clear(body);
     if (!sections.length) { body.append(h('div', { class: 'card empty' }, 'Henüz bölüm yok. “＋ Bölüm” ile ekleyin.')); return; }
+    const grid = h('div', { class: lokanta ? 'shop-sec-stack' : 'esnaf-grid' });
     sections.forEach(s => {
-      const head = h('div', { class: 'shop-sec-h' },
-        h('b', null, s.name),
-        s.kind === 'hall' ? h('span', { class: 'chip' }, 'Salon') : h('span', { class: 'chip' }, 'Oda'),
-        s.smoking ? h('span', { class: 'chip warn' }, '🚬 Sigara') : null,
-        h('span', { class: 'spacer' }),
-        lokanta ? h('button', { class: 'btn sm', type: 'button', onclick: () => editTable(s) }, '＋ Masa') : null,
-        h('button', { class: 'btn sm', type: 'button', onclick: () => editSection(s) }, 'Düzenle'),
-        h('button', { class: 'btn sm danger', type: 'button', onclick: () => delSection(s) }, 'Sil'));
-      const card = h('div', { class: 'card shop-sec' }, head);
+      const card = h('div', { class: 'esnaf-card sec-card' },
+        h('div', { class: 'esnaf-card-top' },
+          h('div', { class: 'esnaf-ic' }, s.kind === 'hall' ? '🍽️' : '🚪'),
+          h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end' },
+            h('span', { class: 'chip' }, s.kind === 'hall' ? 'Salon' : 'Oda'),
+            s.smoking ? h('span', { class: 'chip warn' }, '🚬 Sigara') : null)),
+        h('h3', { class: 'esnaf-card-title' }, s.name));
       if (lokanta) {
         const tbls = s.tables || [];
         card.append(tbls.length
-          ? h('div', { class: 'shop-tbls' }, tbls.map(t => h('div', { class: 'shop-tbl-chip ' + (t.shape === 'round' ? 'round' : '') },
+          ? h('div', { class: 'esnaf-sec-tables' }, tbls.map(t => h('div', { class: 'esnaf-tbl ' + (t.shape === 'round' ? 'round' : '') },
+              h('button', { class: 'esnaf-tbl-x', type: 'button', title: 'Sil', onclick: () => delTable(t) }, '×'),
               h('b', null, t.name), h('small', null, `${t.seats} kişi`),
-              h('div', { class: 'shop-tbl-acts' },
-                h('button', { class: 'mini', type: 'button', title: 'Düzenle', onclick: () => editTable(s, t) }, '✎'),
-                h('button', { class: 'mini', type: 'button', title: 'Sil', onclick: () => delTable(t) }, '×')))))
-          : h('div', { class: 'muted small', style: 'padding:6px 2px' }, 'Masa yok'));
+              h('button', { class: 'btn sm', type: 'button', style: 'padding:1px 8px;margin-top:2px', onclick: () => editTable(s, t) }, 'Düzenle'))))
+          : h('p', { class: 'esnaf-card-sub' }, 'Henüz masa yok'));
       }
-      body.append(card);
+      card.append(h('div', { class: 'esnaf-card-acts' },
+        lokanta ? h('button', { class: 'btn sm', type: 'button', onclick: () => editTable(s) }, '＋ Masa') : null,
+        h('button', { class: 'btn sm', type: 'button', onclick: () => editSection(s) }, 'Düzenle'),
+        h('button', { class: 'btn sm danger', type: 'button', onclick: () => delSection(s) }, 'Sil')));
+      grid.append(card);
     });
+    body.append(grid);
   }
 
   function editSection(s) {

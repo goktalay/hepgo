@@ -44,16 +44,16 @@ export async function render(view, params, ctx) {
   function draw() {
     clear(body);
     if (!list.length) { body.append(h('div', { class: 'card empty' }, 'Bu gün rezervasyon yok.')); return; }
-    const wrap = h('div', { class: 'shop-rsv-list' });
+    const wrap = h('div', { class: 'esnaf-rsv-list' });
     list.forEach(r => {
       const who = lokanta ? (r.table_name || 'Masa') : (r.staff_name || 'Personel');
       const what = lokanta ? (r.party ? `${r.party} kişi` : '') : (r.service_name || '');
-      wrap.append(h('div', { class: `card shop-rsv-row st-${r.status}` },
-        h('div', { class: 'shop-rsv-time' }, hm(r.starts_at), h('small', null, '– ' + hm(r.ends_at))),
+      wrap.append(h('div', { class: `esnaf-rsv st-${r.status}` },
+        h('div', { class: 'esnaf-rsv-time' }, hm(r.starts_at), h('small', null, '– ' + hm(r.ends_at))),
         h('div', { class: 'grow' }, h('b', null, r.customer || who),
           h('div', { class: 'small muted' }, [who, what].filter(Boolean).join(' · ') + (r.phone ? ' · ' + r.phone : ''))),
         h('span', { class: 'chip st-chip' }, STATUS[r.status] || r.status),
-        h('div', { class: 'shop-rsv-acts' },
+        h('div', { class: 'esnaf-rsv-acts' },
           r.status === 'ONAYLI' ? h('button', { class: 'btn sm', type: 'button', title: 'Geldi/Tamam', onclick: () => setStatus(r, 'TAMAM') }, '✓') : null,
           r.status === 'ONAYLI' ? h('button', { class: 'btn sm', type: 'button', title: 'Gelmedi', onclick: () => setStatus(r, 'GELMEDI') }, '∅') : null,
           h('button', { class: 'btn sm', type: 'button', onclick: () => edit(r) }, 'Düzenle'),

@@ -8,6 +8,7 @@
   var TITLES = {
     privacy: { tr: 'Gizlilik Politikası', en: 'Privacy Policy', de: 'Datenschutzerklärung', fr: 'Politique de confidentialité', es: 'Política de privacidad', ar: 'سياسة الخصوصية', ru: 'Политика конфиденциальности' },
     terms: { tr: 'Kullanım Şartları', en: 'Terms of Use', de: 'Nutzungsbedingungen', fr: 'Conditions d’utilisation', es: 'Condiciones de uso', ar: 'شروط الاستخدام', ru: 'Условия использования' },
+    beta: { tr: 'Beta Programı Sözleşmesi', en: 'Beta Program Agreement', de: 'Beta-Programm-Vereinbarung', fr: 'Accord du programme bêta', es: 'Acuerdo del programa beta', ar: 'اتفاقية برنامج بيتا', ru: 'Соглашение о бета-программе' },
   };
   var UPDATED = { tr: 'Son güncelleme', en: 'Last updated', de: 'Zuletzt aktualisiert', fr: 'Dernière mise à jour', es: 'Última actualización', ar: 'آخر تحديث', ru: 'Последнее обновление' };
 

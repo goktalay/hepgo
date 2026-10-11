@@ -1,8 +1,9 @@
-// HEPGO Fabrika — Canlı İzleme 3B sahnesi (Three.js, yerel kopya).
-// vantra-facility-os (horizonx) esinli: gerçek cam duvarlar (MeshPhysical transmission),
-// opak alt eşik + cam pencere, kalın zemin plakaları, ACESFilmic ışık + yumuşak gölge,
-// canlı personel her zaman görünür kart (depthTest:false) + durum rengi halka + sütun, orbit kamera.
-// 2B kat planını (oda poligonları) 3B'ye yükseltir; veri factory.js'teki uçlardan gelir.
+// HEPGO Fabrika — Canlı İzleme 3B sahnesi (Three.js, yerel kopya) — vantra-facility-os esinli.
+// • Kat planı ARKA PLAN RESMİNDEKİ duvar çizgileri otomatik tespit edilir ve 3B beyaz duvar olarak yükseltilir
+//   (koyu piksel taraması → yatay/dikey segmentler → InstancedMesh). Polygon oda çizmek gerekmez.
+// • Polygon odalar (varsa) cam duvar + eşik olarak çizilir.
+// • Kat: kalın beyaz plaka; altyapı işaretçileri (UPS/WiFi/priz...) pin + emoji; canlı personel yüz kartı + durum rengi.
+// • Sol cam panel: kat seçici, sayaçlar, canlı kişi listesi. Orbit kamera. Açık/koyu tema.
 
 const LIB = '/static/vendor/three/';
 let _libs = null;
@@ -10,192 +11,217 @@ const loadLibs = () => (_libs ??= Promise.all(
   ['three.module.min.js', 'OrbitControls.js'].map(f => import(LIB + f))
 ).then(([T, O]) => ({ T, OrbitControls: O.OrbitControls })).catch(e => { _libs = null; throw e; }));
 
-const WALL_H = 2.2, TH = 0.12, SILL_H = 0.5, SPAN = 26;
+const WALL_H = 2.2, IMG_WALL_H = 1.75, TH = 0.12, SILL_H = 0.5, SPAN = 26, SLAB_T = 0.9;
 let _Tref = null;
 
 const PAL = {
-  light: { ground: 0xeef1f7, g1: 0xc6d0e4, g2: 0xd8e0ef, slab: 0xe3e8f1, deck: 0xdde5f1, wall: 0xeef1f8, sill: 0xd4dcea, steel: 0x9fb0c8, label: '#0b1322', labelBg: 'rgba(255,255,255,.9)' },
-  dark: { ground: 0x0d1424, g1: 0x22324e, g2: 0x182438, slab: 0x172338, deck: 0x1d2b48, wall: 0x2a3446, sill: 0x1b2740, steel: 0x45506a, label: '#e7edf7', labelBg: 'rgba(15,22,38,.82)' },
+  light: { grid1: 0xd3d9e6, grid2: 0xe3e8f1, slab: 0xffffff, slabSide: 0xeef1f8, deck: 0xf3f5fa, wall: 0xf7f8fc, sill: 0xe6eaf3, steel: 0xb7c2d6, label: '#1c2233', labelBg: 'rgba(255,255,255,.92)', accent: 0x7c6cf0 },
+  dark: { grid1: 0x263252, grid2: 0x1b2540, slab: 0x1f2a44, slabSide: 0x182238, deck: 0x25304d, wall: 0x3a4664, sill: 0x2b3650, steel: 0x55617f, label: '#e8edf8', labelBg: 'rgba(18,24,40,.86)', accent: 0x9d8cff },
 };
 const ageColor = at => { const ms = at ? Date.now() - new Date(at).getTime() : Infinity; return ms <= 3e5 ? 0x16a34a : ms <= 36e5 ? 0xf59e0b : 0xdc2626; };
+const ageText = at => { if (!at) return '—'; const m = Math.round((Date.now() - new Date(at).getTime()) / 60000); return m < 1 ? 'şimdi' : m < 60 ? `${m} dk` : `${Math.round(m / 60)} sa`; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export async function createFactory3D(mountEl, opts = {}) {
   const { T, OrbitControls } = await loadLibs();
   _Tref = T;
   const fileUrl = opts.fileUrl || (p => p);
   let dark = !!opts.dark, floorName = opts.floorName || '', palette = opts.palette || {};
+  let floors = opts.floors || [], floorId = opts.floorId ?? null; const onFloor = opts.onFloor || null;
   let P = dark ? PAL.dark : PAL.light;
 
-  // ---------- glass HUD ----------
+  // ---------- cam panel (HUD) ----------
   ensureHudStyle();
   const hud = document.createElement('div'); hud.className = 'f3d-hud';
-  hud.style.cssText = 'position:absolute;left:16px;top:16px;z-index:5;pointer-events:none';
-  hud.innerHTML = `<div class="f3d-hud-card">
-    <div class="f3d-hud-top"><span class="f3d-dot live"></span><b>Canlı İzleme · 3B</b></div>
-    <div class="f3d-hud-floor"></div>
-    <div class="f3d-hud-cnt"><span class="n">0</span> kişi şu an sahada</div>
-    <div class="f3d-hud-leg"><span><i class="g"></i>çok yeni</span><span><i class="y"></i>1 saat içinde</span><span><i class="r"></i>daha eski</span></div>
-  </div>`;
+  hud.style.cssText = 'position:absolute;left:14px;top:14px;bottom:14px;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:10px;max-width:290px';
+  hud.innerHTML = `
+    <div class="f3d-card">
+      <div class="f3d-top"><span class="f3d-dot live"></span><b>Canlı İzleme · 3B</b><span class="f3d-chip">RTLS</span></div>
+      <div class="f3d-floor"></div>
+      <div class="f3d-stats">
+        <div class="f3d-stat v"><b class="n-people">0</b><span>Kişi</span></div>
+        <div class="f3d-stat c"><b class="n-cams">0</b><span>Kamera</span></div>
+        <div class="f3d-stat m"><b class="n-markers">0</b><span>İşaretçi</span></div>
+      </div>
+    </div>
+    <div class="f3d-card f3d-people">
+      <div class="f3d-sub">Sahadaki kişiler</div>
+      <div class="f3d-list"></div>
+      <div class="f3d-leg"><span><i class="g"></i>çok yeni</span><span><i class="y"></i>1 saat içinde</span><span><i class="r"></i>daha eski</span></div>
+    </div>
+    <div class="f3d-floors"></div>`;
   mountEl.appendChild(hud); if (dark) hud.classList.add('f3d-dark');
-  const hudFloor = hud.querySelector('.f3d-hud-floor'), hudCntEl = hud.querySelector('.f3d-hud-cnt .n');
-  const setHud = (name, n) => { if (name != null) floorName = name; hudFloor.textContent = floorName || 'Tüm kat'; if (n != null) hudCntEl.textContent = n; };
+  const q = s => hud.querySelector(s);
+  const el = { floor: q('.f3d-floor'), nPeople: q('.n-people'), nCams: q('.n-cams'), nMarkers: q('.n-markers'), list: q('.f3d-list'), floors: q('.f3d-floors') };
+  const renderFloors = () => {
+    el.floors.innerHTML = '';
+    if (!floors.length) return;
+    floors.forEach(f => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'f3d-fl' + (f.id === floorId ? ' on' : ''); b.textContent = f.name;
+      b.onclick = () => { if (onFloor) onFloor(f.id); }; el.floors.appendChild(b);
+    });
+  };
+  const renderPeople = (ppl) => {
+    el.nPeople.textContent = ppl.length;
+    if (!ppl.length) { el.list.innerHTML = '<div class="f3d-empty">Son 10 dakikada tanınan kişi yok</div>'; return; }
+    el.list.innerHTML = ppl.slice(0, 8).map(p => {
+      const col = '#' + ageColor(p.at).toString(16).padStart(6, '0');
+      const av = p.crop ? `<img src="${esc(fileUrl(p.crop, 64))}" alt="">` : `<i style="background:${col}">${esc((p.subject_name || '?').slice(0, 1).toLocaleUpperCase('tr'))}</i>`;
+      return `<div class="f3d-row"><span class="f3d-av" style="border-color:${col}">${av}</span><span class="f3d-nm"><b>${esc(p.subject_name || '—')}</b><small>${esc(p.room_name || p.camera_name || '—')}</small></span><span class="f3d-age" style="color:${col}">${ageText(p.at)}</span></div>`;
+    }).join('') + (ppl.length > 8 ? `<div class="f3d-more">+${ppl.length - 8} kişi daha</div>` : '');
+  };
+  const setFloorName = n => { if (n != null) floorName = n; el.floor.textContent = floorName || 'Tüm kat'; };
+  setFloorName(floorName); renderFloors(); renderPeople([]);
 
   // ---------- renderer / sahne / kamera ----------
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
-  renderer.outputColorSpace = 'outputColorSpace' in renderer ? T.SRGBColorSpace : renderer.outputColorSpace;
-  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.06;
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;touch-action:none;cursor:grab';
   mountEl.appendChild(renderer.domElement);
 
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(40, 1, 0.3, 400);
-  camera.position.set(SPAN * 0.5, SPAN * 0.78, SPAN * 1.0);
-
+  const camera = new T.PerspectiveCamera(36, 1, 0.3, 500);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08;
-  controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 6; controls.maxDistance = 95;
+  controls.maxPolarAngle = Math.PI * 0.47; controls.minDistance = 6; controls.maxDistance = 120;
 
-  // ---------- ışık ----------
-  const hemi = new T.HemisphereLight(0xffffff, 0x8491a6, 0.9); scene.add(hemi);
-  const key = new T.DirectionalLight(0xffffff, 1.35);
-  key.position.set(16, 34, 18); key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -30; key.shadow.camera.right = 30; key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
-  key.shadow.camera.near = 1; key.shadow.camera.far = 110; key.shadow.bias = -0.0006; key.shadow.radius = 3;
+  const hemi = new T.HemisphereLight(0xffffff, 0x9aa6bd, 1.0); scene.add(hemi);
+  const key = new T.DirectionalLight(0xffffff, 1.45);
+  key.position.set(18, 36, 20); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -34; key.shadow.camera.right = 34; key.shadow.camera.top = 34; key.shadow.camera.bottom = -34;
+  key.shadow.camera.near = 1; key.shadow.camera.far = 120; key.shadow.bias = -0.0005; key.shadow.radius = 4;
   scene.add(key);
-  const rim = new T.DirectionalLight(0x9db4ff, 0.5); rim.position.set(-20, 12, -18); scene.add(rim);
+  const rim = new T.DirectionalLight(0xb9c6ff, 0.55); rim.position.set(-22, 14, -20); scene.add(rim);
 
   const gWorld = new T.Group(); scene.add(gWorld);
+  const gBg = new T.Group(); scene.add(gBg);
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, ground, gBgMesh = null, M = {};
+  let grid, M = {};
 
   const makeMats = () => {
-    M.ground = new T.MeshStandardMaterial({ color: P.ground, roughness: 0.96, metalness: 0 });
-    M.slab = new T.MeshStandardMaterial({ color: P.slab, roughness: 0.85, metalness: 0.08 });
-    M.deck = new T.MeshStandardMaterial({ color: P.deck, roughness: 0.6, metalness: 0.12 });
-    M.wall = new T.MeshStandardMaterial({ color: P.wall, roughness: 0.7, metalness: 0.06 });
-    M.sill = new T.MeshStandardMaterial({ color: P.sill, roughness: 0.8, metalness: 0.05 });
+    M.slab = new T.MeshStandardMaterial({ color: P.slab, roughness: 0.55, metalness: 0.05 });
+    M.slabSide = new T.MeshStandardMaterial({ color: P.slabSide, roughness: 0.7, metalness: 0.05 });
+    M.deck = new T.MeshStandardMaterial({ color: P.deck, roughness: 0.6, metalness: 0.1 });
+    M.wall = new T.MeshStandardMaterial({ color: P.wall, roughness: 0.62, metalness: 0.04 });
+    M.sill = new T.MeshStandardMaterial({ color: P.sill, roughness: 0.75, metalness: 0.05 });
     M.glass = new T.MeshPhysicalMaterial({ color: 0xa9cfdd, transmission: 0.9, thickness: 0.5, roughness: 0.14, metalness: 0, ior: 1.35, transparent: true, opacity: 0.4, side: T.DoubleSide });
     M.frame = new T.MeshStandardMaterial({ color: P.steel, roughness: 0.5, metalness: 0.4 });
     M.cam = new T.MeshStandardMaterial({ color: 0x2a3340, roughness: 0.45, metalness: 0.3 });
-    M.cone = new T.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.08, side: T.DoubleSide, depthWrite: false });
-    M.edge = new T.LineBasicMaterial({ color: P.steel, transparent: true, opacity: 0.55 });
+    M.cone = new T.MeshBasicMaterial({ color: P.accent, transparent: true, opacity: 0.07, side: T.DoubleSide, depthWrite: false });
   };
-
   const buildBase = () => {
-    if (ground) { scene.remove(ground); ground.geometry.dispose(); }
     if (grid) scene.remove(grid);
-    ground = new T.Mesh(new T.PlaneGeometry(260, 260), M.ground);
-    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; ground.receiveShadow = true; scene.add(ground);
-    grid = new T.GridHelper(260, 130, P.g1, P.g2);
-    grid.material.transparent = true; grid.material.opacity = dark ? 0.45 : 0.7; grid.position.y = -0.02; scene.add(grid);
+    grid = new T.GridHelper(300, 150, P.grid1, P.grid2);
+    grid.material.transparent = true; grid.material.opacity = dark ? 0.35 : 0.45; grid.position.y = -SLAB_T - 0.02; scene.add(grid);
   };
 
   // ---------- koordinat dönüşümü ----------
   let X = { cx: 0, cy: 0, s: 1 };
-  const computeTransform = (rooms, cams, markers) => {
+  const computeTransform = (rooms, cams, markers, bgBox) => {
     const pts = [];
     (rooms || []).forEach(r => (r.points || []).forEach(p => pts.push(p)));
     (cams || []).forEach(c => (c.x != null) && pts.push([c.x, c.y]));
     (markers || []).forEach(m => (m.x != null) && pts.push([m.x, m.y]));
+    if (bgBox) pts.push([bgBox.x0, bgBox.y0], [bgBox.x1, bgBox.y1]);
     if (!pts.length) { X = { cx: 0, cy: 0, s: 0.05 }; return; }
     let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
     pts.forEach(([x, y]) => { if (x < a) a = x; if (x > b) b = x; if (y < c) c = y; if (y > d) d = y; });
     X = { cx: (a + b) / 2, cy: (c + d) / 2, s: SPAN / Math.max(b - a || 1, d - c || 1) };
   };
   const px = x => (x - X.cx) * X.s, pz = y => (y - X.cy) * X.s;
-
   const disposeGroup = g => { g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.map?.dispose?.(); m.dispose?.(); }); }); g.clear(); };
 
-  // ---------- kat planı: zemin plakaları + cam duvarlar ----------
+  // ---------- polygon odalar + kameralar + işaretçiler ----------
   const buildWorld = (rooms, cams, markers, stairs) => {
     disposeGroup(gWorld);
     (rooms || []).forEach(r => {
-      const pts = (r.points || []).filter(p => p && p.length >= 2);
-      if (pts.length < 3) return;
-      const shape = new T.Shape();
-      pts.forEach(([x, y], i) => { const sx = px(x), sz = pz(y); i ? shape.lineTo(sx, sz) : shape.moveTo(sx, sz); });
-      shape.closePath();
-      // kalın zemin plakası (extrude, hafif yükselti)
-      const slabGeo = new T.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false });
-      slabGeo.rotateX(Math.PI / 2);
-      const col = r.color ? new T.Color(r.color).lerp(new T.Color(P.deck), 0.55) : null;
-      const sm = col ? M.deck.clone() : M.deck; if (col) sm.color = col;
-      const slab = new T.Mesh(slabGeo, sm); slab.position.y = 0.14; slab.receiveShadow = true; slab.castShadow = true; slab.userData.room = r; gWorld.add(slab);
-      // duvarlar: her kenar → opak alt eşik + cam pencere + ince üst kiriş
+      const pts = (r.points || []).filter(p => p && p.length >= 2); if (pts.length < 3) return;
+      const shape = new T.Shape(); pts.forEach(([x, y], i) => { const sx = px(x), sz = pz(y); i ? shape.lineTo(sx, sz) : shape.moveTo(sx, sz); }); shape.closePath();
+      const slabGeo = new T.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false }); slabGeo.rotateX(Math.PI / 2);
+      const slab = new T.Mesh(slabGeo, M.deck); slab.position.y = 0.14; slab.receiveShadow = true; slab.castShadow = true; gWorld.add(slab);
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         const ax = px(a[0]), az = pz(a[1]), bx = px(b[0]), bz = pz(b[1]);
         const len = Math.hypot(bx - ax, bz - az); if (len < 0.05) continue;
         const mx = (ax + bx) / 2, mz = (az + bz) / 2, ry = -Math.atan2(bz - az, bx - ax);
-        const sill = new T.Mesh(new T.BoxGeometry(len, SILL_H, TH), M.sill);
-        sill.position.set(mx, SILL_H / 2 + 0.14, mz); sill.rotation.y = ry; sill.castShadow = true; sill.receiveShadow = true; gWorld.add(sill);
+        const sill = new T.Mesh(new T.BoxGeometry(len, SILL_H, TH), M.sill); sill.position.set(mx, SILL_H / 2 + 0.14, mz); sill.rotation.y = ry; sill.castShadow = true; sill.receiveShadow = true; gWorld.add(sill);
         const glassH = WALL_H - SILL_H - 0.14;
-        const glass = new T.Mesh(new T.BoxGeometry(len, glassH, 0.05), M.glass);
-        glass.position.set(mx, SILL_H + 0.14 + glassH / 2, mz); glass.rotation.y = ry; gWorld.add(glass);
-        const top = new T.Mesh(new T.BoxGeometry(len, 0.14, TH), M.wall);
-        top.position.set(mx, WALL_H + 0.07, mz); top.rotation.y = ry; top.castShadow = true; gWorld.add(top);
-        // dikey cam çerçeveleri
+        const glass = new T.Mesh(new T.BoxGeometry(len, glassH, 0.05), M.glass); glass.position.set(mx, SILL_H + 0.14 + glassH / 2, mz); glass.rotation.y = ry; gWorld.add(glass);
+        const top = new T.Mesh(new T.BoxGeometry(len, 0.14, TH), M.wall); top.position.set(mx, WALL_H + 0.07, mz); top.rotation.y = ry; top.castShadow = true; gWorld.add(top);
         const n = Math.max(1, Math.round(len / 2.4));
-        for (let k = 1; k < n; k++) {
-          const t = k / n, fx = ax + (bx - ax) * t, fz = az + (bz - az) * t;
-          const fr = new T.Mesh(new T.BoxGeometry(0.06, glassH, TH * 0.9), M.frame);
-          fr.position.set(fx, SILL_H + 0.14 + glassH / 2, fz); fr.rotation.y = ry; gWorld.add(fr);
-        }
+        for (let k = 1; k < n; k++) { const t = k / n, fx = ax + (bx - ax) * t, fz = az + (bz - az) * t; const fr = new T.Mesh(new T.BoxGeometry(0.06, glassH, TH * 0.9), M.frame); fr.position.set(fx, SILL_H + 0.14 + glassH / 2, fz); fr.rotation.y = ry; gWorld.add(fr); }
       }
       if (r.name) { const c = centroid(pts); const lbl = makeTextSprite(r.name, P); lbl.position.set(px(c[0]), WALL_H + 0.7, pz(c[1])); gWorld.add(lbl); }
     });
-    // kameralar (gövde + lens + görüş konisi)
     (cams || []).forEach(c => {
       if (c.x == null || c.y == null) return;
       const g = new T.Group(); g.position.set(px(c.x), WALL_H + 0.05, pz(c.y)); gWorld.add(g);
       const dir = (c.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
       const body = new T.Mesh(new T.BoxGeometry(0.26, 0.26, 0.4), M.cam); body.rotation.x = 0.4; body.castShadow = true; g.add(body);
-      const lens = new T.Mesh(new T.SphereGeometry(0.1, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 }));
-      lens.position.set(0, -0.06, 0.24); g.add(lens);
-      const cone = new T.Mesh(new T.ConeGeometry(1.7, 4, 24, 1, true), M.cone);
-      cone.position.set(0, -0.3, 2); cone.rotation.x = -Math.PI / 2; g.add(cone);
+      const lens = new T.Mesh(new T.SphereGeometry(0.1, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.06, 0.24); g.add(lens);
+      const cone = new T.Mesh(new T.ConeGeometry(1.7, 4, 24, 1, true), M.cone); cone.position.set(0, -0.3, 2); cone.rotation.x = -Math.PI / 2; g.add(cone);
     });
-    (stairs || []).forEach(sObj => {
-      if (sObj.x == null || sObj.y == null) return;
-      const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.slab);
-      m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m);
-    });
-    // altyapı işaretçileri (UPS / WiFi / priz / switch ...) — renkli pin + emoji rozet
+    (stairs || []).forEach(sObj => { if (sObj.x == null || sObj.y == null) return; const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.sill); m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m); });
+    // altyapı işaretçileri — ince pin + renkli baş + emoji rozet
+    let camCount = (cams || []).length;
     (markers || []).forEach(m => {
       if (m.x == null || m.y == null) return;
       const meta = palette[m.kind] || { color: '#64748b', icon: '•' };
+      if (/^cam/.test(m.kind || '')) camCount++;
       const col = new T.Color(meta.color);
-      const pin = new T.Mesh(new T.CylinderGeometry(0.045, 0.045, 0.9, 6), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 }));
-      pin.position.set(px(m.x), 0.45, pz(m.y)); gWorld.add(pin);
-      const head = new T.Mesh(new T.SphereGeometry(0.17, 16, 12), new T.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.2 }));
-      head.position.set(px(m.x), 1.0, pz(m.y)); head.castShadow = true; gWorld.add(head);
-      if (meta.icon) { const em = emojiSprite(meta.icon); em.position.set(px(m.x), 1.0, pz(m.y)); em.userData.bill = false; gWorld.add(em); }
+      const pin = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.75, 6), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5 }));
+      pin.position.set(px(m.x), 0.38, pz(m.y)); gWorld.add(pin);
+      const head = new T.Mesh(new T.SphereGeometry(0.13, 14, 10), new T.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.2 }));
+      head.position.set(px(m.x), 0.82, pz(m.y)); head.castShadow = true; gWorld.add(head);
+      if (meta.icon) { const em = emojiSprite(meta.icon); em.position.set(px(m.x), 0.82, pz(m.y)); gWorld.add(em); }
     });
+    el.nCams.textContent = camCount; el.nMarkers.textContent = (markers || []).length;
   };
 
-  // ---------- arka plan kat planı resmi (zemin dokusu) ----------
-  function buildBg(bg) {
-    if (gBgMesh) { gWorld.remove(gBgMesh); gBgMesh.geometry.dispose(); gBgMesh.material.map?.dispose?.(); gBgMesh.material.dispose(); gBgMesh = null; }
-    if (!bg || !bg.url) return;
+  // ---------- arka plan kat planı: beyaz kat plakası + soluk resim + RESİMDEN 3B DUVARLAR ----------
+  let bgReq = 0;
+  function buildBg(bg, after) {
+    disposeGroup(gBg);
+    if (!bg || !bg.url) { after && after(null); return; }
+    const req = ++bgReq;
     const img = new Image(); img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (req !== bgReq) return;
       const nw = img.naturalWidth || 800, nh = img.naturalHeight || 600, sc = bg.scale || 1;
-      const W = nw * sc * X.s, H = nh * sc * X.s;       // dünya birimi
+      const box = { x0: bg.x || 0, y0: bg.y || 0, x1: (bg.x || 0) + nw * sc, y1: (bg.y || 0) + nh * sc };
+      after && after(box);                       // dönüşüm bu kutuyu da kapsasın
+      const W = nw * sc * X.s, H = nh * sc * X.s, cx = px(box.x0 + nw * sc / 2), cz = pz(box.y0 + nh * sc / 2);
+      // kalın beyaz kat plakası (üst yüzey y=0)
+      const slab = new T.Mesh(new T.BoxGeometry(W + 0.6, SLAB_T, H + 0.6), [M.slabSide, M.slabSide, M.slab, M.slabSide, M.slabSide, M.slabSide]);
+      slab.position.set(cx, -SLAB_T / 2, cz); slab.receiveShadow = true; slab.castShadow = true; gBg.add(slab);
+      // soluk plan resmi (zemin dokusu)
       const tex = new T.Texture(img); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; tex.needsUpdate = true;
-      const geo = new T.PlaneGeometry(W, H); geo.rotateX(-Math.PI / 2);
-      const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, opacity: bg.opacity != null ? Math.max(0.6, bg.opacity) : 0.92 });
-      gBgMesh = new T.Mesh(geo, mat);
-      gBgMesh.position.set(px((bg.x || 0) + nw * sc / 2), 0.04, pz((bg.y || 0) + nh * sc / 2));
-      gWorld.add(gBgMesh);
+      const plane = new T.Mesh(new T.PlaneGeometry(W, H), new T.MeshBasicMaterial({ map: tex, transparent: true, opacity: dark ? 0.18 : 0.28, depthWrite: false }));
+      plane.rotation.x = -Math.PI / 2; plane.position.set(cx, 0.012, cz); plane.receiveShadow = true; gBg.add(plane);
+      // resimdeki duvar çizgilerini 3B duvara çevir
+      const segs = extractWalls(img, { x: box.x0, y: box.y0, scale: sc });
+      if (segs.length) {
+        const n = Math.min(segs.length, 24000);
+        const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, n);
+        const m4 = new T.Matrix4(), qI = new T.Quaternion(), pos = new T.Vector3(), scl = new T.Vector3();
+        for (let i = 0; i < n; i++) {
+          const s = segs[i];
+          pos.set(px(s.cx), IMG_WALL_H / 2, pz(s.cz));
+          if (s.horiz) scl.set(Math.max(s.len * X.s, 0.02), IMG_WALL_H, Math.max(s.th * X.s, 0.06));
+          else scl.set(Math.max(s.th * X.s, 0.06), IMG_WALL_H, Math.max(s.len * X.s, 0.02));
+          m4.compose(pos, qI, scl); inst.setMatrixAt(i, m4);
+        }
+        inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; gBg.add(inst);
+      }
     };
-    img.onerror = () => {};
+    img.onerror = () => { after && after(null); };
     img.src = bg.url;
   }
 
-  // ---------- canlı personel (her zaman görünür kart + halka + sütun) ----------
+  // ---------- canlı personel ----------
   const texLoader = new T.TextureLoader();
   const updateLive = (people) => {
     disposeGroup(gLive);
@@ -206,78 +232,83 @@ export async function createFactory3D(mountEl, opts = {}) {
       const n = list.length, off = n > 1 ? 0.95 : 0, ang = (i / n) * Math.PI * 2;
       const sx = px(p.x) + Math.cos(ang) * off, sz = pz(p.y) + Math.sin(ang) * off;
       const col = new T.Color(ageColor(p.at));
-      // zemin halkası + ışık sütunu
-      const ring = new T.Mesh(new T.RingGeometry(0.42, 0.56, 40), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.75, side: T.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(sx, 0.18, sz); gLive.add(ring);
-      const stem = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 2.3, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45 }));
-      stem.position.set(sx, 1.3, sz); gLive.add(stem);
-      // kart grubu (her zaman görünür: depthTest:false, billboard)
+      const ring = new T.Mesh(new T.RingGeometry(0.42, 0.56, 40), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8, side: T.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(sx, 0.03, sz); gLive.add(ring);
+      const stem = new T.Mesh(new T.CylinderGeometry(0.025, 0.025, 2.4, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45 }));
+      stem.position.set(sx, 1.2, sz); gLive.add(stem);
       const grp = new T.Group(); grp.position.set(sx, 2.95, sz); grp.userData.bill = true; gLive.add(grp);
-      const back = new T.Mesh(new T.CircleGeometry(0.62, 40), new T.MeshBasicMaterial({ color: col, depthTest: false, toneMapped: false }));
-      back.renderOrder = 10; grp.add(back);
-      const face = new T.Mesh(new T.CircleGeometry(0.54, 40), new T.MeshBasicMaterial({ map: initialTex(p.subject_name, col), depthTest: false, toneMapped: false }));
-      face.position.z = 0.01; face.renderOrder = 11; grp.add(face);
+      const back = new T.Mesh(new T.CircleGeometry(0.62, 40), new T.MeshBasicMaterial({ color: col, depthTest: false, toneMapped: false })); back.renderOrder = 10; grp.add(back);
+      const face = new T.Mesh(new T.CircleGeometry(0.54, 40), new T.MeshBasicMaterial({ map: initialTex(p.subject_name, col), depthTest: false, toneMapped: false })); face.position.z = 0.01; face.renderOrder = 11; grp.add(face);
       if (p.crop) texLoader.load(fileUrl(p.crop, 128), tex => { if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; face.material.map = roundTex(tex); face.material.needsUpdate = true; }, undefined, () => {});
       const tag = makeTextSprite((p.subject_name || '—').slice(0, 16), P, col.getHex()); tag.position.set(sx, 4.0, sz); gLive.add(tag);
     }));
-    setHud(null, ppl.length);
+    renderPeople((people || []));
   };
 
   // ---------- render döngüsü ----------
   let raf = 0, running = false;
-  const tick = () => {
-    if (!running) return;
-    raf = requestAnimationFrame(tick);
-    controls.update();
-    gLive.children.forEach(o => { if (o.userData.bill) o.quaternion.copy(camera.quaternion); });
-    renderer.render(scene, camera);
-  };
+  const tick = () => { if (!running) return; raf = requestAnimationFrame(tick); controls.update(); gLive.children.forEach(o => { if (o.userData.bill) o.quaternion.copy(camera.quaternion); }); renderer.render(scene, camera); };
   const start = () => { if (!running) { running = true; tick(); } };
   const stop = () => { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; };
-
-  const resize = () => {
-    const w = mountEl.clientWidth, h = mountEl.clientHeight;
-    if (!w || !h) return;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
-  };
+  const resize = () => { const w = mountEl.clientWidth, h = mountEl.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
   const ro = new ResizeObserver(resize); ro.observe(mountEl);
   const onVis = () => { if (document.hidden) stop(); else start(); };
   document.addEventListener('visibilitychange', onVis);
-
-  const fit = () => { controls.target.set(0, WALL_H / 2, 0); camera.position.set(SPAN * 0.5, SPAN * 0.78, SPAN * 1.0); controls.update(); };
+  const fit = () => { controls.target.set(0, 0.6, 0); camera.position.set(SPAN * 0.55, SPAN * 0.82, SPAN * 1.02); controls.update(); };
 
   makeMats(); buildBase(); resize(); fit(); start();
 
+  let last = null;
   return {
-    build({ rooms, cams, markers, stairs, floorName, bg, palette: pal }) {
+    build({ rooms, cams, markers, stairs, floorName: fn, bg, palette: pal, floors: fl, floorId: fid }) {
       if (pal) palette = pal;
-      if (floorName != null) setHud(floorName, null);
-      computeTransform(rooms, cams, markers); buildWorld(rooms, cams, markers, stairs); buildBg(bg); fit();
+      if (fl) { floors = fl; } if (fid !== undefined) { floorId = fid; } renderFloors();
+      if (fn != null) setFloorName(fn);
+      last = { rooms, cams, markers, stairs };
+      computeTransform(rooms, cams, markers, null); buildWorld(rooms, cams, markers, stairs); fit();
+      // arka plan resmi yüklenince dönüşümü resmi kapsayacak şekilde yenile ve dünyayı yeniden kur
+      buildBg(bg, box => { if (!box) return; computeTransform(rooms, cams, markers, box); buildWorld(rooms, cams, markers, stairs); if (last.people) updateLive(last.people); fit(); });
     },
-    updateLive,
+    updateLive(people) { if (last) last.people = people; updateLive(people); },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,
-    dispose() {
-      stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis);
-      disposeGroup(gWorld); disposeGroup(gLive);
-      renderer.dispose(); renderer.domElement.remove(); hud.remove();
-    },
+    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); },
   };
+}
+
+// ---------- resimden duvar çıkarma ----------
+// Koyu pikselleri (duvar çizgileri) tarar; yatay ve dikey ardışık koyu dizileri segment yapar.
+// Kısa diziler (metin, gürültü) elenir. Plan koordinatına (bg.x/y + ölçek) çevrilir.
+function extractWalls(img, bg) {
+  const nw = img.naturalWidth || 800, nh = img.naturalHeight || 600, sc = bg.scale || 1;
+  const cw = Math.min(nw, 560), ch = Math.max(1, Math.round(nh * cw / nw));
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, cw, ch);
+  let d; try { d = ctx.getImageData(0, 0, cw, ch).data; } catch { return []; }   // CORS ile boyanmış canvas → vazgeç
+  // eşik: resmin parlaklık dağılımına göre (beyaz zemin + koyu çizgi varsayımı)
+  let sum = 0, cnt = 0; for (let i = 0; i < cw * ch; i += 7) { if (d[i * 4 + 3] > 90) { sum += 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; cnt++; } }
+  const mean = cnt ? sum / cnt : 200, thr = Math.min(120, mean * 0.55);
+  const dark = new Uint8Array(cw * ch);
+  for (let i = 0; i < cw * ch; i++) { if (d[i * 4 + 3] < 90) continue; const l = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; if (l < thr) dark[i] = 1; }
+  const MIN = Math.max(4, Math.round(cw / 110)), segs = [];
+  for (let y = 0; y < ch; y++) { let run = 0; for (let x = 0; x <= cw; x++) { const on = x < cw && dark[y * cw + x]; if (on) run++; else { if (run >= MIN) segs.push({ h: 1, x0: x - run, x1: x, y }); run = 0; } } }
+  for (let x = 0; x < cw; x++) { let run = 0; for (let y = 0; y <= ch; y++) { const on = y < ch && dark[y * cw + x]; if (on) run++; else { if (run >= MIN) segs.push({ h: 0, y0: y - run, y1: y, x }); run = 0; } } }
+  const ux = nw * sc / cw, uy = nh * sc / ch;
+  return segs.map(s => s.h
+    ? { cx: bg.x + (s.x0 + s.x1) / 2 * ux, cz: bg.y + (s.y + 0.5) * uy, len: (s.x1 - s.x0) * ux, th: uy * 1.3, horiz: true }
+    : { cx: bg.x + (s.x + 0.5) * ux, cz: bg.y + (s.y0 + s.y1) / 2 * uy, len: (s.y1 - s.y0) * uy, th: ux * 1.3, horiz: false });
 }
 
 // ---------- yardımcılar ----------
 function centroid(pts) { let x = 0, y = 0; pts.forEach(p => { x += p[0]; y += p[1]; }); return [x / pts.length, y / pts.length]; }
 function roundTex(tex) {
   const T = _Tref, img = tex.image; if (!img) return tex;
-  const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
-  const ctx = cv.getContext('2d');
-  ctx.save(); ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.clip();
-  ctx.drawImage(img, 0, 0, S, S); ctx.restore();
+  const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d');
+  ctx.save(); ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(img, 0, 0, S, S); ctx.restore();
   const t = new T.CanvasTexture(cv); if ('colorSpace' in t) t.colorSpace = T.SRGBColorSpace; return t;
 }
 function initialTex(name, col) {
-  const T = _Tref, S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
-  const ctx = cv.getContext('2d');
+  const T = _Tref, S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d');
   ctx.fillStyle = '#' + col.getHexString(); ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 60px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText((name || '?').slice(0, 1).toLocaleUpperCase('tr'), S / 2, S / 2 + 4);
@@ -297,35 +328,56 @@ function makeTextSprite(text, P, accentHex) {
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function emojiSprite(ch) {
-  const T = _Tref, S = 96, cv = document.createElement('canvas'); cv.width = cv.height = S;
-  const ctx = cv.getContext('2d');
-  ctx.font = '64px system-ui,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  const T = _Tref, S = 96, cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d');
+  ctx.font = '60px system-ui,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, S / 2, S / 2 + 4);
   const tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
   const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
-  sp.renderOrder = 9; sp.scale.set(0.62, 0.62, 1); return sp;
+  sp.renderOrder = 9; sp.scale.set(0.5, 0.5, 1); return sp;
 }
 
 function ensureHudStyle() {
   if (document.getElementById('f3d-hud-style')) return;
   const st = document.createElement('style'); st.id = 'f3d-hud-style';
   st.textContent = `
-  .f3d-hud{position:absolute;left:16px;top:16px;z-index:5;pointer-events:none}
-  .f3d-hud-card{background:rgba(255,255,255,.52);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);border:1px solid rgba(255,255,255,.6);border-radius:16px;padding:14px 18px;box-shadow:0 10px 36px rgba(16,24,48,.14);min-width:196px;font-family:system-ui,-apple-system,sans-serif}
-  .f3d-hud-top{display:flex;align-items:center;gap:8px;font-size:13px;color:#0b1322}
-  .f3d-hud-top b{font-weight:700}
-  .f3d-dot.live{width:8px;height:8px;border-radius:50%;background:#16a34a;animation:f3dpulse 1.8s infinite}
+  .f3d-hud{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  .f3d-card{background:rgba(255,255,255,.66);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);border:1px solid rgba(255,255,255,.75);border-radius:18px;padding:14px 16px;box-shadow:0 2px 6px rgba(24,32,64,.05),0 14px 34px -10px rgba(24,32,64,.16);pointer-events:auto}
+  .f3d-top{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#1c2233}
+  .f3d-top b{font-weight:700}
+  .f3d-chip{margin-left:auto;font-size:10px;letter-spacing:.08em;color:#7c6cf0;background:rgba(124,108,240,.12);border-radius:999px;padding:3px 8px;font-weight:700}
+  .f3d-dot.live{width:8px;height:8px;border-radius:50%;background:#16a34a;animation:f3dpulse 1.8s infinite;flex:none}
   @keyframes f3dpulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
-  .f3d-hud-floor{margin-top:10px;font-size:19px;font-weight:800;color:#0b1322;letter-spacing:-.02em}
-  .f3d-hud-cnt{margin-top:2px;font-size:12.5px;color:#5b6170}
-  .f3d-hud-cnt .n{font-weight:800;color:#2f6fed;font-size:15px}
-  .f3d-hud-leg{margin-top:11px;display:flex;flex-direction:column;gap:3px;font-size:11px;color:#5b6170}
-  .f3d-hud-leg span{display:flex;align-items:center;gap:6px}
-  .f3d-hud-leg i{width:9px;height:9px;border-radius:50%;display:inline-block}
-  .f3d-hud-leg i.g{background:#16a34a}.f3d-hud-leg i.y{background:#f59e0b}.f3d-hud-leg i.r{background:#dc2626}
-  .f3d-dark .f3d-hud-card{background:rgba(15,22,38,.55);border-color:rgba(120,150,210,.35)}
-  .f3d-dark .f3d-hud-top,.f3d-dark .f3d-hud-floor{color:#e7edf7}
-  .f3d-dark .f3d-hud-cnt,.f3d-dark .f3d-hud-leg{color:#9aa6bd}
+  .f3d-floor{margin-top:8px;font-size:20px;font-weight:800;color:#1c2233;letter-spacing:-.02em}
+  .f3d-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .f3d-stat{border-radius:12px;padding:8px 6px;text-align:center}
+  .f3d-stat b{display:block;font-size:18px;font-weight:800;line-height:1.1}
+  .f3d-stat span{font-size:10.5px;color:#5b6170}
+  .f3d-stat.v{background:rgba(124,108,240,.14)}.f3d-stat.v b{color:#6a58e8}
+  .f3d-stat.c{background:rgba(14,165,233,.14)}.f3d-stat.c b{color:#0284c7}
+  .f3d-stat.m{background:rgba(22,163,74,.13)}.f3d-stat.m b{color:#15803d}
+  .f3d-people{flex:1;min-height:0;display:flex;flex-direction:column}
+  .f3d-sub{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7a8296;font-weight:700;margin-bottom:8px}
+  .f3d-list{overflow:auto;min-height:0;flex:1;display:flex;flex-direction:column;gap:6px}
+  .f3d-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:12px;background:rgba(255,255,255,.55)}
+  .f3d-av{width:30px;height:30px;border-radius:50%;border:2px solid #16a34a;overflow:hidden;flex:none;display:flex;align-items:center;justify-content:center}
+  .f3d-av img{width:100%;height:100%;object-fit:cover}
+  .f3d-av i{font-style:normal;color:#fff;font-weight:700;font-size:13px;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  .f3d-nm{flex:1;min-width:0;line-height:1.15}
+  .f3d-nm b{display:block;font-size:12.5px;color:#1c2233;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .f3d-nm small{font-size:10.5px;color:#7a8296}
+  .f3d-age{font-size:11px;font-weight:700}
+  .f3d-empty,.f3d-more{font-size:11.5px;color:#7a8296;padding:6px 2px}
+  .f3d-leg{margin-top:8px;display:flex;gap:10px;font-size:10.5px;color:#5b6170;flex-wrap:wrap}
+  .f3d-leg span{display:flex;align-items:center;gap:5px}
+  .f3d-leg i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .f3d-leg i.g{background:#16a34a}.f3d-leg i.y{background:#f59e0b}.f3d-leg i.r{background:#dc2626}
+  .f3d-floors{display:flex;gap:6px;flex-wrap:wrap;pointer-events:auto}
+  .f3d-fl{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);backdrop-filter:blur(14px);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:#3b4252;cursor:pointer}
+  .f3d-fl.on{background:#7c6cf0;color:#fff;border-color:#7c6cf0}
+  .f3d-dark .f3d-card,.f3d-dark .f3d-fl{background:rgba(18,24,40,.62);border-color:rgba(130,150,210,.3)}
+  .f3d-dark .f3d-top,.f3d-dark .f3d-floor,.f3d-dark .f3d-nm b{color:#e8edf8}
+  .f3d-dark .f3d-row{background:rgba(255,255,255,.06)}
+  .f3d-dark .f3d-stat span,.f3d-dark .f3d-sub,.f3d-dark .f3d-leg,.f3d-dark .f3d-nm small,.f3d-dark .f3d-empty,.f3d-dark .f3d-fl{color:#aab4c8}
   `;
   document.head.appendChild(st);
 }

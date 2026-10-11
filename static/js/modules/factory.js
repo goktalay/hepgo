@@ -194,7 +194,11 @@ export async function render(view, params, ctx) {
   async function ensure3D() {
     if (fab3d || fab3dBusy) return fab3d;
     fab3dBusy = true;
-    try { const mod = await import('./factory3d.js'); fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark() }); }
+    try {
+      const mod = await import('./factory3d.js');
+      fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark(),
+        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); } });
+    }
     catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
   }
@@ -208,7 +212,8 @@ export async function render(view, params, ctx) {
       const bg = (fl && fl.bg_image && st.layers.bg !== false)
         ? { url: fileUrl(fl.bg_image), x: fl.bg_x || 0, y: fl.bg_y || 0, scale: fl.bg_scale || 1, opacity: fl.bg_opacity != null ? fl.bg_opacity : 0.9 }
         : null;
-      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE });
+      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE,
+        floors: st.floors.map(f => ({ id: f.id, name: f.name })), floorId: st.floorId });
       inst.updateLive(st.liveData?.people || []);
       inst.resize();
       requestAnimationFrame(() => { try { inst.resize(); } catch {} });   // el3d yeni görünür oldu; layout oturunca tekrar ölç
@@ -1298,7 +1303,7 @@ function injectStyle() {
   .fab-floor.on{background:var(--pri,#2563eb);color:#fff;border-color:var(--pri,#2563eb)}
   .fab-floor.add{border-style:dashed;color:var(--muted,#6b7280)}
   .fab-stage{flex:1;position:relative;border:1px solid var(--line,#e5e7eb);border-radius:10px;overflow:hidden;background:var(--bg2,#f8fafc);touch-action:none}
-  .fab-3d{position:absolute;inset:0;z-index:3;background:radial-gradient(130% 120% at 50% 0%,rgba(99,140,255,.10),transparent 60%)}
+  .fab-3d{position:absolute;inset:0;z-index:3;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
   .fab-3d canvas{border-radius:inherit;cursor:grab}
   .fab-3d canvas:active{cursor:grabbing}
   .fab-svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}

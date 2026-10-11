@@ -341,6 +341,11 @@ def current_user(request: Request, conn=db.DB):
                                if m.split('.')[0] not in _off or modules_tier.tier(m) in ('required', 'always')]
     except Exception:   # noqa: BLE001 — modül yönetimi hatası girişi bozmasın
         pass
+    # Esnaf modülleri (yazarkasa/bölümler/hizmetler/rezervasyon/garson) yalnızca esnaf paketinde görünür;
+    # fabrika/KOBİ firmasında (esnaf_pkg boş) master dâhil kimseye gösterilmez.
+    if not config.ESNAF_PKG:
+        _esnaf = {'pos', 'sections', 'services', 'reservations', 'waiter'}
+        user['modules'] = [m for m in user['modules'] if m.split('.')[0] not in _esnaf]
     user['write_modules'] = [m for m in user.get('write_modules', []) if m in user['modules']]
     return user
 

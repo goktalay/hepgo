@@ -192,33 +192,7 @@ export async function render(view, params, ctx) {
     try {
       const mod = await import('./factory3d.js');
       fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark(),
-        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); },
-        // 3B'de bölgeye/alana tıklandı → ad ver / değiştir / sil → kat kaydına (zone_labels) yaz
-        onLabel: info => {
-          const fl = st.floors.find(f => f.id === st.floorId); if (!fl) return;
-          const arr = parseLabels(fl);
-          const inp = h('input', { class: 'input', value: info.current || '', placeholder: info.zone ? `Bölge adı (şu an: ${info.zone})` : 'Alan etiketi (ör. Montaj Hattı)' });
-          const save = async next => {
-            try {
-              await api.patch(`/api/factory/floors/${fl.id}`, { zone_labels: next });
-              fl.zone_labels = JSON.stringify(next); toast(next.length < arr.length ? 'Etiket silindi' : 'Ad kaydedildi'); show3D(true);
-            } catch (err) { toastError(err); }
-          };
-          modal({
-            title: info.zone ? 'Bölge adı' : 'Alan etiketi', body: field('Ad', inp),
-            actions: [
-              { label: 'Vazgeç' },
-              ...(info.idx >= 0 ? [{ label: 'Sil', class: 'danger', onClick: () => save(arr.filter((_, i) => i !== info.idx)) }] : []),
-              { label: 'Kaydet', class: 'primary', onClick: () => {
-                const nm = inp.value.trim(); if (!nm) { toast('Ad boş olamaz', 'err'); return; }
-                const next = arr.slice();
-                if (info.idx >= 0) next[info.idx] = { ...next[info.idx], name: nm }; else next.push({ x: info.x, y: info.y, name: nm });
-                return save(next);
-              } },
-            ],
-          });
-          setTimeout(() => { try { inp.focus(); inp.select(); } catch {} }, 50);
-        } });
+        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); } });
     }
     catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
@@ -227,6 +201,33 @@ export async function render(view, params, ctx) {
   // Kat kaydındaki 3B bölge/alan adları (JSON metin ya da dizi) → [{x,y,name}]
   const parseLabels = fl => { try { const v = fl && fl.zone_labels; const a = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(a) ? a : []; } catch { return []; } };
   const sync3D = () => { if (st.mode === 'live' && fab3d && !el3d.hidden) show3D(true); };
+  // Bölüm etiketi (Düzen → "Bölüm Etiketi Koy" ya da mevcut hapa tıkla): ad ver / değiştir / sil → kat kaydına (zone_labels) yaz.
+  // 3B Canlı'da etiket noktası bir kapalı bölgenin içine düşerse o bölgenin adı olur, düşmezse serbest bölüm olarak listelenir.
+  function labelModal(info) {
+    const fl = st.floors.find(f => f.id === st.floorId); if (!fl) return;
+    const arr = parseLabels(fl);
+    const inp = h('input', { class: 'input', value: info.current || '', placeholder: 'Bölüm adı (ör. Montaj Hattı)' });
+    const save = async next => {
+      try {
+        await api.patch(`/api/factory/floors/${fl.id}`, { zone_labels: next });
+        fl.zone_labels = JSON.stringify(next); toast(next.length < arr.length ? 'Bölüm etiketi silindi' : 'Bölüm kaydedildi'); drawCanvas(); sync3D();
+      } catch (err) { toastError(err); }
+    };
+    modal({
+      title: info.idx >= 0 ? 'Bölüm etiketi' : 'Yeni bölüm etiketi', body: field('Ad', inp),
+      actions: [
+        { label: 'Vazgeç' },
+        ...(info.idx >= 0 ? [{ label: 'Sil', class: 'danger', onClick: () => save(arr.filter((_, i) => i !== info.idx)) }] : []),
+        { label: 'Kaydet', class: 'primary', onClick: () => {
+          const nm = inp.value.trim(); if (!nm) { toast('Ad boş olamaz', 'err'); return; }
+          const next = arr.slice();
+          if (info.idx >= 0) next[info.idx] = { ...next[info.idx], name: nm }; else next.push({ x: info.x, y: info.y, name: nm });
+          return save(next);
+        } },
+      ],
+    });
+    setTimeout(() => { try { inp.focus(); inp.select(); } catch {} }, 50);
+  }
   async function show3D(on) {
     // Canlı 3B'de üst kat çubuğu (+Kat/Sırala/Sil), yüzen araç kolu ve Seçenekler popover'ı gizli — kat seçimi 3B'nin kendi seçicisinden
     floorBar.hidden = !!on;
@@ -241,7 +242,9 @@ export async function render(view, params, ctx) {
         ? { url: fileUrl(fl.bg_image), x: fl.bg_x || 0, y: fl.bg_y || 0, scale: fl.bg_scale || 1, opacity: fl.bg_opacity != null ? fl.bg_opacity : 0.9 }
         : null;
       const L = st.layers || {};
+      const printers = await api.get('/api/printers').catch(() => []);   // Yazıcı Odası rafına yerleştirilir (modül yoksa boş)
       inst.build({
+        printers: Array.isArray(printers) ? printers : (printers && Array.isArray(printers.items) ? printers.items : []),
         rooms: L.rooms === false ? [] : st.rooms,
         cams: L.cams === false ? [] : st.cams,
         markers: L.markers === false ? [] : (st.markers || []).filter(m => MARKER_PALETTE[m.kind] && L[`mk:${m.kind}`] !== false),
@@ -490,7 +493,21 @@ export async function render(view, params, ctx) {
       }
     });
 
-    // ALTYAPI işaretçileri (UPS, priz, WiFi, internet/intranet, switch, planlanan kamera, not) — paletten ikon + renk
+    // 3B Canlı bölüm etiketleri (zone_labels): Düzen'de küçük hap; tıkla → ad değiştir / sil
+    if (st.mode === 'edit') {
+      const flr = st.floors.find(f => f.id === st.floorId);
+      parseLabels(flr).forEach((l, idx) => {
+        if (l.x == null || l.y == null) return;
+        const g = s('g', { class: 'fab-zlabel', transform: `translate(${l.x} ${l.y})`,
+          onclick: e => { if (st.tool === 'select' || st.tool === 'label') { e.stopPropagation(); labelModal({ x: l.x, y: l.y, idx, current: l.name }); } } });
+        const w = Math.max(30, String(l.name || '').length * 6.2 + 14);
+        g.append(s('rect', { x: -w / 2, y: -9, width: w, height: 18, rx: 9, class: 'fab-zlabel-bg' }));
+        g.append(s('text', { x: 0, y: 4, class: 'fab-zlabel-txt', 'text-anchor': 'middle' }, l.name || ''));
+        gStatic.append(g);
+      });
+    }
+
+    // Kamera / not işaretçileri — paletten ikon + renk
     if (st.layers.markers) st.markers.forEach(m => {
       if (!MARKER_PALETTE[m.kind]) return;                 // kaldırılan türler (UPS/WiFi/priz/…) çizilmez
       if (st.layers[`mk:${m.kind}`] === false) return;   // TÜR BAZLI göster/gizle (ör. sadece kameralar)
@@ -641,7 +658,7 @@ export async function render(view, params, ctx) {
     const w = toWorld(e.clientX, e.clientY);
     if (st.mode === 'edit' && st.tool === 'room') { addDraftVertex(w); return; }
     if (st.mode === 'edit' && st.tool === 'line') { addLineVertex(w); return; }
-    if (st.mode === 'edit' && (st.tool === 'camera' || st.tool === 'stair' || st.tool === 'marker')) { return; }   // kamera/merdiven/işaretçi: yerleştirme click ile (aşağıda), pan başlatma
+    if (st.mode === 'edit' && (st.tool === 'camera' || st.tool === 'stair' || st.tool === 'marker' || st.tool === 'label')) { return; }   // kamera/merdiven/işaretçi/etiket: yerleştirme click ile (aşağıda), pan başlatma
     // boş alana tıklama: pan + seçim temizle
     if (st.mode === 'edit' && st.tool === 'select') { st.sel = null; drawSide(); drawOverlay(); }
     const sx = e.clientX, sy = e.clientY, px = st.cam.panX, py = st.cam.panY;
@@ -705,6 +722,10 @@ export async function render(view, params, ctx) {
     if (st.mode === 'edit' && st.tool === 'marker' && pendingMarkerKind) {
       const w = toWorld(e.clientX, e.clientY);
       placeMarkerAt(pendingMarkerKind, Math.round(w.x), Math.round(w.y));
+    }
+    if (st.mode === 'edit' && st.tool === 'label') {
+      const w = toWorld(e.clientX, e.clientY);
+      labelModal({ x: Math.round(w.x), y: Math.round(w.y), idx: -1, current: '' });
     }
   });
 
@@ -821,6 +842,7 @@ export async function render(view, params, ctx) {
     if (key === 'camera') pickCamera();
     else if (key === 'marker') pickMarkerKind();
     else if (key === 'stair') hintText('Merdiven koymak için plana tıklayın');
+    else if (key === 'label') hintText('Bölüm etiketi: plana tıklayın ve bölümün adını girin (3B Canlı İzleme bölüm paneli). Var olan etikete tıklayınca düzenleyebilirsiniz.');
     else if (key === 'line') hintText(`${st.lineKind === 'power' ? 'Elektrik' : st.lineKind === 'network' ? 'Network' : 'Hat'} hattı: noktaları tıklayın; bitirmek için çift tık ya da Enter.`);
     else hintText('');
     drawSide(); drawOverlay();
@@ -894,7 +916,8 @@ export async function render(view, params, ctx) {
       btn('Seç / Taşı', 'select', () => setTool('select'), st.tool === 'select'),
       btn('Oda Çiz', 'room', () => setTool('room'), st.tool === 'room'),
       btn('Kamera Koy (NVR)', 'camera', () => setTool('camera'), st.tool === 'camera'),
-      btn('İşaretçi Koy (UPS / priz / WiFi / internet / switch / kamera / not)', 'marker', () => setTool('marker'), st.tool === 'marker'),
+      btn('Kamera / Not İşaretçisi Koy', 'marker', () => setTool('marker'), st.tool === 'marker'),
+      btn('Bölüm Etiketi Koy (3B Canlı İzleme bölümleri)', 'room', () => setTool('label'), st.tool === 'label'),
       h('div', { class: 'fab-tb-sep' }),
       h('div', { class: 'fab-tb-sep' }),
       btn('Merdiven Koy', 'stair', () => setTool('stair'), st.tool === 'stair'),
@@ -1364,6 +1387,9 @@ function injectStyle() {
   .fab-stair-step{stroke:#64748b;stroke-width:1.2}
   .fab-stair-lbl{font:600 10px system-ui;fill:#475569;pointer-events:none}
   .fab-marker-dot{fill:#64748b}
+  .fab-zlabel{cursor:pointer}
+  .fab-zlabel-bg{fill:rgba(124,108,240,.14);stroke:#7c6cf0;stroke-width:1}
+  .fab-zlabel-txt{font-size:10px;font-weight:600;fill:#4b3fc4;pointer-events:none}
   .fab-marker-lbl{font:600 11px system-ui;fill:#475569}
   .fab-draft{fill:none;stroke:#2563eb;stroke-width:2;stroke-dasharray:5 4;vector-effect:non-scaling-stroke}
   .fab-draft-dot{fill:#2563eb}

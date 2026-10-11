@@ -336,7 +336,9 @@ export async function createFactory3D(mountEl, opts = {}) {
       // canlı veri: ad · durum · % (yazdırırken) — küçük etiket, yazıcının üstünde; ilerleme çubuğu kapı altında
       const prog = Math.max(0, Math.min(100, +p.live_progress || 0));
       const txt = `${p.name || 'Yazıcı'} · ${PR_TEXT[stt] || stt}${stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' ? ` %${Math.floor(prog)}` : ''}`;
-      const lbl = makeTextSprite(txt, P, col); lbl.scale.multiplyScalar(0.42 * Math.max(0.8, ky / 1.9)); lbl.position.set(0, PH + 0.28 * ky, 0); pg.add(lbl);
+      if (stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' || stt === 'HATA') {   // boştakiler yalnız LED (etiket kalabalığı olmasın); tıklayınca pencere
+        const lbl = makeTextSprite(txt, P, col); lbl.scale.multiplyScalar(0.36 * Math.max(0.8, ky / 1.9)); lbl.position.set(0, PH + 0.26 * ky, 0); pg.add(lbl);
+      }
       if (stt === 'YAZDIRIYOR' || stt === 'DURAKLADI') {
         const bw = RW * 0.8, bar = new T.Mesh(new T.PlaneGeometry(bw, 0.04 * ky), new T.MeshBasicMaterial({ color: 0x2b3240 })); bar.position.set(0, PH * 0.12, RD * 0.45 + 0.006); pg.add(bar);
         const fill = new T.Mesh(new T.PlaneGeometry(Math.max(0.001, bw * prog / 100), 0.04 * ky), new T.MeshBasicMaterial({ color: col })); fill.position.set(-bw / 2 + bw * prog / 200, PH * 0.12, RD * 0.45 + 0.008); pg.add(fill);

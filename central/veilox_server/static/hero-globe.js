@@ -110,7 +110,7 @@ function mount(root, stage, config) {
   return { dispose, apply };
 }
 
-const HZ = { factory: ['#2f6fed', '#7c5cf5'], grocery: ['#16a34a', '#a3e635'], barber: ['#ef4444', '#f59e0b'], restaurant: ['#f59e0b', '#f472b6'] };
+const HZ = { factory: ['#e63946', '#ffb703'], grocery: ['#16a34a', '#a3e635'], barber: ['#e63946', '#ff7a45'], restaurant: ['#f59e0b', '#f472b6'] };
 
 export function webglOK() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } }
 

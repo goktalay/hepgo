@@ -377,13 +377,13 @@ const SEC = {
 
 // Üstteki çizgisel dünya header'ı (hero üstü) + KOBİ/Esnaf ikili yapı tanıtımı — 7 dil.
 const WORLD = {
-  tr: { h: 'Fabrikadan esnafa, tek platform', lead: 'İster üretim yapan bir KOBİ, ister bakkal, berber ya da lokanta olun — HEPGO işinizi tek ekrandan, 7 dilde yönetir. Bulutta ya da kendi sunucunuzda.', cta: 'Hemen başlayın' },
-  en: { h: 'From factories to small shops — one platform', lead: 'Whether you are a manufacturing SME or a grocery, barber or restaurant, HEPGO runs your business from one screen, in 7 languages. In the cloud or on your own server.', cta: 'Get started' },
-  de: { h: 'Von der Fabrik bis zum Kleingewerbe — eine Plattform', lead: 'Ob produzierender Mittelständler oder Laden, Friseur oder Restaurant — HEPGO führt Ihr Geschäft über einen Bildschirm, in 7 Sprachen. In der Cloud oder auf Ihrem Server.', cta: 'Loslegen' },
-  fr: { h: 'De l’usine au commerce — une seule plateforme', lead: 'PME industrielle ou épicerie, coiffeur, restaurant — HEPGO gère votre activité depuis un seul écran, en 7 langues. Dans le cloud ou sur votre serveur.', cta: 'Commencer' },
-  es: { h: 'De la fábrica al comercio: una sola plataforma', lead: 'Ya sea una pyme industrial o una tienda, peluquería o restaurante, HEPGO gestiona su negocio desde una sola pantalla, en 7 idiomas. En la nube o en su servidor.', cta: 'Empezar' },
-  ar: { h: 'من المصنع إلى المتجر — منصة واحدة', lead: 'سواء كنت منشأة صناعية أو بقالة أو حلاقاً أو مطعماً، يدير HEPGO عملك من شاشة واحدة وبسبع لغات. في السحابة أو على خادمك الخاص.', cta: 'ابدأ الآن' },
-  ru: { h: 'От завода до небольшого магазина — одна платформа', lead: 'Будь вы производственное МСБ или магазин, парикмахерская или кафе — HEPGO ведёт ваш бизнес с одного экрана, на 7 языках. В облаке или на вашем сервере.', cta: 'Начать' },
+  tr: { eyebrow: 'KOBİLER VE ESNAFLAR İÇİN TEK İŞLETİM SİSTEMİ', h: 'İşletmenizin', hl: 'sinir sistemi.', lead: 'Fabrika yönetiminden bakkal POS’una, berber randevusundan restoran masasına — HEPGO, işletmenizin türüne göre şekillenen tek canlı platformdur.', cta: 'Platformu keşfet', stats: [['2', 'ana yol'], ['20+', 'modül'], ['7', 'dil']] },
+  en: { eyebrow: 'ONE OPERATING SYSTEM FOR SMEs AND SMALL SHOPS', h: 'Your business’s', hl: 'nervous system.', lead: 'From factory management to grocery POS, from barber bookings to restaurant tables — HEPGO is one live platform that adapts to your business type.', cta: 'Explore the platform', stats: [['2', 'paths'], ['20+', 'modules'], ['7', 'languages']] },
+  de: { eyebrow: 'EIN BETRIEBSSYSTEM FÜR KMU UND KLEINGEWERBE', h: 'Das Nervensystem', hl: 'Ihres Betriebs.', lead: 'Von der Fabriksteuerung bis zur Laden-Kasse, vom Friseurtermin bis zum Restauranttisch — HEPGO ist eine lebendige Plattform, die sich Ihrem Geschäft anpasst.', cta: 'Plattform entdecken', stats: [['2', 'Wege'], ['20+', 'Module'], ['7', 'Sprachen']] },
+  fr: { eyebrow: 'UN SYSTÈME D’EXPLOITATION POUR PME ET COMMERCES', h: 'Le système nerveux', hl: 'de votre entreprise.', lead: 'De la gestion d’usine à la caisse d’épicerie, du rendez-vous coiffure à la table de restaurant — HEPGO est une plateforme vivante qui s’adapte à votre activité.', cta: 'Découvrir la plateforme', stats: [['2', 'voies'], ['20+', 'modules'], ['7', 'langues']] },
+  es: { eyebrow: 'UN SISTEMA OPERATIVO PARA PYMES Y COMERCIOS', h: 'El sistema nervioso', hl: 'de su negocio.', lead: 'De la gestión de fábrica al TPV de la tienda, de la cita en peluquería a la mesa del restaurante — HEPGO es una plataforma viva que se adapta a su negocio.', cta: 'Explorar la plataforma', stats: [['2', 'vías'], ['20+', 'módulos'], ['7', 'idiomas']] },
+  ar: { eyebrow: 'نظام تشغيل واحد للمنشآت والحرفيين', h: 'الجهاز العصبي', hl: 'لعملك.', lead: 'من إدارة المصنع إلى نقطة بيع البقالة، ومن حجز الحلاق إلى طاولة المطعم — HEPGO منصة حية تتكيّف مع نوع عملك.', cta: 'استكشف المنصة', stats: [['2', 'مسار'], ['20+', 'وحدة'], ['7', 'لغات']] },
+  ru: { eyebrow: 'ЕДИНАЯ ОС ДЛЯ МСБ И МАЛОГО БИЗНЕСА', h: 'Нервная система', hl: 'вашего бизнеса.', lead: 'От управления заводом до кассы магазина, от записи в парикмахерскую до столика в кафе — HEPGO это живая платформа, подстраивающаяся под ваш бизнес.', cta: 'Открыть платформу', stats: [['2', 'пути'], ['20+', 'модулей'], ['7', 'языков']] },
 };
 const DUO = {
   tr: { eye: 'İki yapı, tek platform', h: 'Size uygun olanı seçin', p: 'HEPGO hem kurumsal üretim firmalarına hem de esnaflara göre şekillenir; kayıtta tipinizi seçersiniz.',
@@ -454,14 +454,17 @@ function page() {
   </div></header>
   <main>
     <section class="world-hero" id="hero3d">
-      <div class="hero-globe-stage" id="heroGlobe" aria-hidden="true"></div>
-      <div class="world-copy reveal">
-        <span class="pill"><i></i> ${esc(t.heroPill)}</span>
-        <h1>${esc(wd.h)}</h1>
-        <p class="lead">${esc(wd.lead)}</p>
-        <div class="sector-tabs" id="sectorTabs">${SECTOR_KEYS.map((k, i) => `<button class="sector-tab${i === 0 ? ' on' : ''}" data-sec="${k}">${esc(sc[k].l)}</button>`).join('')}</div>
-        <p class="sector-tag" id="sectorTag">${esc(sc.factory.tag)}</p>
-        <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(wd.cta)}</a><a class="btn btn-ghost btn-lg" href="#yapilar">${esc(t.heroCta[1])}</a></div>
+      <div class="wrap hero-split">
+        <div class="world-copy reveal">
+          <span class="eyebrow eyebrow-dot">${esc(wd.eyebrow)}</span>
+          <h1>${esc(wd.h)} <span class="hl">${esc(wd.hl)}</span></h1>
+          <p class="lead">${esc(wd.lead)}</p>
+          <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(wd.cta)} ↗</a><a class="btn btn-ghost btn-lg" href="#yapilar">${esc(t.heroCta[1])}</a></div>
+          <div class="sector-tabs" id="sectorTabs">${SECTOR_KEYS.map((k, i) => `<button class="sector-tab${i === 0 ? ' on' : ''}" data-sec="${k}">${esc(sc[k].l)}</button>`).join('')}</div>
+          <p class="sector-tag" id="sectorTag">${esc(sc.factory.tag)}</p>
+          <div class="hero-stats">${wd.stats.map((s, i) => `${i ? '<i></i>' : ''}<span><b>${esc(s[0])}</b> ${esc(s[1])}</span>`).join('')}</div>
+        </div>
+        <div class="hero-globe-stage" id="heroGlobe" aria-hidden="true"></div>
       </div>
     </section>
 
@@ -676,7 +679,7 @@ async function mount3D() {
   const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
   if (!tabs) return;
   if (stage) {
-    const mod = await import('/static/hero-globe.js?v=20261011f').catch(() => null);
+    const mod = await import('/static/hero-globe.js?v=20261011g').catch(() => null);
     if (mod && mod.webglOK()) { try { _heroHandle = mod.mountGlobe(stage, 'factory'); } catch { _heroHandle = null; } }
   }
   let idx = 0;

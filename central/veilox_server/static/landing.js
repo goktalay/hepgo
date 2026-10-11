@@ -454,13 +454,7 @@ function page() {
   </div></header>
   <main>
     <section class="world-hero" id="hero3d">
-      <canvas class="scene3d-canvas" id="scene3d" hidden></canvas>
-      <div class="globe" aria-hidden="true"><div class="globe__sphere">
-        <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
-        <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
-        <span class="globe__p globe__p--eq"></span><span class="globe__p globe__p--n"></span><span class="globe__p globe__p--s"></span>
-        <span class="globe__dot"></span><span class="globe__dot"></span><span class="globe__dot"></span><span class="globe__dot"></span>
-      </div></div>
+      <iframe class="hero-globe-frame" id="heroGlobe" src="/static/hero-globe.html?v=20261011e" title="HEPGO" loading="eager" tabindex="-1" aria-hidden="true"></iframe>
       <div class="world-copy reveal">
         <span class="pill"><i></i> ${esc(t.heroPill)}</span>
         <h1>${esc(wd.h)}</h1>
@@ -672,31 +666,22 @@ function render() {
   mount3D();
 }
 
-// Hero'daki sektörel 3D sahne: WebGL varsa yüklenir; yoksa CSS çizgisel dünya görünür kalır.
-let _scene = null, _autoTimer = null, _sceneToken = 0;
-async function mount3D() {
-  if (_scene) { try { _scene.dispose(); } catch { /* */ } _scene = null; }
-  if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
-  const canvas = $('#scene3d');
-  if (!canvas) return;
-  const mod = await import('/static/scene3d.js?v=20261011d').catch(() => null);
-  if (!mod || !mod.webglOK()) return;   // WebGL yok → CSS dünya fallback
-  const token = ++_sceneToken;
-  let scene;
-  try { scene = await mod.mountScene(canvas); } catch { return; }
-  if (token !== _sceneToken) { try { scene.dispose(); } catch { /* */ } return; }
-  _scene = scene;
-  canvas.hidden = false;
-  const globe = document.querySelector('.world-hero .globe'); if (globe) globe.style.display = 'none';
+// Hero'daki premium 3D küre (horizonx Reactive Globe, iframe içinde). Sektör sekmesi iframe'e postMessage
+// ile renk gönderir (fabrika mavi, bakkal yeşil, berber kırmızı, lokanta amber) + başlık altı tanımı değişir.
+let _heroTimer = null;
+function mount3D() {
+  if (_heroTimer) { clearInterval(_heroTimer); _heroTimer = null; }
+  const frame = $('#heroGlobe');
   const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
+  if (!tabs) return;
+  let idx = 0;
   const setSec = key => {
-    scene.show(key);
-    if (tabs) tabs.querySelectorAll('.sector-tab').forEach(b => b.classList.toggle('on', b.dataset.sec === key));
+    try { frame && frame.contentWindow && frame.contentWindow.postMessage({ hzSector: key }, '*'); } catch { /* */ }
+    tabs.querySelectorAll('.sector-tab').forEach(b => b.classList.toggle('on', b.dataset.sec === key));
     if (tagEl && sc[key]) tagEl.textContent = sc[key].tag;
   };
-  let idx = 0;
-  const restartAuto = () => { if (_autoTimer) clearInterval(_autoTimer); _autoTimer = setInterval(() => { idx = (idx + 1) % SECTOR_KEYS.length; setSec(SECTOR_KEYS[idx]); }, 6000); };
-  if (tabs) tabs.querySelectorAll('.sector-tab').forEach(b => b.addEventListener('click', () => { idx = SECTOR_KEYS.indexOf(b.dataset.sec); setSec(b.dataset.sec); restartAuto(); }));
+  const restartAuto = () => { if (_heroTimer) clearInterval(_heroTimer); _heroTimer = setInterval(() => { idx = (idx + 1) % SECTOR_KEYS.length; setSec(SECTOR_KEYS[idx]); }, 6000); };
+  tabs.querySelectorAll('.sector-tab').forEach(b => b.addEventListener('click', () => { idx = SECTOR_KEYS.indexOf(b.dataset.sec); setSec(b.dataset.sec); restartAuto(); }));
   restartAuto();
 }
 

@@ -2597,6 +2597,20 @@ def _migrate(conn):
             name TEXT NOT NULL, qty REAL NOT NULL DEFAULT 1, price REAL NOT NULL DEFAULT 0,
             note TEXT, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS ix_shop_oi_order ON shop_order_items(order_id);
+        -- Beta geri bildirim: firma kullanıcısı hata/tavsiye/diğer bildirir; merkeze (Veilox) iletilir, merkez cevabı buraya yazılır.
+        CREATE TABLE IF NOT EXISTS beta_feedback (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_name TEXT,
+            category TEXT NOT NULL DEFAULT 'diger',   -- hata | tavsiye | diger
+            message TEXT NOT NULL,
+            screenshot TEXT,                          -- opsiyonel data URI (ekran görüntüsü)
+            page TEXT,                                -- bildirim anındaki ekran (hash)
+            status TEXT NOT NULL DEFAULT 'NEW',       -- NEW | SENT | ANSWERED
+            reply TEXT, replied_at TEXT,
+            remote_id INTEGER,                        -- merkezdeki kaydın id'si (federasyon senkronu)
+            created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS ix_beta_fb_user ON beta_feedback(user_id);
     ''')
     user_cols = {r[1] for r in conn.execute('PRAGMA table_info(users)')}
     if 'last_seen' not in user_cols:

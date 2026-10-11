@@ -8362,3 +8362,32 @@ textarea.sv-input { resize: vertical; }
 .pos-scan { flex: none; padding: 0 14px; font-size: 18px; }
 .pos-scan-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .pos-scan-video { width: 100%; max-width: 360px; border-radius: 12px; background: #000; aspect-ratio: 4 / 3; object-fit: cover; }
+
+/* ---------- Beta geri bildirim (footer ortası + modal) ---------- */
+.app-footer { position: relative; }
+.beta-fab { position: absolute; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 4px 13px; border-radius: 999px; }
+.beta-fab:hover { color: var(--primary); border-color: var(--primary); }
+.beta-dot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+@media (max-width: 760px) { .beta-fab span.beta-dot { display: inline-block; } .beta-fab { font-size: 0; gap: 0; padding: 6px 10px; } .beta-fab .beta-dot { font-size: 0; } }
+
+.beta-modal { display: flex; flex-direction: column; gap: 12px; min-width: min(460px, 86vw); }
+.beta-intro { margin: 0; font-size: 13px; color: var(--muted); background: #fff8ec; border: 1px solid #fde8c0; padding: 9px 12px; border-radius: 10px; }
+.beta-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+.beta-tab { border: 0; background: none; cursor: pointer; font: inherit; padding: 8px 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+.beta-tab.on { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.beta-pane { min-height: 160px; }
+.beta-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.beta-field > label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.beta-cats { display: flex; gap: 8px; flex-wrap: wrap; }
+.beta-cat { border: 1.5px solid var(--border); background: var(--surface); border-radius: 10px; padding: 8px 14px; cursor: pointer; font: inherit; }
+.beta-cat.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.beta-msg { resize: vertical; }
+.beta-shot { flex-direction: row; align-items: center; gap: 10px; }
+.beta-foot { display: flex; justify-content: flex-end; }
+.beta-item { border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; margin-bottom: 10px; }
+.beta-item-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.beta-item-msg { font-size: 14px; white-space: pre-wrap; }
+.beta-reply { margin-top: 8px; padding: 9px 11px; background: var(--primary-soft); border-radius: 9px; font-size: 13.5px; }
+.chip.ok { background: #dcfce7; color: #15803d; }

@@ -67,6 +67,7 @@ import * as sections from './modules/sections.js';
 import * as services from './modules/services.js';
 import * as reservations from './modules/reservations.js';
 import * as waiter from './modules/waiter.js';
+import { betaButton } from './modules/beta.js';
 import * as mrp from './modules/mrp.js';
 import * as purchasing from './modules/purchasing.js';
 import * as master from './modules/master.js';
@@ -934,6 +935,7 @@ function renderShell() {
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),
+      betaButton(ctx),
       statusBar())));
   // Açılış sayfası (Ayarlar → Arayüz): girişte ana sayfa yerine seçilen modül
   const start = u.prefs?.settings?.start;

@@ -940,6 +940,12 @@ def terms_page():
     return _legal_page('terms')
 
 
+@app.get('/beta-sozlesmesi')
+@app.get('/beta-agreement')
+def beta_agreement_page():
+    return _legal_page('beta')
+
+
 # --- Federasyon: müşteri ERP instance'larının merkez destek girişini doğrulaması ---
 # Müşteri ERP'si, giriş ekranından gelen merkez destek kullanıcısını buraya sorar (paylaşılan anahtarla korunur).
 # Merkez tek yönetici hesabıyla (VEILOX_USERNAME / PASSWORD_HASH) doğrular; geçerliyse kimliğini döner.

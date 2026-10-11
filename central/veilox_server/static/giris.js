@@ -224,10 +224,10 @@ const T = {
 const t = () => T[lang] || T.en;   // eksik çeviri güvenli şekilde İngilizce'ye düşer
 // Yasal sayfa bağlantı metinleri (kayıt onayı altında; sayfalar veilox'ta /gizlilik + /kullanim-sartlari, 7 dilli)
 const LEGAL_L = {
-  tr: ['Gizlilik Politikası', 'Kullanım Şartları'], en: ['Privacy Policy', 'Terms of Use'],
-  de: ['Datenschutzerklärung', 'Nutzungsbedingungen'], fr: ['Politique de confidentialité', 'Conditions d’utilisation'],
-  es: ['Política de privacidad', 'Condiciones de uso'], ar: ['سياسة الخصوصية', 'شروط الاستخدام'],
-  ru: ['Политика конфиденциальности', 'Условия использования'],
+  tr: ['Gizlilik Politikası', 'Kullanım Şartları', 'Beta Programı Sözleşmesi'], en: ['Privacy Policy', 'Terms of Use', 'Beta Program Agreement'],
+  de: ['Datenschutzerklärung', 'Nutzungsbedingungen', 'Beta-Programm-Vereinbarung'], fr: ['Politique de confidentialité', 'Conditions d’utilisation', 'Accord du programme bêta'],
+  es: ['Política de privacidad', 'Condiciones de uso', 'Acuerdo del programa beta'], ar: ['سياسة الخصوصية', 'شروط الاستخدام', 'اتفاقية برنامج بيتا'],
+  ru: ['Политика конфиденциальности', 'Условия использования', 'Соглашение о бета-программе'],
 };
 const legalL = () => LEGAL_L[lang] || LEGAL_L.en;
 // Firma tipi + modül seçimi metinleri (7 dil; eksikse İngilizce'ye düşer)
@@ -523,7 +523,7 @@ function regView() {
             <label class="vx-field"><span>${esc(L.pw2)}</span><input class="vx-input" type="password" name="pw2" minlength="10" autocomplete="new-password"${needV ? '' : ' required'}></label></div>
           <div class="gx-meter"><i id="pwBar"></i><small id="pwTxt"></small></div>
           <label class="gx-check"><input type="checkbox" name="accept"${needV ? '' : ' required'}><span>${esc(L.accept)}</span></label>
-          <p class="gx-legal-links"><a href="/gizlilik" target="_blank" rel="noopener">${esc(legalL()[0])}</a> · <a href="/kullanim-sartlari" target="_blank" rel="noopener">${esc(legalL()[1])}</a></p>
+          <p class="gx-legal-links"><a href="/gizlilik" target="_blank" rel="noopener">${esc(legalL()[0])}</a> · <a href="/kullanim-sartlari" target="_blank" rel="noopener">${esc(legalL()[1])}</a> · <a href="/beta-sozlesmesi" target="_blank" rel="noopener">${esc(legalL()[2])}</a></p>
         </div>
         <div class="vx-err" id="regErr"></div>
         ${needV ? `<p class="gx-sub gx-verifyhint">${esc(L.verifyFirst)}</p>` : ''}

@@ -165,18 +165,27 @@ export async function createFactory3D(mountEl, opts = {}) {
       const cone = new T.Mesh(new T.ConeGeometry(1.7, 4, 24, 1, true), M.cone); cone.position.set(0, -0.3, 2); cone.rotation.x = -Math.PI / 2; g.add(cone);
     });
     (stairs || []).forEach(sObj => { if (sObj.x == null || sObj.y == null) return; const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.sill); m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m); });
-    // altyapı işaretçileri — ince pin + renkli baş + emoji rozet
+    // altyapı işaretçileri: planlanan kameralar duvar üstünde küçük gövde+lens (vantra), diğerleri zeminde küçük renkli nokta + minik rozet
     let camCount = (cams || []).length;
+    const lensMat = new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 });
     (markers || []).forEach(m => {
       if (m.x == null || m.y == null) return;
-      const meta = palette[m.kind] || { color: '#64748b', icon: '•' };
-      if (/^cam/.test(m.kind || '')) camCount++;
-      const col = new T.Color(meta.color);
-      const pin = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.75, 6), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5 }));
-      pin.position.set(px(m.x), 0.38, pz(m.y)); gWorld.add(pin);
-      const head = new T.Mesh(new T.SphereGeometry(0.13, 14, 10), new T.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.2 }));
-      head.position.set(px(m.x), 0.82, pz(m.y)); head.castShadow = true; gWorld.add(head);
-      if (meta.icon) { const em = emojiSprite(meta.icon); em.position.set(px(m.x), 0.82, pz(m.y)); gWorld.add(em); }
+      const meta = palette[m.kind] || { color: '#64748b', icon: '' };
+      const col = new T.Color(meta.color), x = px(m.x), z = pz(m.y);
+      if (/^cam/.test(m.kind || '')) {
+        camCount++;
+        const g = new T.Group(); g.position.set(x, IMG_WALL_H + 0.1, z); gWorld.add(g);
+        const mast = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.22, 6), M.cam); mast.position.y = -0.1; g.add(mast);
+        const body = new T.Mesh(new T.BoxGeometry(0.2, 0.16, 0.3), M.cam); body.position.y = 0.06; body.castShadow = true; g.add(body);
+        const lens = new T.Mesh(new T.SphereGeometry(0.06, 12, 10), lensMat); lens.position.set(0, 0.04, 0.17); g.add(lens);
+        const led = new T.Mesh(new T.SphereGeometry(0.022, 8, 8), new T.MeshBasicMaterial({ color: 0xf43f5e })); led.position.set(0.07, 0.12, 0.1); g.add(led);
+        return;
+      }
+      const dot = new T.Mesh(new T.SphereGeometry(0.085, 12, 10), new T.MeshStandardMaterial({ color: col, roughness: 0.35, metalness: 0.2 }));
+      dot.position.set(x, 0.09, z); dot.castShadow = true; gWorld.add(dot);
+      const halo = new T.Mesh(new T.RingGeometry(0.12, 0.2, 24), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, side: T.DoubleSide }));
+      halo.rotation.x = -Math.PI / 2; halo.position.set(x, 0.02, z); gWorld.add(halo);
+      if (meta.icon) { const em = emojiSprite(meta.icon); em.scale.set(0.34, 0.34, 1); em.position.set(x, 0.42, z); gWorld.add(em); }
     });
     el.nCams.textContent = camCount; el.nMarkers.textContent = (markers || []).length;
   };
@@ -201,21 +210,32 @@ export async function createFactory3D(mountEl, opts = {}) {
       const tex = new T.Texture(img); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; tex.needsUpdate = true;
       const plane = new T.Mesh(new T.PlaneGeometry(W, H), new T.MeshBasicMaterial({ map: tex, transparent: true, opacity: dark ? 0.18 : 0.28, depthWrite: false }));
       plane.rotation.x = -Math.PI / 2; plane.position.set(cx, 0.012, cz); plane.receiveShadow = true; gBg.add(plane);
-      // resimdeki duvar çizgilerini 3B duvara çevir
-      const segs = extractWalls(img, { x: box.x0, y: box.y0, scale: sc });
-      if (segs.length) {
-        const n = Math.min(segs.length, 24000);
-        const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, n);
-        const m4 = new T.Matrix4(), qI = new T.Quaternion(), pos = new T.Vector3(), scl = new T.Vector3();
-        for (let i = 0; i < n; i++) {
-          const s = segs[i];
-          pos.set(px(s.cx), IMG_WALL_H / 2, pz(s.cz));
-          if (s.horiz) scl.set(Math.max(s.len * X.s, 0.02), IMG_WALL_H, Math.max(s.th * X.s, 0.06));
-          else scl.set(Math.max(s.th * X.s, 0.06), IMG_WALL_H, Math.max(s.len * X.s, 0.02));
-          m4.compose(pos, qI, scl); inst.setMatrixAt(i, m4);
+      // plandaki duvar çizgilerini 3B duvara çevir: SVG ise vektörden (hassas), raster ise piksel taramasından
+      const geo = { x: box.x0, y: box.y0, scale: sc };
+      const place = segs => {
+        if (req !== bgReq) return;
+        const keep = [];
+        for (const s of segs) {
+          const ax = px(s.ax), az = pz(s.az), bx = px(s.bx), bz = pz(s.bz);
+          const len = Math.hypot(bx - ax, bz - az);
+          if (len < 0.22) continue;                      // kapı sembolü, köşe işareti vb. kısa parçalar
+          keep.push({ ax, az, bx, bz, len, th: s.th != null ? Math.max(s.th * X.s, 0.14) : 0.14 });
+          if (keep.length >= 24000) break;
         }
+        if (!keep.length) return;
+        const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, keep.length);
+        const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();
+        keep.forEach((s, i) => {
+          pos.set((s.ax + s.bx) / 2, IMG_WALL_H / 2, (s.az + s.bz) / 2);
+          q.setFromAxisAngle(up, -Math.atan2(s.bz - s.az, s.bx - s.ax));
+          scl.set(s.len + s.th * 0.6, IMG_WALL_H, s.th);  // köşeler kapansın diye hafif uzat
+          m4.compose(pos, q, scl); inst.setMatrixAt(i, m4);
+        });
         inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; gBg.add(inst);
-      }
+      };
+      const isSvg = /\.svg(\?|#|$)/i.test(bg.url) || /^data:image\/svg/i.test(bg.url);
+      if (isSvg) svgWalls(bg.url, nw, nh, geo).then(place).catch(() => place(extractWalls(img, geo)));
+      else place(extractWalls(img, geo));
     };
     img.onerror = () => { after && after(null); };
     img.src = bg.url;
@@ -295,8 +315,55 @@ function extractWalls(img, bg) {
   for (let x = 0; x < cw; x++) { let run = 0; for (let y = 0; y <= ch; y++) { const on = y < ch && dark[y * cw + x]; if (on) run++; else { if (run >= MIN) segs.push({ h: 0, y0: y - run, y1: y, x }); run = 0; } } }
   const ux = nw * sc / cw, uy = nh * sc / ch;
   return segs.map(s => s.h
-    ? { cx: bg.x + (s.x0 + s.x1) / 2 * ux, cz: bg.y + (s.y + 0.5) * uy, len: (s.x1 - s.x0) * ux, th: uy * 1.3, horiz: true }
-    : { cx: bg.x + (s.x + 0.5) * ux, cz: bg.y + (s.y0 + s.y1) / 2 * uy, len: (s.y1 - s.y0) * uy, th: ux * 1.3, horiz: false });
+    ? { ax: bg.x + s.x0 * ux, az: bg.y + (s.y + 0.5) * uy, bx: bg.x + s.x1 * ux, bz: bg.y + (s.y + 0.5) * uy, th: uy * 1.3 }
+    : { ax: bg.x + (s.x + 0.5) * ux, az: bg.y + s.y0 * uy, bx: bg.x + (s.x + 0.5) * ux, bz: bg.y + s.y1 * uy, th: ux * 1.3 });
+}
+
+// ---------- SVG kat planından duvar çıkarma (vektör; line/polyline/polygon/rect/path) ----------
+// Elemanlar geçici bir gizli <svg> içine alınır; getCTM ile iç transform'lar user-space'e çözülür.
+// user-space (viewBox) → plan koordinatı: bg.x + (x - vbX) * (naturalW / vbW) * bg.scale
+async function svgWalls(url, nw, nh, bg) {
+  const txt = await (await fetch(url, { credentials: 'same-origin' })).text();
+  const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
+  const root = doc.documentElement;
+  if (!root || root.nodeName.toLowerCase() !== 'svg') return [];
+  const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const [vx, vy, vw, vh] = (vb.length === 4 && vb[2] > 0 && vb[3] > 0) ? vb : [0, 0, nw, nh];
+  const sc = bg.scale || 1, kx = nw / vw * sc, ky = nh / vh * sc, th = Math.max(vw, vh) * 0.004 * kx;   // duvar kalınlığı (plan birimi)
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-99999px;top:-99999px;width:10px;height:10px;overflow:hidden;visibility:hidden';
+  const live = document.importNode(root, true); host.appendChild(live); document.body.appendChild(host);
+  const segs = [];
+  try {
+    const pt = live.createSVGPoint();
+    const toUser = (el, x, y) => { try { const m = el.getCTM(); if (!m) return [x, y]; pt.x = x; pt.y = y; const p = pt.matrixTransform(m); return [p.x, p.y]; } catch { return [x, y]; } };
+    const push = (el, x1, y1, x2, y2) => {
+      const [ax, ay] = toUser(el, x1, y1), [bx, by] = toUser(el, x2, y2);
+      if (!isFinite(ax + ay + bx + by)) return;
+      segs.push({ ax: bg.x + (ax - vx) * kx, az: bg.y + (ay - vy) * ky, bx: bg.x + (bx - vx) * kx, bz: bg.y + (by - vy) * ky, th });
+    };
+    const num = v => parseFloat(v) || 0;
+    const pts = s => (s || '').trim().split(/[\s,]+/).map(Number).filter(n => isFinite(n));
+    live.querySelectorAll('line,polyline,polygon,rect,path').forEach(el => {
+      if (segs.length > 40000) return;
+      const tag = el.tagName.toLowerCase();
+      const style = (el.getAttribute('style') || '') + ';';
+      const stroke = el.getAttribute('stroke') || (style.match(/stroke:\s*([^;]+)/) || [])[1] || '';
+      const fill = el.getAttribute('fill') || (style.match(/fill:\s*([^;]+)/) || [])[1] || '';
+      if (stroke === 'none' && (fill === 'none' || !fill)) return;         // görünmez
+      if (tag === 'line') push(el, num(el.getAttribute('x1')), num(el.getAttribute('y1')), num(el.getAttribute('x2')), num(el.getAttribute('y2')));
+      else if (tag === 'polyline' || tag === 'polygon') { const p = pts(el.getAttribute('points')); for (let i = 2; i < p.length; i += 2) push(el, p[i - 2], p[i - 1], p[i], p[i + 1]); if (tag === 'polygon' && p.length >= 4) push(el, p[p.length - 2], p[p.length - 1], p[0], p[1]); }
+      else if (tag === 'rect') { const x = num(el.getAttribute('x')), y = num(el.getAttribute('y')), w = num(el.getAttribute('width')), h = num(el.getAttribute('height')); if (w > 0 && h > 0) { push(el, x, y, x + w, y); push(el, x + w, y, x + w, y + h); push(el, x + w, y + h, x, y + h); push(el, x, y + h, x, y); } }
+      else if (tag === 'path') {
+        let L = 0; try { L = el.getTotalLength(); } catch { L = 0; }
+        if (!(L > 0)) return;
+        const n = Math.min(400, Math.max(2, Math.ceil(L / (Math.max(vw, vh) * 0.01))));
+        let prev = null;
+        for (let i = 0; i <= n; i++) { let p; try { p = el.getPointAtLength(L * i / n); } catch { break; } if (prev && (Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y)) > 0.01) push(el, prev.x, prev.y, p.x, p.y); prev = p; }
+      }
+    });
+  } finally { host.remove(); }
+  return segs;
 }
 
 // ---------- yardımcılar ----------

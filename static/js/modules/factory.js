@@ -202,6 +202,8 @@ export async function render(view, params, ctx) {
     catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
   }
+  // Katman/tür değişince 3B sahneyi de yenile (yalnız canlı modda ve 3B açıkken)
+  const sync3D = () => { if (st.mode === 'live' && fab3d && !el3d.hidden) show3D(true); };
   async function show3D(on) {
     if (!on) { el3d.hidden = true; svg.style.display = ''; return; }
     svg.style.display = 'none'; el3d.hidden = false;
@@ -212,7 +214,13 @@ export async function render(view, params, ctx) {
       const bg = (fl && fl.bg_image && st.layers.bg !== false)
         ? { url: fileUrl(fl.bg_image), x: fl.bg_x || 0, y: fl.bg_y || 0, scale: fl.bg_scale || 1, opacity: fl.bg_opacity != null ? fl.bg_opacity : 0.9 }
         : null;
-      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE,
+      const L = st.layers || {};
+      inst.build({
+        rooms: L.rooms === false ? [] : st.rooms,
+        cams: L.cams === false ? [] : st.cams,
+        markers: L.markers === false ? [] : (st.markers || []).filter(m => L[`mk:${m.kind}`] !== false),
+        stairs: L.stairs === false ? [] : st.stairs,
+        floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE,
         floors: st.floors.map(f => ({ id: f.id, name: f.name })), floorId: st.floorId });
       inst.updateLive(st.liveData?.people || []);
       inst.resize();
@@ -900,19 +908,19 @@ export async function render(view, params, ctx) {
   function layersPanel() {
     const rows = LAYER_DEFS.map(([k, lbl]) => {
       const cb = h('input', { type: 'checkbox', checked: st.layers[k] !== false });
-      cb.addEventListener('change', () => { st.layers[k] = cb.checked; saveLayers(st.layers); drawCanvas(); });
+      cb.addEventListener('change', () => { st.layers[k] = cb.checked; saveLayers(st.layers); drawCanvas(); sync3D(); });
       return h('label', { class: 'fab-layer' }, cb, h('span', null, lbl));
     });
     // İşaretçi TÜRLERİ: o katta bulunan türler için ayrı göster/gizle (ör. "sadece kameralar")
     const present = [...new Set((st.markers || []).map(m => m.kind))];
     const mkRows = MARKER_ORDER.filter(k => present.includes(k)).map(k => {
       const cb = h('input', { type: 'checkbox', checked: st.layers[`mk:${k}`] !== false });
-      cb.addEventListener('change', () => { st.layers[`mk:${k}`] = cb.checked; saveLayers(st.layers); drawCanvas(); });
+      cb.addEventListener('change', () => { st.layers[`mk:${k}`] = cb.checked; saveLayers(st.layers); drawCanvas(); sync3D(); });
       return h('label', { class: 'fab-layer' }, cb, h('span', null, `${MARKER_PALETTE[k].icon} ${MARKER_PALETTE[k].label}`));
     });
     let mkAll = null;
     if (mkRows.length) {
-      const setAll = on => { present.forEach(k => { st.layers[`mk:${k}`] = on; }); saveLayers(st.layers); drawSide(); drawCanvas(); };
+      const setAll = on => { present.forEach(k => { st.layers[`mk:${k}`] = on; }); saveLayers(st.layers); drawSide(); drawCanvas(); sync3D(); };
       mkAll = h('div', { class: 'fab-mk-all' },
         h('button', { class: 'btn xs', type: 'button', onclick: () => setAll(true) }, 'Hepsi'),
         h('button', { class: 'btn xs', type: 'button', onclick: () => setAll(false) }, 'Hiçbiri'));

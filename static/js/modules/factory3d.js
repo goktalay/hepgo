@@ -117,10 +117,10 @@ export async function createFactory3D(mountEl, opts = {}) {
   mountEl.appendChild(renderer.domElement);
 
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(36, 1, 0.3, 500);
+  const camera = new T.PerspectiveCamera(36, 1, 0.05, 500);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08;
-  controls.maxPolarAngle = Math.PI * 0.47; controls.minDistance = 6; controls.maxDistance = 120;
+  controls.maxPolarAngle = Math.PI * 0.47; controls.minDistance = 0.5; controls.maxDistance = 120; controls.zoomSpeed = 1.4;   // yazıcıya kadar yakınlaşılabilsin
   // ---------- fare modları: Orbit (sol: döndür) · Gez (sol: kaydır) · Döndür (otomatik dönüş) — alt-orta segment ----------
   const hudM = document.createElement('div'); hudM.className = 'seg f3d-modes';
   hudM.style.cssText = 'position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:6;pointer-events:auto';

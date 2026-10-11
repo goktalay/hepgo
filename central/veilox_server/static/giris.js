@@ -270,7 +270,7 @@ function shell() {
         <span class="pill"><i></i> HEPGO ERP</span>
         <h1>${esc(L.sideH)}</h1><p>${esc(L.sideP)}</p>
         <ul class="gx-ticks">${L.sideList.map(x => `<li>${svg('<path d="M5 12l4 4 10-10"/>')}<span>${esc(x)}</span></li>`).join('')}</ul>
-        <div class="gx-shot"><img class="shot" src="/static/img/landing/shots/dashboard.webp" alt=""></div>
+        <div class="gx-shot"><img class="shot" src="/static/img/landing/shots/dashboard.webp?v=2" alt=""></div>
       </div></aside>
       <section class="gx-card">
         <div class="gx-tabs" role="tablist">

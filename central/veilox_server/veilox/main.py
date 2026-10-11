@@ -895,6 +895,13 @@ app.mount('/static', StaticFiles(directory=STATIC), name='static')
 
 @app.get('/')
 def index():
+    # Ana sayfa: Sorvine parçacık deneyimi (static/exp); yoksa emergent landing'e düş.
+    exp = STATIC / 'exp' / 'index.html'
+    return FileResponse(exp if exp.exists() else STATIC / 'landing.html')
+
+
+@app.get('/platform')
+def platform_page():
     land = STATIC / 'landing.html'
     return FileResponse(land if land.exists() else STATIC / 'index.html')
 

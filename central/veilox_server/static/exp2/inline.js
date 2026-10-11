@@ -4,45 +4,24 @@
   if (RM) document.documentElement.classList.add('rm');
 
   /* ---------- Brand / data config ---------- */
-  var GTABLES = [
-    { title:'Satış Analitiği', rows:[
-      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-01','₺130,000','pending'],
-      ['/static/exp2/assets/avatars/a2.png','Zeynep Kaya','2025-11-02','₺400,000','approved'],
-      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-10-08','₺220,000','approved'],
-      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-09-06','₺360,000','pending'],
-      ['/static/exp2/assets/avatars/a2.png','Can Öz','2025-03-07','₺890,000','approved']
-    ]},
-    { title:'Saha Performansı', rows:[
-      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-10-11','₺96,000','approved'],
-      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-14','₺210,000','pending'],
-      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-11-01','₺175,000','approved'],
-      ['/static/exp2/assets/avatars/a2.png','Zeynep Kaya','2025-11-09','₺302,000','approved'],
-      ['/static/exp2/assets/avatars/a3.png','Ece Ak','2025-11-12','₺88,000','pending']
-    ]},
-    { title:'Müşteri Kartları', rows:[
-      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-10-19','₺54,000','approved'],
-      ['/static/exp2/assets/avatars/a2.png','Can Öz','2025-10-22','₺132,000','approved'],
-      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-29','₺77,500','pending'],
-      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-11-04','₺148,000','approved'],
-      ['/static/exp2/assets/avatars/a4.png','Burak Şen','2025-11-15','₺61,200','pending']
-    ]}
+  var GSHOTS = [
+    { src:'/static/img/landing/shots/randevu.webp?v=2', alt:'HEPGO Randevu Takvimi ekranı' },
+    { src:'/static/img/landing/shots/field.webp?v=2', alt:'HEPGO Saha Yönetimi ekranı' },
+    { src:'/static/img/landing/shots/dashboard.webp?v=2', alt:'HEPGO Müşteri / Firma Kartı ekranı' }
   ];
-
-  function renderGTable(i){
-    var t = GTABLES[i];
-    document.getElementById('gtTitle').textContent = t.title;
-    document.getElementById('gtBody').innerHTML = t.rows.map(function(r){
-      return '<tr><td class="who"><img class="avatar" src="'+r[0]+'" alt="'+r[1]+'">'+r[1]+'</td><td>'+r[2]+'</td><td class="amt">'+r[3]+'</td><td><span class="status '+r[4]+'">'+(r[4]==='approved'?'Onaylı':'Bekliyor')+'</span></td></tr>';
-    }).join('');
+  function renderGShot(i){
+    var s = GSHOTS[i] || GSHOTS[0];
+    var img = document.getElementById('gtShot');
+    if (img){ img.src = s.src; img.alt = s.alt; }
   }
-  renderGTable(0);
+  renderGShot(0);
 
   var gtabs = document.querySelectorAll('.gtab');
   gtabs.forEach(function(btn,i){
     btn.addEventListener('click', function(){
       gtabs.forEach(function(b){ b.classList.remove('on'); b.setAttribute('aria-selected','false'); });
       btn.classList.add('on'); btn.setAttribute('aria-selected','true');
-      renderGTable(i);
+      renderGShot(i);
     });
   });
 

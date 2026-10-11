@@ -184,7 +184,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       const lens = new T.Mesh(new T.SphereGeometry(0.08, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.02, 0.2); g.add(lens);
       body.userData.cam = { id: c.camera_id, name: c.camera_name || c.name || `Kamera #${c.camera_id}`, live: true }; camMeshes.push(body);
       // kapsama alanı: 2B'deki gibi 70 birim, ~69° (1.2 rad), amber — zeminde yumuşak sektör
-      const len = 70 * X.s, sec = makeSectorPlane(len, 1.2, 0xf59e0b);
+      const len = 70 * 1.5 * X.s, sec = makeSectorPlane(len, 1.2, 0xf59e0b);   // 2B oranının 1.5 katı (3B'de okunabilirlik)
       sec.position.set(cx + Math.cos(dir) * len / 2, 0.025, cz + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
     });
     (stairs || []).forEach(sObj => { if (sObj.x == null || sObj.y == null) return; const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.sill); m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m); });
@@ -204,7 +204,7 @@ export async function createFactory3D(mountEl, opts = {}) {
         const led = new T.Mesh(new T.SphereGeometry(0.022, 8, 8), new T.MeshBasicMaterial({ color: 0xf43f5e })); led.position.set(0.07, 0.12, 0.1); g.add(led);
         const dir = (m.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
         body.userData.cam = { id: m.camera_id || null, name: m.label || m.name || (m.camera_id ? (m.camera_name || `Kamera #${m.camera_id}`) : (meta.label || 'Kamera')), live: !!m.camera_id }; camMeshes.push(body);
-        const len = (m.kind === 'cam_outdoor' ? 95 : 72) * X.s, sec = makeSectorPlane(len, 1.2, 0x38bdf8);   // 2B ile aynı: mavi, 72/95 birim
+        const len = (m.kind === 'cam_outdoor' ? 95 : 72) * 1.5 * X.s, sec = makeSectorPlane(len, 1.2, 0x38bdf8);   // 2B ile aynı oran ×1.5: mavi, 72/95 birim
         sec.position.set(x + Math.cos(dir) * len / 2, 0.025, z + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
         return;
       }
@@ -216,7 +216,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     });
     el.nCams.textContent = camCount; el.nMarkers.textContent = (markers || []).length;
     let ci = 0;
-    camNames = [...(cams || []).map(c => c.name || `Kamera ${++ci}`),
+    camNames = [...(cams || []).map(c => c.camera_name || c.name || `Kamera ${++ci}`),
       ...(markers || []).filter(m => /^cam/.test(m.kind || '')).map(m => m.label || m.name || `${(palette[m.kind] && palette[m.kind].label) || 'Kamera'} ${++ci}`)];
     renderCamPanel();
   };
@@ -478,6 +478,10 @@ export async function createFactory3D(mountEl, opts = {}) {
     },
     updateLive(people) { if (last) last.people = people; updateLive(people); },
     stats() { return { walls: lastWalls, wallErr, scale: X.s }; },
+    camScreenPos() {   // test/teşhis: kamera gövdelerinin ekran (client) koordinatları
+      const r = renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
+      return camMeshes.map(m => { m.getWorldPosition(v); v.project(camera); return { name: m.userData.cam.name, x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; });
+    },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,
     dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); },

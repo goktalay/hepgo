@@ -31,6 +31,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   const fileUrl = opts.fileUrl || (p => p);
   let dark = !!opts.dark, floorName = opts.floorName || '', palette = opts.palette || {};
   let floors = opts.floors || [], floorId = opts.floorId ?? null; const onFloor = opts.onFloor || null;
+  const onPrinter = opts.onPrinter || null;   // yazıcıya tıklandı → factory.js bilgi penceresi açar
   let P = dark ? PAL.dark : PAL.light;
 
   // ---------- cam panel (HUD) ----------
@@ -149,10 +150,13 @@ export async function createFactory3D(mountEl, opts = {}) {
   const gZones = new T.Group(); scene.add(gZones);
   const gPrinters = new T.Group(); scene.add(gPrinters);   // Yazıcı Odası rafı + yazıcılar
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, M = {}, zones = [], zoneGrid = null, camNames = [], labels = [], freeLabels = [], camMeshes = [], printers = [];
+  let grid, M = {}, zones = [], zoneGrid = null, camNames = [], labels = [], freeLabels = [], camMeshes = [], printers = [], printerMeshes = [];
   const ZONE_COLORS = [0xc7c2ff, 0xbfe3ff, 0xc3f1dc, 0xffe1c4, 0xffd1dc, 0xd9f0b8, 0xfff0b3, 0xd4e6ff];
   // yazıcı durum ışığı (printers3d ile aynı renkler)
   const PR_STATE = { YAZDIRIYOR: 0x3b82f6, HAZIR: 0x22c55e, TAMAMLANDI: 0xa855f7, DURAKLADI: 0xf59e0b, HATA: 0xef4444, CEVRIMDISI: 0x4b5563, BAKIM: 0xf97316, ARGE: 0x14b8a6 };
+  const PR_TEXT = { YAZDIRIYOR: 'Yazdırıyor', HAZIR: 'Hazır', TAMAMLANDI: 'Tamamlandı', DURAKLADI: 'Duraklandı', HATA: 'Hata', CEVRIMDISI: 'Çevrimdışı', BAKIM: 'Bakım', ARGE: 'Ar-Ge' };
+  // yazıcı durumu (printers3d ile aynı kural: bakım > arge > canlı durum)
+  const prState = p => p.maint_since ? 'BAKIM' : (p.arge_since ? (p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI' ? p.live_state : 'ARGE') : String(p.live_state || p.state || 'CEVRIMDISI').toUpperCase());
 
   const makeMats = () => {
     M.slab = new T.MeshStandardMaterial({ color: P.slab, roughness: 0.55, metalness: 0.05 });
@@ -304,28 +308,39 @@ export async function createFactory3D(mountEl, opts = {}) {
     const W = bx1 - bx0, D = bz1 - bz0; if (W < 0.5 || D < 0.5) return;
     const along = W >= D, long = Math.max(W, D), short = Math.min(W, D);         // raflar odanın uzun kenarına paralel
     const slots = Math.max(1, Math.ceil(printers.length / 4), ...printers.map(p => +p.rack_slot || 1));
-    const PITCH = Math.min(0.64, (long * 0.8) / slots), k = PITCH / 0.64;        // yazıcı ölçeği (oda küçükse küçülür)
-    const RW = 0.5 * k, RD = 0.52 * k, PH = 0.55 * k, RH = Math.min(IMG_WALL_H - 0.1, 1.55 * k);
-    const AISLE = Math.max(0.4 * k, Math.min(2.2 * k, short - 2 * RD - 0.3)), SHELF = [0.08 * k, 0.78 * k], len = slots * PITCH;
+    // yazıcı ölçeği: hedef 3× (0.64×3 aralık), oda dar/kısaysa sığacak kadar küçülür; yükseklik duvarı aşmasın diye ayrıca sınırlı
+    const PITCH = Math.min(0.64 * 3, (long * 0.8) / slots), k = PITCH / 0.64, ky = Math.min(k, 1.9);
+    const RW = 0.5 * k, RD = 0.52 * k, PH = 0.55 * ky, SHELF = [0.08 * ky, 0.78 * ky], RH = SHELF[1] + PH + 0.15;
+    const AISLE = Math.max(0.4 * k, Math.min(2.2 * k, short - 2 * RD - 0.3)), len = slots * PITCH;
     const g = new T.Group(); g.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2); if (!along) g.rotation.y = Math.PI / 2; gPrinters.add(g);
     const rackMat = new T.MeshStandardMaterial({ color: 0x8a94a6, roughness: 0.6, metalness: 0.5 });
     const shelfMat = new T.MeshStandardMaterial({ color: 0xd7dce6, roughness: 0.7 });
     [-1, 1].forEach(side => {
       const zc = side * (AISLE / 2 + RD / 2);
-      SHELF.forEach(y => { const sh = new T.Mesh(new T.BoxGeometry(len, 0.03 * k, RD), shelfMat); sh.position.set(0, y, zc); sh.receiveShadow = true; g.add(sh); });
+      SHELF.forEach(y => { const sh = new T.Mesh(new T.BoxGeometry(len, 0.03 * ky, RD), shelfMat); sh.position.set(0, y, zc); sh.receiveShadow = true; g.add(sh); });
       [-len / 2, len / 2].forEach(x => [zc - RD / 2, zc + RD / 2].forEach(z => { const post = new T.Mesh(new T.BoxGeometry(0.03 * k, RH, 0.03 * k), rackMat); post.position.set(x, RH / 2, z); g.add(post); }));
     });
     const bodyMat = new T.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.5, metalness: 0.3 });
     const glassMat = new T.MeshPhysicalMaterial({ color: 0x9ec5ff, transparent: true, opacity: 0.38, roughness: 0.1, metalness: 0, clearcoat: 1, side: T.DoubleSide });
+    printerMeshes = [];
     printers.forEach((p, i) => {
       const side = String(p.rack_side || (i % 2 ? 'R' : 'L')).toUpperCase().startsWith('R') ? 1 : -1;
       const level = Math.min(2, Math.max(1, +p.rack_level || 1)), slot = Math.max(1, +p.rack_slot || Math.floor(i / 4) + 1);
-      const pg = new T.Group(); pg.position.set(-len / 2 + (slot - 0.5) * PITCH, SHELF[level - 1] + 0.015 * k, side * (AISLE / 2 + RD / 2));
+      const pg = new T.Group(); pg.position.set(-len / 2 + (slot - 0.5) * PITCH, SHELF[level - 1] + 0.015 * ky, side * (AISLE / 2 + RD / 2));
       pg.rotation.y = side > 0 ? Math.PI : 0;                                            // cam kapı koridora baksın
       const body = new T.Mesh(new T.BoxGeometry(RW, PH, RD * 0.9), bodyMat); body.position.y = PH / 2; body.castShadow = true; pg.add(body);
+      body.userData.printer = p.id; printerMeshes.push(body);
       const door = new T.Mesh(new T.PlaneGeometry(RW * 0.8, PH * 0.62), glassMat); door.position.set(0, PH * 0.5, RD * 0.45 + 0.004); pg.add(door);
-      const col = PR_STATE[String(p.state || '').toUpperCase()] || PR_STATE.CEVRIMDISI;
+      const stt = prState(p), col = PR_STATE[stt] || PR_STATE.CEVRIMDISI;
       const led = new T.Mesh(new T.SphereGeometry(0.03 * k, 8, 8), new T.MeshBasicMaterial({ color: col })); led.position.set(RW * 0.36, PH * 0.9, RD * 0.46); pg.add(led);
+      // canlı veri: ad · durum · % (yazdırırken) — küçük etiket, yazıcının üstünde; ilerleme çubuğu kapı altında
+      const prog = Math.max(0, Math.min(100, +p.live_progress || 0));
+      const txt = `${p.name || 'Yazıcı'} · ${PR_TEXT[stt] || stt}${stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' ? ` %${Math.floor(prog)}` : ''}`;
+      const lbl = makeTextSprite(txt, P, col); lbl.scale.multiplyScalar(0.42 * Math.max(0.8, ky / 1.9)); lbl.position.set(0, PH + 0.28 * ky, 0); pg.add(lbl);
+      if (stt === 'YAZDIRIYOR' || stt === 'DURAKLADI') {
+        const bw = RW * 0.8, bar = new T.Mesh(new T.PlaneGeometry(bw, 0.04 * ky), new T.MeshBasicMaterial({ color: 0x2b3240 })); bar.position.set(0, PH * 0.12, RD * 0.45 + 0.006); pg.add(bar);
+        const fill = new T.Mesh(new T.PlaneGeometry(Math.max(0.001, bw * prog / 100), 0.04 * ky), new T.MeshBasicMaterial({ color: col })); fill.position.set(-bw / 2 + bw * prog / 200, PH * 0.12, RD * 0.45 + 0.008); pg.add(fill);
+      }
       g.add(pg);
     });
   }
@@ -513,15 +528,30 @@ export async function createFactory3D(mountEl, opts = {}) {
     const hit = camRay.intersectObjects(camMeshes, false)[0];
     return hit ? hit.object.userData.cam : null;
   };
+  // yazıcı gövdesi altında mı? (ekran koordinatı → yazıcı id)
+  const printerAt = (cx, cy) => {
+    if (!printerMeshes.length) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    camNdc.set(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
+    camRay.setFromCamera(camNdc, camera);
+    const hit = camRay.intersectObjects(printerMeshes, false)[0];
+    return hit ? hit.object.userData.printer : null;
+  };
   renderer.domElement.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch' || camPinned) return;
     const cam = camAt(e.clientX, e.clientY);
     if (cam) { renderer.domElement.style.cursor = 'pointer'; showCam(cam, e.clientX, e.clientY, false); }
-    else { renderer.domElement.style.cursor = 'grab'; if (!camBox.hidden) hideCam(); }
+    else { renderer.domElement.style.cursor = (onPrinter && printerAt(e.clientX, e.clientY) != null) ? 'pointer' : 'grab'; if (!camBox.hidden) hideCam(); }
   });
   renderer.domElement.addEventListener('pointerleave', () => { if (!camPinned) hideCam(); });
-  // dokunmatik / tıklama: kameraya dokununca sabitlenmiş önizleme (tekrar dokununca ya da ✕ ile kapanır)
+  // dokunmatik / tıklama: kameraya dokununca sabitlenmiş önizleme (tekrar dokununca ya da ✕ ile kapanır); yazıcıya dokununca bilgi penceresi
+  let prDown = null;
+  renderer.domElement.addEventListener('pointerdown', e => { prDown = { x: e.clientX, y: e.clientY, t: Date.now() }; }, true);
   renderer.domElement.addEventListener('pointerup', e => {
+    const d = prDown; prDown = null;
+    if (onPrinter && d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6 && Date.now() - d.t < 500) {
+      const pid = printerAt(e.clientX, e.clientY); if (pid != null) { if (camPinned) hideCam(); onPrinter(pid); return; }
+    }
     const cam = camAt(e.clientX, e.clientY);
     if (cam) { if (camPinned && camCur === cam.id) hideCam(); else showCam(cam, e.clientX, e.clientY, true); }
     else if (camPinned) hideCam();
@@ -545,11 +575,17 @@ export async function createFactory3D(mountEl, opts = {}) {
       // arka plan resmi yüklenince dönüşümü resmi kapsayacak şekilde yenile ve dünyayı yeniden kur
       buildBg(bg, box => { if (!box) return; computeTransform(rooms, cams, markers, box); buildWorld(rooms, cams, markers, stairs); if (last.people) updateLive(last.people); fit(); });
     },
+    // canlı yazıcı verisi (durum / % / dosya) yenilenince rafı yeniden kur
+    updatePrinters(list) { printers = Array.isArray(list) ? list : []; try { buildPrinters(); } catch (e) { console.warn('[factory3d] yazıcılar', e); } },
     updateLive(people) { if (last) last.people = people; updateLive(people); },
     stats() { return { walls: lastWalls, wallErr, scale: X.s }; },
     camScreenPos() {   // test/teşhis: kamera gövdelerinin ekran (client) koordinatları
       const r = renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
       return camMeshes.map(m => { m.getWorldPosition(v); v.project(camera); return { name: m.userData.cam.name, x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; });
+    },
+    printerScreenPos() {   // test/teşhis: yazıcı gövdelerinin ekran koordinatları
+      const r = renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
+      return printerMeshes.map(m => { m.getWorldPosition(v); v.project(camera); return { id: m.userData.printer, x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; });
     },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,

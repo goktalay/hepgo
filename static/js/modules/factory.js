@@ -11,6 +11,7 @@
 // /api/factory/movement ve /api/factory/now (mevcut events/recent yolu) üzerinden gelir; kişi seçici
 // /api/faces/people (mevcut yüz atama seçicisi) ile doldurulur.
 import { api, fileUrl } from '../api.js';
+import { PRINTER_STATES, badge } from '../status.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, modal, moduleToolbar, onLeave, pageHead,
   segmented, toast, toastError,
@@ -192,7 +193,8 @@ export async function render(view, params, ctx) {
     try {
       const mod = await import('./factory3d.js');
       fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark(),
-        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); } });
+        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); },
+        onPrinter: id => openPrinterInfo(id) });
     }
     catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
@@ -201,6 +203,41 @@ export async function render(view, params, ctx) {
   // Kat kaydındaki 3B bölge/alan adları (JSON metin ya da dizi) → [{x,y,name}]
   const parseLabels = fl => { try { const v = fl && fl.zone_labels; const a = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(a) ? a : []; } catch { return []; } };
   const sync3D = () => { if (st.mode === 'live' && fab3d && !el3d.hidden) show3D(true); };
+  // ---- Yazıcı Odası: 3B'de yazıcıya tıklanınca canlı bilgi penceresi (Yazıcılar modülündeki pencereyle aynı içerik; açıkken 10 sn'de bir yenilenir)
+  const prStateOf = p => p.maint_since ? 'BAKIM' : (p.arge_since ? (p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI' ? p.live_state : 'ARGE') : (p.live_state || 'CEVRIMDISI'));
+  const prPlace = p => p.rack_side ? `${p.rack_side === 'L' ? 'Sol raf' : 'Sağ raf'} · ${p.rack_level === 2 ? 'Üst kat' : 'Alt kat'} · ${p.rack_slot}. sıra` : 'Yeri yok';
+  const prBody = p => {
+    const stt = prStateOf(p);
+    return h('div', null,
+      h('div', { style: { marginBottom: '8px' } }, badge(PRINTER_STATES, stt)),
+      stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' ? h('div', { class: 'print-progress', style: { margin: '6px 0 12px', maxWidth: 'none' } },
+        h('div', { class: 'track' }, h('i', { class: stt === 'DURAKLADI' ? 'paused' : '', style: { width: `${p.live_progress || 0}%` } })),
+        h('span', null, `%${Math.floor(p.live_progress || 0)}`)) : null,
+      h('dl', { class: 'kv' },
+        h('dt', null, 'Yeri'), h('dd', null, prPlace(p)),
+        h('dt', null, 'IP'), h('dd', { class: 'mono' }, p.ip || '—'),
+        h('dt', null, 'Model'), h('dd', null, p.model || '—'),
+        h('dt', null, 'Dosya'), h('dd', { class: 'mono small' }, p.live_file || '—'),
+        h('dt', null, 'Sistemde'), h('dd', null, p.current_part
+          ? h('a', { href: `#/production/${p.current_order_id}` }, `${p.current_order} / ${p.current_part}`)
+          : p.file_part ? `${p.file_part} (dosya adından; sistemde siparişi yok)` : 'İş yok'),
+        h('dt', null, 'Son görülme'), h('dd', null, p.last_seen ? fmtDateTime(p.last_seen) : '—')));
+  };
+  let prInfo = null;
+  function openPrinterInfo(id) {
+    const p = (st.printers || []).find(x => x.id === id); if (!p) return;
+    prInfo?.close?.();
+    const box = h('div', null, prBody(p));
+    const m = modal({ title: p.name || 'Yazıcı', body: box, onClose: () => { if (prInfo && prInfo.id === id) prInfo = null; },
+      actions: [{ label: 'Yazıcılar modülü', onClick: () => { location.hash = '#/printers'; } }, { label: 'Kapat', class: 'primary' }] });
+    prInfo = { id, box, close: m.close };
+  }
+  async function refreshPrinters() {
+    if (!(fab3d && !el3d.hidden)) return;
+    const list = await api.get('/api/printers').catch(() => null); if (!Array.isArray(list)) return;
+    st.printers = list; fab3d.updatePrinters(list);
+    if (prInfo) { const p = list.find(x => x.id === prInfo.id); if (p) clear(prInfo.box, [prBody(p)]); }
+  }
   // Bölüm etiketi (Düzen → "Bölüm Etiketi Koy" ya da mevcut hapa tıkla): ad ver / değiştir / sil → kat kaydına (zone_labels) yaz.
   // 3B Canlı'da etiket noktası bir kapalı bölgenin içine düşerse o bölgenin adı olur, düşmezse serbest bölüm olarak listelenir.
   function labelModal(info) {
@@ -243,8 +280,9 @@ export async function render(view, params, ctx) {
         : null;
       const L = st.layers || {};
       const printers = await api.get('/api/printers').catch(() => []);   // Yazıcı Odası rafına yerleştirilir (modül yoksa boş)
+      st.printers = Array.isArray(printers) ? printers : [];
       inst.build({
-        printers: Array.isArray(printers) ? printers : (printers && Array.isArray(printers.items) ? printers.items : []),
+        printers: st.printers,
         rooms: L.rooms === false ? [] : st.rooms,
         cams: L.cams === false ? [] : st.cams,
         markers: L.markers === false ? [] : (st.markers || []).filter(m => MARKER_PALETTE[m.kind] && L[`mk:${m.kind}`] !== false),
@@ -1206,9 +1244,9 @@ export async function render(view, params, ctx) {
     drawMoveSide(); drawOverlay();
   }
   async function refreshLive() {
-    // Canlı 3B: son 24 saat (herkesin son görüldüğü yer; ≤10 dk yeşil, eskisi gri). Hareket modu: 10 dk.
-    st.liveData = await api.get(`/api/factory/now?minutes=${st.mode === 'live' ? 1440 : 10}`);
-    if (st.mode === 'live') { drawCanvas(); drawLiveSide(); if (fab3d && !el3d.hidden) fab3d.updateLive(st.liveData?.people || []); }
+    // Canlı 3B: son 30 gün (herkesin son görüldüğü yer; ≤10 dk yeşil, eskisi gri). Hareket modu: 10 dk.
+    st.liveData = await api.get(`/api/factory/now?minutes=${st.mode === 'live' ? 43200 : 10}`);
+    if (st.mode === 'live') { drawCanvas(); drawLiveSide(); if (fab3d && !el3d.hidden) { fab3d.updateLive(st.liveData?.people || []); refreshPrinters(); } }
     else { drawMoveSide(); drawOverlay(); }
   }
   function livePanel() {

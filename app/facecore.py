@@ -301,6 +301,24 @@ def recent(conn):
            WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL ORDER BY s.at DESC LIMIT 200'''))
 
 
+def last_seen(conn, since=None):
+    """Tanınan her yüz grubunun EN SON görülmesi (since'ten sonra) — Fabrika 3B Canlı 'son görüldüğü yer'.
+    recent() son 200 görülmeyle sınırlı olduğundan eski görülen kişiler orada kaybolur; burada kişi başına tek satır döner."""
+    where = 'WHERE at >= ?' if since else ''
+    args = (since,) if since else ()
+    return db.rows(conn.execute(
+        f'''SELECT s.id, s.at, s.crop, s.frame, s.clip, s.fx, s.fr, c.name AS camera_name, g.id AS group_id, g.user_id, g.person_id, g.family_id, g.visitor_id,
+                   u.full_name AS user_name, p.full_name AS person_name, pc.name AS person_company, fm.full_name AS family_name,
+                   vz.full_name AS visitor_name, vz.company AS visitor_company
+            FROM (SELECT group_id, MAX(at) AS at FROM face_sightings {where} GROUP BY group_id) m
+            JOIN face_sightings s ON s.group_id = m.group_id AND s.at = m.at
+            JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+            LEFT JOIN users u ON u.id = g.user_id LEFT JOIN company_people p ON p.id = g.person_id LEFT JOIN companies pc ON pc.id = p.company_id
+            LEFT JOIN family_members fm ON fm.id = g.family_id LEFT JOIN visitors vz ON vz.id = g.visitor_id
+            WHERE g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL
+            GROUP BY s.group_id ORDER BY s.at DESC LIMIT 1000''', args))
+
+
 def events(conn, date_from, date_to, kind='known', limit=500):
     where = "s.at >= ? AND s.at < ?"
     args = [date_from, date_to + '~']
@@ -611,6 +629,8 @@ def rpc(conn, method, args):
                                 a.get('validate', True), a.get('family_id'), a.get('visitor_id'))
     if method == 'recent':
         return recent(conn)
+    if method == 'last_seen':
+        return last_seen(conn, a.get('since'))
     if method == 'events':
         return events(conn, a['date_from'], a['date_to'], a.get('kind', 'known'), a.get('limit', 500))
     if method == 'cameras_list':

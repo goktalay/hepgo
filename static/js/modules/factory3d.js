@@ -11,7 +11,7 @@ const loadLibs = () => (_libs ??= Promise.all(
   ['three.module.min.js', 'OrbitControls.js'].map(f => import(LIB + f))
 ).then(([T, O]) => ({ T, OrbitControls: O.OrbitControls })).catch(e => { _libs = null; throw e; }));
 
-const WALL_H = 2.2, IMG_WALL_H = 1.75, TH = 0.12, SILL_H = 0.5, SPAN = 26, SLAB_T = 0.9;
+const WALL_H = 1.4, IMG_WALL_H = 1.1, TH = 0.06, SILL_H = 0.34, SPAN = 26, SLAB_T = 0.9;   // alçak, ince cam duvarlar
 let _Tref = null;
 
 const PAL = {
@@ -309,7 +309,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     const along = W >= D, long = Math.max(W, D), short = Math.min(W, D);         // raflar odanın uzun kenarına paralel
     const slots = Math.max(1, Math.ceil(printers.length / 4), ...printers.map(p => +p.rack_slot || 1));
     // yazıcı ölçeği: hedef 3× (0.64×3 aralık), oda dar/kısaysa sığacak kadar küçülür; yükseklik duvarı aşmasın diye ayrıca sınırlı
-    const PITCH = Math.min(0.64 * 3, (long * 0.8) / slots), k = PITCH / 0.64, ky = Math.min(k, 1.9);
+    const PITCH = Math.min(0.64 * 3, (long * 0.8) / slots), k = PITCH / 0.64, ky = Math.min(k, 1.4);
     const RW = 0.5 * k, RD = 0.52 * k, PH = 0.55 * ky, SHELF = [0.08 * ky, 0.78 * ky], RH = SHELF[1] + PH + 0.15;
     const AISLE = Math.max(0.4 * k, Math.min(2.2 * k, short - 2 * RD - 0.3)), len = slots * PITCH;
     const g = new T.Group(); g.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2); if (!along) g.rotation.y = Math.PI / 2; gPrinters.add(g);
@@ -333,12 +333,8 @@ export async function createFactory3D(mountEl, opts = {}) {
       const door = new T.Mesh(new T.PlaneGeometry(RW * 0.8, PH * 0.62), glassMat); door.position.set(0, PH * 0.5, RD * 0.45 + 0.004); pg.add(door);
       const stt = prState(p), col = PR_STATE[stt] || PR_STATE.CEVRIMDISI;
       const led = new T.Mesh(new T.SphereGeometry(0.03 * k, 8, 8), new T.MeshBasicMaterial({ color: col })); led.position.set(RW * 0.36, PH * 0.9, RD * 0.46); pg.add(led);
-      // canlı veri: ad · durum · % (yazdırırken) — küçük etiket, yazıcının üstünde; ilerleme çubuğu kapı altında
+      // canlı veri: üstte etiket YOK (kullanıcı isteği) — durum LED rengi + yazdırırken kapı altında ilerleme çubuğu; ayrıntı tıklayınca
       const prog = Math.max(0, Math.min(100, +p.live_progress || 0));
-      const txt = `${p.name || 'Yazıcı'} · ${PR_TEXT[stt] || stt}${stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' ? ` %${Math.floor(prog)}` : ''}`;
-      if (stt === 'YAZDIRIYOR' || stt === 'DURAKLADI' || stt === 'HATA') {   // boştakiler yalnız LED (etiket kalabalığı olmasın); tıklayınca pencere
-        const lbl = makeTextSprite(txt, P, col); lbl.scale.multiplyScalar(0.36 * Math.max(0.8, ky / 1.9)); lbl.position.set(0, PH + 0.26 * ky, 0); pg.add(lbl);
-      }
       if (stt === 'YAZDIRIYOR' || stt === 'DURAKLADI') {
         const bw = RW * 0.8, bar = new T.Mesh(new T.PlaneGeometry(bw, 0.04 * ky), new T.MeshBasicMaterial({ color: 0x2b3240 })); bar.position.set(0, PH * 0.12, RD * 0.45 + 0.006); pg.add(bar);
         const fill = new T.Mesh(new T.PlaneGeometry(Math.max(0.001, bw * prog / 100), 0.04 * ky), new T.MeshBasicMaterial({ color: col })); fill.position.set(-bw / 2 + bw * prog / 200, PH * 0.12, RD * 0.45 + 0.008); pg.add(fill);
@@ -432,13 +428,13 @@ export async function createFactory3D(mountEl, opts = {}) {
           const ax = px(s.ax), az = pz(s.az), bx = px(s.bx), bz = pz(s.bz);
           const len = Math.hypot(bx - ax, bz - az);
           if (len < 0.22) { if (dropped.length < 4) dropped.push({ raw: [s.ax, s.az, s.bx, s.bz].map(v => +v.toFixed(1)), len: +len.toFixed(3) }); continue; }
-          keep.push({ ax, az, bx, bz, len, th: s.th != null ? Math.max(s.th * X.s, 0.14) : 0.14 });
+          keep.push({ ax, az, bx, bz, len, th: s.th != null ? Math.min(Math.max(s.th * X.s, 0.05), 0.09) : 0.06 });   // ince duvar
           if (keep.length >= 24000) break;
         }
         lastWalls = { total: segs.length, kept: keep.length, X: { ...X }, dropped, keptSample: keep.slice(0, 3).map(k => ({ ax: +k.ax.toFixed(2), az: +k.az.toFixed(2), bx: +k.bx.toFixed(2), bz: +k.bz.toFixed(2), len: +k.len.toFixed(2) })) };
         if (!keep.length) return;
         // vantra pencere duvarı: opak alt eşik + şeffaf cam + ince üst kiriş (her biri tek InstancedMesh)
-        const SILL = 0.42, RAIL = 0.08, GH = IMG_WALL_H - SILL - RAIL;
+        const SILL = 0.26, RAIL = 0.05, GH = IMG_WALL_H - SILL - RAIL;
         const layer = (mat, y, h, thMul, shadow) => {
           const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), mat, keep.length);
           const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();

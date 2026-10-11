@@ -178,14 +178,14 @@ export async function createFactory3D(mountEl, opts = {}) {
     });
     (cams || []).forEach(c => {
       if (c.x == null || c.y == null) return;
-      const cx = px(c.x), cz = pz(c.y), dir = (c.direction || 0) * Math.PI / 180;
-      const g = new T.Group(); g.position.set(cx, IMG_WALL_H + 0.1, cz); g.rotation.y = -dir; gWorld.add(g);
+      const cx = px(c.x), cz = pz(c.y), dir = (c.direction || 0) * Math.PI / 180, camH = IMG_WALL_H + 0.1;
+      // gövde: mercek (+Z) 2B yönüyle aynı tarafa baksın (0° = doğu/+x, saat yönü) → rotation.y = π/2 − dir
+      const g = new T.Group(); g.position.set(cx, camH, cz); g.rotation.y = Math.PI / 2 - dir; gWorld.add(g);
       const body = new T.Mesh(new T.BoxGeometry(0.26, 0.2, 0.36), M.cam); body.castShadow = true; g.add(body);
       const lens = new T.Mesh(new T.SphereGeometry(0.08, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.02, 0.2); g.add(lens);
       body.userData.cam = { id: c.camera_id, name: c.camera_name || c.name || `Kamera #${c.camera_id}`, live: true }; camMeshes.push(body);
-      // kapsama alanı: 2B'deki gibi 70 birim, ~69° (1.2 rad), amber — zeminde yumuşak sektör
-      const len = 70 * 1.5 * X.s, sec = makeSectorPlane(len, 1.2, 0xf59e0b);   // 2B oranının 1.5 katı (3B'de okunabilirlik)
-      sec.position.set(cx + Math.cos(dir) * len / 2, 0.025, cz + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
+      // kapsama: kameradan zemine eğimli görüş hunisi (tepe mercekte, geniş kenar yerde); 2B ile aynı yön/açı, 70×1.5 birim, amber
+      gWorld.add(viewCone(cx, cz, camH, dir, 70 * 1.5 * X.s, 0xf59e0b));
     });
     (stairs || []).forEach(sObj => { if (sObj.x == null || sObj.y == null) return; const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.sill); m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m); });
     // altyapı işaretçileri: planlanan kameralar duvar üstünde küçük gövde+lens (vantra), diğerleri zeminde küçük renkli nokta + minik rozet
@@ -202,10 +202,9 @@ export async function createFactory3D(mountEl, opts = {}) {
         const body = new T.Mesh(new T.BoxGeometry(0.2, 0.16, 0.3), M.cam); body.position.y = 0.06; body.castShadow = true; g.add(body);
         const lens = new T.Mesh(new T.SphereGeometry(0.06, 12, 10), lensMat); lens.position.set(0, 0.04, 0.17); g.add(lens);
         const led = new T.Mesh(new T.SphereGeometry(0.022, 8, 8), new T.MeshBasicMaterial({ color: 0xf43f5e })); led.position.set(0.07, 0.12, 0.1); g.add(led);
-        const dir = (m.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
+        const dir = (m.direction || 0) * Math.PI / 180; g.rotation.y = Math.PI / 2 - dir;   // mercek (+Z) 2B yönüne baksın
         body.userData.cam = { id: m.camera_id || null, name: m.label || m.name || (m.camera_id ? (m.camera_name || `Kamera #${m.camera_id}`) : (meta.label || 'Kamera')), live: !!m.camera_id }; camMeshes.push(body);
-        const len = (m.kind === 'cam_outdoor' ? 95 : 72) * 1.5 * X.s, sec = makeSectorPlane(len, 1.2, 0x38bdf8);   // 2B ile aynı oran ×1.5: mavi, 72/95 birim
-        sec.position.set(x + Math.cos(dir) * len / 2, 0.025, z + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
+        gWorld.add(viewCone(x, z, IMG_WALL_H + 0.1, dir, (m.kind === 'cam_outdoor' ? 95 : 72) * 1.5 * X.s, 0x38bdf8));   // 2B ile aynı yön/açı, mavi
         return;
       }
       const dot = new T.Mesh(new T.SphereGeometry(0.085, 12, 10), new T.MeshStandardMaterial({ color: col, roughness: 0.35, metalness: 0.2 }));
@@ -284,15 +283,24 @@ export async function createFactory3D(mountEl, opts = {}) {
   function renderZonePanel() {
     if (!el.zones) return;
     if (!zones.length) { el.zones.innerHTML = '<div class="f3d-empty">Bu katta kapalı bölge bulunamadı</div>'; return; }
-    el.zones.innerHTML = zones.slice(0, 10).map((zn, i) => `<div class="f3d-row"><i class="f3d-sw" style="background:#${ZONE_COLORS[i % ZONE_COLORS.length].toString(16).padStart(6, '0')}"></i><span class="f3d-nm"><b>${esc(zn.name)}</b></span><span class="f3d-cnt${zn.people ? ' on' : ''}">${zn.people} kişi</span></div>`).join('')
-      + (zones.length > 10 ? `<div class="f3d-more">+${zones.length - 10} bölge</div>` : '');
+    el.zones.innerHTML = zones.map((zn, i) => `<div class="f3d-row"><i class="f3d-sw" style="background:#${ZONE_COLORS[i % ZONE_COLORS.length].toString(16).padStart(6, '0')}"></i><span class="f3d-nm"><b>${esc(zn.name)}</b></span><span class="f3d-cnt${zn.people ? ' on' : ''}">${zn.people} kişi</span></div>`).join('');   // tümü; ince scroll
   }
   function renderCamPanel() {
     if (!el.cams) return;
     el.nCamList.textContent = camNames.length;
     el.cams.innerHTML = camNames.length
-      ? camNames.slice(0, 8).map(nm => `<div class="f3d-row"><span class="f3d-rec"><i></i>REC</span><span class="f3d-nm"><b>${esc(nm)}</b></span></div>`).join('') + (camNames.length > 8 ? `<div class="f3d-more">+${camNames.length - 8} kamera</div>` : '')
+      ? camNames.map(nm => `<div class="f3d-row"><span class="f3d-rec"><i></i>REC</span><span class="f3d-nm"><b>${esc(nm)}</b></span></div>`).join('')
       : '<div class="f3d-empty">Kamera yok</div>';
+  }
+
+  // Kamera görüş hunisi: tepe noktası kamera yüksekliğinde (mercek), geniş kenarı zemine iner; yön 2B ile aynı (0°=+x, saat yönü)
+  function viewCone(cx, cz, h, dir, len, color) {
+    const L = Math.hypot(len, h), tilt = Math.atan2(h, len);
+    const sg = new T.Group(); sg.position.set(cx, h, cz); sg.rotation.y = -dir;      // grup +X → dünya (cos dir, sin dir)
+    const sec = makeSectorPlane(L, 1.2, color);
+    sec.rotation.set(-Math.PI / 2, 0, -tilt, 'ZYX');                                  // önce yatır, sonra +X'i aşağı eğ
+    sec.position.set(L / 2 * Math.cos(tilt), -L / 2 * Math.sin(tilt), 0);             // tepe (apex) tam kamerada
+    sg.add(sec); return sg;
   }
 
   let bgReq = 0, lastWalls = null, wallErr = null;
@@ -688,7 +696,15 @@ function ensureHudStyle() {
   .f3d-fl{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);backdrop-filter:blur(14px);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:#3b4252;cursor:pointer}
   .f3d-fl.on{background:#7c6cf0;color:#fff;border-color:#7c6cf0}
   .f3d-scroll{overflow:auto;min-height:0}
-  .f3d-right .f3d-card{max-height:46%}
+  .f3d-right{max-height:calc(100% - 28px)}
+  .f3d-right .f3d-card{max-height:52%;flex:0 1 auto;display:flex;flex-direction:column}
+  .f3d-right .f3d-zones,.f3d-right .f3d-cams{overflow:auto;min-height:0;flex:1;padding-right:2px}
+  /* ince, yumuşak kaydırma çubuğu (bölgeler / kameralar / kişiler) */
+  .f3d-scroll,.f3d-list,.f3d-zones,.f3d-cams{scrollbar-width:thin;scrollbar-color:rgba(100,110,140,.28) transparent}
+  .f3d-scroll::-webkit-scrollbar,.f3d-list::-webkit-scrollbar,.f3d-zones::-webkit-scrollbar,.f3d-cams::-webkit-scrollbar{width:5px}
+  .f3d-scroll::-webkit-scrollbar-thumb,.f3d-list::-webkit-scrollbar-thumb,.f3d-zones::-webkit-scrollbar-thumb,.f3d-cams::-webkit-scrollbar-thumb{background:rgba(100,110,140,.28);border-radius:99px}
+  .f3d-scroll::-webkit-scrollbar-thumb:hover,.f3d-zones::-webkit-scrollbar-thumb:hover,.f3d-cams::-webkit-scrollbar-thumb:hover{background:rgba(100,110,140,.45)}
+  .f3d-scroll::-webkit-scrollbar-track,.f3d-list::-webkit-scrollbar-track,.f3d-zones::-webkit-scrollbar-track,.f3d-cams::-webkit-scrollbar-track{background:transparent}
   .f3d-zones,.f3d-cams{display:flex;flex-direction:column;gap:6px}
   .f3d-sw{width:11px;height:11px;border-radius:4px;flex:none;border:1px solid rgba(0,0,0,.08)}
   .f3d-cnt{font-size:11px;color:#7a8296;font-weight:700;white-space:nowrap}

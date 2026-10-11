@@ -214,15 +214,15 @@ export async function createFactory3D(mountEl, opts = {}) {
       const geo = { x: box.x0, y: box.y0, scale: sc };
       const place = segs => {
         if (req !== bgReq) return;
-        const keep = [];
+        const keep = [], dropped = [];
         for (const s of segs) {
           const ax = px(s.ax), az = pz(s.az), bx = px(s.bx), bz = pz(s.bz);
           const len = Math.hypot(bx - ax, bz - az);
-          if (len < 0.22) continue;                      // kapı sembolü, köşe işareti vb. kısa parçalar
+          if (len < 0.22) { if (dropped.length < 4) dropped.push({ raw: [s.ax, s.az, s.bx, s.bz].map(v => +v.toFixed(1)), len: +len.toFixed(3) }); continue; }
           keep.push({ ax, az, bx, bz, len, th: s.th != null ? Math.max(s.th * X.s, 0.14) : 0.14 });
           if (keep.length >= 24000) break;
         }
-        lastWalls = { total: segs.length, kept: keep.length };
+        lastWalls = { total: segs.length, kept: keep.length, X: { ...X }, dropped, keptSample: keep.slice(0, 3).map(k => ({ ax: +k.ax.toFixed(2), az: +k.az.toFixed(2), bx: +k.bx.toFixed(2), bz: +k.bz.toFixed(2), len: +k.len.toFixed(2) })) };
         if (!keep.length) return;
         const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, keep.length);
         const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();
@@ -346,7 +346,14 @@ async function svgWalls(url, nw, nh, bg) {
   const segs = [];
   try {
     const pt = live.createSVGPoint();
-    const toUser = (el, x, y) => { try { const m = el.getCTM(); if (!m) return [x, y]; pt.x = x; pt.y = y; const p = pt.matrixTransform(m); return [p.x, p.y]; } catch { return [x, y]; } };
+    // İç transform yoksa koordinatlar zaten viewBox (user) uzayındadır — CTM'ye hiç dokunma (en sağlam yol).
+    // Transform varsa: el.getCTM() kök svg'nin viewBox→viewport (px) dönüşümünü de içerir; kökün tersiyle sadeleştir.
+    const needCTM = !!live.querySelector('[transform]');
+    let rootInv = null; try { const rm = live.getCTM(); rootInv = rm ? rm.inverse() : null; } catch { rootInv = null; }
+    const toUser = (el, x, y) => {
+      if (!needCTM) return [x, y];
+      try { let m = el.getCTM(); if (!m) return [x, y]; if (rootInv) m = rootInv.multiply(m); pt.x = x; pt.y = y; const p = pt.matrixTransform(m); return [p.x, p.y]; } catch { return [x, y]; }
+    };
     const push = (el, x1, y1, x2, y2) => {
       const [ax, ay] = toUser(el, x1, y1), [bx, by] = toUser(el, x2, y2);
       if (!isFinite(ax + ay + bx + by)) return;

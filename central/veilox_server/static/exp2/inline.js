@@ -5,26 +5,26 @@
 
   /* ---------- Brand / data config ---------- */
   var GTABLES = [
-    { title:'Sales Analytics', rows:[
-      ['assets/avatars/a1.png','Dana Cole','2025-10-01','$130,000','pending'],
-      ['assets/avatars/a2.png','Priya Nair','2025-11-02','$400,000','approved'],
-      ['assets/avatars/a3.png','Tom Alvarez','2025-10-08','$220,000','approved'],
-      ['assets/avatars/a4.png','Mei Tanaka','2025-09-06','$360,000','pending'],
-      ['assets/avatars/a2.png','Sofia Lind','2025-03-07','$890,000','approved']
+    { title:'Satış Analitiği', rows:[
+      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-01','₺130,000','pending'],
+      ['/static/exp2/assets/avatars/a2.png','Zeynep Kaya','2025-11-02','₺400,000','approved'],
+      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-10-08','₺220,000','approved'],
+      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-09-06','₺360,000','pending'],
+      ['/static/exp2/assets/avatars/a2.png','Can Öz','2025-03-07','₺890,000','approved']
     ]},
-    { title:'Territory Performance', rows:[
-      ['assets/avatars/a3.png','Tom Alvarez','2025-10-11','$96,000','approved'],
-      ['assets/avatars/a1.png','Dana Cole','2025-10-14','$210,000','pending'],
-      ['assets/avatars/a4.png','Mei Tanaka','2025-11-01','$175,000','approved'],
-      ['assets/avatars/a2.png','Priya Nair','2025-11-09','$302,000','approved'],
-      ['assets/avatars/a3.png','Owen Hart','2025-11-12','$88,000','pending']
+    { title:'Saha Performansı', rows:[
+      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-10-11','₺96,000','approved'],
+      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-14','₺210,000','pending'],
+      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-11-01','₺175,000','approved'],
+      ['/static/exp2/assets/avatars/a2.png','Zeynep Kaya','2025-11-09','₺302,000','approved'],
+      ['/static/exp2/assets/avatars/a3.png','Ece Ak','2025-11-12','₺88,000','pending']
     ]},
-    { title:'Enriched Leads', rows:[
-      ['assets/avatars/a4.png','Mei Tanaka','2025-10-19','$54,000','approved'],
-      ['assets/avatars/a2.png','Sofia Lind','2025-10-22','$132,000','approved'],
-      ['assets/avatars/a1.png','Dana Cole','2025-10-29','$77,500','pending'],
-      ['assets/avatars/a3.png','Tom Alvarez','2025-11-04','$148,000','approved'],
-      ['assets/avatars/a4.png','Lena Roy','2025-11-15','$61,200','pending']
+    { title:'Müşteri Kartları', rows:[
+      ['/static/exp2/assets/avatars/a4.png','Ayşe Yıldız','2025-10-19','₺54,000','approved'],
+      ['/static/exp2/assets/avatars/a2.png','Can Öz','2025-10-22','₺132,000','approved'],
+      ['/static/exp2/assets/avatars/a1.png','Selin Aydın','2025-10-29','₺77,500','pending'],
+      ['/static/exp2/assets/avatars/a3.png','Mert Demir','2025-11-04','₺148,000','approved'],
+      ['/static/exp2/assets/avatars/a4.png','Burak Şen','2025-11-15','₺61,200','pending']
     ]}
   ];
 
@@ -32,7 +32,7 @@
     var t = GTABLES[i];
     document.getElementById('gtTitle').textContent = t.title;
     document.getElementById('gtBody').innerHTML = t.rows.map(function(r){
-      return '<tr><td class="who"><img class="avatar" src="'+r[0]+'" alt="'+r[1]+'">'+r[1]+'</td><td>'+r[2]+'</td><td class="amt">'+r[3]+'</td><td><span class="status '+r[4]+'">'+(r[4]==='approved'?'Approved':'Pending')+'</span></td></tr>';
+      return '<tr><td class="who"><img class="avatar" src="'+r[0]+'" alt="'+r[1]+'">'+r[1]+'</td><td>'+r[2]+'</td><td class="amt">'+r[3]+'</td><td><span class="status '+r[4]+'">'+(r[4]==='approved'?'Onaylı':'Bekliyor')+'</span></td></tr>';
     }).join('');
   }
   renderGTable(0);
@@ -55,7 +55,7 @@
       el.textContent = yearly ? el.getAttribute('data-y') : el.getAttribute('data-m');
     });
     document.querySelectorAll('[data-billed]').forEach(function(el){
-      el.textContent = yearly ? 'billed annually' : 'billed monthly';
+      el.textContent = 'beta döneminde ücretsiz';
     });
   });
 

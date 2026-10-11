@@ -52,6 +52,16 @@ export async function createFactory3D(mountEl, opts = {}) {
       </div>
       <div class="f3d-ft">Konumlar 10 sn'de bir yenilenir · çift tık: küçült</div>
     </div>
+    <div class="f3d-card f3d-filter" data-icon="🎚️">
+      <div class="f3d-hd"><span class="f3d-ic">🎚️</span><b class="f3d-ttl">Filtre</b></div>
+      <div class="f3d-bd f3d-togs">
+        <div class="f3d-tog on" data-k="online"><i class="sw"></i><span><b class="d" style="background:#16a34a"></b>Çevrimiçi kişiler</span></div>
+        <div class="f3d-tog on" data-k="offline"><i class="sw"></i><span><b class="d" style="background:#98a2b3"></b>Çevrimdışı kişiler</span></div>
+        <div class="f3d-tog on" data-k="cams"><i class="sw"></i><span><b class="d" style="background:#38bdf8"></b>Kameralar</span></div>
+        <div class="f3d-tog on" data-k="labels"><i class="sw"></i><span><b class="d" style="background:#7c6cf0"></b>Bölüm etiketleri</span></div>
+      </div>
+      <div class="f3d-ft">Sahnede göster / gizle</div>
+    </div>
     <div class="f3d-card f3d-people" data-icon="👥">
       <div class="f3d-hd"><span class="f3d-ic">👥</span><b class="f3d-ttl">Sahadaki Kişiler</b><span class="f3d-chip n-people2">0</span></div>
       <div class="f3d-bd f3d-list"></div>
@@ -62,6 +72,30 @@ export async function createFactory3D(mountEl, opts = {}) {
   const hudF = document.createElement('div'); hudF.className = 'seg f3d-floors';
   hudF.style.cssText = 'position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:6;pointer-events:auto';
   mountEl.appendChild(hudF);
+  // canlı dijital saat: kat seçicinin altında, cam kart, büyük tabular rakamlar + Türkçe tarih
+  const hudC = document.createElement('div'); hudC.className = 'f3d-clock';
+  hudC.style.cssText = 'position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:6;pointer-events:none';
+  hudC.innerHTML = '<div class="f3d-time"><span class="hh">00</span><span class="col">:</span><span class="mm">00</span><span class="ss">00</span></div><div class="f3d-date"></div>';
+  mountEl.appendChild(hudC); if (dark) hudC.classList.add('f3d-dark');
+  const clkEl = { hh: hudC.querySelector('.hh'), mm: hudC.querySelector('.mm'), ss: hudC.querySelector('.ss'), date: hudC.querySelector('.f3d-date') };
+  let clkDay = '';
+  const tickClock = () => {
+    const d = new Date(), p2 = v => String(v).padStart(2, '0');
+    clkEl.hh.textContent = p2(d.getHours()); clkEl.mm.textContent = p2(d.getMinutes()); clkEl.ss.textContent = p2(d.getSeconds());
+    const day = d.toDateString(); if (day !== clkDay) { clkDay = day; clkEl.date.textContent = d.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
+  };
+  tickClock(); const clkTimer = setInterval(tickClock, 1000);
+  // filtre: sahnede çevrimiçi/çevrimdışı kişiler, kameralar (gövde + huni), bölüm etiketleri
+  const filt = { online: true, offline: true, cams: true, labels: true };
+  hud.addEventListener('click', e => {
+    const t = e.target.closest && e.target.closest('.f3d-tog'); if (!t) return;
+    const k = t.dataset.k; filt[k] = !filt[k]; t.classList.toggle('on', filt[k]); applyFilter();
+  });
+  function applyFilter() {
+    gLive.children.forEach(o => { if (o.userData.person) o.visible = !!filt[o.userData.person]; });
+    gWorld.children.forEach(o => { if (o.userData.camObj) o.visible = filt.cams; });
+    gZones.children.forEach(o => { if (o.userData.lbl) o.visible = filt.labels; });
+  }
   // çift tık: kartı ikona küçült / ikondan geri aç (tüm cam paneller)
   mountEl.addEventListener('dblclick', e => {
     const card = e.target.closest && e.target.closest('.f3d-card'); if (!card) return;
@@ -220,7 +254,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       if (c.x == null || c.y == null) return;
       const cx = px(c.x), cz = pz(c.y), dir = (c.direction || 0) * Math.PI / 180, camH = IMG_WALL_H + 0.1;
       // gövde: mercek (+Z) 2B yönüyle aynı tarafa baksın (0° = doğu/+x, saat yönü) → rotation.y = π/2 − dir
-      const g = new T.Group(); g.position.set(cx, camH, cz); g.rotation.y = Math.PI / 2 - dir; gWorld.add(g);
+      const g = new T.Group(); g.position.set(cx, camH, cz); g.rotation.y = Math.PI / 2 - dir; g.userData.camObj = true; gWorld.add(g);
       const body = new T.Mesh(new T.BoxGeometry(0.26, 0.2, 0.36), M.cam); body.castShadow = true; g.add(body);
       const lens = new T.Mesh(new T.SphereGeometry(0.08, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.02, 0.2); g.add(lens);
       body.userData.cam = { id: c.camera_id, name: c.camera_name || c.name || `Kamera #${c.camera_id}`, live: true }; camMeshes.push(body);
@@ -238,7 +272,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       if (/^cam/.test(m.kind || '')) {
         if (!m.camera_id) return;   // NVR bağlı olmayan kamera işaretçileri 3B'de hiç çizilmez (listede de yok)
         camCount++;
-        const g = new T.Group(); g.position.set(x, IMG_WALL_H + 0.1, z); gWorld.add(g);
+        const g = new T.Group(); g.position.set(x, IMG_WALL_H + 0.1, z); g.userData.camObj = true; gWorld.add(g);
         const mast = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.22, 6), M.cam); mast.position.y = -0.1; g.add(mast);
         const body = new T.Mesh(new T.BoxGeometry(0.2, 0.16, 0.3), M.cam); body.position.y = 0.06; body.castShadow = true; g.add(body);
         const lens = new T.Mesh(new T.SphereGeometry(0.06, 12, 10), lensMat); lens.position.set(0, 0.04, 0.17); g.add(lens);
@@ -257,7 +291,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     el.nCams.textContent = camCount; el.nMarkers.textContent = (markers || []).length;
     // panel listesi: ad (etiket › NVR adı › tür N) + sahnedeki gövde (tıklayınca yerinde önizleme)
     camNames = camMeshes.map(mh => mh.userData.cam.name);
-    renderCamPanel();
+    renderCamPanel(); applyFilter();
   };
 
   // ---------- arka plan kat planı: beyaz kat plakası + soluk resim + RESİMDEN 3B DUVARLAR ----------
@@ -352,8 +386,9 @@ export async function createFactory3D(mountEl, opts = {}) {
     zones.forEach((zn, zi) => { col.set(ZONE_COLORS[zi % ZONE_COLORS.length]); zn.cells.forEach(i => { const x = i % GX, z = (i - x) / GX; pos.set(x0 + (x + 0.5) * cw, 0.02, z0 + (z + 0.5) * ch); m4.compose(pos, q, scl); inst.setMatrixAt(k, m4); inst.setColorAt(k, col); k++; }); });
     inst.instanceMatrix.needsUpdate = true; if (inst.instanceColor) inst.instanceColor.needsUpdate = true; inst.renderOrder = 1; gZones.add(inst);
     // zarif küçük etiketler: bölge adları (duvar üstünün biraz altında) + serbest alan etiketleri
-    zones.forEach(zn => { const lbl = makeLabelSprite(zn.name, P, !!zn.named); lbl.position.set(zn.cx, IMG_WALL_H - 0.35, zn.cz); gZones.add(lbl); });
-    freeLabels.forEach(fl => { const lbl = makeLabelSprite(fl.name, P, true); lbl.position.set(fl.x, 0.75, fl.z); gZones.add(lbl); });
+    zones.forEach(zn => { const lbl = makeLabelSprite(zn.name, P, !!zn.named); lbl.position.set(zn.cx, IMG_WALL_H - 0.35, zn.cz); lbl.userData.lbl = true; gZones.add(lbl); });
+    freeLabels.forEach(fl => { const lbl = makeLabelSprite(fl.name, P, true); lbl.position.set(fl.x, 0.75, fl.z); lbl.userData.lbl = true; gZones.add(lbl); });
+    applyFilter();
   }
   // kayıtlı etiketleri bölgelere eşle: etiket noktası bir bölgenin içindeyse o bölgenin adı olur, değilse serbest etiket
   function applyLabels() {
@@ -397,7 +432,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     const sec = makeSectorPlane(L, 1.2, color);
     sec.rotation.set(-Math.PI / 2, 0, -tilt, 'ZYX');                                  // önce yatır, sonra +X'i aşağı eğ
     sec.position.set(L / 2 * Math.cos(tilt), -L / 2 * Math.sin(tilt), 0);             // tepe (apex) tam kamerada
-    sg.add(sec); return sg;
+    sg.add(sec); sg.userData.camObj = true; return sg;
   }
 
   let bgReq = 0, lastWalls = null, wallErr = null;
@@ -475,10 +510,11 @@ export async function createFactory3D(mountEl, opts = {}) {
       // Kişi: üstte daire içinde fotoğraf (çevrimiçi yeşil / çevrimdışı gri çerçeve), altında çok ince çubuk; isim yazılmaz
       const recent = isRecent(p.at), col = new T.Color(ageColor(p.at));
       const stem = new T.Mesh(new T.CylinderGeometry(0.012, 0.012, 2.2, 6), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: recent ? 0.7 : 0.4 }));
+      const who = recent ? 'online' : 'offline'; stem.userData.person = who;
       stem.position.set(sx, 1.1, sz); gLive.add(stem);
       const foot = new T.Mesh(new T.CircleGeometry(0.07, 16), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: recent ? 0.9 : 0.5 }));
-      foot.rotation.x = -Math.PI / 2; foot.position.set(sx, 0.025, sz); gLive.add(foot);
-      const grp = new T.Group(); grp.position.set(sx, 2.75, sz); grp.userData.bill = true; gLive.add(grp);
+      foot.rotation.x = -Math.PI / 2; foot.position.set(sx, 0.025, sz); foot.userData.person = who; gLive.add(foot);
+      const grp = new T.Group(); grp.position.set(sx, 2.75, sz); grp.userData.bill = true; grp.userData.person = who; gLive.add(grp);
       const border = new T.Mesh(new T.CircleGeometry(0.6, 40), new T.MeshBasicMaterial({ color: col, depthTest: false, toneMapped: false, transparent: true, opacity: recent ? 1 : 0.85 })); border.renderOrder = 10; grp.add(border);
       const face = new T.Mesh(new T.CircleGeometry(0.52, 40), new T.MeshBasicMaterial({ map: initialTex(p.subject_name, col), depthTest: false, toneMapped: false, transparent: true, opacity: recent ? 1 : 0.8 })); face.position.z = 0.01; face.renderOrder = 11; grp.add(face);
       if (p.crop) texLoader.load(fileUrl(p.crop, 128), tex => { if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; face.material.map = roundTex(tex); face.material.needsUpdate = true; }, undefined, () => {});
@@ -487,6 +523,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     ppl.filter(p => isRecent(p.at)).forEach(p => { const zn = zoneAt(px(p.x), pz(p.y)); if (zn) zn.people++; });   // yalnız yakın görülenler "sahada"
     renderZonePanel();
     renderPeople((people || []));
+    applyFilter();
   };
 
   // ---------- render döngüsü ----------
@@ -523,7 +560,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     const rect = renderer.domElement.getBoundingClientRect();
     camNdc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     camRay.setFromCamera(camNdc, camera);
-    const hit = camRay.intersectObjects(camMeshes, false)[0];
+    const hit = camRay.intersectObjects(camMeshes.filter(m => !m.parent || m.parent.visible), false)[0];   // filtreyle gizli kameralar seçilmez
     return hit ? hit.object.userData.cam : null;
   };
   // yazıcı gövdesi altında mı? (ekran koordinatı → yazıcı id)
@@ -585,9 +622,9 @@ export async function createFactory3D(mountEl, opts = {}) {
       const r = renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
       return printerMeshes.map(m => { m.getWorldPosition(v); v.project(camera); return { id: m.userData.printer, x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; });
     },
-    setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
+    setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); hudC.classList.toggle('f3d-dark', dark); },
     resize,
-    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); },
+    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); hudC.remove(); clearInterval(clkTimer); },
   };
 }
 
@@ -811,6 +848,25 @@ function ensureHudStyle() {
   .f3d-card.f3d-min .f3d-hd{border:0;padding:0}
   .f3d-card.f3d-min .f3d-ic{font-size:20px}
   .f3d-right .f3d-card.f3d-min{align-self:flex-end}   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
+  .f3d-togs{display:flex;flex-direction:column;gap:7px}
+  .f3d-tog{display:flex;align-items:center;gap:10px;font-size:12px;color:#2a3040;cursor:pointer;user-select:none}
+  .f3d-tog span{display:flex;align-items:center;gap:7px}
+  .f3d-tog .d{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .f3d-tog .sw{position:relative;width:30px;height:17px;border-radius:999px;background:#cfd4de;transition:background .18s;flex:0 0 auto}
+  .f3d-tog .sw::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .18s}
+  .f3d-tog.on .sw{background:#7c6cf0}.f3d-tog.on .sw::after{left:15px}
+  .f3d-tog:not(.on){color:#8a90a0}
+  .f3d-dark .f3d-tog{color:#dbe0ea}.f3d-dark .f3d-tog .sw{background:#3a4152}
+  /* dijital saat: cam kart, 3B kabartma rakamlar, yanıp sönen iki nokta */
+  .f3d-clock{background:rgba(255,255,255,.72);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(255,255,255,.75);border-radius:16px;padding:7px 18px 8px;box-shadow:0 10px 30px rgba(28,34,51,.12),inset 0 1px 0 rgba(255,255,255,.9);text-align:center;min-width:150px}
+  .f3d-time{display:flex;align-items:baseline;justify-content:center;font-weight:800;font-size:30px;line-height:1;letter-spacing:.04em;font-variant-numeric:tabular-nums;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(180deg,#2b2f6b 0%,#7c6cf0 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 1px 0 rgba(255,255,255,.9)) drop-shadow(0 6px 10px rgba(124,108,240,.28))}
+  .f3d-time .col{animation:f3dblink 1s steps(1) infinite;margin:0 1px}
+  .f3d-time .ss{font-size:14px;margin-left:6px;letter-spacing:.06em;opacity:.85}
+  .f3d-date{margin-top:3px;font-size:10.5px;letter-spacing:.06em;text-transform:capitalize;color:#5b6170;font-weight:600}
+  .f3d-clock.f3d-dark{background:rgba(22,26,36,.7);border-color:rgba(255,255,255,.1)}
+  .f3d-clock.f3d-dark .f3d-time{background:linear-gradient(180deg,#eef0ff 0%,#9d93ff 100%);-webkit-background-clip:text;background-clip:text}
+  .f3d-clock.f3d-dark .f3d-date{color:#aab1c2}
+  @keyframes f3dblink{50%{opacity:.25}}
   .f3d-dark .f3d-hd{color:#e8edf8;border-color:rgba(130,150,210,.2)}.f3d-dark .f3d-ft{border-color:rgba(130,150,210,.2);background:rgba(255,255,255,.05);color:#9aa6bd}
   /* ince, yumuşak kaydırma çubuğu (bölgeler / kameralar / kişiler) */
   .f3d-scroll,.f3d-list,.f3d-zones,.f3d-cams{scrollbar-width:thin;scrollbar-color:rgba(100,110,140,.28) transparent}

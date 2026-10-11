@@ -147,6 +147,8 @@ def _ensure_schema(conn):
         conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_y REAL NOT NULL DEFAULT 0')
     if 'bg_opacity' not in floor_cols:
         conn.execute('ALTER TABLE factory_floors ADD COLUMN bg_opacity REAL NOT NULL DEFAULT 0.6')
+    if 'zone_labels' not in floor_cols:   # 3B canlı izleme: bölge/alan adları — JSON [{x, y, name}] (plan koordinatı)
+        conn.execute('ALTER TABLE factory_floors ADD COLUMN zone_labels TEXT')
     conn.commit()
 
 
@@ -298,6 +300,7 @@ class FloorPatch(BaseModel):
     bg_x: Optional[float] = None
     bg_y: Optional[float] = None
     bg_opacity: Optional[float] = None
+    zone_labels: Optional[list] = None   # 3B bölge/alan adları: [{x, y, name}] — None = gönderilmedi
 
 
 class ReorderIn(BaseModel):
@@ -335,8 +338,21 @@ def update_floor(fid: int, body: FloorPatch, user=Depends(fab_user), conn=db.DB)
     bg_x = body.bg_x if body.bg_x is not None else f['bg_x']
     bg_y = body.bg_y if body.bg_y is not None else f['bg_y']
     bg_opacity = body.bg_opacity if body.bg_opacity is not None else f['bg_opacity']
+    # 3B bölge/alan adları: gönderilmişse temizleyip JSON olarak yaz (ad boşsa atılır; en çok 200 etiket)
+    if body.zone_labels is None:
+        zone_labels = f['zone_labels']
+    else:
+        import json as _json
+        clean = []
+        for l in body.zone_labels[:200]:
+            if not isinstance(l, dict):
+                continue
+            nm = str(l.get('name', '')).strip()[:60]
+            if nm:
+                clean.append({'x': float(l.get('x', 0) or 0), 'y': float(l.get('y', 0) or 0), 'name': nm})
+        zone_labels = _json.dumps(clean, ensure_ascii=False)
     conn.execute('''UPDATE factory_floors SET name = ?, ordinal = ?, bg_scale = ?, bg_x = ?, bg_y = ?,
-                    bg_opacity = ? WHERE id = ?''', (name, ordv, bg_scale, bg_x, bg_y, bg_opacity, fid))
+                    bg_opacity = ?, zone_labels = ? WHERE id = ?''', (name, ordv, bg_scale, bg_x, bg_y, bg_opacity, zone_labels, fid))
     db.audit(conn, user['id'], 'Fabrika katını güncelledi', 'factory_floor', fid, name)
     return db.row(conn.execute('SELECT * FROM factory_floors WHERE id = ?', (fid,)))
 

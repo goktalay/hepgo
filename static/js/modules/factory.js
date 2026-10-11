@@ -197,12 +197,40 @@ export async function render(view, params, ctx) {
     try {
       const mod = await import('./factory3d.js');
       fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark(),
-        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); } });
+        onFloor: async id => { if (id === st.floorId) return; st.floorId = id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); show3D(true); },
+        // 3B'de bölgeye/alana tıklandı → ad ver / değiştir / sil → kat kaydına (zone_labels) yaz
+        onLabel: info => {
+          const fl = st.floors.find(f => f.id === st.floorId); if (!fl) return;
+          const arr = parseLabels(fl);
+          const inp = h('input', { class: 'input', value: info.current || '', placeholder: info.zone ? `Bölge adı (şu an: ${info.zone})` : 'Alan etiketi (ör. Montaj Hattı)' });
+          const save = async next => {
+            try {
+              await api.patch(`/api/factory/floors/${fl.id}`, { zone_labels: next });
+              fl.zone_labels = JSON.stringify(next); toast(next.length < arr.length ? 'Etiket silindi' : 'Ad kaydedildi'); show3D(true);
+            } catch (err) { toastError(err); }
+          };
+          modal({
+            title: info.zone ? 'Bölge adı' : 'Alan etiketi', body: field('Ad', inp),
+            actions: [
+              { label: 'Vazgeç' },
+              ...(info.idx >= 0 ? [{ label: 'Sil', class: 'danger', onClick: () => save(arr.filter((_, i) => i !== info.idx)) }] : []),
+              { label: 'Kaydet', class: 'primary', onClick: () => {
+                const nm = inp.value.trim(); if (!nm) { toast('Ad boş olamaz', 'err'); return; }
+                const next = arr.slice();
+                if (info.idx >= 0) next[info.idx] = { ...next[info.idx], name: nm }; else next.push({ x: info.x, y: info.y, name: nm });
+                return save(next);
+              } },
+            ],
+          });
+          setTimeout(() => { try { inp.focus(); inp.select(); } catch {} }, 50);
+        } });
     }
     catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
   }
   // Katman/tür değişince 3B sahneyi de yenile (yalnız canlı modda ve 3B açıkken)
+  // Kat kaydındaki 3B bölge/alan adları (JSON metin ya da dizi) → [{x,y,name}]
+  const parseLabels = fl => { try { const v = fl && fl.zone_labels; const a = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(a) ? a : []; } catch { return []; } };
   const sync3D = () => { if (st.mode === 'live' && fab3d && !el3d.hidden) show3D(true); };
   async function show3D(on) {
     if (!on) { el3d.hidden = true; svg.style.display = ''; return; }
@@ -220,7 +248,7 @@ export async function render(view, params, ctx) {
         cams: L.cams === false ? [] : st.cams,
         markers: L.markers === false ? [] : (st.markers || []).filter(m => L[`mk:${m.kind}`] !== false),
         stairs: L.stairs === false ? [] : st.stairs,
-        floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE,
+        floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE, labels: parseLabels(fl),
         floors: st.floors.map(f => ({ id: f.id, name: f.name })), floorId: st.floorId });
       inst.updateLive(st.liveData?.people || []);
       inst.resize();

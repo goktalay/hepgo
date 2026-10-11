@@ -107,7 +107,8 @@ export async function createFactory3D(mountEl, opts = {}) {
   const gBg = new T.Group(); scene.add(gBg);
   const gZones = new T.Group(); scene.add(gZones);
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, M = {}, zones = [], zoneGrid = null, camNames = [];
+  let grid, M = {}, zones = [], zoneGrid = null, camNames = [], labels = [], freeLabels = [];
+  const onLabel = opts.onLabel || null;   // bölgeye/alana tıklayınca ad verme (factory.js kaydeder)
   const ZONE_COLORS = [0xc7c2ff, 0xbfe3ff, 0xc3f1dc, 0xffe1c4, 0xffd1dc, 0xd9f0b8, 0xfff0b3, 0xd4e6ff];
 
   const makeMats = () => {
@@ -214,7 +215,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     const wall = new Uint8Array(N);
     const mark = (x, z) => { const gx = Math.floor((x - bb.x0) / cw), gz = Math.floor((z - bb.z0) / ch); if (gx >= 0 && gz >= 0 && gx < GX && gz < GZ) wall[gz * GX + gx] = 1; };
     segs.forEach(s => { const n = Math.max(1, Math.ceil(s.len / (Math.min(cw, ch) * 0.5))); for (let i = 0; i <= n; i++) { const t = i / n; mark(s.ax + (s.bx - s.ax) * t, s.az + (s.bz - s.az) * t); } });
-    const r = Math.max(2, Math.round(GX * 0.022)), dil = new Uint8Array(N);   // kapı boşluklarını kapat
+    const r = Math.max(2, Math.round(GX * 0.028)), dil = new Uint8Array(N);   // kapı boşluklarını kapat (geniş kapılar dâhil)
     for (let z = 0; z < GZ; z++) for (let x = 0; x < GX; x++) if (wall[z * GX + x]) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { if (dx * dx + dz * dz > r * r) continue; const xx = x + dx, zz = z + dz; if (xx >= 0 && zz >= 0 && xx < GX && zz < GZ) dil[zz * GX + xx] = 1; }
     const lab = new Int32Array(N), stack = [];
     const nb4 = i => { const x = i % GX, z = (i - x) / GX; return [x > 0 ? i - 1 : -1, x < GX - 1 ? i + 1 : -1, z > 0 ? i - GX : -1, z < GZ - 1 ? i + GX : -1]; };
@@ -228,7 +229,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       while (stack.length) { const i = stack.pop(); cnt++; for (const j of nb4(i)) if (j >= 0 && !dil[j] && lab[j] === 0) { lab[j] = id; stack.push(j); } }
       comps.push({ id, cnt });
     }
-    const minArea = N * 0.004, keepC = comps.filter(c => c.cnt >= minArea).sort((a, b) => b.cnt - a.cnt).slice(0, 40);
+    const minArea = N * 0.0015, keepC = comps.filter(c => c.cnt >= minArea).sort((a, b) => b.cnt - a.cnt).slice(0, 60);   // küçük odalar (tuvalet, sunucu) da bölge olsun
     const keepIds = new Set(keepC.map(c => c.id)); for (let i = 0; i < N; i++) if (lab[i] > 0 && !keepIds.has(lab[i])) lab[i] = 0;
     let fr = []; for (let i = 0; i < N; i++) if (lab[i] > 0) fr.push(i);     // dilate kalınlığını geri ver (duvara kadar büyüt)
     for (let it = 0; it <= r && fr.length; it++) { const nx = []; for (const i of fr) for (const j of nb4(i)) if (j >= 0 && !wall[j] && lab[j] === 0) { lab[j] = lab[i]; nx.push(j); } fr = nx; }
@@ -251,7 +252,20 @@ export async function createFactory3D(mountEl, opts = {}) {
     let k = 0;
     zones.forEach((zn, zi) => { col.set(ZONE_COLORS[zi % ZONE_COLORS.length]); zn.cells.forEach(i => { const x = i % GX, z = (i - x) / GX; pos.set(x0 + (x + 0.5) * cw, 0.02, z0 + (z + 0.5) * ch); m4.compose(pos, q, scl); inst.setMatrixAt(k, m4); inst.setColorAt(k, col); k++; }); });
     inst.instanceMatrix.needsUpdate = true; if (inst.instanceColor) inst.instanceColor.needsUpdate = true; inst.renderOrder = 1; gZones.add(inst);
-    zones.forEach(zn => { const lbl = makeTextSprite(zn.name, P); lbl.position.set(zn.cx, IMG_WALL_H + 0.55, zn.cz); gZones.add(lbl); });
+    // zarif küçük etiketler: bölge adları (duvar üstünün biraz altında) + serbest alan etiketleri
+    zones.forEach(zn => { const lbl = makeLabelSprite(zn.name, P, !!zn.named); lbl.position.set(zn.cx, IMG_WALL_H - 0.35, zn.cz); gZones.add(lbl); });
+    freeLabels.forEach(fl => { const lbl = makeLabelSprite(fl.name, P, true); lbl.position.set(fl.x, 0.75, fl.z); gZones.add(lbl); });
+  }
+  // kayıtlı etiketleri bölgelere eşle: etiket noktası bir bölgenin içindeyse o bölgenin adı olur, değilse serbest etiket
+  function applyLabels() {
+    freeLabels = [];
+    zones.forEach((zn, i) => { zn.name = `Bölge ${i + 1}`; zn.named = false; zn.labelIdx = -1; });
+    (labels || []).forEach((l, idx) => {
+      if (!l || l.x == null || l.y == null || !l.name) return;
+      const wx = px(l.x), wz = pz(l.y), zn = zoneAt(wx, wz);
+      if (zn) { zn.name = l.name; zn.named = true; zn.labelIdx = idx; }
+      else freeLabels.push({ x: wx, z: wz, name: l.name, idx });
+    });
   }
   function renderZonePanel() {
     if (!el.zones) return;
@@ -318,7 +332,7 @@ export async function createFactory3D(mountEl, opts = {}) {
         layer(M.wall, SILL + GH, RAIL, 1.1, true);
         // kapalı alanları bölge olarak tanı → zemin tonu + etiket + kişi sayımı
         try { zones = detectRooms(keep, { x0: px(box.x0), z0: pz(box.y0), x1: px(box.x1), z1: pz(box.y1) }); } catch { zones = []; }
-        renderZones(); if (last && last.people) updateLive(last.people); else renderZonePanel();
+        applyLabels(); renderZones(); if (last && last.people) updateLive(last.people); else renderZonePanel();
       };
       const isSvg = /\.svg(\?|#|$)/i.test(bg.url) || /^data:image\/svg/i.test(bg.url);
       wallErr = null;
@@ -363,6 +377,25 @@ export async function createFactory3D(mountEl, opts = {}) {
   const stop = () => { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; };
   const resize = () => { const w = mountEl.clientWidth, h = mountEl.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
   const ro = new ResizeObserver(resize); ro.observe(mountEl);
+  // bölgeye / boş alana tıkla → ad ver (sürükleme ile karışmasın: 6px altı hareket + 400ms)
+  if (onLabel) {
+    const ray = new T.Raycaster(), ground = new T.Plane(new T.Vector3(0, 1, 0), 0), ndc = new T.Vector2(), hit = new T.Vector3();
+    let down = null;
+    renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+    renderer.domElement.addEventListener('pointerup', e => {
+      if (!down) return; const d = down; down = null;
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || Date.now() - d.t > 400) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      if (!ray.ray.intersectPlane(ground, hit)) return;
+      const zn = zoneAt(hit.x, hit.z);
+      let idx = -1, current = '';
+      if (zn && zn.labelIdx >= 0) { idx = zn.labelIdx; current = zn.name; }
+      else { const near = freeLabels.find(f => Math.hypot(f.x - hit.x, f.z - hit.z) < 0.9); if (near) { idx = near.idx; current = near.name; } }
+      onLabel({ x: hit.x / X.s + X.cx, y: hit.z / X.s + X.cy, zone: zn ? zn.name : null, idx, current });
+    });
+  }
   const onVis = () => { if (document.hidden) stop(); else start(); };
   document.addEventListener('visibilitychange', onVis);
   const fit = () => { controls.target.set(0, 0.6, 0); camera.position.set(SPAN * 0.55, SPAN * 0.82, SPAN * 1.02); controls.update(); };
@@ -371,8 +404,9 @@ export async function createFactory3D(mountEl, opts = {}) {
 
   let last = null;
   return {
-    build({ rooms, cams, markers, stairs, floorName: fn, bg, palette: pal, floors: fl, floorId: fid }) {
+    build({ rooms, cams, markers, stairs, floorName: fn, bg, palette: pal, floors: fl, floorId: fid, labels: lb }) {
       if (pal) palette = pal;
+      if (lb) labels = lb;
       if (fl) { floors = fl; } if (fid !== undefined) { floorId = fid; } renderFloors();
       if (fn != null) setFloorName(fn);
       last = { rooms, cams, markers, stairs };
@@ -498,6 +532,20 @@ function makeTextSprite(text, P, accentHex) {
   const tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
   const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
   sp.renderOrder = 12; sp.scale.set(cv.width / cv.height * 0.95, 0.95, 1); return sp;
+}
+// Zarif küçük alan etiketi (photoshop'taki gibi: ince yazı, beyaz hafif saydam kutu, ince kenar)
+function makeLabelSprite(text, P, named) {
+  const T = _Tref, fs = 30, pad = 14, cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+  const font = `${named ? 500 : 400} ${fs}px system-ui,-apple-system,"Segoe UI",sans-serif`;
+  ctx.font = font;
+  const w = Math.ceil(ctx.measureText(text).width) + pad * 2, hh = fs + pad;
+  cv.width = w; cv.height = hh; ctx.font = font;
+  ctx.fillStyle = P.labelBg; roundRect(ctx, 0.5, 0.5, w - 1, hh - 1, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(28,34,51,.14)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = named ? P.label : 'rgba(28,34,51,.55)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, w / 2, hh / 2 + 1);
+  const tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
+  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
+  sp.renderOrder = 8; const sc = 0.52; sp.scale.set(cv.width / cv.height * sc, sc, 1); return sp;
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function emojiSprite(ch) {

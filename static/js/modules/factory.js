@@ -195,7 +195,7 @@ export async function render(view, params, ctx) {
     if (fab3d || fab3dBusy) return fab3d;
     fab3dBusy = true;
     try { const mod = await import('./factory3d.js'); fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark() }); }
-    catch (e) { fab3d = null; }
+    catch (e) { fab3d = null; console.error('[factory3d] yüklenemedi', e); try { toast('3B görünüm yüklenemedi: ' + (e?.message || e), 'err'); } catch {} }
     fab3dBusy = false; return fab3d;
   }
   async function show3D(on) {
@@ -203,9 +203,14 @@ export async function render(view, params, ctx) {
     svg.style.display = 'none'; el3d.hidden = false;
     const inst = await ensure3D();
     if (!inst) { el3d.hidden = true; svg.style.display = ''; return; }
-    inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs });
-    inst.updateLive(st.liveData?.people || []);
-    inst.resize();
+    try {
+      const fl = st.floors.find(f => f.id === st.floorId);
+      inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs, floorName: fl ? fl.name : '' });
+      inst.updateLive(st.liveData?.people || []);
+      inst.resize();
+      requestAnimationFrame(() => { try { inst.resize(); } catch {} });   // el3d yeni görünür oldu; layout oturunca tekrar ölç
+      if (!st.rooms.length) { try { toast('Bu katta oda/duvar tanımlı değil — Düzen modunda kat planını çizin', 'err'); } catch {} }
+    } catch (e) { console.error('[factory3d] çizim', e); try { toast('3B çizim hatası: ' + (e?.message || e), 'err'); } catch {} }
   }
   const floorBar = h('div', { class: 'fab-floors' });
   const hint = h('div', { class: 'fab-hint' });

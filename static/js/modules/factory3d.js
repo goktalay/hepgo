@@ -207,10 +207,10 @@ export async function createFactory3D(mountEl, opts = {}) {
         const ax = px(a[0]), az = pz(a[1]), bx = px(b[0]), bz = pz(b[1]);
         const len = Math.hypot(bx - ax, bz - az); if (len < 0.05) continue;
         const mx = (ax + bx) / 2, mz = (az + bz) / 2, ry = -Math.atan2(bz - az, bx - ax);
-        const sill = new T.Mesh(new T.BoxGeometry(len, SILL_H, TH), M.sill); sill.position.set(mx, SILL_H / 2 + 0.14, mz); sill.rotation.y = ry; sill.castShadow = true; sill.receiveShadow = true; gWorld.add(sill);
+        const sill = new T.Mesh(new T.BoxGeometry(len, SILL_H, TH), M.sill); sill.position.set(mx, SILL_H / 2 + 0.14, mz); sill.rotation.y = ry; sill.castShadow = false; sill.receiveShadow = false; gWorld.add(sill);
         const glassH = WALL_H - SILL_H - 0.14;
         const glass = new T.Mesh(new T.BoxGeometry(len, glassH, 0.05), M.glass); glass.position.set(mx, SILL_H + 0.14 + glassH / 2, mz); glass.rotation.y = ry; gWorld.add(glass);
-        const top = new T.Mesh(new T.BoxGeometry(len, 0.14, TH), M.wall); top.position.set(mx, WALL_H + 0.07, mz); top.rotation.y = ry; top.castShadow = true; gWorld.add(top);
+        const top = new T.Mesh(new T.BoxGeometry(len, 0.14, TH), M.wall); top.position.set(mx, WALL_H + 0.07, mz); top.rotation.y = ry; top.castShadow = false; gWorld.add(top);
         const n = Math.max(1, Math.round(len / 2.4));
         for (let k = 1; k < n; k++) { const t = k / n, fx = ax + (bx - ax) * t, fz = az + (bz - az) * t; const fr = new T.Mesh(new T.BoxGeometry(0.06, glassH, TH * 0.9), M.frame); fr.position.set(fx, SILL_H + 0.14 + glassH / 2, fz); fr.rotation.y = ry; gWorld.add(fr); }
       }
@@ -446,9 +446,9 @@ export async function createFactory3D(mountEl, opts = {}) {
           });
           inst.instanceMatrix.needsUpdate = true; inst.castShadow = shadow; inst.receiveShadow = shadow; gBg.add(inst); return inst;
         };
-        layer(M.sill, 0, SILL, 1, true);
+        layer(M.sill, 0, SILL, 1, false);   // duvar gölgesi yok (kullanıcı isteği)
         const gl = layer(M.imgGlass, SILL, GH, 0.5, false); gl.renderOrder = 2;
-        layer(M.wall, SILL + GH, RAIL, 1.1, true);
+        layer(M.wall, SILL + GH, RAIL, 1.1, false);
         // kapalı alanları bölge olarak tanı → zemin tonu + etiket + kişi sayımı
         try { zones = detectRooms(keep, { x0: px(box.x0), z0: pz(box.y0), x1: px(box.x1), z1: pz(box.y1) }); } catch { zones = []; }
         applyLabels(); renderZones(); buildPrinters(); if (last && last.people) updateLive(last.people); else renderZonePanel();

@@ -934,7 +934,7 @@ def who_is_where(minutes: int = 10, user=Depends(fab_user), conn=db.DB):
     """Canlı "şu an kim nerede": son `minutes` dakikadaki görülmeler odalara eşlenir, her özne için en son
     görülme tutulur. Mevcut `recent` yolu yeniden kullanılır."""
     _ensure(conn)
-    minutes = max(1, min(int(minutes or 10), 43200))   # 30 güne kadar (3B Canlı: herkesin son görüldüğü yer, eskiler gri)
+    minutes = max(1, min(int(minutes or 10), 525600))   # 1 yıla kadar (3B Canlı: TÜM kişilerin son görüldüğü yer, eskiler gri)
     cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat(timespec='seconds')
 
     rows = None

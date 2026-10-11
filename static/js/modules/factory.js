@@ -1244,8 +1244,8 @@ export async function render(view, params, ctx) {
     drawMoveSide(); drawOverlay();
   }
   async function refreshLive() {
-    // Canlı 3B: son 30 gün (herkesin son görüldüğü yer; ≤10 dk yeşil, eskisi gri). Hareket modu: 10 dk.
-    st.liveData = await api.get(`/api/factory/now?minutes=${st.mode === 'live' ? 43200 : 10}`);
+    // Canlı 3B: son 1 yıl (TÜM kişiler, son görüldüğü yer; ≤10 dk yeşil, eskisi gri). Hareket modu: 10 dk.
+    st.liveData = await api.get(`/api/factory/now?minutes=${st.mode === 'live' ? 525600 : 10}`);
     if (st.mode === 'live') { drawCanvas(); drawLiveSide(); if (fab3d && !el3d.hidden) { fab3d.updateLive(st.liveData?.people || []); refreshPrinters(); } }
     else { drawMoveSide(); drawOverlay(); }
   }

@@ -409,10 +409,23 @@ const DUO = {
     esnaf: { t: 'Малый бизнес', d: 'Готовые пакеты для магазина, парикмахерской/салона и кафе — мгновенная настройка.', list: ['Магазин: сенсорная касса + штрихкод', 'Парикмахерская/Салон: календарь записи + услуга и доля персонала', 'Кафе: план столов + официант + счета'] } },
 };
 
+// Hero'daki 3D sahnenin sektör sekmeleri (etiket + kısa tanım) — 7 dil.
+const SECTOR_KEYS = ['factory', 'grocery', 'barber', 'restaurant'];
+const SECTORS = {
+  tr: { factory: { l: 'Fabrika', tag: 'Üretim, iş emri, stok ve sahayı tek ekrandan yönetin.' }, grocery: { l: 'Bakkal', tag: 'Dokunmatik yazarkasa ve barkodla saniyede satış.' }, barber: { l: 'Berber', tag: 'Randevu takvimi, hizmetler ve personel payı.' }, restaurant: { l: 'Lokanta', tag: 'Masa düzeni, garson ekranı ve adisyon.' } },
+  en: { factory: { l: 'Factory', tag: 'Run production, work orders, stock and field from one screen.' }, grocery: { l: 'Grocery', tag: 'Sell in seconds with a touch POS and barcode.' }, barber: { l: 'Barber', tag: 'Booking calendar, services and staff share.' }, restaurant: { l: 'Restaurant', tag: 'Table layout, waiter screen and checks.' } },
+  de: { factory: { l: 'Fabrik', tag: 'Produktion, Aufträge, Lager und Außendienst auf einem Bildschirm.' }, grocery: { l: 'Laden', tag: 'Sekundenschnell verkaufen mit Touch-Kasse und Barcode.' }, barber: { l: 'Friseur', tag: 'Terminkalender, Leistungen und Mitarbeiteranteil.' }, restaurant: { l: 'Restaurant', tag: 'Tischplan, Kellner-Bildschirm und Rechnungen.' } },
+  fr: { factory: { l: 'Usine', tag: 'Production, ordres, stock et terrain sur un seul écran.' }, grocery: { l: 'Épicerie', tag: 'Vendez en quelques secondes avec caisse tactile et code-barres.' }, barber: { l: 'Coiffeur', tag: 'Agenda de rendez-vous, services et part du personnel.' }, restaurant: { l: 'Restaurant', tag: 'Plan de tables, écran serveur et additions.' } },
+  es: { factory: { l: 'Fábrica', tag: 'Producción, órdenes, stock y campo en una sola pantalla.' }, grocery: { l: 'Tienda', tag: 'Venda en segundos con TPV táctil y código de barras.' }, barber: { l: 'Peluquería', tag: 'Agenda de citas, servicios y parte del personal.' }, restaurant: { l: 'Restaurante', tag: 'Plano de mesas, pantalla de camarero y cuentas.' } },
+  ar: { factory: { l: 'مصنع', tag: 'أدِر الإنتاج وأوامر العمل والمخزون والميدان من شاشة واحدة.' }, grocery: { l: 'بقالة', tag: 'بِع في ثوانٍ عبر نقطة بيع باللمس وباركود.' }, barber: { l: 'حلاق', tag: 'تقويم مواعيد وخدمات وحصة الموظف.' }, restaurant: { l: 'مطعم', tag: 'توزيع الطاولات وشاشة النادل والفواتير.' } },
+  ru: { factory: { l: 'Завод', tag: 'Производство, наряды, склад и выезды с одного экрана.' }, grocery: { l: 'Магазин', tag: 'Продажи за секунды: сенсорная касса и штрихкод.' }, barber: { l: 'Парикмахер', tag: 'Календарь записи, услуги и доля персонала.' }, restaurant: { l: 'Кафе', tag: 'План столов, экран официанта и счета.' } },
+};
+
 function page() {
   const t = T[lang];
   const wd = WORLD[lang] || WORLD.en;
   const du = DUO[lang] || DUO.en;
+  const sc = SECTORS[lang] || SECTORS.en;
   const sun = svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>');
   const moon = svg('<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>');
   const feat = FEATURES.map((f, i) => `<div class="feat reveal fc${i}">
@@ -440,7 +453,8 @@ function page() {
     </div>
   </div></header>
   <main>
-    <section class="world-hero">
+    <section class="world-hero" id="hero3d">
+      <canvas class="scene3d-canvas" id="scene3d" hidden></canvas>
       <div class="globe" aria-hidden="true"><div class="globe__sphere">
         <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
         <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
@@ -451,6 +465,8 @@ function page() {
         <span class="pill"><i></i> ${esc(t.heroPill)}</span>
         <h1>${esc(wd.h)}</h1>
         <p class="lead">${esc(wd.lead)}</p>
+        <div class="sector-tabs" id="sectorTabs">${SECTOR_KEYS.map((k, i) => `<button class="sector-tab${i === 0 ? ' on' : ''}" data-sec="${k}">${esc(sc[k].l)}</button>`).join('')}</div>
+        <p class="sector-tag" id="sectorTag">${esc(sc.factory.tag)}</p>
         <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(wd.cta)}</a><a class="btn btn-ghost btn-lg" href="#yapilar">${esc(t.heroCta[1])}</a></div>
       </div>
     </section>
@@ -653,6 +669,35 @@ function render() {
   addEventListener('scroll', onScroll, { passive: true }); onScroll();
   revealAll();
   fillPricing();
+  mount3D();
+}
+
+// Hero'daki sektörel 3D sahne: WebGL varsa yüklenir; yoksa CSS çizgisel dünya görünür kalır.
+let _scene = null, _autoTimer = null, _sceneToken = 0;
+async function mount3D() {
+  if (_scene) { try { _scene.dispose(); } catch { /* */ } _scene = null; }
+  if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
+  const canvas = $('#scene3d');
+  if (!canvas) return;
+  const mod = await import('/static/scene3d.js?v=20261011c').catch(() => null);
+  if (!mod || !mod.webglOK()) return;   // WebGL yok → CSS dünya fallback
+  const token = ++_sceneToken;
+  let scene;
+  try { scene = await mod.mountScene(canvas); } catch { return; }
+  if (token !== _sceneToken) { try { scene.dispose(); } catch { /* */ } return; }
+  _scene = scene;
+  canvas.hidden = false;
+  const globe = document.querySelector('.world-hero .globe'); if (globe) globe.style.display = 'none';
+  const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
+  const setSec = key => {
+    scene.show(key);
+    if (tabs) tabs.querySelectorAll('.sector-tab').forEach(b => b.classList.toggle('on', b.dataset.sec === key));
+    if (tagEl && sc[key]) tagEl.textContent = sc[key].tag;
+  };
+  let idx = 0;
+  const restartAuto = () => { if (_autoTimer) clearInterval(_autoTimer); _autoTimer = setInterval(() => { idx = (idx + 1) % SECTOR_KEYS.length; setSec(SECTOR_KEYS[idx]); }, 6000); };
+  if (tabs) tabs.querySelectorAll('.sector-tab').forEach(b => b.addEventListener('click', () => { idx = SECTOR_KEYS.indexOf(b.dataset.sec); setSec(b.dataset.sec); restartAuto(); }));
+  restartAuto();
 }
 
 fetch('/api/public/site').then(r => r.json()).then(x => { site = x; }).catch(() => {}).finally(render);

@@ -1,8 +1,8 @@
 // HEPGO Fabrika — Canlı İzleme 3B sahnesi (Three.js, yerel kopya).
-// 2B kat planını (oda poligonları = duvarlar) 3B'ye yükseltir: zemin plakaları + cam duvarlar,
-// kameralar koni+görüş konisi, canlı personel yüz fotoğraflı dik kartlar (billboard) + durum rengi.
-// vantra-facility-os esinli: orbit kamera, cam yüzeyler, yumuşak ışık, açık/koyu uyumlu.
-// Veri factory.js'teki aynı uçlardan gelir; bu modül yalnız görselleştirir.
+// vantra-facility-os (horizonx) esinli: gerçek cam duvarlar (MeshPhysical transmission),
+// opak alt eşik + cam pencere, kalın zemin plakaları, ACESFilmic ışık + yumuşak gölge,
+// canlı personel her zaman görünür kart (depthTest:false) + durum rengi halka + sütun, orbit kamera.
+// 2B kat planını (oda poligonları) 3B'ye yükseltir; veri factory.js'teki uçlardan gelir.
 
 const LIB = '/static/vendor/three/';
 let _libs = null;
@@ -10,26 +10,26 @@ const loadLibs = () => (_libs ??= Promise.all(
   ['three.module.min.js', 'OrbitControls.js'].map(f => import(LIB + f))
 ).then(([T, O]) => ({ T, OrbitControls: O.OrbitControls })).catch(e => { _libs = null; throw e; }));
 
-const WALL_H = 2.3;          // duvar yüksekliği (birim)
-const SPAN = 26;             // sahnenin hedef genişliği (birim)
+const WALL_H = 2.2, TH = 0.12, SILL_H = 0.5, SPAN = 26;
+let _Tref = null;
 
-// görülme yaşına göre renk (factory.js liveAgeColor ile aynı)
-const ageColor = at => {
-  const ms = at ? Date.now() - new Date(at).getTime() : Infinity;
-  return ms <= 5 * 60000 ? 0x16a34a : ms <= 60 * 60000 ? 0xf59e0b : 0xdc2626;
+const PAL = {
+  light: { ground: 0xeef1f7, g1: 0xc6d0e4, g2: 0xd8e0ef, slab: 0xe3e8f1, deck: 0xdde5f1, wall: 0xeef1f8, sill: 0xd4dcea, steel: 0x9fb0c8, label: '#0b1322', labelBg: 'rgba(255,255,255,.9)' },
+  dark: { ground: 0x0d1424, g1: 0x22324e, g2: 0x182438, slab: 0x172338, deck: 0x1d2b48, wall: 0x2a3446, sill: 0x1b2740, steel: 0x45506a, label: '#e7edf7', labelBg: 'rgba(15,22,38,.82)' },
 };
+const ageColor = at => { const ms = at ? Date.now() - new Date(at).getTime() : Infinity; return ms <= 3e5 ? 0x16a34a : ms <= 36e5 ? 0xf59e0b : 0xdc2626; };
 
 export async function createFactory3D(mountEl, opts = {}) {
   const { T, OrbitControls } = await loadLibs();
   _Tref = T;
   const fileUrl = opts.fileUrl || (p => p);
-  let dark = !!opts.dark;
-  let floorName = opts.floorName || '';
+  let dark = !!opts.dark, floorName = opts.floorName || '';
+  let P = dark ? PAL.dark : PAL.light;
 
-  // ---------- cam (glass) HUD paneli (vantra tarzı) ----------
+  // ---------- glass HUD ----------
   ensureHudStyle();
   const hud = document.createElement('div'); hud.className = 'f3d-hud';
-  hud.style.cssText = 'position:absolute;left:16px;top:16px;z-index:5;pointer-events:none';   // konum CSP-muaf (görsel detay class'tan)
+  hud.style.cssText = 'position:absolute;left:16px;top:16px;z-index:5;pointer-events:none';
   hud.innerHTML = `<div class="f3d-hud-card">
     <div class="f3d-hud-top"><span class="f3d-dot live"></span><b>Canlı İzleme · 3B</b></div>
     <div class="f3d-hud-floor"></div>
@@ -37,80 +37,79 @@ export async function createFactory3D(mountEl, opts = {}) {
     <div class="f3d-hud-leg"><span><i class="g"></i>çok yeni</span><span><i class="y"></i>1 saat içinde</span><span><i class="r"></i>daha eski</span></div>
   </div>`;
   mountEl.appendChild(hud); if (dark) hud.classList.add('f3d-dark');
-  const hudFloor = hud.querySelector('.f3d-hud-floor');
-  const hudCnt = hud.querySelector('.f3d-hud-cnt .n');
-  const setHud = (name, n) => { if (name != null) floorName = name; hudFloor.textContent = floorName || 'Tüm kat'; hudCnt.textContent = n; };
+  const hudFloor = hud.querySelector('.f3d-hud-floor'), hudCntEl = hud.querySelector('.f3d-hud-cnt .n');
+  const setHud = (name, n) => { if (name != null) floorName = name; hudFloor.textContent = floorName || 'Tüm kat'; if (n != null) hudCntEl.textContent = n; };
 
   // ---------- renderer / sahne / kamera ----------
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  renderer.outputColorSpace = 'outputColorSpace' in renderer ? T.SRGBColorSpace : renderer.outputColorSpace;
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.06;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
-  if ('outputColorSpace' in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
-  renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;touch-action:none';
+  renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;touch-action:none;cursor:grab';
   mountEl.appendChild(renderer.domElement);
 
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(46, 1, 0.1, 400);
-  camera.position.set(0, 26, 30);
+  const camera = new T.PerspectiveCamera(40, 1, 0.3, 400);
+  camera.position.set(SPAN * 0.5, SPAN * 0.78, SPAN * 1.0);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08;
-  controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 6; controls.maxDistance = 90;
-  controls.target.set(0, 0, 0);
+  controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 6; controls.maxDistance = 95;
 
   // ---------- ışık ----------
-  const hemi = new T.HemisphereLight(0xffffff, 0x8794a8, 0.95); scene.add(hemi);
-  const key = new T.DirectionalLight(0xffffff, 1.25); key.position.set(14, 26, 12);
-  key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.near = 1; key.shadow.camera.far = 120;
-  key.shadow.camera.left = -40; key.shadow.camera.right = 40; key.shadow.camera.top = 40; key.shadow.camera.bottom = -40;
+  const hemi = new T.HemisphereLight(0xffffff, 0x8491a6, 0.9); scene.add(hemi);
+  const key = new T.DirectionalLight(0xffffff, 1.35);
+  key.position.set(16, 34, 18); key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -30; key.shadow.camera.right = 30; key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
+  key.shadow.camera.near = 1; key.shadow.camera.far = 110; key.shadow.bias = -0.0006; key.shadow.radius = 3;
   scene.add(key);
-  scene.add(new T.DirectionalLight(0x9db4ff, 0.4).translateX(-18).translateY(10).translateZ(-14));
+  const rim = new T.DirectionalLight(0x9db4ff, 0.5); rim.position.set(-20, 12, -18); scene.add(rim);
 
-  // ---------- kalıcı gruplar ----------
-  const gWorld = new T.Group(); scene.add(gWorld);        // kat planı (statik) — tek seferde kurulur
-  const gLive = new T.Group(); scene.add(gLive);          // canlı personel — her güncellemede yenilenir
-  let grid, ground;
+  const gWorld = new T.Group(); scene.add(gWorld);
+  const gLive = new T.Group(); scene.add(gLive);
+  let grid, ground, M = {};
 
-  // ---------- koordinat dönüşümü (plan → sahne) ----------
+  const makeMats = () => {
+    M.ground = new T.MeshStandardMaterial({ color: P.ground, roughness: 0.96, metalness: 0 });
+    M.slab = new T.MeshStandardMaterial({ color: P.slab, roughness: 0.85, metalness: 0.08 });
+    M.deck = new T.MeshStandardMaterial({ color: P.deck, roughness: 0.6, metalness: 0.12 });
+    M.wall = new T.MeshStandardMaterial({ color: P.wall, roughness: 0.7, metalness: 0.06 });
+    M.sill = new T.MeshStandardMaterial({ color: P.sill, roughness: 0.8, metalness: 0.05 });
+    M.glass = new T.MeshPhysicalMaterial({ color: 0xa9cfdd, transmission: 0.9, thickness: 0.5, roughness: 0.14, metalness: 0, ior: 1.35, transparent: true, opacity: 0.4, side: T.DoubleSide });
+    M.frame = new T.MeshStandardMaterial({ color: P.steel, roughness: 0.5, metalness: 0.4 });
+    M.cam = new T.MeshStandardMaterial({ color: 0x2a3340, roughness: 0.45, metalness: 0.3 });
+    M.cone = new T.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.08, side: T.DoubleSide, depthWrite: false });
+    M.edge = new T.LineBasicMaterial({ color: P.steel, transparent: true, opacity: 0.55 });
+  };
+
+  const buildBase = () => {
+    if (ground) { scene.remove(ground); ground.geometry.dispose(); }
+    if (grid) scene.remove(grid);
+    ground = new T.Mesh(new T.PlaneGeometry(260, 260), M.ground);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.04; ground.receiveShadow = true; scene.add(ground);
+    grid = new T.GridHelper(260, 130, P.g1, P.g2);
+    grid.material.transparent = true; grid.material.opacity = dark ? 0.45 : 0.7; grid.position.y = -0.02; scene.add(grid);
+  };
+
+  // ---------- koordinat dönüşümü ----------
   let X = { cx: 0, cy: 0, s: 1 };
   const computeTransform = (rooms, cams, markers) => {
     const pts = [];
     (rooms || []).forEach(r => (r.points || []).forEach(p => pts.push(p)));
-    (cams || []).forEach(c => pts.push([c.x, c.y]));
-    (markers || []).forEach(m => pts.push([m.x, m.y]));
+    (cams || []).forEach(c => (c.x != null) && pts.push([c.x, c.y]));
+    (markers || []).forEach(m => (m.x != null) && pts.push([m.x, m.y]));
     if (!pts.length) { X = { cx: 0, cy: 0, s: 0.05 }; return; }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    pts.forEach(([x, y]) => { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; });
-    const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
-    X = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, s: SPAN / Math.max(w, h) };
+    let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+    pts.forEach(([x, y]) => { if (x < a) a = x; if (x > b) b = x; if (y < c) c = y; if (y > d) d = y; });
+    X = { cx: (a + b) / 2, cy: (c + d) / 2, s: SPAN / Math.max(b - a || 1, d - c || 1) };
   };
-  const px = x => (x - X.cx) * X.s;           // plan x → sahne X
-  const pz = y => (y - X.cy) * X.s;           // plan y → sahne Z
+  const px = x => (x - X.cx) * X.s, pz = y => (y - X.cy) * X.s;
 
-  const mats = {};
-  const makeMats = () => {
-    mats.ground = new T.MeshStandardMaterial({ color: dark ? 0x0e1626 : 0xeef1f7, roughness: 0.95, metalness: 0 });
-    mats.floor = new T.MeshStandardMaterial({ color: dark ? 0x1b2740 : 0xdfe6f2, roughness: 0.8, metalness: 0.05, transparent: true, opacity: 0.55 });
-    mats.wall = new T.MeshStandardMaterial({ color: dark ? 0x3b82f6 : 0x2f6fed, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.22, side: T.DoubleSide });
-    mats.wallEdge = new T.LineBasicMaterial({ color: dark ? 0x7aa2ff : 0x2f6fed, transparent: true, opacity: 0.8 });
-    mats.cam = new T.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.3 });
-    mats.cone = new T.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.14, side: T.DoubleSide, depthWrite: false });
-  };
+  const disposeGroup = g => { g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.map?.dispose?.(); m.dispose?.(); }); }); g.clear(); };
 
-  const disposeGroup = g => { g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.map?.dispose?.() || m.dispose?.()); } }); g.clear(); };
-
-  // ---------- zemin + ızgara ----------
-  const buildBase = () => {
-    if (ground) { scene.remove(ground); ground.geometry.dispose(); }
-    if (grid) scene.remove(grid);
-    ground = new T.Mesh(new T.PlaneGeometry(240, 240), mats.ground);
-    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true; scene.add(ground);
-    grid = new T.GridHelper(240, 120, dark ? 0x23324e : 0xc6d0e4, dark ? 0x1a2740 : 0xd8e0ef);
-    grid.material.transparent = true; grid.material.opacity = dark ? 0.5 : 0.7; scene.add(grid);
-  };
-
-  // ---------- kat planı: oda zeminleri + cam duvarlar ----------
+  // ---------- kat planı: zemin plakaları + cam duvarlar ----------
   const buildWorld = (rooms, cams, markers, stairs) => {
     disposeGroup(gWorld);
     (rooms || []).forEach(r => {
@@ -119,87 +118,83 @@ export async function createFactory3D(mountEl, opts = {}) {
       const shape = new T.Shape();
       pts.forEach(([x, y], i) => { const sx = px(x), sz = pz(y); i ? shape.lineTo(sx, sz) : shape.moveTo(sx, sz); });
       shape.closePath();
-      // zemin plakası (yatay)
-      const floorGeo = new T.ShapeGeometry(shape); floorGeo.rotateX(Math.PI / 2);
-      const col = r.color ? new T.Color(r.color) : null;
-      const fm = col ? mats.floor.clone() : mats.floor; if (col) fm.color = col.lerp(new T.Color(dark ? 0x1b2740 : 0xdfe6f2), 0.45);
-      const floor = new T.Mesh(floorGeo, fm); floor.position.y = 0.01; floor.receiveShadow = true; gWorld.add(floor);
-      // duvarlar: her kenar için dikey cam yüzey + üst kenar çizgisi
+      // kalın zemin plakası (extrude, hafif yükselti)
+      const slabGeo = new T.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false });
+      slabGeo.rotateX(Math.PI / 2);
+      const col = r.color ? new T.Color(r.color).lerp(new T.Color(P.deck), 0.55) : null;
+      const sm = col ? M.deck.clone() : M.deck; if (col) sm.color = col;
+      const slab = new T.Mesh(slabGeo, sm); slab.position.y = 0.14; slab.receiveShadow = true; slab.castShadow = true; slab.userData.room = r; gWorld.add(slab);
+      // duvarlar: her kenar → opak alt eşik + cam pencere + ince üst kiriş
       for (let i = 0; i < pts.length; i++) {
         const a = pts[i], b = pts[(i + 1) % pts.length];
         const ax = px(a[0]), az = pz(a[1]), bx = px(b[0]), bz = pz(b[1]);
-        const len = Math.hypot(bx - ax, bz - az); if (len < 0.01) continue;
-        const wall = new T.Mesh(new T.PlaneGeometry(len, WALL_H), mats.wall);
-        wall.position.set((ax + bx) / 2, WALL_H / 2, (az + bz) / 2);
-        wall.rotation.y = -Math.atan2(bz - az, bx - ax);
-        wall.castShadow = true; gWorld.add(wall);
+        const len = Math.hypot(bx - ax, bz - az); if (len < 0.05) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2, ry = -Math.atan2(bz - az, bx - ax);
+        const sill = new T.Mesh(new T.BoxGeometry(len, SILL_H, TH), M.sill);
+        sill.position.set(mx, SILL_H / 2 + 0.14, mz); sill.rotation.y = ry; sill.castShadow = true; sill.receiveShadow = true; gWorld.add(sill);
+        const glassH = WALL_H - SILL_H - 0.14;
+        const glass = new T.Mesh(new T.BoxGeometry(len, glassH, 0.05), M.glass);
+        glass.position.set(mx, SILL_H + 0.14 + glassH / 2, mz); glass.rotation.y = ry; gWorld.add(glass);
+        const top = new T.Mesh(new T.BoxGeometry(len, 0.14, TH), M.wall);
+        top.position.set(mx, WALL_H + 0.07, mz); top.rotation.y = ry; top.castShadow = true; gWorld.add(top);
+        // dikey cam çerçeveleri
+        const n = Math.max(1, Math.round(len / 2.4));
+        for (let k = 1; k < n; k++) {
+          const t = k / n, fx = ax + (bx - ax) * t, fz = az + (bz - az) * t;
+          const fr = new T.Mesh(new T.BoxGeometry(0.06, glassH, TH * 0.9), M.frame);
+          fr.position.set(fx, SILL_H + 0.14 + glassH / 2, fz); fr.rotation.y = ry; gWorld.add(fr);
+        }
       }
-      // oda kontürü üst kenar (parlak çizgi, duvar hissi)
-      const edgePts = pts.map(([x, y]) => new T.Vector3(px(x), WALL_H, pz(y)));
-      edgePts.push(edgePts[0].clone());
-      gWorld.add(new T.Line(new T.BufferGeometry().setFromPoints(edgePts), mats.wallEdge));
-      // taban kontür
-      const basePts = pts.map(([x, y]) => new T.Vector3(px(x), 0.02, pz(y))); basePts.push(basePts[0].clone());
-      gWorld.add(new T.Line(new T.BufferGeometry().setFromPoints(basePts), mats.wallEdge));
-      // oda adı etiketi (3B sprite)
-      if (r.name) { const c = centroid(pts); const lbl = makeTextSprite(r.name, dark); lbl.position.set(px(c[0]), WALL_H + 0.6, pz(c[1])); gWorld.add(lbl); }
+      if (r.name) { const c = centroid(pts); const lbl = makeTextSprite(r.name, P); lbl.position.set(px(c[0]), WALL_H + 0.7, pz(c[1])); gWorld.add(lbl); }
     });
-    // kameralar
+    // kameralar (gövde + lens + görüş konisi)
     (cams || []).forEach(c => {
       if (c.x == null || c.y == null) return;
-      const body = new T.Mesh(new T.ConeGeometry(0.28, 0.7, 4), mats.cam);
-      body.position.set(px(c.x), WALL_H + 0.1, pz(c.y)); body.rotation.x = Math.PI / 2;
-      body.castShadow = true; gWorld.add(body);
-      const dir = (c.direction || 0) * Math.PI / 180;
-      const cone = new T.Mesh(new T.ConeGeometry(2.4, 5, 24, 1, true), mats.cone);
-      cone.position.set(px(c.x) + Math.cos(dir) * 2.4, WALL_H - 0.3, pz(c.y) + Math.sin(dir) * 2.4);
-      cone.rotation.z = Math.PI / 2; cone.rotation.y = -dir; gWorld.add(cone);
+      const g = new T.Group(); g.position.set(px(c.x), WALL_H + 0.05, pz(c.y)); gWorld.add(g);
+      const dir = (c.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
+      const body = new T.Mesh(new T.BoxGeometry(0.26, 0.26, 0.4), M.cam); body.rotation.x = 0.4; body.castShadow = true; g.add(body);
+      const lens = new T.Mesh(new T.SphereGeometry(0.1, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 }));
+      lens.position.set(0, -0.06, 0.24); g.add(lens);
+      const cone = new T.Mesh(new T.ConeGeometry(1.7, 4, 24, 1, true), M.cone);
+      cone.position.set(0, -0.3, 2); cone.rotation.x = -Math.PI / 2; g.add(cone);
     });
-    // merdivenler (basit blok)
     (stairs || []).forEach(sObj => {
       if (sObj.x == null || sObj.y == null) return;
-      const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), new T.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 }));
+      const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.slab);
       m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m);
     });
   };
 
-  // ---------- canlı personel ----------
+  // ---------- canlı personel (her zaman görünür kart + halka + sütun) ----------
   const texLoader = new T.TextureLoader();
   const updateLive = (people) => {
     disposeGroup(gLive);
     const ppl = (people || []).filter(p => p.x != null && p.y != null);
-    // aynı noktadakileri hafif daire içine yay
     const spots = new Map();
     ppl.forEach(p => { const k = `${Math.round(p.x)},${Math.round(p.y)}`; if (!spots.has(k)) spots.set(k, []); spots.get(k).push(p); });
     spots.forEach(list => list.forEach((p, i) => {
-      const n = list.length, off = n > 1 ? 0.9 : 0, ang = (i / n) * Math.PI * 2;
+      const n = list.length, off = n > 1 ? 0.95 : 0, ang = (i / n) * Math.PI * 2;
       const sx = px(p.x) + Math.cos(ang) * off, sz = pz(p.y) + Math.sin(ang) * off;
-      const col = ageColor(p.at);
-      // durum tabanı (disk + ışık sütunu)
-      const disk = new T.Mesh(new T.CircleGeometry(0.6, 24), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85 }));
-      disk.rotation.x = -Math.PI / 2; disk.position.set(sx, 0.05, sz); gLive.add(disk);
-      const beam = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, 2.4, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35 }));
-      beam.position.set(sx, 1.2, sz); gLive.add(beam);
-      // yüz kartı (billboard sprite)
-      const makeFace = (map) => {
-        const mat = new T.SpriteMaterial({ map, transparent: true });
-        const sp = new T.Sprite(mat); sp.scale.set(1.5, 1.5, 1); sp.position.set(sx, 2.7, sz); sp.userData.bill = true; gLive.add(sp);
-        // renkli halka (durum)
-        const ring = new T.Mesh(new T.RingGeometry(0.78, 0.92, 32), new T.MeshBasicMaterial({ color: col, side: T.DoubleSide }));
-        ring.position.set(sx, 2.7, sz); ring.userData.bill = true; gLive.add(ring);
-      };
-      if (p.crop) {
-        texLoader.load(fileUrl(p.crop, 128), tex => { if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; makeFace(roundTex(tex, T)); }, undefined, () => makeFace(initialTex(p.subject_name, col, T)));
-      } else makeFace(initialTex(p.subject_name, col, T));
-      // isim etiketi
-      const tag = makeTextSprite((p.subject_name || '—').slice(0, 16), dark, col);
-      tag.position.set(sx, 3.8, sz); gLive.add(tag);
+      const col = new T.Color(ageColor(p.at));
+      // zemin halkası + ışık sütunu
+      const ring = new T.Mesh(new T.RingGeometry(0.42, 0.56, 40), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.75, side: T.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(sx, 0.18, sz); gLive.add(ring);
+      const stem = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 2.3, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45 }));
+      stem.position.set(sx, 1.3, sz); gLive.add(stem);
+      // kart grubu (her zaman görünür: depthTest:false, billboard)
+      const grp = new T.Group(); grp.position.set(sx, 2.95, sz); grp.userData.bill = true; gLive.add(grp);
+      const back = new T.Mesh(new T.CircleGeometry(0.62, 40), new T.MeshBasicMaterial({ color: col, depthTest: false, toneMapped: false }));
+      back.renderOrder = 10; grp.add(back);
+      const face = new T.Mesh(new T.CircleGeometry(0.54, 40), new T.MeshBasicMaterial({ map: initialTex(p.subject_name, col), depthTest: false, toneMapped: false }));
+      face.position.z = 0.01; face.renderOrder = 11; grp.add(face);
+      if (p.crop) texLoader.load(fileUrl(p.crop, 128), tex => { if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; face.material.map = roundTex(tex); face.material.needsUpdate = true; }, undefined, () => {});
+      const tag = makeTextSprite((p.subject_name || '—').slice(0, 16), P, col.getHex()); tag.position.set(sx, 4.0, sz); gLive.add(tag);
     }));
     setHud(null, ppl.length);
   };
 
-  // ---------- render döngüsü (görünür değilken durur) ----------
-  let raf = 0, running = false, visible = true;
+  // ---------- render döngüsü ----------
+  let raf = 0, running = false;
   const tick = () => {
     if (!running) return;
     raf = requestAnimationFrame(tick);
@@ -207,30 +202,29 @@ export async function createFactory3D(mountEl, opts = {}) {
     gLive.children.forEach(o => { if (o.userData.bill) o.quaternion.copy(camera.quaternion); });
     renderer.render(scene, camera);
   };
-  const start = () => { if (!running && visible) { running = true; tick(); } };
+  const start = () => { if (!running) { running = true; tick(); } };
   const stop = () => { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; };
 
   const resize = () => {
-    const w = mountEl.clientWidth || 800, h = mountEl.clientHeight || 500;
+    const w = mountEl.clientWidth, h = mountEl.clientHeight;
+    if (!w || !h) return;
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
   };
   const ro = new ResizeObserver(resize); ro.observe(mountEl);
   const onVis = () => { if (document.hidden) stop(); else start(); };
   document.addEventListener('visibilitychange', onVis);
 
-  // ---------- fit kamera ----------
-  const fit = () => { controls.target.set(0, WALL_H / 2, 0); camera.position.set(SPAN * 0.5, SPAN * 0.9, SPAN * 1.05); controls.update(); };
+  const fit = () => { controls.target.set(0, WALL_H / 2, 0); camera.position.set(SPAN * 0.5, SPAN * 0.78, SPAN * 1.0); controls.update(); };
 
   makeMats(); buildBase(); resize(); fit(); start();
 
   return {
-    setFloor(_data) { /* rezerv */ },
     build({ rooms, cams, markers, stairs, floorName }) {
-      if (floorName != null) setHud(floorName, hudCnt.textContent || 0);
+      if (floorName != null) setHud(floorName, null);
       computeTransform(rooms, cams, markers); buildWorld(rooms, cams, markers, stairs); fit();
     },
     updateLive,
-    setDark(d) { dark = !!d; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
+    setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,
     dispose() {
       stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis);
@@ -242,45 +236,34 @@ export async function createFactory3D(mountEl, opts = {}) {
 
 // ---------- yardımcılar ----------
 function centroid(pts) { let x = 0, y = 0; pts.forEach(p => { x += p[0]; y += p[1]; }); return [x / pts.length, y / pts.length]; }
-
-function roundTex(tex, T) {
-  // kare foto → yuvarlak maskeli texture
-  const img = tex.image; if (!img) return tex;
+function roundTex(tex) {
+  const T = _Tref, img = tex.image; if (!img) return tex;
   const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
-  ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
-  ctx.drawImage(img, 0, 0, S, S);
+  ctx.save(); ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(img, 0, 0, S, S); ctx.restore();
   const t = new T.CanvasTexture(cv); if ('colorSpace' in t) t.colorSpace = T.SRGBColorSpace; return t;
 }
-function initialTex(name, col, T) {
-  const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
+function initialTex(name, col) {
+  const T = _Tref, S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
-  ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.fillStyle = '#' + col.toString(16).padStart(6, '0'); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 64px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#' + col.getHexString(); ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 60px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText((name || '?').slice(0, 1).toLocaleUpperCase('tr'), S / 2, S / 2 + 4);
   const t = new T.CanvasTexture(cv); if ('colorSpace' in t) t.colorSpace = T.SRGBColorSpace; return t;
 }
-function makeTextSprite(text, dark, accent) {
-  const pad = 16, fs = 42, cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+function makeTextSprite(text, P, accentHex) {
+  const T = _Tref, fs = 42, pad = 16, cv = document.createElement('canvas'), ctx = cv.getContext('2d');
   ctx.font = `600 ${fs}px system-ui,sans-serif`;
   const w = Math.ceil(ctx.measureText(text).width) + pad * 2, hh = fs + pad;
   cv.width = w; cv.height = hh; ctx.font = `600 ${fs}px system-ui,sans-serif`;
-  ctx.fillStyle = dark ? 'rgba(15,22,38,.82)' : 'rgba(255,255,255,.9)';
-  roundRect(ctx, 0, 0, w, hh, 12); ctx.fill();
-  if (accent != null) { ctx.strokeStyle = '#' + accent.toString(16).padStart(6, '0'); ctx.lineWidth = 3; roundRect(ctx, 1.5, 1.5, w - 3, hh - 3, 11); ctx.stroke(); }
-  ctx.fillStyle = dark ? '#e7edf7' : '#0b1322'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, w / 2, hh / 2 + 2);
-  return buildSprite(cv);
-}
-// sprite'ı modülün three örneğiyle kur (createFactory3D içinde _Tref = T atanır)
-let _Tref = null;
-function buildSprite(cv) {
-  const T = _Tref; if (!T) return new Object3DStub();
+  ctx.fillStyle = P.labelBg; roundRect(ctx, 0, 0, w, hh, 12); ctx.fill();
+  if (accentHex != null) { ctx.strokeStyle = '#' + accentHex.toString(16).padStart(6, '0'); ctx.lineWidth = 3; roundRect(ctx, 1.5, 1.5, w - 3, hh - 3, 11); ctx.stroke(); }
+  ctx.fillStyle = P.label; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, w / 2, hh / 2 + 2);
   const tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
-  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sp.scale.set(cv.width / cv.height * 0.9, 0.9, 1); sp.userData.bill = false; return sp;
+  const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false }));
+  sp.renderOrder = 12; sp.scale.set(cv.width / cv.height * 0.95, 0.95, 1); return sp;
 }
-function Object3DStub() { return { position: { set() {} }, scale: { set() {} }, userData: {} }; }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
 function ensureHudStyle() {

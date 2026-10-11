@@ -75,9 +75,9 @@ export async function createFactory3D(mountEl, opts = {}) {
   // canlı dijital saat: kat seçicinin altında, cam kart, büyük tabular rakamlar + Türkçe tarih
   const hudC = document.createElement('div'); hudC.className = 'f3d-clock';
   hudC.style.cssText = 'position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:6;pointer-events:none';
-  hudC.innerHTML = '<div class="f3d-time"><span class="hh">00</span><span class="col">:</span><span class="mm">00</span><span class="ss">00</span></div><div class="f3d-date"></div>';
+  hudC.innerHTML = '<div class="f3d-time"><span class="f3d-hh">00</span><span class="f3d-col">:</span><span class="f3d-mm">00</span><span class="f3d-ss">00</span></div><div class="f3d-date"></div>';
   mountEl.appendChild(hudC); if (dark) hudC.classList.add('f3d-dark');
-  const clkEl = { hh: hudC.querySelector('.hh'), mm: hudC.querySelector('.mm'), ss: hudC.querySelector('.ss'), date: hudC.querySelector('.f3d-date') };
+  const clkEl = { hh: hudC.querySelector('.f3d-hh'), mm: hudC.querySelector('.f3d-mm'), ss: hudC.querySelector('.f3d-ss'), date: hudC.querySelector('.f3d-date') };
   let clkDay = '';
   const tickClock = () => {
     const d = new Date(), p2 = v => String(v).padStart(2, '0');
@@ -860,8 +860,8 @@ function ensureHudStyle() {
   /* dijital saat: cam kart, 3B kabartma rakamlar, yanıp sönen iki nokta */
   .f3d-clock{background:rgba(255,255,255,.72);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(255,255,255,.75);border-radius:16px;padding:7px 18px 8px;box-shadow:0 10px 30px rgba(28,34,51,.12),inset 0 1px 0 rgba(255,255,255,.9);text-align:center;min-width:150px}
   .f3d-time{white-space:nowrap;font-weight:800;font-size:30px;line-height:1;letter-spacing:.05em;font-variant-numeric:tabular-nums;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#3a3f8f;text-shadow:0 1px 0 #fff,0 2px 0 rgba(58,63,143,.18),0 3px 0 rgba(58,63,143,.10),0 10px 18px rgba(124,108,240,.28)}
-  .f3d-time .col{animation:f3dblink 1s steps(1) infinite;margin:0 1px}
-  .f3d-time .ss{font-size:14px;margin-left:6px;letter-spacing:.06em;color:#7c6cf0;vertical-align:baseline}
+  .f3d-time .f3d-col{animation:f3dblink 1s steps(1) infinite;margin:0 1px}
+  .f3d-time .f3d-ss{font-size:14px;margin-left:6px;letter-spacing:.06em;color:#7c6cf0;vertical-align:baseline}
   .f3d-date{margin-top:3px;font-size:10.5px;letter-spacing:.06em;text-transform:capitalize;color:#5b6170;font-weight:600}
   .f3d-clock.f3d-dark{background:rgba(22,26,36,.7);border-color:rgba(255,255,255,.1)}
   .f3d-clock.f3d-dark .f3d-time{color:#eef0ff;text-shadow:0 1px 0 rgba(255,255,255,.15),0 2px 0 rgba(0,0,0,.35),0 10px 18px rgba(124,108,240,.45)}

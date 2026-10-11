@@ -859,12 +859,12 @@ function ensureHudStyle() {
   .f3d-dark .f3d-tog{color:#dbe0ea}.f3d-dark .f3d-tog .sw{background:#3a4152}
   /* dijital saat: cam kart, 3B kabartma rakamlar, yanıp sönen iki nokta */
   .f3d-clock{background:rgba(255,255,255,.72);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(255,255,255,.75);border-radius:16px;padding:7px 18px 8px;box-shadow:0 10px 30px rgba(28,34,51,.12),inset 0 1px 0 rgba(255,255,255,.9);text-align:center;min-width:150px}
-  .f3d-time{display:flex;align-items:baseline;justify-content:center;font-weight:800;font-size:30px;line-height:1;letter-spacing:.04em;font-variant-numeric:tabular-nums;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(180deg,#2b2f6b 0%,#7c6cf0 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 1px 0 rgba(255,255,255,.9)) drop-shadow(0 6px 10px rgba(124,108,240,.28))}
+  .f3d-time{white-space:nowrap;font-weight:800;font-size:30px;line-height:1;letter-spacing:.05em;font-variant-numeric:tabular-nums;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#3a3f8f;text-shadow:0 1px 0 #fff,0 2px 0 rgba(58,63,143,.18),0 3px 0 rgba(58,63,143,.10),0 10px 18px rgba(124,108,240,.28)}
   .f3d-time .col{animation:f3dblink 1s steps(1) infinite;margin:0 1px}
-  .f3d-time .ss{font-size:14px;margin-left:6px;letter-spacing:.06em;opacity:.85}
+  .f3d-time .ss{font-size:14px;margin-left:6px;letter-spacing:.06em;color:#7c6cf0;vertical-align:baseline}
   .f3d-date{margin-top:3px;font-size:10.5px;letter-spacing:.06em;text-transform:capitalize;color:#5b6170;font-weight:600}
   .f3d-clock.f3d-dark{background:rgba(22,26,36,.7);border-color:rgba(255,255,255,.1)}
-  .f3d-clock.f3d-dark .f3d-time{background:linear-gradient(180deg,#eef0ff 0%,#9d93ff 100%);-webkit-background-clip:text;background-clip:text}
+  .f3d-clock.f3d-dark .f3d-time{color:#eef0ff;text-shadow:0 1px 0 rgba(255,255,255,.15),0 2px 0 rgba(0,0,0,.35),0 10px 18px rgba(124,108,240,.45)}
   .f3d-clock.f3d-dark .f3d-date{color:#aab1c2}
   @keyframes f3dblink{50%{opacity:.25}}
   .f3d-dark .f3d-hd{color:#e8edf8;border-color:rgba(130,150,210,.2)}.f3d-dark .f3d-ft{border-color:rgba(130,150,210,.2);background:rgba(255,255,255,.05);color:#9aa6bd}

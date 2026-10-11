@@ -484,21 +484,6 @@ function page() {
       </div>
     </div></section>
 
-    <section class="hero"><div class="hero-glow"></div><div class="wrap hero-grid">
-      <div class="hero-copy reveal">
-        <span class="pill"><i></i> ${esc(t.heroPill)}</span>
-        <h1>${esc(t.heroH[0])}<span class="grad">${esc(t.heroH[1])}</span>${esc(t.heroH[2])}</h1>
-        <p class="lead">${esc(t.heroLead)}</p>
-        <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(t.heroCta[0])}</a><a class="btn btn-ghost btn-lg" href="#ozellikler">${esc(t.heroCta[1])}</a></div>
-        <ul class="hero-points">${t.heroPoints.map(p => `<li>${svg('<path d="M5 12l4 4 10-10"/>')}${esc(p)}</li>`).join('')}</ul>
-      </div>
-      <div class="hero-visual reveal">
-        <div class="laptop"><div class="laptop-screen"><img class="shot" src="/static/img/landing/shots/dashboard.webp" alt="" loading="eager"></div><div class="laptop-base"></div></div>
-        <div class="phone phone-hero"><div class="phone-screen"><img class="shot" src="/static/img/landing/shots/m-live.webp" alt=""></div></div>
-      </div>
-    </div></section>
-
-    <section class="stats wrap reveal">${t.stats.map(s => `<div><b>${esc(s[0])}</b><span>${esc(s[1])}</span></div>`).join('')}</section>
 
     <section class="section" id="ozellikler"><div class="wrap">
       <div class="sec-head reveal"><span class="eyebrow">${esc(t.featEye)}</span><h2>${esc(t.featH)}</h2><p>${esc(t.featP)}</p></div>
@@ -679,7 +664,7 @@ async function mount3D() {
   const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
   if (!tabs) return;
   if (stage) {
-    const mod = await import('/static/hero-globe.js?v=20261011g').catch(() => null);
+    const mod = await import('/static/hero-globe.js?v=20261011h').catch(() => null);
     if (mod && mod.webglOK()) { try { _heroHandle = mod.mountGlobe(stage, 'factory'); } catch { _heroHandle = null; } }
   }
   let idx = 0;

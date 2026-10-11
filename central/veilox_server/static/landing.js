@@ -375,8 +375,44 @@ const SEC = {
        ['Ночные бэкапы', 'База данных и файлы автоматически копируются каждую ночь.']],
 };
 
+// Üstteki çizgisel dünya header'ı (hero üstü) + KOBİ/Esnaf ikili yapı tanıtımı — 7 dil.
+const WORLD = {
+  tr: { h: 'Fabrikadan esnafa, tek platform', lead: 'İster üretim yapan bir KOBİ, ister bakkal, berber ya da lokanta olun — HEPGO işinizi tek ekrandan, 7 dilde yönetir. Bulutta ya da kendi sunucunuzda.', cta: 'Hemen başlayın' },
+  en: { h: 'From factories to small shops — one platform', lead: 'Whether you are a manufacturing SME or a grocery, barber or restaurant, HEPGO runs your business from one screen, in 7 languages. In the cloud or on your own server.', cta: 'Get started' },
+  de: { h: 'Von der Fabrik bis zum Kleingewerbe — eine Plattform', lead: 'Ob produzierender Mittelständler oder Laden, Friseur oder Restaurant — HEPGO führt Ihr Geschäft über einen Bildschirm, in 7 Sprachen. In der Cloud oder auf Ihrem Server.', cta: 'Loslegen' },
+  fr: { h: 'De l’usine au commerce — une seule plateforme', lead: 'PME industrielle ou épicerie, coiffeur, restaurant — HEPGO gère votre activité depuis un seul écran, en 7 langues. Dans le cloud ou sur votre serveur.', cta: 'Commencer' },
+  es: { h: 'De la fábrica al comercio: una sola plataforma', lead: 'Ya sea una pyme industrial o una tienda, peluquería o restaurante, HEPGO gestiona su negocio desde una sola pantalla, en 7 idiomas. En la nube o en su servidor.', cta: 'Empezar' },
+  ar: { h: 'من المصنع إلى المتجر — منصة واحدة', lead: 'سواء كنت منشأة صناعية أو بقالة أو حلاقاً أو مطعماً، يدير HEPGO عملك من شاشة واحدة وبسبع لغات. في السحابة أو على خادمك الخاص.', cta: 'ابدأ الآن' },
+  ru: { h: 'От завода до небольшого магазина — одна платформа', lead: 'Будь вы производственное МСБ или магазин, парикмахерская или кафе — HEPGO ведёт ваш бизнес с одного экрана, на 7 языках. В облаке или на вашем сервере.', cta: 'Начать' },
+};
+const DUO = {
+  tr: { eye: 'İki yapı, tek platform', h: 'Size uygun olanı seçin', p: 'HEPGO hem kurumsal üretim firmalarına hem de esnaflara göre şekillenir; kayıtta tipinizi seçersiniz.',
+    kobi: { t: 'KOBİ ve Üstü', d: 'İhtiyacınıza göre modül seçin; dilediğiniz zaman açıp kapatın.', list: ['Üretim, iş emri ve stok takibi', 'Satın alma, satış ve CRM', 'İK, finans ve evrak yönetimi', 'Canlı konum, kamera ve görüntülü toplantı'] },
+    esnaf: { t: 'Esnaf', d: 'Bakkal, berber/kuaför ve lokanta için hazır paketler — anında kurulum.', list: ['Bakkal: dokunmatik yazarkasa + barkod', 'Berber/Kuaför: randevu takvimi + hizmet ve personel payı', 'Lokanta: masa düzeni + garson + adisyon'] } },
+  en: { eye: 'Two setups, one platform', h: 'Pick what fits you', p: 'HEPGO adapts to both corporate manufacturers and small businesses; you choose your type at sign-up.',
+    kobi: { t: 'SME and up', d: 'Choose the modules you need; turn them on or off anytime.', list: ['Production, work orders and stock', 'Purchasing, sales and CRM', 'HR, finance and documents', 'Live location, cameras and video meetings'] },
+    esnaf: { t: 'Small business', d: 'Ready packages for grocery, barber/salon and restaurant — instant setup.', list: ['Grocery: touch POS + barcode', 'Barber/Salon: booking calendar + service & staff share', 'Restaurant: table layout + waiter + checks'] } },
+  de: { eye: 'Zwei Setups, eine Plattform', h: 'Wählen Sie, was passt', p: 'HEPGO passt sich sowohl Herstellern als auch Kleingewerbe an; den Typ wählen Sie bei der Anmeldung.',
+    kobi: { t: 'KMU und größer', d: 'Wählen Sie die benötigten Module; jederzeit ein- oder ausschalten.', list: ['Produktion, Arbeitsaufträge und Lager', 'Einkauf, Vertrieb und CRM', 'HR, Finanzen und Dokumente', 'Live-Standort, Kameras und Videokonferenzen'] },
+    esnaf: { t: 'Kleingewerbe', d: 'Fertige Pakete für Laden, Friseur/Salon und Restaurant — sofort einsatzbereit.', list: ['Laden: Touch-Kasse + Barcode', 'Friseur/Salon: Terminkalender + Leistung & Mitarbeiteranteil', 'Restaurant: Tischplan + Kellner + Rechnungen'] } },
+  fr: { eye: 'Deux configurations, une plateforme', h: 'Choisissez ce qui vous convient', p: 'HEPGO s’adapte aux industriels comme aux commerçants ; vous choisissez votre type à l’inscription.',
+    kobi: { t: 'PME et plus', d: 'Choisissez les modules nécessaires ; activez-les quand vous voulez.', list: ['Production, ordres de travail et stock', 'Achats, ventes et CRM', 'RH, finances et documents', 'Localisation en direct, caméras et visioconférence'] },
+    esnaf: { t: 'Artisan / commerçant', d: 'Forfaits prêts pour épicerie, coiffeur/salon et restaurant — installation immédiate.', list: ['Épicerie : caisse tactile + code-barres', 'Coiffeur/Salon : agenda + service & part du personnel', 'Restaurant : plan de tables + serveur + additions'] } },
+  es: { eye: 'Dos configuraciones, una plataforma', h: 'Elija lo que encaja', p: 'HEPGO se adapta tanto a fabricantes como a comercios; elige tu tipo al registrarte.',
+    kobi: { t: 'Pyme y más', d: 'Elija los módulos que necesita; actívelos cuando quiera.', list: ['Producción, órdenes de trabajo y stock', 'Compras, ventas y CRM', 'RRHH, finanzas y documentos', 'Ubicación en vivo, cámaras y videollamadas'] },
+    esnaf: { t: 'Autónomo / comercio', d: 'Paquetes listos para tienda, peluquería/salón y restaurante — instalación inmediata.', list: ['Tienda: TPV táctil + código de barras', 'Peluquería/Salón: agenda + servicio y parte del personal', 'Restaurante: plano de mesas + camarero + cuentas'] } },
+  ar: { eye: 'هيكلان، منصة واحدة', h: 'اختر ما يناسبك', p: 'يتكيّف HEPGO مع الشركات الصناعية والحرفيين معاً؛ تختار نوعك عند التسجيل.',
+    kobi: { t: 'المنشآت وما فوق', d: 'اختر الوحدات التي تحتاجها؛ فعّلها أو أوقفها متى شئت.', list: ['الإنتاج وأوامر العمل والمخزون', 'المشتريات والمبيعات وإدارة العملاء', 'الموارد البشرية والمالية والمستندات', 'الموقع المباشر والكاميرات والاجتماعات المرئية'] },
+    esnaf: { t: 'الحرفيون', d: 'باقات جاهزة للبقالة والحلاق/الصالون والمطعم — تثبيت فوري.', list: ['بقالة: نقطة بيع باللمس + باركود', 'حلاق/صالون: تقويم مواعيد + خدمة وحصة الموظف', 'مطعم: توزيع طاولات + نادل + فواتير'] } },
+  ru: { eye: 'Две конфигурации, одна платформа', h: 'Выберите своё', p: 'HEPGO подходит и производителям, и малому бизнесу; тип вы выбираете при регистрации.',
+    kobi: { t: 'МСБ и выше', d: 'Выберите нужные модули; включайте и выключайте в любой момент.', list: ['Производство, наряды и склад', 'Закупки, продажи и CRM', 'Кадры, финансы и документы', 'Геолокация, камеры и видеовстречи'] },
+    esnaf: { t: 'Малый бизнес', d: 'Готовые пакеты для магазина, парикмахерской/салона и кафе — мгновенная настройка.', list: ['Магазин: сенсорная касса + штрихкод', 'Парикмахерская/Салон: календарь записи + услуга и доля персонала', 'Кафе: план столов + официант + счета'] } },
+};
+
 function page() {
   const t = T[lang];
+  const wd = WORLD[lang] || WORLD.en;
+  const du = DUO[lang] || DUO.en;
   const sun = svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>');
   const moon = svg('<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>');
   const feat = FEATURES.map((f, i) => `<div class="feat reveal fc${i}">
@@ -404,6 +440,37 @@ function page() {
     </div>
   </div></header>
   <main>
+    <section class="world-hero">
+      <div class="globe" aria-hidden="true"><div class="globe__sphere">
+        <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
+        <span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span><span class="globe__m"></span>
+        <span class="globe__p globe__p--eq"></span><span class="globe__p globe__p--n"></span><span class="globe__p globe__p--s"></span>
+        <span class="globe__dot"></span><span class="globe__dot"></span><span class="globe__dot"></span><span class="globe__dot"></span>
+      </div></div>
+      <div class="world-copy reveal">
+        <span class="pill"><i></i> ${esc(t.heroPill)}</span>
+        <h1>${esc(wd.h)}</h1>
+        <p class="lead">${esc(wd.lead)}</p>
+        <div class="hero-cta"><a class="btn btn-primary btn-lg" href="/giris#kayit">${esc(wd.cta)}</a><a class="btn btn-ghost btn-lg" href="#yapilar">${esc(t.heroCta[1])}</a></div>
+      </div>
+    </section>
+
+    <section class="section duo" id="yapilar"><div class="wrap">
+      <div class="sec-head reveal"><span class="eyebrow">${esc(du.eye)}</span><h2>${esc(du.h)}</h2><p>${esc(du.p)}</p></div>
+      <div class="duo-grid">
+        <div class="duo-card reveal">
+          <div class="duo-ic duo-ic--kobi">${svg('<path d="M3 21h18M5 21V8l5-3 5 3v13M9 12h2M9 16h2M14 12h2M14 16h2"/>')}</div>
+          <h3>${esc(du.kobi.t)}</h3><p>${esc(du.kobi.d)}</p>
+          <ul>${du.kobi.list.map(x => `<li>${svg('<path d="M5 12l4 4 10-10"/>')}${esc(x)}</li>`).join('')}</ul>
+        </div>
+        <div class="duo-card reveal duo-card--esnaf">
+          <div class="duo-ic duo-ic--esnaf">${svg('<path d="M4 9h16l-1 11H5L4 9zM4 9l2-5h12l2 5M9 13h6"/>')}</div>
+          <h3>${esc(du.esnaf.t)}</h3><p>${esc(du.esnaf.d)}</p>
+          <ul>${du.esnaf.list.map(x => `<li>${svg('<path d="M5 12l4 4 10-10"/>')}${esc(x)}</li>`).join('')}</ul>
+        </div>
+      </div>
+    </div></section>
+
     <section class="hero"><div class="hero-glow"></div><div class="wrap hero-grid">
       <div class="hero-copy reveal">
         <span class="pill"><i></i> ${esc(t.heroPill)}</span>

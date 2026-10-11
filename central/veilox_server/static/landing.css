@@ -521,3 +521,53 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .gx-modcard.on .gx-modcard-s { color: var(--blue); font-weight: 600; }
 .gx-modcard.locked { opacity: .7; cursor: default; border-style: dashed; }
 [dir="rtl"] .gx-ft, [dir="rtl"] .gx-modcard { text-align: right; }
+
+/* ===== Üst header: çizgisel dönen dünya + KOBİ/Esnaf tanıtımı ===== */
+.world-hero { position: relative; overflow: hidden; padding: 96px 20px 72px; display: grid; place-items: center; text-align: center;
+  background: radial-gradient(1200px 600px at 50% -10%, var(--soft), transparent 70%); }
+.world-copy { position: relative; z-index: 2; max-width: 820px; }
+.world-copy h1 { font-size: clamp(30px, 5.2vw, 58px); line-height: 1.05; letter-spacing: -.02em; margin: 16px 0 14px; }
+.world-copy .lead { font-size: clamp(16px, 2.2vw, 20px); color: var(--sub); max-width: 680px; margin: 0 auto 26px; }
+.world-copy .hero-cta { justify-content: center; }
+
+.globe { position: absolute; top: 46%; left: 50%; width: min(660px, 92vw); height: min(660px, 92vw);
+  transform: translate(-50%, -50%); perspective: 1300px; opacity: .22; pointer-events: none; z-index: 0; }
+.globe__sphere { position: absolute; inset: 0; transform-style: preserve-3d; animation: globe-spin 34s linear infinite; will-change: transform; }
+@keyframes globe-spin { from { transform: rotateX(-18deg) rotateY(0); } to { transform: rotateX(-18deg) rotateY(360deg); } }
+.globe__m, .globe__p { position: absolute; inset: 0; border: 1px solid var(--blue); border-radius: 50%; }
+.globe__m:nth-child(1) { transform: rotateY(0deg); }
+.globe__m:nth-child(2) { transform: rotateY(22.5deg); }
+.globe__m:nth-child(3) { transform: rotateY(45deg); }
+.globe__m:nth-child(4) { transform: rotateY(67.5deg); }
+.globe__m:nth-child(5) { transform: rotateY(90deg); }
+.globe__m:nth-child(6) { transform: rotateY(112.5deg); }
+.globe__m:nth-child(7) { transform: rotateY(135deg); }
+.globe__m:nth-child(8) { transform: rotateY(157.5deg); }
+.globe__p--eq { transform: rotateX(90deg); }
+.globe__p--n { transform: rotateX(90deg) translateZ(-33%) scale(.8); border-color: var(--blue-2); }
+.globe__p--s { transform: rotateX(90deg) translateZ(33%) scale(.8); border-color: var(--blue-2); }
+.globe__dot { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%;
+  background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+.globe__dot:nth-child(12) { transform: rotateY(35deg) rotateX(22deg) translateZ(min(330px, 46vw)); }
+.globe__dot:nth-child(13) { transform: rotateY(120deg) rotateX(-14deg) translateZ(min(330px, 46vw)); }
+.globe__dot:nth-child(14) { transform: rotateY(210deg) rotateX(30deg) translateZ(min(330px, 46vw)); }
+.globe__dot:nth-child(15) { transform: rotateY(290deg) rotateX(-8deg) translateZ(min(330px, 46vw)); }
+@media (prefers-reduced-motion: reduce) { .globe__sphere { animation: none; transform: rotateX(-18deg) rotateY(25deg); } }
+
+/* KOBİ / Esnaf ikili kartlar */
+.duo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px; }
+.duo-card { position: relative; border: 1px solid var(--line); border-radius: var(--r); padding: 30px 28px; background: #fff;
+  box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s; }
+.duo-card:hover { transform: translateY(-4px); }
+.duo-card--esnaf { background: linear-gradient(180deg, var(--soft), #fff); }
+.duo-ic { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
+  background: var(--soft); color: var(--blue); }
+.duo-ic--esnaf { background: #e9f9ef; color: #16a34a; }
+.duo-ic svg { width: 28px; height: 28px; }
+.duo-card h3 { font-size: 22px; margin: 0 0 6px; }
+.duo-card > p { color: var(--sub); margin: 0 0 16px; }
+.duo-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.duo-card li { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; color: var(--ink); }
+.duo-card li svg { width: 20px; height: 20px; color: var(--blue); flex: none; margin-top: 1px; }
+.duo-card--esnaf li svg { color: #16a34a; }
+@media (max-width: 760px) { .duo-grid { grid-template-columns: 1fr; } .world-hero { padding: 72px 18px 52px; } }

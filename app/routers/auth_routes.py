@@ -303,7 +303,8 @@ def me(user=Depends(auth.current_user), conn=db.DB):
     out['must_change_password'] = bool(user['must_change_password']) and config.FORCE_PASSWORD_CHANGE and policy.get(conn)['force_first_change']
     from .. import kvkk
     out['kvkk_pending'] = (not user.get('support')) and (not kvkk.user_terms_ok(conn, user['id']))   # girişte zorunlu KVKK onayı (destek oturumu hariç)
-    if config.FEDERATION_CENTRAL:   # Merkez (Veilox) instance: özlük evrak geri sayımı YOK (destek ekibi, fabrika personeli değil)
+    # Özlük evrak geri sayımı: Merkez (Veilox), esnaf firmaları (İK yok, basit personel) ve İK modülü olmayan firmalarda GÖSTERİLMEZ.
+    if config.FEDERATION_CENTRAL or config.ESNAF_PKG or ('hr' not in user.get('modules', [])):
         out['docs_due'] = None
     else:
         from .hr import my_docs

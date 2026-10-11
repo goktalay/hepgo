@@ -85,8 +85,8 @@ def valid_modules(keys):
 # Ortak: admin, users (çekirdek) + companies (müşteri) + finance (kasa) + pos (yazarkasa).
 ESNAF_PACKAGES = {
     'bakkal':  ['admin', 'users', 'companies', 'products', 'stock', 'purchasing', 'finance', 'pos'],
-    'berber':  ['admin', 'users', 'companies', 'hr', 'finance', 'pos', 'sections', 'services', 'reservations'],
-    'lokanta': ['admin', 'users', 'companies', 'hr', 'products', 'stock', 'finance', 'pos',
+    'berber':  ['admin', 'users', 'companies', 'finance', 'pos', 'sections', 'services', 'reservations'],
+    'lokanta': ['admin', 'users', 'companies', 'products', 'stock', 'finance', 'pos',
                 'sections', 'reservations', 'waiter'],
 }
 ESNAF_PKGS = tuple(ESNAF_PACKAGES)

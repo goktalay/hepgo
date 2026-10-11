@@ -46,18 +46,24 @@
     });
   });
 
-  /* ---------- Pricing toggle ---------- */
-  var sw = document.getElementById('billSwitch');
-  sw.addEventListener('click', function(){
-    var yearly = sw.classList.toggle('yearly');
-    sw.setAttribute('aria-checked', yearly ? 'true' : 'false');
-    document.querySelectorAll('[data-price]').forEach(function(el){
-      el.textContent = yearly ? el.getAttribute('data-y') : el.getAttribute('data-m');
+  /* ---------- Beta koltuk sayacı ---------- */
+  (function(){
+    var left = document.getElementById('seatLeft');
+    var fill = document.getElementById('seatFill');
+    var note = document.getElementById('seatNote');
+    if (!left && !note) return;
+    fetch('/api/beta/seats').then(function(r){ return r.json(); }).then(function(d){
+      var total = d.total || 100, taken = d.taken || 0, rem = (typeof d.left === 'number') ? d.left : (total - taken);
+      if (left) left.textContent = rem;
+      if (fill) fill.style.width = Math.max(4, Math.min(100, Math.round(taken / total * 100))) + '%';
+      if (note) note.textContent = rem > 0
+        ? (taken + ' firma katıldı · ' + rem + ' beta koltuğu kaldı')
+        : 'Tüm beta koltukları doldu — bekleme listesine katılın';
+    }).catch(function(){
+      if (left) left.textContent = '100';
+      if (note) note.textContent = 'Beta koltukları açık — hemen başvurun';
     });
-    document.querySelectorAll('[data-billed]').forEach(function(el){
-      el.textContent = 'beta döneminde ücretsiz';
-    });
-  });
+  })();
 
   /* ---------- FAQ accordion ---------- */
   document.querySelectorAll('.acc').forEach(function(acc){

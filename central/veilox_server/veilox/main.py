@@ -684,6 +684,17 @@ def companies(request: Request):
         return [db.company_public(c) for c in db.rows(conn, 'SELECT * FROM companies ORDER BY id DESC')]
 
 
+BETA_SEATS_TOTAL = 100
+
+@app.get('/api/beta/seats')
+def beta_seats():
+    """Herkese açık: beta koltuk sayacı (toplam 100, kayıtlı firma sayısı düşülür)."""
+    with db.connect() as conn:
+        taken = int(db.row(conn, 'SELECT COUNT(*) AS c FROM companies')['c'])
+    left = max(0, BETA_SEATS_TOTAL - taken)
+    return {'total': BETA_SEATS_TOTAL, 'taken': taken, 'left': left}
+
+
 @app.get('/api/companies/{cid}')
 def company_get(cid: int, request: Request):
     current(request)

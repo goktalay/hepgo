@@ -427,11 +427,12 @@ export async function createFactory3D(mountEl, opts = {}) {
     const lx = Math.min(rect.width - 246, Math.max(0, clientX - rect.left)), ly = Math.max(150, clientY - rect.top);
     camBox.style.left = lx + 'px'; camBox.style.top = ly + 'px';
     camBox.classList.toggle('touch', !!pinned);
-    if (camCur !== cam.id || camBox.hidden) {
+    if (camCur !== cam.id || camBox.hidden || camPinned !== !!pinned) {
       camCur = cam.id;
       camBox.innerHTML = `<div class="f3d-cam-hd">📷 ${esc(cam.name)}${cam.live ? '<span class="f3d-rec"><i></i>CANLI</span>' : ''}${pinned ? '<button class="f3d-cam-x" type="button" aria-label="Kapat">✕</button>' : ''}</div>`
         + (cam.live ? `<img alt="" src="${frameUrl(cam.id)}">` : '') + `<div class="f3d-cam-ft">${cam.live ? 'NVR anlık görüntü · sürekli yenilenir' : 'Planlanan kamera — NVR bağlı değil'}</div>`;
       const x = camBox.querySelector('.f3d-cam-x'); if (x) x.onclick = hideCam;
+      const im = camBox.querySelector('img'); if (im) im.onerror = () => { const ft = camBox.querySelector('.f3d-cam-ft'); if (ft) ft.textContent = 'Görüntü alınamadı — kamera çevrimdışı olabilir'; };
       if (camTimer) clearInterval(camTimer);
       if (cam.live) { const img = camBox.querySelector('img'); camTimer = setInterval(() => { if (!camBox.hidden && img) img.src = frameUrl(cam.id); }, 1500); }
     }

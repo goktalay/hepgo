@@ -186,6 +186,27 @@ export async function render(view, params, ctx) {
     sideBody);
   side.hidden = true;
   stage.append(toolbarEl, tbBgInp, side);
+  // ---- 3B canlı izleme (yalnız 'live' modunda; tembel yüklenir) ----
+  const el3d = h('div', { class: 'fab-3d', hidden: true });
+  stage.append(el3d);
+  let fab3d = null, fab3dBusy = false;
+  const is3dDark = () => { try { return document.documentElement.getAttribute('data-theme') === 'dark' || document.body.classList.contains('dark') || document.body.classList.contains('theme-dark'); } catch { return false; } };
+  async function ensure3D() {
+    if (fab3d || fab3dBusy) return fab3d;
+    fab3dBusy = true;
+    try { const mod = await import('./factory3d.js'); fab3d = await mod.createFactory3D(el3d, { fileUrl, dark: is3dDark() }); }
+    catch (e) { fab3d = null; }
+    fab3dBusy = false; return fab3d;
+  }
+  async function show3D(on) {
+    if (!on) { el3d.hidden = true; svg.style.display = ''; return; }
+    svg.style.display = 'none'; el3d.hidden = false;
+    const inst = await ensure3D();
+    if (!inst) { el3d.hidden = true; svg.style.display = ''; return; }
+    inst.build({ rooms: st.rooms, cams: st.cams, markers: st.markers, stairs: st.stairs });
+    inst.updateLive(st.liveData?.people || []);
+    inst.resize();
+  }
   const floorBar = h('div', { class: 'fab-floors' });
   const hint = h('div', { class: 'fab-hint' });
   const wrap = h('div', { class: 'fab-wrap' }, h('div', { class: 'fab-main' }, floorBar, stage, hint));
@@ -224,7 +245,7 @@ export async function render(view, params, ctx) {
   function drawFloorBar() {
     const tabs = st.floors.map(f => h('button', {
       class: `fab-floor ${f.id === st.floorId ? 'on' : ''}`, type: 'button',
-      onclick: async () => { st.floorId = f.id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); },
+      onclick: async () => { st.floorId = f.id; st.sel = null; st.draft = null; await loadFloorData(); drawCanvas(); drawSide(); drawFloorBar(); if (st.mode === 'live') show3D(true); },
       ondblclick: () => renameFloor(f),
     }, f.name));
     const add = h('button', { class: 'fab-floor add', type: 'button', title: 'Kat ekle', onclick: addFloor }, '+ Kat');
@@ -1117,7 +1138,7 @@ export async function render(view, params, ctx) {
   }
   async function refreshLive() {
     st.liveData = await api.get('/api/factory/now?minutes=10');
-    if (st.mode === 'live') { drawCanvas(); drawLiveSide(); }
+    if (st.mode === 'live') { drawCanvas(); drawLiveSide(); if (fab3d && !el3d.hidden) fab3d.updateLive(st.liveData?.people || []); }
     else { drawMoveSide(); drawOverlay(); }
   }
   function livePanel() {
@@ -1230,8 +1251,9 @@ export async function render(view, params, ctx) {
     hintText('');
     if (mode === 'live') { st.panelOpen = true; startLive(); }
     drawCanvas(); drawSide();
+    show3D(mode === 'live');
   }
-  onLeave(() => { if (st.liveTimer) clearInterval(st.liveTimer); if (st.play.raf) cancelAnimationFrame(st.play.raf); });
+  onLeave(() => { if (st.liveTimer) clearInterval(st.liveTimer); if (st.play.raf) cancelAnimationFrame(st.play.raf); fab3d?.dispose?.(); });
 
   const toolbar = moduleToolbar(segmented([['edit', 'Düzen'], ['move', 'Hareket'], ['live', 'Canlı']], st.mode, setMode, { tabs: true }));
   clear(view, pageHead('Fabrika', { back: '#/', sub: 'Kat planı · kamera/personel yerleşimi · hareket izi · canlı konum' }), toolbar, wrap);
@@ -1268,6 +1290,9 @@ function injectStyle() {
   .fab-floor.on{background:var(--pri,#2563eb);color:#fff;border-color:var(--pri,#2563eb)}
   .fab-floor.add{border-style:dashed;color:var(--muted,#6b7280)}
   .fab-stage{flex:1;position:relative;border:1px solid var(--line,#e5e7eb);border-radius:10px;overflow:hidden;background:var(--bg2,#f8fafc);touch-action:none}
+  .fab-3d{position:absolute;inset:0;z-index:3;background:radial-gradient(130% 120% at 50% 0%,rgba(99,140,255,.10),transparent 60%)}
+  .fab-3d canvas{border-radius:inherit;cursor:grab}
+  .fab-3d canvas:active{cursor:grabbing}
   .fab-svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
   .fab-svg:active{cursor:grabbing}
   .fab-grid{stroke:#e2e8f0;stroke-width:1;vector-effect:non-scaling-stroke}

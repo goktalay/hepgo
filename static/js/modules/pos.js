@@ -2,9 +2,10 @@
 // sağda sepet (adet +/-), altta ödeme (Nakit/Kart/Veresiye) + kasa seçimi + Satışı Tamamla.
 // Barkod: arama kutusuna el tarayıcı (klavye) yazar; Enter → ilk eşleşen ürün sepete eklenir.
 import { api } from '../api.js';
-import { clear, h, pageHead, toast, toastError } from '../ui.js';
+import { clear, h, modal, pageHead, toast, toastError } from '../ui.js';
 
 const TL = n => `${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export async function render(view, params, ctx) {
   const reloadRef = { fn: null };
@@ -22,6 +23,10 @@ export async function render(view, params, ctx) {
 
   // ---- sol: ürünler ----
   const search = h('input', { class: 'pos-search', type: 'search', placeholder: 'Barkod okut veya ürün ara…', autocomplete: 'off' });
+  // Kamera ile barkod okuma: yalnız BarcodeDetector destekleyen tarayıcılarda (Android Chrome vb.) görünür.
+  const canScan = typeof window.BarcodeDetector !== 'undefined';
+  const scanBtn = h('button', { class: 'btn pos-scan', type: 'button', title: 'Kamera ile barkod oku', hidden: !canScan,
+    onclick: () => openScanner(code => addByCode(code)) }, '📷');
   const grid = h('div', { class: 'pos-grid' });
   const drawGrid = (list) => {
     clear(grid);
@@ -34,15 +39,20 @@ export async function render(view, params, ctx) {
     const q = search.value.trim().toLocaleLowerCase('tr');
     drawGrid(q ? prods.filter(p => `${p.name} ${p.code} ${p.barcode || ''}`.toLocaleLowerCase('tr').includes(q)) : prods);
   };
+  // Barkod/ad ile ürün bul + sepete ekle (hem Enter hem kamera okuması bunu kullanır)
+  const addByCode = (q) => {
+    q = (q || '').trim();
+    if (!q) return false;
+    const exact = prods.find(p => (p.barcode || '') === q) || prods.find(p => p.code === q)
+      || prods.filter(p => p.name.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))[0];
+    if (exact) { addToCart(exact); search.value = ''; filter(); return true; }
+    toastError('Ürün bulunamadı: ' + q); return false;
+  };
   search.addEventListener('input', filter);
   search.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const q = search.value.trim();
-    if (!q) return;
-    const exact = prods.find(p => (p.barcode || '') === q) || prods.find(p => p.code === q)
-      || prods.filter(p => p.name.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))[0];
-    if (exact) { addToCart(exact); search.value = ''; filter(); } else toastError('Ürün bulunamadı');
+    addByCode(search.value);
   });
 
   // ---- sağ: sepet ----
@@ -79,6 +89,7 @@ export async function render(view, params, ctx) {
     if (!cart.size) return;
     if (state.payment !== 'Veresiye' && !state.account && accounts.length) { toastError('Kasa seçin'); return; }
     finishBtn.disabled = true; finishBtn.textContent = 'Kaydediliyor…';
+    const snapshot = [...cart.values()].map(x => ({ name: x.p.name, qty: x.qty, price: x.p.sale_price || 0 }));
     try {
       const r = await api.post('/api/pos/sale', {
         items: [...cart.values()].map(x => ({ product_id: x.p.id, qty: x.qty })),
@@ -86,13 +97,14 @@ export async function render(view, params, ctx) {
       });
       toast(`Satış tamam · ${r.number} · ${TL(r.total)}`);
       cart.clear(); drawCart(); search.focus();
+      printReceipt(r, snapshot, ctx);   // fişi yazdırma penceresi (kullanıcı iptal edebilir)
     } catch (e) { toastError(e.message || 'Satış kaydedilemedi'); }
     finishBtn.disabled = false; finishBtn.textContent = 'Satışı Tamamla';
   };
 
   clear(wrap);
   wrap.append(
-    h('div', { class: 'pos-left' }, search, grid),
+    h('div', { class: 'pos-left' }, h('div', { class: 'pos-search-row' }, search, scanBtn), grid),
     h('div', { class: 'pos-right' },
       h('div', { class: 'pos-cart-h' }, 'Sepet'),
       cartBox,
@@ -154,4 +166,52 @@ async function openCatalog(onDone) {
     body.append(form, listBox);
   };
   try { draw(await api.get('/api/pos/catalog')); } catch { clear(body, h('p', { class: 'muted' }, 'Yüklenemedi')); }
+}
+
+// Kamera ile barkod okuma (BarcodeDetector): okunan ilk barkodu onCode(value) ile verir. Kamera erişimi gerekir.
+async function openScanner(onCode) {
+  if (typeof window.BarcodeDetector === 'undefined') { toastError('Tarayıcı kamera ile barkod okumayı desteklemiyor'); return; }
+  const video = h('video', { class: 'pos-scan-video', autoplay: true, muted: true, playsinline: true });
+  let stream = null, raf = null, done = false;
+  const stop = () => { done = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); };
+  const m = modal({ title: 'Barkod Okut', wide: false, onClose: stop,
+    body: h('div', { class: 'pos-scan-wrap' }, video, h('p', { class: 'muted small' }, 'Barkodu kameraya gösterin')),
+    actions: [{ label: 'Kapat' }] });
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = stream;
+    const detector = new window.BarcodeDetector();
+    const scan = async () => {
+      if (done) return;
+      try {
+        const codes = await detector.detect(video);
+        const val = codes && codes[0] && codes[0].rawValue;
+        if (val) { stop(); m.close(); if (navigator.vibrate) navigator.vibrate(60); onCode(val); return; }
+      } catch { /* kare atlandı */ }
+      raf = requestAnimationFrame(scan);
+    };
+    raf = requestAnimationFrame(scan);
+  } catch { stop(); m.close(); toastError('Kameraya erişilemedi (izin gerekebilir)'); }
+}
+
+// Fiş yazdırma: satış sonrası 72mm fiş düzeni, ayrı pencerede yazdırılır (açılır pencere izni gerekir).
+function printReceipt(r, items, ctx) {
+  const company = (ctx && ctx.meta && ctx.meta.company) || 'HEPGO';
+  const now = new Date().toLocaleString('tr-TR');
+  const rows = items.map(it => `<tr><td>${esc(it.name)}</td><td class="q">${it.qty}</td><td class="p">${TL(it.qty * it.price)}</td></tr>`).join('');
+  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>Fiş ${esc(r.number)}</title>
+<style>*{font-family:'Courier New',monospace}body{width:72mm;margin:0 auto;padding:6px;font-size:12px;color:#000}
+h3{text-align:center;margin:4px 0}.meta{text-align:center;font-size:11px;margin-bottom:6px}
+table{width:100%;border-collapse:collapse}td{padding:2px 0;vertical-align:top}.q{text-align:center;width:30px}.p{text-align:right;white-space:nowrap}
+.tot{border-top:1px dashed #000;margin-top:6px;padding-top:4px;font-weight:bold;display:flex;justify-content:space-between;font-size:13px}
+.foot{text-align:center;margin-top:8px;font-size:11px}</style></head>
+<body><h3>${esc(company)}</h3><div class="meta">${esc(r.number)}<br>${esc(now)}</div>
+<table>${rows}</table>
+<div class="tot"><span>TOPLAM</span><span>${TL(r.total)}</span></div>
+<div class="meta" style="margin-top:4px">${esc(r.payment || '')} · KDV ${TL(r.vat)}</div>
+<div class="foot">Teşekkür ederiz</div>
+<script>window.onload=function(){window.print();setTimeout(function(){window.close()},400)}<\/script></body></html>`;
+  const w = window.open('', '_blank', 'width=360,height=640');
+  if (!w) { toast('Fiş için açılır pencereye izin verin'); return; }
+  w.document.write(html); w.document.close();
 }

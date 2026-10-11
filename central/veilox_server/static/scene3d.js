@@ -3,9 +3,11 @@
 // Berber (koltuk/ayna/dönen direk/makas), Lokanta (masa/tabak/sandalye/servis kapağı).
 // Sahneler yavaşça döner, imleci hafifçe izler; sektör değişince eski sahne küçülüp kaybolur, yeni açılır.
 // Görünmezken (sekme arkada / ekran dışı) çizim durur. WebGL yoksa çağıran CSS'e düşer.
-const LIB = '/static/vendor/three/three.module.min.js';
+const LIB = '/static/vendor/three/';
 let _T = null;
-const loadThree = () => (_T ??= import(LIB).then(m => m).catch(e => { _T = null; throw e; }));
+const loadThree = () => (_T ??= Promise.all([import(LIB + 'three.module.min.js'), import(LIB + 'RoomEnvironment.js')])
+  .then(([T, R]) => ({ T, RoomEnvironment: R.RoomEnvironment }))
+  .catch(e => { _T = null; throw e; }));
 
 export function webglOK() {
   try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; }
@@ -14,23 +16,33 @@ export function webglOK() {
 export const SECTOR_KEYS = ['factory', 'grocery', 'barber', 'restaurant'];
 
 export async function mountScene(canvas) {
-  const T = await loadThree();
+  const { T, RoomEnvironment } = await loadThree();
 
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = T.ACESFilmicToneMapping;   // sinematik ton eşleme
+  renderer.toneMappingExposure = 1.08;
+  if ('outputColorSpace' in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
   const scene = new T.Scene();
+  scene.fog = new T.Fog(0x0b1322, 12, 21);          // uzakta yumuşak kararma (derinlik)
   const camera = new T.PerspectiveCamera(42, 1, 0.1, 100);
   camera.position.set(0, 1.4, 9);
   camera.lookAt(0, 0.4, 0);
 
+  // ---- PBR ortam yansıması (metal/krom parlamaları gerçekçi olur) ----
+  const pmrem = new T.PMREMGenerator(renderer);
+  try { scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; if ('environmentIntensity' in scene) scene.environmentIntensity = 0.75; } catch { /* ortam yoksa düz ışıkla devam */ }
+
   // ---- ışıklar ----
-  scene.add(new T.HemisphereLight(0xcfe0ff, 0x0a1120, 1.05));
-  const key = new T.DirectionalLight(0xffffff, 1.5); key.position.set(4, 7, 6); scene.add(key);
-  const rim = new T.DirectionalLight(0x7c5cf5, 0.9); rim.position.set(-6, 3, -4); scene.add(rim);
+  scene.add(new T.HemisphereLight(0xcfe0ff, 0x0a1120, 0.85));
+  const key = new T.DirectionalLight(0xffffff, 1.6); key.position.set(4, 7, 6); scene.add(key);
+  const rim = new T.DirectionalLight(0x7c5cf5, 1.0); rim.position.set(-6, 3, -4); scene.add(rim);
+  const accent = new T.PointLight(0x2f6fed, 0, 16, 2); accent.position.set(0, 1.2, 3); scene.add(accent);
+  const ACCENT = { factory: 0xf59e0b, grocery: 0x16a34a, barber: 0xef4444, restaurant: 0xf59e0b };
 
   // ---- yardımcılar ----
-  const mat = (color, o = {}) => new T.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15, flatShading: true, ...o });
-  const metal = (color, o = {}) => new T.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.85, flatShading: true, ...o });
+  const mat = (color, o = {}) => new T.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2, flatShading: true, envMapIntensity: 0.7, ...o });
+  const metal = (color, o = {}) => new T.MeshStandardMaterial({ color, roughness: 0.22, metalness: 1.0, flatShading: true, envMapIntensity: 1.35, ...o });
   const glow = (color, k = 1.3) => new T.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k, roughness: 0.4, flatShading: true });
   const M = (geo, m) => new T.Mesh(geo, m);
   const box = (w, h, d, m) => M(new T.BoxGeometry(w, h, d), m);
@@ -146,11 +158,13 @@ export async function mountScene(canvas) {
 
   let active = 'factory';
   scenes[active].visible = true; scenes[active].scale.setScalar(1);
-  let targetScale = { ...Object.fromEntries(SECTOR_KEYS.map(k => [k, k === active ? 1 : 0.001])) };
+  const targetScale = { ...Object.fromEntries(SECTOR_KEYS.map(k => [k, k === active ? 1 : 0.001])) };
+  accent.color.setHex(ACCENT[active]); accent.intensity = 22;
 
   function show(key) {
     if (!scenes[key] || key === active) return;
     active = key;
+    accent.color.setHex(ACCENT[key] || 0x2f6fed);
     SECTOR_KEYS.forEach(k => { targetScale[k] = k === key ? 1 : 0.001; if (k === key) scenes[k].visible = true; });
   }
 

@@ -679,7 +679,7 @@ async function mount3D() {
   if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
   const canvas = $('#scene3d');
   if (!canvas) return;
-  const mod = await import('/static/scene3d.js?v=20261011c').catch(() => null);
+  const mod = await import('/static/scene3d.js?v=20261011d').catch(() => null);
   if (!mod || !mod.webglOK()) return;   // WebGL yok → CSS dünya fallback
   const token = ++_sceneToken;
   let scene;

@@ -270,16 +270,17 @@ const ROWS = [
 // Gerçek ekran görüntüleri galerisi
 const S = '/static/img/landing/shots/';
 const GALLERY = [
-  { img: S + 'dashboard.webp', tr: 'Kişisel pano', en: 'Personal dashboard', de: 'Persönliches Dashboard', fr: 'Tableau de bord personnel', es: 'Panel personal', ar: 'لوحة شخصية', ru: 'Личная панель' },
+  { img: S + 'dashboard.webp', tr: 'Firma yönetimi', en: 'Company management', de: 'Firmenverwaltung', fr: 'Gestion des entreprises', es: 'Gestión de empresas', ar: 'إدارة الشركات', ru: 'Управление компаниями' },
   { img: S + 'printers.webp', tr: 'Yazıcı yönetimi', en: 'Printer management', de: 'Druckerverwaltung', fr: 'Gestion des imprimantes', es: 'Gestión de impresoras', ar: 'إدارة الطابعات', ru: 'Управление принтерами' },
-  { img: S + 'orders.webp', tr: 'İş emri yönetimi', en: 'Work orders', de: 'Arbeitsaufträge', fr: 'Ordres de travail', es: 'Órdenes de trabajo', ar: 'أوامر العمل', ru: 'Наряды' },
+  { img: S + 'orders.webp', tr: 'Üretim yönetimi', en: 'Production management', de: 'Produktionsverwaltung', fr: 'Gestion de production', es: 'Gestión de producción', ar: 'إدارة الإنتاج', ru: 'Управление производством' },
   { img: S + 'reports.webp', tr: 'Raporlar (22+)', en: 'Reports (22+)', de: 'Berichte (22+)', fr: 'Rapports (22+)', es: 'Informes (22+)', ar: 'تقارير (22+)', ru: 'Отчёты (22+)' },
   { img: S + 'belge-list.webp', tr: 'Belge Yönetim', en: 'Document suite', de: 'Dokumentensuite', fr: 'Suite bureautique', es: 'Suite de documentos', ar: 'حزمة المستندات', ru: 'Документы' },
   { img: S + 'belge-excel.webp', tr: 'Uygulama içi Excel', en: 'In-app spreadsheet', de: 'Tabellen in der App', fr: 'Tableur intégré', es: 'Hoja de cálculo en la app', ar: 'جداول داخل التطبيق', ru: 'Таблицы в приложении' },
-  { img: S + 'meet.webp', tr: 'Görüntülü toplantı', en: 'Video meetings', de: 'Videokonferenzen', fr: 'Visioconférences', es: 'Videollamadas', ar: 'اجتماعات مرئية', ru: 'Видеоконференции' },
+  { img: S + 'fabrika.webp', tr: 'Fabrika yerleşimi', en: 'Factory layout', de: 'Fabriklayout', fr: 'Plan d’usine', es: 'Plano de fábrica', ar: 'مخطط المصنع', ru: 'План завода' },
   { img: S + 'field.webp', tr: 'Saha yönetimi', en: 'Field management', de: 'Außendienst', fr: 'Gestion du terrain', es: 'Gestión de campo', ar: 'إدارة الميدان', ru: 'Выезды' },
   { img: S + 'finance-cash.webp', tr: 'Nakit akışı ve yaşlandırma', en: 'Cash flow & aging', de: 'Cashflow & Fälligkeiten', fr: 'Trésorerie & balance âgée', es: 'Tesorería y antigüedad', ar: 'التدفق النقدي والأعمار', ru: 'Денежный поток и старение' },
   { img: S + 'finance-trial.webp', tr: 'Mizan', en: 'Trial balance', de: 'Rohbilanz', fr: 'Balance', es: 'Balance de sumas', ar: 'ميزان المراجعة', ru: 'Оборотная ведомость' },
+  { img: S + 'kullanicilar.webp', tr: 'Kullanıcı yönetimi', en: 'User management', de: 'Benutzerverwaltung', fr: 'Gestion des utilisateurs', es: 'Gestión de usuarios', ar: 'إدارة المستخدمين', ru: 'Управление пользователями' },
 ];
 
 // Modül ikonları (sabit)

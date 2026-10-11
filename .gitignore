@@ -22,3 +22,4 @@ vendor/whisper
 # Claude Code yerel ayarları (izinler)
 .claude/settings.local.json
 /agent-dist/
+central/veilox_server/static/img/landing/shots/_backup-*/

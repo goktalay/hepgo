@@ -18,7 +18,10 @@ const PAL = {
   light: { grid1: 0xd3d9e6, grid2: 0xe3e8f1, slab: 0xffffff, slabSide: 0xeef1f8, deck: 0xf3f5fa, wall: 0xf7f8fc, sill: 0xe6eaf3, steel: 0xb7c2d6, label: '#1c2233', labelBg: 'rgba(255,255,255,.92)', accent: 0x7c6cf0 },
   dark: { grid1: 0x263252, grid2: 0x1b2540, slab: 0x1f2a44, slabSide: 0x182238, deck: 0x25304d, wall: 0x3a4664, sill: 0x2b3650, steel: 0x55617f, label: '#e8edf8', labelBg: 'rgba(18,24,40,.86)', accent: 0x9d8cff },
 };
-const ageColor = at => { const ms = at ? Date.now() - new Date(at).getTime() : Infinity; return ms <= 3e5 ? 0x16a34a : ms <= 36e5 ? 0xf59e0b : 0xdc2626; };
+// İki kademe: yakın zamanda görüldü (≤10 dk) → yeşil; daha eski → gri "son görüldüğü yer"
+const RECENT_MS = 10 * 60000;
+const isRecent = at => !!at && (Date.now() - new Date(at).getTime()) <= RECENT_MS;
+const ageColor = at => (isRecent(at) ? 0x16a34a : 0x98a2b3);
 const ageText = at => { if (!at) return '—'; const m = Math.round((Date.now() - new Date(at).getTime()) / 60000); return m < 1 ? 'şimdi' : m < 60 ? `${m} dk` : `${Math.round(m / 60)} sa`; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -39,7 +42,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       <div class="f3d-top"><span class="f3d-dot live"></span><b>Canlı İzleme · 3B</b><span class="f3d-chip">RTLS</span></div>
       <div class="f3d-floor"></div>
       <div class="f3d-stats">
-        <div class="f3d-stat v"><b class="n-people">0</b><span>Kişi</span></div>
+        <div class="f3d-stat v"><b class="n-people">0</b><span>Sahada</span></div>
         <div class="f3d-stat c"><b class="n-cams">0</b><span>Kamera</span></div>
         <div class="f3d-stat m"><b class="n-markers">0</b><span>İşaretçi</span></div>
       </div>
@@ -47,12 +50,15 @@ export async function createFactory3D(mountEl, opts = {}) {
     <div class="f3d-card f3d-people">
       <div class="f3d-sub">Sahadaki kişiler</div>
       <div class="f3d-list"></div>
-      <div class="f3d-leg"><span><i class="g"></i>çok yeni</span><span><i class="y"></i>1 saat içinde</span><span><i class="r"></i>daha eski</span></div>
-    </div>
-    <div class="f3d-floors"></div>`;
+      <div class="f3d-leg"><span><i class="g"></i>yakın zamanda görüldü</span><span><i class="x"></i>son görüldüğü yer</span></div>
+    </div>`;
   mountEl.appendChild(hud); if (dark) hud.classList.add('f3d-dark');
+  // kat seçici: üstte ortada, HEPGO modüllerindeki silindirik segment buton (.seg) tarzı
+  const hudF = document.createElement('div'); hudF.className = 'seg f3d-floors';
+  hudF.style.cssText = 'position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:6;pointer-events:auto';
+  mountEl.appendChild(hudF);
   const q = s => hud.querySelector(s);
-  const el = { floor: q('.f3d-floor'), nPeople: q('.n-people'), nCams: q('.n-cams'), nMarkers: q('.n-markers'), list: q('.f3d-list'), floors: q('.f3d-floors') };
+  const el = { floor: q('.f3d-floor'), nPeople: q('.n-people'), nCams: q('.n-cams'), nMarkers: q('.n-markers'), list: q('.f3d-list'), floors: hudF };
   // sağ cam panel: bölgeler + kameralar (vantra "Ward cameras" tarzı)
   const hudR = document.createElement('div'); hudR.className = 'f3d-hud f3d-right';
   hudR.style.cssText = 'position:absolute;right:14px;top:14px;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:10px;width:236px;max-height:calc(100% - 28px)';
@@ -64,13 +70,14 @@ export async function createFactory3D(mountEl, opts = {}) {
     el.floors.innerHTML = '';
     if (!floors.length) return;
     floors.forEach(f => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'f3d-fl' + (f.id === floorId ? ' on' : ''); b.textContent = f.name;
+      const b = document.createElement('button'); b.type = 'button'; b.className = f.id === floorId ? 'on' : ''; b.textContent = f.name;
       b.onclick = () => { if (onFloor) onFloor(f.id); }; el.floors.appendChild(b);
     });
   };
   const renderPeople = (ppl) => {
-    el.nPeople.textContent = ppl.length;
-    if (!ppl.length) { el.list.innerHTML = '<div class="f3d-empty">Son 10 dakikada tanınan kişi yok</div>'; return; }
+    ppl = [...(ppl || [])].sort((a, b) => (isRecent(b.at) - isRecent(a.at)) || (new Date(b.at || 0) - new Date(a.at || 0)));
+    el.nPeople.textContent = ppl.filter(p => isRecent(p.at)).length;
+    if (!ppl.length) { el.list.innerHTML = '<div class="f3d-empty">Henüz tanınan kişi yok</div>'; return; }
     el.list.innerHTML = ppl.slice(0, 8).map(p => {
       const col = '#' + ageColor(p.at).toString(16).padStart(6, '0');
       const av = p.crop ? `<img src="${esc(fileUrl(p.crop, 64))}" alt="">` : `<i style="background:${col}">${esc((p.subject_name || '?').slice(0, 1).toLocaleUpperCase('tr'))}</i>`;
@@ -107,7 +114,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   const gBg = new T.Group(); scene.add(gBg);
   const gZones = new T.Group(); scene.add(gZones);
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, M = {}, zones = [], zoneGrid = null, camNames = [], labels = [], freeLabels = [];
+  let grid, M = {}, zones = [], zoneGrid = null, camNames = [], labels = [], freeLabels = [], camMeshes = [];
   const onLabel = opts.onLabel || null;   // bölgeye/alana tıklayınca ad verme (factory.js kaydeder)
   const ZONE_COLORS = [0xc7c2ff, 0xbfe3ff, 0xc3f1dc, 0xffe1c4, 0xffd1dc, 0xd9f0b8, 0xfff0b3, 0xd4e6ff];
 
@@ -149,7 +156,7 @@ export async function createFactory3D(mountEl, opts = {}) {
 
   // ---------- polygon odalar + kameralar + işaretçiler ----------
   const buildWorld = (rooms, cams, markers, stairs) => {
-    disposeGroup(gWorld);
+    disposeGroup(gWorld); camMeshes = [];
     (rooms || []).forEach(r => {
       const pts = (r.points || []).filter(p => p && p.length >= 2); if (pts.length < 3) return;
       const shape = new T.Shape(); pts.forEach(([x, y], i) => { const sx = px(x), sz = pz(y); i ? shape.lineTo(sx, sz) : shape.moveTo(sx, sz); }); shape.closePath();
@@ -171,11 +178,14 @@ export async function createFactory3D(mountEl, opts = {}) {
     });
     (cams || []).forEach(c => {
       if (c.x == null || c.y == null) return;
-      const g = new T.Group(); g.position.set(px(c.x), WALL_H + 0.05, pz(c.y)); gWorld.add(g);
-      const dir = (c.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
-      const body = new T.Mesh(new T.BoxGeometry(0.26, 0.26, 0.4), M.cam); body.rotation.x = 0.4; body.castShadow = true; g.add(body);
-      const lens = new T.Mesh(new T.SphereGeometry(0.1, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.06, 0.24); g.add(lens);
-      const cone = new T.Mesh(new T.ConeGeometry(1.7, 4, 24, 1, true), M.cone); cone.position.set(0, -0.3, 2); cone.rotation.x = -Math.PI / 2; g.add(cone);
+      const cx = px(c.x), cz = pz(c.y), dir = (c.direction || 0) * Math.PI / 180;
+      const g = new T.Group(); g.position.set(cx, IMG_WALL_H + 0.1, cz); g.rotation.y = -dir; gWorld.add(g);
+      const body = new T.Mesh(new T.BoxGeometry(0.26, 0.2, 0.36), M.cam); body.castShadow = true; g.add(body);
+      const lens = new T.Mesh(new T.SphereGeometry(0.08, 14, 12), new T.MeshStandardMaterial({ color: 0x11161f, roughness: 0.15, metalness: 0.9 })); lens.position.set(0, -0.02, 0.2); g.add(lens);
+      body.userData.cam = { id: c.camera_id, name: c.camera_name || c.name || `Kamera #${c.camera_id}`, live: true }; camMeshes.push(body);
+      // kapsama alanı: 2B'deki gibi 70 birim, ~69° (1.2 rad), amber — zeminde yumuşak sektör
+      const len = 70 * X.s, sec = makeSectorPlane(len, 1.2, 0xf59e0b);
+      sec.position.set(cx + Math.cos(dir) * len / 2, 0.025, cz + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
     });
     (stairs || []).forEach(sObj => { if (sObj.x == null || sObj.y == null) return; const m = new T.Mesh(new T.BoxGeometry(1.4, 0.5, 1.4), M.sill); m.position.set(px(sObj.x), 0.25, pz(sObj.y)); m.castShadow = true; gWorld.add(m); });
     // altyapı işaretçileri: planlanan kameralar duvar üstünde küçük gövde+lens (vantra), diğerleri zeminde küçük renkli nokta + minik rozet
@@ -192,6 +202,10 @@ export async function createFactory3D(mountEl, opts = {}) {
         const body = new T.Mesh(new T.BoxGeometry(0.2, 0.16, 0.3), M.cam); body.position.y = 0.06; body.castShadow = true; g.add(body);
         const lens = new T.Mesh(new T.SphereGeometry(0.06, 12, 10), lensMat); lens.position.set(0, 0.04, 0.17); g.add(lens);
         const led = new T.Mesh(new T.SphereGeometry(0.022, 8, 8), new T.MeshBasicMaterial({ color: 0xf43f5e })); led.position.set(0.07, 0.12, 0.1); g.add(led);
+        const dir = (m.direction || 0) * Math.PI / 180; g.rotation.y = -dir;
+        body.userData.cam = { id: m.camera_id || null, name: m.label || m.name || (m.camera_id ? (m.camera_name || `Kamera #${m.camera_id}`) : (meta.label || 'Kamera')), live: !!m.camera_id }; camMeshes.push(body);
+        const len = (m.kind === 'cam_outdoor' ? 95 : 72) * X.s, sec = makeSectorPlane(len, 1.2, 0x38bdf8);   // 2B ile aynı: mavi, 72/95 birim
+        sec.position.set(x + Math.cos(dir) * len / 2, 0.025, z + Math.sin(dir) * len / 2); sec.rotation.z = -dir; gWorld.add(sec);
         return;
       }
       const dot = new T.Mesh(new T.SphereGeometry(0.085, 12, 10), new T.MeshStandardMaterial({ color: col, roughness: 0.35, metalness: 0.2 }));
@@ -353,10 +367,10 @@ export async function createFactory3D(mountEl, opts = {}) {
     spots.forEach(list => list.forEach((p, i) => {
       const n = list.length, off = n > 1 ? 0.95 : 0, ang = (i / n) * Math.PI * 2;
       const sx = px(p.x) + Math.cos(ang) * off, sz = pz(p.y) + Math.sin(ang) * off;
-      const col = new T.Color(ageColor(p.at));
-      const ring = new T.Mesh(new T.RingGeometry(0.42, 0.56, 40), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8, side: T.DoubleSide }));
+      const recent = isRecent(p.at), col = new T.Color(ageColor(p.at));   // yeşil: yakın; gri: son görüldüğü yer (soluk)
+      const ring = new T.Mesh(new T.RingGeometry(0.42, 0.56, 40), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: recent ? 0.8 : 0.45, side: T.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.set(sx, 0.03, sz); gLive.add(ring);
-      const stem = new T.Mesh(new T.CylinderGeometry(0.025, 0.025, 2.4, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45 }));
+      const stem = new T.Mesh(new T.CylinderGeometry(0.025, 0.025, 2.4, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: recent ? 0.45 : 0.22 }));
       stem.position.set(sx, 1.2, sz); gLive.add(stem);
       const grp = new T.Group(); grp.position.set(sx, 2.95, sz); grp.userData.bill = true; gLive.add(grp);
       const back = new T.Mesh(new T.CircleGeometry(0.62, 40), new T.MeshBasicMaterial({ color: col, depthTest: false, toneMapped: false })); back.renderOrder = 10; grp.add(back);
@@ -365,7 +379,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       const tag = makeTextSprite((p.subject_name || '—').slice(0, 16), P, col.getHex()); tag.position.set(sx, 4.0, sz); gLive.add(tag);
     }));
     zones.forEach(zn => { zn.people = 0; });
-    ppl.forEach(p => { const zn = zoneAt(px(p.x), pz(p.y)); if (zn) zn.people++; });
+    ppl.filter(p => isRecent(p.at)).forEach(p => { const zn = zoneAt(px(p.x), pz(p.y)); if (zn) zn.people++; });   // yalnız yakın görülenler "sahada"
     renderZonePanel();
     renderPeople((people || []));
   };
@@ -386,6 +400,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       try {
         if (!down) return; const d = down; down = null;
         if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || Date.now() - d.t > 400) return;
+        if (camMeshes.length && camAt(e.clientX, e.clientY)) return;   // kameraya tıklama → canlı önizleme, ad penceresi değil
         const rect = renderer.domElement.getBoundingClientRect();
         ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         ray.setFromCamera(ndc, camera);
@@ -401,6 +416,48 @@ export async function createFactory3D(mountEl, opts = {}) {
     // pointer capture / OrbitControls yüzünden pointerup yakalanamazsa click de aynı işi yapsın
     renderer.domElement.addEventListener('click', e => { if (down) onUp(e); });
   }
+  // ---------- kamera üzerine gel / dokun → bağlı NVR kamerasının canlı görüntüsü (anlık kare, 1.5 sn'de bir yenilenir) ----------
+  const camBox = document.createElement('div'); camBox.className = 'f3d-cam'; camBox.hidden = true; mountEl.appendChild(camBox);
+  let camCur = null, camTimer = 0, camPinned = false;
+  const camRay = new T.Raycaster(), camNdc = new T.Vector2();
+  const frameUrl = id => `/api/cameras/${id}/frame?t=${Date.now()}`;
+  const hideCam = () => { camBox.hidden = true; camCur = null; camPinned = false; if (camTimer) { clearInterval(camTimer); camTimer = 0; } };
+  const showCam = (cam, clientX, clientY, pinned) => {
+    const rect = mountEl.getBoundingClientRect();
+    const lx = Math.min(rect.width - 246, Math.max(0, clientX - rect.left)), ly = Math.max(150, clientY - rect.top);
+    camBox.style.left = lx + 'px'; camBox.style.top = ly + 'px';
+    camBox.classList.toggle('touch', !!pinned);
+    if (camCur !== cam.id || camBox.hidden) {
+      camCur = cam.id;
+      camBox.innerHTML = `<div class="f3d-cam-hd">📷 ${esc(cam.name)}${cam.live ? '<span class="f3d-rec"><i></i>CANLI</span>' : ''}${pinned ? '<button class="f3d-cam-x" type="button" aria-label="Kapat">✕</button>' : ''}</div>`
+        + (cam.live ? `<img alt="" src="${frameUrl(cam.id)}">` : '') + `<div class="f3d-cam-ft">${cam.live ? 'NVR anlık görüntü · sürekli yenilenir' : 'Planlanan kamera — NVR bağlı değil'}</div>`;
+      const x = camBox.querySelector('.f3d-cam-x'); if (x) x.onclick = hideCam;
+      if (camTimer) clearInterval(camTimer);
+      if (cam.live) { const img = camBox.querySelector('img'); camTimer = setInterval(() => { if (!camBox.hidden && img) img.src = frameUrl(cam.id); }, 1500); }
+    }
+    camBox.hidden = false; camPinned = !!pinned;
+  };
+  const camAt = (clientX, clientY) => {
+    if (!camMeshes.length) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    camNdc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    camRay.setFromCamera(camNdc, camera);
+    const hit = camRay.intersectObjects(camMeshes, false)[0];
+    return hit ? hit.object.userData.cam : null;
+  };
+  renderer.domElement.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch' || camPinned) return;
+    const cam = camAt(e.clientX, e.clientY);
+    if (cam) { renderer.domElement.style.cursor = 'pointer'; showCam(cam, e.clientX, e.clientY, false); }
+    else { renderer.domElement.style.cursor = 'grab'; if (!camBox.hidden) hideCam(); }
+  });
+  renderer.domElement.addEventListener('pointerleave', () => { if (!camPinned) hideCam(); });
+  // dokunmatik / tıklama: kameraya dokununca sabitlenmiş önizleme (tekrar dokununca ya da ✕ ile kapanır)
+  renderer.domElement.addEventListener('pointerup', e => {
+    const cam = camAt(e.clientX, e.clientY);
+    if (cam) { if (camPinned && camCur === cam.id) hideCam(); else showCam(cam, e.clientX, e.clientY, true); }
+    else if (camPinned) hideCam();
+  }, true);
   const onVis = () => { if (document.hidden) stop(); else start(); };
   document.addEventListener('visibilitychange', onVis);
   const fit = () => { controls.target.set(0, 0.6, 0); camera.position.set(SPAN * 0.55, SPAN * 0.82, SPAN * 1.02); controls.update(); };
@@ -553,6 +610,22 @@ function makeLabelSprite(text, P, named) {
   sp.renderOrder = 8; const sc = 0.52; sp.scale.set(cv.width / cv.height * sc, sc, 1); return sp;
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+// Kamera kapsama alanı: zeminde yumuşak gradyanlı sektör (2B'deki üçgen/koni gibi). Doku önbelleklenir (fov+renk).
+const _secCache = new Map();
+function makeSectorPlane(lenWorld, fovRad, colorHex) {
+  const T = _Tref, key = `${Math.round(fovRad * 100)}:${colorHex}`;
+  let tex = _secCache.get(key);
+  if (!tex) {
+    const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d');
+    const c = '#' + colorHex.toString(16).padStart(6, '0');
+    const g = ctx.createRadialGradient(4, S / 2, 0, 4, S / 2, S - 6);
+    g.addColorStop(0, c + 'a6'); g.addColorStop(0.55, c + '55'); g.addColorStop(1, c + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(4, S / 2); ctx.arc(4, S / 2, S - 6, -fovRad / 2, fovRad / 2); ctx.closePath(); ctx.fill();
+    tex = new T.CanvasTexture(cv); if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; _secCache.set(key, tex);
+  }
+  const m = new T.Mesh(new T.PlaneGeometry(lenWorld, lenWorld), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: T.DoubleSide }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 3; return m;   // tepe noktası sol kenarda: konumlanırken yön boyunca len/2 kaydır
+}
 function emojiSprite(ch) {
   const T = _Tref, S = 96, cv = document.createElement('canvas'); cv.width = cv.height = S; const ctx = cv.getContext('2d');
   ctx.font = '60px system-ui,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
@@ -596,7 +669,16 @@ function ensureHudStyle() {
   .f3d-leg{margin-top:8px;display:flex;gap:10px;font-size:10.5px;color:#5b6170;flex-wrap:wrap}
   .f3d-leg span{display:flex;align-items:center;gap:5px}
   .f3d-leg i{width:8px;height:8px;border-radius:50%;display:inline-block}
-  .f3d-leg i.g{background:#16a34a}.f3d-leg i.y{background:#f59e0b}.f3d-leg i.r{background:#dc2626}
+  .f3d-leg i.g{background:#16a34a}.f3d-leg i.y{background:#f59e0b}.f3d-leg i.r{background:#dc2626}.f3d-leg i.x{background:#98a2b3}
+  .f3d-floors.seg{box-shadow:0 2px 6px rgba(24,32,64,.06),0 10px 24px -8px rgba(24,32,64,.14);backdrop-filter:blur(12px)}
+  .f3d-cam{position:absolute;z-index:7;pointer-events:none;width:232px;border-radius:14px;overflow:hidden;background:rgba(255,255,255,.72);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);border:1px solid rgba(255,255,255,.75);box-shadow:0 4px 12px rgba(24,32,64,.08),0 24px 56px -12px rgba(24,32,64,.22);transform:translate(14px,-100%);font-family:system-ui,-apple-system,sans-serif}
+  .f3d-cam .f3d-cam-hd{display:flex;align-items:center;gap:6px;padding:7px 10px;font-size:11.5px;font-weight:700;color:#1c2233}
+  .f3d-cam .f3d-cam-hd .f3d-rec{margin-left:auto}
+  .f3d-cam img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#111823}
+  .f3d-cam .f3d-cam-ft{padding:5px 10px 7px;font-size:10.5px;color:#7a8296}
+  .f3d-cam.touch{pointer-events:auto}
+  .f3d-cam .f3d-cam-x{margin-left:6px;border:0;background:transparent;color:#7a8296;font-size:14px;cursor:pointer;pointer-events:auto}
+  .f3d-dark .f3d-cam{background:rgba(18,24,40,.72);border-color:rgba(130,150,210,.3)}.f3d-dark .f3d-cam .f3d-cam-hd{color:#e8edf8}
   .f3d-floors{display:flex;gap:6px;flex-wrap:wrap;pointer-events:auto}
   .f3d-fl{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);backdrop-filter:blur(14px);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:#3b4252;cursor:pointer}
   .f3d-fl.on{background:#7c6cf0;color:#fff;border-color:#7c6cf0}

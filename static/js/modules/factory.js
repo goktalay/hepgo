@@ -39,12 +39,7 @@ const ROOM_COLORS = ['#60a5fa', '#34d399', '#f59e0b', '#f472b6', '#a78bfa', '#f8
 // İŞARETÇİ PALETİ: backend MARKER_KINDS allowlist ile AYNI anahtarlar; her türe ayrı ikon (emoji) + renk.
 // (NVR'a bağlı gerçek kameralar factory_cameras'ta kalır; cam_indoor/cam_outdoor burada PLANLANAN/bağsız konumlardır.)
 const MARKER_PALETTE = {
-  ups:          { label: 'UPS / Güç kaynağı',         icon: '🔋', color: '#16a34a' },
-  power_outlet: { label: 'Priz / Elektrik',           icon: '⚡', color: '#f59e0b' },
-  wifi:         { label: 'WiFi erişim noktası',       icon: '📶', color: '#2563eb' },
-  internet:     { label: 'Internet / Ethernet prizi', icon: '🌐', color: '#0891b2' },
-  intranet:     { label: 'Intranet noktası',          icon: '🔗', color: '#7c3aed' },
-  switch:       { label: 'Ağ switch’i',               icon: '🔀', color: '#0ea5e9' },
+  // UPS / priz / WiFi / internet / intranet / switch işaretçileri kullanılmıyor — kaldırıldı (eski kayıtlar çizilmez)
   cam_indoor:   { label: 'İç kamera (planlanan)',     icon: '📷', color: '#334155' },
   cam_outdoor:  { label: 'Dış kamera (planlanan)',    icon: '📹', color: '#475569' },
   note:         { label: 'Not / etiket',              icon: '📝', color: '#64748b' },
@@ -79,7 +74,7 @@ const lineDash = ln => (ln.kind === 'network' ? '7 5' : null);
 // KATMAN (layer) görünürlük anahtarları: her kategori bağımsız açılıp kapanır (pptx'teki ayrı planlar gibi).
 const LAYER_DEFS = [
   ['bg', 'Arka plan'], ['rooms', 'Odalar'], ['cams', 'NVR Kameralar'], ['markers', 'İşaretçiler'],
-  ['network', 'Network hatları'], ['power', 'Elektrik hatları'], ['stairs', 'Merdivenler'],
+  // (network / power hatları ve merdivenler kullanılmıyor — kaldırıldı)
 ];
 const LAYER_KEY = 'fab.layers';
 function loadLayers() {   // cihaz başına (localStorage) saklanır; hepsi öntanımlı açık
@@ -233,7 +228,10 @@ export async function render(view, params, ctx) {
   const parseLabels = fl => { try { const v = fl && fl.zone_labels; const a = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []); return Array.isArray(a) ? a : []; } catch { return []; } };
   const sync3D = () => { if (st.mode === 'live' && fab3d && !el3d.hidden) show3D(true); };
   async function show3D(on) {
+    // Canlı 3B'de üst kat çubuğu (+Kat/Sırala/Sil), yüzen araç kolu ve Seçenekler popover'ı gizli — kat seçimi 3B'nin kendi seçicisinden
+    floorBar.hidden = !!on;
     if (!on) { el3d.hidden = true; svg.style.display = ''; return; }
+    toolbarEl.hidden = true; st.panelOpen = false; side.hidden = true;
     svg.style.display = 'none'; el3d.hidden = false;
     const inst = await ensure3D();
     if (!inst) { el3d.hidden = true; svg.style.display = ''; return; }
@@ -246,8 +244,8 @@ export async function render(view, params, ctx) {
       inst.build({
         rooms: L.rooms === false ? [] : st.rooms,
         cams: L.cams === false ? [] : st.cams,
-        markers: L.markers === false ? [] : (st.markers || []).filter(m => L[`mk:${m.kind}`] !== false),
-        stairs: L.stairs === false ? [] : st.stairs,
+        markers: L.markers === false ? [] : (st.markers || []).filter(m => MARKER_PALETTE[m.kind] && L[`mk:${m.kind}`] !== false),
+        stairs: [],   // merdivenler kaldırıldı
         floorName: fl ? fl.name : '', bg, palette: MARKER_PALETTE, labels: parseLabels(fl),
         floors: st.floors.map(f => ({ id: f.id, name: f.name })), floorId: st.floorId });
       inst.updateLive(st.liveData?.people || []);
@@ -494,6 +492,7 @@ export async function render(view, params, ctx) {
 
     // ALTYAPI işaretçileri (UPS, priz, WiFi, internet/intranet, switch, planlanan kamera, not) — paletten ikon + renk
     if (st.layers.markers) st.markers.forEach(m => {
+      if (!MARKER_PALETTE[m.kind]) return;                 // kaldırılan türler (UPS/WiFi/priz/…) çizilmez
       if (st.layers[`mk:${m.kind}`] === false) return;   // TÜR BAZLI göster/gizle (ör. sadece kameralar)
       const meta = markerMeta(m.kind);
       const sel = st.sel && st.sel.type === 'marker' && st.sel.id === m.id;
@@ -520,7 +519,7 @@ export async function render(view, params, ctx) {
     drawOverlay();
   }
   // Bir hattın mevcut katman görünürlüğü (network/power ayrı; other her zaman görünür)
-  const lineVisible = ln => (ln.kind === 'power' ? st.layers.power !== false : ln.kind === 'network' ? st.layers.network !== false : true);
+  const lineVisible = () => false;   // network/elektrik hatları kullanılmıyor — eski kayıtlar çizilmez
 
   function drawEmptyHint() {
     gStatic.append(s('text', { x: 0, y: 0, class: 'fab-empty', 'text-anchor': 'middle' }, 'Başlamak için bir kat ekleyin'));
@@ -897,8 +896,6 @@ export async function render(view, params, ctx) {
       btn('Kamera Koy (NVR)', 'camera', () => setTool('camera'), st.tool === 'camera'),
       btn('İşaretçi Koy (UPS / priz / WiFi / internet / switch / kamera / not)', 'marker', () => setTool('marker'), st.tool === 'marker'),
       h('div', { class: 'fab-tb-sep' }),
-      btn('Network Hattı Çiz', 'net', () => setTool('line', { lineKind: 'network' }), st.tool === 'line' && st.lineKind === 'network'),
-      btn('Elektrik Hattı Çiz', 'power', () => setTool('line', { lineKind: 'power' }), st.tool === 'line' && st.lineKind === 'power'),
       h('div', { class: 'fab-tb-sep' }),
       btn('Merdiven Koy', 'stair', () => setTool('stair'), st.tool === 'stair'),
       btn('Arka Plan Planı Yükle', 'bg', () => { if (!st.floorId) return toast('Önce bir kat seçin', 'err'); tbBgInp.click(); }, false),
@@ -1186,7 +1183,8 @@ export async function render(view, params, ctx) {
     drawMoveSide(); drawOverlay();
   }
   async function refreshLive() {
-    st.liveData = await api.get('/api/factory/now?minutes=10');
+    // Canlı 3B: son 24 saat (herkesin son görüldüğü yer; ≤10 dk yeşil, eskisi gri). Hareket modu: 10 dk.
+    st.liveData = await api.get(`/api/factory/now?minutes=${st.mode === 'live' ? 1440 : 10}`);
     if (st.mode === 'live') { drawCanvas(); drawLiveSide(); if (fab3d && !el3d.hidden) fab3d.updateLive(st.liveData?.people || []); }
     else { drawMoveSide(); drawOverlay(); }
   }

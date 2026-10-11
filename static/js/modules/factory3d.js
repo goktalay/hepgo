@@ -53,6 +53,13 @@ export async function createFactory3D(mountEl, opts = {}) {
   mountEl.appendChild(hud); if (dark) hud.classList.add('f3d-dark');
   const q = s => hud.querySelector(s);
   const el = { floor: q('.f3d-floor'), nPeople: q('.n-people'), nCams: q('.n-cams'), nMarkers: q('.n-markers'), list: q('.f3d-list'), floors: q('.f3d-floors') };
+  // sağ cam panel: bölgeler + kameralar (vantra "Ward cameras" tarzı)
+  const hudR = document.createElement('div'); hudR.className = 'f3d-hud f3d-right';
+  hudR.style.cssText = 'position:absolute;right:14px;top:14px;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:10px;width:236px;max-height:calc(100% - 28px)';
+  hudR.innerHTML = `<div class="f3d-card f3d-scroll"><div class="f3d-sub">Bölgeler</div><div class="f3d-zones"><div class="f3d-empty">Plan yüklenince bölgeler çıkarılır</div></div></div>
+    <div class="f3d-card f3d-scroll"><div class="f3d-sub">Kameralar <span class="f3d-chip n-camlist">0</span></div><div class="f3d-cams"><div class="f3d-empty">Kamera yok</div></div></div>`;
+  mountEl.appendChild(hudR); if (dark) hudR.classList.add('f3d-dark');
+  el.zones = hudR.querySelector('.f3d-zones'); el.cams = hudR.querySelector('.f3d-cams'); el.nCamList = hudR.querySelector('.n-camlist');
   const renderFloors = () => {
     el.floors.innerHTML = '';
     if (!floors.length) return;
@@ -98,8 +105,10 @@ export async function createFactory3D(mountEl, opts = {}) {
 
   const gWorld = new T.Group(); scene.add(gWorld);
   const gBg = new T.Group(); scene.add(gBg);
+  const gZones = new T.Group(); scene.add(gZones);
   const gLive = new T.Group(); scene.add(gLive);
-  let grid, M = {};
+  let grid, M = {}, zones = [], zoneGrid = null, camNames = [];
+  const ZONE_COLORS = [0xc7c2ff, 0xbfe3ff, 0xc3f1dc, 0xffe1c4, 0xffd1dc, 0xd9f0b8, 0xfff0b3, 0xd4e6ff];
 
   const makeMats = () => {
     M.slab = new T.MeshStandardMaterial({ color: P.slab, roughness: 0.55, metalness: 0.05 });
@@ -108,6 +117,9 @@ export async function createFactory3D(mountEl, opts = {}) {
     M.wall = new T.MeshStandardMaterial({ color: P.wall, roughness: 0.62, metalness: 0.04 });
     M.sill = new T.MeshStandardMaterial({ color: P.sill, roughness: 0.75, metalness: 0.05 });
     M.glass = new T.MeshPhysicalMaterial({ color: 0xa9cfdd, transmission: 0.9, thickness: 0.5, roughness: 0.14, metalness: 0, ior: 1.35, transparent: true, opacity: 0.4, side: T.DoubleSide });
+    // plandan çıkan duvarlar için hafif cam (binlerce segment → transmission yerine şeffaf+clearcoat, tek draw call)
+    M.imgGlass = new T.MeshPhysicalMaterial({ color: 0xcfe6f4, transparent: true, opacity: 0.42, roughness: 0.06, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.15, side: T.DoubleSide, depthWrite: false });
+    M.zone = new T.MeshBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false });
     M.frame = new T.MeshStandardMaterial({ color: P.steel, roughness: 0.5, metalness: 0.4 });
     M.cam = new T.MeshStandardMaterial({ color: 0x2a3340, roughness: 0.45, metalness: 0.3 });
     M.cone = new T.MeshBasicMaterial({ color: P.accent, transparent: true, opacity: 0.07, side: T.DoubleSide, depthWrite: false });
@@ -188,12 +200,76 @@ export async function createFactory3D(mountEl, opts = {}) {
       if (meta.icon) { const em = emojiSprite(meta.icon); em.scale.set(0.34, 0.34, 1); em.position.set(x, 0.42, z); gWorld.add(em); }
     });
     el.nCams.textContent = camCount; el.nMarkers.textContent = (markers || []).length;
+    let ci = 0;
+    camNames = [...(cams || []).map(c => c.name || `Kamera ${++ci}`),
+      ...(markers || []).filter(m => /^cam/.test(m.kind || '')).map(m => m.label || m.name || `${(palette[m.kind] && palette[m.kind].label) || 'Kamera'} ${++ci}`)];
+    renderCamPanel();
   };
 
   // ---------- arka plan kat planı: beyaz kat plakası + soluk resim + RESİMDEN 3B DUVARLAR ----------
+  // ---------- bölge tespiti: duvar segmentlerinden kapalı alanlar (grid + dilate + flood-fill) ----------
+  function detectRooms(segs, bb) {
+    const W = bb.x1 - bb.x0, H = bb.z1 - bb.z0; if (!(W > 0 && H > 0) || !segs.length) return [];
+    const GX = 220, GZ = Math.max(24, Math.round(GX * H / W)), cw = W / GX, ch = H / GZ, N = GX * GZ;
+    const wall = new Uint8Array(N);
+    const mark = (x, z) => { const gx = Math.floor((x - bb.x0) / cw), gz = Math.floor((z - bb.z0) / ch); if (gx >= 0 && gz >= 0 && gx < GX && gz < GZ) wall[gz * GX + gx] = 1; };
+    segs.forEach(s => { const n = Math.max(1, Math.ceil(s.len / (Math.min(cw, ch) * 0.5))); for (let i = 0; i <= n; i++) { const t = i / n; mark(s.ax + (s.bx - s.ax) * t, s.az + (s.bz - s.az) * t); } });
+    const r = Math.max(2, Math.round(GX * 0.022)), dil = new Uint8Array(N);   // kapı boşluklarını kapat
+    for (let z = 0; z < GZ; z++) for (let x = 0; x < GX; x++) if (wall[z * GX + x]) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { if (dx * dx + dz * dz > r * r) continue; const xx = x + dx, zz = z + dz; if (xx >= 0 && zz >= 0 && xx < GX && zz < GZ) dil[zz * GX + xx] = 1; }
+    const lab = new Int32Array(N), stack = [];
+    const nb4 = i => { const x = i % GX, z = (i - x) / GX; return [x > 0 ? i - 1 : -1, x < GX - 1 ? i + 1 : -1, z > 0 ? i - GX : -1, z < GZ - 1 ? i + GX : -1]; };
+    const seed = i => { if (i >= 0 && !dil[i] && lab[i] === 0) { lab[i] = -1; stack.push(i); } };
+    for (let x = 0; x < GX; x++) { seed(x); seed((GZ - 1) * GX + x); } for (let z = 0; z < GZ; z++) { seed(z * GX); seed(z * GX + GX - 1); }
+    while (stack.length) nb4(stack.pop()).forEach(seed);                      // dış alan = -1
+    const comps = []; let next = 1;
+    for (let i0 = 0; i0 < N; i0++) {
+      if (dil[i0] || lab[i0] !== 0) continue;
+      const id = next++; let cnt = 0; lab[i0] = id; stack.push(i0);
+      while (stack.length) { const i = stack.pop(); cnt++; for (const j of nb4(i)) if (j >= 0 && !dil[j] && lab[j] === 0) { lab[j] = id; stack.push(j); } }
+      comps.push({ id, cnt });
+    }
+    const minArea = N * 0.004, keepC = comps.filter(c => c.cnt >= minArea).sort((a, b) => b.cnt - a.cnt).slice(0, 40);
+    const keepIds = new Set(keepC.map(c => c.id)); for (let i = 0; i < N; i++) if (lab[i] > 0 && !keepIds.has(lab[i])) lab[i] = 0;
+    let fr = []; for (let i = 0; i < N; i++) if (lab[i] > 0) fr.push(i);     // dilate kalınlığını geri ver (duvara kadar büyüt)
+    for (let it = 0; it <= r && fr.length; it++) { const nx = []; for (const i of fr) for (const j of nb4(i)) if (j >= 0 && !wall[j] && lab[j] === 0) { lab[j] = lab[i]; nx.push(j); } fr = nx; }
+    zoneGrid = { lab, GX, GZ, cw, ch, x0: bb.x0, z0: bb.z0 };
+    const out = []; let n = 1;
+    keepC.forEach(c => { const cells = []; let sx = 0, sz = 0; for (let i = 0; i < N; i++) if (lab[i] === c.id) { cells.push(i); const x = i % GX; sx += x; sz += (i - x) / GX; } if (!cells.length) return; out.push({ id: c.id, name: `Bölge ${n++}`, cells, cx: bb.x0 + (sx / cells.length + 0.5) * cw, cz: bb.z0 + (sz / cells.length + 0.5) * ch, people: 0 }); });
+    return out;
+  }
+  function zoneAt(x, z) {
+    if (!zoneGrid) return null; const { lab, GX, GZ, cw, ch, x0, z0 } = zoneGrid;
+    const gx = Math.floor((x - x0) / cw), gz = Math.floor((z - z0) / ch); if (gx < 0 || gz < 0 || gx >= GX || gz >= GZ) return null;
+    const id = lab[gz * GX + gx]; return id > 0 ? (zones.find(zn => zn.id === id) || null) : null;
+  }
+  function renderZones() {
+    disposeGroup(gZones);
+    if (!zoneGrid || !zones.length) return;
+    const { GX, cw, ch, x0, z0 } = zoneGrid, total = zones.reduce((a, zn) => a + zn.cells.length, 0);
+    const inst = new T.InstancedMesh(new T.PlaneGeometry(cw * 1.03, ch * 1.03), M.zone, total);
+    const m4 = new T.Matrix4(), q = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -Math.PI / 2), pos = new T.Vector3(), scl = new T.Vector3(1, 1, 1), col = new T.Color();
+    let k = 0;
+    zones.forEach((zn, zi) => { col.set(ZONE_COLORS[zi % ZONE_COLORS.length]); zn.cells.forEach(i => { const x = i % GX, z = (i - x) / GX; pos.set(x0 + (x + 0.5) * cw, 0.02, z0 + (z + 0.5) * ch); m4.compose(pos, q, scl); inst.setMatrixAt(k, m4); inst.setColorAt(k, col); k++; }); });
+    inst.instanceMatrix.needsUpdate = true; if (inst.instanceColor) inst.instanceColor.needsUpdate = true; inst.renderOrder = 1; gZones.add(inst);
+    zones.forEach(zn => { const lbl = makeTextSprite(zn.name, P); lbl.position.set(zn.cx, IMG_WALL_H + 0.55, zn.cz); gZones.add(lbl); });
+  }
+  function renderZonePanel() {
+    if (!el.zones) return;
+    if (!zones.length) { el.zones.innerHTML = '<div class="f3d-empty">Bu katta kapalı bölge bulunamadı</div>'; return; }
+    el.zones.innerHTML = zones.slice(0, 10).map((zn, i) => `<div class="f3d-row"><i class="f3d-sw" style="background:#${ZONE_COLORS[i % ZONE_COLORS.length].toString(16).padStart(6, '0')}"></i><span class="f3d-nm"><b>${esc(zn.name)}</b></span><span class="f3d-cnt${zn.people ? ' on' : ''}">${zn.people} kişi</span></div>`).join('')
+      + (zones.length > 10 ? `<div class="f3d-more">+${zones.length - 10} bölge</div>` : '');
+  }
+  function renderCamPanel() {
+    if (!el.cams) return;
+    el.nCamList.textContent = camNames.length;
+    el.cams.innerHTML = camNames.length
+      ? camNames.slice(0, 8).map(nm => `<div class="f3d-row"><span class="f3d-rec"><i></i>REC</span><span class="f3d-nm"><b>${esc(nm)}</b></span></div>`).join('') + (camNames.length > 8 ? `<div class="f3d-more">+${camNames.length - 8} kamera</div>` : '')
+      : '<div class="f3d-empty">Kamera yok</div>';
+  }
+
   let bgReq = 0, lastWalls = null, wallErr = null;
   function buildBg(bg, after) {
-    disposeGroup(gBg);
+    disposeGroup(gBg); disposeGroup(gZones); zones = []; zoneGrid = null; renderZonePanel();
     if (!bg || !bg.url) { after && after(null); return; }
     const req = ++bgReq;
     const img = new Image(); img.crossOrigin = 'anonymous';
@@ -224,15 +300,25 @@ export async function createFactory3D(mountEl, opts = {}) {
         }
         lastWalls = { total: segs.length, kept: keep.length, X: { ...X }, dropped, keptSample: keep.slice(0, 3).map(k => ({ ax: +k.ax.toFixed(2), az: +k.az.toFixed(2), bx: +k.bx.toFixed(2), bz: +k.bz.toFixed(2), len: +k.len.toFixed(2) })) };
         if (!keep.length) return;
-        const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, keep.length);
-        const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();
-        keep.forEach((s, i) => {
-          pos.set((s.ax + s.bx) / 2, IMG_WALL_H / 2, (s.az + s.bz) / 2);
-          q.setFromAxisAngle(up, -Math.atan2(s.bz - s.az, s.bx - s.ax));
-          scl.set(s.len + s.th * 0.6, IMG_WALL_H, s.th);  // köşeler kapansın diye hafif uzat
-          m4.compose(pos, q, scl); inst.setMatrixAt(i, m4);
-        });
-        inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; gBg.add(inst);
+        // vantra pencere duvarı: opak alt eşik + şeffaf cam + ince üst kiriş (her biri tek InstancedMesh)
+        const SILL = 0.42, RAIL = 0.08, GH = IMG_WALL_H - SILL - RAIL;
+        const layer = (mat, y, h, thMul, shadow) => {
+          const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), mat, keep.length);
+          const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();
+          keep.forEach((s, i) => {
+            pos.set((s.ax + s.bx) / 2, y + h / 2, (s.az + s.bz) / 2);
+            q.setFromAxisAngle(up, -Math.atan2(s.bz - s.az, s.bx - s.ax));
+            scl.set(s.len + s.th * 0.6, h, s.th * thMul);   // köşeler kapansın diye hafif uzat
+            m4.compose(pos, q, scl); inst.setMatrixAt(i, m4);
+          });
+          inst.instanceMatrix.needsUpdate = true; inst.castShadow = shadow; inst.receiveShadow = shadow; gBg.add(inst); return inst;
+        };
+        layer(M.sill, 0, SILL, 1, true);
+        const gl = layer(M.imgGlass, SILL, GH, 0.5, false); gl.renderOrder = 2;
+        layer(M.wall, SILL + GH, RAIL, 1.1, true);
+        // kapalı alanları bölge olarak tanı → zemin tonu + etiket + kişi sayımı
+        try { zones = detectRooms(keep, { x0: px(box.x0), z0: pz(box.y0), x1: px(box.x1), z1: pz(box.y1) }); } catch { zones = []; }
+        renderZones(); if (last && last.people) updateLive(last.people); else renderZonePanel();
       };
       const isSvg = /\.svg(\?|#|$)/i.test(bg.url) || /^data:image\/svg/i.test(bg.url);
       wallErr = null;
@@ -264,6 +350,9 @@ export async function createFactory3D(mountEl, opts = {}) {
       if (p.crop) texLoader.load(fileUrl(p.crop, 128), tex => { if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace; face.material.map = roundTex(tex); face.material.needsUpdate = true; }, undefined, () => {});
       const tag = makeTextSprite((p.subject_name || '—').slice(0, 16), P, col.getHex()); tag.position.set(sx, 4.0, sz); gLive.add(tag);
     }));
+    zones.forEach(zn => { zn.people = 0; });
+    ppl.forEach(p => { const zn = zoneAt(px(p.x), pz(p.y)); if (zn) zn.people++; });
+    renderZonePanel();
     renderPeople((people || []));
   };
 
@@ -295,7 +384,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     stats() { return { walls: lastWalls, wallErr, scale: X.s }; },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,
-    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); },
+    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); },
   };
 }
 
@@ -458,6 +547,15 @@ function ensureHudStyle() {
   .f3d-floors{display:flex;gap:6px;flex-wrap:wrap;pointer-events:auto}
   .f3d-fl{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);backdrop-filter:blur(14px);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:#3b4252;cursor:pointer}
   .f3d-fl.on{background:#7c6cf0;color:#fff;border-color:#7c6cf0}
+  .f3d-scroll{overflow:auto;min-height:0}
+  .f3d-right .f3d-card{max-height:46%}
+  .f3d-zones,.f3d-cams{display:flex;flex-direction:column;gap:6px}
+  .f3d-sw{width:11px;height:11px;border-radius:4px;flex:none;border:1px solid rgba(0,0,0,.08)}
+  .f3d-cnt{font-size:11px;color:#7a8296;font-weight:700;white-space:nowrap}
+  .f3d-cnt.on{color:#6a58e8}
+  .f3d-rec{font-size:9.5px;letter-spacing:.08em;color:#e11d48;font-weight:800;display:flex;align-items:center;gap:4px;flex:none}
+  .f3d-rec i{width:6px;height:6px;border-radius:50%;background:#e11d48;animation:f3dpulse 1.6s infinite}
+  .f3d-dark .f3d-cnt{color:#aab4c8}.f3d-dark .f3d-cnt.on{color:#b6a8ff}
   .f3d-dark .f3d-card,.f3d-dark .f3d-fl{background:rgba(18,24,40,.62);border-color:rgba(130,150,210,.3)}
   .f3d-dark .f3d-top,.f3d-dark .f3d-floor,.f3d-dark .f3d-nm b{color:#e8edf8}
   .f3d-dark .f3d-row{background:rgba(255,255,255,.06)}

@@ -664,7 +664,7 @@ async function mount3D() {
   const tabs = $('#sectorTabs'), tagEl = $('#sectorTag'), sc = SECTORS[lang] || SECTORS.en;
   if (!tabs) return;
   if (stage) {
-    const mod = await import('/static/hero-globe.js?v=20261011h').catch(() => null);
+    const mod = await import('/static/hero-globe.js?v=20261011i').catch(() => null);
     if (mod && mod.webglOK()) { try { _heroHandle = mod.mountGlobe(stage, 'factory'); } catch { _heroHandle = null; } }
   }
   let idx = 0;

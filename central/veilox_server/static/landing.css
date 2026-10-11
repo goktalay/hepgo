@@ -597,3 +597,13 @@ html[data-theme="dark"] .pc-table tr.pc-grp th { background: rgba(255,255,255,.0
 .duo-card li svg { width: 20px; height: 20px; color: var(--blue); flex: none; margin-top: 1px; }
 .duo-card--esnaf li svg { color: #16a34a; }
 @media (max-width: 760px) { .duo-grid { grid-template-columns: 1fr; } .world-hero { padding: 72px 18px 52px; } }
+
+/* ===== Emergent palet uyumu (modül/özellik ikonları + bölüm zeminleri) ===== */
+.feat-ic, .mod-ic { background: var(--soft) !important; color: var(--blue) !important; }
+.section-tint { background: var(--paper2); }
+.section-dark { background: var(--ink); color: #fff; }
+.grad { background: linear-gradient(100deg, var(--blue) 20%, var(--gold) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.feat, .mod, .price-card, .shot-card { border-color: var(--line); }
+.feat:hover, .mod:hover { border-color: var(--blue); }
+.sec-head .eyebrow { color: var(--blue); }
+.nav .brand-logo { filter: none; }

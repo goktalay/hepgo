@@ -191,7 +191,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   };
 
   // ---------- arka plan kat planı: beyaz kat plakası + soluk resim + RESİMDEN 3B DUVARLAR ----------
-  let bgReq = 0;
+  let bgReq = 0, lastWalls = null, wallErr = null;
   function buildBg(bg, after) {
     disposeGroup(gBg);
     if (!bg || !bg.url) { after && after(null); return; }
@@ -222,6 +222,7 @@ export async function createFactory3D(mountEl, opts = {}) {
           keep.push({ ax, az, bx, bz, len, th: s.th != null ? Math.max(s.th * X.s, 0.14) : 0.14 });
           if (keep.length >= 24000) break;
         }
+        lastWalls = { total: segs.length, kept: keep.length };
         if (!keep.length) return;
         const inst = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), M.wall, keep.length);
         const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), pos = new T.Vector3(), scl = new T.Vector3();
@@ -234,7 +235,8 @@ export async function createFactory3D(mountEl, opts = {}) {
         inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; gBg.add(inst);
       };
       const isSvg = /\.svg(\?|#|$)/i.test(bg.url) || /^data:image\/svg/i.test(bg.url);
-      if (isSvg) svgWalls(bg.url, nw, nh, geo).then(place).catch(() => place(extractWalls(img, geo)));
+      wallErr = null;
+      if (isSvg) svgWalls(bg.url, nw, nh, geo).then(place).catch(e => { wallErr = String(e && e.message || e); place(extractWalls(img, geo)); });
       else place(extractWalls(img, geo));
     };
     img.onerror = () => { after && after(null); };
@@ -290,6 +292,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       buildBg(bg, box => { if (!box) return; computeTransform(rooms, cams, markers, box); buildWorld(rooms, cams, markers, stairs); if (last.people) updateLive(last.people); fit(); });
     },
     updateLive(people) { if (last) last.people = people; updateLive(people); },
+    stats() { return { walls: lastWalls, wallErr, scale: X.s }; },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); },
     resize,
     dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); },
@@ -323,7 +326,14 @@ function extractWalls(img, bg) {
 // Elemanlar geçici bir gizli <svg> içine alınır; getCTM ile iç transform'lar user-space'e çözülür.
 // user-space (viewBox) → plan koordinatı: bg.x + (x - vbX) * (naturalW / vbW) * bg.scale
 async function svgWalls(url, nw, nh, bg) {
-  const txt = await (await fetch(url, { credentials: 'same-origin' })).text();
+  let txt;
+  const dm = /^data:image\/svg\+xml(;[^,]*)?,(.*)$/is.exec(url);
+  if (dm) {                                   // data: URL — CSP connect-src'den bağımsız, fetch'siz çöz
+    const meta = dm[1] || '', body = dm[2];
+    txt = /;base64/i.test(meta) ? decodeURIComponent(escape(atob(body))) : decodeURIComponent(body);
+  } else {
+    txt = await (await fetch(url, { credentials: 'same-origin' })).text();
+  }
   const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
   const root = doc.documentElement;
   if (!root || root.nodeName.toLowerCase() !== 'svg') return [];

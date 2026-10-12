@@ -61,6 +61,44 @@ def _get(conn, cid):
     return r
 
 
+# ---- Kamera izleme (duvar) ayarı: kare yenileme hızı (Program Ayarları › Modül Ayarları › Kamera İzleme) — app_kv 'camera.wall_config'
+WALL_KV = 'camera.wall_config'
+WALL_FPS = (1, 2, 3, 4, 6, 8, 10, 15)
+
+
+def wall_config(conn):
+    import json
+    row = conn.execute('SELECT v FROM app_kv WHERE k = ?', (WALL_KV,)).fetchone()
+    try:
+        d = json.loads(row[0]) if row else {}
+    except (ValueError, TypeError):
+        d = {}
+    fps = d.get('fps')
+    return {'fps': fps if fps in WALL_FPS else None}   # None = otomatik (düzene göre 4 / 2,5 / 1,7 kare/sn)
+
+
+@router.get('/wall-config')
+def get_wall_config(user=Depends(cam_user), conn=db.DB):
+    return wall_config(conn)
+
+
+class WallConfigIn(BaseModel):
+    fps: Optional[int] = None
+
+
+@router.put('/wall-config')
+def put_wall_config(body: WallConfigIn, user=Depends(auth.current_user), conn=db.DB):
+    if not (user.get('master') or auth.ADMIN in user.get('roles', [])):
+        raise HTTPException(403, 'Yalnız Sistem Yöneticisi')
+    if body.fps is not None and body.fps not in WALL_FPS:
+        raise HTTPException(400, f"FPS şunlardan biri olmalı: {', '.join(map(str, WALL_FPS))} (boş = otomatik)")
+    import json
+    conn.execute('INSERT OR REPLACE INTO app_kv (k, v) VALUES (?, ?)', (WALL_KV, json.dumps({'fps': body.fps})))
+    conn.commit()
+    db.audit(conn, user['id'], 'Kamera izleme FPS ayarı', 'settings', None, f"{body.fps or 'otomatik'} kare/sn")
+    return wall_config(conn)
+
+
 @router.get('')
 def list_cameras(user=Depends(cam_user), conn=db.DB):
     from .. import facebridge

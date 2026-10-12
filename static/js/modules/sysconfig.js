@@ -961,6 +961,7 @@ const MODULE_SETTINGS = [
   { key: 'hr', title: 'İnsan Kaynakları · İSG', desc: 'Görev tanımı belgelerinin genel hükümleri', icon: 'person', body: isgGeneralBody },
   { key: 'mesai', title: 'Mesai Ayarları', desc: 'Haftalık mesai saatleri, tatiller, fazla mesai çarpanı', icon: 'person', body: mesaiBody },
   { key: 'cleaning', title: 'Temizlik', desc: 'Günlük temizlik çeklisti maddeleri', icon: 'grid', body: cleaningSettingsBody },
+  { key: 'cameras', title: 'Kamera İzleme', desc: 'Kamera duvarı kare yenileme hızı (FPS)', icon: 'grid', body: camerasSettingsBody },
   { key: 'building', title: 'Güvenlik · Bina Kontrol', desc: 'Günlük bina kontrol (tur) saatleri', icon: 'lock', body: buildingSettingsBody },
   // Konuşma tanımanın geçtiği modüller: her birinde aç / kapa (entegrasyon çalışmıyorsa açılamaz)
   { key: 'speech-meetings', title: 'Toplantılar', desc: 'Toplantı kaydını metne çevirme, konuşmacı tanıma', icon: 'grid', body: () => speechSettingsBody('meetings') },
@@ -990,6 +991,27 @@ function speechSettingsBody(key) {
       d.integration ? null : h('p', { class: 'small' }, h('a', { href: '#/sysconfig/integrations' }, 'Program Ayarları › Entegrasyonlar › Konuşma Tanıma →'))));
   };
   (async () => { try { draw(await api.get('/api/system/speech')); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); } })();
+  return wrap;
+}
+
+// Kamera İzleme: kamera duvarının kare yenileme hızı (sunucudan JPEG kare çekme sıklığı; tüm kullanıcılar için geçerli)
+function camerasSettingsBody() {
+  const wrap = h('div', null, h('div', { class: 'card card-pad' }, h('div', { class: 'loading' }, 'Yükleniyor…')));
+  const OPTS = [[0, 'Otomatik (düzene göre: 4 / 2,5 / 1,7 kare/sn)'], [1, '1 kare/sn'], [2, '2 kare/sn'], [3, '3 kare/sn'], [4, '4 kare/sn'], [6, '6 kare/sn'], [8, '8 kare/sn'], [10, '10 kare/sn'], [15, '15 kare/sn']];
+  const draw = cfg => {
+    const sel = h('select', { class: 'input', style: { maxWidth: '360px' } }, OPTS.map(([v, l]) => h('option', { value: v, selected: (cfg.fps || 0) === v }, l)));
+    const hint = h('p', { class: 'small muted' });
+    const upd = () => { const f = Number(sel.value); hint.textContent = f ? `Her kamera karesi ${Math.round(1000 / f)} ms'de bir çekilir. 16'lı düzende ${f} kare/sn ≈ saniyede ${16 * f} istek — yüksek değerler sunucu ve ağ yükünü artırır.` : 'Düzene göre: 1–4 kamera 4 kare/sn, 6–9 kamera 2,5 kare/sn, 12–16 kamera 1,7 kare/sn.'; };
+    sel.addEventListener('change', upd); upd();
+    clear(wrap, h('section', { class: 'card card-pad' },
+      h('h3', { style: { marginTop: 0 } }, 'Kamera İzleme · Kare Yenileme Hızı'),
+      h('p', { class: 'small muted' }, 'Kameralar › İzle ekranındaki canlı kareler sunucudan bu sıklıkla çekilir. Ayar tüm kullanıcılar için geçerlidir; açık ekranlarda yenilemeyle devreye girer.'),
+      field('FPS', sel), hint,
+      h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        try { draw(await api.put('/api/cameras/wall-config', { fps: Number(sel.value) || null })); toast('Kamera izleme FPS kaydedildi'); } catch (err) { toastError(err); }
+      } }, 'Kaydet'))));
+  };
+  (async () => { try { draw(await api.get('/api/cameras/wall-config')); } catch (err) { clear(wrap, h('div', { class: 'card empty' }, err.message)); } })();
   return wrap;
 }
 

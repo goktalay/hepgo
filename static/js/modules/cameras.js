@@ -22,7 +22,8 @@ export async function renderCameras(body, ctx, params) {
 
 // ---------- İzleme duvarı
 async function renderWall(box) {
-  const [cams, saved] = await Promise.all([api.get('/api/cameras'), api.get('/api/me/prefs/camera.wall').catch(() => ({}))]);
+  const [cams, saved, wallCfg] = await Promise.all([api.get('/api/cameras'), api.get('/api/me/prefs/camera.wall').catch(() => ({})), api.get('/api/cameras/wall-config').catch(() => ({}))]);
+  const fixedFps = Number(wallCfg?.fps) || 0;   // Program Ayarları › Kamera İzleme: sabit FPS (0 = düzene göre otomatik)
   let cfg = { layout: 4, slots: [] };
   try { cfg = { ...cfg, ...JSON.parse(saved.value || '{}') }; } catch { /* varsayılan */ }
   const active = cams.filter(c => c.active);
@@ -86,7 +87,7 @@ async function renderWall(box) {
     };
     sel.addEventListener('change', () => { cfg.slots[i] = camId(); save(); etag = null; img.removeAttribute('src'); loop(); });
     el.addEventListener('dblclick', e => { if (e.target !== sel) el.classList.toggle('max'); });
-    const period = () => (cfg.layout <= 4 ? 250 : cfg.layout <= 9 ? 400 : 600);
+    const period = () => (fixedFps ? Math.round(1000 / fixedFps) : (cfg.layout <= 4 ? 250 : cfg.layout <= 9 ? 400 : 600));
     let timer;
     async function loop() {
       clearTimeout(timer);

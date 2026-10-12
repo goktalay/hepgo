@@ -19,7 +19,7 @@ export async function loadMaps() {
       const cb = `__gmaps_${Date.now()}`;
       window[cb] = () => { resolve(window.google.maps); delete window[cb]; };
       const s = document.createElement('script');
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&callback=${cb}`;
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=${cb}`;
       s.async = true;
       s.onerror = () => { reject(new Error('Google Haritalar yüklenemedi')); _loadP = null; };
       document.head.append(s);

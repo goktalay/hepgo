@@ -4,7 +4,7 @@
 // Reddedilmişler) ve tarih filtresi (Tüm tarihler / Bu hafta / Bu ay / Bu yıl). Üst çubuktaki TODO ikonu (app.js
 // todoButton) /api/todos/pending ile aynı veriyi gösterir. Günlük Görevler'den bağımsız.
 import { api } from '../api.js';
-import { clear, confirmDialog, every, field, h, modal, segmented, toast, toastError } from '../ui.js';
+import { avatar, clear, confirmDialog, every, field, h, modal, segmented, toast, toastError } from '../ui.js';
 
 const ADMIN = 'Sistem Yöneticisi';
 export const isAdmin = ctx => !!ctx?.user?.master || (ctx?.user?.roles || []).includes(ADMIN);
@@ -170,14 +170,16 @@ export async function render(view, params, ctx) {
     let all = [];
     try { all = await api.get(`/api/todos?scope=all&status=all&period=${period}`); } catch { /* sayılar boş kalır */ }
     const cnt = id => all.filter(t => (!id || t.assignee_id === id)), openN = l => l.filter(t => t.open).length;
-    const btn = (id, name, l) => h('button', { class: `todo-person ${person === id ? 'on' : ''}`, type: 'button', onclick: () => { person = id; drawPeople(); load(); } },
+    // küçük fotoğraf; çerçeve: yeşil = çevrimiçi, gri = çevrimdışı
+    const btn = (id, name, l, u) => h('button', { class: `todo-person ${person === id ? 'on' : ''}`, type: 'button', onclick: () => { person = id; drawPeople(); load(); } },
+      u ? h('span', { class: `u-av ${u.online ? 'online' : 'offline'}`, title: u.online ? 'Çevrimiçi' : 'Çevrimdışı' }, avatar(u, 'sm')) : h('span', { class: 'u-av all' }, '👥'),
       h('span', { class: 'nm' }, name), openN(l) ? h('span', { class: 'n open' }, openN(l)) : null, h('span', { class: 'n' }, l.length));
     const withTasks = us.filter(u => cnt(u.id).length), without = us.filter(u => !cnt(u.id).length);
     clear(peopleEl,
       btn(0, 'Tüm Personel', all),
-      withTasks.map(u => btn(u.id, u.full_name || u.username, cnt(u.id))),
+      withTasks.map(u => btn(u.id, u.full_name || u.username, cnt(u.id), u)),
       without.length ? h('div', { class: 'todo-people-sep' }, 'Görevi olmayanlar') : null,
-      without.map(u => btn(u.id, u.full_name || u.username, [])));
+      without.map(u => btn(u.id, u.full_name || u.username, [], u)));
   }
 
   function draw() {

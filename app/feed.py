@@ -76,6 +76,8 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=
         for pid, emoji, n in conn.execute(
                 f'SELECT post_id, emoji, COUNT(*) FROM feed_reactions WHERE post_id IN ({ph}) GROUP BY post_id, emoji', ids):
             counts.setdefault(pid, {})[emoji] = n
+        views = {pid: n for pid, n in conn.execute(
+            f'SELECT post_id, COUNT(*) FROM feed_views WHERE post_id IN ({ph}) GROUP BY post_id', ids)}
         comments = {pid: n for pid, n in conn.execute(
             f'SELECT post_id, COUNT(*) FROM feed_comments WHERE post_id IN ({ph}) AND deleted_at IS NULL GROUP BY post_id', ids)}
         mine, saves = {}, set()
@@ -86,6 +88,7 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=
         for p in posts:
             p['reactions'] = counts.get(p['id'], {})
             p['comment_count'] = comments.get(p['id'], 0)
+            p['view_count'] = views.get(p['id'], 0)
             p['my_reaction'] = mine.get(p['id'])
             p['saved'] = p['id'] in saves
     return posts

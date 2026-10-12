@@ -179,6 +179,12 @@ CREATE TABLE IF NOT EXISTS live_viewers (
     PRIMARY KEY (stream_id, user_id)
 );
 -- Şirketten Haberler: kullanıcının favorilere kaydettiği paylaşımlar (Instagram "Kaydet")
+CREATE TABLE IF NOT EXISTS feed_views (                -- paylaşımı kim ne zaman gördü (ilk görünme; master 'Görenler')
+    post_id INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    at      TEXT NOT NULL,
+    PRIMARY KEY (post_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS feed_saves (
     post_id    INTEGER NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2642,6 +2648,10 @@ def _migrate(conn):
             created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS ix_beta_fb_user ON beta_feedback(user_id);
     ''')
+    sess_cols = {r[1] for r in conn.execute('PRAGMA table_info(sessions)')}
+    if 'device' not in sess_cols:   # istemci türü (android_app / ios_app / web / web_mobile) + ham User-Agent
+        conn.execute('ALTER TABLE sessions ADD COLUMN device TEXT')
+        conn.execute('ALTER TABLE sessions ADD COLUMN user_agent TEXT')
     user_cols = {r[1] for r in conn.execute('PRAGMA table_info(users)')}
     if 'last_seen' not in user_cols:
         conn.execute('ALTER TABLE users ADD COLUMN last_seen TEXT')

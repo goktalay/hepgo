@@ -60,9 +60,10 @@ def _with_roles(conn, users, viewer=None):
 def list_users(q: str = '', role: str = '', user=Depends(admin_only), conn=db.DB):
     sql = '''SELECT id, username, full_name, phone, photo, active, created_at, last_seen,
                     (SELECT MAX(at) FROM login_logs l WHERE l.user_id = users.id AND success = 1) AS last_login,
-                    (SELECT MAX(is_foreign) FROM employees e WHERE e.user_id = users.id) AS is_foreign
+                    (SELECT MAX(is_foreign) FROM employees e WHERE e.user_id = users.id) AS is_foreign,
+                    (SELECT s.device FROM sessions s WHERE s.user_id = users.id AND s.expires_at > ? ORDER BY s.created_at DESC, s.rowid DESC LIMIT 1) AS device
              FROM users WHERE deleted_at IS NULL'''
-    args = []
+    args = [datetime.now().isoformat(timespec='seconds')]
     if q:
         sql += ' AND (username LIKE ? OR full_name LIKE ?)'
         args += [f'%{q}%', f'%{q}%']

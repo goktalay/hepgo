@@ -166,11 +166,13 @@ def w_active_users(conn, user):
     cut = (_dt.now() - ONLINE_WINDOW).isoformat(timespec='seconds')
     admin = 'Sistem Yöneticisi' in (user.get('roles') or [])
     rows = db.rows(conn.execute(
-        '''SELECT id, full_name, photo FROM users u WHERE active = 1 AND deleted_at IS NULL AND id != ? AND last_seen >= ?
+        '''SELECT id, full_name, photo,
+                  (SELECT s2.device FROM sessions s2 WHERE s2.user_id = u.id AND s2.expires_at > ? ORDER BY s2.created_at DESC, s2.rowid DESC LIMIT 1) AS device
+           FROM users u WHERE active = 1 AND deleted_at IS NULL AND id != ? AND last_seen >= ?
              AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?)
              AND (? OR IFNULL(json_extract(u.prefs, '$.settings.privacy.hide_online'), 0) = 0)
            ORDER BY full_name''',
-        (user['id'], cut, db.now(), admin)))
+        (db.now(), user['id'], cut, db.now(), admin)))
     return {'items': rows, 'count': len(rows)}
 
 

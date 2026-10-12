@@ -28,6 +28,7 @@ async function request(method, url, body) {
 
 async function send(method, url, body) {
   const opts = { method, headers: {}, credentials: 'same-origin' };
+  try { if (window.Capacitor?.isNativePlatform?.()) opts.headers['X-Hepgo-Platform'] = window.Capacitor.getPlatform(); } catch { /* tarayıcı */ }   // sunucu: oturum cihaz türü
   if (body instanceof FormData) {
     opts.body = await optimizeForm(body);
   } else if (body !== undefined) {

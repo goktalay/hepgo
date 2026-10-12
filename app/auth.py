@@ -248,12 +248,37 @@ def absence_message(a):
 _absence_cache = {}   # user_id -> (zaman, sonuç): her istekte sorgu yapılmasın
 
 
-def create_session(conn, user_id, hours=None):
+DEVICE_LABEL = {'android_app': 'Android App', 'ios_app': 'iOS App', 'web_mobile': 'Mobil Web', 'web': 'Web App'}
+
+
+def device_of(ua, hint=None):
+    """İstemci türü: android_app / ios_app / web_mobile / web. hint = X-Hepgo-Platform başlığı (Capacitor kabuğu gönderir);
+    yoksa User-Agent'tan kestirilir (Android WebView 'wv', iOS WKWebView'da 'Safari/' yoktur)."""
+    hh = (hint or '').strip().lower()
+    if hh in ('android', 'ios'):
+        return hh + '_app'
+    u = (ua or '').lower()
+    if 'android' in u and ('; wv' in u or 'wv)' in u):
+        return 'android_app'
+    if ('iphone' in u or 'ipad' in u) and 'safari/' not in u:
+        return 'ios_app'
+    if 'mobile' in u or 'android' in u or 'iphone' in u or 'ipad' in u:
+        return 'web_mobile'
+    return 'web'
+
+
+def request_device(request):
+    """İstekten (login) cihaz türü + ham UA."""
+    ua = (request.headers.get('user-agent') or '')[:300] if request is not None else ''
+    return device_of(ua, request.headers.get('x-hepgo-platform') if request is not None else None), ua
+
+
+def create_session(conn, user_id, hours=None, device=None, ua=None):
     token = secrets.token_urlsafe(32)
     now = datetime.now()
-    conn.execute('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)',
+    conn.execute('INSERT INTO sessions (token, user_id, created_at, expires_at, device, user_agent) VALUES (?,?,?,?,?,?)',
                  (token, user_id, now.isoformat(timespec='seconds'),
-                  (now + timedelta(hours=hours or config.SESSION_HOURS)).isoformat(timespec='seconds')))
+                  (now + timedelta(hours=hours or config.SESSION_HOURS)).isoformat(timespec='seconds'), device, ua))
     return token
 
 
@@ -272,11 +297,16 @@ def current_user(request: Request, conn=db.DB):
     if not token:
         raise HTTPException(401, 'Oturum açılmamış')
     user = db.row(conn.execute(
-        '''SELECT u.id, u.username, u.full_name, u.photo, u.active, u.last_seen, u.prefs, u.must_change_password, u.support_until, s.expires_at
+        '''SELECT u.id, u.username, u.full_name, u.photo, u.active, u.last_seen, u.prefs, u.must_change_password, u.support_until, s.expires_at, s.device
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?''', (token,)))
     now = db.now()
     if not user or user['expires_at'] < now or not user['active']:
         raise HTTPException(401, 'Oturum süresi doldu')
+    if not user.get('device'):   # eski oturum (sütun yeni): ilk istekte cihaz türünü kaydet
+        dv, ua = request_device(request)
+        conn.execute('UPDATE sessions SET device = ?, user_agent = ? WHERE token = ?', (dv, ua, token))
+        conn.commit()
+        user['device'] = dv
     # Çevrimiçi takibi: son etkinlik zamanı (yazma yükü için en fazla 20 sn'de bir güncellenir)
     if not user['last_seen'] or (datetime.fromisoformat(now) - datetime.fromisoformat(user['last_seen'])).total_seconds() > 20:
         conn.execute('UPDATE users SET last_seen = ? WHERE id = ?', (now, user['id']))

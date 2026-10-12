@@ -8492,3 +8492,15 @@ textarea.sv-input { resize: vertical; }
   .todo-person { width: auto; } .todo-people-sep { width: 100%; }
   .todo-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.todo-person .u-av { padding: 1px; border-width: 2px; } .todo-person .u-av.offline { border-color: color-mix(in srgb, var(--muted) 35%, transparent); opacity: .85; }
+.todo-person .u-av.all { width: 30px; height: 30px; align-items: center; justify-content: center; font-size: 15px; border-color: transparent; }
+.todo-person .avatar.sm { width: 24px; height: 24px; font-size: 10px; }
+/* pano: çevrimiçi kullanıcının cihaz türü; kullanıcılar listesi */
+.db-user-dev { font-size: 10px; color: var(--muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.db-user-dev.android_app { color: #3ddc84; } .db-user-dev.ios_app { color: var(--text); } .db-user-dev.web, .db-user-dev.web_mobile { color: var(--primary); }
+.u-dev { color: var(--primary); font-weight: 600; }
+/* paylaşım: master 'Görenler' listesi */
+.feed-viewers { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
+.feed-viewer { display: flex; align-items: center; gap: 10px; } .feed-viewer b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-eye { font-size: 16px; line-height: 1; }

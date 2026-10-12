@@ -152,6 +152,32 @@ class SeenIn(BaseModel):
     last_id: int
 
 
+class ViewsIn(BaseModel):
+    ids: list
+
+
+@router.post('/views')
+def views(body: ViewsIn, user=Depends(auth.current_user), conn=db.DB):
+    """Paylaşımlar ekranda göründü (ilk görünme kaydedilir; tekrarlar yok sayılır)."""
+    ids = [int(i) for i in (body.ids or [])[:200] if str(i).isdigit()]
+    if ids:
+        now = db.now()
+        conn.executemany('INSERT OR IGNORE INTO feed_views (post_id, user_id, at) VALUES (?,?,?)', [(i, user['id'], now) for i in ids])
+        conn.commit()
+    return {'ok': True, 'n': len(ids)}
+
+
+@router.get('/{post_id}/viewers')
+def viewers(post_id: int, user=Depends(auth.current_user), conn=db.DB):
+    """Paylaşımı kimler görmüş — yalnız master (sistem sahibi)."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yalnız sistem sahibi görebilir')
+    rows = db.rows(conn.execute('''SELECT v.user_id, v.at, u.full_name, u.photo FROM feed_views v JOIN users u ON u.id = v.user_id
+                                   WHERE v.post_id = ? ORDER BY v.at DESC''', (post_id,)))
+    total = conn.execute('SELECT COUNT(*) FROM users WHERE active = 1 AND deleted_at IS NULL').fetchone()[0]
+    return {'count': len(rows), 'total_users': total, 'items': rows}
+
+
 @router.post('/seen')
 def seen(body: SeenIn, user=Depends(auth.current_user), conn=db.DB):
     """Kullanıcı akışı ana ekranda gördü: yeni paylaşım bildirimi kalkar."""

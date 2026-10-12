@@ -73,18 +73,19 @@ function cards(users) {
       u.external ? h('a', { class: 'badge purple', href: u.external.href, title: 'Dış firma personeli (İK personeli değil)' }, t('Dış firma: {name}', { name: u.external.company_name })) : null)));
 }
 
+const DEVICE_LABEL = { android_app: 'Android App', ios_app: 'iOS App', web_mobile: 'Mobil Web', web: 'Web App' };   // çevrimiçi oturumun cihaz türü
 // WhatsApp tarzı satır listesi: çevrimiçi ise avatar etrafında yeşil halka, pasif kullanıcıda tüm satır gri. Tutarlı satır yükseklikleri.
 function table(users) {
   return h('div', { class: 'u-list' }, users.map(u =>
     h('button', { class: `u-row ${u.active ? '' : 'passive'} ${u.is_foreign ? 'foreign' : ''} ${u.external ? 'external' : ''}`, type: 'button', onclick: () => open(u) },
-      h('span', { class: `u-av ${u.active && u.online ? 'online' : ''}`, title: u.active && u.online ? 'Çevrimiçi' : null }, avatar(u, 'md')),
+      h('span', { class: `u-av ${u.active && u.online ? 'online' : ''}`, title: u.active && u.online ? 'Çevrimiçi' + (u.device ? ' · ' + (DEVICE_LABEL[u.device] || u.device) : '') : null }, avatar(u, 'md')),
       h('div', { class: 'u-row-mid' },
         h('div', { class: 'u-row-top' }, h('b', null, u.full_name),
           u.active ? null : h('span', { class: 'u-pill' }, 'Pasif'),
           lockInfo(u),
           u.absence ? h('span', { class: `badge ${u.absence.kind === 'RAPOR' ? 'yellow' : 'blue'}`, title: t('{d} tarihine kadar', { d: u.absence.until }) }, u.absence.label) : null,
           u.external ? h('span', { class: 'badge purple' }, t('Dış: {name}', { name: u.external.company_name })) : null),
-        h('div', { class: 'u-row-sub' }, u.username)),
+        h('div', { class: 'u-row-sub' }, u.username, u.active && u.online && u.device ? h('span', { class: 'u-dev' }, ' · ' + (DEVICE_LABEL[u.device] || u.device)) : null)),
       h('div', { class: 'u-row-end' },
         h('span', { class: 'u-row-roles' }, u.roles.join(', ') || '—'),
         h('span', { class: 'u-row-seen' }, fmtDateTime(u.last_login) || '—')))));

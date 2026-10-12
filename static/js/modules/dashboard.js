@@ -18,6 +18,7 @@ const dbAvatar = (name, photo, cls = '') => (photo
 // Kişi durumu (kullanıcı id'si → görevde / izinde / çevrimiçi / çevrimdışı); avatar çerçevesinde gösterilir
 const presenceOf = (id, d) => (d?.on_duty?.includes(id) ? 'duty' : d?.on_leave?.includes(id) ? 'leave' : d?.online?.includes(id) ? 'online' : 'off');
 const ST_TITLE = { duty: 'Görevde', leave: 'İzinde', online: 'Çevrimiçi', off: 'Çevrimdışı' };
+const DEVICE_LABEL = { android_app: '🤖 Android App', ios_app: ' iOS App', web_mobile: '📱 Mobil Web', web: '💻 Web App' };   // oturumun cihaz türü
 const dbAvatarSt = (name, photo, id, d, cls = '') => {
   const st = presenceOf(id, d);
   return h('span', { class: `db-avwrap st-${st}`, title: ST_TITLE[st] }, dbAvatar(name, photo, cls));
@@ -421,7 +422,7 @@ export async function renderDashboard(view, ctx, modules) {
       case 'spotify': { dbSpotify(body, acts, d); return; }
       case 'transfers': { dbTransfers(body, acts, d); return; }
       case 'active_users': return clear(body, !d.items?.length ? h('div', { class: 'db-none' }, 'Çevrimiçi başka kullanıcı yok')
-        : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0])); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
+        : h('div', { class: 'db-users' }, d.items.map(u => { const b = h('button', { type: 'button', class: 'db-user', title: u.full_name }, dbAvatar(u.full_name, u.photo, 'lg'), h('span', { class: 'db-user-n' }, (u.full_name || '').split(' ')[0]), h('span', { class: `db-user-dev ${u.device || ''}` }, DEVICE_LABEL[u.device] || 'Web App')); b.addEventListener('click', e => miniChat(u, e.currentTarget)); return b; })));
       case 'quick_directory': {
         const ppl = it.o?.people || [];
         return clear(body, !ppl.length ? h('div', { class: 'db-none' }, h('span', null, 'Kişi ekleyin: '), h('button', { class: 'link', type: 'button', onclick: () => settings(it) }, 'Ayarlar ⚙'))

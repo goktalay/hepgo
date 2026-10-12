@@ -105,6 +105,22 @@ export function renderFeed(container, ctx, opts = {}) {
     const more = long ? h('button', { class: 'feed-moretx', type: 'button', onclick: () => { fill(t); more.remove(); } }, 'devamı') : null;
     return [lead || null, p.ref_link ? h('a', { href: p.ref_link }, span) : span, more];
   };
+  // Görüntülenme: kart %50 görününce bir kez kaydedilir (toplu, 800 ms gecikmeli); master 'Görenler' listesini buradan okur
+  const viewed = new Set(), viewQ = new Set(); let viewT = 0;
+  const flushViews = () => { const ids = [...viewQ]; viewQ.clear(); if (ids.length) api.post('/api/feed/views', { ids }).catch(() => {}); };
+  const viewObs = new IntersectionObserver(es => {
+    es.forEach(e => { const id = +e.target.dataset.pid; if (e.intersectionRatio >= 0.5 && id && !viewed.has(id)) { viewed.add(id); viewQ.add(id); viewObs.unobserve(e.target); } });
+    if (viewQ.size) { clearTimeout(viewT); viewT = setTimeout(flushViews, 800); }
+  }, { threshold: [0.5] });
+  async function showViewers(p) {
+    let d;
+    try { d = await api.get(`/api/feed/${p.id}/viewers`); } catch (e) { return toastError(e); }
+    const items = d.items || [];
+    modal({ title: `Görenler · ${d.count}${d.total_users ? ' / ' + d.total_users : ''}`,
+      body: items.length ? h('div', { class: 'feed-viewers' }, items.map(v => h('div', { class: 'feed-viewer' }, avatar({ full_name: v.full_name, photo: v.photo }, 'sm'),
+        h('b', null, v.full_name || '—'), h('span', { class: 'small muted' }, fmtDateTime(v.at))))) : h('div', { class: 'empty small' }, 'Henüz kimse görmedi'),
+      actions: [{ label: 'Kapat', class: 'primary' }] });
+  }
   const postCard = p => {
     const badge = KIND_BADGE[p.kind] || KIND_BADGE.USER;
     const vis = visualOf(p), aud = (p.media || []).filter(m => m.type === 'audio');
@@ -121,7 +137,7 @@ export function renderFeed(container, ctx, opts = {}) {
       !vis.length && p.text ? h('div', { class: 'feed-text' }, textBody(p)) : null,
       aud.length ? h('div', { class: 'feed-auds' }, aud.map(m => mediaEl(m, p))) : null,
       footer(p, c => reCard(p, c), vis.length > 0));
-    p._card = card;
+    p._card = card; card.dataset.pid = p.id; viewObs.observe(card);   // ekranda görünce 'görüldü' kaydı
     return card;
   };
 
@@ -159,7 +175,9 @@ export function renderFeed(container, ctx, opts = {}) {
     const share = h('button', { class: 'feed-ib', type: 'button', title: 'Paylaş', onpointerdown: () => prefetchShare(p), onclick: e => sharePost(p, e.currentTarget) }, svgSpan(IG.send));
     const save = h('button', { class: `feed-ib feed-save ${p.saved ? 'on' : ''}`, type: 'button', title: p.saved ? 'Kaydedilenlerden çıkar' : 'Favorilere kaydet',
       onclick: e => toggleSave(p, e.currentTarget) }, svgSpan(IG.save));
-    const bar = h('div', { class: 'feed-bar' }, h('div', { class: 'feed-bar-l' }, likeWrap, likeN, cmt, cmtN, share), save);
+    const eye = ctx.user?.master ? h('button', { class: 'feed-ib feed-eye', type: 'button', title: 'Kimler görmüş', onclick: () => showViewers(p) }, '👁') : null;   // yalnız master
+    const eyeN = ctx.user?.master && p.view_count ? h('button', { class: 'feed-n link', type: 'button', title: 'Kimler görmüş', onclick: () => showViewers(p) }, String(p.view_count)) : null;
+    const bar = h('div', { class: 'feed-bar' }, h('div', { class: 'feed-bar-l' }, likeWrap, likeN, cmt, cmtN, share, eye, eyeN), save);
     const cap = media && p.text ? h('div', { class: 'feed-cap' }, textBody(p, h('b', null, authorName(p), ' '))) : null;
     const allC = p.comment_count && !p._open ? h('button', { class: 'feed-cmore', type: 'button', onclick: () => toggleComments(p, rerender, true) },
       p.comment_count === 1 ? '1 yorumu gör' : `${p.comment_count} yorumun tümünü gör`) : null;

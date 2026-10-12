@@ -2012,6 +2012,16 @@ td.wrap { white-space: normal; max-width: 280px; }
 .cw-over[hidden] { display: none; }
 .cw.cw-full { position: fixed; inset: 0; z-index: 40; background: #0b0f17; padding: 10px 12px; display: flex; flex-direction: column; }
 .cw.cw-full .cw-bar { color: #e5e7eb; }
+/* tam ekranda üst çubuk her zaman KOYU tema (açık temada beyaz üstüne beyaz yazı okunmuyordu) */
+.cw.cw-full .cw-bar .muted { color: #9aa4b5; }
+.cw.cw-full .cw-bar .btn { background: #1f2633; border-color: #343d4f; color: #e5e7eb; }
+.cw.cw-full .cw-bar .btn:hover { background: #2a3345; }
+.cw.cw-full .cw-bar .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cw.cw-full .cw-bar .seg { background: #141a25; border-color: #343d4f; }
+.cw.cw-full .cw-bar .seg button { color: #cbd5e1; }
+.cw.cw-full .cw-bar .seg button:hover { background: #1f2633; }
+.cw.cw-full .cw-bar .seg button.on { background: #e5e7eb; color: #0b0f17; box-shadow: none; }
+.cw.cw-full .cw-bar .input, .cw.cw-full .cw-bar select { background: #1f2633; color: #e5e7eb; border-color: #343d4f; }
 .cw.cw-full .cw-grid { flex: 1; min-height: 0; align-content: center; }
 
 /* ---------- Güvenlik → Tanımlanamayan Kişiler ---------- */

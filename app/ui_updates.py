@@ -44,7 +44,7 @@ _NAMED_RE = re.compile(r'''^import\s+\{([^}]+)\}\s+from\s+['"]\./([^'"]+\.js)['"
 _MODULE_RE = re.compile(r'''\{\s*key:\s*'([^']+)',\s*title:\s*'([^']*)'[^}\n]*?\bmod:\s*(\w+)''')
 _PERSONAL_RE = re.compile(r'''\{\s*key:\s*'(\w+)',\s*route:\s*'([^']+)',\s*title:\s*'([^']*)'[^\n]*?render:\s*(?:params|\(\s*\))?\s*=>\s*(\w+)''')
 # app.js içinde doğrudan çizilen ekranlar (MODULES/PERSONAL dışı): anahtar → (başlık, dosya)
-_EXTRA_SCREENS = {'home': ('Ana Sayfa (Pano)', 'modules/dashboard.js'), 'settings': ('Ayarlar', 'modules/settings.js'),
+_EXTRA_SCREENS = {'home': ('Ana Sayfa (Pano)', 'modules/dashboard.js'), 'calendar': ('Takvim', 'modules/crm.js'),   # calendarPage app.js içinde; takvim paneli crm.js'den 'settings': ('Ayarlar', 'modules/settings.js'),
                   'alerts': ('Uyarılar', 'modules/alerts.js'), 'meet': ('Online Toplantı', 'modules/meet.js'),
                   'sign': ('İmza Talepleri', 'modules/sign.js')}
 _cache = {}

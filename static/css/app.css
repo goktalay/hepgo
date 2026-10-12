@@ -8558,3 +8558,20 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .sys-net-h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
 .sys-net-row { display: flex; gap: 12px; font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
 .sys-net-row .dn { color: var(--primary); } .sys-net-row .up { color: var(--success); }
+/* ---- Yönetim › Canlı Sistem: koyu, tamamen grafik ---- */
+.ls-page { background: radial-gradient(120% 90% at 50% 0%, #141a2b 0%, #0b0f17 60%, #070a10 100%); border-radius: 16px; padding: 16px; min-height: calc(100vh - 170px); color: #e5e7eb; }
+.ls-page:fullscreen { border-radius: 0; padding: 22px; min-height: 100vh; overflow: auto; }
+.ls-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ls-host { display: flex; flex-direction: column; gap: 12px; }
+.ls-host-h { display: flex; align-items: center; gap: 10px; padding: 4px 6px 2px; }
+.ls-host-h b { font-size: 17px; letter-spacing: .02em; } .ls-host-sub { font-size: 12px; color: #8a94a6; margin-left: auto; }
+.ls-ic svg { width: 20px; height: 20px; color: #93c5fd; }
+.ls-card { background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 12px 14px 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.ls-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ls-title { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: #8a94a6; font-weight: 700; }
+.ls-big { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .01em; text-shadow: 0 0 18px rgba(96,165,250,.25); }
+.ls-canvas { position: relative; height: 150px; margin-top: 6px; }
+.ls-sub { font-size: 11.5px; color: #7c8698; margin-top: 4px; min-height: 14px; }
+.ls-unavail { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: #fca5a5; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; }
+.ls-fs svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+@media (max-width: 1000px) { .ls-grid { grid-template-columns: 1fr; } .ls-canvas { height: 120px; } }

@@ -688,6 +688,34 @@ def put_facerec(body: FacerecIn, user=Depends(auth.current_user), conn=db.DB):
     return {'score': score, 'min_face': min_face}
 
 
+# ---- Canlı Sistem (Yönetim › Canlı Sistem): merkez sunucu + fabrika (ASUS GX10) CPU / RAM / GPU / ağ, saniyelik tarih
+_live_factory_cache = {'t': 0.0, 'snap': None}
+
+
+@router.get('/live')
+def live_system(since: int = 0, factory_since: int = 0, user=Depends(auth.current_user)):
+    """Yalnız Sistem Yöneticisi. central: bu sunucu (sysstat); factory: ajanın sysstat'ı (uzak modda; 2 sn önbellek,
+    ajan yoksa 'unavailable'). since/factory_since: bu zamandan (epoch sn) sonraki tarih noktaları."""
+    if not _is_sysadmin(user):
+        raise HTTPException(403, 'Yetkiniz yok')
+    import time as _t
+    central = sysstat.snapshot()
+    central['history'] = [p for p in central.get('history', []) if p.get('t', 0) > since]
+    factory = None
+    if config.AGENT_MODE == 'remote':
+        now = _t.monotonic()
+        if _live_factory_cache['snap'] is None or now - _live_factory_cache['t'] > 2:
+            from .. import devices
+            try:
+                snap = devices.call_sync('sysstat', timeout=4)
+            except Exception as e:   # noqa: BLE001
+                snap = {'history': [], 'unavailable': str(e)}
+            _live_factory_cache.update(t=now, snap=snap)
+        factory = dict(_live_factory_cache['snap'])
+        factory['history'] = [p for p in factory.get('history', []) if p.get('t', 0) > factory_since]
+    return {'at': _t.time(), 'central': central, 'factory': factory, 'remote': config.AGENT_MODE == 'remote'}
+
+
 @router.get('/nvr/stat')
 def nvr_stat(user=Depends(auth.current_user)):
     """NVR'ın çalıştığı fabrika makinesinin canlı CPU/GPU/RAM grafiği (yüz-tanıma yükü)."""

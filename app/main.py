@@ -249,11 +249,11 @@ def _app_csp(nonce):
     img/connect/media https: ile pragmatik (harita döşemeleri, avatar, radyo akışı, hava durumu, OAuth)."""
     return ("default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self'; "
             f"script-src 'self' 'nonce-{nonce}' 'unsafe-eval' 'unsafe-hashes' {_CSP_HASHES} "
-            "https://maps.googleapis.com https://maps.gstatic.com; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; "
+            "https://maps.googleapis.com https://maps.gstatic.com https://cdn.jsdelivr.net; "   # jsdelivr: Cesium (3B uçuş izleme)
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
             "connect-src 'self' https: wss:; media-src 'self' blob: data: https:; "
-            "worker-src 'self' blob:; child-src 'self' blob: data:; frame-src 'self' blob: data:;")
+            "worker-src 'self' blob: https://cdn.jsdelivr.net; child-src 'self' blob: data:; frame-src 'self' blob: data:;")
 
 
 @app.middleware('http')

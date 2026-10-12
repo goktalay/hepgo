@@ -671,9 +671,17 @@ export async function renderDashboard(view, ctx, modules) {
         h('span', { class: 'db-duty-n' }, String(g.people.length)),
         h('span', { class: 'db-duty-caret', 'aria-hidden': 'true' }),
         tEl);
+      // Sistem Yöneticisi / güvenlik: görevi tamamlandı işaretle (grup döndü) — QR okutulmadıysa da
+      const canEnd = ctx.user?.master || (ctx.user?.roles || []).includes('Sistem Yöneticisi') || (ctx.user?.modules || []).includes('security');
+      const endBtn = canEnd ? h('button', { class: 'btn sm db-duty-end', type: 'button', title: 'Görev tamamlandı: grup fabrikaya döndü', onclick: async e => {
+        e.stopPropagation();
+        if (!await confirmDialog('Görev tamamlandı', `${g.plate || 'Araçsız'} · ${g.people.map(p => p.name).join(', ')} — görev tamamlandı olarak işaretlensin mi?`)) return;
+        try { await api.post(`/api/security/duty/${g.id}/return`, {}); toast('Görev tamamlandı'); const d = await api.get('/api/dashboard/data?keys=on_duty'); dbOnDuty(body, d.on_duty?.items || []); }
+        catch (err) { toastError(err); }
+      } }, '✓ Tamamlandı') : null;
       const people = h('div', { class: 'db-duty-people' }, g.people.map(p => h('div', { class: `db-dutyp ${p.pending_exit ? 'noexit' : ''}` },
         dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name), p.pending_exit ? h('span', { class: 'badge yellow', title: 'Onaylı görev; güvenlikte QR çıkış henüz okutulmadı' }, 'çıkış okutmadı') : null)));
-      const item = h('div', { class: 'db-duty-item' }, row, people);
+      const item = h('div', { class: 'db-duty-item' }, row, endBtn ? h('div', { class: 'db-duty-people' }, people.childNodes.length ? [...people.childNodes] : null, h('div', { class: 'db-duty-endrow' }, endBtn)) : people);
       row.addEventListener('click', () => item.classList.toggle('open'));
       return item;
     });

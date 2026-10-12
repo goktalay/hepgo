@@ -8553,3 +8553,4 @@ svg.fa-inline { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 
 svg.fa-inline.fa-solo { margin-right: 0; }
 .btn svg.fa-inline { width: 15px; height: 15px; }
 .seg button svg.fa-inline { width: 14px; height: 14px; }
+.db-duty-endrow { display: flex; justify-content: flex-end; padding: 6px 8px 2px; }

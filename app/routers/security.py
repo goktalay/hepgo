@@ -12,6 +12,13 @@ from .. import auth, db, exitpass
 
 router = APIRouter(prefix='/api/security')
 security_user = auth.require_module('security')
+
+
+def security_or_admin(user=Depends(auth.current_user)):
+    """Güvenlik modülü olanlar ya da Sistem Yöneticisi (pano 'Görevdeki Personel' › Tamamlandı)."""
+    if 'security' in user.get('modules', []) or user.get('master') or auth.ADMIN in user.get('roles', []):
+        return user
+    raise HTTPException(403, 'Bu işlem için güvenlik modülü ya da Sistem Yöneticisi yetkisi gerekir')
 admin_user = auth.require_module('admin')
 BC_KEY = 'building_control'   # app_kv: {'times': ['HH:MM', ...]} günlük bina kontrol saatleri
 # Onaylı olmayan kaydın çıkış kapısında gösterilecek gerekçesi
@@ -180,6 +187,14 @@ def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     if depart and today < depart:
         return {'allow': False, 'reason': f'Görev {depart} tarihinde başlıyor', **info}
     warn = 'Dikkat: tahmini dönüş tarihi geçmiş' if ret and today > ret else None
+    if r['exited_at'] and not r['returned_at']:   # İKİNCİ okutma → grup fabrikaya DÖNDÜ (giriş): Görevde'den düşer, araç içeri
+        conn.execute("UPDATE duty_requests SET returned_at = ?, return_kind = 'sirket' WHERE id = ?", (db.now(), r['id']))
+        plate_in = vehicle_enter(conn, r['vehicle_plate'], user['id'])
+        for nm in people:
+            db.audit(conn, user['id'], 'Personel dönüşü (QR)', 'person_exit', r['id'], f'{nm} · duty')
+        return {'allow': True, 'returned': True, **info, 'note': 'Görevden döndü — giriş yapıldı', 'vehicle_plate': plate_in, 'vehicle_entered': bool(plate_in)}
+    if r['returned_at']:   # üçüncü+ okutma: dönüş zaten kaydedilmiş
+        return {'allow': False, **info, 'reason': f"Bu görev {r['returned_at'][11:16]} itibarıyla tamamlandı (giriş yapılmış)"}
     if not r['exited_at']:   # ilk okutma → "Görevde"ye geç (manuel + saha görevleri)
         conn.execute('UPDATE duty_requests SET exited_at = ? WHERE id = ?', (db.now(), r['id']))
     for nm in people:   # her personel için çıkış kaydı
@@ -205,8 +220,9 @@ def personnel(user=Depends(security_user), conn=db.DB):
 
 
 @router.post('/duty/{did}/return')
-def duty_return(did: int, user=Depends(security_user), conn=db.DB):
-    """Görev grubu fabrikaya döndü (güvenlik "Giriş Yaptı"): grubu "Görevde"den düşürür ve aracını İÇERİ girmiş işaretler."""
+def duty_return(did: int, user=Depends(security_or_admin), conn=db.DB):
+    """Görev grubu fabrikaya döndü (güvenlik "Giriş Yaptı" ya da yönetici pano › Tamamlandı): grubu "Görevde"den düşürür,
+    aracını İÇERİ girmiş işaretler."""
     r = db.row(conn.execute("SELECT * FROM duty_requests WHERE id = ? AND status = 'ONAYLANDI'", (did,)))
     if not r:
         raise HTTPException(404, 'Görev grubu bulunamadı')

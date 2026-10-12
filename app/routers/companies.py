@@ -116,17 +116,18 @@ def _admin(user=Depends(auth.current_user)):
 class GeocodeIn(BaseModel):
     only_missing: bool = True
     ids: Optional[List[int]] = None
+    redo_osm: bool = False   # OpenStreetMap / yaklaşık sonuçları Google ile yenile
 
 
 @router.post('/geocode')
 def geocode_start(body: GeocodeIn, user=Depends(_admin)):
     """Firma adları (ve varsa adresleri) internetten aranır; bulunan enlem/boylam firmaya yazılır. Arka planda çalışır."""
     from .. import geocode
-    started = geocode.run(db.connect, only_missing=body.only_missing, ids=body.ids)
+    started = geocode.run(db.connect, only_missing=body.only_missing, ids=body.ids, redo_osm=body.redo_osm)
     if not started:
         raise HTTPException(409, 'Konum taraması zaten çalışıyor')
     with db.connect() as c:
-        db.audit(c, user['id'], 'Firma konum taraması başlattı', 'settings', None, 'tümü' if not body.ids else f'{len(body.ids)} firma')
+        db.audit(c, user['id'], 'Firma konum taraması başlattı', 'settings', None, ('OSM→Google yenile' if body.redo_osm else 'eksikler') if not body.ids else f'{len(body.ids)} firma')
         c.commit()
     return {'started': True, **geocode.STATE}
 

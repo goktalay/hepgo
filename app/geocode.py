@@ -48,6 +48,21 @@ def google_place(name, key):
     return {'lat': loc['lat'], 'lng': loc['lng'], 'label': f"{c.get('name', '')} · {c.get('formatted_address', '')}".strip(' ·'), 'source': 'google-places'}
 
 
+def google_place_new(query, key):
+    """Places API (New) Text Search — Google Cloud'da 'Places API (New)' etkinse (eski Places API kapalıyken de çalışır)."""
+    body = json.dumps({'textQuery': query, 'regionCode': 'TR', 'languageCode': 'tr', 'maxResultCount': 1}).encode()
+    req = urllib.request.Request('https://places.googleapis.com/v1/places:searchText', data=body, method='POST', headers={
+        'User-Agent': UA, 'Content-Type': 'application/json', 'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location'})
+    with urllib.request.urlopen(req, timeout=12) as r:
+        d = json.loads(r.read().decode('utf-8', errors='replace'))
+    pl = (d.get('places') or [None])[0]
+    if not pl or not pl.get('location'):
+        return None
+    return {'lat': pl['location']['latitude'], 'lng': pl['location']['longitude'],
+            'label': f"{(pl.get('displayName') or {}).get('text', '')} · {pl.get('formattedAddress', '')}".strip(' ·'), 'source': 'google-places'}
+
+
 def nominatim(query):
     wait = 1.1 - (time.monotonic() - _last_nominatim[0])
     if wait > 0:
@@ -91,9 +106,13 @@ def find(name, address=None, city=None):
         if simp and simp != address:
             tries.append(lambda: nominatim(simp))
     if key:
-        tries.append(lambda: google_place(f'{name}{", " + city if city else ""}', key))
+        q1 = f'{name}{", " + city if city else ""}'
+        tries.append(lambda: google_place_new(q1, key))        # Places API (New)
+        tries.append(lambda: google_place(q1, key))            # eski Places API (hâlâ açıksa)
         if cname != name:
-            tries.append(lambda: google_place(f'{cname}{", " + city if city else ""}', key))
+            q2 = f'{cname}{", " + city if city else ""}'
+            tries.append(lambda: google_place_new(q2, key))
+            tries.append(lambda: google_place(q2, key))
     if city:
         tries.append(lambda: nominatim(f'{cname}, {city}'))
     tries.append(lambda: nominatim(name))
@@ -139,7 +158,7 @@ def _company_address(conn, cid):
     return (', '.join(x for x in (addr, city) if x) or None), city
 
 
-def run(conn_factory, only_missing=True, ids=None):
+def run(conn_factory, only_missing=True, ids=None, redo_osm=False):
     """Toplu tarama (arka plan). conn_factory: yeni bağlantı üreten fonksiyon (iş parçacığı kendi bağlantısını açar)."""
     with _lock:
         if STATE['running']:
@@ -151,7 +170,9 @@ def run(conn_factory, only_missing=True, ids=None):
         try:
             where = 'active = 1'
             args = []
-            if only_missing:
+            if redo_osm:   # OSM/yaklaşık bulunanlar Google ile yeniden aranır (Google sonucu olanlara dokunulmaz)
+                where += " AND (lat IS NULL OR lng IS NULL OR geo_source IN ('nominatim', 'approx'))"
+            elif only_missing:
                 where += ' AND (lat IS NULL OR lng IS NULL)'
             if ids:
                 where += f" AND id IN ({','.join('?' * len(ids))})"

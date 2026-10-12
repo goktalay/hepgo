@@ -59,9 +59,11 @@ function geocodeBtn(ctx, reload, missingCount) {
   };
   btn.addEventListener('click', async () => {
     const n = missingCount ? missingCount() : null;
-    const all = await confirmDialog('Konumları bul', `Yalnız ENLEM/BOYLAMI OLMAYAN aktif firmalar taranır${n != null ? ` (${n} firma)` : ''}; konumu bulunmuş firmalara dokunulmaz. Adı ve varsa adresi internette aranır; bulunamayanlar bir sonraki taramada yeniden denenir.`, { okLabel: 'Başlat' });
-    if (!all) return;
-    try { await api.post('/api/companies/geocode', { only_missing: true }); btn.disabled = true; timer = setInterval(poll, 1500); poll(); } catch (err) { toastError(err); }
+    const start = async redo => { try { await api.post('/api/companies/geocode', { only_missing: true, redo_osm: redo }); btn.disabled = true; timer = setInterval(poll, 1500); poll(); } catch (err) { toastError(err); } };
+    modal({ title: 'Konumları bul',
+      body: h('div', null, h('p', { class: 'small', style: { marginTop: 0 } }, `Yalnız ENLEM/BOYLAMI OLMAYAN aktif firmalar taranır${n != null ? ` (${n} firma)` : ''}; konumu bulunmuş firmalara dokunulmaz. Adı ve varsa adresi internette aranır (Google → OpenStreetMap); bulunamayanlar bir sonraki taramada yeniden denenir.`),
+        h('p', { class: 'small muted' }, '“OSM sonuçlarını Google ile yenile”: daha önce OpenStreetMap ile ya da yaklaşık (ilçe merkezi) bulunan konumlar Google ile yeniden aranır; Google ile bulunmuş olanlara dokunulmaz.')),
+      actions: [{ label: 'Vazgeç' }, { label: 'OSM sonuçlarını Google ile yenile', onClick: () => start(true) }, { label: 'Eksikleri tara', class: 'primary', onClick: () => start(false) }] });
   });
   api.get('/api/companies/geocode/status').then(s => { if (s.running) { timer = setInterval(poll, 1500); poll(); } }).catch(() => {});
   return btn;

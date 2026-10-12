@@ -169,6 +169,12 @@ export async function createFactory3D(mountEl, opts = {}) {
     hudM.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   };
   MODES.forEach(([k, lbl]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.m = k; b.textContent = lbl; b.onclick = () => setMouseMode(k); hudM.appendChild(b); });
+  // ⛶ Tam ekran: 3B kapsayıcı tam ekrana geçer; sol/sağ paneller kapsayıcıya göre konumlandığından kenarlara yaslanır, sahne büyür
+  const fsBtn = document.createElement('button'); fsBtn.type = 'button'; fsBtn.className = 'f3d-fs'; fsBtn.textContent = '⛶ Tam ekran'; hudM.appendChild(fsBtn);
+  const fsTarget = () => mountEl.closest('.fab-3d') || mountEl;
+  fsBtn.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); else fsTarget().requestFullscreen?.().catch(() => {}); };
+  const onFs = () => { const on = !!document.fullscreenElement && (document.fullscreenElement === fsTarget() || fsTarget().contains(document.fullscreenElement)); fsBtn.textContent = on ? '⛶ Tam ekrandan çık' : '⛶ Tam ekran'; fsTarget().classList.toggle('f3d-fullscreen', on); setTimeout(() => { try { resize(); } catch {} }, 60); };
+  document.addEventListener('fullscreenchange', onFs);
   mountEl.appendChild(hudM); setMouseMode('orbit');
 
   const hemi = new T.HemisphereLight(0xffffff, 0x9aa6bd, 1.0); scene.add(hemi);
@@ -624,7 +630,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); hudC.classList.toggle('f3d-dark', dark); },
     resize,
-    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); hudC.remove(); clearInterval(clkTimer); },
+    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); document.removeEventListener('fullscreenchange', onFs); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); hudC.remove(); clearInterval(clkTimer); },
   };
 }
 
@@ -847,7 +853,10 @@ function ensureHudStyle() {
   .f3d-card.f3d-min .f3d-bd,.f3d-card.f3d-min .f3d-ft,.f3d-card.f3d-min .f3d-hd>*:not(.f3d-ic){display:none}
   .f3d-card.f3d-min .f3d-hd{border:0;padding:0}
   .f3d-card.f3d-min .f3d-ic{font-size:20px}
-  .f3d-right .f3d-card.f3d-min{align-self:flex-end}   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
+  .f3d-right .f3d-card.f3d-min{align-self:flex-end}
+  .f3d-modes .f3d-fs{margin-left:4px;border-left:1px solid rgba(28,34,51,.12)!important;border-radius:0 999px 999px 0}
+  .f3d-fullscreen{width:100vw!important;height:100vh!important;max-width:none!important;border-radius:0!important;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
+  .f3d-fullscreen>*{height:100%}   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
   .f3d-togs{display:flex;flex-direction:column;gap:7px}
   .f3d-tog{display:flex;align-items:center;gap:10px;font-size:12px;color:#2a3040;cursor:pointer;user-select:none}
   .f3d-tog span{display:flex;align-items:center;gap:7px}

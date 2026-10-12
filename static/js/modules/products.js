@@ -291,7 +291,7 @@ async function renderDetail(view, id, ctx) {
       if (tab === 'tree') await treeTab(stage, p, canEdit);
       else if (tab === 'recipe') await recipeTab(stage, p, canEdit);
       else if (tab === 'image') await imageTab(stage, p, canEdit);
-      else if (p.type === 'MAMUL' && ['caymaz', 'caymaz-v2'].includes(p.schema)) cleanup = assemblyTab(stage, p, canEdit);   // uçak: 3B montaj
+      else if (p.type === 'MAMUL' && ['caymaz', 'caymaz-v2', 'caymaz-v3'].includes(p.schema)) cleanup = assemblyTab(stage, p, canEdit);   // uçak: 3B montaj
       else cleanup = await gcodeTab(stage, p, canEdit);
     } catch (err) {
       clear(stage, h('div', { class: 'card empty' }, err.message));

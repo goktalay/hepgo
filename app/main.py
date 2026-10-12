@@ -32,6 +32,12 @@ async def lifespan(app):
         integrations.apply(conn)
     with db.connect() as conn:   # kataloğa sonradan eklenen parçalar (ör. elektronik kat) mevcut siparişlere
         production.sync_catalog_parts(conn)
+    from . import semis
+    with db.connect() as conn:   # CAYMAZ V3: V2 olan firmada ürün ağacı + yeni parçaların G-code'u (bir kez; idempotent)
+        try:
+            semis.ensure_versions(conn)
+        except Exception as e:   # noqa: BLE001
+            print('[semis] sürüm kurulumu hatası:', e)
     auth.seed_admin()
     from . import rbac
     with db.connect() as conn:   # Rol Yönetimi: koddaki roller / varsayılan modül izinleri (bir kez) veritabanına

@@ -9,7 +9,7 @@ import copy
 
 from . import db, spares
 from . import plane as caymaz
-from . import plane_v2
+from . import plane_v2, plane_v3
 
 SEMI = spares.SEMI
 ELECTRONICS = 'ELEKTRONIK'
@@ -129,8 +129,12 @@ SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id']), 'titl
                 for p in caymaz.build()})
 SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v2), 'title': f'CAYMAZ V2 parçası {p["id"]}'}
                 for p in plane_v2.build() if f'{PART_PREFIX}{p["id"]}' not in SCHEMAS})
+SCHEMAS.update({f'semi-v3-{code.lower()}': {'module': SemiSchema(sec, plane_v3), 'title': f'CAYMAZ V3 {name} (yarı mamul)'}
+                for code, (sec, name) in SEMIS.items()})
+SCHEMAS.update({f'{PART_PREFIX}{p["id"]}': {'module': PartSchema(p['id'], plane_v3), 'title': f'CAYMAZ V3 parçası {p["id"]}'}
+                for p in plane_v3.build() if f'{PART_PREFIX}{p["id"]}' not in SCHEMAS})
 # yarı mamul kodu → montaj bölümü (V2 yarı mamulleri kod sonunda 2: SLK2, SGK2, GVD2, ELK2)
-SEMI_SECTIONS = {**{c: v[0] for c, v in SEMIS.items()}, **{f'{c}2': v[0] for c, v in SEMIS.items()}}
+SEMI_SECTIONS = {**{c: v[0] for c, v in SEMIS.items()}, **{f'{c}2': v[0] for c, v in SEMIS.items()}, **{f'{c}3': v[0] for c, v in SEMIS.items()}}
 
 
 def is_part_spare(product):
@@ -201,43 +205,93 @@ V2_DESCRIPTION = ('Benzin deposunu rahat yerleştirmek için kapakları büyütt
                   'borular eklendi, kanatların kolay birleştirilmesi için kelepçe sistemi eklendi.')
 
 
-def create_v2(conn, code='CYZ2'):
-    """CAYMAZ V2 ürün ağacı (bir kez, firma bazında elle çalıştırılır): mamul, dört V2 yarı mamulü, yalnızca V2'de
-    olan parçaların yedek parça ürünleri ve montaj sarfı kullanımları (V1 yarı mamullerinden kopya).
-    Ortak parçalar V1'in parça yedekleridir (yeni ürün açılmaz). Mamulün id'sini döner."""
+V3_DESCRIPTION = ('CAYMAZ V2 ile aynı yapı; L4, R4 kanat parçaları ve gövde 01 parçası yeniden çizildi '
+                  '(CAYMAZ - L4V3, CAYMAZ - R4V3, CAYMAZ O1 - V3).')
+# sürüm: (mamul kodu, ad, seri, açıklama, şema anahtarı, parça şeması modülü, montaj sarfı kopyalanacak önceki sürüm eki)
+VERSIONS = {
+    '2': ('CYZ2', 'CAYMAZ V2', 'CYZ-S2', V2_DESCRIPTION, 'caymaz-v2', plane_v2, ''),
+    '3': ('CYZ3', 'CAYMAZ V3', 'CYZ-S3', V3_DESCRIPTION, 'caymaz-v3', plane_v3, '2'),
+}
+
+
+def create_version(conn, ver, code=None):
+    """CAYMAZ V<ver> ürün ağacı (bir kez, firma bazında): mamul, dört V<ver> yarı mamulü, yalnızca bu sürümde olan
+    parçaların yedek parça ürünleri (baskı dosyası/süresi print_files'tan) ve montaj sarfı kullanımları (önceki sürümün
+    yarı mamullerinden kopya). Ortak parçalar önceki sürümlerin parça yedekleridir (yeni ürün açılmaz). Mamul id'sini döner."""
+    vcode, vname, serial, desc, schema_key, plane_mod, prev = VERSIONS[ver]
+    code = code or vcode
     row = conn.execute('SELECT id FROM products WHERE code = ?', (code,)).fetchone()
     if row:
         return row[0]
+    from .print_files import PRINT_FILES
     mamul = conn.execute(
         '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, orderable, usage_type, created_at)
-           VALUES (?,?,?,?,?,?,?,1,'TEK',?)''', (code, 'CAYMAZ V2', 'CYZ-S2', V2_DESCRIPTION, 'caymaz-v2', code, 'MAMUL', db.now())).lastrowid
+           VALUES (?,?,?,?,?,?,?,1,'TEK',?)''', (code, vname, serial, desc, schema_key, code, 'MAMUL', db.now())).lastrowid
     semi_ids = {}
     for c, (sec, name) in SEMIS.items():
-        semi_ids[f'{c}2'] = conn.execute(
+        semi_ids[f'{c}{ver}'] = conn.execute(
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, parent_id, orderable, created_at)
-               VALUES (?,?,?,?,?,?,?,?,0,?)''', (f'{c}2', f'{name} V2', f'{c}2-YM', 'CAYMAZ V2 yarı mamulü · montajda birleştirilen ana yapı',
-                                                   f'semi-v2-{c.lower()}', f'{c}2', SEMI, mamul, db.now())).lastrowid
-        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (mamul, semi_ids[f'{c}2']))
-    for part in plane_v2.build():
+               VALUES (?,?,?,?,?,?,?,?,0,?)''', (f'{c}{ver}', f'{name} V{ver}', f'{c}{ver}-YM', f'{vname} yarı mamulü · montajda birleştirilen ana yapı',
+                                                   f'semi-v{ver}-{c.lower()}', f'{c}{ver}', SEMI, mamul, db.now())).lastrowid
+        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (mamul, semi_ids[f'{c}{ver}']))
+    for part in plane_mod.build():
         schema = f'{PART_PREFIX}{part["id"]}'
         if conn.execute('SELECT 1 FROM products WHERE schema = ?', (schema,)).fetchone():
-            continue   # V1 ile ortak parça
+            continue   # önceki sürümle ortak parça
         pcode = part['id'] if not conn.execute('SELECT 1 FROM products WHERE code = ?', (part['id'],)).fetchone() else f'P-{part["id"]}'
+        pf = PRINT_FILES.get(part['id'], (None, None))
         conn.execute(
             '''INSERT INTO products (code, name, serial, description, schema, queue_prefix, type, per_print, parent_id,
-                                      orderable, created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?)''',
-            (pcode, part_name(part), f'{part["id"]}-YP', 'CAYMAZ V2 parçası · mamul siparişiyle üretilir', schema, 'YP',
-             SEMI, 1, semi_ids[semi_of(part, '2')], db.now()))
-    for part in plane_v2.build():   # ağaç: V2 ana yapısı → parçaları (V1 ile ortak olanlar dahil)
+                                      orderable, print_file, print_minutes, created_at) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)''',
+            (pcode, part_name(part), f'{part["id"]}-YP', f'{vname} parçası · mamul siparişiyle üretilir', schema, 'YP',
+             SEMI, 1, semi_ids[semi_of(part, ver)], pf[0], pf[1], db.now()))
+    for part in plane_mod.build():   # ağaç: V<ver> ana yapısı → parçaları (ortak olanlar dahil)
         child = conn.execute('SELECT id FROM products WHERE schema = ?', (f'{PART_PREFIX}{part["id"]}',)).fetchone()
-        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (semi_ids[semi_of(part, '2')], child[0]))
-    v1 = dict(conn.execute("SELECT code, id FROM products WHERE schema LIKE 'semi-%' AND code IN ('SLK','SGK','GVD','ELK')").fetchall())
+        conn.execute('INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty) VALUES (?,?,1)', (semi_ids[semi_of(part, ver)], child[0]))
+    prev_codes = tuple(f'{c}{prev}' for c in SEMIS)
+    prev_ids = dict(conn.execute(f"SELECT code, id FROM products WHERE schema LIKE 'semi-%' AND code IN ({','.join('?' * len(prev_codes))})", prev_codes).fetchall())
     for c in SEMIS:
-        if c in v1:   # montaj sarfı kullanımları V1 ana yapılarından kopyalanır
+        if f'{c}{prev}' in prev_ids:   # montaj sarfı kullanımları önceki sürümün ana yapılarından kopyalanır
             conn.execute('''INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty, pos)
                             SELECT ?, b.child_id, b.qty, 1 FROM product_bom b JOIN products p ON p.id = b.child_id
-                            WHERE b.parent_id = ? AND p.schema LIKE 'spare-%' ''', (semi_ids[f'{c}2'], v1[c]))
+                            WHERE b.parent_id = ? AND p.schema LIKE 'spare-%' ''', (semi_ids[f'{c}{ver}'], prev_ids[f'{c}{prev}']))
+    # mamul düzeyinde V<prev>'e eklenmiş diğer yarı mamuller (ör. karbüratör kapağı) aynen bağlanır
+    if prev:
+        prev_m = conn.execute('SELECT id FROM products WHERE code = ?', (VERSIONS[prev][0],)).fetchone()
+        if prev_m:
+            conn.execute('''INSERT OR IGNORE INTO product_bom (parent_id, child_id, qty, pos)
+                            SELECT ?, b.child_id, b.qty, b.pos FROM product_bom b JOIN products p ON p.id = b.child_id
+                            WHERE b.parent_id = ? AND p.schema NOT LIKE 'semi-%' ''', (mamul, prev_m[0]))
+    conn.commit()
     return mamul
+
+
+def create_v2(conn, code='CYZ2'):
+    return create_version(conn, '2', code)
+
+
+def create_v3(conn, code='CYZ3'):
+    return create_version(conn, '3', code)
+
+
+def ensure_versions(conn):
+    """Başlangıçta: V2 olan firmada V3 yoksa oluşturur; V3'e özel parçaların G-code'u uploads/gcode altında
+    (print_files adıyla) duruyorsa bağlar (önizleme/süre üretilir). Hiçbir şey yoksa dokunmaz."""
+    if not conn.execute('SELECT 1 FROM products WHERE code = ?', (VERSIONS['2'][0],)).fetchone():
+        return None
+    mid = create_v3(conn)
+    from . import config, gcode
+    folder = config.UPLOAD_DIR / gcode.FOLDER
+    for r in db.rows(conn.execute('''SELECT id, print_file FROM products WHERE gcode_file IS NULL AND print_file IS NOT NULL
+                                     AND schema IN (?,?,?)''', tuple(f'{PART_PREFIX}{k}' for k in plane_v3.CHANGED.values()))):
+        src = folder / f'{r["print_file"]}.gcode'
+        if src.is_file():
+            try:
+                gcode.attach(conn, r['id'], src)
+                conn.commit()
+            except Exception as e:   # noqa: BLE001 — bir dosya bozuksa diğerleri bağlansın
+                print('[semis] gcode bağlanamadı', src.name, e)
+    return mid
 
 
 def print_info(conn):

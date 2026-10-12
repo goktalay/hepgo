@@ -87,4 +87,8 @@ PRINT_FILES = {
     'R15A-V2': ('R15-V2 PART A _ABS_12h20m', 740),
     'R15B-V2': ('R15-V2 PART B_ABS_14h39m', 879),
     'R18-V2': ('R18-V2_ABS_9h53m', 593),
+    # CAYMAZ V3 (2026-10-12): yalnız L4, R4 ve gövde 01 yeniden çizildi
+    'L4-V3': ('CAYMAZ - L4V3_ABS_8h38m', 518),
+    'R4-V3': ('CAYMAZ - R4V3_ABS_8h36m', 516),
+    '01-V3': ('CAYMAZ O1 - V3_ABS_1d2h27m', 1587),
 }

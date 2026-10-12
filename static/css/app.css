@@ -8505,3 +8505,4 @@ textarea.sv-input { resize: vertical; }
 .feed-viewer { display: flex; align-items: center; gap: 10px; } .feed-viewer b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-eye { font-size: 16px; line-height: 1; }
 .todo-mini-due { margin-top: 4px; } .todo-mini-due.late { color: var(--danger); font-weight: 700; }
+.db-duty-plate.noexit { opacity: .75; border-style: dashed; } .db-dutyp.noexit b { opacity: .8; }

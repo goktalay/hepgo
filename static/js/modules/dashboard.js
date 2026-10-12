@@ -635,12 +635,12 @@ export async function renderDashboard(view, ctx, modules) {
       const tEl = h('b', { class: 'db-duty-digital' }, elapsed(g.since));
       clocks.push({ tEl, since: g.since });
       const row = h('button', { class: 'db-duty-row', type: 'button' },
-        h('span', { class: `db-duty-plate${g.plate ? '' : ' noveh'}` }, g.plate || 'Araçsız'),
+        h('span', { class: `db-duty-plate${g.plate ? '' : ' noveh'}${g.people.every(p => p.pending_exit) ? ' noexit' : ''}` }, g.plate || 'Araçsız'),
         h('span', { class: 'db-duty-n' }, String(g.people.length)),
         h('span', { class: 'db-duty-caret', 'aria-hidden': 'true' }),
         tEl);
-      const people = h('div', { class: 'db-duty-people' }, g.people.map(p => h('div', { class: 'db-dutyp' },
-        dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name))));
+      const people = h('div', { class: 'db-duty-people' }, g.people.map(p => h('div', { class: `db-dutyp ${p.pending_exit ? 'noexit' : ''}` },
+        dbAvatar(p.name, p.photo, 'lg'), h('b', null, p.name), p.pending_exit ? h('span', { class: 'badge yellow', title: 'Onaylı görev; güvenlikte QR çıkış henüz okutulmadı' }, 'çıkış okutmadı') : null)));
       const item = h('div', { class: 'db-duty-item' }, row, people);
       row.addEventListener('click', () => item.classList.toggle('open'));
       return item;

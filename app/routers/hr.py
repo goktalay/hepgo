@@ -1424,8 +1424,12 @@ def duty_vehicles(user=Depends(auth.current_user), conn=db.DB):
 
 @duties_me_router.get('')
 def my_duty_reqs(user=Depends(auth.current_user), conn=db.DB):
-    """Kişisel › Görevlerim: oluşturduğum ya da göreve gittiğim formlar. Onaylananlar pass_token taşır."""
-    rows = _duty_reqs(conn, '(d.requested_by = ? OR e.user_id = ?)', (user['id'], user['id']))
+    """Kişisel › Görevlerim: oluşturduğum, göreve gittiğim (ana ya da ek personel), onayıma gelen ya da KARAR VERDİĞİM formlar.
+    Onaylananlar pass_token taşır."""
+    uid = user['id']
+    rows = _duty_reqs(conn, '''(d.requested_by = ? OR e.user_id = ? OR d.approver_id = ? OR d.decided_by = ?
+                                OR EXISTS (SELECT 1 FROM duty_people dp2 JOIN employees e2 ON e2.id = dp2.employee_id
+                                           WHERE dp2.duty_id = d.id AND e2.user_id = ?))''', (uid, uid, uid, uid, uid))
     conn.execute("UPDATE duty_requests SET seen_at = ? WHERE requested_by = ? AND status != 'BEKLIYOR' AND seen_at IS NULL",
                  (db.now(), user['id']))
     return {'items': rows}
@@ -1549,22 +1553,42 @@ def on_leave_today(conn):
             ORDER BY name""", (today, today)))
 
 
+def _time_passed(iso):
+    """ISO zaman şu andan önce mi? Saat dilimli ('+03:00') değerler doğru karşılaştırılır; dilimsiz eski kayıtlar Türkiye saati sayılır."""
+    from datetime import datetime, timedelta, timezone
+    try:
+        d = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return True
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone(timedelta(hours=3)))
+    return d <= datetime.now(timezone.utc)
+
+
 def on_duty_now(conn):
-    """Şu an görevde olan personel (onaylı görev formları; çıkış tarihi geçmiş, dönüş geçmemiş, henüz geri girmemiş).
-    Görev araca/göreve özel olduğundan her görevdeki HER personel ayrı satır olarak döner."""
+    """Şu an görevde olan personel: onaylı görev formları, dönüş geçmemiş, henüz geri girmemiş. QR ile çıkış okutmuş olanlar
+    (ya da saha görevi araç çıkışı) kesin; çıkış okutmadan planlı çıkış saati geçmiş olanlar da listelenir ve pending_exit=True
+    ile işaretlenir ('çıkış okutmadı'). Görev araca/göreve özel olduğundan her görevdeki HER personel ayrı satır döner."""
     today = db.now()[:10]
-    return db.rows(conn.execute(
+    rows = db.rows(conn.execute(
         """SELECT d.id, e.first_name || ' ' || e.last_name AS name, e.title, u.photo,
-                  d.destination, d.vehicle_plate, d.depart_at, d.return_at, d.source
+                  d.destination, d.vehicle_plate, d.depart_at, d.return_at, d.source, d.exited_at
              FROM duty_requests d
              JOIN duty_people dp ON dp.duty_id = d.id
              JOIN employees e ON e.id = dp.employee_id
              LEFT JOIN users u ON u.id = e.user_id
             WHERE d.status = 'ONAYLANDI' AND d.returned_at IS NULL
-              AND (d.exited_at IS NOT NULL OR d.source = 'field')
               AND substr(d.depart_at, 1, 10) <= ?
               AND (d.return_at IS NULL OR substr(d.return_at, 1, 10) >= ?)
             ORDER BY d.depart_at DESC, name""", (today, today)))
+    out = []
+    for r in rows:
+        exited = bool(r['exited_at']) or r['source'] == 'field'
+        if not exited and not _time_passed(r['depart_at']):
+            continue   # planlı çıkış saati henüz gelmedi
+        r['pending_exit'] = not exited
+        out.append(r)
+    return out
 
 
 def on_duty_groups(conn):

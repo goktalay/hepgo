@@ -373,7 +373,7 @@ function enterApp() {
     import('./modules/tvroom.js').then(m => m.renderTv(root, ctx));
     return;
   }
-  renderShell(); checkWhatsNew(); startSupportWatch(); checkDevicePush();
+  renderShell(); checkWhatsNew(); startSupportWatch(); checkDevicePush(); uiUpdatesInit();
   document.querySelector('.support-pill')?.remove();
   if (ctx.user?.support) {   // merkez destek oturumu göstergesi
     document.body.append(h('div', { class: 'support-pill' }, '🛟 ',
@@ -1276,19 +1276,49 @@ async function checkWhatsNew() {
 }
 
 // "Yeni sürüm" uyarısı: sunucudaki arayüz derlemesi değişince herkese üstte banner; dokununca önbelleği temizleyip yeniden yükler.
+// EKRAN BAZLI güncelleme: sunucu her başlangıçta değişen dosyalardan etkilenen ekranları çıkarır (ui_releases). İstemci açılışta
+// hangi sürümle yüklendiğini bildirir; derleme değişince yalnız o anki ekran etkilenmişse sağ üstte "Yenile" düğmesi çıkar; etkilenmeyen
+// ekrandaki kullanıcı değişen ekrana girince görür. Yenile / güncel kodla ekrana giriş sunucuda (sürüm, ekran, kullanıcı) olarak izlenir.
 let buildId = null;
+const uiUpd = { loaded: 0, current: 0, pending: {}, visited: new Set(), dismissed: new Set(), at: 0 };
 window.addEventListener('caymaz:build', e => {
   if (!buildId) { buildId = e.detail; return; }
-  if (e.detail !== buildId && !document.getElementById('ver-banner')) showVersionBanner();
+  if (e.detail !== buildId) { buildId = e.detail; uiRefreshPending(); }
 });
-function showVersionBanner() {
-  const bar = h('div', { id: 'ver-banner', class: 'ver-banner' },
-    h('span', null, '🎉 Yeni sürüm hazır — güncellemek için dokunun'),
-    ctx.user?.master ? h('button', { class: 'btn sm ghost-light', type: 'button', onclick: () => whatsNewModal(loadedVersion) }, 'Neler değişti?') : null,
-    h('button', { class: 'btn sm', type: 'button', onclick: hardReload }, 'Güncelle'),
-    h('button', { class: 'ver-x', type: 'button', title: 'Şimdilik kapat', onclick: () => bar.remove() }, '×'));
-  document.body.append(bar);
+const currentScreen = () => { const k = location.hash.replace(/^#\/?/, '').split('/')[0]; return k || 'home'; };
+async function uiUpdatesInit() {
+  try {
+    const d = await api.post('/api/ui/loaded', { stamp: window.__VER || null });
+    uiUpd.loaded = d.release || 0; uiUpd.current = d.current || 0; uiUpd.pending = d.pending || {}; uiUpd.at = Date.now();
+  } catch { /* takip yoksa düğme çıkmaz */ }
+  uiApply();
 }
+async function uiRefreshPending() {
+  try { const d = await api.get(`/api/ui/updates?loaded=${uiUpd.loaded}`); uiUpd.current = d.current || 0; uiUpd.pending = d.pending || {}; uiUpd.at = Date.now(); } catch { return; }
+  uiApply();
+}
+function uiAffected(screen) { return uiUpd.pending['*'] || uiUpd.pending[screen] || 0; }
+function uiApply() {
+  if (!ctx.user) return;
+  const screen = currentScreen(), rel = uiAffected(screen);
+  const old = document.getElementById('ui-upd');
+  if (rel && !uiUpd.dismissed.has(screen)) {
+    if (old && old.dataset.screen === screen) return;
+    old?.remove();
+    const pill = h('div', { id: 'ui-upd', class: 'ui-upd', 'data-screen': screen },
+      h('span', { class: 'ui-upd-dot' }), h('span', null, uiUpd.pending['*'] ? 'Uygulama güncellendi' : 'Bu ekran güncellendi'),
+      ctx.user?.master ? h('button', { class: 'btn sm ghost-light', type: 'button', onclick: () => whatsNewModal(loadedVersion) }, 'Neler değişti?') : null,
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { await api.post('/api/ui/ack', { screen, release: rel, kind: 'refresh' }); } catch { /* */ } hardReload(); } }, '⟳ Yenile'),
+      h('button', { class: 'ver-x', type: 'button', title: 'Şimdilik kapat', onclick: () => { uiUpd.dismissed.add(screen); pill.remove(); } }, '×'));
+    document.body.append(pill);
+    return;
+  }
+  old?.remove();
+  // güncel kodla ekrana girdi → bu ekran için bu sürüm 'güncellendi' sayılır (açılış başına bir kez)
+  if (!rel && uiUpd.loaded && !uiUpd.visited.has(screen)) { uiUpd.visited.add(screen); api.post('/api/ui/ack', { screen, release: uiUpd.loaded, kind: 'visit' }).catch(() => {}); }
+}
+window.addEventListener('hashchange', () => setTimeout(uiApply, 50));
+setInterval(() => { if (!document.hidden && ctx.user && Date.now() - uiUpd.at > 120000) uiRefreshPending(); }, 60000);
 async function hardReload() {
   try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } } catch { /* */ }
   location.reload();

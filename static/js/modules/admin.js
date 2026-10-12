@@ -37,10 +37,16 @@ const DEFAULT_TILES = ['online_users', 'printers_printing', 'printers_really_idl
   'orders_open', 'today_done', 'parts_error', 'parts_pending_approval', 'printers_offline'];
 const PREF = 'adminTiles';
 
-const nav = cur => segmented([['', 'Sistem Durumu'], ['live', 'Canlı Üretim']], cur, k => { location.hash = k ? `#/admin/${k}` : '#/admin'; }, { tabs: true });
+const nav = cur => segmented([['', 'Sistem Durumu'], ['live', 'Canlı Üretim'], ['updates', 'Sürüm Takibi']], cur, k => { location.hash = k ? `#/admin/${k}` : '#/admin'; }, { tabs: true });
 
 export async function render(view, params, ctx) {
   if (params[0] === 'live') return renderLive(view, params, ctx);
+  if (params[0] === 'updates') {   // ekran bazlı sürüm takibi: sürüm → ekran → kullanıcı (güncelledi / güncellemedi)
+    const body = h('div');
+    clear(view, pageHead('Yönetim', { back: '#/', sub: 'Sürüm Takibi · hangi ekran hangi sürümde değişti, kim güncelledi', tabs: nav('updates') }), body);
+    const mod = await import('./uiupdates.js');
+    return mod.render(view, body);
+  }
   return renderSystem(view);
 }
 

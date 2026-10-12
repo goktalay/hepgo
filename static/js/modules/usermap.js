@@ -2,7 +2,7 @@
 // Veri: GET /api/location/latest (yalnız master/admin/güvenlik/İK). Konumu olmayan kullanıcı gösterilmez.
 // Google Haritalar anahtarı yoksa liste yedeğine düşer.
 import { api, fileUrl } from '../api.js';
-import { clear, h, onLeave, t, toastError } from '../ui.js';
+import { clear, h, onLeave, t, toast, toastError } from '../ui.js';
 import { loadMaps } from '../maps.js';
 
 const initials = name => (name || '?').split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toLocaleUpperCase('tr');
@@ -82,7 +82,13 @@ export async function render(view, params, ctx) {
         h('b', null, p.full_name || 'Kişi'),
         h('div', { class: 'small' }, h('span', { class: `um-dot ${pr.cls}` }), pr.label),
         h('div', { class: 'small muted' }, `Konum: ${ago(p.at)}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''}`),
-        h('a', { href: `https://www.google.com/maps?q=${p.lat},${p.lng}`, target: '_blank', rel: 'noopener', class: 'small' }, 'Google Haritalar ↗')) });
+        h('a', { href: `https://www.google.com/maps?q=${p.lat},${p.lng}`, target: '_blank', rel: 'noopener', class: 'small' }, 'Google Haritalar ↗'),
+        // Ev olarak kaydet: bu konum personelin 'Ev' adresine enlem/boylam olarak yazılır (İK › Adresler haritasında ev işareti)
+        p.employee_id ? h('div', { style: { marginTop: '6px' } }, h('button', { class: 'btn sm', type: 'button', onclick: async e => {
+          const btn = e.currentTarget; btn.disabled = true;
+          try { const r = await api.post(`/api/hr/employees/${p.employee_id}/home-location`, { lat: p.lat, lng: p.lng }); toast(r.created ? 'Ev konumu kaydedildi (yeni Ev adresi açıldı)' : 'Ev konumu güncellendi'); btn.textContent = '🏠 Ev kaydedildi'; }
+          catch (err) { toastError(err); btn.disabled = false; }
+        } }, '🏠 Ev olarak kaydet')) : null) });
       pin.addEventListener('click', () => { info.setPosition(pos); info.open(map); });
       const ov = new AvatarOverlay(pos, pin); ov.setMap(map); overlays.push(ov);
     }

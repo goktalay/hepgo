@@ -641,6 +641,43 @@ def update_address(eid: int, aid: int, body: AddressIn, user=Depends(hr_user), c
     return {'ok': True}
 
 
+class HomeLocIn(BaseModel):
+    lat: float
+    lng: float
+    label: Optional[str] = 'Ev'
+
+
+def _hr_or_admin(user=Depends(auth.current_user)):
+    if 'hr' in user.get('modules', []) or user.get('master') or auth.ADMIN in user.get('roles', []):
+        return user
+    raise HTTPException(403, 'Bu işlem için İK ya da Sistem Yöneticisi yetkisi gerekir')
+
+
+@router.post('/employees/{eid}/home-location')
+def set_home_location(eid: int, body: HomeLocIn, user=Depends(_hr_or_admin), conn=db.DB):
+    """Canlı Konum › kişi balonu › 'Ev olarak kaydet': enlem/boylam personelin 'Ev' adresine yazılır (yoksa adres açılır).
+    İK › Adresler'de harita üzerinde ev işaretiyle gösterilir."""
+    _get(conn, eid)
+    if not (-90 <= body.lat <= 90 and -180 <= body.lng <= 180):
+        raise HTTPException(400, 'Geçersiz koordinat')
+    label = (body.label or 'Ev').strip()[:40] or 'Ev'
+    lat, lng = round(body.lat, 6), round(body.lng, 6)
+    a = db.row(conn.execute('SELECT * FROM employee_addresses WHERE employee_id = ? AND label = ? ORDER BY is_primary DESC, id LIMIT 1', (eid, label)))
+    if a:
+        conn.execute('UPDATE employee_addresses SET lat = ?, lng = ?, updated_at = ? WHERE id = ?', (lat, lng, db.now(), a['id']))
+        aid = a['id']
+    else:
+        aid = conn.execute('''INSERT INTO employee_addresses (employee_id, label, address, note, lat, lng, is_primary, created_at)
+                              VALUES (?,?,?,?,?,?,?,?)''',
+                           (eid, label, f'Konumdan kaydedildi ({lat}, {lng}) — adresi düzenleyin', 'Canlı Konum › Ev olarak kaydet',
+                            lat, lng, 0, db.now())).lastrowid
+        _set_primary(conn, eid, aid, False)
+    conn.commit()
+    event(conn, eid, user['id'], 'Ev konumu kaydedildi', f'{label}: {lat}, {lng}')
+    db.audit(conn, user['id'], 'Personel ev konumu kaydetti', 'employee', eid, f'{lat}, {lng}')
+    return {'ok': True, 'address_id': aid, 'lat': lat, 'lng': lng, 'created': not a}
+
+
 @router.delete('/employees/{eid}/addresses/{aid}')
 def delete_address(eid: int, aid: int, user=Depends(hr_user), conn=db.DB):
     a = _address(conn, eid, aid)

@@ -106,7 +106,8 @@ def location_latest(user=Depends(auth.current_user), conn=db.DB):
     allowed = user.get('master') or any(r in user.get('roles', []) for r in (auth.ADMIN, auth.SECURITY, auth.HR))
     if not allowed:
         raise HTTPException(403, 'Yetki yok')
-    rows = db.rows(conn.execute('''SELECT lp.user_id, u.full_name, u.photo, u.last_seen, lp.lat, lp.lng, lp.accuracy, lp.at, lp.platform
+    rows = db.rows(conn.execute('''SELECT lp.user_id, u.full_name, u.photo, u.last_seen, lp.lat, lp.lng, lp.accuracy, lp.at, lp.platform,
+               (SELECT e.id FROM employees e WHERE e.user_id = u.id ORDER BY (e.status = 'AKTIF') DESC, e.id LIMIT 1) AS employee_id
         FROM location_pings lp
         JOIN (SELECT user_id, MAX(id) AS mid FROM location_pings GROUP BY user_id) m ON m.mid = lp.id
         JOIN users u ON u.id = lp.user_id

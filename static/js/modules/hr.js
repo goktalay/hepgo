@@ -960,16 +960,40 @@ function addressesTab(e, m) {
   return h('div', { class: 'card card-pad' },
     h('div', { class: 'tv-bar' }, h('b', null, 'Adresler'), h('span', { class: 'small muted' }, 'Birincil adres personel kartında görünür'),
       h('span', { class: 'spacer' }), h('button', { class: 'btn sm primary', onclick: () => addressForm(e, m) }, '＋ Adres Ekle')),
+    addrMap(e),
     e.addresses.length ? h('div', { class: 'addr-grid' }, e.addresses.map(a => h('div', { class: `addr-card ${a.is_primary ? 'primary' : ''}` },
       h('div', { class: 'addr-head' }, h('b', null, a.label), a.is_primary ? h('span', { class: 'badge blue' }, 'Birincil') : null),
       h('div', { class: 'addr-text' }, a.address),
       a.district || a.city || a.postal_code ? h('div', { class: 'small' }, [[a.district, a.city].filter(Boolean).join(' / '), a.postal_code].filter(Boolean).join(' · ')) : null,
       a.note ? h('div', { class: 'small muted' }, a.note) : null,
+      a.lat != null && a.lng != null ? h('div', { class: 'small' }, '🏠 ', h('a', { href: `https://www.google.com/maps?q=${a.lat},${a.lng}`, target: '_blank', rel: 'noopener' }, `${a.lat}, ${a.lng}`)) : null,
       h('div', { class: 'addr-actions' },
         h('button', { class: 'btn sm', onclick: () => addressForm(e, m, a) }, 'Düzenle'),
         a.is_primary ? null : h('button', { class: 'btn sm', onclick: () => setPrimary(a) }, 'Birincil Yap'),
         h('button', { class: 'btn sm ghost danger-text', onclick: () => remove(a) }, 'Sil')))))
       : h('div', { class: 'empty small' }, 'Adres girilmemiş. “Adres Ekle” ile ekleyin.'));
+}
+
+// Konumu olan adresler (Canlı Konum › Ev olarak kaydet) haritada ev işaretiyle; Google Haritalar anahtarı yoksa gösterilmez
+function addrMap(e) {
+  const pts = e.addresses.filter(a => a.lat != null && a.lng != null);
+  if (!pts.length) return null;
+  const box = h('div', { class: 'addr-map' });
+  (async () => {
+    let maps = null;
+    try { maps = await (await import('../maps.js')).loadMaps(); } catch { /* anahtar yok */ }
+    if (!maps) { box.remove(); return; }
+    const map = new maps.Map(box, { mapTypeId: 'roadmap', mapTypeControl: false, streetViewControl: false, fullscreenControl: true, zoom: 15, center: { lat: pts[0].lat, lng: pts[0].lng } });
+    const bounds = new maps.LatLngBounds();
+    pts.forEach(a => {
+      const pos = new maps.LatLng(a.lat, a.lng); bounds.extend(pos);
+      const mk = new maps.Marker({ position: pos, map, title: `${a.label} · ${a.address}`, label: { text: '🏠', fontSize: '18px' } });
+      const info = new maps.InfoWindow({ content: h('div', { class: 'um-info' }, h('b', null, a.label), h('div', { class: 'small' }, a.address), h('div', { class: 'small muted' }, `${a.lat}, ${a.lng}`)) });
+      mk.addListener('click', () => info.open(map, mk));
+    });
+    if (pts.length > 1) map.fitBounds(bounds, 48);
+  })();
+  return box;
 }
 
 function addressForm(e, m, a = null) {

@@ -8504,3 +8504,4 @@ textarea.sv-input { resize: vertical; }
 .feed-viewers { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
 .feed-viewer { display: flex; align-items: center; gap: 10px; } .feed-viewer b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-eye { font-size: 16px; line-height: 1; }
+.todo-mini-due { margin-top: 4px; } .todo-mini-due.late { color: var(--danger); font-weight: 700; }

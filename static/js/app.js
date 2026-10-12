@@ -830,7 +830,7 @@ function todoButton() {
   const row = (t, href, sub) => h('a', { class: 'alert-item info', href, onclick: close },
     h('span', { class: `todo-dot ${t.status}` }),
     h('div', { class: 'grow', style: { minWidth: '0' } }, h('b', null, t.title), h('div', { class: 'small muted todo-sub', 'data-id': t.id }, sub)));
-  const subOf = t => t.status === 'started' ? `Devam ediyor · ${todosMod.fmtDur(todosMod.liveElapsed(t))}` : (t.due_at ? 'Bekliyor · son ' + t.due_at.replace('T', ' ') : 'Bekliyor');
+  const subOf = t => t.status === 'started' ? `Devam ediyor · ${todosMod.fmtDur(todosMod.liveElapsed(t))}` : `Bekliyor · ⏳ ${todosMod.fmtDur(todosMod.liveElapsed(t))}${t.due_at ? ' · son ' + t.due_at.replace('T', ' ') : ''}`;
   const draw = () => {
     count.hidden = !data.count; count.textContent = data.count > 99 ? '99+' : data.count;
     btn.classList.toggle('on', !!data.count); btn.classList.toggle('run', data.mine.some(t => t.status === 'started'));
@@ -845,7 +845,7 @@ function todoButton() {
   btn.addEventListener('click', load);
   window.addEventListener('hepgo:todos-changed', load);
   clearInterval(todoTimer);
-  todoTimer = setInterval(() => { if (panel.hidden) load(); else data.mine.forEach(t => { const el = panel.querySelector(`.todo-sub[data-id="${t.id}"]`); if (el && t.status === 'started') el.textContent = subOf(t); }); }, panel.hidden ? 15000 : 1000);
+  todoTimer = setInterval(() => { if (panel.hidden) load(); else data.mine.forEach(t => { const el = panel.querySelector(`.todo-sub[data-id="${t.id}"]`); if (el && todosMod.ticking(t)) el.textContent = subOf(t); }); }, panel.hidden ? 15000 : 1000);
   draw(); load();
   return h('div', { class: 'menu-anchor' }, btn, panel);
 }

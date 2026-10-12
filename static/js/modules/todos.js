@@ -11,8 +11,10 @@ export const isAdmin = ctx => !!ctx?.user?.master || (ctx?.user?.roles || []).in
 export const changed = () => window.dispatchEvent(new Event('hepgo:todos-changed'));
 // süre: "1:05:09" ya da "05:09"
 export const fmtDur = s => { s = Math.max(0, Math.floor(s || 0)); const hh = Math.floor(s / 3600), mm = Math.floor(s % 3600 / 60), ss = s % 60; return (hh ? hh + ':' : '') + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'); };
-// devam eden görevde süre tarayıcıda akar (sunucu started_at + yerel saat)
-export const liveElapsed = t => t.status === 'started' && t.started_at ? Math.max(0, Math.floor((Date.now() - new Date(t.started_at).getTime()) / 1000)) : (t.elapsed_s || 0);
+// süre tarayıcıda akar: devam eden → başladığından beri; BAŞLAMAMIŞ → verildiğinden beri bekleme süresi; kapalı → kaydedilen
+const since = iso => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+export const liveElapsed = t => t.status === 'started' && t.started_at ? since(t.started_at) : (t.status === 'pending' && t.created_at ? since(t.created_at) : (t.elapsed_s || 0));
+export const ticking = t => t.status === 'started' || t.status === 'pending';
 const fmtDT = iso => iso ? new Date(iso.length === 16 ? iso + ':00' : iso).toLocaleString('tr', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 const PR = { low: ['Düşük', 'gray'], normal: ['Normal', 'blue'], high: ['Yüksek', 'red'] };
 const ST = { pending: ['Bekliyor', 'gray'], started: ['Devam ediyor', 'blue'], done: ['Tamamlandı', 'green'], rejected: ['Reddedildi', 'red'], cancelled: ['İptal', 'gray'] };
@@ -84,7 +86,7 @@ export async function render(view, params, ctx) {
 
   // ---- tam kart (her iki sekmede; TODO panosunda tıklayınca pencerede)
   const mine = t => t.assignee_id === ctx.user.id;
-  const timerEl = t => h('span', { class: `todo-timer ${t.status}`, 'data-id': t.id }, '⏱ ', h('span', { class: 'v' }, fmtDur(liveElapsed(t))));
+  const timerEl = t => h('span', { class: `todo-timer ${t.status}`, 'data-id': t.id, title: t.status === 'pending' ? 'Verildiğinden beri bekliyor' : 'Çalışma süresi' }, t.status === 'pending' ? '⏳ ' : '⏱ ', h('span', { class: 'v' }, fmtDur(liveElapsed(t))));
   function actionsOf(t) {
     const canWork = mine(t) || admin, out = [];
     if (canWork && t.status === 'pending') out.push(h('button', { class: 'btn primary', type: 'button', onclick: () => act(() => api.post(`/api/todos/${t.id}/start`), 'Görev başlatıldı · süre işliyor') }, '▶ Başla'));
@@ -136,7 +138,8 @@ export async function render(view, params, ctx) {
     return h('div', { class: `todo-mini ${t.status} ${overdue(t) ? 'late' : ''}`, onclick: () => openCard(t) },
       h('div', { class: 'todo-mini-h' }, badge(PR, t.priority), h('b', null, t.title)),
       h('div', { class: 'todo-mini-m' }, h('span', null, t.assignee_name || t.assignee_username),
-        t.status !== 'pending' ? timerEl(t) : (t.due_at ? h('span', { class: overdue(t) ? 'late' : '' }, '⏳ ' + fmtDT(t.due_at)) : null)),
+        timerEl(t)),
+      t.status === 'pending' && t.due_at ? h('div', { class: `small todo-mini-due ${overdue(t) ? 'late' : 'muted'}` }, 'Son: ' + fmtDT(t.due_at)) : null,
       t.item_count ? h('div', { class: 'todo-prog' }, h('i', { style: { width: Math.round(t.item_done * 100 / t.item_count) + '%' } })) : null,
       t.reason ? h('div', { class: 'small muted todo-mini-r' }, t.reason) : null);
   }
@@ -157,7 +160,7 @@ export async function render(view, params, ctx) {
       h('td', null, badge(PR, t.priority)),
       h('td', { class: 'small' }, fmtDT(t.created_at)),
       h('td', { class: `small ${overdue(t) ? 'late' : ''}` }, t.due_at ? fmtDT(t.due_at) : '—'),
-      h('td', null, t.status === 'pending' ? h('span', { class: 'muted' }, '—') : timerEl(t)),
+      h('td', null, timerEl(t)),
       h('td', { class: 'small' }, t.item_count ? `${t.item_done}/${t.item_count}` : '—'));
   }
 
@@ -223,6 +226,6 @@ export async function render(view, params, ctx) {
   clear(view, h('div', { class: 'page-head' }, h('h1', null, 'Yapılacaklar'), h('div', { class: 'spacer' }), newBtn), page);
   layout();
   // saniyede bir: devam eden görevlerin süresi (kart, liste, pano ve açık pencere)
-  every(1000, () => list.forEach(t => { if (t.status !== 'started') return; document.querySelectorAll(`.todo-timer[data-id="${t.id}"] .v`).forEach(el => { el.textContent = fmtDur(liveElapsed(t)); }); }));
+  every(1000, () => list.forEach(t => { if (!ticking(t)) return; document.querySelectorAll(`.todo-timer[data-id="${t.id}"] .v`).forEach(el => { el.textContent = fmtDur(liveElapsed(t)); }); }));
   window.addEventListener('hepgo:todos-changed', () => load());
 }

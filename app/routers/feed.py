@@ -42,6 +42,23 @@ def save(post_id: int, user=Depends(auth.current_user), conn=db.DB):
     return {'ok': True, 'saved': r}
 
 
+class PinIn(BaseModel):
+    on: bool = True
+
+
+@router.post('/{post_id}/pin')
+def pin(post_id: int, body: PinIn, user=Depends(auth.current_user), conn=db.DB):
+    """Yalnız master: paylaşımı Şirketten Haberler'in en üstüne sabitler (tek sabitli paylaşım) ya da kaldırır."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yalnız sistem sahibi sabitleyebilir')
+    r = feed.set_pinned(conn, post_id, user['id'], body.on)
+    if r is None:
+        raise HTTPException(404, 'Paylaşım bulunamadı')
+    conn.commit()
+    db.audit(conn, user['id'], 'Paylaşımı üste sabitledi' if r else 'Paylaşım sabitlemesini kaldırdı', 'feed', post_id)
+    return {'ok': True, 'pinned': r}
+
+
 class ReactIn(BaseModel):
     emoji: str
 

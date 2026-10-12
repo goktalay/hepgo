@@ -130,7 +130,8 @@ export function renderFeed(container, ctx, opts = {}) {
         p.system ? h('img', { class: 'feed-ava', src: LOGO, alt: '' }) : avatar({ full_name: p.author_name, photo: p.author_photo }, 36)),
       h('div', { class: 'grow' }, h('b', null, authorName(p)), sub.some(Boolean) ? h('small', null, sub.filter(Boolean).join(' · ')) : null),
       h('button', { class: 'feed-more', type: 'button', title: 'Seçenekler', 'aria-label': 'Paylaşım seçenekleri', onclick: () => postMenu(p) }, svgSpan(IG.more)));
-    const card = h('div', { class: `feed-post ${vis.length ? 'has-media' : 'text-only'}` },
+    const card = h('div', { class: `feed-post ${vis.length ? 'has-media' : 'text-only'} ${p.pinned ? 'pinned' : ''}` },
+      p.pinned ? h('div', { class: 'feed-pinned' }, '📌 Sabitlenmiş paylaşım') : null,
       vis.length ? h('div', { class: 'feed-mwrap' },
         h('div', { class: `feed-medias n${Math.min(vis.length, 4)}` }, vis.slice(0, 4).map((m, k) => mediaEl(m, p, k === 3 && vis.length > 4 ? vis.length - 4 : 0))),
         who) : who,
@@ -213,8 +214,14 @@ export function renderFeed(container, ctx, opts = {}) {
       p.text ? { ico: IG.copy, label: 'Metni kopyala', run: () => copyText(p.text) } : null,
       p.lat && p.lng ? { ico: IG.pin, label: 'Konumu haritada aç', run: () => window.open(`https://www.google.com/maps?q=${p.lat},${p.lng}`, '_blank', 'noopener') } : null,
       canSeeReactors(p) && totalOf(p) ? { ico: IG.heart, label: 'Kimler beğendi', run: () => showReactors(p) } : null,
+      ctx.user?.master ? { ico: IG.pin, label: p.pinned ? 'Üstten sabitlemeyi kaldır' : 'Üste sabitle (herkes için)', run: () => togglePin(p) } : null,   // yalnız master
       canDelete(p) ? { ico: IG.trash, label: 'Sil', danger: true, run: () => del(p) } : null,
     ].filter(Boolean));
+  }
+  // Üste sabitle: master; tek sabitli paylaşım olur, herkes için en üstte görünür (yeni paylaşımlar altına gelir)
+  async function togglePin(p) {
+    try { await api.post(`/api/feed/${p.id}/pin`, { on: !p.pinned }); toast(p.pinned ? 'Sabitleme kaldırıldı' : 'Paylaşım üste sabitlendi'); await load(); }
+    catch (err) { toastError(err); }
   }
 
   async function doReact(p, emoji, rerender) {
@@ -508,6 +515,7 @@ export function renderFeed(container, ctx, opts = {}) {
     let i = 0;
     const put = () => { list.append(socialCard(q[i])); q[i]._placed = true; i++; };
     for (const p of items) {
+      if (p.pinned) { list.append(postCard(p)); continue; }   // sabitli: tarihten bağımsız en üstte
       while (i < q.length && (q[i].posted_at || '') > (p.created_at || '')) put();
       list.append(postCard(p));
     }
@@ -606,10 +614,11 @@ export function renderFeed(container, ctx, opts = {}) {
     const list = body.querySelector('.feed-list');
     if (!list) return load();
     posts = [...fresh, ...posts];
-    for (const x of fresh.slice().reverse()) {   // en yeni en üstte kalsın
+    const pinnedCard = list.firstElementChild?.classList.contains('pinned') ? list.firstElementChild : null;   // sabitli paylaşım hep en üstte
+    for (const x of fresh.slice().reverse()) {   // en yeni en üstte kalsın (sabitlinin altında)
       const card = postCard(x);
       card.classList.add('feed-fresh');
-      list.prepend(card);
+      if (pinnedCard) pinnedCard.after(card); else list.prepend(card);
     }
     markSeen();
   }

@@ -3023,6 +3023,9 @@ def _migrate(conn):
         conn.execute('ALTER TABLE material_docs ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)')
     if 'is_supplier' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # tedarikçi (Satın Alma)
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
+    if 'pinned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # Şirketten Haberler: master'ın üste sabitlediği paylaşım
+        conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_at TEXT')
+        conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_by INTEGER REFERENCES users(id)')
     lr_cols = {r[1] for r in conn.execute('PRAGMA table_info(leave_requests)')}
     if 'signed_file' not in lr_cols:   # onaylanan iznin ıslak imzalı formu (İK yükler)
         for col in ('signed_file', 'signed_name', 'signed_at'):

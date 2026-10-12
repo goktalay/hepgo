@@ -42,6 +42,7 @@ def _row(r):
     except (ValueError, TypeError):
         d['media'] = []
     d['system'] = d.get('author_id') is None
+    d['pinned'] = bool(d.get('pinned_at'))
     return d
 
 
@@ -49,6 +50,11 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=
     """before=(created_at, id): bu paylaşımdan eskiler (sonsuz kaydırmada sonraki sayfa); after=id: bundan yeniler (canlı ekleme)."""
     where = 'f.deleted_at IS NULL'
     args = []
+    # Sabitli paylaşım: ilk sayfada (before/after/saved/located yokken) en üstte; her sorguda normal listeden hariç (tekrarlanmasın)
+    pinned = db.row(conn.execute('SELECT id FROM feed_posts WHERE deleted_at IS NULL AND pinned_at IS NOT NULL ORDER BY pinned_at DESC LIMIT 1'))
+    if pinned:
+        where += ' AND f.id != ?'
+        args.append(pinned['id'])
     if before:
         where += ' AND (f.created_at < ? OR (f.created_at = ? AND f.id < ?))'
         args += [before[0], before[0], before[1]]
@@ -64,10 +70,16 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=
         where += ' AND f.created_at >= ?'
         args.append(since)
     rows = db.rows(conn.execute(
-        f'''SELECT f.id, f.kind, f.author_id, f.text, f.media, f.lat, f.lng, f.ref_type, f.ref_id, f.ref_link, f.created_at,
+        f'''SELECT f.id, f.kind, f.author_id, f.text, f.media, f.lat, f.lng, f.ref_type, f.ref_id, f.ref_link, f.created_at, f.pinned_at,
                    u.full_name AS author_name, u.photo AS author_photo
             FROM feed_posts f LEFT JOIN users u ON u.id = f.author_id
             WHERE {where} ORDER BY f.created_at DESC, f.id DESC LIMIT ?''', (*args, min(limit, 300))))
+    if pinned and not before and not after and not saved and not located:
+        top = db.row(conn.execute('''SELECT f.id, f.kind, f.author_id, f.text, f.media, f.lat, f.lng, f.ref_type, f.ref_id, f.ref_link, f.created_at, f.pinned_at,
+                                            u.full_name AS author_name, u.photo AS author_photo
+                                     FROM feed_posts f LEFT JOIN users u ON u.id = f.author_id WHERE f.id = ?''', (pinned['id'],)))
+        if top:
+            rows = [top, *rows]
     posts = [_row(r) for r in rows]
     if posts:
         ids = [p['id'] for p in posts]
@@ -95,6 +107,18 @@ def list_posts(conn, since=None, limit=60, located=False, viewer_id=None, saved=
 
 
 REACTIONS = ('👍', '❤️', '😂', '😮', '😢', '👏', '🎉')   # izin verilen tepki simgeleri
+
+
+def set_pinned(conn, post_id, user_id, on):
+    """Master: paylaşımı üste sabitle / kaldır. Aynı anda tek sabitli paylaşım olur."""
+    if not conn.execute('SELECT 1 FROM feed_posts WHERE id = ? AND deleted_at IS NULL', (post_id,)).fetchone():
+        return None
+    if on:
+        conn.execute('UPDATE feed_posts SET pinned_at = NULL, pinned_by = NULL WHERE pinned_at IS NOT NULL')
+        conn.execute('UPDATE feed_posts SET pinned_at = ?, pinned_by = ? WHERE id = ?', (db.now(), user_id, post_id))
+    else:
+        conn.execute('UPDATE feed_posts SET pinned_at = NULL, pinned_by = NULL WHERE id = ?', (post_id,))
+    return bool(on)
 
 
 def react(conn, post_id, user_id, emoji):

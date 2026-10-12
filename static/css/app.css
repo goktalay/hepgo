@@ -8586,3 +8586,9 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .um-toggle.on { opacity: 1; }
 .co-geo { color: var(--primary); font-weight: 600; }
 .um-copin.approx img, .um-copin.approx .um-coini { border-style: dashed; opacity: .85; }
+/* Firma Haritası: üst çubukta arama / süzgeç; boş durum */
+.um-search { width: 220px; max-width: 32vw; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.um-search::placeholder { color: rgba(255,255,255,.7); }
+.um-select { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 999px; padding: 5px 10px; font-size: 13px; }
+.um-select option { color: #111; }
+.um-empty { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); background: rgba(11,15,22,.85); color: #e8eefc; padding: 10px 16px; border-radius: 12px; font-size: 13px; z-index: 4; }

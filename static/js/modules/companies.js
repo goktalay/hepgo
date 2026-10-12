@@ -32,13 +32,17 @@ async function route(view, params, ctx) {
     if (['person', 'user'].includes(params[1]) && params[2]) return renderContact(view, ctx, params[1], Number(params[2]), params[3]);
     return renderDirectory(view, ctx);
   }
+  if (params[0] === 'harita') {   // tam ekran firma haritası (konumu bulunan firmalar logolarıyla)
+    const mod = await import('./comap.js');
+    return mod.render(view, ctx, { base: BASE });
+  }
   if (params[0]) return renderDetail(view, Number(params[0]), ctx, params[1]);
   return renderList(view, ctx);
 }
 
 // Firmalar / Rehber görünüm seçici (adres çubuğunda: #/companies ve #/companies/rehber)
-const viewSwitch = current => segmented([['companies', SUP ? 'Tedarikçiler' : 'Firmalar'], ['rehber', 'Rehber']], current,
-  v => { location.hash = v === 'rehber' ? `${BASE}/rehber` : BASE; });
+const viewSwitch = current => segmented([['companies', SUP ? 'Tedarikçiler' : 'Firmalar'], ['rehber', 'Rehber'], ['harita', 'Harita']], current,
+  v => { location.hash = v === 'rehber' ? `${BASE}/rehber` : v === 'harita' ? `${BASE}/harita` : BASE; });
 
 const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toLocaleUpperCase('tr');
 // Konumları bul: firma adları (ve adresleri) internetten aranır; ilerleme düğmede, bitince liste yenilenir (yalnız yönetici)

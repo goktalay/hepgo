@@ -139,6 +139,7 @@ TIKTOK_CLIENT_KEY = os.environ.get('CAYMAZ_TIKTOK_CLIENT_KEY', '')
 TIKTOK_CLIENT_SECRET = os.environ.get('CAYMAZ_TIKTOK_CLIENT_SECRET', '')
 # Google Haritalar JavaScript API anahtarı (istemci tarafında kullanılır; HTTP yönlendiren kısıtıyla korunur).
 GOOGLE_MAPS_API_KEY = os.environ.get('CAYMAZ_GOOGLE_MAPS_API_KEY', '')
+GOOGLE_MAPS_SERVER_KEY = os.environ.get('CAYMAZ_GOOGLE_MAPS_SERVER_KEY', '')   # sunucu tarafı (Geocoding / Places): IP kısıtlı ayrı anahtar
 PUBLIC_URL = os.environ.get('CAYMAZ_PUBLIC_URL', '').rstrip('/')   # ör. https://caymaz.app
 
 # Yapay zeka asistanı (maskot sohbeti) — Claude API. Anahtar .env'de tutulur (asla loglanmaz).

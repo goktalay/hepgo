@@ -134,10 +134,12 @@ GROUPS = {
     },
     'maps': {
         'title': 'Google Haritalar',
-        'desc': 'Harita görünümleri (ör. Güvenlik › Bina Kontrol) Google Haritalar ile gösterilir. Anahtar Google Cloud '
-                'Console › Maps JavaScript API’den alınır; güvenlik için HTTP yönlendiren (domain) kısıtı eklenmelidir.',
+        'desc': 'Harita görünümleri (Canlı Konum, Firma Haritası, Bina Kontrol) Google Haritalar ile gösterilir. Tarayıcı anahtarı Maps JavaScript '
+                'API için (HTTP yönlendiren/domain kısıtı önerilir). Sunucu anahtarı firma konum araması (Geocoding + Places API (New)) için; '
+                'IP kısıtlı olabilir. Sunucu anahtarı boşsa aramalar tarayıcı anahtarıyla denenir.',
         'fields': [
-            ('GOOGLE_MAPS_API_KEY', 'Maps API anahtarı', 'text', 'AIza… ile başlar'),
+            ('GOOGLE_MAPS_API_KEY', 'Maps API anahtarı (tarayıcı)', 'text', 'AIza… ile başlar'),
+            ('GOOGLE_MAPS_SERVER_KEY', 'Sunucu anahtarı (Geocoding / Places)', 'text', 'boş = tarayıcı anahtarı kullanılır'),
         ],
     },
     'general': {

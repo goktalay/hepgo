@@ -24,7 +24,8 @@ def _get_json(url, timeout=12):
 
 
 def _google_key():
-    return (getattr(config, 'GOOGLE_MAPS_API_KEY', '') or '').strip()
+    """Sunucu anahtarı (IP kısıtlı olabilir) öncelikli; yoksa tarayıcı anahtarı."""
+    return (getattr(config, 'GOOGLE_MAPS_SERVER_KEY', '') or '').strip() or (getattr(config, 'GOOGLE_MAPS_API_KEY', '') or '').strip()
 
 
 def google_geocode(address, key):

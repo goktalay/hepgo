@@ -341,7 +341,7 @@ def list_employees(user=Depends(hr_user), conn=db.DB):
         files.setdefault(f['employee_id'], {})[f['kind']] = f
     today = date.today().isoformat()
     on_leave = {r[0] for r in conn.execute(
-        "SELECT employee_id FROM leave_requests WHERE status = 'ONAYLANDI' AND start_date <= ? AND end_date >= ?", (today, today))}
+        "SELECT employee_id FROM leave_requests WHERE status = 'ONAYLANDI' AND start_date <= ? AND end_date >= ? AND (ended_at IS NULL OR substr(ended_at, 1, 10) > ?)", (today, today, today))}
     unsigned = dict(conn.execute(
         "SELECT employee_id, COUNT(*) FROM leave_requests WHERE status = 'ONAYLANDI' AND signed_file IS NULL GROUP BY employee_id").fetchall())
     on_report = {r[0] for r in conn.execute(
@@ -1581,7 +1581,8 @@ def on_leave_today(conn):
              FROM leave_requests l JOIN employees e ON e.id = l.employee_id
             WHERE l.status = 'ONAYLANDI' AND substr(COALESCE(l.start_date, l.req_start), 1, 10) <= ?
               AND substr(COALESCE(l.end_date, l.req_end), 1, 10) >= ?
-            ORDER BY name""", (today, today)))
+              AND (l.ended_at IS NULL OR substr(l.ended_at, 1, 10) > ?)
+            ORDER BY name""", (today, today, today)))
 
 
 def _time_passed(iso):

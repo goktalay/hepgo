@@ -212,6 +212,7 @@ def dnd_state(prefs):
 ABSENCE_SQL = '''
     SELECT e.user_id, 'IZIN' AS kind, l.end_date AS until FROM leave_requests l JOIN employees e ON e.id = l.employee_id
     WHERE l.status = 'ONAYLANDI' AND l.start_date <= :d AND l.end_date >= :d AND e.user_id IS NOT NULL {uf}
+      AND (l.ended_at IS NULL OR substr(l.ended_at, 1, 10) > :d)
     UNION ALL
     SELECT e.user_id, 'RAPOR', r.end_date FROM employee_health_reports r JOIN employees e ON e.id = r.employee_id
     WHERE r.start_date <= :d AND r.end_date >= :d AND e.user_id IS NOT NULL {uf}'''

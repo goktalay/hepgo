@@ -219,7 +219,8 @@ def _presence(conn):
         """SELECT DISTINCT e.user_id FROM leave_requests l JOIN employees e ON e.id = l.employee_id
             WHERE e.user_id IS NOT NULL AND l.status = 'ONAYLANDI'
               AND substr(COALESCE(l.start_date, l.req_start), 1, 10) <= ?
-              AND substr(COALESCE(l.end_date, l.req_end), 1, 10) >= ?""", (today, today))]
+              AND substr(COALESCE(l.end_date, l.req_end), 1, 10) >= ?
+              AND (l.ended_at IS NULL OR substr(l.ended_at, 1, 10) > ?)""", (today, today, today))]
     return {'online': online, 'on_duty': duty, 'on_leave': leave}
 
 

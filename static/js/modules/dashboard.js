@@ -3,6 +3,7 @@
 // eklenir, çıkarılır, taşınır, genişliği (1/3, 2/3, tam) ve ayarı (saat biçimi, hava durumu konumu) değiştirilir.
 import { api, fileUrl } from '../api.js';
 import { icons } from '../icons.js';
+import { faIcon } from '../fa-icons.js';
 import { PRINTER_STATES, orderBadge, queuePlate } from '../status.js';
 import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, progressBar, segmented, svgIcon, t, toast, toastError } from '../ui.js';
 import { LEVELS } from './announcements.js';
@@ -26,14 +27,45 @@ const dbAvatarSt = (name, photo, id, d, cls = '') => {
 
 const MULTI = new Set(['clock', 'weather', 'world_clock', 'quick_directory']);   // birden çok eklenebilen / ayarlı
 // Pano kutucuk başlığına konuya özel ikon (widget anahtarına göre)
+// Pano kutu ikonları: Font Awesome Pro Light (tek renk; emoji değil) — fa-icons.js alt kümesi
 const DB_ICONS = {
-  modules: '🧩', company_news: '📣', birthdays: '🎂', calendar: '📅', notifications: '🔔', alerts: '⚠️',
-  my_cargo: '📦', my_guests: '🙋', my_calls: '📞', announcements: '📢', email: '✉️', active_users: '👥',
-  world_clock: '🌍', alarm: '⏰', notes: '📝', files: '📁', quick_directory: '📇', my_messages: '💬',
-  my_meetings: '📹', spotify: '🎵', weather: '🌤️', clock: '🕐', kpi_production: '🏭', chart_production: '📈',
-  forecast: '🔮', recent_orders: '🧾', kpi_printers: '🖨️', kpi_warehouse: '🏬', kpi_stock: '📦', kpi_field: '🛩️',
-  kpi_security: '🛡️', kpi_secretariat: '🛎️', kpi_documents: '📄', kpi_admin: '🛠️', transfers: '🔄',
-  on_duty: '🎯', on_leave: '🌴',
+  modules: 'puzzle-piece',
+  company_news: 'bullhorn',
+  birthdays: 'cake-candles',
+  calendar: 'calendar',
+  notifications: 'bell',
+  alerts: 'triangle-exclamation',
+  my_cargo: 'box',
+  my_guests: 'hand-wave',
+  my_calls: 'phone',
+  announcements: 'megaphone',
+  email: 'envelope',
+  active_users: 'users',
+  world_clock: 'earth-europe',
+  alarm: 'alarm-clock',
+  notes: 'note-sticky',
+  files: 'folder',
+  quick_directory: 'address-book',
+  my_messages: 'comments',
+  my_meetings: 'video',
+  spotify: 'music',
+  weather: 'cloud-sun',
+  clock: 'clock',
+  kpi_production: 'industry',
+  chart_production: 'chart-line',
+  forecast: 'wand-magic-sparkles',
+  recent_orders: 'receipt',
+  kpi_printers: 'print',
+  kpi_warehouse: 'warehouse',
+  kpi_stock: 'boxes-stacked',
+  kpi_field: 'drone',
+  kpi_security: 'shield-halved',
+  kpi_secretariat: 'bell-concierge',
+  kpi_documents: 'file-lines',
+  kpi_admin: 'screwdriver-wrench',
+  transfers: 'arrows-rotate',
+  on_duty: 'bullseye',
+  on_leave: 'umbrella-beach',
 };
 // GridStack (sürükle-bırak pano) — vendor'dan yüklenir (offline). 12 sütun; 1/3=4, 2/3=8, tam=12.
 let gridLib;
@@ -169,7 +201,7 @@ export async function renderDashboard(view, ctx, modules) {
     const chev = canCollapse ? h('span', { class: 'db-chev', title: 'Aç / kapa' }) : null;
     const dbIc = DB_ICONS[it.k];
     const head = h('div', { class: `db-head${canCollapse ? ' db-head-collapsible' : ''}` }, chev,
-      h('h3', null, dbIc ? h('span', { class: 'db-ic', 'aria-hidden': 'true' }, dbIc) : null,
+      h('h3', null, dbIc ? h('span', { class: 'db-ic', 'aria-hidden': 'true' }, faIcon(dbIc)) : null,
         it.k === 'weather' && it.o?.name ? t('Hava durumu · {name}', { name: it.o.name }) : w.title), acts, tools);
     if (canCollapse) head.addEventListener('click', e => {   // tüm başlığa tıklama kutuyu açar/kapatır (düğmeler ve sürükleme hariç)
       if (e.target.closest('button, a, .db-acts, .db-tools, input, select')) return;

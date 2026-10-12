@@ -657,7 +657,7 @@ export async function renderDashboard(view, ctx, modules) {
     // Görev (araç/misyon) bazında grupla: aynı görevdeki personel tek grupta, üstte plaka, sağda tek sayaç
     const groups = new Map();
     items.forEach(x => {
-      if (!groups.has(x.id)) groups.set(x.id, { plate: x.vehicle_plate, since: x.depart_at, people: [] });
+      if (!groups.has(x.id)) groups.set(x.id, { id: x.id, plate: x.vehicle_plate, since: x.depart_at, people: [] });   // id: Tamamlandı → /duty/{id}/return
       groups.get(x.id).people.push(x);
     });
     const clocks = [];

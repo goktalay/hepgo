@@ -3028,6 +3028,9 @@ def _migrate(conn):
         for col in ('signed_file', 'signed_name', 'signed_at'):
             conn.execute(f'ALTER TABLE leave_requests ADD COLUMN {col} TEXT')
         conn.execute('ALTER TABLE leave_requests ADD COLUMN signed_by INTEGER REFERENCES users(id)')
+    if 'lat' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # firma konumu (internetten bulunan enlem/boylam)
+        for col, typ in (('lat', 'REAL'), ('lng', 'REAL'), ('geo_source', 'TEXT'), ('geo_label', 'TEXT'), ('geo_at', 'TEXT')):
+            conn.execute(f'ALTER TABLE companies ADD COLUMN {col} {typ}')
     if 'lat' not in {r[1] for r in conn.execute('PRAGMA table_info(employee_addresses)')}:   # ev konumu (Canlı Konum › Ev olarak kaydet)
         conn.execute('ALTER TABLE employee_addresses ADD COLUMN lat REAL')
         conn.execute('ALTER TABLE employee_addresses ADD COLUMN lng REAL')

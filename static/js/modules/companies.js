@@ -41,6 +41,27 @@ const viewSwitch = current => segmented([['companies', SUP ? 'Tedarikçiler' : '
   v => { location.hash = v === 'rehber' ? `${BASE}/rehber` : BASE; });
 
 const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toLocaleUpperCase('tr');
+// Konumları bul: firma adları (ve adresleri) internetten aranır; ilerleme düğmede, bitince liste yenilenir (yalnız yönetici)
+function geocodeBtn(ctx, reload) {
+  if (!(ctx?.user?.master || (ctx?.user?.roles || []).includes('Sistem Yöneticisi'))) return null;
+  const btn = h('button', { class: 'btn', type: 'button', title: 'Firma adlarını internette arayıp enlem/boylamı kaydeder (eksik olanlar)' }, '🌐 Konumları bul');
+  let timer = null;
+  const poll = async () => {
+    try {
+      const s = await api.get('/api/companies/geocode/status');
+      if (s.running) { btn.disabled = true; btn.textContent = `🌐 ${s.done}/${s.total} · ${s.current || ''}`.slice(0, 60); }
+      else { clearInterval(timer); timer = null; btn.disabled = false; btn.textContent = '🌐 Konumları bul'; if (s.finished_at) { toast(`Konum taraması bitti: ${s.found} bulundu, ${s.failed} bulunamadı`); reload(); } }
+    } catch { clearInterval(timer); timer = null; btn.disabled = false; }
+  };
+  btn.addEventListener('click', async () => {
+    const all = await confirmDialog('Konumları bul', 'Konumu olmayan aktif firmaların adları (ve varsa adresleri) internette aranıp enlem/boylam kaydedilecek. Birkaç dakika sürebilir.', { okLabel: 'Başlat' });
+    if (!all) return;
+    try { await api.post('/api/companies/geocode', { only_missing: true }); btn.disabled = true; timer = setInterval(poll, 1500); poll(); } catch (err) { toastError(err); }
+  });
+  api.get('/api/companies/geocode/status').then(s => { if (s.running) { timer = setInterval(poll, 1500); poll(); } }).catch(() => {});
+  return btn;
+}
+
 export const logoOf = (c, cls = 'co-logo') => (c.logo ? h('img', { class: cls, src: fileUrl(c.logo, 256), alt: c.name })
   : h('span', { class: `${cls} co-initials` }, initials(c.name)));
 
@@ -108,7 +129,7 @@ async function renderList(view, ctx) {
       logoOf(c),
       h('div', { class: 'grow' },
         h('b', null, c.name), c.active ? null : h('span', { class: 'badge gray', style: { marginLeft: '6px' } }, 'Pasif'),
-        h('div', { class: 'small muted' }, [c.city, c.tax_no ? `VN ${c.tax_no}` : null, c.phone].filter(Boolean).join(' · ') || '—'),
+        h('div', { class: 'small muted' }, [c.city, c.tax_no ? `VN ${c.tax_no}` : null, c.phone].filter(Boolean).join(' · ') || '—', c.lat != null ? h('span', { class: 'co-geo', title: `${c.geo_label || ''} (${c.geo_source || ''})` }, ' 📍 konum') : null),
         h('div', { class: 'co-counts' }, h('span', null, t('{n} adres', { n: c.address_count })), h('span', null, t('{n} kişi', { n: c.people_count })),
           h('span', null, t('{n} evrak', { n: c.document_count })))))))
       : h('div', { class: 'card empty' }, companies.length ? 'Filtreye uyan firma yok' : 'Henüz firma eklenmedi'));
@@ -119,7 +140,7 @@ async function renderList(view, ctx) {
   clear(view,
     pageHead(TITLE, { back: '#/', sub: 'Firmalar, kişiler ve evraklar', tabs: SUP ? null : crmNav('companies', ctx) }),
     moduleToolbar(viewSwitch('companies'), h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
-      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma')),
+      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), geocodeBtn(ctx, reload)),
     stats,
     h('div', { class: 'filters' }, q, act),
     grid);

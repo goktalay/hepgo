@@ -8576,3 +8576,13 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .ls-fs svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
 @media (max-width: 1000px) { .ls-grid { grid-template-columns: 1fr; } .ls-canvas { height: 120px; } }
 .addr-map { height: 280px; border-radius: 12px; overflow: hidden; margin-bottom: 12px; border: 1px solid var(--border); }
+/* Canlı Konum: firma logosu işaretçisi */
+.um-copin { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.um-copin img, .um-coini { width: 36px; height: 36px; border-radius: 10px; background: #fff; object-fit: contain; padding: 3px; border: 2px solid #1d4ed8; box-shadow: 0 4px 12px rgba(15,23,42,.3); }
+.um-coini { display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #1d4ed8; }
+.um-copin.sup img, .um-copin.sup .um-coini { border-color: #b45309; } .um-copin.sup .um-coini { color: #b45309; }
+.um-copin::after { content: ''; width: 0; height: 0; border: 6px solid transparent; border-top-color: #1d4ed8; margin-top: -4px; }
+.um-toggle { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; opacity: .6; margin-right: 8px; }
+.um-toggle.on { opacity: 1; }
+.co-geo { color: var(--primary); font-weight: 600; }
+.um-copin.approx img, .um-copin.approx .um-coini { border-style: dashed; opacity: .85; }

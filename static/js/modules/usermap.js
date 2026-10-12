@@ -40,12 +40,13 @@ export async function render(view, params, ctx) {
   const countChip = h('span', { class: 'um-count' }, '…');
   const back = h('button', { class: 'um-back', type: 'button', title: 'Geri', 'aria-label': 'Geri' }, '←');
   back.addEventListener('click', () => { if (history.length > 1) history.back(); else location.hash = '#/'; });
-  const bar = h('div', { class: 'um-bar' }, back, h('b', { class: 'um-title' }, 'Canlı Konum'), h('span', { class: 'spacer' }), countChip);
+  const coBtn = h('button', { class: 'um-toggle on', type: 'button', title: 'Firma konumları' }, '🏢 Firmalar');
+  const bar = h('div', { class: 'um-bar' }, back, h('b', { class: 'um-title' }, 'Canlı Konum'), h('span', { class: 'spacer' }), coBtn, countChip);
   const full = h('div', { class: 'um-full' }, mapBox, bar);
   document.body.appendChild(full);
 
-  let maps = null, map = null, overlays = [], AvatarOverlay = null, timer = null, firstFit = true;
-  const cleanup = () => { clearInterval(timer); overlays.forEach(o => { try { o.setMap(null); } catch (e) { /* */ } }); full.remove(); };
+  let maps = null, map = null, overlays = [], coOverlays = [], AvatarOverlay = null, timer = null, firstFit = true, showCo = true;
+  const cleanup = () => { clearInterval(timer); [...overlays, ...coOverlays].forEach(o => { try { o.setMap(null); } catch (e) { /* */ } }); full.remove(); };
   onLeave(cleanup);
 
   const located = ps => (ps || []).filter(p => p.lat != null && p.lng != null);
@@ -95,7 +96,26 @@ export async function render(view, params, ctx) {
     if (ppl.length && firstFit) { map.fitBounds(bounds, 64); if (ppl.length === 1) map.setZoom(15); firstFit = false; }
   };
 
+  // Firma konumları: logo (yoksa baş harf) işaretçisi; tıklayınca ad + adres + kaynak
+  const drawCompanies = async () => {
+    coOverlays.forEach(o => o.setMap(null)); coOverlays = [];
+    if (!showCo) return;
+    let cos = [];
+    try { cos = await api.get('/api/companies/geo'); } catch { return; }
+    for (const c of cos) {
+      const pos = new maps.LatLng(c.lat, c.lng);
+      const ini = (c.name || '?').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toLocaleUpperCase('tr');
+      const pin = h('div', { class: `um-copin ${c.is_supplier ? 'sup' : ''} ${c.geo_source === 'approx' ? 'approx' : ''}`, title: c.geo_source === 'approx' ? 'Yaklaşık konum (ilçe merkezi)' : '' }, c.logo ? h('img', { src: fileUrl(c.logo, 128), alt: '' }) : h('span', { class: 'um-coini' }, ini), h('span', { class: 'um-pin-name' }, (c.name || '').split(' ').slice(0, 2).join(' ')));
+      const info = new maps.InfoWindow({ content: h('div', { class: 'um-info' }, h('b', null, c.name), c.address ? h('div', { class: 'small' }, c.address) : null,
+        h('div', { class: 'small muted' }, `${c.geo_label || ''}${c.geo_source ? ` · ${c.geo_source}` : ''}`),
+        h('a', { href: `#/companies/${c.id}`, class: 'small' }, 'Firma kartı →'), ' · ', h('a', { href: `https://www.google.com/maps?q=${c.lat},${c.lng}`, target: '_blank', rel: 'noopener', class: 'small' }, 'Google Haritalar ↗')) });
+      pin.addEventListener('click', () => { info.setPosition(pos); info.open(map); });
+      const ov = new AvatarOverlay(pos, pin); ov.setMap(map); coOverlays.push(ov);
+    }
+  };
+  coBtn.addEventListener('click', () => { showCo = !showCo; coBtn.classList.toggle('on', showCo); drawCompanies(); });
   const load = async () => { try { const d = await api.get('/api/location/latest'); draw(d.people); } catch (e) { toastError(e); } };
   await load();
+  drawCompanies();
   timer = setInterval(load, 20000);
 }

@@ -106,6 +106,68 @@ def _reader(user, supplier):
         raise HTTPException(403, 'Bu modüle erişim yetkiniz yok')
 
 
+# ---- Firma konumları: internetten bul (toplu, arka plan), harita için liste, elle düzeltme
+def _admin(user=Depends(auth.current_user)):
+    if user.get('master') or auth.ADMIN in user.get('roles', []):
+        return user
+    raise HTTPException(403, 'Yalnız Sistem Yöneticisi')
+
+
+class GeocodeIn(BaseModel):
+    only_missing: bool = True
+    ids: Optional[List[int]] = None
+
+
+@router.post('/geocode')
+def geocode_start(body: GeocodeIn, user=Depends(_admin)):
+    """Firma adları (ve varsa adresleri) internetten aranır; bulunan enlem/boylam firmaya yazılır. Arka planda çalışır."""
+    from .. import geocode
+    started = geocode.run(db.connect, only_missing=body.only_missing, ids=body.ids)
+    if not started:
+        raise HTTPException(409, 'Konum taraması zaten çalışıyor')
+    with db.connect() as c:
+        db.audit(c, user['id'], 'Firma konum taraması başlattı', 'settings', None, 'tümü' if not body.ids else f'{len(body.ids)} firma')
+        c.commit()
+    return {'started': True, **geocode.STATE}
+
+
+@router.get('/geocode/status')
+def geocode_status(user=Depends(auth.current_user)):
+    from .. import geocode
+    return geocode.STATE
+
+
+@router.get('/geo')
+def companies_geo(user=Depends(auth.current_user), conn=db.DB):
+    """Canlı Konum haritası: konumu bilinen aktif firmalar (logo ile)."""
+    allowed = user.get('master') or any(r in user.get('roles', []) for r in (auth.ADMIN, auth.SECURITY, auth.HR)) or 'companies' in user.get('modules', [])
+    if not allowed:
+        raise HTTPException(403, 'Yetki yok')
+    return db.rows(conn.execute('''SELECT id, name, logo, lat, lng, geo_label, geo_source, is_supplier,
+                                          (SELECT a.address FROM company_addresses a WHERE a.company_id = c.id ORDER BY a.id LIMIT 1) AS address
+                                   FROM companies c WHERE active = 1 AND lat IS NOT NULL AND lng IS NOT NULL ORDER BY name'''))
+
+
+class GeoIn(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+@router.put('/{cid}/geo')
+def set_geo(cid: int, body: GeoIn, user=Depends(company_user), conn=db.DB):
+    """Elle konum (ya da boş → konumu sil)."""
+    if not conn.execute('SELECT 1 FROM companies WHERE id = ?', (cid,)).fetchone():
+        raise HTTPException(404, 'Firma bulunamadı')
+    if body.lat is None or body.lng is None:
+        conn.execute('UPDATE companies SET lat = NULL, lng = NULL, geo_source = NULL, geo_label = NULL, geo_at = NULL WHERE id = ?', (cid,))
+    else:
+        if not (-90 <= body.lat <= 90 and -180 <= body.lng <= 180):
+            raise HTTPException(400, 'Geçersiz koordinat')
+        conn.execute('UPDATE companies SET lat = ?, lng = ?, geo_source = ?, geo_at = ? WHERE id = ?', (round(body.lat, 6), round(body.lng, 6), 'manual', db.now(), cid))
+    db.audit(conn, user['id'], 'Firma konumu değiştirdi', 'company', cid, f'{body.lat}, {body.lng}' if body.lat is not None else 'silindi')
+    return {'ok': True}
+
+
 @router.get('')
 def list_companies(supplier: bool = False, user=Depends(auth.current_user), conn=db.DB):
     """supplier=1: tedarikçiler (Satın Alma); aksi halde müşteri / diğer firmalar."""

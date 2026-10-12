@@ -8539,3 +8539,8 @@ textarea.sv-input { resize: vertical; }
 .uu-user.ok { background: color-mix(in srgb, var(--success) 5%, transparent); } .uu-user.stale { background: color-mix(in srgb, var(--warning, #f59e0b) 8%, transparent); }
 .uu-none { padding: 4px 10px; }
 @media (max-width: 1000px) { .uu-split { grid-template-columns: 1fr; } .uu-col { max-height: none; } }
+
+/* Uygulamalar panelinde ✕, 'ARAMA KUTUSU' başlığının en sağında aynı satırda */
+.apps-panel .popup-close { top: 10px; right: 12px; width: 28px; height: 28px; }
+.apps-panel .apps-search-title { padding-right: 40px; }
+.leave-ended { color: var(--primary); font-weight: 600; }

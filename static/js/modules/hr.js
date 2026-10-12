@@ -368,14 +368,29 @@ function leaveCard(l, { hr = false, showEmployee = false, mine = false } = {}) {
       h('dt', null, 'Sebep'), h('dd', null, l.reason || '—'),
       h('dt', null, 'Nerede'), h('dd', null, l.location || '—'),
       l.decision_note ? [h('dt', null, 'İK notu'), h('dd', null, l.decision_note)] : null,
-      l.decided_by_name && l.status !== 'IPTAL' ? [h('dt', null, 'Karar'), h('dd', null, `${l.decided_by_name} · ${fmtDate(l.decided_at)}`)] : null),
+      l.decided_by_name && l.status !== 'IPTAL' ? [h('dt', null, 'Karar'), h('dd', null, `${l.decided_by_name} · ${fmtDate(l.decided_at)}`)] : null,
+      l.ended ? [h('dt', null, 'Tamamlandı'), h('dd', { class: 'leave-ended' }, `${fmtDate(l.end_date)} · planlanan ${fmtDate(l.planned_end)} · ${l.ended_by_name || ''} · ${fmtDateTime(l.ended_at)}`, l.end_note ? h('div', { class: 'small muted' }, l.end_note) : null)] : null),
     l.status === 'ONAYLANDI' ? h('div', { class: 'leave-sign' }, signedCell(l, hr)) : null,
     h('div', { class: 'leave-actions' },
       hr && l.status === 'BEKLIYOR' ? [h('button', { class: 'btn sm primary', onclick: () => approveModal(l) }, 'Onayla'),
         h('button', { class: 'btn sm', onclick: () => rejectLeave(l) }, 'Reddet')] : null,
+      hr && l.active ? h('button', { class: 'btn sm', title: 'Personel işe döndü: izni bugün itibarıyla kapat', onclick: () => endLeave(l) }, '✓ İzin tamamlandı') : null,
       hr && l.status === 'ONAYLANDI' && l.signed_file ? h('button', { class: 'btn sm', onclick: () => printLeaveForm(l) }, 'Formu Yazdır') : null,
       leaveQrBtn(l),
       mine && l.status === 'BEKLIYOR' ? h('button', { class: 'btn sm', onclick: () => cancelLeave(l) }, 'Geri Çek') : null));
+}
+
+// İzin tamamlandı (erken dönüş): İK, personel işe dönünce izni tarihi beklemeden kapatır; kim/ne zaman/neden kayda geçer
+function endLeave(l) {
+  const note = h('textarea', { class: 'input', rows: 3, placeholder: 'Not (isteğe bağlı) — ör. işe erken döndü' });
+  modal({
+    title: 'İzin tamamlandı',
+    body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, `${l.employee_name || ''} · planlanan bitiş ${fmtDate(l.end_date)}. İzin bugün itibarıyla kapanacak; kişi artık izinli sayılmaz.`), field('Not', note)),
+    actions: [{ label: 'Vazgeç' }, { label: 'Tamamlandı', class: 'primary', onClick: async () => {
+      try { await api.post(`/api/hr/leaves/${l.id}/end`, { note: note.value.trim() }); toast('İzin tamamlandı olarak kapatıldı'); reload(); }
+      catch (err) { toastError(err); return false; }
+    } }],
+  });
 }
 
 function leaveTable(rows, { hr = false, showEmployee = false, mine = false } = {}) {
@@ -389,12 +404,15 @@ function leaveTable(rows, { hr = false, showEmployee = false, mine = false } = {
       h('td', { class: l.changed ? 'leave-changed' : '' }, l.start_date ? range(l.start_date, l.end_date) : '—',
         l.changed ? h('div', { class: 'small' }, 'İK tarafından değiştirildi') : null),
       h('td', { class: 'small' }, l.reason, h('div', { class: 'muted' }, `📍 ${l.location || '—'}`)),
-      h('td', null, badge(LEAVE_STATUS, l.status), l.decision_note ? h('div', { class: 'small muted' }, l.decision_note) : null,
-        l.decided_by_name && l.status !== 'IPTAL' ? h('div', { class: 'small muted' }, `${l.decided_by_name} · ${fmtDate(l.decided_at)}`) : null),
+      h('td', null, badge(LEAVE_STATUS, l.status), l.ended ? h('span', { class: 'badge blue', style: { marginLeft: '4px' }, title: `Planlanan bitiş ${fmtDate(l.planned_end)} · ${l.ended_by_name || ''} · ${fmtDateTime(l.ended_at)}${l.end_note ? ' · ' + l.end_note : ''}` }, 'Erken tamamlandı') : null,
+        l.decision_note ? h('div', { class: 'small muted' }, l.decision_note) : null,
+        l.decided_by_name && l.status !== 'IPTAL' ? h('div', { class: 'small muted' }, `${l.decided_by_name} · ${fmtDate(l.decided_at)}`) : null,
+        l.ended ? h('div', { class: 'small muted' }, `Tamamlandı: ${fmtDate(l.end_date)} (planlanan ${fmtDate(l.planned_end)}) · ${l.ended_by_name || ''}`) : null),
       mine ? null : h('td', null, signedCell(l, hr)),
       h('td', { class: 'actions' },
         hr && l.status === 'BEKLIYOR' ? [h('button', { class: 'btn sm primary', onclick: () => approveModal(l) }, 'Onayla'),
           h('button', { class: 'btn sm', onclick: () => rejectLeave(l) }, 'Reddet')] : null,
+        hr && l.active ? h('button', { class: 'btn sm', title: 'Personel işe döndü: izni bugün itibarıyla kapat', onclick: () => endLeave(l) }, '✓ İzin tamamlandı') : null,
         leaveQrBtn(l),
         mine && l.status === 'BEKLIYOR' ? h('button', { class: 'btn sm', onclick: () => cancelLeave(l) }, 'Geri Çek') : null))))));
 }

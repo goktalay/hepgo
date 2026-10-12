@@ -1153,15 +1153,18 @@ class DecideIn(BaseModel):
 def _leaves(conn, where, args=()):
     rows = db.rows(conn.execute(
         f'''SELECT l.*, e.first_name || ' ' || e.last_name AS employee_name, e.title AS employee_title, e.tc_no AS employee_tc, e.department AS employee_department, e.user_id,
-                   r.full_name AS requested_by_name, d.full_name AS decided_by_name, s.full_name AS signed_by_name
+                   r.full_name AS requested_by_name, d.full_name AS decided_by_name, s.full_name AS signed_by_name, en.full_name AS ended_by_name
             FROM leave_requests l JOIN employees e ON e.id = l.employee_id
             LEFT JOIN users r ON r.id = l.requested_by LEFT JOIN users d ON d.id = l.decided_by LEFT JOIN users s ON s.id = l.signed_by
+            LEFT JOIN users en ON en.id = l.ended_by
             WHERE {where} ORDER BY l.req_start DESC, l.id DESC''', args))
     for r in rows:
         r['req_days'] = leave_days(r['req_start'], r['req_end'])
         r['days'] = leave_days(r['start_date'], r['end_date']) if r['start_date'] else None
         r['unsigned'] = r['status'] == 'ONAYLANDI' and not r['signed_file']
-        r['changed'] = r['status'] == 'ONAYLANDI' and (r['start_date'], r['end_date']) != (r['req_start'], r['req_end'])
+        r['changed'] = r['status'] == 'ONAYLANDI' and (r['start_date'], r['end_date']) != (r['req_start'], r['req_end']) and not r.get('ended_at')
+        r['ended'] = bool(r.get('ended_at'))
+        r['active'] = r['status'] == 'ONAYLANDI' and not r['ended'] and bool(r['start_date']) and r['start_date'] <= db.now()[:10] <= (r['end_date'] or '')
         r['pass_token'] = exitpass.make_token(conn, 'leave', r['id'], r['end_date'] or r['req_end']) if r['status'] == 'ONAYLANDI' else None
     return rows
 
@@ -1237,6 +1240,34 @@ def approve_leave(lid: int, body: DecideIn, user=Depends(hr_user), conn=db.DB):
                  (start, end, user['id'], db.now(), (body.note or '').strip()[:1000] or None, lid))
     db.audit(conn, user['id'], 'İzin talebini onayladı', 'leave', lid, f'{start}–{end}')
     return {'ok': True}
+
+
+class EndIn(BaseModel):
+    note: Optional[str] = None
+
+
+@router.post('/leaves/{lid}/end')
+def end_leave(lid: int, body: EndIn, user=Depends(hr_user), conn=db.DB):
+    """İzin tamamlandı: personel planlanan tarihten önce işe döndü → izin bugün kapanır (end_date = bugün), planlanan bitiş
+    planned_end'de saklanır, kim/ne zaman/neden kaydedilir; kişi hemen izinli sayılmaz (pano, oturum, rehber)."""
+    auth._absence_cache.clear()
+    r = db.row(conn.execute('SELECT * FROM leave_requests WHERE id = ?', (lid,)))
+    if not r:
+        raise HTTPException(404, 'İzin bulunamadı')
+    if r['status'] != 'ONAYLANDI':
+        raise HTTPException(400, 'Yalnız onaylanmış izin tamamlanabilir')
+    if r['ended_at']:
+        raise HTTPException(400, 'Bu izin zaten tamamlandı')
+    today = db.now()[:10]
+    if r['end_date'] and r['end_date'] < today:
+        raise HTTPException(400, 'İzin süresi zaten dolmuş')
+    if r['start_date'] and r['start_date'] > today:
+        raise HTTPException(400, 'İzin henüz başlamadı')
+    note = (body.note or '').strip()[:1000] or None
+    conn.execute('''UPDATE leave_requests SET planned_end = COALESCE(planned_end, end_date), end_date = ?, ended_at = ?, ended_by = ?, end_note = ?
+                    WHERE id = ?''', (today, db.now(), user['id'], note, lid))
+    db.audit(conn, user['id'], 'İzni erken tamamladı', 'leave', lid, f"planlanan {r['end_date']} → {today}" + (f' · {note}' if note else ''))
+    return {'ok': True, 'end_date': today, 'planned_end': r['end_date']}
 
 
 @router.post('/leaves/{lid}/reject')

@@ -3028,6 +3028,10 @@ def _migrate(conn):
         for col in ('signed_file', 'signed_name', 'signed_at'):
             conn.execute(f'ALTER TABLE leave_requests ADD COLUMN {col} TEXT')
         conn.execute('ALTER TABLE leave_requests ADD COLUMN signed_by INTEGER REFERENCES users(id)')
+    if 'ended_at' not in lr_cols:   # izin erken tamamlandı (İK kapattı): planlanan bitiş saklanır, end_date kapatma gününe çekilir
+        for col in ('ended_at', 'end_note', 'planned_end'):
+            conn.execute(f'ALTER TABLE leave_requests ADD COLUMN {col} TEXT')
+        conn.execute('ALTER TABLE leave_requests ADD COLUMN ended_by INTEGER REFERENCES users(id)')
     if 'manager_id' not in {r[1] for r in conn.execute('PRAGMA table_info(employees)')}:   # personelin yöneticisi (görev formunda varsayılan onaylayan)
         conn.execute('ALTER TABLE employees ADD COLUMN manager_id INTEGER REFERENCES users(id)')
     if 'edited_by' not in {r[1] for r in conn.execute('PRAGMA table_info(team_meeting_notes)')}:   # toplantı sonrası düzenleyen

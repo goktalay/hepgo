@@ -8546,4 +8546,4 @@ textarea.sv-input { resize: vertical; }
 .apps-panel .apps-search-title { padding-right: 40px; }
 .leave-ended { color: var(--primary); font-weight: 600; }
 .chat-paste img { max-width: 100%; max-height: 50vh; border-radius: 12px; display: block; margin: 0 auto 10px; box-shadow: 0 4px 16px rgba(15,23,42,.15); }
-.chat-timeline.drop { outline: 2px dashed var(--primary); outline-offset: -6px; }
+.msg-timeline.drop { outline: 2px dashed var(--primary); outline-offset: -6px; }

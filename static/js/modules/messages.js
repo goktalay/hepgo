@@ -515,6 +515,38 @@ function conversation(container, target) {
   }
   const sendText = () => { const t = input.value.trim(); if (!t) return; input.value = ''; autosize(); const fd = new FormData(); fd.append('body', t); send(fd, t); };
   const sendFiles = files => { for (const f of files) { if (f.size > 25 * 1024 * 1024) { toast(t('{name}: 25 MB üstü', { name: f.name }), 'err'); continue; } const fd = new FormData(); fd.append('file', f); send(fd, `📎 ${f.name}`); } };
+  // Panodan resim yapıştırma (WhatsApp gibi): önizleme + isteğe bağlı açıklama → resim dosyası olarak gönderilir
+  const clipImages = e => [...(e.clipboardData?.items || [])].filter(i => i.kind === 'file' && i.type.startsWith('image/')).map((it, k) => {
+    const f = it.getAsFile(); if (!f) return null;
+    const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    return new File([f], `resim-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}-${k + 1}.${ext}`, { type: f.type });
+  }).filter(Boolean);
+  const pasteImages = files => {
+    const url = URL.createObjectURL(files[0]);
+    const cap = h('input', { class: 'input', placeholder: 'Açıklama ekleyin (isteğe bağlı) · Enter: gönder' });
+    let m = null;
+    const doSend = () => {
+      const text = cap.value.trim();
+      files.forEach((f, i) => { const fd = new FormData(); fd.append('file', f); if (i === 0 && text) fd.append('body', text); send(fd, text || '🖼️ Resim'); });
+      m?.close();
+    };
+    m = modal({ title: files.length > 1 ? t('{n} resim gönder', { n: files.length }) : 'Resmi gönder',
+      body: h('div', { class: 'chat-paste' }, h('img', { src: url, alt: '' }), files.length > 1 ? h('div', { class: 'small muted' }, `+${files.length - 1} resim daha`) : null, cap),
+      onClose: () => URL.revokeObjectURL(url),
+      actions: [{ label: 'Vazgeç' }, { label: 'Gönder ➤', class: 'primary', onClick: doSend }] });
+    cap.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } });
+    setTimeout(() => cap.focus(), 50);
+  };
+  input.addEventListener('paste', e => {
+    const imgs = clipImages(e);
+    if (imgs.length) { e.preventDefault(); pasteImages(imgs); return; }
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); sendFiles(files); }
+  });
+  // sürükle-bırak: zaman çizelgesine bırakılan dosyalar gönderilir (resimler önizlemeyle)
+  timeline.addEventListener('dragover', e => { e.preventDefault(); timeline.classList.add('drop'); });
+  timeline.addEventListener('dragleave', () => timeline.classList.remove('drop'));
+  timeline.addEventListener('drop', e => { e.preventDefault(); timeline.classList.remove('drop'); const fs = [...(e.dataTransfer?.files || [])]; const imgs = fs.filter(f => f.type.startsWith('image/')); if (imgs.length) pasteImages(imgs); const rest = fs.filter(f => !f.type.startsWith('image/')); if (rest.length) sendFiles(rest); });
   const autosize = () => { input.style.height = 'auto'; input.style.height = `${Math.min(120, input.scrollHeight)}px`; };
   input.addEventListener('input', autosize);
   input.addEventListener('input', () => {   // karşı tarafa "yazıyor…" (en fazla ~2,5 sn'de bir)

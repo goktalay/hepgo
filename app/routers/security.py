@@ -144,6 +144,7 @@ def vehicle_exit(conn, plate, user_id, note='Görev çıkışı'):
 def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     """QR çıkış kodunu doğrular ve izin verilirse personel çıkışını kaydeder."""
     v = exitpass.verify_token(conn, body.token)
+    print(f"[verify-pass] user={user['id']} ok={v.get('ok')} kind={v.get('kind')} id={v.get('id')} exp={v.get('exp')}")   # teşhis: hangi kod okutuldu
     if not v['ok']:
         return {'allow': False, 'reason': v.get('reason') or 'Geçersiz veya süresi dolmuş kod'}
     today = _date.today().isoformat()

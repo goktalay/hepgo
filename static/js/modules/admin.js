@@ -255,6 +255,7 @@ async function renderSystem(view) {
   clear(view, pageHead('Yönetim', { back: '#/', sub: h('span', null, 'Sistem durumu · 30 saniyede bir yenilenir · ', stamp),
     tabs: nav('') }), body);
 
+  const mbit = bps => (bps == null ? '—' : bps * 8 >= 1e6 ? `${(bps * 8 / 1e6).toFixed(2)} Mbit/s` : `${Math.round(bps * 8 / 1e3)} kbit/s`);
   const gauge = (label, pct, sub, warn = 80, crit = 92) => {
     const tone = pct >= crit ? 'crit' : pct >= warn ? 'warn' : 'ok';
     const ring = h('div', { class: 'sys-ring' }, h('b', null, `%${Math.round(pct || 0)}`));
@@ -292,6 +293,12 @@ async function renderSystem(view) {
         gauge('Bellek', s.ram_total ? 100 * s.ram_used / s.ram_total : 0, `${fmtBytes(s.ram_used)} / ${fmtBytes(s.ram_total)}`),
         gauge('Disk', s.disk_total ? 100 * s.disk_used / s.disk_total : 0, t('{free} boş / {total}', { free: fmtBytes(s.disk_free), total: fmtBytes(s.disk_total) })),
         s.gpu_name ? gauge('Ekran kartı', s.gpu, `${s.gpu_name}${s.gpu_temp != null ? ` · ${s.gpu_temp}°C` : ''}`) : null,
+        // Ağ yükü: anlık ve 1 dk ortalama (Mbit/s), açılıştan bu yana toplam (tüm fiziksel arayüzler, lo hariç)
+        s.net_rx_bps != null ? h('div', { class: 'sys-net' },
+          h('div', { class: 'sys-net-h' }, 'Ağ yükü'),
+          h('div', { class: 'sys-net-row' }, h('span', { class: 'dn' }, '↓ ' + mbit(s.net_rx_bps)), h('span', { class: 'up' }, '↑ ' + mbit(s.net_tx_bps))),
+          h('small', null, `1 dk ort: ↓ ${mbit(s.net_rx_avg)} · ↑ ${mbit(s.net_tx_avg)}`),
+          h('small', null, `Toplam: ↓ ${fmtBytes(s.net_rx_total)} · ↑ ${fmtBytes(s.net_tx_total)}`)) : null,
         h('div', { class: 'sys-up' }, h('span', null, 'Sunucu açık'), h('b', null, fmtUp(s.uptime_s)), h('span', null, 'Uygulama'), h('b', null, fmtUp(s.app_uptime_s)),
           h('small', null, d.host))),
 

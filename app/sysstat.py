@@ -25,6 +25,19 @@ def _cpu_times():
     return sum(v), idle
 
 
+def _net_bytes():
+    """Tüm fiziksel arayüzlerin (lo hariç) toplam alınan / gönderilen bayt sayısı (/proc/net/dev)."""
+    rx = tx = 0
+    with open('/proc/net/dev') as f:
+        for line in f.readlines()[2:]:
+            name, data = line.split(':', 1)
+            if name.strip() == 'lo':
+                continue
+            v = data.split()
+            rx += int(v[0]); tx += int(v[8])
+    return rx, tx
+
+
 def _ram():
     info = {}
     with open('/proc/meminfo') as f:
@@ -70,21 +83,39 @@ class _Gpu:
 def _loop():
     gpu = _Gpu()
     prev = _cpu_times()
+    try:
+        pnet = _net_bytes()
+    except Exception:   # noqa: BLE001
+        pnet = None
     while True:
         time.sleep(1)
         try:
             cur = _cpu_times()
             dt, di = cur[0] - prev[0], cur[1] - prev[1]
             prev = cur
+            # ağ: saniyelik alınan / gönderilen bayt (anlık hız)
+            rx_bps = tx_bps = None
+            try:
+                nnet = _net_bytes()
+                if pnet:
+                    rx_bps, tx_bps = max(0, nnet[0] - pnet[0]), max(0, nnet[1] - pnet[1])
+                pnet = nnet
+            except Exception:   # noqa: BLE001
+                pass
             cpu = round(100 * (dt - di) / dt, 1) if dt > 0 else 0.0
             total, used = _ram()
             g, temp = gpu.sample()
             disk = shutil.disk_usage(config.DATA_DIR)
-            point = {'t': int(time.time()), 'cpu': cpu, 'gpu': g, 'ram': round(100 * used / total, 1)}
+            point = {'t': int(time.time()), 'cpu': cpu, 'gpu': g, 'ram': round(100 * used / total, 1), 'rx': rx_bps, 'tx': tx_bps}
             with _lock:
                 _history.append(point)
+                hist = [p for p in _history if p.get('rx') is not None][-60:]
                 _latest.update(cpu=cpu, gpu=g, gpu_temp=temp, gpu_name=gpu.name, ram_total=total, ram_used=used,
-                               disk_total=disk.total, disk_used=disk.used, disk_free=disk.free)
+                               disk_total=disk.total, disk_used=disk.used, disk_free=disk.free,
+                               net_rx_bps=rx_bps, net_tx_bps=tx_bps,
+                               net_rx_avg=round(sum(p['rx'] for p in hist) / len(hist)) if hist else None,
+                               net_tx_avg=round(sum(p['tx'] for p in hist) / len(hist)) if hist else None,
+                               net_rx_total=nnet[0] if pnet else None, net_tx_total=nnet[1] if pnet else None)
         except Exception:
             pass
 

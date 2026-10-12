@@ -8554,3 +8554,7 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .btn svg.fa-inline { width: 15px; height: 15px; }
 .seg button svg.fa-inline { width: 14px; height: 14px; }
 .db-duty-endrow { display: flex; justify-content: flex-end; padding: 6px 8px 2px; }
+.sys-net { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 12px; min-width: 190px; font-size: 12px; color: var(--muted); }
+.sys-net-h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
+.sys-net-row { display: flex; gap: 12px; font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.sys-net-row .dn { color: var(--primary); } .sys-net-row .up { color: var(--success); }

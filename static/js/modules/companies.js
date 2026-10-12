@@ -46,7 +46,7 @@ const viewSwitch = current => segmented([['companies', SUP ? 'Tedarikçiler' : '
 
 const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toLocaleUpperCase('tr');
 // Konumları bul: firma adları (ve adresleri) internetten aranır; ilerleme düğmede, bitince liste yenilenir (yalnız yönetici)
-function geocodeBtn(ctx, reload) {
+function geocodeBtn(ctx, reload, missingCount) {
   if (!(ctx?.user?.master || (ctx?.user?.roles || []).includes('Sistem Yöneticisi'))) return null;
   const btn = h('button', { class: 'btn', type: 'button', title: 'Firma adlarını internette arayıp enlem/boylamı kaydeder (eksik olanlar)' }, '🌐 Konumları bul');
   let timer = null;
@@ -58,7 +58,8 @@ function geocodeBtn(ctx, reload) {
     } catch { clearInterval(timer); timer = null; btn.disabled = false; }
   };
   btn.addEventListener('click', async () => {
-    const all = await confirmDialog('Konumları bul', 'Konumu olmayan aktif firmaların adları (ve varsa adresleri) internette aranıp enlem/boylam kaydedilecek. Birkaç dakika sürebilir.', { okLabel: 'Başlat' });
+    const n = missingCount ? missingCount() : null;
+    const all = await confirmDialog('Konumları bul', `Yalnız ENLEM/BOYLAMI OLMAYAN aktif firmalar taranır${n != null ? ` (${n} firma)` : ''}; konumu bulunmuş firmalara dokunulmaz. Adı ve varsa adresi internette aranır; bulunamayanlar bir sonraki taramada yeniden denenir.`, { okLabel: 'Başlat' });
     if (!all) return;
     try { await api.post('/api/companies/geocode', { only_missing: true }); btn.disabled = true; timer = setInterval(poll, 1500); poll(); } catch (err) { toastError(err); }
   });
@@ -144,7 +145,7 @@ async function renderList(view, ctx) {
   clear(view,
     pageHead(TITLE, { back: '#/', sub: 'Firmalar, kişiler ve evraklar', tabs: SUP ? null : crmNav('companies', ctx) }),
     moduleToolbar(viewSwitch('companies'), h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
-      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), geocodeBtn(ctx, reload)),
+      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), geocodeBtn(ctx, reload, () => companies.filter(c => c.active && c.lat == null).length)),
     stats,
     h('div', { class: 'filters' }, q, act),
     grid);

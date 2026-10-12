@@ -856,7 +856,7 @@ function ensureHudStyle() {
   .f3d-right .f3d-card.f3d-min{align-self:flex-end}
   .f3d-modes .f3d-fs{margin-left:4px;border-left:1px solid rgba(28,34,51,.12)!important;border-radius:0 999px 999px 0}
   .f3d-fullscreen{width:100vw!important;height:100vh!important;max-width:none!important;border-radius:0!important;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
-  .f3d-fullscreen>*{height:100%}   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
+  .f3d-fullscreen>canvas{height:100%!important;width:100%!important}   /* yalnız sahne büyür; paneller/çubuklar kendi boyutunda */   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
   .f3d-togs{display:flex;flex-direction:column;gap:7px}
   .f3d-tog{display:flex;align-items:center;gap:10px;font-size:12px;color:#2a3040;cursor:pointer;user-select:none}
   .f3d-tog span{display:flex;align-items:center;gap:7px}

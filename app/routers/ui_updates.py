@@ -7,6 +7,19 @@ from pydantic import BaseModel
 from .. import auth, db, ui_updates as U
 
 router = APIRouter(prefix='/api/ui')
+_last_stamp = {'v': None}
+
+
+def _sync(conn):
+    """Statik dosyalar restart olmadan değiştiyse (yalnız rsync) damga değişir → sürüm taraması burada tetiklenir (damga başına bir kez)."""
+    from ..main import asset_version
+    try:
+        stamp = asset_version()
+    except Exception:   # noqa: BLE001
+        return
+    if stamp != _last_stamp['v']:
+        U.ensure_release(conn, stamp)
+        _last_stamp['v'] = stamp
 
 
 def _admin(user=Depends(auth.current_user)):
@@ -22,7 +35,7 @@ class LoadedIn(BaseModel):
 @router.post('/loaded')
 def loaded(body: LoadedIn, user=Depends(auth.current_user), conn=db.DB):
     """İstemci açıldı: hangi derlemeyle yüklendi → sürüm id'si. Yanıt: {release, current, pending}."""
-    U.ensure_tables(conn)
+    U.ensure_tables(conn); _sync(conn)
     rid = U.set_loaded(conn, user['id'], body.stamp)
     return {'release': rid, 'current': U.current_id(conn), 'pending': U.pending_for(conn, rid)}
 
@@ -30,7 +43,7 @@ def loaded(body: LoadedIn, user=Depends(auth.current_user), conn=db.DB):
 @router.get('/updates')
 def updates(loaded: int = 0, user=Depends(auth.current_user), conn=db.DB):
     """loaded sürümünden sonra değişen ekranlar: {current, pending:{screen: release}} ('*' = tüm ekranlar)."""
-    U.ensure_tables(conn)
+    U.ensure_tables(conn); _sync(conn)
     return {'current': U.current_id(conn), 'pending': U.pending_for(conn, loaded)}
 
 

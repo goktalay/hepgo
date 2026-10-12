@@ -8460,3 +8460,35 @@ textarea.sv-input { resize: vertical; }
 .todo-dot.started { background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); } .todo-dot.done { background: var(--success); }
 .todo-btn.on svg { color: var(--primary); }
 .todo-btn.run .alert-count { background: var(--primary); }
+/* TODO: yönetici görünümü — sol personel listesi + Liste / Kart / TODO panosu */
+.todo-split { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; align-items: start; }
+.todo-people { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 8px; max-height: calc(100vh - 110px); overflow: auto; }
+.todo-person { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 10px; cursor: pointer; font: inherit; color: inherit; }
+.todo-person:hover { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.todo-person.on { background: var(--primary-soft, color-mix(in srgb, var(--primary) 14%, transparent)); color: var(--primary); font-weight: 700; }
+.todo-person .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-person .n { font-size: 11px; font-weight: 700; color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); border-radius: 999px; padding: 1px 7px; }
+.todo-person .n.open { color: #fff; background: var(--primary); }
+.todo-people-sep { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 2px; }
+.todo-main { min-width: 0; }
+.todo-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.todo-col { background: color-mix(in srgb, var(--muted) 7%, var(--surface)); border: 1px solid var(--border); border-radius: 14px; padding: 8px; min-height: 160px; }
+.todo-col-h { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; font-weight: 800; color: var(--muted); padding: 4px 6px 8px; }
+.todo-col-h b { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+.todo-col.started .todo-col-h { color: var(--primary); } .todo-col.done .todo-col-h { color: var(--success); } .todo-col.rejected .todo-col-h { color: var(--danger); }
+.todo-col-b { display: flex; flex-direction: column; gap: 8px; }
+.todo-mini { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 9px 10px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.todo-mini:hover { border-color: var(--primary); }
+.todo-mini.started { border-left: 3px solid var(--primary); } .todo-mini.done { border-left: 3px solid var(--success); } .todo-mini.rejected { border-left: 3px solid var(--danger); } .todo-mini.late { border-color: var(--danger); }
+.todo-mini-h { display: flex; align-items: center; gap: 6px; } .todo-mini-h b { font-size: 13px; line-height: 1.25; }
+.todo-mini-m { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 5px; }
+.todo-mini-m .todo-timer { font-size: 12px; margin-left: 0; } .todo-mini-m .late { color: var(--danger); font-weight: 700; }
+.todo-mini-r { margin-top: 4px; font-style: italic; }
+.todo-result.rej { background: color-mix(in srgb, var(--danger) 9%, var(--surface)); }
+.todo-table tbody tr { cursor: pointer; } .todo-table tbody tr:hover td { background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.todo-table td .late { color: var(--danger); font-weight: 700; } .todo-table .todo-timer { font-size: 13px; margin-left: 0; }
+@media (max-width: 900px) {
+  .todo-split { grid-template-columns: 1fr; } .todo-people { position: static; max-height: 180px; flex-direction: row; flex-wrap: wrap; }
+  .todo-person { width: auto; } .todo-people-sep { width: 100%; }
+  .todo-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

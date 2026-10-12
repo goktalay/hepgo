@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS todos (
     done_at TEXT,
     elapsed_s INTEGER NOT NULL DEFAULT 0,
     result TEXT,
-    seen_at TEXT
+    seen_at TEXT,
+    reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee_id, status);
 CREATE TABLE IF NOT EXISTS todo_items (
@@ -50,6 +51,10 @@ OPEN = ('pending', 'started')
 
 def _ensure(conn):
     conn.executescript(DDL)
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(todos)')}
+    if 'reason' not in cols:   # eski kurulum: red nedeni sütunu
+        conn.execute('ALTER TABLE todos ADD COLUMN reason TEXT')
+        conn.commit()
 
 
 def _is_admin(user):
@@ -111,9 +116,24 @@ def _push(uid, title, body, url):
 
 
 # ---------------------------------------------------------------- listeler
+def _period_start(period):
+    """week/month/year → dönem başlangıcı (ISO); diğer → None (tüm tarihler)."""
+    from datetime import date, timedelta
+    today = date.today()
+    if period == 'week':
+        return (today - timedelta(days=today.weekday())).isoformat()
+    if period == 'month':
+        return today.replace(day=1).isoformat()
+    if period == 'year':
+        return today.replace(month=1, day=1).isoformat()
+    return None
+
+
 @router.get('')
-def list_todos(scope: str = 'mine', status: str = 'open', user=Depends(auth.current_user), conn=db.DB):
-    """scope=mine (bana atanan) | given (verdiğim) | all (yönetici: hepsi); status=open | done | all."""
+def list_todos(scope: str = 'mine', status: str = 'open', assignee: int = 0, period: str = 'all',
+               user=Depends(auth.current_user), conn=db.DB):
+    """scope=mine (bana atanan) | given (verdiğim) | all (yönetici: herkese verilen); status=open | done | all;
+    assignee=<user_id> (yönetici: tek personel); period=all | week | month | year (verilme tarihine göre)."""
     _ensure(conn)
     where, args = [], []
     if scope == 'given':
@@ -122,10 +142,15 @@ def list_todos(scope: str = 'mine', status: str = 'open', user=Depends(auth.curr
         pass
     else:
         where.append('t.assignee_id = ?'); args.append(user['id'])
+    if assignee and _is_admin(user):
+        where.append('t.assignee_id = ?'); args.append(int(assignee))
+    start = _period_start(period)
+    if start:
+        where.append('t.created_at >= ?'); args.append(start)
     if status == 'open':
         where.append("t.status IN ('pending','started')")
     elif status == 'done':
-        where.append("t.status IN ('done','cancelled')")
+        where.append("t.status IN ('done','cancelled','rejected')")
     sql = SELECT + (' WHERE ' + ' AND '.join(where) if where else '')
     sql += " ORDER BY CASE t.status WHEN 'started' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, COALESCE(t.due_at, '9') , t.id DESC LIMIT 500"
     rows = db.rows(conn.execute(sql, args))
@@ -137,7 +162,7 @@ def pending(user=Depends(auth.current_user), conn=db.DB):
     """Üst çubuk TODO ikonu: bana atanan açık görevler (başlatılmış önce) + yöneticiyse görülmemiş tamamlananlar."""
     _ensure(conn)
     rows = db.rows(conn.execute(SELECT + " WHERE t.assignee_id = ? AND t.status IN ('pending','started') ORDER BY CASE t.status WHEN 'started' THEN 0 ELSE 1 END, COALESCE(t.due_at, '9'), t.id DESC LIMIT 30", (user['id'],)))
-    done = db.rows(conn.execute(SELECT + " WHERE t.created_by = ? AND t.status = 'done' AND t.seen_at IS NULL ORDER BY t.done_at DESC LIMIT 20", (user['id'],))) if _is_admin(user) else []
+    done = db.rows(conn.execute(SELECT + " WHERE t.created_by = ? AND t.status IN ('done','rejected') AND t.seen_at IS NULL ORDER BY t.done_at DESC LIMIT 20", (user['id'],))) if _is_admin(user) else []
     return {'count': len(rows) + len(done), 'mine': [_pub(conn, r, False) for r in rows], 'done': [_pub(conn, r, False) for r in done], 'admin': _is_admin(user)}
 
 
@@ -151,7 +176,7 @@ def done_unseen_for(conn, uid):
     """notifications.py: verdiğim görevlerden tamamlanmış ama henüz görmediklerim."""
     _ensure(conn)
     return db.rows(conn.execute('''SELECT t.id, t.title, a.full_name AS assignee_name FROM todos t JOIN users a ON a.id = t.assignee_id
-                                   WHERE t.created_by = ? AND t.status = 'done' AND t.seen_at IS NULL ORDER BY t.done_at DESC''', (uid,)))
+                                   WHERE t.created_by = ? AND t.status IN ('done','rejected') AND t.seen_at IS NULL ORDER BY t.done_at DESC''', (uid,)))
 
 
 @router.get('/{tid}')
@@ -247,7 +272,7 @@ def reopen(tid: int, user=Depends(auth.current_user), conn=db.DB):
     t = _get(conn, tid, user)
     if not (t['created_by'] == user['id'] or _is_admin(user)):
         raise HTTPException(403, 'Yalnız görevi veren yeniden açabilir')
-    conn.execute("UPDATE todos SET status = 'started', started_at = ?, done_at = NULL, seen_at = NULL WHERE id = ?", (db.now(), tid))
+    conn.execute("UPDATE todos SET status = 'started', started_at = ?, done_at = NULL, seen_at = NULL, reason = NULL WHERE id = ?", (db.now(), tid))
     conn.commit()
     _push(t['assignee_id'], 'Görev yeniden açıldı', t['title'], '/app#/my-todos')
     return _pub(conn, _get(conn, tid, user))
@@ -290,6 +315,29 @@ def complete(tid: int, body: CompleteIn, user=Depends(auth.current_user), conn=d
     conn.commit()
     if t['created_by'] and t['created_by'] != user['id']:
         _push(t['created_by'], 'Görev tamamlandı', f"{t['assignee_name']} · {t['title']}", '/app#/my-todos/given')
+    return _pub(conn, _get(conn, tid, user))
+
+
+class RejectIn(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post('/{tid}/reject')
+def reject(tid: int, body: RejectIn, user=Depends(auth.current_user), conn=db.DB):
+    """Atanan kişi görevi reddeder (bekleyen ya da başlamış): neden zorunlu; başlamışsa o ana kadarki süre saklanır."""
+    t = _get(conn, tid, user)
+    _assignee(t, user)
+    if t['status'] not in OPEN:
+        raise HTTPException(400, 'Görev zaten kapalı')
+    reason = (body.reason or '').strip()[:1000]
+    if not reason:
+        raise HTTPException(400, 'Red nedeni gerekli')
+    now = db.now()
+    elapsed = int(t['elapsed_s'] or 0) + _elapsed(t, now)
+    conn.execute("UPDATE todos SET status = 'rejected', done_at = ?, elapsed_s = ?, reason = ? WHERE id = ?", (now, elapsed, reason, tid))
+    conn.commit()
+    if t['created_by'] and t['created_by'] != user['id']:
+        _push(t['created_by'], 'Görev reddedildi', f"{t['assignee_name']} · {t['title']} · {reason}", '/app#/my-todos/given')
     return _pub(conn, _get(conn, tid, user))
 
 

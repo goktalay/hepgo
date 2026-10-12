@@ -1094,7 +1094,8 @@ CREATE TABLE IF NOT EXISTS todos (
     done_at TEXT,
     elapsed_s INTEGER NOT NULL DEFAULT 0,
     result TEXT,
-    seen_at TEXT
+    seen_at TEXT,
+    reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee_id, status);
 CREATE TABLE IF NOT EXISTS todo_items (

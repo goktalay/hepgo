@@ -620,7 +620,7 @@ NOTIFICATIONS = [
     {'key': 'task-assigned', 'roles': None, 'fn': task_assigned, 'title': 'Size yeni görev atandı', 'push': False},
     # Yapılacaklar (TODO): anlık push'u routers/todos atar
     {'key': 'todo-pending', 'roles': None, 'fn': todo_pending, 'title': 'Size verilen görev bekliyor', 'push': False},
-    {'key': 'todo-done', 'roles': None, 'fn': todo_done, 'title': 'Verdiğiniz görev tamamlandı', 'push': False},
+    {'key': 'todo-done', 'roles': None, 'fn': todo_done, 'title': 'Verdiğiniz görev tamamlandı / reddedildi', 'push': False},
 ]
 
 

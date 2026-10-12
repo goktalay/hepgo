@@ -87,13 +87,13 @@ PERSONNEL_FILES = {
 CONTRACTS = {
     'GIZLILIK': 'Gizlilik Sözleşmesi',
     'IS_SOZLESMESI': 'Belirsiz Süreli İş Sözleşmesi',
-    'ARAC': 'Araç Kullanım Sözleşmesi',
-    # İsteğe bağlı
+    # İsteğe bağlı (eksik sayılmaz, uyarıya girmez)
+    'ARAC': 'Araç Kullanım Sözleşmesi',   # 12 Ekim 2026: zorunlu statüsünden çıkarıldı (yalnız araç kullanan personel)
     'TADIL': 'İş Sözleşmesi Tadil Protokolü',
     'KVKK': 'KVKK Aydınlatma Metni',
 }
 FILE_KINDS = {**PERSONNEL_FILES, **CONTRACTS}
-REQUIRED_KINDS = ('ADLI_SICIL', 'SAGLIK', 'ASKERLIK', 'MEZUNIYET', 'HIZMET_DOKUMU', 'VESIKALIK', 'GIZLILIK', 'IS_SOZLESMESI', 'ARAC')
+REQUIRED_KINDS = ('ADLI_SICIL', 'SAGLIK', 'ASKERLIK', 'MEZUNIYET', 'HIZMET_DOKUMU', 'VESIKALIK', 'GIZLILIK', 'IS_SOZLESMESI')
 # Görev tanımı maddelerinin gizlilik dereceleri. Genel ve Kurum İçi maddeler başka belgelerde (ör. saha görev raporu)
 # kullanılabilir; Gizli ve Çok Gizli maddeler yalnızca İK ekranında görünür.
 DUTY_LEVELS = {'GENEL': 'Genel', 'KURUM_ICI': 'Kurum İçi', 'GIZLI': 'Gizli', 'COK_GIZLI': 'Çok Gizli'}

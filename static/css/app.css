@@ -8428,3 +8428,35 @@ textarea.sv-input { resize: vertical; }
 .esnaf-rsv .grow b { font-size: 15px; } .esnaf-rsv-time small { display: block; }
 .pos-prod.svc { border-color: var(--primary); background: var(--primary-soft); }
 .pos-prod-tag { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; }
+
+/* ---- Yapılacaklar (TODO) ---- */
+.todo-tabs { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.todo-list { display: flex; flex-direction: column; gap: 10px; }
+.todo-card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 12px 14px; }
+.todo-card.started { border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent); }
+.todo-card.done { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success) 5%, var(--surface)); }
+.todo-card.late { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.todo-card.focus { outline: 2px solid var(--primary); outline-offset: 2px; }
+.todo-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.todo-head b.t { font-size: 15px; }
+.todo-timer { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; color: var(--primary); display: flex; align-items: center; gap: 4px; }
+.todo-timer.done { color: var(--success); } .todo-timer.pending { color: var(--muted); font-weight: 600; }
+.todo-meta { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+.todo-meta .late { color: var(--danger); font-weight: 700; }
+.todo-note { margin-top: 8px; font-size: 13px; white-space: pre-wrap; }
+.todo-prog { height: 4px; border-radius: 2px; background: var(--border); margin-top: 8px; overflow: hidden; } .todo-prog i { display: block; height: 100%; background: var(--primary); }
+.todo-items { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.todo-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.todo-item.done > span { text-decoration: line-through; color: var(--muted); }
+.todo-item .chk { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; display: grid; place-items: center; font-size: 12px; color: #fff; flex: 0 0 auto; padding: 0; }
+.todo-item.done .chk { background: var(--success); border-color: var(--success); }
+.todo-item .chk:disabled { cursor: default; }
+.todo-item .x { margin-left: auto; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+.todo-add { display: flex; gap: 6px; margin-top: 8px; } .todo-add .input { flex: 1; }
+.todo-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.todo-result { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 9%, var(--surface)); font-size: 13px; white-space: pre-wrap; }
+.todo-panel .todo-head-row { display: flex; justify-content: space-between; align-items: center; }
+.todo-dot { width: 9px; height: 9px; border-radius: 50%; background: #98a2b3; flex: 0 0 auto; margin-top: 6px; }
+.todo-dot.started { background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); } .todo-dot.done { background: var(--success); }
+.todo-btn.on svg { color: var(--primary); }
+.todo-btn.run .alert-count { background: var(--primary); }

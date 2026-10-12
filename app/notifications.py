@@ -538,6 +538,20 @@ def task_assigned(conn, user):
     return _result(rows, [r['title'] for r in rows], '#/my-tasks', 'Size atanan günlük görevler')
 
 
+def todo_pending(conn, user):
+    """Bana verilen açık TODO görevleri (bekleyen + devam eden)."""
+    from .routers.todos import pending_for
+    rows = pending_for(conn, user['id'])
+    return _result(rows, [r['title'] for r in rows], '#/my-todos', 'Yapılacaklar')
+
+
+def todo_done(conn, user):
+    """Verdiğim TODO görevlerinden tamamlanmış ama sonucunu henüz görmediklerim."""
+    from .routers.todos import done_unseen_for
+    rows = done_unseen_for(conn, user['id'])
+    return _result(rows, [f"{r['assignee_name']} · {r['title']}" for r in rows], '#/my-todos/given')
+
+
 NOTIFICATIONS = [
     {'key': 'tickets-waiting', 'roles': None, 'fn': tickets_waiting, 'title': 'Yanıt bekleyen destek talebi'},
     {'key': 'radio-invite', 'roles': None, 'fn': radio_invites, 'title': 'Telsiz kanalı daveti'},
@@ -604,6 +618,9 @@ NOTIFICATIONS = [
     {'key': 'file-shared', 'roles': None, 'fn': file_shared, 'title': 'Sizinle paylaşılan dosya'},
     # Günlük görev: anlık push'u routers/usertasks.create_task atar; tarama aynı artış için ikinci kez atmasın
     {'key': 'task-assigned', 'roles': None, 'fn': task_assigned, 'title': 'Size yeni görev atandı', 'push': False},
+    # Yapılacaklar (TODO): anlık push'u routers/todos atar
+    {'key': 'todo-pending', 'roles': None, 'fn': todo_pending, 'title': 'Size verilen görev bekliyor', 'push': False},
+    {'key': 'todo-done', 'roles': None, 'fn': todo_done, 'title': 'Verdiğiniz görev tamamlandı', 'push': False},
 ]
 
 
@@ -668,7 +685,7 @@ _GROUP = {
     'field-report-lead': 'Saha Yönetimi', 'field-report-pilot': 'Saha Yönetimi',
     'field-road': 'Saha Yönetimi', 'field-assigned': 'Saha Yönetimi',
     'live-now': 'Canlı Yayın', 'certs-expiring': 'Sertifikalar', 'audits-upcoming': 'Sertifikalar',
-    'contracts-pending': 'Sözleşmeler',
+    'contracts-pending': 'Sözleşmeler', 'todo-pending': 'Yapılacaklar', 'todo-done': 'Yapılacaklar',
 }
 
 

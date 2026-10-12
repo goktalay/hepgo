@@ -59,6 +59,7 @@ import * as design from './modules/design.js';
 import * as hr from './modules/hr.js';
 import * as duty from './modules/duty.js';
 import * as mytasks from './modules/mytasks.js';
+import * as todosMod from './modules/todos.js';
 import * as tasksAdmin from './modules/tasksadmin.js';
 import * as mysurvey from './modules/mysurvey.js';
 import * as surveysAdmin from './modules/surveysadmin.js';
@@ -705,7 +706,7 @@ function syncMenuCounts(items) {
 
 // Birleşik bildirim düğmesi: üretim/yazıcı UYARILARI + kişiye özel BİLDİRİMLER tek zilde (mobilde yer kazanır).
 // Rozet toplamı gösterir; rengi en önemli kayda göre: kritik (yanıp söner) > hata (kırmızı) > uyarı (turuncu) > bildirim (mavi).
-let alertTimer, notifyTimer;
+let alertTimer, notifyTimer, todoTimer;
 let spotifyTimer;   // üst bardaki “şu an çalıyor” şeridi için anlık çalan parça yoklaması
 let supportWatch, supportReq = null;   // merkez destek girişi: master onay bekleyen talebi izler
 
@@ -817,6 +818,36 @@ function notifNames(n) {
   }
   if (n.count > n.names.length) wrap.append(h('div', { class: 'ntf-line muted' }, '…'));
   return wrap;
+}
+// Üst çubuk TODO ikonu: bana verilen açık görevler (devam eden önce, süre akar) + yöneticiyse görülmemiş tamamlananlar; rozet = toplam
+function todoButton() {
+  const count = h('span', { class: 'alert-count', hidden: true });
+  const btn = h('button', { class: 'icon-btn notify-btn todo-btn', title: 'Yapılacaklar', 'aria-label': 'Yapılacaklar', 'aria-haspopup': 'menu' },
+    svgIcon(icons.todo), count);
+  const panel = h('div', { class: 'dropdown alerts-panel todo-panel', role: 'menu' });
+  let data = { count: 0, mine: [], done: [] };
+  const close = () => { panel.hidden = true; };
+  const row = (t, href, sub) => h('a', { class: 'alert-item info', href, onclick: close },
+    h('span', { class: `todo-dot ${t.status}` }),
+    h('div', { class: 'grow', style: { minWidth: '0' } }, h('b', null, t.title), h('div', { class: 'small muted todo-sub', 'data-id': t.id }, sub)));
+  const subOf = t => t.status === 'started' ? `Devam ediyor · ${todosMod.fmtDur(todosMod.liveElapsed(t))}` : (t.due_at ? 'Bekliyor · son ' + t.due_at.replace('T', ' ') : 'Bekliyor');
+  const draw = () => {
+    count.hidden = !data.count; count.textContent = data.count > 99 ? '99+' : data.count;
+    btn.classList.toggle('on', !!data.count); btn.classList.toggle('run', data.mine.some(t => t.status === 'started'));
+    clear(panel,
+      h('div', { class: 'alerts-head todo-head-row' }, h('span', null, 'Yapılacaklar'), h('a', { href: '#/my-todos', class: 'small', onclick: close }, 'Tümü →')),
+      data.mine.length ? data.mine.map(t => row(t, `#/my-todos/${t.id}`, subOf(t))) : h('div', { class: 'empty small' }, 'Bekleyen göreviniz yok'),
+      data.done.length ? [h('div', { class: 'inbox-sec info' }, h('span', null, 'Tamamlanan · sonucu görülmedi'), h('b', null, data.done.length)),
+        ...data.done.map(t => row(t, '#/my-todos/given', `${t.assignee_name || ''} · ${todosMod.fmtDur(t.elapsed_s)}`))] : null);
+  };
+  const load = async () => { try { data = await api.get('/api/todos/pending'); draw(); } catch { /* oturum kapanırsa kabuk yeniden çizilir */ } };
+  popup(btn, panel);
+  btn.addEventListener('click', load);
+  window.addEventListener('hepgo:todos-changed', load);
+  clearInterval(todoTimer);
+  todoTimer = setInterval(() => { if (panel.hidden) load(); else data.mine.forEach(t => { const el = panel.querySelector(`.todo-sub[data-id="${t.id}"]`); if (el && t.status === 'started') el.textContent = subOf(t); }); }, panel.hidden ? 15000 : 1000);
+  draw(); load();
+  return h('div', { class: 'menu-anchor' }, btn, panel);
 }
 function inboxButton() {
   const count = h('span', { class: 'alert-count', hidden: true });
@@ -931,7 +962,7 @@ function renderShell() {
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       spotifyStrip(),
       h('div', { class: 'header-right' }, radio.button(popup),
-        docsCountdown(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+        docsCountdown(), todoButton(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),
@@ -1397,6 +1428,7 @@ const PERSONAL = [
   { key: 'files', route: 'my-files', title: 'Dosya Yöneticisi', notify: 'file-shared', render: params => fileManager.render(view, params, ctx) },
   { key: 'duties', route: 'my-duties', title: 'Görev Formu', notify: 'duty-decided', render: params => duty.render(view, params, ctx) },
   { key: 'tasks', route: 'my-tasks', title: 'Görevlerim', notify: 'task-assigned', render: params => mytasks.render(view, params, ctx) },
+  { key: 'todos', route: 'my-todos', title: 'Yapılacaklar', notify: 'todo-pending', render: params => todosMod.render(view, params, ctx) },
   { key: 'surveys', route: 'my-surveys', title: 'Anketlerim', notify: 'survey', render: params => mysurvey.render(view, params, ctx) },
 ];
 let notifyCounts = new Map();

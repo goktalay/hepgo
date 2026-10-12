@@ -1079,6 +1079,35 @@ CREATE TABLE IF NOT EXISTS cleaning_log (
     UNIQUE(item_id, day)
 );
 CREATE INDEX IF NOT EXISTS idx_cleaning_log_day ON cleaning_log(day);
+-- Yapılacaklar (TODO): yönetici verir, personel başlatır (süre) → maddeler → tamamlar (routers/todos.py)
+CREATE TABLE IF NOT EXISTS todos (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    note TEXT,
+    assignee_id INTEGER NOT NULL REFERENCES users(id),
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    due_at TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at TEXT,
+    done_at TEXT,
+    elapsed_s INTEGER NOT NULL DEFAULT 0,
+    result TEXT,
+    seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee_id, status);
+CREATE TABLE IF NOT EXISTS todo_items (
+    id INTEGER PRIMARY KEY,
+    todo_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    done_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_todo_items_todo ON todo_items(todo_id);
 -- Günlük Görevler: Sistem Yöneticisi tarafından belirli bir kullanıcıya atanan görevler (temizlikten bağımsız).
 -- recurring=1 → her gün tekrarlar (günlük tamamlama user_task_log'da); recurring=0 → tek seferlik (done_at tabloda).
 -- mandatory=1 → tamamlanana kadar kullanıcının ana ekranında kalıcı uyarı şeridi gösterilir.

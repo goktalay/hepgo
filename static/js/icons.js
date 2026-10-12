@@ -86,6 +86,7 @@ export const icons = {
   // Fabrika: testere-dişli çatılı sanayi binası (dijital ikiz / kat planı modülü)
   factory: svg('<path d="M3 21V10l5 3V10l5 3V10l5 3v8z"/><path d="M3 21h18"/><path d="M6 7V3h2v4"/><path d="M8 17h2M13 17h2"/>'),
   videocam: svg('<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10l5-3v10l-5-3z"/>'),
+  todo: svg('<path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6l1.2 1.2L7.5 4.9"/><path d="M4 12l1.2 1.2 2.3-2.3"/><path d="M4 18l1.2 1.2 2.3-2.3"/>'),
   cleaning: svg('<path d="M15 3l4 4-7 7-4-4z"/><path d="M8 10l-4 8 8-4"/><path d="M4 18l2 2"/>'),
   design: svg('<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M12 3v18M3 8l9 5 9-5"/><circle cx="12" cy="13" r="2"/>'),
   projects: svg('<path d="M3 7.5h7l2 2.5h9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M8 14.5h3M8 17h6"/><circle cx="17" cy="15.5" r="2"/>'),

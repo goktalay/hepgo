@@ -8547,3 +8547,9 @@ textarea.sv-input { resize: vertical; }
 .leave-ended { color: var(--primary); font-weight: 600; }
 .chat-paste img { max-width: 100%; max-height: 50vh; border-radius: 12px; display: block; margin: 0 auto 10px; box-shadow: 0 4px 16px rgba(15,23,42,.15); }
 .msg-timeline.drop { outline: 2px dashed var(--primary); outline-offset: -6px; }
+
+/* Emoji yerine Font Awesome (otomatik, ui.js): satır içi ikon metinle hizalı */
+svg.fa-inline { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: .38em; flex: none; }
+svg.fa-inline.fa-solo { margin-right: 0; }
+.btn svg.fa-inline { width: 15px; height: 15px; }
+.seg button svg.fa-inline { width: 14px; height: 14px; }

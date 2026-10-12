@@ -1,3 +1,4 @@
+import { FA } from '../fa-icons.js';
 // HEPGO Fabrika — Canlı İzleme 3B sahnesi (Three.js, yerel kopya) — vantra-facility-os esinli.
 // • Kat planı ARKA PLAN RESMİNDEKİ duvar çizgileri otomatik tespit edilir ve 3B beyaz duvar olarak yükseltilir
 //   (koyu piksel taraması → yatay/dikey segmentler → InstancedMesh). Polygon oda çizmek gerekmez.
@@ -41,7 +42,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   // kart = header (ikon + başlık, altında ince çizgi) · gövde · footer (hafif koyu zemin). Çift tık → ikona küçülür / geri açılır.
   hud.innerHTML = `
     <div class="f3d-card f3d-main" data-icon="📡">
-      <div class="f3d-hd"><span class="f3d-ic">📡</span><span class="f3d-dot live"></span><b class="f3d-ttl">Canlı İzleme · 3B</b><span class="f3d-chip">RTLS</span></div>
+      <div class="f3d-hd"><span class="f3d-ic">${FA['satellite-dish']}</span><span class="f3d-dot live"></span><b class="f3d-ttl">Canlı İzleme · 3B</b><span class="f3d-chip">RTLS</span></div>
       <div class="f3d-bd">
         <div class="f3d-floor"></div>
         <div class="f3d-stats">
@@ -53,7 +54,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       <div class="f3d-ft">Konumlar 10 sn'de bir yenilenir · çift tık: küçült</div>
     </div>
     <div class="f3d-card f3d-filter" data-icon="🎚️">
-      <div class="f3d-hd"><span class="f3d-ic">🎚️</span><b class="f3d-ttl">Filtre</b></div>
+      <div class="f3d-hd"><span class="f3d-ic">${FA.sliders}</span><b class="f3d-ttl">Filtre</b></div>
       <div class="f3d-bd f3d-togs">
         <div class="f3d-tog on" data-k="online"><i class="sw"></i><span><b class="d" style="background:#16a34a"></b>Çevrimiçi kişiler</span></div>
         <div class="f3d-tog on" data-k="offline"><i class="sw"></i><span><b class="d" style="background:#98a2b3"></b>Çevrimdışı kişiler</span></div>
@@ -63,7 +64,7 @@ export async function createFactory3D(mountEl, opts = {}) {
       <div class="f3d-ft">Sahnede göster / gizle</div>
     </div>
     <div class="f3d-card f3d-people" data-icon="👥">
-      <div class="f3d-hd"><span class="f3d-ic">👥</span><b class="f3d-ttl">Sahadaki Kişiler</b><span class="f3d-chip n-people2">0</span></div>
+      <div class="f3d-hd"><span class="f3d-ic">${FA.users}</span><b class="f3d-ttl">Sahadaki Kişiler</b><span class="f3d-chip n-people2">0</span></div>
       <div class="f3d-bd f3d-list"></div>
       <div class="f3d-ft f3d-leg"><span><i class="g"></i>yakın zamanda görüldü</span><span><i class="x"></i>son görüldüğü yer</span></div>
     </div>`;
@@ -108,12 +109,12 @@ export async function createFactory3D(mountEl, opts = {}) {
   hudR.style.cssText = 'position:absolute;right:14px;top:14px;z-index:5;pointer-events:none;display:flex;flex-direction:column;gap:10px;width:236px;height:calc(100% - 28px)';
   hudR.innerHTML = `
     <div class="f3d-card f3d-zonecard" data-icon="🗂️">
-      <div class="f3d-hd"><span class="f3d-ic">🗂️</span><b class="f3d-ttl">Bölümler</b><span class="f3d-chip n-zones">0</span></div>
+      <div class="f3d-hd"><span class="f3d-ic">${FA.folders}</span><b class="f3d-ttl">Bölümler</b><span class="f3d-chip n-zones">0</span></div>
       <div class="f3d-bd f3d-zones"><div class="f3d-empty">Plan yüklenince bölümler çıkarılır</div></div>
       <div class="f3d-ft">Etiketler Düzen › "Bölüm Etiketi Koy" ile · kişi sayısı: yakın görülenler</div>
     </div>
     <div class="f3d-card f3d-camcard" data-icon="📷">
-      <div class="f3d-hd"><span class="f3d-ic">📷</span><b class="f3d-ttl">Kameralar</b><span class="f3d-chip n-camlist">0</span></div>
+      <div class="f3d-hd"><span class="f3d-ic">${FA.camera}</span><b class="f3d-ttl">Kameralar</b><span class="f3d-chip n-camlist">0</span></div>
       <div class="f3d-bd f3d-cams"><div class="f3d-empty">Kamera yok</div></div>
       <div class="f3d-ft">Satıra tıkla → kameranın yerinde canlı önizleme</div>
     </div>`;
@@ -158,7 +159,7 @@ export async function createFactory3D(mountEl, opts = {}) {
   // ---------- fare modları: Orbit (sol: döndür) · Gez (sol: kaydır) · Döndür (otomatik dönüş) — alt-orta segment ----------
   const hudM = document.createElement('div'); hudM.className = 'seg f3d-modes';
   hudM.style.cssText = 'position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:6;pointer-events:auto';
-  const MODES = [['orbit', '🧭 Orbit'], ['pan', '✋ Gez'], ['rotate', '🔄 Döndür']];
+  const MODES = [['orbit', `${FA.compass} Orbit`], ['pan', `${FA.hand} Gez`], ['rotate', `${FA['arrows-rotate']} Döndür`]];
   let mouseMode = 'orbit';
   const setMouseMode = m => {
     mouseMode = m;
@@ -168,12 +169,12 @@ export async function createFactory3D(mountEl, opts = {}) {
     renderer.domElement.style.cursor = m === 'pan' ? 'move' : 'grab';
     hudM.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   };
-  MODES.forEach(([k, lbl]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.m = k; b.textContent = lbl; b.onclick = () => setMouseMode(k); hudM.appendChild(b); });
+  MODES.forEach(([k, lbl]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.m = k; b.innerHTML = lbl; b.onclick = () => setMouseMode(k); hudM.appendChild(b); });
   // ⛶ Tam ekran: 3B kapsayıcı tam ekrana geçer; sol/sağ paneller kapsayıcıya göre konumlandığından kenarlara yaslanır, sahne büyür
-  const fsBtn = document.createElement('button'); fsBtn.type = 'button'; fsBtn.className = 'f3d-fs'; fsBtn.textContent = '⛶ Tam ekran'; hudM.appendChild(fsBtn);
+  const fsBtn = document.createElement('button'); fsBtn.type = 'button'; fsBtn.className = 'f3d-fs'; fsBtn.innerHTML = `${FA.expand} Tam ekran`; hudM.appendChild(fsBtn);
   const fsTarget = () => mountEl.closest('.fab-3d') || mountEl;
   fsBtn.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); else fsTarget().requestFullscreen?.().catch(() => {}); };
-  const onFs = () => { const on = !!document.fullscreenElement && (document.fullscreenElement === fsTarget() || fsTarget().contains(document.fullscreenElement)); fsBtn.textContent = on ? '⛶ Tam ekrandan çık' : '⛶ Tam ekran'; fsTarget().classList.toggle('f3d-fullscreen', on); setTimeout(() => { try { resize(); } catch {} }, 60); };
+  const onFs = () => { const on = !!document.fullscreenElement && (document.fullscreenElement === fsTarget() || fsTarget().contains(document.fullscreenElement)); fsBtn.innerHTML = `${on ? FA.compress : FA.expand} ${on ? 'Tam ekrandan çık' : 'Tam ekran'}`; fsTarget().classList.toggle('f3d-fullscreen', on); setTimeout(() => { try { resize(); } catch {} }, 60); };
   document.addEventListener('fullscreenchange', onFs);
   mountEl.appendChild(hudM); setMouseMode('orbit');
 
@@ -552,7 +553,7 @@ export async function createFactory3D(mountEl, opts = {}) {
     camBox.classList.toggle('touch', !!pinned);
     if (camCur !== cam.id || camBox.hidden || camPinned !== !!pinned) {
       camCur = cam.id;
-      camBox.innerHTML = `<div class="f3d-cam-hd">📷 ${esc(cam.name)}${cam.live ? '<span class="f3d-rec"><i></i>CANLI</span>' : ''}${pinned ? '<button class="f3d-cam-x" type="button" aria-label="Kapat">✕</button>' : ''}</div>`
+      camBox.innerHTML = `<div class="f3d-cam-hd">${FA.camera} ${esc(cam.name)}${cam.live ? '<span class="f3d-rec"><i></i>CANLI</span>' : ''}${pinned ? '<button class="f3d-cam-x" type="button" aria-label="Kapat">✕</button>' : ''}</div>`
         + (cam.live ? `<img alt="" src="${frameUrl(cam.id)}">` : '') + `<div class="f3d-cam-ft">${cam.live ? 'NVR anlık görüntü · sürekli yenilenir' : 'Planlanan kamera — NVR bağlı değil'}</div>`;
       const x = camBox.querySelector('.f3d-cam-x'); if (x) x.onclick = hideCam;
       const im = camBox.querySelector('img'); if (im) im.onerror = () => { const ft = camBox.querySelector('.f3d-cam-ft'); if (ft) ft.textContent = 'Görüntü alınamadı — kamera çevrimdışı olabilir'; };
@@ -854,6 +855,9 @@ function ensureHudStyle() {
   .f3d-card.f3d-min .f3d-hd{border:0;padding:0}
   .f3d-card.f3d-min .f3d-ic{font-size:20px}
   .f3d-right .f3d-card.f3d-min{align-self:flex-end}
+  .f3d-ic svg{width:16px;height:16px;vertical-align:-3px}
+  .f3d-modes button svg,.f3d-fs svg{width:14px;height:14px;vertical-align:-2px;margin-right:5px}
+  .f3d-cam-hd svg{width:14px;height:14px;vertical-align:-2px;margin-right:4px}
   .f3d-modes .f3d-fs{margin-left:4px;border-left:1px solid rgba(28,34,51,.12)!important;border-radius:0 999px 999px 0}
   .f3d-fullscreen{width:100vw!important;height:100vh!important;max-width:none!important;border-radius:0!important;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
   .f3d-fullscreen>canvas{height:100%!important;width:100%!important}   /* yalnız sahne büyür; paneller/çubuklar kendi boyutunda */   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */

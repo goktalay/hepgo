@@ -1,4 +1,5 @@
 // Küçük DOM yardımcıları: öğe oluşturma, modal, bildirim, biçimlendirme.
+import { faFromText } from './fa-icons.js';
 import { fileUrl } from './api.js';
 import { segIcon } from './segicons.js';
 import { icons } from './icons.js';
@@ -38,12 +39,19 @@ export function h(tag, attrs, ...children) {
   return el;
 }
 
+// Emoji ikon → Font Awesome: yalnız arayüz "krom" öğelerinde (düğme, bağlantı, etiket, başlık…) ve yalnız metnin BAŞINDAKİ emoji.
+// Sohbet/akış/not gövdeleri (div/p) dokunulmaz; kullanıcı metni aynen kalır.
+const ICON_TAGS = new Set(['BUTTON', 'A', 'SPAN', 'B', 'STRONG', 'LABEL', 'H1', 'H2', 'H3', 'H4', 'SUMMARY', 'TH', 'DT', 'SMALL', 'LEGEND', 'EM', 'I']);
 function append(el, children) {
   for (const c of children.flat(Infinity)) {
     if (c === null || c === undefined || c === false) continue;
     if (c instanceof Node) { el.append(c); continue; }
-    const s = String(c);
-    el.append(document.createTextNode(typeof c === 'string' ? t(s) : s));
+    const s = typeof c === 'string' ? t(String(c)) : String(c);
+    if (s.length && s.charCodeAt(0) >= 0x2190 && ICON_TAGS.has(el.tagName)) {
+      const r = faFromText(s);
+      if (r) { el.append(r[0]); if (r[1]) el.append(document.createTextNode(r[1])); continue; }
+    }
+    el.append(document.createTextNode(s));
   }
 }
 

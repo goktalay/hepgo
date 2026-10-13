@@ -60,6 +60,7 @@ import * as hr from './modules/hr.js';
 import * as duty from './modules/duty.js';
 import * as mytasks from './modules/mytasks.js';
 import * as todosMod from './modules/todos.js';
+import { initWebLocation } from './weblocation.js';
 import * as tasksAdmin from './modules/tasksadmin.js';
 import * as mysurvey from './modules/mysurvey.js';
 import * as surveysAdmin from './modules/surveysadmin.js';
@@ -374,6 +375,8 @@ function enterApp() {
     return;
   }
   renderShell(); checkWhatsNew(); startSupportWatch(); checkDevicePush(); uiUpdatesInit();
+  // Web konum paylaşımı (tarayıcı): KVKK rızası + tarayıcı izni + Ayarlar › Gizlilik anahtarı; native kabukta native.js yapar
+  initWebLocation(ctx, () => ctx.user?.prefs?.settings?.privacy?.share_location_web !== false);
   document.querySelector('.support-pill')?.remove();
   if (ctx.user?.support) {   // merkez destek oturumu göstergesi
     document.body.append(h('div', { class: 'support-pill' }, '🛟 ',

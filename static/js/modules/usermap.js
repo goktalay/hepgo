@@ -77,12 +77,13 @@ export async function render(view, params, ctx) {
     const bounds = new maps.LatLngBounds();
     for (const p of ppl) {
       const pos = new maps.LatLng(p.lat, p.lng); bounds.extend(pos);
-      const pin = h('div', { class: 'um-pin' }, avatarEl(p), h('span', { class: 'um-pin-name' }, (p.full_name || '').split(' ')[0]));
+      const web = p.platform === 'web';   // tarayıcıdan paylaşılan konum: kesik çerçeve + 'Web' etiketi (doğruluk daha düşük olabilir)
+      const pin = h('div', { class: `um-pin ${web ? 'web' : ''}` }, avatarEl(p, web ? 'web' : ''), h('span', { class: 'um-pin-name' }, (p.full_name || '').split(' ')[0] + (web ? ' · Web' : '')));
       const pr = presence(p.last_seen);
       const info = new maps.InfoWindow({ content: h('div', { class: 'um-info' },
         h('b', null, p.full_name || 'Kişi'),
         h('div', { class: 'small' }, h('span', { class: `um-dot ${pr.cls}` }), pr.label),
-        h('div', { class: 'small muted' }, `Konum: ${ago(p.at)}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''}`),
+        h('div', { class: 'small muted' }, `Konum: ${ago(p.at)}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''} · ${p.platform === 'web' ? 'Web tarayıcı' : p.platform === 'ios' ? 'iOS App' : p.platform === 'android' ? 'Android App' : 'Uygulama'}`),
         h('a', { href: `https://www.google.com/maps?q=${p.lat},${p.lng}`, target: '_blank', rel: 'noopener', class: 'small' }, 'Google Haritalar ↗'),
         // Ev olarak kaydet: bu konum personelin 'Ev' adresine enlem/boylam olarak yazılır (İK › Adresler haritasında ev işareti)
         p.employee_id ? h('div', { style: { marginTop: '6px' } }, h('button', { class: 'btn sm', type: 'button', onclick: async e => {

@@ -123,6 +123,18 @@ SPARES = {
 }
 SCHEMAS = {f'spare-{code.lower()}': {'module': SpareSchema(code, v[0], v[1]), 'title': f'{v[0]} (montaj sarfı)'}
            for code, v in SPARES.items()}
+# Aynı çizimi kullanan sonraki sürümler (Ürün Yönetimi'nden açılmış ürün; kod → (ad, çizim)). Tohumlanmaz; migrate() ile şeması bağlanır.
+ALIASES = {
+    'MKHV2': ('Kamera Holder V2', _kmh),   # 2026-10-13: KMH'nin 2B üstten görünümü MKHV2'de de gösterilsin
+}
+SCHEMAS.update({f'spare-{code.lower()}': {'module': SpareSchema(code, name, drawing), 'title': f'{name} (montaj sarfı)'}
+                for code, (name, drawing) in ALIASES.items()})
+
+
+def migrate(conn):
+    """ALIASES'taki ürünler 'custom' şemadaysa çizim şemasına bağlanır (başlangıçta, idempotent)."""
+    for code in ALIASES:
+        conn.execute("UPDATE products SET schema = ? WHERE code = ? AND schema = ?", (f'spare-{code.lower()}', code, CUSTOM))
 
 
 def seed(conn):

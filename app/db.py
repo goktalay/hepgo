@@ -3066,6 +3066,7 @@ def _migrate(conn):
             conn.execute(f'ALTER TABLE products ADD COLUMN {col} TEXT')
     from . import bom, semis, spares   # döngüsel içe aktarmayı önlemek için burada
     spares.seed(conn)
+    spares.migrate(conn)   # çizim şeması takma adları (ör. MKHV2 → Kamera Holder çizimi)
     semis.seed(conn)
     if first_bom:
         bom.migrate(conn)

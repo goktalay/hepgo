@@ -466,6 +466,15 @@ async function imageTab(stage, p, canEdit) {
     tooltip: part => partInfoLines(part, plane.groups),
     onClick: tree ? part => goPart(tree, part.id) : undefined,
   });
+  if (p.role === 'sarf') {   // tek parçalı çizim (KMH, MKHV2…): ayrı 'Şema çizimi' bölümü YOK; resim yüklenmemişse çizim 2B üstten görünüm kartında
+    pl.setLayer(null);
+    const dz = imgCard.querySelector('.drop-zone');
+    if (dz) {
+      dz.replaceWith(h('div', { class: 'pd-image pd-schema' }, pl.svg));
+      if (canEdit) imgCard.querySelector('.tv-bar').append(h('button', { class: 'btn sm', onclick: pick }, 'Resim yükle'));
+    }
+    return clear(stage, imgCard);
+  }
   if (!tree) {
     clear(schemaStage, p.role === 'mamul' ? layerToggle(pl, 'plane.layer', plane) : (pl.setLayer(null), null), pl.svg);
   } else {

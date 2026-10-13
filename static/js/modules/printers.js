@@ -28,11 +28,14 @@ export async function render(view, params, ctx) {
   const modeSeg = segmented([['list', 'Liste'], ['3d', '3B Görünüm'], ...(canEdit ? [['order', 'Sıralama']] : [])], mode,
     v => { mode = v; setPref('printers.view', v); draw(); });
   const idle = p => p.live_state === 'HAZIR' || p.live_state === 'TAMAMLANDI';
+  // Görünen durum (rozetle aynı kural): bakım > Ar-Ge > canlı durum. Durum süzgeci canlı duruma değil buna bakar (BAKIM/ARGE süzgeçleri çalışsın)
+  const effState = p => p.maint_since ? 'BAKIM' : (p.arge_since ? (p.live_state && p.live_state !== 'HATA' && p.live_state !== 'CEVRIMDISI' ? p.live_state : 'ARGE') : (p.live_state || 'CEVRIMDISI'));
+  const stateMatch = (p, v) => v === 'BAKIM' ? !!p.maint_since : v === 'ARGE' ? !!p.arge_since : effState(p) === v;
   const mismatch = p => (idle(p) && p.current_part) || (p.live_state === 'YAZDIRIYOR' && !p.current_part);
   const draw = () => {
     const list = printers.filter(p =>
       (!state.value || (state.value === 'SYSTEM' ? p.current_part : state.value === 'MISMATCH' ? mismatch(p)
-        : state.value === 'AUTO' ? p.auto_added : p.live_state === state.value)) &&
+        : state.value === 'AUTO' ? p.auto_added : stateMatch(p, state.value))) &&
       matches(q.value, p.name, p.ip, p.model, p.live_file, p.last_job, p.current_order, p.current_part));
     if (mode === '3d') {   // oda tüm yazıcıları gösterir; filtreler liste görünümü içindir
       room ??= printerRoom({ canEdit, canOpen, reload: () => load() });

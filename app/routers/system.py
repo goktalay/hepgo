@@ -337,6 +337,65 @@ def get_brand_logo(conn=db.DB):
     raise HTTPException(404)
 
 
+_og_cache = {}   # kaynak anahtarı → PNG bayt
+
+
+def _og_sources(conn):
+    """Önizleme görseli için aday logo dosyaları (öncelik sırasıyla): yüklenen firma logosu, kurulum logosu, beyaz etikette depo logosu, HEPGO simgesi."""
+    out = []
+    rel = _brand(conn).get('logo')
+    if rel and '..' not in rel and (config.UPLOAD_DIR / rel).is_file():
+        out.append(config.UPLOAD_DIR / rel)
+    if config.BRAND_DIR and (config.BRAND_DIR / 'img' / 'logo.png').is_file():
+        out.append(config.BRAND_DIR / 'img' / 'logo.png')
+    if config.WHITE_LABEL and (config.STATIC_DIR / 'img' / 'logo.png').is_file():
+        out.append(config.STATIC_DIR / 'img' / 'logo.png')
+    out.append(config.STATIC_DIR / 'icons' / 'icon-512.png')
+    return out
+
+
+def og_image_bytes(conn, size=640):
+    """Bağlantı önizlemesi (WhatsApp / iMessage / Slack og:image) için kare PNG: beyaz zemin, firma logosu ortada.
+    SVG logo yalnız cairosvg varsa çevrilir; yoksa sıradaki PNG kaynağa düşülür (önizleme araçları SVG göstermez)."""
+    import io
+    from PIL import Image
+    for src in _og_sources(conn):
+        key = (str(src), src.stat().st_mtime_ns, size)
+        if key in _og_cache:
+            return _og_cache[key]
+        try:
+            if src.suffix.lower() == '.svg' or src.read_bytes()[:5].lstrip().lower().startswith(b'<svg') or b'<svg' in src.read_bytes()[:400]:
+                try:
+                    import cairosvg
+                    raw = cairosvg.svg2png(url=str(src), output_width=size * 2)
+                    logo = Image.open(io.BytesIO(raw)).convert('RGBA')
+                except Exception:   # noqa: BLE001 — cairosvg yok ya da SVG çevrilemedi → sıradaki kaynak
+                    continue
+            else:
+                logo = Image.open(src).convert('RGBA')
+        except Exception:   # noqa: BLE001
+            continue
+        canvas = Image.new('RGBA', (size, size), (255, 255, 255, 255))
+        box = int(size * 0.72)
+        logo.thumbnail((box, box), Image.LANCZOS)
+        canvas.alpha_composite(logo, ((size - logo.width) // 2, (size - logo.height) // 2))
+        buf = io.BytesIO()
+        canvas.convert('RGB').save(buf, 'PNG', optimize=True)
+        _og_cache.clear(); _og_cache[key] = buf.getvalue()
+        return _og_cache[key]
+    return None
+
+
+@router.get('/brand/og.png')
+def get_brand_og(conn=db.DB):
+    """Bağlantı önizleme görseli (herkese açık): firma logosu beyaz kare zeminde PNG."""
+    from fastapi.responses import Response
+    data = og_image_bytes(conn)
+    if not data:
+        raise HTTPException(404)
+    return Response(data, media_type='image/png', headers={'Cache-Control': 'public, max-age=3600'})
+
+
 @router.post('/brand/logo')
 async def upload_brand_logo(file: UploadFile, user=Depends(auth.current_user), conn=db.DB):
     """Firma logosu yükle (yalnızca Sistem Yöneticisi / MASTER). Tenant'ın UPLOAD_DIR'ine yazılır."""

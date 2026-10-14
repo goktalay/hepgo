@@ -389,7 +389,8 @@ def _brand_head(html, request, page_title=None, description=None):
           f'<meta property="og:type" content="website">\n<meta property="og:site_name" content="{e(brand)}">\n'
           f'<meta property="og:title" content="{e(title)}">\n<meta property="og:description" content="{e(desc)}">\n'
           + (f'<meta property="og:url" content="{e(base + request.url.path)}">\n'
-             f'<meta property="og:image" content="{e(base)}/static/icons/icon-512.png">\n' if base else '')
+             f'<meta property="og:image" content="{e(base)}/api/system/brand/og.png">\n'   # firma logosu (PNG, kare) — WhatsApp/iMessage SVG göstermez
+             f'<meta property="og:image:type" content="image/png">\n<meta property="og:image:width" content="640">\n<meta property="og:image:height" content="640">\n' if base else '')
           + f'<meta name="twitter:card" content="summary">\n<meta name="twitter:title" content="{e(title)}">\n'
           f'<meta name="twitter:description" content="{e(desc)}">\n')
     return html.replace('</head>', og + '</head>', 1)

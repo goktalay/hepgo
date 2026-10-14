@@ -424,12 +424,13 @@ def set_step_tree(did: int, body: StepTreeIn, user=Depends(design_user), conn=db
         groups = [g for g in (tree.get('groups') or []) if isinstance(g, dict) and g.get('key') and str(g.get('name') or '').strip()]
         tree = {'groups': [{'key': str(g['key'])[:120], 'name': str(g['name']).strip()[:200], 'parent': (str(g['parent'])[:120] if g.get('parent') else None)} for g in groups][:500],
                 'parents': {str(k)[:120]: (str(v)[:120] if v else None) for k, v in (tree.get('parents') or {}).items()},
-                'names': {str(k)[:120]: str(v).strip()[:200] for k, v in (tree.get('names') or {}).items() if str(v or '').strip()}}
-        if not tree['groups'] and not tree['parents'] and not tree['names']:
+                'names': {str(k)[:120]: str(v).strip()[:200] for k, v in (tree.get('names') or {}).items() if str(v or '').strip()},
+                'hidden': [str(k)[:120] for k in (tree.get('hidden') or []) if k][:2000]}   # ağaçtan/modelden gizlenen parça ve kırılımlar
+        if not tree['groups'] and not tree['parents'] and not tree['names'] and not tree['hidden']:
             tree = None
     conn.execute('UPDATE design_drawings SET step_tree = ? WHERE id = ?', (json.dumps(tree, ensure_ascii=False) if tree else None, did))
     db.audit(conn, user['id'], 'STEP parça ağacını düzenledi', 'design_drawing', did,
-             f"{d['name']} · {len(tree['groups'])} kırılım, {len(tree['parents'])} taşıma, {len(tree['names'])} ad" if tree else f"{d['name']} · sıfırlandı")
+             f"{d['name']} · {len(tree['groups'])} kırılım, {len(tree['parents'])} taşıma, {len(tree['names'])} ad, {len(tree['hidden'])} gizli" if tree else f"{d['name']} · sıfırlandı")
     return {'ok': True, 'tree': tree}
 
 

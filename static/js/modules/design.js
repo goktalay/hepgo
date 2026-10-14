@@ -367,7 +367,7 @@ function stepStudio(host, { did, vid, name, reload }) {
   const collapsed = new Set();
 
   // ---- Ağaç düzenleme (yerel; "Kaydet" ile sunucuya): alt kırılım ekle, taşı (sürükle-bırak / Taşı), ad değiştir
-  let overlay = { groups: [], parents: {}, names: {} }, dirty = false;
+  let overlay = { groups: [], parents: {}, names: {}, hidden: [] }, dirty = false;
   const checked = new Set();   // işaretli parça/kırılım anahtarları (toplu taşıma)
   const checkChip = h('button', { class: 'btn xs ghost', type: 'button', hidden: true, title: 'İşaretleri kaldır' }, '');
   const refreshCheck = () => { checkChip.hidden = !checked.size; checkChip.textContent = `☑ ${checked.size} işaretli ✕`; moveBtn.textContent = checked.size ? `⤵ Taşı (${checked.size})` : '⤵ Taşı'; moveBtn.disabled = !checked.size && !selected; };
@@ -376,7 +376,8 @@ function stepStudio(host, { did, vid, name, reload }) {
   const addGrpBtn = h('button', { class: 'btn xs', type: 'button', title: 'Seçili kırılımın (ya da kökün) altına yeni alt kırılım ekle' }, '＋ Alt kırılım');
   const renameBtn = h('button', { class: 'btn xs', type: 'button', title: 'Seçili parça / kırılımın adını değiştir', disabled: true }, '✎ Ad');
   const moveBtn = h('button', { class: 'btn xs', type: 'button', title: 'Seçili parça / kırılımı başka bir kırılımın altına taşı', disabled: true }, '⤵ Taşı');
-  const delGrpBtn = h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Alt kırılımı kaldır (içindekiler bir üste çıkar)', disabled: true }, '🗑');
+  const delGrpBtn = h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Seçili parçayı / alt montajı ağaçtan ve modelden kaldır (gizlenenlerden geri getirilebilir); kendi eklediğiniz kırılımı kaldırır', disabled: true }, '🗑');
+  const hiddenBtn = h('button', { class: 'btn xs ghost', type: 'button', hidden: true, title: 'Kaldırılan parçalar — geri getir' }, '');
   const markDirty = () => { dirty = true; treeSaveBtn.disabled = false; };
   const beforeUnload = e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload);
@@ -435,18 +436,36 @@ function stepStudio(host, { did, vid, name, reload }) {
       actions: [{ label: 'Vazgeç' }, { label: 'Taşı', class: 'primary', onClick: () => moveTo(selected, sel.value) }] });
   });
   delGrpBtn.addEventListener('click', async () => {
-    if (!selected || !selected.custom) return;
-    if (!await confirmDialog('Alt kırılımı kaldır', t('“{name}” kaldırılsın mı? İçindeki parçalar bir üst kırılıma çıkar.', { name: selected.name }), { okLabel: 'Kaldır', danger: true })) return;
-    const g = overlay.groups.find(x => x.key === selected.key), up = g ? g.parent : null;
-    for (const c of selected.children) { const cg = overlay.groups.find(x => x.key === c.key); if (cg) cg.parent = up; else overlay.parents[c.key] = up; }
-    overlay.groups = overlay.groups.filter(x => x.key !== selected.key);
-    delete overlay.parents[selected.key]; delete overlay.names[selected.key];
-    markDirty(); viewer.select(null); applyTree();
+    if (!selected) return;
+    const set = checked.size ? viewer.nodes.filter(n => checked.has(n.key)) : [selected];
+    if (set.length === 1 && set[0].custom) {   // kendi kırılımı: içindekiler bir üste çıkar
+      if (!await confirmDialog('Alt kırılımı kaldır', t('“{name}” kaldırılsın mı? İçindeki parçalar bir üst kırılıma çıkar.', { name: selected.name }), { okLabel: 'Kaldır', danger: true })) return;
+      const g = overlay.groups.find(x => x.key === selected.key), up = g ? g.parent : null;
+      for (const c of selected.children) { const cg = overlay.groups.find(x => x.key === c.key); if (cg) cg.parent = up; else overlay.parents[c.key] = up; }
+      overlay.groups = overlay.groups.filter(x => x.key !== selected.key);
+      delete overlay.parents[selected.key]; delete overlay.names[selected.key];
+    } else {   // STEP'ten gelen parça / alt montaj: ağaçtan ve modelden gizlenir (dosya değişmez; geri getirilebilir)
+      const names = set.map(n => n.name).slice(0, 8).join(', ') + (set.length > 8 ? '…' : '');
+      if (!await confirmDialog(set.length === 1 ? 'Parçayı kaldır' : t('{n} öğeyi kaldır', { n: set.length }), t('{names}\n\nAğaçtan ve 3B modelden kaldırılsın mı? STEP dosyası değişmez; “Kaldırılanlar” listesinden geri getirebilirsiniz.', { names }), { okLabel: 'Kaldır', danger: true })) return;
+      for (const n of set) { if (!overlay.hidden.includes(n.key)) overlay.hidden.push(n.key); }
+      checked.clear();
+    }
+    markDirty(); viewer.select(null); applyTree(); refreshCheck();
+  });
+  hiddenBtn.addEventListener('click', () => {
+    if (!viewer) return;
+    const list = h('div', { class: 'dz-notes' });
+    const draw = () => clear(list, viewer.hidden.length ? viewer.hidden.map(n => h('div', { class: 'dz-note-row' },
+      h('div', { class: 'grow' }, h('b', null, n.name), n.kind === 'group' ? h('span', { class: 'small muted' }, t(' · alt montaj, {n} parça', { n: n.allMeshes.length })) : null),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => { overlay.hidden = overlay.hidden.filter(k => k !== n.key); markDirty(); applyTree(); draw(); } }, '↩ Geri getir')))
+      : h('div', { class: 'muted' }, 'Kaldırılan parça yok.'));
+    draw();
+    modal({ title: 'Kaldırılan parçalar', body: list, actions: [{ label: 'Kapat' }] });
   });
   treeSaveBtn.addEventListener('click', async () => {
     try {
       const r = await api.put(`/api/design/drawings/${did}/step-tree`, { tree: overlay });
-      overlay = r.tree || { groups: [], parents: {}, names: {} }; dirty = false; treeSaveBtn.disabled = true;
+      overlay = r.tree ? { hidden: [], ...r.tree } : { groups: [], parents: {}, names: {}, hidden: [] }; dirty = false; treeSaveBtn.disabled = true;
       toast('Parça ağacı kaydedildi', 'success'); applyTree();
     } catch (err) { toastError(err); }
   });
@@ -474,7 +493,7 @@ function stepStudio(host, { did, vid, name, reload }) {
       const row = h('button', { class: `stp-row ${isG ? 'group' : ''} ${p.custom ? 'custom' : ''} ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''} ${checked.has(p.key) ? 'checked' : ''}`, type: 'button',
         style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : (isG ? t('{name} · alt montaj, {n} parça', { name: p.name, n: p.allMeshes.length }) : p.name),
         onclick: () => viewer.select(p) },
-        cb, caret, h('span', { class: 'stp-row-name' }, p.custom ? '📁 ' : '', p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
+        cb, caret, h('span', { class: 'stp-row-name' }, p.custom ? [h('span', { class: 'stp-folder' }, '📁'), ' '] : null, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
         ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
       dnd(row, p); if (isG) dropTarget(row, p.key);
       rows[p.key] = row; items.push(row);
@@ -483,6 +502,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     walk(viewer.root.children);
     const n = Object.keys(links).length, g = viewer.nodes.filter(x => x.kind === 'group').length;
     countChip.textContent = t('{n} parça{g} · {m} eşleşmiş', { n: viewer.parts.length, g: g ? t(' · {g} alt montaj', { g }) : '', m: n });
+    const hid = (viewer.hidden || []).length; hiddenBtn.hidden = !hid; hiddenBtn.textContent = t('🚫 Kaldırılan ({n})', { n: hid });
     const rootRow = h('button', { class: `stp-row root ${!selected ? 'on' : ''}`, type: 'button', onclick: () => viewer.select(null) }, h('span', { class: 'stp-dot' }), h('b', null, viewer.root.name || 'Tüm montaj'));
     dropTarget(rootRow, 'root');
     clear(treeEl, rootRow, items);
@@ -531,7 +551,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     selName.textContent = p ? `${p.name}${p.kind === 'group' ? t(' (alt montaj · {n} parça)', { n: p.allMeshes.length }) : ''}` : 'Parça seçilmedi';
     selLink.textContent = p ? (ln ? `↔ ${ln.product_code} — ${ln.product_name || ''}` : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.';
     saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln);
-    renameBtn.disabled = !p; moveBtn.disabled = !p && !checked.size; delGrpBtn.disabled = !(p && p.custom);
+    renameBtn.disabled = !p; moveBtn.disabled = !p && !checked.size; delGrpBtn.disabled = !p;
     fillCands();
     candSel.value = ln ? String(ln.product_id) : '';
     if (p && !ln) { const guess = guessFor(p); if (guess) candSel.value = String(guess.id); }
@@ -546,7 +566,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     const r = await api.get(`/api/design/drawings/${did}/step-links`);
     links = Object.fromEntries((r.links || []).map(l => [l.mesh_key, l]));
     cands = r.candidates || []; mamul = r.product || null;
-    if (!dirty) overlay = r.tree && typeof r.tree === 'object' ? { groups: r.tree.groups || [], parents: r.tree.parents || {}, names: r.tree.names || {} } : { groups: [], parents: {}, names: {} };
+    if (!dirty) overlay = r.tree && typeof r.tree === 'object' ? { groups: r.tree.groups || [], parents: r.tree.parents || {}, names: r.tree.names || {}, hidden: r.tree.hidden || [] } : { groups: [], parents: {}, names: {}, hidden: [] };
     fillCands(); drawTree(); if (selected) onSelect(selected);
   };
   saveBtn.addEventListener('click', async () => {
@@ -621,7 +641,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     h('div', { class: 'stp-main' },
       h('div', { class: 'stp-side' },
         h('div', { class: 'stp-side-head' }, h('b', null, 'Parçalar'), treeSaveBtn),
-        h('div', { class: 'stp-tools' }, addGrpBtn, renameBtn, moveBtn, delGrpBtn, checkChip),
+        h('div', { class: 'stp-tools' }, addGrpBtn, renameBtn, moveBtn, delGrpBtn, checkChip, hiddenBtn),
         treeEl),
       h('div', { class: 'stp-view' }, canvas, cmp,
         h('div', { class: 'stp-bar' }, h('span', { class: 'stp-lbl' }, '💥 Patlat'), range, rangeVal, fitBtn, h('span', { class: 'spacer' }), countChip))),

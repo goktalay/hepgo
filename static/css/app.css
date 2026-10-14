@@ -8694,3 +8694,4 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 /* Ağaç satırındaki işaret kutusu: genel "switch" görünümü yerine küçük kare kutu */
 .stp-row input[type="checkbox"].stp-cb { appearance: auto; -webkit-appearance: checkbox; width: 14px !important; height: 14px !important; min-width: 14px; border-radius: 3px; background: none; border: 0; padding: 0; margin: 0; }
 .stp-row input[type="checkbox"].stp-cb::after { display: none; content: none; }
+.stp-folder { display: inline-flex; margin-right: 5px; vertical-align: -2px; }

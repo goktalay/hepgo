@@ -74,6 +74,7 @@ export function reindex(tree) {
 // Kullanıcı düzeni (design_drawings.step_tree): groups [{key:'c:…', name, parent}], parents {key: parentKey|null(kök)}, names {key: ad}
 // Dosya değişmez; düzen her açılışta STEP ağacına uygulanır. Döngü ve kayıp anahtarlar sessizce atlanır.
 export function applyOverlay(tree, ov) {
+  tree.hidden = []; tree.hiddenMeshes = new Set();
   if (!ov) return tree;
   const byKey = new Map([['root', tree.root], ...tree.nodes.map(n => [n.key, n])]);
   for (const g of (ov.groups || [])) {
@@ -90,7 +91,18 @@ export function applyOverlay(tree, ov) {
     if (node && parent && node !== tree.root) move(node, parent);
   }
   for (const [k, name] of Object.entries(ov.names || {})) { const n = byKey.get(k); if (n && String(name).trim()) n.name = String(name).trim(); }
-  return reindex(tree);
+  // Gizlenenler (kullanıcı "sildi"): ağaçtan ayrılır, gövdeleri sahnede görünmez; geri getirilebilsin diye liste tutulur
+  tree.hidden = []; tree.hiddenMeshes = new Set();
+  for (const k of (ov.hidden || [])) {
+    const n = byKey.get(k); if (!n || n === tree.root) continue;
+    if (n.parent) n.parent.children = n.parent.children.filter(c => c !== n);
+    n.parent = null; tree.hidden.push(n);
+  }
+  reindex(tree);
+  const nodeKeys = new Set(tree.nodes.map(n => n.key));
+  for (const n of tree.hidden) { reindex({ root: n }); for (const i of n.allMeshes) tree.hiddenMeshes.add(i); }
+  tree.hidden = tree.hidden.filter(n => !nodeKeys.has(n.key));
+  return tree;
   function move(node, parent) {
     for (let a = parent; a; a = a.parent) if (a === node) return;   // kendi altına taşınamaz
     const old = node.parent; if (old) old.children = old.children.filter(c => c !== node);
@@ -212,7 +224,7 @@ export async function viewStep(container, src, opts = {}) {
   let lastT = 0;
   const index = () => {   // ağaç (yeniden) kurulunca: mesh → yaprak, düğüm merkezleri (patlatmasız konumlardan)
     const leafOf = i => tree.flat.find(p => p.meshes.includes(i)) || null;
-    meshObjs.forEach(m => { if (m) m.userData.part = leafOf(m.userData.idx); });
+    meshObjs.forEach(m => { if (m) { m.userData.part = leafOf(m.userData.idx); m.visible = !(tree.hiddenMeshes && tree.hiddenMeshes.has(m.userData.idx)); } });
     nodeCenter.clear(); meshObjs.forEach(m => { if (m) m.position.set(0, 0, 0); });
     centerOf(tree.root); tree.nodes.forEach(centerOf);
   };
@@ -237,7 +249,7 @@ export async function viewStep(container, src, opts = {}) {
     const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(meshObjs.filter(Boolean), false)[0];
+    const hit = ray.intersectObjects(meshObjs.filter(m => m && m.visible), false)[0];
     if (!hit) { select(null); return; }
     select(hit.object.userData.part || null);
   });
@@ -308,7 +320,7 @@ export async function viewStep(container, src, opts = {}) {
   };
 
   return {
-    get tree() { return tree; }, get root() { return tree.root; }, get nodes() { return tree.nodes; }, get parts() { return tree.flat; },
+    get tree() { return tree; }, get root() { return tree.root; }, get nodes() { return tree.nodes; }, get parts() { return tree.flat; }, get hidden() { return tree.hidden || []; },
     select, explode, fit, rebuild, silhouette, resize: onResize, parsed: res,
     // Küçük döner görünüm (karşılaştırma penceresi): düğümün gövdeleri ayrı bir sahnede, kendi etrafında döner. → { dispose }
     miniView(el, node, { color = 0xf97316 } = {}) {

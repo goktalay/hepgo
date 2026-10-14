@@ -36,7 +36,8 @@ class ProductLinkIn(BaseModel):
 class StepLinkIn(BaseModel):
     mesh_key: str
     mesh_name: Optional[str] = None
-    product_id: Optional[int] = None   # None → eşleşmeyi kaldır
+    product_id: Optional[int] = None   # None → parçanın tüm eşleşmelerini kaldır
+    mode: str = 'replace'              # replace: parçanın eşleşmesi bu ürün olur · add: ek ürün (L15 → L15A + L15B) · remove: yalnız bu ürünü çıkar
 
 
 class StepTreeIn(BaseModel):
@@ -401,9 +402,10 @@ def step_links(did: int, user=Depends(design_user), conn=db.DB):
             seen.add(c['id']); uniq.append(dict(c))
     if uniq:   # adayların G-code 3B önizleme yolu (karşılaştırma penceresi: seçili STEP parçası ↔ ürünün basılan geometrisi)
         ids = [c['id'] for c in uniq]
-        prev = {r['id']: r['gcode_preview'] for r in db.rows(conn.execute(f"SELECT id, gcode_preview FROM products WHERE id IN ({','.join('?' * len(ids))})", ids))}
-        for c in uniq:
-            c['gcode_preview'] = prev.get(c['id'])
+        prev = {r['id']: r for r in db.rows(conn.execute(f"SELECT id, gcode_preview, orderable FROM products WHERE id IN ({','.join('?' * len(ids))})", ids))}
+        for c in uniq:   # orderable: sipariş verilebilir yarı mamul → birden çok STEP parçasıyla eşleşebilir (ör. aynı vida/klips)
+            c['gcode_preview'] = (prev.get(c['id']) or {}).get('gcode_preview')
+            c['orderable'] = bool((prev.get(c['id']) or {}).get('orderable'))
     mamul = db.row(conn.execute('SELECT id, code, name FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
     try:
         tree = json.loads(d['step_tree']) if d['step_tree'] else None
@@ -466,8 +468,14 @@ def set_step_link(did: int, body: StepLinkIn, user=Depends(design_user), conn=db
     p = db.row(conn.execute('SELECT id, code, name FROM products WHERE id = ?', (body.product_id,)))
     if not p:
         raise HTTPException(404, 'Ürün bulunamadı')
+    if body.mode == 'remove':
+        conn.execute('DELETE FROM design_step_links WHERE drawing_id = ? AND mesh_key = ? AND product_id = ?', (did, key, p['id']))
+        db.audit(conn, user['id'], 'STEP parça eşleşmesini kaldırdı', 'design_drawing', did, f"{body.mesh_name or key} ✕ {p['code']}")
+        return {'ok': True, 'linked': bool(conn.execute('SELECT 1 FROM design_step_links WHERE drawing_id = ? AND mesh_key = ?', (did, key)).fetchone())}
+    if body.mode != 'add':   # replace: parçanın önceki eşleşmeleri gider
+        conn.execute('DELETE FROM design_step_links WHERE drawing_id = ? AND mesh_key = ?', (did, key))
     conn.execute('''INSERT INTO design_step_links (drawing_id, mesh_key, mesh_name, product_id, created_by, created_at) VALUES (?,?,?,?,?,?)
-                    ON CONFLICT(drawing_id, mesh_key) DO UPDATE SET mesh_name = excluded.mesh_name, product_id = excluded.product_id,
+                    ON CONFLICT(drawing_id, mesh_key, product_id) DO UPDATE SET mesh_name = excluded.mesh_name,
                     created_by = excluded.created_by, created_at = excluded.created_at''',
                  (did, key, (body.mesh_name or '')[:200] or None, p['id'], user['id'], db.now()))
     db.audit(conn, user['id'], 'STEP parçasını ürünle eşleştirdi', 'design_drawing', did, f"{body.mesh_name or key} → {p['code']}")

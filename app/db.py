@@ -3062,7 +3062,24 @@ def _migrate(conn):
             product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
             created_by INTEGER REFERENCES users(id),
             created_at TEXT NOT NULL,
-            UNIQUE (drawing_id, mesh_key));''')
+            UNIQUE (drawing_id, mesh_key, product_id));''')
+    # STEP parça eşleşmesi: bir parça birden çok yarı mamule bağlanabilir (ör. L15 → L15A + L15B) → tekillik (drawing_id, mesh_key, product_id)
+    sl_sql = (conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'design_step_links'").fetchone() or [''])[0] or ''
+    if 'UNIQUE (drawing_id, mesh_key)' in sl_sql.replace('  ', ' '):
+        conn.executescript('''
+            CREATE TABLE design_step_links_new (
+                id INTEGER PRIMARY KEY,
+                drawing_id INTEGER NOT NULL REFERENCES design_drawings(id) ON DELETE CASCADE,
+                mesh_key TEXT NOT NULL,
+                mesh_name TEXT,
+                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                created_by INTEGER REFERENCES users(id),
+                created_at TEXT NOT NULL,
+                UNIQUE (drawing_id, mesh_key, product_id));
+            INSERT INTO design_step_links_new (id, drawing_id, mesh_key, mesh_name, product_id, created_by, created_at)
+                SELECT id, drawing_id, mesh_key, mesh_name, product_id, created_by, created_at FROM design_step_links;
+            DROP TABLE design_step_links;
+            ALTER TABLE design_step_links_new RENAME TO design_step_links;''')
     if 'pinned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # Şirketten Haberler: master'ın üste sabitlediği paylaşım
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_at TEXT')
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_by INTEGER REFERENCES users(id)')

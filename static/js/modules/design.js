@@ -351,7 +351,8 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const candFilter = h('input', { class: 'input', placeholder: 'Ürün ara (kod / ad)…', 'aria-label': 'Ürün ara' });
   const candSel = h('select', { class: 'input', 'aria-label': 'Eşleşecek ürün' });
   const saveBtn = h('button', { class: 'btn sm primary', type: 'button', disabled: true }, 'Eşleştir');
-  const unlinkBtn = h('button', { class: 'btn sm ghost danger-text', type: 'button', disabled: true }, 'Kaldır');
+  const unlinkBtn = h('button', { class: 'btn sm ghost danger-text', type: 'button', disabled: true, title: 'Parçanın tüm eşleşmelerini kaldır' }, 'Kaldır');
+  const addLinkBtn = h('button', { class: 'btn sm', type: 'button', disabled: true, title: 'Aynı parçaya ikinci bir yarı mamul ekle (ör. L15 → L15A + L15B)' }, '＋ Ek yarı mamul');
   const autoBtn = h('button', { class: 'btn sm', type: 'button', title: 'STEP parça adlarını ürün kodlarıyla karşılaştırıp eşleşenleri bağlar' }, '✨ Ada göre otomatik eşle');
   const range = h('input', { type: 'range', min: '0', max: '100', value: '0', class: 'stp-range', 'aria-label': 'Patlatma' });
   const rangeVal = h('span', { class: 'small muted stp-range-val' }, '%0');
@@ -364,7 +365,9 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   let cmpGv = null, cmpSv = null, cmpKey = null;
 
   let viewer = null, links = {}, cands = [], mamul = null, selected = null, rows = {};
-  const linkOf = p => links[p.key] || null;
+  const linksOf = p => links[p.key] || [];          // bir parça birden çok yarı mamule bağlanabilir (ör. L15 → L15A + L15B)
+  const linkOf = p => linksOf(p)[0] || null;
+  const allLinks = () => Object.values(links).flat();
   const collapsed = new Set();
 
   // ---- Ağaç düzenleme (yerel; "Kaydet" ile sunucuya): alt kırılım ekle, taşı (sürükle-bırak / Taşı), ad değiştir
@@ -532,16 +535,16 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
         onclick: ev => { ev.stopPropagation(); if (closed) collapsed.delete(p.key); else collapsed.add(p.key); drawTree(); } }, '▾') : h('span', { class: 'stp-dot' });
       const cb = h('input', { type: 'checkbox', class: 'stp-cb', checked: checked.has(p.key), title: 'İşaretle (toplu taşıma)', onclick: ev => { ev.stopPropagation(); if (cb.checked) checked.add(p.key); else checked.delete(p.key); row.classList.toggle('checked', cb.checked); refreshCheck(); } });
       const row = h('button', { class: `stp-row ${isG ? 'group' : ''} ${p.custom ? 'custom' : ''} ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''} ${checked.has(p.key) ? 'checked' : ''}`, type: 'button',
-        style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : (isG ? t('{name} · alt montaj, {n} parça', { name: p.name, n: p.allMeshes.length }) : p.name),
+        style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${linksOf(p).map(l => `${l.product_code} ${l.product_name || ''}`).join(' + ')}` : (isG ? t('{name} · alt montaj, {n} parça', { name: p.name, n: p.allMeshes.length }) : p.name),
         onclick: () => viewer.select(p) },
         cb, caret, h('span', { class: 'stp-row-name' }, p.custom ? [h('span', { class: 'stp-folder' }, '📁'), ' '] : null, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
-        ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
+        ln ? h('span', { class: 'stp-row-code' }, linksOf(p).map(l => l.product_code).join(' + ')) : null);
       if (!p.engine) { dnd(row, p); if (isG) dropTarget(row, p.key); }
       rows[p.key] = row; items.push(row);
       if (isG && !closed) walk(p.children);
     });
     walk(viewer.root.children);
-    const n = Object.keys(links).length, g = viewer.nodes.filter(x => x.kind === 'group').length;
+    const n = Object.keys(links).filter(k => links[k].length).length, g = viewer.nodes.filter(x => x.kind === 'group').length;
     countChip.textContent = t('{n} parça{g} · {m} eşleşmiş', { n: viewer.parts.length, g: g ? t(' · {g} alt montaj', { g }) : '', m: n });
     const hid = (viewer.hidden || []).length; hiddenBtn.hidden = !hid; hiddenBtn.textContent = t('🚫 Kaldırılan ({n})', { n: hid });
     const rootRow = h('button', { class: `stp-row root ${!selected ? 'on' : ''}`, type: 'button', onclick: () => viewer.select(null) }, h('span', { class: 'stp-dot' }), h('b', null, viewer.root.name || 'Tüm montaj'));
@@ -549,14 +552,15 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     clear(treeEl, rootRow, items);
   };
 
-  // Aday listesi: başka bir parçayla eşleşmiş ürünler gizlenir (seçili parçanın kendi eşleşmesi kalır); arama kutusu süzer
+  // Aday listesi: başka bir parçayla eşleşmiş ürünler gizlenir (seçili parçanın kendi eşleşmesi kalır); istisna: "sipariş verilebilir"
+  // yarı mamuller (products.orderable) birden çok parçayla eşleşebilir ve listede kalır; arama kutusu süzer
   const fillCands = () => {
-    const q = normCode(candFilter.value), keep = selected ? linkOf(selected)?.product_id : null;
-    const used = new Set(Object.values(links).map(l => l.product_id).filter(id => id !== keep));
-    const list = cands.filter(c => !used.has(c.id));
+    const q = normCode(candFilter.value), keep = new Set(selected ? linksOf(selected).map(l => l.product_id) : []);
+    const used = new Set(allLinks().map(l => l.product_id).filter(id => !keep.has(id)));
+    const list = cands.filter(c => c.orderable || !used.has(c.id));
     const prev = candSel.value;
     clear(candSel, h('option', { value: '' }, list.length ? '— ürün seçin —' : (mamul ? 'Bu mamulün ağacında eşleşmemiş yarı mamul kalmadı' : '— ürün seçin —')),
-      list.map(c => h('option', { value: c.id, hidden: !!q && !normCode(`${c.code} ${c.name}`).includes(q) }, `${c.code} — ${c.name}${c.type && c.type !== 'YARI_MAMUL' ? ` (${PTYPE[c.type] || c.type})` : ''}`)));
+      list.map(c => h('option', { value: c.id, hidden: !!q && !normCode(`${c.code} ${c.name}`).includes(q) }, `${c.code} — ${c.name}${c.type && c.type !== 'YARI_MAMUL' ? ` (${PTYPE[c.type] || c.type})` : ''}${c.orderable ? (used.has(c.id) ? t(' · sipariş verilebilir, {n} parçada', { n: allLinks().filter(l => l.product_id === c.id).length }) : ' · sipariş verilebilir') : ''}`)));
     if (prev && list.some(c => String(c.id) === prev)) candSel.value = prev;
   };
   candFilter.addEventListener('input', fillCands);
@@ -565,7 +569,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const updateCompare = () => {
     const p = selected;
     const prodId = candSel.value ? Number(candSel.value) : (p ? linkOf(p)?.product_id : null);
-    const prod = prodId ? (cands.find(c => c.id === prodId) || Object.values(links).find(l => l.product_id === prodId)) : null;
+    const prod = prodId ? (cands.find(c => c.id === prodId) || allLinks().find(l => l.product_id === prodId)) : null;
     const key = `${p ? p.key : ''}|${prodId || ''}`;
     if (!p) { cmp.hidden = true; cmpGv?.destroy(); cmpSv?.dispose(); cmpGv = cmpSv = null; cmpKey = null; return; }
     cmp.hidden = false;
@@ -588,24 +592,26 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     Object.values(rows).forEach(r => r.classList.remove('on'));
     if (p && rows[p.key]) { rows[p.key].classList.add('on'); rows[p.key].scrollIntoView({ block: 'nearest' }); }
     treeEl.querySelector('.stp-row.root')?.classList.toggle('on', !p);
-    const ln = p ? linkOf(p) : null;
+    const ln = p ? linkOf(p) : null, lns = p ? linksOf(p) : [];
     selName.textContent = p ? `${p.name}${p.kind === 'group' ? t(' (alt montaj · {n} parça)', { n: p.allMeshes.length }) : ''}` : 'Parça seçilmedi';
-    selLink.textContent = p ? (ln ? `↔ ${ln.product_code} — ${ln.product_name || ''}` : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.';
-    saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln);
+    clear(selLink, p ? (lns.length ? ['↔ ', ...lns.map(l => h('span', { class: 'stp-chip' }, `${l.product_code} — ${l.product_name || ''}`,
+      h('button', { class: 'stp-chip-x', type: 'button', title: 'Bu ürünü eşleşmeden çıkar', onclick: () => removeLink(p, l.product_id) }, '✕')))] : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.');
+    saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln); addLinkBtn.disabled = !(p && ln);
+    saveBtn.textContent = ln ? 'Değiştir' : 'Eşleştir';
     renameBtn.disabled = !p; moveBtn.disabled = !p && !checked.size; delGrpBtn.disabled = !p;
     fillCands();
     candSel.value = ln ? String(ln.product_id) : '';
     if (p && !ln) { const guess = guessFor(p); if (guess) candSel.value = String(guess.id); }
     updateCompare();
   };
-  const guessFor = p => {
-    const vs = codeVariants(p.name), used = new Set(Object.values(links).map(l => l.product_id));
-    return cands.find(c => !used.has(c.id) && codeVariants(c.code).some(v => vs.includes(v))) || null;
+  const guessFor = p => {   // yalnız henüz bağlanmamış (ya da sipariş verilebilir) ürünler önerilir
+    const vs = codeVariants(p.name), used = new Set(allLinks().map(l => l.product_id));
+    return cands.find(c => (c.orderable || !used.has(c.id)) && codeVariants(c.code).some(v => vs.includes(v))) || null;
   };
 
   const loadLinks = async () => {
     const r = await api.get(`/api/design/drawings/${did}/step-links`);
-    links = Object.fromEntries((r.links || []).map(l => [l.mesh_key, l]));
+    links = {}; for (const l of (r.links || [])) (links[l.mesh_key] ||= []).push(l);
     cands = r.candidates || []; mamul = r.product || null;
     if (!dirty) overlay = r.tree && typeof r.tree === 'object' ? { groups: r.tree.groups || [], parents: r.tree.parents || {}, names: r.tree.names || {}, hidden: r.tree.hidden || [], engine: r.tree.engine || null } : { groups: [], parents: {}, names: {}, hidden: [], engine: null };
     fillCands(); drawTree(); if (selected) onSelect(selected);
@@ -617,6 +623,16 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
       toast('Eşleştirildi', 'success'); await loadLinks(); reload?.();
     } catch (err) { toastError(err); }
   });
+  addLinkBtn.addEventListener('click', async () => {
+    if (!selected || !candSel.value) { toast('Eklenecek ürünü listeden seçin', 'err'); return; }
+    try {
+      await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: selected.key, mesh_name: selected.name, product_id: Number(candSel.value), mode: 'add' });
+      toast('Ek yarı mamul eklendi', 'success'); await loadLinks(); reload?.();
+    } catch (err) { toastError(err); }
+  });
+  const removeLink = async (p, productId) => {
+    try { await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: p.key, mesh_name: p.name, product_id: productId, mode: 'remove' }); toast('Eşleşme çıkarıldı'); await loadLinks(); reload?.(); } catch (err) { toastError(err); }
+  };
   unlinkBtn.addEventListener('click', async () => {
     if (!selected) return;
     try { await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: selected.key, mesh_name: selected.name, product_id: null }); toast('Eşleşme kaldırıldı'); await loadLinks(); reload?.(); } catch (err) { toastError(err); }
@@ -848,7 +864,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
         engineBar)),
     h('div', { class: 'stp-sel' },
       h('div', { class: 'stp-sel-info' }, selName, selLink),
-      h('div', { class: 'stp-sel-ctl' }, candFilter, candSel, saveBtn, unlinkBtn, h('span', { class: 'spacer' }), autoBtn)));
+      h('div', { class: 'stp-sel-ctl' }, candFilter, candSel, saveBtn, addLinkBtn, unlinkBtn, h('span', { class: 'spacer' }), autoBtn)));
   clear(host, viewPanel, cfdPanel);
 
   // ---- Model yükleme (ilerleme: indirme yüzdesi → CAD çözümleme)

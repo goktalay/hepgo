@@ -28,6 +28,16 @@ class RenameIn(BaseModel):
     name: str
 
 
+class ProductLinkIn(BaseModel):
+    product_id: Optional[int] = None
+
+
+class StepLinkIn(BaseModel):
+    mesh_key: str
+    mesh_name: Optional[str] = None
+    product_id: Optional[int] = None   # None → eşleşmeyi kaldır
+
+
 class CopyIn(BaseModel):
     target_project_id: Optional[int] = None
     target_parent_id: Optional[int] = None
@@ -60,11 +70,12 @@ def create_project(body: ProjectIn, user=Depends(design_user), conn=db.DB):
 def _tree(conn, pid):
     """Projenin çizim ağacı: her düğümde güncel sürüm + sürüm sayısı; parent_id ile iç içe."""
     drawings = db.rows(conn.execute(
-        '''SELECT d.*, u.full_name AS created_by_name,
+        '''SELECT d.*, u.full_name AS created_by_name, pr.code AS product_code, pr.name AS product_name,
+                  (SELECT COUNT(*) FROM design_step_links l WHERE l.drawing_id = d.id) AS link_count,
                   (SELECT COUNT(*) FROM design_drawing_versions v WHERE v.drawing_id = d.id) AS version_count,
                   (SELECT COUNT(*) FROM design_drawing_notes n WHERE n.drawing_id = d.id) AS note_count,
                   (SELECT COUNT(*) FROM design_production_parts pp WHERE pp.drawing_id = d.id) AS prod_count
-           FROM design_drawings d LEFT JOIN users u ON u.id = d.created_by
+           FROM design_drawings d LEFT JOIN users u ON u.id = d.created_by LEFT JOIN products pr ON pr.id = d.product_id
            WHERE d.project_id = ? ORDER BY d.sort, d.id''', (pid,)))
     cur = {}
     for v in db.rows(conn.execute(
@@ -257,6 +268,79 @@ class ProdPartIn(BaseModel):
     name: str
     qty: Optional[float] = None
     note: Optional[str] = None
+
+
+# ---------- Eşleştirme: montaj/çizim ↔ mamul; STEP parçası ↔ yarı mamul (3B önizlemede seçilen parça)
+def _drawing(conn, did):
+    d = db.row(conn.execute('SELECT * FROM design_drawings WHERE id = ?', (did,)))
+    if not d:
+        raise HTTPException(404, 'Çizim bulunamadı')
+    return d
+
+
+@router.put('/drawings/{did}/product')
+def set_drawing_product(did: int, body: ProductLinkIn, user=Depends(design_user), conn=db.DB):
+    """Montaj/çizimi Ürün Yönetimi'ndeki mamul (ya da yarı mamul) ile eşleştir; None → kaldır."""
+    d = _drawing(conn, did)
+    name = None
+    if body.product_id is not None:
+        p = db.row(conn.execute('SELECT id, code, name, type FROM products WHERE id = ?', (body.product_id,)))
+        if not p:
+            raise HTTPException(404, 'Ürün bulunamadı')
+        name = f"{p['code']} — {p['name']}"
+    conn.execute('UPDATE design_drawings SET product_id = ? WHERE id = ?', (body.product_id, did))
+    db.audit(conn, user['id'], 'Çizimi ürünle eşleştirdi' if body.product_id else 'Çizim–ürün eşleşmesini kaldırdı', 'design_drawing', did, name or d['name'])
+    return {'ok': True, 'product_id': body.product_id, 'product_label': name}
+
+
+@router.get('/drawings/{did}/step-links')
+def step_links(did: int, user=Depends(design_user), conn=db.DB):
+    """STEP parça eşleşmeleri + seçim adayları (çizim bir mamule bağlıysa onun ağacındaki yarı mamuller, değilse tüm yarı mamuller)."""
+    from .. import bom
+    d = _drawing(conn, did)
+    links = db.rows(conn.execute('''SELECT l.mesh_key, l.mesh_name, l.product_id, p.code AS product_code, p.name AS product_name
+                                    FROM design_step_links l JOIN products p ON p.id = l.product_id WHERE l.drawing_id = ? ORDER BY l.id''', (did,)))
+    cands = []
+    if d['product_id']:
+        def walk(n):
+            if n['id'] != d['product_id']:
+                cands.append({'id': n['id'], 'code': n['code'], 'name': n['name'], 'type': n['type'], 'section': n.get('section')})
+            for c in n.get('children', []):
+                walk(c)
+        try:
+            walk(bom.tree(conn, d['product_id']))
+        except Exception:   # noqa: BLE001
+            pass
+    if not cands:
+        cands = db.rows(conn.execute("SELECT id, code, name, type, NULL AS section FROM products WHERE active = 1 AND type IN ('YARI_MAMUL','YEDEK_PARCA') ORDER BY code"))
+    seen, uniq = set(), []
+    for c in cands:
+        if c['id'] not in seen:
+            seen.add(c['id']); uniq.append(c)
+    mamul = db.row(conn.execute('SELECT id, code, name FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
+    return {'links': links, 'candidates': uniq, 'product': mamul,
+            'mamuls': db.rows(conn.execute("SELECT id, code, name FROM products WHERE active = 1 AND type = 'MAMUL' ORDER BY name"))}
+
+
+@router.put('/drawings/{did}/step-links')
+def set_step_link(did: int, body: StepLinkIn, user=Depends(design_user), conn=db.DB):
+    d = _drawing(conn, did)
+    key = (body.mesh_key or '').strip()[:200]
+    if not key:
+        raise HTTPException(400, 'Parça anahtarı gerekli')
+    if body.product_id is None:
+        conn.execute('DELETE FROM design_step_links WHERE drawing_id = ? AND mesh_key = ?', (did, key))
+        db.audit(conn, user['id'], 'STEP parça eşleşmesini kaldırdı', 'design_drawing', did, f"{d['name']} · {body.mesh_name or key}")
+        return {'ok': True, 'linked': False}
+    p = db.row(conn.execute('SELECT id, code, name FROM products WHERE id = ?', (body.product_id,)))
+    if not p:
+        raise HTTPException(404, 'Ürün bulunamadı')
+    conn.execute('''INSERT INTO design_step_links (drawing_id, mesh_key, mesh_name, product_id, created_by, created_at) VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(drawing_id, mesh_key) DO UPDATE SET mesh_name = excluded.mesh_name, product_id = excluded.product_id,
+                    created_by = excluded.created_by, created_at = excluded.created_at''',
+                 (did, key, (body.mesh_name or '')[:200] or None, p['id'], user['id'], db.now()))
+    db.audit(conn, user['id'], 'STEP parçasını ürünle eşleştirdi', 'design_drawing', did, f"{body.mesh_name or key} → {p['code']}")
+    return {'ok': True, 'linked': True, 'product_code': p['code'], 'product_name': p['name']}
 
 
 @router.get('/drawings/{did}/parts')

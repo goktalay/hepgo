@@ -107,9 +107,11 @@ function montajCard(d, pid, acts) {
         h('b', { class: 'dz-mcard-name' }, d.name),
         cur ? h('span', { class: 'dz-ver' }, `v${cur.version}`) : h('span', { class: 'small muted' }, 'sürüm yok'),
         h('div', { class: 'small muted' }, t('{n} alt çizim{parts}', { n: kids, parts: d.prod_count ? t(' · {p} parça', { p: d.prod_count }) : '' })),
+        d.product_code ? h('div', { class: 'small dz-mcard-prod', title: d.product_name || '' }, `↔ ${d.product_code}${d.link_count ? t(' · {n} parça eşleşti', { n: d.link_count }) : ''}`) : null,
         h('span', { class: 'dz-mcard-open' }, 'Ağacı aç →'))),
     h('div', { class: 'dz-acts' },
       h('button', { class: 'btn sm primary', type: 'button', onclick: () => acts.newVersion(d) }, cur ? 'Yeni Sürüm' : 'Dosya Yükle'),
+      (cur && isStep(cur.file_name)) ? h('button', { class: 'btn sm', type: 'button', title: '3B montaj görünümü ve ürün eşleştirme', onclick: () => acts.step(d) }, '🧊 3B') : null,
       d.version_count ? h('button', { class: 'btn sm', type: 'button', onclick: () => acts.history(d) }, t('Geçmiş ({n})', { n: d.version_count })) : null,
       h('button', { class: 'btn sm', type: 'button', title: 'Notlar', onclick: () => acts.notesModal(d) }, `📝${d.note_count ? ` ${d.note_count}` : ''}`),
       h('button', { class: 'btn sm', type: 'button', title: 'Üretim Parçaları', onclick: () => acts.partsModal(d) }, `🔩${d.prod_count ? ` ${d.prod_count}` : ''}`),
@@ -181,7 +183,7 @@ function designActions(pid, reload, isMaster) {
         h('span', { class: 'dz-hver' }, `v${v.version}`),
         h('div', { class: 'grow' },
           h('div', { class: 'dz-file-row' }, [...dzFileLinks('v', v.id, v.file_name, isMaster),
-            isStep(v.file_name) ? h('button', { class: 'btn sm', type: 'button', onclick: () => stepModal(v.id, v.file_name) }, '🧊 3B') : null]),
+            isStep(v.file_name) ? h('button', { class: 'btn sm', type: 'button', onclick: () => stepStudio({ did: d.id, vid: v.id, name: `${d.name} v${v.version}`, reload }) }, '🧊 3B') : null]),
           v.note ? h('div', { class: 'small dz-note' }, v.note) : null,
           h('div', { class: 'small muted' }, `${fmtDateTime(v.created_at)} · ${v.uploaded_by_name || ''}`))))),
       actions: [{ label: 'Kapat' }],
@@ -274,21 +276,137 @@ function designActions(pid, reload, isMaster) {
       } }] });
   }
 
-  return { addDrawing, newVersion, history, rename, del, notesModal, partsModal, copyModal };
+  const step = d => stepStudio({ did: d.id, vid: d.current.id, name: d.name, reload });
+  return { addDrawing, newVersion, history, rename, del, notesModal, partsModal, copyModal, step };
 }
 
-// STEP dosyasının 3B önizlemesi (bağımsız)
-async function stepModal(vid, name) {
-  const wrap = h('div', { class: 'step3d-wrap' }, h('div', { class: 'loading', style: { padding: '24px' } }, '3B model yükleniyor… (ilk açılışta CAD çekirdeği iner)'));
-  let viewer = null;
-  modal({ title: t('{name} · 3B Önizleme', { name }), wide: true, body: wrap, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
+// ---------- STEP 3B stüdyosu: solda parça ağacı, ortada model (tıkla/seç → turuncu vurgu), altta patlatma kaydırıcısı,
+// montaj ↔ Ürün Yönetimi mamulü ve seçili parça ↔ yarı mamul / yedek parça eşleştirme (design_step_links). ----------
+const PTYPE = { MAMUL: 'Mamul', YARI_MAMUL: 'Yarı mamul', YEDEK_PARCA: 'Yedek parça', SARF: 'Sarf' };
+// Ad/kod sadeleştirme: "L4 - V3" ↔ "L4-V3"; "O1 - V3" ↔ "01-V3" (STEP'te O harfi / üründe sıfır); boşluk, Türkçe İ, satır sonu
+const normCode = s => (s || '').replace(/[\r\n]/g, '').toLocaleUpperCase('tr').replace(/İ/g, 'I').replace(/[\s_]+/g, '').replace(/-+/g, '-');
+const codeVariants = s => { const n = normCode(s); const z = n.replace(/O(?=\d)/g, '0'), o = n.replace(/\b0(?=\d)/g, 'O'); return [...new Set([n, z, o])]; };
+
+async function stepStudio({ did, vid, name, reload }) {
+  const canvas = h('div', { class: 'stp-canvas' }, h('div', { class: 'loading', style: { padding: '24px' } }, '3B model yükleniyor… (ilk açılışta CAD çekirdeği iner, büyük dosyalarda bir dakikaya kadar sürebilir)'));
+  const treeEl = h('div', { class: 'stp-tree' }, h('div', { class: 'small muted', style: { padding: '8px' } }, 'Parçalar okunuyor…'));
+  const selName = h('b', { class: 'stp-sel-name' }, 'Parça seçilmedi');
+  const selLink = h('span', { class: 'small muted' }, '');
+  const candFilter = h('input', { class: 'input', placeholder: 'Ürün ara (kod / ad)…', 'aria-label': 'Ürün ara' });
+  const candSel = h('select', { class: 'input', 'aria-label': 'Eşleşecek ürün' });
+  const saveBtn = h('button', { class: 'btn sm primary', type: 'button', disabled: true }, 'Eşleştir');
+  const unlinkBtn = h('button', { class: 'btn sm ghost danger-text', type: 'button', disabled: true }, 'Kaldır');
+  const autoBtn = h('button', { class: 'btn sm', type: 'button', title: 'STEP parça adlarını ürün kodlarıyla karşılaştırıp eşleşenleri bağlar' }, '✨ Ada göre otomatik eşle');
+  const mamulSel = h('select', { class: 'input', 'aria-label': 'Mamul' });
+  const mamulBtn = h('button', { class: 'btn sm', type: 'button' }, 'Kaydet');
+  const mamulInfo = h('span', { class: 'small muted' }, '');
+  const range = h('input', { type: 'range', min: '0', max: '100', value: '0', class: 'stp-range', 'aria-label': 'Patlatma' });
+  const rangeVal = h('span', { class: 'small muted stp-range-val' }, '%0');
+  const fitBtn = h('button', { class: 'btn sm ghost', type: 'button', title: 'Kadrajı sıfırla' }, '⌖ Kadraj');
+  const countChip = h('span', { class: 'small muted' }, '');
+
+  let viewer = null, links = {}, cands = [], mamul = null, selected = null, rows = {};
+  const linkOf = p => links[p.key] || null;
+
+  const drawTree = () => {
+    if (!viewer) return;
+    rows = {};
+    const items = viewer.parts.map(p => {
+      const ln = linkOf(p);
+      const row = h('button', { class: `stp-row ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''}`, type: 'button',
+        style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : p.name,
+        onclick: () => viewer.select(p) },
+        h('span', { class: 'stp-dot' }), h('span', { class: 'stp-row-name' }, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null),
+        ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
+      rows[p.key] = row;
+      return row;
+    });
+    const n = Object.keys(links).length;
+    countChip.textContent = t('{n} parça · {m} eşleşmiş', { n: viewer.parts.length, m: n });
+    clear(treeEl, h('button', { class: `stp-row root ${!selected ? 'on' : ''}`, type: 'button', onclick: () => viewer.select(null) }, h('span', { class: 'stp-dot' }), h('b', null, 'Tüm montaj')), items);
+  };
+
+  const fillCands = () => {
+    const q = normCode(candFilter.value);
+    clear(candSel, h('option', { value: '' }, '— ürün seçin —'), cands.map(c => h('option', { value: c.id, hidden: !!q && !normCode(`${c.code} ${c.name}`).includes(q) }, `${c.code} — ${c.name}${c.type && c.type !== 'YARI_MAMUL' ? ` (${PTYPE[c.type] || c.type})` : ''}`)));
+  };
+  candFilter.addEventListener('input', fillCands);
+
+  const onSelect = p => {
+    selected = p;
+    Object.values(rows).forEach(r => r.classList.remove('on'));
+    if (p && rows[p.key]) { rows[p.key].classList.add('on'); rows[p.key].scrollIntoView({ block: 'nearest' }); }
+    treeEl.querySelector('.stp-row.root')?.classList.toggle('on', !p);
+    const ln = p ? linkOf(p) : null;
+    selName.textContent = p ? p.name : 'Parça seçilmedi';
+    selLink.textContent = p ? (ln ? `↔ ${ln.product_code} — ${ln.product_name || ''}` : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.';
+    saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln);
+    candSel.value = ln ? String(ln.product_id) : '';
+    // Eşleşme yoksa ada göre öneri
+    if (p && !ln) { const guess = guessFor(p); if (guess) candSel.value = String(guess.id); }
+  };
+  const guessFor = p => {
+    const vs = codeVariants(p.name);
+    return cands.find(c => codeVariants(c.code).some(v => vs.includes(v))) || null;
+  };
+
+  const loadLinks = async () => {
+    const r = await api.get(`/api/design/drawings/${did}/step-links`);
+    links = Object.fromEntries((r.links || []).map(l => [l.mesh_key, l]));
+    cands = r.candidates || []; mamul = r.product || null;
+    clear(mamulSel, h('option', { value: '' }, '— mamul seçin —'), (r.mamuls || []).map(m => h('option', { value: m.id, selected: mamul && mamul.id === m.id }, `${m.code} — ${m.name}`)));
+    mamulInfo.textContent = mamul ? t('Parça adayları: {code} ürün ağacındaki yarı mamuller', { code: mamul.code }) : 'Mamul seçilmedi; adaylar tüm yarı mamuller / yedek parçalar';
+    fillCands(); drawTree(); if (selected) onSelect(selected);
+  };
+
+  saveBtn.addEventListener('click', async () => {
+    if (!selected || !candSel.value) { toast('Önce listeden ürün seçin', 'err'); return; }
+    try {
+      await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: selected.key, mesh_name: selected.name, product_id: Number(candSel.value) });
+      toast('Eşleştirildi', 'success'); await loadLinks(); reload?.();
+    } catch (err) { toastError(err); }
+  });
+  unlinkBtn.addEventListener('click', async () => {
+    if (!selected) return;
+    try { await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: selected.key, mesh_name: selected.name, product_id: null }); toast('Eşleşme kaldırıldı'); await loadLinks(); reload?.(); } catch (err) { toastError(err); }
+  });
+  autoBtn.addEventListener('click', async () => {
+    if (!viewer) return;
+    const todo = viewer.parts.filter(p => !linkOf(p)).map(p => [p, guessFor(p)]).filter(([, g]) => g);
+    if (!todo.length) { toast('Ada göre eşleşen yeni parça bulunamadı'); return; }
+    if (!await confirmDialog('Otomatik eşleştirme', t('{n} parça adı ürün koduyla eşleşiyor:\n{list}\n\nBağlansın mı?', { n: todo.length, list: todo.slice(0, 12).map(([p, g]) => `${p.name} → ${g.code}`).join('\n') + (todo.length > 12 ? '\n…' : '') }), { okLabel: 'Eşleştir' })) return;
+    let ok = 0;
+    for (const [p, g] of todo) { try { await api.put(`/api/design/drawings/${did}/step-links`, { mesh_key: p.key, mesh_name: p.name, product_id: g.id }); ok++; } catch { /* sıradakine */ } }
+    toast(t('{n} parça eşleştirildi', { n: ok }), 'success'); await loadLinks(); reload?.();
+  });
+  mamulBtn.addEventListener('click', async () => {
+    try {
+      await api.put(`/api/design/drawings/${did}/product`, { product_id: mamulSel.value ? Number(mamulSel.value) : null });
+      toast(mamulSel.value ? 'Montaj mamul ile eşleştirildi' : 'Mamul eşleşmesi kaldırıldı', 'success'); await loadLinks(); reload?.();
+    } catch (err) { toastError(err); }
+  });
+  range.addEventListener('input', () => { rangeVal.textContent = `%${range.value}`; viewer?.explode(Number(range.value) / 100); });
+  fitBtn.addEventListener('click', () => viewer?.fit());
+
+  const body = h('div', { class: 'stp-studio' },
+    h('div', { class: 'stp-top' }, h('span', { class: 'stp-lbl' }, '🏷 Montaj ↔ Mamul'), mamulSel, mamulBtn, mamulInfo, h('span', { class: 'spacer' }), countChip),
+    h('div', { class: 'stp-main' },
+      h('div', { class: 'stp-side' }, h('div', { class: 'stp-side-head' }, h('b', null, 'Parçalar'), autoBtn), treeEl),
+      h('div', { class: 'stp-view' }, canvas,
+        h('div', { class: 'stp-bar' }, h('span', { class: 'stp-lbl' }, '💥 Patlat'), range, rangeVal, fitBtn))),
+    h('div', { class: 'stp-sel' },
+      h('div', { class: 'stp-sel-info' }, selName, selLink),
+      h('div', { class: 'stp-sel-ctl' }, candFilter, candSel, saveBtn, unlinkBtn)));
+  modal({ title: t('{name} · 3B Montaj', { name }), wide: true, body, actions: [{ label: 'Kapat' }], onClose: () => viewer?.dispose() });
+
   try {
-    const resp = await fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' });
+    const [resp] = await Promise.all([fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' }), loadLinks().catch(err => toastError(err))]);
     if (!resp.ok) throw new Error('Dosya alınamadı');
     const buf = await resp.arrayBuffer();
-    clear(wrap);
-    viewer = await viewStep(wrap, buf);
-  } catch (err) { clear(wrap, h('div', { class: 'card empty' }, 'Önizleme yüklenemedi: ' + (err.message || err))); }
+    clear(canvas);
+    viewer = await viewStep(canvas, buf, { onSelect });
+    drawTree(); onSelect(null);
+  } catch (err) { clear(canvas, h('div', { class: 'card empty' }, 'Önizleme yüklenemedi: ' + (err.message || err))); clear(treeEl); }
 }
 
 // ---------- Montaj ağacı: gerçek ağaç (organizasyon şemasında kullanılan treeSpider bileşeni) ----------
@@ -326,7 +444,7 @@ function kindAvatar(kind) {
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
-async function renderChart(stage, tree_data, byId, openMenu) {
+async function renderChart(stage, tree_data, byId, openMenu, onStep) {
   const TreeSpider = await loadTreeSpider();
   clear(stage);
   const cid = 'dzts-' + Date.now().toString(36);
@@ -361,7 +479,9 @@ async function renderChart(stage, tree_data, byId, openMenu) {
       cancel();
       if (longPressed) { ev.preventDefault(); ev.stopPropagation(); return; }
       if (ev.target.closest && ev.target.closest('.ts-linker')) return;   // oka basıldıysa bileşen açar/kapar
-      openMenu({ clientX: ev.clientX, clientY: ev.clientY }, byId[id] || null);
+      const node = byId[id] || null;
+      if (node && node.current && isStep(node.current.file_name) && onStep) { onStep(node); return; }   // STEP'li düğüm: dokun → 3B montaj
+      openMenu({ clientX: ev.clientX, clientY: ev.clientY }, node);
     });
   });
   chart.initialize();
@@ -383,7 +503,7 @@ async function renderAssembly(view, pid, nodeId, ctx) {
       [cur ? 'Yeni Sürüm' : 'Dosya Yükle', () => acts.newVersion(node), false],
       node.version_count ? [t('Sürüm Geçmişi ({n})', { n: node.version_count }), () => acts.history(node), false] : null,
       cur ? ['Dosyayı Önizle', () => window.open(`/api/design/file?v=${cur.id}`, '_blank', 'noopener'), false] : null,
-      (cur && isStep(cur.file_name)) ? ['🧊 3B Önizle', () => stepModal(cur.id, cur.file_name), false] : null,
+      (cur && isStep(cur.file_name)) ? ['🧊 3B Montaj / Eşleştir', () => stepStudio({ did: node.id, vid: cur.id, name: node.name, reload: load }), false] : null,
       [t('📝 Notlar{c}', { c: node.note_count ? ` (${node.note_count})` : '' }), () => acts.notesModal(node), false],
       [t('🔩 Üretim Parçaları{c}', { c: node.prod_count ? ` (${node.prod_count})` : '' }), () => acts.partsModal(node), false],
       ['+ Alt Çizim', () => acts.addDrawing(node), false],
@@ -413,7 +533,7 @@ async function renderAssembly(view, pid, nodeId, ctx) {
         h('button', { class: 'btn primary', type: 'button', onclick: () => acts.addDrawing(root) }, '+ Alt Çizim')),
       body);
     clear(body,
-      h('p', { class: 'small muted dz-ts-hint' }, 'Bir düğüme dokunun → işlemler menüsü (yeni sürüm, alt çizim, notlar, üretim parçaları…). Alt dalları açıp kapatmak için düğümdeki oka dokunun.'),
+      h('p', { class: 'small muted dz-ts-hint' }, 'Bir düğüme dokunun → işlemler menüsü (yeni sürüm, alt çizim, notlar, üretim parçaları…); STEP dosyalı düğümde dokunuş 3B montajı açar, menü için basılı tutun. Alt dalları açıp kapatmak için düğümdeki oka dokunun.'),
       stage);
     const byId = {}; const flat = [];
     const walk = (node, parentId) => { byId[String(node.id)] = node; flat.push({ node, parentId }); (node.children || []).forEach(c => walk(c, String(node.id))); };
@@ -421,10 +541,10 @@ async function renderAssembly(view, pid, nodeId, ctx) {
     const tree_data = flat.map(({ node, parentId }) => ({
       id: String(node.id), parentId,
       name: node.name || '—',
-      role: `${KIND[node.kind] || ''}${node.current ? ` · v${node.current.version}` : ' · sürüm yok'}`,
+      role: `${KIND[node.kind] || ''}${node.current ? ` · v${node.current.version}` : ' · sürüm yok'}${node.product_code ? ` · ↔ ${node.product_code}` : ''}`,
       image: (node.current && isImg(node.current.file_name)) ? `/api/design/file?v=${node.current.id}` : kindAvatar(node.kind),
     }));
-    renderChart(stage, tree_data, byId, openMenu);
+    renderChart(stage, tree_data, byId, openMenu, node => stepStudio({ did: node.id, vid: node.current.id, name: node.name, reload: load }));
   };
   load();
 }

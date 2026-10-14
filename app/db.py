@@ -3023,6 +3023,18 @@ def _migrate(conn):
         conn.execute('ALTER TABLE material_docs ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)')
     if 'is_supplier' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # tedarikçi (Satın Alma)
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
+    if 'product_id' not in {r[1] for r in conn.execute('PRAGMA table_info(design_drawings)')}:   # montaj/çizim ↔ mamul (Ürün Yönetimi) eşleşmesi
+        conn.execute('ALTER TABLE design_drawings ADD COLUMN product_id INTEGER REFERENCES products(id) ON DELETE SET NULL')
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS design_step_links (   -- STEP içindeki parça (ad/yol anahtarı) ↔ Ürün Yönetimi yarı mamulü
+            id INTEGER PRIMARY KEY,
+            drawing_id INTEGER NOT NULL REFERENCES design_drawings(id) ON DELETE CASCADE,
+            mesh_key TEXT NOT NULL,
+            mesh_name TEXT,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            UNIQUE (drawing_id, mesh_key));''')
     if 'pinned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # Şirketten Haberler: master'ın üste sabitlediği paylaşım
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_at TEXT')
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_by INTEGER REFERENCES users(id)')

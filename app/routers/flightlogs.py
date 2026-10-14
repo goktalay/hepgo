@@ -155,6 +155,16 @@ def get_log(lid: int, user=Depends(auth.current_user), conn=db.DB):
         raise HTTPException(403, 'Bu rapora erişim yetkiniz yok')
     log['analysis'] = json.loads(log['analysis']) if log['analysis'] else None
     log['fuel'] = json.loads(log['fuel']) if log.get('fuel') else None
+    if log['fuel']:   # rapor için seyreltilmiş seri (≤ 600 nokta) + motor çalışırken en düşük tüketim
+        try:
+            fdata = json.loads(_fuel_path(log).read_text(encoding='utf-8'))
+            smp = fdata.get('samples') or []
+            step = max(1, len(smp) // 600)
+            log['fuel']['series'] = [[r[0], r[1], r[2], r[3]] for r in smp[::step]] + ([smp[-1][:4]] if smp and (len(smp) - 1) % step else [])
+            running = [r[1] for r in smp if r[1] > 0]
+            log['fuel']['min_lph'] = round(min(running), 2) if running else None
+        except (OSError, ValueError):
+            pass
     log['task'] = get_task(conn, log['task_id']) if log['task_id'] else None
     log['flight'] = next((f for f in log['task']['flights'] if f['id'] == log['flight_id']), None) if log['task'] else None
     return log

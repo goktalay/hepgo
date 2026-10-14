@@ -98,7 +98,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   // Uçuş izi (seyreltilmiş): havadayken sarı, yerdeyken (kalkış öncesi bekleme, iniş sonrası, rampa/araç üstü) gri; irtifa perdesi yalnız havada
   const stepN = Math.max(1, Math.ceil(S.length / 4000));
   const inAir = t => flying.some(([x, y]) => t >= x && t <= y);
-  const yellow = Cesium.Color.fromCssColorString('#ffcc33'), grey = Cesium.Color.fromCssColorString('#9aa3ad').withAlpha(0.85);
+  const yellow = Cesium.Color.fromCssColorString('#ffcc33').withAlpha(0.6), grey = Cesium.Color.fromCssColorString('#9aa3ad').withAlpha(0.85);
   const segs = [];   // { air, pts }
   for (let i = 0; i < S.length; i += stepN) {
     const air = inAir(S[i][0]);
@@ -110,10 +110,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   for (const seg of segs) {
     if (seg.pts.length < 2) continue;
     const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 1.5 : 1.2, material: seg.air ? yellow : grey } });
-    if (seg.air) {
-      viewer.entities.add({ wall: { positions: seg.pts, material: Cesium.Color.fromCssColorString('#3aa0ff').withAlpha(0.07), outline: false } });
-      if (!track) track = ent;
-    }
+    if (seg.air && !track) track = ent;   // irtifa perdesi (mavi gölge) çizilmez
   }
   track = track || viewer.entities.values[0];
   // Kalkış noktası (ilk havalanma; uçuş aralığı yoksa kayıt başı)

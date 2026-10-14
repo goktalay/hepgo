@@ -8727,3 +8727,5 @@ input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .r3d-bar.rate { height: 2px; }
 .r3d-bar i { display: block; height: 100%; border-radius: inherit; background: #22c55e; transition: width .2s linear; }
 .r3d-bar.rate i { background: #38bdf8; }
+.fr-kpis-fuel { margin-top: 2.5mm; }
+.fr-charts-fuel { margin: 3mm 0; }

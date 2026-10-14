@@ -69,6 +69,20 @@ export function buildFlightReport(log, company) {
       kpi('Maks. yer hızı', n(s.gs_max, 1, ' m/s'), `${n((s.gs_max || 0) * 3.6, 0)} km/sa`),
       kpi('Maks. hava hızı', n(s.as_max, 1, ' m/s'), s.as_avg ? `Ortalama: ${n(s.as_avg, 1)} m/s` : 'Hava hızı sensörü yok'),
       kpi('Tüketilen enerji', n(s.bat_used_mah, 0, ' mAh'), s.bat_used_wh ? `${n(s.bat_used_wh, 1)} Wh` : null)),
+    ...(log.fuel ? [
+      h('div', { class: 'fr-kpis fr-kpis-fuel' },
+        kpi('Toplam yakılan yakıt', n(log.fuel.total_l, 2, ' L'), `${n(log.fuel.start_l, 1)} → ${n(log.fuel.end_l, 1)} L`),
+        kpi('Ortalama tüketim', n(log.fuel.avg_lph, 2, ' L/sa'), 'motor çalışırken'),
+        kpi('Maks. tüketim', n(log.fuel.peak_lph, 2, ' L/sa')),
+        kpi('Min. tüketim', n(log.fuel.min_lph, 2, ' L/sa'), 'motor çalışırken'),
+        kpi('Uçuş saatine göre', n(log.fuel.lph_flight, 2, ' L/sa')),
+        kpi('Km başına', n(log.fuel.l_per_km, 3, ' L/km'), log.fuel.peak_thrust_kg ? `Maks. itki ${n(log.fuel.peak_thrust_kg, 1)} kg` : null)),
+      log.fuel.series?.length ? h('div', { class: 'fr-charts fr-charts-fuel' },
+        lineChart({ title: 'Yakıt tüketimi', unit: 'L/sa', bands, series: [{ label: 'Anlık tüketim', color: C.green, data: log.fuel.series.map(r => [r[0], r[1]]) }] }),
+        lineChart({ title: 'Yakılan yakıt (birikimli) ve itki', unit: 'L · kg', bands, series: [
+          { label: 'Yakılan (L)', color: C.blue, data: log.fuel.series.map(r => [r[0], r[2]]) },
+          { label: 'İtki (kg)', color: C.orange, dash: '4 3', data: log.fuel.series.map(r => [r[0], r[3]]) }] })) : null,
+    ] : []),
     h('div', { class: 'fr-two' }, section('Uçuş bilgileri', info), trackMap(a.track, s.home, { height: 330 })),
     section('Değerlendirme', findings),
   ];

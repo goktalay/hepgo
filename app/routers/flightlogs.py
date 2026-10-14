@@ -23,7 +23,7 @@ tools_user = auth.require_module('tools')
 
 _SELECT = '''
     SELECT l.id, l.task_id, l.flight_id, l.file, l.file_name, l.size, l.status, l.error, l.aircraft, l.pilot, l.location,
-           l.note, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
+           l.note, l.fuel, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
            json_extract(l.analysis, '$.summary.vehicle') AS vehicle,
            json_extract(l.analysis, '$.summary.flight_s') AS flight_s,
            json_extract(l.analysis, '$.summary.takeoff_utc') AS takeoff_utc,
@@ -154,6 +154,7 @@ def get_log(lid: int, user=Depends(auth.current_user), conn=db.DB):
     if not allowed & set(user['modules']):
         raise HTTPException(403, 'Bu rapora erişim yetkiniz yok')
     log['analysis'] = json.loads(log['analysis']) if log['analysis'] else None
+    log['fuel'] = json.loads(log['fuel']) if log.get('fuel') else None
     log['task'] = get_task(conn, log['task_id']) if log['task_id'] else None
     log['flight'] = next((f for f in log['task']['flights'] if f['id'] == log['flight_id']), None) if log['task'] else None
     return log
@@ -179,3 +180,92 @@ async def get_replay(lid: int, user=Depends(auth.current_user), conn=db.DB):
         tmp.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
         tmp.rename(path)
     return FileResponse(path, media_type='application/json', headers={'Cache-Control': 'private, max-age=86400'})
+
+
+# ---------- Yakıt: başlangıç / bitiş litre → toplam tüketim, motor itkisine (gaz) göre zamana dağıtım ----------
+class FuelIn(BaseModel):
+    start_l: float
+    end_l: float
+    thrust_max_kg: float = 51.0   # motorun azami statik itkisi (DLE-222: 51 kg); itki tahmini için
+
+
+def _fuel_path(log):
+    return config.UPLOAD_DIR / (log['file'] + '.fuel.json')
+
+
+def fuel_series(samples, total_l, thrust_max_kg):
+    """Telemetriye (5 Hz) yakıt dağıtımı. Gaz (%) ile motor gücü arasında p = 0,08 + 0,92·(gaz/100)^1,5 ilişkisi varsayılır
+    (rölanti ~%8); toplam yakılan litre bu ağırlıkla zamana paylaştırılır → anlık tüketim (L/sa) ve birikimli yakılan (L).
+    İtki: T = T_max · (gaz/100)² · (1 − 0,6·min(1, hava hızı/45)) — pervane itkisi hız arttıkça düşer (kaba tahmin)."""
+    n = len(samples)
+    eff = [0.0] * n
+    for i, s in enumerate(samples):
+        thr = s[9]
+        if thr is None or thr <= 0:
+            continue
+        eff[i] = 0.08 + 0.92 * (min(100.0, thr) / 100.0) ** 1.5
+    W = 0.0
+    dts = [0.0] * n
+    for i in range(1, n):
+        dts[i] = max(0.0, min(5.0, samples[i][0] - samples[i - 1][0]))
+        W += eff[i] * dts[i]
+    out, burned = [], 0.0
+    peak_rate = 0.0; peak_thrust = 0.0; run_s = 0.0
+    for i, s in enumerate(samples):
+        rate_lps = (total_l * eff[i] / W) if W > 0 else 0.0
+        burned += rate_lps * dts[i]
+        thr = max(0.0, min(100.0, s[9] or 0.0))
+        aspd = s[8] or 0.0
+        thrust = thrust_max_kg * (thr / 100.0) ** 2 * (1 - 0.6 * min(1.0, aspd / 45.0))
+        lph = rate_lps * 3600
+        peak_rate = max(peak_rate, lph); peak_thrust = max(peak_thrust, thrust)
+        if eff[i] > 0:
+            run_s += dts[i]
+        out.append([round(s[0], 1), round(lph, 2), round(burned, 3), round(thrust, 2), round(thr)])
+    return out, {'engine_s': round(run_s), 'peak_lph': round(peak_rate, 1), 'peak_thrust_kg': round(peak_thrust, 1),
+                 'avg_lph': round(total_l / (run_s / 3600), 2) if run_s > 0 else None}
+
+
+@router.post('/flight-logs/{lid}/fuel')
+async def compute_fuel(lid: int, body: FuelIn, user=Depends(auth.current_user), conn=db.DB):
+    """Yakıt hesapla: başlangıç − bitiş = toplam yakılan; gaz/itki ağırlığıyla telemetriye dağıtılır ve dosyaya yazılır (bir kez)."""
+    log = await run_in_threadpool(get_log, lid, user, conn)
+    if log['status'] != 'TAMAM':
+        raise HTTPException(400, 'Önce uçuş logu (.bin) yüklenip analizi tamamlanmalı')
+    if body.start_l < 0 or body.end_l < 0 or body.start_l > 500:
+        raise HTTPException(400, 'Litre değerleri geçersiz')
+    if body.end_l > body.start_l:
+        raise HTTPException(400, 'Bitiş yakıtı başlangıçtan fazla olamaz')
+    total = body.start_l - body.end_l
+    rpath = _replay_path(log)
+    if not rpath.exists():
+        try:
+            data = await run_in_threadpool(replay, config.UPLOAD_DIR / log['file'])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        rpath.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+    else:
+        data = json.loads(rpath.read_text(encoding='utf-8'))
+    series, stats = await run_in_threadpool(fuel_series, data['samples'], total, float(body.thrust_max_kg or 51))
+    summary = {'start_l': body.start_l, 'end_l': body.end_l, 'total_l': round(total, 3), 'thrust_max_kg': float(body.thrust_max_kg or 51),
+               'flight_s': log.get('flight_s'), 'computed_at': db.now(), 'computed_by': user['full_name'], **stats}
+    fs = log.get('flight_s') or 0
+    summary['lph_flight'] = round(total / (fs / 3600), 2) if fs else None   # havada geçen saate göre
+    dist = ((log.get('analysis') or {}).get('summary') or {}).get('distance_m')
+    summary['l_per_km'] = round(total / (dist / 1000), 3) if dist else None
+    tmp = _fuel_path(log).with_suffix('.tmp')
+    tmp.write_text(json.dumps({'summary': summary, 'samples': series}, separators=(',', ':')), encoding='utf-8')
+    tmp.rename(_fuel_path(log))
+    conn.execute('UPDATE flight_logs SET fuel = ? WHERE id = ?', (json.dumps(summary, ensure_ascii=False), lid))
+    db.audit(conn, user['id'], 'Uçuş yakıtı hesapladı', 'flight_log', lid, f"{body.start_l:g} → {body.end_l:g} L · {total:g} L")
+    return summary
+
+
+@router.get('/flight-logs/{lid}/fuel')
+async def get_fuel(lid: int, user=Depends(auth.current_user), conn=db.DB):
+    """Yakıt serisi (3B izleme HUD'u için): [[t, L/sa, yakılan L, itki kg, gaz %]…] + özet."""
+    log = await run_in_threadpool(get_log, lid, user, conn)
+    path = _fuel_path(log)
+    if not path.exists():
+        raise HTTPException(404, 'Yakıt hesaplanmamış')
+    return FileResponse(path, media_type='application/json', headers={'Cache-Control': 'private, max-age=3600'})

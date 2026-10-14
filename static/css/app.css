@@ -8718,3 +8718,5 @@ input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .stp-chip-x:hover { color: var(--danger); }
 .vm-guest-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; color: var(--text); padding: 2px 4px 0; }
 .vm-guest-brand img { max-height: 40px; max-width: 160px; object-fit: contain; }
+.fl-fuel-plot { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; margin-bottom: 6px; }
+.fl-fuel-body { margin-top: 8px; }

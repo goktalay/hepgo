@@ -30,9 +30,9 @@ const clock = sec => {
 export async function render3D(view, id, back, { embed = false } = {}) {
   const box = h('div', { class: `r3d-stage ${embed ? 'embed' : ''}` }, h('div', { class: 'r3d-loading' }, '3B oynatma hazırlanıyor…'));
   if (embed) clear(view, box); else clear(view, pageHead('3B Uçuş Oynatma', { back, sub: 'Yükleniyor…' }), box);
-  let Cesium, log, data;
+  let Cesium, log, data, fuel;
   try {
-    [Cesium, log, data] = await Promise.all([loadCesium(), api.get(`/api/flight-logs/${id}`), api.get(`/api/flight-logs/${id}/replay`)]);
+    [Cesium, log, data, fuel] = await Promise.all([loadCesium(), api.get(`/api/flight-logs/${id}`), api.get(`/api/flight-logs/${id}/replay`), api.get(`/api/flight-logs/${id}/fuel`).catch(() => null)]);
   } catch (err) {
     clear(box, h('div', { class: 'card card-pad' }, h('div', { class: 'alert err', style: { margin: 0 } }, err.message)));
     return;
@@ -174,6 +174,9 @@ export async function render3D(view, id, back, { embed = false } = {}) {
 
   // Anlık değerler (HUD)
   const modeAt = t => { let m = null; for (const x of modes) { if (x.t <= t) m = x.name; else break; } return m; };
+  // Yakıt serisi (Yakıt Hesapla sonrası): [t, L/sa, yakılan L, itki kg, gaz %] — zamana göre ikili arama
+  const FS = fuel && fuel.samples && fuel.samples.length ? fuel.samples : null;
+  const fuelAt = FS ? (t => { let lo = 0, hi = FS.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (FS[mid][0] <= t) lo = mid; else hi = mid - 1; } return FS[lo]; }) : null;
   const row = (k, v) => h('div', null, h('span', null, k), h('b', null, v));
   let last = -1;
   const drawHud = () => {
@@ -192,7 +195,11 @@ export async function render3D(view, id, back, { embed = false } = {}) {
       row('Gaz', s[9] == null ? '—' : `%${Math.round(s[9])}`),
       row('Batarya', s[10] == null ? '—' : `${Number(s[10]).toFixed(2)} V`),
       row('Roll / Pitch', `${f1(s[4])}° / ${f1(s[5])}°`),
-      row('Yön (yaw)', `${f1(s[6])}°`));
+      row('Yön (yaw)', `${f1(s[6])}°`),
+      ...(fuelAt ? (() => { const fr = fuelAt(t); return [
+        row('Anlık tüketim', `${f1(fr[1])} L/sa`),
+        row('Yakılan yakıt', `${Number(fr[2]).toFixed(2)} / ${fuel.summary.total_l} L`),
+        row('İtki', `${f1(fr[3])} kg (%${fr[4]})`)]; })() : []));
   };
   clockModel.onTick.addEventListener(drawHud);
   box.viewer = viewer;   // test ve hata ayıklama için

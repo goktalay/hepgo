@@ -61,6 +61,98 @@ export async function renderFlight(view, id, ctx, tab) {
           : 'Log yükleme yetkisi saha sorumlusu ve pilottadır.'));
   };
 
+  // ---- Yakıt: başlangıç/bitiş litre → toplam; motor itkisine (gaz) göre zamana dağıtım; grafik (yakıt + itki); bir kez hesaplanır, saklanır
+  const fuelCard = () => {
+    const ready = log?.status === 'TAMAM';
+    const box = h('div', { class: 'card card-pad fl-fuel' });
+    const btn = h('button', { class: 'btn primary', type: 'button', disabled: !ready, title: ready ? 'Başlangıç ve bitiş yakıtını girin' : 'Önce uçuş logunu (.bin) yükleyin' }, '⛽ Yakıt Hesapla');
+    const body = h('div', { class: 'fl-fuel-body' });
+    const plot = (cv, series, { leftLabel = '', rightLabel = '' } = {}) => {   // iki eksenli zaman grafiği
+      const g = cv.getContext('2d'), W = cv.width, H = cv.height, L = 48, R = 48, T = 10, B = 24;
+      g.clearRect(0, 0, W, H); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+      const all = series.filter(sr => sr.y.length);
+      if (!all.length) return;
+      const x0 = 0, x1 = Math.max(...all.map(sr => sr.x[sr.x.length - 1])) || 1;
+      const rng = ax => { const ys = all.filter(sr => sr.axis === ax).flatMap(sr => sr.y); return ys.length ? [0, Math.max(...ys) * 1.08 || 1] : null; };
+      const rl = rng('L'), rr = rng('R');
+      const X = x => L + (x - x0) / (x1 - x0) * (W - L - R);
+      const Y = (y, ax) => { const [a, b] = ax === 'L' ? rl : rr; return T + (1 - (y - a) / (b - a)) * (H - T - B); };
+      g.strokeStyle = '#e2e8f0'; g.lineWidth = 1; g.fillStyle = '#64748b'; g.font = '10px system-ui';
+      for (let i = 0; i <= 4; i++) {
+        const yy = T + i * (H - T - B) / 4; g.beginPath(); g.moveTo(L, yy); g.lineTo(W - R, yy); g.stroke();
+        if (rl) { g.textAlign = 'right'; g.fillText((rl[1] - i * (rl[1] - rl[0]) / 4).toPrecision(3), L - 4, yy + 3); }
+        if (rr) { g.textAlign = 'left'; g.fillText((rr[1] - i * (rr[1] - rr[0]) / 4).toPrecision(3), W - R + 4, yy + 3); }
+      }
+      g.textAlign = 'center';
+      for (let i = 0; i <= 6; i++) { const x = x0 + i * (x1 - x0) / 6; const m = Math.floor(x / 60), sec = Math.round(x % 60); g.fillText(`${m}:${String(sec).padStart(2, '0')}`, X(x), H - 8); }
+      if (leftLabel) { g.save(); g.translate(10, H / 2); g.rotate(-Math.PI / 2); g.fillText(leftLabel, 0, 0); g.restore(); }
+      if (rightLabel) { g.save(); g.translate(W - 8, H / 2); g.rotate(Math.PI / 2); g.fillText(rightLabel, 0, 0); g.restore(); }
+      all.forEach((sr, i) => {
+        g.strokeStyle = sr.color; g.lineWidth = sr.width || 1.4; g.setLineDash(sr.dash || []); g.beginPath();
+        sr.x.forEach((x, k) => { const px = X(x), py = Y(sr.y[k], sr.axis); if (k === 0) g.moveTo(px, py); else g.lineTo(px, py); });
+        g.stroke(); g.setLineDash([]);
+        g.fillStyle = sr.color; g.textAlign = 'left'; g.fillText(sr.name, L + 8 + i * 120, T + 10);
+      });
+    };
+    const draw = async () => {
+      if (!ready) { clear(body, h('div', { class: 'small muted' }, 'Yakıt hesabı için önce uçuş logu yüklenmeli.')); return; }
+      let full; try { full = await api.get(`/api/flight-logs/${log.id}`); } catch { return; }
+      const fu = full.fuel;
+      if (!fu) { clear(body, h('div', { class: 'small muted' }, 'Henüz hesaplanmadı. Uçuş öncesi ve sonrası depodaki yakıtı girin; toplam tüketim motor itkisine (gaz) göre zamana dağıtılır ve 3B izlemede anlık gösterilir.')); return; }
+      const tile = (k, v, sub) => h('div', { class: 'dz-tile' }, h('div', { class: 'dz-tile-l' }, k), h('div', { class: 'dz-tile-v' }, v), sub ? h('div', { class: 'small muted' }, sub) : null);
+      const cv = h('canvas', { class: 'fl-fuel-plot', width: 900, height: 240 });
+      clear(body,
+        h('div', { class: 'dz-tiles' },
+          tile('Başlangıç', `${fu.start_l} L`), tile('Bitiş', `${fu.end_l} L`), tile('Toplam yakılan', `${fu.total_l} L`),
+          tile('Ortalama tüketim', fu.avg_lph != null ? `${fu.avg_lph} L/sa` : '—', 'motor çalışırken'),
+          tile('Uçuş saatine göre', fu.lph_flight != null ? `${fu.lph_flight} L/sa` : '—'),
+          tile('Km başına', fu.l_per_km != null ? `${fu.l_per_km} L/km` : '—'),
+          tile('En yüksek tüketim', fu.peak_lph != null ? `${fu.peak_lph} L/sa` : '—'),
+          tile('En yüksek itki', fu.peak_thrust_kg != null ? `${fu.peak_thrust_kg} kg` : '—', `azami ${fu.thrust_max_kg} kg`)),
+        h('div', { class: 'small muted', style: { margin: '8px 0 4px' } }, 'Yakıt kullanımı ve itki — zaman (dk:sn)'),
+        cv,
+        h('div', { class: 'small muted' }, `Hesaplandı: ${fmtDateTime(fu.computed_at)} · ${fu.computed_by || ''}`));
+      try {
+        const fd = await api.get(`/api/flight-logs/${log.id}/fuel`);
+        const S = fd.samples, step = Math.max(1, Math.ceil(S.length / 1500)), pick = S.filter((_, i) => i % step === 0);
+        plot(cv, [
+          { name: 'Yakılan (L)', axis: 'L', color: '#1d4ed8', width: 1.8, x: pick.map(r => r[0]), y: pick.map(r => r[2]) },
+          { name: 'Tüketim (L/sa)', axis: 'L', color: '#16a34a', dash: [4, 3], x: pick.map(r => r[0]), y: pick.map(r => r[1]) },
+          { name: 'İtki (kg)', axis: 'R', color: '#f97316', x: pick.map(r => r[0]), y: pick.map(r => r[3]) },
+        ], { leftLabel: 'L · L/sa', rightLabel: 'kg' });
+      } catch { /* seri yoksa yalnız özet */ }
+    };
+    btn.addEventListener('click', async () => {
+      let full = null; try { full = await api.get(`/api/flight-logs/${log.id}`); } catch { /* */ }
+      const fu = full?.fuel || {};
+      const inS = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', value: fu.start_l ?? '', placeholder: 'örn. 12.5' });
+      const inE = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', value: fu.end_l ?? '', placeholder: 'örn. 8.2' });
+      const inT = h('input', { class: 'input', type: 'number', step: '1', min: '1', value: fu.thrust_max_kg ?? 51 });
+      const pbar = h('i'), ptxt = h('b', null, ''), prog = h('div', { class: 'progress-line', hidden: true }, h('div', { class: 'progress grow' }, pbar), ptxt);
+      const pmsg = h('div', { class: 'small muted', hidden: true });
+      modal({ title: 'Yakıt Hesapla', body: h('div', null,
+        field('Başlangıçtaki yakıt (L)', inS, 'Kalkış öncesi depodaki benzin'), field('Bitişteki yakıt (L)', inE, 'Motor durduktan sonra kalan'),
+        field('Motorun azami itkisi (kg)', inT, 'İtki tahmini için (DLE-222 ≈ 51 kg)'), prog, pmsg),
+        actions: [{ label: 'Vazgeç' }, { label: 'Hesapla', class: 'primary', onClick: async ({ button }) => {
+          const a = Number(inS.value), b = Number(inE.value);
+          if (!(a >= 0) || !(b >= 0)) throw new Error('Litre değerlerini girin');
+          if (b > a) throw new Error('Bitiş yakıtı başlangıçtan fazla olamaz');
+          prog.hidden = false; pmsg.hidden = false; button.textContent = 'Hesaplanıyor…';
+          const phases = ['Telemetri okunuyor…', 'Gaz / itki eğrisi çıkarılıyor…', 'Yakıt zamana dağıtılıyor…', 'Kaydediliyor…'];
+          let k = 0; pbar.style.width = '8%'; ptxt.textContent = '%8'; pmsg.textContent = phases[0];
+          const tick = setInterval(() => { k = Math.min(k + 1, phases.length - 1); const pct = Math.min(90, 8 + k * 27); pbar.style.width = `${pct}%`; ptxt.textContent = `%${pct}`; pmsg.textContent = phases[k]; }, 700);
+          try {
+            const r = await api.post(`/api/flight-logs/${log.id}/fuel`, { start_l: a, end_l: b, thrust_max_kg: Number(inT.value) || 51 });
+            pbar.style.width = '100%'; ptxt.textContent = '%100'; pmsg.textContent = tr('Tamam: {t} L yakıldı · ortalama {r} L/sa', { t: r.total_l, r: r.avg_lph ?? '—' });
+            toast('Yakıt hesaplandı', 'success'); draw();
+          } finally { clearInterval(tick); }
+        } }] });
+    });
+    box.append(h('div', { class: 'fl-log-head' }, h('h2', null, 'Yakıt'), h('span', { class: 'grow' }), btn), body);
+    draw();
+    return box;
+  };
+
   // ---- Hurda: tek kullanımlık uçak uçunca (log havada kalma gösterince otomatik; log yoksa saha sorumlusu işaretler)
   const scrapActions = () => {
     if (!d.can.manage || o.usage_type !== 'TEK') return null;
@@ -227,6 +319,7 @@ export async function renderFlight(view, id, ctx, tab) {
           kv('Araçlar', t.vehicles.join(', ') || null),
           kv('Başlama / bitiş', t.started_at ? `${fmtDateTime(t.started_at)} – ${t.finished_at ? fmtDateTime(t.finished_at) : 'devam ediyor'}` : 'Başlamadı')))),
     logCard(),
+    fuelCard(),
     tabView([
       { key: 'report', label: 'Uçuş Raporu', render: report },
       { key: '3d', label: '3B Uçuş İzleme', render: replay },

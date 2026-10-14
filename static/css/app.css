@@ -8709,3 +8709,6 @@ input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .cfd-log { max-height: 220px; overflow: auto; font-size: 11px; background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
 .cfd-ctl details { margin: 6px 0; } .cfd-ctl summary { cursor: pointer; color: var(--primary); }
 @media (max-width: 760px) { .cfd-plots { grid-template-columns: 1fr; } }
+.stp-engine { margin-top: 2px; }
+.stp-engine .input.sm { width: auto; min-width: 0; padding: 4px 6px; font-size: 12px; }
+.stp-engine .stp-off { width: 64px; }

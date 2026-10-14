@@ -2,6 +2,7 @@
 // Ağır kütüphaneler (three + ~7MB CAD çekirdeği) yalnızca bir STEP açılınca tembel yüklenir.
 // Montaj görünümü: STEP içindeki parça ağacı (buildStepTree), parça seçimi/vurgusu (select), patlatma (explode 0–1).
 import { loadLibs } from './gcode3d.js';   // [THREE, { OrbitControls }]
+import { ENGINES, buildEngine, buildProp } from './engine3d.js';
 
 const OCCT = '/static/vendor/occt/';
 let occtPromise = null;
@@ -150,7 +151,8 @@ export async function viewStep(container, src, opts = {}) {
   const [THREE, { OrbitControls }] = await loadLibs();
   const res = src instanceof ArrayBuffer ? await parseStep(src, opts) : src;
   if (!res || !res.meshes || !res.meshes.length) throw new Error('STEP dosyası okunamadı ya da geometri yok.');
-  let tree = applyOverlay(buildStepTree(res), opts.overlay);
+  let lastOverlay = opts.overlay || null;
+  let tree = applyOverlay(buildStepTree(res), lastOverlay);
 
   const W = container.clientWidth || 560, H = container.clientHeight || 420;
   const scene = new THREE.Scene();
@@ -181,6 +183,7 @@ export async function viewStep(container, src, opts = {}) {
     group.add(m); meshObjs[i] = m;
   });
   scene.add(group);
+  const baseCount = res.meshes.length;   // STEP gövdeleri; motor gövdeleri bu indeksten sonra eklenir
 
   // Kadraj: geometriyi ortala, uzaklığı ayarla
   const box = new THREE.Box3().setFromObject(group);
@@ -221,8 +224,29 @@ export async function viewStep(container, src, opts = {}) {
     const c = b.isEmpty() ? new THREE.Vector3() : b.getCenter(new THREE.Vector3());
     nodeCenter.set(n, c); return c;
   };
-  let lastT = 0;
+  let lastT = 0, engine = null;   // engine: { spec, node, meshes:[idx] }
+  const axisVec = a => { const v = new THREE.Vector3(); v[a[1]] = a[0] === '-' ? -1 : 1; return v; };
+  const nodeBox = n => { const b = new THREE.Box3(); (n ? n.allMeshes : tree.root.allMeshes).forEach(i => { const m = meshObjs[i]; if (m && !m.userData.engine) { m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox.clone(); b.union(bb); } }); return b; };
+  // Motor yerleşimi: spec { type, node (anahtar|null=kök), nose:'+x', up:'+z', offset:[mm], prop }. Motor yerel +X pervane → modelde −burun (arkadan itiş)
+  const attachEngine = () => {
+    if (!engine) return;
+    const spec = engine.spec, e = ENGINES[spec.type]; if (!e) return;
+    const mount = spec.node ? tree.nodes.find(n => n.key === spec.node) : null;
+    const nb = nodeBox(mount || null); const c = nb.isEmpty() ? new THREE.Vector3() : nb.getCenter(new THREE.Vector3()), sz = nb.isEmpty() ? new THREE.Vector3() : nb.getSize(new THREE.Vector3());
+    const nose = axisVec(spec.nose || '+x'), up = axisVec(spec.up || '+z');
+    if (Math.abs(nose.dot(up)) > 0.5) up.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(nose[k]) < 0.5)] = 1;
+    const ex = nose.clone().multiplyScalar(-1), ez = up.clone(), ey = ez.clone().cross(ex).normalize();
+    const R = new THREE.Matrix4().makeBasis(ex, ey, ez);   // motor yerel → model
+    const half = Math.abs(sz.dot(nose)) / 2;   // bağlanılan düğümün burun ekseni boyunca yarı boyu
+    const pos = c.clone().add(ex.clone().multiplyScalar(half + 27 + e.case[0] / 2)).add(new THREE.Vector3(...(spec.offset || [0, 0, 0])));
+    const M = new THREE.Matrix4().compose(pos, new THREE.Quaternion().setFromRotationMatrix(R), new THREE.Vector3(1, 1, 1));
+    const node = { key: 'engine', name: `Motor: ${spec.type}`, kind: 'group', engine: true, custom: false, path: '', meshes: [], allMeshes: [], children: [], parent: tree.root };
+    engine.meshes.forEach(idx => { const m = meshObjs[idx]; if (m.geometry !== m.userData.baseGeom) m.geometry.dispose(); m.geometry = m.userData.baseGeom.clone().applyMatrix4(M); m.geometry.computeBoundingBox(); m.userData.center = m.geometry.boundingBox.getCenter(new THREE.Vector3()).sub(center);
+      node.children.push({ key: `engine:${m.userData.name}`, name: m.userData.name, kind: 'part', engine: true, path: '', meshes: [idx], allMeshes: [idx], children: [] }); });
+    tree.root.children.push(node); reindex(tree); engine.node = node;
+  };
   const index = () => {   // ağaç (yeniden) kurulunca: mesh → yaprak, düğüm merkezleri (patlatmasız konumlardan)
+    attachEngine();
     const leafOf = i => tree.flat.find(p => p.meshes.includes(i)) || null;
     meshObjs.forEach(m => { if (m) { m.userData.part = leafOf(m.userData.idx); m.visible = !(tree.hiddenMeshes && tree.hiddenMeshes.has(m.userData.idx)); } });
     nodeCenter.clear(); meshObjs.forEach(m => { if (m) m.position.set(0, 0, 0); });
@@ -313,6 +337,7 @@ export async function viewStep(container, src, opts = {}) {
   // Düzeni yeniden uygula (alt kırılım ekleme/taşıma/ad); seçim anahtara göre korunur, patlatma yeniden hesaplanır
   const rebuild = overlay => {
     const selKey = selected && selected.key;
+    lastOverlay = overlay || null;
     tree = applyOverlay(buildStepTree(res), overlay);
     index(); explode(lastT);
     selected = selKey ? (tree.nodes.find(n => n.key === selKey) || null) : null; paint();
@@ -322,10 +347,28 @@ export async function viewStep(container, src, opts = {}) {
   return {
     get tree() { return tree; }, get root() { return tree.root; }, get nodes() { return tree.nodes; }, get parts() { return tree.flat; }, get hidden() { return tree.hidden || []; },
     select, explode, fit, rebuild, silhouette, resize: onResize, parsed: res,
+    // Motor ekle/kaldır (spec null → kaldır). Gövdeler sahneye eklenir, ağaçta "Motor: …" grubu olur, STL/kesit/patlatmaya girer.
+    setEngine(spec) {
+      if (engine) { engine.meshes.forEach(i => { const m = meshObjs[i]; if (m) { group.remove(m); m.geometry.dispose(); m.material.dispose(); } }); meshObjs.length = baseCount; engine = null; }
+      if (spec && ENGINES[spec.type]) {
+        const parts = [...buildEngine(THREE, spec.type), ...(spec.prop ? buildProp(THREE, spec.type) : [])];
+        engine = { spec: { ...spec }, meshes: [], node: null };
+        parts.forEach(p => {
+          const m = new THREE.Mesh(p.geometry.clone(), new THREE.MeshStandardMaterial({ color: p.color, metalness: 0.5, roughness: 0.5 }));
+          m.userData = { idx: meshObjs.length, name: p.name, engine: true, baseColor: new THREE.Color(p.color), baseGeom: p.geometry, center: new THREE.Vector3() };
+          engine.meshes.push(meshObjs.length); meshObjs.push(m); group.add(m);
+        });
+      }
+      tree = applyOverlay(buildStepTree(res), lastOverlay); index(); explode(lastT); paint();
+      return engine ? engine.node : null;
+    },
+    get engine() { return engine ? engine.spec : null; },
+    engineInfo(type) { return ENGINES[type] || null; },
+    get engines() { return Object.entries(ENGINES).map(([k, v]) => ({ key: k, label: v.label, weight_g: v.weight_g, cc: v.cc, power_kw: v.power_kw })); },
     // STL dışa aktarma (CFD): görünür gövdeler (ya da düğümün gövdeleri), model ekseni → akış ekseni dönüşümü, metre.
     // nose: burun yönü (model ekseni '+x'…'-z'; hava burundan kuyruğa akar → burun durum uzayında −x'e bakar), up: yukarı ekseni → +z,
     // aoa: hücum açısı (derece, burun yukarı +), scale: model birimi → metre (STEP mm → 0.001). Döner: { buffer (binary STL), triangles, bbox }
-    exportStl(node, { nose = '+x', up = '+z', aoa = 0, scale = 0.001 } = {}) {
+    exportStl(node, { nose = '+x', up = '+z', aoa = 0, scale = 0.001, includeEngine = true } = {}) {
       const axis = s => { const v = new THREE.Vector3(); v[s[1]] = s[0] === '-' ? -1 : 1; return v; };
       const n = axis(nose), u = axis(up);
       if (Math.abs(n.dot(u)) > 0.5) u.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(n[k]) < 0.5)] = 1;   // burun ile yukarı aynı eksense düzelt
@@ -333,7 +376,7 @@ export async function viewStep(container, src, opts = {}) {
       const m = new THREE.Matrix4().makeBasis(ex, ey, ez).transpose();   // model → durum (satırlar = yeni eksenler)
       const pitch = new THREE.Matrix4().makeRotationY(aoa * Math.PI / 180);   // R_y(+α): burun (−x,0,0) → (−cosα, 0, sinα) = burun yukarı
       const M = new THREE.Matrix4().multiplyMatrices(pitch, m);
-      const list = (node ? node.allMeshes : tree.root.allMeshes).map(i => meshObjs[i]).filter(mm => mm && mm.visible);
+      const list = (node ? node.allMeshes : tree.root.allMeshes).map(i => meshObjs[i]).filter(mm => mm && mm.visible && (includeEngine || !mm.userData.engine));
       let count = 0; list.forEach(mm => { count += mm.geometry.index ? mm.geometry.index.count / 3 : mm.geometry.attributes.position.count / 3; });
       const buf = new ArrayBuffer(84 + count * 50), dv = new DataView(buf);
       new Uint8Array(buf, 0, 80).set(new TextEncoder().encode('HEPGO STEP->STL flow+x up+z meters').subarray(0, 80));

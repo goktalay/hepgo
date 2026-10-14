@@ -415,6 +415,22 @@ def step_links(did: int, user=Depends(design_user), conn=db.DB):
             'mamuls': db.rows(conn.execute("SELECT id, code, name FROM products WHERE active = 1 AND type = 'MAMUL' ORDER BY name"))}
 
 
+ENGINE_TYPES = ('DLE-222', 'HE-280')   # static/js/engine3d.js ile aynı
+
+
+def tree_in_engine(e):
+    """Motor yerleşimi: {type, node, nose, up, offset[3], prop} — bilinmeyen tür → yok."""
+    if not isinstance(e, dict) or e.get('type') not in ENGINE_TYPES:
+        return None
+    try:
+        off = [float(x) for x in (e.get('offset') or [0, 0, 0])][:3]
+    except (TypeError, ValueError):
+        off = [0, 0, 0]
+    ax = lambda v, d: v if isinstance(v, str) and len(v) == 2 and v[0] in '+-' and v[1] in 'xyz' else d
+    return {'type': e['type'], 'node': (str(e['node'])[:120] if e.get('node') else None), 'nose': ax(e.get('nose'), '+x'), 'up': ax(e.get('up'), '+z'),
+            'offset': (off + [0, 0, 0])[:3], 'prop': bool(e.get('prop'))}
+
+
 @router.put('/drawings/{did}/step-tree')
 def set_step_tree(did: int, body: StepTreeIn, user=Depends(design_user), conn=db.DB):
     """STEP ağacı düzenlemelerini (alt kırılımlar, taşımalar, adlar) tek seferde kaydet; dosya değişmez, düzen her açılışta uygulanır."""
@@ -426,7 +442,10 @@ def set_step_tree(did: int, body: StepTreeIn, user=Depends(design_user), conn=db
                 'parents': {str(k)[:120]: (str(v)[:120] if v else None) for k, v in (tree.get('parents') or {}).items()},
                 'names': {str(k)[:120]: str(v).strip()[:200] for k, v in (tree.get('names') or {}).items() if str(v or '').strip()},
                 'hidden': [str(k)[:120] for k in (tree.get('hidden') or []) if k][:2000]}   # ağaçtan/modelden gizlenen parça ve kırılımlar
-        if not tree['groups'] and not tree['parents'] and not tree['names'] and not tree['hidden']:
+        eng = tree_in_engine(body.tree.get('engine'))
+        if eng:
+            tree['engine'] = eng
+        if not tree['groups'] and not tree['parents'] and not tree['names'] and not tree['hidden'] and not eng:
             tree = None
     conn.execute('UPDATE design_drawings SET step_tree = ? WHERE id = ?', (json.dumps(tree, ensure_ascii=False) if tree else None, did))
     db.audit(conn, user['id'], 'STEP parça ağacını düzenledi', 'design_drawing', did,

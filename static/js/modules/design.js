@@ -368,7 +368,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const collapsed = new Set();
 
   // ---- Ağaç düzenleme (yerel; "Kaydet" ile sunucuya): alt kırılım ekle, taşı (sürükle-bırak / Taşı), ad değiştir
-  let overlay = { groups: [], parents: {}, names: {}, hidden: [] }, dirty = false;
+  let overlay = { groups: [], parents: {}, names: {}, hidden: [], engine: null }, dirty = false;
   const checked = new Set();   // işaretli parça/kırılım anahtarları (toplu taşıma)
   const checkChip = h('button', { class: 'btn xs ghost', type: 'button', hidden: true, title: 'İşaretleri kaldır' }, '');
   const refreshCheck = () => { checkChip.hidden = !checked.size; checkChip.textContent = `☑ ${checked.size} işaretli ✕`; moveBtn.textContent = checked.size ? `⤵ Taşı (${checked.size})` : '⤵ Taşı'; moveBtn.disabled = !checked.size && !selected; };
@@ -389,7 +389,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
       actions: [{ label: 'Vazgeç' }, { label: 'Tamam', class: 'primary', onClick: () => { if (!inp.value.trim()) throw new Error('Ad girin'); done = true; resolve(inp.value.trim()); } }] });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) inp.closest('.modal-back')?.querySelector('.modal-foot .primary')?.click(); });
   });
-  const applyTree = () => { if (!viewer) return; viewer.rebuild(overlay); drawTree(); onSelect(viewer.selected); };
+  const applyTree = () => { if (!viewer) return; viewer.rebuild(overlay); fillEngNodes(); drawTree(); onSelect(viewer.selected); };
   const isDesc = (node, anc) => { for (let a = node; a; a = a.parent) if (a === anc) return true; return false; };
   const moveSet = node => (checked.size ? viewer.nodes.filter(n => checked.has(n.key)) : (node ? [node] : []));   // işaretliler varsa onlar, yoksa verilen düğüm
   const moveTo = (node, targetKey) => {
@@ -466,7 +466,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   treeSaveBtn.addEventListener('click', async () => {
     try {
       const r = await api.put(`/api/design/drawings/${did}/step-tree`, { tree: overlay });
-      overlay = r.tree ? { hidden: [], ...r.tree } : { groups: [], parents: {}, names: {}, hidden: [] }; dirty = false; treeSaveBtn.disabled = true;
+      overlay = r.tree ? { hidden: [], engine: null, ...r.tree } : { groups: [], parents: {}, names: {}, hidden: [], engine: null }; dirty = false; treeSaveBtn.disabled = true;
       toast('Parça ağacı kaydedildi', 'success'); applyTree();
     } catch (err) { toastError(err); }
   });
@@ -479,6 +479,46 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     row.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.classList.add('drop'); });
     row.addEventListener('dragleave', () => row.classList.remove('drop'));
     row.addEventListener('drop', e => { e.preventDefault(); row.classList.remove('drop'); const k = e.dataTransfer.getData('text/plain'); const n = viewer?.nodes.find(x => x.key === k); if (n) moveTo(n, targetKey); });
+  };
+
+  // ---- Motor seçimi: parametrik motor zarfı (DLE-222 / HE-280) seçilen bağlantı düğümünün arkasına (−burun) yerleşir; Kaydet ile kalıcı
+  const engSel = h('select', { class: 'input sm', 'aria-label': 'Motor' }, h('option', { value: '' }, 'Motor yok'));
+  const engNode = h('select', { class: 'input sm', 'aria-label': 'Bağlantı düğümü', title: 'Motorun arkasına takılacağı parça / kırılım (motor tutucu)' });
+  const engNose = h('select', { class: 'input sm', title: 'Burun yönü (model ekseni) — motor arkaya, pervane kuyruğa bakar' }, ...[['+x', 'Burun +X'], ['-x', 'Burun −X'], ['+y', 'Burun +Y'], ['-y', 'Burun −Y'], ['+z', 'Burun +Z'], ['-z', 'Burun −Z']].map(([v, l]) => h('option', { value: v }, l)));
+  const engUp = h('select', { class: 'input sm', title: 'Yukarı ekseni' }, ...[['+z', 'Yukarı +Z'], ['-z', 'Yukarı −Z'], ['+y', 'Yukarı +Y'], ['-y', 'Yukarı −Y'], ['+x', 'Yukarı +X'], ['-x', 'Yukarı −X']].map(([v, l]) => h('option', { value: v }, l)));
+  const engOff = ['X', 'Y', 'Z'].map(a => h('input', { class: 'input sm stp-off', type: 'number', step: '5', value: '0', title: `${a} kaydırma (mm)`, placeholder: a }));
+  const engProp = h('input', { type: 'checkbox', class: 'stp-cb' });
+  const engInfo = h('span', { class: 'small muted' }, '');
+  const engineBar = h('div', { class: 'stp-bar stp-engine' }, h('span', { class: 'stp-lbl' }, '⚙ Motor'), engSel, engNode, engNose, engUp, h('span', { class: 'small muted' }, 'Kaydır (mm):'), ...engOff, h('label', { class: 'small cfd-tog' }, engProp, 'Pervane'), engInfo);
+  const fillEngNodes = () => {
+    if (!viewer) return;
+    const cur = (overlay.engine && overlay.engine.node) || engNode.value || '';
+    const opts = [h('option', { value: '' }, `⌂ ${viewer.root.name || 'Tüm montaj'}`)];
+    const walk = (nodes, depth) => nodes.forEach(n => { if (n.engine) return; opts.push(h('option', { value: n.key, selected: n.key === cur }, `${'— '.repeat(depth)}${n.name}`)); walk(n.children, depth + 1); });
+    walk(viewer.root.children, 0);
+    clear(engNode, opts);
+    if (!cur) { const guess = viewer.nodes.find(n => !n.engine && /motor|tutucu|engine|mount/i.test(n.name)); if (guess) engNode.value = guess.key; }
+  };
+  const engineSpec = () => engSel.value ? { type: engSel.value, node: engNode.value || null, nose: engNose.value, up: engUp.value, offset: engOff.map(i => Number(i.value) || 0), prop: engProp.checked } : null;
+  const applyEngine = (fromUser = true) => {
+    if (!viewer) return;
+    const spec = engineSpec();
+    viewer.setEngine(spec);
+    const info = spec ? viewer.engineInfo(spec.type) : null;
+    engInfo.textContent = info ? t('{cc} cc · {w} kg · {p} kW', { cc: info.cc, w: (info.weight_g / 1000).toFixed(2), p: info.power_kw }) : '';
+    [engNode, engNose, engUp, ...engOff, engProp].forEach(el => { el.disabled = !spec; });
+    inEngineRow.hidden = !spec; if (spec) { inNose.value = spec.nose; inUp.value = spec.up; }
+    if (fromUser) { overlay.engine = spec; markDirty(); }
+    drawTree(); onSelect(viewer.selected);
+  };
+  [engSel, engNode, engNose, engUp, ...engOff, engProp].forEach(el => el.addEventListener('change', () => applyEngine(true)));
+  const loadEngineUi = () => {   // sürümden gelen overlay.engine → kontroller
+    if (!viewer) return;
+    clear(engSel, h('option', { value: '' }, 'Motor yok'), viewer.engines.map(e => h('option', { value: e.key }, e.label)));
+    fillEngNodes();
+    const e = overlay.engine;
+    if (e && viewer.engineInfo(e.type)) { engSel.value = e.type; engNode.value = e.node || ''; engNose.value = e.nose || '+x'; engUp.value = e.up || '+z'; engOff.forEach((i, k) => { i.value = String((e.offset || [0, 0, 0])[k] || 0); }); engProp.checked = !!e.prop; }
+    applyEngine(false);
   };
 
   // ---- Ağaç çizimi
@@ -496,7 +536,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
         onclick: () => viewer.select(p) },
         cb, caret, h('span', { class: 'stp-row-name' }, p.custom ? [h('span', { class: 'stp-folder' }, '📁'), ' '] : null, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
         ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
-      dnd(row, p); if (isG) dropTarget(row, p.key);
+      if (!p.engine) { dnd(row, p); if (isG) dropTarget(row, p.key); }
       rows[p.key] = row; items.push(row);
       if (isG && !closed) walk(p.children);
     });
@@ -567,7 +607,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     const r = await api.get(`/api/design/drawings/${did}/step-links`);
     links = Object.fromEntries((r.links || []).map(l => [l.mesh_key, l]));
     cands = r.candidates || []; mamul = r.product || null;
-    if (!dirty) overlay = r.tree && typeof r.tree === 'object' ? { groups: r.tree.groups || [], parents: r.tree.parents || {}, names: r.tree.names || {}, hidden: r.tree.hidden || [] } : { groups: [], parents: {}, names: {}, hidden: [] };
+    if (!dirty) overlay = r.tree && typeof r.tree === 'object' ? { groups: r.tree.groups || [], parents: r.tree.parents || {}, names: r.tree.names || {}, hidden: r.tree.hidden || [], engine: r.tree.engine || null } : { groups: [], parents: {}, names: {}, hidden: [], engine: null };
     fillCands(); drawTree(); if (selected) onSelect(selected);
   };
   saveBtn.addEventListener('click', async () => {
@@ -646,6 +686,8 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const inNose = h('select', { class: 'input' }, axisOpts('+x'));
   const inUp = h('select', { class: 'input' }, axisOpts('+z'));
   const inScope = h('select', { class: 'input' }, h('option', { value: 'all' }, 'Tüm montaj (gizlenenler hariç)'), h('option', { value: 'sel' }, '3B sekmesinde seçili parça / kırılım'));
+  const inEngine = h('input', { type: 'checkbox', class: 'stp-cb', checked: true });
+  const inEngineRow = h('label', { class: 'small cfd-tog', hidden: true }, inEngine, 'Seçili motor dahil');
   const inRes = h('select', { class: 'input' }, h('option', { value: 'coarse', selected: true }, 'Kaba — hızlı (≈ 0,3–1 M hücre)'), h('option', { value: 'medium' }, 'Orta (≈ 1–3 M hücre)'), h('option', { value: 'fine' }, 'İnce — uzun (≈ 3–8 M hücre)'));
   const inRho = h('input', { class: 'input', type: 'number', step: 'any', value: '1.225' }), inNu = h('input', { class: 'input', type: 'number', step: 'any', value: '0.000015' }), inTi = h('input', { class: 'input', type: 'number', step: 'any', value: '1' });
   const inIters = h('input', { class: 'input', type: 'number', step: '1', min: '20', max: '3000', placeholder: 'otomatik' });
@@ -756,12 +798,12 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     const U = Number(inU.value); if (!(U >= 0.5 && U <= 200)) { toast('Akış hızı 0,5–200 m/s olmalı', 'err'); return; }
     startBtn.disabled = true; upLine.hidden = false; upBar.style.width = '0%'; upPct.textContent = 'STL';
     try {
-      const stl = viewer.exportStl(node, { nose: inNose.value, up: inUp.value, aoa: Number(inAoa.value) || 0, scale: 0.001 });
+      const stl = viewer.exportStl(node, { nose: inNose.value, up: inUp.value, aoa: Number(inAoa.value) || 0, scale: 0.001, includeEngine: inEngine.checked });
       if (!stl.triangles) throw new Error('Dışa aktarılacak gövde yok');
       const fd = new FormData(); fd.append('file', new Blob([stl.buffer], { type: 'application/octet-stream' }), 'body.stl');
       fd.append('params', JSON.stringify({ U, rho: Number(inRho.value) || 1.225, nu: Number(inNu.value) || 1.5e-5, turb_intensity: (Number(inTi.value) || 1) / 100, res: inRes.value, aoa: Number(inAoa.value) || 0,
-        nose: inNose.value, up: inUp.value, scope: inScope.value, scope_name: node ? node.name : '', iters: inIters.value ? Number(inIters.value) : null, version_id: vid,
-        name: `${node ? node.name : name} · ${U} m/s · ${Number(inAoa.value) || 0}° · ${inRes.selectedOptions[0].textContent.split(' ')[0]}` }));
+        nose: inNose.value, up: inUp.value, scope: inScope.value, scope_name: node ? node.name : '', iters: inIters.value ? Number(inIters.value) : null, version_id: vid, engine: viewer.engine && inEngine.checked ? viewer.engine.type : null,
+        name: `${node ? node.name : name}${viewer.engine && inEngine.checked ? ' + ' + viewer.engine.type : ''} · ${U} m/s · ${Number(inAoa.value) || 0}° · ${inRes.selectedOptions[0].textContent.split(' ')[0]}` }));
       const r = await upload(`/api/design/drawings/${did}/cfd`, fd, p => { upBar.style.width = `${p}%`; upPct.textContent = `%${p}`; });
       toast(t('Analiz #{id} kuyruğa alındı ({n} üçgen, gövde {l} m)', { id: r.id, n: stl.triangles.toLocaleString('tr-TR'), l: (r.geometry.size[0]).toFixed(2) }), 'success');
       await loadRuns(r.id);
@@ -777,7 +819,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
       ofStatus,
       field('Uçuş / akış hızı (m/s)', inU), field('Hücum açısı (°)', inAoa, 'burun yukarı +'),
       h('div', { class: 'dz-part-fields' }, field('Burun yönü (model ekseni)', inNose), field('Yukarı (model ekseni)', inUp)),
-      field('Nesne', inScope), field('Ağ çözünürlüğü', inRes),
+      field('Nesne', inScope), inEngineRow, field('Ağ çözünürlüğü', inRes),
       h('details', null, h('summary', { class: 'small' }, 'Gelişmiş'), h('div', { class: 'dz-part-fields' }, field('Hava yoğunluğu (kg/m³)', inRho), field('Kinematik viskozite (m²/s)', inNu)), h('div', { class: 'dz-part-fields' }, field('Türbülans yoğunluğu (%)', inTi), field('En çok yineleme', inIters))),
       startBtn, upLine,
       h('p', { class: 'small muted', style: { marginTop: '10px' } }, 'Sunucuda OpenFOAM: snappyHexMesh ile gövde çevresinde hex ağ, simpleFoam ile kararlı RANS çözümü (k-ω SST), sınır tabaka duvar fonksiyonlu. Kaba ağda dakikalar, ince ağda saatler sürebilir.')),
@@ -802,7 +844,8 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
         h('div', { class: 'stp-tools' }, addGrpBtn, renameBtn, moveBtn, delGrpBtn, checkChip, hiddenBtn),
         treeEl),
       h('div', { class: 'stp-view' }, canvas, cmp,
-        h('div', { class: 'stp-bar' }, h('span', { class: 'stp-lbl' }, '💥 Patlat'), range, rangeVal, fitBtn, h('span', { class: 'spacer' }), countChip))),
+        h('div', { class: 'stp-bar' }, h('span', { class: 'stp-lbl' }, '💥 Patlat'), range, rangeVal, fitBtn, h('span', { class: 'spacer' }), countChip),
+        engineBar)),
     h('div', { class: 'stp-sel' },
       h('div', { class: 'stp-sel-info' }, selName, selLink),
       h('div', { class: 'stp-sel-ctl' }, candFilter, candSel, saveBtn, unlinkBtn, h('span', { class: 'spacer' }), autoBtn)));
@@ -820,7 +863,8 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
       clear(canvas);
       viewer = await viewStep(canvas, parsed, { onSelect, overlay });
       viewer.nodes.forEach(n => { if (n.kind === 'group' && n.depth >= 2 && !n.custom) collapsed.add(n.key); });
-      drawTree(); onSelect(null);
+      collapsed.add('engine');
+      loadEngineUi(); drawTree(); onSelect(null);
       if (!cfdPanel.hidden && !cfd2dPanel.hidden) takeCut();
     } catch (err) { clear(canvas, h('div', { class: 'card empty' }, 'Model yüklenemedi: ' + (err.message || err))); clear(treeEl); }
   })();

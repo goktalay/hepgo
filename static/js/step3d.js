@@ -16,31 +16,50 @@ export const meshKey = (name, path) => {
   return n ? `n:${n.toLocaleLowerCase('tr')}` : `p:${path}`;
 };
 
-// occt sonucu → düz parça listesi [{key, name, path, meshes:[idx…], depth}] ve iç içe ağaç
+// occt sonucu → montaj ağacı. Düğüm: {key, name, path, depth, kind:'group'|'part', meshes:[idx], allMeshes:[idx…], children, parent}
+// STEP içindeki alt montajlar (çocuklu düğüm) ve birden çok gövdeli düğümler (ör. "caymaz - v3 part 2": 30 mesh, her birinin adı var)
+// grup olur; her gövde (mesh) kendi adıyla ayrı parça olarak gruba girer. Tek gövdeli düğüm doğrudan parçadır.
+// Döner: { root, nodes: kök dışındaki tüm düğümler (ağaç sırasında), flat: yalnız yaprak parçalar }
 export function buildStepTree(res) {
-  const flat = [];
-  const walk = (node, path, depth, out) => {
-    const name = (node.name || '').trim();
-    const meshes = node.meshes || [];
-    const kids = (node.children || []).map((c, i) => walk(c, path ? `${path}/${i}` : String(i), depth + 1, out));
-    const item = { key: meshKey(name, path), name: name || (meshes.length ? `Parça ${path}` : 'Montaj'), path, depth, meshes: meshes.slice(), children: kids,
-      allMeshes: [...meshes, ...kids.flatMap(k => k.allMeshes)] };
-    if (meshes.length || !kids.length) out.push(item);
+  const clean = s => (s || '').replace(/[\r\n]+/g, '').replace(/\s+/g, ' ').trim();   // STEP adlarında kaçan satır sonları ("ELEKTRONİK KATMA\rN")
+  const meshName = i => clean(res.meshes?.[i]?.name);
+  const walk = (node, path) => {
+    const meshes = (node.meshes || []).slice();
+    const kids = (node.children || []).map((c, i) => walk(c, path ? `${path}/${i}` : String(i)));
+    const item = { name: clean(node.name), path, children: kids, meshes: [], allMeshes: [], kind: 'part' };
+    if (meshes.length === 1 && !kids.length) item.meshes = meshes;
+    else if (meshes.length) {   // çok gövdeli düğüm = alt montaj; gövdeler ayrı parça
+      item.kind = 'group';
+      meshes.forEach((mi, j) => item.children.push({ name: meshName(mi) || `${item.name || 'Grup'} · gövde ${j + 1}`, path: `${path}/m${j}`, children: [], meshes: [mi], allMeshes: [mi], kind: 'part' }));
+    } else if (kids.length) item.kind = 'group';
+    item.allMeshes = [...item.meshes, ...item.children.flatMap(k => k.allMeshes)];
     return item;
   };
-  const root = walk(res.root || { children: [] }, '', 0, flat);
-  const parts = flat.filter(p => p.allMeshes.length);
+  let root = walk(res.root || { children: [] }, '');
+  root.children = root.children.filter(c => c.allMeshes.length);
+  // Boş sarmalayıcı kökler (adsız kök → tek alt montaj) atlanır; en üstteki gerçek montaj kök olur
+  while (!root.meshes.length && root.children.length === 1 && root.children[0].kind === 'group') root = root.children[0];
+  root.name = root.name || 'Montaj'; root.depth = 0; root.parent = null;
+  const nodes = [], flat = [];
+  const collect = (n, depth) => {
+    n.children = n.children.filter(c => c.allMeshes.length);
+    for (const c of n.children) {
+      c.depth = depth; c.parent = n; c.key = meshKey(c.name, c.path); if (c.kind === 'group') c.key = 'g' + c.key.slice(1);
+      nodes.push(c); if (c.kind === 'part') flat.push(c);
+      collect(c, depth + 1);
+    }
+  };
+  collect(root, 1);
   // Aynı adlı parçalar (ör. 4 × "AT"): sıra numarasıyla benzersiz anahtar — sürümler arasında sıra aynı kaldığı sürece eşleşme korunur
   const seen = {};
-  for (const p of parts) {
+  for (const p of nodes) {
     const n = (seen[p.key] = (seen[p.key] || 0) + 1);
     if (n > 1) { p.key = `${p.key}#${n}`; p.dupIndex = n; }
   }
-  for (const p of parts) p.name = p.name.replace(/[\r\n]+/g, '');   // STEP adlarında kaçan satır sonları ("ELEKTRONİK KATMA\rN")
-  return { root, flat: parts };
+  return { root, nodes, flat };
 }
 
-// container: boş DOM düğümü (ölçülü). arrayBuffer: STEP. opts.onSelect(part|null). → { tree, parts, select, explode, fit, dispose }
+// container: boş DOM düğümü (ölçülü). arrayBuffer: STEP. opts.onSelect(node|null). → { root, nodes, parts, select(node), explode(0–1), fit, dispose }
 export async function viewStep(container, arrayBuffer, opts = {}) {
   const [THREE, { OrbitControls }] = await loadLibs();
   const occt = await loadOcct();
@@ -106,18 +125,29 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
   };
   const select = part => { selected = part || null; paint(); opts.onSelect?.(selected); };
 
-  // ---- patlatma: her parça, montaj merkezinden kendi merkezine doğru t·k kadar kayar
+  // ---- patlatma (hiyerarşik): alt montaj kendi merkezinden montaj merkezine göre, içindeki parçalar alt montaj merkezine göre açılır.
+  // Her parça: Σ (düğüm merkezi − üst düğüm merkezi) · t · 1.5 — uzaklıklar orantılı büyür, montaj yapısı korunur.
+  meshObjs.forEach(m => { if (m) m.userData.center.sub(center); });   // grup (0,0,0)'a taşındı → merkezler aynı uzaya
+  const nodeCenter = new Map();
+  const centerOf = n => {
+    if (nodeCenter.has(n)) return nodeCenter.get(n);
+    const b = new THREE.Box3();
+    n.allMeshes.forEach(i => { if (meshObjs[i]) b.expandByObject(meshObjs[i]); });
+    const c = b.isEmpty() ? new THREE.Vector3() : b.getCenter(new THREE.Vector3());
+    nodeCenter.set(n, c); return c;
+  };
+  const leafOf = i => tree.flat.find(p => p.meshes.includes(i)) || null;
+  meshObjs.forEach(m => { if (m) m.userData.part = leafOf(m.userData.idx); });
+  centerOf(tree.root); tree.nodes.forEach(centerOf);   // başlangıç konumlarıyla (patlatmadan önce) hesapla
   const explode = t => {
-    const k = Math.max(0, Math.min(1, t)) * radius * 1.2;
+    const k = Math.max(0, Math.min(1, t)) * 1.5;
     meshObjs.forEach(m => {
       if (!m) return;
-      const dir = m.userData.center.clone();   // group merkezi zaten (0,0,0)'a taşındı → center = yön
-      const len = dir.length() || 1;
-      m.position.copy(dir.multiplyScalar(k / len));
+      const off = new THREE.Vector3();
+      for (let n = m.userData.part; n && n.parent; n = n.parent) off.add(centerOf(n).clone().sub(centerOf(n.parent)).multiplyScalar(k));
+      m.position.copy(off);
     });
   };
-  // explode için parça merkezleri grup kaydırmasından sonra yeniden alınır
-  meshObjs.forEach(m => { if (m) m.userData.center.sub(center); });
 
   // ---- tıklayarak parça seçme (raycast)
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -130,8 +160,7 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
     ray.setFromCamera(ndc, camera);
     const hit = ray.intersectObjects(meshObjs.filter(Boolean), false)[0];
     if (!hit) { select(null); return; }
-    const idx = hit.object.userData.idx;
-    select(tree.flat.find(p => p.meshes.includes(idx)) || tree.flat.find(p => p.allMeshes.includes(idx)) || null);
+    select(hit.object.userData.part || null);
   });
 
   let raf = null, alive = true;
@@ -141,7 +170,7 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
   window.addEventListener('resize', onResize);
 
   return {
-    tree, parts: tree.flat, select, explode, fit, resize: onResize,
+    tree, root: tree.root, nodes: tree.nodes, parts: tree.flat, select, explode, fit, resize: onResize,
     get selected() { return selected; },
     dispose() {
       alive = false; if (raf) cancelAnimationFrame(raf);

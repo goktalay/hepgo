@@ -8632,3 +8632,6 @@ svg.fa-inline.fa-solo { margin-right: 0; }
   .stp-canvas { height: 46vh; }
   .stp-top .input, .stp-sel-ctl .input { min-width: 0; flex: 1; }
 }
+.stp-row.group .stp-row-name { font-weight: 600; }
+.stp-caret { flex: none; width: 14px; text-align: center; color: var(--muted); cursor: pointer; transition: transform .15s; font-size: 12px; }
+.stp-caret.closed { transform: rotate(-90deg); }

@@ -307,23 +307,29 @@ async function stepStudio({ did, vid, name, reload }) {
 
   let viewer = null, links = {}, cands = [], mamul = null, selected = null, rows = {};
   const linkOf = p => links[p.key] || null;
+  const collapsed = new Set();   // kapalı alt montaj anahtarları (varsayılan: 2. seviyeden derin gruplar kapalı)
 
+  // Ağaç: alt montajlar (STEP içindeki STEP'ler / çok gövdeli düğümler) ▸ ile açılıp kapanır; grup satırı seçilince tüm alt parçalar vurgulanır
   const drawTree = () => {
     if (!viewer) return;
     rows = {};
-    const items = viewer.parts.map(p => {
-      const ln = linkOf(p);
-      const row = h('button', { class: `stp-row ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''}`, type: 'button',
-        style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : p.name,
+    const items = [];
+    const walk = nodes => nodes.forEach(p => {
+      const ln = linkOf(p), isG = p.kind === 'group', closed = isG && collapsed.has(p.key);
+      const caret = isG ? h('span', { class: `stp-caret ${closed ? 'closed' : ''}`, title: closed ? 'Aç' : 'Kapat',
+        onclick: ev => { ev.stopPropagation(); if (closed) collapsed.delete(p.key); else collapsed.add(p.key); drawTree(); } }, '▾') : h('span', { class: 'stp-dot' });
+      const row = h('button', { class: `stp-row ${isG ? 'group' : ''} ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''}`, type: 'button',
+        style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : (isG ? t('{name} · alt montaj, {n} parça', { name: p.name, n: p.allMeshes.length }) : p.name),
         onclick: () => viewer.select(p) },
-        h('span', { class: 'stp-dot' }), h('span', { class: 'stp-row-name' }, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null),
+        caret, h('span', { class: 'stp-row-name' }, p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
         ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
-      rows[p.key] = row;
-      return row;
+      rows[p.key] = row; items.push(row);
+      if (isG && !closed) walk(p.children);
     });
-    const n = Object.keys(links).length;
-    countChip.textContent = t('{n} parça · {m} eşleşmiş', { n: viewer.parts.length, m: n });
-    clear(treeEl, h('button', { class: `stp-row root ${!selected ? 'on' : ''}`, type: 'button', onclick: () => viewer.select(null) }, h('span', { class: 'stp-dot' }), h('b', null, 'Tüm montaj')), items);
+    walk(viewer.root.children);
+    const n = Object.keys(links).length, g = viewer.nodes.filter(x => x.kind === 'group').length;
+    countChip.textContent = t('{n} parça{g} · {m} eşleşmiş', { n: viewer.parts.length, g: g ? t(' · {g} alt montaj', { g }) : '', m: n });
+    clear(treeEl, h('button', { class: `stp-row root ${!selected ? 'on' : ''}`, type: 'button', onclick: () => viewer.select(null) }, h('span', { class: 'stp-dot' }), h('b', null, viewer.root.name || 'Tüm montaj')), items);
   };
 
   const fillCands = () => {
@@ -334,11 +340,15 @@ async function stepStudio({ did, vid, name, reload }) {
 
   const onSelect = p => {
     selected = p;
+    // Modelden seçilen parça kapalı bir alt montajın içindeyse üst grupları aç
+    let opened = false;
+    for (let a = p && p.parent; a && a.parent; a = a.parent) if (collapsed.has(a.key)) { collapsed.delete(a.key); opened = true; }
+    if (opened) drawTree();
     Object.values(rows).forEach(r => r.classList.remove('on'));
     if (p && rows[p.key]) { rows[p.key].classList.add('on'); rows[p.key].scrollIntoView({ block: 'nearest' }); }
     treeEl.querySelector('.stp-row.root')?.classList.toggle('on', !p);
     const ln = p ? linkOf(p) : null;
-    selName.textContent = p ? p.name : 'Parça seçilmedi';
+    selName.textContent = p ? `${p.name}${p.kind === 'group' ? t(' (alt montaj · {n} parça)', { n: p.allMeshes.length }) : ''}` : 'Parça seçilmedi';
     selLink.textContent = p ? (ln ? `↔ ${ln.product_code} — ${ln.product_name || ''}` : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.';
     saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln);
     candSel.value = ln ? String(ln.product_id) : '';
@@ -372,7 +382,7 @@ async function stepStudio({ did, vid, name, reload }) {
   });
   autoBtn.addEventListener('click', async () => {
     if (!viewer) return;
-    const todo = viewer.parts.filter(p => !linkOf(p)).map(p => [p, guessFor(p)]).filter(([, g]) => g);
+    const todo = viewer.nodes.filter(p => !linkOf(p)).map(p => [p, guessFor(p)]).filter(([, g]) => g);
     if (!todo.length) { toast('Ada göre eşleşen yeni parça bulunamadı'); return; }
     if (!await confirmDialog('Otomatik eşleştirme', t('{n} parça adı ürün koduyla eşleşiyor:\n{list}\n\nBağlansın mı?', { n: todo.length, list: todo.slice(0, 12).map(([p, g]) => `${p.name} → ${g.code}`).join('\n') + (todo.length > 12 ? '\n…' : '') }), { okLabel: 'Eşleştir' })) return;
     let ok = 0;
@@ -405,6 +415,7 @@ async function stepStudio({ did, vid, name, reload }) {
     const buf = await resp.arrayBuffer();
     clear(canvas);
     viewer = await viewStep(canvas, buf, { onSelect });
+    viewer.nodes.forEach(n => { if (n.kind === 'group' && n.depth >= 2) collapsed.add(n.key); });   // derin alt montajlar kapalı başlar
     drawTree(); onSelect(null);
   } catch (err) { clear(canvas, h('div', { class: 'card empty' }, 'Önizleme yüklenemedi: ' + (err.message || err))); clear(treeEl); }
 }

@@ -109,8 +109,9 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   let track = null;
   for (const seg of segs) {
     if (seg.pts.length < 2) continue;
-    const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 1.5 : 1.2, material: seg.air ? yellow : grey } });
-    if (seg.air && !track) track = ent;   // irtifa perdesi (mavi gölge) çizilmez
+    // Havadaki iz sabit çizilmez (yalnız uçağın arkasındaki şeffaf sarı kuyruk); görünmez bir çizgi kadraj ("Tüm iz") için tutulur
+    const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 1 : 1.2, material: seg.air ? yellow.withAlpha(0) : grey } });
+    if (seg.air && !track) track = ent;
   }
   track = track || viewer.entities.values[0];
   // Kalkış noktası (ilk havalanma; uçuş aralığı yoksa kayıt başı)
@@ -126,7 +127,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start: at(0), stop: at(duration) })]),
     position, orientation,
     model: { uri: '/static/models/caymaz.gltf', minimumPixelSize: 72, maximumScale: 400, scale: 1.8 },
-    path: { leadTime: 0, trailTime: 90, width: 2, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: Cesium.Color.ORANGE }) },
+    path: { leadTime: 0, trailTime: 120, width: 2.5, material: Cesium.Color.fromCssColorString('#ffcc33').withAlpha(0.45) },   // arkasındaki iz: şeffaf sarı
   });
   const planePosAt = t => position.getValue(t);
   // Burun ucu etiketi (HTML, Cesium sahnesinin üstünde): yer hızı (km/sa); altında ince yakıt yüzdesi çubuğu (değer yazmaz) ve

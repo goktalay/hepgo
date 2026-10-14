@@ -3023,6 +3023,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE material_docs ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)')
     if 'is_supplier' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # tedarikçi (Satın Alma)
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
+    if 'duration_min' not in {r[1] for r in conn.execute('PRAGMA table_info(online_meetings)')}:   # görüntülü toplantı süresi (davet metni: 15:00 – 16:00)
+        conn.execute('ALTER TABLE online_meetings ADD COLUMN duration_min INTEGER NOT NULL DEFAULT 60')
     dd_cols = {r[1] for r in conn.execute('PRAGMA table_info(design_drawings)')}
     if 'product_id' not in dd_cols:   # montaj/çizim ↔ mamul (Ürün Yönetimi) eşleşmesi
         conn.execute('ALTER TABLE design_drawings ADD COLUMN product_id INTEGER REFERENCES products(id) ON DELETE SET NULL')

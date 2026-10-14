@@ -75,7 +75,7 @@ def _state(m):
 def _mpay(mid, m):
     """Odaya giren istemciye toplantı özeti (başlık, kayıt, başlama zamanı → süre sayacı)."""
     return {'id': mid, 'title': m['title'], 'record': bool(m['record']), 'code': m['code'],
-            'started_at': m.get('started_at'), 'now': db.now()}
+            'started_at': m.get('started_at'), 'now': db.now(), 'invite_text': invite_text(dict(m))}
 
 
 # ---------- REST ----------
@@ -84,8 +84,40 @@ class CreateIn(BaseModel):
     waiting_room: bool = True
     record: bool = False
     scheduled_at: Optional[str] = None
+    duration_min: int = 60
+    send_email: bool = False           # oluşturunca katılımcılara logolu davet e-postası (sahibinin bağlı posta hesabından)
     user_ids: list[int] = []           # şirket içi davetliler
     externals: list[dict] = []         # [{name, email?}]
+
+
+TR_DAYS = ('Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar')
+TR_MONTHS = ('Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık')
+TZ_NAME = 'Europe/Istanbul'
+
+
+def when_lines(scheduled_at, duration_min):
+    """'Perşembe, 15 Ekim · 15:00 – 16:00' + saat dilimi; zaman yoksa boş liste."""
+    if not scheduled_at:
+        return []
+    from datetime import datetime, timedelta
+    try:
+        st = datetime.fromisoformat(scheduled_at[:19])
+    except ValueError:
+        return []
+    en = st + timedelta(minutes=int(duration_min or 60))
+    day = f'{TR_DAYS[st.weekday()]}, {st.day} {TR_MONTHS[st.month - 1]}'
+    if st.year != datetime.now().year:
+        day += f' {st.year}'
+    return [f"{day} · {st.strftime('%H:%M')} – {en.strftime('%H:%M')}", f'Saat dilimi: {TZ_NAME}']
+
+
+def invite_text(m, link=None):
+    """Google Meet davet metni biçiminde: başlık, tarih-saat, saat dilimi, katılma bilgileri, bağlantı, kod."""
+    from .. import config
+    lines = [m['title'], *when_lines(m.get('scheduled_at'), m.get('duration_min') or 60), '',
+             f'{config.COMPANY_NAME} Görüntülü Toplantı katılma bilgileri',
+             f"Görüntülü görüşme bağlantısı: {link or _public_url(m['code'])}", f"Davet kodu: {m['code']}"]
+    return '\n'.join(lines)
 
 
 def _meeting(conn, mid):
@@ -118,10 +150,10 @@ def create_meeting(body: CreateIn, user=Depends(auth.current_user), conn=db.DB):
     while conn.execute('SELECT 1 FROM online_meetings WHERE code = ?', (code,)).fetchone():
         code = _code()
     mid = conn.execute(
-        '''INSERT INTO online_meetings (code, title, host_id, waiting_room, record, scheduled_at, created_at)
-           VALUES (?,?,?,?,?,?,?)''',
+        '''INSERT INTO online_meetings (code, title, host_id, waiting_room, record, scheduled_at, duration_min, created_at)
+           VALUES (?,?,?,?,?,?,?,?)''',
         (code, body.title.strip()[:200], user['id'], int(body.waiting_room), int(body.record),
-         body.scheduled_at, db.now())).lastrowid
+         body.scheduled_at, max(5, min(int(body.duration_min or 60), 1440)), db.now())).lastrowid
     # host katılımcı
     conn.execute("INSERT INTO online_meeting_participants (meeting_id, user_id, name, role, state, created_at) VALUES (?,?,?,'host','KABUL',?)",
                  (mid, user['id'], user['full_name'], db.now()))
@@ -140,7 +172,82 @@ def create_meeting(body: CreateIn, user=Depends(auth.current_user), conn=db.DB):
                         VALUES (?,?,?,1,?,?)''', (mid, name, (e.get('email') or '').strip()[:200] or None, tok, db.now()))
         out_ext.append({'name': name, 'link': f'{_public_url(code)}?t={tok}'})
     db.audit(conn, user['id'], 'Online toplantı oluşturdu', 'online_meeting', mid, body.title[:100])
-    return {'id': mid, 'code': code, 'link': _public_url(code), 'externals': out_ext}
+    m = _meeting(conn, mid)
+    out = {'id': mid, 'code': code, 'link': _public_url(code), 'externals': out_ext, 'invite_text': invite_text(m)}
+    if body.send_email:
+        try:
+            out['email'] = _send_invites(conn, m, user)
+        except HTTPException as e:
+            out['email'] = {'error': e.detail}
+    return out
+
+
+def _mail_html(m, link, logo_url, company):
+    """Logolu davet e-postası (HTML)."""
+    esc = lambda x: str(x or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    when = when_lines(m.get('scheduled_at'), m.get('duration_min') or 60)
+    when_html = ''.join(f'<div style="font-size:15px;color:#334155;margin:2px 0">{esc(w)}</div>' for w in when)
+    logo = f'<img src="{esc(logo_url)}" alt="{esc(company)}" style="max-height:56px;max-width:220px;display:block;margin-bottom:18px">' if logo_url else f'<div style="font-size:20px;font-weight:700;margin-bottom:18px">{esc(company)}</div>'
+    return f'''<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:0 auto;padding:28px;border:1px solid #e2e8f0;border-radius:14px;color:#0f172a">
+{logo}
+<div style="font-size:22px;font-weight:700;margin-bottom:8px">{esc(m['title'])}</div>
+{when_html}
+<div style="margin:22px 0 10px;font-weight:600">{esc(company)} Görüntülü Toplantı katılma bilgileri</div>
+<div style="font-size:14px;color:#334155">Görüntülü görüşme bağlantısı: <a href="{esc(link)}" style="color:#1d4ed8">{esc(link)}</a></div>
+<div style="font-size:14px;color:#334155;margin-top:4px">Davet kodu: <b>{esc(m['code'])}</b></div>
+<a href="{esc(link)}" style="display:inline-block;margin-top:22px;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Toplantıya katıl</a>
+<div style="font-size:12px;color:#94a3b8;margin-top:26px">Bu davet {esc(company)} HEPGO görüntülü toplantı sisteminden gönderildi. Tarayıcıdan, uygulama kurmadan katılabilirsiniz.</div>
+</div>'''
+
+
+def _send_invites(conn, m, user):
+    """Katılımcılara (e-postası olan şirket içi kullanıcılar + e-postalı dış katılımcılar) sahibinin bağlı posta hesabından logolu davet."""
+    from .. import config, mail
+    from .system import brand_logo_url
+    box = db.row(conn.execute('SELECT * FROM mail_boxes WHERE user_id = ? ORDER BY sort, id LIMIT 1', (user['id'],)))
+    if not box:
+        raise HTTPException(400, 'E-posta göndermek için önce Posta modülünde bir e-posta hesabı bağlayın')
+    base = (config.PUBLIC_URL or config.LOCAL_URL or '').rstrip('/')
+    lu = brand_logo_url(conn)
+    logo_url = f'{base}{lu}' if (lu and base) else (f'{base}/static/img/logo.png' if base else None)
+    rcpts = []
+    for p in _participants(conn, m['id']):
+        if p['role'] == 'host':
+            continue
+        email = p['email']
+        if not email and p['user_id']:
+            r = conn.execute('SELECT email FROM users WHERE id = ?', (p['user_id'],)).fetchone()
+            email = r[0] if r else None
+        if not email or '@' not in email:
+            continue
+        link = f"{_public_url(m['code'])}?t={p['token']}" if p['is_external'] and p['token'] else _public_url(m['code'])
+        rcpts.append((p['name'], email, link))
+    if not rcpts:
+        raise HTTPException(400, 'E-posta adresi olan katılımcı yok')
+    sent, errors = 0, []
+    subject = f"Davet: {m['title']}" + (f" · {when_lines(m.get('scheduled_at'), m.get('duration_min'))[0]}" if m.get('scheduled_at') else '')
+    for name, email, link in rcpts:
+        try:
+            mail.send(box, to=f'{name} <{email}>', subject=subject, body=invite_text(m, link), html=_mail_html(m, link, logo_url, config.COMPANY_NAME))
+            sent += 1
+        except Exception as e:   # noqa: BLE001
+            errors.append(f'{email}: {e}')
+    db.audit(conn, user['id'], 'Toplantı davet e-postası gönderdi', 'online_meeting', m['id'], f'{sent} alıcı')
+    return {'sent': sent, 'total': len(rcpts), 'errors': errors[:5]}
+
+
+@router.post('/{mid}/email')
+async def send_invites(mid: int, user=Depends(auth.current_user)):
+    """Davet e-postalarını (yeniden) gönder — yalnız sahibi."""
+    def work():
+        with db.connect() as conn:
+            if not _is_host(conn, mid, user):
+                raise HTTPException(403, 'Yalnızca toplantı sahibi gönderebilir')
+            m = _meeting(conn, mid)
+            if not m or m['status'] == 'BITTI':
+                raise HTTPException(400, 'Toplantı sona ermiş')
+            return _send_invites(conn, m, user)
+    return await _db(work)
 
 
 @router.get('/invitees')
@@ -221,6 +328,7 @@ def my_meetings(user=Depends(auth.current_user), conn=db.DB):
     for m in rows:
         m['is_host'] = m['host_id'] == user['id']
         m['link'] = _public_url(m['code'])
+        m['invite_text'] = invite_text(m)
         m['people'] = db.rows(conn.execute(   # avatar yığını için ilk 5 katılımcı
             '''SELECT p.name, u.photo FROM online_meeting_participants p LEFT JOIN users u ON u.id = p.user_id
                WHERE p.meeting_id = ? ORDER BY p.role DESC, p.id LIMIT 5''', (m['id'],)))
@@ -237,6 +345,7 @@ def meeting_detail(mid: int, user=Depends(auth.current_user), conn=db.DB):
         raise HTTPException(403, 'Bu toplantıya katılımcı değilsiniz')
     m['is_host'] = is_host
     m['link'] = _public_url(m['code'])
+    m['invite_text'] = invite_text(m)
     m['participants'] = _participants(conn, mid)
     m['live_count'] = len(LIVE.get(mid, {}))
     return m

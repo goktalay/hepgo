@@ -153,13 +153,23 @@ async function renderHome(view, ctx) {
   }) : [h('div', { class: 'vm-empty' }, rows.length ? 'Başka toplantı yok.' : 'Henüz toplantı yok.')]);
 }
 
+// Davet metni (Google Meet biçimi): başlık, tarih-saat, saat dilimi, katılma bilgileri, bağlantı, kod
 function copyLink(m) {
-  navigator.clipboard?.writeText(m.link).then(() => toast('Davet linki kopyalandı'), () => toast(m.link));
+  const text = m.invite_text || m.link;
+  navigator.clipboard?.writeText(text).then(() => toast('Davet bilgileri kopyalandı'), () => toast(text));
+}
+async function sendInviteMail(mid) {
+  try {
+    const r = await api.post(`/api/meet/${mid}/email`, {});
+    toast(t('{n} / {t} katılımcıya davet e-postası gönderildi', { n: r.sent, t: r.total }) + (r.errors?.length ? ` · hata: ${r.errors[0]}` : ''), r.errors?.length ? 'err' : 'success');
+  } catch (err) { toastError(err); }
 }
 
 function newMeetingModal(ctx, done) {
   const title = h('input', { class: 'input', placeholder: 'Örn: Haftalık üretim toplantısı' });
   const when = h('input', { class: 'input', type: 'datetime-local' });
+  const dur = h('select', { class: 'input' }, ...[15, 30, 45, 60, 90, 120, 180].map(v => h('option', { value: v, selected: v === 60 }, v >= 60 ? t('{h} saat{m}', { h: Math.floor(v / 60), m: v % 60 ? ` ${v % 60} dk` : '' }) : t('{m} dk', { m: v }))));
+  const mailCb = h('input', { type: 'checkbox', checked: true });
   const wr = h('input', { type: 'checkbox', checked: true });
   const rec = h('input', { type: 'checkbox' });
   const userSel = h('div', { class: 'vm-usersel' }, h('div', { class: 'small muted' }, 'Yükleniyor…'));
@@ -179,7 +189,9 @@ function newMeetingModal(ctx, done) {
     body: h('div', { class: 'vm-form' },
       h('label', { class: 'field' }, h('span', null, 'Başlık'), title),
       h('label', { class: 'field' }, h('span', null, 'Zaman (opsiyonel)'), when,
-        h('small', { class: 'hint' }, 'Boş bırakırsanız hemen başlatabilirsiniz; zaman girerseniz programda görünür.')),
+        h('small', { class: 'hint' }, 'Boş bırakırsanız hemen başlatabilirsiniz; zaman girerseniz programda ve davet metninde görünür.')),
+      h('label', { class: 'field' }, h('span', null, 'Süre'), dur),
+      h('label', { class: 'set-toggle' }, mailCb, h('span', null, h('b', null, 'Katılımcılara davet e-postası gönder'), h('small', null, 'Şirket logolu davet; bağlı posta hesabınızdan gönderilir'))),
       h('label', { class: 'set-toggle' }, wr, h('span', null, h('b', null, 'Bekleme odası'), h('small', null, 'Katılımcılar önce bekler, siz kabul edersiniz'))),
       h('label', { class: 'set-toggle' }, rec, h('span', null, h('b', null, 'Toplantıyı kaydet'), h('small', null, 'Konuşmalar kaydedilir ve metne çevrilir'))),
       h('h4', { class: 'set-sub' }, 'Şirket içi davetliler'), userSel,
@@ -192,9 +204,10 @@ function newMeetingModal(ctx, done) {
         const externals = [...exts.querySelectorAll('.vm-ext-row')].map(r => {
           const [n, e] = r.querySelectorAll('input'); return { name: n.value.trim(), email: e.value.trim() };
         }).filter(x => x.name);
-        const d = await api.post('/api/meet', { title: title.value.trim(), scheduled_at: when.value || null,
-          waiting_room: wr.checked, record: rec.checked, user_ids: [...picked], externals });
+        const d = await api.post('/api/meet', { title: title.value.trim(), scheduled_at: when.value || null, duration_min: Number(dur.value) || 60,
+          send_email: mailCb.checked, waiting_room: wr.checked, record: rec.checked, user_ids: [...picked], externals });
         toast(t('Toplantı oluşturuldu · Kod: {code}', { code: d.code }), 'success');
+        if (d.email) toast(d.email.error ? `E-posta gönderilemedi: ${d.email.error}` : t('{n} / {t} katılımcıya davet e-postası gönderildi', { n: d.email.sent, t: d.email.total }), d.email.error ? 'err' : 'success');
         done?.();
         createdModal(d);
       },
@@ -210,6 +223,11 @@ function createdModal(d) {
     title: 'Toplantı hazır',
     body: h('div', { class: 'vm-created' },
       h('div', { class: 'vm-created-ic' }, ic('video')),
+      d.invite_text ? h('div', { class: 'vm-linkrow' }, h('small', null, 'Davet bilgileri'),
+        h('pre', { class: 'vm-invite' }, d.invite_text),
+        h('div', { class: 'stp-bar' },
+          h('button', { class: 'btn sm primary', type: 'button', onclick: () => { navigator.clipboard?.writeText(d.invite_text); toast('Davet bilgileri kopyalandı'); } }, '⧉ Davet bilgilerini kopyala'),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => sendInviteMail(d.id) }, '📧 Davet e-postası gönder'))) : null,
       row('Davet kodu', d.code), row('Toplantı linki', d.link),
       ...(d.externals || []).map(e => row(t('{name} için özel link', { name: e.name }), e.link))),
     actions: ['spacer', { label: 'Tamam', class: 'primary', onClick: () => {} }],
@@ -410,6 +428,7 @@ export async function openRoom(view, opts) {
     waitScreen.hidden = true;
     selfCid = m.self; isHost = m.is_host; if (m.pid) myPid = m.pid;
     if (m.meeting?.code) opts.code = m.meeting.code;
+    if (m.meeting?.invite_text) opts.invite_text = m.meeting.invite_text;
     titleEl.textContent = m.meeting?.title || opts.title || 'Toplantı';
     root.classList.toggle('is-host', isHost);
     for (const p of m.peers || []) addPeer(p, false);
@@ -539,7 +558,7 @@ export async function openRoom(view, opts) {
         item('hand', hand ? 'Eli indir' : 'El kaldır', toggleHand, hand),
         item('chat', 'Sohbet', () => togglePanel('chat')),
         item('people', 'Katılımcılar', () => togglePanel('people')),
-        item('link', 'Davet linkini kopyala', () => { const l = `${location.origin}/m/${encodeURIComponent(opts.code || '')}`; navigator.clipboard?.writeText(l); toast('Kopyalandı'); })));
+        item('link', 'Davet bilgilerini kopyala', () => { const l = opts.invite_text || `${location.origin}/m/${encodeURIComponent(opts.code || '')}`; navigator.clipboard?.writeText(l); toast('Davet bilgileri kopyalandı'); })));
     root.append(sheet);
   }
 

@@ -802,9 +802,12 @@ export async function guestEntry(code) {
     .then(s => { pstream = s; preview.srcObject = s; prevWrap.classList.remove('camoff'); }).catch(() => {});
   const name = h('input', { class: 'input', placeholder: 'Adınız Soyadınız', autocomplete: 'name' });
   const go = h('button', { class: 'vm-join', type: 'button' }, 'Toplantıya Katıl');
+  const brand = h('div', { class: 'vm-guest-brand' }, info.logo_url ? h('img', { src: info.logo_url, alt: info.company || '' }) : null, h('span', null, info.company || ''));
   clear(root, h('div', { class: 'vm-guest' }, h('div', { class: 'vm-guest-card' },
+    brand,
     prevWrap,
     h('div', { class: 'vm-guest-meta' }, h('b', { class: 'vm-guest-title' }, info.title),
+      (info.when || []).length ? h('small', { class: 'muted' }, info.when[0]) : null,
       info.status === 'DEVAM' ? h('span', { class: 'vm-live' }, h('i'), 'Şu an devam ediyor') : h('small', { class: 'muted' }, 'Henüz başlamadı — katılınca beklersiniz')),
     h('label', { class: 'field' }, h('span', null, 'Görünecek adınız'), name),
     go)));

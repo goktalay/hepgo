@@ -354,10 +354,13 @@ def meeting_detail(mid: int, user=Depends(auth.current_user), conn=db.DB):
 @router.get('/public/{code}')
 def public_info(code: str, conn=db.DB):
     """Dış katılımcı giriş ekranı için temel bilgi (oturum gerektirmez)."""
-    m = db.row(conn.execute('SELECT title, status, waiting_room FROM online_meetings WHERE code = ?', (code,)))
+    from .. import config
+    from .system import brand_logo_url
+    m = db.row(conn.execute('SELECT title, status, waiting_room, scheduled_at, duration_min FROM online_meetings WHERE code = ?', (code,)))
     if not m or m['status'] == 'BITTI':
         raise HTTPException(404, 'Toplantı bulunamadı veya sona erdi')
-    return {'title': m['title'], 'status': m['status'], 'waiting_room': bool(m['waiting_room'])}
+    return {'title': m['title'], 'status': m['status'], 'waiting_room': bool(m['waiting_room']), 'when': when_lines(m['scheduled_at'], m['duration_min']),
+            'company': config.COMPANY_NAME, 'logo_url': brand_logo_url(conn) or '/static/img/logo.png'}
 
 
 class GuestIn(BaseModel):

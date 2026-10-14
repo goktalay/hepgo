@@ -434,8 +434,20 @@ def app_shell(request: Request):
 
 @app.get('/m/{code}')
 def meeting_join_page(code: str, request: Request):
-    """Dış katılımcı toplantı giriş sayfası: aynı uygulama kabuğu; app.js guest moduna geçer."""
-    return _spa(request, 'Görüntülü toplantı daveti', 'Toplantıya katılmak için bağlantıya dokunun.')
+    """Dış katılımcı toplantı giriş sayfası: aynı uygulama kabuğu; app.js guest moduna geçer.
+    Bağlantı önizlemesi (WhatsApp vb.) için başlıkta toplantı adı, açıklamada firma + tarih-saat."""
+    title, desc = 'Görüntülü toplantı daveti', 'Toplantıya katılmak için bağlantıya dokunun.'
+    try:
+        from .routers.meet import when_lines
+        with db.connect() as conn:
+            m = db.row(conn.execute("SELECT title, scheduled_at, duration_min FROM online_meetings WHERE code = ? AND status != 'BITTI'", (code,)))
+        if m:
+            title = m['title']
+            when = when_lines(m['scheduled_at'], m['duration_min'])
+            desc = f"{config.COMPANY_NAME} görüntülü toplantı daveti" + (f" · {when[0]}" if when else '') + ' · Katılmak için bağlantıya dokunun.'
+    except Exception:   # noqa: BLE001 — önizleme metni için; sayfa yine açılır
+        pass
+    return _spa(request, title, desc)
 
 
 # Herkese açık yasal sayfalar (Google / Microsoft OAuth onay ekranı bunlara bağlantı ister): oturum gerektirmez.

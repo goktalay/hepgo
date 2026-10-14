@@ -44,6 +44,11 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   const start = Cesium.JulianDate.fromIso8601(a.summary?.start_utc || '2000-01-01T00:00:00Z');
   const at = t => Cesium.JulianDate.addSeconds(start, t, new Cesium.JulianDate());
   const duration = S[S.length - 1][0];
+  const find = t => {   // t'ye en yakın önceki örnek (ikili arama)
+    let lo = 0, hi = S.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S[mid][0] <= t) lo = mid; else hi = mid - 1; }
+    return S[lo];
+  };
 
   if (!embed) clear(view, pageHead('3B Uçuş Oynatma', { back, sub: `${log.file_name}${log.aircraft ? ` · ${log.aircraft}` : ''}` }), box);
   clear(box);
@@ -87,21 +92,35 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   }
   position.setInterpolationOptions({ interpolationDegree: 1, interpolationAlgorithm: Cesium.LinearApproximation });
 
-  // Uçuş izi (seyreltilmiş) ve irtifa perdesi
+  // Uçuş izi (seyreltilmiş): havadayken sarı, yerdeyken (kalkış öncesi bekleme, iniş sonrası, rampa/araç üstü) gri; irtifa perdesi yalnız havada
   const stepN = Math.max(1, Math.ceil(S.length / 4000));
-  const pathPts = pts.filter((_, i) => i % stepN === 0);
-  viewer.entities.add({ polyline: { positions: pathPts, width: 2.5, material: Cesium.Color.fromCssColorString('#ffcc33') } });
+  const inAir = t => flying.some(([x, y]) => t >= x && t <= y);
+  const yellow = Cesium.Color.fromCssColorString('#ffcc33'), grey = Cesium.Color.fromCssColorString('#9aa3ad').withAlpha(0.85);
+  const segs = [];   // { air, pts }
+  for (let i = 0; i < S.length; i += stepN) {
+    const air = inAir(S[i][0]);
+    let seg = segs[segs.length - 1];
+    if (!seg || seg.air !== air) { seg = { air, pts: seg ? [seg.pts[seg.pts.length - 1]] : [] }; segs.push(seg); }   // önceki uçla birleşsin
+    seg.pts.push(pts[i]);
+  }
+  let track = null;
+  for (const seg of segs) {
+    if (seg.pts.length < 2) continue;
+    const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 2.5 : 2, material: seg.air ? yellow : grey } });
+    if (seg.air) {
+      viewer.entities.add({ wall: { positions: seg.pts, material: Cesium.Color.fromCssColorString('#3aa0ff').withAlpha(0.07), outline: false } });
+      if (!track) track = ent;
+    }
+  }
+  track = track || viewer.entities.values[0];
+  // Kalkış noktası (ilk havalanma; uçuş aralığı yoksa kayıt başı)
+  const tk = flying.length ? find(flying[0][0]) : S[0];
   viewer.entities.add({
-    wall: { positions: pathPts, material: Cesium.Color.fromCssColorString('#3aa0ff').withAlpha(0.07), outline: false },
-  });
-  // Kalkış (ev) noktası
-  viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(S[0][2], S[0][1], 0.5),
+    position: Cesium.Cartesian3.fromDegrees(tk[2], tk[1], 0.5),
     point: { pixelSize: 10, color: Cesium.Color.LIME, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
     label: { text: 'Kalkış', font: '13px sans-serif', pixelOffset: new Cesium.Cartesian2(0, -18), fillColor: Cesium.Color.WHITE,
       outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE },
   });
-  const track = viewer.entities.values[0];
   const plane = viewer.entities.add({
     viewFrom: new Cesium.Cartesian3(-60, -60, 70),   // takip kamerası: uçağın arkasından ve yukarıdan
     availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start: at(0), stop: at(duration) })]),
@@ -120,11 +139,6 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   viewer.timeline.zoomTo(at(0), at(duration));
 
   // Anlık değerler (HUD)
-  const find = t => {   // t'ye en yakın önceki örnek (ikili arama)
-    let lo = 0, hi = S.length - 1;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S[mid][0] <= t) lo = mid; else hi = mid - 1; }
-    return S[lo];
-  };
   const modeAt = t => { let m = null; for (const x of modes) { if (x.t <= t) m = x.name; else break; } return m; };
   const row = (k, v) => h('div', null, h('span', null, k), h('b', null, v));
   let last = -1;
@@ -134,7 +148,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     if (Math.abs(t - last) < 0.1) return;
     last = t;
     const s = find(t);
-    const air = flying.some(([x, y]) => t >= x && t <= y);
+    const air = inAir(t);
     clear(hud,
       h('div', { class: 'r3d-hud-head' }, h('b', null, clock(t)), h('span', { class: `badge ${air ? 'green' : 'gray'}` }, air ? 'Havada' : 'Yerde'),
         modeAt(t) ? h('span', { class: 'badge blue' }, modeAt(t)) : null),

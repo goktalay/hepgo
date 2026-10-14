@@ -79,7 +79,7 @@ export function applyOverlay(tree, ov) {
   for (const g of (ov.groups || [])) {
     if (!g || !g.key || byKey.has(g.key)) continue;
     const node = { key: g.key, name: g.name || 'Alt kırılım', path: '', kind: 'group', custom: true, meshes: [], allMeshes: [], children: [] };
-    byKey.set(g.key, node); tree.root.children.push(node); node.parent = tree.root;
+    byKey.set(g.key, node); tree.root.children.unshift(node); node.parent = tree.root;
   }
   for (const g of (ov.groups || [])) {   // grup ebeveynleri (gruplar birbirinin içine girebilir)
     const node = byKey.get(g && g.key), parent = byKey.get(g && g.parent) || tree.root;
@@ -94,7 +94,8 @@ export function applyOverlay(tree, ov) {
   function move(node, parent) {
     for (let a = parent; a; a = a.parent) if (a === node) return;   // kendi altına taşınamaz
     const old = node.parent; if (old) old.children = old.children.filter(c => c !== node);
-    parent.children.push(node); node.parent = parent;
+    if (node.custom) parent.children.unshift(node); else parent.children.push(node);
+    node.parent = parent;
   }
 }
 

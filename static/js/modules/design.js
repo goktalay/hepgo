@@ -228,93 +228,27 @@ function designActions(pid, reload, isMaster) {
     });
   }
 
-  async function history(d) {
-    let vs;
-    try { vs = await api.get(`/api/design/drawings/${d.id}/versions`); } catch (err) { return toastError(err); }
-    modal({
-      title: t('{name} · Sürüm Geçmişi', { name: d.name }), wide: true,
-      body: h('div', { class: 'dz-history' }, vs.map(v => h('div', { class: 'dz-hrow' },
-        h('span', { class: 'dz-hver' }, `v${v.version}`),
-        h('div', { class: 'grow' },
-          h('div', { class: 'dz-file-row' }, [...dzFileLinks('v', v.id, v.file_name, isMaster),
-            isStep(v.file_name) ? h('a', { class: 'btn sm', href: `#/design/${pid}/${d.id}/v/${v.id}` }, '🧊 3B Aç') : null]),
-          v.note ? h('div', { class: 'small dz-note' }, v.note) : null,
-          h('div', { class: 'small muted' }, `${fmtDateTime(v.created_at)} · ${v.uploaded_by_name || ''}${v.size ? ` · ${fmtSize(v.size)}` : ''}`))))),
-      actions: [{ label: 'Kapat' }],
-    });
-  }
-
-  function rename(d) {
-    const name = h('input', { class: 'input', value: d.name });
-    modal({ title: 'Yeniden Adlandır', body: field('Ad', name),
-      actions: [{ label: 'Vazgeç' }, { label: 'Kaydet', class: 'primary', onClick: async () => {
-        if (!name.value.trim()) throw new Error('Ad girin');
-        await api.put(`/api/design/drawings/${d.id}`, { name: name.value }); reload();
-      } }] });
-  }
   async function del(d) {
-    const msg = isMaster ? t('“{name}” tüm sürümleriyle silinsin mi?', { name: d.name }) : t('“{name}” için silme talebi Master onayına gönderilsin mi?', { name: d.name });
+    const msg = isMaster ? t('“{name}” tüm sürümleri, eşleştirmeleri ve notlarıyla silinsin mi?', { name: d.name }) : t('“{name}” için silme talebi Master onayına gönderilsin mi?', { name: d.name });
     if (!await confirmDialog(isMaster ? 'Montajı sil' : 'Silme talebi', msg, { okLabel: isMaster ? 'Sil' : 'Talep Gönder', danger: true })) return;
     try { const r = await api.del(`/api/design/drawings/${d.id}`); toast(r.requested ? 'Silme talebi Master onayına gönderildi' : 'Silindi'); if (!r.requested) location.hash = `#/design/${pid}`; else reload(); } catch (err) { toastError(err); }
   }
 
-  async function notesModal(d) {
+  function notesPanel(d) {
     const list = h('div', { class: 'dz-notes' });
     const ta = h('textarea', { class: 'input', rows: 2, placeholder: 'Not ekle…' });
     const draw = async () => {
       let ns; try { ns = await api.get(`/api/design/drawings/${d.id}/notes`); } catch { return; }
       clear(list, ns.length ? ns.map(n => h('div', { class: 'dz-note-row' },
         h('div', { class: 'grow' }, h('div', null, n.note), h('div', { class: 'small muted' }, `${fmtDateTime(n.created_at)} · ${n.by_name || ''}`)),
-        h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Sil', onclick: async () => { await api.del(`/api/design/notes/${n.id}`); draw(); reload(); } }, '×')))
+        h('button', { class: 'btn xs ghost danger-text', type: 'button', title: 'Sil', onclick: async () => { await api.del(`/api/design/notes/${n.id}`); draw(); } }, '×')))
         : h('div', { class: 'muted' }, 'Henüz not yok.'));
     };
-    const add = async () => { if (!ta.value.trim()) return; try { await api.post(`/api/design/drawings/${d.id}/notes`, { note: ta.value }); ta.value = ''; draw(); reload(); } catch (err) { toastError(err); } };
+    const add = async () => { if (!ta.value.trim()) return; try { await api.post(`/api/design/drawings/${d.id}/notes`, { note: ta.value }); ta.value = ''; draw(); } catch (err) { toastError(err); } };
     draw();
-    modal({ title: t('{name} · Notlar', { name: d.name }), wide: true, body: h('div', null, list, h('div', { class: 'cl-set-add', style: { marginTop: '10px' } }, ta, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))), actions: [{ label: 'Kapat' }] });
+    return h('div', { class: 'dz-notes-panel card' }, h('div', { class: 'cl-set-add' }, ta, h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle')), list);
   }
-
-  // Montaj üretim parçaları (G-code dosyaları)
-  async function partsModal(d) {
-    const list = h('div', { class: 'dz-parts' });
-    const draw = async () => {
-      let ps; try { ps = await api.get(`/api/design/drawings/${d.id}/parts`); } catch { return; }
-      clear(list, ps.length ? ps.map(pp => h('div', { class: 'dz-part-row' },
-        h('div', { class: 'grow' }, h('b', null, pp.name), pp.qty != null ? h('span', { class: 'small muted' }, t(' · {q} adet', { q: pp.qty })) : null,
-          pp.note ? h('div', { class: 'small dz-note' }, pp.note) : null,
-          h('div', { class: 'small muted' }, `${fmtDateTime(pp.created_at)} · ${pp.by_name || ''}`)),
-        pp.file_path ? h('div', { class: 'dz-file-row' }, dzFileLinks('p', pp.id, pp.file_name || pp.name, isMaster)) : null,
-        h('button', { class: 'btn xs ghost danger-text', type: 'button', title: isMaster ? 'Sil' : 'Silme talebi', onclick: async () => { if (await confirmDialog(isMaster ? 'Parçayı sil' : 'Silme talebi', isMaster ? t('“{name}” silinsin mi?', { name: pp.name }) : t('“{name}” için silme talebi Master onayına gönderilsin mi?', { name: pp.name }), { okLabel: isMaster ? 'Sil' : 'Talep Gönder', danger: true })) { const r = await api.del(`/api/design/parts/${pp.id}`); toast(r.requested ? 'Silme talebi gönderildi' : 'Silindi'); draw(); reload(); } } }, '×')))
-        : h('div', { class: 'muted' }, 'Henüz üretim parçası yok.'));
-    };
-    const fileIn = h('input', { type: 'file', class: 'input', accept: '.gcode,.nc,.tap,.ngc,.cnc,.txt' });
-    const nm = h('input', { class: 'input', placeholder: 'Parça adı (boşsa dosya adı)' });
-    const qty = h('input', { class: 'input', type: 'number', min: '0', step: '1', placeholder: 'Adet', style: { maxWidth: '110px' } });
-    const note = h('input', { class: 'input', placeholder: 'Açıklama (isteğe bağlı)' });
-    const add = async () => {
-      if (!fileIn.files[0]) { toast('G-code dosyası seçin', 'err'); return; }
-      const fd = new FormData(); fd.append('file', fileIn.files[0]); fd.append('name', nm.value); fd.append('qty', qty.value); fd.append('note', note.value);
-      try { await upload(`/api/design/drawings/${d.id}/parts`, fd); fileIn.value = ''; nm.value = ''; qty.value = ''; note.value = ''; draw(); reload(); } catch (err) { toastError(err); }
-    };
-    draw();
-    modal({ title: t('{name} · Üretim Parçaları (G-code)', { name: d.name }), wide: true,
-      body: h('div', null, list,
-        h('div', { class: 'dz-part-add' }, h('b', null, 'Yeni G-code parçası'),
-          field('G-code dosyası', fileIn), h('div', { class: 'dz-part-fields' }, field('Parça adı', nm), field('Adet', qty)), field('Açıklama', note),
-          h('button', { class: 'btn primary', type: 'button', onclick: add }, 'Ekle'))),
-      actions: [{ label: 'Kapat' }] });
-  }
-
-  async function copyModal(d) {
-    let projects; try { projects = await api.get('/api/design/projects'); } catch (err) { return toastError(err); }
-    const projSel = h('select', { class: 'input' }, projects.map(pr => h('option', { value: pr.id, selected: pr.id === pid }, pr.name)));
-    modal({ title: t('{name} · Kopyala', { name: d.name }),
-      body: h('div', null, h('p', { class: 'small muted', style: { marginTop: 0 } }, 'Montaj; tüm sürüm geçmişiyle birlikte kopyalanır.'), field('Hedef proje', projSel)),
-      actions: [{ label: 'Vazgeç' }, { label: 'Kopyala', class: 'primary', onClick: async () => {
-        const tproj = Number(projSel.value);
-        await api.post(`/api/design/drawings/${d.id}/copy`, { target_project_id: tproj, target_parent_id: null });
-        toast('Kopyalandı', 'success'); if (tproj === pid) reload();
-      } }] });
-  }
+  function notesModal(d) { modal({ title: t('{name} · Notlar', { name: d.name }), wide: true, body: notesPanel(d), actions: [{ label: 'Kapat' }] }); }
 
   // Montaj genel bilgileri (kalkış ağırlığı, faydalı yük…)
   function specsModal(d, onSaved) {
@@ -332,7 +266,7 @@ function designActions(pid, reload, isMaster) {
       } }] });
   }
 
-  return { addDrawing, newVersion, history, rename, del, notesModal, partsModal, copyModal, specsModal };
+  return { addDrawing, newVersion, del, notesModal, notesPanel, specsModal };
 }
 
 // ---------- Montaj detayı: genel bilgiler + 3B Görünüm / CFD Analizi ----------
@@ -344,39 +278,33 @@ async function renderDetail(view, pid, did, vid, ctx) {
   const reloadInfo = async () => { try { d = await api.get(`/api/design/drawings/${did}`); drawInfo(); } catch { /* */ } };
   const acts = designActions(pid, reloadInfo, isMaster);
   const infoEl = h('div', { class: 'dz-info card' });
-  const stage = h('div', { class: 'stp-stage' });
+  const stage = h('div', { class: 'stp-stage-in' });
   let tab = 'view', studio = null;
 
   const tile = (label, value, sub) => h('div', { class: 'dz-tile' }, h('div', { class: 'dz-tile-l' }, label), h('div', { class: 'dz-tile-v' }, value), sub ? h('div', { class: 'small muted' }, sub) : null);
+  const dd = () => ({ id: did, name: d.name, current: d.current, version_count: d.version_count, specs: d.specs });
+  const subEl = h('div', { class: 'sub' });
   const drawInfo = () => {
     const sp = d.specs || {}, st = d.stats || {};
+    subEl.textContent = d.product ? `${d.product.code} — ${d.product.name}` : 'Mamul eşleştirilmedi';
     const mamulSel = h('select', { class: 'input sm', 'aria-label': 'Mamul' }, h('option', { value: '' }, '— mamul seçin —'), (d.mamuls || []).map(m => h('option', { value: m.id, selected: d.product && d.product.id === m.id }, `${m.code} — ${m.name}`)));
     mamulSel.addEventListener('change', async () => {
       try { await api.put(`/api/design/drawings/${did}/product`, { product_id: mamulSel.value ? Number(mamulSel.value) : null }); toast(mamulSel.value ? 'Montaj mamul ile eşleştirildi' : 'Mamul eşleşmesi kaldırıldı', 'success'); await reloadInfo(); studio?.reloadLinks(); } catch (err) { toastError(err); }
     });
     const empty = sp.empty_g ?? (st.printed_weight_g || null);
+    const upBtn = h('button', { class: 'btn xs ghost', type: 'button', onclick: () => acts.newVersion(dd()) }, cur ? '⬆ STEP değiştir' : '⬆ STEP yükle');
     clear(infoEl,
-      h('div', { class: 'dz-info-head' },
-        h('div', null, h('b', { class: 'dz-info-name' }, d.name), h('span', { class: `badge ${KIND_BADGE[d.kind] || 'gray'}`, style: { marginLeft: '8px' } }, KIND[d.kind] || 'Çizim')),
-        h('div', { class: 'small muted' }, cur ? `v${cur.version} · ${cur.file_name}${cur.size ? ` · ${fmtSize(cur.size)}` : ''} · ${fmtDateTime(cur.created_at)}` : 'Henüz dosya yüklenmedi'),
-        h('span', { class: 'spacer' }),
-        h('button', { class: 'btn sm', type: 'button', onclick: () => acts.specsModal(d, () => reloadInfo()) }, '✎ Bilgileri düzenle')),
+      h('div', { class: 'dz-info-head small muted' }, cur ? `v${cur.version} · ${cur.file_name}${cur.size ? ` · ${fmtSize(cur.size)}` : ''} · ${fmtDateTime(cur.created_at)}` : 'Henüz dosya yüklenmedi', upBtn),
       h('div', { class: 'dz-tiles' },
-        tile('Eşleştirilen mamul', mamulSel, d.product ? `${d.product.code} — ${d.product.name}` : 'Ürün Yönetimi mamulü'),
+        tile('Eşleştirilen mamul', mamulSel),
         tile('Toplam kalkış ağırlığı', fmtNum(sp.mtow_g, 'g'), 'MTOW'),
         tile('Faydalı yük', fmtNum(sp.payload_g, 'g'), 'payload'),
-        tile('Boş ağırlık', fmtNum(empty, 'g', 1), sp.empty_g != null ? 'girilen' : (st.printed_weight_g ? t('{n} eşleşen parçanın G-code filament ağırlığı', { n: st.weighed }) : '—')),
-        tile('Kanat açıklığı', fmtNum(sp.wingspan_mm, 'mm')),
-        tile('Uzunluk', fmtNum(sp.length_mm, 'mm')),
-        tile('Seyir hızı', fmtNum(sp.cruise_kmh, 'km/sa')),
-        tile('Uçuş süresi', fmtNum(sp.endurance_min, 'dk')),
-        tile('Batarya', sp.battery || '—'),
-        tile('Eşleşen parça', fmtNum(st.linked), st.print_minutes ? t('toplam baskı ≈ {h} sa', { h: (st.print_minutes / 60).toFixed(1) }) : null)),
-      sp.notes ? h('div', { class: 'small dz-note', style: { marginTop: '8px' } }, sp.notes) : null);
+        tile('Boş ağırlık', fmtNum(empty, 'g', 1), sp.empty_g != null ? null : (st.printed_weight_g ? t('{n} eşleşen parçanın G-code ağırlığı', { n: st.weighed }) : null)),
+        tile('Uçuş süresi', fmtNum(sp.endurance_min, 'dk'), sp.cruise_kmh ? t('seyir {v} km/sa', { v: fmtNum(sp.cruise_kmh) }) : null),
+        tile('Eşleşen parça', fmtNum(st.linked), st.print_minutes ? t('toplam baskı ≈ {h} sa', { h: (st.print_minutes / 60).toFixed(1) }) : null)));
   };
   drawInfo();
 
-  const dd = () => ({ id: did, name: d.name, current: d.current, version_count: d.version_count, specs: d.specs });
   const fsBtn = h('button', { class: 'btn sm ghost', type: 'button', title: 'Tam ekran' }, '⛶ Tam ekran');
   fsBtn.addEventListener('click', () => {
     if (!document.fullscreenElement) (stage.requestFullscreen || stage.webkitRequestFullscreen)?.call(stage);
@@ -386,29 +314,23 @@ async function renderDetail(view, pid, did, vid, ctx) {
   document.addEventListener('fullscreenchange', onFs);
   onLeave(() => { document.removeEventListener('fullscreenchange', onFs); studio?.dispose(); });
 
-  const tabsEl = moduleTabs([['view', '🧊 3B Görünüm'], ['cfd', '🌬 CFD Analizi']], tab, k => { tab = k; studio?.showTab(k); });
-  clear(view,
-    pageHead(d.name, { back: `#/design/${pid}`, sub: `${d.project ? d.project.name : ''} · ${KIND[d.kind] || 'Çizim'}` }),
-    moduleToolbar(
-      h('button', { class: 'btn primary', type: 'button', onclick: () => acts.newVersion(dd()) }, d.current ? 'Yeni Sürüm' : 'Dosya Yükle'),
-      d.version_count ? h('button', { class: 'btn', type: 'button', onclick: () => acts.history(dd()) }, t('Geçmiş ({n})', { n: d.version_count })) : null,
-      h('button', { class: 'btn', type: 'button', onclick: () => acts.notesModal(dd()) }, `📝 Notlar${d.note_count ? ` (${d.note_count})` : ''}`),
-      h('button', { class: 'btn', type: 'button', onclick: () => acts.partsModal(dd()) }, `🔩 Üretim Parçaları${d.prod_count ? ` (${d.prod_count})` : ''}`),
-      h('button', { class: 'btn ghost', type: 'button', onclick: () => acts.copyModal(dd()) }, '⧉ Kopyala'),
-      h('button', { class: 'btn ghost', type: 'button', onclick: () => acts.rename(dd()) }, '✎ Ad'),
-      h('button', { class: 'btn ghost danger-text', type: 'button', onclick: () => acts.del(dd()) }, '🗑 Sil')),
-    infoEl,
-    h('div', { class: 'stp-tabs-row' }, tabsEl, h('span', { class: 'spacer' }), fsBtn),
-    stage);
+  const notesEl = h('div', { hidden: true }, acts.notesPanel(dd()));
+  const showTab = k => { tab = k; notesEl.hidden = k !== 'notes'; fsBtn.hidden = k === 'notes'; studio?.showTab(k); };
+  const tabsEl = moduleTabs([['view', '🧊 3B Görünüm'], ['cfd', '🌬 CFD Analizi'], ['notes', `📝 Notlar${d.note_count ? ` (${d.note_count})` : ''}`]], tab, showTab);
+  const head = pageHead(d.name, { back: `#/design/${pid}`, right: h('div', { class: 'pill-group' },
+    h('button', { class: 'btn sm', type: 'button', onclick: () => acts.specsModal(d, () => reloadInfo()) }, '✎ Bilgileri düzenle'),
+    h('button', { class: 'btn sm ghost danger-text', type: 'button', onclick: () => acts.del(dd()) }, '🗑 Sil')) });
+  head.querySelector('.page-head-t').append(subEl);
+  const stageWrap = h('div', { class: 'stp-stage' });
+  clear(view, head, infoEl, h('div', { class: 'stp-tabs-row' }, tabsEl, h('span', { class: 'spacer' }), fsBtn), stageWrap);
+  stageWrap.append(stage, notesEl);
 
-  if (!cur) { clear(stage, h('div', { class: 'card empty' }, 'Bu montaj için henüz dosya yok. “Dosya Yükle” ile STEP (.step/.stp) yükleyin.')); return; }
-  if (!isStep(cur.file_name)) {
+  if (!cur) clear(stage, h('div', { class: 'card empty' }, h('p', null, 'Bu montaj için henüz dosya yok.'), h('button', { class: 'btn primary', type: 'button', onclick: () => acts.newVersion(dd()) }, '⬆ STEP yükle')));
+  else if (!isStep(cur.file_name)) {
     clear(stage, h('div', { class: 'card empty' }, isImg(cur.file_name) ? h('img', { src: `/api/design/file?v=${cur.id}`, alt: d.name, style: { maxWidth: '100%', borderRadius: '10px' } }) : null,
       h('p', null, '3B görünüm ve CFD için STEP (.step/.stp) sürümü gerekir.'), ...dzFileLinks('v', cur.id, cur.file_name, isMaster)));
-    return;
-  }
-  studio = stepStudio(stage, { did, vid: cur.id, name: d.name, reload: reloadInfo });
-  studio.showTab(tab);
+  } else studio = stepStudio(stage, { did, vid: cur.id, name: d.name, reload: reloadInfo });
+  showTab(tab);
 }
 
 // ---------- 3B stüdyo (sayfa içi): parça ağacı (düzenlenebilir), model, patlatma, karşılaştırma, ürün eşleştirme + CFD sekmesi ----------
@@ -446,6 +368,10 @@ function stepStudio(host, { did, vid, name, reload }) {
 
   // ---- Ağaç düzenleme (yerel; "Kaydet" ile sunucuya): alt kırılım ekle, taşı (sürükle-bırak / Taşı), ad değiştir
   let overlay = { groups: [], parents: {}, names: {} }, dirty = false;
+  const checked = new Set();   // işaretli parça/kırılım anahtarları (toplu taşıma)
+  const checkChip = h('button', { class: 'btn xs ghost', type: 'button', hidden: true, title: 'İşaretleri kaldır' }, '');
+  const refreshCheck = () => { checkChip.hidden = !checked.size; checkChip.textContent = `☑ ${checked.size} işaretli ✕`; moveBtn.textContent = checked.size ? `⤵ Taşı (${checked.size})` : '⤵ Taşı'; moveBtn.disabled = !checked.size && !selected; };
+  checkChip.addEventListener('click', () => { checked.clear(); drawTree(); refreshCheck(); });
   const treeSaveBtn = h('button', { class: 'btn xs primary', type: 'button', disabled: true, title: 'Ağaç düzenlemelerini kaydet' }, '💾 Kaydet');
   const addGrpBtn = h('button', { class: 'btn xs', type: 'button', title: 'Seçili kırılımın (ya da kökün) altına yeni alt kırılım ekle' }, '＋ Alt kırılım');
   const renameBtn = h('button', { class: 'btn xs', type: 'button', title: 'Seçili parça / kırılımın adını değiştir', disabled: true }, '✎ Ad');
@@ -454,32 +380,42 @@ function stepStudio(host, { did, vid, name, reload }) {
   const markDirty = () => { dirty = true; treeSaveBtn.disabled = false; };
   const beforeUnload = e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload);
-  const askName = (title, value = '') => new Promise(resolve => {
+  const askName = (title, value = '', hint = null) => new Promise(resolve => {
     const inp = h('input', { class: 'input', value, placeholder: 'Ad', maxlength: '200' });
     let done = false;
-    modal({ title, body: field('Ad', inp), onClose: () => { if (!done) resolve(null); },
+    modal({ title, body: field('Ad', inp, hint), onClose: () => { if (!done) resolve(null); },
       actions: [{ label: 'Vazgeç' }, { label: 'Tamam', class: 'primary', onClick: () => { if (!inp.value.trim()) throw new Error('Ad girin'); done = true; resolve(inp.value.trim()); } }] });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) inp.closest('.modal-back')?.querySelector('.modal-foot .primary')?.click(); });
   });
   const applyTree = () => { if (!viewer) return; viewer.rebuild(overlay); drawTree(); onSelect(viewer.selected); };
   const isDesc = (node, anc) => { for (let a = node; a; a = a.parent) if (a === anc) return true; return false; };
+  const moveSet = node => (checked.size ? viewer.nodes.filter(n => checked.has(n.key)) : (node ? [node] : []));   // işaretliler varsa onlar, yoksa verilen düğüm
   const moveTo = (node, targetKey) => {
-    if (!viewer || !node) return;
+    if (!viewer) return;
     const target = targetKey === 'root' ? viewer.root : viewer.nodes.find(n => n.key === targetKey);
-    if (!target || target.kind !== 'group' || isDesc(target, node) || target === node.parent) return;
-    const g = overlay.groups.find(x => x.key === node.key);
-    if (g) g.parent = target === viewer.root ? null : target.key; else overlay.parents[node.key] = target === viewer.root ? null : target.key;
-    collapsed.delete(target.key); markDirty(); applyTree();
+    if (!target || target.kind !== 'group') return;
+    let moved = 0;
+    for (const n of moveSet(node)) {
+      if (n === target || isDesc(target, n) || target === n.parent) continue;
+      const g = overlay.groups.find(x => x.key === n.key);
+      if (g) g.parent = target === viewer.root ? null : target.key; else overlay.parents[n.key] = target === viewer.root ? null : target.key;
+      moved++;
+    }
+    if (!moved) return;
+    checked.clear(); collapsed.delete(target.key); markDirty(); applyTree(); refreshCheck();
+    toast(t('{n} öğe “{g}” altına taşındı', { n: moved, g: target.name }));
   };
   addGrpBtn.addEventListener('click', async () => {
     if (!viewer) return;
-    const nm = await askName('Yeni alt kırılım'); if (!nm) return;
     const parent = selected ? (selected.kind === 'group' ? selected : selected.parent) : viewer.root;
+    const nm = await askName(t('Yeni alt kırılım — “{p}” altına', { p: parent.name }), '', checked.size ? t('İşaretli {n} parça bu kırılımın içine alınır.', { n: checked.size }) : null); if (!nm) return;
     const key = `c:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     overlay.groups.push({ key, name: nm, parent: parent && parent !== viewer.root ? parent.key : null });
-    if (parent) collapsed.delete(parent.key);
-    markDirty(); applyTree();
+    for (const k of checked) { const n = viewer.nodes.find(x => x.key === k); if (!n || n.key === key) continue; const g = overlay.groups.find(x => x.key === k); if (g) g.parent = key; else overlay.parents[k] = key; }
+    checked.clear(); if (parent) collapsed.delete(parent.key);
+    markDirty(); applyTree(); refreshCheck();
     const n = viewer.nodes.find(x => x.key === key); if (n) viewer.select(n);
+    toast(t('“{g}” eklendi — parçaları sürükleyip ya da işaretleyip “Taşı” ile içine alın; sonra “Kaydet”.', { g: nm }));
   });
   renameBtn.addEventListener('click', async () => {
     if (!selected) return;
@@ -489,12 +425,13 @@ function stepStudio(host, { did, vid, name, reload }) {
     markDirty(); applyTree();
   });
   moveBtn.addEventListener('click', () => {
-    if (!selected || !viewer) return;
+    if (!viewer) return;
+    const set = moveSet(selected); if (!set.length) return;
     const opts = [h('option', { value: 'root' }, `⌂ ${viewer.root.name || 'Tüm montaj'}`)];
-    const walk = (nodes, depth) => nodes.forEach(n => { if (n.kind !== 'group' || isDesc(n, selected)) return; opts.push(h('option', { value: n.key, selected: n === selected.parent }, `${'— '.repeat(depth)}${n.name}`)); walk(n.children, depth + 1); });
+    const walk = (nodes, depth) => nodes.forEach(n => { if (n.kind !== 'group' || set.some(x => isDesc(n, x))) return; opts.push(h('option', { value: n.key }, `${'— '.repeat(depth)}${n.name}`)); walk(n.children, depth + 1); });
     walk(viewer.root.children, 0);
     const sel = h('select', { class: 'input' }, opts);
-    modal({ title: t('“{name}” → taşı', { name: selected.name }), body: field('Hedef kırılım', sel, 'Parçaları ağaçta sürükleyip bir kırılımın üstüne bırakarak da taşıyabilirsiniz.'),
+    modal({ title: set.length === 1 ? t('“{name}” → taşı', { name: set[0].name }) : t('{n} öğeyi taşı', { n: set.length }), body: field('Hedef kırılım', sel, 'Parçaları ağaçta sürükleyip bir kırılımın üstüne bırakarak da taşıyabilirsiniz; birden çok parça için satırlardaki kutuları işaretleyin.'),
       actions: [{ label: 'Vazgeç' }, { label: 'Taşı', class: 'primary', onClick: () => moveTo(selected, sel.value) }] });
   });
   delGrpBtn.addEventListener('click', async () => {
@@ -533,10 +470,11 @@ function stepStudio(host, { did, vid, name, reload }) {
       const ln = linkOf(p), isG = p.kind === 'group', closed = isG && collapsed.has(p.key);
       const caret = isG ? h('span', { class: `stp-caret ${closed ? 'closed' : ''}`, title: closed ? 'Aç' : 'Kapat',
         onclick: ev => { ev.stopPropagation(); if (closed) collapsed.delete(p.key); else collapsed.add(p.key); drawTree(); } }, '▾') : h('span', { class: 'stp-dot' });
-      const row = h('button', { class: `stp-row ${isG ? 'group' : ''} ${p.custom ? 'custom' : ''} ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''}`, type: 'button',
+      const cb = h('input', { type: 'checkbox', class: 'stp-cb', checked: checked.has(p.key), title: 'İşaretle (toplu taşıma)', onclick: ev => { ev.stopPropagation(); if (cb.checked) checked.add(p.key); else checked.delete(p.key); row.classList.toggle('checked', cb.checked); refreshCheck(); } });
+      const row = h('button', { class: `stp-row ${isG ? 'group' : ''} ${p.custom ? 'custom' : ''} ${selected && selected.key === p.key ? 'on' : ''} ${ln ? 'linked' : ''} ${checked.has(p.key) ? 'checked' : ''}`, type: 'button',
         style: { paddingLeft: `${8 + Math.max(0, p.depth - 1) * 14}px` }, title: ln ? `${p.name} ↔ ${ln.product_code} ${ln.product_name || ''}` : (isG ? t('{name} · alt montaj, {n} parça', { name: p.name, n: p.allMeshes.length }) : p.name),
         onclick: () => viewer.select(p) },
-        caret, h('span', { class: 'stp-row-name' }, p.custom ? '📁 ' : '', p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
+        cb, caret, h('span', { class: 'stp-row-name' }, p.custom ? '📁 ' : '', p.name, p.dupIndex ? h('span', { class: 'muted' }, ` #${p.dupIndex}`) : null, isG ? h('span', { class: 'muted small' }, ` (${p.children.length})`) : null),
         ln ? h('span', { class: 'stp-row-code' }, ln.product_code) : null);
       dnd(row, p); if (isG) dropTarget(row, p.key);
       rows[p.key] = row; items.push(row);
@@ -593,7 +531,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     selName.textContent = p ? `${p.name}${p.kind === 'group' ? t(' (alt montaj · {n} parça)', { n: p.allMeshes.length }) : ''}` : 'Parça seçilmedi';
     selLink.textContent = p ? (ln ? `↔ ${ln.product_code} — ${ln.product_name || ''}` : 'Henüz ürünle eşleştirilmedi') : 'Soldaki listeden ya da modelden bir parçaya dokunun.';
     saveBtn.disabled = !p; unlinkBtn.disabled = !(p && ln);
-    renameBtn.disabled = !p; moveBtn.disabled = !p; delGrpBtn.disabled = !(p && p.custom);
+    renameBtn.disabled = !p; moveBtn.disabled = !p && !checked.size; delGrpBtn.disabled = !(p && p.custom);
     fillCands();
     candSel.value = ln ? String(ln.product_id) : '';
     if (p && !ln) { const guess = guessFor(p); if (guess) candSel.value = String(guess.id); }
@@ -683,7 +621,7 @@ function stepStudio(host, { did, vid, name, reload }) {
     h('div', { class: 'stp-main' },
       h('div', { class: 'stp-side' },
         h('div', { class: 'stp-side-head' }, h('b', null, 'Parçalar'), treeSaveBtn),
-        h('div', { class: 'stp-tools' }, addGrpBtn, renameBtn, moveBtn, delGrpBtn),
+        h('div', { class: 'stp-tools' }, addGrpBtn, renameBtn, moveBtn, delGrpBtn, checkChip),
         treeEl),
       h('div', { class: 'stp-view' }, canvas, cmp,
         h('div', { class: 'stp-bar' }, h('span', { class: 'stp-lbl' }, '💥 Patlat'), range, rangeVal, fitBtn, h('span', { class: 'spacer' }), countChip))),
@@ -711,7 +649,7 @@ function stepStudio(host, { did, vid, name, reload }) {
 
   return {
     showTab(k) {
-      viewPanel.hidden = k !== 'view'; cfdPanel.hidden = k !== 'cfd';
+      viewPanel.hidden = k !== 'view'; cfdPanel.hidden = k !== 'cfd'; host.hidden = k === 'notes';
       if (k === 'view') setTimeout(() => viewer?.resize(), 30);
       if (k === 'cfd' && viewer && !cfdReady) takeCut();
     },

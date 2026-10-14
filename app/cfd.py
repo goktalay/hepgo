@@ -48,7 +48,7 @@ def cores():
 def env_prefix():
     """Allrun içinde OpenFOAM ortamı: paketten çıkarılmış kurulumda (DEV) sistem kütüphaneleri de eklenir; MPI yoksa DUMMY."""
     extra = OPENFOAM_DIR.parents[1] / 'x86_64-linux-gnu'   # /opt/hepgo/openfoam/usr/lib/x86_64-linux-gnu (paketten çıkarılmış DEV kurulumu)
-    lines = ['export FOAM_SIGFPE=', 'export OMPI_MCA_btl_vader_single_copy_mechanism=none']
+    lines = ['export FOAM_SIGFPE=', 'export OMPI_MCA_btl_vader_single_copy_mechanism=none', 'export OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1']   # uygulama root değil; test/CLI için
     if extra.exists():
         lines.append(f'export LD_LIBRARY_PATH={extra}:$LD_LIBRARY_PATH')
     mpl = 'SYSTEMOPENMPI' if shutil.which('mpirun') else 'DUMMY'
@@ -424,7 +424,7 @@ ph "checkMesh"
 checkMesh > log.checkMesh 2>&1 || true
 ph "simpleFoam"
 {'decomposePar -force > log.decomposePar 2>&1 || { echo FAIL decomposePar > phase; exit 2; }' if par else ''}
-{'nice -n 10 mpirun --oversubscribe -np ' + str(nproc) + ' simpleFoam -parallel > log.simpleFoam 2>&1 || { echo FAIL simpleFoam > phase; exit 2; }' if par else 'nice -n 10 simpleFoam > log.simpleFoam 2>&1 || { echo FAIL simpleFoam > phase; exit 2; }'}
+{'nice -n 10 mpirun --oversubscribe --bind-to none -np ' + str(nproc) + ' simpleFoam -parallel > log.simpleFoam 2>&1 || { echo FAIL simpleFoam > phase; exit 2; }' if par else 'nice -n 10 simpleFoam > log.simpleFoam 2>&1 || { echo FAIL simpleFoam > phase; exit 2; }'}
 {'reconstructPar -latestTime > log.reconstructPar 2>&1 || { echo FAIL reconstructPar > phase; exit 2; }' if par else ''}
 ph "post"
 foamToVTK -latestTime -no-internal -patches body -fields "(p U wallShearStress yPlus)" -ascii > log.foamToVTK 2>&1 || {{ echo FAIL foamToVTK > phase; exit 2; }}

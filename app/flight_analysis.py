@@ -32,7 +32,7 @@ def _run(log_id):
             if row['flight_id'] and flight_s > 0:
                 from .production import scrap
                 order = conn.execute('SELECT order_id FROM field_flights WHERE id = ?', (row['flight_id'],)).fetchone()
-                if order:
+                if order and order[0]:   # dron uçuşlarında (order_id NULL) hurda yok
                     scrap(conn, order[0], row['uploaded_by'], f'Uçtu (uçuş logu: {int(flight_s // 60)} dk {int(flight_s % 60)} sn havada)')
             if row['task_id']:
                 from .routers.field import complete_if_reported   # döngüsel içe aktarmayı önlemek için burada

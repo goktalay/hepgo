@@ -6,7 +6,7 @@ import { clear, h, onLeave, pageHead, toastError } from '../ui.js';
 
 const CESIUM = 'https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/';
 let cesiumLoading = null;
-function loadCesium() {
+export function loadCesium() {
   if (window.Cesium) return Promise.resolve(window.Cesium);
   cesiumLoading ??= new Promise((resolve, reject) => {
     window.CESIUM_BASE_URL = CESIUM;
@@ -18,6 +18,29 @@ function loadCesium() {
   });
   return cesiumLoading;
 }
+
+// Ortak Cesium görüntüleyici (uydu altlık, arazi modeli yok, gezgin araç çubukları kapalı). Uçuş oynatma ve
+// Dron Yönetimi › Canlı Uçuş aynı ayarları kullanır.
+export function createViewer(Cesium, holder, { timeline = false, animation = false, fullscreen = true } = {}) {
+  Cesium.Ion.defaultAccessToken = '';
+  const satellite = Cesium.ImageryLayer.fromProviderAsync(
+    Cesium.ArcGisMapServerImageryProvider.fromUrl('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'));
+  const viewer = new Cesium.Viewer(holder, {
+    baseLayer: satellite, terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false, navigationHelpButton: false,
+    infoBox: false, selectionIndicator: false, fullscreenButton: fullscreen, timeline, animation,
+    shouldAnimate: false,
+  });
+  viewer.scene.globe.enableLighting = false;
+  viewer.scene.skyAtmosphere.show = true;
+  return viewer;
+}
+
+// Uçak modeli (gltf): oynatma ve canlı izlemede aynı
+export const PLANE_MODEL = { uri: '/static/models/caymaz.gltf', minimumPixelSize: 72, maximumScale: 400, scale: 1.8 };
+// Yönelim: model burnu Cesium +X'te (heading 0 = doğu) → heading = yaw − 90°; pitch burun yukarı +, roll sağ kanat aşağı + (ArduPilot)
+export const planeOrientation = (Cesium, p, yawDeg, pitchDeg, rollDeg) => Cesium.Transforms.headingPitchRollQuaternion(p,
+  new Cesium.HeadingPitchRoll(Cesium.Math.toRadians((yawDeg || 0) - 90), Cesium.Math.toRadians(pitchDeg || 0), Cesium.Math.toRadians(rollDeg || 0)));
 
 const f1 = v => (v == null ? '—' : Number(v).toFixed(1));
 const clock = sec => {
@@ -72,17 +95,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   const tools = h('div', { class: 'r3d-tools' });
   box.append(holder, hud, tools);
 
-  Cesium.Ion.defaultAccessToken = '';
-  const satellite = Cesium.ImageryLayer.fromProviderAsync(
-    Cesium.ArcGisMapServerImageryProvider.fromUrl('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'));
-  const viewer = new Cesium.Viewer(holder, {
-    baseLayer: satellite, terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-    baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false, navigationHelpButton: false,
-    infoBox: false, selectionIndicator: false, fullscreenButton: true, timeline: true, animation: true,
-    shouldAnimate: false,
-  });
-  viewer.scene.globe.enableLighting = false;
-  viewer.scene.skyAtmosphere.show = true;
+  const viewer = createViewer(Cesium, holder, { timeline: true, animation: true });
   let destroyed = false;
   onLeave(() => { destroyed = true; if (!viewer.isDestroyed()) viewer.destroy(); });
   // sekme değişip kutu sayfadan kalkınca oynatıcı kapanır (arka planda çizmeye devam etmesin)
@@ -138,7 +151,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     viewFrom: new Cesium.Cartesian3(-60, -60, 70),   // takip kamerası: uçağın arkasından ve yukarıdan
     availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start: at(0), stop: at(duration) })]),
     position, orientation,
-    model: { uri: '/static/models/caymaz.gltf', minimumPixelSize: 72, maximumScale: 400, scale: 1.8 },
+    model: PLANE_MODEL,
     path: { leadTime: 0, trailTime: 120, width: 2.5, material: Cesium.Color.fromCssColorString('#ffcc33').withAlpha(0.45) },   // arkasındaki iz: şeffaf sarı
   });
   const planePosAt = t => position.getValue(t);

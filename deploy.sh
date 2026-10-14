@@ -15,10 +15,13 @@ case $TARGET in
 esac
 [ -w "$DST" ] || { echo "HATA: $DST yazılamıyor (izin)"; exit 1; }
 
-# Yalnızca main'e gönderilmiş, temiz bir ağaç aktarılır
+# Yalnızca origin'e gönderilmiş, temiz bir ağaç aktarılır. Varsayılan dal main; başka bir dalı (ör. DEV'de deneme için)
+# aktarmak için ALLOW_BRANCH=1 ./deploy.sh app --apply (HEAD yine origin/<dal> ile aynı olmalı).
 [ -z "$(git status --porcelain)" ] || { echo "HATA: commit edilmemiş değişiklik var"; exit 1; }
-git fetch -q origin main
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "HATA: HEAD origin/main ile aynı değil"; exit 1; }
+BR=$(git rev-parse --abbrev-ref HEAD)
+[ "$BR" = main ] || [ -n "${ALLOW_BRANCH:-}" ] || { echo "HATA: '$BR' dalındasınız; main dışı dalı aktarmak için ALLOW_BRANCH=1"; exit 1; }
+git fetch -q origin "$BR"
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BR")" ] || { echo "HATA: HEAD origin/$BR ile aynı değil (önce push)"; exit 1; }
 
 EXCL=(--exclude=/.git/ --exclude=/.venv/ --exclude=/data/ --exclude=/tenants/
       --exclude='.env*' --exclude=__pycache__/ --exclude='*.pyc' --exclude=/.deployed-rev

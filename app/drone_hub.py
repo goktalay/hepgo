@@ -1,0 +1,659 @@
+"""Dron köprüsü hub'ı (Dron Yönetimi paketi, Faz 0): pilotun cihazındaki köprü yazılımı sunucuya DIŞA DOĞRU WebSocket ile
+bağlanır (port açılmaz; Cloudflare tüneli + Unix soket mimarisiyle uyumlu), drondan gelen ham MAVLink baytlarını ikili çerçeve
+olarak iletir; sunucu pymavlink ile çözümleyip tarayıcılara (Canlı Uçuş) 5–10 Hz JSON durum paketi dağıtır; tarayıcıdan gelen
+komutlar (arm, set_mode, rtl, …) req/res RPC ile köprüye iletilir. Uçuş sonrası .bin logu köprü kanalından parça parça gelir ve
+flight_logs'a (source=BRIDGE) düşer. Canlı telemetri DOSYAYA (.tlog) yazılır; veritabanında yalnız oturum meta tutulur.
+
+Protokol v1 (GÖKTUNGU köprüleriyle ortak sözleşme):
+  köprü → sunucu (metin JSON): {v:1,t:'auth',key,host,platform,bridge_ver} | {v:1,t:'pair',code,host,platform,bridge_ver}
+      | {t:'ping'} | {t:'res',rid,ok,result|error} | {t:'log_begin',name,size,sha256,flight_id?,task_id?} | {t:'log_end'}
+  köprü → sunucu (ikili): ham MAVLink v1/v2 çerçeveleri; log aktarımı sırasında (.bin parçaları, ≤ 1 MB)
+  sunucu → köprü: {t:'auth_ok',bridge_id,server_time,key?} | {t:'auth_err',code} | {t:'pong'} | {t:'cmd',rid,sysid,name,params}
+      | {t:'log_ack',flight_log_id} | {t:'log_err',error}
+  tarayıcı ↔ sunucu (/ws/drone/live, oturum çerezi): ← {t:'hello',bridges,drones} {t:'status',bridge_id,sysid,state}
+      {t:'bridge',bridge_id,online} {t:'event',bridge_id,sysid,text,severity} {t:'res',rid,ok,…} {t:'pong'}
+      → {t:'ping'} {t:'cmd',rid,bridge_id,sysid,name,params} {t:'watch',bridge_id|null}
+  Kapanış kodları: 4400 kimlik yok/zaman aşımı · 4403 anahtar/kod yanlış · 4409 aynı köprü ikinci bağlantı (eski kapatılır)
+      · 4429 hız sınırı (IP başına 10 başarısız deneme / dk).
+Komut adları v1: arm, disarm, set_mode{mode}, takeoff{alt_rel_m}, land, rtl, goto{lat,lon,alt_rel_m,speed_mps?},
+  mission_upload{items}, mission_download, disconnect (sunucu tarafı: köprü oturumunu KAPANDI ile kapatır).
+Tek uvicorn süreci varsayılır (tenant başına bir süreç; --workers>1 ile hub paylaşılamaz).
+"""
+import asyncio
+import hashlib
+import hmac
+import json
+import secrets
+import threading
+import time
+from pathlib import Path
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from . import auth, cameras, config, db
+
+ws_router = APIRouter()
+
+PROTO = 1
+PAIR_TTL = 600            # eşleştirme kodu ömrü (sn)
+AUTH_TIMEOUT = 15         # ilk mesaj için bekleme
+STATUS_HZ = 10            # tarayıcıya en çok durum paketi/sn (sysid başına)
+VIEWER_QUEUE = 4          # izleyici kuyruğu (telemetride eski paket değersiz → dolunca en eskisi atılır)
+LOG_MAX = 2 * 1024 ** 3   # köprüden gelen .bin üst sınırı
+RATE_WINDOW, RATE_MAX = 60, 10
+CMD_TIMEOUT = 10
+CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect'}
+
+BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
+VIEWERS = {}        # ws → Viewer
+PAIR_CODES = {}     # kod → {'bridge_id', 'exp'}
+_fails = {}         # ip → [zaman damgası…]
+_pending = {}       # rid → (Future, viewer_ws | None)
+_loop_task = None
+
+
+def _db(fn, *a):
+    return asyncio.to_thread(fn, *a)
+
+
+# ---------------- MAVLink çözümleme ----------------
+def _mav():
+    from pymavlink.dialects.v20 import ardupilotmega as dialect
+    p = dialect.MAVLink(None)
+    p.robust_parsing = True
+    return p
+
+
+def _mode_name(mav_type, num):
+    try:
+        from pymavlink import mavutil
+        mp = mavutil.mode_mapping_bynumber(mav_type) or {}
+        return mp.get(num) or str(num)
+    except Exception:   # noqa: BLE001
+        return str(num)
+
+
+class DroneState:
+    """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük)."""
+    __slots__ = ('d', 'emitted', 'dirty', 'timer')
+
+    def __init__(self, sysid):
+        self.timer = None   # hız sınırına takılan güncellemeyi sonradan yayınlayan zamanlayıcı
+        self.d = {'sysid': sysid, 'type': None, 'autopilot': None, 'armed': False, 'mode': None, 'mode_num': None,
+                  'lat': None, 'lon': None, 'alt': None, 'alt_rel': None, 'hdg': None, 'vx': None, 'vy': None, 'vz': None,
+                  'airspeed': None, 'groundspeed': None, 'throttle': None, 'climb': None, 'roll': None, 'pitch': None, 'yaw': None,
+                  'volt': None, 'curr': None, 'batt_pct': None, 'fix': None, 'sats': None, 'hdop': None, 'rpm': None,
+                  'last_hb': None, 'updated': None, 'msgs': 0}
+        self.emitted = 0.0
+        self.dirty = False
+
+    def feed(self, m):
+        t = m.get_type(); d = self.d
+        d['msgs'] += 1
+        if t == 'HEARTBEAT':
+            if getattr(m, 'type', None) in (6,):   # GCS kalp atışı — dron değil
+                return False
+            d['type'] = m.type; d['autopilot'] = m.autopilot
+            d['armed'] = bool(m.base_mode & 128)
+            d['mode_num'] = m.custom_mode; d['mode'] = _mode_name(m.type, m.custom_mode)
+            d['last_hb'] = time.time()
+        elif t == 'GLOBAL_POSITION_INT':
+            d['lat'] = m.lat / 1e7; d['lon'] = m.lon / 1e7; d['alt'] = m.alt / 1000; d['alt_rel'] = m.relative_alt / 1000
+            d['vx'] = m.vx / 100; d['vy'] = m.vy / 100; d['vz'] = m.vz / 100; d['hdg'] = (m.hdg / 100) if m.hdg != 65535 else None
+        elif t == 'VFR_HUD':
+            d['airspeed'] = m.airspeed; d['groundspeed'] = m.groundspeed; d['throttle'] = m.throttle; d['climb'] = m.climb
+            if d['hdg'] is None:
+                d['hdg'] = m.heading
+        elif t == 'ATTITUDE':
+            import math
+            d['roll'] = round(math.degrees(m.roll), 1); d['pitch'] = round(math.degrees(m.pitch), 1); d['yaw'] = round(math.degrees(m.yaw) % 360, 1)
+        elif t == 'SYS_STATUS':
+            d['volt'] = m.voltage_battery / 1000 if m.voltage_battery != 65535 else None
+            d['curr'] = m.current_battery / 100 if m.current_battery != -1 else None
+            d['batt_pct'] = m.battery_remaining if m.battery_remaining != -1 else None
+        elif t == 'GPS_RAW_INT':
+            d['fix'] = m.fix_type; d['sats'] = m.satellites_visible; d['hdop'] = m.eph / 100 if m.eph != 65535 else None
+        elif t == 'RPM':
+            d['rpm'] = getattr(m, 'rpm1', None)
+        else:
+            return False
+        d['updated'] = time.time()
+        self.dirty = True
+        return True
+
+
+class Viewer:
+    def __init__(self, ws, user):
+        self.ws, self.user = ws, user
+        self.q = asyncio.Queue(maxsize=VIEWER_QUEUE)
+        self.watch = None   # bridge_id ya da None (hepsi)
+
+    def put(self, txt):
+        try:
+            self.q.put_nowait(txt)
+        except asyncio.QueueFull:   # yetişemiyor: en eskisini at (telemetride eski paket değersiz)
+            try:
+                self.q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self.q.put_nowait(txt)
+            except asyncio.QueueFull:
+                pass
+
+
+class Bridge:
+    def __init__(self, ws, row, host, platform, ver):
+        self.ws, self.id, self.name = ws, row['id'], row['name']
+        self.host, self.platform, self.ver = host, platform, ver
+        self.session_id = None
+        self.parser = _mav()
+        self.drones = {}        # sysid → DroneState
+        self.packets = 0
+        self.last_seen = time.time()
+        self.connected_at = db.now()
+        self.closing = None     # None | 'KAPANDI' (sunucu/pilot kapattı)
+        self.log = None         # aktif .bin aktarımı: {'f', 'h', 'size', 'got', 'name', 'sha', 'path', 'flight_id', 'task_id'}
+        self.tlog = None        # canlı telemetri dosyası
+        self.tlog_path = None
+
+    def info(self):
+        return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver,
+                'connected_at': self.connected_at, 'packets': self.packets, 'session_id': self.session_id,
+                'drones': {str(s): st.d for s, st in self.drones.items()}}
+
+
+# ---------------- Yardımcılar ----------------
+def _broadcast(msg, bridge_id=None):
+    txt = json.dumps(msg, ensure_ascii=False)
+    for v in list(VIEWERS.values()):
+        if v.watch is None or bridge_id is None or v.watch == bridge_id:
+            v.put(txt)
+
+
+async def _safe_send(ws, msg):
+    try:
+        await ws.send_text(json.dumps(msg, ensure_ascii=False))
+    except Exception:   # noqa: BLE001
+        pass
+
+
+def _rate_limited(ip):
+    now = time.time()
+    lst = [t for t in _fails.get(ip, []) if now - t < RATE_WINDOW]
+    _fails[ip] = lst
+    return len(lst) >= RATE_MAX
+
+
+def _note_fail(ip):
+    _fails.setdefault(ip, []).append(time.time())
+
+
+def _resolve_key(key):
+    """Düz anahtar → drone_bridges satırı (sabit-zamanlı karşılaştırma, yalnız aktif köprüler)."""
+    if not key:
+        return None
+    with db.connect() as conn:
+        rows = db.rows(conn.execute('SELECT id, name, key_enc FROM drone_bridges WHERE active = 1 AND key_enc IS NOT NULL'))
+    for r in rows:
+        try:
+            if hmac.compare_digest(cameras.decrypt(r['key_enc']), key):
+                return r
+        except Exception:   # noqa: BLE001
+            continue
+    return None
+
+
+def make_pair_code(bridge_id):
+    """Panelden 'Eşleştir': 6 karakterli tek kullanımlık kod (10 dk). Aynı köprünün eski kodu iptal olur."""
+    for c, v in list(PAIR_CODES.items()):
+        if v['bridge_id'] == bridge_id or v['exp'] < time.time():
+            PAIR_CODES.pop(c, None)
+    code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))
+    PAIR_CODES[code] = {'bridge_id': bridge_id, 'exp': time.time() + PAIR_TTL}
+    return {'code': code, 'expires_in': PAIR_TTL}
+
+
+def issue_key(conn, bridge_id):
+    """Yeni kalıcı anahtar üretir, şifreli saklar, DÜZ metni döndürür (yalnız bir kez gösterilir); eski anahtar geçersiz olur."""
+    key = secrets.token_urlsafe(32)
+    conn.execute('UPDATE drone_bridges SET key_enc = ?, updated_at = ? WHERE id = ?', (cameras.encrypt(key), db.now(), bridge_id))
+    return key
+
+
+def online_bridges():
+    return {b.id: b.info() for b in BRIDGES.values()}
+
+
+def snapshot():
+    return {'bridges': [b.info() for b in BRIDGES.values()]}
+
+
+async def disconnect_bridge(bridge_id, reason='KAPANDI'):
+    b = BRIDGES.get(bridge_id)
+    if not b:
+        return False
+    b.closing = reason
+    try:
+        await b.ws.close(code=1000)
+    except Exception:   # noqa: BLE001
+        pass
+    return True
+
+
+def _open_session(bridge, started_by=None):
+    def work():
+        tdir = config.UPLOAD_DIR / 'drone'
+        tdir.mkdir(parents=True, exist_ok=True)
+        rel = f"drone/{db.now().replace(':', '').replace('-', '')[:15]}-{bridge.id}-{secrets.token_hex(4)}.tlog"
+        with db.connect() as conn:
+            cur = conn.execute('''INSERT INTO drone_bridge_sessions (bridge_id, started_by, started_at, status, tlog_path, last_seen)
+                                  VALUES (?,?,?,'ACIK',?,?)''', (bridge.id, started_by, db.now(), rel, db.now()))
+            conn.execute("UPDATE drone_bridges SET status = 'CEVRIMICI', last_seen = ?, host = ?, platform = ?, bridge_ver = ? WHERE id = ?",
+                         (db.now(), bridge.host, bridge.platform, bridge.ver, bridge.id))
+            db.audit(conn, None, 'Dron köprüsü bağlandı', 'drone_bridge', bridge.id, f'{bridge.name} · {bridge.host or ""}')
+            conn.commit()
+            return cur.lastrowid, rel
+    return _db(work)
+
+
+def _close_session(bridge, status, error=None, mark_offline=True):
+    """Oturum kapanışını arka plan iş parçacığında yazar (await edilmez): bağlantı görevi iptal edilmiş olsa bile tamamlanır."""
+    def work():
+        try:
+            with db.connect() as conn:
+                conn.execute('UPDATE drone_bridge_sessions SET ended_at = ?, status = ?, packets = ?, last_seen = ?, error = ? WHERE id = ?',
+                             (db.now(), status, bridge.packets, db.now(), error, bridge.session_id))
+                if mark_offline:
+                    conn.execute("UPDATE drone_bridges SET status = 'CEVRIMDISI', last_seen = ? WHERE id = ?", (db.now(), bridge.id))
+                db.audit(conn, None, 'Dron köprüsü ayrıldı', 'drone_bridge', bridge.id, f'{bridge.name} · {status} · {bridge.packets} paket')
+                conn.commit()
+        except Exception:   # noqa: BLE001
+            pass
+    try:
+        asyncio.get_running_loop().run_in_executor(None, work)
+    except RuntimeError:
+        threading.Thread(target=work, daemon=True).start()
+
+
+def _tlog_write(bridge, data):
+    """Mission Planner uyumlu .tlog: her MAVLink çerçevesi önünde 8 bayt big-endian mikrosaniye zaman damgası."""
+    if bridge.tlog is None:
+        try:
+            p = config.UPLOAD_DIR / bridge.tlog_path
+            bridge.tlog = open(p, 'ab')
+        except OSError:
+            return
+    try:
+        bridge.tlog.write(int(time.time() * 1e6).to_bytes(8, 'big') + data)
+    except OSError:
+        pass
+
+
+# ---------------- Köprü: /ws/drone/bridge ----------------
+@ws_router.websocket('/ws/drone/bridge')
+async def ws_bridge(ws: WebSocket):
+    await ws.accept()
+    ip = (ws.client.host if ws.client else '') or ''
+    if _rate_limited(ip):
+        await ws.close(code=4429)
+        return
+    try:
+        first = json.loads(await asyncio.wait_for(ws.receive_text(), AUTH_TIMEOUT))
+    except Exception:   # noqa: BLE001
+        await ws.close(code=4400)
+        return
+    row, issued = None, None
+    if first.get('t') == 'auth':
+        row = await _db(_resolve_key, str(first.get('key') or ''))
+    elif first.get('t') == 'pair':
+        code = str(first.get('code') or '').strip().upper()
+        pc = PAIR_CODES.pop(code, None)
+        if pc and pc['exp'] >= time.time():
+            def pair():
+                with db.connect() as conn:
+                    r = db.row(conn.execute('SELECT id, name FROM drone_bridges WHERE id = ? AND active = 1', (pc['bridge_id'],)))
+                    if not r:
+                        return None, None
+                    k = issue_key(conn, r['id'])
+                    db.audit(conn, None, 'Dron köprüsü eşleştirildi', 'drone_bridge', r['id'], f"{r['name']} · {first.get('host') or ''}")
+                    conn.commit()
+                    return r, k
+            row, issued = await _db(pair)
+    if row is None:
+        _note_fail(ip)
+        def rej():
+            with db.connect() as conn:
+                db.audit(conn, None, 'Dron köprüsü kimlik reddi', 'drone_bridge', None, f"{ip} · {first.get('host') or ''}")
+                conn.commit()
+        await _db(rej)
+        await _safe_send(ws, {'t': 'auth_err', 'code': 4403})
+        await ws.close(code=4403)
+        return
+    bridge = Bridge(ws, row, str(first.get('host') or '')[:120], str(first.get('platform') or '')[:40], str(first.get('bridge_ver') or '')[:40])
+    prev = BRIDGES.get(bridge.id)
+    BRIDGES[bridge.id] = bridge
+    if prev is not None and prev.ws is not ws:   # aynı köprü ikinci kez: eski bağlantı kapatılır
+        prev.closing = 'KAPANDI'
+        try:
+            await prev.ws.close(code=4409)
+        except Exception:   # noqa: BLE001
+            pass
+    bridge.session_id, bridge.tlog_path = await _open_session(bridge)
+    hello = {'t': 'auth_ok', 'v': PROTO, 'bridge_id': bridge.id, 'name': bridge.name, 'server_time': db.now(), 'session_id': bridge.session_id}
+    if issued:
+        hello['key'] = issued   # yalnız eşleştirmede, bir kez
+    await _safe_send(ws, hello)
+    _broadcast({'t': 'bridge', 'bridge_id': bridge.id, 'online': True, 'info': bridge.info()})
+    status = 'KOPTU'
+    error = None
+    try:
+        while True:
+            m = await ws.receive()
+            if m.get('type') == 'websocket.disconnect':
+                break
+            bridge.last_seen = time.time()
+            if m.get('bytes') is not None:
+                data = m['bytes']
+                if bridge.log:
+                    await _log_chunk(bridge, data)
+                else:
+                    bridge.packets += 1
+                    _tlog_write(bridge, data)
+                    _feed_mavlink(bridge, data)
+            elif m.get('text'):
+                try:
+                    msg = json.loads(m['text'])
+                except ValueError:
+                    continue
+                t = msg.get('t')
+                if t == 'ping':
+                    await _safe_send(ws, {'t': 'pong', 'server_time': db.now()})
+                elif t == 'res':
+                    ent = _pending.get(msg.get('rid'))
+                    if ent and not ent[0].done():
+                        ent[0].set_result(msg)
+                elif t == 'log_begin':
+                    await _log_begin(bridge, msg)
+                elif t == 'log_end':
+                    await _log_end(bridge)
+                elif t == 'status':   # cihazda çözümlenmiş durum (isteğe bağlı): doğrudan dağıt
+                    sysid = int(msg.get('sysid') or 1)
+                    st = bridge.drones.setdefault(sysid, DroneState(sysid))
+                    st.d.update({k: v for k, v in (msg.get('state') or {}).items() if k in st.d})
+                    st.d['updated'] = time.time(); st.dirty = True
+                    _emit(bridge, st, force=True)
+                elif t == 'event':
+                    _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': msg.get('sysid'), 'text': str(msg.get('text') or '')[:300],
+                                'severity': msg.get('severity')}, bridge.id)
+    except (WebSocketDisconnect, Exception) as e:   # noqa: BLE001
+        error = str(e)[:200] if not isinstance(e, WebSocketDisconnect) else None
+    finally:
+        if bridge.closing:
+            status = bridge.closing
+        current = BRIDGES.get(bridge.id) is bridge   # aynı köprü yeni bağlantıyla devam ediyorsa (4409) çevrimdışı sayılmaz
+        if current:
+            BRIDGES.pop(bridge.id, None)
+            for rid, (fut, _vw, bid) in list(_pending.items()):
+                if not fut.done() and bid == bridge.id:
+                    fut.set_exception(RuntimeError('Köprü bağlantısı koptu'))
+        if bridge.log:
+            try:
+                bridge.log['f'].close(); Path(bridge.log['path']).unlink(missing_ok=True)
+            except OSError:
+                pass
+        if bridge.tlog:
+            try:
+                bridge.tlog.close()
+            except OSError:
+                pass
+        if current:   # izleyicilere senkron (görev iptal edilmişse bile ulaşır)
+            _broadcast({'t': 'bridge', 'bridge_id': bridge.id, 'online': False, 'status': status})
+        _close_session(bridge, status, error, mark_offline=current)
+
+
+def _feed_mavlink(bridge, data):
+    try:
+        msgs = bridge.parser.parse_buffer(data) or []
+    except Exception:   # noqa: BLE001 — bozuk çerçeve: atla
+        return
+    for m in msgs:
+        try:
+            sysid = m.get_srcSystem()
+        except Exception:   # noqa: BLE001
+            continue
+        if m.get_type() == 'BAD_DATA':
+            continue
+        if m.get_type() == 'STATUSTEXT':
+            _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': str(m.text).rstrip('\x00')[:200], 'severity': m.severity}, bridge.id)
+            continue
+        st = bridge.drones.setdefault(sysid, DroneState(sysid))
+        if st.feed(m):
+            _emit(bridge, st)
+
+
+def _emit(bridge, st, force=False):
+    """En çok STATUS_HZ paket/sn; sınıra takılan güncelleme kaybolmaz, süre dolunca son durum yayınlanır."""
+    wait = 1.0 / STATUS_HZ - (time.time() - st.emitted)
+    if not force and wait > 0:
+        if st.timer is None:
+            st.timer = asyncio.get_running_loop().call_later(wait, _flush, bridge, st)
+        return
+    _flush(bridge, st)
+
+
+def _flush(bridge, st):
+    if st.timer is not None:
+        st.timer.cancel(); st.timer = None
+    st.emitted = time.time(); st.dirty = False
+    _broadcast({'t': 'status', 'bridge_id': bridge.id, 'sysid': st.d['sysid'], 'state': st.d}, bridge.id)
+
+
+# ---------------- Uçuş sonrası .bin aktarımı ----------------
+async def _log_begin(bridge, msg):
+    size = int(msg.get('size') or 0)
+    name = str(msg.get('name') or 'flight.bin')[:120]
+    if bridge.log or size <= 0 or size > LOG_MAX or not name.lower().endswith(('.bin', '.log')):
+        await _safe_send(bridge.ws, {'t': 'log_err', 'error': 'Geçersiz log başlangıcı (boyut/ad) ya da aktarım sürüyor'})
+        return
+    d = config.UPLOAD_DIR / 'flightlogs'
+    d.mkdir(parents=True, exist_ok=True)
+    rel = f"flightlogs/{secrets.token_hex(12)}{Path(name).suffix.lower()}"
+    bridge.log = {'f': open(config.UPLOAD_DIR / rel, 'wb'), 'h': hashlib.sha256(), 'size': size, 'got': 0, 'name': name,
+                  'sha': str(msg.get('sha256') or '').lower(), 'path': str(config.UPLOAD_DIR / rel), 'rel': rel,
+                  'flight_id': msg.get('flight_id'), 'task_id': msg.get('task_id')}
+    await _safe_send(bridge.ws, {'t': 'log_ready', 'name': name})
+
+
+async def _log_chunk(bridge, data):
+    lg = bridge.log
+    lg['f'].write(data); lg['h'].update(data); lg['got'] += len(data)
+    if lg['got'] > lg['size']:
+        lg['f'].close(); Path(lg['path']).unlink(missing_ok=True); bridge.log = None
+        await _safe_send(bridge.ws, {'t': 'log_err', 'error': 'Bildirilen boyut aşıldı'})
+
+
+async def _log_end(bridge):
+    lg = bridge.log
+    if not lg:
+        return
+    bridge.log = None
+    lg['f'].close()
+    digest = lg['h'].hexdigest()
+    if lg['got'] != lg['size'] or (lg['sha'] and lg['sha'] != digest):
+        Path(lg['path']).unlink(missing_ok=True)
+        await _safe_send(bridge.ws, {'t': 'log_err', 'error': 'Boyut ya da sağlama (sha256) uyuşmuyor'})
+        return
+
+    def store():
+        from . import flight_analysis
+        with db.connect() as conn:
+            s = db.row(conn.execute('SELECT started_by, task_id, flight_id FROM drone_bridge_sessions WHERE id = ?', (bridge.session_id,))) or {}
+            flight_id = lg.get('flight_id') or s.get('flight_id')
+            task_id = lg.get('task_id') or s.get('task_id')
+            if flight_id and not task_id:
+                r = conn.execute('SELECT task_id FROM field_flights WHERE id = ?', (flight_id,)).fetchone()
+                task_id = r[0] if r else None
+            cur = conn.execute('''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, uploaded_by, uploaded_at, source, note)
+                                  VALUES (?,?,?,?,?,?,?,'BRIDGE',?)''',
+                               (task_id, flight_id, lg['rel'], lg['name'], lg['got'], s.get('started_by'), db.now(), f'Köprü: {bridge.name}'))
+            db.audit(conn, s.get('started_by'), 'Dron köprüsünden uçuş logu alındı', 'flight_log', cur.lastrowid, f"{lg['name']} · {lg['got']} bayt")
+            conn.commit()
+            lid = cur.lastrowid
+        flight_analysis.start(lid)
+        return lid
+    lid = await _db(store)
+    await _safe_send(bridge.ws, {'t': 'log_ack', 'flight_log_id': lid})
+    _broadcast({'t': 'log', 'bridge_id': bridge.id, 'flight_log_id': lid, 'name': lg['name']}, bridge.id)
+
+
+# ---------------- Tarayıcı: /ws/drone/live ----------------
+def _ws_user(token):
+    """Oturum çerezinden kullanıcı + roller + modül izinleri (WebSocket'te Depends yok)."""
+    with db.connect() as conn:
+        u = auth.user_by_token(conn, token)
+        if not u:
+            return None
+        from . import rbac
+        real = auth.user_roles(conn, u['id'])
+        u['master'] = auth.is_master(u['username'])
+        if u['master']:
+            u['roles'] = [*auth.ROLES, auth.MASTER]
+            u['modules'] = [*dict.fromkeys([*auth.MODULE_ROLES.keys(), *rbac.node_keys()])]
+            u['write_modules'] = list(u['modules'])
+        else:
+            u['roles'] = rbac.expand(real)
+            u['modules'] = rbac.allowed(real)
+            u['write_modules'] = rbac.writable(real)
+        return u
+
+
+def can_read(user):
+    """Rol Yönetimi: 'field.live' alt düğümü (ayar yoksa 'field' modülünden miras alır — rbac.node_chain)."""
+    return 'field.live' in user['modules']
+
+
+def can_command(user):
+    return 'field.live' in user['write_modules'] and (user.get('master') or auth.PILOT in user['roles'] or auth.ADMIN in user['roles'])
+
+
+async def _viewer_sender(v: Viewer):
+    try:
+        while True:
+            await v.ws.send_text(await v.q.get())
+    except Exception:   # noqa: BLE001
+        pass
+
+
+async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid=None):
+    """Tarayıcıdan (ya da REST'ten) köprüye komut: yetki + audit + req/res (CMD_TIMEOUT)."""
+    if name not in CMD_NAMES:
+        raise RuntimeError('Bilinmeyen komut')
+    if not can_command(user):
+        raise RuntimeError('Komut için Canlı Uçuş yazma yetkisi ve Pilot rolü gerekir')
+    b = BRIDGES.get(int(bridge_id))
+    if b is None:
+        raise RuntimeError('Köprü bağlı değil')
+
+    def audit():
+        with db.connect() as conn:
+            db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
+            conn.commit()
+    await _db(audit)
+    if name == 'disconnect':
+        await disconnect_bridge(b.id, 'KAPANDI')
+        return {'ok': True}
+    rid = rid or secrets.token_hex(8)
+    fut = asyncio.get_running_loop().create_future()
+    _pending[rid] = (fut, viewer_ws, b.id)
+    try:
+        await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
+        res = await asyncio.wait_for(fut, CMD_TIMEOUT)
+        return {'ok': bool(res.get('ok')), 'result': res.get('result'), 'error': res.get('error')}
+    except asyncio.TimeoutError:
+        raise RuntimeError('Köprü komuta yanıt vermedi (zaman aşımı)')
+    finally:
+        _pending.pop(rid, None)
+
+
+@ws_router.websocket('/ws/drone/live')
+async def ws_live(ws: WebSocket):
+    await ws.accept()
+    user = await _db(_ws_user, ws.cookies.get(auth.COOKIE))
+    if not user or not can_read(user):
+        await _safe_send(ws, {'t': 'error', 'error': 'auth'})
+        await ws.close(code=4403)
+        return
+    v = Viewer(ws, user)
+    VIEWERS[ws] = v
+    sender = asyncio.create_task(_viewer_sender(v))
+    v.put(json.dumps({'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}, **snapshot()}, ensure_ascii=False))
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            t = msg.get('t')
+            if t == 'ping':
+                v.put(json.dumps({'t': 'pong'}))
+            elif t == 'watch':
+                v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
+                v.put(json.dumps({'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}, **snapshot()}, ensure_ascii=False))
+            elif t == 'cmd':
+                rid = str(msg.get('rid') or secrets.token_hex(8))
+                try:
+                    res = await send_command(user, msg.get('bridge_id'), int(msg.get('sysid') or 1), str(msg.get('name') or ''), msg.get('params') or {}, ws, rid)
+                    v.put(json.dumps({'t': 'res', 'rid': rid, **res}, ensure_ascii=False))
+                except Exception as e:   # noqa: BLE001
+                    v.put(json.dumps({'t': 'res', 'rid': rid, 'ok': False, 'error': str(e)}, ensure_ascii=False))
+    except (WebSocketDisconnect, Exception):   # noqa: BLE001
+        pass
+    finally:
+        VIEWERS.pop(ws, None)
+        sender.cancel()
+
+
+# ---------------- Açılış / bakım ----------------
+def recover_on_start():
+    """Sunucu yeniden başladı: önceki süreçten açık kalan köprü oturumları KESILDI, köprüler çevrimdışı."""
+    try:
+        with db.connect() as conn:
+            conn.execute("UPDATE drone_bridge_sessions SET status = 'KESILDI', ended_at = ? WHERE ended_at IS NULL", (db.now(),))
+            conn.execute("UPDATE drone_bridges SET status = 'CEVRIMDISI' WHERE status != 'CEVRIMDISI'")
+            conn.commit()
+    except Exception:   # noqa: BLE001
+        pass
+
+
+async def _maintenance():
+    """30 sn'de bir: bağlı köprülerin last_seen/paket sayısı DB'ye, süresi dolan eşleştirme kodları temizlenir."""
+    while True:
+        await asyncio.sleep(30)
+        try:
+            now = time.time()
+            for c, pc in list(PAIR_CODES.items()):
+                if pc['exp'] < now:
+                    PAIR_CODES.pop(c, None)
+            items = [(b.id, b.session_id, b.packets) for b in BRIDGES.values()]
+            if items:
+                def work():
+                    with db.connect() as conn:
+                        for bid, sid, pk in items:
+                            conn.execute('UPDATE drone_bridge_sessions SET packets = ?, last_seen = ? WHERE id = ?', (pk, db.now(), sid))
+                            conn.execute("UPDATE drone_bridges SET last_seen = ?, status = 'CEVRIMICI' WHERE id = ?", (db.now(), bid))
+                        conn.commit()
+                await _db(work)
+        except Exception:   # noqa: BLE001
+            pass
+
+
+def start():
+    """main.lifespan: açılışta bir kez."""
+    global _loop_task
+    recover_on_start()
+    try:
+        _loop_task = asyncio.get_running_loop().create_task(_maintenance())
+    except RuntimeError:
+        _loop_task = None

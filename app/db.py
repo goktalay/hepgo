@@ -1532,16 +1532,110 @@ CREATE TABLE IF NOT EXISTS field_tasks (
     end_km      REAL,
     road_note   TEXT
 );
--- Görevdeki her uçak (sipariş) için bir uçuş. launch: ARAC_USTU | RAMPA
+-- Görevdeki her uçak (sipariş) YA DA dron (Dron Envanteri) için bir uçuş. launch: ARAC_USTU | RAMPA
+-- order_id (üretimden gelen uçak) ve drone_id (dron envanteri) birbirinin yerine geçer; en az biri dolu olmalıdır.
 CREATE TABLE IF NOT EXISTS field_flights (
     id         INTEGER PRIMARY KEY,
     task_id    INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE,
-    order_id   INTEGER NOT NULL REFERENCES orders(id),
+    order_id   INTEGER REFERENCES orders(id),
+    drone_id   INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,
     launch     TEXT,
     note       TEXT,
     updated_at TEXT,
-    UNIQUE (task_id, order_id)
+    UNIQUE (task_id, order_id),
+    UNIQUE (task_id, drone_id)
 );
+-- Dron Yönetimi paketi (Saha Yönetimi alt modülleri field.drones / field.live / field.routes / field.bridges):
+-- dron envanteri (kuyruk no D-0001), telemetri köprüleri (pilotun cihazındaki yazılım; sunucuya dışa doğru WebSocket),
+-- köprü oturumları, rota merkezleri / rotalar / ara noktalar. Canlı telemetri DOSYAYA yazılır (tlog_path); DB'de yalnız oturum meta.
+CREATE TABLE IF NOT EXISTS drone_bridges (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    key_enc     TEXT,                                   -- eşleştirme anahtarı (cameras.encrypt ile şifreli); yalnız üretim anında düz gösterilir
+    platform    TEXT,                                   -- android | windows | linux | other
+    owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- sahibi pilot
+    host        TEXT,                                   -- son bağlanan cihaz adı (köprü bildirir)
+    bridge_ver  TEXT,
+    status      TEXT NOT NULL DEFAULT 'CEVRIMDISI',     -- CEVRIMDISI | CEVRIMICI
+    last_seen   TEXT,
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS drone_drones (
+    id          INTEGER PRIMARY KEY,
+    code        TEXT NOT NULL UNIQUE,                   -- kuyruk no: db.next_code(conn, 'drone_drones', 'code', 'D') → D-0001
+    name        TEXT NOT NULL,
+    serial      TEXT UNIQUE COLLATE NOCASE,
+    model       TEXT,
+    protocol    TEXT NOT NULL DEFAULT 'mavlink',        -- v1: mavlink (DJI/Parrot eklentileri sonra)
+    sysid       INTEGER,                                -- MAVLink sistem kimliği (köprü birden çok dron taşıyorsa ayrım)
+    conn_type   TEXT,                                   -- tcp | udp | serial (köprünün drona yerel bağlantısı)
+    conn_host   TEXT, conn_port INTEGER, conn_serial TEXT, conn_baud INTEGER,
+    bridge_id   INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+    order_id    INTEGER REFERENCES orders(id) ON DELETE SET NULL,          -- üretimden gelen uçak bağı (isteğe bağlı)
+    pilot_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,           -- sorumlu pilot
+    status      TEXT NOT NULL DEFAULT 'AKTIF',          -- AKTIF | BAKIMDA | ARIZALI | PASIF
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_drones_bridge ON drone_drones(bridge_id);
+CREATE TABLE IF NOT EXISTS drone_bridge_sessions (
+    id          INTEGER PRIMARY KEY,
+    bridge_id   INTEGER NOT NULL REFERENCES drone_bridges(id) ON DELETE CASCADE,
+    drone_id    INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,
+    task_id     INTEGER REFERENCES field_tasks(id) ON DELETE SET NULL,
+    flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL,
+    started_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    started_at  TEXT NOT NULL,
+    ended_at    TEXT,                                   -- NULL: açık oturum
+    status      TEXT NOT NULL DEFAULT 'ACIK',           -- ACIK | KAPANDI | KOPTU | KESILDI (sunucu yeniden başladı)
+    packets     INTEGER NOT NULL DEFAULT 0,
+    last_seen   TEXT,
+    tlog_path   TEXT,                                   -- canlı telemetri kaydı (UPLOAD_DIR altında), flight_logs'a düşmez
+    error       TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_bridge_sessions_bridge ON drone_bridge_sessions(bridge_id, started_at);
+CREATE INDEX IF NOT EXISTS ix_drone_bridge_sessions_open ON drone_bridge_sessions(ended_at);
+CREATE TABLE IF NOT EXISTS drone_route_centers (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    lat         REAL NOT NULL, lon REAL NOT NULL, alt REAL,
+    location_id INTEGER REFERENCES field_locations(id) ON DELETE SET NULL,
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS drone_routes (
+    id          INTEGER PRIMARY KEY,
+    center_id   INTEGER REFERENCES drone_route_centers(id) ON DELETE SET NULL,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'line',           -- line | loop | survey
+    cruise_alt  REAL, cruise_speed REAL,
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_routes_center ON drone_routes(center_id);
+CREATE TABLE IF NOT EXISTS drone_waypoints (
+    id          INTEGER PRIMARY KEY,
+    route_id    INTEGER NOT NULL REFERENCES drone_routes(id) ON DELETE CASCADE,
+    ord         INTEGER NOT NULL,
+    lat         REAL NOT NULL, lon REAL NOT NULL, alt REAL,
+    action      TEXT NOT NULL DEFAULT 'waypoint',       -- waypoint | loiter | land | rtl | takeoff
+    hold_s      REAL,
+    note        TEXT,
+    UNIQUE (route_id, ord)
+);
+CREATE INDEX IF NOT EXISTS ix_drone_waypoints_route ON drone_waypoints(route_id, ord);
 -- Uçuş videoları (parça parça yüklenir; boyut sınırı yok)
 CREATE TABLE IF NOT EXISTS flight_videos (
     id          INTEGER PRIMARY KEY,
@@ -1915,7 +2009,8 @@ CREATE TABLE IF NOT EXISTS flight_logs (
     uploaded_by INTEGER REFERENCES users(id),
     uploaded_at TEXT NOT NULL,
     analyzed_at TEXT,
-    flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL
+    flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL,
+    source      TEXT NOT NULL DEFAULT 'UPLOAD'   -- UPLOAD (elle yükleme) | BRIDGE (dron köprüsünden uçuş sonrası .bin)
 );
 CREATE INDEX IF NOT EXISTS ix_flight_logs_task ON flight_logs(task_id);
 
@@ -2499,9 +2594,13 @@ def _migrate_field_tasks(conn):
 
 
 def _rebuild_field_flights(conn):
-    """Eski geçişte yabancı anahtarsız oluşan field_flights tablosunu şemadaki tanımla yeniden kurar
-    (görev silinince uçuşları da silinsin). Görevi olmayan artık uçuş kayıtları temizlenir."""
-    if conn.execute("SELECT COUNT(*) FROM pragma_foreign_key_list('field_flights')").fetchone()[0]:
+    """field_flights tablosunu şemadaki tanımla yeniden kurar: (1) eski geçişte yabancı anahtarsız oluşmuşsa
+    (görev silinince uçuşları da silinsin), (2) Dron Yönetimi için drone_id sütunu yoksa (order_id NULL olabilir;
+    SQLite'ta NOT NULL kaldırmak tablo yeniden kurmadır). İdempotent: ikinci açılışta hiçbir şey yapmaz.
+    Görevi olmayan artık uçuş kayıtları temizlenir. flight_logs / flight_videos referansları korunur (legacy_alter_table)."""
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(field_flights)')}
+    has_fk = conn.execute("SELECT COUNT(*) FROM pragma_foreign_key_list('field_flights')").fetchone()[0]
+    if has_fk and 'drone_id' in cols:
         return
     conn.commit()
     conn.execute('PRAGMA foreign_keys = OFF')
@@ -2512,11 +2611,13 @@ def _rebuild_field_flights(conn):
         CREATE TABLE field_flights (
             id         INTEGER PRIMARY KEY,
             task_id    INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE,
-            order_id   INTEGER NOT NULL REFERENCES orders(id),
+            order_id   INTEGER REFERENCES orders(id),
+            drone_id   INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,
             launch     TEXT,
             note       TEXT,
             updated_at TEXT,
-            UNIQUE (task_id, order_id)
+            UNIQUE (task_id, order_id),
+            UNIQUE (task_id, drone_id)
         );
         INSERT INTO field_flights (id, task_id, order_id, launch, note, updated_at)
             SELECT id, task_id, order_id, launch, note, updated_at FROM field_flights_old;
@@ -3023,6 +3124,8 @@ def _migrate(conn):
         conn.execute('ALTER TABLE material_docs ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)')
     if 'is_supplier' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # tedarikçi (Satın Alma)
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
+    if 'source' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # log kaynağı: UPLOAD | BRIDGE (dron köprüsü)
+        conn.execute("ALTER TABLE flight_logs ADD COLUMN source TEXT NOT NULL DEFAULT 'UPLOAD'")
     if 'fuel' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # uçuş yakıtı: başlangıç/bitiş litre + itkiye göre dağıtılmış tüketim özeti (JSON)
         conn.execute('ALTER TABLE flight_logs ADD COLUMN fuel TEXT')
     if 'duration_min' not in {r[1] for r in conn.execute('PRAGMA table_info(online_meetings)')}:   # görüntülü toplantı süresi (davet metni: 15:00 – 16:00)

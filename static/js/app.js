@@ -1388,7 +1388,10 @@ const SUB_PAGES = {
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,
   stock: p => `Ürün #${p[0]}`,
-  field: p => (p[0] === 'report' ? `Uçuş raporu #${p[1]}` : p.join('/')),
+  field: p => {
+    const d = { drones: 'Dron Envanteri', live: 'Canlı Uçuş', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]];
+    return p[0] === 'report' ? `Uçuş raporu #${p[1]}` : d ? `Dron Yönetimi · ${d}${p[1] ? ` #${p[1]}` : ''}` : p.join('/');
+  },
   tools: p => (p[0] === 'flight-log' ? `Uçuş Logu Analizi${p[1] ? ` · Rapor #${p[1]}` : ''}` : p.join('/')),
 };
 let currentPage = null;

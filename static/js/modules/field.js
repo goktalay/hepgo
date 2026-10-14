@@ -15,6 +15,9 @@ import { qrSvgEl } from '../qr.js';
 import { render3D } from './replay3d.js';
 import { renderFlight } from './flight.js';
 import { logBadge, renderReportView } from './tools.js';
+import * as droneMod from './drone.js';
+
+const DRONE_PAGES = ['drones', 'live', 'routes', 'bridges'];   // Dron Yönetimi alt sayfaları (#/field/drones …)
 
 // Görev başlatma ekranında gösterilen uyarılar. İhtiyaca göre düzenlenir.
 const START_WARNINGS = [
@@ -41,6 +44,7 @@ export async function render(view, params, ctx) {
   if (params[0] === 'task') return renderTask(view, Number(params[1]), ctx);
   if (params[0] === 'flight') return renderFlight(view, Number(params[1]), ctx, params[2]);
   if (params[0] === 'places') return renderPlaces(view, ctx);
+  if (DRONE_PAGES.includes(params[0])) return droneMod.render(view, params, ctx);
   if (params[0] === 'flights' || (!params[0] && pref('field.view', 'tasks') === 'flights')) return renderFlightsList(view, ctx);
   return renderList(view, ctx);
 }
@@ -115,6 +119,7 @@ async function renderList(view, ctx) {
     h('div', { class: 'filters' }, q, status, driver, place, period.el, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
       h('span', { class: 'spacer' }),
       h('a', { class: 'btn', href: '#/field/places' }, 'Görev Yerleri ve Araçlar'),
+      ctx.user.modules.some(m => DRONE_PAGES.includes(m.split('.')[1]) && m.startsWith('field.')) ? h('a', { class: 'btn', href: '#/field/drones' }, 'Dron Yönetimi') : null,
       manager ? h('button', { class: 'btn primary', onclick: () => newTask(ctx, load) }, svgIcon(icons.plus), 'Yeni Saha Görevi') : null),
     body);
   await load();
@@ -136,7 +141,7 @@ async function renderFlightsList(view, ctx) {
   const body = h('div');
   let rows = [];
   const draw = () => {
-    const list = rows.filter(f => matches(q.value, f.queue_no, f.order_code, f.product_name, f.task_code, f.location_name, f.pilot_name));
+    const list = rows.filter(f => matches(q.value, f.queue_no, f.order_code, f.product_name, f.task_code, f.location_name, f.pilot_name, f.drone_code, f.drone_name));
     stats.set([
       { icon: 'fleet', label: mode === 'ready' ? 'Uçuşa hazır uçak' : mode === 'flown' ? 'Uçmuş uçak' : 'Görevlerdeki uçak', value: rows.length },
       { icon: 'documents', label: 'Raporu hazır', value: rows.filter(f => f.log_status === 'TAMAM').length, tone: 'ok' },
@@ -146,9 +151,9 @@ async function renderFlightsList(view, ctx) {
     clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Saha görevi', 'Görev yeri / pilot', 'Uçuş logu', 'Havada', 'Not / medya'].map(c => h('th', null, c)))),
       h('tbody', null, list.map(f => h('tr', { class: 'click', onclick: () => { location.hash = `#/field/flight/${f.id}`; } },
-        h('td', null, f.queue_no ? queuePlate(f.queue_no) : h('b', { class: 'mono' }, f.order_code), h('div', { class: 'small muted' }, f.order_code),
-          f.order_status !== 'TAMAMLANDI' ? badge(ORDER_STATES, f.order_status) : null),
-        h('td', null, f.product_name || '—', h('div', null, h('span', { class: `badge ${USAGE_TYPES[f.usage_type]?.badge || 'gray'}` },
+        h('td', null, f.queue_no ? queuePlate(f.queue_no) : h('b', { class: 'mono' }, f.order_code || f.drone_code), h('div', { class: 'small muted' }, f.order_code || f.drone_name || ''),
+          f.drone_id ? h('span', { class: 'badge blue' }, 'Dron') : f.order_status !== 'TAMAMLANDI' ? badge(ORDER_STATES, f.order_status) : null),
+        h('td', null, f.product_name || f.drone_model || '—', f.drone_id ? null : h('div', null, h('span', { class: `badge ${USAGE_TYPES[f.usage_type]?.badge || 'gray'}` },
           USAGE_TYPES[f.usage_type]?.label || '—'))),
         h('td', null, h('b', null, f.task_code), h('div', null, badge(TASK_STATES, f.task_status))),
         h('td', null, f.location_name || '—', h('div', { class: 'small muted' }, f.pilot_name || '')),
@@ -175,12 +180,24 @@ async function renderFlightsList(view, ctx) {
 // ---------- Yeni görev ----------
 async function newTask(ctx, done) {
   const role = r => api.get(`/api/people?role=${encodeURIComponent(r)}`);
-  const [aircraft, leads, admins, drivers, staff, locations, pilots] = await Promise.all([
+  const [aircraft, leads, admins, drivers, staff, locations, pilots, drones] = await Promise.all([
     api.get('/api/field/available-aircraft'), role('Saha Sorumlusu'), role('Sistem Yöneticisi'), role('Şoför'),
     role('Saha Personeli'), api.get('/api/field/locations'), role('Pilot'),
+    api.get('/api/field/available-drones').catch(() => []),   // Dron Yönetimi (Dron Envanteri) — tablo yoksa/yetki yoksa boş
   ]);
   const leadList = [...new Map([...leads, ...admins].map(u => [u.id, u])).values()];
   const picked = new Set();
+  // Dronlar (Dron Envanteri): aktif ve açık görevde olmayanlar; görevde her dron bir uçuş olur (uçak gibi)
+  const pickedD = new Set();
+  const droneList = drones.length ? h('div', { class: 'pick-list', style: { maxHeight: '160px' } }, drones.map(d => {
+    const cb = h('input', { type: 'checkbox' });
+    const el = h('label', { class: 'pick' }, cb, h('div', { class: 'grow' }, h('b', { class: 'mono' }, d.code),
+      h('span', { class: 'small muted' }, [d.name, d.model, d.bridge_name].filter(Boolean).join(' · '))),
+      d.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti' }, tr('{n} görev yaptı', { n: d.past_tasks })) : null,
+      h('span', { class: `badge ${d.bridge_status === 'CEVRIMICI' ? 'green' : 'gray'}` }, d.bridge_status === 'CEVRIMICI' ? 'Köprü çevrimiçi' : 'Dron'));
+    cb.addEventListener('change', () => { cb.checked ? pickedD.add(d.id) : pickedD.delete(d.id); el.classList.toggle('on', cb.checked); });
+    return el;
+  })) : null;
   const planes = h('div', { class: 'pick-list', style: { maxHeight: '220px' } }, aircraft.length ? aircraft.map(a => {
     // Uçulmadan dönen tek kullanımlık uçak (carry_over): uçuş deposunda kaldı; yeni göreve otomatik devredilir (varsayılan seçili).
     const cb = h('input', { type: 'checkbox', checked: !!a.carry_over });
@@ -219,6 +236,7 @@ async function newTask(ctx, done) {
     wide: true,
     body: h('div', null,
       field('Götürülecek uçaklar (saha deposu ve montajdakiler)', planes, 'Her uçak görevde bir uçuş olarak listelenir. Montajdaki uçağın montajı sahada Üretim ekranından sürdürülür.'),
+      droneList ? field('Götürülecek dronlar (Dron Envanteri)', droneList, 'Dronlar da görevde birer uçuş olarak listelenir; canlı telemetri Dron Yönetimi › Canlı Uçuş\'tan izlenir.') : null,
       h('div', { class: 'row' }, field('Saha sorumlusu', lead), field('Pilot', pilot)),
       h('div', { class: 'small muted', style: { marginTop: '-6px', marginBottom: '10px' } },
         'Araçlar ve şoförleri görev oluşturulduktan sonra görevin Yol Yönetimi bölümünden eklenir (birden fazla olabilir).'),
@@ -234,12 +252,12 @@ async function newTask(ctx, done) {
       { label: 'Vazgeç' },
       {
         label: 'Görevi Oluştur', class: 'primary', onClick: async () => {
-          if (!picked.size) throw new Error('En az bir uçak seçin');
+          if (!picked.size && !pickedD.size) throw new Error(droneList ? 'En az bir uçak ya da dron seçin' : 'En az bir uçak seçin');
           if (!lead.value) throw new Error('Saha sorumlusu seçin');
           if (!pilot.value) throw new Error('Pilot seçin');
           if (!chosen.size) throw new Error('En az bir saha personeli ekleyin');
           const { id, code } = await api.post('/api/field/tasks', {
-            order_ids: [...picked], lead_id: Number(lead.value), pilot_id: Number(pilot.value),
+            order_ids: [...picked], drone_ids: [...pickedD], lead_id: Number(lead.value), pilot_id: Number(pilot.value),
             staff_ids: [...chosen.keys()], location_id: place.value ? Number(place.value) : null, note: note.value.trim() || null,
           });
           toast(tr('{code} görev kodu ile oluşturuldu', { code }));
@@ -350,9 +368,10 @@ async function renderTask(view, id, ctx) {
       h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Fırlatma sistemi', 'Uçuş logu', 'Havada', 'Video', ''].map(c => h('th', null, c)))),
       h('tbody', null, t.flights.map(f => h('tr', { class: 'click', title: IN_ASSEMBLY.includes(f.order_status)
         ? 'Uçak sahada montajda: montaj detayına git' : 'Uçuş detayına git', onclick: e => { if (!e.target.closest('a,button')) openAircraft(f); } },
-        h('td', null, queuePlate(f.queue_no) || '—', h('div', { class: 'small muted' }, f.order_code),
+        h('td', null, f.drone_id ? h('b', { class: 'mono' }, f.drone_code) : (queuePlate(f.queue_no) || '—'), h('div', { class: 'small muted' }, f.order_code || f.drone_name || ''),
+          f.drone_id ? h('span', { class: 'badge blue', style: { marginTop: '3px' } }, 'Dron') : null,
           IN_ASSEMBLY.includes(f.order_status) ? h('span', { class: 'badge yellow', style: { marginTop: '3px' } }, 'Sahada montaj') : null),
-        h('td', null, f.product_name || '—', h('div', { class: 'small muted mono' }, f.product_serial || '')),
+        h('td', null, f.product_name || f.drone_model || '—', h('div', { class: 'small muted mono' }, f.product_serial || '')),
         h('td', null, f.launch ? h('span', { class: `badge ${f.launch === 'RAMPA' ? 'purple' : 'blue'}` }, LAUNCH[f.launch]) : h('span', { class: 'muted' }, 'Seçilmedi')),
         h('td', null, f.log_status ? logBadge(f.log_status) : h('span', { class: 'muted' }, 'Yüklenmedi'),
           f.log_file ? h('div', { class: 'small muted' }, f.log_file) : null,
@@ -404,7 +423,7 @@ async function renderTask(view, id, ctx) {
         try { await api.del(`/api/field/videos/${v.id}`); toast('Video silindi'); await load(); } catch (err) { toastError(err); }
       } }, 'Sil') : null)) : h('div', { class: 'small muted' }, 'Henüz video yüklenmedi'));
     modal({
-      title: tr('Uçuş — {id}', { id: f.queue_no || f.order_code }),
+      title: tr('Uçuş — {id}', { id: f.queue_no || f.order_code || f.drone_code }),
       onClose: () => { progress.abort(); videoProgress.abort(); },   // pencere kapanırsa süren yükleme iptal edilir
       body: h('div', null,
         field('Fırlatma sistemi', choice),

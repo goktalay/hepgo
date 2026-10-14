@@ -71,6 +71,8 @@ async def lifespan(app):
     asyncio.get_running_loop().create_task(sync.loop())   # entegrasyon otomatik senkronizasyonu (Mikro / PDKS)
     asyncio.get_running_loop().create_task(meet_router.end_stale_on_startup())   # yeniden başlamada asılı kalan 'canlı' toplantılar
     asyncio.get_running_loop().create_task(live_router.start_reaper())   # yarım kalan canlı yayınlar (yayıncı dönmezse kapanır)
+    from . import drone_hub
+    drone_hub.start()   # Dron Yönetimi: önceki süreçten açık kalan köprü oturumları KESILDI; bakım döngüsü
     yield
 
 
@@ -194,7 +196,9 @@ class _DownloadTracker:
 
 
 app.add_middleware(_DownloadTracker)
-for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router,
+from . import drone_hub  # noqa: E402 — Dron Yönetimi: köprü + canlı uçuş WebSocket'leri
+from .routers import drone as drone_router  # noqa: E402
+for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router, drone_router.router, drone_hub.ws_router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.duties_me_router, hr.duties_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
           cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, usertasks.router, todos.router, ui_updates_router.router, surveys.router, pos.router, sections.router, services.router, reservations.router, waiter.router, beta.router, design.router, console.ws_router, ssh_hosts.router, ssh_hosts.ws_router, notes.router, filemanager.router, filemanager.public, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router, live_router.router, live_router.ws_router, certs_router.router, fleet_router.router, boss_router.router, roles_router.router, projects_router.router, social_router.router, contacts_router.router, spotify_router.router,

@@ -8731,3 +8731,40 @@ input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .fr-charts-fuel { margin: 3mm 0; }
 .r3d-nose.off { background: rgba(127,29,29,.75); }
 .r3d-nose.off b { color: #ff6b6b; }
+
+/* ---------- Dron Yönetimi (Saha Yönetimi alt modülleri) ---------- */
+.dr-live { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; align-items: start; }
+.dr-side { display: flex; flex-direction: column; gap: 10px; }
+.dr-side .card { padding: 10px 12px; }
+.dr-map { position: relative; height: calc(100dvh - 330px); min-height: 420px; border-radius: var(--radius); overflow: hidden; background: #0b1220; }
+.dr-map .r3d-map { position: absolute; inset: 0; }
+.dr-map .dr-map-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #cbd5e1; padding: 20px; text-align: center; z-index: 1; }
+.dr-map .r3d-hud { min-width: 250px; }
+.dr-events { max-height: 170px; overflow: auto; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.dr-events:empty::before { content: 'Henüz olay yok'; color: var(--muted); }
+.dr-events > div { display: flex; gap: 10px; line-height: 1.6; white-space: nowrap; }
+.dr-events > div > span:last-child { white-space: normal; }
+.dr-events .sev-err { color: var(--danger); }
+.dr-events .sev-warn { color: var(--warning); }
+.dr-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+.dr-kv span { color: var(--muted); }
+.dr-kv b { text-align: right; font-variant-numeric: tabular-nums; }
+.dr-bridge { display: flex; align-items: center; gap: 8px; padding: 8px 4px 4px; font-size: 13px; }
+.dr-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; margin-left: 10px; }
+.dr-item:hover { background: var(--surface-2); }
+.dr-item.on { border-color: var(--primary); background: var(--primary-soft); }
+.dr-item .grow { flex: 1; min-width: 0; }
+.dr-dot { width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; flex: 0 0 auto; }
+.dr-dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .25); }
+.dr-pair-code { font-size: 40px; letter-spacing: .25em; font-weight: 800; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding: 14px; background: var(--surface-2); border-radius: var(--radius); user-select: all; }
+.dr-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; background: var(--surface-2); padding: 10px; border-radius: 8px; user-select: all; }
+.dr-route { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+.dr-route-svg { width: 100%; aspect-ratio: 1; background: var(--surface-2); border-radius: var(--radius); overflow: hidden; }
+.dr-route-svg svg { width: 100%; height: 100%; display: block; }
+table.dr-wp td { padding: 4px 6px; vertical-align: middle; }
+table.dr-wp .input { height: 30px; padding: 2px 6px; font-size: 13px; min-width: 70px; }
+table.dr-wp select.input { min-width: 120px; }
+@media (max-width: 960px) {
+  .dr-live, .dr-route { grid-template-columns: 1fr; }
+  .dr-map { height: 55vh; }
+}

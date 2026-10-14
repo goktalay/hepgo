@@ -34,7 +34,8 @@ FINISHED = ('GOREV_TAMAMLANDI', 'BASARISIZ')
 
 
 class TaskIn(BaseModel):
-    order_ids: list[int]
+    order_ids: list[int] = []      # üretimden gelen uçaklar (sipariş); order_ids VEYA drone_ids'ten en az biri dolu olmalı
+    drone_ids: list[int] = []      # Dron Envanteri'nden dronlar (Dron Yönetimi paketi)
     lead_id: int
     driver_id: Optional[int] = None   # eski alan: şoförler artık görevdeki araçlarla girilir
     pilot_id: Optional[int] = None
@@ -112,13 +113,15 @@ def _flights(conn, task_ids):
         return {}
     rows = db.rows(conn.execute(
         f'''SELECT f.*, o.code AS order_code, o.queue_no, o.status AS order_status, p.name AS product_name, p.serial AS product_serial,
+                   d.code AS drone_code, d.name AS drone_name, d.model AS drone_model, d.status AS drone_status,
                    l.id AS log_id, l.status AS log_status, l.file_name AS log_file, l.error AS log_error,
                    json_extract(l.analysis, '$.summary.flight_s') AS flight_s
             FROM field_flights f
-            JOIN orders o ON o.id = f.order_id
+            LEFT JOIN orders o ON o.id = f.order_id
             LEFT JOIN products p ON p.id = o.product_id
+            LEFT JOIN drone_drones d ON d.id = f.drone_id
             LEFT JOIN flight_logs l ON l.id = (SELECT MAX(id) FROM flight_logs WHERE flight_id = f.id)
-            WHERE f.task_id IN ({','.join('?' * len(task_ids))}) ORDER BY o.queue_no''', task_ids))
+            WHERE f.task_id IN ({','.join('?' * len(task_ids))}) ORDER BY o.queue_no, d.code''', task_ids))
     videos = {}
     if rows:
         for v in db.rows(conn.execute(
@@ -172,7 +175,7 @@ def _tasks(conn, where='1=1', args=()):
             '''SELECT u.id, u.full_name FROM field_task_staff s JOIN users u ON u.id = s.user_id
                WHERE s.task_id = ? ORDER BY u.full_name''', (t['id'],)))
         t['flights'] = flights.get(t['id'], [])
-        t['aircraft'] = ', '.join(f['queue_no'] or f['order_code'] for f in t['flights'])
+        t['aircraft'] = ', '.join(f['queue_no'] or f['order_code'] or f['drone_code'] or '?' for f in t['flights'])
         t['logs_ready'] = sum(1 for f in t['flights'] if f['log_status'] == 'TAMAM')
         t['vehicles'] = vehicles.get(t['id'], [])
         t['vehicle_plate'] = ', '.join(v['plate'] for v in t['vehicles']) or None
@@ -274,14 +277,39 @@ def available_aircraft(user=Depends(field_manager), conn=db.DB):
            ORDER BY o.status = 'MONTAJ', o.queue_no, o.code'''))
 
 
+def available_drones_rows(conn):
+    """Göreve götürülebilecek dronlar (Dron Envanteri): aktif ve açık bir görevde (başlangıç / görevde) olmayanlar."""
+    return db.rows(conn.execute(
+        '''SELECT d.id, d.code, d.name, d.model, d.serial, d.status, d.note, b.name AS bridge_name, b.status AS bridge_status,
+                  pl.full_name AS pilot_name,
+                  (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
+                   WHERE f.drone_id = d.id AND t.status != 'IPTAL') AS past_tasks
+           FROM drone_drones d LEFT JOIN drone_bridges b ON b.id = d.bridge_id LEFT JOIN users pl ON pl.id = d.pilot_id
+           WHERE d.status = 'AKTIF' AND NOT EXISTS (
+               SELECT 1 FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
+               WHERE f.drone_id = d.id AND t.status IN ('BASLANGIC', 'GOREVDE'))
+           ORDER BY d.code'''))
+
+
+@router.get('/available-drones')
+def available_drones(user=Depends(field_manager), conn=db.DB):
+    return available_drones_rows(conn)
+
+
 @router.post('/tasks')
 def create_task(body: TaskIn, user=Depends(field_manager), conn=db.DB):
     orders = sorted(set(body.order_ids))
-    if not orders:
-        raise HTTPException(400, 'En az bir uçak seçin')
-    available = {r['id'] for r in available_aircraft(user, conn)}
-    if any(o not in available for o in orders):
-        raise HTTPException(400, 'Seçilen uçaklardan biri saha deposunda / montajda değil veya başka bir görevde')
+    drones = sorted(set(body.drone_ids))
+    if not orders and not drones:
+        raise HTTPException(400, 'En az bir uçak ya da dron seçin')
+    if orders:
+        available = {r['id'] for r in available_aircraft(user, conn)}
+        if any(o not in available for o in orders):
+            raise HTTPException(400, 'Seçilen uçaklardan biri saha deposunda / montajda değil veya başka bir görevde')
+    if drones:
+        avail_d = {r['id'] for r in available_drones_rows(conn)}
+        if any(d not in avail_d for d in drones):
+            raise HTTPException(400, 'Seçilen dronlardan biri aktif değil veya başka bir görevde')
     if not _has_role(conn, body.lead_id, auth.FIELD_LEAD) and not _has_role(conn, body.lead_id, auth.ADMIN):
         raise HTTPException(400, 'Seçilen kişi saha sorumlusu değil')
     if body.driver_id and not _has_role(conn, body.driver_id, auth.DRIVER):
@@ -305,11 +333,15 @@ def create_task(body: TaskIn, user=Depends(field_manager), conn=db.DB):
     conn.executemany('INSERT INTO field_task_staff (task_id, user_id) VALUES (?,?)', [(tid, s) for s in staff])
     conn.executemany('INSERT INTO field_flights (task_id, order_id, updated_at) VALUES (?,?,?)',
                      [(tid, o, db.now()) for o in orders])
+    conn.executemany('INSERT INTO field_flights (task_id, drone_id, updated_at) VALUES (?,?,?)',
+                     [(tid, d, db.now()) for d in drones])
     task_equipment(conn, tid)   # standart saha ekipman listesi göreve kopyalanır
     # Montaj aşamasında sahaya götürülen uçaklar görev açılınca "Sahada Montaj" aşamasına geçer
-    conn.execute(f"""UPDATE orders SET status = 'SAHADA_MONTAJ' WHERE status = 'MONTAJ'
-                     AND id IN ({','.join('?' * len(orders))})""", orders)
-    db.audit(conn, user['id'], 'Saha görevi oluşturdu', 'field_task', tid, f'{code} ({len(orders)} uçak)')
+    if orders:
+        conn.execute(f"""UPDATE orders SET status = 'SAHADA_MONTAJ' WHERE status = 'MONTAJ'
+                         AND id IN ({','.join('?' * len(orders))})""", orders)
+    parts = [f'{len(orders)} uçak' if orders else None, f'{len(drones)} dron' if drones else None]
+    db.audit(conn, user['id'], 'Saha görevi oluşturdu', 'field_task', tid, f'{code} ({", ".join(p for p in parts if p)})')
     return {'id': tid, 'code': code}
 
 
@@ -780,7 +812,7 @@ def _flight_notes(conn, fid):
 def list_flights(view: str = 'ready', date_from: str = '', date_to: str = '', user=Depends(field_user), conn=db.DB):
     """Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar. ready: uçuşa hazır (saha deposunda, montajı bitmiş; görev
     başlangıç / görevde), flown: uçmuş (logu hazır ya da hurda), all: iptal edilmemiş görevlerdeki tümü."""
-    where = {'ready': "o.status = 'TAMAMLANDI' AND t.status IN ('BASLANGIC', 'GOREVDE')",
+    where = {'ready': "(o.status = 'TAMAMLANDI' OR f.drone_id IS NOT NULL) AND t.status IN ('BASLANGIC', 'GOREVDE')",
              'flown': "(o.status = 'HURDA' OR l.status = 'TAMAM')",
              'all': "t.status != 'IPTAL'"}.get(view)
     if not where:
@@ -792,16 +824,18 @@ def list_flights(view: str = 'ready', date_from: str = '', date_to: str = '', us
     return db.rows(conn.execute(
         f'''SELECT f.id, f.task_id, f.launch, o.id AS order_id, o.code AS order_code, o.queue_no, o.status AS order_status,
                    o.scrapped_at, p.name AS product_name, COALESCE(p.usage_type, 'TEK') AS usage_type,
+                   f.drone_id, d.code AS drone_code, d.name AS drone_name, d.model AS drone_model,
                    t.code AS task_code, t.status AS task_status, t.started_at, loc.name AS location_name, pl.full_name AS pilot_name,
                    l.id AS log_id, l.status AS log_status, json_extract(l.analysis, '$.summary.flight_s') AS flight_s,
                    (SELECT COUNT(*) FROM flight_notes n WHERE n.flight_id = f.id) AS note_count,
                    (SELECT COUNT(*) FROM flight_videos v WHERE v.flight_id = f.id) AS media_count
-            FROM field_flights f JOIN field_tasks t ON t.id = f.task_id JOIN orders o ON o.id = f.order_id
+            FROM field_flights f JOIN field_tasks t ON t.id = f.task_id LEFT JOIN orders o ON o.id = f.order_id
             LEFT JOIN products p ON p.id = o.product_id
+            LEFT JOIN drone_drones d ON d.id = f.drone_id
             LEFT JOIN field_locations loc ON loc.id = t.location_id LEFT JOIN users pl ON pl.id = t.pilot_id
             LEFT JOIN flight_logs l ON l.id = (SELECT MAX(id) FROM flight_logs WHERE flight_id = f.id)
             WHERE t.status != 'IPTAL' AND {where}
-            ORDER BY t.id DESC, o.queue_no''', tuple(dargs)))
+            ORDER BY t.id DESC, o.queue_no, d.code''', tuple(dargs)))
 
 
 @router.post('/flights/{fid}/scrap')

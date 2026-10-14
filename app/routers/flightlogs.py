@@ -181,6 +181,12 @@ async def get_replay(lid: int, user=Depends(auth.current_user), conn=db.DB):
     if log['status'] != 'TAMAM':
         raise HTTPException(400, 'Log analizi tamamlanmadan 3B oynatma açılamaz')
     path = _replay_path(log)
+    if path.exists():   # eski önbellek (rpm alanı yok) → yeniden üret
+        try:
+            if '"rpm"' not in path.read_text(encoding='utf-8', errors='replace')[:400]:
+                path.unlink()
+        except OSError:
+            pass
     if not path.exists():
         try:
             data = await run_in_threadpool(replay, config.UPLOAD_DIR / log['file'])

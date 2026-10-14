@@ -443,7 +443,7 @@ def replay(path):
     yer hızı, hava hızı (m/s), gaz (%), batarya (V)]. Konum EKF'den (POS), yoksa GPS'ten alınır."""
     log = mavutil.mavlink_connection(str(path), zero_time_base=False)
     t0 = None
-    cur = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'gs': None, 'as': None, 'thr': None, 'volt': None}
+    cur = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'gs': None, 'as': None, 'thr': None, 'volt': None, 'rpm': None}
     pos = None            # (enlem, boylam, eve göre irtifa)
     gps_alt0 = None
     has_pos = False
@@ -451,7 +451,7 @@ def replay(path):
     step = 1.0 / REPLAY_HZ
     next_t = 0.0
     while True:
-        m = log.recv_match(type=['ATT', 'POS', 'GPS', 'CTUN', 'ARSP', 'BAT', 'CURR'])
+        m = log.recv_match(type=['ATT', 'POS', 'GPS', 'CTUN', 'ARSP', 'BAT', 'CURR', 'RPM'])
         if m is None:
             break
         tus = getattr(m, 'TimeUS', None)
@@ -493,12 +493,15 @@ def replay(path):
             v = _num(getattr(m, 'Volt', None))
             if getattr(m, 'Inst', getattr(m, 'Instance', 0)) in (0, None) and v and v > 0.5:
                 cur['volt'] = v
+        elif tp == 'RPM':   # motor devri (sensör bağlıysa; yoksa 0 gelir → istemci gaz değerine düşer)
+            if getattr(m, 'I', 0) in (0, None):
+                cur['rpm'] = _num(getattr(m, 'RPM', getattr(m, 'rpm1', None)))
         if pos and t >= next_t:
             samples.append([_r(t, 2), round(pos[0], 7), round(pos[1], 7), _r(pos[2], 1), _r(cur['roll'], 1),
                             _r(cur['pitch'], 1), _r(cur['yaw'], 1), _r(cur['gs'], 1), _r(cur['as'], 1),
-                            _r(cur['thr'], 0), _r(cur['volt'], 2)])
+                            _r(cur['thr'], 0), _r(cur['volt'], 2), _r(cur['rpm'], 0)])
             next_t = t + step
     if len(samples) < 2:
         raise ValueError('Logda 3B oynatma için konum verisi yok')
     samples = _thin(samples, REPLAY_MAX)
-    return {'fields': ['t', 'lat', 'lng', 'alt', 'roll', 'pitch', 'yaw', 'gs', 'as', 'thr', 'volt'], 'samples': samples}
+    return {'fields': ['t', 'lat', 'lng', 'alt', 'roll', 'pitch', 'yaw', 'gs', 'as', 'thr', 'volt', 'rpm'], 'samples': samples}

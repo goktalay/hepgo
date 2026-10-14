@@ -8729,3 +8729,5 @@ input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .r3d-bar.rate i { background: #38bdf8; }
 .fr-kpis-fuel { margin-top: 2.5mm; }
 .fr-charts-fuel { margin: 3mm 0; }
+.r3d-nose.off { background: rgba(127,29,29,.75); }
+.r3d-nose.off b { color: #ff6b6b; }

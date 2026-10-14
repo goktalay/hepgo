@@ -49,6 +49,18 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S[mid][0] <= t) lo = mid; else hi = mid - 1; }
     return S[lo];
   };
+  // Motor sustu aralıkları (havadayken): RPM sensörü varsa devir < 300, yoksa gaz ≤ %2 — en az 3 sn sürerse
+  const inAirT = t => flying.some(([x, y]) => t >= x && t <= y);
+  const hasRpm = S.some(s => (s[11] || 0) > 0);
+  const engOff = [];
+  { let st = null;
+    for (const s of S) {
+      const off = inAirT(s[0]) && (hasRpm ? (s[11] || 0) < 300 : (s[9] == null || s[9] <= 2));
+      if (off && st === null) st = s[0];
+      else if (!off && st !== null) { if (s[0] - st >= 3) engOff.push([st, s[0]]); st = null; }
+    }
+    if (st !== null && S[S.length - 1][0] - st >= 3) engOff.push([st, S[S.length - 1][0]]); }
+  const engOffAt = t => engOff.some(([x, y]) => t >= x && t <= y);
   // Yakıt serisi (Yakıt Hesapla sonrası): [t, L/sa, yakılan L, itki kg, gaz %] — zamana göre ikili arama
   const FS = fuel && fuel.samples && fuel.samples.length ? fuel.samples : null;
   const fuelAt = FS ? (t => { let lo = 0, hi = FS.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (FS[mid][0] <= t) lo = mid; else hi = mid - 1; } return FS[lo]; }) : null;
@@ -161,6 +173,8 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     if (Math.abs(sec - noseLast) < 0.2) return;
     noseLast = sec;
     noseSpeed.textContent = `${Math.round((s[7] || 0) * 3.6)} km/sa`;
+    noseEl.classList.toggle('off', engOffAt(sec));
+    drawRed(sec);
     if (fuelAt) {
       const fr = fuelAt(sec);
       const left = startL > 0 ? Math.max(0, Math.min(1, (startL - fr[2]) / startL)) : 0;
@@ -169,6 +183,23 @@ export async function render3D(view, id, back, { embed = false } = {}) {
       rateFill.style.width = `${(((fr[1] - rateMin) / ((rateMax - rateMin) || 1)) * 100).toFixed(1)}%`;
     }
   });
+  // Motor susunca kuyruk kırmızı: son 120 sn içindeki "motor sustu" parçaları ayrı çizgi koleksiyonuyla çizilir (0,5 sn'de bir yenilenir)
+  const redLines = viewer.scene.primitives.add(new Cesium.PolylineCollection());
+  const redMat = Cesium.Material.fromType('Color', { color: Cesium.Color.fromCssColorString('#ff3b30').withAlpha(0.8) });
+  let redLast = -1;
+  const drawRed = sec => {
+    if (!engOff.length || Math.abs(sec - redLast) < 0.5) return;
+    redLast = sec;
+    redLines.removeAll();
+    const t0 = sec - 120;
+    let run = [];
+    const flush = () => { if (run.length > 1) redLines.add({ positions: run, width: 2.5, material: redMat }); run = []; };
+    for (let i = 0; i < S.length; i++) {
+      const t = S[i][0]; if (t < t0) continue; if (t > sec) break;
+      if (engOffAt(t)) run.push(pts[i]); else flush();
+    }
+    flush();
+  };
   // İrtifa çizgisi: uçaktan yere (0 m) dikey çizgi, tam ortasında anlık irtifa etiketi — uçakla birlikte gezer
   const carto = new Cesium.Cartographic();
   const groundOf = (p, out) => { Cesium.Cartographic.fromCartesian(p, Cesium.Ellipsoid.WGS84, carto); return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0, Cesium.Ellipsoid.WGS84, out); };
@@ -209,7 +240,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     const s = find(t);
     const air = inAir(t);
     clear(hud,
-      h('div', { class: 'r3d-hud-head' }, h('b', null, clock(t)), h('span', { class: `badge ${air ? 'green' : 'gray'}` }, air ? 'Havada' : 'Yerde'),
+      h('div', { class: 'r3d-hud-head' }, h('b', null, clock(t)), h('span', { class: `badge ${air ? 'green' : 'gray'}` }, air ? 'Havada' : 'Yerde'), engOffAt(t) ? h('span', { class: 'badge red' }, 'Motor sustu') : null,
         modeAt(t) ? h('span', { class: 'badge blue' }, modeAt(t)) : null),
       row('İrtifa (eve göre)', `${f1(s[3])} m`),
       row('Yer hızı', `${f1(s[7])} m/s`),

@@ -49,6 +49,9 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S[mid][0] <= t) lo = mid; else hi = mid - 1; }
     return S[lo];
   };
+  // Yakıt serisi (Yakıt Hesapla sonrası): [t, L/sa, yakılan L, itki kg, gaz %] — zamana göre ikili arama
+  const FS = fuel && fuel.samples && fuel.samples.length ? fuel.samples : null;
+  const fuelAt = FS ? (t => { let lo = 0, hi = FS.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (FS[mid][0] <= t) lo = mid; else hi = mid - 1; } return FS[lo]; }) : null;
 
   if (!embed) clear(view, pageHead('3B Uçuş Oynatma', { back, sub: `${log.file_name}${log.aircraft ? ` · ${log.aircraft}` : ''}` }), box);
   clear(box);
@@ -129,20 +132,44 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     path: { leadTime: 0, trailTime: 90, width: 2, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: Cesium.Color.ORANGE }) },
   });
   const planePosAt = t => position.getValue(t);
-  // Burun ucu etiketi: yer hızı (km/sa) — uçağın burnunun 5 m önünde, yönelimle birlikte döner
+  // Burun ucu etiketi (HTML, Cesium sahnesinin üstünde): yer hızı (km/sa); altında ince yakıt yüzdesi çubuğu (değer yazmaz) ve
+  // daha ince anlık tüketim çubuğu (serinin en düşük–en yüksek tüketimi arasında oranlı). Konum her karede burnun 5 m önüne izdüşürülür.
   const noseOf = (p, yawDeg, out) => {
     const enu = Cesium.Transforms.eastNorthUpToFixedFrame(p);
     const r = Cesium.Math.toRadians(yawDeg || 0), d = 5;
     return Cesium.Matrix4.multiplyByPoint(enu, new Cesium.Cartesian3(Math.sin(r) * d, Math.cos(r) * d, 0.6), out);
   };
-  viewer.entities.add({
-    position: new Cesium.CallbackProperty(t => { const p = planePosAt(t); if (!p) return undefined; const s = find(Cesium.JulianDate.secondsDifference(t, start)); return noseOf(p, s[6], new Cesium.Cartesian3()); }, false),
-    label: {
-      text: new Cesium.CallbackProperty(t => { const s = find(Cesium.JulianDate.secondsDifference(t, start)); return `${Math.round((s[7] || 0) * 3.6)} km/sa`; }, false),
-      font: 'bold 12px sans-serif', fillColor: Cesium.Color.fromCssColorString('#ffe08a'), outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-      pixelOffset: new Cesium.Cartesian2(0, -10), showBackground: true, backgroundColor: Cesium.Color.fromCssColorString('#0f172a').withAlpha(0.55), backgroundPadding: new Cesium.Cartesian2(5, 3),
-      disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    },
+  const noseSpeed = h('b', null, '');
+  const fuelFill = h('i'), rateFill = h('i');
+  const noseEl = h('div', { class: 'r3d-nose', hidden: true }, noseSpeed,
+    FS ? h('span', { class: 'r3d-bar fuel', title: 'Kalan yakıt' }, fuelFill) : null,
+    FS ? h('span', { class: 'r3d-bar rate', title: 'Anlık tüketim (en düşük–en yüksek)' }, rateFill) : null);
+  box.append(noseEl);
+  const rateMin = FS ? Math.min(...FS.map(r => r[1])) : 0, rateMax = FS ? Math.max(...FS.map(r => r[1])) : 1;
+  const startL = fuel && fuel.summary ? Number(fuel.summary.start_l) : 0;
+  const toWin = (Cesium.SceneTransforms.worldToWindowCoordinates || Cesium.SceneTransforms.wgs84ToWindowCoordinates).bind(Cesium.SceneTransforms);
+  const noseTmp = new Cesium.Cartesian3(), winTmp = new Cesium.Cartesian2();
+  let noseLast = -1;
+  viewer.scene.postRender.addEventListener(() => {
+    if (destroyed) return;
+    const p = planePosAt(clockModel.currentTime);
+    if (!p) { noseEl.hidden = true; return; }
+    const sec = Cesium.JulianDate.secondsDifference(clockModel.currentTime, start);
+    const s = find(sec);
+    const w = toWin(viewer.scene, noseOf(p, s[6], noseTmp), winTmp);
+    if (!w) { noseEl.hidden = true; return; }
+    noseEl.hidden = false;
+    noseEl.style.transform = `translate(${Math.round(w.x)}px, ${Math.round(w.y)}px)`;
+    if (Math.abs(sec - noseLast) < 0.2) return;
+    noseLast = sec;
+    noseSpeed.textContent = `${Math.round((s[7] || 0) * 3.6)} km/sa`;
+    if (fuelAt) {
+      const fr = fuelAt(sec);
+      const left = startL > 0 ? Math.max(0, Math.min(1, (startL - fr[2]) / startL)) : 0;
+      fuelFill.style.width = `${(left * 100).toFixed(1)}%`;
+      fuelFill.style.background = left < 0.2 ? '#ef4444' : left < 0.4 ? '#f59e0b' : '#22c55e';
+      rateFill.style.width = `${(((fr[1] - rateMin) / ((rateMax - rateMin) || 1)) * 100).toFixed(1)}%`;
+    }
   });
   // İrtifa çizgisi: uçaktan yere (0 m) dikey çizgi, tam ortasında anlık irtifa etiketi — uçakla birlikte gezer
   const carto = new Cesium.Cartographic();
@@ -174,9 +201,6 @@ export async function render3D(view, id, back, { embed = false } = {}) {
 
   // Anlık değerler (HUD)
   const modeAt = t => { let m = null; for (const x of modes) { if (x.t <= t) m = x.name; else break; } return m; };
-  // Yakıt serisi (Yakıt Hesapla sonrası): [t, L/sa, yakılan L, itki kg, gaz %] — zamana göre ikili arama
-  const FS = fuel && fuel.samples && fuel.samples.length ? fuel.samples : null;
-  const fuelAt = FS ? (t => { let lo = 0, hi = FS.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (FS[mid][0] <= t) lo = mid; else hi = mid - 1; } return FS[lo]; }) : null;
   const row = (k, v) => h('div', null, h('span', null, k), h('b', null, v));
   let last = -1;
   const drawHud = () => {

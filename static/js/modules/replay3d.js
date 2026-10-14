@@ -106,7 +106,7 @@ export async function render3D(view, id, back, { embed = false } = {}) {
   let track = null;
   for (const seg of segs) {
     if (seg.pts.length < 2) continue;
-    const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 2.5 : 2, material: seg.air ? yellow : grey } });
+    const ent = viewer.entities.add({ polyline: { positions: seg.pts, width: seg.air ? 1.5 : 1.2, material: seg.air ? yellow : grey } });
     if (seg.air) {
       viewer.entities.add({ wall: { positions: seg.pts, material: Cesium.Color.fromCssColorString('#3aa0ff').withAlpha(0.07), outline: false } });
       if (!track) track = ent;
@@ -126,7 +126,41 @@ export async function render3D(view, id, back, { embed = false } = {}) {
     availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start: at(0), stop: at(duration) })]),
     position, orientation,
     model: { uri: '/static/models/caymaz.gltf', minimumPixelSize: 72, maximumScale: 400, scale: 1.8 },
-    path: { leadTime: 0, trailTime: 90, width: 4, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: Cesium.Color.ORANGE }) },
+    path: { leadTime: 0, trailTime: 90, width: 2, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.25, color: Cesium.Color.ORANGE }) },
+  });
+  const planePosAt = t => position.getValue(t);
+  // Burun ucu etiketi: yer hızı (km/sa) — uçağın burnunun 5 m önünde, yönelimle birlikte döner
+  const noseOf = (p, yawDeg, out) => {
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(p);
+    const r = Cesium.Math.toRadians(yawDeg || 0), d = 5;
+    return Cesium.Matrix4.multiplyByPoint(enu, new Cesium.Cartesian3(Math.sin(r) * d, Math.cos(r) * d, 0.6), out);
+  };
+  viewer.entities.add({
+    position: new Cesium.CallbackProperty(t => { const p = planePosAt(t); if (!p) return undefined; const s = find(Cesium.JulianDate.secondsDifference(t, start)); return noseOf(p, s[6], new Cesium.Cartesian3()); }, false),
+    label: {
+      text: new Cesium.CallbackProperty(t => { const s = find(Cesium.JulianDate.secondsDifference(t, start)); return `${Math.round((s[7] || 0) * 3.6)} km/sa`; }, false),
+      font: 'bold 12px sans-serif', fillColor: Cesium.Color.fromCssColorString('#ffe08a'), outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      pixelOffset: new Cesium.Cartesian2(0, -10), showBackground: true, backgroundColor: Cesium.Color.fromCssColorString('#0f172a').withAlpha(0.55), backgroundPadding: new Cesium.Cartesian2(5, 3),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
+  // İrtifa çizgisi: uçaktan yere (0 m) dikey çizgi, tam ortasında anlık irtifa etiketi — uçakla birlikte gezer
+  const carto = new Cesium.Cartographic();
+  const groundOf = (p, out) => { Cesium.Cartographic.fromCartesian(p, Cesium.Ellipsoid.WGS84, carto); return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0, Cesium.Ellipsoid.WGS84, out); };
+  viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(t => { const p = planePosAt(t); return p ? [p, groundOf(p, new Cesium.Cartesian3())] : []; }, false),
+      width: 1.2, material: Cesium.Color.fromCssColorString('#ffffff').withAlpha(0.7),
+    },
+  });
+  viewer.entities.add({
+    position: new Cesium.CallbackProperty(t => { const p = planePosAt(t); if (!p) return undefined; const g = groundOf(p, new Cesium.Cartesian3()); return Cesium.Cartesian3.midpoint(p, g, new Cesium.Cartesian3()); }, false),
+    label: {
+      text: new Cesium.CallbackProperty(t => { const sec = Cesium.JulianDate.secondsDifference(t, start); const s = find(sec); return `${Math.max(0, s[3]).toFixed(1)} m`; }, false),
+      font: '12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      showBackground: true, backgroundColor: Cesium.Color.fromCssColorString('#0f172a').withAlpha(0.55), backgroundPadding: new Cesium.Cartesian2(5, 3),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
   });
 
   const clockModel = viewer.clock;

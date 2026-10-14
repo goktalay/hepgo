@@ -3033,6 +3033,25 @@ def _migrate(conn):
     if 'thumb_path' not in {r[1] for r in conn.execute('PRAGMA table_info(design_drawing_versions)')}:   # STEP sürümünün 3B önizleme resmi (tarayıcıda üretilir)
         conn.execute('ALTER TABLE design_drawing_versions ADD COLUMN thumb_path TEXT')
     conn.executescript('''
+        CREATE TABLE IF NOT EXISTS design_cfd_runs (   -- 3B CFD analizi (OpenFOAM) koşuları: durum dizini, parametreler, sonuç özeti
+            id INTEGER PRIMARY KEY,
+            drawing_id INTEGER NOT NULL REFERENCES design_drawings(id) ON DELETE CASCADE,
+            version_id INTEGER REFERENCES design_drawing_versions(id) ON DELETE SET NULL,
+            name TEXT,
+            params TEXT,
+            geometry TEXT,
+            status TEXT NOT NULL DEFAULT 'queued',   -- queued | running | cancelling | cancelled | done | failed
+            phase TEXT,
+            iters INTEGER NOT NULL DEFAULT 0,
+            cells INTEGER NOT NULL DEFAULT 0,
+            result TEXT,
+            error TEXT,
+            dir TEXT,
+            created_by INTEGER REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT);
+        CREATE INDEX IF NOT EXISTS idx_dcr_drawing ON design_cfd_runs(drawing_id);
         CREATE TABLE IF NOT EXISTS design_step_links (   -- STEP içindeki parça (ad/yol anahtarı) ↔ Ürün Yönetimi yarı mamulü
             id INTEGER PRIMARY KEY,
             drawing_id INTEGER NOT NULL REFERENCES design_drawings(id) ON DELETE CASCADE,

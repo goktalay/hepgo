@@ -32,6 +32,8 @@ async def lifespan(app):
         integrations.apply(conn)
     with db.connect() as conn:   # kataloğa sonradan eklenen parçalar (ör. elektronik kat) mevcut siparişlere
         production.sync_catalog_parts(conn)
+    from . import cfd
+    cfd.recover_on_start()   # yarım kalan CFD koşuları 'failed', kuyruktakiler sürer
     from . import semis
     with db.connect() as conn:   # CAYMAZ V3: V2 olan firmada ürün ağacı + yeni parçaların G-code'u (bir kez; idempotent)
         try:

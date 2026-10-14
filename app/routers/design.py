@@ -455,6 +455,150 @@ def set_step_link(did: int, body: StepLinkIn, user=Depends(design_user), conn=db
     return {'ok': True, 'linked': True, 'product_code': p['code'], 'product_name': p['name']}
 
 
+# ---------- 3B CFD (OpenFOAM) ----------
+@router.get('/cfd/status')
+def cfd_status(user=Depends(design_user)):
+    from .. import cfd
+    return {'available': cfd.available(), 'openfoam_dir': str(cfd.OPENFOAM_DIR), 'cores': cfd.cores(), 'resolutions': {k: v['label'] for k, v in cfd.RES.items()},
+            'iters': {k: v['iters'] for k, v in cfd.RES.items()}}
+
+
+@router.get('/drawings/{did}/cfd')
+def cfd_list(did: int, user=Depends(design_user), conn=db.DB):
+    _drawing(conn, did)
+    rows = db.rows(conn.execute('''SELECT r.id, r.name, r.status, r.phase, r.iters, r.cells, r.params, r.geometry, r.result, r.error, r.created_at, r.started_at, r.finished_at,
+                                          r.version_id, u.full_name AS created_by_name
+                                   FROM design_cfd_runs r LEFT JOIN users u ON u.id = r.created_by WHERE r.drawing_id = ? ORDER BY r.id DESC LIMIT 50''', (did,)))
+    for r in rows:
+        for k in ('params', 'geometry', 'result'):
+            try:
+                r[k] = json.loads(r[k]) if r[k] else None
+            except (TypeError, ValueError):
+                r[k] = None
+    return rows
+
+
+@router.post('/drawings/{did}/cfd')
+async def cfd_create(did: int, file: UploadFile = File(...), params: str = Form('{}'), user=Depends(design_user)):
+    """Yeni analiz: STL (akış +x, yukarı +z, metre) + parametreler → durum dizini üretilir, kuyruğa alınır."""
+    from .. import cfd, config as cfg
+    if not cfd.available():
+        raise HTTPException(503, 'OpenFOAM bu sunucuda kurulu değil (CAYMAZ_OPENFOAM_DIR)')
+    try:
+        p = json.loads(params or '{}')
+    except ValueError:
+        raise HTTPException(400, 'Parametreler okunamadı')
+    with db.connect() as conn:
+        d = _drawing(conn, did)
+        active = conn.execute("SELECT COUNT(*) FROM design_cfd_runs WHERE status IN ('queued','running','cancelling')").fetchone()[0]
+    if active >= 3:
+        raise HTTPException(429, 'Kuyrukta zaten 3 analiz var; biri bitince yenisini başlatın')
+    U = float(p.get('U') or 0)
+    if not (0.5 <= U <= 200):
+        raise HTTPException(400, 'Akış hızı 0,5–200 m/s olmalı')
+    res = p.get('res') if p.get('res') in cfd.RES else 'coarse'
+    cores = int(p.get('cores') or cfd.cores()); cores = max(1, min(cores, cfd.cores()))
+    iters = int(p.get('iters') or cfd.RES[res]['iters']); iters = max(20, min(iters, 3000))
+    prm = {'U': U, 'rho': float(p.get('rho') or 1.225), 'nu': float(p.get('nu') or 1.5e-5), 'res': res, 'cores': cores, 'iters': iters,
+           'turb_intensity': float(p.get('turb_intensity') or 0.01), 'aoa': float(p.get('aoa') or 0), 'nose': p.get('nose') or '+x', 'up': p.get('up') or '+z',
+           'scope': p.get('scope') or 'all', 'scope_name': (p.get('scope_name') or '')[:200]}
+    with db.connect() as conn:
+        cur = conn.execute('INSERT INTO design_cfd_runs (drawing_id, version_id, name, params, status, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
+                           (did, p.get('version_id'), (p.get('name') or f"{d['name']} · {U:g} m/s · {cfd.RES[res]['label']}")[:200], json.dumps(prm), 'preparing', user['id'], db.now()))
+        run_id = cur.lastrowid
+    case = cfd.CFD_DIR / str(run_id)
+    try:
+        (case / 'constant' / 'triSurface').mkdir(parents=True, exist_ok=True)
+        stl = case / 'constant' / 'triSurface' / 'body.stl'
+        with open(stl, 'wb') as f:
+            while True:
+                chunk = await file.read(1 << 20)
+                if not chunk:
+                    break
+                f.write(chunk)
+        tris = cfd.read_stl(stl)
+        if len(tris) < 4:
+            raise ValueError('STL boş')
+        geo = cfd.geometry(tris)
+        if max(geo['size']) > 50 or max(geo['size']) < 0.005:
+            raise ValueError(f"Gövde boyutu {max(geo['size']):.3f} m — birim/ölçek hatalı görünüyor (metre bekleniyor)")
+        info = cfd.write_case(case, geo, prm)
+        with db.connect() as conn:
+            conn.execute("UPDATE design_cfd_runs SET status = 'queued', geometry = ?, dir = ?, params = ? WHERE id = ?",
+                         (json.dumps({**geo, **info}), str(case), json.dumps({**prm, **info}), run_id))
+            db.audit(conn, user['id'], 'CFD analizi başlattı', 'design_drawing', did, f"{d['name']} · {U:g} m/s · {res}")
+    except Exception as e:   # noqa: BLE001
+        with db.connect() as conn:
+            conn.execute("UPDATE design_cfd_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?", (str(e)[:2000], db.now(), run_id))
+        raise HTTPException(400, f'Analiz hazırlanamadı: {e}')
+    cfd.enqueue(run_id)
+    return {'id': run_id, 'geometry': geo, 'case': info}
+
+
+def _cfd_run(conn, rid):
+    r = db.row(conn.execute('SELECT * FROM design_cfd_runs WHERE id = ?', (rid,)))
+    if not r:
+        raise HTTPException(404, 'Analiz bulunamadı')
+    return r
+
+
+@router.get('/cfd/{rid}')
+def cfd_get(rid: int, user=Depends(design_user), conn=db.DB):
+    from .. import cfd
+    r = dict(_cfd_run(conn, rid))
+    for k in ('params', 'geometry', 'result'):
+        try:
+            r[k] = json.loads(r[k]) if r[k] else None
+        except (TypeError, ValueError):
+            r[k] = None
+    r['log'] = cfd.log_tail(rid, 40)
+    if r['status'] in ('running', 'done') and r.get('dir'):
+        from pathlib import Path
+        case = Path(r['dir'])
+        try:
+            r['coeffs_live'] = cfd.parse_coeffs(case) if r['status'] == 'running' else None
+            r['residuals'] = cfd.parse_residuals(case)
+        except Exception:   # noqa: BLE001
+            r['coeffs_live'] = None; r['residuals'] = None
+    r.pop('dir', None)
+    return r
+
+
+@router.post('/cfd/{rid}/cancel')
+def cfd_cancel(rid: int, user=Depends(design_user), conn=db.DB):
+    r = _cfd_run(conn, rid)
+    if r['status'] == 'queued':
+        conn.execute("UPDATE design_cfd_runs SET status = 'cancelled', phase = 'cancelled', finished_at = ? WHERE id = ?", (db.now(), rid))
+    elif r['status'] == 'running':
+        conn.execute("UPDATE design_cfd_runs SET status = 'cancelling' WHERE id = ?", (rid,))
+    return {'ok': True}
+
+
+@router.delete('/cfd/{rid}')
+def cfd_delete(rid: int, user=Depends(design_user), conn=db.DB):
+    import shutil
+    r = _cfd_run(conn, rid)
+    if r['status'] in ('running', 'cancelling'):
+        raise HTTPException(400, 'Önce analizi durdurun')
+    conn.execute('DELETE FROM design_cfd_runs WHERE id = ?', (rid,))
+    if r['dir']:
+        shutil.rmtree(r['dir'], ignore_errors=True)
+    return {'ok': True}
+
+
+@router.get('/cfd/{rid}/file')
+def cfd_file(rid: int, name: str, user=Depends(design_user), conn=db.DB):
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    r = _cfd_run(conn, rid)
+    if name not in ('body.bin', 'slice_side.bin', 'slice_top.bin', 'lines.bin', 'meta.json') or not r['dir']:
+        raise HTTPException(404, 'Dosya yok')
+    path = Path(r['dir']) / 'results' / name
+    if not path.is_file():
+        raise HTTPException(404, 'Sonuç dosyası yok')
+    return FileResponse(path, media_type='application/json' if name.endswith('.json') else 'application/octet-stream')
+
+
 @router.get('/drawings/{did}/parts')
 def list_parts(did: int, user=Depends(design_user), conn=db.DB):
     return db.rows(conn.execute(

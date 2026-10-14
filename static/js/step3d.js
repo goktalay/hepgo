@@ -322,6 +322,39 @@ export async function viewStep(container, src, opts = {}) {
   return {
     get tree() { return tree; }, get root() { return tree.root; }, get nodes() { return tree.nodes; }, get parts() { return tree.flat; }, get hidden() { return tree.hidden || []; },
     select, explode, fit, rebuild, silhouette, resize: onResize, parsed: res,
+    // STL dışa aktarma (CFD): görünür gövdeler (ya da düğümün gövdeleri), model ekseni → akış ekseni dönüşümü, metre.
+    // nose: burun yönü (model ekseni '+x'…'-z'; hava burundan kuyruğa akar → burun durum uzayında −x'e bakar), up: yukarı ekseni → +z,
+    // aoa: hücum açısı (derece, burun yukarı +), scale: model birimi → metre (STEP mm → 0.001). Döner: { buffer (binary STL), triangles, bbox }
+    exportStl(node, { nose = '+x', up = '+z', aoa = 0, scale = 0.001 } = {}) {
+      const axis = s => { const v = new THREE.Vector3(); v[s[1]] = s[0] === '-' ? -1 : 1; return v; };
+      const n = axis(nose), u = axis(up);
+      if (Math.abs(n.dot(u)) > 0.5) u.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(n[k]) < 0.5)] = 1;   // burun ile yukarı aynı eksense düzelt
+      const ex = n.clone().multiplyScalar(-1), ez = u.clone(), ey = ez.clone().cross(ex).normalize();   // durum: x = akış (kuyruk), z = yukarı, y = sağ el
+      const m = new THREE.Matrix4().makeBasis(ex, ey, ez).transpose();   // model → durum (satırlar = yeni eksenler)
+      const pitch = new THREE.Matrix4().makeRotationY(aoa * Math.PI / 180);   // R_y(+α): burun (−x,0,0) → (−cosα, 0, sinα) = burun yukarı
+      const M = new THREE.Matrix4().multiplyMatrices(pitch, m);
+      const list = (node ? node.allMeshes : tree.root.allMeshes).map(i => meshObjs[i]).filter(mm => mm && mm.visible);
+      let count = 0; list.forEach(mm => { count += mm.geometry.index ? mm.geometry.index.count / 3 : mm.geometry.attributes.position.count / 3; });
+      const buf = new ArrayBuffer(84 + count * 50), dv = new DataView(buf);
+      new Uint8Array(buf, 0, 80).set(new TextEncoder().encode('HEPGO STEP->STL flow+x up+z meters').subarray(0, 80));
+      dv.setUint32(80, count, true);
+      let off = 84; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), nn = new THREE.Vector3();
+      const mn = new THREE.Vector3(Infinity, Infinity, Infinity), mx = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+      for (const mm of list) {
+        const pos = mm.geometry.attributes.position.array, idx = mm.geometry.index ? mm.geometry.index.array : null, tri = idx ? idx.length / 3 : pos.length / 9;
+        for (let t = 0; t < tri; t++) {
+          const i0 = (idx ? idx[t * 3] : t * 3) * 3, i1 = (idx ? idx[t * 3 + 1] : t * 3 + 1) * 3, i2 = (idx ? idx[t * 3 + 2] : t * 3 + 2) * 3;
+          a.set(pos[i0], pos[i0 + 1], pos[i0 + 2]).applyMatrix4(M).multiplyScalar(scale);
+          b.set(pos[i1], pos[i1 + 1], pos[i1 + 2]).applyMatrix4(M).multiplyScalar(scale);
+          c.set(pos[i2], pos[i2 + 1], pos[i2 + 2]).applyMatrix4(M).multiplyScalar(scale);
+          nn.copy(b).sub(a).cross(c.clone().sub(a)).normalize();
+          dv.setFloat32(off, nn.x, true); dv.setFloat32(off + 4, nn.y, true); dv.setFloat32(off + 8, nn.z, true); off += 12;
+          for (const v of [a, b, c]) { dv.setFloat32(off, v.x, true); dv.setFloat32(off + 4, v.y, true); dv.setFloat32(off + 8, v.z, true); off += 12; mn.min(v); mx.max(v); }
+          dv.setUint16(off, 0, true); off += 2;
+        }
+      }
+      return { buffer: buf, triangles: count, bbox: count ? { min: mn.toArray(), max: mx.toArray(), size: mx.clone().sub(mn).toArray() } : null };
+    },
     // Küçük döner görünüm (karşılaştırma penceresi): düğümün gövdeleri ayrı bir sahnede, kendi etrafında döner. → { dispose }
     miniView(el, node, { color = 0xf97316 } = {}) {
       const w = el.clientWidth || 200, hh = el.clientHeight || 160;

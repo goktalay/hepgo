@@ -2,10 +2,11 @@
 // üstte genel bilgiler (kalkış ağırlığı, faydalı yük, mamul…), altta "3B Görünüm" (STEP parça ağacı, patlatma, ürün eşleştirme,
 // G-code karşılaştırma) ve "CFD Analizi" (2B kesit, kafes-Boltzmann) alt modülleri. Her yeni dosya yüklemesi yeni sürümdür.
 import { api, upload } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, h, modal, moduleTabs, moduleToolbar, onLeave, pageHead, t, toast, toastError } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, h, modal, moduleTabs, moduleToolbar, onLeave, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { isStep, parseStep, viewStep } from '../step3d.js';
 import { viewer as gcodeViewer } from '../gcode3d.js';
 import { createCfdView } from '../cfd2d.js';
+import { createCfdViz } from '../cfdviz.js';
 
 const KIND = { assembly: 'Montaj Çizimi', drawing: 'Çizim', part: 'Parça' };
 const KIND_BADGE = { assembly: 'blue', drawing: 'gray', part: 'green' };
@@ -329,7 +330,7 @@ async function renderDetail(view, pid, did, vid, ctx) {
   else if (!isStep(cur.file_name)) {
     clear(stage, h('div', { class: 'card empty' }, isImg(cur.file_name) ? h('img', { src: `/api/design/file?v=${cur.id}`, alt: d.name, style: { maxWidth: '100%', borderRadius: '10px' } }) : null,
       h('p', null, '3B görünüm ve CFD için STEP (.step/.stp) sürümü gerekir.'), ...dzFileLinks('v', cur.id, cur.file_name, isMaster)));
-  } else studio = stepStudio(stage, { did, vid: cur.id, name: d.name, reload: reloadInfo });
+  } else studio = stepStudio(stage, { did, vid: cur.id, name: d.name, reload: reloadInfo, specs: d.specs });
   showTab(tab);
 }
 
@@ -339,7 +340,7 @@ const PTYPE = { MAMUL: 'Mamul', YARI_MAMUL: 'Yarı mamul', YEDEK_PARCA: 'Yedek p
 const normCode = s => (s || '').replace(/[\r\n]/g, '').toLocaleUpperCase('tr').replace(/İ/g, 'I').replace(/[\s_]+/g, '').replace(/-+/g, '-');
 const codeVariants = s => { const n = normCode(s); const z = n.replace(/O(?=\d)/g, '0'), o = n.replace(/\b0(?=\d)/g, 'O'); return [...new Set([n, z, o])]; };
 
-function stepStudio(host, { did, vid, name, reload }) {
+function stepStudio(host, { did, vid, name, reload, specs }) {
   // ---- yükleme ilerlemesi
   const bar = h('i'), pct = h('b', null, '%0'), phase = h('div', { class: 'small muted' }, 'Dosya indiriliyor…');
   const loader = h('div', { class: 'stp-loader' }, h('div', { class: 'progress-line' }, h('div', { class: 'progress grow' }, bar), pct), phase);
@@ -626,15 +627,172 @@ function stepStudio(host, { did, vid, name, reload }) {
   cfdVisc.addEventListener('input', () => { cfdViscV.textContent = cfdNu().toFixed(3); cfd?.setViscosity(cfdNu()); });
   cfdMode.addEventListener('change', () => { if (cfd) cfd.opt.mode = cfdMode.value; });
   cfdPart.addEventListener('change', () => { if (cfd) cfd.opt.particles = cfdPart.checked; });
-  const cfdPanel = h('div', { class: 'cfd-panel', hidden: true },
+  const cfd2dPanel = h('div', { class: 'cfd-panel' },
     h('div', { class: 'cfd-ctl' },
       field('Kesit düzlemi', cfdAxis), field('Nesne', cfdObj), field('Akış yönü', cfdFlip),
       field('Giriş hızı (kafes)', h('div', { class: 'progress-line' }, cfdSpeed, cfdSpeedV)),
       field('Viskozite (kafes)', h('div', { class: 'progress-line' }, cfdVisc, cfdViscV)),
       field('Görünüm', cfdMode), h('label', { class: 'small', style: { display: 'flex', gap: '6px', alignItems: 'center' } }, cfdPart, 'Akım izleyici parçacıklar'),
       h('div', { class: 'stp-bar' }, cfdCut, cfdRun, cfdReset),
-      h('p', { class: 'small muted', style: { marginTop: '10px' } }, '2B kesit, kafes-Boltzmann (D2Q9) yaklaşık çözüm — ön değerlendirme amaçlıdır; katsayılar boyutsuz kafes birimindedir ve yalnız tasarımlar arası karşılaştırma için anlamlıdır.')),
+      h('p', { class: 'small muted', style: { marginTop: '10px' } }, '2B kesit, kafes-Boltzmann (D2Q9) yaklaşık çözüm — anlık ön izleme içindir; katsayılar boyutsuz kafes birimindedir.')),
     h('div', { class: 'cfd-view' }, cfdHost, cfdInfo, cfdStats));
+
+  // ---- 3B CFD (OpenFOAM, sunucuda): STL dışa aktar → analiz kuyruğu → ilerleme/yakınsama → sonuçlar (katsayılar, yüzey Cp, kesitler, akım çizgileri)
+  const sp = specs || {};
+  const ofStatus = h('div', { class: 'small muted' }, 'Çözücü durumu alınıyor…');
+  const inU = h('input', { class: 'input', type: 'number', step: 'any', min: '0.5', max: '200', value: sp.cruise_kmh ? (Number(sp.cruise_kmh) / 3.6).toFixed(1) : '20' });
+  const inAoa = h('input', { class: 'input', type: 'number', step: 'any', min: '-30', max: '30', value: '0' });
+  const axisOpts = sel => [['+x', '+X'], ['-x', '−X'], ['+y', '+Y'], ['-y', '−Y'], ['+z', '+Z'], ['-z', '−Z']].map(([v, l]) => h('option', { value: v, selected: v === sel }, l));
+  const inNose = h('select', { class: 'input' }, axisOpts('+x'));
+  const inUp = h('select', { class: 'input' }, axisOpts('+z'));
+  const inScope = h('select', { class: 'input' }, h('option', { value: 'all' }, 'Tüm montaj (gizlenenler hariç)'), h('option', { value: 'sel' }, '3B sekmesinde seçili parça / kırılım'));
+  const inRes = h('select', { class: 'input' }, h('option', { value: 'coarse', selected: true }, 'Kaba — hızlı (≈ 0,3–1 M hücre)'), h('option', { value: 'medium' }, 'Orta (≈ 1–3 M hücre)'), h('option', { value: 'fine' }, 'İnce — uzun (≈ 3–8 M hücre)'));
+  const inRho = h('input', { class: 'input', type: 'number', step: 'any', value: '1.225' }), inNu = h('input', { class: 'input', type: 'number', step: 'any', value: '0.000015' }), inTi = h('input', { class: 'input', type: 'number', step: 'any', value: '1' });
+  const inIters = h('input', { class: 'input', type: 'number', step: '1', min: '20', max: '3000', placeholder: 'otomatik' });
+  const startBtn = h('button', { class: 'btn primary', type: 'button' }, '▶ 3B analizi başlat');
+  const upBar = h('i'), upPct = h('b', null, ''), upLine = h('div', { class: 'progress-line', hidden: true }, h('div', { class: 'progress grow' }, upBar), upPct);
+  const runSel = h('select', { class: 'input', 'aria-label': 'Analiz' });
+  const runRefresh = h('button', { class: 'btn xs ghost', type: 'button', title: 'Yenile' }, '↻');
+  const runCancel = h('button', { class: 'btn xs ghost danger-text', type: 'button', hidden: true }, '⏹ Durdur');
+  const runDel = h('button', { class: 'btn xs ghost danger-text', type: 'button', hidden: true, title: 'Analizi ve dosyalarını sil' }, '🗑');
+  const stBadge = h('span', { class: 'badge gray' }, '—'), stPhase = h('span', { class: 'small muted' }, ''), stBar = h('i'), stPct = h('b', null, ''), stLine = h('div', { class: 'progress-line' }, h('div', { class: 'progress grow' }, stBar), stPct);
+  const stInfo = h('div', { class: 'small muted' }, '');
+  const resTable = h('div', { class: 'cfd-res' });
+  const plotResid = h('canvas', { class: 'cfd-plot', width: 560, height: 170 }), plotCoef = h('canvas', { class: 'cfd-plot', width: 560, height: 150 });
+  const vizHost = h('div', { class: 'cfd3d-view' }, h('div', { class: 'small muted', style: { padding: '24px' } }, 'Sonuç yok. Analiz bitince gövde, kesitler ve akım çizgileri burada görünür.'));
+  const legend = h('canvas', { class: 'cfd-legend', width: 260, height: 44 });
+  const vizField = h('select', { class: 'input sm' }, h('option', { value: 'Cp' }, 'Gövde: Cp (basınç katsayısı)'), h('option', { value: 'wallShearStress' }, 'Gövde: kayma gerilmesi'), h('option', { value: 'yPlus' }, 'Gövde: y+'));
+  const vizSlice = h('select', { class: 'input sm' }, h('option', { value: 'Umag' }, 'Kesitler: |U| / U∞'), h('option', { value: 'Cp' }, 'Kesitler: Cp'));
+  const tog = (name, label, on = true) => { const cb = h('input', { type: 'checkbox', class: 'stp-cb', checked: on }); cb.addEventListener('change', () => viz?.show(name, cb.checked)); return h('label', { class: 'small cfd-tog' }, cb, label); };
+  const togBody = tog('body', 'Gövde'), togSide = tog('slice_side', 'Yan kesit'), togTop = tog('slice_top', 'Üst kesit', false), togLines = tog('lines', 'Akım çizgileri');
+  const vizFit = h('button', { class: 'btn xs ghost', type: 'button' }, '⌖ Gövde'), vizFitAll = h('button', { class: 'btn xs ghost', type: 'button' }, '⌖ Tümü');
+  const logPre = h('pre', { class: 'cfd-log' }, '');
+  let runs = [], curRun = null, viz = null, pollT = null, vizLoadedFor = null;
+
+  const fmtN = (v, d = 3) => (v == null || Number.isNaN(v)) ? '—' : Number(v).toLocaleString('tr-TR', { maximumFractionDigits: d });
+  const plot = (cv, series, { log = false, xlabel = '' } = {}) => {
+    const g = cv.getContext('2d'), W = cv.width, H = cv.height, L = 44, B = 22, T = 8, R = 8;
+    g.clearRect(0, 0, W, H); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    const all = series.filter(s => s.y && s.y.length);
+    if (!all.length) { g.fillStyle = '#94a3b8'; g.font = '12px system-ui'; g.fillText('veri yok', L, H / 2); return; }
+    const xs = all.flatMap(s => s.x), ys = all.flatMap(s => s.y.filter(v => v != null && (!log || v > 0)));
+    const x0 = Math.min(...xs), x1 = Math.max(...xs) || 1; let y0 = Math.min(...ys), y1 = Math.max(...ys);
+    if (log) { y0 = Math.log10(Math.max(y0, 1e-12)); y1 = Math.log10(Math.max(y1, 1e-12)); }
+    if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    const X = x => L + (x - x0) / (x1 - x0 || 1) * (W - L - R), Y = y => T + (1 - ((log ? Math.log10(Math.max(y, 1e-12)) : y) - y0) / (y1 - y0)) * (H - T - B);
+    g.strokeStyle = '#e2e8f0'; g.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) { const yy = T + i * (H - T - B) / 4; g.beginPath(); g.moveTo(L, yy); g.lineTo(W - R, yy); g.stroke(); }
+    g.fillStyle = '#64748b'; g.font = '10px system-ui'; g.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) { const v = y1 - i * (y1 - y0) / 4; g.fillText(log ? `1e${v.toFixed(1)}` : v.toPrecision(3), L - 4, T + i * (H - T - B) / 4 + 3); }
+    g.textAlign = 'center'; g.fillText(`${Math.round(x0)}`, L, H - 6); g.fillText(`${Math.round(x1)}${xlabel ? ' ' + xlabel : ''}`, W - R - 10, H - 6);
+    all.forEach((s, i) => {
+      g.strokeStyle = s.color || ['#1d4ed8', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'][i % 6]; g.lineWidth = 1.5; g.beginPath(); let started = false;
+      s.x.forEach((x, k) => { const v = s.y[k]; if (v == null || (log && v <= 0)) return; const px = X(x), py = Y(v); if (!started) { g.moveTo(px, py); started = true; } else g.lineTo(px, py); });
+      g.stroke(); g.fillStyle = g.strokeStyle; g.textAlign = 'left'; g.fillText(s.name, L + 6 + i * 70, T + 10);
+    });
+  };
+  const drawRun = r => {
+    curRun = r;
+    const st = r.status, prm = r.params || {}, res = r.result || {};
+    const total = prm.iters || 0, done = r.iters || 0;
+    stBadge.textContent = { queued: 'Kuyrukta', preparing: 'Hazırlanıyor', running: 'Çalışıyor', cancelling: 'Durduruluyor', cancelled: 'Durduruldu', done: 'Tamamlandı', failed: 'Hata' }[st] || st;
+    stBadge.className = `badge ${{ done: 'green', failed: 'red', running: 'blue', cancelled: 'gray' }[st] || 'gray'}`;
+    const ph = { features: 'yüzey özellikleri', blockMesh: 'arka plan ağı', snappyHexMesh: 'gövde çevresi ağ (snappyHexMesh)', checkMesh: 'ağ kontrolü', simpleFoam: 'çözüm (simpleFoam, k-ω SST)', post: 'sonuçlar yazılıyor', results: 'sonuçlar işleniyor', done: 'bitti' }[r.phase] || (r.phase || '');
+    stPhase.textContent = ph ? `Aşama: ${ph}` : '';
+    const pct = st === 'done' ? 100 : (r.phase === 'simpleFoam' && total ? Math.min(99, 15 + Math.round(done / total * 80)) : { features: 3, blockMesh: 6, snappyHexMesh: 10, checkMesh: 14, post: 96, results: 98 }[r.phase] || 0);
+    stBar.style.width = `${pct}%`; stPct.textContent = `%${pct}`;
+    stInfo.textContent = [r.cells ? t('{n} hücre', { n: fmtN(r.cells, 0) }) : null, done ? t('{a} / {b} yineleme', { a: done, b: total }) : null, prm.cores ? t('{n} çekirdek', { n: prm.cores }) : null,
+      r.started_at ? t('başladı {d}', { d: fmtDateTime(r.started_at) }) : null, r.finished_at ? t('bitti {d}', { d: fmtDateTime(r.finished_at) }) : null].filter(Boolean).join(' · ');
+    runCancel.hidden = !['queued', 'running'].includes(st); runDel.hidden = ['running', 'cancelling'].includes(st);
+    const c = res.coeffs || r.coeffs_live || null, f = res.forces || null, geo = r.geometry || {};
+    const row = (k, v, sub) => h('div', { class: 'dz-tile' }, h('div', { class: 'dz-tile-l' }, k), h('div', { class: 'dz-tile-v' }, v), sub ? h('div', { class: 'small muted' }, sub) : null);
+    clear(resTable, c ? h('div', { class: 'dz-tiles' },
+      row('C_d', fmtN(c.Cd, 4), 'sürükleme katsayısı'), row('C_l', fmtN(c.Cl, 4), 'kaldırma katsayısı'), row('L / D', f && f.LD != null ? fmtN(f.LD, 2) : '—'),
+      row('Sürükleme', f ? `${fmtN(f.drag_N, 2)} N` : '—', f ? t('{u} m/s, ρ {r}', { u: prm.U, r: prm.rho }) : null), row('Kaldırma', f ? `${fmtN(f.lift_N, 2)} N` : '—'),
+      row('C_m (yunuslama)', fmtN(c.CmPitch, 4)), row('Referans alan', geo.frontal_area != null ? `${fmtN(geo.frontal_area * 1e4, 1)} cm²` : '—', 'ön izdüşüm'),
+      row('Hücum açısı', `${fmtN(prm.aoa, 1)}°`), row('Ağ', r.cells ? fmtN(r.cells, 0) : '—', 'hücre'), row('Yineleme', `${done}${total ? ' / ' + total : ''}`, st === 'done' && total && done < total ? 'yakınsadı (erken durdu)' : null))
+      : (st === 'failed' ? h('div', { class: 'card empty danger-text' }, h('b', null, 'Analiz başarısız: '), r.error || '') : h('div', { class: 'small muted' }, st === 'done' ? 'Katsayı verisi yok' : 'Katsayılar çözüm sırasında burada güncellenir.')));
+    const rs = r.residuals;
+    plot(plotResid, rs ? ['Ux', 'Uy', 'Uz', 'p', 'k', 'omega'].filter(k => rs[k]).map(k => ({ name: k, x: rs.iters, y: rs[k] })) : [], { log: true, xlabel: 'yineleme' });
+    const hist = c && c.history;
+    plot(plotCoef, hist ? [{ name: 'Cd', x: hist.map(x => x[0]), y: hist.map(x => x[1]) }, { name: 'Cl', x: hist.map(x => x[0]), y: hist.map(x => x[2]) }] : [], { xlabel: 'yineleme' });
+    logPre.textContent = r.log || '';
+    if (st === 'done' && res.files && vizLoadedFor !== r.id) loadViz(r);
+    if (st !== 'done') { vizLoadedFor = null; }
+  };
+  const loadViz = async r => {
+    vizLoadedFor = r.id;
+    try {
+      if (!viz) { clear(vizHost); viz = await createCfdViz(vizHost, { legend }); }
+      const have = await viz.load(`/api/design/cfd/${r.id}/file?x=1`, r.result);
+      viz.show('slice_top', false);
+      [togBody, togSide, togTop, togLines].forEach(l => { l.hidden = !have.includes(l.querySelector('input') && { Gövde: 'body', 'Yan kesit': 'slice_side', 'Üst kesit': 'slice_top', 'Akım çizgileri': 'lines' }[l.textContent.trim()]); });
+    } catch (err) { clear(vizHost, h('div', { class: 'small muted', style: { padding: '24px' } }, 'Görselleştirme yüklenemedi: ' + (err.message || err))); }
+  };
+  vizField.addEventListener('change', () => viz?.setField('body', vizField.value));
+  vizSlice.addEventListener('change', () => viz?.setField('slice', vizSlice.value));
+  vizFit.addEventListener('click', () => viz?.fitBody()); vizFitAll.addEventListener('click', () => viz?.fit());
+  const loadRuns = async (selectId = null) => {
+    try { runs = await api.get(`/api/design/drawings/${did}/cfd`); } catch (err) { toastError(err); return; }
+    const want = selectId || (curRun && curRun.id) || (runs[0] && runs[0].id);
+    clear(runSel, runs.length ? runs.map(r => h('option', { value: r.id, selected: r.id === want }, `#${r.id} · ${r.name || ''} · ${{ queued: 'kuyrukta', preparing: 'hazırlanıyor', running: 'çalışıyor', cancelling: 'durduruluyor', cancelled: 'durduruldu', done: 'tamamlandı', failed: 'hata' }[r.status] || r.status}`)) : h('option', { value: '' }, 'Henüz analiz yok'));
+    if (want) await pollRun(want); else { curRun = null; clear(resTable); }
+  };
+  const pollRun = async id => {
+    let r; try { r = await api.get(`/api/design/cfd/${id}`); } catch { return; }
+    drawRun(r);
+    const opt = [...runSel.options].find(o => Number(o.value) === r.id); if (opt) opt.textContent = `#${r.id} · ${r.name || ''} · ${{ queued: 'kuyrukta', preparing: 'hazırlanıyor', running: 'çalışıyor', cancelling: 'durduruluyor', cancelled: 'durduruldu', done: 'tamamlandı', failed: 'hata' }[r.status] || r.status}`;
+    clearTimeout(pollT);
+    if (['queued', 'preparing', 'running', 'cancelling'].includes(r.status)) pollT = setTimeout(() => pollRun(id), 4000);
+  };
+  runSel.addEventListener('change', () => { if (runSel.value) pollRun(Number(runSel.value)); });
+  runRefresh.addEventListener('click', () => loadRuns());
+  runCancel.addEventListener('click', async () => { if (!curRun) return; try { await api.post(`/api/design/cfd/${curRun.id}/cancel`, {}); toast('Durduruluyor'); pollRun(curRun.id); } catch (err) { toastError(err); } });
+  runDel.addEventListener('click', async () => { if (!curRun || !await confirmDialog('Analizi sil', t('#{id} analizi ve dosyaları silinsin mi?', { id: curRun.id }), { okLabel: 'Sil', danger: true })) return; try { await api.del(`/api/design/cfd/${curRun.id}`); curRun = null; loadRuns(); } catch (err) { toastError(err); } });
+  startBtn.addEventListener('click', async () => {
+    if (!viewer) { toast('Önce 3B model yüklensin', 'err'); return; }
+    const node = inScope.value === 'sel' ? selected : null;
+    if (inScope.value === 'sel' && !node) { toast('3B sekmesinde bir parça / kırılım seçin', 'err'); return; }
+    const U = Number(inU.value); if (!(U >= 0.5 && U <= 200)) { toast('Akış hızı 0,5–200 m/s olmalı', 'err'); return; }
+    startBtn.disabled = true; upLine.hidden = false; upBar.style.width = '0%'; upPct.textContent = 'STL';
+    try {
+      const stl = viewer.exportStl(node, { nose: inNose.value, up: inUp.value, aoa: Number(inAoa.value) || 0, scale: 0.001 });
+      if (!stl.triangles) throw new Error('Dışa aktarılacak gövde yok');
+      const fd = new FormData(); fd.append('file', new Blob([stl.buffer], { type: 'application/octet-stream' }), 'body.stl');
+      fd.append('params', JSON.stringify({ U, rho: Number(inRho.value) || 1.225, nu: Number(inNu.value) || 1.5e-5, turb_intensity: (Number(inTi.value) || 1) / 100, res: inRes.value, aoa: Number(inAoa.value) || 0,
+        nose: inNose.value, up: inUp.value, scope: inScope.value, scope_name: node ? node.name : '', iters: inIters.value ? Number(inIters.value) : null, version_id: vid,
+        name: `${node ? node.name : name} · ${U} m/s · ${Number(inAoa.value) || 0}° · ${inRes.selectedOptions[0].textContent.split(' ')[0]}` }));
+      const r = await upload(`/api/design/drawings/${did}/cfd`, fd, p => { upBar.style.width = `${p}%`; upPct.textContent = `%${p}`; });
+      toast(t('Analiz #{id} kuyruğa alındı ({n} üçgen, gövde {l} m)', { id: r.id, n: stl.triangles.toLocaleString('tr-TR'), l: (r.geometry.size[0]).toFixed(2) }), 'success');
+      await loadRuns(r.id);
+    } catch (err) { toastError(err); } finally { startBtn.disabled = false; upLine.hidden = true; }
+  });
+  api.get('/api/design/cfd/status').then(s => {
+    ofStatus.textContent = s.available ? t('OpenFOAM v2406 hazır · {n} çekirdek', { n: s.cores }) : 'OpenFOAM bu sunucuda kurulu değil — analiz başlatılamaz';
+    ofStatus.classList.toggle('danger-text', !s.available); startBtn.disabled = !s.available;
+  }).catch(() => { ofStatus.textContent = 'Çözücü durumu alınamadı'; });
+
+  const cfd3dPanel = h('div', { class: 'cfd-panel' },
+    h('div', { class: 'cfd-ctl' },
+      ofStatus,
+      field('Uçuş / akış hızı (m/s)', inU), field('Hücum açısı (°)', inAoa, 'burun yukarı +'),
+      h('div', { class: 'dz-part-fields' }, field('Burun yönü (model ekseni)', inNose), field('Yukarı (model ekseni)', inUp)),
+      field('Nesne', inScope), field('Ağ çözünürlüğü', inRes),
+      h('details', null, h('summary', { class: 'small' }, 'Gelişmiş'), h('div', { class: 'dz-part-fields' }, field('Hava yoğunluğu (kg/m³)', inRho), field('Kinematik viskozite (m²/s)', inNu)), h('div', { class: 'dz-part-fields' }, field('Türbülans yoğunluğu (%)', inTi), field('En çok yineleme', inIters))),
+      startBtn, upLine,
+      h('p', { class: 'small muted', style: { marginTop: '10px' } }, 'Sunucuda OpenFOAM: snappyHexMesh ile gövde çevresinde hex ağ, simpleFoam ile kararlı RANS çözümü (k-ω SST), sınır tabaka duvar fonksiyonlu. Kaba ağda dakikalar, ince ağda saatler sürebilir.')),
+    h('div', { class: 'cfd-view' },
+      h('div', { class: 'stp-bar' }, runSel, runRefresh, runCancel, runDel),
+      h('div', { class: 'cfd-status card' }, h('div', { class: 'stp-bar' }, stBadge, stPhase), stLine, stInfo),
+      resTable,
+      h('div', { class: 'cfd-plots' }, h('div', null, h('div', { class: 'small muted' }, 'Yakınsama (artık, log)'), plotResid), h('div', null, h('div', { class: 'small muted' }, 'C_d / C_l tarihçesi'), plotCoef)),
+      h('div', { class: 'stp-bar' }, vizField, vizSlice, togBody, togSide, togTop, togLines, h('span', { class: 'spacer' }), vizFit, vizFitAll),
+      vizHost, legend,
+      h('details', null, h('summary', { class: 'small' }, 'Çözücü günlüğü'), logPre)));
+
+  const cfdModeSel = segmented([['cfd3d', '🧮 3B Analiz (OpenFOAM)'], ['cfd2d', '⚡ Hızlı 2B ön izleme']], 'cfd3d', k => { cfd3dPanel.hidden = k !== 'cfd3d'; cfd2dPanel.hidden = k !== 'cfd2d'; if (k === 'cfd2d' && viewer && !cfdReady) takeCut(); if (k === 'cfd3d') setTimeout(() => viz?.resize(), 30); });
+  cfd2dPanel.hidden = true;
+  const cfdPanel = h('div', { hidden: true }, h('div', { class: 'cfd-mode' }, cfdModeSel), cfd3dPanel, cfd2dPanel);
 
   // ---- Yerleşim
   const viewPanel = h('div', { class: 'stp-studio' },
@@ -663,7 +821,7 @@ function stepStudio(host, { did, vid, name, reload }) {
       viewer = await viewStep(canvas, parsed, { onSelect, overlay });
       viewer.nodes.forEach(n => { if (n.kind === 'group' && n.depth >= 2 && !n.custom) collapsed.add(n.key); });
       drawTree(); onSelect(null);
-      if (cfdPanel.hidden === false) takeCut();
+      if (!cfdPanel.hidden && !cfd2dPanel.hidden) takeCut();
     } catch (err) { clear(canvas, h('div', { class: 'card empty' }, 'Model yüklenemedi: ' + (err.message || err))); clear(treeEl); }
   })();
 
@@ -671,11 +829,11 @@ function stepStudio(host, { did, vid, name, reload }) {
     showTab(k) {
       viewPanel.hidden = k !== 'view'; cfdPanel.hidden = k !== 'cfd'; host.hidden = k === 'notes';
       if (k === 'view') setTimeout(() => viewer?.resize(), 30);
-      if (k === 'cfd' && viewer && !cfdReady) takeCut();
+      if (k === 'cfd') { if (!runs.length && !curRun) loadRuns(); if (!cfd2dPanel.hidden && viewer && !cfdReady) takeCut(); setTimeout(() => viz?.resize(), 30); }
     },
     resize() { viewer?.resize(); },
     reloadLinks() { loadLinks().catch(() => {}); },
     get dirty() { return dirty; },
-    dispose() { window.removeEventListener('beforeunload', beforeUnload); cmpGv?.destroy(); cmpSv?.dispose(); cfd?.destroy(); viewer?.dispose(); },
+    dispose() { window.removeEventListener('beforeunload', beforeUnload); clearTimeout(pollT); cmpGv?.destroy(); cmpSv?.dispose(); cfd?.destroy(); viz?.dispose(); viewer?.dispose(); },
   };
 }

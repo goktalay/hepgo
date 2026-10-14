@@ -8692,6 +8692,20 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .stp-row.checked { background: #eff6ff; }
 .stp-row.root .stp-cb { display: none; }
 /* Ağaç satırındaki işaret kutusu: genel "switch" görünümü yerine küçük kare kutu */
-.stp-row input[type="checkbox"].stp-cb { appearance: auto; -webkit-appearance: checkbox; width: 14px !important; height: 14px !important; min-width: 14px; border-radius: 3px; background: none; border: 0; padding: 0; margin: 0; }
-.stp-row input[type="checkbox"].stp-cb::after { display: none; content: none; }
+input[type="checkbox"].stp-cb { appearance: auto; -webkit-appearance: checkbox; width: 14px !important; height: 14px !important; min-width: 14px; border-radius: 3px; background: none; border: 0; padding: 0; margin: 0; }
+input[type="checkbox"].stp-cb::after { display: none; content: none; }
 .stp-folder { display: inline-flex; margin-right: 5px; vertical-align: -2px; }
+/* 3B CFD (OpenFOAM) paneli */
+.cfd-mode { margin-bottom: 10px; }
+.cfd-status { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.cfd-res .dz-tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.cfd-plots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cfd-plot { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.cfd3d-view { width: 100%; height: min(60vh, 520px); border-radius: 12px; overflow: hidden; background: #f3f6fb; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
+.cfd3d-view canvas { display: block; }
+.cfd-legend { display: block; margin-top: 4px; }
+.cfd-tog { display: inline-flex; align-items: center; gap: 4px; }
+.cfd-tog .stp-cb { opacity: 1; }
+.cfd-log { max-height: 220px; overflow: auto; font-size: 11px; background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
+.cfd-ctl details { margin: 6px 0; } .cfd-ctl summary { cursor: pointer; color: var(--primary); }
+@media (max-width: 760px) { .cfd-plots { grid-template-columns: 1fr; } }

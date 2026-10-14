@@ -39,33 +39,105 @@ export function buildStepTree(res) {
   root.children = root.children.filter(c => c.allMeshes.length);
   // Boş sarmalayıcı kökler (adsız kök → tek alt montaj) atlanır; en üstteki gerçek montaj kök olur
   while (!root.meshes.length && root.children.length === 1 && root.children[0].kind === 'group') root = root.children[0];
-  root.name = root.name || 'Montaj'; root.depth = 0; root.parent = null;
-  const nodes = [], flat = [];
-  const collect = (n, depth) => {
+  root.name = root.name || 'Montaj'; root.depth = 0; root.parent = null; root.key = 'root';
+  const nodes = [];
+  const collect = n => {
     n.children = n.children.filter(c => c.allMeshes.length);
     for (const c of n.children) {
-      c.depth = depth; c.parent = n; c.key = meshKey(c.name, c.path); if (c.kind === 'group') c.key = 'g' + c.key.slice(1);
-      nodes.push(c); if (c.kind === 'part') flat.push(c);
-      collect(c, depth + 1);
+      c.key = meshKey(c.name, c.path); if (c.kind === 'group') c.key = 'g' + c.key.slice(1);
+      nodes.push(c); collect(c);
     }
   };
-  collect(root, 1);
+  collect(root);
   // Aynı adlı parçalar (ör. 4 × "AT"): sıra numarasıyla benzersiz anahtar — sürümler arasında sıra aynı kaldığı sürece eşleşme korunur
   const seen = {};
   for (const p of nodes) {
     const n = (seen[p.key] = (seen[p.key] || 0) + 1);
     if (n > 1) { p.key = `${p.key}#${n}`; p.dupIndex = n; }
   }
-  return { root, nodes, flat };
+  return reindex({ root });
 }
 
-// container: boş DOM düğümü (ölçülü). arrayBuffer: STEP. opts.onSelect(node|null). → { root, nodes, parts, select(node), explode(0–1), fit, dispose }
-export async function viewStep(container, arrayBuffer, opts = {}) {
+// Ağacı yeniden dizinle: depth, parent, allMeshes (alttan üste), nodes (ağaç sırası), flat (yaprak parçalar)
+export function reindex(tree) {
+  const nodes = [], flat = [];
+  const walk = (n, depth) => {
+    n.depth = depth;
+    n.allMeshes = [...n.meshes];
+    for (const c of n.children) { c.parent = n; nodes.push(c); if (c.kind === 'part') flat.push(c); walk(c, depth + 1); n.allMeshes.push(...c.allMeshes); }
+  };
+  tree.root.parent = null; walk(tree.root, 0);
+  tree.nodes = nodes; tree.flat = flat;
+  return tree;
+}
+
+// Kullanıcı düzeni (design_drawings.step_tree): groups [{key:'c:…', name, parent}], parents {key: parentKey|null(kök)}, names {key: ad}
+// Dosya değişmez; düzen her açılışta STEP ağacına uygulanır. Döngü ve kayıp anahtarlar sessizce atlanır.
+export function applyOverlay(tree, ov) {
+  if (!ov) return tree;
+  const byKey = new Map([['root', tree.root], ...tree.nodes.map(n => [n.key, n])]);
+  for (const g of (ov.groups || [])) {
+    if (!g || !g.key || byKey.has(g.key)) continue;
+    const node = { key: g.key, name: g.name || 'Alt kırılım', path: '', kind: 'group', custom: true, meshes: [], allMeshes: [], children: [] };
+    byKey.set(g.key, node); tree.root.children.push(node); node.parent = tree.root;
+  }
+  for (const g of (ov.groups || [])) {   // grup ebeveynleri (gruplar birbirinin içine girebilir)
+    const node = byKey.get(g && g.key), parent = byKey.get(g && g.parent) || tree.root;
+    if (node && node.custom && parent !== node) move(node, parent);
+  }
+  for (const [k, pk] of Object.entries(ov.parents || {})) {
+    const node = byKey.get(k), parent = byKey.get(pk || 'root');
+    if (node && parent && node !== tree.root) move(node, parent);
+  }
+  for (const [k, name] of Object.entries(ov.names || {})) { const n = byKey.get(k); if (n && String(name).trim()) n.name = String(name).trim(); }
+  return reindex(tree);
+  function move(node, parent) {
+    for (let a = parent; a; a = a.parent) if (a === node) return;   // kendi altına taşınamaz
+    const old = node.parent; if (old) old.children = old.children.filter(c => c !== node);
+    parent.children.push(node); node.parent = parent;
+  }
+}
+
+// STEP çözümleme: önce module worker (ana iş parçacığı kilitlenmez; ilerleme/iptal mümkün), olmazsa ana iş parçacığında occt.
+// Dönen: { root, meshes: [{ name, color:[r,g,b]|null, position: Float32Array, normal: Float32Array|null, index: Uint32Array|null }] }
+let worker = null, reqId = 0;
+const pending = new Map();
+function getWorker() {
+  if (worker) return worker;
+  worker = new Worker('/static/js/step-worker.js', { type: 'module' });
+  worker.onmessage = e => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); e.data.ok ? p.resolve(e.data.result) : p.reject(new Error(e.data.error || 'STEP çözümlenemedi')); };
+  worker.onerror = err => { for (const p of pending.values()) p.reject(new Error('STEP işçisi hata verdi: ' + (err.message || ''))); pending.clear(); worker = null; };
+  return worker;
+}
+export async function parseStep(arrayBuffer, { onPhase } = {}) {
+  onPhase?.('CAD çekirdeği yükleniyor…');
+  try {
+    const w = getWorker();
+    const id = ++reqId;
+    const buf = arrayBuffer.slice(0);   // işçiye aktarılır; çağıranın tamponu bozulmasın
+    const res = await new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); w.postMessage({ id, buffer: buf }, [buf]); onPhase?.('Model çözümleniyor (büyük dosyalarda 1 dk sürebilir)…'); });
+    return res;
+  } catch (err) {
+    if (!/işçisi|Worker|module/i.test(String(err && err.message))) throw err;
+    onPhase?.('Model çözümleniyor…');
+    const occt = await loadOcct();
+    const r = occt.ReadStepFile(new Uint8Array(arrayBuffer), null);
+    if (!r || !r.success) throw new Error('STEP dosyası okunamadı');
+    const strip = n => ({ name: n.name || '', meshes: (n.meshes || []).slice(), children: (n.children || []).map(strip) });
+    return { root: strip(r.root || {}), meshes: (r.meshes || []).map(m => ({ name: m.name || '', color: m.color && m.color.length === 3 ? [...m.color] : null,
+      position: m.attributes?.position?.array ? Float32Array.from(m.attributes.position.array) : null,
+      normal: m.attributes?.normal?.array?.length ? Float32Array.from(m.attributes.normal.array) : null,
+      index: m.index?.array?.length ? Uint32Array.from(m.index.array) : null })) };
+  }
+}
+
+// container: boş DOM düğümü (ölçülü). src: STEP ArrayBuffer ya da parseStep sonucu. opts.onSelect(node|null), opts.overlay, opts.onPhase.
+// → { root, nodes, parts, select(node), explode(0–1), fit, rebuild, silhouette, snapshot, dispose }
+export async function viewStep(container, src, opts = {}) {
   const [THREE, { OrbitControls }] = await loadLibs();
-  const occt = await loadOcct();
-  const res = occt.ReadStepFile(new Uint8Array(arrayBuffer), null);
-  if (!res || !res.success || !res.meshes || !res.meshes.length) throw new Error('STEP dosyası okunamadı ya da geometri yok.');
-  const tree = buildStepTree(res);
+  const res = src instanceof ArrayBuffer ? await parseStep(src, opts) : src;
+  if (!res || !res.meshes || !res.meshes.length) throw new Error('STEP dosyası okunamadı ya da geometri yok.');
+  let tree = applyOverlay(buildStepTree(res), opts.overlay);
 
   const W = container.clientWidth || 560, H = container.clientHeight || 420;
   const scene = new THREE.Scene();
@@ -82,13 +154,13 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
   const group = new THREE.Group();
   const meshObjs = [];   // index = occt mesh index
   res.meshes.forEach((mesh, i) => {
-    const pos = mesh.attributes?.position?.array;
+    const pos = mesh.position;
     if (!pos || !pos.length) { meshObjs[i] = null; return; }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(pos), 3));
-    if (mesh.attributes.normal?.array?.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(Float32Array.from(mesh.attributes.normal.array), 3));
-    if (mesh.index?.array?.length) g.setIndex(Array.from(mesh.index.array));
-    if (!mesh.attributes.normal?.array?.length) g.computeVertexNormals();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    if (mesh.normal?.length) g.setAttribute('normal', new THREE.BufferAttribute(mesh.normal, 3));
+    if (mesh.index?.length) g.setIndex(new THREE.BufferAttribute(mesh.index, 1));
+    if (!mesh.normal?.length) g.computeVertexNormals();
     g.computeBoundingBox();
     const c = mesh.color && mesh.color.length === 3 ? new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2]) : new THREE.Color(0x9aa8bd);
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: c, metalness: 0.25, roughness: 0.65, side: THREE.DoubleSide }));
@@ -136,10 +208,16 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
     const c = b.isEmpty() ? new THREE.Vector3() : b.getCenter(new THREE.Vector3());
     nodeCenter.set(n, c); return c;
   };
-  const leafOf = i => tree.flat.find(p => p.meshes.includes(i)) || null;
-  meshObjs.forEach(m => { if (m) m.userData.part = leafOf(m.userData.idx); });
-  centerOf(tree.root); tree.nodes.forEach(centerOf);   // başlangıç konumlarıyla (patlatmadan önce) hesapla
+  let lastT = 0;
+  const index = () => {   // ağaç (yeniden) kurulunca: mesh → yaprak, düğüm merkezleri (patlatmasız konumlardan)
+    const leafOf = i => tree.flat.find(p => p.meshes.includes(i)) || null;
+    meshObjs.forEach(m => { if (m) m.userData.part = leafOf(m.userData.idx); });
+    nodeCenter.clear(); meshObjs.forEach(m => { if (m) m.position.set(0, 0, 0); });
+    centerOf(tree.root); tree.nodes.forEach(centerOf);
+  };
+  index();
   const explode = t => {
+    lastT = t;
     const k = Math.max(0, Math.min(1, t)) * 1.5;
     meshObjs.forEach(m => {
       if (!m) return;
@@ -169,8 +247,93 @@ export async function viewStep(container, arrayBuffer, opts = {}) {
   const onResize = () => { const w = container.clientWidth || W, hh = container.clientHeight || H; camera.aspect = w / hh; camera.updateProjectionMatrix(); renderer.setSize(w, hh); };
   window.addEventListener('resize', onResize);
 
+  // Siluet (CFD kesiti): düğümün (ya da tüm montajın) üçgenleri eksen boyunca düzleme izdüşürülüp cols×rows ızgaraya rasterlenir.
+  // axis: 'z' üstten (u=x, v=y) · 'y' önden (u=x, v=z) · 'x' yandan (u=y, v=z). Dönen: { mask: Uint8Array(cols*rows), bbox, fill }
+  // Cisim ızgarada yatayda box.x0..x1, düşeyde ortalanır (oran korunur); flip: akış yönü ters (u aynalanır).
+  const silhouette = (node, axis = 'z', cols = 240, rows = 120, { x0 = 0.22, x1 = 0.62, flip = false } = {}) => {
+    const n = node || tree.root;
+    const ax = { x: [1, 2], y: [0, 2], z: [0, 1] }[axis] || [0, 1];
+    const tris = [];
+    let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
+    for (const i of n.allMeshes) {
+      const m = meshObjs[i]; if (!m) continue;
+      const pos = m.geometry.attributes.position.array, idx = m.geometry.index ? m.geometry.index.array : null, cnt = idx ? idx.length : pos.length / 3;
+      const pts = new Float32Array(cnt * 2);
+      for (let k = 0; k < cnt; k++) {
+        const vi = (idx ? idx[k] : k) * 3;
+        const u = pos[vi + ax[0]], v = pos[vi + ax[1]];
+        pts[k * 2] = u; pts[k * 2 + 1] = v;
+        if (u < umin) umin = u; if (u > umax) umax = u; if (v < vmin) vmin = v; if (v > vmax) vmax = v;
+      }
+      tris.push(pts);
+    }
+    const mask = new Uint8Array(cols * rows);
+    if (!tris.length || umin === Infinity) return { mask, bbox: null, fill: 0 };
+    const du = umax - umin || 1, dv = vmax - vmin || 1;
+    const sx = (x1 - x0) * cols / du;   // ölçek: cisim genişliği → (x1−x0)·cols hücre; düşeyde aynı ölçek, en çok rows·0.8
+    const s = Math.min(sx, rows * 0.8 / dv);
+    const w = du * s, hgt = dv * s, ox = x0 * cols + ((x1 - x0) * cols - w) / 2, oy = (rows - hgt) / 2;
+    const U = u => { const c = ox + (u - umin) * s; return flip ? ox + w - (c - ox) : c; };
+    const V = v => oy + (vmax - v) * s;   // ekran: yukarı = +v
+    for (const pts of tris) {
+      for (let k = 0; k < pts.length; k += 6) {
+        const ax0 = U(pts[k]), ay0 = V(pts[k + 1]), bx = U(pts[k + 2]), by = V(pts[k + 3]), cx = U(pts[k + 4]), cy = V(pts[k + 5]);
+        const minx = Math.max(0, Math.floor(Math.min(ax0, bx, cx))), maxx = Math.min(cols - 1, Math.ceil(Math.max(ax0, bx, cx)));
+        const miny = Math.max(0, Math.floor(Math.min(ay0, by, cy))), maxy = Math.min(rows - 1, Math.ceil(Math.max(ay0, by, cy)));
+        if (maxx - minx <= 1 && maxy - miny <= 1) {   // hücreden küçük üçgen: ağırlık merkezi
+          const gx = Math.floor((ax0 + bx + cx) / 3), gy = Math.floor((ay0 + by + cy) / 3);
+          if (gx >= 0 && gx < cols && gy >= 0 && gy < rows) mask[gy * cols + gx] = 1;
+          continue;
+        }
+        const det = (bx - ax0) * (cy - ay0) - (cx - ax0) * (by - ay0); if (Math.abs(det) < 1e-9) continue;
+        for (let y = miny; y <= maxy; y++) for (let x = minx; x <= maxx; x++) {
+          const px = x + 0.5, py = y + 0.5;
+          const l1 = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / det, l2 = ((cx - px) * (ay0 - py) - (ax0 - px) * (cy - py)) / det, l3 = 1 - l1 - l2;
+          if (l1 >= -1e-6 && l2 >= -1e-6 && l3 >= -1e-6) mask[y * cols + x] = 1;
+        }
+      }
+    }
+    let fill = 0; for (let i = 0; i < mask.length; i++) fill += mask[i];
+    return { mask, bbox: { umin, umax, vmin, vmax, width: du, height: dv }, fill, cell: 1 / s };   // cell: bir hücrenin model birimi (mm) karşılığı
+  };
+
+  // Düzeni yeniden uygula (alt kırılım ekleme/taşıma/ad); seçim anahtara göre korunur, patlatma yeniden hesaplanır
+  const rebuild = overlay => {
+    const selKey = selected && selected.key;
+    tree = applyOverlay(buildStepTree(res), overlay);
+    index(); explode(lastT);
+    selected = selKey ? (tree.nodes.find(n => n.key === selKey) || null) : null; paint();
+    return tree;
+  };
+
   return {
-    tree, root: tree.root, nodes: tree.nodes, parts: tree.flat, select, explode, fit, resize: onResize,
+    get tree() { return tree; }, get root() { return tree.root; }, get nodes() { return tree.nodes; }, get parts() { return tree.flat; },
+    select, explode, fit, rebuild, silhouette, resize: onResize, parsed: res,
+    // Küçük döner görünüm (karşılaştırma penceresi): düğümün gövdeleri ayrı bir sahnede, kendi etrafında döner. → { dispose }
+    miniView(el, node, { color = 0xf97316 } = {}) {
+      const w = el.clientWidth || 200, hh = el.clientHeight || 160;
+      const r2 = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      r2.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); r2.setSize(w, hh); el.replaceChildren(r2.domElement);
+      const sc = new THREE.Scene(), cam = new THREE.PerspectiveCamera(35, w / hh, 0.01, 1e6);
+      sc.add(new THREE.AmbientLight(0xffffff, 0.8)); const l = new THREE.DirectionalLight(0xffffff, 0.9); l.position.set(1, 1.2, 1); sc.add(l);
+      const grp = new THREE.Group();
+      (node ? node.allMeshes : []).forEach(i => { const m = meshObjs[i]; if (m) grp.add(new THREE.Mesh(m.geometry, new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.6, side: THREE.DoubleSide }))); });
+      const bb = new THREE.Box3().setFromObject(grp), sz = bb.getSize(new THREE.Vector3()), ce = bb.getCenter(new THREE.Vector3());
+      grp.position.sub(ce); sc.add(grp);
+      const rad = Math.max(sz.x, sz.y, sz.z, 1) * 0.5, d = rad / Math.tan((cam.fov * Math.PI / 180) / 2) * 1.5;
+      cam.position.set(d * 0.7, d * 0.5, d); cam.lookAt(0, 0, 0); cam.near = d / 500; cam.far = d * 50; cam.updateProjectionMatrix();
+      let on = true, id = null;
+      const loop = () => { if (!on) return; grp.rotation.y += 0.012; r2.render(sc, cam); id = requestAnimationFrame(loop); };
+      loop();
+      return { dispose() { on = false; if (id) cancelAnimationFrame(id); grp.traverse(o => o.material?.dispose?.()); r2.dispose(); r2.domElement.remove(); } };
+    },
+    // PNG önizleme (montaj kartı): o anki kadraj; patlatma/seçim olmadan çekmek için önce select(null), explode(0)
+    snapshot(w = 480, hgt = 360) {
+      const c = document.createElement('canvas'); c.width = w; c.height = hgt;
+      renderer.render(scene, camera);
+      c.getContext('2d').drawImage(renderer.domElement, 0, 0, w, hgt);
+      return c.toDataURL('image/png');
+    },
     get selected() { return selected; },
     dispose() {
       alive = false; if (raf) cancelAnimationFrame(raf);

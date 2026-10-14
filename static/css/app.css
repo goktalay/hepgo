@@ -8599,7 +8599,6 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .um-av.web { border-style: dashed; }
 .um-pin.web .um-pin-name { background: rgba(255,247,205,.95); }
 /* ---- Endüstriyel Tasarım › STEP 3B stüdyosu (parça ağacı + model + patlatma + ürün eşleştirme) ---- */
-.modal.wide:has(.stp-studio) { max-width: min(1280px, 96vw); }
 .stp-studio { display: flex; flex-direction: column; gap: 10px; }
 .stp-top, .stp-bar, .stp-sel-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .stp-top .input, .stp-sel-ctl .input { width: auto; min-width: 200px; }
@@ -8607,7 +8606,7 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .stp-main { display: grid; grid-template-columns: 260px 1fr; gap: 10px; min-height: 0; }
 .stp-side { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .stp-side-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.stp-tree { overflow: auto; max-height: min(50vh, 500px); padding: 4px; display: flex; flex-direction: column; gap: 1px; }
+.stp-tree { overflow: auto; max-height: calc(100vh - 420px); min-height: 220px; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
 .stp-row { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; min-width: 0; }
 .stp-row:hover { background: var(--surface-2); }
 .stp-row.on { background: #fff7ed; color: #9a3412; font-weight: 600; }
@@ -8618,7 +8617,7 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .stp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stp-row-code { flex: none; font-size: 11px; font-weight: 700; color: #15803d; background: #dcfce7; padding: 1px 6px; border-radius: 999px; }
 .stp-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.stp-canvas { width: 100%; height: min(50vh, 500px); border-radius: 12px; overflow: hidden; background: #eef3fb; display: grid; place-items: center; border: 1px solid var(--border); }
+.stp-canvas { width: 100%; height: calc(100vh - 420px); min-height: 320px; border-radius: 12px; overflow: hidden; background: #eef3fb; display: grid; place-items: center; border: 1px solid var(--border); }
 .stp-canvas canvas { display: block; }
 .stp-range { flex: 1; min-width: 160px; accent-color: #f97316; }
 .stp-range-val { min-width: 42px; }
@@ -8635,3 +8634,50 @@ svg.fa-inline.fa-solo { margin-right: 0; }
 .stp-row.group .stp-row-name { font-weight: 600; }
 .stp-caret { flex: none; width: 14px; text-align: center; color: var(--muted); cursor: pointer; transition: transform .15s; font-size: 12px; }
 .stp-caret.closed { transform: rotate(-90deg); }
+.stp-tools { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.stp-row.custom .stp-row-name { color: #1d4ed8; }
+.stp-row.dragging { opacity: .45; }
+.stp-row.drop { outline: 2px dashed #f97316; outline-offset: -2px; background: #fff7ed; }
+.stp-sel-ctl .spacer { flex: 1; }
+
+/* ---- Endüstriyel Tasarım: sade montaj kartı (3B önizleme + ad), detay sayfası (bilgi kutuları, sekmeler, tam ekran sahne) ---- */
+.dz-mcard { padding: 0; overflow: hidden; display: flex; flex-direction: column; color: var(--text); }
+.dz-mcard:hover { text-decoration: none; box-shadow: 0 8px 24px rgba(15,23,42,.12); }
+.dz-mcard-thumb { position: relative; width: 100%; aspect-ratio: 4 / 3; border: 0; border-radius: 0; background: linear-gradient(135deg, #eef3fb, #e3e9f4); display: flex; align-items: center; justify-content: center; }
+.dz-mcard-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.dz-mcard-ico { width: 56px; height: 56px; }
+.dz-mcard-spin { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px; background: rgba(255,255,255,.85); text-align: center; }
+.dz-mcard-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+.dz-mcard-name { font-size: 15px; }
+.dz-info { margin-bottom: 12px; }
+.dz-info-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.dz-info-name { font-size: 17px; }
+.dz-tiles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.dz-tile { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.dz-tile-l { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.dz-tile-v { font-size: 17px; font-weight: 700; margin: 2px 0; }
+.dz-tile-v .input.sm { font-size: 13px; font-weight: 500; padding: 4px 6px; width: 100%; }
+.dz-spec-form { display: grid; gap: 4px 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.dz-spec-form > :last-child { grid-column: 1 / -1; }
+.stp-tabs-row { display: flex; align-items: center; gap: 8px; }
+.stp-tabs-row .module-tabs { margin: 0; flex: 1; }
+.stp-stage { position: relative; }
+.stp-stage:fullscreen { background: var(--bg); padding: 12px; overflow: auto; }
+.stp-stage:fullscreen .stp-canvas, .stp-stage:fullscreen .stp-tree { height: calc(100vh - 230px); max-height: none; }
+.stp-view { position: relative; }
+.stp-loader { width: min(420px, 90%); display: flex; flex-direction: column; gap: 6px; }
+.stp-cmp { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; padding: 6px; background: rgba(255,255,255,.92); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 18px rgba(15,23,42,.14); z-index: 2; }
+.stp-cmp-col { width: 170px; }
+.stp-cmp-l { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.stp-cmp-box { width: 170px; height: 130px; border-radius: 8px; background: #f3f6fb; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.stp-cmp-box canvas { display: block; width: 100% !important; height: 100% !important; }
+.stp-cmp-empty { text-align: center; padding: 8px; }
+/* CFD */
+.cfd-panel { display: grid; grid-template-columns: 260px 1fr; gap: 12px; }
+.cfd-ctl { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.cfd-ctl .field { margin-bottom: 6px; }
+.cfd-view { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cfd-canvas-wrap { width: 100%; aspect-ratio: 2 / 1; border-radius: 12px; overflow: hidden; background: #0f172a; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); }
+.cfd-canvas { width: 100%; height: 100%; image-rendering: auto; }
+.cfd-stats { font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .cfd-panel { grid-template-columns: 1fr; } .stp-cmp { transform: scale(.7); transform-origin: top left; } .stp-canvas, .stp-tree { height: 46vh; } }

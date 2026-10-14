@@ -3023,8 +3023,15 @@ def _migrate(conn):
         conn.execute('ALTER TABLE material_docs ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)')
     if 'is_supplier' not in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}:   # tedarikçi (Satın Alma)
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
-    if 'product_id' not in {r[1] for r in conn.execute('PRAGMA table_info(design_drawings)')}:   # montaj/çizim ↔ mamul (Ürün Yönetimi) eşleşmesi
+    dd_cols = {r[1] for r in conn.execute('PRAGMA table_info(design_drawings)')}
+    if 'product_id' not in dd_cols:   # montaj/çizim ↔ mamul (Ürün Yönetimi) eşleşmesi
         conn.execute('ALTER TABLE design_drawings ADD COLUMN product_id INTEGER REFERENCES products(id) ON DELETE SET NULL')
+    if 'step_tree' not in dd_cols:   # STEP parça ağacı düzenlemeleri (JSON: kullanıcı alt kırılımları, taşımalar, ad değişiklikleri)
+        conn.execute('ALTER TABLE design_drawings ADD COLUMN step_tree TEXT')
+    if 'specs' not in dd_cols:   # montaj genel bilgileri (JSON: mtow_g, payload_g, empty_g, wingspan_mm, length_mm, cruise_kmh, endurance_min, battery, notes)
+        conn.execute('ALTER TABLE design_drawings ADD COLUMN specs TEXT')
+    if 'thumb_path' not in {r[1] for r in conn.execute('PRAGMA table_info(design_drawing_versions)')}:   # STEP sürümünün 3B önizleme resmi (tarayıcıda üretilir)
+        conn.execute('ALTER TABLE design_drawing_versions ADD COLUMN thumb_path TEXT')
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS design_step_links (   -- STEP içindeki parça (ad/yol anahtarı) ↔ Ürün Yönetimi yarı mamulü
             id INTEGER PRIMARY KEY,

@@ -1,6 +1,7 @@
 """Endüstriyel Tasarım: projeler → çizim / montaj çizimi ağacı (parent_id ile alt çizimler) → her çizimin sürüm
 geçmişi. Her yeni dosya yüklemesi yeni bir sürümdür; eski sürümler (dosya + açıklama) geçmişte kalır ve görüntülenebilir.
 """
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -36,6 +37,11 @@ class StepLinkIn(BaseModel):
     mesh_key: str
     mesh_name: Optional[str] = None
     product_id: Optional[int] = None   # None → eşleşmeyi kaldır
+
+
+class StepTreeIn(BaseModel):
+    """STEP parça ağacı düzenlemesi: groups [{key, name, parent}], parents {key: parentKey|null}, names {key: ad}; None/boş → sıfırla."""
+    tree: Optional[dict] = None
 
 
 class CopyIn(BaseModel):
@@ -187,8 +193,84 @@ async def add_version(did: int, file: UploadFile = File(...), note: str = Form(N
         nxt = (conn.execute('SELECT MAX(version) FROM design_drawing_versions WHERE drawing_id = ?', (did,)).fetchone()[0] or 0) + 1
         conn.execute('''INSERT INTO design_drawing_versions (drawing_id, version, file_path, file_name, note, uploaded_by, created_at)
                         VALUES (?,?,?,?,?,?,?)''', (did, nxt, path, (file.filename or 'çizim')[:200], (note or '').strip() or None, user['id'], db.now()))
+        vid = conn.execute('SELECT id FROM design_drawing_versions WHERE drawing_id = ? AND version = ?', (did, nxt)).fetchone()[0]
         db.audit(conn, user['id'], f'Çizim sürümü yüklendi (v{nxt})', 'design_drawing', did, (file.filename or ''))
-    return {'ok': True, 'version': nxt}
+    return {'ok': True, 'version': nxt, 'id': vid}
+
+
+@router.post('/versions/{vid}/thumb')
+async def set_version_thumb(vid: int, file: UploadFile = File(...), user=Depends(design_user)):
+    """STEP sürümünün 3B önizleme resmi (PNG; tarayıcıda WebGL ile çekilir, montaj kartında gösterilir)."""
+    with db.connect() as conn:
+        v = db.row(conn.execute('SELECT id, drawing_id FROM design_drawing_versions WHERE id = ?', (vid,)))
+        if not v:
+            raise HTTPException(404, 'Sürüm bulunamadı')
+    path = await save_upload('design', file)
+    with db.connect() as conn:
+        conn.execute('UPDATE design_drawing_versions SET thumb_path = ? WHERE id = ?', (path, vid))
+    return {'ok': True, 'thumb': f'/api/design/file?t={vid}'}
+
+
+class SpecsIn(BaseModel):
+    specs: Optional[dict] = None
+
+
+SPEC_KEYS = ('mtow_g', 'payload_g', 'empty_g', 'wingspan_mm', 'length_mm', 'cruise_kmh', 'endurance_min', 'battery', 'notes')
+
+
+@router.put('/drawings/{did}/specs')
+def set_specs(did: int, body: SpecsIn, user=Depends(design_user), conn=db.DB):
+    """Montaj genel bilgileri (kalkış ağırlığı, faydalı yük, kanat açıklığı…) — detay sayfasının üst kartı."""
+    d = _drawing(conn, did)
+    sp = {}
+    for k in SPEC_KEYS:
+        v = (body.specs or {}).get(k)
+        if v is None or v == '':
+            continue
+        if k in ('battery', 'notes'):
+            sp[k] = str(v).strip()[:500]
+        else:
+            try:
+                sp[k] = float(v)
+            except (TypeError, ValueError):
+                raise HTTPException(400, f'{k}: sayı girin')
+    conn.execute('UPDATE design_drawings SET specs = ? WHERE id = ?', (json.dumps(sp, ensure_ascii=False) if sp else None, did))
+    db.audit(conn, user['id'], 'Montaj bilgilerini güncelledi', 'design_drawing', did, d['name'])
+    return {'ok': True, 'specs': sp}
+
+
+@router.get('/drawings/{did}')
+def drawing_detail(did: int, user=Depends(design_user), conn=db.DB):
+    """Montaj detay sayfası: çizim, güncel sürüm, proje, mamul, bilgiler, eşleşme istatistikleri (basılan parça ağırlığı, süre)."""
+    d = dict(_drawing(conn, did))
+    proj = db.row(conn.execute('SELECT id, name FROM design_projects WHERE id = ?', (d['project_id'],)))
+    cur = db.row(conn.execute('SELECT id, version, file_name, size, note, created_at, thumb_path FROM design_drawing_versions WHERE drawing_id = ? ORDER BY version DESC LIMIT 1', (did,)))
+    mamul = db.row(conn.execute('SELECT id, code, name, weight_g FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
+    links = db.rows(conn.execute('''SELECT l.mesh_key, l.mesh_name, p.id, p.code, p.name, p.weight_g, p.gcode_meta, p.print_minutes
+                                    FROM design_step_links l JOIN products p ON p.id = l.product_id WHERE l.drawing_id = ?''', (did,)))
+    weight = 0.0; minutes = 0.0; weighed = 0
+    for l in links:
+        w = l['weight_g']
+        if not w and l['gcode_meta']:
+            try:
+                w = (json.loads(l['gcode_meta']) or {}).get('filament_g')
+            except (TypeError, ValueError):
+                w = None
+        if w:
+            weight += float(w); weighed += 1
+        if l['print_minutes']:
+            minutes += float(l['print_minutes'])
+    try:
+        specs = json.loads(d['specs']) if d['specs'] else {}
+    except (TypeError, ValueError):
+        specs = {}
+    counts = db.row(conn.execute('''SELECT (SELECT COUNT(*) FROM design_drawing_versions WHERE drawing_id = ?) AS versions,
+                                       (SELECT COUNT(*) FROM design_drawing_notes WHERE drawing_id = ?) AS notes,
+                                       (SELECT COUNT(*) FROM design_production_parts WHERE drawing_id = ?) AS parts''', (did, did, did)))
+    return {'id': d['id'], 'name': d['name'], 'kind': d['kind'], 'project': proj, 'current': cur, 'product': mamul, 'specs': specs,
+            'version_count': counts['versions'], 'note_count': counts['notes'], 'prod_count': counts['parts'],
+            'stats': {'linked': len(links), 'weighed': weighed, 'printed_weight_g': round(weight, 1), 'print_minutes': round(minutes)},
+            'mamuls': db.rows(conn.execute("SELECT id, code, name FROM products WHERE active = 1 AND type = 'MAMUL' ORDER BY name"))}
 
 
 # ---------- Kopyalama: bir çizimi / montajı (tüm alt parçaları ve sürüm geçmişiyle) başka yere kopyala ----------
@@ -298,7 +380,7 @@ def step_links(did: int, user=Depends(design_user), conn=db.DB):
     """STEP parça eşleşmeleri + seçim adayları (çizim bir mamule bağlıysa onun ağacındaki yarı mamuller, değilse tüm yarı mamuller)."""
     from .. import bom
     d = _drawing(conn, did)
-    links = db.rows(conn.execute('''SELECT l.mesh_key, l.mesh_name, l.product_id, p.code AS product_code, p.name AS product_name
+    links = db.rows(conn.execute('''SELECT l.mesh_key, l.mesh_name, l.product_id, p.code AS product_code, p.name AS product_name, p.gcode_preview
                                     FROM design_step_links l JOIN products p ON p.id = l.product_id WHERE l.drawing_id = ? ORDER BY l.id''', (did,)))
     cands = []
     if d['product_id']:
@@ -311,15 +393,44 @@ def step_links(did: int, user=Depends(design_user), conn=db.DB):
             walk(bom.tree(conn, d['product_id']))
         except Exception:   # noqa: BLE001
             pass
-    if not cands:
+    if not cands and not d['product_id']:   # mamul seçiliyse yalnız onun ağacı (boşsa boş); seçili değilse tüm yarı mamuller
         cands = db.rows(conn.execute("SELECT id, code, name, type, NULL AS section FROM products WHERE active = 1 AND type IN ('YARI_MAMUL','YEDEK_PARCA') ORDER BY code"))
     seen, uniq = set(), []
     for c in cands:
         if c['id'] not in seen:
-            seen.add(c['id']); uniq.append(c)
+            seen.add(c['id']); uniq.append(dict(c))
+    if uniq:   # adayların G-code 3B önizleme yolu (karşılaştırma penceresi: seçili STEP parçası ↔ ürünün basılan geometrisi)
+        ids = [c['id'] for c in uniq]
+        prev = {r['id']: r['gcode_preview'] for r in db.rows(conn.execute(f"SELECT id, gcode_preview FROM products WHERE id IN ({','.join('?' * len(ids))})", ids))}
+        for c in uniq:
+            c['gcode_preview'] = prev.get(c['id'])
     mamul = db.row(conn.execute('SELECT id, code, name FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
-    return {'links': links, 'candidates': uniq, 'product': mamul,
+    try:
+        tree = json.loads(d['step_tree']) if d['step_tree'] else None
+    except (TypeError, ValueError):
+        tree = None
+    cur = db.row(conn.execute('SELECT id, version, file_name FROM design_drawing_versions WHERE drawing_id = ? ORDER BY version DESC LIMIT 1', (did,)))
+    return {'links': links, 'candidates': uniq, 'product': mamul, 'tree': tree,
+            'drawing': {'id': d['id'], 'name': d['name'], 'project_id': d['project_id'], 'kind': d['kind'], 'current': cur},
             'mamuls': db.rows(conn.execute("SELECT id, code, name FROM products WHERE active = 1 AND type = 'MAMUL' ORDER BY name"))}
+
+
+@router.put('/drawings/{did}/step-tree')
+def set_step_tree(did: int, body: StepTreeIn, user=Depends(design_user), conn=db.DB):
+    """STEP ağacı düzenlemelerini (alt kırılımlar, taşımalar, adlar) tek seferde kaydet; dosya değişmez, düzen her açılışta uygulanır."""
+    d = _drawing(conn, did)
+    tree = body.tree or None
+    if tree:
+        groups = [g for g in (tree.get('groups') or []) if isinstance(g, dict) and g.get('key') and str(g.get('name') or '').strip()]
+        tree = {'groups': [{'key': str(g['key'])[:120], 'name': str(g['name']).strip()[:200], 'parent': (str(g['parent'])[:120] if g.get('parent') else None)} for g in groups][:500],
+                'parents': {str(k)[:120]: (str(v)[:120] if v else None) for k, v in (tree.get('parents') or {}).items()},
+                'names': {str(k)[:120]: str(v).strip()[:200] for k, v in (tree.get('names') or {}).items() if str(v or '').strip()}}
+        if not tree['groups'] and not tree['parents'] and not tree['names']:
+            tree = None
+    conn.execute('UPDATE design_drawings SET step_tree = ? WHERE id = ?', (json.dumps(tree, ensure_ascii=False) if tree else None, did))
+    db.audit(conn, user['id'], 'STEP parça ağacını düzenledi', 'design_drawing', did,
+             f"{d['name']} · {len(tree['groups'])} kırılım, {len(tree['parents'])} taşıma, {len(tree['names'])} ad" if tree else f"{d['name']} · sıfırlandı")
+    return {'ok': True, 'tree': tree}
 
 
 @router.put('/drawings/{did}/step-links')
@@ -392,11 +503,13 @@ def delete_part(part_id: int, user=Depends(design_user), conn=db.DB):
 
 # ---------- Dosya servisi: önizleme tüm tasarımcılara, indirme (dl=1) yalnızca Master ----------
 @router.get('/file')
-def design_file(v: int = None, p: int = None, dl: int = 0, user=Depends(design_user), conn=db.DB):
+def design_file(v: int = None, p: int = None, t: int = None, dl: int = 0, user=Depends(design_user), conn=db.DB):
     from fastapi.responses import FileResponse
     from .. import config
     row = None
-    if v:
+    if t:   # sürümün 3B önizleme resmi
+        row = db.row(conn.execute("SELECT thumb_path AS file_path, 'onizleme.png' AS file_name FROM design_drawing_versions WHERE id = ?", (t,)))
+    elif v:
         row = db.row(conn.execute('SELECT file_path, file_name FROM design_drawing_versions WHERE id = ?', (v,)))
     elif p:
         row = db.row(conn.execute('SELECT file_path, file_name FROM design_production_parts WHERE id = ?', (p,)))

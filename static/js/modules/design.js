@@ -490,9 +490,10 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const engNose = h('select', { class: 'input sm', title: 'Burun yönü (model ekseni) — motor arkaya, pervane kuyruğa bakar' }, ...[['+x', 'Burun +X'], ['-x', 'Burun −X'], ['+y', 'Burun +Y'], ['-y', 'Burun −Y'], ['+z', 'Burun +Z'], ['-z', 'Burun −Z']].map(([v, l]) => h('option', { value: v }, l)));
   const engUp = h('select', { class: 'input sm', title: 'Yukarı ekseni' }, ...[['+z', 'Yukarı +Z'], ['-z', 'Yukarı −Z'], ['+y', 'Yukarı +Y'], ['-y', 'Yukarı −Y'], ['+x', 'Yukarı +X'], ['-x', 'Yukarı −X']].map(([v, l]) => h('option', { value: v }, l)));
   const engOff = ['X', 'Y', 'Z'].map(a => h('input', { class: 'input sm stp-off', type: 'number', step: '5', value: '0', title: `${a} kaydırma (mm)`, placeholder: a }));
+  const engYaw = h('input', { class: 'input sm stp-off', type: 'number', step: '5', value: '0', title: 'Yatay dönüş (°): burun eksenlerle çaprazsa, ör. 45', placeholder: '°' });
   const engProp = h('input', { type: 'checkbox', class: 'stp-cb' });
   const engInfo = h('span', { class: 'small muted' }, '');
-  const engineBar = h('div', { class: 'stp-bar stp-engine' }, h('span', { class: 'stp-lbl' }, '⚙ Motor'), engSel, engNode, engNose, engUp, h('span', { class: 'small muted' }, 'Kaydır (mm):'), ...engOff, h('label', { class: 'small cfd-tog' }, engProp, 'Pervane'), engInfo);
+  const engineBar = h('div', { class: 'stp-bar stp-engine' }, h('span', { class: 'stp-lbl' }, '⚙ Motor'), engSel, engNode, engNose, engUp, h('span', { class: 'small muted' }, 'Yatay dönüş:'), engYaw, h('span', { class: 'small muted' }, 'Kaydır (mm):'), ...engOff, h('label', { class: 'small cfd-tog' }, engProp, 'Pervane'), engInfo);
   const fillEngNodes = () => {
     if (!viewer) return;
     const cur = (overlay.engine && overlay.engine.node) || engNode.value || '';
@@ -502,25 +503,25 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     clear(engNode, opts);
     if (!cur) { const guess = viewer.nodes.find(n => !n.engine && /motor|tutucu|engine|mount/i.test(n.name)); if (guess) engNode.value = guess.key; }
   };
-  const engineSpec = () => engSel.value ? { type: engSel.value, node: engNode.value || null, nose: engNose.value, up: engUp.value, offset: engOff.map(i => Number(i.value) || 0), prop: engProp.checked } : null;
+  const engineSpec = () => engSel.value ? { type: engSel.value, node: engNode.value || null, nose: engNose.value, up: engUp.value, yaw: Number(engYaw.value) || 0, offset: engOff.map(i => Number(i.value) || 0), prop: engProp.checked } : null;
   const applyEngine = (fromUser = true) => {
     if (!viewer) return;
     const spec = engineSpec();
     viewer.setEngine(spec);
     const info = spec ? viewer.engineInfo(spec.type) : null;
     engInfo.textContent = info ? t('{cc} cc · {w} kg · {p} kW', { cc: info.cc, w: (info.weight_g / 1000).toFixed(2), p: info.power_kw }) : '';
-    [engNode, engNose, engUp, ...engOff, engProp].forEach(el => { el.disabled = !spec; });
-    inEngineRow.hidden = !spec; if (spec) { inNose.value = spec.nose; inUp.value = spec.up; }
+    [engNode, engNose, engUp, engYaw, ...engOff, engProp].forEach(el => { el.disabled = !spec; });
+    inEngineRow.hidden = !spec; if (spec) { inNose.value = spec.nose; inUp.value = spec.up; inYaw.value = String(spec.yaw || 0); }
     if (fromUser) { overlay.engine = spec; markDirty(); }
     drawTree(); onSelect(viewer.selected);
   };
-  [engSel, engNode, engNose, engUp, ...engOff, engProp].forEach(el => el.addEventListener('change', () => applyEngine(true)));
+  [engSel, engNode, engNose, engUp, engYaw, ...engOff, engProp].forEach(el => el.addEventListener('change', () => applyEngine(true)));
   const loadEngineUi = () => {   // sürümden gelen overlay.engine → kontroller
     if (!viewer) return;
     clear(engSel, h('option', { value: '' }, 'Motor yok'), viewer.engines.map(e => h('option', { value: e.key }, e.label)));
     fillEngNodes();
     const e = overlay.engine;
-    if (e && viewer.engineInfo(e.type)) { engSel.value = e.type; engNode.value = e.node || ''; engNose.value = e.nose || '+x'; engUp.value = e.up || '+z'; engOff.forEach((i, k) => { i.value = String((e.offset || [0, 0, 0])[k] || 0); }); engProp.checked = !!e.prop; }
+    if (e && viewer.engineInfo(e.type)) { engSel.value = e.type; engNode.value = e.node || ''; engNose.value = e.nose || '+x'; engUp.value = e.up || '+z'; engYaw.value = String(e.yaw || 0); engOff.forEach((i, k) => { i.value = String((e.offset || [0, 0, 0])[k] || 0); }); engProp.checked = !!e.prop; }
     applyEngine(false);
   };
 
@@ -698,6 +699,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const ofStatus = h('div', { class: 'small muted' }, 'Çözücü durumu alınıyor…');
   const inU = h('input', { class: 'input', type: 'number', step: 'any', min: '0.5', max: '200', value: sp.cruise_kmh ? (Number(sp.cruise_kmh) / 3.6).toFixed(1) : '20' });
   const inAoa = h('input', { class: 'input', type: 'number', step: 'any', min: '-30', max: '30', value: '0' });
+  const inYaw = h('input', { class: 'input', type: 'number', step: 'any', min: '-180', max: '180', value: '0' });
   const axisOpts = sel => [['+x', '+X'], ['-x', '−X'], ['+y', '+Y'], ['-y', '−Y'], ['+z', '+Z'], ['-z', '−Z']].map(([v, l]) => h('option', { value: v, selected: v === sel }, l));
   const inNose = h('select', { class: 'input' }, axisOpts('+x'));
   const inUp = h('select', { class: 'input' }, axisOpts('+z'));
@@ -814,10 +816,10 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
     const U = Number(inU.value); if (!(U >= 0.5 && U <= 200)) { toast('Akış hızı 0,5–200 m/s olmalı', 'err'); return; }
     startBtn.disabled = true; upLine.hidden = false; upBar.style.width = '0%'; upPct.textContent = 'STL';
     try {
-      const stl = viewer.exportStl(node, { nose: inNose.value, up: inUp.value, aoa: Number(inAoa.value) || 0, scale: 0.001, includeEngine: inEngine.checked });
+      const stl = viewer.exportStl(node, { nose: inNose.value, up: inUp.value, aoa: Number(inAoa.value) || 0, yaw: Number(inYaw.value) || 0, scale: 0.001, includeEngine: inEngine.checked });
       if (!stl.triangles) throw new Error('Dışa aktarılacak gövde yok');
       const fd = new FormData(); fd.append('file', new Blob([stl.buffer], { type: 'application/octet-stream' }), 'body.stl');
-      fd.append('params', JSON.stringify({ U, rho: Number(inRho.value) || 1.225, nu: Number(inNu.value) || 1.5e-5, turb_intensity: (Number(inTi.value) || 1) / 100, res: inRes.value, aoa: Number(inAoa.value) || 0,
+      fd.append('params', JSON.stringify({ U, rho: Number(inRho.value) || 1.225, nu: Number(inNu.value) || 1.5e-5, turb_intensity: (Number(inTi.value) || 1) / 100, res: inRes.value, aoa: Number(inAoa.value) || 0, yaw: Number(inYaw.value) || 0,
         nose: inNose.value, up: inUp.value, scope: inScope.value, scope_name: node ? node.name : '', iters: inIters.value ? Number(inIters.value) : null, version_id: vid, engine: viewer.engine && inEngine.checked ? viewer.engine.type : null,
         name: `${node ? node.name : name}${viewer.engine && inEngine.checked ? ' + ' + viewer.engine.type : ''} · ${U} m/s · ${Number(inAoa.value) || 0}° · ${inRes.selectedOptions[0].textContent.split(' ')[0]}` }));
       const r = await upload(`/api/design/drawings/${did}/cfd`, fd, p => { upBar.style.width = `${p}%`; upPct.textContent = `%${p}`; });
@@ -833,7 +835,7 @@ function stepStudio(host, { did, vid, name, reload, specs }) {
   const cfd3dPanel = h('div', { class: 'cfd-panel' },
     h('div', { class: 'cfd-ctl' },
       ofStatus,
-      field('Uçuş / akış hızı (m/s)', inU), field('Hücum açısı (°)', inAoa, 'burun yukarı +'),
+      field('Uçuş / akış hızı (m/s)', inU), h('div', { class: 'dz-part-fields' }, field('Hücum açısı (°)', inAoa, 'burun yukarı +'), field('Yatay dönüş (°)', inYaw, 'burun eksenlerle çaprazsa, ör. +45')),
       h('div', { class: 'dz-part-fields' }, field('Burun yönü (model ekseni)', inNose), field('Yukarı (model ekseni)', inUp)),
       field('Nesne', inScope), inEngineRow, field('Ağ çözünürlüğü', inRes),
       h('details', null, h('summary', { class: 'small' }, 'Gelişmiş'), h('div', { class: 'dz-part-fields' }, field('Hava yoğunluğu (kg/m³)', inRho), field('Kinematik viskozite (m²/s)', inNu)), h('div', { class: 'dz-part-fields' }, field('Türbülans yoğunluğu (%)', inTi), field('En çok yineleme', inIters))),

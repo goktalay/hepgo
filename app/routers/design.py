@@ -429,8 +429,12 @@ def tree_in_engine(e):
     except (TypeError, ValueError):
         off = [0, 0, 0]
     ax = lambda v, d: v if isinstance(v, str) and len(v) == 2 and v[0] in '+-' and v[1] in 'xyz' else d
+    try:
+        yaw = float(e.get('yaw') or 0)
+    except (TypeError, ValueError):
+        yaw = 0.0
     return {'type': e['type'], 'node': (str(e['node'])[:120] if e.get('node') else None), 'nose': ax(e.get('nose'), '+x'), 'up': ax(e.get('up'), '+z'),
-            'offset': (off + [0, 0, 0])[:3], 'prop': bool(e.get('prop'))}
+            'yaw': yaw, 'offset': (off + [0, 0, 0])[:3], 'prop': bool(e.get('prop'))}
 
 
 @router.put('/drawings/{did}/step-tree')
@@ -527,7 +531,7 @@ async def cfd_create(did: int, file: UploadFile = File(...), params: str = Form(
     cores = int(p.get('cores') or cfd.cores()); cores = max(1, min(cores, cfd.cores()))
     iters = int(p.get('iters') or cfd.RES[res]['iters']); iters = max(20, min(iters, 3000))
     prm = {'U': U, 'rho': float(p.get('rho') or 1.225), 'nu': float(p.get('nu') or 1.5e-5), 'res': res, 'cores': cores, 'iters': iters,
-           'turb_intensity': float(p.get('turb_intensity') or 0.01), 'aoa': float(p.get('aoa') or 0), 'nose': p.get('nose') or '+x', 'up': p.get('up') or '+z',
+           'turb_intensity': float(p.get('turb_intensity') or 0.01), 'aoa': float(p.get('aoa') or 0), 'yaw': float(p.get('yaw') or 0), 'nose': p.get('nose') or '+x', 'up': p.get('up') or '+z',
            'scope': p.get('scope') or 'all', 'scope_name': (p.get('scope_name') or '')[:200]}
     with db.connect() as conn:
         cur = conn.execute('INSERT INTO design_cfd_runs (drawing_id, version_id, name, params, status, created_by, created_at) VALUES (?,?,?,?,?,?,?)',

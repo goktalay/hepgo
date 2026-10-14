@@ -226,6 +226,14 @@ export async function viewStep(container, src, opts = {}) {
   };
   let lastT = 0, engine = null;   // engine: { spec, node, meshes:[idx] }
   const axisVec = a => { const v = new THREE.Vector3(); v[a[1]] = a[0] === '-' ? -1 : 1; return v; };
+  // Burun ve yukarı ekseninden sağ el tabanı: ex = −burun (akış/kuyruk), ez = yukarı, ey = ez × ex. yaw: burnu yukarı ekseni etrafında döndürür (°, +45 = saat yönü tersi, üstten)
+  const flowBasis = (noseA, upA, yaw = 0) => {
+    const n = axisVec(noseA), u = axisVec(upA);
+    if (Math.abs(n.dot(u)) > 0.5) u.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(n[k]) < 0.5)] = 1;
+    if (yaw) n.applyAxisAngle(u, yaw * Math.PI / 180);
+    const ex = n.clone().multiplyScalar(-1), ez = u.clone(), ey = ez.clone().cross(ex).normalize();
+    return { ex, ey, ez, nose: n, up: u };
+  };
   const nodeBox = n => { const b = new THREE.Box3(); (n ? n.allMeshes : tree.root.allMeshes).forEach(i => { const m = meshObjs[i]; if (m && !m.userData.engine) { m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox.clone(); b.union(bb); } }); return b; };
   // Motor yerleşimi: spec { type, node (anahtar|null=kök), nose:'+x', up:'+z', offset:[mm], prop }. Motor yerel +X pervane → modelde −burun (arkadan itiş)
   const attachEngine = () => {
@@ -233,11 +241,9 @@ export async function viewStep(container, src, opts = {}) {
     const spec = engine.spec, e = ENGINES[spec.type]; if (!e) return;
     const mount = spec.node ? tree.nodes.find(n => n.key === spec.node) : null;
     const nb = nodeBox(mount || null); const c = nb.isEmpty() ? new THREE.Vector3() : nb.getCenter(new THREE.Vector3()), sz = nb.isEmpty() ? new THREE.Vector3() : nb.getSize(new THREE.Vector3());
-    const nose = axisVec(spec.nose || '+x'), up = axisVec(spec.up || '+z');
-    if (Math.abs(nose.dot(up)) > 0.5) up.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(nose[k]) < 0.5)] = 1;
-    const ex = nose.clone().multiplyScalar(-1), ez = up.clone(), ey = ez.clone().cross(ex).normalize();
+    const { ex, ey, ez, nose } = flowBasis(spec.nose || '+x', spec.up || '+z', Number(spec.yaw) || 0);
     const R = new THREE.Matrix4().makeBasis(ex, ey, ez);   // motor yerel → model
-    const half = Math.abs(sz.dot(nose)) / 2;   // bağlanılan düğümün burun ekseni boyunca yarı boyu
+    const half = Math.abs(sz.x * nose.x) / 2 + Math.abs(sz.y * nose.y) / 2 + Math.abs(sz.z * nose.z) / 2;   // düğümün burun yönündeki yarı boyu (yaklaşık)
     const pos = c.clone().add(ex.clone().multiplyScalar(half + 27 + e.case[0] / 2)).add(new THREE.Vector3(...(spec.offset || [0, 0, 0])));
     const M = new THREE.Matrix4().compose(pos, new THREE.Quaternion().setFromRotationMatrix(R), new THREE.Vector3(1, 1, 1));
     const node = { key: 'engine', name: `Motor: ${spec.type}`, kind: 'group', engine: true, custom: false, path: '', meshes: [], allMeshes: [], children: [], parent: tree.root };
@@ -368,11 +374,8 @@ export async function viewStep(container, src, opts = {}) {
     // STL dışa aktarma (CFD): görünür gövdeler (ya da düğümün gövdeleri), model ekseni → akış ekseni dönüşümü, metre.
     // nose: burun yönü (model ekseni '+x'…'-z'; hava burundan kuyruğa akar → burun durum uzayında −x'e bakar), up: yukarı ekseni → +z,
     // aoa: hücum açısı (derece, burun yukarı +), scale: model birimi → metre (STEP mm → 0.001). Döner: { buffer (binary STL), triangles, bbox }
-    exportStl(node, { nose = '+x', up = '+z', aoa = 0, scale = 0.001, includeEngine = true } = {}) {
-      const axis = s => { const v = new THREE.Vector3(); v[s[1]] = s[0] === '-' ? -1 : 1; return v; };
-      const n = axis(nose), u = axis(up);
-      if (Math.abs(n.dot(u)) > 0.5) u.set(0, 0, 0)[['x', 'y', 'z'].find(k => Math.abs(n[k]) < 0.5)] = 1;   // burun ile yukarı aynı eksense düzelt
-      const ex = n.clone().multiplyScalar(-1), ez = u.clone(), ey = ez.clone().cross(ex).normalize();   // durum: x = akış (kuyruk), z = yukarı, y = sağ el
+    exportStl(node, { nose = '+x', up = '+z', aoa = 0, yaw = 0, scale = 0.001, includeEngine = true } = {}) {
+      const { ex, ey, ez } = flowBasis(nose, up, Number(yaw) || 0);   // durum: x = akış (kuyruk), z = yukarı, y = sağ el; yaw: burun yatayda döndürülmüş
       const m = new THREE.Matrix4().makeBasis(ex, ey, ez).transpose();   // model → durum (satırlar = yeni eksenler)
       const pitch = new THREE.Matrix4().makeRotationY(aoa * Math.PI / 180);   // R_y(+α): burun (−x,0,0) → (−cosα, 0, sinα) = burun yukarı
       const M = new THREE.Matrix4().multiplyMatrices(pitch, m);

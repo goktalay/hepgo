@@ -735,4 +735,39 @@
       } catch (e) {}
     });
   });
+
+  // ---------------------------------------------------------------
+  // 12. ALT BAR "HARITA: n KB · n karo" SAYACI
+  //     GOKTUNGU'da bu gosterge sunucunun tile_cache_ozet iletisiyle
+  //     dolar (harita.js:756-812 hrtCacheDurumYaz). HEPGO'da karo
+  //     vekili/onbellegi yok; karolar dogrudan saglayicidan gelir.
+  //     Istemci tarafinda PerformanceObserver ile bu oturumda indirilen
+  //     karo sayisi ve (Timing-Allow-Origin varsa gercek, yoksa ~24 KB
+  //     tahmini) toplam boyut ayni gostergeye yazilir.
+  // ---------------------------------------------------------------
+  guvenli("harita-sayac", function () {
+    if (!document.getElementById("hrtCacheDurum") || typeof PerformanceObserver !== "function") return;
+    var adet = 0, boyut = 0, bilinen = 0, zaman = null;
+    var KARO = /arcgisonline\.com|openstreetmap\.org|opentopomap\.org|cartocdn\.com/;
+    function yaz() {
+      if (zaman) return;
+      zaman = setTimeout(function () {
+        zaman = null;
+        var b = bilinen > 0 ? Math.round(boyut * adet / bilinen) : adet * 24 * 1024;
+        if (typeof window.hrtCacheDurumYaz === "function") window.hrtCacheDurumYaz({ hazir: true, adet: adet, boyut: b });
+      }, 500);
+    }
+    var po = new PerformanceObserver(function (list) {
+      list.getEntries().forEach(function (e) {
+        if (!KARO.test(e.name || "")) return;
+        adet++;
+        var b = e.transferSize || e.encodedBodySize || 0;
+        if (b > 0) { boyut += b; bilinen++; }
+      });
+      yaz();
+    });
+    po.observe({ type: "resource", buffered: true });
+    window.addEventListener("pagehide", function () { try { po.disconnect(); } catch (e) {} }, { once: true });
+    yaz();
+  });
 })();

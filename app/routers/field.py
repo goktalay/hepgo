@@ -439,6 +439,8 @@ def task_live(tid: int, user=Depends(field_user), conn=db.DB):
     if not (is_manager(user) or _member(t, user)):
         raise HTTPException(403, 'Bu görevin canlı uçuşunu yalnız görev üyeleri ve saha yöneticileri izleyebilir')
     task, flights = drone_hub.task_live(conn, tid)
+    # tam ekran üst bandındaki görev tanımı için
+    task.update(note=t.get('note'), lead_name=t.get('lead_name'), pilot_name=t.get('pilot_name'), location_name=t.get('location_name'))
     for f in flights:
         if f['sim_bridge_id'] is not None:
             f['bridge_online'] = f['sim_bridge_id'] in drone_hub.SIMS

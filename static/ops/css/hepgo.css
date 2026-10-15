@@ -275,3 +275,35 @@ html[data-hepgo-rol="izleyici"] .bag-btn.bag-stop {
   opacity: .45;
   pointer-events: none;
 }
+
+/* ===== HEPGO Faz 1b ===== */
+/* Bağlantı Yöneticisi paneli ve aç/kapat düğmesi yok (kullanıcı kararı) */
+#yzSeri, #btnBaglantiPanel { display: none !important; }
+/* Dron kartları kapatılamaz (yüzen kartın X düğmesi gizli); sol sütun dizilimi hepgo_patch.js */
+.dron-kart.ayrik .dk-ayir-btn { display: none !important; }
+.dron-kart.ayrik { width: 400px; }
+.dron-kart.ayrik.dk-yapisiyor { outline: 2px dashed var(--interceptor, #35d0ff); outline-offset: 1px; }
+/* Bağlantı atanmamış dron: gri */
+.dron-kart.hk-baglantisiz { filter: grayscale(1); opacity: .62; }
+.dron-kart.hk-baglantisiz:hover { opacity: .85; }
+/* Başlıktaki Bağlan düğmesi (en sağda; bağlantı atanmışsa adı) */
+.dron-kart-baslik .hk-bagla { margin-left: auto; order: 99; display: inline-flex; align-items: center; gap: 5px; max-width: 150px;
+  height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid var(--cizgi, #2a3240); background: rgba(255,255,255,.04);
+  color: var(--metin, #cfd8e3); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; flex: 0 1 auto; }
+.dron-kart-baslik .hk-bagla span { overflow: hidden; text-overflow: ellipsis; }
+.dron-kart-baslik .hk-bagla:hover { border-color: var(--interceptor, #35d0ff); }
+.dron-kart-baslik .hk-bagla.bagli { color: #22c55e; border-color: rgba(34,197,94,.55); }
+.dron-kart-baslik .hk-bagla.baglaniyor { color: var(--uyari, #ffc94d); border-color: rgba(255,201,77,.5); }
+.dron-kart-baslik .hk-bagla.yok { color: #8a94a3; cursor: help; }
+.dron-kart-baslik .hk-bagla.sanal { color: #b48cff; border-color: rgba(180,140,255,.5); cursor: default; }
+/* Tam ekran üst bandı */
+#hepgoUstBar { display: none; flex: 0 0 auto; align-items: center; gap: 12px; padding: 6px 16px; z-index: 2600; position: relative;
+  background: var(--bar-arka1, rgba(11,14,17,.95)); border-bottom: 1px solid var(--cizgi, #1f2937); color: var(--metin, #cfd8e3); }
+body.hepgo-tam #hepgoUstBar { display: flex; }
+#hepgoUstLogo { height: 34px; width: auto; max-width: 160px; object-fit: contain; }
+#hepgoUstBar .hub-orta { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+#hepgoUstFirma { font-size: 15px; letter-spacing: .02em; }
+#hepgoUstGorev { font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hepgoUstSaat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-variant-numeric: tabular-nums; }
+#hepgoUstSaat b { font-size: 18px; font-family: ui-monospace, Consolas, monospace; }
+#hepgoUstSaat span { font-size: 11px; opacity: .7; }

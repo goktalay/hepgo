@@ -337,7 +337,7 @@ function dCevir(k){
     mission_seq: s.mission_seq, mission_count: s.mission_count, hedef_mesafe: s.wp_dist,
     ucus: s.flight_s, ucus_sn: s.flight_s, kat_mesafe: s.dist_m, rpm: s.rpm, yuk: s.alt_rel,
     hazirlik: hazirlikHesapla(s), sensorler: s.sensors, ekf_flags: s.ekf_flags, prearm: s.prearm,
-    renk: renk || undefined, son: s.updated
+    renk: renk || undefined, son: s.updated, hepgo_ucus: f ? f.id : null
   };
 }
 
@@ -351,7 +351,20 @@ function telemetriPaketiUret(){
     if (sessiz > 10){ delete DURUM[uid]; continue; }   // 10 sn'dir kalp atışı yok: listeden düş → dronSil
     dronlar.push(dCevir(k));
   }
-  gorevDurumTazele(dronlar);
+  // Telemetrisi henüz gelmeyen görev uçakları da solda (katlı) kart olarak görünür: Bağlan düğmesi kartın başlığındadır.
+  // Yer tutucu sysid: uçuşun sysid'si (boşsa / başka dronda kullanılıyorsa 900 + uçuş id).
+  const canliUcus = new Set(dronlar.map(d => d.hepgo_ucus).filter(hwVar));
+  const kullanilan = new Set(dronlar.map(d => Number(d.sysid)));
+  for (const f of FLIGHTS){
+    if (canliUcus.has(f.id)) continue;
+    let g = hwVar(f.sysid) ? Number(f.sysid) : 900 + Number(f.id);
+    if (kullanilan.has(g)) g = 900 + Number(f.id);
+    kullanilan.add(g);
+    dronlar.push({sysid: g, baglanti: false, armed: false, mod: "", isim: ucusEtiket(f), kullanici_isim: ucusEtiket(f),
+                  uid: "f" + f.id, dron_uid: "f" + f.id, baglanti_id: ucusGrupId(f), kopru_adi: ucusKopruAdi(f),
+                  lat: null, lon: null, hazirlik: {}, hepgo_ucus: f.id, hepgo_yer: true});
+  }
+  gorevDurumTazele(dronlar.filter(d => !d.hepgo_yer));
   const renkler = {}, tablo = renkTablosu();
   for (const d of dronlar) if (tablo[d.uid]) renkler[String(d.sysid)] = tablo[d.uid];
   // baglanti_durumlari: uçuş grubu bazlı (seri.js baglantiDurumlariIsle yalnız değişince yeniden çizer)
@@ -390,7 +403,11 @@ function telemetriIsle(m){
     if (gelenDronlar.length === 0 && Object.keys(sonVeri).length > 0 && typeof tumDronlariTemizle === "function") tumDronlariTemizle();
   });
   for (const d of gelenDronlar){
-    _guvenli("dron_" + d.sysid, () => { sonVeri[d.sysid] = d; varlikGuncelle(d); });
+    _guvenli("dron_" + d.sysid, () => {
+      sonVeri[d.sysid] = d; varlikGuncelle(d);
+      if (d.hepgo_yer && typeof dronSilmeTimer !== "undefined" && dronSilmeTimer[d.sysid]){ clearTimeout(dronSilmeTimer[d.sysid]); delete dronSilmeTimer[d.sysid]; }
+      if (typeof window.hepgoKartHazirla === "function") window.hepgoKartHazirla(d);
+    });
   }
   _guvenli("dron_kaybolan", () => {
     if (typeof dronSil !== "function") return;
@@ -544,8 +561,6 @@ function helloIsle(m){
   baglantiListesiYayinla();
   if (ilkHello){
     ilkHello = false;
-    if (typeof window.yuzenPanelAc === "function") try { window.yuzenPanelAc("yzSeri"); } catch (e) {}
-    if (typeof window.hepgoYzSeriKonumla === "function") try { window.hepgoYzSeriKonumla(); } catch (e) {}
     hwKonsol("HEPGO", hwT("Canlı uçuş sunucusuna bağlandı", "Connected to live flight server") + (me.name ? " · " + me.name : "") +
              (me.can_command ? "" : " · " + hwT("izleyici (komut yetkisi yok)", "viewer (no command permission)")), "basari");
   }
@@ -1270,6 +1285,18 @@ if (typeof varliklar !== "undefined") window.varliklar = varliklar;
 window.dronRenkler = window.dronRenkler || {};
 window.dronlarSon = window.dronlarSon || [];
 // Dışa açık yardımcılar (hepgo_patch.js ve hata ayıklama için)
+window.hepgoUcus = {
+  bilgi: (id) => {
+    const f = FLIGHTS.find(x => Number(x.id) === Number(id));
+    if (!f) return null;
+    const sanal = f.protocol === "sanal", atanmis = sanal || (hwVar(f.bridge_id) && !!(f.link && f.link.type));
+    const ad = sanal ? hwT("Sanal", "Virtual") : (atanmis ? ucusKopruAdi(f) + " · " + linkOzet(f) : "");
+    return {id: f.id, sanal: sanal, atanmis: atanmis, ad: ad, kopru_online: ucusKopruOnline(f), durum: ucusDurumu(f).durum, etiket: ucusEtiket(f)};
+  },
+  baglan: (id) => CEVIR.baglanti_baslat({id: "f" + id}),
+  kes: (id) => CEVIR.baglanti_durdur({id: "f" + id}),
+  gorev: () => GOREV_BILGI
+};
 window.HEPGO_WS = {
   durum: () => DURUM, kopruler: () => KOPRULER, ucuslar: () => FLIGHTS, gorevId: () => GOREV_ID, gorevBilgi: () => GOREV_BILGI,
   linkDurum: () => LINK_DURUM, bekleyen: () => BEKLEYEN, gorev: () => GOREV, rotalar: () => ROTALAR, rotaGorunur: () => ROTA_GORUNUR,

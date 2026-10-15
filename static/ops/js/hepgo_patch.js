@@ -742,3 +742,205 @@
     yaz();
   });
 })();
+
+// =====================================================================
+// HEPGO FAZ 1b (kullanıcı geri bildirimi, 15 Ekim 2026)
+//  - Bağlantı Yöneticisi paneli yok (hepgo.css gizler).
+//  - Görevin dronları solda alt alta, KATLI kart; kapatılamaz; mıknatıslı (sürükleyince
+//    birbirine / sol sütuna yapışır), sütundan ayrılabilir, sütuna geri bırakılabilir.
+//  - Kart başlığının en sağında "Bağlan" düğmesi: bağlantı atanmışsa adını yazar;
+//    atanmamışsa kart gri.
+//  - HEPGO tam ekranında üstte firma logosu + adı, altında görev tanımı, sağda tarih/saat.
+// GÖKTUNGU dosyalarına dokunulmaz: dronKartSurukleKur (function declaration → global
+// nesne özelliği) burada değiştirilir; kartlar dronKartAyirToggle ile yüzen kipe alınır.
+// =====================================================================
+(function hepgoFaz1b() {
+  var SOL = 52, UST = 10, ARA = 2, ESIK = 18, sira = 0, cizZaman = null;
+  function ustOfset() {
+    var b = document.getElementById("hepgoUstBar");
+    return UST + (document.body.classList.contains("hepgo-tam") && b ? b.offsetHeight : 0);
+  }
+  function kartlar() { return Array.prototype.slice.call(document.querySelectorAll("body > .dron-kart.ayrik")); }
+  function sutun() {
+    return kartlar().filter(function (k) { return k.dataset.hepgoSerbest !== "1"; })
+      .sort(function (a, b) { return (+a.dataset.hepgoSira || 0) - (+b.dataset.hepgoSira || 0); });
+  }
+  function diz() {
+    cizZaman = null;
+    var y = ustOfset();
+    sutun().forEach(function (k) {
+      if (k._hepgoSurukleniyor) return;
+      k.style.left = SOL + "px"; k.style.top = y + "px";
+      y += k.offsetHeight + ARA;
+    });
+  }
+  function dizPlanla() { if (!cizZaman) cizZaman = requestAnimationFrame(diz); }
+  window.hepgoKartDiz = dizPlanla;
+  var ro = (typeof ResizeObserver === "function") ? new ResizeObserver(dizPlanla) : null;
+  window.addEventListener("resize", dizPlanla);
+  // kart silinince (dronSil) sütun yeniden dizilir
+  try { new MutationObserver(dizPlanla).observe(document.body, { childList: true }); } catch (e) {}
+
+  // ---- Sürükleme + mıknatıs (GÖKTUNGU dronKartSurukleKur yerine) ----
+  function yapis(tasinan, x, y) {
+    var w = tasinan.offsetWidth, hgt = tasinan.offsetHeight, iyi = null;
+    function dene(nx, ny, d) { if (d <= ESIK && (!iyi || d < iyi.d)) iyi = { x: nx, y: ny, d: d }; }
+    dene(SOL, y, Math.abs(x - SOL));   // sol sütun kılavuzu
+    kartlar().forEach(function (k) {
+      if (k === tasinan) return;
+      var r = k.getBoundingClientRect();
+      var dikey = Math.min(y + hgt, r.bottom) - Math.max(y, r.top) > -ESIK;
+      var yatay = Math.min(x + w, r.right) - Math.max(x, r.left) > -ESIK;
+      if (yatay) {
+        dene(r.left, r.bottom + ARA, Math.abs(y - r.bottom - ARA) + Math.abs(x - r.left) * 0.05);   // altına
+        dene(r.left, r.top - hgt - ARA, Math.abs(y + hgt + ARA - r.top) + Math.abs(x - r.left) * 0.05);   // üstüne
+      }
+      if (dikey) {
+        dene(r.right + ARA, r.top, Math.abs(x - r.right - ARA) + Math.abs(y - r.top) * 0.05);   // sağına
+        dene(r.left - w - ARA, r.top, Math.abs(x + w + ARA - r.left) + Math.abs(y - r.top) * 0.05);   // soluna
+      }
+    });
+    return iyi;
+  }
+  window.dronKartSurukleKur = function (kok, baslik) {
+    var s = null;
+    baslik.addEventListener("pointerdown", function (ev) {
+      if (!kok.classList.contains("ayrik") || ev.button !== 0) return;
+      if (ev.target.closest("button")) return;
+      var r = kok.getBoundingClientRect();
+      s = { dx: ev.clientX - r.left, dy: ev.clientY - r.top, x0: ev.clientX, y0: ev.clientY, oynadi: false };
+      try { baslik.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+    baslik.addEventListener("pointermove", function (ev) {
+      if (!s) return;
+      if (!s.oynadi && Math.abs(ev.clientX - s.x0) + Math.abs(ev.clientY - s.y0) < 5) return;
+      s.oynadi = true; kok._hepgoSurukleniyor = true; kok.dataset.hepgoSerbest = "1";
+      var x = Math.max(0, Math.min(ev.clientX - s.dx, window.innerWidth - kok.offsetWidth));
+      var y = Math.max(0, Math.min(ev.clientY - s.dy, window.innerHeight - 30));
+      var yp = yapis(kok, x, y);
+      if (yp) { x = yp.x; y = yp.y; }
+      kok.classList.toggle("dk-yapisiyor", !!yp);
+      kok.style.left = x + "px"; kok.style.top = y + "px";
+      dizPlanla();
+    });
+    function birak(ev) {
+      if (!s) return;
+      var oynadi = s.oynadi; s = null; kok._hepgoSurukleniyor = false;
+      kok.classList.remove("dk-yapisiyor");
+      try { baslik.releasePointerCapture(ev.pointerId); } catch (e) {}
+      if (!oynadi) return;
+      var x = parseFloat(kok.style.left) || 0, y = parseFloat(kok.style.top) || 0;
+      if (Math.abs(x - SOL) <= ESIK) {   // sol sütuna geri bırakıldı: dikey konumuna göre sıraya girer
+        delete kok.dataset.hepgoSerbest;
+        var liste = sutun().filter(function (k) { return k !== kok; });
+        var yer = liste.length;
+        for (var i = 0; i < liste.length; i++) { if (y < (parseFloat(liste[i].style.top) || 0) + liste[i].offsetHeight / 2) { yer = i; break; } }
+        liste.splice(yer, 0, kok);
+        liste.forEach(function (k, i) { k.dataset.hepgoSira = String(i + 1); });
+        sira = Math.max(sira, liste.length);
+      }
+      dizPlanla();
+    }
+    baslik.addEventListener("pointerup", birak);
+    baslik.addEventListener("pointercancel", birak);
+  };
+
+  // ---- Kart hazırlığı (hepgo_ws.js her telemetri paketinde çağırır) ----
+  function dugmeGuncelle(kok) {
+    var b = kok._hkBagla;
+    if (!b || !window.hepgoUcus) return;
+    var u = kok.dataset.hepgoUcus ? window.hepgoUcus.bilgi(kok.dataset.hepgoUcus) : null;
+    var imza = u ? [u.atanmis, u.ad, u.durum, u.kopru_online, u.sanal].join("|") : "-";
+    if (b._imza === imza) return;
+    b._imza = imza;
+    kok.classList.toggle("hk-baglantisiz", !!u && !u.atanmis);
+    if (!u) { b.style.display = "none"; return; }
+    b.style.display = "";
+    b.className = "hk-bagla " + (u.sanal ? "sanal" : !u.atanmis ? "yok" : u.durum);
+    var ikon = u.durum === "baglaniyor" ? "fa-circle-notch fa-spin" : u.durum === "bagli" ? "fa-link" : "fa-plug";
+    var metin = u.atanmis ? u.ad : "";
+    b.innerHTML = "<i class='fa-solid " + ikon + "'></i>" + (metin ? "<span></span>" : "");
+    if (metin) b.querySelector("span").textContent = metin;
+    b.title = u.sanal ? "Sanal dron: sunucu içi simülatör, otomatik bağlı"
+      : !u.atanmis ? "Bağlantı atanmamış — görev › Uçuş Yönetimi › Düzenle › Bağlantı"
+      : u.durum === "bagli" ? "Bağlı: " + u.ad + " (tıkla: bağlantıyı kes)"
+      : u.durum === "baglaniyor" ? "Bağlanıyor… (tıkla: vazgeç)"
+      : (u.kopru_online ? "Bağlan: " + u.ad : "Köprü çevrimdışı: " + u.ad);
+  }
+  window.hepgoKartHazirla = function (d) {
+    var kart = (typeof dronKartlar === "object" && dronKartlar) ? dronKartlar[d.sysid] : null;
+    if (!kart || !kart.kok) return;
+    var kok = kart.kok;
+    kok.dataset.hepgoUcus = (d.hepgo_ucus !== null && d.hepgo_ucus !== undefined) ? String(d.hepgo_ucus) : "";
+    if (!kok.dataset.hepgoHazir) {
+      kok.dataset.hepgoHazir = "1";
+      if (!kok.classList.contains("ayrik") && typeof dronKartAyirToggle === "function") {
+        try { dronKartAyirToggle(d.sysid); } catch (e) { console.error("[hepgo] kart ayrılamadı", e); }
+      }
+      kok.classList.add("dk-yalniz-baslik");   // katlı başlar (yalnız başlık)
+      try { if (kok._btnKucult) kok._btnKucult.innerHTML = DK_BUYULT_IKON; } catch (e) {}
+      kok.dataset.hepgoSira = String(++sira);
+      if (ro) ro.observe(kok);
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "hk-bagla";
+      b.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      b.addEventListener("dblclick", function (e) { e.stopPropagation(); });
+      b.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var u = kok.dataset.hepgoUcus ? window.hepgoUcus.bilgi(kok.dataset.hepgoUcus) : null;
+        if (!u || u.sanal) return;
+        if (!u.atanmis) {
+          if (typeof window.uyariToastGoster === "function")
+            window.uyariToastGoster({ seviye: "uyari", kategori: "köprü", mesaj: u.etiket + ": bağlantı atanmamış. Saha görevi › Uçuş Yönetimi › Düzenle › Bağlantı panelinden köprü ve erişim ayarlarını seçin." });
+          return;
+        }
+        if (u.durum === "kapali") window.hepgoUcus.baglan(u.id); else window.hepgoUcus.kes(u.id);
+      });
+      kart.baslik.appendChild(b);   // başlığın en sağı
+      kok._hkBagla = b;
+      dizPlanla();
+    }
+    dugmeGuncelle(kok);
+  };
+
+  // ---- HEPGO tam ekran üst bandı ----
+  var meta = null, saatZaman = null;
+  function ustBarDoldur() {
+    var g = (window.hepgoUcus && window.hepgoUcus.gorev()) || {};
+    var parcalar = [g.code, g.location_name, g.note].filter(function (x) { return x; });
+    var gEl = document.getElementById("hepgoUstGorev");
+    if (gEl) gEl.textContent = parcalar.join(" · ") + (g.pilot_name ? " · Pilot: " + g.pilot_name : "");
+    if (meta) {
+      var f = document.getElementById("hepgoUstFirma"), l = document.getElementById("hepgoUstLogo");
+      if (f) f.textContent = meta.company || "";
+      if (l && !l.getAttribute("src")) l.src = meta.logo_url || "/static/img/hepgo-logo.png";
+    }
+  }
+  function saat() {
+    var el = document.getElementById("hepgoUstSaat");
+    if (!el) return;
+    var d = new Date();
+    el.innerHTML = "";
+    var t = document.createElement("b"); t.textContent = d.toLocaleTimeString("tr-TR");
+    var g = document.createElement("span"); g.textContent = d.toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric", weekday: "long" });
+    el.appendChild(t); el.appendChild(g);
+  }
+  function tamGuncelle() {
+    var tam = false;
+    try { tam = !!(window.parent && window.parent !== window && window.parent.document.fullscreenElement); } catch (e) {}
+    document.body.classList.toggle("hepgo-tam", tam);
+    if (tam) {
+      if (!meta) fetch("/api/meta", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (m) { meta = m; ustBarDoldur(); }).catch(function () {});
+      ustBarDoldur(); saat();
+      if (!saatZaman) saatZaman = setInterval(function () { saat(); ustBarDoldur(); }, 1000);
+    } else if (saatZaman) { clearInterval(saatZaman); saatZaman = null; }
+    dizPlanla();
+    try { var v = window.__haritaViewerAl && window.__haritaViewerAl(); if (v) setTimeout(function () { v.resize(); }, 60); } catch (e) {}
+  }
+  try {
+    var pd = window.parent.document;
+    pd.addEventListener("fullscreenchange", tamGuncelle);
+    window.addEventListener("pagehide", function () { try { pd.removeEventListener("fullscreenchange", tamGuncelle); } catch (e) {} }, { once: true });
+  } catch (e) {}
+  tamGuncelle();
+})();

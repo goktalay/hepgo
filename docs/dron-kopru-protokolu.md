@@ -62,12 +62,16 @@ ve eski kodu anında geçersiz kılar. `GET /bridges` satırları anahtarı/kodu
   köprülerden ve görevin sanal dronlarından gelir; `hello` yanıtı `task{id,code,status,location_name,lat,lon}` ve `flights[]` (live ile aynı)
   taşır, `bridges[]` yalnız bu köprüleri içerir. Uçuş eklenince/kaldırılınca/bağlantısı değişince sunucu izleyicilere yeni bir `hello` gönderir.
   `{t:'watch', bridge_id|null}` eski davranışıyla korunur.
-- SANAL DRON (`protocol='sanal'`): sunucu içi simülatör; köprü gerekmez. `bridge_id = -drone_id` (negatif), `info.sim = true`, ad
-  `Sanal · <dron kodu>`, sysid = uçuşun sysid'si || 1, HEARTBEAT tipi Quadrotor (ArduCopter modları). 5 Hz `status` üretir; komutlar aynı
-  `cmd` çerçevesiyle gider (`bridge_id` negatif): arm/disarm, takeoff{alt_rel_m} (3 m/s), land (2 m/s), rtl (12 m/s, sonra iniş),
-  goto{lat,lon,alt_rel_m} (12 m/s), set_mode{AUTO|LOITER|GUIDED|RTL|LAND|…}, mission_upload{items}/mission_download (MISSION_ITEM_INT
-  şeması), mission_set_current, set_home, altitude_change, arm_check; link_open/link_close/disconnect `ok`. Batarya uçarken 0,03 %/sn düşer.
-  Görevi izleyen kalmayınca 10 dk sonra, görev kapanınca/iptal olunca hemen durur (`bridge{online:false}`).
+- SANAL DRON (`protocol='sanal'`) = GERÇEK ArduPilot SITL süreci (GÖKTUNGU birebir; app/drone_sitl.py). Görev izlenince hub
+  arducopter/arduplane SITL'i başlatır (sürüm sabit: stable-4.7.2, ikili ilk kullanımda `data/sitl/`e indirilir, sha256 kaydedilir;
+  model dron kaydının model metninden: varsayılan çok rotorlu '+', 'hexa', 'heli', 'plane', 'quadplane'), `--base-port` 15670'ten
+  10'luk boş blok, `--defaults` varsayilan.parm (FRAME_CLASS 1, FS_GCS_ENABLE 0, MAV_SYSID, ARMING_SKIPCHK 16, LOG_BACKEND_TYPE 0,
+  LOG_DISARMED 0), çalışma dizini `<veri>/sitl_calisma/<drone_id>`. Hub SERIAL0'a Hepgo Dron Köprüsü çekirdeğiyle (kopru_core.MavLink)
+  bağlanır: ham MAVLink gerçek köprüdeki gibi işlenir, komutlar aynı yürütücüden geçer (kinematik, ARM denetimleri, modlar, görev
+  davranışı gerçek firmware'den). `bridge_id = -drone_id`, `info.sim = info.sitl = true`, sysid = uçuşun sysid'si || 1. SITL açılışı
+  ~10–45 sn (EKF/GPS); bu sürede ARM reddedilir. İstemci kapanınca SITL kendini kapatır; izleyen kalmayınca 10 dk sonra, görev
+  kapanınca hemen durur. Sunucu açılışında önceki süreçten kalan SITL'ler (bu kiracının çalışma kökü) temizlenir.
+  `HEPGO_SITL=0` yalnız testler için eski sunucu içi kinematik simülatörü seçer.
 
 ## v1.1 (isteğe bağlı; köprü `auth`/`pair` çerçevesinde `caps:[…]` bildirir, sunucu `hello.caps` ile tarayıcıya açar)
 

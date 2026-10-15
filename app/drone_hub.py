@@ -26,6 +26,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -33,7 +34,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from . import auth, cameras, config, db
+from . import auth, cameras, config, db, drone_sitl
 
 ws_router = APIRouter()
 
@@ -71,6 +72,9 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              'mission_start'}
 BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start'}   # köprünün bildirebileceği yetenekler
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
+# Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
+SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
+SITL_CONNECT_S = 40                     # SITL ayağa kalkıp SERIAL0'ı dinleyene dek bağlanma denemesi (GÖKTUNGU Tuzak D)
 SIM_IDLE = 600                          # izleyici kalmayınca sanal dronun durma süresi (sn)
 
 BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
@@ -759,7 +763,7 @@ def task_live(conn, task_id):
         return None, []
     rows = db.rows(conn.execute(
         '''SELECT f.id, f.order_id, f.drone_id, f.bridge_id, f.sysid, f.link, o.queue_no, o.code AS order_code, p.name AS product_name,
-                  d.code AS drone_code, d.name AS drone_name, d.protocol AS drone_protocol, b.name AS bridge_name
+                  d.code AS drone_code, d.name AS drone_name, d.protocol AS drone_protocol, d.model AS drone_model, b.name AS bridge_name
            FROM field_flights f
            LEFT JOIN orders o ON o.id = f.order_id LEFT JOIN products p ON p.id = o.product_id
            LEFT JOIN drone_drones d ON d.id = f.drone_id LEFT JOIN drone_bridges b ON b.id = f.bridge_id
@@ -771,7 +775,7 @@ def task_live(conn, task_id):
                         'label': r['queue_no'] or r['order_code'] or r['drone_code'] or f"#{r['id']}",
                         'name': r['product_name'] or r['drone_name'], 'protocol': protocol, 'sysid': r['sysid'],
                         'bridge_id': r['bridge_id'], 'bridge_name': r['bridge_name'], 'bridge_online': r['bridge_id'] in BRIDGES,
-                        'link': parse_link(r['link']), 'sim_bridge_id': -r['drone_id'] if protocol == 'sanal' and r['drone_id'] else None})
+                        'drone_model': r['drone_model'], 'link': parse_link(r['link']), 'sim_bridge_id': -r['drone_id'] if protocol == 'sanal' and r['drone_id'] else None})
     return task, flights
 
 
@@ -1162,17 +1166,154 @@ class SimDrone:
                 _broadcast({'t': 'bridge', 'bridge_id': self.id, 'online': False, 'status': 'KAPANDI'}, self.id)
 
 
+class SitlDrone:
+    """SANAL DRON (GÖKTUNGU birebir): görevin protocol='sanal' uçuşu için GERÇEK ArduPilot SITL süreci. Hub SITL'in SERIAL0
+    TCP portuna Hepgo Dron Köprüsü çekirdeğiyle (kopru_core.MavLink) bağlanır; ham MAVLink gerçek köprüdeki gibi _feed_mavlink'e
+    akar, komutlar MavLink.execute ile yürütülür (sanal dron özel kod yolu KULLANMAZ). Bridge yüzeyi SimDrone ile aynı:
+    bridge_id = -drone_id, sysid = uçuş sysid || 1. İzleyici kalmayınca SIM_IDLE sonra, görev açık değilse hemen durur;
+    süreç ölürse bağlantı 'KOPTU' olur."""
+
+    def __init__(self, task_id, flight, home):
+        self.task_id, self.drone_id, self.flight_id = task_id, int(flight['drone_id']), flight['id']
+        self.id = -self.drone_id
+        self.name = f"Sanal · {flight['label']}"
+        self.sysid = int(flight.get('sysid') or 1)
+        self.tip = drone_sitl.model_tipi(flight.get('drone_model'))
+        self.host, self.platform, self.ver = 'sunucu', 'sitl', 'ArduPilot SITL'
+        self.caps = ['set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear']
+        self.session_id, self.packets, self.connected_at, self.last_seen = None, 0, db.now(), time.time()
+        self.closing, self.log, self.tlog, self.tlog_path = None, None, None, None
+        self.parser = _mav()
+        self.drones = {}
+        self.home = (float(home[0]), float(home[1]))
+        self.link = None
+        self.loop = None
+        self.last_viewer = time.time()
+        self.task = None
+        self.state = 'BASLIYOR'   # BASLIYOR | HAZIR | HATA
+
+    def info(self):
+        return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
+                'connected_at': self.connected_at, 'packets': self.packets, 'session_id': None, 'sim': True, 'sitl': True, 'sitl_state': self.state,
+                'drone_id': self.drone_id, 'task_id': self.task_id, 'flight_id': self.flight_id,
+                'drones': {str(s): st.d for s, st in self.drones.items()}}
+
+    def _event(self, text, severity=6):
+        _broadcast({'t': 'event', 'bridge_id': self.id, 'sysid': self.sysid, 'text': text, 'severity': severity, 'ts': time.time()}, self.id)
+        console_line(self, self.sysid, 'SITL', text, 'hata' if severity <= 3 else 'uyari' if severity == 4 else 'bilgi')
+
+    def _konsol(self, metin, sev='bilgi'):   # SITL yöneticisi (iş parçacığı) → olay döngüsü
+        if self.loop is not None and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(console_line, self, self.sysid, 'SITL', metin, sev)
+
+    def _publish(self):
+        for st in list(self.drones.values()):
+            _emit(self, st, force=True)
+
+    def _on_bytes(self, data):   # MavLink okuyucu iş parçacığından
+        self.packets += 1
+        self.last_seen = time.time()
+        if self.loop is not None and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(_feed_mavlink, self, data)
+
+    def _on_state(self, state, err=None):
+        if state == 'lost' and self.loop is not None and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(self._event, f'SITL bağlantısı koptu: {err or ""}'.strip(), 3)
+
+    async def acommand(self, name, params):
+        if name in ('link_open', 'link_close', 'disconnect'):
+            return {'ok': True, 'result': {'sim': True}}   # sanal dron her zaman bağlı
+        if self.link is None:
+            return {'ok': False, 'error': 'Sanal dron henüz hazır değil (SITL açılıyor)'}
+        try:
+            res = await asyncio.get_running_loop().run_in_executor(None, self.link.execute, name, params or {}, self.sysid)
+            return {'ok': True, 'result': res}
+        except Exception as e:   # noqa: BLE001
+            return {'ok': False, 'error': str(e)[:300]}
+
+    def command(self, name, params):   # eşzamanlı yol (yalnız eski simülatör); SITL'de kullanılmaz
+        return {'ok': False, 'error': 'SITL komutu eşzamansız yürütülür'}
+
+    def _connect(self, port):
+        core = drone_sitl.kopru_cekirdegi()
+        end = time.time() + SITL_CONNECT_S
+        last = None
+        while time.time() < end:
+            link = core.MavLink({'type': 'tcp', 'host': '127.0.0.1', 'port': port, 'sysid': self.sysid}, self._on_bytes, self._on_state)
+            try:
+                link.open()
+                return link, None
+            except Exception as e:   # noqa: BLE001
+                last = e
+                time.sleep(1.0)
+        return None, f'SITL portuna bağlanılamadı (tcp:127.0.0.1:{port}): {last}'
+
+    async def run(self):
+        self.loop = asyncio.get_running_loop()
+        ex = self.loop.run_in_executor
+        status = 'KAPANDI'
+        try:
+            self._event(f'SITL başlatılıyor ({self.tip}) · {self.name}', 6)
+            port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.drone_id, self.tip, self.home[0], self.home[1], self.sysid,
+                                                                          konsol=self._konsol))
+            if not port:
+                self.state = 'HATA'
+                self._event(err or 'SITL başlatılamadı', 2)
+                status = 'KOPTU'
+                return
+            link, err = await ex(None, self._connect, port)
+            if link is None:
+                self.state = 'HATA'
+                self._event(err, 2)
+                status = 'KOPTU'
+                return
+            self.link = link
+            self.state = 'HAZIR'
+            self._event(f'Sanal dron (SITL) bağlandı: tcp:127.0.0.1:{port}', 6)
+            n = 0
+            while True:
+                await asyncio.sleep(1.0)
+                n += 1
+                if not drone_sitl.YONETICI.calisiyor_mu(self.drone_id) or not link.running:
+                    self._event('SITL süreci sonlandı', 2)
+                    status = 'KOPTU'
+                    break
+                if n % 5 == 0:   # izleyici var mı
+                    now = time.time()
+                    if any(v.task_id == self.task_id for v in VIEWERS.values()):
+                        self.last_viewer = now
+                    elif now - self.last_viewer > SIM_IDLE:
+                        break
+                if n % 30 == 0 and await _db(_task_status, self.task_id) not in OPEN_TASK:   # görev kapandı/iptal
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception:   # noqa: BLE001
+            status = 'KOPTU'
+        finally:
+            if self.link is not None:
+                self.link.close()
+            try:
+                await asyncio.get_running_loop().run_in_executor(None, drone_sitl.YONETICI.durdur, self.drone_id)
+            except Exception:   # noqa: BLE001
+                drone_sitl.YONETICI.durdur(self.drone_id)
+            if SIMS.get(self.id) is self:
+                SIMS.pop(self.id, None)
+                _broadcast({'t': 'bridge', 'bridge_id': self.id, 'online': False, 'status': status}, self.id)
+
+
 def start_sim(task_id, flight, home):
     """Görevin sanal dronu için simülatörü başlatır (çalışıyorsa mevcut döner)."""
     sim = SIMS.get(-int(flight['drone_id']))
     if sim is not None:
         return sim
-    sim = SimDrone(task_id, flight, home)
+    sim = (SitlDrone if SITL_ENABLED else SimDrone)(task_id, flight, home)
     SIMS[sim.id] = sim
     sim.task = asyncio.get_running_loop().create_task(sim.run())
     _broadcast({'t': 'bridge', 'bridge_id': sim.id, 'online': True, 'info': sim.info()}, sim.id)
-    sim._event(f'Sanal dron hazır · {sim.name}', 6)
-    sim._publish()
+    if not SITL_ENABLED:
+        sim._event(f'Sanal dron hazır · {sim.name}', 6)
+        sim._publish()
     return sim
 
 
@@ -1500,7 +1641,7 @@ async def _mission_flow(b, sim, sysid, params, viewer_ws):
 async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
     """Tek komutu köprüye (ya da sanal drona) gönderir, sonucu konsola yazar."""
     if sim:
-        res = b.command(name, params)
+        res = await b.acommand(name, params) if isinstance(b, SitlDrone) else b.command(name, params)
         ok = bool(res.get('ok'))
         console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
         b._publish()
@@ -1645,6 +1786,11 @@ def start():
     """main.lifespan: açılışta bir kez."""
     global _loop_task
     recover_on_start()
+    if SITL_ENABLED:
+        try:
+            drone_sitl.YONETICI.artiklari_temizle()   # önceki süreçten kalan SITL'ler portu tutmasın (GÖKTUNGU)
+        except Exception:   # noqa: BLE001
+            pass
     try:
         _loop_task = asyncio.get_running_loop().create_task(_maintenance())
     except RuntimeError:

@@ -13,6 +13,7 @@ import time
 
 faulthandler.dump_traceback_later(170, exit=True)   # WebSocket beklemesi takılırsa yığın izini bas ve çık
 
+os.environ.setdefault('HEPGO_SITL', '0')   # bu test eski kinematik simülatörle (hızlı); gerçek SITL: tests/test_drone_sitl.py
 os.environ.update(CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYMAZ_PRINTER_POLL='0', CAYMAZ_ADMIN_USERNAME='admin@test',
                   CAYMAZ_ADMIN_PASSWORD='admin-sifre-1', CAYMAZ_FORCE_PASSWORD_CHANGE='0')
 

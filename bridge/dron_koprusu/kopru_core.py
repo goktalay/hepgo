@@ -88,6 +88,7 @@ class MavLink:
         self.rx = 0
         self.last_rx = 0.0
         self.errors = 0
+        self.streams = set()   # veri akışı istenmiş sysid'ler
 
     # ---- bağlantı ----
     def open(self):
@@ -153,6 +154,8 @@ class MavLink:
                 self.target_comp = msg.get_srcComponent()
                 self.vtype = msg.type
                 self.armed = bool(msg.base_mode & 128)
+                if src not in self.streams:
+                    self._request_streams(src, msg.get_srcComponent())
             elif t == 'GLOBAL_POSITION_INT' and src == self.target:
                 self.last_pos = (msg.lat, msg.lon, msg.relative_alt / 1000)
             elif t == 'PARAM_VALUE':
@@ -170,6 +173,19 @@ class MavLink:
             for w in ws:
                 if t in w.types and (w.cond is None or w.cond(msg)):
                     w.q.put(msg)
+
+    def _request_streams(self, sysid, comp):
+        """GÖKTUNGU dron.py: ilk HEARTBEAT'te tüm veri akışları 4 Hz; EKF_STATUS_REPORT (193) ve VIBRATION (241) 2 Hz,
+        HOME_POSITION (242) 5 sn aralıkla (ALL akışında yayılmazlar) + ilk HOME bir kez istenir. SITL ve akış parametresi
+        (SRx_*) sıfır olan otopilotlar istek gelmeden telemetri yaymaz."""
+        self.streams.add(sysid)
+        try:
+            self.m.mav.request_data_stream_send(sysid, comp, 0, 4, 1)   # MAV_DATA_STREAM_ALL
+            for mid, us in ((193, 500000), (241, 500000), (242, 5000000)):
+                self.m.mav.command_long_send(sysid, comp, 511, 0, mid, us, 0, 0, 0, 0, 0)   # MAV_CMD_SET_MESSAGE_INTERVAL
+            self.m.mav.command_long_send(sysid, comp, 512, 0, 242, 0, 0, 0, 0, 0, 0)       # MAV_CMD_REQUEST_MESSAGE (HOME)
+        except Exception:   # noqa: BLE001
+            self.streams.discard(sysid)
 
     # ---- yardımcılar ----
     def _waiter(self, types, cond=None):

@@ -909,7 +909,8 @@
   var meta = null, saatZaman = null;
   function ustBarDoldur() {
     var g = (window.hepgoUcus && window.hepgoUcus.gorev()) || {};
-    var parcalar = [g.code, g.location_name, g.note].filter(function (x) { return x; });
+    // Saha görevinin açıklaması (note) üst bantta gösterilmez (kullanıcı isteği): kod · görev yeri · pilot
+    var parcalar = [g.code, g.location_name].filter(function (x) { return x; });
     var gEl = document.getElementById("hepgoUstGorev");
     if (gEl) gEl.textContent = parcalar.join(" · ") + (g.pilot_name ? " · Pilot: " + g.pilot_name : "");
     if (meta) {

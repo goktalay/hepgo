@@ -31,7 +31,9 @@ Sunucu-yalnız (köprüye gitmez): `arm_check` → `res.result` ARM CHECK raporu
   (HEPGO saha görevi uçuş kaydı; yoksa köprü oturumunun bağlamı).
 - `ping` köprüden gelir, yanıt `{t:'pong',server_time}`; sunucu ping göndermez, 20–30 sn'de bir önerilir. Sunucu tarafı boşta zaman aşımı yok.
 - `event.severity` MAV_SEVERITY 0..7; tarayıcıya `ts`'siz geçer (STATUSTEXT olaylarında sunucu `ts` ekler).
-- `res`: `{t:'res', rid, ok, result?, error?}`; sunucu 10 sn bekler. `disconnect` köprüye gönderilmez (sunucu kapatır, close 1000).
+- `res`: `{t:'res', rid, ok, result?, error?}`; sunucu 10 sn bekler — `mission_upload`, `mission_download` ve `log_list` için 60 sn (öğe başına
+  MISSION_REQUEST_INT turu telsizde 0,2–1 sn sürer). Köprü `res`'i el sıkışma tamamlanınca döner; ara ilerleme isteğe bağlı `event` ile.
+  `disconnect` köprüye gönderilmez (sunucu kapatır, close 1000).
 
 Tarayıcı ↔ sunucu (`/ws/drone/live`, oturum çerezi): ← `hello{v,caps,me,bridges[]}` · `status{bridge_id,sysid,state(+ready)}` ·
 `bridge{bridge_id,online,info|status}` · `event{bridge_id,sysid,text,severity,ts}` · `res{rid,ok,result,error}` ·

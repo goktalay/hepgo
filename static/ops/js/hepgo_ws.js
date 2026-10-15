@@ -610,7 +610,9 @@ function cmdKopruye(bridgeId, sysid, g, name, params, tip, ekler){
   }
   const rid = "h" + (++ridSayac) + "-" + Date.now().toString(36);
   const kayit = {tip: tip || name, sysid: g, gercek: Number(sysid), bridge_id: Number(bridgeId), name: name, params: params || {}, ekler: ekler || {}, zaman: Date.now()};
-  kayit.timer = setTimeout(() => resIsle({rid: rid, ok: false, error: hwT("yanıt alınamadı (12 sn zaman aşımı)", "no response (12 s timeout)")}), 12000);   // sunucu CMD_TIMEOUT 10 sn'nin üstünde: sunucunun hata metni önce gelsin
+  // sunucu zaman aşımının (10 sn; mission_upload/mission_download/log_list 60 sn) üstünde: sunucunun hata metni önce gelsin
+  const zamanAsimiSn = (name === "mission_upload" || name === "mission_download" || name === "log_list") ? 65 : 12;
+  kayit.timer = setTimeout(() => resIsle({rid: rid, ok: false, error: hwT("yanıt alınamadı (" + zamanAsimiSn + " sn zaman aşımı)", "no response (" + zamanAsimiSn + " s timeout)")}), zamanAsimiSn * 1000);
   BEKLEYEN[rid] = kayit;
   gercekWs.send(JSON.stringify({t: "cmd", rid: rid, bridge_id: Number(bridgeId), sysid: Number(sysid), name: name, params: params || {}}));
   if (name !== "arm_check"){

@@ -44,6 +44,7 @@ VIEWER_QUEUE = 32         # izleyici kuyruğu (dolunca en eskisi atılır; param
 LOG_MAX = 2 * 1024 ** 3   # köprüden gelen .bin üst sınırı
 RATE_WINDOW, RATE_MAX = 60, 10
 CMD_TIMEOUT = 10
+CMD_TIMEOUTS = {'mission_upload': 60, 'mission_download': 60, 'log_list': 60}   # öğe başına MISSION_REQUEST_INT turu (telsizde 0,2–1 sn) → uzun rotalar
 CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
              # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
              'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change',
@@ -747,7 +748,7 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
                 st.d['magkal_pct'] = 0; st.d['magkal_durum'] = None; st.d['magkal_rapor'] = None
     try:
         await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
-        res = await asyncio.wait_for(fut, CMD_TIMEOUT)
+        res = await asyncio.wait_for(fut, CMD_TIMEOUTS.get(name, CMD_TIMEOUT))
         ok = bool(res.get('ok'))
         console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
         return {'ok': ok, 'result': res.get('result'), 'error': res.get('error')}

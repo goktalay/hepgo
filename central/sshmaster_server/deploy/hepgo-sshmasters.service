@@ -1,0 +1,21 @@
+[Unit]
+Description=SSH Master hesap ve senkronizasyon servisi (sshmasters.com) — yalnız 127.0.0.1:8095, Cloudflare tüneli önünde
+After=network.target
+
+[Service]
+User=hepgo
+Group=hepgo
+WorkingDirectory=/opt/hepgo/sshmaster
+Environment=SSHM_ENV_FILE=/opt/hepgo/sshmaster/.env
+Environment=VEILOX_ENV_FILE=/opt/hepgo/veilox/.env
+ExecStart=/opt/hepgo/caymazbuild/.venv/bin/python -m uvicorn sshm.main:app --host 127.0.0.1 --port 8095 --no-server-header --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/hepgo/sshmaster/data
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

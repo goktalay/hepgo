@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSH Master — Windows için SSH bağlantı yöneticisi</title>
+<meta name="description" content="SSH Master: bağlantı kartları ve klasörler, tam özellikli terminal, bölünmüş görünüm, komut kısayolları ve SFTP dosya yöneticisi tek Windows uygulamasında. Hesap oluşturup indirin.">
+<meta property="og:title" content="SSH Master — Windows için SSH bağlantı yöneticisi">
+<meta property="og:description" content="Bağlantı kartları, bölünmüş terminal, komut kısayolları ve SFTP dosya yöneticisi tek uygulamada.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sshmasters.com/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: rgba(11, 15, 23, .75); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 16px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="4" width="28" height="24" rx="6" fill="url(#g)"/><path d="M9 12l5 4-5 4" fill="none" stroke="#06101c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 21h7" stroke="#06101c" stroke-width="2.6" stroke-linecap="round"/></svg>
+      SSH Master
+    </a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#kisayollar">Kısayollar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
+    <a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">Windows için SSH bağlantı yöneticisi</span>
+        <h1>Tüm sunucularınız <em>tek pencerede</em>.</h1>
+        <p class="lead">SSH Master; bağlantı kartları ve klasörler, tam özellikli terminal, bölünmüş görünüm, komut kısayolları ve SFTP dosya yöneticisini tek Windows uygulamasında toplar.</p>
+        <div class="cta">
+          <a class="store" href="/kayit">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+            <span><small>Hesap oluşturun</small><b>İndirin</b></span>
+          </a>
+          <span class="note">Windows için · Hesabım sayfanızdan kişiye özel indirme</span>
+        </div>
+      </div>
+      <div class="app" aria-hidden="true">
+        <div class="app-bar"><b>SSH Master</b><span class="chip on">Bölünmüş · 2</span><span class="chip">Tüm bölmelere yaz</span><span class="sp"></span><span>Ctrl+Shift+E</span></div>
+        <div class="panes">
+          <div class="pane">
+            <div class="pane-head"><span class="dot"></span>web-01 · deploy</div>
+            <div class="side">
+              <div class="grp"><h6>Kısayollar</h6><div class="sel">systemctl status nginx</div><div>tail -f app.log</div><div>df -h</div></div>
+              <div class="grp"><h6>Sunucu (SFTP)</h6><div>/var/www</div><div>📁 releases</div><div>📄 .env</div></div>
+              <div><h6>Bilgisayarım</h6><div>C:\Projeler</div></div>
+            </div>
+<pre><span class="g">deploy@web-01</span>:<span class="cy">~</span>$ systemctl status nginx
+<span class="g">●</span> nginx.service - web server
+   Active: <span class="g">active (running)</span>
+<span class="g">deploy@web-01</span>:<span class="cy">~</span>$ df -h /
+/dev/sda1  80G  31G  46G  41% /
+<span class="g">deploy@web-01</span>:<span class="cy">~</span>$ <span class="cy">▌</span></pre>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span class="dot"></span>db-01 · admin</div>
+            <div class="side">
+              <div class="grp"><h6>Kısayollar</h6><div>pg_isready</div><div class="sel">uptime</div></div>
+              <div class="grp"><h6>Sunucu (SFTP)</h6><div>/backup</div><div>📄 gece.sql.gz</div></div>
+              <div><h6>Bilgisayarım</h6><div>D:\Yedek</div></div>
+            </div>
+<pre><span class="mg">admin@db-01</span>:<span class="cy">~</span>$ uptime
+ 15:24:07 up 42 days, load average: <span class="y">0.21</span>
+<span class="mg">admin@db-01</span>:<span class="cy">~</span>$ pg_isready
+/var/run/postgresql:5432 - <span class="g">accepting connections</span>
+<span class="mg">admin@db-01</span>:<span class="cy">~</span>$ <span class="cy">▌</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>İhtiyacınız olan her şey</h2>
+      <p class="sub">Bağlantılarınızı düzenleyin, birden çok sunucuda aynı anda çalışın, dosyalarınızı sürükleyip bırakarak taşıyın.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><path d="M17 14v6M14 17h6"/></svg></div>
+          <h3>Bağlantı kartları</h3><p>Ad, sunucu, port, kullanıcı ve şifre ya da özel anahtarla kart oluşturun. Kaydetmeden bağlantıyı test edin, kartları renkle etiketleyin.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+          <h3>Klasörler ve arama</h3><p>İç içe klasörler oluşturun, kartları sürükleyip bırakarak taşıyın. <kbd>Ctrl+F</kbd> ile anında bulun; "son kaldığım klasöre git" ile kaldığınız yerden açın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l3 3-3 3M13 15h4"/></svg></div>
+          <h3>Tam özellikli terminal</h3><p>Karta çift tıklayın; xterm tabanlı SSH konsolu ayrı pencerede açılsın. 256 renk, kopyala/yapıştır, sağ tık menüsü ve yeniden bağlanma.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 12h18"/></svg></div>
+          <h3>Bölünmüş görünüm</h3><p>Birden çok kartı seçip tek pencerede açın: ikisi yan yana, dördü 2×2, en fazla altı bölme. Ayırıcıları sürükleyerek boyutlandırın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h12M4 12h12M4 18h12"/><path d="M19 5l2 2-2 2M19 11l2 2-2 2"/></svg></div>
+          <h3>Tüm bölmelere yaz</h3><p>Açıkken klavye girdiniz ve kısayollarınız bağlı tüm sunuculara aynı anda gider; aynı işi her sunucuda tek seferde yapın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>
+          <h3>Komut kısayolları</h3><p>Sık kullandığınız komutları kaydedin; çift tıklayınca imlecin olduğu yere yazılsın, isterseniz Enter'a da basılsın. Sürükleyerek sıralayın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+          <h3>SFTP dosya yöneticisi</h3><p>Sunucu dosyalarında gezinin, terminalin bulunduğu klasörü takip edin. İndirin, yeniden adlandırın, silin, yeni klasör açın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+          <h3>Bilgisayarım paneli</h3><p>Windows klasörleri ve sürücüleri aynı ekranda. Paneller arasında ve Windows Gezgini'nden sürükle-bırak ile yükleyin ya da indirin.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M21 4v5h-5M3 20v-5h5"/></svg></div>
+          <h3>Web ile senkronizasyon</h3><p>Bağlantı kütüphaneniz cihazlarınız arasında eşitlenir. Uçtan uca şifrelidir: anahtar yalnız sizde, sunucu içeriği okuyamaz. İsterseniz ayarlardan kapatın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Güvenli</h3><p>Şifreler Windows DPAPI ile şifrelenir. Sunucunun host anahtarı ilk bağlantıda kaydedilir; değişirse bağlantı reddedilir.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap two">
+      <div>
+        <h2>Her bağlantıya kendi rengi</h2>
+        <p class="sub">Her bağlantı için ayrı konsol renk paleti seçin; üretim sunucusunu bir bakışta ayırt edin.</p>
+        <div class="themes">
+          <span class="theme"><i style="background:linear-gradient(135deg,#0b0f17 50%,#22d3ee 50%)"></i>SSH Master</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#0c0c0c 50%,#3a96dd 50%)"></i>Campbell</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#300a24 50%,#eeeeec 50%)"></i>Ubuntu</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#282a36 50%,#bd93f9 50%)"></i>Dracula</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#282c34 50%,#61afef 50%)"></i>One Dark</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#272822 50%,#a6e22e 50%)"></i>Monokai</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#2e3440 50%,#88c0d0 50%)"></i>Nord</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#282828 50%,#fabd2f 50%)"></i>Gruvbox</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#1a1b26 50%,#7aa2f7 50%)"></i>Tokyo Night</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#002b36 50%,#2aa198 50%)"></i>Solarized</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#000000 50%,#00ff41 50%)"></i>Matrix</span>
+          <span class="theme"><i style="background:linear-gradient(135deg,#ffffff 50%,#0969da 50%)"></i>GitHub Light</span>
+        </div>
+      </div>
+      <div>
+        <h2>Arka planda hazır</h2>
+        <p class="sub">Küçültünce sistem tepsisinde bekler, kapatınca tepsiye gizlenir. Tepsi menüsünden klasör yapınıza göre doğrudan bağlanın.</p>
+        <p class="sub">Terminal yazı boyutunu ayarlardan dilediğiniz gibi büyütün ya da küçültün.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="kisayollar">
+    <div class="wrap two">
+      <div>
+        <h2>Klavyeden ayrılmadan</h2>
+        <p class="sub">Bölmeleri açın, kapatın ve aralarında geçin; paneli tek tuşla gizleyin.</p>
+      </div>
+      <table class="keys">
+        <tr><td><kbd>Ctrl</kbd> + tık, <kbd>Enter</kbd></td><td>Seçili kartları bölünmüş görünümde aç</td></tr>
+        <tr><td><kbd>Ctrl+Shift+E</kbd> / <kbd>Ctrl+Shift+O</kbd></td><td>Sağa / aşağıya yeni bölme</td></tr>
+        <tr><td><kbd>Ctrl+Shift+W</kbd></td><td>Bölmeyi kapat</td></tr>
+        <tr><td><kbd>Alt</kbd> + ok tuşları</td><td>Bölmeler arasında geç</td></tr>
+        <tr><td><kbd>Ctrl+B</kbd></td><td>Bölmenin sol panelini aç / kapat</td></tr>
+        <tr><td><kbd>Ctrl+Shift+V</kbd></td><td>Terminale yapıştır</td></tr>
+        <tr><td><kbd>Ctrl+F</kbd></td><td>Bağlantılarda ara</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="alt" id="nasil">
+    <div class="wrap">
+      <h2>Üç adımda başlayın</h2>
+      <p class="sub">Kurulumdan ilk bağlantıya birkaç dakika.</p>
+      <div class="steps">
+        <div class="step"><h3>Hesap oluşturun</h3><p>E-postanızı doğrulayın; Hesabım sayfanızdaki size özel bağlantıdan SSH Master'ı indirip kurun.</p></div>
+        <div class="step"><h3>Giriş yapın, kart oluşturun</h3><p>"Yeni" kartına sunucu, port, kullanıcı ve şifre ya da özel anahtarı girin; kaydetmeden test edin.</p></div>
+        <div class="step"><h3>Çift tıklayın</h3><p>Kart çift tıkla terminalde açılır; birden çok kartı seçip bölünmüş görünümde çalışın.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>SSH Master'ı edinin</h2>
+      <p class="sub" style="margin-left:auto;margin-right:auto">Hesap oluşturun, size özel bağlantıdan indirin. Bağlantılarınız cihazlarınız arasında uçtan uca şifreli eşitlenir.</p>
+      <div class="cta">
+        <a class="store" href="/kayit">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+            <span><small>Hesap oluşturun</small><b>İndirin</b></span>
+          </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> SSH Master</span>
+    <span class="sp"></span>
+    <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

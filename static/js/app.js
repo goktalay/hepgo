@@ -29,6 +29,7 @@ import { initAlarms } from './alarms.js';
 import * as boss from './modules/boss.js';
 import * as projectsMod from './modules/projects.js';
 import * as members from './modules/members.js';
+import * as sshmasterMod from './modules/sshmaster.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
 import * as membershipMod from './modules/membership.js';
@@ -137,6 +138,7 @@ const MODULES = [
   { key: 'projects', title: 'Proje Yönetimi', mod: projectsMod },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
+  { key: 'sshmaster', title: 'SSH Master', mod: sshmasterMod },
   { key: 'tickets', title: 'Destek Merkezi', mod: ticketsMod },
   { key: 'sms', title: 'Toplu SMS', mod: smsMod, group: 'system' },
   // Firma paneli: merkezle ilişki (paket, ödemeler, destek talepleri) — firma instance'ında
@@ -176,6 +178,7 @@ const MOD_KEYWORDS = {
   products: 'urun malzeme recete',
   certs: 'sertifika belgelendirme',
   members: 'uyelik abonelik',
+  sshmaster: 'ssh master sshmasters terminal indirme',
   tickets: 'destek talep ticket',
 };
 // Alt modül / sık yapılan işler indeksi (küratörlü): arama bunları da bulur ve ilgili yere götürür.

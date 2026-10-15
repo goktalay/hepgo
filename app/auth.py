@@ -107,6 +107,7 @@ if config.FEDERATION_CENTRAL:
     MODULE_ROLES['members'] = [ADMIN]                  # firmalar, paketler, ödeme takibi, askı
     MODULE_ROLES['tickets'] = [ADMIN, SUPPORT_ROLE]    # destek talepleri (merkez gelen kutusu)
     MODULE_ROLES['sms'] = [ADMIN]                      # toplu SMS
+    MODULE_ROLES['sshmaster'] = [ADMIN]                # SSH Master (sshmasters.com) kullanıcıları ve sürümleri
 elif config.FEDERATION_URL:
     MODULE_ROLES['uyelik'] = [ADMIN]                   # firma: paket, ödemeler, destek talepleri, sözleşme
 MRP_MANAGERS = [ADMIN, WAREHOUSE_MANAGER, MRP_LEAD]   # malzeme / depo kaydı, stok hareketi

@@ -1,0 +1,150 @@
+/* GOKTUNGU GCS — panel_durumcubugu.css
+ * IS51-PANEL-DURUMCUBUGU-V1  (App 2.4.110)
+ *
+ * NEDEN
+ * -----
+ * Yonetim panellerinin (Baglanti Yoneticisi, Kameralar, Rotalar,
+ * Kayitli Lokasyonlar, AI panelleri, Gecmis Yoneticisi) altinda
+ * hicbir ozet gostergesi yoktu. Kullanici kac kayit oldugunu
+ * ancak listeyi elle sayarak ogrenebiliyordu.
+ *
+ * Bu dosya, js/panel_durumcubugu.js tarafindan her panelin SON
+ * cocugu olarak eklenen `.panel-durum-cubugu` ogesinin gorsel
+ * sozlesmesini tanimlar.
+ *
+ * TASARIM KURALLARI
+ * -----------------
+ * - SABIT RENK YASAK. Tum renkler CSS degiskeni uzerinden gelir;
+ *   gece/gunduz kipi otomatik calisir (`body.acik-tema`).
+ * - `flex: 0 0 auto` — govde kayarken cubuk ALTTA SABIT kalir.
+ *   Bu yalnizca kap `display:flex; flex-direction:column` ise
+ *   gecerlidir; kap oyle degilse JS tarafi kabi duzeltir.
+ * - Yukseklik SABIT degil ama ongorulebilir olmali: 4px dikey
+ *   yastik + 11px satir -> ~26px. AI panellerinin `max-height`
+ *   hesabi bu degere dayanir (stil.css yamasi 44px -> 72px).
+ * - Ikon zorunlu (kullanici istegi). Ikon rengi `--vurgu`.
+ *
+ * Bu dosya stil.css, pencere_dok.css, dugme_birlik.css ve
+ * panel_ustbar.css'ten SONRA yuklenir.
+ */
+
+/* --- Temel serit --- */
+.panel-durum-cubugu {
+  /* Kayan govdenin kardesi; asla kaymaz, asla ezilmez */
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  /* Pencere govdesiyle ayni yatay yastik (panel_ustbar.css ile uyumlu) */
+  padding: 5px 12px;
+
+  background: var(--panel);
+  border-top: 1px solid var(--cizgi);
+  color: var(--soluk);
+
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  line-height: 1.4;
+
+  /* Cubuk pencerenin alt kosesine oturur; kap border-radius tasiyorsa
+     serit kose disina tasmasin. */
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+
+  /* Metin uzarsa sarmasin; pencere daraldiginda kayarak gorunur */
+  white-space: nowrap;
+  overflow: hidden;
+
+  /* Kullanici secimi gerekmeyen salt-okunur gosterge */
+  user-select: none;
+}
+
+/* --- Ikon (kullanici istegi: her panelde ikon olacak) --- */
+.panel-durum-cubugu > i {
+  flex: 0 0 auto;
+  color: var(--vurgu);
+  font-size: 11px;
+  width: 13px;
+  text-align: center;
+}
+
+/* --- Metin --- */
+.panel-durum-cubugu .pdc-metin {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sayisal degerler metinden ayrilsin: okunurlugu artirir ve
+   "0/0" gibi degerlerin goz taramasini kolaylastirir. */
+.panel-durum-cubugu .pdc-deger {
+  color: var(--metin);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Gunduz kipi ---
+ *
+ * OLCUM (IS51/olcum-45): acik tema `:root[data-tema="acik"]`
+ * secicisiyle acilir (stil.css:75), `body.acik-tema` DEGIL.
+ * `body.acik-tema` yalniz birkac yerel kuralda kullanilmis ve
+ * hicbir degisken tanimlamaz — o seciciyle yazilan kural
+ * Chromium olcumunde ETKISIZ kaldi (arkaplan koyu kaldi).
+ *
+ * Serit renkleri zaten `--panel` / `--cizgi` / `--soluk`
+ * degiskenlerinden geldigi ve bu degiskenler acik temada yeniden
+ * tanimlandigi icin RENK EZMESINE gerek yoktur. Asagidaki kural
+ * yalnizca acik kipte ust cizginin kaybolmamasi icin vardir. */
+:root[data-tema="acik"] .panel-durum-cubugu {
+  border-top-color: var(--cizgi);
+  background: var(--panel);
+}
+
+/* --- Kap duzeltmeleri ---
+ * Statusbar'in ALTTA SABIT kalabilmesi icin kabin dikey flex
+ * olmasi sart. Asagidaki kaplar olcumde flex-column DEGILDI. */
+
+/* Baglanti Yoneticisi (`.yuzen-panel`): kap zaten flex-column ama
+ * govdesi `.yuzen-icerik` yalnizca `flex: 1 1 auto` tasiyordu.
+ * Flex ogesinin varsayilan `min-height: auto` degeri, ogenin
+ * ICERIK yuksekliginden daha fazla kuculmesini engeller; uzun
+ * listede govde kabi asar ve serit kabin ALTINDAN TASAR.
+ * Chromium olcumu: altFark = -723px (IS51/olcum-45).
+ * `min-height: 0` kisitlamayi kaldirir, govde kayar, serit oturur. */
+.yuzen-panel > .yuzen-icerik {
+  min-height: 0;
+}
+
+/* Ayni tuzak dinamik bolum pencerelerinde de var: `.bolum-popup-govde`
+ * ve `.ai-popup-icerik` de flex ogesi olarak kullaniliyor. */
+.bolum-popup > .bolum-popup-govde,
+.ai-popup-icerik {
+  min-height: 0;
+}
+
+/* Kayitli Lokasyonlar: kap kendisi kayiyordu (stil.css:2147
+   `overflow-y:auto`). Kap kayarsa statusbar da icerikle birlikte
+   kayar. Kaydirmayi listeye devret. */
+#lokasyonPopup {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#lokasyonPopup #lokasyonListe {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Bos durum mesaji listeyle ayni akista; kaymasin, sabit dursun */
+#lokasyonPopup #lokasyonBos {
+  flex: 0 0 auto;
+}
+
+/* Gecmis Yoneticisi: `.gecmis-popup` 10px ic yastik tasiyor.
+   Statusbar bu yastigi asip pencere kenarina oturmali, aksi halde
+   serit havada duruyormus gibi gorunur. */
+.gecmis-popup > .panel-durum-cubugu {
+  margin: 6px -10px -10px -10px;
+}

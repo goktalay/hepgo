@@ -1,0 +1,282 @@
+/* =====================================================================
+   GOKTUNGU GCS - DUGME BICIM BIRLIGI            (FAZ 18 / IS 2)
+   Isaret: FAZ18-IS2-DUGME-BIRLIK
+   =====================================================================
+   SORUN: Arayuzde 181 dugme vardi ve bicimleri dagilmisti. Olculen
+   dagilim: 46 ayri `padding`, 13 ayri `font-size`, 11 ayri `height`,
+   8 ayri `border-radius`. Ayni islevi goren iki dugme (baglanti
+   yoneticisindeki SANAL ile AI panelindeki YENI SUNUCU) yan yana
+   konunca biri otekinin neredeyse iki kati cikiyordu.
+
+   KOK NEDEN: `onay-btn` gibi ortak gorunen sinif adlari yalnizca DAR
+   kapsamlarda tanimliydi (`.ph-form-alt .onay-btn`, `.yeni-kul-form
+   .yk-alt .onay-btn`). Bu kapsamlarin disinda ayni sinifi tasiyan
+   dugmeler hicbir kural almiyor, temel `button{padding:8px 14px;
+   font-size:13px}` kuralina dusuyordu. Yani sinif adi ayni, gorunum
+   farkli.
+
+   COZUM: Sinif sinif duzeltmek 46 ayri yastik degeri demek --
+   surdurulemez. Yerine TEK DUGME SOZLESMESI kuruldu. Bu dosya
+   `stil.css`ten SONRA yuklenir; art arda gelme kuraliyla onceki tum
+   yastik/yazi-boyu bildirimlerine ustun gelir.
+
+   SOZLESME REFERANSI: kullanicinin isaret ettigi kompakt bicim,
+   yani baglanti yoneticisi arac cubugu (`.bag-tb-btn`):
+     padding: 5px 9px; font-size: 10px; font-weight: 700;
+     letter-spacing: .06em; border-radius: 3px;  i -> 11px
+
+   NEDEN `!important` KULLANILDI: hedeflenen bildirimlerin bir kismi
+   `stil.css` icinde KIMLIK secicileriyle (`#btnGiris`, `#btnKullanicilar`
+   gibi) yazilmis. Kimlik ozgulugu (1,0,0) bu dosyadaki sinif/etiket
+   secicilerini (0,0,1 / 0,1,0) her kosulda gecer; dosya sirasi bunu
+   degistirmez. Ozgulugu kimlik duzeyine cikarmak icin her hedefi
+   `:where()` ile saymadan yazmak gerekirdi ki o da `!important`
+   tasiyan mevcut bildirimleri (ornegin `.gorev-btn-iptal`in
+   `padding:10px 6px !important`) yine gecemezdi. Bu yuzden yalnizca
+   sozlesme ozelliklerinde `!important` kullanilir; renk, arka plan,
+   kenarlik gibi KIMLIK tasiyan ozelliklere DOKUNULMAZ.
+   ===================================================================== */
+
+:root {
+  /* Tek yerden olceklenebilir sozlesme degerleri. Ileride dugmeler
+     buyutulmek istenirse yalniz bu blok degisir. */
+  --dgm-yastik: 5px 9px;
+  --dgm-yazi: 10px;
+  --dgm-kalinlik: 700;
+  --dgm-harf-aralik: .06em;
+  --dgm-kose: 3px;
+  --dgm-taban-yuk: 26px;   /* dokunma hedefi tabani */
+  --dgm-ikon-yazi: 11px;
+  --dgm-bosluk: 5px;       /* ikon ile metin arasi */
+  --dgm-kare: 26px;        /* yalniz-ikon dugmelerin kenari */
+}
+
+/* ---------------------------------------------------------------------
+   DISLAMA LISTESI
+   ---------------------------------------------------------------------
+   Asagidaki dugmeler sozlesmeye ALINMAZ, cunku islevleri belirli bir
+   boyut gerektiriyor:
+     #btnBaglan          tam genislikte ana eylem dugmesi
+     .tema-grup button   segment secici (bitisik kutular)
+     .dk-hucre-btn       kumanda tuslari (buyuk dokunma hedefi sart)
+     .dk-joy-btn         oyun kolu tuslari
+     .dk-mod-btn         ucus kipi kareleri (izgara ogesi)
+     .grafik-sekme       sekme baslygi, dugme gibi gorunmez
+     .cesium-*           Cesium'un kendi arayuzu, disa aittir
+     .sw-ileri/.sw-geri  sihirbaz gezinme dugmeleri (kendi olcusu var)
+     .i2-led-btn         istasyon LED gostergeleri (kare izgara)
+   `:not()` zinciri tek secicide toplanir; boylece dislama tek yerden
+   okunur ve yeni dislama eklemek tek satir degisikligi olur.
+   --------------------------------------------------------------------- */
+
+button:not(#btnBaglan):not(.tema-grup button):not(.dk-hucre-btn):not(.dk-joy-btn):not(.dk-mod-btn):not(.grafik-sekme):not(.sw-ileri):not(.sw-geri):not(.i2-led-btn):not(.i2-led-hepsi):not([class*="cesium"]):not(.gc-oynatici button) {
+  padding: var(--dgm-yastik) !important;
+  font-size: var(--dgm-yazi) !important;
+  font-weight: var(--dgm-kalinlik) !important;
+  letter-spacing: var(--dgm-harf-aralik) !important;
+  border-radius: var(--dgm-kose) !important;
+  min-height: var(--dgm-taban-yuk) !important;
+  /* Yukseklik SABITLENMEZ: `height` yerine `min-height` kullanilir.
+     Sabit yukseklik, yazi tipi buyutuldugunde ya da iki satira dusen
+     metinlerde tasmaya yol acar. */
+  height: auto !important;
+  line-height: 1.15 !important;
+  box-sizing: border-box !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dgm-bosluk);
+  white-space: nowrap;
+}
+
+/* Dugme icindeki ikon boyu da sozlesmeye baglanir; aksi halde 20px'lik
+   ikonlar 10px'lik metnin yaninda orantisiz kalir. */
+button:not(#btnBaglan):not(.tema-grup button):not(.dk-hucre-btn):not(.dk-joy-btn):not(.dk-mod-btn):not(.grafik-sekme):not(.sw-ileri):not(.sw-geri):not(.i2-led-btn):not(.i2-led-hepsi):not([class*="cesium"]):not(.gc-oynatici button) > i {
+  font-size: var(--dgm-ikon-yazi) !important;
+  line-height: 1 !important;
+}
+
+/* ---------------------------------------------------------------------
+   YALNIZ-IKON DUGMELERI
+   ---------------------------------------------------------------------
+   Olculdu: index.html'deki 120 dugmenin 49'u metin TASIMAZ (kapatma,
+   oynat, sil, tam ekran vb.). Bunlara metinli sozlesmenin yatay
+   yastigi (9px) uygulanirsa yayvanlasirlar. Kare kalmalari icin
+   yastik sifirlanir ve kenar `--dgm-kare`ye sabitlenir.
+
+   `:not(:has(span))` VE duz metin denetimi birlikte gerekir; bazi
+   dugmeler metni `<span>` olmadan dogrudan yaziyor. `:has()`
+   destegi olmayan cok eski tarayicida kural sessizce duser ve dugme
+   metinli sozlesmeyi alir -- bozulma degil, yalnizca yayvan gorunum.
+   --------------------------------------------------------------------- */
+/* v2.4.120 (IS62): `<img>` TASIYAN IKON DUGMELERI DE KAPSANIR.
+   Olculdu: harita arac grubuna eklenen Turkbey dugmesi 33x26
+   render oluyordu, kardesleri 26x26. Sebep bu secicinin yalniz
+   `<i>` arayip `<img>` tasiyan dugmeyi disarida birakmasiydi;
+   dugme genel `button { padding: 8px 14px }` kuralina dusuyordu.
+   Sozlesmenin NIYETI degismedi ("yalniz ikon tasiyan dugme kare
+   olsun") -- yalniz ifadesi guncellendi, cunku artik her ikon
+   Font Awesome degil. Boylece ileride eklenecek gorsel-ikonlu
+   dugmeler de kendiliginden kapsanir.
+   Olculdu: index.html'de yalniz-<img> tasiyan dugme sayisi 1;
+   bu genisletme baska hicbir dugmenin gorunumunu degistirmez. */
+button:not(#btnBaglan):not(.tema-grup button):not(.dk-hucre-btn):not(.dk-joy-btn):not(.dk-mod-btn):not(.grafik-sekme):not(.sw-ileri):not(.sw-geri):not(.i2-led-btn):not(.i2-led-hepsi):not([class*="cesium"]):not(.gc-oynatici button):has(> i, > img):not(:has(> span)):not(:has(> *:not(i):not(img))) {
+  width: var(--dgm-kare) !important;
+  min-width: var(--dgm-kare) !important;
+  height: var(--dgm-kare) !important;
+  min-height: var(--dgm-kare) !important;
+  padding: 0 !important;
+  gap: 0;
+}
+
+/* ---------------------------------------------------------------------
+   IKON-METIN BOSLUGU
+   ---------------------------------------------------------------------
+   `stil.css:1272` bosluk icin `button:has(> i + span) > i {
+   margin-right: 6px }` kullaniyordu. Sozlesme artik `gap` ile bosluk
+   verdigi icin o kenar bosluk CIFT bosluk yaratir. Sifirlanir.
+   --------------------------------------------------------------------- */
+button:has(> i + span) > i { margin-right: 0 !important; }
+
+/* ---------------------------------------------------------------------
+   TAM GENISLIK ISTEYEN DUGMELER
+   ---------------------------------------------------------------------
+   Bazi dugmeler kapsayicisini doldurmak uzere yazilmis (`width:100%`).
+   Sozlesme `display:inline-flex` verdigi icin bu dugmeler daralabilir.
+   `width` bildirimi olan dugmelerde genislik korunur.
+   --------------------------------------------------------------------- */
+button[style*="width"], button.tam-genis { width: 100%; }
+
+/* ---------------------------------------------------------------------
+   SIHIRBAZ GEZINME DUGMELERI
+   ---------------------------------------------------------------------
+   `.sw-ileri` / `.sw-geri` dislandi ama sozlesmeyle UYUMLU olmalari
+   icin kendi olculeri sozlesme degiskenlerine baglanir. Boylece
+   sozlesme olceklenirse sihirbaz da birlikte olceklenir.
+   --------------------------------------------------------------------- */
+.sw-ileri, .sw-geri {
+  font-size: calc(var(--dgm-yazi) + 1px);
+  font-weight: var(--dgm-kalinlik);
+  letter-spacing: var(--dgm-harf-aralik);
+  border-radius: var(--dgm-kose);
+  min-height: calc(var(--dgm-taban-yuk) + 8px);
+}
+
+/* ---------------------------------------------------------------------
+   ARAC CUBUGU KUMELERI
+   ---------------------------------------------------------------------
+   Ust barlardaki dugme kumelerinde bosluk da birlestirilir; aksi halde
+   dugmeler ayni olcude olsa bile aralari farkli oldugu icin kume
+   dagimik gorunur. Olculen mevcut degerler: 4px, 6px, 8px, 10px.
+   --------------------------------------------------------------------- */
+#bagToolbarBtnlar,
+.ai-arac-cubugu,
+.kam-araclar,
+.gorev-dugmeler,
+.lok-dugme-satir,
+.onay-dugme-satir,
+.rota-nokta-dugmeler,
+.kayit-dugmeler { gap: 6px !important; }
+
+
+/* ==================================================================
+   IS50-PENCERE-ISKELET-V2 — PENCERE ISKELETI VE AUTOFILL
+   ------------------------------------------------------------------
+   Bu blok iki olculen kusuru onarir:
+
+   (1) Tarayici otomatik doldurma rengi ("pembe arka plan")
+   (2) Kaydet/Iptal dugmelerinin pencere altinda sabit kalmasi
+
+   Yapisal tasima js/pencere_iskelet.js icinde yapilir; burada
+   yalnizca gorsel sozlesme tanimlanir.
+   ================================================================== */
+
+/* --- (1) AUTOFILL RENGI -------------------------------------------
+   Chrome/Edge otomatik doldurulan girdilere kendi dahili arka
+   planini uygular. Bu renk `background-color` ile ezilemez; tek
+   yol ic golgeyi (inset box-shadow) girdinin tamamina yaymaktir.
+
+   Renk sabit degildir, tema degiskenine baglidir; boylece gece
+   ve gunduz kipinde dogru rengi alir.
+   `transition` gecikmesi Chrome'un kendi renk gecisini bastirir. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--giris-arka) inset !important;
+  box-shadow: 0 0 0 1000px var(--giris-arka) inset !important;
+  -webkit-text-fill-color: var(--metin) !important;
+  caret-color: var(--metin) !important;
+  -webkit-transition: background-color 5000s ease-in-out 0s !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+}
+
+/* --- (2) PENCERE ISKELETI -----------------------------------------
+   Uc katmanli dikey duzen:
+     [baslik]  sabit, esnemez
+     [govde]   esner, tasarsa kendi icinde kaydirilir
+     [dugme]   sabit, esnemez, HER ZAMAN altta
+
+   `min-height:0` zorunludur: flex cocugu varsayilan olarak
+   icerigi kadar kucultulebilir; bu deger olmadan govde
+   kaydirilmaz, kutu buyur ve dugmeler ekran disina tasar. */
+.pencere-iskelet {
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: 88vh !important;
+  overflow: hidden !important;
+}
+
+.pencere-iskelet > .popup-baslik,
+.pencere-iskelet > .modal-baslik {
+  flex: 0 0 auto !important;
+}
+
+.pencere-iskelet > .pencere-govde {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
+}
+
+/* Dugme seridi kutunun DOGRUDAN cocugudur (JS tasir), bu yuzden
+   govde kaydirilirken yerinde kalir. Arka plan TAM DONUK olmali;
+   --panel-arka saydam oldugu icin (.94/.95) --panel kullanilir. */
+.pencere-iskelet > .pencere-dugme-serit {
+  flex: 0 0 auto !important;
+  background: var(--panel) !important;
+  border-top: 1px solid var(--cizgi) !important;
+  padding: 10px 12px !important;
+  margin: 0 !important;
+  z-index: 3;
+}
+
+/* Hata satiri da serit gibi altta sabit kalir, dugmelerin ustunde. */
+.pencere-iskelet > .pencere-hata-serit {
+  flex: 0 0 auto !important;
+  background: var(--panel) !important;
+  padding: 0 12px !important;
+  margin: 0 !important;
+  z-index: 3;
+}
+
+/* Govdenin alt bosluğu serit ile cakismamali. */
+.pencere-iskelet > .pencere-govde {
+  padding-bottom: 4px !important;
+}
+
+/* --- (3) FORM KABI NOTRLUGU ----------------------------------------
+   `bag-tur-alan` kaplari yalnizca gorunurluk anahtaridir; renkli
+   arka planlari olmamalidir. Rozet secicileri stil.css icinde
+   daraltildi; burada ek guvence olarak kabin notr kalmasi saglanir.
+   Boylece ileride benzer bir sizinti olusursa da kap etkilenmez. */
+.bag-tur-alan {
+  background: transparent !important;
+  color: inherit !important;
+}

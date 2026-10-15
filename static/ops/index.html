@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEPGO HAREKÂT</title>
+<!-- HEPGO uyarlaması: Bu sayfa GÖKTUNGU harekât arayüzünün (vendor/goktungu/index.orig.html) sadeleştirilmiş kopyasıdır ve
+     HEPGO SPA içinde (#/field/live) iframe olarak açılır. js/*.js ve css/*.css GÖKTUNGU dosyaları BAYT BAYT
+     değişmeden kopyalanmıştır (vendor/goktungu/KAYNAK.sha256); tüm uyarlama js/hepgo_stub.js, js/hepgo_patch_pre.js, js/hepgo_patch.js, js/hepgo_ws.js
+     ve css/hepgo.css dosyalarında toplanır. Kapsam dışı DOM (radar, M50/EO, kamera, AI, angajman, sürü, makro,
+     lisans, köprü kimliği, mesajlaşma, profil/giriş/kullanıcı, widget) çıkarılmıştır; kalan betiklerin
+     getElementById ile guard'sız eriştiği her id DOM'da tutulur. -->
+<link rel="icon" type="image/png" href="/static/img/logo-mark.png">
+<script>
+  // Cesium worker/asset betiklerinin doğru yerden yüklenmesi için (HEPGO replay3d.js ile aynı CDN sürümü)
+  window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/";
+</script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Cesium.js" integrity="sha384-D1oR8FyBDsJWkPeydGJTh8nJg5/++9sqchzJuu+oGQPmgbwu3aJmoVj3BTowr6t6" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Widgets/widgets.css" integrity="sha384-ghEeMdcWWzRv/BPeUcX835vcKDGrxvROXisl/Btpv3GeekBUXTSPVcFJpI1Tcrgp" crossorigin="anonymous">
+<!-- Font Awesome Pro 7.3.1 (HEPGO vendor; all.min.css yok, dört dosya eşdeğerdir) -->
+<link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
+<link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
+<link rel="stylesheet" href="/static/vendor/fontawesome/css/regular.min.css">
+<link rel="stylesheet" href="/static/vendor/fontawesome/css/brands.min.css">
+<!-- GÖKTUNGU stilleri (değişmeden). Sıra zorunlu: stil -> dugme_birlik -> panel_ustbar -> panel_durumcubugu
+     -> dron_ekran_disi -> metin_secim (en son GÖKTUNGU dosyası) -> hepgo.css (HEPGO override'ları, en son). -->
+<link rel="stylesheet" href="css/stil.css">
+<link rel="stylesheet" href="css/dugme_birlik.css">
+<link rel="stylesheet" href="css/panel_ustbar.css">
+<link rel="stylesheet" href="css/panel_durumcubugu.css">
+<link rel="stylesheet" href="css/dron_ekran_disi.css">
+<link rel="stylesheet" href="css/metin_secim.css">
+<link rel="stylesheet" href="css/hepgo.css">
+</head>
+<body>
+<div id="ustBar">
+  <div id="ustBarSol">
+    <div id="menubar">
+      <!-- CIHAZLAR: HEPGO uyarlamasında yalnız Dronlar alt menüsü (Radar / Elektro-Optik / Kameralar kapsam dışı) -->
+      <div class="mb-item" id="mbCihazlar" data-hizli="c">
+        <span class="mb-etiket" data-i18n="mbCihazlar">Cihazlar</span>
+        <div class="mb-dropdown">
+          <!-- Dronlar -->
+          <div class="mb-alt" id="mbDronlar">
+            <div class="mb-oge mb-alt-bas"><i class="fa-solid fa-helicopter"></i><span data-i18n="mbDronlar">Dronlar</span><i class="fa-solid fa-chevron-right mb-alt-ok"></i></div>
+            <div class="mb-alt-menu">
+              <div class="mb-oge mb-popup-toggle pasif" data-yuzen="yzSeri" data-hizli="b"><i class="fa-solid fa-tower-broadcast"></i><span data-i18n="mbBaglanti">Bağlantı yöneticisi</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- SISTEM: Rotalar + Harita/Arayüz ayarları (AI, Makrolar, Program ayarları, Yer istasyonu Dual kapsam dışı) -->
+      <div class="mb-item" id="mbUygulama" data-hizli="s">
+        <span class="mb-etiket" data-i18n="mbSistem">Sistem</span>
+        <div class="mb-dropdown">
+          <!-- Rotalar (ic-ice flyout) -->
+          <div class="mb-alt" id="mbRotalar">
+            <div class="mb-oge mb-alt-bas"><i class="fa-solid fa-route"></i><span data-i18n="mbRotalar">Rotalar</span><i class="fa-solid fa-chevron-right mb-alt-ok"></i></div>
+            <div class="mb-alt-menu">
+              <div class="mb-oge" id="mbYeniRota" data-hizli="y"><i class="fa-solid fa-plus"></i><span data-i18n="mbYeniRota">Yeni rota</span></div>
+              <div class="mb-ayrac"></div>
+              <div class="mb-oge" id="mbSpiralRota" data-hizli="s"><i class="fa-solid fa-hurricane"></i><span data-i18n="mbSpiralRota">Spiral rota</span></div>
+              <div class="mb-ayrac"></div>
+              <div class="mb-oge" id="mbRotaYukle" data-hizli="k"><i class="fa-solid fa-folder-open"></i><span data-i18n="mbRotaYukle">Rota yükle</span></div>
+              <input type="file" id="rotaDosyaGiris" accept=".waypoints,.plan,.mission,.txt" style="display:none">
+              <div class="mb-oge" id="mbTumRota" data-hizli="t"><i class="fa-solid fa-eye"></i><span data-i18n="mbTumRota">Tüm rotaları aç/kapat</span></div>
+              <div class="mb-ayrac"></div>
+              <div class="mb-oge mb-panel-toggle" id="mbPanelRotalar" data-panel="rotalar"><i class="fa-solid fa-table-columns"></i><span data-i18n="mbPanelRotalar">Rotalar paneli</span></div>
+            </div>
+          </div>
+          <div class="mb-ayrac"></div>
+          <!-- Harita / Arayüz ayarları -->
+          <div class="mb-oge mb-popup-toggle pasif" id="mbHaritaAyar" data-hizli="h" data-popup-hedef="haritaPopup"><i class="fa-solid fa-map"></i><span data-i18n="mbHaritaAyar">Harita ayarları</span></div>
+          <div class="mb-oge mb-popup-toggle pasif" id="mbArayuzAyar" data-hizli="a" data-popup-hedef="arayuzPopup"><i class="fa-solid fa-sliders"></i><span data-i18n="mbArayuzAyar">Arayüz ayarları</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="ustBarOrta">
+    <!-- HEPGO markası. Dosya adı bilinçli olarak logo.png/logo_acik.png DEĞİL: tema.js firmaLogoSec() yalnız bu iki adı
+         tema ile değiştirir; HEPGO logosu her iki temada da aynı kalır. -->
+    <img id="logo" src="img/hepgo-logo.png" alt="HEPGO">
+    <span class="baslik">HEPGO HAREKÂT</span>
+  </div>
+  <div id="ustBarSag">
+    <button id="btnHaritaAyar" class="gizli-tasindi" data-i18n-title="mbHaritaAyar" title="Harita Ayarları"><i class="fa-solid fa-map"></i></button>
+    <button id="btnArayuzAyar" class="gizli-tasindi" data-i18n-title="mbArayuzAyar" title="Arayüz Ayarları"><i class="fa-solid fa-sliders"></i></button>
+    <button id="btnTamEkran" data-i18n-title="ipTamEkran" title="Tam Ekran"><i class="fa-solid fa-expand"></i></button>
+    <!-- HEPGO: #btnUyarilar GİZLİ tutulur (orijinalde de display:none). uyari_merkezi.js:201 toast tıklamasında
+         (_umBtn || #profilKutu).getBoundingClientRect() guard'sız; #profilKutu kaldırıldığı için bu düğme konum çapası olur. -->
+    <button id="btnUyarilar" data-i18n-title="pmUyarilar" title="Uyarılar" style="visibility:hidden;width:0;padding:0;border:0;margin:0;position:relative;"><i class="fa-solid fa-bell"></i><span id="uyariRozet" class="uyari-rozet" style="display:none;">0</span></button>
+  </div>
+</div>
+
+<div id="anaAlan">
+
+<div id="haritaAlan">
+  <div id="cesiumContainer"></div>
+  <!-- v2.1.7c: HARITA ARAC GRUBU (dikey): arama dugmesi + cetvel -->
+  <div id="haritaAracGrubu">
+    <!-- HEPGO: #btnGokkubbeyeGit (Türkbey kısayolu) kaldırıldı. -->
+    <button id="btnHaritaArama" title="Yer ara veya koordinat gir" data-i18n-title="aramaBaslik"><i class="fa-solid fa-magnifying-glass"></i></button>
+    <button id="btnCetvel" data-i18n-title="ipCetvel" title="Cetvel (mesafe &#246;l&#231;&#252;m&#252;)"><i class="fa-solid fa-ruler"></i></button>
+    <!-- v2.4.34: TUMUNU SIGDIR - haritadaki tum aktif bilesenleri
+         (dron, hedef, radar, kamera, lokasyon) tek gorunume alir.
+         Tek nokta varsa yalniz ona odaklanir. -->
+    <button id="btnTumunuSigdir" data-i18n-title="ipTumunuSigdir"
+            title="T&#252;m bile&#351;enleri g&#246;r&#252;n&#252;me s&#305;&#287;d&#305;r"><i class="fa-solid fa-expand"></i></button>
+    <!-- v2.4.34: KONUMUMA GIT - tarayici Geolocation API -->
+    <button id="btnKonumuma" data-i18n-title="ipKonumuma"
+            title="Konumuma git"><i class="fa-solid fa-location-crosshairs"></i></button>
+  </div>
+  <!-- v2.1.7c: ARAMA POPUP'I (tasinabilir) -->
+  <div id="haritaAramaPopup" class="popup-gizli">
+    <div class="popup-baslik" id="haritaAramaPopupBaslik">
+      <span><i class="fa-solid fa-magnifying-glass"></i>&nbsp;<span data-i18n="aramaBaslik">YER ARAMA</span></span>
+      <button id="btnAramaPopupKapat" class="bolum-popup-btn" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="haritaAramaKutu">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="haritaAramaGiris" data-i18n-ph="phYerAra" placeholder="Yer ara veya koordinat gir..."
+             spellcheck="false" autocomplete="off">
+      <button id="btnAramaTemizle" data-i18n-title="ipTemizle" title="Temizle" style="display:none;"><i class="fa-solid fa-xmark"></i></button>
+      <div id="haritaAramaSonuclar" class="popup-gizli"></div>
+    </div>
+  </div>
+  <div id="rotaRozet" style="display:none;"><i class="fa-solid fa-route"></i> <span id="rotaRozetMetin"></span></div>
+  <!-- ALT-ORTA PANEL: yalnız KONSOL (RADAR & AI grafik yarısı kapsam dışı; hepgo.css #konsolYari tam genişlik) -->
+  <div id="altOrtaPanel">
+    <div id="altOrtaBaslik">
+      <span><i class="fa-solid fa-terminal"></i>&nbsp;<span data-i18n="panelKonsol">KONSOL</span></span>
+      <i id="altOrtaOk" class="fa-solid fa-chevron-down"></i>
+    </div>
+    <div id="altOrtaGovde">
+      <div id="konsolYari"><div id="konsolKutu"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="sagTutamac" class="panel-tutamac" data-i18n-title="ipTutamac" title="Sürükleyerek panel genişliğini ayarlayın">
+  <div class="tutamac-cizgi"></div>
+</div>
+
+<div id="sagPanel">
+  <!-- v2.4.33: Ayri DRONLAR bolumu KALDIRILDI. Dron kartlari artik
+       Baglanti Yoneticisi icinde, bagli olduklari baglantinin altinda
+       yasiyor. Asagidaki kap GIZLI YEDEK olarak korunur: baglanti
+       grubu henuz cizilmemisken uretilen kart bir yere eklenmek
+       zorundadir, aksi halde DOM'a hic girmez ve gostergeleri
+       baslatilamaz. Bir sonraki bagGruplariDoldur() karti grubuna
+       tasir. Bu kap kullaniciya asla gorunmez. -->
+  <div id="dronKartListesi" style="display:none"></div>
+
+  <!-- HEPGO: Kamera yönetimi bölümü (#kameralarToolbar/#kameralarIcerik) kapsam dışı; bolum_popup.js/menubar.js guard'lı -->
+
+  <!-- FAZ18-IS35-ROTALAR: rota olusturma dugmeleri ust bara tasindi.
+       Her dugme MENU OGESININ .click() tetikleyicisini kullanir; rota
+       olusturma kodu KOPYALANMADI (tek tetikleyici yolu korunur). -->
+  <div class="panel-toolbar" id="rotalarToolbar">
+    <span class="tb-etiket" data-i18n="tbEtiketRotalar">G&Ouml;REV ROTALARI</span>
+    <span class="tb-bosluk"></span>
+    <button id="tbSpiralRota" class="tb-btn tb-btn-metin" data-i18n-title="mbSpiralRota" title="Spiral Rota"><i class="fa-solid fa-hurricane"></i><span data-i18n="mbSpiralRota">Spiral rota</span></button>
+    <!-- HEPGO: #tbDilimliRota / #tbKoridorRota kaldırıldı (serbest_form.js / koridor.js pakette yok) -->
+    <button id="tbRotaYukle" class="tb-btn tb-btn-metin" data-i18n-title="mbRotaYukle" title="Rota Y&uuml;kle"><i class="fa-solid fa-folder-open"></i><span data-i18n="mbRotaYukle">Rota y&uuml;kle</span></button>
+    <button id="tbYeniRota" class="tb-btn tb-btn-metin tb-btn-ekle" data-i18n-title="rotaYeniRotaBaslik" title="Serbest Rota"><i class="fa-solid fa-plus"></i><span data-i18n="rotaYeniRotaBaslik">Serbest Rota</span></button>
+  </div>
+  <div class="sabit-icerik" id="rotalarIcerik">
+    <div id="rotaListesi"></div>
+    <div id="rotaYokKutu" class="bos-panel">
+      <i class="fa-solid fa-route"></i>
+      <span data-i18n="rotaYokBuyuk">KAYITLI ROTA YOK</span>
+    </div>
+  </div>
+</div>
+
+<!-- YUZEN PANEL: BAGLANTI YONETICISI -->
+<div id="yzSeri" class="yuzen-panel yuzen-gizli">
+  <div class="yuzen-baslik">
+    <span><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="panelSeri">BA&#286;LANTI Y&#214;NET&#304;C&#304;S&#304;</span></span>
+    <button class="yuzen-kapat" data-yuzen="yzSeri" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="yuzen-icerik">
+
+  <!-- Baglanti toolbar'i -->
+  <div id="bagToolbar">
+    <span id="bagToolbarLabel" data-i18n="bagToolbarLabel">BA&#286;LANTI</span>
+    <div id="bagToolbarBtnlar">
+      <button id="btnYeniSeri" class="bag-tb-btn" data-i18n-title="bagYeniSeri" title="Yeni Seri Bağlantı"><i class="fa-solid fa-plug"></i><span>SER&#304;</span></button>
+      <button id="btnYeniTcp" class="bag-tb-btn" data-i18n-title="bagYeniTcp" title="Yeni TCP Bağlantı"><i class="fa-solid fa-network-wired"></i><span>TCP</span></button>
+      <button id="btnYeniUdp" class="bag-tb-btn" data-i18n-title="bagYeniUdp" title="Yeni UDP Bağlantı"><i class="fa-solid fa-wifi"></i><span>UDP</span></button>
+      <button id="btnYeniDji" class="bag-tb-btn" data-i18n-title="bagYeniDji" title="Yeni DJI Bağlantı"><i class="fa-solid fa-satellite-dish"></i><span>DJI</span></button>
+      <!-- v2.4.39: SANAL baglanti. Gercek donanim yerine sunucuda
+           calisan bir MAVLink simulatoru baslatir; dron haritanin
+           o anki merkezinde dogar. -->
+      <button id="btnYeniSanal" class="bag-tb-btn" data-i18n-title="bagYeniSanal" title="Yeni Sanal Dron"><i class="fa-solid fa-vial"></i><span>SANAL</span></button>
+      <button id="btnYeniLogDron" class="bag-tb-btn" title="Log Dron (.bin kaydi oynat/simule et)"><i class="fa-solid fa-plane-up"></i><span>LOG DRON</span></button>
+      <!-- v2.4.53: MERKEZ baglanti. Sahadaki GCS sunucularinin sabit IP'si
+           yoktur; koprü merkeze kendisi baglanir (client-to-server) ve
+           merkez o soket uzerinden haberlesir. Bu yuzden kullaniciya IP
+           sorulmaz: merkezden O AN acik sunucular listelenir ve secilir. -->
+      <button id="btnYeniMerkez" class="bag-tb-btn" data-i18n-title="bagYeniMerkez" title="Merkezden Sunucu Seç"><i class="fa-solid fa-cloud-arrow-down"></i><span>MERKEZ</span></button>
+    </div>
+  </div>
+
+  <!-- Kayitli baglanti listesi -->
+  <div id="bagListe"></div>
+  <!-- FAZ18/IS7: duz metin yerine ikonlu bos durum (Kameralar deseni). -->
+  <div id="bagYok" class="bos-panel">
+    <i class="fa-solid fa-tower-broadcast"></i>
+    <span data-i18n="bagYok">KAYITLI BA&#286;LANTI YOK</span>
+  </div>
+
+  </div>
+</div>
+
+<!-- MODAL: YENI BAGLANTI (seri/tcp/udp ortak, alanlar tur'e gore gizlenir) -->
+<div id="bagEklePerde" class="popup-gizli">
+  <div id="bagEkleKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-tower-broadcast"></i> <span id="bagEkleBaslik">YEN&#304; SER&#304; BA&#286;LANTI</span></span>
+      <button id="btnBagKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="lok-kaydet-icerik">
+    <div class="alan" id="bagAdAlan">
+      <label for="bagAd" data-i18n="lblBagAd">Ba&#287;lant&#305; Ad&#305;</label>
+      <input type="text" id="bagAd" maxlength="40" placeholder="Telemetri 433"
+             spellcheck="false" autocomplete="off">
+    </div>
+
+    <!-- KOPRU SECIMI (v2.4.55) - merkezde calisan kurulumda gorunur.
+         Kullanicinin bildirdigi kusur: "yeni TCP baglanti olusturacagimda
+         hangi makine icin olusturacagimi sormadi". Baglanti, secilen
+         koprunun bilgisayarinda acilir; adres o makinede cozulur. -->
+    <div id="bagKopruAlan" class="alan" style="display:none">
+      <label for="bagKopruSec" data-i18n="lblBagKopru">Ba&#287;lant&#305;n&#305;n Kurulaca&#287;&#305; Makine</label>
+      <div class="bag-merkez-satir">
+        <select id="bagKopruSec"></select>
+        <button type="button" id="btnBagKopruYenile" class="btn-kucuk" data-i18n-title="btnYenile" title="Yenile"><i class="fa-solid fa-rotate"></i></button>
+      </div>
+      <div id="bagKopruAciklama" class="bag-dji-aciklama" data-i18n="bagKopruAciklama">Ba&#287;lant&#305; se&#231;ilen k&#246;pr&#252; bilgisayar&#305;nda kurulur; adres ve port o makinede &#231;&#246;z&#252;l&#252;r. Ham MAVLink ak&#305;&#351;&#305; k&#246;pr&#252; kanal&#305;yla merkeze ta&#351;&#305;n&#305;r. Yaln&#305;zca &#231;evrimi&#231;i k&#246;pr&#252;ler listelenir.</div>
+    </div>
+
+    <!-- v2.4.142: DJI disindaki her baglantida secim gorunur. Secici,
+         desteklenmeyen tasima turlerinde ArduPilot'a kilitlenir; ayni
+         kural sunucuda da uygulanir. -->
+    <div id="bagUcusYazilimiAlan" class="alan">
+      <label for="bagUcusYazilimi" data-i18n="lblBagUcusYazilimi">Uçuş Yazılımı</label>
+      <select id="bagUcusYazilimi">
+        <option value="otomatik" data-i18n="bagUcusOtomatik">Otomatik algıla (RFD900 / seri)</option>
+        <option value="ardupilot" data-i18n="bagUcusArduPilot">ArduPilot (MAVLink)</option>
+        <option value="betaflight" data-i18n="bagUcusBetaflight">Betaflight (MSP — salt okunur)</option>
+      </select>
+      <div id="bagUcusYazilimiAciklama" class="bag-dji-aciklama" data-i18n="bagUcusArduAciklama">ArduPilot bağlantıları mevcut MAVLink işlevleriyle çalışır.</div>
+    </div>
+
+    <!-- SERI alanlari -->
+    <div class="bag-tur-alan bag-tur-seri">
+      <div class="alan">
+        <label for="bagPortSec" data-i18n="lblPortSec">Port</label>
+        <div class="satir">
+          <select id="bagPortSec"></select>
+          <button id="btnBagYenile" title="Port listesini yenile"><i class="fa-solid fa-rotate-right"></i></button>
+        </div>
+      </div>
+      <div class="alan">
+        <label for="bagPortElle" data-i18n="lblPortElle">veya elle yaz (bo&#351; b&#305;rak&#305;labilir)</label>
+        <input type="text" id="bagPortElle" placeholder="COM5 / /dev/ttyUSB0"
+               spellcheck="false" autocomplete="off">
+      </div>
+      <div class="alan">
+        <label for="bagBaud" data-i18n="lblBaud">Baud</label>
+        <!-- v2.4.37: 115200 ustu standart hizlar eklendi. 250000 ve
+             1000000 ArduPilot/telemetri donanimlarinda yaygin; 921600 ve
+             uzeri USB-seri koprulerde kullanilir. Varsayilan 57600'de
+             kaliyor (RFD900X fabrika ayari). Sunucu tarafinda ust sinir
+             yok: deger dogrudan mavutil'e gecirilir. -->
+        <select id="bagBaud">
+          <option>9600</option><option>19200</option><option>38400</option>
+          <option selected>57600</option><option>115200</option>
+          <option>230400</option><option>250000</option><option>460800</option>
+          <option>500000</option><option>921600</option><option>1000000</option>
+          <option>1500000</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- TCP alanlari -->
+    <div class="bag-tur-alan bag-tur-tcp" style="display:none">
+      <div class="alan">
+        <label for="bagHost" data-i18n="lblBagHost">Sunucu Adresi (IP / host)</label>
+        <input type="text" id="bagHost" placeholder="192.168.1.10"
+               spellcheck="false" autocomplete="off">
+      </div>
+      <div class="alan">
+        <label for="bagTcpPort" data-i18n="lblBagTcpPort">Port</label>
+        <input type="number" id="bagTcpPort" min="1" max="65535" value="5760">
+      </div>
+    </div>
+
+    <!-- UDP alanlari -->
+    <div class="bag-tur-alan bag-tur-udp" style="display:none">
+      <div class="alan">
+        <label for="bagUdpPort" data-i18n="lblBagUdpPort">Dinleme Portu</label>
+        <input type="number" id="bagUdpPort" min="1" max="65535" value="14550">
+      </div>
+    </div>
+
+    <!-- SANAL alanlari (v2.4.39) -->
+    <div class="bag-tur-alan bag-tur-sanal" style="display:none">
+      <div class="alan">
+        <label for="bagSanalTip" data-i18n="lblBagSanalTip">Dron Tipi</label>
+        <select id="bagSanalTip">
+          <option value="multirotor" selected data-i18n="sanalTipMultirotor">Multirotor</option>
+          <option value="sabit_kanat" data-i18n="sanalTipSabitKanat">Sabit Kanat</option>
+          <option value="interceptor" data-i18n="sanalTipInterceptor">Interceptor</option>
+        </select>
+      </div>
+      <div class="alan">
+        <label for="bagSanalAdet" data-i18n="lblBagSanalAdet">Dron Sayısı</label>
+        <input type="number" id="bagSanalAdet" min="1" max="10" value="1">
+      </div>
+      <!-- Konum alanlari haritadan otomatik doldurulur; kullanici
+           istedigi takdirde elle degistirebilir. -->
+      <div class="satir">
+        <div class="alan">
+          <label for="bagSanalEnlem" data-i18n="lblEnlem">Enlem</label>
+          <input type="text" id="bagSanalEnlem" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="alan">
+          <label for="bagSanalBoylam" data-i18n="lblBoylam">Boylam</label>
+          <input type="text" id="bagSanalBoylam" spellcheck="false" autocomplete="off">
+        </div>
+      </div>
+      <div class="bag-dji-aciklama" data-i18n="bagSanalAciklama">Her sanal dron gerçek bir ArduPilot SITL sürecidir: parametreler, ARM denetimleri, uçuş modları ve görev davranışı gerçek uçuş yazılımıyla aynıdır. Gerçek dronlarla birebir aynı çalışır; UDP dışa aktarımı ve angajman desteklenir. Benzetim dosyası ilk kullanımda sihirbazın hazırlık adımında indirilir (~7 MB).</div>
+    </div>
+
+    <!-- MERKEZ alanlari (v2.4.53) -->
+    <div class="bag-tur-alan bag-tur-merkez" style="display:none">
+      <div class="alan">
+        <label for="bagMerkezSunucu" data-i18n="lblBagMerkezSunucu">A&#231;&#305;k Sunucular</label>
+        <div class="bag-merkez-satir">
+          <select id="bagMerkezSunucu"></select>
+          <button type="button" id="btnBagMerkezYenile" class="btn-kucuk" data-i18n-title="btnYenile" title="Yenile"><i class="fa-solid fa-rotate"></i></button>
+        </div>
+      </div>
+      <div id="bagMerkezDurum" class="bag-merkez-durum"></div>
+      <div class="bag-dji-aciklama" data-i18n="bagMerkezAciklama">Yaln&#305;zca &#351;u anda merkeze ba&#287;l&#305; olan sunucular listelenir. Sahadaki sunucular&#305;n sabit IP adresi gerekmez: ba&#287;lant&#305;y&#305; sunucu kendisi kurar, merkez ayn&#305; ba&#287;lant&#305; &#252;zerinden haberle&#351;ir. Merkez hesab&#305; Program Ayarlar&#305; &#8594; Merkez Sunucu b&#246;l&#252;m&#252;nden tan&#305;mlan&#305;r.</div>
+    </div>
+
+    <!-- DJI alanlari -->
+    <div class="bag-tur-alan bag-tur-dji" style="display:none">
+      <div class="alan">
+        <label for="bagDjiPort" data-i18n="lblBagDjiPort">K&#246;pr&#252; Dinleme Portu (TCP)</label>
+        <input type="number" id="bagDjiPort" min="1" max="65535" value="8790">
+      </div>
+      <div class="bag-dji-aciklama" data-i18n="bagDjiAciklama">DJI dronlar&#305; GÖKTUNGU Android k&#246;pr&#252; uygulamas&#305; (Mobile SDK) veya OSDK adapt&#246;r&#252; &#252;zerinden bu porta ba&#287;lan&#305;r.</div>
+    </div>
+
+    <div id="bagEkleHata"></div>
+
+    <div class="lok-dugme-satir">
+      <button id="btnBagKaydet" data-i18n="btnKaydet">KAYDET</button>
+      <button id="btnBagIptal" data-i18n="btnIptal">&#304;PTAL</button>
+    </div>
+    </div>
+  </div>
+</div>
+
+
+
+</div><!-- /anaAlan -->
+
+<!-- ARAYUZ AYARLARI POPUP -->
+<div id="arayuzPopup" class="popup-gizli">
+  <div class="popup-baslik">
+    <span><i class="fa-solid fa-sliders"></i> <span data-i18n="panelArayuz">ARAYÜZ AYARLARI</span></span>
+    <button id="btnPopupKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="popup-icerik">
+    <!-- Görünüm -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-palette"></i><span data-i18n="panelGorunum">GÖRÜNÜM</span></h3>
+      <div class="alan">
+        <div class="tema-grup">
+          <button id="btnKoyu" class="secili"><i class="fa-solid fa-moon"></i><span data-i18n="btnKoyu">KOYU</span></button>
+          <button id="btnAcik"><i class="fa-solid fa-sun"></i><span data-i18n="btnAcik">AÇIK</span></button>
+        </div>
+      </div>
+      <div class="alan">
+        <label data-i18n="lblDil">Dil / Language</label>
+        <div class="tema-grup">
+          <button id="btnDilTR" class="secili"><i class="fa-solid fa-language"></i><span>TR</span></button>
+          <button id="btnDilEN"><i class="fa-solid fa-language"></i><span>EN</span></button>
+        </div>
+      </div>
+      <!-- v2.4.33: RFD900X baud/port ipucu KALDIRILDI. Bu not seri
+           baglantinin bu pencereden kuruldugu donemden kalmisti;
+           baglanti kurulumu Baglanti Yoneticisi'ne tasindiktan sonra
+           Arayuz Ayarlari (tema + dil) penceresinde anlamsiz kaldi.
+           i18n'deki `ipucu` anahtari ve uygulama kodu da kaldirildi. -->
+    </div>
+  </div>
+</div>
+
+<!-- HARITA AYARLARI POPUP -->
+<div id="haritaPopup" class="popup-gizli">
+  <div class="popup-baslik">
+    <span><i class="fa-solid fa-map"></i> <span data-i18n="panelHaritaAyar">HARİTA AYARLARI</span></span>
+    <button id="btnHaritaPopupKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="popup-icerik">
+    <!-- Harita Kaynagi (combobox) -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-layer-group"></i><span data-i18n="lblHaritaKaynak">Harita Kaynağı</span></h3>
+      <div class="alan">
+        <select id="selHaritaKaynak" class="gcs-select"></select>
+        <div id="haritaKaynakNot" style="margin-top:6px;color:var(--soluk);font-size:10px;line-height:1.5;" data-i18n="haritaKaynakNot">ESRI ve GOOGLE en güncel uydu görüntülerini sunar.</div>
+      </div>
+    </div>
+    <!-- HEPGO: "Çevrimdışı Harita Önbelleği" bölümü kaldırıldı (tile proxy yok; harita.js:816 IIFE if(!bilgiEl) return) -->
+    <!-- Arazi (Terrain) -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-mountain"></i><span data-i18n="lblTerrain">Arazi Yüksekliği (Terrain)</span></h3>
+      <div class="alan">
+        <div class="tema-grup">
+          <button id="btnTerrain"><i class="fa-solid fa-mountain"></i><span>KAPALI</span></button>
+        </div>
+        <div style="margin-top:6px;color:var(--soluk);font-size:10px;line-height:1.5;" data-i18n="terrainNot">Açıkken harita gerçek arazi yükseltisiyle 3B gösterilir (internet gerektirir).</div>
+      </div>
+      <!-- FAZ18-PRIZMA-KALDIR: prizma ikon kip anahtari KALDIRILDI.
+           Kullanici istegi: "Harita ayarlarinda prizma ikon
+           secenegini tamamen kaldir". Prizma artik TEK ve
+           degistirilemez gorunumdur; ikonPrizmaMi() daima
+           true doner. Cizim govdesi js/prizma_ikon.js icinde
+           korunmustur. -->
+      <div class="alan">
+        <label data-i18n="lblAbartma">Arazi Abartması</label>
+        <div class="hrt-slider-satir">
+          <input type="range" id="rngAbartma" min="1" max="5" step="0.5" value="1">
+          <span id="lblAbartmaDeger" class="hrt-slider-deger">1.0x</span>
+        </div>
+      </div>
+    </div>
+    <!-- 3B Ikonlar (IS151) -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-cubes"></i><span data-i18n="lbl3dIkon">3B İkonlar</span></h3>
+      <div class="alan">
+        <div class="tema-grup">
+          <button id="btn3dIkon"><i class="fa-solid fa-cubes"></i><span>AÇIK</span></button>
+        </div>
+        <div style="margin-top:6px;color:var(--soluk);font-size:10px;line-height:1.5;" data-i18n="ikon3dNot">Açıkken dron (sabit kanat/multirotor), radar ve elektro-optik haritada 3B model olarak gösterilir; radar döner, her ikonun önünde yön üçgeni bulunur. Kapalıyken sade elmas gösterim kullanılır.</div>
+      </div>
+    </div>
+    <!-- Cesium Goruntu / Performans -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-display"></i><span data-i18n="lblCesiumGoruntu">Görüntü / Performans</span></h3>
+      <div class="alan hrt-anahtar-liste">
+        <label class="hrt-anahtar"><input type="checkbox" id="chkFxaa"><span data-i18n="lblFxaa">Kenar Yumuşatma (FXAA)</span></label>
+        <label class="hrt-anahtar"><input type="checkbox" id="chkAtmosfer"><span data-i18n="lblAtmosfer">Atmosfer</span></label>
+        <label class="hrt-anahtar"><input type="checkbox" id="chkSis"><span data-i18n="lblSis">Sis (Fog)</span></label>
+        <label class="hrt-anahtar"><input type="checkbox" id="chkAydinlatma"><span data-i18n="lblAydinlatma">Güneş Aydınlatması</span></label>
+        <label class="hrt-anahtar"><input type="checkbox" id="chkSuEfekti"><span data-i18n="lblSuEfekti">Su Efekti</span></label>
+        <label class="hrt-anahtar"><input type="checkbox" id="chkFps"><span data-i18n="lblFps">FPS Göstergesi</span></label>
+      </div>
+      <div class="alan">
+        <label data-i18n="lblMsaa">MSAA (Kenar Örnekleme)</label>
+        <select id="selMsaa" class="gcs-select">
+          <option value="1">Kapalı</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+        </select>
+      </div>
+      <div class="alan">
+        <label data-i18n="lblCozunurluk">Çözünürlük Ölçeği</label>
+        <div class="hrt-slider-satir">
+          <input type="range" id="rngCozunurluk" min="0.5" max="2" step="0.25" value="1">
+          <span id="lblCozunurlukDeger" class="hrt-slider-deger">1.00x</span>
+        </div>
+        <div style="margin-top:6px;color:var(--soluk);font-size:10px;line-height:1.5;" data-i18n="cozunurlukNot">1 altı performans artırır, üstü görüntüyü netleştirir.</div>
+      </div>
+    </div>
+    <!-- Merkez Konum -->
+    <div class="alt-bolum">
+      <h3 class="alt-baslik"><i class="fa-solid fa-location-dot"></i><span data-i18n="panelKonum">MERKEZ KONUM</span></h3>
+      <div class="alan">
+        <div class="satir">
+          <div style="flex:1">
+            <label for="latGiris" data-i18n="lblEnlem">Enlem</label>
+            <input type="text" id="latGiris" placeholder="39.925" spellcheck="false" autocomplete="off">
+          </div>
+          <div style="flex:1">
+            <label for="lonGiris" data-i18n="lblBoylam">Boylam</label>
+            <input type="text" id="lonGiris" placeholder="32.837" spellcheck="false" autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="alan">
+        <button id="btnKonumaGit" style="width:100%;padding:9px;"><i class="fa-solid fa-location-crosshairs"></i><span data-i18n="btnKonumaGit">KONUMA GİT</span></button>
+      </div>
+      <div class="alan">
+        <div id="konumKaynak" style="color:var(--soluk);font-size:11px;font-family:Consolas,monospace;">Konum alınıyor...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CTRL+SOL TIK HARITA MENUSU -->
+<div id="haritaMenu" class="popup-gizli">
+  <div class="harita-menu-baslik"><i class="fa-solid fa-location-dot"></i> <span id="menuKoordinat"></span></div>
+  <div id="menuDronListesi"></div>
+</div>
+
+<!-- YENI ROTA MODALI -->
+<div id="rotaModalPerde" class="popup-gizli">
+  <div id="rotaModalKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-route"></i> <span data-i18n="rotaModalBaslik">YENİ ROTA</span></span>
+      <button id="btnRotaModalKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="lok-kaydet-icerik">
+      <label for="rotaAd" data-i18n="lblRotaAd">ROTA ADI</label>
+      <input type="text" id="rotaAd" data-i18n-ph="phOrnRotaAd" placeholder="Örn: Devriye A" spellcheck="false" maxlength="60">
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblRotaIrtifa">Varsayılan İrtifa</span> <span class="rota-slider-deger" id="rotaIrtifaDeger">100 m</span></label>
+        <input type="range" id="rotaIrtifa" min="5" max="500" step="5" value="100">
+      </div>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblRotaHiz">Varsayılan Hız</span> <span class="rota-slider-deger" id="rotaHizDeger">10 m/s</span></label>
+        <input type="range" id="rotaHiz" min="1" max="83" step="0.5" value="10">
+      </div>
+      <div id="rotaHata"></div>
+      <div class="lok-dugme-satir">
+        <button id="btnRotaKaydet" data-i18n="btnKaydet">KAYDET</button>
+        <button id="btnRotaIptal" data-i18n="btnIptal">İPTAL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SPIRAL ROTA MODALI (v2.2.0) -->
+<div id="spiralModalPerde" class="popup-gizli">
+  <div id="spiralModalKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-hurricane"></i> <span data-i18n="spiralModalBaslik">SPİRAL ROTA</span></span>
+      <button id="btnSpiralModalKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="lok-kaydet-icerik">
+      <label for="spiralAd" data-i18n="lblRotaAd">ROTA ADI</label>
+      <input type="text" id="spiralAd" data-i18n-ph="phOrnSpiralAd" placeholder="Örn: Spiral Tarama A" spellcheck="false" maxlength="60">
+      <label for="spiralDronTip" data-i18n="lblSpiralDronTip">DRON TİPİ</label>
+      <select id="spiralDronTip">
+        <option value="kopter" data-i18n="spiralKopter">Çok Rotorlu (Kopter / VTOL hover)</option>
+        <option value="sabit" data-i18n="spiralSabit">Sabit Kanat</option>
+      </select>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblSpiralNokta">Nokta Sayısı</span> <span class="rota-slider-deger" id="spiralNoktaDeger">24</span></label>
+        <input type="range" id="spiralNokta" min="6" max="120" step="1" value="24">
+      </div>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblSpiralCap">Çap</span> <span class="rota-slider-deger" id="spiralCapDeger">300 m</span></label>
+        <input type="range" id="spiralCap" min="40" max="4000" step="20" value="300">
+      </div>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblSpiralBasYuk">Başlangıç Yüksekliği</span> <span class="rota-slider-deger" id="spiralBasYukDeger">50 m</span></label>
+        <input type="range" id="spiralBasYuk" min="5" max="1000" step="5" value="50">
+      </div>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblSpiralBitYuk">Bitiş Yüksekliği</span> <span class="rota-slider-deger" id="spiralBitYukDeger">200 m</span></label>
+        <input type="range" id="spiralBitYuk" min="5" max="1000" step="5" value="200">
+      </div>
+      <div class="rota-slider-satir">
+        <label><span data-i18n="lblRotaHiz">Varsayılan Hız</span> <span class="rota-slider-deger" id="spiralHizDeger">10 m/s</span></label>
+        <input type="range" id="spiralHiz" min="1" max="83" step="0.5" value="10">
+      </div>
+      <div id="spiralBilgi" class="spiral-bilgi"></div>
+      <div id="spiralHata"></div>
+      <div class="lok-dugme-satir">
+        <button id="btnSpiralEkle" data-i18n="btnSpiralEkle">ROTA EKLE</button>
+        <button id="btnSpiralIptal" data-i18n="btnIptal">İPTAL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="rotaNoktaPopup" class="popup-gizli">
+  <div class="popup-baslik">
+    <span><i class="fa-solid fa-map-pin"></i> <span data-i18n="rotaNoktaBaslik">ROTA NOKTASI</span> <span id="rotaNoktaNo"></span></span>
+    <button id="btnRotaNoktaKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="lok-kaydet-icerik">
+    <div id="rotaNoktaKoord"></div>
+    <div class="rota-slider-satir">
+      <label><span data-i18n="lblNoktaIrtifa">İrtifa</span> <span class="rota-slider-deger" id="noktaIrtifaDeger">100 m</span></label>
+      <input type="range" id="noktaIrtifa" min="5" max="500" step="5" value="100">
+    </div>
+    <div class="rota-slider-satir">
+      <label><span data-i18n="lblNoktaHiz">Hız</span> <span class="rota-slider-deger" id="noktaHizDeger">10 m/s</span></label>
+      <input type="range" id="noktaHiz" min="1" max="83" step="0.5" value="10">
+    </div>
+    <div class="rota-nokta-dugmeler">
+      <button id="btnNoktaEkle" data-i18n="btnYeniNokta">YENİ NOKTA</button>
+      <button id="btnNoktaGuncelle" data-i18n="btnNoktaGuncelle" style="display:none">GÜNCELLE</button>
+      <button id="btnNoktaSil" data-i18n="btnNoktaSil" style="display:none">NOKTAYI SİL</button>
+      <button id="btnNoktaIptal" data-i18n="btnIptal">İPTAL</button>
+      <button id="btnRotaSonlandir" data-i18n="btnRotaSonlandir">ROTAYI SONLANDIR</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROTA DETAY POPUP'I (nokta listesi + sil/duzenle) -->
+<div id="rotaDetayPerde" class="popup-gizli">
+  <div id="rotaDetayKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-route"></i> <span id="rotaDetayBaslik"></span></span>
+      <button id="btnRotaDetayKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="lok-kaydet-icerik">
+      <div id="rotaDetayOzet"></div>
+      <div id="rotaNoktaListesi"></div>
+      <div class="rota-nokta-dugmeler">
+        <!-- v2.4.23: rota parametrelerini (irtifa/hiz/aci) duzenleme -->
+        <button id="btnRotaParam" data-i18n="btnRotaParam">PARAMETRELERİ DEĞİŞTİR</button>
+        <button id="btnRotaDuzenle" data-i18n="btnRotaDuzenle">ROTAYI DÜZENLE</button>
+        <button id="btnRotaSil" data-i18n="btnRotaSil">ROTAYI SİL</button>
+        <button id="btnRotaDetayIptal" data-i18n="btnIptal">İPTAL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROTA PARAMETRE DUZENLEME MODALI (v2.4.23) -->
+<div id="rotaParamPerde" class="popup-gizli">
+  <div id="rotaParamKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-sliders"></i>
+        <span data-i18n="rpBaslik">ROTA PARAMETRELERİ</span>
+        <span id="rpRotaAd" class="rp-rota-ad"></span></span>
+      <button id="btnRpKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="rp-icerik">
+      <!-- Serbest form geometri parametreleri (yalniz serbest form rotalarda) -->
+      <div id="rpGeoBolum" class="rp-bolum" style="display:none">
+        <div class="rp-bolum-baslik">
+          <i class="fa-solid fa-draw-polygon"></i>
+          <span data-i18n="rpGeoBaslik">ALAN TARAMA GEOMETRİSİ</span>
+        </div>
+        <div class="rp-satir">
+          <label for="rpAralik" data-i18n="rpAralik">Aralık Mesafesi</label>
+          <div class="rp-giris">
+            <input type="number" id="rpAralik" min="2" max="200" step="1">
+            <span class="rp-birim">m</span>
+          </div>
+        </div>
+        <div class="rp-satir">
+          <label for="rpYon" data-i18n="rpYon">Uçuş Yönü (Açı)</label>
+          <div class="rp-giris">
+            <input type="number" id="rpYon" min="0" max="359" step="1">
+            <span class="rp-birim">°</span>
+          </div>
+        </div>
+        <div class="rp-bilgi" id="rpGeoBilgi"></div>
+      </div>
+
+      <!-- Tum noktalara toplu uygulama -->
+      <div class="rp-bolum">
+        <div class="rp-bolum-baslik">
+          <i class="fa-solid fa-layer-group"></i>
+          <span data-i18n="rpTopluBaslik">TÜM NOKTALARA UYGULA</span>
+        </div>
+        <div class="rp-satir">
+          <label class="rp-onay">
+            <input type="checkbox" id="rpTopluIrtifaAc">
+            <span data-i18n="rpIrtifa">İrtifa</span>
+          </label>
+          <div class="rp-giris">
+            <input type="number" id="rpTopluIrtifa" min="1" max="2000" step="1" disabled>
+            <span class="rp-birim">m</span>
+          </div>
+        </div>
+        <div class="rp-satir">
+          <label class="rp-onay">
+            <input type="checkbox" id="rpTopluHizAc">
+            <span data-i18n="rpHiz">Hız</span>
+          </label>
+          <div class="rp-giris">
+            <input type="number" id="rpTopluHiz" min="0.5" max="83.3" step="0.5" disabled>
+            <span class="rp-birim">m/s</span>
+          </div>
+        </div>
+        <div class="rp-satir">
+          <label class="rp-onay">
+            <input type="checkbox" id="rpTopluAciAc">
+            <span data-i18n="rpAci">Yönelim Açısı</span>
+          </label>
+          <div class="rp-giris">
+            <select id="rpTopluAciMod" disabled>
+              <option value="oto" data-i18n="rpAciOto">Otomatik (rota yönü)</option>
+              <option value="sabit" data-i18n="rpAciSabit">Sabit açı</option>
+            </select>
+            <input type="number" id="rpTopluAci" min="0" max="359" step="1"
+                   value="0" disabled style="display:none">
+            <span class="rp-birim" id="rpTopluAciBirim" style="display:none">°</span>
+          </div>
+        </div>
+        <button id="btnRpTopluUygula" class="rp-btn rp-btn-ikincil"
+                data-i18n="rpTopluUygula">SEÇİLİ ALANLARI UYGULA</button>
+      </div>
+
+      <!-- Nokta bazli tablo -->
+      <div class="rp-bolum rp-bolum-tablo">
+        <div class="rp-bolum-baslik">
+          <i class="fa-solid fa-list-ol"></i>
+          <span data-i18n="rpNoktaBaslik">NOKTA BAZINDA</span>
+          <span class="rp-bolum-not" id="rpNoktaSayi"></span>
+        </div>
+        <div class="rp-tablo-basi">
+          <span class="rp-th-no">#</span>
+          <span class="rp-th-koord" data-i18n="rpKoord">KOORDİNAT</span>
+          <span class="rp-th-val" data-i18n="rpIrtifaKisa">İRTİFA</span>
+          <span class="rp-th-val" data-i18n="rpHizKisa">HIZ</span>
+          <span class="rp-th-val" data-i18n="rpAciKisa">AÇI</span>
+        </div>
+        <div id="rpNoktaTablo"></div>
+      </div>
+
+      <div id="rpHata"></div>
+      <div class="rp-dugmeler">
+        <button id="btnRpKaydet" class="rp-btn rp-btn-kaydet"
+                data-i18n="rpKaydet">KAYDET</button>
+        <button id="btnRpIptal" class="rp-btn" data-i18n="btnIptal">İPTAL</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GOREV: ROTA SECIM POPUP -->
+<div id="gorevRotaPerde" class="popup-gizli">
+  <div id="gorevRotaKutu">
+    <div class="popup-baslik">
+      <span><i class="fa-solid fa-route"></i> <span data-i18n="gorevRotaSecBaslik">ROTAYA G&Ouml;NDER</span> &mdash; <span id="gorevRotaDronAd"></span></span>
+      <button id="btnGorevRotaKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="lok-kaydet-icerik">
+      <div id="gorevRotaListe"></div>
+      <div id="gorevRotaYok" data-i18n="rotaYokBuyuk">KAYITLI ROTA YOK</div>
+    </div>
+  </div>
+</div>
+
+<!-- GOREV: ROTA IZLEME POPUP -->
+<div id="gorevIzlemePopup" class="popup-gizli">
+  <div class="popup-baslik">
+    <span><i class="fa-solid fa-paper-plane"></i> <span id="gorevIzlemeBaslik"></span></span>
+    <button id="btnGorevIzlemeKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="gorev-izleme-icerik">
+    <div class="gorev-durum-satir">
+      <span id="gorevDurumRozet" class="gorev-rozet bekliyor" data-i18n="gorevDurumBekliyor">HAZIR</span>
+    </div>
+    <div class="gorev-bilgi-tablo">
+      <div><span data-i18n="gorevToplamNokta">TOPLAM NOKTA</span><b id="gorevToplamNokta">-</b></div>
+      <div><span data-i18n="gorevMevcutNokta">MEVCUT NOKTA</span><b id="gorevMevcutNokta">-</b></div>
+      <div><span data-i18n="gorevMesafe">TOPLAM MESAFE</span><b id="gorevMesafe">-</b></div>
+      <div><span data-i18n="gorevSure">TAHM&#304;N&#304; S&Uuml;RE</span><b id="gorevSure">-</b></div>
+    </div>
+    <!-- v2.4.20: gorev yukleme ilerleme cubugu -->
+    <div id="gorevYuklemeSatir" class="gorev-yukleme-satir popup-gizli">
+      <div class="gys-ust">
+        <span id="gorevYuklemeEtiket" data-i18n="gorevYuklemeEtiket">G&Ouml;REV Y&Uuml;KLEN&#304;YOR</span>
+        <b id="gorevYuklemeYuzde">0%</b>
+      </div>
+      <div class="gorev-cubuk-dis">
+        <div id="gorevYuklemeCubuk" class="gorev-cubuk-ic" style="width:0%"></div>
+      </div>
+      <div id="gorevYuklemeAlt" class="gys-alt">-</div>
+    </div>
+    <!-- v2.4.41: GOREV TAMAMLANMA (UCUS) ilerleme cubugu.
+         Yukleme cubugundan AYRIDIR: yukleme "kac gorev ogesi drona
+         gitti", bu cubuk "gorevin ne kadari UCULDU" demektir. Sunucu
+         gorev_yuzde alanini uculan en yuksek WP'ye gore yayinlar. -->
+    <div id="gorevUcusSatir" class="gorev-yukleme-satir gorev-ucus-satir popup-gizli">
+      <div class="gys-ust">
+        <span id="gorevUcusEtiket" data-i18n="gorevUcusEtiket">G&Ouml;REV TAMAMLANMA</span>
+        <b id="gorevUcusYuzde">0%</b>
+      </div>
+      <div class="gorev-cubuk-dis">
+        <div id="gorevUcusCubuk" class="gorev-cubuk-ic" style="width:0%"></div>
+      </div>
+      <div id="gorevUcusAlt" class="gys-alt">-</div>
+    </div>
+    <!-- v2.4.35: GOREV DURDURULUNCA NE OLACAK?
+         Ilaclama gibi uzun operasyonlarda bir gorevde birkac kez
+         batarya degisimi olabilir; durdurma davranisi gorev drona
+         YUKLENIRKEN secilir ve gorev boyunca gecerlidir. -->
+    <div id="gorevDurdurmaAyar" class="gorev-durdurma-ayar">
+      <div class="gda-baslik">
+        <i class="fa-solid fa-hand"></i>
+        <span data-i18n="gorevDurdurmaBaslik">G&Ouml;REV DURDURULUNCA</span>
+      </div>
+      <label class="gda-secenek">
+        <input type="radio" name="gorevDurdurmaDavranisi" value="bekle" checked>
+        <span>
+          <b data-i18n="gorevDurdurmaBekle">DURDU&#286;U YERDE BEKLES&#304;N</b>
+          <em data-i18n="gorevDurdurmaBekleAcik">Ara&#231; havada as&#305;l&#305; kal&#305;r (BRAKE / LOITER)</em>
+        </span>
+      </label>
+      <label class="gda-secenek">
+        <input type="radio" name="gorevDurdurmaDavranisi" value="basa_don">
+        <span>
+          <b data-i18n="gorevDurdurmaBasaDon">BA&#350;LANGI&Ccedil; NOKTASINA D&Ouml;NS&Uuml;N</b>
+          <em data-i18n="gorevDurdurmaBasaDonAcik">Ara&#231; kalk&#305;&#351; noktas&#305;na d&ouml;ner (RTL) &mdash; batarya de&#287;i&#351;imi</em>
+        </span>
+      </label>
+      <div id="gorevDurdurmaKilit" class="gda-kilit popup-gizli"
+           data-i18n="gorevDurdurmaKilit">
+        G&ouml;rev y&uuml;kl&uuml; &mdash; se&#231;im bu g&ouml;rev boyunca de&#287;i&#351;tirilemez
+      </div>
+    </div>
+    <!-- v2.4.20: yukleme ve baslatma ayri dugmeler -->
+    <div class="gorev-dugmeler gorev-dugmeler-yukle">
+      <button id="btnGorevYukle" class="gorev-btn-yukle" data-i18n="btnGorevYukle">
+        <i class="fa-solid fa-cloud-arrow-up"></i><span>ROTAYI Y&Uuml;KLE
+      </span></button>
+      <button id="btnGorevBaslat" class="gorev-btn-baslat" data-i18n="btnGorevBaslat" disabled>
+        <i class="fa-solid fa-play"></i><span>ROTAYI BA&#350;LAT
+      </span></button>
+    </div>
+    <div class="gorev-dugmeler">
+      <button id="btnGorevDurdur" data-i18n="btnGorevDurdur" disabled>DURDUR</button>
+      <button id="btnGorevDevam" data-i18n="btnGorevDevam" disabled>DEVAM ET</button>
+    </div>
+    <!-- v2.4.35: yarim kalmis gorevi kaldigi noktadan surdur.
+         Batarya degisimi icin dron offline olup tekrar online
+         oldugunda gorunur. -->
+    <div id="gorevSurdurSatir" class="gorev-surdur-satir popup-gizli">
+      <div class="gss-bilgi">
+        <i class="fa-solid fa-battery-half"></i>
+        <span id="gorevSurdurMetin">-</span>
+      </div>
+      <button id="btnGorevSurdur" class="gorev-btn-surdur" data-i18n="btnGorevSurdur">
+        <i class="fa-solid fa-forward"></i><span>KALDI&#286;I YERDEN DEVAM ET
+      </span></button>
+    </div>
+    <!-- v2.4.18: gorevi tamamen iptal et -->
+    <div class="gorev-dugmeler gorev-dugmeler-iptal">
+      <button id="btnGorevIptal" class="gorev-btn-iptal" data-i18n="btnGorevIptal" disabled>
+        <i class="fa-solid fa-ban"></i><span>G&Ouml;REV &#304;PTAL
+      </span></button>
+    </div>
+  </div>
+</div>
+
+<div id="altBar">
+  <span id="wsDurum">WS: ba&#287;lan&#305;yor...</span>
+  <span id="fSeri">SER&#304;: ba&#287;l&#305; de&#287;il</span>
+  <span id="fareKoordinat" data-i18n-title="ipFareKonum" title="Fare konumu (enlem, boylam)"></span>
+  <span id="zoomDurum" data-i18n-title="ipHrtZoom" title="Harita zoom seviyesi"></span>
+  <!-- HEPGO: #hrtCacheDurum kaldırıldı (harita.js:757 IIFE if(!el) return) -->
+  <span class="atif" id="haritaAtif">&#169; Esri &#183; Maxar &#183; Earthstar Geographics</span>
+</div>
+
+<!-- =====================================================================================================
+     BETİK SIRASI (GÖKTUNGU sırası korunur; yalnız üç HEPGO dosyası eklenir, ws.js yerine hepgo_ws.js yüklenir).
+     Klasik <script> (ESM değil), ortak global kapsam.
+     - js/hepgo_stub.js EN BAŞTA: Cesium.Ion.defaultAccessToken='' ve pakette olmayan modüllerin (radar_gorsel,
+       prizma_ikon, angajman, surum, kullanici) guard'sız okunan globalleri.
+     - jquery / flightindicators / pakette OLMAYAN 64 dosya YÜKLENMEZ (paketteki JS'lerde kullanım yok).
+     - kalkis_kontrol.js, failsafe_kalib.js, dron_bakim.js, dron_yakinlik.js kopyalandı ama BURADA YÜKLENMEZ
+       (sunucu param/komut desteği gelince hepgo_ws.js HEPGO_OZ bayraklarına göre dinamik yükleyebilir).
+     - log_replay, gecmis, kayitli_dronlar, makrolar, joystick_ayar, kopru_kimlik, kopruler_panel, ws.js: kapsam dışı.
+     - kayit.js, filtreler.js, pencere_dok.js ASLA eklenmez (guard'sız DOM erişimiyle çöker).
+     - js/hepgo_patch_pre.js: harita.js'ten ÖNCE zorunlu (window.goktunguYol erişimcisi: GÖKTUNGU karo vekili
+       "tile/<kaynak>/{z}/{x}/{y}" yolları doğrudan sağlayıcı URL'lerine çevrilir; viewer kurulurken ilk taban
+       katmanı da doğru URL'yi alır).
+     ===================================================================================================== -->
+<script src="js/hepgo_stub.js"></script>
+<script src="js/hepgo_patch_pre.js"></script>
+<script src="js/app_yolu.js"></script>
+<script src="js/bolum_resize.js"></script>
+<script src="js/popup_tasima.js"></script>
+<script src="js/bolum_popup.js"></script>
+<script src="js/arayuz.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/onay.js"></script>
+<script src="js/harita.js"></script>
+<script src="js/harita_accordion.js"></script>
+<script src="js/harita_ikon_3d.js"></script>
+<script src="js/tema.js"></script>
+<script src="js/panel_pfd.js"></script>
+<script src="js/dronlar.js"></script>
+<script src="js/dron_ekran_disi.js"></script>
+<script src="js/home_ikon.js"></script>
+<script src="js/arm_check.js"></script>
+<script src="js/seri.js"></script>
+<script src="js/harita_hover.js"></script>
+<script src="js/harita_cevrimici.js"></script>
+<script src="js/konsol.js"></script>
+<script src="js/harita_menu.js"></script>
+<script src="js/rotalar.js"></script>
+<script src="js/rota_tipleri.js"></script>
+<script src="js/rota_param.js"></script>
+<script src="js/gorev.js"></script>
+<script src="js/menubar.js"></script>
+<script src="js/uyari_merkezi.js"></script>
+<!-- HEPGO davranış yamaları (dkArmSecimAc global kopyası, İŞLEMLER düğmeleri, History yönlendirmesi, tile URL'leri,
+     yzSeri başlığı, tema senkronu). ws.js yerine hepgo_ws.js: gerçek /ws/drone/live soketi + sahte `ws` nesnesi
+     (seri.js:7 `let ws`e ATANIR, yeniden bildirilmez); sonunda applyLanguage + ayarlariUygula + bağlan. -->
+<script src="js/hepgo_patch.js"></script>
+<script src="js/hepgo_ws.js"></script>
+<!-- IS50 / IS51: DOM düzelticileri en sonda -->
+<script src="js/pencere_iskelet.js"></script>
+<script src="js/panel_durumcubugu.js"></script>
+</body>
+</html>

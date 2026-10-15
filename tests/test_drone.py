@@ -144,7 +144,23 @@ def main():
                 assert state['throttle'] == 65 and state['airspeed'] == 22.5, state
                 assert state['armed'] is True and state['mode'] == 'AUTO' and abs(state['lat'] - 39.9) < 1e-6 and state['alt_rel'] == 120.0, state
                 ev = drain(live, 'event')
-                assert 'Test uyarisi' in ev['text'] and ev['severity'] == 4, ev
+                assert 'Test uyarisi' in ev['text'] and ev['severity'] == 4 and ev['ts'], ev
+                assert 'console' in hello['caps'] and 'arm_check' in hello['caps'], hello
+                # Haberleşme konsolu: STATUSTEXT satırı yayınlanır, geçmiş istenebilir, aynı satır tekrarı birleşir
+                cl = drain(live, 'console')
+                assert cl['tag'] == 'STATUS' and 'Test uyarisi' in cl['text'] and cl['sev'] == 'uyari' and cl['fresh'] is True, cl
+                ws.send_bytes(st)
+                cl2 = drain(live, 'console')
+                assert cl2['repeat'] == 2 and cl2['fresh'] is False, cl2
+                live.send_text(json.dumps({'t': 'console_hist', 'bridge_id': b['id'], 'sysid': 7}))
+                hist = drain(live, 'console_hist')
+                assert len(hist['lines']) == 1 and hist['lines'][0]['repeat'] == 2, hist
+                # ARM CHECK raporu sunucudan (köprüye gitmez; komut yetkisi gerekmez)
+                live.send_text(json.dumps({'t': 'cmd', 'rid': 'ac', 'bridge_id': b['id'], 'sysid': 7, 'name': 'arm_check'}))
+                ac = drain(live, 'res', pred=lambda m: m.get('rid') == 'ac')
+                assert ac['ok'] is True and ac['result']['bulundu'] is True and ac['result']['armed'] is True, ac
+                assert any(x['grup'] == 'konum' for x in ac['result']['maddeler']) and ac['result']['mesajlar'][0]['sev'] == 4, ac['result']
+                assert s1['state']['ready'] and 'hazir' in s1['state']['ready'], s1['state'].get('ready')
                 # ping/pong
                 ws.send_text(json.dumps({'t': 'ping'}))
                 assert json.loads(ws.receive_text())['t'] == 'pong'

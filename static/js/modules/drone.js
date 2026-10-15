@@ -6,14 +6,11 @@ import {
   clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, onLeave, pageHead, statStrip, toast,
   toastError, t as tr,
 } from '../ui.js';
-import { PLANE_MODEL, createViewer, loadCesium, planeOrientation } from './replay3d.js';
 
 const TABS = [['drones', 'Dron Envanteri'], ['live', 'Canlı Uçuş'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']];
 const DRONE_BADGE = { AKTIF: 'green', BAKIMDA: 'yellow', ARIZALI: 'red', PASIF: 'gray' };
 const SESSION_BADGE = { ACIK: 'green', KAPANDI: 'gray', KOPTU: 'red', KESILDI: 'yellow' };
 const FIX = { 0: 'GPS yok', 1: 'Fix yok', 2: '2B', 3: '3B', 4: 'DGPS', 5: 'RTK float', 6: 'RTK fixed' };
-const MODES = ['MANUAL', 'STABILIZE', 'FBWA', 'FBWB', 'CRUISE', 'LOITER', 'AUTO', 'GUIDED', 'RTL', 'TAKEOFF', 'QLOITER', 'QHOVER', 'QLAND',
-  'ALT_HOLD', 'LAND', 'POSHOLD', 'CIRCLE'];
 const f1 = v => (v == null ? '—' : Number(v).toFixed(1));
 const num = (v, d = 0) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(Number(v).toFixed(d)));
 const ago = iso => { if (!iso) return '—'; const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000); return s < 60 ? `${Math.round(s)} sn önce` : s < 3600 ? `${Math.round(s / 60)} dk önce` : fmtDateTime(iso); };
@@ -509,226 +506,37 @@ async function renderRouteEditor(view, id, ctx, m) {
 }
 
 // ======================================================================
-// Canlı Uçuş
+// Canlı Uçuş — GÖKTUNGU harekât arayüzü BİREBİR: /static/ops/index.html (GÖKTUNGU'nun kendi betikleri, CSS'i ve Cesium haritası)
+// bir iframe içinde çalışır; HEPGO'nun üst başlığı ve alt barı kalır, iframe aradaki alanı kaplar. Tam ekran düğmesi iframe'i
+// tam ekrana alır (başlık/alt bar görünmez); API yoksa iframe parent'a {t:'ops-fullscreen', on} gönderir → body.ops-full.
+// iframe → parent gezinme: {t:'ops-nav', hash:'#/field/drones'}. Aynı köken: oturum çerezi ve /ws/drone/live paylaşılır.
 // ======================================================================
 async function renderLive(view, ctx, m, head) {
-  const side = h('div', { class: 'dr-side' });
-  const mapBox = h('div', { class: 'dr-map' });
-  const mapHolder = h('div', { class: 'r3d-map' });
-  const mapMsg = h('div', { class: 'dr-map-msg' }, '3B harita yükleniyor…');
-  const hud = h('div', { class: 'r3d-hud', hidden: true });
-  const tools = h('div', { class: 'r3d-tools' });
-  mapBox.append(mapHolder, mapMsg, hud, tools);
-  const events = h('div', { class: 'dr-events' });
-  const connBadge = h('span', { class: 'badge gray' }, 'Bağlanıyor…');
-  const listEl = h('div');
-  const cmdEl = h('div');
-  side.append(h('div', { class: 'card' }, h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' } }, h('b', null, 'Köprüler ve dronlar'), h('span', { class: 'spacer' }), connBadge), listEl),
-    h('div', { class: 'card' }, h('b', null, 'Komutlar'), cmdEl));
-  clear(view, head('Canlı Uçuş · köprülerden gelen MAVLink telemetrisi (anlık)'),
-    h('div', { class: 'dr-live' }, side, h('div', null, mapBox, h('div', { style: { marginTop: '10px' } }, h('div', { class: 'small muted', style: { marginBottom: '4px' } }, 'Olaylar (STATUSTEXT ve köprü bildirimleri)'), events))));
-
-  // Durum deposu: key = `${bridge_id}:${sysid}` → state; bridges: id → info
-  const bridges = new Map();     // bridge_id → { name, online, info }
-  const states = new Map();      // key → state
-  const inventory = new Map();   // `${bridge_id}:${sysid}` ya da `${bridge_id}:*` → envanter dronu
-  let selected = null;           // seçili key
-  let canCommand = false;
-  try {
-    const inv = await api.get('/api/drone/live');
-    for (const d of inv.drones || []) if (d.bridge_id) inventory.set(`${d.bridge_id}:${d.sysid ?? '*'}`, d);
-    canCommand = inv.can_command;
-    for (const b of (await bridgesList())) bridges.set(b.id, { name: b.name, online: b.online, info: b.live });
-  } catch { /* envanter yetkisi yoksa yalnız canlı veriler */ }
-  const labelOf = key => { const [bid, sid] = key.split(':'); const d = inventory.get(key) || inventory.get(`${bid}:*`); return d ? `${d.code} · ${d.name}` : `sysid ${sid}`; };
-
-  // ---- Cesium ----
-  let Cesium = null, viewer = null;
-  const ents = new Map();   // key → { entity, pos, ori, trail(PolylineCollection item), pts[] }
-  let destroyed = false;
-  let follow = true;
-  loadCesium().then(C => {
-    if (destroyed) return;
-    Cesium = C;
-    viewer = createViewer(Cesium, mapHolder, { timeline: false, animation: false });
-    mapMsg.remove();
-    hud.hidden = false;
-    for (const key of states.keys()) placeOnMap(key);
-    const btn = (label, fn, cls = '') => h('button', { class: `btn sm ${cls}`, type: 'button', onclick: fn }, label);
-    const followBtn = btn('Takip et', () => { follow = !follow; followBtn.classList.toggle('primary', follow); if (follow && selected && ents.get(selected)) viewer.trackedEntity = ents.get(selected).entity; else viewer.trackedEntity = undefined; }, 'primary');
-    clear(tools, followBtn, btn('Tümünü göster', () => { follow = false; followBtn.classList.remove('primary'); viewer.trackedEntity = undefined; viewer.zoomTo(viewer.entities).catch(() => {}); }));
-  }).catch(err => {
-    console.error('Canlı Uçuş haritası:', err);
-    if (!mapMsg.isConnected) mapBox.append(mapMsg);
-    clear(mapMsg, h('div', null, h('div', { class: 'alert err', style: { margin: 0 } }, err.message), h('div', { class: 'small', style: { marginTop: '8px', color: '#cbd5e1' } }, 'Harita olmadan da köprü/dron listesi ve anlık değerler çalışır.')));
-  });
-  const trailMat = () => Cesium.Material.fromType('Color', { color: Cesium.Color.fromCssColorString('#ffcc33').withAlpha(0.6) });
-  let trails = null;
-  const placeOnMap = key => {
-    const st = states.get(key);
-    if (!viewer || !st || st.lat == null || st.lon == null) return;
-    const p = Cesium.Cartesian3.fromDegrees(st.lon, st.lat, Math.max(0, st.alt_rel ?? 0) + 1);
-    let e = ents.get(key);
-    if (!e) {
-      const pos = new Cesium.ConstantPositionProperty(p);
-      const ori = new Cesium.ConstantProperty(planeOrientation(Cesium, p, st.yaw ?? st.hdg, st.pitch, st.roll));
-      const entity = viewer.entities.add({
-        viewFrom: new Cesium.Cartesian3(-60, -60, 70), position: pos, orientation: ori, model: PLANE_MODEL,
-        label: { text: labelOf(key), font: '13px sans-serif', pixelOffset: new Cesium.Cartesian2(0, -36), fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE, showBackground: true, backgroundColor: Cesium.Color.fromCssColorString('#0f172a').withAlpha(0.55), disableDepthTestDistance: Number.POSITIVE_INFINITY },
-      });
-      trails ??= viewer.scene.primitives.add(new Cesium.PolylineCollection());
-      e = { entity, pos, ori, pts: [], line: null };
-      ents.set(key, e);
-      if (ents.size === 1) { viewer.zoomTo(entity).catch(() => {}); if (follow) viewer.trackedEntity = entity; }
-    } else {
-      e.pos.setValue(p);
-      e.ori.setValue(planeOrientation(Cesium, p, st.yaw ?? st.hdg, st.pitch, st.roll));
+  const ver = (document.querySelector('script[src*="app.js"]')?.src.match(/[?&]v=([^&]+)/) || [])[1] || '';
+  const frame = h('iframe', { class: 'ops-frame', src: `/static/ops/index.html${ver ? `?v=${encodeURIComponent(ver)}` : ''}`,
+    allow: 'fullscreen; geolocation', allowfullscreen: true, title: 'Canlı Uçuş — harekât ekranı' });
+  view.classList.add('ops-view');
+  const scroller = view.closest('.scroller');
+  scroller?.classList.add('ops-scroll');
+  const onMsg = e => {
+    if (e.origin !== location.origin || e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
+    if (e.data.t === 'ops-fullscreen') {
+      document.body.classList.toggle('ops-full', !!e.data.on);
+      if (e.data.on) document.documentElement.requestFullscreen?.().catch(() => {});
+      else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    } else if (e.data.t === 'ops-nav' && typeof e.data.hash === 'string' && e.data.hash.startsWith('#/')) {
+      location.hash = e.data.hash;
     }
-    const last = e.pts[e.pts.length - 1];
-    if (!last || Cesium.Cartesian3.distance(last, p) > 1.5) {
-      e.pts.push(p);
-      if (e.pts.length > 1200) e.pts.shift();
-      if (e.pts.length > 1) {
-        if (e.line) trails.remove(e.line);
-        e.line = trails.add({ positions: e.pts.slice(), width: 2, material: trailMat() });
-      }
-    }
-    if (follow && selected === key) viewer.trackedEntity = e.entity;
   };
-
-  // ---- Liste ve HUD ----
-  const row = (k, v) => h('div', null, h('span', null, k), h('b', null, v));
-  const drawList = () => {
-    const items = [];
-    const seen = new Set();
-    for (const [bid, b] of bridges) {
-      items.push(h('div', { class: 'dr-bridge' }, h('span', { class: `dr-dot ${b.online ? 'on' : ''}` }), h('b', null, b.name), b.online && b.info ? h('span', { class: 'small muted' }, ` · ${b.info.packets || 0} paket`) : h('span', { class: 'small muted' }, ' · çevrimdışı')));
-      for (const [key, st] of states) {
-        if (Number(key.split(':')[0]) !== bid) continue;
-        seen.add(key);
-        items.push(droneItem(key, st));
-      }
-    }
-    for (const [key, st] of states) if (!seen.has(key)) items.push(droneItem(key, st));
-    clear(listEl, items.length ? items : h('div', { class: 'small muted' }, 'Bağlı köprü yok. Pilot cihazındaki köprü yazılımı bağlanınca dronlar burada görünür.'));
-  };
-  const droneItem = (key, st) => h('div', { class: `dr-item ${selected === key ? 'on' : ''}`, onclick: () => { selected = key; drawList(); drawHud(); if (viewer && follow && ents.get(key)) viewer.trackedEntity = ents.get(key).entity; } },
-    h('span', { class: `dr-dot ${st.last_hb && Date.now() / 1000 - st.last_hb < 5 ? 'on' : ''}` }),
-    h('div', { class: 'grow' }, h('b', null, labelOf(key)), h('div', { class: 'small' }, liveLine(st))));
-  const drawHud = () => {
-    const st = selected ? states.get(selected) : null;
-    if (!st) { clear(hud, h('div', { class: 'r3d-hud-head' }, h('b', null, '—'), h('span', { class: 'small muted' }, 'Dron seçin'))); drawCmd(); return; }
-    const hbAge = st.last_hb ? Date.now() / 1000 - st.last_hb : null;
-    clear(hud,
-      h('div', { class: 'r3d-hud-head' }, h('b', { style: { fontSize: '14px' } }, labelOf(selected)),
-        h('span', { class: `badge ${st.armed ? 'red' : 'gray'}` }, st.armed ? 'ARMED' : 'Disarmed'), st.mode ? h('span', { class: 'badge blue' }, st.mode) : null,
-        hbAge != null && hbAge > 5 ? h('span', { class: 'badge yellow' }, `Kalp atışı ${Math.round(hbAge)} sn önce`) : null),
-      row('İrtifa (göreli)', `${f1(st.alt_rel)} m`), row('İrtifa (MSL)', `${f1(st.alt)} m`),
-      row('Yer hızı', `${f1(st.groundspeed)} m/s · ${Math.round((st.groundspeed || 0) * 3.6)} km/sa`), row('Hava hızı', `${f1(st.airspeed)} m/s`),
-      row('Tırmanma', `${f1(st.climb)} m/s`), row('Gaz', st.throttle == null ? '—' : `%${st.throttle}`),
-      row('Yön', `${f1(st.hdg)}°`), row('Roll / Pitch', `${f1(st.roll)}° / ${f1(st.pitch)}°`),
-      row('Batarya', st.volt == null ? '—' : `${Number(st.volt).toFixed(2)} V${st.curr != null ? ` · ${f1(st.curr)} A` : ''}${st.batt_pct != null ? ` · %${st.batt_pct}` : ''}`),
-      row('GPS', `${FIX[st.fix] || '—'}${st.sats != null ? ` · ${st.sats} uydu` : ''}${st.hdop != null ? ` · HDOP ${st.hdop}` : ''}`),
-      st.rpm != null ? row('Motor', `${Math.round(st.rpm)} rpm`) : null,
-      row('Konum', st.lat != null ? `${st.lat.toFixed(6)}, ${st.lon.toFixed(6)}` : '—'),
-      row('Paket', String(st.msgs || 0)));
-    drawCmd();
-  };
-  // ---- Komutlar ----
-  const pending = new Map();   // rid → {resolve, reject, timer}
-  const sendCmd = (name, params = {}) => new Promise((resolve, reject) => {
-    if (!selected) return reject(new Error('Önce dron seçin'));
-    if (!ws || ws.readyState !== 1) return reject(new Error('Sunucu bağlantısı yok'));
-    const [bridge_id, sysid] = selected.split(':').map(Number);
-    const rid = Math.random().toString(36).slice(2, 10);
-    const timer = setTimeout(() => { pending.delete(rid); reject(new Error('Köprü yanıt vermedi (zaman aşımı)')); }, 15000);
-    pending.set(rid, { resolve, reject, timer });
-    ws.send(JSON.stringify({ t: 'cmd', rid, bridge_id, sysid, name, params }));
-  });
-  const run = async (label, name, params, confirmText) => {
-    if (confirmText && !await confirmDialog(label, confirmText, { okLabel: label, danger: true })) return;
-    try {
-      const r = await sendCmd(name, params);
-      if (r.ok) toast(tr('{label}: kabul edildi', { label })); else toast(tr('{label}: {err}', { label, err: r.error || 'reddedildi' }), 'err');
-    } catch (err) { toastError(err); }
-  };
-  const drawCmd = () => {
-    if (!canCommand) { clear(cmdEl, h('div', { class: 'small muted' }, 'Komut göndermek için Canlı Uçuş yazma yetkisi ve Pilot rolü gerekir.')); return; }
-    const st = selected ? states.get(selected) : null;
-    if (!st) { clear(cmdEl, h('div', { class: 'small muted' }, 'Komut için listeden dron seçin.')); return; }
-    const mode = h('input', { class: 'input', list: 'dr-modes', placeholder: 'Mod (AUTO, RTL…)', style: { width: '140px' } });
-    const dl = h('datalist', { id: 'dr-modes' }, MODES.map(x => h('option', { value: x })));
-    const alt = h('input', { class: 'input', type: 'number', value: 50, min: 5, max: 1000, style: { width: '90px' }, title: 'Kalkış irtifası (m)' });
-    clear(cmdEl,
-      h('div', { class: 'pill-group', style: { flexWrap: 'wrap', marginTop: '6px' } },
-        st.armed ? h('button', { class: 'btn sm danger', onclick: () => run('Disarm', 'disarm', {}, 'Motorlar durdurulsun mu (DISARM)? Havadaysa dron düşer.') }, 'Disarm')
-          : h('button', { class: 'btn sm danger', onclick: () => run('Arm', 'arm', {}, 'Motorlar kurulsun mu (ARM)? Pervane dönebilir; çevrenin güvenli olduğundan emin olun.') }, 'Arm'),
-        h('button', { class: 'btn sm', onclick: () => run('RTL', 'rtl', {}, 'Dron eve dönsün mü (RTL)?') }, 'Eve dön'),
-        h('button', { class: 'btn sm', onclick: () => run('İniş', 'land', {}, 'Dron bulunduğu yere insin mi (LAND)?') }, 'İniş'),
-        h('button', { class: 'btn sm', onclick: () => run('Kalkış', 'takeoff', { alt_rel_m: Number(alt.value) || 50 }, tr('{alt} m irtifaya kalkış verilsin mi?', { alt: alt.value })) }, 'Kalkış'), alt),
-      h('div', { style: { display: 'flex', gap: '6px', marginTop: '6px' } }, mode, dl,
-        h('button', { class: 'btn sm', onclick: () => { const v = mode.value.trim().toUpperCase(); if (!v) return toast('Mod girin', 'err'); run('Mod değiştir', 'set_mode', { mode: v }, tr('Uçuş modu {mode} yapılsın mı?', { mode: v })); } }, 'Modu ayarla')),
-      h('div', { class: 'small muted', style: { marginTop: '6px' } }, 'Her komut kayda geçer (kim, ne zaman, hangi dron).'));
-  };
-  const addEvent = (bid, sysid, text, severity) => {
-    const sev = severity == null ? '' : Number(severity) <= 3 ? 'sev-err' : Number(severity) === 4 ? 'sev-warn' : '';
-    events.prepend(h('div', { class: sev }, h('span', { class: 'muted' }, new Date().toLocaleTimeString('tr-TR')), h('span', { class: 'muted' }, `${bridges.get(bid)?.name || `köprü ${bid}`}${sysid != null ? `/${sysid}` : ''}`), h('span', null, text)));
-    while (events.children.length > 200) events.lastChild.remove();
-  };
-
-  // ---- WebSocket ----
-  let ws = null, retry = null, pingIv = null;
-  const handle = msg => {
-    if (msg.t === 'hello') {
-      canCommand = !!msg.me?.can_command;
-      for (const b of msg.bridges || []) {
-        const cur = bridges.get(b.bridge_id) || { name: b.name };
-        bridges.set(b.bridge_id, { ...cur, name: b.name || cur.name, online: true, info: b });
-        for (const [sid, st] of Object.entries(b.drones || {})) { const key = `${b.bridge_id}:${sid}`; states.set(key, st); placeOnMap(key); }
-      }
-      if (!selected && states.size) selected = states.keys().next().value;
-      drawList(); drawHud();
-    } else if (msg.t === 'status') {
-      const key = `${msg.bridge_id}:${msg.sysid}`;
-      const first = !states.has(key);
-      states.set(key, msg.state);
-      const b = bridges.get(msg.bridge_id); if (b && b.info) b.info.packets = (b.info.packets || 0) + 1;
-      placeOnMap(key);
-      if (!selected) selected = key;
-      if (first) drawList(); else if (selected === key) { const it = listEl.querySelector('.dr-item.on .small'); if (it) clear(it, liveLine(msg.state)); }
-      if (selected === key) drawHud();
-    } else if (msg.t === 'bridge') {
-      const cur = bridges.get(msg.bridge_id) || { name: msg.info?.name || `Köprü ${msg.bridge_id}` };
-      bridges.set(msg.bridge_id, { ...cur, name: msg.info?.name || cur.name, online: !!msg.online, info: msg.info || cur.info });
-      addEvent(msg.bridge_id, null, msg.online ? 'Köprü bağlandı' : `Köprü ayrıldı (${msg.status || ''})`, msg.online ? 6 : 4);
-      if (!msg.online) for (const key of [...states.keys()]) if (Number(key.split(':')[0]) === msg.bridge_id) { const e = ents.get(key); if (e && viewer) { viewer.entities.remove(e.entity); if (e.line) trails.remove(e.line); } ents.delete(key); states.delete(key); if (selected === key) selected = null; }
-      drawList(); drawHud();
-    } else if (msg.t === 'event') addEvent(msg.bridge_id, msg.sysid, msg.text, msg.severity);
-    else if (msg.t === 'res') { const p = pending.get(msg.rid); if (p) { clearTimeout(p.timer); pending.delete(msg.rid); p.resolve(msg); } }
-    else if (msg.t === 'log') { addEvent(msg.bridge_id, null, `Uçuş logu alındı: ${msg.name} (#${msg.flight_log_id})`, 6); toast(tr('Köprüden uçuş logu alındı: {name}', { name: msg.name })); }
-  };
-  const connect = () => {
-    if (destroyed) return;
-    connBadge.textContent = 'Bağlanıyor…'; connBadge.className = 'badge gray';
-    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/drone/live`);
-    ws.onopen = () => { connBadge.textContent = 'Bağlı'; connBadge.className = 'badge green'; };
-    ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (err) { console.error(err); } };
-    ws.onclose = ev => {
-      if (destroyed) return;
-      connBadge.textContent = ev.code === 4403 ? 'Yetki yok' : 'Bağlantı koptu'; connBadge.className = 'badge red';
-      for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error('Bağlantı koptu')); }
-      pending.clear();
-      if (ev.code !== 4403) retry = setTimeout(connect, 3000);
-    };
-  };
-  connect();
-  pingIv = setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'ping' })); drawList(); }, 20000);
+  const onFs = () => { if (!document.fullscreenElement) document.body.classList.remove('ops-full'); };
+  window.addEventListener('message', onMsg);
+  document.addEventListener('fullscreenchange', onFs);
   onLeave(() => {
-    destroyed = true;
-    clearTimeout(retry); clearInterval(pingIv);
-    try { ws?.close(); } catch { /* yok */ }
-    if (viewer && !viewer.isDestroyed()) viewer.destroy();
+    window.removeEventListener('message', onMsg);
+    document.removeEventListener('fullscreenchange', onFs);
+    document.body.classList.remove('ops-full');
+    view.classList.remove('ops-view');
+    scroller?.classList.remove('ops-scroll');
   });
-  drawList(); drawHud();
+  clear(view, frame);
 }

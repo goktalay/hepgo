@@ -1,0 +1,128 @@
+/* =====================================================================
+   HEPGO HAREKÂT — hepgo.css
+   GÖKTUNGU harekât arayüzü stilleri (css/stil.css ve diğerleri) HEPGO'ya
+   BAYT BAYT değişmeden kopyalanmıştır; bu dosya yalnız HEPGO'ya özgü
+   override'ları içerir ve EN SON yüklenir (metin_secim.css'ten sonra).
+   Sayfa HEPGO SPA içinde (#/field/live) iframe olarak çalışır; buradaki
+   kurallar iframe sınırını aşmaz.
+   ===================================================================== */
+
+/* ---- iframe içinde tam yükseklik -------------------------------------
+   stil.css:95-96 html,body{height:100%;overflow:hidden} ile aynı yönde;
+   iframe gövdesinin kaydırma çubuğu üretmemesi ve #anaAlan'ın kalan
+   yüksekliği doldurması için açıkça yinelenir. */
+html, body {
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ---- Yazı tipi yedekleri ----------------------------------------------
+   stil.css "Segoe UI" / Consolas kullanır; Linux istemcilerde ikisi de
+   yoktur. Gövde için sistem yazı tipleri, konsol ve alt bar için açık
+   bir monospace yığını verilir (Windows'ta Segoe UI / Consolas yine
+   önceliklidir). */
+html, body {
+  font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", Roboto,
+    Ubuntu, "DejaVu Sans", "Liberation Sans", sans-serif;
+}
+#konsolKutu,
+#konsolKutu .k-satir,
+.dk-konsol-govde,
+.dk-kons-satir,
+#altBar,
+#zoomDurum,
+#konumKaynak,
+#rotaNoktaKoord,
+#menuKoordinat {
+  font-family: Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono",
+    "Liberation Mono", "Ubuntu Mono", "Noto Sans Mono", monospace;
+}
+
+/* ---- Konsol alt paneli tam genişlik -----------------------------------
+   #grafikYari (RADAR & AI grafik yarısı) index.html'den çıkarıldı;
+   stil.css:393-395 #konsolYari'yi %50'ye sabitler. */
+#konsolYari {
+  flex: 1 1 auto;
+  max-width: none;
+  width: 100%;
+  border-right: 0;
+}
+
+/* ---- Dron kartı: kapsam dışı karolar ----------------------------------
+   Joystick (.dk-joy-btn, dronlar.js:1231) ve UDP MAVLink yayın rozeti
+   (.dk-udp-btn, dronlar.js:1447) kart içinde üretilir; manuel kontrol ve
+   UDP dışa aktarım HEPGO kapsamı dışındadır (manuel_eksen sahte ws'de
+   yutulur). DOM'da kalır, gizlenir. */
+.dk-joy-btn,
+.dk-udp-btn {
+  display: none !important;
+}
+
+/* ---- Bağlantı Yöneticisi (#yzSeri) -------------------------------------
+   HEPGO'da köprüler Dron Köprüleri sayfasından tanımlanır ve eşleştirme
+   koduyla kendileri bağlanır; +SERİ/+TCP/+UDP/+DJI/+SANAL/+LOG DRON/
+   +MERKEZ düğmeleri işlevsizdir. seri.js:1399-1411 bu düğmelere guard'sız
+   addEventListener bağladığı için DOM'da kalır, burada gizlenir. */
+#btnYeniSeri,
+#btnYeniTcp,
+#btnYeniUdp,
+#btnYeniDji,
+#btnYeniSanal,
+#btnYeniLogDron,
+#btnYeniMerkez {
+  display: none !important;
+}
+/* Play düğmesi: köprü oturumunu tarayıcı başlatamaz (köprü kendisi
+   bağlanır); Stop → disconnect komutu kalır. */
+.bag-btn.bag-play,
+.bag-btn.bag-duzenle,
+.bag-btn.bag-sil {
+  display: none !important;   /* köprüler HEPGO › Dron Köprüleri'nden yönetilir; Düzenle/Sil burada işlevsiz olurdu */
+}
+
+/* ---- Font Awesome aile adı düzeltmesi ---------------------------------
+   stil.css:2243 "Font Awesome 6 Free" ister; HEPGO vendor paketi
+   Font Awesome Pro 7.3.1'dir (solid.min.css :root --fa-family-classic:
+   "Font Awesome 7 Pro"). Düzeltilmezse gölge satırındaki ikon kutu olur. */
+.dron-kart.dk-golge .dron-kart-baslik::before {
+  font-family: var(--fa-family-classic, "Font Awesome 7 Pro");
+  font-weight: 900;
+}
+
+/* ---- Üst bar: HEPGO markası --------------------------------------------
+   img/hepgo-logo.png 824x260; stil.css:125 #logo{height:24px} korunur,
+   bar 32px olduğu için biraz daha küçük tutulur. */
+#logo {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+#ustBarOrta .baslik {
+  white-space: nowrap;
+}
+
+/* ---- Alt bar ------------------------------------------------------------
+   #fareKoordinat'a yazan modül yok (ölü); boşken yer kaplamasın. */
+#fareKoordinat:empty {
+  display: none;
+}
+
+/* ---- Yetki görünürlüğü (isteğe bağlı kanca) ----------------------------
+   hepgo_ws.js hello.me.can_command=false ise
+   document.documentElement.dataset.hepgoRol = "izleyici" yazabilir;
+   komut üreten düğmeler soluklaşır ve tıklanamaz olur (sunucu zaten
+   reddeder; bu yalnız görsel ipucudur). Nitelik yoksa kural etkisizdir. */
+html[data-hepgo-rol="izleyici"] .dk-tkland,
+html[data-hepgo-rol="izleyici"] .dk-telemetri .dk-tel-hucre[data-islev="durum"],
+html[data-hepgo-rol="izleyici"] .dk-telemetri .dk-tel-hucre[data-islev="mod"],
+html[data-hepgo-rol="izleyici"] .dk-telemetri .dk-tel-hucre[data-islev="irtifa"],
+html[data-hepgo-rol="izleyici"] .dk-islem-hucre.tehlikeli,
+html[data-hepgo-rol="izleyici"] .gorev-dugmeler button,
+html[data-hepgo-rol="izleyici"] .gorev-btn-surdur,
+html[data-hepgo-rol="izleyici"] .bag-btn.bag-stop {
+  opacity: .45;
+  pointer-events: none;
+}

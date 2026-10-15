@@ -1,0 +1,325 @@
+/* GOKTUNGU GCS — panel_ustbar.css
+ * FAZ 18 / IS 7 (v2.4.81)
+ *
+ * NEDEN: Bes AI paneli ve Suru Ucus kurulumu, ekleme dugmelerini
+ * icerik govdesinin ICINDE tasiyordu. Kameralar/Rotalar ise
+ * `.panel-toolbar` + `.tb-bosluk` ile dugmeleri saga yasliyordu.
+ * Kullanici hepsinin ikinci desende olmasini istedi.
+ *
+ * `.panel-toolbar` kurallari stil.css:157'de zaten var; ancak orada
+ * sabit panel bolumleri icin yazilmis. Yuzen pencere (popup) icinde
+ * baslik cubugunun HEMEN ALTINDA durdugunda ust kenarligin cift
+ * cizgi olusturmamasi ve yatay yastigin pencere govdesiyle hizalanmasi
+ * icin bu dosya ince duzeltmeler ekler.
+ *
+ * Bu dosya stil.css ve dugme_birlik.css'ten SONRA yuklenir.
+ */
+
+/* --- Popup icindeki panel ust bari --- */
+.popup-baslik + .panel-toolbar,
+.suru-baslik + .panel-toolbar {
+  /* Baslik cubugunun kendi alt kenarligi var; cift cizgi olmasin */
+  border-top: 0;
+  border-radius: 0;
+  /* Pencere govdesiyle ayni yatay yastik */
+  padding: 6px 12px;
+  /* Ust bar icerikle birlikte kaymasin */
+  flex: 0 0 auto;
+}
+
+/* Ust bar icindeki arama alani asiri buyumesin: kalan yeri alir ama
+ * dugmeleri sikistirmaz. `.ai-ara` flex:1 tasiyordu; ust barda
+ * dugmelerle yan yana geldiginde ust siniri olmali. */
+.panel-toolbar .ai-ara {
+  flex: 0 1 190px;
+  min-width: 90px;
+  max-width: 240px;
+}
+
+/* Tespit Gecmisi filtreleri ust bara tasindiginda: dar pencerede
+ * alt satira sarar, genis pencerede tek satir kalir. */
+.panel-toolbar.tb-filtre {
+  /* FAZ18/IS4: filtreler ALT ALTA sarmayacak. `wrap` acikken tur /
+     kamera / tarih / ARA ogeleri dar pencerede alt satira dusuyor ve
+     ust bar iki-uc satir yukseklige cikiyordu. `nowrap` ile tek satir
+     garanti; `.tb-bosluk` (flex:1) filtre grubunu SAGA yasliyor. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+/* Filtre ogeleri daralabilsin; yoksa nowrap ile ust bardan tasarlar. */
+.panel-toolbar.tb-filtre select,
+.panel-toolbar.tb-filtre input[type="date"],
+.panel-toolbar.tb-filtre button {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Pencere basligini yineleyen kalin baslik yerine kullanilan hafif,
+   ikonsuz etiket. Kullanici kurali: koyu font olmayacak, ikonsuz. */
+.panel-toolbar .tb-etiket {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  color: var(--metin);
+  opacity: .75;
+  user-select: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.panel-toolbar.tb-filtre select,
+.panel-toolbar.tb-filtre input[type="date"] {
+  background: var(--girdi-arka);
+  color: var(--metin);
+  border: 1px solid var(--cizgi);
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-size: 11px;
+  outline: none;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.panel-toolbar.tb-filtre select:focus,
+.panel-toolbar.tb-filtre input[type="date"]:focus {
+  border-color: var(--vurgu);
+}
+
+/* Metinli ust bar dugmesi: `.tb-btn` 30x30 karedir (yalniz ikon).
+ * Ust bara tasinan YENI KISI / YENI ARAC gibi dugmeler metin tasir,
+ * bu yuzden kare kalip yerine dugme birligi olculerini kullanir. */
+.panel-toolbar .tb-btn-metin {
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 5px 9px;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* --- Kamera tipi ikon dugmeleri (IS 7) --- */
+/* NEDEN: Protokol bir <select> icindeydi; kullanici "kamera tipleri
+ * ikon olarak gelsin" dedi. <select> KALDIRILMADI (kameralar.js:56
+ * uzerinden bes yerde okunuyor); ustune ikonlu dugme kumesi eklendi.
+ * Dugmeye tiklanınca select.value yazilir ve change tetiklenir. */
+.kam-tip-izgara {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+.kam-tip-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: var(--girdi-arka);
+  color: var(--metin);
+  border: 1px solid var(--cizgi);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+  min-height: 54px;
+}
+.kam-tip-btn i {
+  font-size: 17px;
+  opacity: .8;
+}
+.kam-tip-btn span {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-align: center;
+  line-height: 1.15;
+}
+.kam-tip-btn:hover {
+  background: var(--dugme-hover);
+  border-color: var(--soluk);
+}
+.kam-tip-btn.secili {
+  border-color: var(--siyan);
+  background: color-mix(in srgb, var(--siyan) 14%, transparent);
+}
+.kam-tip-btn.secili i {
+  opacity: 1;
+  color: var(--siyan);
+}
+
+/* Protokol <select> gizlenmez ama ikon kumesi varken ikincil kalir:
+ * kullanici yine oradan da secebilir (erisilebilirlik). */
+#kamProtokol { margin-top: 0; }
+
+/* --- Suru Ucus kurulum ust bari --- */
+/* Suru paneli kendi `.suru-btn` sinifini kullaniyor; ust bara
+ * tasindiginda dikey dolgusu ust barla uyumlu olmali. */
+.panel-toolbar .suru-btn {
+  width: auto;
+  margin: 0;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+/* FAZ18-USTBAR-GORUNUR: UST BAR EKLEME DUGMESI VURGUSU.
+   AI panellerinde ekleme dugmeleri `onay-btn` ile vurgulu ve metinli
+   ("YENI SUNUCU"). Kameralar ve Rotalar panellerinde ikon-only
+   dugmeler kullaniliyor; ayni gorsel agirligi tasiyabilmeleri icin
+   birincil renkle vurgulanir. Boylece dokuz panelin ekleme eylemi
+   tek sozlesmede toplanir. */
+.panel-toolbar .tb-btn-ekle {
+  border-color: color-mix(in srgb, var(--vurgu) 55%, transparent);
+  background: color-mix(in srgb, var(--vurgu) 16%, transparent);
+  color: var(--vurgu);
+}
+.panel-toolbar .tb-btn-ekle:hover {
+  border-color: var(--vurgu);
+  background: color-mix(in srgb, var(--vurgu) 26%, transparent);
+}
+
+/* FAZ18-IS4-USTBAR-SOZLESME */
+
+
+/* ===================================================================
+   FAZ18-PANEL-ISKELET: IS 26 + IS 32 + IS 33
+   =================================================================== */
+
+/* -------------------------------------------------------------------
+   IS 26 — FILTRE GENISLIK DAGILIMI
+   OLCUM: `.panel-toolbar.tb-filtre select` hepsi `flex: 0 1 auto`
+   tasiyordu; icerigi uzun olan ('TUM TURLER') genisliyor, tarih alani
+   kirpiliyordu. Kullanici: "combobox filtreleri cok uzun yapmissin,
+   tarih daha uzun olmali, buton bile tam gorunmuyor".
+   COZUM: select icerige gore daralir; tarih alanina SABIT taban
+   genislik; ARA dugmesi asla daralmaz.
+   ------------------------------------------------------------------- */
+.panel-toolbar.tb-filtre select {
+  /* Icerige gore daralsin: `width:auto` ile tarayici en uzun
+     secenegin genisligini kullanir, sabit bir taban dayatmaz. */
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 160px;
+}
+.panel-toolbar.tb-filtre input[type="date"] {
+  /* Tarih bicimi (gg.aa.yyyy + takvim ikonu) daralinca kirpilir;
+     bu yuzden sabit taban genislik verilir ve daralmasi engellenir. */
+  flex: 0 0 auto;
+  width: 140px;
+  min-width: 140px;
+}
+.panel-toolbar.tb-filtre button {
+  /* ARA dugmesi hicbir kosulda daralmaz: metin tasmasi olmaz. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------
+   IS 32 — PANEL BASLIGI SCROLL DISINDA KALIR
+   KOK NEDEN: `overflow-y:auto` pencere KOK ogesindeydi
+   (#arayuzPopup stil.css:1842, #haritaPopup stil.css:4091), baslik da
+   bu kapsayicinin cocugu oldugu icin kaydirildikca kayboluyordu.
+   Dogru desen zaten vardi: `.ai-popup-icerik` scroll'u ICERIKTE
+   tutuyor, baslik kardes oge olarak sabit kaliyor.
+   COZUM: kok oge flex kolon + overflow:hidden; scroll icerige tasinir.
+   `!important` gerekli: hedef kurallar id secicili (#haritaPopup),
+   yani bu dosyadaki sinif secicilerinden daha yuksek ozgullukte.
+   ------------------------------------------------------------------- */
+#arayuzPopup,
+#haritaPopup {
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+#arayuzPopup > .popup-baslik,
+#haritaPopup > .popup-baslik {
+  /* Baslik gerilmez ve kucululmez: sabit yukseklikli tutamac. */
+  flex: 0 0 auto;
+}
+#arayuzPopup > .popup-icerik,
+#haritaPopup > .popup-icerik {
+  flex: 1 1 auto;
+  /* `min-height: 0` ZORUNLU. Flex cocugu varsayilan olarak
+     `min-height: auto` tasir; bu deger cocugun icerik yuksekligi
+     kadar buyumesine izin verir ve overflow HIC tetiklenmez.
+     Ayni kural `#aiGecmisPopup .ai-popup-icerik` icinde de var. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* -------------------------------------------------------------------
+   IS 33 — HARITA AYARLARI ACCORDION
+   OLCULEN 5 grup: Harita Kaynagi, Cevrimdisi Onbellek, Arazi,
+   Goruntu/Performans, Merkez Konum. Hepsi ayni anda acikti; pencere
+   82vh sinirina dayanip uzun scroll uretiyordu.
+   COZUM: baslik tiklanabilir, govde acilir/kapanir, durum
+   localStorage'da saklanir (harita_accordion.js).
+   ------------------------------------------------------------------- */
+#haritaPopup .alt-bolum > .alt-baslik {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Ok isareti icin sagda yer birak */
+  padding-right: 22px;
+  position: relative;
+}
+/* Acilir-kapanir gostergesi: kullanici istegi "+- seklinde acilir
+   kapanir" (destek agaci isinde ayni desen kullanildi). */
+#haritaPopup .alt-bolum > .alt-baslik::after {
+  content: "\2212";              /* eksi: grup ACIK */
+  position: absolute;
+  right: 4px;
+  font-size: 13px;
+  line-height: 1;
+  opacity: .65;
+  transition: opacity .12s;
+}
+#haritaPopup .alt-bolum.kapali > .alt-baslik::after {
+  content: "\002B";              /* arti: grup KAPALI */
+}
+#haritaPopup .alt-bolum > .alt-baslik:hover::after { opacity: 1; }
+#haritaPopup .alt-bolum.kapali > .alan {
+  display: none;
+}
+
+/* ===================================================================
+   FAZ18-IS22-GECMIS-FILTRE — DRON HISTORY FILTRE UST BARI
+   ===================================================================
+   OLCUM: panelde `panel-toolbar` sinifi HIC YOKTU (0 esleme).
+   Baslik `dkMiniPopupBaslikKur()` ile kuruluyor -> `.dk-mp-baslik`.
+   Mevcut kural yalnizca `.popup-baslik + .panel-toolbar` ve
+   `.suru-baslik + .panel-toolbar` icin yazilmis; bu baslik sinifi
+   kapsam DISINDA kaliyordu (cift kenarlik ve yanlis yastik).
+   ------------------------------------------------------------------- */
+.dk-mp-baslik + .panel-toolbar {
+  /* Baslik cubugunun kendi alt kenarligi var; cift cizgi olmasin */
+  border-top: 0;
+  border-radius: 0;
+  padding: 6px 10px;
+  /* Ust bar icerikle birlikte kaymaz */
+  flex: 0 0 auto;
+}
+/* OLCUM: `.panel-toolbar { gap: 0 }` (stil.css:184) ve ezen kural YOK;
+   `.panel-toolbar > *` margin kurali da yok. Filtre ogeleri BITISIK
+   duruyordu. `<select>`/`<input>` flex ogesi oldugu icin HTML'deki
+   satir sonu bosluklari gorsel aralik uretmez.
+   `.panel-toolbar` TAMAMINA dokunulmuyor: diger ust barlarda dugme
+   kumeleri bitisik tasarlanmis olabilir, olculmeden degistirilmez. */
+.panel-toolbar.tb-filtre {
+  gap: 6px;
+}
+/* Dron History penceresi: KOK padding kaldirilir.
+   OLCUM: `.gecmis-popup { padding: 10px }` (stil.css:1441). Diger
+   paneller kokte yastik TASIMIYOR; yastigi baslik/ust bar/icerik
+   kapsayicilari veriyor. Kok yastik ayrica ust barin pencere kenarina
+   yaslanmasini engelliyordu (ust bar tam genislik olmali). */
+.gecmis-popup {
+  padding: 0;
+}
+.gecmis-popup .gc-govde {
+  /* Eski kok yastigin yerini alir; sol/sag panolar kenara yapismaz. */
+  padding: 8px;
+}
+.gecmis-popup .gc-resize {
+  /* Kok yastik kaldirildi -> tutamac kosede dogru otursun. */
+  right: 2px;
+  bottom: 2px;
+}

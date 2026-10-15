@@ -1,0 +1,79 @@
+/* ============================================================
+   IS55-METIN-SECIM-V1 — Metin secimi sozlesmesi
+   ------------------------------------------------------------
+   TALEP: Arayuzde hicbir metin secilemesin; yalniz giris
+   alanlarinda secim acik kalsin.
+
+   NEDEN KAPSAYICI KURAL:
+   Bu dosyadan once secim engelleme 41 ayri secicide elle
+   yaziliydi. Yeni eklenen her bilesen varsayilan olarak
+   secilebilir kaliyor ve kusur surekli geri geliyordu.
+   `html, body` uzerinden KALITIM ile tum agaca yayilir;
+   istisna seciciler kalitimi tek noktada keser.
+
+   NEDEN `*` DEGIL:
+   `*` her ogeye dogrudan yazar ve kalitimi kirar; istisna
+   secicilerin her alt ogeyi tek tek hedeflemesi gerekirdi.
+   `html, body` ile istisna ogenin ALTINDAKI metin dugumleri de
+   kendiliginden secilebilir olur.
+
+   MEVCUT 41 KURAL KORUNDU: hepsi ayni yonde (`none`) calisiyor;
+   silmek gereksiz risk uretirdi.
+
+   YUKLEME SIRASI: bu dosya tum CSS dosyalarindan SONRA
+   yuklenmelidir, aksi halde istisna kurallari ezilebilir.
+   ============================================================ */
+
+/* --- Varsayilan: secim KAPALI --- */
+html,
+body {
+  -webkit-user-select: none; /* Safari, eski WebKit */
+  -moz-user-select: none;    /* eski Gecko */
+  -ms-user-select: none;     /* eski Edge/IE */
+  user-select: none;
+}
+
+/* --- Istisna: giris alanlari --- */
+/* Kullanicinin metin girdigi, duzenledigi veya sectigi her oge.
+   `popup_tasima.js:160` icindeki surukleme istisna listesiyle
+   ayni aileyi hedefler; iki sozlesme tutarli kalir. */
+input,
+textarea,
+select,
+option,
+optgroup,
+[contenteditable="true"],
+[contenteditable=""],
+[contenteditable="true"] *,
+[contenteditable=""] * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* --- Istisna: tanisal ciktilar --- */
+/* Dron konsolu. Kullanici bir hata yasadiginda konsol ciktisini
+   secip kopyalayabilmeli; bu tanisal yetenek korunmalidir.
+   Uygulamada pano (clipboard) islevi bulunmadigi olculdu, bu
+   yuzden secim tek kopyalama yoludur. */
+#konsolKutu,
+#konsolKutu * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+/* --- Surukleme sirasinda vurgu olusmasin --- */
+/* Panel basliklari `cursor: move` tasir. Bazi tarayicilar
+   surukleme sirasinda yine de vurgu cizebiliyor; bu kural
+   pencere/panel suruklemesini tamamen temiz birakir. */
+.dok-baslik,
+.yuzen-baslik,
+.popup-baslik {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}

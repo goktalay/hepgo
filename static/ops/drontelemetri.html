@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GÖKTUNGU Telemetri</title>
+<style>
+  :root{
+    --zemin:#04070C; --zemin2:#0A1119; --kart:#0E1720; --kart2:#111E29;
+    --cizgi:#1C2A38; --cizgi2:#24384A;
+    --siyan:#5CC8FF; --kehribar:#F2B24A; --iyi:#57D08A; --kotu:#FF5B5B;
+    --metin:#DCE7F0; --soluk:#5E7286; --soluk2:#8598A9;
+    --arka: radial-gradient(1200px 700px at 50% -10%, #0B1622 0%, var(--zemin) 60%);
+    color-scheme: dark;
+  }
+  :root[data-tema="acik"]{
+    --zemin:#EDF1F5; --zemin2:#FFFFFF; --kart:#FFFFFF; --kart2:#F4F8FB;
+    --cizgi:#D6DEE6; --cizgi2:#BFCAD5;
+    --siyan:#0F7CB5; --kehribar:#B9791F; --iyi:#1E9C57; --kotu:#CE3B3B;
+    --metin:#16222E; --soluk:#7C8B99; --soluk2:#586A78;
+    --arka: radial-gradient(1200px 700px at 50% -10%, #FFFFFF 0%, var(--zemin) 60%);
+    color-scheme: light;
+  }
+  *{ box-sizing:border-box; }
+  [hidden]{ display:none !important; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background: var(--arka);
+    color:var(--metin);
+    font-family:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column; overflow:hidden;
+    padding: env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);
+  }
+  /* ---- Üst şerit ---- */
+  header{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:11px 18px; border-bottom:1px solid var(--cizgi); flex:0 0 auto;
+    background:linear-gradient(180deg, var(--kart2), var(--zemin2));
+  }
+  .rozet{ width:34px; height:34px; border-radius:8px; flex:0 0 auto; display:grid; place-items:center;
+          background:linear-gradient(135deg,#12222f,#0a1420); border:1px solid var(--cizgi2);
+          color:var(--siyan); font-weight:800; font-size:15px; letter-spacing:.5px; }
+  .baslik-ana{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .baslik-ana b{ font-size:15px; letter-spacing:.4px; }
+  .baslik-ana span{ font-size:11px; color:var(--soluk2); letter-spacing:1.2px; text-transform:uppercase; }
+  .tepe-sag{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .ekle-btn{ display:inline-flex; align-items:center; gap:8px; cursor:pointer; font:inherit;
+             padding:9px 15px 9px 12px; border-radius:10px; font-size:12px; letter-spacing:1.2px;
+             text-transform:uppercase; font-weight:650; color:var(--siyan);
+             background:rgba(92,200,255,.08); border:1px solid rgba(92,200,255,.35);
+             transition:background .12s, border-color .12s, transform .05s; }
+  .ekle-btn:hover{ background:rgba(92,200,255,.16); border-color:var(--siyan); }
+  .ekle-btn:active{ transform:scale(.97); }
+  .ekle-btn .art{ font-size:19px; line-height:1; font-weight:400; }
+  .durum{ display:inline-flex; align-items:center; gap:8px; font-size:11.5px; letter-spacing:1px;
+          text-transform:uppercase; color:var(--soluk2); padding:7px 12px; border-radius:20px;
+          border:1px solid var(--cizgi2); background:var(--zemin2); white-space:nowrap; }
+  .durum .nokta{ width:9px; height:9px; border-radius:50%; background:var(--soluk); }
+  .durum.canli{ color:var(--iyi); border-color:rgba(87,208,138,.35); }
+  .durum.canli .nokta{ background:var(--iyi); animation:nabiz 1.6s ease-out infinite; }
+  .durum.kopuk{ color:var(--kotu); border-color:rgba(255,91,91,.35); }
+  .durum.kopuk .nokta{ background:var(--kotu); }
+  @keyframes nabiz{ 0%{box-shadow:0 0 0 0 rgba(87,208,138,.5);} 100%{box-shadow:0 0 0 8px rgba(87,208,138,0);} }
+  .tepe-btn{ flex:0 0 auto; width:38px; height:38px; border-radius:10px; cursor:pointer;
+             border:1px solid var(--cizgi2); background:var(--zemin2); color:var(--soluk2);
+             display:grid; place-items:center; transition:color .12s, border-color .12s, background .12s; }
+  .tepe-btn:hover{ color:var(--siyan); border-color:var(--siyan); background:rgba(92,200,255,.06); }
+  .tepe-btn svg{ width:18px; height:18px; display:block; }
+
+  /* ---- İki panel + splitter ---- */
+  .golge{ flex:1 1 auto; display:flex; min-height:0; }
+  .sol{ width:50%; min-width:240px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+        padding:18px; overflow:auto; }
+  .pfd{ width:100%; display:block; border-radius:14px; border:1px solid var(--cizgi);
+        box-shadow:0 10px 30px rgba(0,0,0,.4); background:#1a1c22; }
+  .tutamac{ flex:0 0 auto; width:10px; cursor:col-resize; position:relative;
+            background:var(--zemin2); border-left:1px solid var(--cizgi); border-right:1px solid var(--cizgi);
+            transition:background .12s; touch-action:none; }
+  .tutamac::before{ content:""; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                    width:2px; height:34px; border-radius:2px; background:var(--cizgi2); box-shadow:4px 0 0 var(--cizgi2), -4px 0 0 var(--cizgi2); }
+  .tutamac:hover, .tutamac.aktif{ background:rgba(92,200,255,.1); }
+  .tutamac:hover::before, .tutamac.aktif::before{ background:var(--siyan); box-shadow:4px 0 0 var(--siyan), -4px 0 0 var(--siyan); }
+  .sag{ flex:1 1 auto; min-width:0; overflow:auto; padding:18px; }
+
+  .izgara{ display:grid; gap:14px; grid-template-columns:repeat(auto-fill, minmax(180px,1fr)); }
+  .goz{ position:relative; border-radius:14px; background:linear-gradient(180deg,var(--kart2),var(--kart));
+        border:1px solid var(--cizgi); padding:18px 18px 16px; min-height:116px;
+        display:flex; flex-direction:column; justify-content:center; transition:border-color .15s; overflow:hidden; }
+  .goz::before{ content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:3px; background:var(--siyan); opacity:.55; }
+  .goz.suru{ opacity:.4; }
+  .goz.uzeri{ border-color:var(--siyan); box-shadow:0 0 0 1px rgba(92,200,255,.25); }
+  .goz .deger{ font-size:clamp(28px,4.4vw,46px); font-weight:750; letter-spacing:-.5px; line-height:1;
+               font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:8px; color:var(--metin); }
+  .goz .deger .birim{ font-size:.42em; font-weight:600; color:var(--soluk2); letter-spacing:0; }
+  .goz .etiket{ margin-top:12px; font-size:11.5px; letter-spacing:1.6px; text-transform:uppercase; color:var(--siyan); font-weight:600; }
+  .goz.bayat .deger{ color:var(--soluk); }
+  .goz.metinsel .deger{ font-size:clamp(20px,3vw,30px); font-weight:700; }
+  .goz .sil{ position:absolute; top:8px; right:8px; width:26px; height:26px; border-radius:7px;
+             border:1px solid var(--cizgi2); background:rgba(8,14,20,.7); color:var(--soluk2); cursor:pointer;
+             display:grid; place-items:center; font-size:14px; opacity:0; transition:opacity .12s, color .12s, border-color .12s; }
+  .goz:hover .sil{ opacity:1; }
+  .goz .sil:hover{ color:var(--kotu); border-color:rgba(255,91,91,.4); }
+  .goz .tut{ position:absolute; top:10px; left:12px; color:var(--soluk); opacity:0; font-size:12px; letter-spacing:2px; cursor:grab; transition:opacity .12s; }
+  .goz:hover .tut{ opacity:.6; }
+  .ipucu{ text-align:center; color:var(--soluk2); font-size:13.5px; padding:32px 16px; line-height:1.6; }
+  .ipucu b{ color:var(--siyan); font-weight:650; }
+
+  /* ---- Seçim penceresi ---- */
+  .perde{ position:fixed; inset:0; background:rgba(2,5,9,.72); backdrop-filter:blur(3px);
+          display:none; align-items:center; justify-content:center; padding:20px; z-index:50; }
+  .perde.acik{ display:flex; }
+  .secim{ width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--kart);
+          border:1px solid var(--cizgi2); border-radius:16px; box-shadow:0 24px 60px rgba(0,0,0,.6); }
+  .secim-bas{ display:flex; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid var(--cizgi);
+              position:sticky; top:0; background:var(--kart2); }
+  .secim-bas b{ font-size:14px; letter-spacing:.4px; }
+  .secim-bas .kapat{ margin-left:auto; width:30px; height:30px; border-radius:8px; cursor:pointer; border:1px solid var(--cizgi2);
+                     background:transparent; color:var(--soluk2); display:grid; place-items:center; font-size:16px; }
+  .secim-bas .kapat:hover{ color:var(--metin); }
+  .secim-liste{ padding:12px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .secim-oge{ text-align:left; padding:12px 14px; border-radius:10px; cursor:pointer; border:1px solid var(--cizgi);
+              background:var(--zemin2); color:var(--metin); display:flex; flex-direction:column; gap:3px; font:inherit; transition:border-color .12s, background .12s; }
+  .secim-oge:hover{ border-color:var(--siyan); background:rgba(92,200,255,.06); }
+  .secim-oge b{ font-size:12.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--siyan); font-weight:600; }
+  .secim-oge small{ font-size:11px; color:var(--soluk2); }
+  .secim-bos{ padding:26px; text-align:center; color:var(--soluk2); font-size:13px; grid-column:1/-1; }
+  @media (max-width:760px){
+    body{ overflow:auto; }
+    .golge{ flex-direction:column; }
+    .sol{ width:auto !important; min-width:0; border-bottom:1px solid var(--cizgi); }
+    .tutamac{ display:none; }
+    .secim-liste{ grid-template-columns:1fr; } .baslik-ana span{ display:none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="rozet">GÖ</div>
+    <div class="baslik-ana">
+      <b id="dronAd">Dron —</b>
+      <span id="dronAlt">Telemetri Paneli</span>
+    </div>
+    <div class="tepe-sag">
+      <button class="ekle-btn" id="ekleBtn"><span class="art">+</span>Gösterge Ekle</button>
+      <div class="durum kopuk" id="durum"><span class="nokta"></span><span id="durumYazi">Bağlanıyor</span></div>
+      <button class="tepe-btn" id="tamEkran" title="Tam ekran" aria-label="Tam ekran"></button>
+    </div>
+  </header>
+
+  <div class="golge" id="golge">
+    <div class="sol" id="sol"><canvas id="pfd" class="pfd"></canvas></div>
+    <div class="tutamac" id="tutamac" title="Sürükle: sol paneli boyutlandır"></div>
+    <div class="sag">
+      <div class="izgara" id="izgara" hidden></div>
+      <div class="ipucu" id="ipucu">Üstteki <b>+ Gösterge Ekle</b> düğmesiyle izlemek istediğiniz telemetrileri ekleyin.<br>Düzeniniz pilotunuza kaydedilir ve tüm dronlarda aynı gelir.</div>
+    </div>
+  </div>
+
+  <div class="perde" id="perde">
+    <div class="secim" role="dialog" aria-modal="true" aria-label="Gösterge ekle">
+      <div class="secim-bas"><b>GÖSTERGE EKLE</b><button class="kapat" id="secimKapat" aria-label="Kapat">×</button></div>
+      <div class="secim-liste" id="secimListe"></div>
+    </div>
+  </div>
+
+<script src="js/panel_pfd.js"></script>
+<script>
+"use strict";
+(function(){
+  var num=function(v,h){ return (typeof v==="number"&&isFinite(v))?v.toFixed(h):"—"; };
+  var sure=function(v){ if(typeof v!=="number"||!isFinite(v)||v<0) return "—"; var m=Math.floor(v/60),s=Math.floor(v%60); return m+":"+(s<10?"0":"")+s; };
+  var gpsFix=function(v){ var a={0:"YOK",1:"YOK",2:"2D",3:"3D",4:"DGPS",5:"RTK-F",6:"RTK-X"}; return (v in a)?a[v]:(v==null?"—":String(v)); };
+  var mesafe=function(la1,lo1,la2,lo2){
+    if([la1,lo1,la2,lo2].some(function(x){return typeof x!=="number"||!isFinite(x);})) return NaN;
+    var R=6371000, t=Math.PI/180, dLa=(la2-la1)*t, dLo=(lo2-lo1)*t;
+    var a=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(la1*t)*Math.cos(la2*t)*Math.sin(dLo/2)*Math.sin(dLo/2);
+    return 2*R*Math.asin(Math.min(1,Math.sqrt(a)));
+  };
+  var KATALOG={
+    alt_rel:{ad:"İrtifa (Bağıl)",birim:"m",fmt:function(v){return num(v,1);}},
+    alt_msl:{ad:"İrtifa (MSL)",birim:"m",fmt:function(v){return num(v,1);}},
+    home_alt:{ad:"Home İrtifa",birim:"m",fmt:function(v){return num(v,1);}},
+    groundspeed:{ad:"Yer Hızı",birim:"m/s",fmt:function(v){return num(v,1);}},
+    airspeed:{ad:"Hava Hızı",birim:"m/s",fmt:function(v){return num(v,1);}},
+    vz:{ad:"Dikey Hız",birim:"m/s",fmt:function(v){return num(v,1);}},
+    vx:{ad:"Kuzey Hızı",birim:"m/s",fmt:function(v){return num(v,1);}},
+    vy:{ad:"Doğu Hızı",birim:"m/s",fmt:function(v){return num(v,1);}},
+    heading:{ad:"Yön",birim:"°",fmt:function(v){return num(v,0);}},
+    dist_home:{ad:"Eve Uzaklık",birim:"m",deger:function(d){return mesafe(d.lat,d.lon,d.home_lat,d.home_lon);},fmt:function(v){return num(v,1);}},
+    wp_dist:{ad:"WP Uzaklık",birim:"m",fmt:function(v){return num(v,1);}},
+    kat_edilen_m:{ad:"Kat Edilen",birim:"m",fmt:function(v){return num(v,1);}},
+    ucus_suresi_sn:{ad:"Uçuş Süresi",birim:"",metin:true,fmt:function(v){return sure(v);}},
+    rpm:{ad:"Motor RPM",birim:"",fmt:function(v){return num(v,0);}},
+    batarya_pct:{ad:"Batarya",birim:"%",fmt:function(v){return num(v,0);}},
+    batarya_v:{ad:"Gerilim",birim:"V",fmt:function(v){return num(v,2);}},
+    batarya_a:{ad:"Akım",birim:"A",fmt:function(v){return num(v,1);}},
+    batarya_kalan_sn:{ad:"Kalan Süre",birim:"",metin:true,fmt:function(v){return sure(v);}},
+    uydu:{ad:"Uydu",birim:"",fmt:function(v){return num(v,0);}},
+    gps_fix:{ad:"GPS Fix",birim:"",metin:true,fmt:function(v){return gpsFix(v);}},
+    hdop:{ad:"GPS HDOP",birim:"",fmt:function(v){return num(v,2);}},
+    vdop:{ad:"GPS VDOP",birim:"",fmt:function(v){return num(v,2);}},
+    lat:{ad:"Enlem",birim:"°",metin:true,fmt:function(v){return num(v,6);}},
+    lon:{ad:"Boylam",birim:"°",metin:true,fmt:function(v){return num(v,6);}},
+    mod:{ad:"Uçuş Modu",birim:"",metin:true,fmt:function(v){return v==null?"—":String(v);}},
+    armed:{ad:"Arm Durumu",birim:"",metin:true,fmt:function(v){return v?"ARMED":"DISARMED";}},
+    roll:{ad:"Yatış",birim:"°",fmt:function(v){return num(v,0);}},
+    pitch:{ad:"Yunuslama",birim:"°",fmt:function(v){return num(v,0);}},
+    titresim:{ad:"Titreşim",birim:"m/s²",fmt:function(v){return num(v,1);}}
+  };
+  var SIRA=["alt_rel","alt_msl","home_alt","groundspeed","airspeed","vz","vx","vy","heading",
+            "dist_home","wp_dist","kat_edilen_m","ucus_suresi_sn","rpm",
+            "batarya_pct","batarya_v","batarya_a","batarya_kalan_sn",
+            "uydu","gps_fix","hdop","vdop","lat","lon","mod","armed","roll","pitch","titresim"];
+
+  var sysid=(function(){ var m=/[?&]sysid=([^&]+)/.exec(location.search); return m?decodeURIComponent(m[1]):""; })();
+  var dizilim=[], sonVeri=null, sonZaman=0, dizilimYuklendi=false;
+
+  var elIzgara=document.getElementById("izgara"), elIpucu=document.getElementById("ipucu");
+  var elDurum=document.getElementById("durum"), elDurumYazi=document.getElementById("durumYazi");
+  var elDronAd=document.getElementById("dronAd"), elDronAlt=document.getElementById("dronAlt");
+  var elPerde=document.getElementById("perde"), elSecimListe=document.getElementById("secimListe");
+  var elPfd=document.getElementById("pfd"), elGolge=document.getElementById("golge");
+  var elSol=document.getElementById("sol"), elTut=document.getElementById("tutamac");
+  elDronAlt.textContent="SYSID "+(sysid||"—")+" · TELEMETRİ PANELİ";
+
+  function pfdCiz(){ if(!elPfd||!window.PanelPFD) return; try{ window.PanelPFD.ciz(elPfd, window.PanelPFD.telemetriDurum(sonVeri||{})); }catch(e){} }
+  // Ana pencere gece/gündüz temasını yayınlar; burada uygulanır (PFD dahil).
+  function temaUygula(t){ try{ if(t==="acik") document.documentElement.setAttribute("data-tema","acik"); else document.documentElement.removeAttribute("data-tema"); }catch(e){} pfdCiz(); }
+
+  // ---- BroadcastChannel köprüsü ----
+  var kanal=null;
+  try{ if(typeof BroadcastChannel!=="undefined") kanal=new BroadcastChannel("goktungu-telemetri"); }catch(e){}
+  function anayaPing(){ if(kanal){ try{kanal.postMessage({t:"tw_ping",sysid:sysid});}catch(e){} } }
+  function dizilimIste(){ if(kanal){ try{kanal.postMessage({t:"tw_dizilim_iste"});}catch(e){} } }
+  function dizilimKaydet(){ if(kanal){ try{kanal.postMessage({t:"tw_dizilim_yaz",dizilim:dizilim});}catch(e){} } }
+  if(kanal){
+    kanal.onmessage=function(ev){
+      var m=ev.data||{};
+      if(m.t==="telemetri"){
+        if(String(m.sysid)!==String(sysid)) return;
+        sonVeri=m.d||null; sonZaman=Date.now();
+        if(sonVeri) elDronAd.textContent=sonVeri.isim||sonVeri.kullanici_isim||("Dron "+sysid);
+        pfdCiz(); degerleriTazele();
+      } else if(m.t==="dizilim"){
+        dizilimYuklendi=true;
+        dizilim=Array.isArray(m.dizilim)?m.dizilim.filter(function(x){return KATALOG[x];}):[];
+        ciz();
+      } else if(m.t==="tema"){
+        temaUygula(m.tema);
+      }
+    };
+  }
+
+  // ---- Çizim ----
+  function ciz(){
+    var bosMu=dizilim.length===0;
+    elIpucu.hidden=!bosMu; elIzgara.hidden=bosMu; elIzgara.innerHTML="";
+    if(bosMu) return;
+    dizilim.forEach(function(anahtar){
+      var k=KATALOG[anahtar]; if(!k) return;
+      var goz=document.createElement("div");
+      goz.className="goz"+(k.metin?" metinsel":""); goz.dataset.anahtar=anahtar; goz.setAttribute("draggable","true");
+      goz.innerHTML='<span class="tut" title="Sürükle">⠿</span><button class="sil" title="Kaldır" aria-label="Kaldır">×</button>'+
+        '<div class="deger"><span class="sayi">—</span>'+(k.birim?'<span class="birim">'+k.birim+'</span>':'')+'</div>'+
+        '<div class="etiket">'+k.ad+'</div>';
+      goz.querySelector(".sil").addEventListener("click",function(e){ e.stopPropagation(); kaldir(anahtar); });
+      suruklemeKur(goz); elIzgara.appendChild(goz);
+    });
+    degerleriTazele();
+  }
+  function degerleriTazele(){
+    if(elIzgara.hidden) return;
+    var bayat=(Date.now()-sonZaman)>3000, g=elIzgara.querySelectorAll(".goz");
+    for(var i=0;i<g.length;i++){ var k=KATALOG[g[i].dataset.anahtar]; if(!k) continue;
+      var v=sonVeri?(k.deger?k.deger(sonVeri):sonVeri[g[i].dataset.anahtar]):undefined, s=g[i].querySelector(".sayi");
+      if(s) s.textContent=k.fmt(v); g[i].classList.toggle("bayat",bayat||!sonVeri); }
+  }
+  function ekleAnahtar(a){ if(!KATALOG[a]||dizilim.indexOf(a)!==-1) return; dizilim.push(a); ciz(); dizilimKaydet(); }
+  function kaldir(a){ var i=dizilim.indexOf(a); if(i!==-1){ dizilim.splice(i,1); ciz(); dizilimKaydet(); } }
+
+  // ---- Seçim penceresi ----
+  function secimAc(){
+    elSecimListe.innerHTML="";
+    var kalan=SIRA.filter(function(a){return dizilim.indexOf(a)===-1;});
+    if(!kalan.length){ var b=document.createElement("div"); b.className="secim-bos"; b.textContent="Tüm göstergeler eklendi."; elSecimListe.appendChild(b); }
+    else kalan.forEach(function(a){ var k=KATALOG[a], o=document.createElement("button"); o.className="secim-oge";
+      o.innerHTML="<b>"+k.ad+"</b><small>"+(k.birim?("birim: "+k.birim):"metin")+"</small>";
+      o.addEventListener("click",function(){ ekleAnahtar(a); secimKapat(); }); elSecimListe.appendChild(o); });
+    elPerde.classList.add("acik");
+  }
+  function secimKapat(){ elPerde.classList.remove("acik"); }
+  document.getElementById("secimKapat").addEventListener("click",secimKapat);
+  document.getElementById("ekleBtn").addEventListener("click",secimAc);
+  elPerde.addEventListener("click",function(e){ if(e.target===elPerde) secimKapat(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") secimKapat(); });
+
+  // ---- Gösterge sürükle-sırala ----
+  var suruklenen=null;
+  function suruklemeKur(goz){
+    goz.addEventListener("dragstart",function(e){ suruklenen=goz; goz.classList.add("suru");
+      try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",goz.dataset.anahtar); }catch(_){} });
+    goz.addEventListener("dragend",function(){ if(suruklenen) suruklenen.classList.remove("suru");
+      var t=elIzgara.querySelectorAll(".goz.uzeri"); for(var i=0;i<t.length;i++) t[i].classList.remove("uzeri"); suruklenen=null; });
+    goz.addEventListener("dragover",function(e){ if(!suruklenen||suruklenen===goz) return; e.preventDefault(); goz.classList.add("uzeri"); });
+    goz.addEventListener("dragleave",function(){ goz.classList.remove("uzeri"); });
+    goz.addEventListener("drop",function(e){ e.preventDefault(); goz.classList.remove("uzeri");
+      if(!suruklenen||suruklenen===goz) return;
+      var a=suruklenen.dataset.anahtar,b=goz.dataset.anahtar,ia=dizilim.indexOf(a),ib=dizilim.indexOf(b);
+      if(ia===-1||ib===-1) return; dizilim.splice(ia,1); dizilim.splice(dizilim.indexOf(b)+(ia<ib?1:0),0,a); ciz(); dizilimKaydet(); });
+  }
+
+  // ---- Splitter (sol panel genişliği) ----
+  var frac=0.5;
+  try{ var sv=localStorage.getItem("goktungu_tel_sol"); if(sv){ var f=parseFloat(sv); if(isFinite(f)) frac=Math.min(0.78,Math.max(0.22,f)); } }catch(e){}
+  function uygulaSol(){ elSol.style.width=(frac*100).toFixed(2)+"%"; pfdCiz(); }
+  uygulaSol();
+  var suruk=false;
+  elTut.addEventListener("pointerdown",function(e){ suruk=true; elTut.classList.add("aktif");
+    try{ elTut.setPointerCapture(e.pointerId); }catch(_){} e.preventDefault(); });
+  window.addEventListener("pointermove",function(e){ if(!suruk) return;
+    var r=elGolge.getBoundingClientRect(); if(!r.width) return;
+    frac=Math.min(0.78,Math.max(0.22,(e.clientX-r.left)/r.width)); uygulaSol(); });
+  window.addEventListener("pointerup",function(){ if(!suruk) return; suruk=false; elTut.classList.remove("aktif");
+    try{ localStorage.setItem("goktungu_tel_sol",String(frac)); }catch(e){} });
+
+  // ---- Tam ekran ----
+  var elTam=document.getElementById("tamEkran");
+  var IK_AC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>';
+  var IK_KAPAT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M16 3v3a2 2 0 0 0 2 2h3M8 21v-3a2 2 0 0 0-2-2H3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>';
+  function tamEkranMi(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+  function tamEkranTazele(){ var t=tamEkranMi(); elTam.innerHTML=t?IK_KAPAT:IK_AC; elTam.title=t?"Tam ekrandan çık":"Tam ekran"; }
+  elTam.addEventListener("click",function(){ try{ if(!tamEkranMi()){ var el=document.documentElement;
+    (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+    else{ (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); } }catch(e){} });
+  document.addEventListener("fullscreenchange",tamEkranTazele);
+  document.addEventListener("webkitfullscreenchange",tamEkranTazele);
+  tamEkranTazele();
+
+  // ---- Durum + döngüler ----
+  function durumTazele(){ var canli=sonVeri&&(Date.now()-sonZaman)<3000;
+    elDurum.className="durum "+(canli?"canli":"kopuk");
+    elDurumYazi.textContent=canli?"Canlı":(sonZaman?"Bağlantı yok":"Bekleniyor"); degerleriTazele(); }
+  window.addEventListener("resize", pfdCiz);
+  anayaPing(); dizilimIste(); pfdCiz(); ciz();
+  setInterval(anayaPing,2500);
+  setInterval(durumTazele,1000);
+  setInterval(pfdCiz,500);
+  setTimeout(function(){ if(!dizilimYuklendi) ciz(); }, 4000);
+})();
+</script>
+</body>
+</html>

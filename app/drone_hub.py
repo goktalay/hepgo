@@ -35,6 +35,8 @@ from . import auth, cameras, config, db
 ws_router = APIRouter()
 
 PROTO = 1
+CAPS = ['console', 'arm_check']   # tarayıcıya bildirilen sunucu yetenekleri (harekât arayüzü HEPGO_OZ bayrakları); set_home/param köprü desteğiyle gelir
+CONSOLE_MAX = 200         # Haberleşme konsolu: dron (sysid) başına saklanan satır
 PAIR_TTL = 600            # eşleştirme kodu ömrü (sn)
 AUTH_TIMEOUT = 15         # ilk mesaj için bekleme
 STATUS_HZ = 10            # tarayıcıya en çok durum paketi/sn (sysid başına)
@@ -42,7 +44,7 @@ VIEWER_QUEUE = 4          # izleyici kuyruğu (telemetride eski paket değersiz 
 LOG_MAX = 2 * 1024 ** 3   # köprüden gelen .bin üst sınırı
 RATE_WINDOW, RATE_MAX = 60, 10
 CMD_TIMEOUT = 10
-CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect'}
+CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check'}
 
 BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
 VIEWERS = {}        # ws → Viewer
@@ -91,12 +93,15 @@ def _dist_m(lat1, lon1, lat2, lon2):
 
 class DroneState:
     """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük). Alanlar GÖKTUNGU harekât paneliyle uyumlu (README eşlemesi)."""
-    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos')
+    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos', 'console', 'rc_at', 'texts')
 
     def __init__(self, sysid):
         self.timer = None   # hız sınırına takılan güncellemeyi sonradan yayınlayan zamanlayıcı
         self.armed_at = None   # ARM anı (uçuş süresi)
         self.last_pos = None   # kat edilen mesafe için son konum
+        self.console = []      # Haberleşme konsolu satırları (son CONSOLE_MAX): {ts, tag, text, sev, repeat}
+        self.rc_at = None      # son RC_CHANNELS zamanı (ARM CHECK: kumanda bağlı mı)
+        self.texts = []        # son STATUSTEXT'ler (ARM CHECK mesajlar sekmesi): {ts, text, severity}
         self.d = {'sysid': sysid, 'type': None, 'type_name': None, 'autopilot': None, 'armed': False, 'mode': None, 'mode_num': None,
                   'lat': None, 'lon': None, 'alt': None, 'alt_rel': None, 'hdg': None, 'vx': None, 'vy': None, 'vz': None,
                   'airspeed': None, 'groundspeed': None, 'throttle': None, 'climb': None, 'roll': None, 'pitch': None, 'yaw': None,
@@ -143,6 +148,9 @@ class DroneState:
             d['home_lat'] = m.latitude / 1e7; d['home_lon'] = m.longitude / 1e7; d['home_alt'] = m.altitude / 1000
         elif t == 'EKF_STATUS_REPORT':
             d['ekf_flags'] = m.flags
+        elif t in ('RC_CHANNELS', 'RC_CHANNELS_RAW'):
+            self.rc_at = time.time()
+            return False
         elif t == 'VFR_HUD':
             d['airspeed'] = m.airspeed; d['groundspeed'] = m.groundspeed; d['throttle'] = m.throttle; d['climb'] = m.climb
             if d['hdg'] is None:
@@ -475,7 +483,13 @@ def _feed_mavlink(bridge, data):
             st.d['last_text'] = text
             if text.startswith(('PreArm', 'Arm:')):   # ARM CHECK rozetleri: son 8 ön-kol uyarısı
                 st.d['prearm'] = (st.d['prearm'] + [text])[-8:]
-            _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': text, 'severity': m.severity}, bridge.id)
+            last = st.texts[-1] if st.texts else None   # ARM CHECK mesajlar sekmesi biçimi (arm_check.js acMesajCiz): ts, metin, sev, tekrar
+            if last and last['metin'] == text and last['sev'] == m.severity:
+                last['tekrar'] += 1; last['ts'] = time.time()
+            else:
+                st.texts = (st.texts + [{'ts': time.time(), 'metin': text, 'sev': m.severity, 'tekrar': 1}])[-50:]
+            _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': text, 'severity': m.severity, 'ts': time.time()}, bridge.id)
+            console_line(bridge, sysid, 'STATUS', text, 'hata' if m.severity <= 3 else 'uyari' if m.severity == 4 else 'basari' if m.severity == 5 else 'bilgi')
             continue
         st = bridge.drones.setdefault(sysid, DroneState(sysid))
         if st.feed(m):
@@ -496,7 +510,66 @@ def _flush(bridge, st):
     if st.timer is not None:
         st.timer.cancel(); st.timer = None
     st.emitted = time.time(); st.dirty = False
+    st.d['ready'] = ready_summary(st)
     _broadcast({'t': 'status', 'bridge_id': bridge.id, 'sysid': st.d['sysid'], 'state': st.d}, bridge.id)
+
+
+# ---------------- Haberleşme konsolu ve ARM CHECK (sunucu-yalnız; köprüye gitmez) ----------------
+def console_line(bridge, sysid, tag, text, sev='bilgi'):
+    """Dron (sysid) başına halka tampon + izleyicilere yayın. Ardışık aynı satır birleştirilir (repeat ×N, fresh False)."""
+    st = bridge.drones.setdefault(int(sysid or 0), DroneState(int(sysid or 0)))
+    now = time.time()
+    last = st.console[-1] if st.console else None
+    if last and last['tag'] == tag and last['text'] == text:
+        last['repeat'] += 1; last['ts'] = now
+        line, fresh = last, False
+    else:
+        line = {'ts': now, 'tag': tag, 'text': text, 'sev': sev, 'repeat': 1}
+        st.console = (st.console + [line])[-CONSOLE_MAX:]
+        fresh = True
+    _broadcast({'t': 'console', 'bridge_id': bridge.id, 'sysid': st.d['sysid'], 'fresh': fresh, **line}, bridge.id)
+
+
+def ready_summary(st):
+    """Kart rozeti / PFD köşe kutusu için uçuşa hazırlık özeti: {hazir, uyari, sebep}."""
+    d = st.d
+    if d['armed']:
+        return {'hazir': None, 'uyari': 0, 'sebep': 'ARM · uçuşta'}
+    fails = [k for k, v in (d['sensors'] or {}).items() if v == 'fail']
+    sebep = d['prearm'][-1] if d['prearm'] else (f'Sensör: {fails[0]}' if fails else None)
+    if sebep is None and (d['fix'] is None or d['fix'] < 3):
+        sebep = 'GPS fix yok'
+    return {'hazir': sebep is None, 'uyari': len(fails), 'sebep': sebep}
+
+
+def arm_check_report(st):
+    """ARM CHECK penceresi (GÖKTUNGU arm_check.js) için rapor: PreArm mesajları, sensör sağlığı, konum, güç, kumanda."""
+    d = st.d; now = time.time()
+    maddeler = []
+    for t in d['prearm']:
+        maddeler.append({'grup': 'prearm', 'ad': t, 'durum': 'hata', 'aciklama': 'Otopilot ön-kol denetimi', 'oncelik': 1})
+    for k, v in (d['sensors'] or {}).items():
+        maddeler.append({'grup': 'sensor', 'ad': k, 'durum': 'tamam' if v == 'ok' else 'hata', 'aciklama': 'SYS_STATUS sensör sağlığı', 'oncelik': 2})
+    fix = d['fix']
+    maddeler.append({'grup': 'konum', 'ad': 'GPS fix', 'durum': 'bilinmiyor' if fix is None else 'tamam' if fix >= 3 else 'uyari' if fix == 2 else 'hata',
+                     'aciklama': f"fix {fix} · {d['sats'] if d['sats'] is not None else '?'} uydu · HDOP {d['hdop'] if d['hdop'] is not None else '?'}", 'oncelik': 1})
+    if d['hdop'] is not None and d['hdop'] > 2:
+        maddeler.append({'grup': 'konum', 'ad': 'HDOP', 'durum': 'uyari', 'aciklama': f"HDOP {d['hdop']} > 2", 'oncelik': 3})
+    maddeler.append({'grup': 'konum', 'ad': 'HOME', 'durum': 'tamam' if d['home_lat'] else 'uyari', 'aciklama': 'Ev konumu alındı' if d['home_lat'] else 'HOME_POSITION gelmedi', 'oncelik': 0})
+    pct = d['batt_pct']
+    maddeler.append({'grup': 'guc', 'ad': 'Batarya', 'durum': 'bilinmiyor' if d['volt'] is None else 'hata' if (pct is not None and pct < 20) else 'uyari' if (pct is not None and pct < 40) else 'tamam',
+                     'aciklama': f"{d['volt']} V" + (f" · %{pct}" if pct is not None else ''), 'oncelik': 1})
+    rc_ok = st.rc_at is not None and now - st.rc_at < 3
+    maddeler.append({'grup': 'rc', 'ad': 'Kumanda', 'durum': 'tamam' if rc_ok else 'bilinmiyor', 'aciklama': 'RC_CHANNELS alınıyor' if rc_ok else 'Kumanda verisi gelmiyor', 'oncelik': 2})
+    hb_ok = d['last_hb'] is not None and now - d['last_hb'] < 5
+    maddeler.append({'grup': 'sensor', 'ad': 'Kalp atışı', 'durum': 'tamam' if hb_ok else 'hata', 'aciklama': 'Telemetri canlı' if hb_ok else 'Kalp atışı yok', 'oncelik': 0})
+    for x in maddeler:   # GÖKTUNGU arm_check.js acDenetimCiz 'deger' alanını gösterir
+        x['deger'] = x['aciklama']
+    kritik = sum(1 for x in maddeler if x['durum'] == 'hata'); uyari = sum(1 for x in maddeler if x['durum'] == 'uyari')
+    sebep = next((x['ad'] for x in maddeler if x['durum'] == 'hata'), None) or next((x['ad'] for x in maddeler if x['durum'] == 'uyari'), None)
+    return {'bulundu': True, 'sysid': d['sysid'], 'armed': d['armed'], 'mod': d['mode'],
+            'ozet': {'hazir': kritik == 0, 'uyari': uyari, 'kritik': kritik, 'sebep': sebep},
+            'maddeler': maddeler, 'parametreler': [], 'mesajlar': list(st.texts), 'ts': now}
 
 
 # ---------------- Uçuş sonrası .bin aktarımı ----------------
@@ -555,6 +628,8 @@ async def _log_end(bridge):
     lid = await _db(store)
     await _safe_send(bridge.ws, {'t': 'log_ack', 'flight_log_id': lid})
     _broadcast({'t': 'log', 'bridge_id': bridge.id, 'flight_log_id': lid, 'name': lg['name']}, bridge.id)
+    for sysid in list(bridge.drones) or [0]:
+        console_line(bridge, sysid, 'LOG', f"Uçuş logu alındı: {lg['name']} (#{lid})", 'basari')
 
 
 # ---------------- Tarayıcı: /ws/drone/live ----------------
@@ -599,11 +674,16 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
     """Tarayıcıdan (ya da REST'ten) köprüye komut: yetki + audit + req/res (CMD_TIMEOUT)."""
     if name not in CMD_NAMES:
         raise RuntimeError('Bilinmeyen komut')
-    if not can_command(user):
-        raise RuntimeError('Komut için Canlı Uçuş yazma yetkisi ve Pilot rolü gerekir')
     b = BRIDGES.get(int(bridge_id))
     if b is None:
         raise RuntimeError('Köprü bağlı değil')
+    if name == 'arm_check':   # sunucu-yalnız rapor (okuma; komut yetkisi gerekmez, köprüye gitmez)
+        st = b.drones.get(int(sysid))
+        if st is None:
+            raise RuntimeError('Bu dronun telemetrisi henüz gelmedi')
+        return {'ok': True, 'result': arm_check_report(st)}
+    if not can_command(user):
+        raise RuntimeError('Komut için Canlı Uçuş yazma yetkisi ve Pilot rolü gerekir')
 
     def audit():
         with db.connect() as conn:
@@ -616,11 +696,16 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
     rid = rid or secrets.token_hex(8)
     fut = asyncio.get_running_loop().create_future()
     _pending[rid] = (fut, viewer_ws, b.id)
+    ptxt = json.dumps(params or {}, ensure_ascii=False)[:160]
+    console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
     try:
         await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
         res = await asyncio.wait_for(fut, CMD_TIMEOUT)
-        return {'ok': bool(res.get('ok')), 'result': res.get('result'), 'error': res.get('error')}
+        ok = bool(res.get('ok'))
+        console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
+        return {'ok': ok, 'result': res.get('result'), 'error': res.get('error')}
     except asyncio.TimeoutError:
+        console_line(b, sysid, 'KOMUT', f'{name}: köprü yanıt vermedi (zaman aşımı)', 'hata')
         raise RuntimeError('Köprü komuta yanıt vermedi (zaman aşımı)')
     finally:
         _pending.pop(rid, None)
@@ -637,7 +722,9 @@ async def ws_live(ws: WebSocket):
     v = Viewer(ws, user)
     VIEWERS[ws] = v
     sender = asyncio.create_task(_viewer_sender(v))
-    v.put(json.dumps({'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}, **snapshot()}, ensure_ascii=False))
+    hello = lambda: json.dumps({'t': 'hello', 'v': PROTO, 'caps': CAPS, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)},   # noqa: E731
+                                **snapshot()}, ensure_ascii=False)
+    v.put(hello())
     try:
         while True:
             raw = await ws.receive_text()
@@ -650,7 +737,20 @@ async def ws_live(ws: WebSocket):
                 v.put(json.dumps({'t': 'pong'}))
             elif t == 'watch':
                 v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
-                v.put(json.dumps({'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}, **snapshot()}, ensure_ascii=False))
+                v.put(hello())
+            elif t in ('console_hist', 'console_clear'):   # Haberleşme konsolu geçmişi / temizleme (dron başına)
+                b = BRIDGES.get(int(msg.get('bridge_id') or 0)); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
+                if t == 'console_clear' and st is not None:
+                    if not can_command(user):   # paylaşılan tamponu yalnız komut yetkisi olanlar temizler (izleyici yalnız kendi görünümünü)
+                        v.put(json.dumps({'t': 'res', 'rid': msg.get('rid'), 'ok': False, 'error': 'Konsolu temizlemek için komut yetkisi gerekir'}, ensure_ascii=False))
+                        continue
+                    st.console = []
+                    def audit_clear():
+                        with db.connect() as conn:
+                            db.audit(conn, user['id'], 'Dron konsolunu temizledi', 'drone_bridge', b.id, f"sysid {st.d['sysid']}")
+                            conn.commit()
+                    await _db(audit_clear)
+                v.put(json.dumps({'t': 'console_hist', 'bridge_id': msg.get('bridge_id'), 'sysid': msg.get('sysid'), 'lines': list(st.console) if st else []}, ensure_ascii=False))
             elif t == 'cmd':
                 rid = str(msg.get('rid') or secrets.token_hex(8))
                 try:

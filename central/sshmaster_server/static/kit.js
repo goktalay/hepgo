@@ -289,7 +289,7 @@
       const a = links[idx], cap = a.parentElement.querySelector('figcaption');
       box.querySelector('img').src = a.href;
       box.querySelector('img').alt = a.querySelector('img')?.alt || '';
-      box.querySelector('p').textContent = cap ? [...cap.children].map(c => c.textContent).join(' — ') : '';
+      box.querySelector('p').textContent = cap ? [...cap.children].map(c => c.textContent).join(' — ') : (a.querySelector('img')?.alt || '');
     };
     const close = () => { box?.remove(); box = null; document.removeEventListener('keydown', key); };
     const key = e => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowRight') show(idx + (root.dir === 'rtl' ? -1 : 1)); else if (e.key === 'ArrowLeft') show(idx + (root.dir === 'rtl' ? 1 : -1)); };

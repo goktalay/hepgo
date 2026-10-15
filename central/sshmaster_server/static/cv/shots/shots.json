@@ -5,7 +5,8 @@
   "title": "Ana ekran",
   "caption": "Projeler kart olarak: tür, kaynak → hedef uzantı ve dönüştürme durumu",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "02-ana-ekran-gunduz",
@@ -13,7 +14,8 @@
   "title": "Ana ekran (gündüz)",
   "caption": "Gece, gündüz ya da sistem teması; projeler klasörlere ayrılabilir",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "03-yeni-proje-gece",
@@ -21,7 +23,8 @@
   "title": "Yeni proje",
   "caption": "Tür, kaynak ve hedef uzantı, dosya ya da klasör, aynı anda kaç dosya",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "04-donusturme-ayarlari-gunduz",
@@ -29,7 +32,8 @@
   "title": "Dönüştürme ayarları",
   "caption": "Kalite, çözünürlük, kare hızı, H.264/H.265 ve ses bit hızı",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "05-klasor-projesi-gece",
@@ -37,7 +41,8 @@
   "title": "Klasör projesi",
   "caption": "Klasör ağacı, seçilen dosyalar ve her satırda ayrı ilerleme sütunu",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "06-klasor-projesi-gunduz",
@@ -45,7 +50,8 @@
   "title": "Klasör projesi (gündüz)",
   "caption": "Aynı anda iki dosya dönüştürülüyor; durum çubuğunda toplam ilerleme",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "07-yan-yana-onizleme-gece",
@@ -53,7 +59,8 @@
   "title": "Yan yana önizleme",
   "caption": "MKV orijinal ve MP4 sonuç birlikte oynatılır; çözünürlük ve boyut farkı",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "08-resim-onizleme-gunduz",
@@ -61,7 +68,8 @@
   "title": "Resim önizleme",
   "caption": "PNG → WEBP: solda orijinal, sağda dönüştürülmüş; boyut kazancı anında",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "09-konusmadan-metne-gece",
@@ -69,7 +77,8 @@
   "title": "Konuşmadan metne",
   "caption": "Cümlenin geçtiği saniye, dil ve metin; satıra tıklayınca o ana gider",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "10-konusmadan-metne-gunduz",
@@ -77,7 +86,8 @@
   "title": "Konuşmadan metne (gündüz)",
   "caption": "Çevrimdışı whisper.cpp; SRT, VTT, TXT, CSV ve JSON olarak dışa aktarım",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "11-tek-dosya-gece",
@@ -85,7 +95,8 @@
   "title": "Tek dosya projesi",
   "caption": "WAV → MP3: büyük ilerleme çubuğu, dalga biçimi ve konuşma metni",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
  },
  {
   "stem": "12-ayarlar-depolama-gunduz",
@@ -93,6 +104,16 @@
   "title": "Ayarlar › Depolama",
   "caption": "Dönüştürülmüş dosyalar AppData'da; tek tıkla silme",
   "w": 1600,
-  "h": 1000
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "13-resimden-metin-gece",
+  "theme": "dark",
+  "title": "Resimden metin (OCR)",
+  "caption": "İsteğe bağlı OCR: satır, güven ve metin; satırın yeri resimde vurgulanır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
  }
 ]

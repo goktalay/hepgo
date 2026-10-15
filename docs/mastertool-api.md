@@ -20,19 +20,24 @@ Türetme diğer uygulamalarla aynı (`POST /api/mt/auth/prelogin` → kdf; `mast
 - `<app>` = `sm | fm | sq | np | cv`. Hatalar: `401 bad_credentials`, `403 unverified`, `403 suspended`, `403 app_disabled` (o uygulamanın
   lisansı kapalı — sso ile de açılmaz), `401 session_expired` (ortak oturum kapanmış / süresi dolmuş), `429 rate_limited`.
 - `sso_token` yalnız **`/api/mt/*`** uçlarında geçer (`/api/<app>/*` uçlarında `403 wrong_app`); uygulama, `/auth/sso` ile kendi token'ını alır.
+  `/auth/sso` yalnız uygulamalar (sm, fm, sq, np, cv) içindir; Master Tool `sso_token`'ı `/api/mt/*` uçlarında doğrudan Bearer olarak kullanır.
 - Ortak oturum 30 gün kullanılmazsa düşer; ona bağlı herhangi bir uygulamanın kullanılması süresini uzatır.
 - Şifre değişince, hesap askıya alınınca ya da Hesabım › Oturumlar'dan kapatılınca sunucu tüm aileyi düşürür → istemciler `401` alır.
 
 ## 2. Cihazda ortak oturumun paylaşılması (TÜM uygulamalar aynı şekilde uygular)
 **Ortak kimlik deposu:** Windows Kimlik Bilgisi Yöneticisi, kullanıcı kapsamında genel kimlik bilgisi (DPAPI korumalı).
-- Node: `@napi-rs/keyring` → `new Entry('Mastertool', 'sso')`, `setPassword(json)` / `getPassword()` / `deletePassword()`.
-  **Altı uygulama da aynı kitaplığı ve aynı iki değeri ('Mastertool', 'sso') kullanmalı** (kitaplık hedef adını bunlardan üretir).
-- İçerik (JSON, < 2 KB): `{"v":1, "email", "user":{"id","name"}, "sso_token", "master":"<base64 32 bayt>", "kdf":{alg,iter,salt}, "at":<ms>}`.
+- Node: **`@napi-rs/keyring` 2.x** (`"^2"`, Master Tool 2.1.1) → `new Entry('Mastertool', 'sso')`, `setPassword(json)` / `getPassword()` /
+  `deletePassword()`. Windows hedef adı `sso.Mastertool` olur. **Altı uygulama da aynı ana sürümü ve aynı iki değeri kullanmalı.**
+- İçerik (JSON): `{"v":1, "email", "user":{"id","name"}, "sso_token", "master":"<base64 32 bayt>", "kdf":{alg,iter,salt}, "at":<ms>}`.
+  **Boyut: en çok 1200 karakter** (Windows kimlik blob'u 2560 bayt, kitaplık UTF-16 yazar → 1280 karakter); gerekirse `user.name` kısaltılır.
   `master` paylaşılır ki şifresiz giren uygulama kendi şifreleme anahtarını türetebilsin (`encKey = HKDF(master, info=<uygulama>-enc-v1)`).
   Asla dosyaya, günlüğe ya da sunucuya yazılmaz.
 
 **Durum işareti (gizli bilgi yok):** `%APPDATA%\Mastertool\sso-state.json` = `{"gen": <artan sayı>, "state": "in"|"out", "at": <ms>}`.
-Uygulamalar dosyayı `fs.watch` ile izler (+ 5 sn'de bir yoklama; izleme kaçırabilir).
+Uygulamalar dosyayı `fs.watch` ile izler (+ 5 sn'de bir yoklama; izleme kaçırabilir). Dosya **geçici dosyaya yazılıp `rename` ile**
+yerine konur (yarım okuma olmasın). `gen` yarışabileceği için durum dosyası yalnız "bir şey değişti" işaretidir; **asıl bilgi ortak
+kimlikten okunur**: kimlik varsa ve içindeki `sso_token` uygulamanın bildiğinden farklıysa onunla `/auth/sso` yapılır; kimlik yoksa oturum
+kapatılır.
 
 **Akışlar**
 1. *Açılış:* uygulamanın kendi token'ı varsa normal devam. Yoksa ve ortak kimlik varsa → `POST /api/<app>/auth/sso` → token'ı kendi deposuna
@@ -59,7 +64,7 @@ uygulama zaten açıksa bu sayede penceresi görünür.
  "launcher": {"name":"Master Tool", "release": {…} | null}}
 ```
 Sıra: sm, fm, sq, np, cv. `license != "AKTIF"` olan uygulama gri ve "Hesabınızda kapalı" etiketiyle gösterilir (indirilmez).
-Simge adresleri sunucuya göredir (`https://mastertool.download/brand/fm.png`); çevrimdışı için yerelde önbelleğe alınır.
+Simge adresleri sunucuya göredir (`https://mastertool.download/brand/fm.svg`; PNG 128 px — büyük gösterimde SVG kullanın); çevrimdışı için yerelde önbelleğe alınır.
 
 `GET /api/mt/apps/<app>/download?kind=setup` → dosya akışı; başlıklar `Content-Length`, `X-Version`, `X-Sha256`.
 `<app>` = `sm|fm|sq|np|cv` ya da `mt` (Master Tool'un kendi güncellemesi). Hatalar: `403 app_disabled`, `404 no_release`, `401`.

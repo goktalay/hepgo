@@ -113,7 +113,7 @@
   <div class="wrap">
     <a class="brand" href="#"><svg aria-hidden="true" viewBox="0 0 32 32"><defs><linearGradient id="gc" gradientUnits="userSpaceOnUse" x1="4" y1="4" x2="28" y2="28"><stop offset="0" stop-color="#5eead4"/><stop offset=".45" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="7" fill="#0b0f17"/><path d="M24.5 13.5A9 9 0 0 0 8.2 10.4" fill="none" stroke="url(#gc)" stroke-width="2.2" stroke-linecap="round"/><path d="M7.5 6.5v4.3h4.3" fill="none" stroke="url(#gc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.5 18.5a9 9 0 0 0 16.3 3.1" fill="none" stroke="url(#gc)" stroke-width="2.2" stroke-linecap="round"/><path d="M24.5 25.5v-4.3h-4.3" fill="none" stroke="url(#gc)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.6 12.6v6.8l5.6-3.4z" fill="url(#gc)" stroke="url(#gc)" stroke-width="1.2" stroke-linejoin="round"/></svg>
 Convert Master</a>
-    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
     <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a><span data-mt-button></span>
   </div>
 </header>
@@ -130,7 +130,7 @@ Convert Master</a>
           <span class="note">Windows için · Hesabım sayfanızdan kişiye özel indirme</span>
         </div>
       </div>
-      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" src="/shots/05-klasor-projesi-gece.webp" width="1600" height="1000" alt="Klasör projesi" fetchpriority="high"><img class="hs-light" src="/shots/06-klasor-projesi-gunduz.webp" width="1600" height="1000" alt="Klasör projesi (gündüz)" loading="lazy"></div><!--/HERO-->
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/05-klasor-projesi-gece.webp" width="1600" height="1000" alt="Klasör projesi" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/06-klasor-projesi-gunduz.webp" width="1600" height="1000" alt="Klasör projesi (gündüz)" loading="lazy"></div><!--/HERO-->
     </div>
   </section>
 
@@ -142,21 +142,43 @@ Convert Master</a>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4-2.5z"/></svg></div>
           <h3>Video</h3><p>MP4, MKV, AVI, MOV, WMV, WebM, FLV, MPEG, TS ve daha fazlası; H.264, H.265, VP9 kodekleri, animasyonlu GIF ve videodan ses çıkarma (MP3, M4A, WAV, FLAC, OGG, Opus).</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-9 8"/></svg></div>
-          <h3>Resim</h3><p>JPG, PNG, WebP, AVIF, GIF, BMP, TIFF, ICO, SVG ve TGA; kalite, boyut sınırı ve meta veri seçenekleri, animasyonlu GIF ve WebP korunur.</p></div>
+          <h3>Resim</h3><p>JPG, PNG, WebP, AVIF, GIF, BMP, TIFF ve ICO arasında dönüştürme, SVG ve TGA okuma; kalite, boyut sınırı ve meta veri seçenekleri, animasyonlu GIF ve WebP korunur.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg></div>
           <h3>Ses</h3><p>MP3, WAV, FLAC, AAC, M4A, OGG, Opus, WMA, AIFF, AMR, AC3 ve daha fazlası; bit hızı, örnekleme hızı ve kanal ayarları.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
-          <h3>Dosya ya da klasör</h3><p>Tek bir dosya ya da alt klasörleriyle bir klasör; dosya seçerken yalnız projenin türündeki dosyalar listelenir, klasörde ağaçtan istediklerinizi işaretleyin.</p></div>
+          <h3>Dosya ya da klasör</h3><p>Tek bir dosya ya da alt klasörleriyle bir klasör; klasör ağacından istediğiniz dosyaları işaretleyin. Binlerce dosyalık klasörlerde de liste akıcı kalır.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 14v6m-3-3h6"/></svg></div>
-          <h3>Toplu dönüştürme</h3><p>Her dosyanın kendi ilerleme sütunu, durumu ve çıktı boyutu; aynı anda 1–32 dosya. Durdurun, yeniden dönüştürün, çıktıları bir klasöre aktarın.</p></div>
+          <h3>Toplu dönüştürme</h3><p>Her dosyanın kendi ilerleme sütunu ve durumu; aynı anda 1–32 dosya. Kaynağı değişen dosya yeniden dönüştürülür; çıktıları klasör yapısıyla başka bir klasöre kopyalayın.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="8" height="14" rx="2"/><rect x="13" y="5" width="8" height="14" rx="2"/></svg></div>
           <h3>Yan yana önizleme</h3><p>Üstte solda orijinal, sağda dönüştürülmüş dosya; video ve seste eşzamanlı oynatma, resimde boyut ve kazanç.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
-          <h3>Konuşmadan metne</h3><p>Bilgisayarınızda, internete gerek olmadan: dil otomatik algılanır, saniye, dil ve metin ayrı sütunlarda; satıra tıklayınca önizleme o saniyeye gider. SRT, VTT, TXT, CSV ve JSON olarak dışa aktarın.</p></div>
+          <h3>Konuşmadan metne</h3><p>İsteğe bağlı ve bilgisayarınızda: model bir kez indirildikten sonra internet gerekmez. Dil otomatik algılanır; saniye, dil ve metin ayrı sütunlarda, satıra tıklayınca önizleme o saniyeye gider. SRT, VTT, TXT, CSV ve JSON olarak dışa aktarın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></div>
+          <h3>Resimden metin (OCR) <span class="soon">1.1.0 ile</span></h3><p>İsteğe bağlı ve çevrimdışı: 21 dil, bir projede en çok 6 dil birlikte; satır, okuma güveni ve metin, satırın yeri resimde vurgulanır. TXT, CSV ve JSON olarak dışa aktarın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h3>Tamamen yerel</h3><p>Dönüştürme, konuşmadan metne ve OCR bu bilgisayarda yapılır; dosyalarınız, sesleriniz ve resimleriniz hiçbir sunucuya gönderilmez. Kaynak dosyalarınıza dokunulmaz.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></div>
           <h3>Düzenli depolama</h3><p>Tüm çıktılar AppData altındaki çalışma klasöründe; proje bazında ya da toplu olarak dönüştürülmüş dosyaları silin, önbelleği ve konuşma modellerini yönetin.</p></div>
         <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4z"/></svg></div>
           <h3>Tek Mastertool hesabı</h3><p>Diğer Mastertool uygulamalarındaki hesabınızla girin; proje tanımlarınız cihazlarınız arasında uçtan uca şifreli eşitlenir, dosyalarınız bilgisayarınızda kalır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+          <h3>8 dil, gece ve gündüz</h3><p>Türkçe, İngilizce, Fransızca, Almanca, İspanyolca, Arapça (sağdan sola), Çince ve Rusça arayüz; gece, gündüz ya da sistem teması, sistem tepsisi ve oturumla başlatma.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay">
+    <div class="wrap">
+      <h2>Yakından bakın</h2>
+      <p class="sub">Convert Master'ın başlıca yetenekleri, gerçek ekranları ve teknik ayrıntılarıyla.</p>
+      <div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/05-klasor-projesi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/05-klasor-projesi-gece-800.webp" srcset="/shots/05-klasor-projesi-gece-800.webp 800w, /shots/05-klasor-projesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasör projesi: ağaç, seçili dosyalar ve satır başına ilerleme"></a></figure><div><h3>Klasör projeleri ve toplu dönüştürme</h3><p>Bir klasörü alt klasörleriyle seçin, ağaçtan dönüştürülecek dosyaları işaretleyin; her satır kendi ilerlemesini ve durumunu gösterir.</p><ul><li>Aynı anda <b>1–32</b> dosya (yeni projelerde 2), durum çubuğundan anında değiştirilir</li><li>Ağaç ve liste yalnız görünen satırları çizer; binlerce dosyalık klasörler akıcı kalır</li><li>Kaynak dosya değişirse (boyut ya da tarih) sonuç geçersiz sayılır ve yeniden dönüştürülür</li><li><code>a.mkv</code> ve <code>a.avi</code> çakışmaz: <code>a_mkv.mp4</code>, <code>a_avi.mp4</code></li><li>Gizli dosyalar (<code>.</code> ya da <code>$</code> ile başlayan) taranmaz</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/04-donusturme-ayarlari-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/04-donusturme-ayarlari-gunduz-800.webp" srcset="/shots/04-donusturme-ayarlari-gunduz-800.webp 800w, /shots/04-donusturme-ayarlari-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Video dönüştürme ayarları: kalite, çözünürlük, kare hızı, kodek"></a></figure><div><h3>Kodek ve kalite ayarları</h3><p>Video için 16 giriş ve 18 çıkış biçimi; kalite, çözünürlük, kare hızı ve ses ayarları proje başına seçilir.</p><ul><li>H.264 (libx264) ya da H.265/HEVC (libx265), WEBM için VP9 + Opus</li><li>Kalite Yüksek / Orta / Düşük: H.264 CRF 18 / 23 / 28, H.265 CRF 22 / 28 / 32</li><li>Çözünürlük 2160p–360p (yalnız küçültür, dikey videolar dahil), kare hızı 15–60 fps</li><li>Ses 64–320 kbps ya da <b>sesi kaldır</b>; MP4/MOV/M4V çıktılarında <code>+faststart</code></li><li>Palet üretimli animasyonlu GIF ve videodan yalnız ses: MP3, M4A, WAV, FLAC, OGG, Opus</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/07-yan-yana-onizleme-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/07-yan-yana-onizleme-gece-800.webp" srcset="/shots/07-yan-yana-onizleme-gece-800.webp 800w, /shots/07-yan-yana-onizleme-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yan yana önizleme: MKV orijinal ve MP4 sonuç birlikte oynatılıyor"></a></figure><div><h3>Yan yana önizleme</h3><p>Solda orijinal, sağda dönüştürülmüş dosya; video ve ses birlikte oynatılır, çözünürlük ve boyut farkı bir bakışta görünür.</p><ul><li>Önizlemede videoyu Chromium 130 oynatır</li><li>Doğrudan oynatılamayan biçimler için kare ve tek tıkla 480p H.264 önizleme kopyası</li><li>Ses için dalga biçimi, gerekirse MP3 önizleme kopyası</li><li>Önizleme önbelleği: 14 gün kullanılmayan dosyalar silinir</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/08-resim-onizleme-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/08-resim-onizleme-gunduz-800.webp" srcset="/shots/08-resim-onizleme-gunduz-800.webp 800w, /shots/08-resim-onizleme-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resim önizleme: PNG orijinal ve WEBP sonuç yan yana"></a></figure><div><h3>Resim dönüştürme</h3><p>sharp / libvips ile 12 giriş ve 8 çıkış biçimi; kalite, boyut sınırı ve meta veri seçenekleri.</p><ul><li>Kalite 1–100: JPG (mozjpeg), WEBP, AVIF, TIFF; PNG kayıpsız, 80 altında renk paleti</li><li>En fazla genişlik / yükseklik: en-boy oranı korunur, büyütme yapılmaz</li><li>Animasyonlu GIF ↔ WEBP animasyonu korunur; EXIF yönü otomatik uygulanır</li><li>SVG 300 dpi ile işlenir; ICO en çok 256×256</li><li>BMP, ICO, TGA gibi biçimlerde FFmpeg devreye girer</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/09-konusmadan-metne-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/09-konusmadan-metne-gece-800.webp" srcset="/shots/09-konusmadan-metne-gece-800.webp 800w, /shots/09-konusmadan-metne-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konuşmadan metne paneli: saniye, dil ve metin sütunları"></a></figure><div><h3>Çevrimdışı konuşmadan metne</h3><p>İsteğe bağlı: whisper.cpp ile video ve ses dosyalarındaki konuşma bu bilgisayarda metne çevrilir; ses hiçbir sunucuya gönderilmez.</p><ul><li>whisper.cpp 1.7.6, CPU; iş parçacığı sayısı çekirdek − 1 (en çok 8)</li><li>5 model: tiny (75 MB) – large-v3-turbo-q5_0 (547 MB); önerilen base (142 MB)</li><li>33 dil + otomatik algılama; çok dilli kayıtlarda her 30 saniyede dil yeniden algılanır</li><li>Satıra tıklayınca önizleme o saniyeye sarılır; oynatırken geçerli cümle vurgulanır</li><li>Dışa aktarım: SRT, WebVTT, TXT, CSV (UTF-8 BOM, <code>;</code> ayraçlı), JSON</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/12-ayarlar-depolama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/12-ayarlar-depolama-gunduz-800.webp" srcset="/shots/12-ayarlar-depolama-gunduz-800.webp 800w, /shots/12-ayarlar-depolama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Depolama: dönüştürülmüş dosyalar, önbellek ve modeller"></a></figure><div><h3>Düzenli depolama</h3><p>Kaynak dosyalarınıza hiç dokunulmaz; tüm çıktılar <code>%APPDATA%\Convert Master</code> altında proje proje tutulur.</p><ul><li>Dönüştürülmüş dosyalar <code>converted\&lt;proje&gt;</code> altında, kaynak klasör yapısıyla</li><li>Proje kartından ya da proje penceresinden <b>Çevrilmiş dosyaları sil</b></li><li>Ayarlar › Depolama: tüm projeler için toplu silme, önizleme önbelleğini temizleme, boyutlar</li><li>Konuşma modelleri önceden indirilip silinebilir</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/13-resimden-metin-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/13-resimden-metin-gece-800.webp" srcset="/shots/13-resimden-metin-gece-800.webp 800w, /shots/13-resimden-metin-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resimden metin (OCR) paneli: satır, güven ve metin"></a></figure><div><h3>Resimden metin (OCR) <span class="soon">1.1.0 ile</span></h3><p>İsteğe bağlı: resim projelerinde resimdeki metin bu bilgisayarda okunur; resimler hiçbir sunucuya gönderilmez.</p><ul><li>tesseract.js 7 (Tesseract LSTM, WebAssembly), çevrimdışı</li><li>21 dil; bir projede en çok 6 dil birlikte (varsayılan Türkçe + İngilizce)</li><li>Dil verisi ilk kullanımda bir kez iner (ör. Türkçe ~2,1 MB)</li><li>Satır no, okuma güveni (%) ve metin; satırın yeri orijinal ve dönüştürülmüş resimde vurgulanır</li><li>Dışa aktarım: TXT, CSV, JSON (satır koordinatlarıyla)</li></ul></div></div>
       </div>
     </div>
   </section>
@@ -167,22 +189,136 @@ Convert Master</a>
       <h2>Uygulamadan görüntüler</h2>
       <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
       <div class="shots" data-gallery>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/01-ana-ekran-gece.webp" data-lightbox><img src="/shots/01-ana-ekran-gece-800.webp" srcset="/shots/01-ana-ekran-gece-800.webp 800w, /shots/01-ana-ekran-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran"></a><figcaption><b>Ana ekran</b><span>Projeler kart olarak: tür, kaynak → hedef uzantı ve dönüştürme durumu</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/02-ana-ekran-gunduz.webp" data-lightbox><img src="/shots/02-ana-ekran-gunduz-800.webp" srcset="/shots/02-ana-ekran-gunduz-800.webp 800w, /shots/02-ana-ekran-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran (gündüz)"></a><figcaption><b>Ana ekran (gündüz)</b><span>Gece, gündüz ya da sistem teması; projeler klasörlere ayrılabilir</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/03-yeni-proje-gece.webp" data-lightbox><img src="/shots/03-yeni-proje-gece-800.webp" srcset="/shots/03-yeni-proje-gece-800.webp 800w, /shots/03-yeni-proje-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni proje"></a><figcaption><b>Yeni proje</b><span>Tür, kaynak ve hedef uzantı, dosya ya da klasör, aynı anda kaç dosya</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/04-donusturme-ayarlari-gunduz.webp" data-lightbox><img src="/shots/04-donusturme-ayarlari-gunduz-800.webp" srcset="/shots/04-donusturme-ayarlari-gunduz-800.webp 800w, /shots/04-donusturme-ayarlari-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dönüştürme ayarları"></a><figcaption><b>Dönüştürme ayarları</b><span>Kalite, çözünürlük, kare hızı, H.264/H.265 ve ses bit hızı</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/05-klasor-projesi-gece.webp" data-lightbox><img src="/shots/05-klasor-projesi-gece-800.webp" srcset="/shots/05-klasor-projesi-gece-800.webp 800w, /shots/05-klasor-projesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasör projesi"></a><figcaption><b>Klasör projesi</b><span>Klasör ağacı, seçilen dosyalar ve her satırda ayrı ilerleme sütunu</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/06-klasor-projesi-gunduz.webp" data-lightbox><img src="/shots/06-klasor-projesi-gunduz-800.webp" srcset="/shots/06-klasor-projesi-gunduz-800.webp 800w, /shots/06-klasor-projesi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasör projesi (gündüz)"></a><figcaption><b>Klasör projesi (gündüz)</b><span>Aynı anda iki dosya dönüştürülüyor; durum çubuğunda toplam ilerleme</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/07-yan-yana-onizleme-gece.webp" data-lightbox><img src="/shots/07-yan-yana-onizleme-gece-800.webp" srcset="/shots/07-yan-yana-onizleme-gece-800.webp 800w, /shots/07-yan-yana-onizleme-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yan yana önizleme"></a><figcaption><b>Yan yana önizleme</b><span>MKV orijinal ve MP4 sonuç birlikte oynatılır; çözünürlük ve boyut farkı</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/08-resim-onizleme-gunduz.webp" data-lightbox><img src="/shots/08-resim-onizleme-gunduz-800.webp" srcset="/shots/08-resim-onizleme-gunduz-800.webp 800w, /shots/08-resim-onizleme-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resim önizleme"></a><figcaption><b>Resim önizleme</b><span>PNG → WEBP: solda orijinal, sağda dönüştürülmüş; boyut kazancı anında</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/09-konusmadan-metne-gece.webp" data-lightbox><img src="/shots/09-konusmadan-metne-gece-800.webp" srcset="/shots/09-konusmadan-metne-gece-800.webp 800w, /shots/09-konusmadan-metne-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konuşmadan metne"></a><figcaption><b>Konuşmadan metne</b><span>Cümlenin geçtiği saniye, dil ve metin; satıra tıklayınca o ana gider</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/10-konusmadan-metne-gunduz.webp" data-lightbox><img src="/shots/10-konusmadan-metne-gunduz-800.webp" srcset="/shots/10-konusmadan-metne-gunduz-800.webp 800w, /shots/10-konusmadan-metne-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konuşmadan metne (gündüz)"></a><figcaption><b>Konuşmadan metne (gündüz)</b><span>Çevrimdışı whisper.cpp; SRT, VTT, TXT, CSV ve JSON olarak dışa aktarım</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="dark"><a href="/shots/11-tek-dosya-gece.webp" data-lightbox><img src="/shots/11-tek-dosya-gece-800.webp" srcset="/shots/11-tek-dosya-gece-800.webp 800w, /shots/11-tek-dosya-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tek dosya projesi"></a><figcaption><b>Tek dosya projesi</b><span>WAV → MP3: büyük ilerleme çubuğu, dalga biçimi ve konuşma metni</span></figcaption></figure>
-        <figure class="shot" data-theme-shot="light"><a href="/shots/12-ayarlar-depolama-gunduz.webp" data-lightbox><img src="/shots/12-ayarlar-depolama-gunduz-800.webp" srcset="/shots/12-ayarlar-depolama-gunduz-800.webp 800w, /shots/12-ayarlar-depolama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Depolama"></a><figcaption><b>Ayarlar › Depolama</b><span>Dönüştürülmüş dosyalar AppData&#x27;da; tek tıkla silme</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/01-ana-ekran-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/01-ana-ekran-gece-800.webp" srcset="/shots/01-ana-ekran-gece-800.webp 800w, /shots/01-ana-ekran-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran"></a><figcaption><b>Ana ekran</b><span>Projeler kart olarak: tür, kaynak → hedef uzantı ve dönüştürme durumu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/02-ana-ekran-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/02-ana-ekran-gunduz-800.webp" srcset="/shots/02-ana-ekran-gunduz-800.webp 800w, /shots/02-ana-ekran-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran (gündüz)"></a><figcaption><b>Ana ekran (gündüz)</b><span>Gece, gündüz ya da sistem teması; projeler klasörlere ayrılabilir</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/03-yeni-proje-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/03-yeni-proje-gece-800.webp" srcset="/shots/03-yeni-proje-gece-800.webp 800w, /shots/03-yeni-proje-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni proje"></a><figcaption><b>Yeni proje</b><span>Tür, kaynak ve hedef uzantı, dosya ya da klasör, aynı anda kaç dosya</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/04-donusturme-ayarlari-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/04-donusturme-ayarlari-gunduz-800.webp" srcset="/shots/04-donusturme-ayarlari-gunduz-800.webp 800w, /shots/04-donusturme-ayarlari-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dönüştürme ayarları"></a><figcaption><b>Dönüştürme ayarları</b><span>Kalite, çözünürlük, kare hızı, H.264/H.265 ve ses bit hızı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/05-klasor-projesi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/05-klasor-projesi-gece-800.webp" srcset="/shots/05-klasor-projesi-gece-800.webp 800w, /shots/05-klasor-projesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasör projesi"></a><figcaption><b>Klasör projesi</b><span>Klasör ağacı, seçilen dosyalar ve her satırda ayrı ilerleme sütunu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/06-klasor-projesi-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/06-klasor-projesi-gunduz-800.webp" srcset="/shots/06-klasor-projesi-gunduz-800.webp 800w, /shots/06-klasor-projesi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasör projesi (gündüz)"></a><figcaption><b>Klasör projesi (gündüz)</b><span>Aynı anda iki dosya dönüştürülüyor; durum çubuğunda toplam ilerleme</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/07-yan-yana-onizleme-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/07-yan-yana-onizleme-gece-800.webp" srcset="/shots/07-yan-yana-onizleme-gece-800.webp 800w, /shots/07-yan-yana-onizleme-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yan yana önizleme"></a><figcaption><b>Yan yana önizleme</b><span>MKV orijinal ve MP4 sonuç birlikte oynatılır; çözünürlük ve boyut farkı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/08-resim-onizleme-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/08-resim-onizleme-gunduz-800.webp" srcset="/shots/08-resim-onizleme-gunduz-800.webp 800w, /shots/08-resim-onizleme-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resim önizleme"></a><figcaption><b>Resim önizleme</b><span>PNG → WEBP: solda orijinal, sağda dönüştürülmüş; boyut kazancı anında</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/09-konusmadan-metne-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/09-konusmadan-metne-gece-800.webp" srcset="/shots/09-konusmadan-metne-gece-800.webp 800w, /shots/09-konusmadan-metne-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konuşmadan metne"></a><figcaption><b>Konuşmadan metne</b><span>Cümlenin geçtiği saniye, dil ve metin; satıra tıklayınca o ana gider</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/10-konusmadan-metne-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/10-konusmadan-metne-gunduz-800.webp" srcset="/shots/10-konusmadan-metne-gunduz-800.webp 800w, /shots/10-konusmadan-metne-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konuşmadan metne (gündüz)"></a><figcaption><b>Konuşmadan metne (gündüz)</b><span>Çevrimdışı whisper.cpp; SRT, VTT, TXT, CSV ve JSON olarak dışa aktarım</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/11-tek-dosya-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/11-tek-dosya-gece-800.webp" srcset="/shots/11-tek-dosya-gece-800.webp 800w, /shots/11-tek-dosya-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tek dosya projesi"></a><figcaption><b>Tek dosya projesi</b><span>WAV → MP3: büyük ilerleme çubuğu, dalga biçimi ve konuşma metni</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/12-ayarlar-depolama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/12-ayarlar-depolama-gunduz-800.webp" srcset="/shots/12-ayarlar-depolama-gunduz-800.webp 800w, /shots/12-ayarlar-depolama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Depolama"></a><figcaption><b>Ayarlar › Depolama</b><span>Dönüştürülmüş dosyalar AppData&#x27;da; tek tıkla silme</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/13-resimden-metin-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/13-resimden-metin-gece-800.webp" srcset="/shots/13-resimden-metin-gece-800.webp 800w, /shots/13-resimden-metin-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resimden metin (OCR)"></a><figcaption><b>Resimden metin (OCR)</b><span>İsteğe bağlı OCR: satır, güven ve metin; satırın yeri resimde vurgulanır</span></figcaption></figure>
       </div>
     </div>
   </section>
 <!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 ve sonrası için bileşenler, biçimler, güvenlik ve sınırlar.</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3>
+          <div class="t-wrap"><table>
+            <tr><th>İşletim sistemi</th><td>Windows 10 veya 11, 64 bit (x64)</td></tr>
+            <tr><th>Kurulum</th><td>Kurulum programı ya da kurulumsuz (portable) sürüm, ~112 MB</td></tr>
+            <tr><th>Ek disk</th><td>Konuşma modelleri 75–547 MB, OCR dil verisi dil başına birkaç MB; yalnız kullanılırsa indirilir</td></tr>
+            <tr><th>Hesap</th><td>Mastertool hesabı; ilk girişten sonra "Beni hatırla" ile çevrimdışı açılır</td></tr>
+            <tr><th>İşlemci</th><td>Dönüştürme ve konuşma tanıma CPU ile yapılır</td></tr>
+          </table></div></div>
+        <div class="spec"><h3>Arayüz dilleri ve görünüm</h3>
+          <div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div>
+          <ul style="margin-top:12px">
+            <li>İlk açılışta Windows dili listedeyse o, değilse İngilizce seçilir.</li>
+            <li>Arapçada pencere sağdan sola; dosya yolları, uzantılar ve metin tabloları soldan sağa kalır.</li>
+            <li>Tema: Gece, Gündüz ya da Sistem tercihi (varsayılan Sistem).</li>
+            <li>Windows oturumuyla başlatma, küçültünce ya da kapatınca sistem tepsisi (isteğe bağlı).</li>
+          </ul></div>
+        <div class="spec wide"><h3>Teknoloji</h3>
+          <div class="t-wrap"><table>
+            <tr><th>Bileşen</th><th>Sürüm</th><th>Görevi</th></tr>
+            <tr><th>Electron</th><td>33.4.11 (Chromium 130.0.6723.191, Node.js 20.18.3)</td><td>Masaüstü uygulama, önizleme oynatıcısı</td></tr>
+            <tr><th>FFmpeg (ffmpeg-static)</th><td>6.1.1 (GPL derlemesi)</td><td>Video ve ses dönüştürme, önizleme kareleri, dalga biçimi</td></tr>
+            <tr><th>sharp / libvips</th><td>0.33.5 / 8.15.3</td><td>Resim dönüştürme</td></tr>
+            <tr><th>whisper.cpp</th><td>1.7.6 (<code>whisper-cli</code>, CPU)</td><td>Çevrimdışı konuşmadan metne</td></tr>
+            <tr><th>Whisper modelleri (ggml)</th><td>tiny · base · small · medium-q5_0 · large-v3-turbo-q5_0</td><td>Konuşma tanıma modeli (seçilen indirilir)</td></tr>
+            <tr><th>tesseract.js <span class="soon">1.1.0 ile</span></th><td>7.0.0 (Tesseract LSTM, WebAssembly)</td><td>Çevrimdışı resimden metin (OCR)</td></tr>
+          </table></div></div>
+        <div class="spec wide"><h3>Biçimler</h3>
+          <div class="t-wrap"><table>
+            <tr><th>Video · giriş (16)</th><td>mp4, mkv, avi, mov, wmv, webm, flv, m4v, mpg, mpeg, ts, mts, m2ts, 3gp, ogv, vob</td></tr>
+            <tr><th>Video · çıkış (18)</th><td>mp4, mkv, webm, avi, mov, wmv, flv, m4v, mpg, 3gp, ogv, gif · yalnız ses: mp3, m4a, wav, flac, ogg, opus</td></tr>
+            <tr><th>Resim · giriş (12)</th><td>jpg, jpeg, png, webp, avif, gif, bmp, tif, tiff, ico, svg, tga</td></tr>
+            <tr><th>Resim · çıkış (8)</th><td>jpg, png, webp, avif, gif, bmp, tiff, ico</td></tr>
+            <tr><th>Ses · giriş (16)</th><td>mp3, wav, flac, aac, m4a, ogg, oga, opus, wma, aiff, aif, amr, ac3, mka, ape, wv</td></tr>
+            <tr><th>Ses · çıkış (10)</th><td>mp3 (LAME), wav (PCM 16 bit), flac, aac (ADTS), m4a (AAC), ogg (Vorbis), opus, wma, aiff (PCM 16 bit), ac3</td></tr>
+            <tr><th>Ses ayarları</th><td>64–320 kbps; örnekleme hızı 48 / 44,1 / 32 / 22,05 / 16 kHz; stereo ya da mono</td></tr>
+          </table></div></div>
+        <div class="spec"><h3>Video kodekleri</h3>
+          <div class="t-wrap"><table>
+            <tr><th>MP4, MKV, MOV, M4V</th><td>H.264 ya da H.265/HEVC + AAC</td></tr>
+            <tr><th>WEBM</th><td>VP9 + Opus</td></tr>
+            <tr><th>AVI</th><td>Xvid (MPEG-4 Part 2) + MP3</td></tr>
+            <tr><th>WMV</th><td>WMV2 + WMA</td></tr>
+            <tr><th>MPG</th><td>MPEG-2 + MP2</td></tr>
+            <tr><th>OGV</th><td>Theora + Vorbis</td></tr>
+            <tr><th>FLV · 3GP</th><td>H.264 + AAC (3GP: baseline profil)</td></tr>
+            <tr><th>GIF</th><td>Palet üretimli animasyon, 10–15 kare/sn</td></tr>
+          </table></div></div>
+        <div class="spec"><h3>Konuşmadan metne modelleri</h3>
+          <div class="t-wrap"><table>
+            <tr><th>Çok küçük (tiny)</th><td>75 MB, en hızlı</td></tr>
+            <tr><th>Temel (base)</th><td>142 MB, önerilen</td></tr>
+            <tr><th>Küçük (small)</th><td>466 MB</td></tr>
+            <tr><th>Orta (medium-q5_0)</th><td>514 MB</td></tr>
+            <tr><th>Large v3 Turbo (q5_0)</th><td>547 MB, en doğru</td></tr>
+            <tr><th>Diller</th><td>33 dil + otomatik algılama</td></tr>
+            <tr><th>Dışa aktarım</th><td>SRT, WebVTT, TXT, CSV, JSON</td></tr>
+          </table></div></div>
+        <div class="spec"><h3>Güvenlik ve gizlilik</h3>
+          <ul>
+            <li>Dönüştürme, konuşmadan metne ve OCR tamamen bu bilgisayarda yapılır; dosyalar hiçbir sunucuya gönderilmez.</li>
+            <li>Senkron uçtan uca şifreli: anahtar şifrenizden cihazda türetilir (PBKDF2-SHA256, 310 000 tur + HKDF-SHA256), içerik AES-256-GCM ile şifrelenir.</li>
+            <li>Senkrona yalnız proje tanımları, proje klasörleri ve genel ayarlar girer; dosyalar, yollar, çıktılar ve metinler girmez.</li>
+            <li>Senkron kapatılabilir, sunucudaki kopya silinebilir.</li>
+            <li>Oturum bilgisi Windows DPAPI ile şifrelenir; pencereler bağlam yalıtımıyla (contextIsolation) çalışır.</li>
+            <li>Ağ yalnız giriş, senkron, sürüm denetimi ve model / dil verisi indirmek için kullanılır; indirmeler Windows proxy ayarlarına uyar.</li>
+          </ul></div>
+        <div class="spec"><h3>Performans ve sınırlar</h3>
+          <ul>
+            <li>Aynı anda dönüştürülecek dosya: proje başına 1–32 (varsayılan 2).</li>
+            <li>Aynı anda metne çevrilecek dosya (konuşma ya da OCR): 1–4 (varsayılan 1).</li>
+            <li>Konuşma tanımada iş parçacığı sayısı: çekirdek − 1, en çok 8.</li>
+            <li>Durdur, süren işlemleri hemen sonlandırır ve yarım çıktıyı siler.</li>
+            <li>Önizleme kopyası 480p H.264; resim önizlemesi en çok 2400 px.</li>
+            <li>Önizleme önbelleğinde 14 gün kullanılmayan dosyalar silinir.</li>
+          </ul></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3>
+          <div class="t-wrap"><table>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>N</kbd></th><td>Ana pencere: yeni proje</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>Ana pencere: projelerde ara</td></tr>
+            <tr><th><kbd>Enter</kbd></th><td>Ana pencere: seçili projeyi aç · Proje penceresi: dosyayı aç (dönüştürüldüyse çıktıyı) · İletişim pencereleri: onayla</td></tr>
+            <tr><th><kbd>F2</kbd></th><td>Ana pencere: proje ayarları</td></tr>
+            <tr><th><kbd>Delete</kbd></th><td>Ana pencere: projeyi sil</td></tr>
+            <tr><th><kbd>Backspace</kbd></th><td>Ana pencere: üst klasöre dön</td></tr>
+            <tr><th><kbd>Esc</kbd></th><td>Ana pencere: aramayı temizle · İletişim pencereleri: kapat</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>Proje penceresi: başlat / durdur</td></tr>
+            <tr><th><kbd>F5</kbd></th><td>Proje penceresi: kaynağı yeniden tara</td></tr>
+            <tr><th><kbd>↑</kbd> / <kbd>↓</kbd></th><td>Proje penceresi: listede önceki / sonraki dosya</td></tr>
+          </table></div></div>
+        <div class="spec wide"><h3>Sürüm geçmişi</h3>
+          <div class="t-wrap"><table>
+            <tr><th><span class="soon">1.1.0 ile</span></th><td>İsteğe bağlı resimden metin (OCR): tesseract.js 7, 21 dil, TXT/CSV/JSON. Konuşmadan metne ve OCR ayrı seçenekler, ikisi de varsayılan kapalı. Büyük resim ve videolar önizleme alanına sığdırılır.</td></tr>
+            <tr><th>1.0.0 · 15 Ekim 2026</th><td>İlk sürüm: video, resim ve ses dönüştürme; dosya ve klasör projeleri, yan yana önizleme, çevrimdışı konuşmadan metne, Mastertool hesabı ve uçtan uca şifreli senkron, 8 dil, gece/gündüz/sistem teması.</td></tr>
+          </table></div></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3>
+        <ul>
+          <li>Yalnız Windows 10/11 x64; macOS, Linux ve ARM derlemesi yok.</li>
+          <li>GPU hızlandırma yok; dönüştürme ve konuşma tanıma işlemciyle yapılır.</li>
+          <li>HEIC/HEIF resimler desteklenmez.</li>
+          <li>Durdurulan dosya kaldığı yerden devam etmez, bir sonraki başlatmada baştan dönüştürülür.</li>
+          <li>Videoda yalnız ilk video ve ilk ses akışı alınır.</li>
+          <li>Çözünürlük ve resim boyutu yalnız küçültülür, büyütme yapılmaz.</li>
+          <li>İlk açılışta Mastertool hesabıyla giriş gerekir.</li>
+        </ul></div>
+    </div>
+  </section>
+
 
   <section class="alt" id="nasil">
     <div class="wrap">

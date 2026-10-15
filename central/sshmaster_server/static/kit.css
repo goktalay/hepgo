@@ -108,3 +108,38 @@ html[data-theme=light] .hero-shot { box-shadow: 0 30px 70px rgba(15,23,42,.22); 
 header.top .brand, header.top nav.links a, header.top .navbtn, header.top .store { white-space: nowrap; }
 header.top nav.links { gap: clamp(12px, 1.5vw, 22px); }
 @media (max-width: 1360px) { header.top nav.links a[href="#kisayollar"], header.top nav.links a[href="#nasil"] { display: none; } }
+/* Ayrıntılı tanıtım: görüntü + açıklama satırları (sıra değişerek), teknik özellik kartları, bilinen sınırlar */
+.detail { display: grid; grid-template-columns: 1.15fr 1fr; gap: 44px; align-items: center; margin: 0 0 64px; }
+.detail:last-child { margin-bottom: 0; }
+.detail:nth-child(even) > .d-shot { order: 2; }
+.detail .d-shot { margin: 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.35); background: var(--card); }
+.detail .d-shot a { display: block; cursor: zoom-in; }
+.detail .d-shot img { display: block; width: 100%; height: auto; }
+.detail h3 { margin: 0 0 10px; font-size: clamp(22px, 2.4vw, 28px); color: var(--head); letter-spacing: -.01em; }
+.detail p { margin: 0 0 14px; color: var(--muted); }
+.detail ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.detail li { position: relative; padding-inline-start: 26px; font-size: 15px; }
+.detail li::before { content: ""; position: absolute; inset-inline-start: 2px; top: .5em; width: 12px; height: 7px; border-left: 2px solid var(--acc); border-bottom: 2px solid var(--acc); transform: rotate(-45deg); }
+.specs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.spec { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; min-width: 0; }
+.spec.wide { grid-column: 1 / -1; }
+.spec h3 { margin: 0 0 12px; font-size: 17px; color: var(--head); display: flex; align-items: center; gap: 10px; }
+.spec h3::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--acc), var(--acc2)); flex: 0 0 auto; }
+.spec .t-wrap { overflow-x: auto; }
+.spec table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.spec th, .spec td { text-align: start; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.spec th { color: var(--muted); font-weight: 600; white-space: nowrap; width: 38%; }
+.spec tr:last-child th, .spec tr:last-child td { border-bottom: 0; }
+.spec ul { margin: 0; padding-inline-start: 18px; font-size: 14.5px; display: grid; gap: 4px; }
+.spec code, .detail code { font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; background: rgba(127,127,127,.14); border-radius: 5px; padding: 1px 5px; }
+.spec .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.spec .tags span { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; background: rgba(127,127,127,.06); }
+.limits { margin-top: 18px; border: 1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.07); border-radius: 14px; padding: 18px 22px; }
+.limits h3 { margin: 0 0 8px; font-size: 16px; color: var(--head); }
+.limits ul { margin: 0; padding-inline-start: 18px; color: var(--muted); font-size: 14.5px; display: grid; gap: 4px; }
+.soon { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: rgba(99,102,241,.16); color: var(--acc2); vertical-align: middle; margin-inline-start: 6px; }
+@media (max-width: 960px) {
+  .detail { grid-template-columns: 1fr; gap: 22px; margin-bottom: 48px; }
+  .detail:nth-child(even) > .d-shot { order: 0; }
+  .specs { grid-template-columns: 1fr; }
+}

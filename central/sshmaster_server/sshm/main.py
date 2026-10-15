@@ -770,7 +770,7 @@ APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv')
 @app.get('/api/mt/apps')
 def mt_apps(request: Request):
     """Master Tool'un gösterdiği uygulamalar. Kurulu mu değil mi istemcide belirlenir (Windows kaldırma kayıtları: DisplayName
-    = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.png (512 px) ve .svg."""
+    = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.svg (tercih) ve .png (128 px)."""
     with db.connect() as conn:
         u, _ = current(request, conn, a='mt')
         out = []

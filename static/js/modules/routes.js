@@ -32,11 +32,16 @@ const haversine = (a, b) => {
 };
 const copy = async (txt, what = 'Kopyalandı') => { try { await navigator.clipboard.writeText(txt); toast(what); } catch { toast('Kopyalanamadı; metni elle seçin', 'err'); } };
 
-// Stil dosyası bir kez eklenir (app.js'in ?v= sürüm eki ile önbellek kırma)
+// Stil dosyası modülle AYNI sürümlü yoldan yüklenir: /sv/<sürüm>/js/modules/routes.js → /sv/<sürüm>/css/routes.css. Eskiden sürüm
+// eki app.js adresindeki ?v= değerinden aranıyordu; uygulama /sv/<sürüm>/ yolunu kullandığı için ek hiç bulunmuyor ve tarayıcı ESKİ
+// routes.css'i önbellekten veriyordu (harita altında boşluk, eski panel görünümü). Sürüm değişince bağlantı yenilenir.
 function ensureCss() {
-  if (document.head.querySelector('link[data-routes-css]')) return;
-  const ver = (document.querySelector('script[src*="app.js"]')?.src.match(/[?&]v=([^&]+)/) || [])[1] || '';
-  document.head.append(h('link', { rel: 'stylesheet', href: `${CSS_HREF}${ver ? `?v=${encodeURIComponent(ver)}` : ''}`, 'data-routes-css': '1' }));
+  let href = CSS_HREF;
+  try { href = new URL('../../css/routes.css', import.meta.url).href; } catch { /* blob/test ortamı: sabit yol */ }
+  const old = document.head.querySelector('link[data-routes-css]');
+  if (old && old.href === href) return;
+  old?.remove();
+  document.head.append(h('link', { rel: 'stylesheet', href, 'data-routes-css': '1' }));
 }
 
 // Daire işaretçi (billboard resmi): eylem rengi dolgu, beyaz kenar, ortada metin (nokta numarası ya da "H"); vurgulu nokta beyaz halkalı.
@@ -116,14 +121,18 @@ export async function render(view, ctx, m, head, params) {
       if (!drag) return;
       const W = layer.clientWidth, H = layer.clientHeight;
       let x = Math.max(0, Math.min(e.clientX - drag.dx, W - el.offsetWidth)), y = Math.max(0, Math.min(e.clientY - drag.dy, H - 36));
-      // mıknatıs: diğer panelin kenarlarına ve harita kenarına yapışır
+      // Mıknatıs YALNIZ panellerin birbirine: kenarlar birbirine 12 px'ten yakın VE diğer eksende üst üste biniyorlarsa yan yana / alt
+      // alta yapışır (yapışınca üst ya da sol kenar da hizalanır). Konum her harekette imleçten yeniden hesaplanır; 12 px'ten fazla
+      // çekince panel serbest kalır (ayrılır). Uzaktaki panele hizalanma yok.
+      const w = el.offsetWidth, hh = el.offsetHeight, T = 12, GAP = 4;
       for (const o of layer.querySelectorAll('.rt-fp')) {
         if (o === el) continue;
         const ox = o.offsetLeft, oy = o.offsetTop, ow = o.offsetWidth, oh = o.offsetHeight;
-        if (Math.abs(x - ox) < 14) x = ox;
-        if (Math.abs(y - (oy + oh + 8)) < 14) y = oy + oh + 8;
-        if (Math.abs(y + el.offsetHeight + 8 - oy) < 14) y = oy - el.offsetHeight - 8;
-        if (Math.abs(x - (ox + ow + 8)) < 14) x = ox + ow + 8;
+        const dikeyKesisim = y < oy + oh + T && y + hh > oy - T, yatayKesisim = x < ox + ow + T && x + w > ox - T;
+        if (dikeyKesisim && Math.abs(x - (ox + ow + GAP)) < T) { x = ox + ow + GAP; if (Math.abs(y - oy) < T) y = oy; }
+        else if (dikeyKesisim && Math.abs(x + w + GAP - ox) < T) { x = ox - w - GAP; if (Math.abs(y - oy) < T) y = oy; }
+        if (yatayKesisim && Math.abs(y - (oy + oh + GAP)) < T) { y = oy + oh + GAP; if (Math.abs(x - ox) < T) x = ox; }
+        else if (yatayKesisim && Math.abs(y + hh + GAP - oy) < T) { y = oy - hh - GAP; if (Math.abs(x - ox) < T) x = ox; }
       }
       el.style.left = `${x}px`; el.style.top = `${y}px`;
     });

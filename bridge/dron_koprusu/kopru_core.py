@@ -22,7 +22,7 @@ from pathlib import Path
 
 APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
 VERSION = '1.0.0'
-CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start']
+CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start', 'mission_clear']
 PING_S = 20
 CHUNK = 256 * 1024
 FATAL_CODES = {4400: 'Köprü kodu geçersiz ya da süresi dolmuş (yeni kod alın)',
@@ -285,6 +285,19 @@ class MavLink:
             return self._mission_download(sysid)
         if name == 'mission_start':   # MAV_CMD_MISSION_START: AUTO'da yerdeki aracı göreve başlatır (sunucu GUIDED→ARM→AUTO sonrası gönderir)
             return self._cmd_long(sysid, 300, (0, 0, 0, 0, 0, 0, 0), 6)
+        if name == 'mission_clear':   # MISSION_CLEAR_ALL (görev iptali: AUTO'ya dönse bile eski görev uçulmaz)
+            tgt = self._tgt(sysid)
+            w = self._waiter(['MISSION_ACK'], lambda m: m.get_srcSystem() == tgt)
+            try:
+                self.m.mav.mission_clear_all_send(tgt, self.target_comp, 0)
+                ack = self._get(w, 5)
+            finally:
+                self._drop(w)
+            if ack is None:
+                raise RuntimeError('Görev listesi temizleme onayı gelmedi')
+            if ack.type != 0:
+                raise RuntimeError(f'Görev listesi temizlenemedi (MAV_MISSION_RESULT {ack.type})')
+            return {'cleared': True}
         if name == 'mission_set_current':
             tgt = self._tgt(sysid)
             # HEPGO sırası → araç sırası: yüklemede başa eklenen ev (+ hız) öğesi kadar kaydır
@@ -351,7 +364,7 @@ class MavLink:
                         raise RuntimeError(f'Görev yükleme zaman aşımı ({len(sent)}/{n})')
                 if msg.get_type() == 'MISSION_ACK':
                     if msg.type == 0:
-                        return {'count': len(items), 'uploaded': n}
+                        return {'count': len(items), 'uploaded': n, 'offset': off}   # araç sırası = HEPGO sırası + offset
                     raise RuntimeError(f'Dron görevi reddetti (MAV_MISSION_RESULT {msg.type})')
                 s = msg.seq
                 if s >= n:

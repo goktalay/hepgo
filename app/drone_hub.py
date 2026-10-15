@@ -58,7 +58,20 @@ TAKEOFF_ALT = 10.0
 GUIDED_CONFIRM_S = 4.0
 ARM_CONFIRM_S = 6.0
 MISSION_ARM_CONFIRM_S = 5.0
-SEQ_CMDS = {'takeoff', 'mission_start'}
+SEQ_CMDS = {'takeoff', 'mission_start', 'mission_pause', 'mission_resume', 'mission_cancel', 'mission_resume_at'}
+MOD_TEYIT_SURESI = 2.5     # GÖKTUNGU gorev.py: set_mode sonrası mod adının telemetride görünmesi için bekleme
+# GÖKTUNGU dron.py v2.4.33: COMMAND_ACK → konsol. Yalnız kullanıcının tetiklediği komutlar bildirilir.
+KOMUT_ADLARI = {22: 'KALKIŞ (TAKEOFF)', 21: 'İNİŞ (LAND)', 20: 'EVE DÖN (RTL)', 400: 'ARM / DISARM', 176: 'MOD DEĞİŞTİRME',
+                252: 'İRTİFA DEĞİŞTİRME', 178: 'HIZ DEĞİŞTİRME', 192: 'KONUMA GİT (REPOSITION)', 16: 'NOKTAYA GİT (WAYPOINT)',
+                300: 'GÖREVİ BAŞLAT', 241: 'KALİBRASYON', 246: 'YENİDEN BAŞLATMA'}
+MAV_RESULT_ADLARI = {0: 'kabul edildi', 1: 'geçici olarak reddedildi (araç şu an bu komutu alamıyor)',
+                     2: 'reddedildi (komut veya parametre bu araca uygun değil)', 3: 'desteklenmiyor (uçuş yazılımı bu komutu tanımıyor)',
+                     4: 'yürütülemedi (ön koşullar sağlanmadı)', 6: 'iptal edildi'}
+# Komut başlangıç satırı "-> aksiyon" (GÖKTUNGU dkonsol) — HEPGO komut adı → GÖKTUNGU aksiyon adı
+AKSIYON_ADI = {'arm': 'arm', 'disarm': 'disarm', 'land': 'land', 'rtl': 'rtl', 'set_mode': 'set_mode', 'reboot': 'reboot',
+               'takeoff': 'takeoff', 'altitude_change': 'altitude_change', 'kalib_gyro': 'kalib_gyro', 'kalib_baro': 'kalib_baro',
+               'kalib_ivme': 'kalib_ivme', 'kalib_level': 'kalib_level', 'kalib_esc': 'kalib_esc', 'kalib_radyo': 'kalib_radyo',
+               'kalib_pusula_baslat': 'kalib_pusula_baslat', 'kalib_pusula_kabul': 'kalib_pusula_kabul', 'kalib_pusula_iptal': 'kalib_pusula_iptal'}
 _FLOWS = {}         # (bridge_id, sysid) → sürmekte olan kalkış/görev akışı   # öğe başına MISSION_REQUEST_INT turu (telsizde 0,2–1 sn) → uzun rotalar
 CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
              # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
@@ -69,8 +82,8 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              'kalib_gyro', 'kalib_baro', 'kalib_ivme', 'kalib_level', 'kalib_esc', 'kalib_radyo',
              'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase',
              # sunucu-içi bileşik komut (bkz. SEQ_CMDS); köprü 'mission_start' yeteneği bildirirse MAV_CMD_MISSION_START olarak da gider
-             'mission_start'}
-BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start'}   # köprünün bildirebileceği yetenekler
+             'mission_start', 'mission_clear', 'mission_pause', 'mission_resume', 'mission_cancel', 'mission_resume_at'}
+BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start', 'mission_clear'}   # köprünün bildirebileceği yetenekler
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 # Sanal dron = gerçek ArduPilot SITL süreci (GÖKTUNGU). HEPGO_SITL=0 → eski sunucu içi kinematik simülatör (yalnız testler).
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
@@ -125,7 +138,7 @@ def _dist_m(lat1, lon1, lat2, lon2):
 
 class DroneState:
     """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük). Alanlar GÖKTUNGU harekât paneliyle uyumlu (README eşlemesi)."""
-    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos', 'console', 'rc_at', 'texts', 'params', 'param_buf', 'param_timer')
+    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos', 'console', 'rc_at', 'texts', 'params', 'param_buf', 'param_timer', 'prearm_hata', 'prearm_ani', 'hedef_rel')
 
     def __init__(self, sysid):
         self.timer = None   # hız sınırına takılan güncellemeyi sonradan yayınlayan zamanlayıcı
@@ -137,6 +150,8 @@ class DroneState:
         self.console = []      # Haberleşme konsolu satırları (son CONSOLE_MAX): {ts, tag, text, sev, repeat}
         self.rc_at = None      # son RC_CHANNELS zamanı (ARM CHECK: kumanda bağlı mı)
         self.texts = []        # son STATUSTEXT'ler (ARM CHECK mesajlar sekmesi): {ts, text, severity}
+        self.prearm_hata, self.prearm_ani = '', 0.0   # son PreArm/ARM reddi metni ve zamanı (GÖKTUNGU: ACK reddi gerekçesi)
+        self.hedef_rel = None  # GÖKTUNGU hedef_irtifa_rel: takeoff/altitude_change hedefi; goto bu irtifayı korur
         self.d = {'sysid': sysid, 'type': None, 'type_name': None, 'autopilot': None, 'armed': False, 'mode': None, 'mode_num': None,
                   'lat': None, 'lon': None, 'alt': None, 'alt_rel': None, 'hdg': None, 'vx': None, 'vy': None, 'vz': None,
                   'airspeed': None, 'groundspeed': None, 'throttle': None, 'climb': None, 'roll': None, 'pitch': None, 'yaw': None,
@@ -567,19 +582,50 @@ def _feed_mavlink(bridge, data):
             st.d['last_text'] = text
             if text.startswith(('PreArm', 'Arm:')):   # ARM CHECK rozetleri: son 8 ön-kol uyarısı
                 st.d['prearm'] = (st.d['prearm'] + [text])[-8:]
+            low = text.lower()
+            if low.startswith('prearm') or low.startswith('arm:') or 'arm' in low.split(':')[0]:   # GÖKTUNGU kuralı
+                st.prearm_hata, st.prearm_ani = text, time.time()
             last = st.texts[-1] if st.texts else None   # ARM CHECK mesajlar sekmesi biçimi (arm_check.js acMesajCiz): ts, metin, sev, tekrar
             if last and last['metin'] == text and last['sev'] == m.severity:
                 last['tekrar'] += 1; last['ts'] = time.time()
             else:
                 st.texts = (st.texts + [{'ts': time.time(), 'metin': text, 'sev': m.severity, 'tekrar': 1}])[-50:]
             _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': text, 'severity': m.severity, 'ts': time.time()}, bridge.id)
-            console_line(bridge, sysid, 'STATUS', text, 'hata' if m.severity <= 3 else 'uyari' if m.severity == 4 else 'basari' if m.severity == 5 else 'bilgi')
+            console_line(bridge, sysid, 'STATUS', text, 'hata' if m.severity <= 3 else 'uyari' if m.severity == 4 else 'bilgi')   # GÖKTUNGU: 0-3 hata, 4 uyarı, 5+ bilgi
             continue
+        if m.get_type() == 'COMMAND_ACK':
+            _command_ack(bridge, sysid, m)
         st = bridge.drones.setdefault(sysid, DroneState(sysid))
         if st.feed(m):
             _emit(bridge, st)
         elif st.param_buf and st.param_timer is None:   # PARAM_VALUE'lar 200 ms'de bir toplu gider (binlerce parametre kuyruğu boğmasın)
             st.param_timer = asyncio.get_running_loop().call_later(0.2, _flush_params, bridge, st)
+
+
+def global_line(bridge, sysid, tag, text, sev='bilgi'):
+    """GÖKTUNGU genel konsolu (konsol.js; hata/uyarı satırları sağ üstte bildirim olur). İzleyicilere {t:'konsol'}."""
+    _broadcast({'t': 'konsol', 'bridge_id': bridge.id, 'sysid': sysid, 'tag': tag, 'text': text, 'sev': sev, 'ts': time.time()}, bridge.id)
+
+
+def _command_ack(bridge, sysid, m):
+    """GÖKTUNGU dron.py _komut_ack_isle: kabul → dron konsolu; red → gerekçeli BAŞARISIZ satırı (dron + genel konsol + ARM CHECK)."""
+    try:
+        no, sonuc = int(m.command), int(m.result)
+    except (TypeError, ValueError, AttributeError):
+        return
+    ad = KOMUT_ADLARI.get(no)
+    if ad is None or sonuc == 5:   # yalnız kullanıcı komutları; IN_PROGRESS ara durum
+        return
+    st = bridge.drones.setdefault(sysid, DroneState(sysid))
+    if sonuc == 0:
+        console_line(bridge, sysid, 'KOMUT', f'{ad} kabul edildi', 'basari')
+        return
+    metin = f"[{sysid}] {ad} BAŞARISIZ: {MAV_RESULT_ADLARI.get(sonuc, f'sonuç={sonuc}')}"
+    if st.prearm_hata and time.time() - st.prearm_ani < 15.0:
+        metin += f' ({st.prearm_hata})'
+    console_line(bridge, sysid, 'KOMUT', metin, 'hata')
+    global_line(bridge, sysid, 'KOMUT', metin, 'hata')
+    st.texts = (st.texts + [{'ts': time.time(), 'metin': metin, 'sev': 2, 'tekrar': 1}])[-50:]
 
 
 def _flush_params(bridge, st):
@@ -803,7 +849,7 @@ def _task_status(task_id):
     return r[0] if r else None
 
 
-COPTER_MODES = {'STABILIZE': 0, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'LOITER': 5, 'RTL': 6, 'LAND': 9, 'POSHOLD': 16}
+COPTER_MODES = {'STABILIZE': 0, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'LOITER': 5, 'RTL': 6, 'LAND': 9, 'POSHOLD': 16, 'BRAKE': 17}
 NAV_TAKEOFF, NAV_WAYPOINT, NAV_LOITER_TIME, NAV_RTL, NAV_LAND, DO_JUMP = 22, 16, 19, 20, 21, 177
 
 
@@ -1033,9 +1079,9 @@ class SimDrone:
             if name == 'disarm':
                 if not d['armed']:
                     return {'ok': False, 'error': 'Zaten DISARM'}
-                if self.alt > 0.5:
+                if self.alt > 0.5 and not p.get('force'):
                     return {'ok': False, 'error': 'Havada disarm edilemez (önce LAND)'}
-                self._disarm()
+                self._disarm()   # zorla (GÖKTUNGU p2=21196): havada motorlar kesilir
                 return {'ok': True}
             if name == 'takeoff':
                 if not d['armed']:
@@ -1112,7 +1158,7 @@ class SimDrone:
                 self.mission, self.seq = mission, 0
                 d['mission_count'] = len(mission); d['mission_seq'] = 0
                 self._event(f'Mission uploaded: {len(mission)} items', 6)
-                return {'ok': True, 'result': {'count': len(mission)}}
+                return {'ok': True, 'result': {'count': len(mission), 'offset': 0}}   # ev öğesi eklenmez: araç sırası = HEPGO sırası
             if name == 'mission_download':
                 return {'ok': True, 'result': {'items': [{k: v for k, v in it.items() if k not in ('lat', 'lon', '_done')} for it in self.mission]}}
             if name == 'mission_set_current':
@@ -1130,6 +1176,10 @@ class SimDrone:
                     self.home = (self.lat, self.lon)
                 d['home_lat'], d['home_lon'] = self.home
                 self._event('Home set', 6)
+                return {'ok': True}
+            if name == 'mission_clear':
+                self.mission, self.seq = [], 0
+                d['mission_count'] = 0
                 return {'ok': True}
             if name in ('link_open', 'link_close', 'disconnect'):
                 return {'ok': True, 'result': {'sim': True}}   # sanal dron her zaman bağlı
@@ -1458,10 +1508,80 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
     params = dict(params or {})
     if name in SEQ_CMDS:
         return await _start_sequence(user, b, sim, sysid, name, params, viewer_ws, audit)
+    return await _single_command(b, sim, int(sysid), name, params, viewer_ws, rid, audit)
+
+
+async def _single_command(b, sim, sysid, name, params, viewer_ws, rid, audit):
+    """GÖKTUNGU dron.py komut_gonder / goto_gonder / set_home_gonder / param_ayarla kuralları (tek komut; ön adımlar burada)."""
+    st = b.drones.get(sysid)
+    d = st.d if st else {}
+    zorla = name == 'arm' and bool(params.get('force'))
+
+    def fail(msg, genel=None):
+        console_line(b, sysid, 'KOMUT', msg, 'hata')
+        if genel:
+            global_line(b, sysid, 'KOMUT', genel, 'hata')
+        return {'ok': False, 'error': msg}
+
+    if name in AKSIYON_ADI:
+        console_line(b, sysid, 'KOMUT', f"-> {'arm_zorla' if zorla else AKSIYON_ADI[name]}", 'bilgi')
+    if name == 'reboot' and d.get('armed'):
+        # Havada uçuş kontrolcüsünü yeniden başlatmak düşüş demektir; karar operatöre bırakılmaz
+        return fail('REBOOT REDDEDİLDİ: araç arm edilmiş durumda. Önce disarm edin.', f'D{sysid} reboot reddedildi: armlı')
+    if name == 'disarm':
+        params['force'] = True   # GÖKTUNGU: DISARM her zaman ZORLA (param2=21196; havada da motorları keser)
+    if name == 'set_home' and params.get('lat') is not None and params.get('lon') is not None:
+        if d.get('lat') is None:   # zemin AMSL'i kestirilemez: uydurma irtifa yazmak tehlikeli bir HOME hatası üretir
+            return fail('Telemetri yok: HOME irtifası kestirilemiyor', f'D{sysid} HOME ayarlanamadı: telemetri yok (irtifa kestirilemiyor)')
+        params['alt'] = float(d.get('alt') or 0.0) - float(d.get('alt_rel') or 0.0)
+    if name == 'goto' and params.get('alt_rel_m') is None:
+        # Kayıtlı REL hedefi (takeoff / altitude_change) korunur: süren tırmanış/alçalma konum değişikliğiyle iptal olmaz
+        if st is not None and st.hedef_rel is not None:
+            params['alt_rel_m'], irtifa_not = st.hedef_rel, f'{st.hedef_rel:.0f}m rel (hedef korundu)'
+        else:
+            params['alt_rel_m'] = float(d.get('alt_rel') or 0.0)
+            irtifa_not = f"{float(d.get('alt') or 0.0):.0f}m MSL (mevcut)"
+    elif name == 'goto':
+        irtifa_not = f"{float(params['alt_rel_m']):.0f}m rel"
     await _db(audit)
-    ptxt = json.dumps(params, ensure_ascii=False)[:160]
-    console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
-    return await _dispatch(b, sim, sysid, name, params, viewer_ws, rid)
+    if name == 'altitude_change':   # GUIDED + mevcut konumda yalnız irtifa (GÖKTUNGU); hedef hafızaya alınır
+        try:
+            hedef = min(500.0, max(1.0, float(params.get('alt_rel_m') if params.get('alt_rel_m') is not None else 10.0)))
+        except (TypeError, ValueError):
+            hedef = 10.0
+        if d.get('lat') is None or d.get('lon') is None:
+            return fail('Aracın konumu bilinmiyor')
+        if st is not None:
+            st.hedef_rel = hedef
+        r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'GUIDED'}, viewer_ws)
+        if not r['ok']:
+            return r
+        r = await _dispatch(b, sim, sysid, 'goto', {'lat': d['lat'], 'lon': d['lon'], 'alt_rel_m': hedef}, viewer_ws)
+        if r['ok']:
+            console_line(b, sysid, 'KOMUT', f'İRTİFA -> {hedef:.0f}m', 'basari')
+        return r
+    res = await _dispatch(b, sim, sysid, name, params, viewer_ws, rid)
+    if not res['ok']:
+        return res
+    if name in ('land', 'rtl', 'disarm') and st is not None:
+        st.hedef_rel = None
+    done = {'land': ('LAND', 'basari'), 'rtl': ('RTL', 'basari'), 'disarm': ('DISARM', 'basari'),
+            'arm': ('ARM (ZORLA — denetimler atlandı)', 'uyari') if zorla else ('ARM', 'basari'),
+            'reboot': ('REBOOT gönderildi — bağlantı kesilecek ve yeniden kurulacak', 'uyari')}.get(name)
+    if name == 'set_mode':
+        done = (f"MOD -> {str(params.get('mode') or '').upper()}", 'basari')
+    elif name == 'goto':
+        done = (f"GOTO {float(params['lat']):.5f},{float(params['lon']):.5f} @ {irtifa_not}", 'basari')
+    elif name == 'set_home':
+        done = ((f"HOME = {float(params['lat']):.6f},{float(params['lon']):.6f} @ {params['alt']:.0f}m AMSL (zemin kestirimi)", 'basari')
+                if params.get('lat') is not None else ('HOME = aracın mevcut konumu', 'basari'))
+    elif name == 'param_set':
+        done = (f"{params.get('name')} = {params.get('value')}", 'basari')
+    if done:
+        console_line(b, sysid, 'KOMUT', *done)
+    if zorla:
+        global_line(b, sysid, 'KOMUT', f'D{sysid} ZORLA ARM: arming denetimleri atlandı', 'uyari')
+    return res
 
 
 def _flow_key(b, sysid):
@@ -1509,19 +1629,20 @@ async def _start_sequence(user, b, sim, sysid, name, params, viewer_ws, audit):
                 await _db(_mark_takeoff_check, kontrol_id, False, 'Telemetri bağlantısı yok')
             return {'ok': False, 'error': 'Telemetri bağlantısı yok; kalkış komutu gönderilemedi'}
         await _db(audit)
-        console_line(b, sysid, 'KOMUT', f"takeoff {hedef:.0f} m ← {who}".strip(), 'bilgi')
+        console_line(b, sysid, 'KOMUT', '-> takeoff', 'bilgi')
         if kontrol_id:
             console_line(b, sysid, 'KOMUT', f'Kontrol listesi onaylandı (kayıt #{kontrol_id}), takeoff {hedef:.0f} m', 'bilgi')
         _FLOWS[key] = asyncio.get_running_loop().create_task(_takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws))
         return {'ok': True, 'result': {'kontrol_id': kontrol_id}}
-    # mission_start (rota başlat): yanıt akış bitince döner (istemci görev aşamasını buna göre günceller)
+    # Görev akışları (rota başlat / duraklat / devam / iptal / sürdür): yanıt akış bitince döner (istemci aşamayı buna göre günceller)
     if key in _FLOWS:
         return {'ok': False, 'error': 'Bu dron için kalkış/görev akışı zaten sürüyor'}
     if st is None:
-        return {'ok': False, 'error': 'Bağlantı yok'}
+        return {'ok': False, 'error': 'baglanti_yok'}
     await _db(audit)
-    console_line(b, sysid, 'KOMUT', f"mission_start ← {who}".strip(), 'bilgi')
-    task = asyncio.get_running_loop().create_task(_mission_flow(b, sim, sysid, params, viewer_ws))
+    flow = {'mission_start': _mission_flow, 'mission_pause': _mission_pause, 'mission_resume': _mission_resume,
+            'mission_cancel': _mission_cancel, 'mission_resume_at': _mission_resume_at}[name]
+    task = asyncio.get_running_loop().create_task(flow(b, sim, sysid, params, viewer_ws))
     _FLOWS[key] = task
     return await task
 
@@ -1591,7 +1712,9 @@ async def _takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws):
         if not r['ok']:
             return fail(f"Kalkış komut hatası: {r.get('error') or 'reddedildi'}")
         sent = True
+        b.drones[int(sysid)].hedef_rel = hedef   # GÖKTUNGU hedef_irtifa_rel: sonraki goto bu irtifayı korur
         console_line(b, sysid, 'KOMUT', f'TAKEOFF komutu iletildi: {hedef:.0f} m', 'basari')
+        global_line(b, sysid, 'KOMUT', f'D{sysid} TAKEOFF {hedef:.0f}m', 'basari')
     except Exception as e:   # noqa: BLE001
         fail(f'Kalkış komut hatası: {e}')
     finally:
@@ -1638,12 +1761,117 @@ async def _mission_flow(b, sim, sysid, params, viewer_ws):
             b._publish()
 
 
+async def _mod_ayarla(b, sim, sysid, mode, viewer_ws, yedek=None):
+    """GÖKTUNGU gorev.py _mod_ayarla: modu gönderir, MOD_TEYIT_SURESI içinde telemetride doğrular; olmazsa yedek modu dener.
+    Dönüş: uygulanan mod adı | None."""
+    d = b.drones[int(sysid)].d
+
+    async def dene(m):
+        r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': m}, viewer_ws)
+        return r['ok'] and await _wait_for(lambda: str(d.get('mode') or '').upper() == m, MOD_TEYIT_SURESI)
+    if await dene(mode):
+        return mode
+    if yedek is None:
+        return None
+    global_line(b, sysid, 'GÖREV', f'D{sysid} {mode} modu doğrulanamadı; {yedek} deneniyor', 'uyari')
+    return yedek if await dene(yedek) else None
+
+
+async def _gorev_flow(fn, b, sysid):
+    try:
+        return await fn()
+    except Exception as e:   # noqa: BLE001
+        return {'ok': False, 'error': str(e)}
+    finally:
+        _FLOWS.pop(_flow_key(b, sysid), None)
+        if isinstance(b, SimDrone) and _alive(b):
+            b._publish()
+
+
+async def _mission_pause(b, sim, sysid, params, viewer_ws):
+    """GÖKTUNGU gorev.py durdur: 'bekle' → BRAKE (doğrulanamazsa LOITER); 'basa_don' → RTL. Doğrulanamazsa aşama değişmez."""
+    async def fn():
+        basa_don = params.get('davranis') == 'basa_don'
+        mod = await (_mod_ayarla(b, sim, sysid, 'RTL', viewer_ws) if basa_don else _mod_ayarla(b, sim, sysid, 'BRAKE', viewer_ws, 'LOITER'))
+        if not mod:
+            global_line(b, sysid, 'GÖREV', f'D{sysid} DURAKLATMA DOĞRULANAMADI — araç mod değişimini kabul etmedi; görev sürüyor olabilir', 'hata')
+            return {'ok': False, 'error': 'mod_dogrulanamadi'}
+        aciklama = 'başlangıca dönüyor' if basa_don else 'durduğu yerde bekliyor'
+        global_line(b, sysid, 'GÖREV', f'D{sysid} görev duraklatıldı — {aciklama} ({mod})', 'uyari')
+        return {'ok': True, 'result': {'mode': mod}}
+    return await _gorev_flow(fn, b, sysid)
+
+
+async def _mission_resume(b, sim, sysid, params, viewer_ws):
+    """GÖKTUNGU gorev.py devam: AUTO (telemetriden doğrulanır)."""
+    async def fn():
+        if not await _mod_ayarla(b, sim, sysid, 'AUTO', viewer_ws):
+            global_line(b, sysid, 'GÖREV', f'D{sysid} AUTO moda geçiş doğrulanamadı — görev devam etmiyor', 'hata')
+            return {'ok': False, 'error': 'mod_dogrulanamadi'}
+        global_line(b, sysid, 'GÖREV', f'D{sysid} görev devam ediyor', 'basari')
+        return {'ok': True, 'result': {'mode': 'AUTO'}}
+    return await _gorev_flow(fn, b, sysid)
+
+
+async def _mission_cancel(b, sim, sysid, params, viewer_ws):
+    """GÖKTUNGU gorev.py iptal: BRAKE (doğrulanamazsa LOITER) ile anında durdur, dronun görev listesini temizle (MISSION_CLEAR_ALL)."""
+    async def fn():
+        isim = str(params.get('rota') or '?')
+        mod = await _mod_ayarla(b, sim, sysid, 'BRAKE', viewer_ws, 'LOITER')
+        if not mod:
+            global_line(b, sysid, 'GÖREV', f'D{sysid} iptalde durdurma modu doğrulanamadı; görev listesi yine de temizleniyor', 'uyari')
+        if sim or 'mission_clear' in b.caps:
+            r = await _dispatch(b, sim, sysid, 'mission_clear', {}, viewer_ws)
+            if not r['ok']:
+                global_line(b, sysid, 'GÖREV', f"İptal hatası: {r.get('error')}", 'hata')
+                return r
+            temiz = 'görev listesi temizlendi'
+        else:
+            temiz = 'görev listesi temizlenemedi (köprü mission_clear desteklemiyor)'
+        global_line(b, sysid, 'GÖREV', f"D{sysid} GÖREV İPTAL EDİLDİ ('{isim}') - dron {mod or 'durdurulamadı'}, {temiz}", 'uyari')
+        return {'ok': True, 'result': {'mode': mod}}
+    return await _gorev_flow(fn, b, sysid)
+
+
+async def _mission_resume_at(b, sim, sysid, params, viewer_ws):
+    """GÖKTUNGU gorev.py surdur: MISSION_SET_CURRENT(kalınan nokta) → ARM değilse GUIDED → ARM → teyit → AUTO → MISSION_START."""
+    async def fn():
+        d = b.drones[int(sysid)].d
+        try:
+            seq = int(params.get('seq'))
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': 'surdurulecek_gorev_yok'}
+        r = await _dispatch(b, sim, sysid, 'mission_set_current', {'seq': seq}, viewer_ws)
+        if not r['ok']:
+            global_line(b, sysid, 'GÖREV', f"Sürdürme (set_current) hatası: {r.get('error')}", 'hata')
+            return r
+        if d.get('armed') is False:
+            if not await _mod_ayarla(b, sim, sysid, 'GUIDED', viewer_ws):
+                global_line(b, sysid, 'GÖREV', f'D{sysid} sürdürme için GUIDED moda geçilemedi', 'hata')
+                return {'ok': False, 'error': 'mod_dogrulanamadi'}
+            r = await _dispatch(b, sim, sysid, 'arm', {}, viewer_ws)
+            if not r['ok'] or not await _wait_for(lambda: bool(d.get('armed')), MISSION_ARM_CONFIRM_S, 0.2):
+                global_line(b, sysid, 'GÖREV', f'D{sysid} sürdürme için ARM teyidi alınamadı', 'hata')
+                return {'ok': False, 'error': 'arm_teyidi_yok'}
+        if not await _mod_ayarla(b, sim, sysid, 'AUTO', viewer_ws):
+            return {'ok': False, 'error': 'mod_dogrulanamadi'}
+        if not sim and 'mission_start' in b.caps:
+            await _dispatch(b, sim, sysid, 'mission_start', {}, viewer_ws)   # AUTO doğrulandı; gönderilemese de araç sürdürür
+        toplam = params.get('toplam_oge')
+        global_line(b, sysid, 'GÖREV', f"D{sysid} GÖREV SÜRDÜRÜLDÜ ('{params.get('rota') or '?'}') — nokta {seq}"
+                    + (f' ({seq + 1}/{toplam})' if toplam else '') + ' itibarıyla devam', 'basari')
+        return {'ok': True}
+    return await _gorev_flow(fn, b, sysid)
+
+
 async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
     """Tek komutu köprüye (ya da sanal drona) gönderir, sonucu konsola yazar."""
     if sim:
         res = await b.acommand(name, params) if isinstance(b, SitlDrone) else b.command(name, params)
         ok = bool(res.get('ok'))
-        console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
+        err = str(res.get('error') or 'reddedildi')
+        if not ok and 'MAV_RESULT' not in err:   # SITL: reddi COMMAND_ACK satırı yazar
+            console_line(b, sysid, 'KOMUT', f'{name}: {err}', 'hata')
         b._publish()
         return {'ok': ok, 'result': res.get('result'), 'error': res.get('error')}
     if name == 'disconnect':
@@ -1662,7 +1890,9 @@ async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
         await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
         res = await asyncio.wait_for(fut, CMD_TIMEOUTS.get(name, CMD_TIMEOUT))
         ok = bool(res.get('ok'))
-        console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
+        err = str(res.get('error') or 'reddedildi')
+        if not ok and 'MAV_RESULT' not in err:   # MAV_RESULT reddini COMMAND_ACK satırı gerekçesiyle yazar
+            console_line(b, sysid, 'KOMUT', f'{name}: {err}', 'hata')
         return {'ok': ok, 'result': res.get('result'), 'error': res.get('error')}
     except asyncio.TimeoutError:
         console_line(b, sysid, 'KOMUT', f'{name}: köprü yanıt vermedi (zaman aşımı)', 'hata')

@@ -75,7 +75,7 @@ ve eski kodu anında geçersiz kılar. `GET /bridges` satırları anahtarı/kodu
 
 ## v1.1 (isteğe bağlı; köprü `auth`/`pair` çerçevesinde `caps:[…]` bildirir, sunucu `hello.caps` ile tarayıcıya açar)
 
-Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link`, `mission_start` (ayrıca yer tutucu `bakim`, `log` — v1.2).
+Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link`, `mission_start`, `mission_clear` (ayrıca yer tutucu `bakim`, `log` — v1.2).
 - cap `link` — köprünün drona yerel bağlantısını sunucudan açma/kapama (uçuşun Bağlantı ayarı; harekât ekranı Bağlantı Yöneticisi "Bağlan"/"Kes"):
   `link_open{type:'serial'|'tcp'|'udp', host?, port?, serial?, baud?, sysid?}` — serial → `serial` (port adı) + `baud`; tcp/udp → `host` + `port`.
   Köprü bağlantıyı kurar, MAVLink akışını başlatır ve `res` döner (`res.error`: açılamadı sebebi). `link_close` → bağlantıyı kapatır. Köprü
@@ -87,6 +87,8 @@ Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`
 - `arm{force:true}` — MAV_CMD_COMPONENT_ARM_DISARM param2=21196 (yalnız ArduPilot; PX4'te `res.error`).
 - `reboot` — MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1=1; yalnız disarmed, aksi hâlde `res.error='armed'`.
 - `mission_set_current{seq}` — MISSION_SET_CURRENT.
+- `mission_clear` — MISSION_CLEAR_ALL (MISSION_ACK beklenir). Görev iptalinde sunucu gönderir (AUTO'ya dönülse bile eski görev uçulmaz).
+- `mission_upload` sonucu `result.offset` = başa eklenen öğe sayısı (ev + varsa hız); istemci araç sırasını (MISSION_CURRENT) buna göre çevirir.
 - `mission_start` — MAV_CMD_MISSION_START (300), parametresiz. Sunucu bunu yalnız "rota başlat" akışının sonunda (GUIDED → ARM → AUTO) gönderir;
   köprü bildirmezse sunucu AUTO ile yetinir.
 
@@ -102,6 +104,15 @@ Tarayıcının `cmd{name:'takeoff', params{alt_rel_m, kontrol?}}` isteği köpr�
 `cmd{name:'mission_start'}` (rota başlat): ARM değilse GUIDED → 0,3 sn → `arm` → 5 sn armed teyidi; sonra `set_mode AUTO` → 0,3 sn →
 (köprü bildirdiyse) `mission_start`. NAV_TAKEOFF gönderilmez: `GET /api/drone/routes/{id}/mission` rotanın başına TAKEOFF öğesi ekler
 (irtifa ilk noktanınki, en az 2 m; ilk nokta zaten 'takeoff' ise eklenmez; yanıtta `auto_takeoff:true`). Yanıt akış bitince döner.
+Sunucu-içi diğer GÖKTUNGU kuralları (dron.py / gorev.py birebir; köprüye v1 komutlarıyla gider, metinler dron konsoluna düşer):
+- `disarm` her zaman `force` (param2=21196); `reboot` araç ARM'dayken reddedilir; `set_home{lat,lon}` irtifası = alt − alt_rel
+  (telemetri yoksa reddedilir); `goto{lat,lon}` irtifasız gelirse son takeoff/altitude_change hedefi (yoksa mevcut irtifa) kullanılır;
+  `altitude_change{alt_rel_m}` = GUIDED + mevcut konumda goto (hedef hafızaya alınır); land/rtl/disarm hedefi siler.
+- `mission_pause{davranis:'bekle'|'basa_don'}`: BRAKE (2,5 sn mod teyidi, olmazsa LOITER) | RTL; `mission_resume`: AUTO (teyitli);
+  `mission_cancel{rota}`: BRAKE/LOITER + `mission_clear`; `mission_resume_at{seq,rota,toplam_oge}`: mission_set_current → (DISARM ise
+  GUIDED → ARM → 5 sn teyit) → AUTO → mission_start. Doğrulanamayan mod geçişinde `ok:false` (aşama değişmez).
+- COMMAND_ACK: kullanıcı komutları (22, 21, 20, 400, 176, 252, 178, 192, 16, 300, 241, 246) için kabul → "<KOMUT> kabul edildi";
+  red → "[sysid] <KOMUT> BAŞARISIZ: <gerekçe> (<son PreArm metni, 15 sn içinde>)" dron konsoluna ve `{t:'konsol'}` genel konsola.
 Not: kod Copter merkezlidir (GÖKTUNGU'daki gibi); sabit kanatta GUIDED+NAV_TAKEOFF kalkış yapmaz — bilinen sınırlama.
 - **Ev öğesi köprünün işidir (ZORUNLU):** `mission_upload.items` HEPGO öğeleridir ve 0. öğe ev konumu DEĞİLDİR (rota görevlerinde 0. öğe
   otomatik TAKEOFF'tur). ArduPilot 0. sıradaki öğeyi ev konumu sayıp uçmadığı için köprü başa bir ev öğesi (command 16, frame 0, aracın

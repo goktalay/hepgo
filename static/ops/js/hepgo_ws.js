@@ -105,7 +105,7 @@ function hwYerel(anahtar, varsayilan){
 function hwYerelYaz(anahtar, deger){ try { localStorage.setItem(anahtar, JSON.stringify(deger)); } catch (e) {} }
 function hwSev(severity){   // MAV_SEVERITY 0-7 → GÖKTUNGU konsol seviyesi
   const s = Number(severity);
-  return s <= 3 ? "hata" : s === 4 ? "uyari" : s === 5 ? "basari" : "bilgi";
+  return s <= 3 ? "hata" : s === 4 ? "uyari" : "bilgi";   // GÖKTUNGU dron.py: 0-3 hata, 4 uyarı, 5+ bilgi
 }
 async function hwFetch(url, secenek){
   const o = Object.assign({credentials: "same-origin", headers: {}}, secenek || {});
@@ -369,7 +369,7 @@ function telemetriPaketiUret(){
   for (const d of dronlar) if (tablo[d.uid]) renkler[String(d.sysid)] = tablo[d.uid];
   // baglanti_durumlari: uçuş grubu bazlı (seri.js baglantiDurumlariIsle yalnız değişince yeniden çizer)
   return {tip: "telemetri", dronlar: dronlar, dron_renkler: renkler, baglanti_durumlari: ucusDurumlari(),
-          gorev_durum: GOREV, gorev_surdurulebilir: {}};
+          gorev_durum: GOREV, gorev_surdurulebilir: surdurulebilirPaketi(dronlar)};
 }
 function telemetriDongu(){
   const m = telemetriPaketiUret();
@@ -601,13 +601,21 @@ function eventIsle(m){
   const text = String(m.text || ""), sev = hwSev(m.severity);
   const ts = (typeof m.ts === "number") ? m.ts : Date.now() / 1000;
   if (!window.HEPGO_OZ.konsol_sunucu) yerelKonsolSatir(g, {ts: ts, etiket: "STATUSTEXT", metin: text, sev: sev});
-  hwKonsol("D" + g, text, sev);
-  if (Number(m.severity) <= 3) hwToast(text, "hata", "D" + g);
+  // GÖKTUNGU: STATUSTEXT her zaman dronun konsoluna; genel konsola YALNIZ hata/uyarı satırları "[sysid] metin" (DRON) düşer,
+  // konsol.js bildirim köprüsü bunları sağ üstte gösterir (8 sn bastırma)
+  if (sev === "hata" || sev === "uyari") genelKonsol("DRON", "[" + g + "] " + text, sev);
   mesajTamponEkle(g, text, Number(m.severity), ts);
   if (Number(m.severity) <= 4){
     UYARI_TAMPON.push({mesaj: "D" + g + ": " + text, ts: ts, okundu: false});
     while (UYARI_TAMPON.length > 100) UYARI_TAMPON.shift();
   }
+}
+function genelKonsol(kaynak, metin, sev){
+  hwKonsol(kaynak, metin, sev);
+  if (typeof window.konsolToastGonder === "function") try { window.konsolToastGonder(kaynak, metin, sev); } catch (e) {}
+}
+function konsolIsle(m){   // sunucu genel konsol satırı {t:'konsol', tag, text, sev} (GÖKTUNGU self.konsol: KOMUT / GÖREV)
+  genelKonsol(m.tag || "HEPGO", String(m.text || "").replace(/^D(\d+)(?=\s)/, (x, n) => "D" + (hwVar(m.sysid) ? gorunenSysid(m.bridge_id, m.sysid) : n)), m.sev || "bilgi");
 }
 function consoleIsle(m){
   if (m.sysid === null || m.sysid === undefined) return;
@@ -704,23 +712,50 @@ function resIsle(m){
     case "param_list":
       if (!ok) paramListesiYayinla(b.sysid, PARAM_ONBELLEK[b.sysid] || {}, "cache", null, hata);
       break;
-    case "gorev_yukle": case "gorev_baslat": case "gorev_durdur": case "gorev_devam": case "gorev_surdur": {
+    case "gorev_yukle": case "gorev_baslat": case "gorev_durdur": case "gorev_devam": {
       const g = GOREV[b.sysid];
       if (g){
         if (ok){
-          if (b.tip === "gorev_yukle"){ g.asama = "yuklendi"; g.yuklenen_oge = g.toplam_oge; g.yuzde = 100; }
+          if (b.tip === "gorev_yukle"){
+            // Köprü başa ev (+ hız) öğesi ekler: araç sırası = HEPGO sırası + ofset (GÖKTUNGU'da wp_harita/toplam_oge araç sırasıdır)
+            const ofset = (m.result && typeof m.result.offset === "number") ? m.result.offset : 1;
+            const wp = {};
+            Object.keys(g.wp_harita || {}).forEach(k => { wp[String(Number(k) + ofset)] = g.wp_harita[k]; });
+            Object.assign(g, {asama: "yuklendi", ofset: ofset, wp_harita: wp, toplam_oge: (g.toplam_oge || 0) + ofset, yuklenen_oge: (g.toplam_oge || 0) + ofset, yuzde: 100});
+          }
+          if (b.tip === "gorev_baslat"){ g.asama = "gorevde"; g.baslama_zamani = Date.now(); g.auto_gorusme = false; }
+          if (b.tip === "gorev_durdur"){ g.asama = "duraklatildi"; g.duraklatma_modu = (m.result && m.result.mode) || ""; surdurmeKaydet(b.sysid); }
+          if (b.tip === "gorev_devam") g.asama = "gorevde";
         } else if (b.ekler && b.ekler.oncekiAsama !== undefined){
-          g.asama = (b.tip === "gorev_yukle") ? "hata" : b.ekler.oncekiAsama;
+          g.asama = (b.tip === "gorev_yukle") ? "hata" : b.ekler.oncekiAsama;   // mod doğrulanamadı: aşama DEĞİŞMEZ (yanlış güvence yok)
         }
       }
       if (typeof window.gorevKomutSonucIsle === "function")
-        try { window.gorevKomutSonucIsle({tip: b.tip + "_sonuc", sysid: b.sysid, basari: ok, hata: ok ? undefined : hata}); } catch (e) {}
+        try { window.gorevKomutSonucIsle({tip: b.tip + "_sonuc", sysid: b.sysid, basari: ok, hata: ok ? undefined : hata, bilgi: ok ? undefined : hata}); } catch (e) {}
+      break;
+    }
+    case "gorev_surdur": {
+      const k = b.ekler && b.ekler.kayit;
+      if (ok && k){
+        GOREV[b.sysid] = {rota_id: k.rota_id, rota_isim: k.rota_isim || "?", asama: "gorevde", toplam_nokta: k.toplam_nokta || 0,
+                          toplam_oge: k.toplam_oge || 0, yuklenen_oge: k.toplam_oge || 0, yuzde: 100, wp_harita: k.wp_harita || {},
+                          durdurma_davranisi: k.durdurma_davranisi || "bekle", mevcut_seq: k.seq, en_yuksek_seq: k.seq, gorev_yuzde: 0,
+                          ofset: k.ofset || 0, baslama_zamani: Date.now(), auto_gorusme: false, surduruldu: true};
+        surdurmeSil(b.sysid);
+        if (hwVar(k.rota_id)){ rotaGorunurAyarla(k.rota_id, true); rotaListesiYayinla(); }
+      }
+      if (typeof window.gorevKomutSonucIsle === "function")
+        try { window.gorevKomutSonucIsle({tip: "gorev_surdur_sonuc", sysid: b.sysid, basari: ok, hata: ok ? undefined : hata}); } catch (e) {}
       break;
     }
     case "gorev_iptal": {
-      const rotaId = GOREV[b.sysid] ? GOREV[b.sysid].rota_id : null;
-      if (ok){ delete GOREV[b.sysid]; rotaGorevdenDus(rotaId); }
-      else if (GOREV[b.sysid] && b.ekler) GOREV[b.sysid].asama = b.ekler.oncekiAsama;
+      const kayit = GOREV[b.sysid];
+      if (ok){
+        // GÖKTUNGU: kayıt hemen düşmez; 'iptal' aşaması bir süre yayında kalır (arayüz rotayı kaldırsın, kullanıcı görsün)
+        if (kayit){ kayit.asama = "iptal"; kayit.dusme_zamani = Date.now() + BITIS_YAYIN_MS; }
+        surdurmeSil(b.sysid);
+        if (kayit) rotaGorevdenDus(kayit.rota_id);
+      } else if (kayit && b.ekler) kayit.asama = b.ekler.oncekiAsama;
       if (typeof window.gorevIptalSonucIsle === "function") try { window.gorevIptalSonucIsle({sysid: b.sysid, basari: ok}); } catch (e) {}
       break;
     }
@@ -753,6 +788,7 @@ function mesajIsle(m){
     case "event": eventIsle(m); break;
     case "res": resIsle(m); break;
     case "console": consoleIsle(m); break;
+    case "konsol": konsolIsle(m); break;
     case "console_hist": consoleHistIsle(m); break;
     case "param": paramIsle(m); break;
     case "params": paramsIsle(m); break;
@@ -829,7 +865,8 @@ function cmdKopruye(bridgeId, sysid, g, name, params, tip, ekler){
   const rid = "h" + (++ridSayac) + "-" + Date.now().toString(36);
   const kayit = {tip: tip || name, sysid: g, gercek: Number(sysid), bridge_id: Number(bridgeId), name: name, params: params || {}, ekler: ekler || {}, zaman: Date.now()};
   // sunucu zaman aşımının (10 sn; mission_upload/mission_download/log_list 60 sn) üstünde: sunucunun hata metni önce gelsin
-  const zamanAsimiSn = (name === "mission_upload" || name === "mission_download" || name === "log_list" || name === "mission_start") ? 65 : 12;
+  const zamanAsimiSn = (name === "mission_upload" || name === "mission_download" || name === "log_list" || name === "mission_start") ? 65
+    : (/^mission_(pause|resume|cancel|resume_at)$/.test(name) || name === "altitude_change") ? 35 : 12;   // mod teyidi (2,5 sn) + yedek mod
   kayit.timer = setTimeout(() => resIsle({rid: rid, ok: false, error: hwT("yanıt alınamadı (" + zamanAsimiSn + " sn zaman aşımı)", "no response (" + zamanAsimiSn + " s timeout)")}), zamanAsimiSn * 1000);
   BEKLEYEN[rid] = kayit;
   gercekWs.send(JSON.stringify({t: "cmd", rid: rid, bridge_id: Number(bridgeId), sysid: Number(sysid), name: name, params: params || {}}));
@@ -853,42 +890,44 @@ function desteklenmiyor(ne){
 }
 
 // {tip:'dron_komut', sysid, aksiyon, …} → HEPGO komutu
+// GÖKTUNGU dron.py PARAM_HARITASI: hız karosu UI anahtarı → (ArduPilot parametresi, çarpan, alt, üst). UI m/s ya da m; araç cm/s ya da cm.
+var PARAM_HARITASI = {
+  yukselme_hizi: ["WPNAV_SPEED_UP", 100, 0.5, 83.3],
+  alcalma_hizi: ["WPNAV_SPEED_DN", 100, 0.5, 83.3],
+  hareket_hizi: ["WPNAV_SPEED", 100, 0.5, 83.3],
+  rtl_irtifa: ["RTL_ALT", 100, 2.0, 200.0]
+};
+// {tip:'dron_komut', sysid, aksiyon, …} → HEPGO komutu. GÖKTUNGU kuralları (ön adımlar, zorla disarm, hedef irtifa, HOME irtifası,
+// konsol metinleri) SUNUCUDA uygulanır (drone_hub._single_command); burada yalnız çeviri yapılır.
 function dronKomutCevir(m){
-  const g = Number(m.sysid), d = dronVeri(g) || {};
+  const g = Number(m.sysid);
   switch (m.aksiyon){
-    case "arm": return cmdGonder(g, "arm", {});
-    case "arm_zorla":
-      if (window.HEPGO_OZ.arm_zorla) return cmdGonder(g, "arm", {force: true});
-      return desteklenmiyor(hwT("Zorla arm", "Force arm"));
-    case "disarm": return cmdGonder(g, "disarm", {});
+    case "arm": return cmdGonder(g, "arm", {});                    // kip DEĞİŞTİRMEZ (GÖKTUNGU v2.5.0)
+    case "arm_zorla": return cmdGonder(g, "arm", {force: true});   // param2=21196: arming denetimleri atlanır
+    case "disarm": return cmdGonder(g, "disarm", {});              // sunucu ZORLA gönderir (param2=21196)
     case "takeoff": return cmdGonder(g, "takeoff", {alt_rel_m: Number(m.irtifa) || 10});
     case "land": return cmdGonder(g, "land", {});
     case "rtl": return cmdGonder(g, "rtl", {});
+    case "auto": return cmdGonder(g, "set_mode", {mode: "AUTO"});
+    case "reboot": return cmdGonder(g, "reboot", {});
     case "set_mode": {
-      const ad = modAdi(g, m.irtifa);
-      if (!ad) return hwToast(hwT("Mod numarası çevrilemedi: " + m.irtifa, "Unknown mode number: " + m.irtifa), "hata", "KOMUT");
+      const ad = modAdi(g, m.irtifa);   // irtifa alanı mod numarasıdır (GÖKTUNGU); araç tipine göre beyaz liste
+      if (!ad){ genelKonsol("KOMUT", "İzin verilmeyen mod: " + m.irtifa, "hata"); return null; }
       return cmdGonder(g, "set_mode", {mode: ad});
     }
-    case "altitude_change": {
-      const hedef = Number(m.irtifa);
-      if (window.HEPGO_OZ.altitude_change) return cmdGonder(g, "altitude_change", {alt_rel_m: hedef});
-      if (String(d.mod || "").toUpperCase() !== "GUIDED")
-        return hwToast(hwT("İrtifa değişikliği için aracı önce GUIDED moda alın", "Switch to GUIDED mode before changing altitude"), "uyari", "KOMUT");
-      if (!window.gecerliKonumMu || !window.gecerliKonumMu(d.lat, d.lon))
-        return hwToast(hwT("Aracın konumu bilinmiyor", "Vehicle position unknown"), "uyari", "KOMUT");
-      return cmdGonder(g, "goto", {lat: d.lat, lon: d.lon, alt_rel_m: hedef});
-    }
-    case "goto":
-      return cmdGonder(g, "goto", {lat: Number(m.lat), lon: Number(m.lon), alt_rel_m: Math.max(10, Number(d.alt_rel) || 50)});
+    case "altitude_change": return cmdGonder(g, "altitude_change", {alt_rel_m: Number(m.irtifa)});   // sunucu: GUIDED + konumda irtifa
+    case "goto": return cmdGonder(g, "goto", {lat: Number(m.lat), lon: Number(m.lon)});              // irtifa: hedef korunur / mevcut
     case "set_home": {
-      if (!window.HEPGO_OZ.set_home) return desteklenmiyor(hwT("HOME ayarla", "Set HOME"));
       const p = (typeof m.lat === "number" && typeof m.lon === "number") ? {lat: m.lat, lon: m.lon} : {};
       return cmdGonder(g, "set_home", p, "set_home");
     }
-    case "param": {   // hız karosu (m/s → cm/s; WPNAV_SPEED*, RTL_ALT cm)
-      if (!window.HEPGO_OZ.param) return desteklenmiyor(hwT("Parametre yazma", "Parameter write"));
-      const deger = Math.round(Number(m.deger) * 100);
-      return cmdGonder(g, "param_set", {name: m.ad, value: deger}, "param_set", {ad: m.ad, deger: deger});
+    case "param": {   // hız karosu: UI anahtarı → ArduPilot parametresi (GÖKTUNGU param_ayarla)
+      const tanim = PARAM_HARITASI[String(m.ad)];
+      if (!tanim){ genelKonsol("KOMUT", "Bilinmeyen parametre: " + m.ad, "hata"); return null; }
+      const v = Number(m.deger);
+      if (!isFinite(v)){ genelKonsol("KOMUT", "Geçersiz değer: " + m.deger, "hata"); return null; }
+      const ham = Math.max(tanim[2], Math.min(tanim[3], v)) * tanim[1];
+      return cmdGonder(g, "param_set", {name: tanim[0], value: ham, type: 9}, "param_set", {ad: tanim[0], deger: ham, ui_ad: m.ad});
     }
     default:
       console.debug("[HEPGO WS] kapsam dışı dron_komut", m.aksiyon);
@@ -926,20 +965,65 @@ function armCheckIstemci(g){
 }
 
 // ---------------- Görev (gorev.js) ↔ mission_upload / set_mode ----------------
+// GÖKTUNGU gorev.py sabitleri
+var BITIS_MODLARI = ["LOITER", "RTL", "LAND", "GUIDED", "BRAKE", "HOLD", "POSHOLD", "QLOITER", "QLAND"];
+var BITIS_ASGARI_MS = 5000, BITIS_YAYIN_MS = 8000;
+// Uçan görevin takibi (GÖKTUNGU _ucus_denetim): seq ilerlemesi, AUTO teyidi, tamamlanma, telemetri kesilince sürdürme kaydı
 function gorevDurumTazele(dronlar){
+  const simdi = Date.now();
+  Object.keys(GOREV).forEach(s => {
+    const k = GOREV[s];
+    if (k && k.dusme_zamani && simdi >= k.dusme_zamani){ const rid = k.rota_id; delete GOREV[s]; rotaGorevdenDus(rid); }
+  });
   for (const d of dronlar){
     const g = GOREV[d.sysid];
-    if (!g) continue;
-    if (g.asama === "gorevde" || g.asama === "duraklatildi"){
-      if (d.armed) g.ucustu = true;
-      if (typeof d.mission_seq === "number"){
-        g.en_yuksek_seq = Math.max(g.en_yuksek_seq || 0, d.mission_seq);
-        const sonSeq = Math.max(1, (g.toplam_oge || 1) - 1);
-        g.gorev_yuzde = Math.min(99, Math.round(100 * g.en_yuksek_seq / sonSeq));
-      }
-      if (g.ucustu && !d.armed){ g.asama = "tamamlandi"; g.gorev_yuzde = 100; rotaGorevdenDus(g.rota_id); }
+    if (!g || (g.asama !== "gorevde" && g.asama !== "duraklatildi")) continue;
+    if (!d.baglanti){ surdurmeKaydet(d.sysid); continue; }   // batarya değişimi: dron gitti, görev bitmedi
+    const seq = d.mission_seq, gecerli = typeof seq === "number" && seq >= 0;
+    if (gecerli){ g.mevcut_seq = seq; if (seq > (g.en_yuksek_seq || 0)) g.en_yuksek_seq = seq; }
+    const mod = String(d.mod || "").toUpperCase();
+    if (mod === "AUTO") g.auto_gorusme = true;
+    const toplam = g.toplam_oge || 0, son = Math.max(0, toplam - 1);
+    g.gorev_yuzde = toplam > 1 ? Math.max(0, Math.min(99, Math.round(100 * (g.en_yuksek_seq || 0) / Math.max(1, son)))) : 0;
+    if (g.asama !== "gorevde" || !g.auto_gorusme || !gecerli) continue;
+    if (g.baslama_zamani && simdi - g.baslama_zamani < BITIS_ASGARI_MS) continue;
+    const disarm = d.armed === false;
+    if (toplam > 0 && (g.en_yuksek_seq || 0) >= son && (BITIS_MODLARI.indexOf(mod) >= 0 || disarm)){
+      Object.assign(g, {asama: "tamamlandi", gorev_yuzde: 100, bitis_zamani: simdi, dusme_zamani: simdi + BITIS_YAYIN_MS});
+      surdurmeSil(d.sysid);
+      genelKonsol("GÖREV", "D" + d.sysid + " GÖREV TAMAMLANDI ('" + g.rota_isim + "') — son nokta " + (g.en_yuksek_seq || 0) + "/" + son + ", "
+                  + (disarm ? "araç DISARM" : "mod " + (mod || "?")), "basari");
+      rotaGorevdenDus(g.rota_id);
     }
   }
+}
+// Sürdürme kaydı (GÖKTUNGU _surdurme_kaydet / surdurulebilir_paketi): yarım kalan görevin kalınan noktası. Tarayıcıda görev başına
+// saklanır; dron çevrimiçi ve aktif görev kaydı yokken "kaldığı yerden devam" önerilir.
+function surdurmeAnahtar(){ return "hepgo_ops_surdur_" + (GOREV_ID || "x"); }
+function surdurmeKayitlari(){ return hwYerel(surdurmeAnahtar(), {}) || {}; }
+function surdurmeKaydet(sysid){
+  const g = GOREV[sysid];
+  if (!g || (g.asama !== "gorevde" && g.asama !== "duraklatildi")) return;
+  const seq = Number(g.en_yuksek_seq || g.mevcut_seq || 0);
+  const t = surdurmeKayitlari();
+  t[String(sysid)] = {seq: seq, nokta: (g.wp_harita || {})[String(seq)], rota_id: g.rota_id, rota_isim: g.rota_isim, toplam_oge: g.toplam_oge || 0,
+                      toplam_nokta: g.toplam_nokta || 0, durdurma_davranisi: g.durdurma_davranisi || "bekle", asama: g.asama, ofset: g.ofset || 0,
+                      wp_harita: g.wp_harita || {}, zaman: Date.now() / 1000};
+  hwYerelYaz(surdurmeAnahtar(), t);
+}
+function surdurmeSil(sysid){
+  const t = surdurmeKayitlari();
+  if (t[String(sysid)]){ delete t[String(sysid)]; hwYerelYaz(surdurmeAnahtar(), t); }
+}
+function surdurulebilirPaketi(dronlar){
+  const t = surdurmeKayitlari(), paket = {};
+  Object.keys(t).forEach(s => {
+    if (GOREV[s]) return;   // aktif kayıt varsa öneri gösterilmez
+    const d = dronlar.find(x => String(x.sysid) === s);
+    if (!d || !d.baglanti) return;
+    paket[s] = Object.assign({}, t[s], {cevrimici: true});
+  });
+  return paket;
 }
 // Görev bitti/iptal: rota başka bir dronun açık görevinde değilse haritadan düşer (kullanıcı kararı 4)
 function rotaGorevdenDus(rotaId){
@@ -948,13 +1032,6 @@ function rotaGorevdenDus(rotaId){
   if (kullanimda) return;
   rotaGorunurAyarla(rotaId, false);
   rotaListesiYayinla();
-}
-function gorevAsamaGec(g, yeniAsama){
-  const kayit = GOREV[g];
-  if (!kayit) return undefined;
-  const onceki = kayit.asama;
-  kayit.asama = yeniAsama;
-  return onceki;
 }
 async function gorevYukle(m){
   const g = Number(m.sysid), rotaId = Number(m.rota_id);
@@ -983,45 +1060,41 @@ async function gorevYukle(m){
 }
 function gorevKomut(tip, m){
   const g = Number(m.sysid);
-  if (!GOREV[g] && tip !== "gorev_iptal"){
+  if (!GOREV[g] && tip !== "gorev_iptal" && tip !== "gorev_surdur"){
     hwToast(hwT("Önce bir rota yükleyin", "Upload a route first"), "uyari", "GÖREV");
     if (typeof window.gorevKomutSonucIsle === "function") window.gorevKomutSonucIsle({tip: tip + "_sonuc", sysid: g, basari: false, hata: hwT("Yüklü görev yok", "No mission loaded"), bilgi: "gorev_yok"});
     return;
   }
-  let onceki, rid = null;
+  const kayit = GOREV[g];
+  let onceki = kayit ? kayit.asama : undefined, rid = null;
   switch (tip){
     case "gorev_baslat":
-      // GÖKTUNGU gorev.py _gorevi_baslat: sunucu ARM değilse GUIDED → ARM → teyit, sonra AUTO → MISSION_START yapar;
+      // GÖKTUNGU gorev.py _gorevi_baslat: sunucu ARM değilse GUIDED → ARM → teyit, sonra AUTO → MISSION_START;
       // kalkışı rotanın başındaki TAKEOFF öğesi yapar (routes/{id}/mission ekler)
-      onceki = gorevAsamaGec(g, "gorevde");
-      rid = cmdGonder(g, "mission_start", {rota: GOREV[g].rota_isim || ""}, tip, {oncekiAsama: onceki});
+      rid = cmdGonder(g, "mission_start", {rota: kayit.rota_isim || ""}, tip, {oncekiAsama: onceki});
       break;
-    case "gorev_durdur":
-      onceki = gorevAsamaGec(g, "duraklatildi");
-      rid = cmdGonder(g, "set_mode", {mode: "LOITER"}, tip, {oncekiAsama: onceki});
+    case "gorev_durdur":   // 'bekle' → BRAKE (doğrulanamazsa LOITER), 'basa_don' → RTL; telemetriden doğrulanır
+      rid = cmdGonder(g, "mission_pause", {davranis: kayit.durdurma_davranisi || "bekle"}, tip, {oncekiAsama: onceki});
       break;
     case "gorev_devam":
-      onceki = gorevAsamaGec(g, "gorevde");
-      rid = cmdGonder(g, "set_mode", {mode: "AUTO"}, tip, {oncekiAsama: onceki});
+      rid = cmdGonder(g, "mission_resume", {}, tip, {oncekiAsama: onceki});
       break;
-    case "gorev_surdur":
-      if (!window.HEPGO_OZ.mission_set_current){
-        desteklenmiyor(hwT("Kaldığı yerden sürdürme", "Resume from waypoint"));
-        if (typeof window.gorevKomutSonucIsle === "function") window.gorevKomutSonucIsle({tip: "gorev_surdur_sonuc", sysid: g, basari: false, hata: hwT("Sunucu desteklemiyor", "Not supported by server")});
-        return;
-      }
-      onceki = gorevAsamaGec(g, "gorevde");
-      rid = cmdGonder(g, "mission_set_current", {seq: Number(m.seq) || 0}, tip, {oncekiAsama: onceki});
-      break;
-    case "gorev_iptal": {
-      const kayit = GOREV[g];
-      onceki = kayit ? gorevAsamaGec(g, "iptal") : undefined;
-      const basaDon = kayit && kayit.durdurma_davranisi === "basa_don";
-      rid = basaDon ? cmdGonder(g, "rtl", {}, tip, {oncekiAsama: onceki}) : cmdGonder(g, "set_mode", {mode: "LOITER"}, tip, {oncekiAsama: onceki});
+    case "gorev_surdur": {   // yarım kalmış görev (batarya değişimi): kalınan noktaya konumlan → ARM (gerekirse) → AUTO
+      const k = surdurmeKayitlari()[String(g)];
+      const red = (bilgi) => {
+        if (typeof window.gorevKomutSonucIsle === "function") window.gorevKomutSonucIsle({tip: "gorev_surdur_sonuc", sysid: g, basari: false, hata: bilgi});
+      };
+      if (!k) return red("surdurulecek_gorev_yok");
+      if (k.toplam_oge && k.seq >= k.toplam_oge){ surdurmeSil(g); return red("gorev_zaten_bitmis"); }
+      rid = cmdGonder(g, "mission_resume_at", {seq: Math.max(0, k.seq - (k.ofset || 0)), rota: k.rota_isim || "", toplam_oge: k.toplam_oge},
+                      tip, {kayit: k});
       break;
     }
+    case "gorev_iptal":    // BRAKE (doğrulanamazsa LOITER) + dronun görev listesi temizlenir
+      rid = cmdGonder(g, "mission_cancel", {rota: kayit ? kayit.rota_isim : ""}, tip, {oncekiAsama: onceki});
+      break;
   }
-  if (!rid && onceki !== undefined && GOREV[g]) GOREV[g].asama = onceki;   // gönderilemedi: aşamayı geri al
+  if (!rid && kayit && onceki !== undefined) kayit.asama = onceki;   // gönderilemedi: aşamayı geri al
 }
 
 // ---------------- Rotalar (rotalar.js) ↔ REST /api/drone/routes ----------------

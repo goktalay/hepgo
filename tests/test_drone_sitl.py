@@ -82,6 +82,29 @@ def main():
             pump(8, lambda: lats.append(state['lat']) and False)
             moved = [x - lat0 for x in lats]
             assert 0 < moved[len(moved) // 2] < 0.002 and max(moved) > 0.0003, moved[::10]   # kademeli ilerleme (anlık sıçrama yok)
+            # GÖKTUNGU prosedürleri gerçek firmware'e karşı: irtifa değişikliği hedefi hafızaya alır, irtifasız goto onu korur
+            assert cmd('a1', 'altitude_change', {'alt_rel_m': 30})['ok'] is True
+            assert pump(25, lambda: (state.get('alt_rel') or 0) > 27), state.get('alt_rel')
+            assert cmd('g2', 'goto', {'lat': lat0, 'lon': state['lon']})['ok'] is True
+            assert any('@ 30m rel (hedef korundu)' in c for c in cons), cons[-6:]
+            # Görev: yükle → başlat (havada: AUTO + MISSION_START) → duraklat (BRAKE teyitli) → devam (AUTO) → iptal (BRAKE + liste temizlenir)
+            items = [{'seq': 0, 'frame': 6, 'command': 16, 'current': 1, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0,
+                      'x': int((lat0 + 0.003) * 1e7), 'y': int(state['lon'] * 1e7), 'z': 30.0, 'mission_type': 0},
+                     {'seq': 1, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0,
+                      'x': int((lat0 + 0.006) * 1e7), 'y': int(state['lon'] * 1e7), 'z': 30.0, 'mission_type': 0}]
+            up = cmd('m1', 'mission_upload', {'items': items})
+            assert up['ok'] is True and up['result']['offset'] == 1, up
+            assert cmd('m2', 'mission_start', {'rota': 'SITL'})['ok'] is True
+            assert pump(10, lambda: state.get('mode') == 'AUTO'), state.get('mode')
+            r = cmd('m3', 'mission_pause', {'davranis': 'bekle'})
+            assert r['ok'] is True and r['result']['mode'] == 'BRAKE', r
+            r = cmd('m4', 'mission_resume')
+            assert r['ok'] is True and r['result']['mode'] == 'AUTO', r
+            r = cmd('m5', 'mission_cancel', {'rota': 'SITL'})
+            assert r['ok'] is True and r['result']['mode'] == 'BRAKE', r
+            dl = cmd('m6', 'mission_download')
+            assert dl['ok'] is True and dl['result']['items'] == [], dl   # görev listesi temizlendi
+            print('görev akışları: AUTO → BRAKE → AUTO → iptal (BRAKE, liste boş)')
             assert cmd('l1', 'land')['ok'] is True
             alts2 = []
             pump(10, lambda: alts2.append(state.get('alt_rel') or 0) and False)

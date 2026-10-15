@@ -241,6 +241,18 @@ def main():
                 assert c2['name'] == 'link_open' and c2['params']['port'] == 14550, c2
                 ws.send_text(json.dumps({'t': 'res', 'rid': 'l1', 'ok': True}))
                 assert drain(live, 'res', pred=lambda m: m.get('rid') == 'l1')['ok'] is True
+                # GÖKTUNGU COMMAND_ACK bildirimi: kabul → dron konsolu; red → gerekçeli BAŞARISIZ (dron + genel konsol), son PreArm metniyle
+                from pymavlink.dialects.v20 import ardupilotmega as _d
+                enc = _d.MAVLink(None, srcSystem=7, srcComponent=1)
+                ws.send_bytes(enc.statustext_encode(3, b'PreArm: Need Position Estimate', 0, 0).pack(enc)
+                              + enc.command_ack_encode(400, 4).pack(enc) + enc.command_ack_encode(22, 0).pack(enc)
+                              + enc.command_ack_encode(511, 4).pack(enc))   # 511 (SET_MESSAGE_INTERVAL) kullanıcı komutu değil: bildirilmez
+                red = drain(live, 'konsol', limit=60)
+                assert red['text'] == '[7] ARM / DISARM BAŞARISIZ: yürütülemedi (ön koşullar sağlanmadı) (PreArm: Need Position Estimate)' and red['sev'] == 'hata', red
+                kabul = drain(live, 'console', limit=60, pred=lambda m: m['text'] == 'KALKIŞ (TAKEOFF) kabul edildi')
+                assert kabul['sev'] == 'basari' and kabul['tag'] == 'KOMUT', kabul
+                ev = drain(live, 'event', limit=60, pred=lambda m: 'PreArm' in m['text'])
+                assert ev['severity'] == 3, ev
                 # bilinmeyen komut reddedilir (köprüye gitmez)
                 res = cmd(live, 'r2', b['id'], 'selfdestruct', sysid=7)
                 assert res['ok'] is False and 'Bilinmeyen' in res['error'], res
@@ -398,8 +410,10 @@ def main():
             assert 'GUIDED/ARM teyidi bekleniyor...' in texts and 'TAKEOFF komutu iletildi: 20 m' in texts, texts
             assert any(x.startswith('Kontrol listesi onaylandı (kayıt #') for x in texts), texts
             assert cmd(live, 's2', sim_id, 'takeoff', {'alt_rel_m': 25})['ok'] is True   # havada: ARM atlanır, yeni hedef
-            assert cmd(live, 's2b', sim_id, 'disarm')['ok'] is False                    # havada disarm edilemez
-            assert cmd(live, 's3', sim_id, 'goto', {'lat': 39.902, 'lon': 32.8, 'alt_rel_m': 20})['ok'] is True
+            r = cmd(live, 's2b', sim_id, 'reboot')                                    # GÖKTUNGU: ARM'dayken reboot reddedilir
+            assert r['ok'] is False and r['error'].startswith('REBOOT REDDEDİLDİ'), r
+            # goto irtifasız: takeoff hedefi (25 m rel) korunur (GÖKTUNGU hedef_irtifa_rel)
+            assert cmd(live, 's3', sim_id, 'goto', {'lat': 39.902, 'lon': 32.8})['ok'] is True
             st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['groundspeed'] > 5)
             assert st['state']['lat'] > 39.9 and st['state']['wp_dist'] is not None and st['state']['dist_m'] > 0 and st['state']['flight_s'] >= 0, st['state']
             assert cmd(live, 's4', sim_id, 'rtl')['ok'] is True
@@ -421,6 +435,24 @@ def main():
             st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['mode'] == 'AUTO')
             assert st['state']['mission_count'] == 3 and st['state']['mission_seq'] is not None, st['state']
             assert cmd(live, 's10', sim_id, 'mission_set_current', {'seq': 1})['ok'] is True
+            # GÖKTUNGU görev akışları: duraklat ('bekle' → BRAKE, telemetriden doğrulanır), devam (AUTO), başa dön (RTL), iptal (+ liste temizlenir)
+            r = cmd(live, 'p1', sim_id, 'mission_pause', {'davranis': 'bekle'})
+            assert r['ok'] is True and r['result']['mode'] == 'BRAKE', r
+            r = cmd(live, 'p2', sim_id, 'mission_resume')
+            assert r['ok'] is True and r['result']['mode'] == 'AUTO', r
+            r = cmd(live, 'p3', sim_id, 'mission_pause', {'davranis': 'basa_don'})
+            assert r['ok'] is True and r['result']['mode'] == 'RTL', r
+            r = cmd(live, 'p4', sim_id, 'mission_resume_at', {'seq': 1, 'rota': 'Test', 'toplam_oge': 3})   # havada: set_current + AUTO
+            assert r['ok'] is True, r
+            r = cmd(live, 'p5', sim_id, 'mission_cancel', {'rota': 'Test'})
+            assert r['ok'] is True and r['result']['mode'] == 'BRAKE' and drone_hub.SIMS[sim_id].mission == [], r
+            gk = [m for m in _inbox.get(id(live), []) if m.get('t') == 'konsol']
+            gk += [drain(live, 'konsol', limit=200, pred=lambda m: 'GÖREV İPTAL EDİLDİ' in m['text'])]
+            texts = [m['text'] for m in gk]
+            assert any("GÖREV İPTAL EDİLDİ ('Test') - dron BRAKE, görev listesi temizlendi" in x for x in texts), texts
+            # irtifa değişikliği: GUIDED + konumda irtifa, hedef hafızaya alınır
+            assert cmd(live, 'a1', sim_id, 'altitude_change', {'alt_rel_m': 30})['ok'] is True
+            assert drone_hub.SIMS[sim_id].st.hedef_rel == 30.0 and drone_hub.SIMS[sim_id].mode == 'GUIDED'
             assert cmd(live, 's11', sim_id, 'set_home', {'lat': 39.95, 'lon': 32.85})['ok'] is True
             ac = cmd(live, 's12', sim_id, 'arm_check')
             assert ac['ok'] is True and ac['result']['armed'] is True and ac['result']['ozet']['hazir'] is True, ac
@@ -432,6 +464,14 @@ def main():
             live.send_text(json.dumps({'t': 'console_hist', 'bridge_id': sim_id, 'sysid': 1}))
             hist = drain(live, 'console_hist', limit=60, pred=lambda m: m.get('bridge_id') == sim_id)
             assert any(x['tag'] == 'KOMUT' for x in hist['lines']) and any('Arming' in x['text'] for x in hist['lines']), hist['lines'][:3]
+            ht = [x['text'] for x in hist['lines']]
+            for beklenen in ('-> takeoff', 'GOTO 39.90200,32.80000 @ 25m rel (hedef korundu)', 'İRTİFA -> 30m', 'MOD -> LOITER', '-> reboot',
+                             'REBOOT REDDEDİLDİ: araç arm edilmiş durumda. Önce disarm edin.', 'RTL'):
+                assert beklenen in ht, (beklenen, ht[-25:])
+            assert any(x.startswith('HOME = 39.950000,32.850000 @ ') and x.endswith('m AMSL (zemin kestirimi)') for x in ht), ht[-10:]
+            # DISARM her zaman ZORLA (GÖKTUNGU param2=21196): havada da motorlar kesilir, hedef irtifa unutulur
+            assert cmd(live, 'd1', sim_id, 'disarm')['ok'] is True
+            assert drone_hub.SIMS[sim_id].st.d['armed'] is False and drone_hub.SIMS[sim_id].st.hedef_rel is None
             with db.connect() as conn:
                 assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Sanal dron komutu'").fetchone()[0] >= 5
             # Görev süzgeci: uçuşa bağlı köprü (b) görünür; başka köprü (b2) bu izleyiciye ulaşmaz

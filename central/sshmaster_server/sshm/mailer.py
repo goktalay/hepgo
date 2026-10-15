@@ -16,7 +16,7 @@ from email.utils import formataddr
 from . import settings
 
 BRANDS = {'sm': ('SSH Master', 'sshmasters.com'), 'fm': ('FTP Masters', 'ftpmasters.com'), 'sq': ('SQL Master', 'sqlmaster.app'),
-          'np': ('Notepad Master', 'notepadmaster.com'),
+          'np': ('Notepad Master', 'notepadmaster.com'), 'cv': ('Convert Master', 'convertmaster.app'),
           'mt': ('Mastertool', 'mastertool.download')}
 
 if os.environ.get('MT_SMTP_USER', '').strip() and os.environ.get('MT_SMTP_PASS', ''):
@@ -89,7 +89,7 @@ def _layout(brand, title, body_html, button_text=None, button_url=None, foot=Non
   </div></div>"""
 
 
-_ONE = ('Tek Mastertool hesabıyla tüm Mastertool uygulamalarına (SSH Master, FTP Masters, SQL Master, Notepad Master) giriş yapabilir, indirmelerinizi ve şifreli eşitlemenizi '
+_ONE = ('Tek Mastertool hesabıyla tüm Mastertool uygulamalarına (SSH Master, FTP Masters, SQL Master, Notepad Master, Convert Master) giriş yapabilir, indirmelerinizi ve şifreli eşitlemenizi '
         'tek yerden yönetebilirsiniz.')
 
 

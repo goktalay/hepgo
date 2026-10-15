@@ -16,7 +16,7 @@ from .. import auth, config, db, support
 
 router = APIRouter(prefix='/api/central/sshm')
 fed = APIRouter(prefix='/api/federation/mastertool')
-APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master'}
+APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master'}
 sshm_user = auth.require_module('sshmaster')
 SSHM_URL = os.environ.get('CAYMAZ_SSHM_URL', 'http://127.0.0.1:8095').rstrip('/')
 
@@ -103,7 +103,7 @@ def release_delete(rid: int, user=Depends(sshm_user), conn=db.DB):
 # Talepler mevcut talep ekranına slug='mastertool', kanal 'mastertool', etiket = uygulama adıyla düşer; kullanıcı yalnız kendi
 # e-postasıyla açılmış talepleri görür. İç notlar ve atanan kişi bilgisi dışarı verilmez.
 SLUG = 'mastertool'
-TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'mt': 'Hesap / genel'}
+TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master', 'mt': 'Hesap / genel'}
 _APP_OF = {v: k for k, v in TICKET_APPS.items()}
 
 

@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -232,7 +232,7 @@ def main():
         r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
         assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
         assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
-        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np'}
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv'}
         assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
         sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
         c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
@@ -253,6 +253,15 @@ def main():
         assert c.post('/api/np/releases/1.0.1/setup', data={}, files={'file': ('x', b'MZ')}, headers={'X-Release-Key': 'sq-anahtar'}).status_code == 403
         assert c.get('/', headers={'Host': 'www.notepadmaster.com'}).text.count('<title>Notepad Master') == 1
         assert c.get('/brand/np.png').headers['content-type'] == 'image/png'
+        # ---- Convert Master (cv)
+        r = c.post('/api/cv/auth/login', json={'email': 'yeni@test.com', 'auth_hash': auth_hash('Yeni-1111', k2)})
+        assert r.status_code == 200, r.text
+        CV = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert c.get('/api/np/library', headers=CV).json()['code'] == 'wrong_app'
+        assert c.put('/api/cv/library', headers=CV, json={'base_version': 0, 'blob': blob}).json() == {'version': 1}
+        assert c.post('/api/cv/releases/1.0.0/setup', data={}, files={'file': ('x', b'MZ' + b'c' * 9)}, headers={'X-Release-Key': 'cv-anahtar'}).status_code == 200
+        assert c.get('/', headers={'Host': 'convertmaster.app'}).text.count('<title>Convert Master') == 1
+        assert c.get('/brand/cv.png').headers['content-type'] == 'image/png'
         r = c.get('/giris', headers={'Host': 'notepadmaster.com'})
         assert 'data-site="np"' in r.text or r.status_code == 302
 
@@ -284,7 +293,7 @@ def main():
         # ---- site kiti ve çeviri sözlükleri (8 dil; Türkçe kaynak sayfanın kendisi)
         for a in ('/kit.js', '/kit.css'):
             assert c.get(a, headers={'Host': 'ftpmasters.com'}).status_code == 200, a
-        for site in ('sm', 'fm', 'sq', 'np', 'mt', 'hesap'):
+        for site in ('sm', 'fm', 'sq', 'np', 'cv', 'mt', 'hesap'):
             for lang in ('en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'):
                 r = c.get(f'/i18n/{site}.{lang}.json')
                 assert r.status_code == 200 and isinstance(r.json(), dict) and len(r.json()) > 20, (site, lang)
@@ -294,8 +303,8 @@ def main():
         for lang in ('en', 'ar', 'zh'):
             d = c.get(f'/i18n/hesap.{lang}.json').json()
             assert not [k for k in keys if k not in d], (lang, [k for k in keys if k not in d][:3])   # hesap.js'deki her metin çevrilmiş
-        for site in ('sm', 'fm', 'sq', 'np', 'mt'):
-            assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'sq': 'www.sqlmaster.app', 'np': 'notepadmaster.com', 'mt': 'mastertool.download'}[site]}).text
+        for site in ('sm', 'fm', 'sq', 'np', 'cv', 'mt'):
+            assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'sq': 'www.sqlmaster.app', 'np': 'notepadmaster.com', 'cv': 'www.convertmaster.app', 'mt': 'mastertool.download'}[site]}).text
         assert 'data-site="hesap"' in c.get('/giris').text
 
         # ---- son kullanıcı hiçbir yerde iç adres görmez

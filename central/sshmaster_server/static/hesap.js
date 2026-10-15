@@ -10,7 +10,7 @@ const view = $('#view');
 view.setAttribute('data-noi18n', '');
 const SITE = document.body.dataset.site || 'sm';
 const BRAND = document.body.dataset.brand || SITE;
-const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', mt: 'Mastertool' };
+const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: 'Mastertool' };
 const SNAME = NAMES[SITE] || 'Mastertool';
 const API = '/api/mt';
 const AQ = BRAND !== SITE ? `?app=${BRAND}` : '';   // portalda ürün markası sayfalar arasında korunur
@@ -161,7 +161,7 @@ const fmtSize = n => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 102
 const fmtDate = s => (s ? new Date(s).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const TABS = () => [['uygulamalar', t('Uygulamalar')], ['cihazlar', t('Cihazlar')], ['guvenlik', t('Şifre')], ['destek', t('Destek')]];
 const TK_STATUS = () => ({ acik: [t('Açık'), 'warn'], yanit_bekliyor: [t('Yanıtlandı'), 'on'], cozuldu: [t('Çözüldü'), ''], kapali: [t('Kapalı'), ''] });
-const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', mt: t('Hesap / genel') });
+const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: t('Hesap / genel') });
 let ACC = null;
 let curTab = null;
 

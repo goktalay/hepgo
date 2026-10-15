@@ -13,7 +13,7 @@
   const DICTS = [SITE, ...((me?.dataset.dicts || '').split(',').map(s => s.trim()).filter(Boolean))];
   const LANGS = [['tr', 'Türkçe'], ['en', 'English'], ['fr', 'Français'], ['de', 'Deutsch'], ['es', 'Español'], ['ar', 'العربية'], ['zh', '中文'], ['ru', 'Русский']];
   const CODES = LANGS.map(l => l[0]);
-  const SITES = ['mastertool.download', 'sshmasters.com', 'ftpmasters.com', 'sqlmaster.app', 'notepadmaster.com', 'hepgo.com'];
+  const SITES = ['mastertool.download', 'sshmasters.com', 'ftpmasters.com', 'sqlmaster.app', 'notepadmaster.com', 'convertmaster.app', 'hepgo.com'];
   const root = document.documentElement;
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* özel kip */ } } };
   const qs = new URLSearchParams(location.search);
@@ -185,7 +185,7 @@
     if (!slot) return;
     const a = document.createElement('a');
     a.className = 'mtk-mt'; a.href = 'https://mastertool.download/'; a.target = '_blank'; a.rel = 'noopener';
-    a.setAttribute('data-noi18n', ''); a.title = 'Mastertool — SSH Master · FTP Masters · SQL Master · Notepad Master';
+    a.setAttribute('data-noi18n', ''); a.title = 'Mastertool — SSH Master · FTP Masters · SQL Master · Notepad Master · Convert Master';
     a.innerHTML = `<span class="mtk-mt-in">${MT_MARK}<span class="mtk-mt-tx">Mastertool</span><svg class="mtk-mt-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
     slot.replaceWith(a);
   }

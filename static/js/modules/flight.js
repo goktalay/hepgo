@@ -158,7 +158,7 @@ export async function renderFlight(view, id, ctx, tab) {
 
   // ---- Hurda: tek kullanımlık uçak uçunca (log havada kalma gösterince otomatik; log yoksa saha sorumlusu işaretler)
   const scrapActions = () => {
-    if (!d.can.manage || o.usage_type !== 'TEK') return null;
+    if (!o || !d.can.manage || o.usage_type !== 'TEK') return null;   // dron uçuşu: sipariş/hurda yok
     if (o.status === 'TAMAMLANDI') {
       return h('div', { class: 'fl-scrap' }, h('button', { class: 'btn sm danger', onclick: async () => {
         if (!await confirmDialog('Uçtu — hurdaya ayır', tr('{id} tek kullanımlık; uçtuğu için hurdaya ayrılsın mı? Bir daha sahaya gidemez.', { id: o.queue_no || o.code }),
@@ -294,8 +294,21 @@ export async function renderFlight(view, id, ctx, tab) {
   };
 
   clear(view,
-    pageHead(tr('Uçuş — {id}', { id: o.queue_no || o.code }), { back: `#/field/task/${t.id}`, sub: `${t.code} · ${o.product_name || ''}` }),
+    pageHead(tr('Uçuş — {id}', { id: o ? (o.queue_no || o.code) : (f.drone_code || f.label || `#${f.id}`) }),
+      { back: `#/field/task/${t.id}`, sub: `${t.code} · ${o ? (o.product_name || '') : (f.drone_name || '')}` }),
     h('div', { class: 'fl-top' },
+      // Dron uçuşu (Dron Envanteri): sipariş yok → dron bilgileri
+      !o ? h('div', { class: 'card card-pad' },
+        h('h2', { class: 'fl-h' }, 'Dron'),
+        h('dl', { class: 'kv' },
+          kv('Dron kodu', f.drone_code ? h('b', { class: 'mono' }, f.drone_code) : '—'),
+          kv('Ad', f.drone_name || '—'),
+          kv('Model', f.drone_model || null),
+          kv('Tür', { mavlink: 'MAVLink', sanal: 'Sanal Dron', dji: 'DJI' }[f.protocol || f.drone_protocol] || null),
+          kv('Bağlantı', f.bridge_name ? `${f.bridge_name}${f.sysid ? ` · sysid ${f.sysid}` : ''}` : null),
+          kv('Fırlatma sistemi', f.launch ? LAUNCH[f.launch] : 'Seçilmedi'),
+          kv('Uçuş süresi (havada)', log?.summary?.flight_s != null ? clock(log.summary.flight_s) : null),
+          kv('Uçuş notu', f.note))) :
       h('div', { class: 'card card-pad' },
         h('h2', { class: 'fl-h' }, 'Uçak'),
         h('dl', { class: 'kv' },

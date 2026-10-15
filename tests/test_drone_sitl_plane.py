@@ -8,7 +8,7 @@ import os
 import tempfile
 import time
 faulthandler.dump_traceback_later(400, exit=True)
-os.environ.update(CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYMAZ_PRINTER_POLL='0', CAYMAZ_ADMIN_USERNAME='admin@test',
+os.environ.update(CAYMAZ_DRONE_PKG='1', CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYMAZ_PRINTER_POLL='0', CAYMAZ_ADMIN_USERNAME='admin@test',
                   CAYMAZ_ADMIN_PASSWORD='admin-sifre-1', CAYMAZ_FORCE_PASSWORD_CHANGE='0', HEPGO_SITL='1')
 from fastapi.testclient import TestClient  # noqa: E402
 from app import auth, drone_hub, flight_analysis  # noqa: E402

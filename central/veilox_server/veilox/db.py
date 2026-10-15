@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS companies (
     package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,
     mode TEXT NOT NULL DEFAULT 'online',  -- online | offline
     modules TEXT NOT NULL DEFAULT '[]',
-    firm_type TEXT NOT NULL DEFAULT 'kobi',  -- kobi | esnaf (kayıtta seçilen firma tipi)
+    firm_type TEXT NOT NULL DEFAULT 'kobi',  -- kobi | esnaf | dron (kayıtta seçilen firma tipi)
     white_label INTEGER NOT NULL DEFAULT 0,
     master_username TEXT NOT NULL,
     master_name TEXT DEFAULT '',

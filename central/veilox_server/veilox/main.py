@@ -30,7 +30,7 @@ from . import settings  # noqa: E402
 settings.load()
 
 from . import db  # noqa: E402
-from .modules_catalog import MODULES, MODULE_KEYS, kobi_modules, valid_modules, esnaf_modules, ESNAF_PKGS  # noqa: E402
+from .modules_catalog import MODULES, MODULE_KEYS, kobi_modules, valid_modules, esnaf_modules, drone_modules, ESNAF_PKGS  # noqa: E402
 from .passwd import make_hash, verify_password  # noqa: E402
 from . import provision, pkg, mailer  # noqa: E402
 USERNAME = os.environ.get('VEILOX_USERNAME', '').strip().lower()
@@ -383,7 +383,7 @@ class RegisterIn(BaseModel):
     country: str = ''           # ülke kodu (ör. TR)
     logo: str = ''              # data URI (base64) — isteğe bağlı firma logosu (kurallı)
     lang: str = ''              # kayıt dili (tr/en/de/fr/es/ar/ru) → master kullanıcının ERP varsayılan dili olur
-    firm_type: str = 'kobi'     # 'kobi' (modül seçimli) | 'esnaf' (hazır paketler)
+    firm_type: str = 'kobi'     # 'kobi' (modül seçimli) | 'esnaf' (hazır paketler) | 'dron' (Dron paketi)
     modules: list = []          # KOBİ: seçilen OPSİYONEL modüller (zorunlular otomatik eklenir; merkez modülleri hariç)
     esnaf_pkg: str = ''         # ESNAF: paket (bakkal/berber/lokanta) → modül seti pakete göre belirlenir
 
@@ -542,6 +542,8 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
                 if pkg not in ESNAF_PKGS:
                     pkg = 'bakkal'
                 mods = esnaf_modules(pkg)                       # esnaf: pakete göre modül seti (bakkal/berber/lokanta)
+            elif ft == 'dron':
+                mods = drone_modules()                          # Dron paketi: sabit modül seti (Dron Yönetimi yalnız burada)
             elif body.modules:
                 mods = kobi_modules(body.modules)              # KOBİ: zorunlu + seçilen opsiyonel
             else:
@@ -567,7 +569,7 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks):
         country = (body.country or '').strip()[:2].upper() or None
         logo_path = _save_firm_logo(slug, body.logo) if body.logo.strip() else None   # kurallı (tür+2MB)
         _reg[ip].append(now)
-        _ftype = 'esnaf' if (body.firm_type or 'kobi') == 'esnaf' else 'kobi'
+        _ftype = body.firm_type if body.firm_type in ('esnaf', 'dron') else 'kobi'
         cur = conn.execute(
             'INSERT INTO companies(slug,name,package_id,mode,modules,firm_type,white_label,master_username,master_name,'
             'master_password_hash,master_secret,monthly_fee,status,self_registered,phone,tax_no,city,country,logo,email_verified,created_at) '

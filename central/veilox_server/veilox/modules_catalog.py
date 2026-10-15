@@ -54,10 +54,11 @@ CORE_MODULES = ['admin', 'users', 'announcements']
 # Modül katmanları (tenant app/modules_tier.py ile BİREBİR senkron):
 # required = KOBİ firmada her zaman açık; optional = kayıtta/sonradan seçilir; central = yalnız merkez açar.
 REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance'}
-OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'drone', 'certs', 'fleet', 'projects',
+OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
             'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos',
             'sections', 'services', 'reservations', 'waiter'}
 CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}
+PACKAGE = {'drone'}   # yalnız Dron paketinde gelir (KOBİ modül seçiminde görünmez); tenant modules_tier.PACKAGE ile aynı
 
 
 def tier(key):
@@ -66,6 +67,8 @@ def tier(key):
         return 'required'
     if k in CENTRAL:
         return 'central'
+    if k in PACKAGE:
+        return 'package'
     return 'optional'
 
 
@@ -96,4 +99,14 @@ ESNAF_PKGS = tuple(ESNAF_PACKAGES)
 def esnaf_modules(pkg):
     """Esnaf kaydı: paket (bakkal/berber/lokanta) → modül listesi (katalog sırasıyla, geçerli anahtarlar)."""
     keys = set(ESNAF_PACKAGES.get(pkg, ESNAF_PACKAGES['bakkal']))
+    return [k for k in MODULE_KEYS if k in keys]
+
+
+# Dron paketi (firm_type='dron'): GÖKTUNGU'nun yerini alan Dron Yönetimi (envanter, canlı uçuş, rotalar, köprüler) + saha görevleri;
+# üretim modülü yok. Müşteri (CRM), fatura (finans), evrak ve çekirdek modüller dahil. Dron modülleri başka pakette görünmez.
+DRONE_PACKAGE = ['admin', 'users', 'announcements', 'reports', 'tools', 'companies', 'documents', 'finance', 'field', 'drone']
+
+
+def drone_modules():
+    keys = set(DRONE_PACKAGE)
     return [k for k in MODULE_KEYS if k in keys]

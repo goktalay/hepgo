@@ -362,8 +362,6 @@ def current_user(request: Request, conn=db.DB):
     # 'master' modülü (sistem sahibi aracı) her zaman kalır; CAYMAZ_MODULES tanımsızsa kısıtlama yoktur.
     if config.MODULES is not None:
         allow = set(config.MODULES) | {'master', 'uyelik'}   # Üyeliğim & Destek: paketten bağımsız, her firmada destek kanalı
-        if 'field' in allow:
-            allow.add('drone')   # Dron Yönetimi, Saha Yönetimi'nden ayrıldı: sahip olan firmada açık kalır
         user['modules'] = [m for m in user['modules'] if m.split('.')[0] in allow]
     # Master, Program Ayarları › Modül Yönetimi'nden SEÇMELİ (optional) modülleri kapatabilir (app_kv['modules.disabled']).
     # Zorunlu (required) ve her-zaman (master/uyelik) modüller kapatılamaz.
@@ -381,8 +379,29 @@ def current_user(request: Request, conn=db.DB):
     if not config.ESNAF_PKG:
         _esnaf = {'pos', 'sections', 'services', 'reservations', 'waiter'}
         user['modules'] = [m for m in user['modules'] if m.split('.')[0] not in _esnaf]
+    # Dron Yönetimi yalnız dron paketinde (diğer paketlerde görünmez); bkz. drone_visible
+    if not drone_visible(conn):
+        user['modules'] = [m for m in user['modules'] if m.split('.')[0] != 'drone']
     user['write_modules'] = [m for m in user.get('write_modules', []) if m in user['modules']]
     return user
+
+
+_drone_legacy = None
+
+
+def drone_visible(conn):
+    """Dron Yönetimi bu kurulumda görünür mü: dron paketi (CAYMAZ_DRONE_PKG), merkezin açıkça verdiği 'drone' modülü ya da
+    paket ayrımından ÖNCE dron kaydı açılmış kurulum (mevcut kullanım kesilmesin). Diğer paketlerde (KOBİ, esnaf) gizli."""
+    global _drone_legacy
+    if config.DRONE_PKG or (config.MODULES is not None and 'drone' in config.MODULES):
+        return True
+    if _drone_legacy is None:
+        try:
+            _drone_legacy = bool(conn.execute('SELECT 1 FROM drone_drones LIMIT 1').fetchone()
+                                 or conn.execute('SELECT 1 FROM drone_bridges LIMIT 1').fetchone())
+        except Exception:   # noqa: BLE001 — tablo yoksa dron kullanımı yok
+            _drone_legacy = False
+    return _drone_legacy
 
 
 PASSWORD_FREE_PATHS = {'/api/auth/me', '/api/auth/password', '/api/auth/logout', '/api/system/status', '/api/activity'}

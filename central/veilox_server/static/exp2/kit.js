@@ -47,6 +47,13 @@
   let dict = {};
   const cache = {};
   const norm = s => s.replace(/\s+/g, ' ').trim();
+  // Sayfa betikleri başlıkları animasyon için kelimelere bölebilir (<span class="w">kelime</span>); anahtar bölünmemiş metindir,
+  // çeviri aynı biçimde yeniden bölünür (animasyonsuz, görünür).
+  const W_RE = /<span class="w" aria-hidden="true"(?: style="[^"]*")?>([^<]*)<\/span>/g;   // GSAP satır içi stil ekleyebilir
+  const unitKey = h => norm(h.replace(W_RE, '$1'));
+  const isSplit = h => h.includes('<span class="w" aria-hidden="true"');
+  const resplit = h => h.split(/<br\s*\/?>/i).map(l => l.trim().split(/\s+/).filter(Boolean)
+    .map(w => `<span class="w" aria-hidden="true">${w}</span>`).join(' ')).join('<br>');
   async function load(l) {
     if (l === 'tr') return {};
     if (cache[l]) return cache[l];
@@ -70,7 +77,7 @@
   const skip = el => SKIP.has(el.tagName) || el.hasAttribute('data-noi18n') || el.getAttribute('translate') === 'no';
   function walk(el, units, texts) {
     if (skip(el)) return;
-    if (hasText(el) && allInline(el)) { units.push(el); return; }
+    if ((hasText(el) || el.querySelector(':scope > span.w')) && allInline(el)) { units.push(el); return; }
     for (const n of el.childNodes) {
       if (n.nodeType === 1) walk(n, units, texts);
       else if (n.nodeType === 3 && n.nodeValue.trim()) texts.push(n);
@@ -82,7 +89,7 @@
   function collect(scope = document.body) {   // çeviri anahtarları (çıkarma aracı da bunu kullanır)
     const units = [], texts = [], keys = new Set();
     walk(scope, units, texts);
-    units.forEach(e => keys.add(norm(orig.get(e) ?? e.innerHTML)));
+    units.forEach(e => keys.add(unitKey(orig.get(e) ?? e.innerHTML)));
     texts.forEach(n => keys.add(norm(orig.get(n) ?? n.nodeValue)));
     attrEls(scope).forEach(e => ATTRS.forEach(a => e.hasAttribute(a) && e.getAttribute(a).trim() && keys.add(norm(origAttr.get(e)?.[a] ?? e.getAttribute(a)))));
     const meta = document.querySelectorAll('meta[name=description],meta[property="og:title"],meta[property="og:description"]');
@@ -96,8 +103,9 @@
     walk(scope, units, texts);
     for (const e of units) {
       if (!orig.has(e)) orig.set(e, e.innerHTML);
-      const k = norm(orig.get(e));
-      const v = lang === 'tr' ? orig.get(e) : dict[k];
+      const k = unitKey(orig.get(e));
+      let v = lang === 'tr' ? orig.get(e) : dict[k];
+      if (v != null && lang !== 'tr' && isSplit(orig.get(e))) v = resplit(v);
       if (v != null && e.innerHTML !== v) e.innerHTML = v;
       else if (v == null && lang !== 'tr' && e.innerHTML !== orig.get(e)) e.innerHTML = orig.get(e);
     }

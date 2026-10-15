@@ -31,16 +31,25 @@
     var fill = document.getElementById('seatFill');
     var note = document.getElementById('seatNote');
     if (!left && !note) return;
+    // Not metni çok dilli: site kiti (kit.js) varsa mtKit.t ile çevrilir, dil değişince yeniden yazılır
+    var T = function(s, v){ return window.mtKit ? window.mtKit.t(s, v) : s.replace(/\{(\w+)\}/g, function(m, k){ return v && k in v ? v[k] : m; }); };
+    var seat = null;
+    var drawNote = function(){
+      if (!note || !seat) return;
+      note.textContent = seat.err ? T('Beta koltukları açık — hemen başvurun')
+        : seat.rem > 0 ? T('{taken} firma katıldı · {rem} beta koltuğu kaldı', {taken: seat.taken, rem: seat.rem})
+        : T('Tüm beta koltukları doldu — bekleme listesine katılın');
+    };
+    if (note) note.setAttribute('data-noi18n', '');
+    window.addEventListener('mt-lang', drawNote);
     fetch('/api/beta/seats').then(function(r){ return r.json(); }).then(function(d){
       var total = d.total || 100, taken = d.taken || 0, rem = (typeof d.left === 'number') ? d.left : (total - taken);
       if (left) left.textContent = rem;
       if (fill) fill.style.width = Math.max(4, Math.min(100, Math.round(taken / total * 100))) + '%';
-      if (note) note.textContent = rem > 0
-        ? (taken + ' firma katıldı · ' + rem + ' beta koltuğu kaldı')
-        : 'Tüm beta koltukları doldu — bekleme listesine katılın';
+      seat = {taken: taken, rem: rem}; drawNote();
     }).catch(function(){
       if (left) left.textContent = '100';
-      if (note) note.textContent = 'Beta koltukları açık — hemen başvurun';
+      seat = {err: true}; drawNote();
     });
   })();
 

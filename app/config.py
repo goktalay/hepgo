@@ -35,6 +35,8 @@ ADMIN_MUST_CHANGE = os.environ.get('CAYMAZ_ADMIN_MUST_CHANGE', '1') != '0'
 # Esnaf paketi (firm_type='esnaf' firmalarda): bakkal | berber | lokanta. Boşsa KOBİ/klasik firma.
 # Bölümler/Rezervasyon/Garson modülleri bu değere göre davranır (berber=oda+personel, lokanta=salon+masa).
 ESNAF_PKG = os.environ.get('CAYMAZ_ESNAF_PKG', '').strip().lower()
+# Dron paketi (kayıtta firma tipi 'dron'): Dron Yönetimi modülü yalnız bu pakette görünür (bkz. auth.drone_visible)
+DRONE_PKG = os.environ.get('CAYMAZ_DRONE_PKG', '').strip().lower() in ('1', 'true', 'yes', 'dron')
 
 COMPANY_NAME = os.environ.get('CAYMAZ_COMPANY_NAME', 'GÖKKUBBE Teknoloji')
 # Resmî / yasal ünvan: kimlik kartlarında tam ünvan gösterilir (başlıklarda kısa COMPANY_NAME kullanılır).

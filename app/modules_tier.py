@@ -5,6 +5,7 @@ içindeki TIER ile BİREBİR uyumlu tutulur.
 - required: her KOBİ firmada her zaman açık; master kapatamaz.
 - optional: master Program Ayarları'ndan açıp kapatabilir (firma sahip olduğu sürece).
 - central: yalnızca merkez (Veilox) yöneticisi açabilir; master'a modül yönetiminde görünmez.
+- package: yalnız ilgili pakette gelir (drone = Dron paketi); KOBİ modül seçiminde ve modül yönetiminde görünmez.
 
 Bir anahtar hiçbirinde değilse 'optional' varsayılır (güvenli: master yönetebilir).
 'master' ve 'uyelik' modülleri paketten bağımsız her zaman açıktır (auth.current_user'da ele alınır),
@@ -16,7 +17,7 @@ REQUIRED = {
     'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance',
 }
 OPTIONAL = {
-    'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'drone',
+    'boss', 'production', 'orders', 'printers', 'products', 'design', 'field',
     'certs', 'fleet', 'projects', 'secretariat', 'security', 'rehber',
     'reports', 'announcements', 'cleaning', 'tools', 'pos',
     'sections', 'services', 'reservations', 'waiter',
@@ -24,6 +25,7 @@ OPTIONAL = {
 CENTRAL = {
     'cameras', 'mikro', 'factory', 'konum', 'sms',
 }
+PACKAGE = {'drone'}   # Dron paketi
 
 # Her zaman açık (modül yönetiminde görünmez / kapatılamaz)
 ALWAYS = {'master', 'uyelik'}
@@ -37,4 +39,6 @@ def tier(key):
         return 'required'
     if k in CENTRAL:
         return 'central'
+    if k in PACKAGE:
+        return 'package'
     return 'optional'

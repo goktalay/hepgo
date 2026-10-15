@@ -10,6 +10,7 @@
 .mtk-theme { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); color: var(--body); }
 .mtk-theme:hover, .mtk-lang:hover { color: var(--ink); }
 .mtk-theme svg { width: 16px; height: 16px; }
+.nav { width: max-content; max-width: calc(100vw - 24px); }   /* left:50% sabit konum: içerik genişliği (yarım ekrana sıkışmasın) */
 .nav > * { flex-shrink: 0; }
 .nav-cta { white-space: nowrap; }
 .nav .mtk-ctl { margin-inline-start: -8px; }
@@ -58,3 +59,7 @@ html[data-theme=dark] img.hero-shot, html[data-theme=dark] .shot-grid img { filt
 .mtk-cur .c { display: none; }
 @media (max-width: 720px) { .mtk-cur .n { display: none; } .mtk-cur .c { display: inline; } .mtk-lang { padding: 0 9px; } }
 @media (max-width: 480px) { .nav .nav-cta { display: none; } .nav { gap: 14px; } }
+
+/* fiyat kartları: KOBİ · KOBİ + Esnaf · Dron */
+.pcards { grid-template-columns: repeat(3, minmax(0, 380px)); }
+@media (max-width: 1100px) { .pcards { grid-template-columns: 1fr; max-width: 520px; margin-inline: auto; } }

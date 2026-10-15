@@ -15,6 +15,24 @@ Komutlar (name/params): `arm` · `disarm` · `set_mode{mode}` · `takeoff{alt_re
 `mission_upload{items[MISSION_ITEM_INT],cruise_speed?}` · `mission_download` · `disconnect` (sunucu tarafı).
 Sunucu-yalnız (köprüye gitmez): `arm_check` → `res.result` ARM CHECK raporu.
 
+Çerçeve ayrıntıları (köprü yazarları için):
+- İlk metin çerçevesi bağlantıdan sonra 15 sn içinde gelmeli (yoksa 4400). `pair` kodu büyük/küçük harf duyarsız; `auth_ok.key` yalnız `pair`'de ve
+  bir kez döner — köprü saklar, sonraki bağlantılarda `auth` kullanır. host ≤120, platform ≤40, bridge_ver ≤40 karakter. IP başına 10 başarısız
+  kimlik/dk → 4429. Aynı anahtarla ikinci bağlantı: ESKİ bağlantı 4409 ile kapanır, yenisi kalır (köprü çevrimdışı sayılmaz).
+- Sunucu köprüye hiç ikili çerçeve göndermez (yalnız JSON). Köprüden gelen ikili çerçeveler ham MAVLink'tir; ancak `log_begin` … `log_end`
+  arasında gelen HER ikili çerçeve .bin parçası sayılır — aktarım sırasında MAVLink gönderilmez.
+- `mission_upload.params = {items:[…], cruise_speed?}`; `items` alanları MISSION_ITEM_INT ile birebir: `{seq, frame (6=GLOBAL_RELATIVE_ALT_INT;
+  DO_JUMP için 2), command (16 WAYPOINT, 19 LOITER_TIME, 20 RTL, 21 LAND, 22 TAKEOFF, 177 DO_JUMP), current, autocontinue, param1..param4,
+  x (lat×1e7), y (lon×1e7), z (m, göreli), mission_type:0}`. MISSION_COUNT/REQUEST/ITEM/ACK el sıkışmasını köprü yürütür;
+  `mission_download` → `res.result.items` aynı şema.
+- `set_mode.params.mode` ArduPilot mod ADI (büyük harf); köprü HEARTBEAT.type'a göre mavutil mode_mapping ile custom_mode'a çevirir.
+- `log_begin`: name `.bin`/`.log` ile bitmeli (≤120 kr), size ≤ 2 GB; sunucu `{t:'log_ready',name}` döner; parçalar düz akış (offset/sıra yok,
+  ≤ 1 MB önerilir); `log_end` sonrası boyut/sha256 uyuşmazsa `log_err`; size aşılınca anında `log_err` + iptal. flight_id/task_id isteğe bağlı
+  (HEPGO saha görevi uçuş kaydı; yoksa köprü oturumunun bağlamı).
+- `ping` köprüden gelir, yanıt `{t:'pong',server_time}`; sunucu ping göndermez, 20–30 sn'de bir önerilir. Sunucu tarafı boşta zaman aşımı yok.
+- `event.severity` MAV_SEVERITY 0..7; tarayıcıya `ts`'siz geçer (STATUSTEXT olaylarında sunucu `ts` ekler).
+- `res`: `{t:'res', rid, ok, result?, error?}`; sunucu 10 sn bekler. `disconnect` köprüye gönderilmez (sunucu kapatır, close 1000).
+
 Tarayıcı ↔ sunucu (`/ws/drone/live`, oturum çerezi): ← `hello{v,caps,me,bridges[]}` · `status{bridge_id,sysid,state(+ready)}` ·
 `bridge{bridge_id,online,info|status}` · `event{bridge_id,sysid,text,severity,ts}` · `res{rid,ok,result,error}` ·
 `console{bridge_id,sysid,ts,tag,text,sev,repeat,fresh}` · `console_hist{sysid,lines[]}` · `params{bridge_id,sysid,items[[name,value,index,count,type]],count,cached}` ·

@@ -3,9 +3,14 @@
 // -----------------------------------------------------------------
 // GÖKTUNGU betikleri (dronlar.js, seri.js, gorev.js, rotalar.js, arm_check.js …)
 // DEĞİŞTİRİLMEDEN kullanılır. Bu dosya iki dünya arasındaki çeviricidir:
+//   * GÖREV BAĞLAMI (Faz 1, kullanıcı kararı 5): sayfa ?task=<id> ile açılır.
+//     GET /api/field/tasks/<id>/live → FLIGHTS (görevin uçakları/dronları, köprü ve
+//     link bilgisiyle); soket açılınca {t:'watch', task_id} gönderilir, sunucu
+//     hello{task, flights, bridges} ile yalnız görevin köprülerini/sanal dronlarını
+//     yayınlar. ?task yoksa harita + bilgi kutusu (serbest uçuş YOK).
 //   * Gerçek soket: HEPGO /ws/drone/live (app/drone_hub.py; çerez oturumu).
 //     Gelen: hello / status / bridge / event / res / console / console_hist /
-//     param / log / pong / error. Giden: ping / cmd / console_hist / console_clear.
+//     param / log / pong / error. Giden: ping / watch / cmd / console_hist / console_clear.
 //   * Sahte soket: seri.js'te bildirilen `let ws` değişkenine ATANIR (burada
 //     yeniden bildirilmez). GÖKTUNGU modülleri ws.send(JSON) ile "tip" tabanlı
 //     mesaj gönderir; CEVIR tablosu bunları HEPGO komutlarına / REST çağrılarına
@@ -13,6 +18,13 @@
 //   * Telemetri: sunucudan 10 Hz gelen status paketleri DURUM tamponunda
 //     toplanır; 200 ms'de bir GÖKTUNGU biçiminde tek `telemetri` paketi
 //     üretilir ve buradaki sade telemetriIsle ile dağıtılır.
+//   * Bağlantı Yöneticisi (seri.js): gruplar görevin UÇUŞLARIDIR (id "f<flight_id>"):
+//     her uçuş için köprü satırı (bridge_name, çevrimiçi/çevrimdışı) ve altında dron
+//     kartı. seri.js'in Play/Stop düğmeleri "Bağlan/Kes" olarak kullanılır:
+//     baglanti_baslat → cmd link_open{link + sysid}, baglanti_durdur → link_close.
+//     Sanal dron (protocol 'sanal'): sunucu içi köprü bridge_id = -drone_id, otomatik bağlı.
+//   * Rotalar: harekât ekranında listelenmez (kullanıcı kararı 4); yalnız göreve
+//     yüklenen rota (gorev.js rota_tek_goster / gorev_yukle) haritada çizilir.
 // Klasik <script>; ortak global kapsam. Üst düzeyde yalnız `var` ve function
 // declaration kullanılır (GÖKTUNGU dosyalarının const/let bildirimleriyle
 // çakışmamak için). Yükleme sırası: seri.js → … → hepgo_patch.js → hepgo_ws.js.
@@ -35,8 +47,17 @@ window.HEPGO_YETKI = false;          // hello.me.can_command
 
 // ---------------- Tamponlar ----------------
 var DURUM = {};          // uid (bridge_id:sysid) → {bridge_id, sysid, gorunen, state, alindi(ms)}
-var KOPRULER = {};       // bridge_id(str) → {bridge_id, name, host, platform, bridge_ver, online, sira}
-var ENVANTER = [];       // GET /api/drone/live → drones (id, code, name, model, sysid, bridge_id)
+var KOPRULER = {};       // bridge_id(str) → {bridge_id, name, host, platform, bridge_ver, online, sira, caps}
+var FLIGHTS = [];        // GET /api/field/tasks/<id>/live → flights: {id, order_id, drone_id, label, name, protocol, sysid, bridge_id,
+                         //   bridge_name, bridge_online, link {type, host?, port?, serial?, baud?}, sim_bridge_id (sanal: -drone_id)}
+var GOREV_ID = (function(){   // iframe ?task=<id> (drone.js renderLive); yoksa null → bilgi kutusu, soket açılmaz
+  try { const n = parseInt(new URLSearchParams(location.search).get("task"), 10); return (n > 0) ? n : null; } catch (e) { return null; }
+})();
+var GOREV_BILGI = null;  // {id, code, status, location_name, lat?, lon?} (REST live → hello.task ile güncellenir)
+var LINK_DURUM = {};     // flight id → "aciliyor" | "acik" (link_open gönderildi / kabul edildi; telemetri gelene dek "bağlanıyor")
+var LINK_ZAMAN = {};     // flight id → ms (link_open kabul zamanı; LINK_TELEMETRI_SN içinde telemetri gelmezse düşer)
+var LINK_TELEMETRI_SN = 30;
+var ROTA_GORUNUR = {};   // rota id(str) → true: haritada çizilir (yalnız göreve yüklenen rota; bellek içi, kalıcı değil)
 var KONSOL_TAMPON = {};  // görünen sysid → [satir] (son 200; sunucu konsolu yoksa)
 var MESAJ_TAMPON = {};   // görünen sysid → [{ts, metin, sev, tekrar}] (ARM CHECK mesajlar sekmesi, istemci raporu)
 var UYARI_TAMPON = [];   // uyarı merkezi listesi için yerel olaylar [{mesaj, ts, okundu}]
@@ -145,29 +166,133 @@ function gorunenSysid(bridgeId, sysid){
   return g;
 }
 
-// ---------------- Envanter (dron adı, dron_isim_kaydet) ----------------
-async function envanterYukle(){
-  try {
-    const y = await hwFetch("/api/drone/live");
-    ENVANTER = Array.isArray(y && y.drones) ? y.drones : [];
-    window.HEPGO_ENVANTER = {};   // hepgo_patch.js dronGecmisAc: '<bridge_id>:<sysid>' → {code, name, id}
-    ENVANTER.forEach(d => { if (d.bridge_id != null && d.sysid != null) window.HEPGO_ENVANTER[d.bridge_id + ":" + d.sysid] = {code: d.code, name: d.name, id: d.id}; });
-  } catch (e) { /* yetki yok ya da sunucu hatası: adlar type_name'den gelir */ }
+// ---------------- Görev bağlamı: uçuşlar (dron adı, grup, köprü, link) ----------------
+function hwVar(v){ return v !== null && v !== undefined; }
+function ucusYukle(){   // REST: görevin uçuşları; 403/404 → hepgoBaslat bilgi kutusu gösterir
+  return hwFetch("/api/field/tasks/" + GOREV_ID + "/live").then(y => {
+    if (y && y.task) gorevBilgiAyarla(y.task);
+    ucuslariAyarla(y && y.flights);
+    if (y && typeof y.can_command === "boolean") window.HEPGO_YETKI = y.can_command;   // hello.me.can_command gelince yenilenir
+    return y;
+  });
 }
-function envanterBul(bridgeId, sysid){
+function ucuslariAyarla(liste){
+  FLIGHTS = Array.isArray(liste) ? liste : [];
+  window.HEPGO_ENVANTER = {};   // hepgo_patch.js dronGecmisAc yedeği: '<bridge_id>:<sysid>' → {code, name, id}
+  for (const f of FLIGHTS){
+    const bid = (f.protocol === "sanal") ? f.sim_bridge_id : f.bridge_id;
+    if (hwVar(bid) && hwVar(f.drone_id)) window.HEPGO_ENVANTER[bid + ":" + (hwVar(f.sysid) ? f.sysid : 1)] = {code: f.label, name: f.name, id: f.drone_id};
+    // sanal dronun sunucu içi köprüsü: hello/status gelmeden listede görünsün (çevrimdışı; SimDrone watch ile başlar)
+    if (f.protocol === "sanal" && hwVar(f.sim_bridge_id) && !KOPRULER[String(f.sim_bridge_id)])
+      kopruKaydet({bridge_id: f.sim_bridge_id, name: "Sanal · " + (f.label || f.name || f.drone_id)}, false);
+  }
+}
+// (bridge_id, sysid) → uçuş. Sanal: bridge_id < 0 → sim_bridge_id. Gerçek: köprü + sysid tam eşleşme; sysid'siz tek uçuş yalnız
+// köprüde o anda tek dron görünüyorsa eşlenir (iki dron aynı uçuşa düşmesin).
+function ucusBul(bridgeId, sysid){
   const bid = Number(bridgeId), sid = Number(sysid);
-  let tam = ENVANTER.find(d => Number(d.bridge_id) === bid && d.sysid !== null && Number(d.sysid) === sid);
+  if (bid < 0) return FLIGHTS.find(f => Number(f.sim_bridge_id) === bid) || null;
+  const tam = FLIGHTS.find(f => hwVar(f.bridge_id) && Number(f.bridge_id) === bid && hwVar(f.sysid) && Number(f.sysid) === sid);
   if (tam) return tam;
-  // sysid'siz tek envanter kaydı yalnız köprüde o anda tek dron görünüyorsa eşlenir (iki dron aynı adı almasın)
-  const kopruDronlari = ENVANTER.filter(d => Number(d.bridge_id) === bid && (d.sysid === null || d.sysid === undefined));
+  const adaylar = FLIGHTS.filter(f => hwVar(f.bridge_id) && Number(f.bridge_id) === bid && !hwVar(f.sysid));
   const kopruDronSayisi = Object.keys(DURUM).filter(u => u.indexOf(String(bid) + ":") === 0).length;
-  return (kopruDronlari.length === 1 && kopruDronSayisi <= 1) ? kopruDronlari[0] : null;
+  return (adaylar.length === 1 && kopruDronSayisi <= 1) ? adaylar[0] : null;
 }
-// hepgo_patch.js dronGecmisAc: görünen sysid → envanter dron id (sanal sysid çakışması geri çevrilir)
+function ucusGrupId(f){ return "f" + f.id; }                       // seri.js bağlantı kaydı id'si (data-bag-govde / data-bag-grup)
+function ucusGrupBul(id){ const m = /^f(\d+)$/.exec(String(id)); return m ? (FLIGHTS.find(f => Number(f.id) === Number(m[1])) || null) : null; }
+function ucusEtiket(f){ return String(f.label || "") + (f.name ? (f.label ? " · " : "") + f.name : ""); }   // "KY-0007 · Caymaz C-1"
+function ucusKopruAdi(f){
+  if (f.protocol === "sanal") return "Sanal · " + (f.label || f.name || "");
+  if (!hwVar(f.bridge_id)) return hwT("Köprü seçilmedi", "No bridge selected");
+  const k = KOPRULER[String(f.bridge_id)];
+  return f.bridge_name || (k && k.name) || ("Köprü " + f.bridge_id);
+}
+function ucusKopruOnline(f){
+  const bid = (f.protocol === "sanal") ? f.sim_bridge_id : f.bridge_id;
+  if (!hwVar(bid)) return false;
+  const k = KOPRULER[String(bid)];
+  if (k) return !!k.online;
+  return (f.protocol === "sanal") ? false : !!f.bridge_online;   // hello gelmeden REST bilgisi
+}
+function ucusDronuVar(f){   // bu uçuşa eşlenen dron telemetride canlı mı (dCevir baglanti ile aynı 5 sn eşiği)
+  for (const uid of Object.keys(DURUM)){
+    const k = DURUM[uid], u = ucusBul(k.bridge_id, k.sysid);
+    if (u && u.id === f.id){ const yas = hbYasSn(k); if (yas === null || yas < 5) return true; }
+  }
+  return false;
+}
+// seri.js durumları: kapali | baglaniyor | bagli | hata (bagListeCiz sarmalı metinleri HEPGO'ya göre yazar)
+function ucusDurumu(f){
+  const online = ucusKopruOnline(f);
+  if (f.protocol === "sanal") return {durum: ucusDronuVar(f) ? "bagli" : (online ? "baglaniyor" : "kapali"), hata: ""};
+  if (!hwVar(f.bridge_id) || !online) return {durum: "kapali", hata: ""};
+  if (ucusDronuVar(f)){ delete LINK_ZAMAN[f.id]; return {durum: "bagli", hata: ""}; }
+  if (LINK_DURUM[f.id] === "aciliyor") return {durum: "baglaniyor", hata: ""};
+  if (LINK_DURUM[f.id] === "acik"){   // köprü link'i açtı, telemetri bekleniyor (spinner; tık → link_close ile vazgeç)
+    if (LINK_ZAMAN[f.id] && Date.now() - LINK_ZAMAN[f.id] > LINK_TELEMETRI_SN * 1000){
+      delete LINK_DURUM[f.id]; delete LINK_ZAMAN[f.id];
+      hwToast(ucusEtiket(f) + ": " + hwT("bağlantı açıldı ama " + LINK_TELEMETRI_SN + " sn içinde telemetri gelmedi; adres/port/baud ve aracın gücünü denetleyin",
+                                          "link opened but no telemetry within " + LINK_TELEMETRI_SN + " s; check address/port/baud and vehicle power"), "uyari", "KÖPRÜ");
+      return {durum: "kapali", hata: ""};
+    }
+    return {durum: "baglaniyor", hata: ""};
+  }
+  return {durum: "kapali", hata: ""};
+}
+function ucusDurumlari(){ const d = {}; for (const f of FLIGHTS) d[ucusGrupId(f)] = ucusDurumu(f); return d; }
+function linkOzet(f){   // köprü satırı alt metni (seri.js bagAltMetin: tur 'merkez' → host aynen yazılır)
+  if (f.protocol === "sanal") return hwT("Sunucu içi sanal dron · otomatik bağlı", "Server-side virtual drone · auto-connected");
+  const l = f.link;
+  if (!l || !l.type) return hwT("Bağlantı seçilmedi (görev › Uçuş Yönetimi › Düzenle)", "No link selected (task › Flight Management › Edit)");
+  const t = String(l.type).toLowerCase(), sys = hwVar(f.sysid) ? " · sysid " + f.sysid : "";
+  if (t === "serial") return (l.serial || "?") + " @ " + (l.baud || 57600) + sys;
+  return t.toUpperCase() + " " + (l.host ? l.host : "") + ":" + (hwVar(l.port) ? l.port : "?") + sys;
+}
+// görev dışı köprülerin mesajları düşürülür (sunucu filtresi watch'tan önce gelen ilk hello'da devrede olmayabilir)
+function gorevKoprusuMu(bridgeId){
+  const bid = Number(bridgeId);
+  return FLIGHTS.some(f => (hwVar(f.bridge_id) && Number(f.bridge_id) === bid) || (hwVar(f.sim_bridge_id) && Number(f.sim_bridge_id) === bid));
+}
+function gorevBilgiAyarla(task){
+  GOREV_BILGI = Object.assign({}, GOREV_BILGI || {}, task || {});
+  const kod = GOREV_BILGI.code || ("#" + (GOREV_BILGI.id || GOREV_ID));
+  try { document.title = "HEPGO HAREKÂT · " + kod; } catch (e) {}
+  const rozet = document.getElementById("hepgoGorevRozet"), metin = document.getElementById("hepgoGorevRozetMetin");
+  if (rozet && metin){
+    metin.textContent = kod;
+    if (GOREV_BILGI.location_name){ const k = document.createElement("small"); k.textContent = " · " + GOREV_BILGI.location_name; metin.appendChild(k); }
+    rozet.style.display = "";
+  }
+}
+// Görev yeri: kullanıcı harita merkezi kaydetmemişse kamera görev yerine uçar (gcsKonum: dron etiketi mesafe referansı)
+function gorevHaritaMerkezi(){
+  const t = GOREV_BILGI || {};
+  if (typeof t.lat !== "number" || typeof t.lon !== "number") return;
+  if (hwYerel("hepgo_ops_merkez", null)) return;
+  try { if (typeof gcsGuncelle === "function") gcsGuncelle(t.lat, t.lon); } catch (e) {}
+  try {
+    if (typeof viewer !== "undefined" && viewer && typeof Cesium !== "undefined")
+      viewer.camera.flyTo({destination: Cesium.Cartesian3.fromDegrees(t.lon, t.lat, 2500), duration: 1.2});
+  } catch (e) {}
+}
+// Bilgi kutusu (index.html #hepgoBilgiKutu): görev bağlamı yok / yetki yok / görev bulunamadı
+function bilgiKutuGoster(baslik, metin, dugme, hash){
+  const kutu = document.getElementById("hepgoBilgiKutu");
+  if (!kutu) return;
+  const b = document.getElementById("hepgoBilgiBaslik"), m = document.getElementById("hepgoBilgiMetin"), d = document.getElementById("hepgoBilgiDugme");
+  if (b) b.textContent = baslik;
+  if (m) m.textContent = metin;
+  if (d){
+    if (dugme){ d.textContent = dugme; d.style.display = ""; d.onclick = () => { if (typeof window.hepgoNav === "function") window.hepgoNav(hash || "#/field"); }; }
+    else d.style.display = "none";
+  }
+  kutu.style.display = "";
+}
+// hepgo_patch.js dronGecmisAc: görünen sysid → envanter dron id (sipariş uçağında yok → null → dron listesi)
 window.hepgoDronIdBul = function(g){
   const h = KOPRU_OF[Number(g)];
-  const env = h ? envanterBul(h.bridge_id, h.sysid) : null;
-  return (env && env.id != null) ? env.id : null;
+  const f = h ? ucusBul(h.bridge_id, h.sysid) : null;
+  return (f && hwVar(f.drone_id)) ? f.drone_id : null;
 };
 function renkTablosu(){ return hwYerel("hepgo_ops_renk", {}) || {}; }
 
@@ -191,8 +316,8 @@ function hazirlikHesapla(s){
 function dCevir(k){
   const s = k.state || {}, b = KOPRULER[String(k.bridge_id)];
   const yas = hbYasSn(k);
-  const env = envanterBul(k.bridge_id, k.sysid);
-  const ad = env ? ((env.code ? env.code + " · " : "") + (env.name || "")) : null;
+  const f = ucusBul(k.bridge_id, k.sysid);               // dron etiketi uçuştan: "<kuyruk no | dron kodu> · <ad>"
+  const ad = f ? ucusEtiket(f) : null;
   const uid = hwUid(k.bridge_id, k.sysid);
   const renk = renkTablosu()[uid];
   return {
@@ -201,7 +326,8 @@ function dCevir(k){
     armed: !!s.armed, mod: (s.mode === null || s.mode === undefined) ? "" : String(s.mode),
     arac_tipi: s.type, tip: s.type_name || "", otopilot: s.autopilot,
     isim: ad || s.type_name || ("SYS" + k.sysid), kullanici_isim: ad || undefined,
-    uid: uid, dron_uid: uid, baglanti_id: String(k.bridge_id), kopru_adi: b ? b.name : "",
+    // baglanti_id = Bağlantı Yöneticisi grubu (uçuş); eşlenemeyen dron seri.js "BAĞLANTISI BİLİNMEYEN" grubuna düşer
+    uid: uid, dron_uid: uid, baglanti_id: f ? ucusGrupId(f) : "", kopru_adi: f ? ucusKopruAdi(f) : (b ? b.name : ""),
     lat: s.lat, lon: s.lon, alt_rel: s.alt_rel, alt_msl: s.alt, irtifa: s.alt_rel, alt: s.alt_rel,   // dron_ekran_disi.js:187 irtifa||alt okur
     heading: (s.hdg === null || s.hdg === undefined) ? s.yaw : s.hdg,
     groundspeed: s.groundspeed, airspeed: s.airspeed, vz: s.vz, roll: s.roll, pitch: s.pitch, gaz: s.throttle, tirmanis: s.climb,
@@ -228,9 +354,8 @@ function telemetriPaketiUret(){
   gorevDurumTazele(dronlar);
   const renkler = {}, tablo = renkTablosu();
   for (const d of dronlar) if (tablo[d.uid]) renkler[String(d.sysid)] = tablo[d.uid];
-  const durumlar = {};
-  for (const bid of Object.keys(KOPRULER)) durumlar[bid] = {durum: KOPRULER[bid].online ? "bagli" : "kapali", hata: ""};
-  return {tip: "telemetri", dronlar: dronlar, dron_renkler: renkler, baglanti_durumlari: durumlar,
+  // baglanti_durumlari: uçuş grubu bazlı (seri.js baglantiDurumlariIsle yalnız değişince yeniden çizer)
+  return {tip: "telemetri", dronlar: dronlar, dron_renkler: renkler, baglanti_durumlari: ucusDurumlari(),
           gorev_durum: GOREV, gorev_surdurulebilir: {}};
 }
 function telemetriDongu(){
@@ -288,19 +413,71 @@ function telemetriIsle(m){
   });
 }
 
-// ---------------- Bağlantı Yöneticisi (seri.js) için köprü listesi ----------------
+// ---------------- Bağlantı Yöneticisi (seri.js) için uçuş listesi ----------------
+// seri.js baglantiListesiIsle → bagListeCiz: her kayıt için .bag-grup[data-bag-grup=id] + .bag-grup-govde[data-bag-govde=id]
+// (dron kartları dCevir baglanti_id ile buraya yerleşir). Alanlar: id, isim (bag-ad), tur (bagTurEtiket + bag-tur-<tur>),
+// host/port (bagAltMetin), kopru_ornek_id. tur 'merkez' seçildi: bagAltMetin b.host'u aynen yazar (bagMerkezOzet yüklü değil);
+// rozet metni/sınıfı ve durum metinleri bagListeCiz sarmalında HEPGO'ya göre yeniden yazılır.
 function baglantiListesiYayinla(){
-  const liste = Object.values(KOPRULER).sort((a, b) => (a.sira || 0) - (b.sira || 0));
-  const durumlar = {};
-  const baglantilar = liste.map(b => {
-    durumlar[String(b.bridge_id)] = {durum: b.online ? "bagli" : "kapali", hata: ""};
-    // seri.js bagListeCiz: id/isim/tur/kopru_ornek_id; bagAltMetin(tcp): host + ":" + port
-    return {id: String(b.bridge_id), isim: b.name || ("Köprü " + b.bridge_id), tur: "tcp",
-            host: b.host || "HEPGO", port: b.platform || "köprü", kopru_ornek_id: null};
-  });
+  const baglantilar = FLIGHTS.map(f => ({id: ucusGrupId(f), isim: ucusKopruAdi(f), tur: "merkez", host: linkOzet(f), port: "", kopru_ornek_id: null}));
   if (typeof baglantiListesiIsle === "function")
-    try { baglantiListesiIsle({tip: "baglanti_listesi", baglantilar: baglantilar, durumlar: durumlar}); } catch (e) { console.error(e); }
+    try { baglantiListesiIsle({tip: "baglanti_listesi", baglantilar: baglantilar, durumlar: ucusDurumlari()}); } catch (e) { console.error(e); }
 }
+// seri.js:915 bagListeCiz function declaration → global nesne özelliği; sözcüksel çağrılar (baglantiListesiIsle,
+// baglantiDurumlariIsle, bagDilTazele) atamadan sonra sarmalı görür. Satır şablonu değişmez; yalnız HEPGO alanları yazılır:
+// uçuş rozeti, tür rozeti (SANAL/SERİ/TCP/UDP/KÖPRÜ), durum metni (KÖPRÜ YOK / ÇEVRİMDIŞI / BAĞLANTI YOK / HAZIR) ve
+// Bağlan/Kes düğmesinin görünürlüğü (data-hepgo-ps; hepgo.css).
+(function bagListeCizSarmala(){
+  if (typeof window.bagListeCiz !== "function" || window.bagListeCiz.__hepgoSarmal) return;
+  const orijinal = window.bagListeCiz;
+  function duzenle(){
+    document.querySelectorAll("#bagListe .bag-grup[data-bag-grup]").forEach(grup => {
+      const f = ucusGrupBul(grup.dataset.bagGrup);
+      if (!f) return;
+      const satir = grup.querySelector(":scope > .bag-satir");
+      if (!satir) return;
+      const s = ucusDurumu(f), online = ucusKopruOnline(f), sanal = f.protocol === "sanal";
+      const link = (f.link && f.link.type) ? String(f.link.type).toLowerCase() : null;
+      const ad = satir.querySelector(".bag-ad");
+      if (ad && !satir.querySelector(".hepgo-ucus-rozet")){
+        const r = document.createElement("span");
+        r.className = "hepgo-ucus-rozet"; r.textContent = f.label || ("#" + f.id); r.title = ucusEtiket(f);
+        ad.insertAdjacentElement("afterend", r);
+      }
+      const tur = satir.querySelector(".bag-tur");
+      if (tur){
+        const kod = sanal ? "sanal" : (link === "serial" ? "seri" : (link === "tcp" || link === "udp") ? link : "kopru");
+        tur.className = "bag-tur bag-tur-" + kod;
+        tur.textContent = kod === "sanal" ? "SANAL" : kod === "seri" ? "SERİ" : kod === "kopru" ? hwT("KÖPRÜ", "BRIDGE") : kod.toUpperCase();
+      }
+      const durum = satir.querySelector(".bag-durum");
+      if (durum && s.durum === "kapali"){
+        if (!sanal && !hwVar(f.bridge_id)) durum.textContent = hwT("KÖPRÜ YOK", "NO BRIDGE");
+        else if (!online){
+          durum.textContent = hwT("ÇEVRİMDIŞI", "OFFLINE"); durum.className = "bag-durum bd-hata";
+          durum.title = hwT("Köprü sunucuya bağlı değil", "Bridge is not connected to the server");
+        }
+        else if (!sanal && !link) durum.textContent = hwT("BAĞLANTI YOK", "NO LINK");
+        else durum.textContent = hwT("HAZIR", "READY");
+      }
+      const gizli = sanal || !online || !link;
+      satir.dataset.hepgoPs = gizli ? "gizli" : "";
+      const ps = satir.querySelector(".bag-btn.bag-play, .bag-btn.bag-stop, .bag-btn.bag-baglaniyor");
+      if (ps && !gizli){
+        ps.title = ps.classList.contains("bag-play")
+          ? hwT("Bağlan: bağlantıyı köprüde aç (link_open)", "Connect: open the link on the bridge (link_open)")
+          : hwT("Kes: bağlantıyı köprüde kapat (link_close)", "Disconnect: close the link on the bridge (link_close)");
+      }
+    });
+  }
+  function sarili(){
+    const sonuc = orijinal.apply(this, arguments);
+    try { duzenle(); } catch (e) { console.error("[HEPGO WS] bagListeCiz düzenlemesi", e); }
+    return sonuc;
+  }
+  sarili.__hepgoSarmal = true; sarili.__orijinal = orijinal;
+  window.bagListeCiz = sarili;
+})();
 function kopruKaydet(info, online){
   const bid = String(info.bridge_id);
   const eski = KOPRULER[bid];
@@ -353,18 +530,22 @@ function helloIsle(m){
   if (typeof window.oturumYoneticiMi !== "function") window.oturumYoneticiMi = function(){ return false; };
   // Yetenek bayrakları: sunucu caps (hello) + çevrimiçi köprülerin caps'i (v1.1; köprü auth çerçevesinde bildirir)
   SUNUCU_CAPS = Array.isArray(m.caps) ? m.caps.slice() : [];
-  // Köprüler: hello'da olmayanlar çevrimdışı sayılır, dron durumları yeniden kurulur
+  // Görev bağlamı: watch{task_id} yanıtı task + flights taşır (sunucudaki en güncel uçuş/köprü/link bilgisi)
+  if (m.task && typeof m.task === "object") gorevBilgiAyarla(m.task);
+  if (Array.isArray(m.flights)) ucuslariAyarla(m.flights);
+  // Köprüler: hello'da olmayanlar çevrimdışı sayılır, dron durumları yeniden kurulur. Görev dışı köprüler düşürülür
+  // (auth sonrası ilk hello watch'tan önce gelir ve filtresiz olabilir).
   for (const bid of Object.keys(KOPRULER)) KOPRULER[bid].online = false;
-  const bridges = Array.isArray(m.bridges) ? m.bridges : [];
+  const bridges = (Array.isArray(m.bridges) ? m.bridges : []).filter(b => gorevKoprusuMu(b.bridge_id));
   const canli = new Set(bridges.map(b => String(b.bridge_id)));
   for (const uid of Object.keys(DURUM)) if (!canli.has(uid.split(":")[0])) delete DURUM[uid];
   for (const b of bridges){ kopruKaydet(b, true); if (Array.isArray(b.caps) && KOPRULER[String(b.bridge_id)]) KOPRULER[String(b.bridge_id)].caps = b.caps.slice(); }
   capsUygula();
   baglantiListesiYayinla();
-  envanterYukle();
   if (ilkHello){
     ilkHello = false;
     if (typeof window.yuzenPanelAc === "function") try { window.yuzenPanelAc("yzSeri"); } catch (e) {}
+    if (typeof window.hepgoYzSeriKonumla === "function") try { window.hepgoYzSeriKonumla(); } catch (e) {}
     hwKonsol("HEPGO", hwT("Canlı uçuş sunucusuna bağlandı", "Connected to live flight server") + (me.name ? " · " + me.name : "") +
              (me.can_command ? "" : " · " + hwT("izleyici (komut yetkisi yok)", "viewer (no command permission)")), "basari");
   }
@@ -466,15 +647,16 @@ function resIsle(m){
   clearTimeout(b.timer);
   delete BEKLEYEN[m.rid];
   const ok = !!m.ok, hata = m.error || "";
+  const kim = (b.ekler && b.ekler.etiket) ? b.ekler.etiket : ("D" + b.sysid);   // link_open/link_close: dron henüz yok, uçuş etiketi
   if (b.tip !== "arm_check"){
     if (ok){
       if (!window.HEPGO_OZ.konsol_sunucu) yerelKonsolSatir(b.sysid, {ts: Date.now() / 1000, etiket: "KOMUT", metin: b.name + ": " + hwT("kabul edildi", "accepted"), sev: "basari"});
-      hwKonsol("KOMUT", "D" + b.sysid + " " + b.name + ": " + hwT("kabul edildi", "accepted"), "basari");
+      hwKonsol("KOMUT", kim + " " + b.name + ": " + hwT("kabul edildi", "accepted"), "basari");
     } else {
       if (!window.HEPGO_OZ.konsol_sunucu) yerelKonsolSatir(b.sysid, {ts: Date.now() / 1000, etiket: "KOMUT", metin: b.name + ": " + hata, sev: "hata"});
-      hwKonsol("KOMUT", "D" + b.sysid + " " + b.name + ": " + hata, "hata");
+      hwKonsol("KOMUT", kim + " " + b.name + ": " + hata, "hata");
       // gorev_* hatalarını gorev.js kendi bildirimiyle gösterir (gorevKomutSonucIsle); burada ikinci toast üretilmez
-      if (!/^gorev_/.test(b.tip) && b.tip !== "set_home") hwToast("D" + b.sysid + " " + b.name + ": " + hata, "hata", "KOMUT");   // set_home kendi toast'ını verir
+      if (!/^gorev_/.test(b.tip) && b.tip !== "set_home") hwToast(kim + " " + b.name + ": " + hata, "hata", "KOMUT");   // set_home kendi toast'ını verir
     }
   }
   const t = (typeof D === "function") ? D() : {};
@@ -515,13 +697,24 @@ function resIsle(m){
         try { window.gorevKomutSonucIsle({tip: b.tip + "_sonuc", sysid: b.sysid, basari: ok, hata: ok ? undefined : hata}); } catch (e) {}
       break;
     }
-    case "gorev_iptal":
-      if (ok) delete GOREV[b.sysid];
+    case "gorev_iptal": {
+      const rotaId = GOREV[b.sysid] ? GOREV[b.sysid].rota_id : null;
+      if (ok){ delete GOREV[b.sysid]; rotaGorevdenDus(rotaId); }
       else if (GOREV[b.sysid] && b.ekler) GOREV[b.sysid].asama = b.ekler.oncekiAsama;
       if (typeof window.gorevIptalSonucIsle === "function") try { window.gorevIptalSonucIsle({sysid: b.sysid, basari: ok}); } catch (e) {}
       break;
-    case "disconnect":
-      if (ok) hwToast(hwT("Köprü bağlantısı kapatıldı", "Bridge connection closed"), "bilgi", "KÖPRÜ");
+    }
+    case "link_open":   // Bağlantı Yöneticisi "Bağlan": köprü link'i açtı → telemetri gelince durum 'bagli' olur
+      if (b.ekler && hwVar(b.ekler.flight_id)){
+        if (ok){ LINK_DURUM[b.ekler.flight_id] = "acik"; LINK_ZAMAN[b.ekler.flight_id] = Date.now(); }
+        else { delete LINK_DURUM[b.ekler.flight_id]; delete LINK_ZAMAN[b.ekler.flight_id]; }
+        baglantiListesiYayinla();
+      }
+      if (ok) hwToast(kim + ": " + hwT("bağlantı köprüde açıldı", "link opened on the bridge"), "basari", "KÖPRÜ");
+      break;
+    case "link_close":
+      if (b.ekler && hwVar(b.ekler.flight_id)){ delete LINK_DURUM[b.ekler.flight_id]; delete LINK_ZAMAN[b.ekler.flight_id]; baglantiListesiYayinla(); }
+      if (ok) hwToast(kim + ": " + hwT("bağlantı kapatıldı", "link closed"), "bilgi", "KÖPRÜ");
       break;
     default: break;
   }
@@ -531,6 +724,8 @@ function bekleyenleriDusur(sebep){
 }
 
 function mesajIsle(m){
+  // Görev dışı köprü (sunucu filtresi watch'tan önce devrede olmayabilir; res/hello köprüye bağlı değil)
+  if (m.t !== "hello" && m.t !== "res" && hwVar(m.bridge_id) && !gorevKoprusuMu(m.bridge_id)) return;
   switch (m.t){
     case "hello": helloIsle(m); break;
     case "status": statusIsle(m); break;
@@ -558,6 +753,7 @@ function durumYaz(durum){
   const t = (typeof D === "function") ? D() : {};
   if (durum === "bagli"){ wsDurum.textContent = hwT("WS: bağlı", "WS: connected"); wsDurum.className = "f-iyi"; }
   else if (durum === "yetki"){ wsDurum.textContent = hwT("WS: yetki yok", "WS: not authorized"); wsDurum.className = "f-kotu"; }
+  else if (durum === "gorevsiz"){ wsDurum.textContent = hwT("WS: görev bağlamı yok", "WS: no task context"); wsDurum.className = "f-uyari"; }
   else { wsDurum.textContent = t.wsKoptu || hwT("WS: koptu, tekrar deneniyor...", "WS: disconnected, retrying..."); wsDurum.className = "f-kotu"; }
 }
 function gercekWsAcik(){ return !!(gercekWs && gercekWs.readyState === 1); }
@@ -574,6 +770,8 @@ function wsBaglan(){
   gercekWs = s;
   s.onopen = () => {
     durumYaz("bagli");
+    // İzleyici görevle sınırlanır: sunucu hello{task, flights, bridges} ile yanıtlar ve görevin sanal dronlarını başlatır
+    if (GOREV_ID) try { s.send(JSON.stringify({t: "watch", task_id: GOREV_ID})); } catch (e) {}
     if (pingZaman) clearInterval(pingZaman);
     pingZaman = setInterval(() => { if (gercekWsAcik()) gercekWs.send(JSON.stringify({t: "ping"})); }, 20000);
   };
@@ -582,7 +780,7 @@ function wsBaglan(){
     if (gercekWs === s) gercekWs = null;
     bekleyenleriDusur(hwT("Sunucu bağlantısı koptu", "Server connection lost"));
     for (const bid of Object.keys(KOPRULER)) KOPRULER[bid].online = false;
-    DURUM = {};
+    DURUM = {}; LINK_DURUM = {}; LINK_ZAMAN = {};
     baglantiListesiYayinla();
     if (ev && ev.code === 4403){ yetkiYok = true; durumYaz("yetki"); hwToast(hwT("Canlı Uçuş izleme yetkiniz yok", "No permission to view live flight"), "hata", "HEPGO"); return; }
     durumYaz("koptu");
@@ -719,9 +917,17 @@ function gorevDurumTazele(dronlar){
         const sonSeq = Math.max(1, (g.toplam_oge || 1) - 1);
         g.gorev_yuzde = Math.min(99, Math.round(100 * g.en_yuksek_seq / sonSeq));
       }
-      if (g.ucustu && !d.armed){ g.asama = "tamamlandi"; g.gorev_yuzde = 100; }
+      if (g.ucustu && !d.armed){ g.asama = "tamamlandi"; g.gorev_yuzde = 100; rotaGorevdenDus(g.rota_id); }
     }
   }
+}
+// Görev bitti/iptal: rota başka bir dronun açık görevinde değilse haritadan düşer (kullanıcı kararı 4)
+function rotaGorevdenDus(rotaId){
+  if (!hwVar(rotaId) || !ROTA_GORUNUR[String(rotaId)]) return;
+  const kullanimda = Object.keys(GOREV).some(s => GOREV[s] && GOREV[s].rota_id === rotaId && GOREV[s].asama !== "tamamlandi" && GOREV[s].asama !== "iptal");
+  if (kullanimda) return;
+  rotaGorunurAyarla(rotaId, false);
+  rotaListesiYayinla();
 }
 function gorevAsamaGec(g, yeniAsama){
   const kayit = GOREV[g];
@@ -735,6 +941,8 @@ async function gorevYukle(m){
   const rota = ROTALAR.find(r => r.id === rotaId);
   GOREV[g] = {rota_id: rotaId, rota_isim: rota ? rota.isim : ("#" + rotaId), asama: "yukleniyor", toplam_nokta: rota ? (rota.noktalar || []).length : 0,
               toplam_oge: 0, yuklenen_oge: 0, yuzde: 0, wp_harita: {}, durdurma_davranisi: m.durdurma_davranisi || "bekle", en_yuksek_seq: 0, gorev_yuzde: 0};
+  rotaGorunurAyarla(rotaId, true);   // göreve yüklenen rota haritada çizilir (tek görünür rota kuralı)
+  rotaListesiYayinla();
   let gorev;
   try { gorev = await hwFetch("/api/drone/routes/" + rotaId + "/mission"); }
   catch (e){
@@ -791,7 +999,8 @@ function gorevKomut(tip, m){
 }
 
 // ---------------- Rotalar (rotalar.js) ↔ REST /api/drone/routes ----------------
-function rotaGorunurTablosu(){ return hwYerel("hepgo_ops_rota_gorunur", {}) || {}; }
+// Rotalar HEPGO › Rotalar sekmesinde yönetilir; harekât ekranında liste yok (#rotaListesi gizli çapa). rotalar.js
+// tumRotalariCiz yalnız gorunur:true rotaları çizer; bu bayrak bellek içi ROTA_GORUNUR'dan gelir (göreve yüklenen rota).
 function rotaMesafe(noktalar){
   let toplam = 0;
   for (let i = 1; i < noktalar.length; i++){
@@ -803,13 +1012,12 @@ function rotaMesafe(noktalar){
   return toplam;
 }
 function rotaCevir(r){
-  const gorunur = rotaGorunurTablosu();
   const irtifa = (r.cruise_alt === null || r.cruise_alt === undefined) ? 100 : Number(r.cruise_alt);
   const hiz = (r.cruise_speed === null || r.cruise_speed === undefined) ? 10 : Number(r.cruise_speed);
   const noktalar = (r.waypoints || []).map(w => ({lat: Number(w.lat), lon: Number(w.lon),
     irtifa: (w.alt === null || w.alt === undefined) ? irtifa : Number(w.alt), hiz: hiz, eylem: w.action, bekleme: w.hold_s}));
   return {id: r.id, isim: r.name, irtifa_varsayilan: irtifa, hiz_varsayilan: hiz, tur: r.kind, merkez: r.center_name || null,
-          gorunur: gorunur[String(r.id)] !== false, mesafe_m: rotaMesafe(noktalar), noktalar: noktalar};
+          gorunur: !!ROTA_GORUNUR[String(r.id)], mesafe_m: rotaMesafe(noktalar), noktalar: noktalar};
 }
 function rotaListesiYayinla(yeniId){
   if (typeof window.rotaListesiIsle === "function")
@@ -828,9 +1036,7 @@ async function rotaListesiYenile(yeniId){
   rotaListesiYayinla(yeniId);
 }
 function rotaGorunurAyarla(id, gorunur){
-  const tablo = rotaGorunurTablosu();
-  tablo[String(id)] = !!gorunur;
-  hwYerelYaz("hepgo_ops_rota_gorunur", tablo);
+  if (gorunur) ROTA_GORUNUR[String(id)] = true; else delete ROTA_GORUNUR[String(id)];
   const r = ROTALAR.find(x => x.id === Number(id));
   if (r) r.gorunur = !!gorunur;
 }
@@ -878,30 +1084,36 @@ async function rotaSil(m){
   catch (e){ hwToast(hwT("Rota silinemedi: ", "Route could not be deleted: ") + e.message, "hata", "ROTA"); }
   await rotaListesiYenile();
 }
-function rotaTekGoster(m){
-  const tablo = rotaGorunurTablosu();
-  ROTALAR.forEach(r => { r.gorunur = (r.id === Number(m.id)); tablo[String(r.id)] = r.gorunur; });
-  hwYerelYaz("hepgo_ops_rota_gorunur", tablo);
+function rotaTekGoster(m){   // gorev.js:176 rota seçimi: yalnız seçilen rota görünür
+  ROTA_GORUNUR = {};
+  ROTA_GORUNUR[String(m.id)] = true;
+  ROTALAR.forEach(r => { r.gorunur = (r.id === Number(m.id)); });
   rotaListesiYayinla();
 }
 
 // ---------------- Dron adı / rengi ----------------
 async function dronIsimKaydet(m){
   const g = Number(m.sysid), hedef = KOPRU_OF[g];
-  const env = hedef ? envanterBul(hedef.bridge_id, hedef.sysid) : null;
-  if (!env){
-    hwToast(hwT("Bu dron HEPGO envanterinde kayıtlı değil; adı Dron Envanteri'nden tanımlayın", "Drone is not in the HEPGO inventory; define it under Drone Inventory"), "uyari", "DRON");
+  const f = hedef ? ucusBul(hedef.bridge_id, hedef.sysid) : null;
+  if (!f){
+    hwToast(hwT("Bu dron görevin uçuşlarıyla eşlenemedi; ad değiştirilemez", "Drone could not be matched to a mission flight; cannot rename"), "uyari", "DRON");
+    return;
+  }
+  if (!hwVar(f.drone_id)){   // sipariş uçağı: etiket kuyruk no + ürün adıdır
+    hwToast(hwT("Sipariş uçağının adı ürün ve kuyruk numarasından gelir; buradan değiştirilemez", "An order aircraft is named by product and tail number; it cannot be renamed here"), "uyari", "DRON");
     return;
   }
   try {
-    const d = await hwFetch("/api/drone/drones/" + env.id);
-    const govde = {name: m.isim, serial: d.serial, model: d.model, protocol: d.protocol || "mavlink", sysid: d.sysid, conn_type: d.conn_type,
-      conn_host: d.conn_host, conn_port: d.conn_port, conn_serial: d.conn_serial, conn_baud: d.conn_baud, bridge_id: d.bridge_id,
+    const d = await hwFetch("/api/drone/drones/" + f.drone_id);
+    // DroneIn (Faz 1): name, serial, model, protocol ('mavlink'|'sanal'|'dji'), order_id, pilot_id, status, note, active
+    // (conn_*/bridge_id/sysid dron kaydında YOK; bağlantı uçuş düzeyinde)
+    const govde = {name: m.isim, serial: d.serial, model: d.model, protocol: d.protocol || "mavlink",
       order_id: d.order_id, pilot_id: d.pilot_id, status: d.status || "AKTIF", note: d.note, active: d.active !== 0 && d.active !== false};
-    await hwFetch("/api/drone/drones/" + env.id, {method: "PUT", body: govde});
-    env.name = m.isim;
+    await hwFetch("/api/drone/drones/" + f.drone_id, {method: "PUT", body: govde});
+    f.name = m.isim;
     const sv = dronVeri(g);
-    if (sv) sv.kullanici_isim = (env.code ? env.code + " · " : "") + m.isim;
+    if (sv) sv.kullanici_isim = ucusEtiket(f);
+    baglantiListesiYayinla();
     hwToast(hwT("Dron adı kaydedildi", "Drone name saved"), "basari", "DRON");
   } catch (e){ hwToast(hwT("Dron adı kaydedilemedi: ", "Drone name could not be saved: ") + e.message, "hata", "DRON"); }
 }
@@ -985,14 +1197,34 @@ var CEVIR = {
   rota_ucus_param: () => {},   // sabit kanat dönüş dairesi parametreleri: param desteği gelince PARAM_REQUEST_READ
   dron_isim_kaydet: (m) => { dronIsimKaydet(m); },
   dron_renk_kaydet: dronRenkKaydet,
+  // Bağlantı Yöneticisi Play = "Bağlan": uçuşun link'i (seri/tcp/udp + sysid) köprüde açılır (v1.1 'link' cap: link_open)
+  baglanti_baslat: (m) => {
+    const f = ucusGrupBul(m.id);
+    if (!f || f.protocol === "sanal") return;
+    if (!ucusKopruOnline(f)){ hwToast(hwT("Köprü çevrimdışı: ", "Bridge offline: ") + ucusKopruAdi(f), "uyari", "KÖPRÜ"); return; }
+    if (!f.link || !f.link.type){
+      hwToast(hwT("Uçuşun bağlantısı seçilmemiş; görev › Uçuş Yönetimi › Düzenle › Bağlantı", "No link selected for this flight; task › Flight Management › Edit › Link"), "uyari", "KÖPRÜ");
+      return;
+    }
+    const params = {type: f.link.type};
+    ["host", "port", "serial", "baud"].forEach(k => { if (hwVar(f.link[k]) && f.link[k] !== "") params[k] = f.link[k]; });
+    if (hwVar(f.sysid)) params.sysid = Number(f.sysid);
+    const sysid = hwVar(f.sysid) ? Number(f.sysid) : 1;
+    const rid = cmdKopruye(f.bridge_id, sysid, sysid, "link_open", params, "link_open", {flight_id: f.id, etiket: ucusEtiket(f)});
+    if (rid){ LINK_DURUM[f.id] = "aciliyor"; baglantiListesiYayinla(); }
+  },
+  // Stop = "Kes": link_close (köprü oturumu kapanmaz, köprü bağlı kalır)
   baglanti_durdur: (m) => {
-    const bid = Number(m.id), b = KOPRULER[String(bid)];
-    const soru = hwT((b ? b.name : "Köprü") + " bağlantısı kapatılsın mı? Köprü yazılımı yeniden bağlanmak zorunda kalır.",
-                     "Close " + (b ? b.name : "bridge") + " connection? The bridge software will have to reconnect.");
-    const gonder = () => cmdKopruye(bid, 1, 0, "disconnect", {}, "disconnect");
+    const f = ucusGrupBul(m.id);
+    if (!f || f.protocol === "sanal") return;
+    const sysid = hwVar(f.sysid) ? Number(f.sysid) : 1;
+    const gonder = () => {
+      const rid = cmdKopruye(f.bridge_id, sysid, sysid, "link_close", {}, "link_close", {flight_id: f.id, etiket: ucusEtiket(f)});
+      if (rid){ delete LINK_DURUM[f.id]; delete LINK_ZAMAN[f.id]; baglantiListesiYayinla(); }
+    };
+    const soru = hwT(ucusEtiket(f) + " bağlantısı köprüde kapatılsın mı? Telemetri kesilir.", "Close the " + ucusEtiket(f) + " link on the bridge? Telemetry will stop.");
     if (typeof onayIste === "function") onayIste(soru, gonder); else gonder();
   },
-  baglanti_baslat: () => hwToast(hwT("Köprüler kendileri bağlanır; köprü yazılımını pilot cihazında başlatın", "Bridges connect on their own; start the bridge software on the pilot device"), "bilgi", "KÖPRÜ"),
   ayar_kaydet: (m) => { if (typeof m.lat === "number" && typeof m.lon === "number") hwYerelYaz("hepgo_ops_merkez", {lat: m.lat, lon: m.lon}); },
   tema: (m) => { if (m.tema) hwYerelYaz("hepgo_ops_tema", m.tema); },
   uyari_listesi: () => {
@@ -1012,7 +1244,7 @@ var YUT_LISTESI = new Set(["portlar", "baglanti_sil", "baglanti_ekle", "baglanti
   "takip_baslat", "takip_iptal", "kalkis_kontrol", "dron_gecmis_liste", "ucus_oku", "ucus_sil", "goruntu_kamera_kaynaklari",
   "goruntu_kamera_dron_bagla", "goruntu_son_kareler", "log_replay_hazirla", "makro_liste", "kalib_mesajlari", "motor_test", "motor_test_dur"]);
 function YUT(m){
-  if (!YUT_LISTESI.has(m.tip) && !/^(log_|makro_|kopru|kalib|ilk_ayar|voltaj_|ivme_|joystick_|goruntu_|istasyon2|ai_|kayit_|replay_|takipci_|filtre_)/.test(String(m.tip)))
+  if (!YUT_LISTESI.has(m.tip) && !/^(log_|makro_|kopru|kalib|ilk_ayar|voltaj_|ivme_|joystick_|goruntu_|istasyon2|ai_|kayit_|replay_|takipci_|filtre_|tile_)/.test(String(m.tip)))
     console.debug("[HEPGO WS] yutuldu:", m.tip, m);
 }
 
@@ -1039,9 +1271,10 @@ window.dronRenkler = window.dronRenkler || {};
 window.dronlarSon = window.dronlarSon || [];
 // Dışa açık yardımcılar (hepgo_patch.js ve hata ayıklama için)
 window.HEPGO_WS = {
-  durum: () => DURUM, kopruler: () => KOPRULER, envanter: () => ENVANTER, bekleyen: () => BEKLEYEN, gorev: () => GOREV,
-  rotalar: () => ROTALAR, kopruOf: (g) => KOPRU_OF[g] || null, gorunenSysid: gorunenSysid, cmd: cmdGonder,
-  rotaYenile: rotaListesiYenile, envanterYenile: envanterYukle, baglan: wsBaglan, gercek: () => gercekWs
+  durum: () => DURUM, kopruler: () => KOPRULER, ucuslar: () => FLIGHTS, gorevId: () => GOREV_ID, gorevBilgi: () => GOREV_BILGI,
+  linkDurum: () => LINK_DURUM, bekleyen: () => BEKLEYEN, gorev: () => GOREV, rotalar: () => ROTALAR, rotaGorunur: () => ROTA_GORUNUR,
+  kopruOf: (g) => KOPRU_OF[g] || null, gorunenSysid: gorunenSysid, ucusBul: ucusBul, cmd: cmdGonder,
+  rotaYenile: rotaListesiYenile, ucusYenile: ucusYukle, baglan: wsBaglan, gercek: () => gercekWs
 };
 
 // ---------------- Başlangıç (ws.js:895-898 karşılığı) ----------------
@@ -1055,7 +1288,13 @@ function parentTema(){
   return hwYerel("hepgo_ops_tema", null);
 }
 (function hepgoBaslat(){
-  try { if (typeof applyLanguage === "function" && typeof aktifDil !== "undefined") applyLanguage(aktifDil, false); } catch (e) { console.error(e); }
+  // Dil HEPGO'dan (hepgo_patch.js hepgoDil: parent lang 'tr*' → TR, diğer → EN); kaydet=true gcs_dil'i de hizalar
+  try {
+    if (typeof applyLanguage === "function"){
+      const dil = (typeof window.hepgoDil === "function") ? window.hepgoDil() : ((typeof aktifDil !== "undefined") ? aktifDil : "TR");
+      applyLanguage(dil, true);
+    }
+  } catch (e) { console.error(e); }
   try {
     if (typeof ayarlariUygula === "function"){
       const ayar = {};
@@ -1066,7 +1305,28 @@ function parentTema(){
       ayarlariUygula(ayar);
     }
   } catch (e) { console.error("[HEPGO WS] ayarlar uygulanamadı", e); }
-  rotaListesiYenile();
   setInterval(telemetriDongu, 200);
-  wsBaglan();
+  baglantiListesiYayinla();   // boş liste: "KAYITLI BAĞLANTI YOK" (uçuşlar gelince dolar)
+  if (!GOREV_ID){
+    // Serbest uçuş yok (kullanıcı kararı 5): soket açılmaz, harita + bilgi kutusu
+    durumYaz("gorevsiz");
+    bilgiKutuGoster(hwT("CANLI UÇUŞ", "LIVE FLIGHT"),
+      hwT("Canlı Uçuş yalnız bir saha görevinden açılır: görev detayında Excel düğmesinin yanındaki \"Canlı Uçuş\" düğmesini kullanın. Görev dışı (serbest) uçuş izlenmez.",
+          "Live Flight opens only from a field task: use the \"Live Flight\" button next to Excel in the task detail. Flights outside a task are not monitored."),
+      hwT("Saha görevlerine git", "Go to field tasks"), "#/field");
+    return;
+  }
+  rotaListesiYenile();
+  ucusYukle().then(() => {
+    baglantiListesiYayinla();
+    gorevHaritaMerkezi();
+    wsBaglan();
+  }).catch(e => {
+    const yetki = !!(e && e.status === 403), yok = !!(e && e.status === 404);
+    durumYaz(yetki ? "yetki" : "koptu");
+    bilgiKutuGoster(yetki ? hwT("YETKİ YOK", "NO PERMISSION") : yok ? hwT("GÖREV BULUNAMADI", "TASK NOT FOUND") : hwT("GÖREV YÜKLENEMEDİ", "TASK COULD NOT BE LOADED"),
+      yetki ? hwT("Bu görevin canlı uçuşunu izlemek için görev üyesi ya da saha yöneticisi olmanız gerekir.", "You must be a task member or field manager to watch this task's live flight.")
+            : ((e && e.message) || ""),
+      hwT("Saha görevlerine git", "Go to field tasks"), "#/field");
+  });
 })();

@@ -234,6 +234,26 @@ export function field(label, control, hint) {
   return h('div', { class: 'field' }, h('label', null, label), control, hint ? h('div', { class: 'hint' }, hint) : null);
 }
 
+// Katlanabilir panel: tıklanan başlık (düğme) + gövde. Uzun formları (ör. uçuş düzenleme penceresi) bölümlere ayırır.
+// open: başlangıçta açık · badge: başlığın sağında kısa durum (metin/sayı → .fold-badge; düğüm → olduğu gibi eklenir).
+// Dönen öğede el.toggle(open) ile dışarıdan açılıp kapanır (ör. doğrulama hatasında ilgili paneli açmak için).
+export function fold(title, body, { open = false, badge } = {}) {
+  const chev = svgIcon('<svg class="fold-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>');
+  const bodyEl = h('div', { class: 'fold-body' }, body);
+  const head = h('button', { class: 'fold-head', type: 'button' }, chev, h('span', { class: 'fold-title' }, title),
+    badge === null || badge === undefined || badge === false ? null : badge instanceof Node ? badge : h('span', { class: 'fold-badge' }, String(badge)));
+  const el = h('div', { class: 'fold' }, head, bodyEl);
+  el.toggle = v => {
+    const on = v === undefined ? !el.classList.contains('open') : !!v;
+    el.classList.toggle('open', on);
+    head.setAttribute('aria-expanded', on ? 'true' : 'false');
+    bodyEl.hidden = !on;
+  };
+  head.addEventListener('click', () => el.toggle());
+  el.toggle(open);
+  return el;
+}
+
 export function segmented(options, value, onChange, opts = {}) {
   const el = h('div', { class: `seg ${opts.tabs ? 'seg-tabs' : ''}`.trim() });
   // Telefonda tek satıra sığmayacak seçimler (çok ya da uzun seçenek: Dil, Metin biçimi…) ızgaraya dönsün (CSS: .seg-long/.seg-many)

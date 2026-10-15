@@ -1534,6 +1534,8 @@ CREATE TABLE IF NOT EXISTS field_tasks (
 );
 -- Görevdeki her uçak (sipariş) YA DA dron (Dron Envanteri) için bir uçuş. launch: ARAC_USTU | RAMPA
 -- order_id (üretimden gelen uçak) ve drone_id (dron envanteri) birbirinin yerine geçer; en az biri dolu olmalıdır.
+-- Bağlantı bilgileri (Dron Yönetimi Faz 1) UÇUŞ düzeyindedir: bridge_id (Dron Köprüleri), sysid (MAVLink sistem kimliği),
+-- link (JSON: {type:'serial'|'tcp'|'udp', host?, port?, serial?, baud?} — köprünün drona yerel bağlantısı).
 CREATE TABLE IF NOT EXISTS field_flights (
     id         INTEGER PRIMARY KEY,
     task_id    INTEGER NOT NULL REFERENCES field_tasks(id) ON DELETE CASCADE,
@@ -1542,6 +1544,9 @@ CREATE TABLE IF NOT EXISTS field_flights (
     launch     TEXT,
     note       TEXT,
     updated_at TEXT,
+    bridge_id  INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+    sysid      INTEGER,
+    link       TEXT,
     UNIQUE (task_id, order_id),
     UNIQUE (task_id, drone_id)
 );
@@ -1564,17 +1569,14 @@ CREATE TABLE IF NOT EXISTS drone_bridges (
     created_at  TEXT NOT NULL,
     updated_at  TEXT
 );
+-- Dron kaydında BAĞLANTI BİLGİSİ TUTULMAZ (Faz 1): köprü / sysid / seri-tcp-udp ayarları saha görevindeki uçuşta (field_flights) seçilir.
 CREATE TABLE IF NOT EXISTS drone_drones (
     id          INTEGER PRIMARY KEY,
     code        TEXT NOT NULL UNIQUE,                   -- kuyruk no: db.next_code(conn, 'drone_drones', 'code', 'D') → D-0001
     name        TEXT NOT NULL,
     serial      TEXT UNIQUE COLLATE NOCASE,
     model       TEXT,
-    protocol    TEXT NOT NULL DEFAULT 'mavlink',        -- v1: mavlink (DJI/Parrot eklentileri sonra)
-    sysid       INTEGER,                                -- MAVLink sistem kimliği (köprü birden çok dron taşıyorsa ayrım)
-    conn_type   TEXT,                                   -- tcp | udp | serial (köprünün drona yerel bağlantısı)
-    conn_host   TEXT, conn_port INTEGER, conn_serial TEXT, conn_baud INTEGER,
-    bridge_id   INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+    protocol    TEXT NOT NULL DEFAULT 'mavlink',        -- mavlink | sanal (sunucu içi simülatör) | dji
     order_id    INTEGER REFERENCES orders(id) ON DELETE SET NULL,          -- üretimden gelen uçak bağı (isteğe bağlı)
     pilot_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,           -- sorumlu pilot
     status      TEXT NOT NULL DEFAULT 'AKTIF',          -- AKTIF | BAKIMDA | ARIZALI | PASIF
@@ -1584,7 +1586,6 @@ CREATE TABLE IF NOT EXISTS drone_drones (
     created_at  TEXT NOT NULL,
     updated_at  TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_drone_drones_bridge ON drone_drones(bridge_id);
 CREATE TABLE IF NOT EXISTS drone_bridge_sessions (
     id          INTEGER PRIMARY KEY,
     bridge_id   INTEGER NOT NULL REFERENCES drone_bridges(id) ON DELETE CASCADE,
@@ -2616,6 +2617,9 @@ def _rebuild_field_flights(conn):
             launch     TEXT,
             note       TEXT,
             updated_at TEXT,
+            bridge_id  INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+            sysid      INTEGER,
+            link       TEXT,
             UNIQUE (task_id, order_id),
             UNIQUE (task_id, drone_id)
         );
@@ -3308,6 +3312,28 @@ def _migrate(conn):
     # ('mikro:<sth_RECno_RECno>' veya açılış için 'mikro-open:<kod>'). Çift sayımı ve tekrar aktarımı önler.
     if 'mikro_key' not in {r[1] for r in conn.execute('PRAGMA table_info(material_moves)')}:
         conn.execute('ALTER TABLE material_moves ADD COLUMN mikro_key TEXT')
+    _migrate_drone_links(conn)
+
+
+def _migrate_drone_links(conn):
+    """Dron Yönetimi Faz 1: bağlantı bilgileri dron kaydından (drone_drones) saha görevi uçuşuna (field_flights) taşınır.
+    field_flights'a bridge_id / sysid / link eklenir; drone_drones'tan conn_* / bridge_id / sysid sütunları düşürülür
+    (sqlite ≥ 3.35 DROP COLUMN; önce sütuna bağlı dizin kaldırılır). PRAGMA table_info ile denetlenir: idempotent."""
+    ff_cols = {r[1] for r in conn.execute('PRAGMA table_info(field_flights)')}
+    if 'bridge_id' not in ff_cols:
+        conn.execute('ALTER TABLE field_flights ADD COLUMN bridge_id INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL')
+    if 'sysid' not in ff_cols:
+        conn.execute('ALTER TABLE field_flights ADD COLUMN sysid INTEGER')
+    if 'link' not in ff_cols:
+        conn.execute('ALTER TABLE field_flights ADD COLUMN link TEXT')
+    conn.execute('CREATE INDEX IF NOT EXISTS ix_field_flights_bridge ON field_flights(bridge_id)')
+    dd_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_drones)')}
+    old = [c for c in ('conn_type', 'conn_host', 'conn_port', 'conn_serial', 'conn_baud', 'bridge_id', 'sysid') if c in dd_cols]
+    if not old:
+        return
+    conn.execute('DROP INDEX IF EXISTS ix_drone_drones_bridge')   # bridge_id'ye bağlı dizin: sütun düşürülmeden önce kalkmalı
+    for col in old:
+        conn.execute(f'ALTER TABLE drone_drones DROP COLUMN {col}')
 
 
 def get_db():

@@ -110,20 +110,12 @@ function elmasIkon(renk) {
 }
 
 // ---------------------------------------------------------------------
-// 7) 3B ikon kipi varsayılanı
-// harita_ikon_3d.js:146 acikMi(): localStorage gcs_ikon_3d null → AÇIK,
-// "1" → açık, "0" → kapalı. models/*.glb pakette yok; kip açık kalırsa
-// dronlar.js:1048 billboard.show=false + model 404 = GÖRÜNMEZ dron.
-// İlk açılışta KAPALI başlatılır; kullanıcı Harita Ayarları › 3B İkonlar
-// ile açabilir. models/ dizini dolduğunda bu blok kaldırılır.
+// 7) 3B ikon kipi: GÖKTUNGU varsayılanı (localStorage gcs_ikon_3d null → AÇIK).
+// models/{ucak,quad,hexa,octo,tri,heli}.glb ikinci varlık paketiyle geldi
+// (vendor/goktungu/VARLIK.sha256); harita_ikon_3d.js YOL = "models/" iframe
+// sayfasına göre /static/ops/models/ olur. Daha önce kapalı başlatılan
+// tarayıcılarda ("0") kullanıcı ayarına dokunulmaz.
 // ---------------------------------------------------------------------
-(function () {
-  try {
-    if (localStorage.getItem("gcs_ikon_3d") === null) {
-      localStorage.setItem("gcs_ikon_3d", "0");
-    }
-  } catch (e) {}
-})();
 
 // ---------------------------------------------------------------------
 // 8) Sürüm (surum.js)

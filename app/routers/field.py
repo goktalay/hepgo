@@ -6,6 +6,7 @@ Görev bitip (başarılı/başarısız) tüm uçuşların uçuş raporu hazır o
 from datetime import datetime
 from typing import Optional
 
+import json
 import secrets
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, config, db, exitpass, transfers
+from .. import auth, config, db, drone_hub, exitpass, transfers
 from ..files import KINDS, local_only, save_upload
 
 router = APIRouter(prefix='/api/field')
@@ -31,6 +32,8 @@ STATUS_TEXT = {
 LAUNCH_TEXT = {'ARAC_USTU': 'Araç Üstü', 'RAMPA': 'Fırlatma Rampası'}
 EXPENSE_CATEGORIES = ['Yakıt', 'Konaklama', 'Yemek', 'Ulaşım / otoyol', 'Malzeme', 'Diğer']
 FINISHED = ('GOREV_TAMAMLANDI', 'BASARISIZ')
+OPEN = ('BASLANGIC', 'GOREVDE')                 # açık görev: uçak eklenir/kaldırılır, canlı uçuş yapılır
+LINK_TYPES = ('serial', 'tcp', 'udp')           # uçuşun köprü → dron yerel bağlantı türü (field_flights.link.type)
 
 
 class TaskIn(BaseModel):
@@ -54,8 +57,19 @@ class AtIn(BaseModel):
 
 
 class FlightIn(BaseModel):
+    """Uçuş düzenleme (tam değiştirme): fırlatma + not + BAĞLANTI (Dron Yönetimi Faz 1 — bağlantı dron kaydında değil uçuştadır).
+    link: {type:'serial'|'tcp'|'udp', host?, port?, serial?, baud?}; serial → serial+baud, tcp/udp → host+port zorunlu."""
     launch: Optional[str] = None
     note: Optional[str] = None
+    bridge_id: Optional[int] = None    # Dron Köprüleri'nden köprü
+    sysid: Optional[int] = None        # MAVLink sistem kimliği 1..255
+    link: Optional[dict] = None
+
+
+class FlightAddIn(BaseModel):
+    """Göreve sonradan uçak ekleme: order_id (üretimden gelen uçak) YA DA drone_id (Dron Envanteri) — tam biri."""
+    order_id: Optional[int] = None
+    drone_id: Optional[int] = None
 
 
 class RoadIn(BaseModel):
@@ -113,13 +127,15 @@ def _flights(conn, task_ids):
         return {}
     rows = db.rows(conn.execute(
         f'''SELECT f.*, o.code AS order_code, o.queue_no, o.status AS order_status, p.name AS product_name, p.serial AS product_serial,
-                   d.code AS drone_code, d.name AS drone_name, d.model AS drone_model, d.status AS drone_status,
+                   d.code AS drone_code, d.name AS drone_name, d.model AS drone_model, d.status AS drone_status, d.protocol AS drone_protocol,
+                   b.name AS bridge_name, b.status AS bridge_status,
                    l.id AS log_id, l.status AS log_status, l.file_name AS log_file, l.error AS log_error,
                    json_extract(l.analysis, '$.summary.flight_s') AS flight_s
             FROM field_flights f
             LEFT JOIN orders o ON o.id = f.order_id
             LEFT JOIN products p ON p.id = o.product_id
             LEFT JOIN drone_drones d ON d.id = f.drone_id
+            LEFT JOIN drone_bridges b ON b.id = f.bridge_id
             LEFT JOIN flight_logs l ON l.id = (SELECT MAX(id) FROM flight_logs WHERE flight_id = f.id)
             WHERE f.task_id IN ({','.join('?' * len(task_ids))}) ORDER BY o.queue_no, d.code''', task_ids))
     videos = {}
@@ -130,10 +146,16 @@ def _flights(conn, task_ids):
                     FROM flight_videos v LEFT JOIN users u ON u.id = v.uploaded_by
                     WHERE v.flight_id IN ({','.join('?' * len(rows))}) ORDER BY v.id''', [f['id'] for f in rows])):
             videos.setdefault(v['flight_id'], []).append(v)
+    online = drone_hub.online_bridges()
     out = {}
     for f in rows:
         f['launch_text'] = LAUNCH_TEXT.get(f['launch'])
         f['videos'] = videos.get(f['id'], [])
+        # Faz 1: bağlantı uçuş düzeyinde — köprü, sysid, link (parse edilmiş); sipariş uçakları MAVLink, dronlar kendi protokolü
+        f['protocol'] = (f['drone_protocol'] or 'mavlink') if f['drone_id'] else 'mavlink'
+        f['label'] = f['queue_no'] or f['order_code'] or f['drone_code']
+        f['link'] = drone_hub.parse_link(f['link'])
+        f['bridge_online'] = (f['bridge_id'] in online) if f['bridge_id'] is not None else (f['protocol'] == 'sanal' and -f['drone_id'] in drone_hub.SIMS)
         out.setdefault(f['task_id'], []).append(f)
     return out
 
@@ -278,13 +300,13 @@ def available_aircraft(user=Depends(field_manager), conn=db.DB):
 
 
 def available_drones_rows(conn):
-    """Göreve götürülebilecek dronlar (Dron Envanteri): aktif ve açık bir görevde (başlangıç / görevde) olmayanlar."""
+    """Göreve götürülebilecek dronlar (Dron Envanteri): aktif ve açık bir görevde (başlangıç / görevde) olmayanlar.
+    protocol: mavlink | sanal | dji (bağlantı bilgisi dron kaydında tutulmaz; uçuşta seçilir)."""
     return db.rows(conn.execute(
-        '''SELECT d.id, d.code, d.name, d.model, d.serial, d.status, d.note, b.name AS bridge_name, b.status AS bridge_status,
-                  pl.full_name AS pilot_name,
+        '''SELECT d.id, d.code, d.name, d.model, d.serial, d.status, d.note, d.protocol, pl.full_name AS pilot_name,
                   (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                    WHERE f.drone_id = d.id AND t.status != 'IPTAL') AS past_tasks
-           FROM drone_drones d LEFT JOIN drone_bridges b ON b.id = d.bridge_id LEFT JOIN users pl ON pl.id = d.pilot_id
+           FROM drone_drones d LEFT JOIN users pl ON pl.id = d.pilot_id
            WHERE d.status = 'AKTIF' AND NOT EXISTS (
                SELECT 1 FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                WHERE f.drone_id = d.id AND t.status IN ('BASLANGIC', 'GOREVDE'))
@@ -343,6 +365,84 @@ def create_task(body: TaskIn, user=Depends(field_manager), conn=db.DB):
     parts = [f'{len(orders)} uçak' if orders else None, f'{len(drones)} dron' if drones else None]
     db.audit(conn, user['id'], 'Saha görevi oluşturdu', 'field_task', tid, f'{code} ({", ".join(p for p in parts if p)})')
     return {'id': tid, 'code': code}
+
+
+@router.get('/tasks/{tid}/addable')
+def task_addable(tid: int, user=Depends(field_manager), conn=db.DB):
+    """Göreve SONRADAN eklenebilecekler: uçaklar (available-aircraft kuralı: saha deposu / montaj, başka açık görevde değil) ve
+    Dron Envanteri'ndeki uygun dronlar; görevdeki mevcut uçuşlar hariç. Görev açık (başlangıç / görevde) değilse 400."""
+    task = get_task(conn, tid)
+    if task['status'] not in OPEN:
+        raise HTTPException(400, 'Yalnız açık göreve (başlangıç / görevde) uçak eklenebilir')
+    in_orders = {f['order_id'] for f in task['flights'] if f['order_id']}
+    in_drones = {f['drone_id'] for f in task['flights'] if f['drone_id']}
+    return {'orders': [r for r in available_aircraft(user, conn) if r['id'] not in in_orders],
+            'drones': [r for r in available_drones_rows(conn) if r['id'] not in in_drones]}
+
+
+@router.post('/tasks/{tid}/flights')
+def add_task_flight(tid: int, body: FlightAddIn, user=Depends(field_manager), conn=db.DB):
+    """Açık göreve uçak (order_id) YA DA dron (drone_id) ekler — tam biri; uygunluk listeleriyle doğrulanır.
+    Montajdaki uçak göreve girince SAHADA_MONTAJ olur. Harekât ekranı izleyicileri yenilenir (drone_hub.task_changed)."""
+    if bool(body.order_id) == bool(body.drone_id):
+        raise HTTPException(400, 'Bir uçak YA DA bir dron seçin')
+    avail = task_addable(tid, user, conn)
+    task = get_task(conn, tid)
+    if body.order_id:
+        row = next((r for r in avail['orders'] if r['id'] == body.order_id), None)
+        if not row:
+            raise HTTPException(400, 'Seçilen uçak saha deposunda / montajda değil, bu görevde ya da başka bir görevde')
+        cur = conn.execute('INSERT INTO field_flights (task_id, order_id, updated_at) VALUES (?,?,?)', (tid, body.order_id, db.now()))
+        conn.execute("UPDATE orders SET status = 'SAHADA_MONTAJ' WHERE status = 'MONTAJ' AND id = ?", (body.order_id,))
+        label = row['queue_no'] or row['code']
+    else:
+        row = next((r for r in avail['drones'] if r['id'] == body.drone_id), None)
+        if not row:
+            raise HTTPException(400, 'Seçilen dron aktif değil, bu görevde ya da başka bir görevde')
+        cur = conn.execute('INSERT INTO field_flights (task_id, drone_id, updated_at) VALUES (?,?,?)', (tid, body.drone_id, db.now()))
+        label = row['code']
+    db.audit(conn, user['id'], 'Saha görevine uçak ekledi', 'field_flight', cur.lastrowid, f'{task["code"]} / {label}')
+    conn.commit()   # canlı izleyici yenilemesi (olay döngüsünde ayrı bağlantıyla okur) yazılmış veriyi görsün
+    drone_hub.task_changed(tid)
+    return {'id': cur.lastrowid}
+
+
+@router.delete('/flights/{fid}')
+def delete_flight(fid: int, user=Depends(field_manager), conn=db.DB):
+    """Açık görevden uçuş kaydını kaldırır: logu / videosu yoksa. Sipariş SAHADA_MONTAJ'a geçmişse geri alınmaz (yalnız kayıt
+    silinir; notlar CASCADE). Görevin son uçuşu kaldırılamaz (görev en az bir uçakla açılır)."""
+    f = flight_row(conn, fid)
+    task = get_task(conn, f['task_id'])
+    if task['status'] not in OPEN:
+        raise HTTPException(400, 'Yalnız açık görevden (başlangıç / görevde) uçuş kaldırılabilir')
+    if conn.execute('SELECT 1 FROM flight_logs WHERE flight_id = ?', (fid,)).fetchone() or \
+            conn.execute('SELECT 1 FROM flight_videos WHERE flight_id = ?', (fid,)).fetchone():
+        raise HTTPException(400, 'Uçuş logu ya da videosu olan uçuş kaldırılamaz')
+    if len(task['flights']) <= 1:
+        raise HTTPException(400, 'Görevin son uçuşu kaldırılamaz; görevi iptal edin')
+    label = _flight_label(task, fid)
+    conn.execute('DELETE FROM field_flights WHERE id = ?', (fid,))
+    db.audit(conn, user['id'], 'Saha görevinden uçağı kaldırdı', 'field_flight', fid, f'{task["code"]} / {label}')
+    conn.commit()
+    drone_hub.task_changed(f['task_id'])
+    return {'ok': True}
+
+
+@router.get('/tasks/{tid}/live')
+def task_live(tid: int, user=Depends(field_user), conn=db.DB):
+    """Canlı Uçuş (harekât ekranı) görev bağlamı: görev {id, code, status, location_name, lat, lon (field_locations'ta konum
+    sütunu yoksa null)} + uçuşlar {id, order_id, drone_id, label, name, protocol, sysid, bridge_id, bridge_name, bridge_online,
+    link, sim_bridge_id} + can_command. Görev üyesi ya da saha yöneticisi; Canlı Uçuş (field.live) okuma izni gerekir."""
+    t = get_task(conn, tid)
+    if not drone_hub.can_read(user):
+        raise HTTPException(403, 'Canlı Uçuş izniniz yok')
+    if not (is_manager(user) or _member(t, user)):
+        raise HTTPException(403, 'Bu görevin canlı uçuşunu yalnız görev üyeleri ve saha yöneticileri izleyebilir')
+    task, flights = drone_hub.task_live(conn, tid)
+    for f in flights:
+        if f['sim_bridge_id'] is not None:
+            f['bridge_online'] = f['sim_bridge_id'] in drone_hub.SIMS
+    return {'task': task, 'flights': flights, 'can_command': drone_hub.can_command(user) if 'write_modules' in user else False}
 
 
 def _transition(conn, tid, expected):
@@ -405,8 +505,54 @@ def require_flight_editor(user):
         raise HTTPException(403, 'Uçuş bilgisini yalnızca saha sorumlusu veya pilot düzenleyebilir')
 
 
+def _flight_label(task, fid):
+    f = next((x for x in task['flights'] if x['id'] == fid), None)
+    return (f and f['label']) or f'#{fid}'
+
+
+def _int(v):
+    try:
+        return int(v) if v is not None and str(v).strip() != '' else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_link(conn, body):
+    """Uçuş bağlantı doğrulaması: köprü var mı, sysid 1..255, link türü ve zorunlu alanları. Saklanacak link JSON metnini
+    (ya da None) döndürür."""
+    if body.bridge_id is not None and not conn.execute('SELECT 1 FROM drone_bridges WHERE id = ?', (body.bridge_id,)).fetchone():
+        raise HTTPException(400, 'Köprü bulunamadı')
+    if body.sysid is not None and not 1 <= body.sysid <= 255:
+        raise HTTPException(400, 'MAVLink sistem kimliği 1…255 olmalı')
+    link = body.link
+    if link is None:
+        return None
+    if not isinstance(link, dict):
+        raise HTTPException(400, 'Bağlantı ayarı nesne olmalı')
+    kind = str(link.get('type') or '').strip().lower()
+    if kind not in LINK_TYPES:
+        raise HTTPException(400, 'Bağlantı türü serial, tcp ya da udp olmalı')
+    if body.bridge_id is None:
+        raise HTTPException(400, 'Bağlantı ayarı için önce köprü seçin')
+    out = {'type': kind}
+    if kind == 'serial':
+        serial, baud = str(link.get('serial') or '').strip()[:120], _int(link.get('baud'))
+        if not serial or not baud or baud <= 0:
+            raise HTTPException(400, 'Seri bağlantı için port adı ve baud gerekli')
+        out.update(serial=serial, baud=baud)
+    else:
+        host, port = str(link.get('host') or '').strip()[:120], _int(link.get('port'))
+        if not host or not port or not 1 <= port <= 65535:
+            raise HTTPException(400, 'TCP/UDP bağlantısı için sunucu adresi ve port (1…65535) gerekli')
+        out.update(host=host, port=port)
+    return json.dumps(out, ensure_ascii=False)
+
+
 @router.put('/flights/{fid}')
 def update_flight(fid: int, body: FlightIn, user=Depends(field_user), conn=db.DB):
+    """Uçuş bilgileri: fırlatma, not ve BAĞLANTI (köprü + sysid + link). Bağlantı alanları (bridge_id/sysid/link) gövdede HİÇ
+    gönderilmezse mevcut değer korunur (Dron Köprüleri yetkisi olmayan pilot fırlatma/not kaydedince bağlantı silinmesin);
+    açıkça null gönderilirse temizlenir."""
     require_flight_editor(user)
     f = flight_row(conn, fid)
     task = get_task(conn, f['task_id'])
@@ -414,11 +560,19 @@ def update_flight(fid: int, body: FlightIn, user=Depends(field_user), conn=db.DB
         raise HTTPException(400, 'İptal edilmiş görevin uçuşu düzenlenemez')
     if body.launch not in (None, *LAUNCH_TEXT):
         raise HTTPException(400, 'Geçersiz fırlatma sistemi')
-    conn.execute('UPDATE field_flights SET launch = ?, note = ?, updated_at = ? WHERE id = ?',
-                 (body.launch, (body.note or '').strip() or None, db.now(), fid))
-    order = conn.execute('SELECT COALESCE(queue_no, code) FROM orders WHERE id = ?', (f['order_id'],)).fetchone()[0]
+    sent = body.model_fields_set
+    if not ({'bridge_id', 'sysid', 'link'} & sent):
+        body.bridge_id, body.sysid = f['bridge_id'], f['sysid']
+        body.link = json.loads(f['link']) if f['link'] else None
+    link = _check_link(conn, body)
+    conn.execute('UPDATE field_flights SET launch = ?, note = ?, bridge_id = ?, sysid = ?, link = ?, updated_at = ? WHERE id = ?',
+                 (body.launch, (body.note or '').strip() or None, body.bridge_id, body.sysid, link, db.now(), fid))
+    bridge = conn.execute('SELECT name FROM drone_bridges WHERE id = ?', (body.bridge_id,)).fetchone() if body.bridge_id else None
+    conn_txt = f' · köprü {bridge[0]}' + (f' · sysid {body.sysid}' if body.sysid else '') + (f' · {json.loads(link)["type"]}' if link else '') if bridge else ''
     db.audit(conn, user['id'], 'Uçuş bilgisini düzenledi', 'field_flight', fid,
-             f'{task["code"]} / {order}: {LAUNCH_TEXT.get(body.launch, "fırlatma seçilmedi")}')
+             f'{task["code"]} / {_flight_label(task, fid)}: {LAUNCH_TEXT.get(body.launch, "fırlatma seçilmedi")}{conn_txt}')
+    conn.commit()
+    drone_hub.task_changed(f['task_id'])
     return {'ok': True}
 
 

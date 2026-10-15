@@ -62,10 +62,13 @@ html, body {
 }
 
 /* ---- Bağlantı Yöneticisi (#yzSeri) -------------------------------------
-   HEPGO'da köprüler Dron Köprüleri sayfasından tanımlanır ve eşleştirme
-   koduyla kendileri bağlanır; +SERİ/+TCP/+UDP/+DJI/+SANAL/+LOG DRON/
-   +MERKEZ düğmeleri işlevsizdir. seri.js:1399-1411 bu düğmelere guard'sız
-   addEventListener bağladığı için DOM'da kalır, burada gizlenir. */
+   HEPGO'da köprüler Dron Köprüleri sayfasından tanımlanır ve köprü
+   koduyla kendileri bağlanır; bağlantı (seri/tcp/udp) saha görevindeki
+   UÇUŞ düzeyinde seçilir (kullanıcı kararı 1/6). +SERİ/+TCP/+UDP/+DJI/
+   +SANAL/+LOG DRON/+MERKEZ düğmeleri işlevsizdir; seri.js:1399-1411 bu
+   düğmelere guard'sız addEventListener bağladığı için DOM'da kalır,
+   toolbar bütünüyle gizlenir. */
+#bagToolbar,
 #btnYeniSeri,
 #btnYeniTcp,
 #btnYeniUdp,
@@ -75,12 +78,47 @@ html, body {
 #btnYeniMerkez {
   display: none !important;
 }
-/* Play düğmesi: köprü oturumunu tarayıcı başlatamaz (köprü kendisi
-   bağlanır); Stop → disconnect komutu kalır. */
-.bag-btn.bag-play,
+/* Satır düğmeleri (seri.js:1023-1047 bagPSButonKur / Düzenle / Sil):
+   - Play (bag-play)  = "Bağlan": uçuşun link'i köprüde açılır (hepgo_ws.js
+     baglanti_baslat → cmd link_open). Stop (bag-stop) = "Kes" → link_close.
+     Köprü çevrimdışıysa, uçuşun link'i yoksa ya da dron sanalsa düğme
+     anlamsızdır: hepgo_ws.js satıra data-hepgo-ps="gizli" yazar.
+   - Düzenle/Sil: köprüler ve bağlantılar HEPGO'da yönetilir; gizli. */
 .bag-btn.bag-duzenle,
 .bag-btn.bag-sil {
-  display: none !important;   /* köprüler HEPGO › Dron Köprüleri'nden yönetilir; Düzenle/Sil burada işlevsiz olurdu */
+  display: none !important;
+}
+.bag-satir[data-hepgo-ps="gizli"] .bag-btn.bag-play,
+.bag-satir[data-hepgo-ps="gizli"] .bag-btn.bag-stop,
+.bag-satir[data-hepgo-ps="gizli"] .bag-btn.bag-baglaniyor {
+  display: none !important;
+}
+/* Uçuş etiketi rozeti (kuyruk no | dron kodu), satır başlığında köprü
+   adının yanında; hepgo_ws.js bagListeCiz sarmalı ekler. */
+.hepgo-ucus-rozet {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(92, 200, 255, .16);
+  color: #5cc8ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.bag-tur.bag-tur-kopru {
+  background: rgba(148, 163, 184, .18);
+  color: #cbd5e1;
+}
+.bag-tur.bag-tur-seri {
+  background: rgba(34, 197, 94, .18);
+  color: #86efac;
+}
+.bag-tur.bag-tur-udp {
+  background: rgba(14, 165, 233, .18);
+  color: #7dd3fc;
 }
 
 /* ---- Font Awesome aile adı düzeltmesi ---------------------------------
@@ -92,16 +130,126 @@ html, body {
   font-weight: 900;
 }
 
-/* ---- Üst bar: HEPGO markası --------------------------------------------
-   img/hepgo-logo.png 824x260; stil.css:125 #logo{height:24px} korunur,
-   bar 32px olduğu için biraz daha küçük tutulur. */
-#logo {
-  height: 22px;
-  width: auto;
-  display: block;
+/* ---- Üst bar KALDIRILDI (kullanıcı kararı 2) ---------------------------
+   #ustBar DOM'da yok; body (column) içinde #anaAlan doğrudan en üstten
+   başlar ve kalan yüksekliği doldurur (stil.css:103-105 flex:1 1 auto).
+   stil.css :root --ust-bar-y (32px) popup_tasima.js:51 ve bazı pencere
+   konumlarında "barın altı" anlamında okunur; bar yokken 0 verilir. */
+:root {
+  --ust-bar-y: 0px;
 }
-#ustBarOrta .baslik {
+#anaAlan {
+  top: 0;
+  margin-top: 0;
+}
+/* Gizli id çapaları (index.html #hepgoGizliCapalar): asla görünmez */
+#hepgoGizliCapalar {
+  display: none !important;
+}
+
+/* ---- Harita Ayarları popup'ı: sol araç grubunun yanında --------------
+   stil.css:4551 #haritaPopup{top:50px;right:60px} üst bardaki düğmeye
+   göreydi; düğme #haritaAracGrubu'na (left:12px, 33px düğme) taşındı.
+   popup_tasima.js kayıtlı konumu inline style ile yazar; o kazanır. */
+#haritaPopup {
+  top: 10px;
+  left: 56px;
+  right: auto;
+}
+
+/* ---- Sol araç grubu: açık (toggle) durumu ------------------------------
+   #btnBaglantiPanel (hepgo_patch.js Bölüm 10) #yzSeri açıkken .acik alır;
+   stil.css:4630 #btnHaritaArama.aktif ile aynı vurgu. */
+#haritaAracGrubu > button.acik {
+  color: #fff;
+  background: #2563eb;
+  border-color: #3b82f6;
+  box-shadow: 0 0 10px rgba(37, 99, 235, .55);
+}
+
+/* ---- Görev rozeti (harita üst-orta) ----------------------------------
+   hepgo_ws.js görev kodunu yazar; #rotaRozet (stil.css:504, düzenleme
+   kipi) ile aynı aile. Sağ üst köşe Bağlantı Yöneticisi'nin (#yzSeri)
+   varsayılan yeri olduğu için rozet üst-ortadadır. */
+#hepgoGorevRozet {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--cizgi);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-arka) 90%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(4px);
+  color: var(--metin);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
   white-space: nowrap;
+  pointer-events: none;
+}
+#hepgoGorevRozet i {
+  color: #5cc8ff;
+}
+#hepgoGorevRozetMetin small {
+  font-weight: 400;
+  color: var(--soluk);
+  letter-spacing: 0;
+}
+
+/* ---- Bilgi kutusu (görev bağlamı yok / yetki yok / görev bulunamadı) -- */
+#hepgoBilgiKutu {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(440px, calc(100% - 40px));
+  box-sizing: border-box;
+  padding: 26px 28px 24px;
+  border: 1px solid var(--cizgi);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-arka) 94%, transparent);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(6px);
+  color: var(--metin);
+  text-align: center;
+}
+#hepgoBilgiKutu .hepgo-bilgi-ikon {
+  font-size: 34px;
+  color: var(--soluk);
+  margin-bottom: 12px;
+}
+#hepgoBilgiKutu .hepgo-bilgi-baslik {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-bottom: 8px;
+}
+#hepgoBilgiKutu .hepgo-bilgi-metin {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--soluk);
+}
+#hepgoBilgiKutu #hepgoBilgiDugme {
+  margin-top: 16px;
+  padding: 8px 16px;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+#hepgoBilgiKutu #hepgoBilgiDugme:hover {
+  background: #1d4ed8;
 }
 
 /* ---- Alt bar ------------------------------------------------------------
@@ -122,6 +270,7 @@ html[data-hepgo-rol="izleyici"] .dk-telemetri .dk-tel-hucre[data-islev="irtifa"]
 html[data-hepgo-rol="izleyici"] .dk-islem-hucre.tehlikeli,
 html[data-hepgo-rol="izleyici"] .gorev-dugmeler button,
 html[data-hepgo-rol="izleyici"] .gorev-btn-surdur,
+html[data-hepgo-rol="izleyici"] .bag-btn.bag-play,
 html[data-hepgo-rol="izleyici"] .bag-btn.bag-stop {
   opacity: .45;
   pointer-events: none;

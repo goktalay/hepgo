@@ -10,13 +10,16 @@ Protokol v1 (GÖKTUNGU köprüleriyle ortak sözleşme):
   köprü → sunucu (ikili): ham MAVLink v1/v2 çerçeveleri; log aktarımı sırasında (.bin parçaları, ≤ 1 MB)
   sunucu → köprü: {t:'auth_ok',bridge_id,server_time,key?} | {t:'auth_err',code} | {t:'pong'} | {t:'cmd',rid,sysid,name,params}
       | {t:'log_ack',flight_log_id} | {t:'log_err',error}
-  tarayıcı ↔ sunucu (/ws/drone/live, oturum çerezi): ← {t:'hello',bridges,drones} {t:'status',bridge_id,sysid,state}
+  tarayıcı ↔ sunucu (/ws/drone/live, oturum çerezi): ← {t:'hello',bridges,task?,flights?} {t:'status',bridge_id,sysid,state}
       {t:'bridge',bridge_id,online} {t:'event',bridge_id,sysid,text,severity} {t:'res',rid,ok,…} {t:'pong'}
-      → {t:'ping'} {t:'cmd',rid,bridge_id,sysid,name,params} {t:'watch',bridge_id|null}
+      → {t:'ping'} {t:'cmd',rid,bridge_id,sysid,name,params} {t:'watch',task_id} | {t:'watch',bridge_id|null}
   Kapanış kodları: 4400 kimlik yok/zaman aşımı · 4403 anahtar/kod yanlış · 4409 aynı köprü ikinci bağlantı (eski kapatılır)
       · 4429 hız sınırı (IP başına 10 başarısız deneme / dk).
 Komut adları v1: arm, disarm, set_mode{mode}, takeoff{alt_rel_m}, land, rtl, goto{lat,lon,alt_rel_m,speed_mps?},
   mission_upload{items}, mission_download, disconnect (sunucu tarafı: köprü oturumunu KAPANDI ile kapatır).
+Faz 1 — GÖREV BAĞLAMI: harekât ekranı {t:'watch',task_id} gönderir; izleyici yalnız o saha görevinin uçuşlarına bağlı köprüleri
+  (field_flights.bridge_id) ve görevin SANAL dronlarını görür. Sanal dron (protocol='sanal'): sunucu içi simülatör SimDrone,
+  köprü gibi davranır, bridge_id = -drone_id (negatif). Bağlantı bilgisi (köprü/sysid/link) dron kaydında değil uçuştadır.
 Tek uvicorn süreci varsayılır (tenant başına bir süreç; --workers>1 ile hub paylaşılamaz).
 """
 import asyncio
@@ -48,16 +51,21 @@ CMD_TIMEOUTS = {'mission_upload': 60, 'mission_download': 60, 'log_list': 60}   
 CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
              # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
              'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change',
+             # v1.1 cap 'link': köprünün drona yerel bağlantısını (uçuşun link ayarı) açma/kapama
+             'link_open', 'link_close',
              # protokol v1.2 taslağı (docs/dron-kopru-protokolu.md; caps 'bakim' / 'log' bildiren köprüler)
              'kalib_gyro', 'kalib_baro', 'kalib_ivme', 'kalib_level', 'kalib_esc', 'kalib_radyo',
              'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase'}
-BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim'}   # köprünün bildirebileceği yetenekler
+BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link'}   # köprünün bildirebileceği yetenekler
+OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
+SIM_IDLE = 600                          # izleyici kalmayınca sanal dronun durma süresi (sn)
 
 BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
+SIMS = {}           # -drone_id → SimDrone (çalışan sanal dronlar)
 VIEWERS = {}        # ws → Viewer
 PAIR_CODES = {}     # kod → {'bridge_id', 'exp'}
 _fails = {}         # ip → [zaman damgası…]
-_pending = {}       # rid → (Future, viewer_ws | None)
+_pending = {}       # rid → (Future, viewer_ws | None, bridge_id)
 _loop_task = None
 
 
@@ -201,7 +209,20 @@ class Viewer:
     def __init__(self, ws, user):
         self.ws, self.user = ws, user
         self.q = asyncio.Queue(maxsize=VIEWER_QUEUE)
-        self.watch = None   # bridge_id ya da None (hepsi)
+        self.watch = None     # bridge_id ya da None (hepsi) — eski davranış
+        self.loop = asyncio.get_running_loop()   # izleyicinin olay döngüsü (task_changed istek iş parçacığından buraya aktarır)
+        self.task_id = None   # Faz 1: görev bağlamı ({t:'watch',task_id}); doluysa yalnız görevin köprüleri/sanal dronları geçer
+        self.allowed = set()  # görevin uçuşlarına bağlı köprü kimlikleri (+ sanal dron -drone_id)
+        self.task = None      # hello.task {id, code, status, location_name, lat, lon}
+        self.flights = []     # hello.flights (task_live ile aynı satırlar)
+
+    def passes(self, bridge_id):
+        """Bu izleyiciye bridge_id kaynaklı bir mesaj gider mi? (None: kaynaksız mesaj, herkese)"""
+        if bridge_id is None:
+            return True
+        if self.task_id is not None:
+            return bridge_id in self.allowed
+        return self.watch is None or self.watch == bridge_id
 
     def put(self, txt):
         try:
@@ -241,10 +262,22 @@ class Bridge:
 
 # ---------------- Yardımcılar ----------------
 def _broadcast(msg, bridge_id=None):
+    """İzleyicilere yayın. Kaynak köprü: bridge_id parametresi, yoksa mesajın bridge_id alanı (köprü çevrimiçi/çevrimdışı
+    bildirimleri) — görev bağlamındaki izleyiciler yalnız kendi görevlerinin köprülerini görür."""
     txt = json.dumps(msg, ensure_ascii=False)
+    src = bridge_id if bridge_id is not None else msg.get('bridge_id')
     for v in list(VIEWERS.values()):
-        if v.watch is None or bridge_id is None or v.watch == bridge_id:
+        if v.passes(src):
             v.put(txt)
+
+
+def _bridge_or_sim(bridge_id):
+    """Gerçek köprü (pozitif) ya da sanal dron (negatif, -drone_id); yoksa None."""
+    try:
+        bid = int(bridge_id or 0)
+    except (TypeError, ValueError):
+        return None
+    return SIMS.get(bid) if bid < 0 else BRIDGES.get(bid)
 
 
 async def _safe_send(ws, msg):
@@ -302,13 +335,15 @@ def online_bridges():
 
 
 def snapshot():
-    return {'bridges': [b.info() for b in BRIDGES.values()]}
+    """Bağlı gerçek köprüler + çalışan sanal dronlar (köprü gibi; bridge_id negatif, info.sim = True)."""
+    return {'bridges': [b.info() for b in BRIDGES.values()] + [s.info() for s in SIMS.values()]}
 
 
-def all_caps():
-    """Tarayıcıya bildirilen yetenekler: sunucu yetenekleri + bağlı köprülerin bildirdikleri (köprü bazlı ayrım hello.bridges[].caps'te)."""
+def all_caps(bridges=None):
+    """Tarayıcıya bildirilen yetenekler: sunucu yetenekleri + bağlı köprülerin bildirdikleri (köprü bazlı ayrım hello.bridges[].caps'te).
+    bridges verilirse (görev bağlamı) yalnız o köprülerin yetenekleri eklenir."""
     caps = set(CAPS)
-    for b in BRIDGES.values():
+    for b in (bridges if bridges is not None else [*BRIDGES.values(), *SIMS.values()]):
         caps |= set(b.caps)
     return sorted(caps)
 
@@ -674,6 +709,537 @@ async def _log_end(bridge):
         console_line(bridge, sysid, 'LOG', f"Uçuş logu alındı: {lg['name']} (#{lid})", 'basari')
 
 
+# ---------------- Görev bağlamı (Faz 1): görevin uçuşları, köprüleri ve sanal dronları ----------------
+_loc_geo = None   # field_locations.lat/lon sütunları var mı (None: henüz bakılmadı)
+
+
+def _location_geo_cols(conn):
+    """field_locations tablosunda konum sütunu (lat + lon|lng) varsa adlarını döndürür; yoksa None (live.task.lat/lon null)."""
+    global _loc_geo
+    if _loc_geo is None:
+        cols = {r[1] for r in conn.execute('PRAGMA table_info(field_locations)')}
+        lon = 'lon' if 'lon' in cols else 'lng' if 'lng' in cols else None
+        _loc_geo = ('lat', lon) if 'lat' in cols and lon else ()
+    return _loc_geo or None
+
+
+def parse_link(txt):
+    """field_flights.link JSON metni → sözlük (bozuksa None)."""
+    if not txt:
+        return None
+    try:
+        v = json.loads(txt) if isinstance(txt, str) else txt
+    except ValueError:
+        return None
+    return v if isinstance(v, dict) and v.get('type') else None
+
+
+def task_live(conn, task_id):
+    """Görev + uçuş satırları (REST /api/field/tasks/{id}/live ve WS hello.task/flights aynı biçim).
+    flights[]: id, order_id, drone_id, label (kuyruk no | dron kodu), name (ürün adı | dron adı), protocol (sipariş uçakları
+    'mavlink'), sysid, bridge_id, bridge_name, bridge_online, link (parse edilmiş), sim_bridge_id (sanal ise -drone_id)."""
+    geo = _location_geo_cols(conn)
+    geo_sql = f', loc.{geo[0]} AS lat, loc.{geo[1]} AS lon' if geo else ', NULL AS lat, NULL AS lon'
+    task = db.row(conn.execute(f'''SELECT t.id, t.code, t.status, loc.name AS location_name{geo_sql}
+                                   FROM field_tasks t LEFT JOIN field_locations loc ON loc.id = t.location_id WHERE t.id = ?''', (task_id,)))
+    if not task:
+        return None, []
+    rows = db.rows(conn.execute(
+        '''SELECT f.id, f.order_id, f.drone_id, f.bridge_id, f.sysid, f.link, o.queue_no, o.code AS order_code, p.name AS product_name,
+                  d.code AS drone_code, d.name AS drone_name, d.protocol AS drone_protocol, b.name AS bridge_name
+           FROM field_flights f
+           LEFT JOIN orders o ON o.id = f.order_id LEFT JOIN products p ON p.id = o.product_id
+           LEFT JOIN drone_drones d ON d.id = f.drone_id LEFT JOIN drone_bridges b ON b.id = f.bridge_id
+           WHERE f.task_id = ? ORDER BY o.queue_no, d.code, f.id''', (task_id,)))
+    flights = []
+    for r in rows:
+        protocol = (r['drone_protocol'] or 'mavlink') if r['drone_id'] else 'mavlink'
+        flights.append({'id': r['id'], 'order_id': r['order_id'], 'drone_id': r['drone_id'],
+                        'label': r['queue_no'] or r['order_code'] or r['drone_code'] or f"#{r['id']}",
+                        'name': r['product_name'] or r['drone_name'], 'protocol': protocol, 'sysid': r['sysid'],
+                        'bridge_id': r['bridge_id'], 'bridge_name': r['bridge_name'], 'bridge_online': r['bridge_id'] in BRIDGES,
+                        'link': parse_link(r['link']), 'sim_bridge_id': -r['drone_id'] if protocol == 'sanal' and r['drone_id'] else None})
+    return task, flights
+
+
+def _task_allowed(flights):
+    out = set()
+    for f in flights:
+        if f['bridge_id'] is not None:
+            out.add(int(f['bridge_id']))
+        if f['sim_bridge_id'] is not None:
+            out.add(int(f['sim_bridge_id']))
+    return out
+
+
+def _sim_home(conn, task):
+    """Sanal dronun ev konumu: görev yeri lat/lon → ilk aktif rota merkezi → Ankara (39.9, 32.8)."""
+    if task and task.get('lat') is not None and task.get('lon') is not None:
+        return float(task['lat']), float(task['lon'])
+    c = conn.execute('SELECT lat, lon FROM drone_route_centers WHERE active = 1 ORDER BY id LIMIT 1').fetchone()
+    return (float(c[0]), float(c[1])) if c else (39.9, 32.8)
+
+
+def _task_status(task_id):
+    with db.connect() as conn:
+        r = conn.execute('SELECT status FROM field_tasks WHERE id = ?', (task_id,)).fetchone()
+    return r[0] if r else None
+
+
+COPTER_MODES = {'STABILIZE': 0, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'LOITER': 5, 'RTL': 6, 'LAND': 9, 'POSHOLD': 16}
+NAV_TAKEOFF, NAV_WAYPOINT, NAV_LOITER_TIME, NAV_RTL, NAV_LAND, DO_JUMP = 22, 16, 19, 20, 21, 177
+
+
+class SimDrone:
+    """SANAL DRON: görevin protocol='sanal' uçuşu için sunucu içi sahte köprü. Bridge ile aynı yüzeyi taşır (id, name, drones,
+    caps, info) — _emit / console_line / arm_check_report değişmeden çalışır; bridge_id = -drone_id (negatif), sysid = uçuş
+    sysid || 1. 5 Hz tick (asyncio görevi) DroneState alanlarını üretir; komutlar send_command'dan (bridge_id < 0) gelir.
+    Kinematik: tırmanma 3 m/s, iniş 2 m/s, yatay 12 m/s (goto/rtl/auto). Batarya uçarken 0,03 %/sn düşer.
+    İzleyici kalmayınca SIM_IDLE sonra, görev açık (BASLANGIC/GOREVDE) değilse hemen durur."""
+    TICK, CLIMB, DESCENT, SPEED = 0.2, 3.0, 2.0, 12.0
+
+    def __init__(self, task_id, flight, home):
+        self.task_id, self.drone_id, self.flight_id = task_id, int(flight['drone_id']), flight['id']
+        self.id = -self.drone_id
+        self.name = f"Sanal · {flight['label']}"
+        self.sysid = int(flight.get('sysid') or 1)
+        self.host, self.platform, self.ver = 'sunucu', 'sanal', f'sim-{PROTO}'
+        self.caps = ['set_home', 'mission_set_current', 'altitude_change', 'arm_force']
+        self.session_id, self.packets, self.connected_at, self.last_seen = None, 0, db.now(), time.time()
+        self.closing, self.log, self.tlog, self.tlog_path = None, None, None, None
+        self.st = DroneState(self.sysid)
+        self.drones = {self.sysid: self.st}
+        self.home = (float(home[0]), float(home[1]))
+        self.lat, self.lon, self.alt = self.home[0], self.home[1], 0.0
+        self.hdg, self.gs, self.vz = 0.0, 0.0, 0.0
+        self.mode, self.phase = 'STABILIZE', 'idle'   # phase: idle | takeoff | goto | auto | loiter | rtl | land
+        self.target = None          # (lat, lon, alt_rel)
+        self.hold_until = None      # LOITER_TIME / WAYPOINT bekleme bitişi
+        self.mission, self.seq = [], 0
+        self.batt = 100.0
+        self.last_viewer = time.time()
+        self.task = None
+        d = self.st.d
+        d.update({'type': 2, 'type_name': MAV_TYPES[2], 'autopilot': 3, 'armed': False, 'fix': 6, 'sats': 12, 'hdop': 0.7,
+                  'home_lat': self.home[0], 'home_lon': self.home[1], 'home_alt': 900.0, 'ekf_flags': 831, 'mission_count': 0,
+                  'sensors': {k: 'ok' for k in ('gyro', 'accel', 'mag', 'baro', 'gps', 'rc', 'ahrs', 'battery', 'prearm', 'logging')}})
+        self.st.rc_at = time.time()
+        self._state()
+
+    # --- Bridge yüzeyi ---
+    def info(self):
+        return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
+                'connected_at': self.connected_at, 'packets': self.packets, 'session_id': None, 'sim': True, 'drone_id': self.drone_id,
+                'task_id': self.task_id, 'flight_id': self.flight_id, 'drones': {str(s): st.d for s, st in self.drones.items()}}
+
+    # --- yardımcılar ---
+    def _event(self, text, severity=6):
+        """STATUSTEXT benzeri olay: event + console + ARM CHECK mesaj listesi."""
+        now = time.time()
+        self.st.d['last_text'] = text
+        self.st.texts = (self.st.texts + [{'ts': now, 'metin': text, 'sev': severity, 'tekrar': 1}])[-50:]
+        _broadcast({'t': 'event', 'bridge_id': self.id, 'sysid': self.sysid, 'text': text, 'severity': severity, 'ts': now}, self.id)
+        console_line(self, self.sysid, 'STATUS', text, 'hata' if severity <= 3 else 'uyari' if severity == 4 else 'basari' if severity == 5 else 'bilgi')
+
+    def _set_mode(self, mode):
+        if mode != self.mode:
+            self.mode = mode
+            self._event(f'Mode {mode}', 6)
+
+    def _dist_to(self, lat, lon):
+        return _dist_m(self.lat, self.lon, lat, lon)
+
+    def _move_toward(self, lat, lon, dt):
+        """Hedefe doğru SPEED ile ilerler; hedefe kalan mesafeyi döndürür."""
+        import math
+        dist = self._dist_to(lat, lon)
+        if dist < 0.05:
+            self.gs = 0.0
+            return 0.0
+        p1, p2 = math.radians(self.lat), math.radians(lat)
+        dl = math.radians(lon - self.lon)
+        brg = math.degrees(math.atan2(math.sin(dl) * math.cos(p2), math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl))) % 360
+        step = min(dist, self.SPEED * dt)
+        self.hdg = brg
+        self.gs = step / dt
+        self.lat += step * math.cos(math.radians(brg)) / 111320.0
+        self.lon += step * math.sin(math.radians(brg)) / (111320.0 * max(0.05, math.cos(math.radians(self.lat))))
+        self.st.d['dist_m'] = round(self.st.d['dist_m'] + step, 1)
+        return dist - step
+
+    def _alt_toward(self, alt, dt):
+        """İrtifayı hedefe götürür (tırmanma CLIMB, alçalma DESCENT); kalan farkı döndürür."""
+        diff = alt - self.alt
+        if abs(diff) < 0.05:
+            self.vz = 0.0; self.alt = alt
+            return 0.0
+        rate = self.CLIMB if diff > 0 else self.DESCENT
+        step = min(abs(diff), rate * dt)
+        self.alt += step if diff > 0 else -step
+        self.vz = step / dt if diff > 0 else -step / dt
+        return alt - self.alt
+
+    def _disarm(self, text='Disarming motors'):
+        self.st.d['armed'] = False; self.st.armed_at = None
+        self.gs = self.vz = 0.0; self.alt = 0.0
+        self.phase, self.target, self.hold_until = 'idle', None, None
+        self._event(text, 6)
+
+    def _mission_next(self):
+        """AUTO: sıradaki görev öğesini hedef yapar; bitince LOITER."""
+        while True:
+            if self.seq >= len(self.mission):
+                self.phase = 'loiter'; self.target = None
+                self._set_mode('LOITER')
+                self._event('Mission complete', 6)
+                return
+            it = self.mission[self.seq]
+            cmd = it['command']
+            self.st.d['mission_seq'] = self.seq
+            if cmd == DO_JUMP:
+                tgt = int(it.get('param1') or 0)
+                rep = it.get('param2')
+                if rep is None or rep < 0 or it.setdefault('_done', 0) < rep:
+                    it['_done'] = it.get('_done', 0) + 1
+                    self.seq = tgt if 0 <= tgt < len(self.mission) else len(self.mission)
+                else:
+                    self.seq += 1
+                continue
+            if cmd == NAV_TAKEOFF:
+                self.target = (self.lat, self.lon, float(it.get('z') or 10))
+                self.phase = 'auto'
+                return
+            if cmd in (NAV_WAYPOINT, NAV_LOITER_TIME):
+                lat, lon = (it['lat'], it['lon']) if (it['lat'] or it['lon']) else (self.lat, self.lon)   # x/y 0: yerinde (ör. yalnız irtifa)
+                self.target = (lat, lon, float(it.get('z') or self.alt or 10))
+                self.phase = 'auto'
+                return
+            if cmd == NAV_RTL:
+                self._rtl(auto=True)
+                return
+            if cmd == NAV_LAND:
+                if it.get('lat') and it.get('lon'):
+                    self.target = (it['lat'], it['lon'], self.alt)
+                    self.phase = 'auto'
+                else:
+                    self.phase = 'land'; self.target = None
+                    self._set_mode('LAND')
+                return
+            self.seq += 1   # bilinmeyen öğe: atla
+
+    def _rtl(self, auto=False):
+        self.target = (self.home[0], self.home[1], max(self.alt, 15.0))
+        self.phase = 'rtl'
+        if not auto:
+            self._set_mode('RTL')
+        self._event('RTL: returning home', 6)
+
+    # --- tick ---
+    def _step(self, dt):
+        d = self.st.d
+        now = time.time()
+        if not d['armed']:
+            self.gs = self.vz = 0.0
+        elif self.phase == 'takeoff':
+            if self._alt_toward(self.target[2], dt) <= 0.05:
+                self.phase = 'loiter'; self.target = None
+                self._event('Takeoff complete', 6)
+        elif self.phase in ('goto', 'rtl', 'auto'):
+            rem = self._move_toward(self.target[0], self.target[1], dt)
+            vrem = self._alt_toward(self.target[2], dt)
+            d['wp_dist'] = int(rem)
+            if rem <= 0.05 and abs(vrem) <= 0.05:
+                if self.phase == 'goto':
+                    self.phase = 'loiter'; self.target = None
+                    self._event('Reached destination', 6)
+                elif self.phase == 'rtl':
+                    self.phase = 'land'; self.target = None
+                    if self.mode != 'RTL':
+                        self._set_mode('LAND')
+                    self._event('RTL: landing', 6)
+                else:   # auto: öğe tamamlandı
+                    it = self.mission[self.seq] if self.seq < len(self.mission) else {}
+                    hold = float(it.get('param1') or 0) if it.get('command') in (NAV_WAYPOINT, NAV_LOITER_TIME) else 0.0
+                    if it.get('command') == NAV_LAND:
+                        self.phase = 'land'; self.target = None
+                        self._set_mode('LAND')
+                    elif hold > 0 and self.hold_until is None:
+                        self.hold_until = now + hold
+                    elif self.hold_until is None or now >= self.hold_until:
+                        self.hold_until = None
+                        self.seq += 1
+                        self._mission_next()
+        elif self.phase == 'land':
+            if self._alt_toward(0.0, dt) <= 0.05:
+                self._disarm()
+        else:   # loiter / idle (havada bekleme)
+            self.gs = 0.0; self.vz = 0.0
+        if d['armed']:
+            self.batt = max(0.0, self.batt - 0.03 * dt)
+            d['flight_s'] = int(now - self.st.armed_at) if self.st.armed_at else 0
+        self._state()
+
+    def _state(self):
+        import math
+        d = self.st.d; now = time.time()
+        moving = self.gs > 0.1
+        d.update({'lat': round(self.lat, 7), 'lon': round(self.lon, 7), 'alt': round(900.0 + self.alt, 1), 'alt_rel': round(self.alt, 1),
+                  'hdg': round(self.hdg, 1), 'groundspeed': round(self.gs, 1), 'airspeed': round(self.gs, 1), 'climb': round(self.vz, 1),
+                  'vx': round(self.gs * math.cos(math.radians(self.hdg)), 1), 'vy': round(self.gs * math.sin(math.radians(self.hdg)), 1), 'vz': round(-self.vz, 1),
+                  'throttle': 0 if not d['armed'] else 60 if moving or abs(self.vz) > 0.1 else 45,
+                  'roll': round(2.0 * math.sin(now), 1) if d['armed'] and self.alt > 0.1 else 0.0,
+                  'pitch': -8.0 if moving else 0.0, 'yaw': round(self.hdg, 1),
+                  'volt': round(21.0 + 4.2 * self.batt / 100, 2), 'curr': 18.0 if (d['armed'] and self.alt > 0.1) else 1.5 if d['armed'] else 0.4,
+                  'batt_pct': int(self.batt), 'mode': self.mode, 'mode_num': COPTER_MODES.get(self.mode, 0),
+                  'last_hb': now, 'updated': now, 'msgs': d['msgs'] + 1})
+        if self.phase not in ('goto', 'rtl', 'auto'):
+            d['wp_dist'] = None
+        self.packets += 1
+
+    def _publish(self):
+        self.st.dirty = True
+        _emit(self, self.st)
+
+    # --- komutlar (send_command → bridge_id < 0) ---
+    def command(self, name, params):
+        """Senkron komut işleyici; {'ok', 'result'?, 'error'?} döndürür (köprü res çerçevesiyle aynı)."""
+        p = params or {}
+        d = self.st.d
+        try:
+            if name == 'arm':
+                if d['armed']:
+                    return {'ok': False, 'error': 'Zaten ARM'}
+                d['armed'] = True; self.st.armed_at = time.time(); d['dist_m'] = 0.0; d['prearm'] = []
+                self.home = (self.lat, self.lon); d['home_lat'], d['home_lon'] = self.home
+                self._event('Arming motors', 6)
+                return {'ok': True}
+            if name == 'disarm':
+                if not d['armed']:
+                    return {'ok': False, 'error': 'Zaten DISARM'}
+                if self.alt > 0.5:
+                    return {'ok': False, 'error': 'Havada disarm edilemez (önce LAND)'}
+                self._disarm()
+                return {'ok': True}
+            if name == 'takeoff':
+                if not d['armed']:
+                    return {'ok': False, 'error': 'Önce ARM edin'}
+                alt = float(p.get('alt_rel_m') or 30)
+                if not 1 <= alt <= 1000:
+                    return {'ok': False, 'error': 'Kalkış irtifası 1…1000 m'}
+                self._set_mode('GUIDED')
+                self.target = (self.lat, self.lon, alt); self.phase = 'takeoff'; self.hold_until = None
+                self._event(f'Takeoff to {alt:g} m', 6)
+                return {'ok': True}
+            if name == 'land':
+                if not d['armed']:
+                    return {'ok': False, 'error': 'Dron yerde'}
+                self._set_mode('LAND'); self.phase = 'land'; self.target = None
+                return {'ok': True}
+            if name == 'rtl':
+                if not d['armed']:
+                    return {'ok': False, 'error': 'Dron yerde'}
+                self._rtl()
+                return {'ok': True}
+            if name == 'goto':
+                if not d['armed'] or self.alt < 0.5:
+                    return {'ok': False, 'error': 'Önce kalkış yapın'}
+                lat, lon = float(p['lat']), float(p['lon'])
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    return {'ok': False, 'error': 'Geçersiz konum'}
+                alt = float(p.get('alt_rel_m') or self.alt)
+                self._set_mode('GUIDED')
+                self.target = (lat, lon, alt); self.phase = 'goto'; self.hold_until = None
+                return {'ok': True}
+            if name == 'altitude_change':
+                if not d['armed'] or self.alt < 0.5:
+                    return {'ok': False, 'error': 'Önce kalkış yapın'}
+                alt = float(p.get('alt_rel_m') or self.alt)
+                self._set_mode('GUIDED')
+                self.target = (self.lat, self.lon, alt); self.phase = 'goto'
+                return {'ok': True}
+            if name == 'set_mode':
+                mode = str(p.get('mode') or '').upper()
+                if mode not in COPTER_MODES:
+                    return {'ok': False, 'error': f'Bilinmeyen mod: {mode}'}
+                if mode == 'AUTO':
+                    if not self.mission:
+                        return {'ok': False, 'error': 'Yüklü görev yok'}
+                    if not d['armed']:
+                        return {'ok': False, 'error': 'Önce ARM edin'}
+                    self._set_mode('AUTO'); self.hold_until = None
+                    self._mission_next()
+                elif mode == 'RTL':
+                    if d['armed']:
+                        self._rtl()
+                    else:
+                        self._set_mode('RTL')
+                elif mode == 'LAND':
+                    self._set_mode('LAND')
+                    if d['armed']:
+                        self.phase = 'land'; self.target = None
+                else:   # STABILIZE / ALT_HOLD / GUIDED / LOITER / POSHOLD: dur, havada bekle
+                    self._set_mode(mode)
+                    if d['armed']:
+                        self.phase = 'loiter'; self.target = None; self.hold_until = None
+                return {'ok': True}
+            if name == 'mission_upload':
+                items = p.get('items') or []
+                if not isinstance(items, list) or len(items) > 500:
+                    return {'ok': False, 'error': 'items listesi gerekli (≤ 500)'}
+                mission = []
+                for it in items:
+                    mission.append({'seq': int(it.get('seq', len(mission))), 'frame': int(it.get('frame', 6)), 'command': int(it.get('command', NAV_WAYPOINT)),
+                                    'param1': float(it.get('param1') or 0), 'param2': float(it.get('param2') or 0),
+                                    'x': int(it.get('x') or 0), 'y': int(it.get('y') or 0), 'z': float(it.get('z') or 0),
+                                    'lat': int(it.get('x') or 0) / 1e7, 'lon': int(it.get('y') or 0) / 1e7})
+                self.mission, self.seq = mission, 0
+                d['mission_count'] = len(mission); d['mission_seq'] = 0
+                self._event(f'Mission uploaded: {len(mission)} items', 6)
+                return {'ok': True, 'result': {'count': len(mission)}}
+            if name == 'mission_download':
+                return {'ok': True, 'result': {'items': [{k: v for k, v in it.items() if k not in ('lat', 'lon', '_done')} for it in self.mission]}}
+            if name == 'mission_set_current':
+                seq = int(p.get('seq') or 0)
+                if not 0 <= seq < max(1, len(self.mission)):
+                    return {'ok': False, 'error': 'Geçersiz seq'}
+                self.seq = seq; d['mission_seq'] = seq
+                if self.mode == 'AUTO' and d['armed']:
+                    self._mission_next()
+                return {'ok': True}
+            if name == 'set_home':
+                if p.get('lat') is not None and p.get('lon') is not None:
+                    self.home = (float(p['lat']), float(p['lon']))
+                else:
+                    self.home = (self.lat, self.lon)
+                d['home_lat'], d['home_lon'] = self.home
+                self._event('Home set', 6)
+                return {'ok': True}
+            if name in ('link_open', 'link_close', 'disconnect'):
+                return {'ok': True, 'result': {'sim': True}}   # sanal dron her zaman bağlı
+            if name in ('param_list', 'param_get', 'param_set', 'reboot') or name.startswith(('kalib_', 'motor_test', 'log_')):
+                return {'ok': False, 'error': 'Sanal dron bu komutu desteklemiyor'}
+            return {'ok': False, 'error': 'Bilinmeyen komut'}
+        except (KeyError, TypeError, ValueError) as e:
+            return {'ok': False, 'error': f'Geçersiz parametre: {e}'}
+
+    # --- yaşam döngüsü ---
+    async def run(self):
+        n = 0
+        try:
+            while True:
+                await asyncio.sleep(self.TICK)
+                self._step(self.TICK)
+                self._publish()
+                n += 1
+                if n % 25 == 0:   # 5 sn: izleyici var mı
+                    now = time.time()
+                    if any(v.task_id == self.task_id for v in VIEWERS.values()):
+                        self.last_viewer = now
+                    elif now - self.last_viewer > SIM_IDLE:
+                        break
+                if n % 150 == 0 and await _db(_task_status, self.task_id) not in OPEN_TASK:   # 30 sn: görev kapandı/iptal
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception:   # noqa: BLE001
+            pass
+        finally:
+            if SIMS.get(self.id) is self:
+                SIMS.pop(self.id, None)
+                _broadcast({'t': 'bridge', 'bridge_id': self.id, 'online': False, 'status': 'KAPANDI'}, self.id)
+
+
+def start_sim(task_id, flight, home):
+    """Görevin sanal dronu için simülatörü başlatır (çalışıyorsa mevcut döner)."""
+    sim = SIMS.get(-int(flight['drone_id']))
+    if sim is not None:
+        return sim
+    sim = SimDrone(task_id, flight, home)
+    SIMS[sim.id] = sim
+    sim.task = asyncio.get_running_loop().create_task(sim.run())
+    _broadcast({'t': 'bridge', 'bridge_id': sim.id, 'online': True, 'info': sim.info()}, sim.id)
+    sim._event(f'Sanal dron hazır · {sim.name}', 6)
+    sim._publish()
+    return sim
+
+
+def stop_sim(bridge_id):
+    """Sanal dronu durdurur: kayıttan hemen çıkar (run() kapanışı yeniden yayın yapmaz), görevi iptal eder, çevrimdışı bildirir."""
+    sim = SIMS.pop(int(bridge_id), None)
+    if sim is None:
+        return False
+    if sim.task is not None:
+        sim.task.cancel()
+    _broadcast({'t': 'bridge', 'bridge_id': sim.id, 'online': False, 'status': 'KAPANDI'}, sim.id)
+    return True
+
+
+async def _apply_task(v, task_id):
+    """İzleyiciyi göreve bağlar: görev + uçuşlar yüklenir, izin kümesi kurulur, sanal dronlar başlatılır."""
+    def load():
+        with db.connect() as conn:
+            task, flights = task_live(conn, task_id)
+            return task, flights, (_sim_home(conn, task) if task else None)
+    task, flights, home = await _db(load)
+    v.task_id, v.task, v.flights = task_id, task, flights
+    v.allowed = _task_allowed(flights)
+    if task and task['status'] in OPEN_TASK:
+        for f in flights:
+            if f['sim_bridge_id'] is not None:
+                start_sim(task_id, f, home)
+    # görev bağlamında bridge_online sanal dronları da kapsar
+    for f in flights:
+        if f['sim_bridge_id'] is not None:
+            f['bridge_online'] = f['sim_bridge_id'] in SIMS
+
+
+async def _refresh_task(task_id):
+    """Görevin uçuşları değişti (ekle/sil/bağlantı): bağlı izleyicilerin izin kümesi ve hello yenilenir; görevden çıkan
+    sanal dron durdurulur."""
+    viewers = [v for v in VIEWERS.values() if v.task_id == task_id]
+    if not viewers:
+        return
+    old_allowed = set().union(*(v.allowed for v in viewers))
+    for v in viewers:
+        await _apply_task(v, task_id)
+        v.put(json.dumps(hello_msg(v), ensure_ascii=False))
+    keep = {f['sim_bridge_id'] for f in viewers[0].flights if f['sim_bridge_id'] is not None}
+    for sid, sim in list(SIMS.items()):
+        if sim.task_id == task_id and sid not in keep:
+            stop_sim(sid)   # yayını yeni izin kümesi süzer → görevden çıkan sanal dronun kapanışı izleyicilere açıkça iletilir
+            if sid in old_allowed:
+                off = json.dumps({'t': 'bridge', 'bridge_id': sid, 'online': False, 'status': 'KAPANDI'}, ensure_ascii=False)
+                for v in viewers:
+                    v.put(off)
+
+
+def task_changed(task_id):
+    """İstek iş parçacığından (routers/field.py: POST/PUT/DELETE flights) çağrılır; görevi izleyen izleyicilerin olay döngüsüne
+    (üretimde tek uvicorn döngüsü) yenilemeyi aktarır. İzleyen yoksa yapılacak bir şey yoktur (sanal dron yalnız izlenirken çalışır)."""
+    tid = int(task_id)
+    loops = {v.loop for v in list(VIEWERS.values()) if v.task_id == tid and v.loop is not None and not v.loop.is_closed()}
+    for loop in loops:
+        try:
+            loop.call_soon_threadsafe(lambda lp=loop: lp.create_task(_refresh_task(tid)))
+        except RuntimeError:
+            pass
+
+
+def hello_msg(v):
+    """İzleyiciye hello: görev bağlamında yalnız görevin köprüleri/sanal dronları + task/flights; aksi hâlde hepsi."""
+    user = v.user
+    msg = {'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}}
+    if v.task_id is not None:
+        bridges = [b for b in [*BRIDGES.values(), *SIMS.values()] if b.id in v.allowed]
+        msg['task'] = v.task
+        msg['flights'] = v.flights
+    else:
+        bridges = [*BRIDGES.values(), *SIMS.values()]
+    msg['caps'] = all_caps(bridges)
+    msg['bridges'] = [b.info() for b in bridges]
+    return msg
+
+
 # ---------------- Tarayıcı: /ws/drone/live ----------------
 def _ws_user(token):
     """Oturum çerezinden kullanıcı + roller + modül izinleri (WebSocket'te Depends yok)."""
@@ -716,9 +1282,10 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
     """Tarayıcıdan (ya da REST'ten) köprüye komut: yetki + audit + req/res (CMD_TIMEOUT)."""
     if name not in CMD_NAMES:
         raise RuntimeError('Bilinmeyen komut')
-    b = BRIDGES.get(int(bridge_id))
+    sim = int(bridge_id) < 0   # sanal dron (bridge_id = -drone_id): komut sunucu içi simülatöre gider
+    b = _bridge_or_sim(bridge_id)
     if b is None:
-        raise RuntimeError('Köprü bağlı değil')
+        raise RuntimeError('Sanal dron çalışmıyor (görev izlenmiyor ya da kapandı)' if sim else 'Köprü bağlı değil')
     if name == 'arm_check':   # sunucu-yalnız rapor (okuma; komut yetkisi gerekmez, köprüye gitmez)
         st = b.drones.get(int(sysid))
         if st is None:
@@ -729,17 +1296,26 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
 
     def audit():
         with db.connect() as conn:
-            db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
+            if sim:
+                db.audit(conn, user['id'], 'Sanal dron komutu', 'drone', b.drone_id, f'{name} · görev {b.task_id} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
+            else:
+                db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
             conn.commit()
     await _db(audit)
+    ptxt = json.dumps(params or {}, ensure_ascii=False)[:160]
+    console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
+    if sim:
+        res = b.command(name, params)
+        ok = bool(res.get('ok'))
+        console_line(b, sysid, 'KOMUT', f"{name}: {'kabul edildi' if ok else (res.get('error') or 'reddedildi')}", 'basari' if ok else 'hata')
+        b._publish()
+        return {'ok': ok, 'result': res.get('result'), 'error': res.get('error')}
     if name == 'disconnect':
         await disconnect_bridge(b.id, 'KAPANDI')
         return {'ok': True}
     rid = rid or secrets.token_hex(8)
     fut = asyncio.get_running_loop().create_future()
     _pending[rid] = (fut, viewer_ws, b.id)
-    ptxt = json.dumps(params or {}, ensure_ascii=False)[:160]
-    console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
     if name.startswith('kalib_'):   # v1.2 kalibrasyon oturumu: pencere yalnız bu andan sonraki STATUSTEXT'leri gösterir
         st = b.drones.get(int(sysid))
         if st is not None:
@@ -770,8 +1346,7 @@ async def ws_live(ws: WebSocket):
     v = Viewer(ws, user)
     VIEWERS[ws] = v
     sender = asyncio.create_task(_viewer_sender(v))
-    hello = lambda: json.dumps({'t': 'hello', 'v': PROTO, 'caps': all_caps(), 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)},   # noqa: E731
-                                **snapshot()}, ensure_ascii=False)
+    hello = lambda: json.dumps(hello_msg(v), ensure_ascii=False)   # noqa: E731
     v.put(hello())
     try:
         while True:
@@ -784,13 +1359,25 @@ async def ws_live(ws: WebSocket):
             if t == 'ping':
                 v.put(json.dumps({'t': 'pong'}))
             elif t == 'watch':
-                v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
+                if msg.get('task_id'):   # Faz 1: görev bağlamı — yalnız görevin köprüleri/sanal dronları; sanal dronlar başlatılır
+                    try:
+                        await _apply_task(v, int(msg['task_id']))
+                    except (TypeError, ValueError):
+                        v.put(json.dumps({'t': 'error', 'error': 'Geçersiz görev'}))
+                        continue
+                    if v.task is None:
+                        v.task_id, v.allowed, v.flights = None, set(), []
+                        v.put(json.dumps({'t': 'error', 'error': 'Görev bulunamadı'}))
+                        continue
+                else:   # eski davranış: tek köprü ya da hepsi
+                    v.task_id, v.task, v.flights, v.allowed = None, None, [], set()
+                    v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
                 v.put(hello())
             elif t == 'param_cache':   # v1.1: sunucudaki PARAM_VALUE önbelleği (param_list sonrası ya da yeniden bağlanınca)
-                b = BRIDGES.get(int(msg.get('bridge_id') or 0)); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
+                b = _bridge_or_sim(msg.get('bridge_id')); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
                 v.put(json.dumps({'t': 'param_cache', 'bridge_id': msg.get('bridge_id'), 'sysid': msg.get('sysid'), 'params': dict(st.params) if st else {}}, ensure_ascii=False))
             elif t in ('console_hist', 'console_clear'):   # Haberleşme konsolu geçmişi / temizleme (dron başına)
-                b = BRIDGES.get(int(msg.get('bridge_id') or 0)); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
+                b = _bridge_or_sim(msg.get('bridge_id')); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
                 if t == 'console_clear' and st is not None:
                     if not can_command(user):   # paylaşılan tamponu yalnız komut yetkisi olanlar temizler (izleyici yalnız kendi görünümünü)
                         v.put(json.dumps({'t': 'res', 'rid': msg.get('rid'), 'ok': False, 'error': 'Konsolu temizlemek için komut yetkisi gerekir'}, ensure_ascii=False))

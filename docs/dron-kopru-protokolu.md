@@ -35,15 +35,47 @@ Sunucu-yalnız (köprüye gitmez): `arm_check` → `res.result` ARM CHECK raporu
   MISSION_REQUEST_INT turu telsizde 0,2–1 sn sürer). Köprü `res`'i el sıkışma tamamlanınca döner; ara ilerleme isteğe bağlı `event` ile.
   `disconnect` köprüye gönderilmez (sunucu kapatır, close 1000).
 
-Tarayıcı ↔ sunucu (`/ws/drone/live`, oturum çerezi): ← `hello{v,caps,me,bridges[]}` · `status{bridge_id,sysid,state(+ready)}` ·
+Tarayıcı ↔ sunucu (`/ws/drone/live`, oturum çerezi): ← `hello{v,caps,me,bridges[],task?,flights?}` · `status{bridge_id,sysid,state(+ready)}` ·
 `bridge{bridge_id,online,info|status}` · `event{bridge_id,sysid,text,severity,ts}` · `res{rid,ok,result,error}` ·
 `console{bridge_id,sysid,ts,tag,text,sev,repeat,fresh}` · `console_hist{sysid,lines[]}` · `params{bridge_id,sysid,items[[name,value,index,count,type]],count,cached}` ·
 `param_cache{sysid,params{name:[value,index,count,type]}}` · `log{bridge_id,flight_log_id,name}` · `pong`
-→ `ping` · `cmd{rid,bridge_id,sysid,name,params}` · `watch{bridge_id|null}` · `console_hist{bridge_id,sysid}` · `console_clear{…}` (komut yetkisi) · `param_cache{bridge_id,sysid}`
+→ `ping` · `cmd{rid,bridge_id,sysid,name,params}` · `watch{task_id}` | `watch{bridge_id|null}` · `console_hist{bridge_id,sysid}` · `console_clear{…}` (komut yetkisi) · `param_cache{bridge_id,sysid}`
+
+### Köprü kodu (Faz 1 — köprünün şirkete bağlanması)
+
+Dron Köprüleri'nde köprü oluşturulunca (`POST /api/drone/bridges` → `{id, code}`) ya da "Kodu yenile" (`POST /bridges/{id}/rekey` →
+`{key, code}`) ile bir KÖPRÜ KODU üretilir ve YALNIZ BİR KEZ gösterilir. Biçim: **`<domain>/<key>`**
+- `domain`: Entegrasyonlar'daki ortak domain (`agentkeys.domain`) varsa o, yoksa isteğin Host başlığı (şemasız, port'suz) — ör. `caymaz.app`.
+- `key`: `drone_hub.issue_key` ile üretilen kalıcı anahtar (`secrets.token_urlsafe(32)`, 43 karakter, `[A-Za-z0-9_-]`); sunucuda şifreli saklanır.
+Köprü yazılımı kodu ilk `/` konumundan ikiye böler: `wss://<domain>/ws/drone/bridge` adresine bağlanır ve v1 `auth` çerçevesinde `key`
+gönderir → köprü kodu üreten şirkete (tenant) ve köprü kaydının sahibine (owner; verilmezse oluşturan kullanıcı) bağlanmış olur
+(Entegrasyonlar'daki ajan API anahtarı kalıbı). Eşleştirme (6 haneli `pair` kodu, 10 dk) akışı ikincil olarak kalır; `rekey` eski anahtarı
+ve eski kodu anında geçersiz kılar. `GET /bridges` satırları anahtarı/kodu ya da ipucunu DÖNDÜRMEZ (yalnız `has_key`).
+
+### Görev bağlamı (Faz 1 — Canlı Uçuş yalnız saha görevinden)
+
+- Bağlantı bilgisi (köprü, MAVLink sysid, köprünün drona yerel bağlantısı `link`) DRON KAYDINDA DEĞİL, saha görevindeki UÇUŞTA tutulur
+  (`field_flights.bridge_id / sysid / link`; `PUT /api/field/flights/{id}`). `GET /api/field/tasks/{id}/live` → `{task, flights[], can_command}`;
+  `flights[]: {id, order_id, drone_id, label (kuyruk no | dron kodu), name, protocol ('mavlink'|'sanal'|'dji'), sysid, bridge_id, bridge_name,
+  bridge_online, link {type,host?,port?,serial?,baud?}, sim_bridge_id (sanal dronda -drone_id)}`.
+- Tarayıcı `{t:'watch', task_id}` gönderir: izleyici görevle sınırlanır — hello/status/bridge/event/console yalnız görevin uçuşlarına bağlı
+  köprülerden ve görevin sanal dronlarından gelir; `hello` yanıtı `task{id,code,status,location_name,lat,lon}` ve `flights[]` (live ile aynı)
+  taşır, `bridges[]` yalnız bu köprüleri içerir. Uçuş eklenince/kaldırılınca/bağlantısı değişince sunucu izleyicilere yeni bir `hello` gönderir.
+  `{t:'watch', bridge_id|null}` eski davranışıyla korunur.
+- SANAL DRON (`protocol='sanal'`): sunucu içi simülatör; köprü gerekmez. `bridge_id = -drone_id` (negatif), `info.sim = true`, ad
+  `Sanal · <dron kodu>`, sysid = uçuşun sysid'si || 1, HEARTBEAT tipi Quadrotor (ArduCopter modları). 5 Hz `status` üretir; komutlar aynı
+  `cmd` çerçevesiyle gider (`bridge_id` negatif): arm/disarm, takeoff{alt_rel_m} (3 m/s), land (2 m/s), rtl (12 m/s, sonra iniş),
+  goto{lat,lon,alt_rel_m} (12 m/s), set_mode{AUTO|LOITER|GUIDED|RTL|LAND|…}, mission_upload{items}/mission_download (MISSION_ITEM_INT
+  şeması), mission_set_current, set_home, altitude_change, arm_check; link_open/link_close/disconnect `ok`. Batarya uçarken 0,03 %/sn düşer.
+  Görevi izleyen kalmayınca 10 dk sonra, görev kapanınca/iptal olunca hemen durur (`bridge{online:false}`).
 
 ## v1.1 (isteğe bağlı; köprü `auth`/`pair` çerçevesinde `caps:[…]` bildirir, sunucu `hello.caps` ile tarayıcıya açar)
 
-Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change` (ayrıca yer tutucu `bakim`, `log` — v1.2).
+Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link` (ayrıca yer tutucu `bakim`, `log` — v1.2).
+- cap `link` — köprünün drona yerel bağlantısını sunucudan açma/kapama (uçuşun Bağlantı ayarı; harekât ekranı Bağlantı Yöneticisi "Bağlan"/"Kes"):
+  `link_open{type:'serial'|'tcp'|'udp', host?, port?, serial?, baud?, sysid?}` — serial → `serial` (port adı) + `baud`; tcp/udp → `host` + `port`.
+  Köprü bağlantıyı kurar, MAVLink akışını başlatır ve `res` döner (`res.error`: açılamadı sebebi). `link_close` → bağlantıyı kapatır. Köprü
+  `link` bildirmezse düğmeler görünmez; köprü yerel ayarıyla kendisi bağlanır (v1 davranışı).
 - `set_home{lat?,lon?,alt?}` — boşsa MAV_CMD_DO_SET_HOME param1=1 (mevcut konum), doluysa param1=0 + konum.
 - `param_list` — PARAM_REQUEST_LIST; PARAM_VALUE'lar ham MAVLink ile zaten sunucuya akar, sunucu önbelleğe alır ve 200 ms'de bir toplu `params` yayınlar.
 - `param_get{name}` — PARAM_REQUEST_READ. `param_set{name,value,type?}` — PARAM_SET; `type` MAV_PARAM_TYPE (1..10); verilmezse tarayıcı

@@ -1,15 +1,19 @@
-"""Dron Yönetimi (Saha Yönetimi alt modülleri — Faz 0): dron envanteri, köprüler (eşleştirme kodu / anahtar), canlı uçuş
-oturumları, rota merkezleri + rotalar + ara noktalar. Canlı telemetri WebSocket'leri app/drone_hub.py'de.
+"""Dron Yönetimi (Saha Yönetimi alt modülleri — Faz 1): dron envanteri, köprüler (köprü kodu / eşleştirme kodu / anahtar),
+canlı uçuş oturumları, rota merkezleri + rotalar + ara noktalar. Canlı telemetri WebSocket'leri app/drone_hub.py'de.
+
+Faz 1 kararları: dron kaydında BAĞLANTI BİLGİSİ yok (köprü/sysid/seri-tcp-udp saha görevindeki uçuşta seçilir — routers/field.py);
+protocol mavlink | sanal (sunucu içi simülatör) | dji; köprü eklenince <domain>/<key> biçiminde KÖPRÜ KODU bir kez döner.
 
 Rol Yönetimi düğümleri: field.drones (Dron Envanteri), field.live (Canlı Uçuş), field.routes (Rotalar), field.bridges
 (Dron Köprüleri). Ayar yoksa 'field' modülünün izni miras alınır (rbac.node_chain).
 """
+import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub
+from .. import agentkeys, auth, db, drone_hub
 
 router = APIRouter(prefix='/api/drone')
 drones_user = auth.require_module('field.drones')
@@ -18,25 +22,20 @@ routes_user = auth.require_module('field.routes')
 bridges_user = auth.require_module('field.bridges')
 
 DRONE_STATUS = {'AKTIF': 'Aktif', 'BAKIMDA': 'Bakımda', 'ARIZALI': 'Arızalı', 'PASIF': 'Pasif'}
+PROTOCOLS = {'mavlink': 'MAVLink', 'sanal': 'Sanal Dron', 'dji': 'DJI'}
 SESSION_STATUS = {'ACIK': 'Açık', 'KAPANDI': 'Kapandı', 'KOPTU': 'Koptu', 'KESILDI': 'Kesildi (sunucu yeniden başladı)'}
 PLATFORMS = ('android', 'windows', 'linux', 'macos', 'other')
-CONN_TYPES = ('tcp', 'udp', 'serial')
+CONN_TYPES = ('tcp', 'udp', 'serial')   # uçuşun link.type seçenekleri (field_flights.link; routers/field.py doğrular)
 ROUTE_KINDS = {'line': 'Hat', 'loop': 'Döngü', 'survey': 'Tarama'}
 WP_ACTIONS = {'waypoint': 'Ara nokta', 'loiter': 'Bekle (loiter)', 'takeoff': 'Kalkış', 'land': 'İniş', 'rtl': 'Eve dön (RTL)'}
 
 
 class DroneIn(BaseModel):
+    """Dron envanteri kaydı — conn_* / bridge_id / sysid YOK (bağlantı uçuş düzeyinde)."""
     name: str
     serial: Optional[str] = None
     model: Optional[str] = None
-    protocol: str = 'mavlink'
-    sysid: Optional[int] = None
-    conn_type: Optional[str] = None
-    conn_host: Optional[str] = None
-    conn_port: Optional[int] = None
-    conn_serial: Optional[str] = None
-    conn_baud: Optional[int] = None
-    bridge_id: Optional[int] = None
+    protocol: str = 'mavlink'       # mavlink | sanal | dji
     order_id: Optional[int] = None
     pilot_id: Optional[int] = None
     status: str = 'AKTIF'
@@ -99,11 +98,28 @@ def _latlon(lat, lon):
         raise HTTPException(400, 'Enlem -90…90, boylam -180…180 olmalı')
 
 
+def _req_host(request):
+    """İsteğin Host başlığı (ters vekil arkasında x-forwarded-host) — şemasız, port'suz, yol'suz."""
+    host = (request.headers.get('x-forwarded-host') or request.headers.get('host') or '').split(',')[0].strip()
+    host = re.sub(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', '', host).split('/', 1)[0]
+    if host.startswith('['):   # IPv6 [::1]:8000
+        return host.split(']', 1)[0] + ']'
+    return host.rsplit(':', 1)[0] if host.count(':') == 1 else host
+
+
+def bridge_code(conn, request_host, key):
+    """KÖPRÜ KODU `<domain>/<key>`: domain = Entegrasyonlar'daki ortak domain (agentkeys.domain) varsa o, yoksa isteğin Host'u.
+    Köprüyü kuran kişi bu kodu köprü yazılımına girer; yazılım domain'den wss://<domain>/ws/drone/bridge adresini türetir ve
+    key ile `auth` olur → köprü bu şirkete (tenant) ve köprü kaydının sahibine (owner) bağlanır. Kod bir kez gösterilir."""
+    domain = agentkeys._strip_scheme(agentkeys.domain(conn)) or request_host or ''
+    return f'{domain}/{key}'
+
+
 # ---------------- Meta ----------------
 @router.get('/meta')
 def meta(user=Depends(auth.current_user)):
-    return {'drone_status': DRONE_STATUS, 'session_status': SESSION_STATUS, 'platforms': PLATFORMS, 'conn_types': CONN_TYPES,
-            'route_kinds': ROUTE_KINDS, 'wp_actions': WP_ACTIONS, 'commands': sorted(drone_hub.CMD_NAMES),
+    return {'drone_status': DRONE_STATUS, 'protocols': PROTOCOLS, 'session_status': SESSION_STATUS, 'platforms': PLATFORMS,
+            'conn_types': CONN_TYPES, 'route_kinds': ROUTE_KINDS, 'wp_actions': WP_ACTIONS, 'commands': sorted(drone_hub.CMD_NAMES),
             'can': {'drones': 'field.drones' in user['modules'], 'live': 'field.live' in user['modules'],
                     'routes': 'field.routes' in user['modules'], 'bridges': 'field.bridges' in user['modules'],
                     'command': drone_hub.can_command(user) if 'write_modules' in user else False}}
@@ -111,42 +127,34 @@ def meta(user=Depends(auth.current_user)):
 
 # ---------------- Dron envanteri ----------------
 def _drones(conn, where='1=1', args=()):
+    """Envanter satırları: bağlantı/köprü/canlı alanları YOK (Faz 1); protocol_text eklenir."""
     rows = db.rows(conn.execute(
-        f'''SELECT d.*, b.name AS bridge_name, b.status AS bridge_status, b.last_seen AS bridge_last_seen,
-                   pl.full_name AS pilot_name, o.code AS order_code, o.queue_no,
+        f'''SELECT d.*, pl.full_name AS pilot_name, o.code AS order_code, o.queue_no,
                    (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                     WHERE f.drone_id = d.id AND t.status != 'IPTAL') AS task_count,
                    (SELECT t.code FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
                     WHERE f.drone_id = d.id AND t.status IN ('BASLANGIC', 'GOREVDE') ORDER BY t.id DESC LIMIT 1) AS open_task_code,
                    (SELECT MAX(l.uploaded_at) FROM flight_logs l JOIN field_flights f ON f.id = l.flight_id WHERE f.drone_id = d.id) AS last_log_at
             FROM drone_drones d
-            LEFT JOIN drone_bridges b ON b.id = d.bridge_id
             LEFT JOIN users pl ON pl.id = d.pilot_id
             LEFT JOIN orders o ON o.id = d.order_id
             WHERE {where} ORDER BY d.active DESC, d.code''', args))
-    online = drone_hub.online_bridges()
     for r in rows:
         r['status_text'] = DRONE_STATUS.get(r['status'], r['status'])
-        r['online'] = r['bridge_id'] in online
-        live = online.get(r['bridge_id'], {}).get('drones', {}) if r['online'] else {}
-        r['live'] = live.get(str(r['sysid'])) if r['sysid'] is not None else (next(iter(live.values())) if len(live) == 1 else None)
+        r['protocol_text'] = PROTOCOLS.get(r['protocol'], r['protocol'])
     return rows
 
 
 def _check_drone_refs(conn, body):
     if body.status not in DRONE_STATUS:
         raise HTTPException(400, 'Geçersiz durum')
-    if body.conn_type and body.conn_type not in CONN_TYPES:
-        raise HTTPException(400, 'Geçersiz bağlantı türü')
-    if body.bridge_id and not conn.execute('SELECT 1 FROM drone_bridges WHERE id = ?', (body.bridge_id,)).fetchone():
-        raise HTTPException(400, 'Köprü bulunamadı')
+    if body.protocol not in PROTOCOLS:
+        raise HTTPException(400, 'Dron türü MAVLink, Sanal Dron ya da DJI olmalı')
     if body.pilot_id and not conn.execute('SELECT 1 FROM users u JOIN user_roles r ON r.user_id = u.id WHERE u.id = ? AND r.role = ?',
                                           (body.pilot_id, auth.PILOT)).fetchone():
         raise HTTPException(400, 'Seçilen kişi pilot değil')
     if body.order_id and not conn.execute('SELECT 1 FROM orders WHERE id = ?', (body.order_id,)).fetchone():
         raise HTTPException(400, 'Sipariş bulunamadı')
-    if body.sysid is not None and not (1 <= body.sysid <= 255):
-        raise HTTPException(400, 'MAVLink sistem kimliği 1…255 olmalı')
 
 
 @router.get('/drones')
@@ -185,13 +193,11 @@ def add_drone(body: DroneIn, user=Depends(drones_user), conn=db.DB):
         raise HTTPException(400, 'Bu seri numarası kayıtlı')
     code = db.next_code(conn, 'drone_drones', 'code', 'D')
     cur = conn.execute(
-        '''INSERT INTO drone_drones (code, name, serial, model, protocol, sysid, conn_type, conn_host, conn_port, conn_serial, conn_baud,
-                                     bridge_id, order_id, pilot_id, status, note, active, created_by, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-        (code, name, serial, _clean(body.model, 80), (body.protocol or 'mavlink')[:20], body.sysid, body.conn_type, _clean(body.conn_host, 120),
-         body.conn_port, _clean(body.conn_serial, 120), body.conn_baud, body.bridge_id, body.order_id, body.pilot_id, body.status,
+        '''INSERT INTO drone_drones (code, name, serial, model, protocol, order_id, pilot_id, status, note, active, created_by, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (code, name, serial, _clean(body.model, 80), body.protocol, body.order_id, body.pilot_id, body.status,
          _clean(body.note, 1000), int(body.active), user['id'], db.now()))
-    db.audit(conn, user['id'], 'Dron ekledi', 'drone', cur.lastrowid, f'{code} {name}')
+    db.audit(conn, user['id'], 'Dron ekledi', 'drone', cur.lastrowid, f'{code} {name} · {PROTOCOLS[body.protocol]}')
     return {'id': cur.lastrowid, 'code': code}
 
 
@@ -208,11 +214,9 @@ def update_drone(did: int, body: DroneIn, user=Depends(drones_user), conn=db.DB)
     if serial and conn.execute('SELECT 1 FROM drone_drones WHERE serial = ? COLLATE NOCASE AND id != ?', (serial, did)).fetchone():
         raise HTTPException(400, 'Bu seri numarası başka bir dronda kayıtlı')
     conn.execute(
-        '''UPDATE drone_drones SET name = ?, serial = ?, model = ?, protocol = ?, sysid = ?, conn_type = ?, conn_host = ?, conn_port = ?,
-                  conn_serial = ?, conn_baud = ?, bridge_id = ?, order_id = ?, pilot_id = ?, status = ?, note = ?, active = ?, updated_at = ?
-           WHERE id = ?''',
-        (name, serial, _clean(body.model, 80), (body.protocol or 'mavlink')[:20], body.sysid, body.conn_type, _clean(body.conn_host, 120),
-         body.conn_port, _clean(body.conn_serial, 120), body.conn_baud, body.bridge_id, body.order_id, body.pilot_id, body.status,
+        '''UPDATE drone_drones SET name = ?, serial = ?, model = ?, protocol = ?, order_id = ?, pilot_id = ?, status = ?, note = ?, active = ?,
+                  updated_at = ? WHERE id = ?''',
+        (name, serial, _clean(body.model, 80), body.protocol, body.order_id, body.pilot_id, body.status,
          _clean(body.note, 1000), int(body.active), db.now(), did))
     db.audit(conn, user['id'], 'Dron güncelledi', 'drone', did, f"{old['code']} {name}")
     return {'ok': True}
@@ -235,15 +239,18 @@ def delete_drone(did: int, user=Depends(drones_user), conn=db.DB):
 
 # ---------------- Köprüler ----------------
 def _bridges(conn, where='1=1', args=()):
+    """Köprü satırları: anahtar/kod ASLA dönmez (has_key yalnız tanımlı mı); flight_count = köprüye bağlı uçuşlar (açık görevler)."""
     rows = db.rows(conn.execute(
         f'''SELECT b.id, b.name, b.platform, b.owner_id, b.host, b.bridge_ver, b.status, b.last_seen, b.note, b.active, b.created_at,
                    b.key_enc IS NOT NULL AS has_key, u.full_name AS owner_name,
-                   (SELECT COUNT(*) FROM drone_drones d WHERE d.bridge_id = b.id) AS drone_count,
+                   (SELECT COUNT(*) FROM field_flights f JOIN field_tasks t ON t.id = f.task_id
+                    WHERE f.bridge_id = b.id AND t.status IN ('BASLANGIC', 'GOREVDE')) AS flight_count,
                    (SELECT COUNT(*) FROM drone_bridge_sessions s WHERE s.bridge_id = b.id) AS session_count
             FROM drone_bridges b LEFT JOIN users u ON u.id = b.owner_id WHERE {where} ORDER BY b.active DESC, b.name COLLATE NOCASE''', args))
     online = drone_hub.online_bridges()
     for r in rows:
         r['has_key'] = bool(r['has_key'])
+        r['drone_count'] = r['flight_count']   # eski alan adı (liste sütunu) — açık görevlerdeki bağlı uçuş sayısı
         r['online'] = r['id'] in online
         r['live'] = online.get(r['id'])
     return rows
@@ -255,7 +262,9 @@ def list_bridges(user=Depends(bridges_user), conn=db.DB):
 
 
 @router.post('/bridges')
-def add_bridge(body: BridgeIn, user=Depends(bridges_user), conn=db.DB):
+def add_bridge(body: BridgeIn, request: Request, user=Depends(bridges_user), conn=db.DB):
+    """Köprü oluşturur ve KÖPRÜ KODU döndürür ({id, code}; code = <domain>/<key>, anahtar o anda üretilir, yalnız bu yanıtta görünür).
+    Sahip (owner_id) verilmezse oluşturan kullanıcı olur: köprü bu şirkete ve bu kişiye bağlanır."""
     name = _clean(body.name, 80)
     if not name:
         raise HTTPException(400, 'Köprü adı gerekli')
@@ -263,10 +272,12 @@ def add_bridge(body: BridgeIn, user=Depends(bridges_user), conn=db.DB):
         raise HTTPException(400, 'Geçersiz platform')
     if conn.execute('SELECT 1 FROM drone_bridges WHERE name = ? COLLATE NOCASE', (name,)).fetchone():
         raise HTTPException(400, 'Bu adda köprü var')
+    owner = body.owner_id or user['id']
     cur = conn.execute('INSERT INTO drone_bridges (name, platform, owner_id, note, active, created_by, created_at) VALUES (?,?,?,?,?,?,?)',
-                       (name, body.platform, body.owner_id, _clean(body.note, 1000), int(body.active), user['id'], db.now()))
-    db.audit(conn, user['id'], 'Dron köprüsü ekledi', 'drone_bridge', cur.lastrowid, name)
-    return {'id': cur.lastrowid}
+                       (name, body.platform, owner, _clean(body.note, 1000), int(body.active), user['id'], db.now()))
+    key = drone_hub.issue_key(conn, cur.lastrowid)
+    db.audit(conn, user['id'], 'Dron köprüsü ekledi', 'drone_bridge', cur.lastrowid, f'{name} · köprü kodu üretildi')
+    return {'id': cur.lastrowid, 'code': bridge_code(conn, _req_host(request), key)}
 
 
 @router.put('/bridges/{bid}')
@@ -294,7 +305,7 @@ def delete_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
         raise HTTPException(404, 'Köprü bulunamadı')
     if bid in drone_hub.BRIDGES:
         raise HTTPException(400, 'Köprü şu an bağlı; önce bağlantıyı kesin')
-    conn.execute('DELETE FROM drone_bridges WHERE id = ?', (bid,))   # oturumlar CASCADE, dronların bridge_id NULL
+    conn.execute('DELETE FROM drone_bridges WHERE id = ?', (bid,))   # oturumlar CASCADE, uçuşların (field_flights) bridge_id NULL
     db.audit(conn, user['id'], 'Dron köprüsü sildi', 'drone_bridge', bid, old['name'])
     return {'ok': True}
 
@@ -311,8 +322,8 @@ def pair_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
 
 
 @router.post('/bridges/{bid}/rekey')
-def rekey_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
-    """Yeni kalıcı anahtar (düz metin yalnız bu yanıtta); eski anahtar hemen geçersiz, bağlı köprü düşürülür."""
+def rekey_bridge(bid: int, request: Request, user=Depends(bridges_user), conn=db.DB):
+    """Yeni kalıcı anahtar + köprü kodu ({key, code}; düz metin yalnız bu yanıtta); eski anahtar hemen geçersiz, bağlı köprü düşürülür."""
     b = db.row(conn.execute('SELECT id, name FROM drone_bridges WHERE id = ?', (bid,)))
     if not b:
         raise HTTPException(404, 'Köprü bulunamadı')
@@ -325,7 +336,7 @@ def rekey_bridge(bid: int, user=Depends(bridges_user), conn=db.DB):
             asyncio.get_running_loop().create_task(drone_hub.disconnect_bridge(bid, 'KAPANDI'))
         except RuntimeError:
             pass
-    return {'key': key}
+    return {'key': key, 'code': bridge_code(conn, _req_host(request), key)}
 
 
 @router.post('/bridges/{bid}/disconnect')
@@ -350,9 +361,10 @@ def bridge_sessions(bid: int, limit: int = 100, user=Depends(bridges_user), conn
 # ---------------- Canlı uçuş ----------------
 @router.get('/live')
 def live_state(user=Depends(live_user), conn=db.DB):
-    """Anlık durum (WebSocket açılmadan önce / yedek): bağlı köprüler + son bilinen dron durumları + envanter eşlemesi."""
+    """Anlık durum (WebSocket açılmadan önce / yedek): bağlı köprüler (+ çalışan sanal dronlar) + son bilinen dron durumları + envanter.
+    Görev bağlamı (uçuş → köprü/sysid eşlemesi) için GET /api/field/tasks/{id}/live kullanılır."""
     snap = drone_hub.snapshot()
-    drones = db.rows(conn.execute('SELECT id, code, name, model, sysid, bridge_id, status FROM drone_drones WHERE active = 1 ORDER BY code'))
+    drones = db.rows(conn.execute('SELECT id, code, name, model, protocol, status FROM drone_drones WHERE active = 1 ORDER BY code'))
     return {**snap, 'drones': drones, 'can_command': drone_hub.can_command(user),
             'sessions': db.rows(conn.execute(
                 '''SELECT s.id, s.bridge_id, b.name AS bridge_name, s.started_at, s.packets, s.last_seen

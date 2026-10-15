@@ -8796,3 +8796,5 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .fl-log-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .fl-log-foot .fl-log-head { margin-bottom: 8px; }
 .fl-log-foot .fl-log-head b { font-size: 13px; }
+.task-sum.fixed { cursor: default; }
+.task-sum.fixed:hover { background: none; }

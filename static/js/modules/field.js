@@ -6,7 +6,7 @@ import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../st
 import { segIcon } from '../segicons.js';
 import { stockPicker } from '../stockpick.js';
 import {
-  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, h, matches, modal, moduleToolbar, pageHead, pref,
+  clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fold, h, matches, modal, moduleToolbar, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
   internTag, nameWithIntern, periodFilter, t as tr
 } from '../ui.js';
@@ -17,7 +17,7 @@ import { renderFlight } from './flight.js';
 import { logBadge, renderReportView } from './tools.js';
 import * as droneMod from './drone.js';
 
-const DRONE_PAGES = ['drones', 'live', 'routes', 'bridges'];   // Dron Yönetimi alt sayfaları (#/field/drones …)
+const DRONE_PAGES = ['drones', 'live', 'routes', 'bridges'];   // Dron Yönetimi alt sayfaları (#/field/drones …; #/field/live?task=<id>)
 
 // Görev başlatma ekranında gösterilen uyarılar. İhtiyaca göre düzenlenir.
 const START_WARNINGS = [
@@ -29,6 +29,15 @@ const START_WARNINGS = [
 ];
 const LAUNCH = { ARAC_USTU: 'Araç Üstü', RAMPA: 'Fırlatma Rampası' };
 const IN_ASSEMBLY = ['MONTAJ', 'SAHADA_MONTAJ'];   // montajı bitmemiş uçak
+const TASK_OPEN = ['BASLANGIC', 'GOREVDE'];        // uçuş eklenip kaldırılabilen görev durumları
+// Uçuş bağlantısı (field_flights.bridge_id / link / sysid): bağlantı bilgisi dron kaydına değil, görevdeki uçuşa yazılır
+const PROTOCOL_TEXT = { mavlink: 'MAVLink', sanal: 'Sanal Dron', dji: 'DJI' };
+const LINK_TYPES = [['serial', 'Seri'], ['tcp', 'TCP'], ['udp', 'UDP']];
+const LINK_DEFAULT_PORT = { tcp: 5760, udp: 14550 };
+const BAUDS = [57600, 115200, 921600, 38400, 19200, 9600];
+const isVirtual = f => (f.protocol || f.drone_protocol) === 'sanal';   // sanal dron: sunucu içi simülatör, köprü gerekmez
+// Bağlantı özeti: "UDP 14550" · "TCP 5760" · "Seri /dev/ttyUSB0 @57600"
+const linkText = l => (!l?.type ? '' : l.type === 'serial' ? `Seri ${l.serial || '?'} @${l.baud || '?'}` : `${String(l.type).toUpperCase()} ${l.port || '?'}`);
 const tl = v => `${Number(v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
 const km = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('tr-TR')} km`);
 const isManager = ctx => ctx.user.roles.some(r => r === 'Sistem Yöneticisi' || r === 'Saha Sorumlusu');
@@ -44,7 +53,8 @@ export async function render(view, params, ctx) {
   if (params[0] === 'task') return renderTask(view, Number(params[1]), ctx);
   if (params[0] === 'flight') return renderFlight(view, Number(params[1]), ctx, params[2]);
   if (params[0] === 'places') return renderPlaces(view, ctx);
-  if (DRONE_PAGES.includes(params[0])) return droneMod.render(view, params, ctx);
+  // Dron Yönetimi sayfaları sorgu taşıyabilir (#/field/live?task=5 → params[0] 'live?task=5'); sayfa adı '?' öncesidir
+  if (DRONE_PAGES.includes(String(params[0] || '').split('?')[0])) return droneMod.render(view, params, ctx);
   if (params[0] === 'flights' || (!params[0] && pref('field.view', 'tasks') === 'flights')) return renderFlightsList(view, ctx);
   return renderList(view, ctx);
 }
@@ -284,7 +294,7 @@ async function renderTask(view, id, ctx) {
     'aria-selected': k === tab ? 'true' : 'false', onclick: () => { tab = k; setPref('field.tab', k); drawTabs(); drawTab(); } }, segIcon(l), l)));
   drawTabs();
   const stats = statStrip();
-  let infoOpen = pref('field.infoOpen', '1') === '1';
+  const infoOpen = true;   // Görev Bilgileri üstte sabit açık (katlanmaz)
   const info = h('div', { class: 'card task-info' });
   const body = h('div');
   let t;
@@ -305,6 +315,7 @@ async function renderTask(view, id, ctx) {
       ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', fail: '<path d="M6 6l12 12M18 6L6 18"/>',
       form: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
       print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+      live: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
     };
     if (c.manage && t.status === 'BASLANGIC') {
       actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Görev durumu' },
@@ -323,6 +334,13 @@ async function renderTask(view, id, ctx) {
       catch (err) { toastError(err); } finally { repBtn.disabled = false; }
     });
     actions.push(h('div', { class: 'btn-join', role: 'group', 'aria-label': 'Belgeler' }, formBtn, repBtn));
+    // Canlı Uçuş: harekât ekranı yalnız bu görevin uçaklarını/dronlarını gösterir (#/field/live?task=<id>); serbest uçuş yok.
+    // Görevde uçuş yoksa ya da görev iptalse pasif. Tek .btn olduğu için toolbar'da ayrı baloncuğa gider; Excel düğmesi (listexport) de oraya gelir.
+    const canLive = t.flights.length > 0 && t.status !== 'IPTAL';
+    actions.push(canLive
+      ? h('a', { class: 'btn', href: `#/field/live?task=${id}`, title: 'Bu görevin uçakları ve dronları için canlı uçuş (harekât ekranı)' }, ico(I.live, 'ic-pri'), 'Canlı Uçuş')
+      : h('button', { class: 'btn', type: 'button', disabled: true,
+        title: t.status === 'IPTAL' ? 'İptal edilmiş görevde canlı uçuş açılmaz' : 'Göreve uçak ya da dron eklenince canlı uçuş açılır' }, ico(I.live), 'Canlı Uçuş'));
     clear(head, pageHead(tr('Saha görevi {code}', { code: t.code }), {
       back: '#/field',
       sub: h('span', null, badge(TASK_STATES, t.status), '  ', tr('Saha sorumlusu: {name}', { name: t.lead_name || '—' })),
@@ -335,12 +353,11 @@ async function renderTask(view, id, ctx) {
     ]);
     const plates = t.flights.length ? h('span', { class: 'task-plates' }, t.flights.map(f => f.queue_no ? queuePlate(f.queue_no) : h('span', { class: 'mono' }, f.order_code))) : '—';
     const kv = (k, v) => h('div', { class: 'task-kv' }, h('span', null, k), h('b', null, v || '—'));
-    const toggle = h('button', { class: 'task-toggle', type: 'button', title: infoOpen ? 'Bilgileri gizle' : 'Bilgileri göster' }, infoOpen ? '▴' : '▾');
-    const summary = h('div', { class: 'task-sum', onclick: () => { infoOpen = !infoOpen; setPref('field.infoOpen', infoOpen ? '1' : '0'); drawHead(); } },
+    const summary = h('div', { class: 'task-sum fixed' },
       h('b', null, 'Görev Bilgileri'), badge(TASK_STATES, t.status),
       t.result ? h('span', { class: `badge ${t.result === 'BASARILI' ? 'green' : 'red'}` }, t.result === 'BASARILI' ? 'Başarılı' : 'Başarısız') : null,
       h('span', { class: 'task-sum-txt' }, [t.lead_name, t.pilot_name, t.location_name].filter(Boolean).join(' · ')),
-      infoOpen ? null : plates, h('span', { class: 'spacer' }), toggle);
+      h('span', { class: 'spacer' }));
     clear(info, summary, infoOpen ? h('div', { class: 'task-info-body' },
       stats,
       h('div', { class: 'task-kv-grid' },
@@ -362,17 +379,20 @@ async function renderTask(view, id, ctx) {
     return drawFlights();
   }
 
-  // Uçuş Yönetimi
+  // Uçuş Yönetimi: görevin uçakları/dronları. Eylem alanında "Dron Ekle" (saha yöneticisi, açık görev); satırda Düzenle / Kaldır.
   function drawFlights() {
+    const open = TASK_OPEN.includes(t.status);
+    if (t.can.manage && open) setTabActions(h('button', { class: 'btn primary', type: 'button', onclick: () => addFlightModal().catch(toastError) }, svgIcon(icons.plus), 'Dron Ekle'));
     clear(body, h('div', { class: 'table-wrap' }, h('table', null,
-      h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Fırlatma sistemi', 'Uçuş logu', 'Havada', 'Video', ''].map(c => h('th', null, c)))),
+      h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Fırlatma sistemi', 'Bağlantı', 'Uçuş logu', 'Havada', 'Video', ''].map(c => h('th', null, c)))),
       h('tbody', null, t.flights.map(f => h('tr', { class: 'click', title: IN_ASSEMBLY.includes(f.order_status)
         ? 'Uçak sahada montajda: montaj detayına git' : 'Uçuş detayına git', onclick: e => { if (!e.target.closest('a,button')) openAircraft(f); } },
         h('td', null, f.drone_id ? h('b', { class: 'mono' }, f.drone_code) : (queuePlate(f.queue_no) || '—'), h('div', { class: 'small muted' }, f.order_code || f.drone_name || ''),
-          f.drone_id ? h('span', { class: 'badge blue', style: { marginTop: '3px' } }, 'Dron') : null,
+          f.drone_id ? h('span', { class: `badge ${isVirtual(f) ? 'purple' : 'blue'}`, style: { marginTop: '3px' } }, PROTOCOL_TEXT[f.protocol || f.drone_protocol] || 'Dron') : null,
           IN_ASSEMBLY.includes(f.order_status) ? h('span', { class: 'badge yellow', style: { marginTop: '3px' } }, 'Sahada montaj') : null),
         h('td', null, f.product_name || f.drone_model || '—', h('div', { class: 'small muted mono' }, f.product_serial || '')),
         h('td', null, f.launch ? h('span', { class: `badge ${f.launch === 'RAMPA' ? 'purple' : 'blue'}` }, LAUNCH[f.launch]) : h('span', { class: 'muted' }, 'Seçilmedi')),
+        h('td', null, linkCell(f)),
         h('td', null, f.log_status ? logBadge(f.log_status) : h('span', { class: 'muted' }, 'Yüklenmedi'),
           f.log_file ? h('div', { class: 'small muted' }, f.log_file) : null,
           f.log_error ? h('div', { class: 'small', style: { color: 'var(--danger)', whiteSpace: 'normal' } }, f.log_error) : null),
@@ -380,9 +400,70 @@ async function renderTask(view, id, ctx) {
         h('td', null, f.videos.length ? h('span', { class: 'badge blue' }, `${f.videos.length} video`) : h('span', { class: 'muted' }, '—')),
         h('td', { class: 'num' }, h('div', { class: 'pill-group' },
           f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}` }, 'Uçuş Raporu') : null,
-          t.can.flights ? h('button', { class: 'btn sm primary', onclick: () => flightModal(f) }, 'Düzenle') : null)))))),
+          t.can.flights ? h('button', { class: 'btn sm primary', onclick: () => flightModal(f) }, 'Düzenle') : null,
+          // Kaldır: yalnız saha yöneticisi, açık görev, logu ve videosu olmayan uçuş (sunucu da aynı kuralı uygular)
+          t.can.manage && open && !f.log_id && !f.videos.length
+            ? h('button', { class: 'btn sm danger', title: 'Uçuşu görevden kaldır (yalnız logu ve videosu olmayan uçuş)', onclick: () => removeFlight(f) }, 'Kaldır') : null)))))),
       h('p', { class: 'small muted', style: { margin: '8px 2px 0' } },
-        'Uçağa tıklayınca uçuş detayı açılır (rapor, 3B izleme, notlar, video ve resimler); sahada montajdaki uçak montaj detayına gider. "Düzenle" ile fırlatma sistemi ve log. Görev bittiğinde tüm uçuşların raporu hazırsa görev "Rapor Tamamlandı" olur.')));
+        'Uçağa tıklayınca uçuş detayı açılır (rapor, 3B izleme, notlar, video ve resimler); sahada montajdaki uçak montaj detayına gider. "Düzenle" ile fırlatma sistemi, bağlantı (köprü / seri-TCP-UDP / sysid) ve log. "Dron Ekle" ile göreve sonradan uçak ya da dron eklenir. Görev bittiğinde tüm uçuşların raporu hazırsa görev "Rapor Tamamlandı" olur.')));
+  }
+
+  // Bağlantı sütunu: köprü adı + tür/port ("Pilot Tableti · UDP 14550"), çevrimiçi rozeti ve sysid; sanal dron "Sanal"; seçilmemişse "Seçilmedi"
+  function linkCell(f) {
+    if (isVirtual(f)) return h('span', { class: 'badge purple', title: 'Sunucu içi simülatör; köprü gerekmez' }, 'Sanal');
+    if (!f.bridge_id) return h('span', { class: 'muted' }, 'Seçilmedi');
+    return h('div', { title: f.link?.host ? `${f.link.host}:${f.link.port}` : '' },
+      h('b', null, f.bridge_name || tr('Köprü #{id}', { id: f.bridge_id })), f.link?.type ? ` · ${linkText(f.link)}` : null,
+      h('div', { class: 'small muted', style: { marginTop: '3px' } },
+        h('span', { class: `badge ${f.bridge_online ? 'green' : 'gray'}` }, f.bridge_online ? 'Çevrimiçi' : 'Çevrimdışı'),
+        f.sysid ? ` sysid ${f.sysid}` : null, f.link?.type ? null : ' · bağlantı ayarı yok'));
+  }
+
+  // Uçuşu görevden kaldır (DELETE): sipariş sahada montaja geçmişse geri alınmaz, yalnız uçuş kaydı silinir
+  async function removeFlight(f) {
+    const label = f.queue_no || f.order_code || f.drone_code;
+    if (!await confirmDialog('Uçuşu kaldır', tr('{id} bu görevden kaldırılsın mı?', { id: label }), { okLabel: 'Kaldır', danger: true })) return;
+    try { await api.del(`/api/field/flights/${f.id}`); toast(tr('{id} görevden kaldırıldı', { id: label })); await load(); } catch (err) { toastError(err); }
+  }
+
+  // Dron Ekle: uygun uçaklar (saha deposu / montaj, başka açık görevde değil) + Dron Envanteri'ndeki uygun dronlar (GET addable); tek seçim → POST flights
+  async function addFlightModal() {
+    const a = await api.get(`/api/field/tasks/${id}/addable`);
+    const orders = a.orders || [], drones = a.drones || [];
+    let pick = null;   // { order_id } | { drone_id }
+    const rows = [];
+    const row = (choice, main, sub, ...badges) => {
+      const rb = h('input', { type: 'radio', name: 'field-addable' });
+      const el = h('label', { class: 'pick' }, rb, h('div', { class: 'grow' }, main, h('span', { class: 'small muted' }, sub)), badges);
+      rb.addEventListener('change', () => { pick = choice; rows.forEach(x => x.classList.toggle('on', x === el)); });
+      rows.push(el);
+      return el;
+    };
+    const list = h('div', { class: 'pick-list', style: { maxHeight: '55vh' } },
+      orders.length ? [h('div', { class: 'pick-group' }, tr('Uçaklar ({n})', { n: orders.length })), orders.map(o => row({ order_id: o.id },
+        o.queue_no ? queuePlate(o.queue_no) : h('b', { class: 'mono' }, o.code),
+        [o.queue_no ? o.code : null, o.product_name, o.note].filter(Boolean).join(' · '),
+        h('span', { class: `badge ${USAGE_TYPES[o.usage_type]?.badge || 'gray'}` }, USAGE_TYPES[o.usage_type]?.label || o.usage_type || '—'),
+        o.carry_over ? h('span', { class: 'badge blue', title: 'Önceki görevde uçulmadı; uçuş deposunda kaldı' }, 'Uçulmadı · devredildi')
+          : o.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti' }, tr('{n} görev yaptı', { n: o.past_tasks })) : null,
+        o.status === 'MONTAJ' ? h('span', { class: 'badge yellow', title: 'Montajı sahada tamamlanacak' }, 'Montajda') : h('span', { class: 'badge green' }, 'Saha deposu')))] : null,
+      drones.length ? [h('div', { class: 'pick-group' }, tr('Dronlar ({n})', { n: drones.length })), drones.map(d => row({ drone_id: d.id },
+        h('b', { class: 'mono' }, d.code), [d.name, d.model].filter(Boolean).join(' · '),
+        h('span', { class: `badge ${d.protocol === 'sanal' ? 'purple' : 'blue'}` }, d.protocol_text || PROTOCOL_TEXT[d.protocol] || 'Dron'),
+        d.past_tasks ? h('span', { class: 'badge blue', title: 'Daha önce saha görevine gitti' }, tr('{n} görev yaptı', { n: d.past_tasks })) : null))] : null,
+      !orders.length && !drones.length ? h('div', { class: 'empty small' },
+        'Eklenebilecek uçak ya da dron yok. Saha deposundaki / montajdaki uçaklar ve Dron Envanteri\'ndeki aktif, başka açık görevde olmayan dronlar listelenir.') : null);
+    modal({
+      title: tr('{code} — Dron Ekle', { code: t.code }),
+      body: h('div', null, field('Göreve eklenecek uçak ya da dron', list,
+        'Tek seçim. Montajdaki uçak eklenince sahada montaj durumuna geçer. Bağlantı (köprü, seri/TCP/UDP, sysid) eklendikten sonra satırdaki "Düzenle" ile seçilir.')),
+      actions: [{ label: 'Vazgeç' }, { label: 'Göreve Ekle', class: 'primary', onClick: async () => {
+        if (!pick) throw new Error('Bir uçak ya da dron seçin');
+        await api.post(`/api/field/tasks/${id}/flights`, pick);
+        toast('Göreve eklendi');
+        await load();
+      } }],
+    });
   }
 
   // Uçağa tıklayınca: montajı bitmemişse (sahada montaj) üretim detayına, bitmişse uçuş detayına
@@ -407,6 +488,81 @@ async function renderTask(view, id, ctx) {
       return b;
     }));
     const note = h('textarea', { class: 'input', rows: 2, disabled: !can }, f.note || '');
+    // --- Bağlantı: köprü (Dron Köprüleri) → tür (seri/TCP/UDP) → erişim alanları → MAVLink sysid. Köprü seçilmeden tür/alanlar görünmez.
+    // Bağlantı bilgisi dron kaydına değil, bu uçuşa (field_flights) yazılır. Sanal dron: köprü yok, yalnız sysid.
+    const virtual = isVirtual(f);
+    let bridgeId = f.bridge_id || null;
+    let linkType = f.link?.type || '';
+    let bridgesFailed = false;   // köprü listesi alınamadı (ör. 403): bağlantı alanları PUT body'ye konmaz, mevcut değer korunur
+    const bridgeSel = h('select', { class: 'input', disabled: !can }, h('option', { value: '' }, 'Köprü seçilmedi'));
+    const hostIn = h('input', { class: 'input mono', value: f.link?.host || '', placeholder: '192.168.4.1', disabled: !can });
+    const portIn = h('input', { class: 'input mono', type: 'number', min: '1', max: '65535', value: f.link?.port ?? '', disabled: !can });
+    const serialIn = h('input', { class: 'input mono', value: f.link?.serial || '', placeholder: '/dev/ttyUSB0 ya da COM3', disabled: !can });
+    const baudSel = h('select', { class: 'input', disabled: !can }, BAUDS.map(b => h('option', { value: b, selected: b === Number(f.link?.baud || 57600) }, String(b))));
+    const sysidIn = h('input', { class: 'input mono', type: 'number', min: '1', max: '255', value: f.sysid ?? '', placeholder: '1', disabled: !can, style: { maxWidth: '140px' } });
+    const linkFields = h('div');
+    const drawLinkFields = () => clear(linkFields,
+      linkType === 'serial' ? h('div', { class: 'row' }, field('Seri port', serialIn), field('Baud', baudSel))
+        : linkType ? h('div', { class: 'row' }, field('Sunucu / IP', hostIn), field('Port', portIn))
+          : h('div', { class: 'small muted', style: { marginBottom: '12px' } }, 'Bağlantı türünü seçin: Seri (USB telemetri), TCP ya da UDP (MAVLink akışı).'));
+    const typeSeg = segmented(LINK_TYPES, linkType, v => {
+      linkType = v;
+      if (!portIn.value && LINK_DEFAULT_PORT[v]) portIn.value = LINK_DEFAULT_PORT[v];   // tür seçilince port boşsa yaygın varsayılan
+      drawLinkFields();
+    });
+    if (!can) typeSeg.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const sysidField = () => field('MAVLink sysid', sysidIn, virtual ? 'Simülatörün dron kimliği (varsayılan 1).' : 'Aynı köprüde birden fazla dron varsa ayırt eder (1–255). Boş bırakılırsa köprünün ilk dronu.');
+    const linkDetail = h('div', { class: 'flight-link' }, field('Bağlantı türü', typeSeg), linkFields, sysidField());
+    const drawLink = () => { linkDetail.hidden = !bridgeId; if (bridgeId) drawLinkFields(); };
+    const linkBody = h('div', null, h('div', { class: 'small muted' }, 'Köprüler yükleniyor…'));
+    const linkFold = fold('Bağlantı', linkBody, { badge: virtual ? 'Sanal' : bridgeId ? `${f.bridge_name || tr('Köprü #{id}', { id: bridgeId })}${f.link?.type ? ` · ${linkText(f.link)}` : ''}` : 'Seçilmedi' });
+    bridgeSel.addEventListener('change', () => {
+      bridgeId = bridgeSel.value ? Number(bridgeSel.value) : null;
+      drawLink();
+      // Panel başlığındaki rozet seçimi izler (köprü adı; kaydedince tabloda tür/port da görünür)
+      const b = linkFold.querySelector('.fold-badge');
+      if (b) b.textContent = bridgeId ? bridgeSel.selectedOptions[0].textContent.split(' · ')[0] : 'Seçilmedi';
+    });
+    if (virtual) {
+      clear(linkBody, h('div', { class: 'alert info', style: { marginBottom: '10px' } }, h('b', null, 'Sanal dron: '),
+        'sunucu içi simülatör; köprü ve bağlantı ayarı gerekmez. Canlı Uçuş\'ta gerçek dron gibi uçar.'), sysidField());
+    } else {
+      api.get('/api/drone/bridges').then(list => {
+        const bridges = [...list];
+        // Uçuşun köprüsü listede yoksa (pasif/silinmiş) seçim kaybolmasın
+        if (bridgeId && !bridges.some(b => b.id === bridgeId)) bridges.push({ id: bridgeId, name: f.bridge_name || tr('Köprü #{id}', { id: bridgeId }), online: !!f.bridge_online, missing: true });
+        bridgeSel.append(...bridges.map(b => h('option', { value: b.id, selected: b.id === bridgeId },
+          `${b.name} · ${b.online ? 'çevrimiçi' : 'çevrimdışı'}${b.missing ? ' · listede yok' : ''}`)));
+        clear(linkBody, field('Dron köprüsü', bridgeSel, bridges.length
+          ? 'Pilot cihazındaki köprü yazılımı (Dron Yönetimi › Dron Köprüleri). Köprü seçilince bağlantı türü ve erişim ayarları açılır.'
+          : 'Kayıtlı köprü yok; Dron Yönetimi › Dron Köprüleri\'nden ekleyin.'), linkDetail);
+        drawLink();
+      }).catch(err => {
+        bridgesFailed = true;
+        clear(linkBody, h('div', { class: 'alert warn', style: { marginBottom: 0 } },
+          err?.status === 403 ? 'Dron Köprüleri yetkisi yok; bağlantı ayarını Dron Köprüleri yetkisi olan bir yönetici yapar.' : tr('Köprüler yüklenemedi: {msg}', { msg: err?.message || String(err) })),
+          bridgeId ? h('div', { class: 'small muted', style: { marginTop: '8px' } },
+            `Mevcut bağlantı: ${f.bridge_name || ''}${f.link?.type ? ` · ${linkText(f.link)}` : ''}${f.sysid ? ` · sysid ${f.sysid}` : ''}`) : null);
+      });
+    }
+    // PUT body'ye eklenecek bağlantı alanları; istemci doğrulaması (hata varsa Bağlantı paneli açılır)
+    const linkPayload = () => {
+      if (bridgesFailed) return {};
+      const fail = msg => { linkFold.toggle(true); throw new Error(msg); };
+      const sysid = sysidIn.value === '' ? null : Number(sysidIn.value);
+      if (sysid !== null && (!Number.isInteger(sysid) || sysid < 1 || sysid > 255)) fail('MAVLink sysid 1–255 arası olmalı');
+      if (virtual) return { bridge_id: null, sysid, link: null };
+      if (!bridgeId) return { bridge_id: null, sysid: null, link: null };
+      if (!linkType) fail('Bağlantı türünü seçin (Seri / TCP / UDP)');
+      if (linkType === 'serial') {
+        if (!serialIn.value.trim()) fail('Seri port girin (ör. /dev/ttyUSB0 ya da COM3)');
+        return { bridge_id: bridgeId, sysid, link: { type: 'serial', serial: serialIn.value.trim(), baud: Number(baudSel.value) } };
+      }
+      const port = Number(portIn.value);
+      if (!hostIn.value.trim()) fail('Sunucu adresi / IP girin');
+      if (!Number.isInteger(port) || port < 1 || port > 65535) fail('Port 1–65535 arası olmalı');
+      return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port } };
+    };
     const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG', style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();
     const remote = ctx.meta.remote;   // internetten bağlanıldı: video/log yalnızca yerel ağdan yüklenir
@@ -425,23 +581,26 @@ async function renderTask(view, id, ctx) {
     modal({
       title: tr('Uçuş — {id}', { id: f.queue_no || f.order_code || f.drone_code }),
       onClose: () => { progress.abort(); videoProgress.abort(); },   // pencere kapanırsa süren yükleme iptal edilir
-      body: h('div', null,
-        field('Fırlatma sistemi', choice),
-        field('Uçuş notu', note),
-        field('Uçuş logu', h('div', null,
+      // Katlanabilir paneller: [Uçuş bilgileri] [Bağlantı] [Uçuş logu] [Uçuş videoları (n)] — ilk panel açık
+      body: h('div', { class: 'flight-edit' },
+        fold('Uçuş bilgileri', [field('Fırlatma sistemi', choice), field('Uçuş notu', note)], { open: true }),
+        linkFold,
+        fold('Uçuş logu', h('div', null,
           f.log_status ? h('div', { style: { marginBottom: '8px' } }, logBadge(f.log_status), ' ', h('span', { class: 'small muted' }, f.log_file || ''),
             f.log_status === 'TAMAM' ? [' · ', h('a', { href: `#/field/report/${f.log_id}` }, 'Raporu aç')] : null) : null,
           canUpload ? (remote ? localUploadNotice(ctx.meta, 'Uçuş logu') : [file, progress]) : h('div', { class: 'small muted' },
-            t.status === 'BASLANGIC' ? 'Log, görev başladıktan sonra yüklenebilir.' : f.log_status === 'ISLENIYOR' ? 'Log analiz ediliyor…' : 'Log yükleme yetkiniz yok.')),
-        canUpload ? 'Yeni log yüklerseniz bu uçuşun raporu yeniden oluşturulur. En fazla 2 GB.' : null),
-        field(tr('Uçuş videoları ({n})', { n: f.videos.length }), h('div', null, videoList,
-          canVideo ? h('div', { style: { marginTop: '8px' } }, remote ? localUploadNotice(ctx.meta, 'Uçuş videosu') : [videoInput, videoProgress]) : null),
-          canVideo ? 'Birden fazla video seçebilirsiniz; boyut sınırı yoktur, büyük dosyalar parça parça yüklenir.' : null)),
+            t.status === 'BASLANGIC' ? 'Log, görev başladıktan sonra yüklenebilir.' : f.log_status === 'ISLENIYOR' ? 'Log analiz ediliyor…' : 'Log yükleme yetkiniz yok.'),
+          canUpload ? h('div', { class: 'hint', style: { marginTop: '6px' } }, 'Yeni log yüklerseniz bu uçuşun raporu yeniden oluşturulur. En fazla 2 GB.') : null),
+        { badge: f.log_status ? logBadge(f.log_status) : 'Yüklenmedi' }),
+        fold(tr('Uçuş videoları ({n})', { n: f.videos.length }), h('div', null, videoList,
+          canVideo ? h('div', { style: { marginTop: '8px' } }, remote ? localUploadNotice(ctx.meta, 'Uçuş videosu') : [videoInput, videoProgress]) : null,
+          canVideo ? h('div', { class: 'hint', style: { marginTop: '6px' } }, 'Birden fazla video seçebilirsiniz; boyut sınırı yoktur, büyük dosyalar parça parça yüklenir.') : null))),
       actions: can ? [
         { label: 'Vazgeç' },
         {
           label: 'Kaydet', class: 'primary', onClick: async () => {
-            await api.put(`/api/field/flights/${f.id}`, { launch: launch || null, note: note.value.trim() || null });
+            // Bağlantı alanları (bridge_id / sysid / link) doğrulanıp body'ye eklenir; köprü listesi alınamadıysa gönderilmez
+            await api.put(`/api/field/flights/${f.id}`, { launch: launch || null, note: note.value.trim() || null, ...linkPayload() });
             const vids = remote ? [] : [...(videoInput.files || [])];
             try {
               if (vids.length) {

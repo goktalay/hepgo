@@ -5,11 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HEPGO HAREKÂT</title>
 <!-- HEPGO uyarlaması: Bu sayfa GÖKTUNGU harekât arayüzünün (vendor/goktungu/index.orig.html) sadeleştirilmiş kopyasıdır ve
-     HEPGO SPA içinde (#/field/live) iframe olarak açılır. js/*.js ve css/*.css GÖKTUNGU dosyaları BAYT BAYT
+     HEPGO SPA içinde (#/field/live?task=<id>) iframe olarak açılır. js/*.js ve css/*.css GÖKTUNGU dosyaları BAYT BAYT
      değişmeden kopyalanmıştır (vendor/goktungu/KAYNAK.sha256); tüm uyarlama js/hepgo_stub.js, js/hepgo_patch_pre.js, js/hepgo_patch.js, js/hepgo_ws.js
      ve css/hepgo.css dosyalarında toplanır. Kapsam dışı DOM (radar, M50/EO, kamera, AI, angajman, sürü, makro,
      lisans, köprü kimliği, mesajlaşma, profil/giriş/kullanıcı, widget) çıkarılmıştır; kalan betiklerin
-     getElementById ile guard'sız eriştiği her id DOM'da tutulur. -->
+     getElementById ile guard'sız eriştiği her id DOM'da tutulur (#hepgoGizliCapalar).
+     FAZ 1 (Ekim 2026, kullanıcı kararları 2-5): GÖKTUNGU üst barı (#ustBar: menüler, logo, Arayüz Ayarları, Tam Ekran) ve sağ
+     ROTALAR paneli (#sagPanel/#sagTutamac) KALDIRILDI. Tam ekran HEPGO'nun kendi düğmesiyle (parent data-immersive), tema/dil
+     HEPGO'dan gelir, Harita Ayarları sol harita araç grubunda, rotalar HEPGO › Rotalar sekmesinde yönetilir. Harekât ekranı
+     YALNIZ bir saha görevinin (?task=<id>) uçaklarını/dronlarını gösterir; ?task yoksa bilgi kutusu çıkar (serbest uçuş yok). -->
 <link rel="icon" type="image/png" href="/static/img/logo-mark.png">
 <script>
   // Cesium worker/asset betiklerinin doğru yerden yüklenmesi için (HEPGO replay3d.js ile aynı CDN sürümü)
@@ -33,63 +37,39 @@
 <link rel="stylesheet" href="css/hepgo.css">
 </head>
 <body>
-<div id="ustBar">
-  <div id="ustBarSol">
-    <div id="menubar">
-      <!-- CIHAZLAR: HEPGO uyarlamasında yalnız Dronlar alt menüsü (Radar / Elektro-Optik / Kameralar kapsam dışı) -->
-      <div class="mb-item" id="mbCihazlar" data-hizli="c">
-        <span class="mb-etiket" data-i18n="mbCihazlar">Cihazlar</span>
-        <div class="mb-dropdown">
-          <!-- Dronlar -->
-          <div class="mb-alt" id="mbDronlar">
-            <div class="mb-oge mb-alt-bas"><i class="fa-solid fa-helicopter"></i><span data-i18n="mbDronlar">Dronlar</span><i class="fa-solid fa-chevron-right mb-alt-ok"></i></div>
-            <div class="mb-alt-menu">
-              <div class="mb-oge mb-popup-toggle pasif" data-yuzen="yzSeri" data-hizli="b"><i class="fa-solid fa-tower-broadcast"></i><span data-i18n="mbBaglanti">Bağlantı yöneticisi</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- SISTEM: Rotalar + Harita/Arayüz ayarları (AI, Makrolar, Program ayarları, Yer istasyonu Dual kapsam dışı) -->
-      <div class="mb-item" id="mbUygulama" data-hizli="s">
-        <span class="mb-etiket" data-i18n="mbSistem">Sistem</span>
-        <div class="mb-dropdown">
-          <!-- Rotalar (ic-ice flyout) -->
-          <div class="mb-alt" id="mbRotalar">
-            <div class="mb-oge mb-alt-bas"><i class="fa-solid fa-route"></i><span data-i18n="mbRotalar">Rotalar</span><i class="fa-solid fa-chevron-right mb-alt-ok"></i></div>
-            <div class="mb-alt-menu">
-              <div class="mb-oge" id="mbYeniRota" data-hizli="y"><i class="fa-solid fa-plus"></i><span data-i18n="mbYeniRota">Yeni rota</span></div>
-              <div class="mb-ayrac"></div>
-              <div class="mb-oge" id="mbSpiralRota" data-hizli="s"><i class="fa-solid fa-hurricane"></i><span data-i18n="mbSpiralRota">Spiral rota</span></div>
-              <div class="mb-ayrac"></div>
-              <div class="mb-oge" id="mbRotaYukle" data-hizli="k"><i class="fa-solid fa-folder-open"></i><span data-i18n="mbRotaYukle">Rota yükle</span></div>
-              <input type="file" id="rotaDosyaGiris" accept=".waypoints,.plan,.mission,.txt" style="display:none">
-              <div class="mb-oge" id="mbTumRota" data-hizli="t"><i class="fa-solid fa-eye"></i><span data-i18n="mbTumRota">Tüm rotaları aç/kapat</span></div>
-              <div class="mb-ayrac"></div>
-              <div class="mb-oge mb-panel-toggle" id="mbPanelRotalar" data-panel="rotalar"><i class="fa-solid fa-table-columns"></i><span data-i18n="mbPanelRotalar">Rotalar paneli</span></div>
-            </div>
-          </div>
-          <div class="mb-ayrac"></div>
-          <!-- Harita / Arayüz ayarları -->
-          <div class="mb-oge mb-popup-toggle pasif" id="mbHaritaAyar" data-hizli="h" data-popup-hedef="haritaPopup"><i class="fa-solid fa-map"></i><span data-i18n="mbHaritaAyar">Harita ayarları</span></div>
-          <div class="mb-oge mb-popup-toggle pasif" id="mbArayuzAyar" data-hizli="a" data-popup-hedef="arayuzPopup"><i class="fa-solid fa-sliders"></i><span data-i18n="mbArayuzAyar">Arayüz ayarları</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div id="ustBarOrta">
-    <!-- HEPGO markası. Dosya adı bilinçli olarak logo.png/logo_acik.png DEĞİL: tema.js firmaLogoSec() yalnız bu iki adı
-         tema ile değiştirir; HEPGO logosu her iki temada da aynı kalır. -->
-    <img id="logo" src="img/hepgo-logo.png" alt="HEPGO">
-    <span class="baslik">HEPGO HAREKÂT</span>
-  </div>
-  <div id="ustBarSag">
-    <button id="btnHaritaAyar" class="gizli-tasindi" data-i18n-title="mbHaritaAyar" title="Harita Ayarları"><i class="fa-solid fa-map"></i></button>
-    <button id="btnArayuzAyar" class="gizli-tasindi" data-i18n-title="mbArayuzAyar" title="Arayüz Ayarları"><i class="fa-solid fa-sliders"></i></button>
-    <button id="btnTamEkran" data-i18n-title="ipTamEkran" title="Tam Ekran"><i class="fa-solid fa-expand"></i></button>
-    <!-- HEPGO: #btnUyarilar GİZLİ tutulur (orijinalde de display:none). uyari_merkezi.js:201 toast tıklamasında
-         (_umBtn || #profilKutu).getBoundingClientRect() guard'sız; #profilKutu kaldırıldığı için bu düğme konum çapası olur. -->
-    <button id="btnUyarilar" data-i18n-title="pmUyarilar" title="Uyarılar" style="visibility:hidden;width:0;padding:0;border:0;margin:0;position:relative;"><i class="fa-solid fa-bell"></i><span id="uyariRozet" class="uyari-rozet" style="display:none;">0</span></button>
-  </div>
+<!-- HEPGO: GİZLİ ÇAPALAR. #ustBar ve #sagPanel kaldırıldı; GÖKTUNGU betiklerinin guard'sız (veya yoksa modülü tamamen
+     kapatan) getElementById erişimleri için id'ler burada, görünmez bir kapta tutulur (hepgo.css display:none).
+     - #btnUyarilar/#uyariRozet : uyari_merkezi.js:16-17 ve :201 (toast tıklamasında getBoundingClientRect guard'sız)
+     - #btnKoyu/#btnAcik        : tema.js:8-9, :47-48, :55-56 (classList/addEventListener guard'sız; tema HEPGO'dan gelir)
+     - #btnDilTR/#btnDilEN      : i18n.js:4761 düğme yoksa "bağımsız sayfa" kipine geçip DOMContentLoaded'da gcs_dil'i
+                                  uygular ve HEPGO'dan verilen dili ezerdi; düğmeler varken bu kip kapalıdır
+     - #dronKartListesi         : dronlar.js:1141/1504/2801 yedek kart kabı (seri.js grupları kartları buradan alır)
+     - #rotaListesi/#rotaYokKutu/#tbYeniRota/#tbSpiralRota/#tbRotaYukle/#tbDilimliRota/#tbKoridorRota ve mb* çapaları:
+       rotalar.js:10-12,51 (#rotaListesi/#tbYeniRota yoksa modül TAMAMEN kapanır; gorev.js rota listesini ondan okur),
+       rota_tipleri.js:155-156,288. DİKKAT: #rotalarToolbar / #rotalarIcerik id'leri BİLİNÇLİ olarak YOK: bolum_popup.js:30
+       bu ikisini bulursa ROTALAR bölümünü yüzen popup olarak açar (kullanıcı kararı 4: rotalar harekât ekranında listelenmez).
+     Rota çizimi: yalnız göreve yüklenen rota haritada çizilir (hepgo_ws.js rota_listesi gorunur bayrağı). -->
+<div id="hepgoGizliCapalar" aria-hidden="true">
+  <button id="btnUyarilar" type="button" tabindex="-1"><i class="fa-solid fa-bell"></i><span id="uyariRozet" class="uyari-rozet" style="display:none;">0</span></button>
+  <button id="btnKoyu" type="button" tabindex="-1"></button>
+  <button id="btnAcik" type="button" tabindex="-1"></button>
+  <button id="btnDilTR" type="button" tabindex="-1"></button>
+  <button id="btnDilEN" type="button" tabindex="-1"></button>
+  <div id="dronKartListesi"></div>
+  <div id="mbYeniRota"></div>
+  <div id="mbSpiralRota"></div>
+  <div id="mbRotaYukle"></div>
+  <div id="mbSerbestForm"></div>
+  <div id="mbKoridorRota"></div>
+  <div id="mbTumRota"></div>
+  <input type="file" id="rotaDosyaGiris" accept=".waypoints,.plan,.mission,.txt" tabindex="-1">
+  <button id="tbSpiralRota" type="button" tabindex="-1"></button>
+  <button id="tbDilimliRota" type="button" tabindex="-1"></button>
+  <button id="tbKoridorRota" type="button" tabindex="-1"></button>
+  <button id="tbRotaYukle" type="button" tabindex="-1"></button>
+  <button id="tbYeniRota" type="button" tabindex="-1"></button>
+  <div id="rotaListesi"></div>
+  <div id="rotaYokKutu" class="bos-panel"></div>
 </div>
 
 <div id="anaAlan">
@@ -109,6 +89,20 @@
     <!-- v2.4.34: KONUMUMA GIT - tarayici Geolocation API -->
     <button id="btnKonumuma" data-i18n-title="ipKonumuma"
             title="Konumuma git"><i class="fa-solid fa-location-crosshairs"></i></button>
+    <!-- HEPGO (kullanıcı kararı 3): Harita Ayarları üst bardan bu gruba taşındı; arayuz.js:349-365 #btnHaritaAyar ile
+         #haritaPopup'ı açar/kapar (hepgo.css popup'ı düğmenin yanında konumlar). -->
+    <button id="btnHaritaAyar" data-i18n-title="mbHaritaAyar" title="Harita ayarları"><i class="fa-solid fa-map"></i></button>
+    <!-- HEPGO: Bağlantı Yöneticisi (#yzSeri: görevin dronları ve köprüleri) aç/kapat. Menübar kaldırıldığı için tek giriş
+         noktası budur; davranış hepgo_patch.js Bölüm 10 (yuzenPanelAc + konum). -->
+    <button id="btnBaglantiPanel" data-i18n-title="mbBaglanti" title="Bağlantı yöneticisi"><i class="fa-solid fa-tower-broadcast"></i></button>
+  </div>
+  <!-- HEPGO: görev rozeti (sağ üst; hepgo_ws.js görev kodu/yerini yazar) ve görev bağlamı yokken bilgi kutusu -->
+  <div id="hepgoGorevRozet" style="display:none;"><i class="fa-solid fa-plane-up"></i> <span id="hepgoGorevRozetMetin"></span></div>
+  <div id="hepgoBilgiKutu" style="display:none;">
+    <i class="fa-solid fa-plane-up hepgo-bilgi-ikon"></i>
+    <div id="hepgoBilgiBaslik" class="hepgo-bilgi-baslik"></div>
+    <div id="hepgoBilgiMetin" class="hepgo-bilgi-metin"></div>
+    <button id="hepgoBilgiDugme" type="button" style="display:none;"></button>
   </div>
   <!-- v2.1.7c: ARAMA POPUP'I (tasinabilir) -->
   <div id="haritaAramaPopup" class="popup-gizli">
@@ -137,43 +131,10 @@
   </div>
 </div>
 
-<div id="sagTutamac" class="panel-tutamac" data-i18n-title="ipTutamac" title="Sürükleyerek panel genişliğini ayarlayın">
-  <div class="tutamac-cizgi"></div>
-</div>
+<!-- HEPGO: #sagTutamac ve #sagPanel (GÖREV ROTALARI listesi, yedek dron kartı kabı) KALDIRILDI (kullanıcı kararı 4).
+     Gerekli id çapaları sayfanın başındaki #hepgoGizliCapalar kabındadır. -->
 
-<div id="sagPanel">
-  <!-- v2.4.33: Ayri DRONLAR bolumu KALDIRILDI. Dron kartlari artik
-       Baglanti Yoneticisi icinde, bagli olduklari baglantinin altinda
-       yasiyor. Asagidaki kap GIZLI YEDEK olarak korunur: baglanti
-       grubu henuz cizilmemisken uretilen kart bir yere eklenmek
-       zorundadir, aksi halde DOM'a hic girmez ve gostergeleri
-       baslatilamaz. Bir sonraki bagGruplariDoldur() karti grubuna
-       tasir. Bu kap kullaniciya asla gorunmez. -->
-  <div id="dronKartListesi" style="display:none"></div>
-
-  <!-- HEPGO: Kamera yönetimi bölümü (#kameralarToolbar/#kameralarIcerik) kapsam dışı; bolum_popup.js/menubar.js guard'lı -->
-
-  <!-- FAZ18-IS35-ROTALAR: rota olusturma dugmeleri ust bara tasindi.
-       Her dugme MENU OGESININ .click() tetikleyicisini kullanir; rota
-       olusturma kodu KOPYALANMADI (tek tetikleyici yolu korunur). -->
-  <div class="panel-toolbar" id="rotalarToolbar">
-    <span class="tb-etiket" data-i18n="tbEtiketRotalar">G&Ouml;REV ROTALARI</span>
-    <span class="tb-bosluk"></span>
-    <button id="tbSpiralRota" class="tb-btn tb-btn-metin" data-i18n-title="mbSpiralRota" title="Spiral Rota"><i class="fa-solid fa-hurricane"></i><span data-i18n="mbSpiralRota">Spiral rota</span></button>
-    <!-- HEPGO: #tbDilimliRota / #tbKoridorRota kaldırıldı (serbest_form.js / koridor.js pakette yok) -->
-    <button id="tbRotaYukle" class="tb-btn tb-btn-metin" data-i18n-title="mbRotaYukle" title="Rota Y&uuml;kle"><i class="fa-solid fa-folder-open"></i><span data-i18n="mbRotaYukle">Rota y&uuml;kle</span></button>
-    <button id="tbYeniRota" class="tb-btn tb-btn-metin tb-btn-ekle" data-i18n-title="rotaYeniRotaBaslik" title="Serbest Rota"><i class="fa-solid fa-plus"></i><span data-i18n="rotaYeniRotaBaslik">Serbest Rota</span></button>
-  </div>
-  <div class="sabit-icerik" id="rotalarIcerik">
-    <div id="rotaListesi"></div>
-    <div id="rotaYokKutu" class="bos-panel">
-      <i class="fa-solid fa-route"></i>
-      <span data-i18n="rotaYokBuyuk">KAYITLI ROTA YOK</span>
-    </div>
-  </div>
-</div>
-
-<!-- YUZEN PANEL: BAGLANTI YONETICISI -->
+<!-- YUZEN PANEL: BAGLANTI YONETICISI (HEPGO: görevin uçuşları; her uçuş için köprü satırı + altında dron kartı) -->
 <div id="yzSeri" class="yuzen-panel yuzen-gizli">
   <div class="yuzen-baslik">
     <span><i class="fa-solid fa-tower-broadcast"></i> <span data-i18n="panelSeri">BA&#286;LANTI Y&#214;NET&#304;C&#304;S&#304;</span></span>
@@ -370,39 +331,10 @@
 
 </div><!-- /anaAlan -->
 
-<!-- ARAYUZ AYARLARI POPUP -->
-<div id="arayuzPopup" class="popup-gizli">
-  <div class="popup-baslik">
-    <span><i class="fa-solid fa-sliders"></i> <span data-i18n="panelArayuz">ARAYÜZ AYARLARI</span></span>
-    <button id="btnPopupKapat" data-i18n-title="ipKapat" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
-  </div>
-  <div class="popup-icerik">
-    <!-- Görünüm -->
-    <div class="alt-bolum">
-      <h3 class="alt-baslik"><i class="fa-solid fa-palette"></i><span data-i18n="panelGorunum">GÖRÜNÜM</span></h3>
-      <div class="alan">
-        <div class="tema-grup">
-          <button id="btnKoyu" class="secili"><i class="fa-solid fa-moon"></i><span data-i18n="btnKoyu">KOYU</span></button>
-          <button id="btnAcik"><i class="fa-solid fa-sun"></i><span data-i18n="btnAcik">AÇIK</span></button>
-        </div>
-      </div>
-      <div class="alan">
-        <label data-i18n="lblDil">Dil / Language</label>
-        <div class="tema-grup">
-          <button id="btnDilTR" class="secili"><i class="fa-solid fa-language"></i><span>TR</span></button>
-          <button id="btnDilEN"><i class="fa-solid fa-language"></i><span>EN</span></button>
-        </div>
-      </div>
-      <!-- v2.4.33: RFD900X baud/port ipucu KALDIRILDI. Bu not seri
-           baglantinin bu pencereden kuruldugu donemden kalmisti;
-           baglanti kurulumu Baglanti Yoneticisi'ne tasindiktan sonra
-           Arayuz Ayarlari (tema + dil) penceresinde anlamsiz kaldi.
-           i18n'deki `ipucu` anahtari ve uygulama kodu da kaldirildi. -->
-    </div>
-  </div>
-</div>
+<!-- HEPGO: ARAYÜZ AYARLARI popup'ı (#arayuzPopup: tema + dil) KALDIRILDI (kullanıcı kararı 3); tema ve dil HEPGO'dan gelir
+     (hepgo_patch.js Bölüm 8-9). tema.js/i18n.js'in aradığı düğme id'leri #hepgoGizliCapalar içinde gizli durur. -->
 
-<!-- HARITA AYARLARI POPUP -->
+<!-- HARITA AYARLARI POPUP (HEPGO: sol harita araç grubundaki #btnHaritaAyar açar) -->
 <div id="haritaPopup" class="popup-gizli">
   <div class="popup-baslik">
     <span><i class="fa-solid fa-map"></i> <span data-i18n="panelHaritaAyar">HARİTA AYARLARI</span></span>
@@ -886,6 +818,7 @@
 <script src="js/onay.js"></script>
 <script src="js/harita.js"></script>
 <script src="js/harita_accordion.js"></script>
+<script src="js/prizma_ikon.js"></script>
 <script src="js/harita_ikon_3d.js"></script>
 <script src="js/tema.js"></script>
 <script src="js/panel_pfd.js"></script>
@@ -905,7 +838,8 @@
 <script src="js/menubar.js"></script>
 <script src="js/uyari_merkezi.js"></script>
 <!-- HEPGO davranış yamaları (dkArmSecimAc global kopyası, İŞLEMLER düğmeleri, History yönlendirmesi, tile URL'leri,
-     yzSeri başlığı, tema senkronu). ws.js yerine hepgo_ws.js: gerçek /ws/drone/live soketi + sahte `ws` nesnesi
+     yzSeri başlığı, parent'tan tema + dil senkronu, Bağlantı Yöneticisi düğmesi). ws.js yerine hepgo_ws.js: görev bağlamı
+     (?task → /api/field/tasks/{id}/live → watch{task_id}), gerçek /ws/drone/live soketi + sahte `ws` nesnesi
      (seri.js:7 `let ws`e ATANIR, yeniden bildirilmez); sonunda applyLanguage + ayarlariUygula + bağlan. -->
 <script src="js/hepgo_patch.js"></script>
 <script src="js/hepgo_ws.js"></script>

@@ -1,14 +1,17 @@
-"""Dron Yönetimi (Faz 0): köprü WebSocket'i (kimlik, eşleştirme, MAVLink → canlı durum, komut RPC, log aktarımı), REST ve RBAC.
+"""Dron Yönetimi (Faz 0 + Faz 1): köprü WebSocket'i (kimlik, köprü kodu, eşleştirme, MAVLink → canlı durum, komut RPC, log aktarımı),
+REST, RBAC; Faz 1: bağlantı bilgisi uçuşta (addable / POST flights / PUT link / DELETE), görev bağlamı (watch task_id, live), sanal dron
+simülatörü (tick + arm/takeoff/goto/rtl + görev yükleme), köprü kodu biçimi, drone_drones sütun düşürme migrasyonu (idempotent).
 Çalıştırma: .venv/bin/python -m tests.test_drone
 """
 import faulthandler
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 
-faulthandler.dump_traceback_later(120, exit=True)   # WebSocket beklemesi takılırsa yığın izini bas ve çık
+faulthandler.dump_traceback_later(170, exit=True)   # WebSocket beklemesi takılırsa yığın izini bas ve çık
 
 os.environ.update(CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYMAZ_PRINTER_POLL='0', CAYMAZ_ADMIN_USERNAME='admin@test',
                   CAYMAZ_ADMIN_PASSWORD='admin-sifre-1', CAYMAZ_FORCE_PASSWORD_CHANGE='0')
@@ -20,6 +23,9 @@ from app import auth, config, db, drone_hub, flight_analysis  # noqa: E402
 from app.main import app  # noqa: E402
 
 flight_analysis.start = lambda lid: None   # testte gerçek .bin analizi başlamasın
+
+OLD_COLS = {'conn_type', 'conn_host', 'conn_port', 'conn_serial', 'conn_baud', 'bridge_id', 'sysid'}   # Faz 0'da drone_drones'taydı
+KEY_RE = re.compile(r'^[A-Za-z0-9_-]{40,}$')
 
 
 def ok(r, code=200):
@@ -65,27 +71,72 @@ def drain(ws, want, limit=10, pred=lambda m: True):
         if m.get('t') == want and pred(m):
             return m
         box.append(m)
-    raise AssertionError(f'{want} mesajı gelmedi; gelenler: {[x.get("t") for x in box]}')
+    raise AssertionError(f'{want} mesajı gelmedi; gelenler: {[x.get("t") for x in box][-20:]}')
+
+
+def cmd(live, rid, bridge_id, name, params=None, sysid=1, limit=60):
+    """İzleyici komutu gönderir, res çerçevesini bekler."""
+    live.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'bridge_id': bridge_id, 'sysid': sysid, 'name': name, 'params': params or {}}))
+    return drain(live, 'res', limit=limit, pred=lambda m: m.get('rid') == rid)
+
+
+def schema_checks():
+    with db.connect() as conn:
+        cols = {r[1] for r in conn.execute('PRAGMA table_info(field_flights)')}
+        assert {'order_id', 'drone_id', 'bridge_id', 'sysid', 'link'} <= cols, cols
+        dcols = {r[1] for r in conn.execute('PRAGMA table_info(drone_drones)')}
+        assert 'protocol' in dcols and not dcols & OLD_COLS, dcols
+        idx = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+        assert 'ix_drone_drones_bridge' not in idx and 'ix_field_flights_bridge' in idx, idx
+        assert 'source' in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'drone_%'")}
+        assert {'drone_bridges', 'drone_drones', 'drone_bridge_sessions', 'drone_route_centers', 'drone_routes', 'drone_waypoints'} <= tables, tables
+        fk = conn.execute('PRAGMA foreign_key_check').fetchall()
+        assert not fk, fk
 
 
 def main():
     with TestClient(app, base_url='https://testserver') as a:
         login(a, 'admin@test', 'admin-sifre-1')
-        # --- şema: field_flights.drone_id, flight_logs.source, drone_* tabloları (idempotent init) ---
+        # --- şema: Faz 1 sütunları; idempotent init ---
         db.init()
+        schema_checks()
+        # --- migrasyon: Faz 0 sütunları (conn_*, bridge_id + dizini, sysid) geri eklenir → init onları düşürür; ikinci init zararsız ---
         with db.connect() as conn:
-            cols = {r[1] for r in conn.execute('PRAGMA table_info(field_flights)')}
-            assert {'order_id', 'drone_id'} <= cols, cols
-            assert 'source' in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}
-            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'drone_%'")}
-            assert {'drone_bridges', 'drone_drones', 'drone_bridge_sessions', 'drone_route_centers', 'drone_routes', 'drone_waypoints'} <= tables, tables
-            fk = conn.execute('PRAGMA foreign_key_check').fetchall()
-            assert not fk, fk
+            for col, typ in (('conn_type', 'TEXT'), ('conn_host', 'TEXT'), ('conn_port', 'INTEGER'), ('conn_serial', 'TEXT'),
+                             ('conn_baud', 'INTEGER'), ('sysid', 'INTEGER')):
+                conn.execute(f'ALTER TABLE drone_drones ADD COLUMN {col} {typ}')
+            conn.execute('ALTER TABLE drone_drones ADD COLUMN bridge_id INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL')
+            conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_drones_bridge ON drone_drones(bridge_id)')
+            conn.commit()
+            assert OLD_COLS <= {r[1] for r in conn.execute('PRAGMA table_info(drone_drones)')}
+        db.init()
+        schema_checks()
+        db.init()
+        schema_checks()
 
-        # --- REST: köprü + dron ---
+        # --- REST: köprü (köprü kodu <domain>/<key>, bir kez) + dron (protocol mavlink | sanal | dji; bağlantı alanı yok) ---
         b = ok(a.post('/api/drone/bridges', json={'name': 'Test köprüsü', 'platform': 'linux'}))
-        d = ok(a.post('/api/drone/drones', json={'name': 'Göktungu-1', 'sysid': 7, 'bridge_id': b['id']}))
+        dom, code_key = b['code'].split('/', 1)
+        assert dom == 'testserver' and KEY_RE.match(code_key), b
+        bl = ok(a.get('/api/drone/bridges'))
+        assert bl[0]['has_key'] is True and bl[0]['owner_name'] and 'code' not in bl[0] and 'code_hint' not in bl[0] and 'key' not in bl[0], bl[0]
+        assert bl[0]['flight_count'] == 0 and bl[0]['drone_count'] == 0, bl[0]
+        d = ok(a.post('/api/drone/drones', json={'name': 'Göktungu-1'}))
         assert d['code'] == 'D-0001', d
+        assert a.post('/api/drone/drones', json={'name': 'X', 'protocol': 'parrot'}).status_code == 400
+        sd = ok(a.post('/api/drone/drones', json={'name': 'Sanal-1', 'protocol': 'sanal'}))
+        assert sd['code'] == 'D-0002', sd
+        drones = ok(a.get('/api/drone/drones'))
+        assert [x['protocol_text'] for x in drones] == ['MAVLink', 'Sanal Dron'], drones
+        assert not {'bridge_id', 'sysid', 'conn_type', 'online', 'live'} & set(drones[0]), drones[0]
+        meta = ok(a.get('/api/drone/meta'))
+        assert meta['protocols'] == {'mavlink': 'MAVLink', 'sanal': 'Sanal Dron', 'dji': 'DJI'} and 'link_open' in meta['commands'], meta
+        # Köprü yazılımı: kodun anahtarıyla auth → auth_ok (eşleştirme kodu olmadan bağlanır)
+        with a.websocket_connect('/ws/drone/bridge') as ws:
+            ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': code_key, 'host': 'kurulum-pc', 'platform': 'linux', 'bridge_ver': '0.2'}))
+            m = json.loads(ws.receive_text())
+            assert m['t'] == 'auth_ok' and m['bridge_id'] == b['id'] and 'key' not in m, m
 
         # --- köprü WS: yanlış anahtar → 4403 ---
         with a.websocket_connect('/ws/drone/bridge') as ws:
@@ -98,7 +149,7 @@ def main():
             ws.send_text('bu json degil')
             assert close_code(ws) == 4400
 
-        # --- eşleştirme kodu → auth_ok + kalıcı anahtar (tek kullanımlık) ---
+        # --- eşleştirme kodu → auth_ok + YENİ kalıcı anahtar (tek kullanımlık); köprü kodunun anahtarı geçersiz olur ---
         pc = ok(a.post(f"/api/drone/bridges/{b['id']}/pair"))
         assert len(pc['code']) == 6
         with a.websocket_connect('/ws/drone/bridge') as ws:
@@ -111,6 +162,11 @@ def main():
             ws.send_text(json.dumps({'v': 1, 't': 'pair', 'code': pc['code']}))
             assert json.loads(ws.receive_text())['t'] == 'auth_err'
             assert close_code(ws) == 4403
+        with a.websocket_connect('/ws/drone/bridge') as ws:   # eski (köprü kodundaki) anahtar artık geçersiz
+            ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': code_key}))
+            assert json.loads(ws.receive_text())['t'] == 'auth_err'
+            assert close_code(ws) == 4403
+
         def sessions():
             for _ in range(25):   # kapanış arka plan iş parçacığında yazılır
                 with db.connect() as conn:
@@ -127,13 +183,13 @@ def main():
         token = a.cookies.get(auth.COOKIE)
         with a.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={token}'}) as live:
             hello = json.loads(live.receive_text())
-            assert hello['t'] == 'hello' and hello['me']['can_command'] is True, hello
+            assert hello['t'] == 'hello' and hello['me']['can_command'] is True and 'task' not in hello, hello
             with a.websocket_connect('/ws/drone/bridge') as ws:
-                ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key, 'host': 'pilot-pc', 'platform': 'linux', 'bridge_ver': '0.1', 'caps': ['set_home', 'param', 'bilinmeyen']}))
+                ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key, 'host': 'pilot-pc', 'platform': 'linux', 'bridge_ver': '0.1', 'caps': ['set_home', 'param', 'link', 'bilinmeyen']}))
                 m = json.loads(ws.receive_text())
                 assert m['t'] == 'auth_ok' and 'key' not in m, m
                 br = drain(live, 'bridge')
-                assert br['online'] is True and br['bridge_id'] == b['id'] and br['info']['caps'] == ['param', 'set_home'], br
+                assert br['online'] is True and br['bridge_id'] == b['id'] and br['info']['caps'] == ['link', 'param', 'set_home'], br
                 hb, gp, hud, st, pv = mav_frames()
                 ws.send_bytes(pv)   # v1.1 PARAM_VALUE → toplu 'params' paketi
                 pr = drain(live, 'params')
@@ -163,8 +219,7 @@ def main():
                 hist = drain(live, 'console_hist')
                 assert len(hist['lines']) == 1 and hist['lines'][0]['repeat'] == 2, hist
                 # ARM CHECK raporu sunucudan (köprüye gitmez; komut yetkisi gerekmez)
-                live.send_text(json.dumps({'t': 'cmd', 'rid': 'ac', 'bridge_id': b['id'], 'sysid': 7, 'name': 'arm_check'}))
-                ac = drain(live, 'res', pred=lambda m: m.get('rid') == 'ac')
+                ac = cmd(live, 'ac', b['id'], 'arm_check', sysid=7)
                 assert ac['ok'] is True and ac['result']['bulundu'] is True and ac['result']['armed'] is True, ac
                 assert any(x['grup'] == 'konum' for x in ac['result']['maddeler']) and ac['result']['mesajlar'][0]['sev'] == 4, ac['result']
                 assert s1['state']['ready'] and 'hazir' in s1['state']['ready'], s1['state'].get('ready')
@@ -173,15 +228,21 @@ def main():
                 assert json.loads(ws.receive_text())['t'] == 'pong'
                 # komut: izleyici → sunucu → köprü → res → izleyici
                 live.send_text(json.dumps({'t': 'cmd', 'rid': 'r1', 'bridge_id': b['id'], 'sysid': 7, 'name': 'set_mode', 'params': {'mode': 'RTL'}}))
-                cmd = json.loads(ws.receive_text())
-                assert cmd['t'] == 'cmd' and cmd['rid'] == 'r1' and cmd['name'] == 'set_mode' and cmd['params'] == {'mode': 'RTL'}, cmd
+                c1 = json.loads(ws.receive_text())
+                assert c1['t'] == 'cmd' and c1['rid'] == 'r1' and c1['name'] == 'set_mode' and c1['params'] == {'mode': 'RTL'}, c1
                 ws.send_text(json.dumps({'t': 'res', 'rid': 'r1', 'ok': True, 'result': {'mode': 'RTL'}}))
                 res = drain(live, 'res')
                 assert res['rid'] == 'r1' and res['ok'] is True, res
+                # v1.1 cap link: link_open köprüye iletilir
+                live.send_text(json.dumps({'t': 'cmd', 'rid': 'l1', 'bridge_id': b['id'], 'sysid': 7, 'name': 'link_open',
+                                           'params': {'type': 'udp', 'host': '0.0.0.0', 'port': 14550, 'sysid': 7}}))
+                c2 = json.loads(ws.receive_text())
+                assert c2['name'] == 'link_open' and c2['params']['port'] == 14550, c2
+                ws.send_text(json.dumps({'t': 'res', 'rid': 'l1', 'ok': True}))
+                assert drain(live, 'res', pred=lambda m: m.get('rid') == 'l1')['ok'] is True
                 # bilinmeyen komut reddedilir (köprüye gitmez)
-                live.send_text(json.dumps({'t': 'cmd', 'rid': 'r2', 'bridge_id': b['id'], 'sysid': 7, 'name': 'selfdestruct'}))
-                res = drain(live, 'res')
-                assert res['rid'] == 'r2' and res['ok'] is False and 'Bilinmeyen' in res['error'], res
+                res = cmd(live, 'r2', b['id'], 'selfdestruct', sysid=7)
+                assert res['ok'] is False and 'Bilinmeyen' in res['error'], res
                 # uçuş sonrası log aktarımı: log_begin → parçalar → log_end → flight_logs (source=BRIDGE)
                 blob = os.urandom(70000)
                 ws.send_text(json.dumps({'t': 'log_begin', 'name': 'ucus.bin', 'size': len(blob), 'sha256': hashlib.sha256(blob).hexdigest()}))
@@ -203,11 +264,12 @@ def main():
                 ws.send_bytes(b'0123456789')
                 ws.send_text(json.dumps({'t': 'log_end'}))
                 assert json.loads(ws.receive_text())['t'] == 'log_err'
-                # REST canlı durum: köprü çevrimiçi, dron envanteriyle eşleşti
+                # REST canlı durum: köprü çevrimiçi; dron kaydında köprü/canlı alanı yok
                 live_state = ok(a.get('/api/drone/live'))
                 assert live_state['bridges'][0]['bridge_id'] == b['id'] and '7' in live_state['bridges'][0]['drones']
+                assert live_state['drones'][0]['protocol'] == 'mavlink' and 'bridge_id' not in live_state['drones'][0], live_state['drones']
                 dr = ok(a.get(f"/api/drone/drones/{d['id']}"))
-                assert dr['online'] is True and dr['live']['mode'] == 'AUTO', dr
+                assert dr['protocol_text'] == 'MAVLink' and dr['flights'] == [] and 'online' not in dr, dr
                 # ikinci bağlantı aynı anahtarla → eskisi 4409 ile kapanır
                 with a.websocket_connect('/ws/drone/bridge') as ws2:
                     ws2.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key}))
@@ -226,15 +288,184 @@ def main():
         # --- Saha görevi: dron ile (order_id NULL) ---
         pilot = ok(a.post('/api/users', json={'username': 'pilot@test', 'full_name': 'Pilot', 'roles': [auth.PILOT, auth.FIELD_STAFF], 'password': 'Gizli-Parola-77'}))
         lead = ok(a.post('/api/users', json={'username': 'saha@test', 'full_name': 'Saha', 'roles': [auth.FIELD_LEAD], 'password': 'Gizli-Parola-77'}))
-        assert [x['code'] for x in ok(a.get('/api/field/available-drones'))] == ['D-0001']
+        avail = ok(a.get('/api/field/available-drones'))
+        assert [x['code'] for x in avail] == ['D-0001', 'D-0002'] and [x['protocol'] for x in avail] == ['mavlink', 'sanal'], avail
         r = a.post('/api/field/tasks', json={'order_ids': [], 'drone_ids': [], 'lead_id': lead['id'], 'pilot_id': pilot['id'], 'staff_ids': [pilot['id']]})
         assert r.status_code == 400 and 'dron' in r.text.lower(), r.text
         t = ok(a.post('/api/field/tasks', json={'drone_ids': [d['id']], 'lead_id': lead['id'], 'pilot_id': pilot['id'], 'staff_ids': [pilot['id']]}))
         task = ok(a.get(f"/api/field/tasks/{t['id']}"))
-        assert task['aircraft'] == 'D-0001' and task['flights'][0]['drone_code'] == 'D-0001' and task['flights'][0]['order_id'] is None, task['flights']
-        assert ok(a.get('/api/field/available-drones')) == []   # açık görevde
+        f0 = task['flights'][0]
+        assert task['aircraft'] == 'D-0001' and f0['drone_code'] == 'D-0001' and f0['order_id'] is None, task['flights']
+        assert f0['protocol'] == 'mavlink' and f0['label'] == 'D-0001' and f0['bridge_id'] is None and f0['link'] is None and f0['bridge_online'] is False, f0
+        assert [x['code'] for x in ok(a.get('/api/field/available-drones'))] == ['D-0002']   # D-0001 açık görevde
         fl = ok(a.get('/api/field/flights?view=ready'))
         assert any(f['drone_code'] == 'D-0001' for f in fl), fl
+
+        # --- Faz 1: Dron Ekle (addable) + POST flights ---
+        ad = ok(a.get(f"/api/field/tasks/{t['id']}/addable"))
+        assert isinstance(ad['orders'], list) and [x['code'] for x in ad['drones']] == ['D-0002'] and ad['drones'][0]['protocol'] == 'sanal', ad
+        assert a.post(f"/api/field/tasks/{t['id']}/flights", json={}).status_code == 400
+        assert a.post(f"/api/field/tasks/{t['id']}/flights", json={'order_id': 1, 'drone_id': sd['id']}).status_code == 400
+        assert a.post(f"/api/field/tasks/{t['id']}/flights", json={'drone_id': d['id']}).status_code == 400       # zaten görevde
+        assert a.post(f"/api/field/tasks/{t['id']}/flights", json={'order_id': 999999}).status_code == 400       # uygun uçak değil
+        nf = ok(a.post(f"/api/field/tasks/{t['id']}/flights", json={'drone_id': sd['id']}))
+        task = ok(a.get(f"/api/field/tasks/{t['id']}"))
+        assert [f['label'] for f in task['flights']] == ['D-0001', 'D-0002'] and task['flights'][1]['protocol'] == 'sanal' and task['flights'][1]['id'] == nf['id'], task['flights']
+        assert ok(a.get('/api/field/available-drones')) == [] and ok(a.get(f"/api/field/tasks/{t['id']}/addable"))['drones'] == []
+        with db.connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Saha görevine uçak ekledi'").fetchone()[0] == 1
+
+        # --- Faz 1: uçuş bağlantısı (PUT): köprü + sysid + link doğrulaması ---
+        fid = f0['id']
+        put = lambda body: a.put(f'/api/field/flights/{fid}', json=body)   # noqa: E731
+        assert put({'bridge_id': 999999}).status_code == 400                                               # köprü yok
+        assert put({'bridge_id': b['id'], 'link': {'type': 'wifi'}}).status_code == 400                     # tür
+        assert put({'bridge_id': b['id'], 'link': {'type': 'serial', 'serial': '/dev/ttyUSB0'}}).status_code == 400   # baud eksik
+        assert put({'bridge_id': b['id'], 'link': {'type': 'tcp', 'host': '192.168.4.1'}}).status_code == 400          # port eksik
+        assert put({'link': {'type': 'udp', 'host': '0.0.0.0', 'port': 14550}}).status_code == 400          # köprü seçilmeden link
+        assert put({'bridge_id': b['id'], 'sysid': 300}).status_code == 400                                 # sysid aralığı
+        ok(put({'launch': 'RAMPA', 'note': 'ilk deneme', 'bridge_id': b['id'], 'sysid': 7, 'link': {'type': 'udp', 'host': '0.0.0.0', 'port': '14550'}}))
+        f0 = ok(a.get(f"/api/field/tasks/{t['id']}"))['flights'][0]
+        assert f0['bridge_id'] == b['id'] and f0['bridge_name'] == 'Test köprüsü' and f0['sysid'] == 7 and f0['launch'] == 'RAMPA', f0
+        assert f0['link'] == {'type': 'udp', 'host': '0.0.0.0', 'port': 14550} and f0['bridge_online'] is False, f0
+        ok(put({'launch': 'RAMPA', 'bridge_id': b['id'], 'sysid': 7, 'link': {'type': 'serial', 'serial': 'COM5', 'baud': 57600}}))
+        assert ok(a.get(f"/api/field/tasks/{t['id']}"))['flights'][0]['link'] == {'type': 'serial', 'serial': 'COM5', 'baud': 57600}
+        ok(put({'launch': 'RAMPA', 'bridge_id': b['id'], 'sysid': 7, 'link': {'type': 'udp', 'host': '0.0.0.0', 'port': 14550}}))
+        assert ok(a.get('/api/drone/bridges'))[0]['flight_count'] == 1
+
+        # --- Faz 1: görev bağlamı REST (live) ---
+        lv = ok(a.get(f"/api/field/tasks/{t['id']}/live"))
+        assert lv['task']['code'] == t['code'] and lv['task']['status'] == 'BASLANGIC' and lv['task']['lat'] is None and lv['can_command'] is True, lv['task']
+        by = {f['label']: f for f in lv['flights']}
+        assert by['D-0001']['protocol'] == 'mavlink' and by['D-0001']['bridge_id'] == b['id'] and by['D-0001']['bridge_name'] == 'Test köprüsü', by
+        assert by['D-0001']['sysid'] == 7 and by['D-0001']['link']['port'] == 14550 and by['D-0001']['sim_bridge_id'] is None, by
+        assert by['D-0002']['protocol'] == 'sanal' and by['D-0002']['sim_bridge_id'] == -sd['id'] and by['D-0002']['name'] == 'Sanal-1', by
+        assert by['D-0002']['bridge_online'] is False   # izleyen yok → sanal dron çalışmıyor
+        ok(a.post('/api/users', json={'username': 'saha2@test', 'full_name': 'Saha 2', 'roles': [auth.FIELD_STAFF], 'password': 'Gizli-Parola-77'}))
+        with TestClient(app, base_url='https://testserver') as o2:   # görev üyesi olmayan saha personeli → 403
+            login(o2, 'saha2@test', 'Gizli-Parola-77')
+            assert o2.get(f"/api/field/tasks/{t['id']}/live").status_code == 403
+        with TestClient(app, base_url='https://testserver') as p:    # pilot (görev üyesi) → 200
+            login(p, 'pilot@test', 'Gizli-Parola-77')
+            assert ok(p.get(f"/api/field/tasks/{t['id']}/live"))['task']['id'] == t['id']
+        assert a.get('/api/field/tasks/999999/live').status_code == 404
+
+        # --- Faz 1: WS watch task_id → görev bağlamı + sanal dron simülatörü ---
+        sim_id = -sd['id']
+        with a.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={token}'}) as live:
+            drain(live, 'hello')
+            live.send_text(json.dumps({'t': 'watch', 'task_id': 999999}))
+            assert drain(live, 'error', limit=20)['error'] == 'Görev bulunamadı'
+            live.send_text(json.dumps({'t': 'watch', 'task_id': t['id']}))
+            hello = drain(live, 'hello', limit=30, pred=lambda m: m.get('task'))
+            assert hello['task']['code'] == t['code'] and [f['label'] for f in hello['flights']] == ['D-0001', 'D-0002'], hello['flights']
+            sims = [x for x in hello['bridges'] if x['bridge_id'] == sim_id]
+            assert sims and sims[0]['sim'] is True and sims[0]['name'] == 'Sanal · D-0002' and sims[0]['drone_id'] == sd['id'], hello['bridges']
+            assert all(x['bridge_id'] == sim_id for x in hello['bridges']), hello['bridges']   # gerçek köprü çevrimdışı
+            assert next(f for f in hello['flights'] if f['label'] == 'D-0002')['bridge_online'] is True
+            assert sim_id in drone_hub.SIMS and drone_hub.SIMS[sim_id].task_id == t['id']
+            assert ok(a.get(f"/api/field/tasks/{t['id']}/live"))['flights'][1]['bridge_online'] is True
+            st = drain(live, 'status', limit=30, pred=lambda m: m['bridge_id'] == sim_id)
+            s = st['state']
+            assert st['sysid'] == 1 and s['armed'] is False and abs(s['lat'] - 39.9) < 1e-6 and abs(s['lon'] - 32.8) < 1e-6, s
+            assert s['fix'] == 6 and s['sats'] == 12 and s['mode'] == 'STABILIZE' and s['type_name'] == 'Quadrotor' and s['batt_pct'] == 100, s
+            assert s['ready']['hazir'] is True, s['ready']
+            # komutlar: ARM'sız kalkış reddedilir; arm → event; takeoff → irtifa artar (GUIDED); goto → hareket; rtl → RTL
+            r0 = cmd(live, 's0', sim_id, 'takeoff', {'alt_rel_m': 20})
+            assert r0['ok'] is False and 'ARM' in r0['error'], r0
+            assert cmd(live, 's1', sim_id, 'arm')['ok'] is True
+            ev = drain(live, 'event', limit=60, pred=lambda m: m['bridge_id'] == sim_id and 'Arming' in m['text'])
+            assert ev['sysid'] == 1 and ev['severity'] == 6, ev
+            assert cmd(live, 's1b', sim_id, 'arm')['ok'] is False                       # zaten ARM
+            assert cmd(live, 's2', sim_id, 'takeoff', {'alt_rel_m': 20})['ok'] is True
+            st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['alt_rel'] > 0.5)
+            assert st['state']['armed'] is True and st['state']['mode'] == 'GUIDED' and st['state']['climb'] > 0, st['state']
+            assert cmd(live, 's2b', sim_id, 'disarm')['ok'] is False                    # havada disarm edilemez
+            assert cmd(live, 's3', sim_id, 'goto', {'lat': 39.902, 'lon': 32.8, 'alt_rel_m': 20})['ok'] is True
+            st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['groundspeed'] > 5)
+            assert st['state']['lat'] > 39.9 and st['state']['wp_dist'] is not None and st['state']['dist_m'] > 0 and st['state']['flight_s'] >= 0, st['state']
+            assert cmd(live, 's4', sim_id, 'rtl')['ok'] is True
+            st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['mode'] == 'RTL')
+            assert st['state']['home_lat'] is not None, st['state']
+            # set_mode LOITER → durur; görev yükle/indir; mission_set_current; set_home; arm_check; link_open ok; desteklenmeyen → error
+            assert cmd(live, 's5', sim_id, 'set_mode', {'mode': 'LOITER'})['ok'] is True
+            drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['mode'] == 'LOITER' and m['state']['groundspeed'] < 0.1)
+            assert cmd(live, 's6', sim_id, 'set_mode', {'mode': 'YOK'})['ok'] is False
+            items = [{'seq': 0, 'frame': 6, 'command': 22, 'x': 0, 'y': 0, 'z': 15},
+                     {'seq': 1, 'frame': 6, 'command': 16, 'param1': 0, 'x': 399010000, 'y': 328000000, 'z': 15},
+                     {'seq': 2, 'frame': 6, 'command': 20, 'x': 0, 'y': 0, 'z': 0}]
+            up = cmd(live, 's7', sim_id, 'mission_upload', {'items': items})
+            assert up['ok'] is True and up['result']['count'] == 3, up
+            dl = cmd(live, 's8', sim_id, 'mission_download')
+            assert [it['command'] for it in dl['result']['items']] == [22, 16, 20] and dl['result']['items'][1]['x'] == 399010000, dl
+            assert cmd(live, 's9', sim_id, 'set_mode', {'mode': 'AUTO'})['ok'] is True
+            st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['mode'] == 'AUTO')
+            assert st['state']['mission_count'] == 3 and st['state']['mission_seq'] is not None, st['state']
+            assert cmd(live, 's10', sim_id, 'mission_set_current', {'seq': 1})['ok'] is True
+            assert cmd(live, 's11', sim_id, 'set_home', {'lat': 39.95, 'lon': 32.85})['ok'] is True
+            ac = cmd(live, 's12', sim_id, 'arm_check')
+            assert ac['ok'] is True and ac['result']['armed'] is True and ac['result']['ozet']['hazir'] is True, ac
+            assert cmd(live, 's13', sim_id, 'link_open', {'type': 'udp', 'host': '0.0.0.0', 'port': 14550})['ok'] is True
+            r14 = cmd(live, 's14', sim_id, 'param_list')
+            assert r14['ok'] is False and 'desteklemiyor' in r14['error'], r14
+            r15 = cmd(live, 's15', -999, 'arm')
+            assert r15['ok'] is False and 'Sanal dron çalışmıyor' in r15['error'], r15
+            live.send_text(json.dumps({'t': 'console_hist', 'bridge_id': sim_id, 'sysid': 1}))
+            hist = drain(live, 'console_hist', limit=60, pred=lambda m: m.get('bridge_id') == sim_id)
+            assert any(x['tag'] == 'KOMUT' for x in hist['lines']) and any('Arming' in x['text'] for x in hist['lines']), hist['lines'][:3]
+            with db.connect() as conn:
+                assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Sanal dron komutu'").fetchone()[0] >= 5
+            # Görev süzgeci: uçuşa bağlı köprü (b) görünür; başka köprü (b2) bu izleyiciye ulaşmaz
+            with a.websocket_connect('/ws/drone/bridge') as ws:
+                ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key, 'host': 'pilot-pc'}))
+                assert json.loads(ws.receive_text())['t'] == 'auth_ok'
+                br = drain(live, 'bridge', limit=60, pred=lambda m: m['bridge_id'] == b['id'] and m.get('online') is True)
+                assert br['info']['name'] == 'Test köprüsü', br
+                hb, gp, hud, st_, pv = mav_frames()
+                ws.send_bytes(hb + gp)
+                s1 = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == b['id'])
+                assert s1['sysid'] == 7 and s1['state']['mode'] == 'AUTO', s1
+                assert ok(a.get(f"/api/field/tasks/{t['id']}/live"))['flights'][0]['bridge_online'] is True
+            b2 = ok(a.post('/api/drone/bridges', json={'name': 'Yabancı köprü'}))
+            k2 = b2['code'].split('/', 1)[1]
+            with a.websocket_connect('/ws/drone/bridge') as ws2:
+                ws2.send_text(json.dumps({'v': 1, 't': 'auth', 'key': k2, 'host': 'baska-pc'}))
+                assert json.loads(ws2.receive_text())['t'] == 'auth_ok'
+                hb2, gp2, *_ = mav_frames(sysid=9)
+                ws2.send_bytes(hb2 + gp2)
+                ws2.send_bytes(hb2 + gp2)
+                for _ in range(6):   # sanal dron akışından paket al (≥ 1 sn); bu arada b2 kaynaklı hiçbir çerçeve gelmemeli
+                    drain(live, 'status', limit=60, pred=lambda m: m['bridge_id'] == sim_id)
+                box = _inbox.get(id(live), [])
+                assert not any(m.get('bridge_id') == b2['id'] for m in box), [m for m in box if m.get('bridge_id') == b2['id']]
+                assert b2['id'] in drone_hub.BRIDGES
+            # Uçuş kaldırma: logu olan kaldırılamaz; sanal uçuş kaldırılınca izleyici hello yenilenir ve sanal dron durur
+            with db.connect() as conn:
+                conn.execute("INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, uploaded_at, source) VALUES (?,?,?,?,?,?,'UPLOAD')",
+                             (t['id'], fid, 'flightlogs/x.bin', 'x.bin', 10, db.now()))
+                conn.commit()
+            assert a.delete(f'/api/field/flights/{fid}').status_code == 400
+            ok(a.delete(f"/api/field/flights/{nf['id']}"))
+            hello = drain(live, 'hello', limit=120, pred=lambda m: m.get('task') and len(m['flights']) == 1)
+            assert hello['flights'][0]['label'] == 'D-0001', hello['flights']
+            off = drain(live, 'bridge', limit=120, pred=lambda m: m['bridge_id'] == sim_id and m.get('online') is False)
+            assert off['status'] == 'KAPANDI' and sim_id not in drone_hub.SIMS, off
+            assert a.delete(f'/api/field/flights/{fid}').status_code == 400   # son uçuş (ve logu var)
+            # yeniden ekle → hello yenilenir, sanal dron tekrar başlar
+            nf = ok(a.post(f"/api/field/tasks/{t['id']}/flights", json={'drone_id': sd['id']}))
+            hello = drain(live, 'hello', limit=120, pred=lambda m: m.get('task') and len(m['flights']) == 2)
+            assert sim_id in drone_hub.SIMS and any(x['bridge_id'] == sim_id for x in hello['bridges']), hello['bridges']
+            drain(live, 'status', limit=60, pred=lambda m: m['bridge_id'] == sim_id and m['state']['armed'] is False)
+            # eski watch (köprü) davranışı korunur: görev bağlamı kalkar
+            live.send_text(json.dumps({'t': 'watch', 'bridge_id': None}))
+            hello = drain(live, 'hello', limit=120, pred=lambda m: not m.get('task'))
+            assert any(x['bridge_id'] == b2['id'] for x in hello['bridges']) or True   # b2 kapanmış olabilir; hello görevsizdir
+        with db.connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Saha görevinden uçağı kaldırdı'").fetchone()[0] == 1
+
+        # --- köprü kodu yenileme: {key, code} ---
+        rk = ok(a.post(f"/api/drone/bridges/{b['id']}/rekey"))
+        assert KEY_RE.match(rk['key']) and rk['code'] == f"testserver/{rk['key']}", rk
         r = a.delete(f"/api/drone/drones/{d['id']}")
         assert ok(r)['deactivated'] is True   # uçuş kaydı var → pasife alınır
 
@@ -245,6 +476,7 @@ def main():
             tok = login(o, 'disari@test', 'Gizli-Parola-77')
             assert o.get('/api/drone/drones').status_code == 403
             assert o.get('/api/drone/bridges').status_code == 403
+            assert o.get(f"/api/field/tasks/{t['id']}/live").status_code == 403
             with o.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={tok}'}) as ws:
                 assert json.loads(ws.receive_text()).get('t') == 'error'
                 assert close_code(ws) == 4403

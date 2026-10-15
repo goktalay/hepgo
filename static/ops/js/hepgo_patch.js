@@ -21,9 +21,16 @@
 //   dronGecmisAc        History -> HEPGO #/field/drones[/<id>]
 //   hepgoNav(hash)      parent.postMessage({t:'ops-nav', hash})
 //   hepgoTemaSenkron()  parent data-theme -> temaUygula
-//   hepgoMetinleriUygula()  HEPGO baslik/menu metinlerini yeniden yazar
+//   hepgoDil()          parent HEPGO dili -> "TR" | "EN" (applyLanguage)
+//   hepgoMetinleriUygula()  HEPGO baslik metinlerini yeniden yazar
 //   hepgoDronIdBul(sysid)   HEPGO_ENVANTER'den dron id (hepgo_ws.js
 //                           kendi surumunu tanimlarsa o kullanilir)
+//   hepgoYzSeriKonumla()    Baglanti Yoneticisi (#yzSeri) varsayilan konum
+//
+// FAZ 1 (Ekim 2026): GOKTUNGU ust bari (menubar) ve tam ekran dugmesi
+// index.html'den KALDIRILDI (kullanici karari 2); buradaki menubar ve
+// tam ekran yamalari da silindi. Tam ekran HEPGO'nun kendi dugmesiyle
+// (parent data-immersive -> body.immersive) yapilir; dil/tema parent'tan.
 // =================================================================
 (function () {
   "use strict";
@@ -59,17 +66,6 @@
   }
   window.hepgoNav = hepgoNav;
 
-  function el(etiket, sinif, nitelikler) {
-    var e = document.createElement(etiket);
-    if (sinif) e.className = sinif;
-    if (nitelikler) {
-      for (var k in nitelikler) {
-        if (Object.prototype.hasOwnProperty.call(nitelikler, k)) e.setAttribute(k, nitelikler[k]);
-      }
-    }
-    return e;
-  }
-
   // ---------------------------------------------------------------
   // 1. HEPGO_OZ (yetenek bayraklari) - pre yuklenmemisse varsayilanlar.
   //    Bayraklar hepgo_ws.js tarafindan hello.caps ile acilir; buradaki
@@ -101,7 +97,7 @@
   //      angajmanPopupAc     dronlar.js:4941 (dugme zaten budanir)
   //      ikonPrizmaMi        dronlar.js:866 (yoksa prizma=true -> ikon yok)
   //      elmasIkon           dronlar.js:902/1023, tema.js:24
-  //      i18nGetir           arayuz.js:384/388 tam ekran ipucu
+  //      i18nGetir           arayuz.js:384/388 (tam ekran dugmesi kaldirildi; stub zararsiz)
   //      oturum              rol bilgisi (hepgo_ws.js hello.me ile gunceller)
   // ---------------------------------------------------------------
   guvenli("emniyet-kemeri", function () {
@@ -469,12 +465,9 @@
   //    her dil uygulamasindan sonra yeniden yazilir.
   // ---------------------------------------------------------------
   var HEPGO_METIN = {
-    hepgoPanelSeri:     { TR: "DRONLAR / KÖPRÜLER", EN: "DRONES / BRIDGES" },
-    hepgoBagToolbar:    { TR: "KÖPRÜ",               EN: "BRIDGE" },
-    hepgoDronYonetimi:  { TR: "Dron Yönetimi",          EN: "Drone Management" },
-    hepgoMbEnvanter:    { TR: "Dron envanteri (HEPGO)",       EN: "Drone inventory (HEPGO)" },
-    hepgoMbRotalar:     { TR: "Rotalar (HEPGO)",              EN: "Routes (HEPGO)" },
-    hepgoMbKopruler:    { TR: "Dron köprüleri (HEPGO)", EN: "Drone bridges (HEPGO)" }
+    hepgoPanelSeri:     { TR: "GÖREV DRONLARI / KÖPRÜLER", EN: "MISSION DRONES / BRIDGES" },
+    hepgoBagToolbar:    { TR: "KÖPRÜ",                      EN: "BRIDGE" },
+    hepgoBtnBaglanti:   { TR: "Bağlantı yöneticisi (görevin dronları ve köprüleri)", EN: "Connection manager (mission drones and bridges)" }
   };
   function aktifDilAdi() {
     try { if (typeof aktifDil === "string" && (aktifDil === "TR" || aktifDil === "EN")) return aktifDil; } catch (e) {}
@@ -508,10 +501,14 @@
         e.textContent = hepgoMetin(hedefler[i].anahtar);
       }
     }
-    // Menubar'a eklenen HEPGO ogeleri (Bolum 9) - sozluk yoksa elle
+    // HEPGO'nun eklediği ögeler: data-hepgo-i18n (metin) / data-hepgo-i18n-title (ipucu)
     var ogeler = document.querySelectorAll("[data-hepgo-i18n]");
     for (var m = 0; m < ogeler.length; m++) {
       ogeler[m].textContent = hepgoMetin(ogeler[m].getAttribute("data-hepgo-i18n"));
+    }
+    var ipuclari = document.querySelectorAll("[data-hepgo-i18n-title]");
+    for (var n = 0; n < ipuclari.length; n++) {
+      ipuclari[n].setAttribute("title", hepgoMetin(ipuclari[n].getAttribute("data-hepgo-i18n-title")));
     }
   }
   window.hepgoMetinleriUygula = hepgoMetinleriUygula;
@@ -534,12 +531,19 @@
   });
 
   // ---------------------------------------------------------------
-  // 8. TEMA SENKRONU (tema.js:11 temaUygula; HEPGO prefs.js:15
-  //    documentElement.dataset.theme = 'dark' | nitelik yok)
-  //    Ayni koken: parent.document okunabilir. 'dark' -> 'koyu', aksi
-  //    'acik'. Parent'ta data-theme degisimi MutationObserver ile izlenir.
-  //    temaUygula stub eksikligiyle yarim kalirsa (tema.js:29/32)
-  //    data-tema niteligi (tema.js:42-43) burada ayrica garanti edilir.
+  // 8. TEMA + DIL SENKRONU (kullanici karari 3: Arayuz Ayarlari yok;
+  //    tema ve dil HEPGO'dan gelir)
+  //    Tema: tema.js:11 temaUygula; HEPGO prefs.js documentElement.
+  //    dataset.theme = 'dark' | nitelik yok. Ayni koken: parent.document
+  //    okunabilir. 'dark' -> 'koyu', aksi 'acik'. temaUygula stub
+  //    eksikligiyle yarim kalirsa (tema.js:29/32) data-tema niteligi
+  //    (tema.js:42-43) burada ayrica garanti edilir.
+  //    Dil: HEPGO i18n.js documentElement.lang = 'tr' | 'en' | 'de' | ...
+  //    (localStorage 'caymaz.lang'). GOKTUNGU yalniz TR/EN bilir:
+  //    'tr*' -> TR, diger her dil -> EN. applyLanguage(dil, true)
+  //    gcs_dil'e de yazar; i18n.js:9 bir sonraki acilista ayni dille
+  //    baslar (parent dili yine ustune uygulanir).
+  //    Parent'ta data-theme / lang degisimi tek MutationObserver ile izlenir.
   // ---------------------------------------------------------------
   function parentTema() {
     try {
@@ -547,6 +551,26 @@
       var de = window.parent.document.documentElement;
       return (de.getAttribute("data-theme") === "dark") ? "koyu" : "acik";
     } catch (e) { return null; }
+  }
+  function parentDil() {
+    try {
+      if (!parentVarMi()) return null;
+      var l = String(window.parent.document.documentElement.getAttribute("lang") || "").toLowerCase();
+      if (!l) { try { l = String(window.parent.localStorage.getItem("caymaz.lang") || "").toLowerCase(); } catch (e2) {} }
+      if (!l) return null;
+      return (l.indexOf("tr") === 0) ? "TR" : "EN";
+    } catch (e) { return null; }
+  }
+  function hepgoDil() {
+    var d = parentDil();
+    if (d) return d;
+    try { if (typeof aktifDil === "string" && (aktifDil === "TR" || aktifDil === "EN")) return aktifDil; } catch (e) {}
+    return "TR";
+  }
+  window.hepgoDil = hepgoDil;
+  function dilUygulaGuvenli(dil) {
+    if (dil !== "TR" && dil !== "EN") return;
+    try { if (typeof applyLanguage === "function") applyLanguage(dil, true); } catch (e) { uyar("applyLanguage", e); }
   }
   function temaUygulaGuvenli(tema) {
     if (tema !== "koyu" && tema !== "acik") return;
@@ -567,78 +591,64 @@
     return t;
   }
   window.hepgoTemaSenkron = hepgoTemaSenkron;
-  guvenli("tema-senkron", function () {
+  guvenli("tema-dil-senkron", function () {
     if (!parentVarMi()) return;
     hepgoTemaSenkron();
+    // Dil ilk kez hepgo_ws.js hepgoBaslat'ta uygulanir (applyLanguage(hepgoDil(), true)); burada yalniz degisim izlenir.
     var de = window.parent.document.documentElement;
-    var son = parentTema();
+    var sonTema = parentTema(), sonDil = parentDil();
     var obs = new MutationObserver(function () {
       var t = parentTema();
-      if (t && t !== son) { son = t; temaUygulaGuvenli(t); }
+      if (t && t !== sonTema) { sonTema = t; temaUygulaGuvenli(t); }
+      var d = parentDil();
+      if (d && d !== sonDil) { sonDil = d; dilUygulaGuvenli(d); }
     });
-    obs.observe(de, { attributes: true, attributeFilter: ["data-theme", "class"] });
+    obs.observe(de, { attributes: true, attributeFilter: ["data-theme", "class", "lang"] });
     // iframe kaldirilinca (HEPGO sayfa degisimi) parent'taki gozlemci sokulur; aksi halde closure iframe realm'ini (Cesium) sizdirir
     window.addEventListener("pagehide", function () { try { obs.disconnect(); } catch (e) {} }, { once: true });
   });
 
   // ---------------------------------------------------------------
-  // 9. MENUBAR: HEPGO baglantilari (menubar.js IIFE yuklenmis; yeni
-  //    ogeler kendi tiklama dinleyicisini tasir, menuyu window.menubarKapat
-  //    (menubar.js:21) ile kapatir). index.html:84-93 #mbDronlar flyout'u
-  //    (.mb-alt-menu) icine: Dron envanteri / Rotalar / Dron kopruleri;
-  //    #menubar basina '< Dron Yonetimi' ust duzey girisi (dropdown'suz
-  //    .mb-item; tiki dogrudan HEPGO'ya gider).
+  // 9. BAGLANTI YONETICISI DUGMESI (#btnBaglantiPanel, sol harita arac
+  //    grubu). Menubar kaldirildigi icin #yzSeri'yi (gorevin dronlari ve
+  //    koprulari) acip kapatan tek giris noktasi budur. Acma arayuz.js:69
+  //    window.yuzenPanelAc ile (kayitli konum/boyut geri yuklenir;
+  //    pencereKonumUygula). Kayitli konum yoksa arayuz.js:21-28 paneli
+  //    ekran ust-ortasina koyar (tb-btn yok); HEPGO varsayilani SAG UST
+  //    kosedir (GOKTUNGU'da dron kartlari sag paneldeydi; sol arac grubu
+  //    ve Harita Ayarlari popup'iyla cakismaz). hepgo_ws.js ilk hello'da
+  //    paneli acar ve ayni konum islevini (hepgoYzSeriKonumla) cagirir.
+  //    Dugmenin .acik durumu panelin class degisimi izlenerek tutulur.
   // ---------------------------------------------------------------
-  guvenli("menubar", function () {
-    var menubar = document.getElementById("menubar");
-    if (!menubar) return;
-
-    function kapat() {
-      try { if (typeof window.menubarKapat === "function") window.menubarKapat(); } catch (e) {}
+  guvenli("baglanti-dugmesi", function () {
+    var btn = document.getElementById("btnBaglantiPanel");
+    var panel = document.getElementById("yzSeri");
+    if (!panel) return;
+    function acikMi() { return !panel.classList.contains("yuzen-gizli"); }
+    function konumla() {
+      // popup_tasima.js pencereKonumUygula kayitli konumu uyguladiysa (dataset.tasindi="1") dokunulmaz
+      if (panel.dataset.tasindi === "1") return;
+      panel.style.transform = "";
+      panel.style.left = "auto";
+      panel.style.right = "12px";
+      panel.style.top = "12px";
     }
-    function oge(id, ikon, anahtar, hash) {
-      var o = el("div", "mb-oge", { id: id });
-      var i = el("i", "fa-solid " + ikon);
-      var sp = el("span", null, { "data-hepgo-i18n": anahtar });
-      if (sozlukEklendi) sp.setAttribute("data-i18n", anahtar);
-      sp.textContent = hepgoMetin(anahtar);
-      o.appendChild(i); o.appendChild(sp);
-      o.addEventListener("click", function (e) {
-        e.stopPropagation();
-        kapat();
-        hepgoNav(hash);
-      });
-      return o;
+    window.hepgoYzSeriKonumla = konumla;
+    function ac() {
+      if (typeof window.yuzenPanelAc === "function") window.yuzenPanelAc("yzSeri");
+      else panel.classList.remove("yuzen-gizli");
+      konumla();
     }
-
-    // Ust duzey '< Dron Yonetimi' girisi (en basta)
-    if (!document.getElementById("mbHepgoGeri")) {
-      var item = el("div", "mb-item", { id: "mbHepgoGeri" });
-      var etiket = el("span", "mb-etiket", { title: "HEPGO Dron Yönetimi" });
-      etiket.appendChild(document.createTextNode("◀ "));
-      var sp = el("span", null, { "data-hepgo-i18n": "hepgoDronYonetimi" });
-      if (sozlukEklendi) sp.setAttribute("data-i18n", "hepgoDronYonetimi");
-      sp.textContent = hepgoMetin("hepgoDronYonetimi");
-      etiket.appendChild(sp);
-      item.appendChild(etiket);
-      etiket.addEventListener("click", function (e) {
-        e.stopPropagation();
-        kapat();
-        hepgoNav("#/field/drones");
-      });
-      menubar.insertBefore(item, menubar.firstChild);
-    }
-
-    // Dronlar flyout'una HEPGO sayfalari
-    var hedef = menubar.querySelector("#mbDronlar .mb-alt-menu") ||
-                menubar.querySelector("#mbCihazlar .mb-dropdown") ||
-                menubar.querySelector(".mb-item .mb-dropdown");
-    if (hedef && !document.getElementById("mbHepgoEnvanter")) {
-      hedef.appendChild(el("div", "mb-ayrac"));
-      hedef.appendChild(oge("mbHepgoEnvanter", "fa-list", "hepgoMbEnvanter", "#/field/drones"));
-      hedef.appendChild(oge("mbHepgoRotalar", "fa-route", "hepgoMbRotalar", "#/field/routes"));
-      hedef.appendChild(oge("mbHepgoKopruler", "fa-diagram-project", "hepgoMbKopruler", "#/field/bridges"));
-    }
+    function kapat() { panel.classList.add("yuzen-gizli"); }
+    if (!btn) return;
+    btn.setAttribute("data-hepgo-i18n-title", "hepgoBtnBaglanti");
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (acikMi()) kapat(); else ac();
+    });
+    var obs = new MutationObserver(function () { btn.classList.toggle("acik", acikMi()); });
+    obs.observe(panel, { attributes: true, attributeFilter: ["class"] });
+    btn.classList.toggle("acik", acikMi());
   });
 
   // Statik basliklari simdi uygula (applyLanguage henuz cagrilmadi;
@@ -646,64 +656,25 @@
   guvenli("metinler", hepgoMetinleriUygula);
 
   // ---------------------------------------------------------------
-  // 10. TAM EKRAN (arayuz.js:370-415 #btnTamEkran)
-  //     arayuz.js document.documentElement.requestFullscreen() cagirir;
-  //     iframe allow="fullscreen" oldugu icin (drone.js renderLive) bu
-  //     iframe'i tam ekran yapar ve HEPGO basligi gorunmez -> DOKUNULMAZ.
-  //     YEDEK: document.fullscreenEnabled false ise (izin/API yok) tik
-  //     yakalama asamasinda kesilir, parent'a {t:'ops-fullscreen', on}
-  //     gonderilir (drone.js:523-526 body.ops-full + parent fullscreen);
-  //     ikon/ipucu ve window.bolumTamEkranModu (bolum_popup.js:285)
-  //     yerelde guncellenir. Parent ESC ile ciktiysa fullscreenchange
-  //     ile geri senkronlanir.
+  // 10. TAM EKRAN: GOKTUNGU #btnTamEkran KALDIRILDI (kullanici karari 2).
+  //     HEPGO'nun kendi tam ekran dugmesi (app.js fullscreenButton)
+  //     parent sayfadaki data-immersive ile ust basligi ve alt bari
+  //     gizler (body.immersive); iframe kalan alani kaplar. Parent tam
+  //     ekrana girip ciktiginda iframe yerlesimi degisir: Cesium canvas
+  //     boyutu tazelenir (harita.js viewer resize). parent.document
+  //     ayni koken; dinleyici pagehide'da sokulur.
   // ---------------------------------------------------------------
-  guvenli("tam-ekran", function () {
-    var btn = document.getElementById("btnTamEkran");
-    if (!btn) return;
-    var apiVar = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
-    if (apiVar || !parentVarMi()) return;   // yerli davranis yeterli / parent yok
-
-    var acik = false;
-    function ikonGuncelle() {
-      var i = btn.querySelector("i");
-      if (i) {
-        i.classList.toggle("fa-expand", !acik);
-        i.classList.toggle("fa-compress", acik);
-      }
-      var t = sozluk();
-      btn.title = acik ? (t.btnTamEkranKapat || "Tam Ekrandan Çık")
-                       : (t.ipTamEkran || t.btnTamEkran || "Tam Ekran");
-    }
-    function uygula(on, yalnizYerel) {
-      acik = !!on;
-      if (!yalnizYerel) parentGonder({ t: "ops-fullscreen", on: acik });
-      try {
-        if (typeof window.bolumTamEkranModu === "function") window.bolumTamEkranModu(acik);
-      } catch (e) { uyar("bolumTamEkranModu", e); }
-      ikonGuncelle();
+  guvenli("tam-ekran-resize", function () {
+    if (!parentVarMi()) return;
+    var fsFn = function () {
       try {
         var v = (typeof window.__haritaViewerAl === "function") ? window.__haritaViewerAl() : null;
-        if (v && typeof v.resize === "function") setTimeout(function () { v.resize(); }, 50);
+        if (!v && typeof viewer !== "undefined") v = viewer;
+        if (v && typeof v.resize === "function") setTimeout(function () { v.resize(); }, 60);
       } catch (e) {}
-    }
-    // Yakalama asamasi: arayuz.js'in hedef dinleyicisinden once calisir;
-    // stopPropagation ile requestFullscreen denemesi (reddedilir) engellenir.
-    document.addEventListener("click", function (e) {
-      var hedef = e.target;
-      if (!hedef || !(hedef === btn || btn.contains(hedef))) return;
-      e.stopPropagation();
-      e.preventDefault();
-      uygula(!acik);
-    }, true);
-    try {
-      var fsFn = function () {
-        var pf = window.parent.document.fullscreenElement;
-        if (!pf && acik) uygula(false, true);
-      };
-      window.parent.document.addEventListener("fullscreenchange", fsFn);
-      window.addEventListener("pagehide", function () { try { window.parent.document.removeEventListener("fullscreenchange", fsFn); } catch (e) {} }, { once: true });
-    } catch (e) {}
-    ikonGuncelle();
+    };
+    window.parent.document.addEventListener("fullscreenchange", fsFn);
+    window.addEventListener("pagehide", function () { try { window.parent.document.removeEventListener("fullscreenchange", fsFn); } catch (e) {} }, { once: true });
   });
 
   // ---------------------------------------------------------------

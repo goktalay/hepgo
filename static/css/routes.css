@@ -1,0 +1,76 @@
+/* Rotalar (Dron Yönetimi › Rotalar): solda 320 px dar sütun (Rota Merkezleri / Rotalar / Adımlar panelleri altlı üstlü),
+   sağda görünür alanı kaplayan Cesium harita. Yükseklik routes.js tarafından kaydırma kutusunun kalan alanına göre ayarlanır;
+   telefonda tek sütun. Tema renkleri app.css değişkenlerinden gelir (açık/koyu otomatik). */
+.rt-wrap { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; height: calc(100dvh - 200px); min-height: 480px; }
+.rt-side { display: grid; grid-template-rows: minmax(150px, 1fr) minmax(150px, 1fr) minmax(170px, 1.4fr); gap: 10px; min-height: 0; }
+.rt-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.rt-panel-head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.rt-panel-head h3 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-panel-head .spacer { flex: 1; }
+.rt-count { font-size: 11px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; line-height: 18px; flex: 0 0 auto; }
+.rt-count:empty { display: none; }
+.rt-search { margin: 6px 6px 0; height: 28px; font-size: 12px; flex: 0 0 auto; }
+.rt-list { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+.rt-row, .rt-step { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; font-size: 13px; }
+.rt-row:hover, .rt-step:hover { background: var(--surface-2); }
+.rt-row.on { border-color: var(--primary); background: var(--primary-soft); }
+.rt-step.hi { border-color: #e0b32a; background: rgba(255, 204, 51, .14); }
+.rt-row.off { opacity: .6; }
+.rt-row .grow, .rt-step .grow { flex: 1; min-width: 0; }
+.rt-row b, .rt-step b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.rt-row .small, .rt-step .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-ic, .rt-no { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; background: #0ea5e9; flex: 0 0 auto; }
+.rt-ic.all { background: var(--muted); }
+.rt-ic.r { background: #64748b; }
+.rt-ic.r.sel { background: #e0b32a; color: #1b1b1b; }
+.rt-acts { display: none; gap: 2px; flex: 0 0 auto; align-items: center; }
+.rt-acts.on, .rt-row:hover .rt-acts, .rt-row.on .rt-acts, .rt-step:hover .rt-acts, .rt-step.hi .rt-acts { display: inline-flex; }
+.rt-ib { height: 24px; width: 24px; min-width: 24px; padding: 0; font-size: 12px; line-height: 1; }
+.rt-ib:disabled { opacity: .3; cursor: default; }
+.rt-empty { padding: 14px 10px; color: var(--muted); font-size: 12px; text-align: center; }
+.rt-foot { padding: 6px 12px; border-top: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+.rt-foot:empty { display: none; }
+
+/* Harita */
+.rt-map { position: relative; border-radius: var(--radius); overflow: hidden; background: #0b1220; min-height: 0; border: 1px solid var(--border); }
+.rt-map-holder { position: absolute; inset: 0; }
+.rt-map-holder .cesium-viewer-bottom { left: 8px; bottom: 4px; }
+.rt-map.editing .rt-map-holder canvas, .rt-map.picking .rt-map-holder canvas { cursor: crosshair; }
+.rt-map .rt-map-holder.over-pt canvas { cursor: grab; }
+.rt-map .rt-map-holder.dragging canvas { cursor: grabbing; }
+.rt-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #cbd5e1; text-align: center; padding: 20px; z-index: 1; background: rgba(11, 18, 32, .65); font-size: 14px; }
+.rt-msg.err { color: #fca5a5; }
+.rt-msg[hidden] { display: none; }
+.rt-tools { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; gap: 4px; align-items: center; background: rgba(11, 18, 32, .72); padding: 4px; border-radius: 999px; backdrop-filter: blur(4px); }
+.rt-tools:empty { display: none; }
+.rt-tools .btn { color: #e6e9ef; border-color: transparent; background: rgba(255, 255, 255, .08); border-radius: 999px; }
+.rt-tools .btn:hover { background: rgba(255, 255, 255, .16); }
+.rt-tools .btn.primary { background: var(--primary); color: #fff; }
+.rt-dirty { color: #ffcc33; font-size: 12px; font-weight: 600; padding: 0 8px; white-space: nowrap; }
+.rt-mapbtns { position: absolute; top: 10px; left: 10px; z-index: 3; display: flex; flex-direction: column; gap: 6px; }
+.rt-mapbtns .btn { width: 34px; padding: 0; background: rgba(11, 18, 32, .72); color: #e6e9ef; border-color: transparent; font-weight: 700; }
+.rt-mapbtns .btn:hover { background: rgba(11, 18, 32, .9); }
+.rt-badge { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(255, 204, 51, .94); color: #1b1b1b; font-weight: 700; font-size: 12px;
+  padding: 5px 14px; border-radius: 999px; white-space: nowrap; display: flex; gap: 10px; align-items: center; max-width: calc(100% - 40px); overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
+.rt-badge[hidden] { display: none; }
+.rt-badge .btn { height: 22px; padding: 0 8px; font-size: 11px; background: rgba(0, 0, 0, .12); border-color: transparent; color: #1b1b1b; }
+
+/* Nokta penceresi (harita üstünde, tıklanan noktanın yanında) */
+.rt-pop { position: absolute; z-index: 4; width: 300px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 10px 12px; }
+.rt-pop[hidden] { display: none; }
+.rt-pop .row { gap: 8px; }
+.rt-pop .row .field { flex: 1; min-width: 0; }
+.rt-pop .field { margin-bottom: 6px; }
+.rt-pop .field label { font-size: 11px; }
+.rt-pop .input { height: 30px; font-size: 13px; padding: 2px 8px; }
+.rt-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rt-pop-head .x-btn { margin-left: auto; }
+.rt-pop-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.rt-pop-foot .spacer { flex: 1; }
+
+@media (max-width: 960px) {
+  .rt-wrap { grid-template-columns: 1fr; height: auto !important; min-height: 0; }
+  .rt-side { grid-template-rows: none; grid-auto-rows: minmax(120px, 220px); }
+  .rt-map { height: 55vh; }
+  .rt-badge { bottom: 10px; font-size: 11px; }
+}

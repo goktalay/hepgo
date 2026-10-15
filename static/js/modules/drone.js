@@ -557,7 +557,11 @@ async function renderLive(view, ctx, m, head) {
     const btn = (label, fn, cls = '') => h('button', { class: `btn sm ${cls}`, type: 'button', onclick: fn }, label);
     const followBtn = btn('Takip et', () => { follow = !follow; followBtn.classList.toggle('primary', follow); if (follow && selected && ents.get(selected)) viewer.trackedEntity = ents.get(selected).entity; else viewer.trackedEntity = undefined; }, 'primary');
     clear(tools, followBtn, btn('Tümünü göster', () => { follow = false; followBtn.classList.remove('primary'); viewer.trackedEntity = undefined; viewer.zoomTo(viewer.entities).catch(() => {}); }));
-  }).catch(err => { clear(mapMsg, h('div', null, h('div', { class: 'alert err', style: { margin: 0 } }, err.message), h('div', { class: 'small', style: { marginTop: '8px', color: '#cbd5e1' } }, 'Harita olmadan da köprü/dron listesi ve anlık değerler çalışır.'))); });
+  }).catch(err => {
+    console.error('Canlı Uçuş haritası:', err);
+    if (!mapMsg.isConnected) mapBox.append(mapMsg);
+    clear(mapMsg, h('div', null, h('div', { class: 'alert err', style: { margin: 0 } }, err.message), h('div', { class: 'small', style: { marginTop: '8px', color: '#cbd5e1' } }, 'Harita olmadan da köprü/dron listesi ve anlık değerler çalışır.')));
+  });
   const trailMat = () => Cesium.Material.fromType('Color', { color: Cesium.Color.fromCssColorString('#ffcc33').withAlpha(0.6) });
   let trails = null;
   const placeOnMap = key => {

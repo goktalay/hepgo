@@ -1637,6 +1637,27 @@ CREATE TABLE IF NOT EXISTS drone_waypoints (
     UNIQUE (route_id, ord)
 );
 CREATE INDEX IF NOT EXISTS ix_drone_waypoints_route ON drone_waypoints(route_id, ord);
+-- GÖKTUNGU kalkış kontrol listesi kaydı (kalkis_kontrolleri): kayıt + takeoff tek sunucu işlemi; pilot ve zaman sunucuda damgalanır
+CREATE TABLE IF NOT EXISTS drone_takeoff_checks (
+    id                INTEGER PRIMARY KEY,
+    task_id           INTEGER REFERENCES field_tasks(id) ON DELETE SET NULL,
+    bridge_id         INTEGER REFERENCES drone_bridges(id) ON DELETE SET NULL,
+    drone_id          INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,   -- sanal dron
+    sysid             INTEGER NOT NULL,
+    user_id           INTEGER REFERENCES users(id),
+    pilot_name        TEXT,
+    vehicle_type      INTEGER,
+    vehicle_type_name TEXT,
+    alt_m             REAL,
+    item_count        INTEGER NOT NULL DEFAULT 0,
+    yes_count         INTEGER NOT NULL DEFAULT 0,
+    full_ok           INTEGER NOT NULL DEFAULT 0,
+    items             TEXT NOT NULL,                  -- JSON [{sira, anahtar, soru, grup, cevap, zorunlu, kaynak}]
+    takeoff_sent      INTEGER,                        -- akış sonucu: 1 iletildi / 0 iletilmedi / NULL sürüyor
+    takeoff_error     TEXT,
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_drone_takeoff_checks_task ON drone_takeoff_checks(task_id);
 -- Uçuş videoları (parça parça yüklenir; boyut sınırı yok)
 CREATE TABLE IF NOT EXISTS flight_videos (
     id          INTEGER PRIMARY KEY,

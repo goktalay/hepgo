@@ -22,7 +22,7 @@ from pathlib import Path
 
 APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
 VERSION = '1.0.0'
-CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force']
+CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force', 'mission_start']
 PING_S = 20
 CHUNK = 256 * 1024
 FATAL_CODES = {4400: 'Köprü kodu geçersiz ya da süresi dolmuş (yeni kod alın)',
@@ -267,6 +267,8 @@ class MavLink:
             return self._mission_upload(sysid, p.get('items') or [], p.get('cruise_speed'))
         if name == 'mission_download':
             return self._mission_download(sysid)
+        if name == 'mission_start':   # MAV_CMD_MISSION_START: AUTO'da yerdeki aracı göreve başlatır (sunucu GUIDED→ARM→AUTO sonrası gönderir)
+            return self._cmd_long(sysid, 300, (0, 0, 0, 0, 0, 0, 0), 6)
         if name == 'mission_set_current':
             tgt = self._tgt(sysid)
             self.m.mav.mission_set_current_send(tgt, self.target_comp, int(p['seq']) + 1)   # +1: 0. öğe ev konumu
@@ -309,6 +311,11 @@ class MavLink:
         if cruise_speed:
             seq_items.insert(1, {'frame': 2, 'command': 178, 'current': 0, 'autocontinue': 1, 'param1': 1, 'param2': float(cruise_speed),
                                  'param3': -1, 'param4': 0, 'x': 0, 'y': 0, 'z': 0.0})
+        # DO_JUMP (177) hedefi HEPGO öğe sırasıdır: başa eklenen ev (+ hız) öğeleri kadar kaydır
+        off = len(seq_items) - len(items)
+        for it in seq_items[off:]:
+            if int(it.get('command') or 0) == 177:
+                it['param1'] = float(it.get('param1') or 0) + off
         n = len(seq_items)
         w = self._waiter(['MISSION_REQUEST_INT', 'MISSION_REQUEST', 'MISSION_ACK'], lambda m: m.get_srcSystem() == tgt)
         try:

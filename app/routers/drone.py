@@ -536,12 +536,21 @@ def route_mission(rid: int, user=Depends(routes_user), conn=db.DB):
     r = get_route(rid, user, conn)
     cmd = {'waypoint': 16, 'loiter': 19, 'takeoff': 22, 'land': 21, 'rtl': 20}   # MAV_CMD_NAV_*: WAYPOINT, LOITER_TIME, TAKEOFF, LAND, RETURN_TO_LAUNCH
     items = []
-    for i, w in enumerate(r['waypoints']):
+    wps = r['waypoints']
+    # GÖKTUNGU rota mekanizması: rotanın İLK öğesi TAKEOFF'tur (irtifa = ilk noktanın irtifası, en az 2 m). "Rotayı başlat"
+    # ARM + AUTO yapar, kalkışı ArduPilot bu öğeyle kendisi yapar. Kullanıcı ilk noktayı zaten 'takeoff' yaptıysa eklenmez.
+    auto_takeoff = bool(wps) and wps[0]['action'] != 'takeoff'
+    if auto_takeoff:
+        a0 = wps[0]['alt'] if wps[0]['alt'] is not None else (r['cruise_alt'] or 100)
+        items.append({'seq': 0, 'frame': 6, 'command': 22, 'current': 1, 'autocontinue': 1, 'param1': 0.0, 'param2': 0.0, 'param3': 0.0,
+                      'param4': 0.0, 'x': 0, 'y': 0, 'z': float(max(2.0, a0)), 'mission_type': 0})
+    for w in wps:
+        i = len(items)
         alt = w['alt'] if w['alt'] is not None else (r['cruise_alt'] or 100)
         items.append({'seq': i, 'frame': 6, 'command': cmd[w['action']], 'current': 1 if i == 0 else 0, 'autocontinue': 1,
                       'param1': float(w['hold_s'] or 0), 'param2': 0.0, 'param3': 0.0, 'param4': 0.0,
                       'x': int(round(w['lat'] * 1e7)), 'y': int(round(w['lon'] * 1e7)), 'z': float(alt), 'mission_type': 0})
-    if r['kind'] == 'loop' and len(items) > 1:   # döngü: son noktadan ilk noktaya DO_JUMP (177) sonsuz tekrar
+    if r['kind'] == 'loop' and len(wps) > 1:   # döngü: son noktadan ilk ROTA noktasına (kalkış öğesine değil) DO_JUMP (177) sonsuz tekrar
         items.append({'seq': len(items), 'frame': 2, 'command': 177, 'current': 0, 'autocontinue': 1,
-                      'param1': 0.0, 'param2': -1.0, 'param3': 0.0, 'param4': 0.0, 'x': 0, 'y': 0, 'z': 0.0, 'mission_type': 0})
-    return {'route_id': rid, 'name': r['name'], 'items': items, 'cruise_speed': r['cruise_speed']}
+                      'param1': 1.0 if auto_takeoff else 0.0, 'param2': -1.0, 'param3': 0.0, 'param4': 0.0, 'x': 0, 'y': 0, 'z': 0.0, 'mission_type': 0})
+    return {'route_id': rid, 'name': r['name'], 'items': items, 'cruise_speed': r['cruise_speed'], 'auto_takeoff': auto_takeoff}

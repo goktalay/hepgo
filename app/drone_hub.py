@@ -47,7 +47,18 @@ VIEWER_QUEUE = 32         # izleyici kuyruğu (dolunca en eskisi atılır; param
 LOG_MAX = 2 * 1024 ** 3   # köprüden gelen .bin üst sınırı
 RATE_WINDOW, RATE_MAX = 60, 10
 CMD_TIMEOUT = 10
-CMD_TIMEOUTS = {'mission_upload': 60, 'mission_download': 60, 'log_list': 60}   # öğe başına MISSION_REQUEST_INT turu (telsizde 0,2–1 sn) → uzun rotalar
+CMD_TIMEOUTS = {'mission_upload': 60, 'mission_download': 60, 'log_list': 60}
+# Sunucu-içi bileşik komutlar (GÖKTUNGU dron.py / gorev.py akışı birebir; köprüye v1 set_mode/arm/takeoff olarak gider):
+#  takeoff       → set_mode GUIDED → mod teyidi (4 sn) → (ARM değilse) ARM (zorlamasız) → ARM teyidi (6 sn) → NAV_TAKEOFF.
+#                  Pilot ayrıca ARM etmez. Akış arka planda yürür; yanıt akış başlayınca döner, adımlar dron konsoluna düşer.
+#  mission_start → (ARM değilse) GUIDED → 0,3 sn → ARM → teyit (5 sn) → AUTO → 0,3 sn → MISSION_START (köprü 'mission_start'
+#                  yeteneği bildirdiyse). NAV_TAKEOFF gönderilmez: rotanın ilk öğesi TAKEOFF'tur (routes/{id}/mission ekler).
+TAKEOFF_ALT = 10.0
+GUIDED_CONFIRM_S = 4.0
+ARM_CONFIRM_S = 6.0
+MISSION_ARM_CONFIRM_S = 5.0
+SEQ_CMDS = {'takeoff', 'mission_start'}
+_FLOWS = {}         # (bridge_id, sysid) → sürmekte olan kalkış/görev akışı   # öğe başına MISSION_REQUEST_INT turu (telsizde 0,2–1 sn) → uzun rotalar
 CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
              # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
              'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change',
@@ -55,8 +66,10 @@ CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mis
              'link_open', 'link_close',
              # protokol v1.2 taslağı (docs/dron-kopru-protokolu.md; caps 'bakim' / 'log' bildiren köprüler)
              'kalib_gyro', 'kalib_baro', 'kalib_ivme', 'kalib_level', 'kalib_esc', 'kalib_radyo',
-             'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase'}
-BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link'}   # köprünün bildirebileceği yetenekler
+             'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase',
+             # sunucu-içi bileşik komut (bkz. SEQ_CMDS); köprü 'mission_start' yeteneği bildirirse MAV_CMD_MISSION_START olarak da gider
+             'mission_start'}
+BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim', 'link', 'mission_start'}   # köprünün bildirebileceği yetenekler
 OPEN_TASK = ('BASLANGIC', 'GOREVDE')   # sanal dron yalnız açık görevde uçar
 SIM_IDLE = 600                          # izleyici kalmayınca sanal dronun durma süresi (sn)
 
@@ -1301,9 +1314,191 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
             else:
                 db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
             conn.commit()
+    params = dict(params or {})
+    if name in SEQ_CMDS:
+        return await _start_sequence(user, b, sim, sysid, name, params, viewer_ws, audit)
     await _db(audit)
-    ptxt = json.dumps(params or {}, ensure_ascii=False)[:160]
+    ptxt = json.dumps(params, ensure_ascii=False)[:160]
     console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
+    return await _dispatch(b, sim, sysid, name, params, viewer_ws, rid)
+
+
+def _flow_key(b, sysid):
+    return (b.id, int(sysid))
+
+
+def _alive(b):
+    return _bridge_or_sim(b.id) is b
+
+
+async def _wait_for(pred, timeout, step=0.15):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if pred():
+            return True
+        await asyncio.sleep(step)
+    return pred()
+
+
+async def _start_sequence(user, b, sim, sysid, name, params, viewer_ws, audit):
+    st = b.drones.get(int(sysid))
+    key = _flow_key(b, sysid)
+    who = user.get('full_name') or user.get('username') or ''
+    if name == 'takeoff':
+        try:
+            hedef = float(params.get('alt_rel_m') or TAKEOFF_ALT)
+        except (TypeError, ValueError):
+            hedef = TAKEOFF_ALT
+        hedef = min(500.0, max(1.0, hedef))
+        checklist = params.get('kontrol')
+        kontrol_id = None
+        if checklist is not None:
+            # GÖKTUNGU kalkis_kontrol: kayıt ve takeoff aynı işlem; kayıt yazılamazsa takeoff GÖNDERİLMEZ.
+            # Tarih/saat ve pilot kimliği istemciden alınmaz, sunucuda damgalanır.
+            viewer = VIEWERS.get(viewer_ws) if viewer_ws is not None else None
+            task_id = getattr(b, 'task_id', None) if sim else (viewer.task_id if viewer else None)
+            kontrol_id = await _db(_save_takeoff_check, user, b, sim, sysid, task_id, hedef, checklist)
+        if key in _FLOWS:
+            console_line(b, sysid, 'KOMUT', 'Kalkış hazırlık akışı zaten sürüyor; tekrar komut gönderilmedi.', 'uyari')
+            if kontrol_id:
+                await _db(_mark_takeoff_check, kontrol_id, False, 'Kalkış hazırlık akışı zaten sürüyordu')
+            return {'ok': False, 'error': 'Kalkış hazırlık akışı zaten sürüyor; tekrar komut gönderilmedi.'}
+        if st is None:
+            if kontrol_id:
+                await _db(_mark_takeoff_check, kontrol_id, False, 'Telemetri bağlantısı yok')
+            return {'ok': False, 'error': 'Telemetri bağlantısı yok; kalkış komutu gönderilemedi'}
+        await _db(audit)
+        console_line(b, sysid, 'KOMUT', f"takeoff {hedef:.0f} m ← {who}".strip(), 'bilgi')
+        if kontrol_id:
+            console_line(b, sysid, 'KOMUT', f'Kontrol listesi onaylandı (kayıt #{kontrol_id}), takeoff {hedef:.0f} m', 'bilgi')
+        _FLOWS[key] = asyncio.get_running_loop().create_task(_takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws))
+        return {'ok': True, 'result': {'kontrol_id': kontrol_id}}
+    # mission_start (rota başlat): yanıt akış bitince döner (istemci görev aşamasını buna göre günceller)
+    if key in _FLOWS:
+        return {'ok': False, 'error': 'Bu dron için kalkış/görev akışı zaten sürüyor'}
+    if st is None:
+        return {'ok': False, 'error': 'Bağlantı yok'}
+    await _db(audit)
+    console_line(b, sysid, 'KOMUT', f"mission_start ← {who}".strip(), 'bilgi')
+    task = asyncio.get_running_loop().create_task(_mission_flow(b, sim, sysid, params, viewer_ws))
+    _FLOWS[key] = task
+    return await task
+
+
+def _save_takeoff_check(user, b, sim, sysid, task_id, hedef, items):
+    if not isinstance(items, list) or not items:
+        raise RuntimeError('Eksik istek (sysid veya madde listesi yok)')
+    rows = []
+    for i, m in enumerate(items[:80]):
+        if not isinstance(m, dict):
+            continue
+        rows.append({'sira': int(m.get('sira', i) or 0), 'anahtar': str(m.get('anahtar') or '')[:60], 'soru': str(m.get('soru') or '')[:300],
+                     'grup': str(m.get('grup') or '')[:60], 'cevap': m.get('cevap') is True,
+                     'zorunlu': m.get('zorunlu') is not False, 'kaynak': str(m.get('kaynak') or '')[:60]})
+    zorunlu = [r for r in rows if r['zorunlu']]
+    if not zorunlu:
+        raise RuntimeError('Kontrol listesi boş')
+    eksik = sum(1 for r in zorunlu if not r['cevap'])
+    if eksik:
+        raise RuntimeError(f'{eksik} zorunlu madde onaylanmadı; kalkış reddedildi')
+    st = b.drones.get(int(sysid))
+    d = st.d if st else {}
+    try:
+        with db.connect() as conn:
+            cur = conn.execute(
+                'INSERT INTO drone_takeoff_checks (task_id, bridge_id, drone_id, sysid, user_id, pilot_name, vehicle_type, vehicle_type_name, '
+                'alt_m, item_count, yes_count, full_ok, items, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (task_id, None if sim else b.id, b.drone_id if sim else None, int(sysid), user['id'], user.get('full_name') or user.get('username'),
+                 d.get('type'), d.get('type_name'), float(hedef), len(rows), sum(1 for r in rows if r['cevap']),
+                 1 if all(r['cevap'] for r in rows) else 0, json.dumps(rows, ensure_ascii=False), db.now()))
+            kid = cur.lastrowid
+            db.audit(conn, user['id'], 'Kalkış kontrol listesi', 'drone_takeoff_check', kid,
+                     f"sysid {sysid} · görev {task_id or '—'} · {sum(1 for r in rows if r['cevap'])}/{len(rows)} EVET · {hedef:.0f} m")
+            conn.commit()
+            return kid
+    except Exception as e:   # noqa: BLE001
+        raise RuntimeError(f'Kalkış kaydı yazılamadı: {e}') from e
+
+
+def _mark_takeoff_check(kid, sent, error):
+    with db.connect() as conn:
+        conn.execute('UPDATE drone_takeoff_checks SET takeoff_sent = ?, takeoff_error = ? WHERE id = ?', (1 if sent else 0, error, kid))
+        conn.commit()
+
+
+async def _takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws):
+    """GÖKTUNGU dron.py _kalkis_islemi: tek deneme, teyit telemetriden (mod adı ve armed bayrağı)."""
+    d = b.drones[int(sysid)].d
+    sent, hata = False, None
+
+    def fail(msg):
+        nonlocal hata
+        hata = msg
+        console_line(b, sysid, 'KOMUT', msg, 'hata')
+    try:
+        console_line(b, sysid, 'KOMUT', 'GUIDED/ARM teyidi bekleniyor...', 'uyari')
+        r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'GUIDED'}, viewer_ws)
+        if not r['ok'] or not await _wait_for(lambda: str(d.get('mode') or '').upper() == 'GUIDED', GUIDED_CONFIRM_S):
+            return fail('GUIDED modu teyit edilmedi; takeoff gönderilmedi.')
+        if not d.get('armed'):
+            r = await _dispatch(b, sim, sysid, 'arm', {}, viewer_ws)
+            if not r['ok'] or not await _wait_for(lambda: bool(d.get('armed')), ARM_CONFIRM_S):
+                return fail('ARM teyidi alınamadı; takeoff gönderilmedi. Pre-arm uyarılarını kontrol edin.')
+        if not _alive(b):
+            return fail('Takeoff öncesi MAVLink bağlantısı kesildi.')
+        r = await _dispatch(b, sim, sysid, 'takeoff', {'alt_rel_m': hedef}, viewer_ws)
+        if not r['ok']:
+            return fail(f"Kalkış komut hatası: {r.get('error') or 'reddedildi'}")
+        sent = True
+        console_line(b, sysid, 'KOMUT', f'TAKEOFF komutu iletildi: {hedef:.0f} m', 'basari')
+    except Exception as e:   # noqa: BLE001
+        fail(f'Kalkış komut hatası: {e}')
+    finally:
+        _FLOWS.pop(_flow_key(b, sysid), None)
+        if sim and _alive(b):
+            b._publish()
+        if kontrol_id:
+            try:
+                await _db(_mark_takeoff_check, kontrol_id, sent, hata)
+            except Exception:   # noqa: BLE001
+                pass
+
+
+async def _mission_flow(b, sim, sysid, params, viewer_ws):
+    """GÖKTUNGU gorev.py _gorevi_baslat: ARM değilse GUIDED → ARM → teyit; sonra AUTO → MISSION_START."""
+    d = b.drones[int(sysid)].d
+    try:
+        if not d.get('armed'):
+            r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'GUIDED'}, viewer_ws)
+            if not r['ok']:
+                return r
+            await asyncio.sleep(0.3)
+            r = await _dispatch(b, sim, sysid, 'arm', {}, viewer_ws)
+            if not r['ok'] or not await _wait_for(lambda: bool(d.get('armed')), MISSION_ARM_CONFIRM_S, 0.2):
+                msg = f'D{sysid} ARM teyidi alınamadı (pre-arm kontrolleri?). Görev başlatılamadı.'
+                console_line(b, sysid, 'KOMUT', msg, 'hata')
+                return {'ok': False, 'error': msg}
+        r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'AUTO'}, viewer_ws)
+        if not r['ok']:
+            return r
+        await asyncio.sleep(0.3)
+        if not sim and 'mission_start' in b.caps:
+            r = await _dispatch(b, sim, sysid, 'mission_start', {}, viewer_ws)
+            if not r['ok']:
+                return r
+        name = str(params.get('rota') or '').strip()
+        console_line(b, sysid, 'KOMUT', f"D{sysid} göreve gönderildi{': ' + repr(name) if name else ''}", 'basari')
+        return {'ok': True}
+    except Exception as e:   # noqa: BLE001
+        return {'ok': False, 'error': str(e)}
+    finally:
+        _FLOWS.pop(_flow_key(b, sysid), None)
+        if sim and _alive(b):
+            b._publish()
+
+
+async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
+    """Tek komutu köprüye (ya da sanal drona) gönderir, sonucu konsola yazar."""
     if sim:
         res = b.command(name, params)
         ok = bool(res.get('ok'))
@@ -1346,6 +1541,7 @@ async def ws_live(ws: WebSocket):
     v = Viewer(ws, user)
     VIEWERS[ws] = v
     sender = asyncio.create_task(_viewer_sender(v))
+    seq_tasks = set()   # arka planda süren bileşik komutlar (rota başlat)
     hello = lambda: json.dumps(hello_msg(v), ensure_ascii=False)   # noqa: E731
     v.put(hello())
     try:
@@ -1391,11 +1587,19 @@ async def ws_live(ws: WebSocket):
                 v.put(json.dumps({'t': 'console_hist', 'bridge_id': msg.get('bridge_id'), 'sysid': msg.get('sysid'), 'lines': list(st.console) if st else []}, ensure_ascii=False))
             elif t == 'cmd':
                 rid = str(msg.get('rid') or secrets.token_hex(8))
-                try:
-                    res = await send_command(user, msg.get('bridge_id'), int(msg.get('sysid') or 1), str(msg.get('name') or ''), msg.get('params') or {}, ws, rid)
-                    v.put(json.dumps({'t': 'res', 'rid': rid, **res}, ensure_ascii=False))
-                except Exception as e:   # noqa: BLE001
-                    v.put(json.dumps({'t': 'res', 'rid': rid, 'ok': False, 'error': str(e)}, ensure_ascii=False))
+
+                async def run_cmd(m=msg, rid=rid):
+                    try:
+                        res = await send_command(user, m.get('bridge_id'), int(m.get('sysid') or 1), str(m.get('name') or ''), m.get('params') or {}, ws, rid)
+                        v.put(json.dumps({'t': 'res', 'rid': rid, **res}, ensure_ascii=False))
+                    except Exception as e:   # noqa: BLE001
+                        v.put(json.dumps({'t': 'res', 'rid': rid, 'ok': False, 'error': str(e)}, ensure_ascii=False))
+                if str(msg.get('name') or '') in SEQ_CMDS:
+                    # bileşik komut (rota başlat) birkaç saniye sürer: izleyicinin diğer mesajlarını bekletmesin
+                    seq_tasks.add(asyncio.get_running_loop().create_task(run_cmd()))
+                    seq_tasks.difference_update({x for x in seq_tasks if x.done()})
+                else:
+                    await run_cmd()
     except (WebSocketDisconnect, Exception):   # noqa: BLE001
         pass
     finally:

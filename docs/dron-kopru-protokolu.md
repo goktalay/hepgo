@@ -71,7 +71,7 @@ ve eski kodu anında geçersiz kılar. `GET /bridges` satırları anahtarı/kodu
 
 ## v1.1 (isteğe bağlı; köprü `auth`/`pair` çerçevesinde `caps:[…]` bildirir, sunucu `hello.caps` ile tarayıcıya açar)
 
-Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link` (ayrıca yer tutucu `bakim`, `log` — v1.2).
+Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link`, `mission_start` (ayrıca yer tutucu `bakim`, `log` — v1.2).
 - cap `link` — köprünün drona yerel bağlantısını sunucudan açma/kapama (uçuşun Bağlantı ayarı; harekât ekranı Bağlantı Yöneticisi "Bağlan"/"Kes"):
   `link_open{type:'serial'|'tcp'|'udp', host?, port?, serial?, baud?, sysid?}` — serial → `serial` (port adı) + `baud`; tcp/udp → `host` + `port`.
   Köprü bağlantıyı kurar, MAVLink akışını başlatır ve `res` döner (`res.error`: açılamadı sebebi). `link_close` → bağlantıyı kapatır. Köprü
@@ -83,6 +83,23 @@ Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`
 - `arm{force:true}` — MAV_CMD_COMPONENT_ARM_DISARM param2=21196 (yalnız ArduPilot; PX4'te `res.error`).
 - `reboot` — MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1=1; yalnız disarmed, aksi hâlde `res.error='armed'`.
 - `mission_set_current{seq}` — MISSION_SET_CURRENT.
+- `mission_start` — MAV_CMD_MISSION_START (300), parametresiz. Sunucu bunu yalnız "rota başlat" akışının sonunda (GUIDED → ARM → AUTO) gönderir;
+  köprü bildirmezse sunucu AUTO ile yetinir.
+
+### Sunucu-içi kalkış ve rota başlatma akışı (GÖKTUNGU dron.py / gorev.py birebir; köprüye yeni komut gerekmez)
+Tarayıcının `cmd{name:'takeoff', params{alt_rel_m, kontrol?}}` isteği köprüye tek komut olarak GİTMEZ; hub şu adımları v1 komutlarıyla yürütür
+(teyit telemetriden: HEARTBEAT mod adı ve armed bayrağı; tek deneme, yeniden deneme yok):
+1. irtifa 1…500 m (yoksa 10). Aynı dron için akış sürüyorsa red: "Kalkış hazırlık akışı zaten sürüyor; tekrar komut gönderilmedi."
+2. `kontrol` (kalkış kontrol listesi maddeleri) varsa önce sunucuda `drone_takeoff_checks`'e yazılır; zorunlu maddelerin hepsi EVET değilse ya da
+   kayıt yazılamazsa takeoff GÖNDERİLMEZ. Pilot ve zaman sunucuda damgalanır. Yanıt bu noktada döner (`result.kontrol_id`); akış arka planda sürer.
+3. `set_mode{mode:'GUIDED'}` → mod 4 sn içinde GUIDED görünmezse "GUIDED modu teyit edilmedi; takeoff gönderilmedi."
+4. ARM değilse `arm` (zorlamasız) → 6 sn içinde armed görünmezse "ARM teyidi alınamadı; takeoff gönderilmedi. Pre-arm uyarılarını kontrol edin."
+5. `takeoff{alt_rel_m}` → "TAKEOFF komutu iletildi: N m". Her adım dron konsoluna düşer.
+`cmd{name:'mission_start'}` (rota başlat): ARM değilse GUIDED → 0,3 sn → `arm` → 5 sn armed teyidi; sonra `set_mode AUTO` → 0,3 sn →
+(köprü bildirdiyse) `mission_start`. NAV_TAKEOFF gönderilmez: `GET /api/drone/routes/{id}/mission` rotanın başına TAKEOFF öğesi ekler
+(irtifa ilk noktanınki, en az 2 m; ilk nokta zaten 'takeoff' ise eklenmez; yanıtta `auto_takeoff:true`). Yanıt akış bitince döner.
+Not: kod Copter merkezlidir (GÖKTUNGU'daki gibi); sabit kanatta GUIDED+NAV_TAKEOFF kalkış yapmaz — bilinen sınırlama.
+- Köprü `mission_upload`'da başa ev (ve hız) öğesi eklediği için `DO_JUMP` (177) `param1` hedefini aynı miktarda kaydırır.
 - `altitude_change{alt_rel_m}` — Copter GUIDED: SET_POSITION_TARGET_LOCAL_NED yalnız z (type_mask); Plane: MAV_CMD_DO_CHANGE_ALTITUDE (köprü HEARTBEAT.type'a göre seçer).
 
 ## v1.2 (TASLAK — GÖKTUNGU dron.py şemaları, adlar korunur ki dron_bakim.js / Log Yönetimi penceresi değişmeden çalışsın)

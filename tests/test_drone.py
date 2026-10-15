@@ -370,16 +370,33 @@ def main():
             assert st['sysid'] == 1 and s['armed'] is False and abs(s['lat'] - 39.9) < 1e-6 and abs(s['lon'] - 32.8) < 1e-6, s
             assert s['fix'] == 6 and s['sats'] == 12 and s['mode'] == 'STABILIZE' and s['type_name'] == 'Quadrotor' and s['batt_pct'] == 100, s
             assert s['ready']['hazir'] is True, s['ready']
-            # komutlar: ARM'sız kalkış reddedilir; arm → event; takeoff → irtifa artar (GUIDED); goto → hareket; rtl → RTL
-            r0 = cmd(live, 's0', sim_id, 'takeoff', {'alt_rel_m': 20})
-            assert r0['ok'] is False and 'ARM' in r0['error'], r0
-            assert cmd(live, 's1', sim_id, 'arm')['ok'] is True
+            # GÖKTUNGU kalkış: kontrol listesi sunucuda doğrulanır ve kaydedilir; takeoff pilotun ayrıca ARM etmesini istemez
+            # (hub: GUIDED → teyit → ARM → teyit → NAV_TAKEOFF, arka planda)
+            kk = lambda cevap, zorunlu=True: [{'anahtar': 'pervane_siki', 'soru': 'Pervaneler sıkı mı?', 'grup': 'fiziksel', 'cevap': cevap, 'zorunlu': zorunlu},   # noqa: E731
+                                              {'anahtar': 'alan_temiz', 'soru': 'Alan temiz mi?', 'grup': 'ortak', 'cevap': True, 'zorunlu': zorunlu}]
+            r = cmd(live, 'k0', sim_id, 'takeoff', {'alt_rel_m': 20, 'kontrol': []})
+            assert r['ok'] is False and 'Eksik istek' in r['error'], r
+            r = cmd(live, 'k1', sim_id, 'takeoff', {'alt_rel_m': 20, 'kontrol': kk(False)})
+            assert r['ok'] is False and r['error'] == '1 zorunlu madde onaylanmadı; kalkış reddedildi', r
+            r = cmd(live, 'k2', sim_id, 'takeoff', {'alt_rel_m': 20, 'kontrol': kk(False, zorunlu=False)})
+            assert r['ok'] is False and r['error'] == 'Kontrol listesi boş', r
+            r0 = cmd(live, 's0', sim_id, 'takeoff', {'alt_rel_m': 20, 'kontrol': kk(True)})
+            assert r0['ok'] is True and r0['result']['kontrol_id'], r0
             ev = drain(live, 'event', limit=60, pred=lambda m: m['bridge_id'] == sim_id and 'Arming' in m['text'])
             assert ev['sysid'] == 1 and ev['severity'] == 6, ev
-            assert cmd(live, 's1b', sim_id, 'arm')['ok'] is False                       # zaten ARM
-            assert cmd(live, 's2', sim_id, 'takeoff', {'alt_rel_m': 20})['ok'] is True
             st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['alt_rel'] > 0.5)
             assert st['state']['armed'] is True and st['state']['mode'] == 'GUIDED' and st['state']['climb'] > 0, st['state']
+            assert cmd(live, 's1b', sim_id, 'arm')['ok'] is False                       # zaten ARM
+            with db.connect() as conn:
+                kc = conn.execute('SELECT * FROM drone_takeoff_checks WHERE id = ?', (r0['result']['kontrol_id'],)).fetchone()
+            assert kc['task_id'] == t['id'] and kc['drone_id'] == sd['id'] and kc['sysid'] == 1 and kc['alt_m'] == 20 and kc['full_ok'] == 1, dict(kc)
+            assert kc['item_count'] == 2 and kc['yes_count'] == 2 and kc['takeoff_sent'] == 1 and kc['takeoff_error'] is None, dict(kc)
+            live.send_text(json.dumps({'t': 'console_hist', 'bridge_id': sim_id, 'sysid': 1}))
+            hist = drain(live, 'console_hist', limit=60, pred=lambda m: m.get('bridge_id') == sim_id)
+            texts = [x['text'] for x in hist['lines']]
+            assert 'GUIDED/ARM teyidi bekleniyor...' in texts and 'TAKEOFF komutu iletildi: 20 m' in texts, texts
+            assert any(x.startswith('Kontrol listesi onaylandı (kayıt #') for x in texts), texts
+            assert cmd(live, 's2', sim_id, 'takeoff', {'alt_rel_m': 25})['ok'] is True   # havada: ARM atlanır, yeni hedef
             assert cmd(live, 's2b', sim_id, 'disarm')['ok'] is False                    # havada disarm edilemez
             assert cmd(live, 's3', sim_id, 'goto', {'lat': 39.902, 'lon': 32.8, 'alt_rel_m': 20})['ok'] is True
             st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['groundspeed'] > 5)
@@ -398,7 +415,8 @@ def main():
             assert up['ok'] is True and up['result']['count'] == 3, up
             dl = cmd(live, 's8', sim_id, 'mission_download')
             assert [it['command'] for it in dl['result']['items']] == [22, 16, 20] and dl['result']['items'][1]['x'] == 399010000, dl
-            assert cmd(live, 's9', sim_id, 'set_mode', {'mode': 'AUTO'})['ok'] is True
+            ms = cmd(live, 's9', sim_id, 'mission_start', {'rota': 'Test'})   # havada ARM: doğrudan AUTO
+            assert ms['ok'] is True, ms
             st = drain(live, 'status', limit=80, pred=lambda m: m['bridge_id'] == sim_id and m['state']['mode'] == 'AUTO')
             assert st['state']['mission_count'] == 3 and st['state']['mission_seq'] is not None, st['state']
             assert cmd(live, 's10', sim_id, 'mission_set_current', {'seq': 1})['ok'] is True
@@ -490,6 +508,18 @@ def main():
             with p.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={tok}'}) as ws:
                 hello = json.loads(ws.receive_text())
                 assert hello['t'] == 'hello', hello
+
+        # --- rota → MISSION: başa otomatik TAKEOFF (ilk noktanın irtifası, en az 2 m); döngü DO_JUMP ilk rota noktasına ---
+        rt = ok(a.post('/api/drone/routes', json={'name': 'Döngü rota', 'kind': 'loop', 'cruise_alt': 40,
+                                                  'waypoints': [{'lat': 39.9, 'lon': 32.8, 'alt': 1}, {'lat': 39.91, 'lon': 32.81}]}))
+        mi = ok(a.get(f"/api/drone/routes/{rt['id']}/mission"))
+        assert mi['auto_takeoff'] is True and [x['command'] for x in mi['items']] == [22, 16, 16, 177], mi
+        assert mi['items'][0]['z'] == 2.0 and mi['items'][0]['current'] == 1 and mi['items'][1]['current'] == 0, mi['items'][:2]
+        assert [x['seq'] for x in mi['items']] == [0, 1, 2, 3] and mi['items'][3]['param1'] == 1.0 and mi['items'][2]['z'] == 40, mi['items']
+        rt2 = ok(a.post('/api/drone/routes', json={'name': 'Kalkışlı rota', 'waypoints': [{'lat': 39.9, 'lon': 32.8, 'alt': 15, 'action': 'takeoff'},
+                                                                                         {'lat': 39.91, 'lon': 32.81, 'alt': 15}]}))
+        mi2 = ok(a.get(f"/api/drone/routes/{rt2['id']}/mission"))
+        assert mi2['auto_takeoff'] is False and [x['command'] for x in mi2['items']] == [22, 16], mi2
 
         # --- yeniden başlama: açık oturumlar KESILDI ---
         with db.connect() as conn:

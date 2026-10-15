@@ -109,13 +109,23 @@ def main():
                 res = wait(lambda m: m['t'] == 'res' and m['rid'] == rid, timeout)
                 print(f'  {name}: ok={res["ok"]} {json.dumps(res.get("result") or res.get("error"), ensure_ascii=False)[:120]}')
                 return res
+            def until(pred, timeout=15):
+                end = time.time() + timeout
+                while time.time() < end and not pred():
+                    time.sleep(0.05)
+                return pred()
+            # GÖKTUNGU kalkış akışı (sunucu): DISARM'dayken takeoff → GUIDED → teyit → ARM → teyit → NAV_TAKEOFF (arka planda)
+            assert cmd('takeoff', {'alt_rel_m': 40})['ok']
+            assert until(lambda: 22 in drone.cmds), drone.cmds
+            assert drone.armed and drone.mode == 4 and drone.cmds.index(176) < drone.cmds.index(400) < drone.cmds.index(22), drone.cmds
             assert cmd('arm')['ok'] and drone.armed
-            assert cmd('set_mode', {'mode': 'GUIDED'})['ok'] and drone.mode == 4
-            assert cmd('takeoff', {'alt_rel_m': 40})['ok'] and 22 in drone.cmds
             items = [{'seq': i, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0,
                       'x': 399000000 + i * 1000, 'y': 328000000, 'z': 100.0, 'mission_type': 0} for i in range(25)]
             res = cmd('mission_upload', {'items': items, 'cruise_speed': 15}, 70)
             assert res['ok'] and drone.count == 27 and len(drone.mission) == 27, (drone.count, len(drone.mission))   # ev + hız + 25
+            # rota başlat: havada ARM → AUTO + MISSION_START (köprü 'mission_start' yeteneği)
+            assert 'mission_start' in caps
+            assert cmd('mission_start', {'rota': 'Test'})['ok'] and drone.mode == 3 and 300 in drone.cmds, drone.cmds
             assert cmd('rtl')['ok'] and drone.mode == 6
             assert not cmd('param_set', {'name': 'XYZ', 'value': 1})['ok']   # tip bilinmiyor → type_unknown
             assert cmd('link_open', {'type': 'udp', 'host': '0.0.0.0', 'port': udp, 'sysid': 1})['ok']   # REPLACE

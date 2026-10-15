@@ -683,8 +683,8 @@
   // 11a. menubar.js:108-123 #mbDronGecmis -> dronGecmisAc() (Bolum 5)
   //      zaten HEPGO'ya yonlenir; index'te kalmissa 'Gecmis modulu
   //      yuklenemedi' toast'i cikmaz. Ek is gerekmez.
-  // 11b. dronlar.js:1981-1982 window.kalkisKontrolAc TANIMLANMAZ ->
-  //      onayIste(onayTakeoff) yedegi (kalkis_kontrol.js yuklenmez).
+  // 11b. kalkis_kontrol.js YUKLENIR: Takeoff -> kalkisKontrolAc (zorunlu kontrol
+  //      listesi) -> {tip:'kalkis_kontrol'} -> hepgo_ws.js -> sunucu tek islem.
   // 11c. #bagEklePerde / #btnYeni* (seri.js:1399-1434 guard'siz) DOM'da
   //      kalir, hepgo.css gizler; burada ek is yok.
   // 11d. Kart kamera satiri, radar, M50, EO kancalari: dronlar.js typeof
@@ -757,8 +757,10 @@
 (function hepgoFaz1b() {
   var SOL = 52, UST = 10, ARA = 2, ESIK = 18, sira = 0, cizZaman = null;
   function ustOfset() {
+    // Tam ekranda üst bant haritanın üstünde yüzer (üstten 20px): sütun bandın altından başlar
     var b = document.getElementById("hepgoUstBar");
-    return UST + (document.body.classList.contains("hepgo-tam") && b ? b.offsetHeight : 0);
+    if (document.body.classList.contains("hepgo-tam") && b && b.offsetHeight) return Math.round(b.getBoundingClientRect().bottom) + 8;
+    return UST;
   }
   function kartlar() { return Array.prototype.slice.call(document.querySelectorAll("body > .dron-kart.ayrik")); }
   function sutun() {
@@ -929,6 +931,8 @@
     var tam = false;
     try { tam = !!(window.parent && window.parent !== window && window.parent.document.fullscreenElement); } catch (e) {}
     document.body.classList.toggle("hepgo-tam", tam);
+    // GÖKTUNGU'nun kendi tam ekran kuralları (stil.css "TAM EKRAN MODU"): alt bar ve konsol harita üstünde yüzer
+    document.body.classList.toggle("tam-ekran-modu", tam);
     if (tam) {
       if (!meta) fetch("/api/meta", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (m) { meta = m; ustBarDoldur(); }).catch(function () {});
       ustBarDoldur(); saat();

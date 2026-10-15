@@ -671,7 +671,7 @@ function resIsle(m){
       if (!window.HEPGO_OZ.konsol_sunucu) yerelKonsolSatir(b.sysid, {ts: Date.now() / 1000, etiket: "KOMUT", metin: b.name + ": " + hata, sev: "hata"});
       hwKonsol("KOMUT", kim + " " + b.name + ": " + hata, "hata");
       // gorev_* hatalarını gorev.js kendi bildirimiyle gösterir (gorevKomutSonucIsle); burada ikinci toast üretilmez
-      if (!/^gorev_/.test(b.tip) && b.tip !== "set_home") hwToast(kim + " " + b.name + ": " + hata, "hata", "KOMUT");   // set_home kendi toast'ını verir
+      if (!/^gorev_/.test(b.tip) && b.tip !== "set_home" && b.tip !== "kalkis_kontrol") hwToast(kim + " " + b.name + ": " + hata, "hata", "KOMUT");   // set_home kendi toast'ını verir
     }
   }
   const t = (typeof D === "function") ? D() : {};
@@ -683,6 +683,11 @@ function resIsle(m){
       if (typeof window.dkArmCheckRaporGeldi === "function") try { window.dkArmCheckRaporGeldi(rapor); } catch (e) {}
       break;
     }
+    case "kalkis_kontrol":
+      if (typeof window.kalkisKontrolSonucIsle === "function")
+        try { window.kalkisKontrolSonucIsle({tip: "kalkis_kontrol_sonuc", sysid: b.sysid, basari: ok, hata: ok ? "" : hata,
+                                              kontrol_id: (m.result && m.result.kontrol_id) || null}); } catch (e) {}
+      break;
     case "set_home": {
       const mevcut = !(b.params && typeof b.params.lat === "number");
       const metin = ok
@@ -824,7 +829,7 @@ function cmdKopruye(bridgeId, sysid, g, name, params, tip, ekler){
   const rid = "h" + (++ridSayac) + "-" + Date.now().toString(36);
   const kayit = {tip: tip || name, sysid: g, gercek: Number(sysid), bridge_id: Number(bridgeId), name: name, params: params || {}, ekler: ekler || {}, zaman: Date.now()};
   // sunucu zaman aşımının (10 sn; mission_upload/mission_download/log_list 60 sn) üstünde: sunucunun hata metni önce gelsin
-  const zamanAsimiSn = (name === "mission_upload" || name === "mission_download" || name === "log_list") ? 65 : 12;
+  const zamanAsimiSn = (name === "mission_upload" || name === "mission_download" || name === "log_list" || name === "mission_start") ? 65 : 12;
   kayit.timer = setTimeout(() => resIsle({rid: rid, ok: false, error: hwT("yanıt alınamadı (" + zamanAsimiSn + " sn zaman aşımı)", "no response (" + zamanAsimiSn + " s timeout)")}), zamanAsimiSn * 1000);
   BEKLEYEN[rid] = kayit;
   gercekWs.send(JSON.stringify({t: "cmd", rid: rid, bridge_id: Number(bridgeId), sysid: Number(sysid), name: name, params: params || {}}));
@@ -967,7 +972,11 @@ async function gorevYukle(m){
   }
   const items = gorev.items || [];
   const wp = {}; let no = 0;
-  items.forEach(it => { if ([16, 19, 20, 21, 22].indexOf(Number(it.command)) >= 0){ no++; wp[String(it.seq)] = no; } });
+  // otomatik eklenen başlangıç TAKEOFF öğesi (gorev.auto_takeoff) kullanıcının rota noktası değildir (GÖKTUNGU: takeoff öğesi WP sayılmaz)
+  items.forEach(it => {
+    if (gorev.auto_takeoff && Number(it.seq) === 0 && Number(it.command) === 22) return;
+    if ([16, 19, 20, 21, 22].indexOf(Number(it.command)) >= 0){ no++; wp[String(it.seq)] = no; }
+  });
   Object.assign(GOREV[g], {toplam_oge: items.length, toplam_nokta: no || GOREV[g].toplam_nokta, wp_harita: wp});
   const rid = cmdGonder(g, "mission_upload", {items: items, cruise_speed: gorev.cruise_speed}, "gorev_yukle", {oncekiAsama: "hazir"});
   if (!rid){ GOREV[g].asama = "hata"; }
@@ -982,8 +991,10 @@ function gorevKomut(tip, m){
   let onceki, rid = null;
   switch (tip){
     case "gorev_baslat":
+      // GÖKTUNGU gorev.py _gorevi_baslat: sunucu ARM değilse GUIDED → ARM → teyit, sonra AUTO → MISSION_START yapar;
+      // kalkışı rotanın başındaki TAKEOFF öğesi yapar (routes/{id}/mission ekler)
       onceki = gorevAsamaGec(g, "gorevde");
-      rid = cmdGonder(g, "set_mode", {mode: "AUTO"}, tip, {oncekiAsama: onceki});
+      rid = cmdGonder(g, "mission_start", {rota: GOREV[g].rota_isim || ""}, tip, {oncekiAsama: onceki});
       break;
     case "gorev_durdur":
       onceki = gorevAsamaGec(g, "duraklatildi");
@@ -1201,6 +1212,14 @@ var CEVIR = {
   },
   gorev_yukle: (m) => { gorevYukle(m); },
   gorev_baslat: (m) => gorevKomut("gorev_baslat", m),
+  // GÖKTUNGU kalkis_kontrol.js: kayıt + takeoff TEK SUNUCU İŞLEMİ (hub önce drone_takeoff_checks'e yazar, yazamazsa takeoff göndermez;
+  // sonra GUIDED → ARM → teyit → NAV_TAKEOFF akışını arka planda yürütür). Yanıt → kalkisKontrolSonucIsle.
+  kalkis_kontrol: (m) => {
+    const g = Number(m.sysid);
+    const rid = cmdGonder(g, "takeoff", {alt_rel_m: Number(m.irtifa) || 10, kontrol: Array.isArray(m.maddeler) ? m.maddeler : []}, "kalkis_kontrol");
+    if (!rid && typeof window.kalkisKontrolSonucIsle === "function")
+      window.kalkisKontrolSonucIsle({tip: "kalkis_kontrol_sonuc", sysid: g, basari: false, hata: hwT("Sunucu bağlantısı yok", "No server connection")});
+  },
   gorev_durdur: (m) => gorevKomut("gorev_durdur", m),
   gorev_devam: (m) => gorevKomut("gorev_devam", m),
   gorev_surdur: (m) => gorevKomut("gorev_surdur", m),
@@ -1256,7 +1275,7 @@ var CEVIR = {
 // Kapsam dışı tipler: sessizce yutulur (düğmeleri hepgo.css/hepgo_patch.js gizler)
 var YUT_LISTESI = new Set(["portlar", "baglanti_sil", "baglanti_ekle", "baglanti_guncelle", "kopru_liste", "sitl_indir", "kopruler_liste",
   "log_listesi", "tlog_listesi", "log_indir", "log_indir_iptal", "tlog_sil", "manuel_durum", "manuel_anahtar", "manuel_eksen",
-  "takip_baslat", "takip_iptal", "kalkis_kontrol", "dron_gecmis_liste", "ucus_oku", "ucus_sil", "goruntu_kamera_kaynaklari",
+  "takip_baslat", "takip_iptal", "dron_gecmis_liste", "ucus_oku", "ucus_sil", "goruntu_kamera_kaynaklari",
   "goruntu_kamera_dron_bagla", "goruntu_son_kareler", "log_replay_hazirla", "makro_liste", "kalib_mesajlari", "motor_test", "motor_test_dur"]);
 function YUT(m){
   if (!YUT_LISTESI.has(m.tip) && !/^(log_|makro_|kopru|kalib|ilk_ayar|voltaj_|ivme_|joystick_|goruntu_|istasyon2|ai_|kayit_|replay_|takipci_|filtre_|tile_)/.test(String(m.tip)))

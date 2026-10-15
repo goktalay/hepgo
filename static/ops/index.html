@@ -805,7 +805,8 @@
      - js/hepgo_stub.js EN BAŞTA: Cesium.Ion.defaultAccessToken='' ve pakette olmayan modüllerin (radar_gorsel,
        prizma_ikon, angajman, surum, kullanici) guard'sız okunan globalleri.
      - jquery / flightindicators / pakette OLMAYAN 64 dosya YÜKLENMEZ (paketteki JS'lerde kullanım yok).
-     - kalkis_kontrol.js, failsafe_kalib.js, dron_bakim.js, dron_yakinlik.js kopyalandı ama BURADA YÜKLENMEZ
+     - kalkis_kontrol.js YÜKLENİR (GÖKTUNGU sırası: arm_check → kalkis_kontrol; kayıt + takeoff sunucuda tek işlem).
+     - failsafe_kalib.js, dron_bakim.js, dron_yakinlik.js kopyalandı ama BURADA YÜKLENMEZ
        (sunucu param/komut desteği gelince hepgo_ws.js HEPGO_OZ bayraklarına göre dinamik yükleyebilir).
      - log_replay, gecmis, kayitli_dronlar, makrolar, joystick_ayar, kopru_kimlik, kopruler_panel, ws.js: kapsam dışı.
      - kayit.js, filtreler.js, pencere_dok.js ASLA eklenmez (guard'sız DOM erişimiyle çöker).
@@ -832,6 +833,7 @@
 <script src="js/dron_ekran_disi.js"></script>
 <script src="js/home_ikon.js"></script>
 <script src="js/arm_check.js"></script>
+<script src="js/kalkis_kontrol.js"></script>
 <script src="js/seri.js"></script>
 <script src="js/harita_hover.js"></script>
 <script src="js/harita_cevrimici.js"></script>

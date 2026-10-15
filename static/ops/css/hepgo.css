@@ -307,3 +307,32 @@ body.hepgo-tam #hepgoUstBar { display: flex; }
 #hepgoUstSaat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-variant-numeric: tabular-nums; }
 #hepgoUstSaat b { font-size: 18px; font-family: ui-monospace, Consolas, monospace; }
 #hepgoUstSaat span { font-size: 11px; opacity: .7; }
+
+/* ---- HEPGO tam ekranı: GÖKTUNGU "TAM EKRAN MODU" (stil.css) deseni ----
+   Üst bant ve alt bar haritanın üstünde, kenarlardan 20px içeride, %80 genişlikte yüzer;
+   silindir (kapsül) biçimli ve hafif şeffaf. Konsol paneli alt barın hemen üstünde yüzer. */
+body.hepgo-tam #hepgoUstBar {
+  position: absolute; top: 20px; left: 10%; width: 80%; box-sizing: border-box;
+  padding: 6px 26px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(11,14,17,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0,0,0,.35);
+}
+:root[data-tema="acik"] body.hepgo-tam #hepgoUstBar { background: rgba(239,243,247,.70); border-color: rgba(0,0,0,.12); }
+body.hepgo-tam #hepgoUstLogo { height: 30px; }
+body.tam-ekran-modu #altBar {
+  border-radius: 999px; padding: 0 22px; z-index: 2550;
+  background: rgba(11,14,17,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(255,255,255,.14);
+}
+:root[data-tema="acik"] body.tam-ekran-modu #altBar { background: rgba(239,243,247,.70); border-color: rgba(0,0,0,.12); }
+body.tam-ekran-modu #altOrtaPanel {
+  bottom: 52px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+  background: rgba(10,14,18,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0,0,0,.35);
+}
+body.tam-ekran-modu #altOrtaBaslik { background: rgba(11,14,17,.55); }
+body.tam-ekran-modu #konsolYari { background: rgba(0,0,0,.55); }
+/* Görev rozeti tam ekranda gereksiz: görev bilgisi üst bantta */
+body.hepgo-tam #hepgoGorevRozet { display: none !important; }
+/* Bildirimler tam ekranda yüzen üst bandın altından başlasın */
+body.hepgo-tam #umToastKap { top: 76px; }

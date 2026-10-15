@@ -8774,3 +8774,25 @@ main#view.ops-view { position: absolute; inset: 0; max-width: none; padding: 0; 
 .scroller.ops-scroll { overflow: hidden; }
 .ops-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #0b0e11; }
 body.ops-full .app-header, body.ops-full .app-footer { display: none !important; }
+/* Tam ekranda sürükleyici modül (data-immersive): HEPGO üst başlığı ve alt barı gizlenir, ekranı modül kaplar */
+body.immersive .app-header, body.immersive .app-footer { display: none !important; }
+
+/* ---------- Katlanabilir panel (ui.js fold): başlık düğmesi + gövde; uzun formları (ör. uçuş düzenleme) bölümlere ayırır ---------- */
+.fold { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 10px; overflow: hidden; }
+.fold:last-child { margin-bottom: 0; }
+.fold-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.fold-head:hover .fold-title { color: var(--primary); }
+.fold-chev { width: 16px; height: 16px; flex: 0 0 auto; color: var(--muted); transition: transform .15s; }
+.fold.open .fold-chev { transform: rotate(90deg); }
+.fold-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-badge { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-body { padding: 12px; border-top: 1px solid var(--border); }
+.fold-body[hidden], .fold:not(.open) .fold-body { display: none; }
+.fold-body > .field:last-child, .fold-body > .row:last-child > .field { margin-bottom: 0; }
+html[dir="rtl"] .fold-head { text-align: right; }
+html[dir="rtl"] .fold-chev { transform: rotate(180deg); }
+html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
+/* Uçuş detayı: log yükleme bölümü Saha Görevi kartının alt bölümünde (ayrı kart değil) */
+.fl-log-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fl-log-foot .fl-log-head { margin-bottom: 8px; }
+.fl-log-foot .fl-log-head b { font-size: 13px; }

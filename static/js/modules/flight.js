@@ -46,9 +46,10 @@ export async function renderFlight(view, id, ctx, tab) {
         if (err.canceled) toast('Yükleme iptal edildi'); else toastError(err);
       } finally { send.disabled = false; }
     });
-    return h('div', { class: 'card card-pad fl-log' },
+    // Saha Görevi kartının alt bölümü (ayrı kart değil)
+    return h('div', { class: 'fl-log fl-log-foot' },
       h('div', { class: 'fl-log-head' },
-        h('h2', null, 'Uçuş logu'),
+        h('b', null, 'Uçuş logu'),
         log ? logBadge(log.status) : h('span', { class: 'badge gray' }, 'Yüklenmedi'),
         log ? h('span', { class: 'small muted' }, `${log.file_name} · ${fmtDateTime(log.uploaded_at)}`) : null),
       log?.status === 'HATA' ? h('div', { class: 'alert err' }, log.error || 'Log analiz edilemedi') : null,
@@ -61,10 +62,10 @@ export async function renderFlight(view, id, ctx, tab) {
           : 'Log yükleme yetkisi saha sorumlusu ve pilottadır.'));
   };
 
-  // ---- Yakıt: başlangıç/bitiş litre → toplam; motor itkisine (gaz) göre zamana dağıtım; grafik (yakıt + itki); bir kez hesaplanır, saklanır
-  const fuelCard = () => {
+  // ---- Yakıt (alt modül sekmesi): başlangıç/bitiş litre → toplam; motor itkisine (gaz) göre zamana dağıtım; grafik (yakıt + itki); bir kez hesaplanır, saklanır
+  const fuel = () => {
     const ready = log?.status === 'TAMAM';
-    const box = h('div', { class: 'card card-pad fl-fuel' });
+    const box = h('div', { class: 'fl-fuel' });
     const btn = h('button', { class: 'btn primary', type: 'button', disabled: !ready, title: ready ? 'Başlangıç ve bitiş yakıtını girin' : 'Önce uçuş logunu (.bin) yükleyin' }, '⛽ Yakıt Hesapla');
     const body = h('div', { class: 'fl-fuel-body' });
     const plot = (cv, series, { leftLabel = '', rightLabel = '' } = {}) => {   // iki eksenli zaman grafiği
@@ -148,7 +149,9 @@ export async function renderFlight(view, id, ctx, tab) {
           } finally { clearInterval(tick); }
         } }] });
     });
-    box.append(h('div', { class: 'fl-log-head' }, h('h2', null, 'Yakıt'), h('span', { class: 'grow' }), btn), body);
+    box.append(h('div', { class: 'fl-log-head' },
+      h('span', { class: 'small muted' }, 'Uçuş öncesi ve sonrası depodaki yakıttan toplam tüketim; motor itkisine (gaz) göre zamana dağıtılır, 3B izlemede anlık gösterilir.'),
+      h('span', { class: 'grow' }), btn), body);
     draw();
     return box;
   };
@@ -317,12 +320,12 @@ export async function renderFlight(view, id, ctx, tab) {
           kv('Pilot', t.pilot_name || '—'),
           kv('Personel', t.staff.join(', ') || null),
           kv('Araçlar', t.vehicles.join(', ') || null),
-          kv('Başlama / bitiş', t.started_at ? `${fmtDateTime(t.started_at)} – ${t.finished_at ? fmtDateTime(t.finished_at) : 'devam ediyor'}` : 'Başlamadı')))),
-    logCard(),
-    fuelCard(),
+          kv('Başlama / bitiş', t.started_at ? `${fmtDateTime(t.started_at)} – ${t.finished_at ? fmtDateTime(t.finished_at) : 'devam ediyor'}` : 'Başlamadı')),
+        logCard())),
     tabView([
       { key: 'report', label: 'Uçuş Raporu', render: report },
       { key: '3d', label: '3B Uçuş İzleme', render: replay },
+      { key: 'fuel', label: 'Yakıt', render: fuel },
       { key: 'notes', label: 'Uçuş Notları', count: d.notes.length, render: notes },
       { key: 'media', label: 'Video ve Resimler', count: d.media.length || null, render: media },
     ], tab || (log?.status === 'TAMAM' ? 'report' : 'notes')));   // log hazırsa rapor, değilse notlar

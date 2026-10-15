@@ -915,7 +915,14 @@ function fullscreenButton() {
   btn.addEventListener('click', () => {
     (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
   });
-  document.addEventListener('fullscreenchange', sync);
+  // "Sürükleyici" (immersive) modüller — ör. Dron Yönetimi › Canlı Uçuş — sayfalarına data-immersive koyar: tam ekranda HEPGO üst
+  // başlığı ve alt barı gizlenir (body.immersive), ekranı modül kaplar. Tam ekrandan çıkınca geri gelir. Diğer modüller de kullanabilir.
+  const immersive = () => {
+    const on = !!document.fullscreenElement && !!document.querySelector('main#view [data-immersive], main#view[data-immersive]');
+    document.body.classList.toggle('immersive', on);
+  };
+  document.addEventListener('fullscreenchange', () => { sync(); immersive(); });
+  window.addEventListener('hashchange', () => setTimeout(immersive, 0));
   sync();
   return btn;
 }

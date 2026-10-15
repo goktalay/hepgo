@@ -1,8 +1,25 @@
 /* Rotalar (Dron Yönetimi › Rotalar): solda 320 px dar sütun (Rota Merkezleri / Rotalar / Adımlar panelleri altlı üstlü),
    sağda görünür alanı kaplayan Cesium harita. Yükseklik routes.js tarafından kaydırma kutusunun kalan alanına göre ayarlanır;
    telefonda tek sütun. Tema renkleri app.css değişkenlerinden gelir (açık/koyu otomatik). */
-.rt-wrap { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; height: calc(100dvh - 200px); min-height: 480px; }
-.rt-side { display: grid; grid-template-rows: minmax(150px, 1fr) minmax(150px, 1fr) minmax(170px, 1.4fr); gap: 10px; min-height: 0; }
+.rt-wrap { display: block; height: calc(100dvh - 200px); min-height: 480px; }
+.rt-wrap > .rt-map { height: 100%; }
+/* Harita üstünde yüzen paneller (Rotalar ağacı / Adımlar): kapatılamaz, katlanabilir, başlıktan taşınır */
+.rt-fp { position: absolute; z-index: 5; width: 320px; max-height: calc(50% - 14px); display: flex; flex-direction: column; overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28); backdrop-filter: blur(6px); }
+.rt-fp-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); cursor: move; user-select: none; flex: 0 0 auto; }
+.rt-fp-head h3 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-fp-head .spacer { flex: 1; }
+.rt-fp-caret { border: 0; background: none; color: var(--muted); cursor: pointer; width: 18px; padding: 0; font-size: 13px; transition: transform .15s; }
+.rt-fp.katli .rt-fp-caret { transform: rotate(-90deg); }
+.rt-fp.katli .rt-fp-body { display: none; }
+.rt-fp.katli .rt-fp-head { border-bottom: 0; }
+.rt-fp-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+/* Ağaç */
+.rt-tree .rt-node { font-weight: 600; }
+.rt-tw { border: 0; background: none; color: var(--muted); cursor: pointer; width: 16px; padding: 0; font-size: 12px; flex: 0 0 auto; }
+.rt-children { margin-left: 18px; padding-left: 6px; border-left: 1px dashed var(--border); }
+.rt-empty.sm { padding: 6px 8px; text-align: left; }
 .rt-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .rt-panel-head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .rt-panel-head h3 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -69,8 +86,7 @@
 .rt-pop-foot .spacer { flex: 1; }
 
 @media (max-width: 960px) {
-  .rt-wrap { grid-template-columns: 1fr; height: auto !important; min-height: 0; }
-  .rt-side { grid-template-rows: none; grid-auto-rows: minmax(120px, 220px); }
-  .rt-map { height: 55vh; }
+  .rt-wrap { height: 70vh !important; }
+  .rt-fp { width: min(300px, calc(100% - 64px)); }
   .rt-badge { bottom: 10px; font-size: 11px; }
 }

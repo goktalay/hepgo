@@ -1,11 +1,11 @@
-name: Mavic Köprü (Windows exe + MSIX)
+name: Hepgo Dron Köprüsü (Windows exe + MSIX)
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'bridge/mavic_kopru/**'
-      - '.github/workflows/mavic-kopru.yml'
+      - 'bridge/dron_koprusu/**'
+      - '.github/workflows/dron-koprusu.yml'
 
 jobs:
   build:
@@ -13,13 +13,13 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: bridge/mavic_kopru
+        working-directory: bridge/dron_koprusu
     env:
       # Partner Center › Ürün › Ürün kimliği değerleri (depo değişkenleri; yoksa test değerleri)
-      MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Veilox.MavicKopru' }}
+      MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Veilox.HepgoDronKoprusu' }}
       MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Veilox' }}
       MSIX_PUBLISHER_DISPLAY: ${{ vars.MSIX_PUBLISHER_DISPLAY || 'Veilox' }}
-      MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME || 'Mavic Köprü' }}
+      MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME || 'Hepgo Dron Köprüsü' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -44,33 +44,33 @@ jobs:
 
       - name: Exe (PyInstaller)
         run: >
-          pyinstaller --noconfirm --onefile --windowed --name MavicKopru --icon kopru.ico
+          pyinstaller --noconfirm --onefile --windowed --name HepgoDronKoprusu --icon kopru.ico
           --add-data "kopru.ico;." --hidden-import pymavlink.dialects.v20.ardupilotmega
-          --collect-submodules pymavlink.dialects.v20 mavic_kopru.py
+          --collect-submodules pymavlink.dialects.v20 dron_koprusu.py
 
       - name: Exe çalışıyor mu (--version)
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\MavicKopru.exe -ArgumentList '--version' -PassThru -Wait -NoNewWindow
+          $p = Start-Process -FilePath dist\HepgoDronKoprusu.exe -ArgumentList '--version' -PassThru -Wait -NoNewWindow
           "çıkış kodu: $($p.ExitCode)"
 
       - name: MSIX paketi
         shell: pwsh
         run: |
           $layout = "packaging\layout"
-          Copy-Item dist\MavicKopru.exe "$layout\MavicKopru.exe"
+          Copy-Item dist\HepgoDronKoprusu.exe "$layout\HepgoDronKoprusu.exe"
           $m = Get-Content packaging\AppxManifest.xml -Raw -Encoding UTF8
           $m = $m.Replace('__IDENTITY_NAME__', $env:MSIX_IDENTITY_NAME).Replace('__PUBLISHER_DISPLAY__', $env:MSIX_PUBLISHER_DISPLAY)
           $m = $m.Replace('__PUBLISHER__', $env:MSIX_PUBLISHER).Replace('__DISPLAY_NAME__', $env:MSIX_DISPLAY_NAME)
           $m = $m.Replace('__VERSION__', "${{ steps.ver.outputs.version }}.0")
           [IO.File]::WriteAllText("$PWD\$layout\AppxManifest.xml", $m, (New-Object System.Text.UTF8Encoding $false))
           $mk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-          & $mk.FullName pack /d $layout /p "dist\MavicKopru-${{ steps.ver.outputs.version }}.msix" /o
+          & $mk.FullName pack /d $layout /p "dist\HepgoDronKoprusu-${{ steps.ver.outputs.version }}.msix" /o
           if ($LASTEXITCODE -ne 0) { throw "makeappx hata" }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MavicKopru-${{ steps.ver.outputs.version }}
+          name: HepgoDronKoprusu-${{ steps.ver.outputs.version }}
           path: |
-            bridge/mavic_kopru/dist/MavicKopru.exe
-            bridge/mavic_kopru/dist/*.msix
+            bridge/dron_koprusu/dist/HepgoDronKoprusu.exe
+            bridge/dron_koprusu/dist/*.msix

@@ -16,7 +16,7 @@ REQUIRED = {
     'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance',
 }
 OPTIONAL = {
-    'boss', 'production', 'orders', 'printers', 'products', 'design', 'field',
+    'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'drone',
     'certs', 'fleet', 'projects', 'secretariat', 'security', 'rehber',
     'reports', 'announcements', 'cleaning', 'tools', 'pos',
     'sections', 'services', 'reservations', 'waiter',

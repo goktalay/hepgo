@@ -1,4 +1,4 @@
-"""Mavic Köprü — çekirdek (arayüzden bağımsız).
+"""Hepgo Dron Köprüsü — çekirdek (arayüzden bağımsız).
 
 HEPGO Dron Yönetimi köprü protokolü v1 + v1.1 (docs/dron-kopru-protokolu.md):
 - Sunucuya DIŞA DOĞRU WebSocket: wss://<alan-adı>/ws/drone/bridge, ilk çerçeve {v:1,t:'auth',key,host,platform,bridge_ver,caps}.
@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-APP_NAME = 'Mavic Köprü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
+APP_NAME = 'Hepgo Dron Köprüsü'          # ürün adı (mağaza adı değişirse yalnız burası ve paket bildirimi)
 VERSION = '1.0.0'
 CAPS = ['link', 'set_home', 'param', 'reboot', 'mission_set_current', 'altitude_change', 'arm_force']
 PING_S = 20
@@ -50,8 +50,8 @@ def parse_code(code):
 
 
 def server_url(domain):
-    """Test/geliştirme için MAVIC_KOPRU_URL ortam değişkeni sunucu adresini ezer."""
-    return os.environ.get('MAVIC_KOPRU_URL') or f'wss://{domain}/ws/drone/bridge'
+    """Test/geliştirme için HEPGO_KOPRU_URL ortam değişkeni sunucu adresini ezer."""
+    return os.environ.get('HEPGO_KOPRU_URL') or f'wss://{domain}/ws/drone/bridge'
 
 
 def link_text(spec):

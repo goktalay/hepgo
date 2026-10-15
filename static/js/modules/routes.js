@@ -1,4 +1,4 @@
-// Rotalar — Dron Yönetimi › Rotalar sekmesi (#/field/routes[/id]). drone.js `routes` sayfasında bu modülü dinamik yükler:
+// Rotalar — Dron Yönetimi › Rotalar sekmesi (#/drone/routes[/id]). drone.js `routes` sayfasında bu modülü dinamik yükler:
 //   import('./routes.js').then(mod => mod.render(view, ctx, m, head, params))
 // Yerleşim: solda 320 px dar sütun, altlı üstlü üç panel (Rota Merkezleri / Rotalar / seçili rotanın Adımları); sağda ekranı
 // kaplayan Cesium harita (replay3d.js loadCesium/createViewer). Rota seçilince ya da yeni rota eklenince harita DÜZENLEME
@@ -75,14 +75,13 @@ export async function render(view, ctx, m, head, params) {
   let C = null;                                   // Cesium renk sabitleri (kütüphane yüklenince)
 
   // ---------- iskelet ----------
-  const centerCount = h('span', { class: 'rt-count' }), routeCount = h('span', { class: 'rt-count' }), stepCount = h('span', { class: 'rt-count' });
-  const centerList = h('div', { class: 'rt-list' }), routeList = h('div', { class: 'rt-list' }), stepList = h('div', { class: 'rt-list' });
+  const routeCount = h('span', { class: 'rt-count' }), stepCount = h('span', { class: 'rt-count' });
+  const tree = h('div', { class: 'rt-list rt-tree' }), stepList = h('div', { class: 'rt-list' });
+  const closed = new Set(JSON.parse(localStorage.getItem('hepgo.rt.kapali') || '[]'));   // ağaçta kapalı merkez düğümleri
   const routeSearch = h('input', { class: 'input rt-search', type: 'search', placeholder: 'Rota ara…' });
   const stepFoot = h('div', { class: 'rt-foot small muted' });
   const stepTitle = h('h3', null, 'Adımlar');
   const iconBtn = (txt, title, fn, disabled = false) => h('button', { class: 'btn sm ghost rt-ib', type: 'button', title, disabled, onclick: fn }, txt);
-  const panel = (titleEl, countEl, actions, ...body) => h('div', { class: 'card rt-panel' },
-    h('div', { class: 'rt-panel-head' }, titleEl, countEl, h('span', { class: 'spacer' }), actions), ...body);
   const holder = h('div', { class: 'rt-map-holder' });
   const tools = h('div', { class: 'rt-tools' });
   const mapBtns = h('div', { class: 'rt-mapbtns' });
@@ -90,13 +89,51 @@ export async function render(view, ctx, m, head, params) {
   const msg = h('div', { class: 'rt-msg' }, '3B harita yükleniyor…');
   const pop = h('div', { class: 'rt-pop', hidden: true });
   const mapBox = h('div', { class: 'rt-map' }, holder, msg, mapBtns, tools, badge, pop);
-  const side = h('div', { class: 'rt-side' },
-    panel(h('h3', null, 'Rota Merkezleri'), centerCount, iconBtn('＋', 'Yeni merkez', () => centerForm(null, null)), centerList),
-    panel(h('h3', null, 'Rotalar'), routeCount, iconBtn('＋', 'Yeni rota', () => routeForm(null)), routeSearch, routeList),
-    panel(stepTitle, stepCount, h('span', { class: 'rt-acts on' },
-      iconBtn('＋', 'Merkez konumunu nokta olarak ekle', () => addCenterPoint('waypoint')),
-      iconBtn('⤴', 'Eve dön (RTL) noktası ekle', () => addCenterPoint('rtl'))), stepList, stepFoot));
-  const wrap = h('div', { class: 'rt-wrap' }, side, mapBox);
+  // Harita üstünde yüzen, kapatılamayan, katlanabilir ve taşınabilir paneller (Canlı Uçuş kartları gibi; konum/katlama cihazda saklanır)
+  const fpanel = (key, title, countEl, actions, ...body) => {
+    const store = `hepgo.rt.panel.${key}`;
+    const st = (() => { try { return JSON.parse(localStorage.getItem(store) || '{}'); } catch { return {}; } })();
+    const caret = h('button', { class: 'rt-fp-caret', type: 'button', title: 'Katla / aç' }, '▾');
+    const headEl = h('div', { class: 'rt-fp-head' }, caret, title, countEl, h('span', { class: 'spacer' }), actions);
+    const el = h('div', { class: `rt-fp ${st.k ? 'katli' : ''}`, 'data-k': key }, headEl, h('div', { class: 'rt-fp-body' }, ...body));
+    const save = () => localStorage.setItem(store, JSON.stringify({ x: el.offsetLeft, y: el.offsetTop, k: el.classList.contains('katli') }));
+    const toggle = () => { el.classList.toggle('katli'); save(); };
+    caret.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+    headEl.addEventListener('dblclick', e => { if (!e.target.closest('button, input')) toggle(); });
+    let drag = null;
+    headEl.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || e.target.closest('button, input, select')) return;
+      drag = { dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop };
+      headEl.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    headEl.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const W = mapBox.clientWidth, H = mapBox.clientHeight;
+      let x = Math.max(0, Math.min(e.clientX - drag.dx, W - el.offsetWidth)), y = Math.max(0, Math.min(e.clientY - drag.dy, H - 36));
+      // mıknatıs: diğer panelin kenarlarına ve harita kenarına yapışır
+      for (const o of mapBox.querySelectorAll('.rt-fp')) {
+        if (o === el) continue;
+        const ox = o.offsetLeft, oy = o.offsetTop, ow = o.offsetWidth, oh = o.offsetHeight;
+        if (Math.abs(x - ox) < 14) x = ox;
+        if (Math.abs(y - (oy + oh + 8)) < 14) y = oy + oh + 8;
+        if (Math.abs(y + el.offsetHeight + 8 - oy) < 14) y = oy - el.offsetHeight - 8;
+        if (Math.abs(x - (ox + ow + 8)) < 14) x = ox + ow + 8;
+      }
+      el.style.left = `${x}px`; el.style.top = `${y}px`;
+    });
+    const end = () => { if (drag) { drag = null; save(); } };
+    headEl.addEventListener('pointerup', end); headEl.addEventListener('pointercancel', end);
+    el._pos = st;
+    return el;
+  };
+  const treePanel = fpanel('rotalar', h('h3', null, 'Rotalar'), routeCount, h('span', { class: 'rt-acts on' },
+    iconBtn('⌂＋', 'Yeni rota merkezi', () => centerForm(null, null)), iconBtn('＋', 'Yeni rota', () => routeForm(null))), routeSearch, tree);
+  const stepPanel = fpanel('adimlar', stepTitle, stepCount, h('span', { class: 'rt-acts on rt-step-acts' },
+    iconBtn('＋', 'Merkez konumunu nokta olarak ekle', () => addCenterPoint('waypoint')),
+    iconBtn('⤴', 'Eve dön (RTL) noktası ekle', () => addCenterPoint('rtl'))), stepList, stepFoot);
+  mapBox.append(treePanel, stepPanel);
+  const side = mapBox;
+  const wrap = h('div', { class: 'rt-wrap' }, mapBox);
   clear(view, head('Rotalar · rota merkezleri, ara noktalar ve harita üzerinde rota tasarımı'), wrap);
 
   // Harita yüksekliği = görünür alan (kaydırma kutusunun kalan yüksekliği); telefonda CSS tek sütuna geçer, yükseklik sabitlenmez
@@ -109,6 +146,11 @@ export async function render(view, ctx, m, head, params) {
     wrap.style.height = `${Math.max(480, Math.round(scRect.height - off - 20))}px`;
   };
   fit();
+  requestAnimationFrame(() => {
+    const p1 = treePanel._pos, p2 = stepPanel._pos;
+    treePanel.style.left = `${p1.x ?? 56}px`; treePanel.style.top = `${p1.y ?? 10}px`;
+    stepPanel.style.left = `${p2.x ?? 56}px`; stepPanel.style.top = `${p2.y ?? Math.round(mapBox.clientHeight / 2 + 4)}px`;   // varsayılan: haritanın alt yarısı (iki panel en çok %50 yükseklikte; çakışmaz)
+  });
   window.addEventListener('resize', fit);
   const ro = window.ResizeObserver ? new ResizeObserver(() => fit()) : null;
   ro?.observe(view.closest('.scroller') || document.body);
@@ -141,54 +183,61 @@ export async function render(view, ctx, m, head, params) {
 
   // ---------- sol paneller ----------
   const centerOf = r => (r?.center_id != null ? S.centers.find(c => c.id === r.center_id) : null);
-  const drawCenters = () => {
-    centerCount.textContent = S.centers.length;
-    clear(centerList,
-      h('div', { class: `rt-row ${S.selCenter == null ? 'on' : ''}`, onclick: () => { S.selCenter = null; drawCenters(); drawRoutes(); drawBase(); } },
-        h('span', { class: 'rt-ic all' }, 'T'),
-        h('div', { class: 'grow' }, h('b', null, 'Tüm merkezler'), h('div', { class: 'small muted' }, tr('{n} rota', { n: S.routes.length })))),
-      S.centers.map(c => h('div', { class: `rt-row ${S.selCenter === c.id ? 'on' : ''} ${c.active ? '' : 'off'}`, onclick: () => selectCenter(c) },
-        h('span', { class: 'rt-ic' }, 'H'),
-        h('div', { class: 'grow' }, h('b', null, c.name),
-          h('div', { class: 'small muted mono' }, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}${c.alt != null ? ` · ${c.alt} m` : ''}`)),
-        h('span', { class: 'badge blue', title: 'Rota sayısı' }, c.route_count),
-        h('span', { class: 'rt-acts' },
-          iconBtn('✎', 'Düzenle', e => { e.stopPropagation(); centerForm(c, null); }),
-          iconBtn('✕', 'Sil', async e => {
-            e.stopPropagation();
-            if (!await confirmDialog('Merkezi sil', tr('{name} silinsin mi? Rotalar kalır, merkez bağı kalkar.', { name: c.name }), { okLabel: 'Sil', danger: true })) return;
-            await api.del(`/api/drone/centers/${c.id}`); toast('Merkez silindi'); await reload();
-          })))),
-      S.centers.length ? null : h('div', { class: 'rt-empty' }, 'Merkez yok. Merkez, rotaların referans noktasıdır (pist / kalkış alanı); "+" ile ekleyin.'));
-  };
-  const visibleRoutes = () => {
+  const routeRow = r => h('div', { class: `rt-row rt-leaf ${S.sel?.id === r.id ? 'on' : ''} ${r.active ? '' : 'off'}`, onclick: () => selectRoute(r.id).catch(toastError) },
+    h('span', { class: `rt-ic r ${S.sel?.id === r.id ? 'sel' : ''}`, title: 'Nokta sayısı' }, S.sel?.id === r.id ? S.wps.length : r.wp_count),
+    h('div', { class: 'grow' }, h('b', null, r.name),
+      h('div', { class: 'small muted' }, [r.kind_text, r.cruise_alt != null ? `${r.cruise_alt} m` : null].filter(Boolean).join(' · '))),
+    r.active ? null : h('span', { class: 'badge gray' }, 'Pasif'),
+    h('span', { class: 'rt-acts' },
+      iconBtn('✎', 'Rota bilgileri', e => { e.stopPropagation(); routeForm(r); }),
+      iconBtn('✕', 'Sil', async e => {
+        e.stopPropagation();
+        if (!await confirmDialog('Rotayı sil', tr('{name} silinsin mi?', { name: r.name }), { okLabel: 'Sil', danger: true })) return;
+        await api.del(`/api/drone/routes/${r.id}`); toast('Rota silindi');
+        if (S.sel?.id === r.id) { S.sel = null; S.wps = []; S.editing = false; S.dirty = false; S.hi = -1; closePop(); }
+        await reload();
+      })));
+  const drawTree = () => {
     const q = routeSearch.value.trim().toLocaleLowerCase('tr');
-    return S.routes.filter(r => (S.selCenter == null || r.center_id === S.selCenter) && (!q || `${r.name} ${r.center_name || ''} ${r.kind_text || ''}`.toLocaleLowerCase('tr').includes(q)));
+    const match = r => !q || `${r.name} ${r.kind_text || ''}`.toLocaleLowerCase('tr').includes(q);
+    const groups = S.centers.map(c => ({ c, routes: S.routes.filter(r => r.center_id === c.id) }));
+    const orphan = S.routes.filter(r => r.center_id == null || !S.centers.some(c => c.id === r.center_id));
+    if (orphan.length) groups.push({ c: null, routes: orphan });
+    const shown = S.routes.filter(match).length;
+    routeCount.textContent = q ? `${shown}/${S.routes.length}` : S.routes.length;
+    const rows = [];
+    for (const g of groups) {
+      const list = g.routes.filter(match);
+      if (q && !list.length && !(g.c && g.c.name.toLocaleLowerCase('tr').includes(q))) continue;
+      const key = g.c ? String(g.c.id) : 'yok';
+      const open = q ? true : !closed.has(key);
+      const tog = e => { e.stopPropagation(); if (closed.has(key)) closed.delete(key); else closed.add(key); localStorage.setItem('hepgo.rt.kapali', JSON.stringify([...closed])); drawTree(); };
+      rows.push(h('div', { class: `rt-row rt-node ${g.c && S.selCenter === g.c.id ? 'on' : ''} ${g.c && !g.c.active ? 'off' : ''}`,
+        onclick: () => (g.c ? selectCenter(g.c) : null) },
+        h('button', { class: 'rt-tw', type: 'button', onclick: tog, title: open ? 'Daralt' : 'Genişlet' }, open ? '▾' : '▸'),
+        h('span', { class: `rt-ic ${g.c ? '' : 'all'}` }, g.c ? 'H' : '–'),
+        h('div', { class: 'grow' }, h('b', null, g.c ? g.c.name : 'Merkezsiz rotalar'),
+          g.c ? h('div', { class: 'small muted mono' }, `${Number(g.c.lat).toFixed(5)}, ${Number(g.c.lon).toFixed(5)}${g.c.alt != null ? ` · ${g.c.alt} m` : ''}`) : null),
+        h('span', { class: 'badge blue', title: 'Rota sayısı' }, g.routes.length),
+        g.c ? h('span', { class: 'rt-acts' },
+          iconBtn('＋', 'Bu merkeze rota ekle', e => { e.stopPropagation(); S.selCenter = g.c.id; routeForm(null); }),
+          iconBtn('✎', 'Merkezi düzenle', e => { e.stopPropagation(); centerForm(g.c, null); }),
+          iconBtn('✕', 'Merkezi sil', async e => {
+            e.stopPropagation();
+            if (!await confirmDialog('Merkezi sil', tr('{name} silinsin mi? Rotalar kalır, merkez bağı kalkar.', { name: g.c.name }), { okLabel: 'Sil', danger: true })) return;
+            await api.del(`/api/drone/centers/${g.c.id}`); toast('Merkez silindi'); await reload();
+          })) : null));
+      if (open) rows.push(h('div', { class: 'rt-children' }, list.length ? list.map(routeRow) : h('div', { class: 'rt-empty sm' }, 'Bu merkezde rota yok')));
+    }
+    clear(tree, rows.length ? rows : h('div', { class: 'rt-empty' }, S.routes.length || S.centers.length ? 'Aramaya uyan rota yok'
+      : 'Henüz merkez ve rota yok. "⌂＋" ile rota merkezi (pist / kalkış alanı), "＋" ile rota ekleyin; rota harita düzenleme modunda açılır.'));
   };
-  const drawRoutes = () => {
-    const list = visibleRoutes();
-    routeCount.textContent = S.selCenter == null && !routeSearch.value ? S.routes.length : `${list.length}/${S.routes.length}`;
-    clear(routeList, list.map(r => h('div', { class: `rt-row ${S.sel?.id === r.id ? 'on' : ''} ${r.active ? '' : 'off'}`, onclick: () => selectRoute(r.id).catch(toastError) },
-      h('span', { class: `rt-ic r ${S.sel?.id === r.id ? 'sel' : ''}`, title: 'Nokta sayısı' }, S.sel?.id === r.id ? S.wps.length : r.wp_count),
-      h('div', { class: 'grow' }, h('b', null, r.name),
-        h('div', { class: 'small muted' }, [r.center_name || 'merkez yok', r.kind_text, r.cruise_alt != null ? `${r.cruise_alt} m` : null].filter(Boolean).join(' · '))),
-      r.active ? null : h('span', { class: 'badge gray' }, 'Pasif'),
-      h('span', { class: 'rt-acts' },
-        iconBtn('✎', 'Rota bilgileri', e => { e.stopPropagation(); routeForm(r); }),
-        iconBtn('✕', 'Sil', async e => {
-          e.stopPropagation();
-          if (!await confirmDialog('Rotayı sil', tr('{name} silinsin mi?', { name: r.name }), { okLabel: 'Sil', danger: true })) return;
-          await api.del(`/api/drone/routes/${r.id}`); toast('Rota silindi');
-          if (S.sel?.id === r.id) { S.sel = null; S.wps = []; S.editing = false; S.dirty = false; S.hi = -1; closePop(); }
-          await reload();
-        })))),
-      list.length ? null : h('div', { class: 'rt-empty' }, S.routes.length ? 'Filtreye uyan rota yok' : 'Henüz rota yok. "+" ile rota ekleyin; harita düzenleme modunda açılır.'));
-  };
+  const drawCenters = drawTree, drawRoutes = drawTree;
   const altText = w => (w.alt != null ? `${w.alt} m` : (S.sel?.cruise_alt != null ? tr('seyir {n} m', { n: S.sel.cruise_alt }) : 'seyir'));
   const drawSteps = () => {
     stepTitle.textContent = S.sel ? `Adımlar · ${S.sel.name}` : 'Adımlar';
     stepCount.textContent = S.sel ? S.wps.length : '';
-    side.querySelectorAll('.rt-acts.on .rt-ib').forEach(b => { b.disabled = !S.editing; });
+    stepPanel.querySelectorAll('.rt-step-acts .rt-ib').forEach(b => { b.disabled = !S.editing; });
     if (!S.sel) { clear(stepList, h('div', { class: 'rt-empty' }, 'Listeden rota seçin; harita düzenleme modunda açılır.')); stepFoot.textContent = ''; return; }
     clear(stepList, S.wps.map((w, i) => h('div', { class: `rt-step ${S.hi === i ? 'hi' : ''}`, onclick: () => highlight(i) },
       h('span', { class: 'rt-no', style: { background: COLORS[w.action] || COLORS.waypoint } }, i + 1),
@@ -234,7 +283,7 @@ export async function render(view, ctx, m, head, params) {
       clear(badge, 'DÜZENLEME · tıkla: nokta ekle · sürükle: taşı · sağ tık: sil');
     } else badge.hidden = true;
   };
-  const drawAll = () => { drawCenters(); drawRoutes(); drawSteps(); drawTools(); drawBadge(); drawBase(); drawSel(); };
+  const drawAll = () => { drawTree(); drawSteps(); drawTools(); drawBadge(); drawBase(); drawSel(); };
 
   // ---------- seçim / düzenleme modu (duzenlemeBaslat / duzenlemeBitir karşılığı) ----------
   const markDirty = () => { S.dirty = true; drawTools(); };
@@ -685,6 +734,6 @@ export async function render(view, ctx, m, head, params) {
     return;
   }
   const wantId = Number(params?.[1]);
-  if (wantId && S.routes.some(r => r.id === wantId)) await selectRoute(wantId).catch(toastError);   // #/field/routes/<id> doğrudan bağlantı
+  if (wantId && S.routes.some(r => r.id === wantId)) await selectRoute(wantId).catch(toastError);   // #/drone/routes/<id> doğrudan bağlantı
   initMap().catch(err => { msg.textContent = err.message; msg.classList.add('err'); });
 }

@@ -1,5 +1,5 @@
-"""Mavic Köprü uçtan uca testi (Linux): geçici HEPGO sunucusu + sahte MAVLink dron (UDP) + köprü (arayüzsüz) + canlı izleyici.
-Çalıştırma: cd bridge/mavic_kopru && ../../.venv/bin/python test_e2e.py
+"""Hepgo Dron Köprüsü uçtan uca testi (Linux): geçici HEPGO sunucusu + sahte MAVLink dron (UDP) + köprü (arayüzsüz) + canlı izleyici.
+Çalıştırma: cd bridge/dron_koprusu && ../../.venv/bin/python test_e2e.py
 """
 import json
 import os
@@ -80,8 +80,8 @@ def main():
         code = r['code']
         print('köprü kodu:', code.split('/')[0] + '/…')
         drone = FakeDrone(udp); drone.start()
-        benv = dict(os.environ, MAVIC_KOPRU_URL=f'ws://127.0.0.1:{port}/ws/drone/bridge')
-        bridge = subprocess.Popen([PY, 'mavic_kopru.py', '--code', code, '--link', f'udp:0.0.0.0:{udp}'], cwd=os.path.dirname(__file__),
+        benv = dict(os.environ, HEPGO_KOPRU_URL=f'ws://127.0.0.1:{port}/ws/drone/bridge')
+        bridge = subprocess.Popen([PY, 'dron_koprusu.py', '--code', code, '--link', f'udp:0.0.0.0:{udp}'], cwd=os.path.dirname(__file__),
                                   env=benv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         cookie = c.cookies.get('caymaz_session')
         with connect(f'ws://127.0.0.1:{port}/ws/drone/live', additional_headers={'Cookie': f'caymaz_session={cookie}'}) as live:

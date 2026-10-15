@@ -5,7 +5,7 @@ export const MODULE_NAMES = {
   production: 'Üretim Yönetimi', orders: 'İş Emri Yönetimi', printers: 'Yazıcı Yönetimi', products: 'Ürün Yönetimi',
   design: 'Endüstriyel Tasarım', mrp: 'MRP', stock: 'Yarı Mamül / Stok', warehouse: 'Onay / Depo', purchasing: 'Satın Alma',
   companies: 'Firma Yönetimi', documents: 'Evrak Yönetimi', sales: 'Satış Yönetimi', crm: 'CRM', finance: 'Finans',
-  hr: 'İnsan Kaynakları', projects: 'Proje Yönetimi', field: 'Saha Yönetimi', fleet: 'Araç Yönetimi', certs: 'Sertifikasyon',
+  hr: 'İnsan Kaynakları', projects: 'Proje Yönetimi', field: 'Saha Yönetimi', drone: 'Dron Yönetimi', fleet: 'Araç Yönetimi', certs: 'Sertifikasyon',
   cleaning: 'Temizlik', secretariat: 'Sekreterya', security: 'Güvenlik', cameras: 'Kameralar', rehber: 'Rehber',
   members: 'Üyelik Yönetimi', tickets: 'Destek Merkezi', sms: 'Toplu SMS', uyelik: 'Üyeliğim & Destek', mikro: 'Mikro ERP', master: 'Veri & Yedek', pos: 'Esnaf Kasa', sections: 'Bölümler', services: 'Hizmetler', reservations: 'Rezervasyon', waiter: 'Garson',
 };

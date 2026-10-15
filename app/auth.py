@@ -65,6 +65,7 @@ MODULE_ROLES = {
     'stock':      [ADMIN, WAREHOUSE_MANAGER, PRODUCTION_MANAGER, PRODUCTION_LEAD, FIELD_LEAD,
                    FIELD_STAFF, PILOT, MRP_LEAD],                                                       # M5 Stok
     'field':      [ADMIN, FIELD_LEAD, FIELD_STAFF, DRIVER, PILOT],                            # M6 Saha
+    'drone':      [ADMIN, FIELD_LEAD, PILOT],                                                 # Dron Yönetimi (envanter, rotalar, köprüler)
     'printers':   [ADMIN, PRODUCTION_MANAGER, PRODUCTION_LEAD, PRINTER_MAINTAINER],           # M7 Yazıcı
     'products':   [ADMIN],                                                                    # M8 Ürün
     'tools':      [r for r in ROLES if r not in (SECURITY, CAMERA, INTERN, CLEANER)],         # M9 Araçlar
@@ -360,6 +361,8 @@ def current_user(request: Request, conn=db.DB):
     # 'master' modülü (sistem sahibi aracı) her zaman kalır; CAYMAZ_MODULES tanımsızsa kısıtlama yoktur.
     if config.MODULES is not None:
         allow = set(config.MODULES) | {'master', 'uyelik'}   # Üyeliğim & Destek: paketten bağımsız, her firmada destek kanalı
+        if 'field' in allow:
+            allow.add('drone')   # Dron Yönetimi, Saha Yönetimi'nden ayrıldı: sahip olan firmada açık kalır
         user['modules'] = [m for m in user['modules'] if m.split('.')[0] in allow]
     # Master, Program Ayarları › Modül Yönetimi'nden SEÇMELİ (optional) modülleri kapatabilir (app_kv['modules.disabled']).
     # Zorunlu (required) ve her-zaman (master/uyelik) modüller kapatılamaz.

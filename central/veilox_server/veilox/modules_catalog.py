@@ -22,6 +22,7 @@ MODULES = [
     ('stock',        'Stok',                  'depo'),
     ('purchasing',   'Satın Alma',            'depo'),
     ('field',        'Saha Yönetimi',         'saha'),
+    ('drone',        'Dron Yönetimi',         'saha'),
     ('companies',    'Firma Yönetimi (CRM)',  'crm'),
     ('sales',        'Satış Yönetimi',        'crm'),
     ('secretariat',  'Sekreterya',            'crm'),
@@ -53,7 +54,7 @@ CORE_MODULES = ['admin', 'users', 'announcements']
 # Modül katmanları (tenant app/modules_tier.py ile BİREBİR senkron):
 # required = KOBİ firmada her zaman açık; optional = kayıtta/sonradan seçilir; central = yalnız merkez açar.
 REQUIRED = {'admin', 'users', 'mrp', 'stock', 'warehouse', 'purchasing', 'sales', 'companies', 'documents', 'hr', 'finance'}
-OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'certs', 'fleet', 'projects',
+OPTIONAL = {'boss', 'production', 'orders', 'printers', 'products', 'design', 'field', 'drone', 'certs', 'fleet', 'projects',
             'secretariat', 'security', 'rehber', 'reports', 'announcements', 'cleaning', 'tools', 'pos',
             'sections', 'services', 'reservations', 'waiter'}
 CENTRAL = {'cameras', 'mikro', 'factory', 'konum', 'sms'}

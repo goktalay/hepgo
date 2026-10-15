@@ -1,5 +1,5 @@
 """Uygulama ikonu (kopru.ico) ve MSIX görselleri (Assets/*.png) üretir. Kaynak: static/img/hepgo-mark.png.
-Çalıştırma: python packaging/make_assets.py (bridge/mavic_kopru dizininden)."""
+Çalıştırma: python packaging/make_assets.py (bridge/dron_koprusu dizininden)."""
 from pathlib import Path
 
 from PIL import Image

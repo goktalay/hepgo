@@ -54,7 +54,9 @@ export async function render(view, params, ctx) {
   if (params[0] === 'flight') return renderFlight(view, Number(params[1]), ctx, params[2]);
   if (params[0] === 'places') return renderPlaces(view, ctx);
   // Dron Yönetimi sayfaları sorgu taşıyabilir (#/field/live?task=5 → params[0] 'live?task=5'); sayfa adı '?' öncesidir
-  if (DRONE_PAGES.includes(String(params[0] || '').split('?')[0])) return droneMod.render(view, params, ctx);
+  const fp = String(params[0] || '').split('?')[0];
+  if (fp === 'live') return droneMod.render(view, params, ctx);   // görevden açılan Canlı Uçuş
+  if (DRONE_PAGES.includes(fp)) { location.replace(`#/drone/${params.join('/')}`); return; }   // eski adresler: Dron Yönetimi artık ayrı modül
   if (params[0] === 'flights' || (!params[0] && pref('field.view', 'tasks') === 'flights')) return renderFlightsList(view, ctx);
   return renderList(view, ctx);
 }
@@ -129,7 +131,7 @@ async function renderList(view, ctx) {
     h('div', { class: 'filters' }, q, status, driver, place, period.el, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
       h('span', { class: 'spacer' }),
       h('a', { class: 'btn', href: '#/field/places' }, 'Görev Yerleri ve Araçlar'),
-      ctx.user.modules.some(m => DRONE_PAGES.includes(m.split('.')[1]) && m.startsWith('field.')) ? h('a', { class: 'btn', href: '#/field/drones' }, 'Dron Yönetimi') : null,
+      ctx.user.modules.includes('drone') ? h('a', { class: 'btn', href: '#/drone/drones' }, 'Dron Yönetimi') : null,
       manager ? h('button', { class: 'btn primary', onclick: () => newTask(ctx, load) }, svgIcon(icons.plus), 'Yeni Saha Görevi') : null),
     body);
   await load();

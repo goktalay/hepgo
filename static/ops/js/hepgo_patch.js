@@ -18,7 +18,7 @@
 //   HEPGO_OZ            yetenek bayraklari (pre tanimlar; eksikse burada)
 //   dkArmSecimAc        dronlar.js:2586 yerel tanimin global kopyasi
 //   dkIslemlerPopupAc   dronlar.js:4863 sarmalayicisi (dugme budama)
-//   dronGecmisAc        History -> HEPGO #/field/drones[/<id>]
+//   dronGecmisAc        History -> HEPGO #/drone/drones[/<id>]
 //   hepgoNav(hash)      parent.postMessage({t:'ops-nav', hash})
 //   hepgoTemaSenkron()  parent data-theme -> temaUygula
 //   hepgoDil()          parent HEPGO dili -> "TR" | "EN" (applyLanguage)
@@ -329,7 +329,7 @@
   // 5. window.dronGecmisAc -> HEPGO Dron Envanteri
   //    gecmis.js yuklenmez; dronlar.js:4961 History dugmesi ve
   //    menubar.js:111 (#mbDronGecmis varsa) typeof korumali olarak bunu
-  //    cagirir. Dron id biliniyorsa #/field/drones/<id>, yoksa liste.
+  //    cagirir. Dron id biliniyorsa #/drone/drones/<id>, yoksa liste.
   //    HEPGO_ENVANTER sozlesmesi (hepgo_ws.js): anahtar "<bridge_id>:<sysid>"
   //    -> {code, name, id}. hepgo_ws.js kendi window.hepgoDronIdBul'unu
   //    tanimlarsa (sanal sysid cevirimi vb.) o tercih edilir.
@@ -358,7 +358,7 @@
     window.dronGecmisAc = function (sysid) {
       var id = null;
       try { id = window.hepgoDronIdBul(sysid); } catch (e) { id = null; }
-      hepgoNav(id != null ? "#/field/drones/" + encodeURIComponent(String(id)) : "#/field/drones");
+      hepgoNav(id != null ? "#/drone/drones/" + encodeURIComponent(String(id)) : "#/drone/drones");
     };
   });
 

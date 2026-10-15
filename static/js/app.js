@@ -15,6 +15,7 @@ import * as users from './modules/users.js';
 import * as orders from './modules/orders.js';
 import * as production from './modules/production.js';
 import * as fieldMod from './modules/field.js';
+import * as droneMod from './modules/drone.js';
 import * as printers from './modules/printers.js';
 import * as tools from './modules/tools.js';
 import * as products from './modules/products.js';
@@ -113,6 +114,7 @@ const MODULES = [
   { key: 'waiter', title: 'Garson', mod: waiter, tone: 'green' },               // Lokanta masa yerleşim + adisyon
   { key: 'mikro', title: 'Mikro ERP', mod: mikro, hidden: true },   // Program Ayarları › Entegrasyonlar altından açılır (yalnızca MASTER)
   { key: 'field', title: 'Saha Yönetimi', mod: fieldMod },
+  { key: 'drone', title: 'Dron Yönetimi', mod: droneMod },
   { key: 'printers', title: 'Yazıcı Yönetimi', mod: printers, sub: 'production',
     show: u => u.modules.includes('printers') && u.printer },   // Üretim'in alt modülü; yalnız yazıcı entegrasyonu eklenmiş + açıksa görünür
   { key: 'products', title: 'Ürün Yönetimi', mod: products, tone: 'red' },
@@ -1395,6 +1397,7 @@ const SUB_PAGES = {
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,
   stock: p => `Ürün #${p[0]}`,
+  drone: p => ({ drones: 'Dron Envanteri', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]] || p.join('/')) + (p[1] ? ` #${p[1]}` : ''),
   field: p => {
     const d = { drones: 'Dron Envanteri', live: 'Canlı Uçuş', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]];
     return p[0] === 'report' ? `Uçuş raporu #${p[1]}` : d ? `Dron Yönetimi · ${d}${p[1] ? ` #${p[1]}` : ''}` : p.join('/');

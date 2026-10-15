@@ -16,10 +16,10 @@ from pydantic import BaseModel
 from .. import agentkeys, auth, db, drone_hub
 
 router = APIRouter(prefix='/api/drone')
-drones_user = auth.require_module('field.drones')
+drones_user = auth.require_module('drone.drones')
 live_user = auth.require_module('field.live')
-routes_user = auth.require_module('field.routes')
-bridges_user = auth.require_module('field.bridges')
+routes_user = auth.require_module('drone.routes')
+bridges_user = auth.require_module('drone.bridges')
 
 DRONE_STATUS = {'AKTIF': 'Aktif', 'BAKIMDA': 'Bakımda', 'ARIZALI': 'Arızalı', 'PASIF': 'Pasif'}
 PROTOCOLS = {'mavlink': 'MAVLink', 'sanal': 'Sanal Dron', 'dji': 'DJI'}
@@ -120,8 +120,8 @@ def bridge_code(conn, request_host, key):
 def meta(user=Depends(auth.current_user)):
     return {'drone_status': DRONE_STATUS, 'protocols': PROTOCOLS, 'session_status': SESSION_STATUS, 'platforms': PLATFORMS,
             'conn_types': CONN_TYPES, 'route_kinds': ROUTE_KINDS, 'wp_actions': WP_ACTIONS, 'commands': sorted(drone_hub.CMD_NAMES),
-            'can': {'drones': 'field.drones' in user['modules'], 'live': 'field.live' in user['modules'],
-                    'routes': 'field.routes' in user['modules'], 'bridges': 'field.bridges' in user['modules'],
+            'can': {'drones': 'drone.drones' in user['modules'], 'live': 'field.live' in user['modules'],
+                    'routes': 'drone.routes' in user['modules'], 'bridges': 'drone.bridges' in user['modules'],
                     'command': drone_hub.can_command(user) if 'write_modules' in user else False}}
 
 

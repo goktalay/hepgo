@@ -1,10 +1,10 @@
-"""Mavic Köprü — masaüstü uygulaması (Windows; Linux/macOS'ta da çalışır).
+"""Hepgo Dron Köprüsü — masaüstü uygulaması (Windows; Linux/macOS'ta da çalışır).
 
 Kullanım: HEPGO › Saha Yönetimi › Dron Yönetimi › Dron Köprüleri'nde köprü ekleyin, verilen köprü kodunu
 ('caymaz.app/…') bu uygulamaya yapıştırıp "Başlat"a basın. Köprü sunucuya bağlanır; dron bağlantısı
 (seri / UDP / TCP) ya buradan elle ya da HEPGO Canlı Uçuş'taki "Bağlan" düğmesiyle (uçuşta seçilen ayarlarla) açılır.
 
-Komut satırı (arayüzsüz):  mavic_kopru --code caymaz.app/KEY [--link udp:0.0.0.0:14550 | --link serial:COM3:57600 | --link tcp:127.0.0.1:5760]
+Komut satırı (arayüzsüz):  dron_koprusu --code caymaz.app/KEY [--link udp:0.0.0.0:14550 | --link serial:COM3:57600 | --link tcp:127.0.0.1:5760]
 """
 import argparse
 import asyncio
@@ -23,7 +23,7 @@ from kopru_core import APP_NAME, VERSION, Bridge, parse_code
 # ---------------- ayar dosyası (kod Windows'ta DPAPI ile şifreli) ----------------
 def _cfg_path():
     base = os.environ.get('APPDATA') or os.path.join(Path.home(), '.config')
-    d = Path(base) / 'MavicKopru'
+    d = Path(base) / 'HepgoDronKoprusu'
     d.mkdir(parents=True, exist_ok=True)
     return d / 'ayarlar.json'
 
@@ -315,7 +315,7 @@ def run_gui():
 
 
 def main():
-    ap = argparse.ArgumentParser(prog='mavic_kopru', description=f'{APP_NAME} — HEPGO dron köprüsü')
+    ap = argparse.ArgumentParser(prog='dron_koprusu', description=f'{APP_NAME} — HEPGO dron köprüsü')
     ap.add_argument('--code', help='Köprü kodu (alan-adı/anahtar); verilirse arayüzsüz çalışır')
     ap.add_argument('--link', help='Dron bağlantısı: udp:0.0.0.0:14550 | serial:COM3:57600 | tcp:127.0.0.1:5760')
     ap.add_argument('--version', action='version', version=VERSION)

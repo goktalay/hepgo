@@ -1,5 +1,5 @@
 // Dron Yönetimi (Saha Yönetimi alt modülleri — Faz 1): Dron Envanteri, Canlı Uçuş, Rotalar, Dron Köprüleri.
-// Adresler: #/field/drones[/id] · #/field/live?task=<görev id> · #/field/routes (routes.js) · #/field/bridges
+// Adresler: #/drone/drones[/id] · #/field/live?task=<görev id> · #/drone/routes (routes.js) · #/drone/bridges
 // Bağlantı bilgileri (köprü, seri/tcp/udp, sysid) DRON KAYDINDA TUTULMAZ; saha görevindeki uçuş (field_flights) düzeyinde seçilir.
 // Canlı telemetri: /ws/drone/live (oturum çerezi) — harekât ekranı (static/ops) yalnız bir saha görevi bağlamında açılır.
 import { api } from '../api.js';
@@ -8,7 +8,8 @@ import {
   toast, t as tr,
 } from '../ui.js';
 
-const TABS = [['drones', 'Dron Envanteri'], ['live', 'Canlı Uçuş'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']];
+// Canlı Uçuş sekmesi yok: harekât ekranı yalnız saha görevinden açılır (#/field/live?task=<id>; renderLive aşağıda)
+const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']];
 const DRONE_BADGE = { AKTIF: 'green', BAKIMDA: 'yellow', ARIZALI: 'red', PASIF: 'gray' };
 const SESSION_BADGE = { ACIK: 'green', KAPANDI: 'gray', KOPTU: 'red', KESILDI: 'yellow' };
 // Dron türü (protocol): ürettiğimiz tüm Caymaz dronları MAVLink; sanal dron sunucu içi simülatör (köprü gerekmez); DJI ileride.
@@ -28,23 +29,22 @@ export async function render(view, params, ctx) {
   // Dron Yönetimi sekme yetkisi olmayan görev pilotu da açabilmeli.
   {
     const [pg, q] = String(params[0] || '').split('?');
-    if (pg === 'live' && new URLSearchParams(q || '').get('task') && !m.can.live) {
+    if (pg === 'live') {
       const head = sub => pageHead('Canlı Uçuş', { back: '#/field', sub });
       return renderLive(view, ctx, m, head, new URLSearchParams(q || ''));
     }
   }
   if (!tabs.length) {
-    clear(view, pageHead('Dron Yönetimi', { back: '#/field' }),
-      h('div', { class: 'card empty' }, 'Dron Yönetimi için yetkiniz yok. Rol Yönetimi › Saha & Operasyon altındaki Dron düğümleri rolünüze açılmalı.'));
+    clear(view, pageHead('Dron Yönetimi', { back: '#/' }),
+      h('div', { class: 'card empty' }, 'Dron Yönetimi için yetkiniz yok. Rol Yönetimi › Saha & Operasyon › Dron Yönetimi rolünüze açılmalı.'));
     return;
   }
   // params[0] 'live?task=5' biçiminde gelebilir (yönlendirici hash'i '/' ile böler, sorgu dizesi ilk parçada kalır)
   const [page, qs] = String(params[0] || '').split('?');
   const want = TABS.some(([k]) => k === page) ? page : tabs[0][0];
   const cur = m.can[want] ? want : tabs[0][0];
-  const head = sub => pageHead('Dron Yönetimi', { back: '#/field', sub, tabs: moduleTabs(tabs, cur, k => { location.hash = `#/field/${k}`; }) });
+  const head = sub => pageHead('Dron Yönetimi', { back: '#/', sub, tabs: moduleTabs(tabs, cur, k => { location.hash = `#/drone/${k}`; }) });
   if (cur === 'drones') return params[1] ? renderDroneDetail(view, Number(params[1]), ctx, m) : renderDrones(view, ctx, m, head);
-  if (cur === 'live') return renderLive(view, ctx, m, head, new URLSearchParams(qs || ''));
   if (cur === 'routes') {
     // Rotalar sekmesi ayrı modülde (routes.js: sol dar sütun + Cesium harita); yalnız gerekince yüklenir.
     const routes = await import('./routes.js');
@@ -88,7 +88,7 @@ async function renderDrones(view, ctx, m, head) {
     ]);
     clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Kod', 'Dron', 'Tür', 'Pilot', 'Durum', 'Görev', 'Son log'].map(c => h('th', null, c)))),
-      h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => { location.hash = `#/field/drones/${d.id}`; } },
+      h('tbody', null, list.map(d => h('tr', { class: 'click', onclick: () => { location.hash = `#/drone/drones/${d.id}`; } },
         h('td', null, h('b', { class: 'mono' }, d.code), d.active ? null : h('div', null, h('span', { class: 'badge gray' }, 'Pasif'))),
         h('td', null, h('b', null, d.name), h('div', { class: 'small muted' }, [d.model, d.serial ? `SN ${d.serial}` : null].filter(Boolean).join(' · '))),
         h('td', null, protoBadge(d)),
@@ -165,7 +165,7 @@ async function renderDroneDetail(view, id, ctx, m) {
     const openFlight = flights.find(f => ['BASLANGIC', 'GOREVDE'].includes(f.task_status) && f.task_id);
     clear(view,
       pageHead(`${d.code} · ${d.name}`, {
-        back: '#/field/drones', sub: [protoText(d), d.model, d.serial ? `SN ${d.serial}` : null, d.status_text].filter(Boolean).join(' · '),
+        back: '#/drone/drones', sub: [protoText(d), d.model, d.serial ? `SN ${d.serial}` : null, d.status_text].filter(Boolean).join(' · '),
         right: h('div', { class: 'pill-group' },
           m.can.live && openFlight ? h('a', { class: 'btn sm', href: liveHref(openFlight.task_id) }, 'Canlı Uçuş') : null,
           h('button', { class: 'btn sm primary', onclick: () => droneForm(d, m, load) }, 'Bilgileri düzenle'),
@@ -173,7 +173,7 @@ async function renderDroneDetail(view, id, ctx, m) {
             if (!await confirmDialog('Dronu sil', tr('{code} silinsin mi? Uçuş geçmişi varsa silinmez, pasife alınır.', { code: d.code }), { okLabel: 'Sil', danger: true })) return;
             const r = await api.del(`/api/drone/drones/${d.id}`);
             toast(r.deactivated ? 'Dron pasife alındı (uçuş geçmişi var)' : 'Dron silindi');
-            location.hash = '#/field/drones';
+            location.hash = '#/drone/drones';
           } }, 'Sil')),
       }),
       h('div', { class: 'grid-2', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'start' } },

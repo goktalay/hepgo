@@ -41,9 +41,11 @@ CATALOG = [
     ('hr', 'İnsan Kaynakları', 'İnsan Kaynakları'),
     ('projects', 'Proje Yönetimi', 'Proje & Ar-Ge'),
     ('field', 'Saha Yönetimi', 'Saha & Operasyon'),
-    # Dron Yönetimi paketi: Saha Yönetimi alt düğümleri (üst modülden miras; rol başına ayrı oku/yaz verilebilir)
-    ('field.drones', 'Dron Envanteri', 'Saha & Operasyon'), ('field.live', 'Canlı Uçuş', 'Saha & Operasyon'),
-    ('field.routes', 'Rotalar', 'Saha & Operasyon'), ('field.bridges', 'Dron Köprüleri', 'Saha & Operasyon'),
+    ('field.live', 'Canlı Uçuş', 'Saha & Operasyon'),   # saha görevinden açılan harekât ekranı
+    # Dron Yönetimi: ayrı üst modül (alt düğümler üst modülden miras alır; rol başına ayrı oku/yaz verilebilir)
+    ('drone', 'Dron Yönetimi', 'Saha & Operasyon'),
+    ('drone.drones', 'Dron Envanteri', 'Saha & Operasyon'), ('drone.routes', 'Rotalar', 'Saha & Operasyon'),
+    ('drone.bridges', 'Dron Köprüleri', 'Saha & Operasyon'),
     ('fleet', 'Araç Yönetimi', 'Saha & Operasyon'), ('certs', 'Sertifikasyon', 'Saha & Operasyon'),
     ('cleaning', 'Temizlik', 'Saha & Operasyon'),
     ('pos', 'Esnaf Kasa', 'Satış & CRM'),

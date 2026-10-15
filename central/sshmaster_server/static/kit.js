@@ -13,7 +13,7 @@
   const DICTS = [SITE, ...((me?.dataset.dicts || '').split(',').map(s => s.trim()).filter(Boolean))];
   const LANGS = [['tr', 'Türkçe'], ['en', 'English'], ['fr', 'Français'], ['de', 'Deutsch'], ['es', 'Español'], ['ar', 'العربية'], ['zh', '中文'], ['ru', 'Русский']];
   const CODES = LANGS.map(l => l[0]);
-  const SITES = ['mastertool.download', 'sshmasters.com', 'ftpmasters.com', 'hepgo.com'];
+  const SITES = ['mastertool.download', 'sshmasters.com', 'ftpmasters.com', 'sqlmaster.app', 'hepgo.com'];
   const root = document.documentElement;
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* özel kip */ } } };
   const qs = new URLSearchParams(location.search);
@@ -166,6 +166,22 @@
     b.title = b.ariaLabel = dark ? lbl[0] : lbl[1];
   }
 
+  // Mastertool düğmesi: uygulama sitelerinde sağ üst köşede, animasyonlu; tıklanınca mastertool.download yeni pencerede açılır
+  const MT_MARK = '<svg class="mtk-mt-ic" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="mtkg" x1="0" y1="0" x2="1" y2="1">'
+    + '<stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs>'
+    + '<rect x="2" y="2" width="28" height="28" rx="8" fill="url(#mtkg)"/><path d="M8.5 22.5V10l7.5 7.5 7.5-7.5v12.5" fill="none" '
+    + 'stroke="#06101c" stroke-opacity=".28" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path class="mtk-mt-m" d="M8.5 22.5V10l7.5 7.5 7.5-7.5v12.5" fill="none" '
+    + 'stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" pathLength="100"/></svg>';
+  function mtButton() {
+    const slot = document.querySelector('[data-mt-button]');
+    if (!slot) return;
+    const a = document.createElement('a');
+    a.className = 'mtk-mt'; a.href = 'https://mastertool.download/'; a.target = '_blank'; a.rel = 'noopener';
+    a.setAttribute('data-noi18n', ''); a.title = 'Mastertool — SSH Master · FTP Masters · SQL Master';
+    a.innerHTML = `<span class="mtk-mt-in">${MT_MARK}<span class="mtk-mt-tx">Mastertool</span><svg class="mtk-mt-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+    slot.replaceWith(a);
+  }
+
   // siteler arası geçişte dil ve tema taşınır
   document.addEventListener('click', e => {
     const a = e.target.closest?.('a[href]'); if (!a) return;
@@ -245,7 +261,7 @@
 
   window.mtKit = { t, setLang, collect, get lang() { return lang; }, get theme() { return resolved(); }, langs: LANGS };
   const start = async () => {
-    controls(); globe();
+    controls(); mtButton(); globe();
     dict = await load(lang);
     observing = true;
     try { translate(); } finally { observing = false; }

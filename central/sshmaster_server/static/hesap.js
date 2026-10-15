@@ -10,7 +10,7 @@ const view = $('#view');
 view.setAttribute('data-noi18n', '');
 const SITE = document.body.dataset.site || 'sm';
 const BRAND = document.body.dataset.brand || SITE;
-const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', mt: 'Mastertool' };
+const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', mt: 'Mastertool' };
 const SNAME = NAMES[SITE] || 'Mastertool';
 const API = '/api/mt';
 const AQ = BRAND !== SITE ? `?app=${BRAND}` : '';   // portalda ürün markası sayfalar arasında korunur
@@ -54,7 +54,7 @@ function pwRules(p) { return p.length >= 8; }
 // ---------- sayfalar ----------
 function pageRegister() {
   document.title = `${t('Hesap oluştur')} — ${SNAME}`;
-  view.innerHTML = `<h1>${t('Hesap oluşturun')}</h1><p class="muted small">${t('Tek Mastertool hesabıyla SSH Master ve FTP Masters\'ı indirin, kayıtlarınızı cihazlar arasında şifreli eşitleyin.')}</p>
+  view.innerHTML = `<h1>${t('Hesap oluşturun')}</h1><p class="muted small">${t('Tek Mastertool hesabıyla SSH Master, FTP Masters ve SQL Master\'ı indirin, kayıtlarınızı cihazlar arasında şifreli eşitleyin.')}</p>
     <form id="f" autocomplete="on">
       <label for="n">${t('Ad soyad')}</label><input id="n" autocomplete="name" required>
       <label for="e">${t('E-posta')}</label><input id="e" type="email" autocomplete="email" required>
@@ -87,7 +87,7 @@ function pageLogin() {
     askida: [t('Hesabınız askıya alınmış.'), 'err'], sifirlandi: [t('Şifreniz değişti. Yeni şifrenizle giriş yapın.'), 'ok'],
     cikis: [t('Çıkış yaptınız.'), 'info'] }[qs.get('durum')];
   view.innerHTML = `<h1>${t('Giriş yapın')}</h1>
-    <p class="muted small">${t('Mastertool hesabınız SSH Master ve FTP Masters\'ta aynıdır.')}</p>
+    <p class="muted small">${t('Mastertool hesabınız SSH Master, FTP Masters ve SQL Master\'da aynıdır.')}</p>
     ${qs.get('sonra') ? `<div class="msg info">${t('İndirme bağlantınız kişiye özeldir; devam etmek için giriş yapın.')}</div>` : ''}
     ${durum ? `<div class="msg ${durum[1]}">${durum[0]}</div>` : ''}
     <form id="f" autocomplete="on">
@@ -140,7 +140,7 @@ async function pageReset(tok) {
     return;
   }
   view.innerHTML = `<h1>${t('Yeni şifre belirleyin')}</h1><p class="muted small">${esc(info.email)}</p>
-    <div class="msg info">${t('Yeni şifre SSH Master ve FTP Masters için birlikte geçerli olur. Şifre değişince web\'de saklanan şifreli kütüphaneleriniz silinir; uygulamalarda yeni şifrenizle giriş yaptığınızda bilgisayarınızdaki kayıtlar yeniden yüklenir.')}</div>
+    <div class="msg info">${t('Yeni şifre tüm Mastertool uygulamaları için birlikte geçerli olur. Şifre değişince web\'de saklanan şifreli kütüphaneleriniz silinir; uygulamalarda yeni şifrenizle giriş yaptığınızda bilgisayarınızdaki kayıtlar yeniden yüklenir.')}</div>
     <form id="f"><label for="p">${t('Yeni şifre')}</label><input id="p" type="password" autocomplete="new-password" required minlength="8">
       <label for="p2">${t('Yeni şifre (tekrar)')}</label><input id="p2" type="password" autocomplete="new-password" required>
       <button class="btn primary block" id="b">${t('Şifreyi kaydet')}</button><div id="m"></div></form>`;
@@ -161,7 +161,7 @@ const fmtSize = n => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 102
 const fmtDate = s => (s ? new Date(s).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const TABS = () => [['uygulamalar', t('Uygulamalar')], ['cihazlar', t('Cihazlar')], ['guvenlik', t('Şifre')], ['destek', t('Destek')]];
 const TK_STATUS = () => ({ acik: [t('Açık'), 'warn'], yanit_bekliyor: [t('Yanıtlandı'), 'on'], cozuldu: [t('Çözüldü'), ''], kapali: [t('Kapalı'), ''] });
-const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', mt: t('Hesap / genel') });
+const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', mt: t('Hesap / genel') });
 let ACC = null;
 let curTab = null;
 
@@ -228,7 +228,7 @@ function panePassword(pane) {
   pane.innerHTML = `<form id="pf"><label for="op">${t('Mevcut şifre')}</label><input id="op" type="password" autocomplete="current-password" required>
       <label for="np">${t('Yeni şifre')}</label><input id="np" type="password" autocomplete="new-password" required minlength="8">
       <label for="np2">${t('Yeni şifre (tekrar)')}</label><input id="np2" type="password" autocomplete="new-password" required>
-      <div class="hint">${t('Yeni şifre SSH Master ve FTP Masters için birlikte geçerli olur. Şifre değişince web\'deki şifreli kopyalar silinir ve diğer cihazlardaki oturumlar kapanır; uygulamalarda yeni şifreyle giriş yaptığınızda bilgisayarınızdaki kayıtlar yeniden yüklenir.')}</div>
+      <div class="hint">${t('Yeni şifre tüm Mastertool uygulamaları için birlikte geçerli olur. Şifre değişince web\'deki şifreli kopyalar silinir ve diğer cihazlardaki oturumlar kapanır; uygulamalarda yeni şifreyle giriş yaptığınızda bilgisayarınızdaki kayıtlar yeniden yüklenir.')}</div>
       <button class="btn block" id="pb">${t('Şifreyi değiştir')}</button><div id="pm"></div></form>`;
   $('#pf').onsubmit = async ev => {
     ev.preventDefault();

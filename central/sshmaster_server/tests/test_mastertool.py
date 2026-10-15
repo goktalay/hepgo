@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -220,6 +220,28 @@ def main():
         m = mailer.OUTBOX[-1]
         assert m['subject'] == 'FTP Masters: destek talebinize yanıt (T-0003)' and '/hesabim?talep=3#destek' in m['text'], m
 
+        # ---- SQL Master (sq): aynı hesap, ayrı oturum / kütüphane / sürüm, kendi anahtarı
+        assert c.get('/api/sq/health').json()['ok']
+        r = c.post('/api/sq/auth/login', json={'email': 'yeni@test.com', 'auth_hash': auth_hash('Yeni-1111', k2), 'device': 'SQL-PC'})
+        assert r.status_code == 200, r.text
+        SQ = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert c.get('/api/fm/library', headers=SQ).json()['code'] == 'wrong_app'
+        assert c.put('/api/sq/library', headers=SQ, json={'base_version': 0, 'blob': blob}).json() == {'version': 1}
+        exe_sq = b'MZ' + b'q' * 400
+        assert c.post('/api/sq/releases/1.0.0/setup', data={}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'fm-anahtar'}).status_code == 403
+        r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
+        assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
+        assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq'}
+        assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
+        sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
+        c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
+        r = c.post('/api/sq/auth/login', json={'email': 'yeni@test.com', 'auth_hash': auth_hash('Yeni-1111', k2)})
+        assert r.json()['code'] == 'app_disabled' and 'SQL Master' in r.json()['message']
+        assert c.get('/', headers={'Host': 'sqlmaster.app'}).text.count('<title>SQL Master') == 1
+        assert c.get('/brand/sq.png').headers['content-type'] == 'image/png'
+        assert c.get('/i18n/sq.de.json').status_code == 200
+
         # ---- Host'a göre site
         for host, title in (('ftpmasters.com', 'FTP Masters —'), ('www.ftpmasters.com', 'FTP Masters —'), ('mastertool.download', 'Mastertool —'),
                             ('sshmasters.com', 'SSH Master —'), ('testserver', 'SSH Master —')):
@@ -248,7 +270,7 @@ def main():
         # ---- site kiti ve çeviri sözlükleri (8 dil; Türkçe kaynak sayfanın kendisi)
         for a in ('/kit.js', '/kit.css'):
             assert c.get(a, headers={'Host': 'ftpmasters.com'}).status_code == 200, a
-        for site in ('sm', 'fm', 'mt', 'hesap'):
+        for site in ('sm', 'fm', 'sq', 'mt', 'hesap'):
             for lang in ('en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'):
                 r = c.get(f'/i18n/{site}.{lang}.json')
                 assert r.status_code == 200 and isinstance(r.json(), dict) and len(r.json()) > 20, (site, lang)
@@ -258,8 +280,8 @@ def main():
         for lang in ('en', 'ar', 'zh'):
             d = c.get(f'/i18n/hesap.{lang}.json').json()
             assert not [k for k in keys if k not in d], (lang, [k for k in keys if k not in d][:3])   # hesap.js'deki her metin çevrilmiş
-        for site in ('sm', 'fm', 'mt'):
-            assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'mt': 'mastertool.download'}[site]}).text
+        for site in ('sm', 'fm', 'sq', 'mt'):
+            assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'sq': 'www.sqlmaster.app', 'mt': 'mastertool.download'}[site]}).text
         assert 'data-site="hesap"' in c.get('/giris').text
 
         # ---- son kullanıcı hiçbir yerde iç adres görmez

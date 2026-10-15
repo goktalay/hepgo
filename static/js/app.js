@@ -138,7 +138,7 @@ const MODULES = [
   { key: 'projects', title: 'Proje Yönetimi', mod: projectsMod },
   // Merkez modu (Veilox Merkez): üyelik yönetimi, destek talepleri, toplu SMS — yalnız merkez instance'ında yetkili olur
   { key: 'members', title: 'Üyelik Yönetimi', mod: members, tone: 'red' },
-  { key: 'sshmaster', title: 'SSH Master', mod: sshmasterMod },
+  { key: 'sshmaster', title: 'Mastertool', mod: sshmasterMod },
   { key: 'tickets', title: 'Destek Merkezi', mod: ticketsMod },
   { key: 'sms', title: 'Toplu SMS', mod: smsMod, group: 'system' },
   // Firma paneli: merkezle ilişki (paket, ödemeler, destek talepleri) — firma instance'ında
@@ -178,7 +178,7 @@ const MOD_KEYWORDS = {
   products: 'urun malzeme recete',
   certs: 'sertifika belgelendirme',
   members: 'uyelik abonelik',
-  sshmaster: 'ssh master sshmasters terminal indirme',
+  sshmaster: 'mastertool ssh master sshmasters ftp masters ftpmasters terminal indirme lisans',
   tickets: 'destek talep ticket',
 };
 // Alt modül / sık yapılan işler indeksi (küratörlü): arama bunları da bulur ve ilgili yere götürür.

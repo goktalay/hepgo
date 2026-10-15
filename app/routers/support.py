@@ -203,6 +203,9 @@ async def ticket_reply(tid: int, request: Request, user=Depends(staff_user), con
         support.set_status_ticket(conn, _ticket(conn, tid), f['status'], user['full_name'])
     db.audit(conn, user['id'], 'Destek: iç not ekledi' if internal else 'Destek: talebi yanıtladı', 'ticket', tid)
     conn.commit()
+    if not internal:
+        from . import sshmaster_admin   # Mastertool talebi: kullanıcıya e-posta (döngüsel içe aktarım olmasın diye burada)
+        sshmaster_admin.notify_reply(t)
     return ticket(tid, user, conn)
 
 

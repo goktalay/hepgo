@@ -7,7 +7,7 @@ export const MODULE_NAMES = {
   companies: 'Firma Yönetimi', documents: 'Evrak Yönetimi', sales: 'Satış Yönetimi', crm: 'CRM', finance: 'Finans',
   hr: 'İnsan Kaynakları', projects: 'Proje Yönetimi', field: 'Saha Yönetimi', drone: 'Dron Yönetimi', fleet: 'Araç Yönetimi', certs: 'Sertifikasyon',
   cleaning: 'Temizlik', secretariat: 'Sekreterya', security: 'Güvenlik', cameras: 'Kameralar', rehber: 'Rehber',
-  members: 'Üyelik Yönetimi', sshmaster: 'SSH Master', tickets: 'Destek Merkezi', sms: 'Toplu SMS', uyelik: 'Üyeliğim & Destek', mikro: 'Mikro ERP', master: 'Veri & Yedek', pos: 'Esnaf Kasa', sections: 'Bölümler', services: 'Hizmetler', reservations: 'Rezervasyon', waiter: 'Garson',
+  members: 'Üyelik Yönetimi', sshmaster: 'Mastertool', tickets: 'Destek Merkezi', sms: 'Toplu SMS', uyelik: 'Üyeliğim & Destek', mikro: 'Mikro ERP', master: 'Veri & Yedek', pos: 'Esnaf Kasa', sections: 'Bölümler', services: 'Hizmetler', reservations: 'Rezervasyon', waiter: 'Garson',
 };
 // Bilinmeyen (yeni) anahtar: ham anahtar yerine okunur biçim (ilk harf büyük)
 export const moduleName = k => MODULE_NAMES[k] || String(k).replace(/[._-]+/g, ' ').replace(/^./, c => c.toLocaleUpperCase('tr'));

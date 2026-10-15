@@ -1,7 +1,7 @@
 # SSH Master hesap ve senkronizasyon API'si (sözleşme v2)
 
 Sunucu: `https://sshmasters.com` (HEPGO canlı sunucusu, servis `hepgo-sshmasters`, kaynak `central/sshmaster_server/`).
-Yönetim: HEPGO Merkez (`merkez.veilox.app`) › SSH Master. Kayıt/şifre e-postaları `register@hepgo.com` üzerinden gider;
+Hesap Mastertool hesabıdır (aynı hesap FTP Masters'ta da geçerli; bkz. docs/ftpmasters-api.md). Yönetim: HEPGO Merkez › Mastertool. Kayıt/şifre e-postaları yapılandırılan gönderenden (hedef `register@mastertool.download`) gider;
 gönderen adı, konu ve logo **SSH Master**'dır.
 
 Tüm gövdeler JSON (UTF-8). Hata yanıtı: `{"code": "<makine kodu>", "message": "<Türkçe açıklama>", "detail": "<aynı>"}`.
@@ -41,13 +41,16 @@ kullanıcıysa 403). İndirme kaydı tutulur. Hesap askıdaysa indirme ve uygula
 → `200 {"token": "<opak>", "user": {"id": 7, "email": "a@b.com", "name": "Ali"}, "sync_enabled": true,
         "kdf": {"alg": "PBKDF2-SHA256", "iter": 310000, "salt": "<base64 16 bayt>"}}`
 
-Hatalar: `401 code=bad_credentials`, `403 code=unverified` (e-posta doğrulanmamış), `403 code=suspended`, `429 code=rate_limited`.
+Hatalar: `401 code=bad_credentials`, `403 code=unverified` (e-posta doğrulanmamış), `403 code=suspended`, `429 code=rate_limited`,
+`403 code=app_disabled` (v2.1: yönetici bu hesapta SSH Master lisansını kapattı; diğer uygulama etkilenmez — "Hesabınızda SSH Master kapalı"
+gösterin). Uygulama token'ı yalnız `/api/sm/*` uçlarında geçer (başka uygulamanın ucunda `403 code=wrong_app`).
 
 - Token opak; `Authorization: Bearer <token>` ile gönderilir. 30 gün kullanılmazsa düşer, her istekte süre uzar.
 - Uygulama token'ı Electron `safeStorage` (DPAPI) ile saklar. **Çevrimdışıyken** saklı token varsa uygulama yerel
   kütüphaneyle açılır; senkronizasyon bağlantı gelince yapılır. Sunucu `401 code=session_expired` dönerse giriş ekranı açılır.
 - `POST /api/sm/auth/logout` (Bearer) — token'ı siler. `GET /api/sm/me` (Bearer) → `{user, sync_enabled, kdf, library: {version, updated_at, size}}`.
 - Şifremi unuttum / kayıt: uygulama tarayıcıda `https://sshmasters.com/sifremi-unuttum` ve `/kayit` açar (`shell.openExternal`).
+  Hesap portalı (`https://mastertool.download`) yayına girince bu adresler oraya yönlenir; uygulamada değişiklik gerekmez.
 
 ## 3. Bağlantı kütüphanesi senkronizasyonu (uçtan uca şifreli)
 
@@ -89,6 +92,11 @@ Kullanıcı yeni şifreyle girişte cihazındaki kütüphane yeniden yüklenir (
 
 `POST /api/sm/releases` — başlık `X-Release-Key: <gizli>` ya da Merkez iç anahtarı; `multipart/form-data`:
 `version` (ör. 1.2.0), `setup` (SSH Master Setup x.y.z.exe), `portable` (isteğe bağlı), `notes` (isteğe bağlı).
+Cloudflare tek istekte **100 MB** sınırı koyar: büyük dosyalar ve taşınabilir sürüm için tek dosyalık / parçalı uç (v2.1):
+`POST /api/sm/releases/<sürüm>/setup` ya da `/portable` — aynı `X-Release-Key`; `multipart/form-data`: `file` (parça), `part` (0'dan),
+`parts` (toplam, ≤ 64), isteğe bağlı `filename`, `notes` (yalnız setup). Parçalar sırayla gönderilir (her biri < 100 MB); ara parçada
+`{ok, received}`, son parçada `{ok, version, kind, sha256, size}`. `setup` sürümü oluşturur (varsa 409 `exists`), `portable` var olan
+sürüme eklenir (sürüm yoksa 404 `no_release`, zaten varsa 409). Sıra bozulursa 409 `part_order` → part=0'dan yeniden.
 En son yüklenen sürüm `/hesabim` indirmesinde verilir. `GET /api/sm/releases/latest` (Bearer) → `{version, notes, size}`
 (uygulama içi "yeni sürüm var" bildirimi için; indirme yine web hesabından).
 

@@ -1,4 +1,4 @@
-"""Merkez › SSH Master vekil uçları: gerçek SSH Master hesap servisi (central/sshmaster_server) geçici portta çalışır,
+"""Merkez › Mastertool (eski adı SSH Master) vekil uçları + Mastertool destek köprüsü: gerçek SSH Master hesap servisi (central/sshmaster_server) geçici portta çalışır,
 Merkez kipindeki HEPGO onu iç anahtarla çağırır. Çalıştırma: .venv/bin/python -m tests.test_sshmaster_admin"""
 import base64
 import hashlib
@@ -26,6 +26,45 @@ def auth_hash(pw, kdf):
     return base64.b64encode(hashlib.pbkdf2_hmac('sha256', m, pw.encode(), 1, 32)).decode()
 
 
+def mastertool_tickets(a):
+    """Mastertool hesap servisinin iç anahtarla çağırdığı destek köprüsü: talepler slug=mastertool ile talep ekranına düşer,
+    kullanıcı yalnız kendi e-postasının taleplerini görür, iç not dışarı çıkmaz, destek yanıtı e-posta bildirimini tetikler."""
+    from app.routers import sshmaster_admin
+    K = {'X-Central-Secret': 'ic-anahtar'}
+    plain = TestClient(app, base_url='https://testserver')
+    assert plain.get('/api/federation/mastertool/tickets?email=u@test.com').status_code == 403
+    assert plain.get('/api/federation/mastertool/tickets?email=u@test.com', headers={'X-Central-Secret': 'yanlis'}).status_code == 403
+    r = plain.post('/api/federation/mastertool/tickets', headers=K, json={'email': 'U@Test.com', 'name': 'Kullanıcı Bir', 'app': 'fm',
+                   'subject': 'FTPS bağlanmıyor', 'body': 'AUTH TLS hatası', 'category': 'teknik'})
+    assert r.status_code == 200, r.text
+    tid = r.json()['id']
+    assert plain.post('/api/federation/mastertool/tickets', headers=K, json={'email': 'u@test.com', 'subject': '', 'body': ''}).status_code == 400
+    lst = plain.get('/api/federation/mastertool/tickets?email=u@test.com', headers=K).json()
+    assert lst[0]['id'] == tid and lst[0]['app'] == 'fm' and lst[0]['status'] == 'acik', lst
+    assert plain.get('/api/federation/mastertool/tickets?email=baska@test.com', headers=K).json() == []
+    assert plain.get(f'/api/federation/mastertool/tickets/{tid}?email=baska@test.com', headers=K).status_code == 404
+    # Merkez talep ekranında: Mastertool · FTP Masters, kanal mastertool, etiket uygulama
+    row = next(x for x in a.get('/api/central/support/tickets?view=all').json()['tickets'] if x['id'] == tid)
+    assert row['company_name'] == 'Mastertool · FTP Masters' and row['channel'] == 'mastertool' and row['tags'] == 'FTP Masters' and row['slug'] == 'mastertool', row
+    sent = []
+    orig = sshmaster_admin.notify_reply
+    sshmaster_admin.notify_reply = lambda t: sent.append(t)
+    try:
+        assert a.post(f'/api/central/support/tickets/{tid}/messages', json={'body': 'iç not', 'internal': True}).status_code == 200
+        assert not sent   # iç not bildirim üretmez
+        assert a.post(f'/api/central/support/tickets/{tid}/messages', json={'body': 'Sertifikayı kontrol edin'}).status_code == 200
+        assert sent and sent[-1]['opened_by_email'] == 'u@test.com' and sent[-1]['slug'] == 'mastertool'
+    finally:
+        sshmaster_admin.notify_reply = orig
+    t = plain.get(f'/api/federation/mastertool/tickets/{tid}?email=u@test.com', headers=K).json()
+    kinds = [m['author_kind'] for m in t['messages']]
+    assert 'note' not in kinds and kinds.count('support') == 1 and t['status'] == 'yanit_bekliyor' and 'assignee_id' not in t, t
+    assert all('iç not' != m['body'] for m in t['messages'])
+    t = plain.post(f'/api/federation/mastertool/tickets/{tid}/messages', headers=K, json={'email': 'u@test.com', 'name': 'Kullanıcı Bir', 'body': 'Düzeldi'}).json()
+    assert t['messages'][-1]['author_kind'] == 'company' and t['status'] == 'acik'
+    assert plain.post(f'/api/federation/mastertool/tickets/{tid}/close', headers=K, json={'email': 'u@test.com'}).json()['status'] == 'cozuldu'
+
+
 def main():
     env = dict(os.environ, SSHM_DATA_DIR=SD, SSHM_ENV_FILE=os.path.join(SD, 'x'), VEILOX_ENV_FILE=os.path.join(SD, 'y'), SSHM_MAIL_TEST='1',
                SSHM_CENTRAL_SECRET='ic-anahtar', SSHM_SECURE_COOKIE='0')
@@ -51,6 +90,19 @@ def main():
             det = a.get(f"/api/central/sshm/users/{u['id']}").json()
             assert det['user']['status'] == 'AKTIF' and det['user']['note'] == 'test', det
             assert a.post(f"/api/central/sshm/users/{u['id']}/reset-mail").json()['sent'] == 'reset'
+            # uygulama lisansı (FTP Masters kapat / aç)
+            assert a.put(f"/api/central/sshm/users/{u['id']}", json={'apps': {'fm': 'KAPALI'}}).json()['ok']
+            det = a.get(f"/api/central/sshm/users/{u['id']}").json()
+            assert det['apps']['fm']['license'] == 'KAPALI' and det['apps']['sm']['license'] == 'AKTIF', det
+            assert a.put(f"/api/central/sshm/users/{u['id']}", json={'apps': {'fm': 'AKTIF'}}).json()['ok']
+            # FTP Masters sürümü (uygulama seçimiyle)
+            r = a.post('/api/central/sshm/releases', data={'version': '1.0.0', 'app': 'fm'},
+                       files={'setup': ('FTP-Masters-Setup-1.0.0.exe', b'MZ' + b'1' * 300, 'application/octet-stream')})
+            assert r.status_code == 200, r.text
+            assert [x['app'] for x in a.get('/api/central/sshm/releases?app=fm').json()] == ['fm']
+            assert a.post('/api/central/sshm/releases', data={'version': '1.0.1', 'app': 'zz'},
+                          files={'setup': ('x.exe', b'MZ', 'application/octet-stream')}).status_code == 400
+            mastertool_tickets(a)
             r = a.post('/api/central/sshm/releases', data={'version': '2.0.1', 'notes': 'deneme'},
                        files={'setup': ('SSH Master Setup 2.0.1.exe', b'MZ' + b'0' * 500, 'application/octet-stream')})
             assert r.status_code == 200 and r.json()['version'] == '2.0.1', r.text
@@ -61,11 +113,11 @@ def main():
             assert a.get('/api/central/sshm/users').json()['stats']['users'] == 0
             from app import db
             with db.connect() as conn:
-                n = conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'Merkez: SSH Master%'").fetchone()[0]
-            assert n >= 5, n
+                n = conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'Merkez: Mastertool%' OR action LIKE 'Merkez: SSH Master%'").fetchone()[0]
+            assert n >= 7, n
     finally:
         srv.terminate()
-    print('Merkez › SSH Master testleri geçti.')
+    print('Merkez › Mastertool testleri geçti.')
 
 
 if __name__ == '__main__':

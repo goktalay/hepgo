@@ -41,7 +41,7 @@ def main():
         r = c.post('/api/sm/auth/register', json={'name': 'Ali Veli', 'email': 'ali@test.com', 'auth_hash': auth_hash('Gizli-123', k1)})
         assert r.status_code == 200, r.text
         m = mailer.OUTBOX[-1]
-        assert m['to'] == 'ali@test.com' and m['subject'].startswith('SSH Master') and 'https://sshmasters.com/logo.png' in m['html'], m['subject']
+        assert m['to'] == 'ali@test.com' and m['subject'].startswith('SSH Master') and 'https://sshmasters.com/brand/sm.png' in m['html'], m['subject']
         assert c.post('/api/sm/auth/register', json={'name': 'X', 'email': 'ali@test.com', 'auth_hash': 'kısa'}).status_code == 422
         # doğrulanmadan uygulama girişi 403 unverified
         r = c.post('/api/sm/auth/login', json={'email': 'ali@test.com', 'auth_hash': auth_hash('Gizli-123', k1)})

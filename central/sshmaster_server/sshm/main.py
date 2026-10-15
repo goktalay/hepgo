@@ -36,6 +36,8 @@ APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'porta
         'sq': {'name': 'SQL Master', 'setup': 'SQL-Master-Setup-{v}.exe', 'portable': 'SQL-Master-Portable-{v}.exe'},
         'np': {'name': 'Notepad Master', 'setup': 'Notepad-Master-Setup-{v}.exe', 'portable': 'Notepad-Master-Portable-{v}.exe'},
         'cv': {'name': 'Convert Master', 'setup': 'Convert-Master-Setup-{v}.exe', 'portable': 'Convert-Master-Portable-{v}.exe'}}
+LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
+RELEASE_APPS = APPS | {'mt': LAUNCHER}               # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
 PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
 SITES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')
 app = FastAPI(title='Mastertool', docs_url=None, redoc_url=None, openapi_url=None)
@@ -51,6 +53,12 @@ SERVER_ITER = 240_000
 class Err(Exception):
     def __init__(self, status, code, message):
         self.status, self.code, self.message = status, code, message
+
+
+def need_release_app(a):
+    if a not in RELEASE_APPS:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    return a
 
 
 def need_prefix(a, apps_only=False):
@@ -171,12 +179,23 @@ def need_license(conn, uid, a):
         raise Err(403, 'app_disabled', f'Bu hesapta {APPS[a]["name"]} kullanımı kapalı')
 
 
-def new_session(conn, user_id, kind, device=None, app_version=None, ip=None, a=None):
+def new_session(conn, user_id, kind, device=None, app_version=None, ip=None, a=None, parent_id=None):
     tok = secrets.token_urlsafe(32)
-    conn.execute('INSERT INTO sessions (user_id, token_hash, kind, app, device, app_version, ip, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?)',
+    conn.execute('INSERT INTO sessions (user_id, token_hash, kind, app, device, app_version, ip, created_at, last_seen, parent_id) '
+                 'VALUES (?,?,?,?,?,?,?,?,?,?)',
                  (user_id, sha(tok), kind, a if kind == 'app' else None, (device or '')[:120] or None, (app_version or '')[:30] or None, ip,
-                  db.now(), time.time()))
+                  db.now(), time.time(), parent_id))
     return tok
+
+
+def end_session(conn, s):
+    """Oturumu kapatır. Ortak (sso) oturum ya da ondan türetilmiş uygulama oturumu kapanınca o cihazdaki tüm aile düşer:
+    ana sso oturumu ve ona bağlı bütün uygulama oturumları. Dönüş: sso ailesi kapandı mı."""
+    root = s['id'] if s['kind'] == 'sso' else s['parent_id']
+    if root:
+        conn.execute('DELETE FROM sessions WHERE id = ? OR parent_id = ?', (root, root))
+    conn.execute('DELETE FROM sessions WHERE id = ?', (s['id'],))
+    return bool(root)
 
 
 def current(request, conn, require=True, web_only=False, a=None):
@@ -207,11 +226,19 @@ def current(request, conn, require=True, web_only=False, a=None):
         return None, None
     if via_cookie and request.method not in ('GET', 'HEAD') and request.headers.get('x-sshm') != '1':
         raise Err(403, 'csrf', 'Geçersiz istek')
+    if s['parent_id'] and not conn.execute('SELECT 1 FROM sessions WHERE id = ?', (s['parent_id'],)).fetchone():
+        conn.execute('DELETE FROM sessions WHERE id = ?', (s['id'],))   # ortak oturum başka bir uygulamada kapatıldı
+        conn.commit()
+        if require:
+            raise Err(401, 'session_expired', 'Oturum kapatıldı; yeniden giriş yapın')
+        return None, None
+    if s['kind'] == 'sso' and a in APPS:
+        raise Err(403, 'wrong_app', 'Ortak oturum yalnız Master Tool uçlarında geçer; uygulama oturumu için /auth/sso kullanın')
     if s['kind'] == 'app' and a in APPS:
         if (s['app'] or 'sm') != a:
             raise Err(403, 'wrong_app', 'Bu oturum başka bir uygulamaya ait')
         need_license(conn, u['id'], a)
-    conn.execute('UPDATE sessions SET last_seen = ? WHERE id = ?', (time.time(), s['id']))
+    conn.execute('UPDATE sessions SET last_seen = ? WHERE id = ? OR id = ?', (time.time(), s['id'], s['parent_id'] or 0))
     conn.commit()
     return u, s
 
@@ -377,7 +404,8 @@ async def login(a: str, request: Request):
     b = await body(request)
     email = norm_email(b.get('email'))
     auth = need_auth_hash(b.get('auth_hash'))
-    web = b.get('client') == 'web' or a == 'mt'
+    desktop = a == 'mt' and b.get('client') == 'desktop'     # Master Tool masaüstü: ortak (sso) oturum
+    web = (b.get('client') == 'web' or a == 'mt') and not desktop
     with db.connect() as conn:
         u = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
         if not u:
@@ -389,9 +417,14 @@ async def login(a: str, request: Request):
             raise Err(403, 'unverified', 'E-posta adresiniz henüz doğrulanmadı; gelen kutunuzdaki bağlantıya tıklayın')
         if u['status'] == 'ASKIDA':
             raise Err(403, 'suspended', 'Hesabınız askıya alınmış')
-        if not web:
+        if not web and not desktop:
             need_license(conn, u['id'], a)
-        tok = new_session(conn, u['id'], 'web' if web else 'app', b.get('device'), b.get('app_version'), client_ip(request), a)
+        ip, dev, ver = client_ip(request), b.get('device'), b.get('app_version')
+        sso = sso_id = None
+        if desktop or (a in APPS and b.get('sso') is True):   # uygulama girişinde sso:true → cihazın ortak oturumu da açılır
+            sso = new_session(conn, u['id'], 'sso', dev, ver, ip)
+            sso_id = conn.execute('SELECT id FROM sessions WHERE token_hash = ?', (sha(sso),)).fetchone()[0]
+        tok = None if desktop else new_session(conn, u['id'], 'web' if web else 'app', dev, ver, ip, a, parent_id=sso_id)
         conn.execute('UPDATE users SET last_login = ? WHERE id = ?', (db.now(), u['id']))
         conn.commit()
         sync = bool(lic(conn, u['id'], a)['sync_enabled']) if a in APPS else True
@@ -400,7 +433,36 @@ async def login(a: str, request: Request):
         resp = JSONResponse(out)
         set_cookie(resp, tok)
         return resp
-    return {'token': tok, **out}
+    if desktop:
+        return {'sso_token': sso, **out}
+    return {'token': tok, **out} | ({'sso_token': sso} if sso else {})
+
+
+@app.post('/api/{a}/auth/sso')
+async def login_sso(a: str, request: Request):
+    """Ortak oturumla (Master Tool ya da başka bir uygulamada bir kez giriş yapılmış) şifresiz uygulama girişi.
+    Gövde: {sso_token, device, app_version}. Yanıt /auth/login ile aynı: {token, user, sync_enabled, kdf}.
+    Uygulama oturumu ortak oturuma bağlıdır: herhangi bir uygulamada çıkış yapılınca hepsi düşer."""
+    need_prefix(a, apps_only=True)
+    rate(request, 'sso', 60)
+    b = await body(request)
+    st = str(b.get('sso_token') or '')
+    with db.connect() as conn:
+        s = conn.execute("SELECT * FROM sessions WHERE token_hash = ? AND kind = 'sso'", (sha(st),)).fetchone()
+        if not s or time.time() - s['last_seen'] > settings.TOKEN_DAYS * 86400:
+            if s:
+                end_session(conn, s)
+                conn.commit()
+            raise Err(401, 'session_expired', 'Ortak oturum geçersiz; yeniden giriş yapın')
+        u = conn.execute('SELECT * FROM users WHERE id = ?', (s['user_id'],)).fetchone()
+        if not u or u['status'] != 'AKTIF':
+            raise Err(403, 'suspended' if u and u['status'] == 'ASKIDA' else 'unauthorized', 'Hesap kullanılamıyor')
+        need_license(conn, u['id'], a)
+        tok = new_session(conn, u['id'], 'app', b.get('device') or s['device'], b.get('app_version'), client_ip(request), a, parent_id=s['id'])
+        conn.execute('UPDATE sessions SET last_seen = ? WHERE id = ?', (time.time(), s['id']))
+        conn.commit()
+        sync = bool(lic(conn, u['id'], a)['sync_enabled'])
+    return {'token': tok, 'user': user_public(u), 'sync_enabled': sync, 'kdf': kdf(u['kdf_salt'])}
 
 
 @app.post('/api/{a}/auth/logout')
@@ -408,10 +470,11 @@ def logout(a: str, request: Request):
     need_prefix(a)
     with db.connect() as conn:
         u, s = current(request, conn, require=False)
+        ended = False
         if s:
-            conn.execute('DELETE FROM sessions WHERE id = ?', (s['id'],))
+            ended = end_session(conn, s)
             conn.commit()
-    resp = JSONResponse({'ok': True})
+    resp = JSONResponse({'ok': True, 'sso_ended': ended})
     resp.delete_cookie(COOKIE, path='/')
     return resp
 
@@ -619,9 +682,10 @@ def account(a: str, request: Request):
                          'library': library_meta(conn, u['id'], k), 'release': release_public(latest_release(conn, k)),
                          'download_url': _dl_url(u, k),
                          'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ? AND app = ?', (u['id'], k)).fetchone()[0]})
+        launcher = {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt')), 'download_url': _dl_url(u, 'mt')}
         sm = apps[0]
         # sm alanları üst düzeyde de (v1 hesap sayfası önbellekte kalmış tarayıcılar için)
-        return {'user': user_public(u), 'apps': apps, 'sessions': sessions, 'sync_enabled': sm['sync_enabled'], 'library': sm['library'],
+        return {'user': user_public(u), 'apps': apps, 'launcher': launcher, 'sessions': sessions, 'sync_enabled': sm['sync_enabled'], 'library': sm['library'],
                 'release': sm['release'], 'download_url': sm['download_url'],
                 'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ?', (u['id'],)).fetchone()[0]}
 
@@ -631,8 +695,10 @@ def session_revoke(a: str, sid: int, request: Request):
     need_prefix(a)
     with db.connect() as conn:
         u, _ = current(request, conn, web_only=True)
-        conn.execute('DELETE FROM sessions WHERE id = ? AND user_id = ?', (sid, u['id']))
-        conn.commit()
+        s = conn.execute('SELECT * FROM sessions WHERE id = ? AND user_id = ?', (sid, u['id'])).fetchone()
+        if s:
+            end_session(conn, s)
+            conn.commit()
     return {'ok': True}
 
 
@@ -658,7 +724,7 @@ def _download(tok, a, request, tur):
             return HTMLResponse(_page_msg(request, 'Bu indirme bağlantısı size ait değil',
                                           'İndirme bağlantıları kişiye özeldir ve yalnız sahibi oturum açmışken çalışır. '
                                           'Kendi bağlantınıza <a href="/hesabim">Hesabım</a> sayfasından ulaşabilirsiniz.'), status_code=403)
-        if lic(conn, u['id'], a)['license'] != 'AKTIF':
+        if a in APPS and lic(conn, u['id'], a)['license'] != 'AKTIF':
             return HTMLResponse(_page_msg(request, f'{APPS[a]["name"]} hesabınızda kapalı',
                                           'Bu uygulamanın kullanımı hesabınız için kapatılmış. <a href="/hesabim#destek">Destek</a> talebi açabilirsiniz.'),
                                 status_code=403)
@@ -683,18 +749,62 @@ def download(tok: str, request: Request, tur: str = 'setup'):
 
 @app.get('/indir/{tok}/{a}')
 def download_app(tok: str, a: str, request: Request, tur: str = 'setup'):
-    if a not in APPS:
+    if a not in RELEASE_APPS:
         return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
     return _download(tok, a, request, tur)
 
 
 @app.get('/api/{a}/releases/latest')
 def release_latest(a: str, request: Request):
-    need_prefix(a, apps_only=True)
+    need_release_app(a)
     with db.connect() as conn:
         current(request, conn, a=a)
         r = latest_release(conn, a)
     return release_public(r) or {'version': None}
+
+
+# ---------------- Master Tool masaüstü: uygulama kataloğu ve indirme (ortak oturumla) ----------------
+APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv')
+
+
+@app.get('/api/mt/apps')
+def mt_apps(request: Request):
+    """Master Tool'un gösterdiği uygulamalar. Kurulu mu değil mi istemcide belirlenir (Windows kaldırma kayıtları: DisplayName
+    = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.png (512 px) ve .svg."""
+    with db.connect() as conn:
+        u, _ = current(request, conn, a='mt')
+        out = []
+        for k in APP_ORDER:
+            L = lic(conn, u['id'], k)
+            out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
+                        'site': settings.SITE_URLS[k] + '/', 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
+                        'license': L['license'], 'release': release_public(latest_release(conn, k))})
+        return {'apps': out, 'launcher': {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}}
+
+
+@app.get('/api/mt/apps/{a}/download')
+def mt_app_download(a: str, request: Request, kind: str = 'setup'):
+    """Kurulum dosyasını ortak oturumla indirir (Master Tool'un indirme çubuğu için Content-Length ve X-Sha256 başlıkları).
+    a = sm|fm|sq|np|cv ya da mt (Master Tool'un kendi güncellemesi). kind = setup|portable."""
+    need_release_app(a)
+    with db.connect() as conn:
+        u, _ = current(request, conn, a='mt')
+        if a in APPS:
+            need_license(conn, u['id'], a)
+        r = latest_release(conn, a)
+        if not r:
+            raise Err(404, 'no_release', 'Henüz yayımlanmış sürüm yok')
+        port = kind == 'portable' and r['portable_file']
+        name = r['portable_file'] if port else r['setup_file']
+        path = rel_dir(a, r['version']) / name
+        if not path.is_file():
+            raise Err(404, 'no_file', 'Dosya bulunamadı')
+        sha = r['setup_sha256'] if not port else ''
+        conn.execute('INSERT INTO downloads (user_id, release_id, app, kind, ip, at) VALUES (?,?,?,?,?,?)',
+                     (u['id'], r['id'], a, 'portable' if port else 'setup', client_ip(request), db.now()))
+        conn.commit()
+    return FileResponse(path, filename=name, media_type='application/octet-stream',
+                        headers={'Cache-Control': 'private, no-store', 'X-Version': r['version'], **({'X-Sha256': sha} if sha else {})})
 
 
 # ---------------- sürüm yükleme (CI / Merkez) ----------------
@@ -743,7 +853,7 @@ async def release_upload(a: str, request: Request, version: str = Form(...), set
                          portable: UploadFile = File(None), notes: str = Form('')):
     """Tek istekte yükleme (setup + isteğe bağlı portable). Cloudflare tek istekte 100 MB sınırı koyar: büyük dosyalar için
     parçalı uç /api/{a}/releases/{version}/{setup|portable} kullanılır."""
-    need_prefix(a, apps_only=True)
+    need_release_app(a)
     _release_auth(request, a)
     version = _version(version)
     d = rel_dir(a, version)
@@ -752,12 +862,12 @@ async def release_upload(a: str, request: Request, version: str = Form(...), set
             raise Err(409, 'exists', 'Bu sürüm zaten yüklü')
     d.mkdir(parents=True, exist_ok=True)
     try:
-        sname = _safe_name(setup.filename, APPS[a]['setup'].format(v=version))
+        sname = _safe_name(setup.filename, RELEASE_APPS[a]['setup'].format(v=version))
         await _save_upload(setup, d / sname)
         ssize, ssha = _finish_exe(d / sname)
         pname = psize = None
         if portable is not None and portable.filename:
-            pname = _safe_name(portable.filename, APPS[a]['portable'].format(v=version))
+            pname = _safe_name(portable.filename, RELEASE_APPS[a]['portable'].format(v=version))
             await _save_upload(portable, d / pname)
             psize, _ = _finish_exe(d / pname)
     except Err:
@@ -776,7 +886,7 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
     """Tek dosya, isteğe bağlı parçalı yükleme (her parça < 100 MB). part 0..parts-1 sırayla gönderilir; son parçada dosya
     doğrulanır (MZ, SHA-256). kind=setup sürümü oluşturur (notes ile); kind=portable var olan sürüme taşınabilir dosyayı ekler.
     Yanıt: ara parçada {ok, received}, son parçada {ok, version, kind, sha256, size}."""
-    need_prefix(a, apps_only=True)
+    need_release_app(a)
     _release_auth(request, a)
     version = _version(version)
     if kind not in ('setup', 'portable'):
@@ -804,7 +914,7 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
         raise Err(413, 'too_large', 'Dosya çok büyük')
     if part < parts - 1:
         return {'ok': True, 'received': tmp.stat().st_size}
-    name = _safe_name(filename or file.filename, APPS[a][kind].format(v=version))
+    name = _safe_name(filename or file.filename, RELEASE_APPS[a][kind].format(v=version))
     try:
         size, sha = _finish_exe(tmp)
     except Err:

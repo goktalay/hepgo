@@ -46,8 +46,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
-    kind TEXT NOT NULL,                            -- web | app
+    kind TEXT NOT NULL,                            -- web | app | sso (Master Tool ortak oturumu: cihazdaki tüm uygulamalar)
     app TEXT,                                      -- uygulama oturumunda sm | fm (web oturumunda NULL)
+    parent_id INTEGER,                             -- sso'dan türetilen uygulama oturumu: ana sso oturumu (o kapanınca bu da düşer)
     device TEXT,
     app_version TEXT,
     ip TEXT,
@@ -137,6 +138,8 @@ def _migrate(conn):
     if 'sessions' in tables and 'app' not in _cols(conn, 'sessions'):
         conn.execute('ALTER TABLE sessions ADD COLUMN app TEXT')
         conn.execute("UPDATE sessions SET app = 'sm' WHERE kind = 'app'")
+    if 'sessions' in tables and 'parent_id' not in _cols(conn, 'sessions'):
+        conn.execute('ALTER TABLE sessions ADD COLUMN parent_id INTEGER')
     if 'downloads' in tables and 'app' not in _cols(conn, 'downloads'):
         conn.execute("ALTER TABLE downloads ADD COLUMN app TEXT NOT NULL DEFAULT 'sm'")
     conn.execute('PRAGMA legacy_alter_table=OFF')

@@ -45,7 +45,8 @@ SITE_URLS = {'sm': PUBLIC_URL, 'fm': os.environ.get('FTPM_PUBLIC_URL', 'https://
 ACCOUNT_URL = PORTAL_URL if PORTAL_LIVE else PUBLIC_URL      # e-postalardaki doğrulama / sıfırlama / hesap bağlantıları
 DEFAULT_SITE = os.environ.get('MT_DEFAULT_SITE', 'sm')         # tanınmayan Host (yerel erişim, testler) hangi site gibi davranır
 RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.get('FTPM_RELEASE_KEY', ''), 'sq': os.environ.get('SQLM_RELEASE_KEY', ''),
-                'np': os.environ.get('NOTEPADM_RELEASE_KEY', ''), 'cv': os.environ.get('CONVERTM_RELEASE_KEY', '')}
+                'np': os.environ.get('NOTEPADM_RELEASE_KEY', ''), 'cv': os.environ.get('CONVERTM_RELEASE_KEY', ''),
+                'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', '')}   # mt = Master Tool masaüstü uygulaması (başlatıcı)
 # Destek talepleri Merkez'in talep ekranına düşer: Merkez aynı sunucuda UNIX soketinde (ya da MT_MERKEZ_URL) iç anahtarla çağrılır
 MERKEZ_UDS = os.environ.get('MT_MERKEZ_UDS', '/run/hepgo/merkez.sock')
 MERKEZ_URL = os.environ.get('MT_MERKEZ_URL', 'http://merkez').rstrip('/')

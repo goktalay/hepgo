@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -334,6 +334,66 @@ def main():
         assert c.get('/shots/shots.json', headers={'Host': 'notepadmaster.com'}).status_code == 404
         assert 'noindex' in c.get('/giris').text   # hesap sayfaları dizine girmez
         assert c.get('/hesabim?app=sshmaster', headers={'Host': 'mastertool.download'}).text.count('data-brand="sm"') == 1
+
+        # ---- Master Tool ortak oturumu (SSO): bir kez giriş → diğer uygulamalar şifresiz; birinde çıkış → hepsi düşer
+        from sshm.main import _RATE
+        _RATE.clear()   # önceki bölümlerin giriş denemeleri hız sınırına takılmasın
+        k = c.post('/api/mt/auth/prelogin', json={'email': 'eski@test.com'}).json()['kdf']
+        AH = auth_hash('Yeni-5678', k)   # şifre yukarıda değiştirildi
+        r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop', 'device': 'MT-PC', 'app_version': '1.0.0'})
+        assert r.status_code == 200 and r.json()['sso_token'] and 'token' not in r.json() and 'set-cookie' not in r.headers, r.text
+        SSO = r.json()['sso_token']
+        MT = {'Authorization': 'Bearer ' + SSO}
+        cat = c.get('/api/mt/apps', headers=MT).json()
+        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        assert cat['apps'][1]['release']['version'] and cat['apps'][1]['icon_png'] == '/brand/fm.png'
+        assert c.get('/api/sm/library', headers=MT).json()['code'] == 'wrong_app'          # ortak token uygulama uçlarında geçmez
+        d = c.get('/api/mt/apps/fm/download', headers=MT)
+        assert d.status_code == 200 and d.headers['x-sha256'] == hashlib.sha256(d.content).hexdigest() and d.content[:2] == b'MZ', d.text[:200]
+        assert c.get('/api/mt/apps/xx/download', headers=MT).status_code == 404
+        assert c.get('/api/mt/apps/fm/download', headers={'Authorization': 'Bearer yanlis'}).status_code == 401
+        r1 = c.post('/api/fm/auth/sso', json={'sso_token': SSO, 'device': 'MT-PC', 'app_version': '1.3.0'})
+        r2 = c.post('/api/sm/auth/sso', json={'sso_token': SSO, 'app_version': '1.2.0'})
+        assert r1.status_code == 200 and r2.status_code == 200 and r1.json()['kdf'] == k and r1.json()['user']['email'] == 'eski@test.com', r1.text
+        F1, S2 = {'Authorization': 'Bearer ' + r1.json()['token']}, {'Authorization': 'Bearer ' + r2.json()['token']}
+        assert c.get('/api/fm/me', headers=F1).status_code == 200 and c.get('/api/sm/me', headers=S2).status_code == 200
+        assert c.post('/api/fm/auth/sso', json={'sso_token': 'yanlis'}).json()['code'] == 'session_expired'
+        assert c.post('/api/mt/auth/sso', json={'sso_token': SSO}).status_code == 404
+        r = c.post('/api/fm/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH}); assert r.status_code == 200, r.text; FM = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert 'sso_token' not in r.json()
+        r = c.post('/api/fm/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH}); assert r.status_code == 200, r.text; FM = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert 'sso_token' not in r.json()
+        # sm'de çıkış → ortak oturum + fm oturumu da düşer; bağımsız (sso'suz) fm oturumu etkilenmez
+        assert c.post('/api/sm/auth/logout', headers=S2).json() == {'ok': True, 'sso_ended': True}
+        assert c.get('/api/fm/me', headers=F1).json()['code'] == 'session_expired'
+        assert c.get('/api/mt/apps', headers=MT).status_code == 401
+        assert c.post('/api/fm/auth/sso', json={'sso_token': SSO}).status_code == 401
+        assert c.get('/api/fm/me', headers=FM).status_code == 200
+        # uygulamada şifreyle giriş + sso:true → ortak oturum da açılır; Master Tool'dan çıkış hepsini kapatır
+        r = c.post('/api/np/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'sso': True, 'device': 'NP-PC'})
+        assert r.json()['sso_token'] and r.json()['token'], r.text
+        NP, SSO2 = {'Authorization': 'Bearer ' + r.json()['token']}, r.json()['sso_token']
+        r = c.post('/api/cv/auth/sso', json={'sso_token': SSO2}); CV = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert c.post('/api/mt/auth/logout', headers={'Authorization': 'Bearer ' + SSO2}).json()['sso_ended'] is True
+        assert c.get('/api/np/me', headers=NP).status_code == 401 and c.get('/api/cv/me', headers=CV).status_code == 401
+        # lisans kapalı uygulama sso ile de açılmaz; Master Tool'un kendi sürümü mt anahtarıyla
+        r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop'}); MT3 = {'Authorization': 'Bearer ' + r.json()['sso_token']}
+        assert c.post('/api/mt/releases', data={'version': '1.0.0'}, files={'setup': ('m.exe', b'MZmt', 'application/octet-stream')},
+                      headers={'X-Release-Key': 'fm-anahtar'}).status_code == 403
+        r = c.post('/api/mt/releases/1.0.0/setup', data={'part': '0', 'parts': '1'}, files={'file': ('b', b'MZmaster')}, headers={'X-Release-Key': 'mt-anahtar'})
+        assert r.status_code == 200 and r.json()['size'] == 8, r.text
+        assert c.get('/api/mt/apps', headers=MT3).json()['launcher']['release']['version'] == '1.0.0'
+        assert c.get('/api/mt/releases/latest', headers=MT3).json()['version'] == '1.0.0'
+        assert c.get('/api/mt/apps/mt/download', headers=MT3).content == b'MZmaster'
+        # web oturumunda (Hesabım) sso oturumu kapatılınca ailesi düşer; web 'Oturumlar' listesinde görünür
+        c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
+        acc = c.get('/api/mt/account').json()
+        assert acc['launcher']['name'] == 'Master Tool' and acc['launcher']['release']['version'] == '1.0.0'
+        sid = next(x['id'] for x in acc['sessions'] if x['kind'] == 'sso')
+        r = c.post('/api/sq/auth/sso', json={'sso_token': MT3['Authorization'][7:]}); SQ = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert c.delete(f'/api/mt/sessions/{sid}', headers=W).json() == {'ok': True}
+        assert c.get('/api/sq/me', headers=SQ).status_code == 401
+        c.post('/api/mt/auth/logout', headers=W)
 
         # ---- son kullanıcı hiçbir yerde iç adres görmez
         for root, _, files in os.walk(settings.STATIC_DIR):

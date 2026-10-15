@@ -40,11 +40,14 @@ CONSOLE_MAX = 200         # Haberleşme konsolu: dron (sysid) başına saklanan 
 PAIR_TTL = 600            # eşleştirme kodu ömrü (sn)
 AUTH_TIMEOUT = 15         # ilk mesaj için bekleme
 STATUS_HZ = 10            # tarayıcıya en çok durum paketi/sn (sysid başına)
-VIEWER_QUEUE = 4          # izleyici kuyruğu (telemetride eski paket değersiz → dolunca en eskisi atılır)
+VIEWER_QUEUE = 32         # izleyici kuyruğu (dolunca en eskisi atılır; parametre akışı toplu 'params' paketleriyle gider)
 LOG_MAX = 2 * 1024 ** 3   # köprüden gelen .bin üst sınırı
 RATE_WINDOW, RATE_MAX = 60, 10
 CMD_TIMEOUT = 10
-CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check'}
+CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
+             # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
+             'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change'}
+BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim'}   # köprünün bildirebileceği yetenekler
 
 BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
 VIEWERS = {}        # ws → Viewer
@@ -93,10 +96,13 @@ def _dist_m(lat1, lon1, lat2, lon2):
 
 class DroneState:
     """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük). Alanlar GÖKTUNGU harekât paneliyle uyumlu (README eşlemesi)."""
-    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos', 'console', 'rc_at', 'texts')
+    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos', 'console', 'rc_at', 'texts', 'params', 'param_buf', 'param_timer')
 
     def __init__(self, sysid):
         self.timer = None   # hız sınırına takılan güncellemeyi sonradan yayınlayan zamanlayıcı
+        self.params = {}    # PARAM_VALUE önbelleği: ad → [değer, index, count, type] (status paketine GİRMEZ; param_cache ile istenir)
+        self.param_buf = []   # yayın bekleyen PARAM_VALUE'lar (200 ms'de bir toplu 'params' paketi)
+        self.param_timer = None
         self.armed_at = None   # ARM anı (uçuş süresi)
         self.last_pos = None   # kat edilen mesafe için son konum
         self.console = []      # Haberleşme konsolu satırları (son CONSOLE_MAX): {ts, tag, text, sev, repeat}
@@ -151,6 +157,11 @@ class DroneState:
         elif t in ('RC_CHANNELS', 'RC_CHANNELS_RAW'):
             self.rc_at = time.time()
             return False
+        elif t == 'PARAM_VALUE':   # v1.1 param_list/param_get/param_set yankısı: önbelleğe + toplu yayın kuyruğuna
+            name = str(m.param_id).rstrip('\x00')
+            self.params[name] = [m.param_value, m.param_index, m.param_count, m.param_type]
+            self.param_buf.append([name, m.param_value, m.param_index, m.param_count, m.param_type])
+            return False
         elif t == 'VFR_HUD':
             d['airspeed'] = m.airspeed; d['groundspeed'] = m.groundspeed; d['throttle'] = m.throttle; d['climb'] = m.climb
             if d['hdg'] is None:
@@ -196,9 +207,10 @@ class Viewer:
 
 
 class Bridge:
-    def __init__(self, ws, row, host, platform, ver):
+    def __init__(self, ws, row, host, platform, ver, caps=()):
         self.ws, self.id, self.name = ws, row['id'], row['name']
         self.host, self.platform, self.ver = host, platform, ver
+        self.caps = sorted(set(caps) & BRIDGE_CAPS)   # v1.1: köprünün desteklediği isteğe bağlı komutlar
         self.session_id = None
         self.parser = _mav()
         self.drones = {}        # sysid → DroneState
@@ -211,7 +223,7 @@ class Bridge:
         self.tlog_path = None
 
     def info(self):
-        return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver,
+        return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
                 'connected_at': self.connected_at, 'packets': self.packets, 'session_id': self.session_id,
                 'drones': {str(s): st.d for s, st in self.drones.items()}}
 
@@ -280,6 +292,14 @@ def online_bridges():
 
 def snapshot():
     return {'bridges': [b.info() for b in BRIDGES.values()]}
+
+
+def all_caps():
+    """Tarayıcıya bildirilen yetenekler: sunucu yetenekleri + bağlı köprülerin bildirdikleri (köprü bazlı ayrım hello.bridges[].caps'te)."""
+    caps = set(CAPS)
+    for b in BRIDGES.values():
+        caps |= set(b.caps)
+    return sorted(caps)
 
 
 async def disconnect_bridge(bridge_id, reason='KAPANDI'):
@@ -383,7 +403,8 @@ async def ws_bridge(ws: WebSocket):
         await _safe_send(ws, {'t': 'auth_err', 'code': 4403})
         await ws.close(code=4403)
         return
-    bridge = Bridge(ws, row, str(first.get('host') or '')[:120], str(first.get('platform') or '')[:40], str(first.get('bridge_ver') or '')[:40])
+    caps = [str(c)[:30] for c in (first.get('caps') or []) if isinstance(c, str)][:32] if isinstance(first.get('caps'), list) else []
+    bridge = Bridge(ws, row, str(first.get('host') or '')[:120], str(first.get('platform') or '')[:40], str(first.get('bridge_ver') or '')[:40], caps)
     prev = BRIDGES.get(bridge.id)
     BRIDGES[bridge.id] = bridge
     if prev is not None and prev.ws is not ws:   # aynı köprü ikinci kez: eski bağlantı kapatılır
@@ -494,6 +515,16 @@ def _feed_mavlink(bridge, data):
         st = bridge.drones.setdefault(sysid, DroneState(sysid))
         if st.feed(m):
             _emit(bridge, st)
+        elif st.param_buf and st.param_timer is None:   # PARAM_VALUE'lar 200 ms'de bir toplu gider (binlerce parametre kuyruğu boğmasın)
+            st.param_timer = asyncio.get_running_loop().call_later(0.2, _flush_params, bridge, st)
+
+
+def _flush_params(bridge, st):
+    st.param_timer = None
+    if not st.param_buf:
+        return
+    items, st.param_buf = st.param_buf, []
+    _broadcast({'t': 'params', 'bridge_id': bridge.id, 'sysid': st.d['sysid'], 'items': items, 'count': items[-1][3], 'cached': len(st.params)}, bridge.id)
 
 
 def _emit(bridge, st, force=False):
@@ -722,7 +753,7 @@ async def ws_live(ws: WebSocket):
     v = Viewer(ws, user)
     VIEWERS[ws] = v
     sender = asyncio.create_task(_viewer_sender(v))
-    hello = lambda: json.dumps({'t': 'hello', 'v': PROTO, 'caps': CAPS, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)},   # noqa: E731
+    hello = lambda: json.dumps({'t': 'hello', 'v': PROTO, 'caps': all_caps(), 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)},   # noqa: E731
                                 **snapshot()}, ensure_ascii=False)
     v.put(hello())
     try:
@@ -738,6 +769,9 @@ async def ws_live(ws: WebSocket):
             elif t == 'watch':
                 v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
                 v.put(hello())
+            elif t == 'param_cache':   # v1.1: sunucudaki PARAM_VALUE önbelleği (param_list sonrası ya da yeniden bağlanınca)
+                b = BRIDGES.get(int(msg.get('bridge_id') or 0)); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
+                v.put(json.dumps({'t': 'param_cache', 'bridge_id': msg.get('bridge_id'), 'sysid': msg.get('sysid'), 'params': dict(st.params) if st else {}}, ensure_ascii=False))
             elif t in ('console_hist', 'console_clear'):   # Haberleşme konsolu geçmişi / temizleme (dron başına)
                 b = BRIDGES.get(int(msg.get('bridge_id') or 0)); st = b.drones.get(int(msg.get('sysid') or 0)) if b else None
                 if t == 'console_clear' and st is not None:

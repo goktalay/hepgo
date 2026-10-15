@@ -351,20 +351,15 @@ function helloIsle(m){
   } else window.oturum = {rol: rol, ad: me.name || "", id: (me.id === undefined) ? null : me.id, can_command: !!me.can_command};
   try { document.documentElement.dataset.hepgoRol = rol; } catch (e) {}   // hepgo.css izleyici kancası: komut düğmeleri soluk
   if (typeof window.oturumYoneticiMi !== "function") window.oturumYoneticiMi = function(){ return false; };
-  // Yetenek bayrakları
-  const caps = Array.isArray(m.caps) ? m.caps : [];
-  const yeni = {};
-  for (const anahtar of Object.keys(HEPGO_CAPS_ESLEM)){
-    const bayrak = HEPGO_CAPS_ESLEM[anahtar];
-    yeni[bayrak] = !!yeni[bayrak] || caps.indexOf(anahtar) >= 0;
-  }
-  Object.assign(window.HEPGO_OZ, yeni);
+  // Yetenek bayrakları: sunucu caps (hello) + çevrimiçi köprülerin caps'i (v1.1; köprü auth çerçevesinde bildirir)
+  SUNUCU_CAPS = Array.isArray(m.caps) ? m.caps.slice() : [];
   // Köprüler: hello'da olmayanlar çevrimdışı sayılır, dron durumları yeniden kurulur
   for (const bid of Object.keys(KOPRULER)) KOPRULER[bid].online = false;
   const bridges = Array.isArray(m.bridges) ? m.bridges : [];
   const canli = new Set(bridges.map(b => String(b.bridge_id)));
   for (const uid of Object.keys(DURUM)) if (!canli.has(uid.split(":")[0])) delete DURUM[uid];
-  for (const b of bridges) kopruKaydet(b, true);
+  for (const b of bridges){ kopruKaydet(b, true); if (Array.isArray(b.caps) && KOPRULER[String(b.bridge_id)]) KOPRULER[String(b.bridge_id)].caps = b.caps.slice(); }
+  capsUygula();
   baglantiListesiYayinla();
   envanterYukle();
   if (ilkHello){
@@ -379,16 +374,29 @@ function statusIsle(m){
   if (!KOPRULER[String(m.bridge_id)]){ kopruKaydet({bridge_id: m.bridge_id}, true); baglantiListesiYayinla(); }
   durumYukle(m.bridge_id, m.sysid, m.state);
 }
+var SUNUCU_CAPS = [];   // hello.caps (sunucu + o an bağlı köprüler)
+function capsUygula(){
+  const birlesik = new Set(SUNUCU_CAPS);
+  for (const bid of Object.keys(KOPRULER)) if (KOPRULER[bid].online) (KOPRULER[bid].caps || []).forEach(c => birlesik.add(c));
+  const yeni = {};
+  for (const anahtar of Object.keys(HEPGO_CAPS_ESLEM)){
+    const bayrak = HEPGO_CAPS_ESLEM[anahtar];
+    yeni[bayrak] = !!yeni[bayrak] || birlesik.has(anahtar);
+  }
+  Object.assign(window.HEPGO_OZ, yeni);
+}
 function bridgeIsle(m){
   const bid = String(m.bridge_id);
   if (m.online){
     kopruKaydet(m.info || {bridge_id: m.bridge_id}, true);
+    if (m.info && Array.isArray(m.info.caps) && KOPRULER[bid]) KOPRULER[bid].caps = m.info.caps.slice();
     hwKonsol("KÖPRÜ", (KOPRULER[bid].name) + " " + hwT("bağlandı", "connected"), "basari");
   } else {
     if (KOPRULER[bid]) KOPRULER[bid].online = false;
     kopruDurumlariniSil(bid);
     hwKonsol("KÖPRÜ", ((KOPRULER[bid] || {}).name || ("Köprü " + bid)) + " " + hwT("ayrıldı", "disconnected") + (m.status ? " (" + m.status + ")" : ""), "uyari");
   }
+  capsUygula();   // köprü gelince/giderken v1.1 düğmeleri (HOME Ayarla, Parametreler…) açılır/kapanır
   baglantiListesiYayinla();
 }
 function eventIsle(m){
@@ -423,6 +431,22 @@ function paramIsle(m){   // sunucu param desteği geldiğinde: {t:'param', bridg
   const alinan = (typeof m.index === "number") ? m.index + 1 : Object.keys(ob).length, toplam = m.count || 0;
   if (typeof dkParamIlerleme === "function") try { dkParamIlerleme(g, alinan, toplam); } catch (e) {}
   if (toplam && alinan >= toplam) paramListesiYayinla(g, ob, "dron", Date.now() / 1000);
+}
+function paramsIsle(m){   // sunucu toplu PARAM_VALUE paketi (200 ms): items [[name, value, index, count, type]…]
+  const g = gorunenSysid(m.bridge_id, m.sysid);
+  const ob = PARAM_ONBELLEK[g] = PARAM_ONBELLEK[g] || {};
+  let son = null;
+  for (const it of (m.items || [])){ if (it && it[0]){ ob[it[0]] = it[1]; son = it; } }
+  const toplam = (son && son[3]) || m.count || 0, alinan = Object.keys(ob).length;
+  if (typeof dkParamIlerleme === "function") try { dkParamIlerleme(g, alinan, toplam); } catch (e) {}
+  if (toplam && alinan >= toplam) paramListesiYayinla(g, ob, "dron", Date.now() / 1000);
+}
+function paramCacheIsle(m){   // sunucudaki PARAM_VALUE önbelleği: {name: [value, index, count, type]}
+  const g = gorunenSysid(m.bridge_id, m.sysid);
+  const ob = PARAM_ONBELLEK[g] = PARAM_ONBELLEK[g] || {};
+  const p = m.params || {};
+  Object.keys(p).forEach(k => { ob[k] = Array.isArray(p[k]) ? p[k][0] : p[k]; });
+  paramListesiYayinla(g, ob, Object.keys(ob).length ? "cache" : "", null);
 }
 function paramListesiYayinla(g, parametreler, kaynak, okumaTs, hata){
   const p = parametreler || {};
@@ -516,6 +540,8 @@ function mesajIsle(m){
     case "console": consoleIsle(m); break;
     case "console_hist": consoleHistIsle(m); break;
     case "param": paramIsle(m); break;
+    case "params": paramsIsle(m); break;
+    case "param_cache": paramCacheIsle(m); break;
     case "log": logIsle(m); break;
     case "pong": break;
     case "error":
@@ -921,6 +947,9 @@ var CEVIR = {
   param_tumu: (m) => {
     const g = Number(m.sysid);
     if (window.HEPGO_OZ.param && m.taze && KOPRU_OF[g]){ cmdGonder(g, "param_list", {}, "param_list"); return; }
+    if (window.HEPGO_OZ.param && KOPRU_OF[g] && gercekWsAcik() && !Object.keys(PARAM_ONBELLEK[g] || {}).length){   // yerel önbellek boş: sunucudakini iste
+      gercekWs.send(JSON.stringify({t: "param_cache", bridge_id: KOPRU_OF[g].bridge_id, sysid: KOPRU_OF[g].sysid})); return;
+    }
     // sunucu param desteği yok ya da önbellek istendi: anında yerel yanıt (dk-param-serit 'bekliyor→bitti' olur ve söner)
     const ob = PARAM_ONBELLEK[g] || {};
     setTimeout(() => paramListesiYayinla(g, ob, "cache", null), 0);

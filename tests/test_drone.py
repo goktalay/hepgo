@@ -39,7 +39,8 @@ def mav_frames(sysid=7):
     gp = enc.global_position_int_encode(0, 399000000, 328000000, 950000, 120000, 1200, 50, -20, 18000).pack(enc)
     hud = enc.vfr_hud_encode(22.5, 24.0, 180, 65, 121.0, 1.5).pack(enc)
     st = enc.statustext_encode(4, b'Test uyarisi', 0, 0).pack(enc)
-    return hb, gp, hud, st
+    pv = enc.param_value_encode(b'RTL_ALT', 100.0, 9, 3, 1).pack(enc) + enc.param_value_encode(b'WPNAV_SPEED', 1000.0, 9, 3, 2).pack(enc)
+    return hb, gp, hud, st, pv
 
 
 def close_code(ws):
@@ -128,12 +129,18 @@ def main():
             hello = json.loads(live.receive_text())
             assert hello['t'] == 'hello' and hello['me']['can_command'] is True, hello
             with a.websocket_connect('/ws/drone/bridge') as ws:
-                ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key, 'host': 'pilot-pc', 'platform': 'linux', 'bridge_ver': '0.1'}))
+                ws.send_text(json.dumps({'v': 1, 't': 'auth', 'key': key, 'host': 'pilot-pc', 'platform': 'linux', 'bridge_ver': '0.1', 'caps': ['set_home', 'param', 'bilinmeyen']}))
                 m = json.loads(ws.receive_text())
                 assert m['t'] == 'auth_ok' and 'key' not in m, m
                 br = drain(live, 'bridge')
-                assert br['online'] is True and br['bridge_id'] == b['id']
-                hb, gp, hud, st = mav_frames()
+                assert br['online'] is True and br['bridge_id'] == b['id'] and br['info']['caps'] == ['param', 'set_home'], br
+                hb, gp, hud, st, pv = mav_frames()
+                ws.send_bytes(pv)   # v1.1 PARAM_VALUE → toplu 'params' paketi
+                pr = drain(live, 'params')
+                assert [x[0] for x in pr['items']] == ['RTL_ALT', 'WPNAV_SPEED'] and pr['count'] == 3 and pr['cached'] == 2, pr
+                live.send_text(json.dumps({'t': 'param_cache', 'bridge_id': b['id'], 'sysid': 7}))
+                pc2 = drain(live, 'param_cache')
+                assert pc2['params']['RTL_ALT'][0] == 100.0, pc2
                 ws.send_bytes(hb + gp)
                 ws.send_bytes(hud)
                 ws.send_bytes(st)

@@ -905,6 +905,36 @@ function inboxButton() {
 
 // Gece / gündüz teması (bu cihazda hatırlanır; ilk boyamadan önce index.html uygular)
 // Tam ekran düğmesi (tarayıcı desteklemiyorsa gösterilmez, ör. iPhone Safari)
+// Tam ekran üst bandı (Canlı Uçuş harekât ekranındaki gibi): sayfa data-immersive="bar" taşıyorsa tam ekranda haritanın üstünde
+// yüzen kapsül — solda firma logosu + adı, altında modül adı (data-immersive-title), sağda saat ve tarih. Canlı Uçuş kendi bandını
+// iframe içinde çizer (data-immersive="1").
+let immTimer = null;
+function immersiveBar(on) {
+  const page = document.querySelector('main#view[data-immersive="bar"], main#view [data-immersive="bar"]');
+  let bar = document.getElementById('immBar');
+  if (!on || !page) {
+    bar?.remove();
+    clearInterval(immTimer); immTimer = null;
+    return;
+  }
+  if (!bar) {
+    bar = h('div', { id: 'immBar', class: 'imm-bar' },
+      h('img', { class: 'imm-logo', src: ctx.meta?.logo_url || '/static/img/hepgo-logo.png', alt: '' }),
+      h('div', { class: 'imm-mid' }, h('b', { class: 'imm-company' }), h('span', { class: 'imm-title' })),
+      h('div', { class: 'imm-clock' }, h('b'), h('span')));
+    document.body.append(bar);
+  }
+  bar.querySelector('.imm-company').textContent = ctx.meta?.company || '';
+  bar.querySelector('.imm-title').textContent = page.dataset.immersiveTitle || '';
+  const tick = () => {
+    const d = new Date();
+    bar.querySelector('.imm-clock b').textContent = d.toLocaleTimeString('tr-TR');
+    bar.querySelector('.imm-clock span').textContent = d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' });
+  };
+  tick();
+  if (!immTimer) immTimer = setInterval(tick, 1000);
+}
+
 function fullscreenButton() {
   if (!document.fullscreenEnabled) return null;
   const btn = h('button', { class: 'icon-btn' });
@@ -922,6 +952,7 @@ function fullscreenButton() {
   const immersive = () => {
     const on = !!document.fullscreenElement && !!document.querySelector('main#view [data-immersive], main#view[data-immersive]');
     document.body.classList.toggle('immersive', on);
+    immersiveBar(on);
   };
   document.addEventListener('fullscreenchange', () => { sync(); immersive(); });
   window.addEventListener('hashchange', () => setTimeout(immersive, 0));
@@ -1165,7 +1196,7 @@ function initPanelCollapse(viewEl) {
     // sonraki başlığa kadar olan kardeşler gizlenir. Sayfa başlığı (.page-head) ve bilinen alt-etiketler hariç.
     viewEl.querySelectorAll('h3, h4').forEach(hd => {
       if (hd.dataset.collapsible) return;
-      if (hd.closest('.card, .set-card, .collapse-head, .panel-foot, .grid-stack, .page-head, .modal-back')) return;
+      if (hd.closest('.card, .set-card, .collapse-head, .panel-foot, .grid-stack, .page-head, .modal-back, .no-collapse')) return;
       if (hd.matches('.set-sub, .sub-h, .dd-role')) return;
       const sibs = [];
       for (let n = hd.nextElementSibling; n; n = n.nextElementSibling) { if (/^H[1-4]$/.test(n.tagName)) break; sibs.push(n); }

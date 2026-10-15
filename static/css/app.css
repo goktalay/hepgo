@@ -8817,3 +8817,15 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
   .filter-pill > * { flex: 1 1 45%; }
   .filter-pill > * + * { border-left: 0 !important; }
 }
+
+/* Tam ekran üst bandı (app.js immersiveBar; Canlı Uçuş harekât ekranıyla aynı görünüm): kapsül, üstten 20px, %80, hafif şeffaf */
+.imm-bar { position: fixed; top: 20px; left: 10%; width: 80%; z-index: 4000; box-sizing: border-box; display: flex; align-items: center; gap: 12px;
+  padding: 6px 26px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: #cfd8e3;
+  background: rgba(11,14,17,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.imm-logo { height: 30px; width: auto; max-width: 160px; object-fit: contain; }
+.imm-mid { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.imm-company { font-size: 15px; letter-spacing: .02em; color: #fff; }
+.imm-title { font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imm-clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.imm-clock b { font-size: 18px; font-family: ui-monospace, Consolas, monospace; color: #fff; }
+.imm-clock span { font-size: 11px; opacity: .7; }

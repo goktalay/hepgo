@@ -88,7 +88,13 @@ export async function render(view, ctx, m, head, params) {
   const badge = h('div', { class: 'rt-badge', hidden: true });
   const msg = h('div', { class: 'rt-msg' }, '3B harita yükleniyor…');
   const pop = h('div', { class: 'rt-pop', hidden: true });
-  const mapBox = h('div', { class: 'rt-map' }, holder, msg, mapBtns, tools, badge, pop);
+  // Dron Yönetimi sekmeleri haritanın üstünde küçük kapsülde (sayfa başlığı yok: harita başlık ile alt bilgi arasını kaplar)
+  const NAV = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']].filter(([k]) => m.can?.[k]);
+  const nav = h('div', { class: 'rt-nav' },
+    h('a', { class: 'rt-nav-back', href: '#/', title: 'Geri', onclick: e => { if (history.length > 1) { e.preventDefault(); history.back(); } } }, '←'),
+    NAV.map(([k, l]) => h('a', { class: `rt-nav-tab ${k === 'routes' ? 'on' : ''}`, href: `#/drone/${k}` }, l)));
+  const layer = h('div', { class: 'rt-layer' });   // yüzen paneller (tam ekranda üst bandın altına iner)
+  const mapBox = h('div', { class: 'rt-map no-collapse' }, holder, msg, layer, nav, mapBtns, tools, badge, pop);   // genel panel katlama/ikon eklemesi dışı
   // Harita üstünde yüzen, kapatılamayan, katlanabilir ve taşınabilir paneller (Canlı Uçuş kartları gibi; konum/katlama cihazda saklanır)
   const fpanel = (key, title, countEl, actions, ...body) => {
     const store = `hepgo.rt.panel.${key}`;
@@ -108,10 +114,10 @@ export async function render(view, ctx, m, head, params) {
     });
     headEl.addEventListener('pointermove', e => {
       if (!drag) return;
-      const W = mapBox.clientWidth, H = mapBox.clientHeight;
+      const W = layer.clientWidth, H = layer.clientHeight;
       let x = Math.max(0, Math.min(e.clientX - drag.dx, W - el.offsetWidth)), y = Math.max(0, Math.min(e.clientY - drag.dy, H - 36));
       // mıknatıs: diğer panelin kenarlarına ve harita kenarına yapışır
-      for (const o of mapBox.querySelectorAll('.rt-fp')) {
+      for (const o of layer.querySelectorAll('.rt-fp')) {
         if (o === el) continue;
         const ox = o.offsetLeft, oy = o.offsetTop, ow = o.offsetWidth, oh = o.offsetHeight;
         if (Math.abs(x - ox) < 14) x = ox;
@@ -131,30 +137,31 @@ export async function render(view, ctx, m, head, params) {
   const stepPanel = fpanel('adimlar', stepTitle, stepCount, h('span', { class: 'rt-acts on rt-step-acts' },
     iconBtn('＋', 'Merkez konumunu nokta olarak ekle', () => addCenterPoint('waypoint')),
     iconBtn('⤴', 'Eve dön (RTL) noktası ekle', () => addCenterPoint('rtl'))), stepList, stepFoot);
-  mapBox.append(treePanel, stepPanel);
+  layer.append(treePanel, stepPanel);
   const side = mapBox;
   const wrap = h('div', { class: 'rt-wrap' }, mapBox);
-  clear(view, head('Rotalar · rota merkezleri, ara noktalar ve harita üzerinde rota tasarımı'), wrap);
+  // Canlı Uçuş gibi: görünüm başlık ile alt bilgi arasını kaplar; HEPGO tam ekranında başlık/alt bilgi gizlenir ve kapsül üst bant
+  // (firma logosu + adı, modül adı, saat/tarih — app.js immersiveBar) çıkar
+  view.classList.add('ops-view');
+  view.dataset.immersive = 'bar';
+  view.dataset.immersiveTitle = 'Dron Yönetimi · Rotalar';
+  const scroller = view.closest('.scroller');
+  scroller?.classList.add('ops-scroll');
+  onLeave(() => {
+    view.classList.remove('ops-view');
+    delete view.dataset.immersive; delete view.dataset.immersiveTitle;
+    document.body.classList.remove('immersive');
+    document.getElementById('immBar')?.remove();
+    scroller?.classList.remove('ops-scroll');
+  });
+  clear(view, wrap);
 
-  // Harita yüksekliği = görünür alan (kaydırma kutusunun kalan yüksekliği); telefonda CSS tek sütuna geçer, yükseklik sabitlenmez
-  const fit = () => {
-    if (!wrap.isConnected) return;
-    if (window.matchMedia('(max-width: 960px)').matches) { wrap.style.height = ''; return; }
-    const sc = view.closest('.scroller');
-    const scRect = sc ? sc.getBoundingClientRect() : { top: 0, height: window.innerHeight };
-    const off = wrap.getBoundingClientRect().top - scRect.top + (sc ? sc.scrollTop : 0);
-    wrap.style.height = `${Math.max(480, Math.round(scRect.height - off - 20))}px`;
-  };
-  fit();
   requestAnimationFrame(() => {
     const p1 = treePanel._pos, p2 = stepPanel._pos;
     treePanel.style.left = `${p1.x ?? 56}px`; treePanel.style.top = `${p1.y ?? 10}px`;
-    stepPanel.style.left = `${p2.x ?? 56}px`; stepPanel.style.top = `${p2.y ?? Math.round(mapBox.clientHeight / 2 + 4)}px`;   // varsayılan: haritanın alt yarısı (iki panel en çok %50 yükseklikte; çakışmaz)
+    stepPanel.style.left = `${p2.x ?? 56}px`; stepPanel.style.top = `${p2.y ?? Math.round(layer.clientHeight / 2 + 4)}px`;   // varsayılan: alt yarı (paneller en çok %50 yükseklikte; çakışmaz)
   });
-  window.addEventListener('resize', fit);
-  const ro = window.ResizeObserver ? new ResizeObserver(() => fit()) : null;
-  ro?.observe(view.closest('.scroller') || document.body);
-  onLeave(() => { destroyed = true; window.removeEventListener('resize', fit); ro?.disconnect(); });
+  onLeave(() => { destroyed = true; });
 
   // ---------- veri ----------
   const ensureDetail = async (id, force = false) => {

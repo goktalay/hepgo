@@ -139,6 +139,7 @@
     setDir();
     observing = true;
     try { translate(); } finally { observing = false; }
+    shotLang();
     syncControls();
     dispatchEvent(new CustomEvent('mt-lang', { detail: l }));
   }
@@ -268,6 +269,17 @@
   }
 
   // ---- ekran görüntüsü galerisi: tıklayınca büyüt, ok tuşları / düğmelerle gez, Esc ile kapat
+  // Ekran görüntüleri: uygulamanın İngilizce arayüzüyle çekilmiş sürümü varsa (data-shot-en) Türkçe dışı dillerde o gösterilir
+  function shotLang() {
+    const en = lang !== 'tr';
+    document.querySelectorAll('[data-shot-en]').forEach(e => ['src', 'srcset', 'href'].forEach(a => {
+      const v = e.getAttribute(a);
+      if (!v) return;
+      const tr = v.replace(/(\/shots\/[0-9a-z._-]+?)-en(-800)?\.webp/g, '$1$2.webp');
+      e.setAttribute(a, en ? tr.replace(/(\/shots\/[0-9a-z._-]+?)(-800)?\.webp/g, '$1-en$2.webp') : tr);
+    }));
+  }
+
   function lightbox() {
     const links = [...document.querySelectorAll('[data-gallery] a[data-lightbox]')];
     if (!links.length) return;
@@ -298,6 +310,7 @@
   const start = async () => {
     controls(); mtButton(); globe(); lightbox();
     dict = await load(lang);
+    shotLang();
     observing = true;
     try { translate(); } finally { observing = false; }
     mo.observe(document.body, { childList: true, subtree: true });

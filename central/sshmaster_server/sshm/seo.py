@@ -75,7 +75,7 @@ def _jsonld(site, title, desc, lang):
         shots = _shots(site)
         if shots:
             d = _dict(site, lang)
-            data['screenshot'] = [{'@type': 'ImageObject', 'url': f'{base(site)}/shots/{x["stem"]}.webp', 'width': x['w'], 'height': x['h'],
+            data['screenshot'] = [{'@type': 'ImageObject', 'url': f'{base(site)}/shots/{x["stem"]}{"-en" if lang != "tr" and x.get("en") else ""}.webp', 'width': x['w'], 'height': x['h'],
                                    'caption': _t(d, x['title'])} for x in shots]
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
@@ -114,6 +114,9 @@ def render_index(site, page, lang):
              f'\n<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{esc(og_title)}">'
              f'<meta name="twitter:description" content="{esc(og_desc)}"><meta name="twitter:image" content="{base(site)}/og.png">'
              f'\n{_jsonld(site, title, desc, lang)}\n')
+    if lang != 'tr':   # İngilizce arayüz görüntüsü olanlar sunucuda da değiştirilir (kit.js aynı kuralı tarayıcıda uygular)
+        en = {x['stem'] for x in _shots(site) if x.get('en')}
+        page = re.sub(r'/shots/([0-9a-z._-]+?)(-800)?\.webp', lambda m: f'/shots/{m[1]}-en{m[2] or ""}.webp' if m[1] in en else m[0], page)
     return page.replace('</head>', extra + '</head>', 1)
 
 

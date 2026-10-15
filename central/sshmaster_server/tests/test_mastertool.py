@@ -326,7 +326,9 @@ def main():
         # ekran görüntüleri: galeri, kahraman görseli, yapılandırılmış veride screenshot, /shots/ yalnız sitenin kendi WebP'leri
         r = c.get('/?lang=en', headers={'Host': 'notepadmaster.com'})
         assert 'id="ekranlar"' in r.text and 'class="hero-shot"' in r.text and '"screenshot"' in r.text
-        assert 'https://notepadmaster.com/shots/05-proje-penceresi-gece.webp' in r.text
+        assert 'https://notepadmaster.com/shots/05-proje-penceresi-gece-en.webp' in r.text
+        assert '/shots/05-proje-penceresi-gece-en.webp' in r.text and '/shots/05-proje-penceresi-gece.webp' not in r.text   # İngilizce arayüz görüntüsü
+        assert '/shots/05-proje-penceresi-gece.webp' in c.get('/', headers={'Host': 'notepadmaster.com'}).text
         sh = c.get('/shots/05-proje-penceresi-gece-800.webp', headers={'Host': 'notepadmaster.com'})
         assert sh.status_code == 200 and sh.headers['content-type'] == 'image/webp'
         assert c.get('/shots/05-proje-penceresi-gece.webp', headers={'Host': 'sshmasters.com'}).status_code == 404

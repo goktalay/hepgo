@@ -307,6 +307,25 @@ def main():
             assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'sq': 'www.sqlmaster.app', 'np': 'notepadmaster.com', 'cv': 'www.convertmaster.app', 'mt': 'mastertool.download'}[site]}).text
         assert 'data-site="hesap"' in c.get('/giris').text
 
+        # ---- SEO: dile göre başlık, canonical/hreflang, sosyal etiketler, yapılandırılmış veri, robots, sitemap
+        r = c.get('/?lang=de', headers={'Host': 'sshmasters.com'})
+        assert '<html lang="de" dir="ltr"' in r.text and '<link rel="canonical" href="https://sshmasters.com/?lang=de">' in r.text, r.text[:300]
+        assert r.text.count('hreflang=') == 9 and 'application/ld+json' in r.text and '"SoftwareApplication"' in r.text
+        assert '<title>SSH Master — Windows' not in r.text and 'og:image' in r.text and 'twitter:card' in r.text
+        r = c.get('/?lang=ar', headers={'Host': 'ftpmasters.com'})
+        assert 'dir="rtl"' in r.text and 'canonical" href="https://ftpmasters.com/?lang=ar"' in r.text
+        r = c.get('/', headers={'Host': 'mastertool.download'})
+        assert '"ItemList"' in r.text and 'canonical" href="https://mastertool.download/"' in r.text
+        assert c.get('/?lang=xx', headers={'Host': 'sqlmaster.app'}).text.count('<html lang="tr"') == 1
+        rb = c.get('/robots.txt', headers={'Host': 'notepadmaster.com'}).text
+        assert 'Sitemap: https://notepadmaster.com/sitemap.xml' in rb and 'Disallow: /api/' in rb
+        sm = c.get('/sitemap.xml', headers={'Host': 'convertmaster.app'})
+        assert sm.headers['content-type'].startswith('application/xml') and sm.text.count('<url>') == 8 and 'convertmaster.app/?lang=zh' in sm.text
+        og = c.get('/og.png', headers={'Host': 'www.convertmaster.app'})
+        assert og.status_code == 200 and og.headers['content-type'] == 'image/png'
+        assert 'noindex' in c.get('/giris').text   # hesap sayfaları dizine girmez
+        assert c.get('/hesabim?app=sshmaster', headers={'Host': 'mastertool.download'}).text.count('data-brand="sm"') == 1
+
         # ---- son kullanıcı hiçbir yerde iç adres görmez
         for root, _, files in os.walk(settings.STATIC_DIR):
             for fn in files:

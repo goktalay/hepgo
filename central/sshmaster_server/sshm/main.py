@@ -28,7 +28,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import db, mailer, merkez, settings
+from . import db, mailer, merkez, seo, settings
 
 VERSION = '2.0.0'
 APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'portable': 'SSH-Master-Portable-{v}.exe'},
@@ -1037,6 +1037,8 @@ def admin_release_delete(rid: int, request: Request):
 
 
 # ---------------- sayfalar (Host'a göre site) ----------------
+APP_ALIASES = {'sshmaster': 'sm', 'sshmasters': 'sm', 'ftpmasters': 'fm', 'ftpmaster': 'fm', 'sqlmaster': 'sq', 'notepadmaster': 'np',
+               'convertmaster': 'cv'}   # uygulamalar ?app=<uzun ad> gönderebilir
 SITE_NAMES = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master', 'mt': 'Mastertool'}
 
 
@@ -1053,15 +1055,37 @@ def _static(path, media=None):
 
 
 @app.get('/')
-def page_index(request: Request):
-    return _static(settings.STATIC_DIR / site_of(request) / 'index.html', 'text/html')
+def page_index(request: Request, lang: str = ''):
+    site = site_of(request)
+    page = (settings.STATIC_DIR / site / 'index.html').read_text(encoding='utf-8')
+    return HTMLResponse(seo.render_index(site, page, lang), headers={'Cache-Control': 'no-cache', 'Vary': 'Host'})
+
+
+@app.get('/robots.txt')
+def page_robots(request: Request):
+    return Response(seo.robots(site_of(request)), media_type='text/plain', headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/sitemap.xml')
+def page_sitemap(request: Request):
+    return Response(seo.sitemap(site_of(request)), media_type='application/xml', headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/og.png')
+def page_og(request: Request):
+    """Sosyal paylaşım görseli (1200×630): static/<site>/og.png."""
+    p = settings.STATIC_DIR / site_of(request) / 'og.png'
+    if not p.is_file():
+        p = settings.STATIC_DIR / site_of(request) / 'logo.png'
+    return FileResponse(p, media_type='image/png', headers={'Cache-Control': 'public, max-age=86400'})
 
 
 def _account_page(request):
     if (r := to_portal(request)):
         return r
     site = site_of(request)
-    brand = request.query_params.get('app') if site == 'mt' and request.query_params.get('app') in APPS else site
+    qa = APP_ALIASES.get((request.query_params.get('app') or '').lower(), request.query_params.get('app'))
+    brand = qa if site == 'mt' and qa in APPS else site
     html = (settings.STATIC_DIR / 'hesap.html').read_text(encoding='utf-8')
     html = html.replace('{{SITE}}', site).replace('{{BRAND}}', brand).replace('{{NAME}}', SITE_NAMES[site])
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
@@ -1111,7 +1135,7 @@ def page_i18n(name: str, request: Request):
 
 @app.get('/{name}')
 def page_asset(name: str, request: Request):
-    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'robots.txt': 'text/plain', 'kit.js': 'text/javascript', 'kit.css': 'text/css'}
+    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'kit.js': 'text/javascript', 'kit.css': 'text/css'}
     per_site = {'favicon.svg': 'image/svg+xml', 'logo.png': 'image/png'}
     if name in shared and (settings.STATIC_DIR / name).is_file():
         return _static(settings.STATIC_DIR / name, shared[name])

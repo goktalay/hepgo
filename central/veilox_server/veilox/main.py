@@ -907,10 +907,25 @@ app.mount('/static', StaticFiles(directory=STATIC), name='static')
 
 
 @app.get('/')
-def index():
-    # Ana sayfa: Sorvine parçacık deneyimi (static/exp); yoksa emergent landing'e düş.
+def index(lang: str = ''):
+    # Ana sayfa: tanıtım (static/exp2) — SEO etiketleri dile göre sunucuda eklenir (veilox/seo.py); yoksa emergent landing'e düş.
     exp = STATIC / 'exp2' / 'index.html'
-    return FileResponse(exp if exp.exists() else STATIC / 'landing.html')
+    if not exp.exists():
+        return FileResponse(STATIC / 'landing.html')
+    from . import seo
+    return HTMLResponse(seo.render(exp.read_text(encoding='utf-8'), lang, STATIC / 'exp2' / 'i18n'), headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/robots.txt')
+def robots_txt():
+    from . import seo
+    return Response(seo.robots(), media_type='text/plain', headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/sitemap.xml')
+def sitemap_xml():
+    from . import seo
+    return Response(seo.sitemap(), media_type='application/xml', headers={'Cache-Control': 'public, max-age=3600'})
 
 
 @app.get('/platform')

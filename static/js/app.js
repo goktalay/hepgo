@@ -1507,6 +1507,11 @@ async function route() {
   if (currentPage?.path !== path) {   // aynı sayfanın yeniden çizimi (kaydet sonrası vb.) yeni giriş sayılmaz
     enterPage(path, pageTitle(key, params));
   }
+  // Tarayıcı sekme başlığı: şirket adı yerine açık olan modül, her kelimenin ilk harfi büyük devamı küçük (Türkçe harf kurallarıyla)
+  try {
+    const mod = pageTitle(key, params).split(' › ')[0].split(' #')[0].trim();
+    document.title = mod.toLocaleLowerCase('tr').replace(/(^|[\s(/-])(\S)/g, (m, sep, c) => sep + c.toLocaleUpperCase('tr'));
+  } catch { /* başlık yazılamazsa sayfa etkilenmesin */ }
   scroller.scrollTop = 0;
   if (key === 'alerts' && params[0]) {   // uyarı ayrıntısı: modül değil, herkese açık
     view.className = '';

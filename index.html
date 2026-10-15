@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSH Masters — Sunucularınıza tek yerden, güvenle bağlanın</title>
+<meta name="description" content="SSH Masters: Windows için SSH bağlantı yöneticisi. Microsoft Store'dan indirin.">
+<meta property="og:title" content="SSH Masters">
+<meta property="og:description" content="Sunucularınıza tek yerden, güvenle bağlanın.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sshmasters.com/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #0b1020; --bg2: #11182d; --card: #151d36; --line: #24304f; --text: #e6ebf5; --muted: #9aa6c3; --acc: #22d3a6; --acc2: #3b82f6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: rgba(11, 16, 32, .72); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 16px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .02em; text-decoration: none; font-size: 18px; }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--text); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 96px 0 72px; background: radial-gradient(900px 420px at 80% -10%, rgba(59,130,246,.25), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,166,.18), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,166,.1); border: 1px solid rgba(34,211,166,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  /* Terminal görseli */
+  .term { background: #0a0f1d; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.5); overflow: hidden; }
+  .term-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #10172b; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; } .d1 { background: #ff5f57; } .d2 { background: #febc2e; } .d3 { background: #28c840; }
+  .tabs { display: flex; gap: 4px; margin-left: 14px; } .tab { padding: 3px 10px; border-radius: 6px; background: #151d36; } .tab.on { background: #1f2a4a; color: var(--text); }
+  .term pre { margin: 0; padding: 18px 20px; font: 13.5px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #cfe3ff; min-height: 250px; white-space: pre-wrap; }
+  .p { color: var(--acc); } .c { color: #7aa2ff; } .m { color: var(--muted); }
+  section { padding: 80px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 640px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,166,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #04121c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 900px) {
+    .hero .wrap { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+  }
+</style>
+</head>
+<body>
+<!-- MICROSOFT STORE BAĞLANTISI: uygulama Store'a yüklenince yalnız aşağıdaki STORE_URL değişir (tüm düğmeler buradan alır). -->
+<script>window.STORE_URL = 'https://apps.microsoft.com/detail/XXXXXXXXXXXX';</script>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3a6"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs><rect x="2" y="4" width="28" height="24" rx="6" fill="url(#g)"/><path d="M9 12l5 4-5 4" fill="none" stroke="#04121c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 21h7" stroke="#04121c" stroke-width="2.6" stroke-linecap="round"/></svg>
+      SSH Masters
+    </a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#nasil">Nasıl çalışır</a><a href="#indir">İndir</a></nav>
+    <a class="store sm" data-store href="#" target="_blank" rel="noopener"><svg viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg><span><b>İndir</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">Windows için</span>
+        <!-- İÇERİK: başlık ve açıklama uygulamanın gerçek konumlandırmasıyla değiştirilecek -->
+        <h1>Sunucularınıza <em>tek yerden</em>, güvenle bağlanın.</h1>
+        <p class="lead">SSH Masters, SSH bağlantılarınızı düzenli tutan ve sunucularınıza tek tıkla ulaşmanızı sağlayan bir masaüstü uygulamasıdır.</p>
+        <div class="cta">
+          <a class="store" data-store href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>
+            <span><small>Edinin</small><b>Microsoft Store</b></span>
+          </a>
+          <span class="note">Windows 10 ve 11</span>
+        </div>
+      </div>
+      <div class="term" aria-hidden="true">
+        <div class="term-bar"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
+          <div class="tabs"><span class="tab on">üretim-web-01</span><span class="tab">veritabanı</span><span class="tab">+</span></div></div>
+<pre><span class="m"># Kayıtlı bağlantı açılıyor…</span>
+<span class="p">➜</span> <span class="c">ssh</span> deploy@uretim-web-01
+<span class="m">Bağlandı · ed25519 anahtarı</span>
+
+deploy@uretim-web-01:~$ <span class="c">uptime</span>
+ 14:52:07 up 42 days,  3 users,  load average: 0.21, 0.18, 0.16
+deploy@uretim-web-01:~$ <span class="p">▌</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Neler sunar?</h2>
+      <p class="sub">Günlük sunucu işlerinizi hızlandıran araçlar bir arada.</p>
+      <!-- İÇERİK: aşağıdaki altı kart YER TUTUCUDUR; uygulamanın gerçek özellikleriyle değiştirilecek -->
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l3 3-3 3M13 15h4"/></svg></div><h3>Bağlantı profilleri</h3><p>Sunucularınızı bir kez kaydedin, tek tıkla bağlanın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></svg></div><h3>Anahtar yönetimi</h3><p>SSH anahtarlarınızı düzenli ve güvenli tutun.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M9 5v4"/></svg></div><h3>Sekmeli oturumlar</h3><p>Birden çok sunucuyla aynı pencerede çalışın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div><h3>Güvenli saklama</h3><p>Kimlik bilgileriniz cihazınızda şifreli kalır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg></div><h3>Gruplar ve arama</h3><p>Çok sayıda sunucuyu gruplayın, anında bulun.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div><h3>Hızlı ve hafif</h3><p>Açılır açılmaz çalışmaya hazır.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="nasil">
+    <div class="wrap">
+      <h2>Üç adımda başlayın</h2>
+      <p class="sub">Kurulumdan ilk bağlantıya birkaç dakika.</p>
+      <div class="steps">
+        <div class="step"><h3>İndirin</h3><p>SSH Masters'ı Microsoft Store'dan yükleyin.</p></div>
+        <div class="step"><h3>Sunucularınızı ekleyin</h3><p>Adres, kullanıcı ve kimlik doğrulama yöntemini girin.</p></div>
+        <div class="step"><h3>Bağlanın</h3><p>Listeden sunucuyu seçin, oturumunuz açılsın.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>SSH Masters'ı hemen deneyin</h2>
+      <p class="sub" style="margin-left:auto;margin-right:auto">Windows için Microsoft Store'da.</p>
+      <div class="cta">
+        <a class="store" data-store href="#" target="_blank" rel="noopener">
+          <svg viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>
+          <span><small>Edinin</small><b>Microsoft Store</b></span>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> SSH Masters</span>
+    <span class="sp"></span>
+    <a href="#indir">Microsoft Store</a>
+  </div>
+</footer>
+<script>
+  document.querySelectorAll('[data-store]').forEach(a => { a.href = window.STORE_URL; });
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+packaging/layout/
+build/
+dist/
+*.spec
+__pycache__/

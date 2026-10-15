@@ -1400,6 +1400,8 @@ const SUB_PAGES = {
   drone: p => ({ drones: 'Dron Envanteri', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]] || p.join('/')) + (p[1] ? ` #${p[1]}` : ''),
   field: p => {
     const d = { drones: 'Dron Envanteri', live: 'Canlı Uçuş', routes: 'Rotalar', bridges: 'Dron Köprüleri' }[p[0]];
+    const sub = { places: 'Görev Yerleri', vehicles: 'Araçlar' }[p[0]];
+    if (sub) return sub;
     return p[0] === 'report' ? `Uçuş raporu #${p[1]}` : d ? `Dron Yönetimi · ${d}${p[1] ? ` #${p[1]}` : ''}` : p.join('/');
   },
   tools: p => (p[0] === 'flight-log' ? `Uçuş Logu Analizi${p[1] ? ` · Rapor #${p[1]}` : ''}` : p.join('/')),

@@ -8798,3 +8798,22 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .fl-log-foot .fl-log-head b { font-size: 13px; }
 .task-sum.fixed { cursor: default; }
 .task-sum.fixed:hover { background: none; }
+
+/* Saha Yönetimi › Görev Listesi: filtre/eylem paneli listeyle aynı kartın başlığında; tüm filtreler tek kapsülde */
+.task-list-card { overflow: hidden; }
+.task-list-card > .filters { margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: var(--surface-2); }
+.task-list-card .table-wrap { border: 0; border-radius: 0; box-shadow: none; }
+.task-list-card > div > .empty { padding: 28px; text-align: center; color: var(--muted); }
+.filter-pill { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 6px; }
+.filter-pill > .input, .filter-pill > select, .filter-pill .period-filter > select, .filter-pill .period-filter .input {
+  border: 0; background: transparent; border-radius: 999px; box-shadow: none; height: 32px; }
+.filter-pill > .input:focus, .filter-pill select:focus { background: var(--surface-2); outline: none; }
+.filter-pill > * + * { border-left: 1px solid var(--border) !important; border-radius: 0 !important; }
+.filter-pill > :last-child { border-top-right-radius: 999px !important; border-bottom-right-radius: 999px !important; }
+.filter-pill .period-filter { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 760px) {
+  .filter-pill { border-radius: 16px; width: 100%; }
+  .filter-pill > * { flex: 1 1 45%; }
+  .filter-pill > * + * { border-left: 0 !important; }
+}

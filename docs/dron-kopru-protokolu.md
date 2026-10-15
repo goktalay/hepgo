@@ -99,7 +99,11 @@ Tarayıcının `cmd{name:'takeoff', params{alt_rel_m, kontrol?}}` isteği köpr�
 (köprü bildirdiyse) `mission_start`. NAV_TAKEOFF gönderilmez: `GET /api/drone/routes/{id}/mission` rotanın başına TAKEOFF öğesi ekler
 (irtifa ilk noktanınki, en az 2 m; ilk nokta zaten 'takeoff' ise eklenmez; yanıtta `auto_takeoff:true`). Yanıt akış bitince döner.
 Not: kod Copter merkezlidir (GÖKTUNGU'daki gibi); sabit kanatta GUIDED+NAV_TAKEOFF kalkış yapmaz — bilinen sınırlama.
-- Köprü `mission_upload`'da başa ev (ve hız) öğesi eklediği için `DO_JUMP` (177) `param1` hedefini aynı miktarda kaydırır.
+- **Ev öğesi köprünün işidir (ZORUNLU):** `mission_upload.items` HEPGO öğeleridir ve 0. öğe ev konumu DEĞİLDİR (rota görevlerinde 0. öğe
+  otomatik TAKEOFF'tur). ArduPilot 0. sıradaki öğeyi ev konumu sayıp uçmadığı için köprü başa bir ev öğesi (command 16, frame 0, aracın
+  konumu) EKLER; isteğe bağlı `cruise_speed` için hemen ardından DO_CHANGE_SPEED (178) ekleyebilir. Eklenen öğe sayısı kadar `DO_JUMP` (177)
+  `param1` ve `mission_set_current.seq` hedefi kaydırılır; `mission_download` sonucunda bu öğeler çıkarılıp HEPGO sırasına geri çevrilir.
+  Öğeleri olduğu gibi gönderen köprüde rotanın ilk öğesi (kalkış) ev konumu sanılır ve kalkış yapılmaz.
 - `altitude_change{alt_rel_m}` — Copter GUIDED: SET_POSITION_TARGET_LOCAL_NED yalnız z (type_mask); Plane: MAV_CMD_DO_CHANGE_ALTITUDE (köprü HEARTBEAT.type'a göre seçer).
 
 ## v1.2 (TASLAK — GÖKTUNGU dron.py şemaları, adlar korunur ki dron_bakim.js / Log Yönetimi penceresi değişmeden çalışsın)

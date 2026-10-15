@@ -2,7 +2,7 @@
 import { api, fileUrl, uploadChunked, uploadLarge } from '../api.js';
 import { icons } from '../icons.js';
 import { printTaskForm, printTaskReport } from '../print.js';
-import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../status.js';
+import { TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../status.js';
 import { segIcon } from '../segicons.js';
 import { stockPicker } from '../stockpick.js';
 import {
@@ -52,12 +52,13 @@ export async function render(view, params, ctx) {
   if (params[0] === 'report') return renderReportView(view, Number(params[1]), '#/field', ctx);
   if (params[0] === 'task') return renderTask(view, Number(params[1]), ctx);
   if (params[0] === 'flight') return renderFlight(view, Number(params[1]), ctx, params[2]);
-  if (params[0] === 'places') return renderPlaces(view, ctx);
+  if (params[0] === 'places') return renderPlaces(view, ctx, 'locations');
+  if (params[0] === 'vehicles') return renderPlaces(view, ctx, 'vehicles');
+  if (params[0] === 'flights') { location.replace('#/field'); return; }   // Uçuş Yönetimi alt modülü kaldırıldı: uçuşlar görevin içinden
   // Dron Yönetimi sayfaları sorgu taşıyabilir (#/field/live?task=5 → params[0] 'live?task=5'); sayfa adı '?' öncesidir
   const fp = String(params[0] || '').split('?')[0];
   if (fp === 'live') return droneMod.render(view, params, ctx);   // görevden açılan Canlı Uçuş
   if (DRONE_PAGES.includes(fp)) { location.replace(`#/drone/${params.join('/')}`); return; }   // eski adresler: Dron Yönetimi artık ayrı modül
-  if (params[0] === 'flights' || (!params[0] && pref('field.view', 'tasks') === 'flights')) return renderFlightsList(view, ctx);
   return renderList(view, ctx);
 }
 
@@ -68,14 +69,11 @@ async function renderList(view, ctx) {
   const status = selectInput(Object.entries(TASK_STATES).map(([k, s]) => [k, s.label]), { all: 'Tüm durumlar' });
   const driver = h('select', { class: 'input' });
   const place = h('select', { class: 'input' });
-  const mineOnly = h('input', { type: 'checkbox' });
   const stats = statStrip();
   const body = h('div');
   let tasks = [];
   let available = null;
 
-  const mine = t => [t.driver_id, t.lead_id, t.pilot_id, t.created_by].includes(ctx.user.id) || t.staff.some(s => s.id === ctx.user.id)
-    || t.vehicles.some(v => v.driver_id === ctx.user.id);
   const refill = (sel, pairs, all) => {
     const cur = sel.value;
     clear(sel, h('option', { value: '' }, all), pairs.map(([v, l]) => h('option', { value: v, selected: String(v) === cur }, l)));
@@ -94,7 +92,6 @@ async function renderList(view, ctx) {
     const list = tasks.filter(t => (!status.value || t.status === status.value) &&
       (!driver.value || driverPairs(t).some(([d]) => String(d) === driver.value)) &&
       (!place.value || String(t.location_id) === place.value) &&
-      (!mineOnly.checked || mine(t)) &&
       matches(q.value, t.code, t.aircraft, t.lead_name, driversOf(t), t.pilot_name, t.location_name, t.vehicle_plate,
         ...t.staff.map(s => s.full_name), ...t.flights.map(f => f.order_code)));
     // Satır: temel bilgi kalın, ayrıntılar altında küçük yazıyla (kişi adları taşmasın)
@@ -115,7 +112,7 @@ async function renderList(view, ctx) {
           t.distance_km != null ? line('Yol', km(t.distance_km)) : null),
         h('td', null, h('b', null, `${t.logs_ready}/${t.flights.length}`), h('div', { class: 'task-sub' }, 'hazır rapor')),
         h('td', { class: 'muted' }, fmtDateTime(t.created_at)))))))
-      : h('div', { class: 'card empty' }, 'Filtreye uyan görev yok'));
+      : h('div', { class: 'empty' }, 'Filtreye uyan görev yok'));
   };
   const period = periodFilter('fieldTasks', () => load(), { title: 'Açık görevler her zaman; bitenler seçilen dönemde' });
   const load = async () => {
@@ -124,70 +121,27 @@ async function renderList(view, ctx) {
     draw();
   };
   q.addEventListener('input', draw);
-  [status, driver, place, mineOnly].forEach(el => el.addEventListener('change', draw));
+  [status, driver, place].forEach(el => el.addEventListener('change', draw));
+  // Görev Listesi: filtreler tek kapsülde (solda), Yeni Saha Görevi + Excel tek kapsülde (sağda; listexport.js Excel'i
+  // .filters .module-pills içine ekler); filtre/eylem paneli listeyle aynı kartın başlığında
   clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', tabs: fieldViewSwitch('tasks') }),
+    pageHead('Saha Yönetimi', { back: '#/', tabs: fieldTabs('tasks') }),
     stats,
-    h('div', { class: 'filters' }, q, status, driver, place, period.el, h('label', { class: 'check' }, mineOnly, 'Sadece benim görevlerim'),
-      h('span', { class: 'spacer' }),
-      h('a', { class: 'btn', href: '#/field/places' }, 'Görev Yerleri ve Araçlar'),
-      ctx.user.modules.includes('drone') ? h('a', { class: 'btn', href: '#/drone/drones' }, 'Dron Yönetimi') : null,
-      manager ? h('button', { class: 'btn primary', onclick: () => newTask(ctx, load) }, svgIcon(icons.plus), 'Yeni Saha Görevi') : null),
-    body);
+    h('div', { class: 'card task-list-card' },
+      h('div', { class: 'filters' },
+        h('div', { class: 'filter-pill' }, q, status, driver, place, period.el),
+        h('span', { class: 'spacer' }),
+        manager ? h('div', { class: 'pill-group module-pills' },
+          h('button', { class: 'btn primary', onclick: () => newTask(ctx, load) }, svgIcon(icons.plus), 'Yeni Saha Görevi')) : null),
+      body));
   await load();
   every(30000, () => load().catch(() => {}));
 }
 
-// ---------- Görünüm seçici: Saha Görevi (görev listesi) | Uçuş Yönetimi (görevlerdeki uçaklar)
-const fieldViewSwitch = current => segmented([['tasks', 'Saha Görevi'], ['flights', 'Uçuş Yönetimi']], current, v => {
-  setPref('field.view', v);
-  location.hash = v === 'flights' ? '#/field/flights' : '#/field';
-  if (v === 'tasks') window.dispatchEvent(new HashChangeEvent('hashchange'));
-}, { tabs: true });
-
-// ---------- Uçuş Yönetimi: saha görevlerine eklenmiş uçaklar; tıklayınca uçuş detayı
-async function renderFlightsList(view, ctx) {
-  let mode = pref('field.flights', 'ready');
-  const q = h('input', { class: 'input', type: 'search', placeholder: 'Uçak, görev, yer, pilot ara…', style: { width: '240px' } });
-  const stats = statStrip();
-  const body = h('div');
-  let rows = [];
-  const draw = () => {
-    const list = rows.filter(f => matches(q.value, f.queue_no, f.order_code, f.product_name, f.task_code, f.location_name, f.pilot_name, f.drone_code, f.drone_name));
-    stats.set([
-      { icon: 'fleet', label: mode === 'ready' ? 'Uçuşa hazır uçak' : mode === 'flown' ? 'Uçmuş uçak' : 'Görevlerdeki uçak', value: rows.length },
-      { icon: 'documents', label: 'Raporu hazır', value: rows.filter(f => f.log_status === 'TAMAM').length, tone: 'ok' },
-      { icon: 'warning', label: 'Hurda (uçtu)', value: rows.filter(f => f.order_status === 'HURDA').length },
-      { icon: 'note', label: 'Uçuş notu', value: rows.reduce((a, f) => a + f.note_count, 0) },
-    ]);
-    clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
-      h('thead', null, h('tr', null, ['Uçak', 'Ürün', 'Saha görevi', 'Görev yeri / pilot', 'Uçuş logu', 'Havada', 'Not / medya'].map(c => h('th', null, c)))),
-      h('tbody', null, list.map(f => h('tr', { class: 'click', onclick: () => { location.hash = `#/field/flight/${f.id}`; } },
-        h('td', null, f.queue_no ? queuePlate(f.queue_no) : h('b', { class: 'mono' }, f.order_code || f.drone_code), h('div', { class: 'small muted' }, f.order_code || f.drone_name || ''),
-          f.drone_id ? h('span', { class: 'badge blue' }, 'Dron') : f.order_status !== 'TAMAMLANDI' ? badge(ORDER_STATES, f.order_status) : null),
-        h('td', null, f.product_name || f.drone_model || '—', f.drone_id ? null : h('div', null, h('span', { class: `badge ${USAGE_TYPES[f.usage_type]?.badge || 'gray'}` },
-          USAGE_TYPES[f.usage_type]?.label || '—'))),
-        h('td', null, h('b', null, f.task_code), h('div', null, badge(TASK_STATES, f.task_status))),
-        h('td', null, f.location_name || '—', h('div', { class: 'small muted' }, f.pilot_name || '')),
-        h('td', null, f.log_status ? logBadge(f.log_status) : h('span', { class: 'muted' }, 'Yüklenmedi')),
-        h('td', null, f.flight_s != null ? clock(f.flight_s) : '—'),
-        h('td', { class: 'small' }, tr('{notes} not · {files} dosya', { notes: f.note_count, files: f.media_count })))))))
-      : h('div', { class: 'card empty' }, mode === 'ready' ? 'Uçuşa hazır uçak yok. Saha görevine eklenen, montajı bitmiş uçaklar burada görünür.'
-        : 'Kayıt yok'));
-  };
-  const period = periodFilter('fieldFlights', () => load(), { title: 'Uçmuş / tüm uçaklarda görevin başladığı dönem' });
-  const load = async () => { period.el.hidden = mode === 'ready'; rows = await api.get(`/api/field/flights?view=${mode}&${period.qs()}`); draw(); };
-  const modeSeg = selectInput([['ready', 'Uçuşa hazır'], ['flown', 'Uçmuş'], ['all', 'Tüm uçaklar']], { all: null, value: mode });
-  modeSeg.addEventListener('change', () => { mode = modeSeg.value; setPref('field.flights', mode); load().catch(toastError); });
-  q.addEventListener('input', draw);
-  clear(view,
-    pageHead('Saha Yönetimi', { back: '#/', sub: 'Uçuş Yönetimi · saha uçakları', tabs: fieldViewSwitch('flights') }),
-    stats,
-    h('div', { class: 'filters' }, modeSeg, q, period.el),
-    body);
-  await load();
-  every(30000, () => load().catch(() => {}));
-}
+// ---------- Alt modüller: Görev Listesi | Görev Yerleri | Araçlar (uçuşlara görevin içinden erişilir)
+const FIELD_TABS = [['tasks', 'Görev Listesi'], ['locations', 'Görev Yerleri'], ['vehicles', 'Araçlar']];
+const FIELD_TAB_HASH = { tasks: '#/field', locations: '#/field/places', vehicles: '#/field/vehicles' };
+const fieldTabs = current => segmented(FIELD_TABS, current, v => { location.hash = FIELD_TAB_HASH[v]; }, { tabs: true });
 
 // ---------- Yeni görev ----------
 async function newTask(ctx, done) {
@@ -1057,22 +1011,23 @@ async function renderTask(view, id, ctx) {
 }
 
 // ---------- Görev yerleri ve araçlar ----------
-async function renderPlaces(view, ctx) {
+async function renderPlaces(view, ctx, kind) {
   const canEdit = ctx.user.roles.some(r => ['Sistem Yöneticisi', 'Saha Sorumlusu', 'Şoför'].includes(r));
-  const locBox = h('div', { class: 'card card-pad' });
-  const vehBox = h('div', { class: 'card card-pad' });
+  const box = h('div', { class: 'card card-pad' });
   const stats = statStrip();
-  let locations = [], vehicles = [];
+  const isLoc = kind === 'locations';
   const load = async () => {
-    [locations, vehicles] = await Promise.all([api.get('/api/field/locations'), api.get('/api/field/vehicles')]);
-    const top = [...locations].sort((a, b) => b.task_count - a.task_count)[0];
-    stats.set([
-      { icon: 'field', label: 'Görev yeri', value: locations.length, sub: tr('aktif {n}', { n: locations.filter(l => l.active).length }) },
-      { icon: 'fleet', label: 'Araç', value: vehicles.length, sub: tr('aktif {n}', { n: vehicles.filter(v => v.active).length }) },
+    const rows = await api.get(`/api/field/${kind}`);
+    const top = [...rows].sort((a, b) => b.task_count - a.task_count)[0];
+    stats.set(isLoc ? [
+      { icon: 'field', label: 'Görev yeri', value: rows.length, sub: tr('aktif {n}', { n: rows.filter(l => l.active).length }) },
       { icon: 'radar', label: 'En çok gidilen yer', value: top?.task_count || 0, sub: top?.name || '—' },
+    ] : [
+      { icon: 'fleet', label: 'Araç', value: rows.length, sub: tr('aktif {n}', { n: rows.filter(v => v.active).length }) },
+      { icon: 'radar', label: 'En çok kullanılan araç', value: top?.task_count || 0, sub: top?.plate || '—' },
     ]);
-    drawList(locBox, 'Görev yerleri', locations, { key: 'name', label: 'Görev yeri adı', path: 'locations', noun: 'görev yeri' });
-    drawList(vehBox, 'Araçlar', vehicles, { key: 'plate', label: 'Plaka', path: 'vehicles', noun: 'araç', mono: true });
+    if (isLoc) drawList(box, 'Görev yerleri', rows, { key: 'name', label: 'Görev yeri adı', path: 'locations', noun: 'görev yeri' });
+    else drawList(box, 'Araçlar', rows, { key: 'plate', label: 'Plaka', path: 'vehicles', noun: 'araç', mono: true });
   };
   function drawList(box, title, rows, o) {
     const name = h('input', { class: `input ${o.mono ? 'mono' : ''}`, placeholder: o.label });
@@ -1128,7 +1083,6 @@ async function renderPlaces(view, ctx) {
         : h('div', { class: 'empty' }, tr('Kayıtlı {noun} yok', { noun: o.noun })));
     draw();
   }
-  clear(view, pageHead('Görev Yerleri ve Araçlar', { back: '#/field', sub: 'Görev yerleri ve araçlar' }),
-    stats, h('div', { class: 'places-grid' }, locBox, vehBox));
+  clear(view, pageHead('Saha Yönetimi', { back: '#/', tabs: fieldTabs(kind) }), stats, box);
   await load();
 }

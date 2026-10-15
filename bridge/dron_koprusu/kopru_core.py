@@ -271,7 +271,8 @@ class MavLink:
             return self._cmd_long(sysid, 300, (0, 0, 0, 0, 0, 0, 0), 6)
         if name == 'mission_set_current':
             tgt = self._tgt(sysid)
-            self.m.mav.mission_set_current_send(tgt, self.target_comp, int(p['seq']) + 1)   # +1: 0. öğe ev konumu
+            # HEPGO sırası → araç sırası: yüklemede başa eklenen ev (+ hız) öğesi kadar kaydır
+            self.m.mav.mission_set_current_send(tgt, self.target_comp, int(p['seq']) + getattr(self, 'mis_off', {}).get(tgt, 1))
             return {'seq': int(p['seq'])}
         if name == 'param_list':
             tgt = self._tgt(sysid)
@@ -313,6 +314,9 @@ class MavLink:
                                  'param3': -1, 'param4': 0, 'x': 0, 'y': 0, 'z': 0.0})
         # DO_JUMP (177) hedefi HEPGO öğe sırasıdır: başa eklenen ev (+ hız) öğeleri kadar kaydır
         off = len(seq_items) - len(items)
+        if not hasattr(self, 'mis_off'):
+            self.mis_off = {}
+        self.mis_off[tgt] = off
         for it in seq_items[off:]:
             if int(it.get('command') or 0) == 177:
                 it['param1'] = float(it.get('param1') or 0) + off

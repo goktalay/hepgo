@@ -73,16 +73,36 @@ def _mode_name(mav_type, num):
         return str(num)
 
 
+MAV_TYPES = {1: 'Sabit kanat', 2: 'Quadrotor', 3: 'Koaksiyel', 4: 'Helikopter', 10: 'Kara aracı', 11: 'Deniz aracı', 12: 'Denizaltı', 13: 'Hexarotor',
+             14: 'Octorotor', 15: 'Tricopter', 19: 'VTOL tailsitter', 20: 'VTOL tiltrotor', 21: 'VTOL', 22: 'VTOL tailsitter', 23: 'VTOL tiltwing',
+             24: 'VTOL', 29: 'Dodecarotor', 35: 'Decarotor'}
+# MAV_SYS_STATUS_SENSOR bit maskesi (SYS_STATUS.onboard_control_sensors_*): panelde sensör sağlığı rozetleri için
+SENSOR_BITS = {'gyro': 1, 'accel': 2, 'mag': 4, 'baro': 8, 'diff_press': 16, 'gps': 32, 'optflow': 64, 'vision': 128, 'laser': 256, 'ext_gnd_truth': 512,
+               'rate_ctrl': 1024, 'att_stab': 2048, 'yaw_pos': 4096, 'z_alt_ctrl': 8192, 'xy_pos_ctrl': 16384, 'motor': 32768, 'rc': 65536,
+               'ahrs': 2097152, 'terrain': 4194304, 'battery': 33554432, 'prearm': 268435456, 'logging': 1073741824, 'geofence': 1048576}
+
+
+def _dist_m(lat1, lon1, lat2, lon2):
+    import math
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * 6371000 * math.asin(math.sqrt(a))
+
+
 class DroneState:
-    """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük)."""
-    __slots__ = ('d', 'emitted', 'dirty', 'timer')
+    """Bir sysid'nin son bilinen durumu (JSON'a çevrilebilir sözlük). Alanlar GÖKTUNGU harekât paneliyle uyumlu (README eşlemesi)."""
+    __slots__ = ('d', 'emitted', 'dirty', 'timer', 'armed_at', 'last_pos')
 
     def __init__(self, sysid):
         self.timer = None   # hız sınırına takılan güncellemeyi sonradan yayınlayan zamanlayıcı
-        self.d = {'sysid': sysid, 'type': None, 'autopilot': None, 'armed': False, 'mode': None, 'mode_num': None,
+        self.armed_at = None   # ARM anı (uçuş süresi)
+        self.last_pos = None   # kat edilen mesafe için son konum
+        self.d = {'sysid': sysid, 'type': None, 'type_name': None, 'autopilot': None, 'armed': False, 'mode': None, 'mode_num': None,
                   'lat': None, 'lon': None, 'alt': None, 'alt_rel': None, 'hdg': None, 'vx': None, 'vy': None, 'vz': None,
                   'airspeed': None, 'groundspeed': None, 'throttle': None, 'climb': None, 'roll': None, 'pitch': None, 'yaw': None,
                   'volt': None, 'curr': None, 'batt_pct': None, 'fix': None, 'sats': None, 'hdop': None, 'rpm': None,
+                  'wp_dist': None, 'mission_seq': None, 'mission_count': None, 'home_lat': None, 'home_lon': None, 'home_alt': None,
+                  'sensors': None, 'ekf_flags': None, 'prearm': [], 'last_text': None, 'flight_s': 0, 'dist_m': 0.0,
                   'last_hb': None, 'updated': None, 'msgs': 0}
         self.emitted = 0.0
         self.dirty = False
@@ -93,13 +113,36 @@ class DroneState:
         if t == 'HEARTBEAT':
             if getattr(m, 'type', None) in (6,):   # GCS kalp atışı — dron değil
                 return False
-            d['type'] = m.type; d['autopilot'] = m.autopilot
-            d['armed'] = bool(m.base_mode & 128)
+            d['type'] = m.type; d['type_name'] = MAV_TYPES.get(m.type, f'Tip {m.type}'); d['autopilot'] = m.autopilot
+            armed = bool(m.base_mode & 128)
+            now = time.time()
+            if armed and not d['armed']:
+                self.armed_at = now; d['dist_m'] = 0.0; d['prearm'] = []
+            elif not armed and d['armed']:
+                self.armed_at = None
+            d['armed'] = armed
+            if self.armed_at:
+                d['flight_s'] = int(now - self.armed_at)
             d['mode_num'] = m.custom_mode; d['mode'] = _mode_name(m.type, m.custom_mode)
-            d['last_hb'] = time.time()
+            d['last_hb'] = now
         elif t == 'GLOBAL_POSITION_INT':
-            d['lat'] = m.lat / 1e7; d['lon'] = m.lon / 1e7; d['alt'] = m.alt / 1000; d['alt_rel'] = m.relative_alt / 1000
+            lat, lon = m.lat / 1e7, m.lon / 1e7
+            if d['armed'] and self.last_pos and lat and lon:
+                d['dist_m'] = round(d['dist_m'] + _dist_m(self.last_pos[0], self.last_pos[1], lat, lon), 1)
+            if lat or lon:
+                self.last_pos = (lat, lon)
+            d['lat'] = lat; d['lon'] = lon; d['alt'] = m.alt / 1000; d['alt_rel'] = m.relative_alt / 1000
             d['vx'] = m.vx / 100; d['vy'] = m.vy / 100; d['vz'] = m.vz / 100; d['hdg'] = (m.hdg / 100) if m.hdg != 65535 else None
+        elif t == 'NAV_CONTROLLER_OUTPUT':
+            d['wp_dist'] = m.wp_dist
+        elif t == 'MISSION_CURRENT':
+            d['mission_seq'] = m.seq
+            if getattr(m, 'total', 65535) not in (65535, None):
+                d['mission_count'] = m.total
+        elif t == 'HOME_POSITION':
+            d['home_lat'] = m.latitude / 1e7; d['home_lon'] = m.longitude / 1e7; d['home_alt'] = m.altitude / 1000
+        elif t == 'EKF_STATUS_REPORT':
+            d['ekf_flags'] = m.flags
         elif t == 'VFR_HUD':
             d['airspeed'] = m.airspeed; d['groundspeed'] = m.groundspeed; d['throttle'] = m.throttle; d['climb'] = m.climb
             if d['hdg'] is None:
@@ -111,6 +154,8 @@ class DroneState:
             d['volt'] = m.voltage_battery / 1000 if m.voltage_battery != 65535 else None
             d['curr'] = m.current_battery / 100 if m.current_battery != -1 else None
             d['batt_pct'] = m.battery_remaining if m.battery_remaining != -1 else None
+            pres, en, ok = m.onboard_control_sensors_present, m.onboard_control_sensors_enabled, m.onboard_control_sensors_health
+            d['sensors'] = {k: ('ok' if ok & b else 'fail') for k, b in SENSOR_BITS.items() if (pres & b) and (en & b)}
         elif t == 'GPS_RAW_INT':
             d['fix'] = m.fix_type; d['sats'] = m.satellites_visible; d['hdop'] = m.eph / 100 if m.eph != 65535 else None
         elif t == 'RPM':
@@ -425,7 +470,12 @@ def _feed_mavlink(bridge, data):
         if m.get_type() == 'BAD_DATA':
             continue
         if m.get_type() == 'STATUSTEXT':
-            _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': str(m.text).rstrip('\x00')[:200], 'severity': m.severity}, bridge.id)
+            text = str(m.text).rstrip('\x00')[:200]
+            st = bridge.drones.setdefault(sysid, DroneState(sysid))
+            st.d['last_text'] = text
+            if text.startswith(('PreArm', 'Arm:')):   # ARM CHECK rozetleri: son 8 ön-kol uyarısı
+                st.d['prearm'] = (st.d['prearm'] + [text])[-8:]
+            _broadcast({'t': 'event', 'bridge_id': bridge.id, 'sysid': sysid, 'text': text, 'severity': m.severity}, bridge.id)
             continue
         st = bridge.drones.setdefault(sysid, DroneState(sysid))
         if st.feed(m):

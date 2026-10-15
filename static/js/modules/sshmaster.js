@@ -6,7 +6,7 @@ import { api, upload } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, statStrip, toast, toastError } from '../ui.js';
 
 const SUBS = [['users', 'Kullanıcılar'], ['releases', 'Sürümler']];
-const APPS = [['sm', 'SSH Master'], ['fm', 'FTP Masters'], ['sq', 'SQL Master']];
+const APPS = [['sm', 'SSH Master'], ['fm', 'FTP Masters'], ['sq', 'SQL Master'], ['np', 'Notepad Master']];
 const APPN = Object.fromEntries(APPS);
 const ST = { AKTIF: ['green', 'Aktif'], BEKLIYOR: ['yellow', 'E-posta bekliyor'], ASKIDA: ['red', 'Askıda'] };
 const size = n => (n == null ? '—' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
@@ -17,7 +17,7 @@ export async function render(view, params) {
   const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'users';
   const nav = segmented(SUBS, sub, v => { location.hash = `#/sshmaster/${v}`; }, { tabs: true });
   const body = h('div');
-  clear(view, pageHead('Mastertool', { back: '#/', sub: 'SSH Master, FTP Masters ve SQL Master — tek hesap, uygulama lisansları ve sürümler', tabs: nav }), body);
+  clear(view, pageHead('Mastertool', { back: '#/', sub: 'SSH Master, FTP Masters, SQL Master ve Notepad Master — tek hesap, uygulama lisansları ve sürümler', tabs: nav }), body);
   return sub === 'releases' ? releasesView(body) : usersView(body);
 }
 
@@ -178,7 +178,7 @@ async function releasesView(view) {
     app = v; sessionStorage.setItem('mt-rel-app', v);
     title.textContent = `Yeni ${APPN[app]} sürümü yükle`;
     hint.textContent = `GitHub Actions aynı uca otomatik yükler: POST /api/${app}/releases (tek istekte ≤ 100 MB) ya da `
-      + `/api/${app}/releases/<sürüm>/setup|portable (parçalı), ${{ sm: 'SSHM', fm: 'FTPM', sq: 'SQLM' }[app]}_RELEASE_KEY ile.`;
+      + `/api/${app}/releases/<sürüm>/setup|portable (parçalı), ${{ sm: 'SSHM', fm: 'FTPM', sq: 'SQLM', np: 'NOTEPADM' }[app]}_RELEASE_KEY ile.`;
     load().catch(e => clear(list, h('div', { class: 'card empty' }, e.message)));
   };
   clear(view, segmented(APPS, app, setApp),

@@ -33,9 +33,10 @@ from . import db, mailer, merkez, settings
 VERSION = '2.0.0'
 APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'portable': 'SSH-Master-Portable-{v}.exe'},
         'fm': {'name': 'FTP Masters', 'setup': 'FTP-Masters-Setup-{v}.exe', 'portable': 'FTP-Masters-Portable-{v}.exe'},
-        'sq': {'name': 'SQL Master', 'setup': 'SQL-Master-Setup-{v}.exe', 'portable': 'SQL-Master-Portable-{v}.exe'}}
-PREFIXES = ('sm', 'fm', 'sq', 'mt')      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
-SITES = ('sm', 'fm', 'sq', 'mt')
+        'sq': {'name': 'SQL Master', 'setup': 'SQL-Master-Setup-{v}.exe', 'portable': 'SQL-Master-Portable-{v}.exe'},
+        'np': {'name': 'Notepad Master', 'setup': 'Notepad-Master-Setup-{v}.exe', 'portable': 'Notepad-Master-Portable-{v}.exe'}}
+PREFIXES = ('sm', 'fm', 'sq', 'np', 'mt')      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
+SITES = ('sm', 'fm', 'sq', 'np', 'mt')
 app = FastAPI(title='Mastertool', docs_url=None, redoc_url=None, openapi_url=None)
 COOKIE = 'sm_session'
 EMAIL_RE = re.compile(r'^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,24}$')
@@ -820,7 +821,7 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
 
 
 # ---------------- destek talepleri (Merkez talep ekranına düşer) ----------------
-TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'mt': 'Hesap / genel'}
+TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'mt': 'Hesap / genel'}
 
 
 def _mz(fn):
@@ -1035,7 +1036,7 @@ def admin_release_delete(rid: int, request: Request):
 
 
 # ---------------- sayfalar (Host'a göre site) ----------------
-SITE_NAMES = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'mt': 'Mastertool'}
+SITE_NAMES = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'mt': 'Mastertool'}
 
 
 def _page_msg(request, title, html):
@@ -1080,6 +1081,7 @@ def page_reset(tok: str, request: Request):
 
 BRAND_FILES = {'sm.png': ('sm', 'logo.png', 'image/png'), 'fm.png': ('fm', 'logo.png', 'image/png'), 'mt.png': ('mt', 'logo.png', 'image/png'),
                'sq.png': ('sq', 'logo.png', 'image/png'), 'sq.svg': ('sq', 'favicon.svg', 'image/svg+xml'),
+               'np.png': ('np', 'logo.png', 'image/png'), 'np.svg': ('np', 'favicon.svg', 'image/svg+xml'),
                'sm.svg': ('sm', 'favicon.svg', 'image/svg+xml'), 'fm.svg': ('fm', 'favicon.svg', 'image/svg+xml'),
                'mt.svg': ('mt', 'favicon.svg', 'image/svg+xml'), 'hepgo.png': ('mt', 'hepgo.png', 'image/png')}
 
@@ -1093,7 +1095,7 @@ def page_brand(name: str, request: Request):
     return FileResponse(settings.STATIC_DIR / d / f, media_type=media, headers={'Cache-Control': 'public, max-age=86400'})
 
 
-I18N_RE = re.compile(r'^(sm|fm|sq|mt|hesap)\.(en|fr|de|es|ar|zh|ru)\.json$')
+I18N_RE = re.compile(r'^(sm|fm|sq|np|mt|hesap)\.(en|fr|de|es|ar|zh|ru)\.json$')
 
 
 @app.get('/i18n/{name}')

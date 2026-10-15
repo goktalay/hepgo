@@ -16,6 +16,7 @@ from email.utils import formataddr
 from . import settings
 
 BRANDS = {'sm': ('SSH Master', 'sshmasters.com'), 'fm': ('FTP Masters', 'ftpmasters.com'), 'sq': ('SQL Master', 'sqlmaster.app'),
+          'np': ('Notepad Master', 'notepadmaster.com'),
           'mt': ('Mastertool', 'mastertool.download')}
 
 if os.environ.get('MT_SMTP_USER', '').strip() and os.environ.get('MT_SMTP_PASS', ''):
@@ -88,7 +89,7 @@ def _layout(brand, title, body_html, button_text=None, button_url=None, foot=Non
   </div></div>"""
 
 
-_ONE = ('Tek Mastertool hesabıyla SSH Master, FTP Masters ve SQL Master\'a giriş yapabilir, indirmelerinizi ve şifreli eşitlemenizi '
+_ONE = ('Tek Mastertool hesabıyla tüm Mastertool uygulamalarına (SSH Master, FTP Masters, SQL Master, Notepad Master) giriş yapabilir, indirmelerinizi ve şifreli eşitlemenizi '
         'tek yerden yönetebilirsiniz.')
 
 
@@ -108,7 +109,7 @@ def send_reset(to, name, url, brand='mt'):
     brand = _brand(brand)
     bn = BRANDS[brand][0]
     subject = f'{bn}: şifre sıfırlama'
-    text = (f'Merhaba {name},\n\nMastertool hesabınızın (SSH Master / FTP Masters / SQL Master) şifresini sıfırlamak için bu bağlantıyı açın '
+    text = (f'Merhaba {name},\n\nMastertool hesabınızın (tüm Mastertool uygulamaları) şifresini sıfırlamak için bu bağlantıyı açın '
             f'(1 saat geçerli):\n{url}\n\nNot: şifre sıfırlanınca web\'de saklanan şifreli kütüphaneleriniz silinir; uygulamalarda yeni '
             f'şifrenizle giriş yaptığınızda bilgisayarınızdaki kayıtlar yeniden yüklenir.\n\n— {bn}')
     send(to, subject, text, _layout(brand, 'Şifrenizi sıfırlayın',
@@ -124,10 +125,10 @@ def send_exists(to, name, login_url, reset_url, brand='mt'):
     bn = BRANDS[brand][0]
     subject = f'{bn}: bu e-postayla zaten bir hesabınız var'
     text = (f'Merhaba {name},\n\nBu e-posta adresiyle yeni bir kayıt denendi; ancak zaten bir Mastertool hesabınız var '
-            f'(SSH Master, FTP Masters ve SQL Master için aynı hesap).\nGiriş: {login_url}\nŞifrenizi hatırlamıyorsanız: {reset_url}\n\n— {bn}')
+            f'(tüm Mastertool uygulamaları için aynı hesap).\nGiriş: {login_url}\nŞifrenizi hatırlamıyorsanız: {reset_url}\n\n— {bn}')
     send(to, subject, text, _layout(brand, 'Zaten bir hesabınız var',
                                     f'Merhaba {_h.escape(name)},<br>Bu e-posta adresiyle yeni bir kayıt denendi; ancak zaten bir Mastertool hesabınız var '
-                                    '(SSH Master, FTP Masters ve SQL Master için aynı hesap). Şifrenizi hatırlamıyorsanız '
+                                    '(tüm Mastertool uygulamaları için aynı hesap). Şifrenizi hatırlamıyorsanız '
                                     f'<a style="color:#22d3ee" href="{_h.escape(reset_url)}">şifre sıfırlama</a> sayfasını kullanın.',
                                     'Giriş yap', login_url), brand)
 

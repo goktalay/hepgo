@@ -113,7 +113,10 @@ Sunucu-içi diğer GÖKTUNGU kuralları (dron.py / gorev.py birebir; köprüye v
   GUIDED → ARM → 5 sn teyit) → AUTO → mission_start. Doğrulanamayan mod geçişinde `ok:false` (aşama değişmez).
 - COMMAND_ACK: kullanıcı komutları (22, 21, 20, 400, 176, 252, 178, 192, 16, 300, 241, 246) için kabul → "<KOMUT> kabul edildi";
   red → "[sysid] <KOMUT> BAŞARISIZ: <gerekçe> (<son PreArm metni, 15 sn içinde>)" dron konsoluna ve `{t:'konsol'}` genel konsola.
-Not: kod Copter merkezlidir (GÖKTUNGU'daki gibi); sabit kanatta GUIDED+NAV_TAKEOFF kalkış yapmaz — bilinen sınırlama.
+SABİT KANAT (HEARTBEAT type 1; sanal ve gerçek tüm sabit kanatlar — GÖKTUNGU'da yoktu): takeoff = `param_set{TKOFF_ALT=irtifa (≤200 m), type 9}`
+(köprü 'param' bildirmiyorsa ya da yazma reddedilirse dronun kayıtlı TKOFF_ALT'ı kullanılır, uyarı yazılır) → `set_mode TAKEOFF` → 4 sn mod
+teyidi → (ARM değilse) `arm` → 6 sn teyit. NAV_TAKEOFF gönderilmez (ArduPlane GUIDED'da reddeder, uçak yerde ARM'lı kalır — SITL'de ölçüldü).
+Rota başlat sabit kanatta da çalışır (rotanın başındaki TAKEOFF öğesi AUTO'da uçulur). VTOL (type 19–25) çok rotorlu akışını kullanır.
 - **Ev öğesi köprünün işidir (ZORUNLU):** `mission_upload.items` HEPGO öğeleridir ve 0. öğe ev konumu DEĞİLDİR (rota görevlerinde 0. öğe
   otomatik TAKEOFF'tur). ArduPilot 0. sıradaki öğeyi ev konumu sayıp uçmadığı için köprü başa bir ev öğesi (command 16, frame 0, aracın
   konumu) EKLER; isteğe bağlı `cruise_speed` için hemen ardından DO_CHANGE_SPEED (178) ekleyebilir. Eklenen öğe sayısı kadar `DO_JUMP` (177)

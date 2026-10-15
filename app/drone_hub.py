@@ -1698,6 +1698,9 @@ async def _takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws):
         hata = msg
         console_line(b, sysid, 'KOMUT', msg, 'hata')
     try:
+        if d.get('type') == 1:   # SABİT KANAT (MAV_TYPE_FIXED_WING): ArduPlane'in kendi kalkışı (GÖKTUNGU'da yok; GUIDED+NAV_TAKEOFF reddedilir)
+            sent = await _plane_takeoff(b, sim, sysid, hedef, viewer_ws, d, fail)
+            return
         console_line(b, sysid, 'KOMUT', 'GUIDED/ARM teyidi bekleniyor...', 'uyari')
         r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'GUIDED'}, viewer_ws)
         if not r['ok'] or not await _wait_for(lambda: str(d.get('mode') or '').upper() == 'GUIDED', GUIDED_CONFIRM_S):
@@ -1726,6 +1729,39 @@ async def _takeoff_flow(b, sim, sysid, hedef, kontrol_id, viewer_ws):
                 await _db(_mark_takeoff_check, kontrol_id, sent, hata)
             except Exception:   # noqa: BLE001
                 pass
+
+
+async def _plane_takeoff(b, sim, sysid, hedef, viewer_ws, d, fail):
+    """Sabit kanat kalkışı (ArduPlane yöntemi; sanal ve gerçek tüm sabit kanatlar): seçilen irtifa TKOFF_ALT'a yazılır, TAKEOFF
+    moduna geçilir (4 sn teyit), ARM edilir (6 sn teyit). Araç TKOFF_ALT'a kendi tırmanır ve orada düzleşir. Çok rotorlu
+    akıştaki gibi GUIDED + MAV_CMD_NAV_TAKEOFF gönderilmez: ArduPlane bunu reddeder ve uçak yerde ARM'lı kalır (SITL'de ölçüldü).
+    Köprü parametre yazmayı desteklemiyorsa ya da yazma reddedilirse dronun kayıtlı TKOFF_ALT değeriyle kalkılır (uyarı yazılır)."""
+    hedef = min(hedef, 200.0)   # TKOFF_ALT aralığı 0–200 m
+    console_line(b, sysid, 'KOMUT', 'Sabit kanat: TAKEOFF/ARM teyidi bekleniyor...', 'uyari')
+    if sim or 'param' in b.caps:
+        r = await _dispatch(b, sim, sysid, 'param_set', {'name': 'TKOFF_ALT', 'value': float(hedef), 'type': 9}, viewer_ws)
+        if r['ok']:
+            console_line(b, sysid, 'KOMUT', f'TKOFF_ALT = {hedef:.0f}', 'basari')
+        else:
+            console_line(b, sysid, 'KOMUT', f"TKOFF_ALT yazılamadı ({r.get('error') or 'reddedildi'}); dronun kayıtlı kalkış irtifası kullanılacak", 'uyari')
+    else:
+        console_line(b, sysid, 'KOMUT', 'Köprü parametre yazmayı desteklemiyor; dronun kayıtlı kalkış irtifası (TKOFF_ALT) kullanılacak', 'uyari')
+    r = await _dispatch(b, sim, sysid, 'set_mode', {'mode': 'TAKEOFF'}, viewer_ws)
+    if not r['ok'] or not await _wait_for(lambda: str(d.get('mode') or '').upper() == 'TAKEOFF', GUIDED_CONFIRM_S):
+        fail('TAKEOFF modu teyit edilmedi; kalkış başlatılmadı.')
+        return False
+    if not d.get('armed'):
+        if not _alive(b):
+            fail('Kalkış öncesi MAVLink bağlantısı kesildi.')
+            return False
+        r = await _dispatch(b, sim, sysid, 'arm', {}, viewer_ws)
+        if not r['ok'] or not await _wait_for(lambda: bool(d.get('armed')), ARM_CONFIRM_S):
+            fail('ARM teyidi alınamadı; kalkış başlatılmadı. Pre-arm uyarılarını kontrol edin.')
+            return False
+    b.drones[int(sysid)].hedef_rel = hedef
+    console_line(b, sysid, 'KOMUT', f'TAKEOFF modu: sabit kanat kalkışı başladı ({hedef:.0f} m)', 'basari')
+    global_line(b, sysid, 'KOMUT', f'D{sysid} TAKEOFF (sabit kanat) {hedef:.0f}m', 'basari')
+    return True
 
 
 async def _mission_flow(b, sim, sysid, params, viewer_ws):

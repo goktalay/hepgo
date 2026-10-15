@@ -949,3 +949,17 @@
   } catch (e) {}
   tamGuncelle();
 })();
+
+// =====================================================================
+// HEPGO: Sabit kanat mod listesine TAKEOFF (ArduPlane custom_mode 13). Karttaki Takeoff düğmesi sabit kanatta sunucuda
+// TKOFF_ALT + TAKEOFF modu + ARM akışını yürütür (drone_hub._plane_takeoff); pilot modu listeden de seçebilsin.
+// dronlar.js DK_MODLAR üst düzey const (ortak sözcüksel kapsam): dizi yerinde genişletilir, GÖKTUNGU dosyasına dokunulmaz.
+// =====================================================================
+(function hepgoPlaneTakeoffModu() {
+  try {
+    if (typeof DK_MODLAR === "undefined" || !Array.isArray(DK_MODLAR.plane)) return;
+    if (DK_MODLAR.plane.some(function (m) { return Number(m[0]) === 13; })) return;
+    var i = DK_MODLAR.plane.findIndex(function (m) { return Number(m[0]) > 13; });
+    DK_MODLAR.plane.splice(i < 0 ? DK_MODLAR.plane.length : i, 0, [13, "TAKEOFF"]);
+  } catch (e) { console.error("[hepgo_patch] TAKEOFF modu eklenemedi", e); }
+})();

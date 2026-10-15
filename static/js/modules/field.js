@@ -297,7 +297,7 @@ async function renderTask(view, id, ctx) {
   drawTabs();
   const stats = statStrip();
   const infoOpen = true;   // Görev Bilgileri üstte sabit açık (katlanmaz)
-  const info = h('div', { class: 'card task-info' });
+  const info = h('div', { class: 'card task-info no-collapse' });
   const body = h('div');
   let t;
 

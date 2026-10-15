@@ -1145,7 +1145,7 @@ function initPanelCollapse(viewEl) {
   const enhance = () => {
     viewEl.querySelectorAll('.card, .set-card').forEach(card => {
       if (card.tagName === 'A') return;
-      if (['db-tile', 'stat-strip', 'empty', 'loading'].some(c => card.classList.contains(c))) return;
+      if (['db-tile', 'stat-strip', 'empty', 'loading', 'no-collapse'].some(c => card.classList.contains(c))) return;
       if (card.closest('.grid-stack, .modal-back')) return;
       if (!card.dataset.collapsible) {
         const head = headerOf(card);

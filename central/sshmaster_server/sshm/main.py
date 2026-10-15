@@ -1079,7 +1079,7 @@ def page_reset(tok: str, request: Request):
 
 BRAND_FILES = {'sm.png': ('sm', 'logo.png', 'image/png'), 'fm.png': ('fm', 'logo.png', 'image/png'), 'mt.png': ('mt', 'logo.png', 'image/png'),
                'sm.svg': ('sm', 'favicon.svg', 'image/svg+xml'), 'fm.svg': ('fm', 'favicon.svg', 'image/svg+xml'),
-               'mt.svg': ('mt', 'favicon.svg', 'image/svg+xml')}
+               'mt.svg': ('mt', 'favicon.svg', 'image/svg+xml'), 'hepgo.png': ('mt', 'hepgo.png', 'image/png')}
 
 
 @app.get('/brand/{name}')

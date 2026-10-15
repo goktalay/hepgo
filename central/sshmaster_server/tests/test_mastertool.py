@@ -228,7 +228,7 @@ def main():
         r = c.get('/giris', headers={'Host': 'ftpmasters.com'})
         assert 'data-site="fm"' in r.text and '<title>FTP Masters — Hesap' in r.text
         assert c.get('/favicon.svg', headers={'Host': 'ftpmasters.com'}).content == open(os.path.join(settings.STATIC_DIR, 'fm', 'favicon.svg'), 'rb').read()
-        for b in ('sm', 'fm', 'mt'):
+        for b in ('sm', 'fm', 'mt', 'hepgo'):
             assert c.get(f'/brand/{b}.png').headers['content-type'] == 'image/png'
         assert c.get('/brand/../main.py').status_code == 404 and c.get('/brand/x.png').status_code == 404
         # portal yayında: ürün sitelerinin hesap sayfaları portala yönlenir (marka korunur), portal kendi sayfasını verir

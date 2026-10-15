@@ -46,7 +46,10 @@ RATE_WINDOW, RATE_MAX = 60, 10
 CMD_TIMEOUT = 10
 CMD_NAMES = {'arm', 'disarm', 'set_mode', 'takeoff', 'land', 'rtl', 'goto', 'mission_upload', 'mission_download', 'disconnect', 'arm_check',
              # protokol v1.1 (isteğe bağlı; köprü auth çerçevesinde caps ile bildirir, desteklemiyorsa res.error döner)
-             'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change'}
+             'set_home', 'param_list', 'param_get', 'param_set', 'reboot', 'mission_set_current', 'altitude_change',
+             # protokol v1.2 taslağı (docs/dron-kopru-protokolu.md; caps 'bakim' / 'log' bildiren köprüler)
+             'kalib_gyro', 'kalib_baro', 'kalib_ivme', 'kalib_level', 'kalib_esc', 'kalib_radyo',
+             'kalib_pusula_baslat', 'kalib_pusula_kabul', 'kalib_pusula_iptal', 'motor_test', 'motor_test_dur', 'log_list', 'log_fetch', 'log_erase'}
 BRIDGE_CAPS = {'set_home', 'param', 'arm_force', 'reboot', 'mission_set_current', 'altitude_change', 'log', 'bakim'}   # köprünün bildirebileceği yetenekler
 
 BRIDGES = {}        # bridge_id → Bridge (yalnız canlı bağlantılar)
@@ -114,6 +117,7 @@ class DroneState:
                   'volt': None, 'curr': None, 'batt_pct': None, 'fix': None, 'sats': None, 'hdop': None, 'rpm': None,
                   'wp_dist': None, 'mission_seq': None, 'mission_count': None, 'home_lat': None, 'home_lon': None, 'home_alt': None,
                   'sensors': None, 'ekf_flags': None, 'prearm': [], 'last_text': None, 'flight_s': 0, 'dist_m': 0.0,
+                  'magkal_pct': None, 'magkal_durum': None, 'magkal_rapor': None, 'kalib': None,   # v1.2 pusula kalibrasyonu / kalibrasyon oturumu
                   'last_hb': None, 'updated': None, 'msgs': 0}
         self.emitted = 0.0
         self.dirty = False
@@ -157,6 +161,12 @@ class DroneState:
         elif t in ('RC_CHANNELS', 'RC_CHANNELS_RAW'):
             self.rc_at = time.time()
             return False
+        elif t == 'MAG_CAL_PROGRESS':   # v1.2 pusula kalibrasyonu ilerlemesi
+            d['magkal_pct'] = m.completion_pct; d['magkal_durum'] = m.cal_status
+        elif t == 'MAG_CAL_REPORT':
+            d['magkal_durum'] = m.cal_status
+            d['magkal_rapor'] = {'compass_id': m.compass_id, 'fitness': m.fitness, 'cal_status': m.cal_status, 'autosaved': m.autosaved,
+                                 'ofs': [m.ofs_x, m.ofs_y, m.ofs_z], 'diag': [m.diag_x, m.diag_y, m.diag_z], 'offdiag': [m.offdiag_x, m.offdiag_y, m.offdiag_z]}
         elif t == 'PARAM_VALUE':   # v1.1 param_list/param_get/param_set yankısı: önbelleğe + toplu yayın kuyruğuna
             name = str(m.param_id).rstrip('\x00')
             self.params[name] = [m.param_value, m.param_index, m.param_count, m.param_type]
@@ -729,6 +739,12 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
     _pending[rid] = (fut, viewer_ws, b.id)
     ptxt = json.dumps(params or {}, ensure_ascii=False)[:160]
     console_line(b, sysid, 'KOMUT', f"{name} {ptxt if ptxt != '{}' else ''} ← {user.get('full_name') or user.get('username') or ''}".strip(), 'bilgi')
+    if name.startswith('kalib_'):   # v1.2 kalibrasyon oturumu: pencere yalnız bu andan sonraki STATUSTEXT'leri gösterir
+        st = b.drones.get(int(sysid))
+        if st is not None:
+            st.d['kalib'] = {'tur': name[6:], 'bas': time.time()}
+            if name == 'kalib_pusula_baslat':
+                st.d['magkal_pct'] = 0; st.d['magkal_durum'] = None; st.d['magkal_rapor'] = None
     try:
         await b.ws.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'sysid': sysid, 'name': name, 'params': params or {}}))
         res = await asyncio.wait_for(fut, CMD_TIMEOUT)

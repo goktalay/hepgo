@@ -35,7 +35,7 @@ Blob = `base64( iv[12] ‖ AES-256-GCM şifreli metin ‖ etiket[16] )`, anahtar
 Açık metin:
 ```json
 {"schema": 1, "items": [
-  {"id": "<16 hex>", "kind": "connection|folder|query|settings", "updated_at": 1792080000000, "rev": 3, "device": "<cihaz id>", "deleted": false, "data": { … }}
+  {"id": "<16 hex>", "kind": "connection|folder|settings", "updated_at": 1792080000000, "rev": 3, "device": "<cihaz id>", "deleted": false, "data": { … }}
 ]}
 ```
 `data` uygulamanın kendi biçimidir (istemci belirler, sunucu görmez). Önerilen:

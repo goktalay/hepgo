@@ -193,7 +193,16 @@ function show(tab) {
 
 function paneApps(pane) {
   const order = [...ACC.apps].sort((a, b) => (b.app === BRAND) - (a.app === BRAND));
-  pane.innerHTML = `<div class="apps">${order.map(x => {
+  const L = ACC.launcher, lr = L && L.release;
+  const launcher = L ? `<div class="app-card launcher">
+      <div class="head"><img src="/brand/mt.png" alt=""><div class="grow"><b>${esc(L.name)}</b>
+        <div class="muted small">${lr ? t('Sürüm {v} · {size} · {date}', { v: esc(lr.version), size: fmtSize(lr.size), date: fmtDate(lr.date) }) : t('İndirilebilir sürüm yakında')}</div></div></div>
+      <p class="hint">${t('Tüm Mastertool uygulamalarını tek pencereden kurun, açın ve güncelleyin; bir kez giriş yapın, hepsi açılsın.')}</p>
+      ${lr ? `<div class="row"><a class="btn primary" href="${esc(L.download_url)}">${t('İndir (Windows)')}</a>
+        ${lr.portable ? `<a class="btn" href="${esc(L.download_url)}?tur=portable">${t('Taşınabilir sürüm')}</a>` : ''}</div>
+        <p class="hint">SHA-256: <code>${esc(lr.sha256)}</code></p>` : ''}
+    </div>` : '';
+  pane.innerHTML = `${launcher}<div class="apps">${order.map(x => {
     const r = x.release, off = x.license !== 'AKTIF';
     return `<div class="app-card ${off ? 'off' : ''}">
       <div class="head"><img src="/brand/${x.app}.png" alt=""><div class="grow"><b>${esc(x.name)}</b>
@@ -212,7 +221,7 @@ function paneApps(pane) {
 }
 
 function paneDevices(pane) {
-  const kind = s => (s.kind === 'web' ? 'Web' : (TK_APPS()[s.app || 'sm'] || t('Uygulama')));
+  const kind = s => (s.kind === 'web' ? 'Web' : s.kind === 'sso' ? t('Ortak oturum (Master Tool)') : (TK_APPS()[s.app || 'sm'] || t('Uygulama')));
   pane.innerHTML = `<table><tr><th>${t('Cihaz')}</th><th>${t('Uygulama')}</th><th>${t('Son görülme')}</th><th></th></tr>
     ${ACC.sessions.map(s => `<tr><td>${esc(s.device || (s.kind === 'web' ? t('Tarayıcı') : t('Uygulama')))}${s.app_version ? ` <span class="muted small">v${esc(s.app_version)}</span>` : ''}</td>
       <td>${kind(s)}</td><td>${fmtDate(s.last_seen)}</td>

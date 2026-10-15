@@ -1,0 +1,74 @@
+[
+ {
+  "stem": "01-uygulamalar-gece",
+  "theme": "dark",
+  "title": "Kurulu ve kurulu olmayan uygulamalar",
+  "caption": "Kurulu uygulamalar tek tıkla açılır, kurulu olmayanlar tek tıkla kurulur",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "02-indirme-gunduz",
+  "theme": "light",
+  "title": "İndirme ilerlemesi",
+  "caption": "Simgenin üzerinde dairesel ilerleme (yüzde, MB); birden çok indirme aynı anda",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "03-guncelleme-gece",
+  "theme": "dark",
+  "title": "Güncelleme rozeti",
+  "caption": "Yeni sürümü olan uygulamada “Güncelleme var” rozeti ve tek tıkla Güncelle",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "04-tepsi-gunduz",
+  "theme": "light",
+  "title": "Tepsi menüsü",
+  "caption": "Tepsi simgesine tek tık: kurulu uygulamalar listelenir, tıklayınca açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "05-ayarlar-genel-gece",
+  "theme": "dark",
+  "title": "Ayarlar › Genel",
+  "caption": "Dil, Gece/Gündüz/Sistem teması, Windows ile başlat, tepsi ve güncellemeler",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "06-ayarlar-hesap-gunduz",
+  "theme": "light",
+  "title": "Ayarlar › Hesap",
+  "caption": "Tek giriş: bir kez giriş yapın; çıkış tüm Mastertool uygulamalarından çıkarır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "07-ayarlar-depolama-gece",
+  "theme": "dark",
+  "title": "Ayarlar › Depolama",
+  "caption": "İndirilen kurulum dosyaları; kurulumdan sonra kendiliğinden silinir",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "08-giris-gunduz",
+  "theme": "light",
+  "title": "Tek giriş",
+  "caption": "Bir kez giriş yapın: SSH Master, FTP Masters ve diğerleri yeniden giriş istemez",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

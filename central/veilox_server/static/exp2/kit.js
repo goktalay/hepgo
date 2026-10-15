@@ -267,9 +267,36 @@
     requestAnimationFrame(frame);
   }
 
+  // ---- ekran görüntüsü galerisi: tıklayınca büyüt, ok tuşları / düğmelerle gez, Esc ile kapat
+  function lightbox() {
+    const links = [...document.querySelectorAll('[data-gallery] a[data-lightbox]')];
+    if (!links.length) return;
+    let box = null, idx = 0;
+    const show = i => {
+      idx = (i + links.length) % links.length;
+      const a = links[idx], cap = a.parentElement.querySelector('figcaption');
+      box.querySelector('img').src = a.href;
+      box.querySelector('img').alt = a.querySelector('img')?.alt || '';
+      box.querySelector('p').textContent = cap ? [...cap.children].map(c => c.textContent).join(' — ') : '';
+    };
+    const close = () => { box?.remove(); box = null; document.removeEventListener('keydown', key); };
+    const key = e => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowRight') show(idx + (root.dir === 'rtl' ? -1 : 1)); else if (e.key === 'ArrowLeft') show(idx + (root.dir === 'rtl' ? 1 : -1)); };
+    links.forEach((a, i) => a.addEventListener('click', e => {
+      e.preventDefault();
+      box = document.createElement('div'); box.className = 'mtk-lb'; box.setAttribute('role', 'dialog'); box.setAttribute('data-noi18n', '');
+      box.innerHTML = '<img alt=""><p></p><button class="x" aria-label="×">×</button><button class="pv" aria-label="‹">‹</button><button class="nx" aria-label="›">›</button>';
+      box.addEventListener('click', ev => { if (ev.target === box) close(); });
+      box.querySelector('.x').onclick = close;
+      box.querySelector('.pv').onclick = () => show(idx - 1);
+      box.querySelector('.nx').onclick = () => show(idx + 1);
+      document.body.append(box); document.addEventListener('keydown', key);
+      show(i);
+    }));
+  }
+
   window.mtKit = { t, setLang, collect, get lang() { return lang; }, get theme() { return resolved(); }, langs: LANGS };
   const start = async () => {
-    controls(); mtButton(); globe();
+    controls(); mtButton(); globe(); lightbox();
     dict = await load(lang);
     observing = true;
     try { translate(); } finally { observing = false; }

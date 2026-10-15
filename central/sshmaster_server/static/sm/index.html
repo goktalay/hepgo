@@ -104,7 +104,7 @@
       <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="4" width="28" height="24" rx="6" fill="url(#g)"/><path d="M9 12l5 4-5 4" fill="none" stroke="#06101c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 21h7" stroke="#06101c" stroke-width="2.6" stroke-linecap="round"/></svg>
       SSH Master
     </a>
-    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#kisayollar">Kısayollar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#kisayollar">Kısayollar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
     <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a><span data-mt-button></span>
   </div>
 </header>
@@ -124,38 +124,7 @@
           <span class="note">Windows için · Hesabım sayfanızdan kişiye özel indirme</span>
         </div>
       </div>
-      <div class="app" aria-hidden="true">
-        <div class="app-bar"><b>SSH Master</b><span class="chip on">Bölünmüş · 2</span><span class="chip">Tüm bölmelere yaz</span><span class="sp"></span><span>Ctrl+Shift+E</span></div>
-        <div class="panes">
-          <div class="pane">
-            <div class="pane-head"><span class="dot"></span>web-01 · deploy</div>
-            <div class="side">
-              <div class="grp"><h6>Kısayollar</h6><div class="sel">systemctl status nginx</div><div>tail -f app.log</div><div>df -h</div></div>
-              <div class="grp"><h6>Sunucu (SFTP)</h6><div>/var/www</div><div>📁 releases</div><div>📄 .env</div></div>
-              <div><h6>Bilgisayarım</h6><div>C:\Projeler</div></div>
-            </div>
-<pre><span class="g">deploy@web-01</span>:<span class="cy">~</span>$ systemctl status nginx
-<span class="g">●</span> nginx.service - web server
-   Active: <span class="g">active (running)</span>
-<span class="g">deploy@web-01</span>:<span class="cy">~</span>$ df -h /
-/dev/sda1  80G  31G  46G  41% /
-<span class="g">deploy@web-01</span>:<span class="cy">~</span>$ <span class="cy">▌</span></pre>
-          </div>
-          <div class="pane">
-            <div class="pane-head"><span class="dot"></span>db-01 · admin</div>
-            <div class="side">
-              <div class="grp"><h6>Kısayollar</h6><div>pg_isready</div><div class="sel">uptime</div></div>
-              <div class="grp"><h6>Sunucu (SFTP)</h6><div>/backup</div><div>📄 gece.sql.gz</div></div>
-              <div><h6>Bilgisayarım</h6><div>D:\Yedek</div></div>
-            </div>
-<pre><span class="mg">admin@db-01</span>:<span class="cy">~</span>$ uptime
- 15:24:07 up 42 days, load average: <span class="y">0.21</span>
-<span class="mg">admin@db-01</span>:<span class="cy">~</span>$ pg_isready
-/var/run/postgresql:5432 - <span class="g">accepting connections</span>
-<span class="mg">admin@db-01</span>:<span class="cy">~</span>$ <span class="cy">▌</span></pre>
-          </div>
-        </div>
-      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" src="/shots/03-bolunmus-terminal-gece.webp" width="1600" height="1000" alt="Bölünmüş terminal" fetchpriority="high"><img class="hs-light" src="/shots/04-bolunmus-terminal-gunduz.webp" width="1600" height="1000" alt="Bölünmüş terminal" loading="lazy"></div><!--/HERO-->
     </div>
   </section>
 
@@ -233,6 +202,29 @@
       </table>
     </div>
   </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/01-ana-ekran-gece.webp" data-lightbox><img src="/shots/01-ana-ekran-gece-800.webp" srcset="/shots/01-ana-ekran-gece-800.webp 800w, /shots/01-ana-ekran-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran"></a><figcaption><b>Ana ekran</b><span>Bağlantı kartları ve klasörler tek bakışta</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/02-ana-ekran-gunduz.webp" data-lightbox><img src="/shots/02-ana-ekran-gunduz-800.webp" srcset="/shots/02-ana-ekran-gunduz-800.webp 800w, /shots/02-ana-ekran-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ana ekran"></a><figcaption><b>Ana ekran</b><span>Gündüz temasında bağlantı kartları ve klasörler</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/03-bolunmus-terminal-gece.webp" data-lightbox><img src="/shots/03-bolunmus-terminal-gece-800.webp" srcset="/shots/03-bolunmus-terminal-gece-800.webp 800w, /shots/03-bolunmus-terminal-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bölünmüş terminal"></a><figcaption><b>Bölünmüş terminal</b><span>Dört sunucu tek pencerede; yazdığınız komut tüm bölmelere gider</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/04-bolunmus-terminal-gunduz.webp" data-lightbox><img src="/shots/04-bolunmus-terminal-gunduz-800.webp" srcset="/shots/04-bolunmus-terminal-gunduz-800.webp 800w, /shots/04-bolunmus-terminal-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bölünmüş terminal"></a><figcaption><b>Bölünmüş terminal</b><span>Her bağlantı kendi konsol renk paletiyle açılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/05-dosya-yonetimi-gece.webp" data-lightbox><img src="/shots/05-dosya-yonetimi-gece-800.webp" srcset="/shots/05-dosya-yonetimi-gece-800.webp 800w, /shots/05-dosya-yonetimi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dosya yönetimi"></a><figcaption><b>Dosya yönetimi</b><span>Kısayollar, sunucu dosyaları ve Bilgisayarım terminalin yanında</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/06-dosya-yonetimi-gunduz.webp" data-lightbox><img src="/shots/06-dosya-yonetimi-gunduz-800.webp" srcset="/shots/06-dosya-yonetimi-gunduz-800.webp 800w, /shots/06-dosya-yonetimi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dosya yönetimi"></a><figcaption><b>Dosya yönetimi</b><span>Sağ tıkla indir, sağ tıkla yükle; terminal klasörünü izler</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/07-aktarim-ilerlemesi-gece.webp" data-lightbox><img src="/shots/07-aktarim-ilerlemesi-gece-800.webp" srcset="/shots/07-aktarim-ilerlemesi-gece-800.webp 800w, /shots/07-aktarim-ilerlemesi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Aktarım ilerlemesi"></a><figcaption><b>Aktarım ilerlemesi</b><span>Büyük dosyalarda hız, kalan süre ve iptal</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/08-arka-planda-aktarim-gece.webp" data-lightbox><img src="/shots/08-arka-planda-aktarim-gece-800.webp" srcset="/shots/08-arka-planda-aktarim-gece-800.webp 800w, /shots/08-arka-planda-aktarim-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Arka planda aktarım"></a><figcaption><b>Arka planda aktarım</b><span>Aktarım panelin altında sürerken çalışmaya devam edin</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/09-konsol-renk-paleti-gece.webp" data-lightbox><img src="/shots/09-konsol-renk-paleti-gece-800.webp" srcset="/shots/09-konsol-renk-paleti-gece-800.webp 800w, /shots/09-konsol-renk-paleti-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Konsol renk paleti"></a><figcaption><b>Konsol renk paleti</b><span>13 hazır palet; seçim anında önizlenir</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/10-baglanti-formu-gece.webp" data-lightbox><img src="/shots/10-baglanti-formu-gece-800.webp" srcset="/shots/10-baglanti-formu-gece-800.webp 800w, /shots/10-baglanti-formu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantı formu"></a><figcaption><b>Bağlantı formu</b><span>Şifre veya anahtarla bağlanın, kaydetmeden önce test edin</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/11-ayarlar-gunduz.webp" data-lightbox><img src="/shots/11-ayarlar-gunduz-800.webp" srcset="/shots/11-ayarlar-gunduz-800.webp 800w, /shots/11-ayarlar-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar"></a><figcaption><b>Ayarlar</b><span>8 dil, Gece/Gündüz/Sistem teması ve başlangıç seçenekleri</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/12-giris-ekrani-gece.webp" data-lightbox><img src="/shots/12-giris-ekrani-gece-800.webp" srcset="/shots/12-giris-ekrani-gece-800.webp 800w, /shots/12-giris-ekrani-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Giriş ekranı"></a><figcaption><b>Giriş ekranı</b><span>Tek hesapla giriş; bağlantılar uçtan uca şifreli eşitlenir</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
 
   <section class="alt" id="nasil">
     <div class="wrap">

@@ -1,0 +1,98 @@
+[
+ {
+  "stem": "01-ana-ekran-gece",
+  "theme": "dark",
+  "title": "Bağlantılar tek ekranda",
+  "caption": "SSH, FTP, lokal klasör ve tek dosya projeleri kartlar ve klasörlerle düzenli",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "02-ana-ekran-gunduz",
+  "theme": "light",
+  "title": "Gündüz teması",
+  "caption": "Gece, Gündüz ya da Windows tercihine uyan Sistem teması",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "03-yeni-baglanti-ssh-gece",
+  "theme": "dark",
+  "title": "Yeni bağlantı: 4 seçenek",
+  "caption": "SSH Projesi, FTP Projesi, Lokal Klasör, Proje Dosyası; bağlantı testi tek tıkla",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "04-klasor-sec-gece",
+  "theme": "dark",
+  "title": "Klasörü sunucuda seçin",
+  "caption": "Testten sonra proje klasörü sunucuda gezinilerek seçilir",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "05-proje-penceresi-gece",
+  "theme": "dark",
+  "title": "Ağaç ve sekmeli editör",
+  "caption": "Solda sunucudaki klasör ağacı, sağda dile göre renklendirilen sekmeler",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "06-proje-penceresi-gunduz",
+  "theme": "light",
+  "title": "Her dil kendi sözdizimiyle",
+  "caption": "PHP, JavaScript, CSS ve 80’i aşkın dil otomatik algılanır",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "07-bul-degistir-gece",
+  "theme": "dark",
+  "title": "Bul ve değiştir",
+  "caption": "Düzenli ifade, büyük/küçük harf ve tam sözcük seçenekleriyle",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "08-cakisma-gece",
+  "theme": "dark",
+  "title": "Değişiklik koruması",
+  "caption": "Dosya sunucuda başkası tarafından değiştirildiyse kaydetmeden önce sorar",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "09-notepadpp-ayarlari-gece",
+  "theme": "dark",
+  "title": "Bağlantı başına Notepad++ ayarları",
+  "caption": "Kodlama, satır sonu, girinti, tema, yazı tipi ve kaydetme kuralları",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "10-kodlama-gece",
+  "theme": "dark",
+  "title": "Kodlama denetimi",
+  "caption": "UTF-8, UTF-8 BOM, Windows-1254 ANSI arasında çevirme ve yeniden açma",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "11-ftp-baglantisi-gunduz",
+  "theme": "light",
+  "title": "FTP, FTPS ve SFTP",
+  "caption": "FTP Masters’ın protokolleri: Implicit, Explicit SSL/TLS ve SFTP",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "12-ayarlar-gunduz",
+  "theme": "light",
+  "title": "Mastertool ayarları",
+  "caption": "8 dil, tema, Windows ile başlatma ve sistem tepsisi",
+  "w": 1600,
+  "h": 1000
+ }
+]

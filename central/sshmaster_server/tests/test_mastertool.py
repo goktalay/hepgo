@@ -323,6 +323,15 @@ def main():
         assert sm.headers['content-type'].startswith('application/xml') and sm.text.count('<url>') == 8 and 'convertmaster.app/?lang=zh' in sm.text
         og = c.get('/og.png', headers={'Host': 'www.convertmaster.app'})
         assert og.status_code == 200 and og.headers['content-type'] == 'image/png'
+        # ekran görüntüleri: galeri, kahraman görseli, yapılandırılmış veride screenshot, /shots/ yalnız sitenin kendi WebP'leri
+        r = c.get('/?lang=en', headers={'Host': 'notepadmaster.com'})
+        assert 'id="ekranlar"' in r.text and 'class="hero-shot"' in r.text and '"screenshot"' in r.text
+        assert 'https://notepadmaster.com/shots/05-proje-penceresi-gece.webp' in r.text
+        sh = c.get('/shots/05-proje-penceresi-gece-800.webp', headers={'Host': 'notepadmaster.com'})
+        assert sh.status_code == 200 and sh.headers['content-type'] == 'image/webp'
+        assert c.get('/shots/05-proje-penceresi-gece.webp', headers={'Host': 'sshmasters.com'}).status_code == 404
+        assert c.get('/shots/..%2Fog.png', headers={'Host': 'notepadmaster.com'}).status_code == 404
+        assert c.get('/shots/shots.json', headers={'Host': 'notepadmaster.com'}).status_code == 404
         assert 'noindex' in c.get('/giris').text   # hesap sayfaları dizine girmez
         assert c.get('/hesabim?app=sshmaster', headers={'Host': 'mastertool.download'}).text.count('data-brand="sm"') == 1
 

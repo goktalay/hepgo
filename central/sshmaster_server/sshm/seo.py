@@ -35,6 +35,17 @@ def _dict(site, lang):
     return _cache[key]
 
 
+def _shots(site):
+    """static/<site>/shots/shots.json (tools/shots.py üretir) — yapılandırılmış veride ekran görüntüleri."""
+    key = ('shots', site)
+    if key not in _cache:
+        try:
+            _cache[key] = json.loads((settings.STATIC_DIR / site / 'shots' / 'shots.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            _cache[key] = []
+    return _cache[key]
+
+
 def _t(d, s):
     return d.get(_norm(_h.unescape(s)), _h.unescape(s))
 
@@ -61,6 +72,11 @@ def _jsonld(site, title, desc, lang):
                 'url': _url(site, lang), 'image': f'{base(site)}/og.png', 'operatingSystem': 'Windows 10, Windows 11',
                 'applicationCategory': cat, 'inLanguage': list(LANGS),
                 'publisher': {'@type': 'Organization', 'name': 'Mastertool', 'url': f'{base("mt")}/'}}
+        shots = _shots(site)
+        if shots:
+            d = _dict(site, lang)
+            data['screenshot'] = [{'@type': 'ImageObject', 'url': f'{base(site)}/shots/{x["stem"]}.webp', 'width': x['w'], 'height': x['h'],
+                                   'caption': _t(d, x['title'])} for x in shots]
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
 

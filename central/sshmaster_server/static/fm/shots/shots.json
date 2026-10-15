@@ -1,0 +1,90 @@
+[
+ {
+  "stem": "01-ana-ekran-gece",
+  "theme": "dark",
+  "title": "Site kartları ve klasörler",
+  "caption": "Tüm FTP, FTPS ve SFTP siteleriniz renkli kartlar ve klasörlerle düzenli",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "02-ana-ekran-gunduz",
+  "theme": "light",
+  "title": "Gündüz teması",
+  "caption": "Gece, Gündüz ya da Sistem teması; tek tıkla geçiş",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "03-site-penceresi-gece",
+  "theme": "dark",
+  "title": "Site penceresi ve aktarım ağacı",
+  "caption": "Bilgisayarım, sunucu ve canlı aktarım ağacı yan yana",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "04-site-penceresi-gunduz",
+  "theme": "light",
+  "title": "Aynı anda indirme ve yükleme",
+  "caption": "Klasörler iç içe ağaçta; her dosyanın boyutu ve ilerlemesi",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "05-site-formu-gece",
+  "theme": "dark",
+  "title": "Site özellikleri",
+  "caption": "Genel, Eylemler, Tür ve Seçenekler sekmeleri; kaydetmeden önce test",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "06-site-formu-gunduz",
+  "theme": "light",
+  "title": "Site özellikleri (gündüz)",
+  "caption": "Etiket, sunucu, giriş yöntemi, klasör, renk ve notlar",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "07-site-formu-tur-gece",
+  "theme": "dark",
+  "title": "Protokol seçimi",
+  "caption": "FTP, FTPS (Implicit, AUTH SSL, AUTH TLS) ve SFTP desteği",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "08-sag-tik-indir-gece",
+  "theme": "dark",
+  "title": "Sağ tıkla indir",
+  "caption": "Sunucudaki dosya ve klasörler sağ tıkla bilgisayarınıza iner",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "09-ayarlar-aktarimlar-gece",
+  "theme": "dark",
+  "title": "Hız sınırı ve aktarım ayarları",
+  "caption": "İsteğe bağlı en yüksek hız, eşzamanlı aktarım ve tekrar deneme",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "10-ayarlar-hakkinda-gunduz",
+  "theme": "light",
+  "title": "Hakkında",
+  "caption": "Güncelleme denetimi ve açık kaynak lisansları; 8 dil desteği",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "11-giris-ekrani-gece",
+  "theme": "dark",
+  "title": "Mastertool hesabıyla giriş",
+  "caption": "Tek hesap: SSH Master ve FTP Masters; siteler uçtan uca şifreli",
+  "w": 1600,
+  "h": 1000
+ }
+]

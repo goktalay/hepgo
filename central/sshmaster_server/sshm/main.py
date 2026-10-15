@@ -1071,6 +1071,18 @@ def page_sitemap(request: Request):
     return Response(seo.sitemap(site_of(request)), media_type='application/xml', headers={'Cache-Control': 'public, max-age=3600'})
 
 
+SHOT_RE = re.compile(r'^[0-9a-z._-]+\.webp$')
+
+
+@app.get('/shots/{name}')
+def page_shot(name: str, request: Request):
+    """Uygulama ekran görüntüleri (tools/shots.py üretir): static/<site>/shots/<ad>.webp."""
+    p = settings.STATIC_DIR / site_of(request) / 'shots' / name
+    if not SHOT_RE.match(name) or not p.is_file():
+        return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    return FileResponse(p, media_type='image/webp', headers={'Cache-Control': 'public, max-age=604800'})
+
+
 @app.get('/og.png')
 def page_og(request: Request):
     """Sosyal paylaşım görseli (1200×630): static/<site>/og.png."""

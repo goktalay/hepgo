@@ -113,7 +113,7 @@
   <div class="wrap">
     <a class="brand" href="#"><svg aria-hidden="true" viewBox="0 0 32 32"><defs><linearGradient id="gn" gradientUnits="userSpaceOnUse" x1="4" y1="4" x2="28" y2="28"><stop offset="0" stop-color="#5eead4"/><stop offset=".45" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="7" fill="#0b0f17"/><path d="M9 5.5h10l5 5v15a1.5 1.5 0 0 1-1.5 1.5h-13.5a1.5 1.5 0 0 1-1.5-1.5v-18.5a1.5 1.5 0 0 1 1.5-1.5z" fill="none" stroke="url(#gn)" stroke-width="2" stroke-linejoin="round"/><path d="M19 6v4.5h4.5" fill="none" stroke="url(#gn)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 15.5l-2.5 2.5 2.5 2.5M17.5 15.5l2.5 2.5-2.5 2.5" fill="none" stroke="url(#gn)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 12h5" stroke="url(#gn)" stroke-width="2" stroke-linecap="round"/></svg>
 Notepad Master</a>
-    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
     <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a><span data-mt-button></span>
   </div>
 </header>
@@ -130,13 +130,7 @@ Notepad Master</a>
           <span class="note">Windows için · Hesabım sayfanızdan kişiye özel indirme</span>
         </div>
       </div>
-      <div class="app" aria-hidden="true">
-        <div class="app-bar"><b>Notepad Master</b><span class="chip on">SSH · web-01</span><span class="chip">index.php</span><span class="chip">style.css</span><span class="sp"></span><span>Ctrl+S · Kaydet ve yükle</span></div>
-        <div class="fl">
-          <div><h6>/var/www/site</h6>📁 assets<br>&nbsp;📄 style.css<br>📁 inc<br>&nbsp;📄 db.php<br><span class="sel">📄 index.php</span><br>📄 .htaccess</div>
-          <div><h6>index.php</h6><span style="color:#8b98b0">1</span>&nbsp; <span style="color:#c084fc">&lt;?php</span><br><span style="color:#8b98b0">2</span>&nbsp; <span style="color:#c084fc">require</span> <span style="color:#34d399">'inc/db.php'</span>;<br><span style="color:#8b98b0">3</span>&nbsp; <span style="color:#22d3ee">$baslik</span> = <span style="color:#34d399">'Hoş geldiniz'</span>;<br><span style="color:#8b98b0">4</span>&nbsp; <span style="color:#c084fc">echo</span> <span style="color:#fbbf24">htmlspecialchars</span>(<span style="color:#22d3ee">$baslik</span>);<br><span style="color:#8b98b0">5</span>&nbsp; <span style="color:#c084fc">?&gt;</span><br><br><span style="color:#34d399">✓ Kaydedildi · sunucuya yüklendi</span></div>
-        </div>
-      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" src="/shots/05-proje-penceresi-gece.webp" width="1600" height="1000" alt="Ağaç ve sekmeli editör" fetchpriority="high"><img class="hs-light" src="/shots/06-proje-penceresi-gunduz.webp" width="1600" height="1000" alt="Her dil kendi sözdizimiyle" loading="lazy"></div><!--/HERO-->
     </div>
   </section>
 
@@ -166,6 +160,29 @@ Notepad Master</a>
       </div>
     </div>
   </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/01-ana-ekran-gece.webp" data-lightbox><img src="/shots/01-ana-ekran-gece-800.webp" srcset="/shots/01-ana-ekran-gece-800.webp 800w, /shots/01-ana-ekran-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantılar tek ekranda"></a><figcaption><b>Bağlantılar tek ekranda</b><span>SSH, FTP, lokal klasör ve tek dosya projeleri kartlar ve klasörlerle düzenli</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/02-ana-ekran-gunduz.webp" data-lightbox><img src="/shots/02-ana-ekran-gunduz-800.webp" srcset="/shots/02-ana-ekran-gunduz-800.webp 800w, /shots/02-ana-ekran-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Gündüz teması"></a><figcaption><b>Gündüz teması</b><span>Gece, Gündüz ya da Windows tercihine uyan Sistem teması</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/03-yeni-baglanti-ssh-gece.webp" data-lightbox><img src="/shots/03-yeni-baglanti-ssh-gece-800.webp" srcset="/shots/03-yeni-baglanti-ssh-gece-800.webp 800w, /shots/03-yeni-baglanti-ssh-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni bağlantı: 4 seçenek"></a><figcaption><b>Yeni bağlantı: 4 seçenek</b><span>SSH Projesi, FTP Projesi, Lokal Klasör, Proje Dosyası; bağlantı testi tek tıkla</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/04-klasor-sec-gece.webp" data-lightbox><img src="/shots/04-klasor-sec-gece-800.webp" srcset="/shots/04-klasor-sec-gece-800.webp 800w, /shots/04-klasor-sec-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Klasörü sunucuda seçin"></a><figcaption><b>Klasörü sunucuda seçin</b><span>Testten sonra proje klasörü sunucuda gezinilerek seçilir</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/05-proje-penceresi-gece.webp" data-lightbox><img src="/shots/05-proje-penceresi-gece-800.webp" srcset="/shots/05-proje-penceresi-gece-800.webp 800w, /shots/05-proje-penceresi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ağaç ve sekmeli editör"></a><figcaption><b>Ağaç ve sekmeli editör</b><span>Solda sunucudaki klasör ağacı, sağda dile göre renklendirilen sekmeler</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/06-proje-penceresi-gunduz.webp" data-lightbox><img src="/shots/06-proje-penceresi-gunduz-800.webp" srcset="/shots/06-proje-penceresi-gunduz-800.webp 800w, /shots/06-proje-penceresi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Her dil kendi sözdizimiyle"></a><figcaption><b>Her dil kendi sözdizimiyle</b><span>PHP, JavaScript, CSS ve 80’i aşkın dil otomatik algılanır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/07-bul-degistir-gece.webp" data-lightbox><img src="/shots/07-bul-degistir-gece-800.webp" srcset="/shots/07-bul-degistir-gece-800.webp 800w, /shots/07-bul-degistir-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bul ve değiştir"></a><figcaption><b>Bul ve değiştir</b><span>Düzenli ifade, büyük/küçük harf ve tam sözcük seçenekleriyle</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/08-cakisma-gece.webp" data-lightbox><img src="/shots/08-cakisma-gece-800.webp" srcset="/shots/08-cakisma-gece-800.webp 800w, /shots/08-cakisma-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Değişiklik koruması"></a><figcaption><b>Değişiklik koruması</b><span>Dosya sunucuda başkası tarafından değiştirildiyse kaydetmeden önce sorar</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/09-notepadpp-ayarlari-gece.webp" data-lightbox><img src="/shots/09-notepadpp-ayarlari-gece-800.webp" srcset="/shots/09-notepadpp-ayarlari-gece-800.webp 800w, /shots/09-notepadpp-ayarlari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Bağlantı başına Notepad++ ayarları"></a><figcaption><b>Bağlantı başına Notepad++ ayarları</b><span>Kodlama, satır sonu, girinti, tema, yazı tipi ve kaydetme kuralları</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/10-kodlama-gece.webp" data-lightbox><img src="/shots/10-kodlama-gece-800.webp" srcset="/shots/10-kodlama-gece-800.webp 800w, /shots/10-kodlama-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kodlama denetimi"></a><figcaption><b>Kodlama denetimi</b><span>UTF-8, UTF-8 BOM, Windows-1254 ANSI arasında çevirme ve yeniden açma</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/11-ftp-baglantisi-gunduz.webp" data-lightbox><img src="/shots/11-ftp-baglantisi-gunduz-800.webp" srcset="/shots/11-ftp-baglantisi-gunduz-800.webp 800w, /shots/11-ftp-baglantisi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="FTP, FTPS ve SFTP"></a><figcaption><b>FTP, FTPS ve SFTP</b><span>FTP Masters’ın protokolleri: Implicit, Explicit SSL/TLS ve SFTP</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/12-ayarlar-gunduz.webp" data-lightbox><img src="/shots/12-ayarlar-gunduz-800.webp" srcset="/shots/12-ayarlar-gunduz-800.webp 800w, /shots/12-ayarlar-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Mastertool ayarları"></a><figcaption><b>Mastertool ayarları</b><span>8 dil, tema, Windows ile başlatma ve sistem tepsisi</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
 
   <section class="alt" id="nasil">
     <div class="wrap">

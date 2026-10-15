@@ -1,0 +1,98 @@
+[
+ {
+  "stem": "01-ana-ekran-gece",
+  "theme": "dark",
+  "title": "Ana ekran",
+  "caption": "Bağlantı kartları ve klasörler tek bakışta",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "02-ana-ekran-gunduz",
+  "theme": "light",
+  "title": "Ana ekran",
+  "caption": "Gündüz temasında bağlantı kartları ve klasörler",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "03-bolunmus-terminal-gece",
+  "theme": "dark",
+  "title": "Bölünmüş terminal",
+  "caption": "Dört sunucu tek pencerede; yazdığınız komut tüm bölmelere gider",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "04-bolunmus-terminal-gunduz",
+  "theme": "light",
+  "title": "Bölünmüş terminal",
+  "caption": "Her bağlantı kendi konsol renk paletiyle açılır",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "05-dosya-yonetimi-gece",
+  "theme": "dark",
+  "title": "Dosya yönetimi",
+  "caption": "Kısayollar, sunucu dosyaları ve Bilgisayarım terminalin yanında",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "06-dosya-yonetimi-gunduz",
+  "theme": "light",
+  "title": "Dosya yönetimi",
+  "caption": "Sağ tıkla indir, sağ tıkla yükle; terminal klasörünü izler",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "07-aktarim-ilerlemesi-gece",
+  "theme": "dark",
+  "title": "Aktarım ilerlemesi",
+  "caption": "Büyük dosyalarda hız, kalan süre ve iptal",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "08-arka-planda-aktarim-gece",
+  "theme": "dark",
+  "title": "Arka planda aktarım",
+  "caption": "Aktarım panelin altında sürerken çalışmaya devam edin",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "09-konsol-renk-paleti-gece",
+  "theme": "dark",
+  "title": "Konsol renk paleti",
+  "caption": "13 hazır palet; seçim anında önizlenir",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "10-baglanti-formu-gece",
+  "theme": "dark",
+  "title": "Bağlantı formu",
+  "caption": "Şifre veya anahtarla bağlanın, kaydetmeden önce test edin",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "11-ayarlar-gunduz",
+  "theme": "light",
+  "title": "Ayarlar",
+  "caption": "8 dil, Gece/Gündüz/Sistem teması ve başlangıç seçenekleri",
+  "w": 1600,
+  "h": 1000
+ },
+ {
+  "stem": "12-giris-ekrani-gece",
+  "theme": "dark",
+  "title": "Giriş ekranı",
+  "caption": "Tek hesapla giriş; bağlantılar uçtan uca şifreli eşitlenir",
+  "w": 1600,
+  "h": 1000
+ }
+]

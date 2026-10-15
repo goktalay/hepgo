@@ -245,10 +245,27 @@ def main():
         finally:
             settings.PORTAL_LIVE = False
 
+        # ---- site kiti ve çeviri sözlükleri (8 dil; Türkçe kaynak sayfanın kendisi)
+        for a in ('/kit.js', '/kit.css'):
+            assert c.get(a, headers={'Host': 'ftpmasters.com'}).status_code == 200, a
+        for site in ('sm', 'fm', 'mt', 'hesap'):
+            for lang in ('en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'):
+                r = c.get(f'/i18n/{site}.{lang}.json')
+                assert r.status_code == 200 and isinstance(r.json(), dict) and len(r.json()) > 20, (site, lang)
+        assert c.get('/i18n/sm.tr.json').status_code == 404 and c.get('/i18n/..%2fmain.py').status_code == 404 and c.get('/i18n/x.en.json').status_code == 404
+        hjs = open(os.path.join(settings.STATIC_DIR, 'hesap.js'), encoding='utf-8').read()
+        keys = {k.replace("\\'", "'") for k in re.findall(r"\bt\('((?:[^'\\]|\\.)*)'", hjs)}
+        for lang in ('en', 'ar', 'zh'):
+            d = c.get(f'/i18n/hesap.{lang}.json').json()
+            assert not [k for k in keys if k not in d], (lang, [k for k in keys if k not in d][:3])   # hesap.js'deki her metin çevrilmiş
+        for site in ('sm', 'fm', 'mt'):
+            assert '/kit.js' in c.get('/', headers={'Host': {'sm': 'sshmasters.com', 'fm': 'ftpmasters.com', 'mt': 'mastertool.download'}[site]}).text
+        assert 'data-site="hesap"' in c.get('/giris').text
+
         # ---- son kullanıcı hiçbir yerde iç adres görmez
         for root, _, files in os.walk(settings.STATIC_DIR):
             for fn in files:
-                if fn.endswith(('.html', '.js', '.css', '.svg')):
+                if fn.endswith(('.html', '.js', '.css', '.svg', '.json')):
                     txt = open(os.path.join(root, fn), encoding='utf-8').read().lower()
                     assert 'veilox' not in txt and 'merkez' not in txt, fn
     print('Mastertool testleri geçti.')

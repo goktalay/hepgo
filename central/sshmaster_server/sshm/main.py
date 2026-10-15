@@ -1091,9 +1091,21 @@ def page_brand(name: str, request: Request):
     return FileResponse(settings.STATIC_DIR / d / f, media_type=media, headers={'Cache-Control': 'public, max-age=86400'})
 
 
+I18N_RE = re.compile(r'^(sm|fm|mt|hesap)\.(en|fr|de|es|ar|zh|ru)\.json$')
+
+
+@app.get('/i18n/{name}')
+def page_i18n(name: str, request: Request):
+    """Site çeviri sözlükleri (kit.js); Türkçe kaynak sayfanın kendisidir."""
+    path = settings.STATIC_DIR / 'i18n' / name
+    if not I18N_RE.match(name) or not path.is_file():
+        return JSONResponse({}, status_code=404)
+    return FileResponse(path, media_type='application/json', headers={'Cache-Control': 'no-cache'})
+
+
 @app.get('/{name}')
 def page_asset(name: str, request: Request):
-    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'robots.txt': 'text/plain'}
+    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'robots.txt': 'text/plain', 'kit.js': 'text/javascript', 'kit.css': 'text/css'}
     per_site = {'favicon.svg': 'image/svg+xml', 'logo.png': 'image/png'}
     if name in shared and (settings.STATIC_DIR / name).is_file():
         return _static(settings.STATIC_DIR / name, shared[name])

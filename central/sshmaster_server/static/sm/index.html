@@ -9,7 +9,9 @@
 <meta property="og:description" content="Bağlantı kartları, bölünmüş terminal, komut kısayolları ve SFTP dosya yöneticisi tek uygulamada.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://sshmasters.com/">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="sm" defer></script>
 <style>
   :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
   * { box-sizing: border-box; }
@@ -17,8 +19,8 @@
   html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   a { color: inherit; }
   .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
-  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: rgba(11, 15, 23, .75); border-bottom: 1px solid var(--line); }
-  header.top .wrap { display: flex; align-items: center; gap: 16px; height: 64px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
   .brand svg { width: 30px; height: 30px; }
   nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
@@ -103,12 +105,12 @@
       SSH Master
     </a>
     <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#kisayollar">Kısayollar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
-    <a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a>
   </div>
 </header>
 
 <main>
-  <section class="hero">
+  <section class="hero center" data-globe>
     <div class="wrap">
       <div>
         <span class="eyebrow">Windows için SSH bağlantı yöneticisi</span>

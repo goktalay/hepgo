@@ -140,6 +140,43 @@ def vehicle_exit(conn, plate, user_id, note='Görev çıkışı'):
     return p
 
 
+def _admin_pass_user(user=Depends(auth.current_user)):
+    """Sistem Yöneticisi ya da sistem sahibi: sebepsiz çıkış QR'ı üretebilir."""
+    if auth.ADMIN in user.get('roles', []) or user.get('master'):
+        return user
+    raise HTTPException(403, 'Çıkış QR\'ı yalnız sistem yöneticilerine açıktır')
+
+
+@router.get('/my-exit-pass')
+def my_exit_pass(user=Depends(_admin_pass_user), conn=db.DB):
+    """Sistem yöneticisinin kendi çıkış QR kodu: sebep istenmez, yalnız bugün geçerli; güvenlik okutunca 'dışarıda' sayılır,
+    ikinci okutma dönüş kaydeder. Kod kullanıcıya bağlıdır (imzalı), başkası kullanamaz."""
+    today = _date.today().isoformat()
+    token = exitpass.make_token(conn, 'admin', user['id'], today)
+    out = db.row(conn.execute("SELECT at FROM person_exits WHERE kind = 'admin' AND ref_id = ? AND returned_at IS NULL ORDER BY id DESC LIMIT 1",
+                              (user['id'],)))
+    return {'token': token, 'valid_on': today, 'name': user['full_name'], 'outside_since': out['at'] if out else None}
+
+
+def admins_outside(conn):
+    """Güvenlik için: çıkış QR'ı okutup henüz dönmemiş sistem yöneticileri."""
+    return db.rows(conn.execute(
+        """SELECT p.id, p.ref_id AS user_id, p.person_name AS name, p.at AS exited_at, u.full_name AS scanned_by_name
+           FROM person_exits p LEFT JOIN users u ON u.id = p.scanned_by
+           WHERE p.kind = 'admin' AND p.returned_at IS NULL ORDER BY p.at DESC"""))
+
+
+@router.post('/admin-exit/{pid}/return')
+def admin_return(pid: int, user=Depends(security_or_admin), conn=db.DB):
+    """Dışarıdaki yönetici için dönüş kaydı (QR olmadan, güvenlik elle)."""
+    r = db.row(conn.execute("SELECT * FROM person_exits WHERE id = ? AND kind = 'admin' AND returned_at IS NULL", (pid,)))
+    if not r:
+        raise HTTPException(404, 'Kayıt bulunamadı ya da dönüş zaten kaydedilmiş')
+    conn.execute('UPDATE person_exits SET returned_at = ?, returned_by = ? WHERE id = ?', (db.now(), user['id'], pid))
+    db.audit(conn, user['id'], 'Yönetici dönüşü (güvenlik)', 'person_exit', pid, r['person_name'])
+    return {'ok': True}
+
+
 @router.post('/verify-pass')
 def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     """QR çıkış kodunu doğrular ve izin verilirse personel çıkışını kaydeder."""
@@ -148,6 +185,21 @@ def verify_pass(body: PassIn, user=Depends(security_user), conn=db.DB):
     if not v['ok']:
         return {'allow': False, 'reason': v.get('reason') or 'Geçersiz veya süresi dolmuş kod'}
     today = _date.today().isoformat()
+    if v['kind'] == 'admin':   # sistem yöneticisi: sebepsiz; ilk okutma çıkış, ikinci okutma dönüş
+        u = db.row(conn.execute("SELECT id, full_name, active FROM users WHERE id = ?", (v['id'],)))
+        if not u or not u['active']:
+            return {'allow': False, 'reason': 'Kullanıcı bulunamadı'}
+        if (v['exp'] or '')[:10] != today:
+            return {'allow': False, 'type': 'admin', 'name': u['full_name'], 'reason': 'Kod yalnız üretildiği gün geçerlidir'}
+        open_row = db.row(conn.execute("SELECT id, at FROM person_exits WHERE kind = 'admin' AND ref_id = ? AND returned_at IS NULL ORDER BY id DESC LIMIT 1",
+                                       (u['id'],)))
+        if open_row:
+            conn.execute('UPDATE person_exits SET returned_at = ?, returned_by = ? WHERE id = ?', (db.now(), user['id'], open_row['id']))
+            db.audit(conn, user['id'], 'Yönetici dönüşü (QR)', 'person_exit', open_row['id'], u['full_name'])
+            return {'allow': True, 'returned': True, 'type': 'admin', 'name': u['full_name'], 'note': 'Döndü — giriş yapıldı',
+                    'dates': {'start': open_row['at'], 'end': db.now()}}
+        _record_exit(conn, u['full_name'], 'admin', u['id'], user['id'])
+        return {'allow': True, 'type': 'admin', 'name': u['full_name'], 'note': 'Sistem yöneticisi — dışarıda', 'dates': {'start': db.now(), 'end': None}}
     if v['kind'] == 'leave':
         r = db.row(conn.execute(
             '''SELECT l.*, e.first_name || ' ' || e.last_name AS name, e.title AS title
@@ -217,7 +269,7 @@ def person_exits(user=Depends(security_user), conn=db.DB):
 def personnel(user=Depends(security_user), conn=db.DB):
     """Güvenlik için: şu an görevde olan araç/görev grupları (kart: plaka + personel + çıkış) ve bugün izinli personel."""
     from .hr import on_duty_groups, on_leave_today
-    return {'on_duty': on_duty_groups(conn), 'on_leave': on_leave_today(conn)}
+    return {'on_duty': on_duty_groups(conn), 'on_leave': on_leave_today(conn), 'admins_outside': admins_outside(conn)}
 
 
 @router.post('/duty/{did}/return')

@@ -13,7 +13,7 @@ import secrets
 from datetime import date
 
 SECRET_KEY = 'exitpass_secret'
-KINDS = ('leave', 'duty')
+KINDS = ('leave', 'duty', 'admin')   # admin: sistem yöneticisinin sebepsiz çıkış kodu (rid = kullanıcı id, exp = gün)
 
 
 def _secret(conn):

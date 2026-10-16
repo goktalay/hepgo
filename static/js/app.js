@@ -8,7 +8,7 @@ import { applySettings, desktopNotify, flashMs, flashOn } from './prefs.js';
 import { renderSettings } from './modules/settings.js';
 import { calendarPanel } from './modules/crm.js';
 import { enableDictation, setDictationEnabled } from './dictation.js';
-import { avatar, clear, field, h, modal, onLeave, pageHead, pref, setPref, stopTimers, svgIcon, t, toast, toastError } from './ui.js';
+import { avatar, clear, field, fmtDate, fmtDateTime, h, modal, onLeave, pageHead, pref, setPref, stopTimers, svgIcon, t, toast, toastError } from './ui.js';
 import { createGlobe } from './globe.js';
 import { hideTip } from './plane.js';
 import * as users from './modules/users.js';
@@ -595,6 +595,11 @@ function appsLauncher() {
       personalTileCounts.add(() => { const c = notifyCounts.get(p.notify) || 0; n.hidden = !c; n.textContent = c > 99 ? '99+' : c; });
       return el;
     });
+    if (ctx.user.master || ctx.user.roles.includes('Sistem Yöneticisi')) {   // sebepsiz çıkış QR'ı: yalnız sistem yöneticileri
+      const qrTile = h('a', { class: 'app-tile', href: '#', role: 'menuitem', onclick: e => { e.preventDefault(); panel.hidden = true; exitPassModal(); } },
+        h('span', { class: 'ico' }, svgIcon(icons.qr)), h('span', null, 'Çıkış QR\'ı'));
+      personalTiles.push(qrTile);
+    }
     const msgTile = countTile('messages', 'Mesajlar', icons.chat, chatSummary().people || 0);
     const msgN = msgTile.querySelector('.tile-count');
     personalTileCounts.add(() => { const c = chatSummary().people || 0; msgN.hidden = !c; msgN.textContent = c > 99 ? '99+' : c; });
@@ -629,6 +634,23 @@ function appsLauncher() {
 // Kişisel alt modülleri (Takvim, Toplantılar, Mail, İzinlerim…) ve Araçlar artık ayrı üst-bar düğmesi değil;
 // tek "Uygulamalar" (ızgara) ikonunun içinde bölüm olarak gösterilir (bkz. appsLauncher). PERSONAL_ICONS ve
 // personalTileCounts oradan kullanılır (kutucuk bekleyen-iş sayıları canlı güncellenir).
+// Sistem yöneticisinin sebepsiz çıkış QR'ı: güvenlik okutunca "dışarıda", ikinci okutma dönüş. Kod yalnız bugün geçerli.
+async function exitPassModal() {
+  let d;
+  try { d = await api.get('/api/security/my-exit-pass'); } catch (err) { toastError(err); return; }
+  const { qrSvgEl } = await import('./qr.js');
+  modal({
+    title: 'Çıkış QR\'ı',
+    body: h('div', null,
+      h('div', { class: 'qr-box' }, qrSvgEl(d.token, { cell: 5, margin: 2 })),
+      h('p', { class: 'small muted', style: { textAlign: 'center' } }, 'Kapıdaki güvenliğe okutun; çıkışınız kaydedilir, dönüşte tekrar okutun.'),
+      h('p', { class: 'small muted', style: { textAlign: 'center' } }, d.outside_since
+        ? t('Şu an dışarıda görünüyorsunuz (çıkış {d}).', { d: fmtDateTime(d.outside_since) })
+        : t('Kod yalnız bugün ({d}) geçerlidir.', { d: fmtDate(d.valid_on) }))),
+    actions: [{ label: 'Kapat', class: 'primary' }],
+  });
+}
+
 const PERSONAL_ICONS = { calendar: 'calendar', meetings: 'video', sign: 'documents', cargo: 'cargo', guests: 'guest', calls: 'phone',
   mail: 'mail', leaves: 'hr', docs: 'paperclip', vehicles: 'fleet', notes: 'note', files: 'folder', duties: 'flightlog', tasks: 'documents' };
 const personalTileCounts = new Set();

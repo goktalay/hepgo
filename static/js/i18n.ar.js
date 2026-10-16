@@ -3193,5 +3193,18 @@ registerCatalog('ar', {
 "Sebep: ": "السبب: ",
 "Anladım": "فهمت",
 "Paylaşımınız kaldırıldı": "أُزيل منشوركم",
-"{id} parça işlemleri": "إجراءات القطعة {id}"
-});
+"{id} parça işlemleri": "إجراءات القطعة {id}",
+"Çıkış QR'ı": "رمز QR للخروج",
+"Kapıdaki güvenliğe okutun; çıkışınız kaydedilir, dönüşte tekrar okutun.": "أظهروه لأمن البوابة؛ يُسجَّل خروجكم، وامسحوه مجددًا عند العودة.",
+"Şu an dışarıda görünüyorsunuz (çıkış {d}).": "تظهرون حاليًا خارج المنشأة (خروج {d}).",
+"Kod yalnız bugün ({d}) geçerlidir.": "الرمز صالح اليوم فقط ({d}).",
+"Sistem yöneticisi": "مدير النظام",
+"Döndü — giriş kaydedildi": "عاد — سُجّل الدخول",
+"Çıkış kaydedildi (sebep gerekmez)": "سُجّل الخروج (لا يلزم ذكر سبب)",
+"Dışarıdaki yöneticiler ({n})": "المديرون في الخارج ({n})",
+"çıkış {d}": "خروج {d}",
+"Döndü": "عاد",
+"{name} fabrikaya döndü mü?": "هل عاد {name} إلى المصنع؟",
+"Dönüş kaydedildi": "سُجّلت العودة",
+"Dışarıda yönetici yok": "لا يوجد مديرون في الخارج"
+}});

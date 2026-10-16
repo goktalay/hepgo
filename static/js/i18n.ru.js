@@ -3193,5 +3193,18 @@ registerCatalog('ru', {
 "Sebep: ": "Причина: ",
 "Anladım": "Понятно",
 "Paylaşımınız kaldırıldı": "Ваша публикация удалена",
-"{id} parça işlemleri": "{id} — действия с деталью"
-});
+"{id} parça işlemleri": "{id} — действия с деталью",
+"Çıkış QR'ı": "QR для выхода",
+"Kapıdaki güvenliğe okutun; çıkışınız kaydedilir, dönüşte tekrar okutun.": "Покажите охране на проходной; выход будет записан, при возвращении отсканируйте снова.",
+"Şu an dışarıda görünüyorsunuz (çıkış {d}).": "Сейчас вы числитесь снаружи (выход {d}).",
+"Kod yalnız bugün ({d}) geçerlidir.": "Код действителен только сегодня ({d}).",
+"Sistem yöneticisi": "Системный администратор",
+"Döndü — giriş kaydedildi": "Вернулся — вход записан",
+"Çıkış kaydedildi (sebep gerekmez)": "Выход записан (причина не требуется)",
+"Dışarıdaki yöneticiler ({n})": "Администраторы снаружи ({n})",
+"çıkış {d}": "выход {d}",
+"Döndü": "Вернулся",
+"{name} fabrikaya döndü mü?": "{name} вернулся на завод?",
+"Dönüş kaydedildi": "Возвращение записано",
+"Dışarıda yönetici yok": "Администраторов снаружи нет"
+}});

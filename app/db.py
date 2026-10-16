@@ -3213,6 +3213,9 @@ def _migrate(conn):
     if 'pinned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # Şirketten Haberler: master'ın üste sabitlediği paylaşım
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_at TEXT')
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_by INTEGER REFERENCES users(id)')
+    if 'returned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(person_exits)')}:   # yönetici çıkış QR'ı: dönüş kaydı
+        conn.execute('ALTER TABLE person_exits ADD COLUMN returned_at TEXT')
+        conn.execute('ALTER TABLE person_exits ADD COLUMN returned_by INTEGER REFERENCES users(id)')
     if 'removed_reason' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # master sebep yazarak kaldırdı → sahibine bildirim
         conn.execute('ALTER TABLE feed_posts ADD COLUMN removed_by INTEGER REFERENCES users(id)')
         conn.execute('ALTER TABLE feed_posts ADD COLUMN removed_reason TEXT')

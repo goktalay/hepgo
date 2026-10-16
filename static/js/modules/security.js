@@ -123,7 +123,14 @@ async function renderPersonnel(body) {
   const leaveList = (title, items, rowFn, empty) => h('div', { class: 'card card-pad sec-plist' },
     h('h3', null, title),
     items.length ? h('ul', { class: 'sec-plist-ul' }, items.map(rowFn)) : h('div', { class: 'small muted' }, empty));
+  const admins = d.admins_outside || [];
   clear(body,
+    leaveList(t('Dışarıdaki yöneticiler ({n})', { n: admins.length }), admins, x => h('li', null,
+      h('b', null, x.name), ' ', h('span', { class: 'small muted' }, t('çıkış {d}', { d: fmtDateTime(x.exited_at) }) + ' · ' + fmtDuration(secondsSince(x.exited_at)) + ' dışarıda'), ' ',
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+        if (!await confirmDialog('Döndü', t('{name} fabrikaya döndü mü?', { name: x.name }), { okLabel: 'Döndü' })) return;
+        try { await api.post(`/api/security/admin-exit/${x.id}/return`, {}); toast('Dönüş kaydedildi'); await renderPersonnel(body); } catch (err) { toastError(err); }
+      } }, 'Döndü')), 'Dışarıda yönetici yok'),
     h('div', { class: 'card card-pad sec-plist' },
       h('h3', null, t('Görevde ({n})', { n: d.on_duty.length })),
       d.on_duty.length ? h('div', { class: 'sec-duty-list' }, d.on_duty.map(dutyCard)) : h('div', { class: 'small muted' }, 'Şu an görevde personel yok')),
@@ -514,8 +521,8 @@ async function renderScan(body) {
         h('div', { class: 'sec-scan-big' }, '✓ ONAYLI ÇIKIŞ'),
         h('div', { class: 'sec-scan-name' }, r.name || ''),
         r.title ? h('div', { class: 'sec-scan-sub' }, r.title) : null,
-        h('div', { class: 'sec-scan-tag' }, r.type === 'duty' ? 'Görev formu' : 'İzin'),
-        h('div', { class: 'sec-scan-dates' }, line));
+        h('div', { class: 'sec-scan-tag' }, r.type === 'duty' ? 'Görev formu' : r.type === 'admin' ? 'Sistem yöneticisi' : 'İzin'),
+        r.type === 'admin' ? h('div', { class: 'sec-scan-dates' }, r.returned ? 'Döndü — giriş kaydedildi' : 'Çıkış kaydedildi (sebep gerekmez)') : h('div', { class: 'sec-scan-dates' }, line));
       beep(true);
     } else {
       result.className = 'sec-scan sec-scan-bad';

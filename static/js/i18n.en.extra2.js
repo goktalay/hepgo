@@ -460,5 +460,18 @@ registerCatalog('en', {
 "Sebep: ": "Reason: ",
 "Anladım": "Got it",
 "Paylaşımınız kaldırıldı": "Your post was removed",
-"{id} parça işlemleri": "{id} part actions"
-});
+"{id} parça işlemleri": "{id} part actions",
+"Çıkış QR'ı": "Exit QR",
+"Kapıdaki güvenliğe okutun; çıkışınız kaydedilir, dönüşte tekrar okutun.": "Show it to security at the gate; your exit is recorded, scan again on return.",
+"Şu an dışarıda görünüyorsunuz (çıkış {d}).": "You currently appear to be outside (exit {d}).",
+"Kod yalnız bugün ({d}) geçerlidir.": "The code is valid only today ({d}).",
+"Sistem yöneticisi": "System administrator",
+"Döndü — giriş kaydedildi": "Returned — entry recorded",
+"Çıkış kaydedildi (sebep gerekmez)": "Exit recorded (no reason required)",
+"Dışarıdaki yöneticiler ({n})": "Administrators outside ({n})",
+"çıkış {d}": "exit {d}",
+"Döndü": "Returned",
+"{name} fabrikaya döndü mü?": "Has {name} returned to the factory?",
+"Dönüş kaydedildi": "Return recorded",
+"Dışarıda yönetici yok": "No administrators outside"
+}});

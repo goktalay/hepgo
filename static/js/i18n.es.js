@@ -3193,5 +3193,18 @@ registerCatalog('es', {
 "Sebep: ": "Motivo: ",
 "Anladım": "Entendido",
 "Paylaşımınız kaldırıldı": "Su publicación fue retirada",
-"{id} parça işlemleri": "{id} — acciones de la pieza"
-});
+"{id} parça işlemleri": "{id} — acciones de la pieza",
+"Çıkış QR'ı": "QR de salida",
+"Kapıdaki güvenliğe okutun; çıkışınız kaydedilir, dönüşte tekrar okutun.": "Muéstrelo a seguridad en la puerta; se registra su salida, vuelva a escanear al regresar.",
+"Şu an dışarıda görünüyorsunuz (çıkış {d}).": "Actualmente figura fuera (salida {d}).",
+"Kod yalnız bugün ({d}) geçerlidir.": "El código solo es válido hoy ({d}).",
+"Sistem yöneticisi": "Administrador del sistema",
+"Döndü — giriş kaydedildi": "Regresó — entrada registrada",
+"Çıkış kaydedildi (sebep gerekmez)": "Salida registrada (no se requiere motivo)",
+"Dışarıdaki yöneticiler ({n})": "Administradores fuera ({n})",
+"çıkış {d}": "salida {d}",
+"Döndü": "Regresó",
+"{name} fabrikaya döndü mü?": "¿{name} ha regresado a la fábrica?",
+"Dönüş kaydedildi": "Regreso registrado",
+"Dışarıda yönetici yok": "No hay administradores fuera"
+}});

@@ -35,12 +35,12 @@ def _dict(site, lang):
     return _cache[key]
 
 
-def _shots(site):
-    """static/<site>/shots/shots.json (tools/shots.py üretir) — yapılandırılmış veride ekran görüntüleri."""
-    key = ('shots', site)
+def _shots(site, tool=None):
+    """static/<site>/shots/shots.json (tools/shots.py üretir; araçta <kod>.shots.json) — yapılandırılmış veride ekran görüntüleri."""
+    key = ('shots', site, tool)
     if key not in _cache:
         try:
-            _cache[key] = json.loads((settings.STATIC_DIR / site / 'shots' / 'shots.json').read_text(encoding='utf-8'))
+            _cache[key] = json.loads((settings.STATIC_DIR / site / 'shots' / (f'{tool}.shots.json' if tool else 'shots.json')).read_text(encoding='utf-8'))
         except (OSError, ValueError):
             _cache[key] = []
     return _cache[key]
@@ -150,6 +150,14 @@ def render_tool(k, meta, page, lang, rel=None):
     desc = _h.unescape(m.group(1)) if m else ''
     ld = _app_ld(meta['name'], 'UtilitiesApplication', u(lang), desc, f'{base("mt")}/brand/{k}-512.png', rel, lang)
     ld['isPartOf'] = {'@type': 'SoftwareApplication', 'name': 'Master Tool', 'url': f'{base("mt")}/#master-tool'}
+    shots = _shots('mt', k)
+    if shots:
+        d = _dict('mt', lang)
+        ld['screenshot'] = [{'@type': 'ImageObject', 'url': f'{base("mt")}/shots/{x["stem"]}{"-en" if lang != "tr" and x.get("en") else ""}.webp',
+                             'width': x['w'], 'height': x['h'], 'caption': _t(d, x['title'])} for x in shots]
+    if lang != 'tr':   # araç görüntülerinin İngilizce sürümleri (ana sayfa işlevi yalnız portalın kendi listesine bakar)
+        en = {x['stem'] for x in shots if x.get('en')}
+        out = re.sub(r'/shots/([0-9a-z._-]+?)(-800)?\.webp', lambda m: f'/shots/{m[1]}-en{m[2] or ""}.webp' if m[1] in en and '-en' not in m[1] else m[0], out)
     return re.sub(r'<script type="application/ld\+json">.*?</script>',
                   lambda _: '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace('</', '<\\/') + '</script>',
                   out, count=1, flags=re.S)

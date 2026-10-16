@@ -12,13 +12,20 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent / 'static'
 site, src = sys.argv[1], Path(sys.argv[2])
+# Araç sayfası kipi: site "mt:<kod>" → görüntüler static/mt/shots/<kod>-… (aynı /shots/ yolu), sayfa static/mt/araclar/<slug>.html
+tool = None
+if site.startswith('mt:'):
+    site, tool = 'mt', site[3:]
+    tool_slug = sys.argv[5] if len(sys.argv) > 5 else tool
+prefix = f'{tool}-' if tool else ''
 hero_pick = sys.argv[3].split(',') if len(sys.argv) > 3 and sys.argv[3] else []   # isteğe bağlı: kahraman için dosya öneki (gece,gündüz), ör. 05,06
 en_dir = Path(sys.argv[4]) if len(sys.argv) > 4 else None   # isteğe bağlı: İngilizce arayüz görüntüleri (aynı dosya adları) → Türkçe dışı dillerde
 items = json.loads((src / 'manifest.json').read_text(encoding='utf-8'))
 out = ROOT / site / 'shots'
 out.mkdir(parents=True, exist_ok=True)
-for f in out.glob('*'):
-    f.unlink()
+for f in out.glob(f'{prefix}*' if tool else '*'):
+    if tool or not re.match(r'^[a-z]{2}-', f.name):   # araç kipinde yalnız kendi öneki; site kipinde araç görüntülerine dokunma
+        f.unlink()
 shots = []
 for it in items:
     name = Path(it['file']).name
@@ -27,7 +34,7 @@ for it in items:
     im = Image.open(src / name)
     im.load()
     im = im.convert('RGB')
-    stem = name[:-4]
+    stem = prefix + name[:-4]
     w, h = im.size
     big = im if w <= 1600 else im.resize((1600, round(h * 1600 / w)), Image.LANCZOS)
     big.save(out / f'{stem}.webp', 'WEBP', quality=84, method=6)
@@ -42,7 +49,7 @@ for it in items:
         ie.resize((800, round(ie.size[1] * 800 / ie.size[0])), Image.LANCZOS).save(out / f'{stem}-en-800.webp', 'WEBP', quality=80, method=6)
     shots.append({'stem': stem, 'theme': it.get('theme', 'dark'), 'title': it['title'][:90], 'caption': it.get('caption', '')[:120],
                   'w': big.size[0], 'h': big.size[1], 'en': en})
-(out / 'shots.json').write_text(json.dumps(shots, ensure_ascii=False, indent=1), encoding='utf-8')
+(out / (f'{tool}.shots.json' if tool else 'shots.json')).write_text(json.dumps(shots, ensure_ascii=False, indent=1), encoding='utf-8')
 
 e = lambda s: html.escape(s, quote=True)   # noqa: E731
 EN = lambda s: ' data-shot-en' if s.get('en') else ''   # noqa: E731  (kit.js / seo.py: Türkçe dışı dillerde -en görüntüsü)
@@ -62,7 +69,7 @@ hero = (f'<!--HERO--><div class="hero-shot" aria-hidden="false">'
         f'<img class="hs-dark"{EN(dark)} src="/shots/{dark["stem"]}.webp" width="{dark["w"]}" height="{dark["h"]}" alt="{e(dark["title"])}" fetchpriority="high">'
         f'<img class="hs-light"{EN(light)} src="/shots/{light["stem"]}.webp" width="{light["w"]}" height="{light["h"]}" alt="{e(light["title"])}" loading="lazy">'
         f'</div><!--/HERO-->')
-p = ROOT / site / 'index.html'
+p = ROOT / site / 'araclar' / f'{tool_slug}.html' if tool else ROOT / site / 'index.html'
 s = p.read_text(encoding='utf-8')
 if '<!--HERO-->' in s:
     s = re.sub(r'<!--HERO-->.*?<!--/HERO-->', lambda m: hero, s, flags=re.S)

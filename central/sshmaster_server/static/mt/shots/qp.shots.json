@@ -1,0 +1,110 @@
+[
+ {
+  "stem": "qp-01-sag-tik-menusu-gece",
+  "theme": "dark",
+  "title": "Gezgin'de sağ tık: Hızlı Önizleme",
+  "caption": "Dosyaya sağ tıklayın, “Hızlı Önizleme”yi seçin; pencere anında açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-02-resim-gece",
+  "theme": "dark",
+  "title": "Resimler: yakınlaştır, sığdır, döndür",
+  "caption": "JPG, PNG, WebP, GIF, BMP, TIFF, ICO, HEIC; dosya bilgisi paneliyle",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-03-psd-katmanlar-gece",
+  "theme": "dark",
+  "title": "Photoshop PSD: birleşik görüntü ve katmanlar",
+  "caption": "Photoshop olmadan PSD/PSB: görüntü, renk modu, katman listesi",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-04-pdf-gunduz",
+  "theme": "light",
+  "title": "PDF: sayfa sayfa, küçük resim şeridiyle",
+  "caption": "Sayfalar resim gibi; PgUp/PgDn ile gezinme, yakınlaştırma",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-05-kod-gece",
+  "theme": "dark",
+  "title": "Metin ve kod: söz dizimi renkli",
+  "caption": "55'ten fazla dil; salt okunur, satır numaralı, kodlama algılamalı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-06-markdown-gunduz",
+  "theme": "light",
+  "title": "Markdown: biçimli görünüm ve içindekiler",
+  "caption": "Tablolar, kod blokları, bağlantılar; uzak resimler yüklenmez",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-07-excel-gece",
+  "theme": "dark",
+  "title": "Excel: sayfalar ve hücreler",
+  "caption": "docx, xlsx ve pptx içeriği Office kurulu olmadan görünür",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-08-word-gunduz",
+  "theme": "light",
+  "title": "Word: başlıklar, listeler ve tablolar",
+  "caption": "Belgenin metni ve tabloları sade, okunaklı bir görünümde",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-09-arsiv-gunduz",
+  "theme": "light",
+  "title": "ZIP arşivi: içerik listesi",
+  "caption": "Açmadan bakın: dosyalar, boyutlar, tarihler, arama",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-10-video-gece",
+  "theme": "dark",
+  "title": "Video ve ses",
+  "caption": "MP4, WebM, MOV, MP3, WAV, FLAC… yerleşik oynatıcıda",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-11-ayarlar-genel-gece",
+  "theme": "dark",
+  "title": "Ayarlar: tepsi, Windows ile başlat, sağ tık",
+  "caption": "Tepside bekler; “Gizle” ile simge kalkar, sağ tık çalışmaya devam eder",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "qp-12-ayarlar-onizleme-gunduz",
+  "theme": "light",
+  "title": "Ayarlar › Önizleme",
+  "caption": "Türleri seçin, varsayılan yakınlaştırma, kısayollar; her şey yerel",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

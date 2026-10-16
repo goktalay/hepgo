@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Preview — sağ tıkla anında dosya önizleme (Master Tool aracı)</title>
+<meta name="description" content="Quick Preview: Windows Gezgini'nde dosyaya sağ tıklayıp anında önizleyin — resim, Photoshop PSD, PDF, Office, kod, video ve ses. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="Quick Preview — sağ tıkla anında dosya önizleme">
+<meta property="og:description" content="Resim, PSD, PDF, Office, kod, video: Gezgin'de sağ tık, anında önizleme. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/quick-preview">
+<link rel="icon" href="/brand/qp.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/qp-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Sağ tıkla, <em>anında</em> gör.</h1>
+        <p class="lead">Quick Preview; Windows Gezgini'nde bir dosyaya sağ tıklayıp "Hızlı Önizleme" dediğinizde resmi, Photoshop dosyasını, PDF'i, Office belgesini, kodu, videoyu ya da sesi açmadan önizler.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/qp-01-sag-tik-menusu-gece.webp" width="1600" height="1000" alt="Gezgin&#x27;de sağ tık: Hızlı Önizleme" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/qp-04-pdf-gunduz.webp" width="1600" height="1000" alt="PDF: sayfa sayfa, küçük resim şeridiyle" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Açmadan bakın</h2>
+      <p class="sub">Gezgin'den ayrılmadan dosyanın içini görün; uygulama tepside bekler, pencere anında açılır.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>
+          <h3>Sağ tık, pencere hazır</h3><p>Uygulama tepside bekler; önizleme penceresi önceden oluşturulup gizli durur. Sağ tıktan başlayan ikinci süreç isteğini bekleyen örneğe iletir ve hiçbir modül yüklemeden kapanır; pencere imlecin bulunduğu ekranda ortalanır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></svg></div>
+          <h3>Tür içerikten anlaşılır</h3><p>Dosya türü önce içerik imzasından (PNG, JPEG, PDF, <code>8BPS</code>, <code>ftyp</code>, <code>PK</code>…), sonra uzantıdan belirlenir. Uzantısı yanlış ya da hiç olmayan dosyalar da doğru gösterilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
+          <h3>Photoshop olmadan PSD</h3><p>PSD ve PSB dosyalarının birleşik görüntüsü gösterilir; renk modu, bit derinliği, çözünürlük ve katman sayısı bilgide. İsteğe bağlı katman listesi: gruplar girintili, gizli katmanlar çizili, opaklık yüzdeleriyle.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div>
+          <h3>PDF sayfa sayfa</h3><p>pdf.js ile sayfalar resim görünümünde; küçük resim şeridi görününce çizilir (en çok 2000 sayfa). %100 ekranda gerçek boyuttur; yakınlaştırınca sayfa yeniden çizilir. Yazı tipleri paketten okunur, ağ kullanılmaz.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10"/></svg></div>
+          <h3>Office kurulu olmasa da</h3><p>Word (docx, docm) başlıklar, listeler ve tablolarla; Excel (xlsx, xlsm) sayfa sekmeleri ve hücre değerleriyle; PowerPoint (pptx, pptm) slayt başlıkları, maddeler ve konuşmacı notlarıyla okunur.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg></div>
+          <h3>Kod ve Markdown</h3><p>highlight.js ile 58 dilde söz dizimi renklendirme; Dockerfile, Makefile gibi uzantısız adlar tanınır. Kodlama BOM, UTF-8, UTF-16 ya da Windows-1254 olarak algılanır. Markdown GFM biçiminde, başlıklardan içindekiler paneliyle.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Tamamen yerel</h3><p>Dosya içeriği hiçbir sunucuya gönderilmez. Önizleme sayfasının içerik güvenlik politikası ağ adreslerine izin vermez; Markdown'daki ham HTML çalışmaz, SVG betikleri yürütülmez.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+          <h3>Tepside bekler</h3><p>Windows ile başlar, pencere açmadan tepsiden sağ tık isteklerini karşılar. "Gizle" ile simge kalkar, önizleme çalışmaya devam eder. Pencereyi kapatmak gizler; içerik temizlenir, oynatıcı durur.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+          <h3>Tek hesap, 8 dil</h3><p>Diğer Mastertool uygulamalarıyla ortak oturum: birinde giriş yaptıysanız şifre sorulmaz. Ayarlar cihazda AES-256-GCM ile şifrelenerek eşitlenir. Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский; Gece, Gündüz ya da Sistem teması.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay">
+    <div class="wrap">
+      <h2>Yakından bakın</h2>
+      <p class="sub">Sağ tık kaydından önizleme penceresine, PDF ve PSD çözümünden tepsideki yaşamına: Quick Preview'un işleyişi.</p>
+      <div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-01-sag-tik-menusu-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-01-sag-tik-menusu-gece-800.webp" srcset="/shots/qp-01-sag-tik-menusu-gece-800.webp 800w, /shots/qp-01-sag-tik-menusu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Gezgin'de dosyaya sağ tık: Hızlı Önizleme komutu"></a></figure><div><h3>Gezgin'in sağ tık menüsünde</h3><p>Kurulum "Hızlı Önizleme" komutunu dosyalar için kayıt defterine yazar; uygulama her açılışta kaydı kendi exe yoluna ve seçili dile göre doğrular.</p><ul><li>Kayıt kullanıcı kapsamındadır (HKCU); yönetici izni gerekmez.</li><li>Yalnız dosyalarda görünür; klasörlerde görünmez.</li><li>Etiket uygulamanın dilinde, 8 dilden biriyle yazılır.</li><li>Taşınabilir sürüm kaydı ilk açılışta yapar; Ayarlar › Genel'den kapatılabilir ve kaydın durumunu gösterir.</li><li>Kaldırma, sağ tık ve "Windows ile başlat" kayıtlarını siler.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-04-pdf-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-04-pdf-gunduz-800.webp" srcset="/shots/qp-04-pdf-gunduz-800.webp 800w, /shots/qp-04-pdf-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="PDF önizlemesi: sayfa ve küçük resim şeridi, gündüz teması"></a></figure><div><h3>PDF: sayfa, küçük resim, gerçek boyut</h3><p>Belge pdf.js ile bir Web Worker'da çözülür; sayfalar resim görünümünde, solda görününce çizilen küçük resim şeridiyle gezilir.</p><ul><li>%100 ekranda gerçek boyuttur (96/72 oranı); yakınlaştırınca sayfa yeniden çizilir, tuval en çok 24 MP.</li><li>Küçük resim şeridi en çok 2000 sayfa için çizilir.</li><li>Bilgi panelinde başlık, yazar, üretici ve PDF sürümü.</li><li>Karakter eşlemleri ve standart yazı tipleri paketten okunur; ağ kullanılmaz.</li><li>Parola korumalı PDF'de bilgi kartı gösterilir.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-03-psd-katmanlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-03-psd-katmanlar-gece-800.webp" srcset="/shots/qp-03-psd-katmanlar-gece-800.webp 800w, /shots/qp-03-psd-katmanlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Photoshop PSD önizlemesi ve katman listesi"></a></figure><div><h3>PSD: birleşik görüntü ve katman listesi</h3><p>Dosyadaki birleşik görüntü ag-psd ile tuvale çizilir; birleşik görüntü yoksa ya da düzse görünür katmanlar normal karışım ve opaklıkla yaklaşık olarak birleştirilir.</p><ul><li>PSD ve PSB desteklenir; yaklaşık görüntüde bilgi panelinde uyarı çıkar.</li><li>Bilgi: renk modu, bit derinliği, çözünürlük, katman sayısı.</li><li>Katman listesi üstten alta; gruplar girintili, gizli katmanlar çizili, opaklık yüzde olarak.</li><li>TIFF (UTIF.js, ilk sayfa) ve HEIC/HEIF (libheif, WebAssembly) de tuvale çizilir.</li><li>Resimlerde saydamlık için dama zemin; %300 üstünde pikseller keskin gösterilir.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-08-word-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-08-word-gunduz-800.webp" srcset="/shots/qp-08-word-gunduz-800.webp 800w, /shots/qp-08-word-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Word belgesi önizlemesi: başlıklar, listeler, tablolar"></a></figure><div><h3>Office belgeleri metin olarak</h3><p>docx, xlsx ve pptx dosyalarının XML parçaları doğrudan okunur; Office kurulu olmasa da içerik görünür.</p><ul><li>Word: başlık, Başlık 1–6 (yerelleştirilmiş adlar dahil), madde işaretli ve numaralı paragraflar, tablolar; belge özellikleri.</li><li>Excel: sayfa sekmeleri (en çok 30), sayılar, mantıksal değerler, tarih biçimli hücreler tarih olarak; formüllerin kayıtlı sonucu gösterilir.</li><li>PowerPoint: slayt başlığı, girinti düzeyli maddeler, tablolar, konuşmacı notları.</li><li>Sınırlar: 4000 paragraf, 500 satır × 60 sütun, 300 slayt; XML parçaları en çok 48 MB.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-05-kod-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-05-kod-gece-800.webp" srcset="/shots/qp-05-kod-gece-800.webp 800w, /shots/qp-05-kod-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kod önizlemesi: söz dizimi renkli, satır numaralı"></a></figure><div><h3>Metin, kod ve Markdown</h3><p>İmzası olmayan dosya, NUL bayt yoksa ve kontrol karakteri oranı %2'nin altındaysa metin sayılır; dil uzantıdan ya da bilinen dosya adından bulunur.</p><ul><li>highlight.js ile 58 dil; dili bilinmeyen 64 KB'a kadar dosyalarda otomatik dil algılama.</li><li>Kodlama: BOM, UTF-8, UTF-16 LE/BE, aksi halde Windows-1254.</li><li>İlk 2 MB gösterilir; 512 KB üstü renklendirilmez.</li><li>Satır numaraları, satır kaydırma (<kbd>W</kbd>) ve yazı boyutu araç çubuğunda.</li><li>Markdown GFM olarak biçimlenir; 3 ve daha çok başlıkta içindekiler paneli, görünüm / kaynak geçişi.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-09-arsiv-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-09-arsiv-gunduz-800.webp" srcset="/shots/qp-09-arsiv-gunduz-800.webp 800w, /shots/qp-09-arsiv-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="ZIP arşivi içerik listesi, gündüz teması"></a></figure><div><h3>Arşivler ve bilgi paneli</h3><p>ZIP tabanlı dosyalarda (zip, jar, apk, epub, odt…) yalnız içerik dizini okunur; arşiv açılmadan içerik listelenir.</p><ul><li>ZIP64, UTF-8 ve eski CP437 dosya adları desteklenir.</li><li>Ad, boyut, sıkıştırılmış boyut, tarih, şifreli girdi işareti ve arama; ilk 5000 girdi.</li><li>Bilgi paneli (<kbd>I</kbd>): tür, bayt olarak boyut, boyutlar, sayfa, süre, kodlama, satır, dil, tarihler, salt okunur, konum (kopyala).</li><li>Tanınmayan türde bilgi kartı: boyut, tarihler, "Varsayılan uygulamayla aç", "Klasörde göster".</li><li>Aynı klasördeki dosyalar Gezgin gibi doğal sıralanır ("resim2" önce "resim10" sonra); gizli dosyalar, desktop.ini ve Thumbs.db atlanır.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/qp-11-ayarlar-genel-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-11-ayarlar-genel-gece-800.webp" srcset="/shots/qp-11-ayarlar-genel-gece-800.webp 800w, /shots/qp-11-ayarlar-genel-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Genel: tepsi, Windows ile başlat, sağ tık menüsü"></a></figure><div><h3>Tepsi, başlangıç ve hesap</h3><p>Pencereler kapansa da uygulama çalışır; çıkış yalnız tepsideki "Çıkış" ya da Ayarlar › Genel'dendir. Uygulama Mastertool hesabı olmadan çalışmaz.</p><ul><li>"Windows ile başlat" varsayılan açıktır; uygulama <code>--hidden</code> ile pencere açmadan tepside bekler.</li><li>"Gizle" simgeyi kaldırır, sağ tık istekleri karşılanmaya devam eder; yeniden çalıştırınca simge geri gelir.</li><li>Girişsizken sağ tıkla istenen dosya bekletilir, girişten sonra açılır.</li><li>Ortak oturum: başka bir Mastertool uygulamasında giriş varsa şifre sorulmaz; birinden çıkış hepsinden çıkıştır.</li><li>Senkron yalnız ayarları kapsar; önizlenen dosyalar, adları ve yolları hiçbir zaman gönderilmez.</li></ul></div></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-01-sag-tik-menusu-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-01-sag-tik-menusu-gece-800.webp" srcset="/shots/qp-01-sag-tik-menusu-gece-800.webp 800w, /shots/qp-01-sag-tik-menusu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Gezgin&#x27;de sağ tık: Hızlı Önizleme"></a><figcaption><b>Gezgin&#x27;de sağ tık: Hızlı Önizleme</b><span>Dosyaya sağ tıklayın, “Hızlı Önizleme”yi seçin; pencere anında açılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-02-resim-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-02-resim-gece-800.webp" srcset="/shots/qp-02-resim-gece-800.webp 800w, /shots/qp-02-resim-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resimler: yakınlaştır, sığdır, döndür"></a><figcaption><b>Resimler: yakınlaştır, sığdır, döndür</b><span>JPG, PNG, WebP, GIF, BMP, TIFF, ICO, HEIC; dosya bilgisi paneliyle</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-03-psd-katmanlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-03-psd-katmanlar-gece-800.webp" srcset="/shots/qp-03-psd-katmanlar-gece-800.webp 800w, /shots/qp-03-psd-katmanlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Photoshop PSD: birleşik görüntü ve katmanlar"></a><figcaption><b>Photoshop PSD: birleşik görüntü ve katmanlar</b><span>Photoshop olmadan PSD/PSB: görüntü, renk modu, katman listesi</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/qp-04-pdf-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-04-pdf-gunduz-800.webp" srcset="/shots/qp-04-pdf-gunduz-800.webp 800w, /shots/qp-04-pdf-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="PDF: sayfa sayfa, küçük resim şeridiyle"></a><figcaption><b>PDF: sayfa sayfa, küçük resim şeridiyle</b><span>Sayfalar resim gibi; PgUp/PgDn ile gezinme, yakınlaştırma</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-05-kod-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-05-kod-gece-800.webp" srcset="/shots/qp-05-kod-gece-800.webp 800w, /shots/qp-05-kod-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Metin ve kod: söz dizimi renkli"></a><figcaption><b>Metin ve kod: söz dizimi renkli</b><span>55&#x27;ten fazla dil; salt okunur, satır numaralı, kodlama algılamalı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/qp-06-markdown-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-06-markdown-gunduz-800.webp" srcset="/shots/qp-06-markdown-gunduz-800.webp 800w, /shots/qp-06-markdown-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Markdown: biçimli görünüm ve içindekiler"></a><figcaption><b>Markdown: biçimli görünüm ve içindekiler</b><span>Tablolar, kod blokları, bağlantılar; uzak resimler yüklenmez</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-07-excel-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-07-excel-gece-800.webp" srcset="/shots/qp-07-excel-gece-800.webp 800w, /shots/qp-07-excel-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Excel: sayfalar ve hücreler"></a><figcaption><b>Excel: sayfalar ve hücreler</b><span>docx, xlsx ve pptx içeriği Office kurulu olmadan görünür</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/qp-08-word-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-08-word-gunduz-800.webp" srcset="/shots/qp-08-word-gunduz-800.webp 800w, /shots/qp-08-word-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Word: başlıklar, listeler ve tablolar"></a><figcaption><b>Word: başlıklar, listeler ve tablolar</b><span>Belgenin metni ve tabloları sade, okunaklı bir görünümde</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/qp-09-arsiv-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-09-arsiv-gunduz-800.webp" srcset="/shots/qp-09-arsiv-gunduz-800.webp 800w, /shots/qp-09-arsiv-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="ZIP arşivi: içerik listesi"></a><figcaption><b>ZIP arşivi: içerik listesi</b><span>Açmadan bakın: dosyalar, boyutlar, tarihler, arama</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-10-video-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-10-video-gece-800.webp" srcset="/shots/qp-10-video-gece-800.webp 800w, /shots/qp-10-video-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Video ve ses"></a><figcaption><b>Video ve ses</b><span>MP4, WebM, MOV, MP3, WAV, FLAC… yerleşik oynatıcıda</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/qp-11-ayarlar-genel-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-11-ayarlar-genel-gece-800.webp" srcset="/shots/qp-11-ayarlar-genel-gece-800.webp 800w, /shots/qp-11-ayarlar-genel-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar: tepsi, Windows ile başlat, sağ tık"></a><figcaption><b>Ayarlar: tepsi, Windows ile başlat, sağ tık</b><span>Tepside bekler; “Gizle” ile simge kalkar, sağ tık çalışmaya devam eder</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/qp-12-ayarlar-onizleme-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/qp-12-ayarlar-onizleme-gunduz-800.webp" srcset="/shots/qp-12-ayarlar-onizleme-gunduz-800.webp 800w, /shots/qp-12-ayarlar-onizleme-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Önizleme"></a><figcaption><b>Ayarlar › Önizleme</b><span>Türleri seçin, varsayılan yakınlaştırma, kısayollar; her şey yerel</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 için bileşenler, desteklenen türler, güvenlik, sınırlar ve kısayollar.</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 ve 11, 64 bit (x64)</td></tr><tr><th>Paketler</th><td><code>Quick-Preview-Setup-&lt;sürüm&gt;.exe</code> (NSIS kurulum) ve <code>Quick-Preview-Portable-&lt;sürüm&gt;.exe</code> (taşınabilir)</td></tr><tr><th>Kurulum klasörü</th><td><code>Program Files\Mastertool\Quick Preview</code>; yalnız bu kullanıcı için kurulumda <code>%LOCALAPPDATA%\Programs\Mastertool\Quick Preview</code></td></tr><tr><th>Başlat menüsü</th><td>Master Tool › Quick Preview</td></tr><tr><th>Hesap</th><td>Mastertool hesabı; diğer Mastertool uygulamalarıyla ortak oturum</td></tr><tr><th>İnternet</th><td>Giriş, ayar senkronu ve sürüm denetimi için; önizleme tamamen yereldir</td></tr><tr><th>Yönetici izni</th><td>Gerekmez; sağ tık kaydı kullanıcı kapsamındadır (HKCU)</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>Electron</th><td>33 (Chromium 130, Node.js 20) — masaüstü çatısı</td></tr><tr><th>pdf.js</th><td>PDF çözümü, Web Worker'da</td></tr><tr><th>ag-psd</th><td>Photoshop PSD / PSB</td></tr><tr><th>UTIF.js</th><td>TIFF</td></tr><tr><th>libheif</th><td>HEIC / HEIF, WebAssembly</td></tr><tr><th>highlight.js</th><td>Söz dizimi renklendirme, 58 dil</td></tr><tr><th>marked</th><td>Markdown (GFM)</td></tr><tr><th>Chromium</th><td>Resim (<code>&lt;img&gt;</code>), SVG, HTML5 video ve ses</td></tr><tr><th>electron-builder</th><td>NSIS kurulum ve taşınabilir paket</td></tr></table></div></div>
+        <div class="spec wide"><h3>Desteklenen türler</h3><div class="t-wrap"><table><tr><th>Resim</th><td>JPG, PNG, GIF, WebP, BMP, ICO, AVIF · yakınlaştırma, döndürme, dama zemin</td></tr><tr><th>TIFF · HEIC / HEIF</th><td>Tuvale çizilir; çok sayfalı TIFF'te ilk sayfa, sayfa sayısı bilgide</td></tr><tr><th>Photoshop</th><td>PSD, PSB · birleşik görüntü, katman listesi, renk modu, bit derinliği, çözünürlük</td></tr><tr><th>PDF</th><td>Sayfa görünümü, küçük resim şeridi, gerçek boyut; başlık, yazar, üretici, PDF sürümü</td></tr><tr><th>SVG</th><td><code>&lt;img&gt;</code> içinde ya da kaynak olarak; betik çalışmaz, dış kaynak yüklenmez</td></tr><tr><th>Metin ve kod</th><td>58 dil; Dockerfile, Makefile, .gitignore, .env gibi uzantısız adlar; satır numaraları</td></tr><tr><th>Markdown</th><td>GFM biçimli görünüm ve kaynak; içindekiler; yalnız yerel ve <code>data:</code> resimler</td></tr><tr><th>Video ve ses</th><td>MP4, M4V, MOV, WebM, MKV, OGV, MP3, WAV, OGG, Opus, FLAC, M4A, AAC · süre ve çözünürlük bilgide</td></tr><tr><th>Word</th><td>docx, docm · başlıklar, listeler, tablolar, belge özellikleri</td></tr><tr><th>Excel</th><td>xlsx, xlsm · sayfa sekmeleri, hücre değerleri, tarih biçimleri (1900/1904)</td></tr><tr><th>PowerPoint</th><td>pptx, pptm · slayt başlığı, maddeler, tablolar, konuşmacı notları</td></tr><tr><th>Arşiv</th><td>zip, jar, apk, epub, odt… · içerik dizini listesi, ZIP64, arama</td></tr><tr><th>Diğer</th><td>Bilgi kartı: boyut, tarihler, tür, "Varsayılan uygulamayla aç", "Klasörde göster"</td></tr></table></div></div>
+        <div class="spec"><h3>Tür algılama ve kodlama</h3><div class="t-wrap"><table><tr><th>Sıra</th><td>Önce içerik imzası, sonra uzantı</td></tr><tr><th>İmzalar</th><td>PNG, JPEG, GIF, WebP, BMP, ICO/CUR, TIFF, PSD/PSB, PDF, ISO-BMFF (HEIC, AVIF, MP4, MOV, M4A), Matroska/WebM, Ogg, FLAC, MP3, RIFF (WAVE, AVI), ZIP</td></tr><tr><th>Metin ölçütü</th><td>NUL bayt yok ve kontrol karakteri oranı %2'nin altında</td></tr><tr><th>SVG</th><td>İçerik <code>&lt;svg</code> ile başlıyorsa</td></tr><tr><th>Metin kodlaması</th><td>BOM → UTF-8 → UTF-16 LE/BE → Windows-1254</td></tr><tr><th>Dil algılama</th><td>Uzantı ve dosya adı tablosu; bilinmiyorsa 64 KB'a kadar otomatik</td></tr></table></div></div>
+        <div class="spec"><h3>Güvenlik ve gizlilik</h3><ul><li>Dosya içeriği, adı ve yolu hiçbir sunucuya gönderilmez; önizleme tamamen yereldir.</li><li>Önizleme sayfasının CSP'si ağ adreslerine izin vermez: <code>default-src 'self'</code>; resim ve ortam yalnız <code>file:</code>, <code>data:</code>, <code>blob:</code>.</li><li>Pencereler <code>contextIsolation</code> açık, <code>nodeIntegration</code> kapalı çalışır; önizlemeye özgü IPC çağrıları yalnız önizleme penceresinden kabul edilir.</li><li>Markdown'daki ham HTML metin olarak gösterilir, <code>javascript:</code> bağlantıları düz metne çevrilir; SVG <code>&lt;img&gt;</code> içinde olduğu için betik çalışmaz.</li><li>Sayfa içinde gezinme engellidir; yeni pencere istekleri yalnız http/https ise tarayıcıda açılır.</li><li>Hesap şifresi sunucuya gitmez; PBKDF2-SHA256 ile türetilen doğrulama özeti gönderilir.</li><li>Ayar senkronu cihazda AES-256-GCM ile şifrelenir; anahtar HKDF-SHA256 ile türetilir ve cihazdan çıkmaz.</li><li>"Beni hatırla" oturumu Windows DPAPI (Electron <code>safeStorage</code>) ile şifreli saklanır.</li></ul></div>
+        <div class="spec"><h3>Performans ve sınırlar</h3><div class="t-wrap"><table><tr><th>Bellek</th><td>PSD, TIFF, HEIC ve PDF belleğe alınır; 1,5 GB üstünde bilgi kartı</td></tr><tr><th>Metin</th><td>İlk 2 MB gösterilir · 512 KB üstü renklendirilmez · otomatik dil algılama ≤ 64 KB</td></tr><tr><th>PDF</th><td>Küçük resim şeridi ≤ 2000 sayfa · tuval ≤ 24 MP</td></tr><tr><th>Office</th><td>XML parçaları ≤ 48 MB · Word 4000 paragraf · Excel 30 sayfa, 500 satır × 60 sütun · PowerPoint 300 slayt</td></tr><tr><th>Arşiv</th><td>İlk 5000 girdi</td></tr><tr><th>Yakınlaştırma</th><td>%2 – %3200</td></tr><tr><th>Pencere</th><td>İlk açılışta çalışma alanının %72 × %80'i, en az 640 × 420; boyut hatırlanır</td></tr><tr><th>Senkron</th><td>Değişiklikten 3 sn sonra ve 5 dakikada bir · kütüphane ≤ 256 KB</td></tr></table></div></div>
+        <div class="spec"><h3>Hesap ve senkron</h3><ul><li>Uygulama Mastertool hesabı olmadan çalışmaz; girişsizken istenen dosya bekletilir, girişten sonra açılır.</li><li>Ortak oturum (SSO): Windows Kimlik Bilgisi Yöneticisi'nde <code>Mastertool / sso</code>; herhangi bir Mastertool uygulamasında giriş varsa şifre sorulmaz, birinde çıkış hepsinden çıkıştır.</li><li>Senkron yalnız ayarları kapsar: tema, dil ve önizleme seçenekleri; yeni cihazda hesaptaki ayarlar kazanır.</li><li>Senkron Hesap sekmesinden kapatılabilir; sunucu kopyası silinebilir.</li><li>Açılışta yeni sürüm denetlenir ve bildirim gösterilir; indirme Master Tool ya da Hesabım üzerinden.</li></ul></div>
+        <div class="spec"><h3>Yerel veri</h3><div class="t-wrap"><table><tr><th><code>%APPDATA%\Quick Preview\store.json</code></th><td>Ayarlar, senkron meta verisi, son sağ tık kaydı, pencere boyutu</td></tr><tr><th><code>%APPDATA%\Quick Preview\account.json</code></th><td>Cihaz kimliği, e-posta; "Beni hatırla" açıksa DPAPI ile şifreli oturum</td></tr><tr><th><code>%APPDATA%\Mastertool\sso-state.json</code></th><td>Mastertool uygulamalarının ortak oturum durumu</td></tr><tr><th><code>HKCU\Software\Classes\*\shell\MastertoolQuickPreview</code></th><td>Sağ tık komutu: <code>"&lt;exe&gt;" --preview "%1"</code></td></tr><tr><th><code>HKCU\…\CurrentVersion\Run</code></th><td><code>MastertoolQuickPreview</code> = <code>"&lt;exe&gt;" --hidden</code> (Windows ile başlat)</td></tr></table></div></div>
+        <div class="spec wide"><h3>Ayarlar ve varsayılanlar</h3><div class="t-wrap"><table><tr><th>Genel</th><td>Dil (sistem dili, desteklenmiyorsa English) · Tema: Gece / Gündüz / Sistem (Sistem) · Windows oturumu açılınca başlat (açık) · Tepsi simgesini göster (açık) · Sağ tık menüsüne "Hızlı Önizleme" ekle (açık) · Açılışta yeni sürümü denetle (açık)</td></tr><tr><th>Önizleme</th><td>Türler: resim, PSD, PDF, SVG, metin ve kod, Markdown, video ve ses, Office, arşiv (hepsi açık) · Açılışta yakınlaştırma: Sığdır / Gerçek boyut (Sığdır) · PSD katman listesi (açık) · Dosya bilgisi paneli (kapalı) · Metinde satır kaydırma (kapalı) · Video ve ses açılınca oynat (açık)</td></tr><tr><th>Hesap</th><td>Oturum açan e-posta · senkron aç/kapat · şimdi senkronize et · sunucu kopyasını sil · Hesabım (web) · çıkış</td></tr><tr><th>Hakkında</th><td>Sürüm · güncelleme denetimi · tanıtım sayfası · açık kaynak lisansları · Chromium lisansları</td></tr><tr><th>Eşitlenenler</th><td>Dil, tema ve Önizleme sekmesi; başlangıç, tepsi, sağ tık ve sürüm denetimi yalnız bu cihazda</td></tr></table></div></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3><div class="specs"><div><p><b>Gezinme ve pencere</b></p><div class="t-wrap"><table><tr><th><kbd>←</kbd> / <kbd>→</kbd></th><td>Klasördeki önceki / sonraki dosya (Arapçada yönler ters)</td></tr><tr><th>Fare geri / ileri</th><td>Önceki / sonraki dosya</td></tr><tr><th><kbd>Esc</kbd> / <kbd>Space</kbd></th><td>Kapat (pencere gizlenir)</td></tr><tr><th><kbd>Enter</kbd></th><td>Varsayılan uygulamayla aç</td></tr><tr><th><kbd>F</kbd> / <kbd>F11</kbd></th><td>Tam ekran</td></tr><tr><th><kbd>I</kbd></th><td>Bilgi paneli</td></tr><tr><th><kbd>PgUp</kbd> / <kbd>PgDn</kbd></th><td>PDF'de sayfa, Excel'de sayfa sekmesi</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd></th><td>İlk / son sayfa</td></tr></table></div></div><div><p><b>Görünüm</b></p><div class="t-wrap"><table><tr><th><kbd>+</kbd> / <kbd>−</kbd> · <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>−</kbd></th><td>Yakınlaştır / uzaklaştır</td></tr><tr><th><kbd>Ctrl</kbd>+tekerlek</th><td>İmlecin olduğu noktaya yakınlaştır</td></tr><tr><th><kbd>0</kbd></th><td>Sığdır (küçük resim büyütülmez)</td></tr><tr><th><kbd>1</kbd></th><td>Gerçek boyut (%100)</td></tr><tr><th>Çift tık</th><td>Sığdır ↔ %100</td></tr><tr><th>Sürükle</th><td>Kaydır</td></tr><tr><th><kbd>R</kbd></th><td>Döndür</td></tr><tr><th><kbd>W</kbd></th><td>Metinde satır kaydırma</td></tr></table></div></div></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0</th><td>İlk sürüm: Gezgin sağ tık menüsü, tek örnek ve önceden hazırlanmış pencere, resim / PSD / PDF / SVG / metin ve kod / Markdown / video ve ses / Office / arşiv önizlemesi, tepsi ve Windows ile başlat, Mastertool ortak oturumu ve şifreli ayar senkronu, 8 dil.</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz dilleri</h3><div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div><p>Arapça sağdan sola; ← / → yönleri de ters çalışır. İlk açılışta sistem dili kullanılır, listede yoksa İngilizce. Sağ tık menüsündeki etiket de seçili dilde yazılır ve dil değişince güncellenir.</p></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3><ul><li>Windows 11'in yeni (kısa) sağ tık menüsünde görünmez; "Daha fazla seçenek göster" altında ya da Shift+sağ tık ile ulaşılır. Yeni menü imzalı paket kimliği (MSIX) gerektirir; kod imzalama sertifikası henüz yoktur.</li><li>Kod imzası olmadığından ilk indirmede Windows SmartScreen uyarı gösterebilir.</li><li>Sağ tık menüsü klasörlerde görünmez; yalnız dosyalar için kayıtlıdır.</li><li>Birden çok dosya seçiliyken Gezgin komutu her dosya için ayrı çalıştırır; önizleme son geleni gösterir, diğerlerine ← / → ile geçilir.</li><li>Kaldırma yalnız kaldıran kullanıcının sağ tık kaydını siler; diğer Windows kullanıcılarının kayıtları kalır (exe olmadığı için çalışmaz).</li><li>Office önizlemesi biçimlendirme, resim ve grafik göstermez; metin, başlık, liste ve tablo içindir.</li><li>Eski ikili Office biçimleri (doc, xls, ppt) ve RAR / 7z arşivleri desteklenmez; yalnız dosya bilgisi gösterilir.</li><li>PSD'de birleşik görüntü yoksa karışım modları, efektler, ayarlama katmanları ve maskeler yok sayılır.</li><li>Chromium'un çözemediği kodekler (ör. HEVC/H.265, bazı AVI kodekleri) oynatılamaz; varsayılan uygulamayla açma önerilir.</li><li>HEIC çözme WebAssembly ile yapılır; çok büyük fotoğraflarda birkaç saniye sürebilir.</li><li>1,5 GB'tan büyük PSD, TIFF, HEIC ve PDF dosyalarında yalnız bilgi kartı gösterilir.</li><li>Uygulama Mastertool hesabı olmadan çalışmaz.</li><li>Yalnız Windows 10 ve 11 (x64).</li></ul></div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>Quick Preview'u edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

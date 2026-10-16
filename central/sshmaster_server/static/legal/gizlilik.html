@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gizlilik ve çerezler · {{SITE}}</title>
+<meta name="description" content="Bu sitede hangi verilerin, neden ve nasıl işlendiği; Google Analytics çerezleri ve izninizi nasıl değiştireceğiniz.">
+<meta name="robots" content="index, follow">
+{{GAMETA}}
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="legal" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.7 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--acc); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .8)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 60px; max-width: 1160px; }
+  .brand { font-weight: 800; text-decoration: none; color: var(--head); font-size: 17px; display: flex; gap: 10px; align-items: center; }
+  .brand img { width: 26px; height: 26px; }
+  .sp { flex: 1; }
+  main { padding: 48px 0 72px; }
+  h1 { color: var(--head); font-size: clamp(30px, 4vw, 40px); margin: 0 0 6px; letter-spacing: -.01em; }
+  h2 { color: var(--head); font-size: 20px; margin: 36px 0 10px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  ul { padding-inline-start: 20px; }
+  li { margin: 4px 0; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 22px; margin-top: 22px; }
+  button.prefs { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 10px; border: 0; cursor: pointer; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  footer { border-top: 1px solid var(--line); padding: 22px 0; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="{{HOME}}"><img src="/favicon.svg" alt="">{{SITE}}</a>
+    <span class="sp"></span>
+    <span data-kit-controls></span>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <h1>Gizlilik ve çerezler</h1>
+    <p class="muted">Son güncelleme: {{DATE}}</p>
+    <p>Bu sayfa, Mastertool ürün sitelerinde (sshmasters.com, ftpmasters.com, sqlmaster.app, notepadmaster.com, convertmaster.app, mastertool.download) hangi verilerin, neden ve nasıl işlendiğini açıklar.</p>
+    <div class="box"><p>Veri sorumlusu: <b>{{PROVIDER}}</b> (Mastertool)</p></div>
+
+    <h2>Ziyaret istatistikleri (Google Analytics)</h2>
+    <p>Tanıtım sayfalarında, <b>yalnız izin verirseniz</b>, siteyi geliştirmek için Google Analytics ile anonim kullanım istatistikleri toplanır:</p>
+    <ul>
+      <li>ziyaret edilen sayfa ve sayfada geçirilen süre</li>
+      <li>yaklaşık konum (ülke ve şehir düzeyinde), cihaz türü, işletim sistemi, tarayıcı ve dil</li>
+      <li>"Hesap oluştur", "Giriş" ve "Mastertool" bağlantılarına tıklanması</li>
+    </ul>
+    <p>Adınız, e-posta adresiniz, şifreniz ya da hesap bilgileriniz Google Analytics'e gönderilmez. Reklam kişiselleştirme ve Google sinyalleri kapalıdır.</p>
+    <p>Giriş, Hesabım, kayıt, şifre sıfırlama, e-posta doğrulama ve kişisel indirme sayfalarında Google Analytics hiç çalışmaz.</p>
+
+    <h2>Çerezler ve tarayıcıda saklananlar</h2>
+    <ul>
+      <li><b>Analiz çerezleri</b> (<code>_ga</code>, <code>_ga_…</code>): yalnız izin verirseniz Google Analytics tarafından yazılır, en çok 2 yıl saklanır.</li>
+      <li><b>Tercihler</b>: dil, tema ve çerez izni seçiminiz tarayıcınızda saklanır; sunucuya gönderilmez.</li>
+      <li><b>Oturum çerezi</b>: hesabınıza giriş yaptığınızda oturumu sürdürmek için zorunlu bir çerez kullanılır.</li>
+    </ul>
+    <p>İzin vermezseniz hiçbir analiz çerezi yazılmaz ve Google'a istek gönderilmez.</p>
+
+    <h2>Hesap ve uygulama verileri</h2>
+    <ul>
+      <li>Mastertool hesabınız için e-posta adresiniz, adınız ve şifrenizden cihazınızda türetilen bir doğrulama özeti saklanır; şifrenizin kendisi sunucuya hiç gönderilmez.</li>
+      <li>Uygulamalardaki bağlantı ve proje kayıtlarınız uçtan uca şifreli eşitlenir; şifreleme anahtarı yalnız sizin cihazlarınızdadır, sunucu içeriği okuyamaz.</li>
+      <li>Oturum açılan cihazın adı, uygulama sürümü ve IP adresi oturum listesinde tutulur; Hesabım › Cihazlar'da görebilir ve kapatabilirsiniz.</li>
+      <li>Destek talepleriniz yanıtlanabilmesi için saklanır.</li>
+    </ul>
+
+    <h2>Yurt dışına aktarım</h2>
+    <p>Google Analytics verileri Google tarafından işlenir ve ABD dahil yurt dışındaki sunuculara aktarılabilir. Bu nedenle Google Analytics yalnız açık izninizle çalışır. Ayrıntılar için <a href="https://policies.google.com/privacy" rel="noopener" target="_blank">Google Gizlilik Politikası</a>.</p>
+
+    <h2>İzninizi değiştirme</h2>
+    <p>İzninizi istediğiniz zaman verebilir ya da geri alabilirsiniz. Geri aldığınızda analiz çerezleri silinir.</p>
+    <p><button type="button" class="prefs" data-cookie-prefs>Çerez tercihleri</button></p>
+
+    <h2>Haklarınız</h2>
+    <p>6698 sayılı Kişisel Verilerin Korunması Kanunu'nun 11. maddesindeki haklarınızı (bilgi alma, düzeltme, silme, itiraz vb.) kullanmak için <a href="{{PORTAL}}/hesabim#destek">mastertool.download › Hesabım › Destek</a> üzerinden talep açabilirsiniz.</p>
+  </div>
+</main>
+<footer><div class="wrap">© Mastertool · <a href="{{HOME}}">{{SITE}}</a></div></footer>
+</body>
+</html>

@@ -320,7 +320,15 @@ def main():
         rb = c.get('/robots.txt', headers={'Host': 'notepadmaster.com'}).text
         assert 'Sitemap: https://notepadmaster.com/sitemap.xml' in rb and 'Disallow: /api/' in rb
         sm = c.get('/sitemap.xml', headers={'Host': 'convertmaster.app'})
-        assert sm.headers['content-type'].startswith('application/xml') and sm.text.count('<url>') == 8 and 'convertmaster.app/?lang=zh' in sm.text
+        assert sm.headers['content-type'].startswith('application/xml') and sm.text.count('<url>') == 9 and 'convertmaster.app/?lang=zh' in sm.text
+        assert 'convertmaster.app/gizlilik' in sm.text and '<image:loc>https://convertmaster.app/shots/' in sm.text
+        # Google Analytics: yalnız tanıtım sayfasında ölçüm kimliği; hesap sayfalarında yok; gizlilik sayfası her sitede
+        r = c.get('/', headers={'Host': 'ftpmasters.com'})
+        assert '<meta name="mt-ga" content="G-0SW2PWQ7L6">' in r.text and '"price": "0"' in r.text and '"softwareVersion"' in r.text
+        assert 'mt-ga' not in c.get('/giris', headers={'Host': 'ftpmasters.com'}).text
+        g = c.get('/gizlilik', headers={'Host': 'sqlmaster.app'})
+        assert g.status_code == 200 and 'SKYREX HAVACILIK TEKNOLOJİ A.Ş.' in g.text and 'G-B86095ZLQB' in g.text and '{{' not in g.text
+        assert c.get('/i18n/legal.en.json').status_code in (200, 404)
         og = c.get('/og.png', headers={'Host': 'www.convertmaster.app'})
         assert og.status_code == 200 and og.headers['content-type'] == 'image/png'
         # ekran görüntüleri: galeri, kahraman görseli, yapılandırılmış veride screenshot, /shots/ yalnız sitenin kendi WebP'leri

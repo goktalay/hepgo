@@ -306,7 +306,72 @@
     }));
   }
 
-  window.mtKit = { t, setLang, collect, get lang() { return lang; }, get theme() { return resolved(); }, langs: LANGS };
+  // ---------- Google Analytics: yalnız ziyaretçinin açık izniyle (KVKK / GDPR) ----------
+  // Ölçüm kimliği sunucuda yalnız tanıtım sayfalarına <meta name="mt-ga"> olarak eklenir; hesap, giriş, şifre sıfırlama,
+  // doğrulama ve kişisel indirme sayfalarında hiç yoktur. İzin verilmeden Google'a hiçbir istek gitmez, çerez yazılmaz.
+  const GA = document.querySelector('meta[name="mt-ga"]')?.content || '';
+  const PRIV = document.querySelector('meta[name="mt-privacy"]')?.content || '/gizlilik';
+  const CKEY = 'mt-consent';   // 'yes' | 'no'
+  const gaOn = () => typeof window.gtag === 'function';
+  function gaLoad() {
+    if (!/^G-[A-Z0-9]{4,16}$/.test(GA) || gaOn()) return;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };   // eslint-disable-line prefer-rest-params
+    window.gtag('js', new Date());
+    window.gtag('config', GA, { allow_google_signals: false, allow_ad_personalization_signals: false });
+    const sc = document.createElement('script');
+    sc.async = true; sc.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA);
+    document.head.append(sc);
+  }
+  function gaClear() {   // izin geri alınınca analiz çerezlerini sil (alan adı ve üst alan adı için)
+    const h = location.hostname.replace(/^www\./, '');
+    document.cookie.split(';').map(c => c.split('=')[0].trim()).filter(n => /^_ga/.test(n)).forEach(n => {
+      ['', `; domain=${h}`, `; domain=.${h}`].forEach(d => { document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}`; });
+    });
+  }
+  function consentBar(force) {
+    if (!GA) return;
+    const v = store.get(CKEY);
+    if (!force && v === 'yes') return gaLoad();
+    if (!force && v === 'no') return;
+    document.querySelector('.mtk-consent')?.remove();
+    const bar = document.createElement('div');
+    bar.className = 'mtk-consent'; bar.setAttribute('role', 'dialog'); bar.setAttribute('aria-live', 'polite');
+    bar.innerHTML = `<p>Siteyi geliştirmek için ziyaretleri Google Analytics ile anonim olarak saymak istiyoruz. İzin verirseniz analiz çerezleri kullanılır; adınız, e-postanız ya da hesap bilgileriniz gönderilmez.</p>
+      <div class="c-act"><a href="${PRIV}">Gizlilik ve çerezler</a><button type="button" data-c="no">Reddet</button><button type="button" class="ok" data-c="yes">Kabul et</button></div>`;
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('[data-c]');
+      if (!b) return;
+      const yes = b.dataset.c === 'yes';
+      store.set(CKEY, yes ? 'yes' : 'no');
+      bar.remove();
+      if (yes) gaLoad();
+      else if (gaOn() || v === 'yes') { gaClear(); location.reload(); }   // daha önce açıktı: yüklenmiş betiği bırakmamak için sayfa yenilenir
+    });
+    document.body.append(bar);
+  }
+  function consentLinks() {   // alt bilgiye "Gizlilik ve çerezler" ve "Çerez tercihleri" (izni sonradan değiştirmek için)
+    if (!GA) return;
+    const f = document.querySelector('footer .wrap') || document.querySelector('footer');
+    if (!f || f.querySelector('[data-cookie-prefs]')) return;
+    const sp = document.createElement('span');
+    sp.className = 'mtk-cprefs';
+    sp.innerHTML = `<a href="${PRIV}">Gizlilik ve çerezler</a> · <a href="#" data-cookie-prefs>Çerez tercihleri</a>`;
+    f.append(sp);
+  }
+  document.addEventListener('click', e => {
+    if (e.target.closest('[data-cookie-prefs]')) { e.preventDefault(); consentBar(true); return; }
+    if (!gaOn()) return;
+    const a = e.target.closest('a[href]');
+    if (!a) return;
+    const href = a.getAttribute('href') || '';
+    const ev = /(^|\/)(kayit|register)(\?|$)/.test(href) ? 'sign_up_click'
+      : /(^|\/)(giris|login)(\?|$)/.test(href) ? 'login_click'
+      : a.closest('[data-mt-button]') || /mastertool\.download/.test(href) ? 'mastertool_click' : '';
+    if (ev) window.gtag('event', ev, { link_url: a.href, link_text: (a.textContent || '').trim().slice(0, 60) });
+  });
+
+  window.mtKit = { t, setLang, collect, get lang() { return lang; }, get theme() { return resolved(); }, langs: LANGS, consent: () => consentBar(true) };
   const start = async () => {
     controls(); mtButton(); globe(); lightbox();
     dict = await load(lang);
@@ -314,6 +379,7 @@
     observing = true;
     try { translate(); } finally { observing = false; }
     mo.observe(document.body, { childList: true, subtree: true });
+    consentLinks(); consentBar(false);
     dispatchEvent(new CustomEvent('mt-lang', { detail: lang }));
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

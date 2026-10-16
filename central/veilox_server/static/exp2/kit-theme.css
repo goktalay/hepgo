@@ -63,3 +63,14 @@ html[data-theme=dark] img.hero-shot, html[data-theme=dark] .shot-grid img { filt
 /* fiyat kartları: KOBİ · KOBİ + Esnaf · Dron */
 .pcards { grid-template-columns: repeat(3, minmax(0, 380px)); }
 @media (max-width: 1100px) { .pcards { grid-template-columns: 1fr; max-width: 520px; margin-inline: auto; } }
+/* Çerez onay bandı (Google Analytics yalnız izinle) — hepgo renkleriyle */
+.mtk-consent { position: fixed; z-index: 60; inset-inline: 16px; bottom: 16px; max-width: 760px; margin-inline: auto; display: flex; gap: 14px 18px; align-items: center; flex-wrap: wrap;
+  padding: 14px 18px; border-radius: 14px; background: var(--card, #fff); color: var(--body, #3a3f4b); border: 1px solid var(--line, #e6e8ee); box-shadow: 0 18px 50px rgba(0,0,0,.18); font-size: 14px; line-height: 1.5; }
+.mtk-consent p { margin: 0; flex: 1 1 320px; }
+.mtk-consent .c-act { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mtk-consent a { color: var(--mut, #7d8391); font-size: 13px; margin-inline-end: 4px; }
+.mtk-consent button { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--line, #e6e8ee); background: transparent; color: var(--ink, #111); }
+.mtk-consent button.ok { background: var(--ink, #111); color: var(--card, #fff); border-color: transparent; }
+.mtk-cprefs { display: block; margin-top: 14px; font-size: 13px; color: var(--mut, #7d8391); }
+.mtk-cprefs a { color: inherit; }
+@media (max-width: 560px) { .mtk-consent { inset-inline: 8px; bottom: 8px; } .mtk-consent .c-act { width: 100%; justify-content: flex-end; } }

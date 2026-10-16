@@ -68,8 +68,11 @@ async def headers(request: Request, call_next):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'no-referrer'
-    response.headers['Content-Security-Policy'] = ("default-src 'self'; img-src 'self' data:; style-src 'self'; "
-                                                   "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+    ga = request.url.path in ('/', '/index.html')   # Google Analytics yalnız tanıtım ana sayfasında (izinle) — panel ve API'de asla
+    gs, gc = (' https://www.googletagmanager.com', ' https://*.google-analytics.com https://*.analytics.google.com'
+              ' https://www.googletagmanager.com') if ga else ('', '')
+    response.headers['Content-Security-Policy'] = (f"default-src 'self'; img-src 'self' data:{gc}; style-src 'self'; "
+                                                   f"script-src 'self'{gs}; connect-src 'self'{gc}; frame-ancestors 'none'; "
                                                    "base-uri 'none'; form-action 'self'")
     if request.url.path.startswith('/api/') or request.url.path in ('/', '/index.html', '/panel'):
         response.headers['Cache-Control'] = 'no-store'
@@ -953,7 +956,7 @@ def kur_page(token: str):
 
 # Herkese açık yasal sayfalar (kayıt ekranından linklenir; 7 dil, legal.js kullanıcının dilinde açar).
 import html as _htmlmod   # noqa: E402
-_LEGAL_VALS = {'DATE': '4 Ekim 2026', 'PROVIDER': 'GÖKKUBBE Teknoloji', 'EMAIL': 'destek@gokkubbetech.com', 'HOST': 'HEPGO'}
+_LEGAL_VALS = {'DATE': '16 Ekim 2026', 'PROVIDER': 'GÖKKUBBE Teknoloji', 'EMAIL': 'destek@gokkubbetech.com', 'HOST': 'HEPGO'}
 
 
 def _legal_page(name):

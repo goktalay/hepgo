@@ -23,6 +23,7 @@ import secrets
 import shutil
 import time
 from collections import defaultdict, deque
+from html import escape as _hesc
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -1168,7 +1169,23 @@ def _static(path, media=None):
 def page_index(request: Request, lang: str = ''):
     site = site_of(request)
     page = (settings.STATIC_DIR / site / 'index.html').read_text(encoding='utf-8')
-    return HTMLResponse(seo.render_index(site, page, lang), headers={'Cache-Control': 'no-cache', 'Vary': 'Host'})
+    with db.connect() as conn:
+        rel = release_public(latest_release(conn, site)) if site in RELEASE_APPS else None
+    return HTMLResponse(seo.render_index(site, page, lang, rel), headers={'Cache-Control': 'no-cache', 'Vary': 'Host'})
+
+
+@app.get('/gizlilik')
+@app.get('/privacy')
+def page_privacy(request: Request):
+    """Gizlilik ve çerezler (her ürün sitesinde; site adı ve veri sorumlusu doldurulur, metin kit.js ile 8 dile çevrilir)."""
+    site = site_of(request)
+    page = (settings.STATIC_DIR / 'legal' / 'gizlilik.html').read_text(encoding='utf-8')
+    for k, v in {'SITE': SITE_NAMES.get(site, 'Mastertool'), 'PROVIDER': settings.LEGAL_PROVIDER, 'DATE': settings.LEGAL_DATE,
+                 'PORTAL': settings.PORTAL_URL, 'HOME': seo.base(site) + '/'}.items():
+        page = page.replace('{{' + k + '}}', _hesc(v))
+    ga = settings.GA_IDS.get(site)   # "Çerez tercihleri" düğmesi çalışsın diye bu sayfada da ölçüm kimliği (yine yalnız izinle)
+    page = page.replace('{{GAMETA}}', f'<meta name="mt-ga" content="{_hesc(ga)}"><meta name="mt-privacy" content="/gizlilik">' if ga else '')
+    return HTMLResponse(page, headers={'Cache-Control': 'public, max-age=3600', 'Vary': 'Host'})
 
 
 @app.get('/robots.txt')
@@ -1243,7 +1260,7 @@ def page_brand(name: str, request: Request):
     return FileResponse(settings.STATIC_DIR / d / f, media_type=media, headers={'Cache-Control': 'public, max-age=86400'})
 
 
-I18N_RE = re.compile(r'^(sm|fm|sq|np|cv|mt|hesap)\.(en|fr|de|es|ar|zh|ru)\.json$')
+I18N_RE = re.compile(r'^(sm|fm|sq|np|cv|mt|hesap|legal)\.(en|fr|de|es|ar|zh|ru)\.json$')
 
 
 @app.get('/i18n/{name}')

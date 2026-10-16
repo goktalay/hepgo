@@ -44,6 +44,11 @@ SITE_URLS = {'sm': PUBLIC_URL, 'fm': os.environ.get('FTPM_PUBLIC_URL', 'https://
              'cv': os.environ.get('CONVERTM_PUBLIC_URL', 'https://convertmaster.app').rstrip('/'), 'mt': PORTAL_URL}
 ACCOUNT_URL = PORTAL_URL if PORTAL_LIVE else PUBLIC_URL      # e-postalardaki doğrulama / sıfırlama / hesap bağlantıları
 DEFAULT_SITE = os.environ.get('MT_DEFAULT_SITE', 'sm')         # tanınmayan Host (yerel erişim, testler) hangi site gibi davranır
+# Google Analytics ölçüm kimlikleri (gizli değildir; yalnız tanıtım sayfalarına, ziyaretçi izin verince yüklenir — kit.js)
+GA_IDS = {} if os.environ.get('MT_GA_OFF') == '1' else {
+    'sm': 'G-BYC3QW5M7K', 'fm': 'G-0SW2PWQ7L6', 'sq': 'G-B86095ZLQB', 'np': 'G-3YL6GD9GWP', 'cv': 'G-TERFDLKWWQ', 'mt': 'G-7SLLGSBLGD'}
+LEGAL_PROVIDER = os.environ.get('MT_LEGAL_PROVIDER', 'SKYREX HAVACILIK TEKNOLOJİ A.Ş.')   # gizlilik sayfasında veri sorumlusu
+LEGAL_DATE = '16 Ekim 2026'
 RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.get('FTPM_RELEASE_KEY', ''), 'sq': os.environ.get('SQLM_RELEASE_KEY', ''),
                 'np': os.environ.get('NOTEPADM_RELEASE_KEY', ''), 'cv': os.environ.get('CONVERTM_RELEASE_KEY', ''),
                 'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', '')}   # mt = Master Tool masaüstü uygulaması (başlatıcı)

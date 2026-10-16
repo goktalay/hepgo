@@ -29,6 +29,9 @@ def _url(lang):
     return f'{BASE}/' if lang == 'tr' else f'{BASE}/?lang={lang}'
 
 
+GA_ID = 'G-2ERBQVXYVK'   # Google Analytics (yalnız ana sayfa; ziyaretçi izin verince kit.js yükler)
+
+
 def render(page, lang, i18n_dir: Path):
     lang = lang if lang in LANGS else 'tr'
     d = _dict(i18n_dir, lang)
@@ -42,6 +45,7 @@ def render(page, lang, i18n_dir: Path):
     page = re.sub(r'<title>.*?</title>', f'<title>{esc(title, False)}</title>', page, count=1, flags=re.S)
     page = re.sub(r'<meta name="description" content="[^"]*">', f'<meta name="description" content="{esc(desc)}">', page, count=1)
     ld = [{'@context': 'https://schema.org', '@type': 'Organization', 'name': 'HEPGO', 'url': f'{BASE}/', 'logo': f'{BASE}/static/img/hepgo-mark.png'},
+          {'@context': 'https://schema.org', '@type': 'WebSite', 'name': 'HEPGO', 'url': f'{BASE}/', 'inLanguage': list(LANGS)},
           {'@context': 'https://schema.org', '@type': 'SoftwareApplication', 'name': 'HEPGO', 'description': desc, 'url': _url(lang),
            'image': f'{BASE}/static/exp2/og.png', 'applicationCategory': 'BusinessApplication', 'operatingSystem': 'Web',
            'inLanguage': list(LANGS), 'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'TRY',
@@ -56,7 +60,10 @@ def render(page, lang, i18n_dir: Path):
              f'<meta property="og:description" content="{esc(desc)}"><meta property="og:locale" content="{OG_LOCALE[lang]}">'
              + ''.join(f'<meta property="og:locale:alternate" content="{OG_LOCALE[l]}">' for l in LANGS if l != lang)
              + f'\n<meta property="og:image" content="{BASE}/static/exp2/og.png"><meta property="og:image:width" content="1200">'
-               f'<meta property="og:image:height" content="630"><meta property="og:image:alt" content="{esc(title)}">'
+               f'<meta property="og:image:height" content="630"><meta property="og:image:type" content="image/png">'
+               f'<meta property="og:image:alt" content="{esc(title)}">'
+             '\n<meta name="application-name" content="HEPGO"><meta name="apple-mobile-web-app-title" content="HEPGO">'
+             f'\n<meta name="mt-ga" content="{GA_ID}"><meta name="mt-privacy" content="/gizlilik">'
              f'\n<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{esc(title)}">'
              f'<meta name="twitter:description" content="{esc(desc)}"><meta name="twitter:image" content="{BASE}/static/exp2/og.png">'
              '\n<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace('</', '<\\/') + '</script>\n')

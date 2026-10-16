@@ -58,20 +58,34 @@ def _url(site, lang):
     return f'{base(site)}/' if lang == 'tr' else f'{base(site)}/?lang={lang}'
 
 
-def _jsonld(site, title, desc, lang):
+def _app_ld(name, cat, url, desc, image, rel, lang):
+    d = {'@context': 'https://schema.org', '@type': 'SoftwareApplication', 'name': name, 'description': desc, 'url': url, 'image': image,
+         'operatingSystem': 'Windows 10, Windows 11', 'applicationCategory': cat, 'inLanguage': list(LANGS),
+         'softwareRequirements': 'Windows 10 / 11 (x64)', 'isAccessibleForFree': True,
+         'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'TRY', 'availability': 'https://schema.org/InStock', 'url': url},
+         'publisher': {'@type': 'Organization', 'name': 'Mastertool', 'url': f'{base("mt")}/'}}
+    if rel and rel.get('version'):
+        d['softwareVersion'] = rel['version']
+        if rel.get('size'):
+            d['fileSize'] = f"{round(rel['size'] / 1e6)} MB"
+        if rel.get('date'):
+            d['dateModified'] = str(rel['date'])[:10]
+    return d
+
+
+def _jsonld(site, title, desc, lang, rel=None):
     if site == 'mt':
         data = [{'@context': 'https://schema.org', '@type': 'Organization', 'name': 'Mastertool', 'url': f'{base("mt")}/',
                  'logo': f'{base("mt")}/brand/mt.png'},
                 {'@context': 'https://schema.org', '@type': 'WebSite', 'name': 'Mastertool', 'url': f'{base("mt")}/', 'inLanguage': list(LANGS)},
                 {'@context': 'https://schema.org', '@type': 'ItemList', 'name': title,
                  'itemListElement': [{'@type': 'ListItem', 'position': i + 1, 'name': n, 'url': f'{base(k)}/'}
-                                     for i, (k, (n, _)) in enumerate(PRODUCTS.items())]}]
+                                     for i, (k, (n, _)) in enumerate(PRODUCTS.items())]
+                 + [{'@type': 'ListItem', 'position': len(PRODUCTS) + 1, 'name': 'Master Tool', 'url': f'{base("mt")}/#master-tool'}]},
+                _app_ld('Master Tool', 'UtilitiesApplication', f'{base("mt")}/#master-tool', desc, f'{base("mt")}/og.png', rel, lang)]
     else:
         name, cat = PRODUCTS[site]
-        data = {'@context': 'https://schema.org', '@type': 'SoftwareApplication', 'name': name, 'description': desc,
-                'url': _url(site, lang), 'image': f'{base(site)}/og.png', 'operatingSystem': 'Windows 10, Windows 11',
-                'applicationCategory': cat, 'inLanguage': list(LANGS),
-                'publisher': {'@type': 'Organization', 'name': 'Mastertool', 'url': f'{base("mt")}/'}}
+        data = _app_ld(name, cat, _url(site, lang), desc, f'{base(site)}/og.png', rel, lang)
         shots = _shots(site)
         if shots:
             d = _dict(site, lang)
@@ -80,7 +94,7 @@ def _jsonld(site, title, desc, lang):
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
 
-def render_index(site, page, lang):
+def render_index(site, page, lang, rel=None):
     """index.html → dile göre SEO etiketleriyle. lang geçersizse Türkçe."""
     lang = lang if lang in LANGS else 'tr'
     d = _dict(site, lang)
@@ -110,10 +124,15 @@ def render_index(site, page, lang):
              f'<meta property="og:locale" content="{OG_LOCALE[lang]}">'
              + ''.join(f'<meta property="og:locale:alternate" content="{OG_LOCALE[l]}">' for l in LANGS if l != lang)
              + f'\n<meta property="og:image" content="{base(site)}/og.png"><meta property="og:image:width" content="1200">'
-               f'<meta property="og:image:height" content="630"><meta property="og:image:alt" content="{esc(og_title)}">'
-             f'\n<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{esc(og_title)}">'
+               f'<meta property="og:image:height" content="630"><meta property="og:image:type" content="image/png">'
+               f'<meta property="og:image:alt" content="{esc(og_title)}">'
+             f'\n<meta name="application-name" content="{esc(name)}"><meta name="apple-mobile-web-app-title" content="{esc(name)}">'
+             f'<meta name="format-detection" content="telephone=no">'
+             + (f'\n<meta name="mt-ga" content="{esc(settings.GA_IDS[site])}"><meta name="mt-privacy" content="/gizlilik">'
+                if settings.GA_IDS.get(site) else '')
+             + f'\n<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{esc(og_title)}">'
              f'<meta name="twitter:description" content="{esc(og_desc)}"><meta name="twitter:image" content="{base(site)}/og.png">'
-             f'\n{_jsonld(site, title, desc, lang)}\n')
+             f'\n{_jsonld(site, title, desc, lang, rel)}\n')
     if lang != 'tr':   # İngilizce arayüz görüntüsü olanlar sunucuda da değiştirilir (kit.js aynı kuralı tarayıcıda uygular)
         en = {x['stem'] for x in _shots(site) if x.get('en')}
         page = re.sub(r'/shots/([0-9a-z._-]+?)(-800)?\.webp', lambda m: f'/shots/{m[1]}-en{m[2] or ""}.webp' if m[1] in en else m[0], page)
@@ -126,8 +145,13 @@ def robots(site):
 
 
 def sitemap(site):
-    alts = ''.join(f'<xhtml:link rel="alternate" hreflang="{HREFLANG.get(l, l)}" href="{_h.escape(_url(site, l))}"/>' for l in LANGS)
-    urls = ''.join(f'<url><loc>{_h.escape(_url(site, l))}</loc>{alts}<changefreq>weekly</changefreq>'
+    """8 dil (hreflang), Türkçe adreste ekran görüntüleri (Google Görseller için image:image) ve gizlilik sayfası."""
+    e = _h.escape
+    alts = ''.join(f'<xhtml:link rel="alternate" hreflang="{HREFLANG.get(l, l)}" href="{e(_url(site, l))}"/>' for l in LANGS)
+    imgs = ''.join(f'<image:image><image:loc>{base(site)}/shots/{x["stem"]}.webp</image:loc></image:image>' for x in _shots(site))
+    urls = ''.join(f'<url><loc>{e(_url(site, l))}</loc>{alts}{imgs if l == "tr" else ""}<changefreq>weekly</changefreq>'
                    f'<priority>{"1.0" if l == "tr" else "0.8"}</priority></url>' for l in LANGS)
+    urls += f'<url><loc>{base(site)}/gizlilik</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>'
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
-            f'xmlns:xhtml="http://www.w3.org/1999/xhtml">{urls}</urlset>\n')
+            'xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
+            f'{urls}</urlset>\n')

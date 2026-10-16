@@ -3192,5 +3192,6 @@ registerCatalog('ar', {
 "Kaldırılan paylaşımlarınız": "منشوراتكم المُزالة",
 "Sebep: ": "السبب: ",
 "Anladım": "فهمت",
-"Paylaşımınız kaldırıldı": "أُزيل منشوركم"
+"Paylaşımınız kaldırıldı": "أُزيل منشوركم",
+"{id} parça işlemleri": "إجراءات القطعة {id}"
 });

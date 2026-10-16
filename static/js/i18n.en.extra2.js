@@ -459,5 +459,6 @@ registerCatalog('en', {
 "Kaldırılan paylaşımlarınız": "Your removed posts",
 "Sebep: ": "Reason: ",
 "Anladım": "Got it",
-"Paylaşımınız kaldırıldı": "Your post was removed"
+"Paylaşımınız kaldırıldı": "Your post was removed",
+"{id} parça işlemleri": "{id} part actions"
 });

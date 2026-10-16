@@ -186,8 +186,9 @@ async function renderOrder(view, id, ctx) {
     },
     onClick: part => {
       const sec = !spare && part.section && part.group !== 'cover' ? secState(part.section) : null;
-      if (sec === 'ready') return sectionModal(order, part.section, order.assembly.sections[part.section], refresh);
-      if (sec === 'done') return stepInfo(order, order.assembly, part.section);
+      const partBtn = canOperate ? { label: t('{id} parça işlemleri', { id: part.id }), onClick: () => { clickPart(order, byPart.get(part.id), part, refresh, canOperate); } } : null;
+      if (sec === 'ready') return sectionModal(order, part.section, order.assembly.sections[part.section], refresh, { partAction: partBtn });
+      if (sec === 'done') return stepInfo(order, order.assembly, part.section, partBtn);
       return clickPart(order, byPart.get(part.id), part, refresh, canOperate);
     },
   });
@@ -473,7 +474,7 @@ async function electronicsModal(order, partId, refresh) {
   });
 }
 
-async function sectionModal(order, key, name, refresh, { url = `/api/orders/${order.id}/assembly/${key}`, min = order.assembly.min_staff } = {}) {
+async function sectionModal(order, key, name, refresh, { url = `/api/orders/${order.id}/assembly/${key}`, min = order.assembly.min_staff, partAction = null } = {}) {
   const people = await assemblers();
   const picker = peoplePicker(people, { empty: 'Montaj Personeli rolünde kullanıcı yok. Kullanıcı Yönetimi\'nden rol verin.' });
   const when = dateTimeInput();
@@ -485,6 +486,7 @@ async function sectionModal(order, key, name, refresh, { url = `/api/orders/${or
       field('Tamamlanma zamanı', when)),
     actions: [
       { label: 'Vazgeç' },
+      ...(partAction ? [partAction, 'spacer'] : []),   // bölüm hazırken tıklanan parçanın kendi işlemleri (geçmiş, montajda hatalı…)
       {
         label: 'Tamamlandı', class: 'success', onClick: async () => {
           const ids = picker.getIds();
@@ -594,7 +596,7 @@ async function calibrationModal(order, asm, refresh) {
   });
 }
 
-function stepInfo(order, asm, key) {
+function stepInfo(order, asm, key, partAction = null) {
   const keys = key ? [key] : [...Object.keys(asm.sections), ...asm.electronics.map(e => e.step), asm.final.step, 'KAPAK', 'KALIBRASYON', 'SAHA_DEPO'];
   const title = k => asm.sections[k] ? t('{name} montajı', { name: asm.sections[k] })
     : asm.electronics.find(e => e.step === k) ? t('Elektronik montajı: {name}', { name: asm.electronics.find(e => e.step === k).name })
@@ -609,7 +611,7 @@ function stepInfo(order, asm, key) {
         st.checklist ? h('div', { class: 'small' }, Object.entries(k === asm.final.step ? asm.final.checks : asm.checks)
           .map(([c, q]) => `${st.checklist[c] ? '✓' : '✗'} ${q}`).join(' · ')) : null);
     })),
-    actions: [{ label: 'Kapat', class: 'primary' }],
+    actions: [...(partAction ? [partAction, 'spacer'] : []), { label: 'Kapat', class: 'primary' }],
   });
 }
 

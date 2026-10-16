@@ -3192,5 +3192,6 @@ registerCatalog('es', {
 "Kaldırılan paylaşımlarınız": "Sus publicaciones retiradas",
 "Sebep: ": "Motivo: ",
 "Anladım": "Entendido",
-"Paylaşımınız kaldırıldı": "Su publicación fue retirada"
+"Paylaşımınız kaldırıldı": "Su publicación fue retirada",
+"{id} parça işlemleri": "{id} — acciones de la pieza"
 });

@@ -3192,5 +3192,6 @@ registerCatalog('ru', {
 "Kaldırılan paylaşımlarınız": "Ваши удалённые публикации",
 "Sebep: ": "Причина: ",
 "Anladım": "Понятно",
-"Paylaşımınız kaldırıldı": "Ваша публикация удалена"
+"Paylaşımınız kaldırıldı": "Ваша публикация удалена",
+"{id} parça işlemleri": "{id} — действия с деталью"
 });

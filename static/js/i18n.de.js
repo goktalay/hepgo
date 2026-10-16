@@ -3192,5 +3192,6 @@ registerCatalog('de', {
 "Kaldırılan paylaşımlarınız": "Ihre entfernten Beiträge",
 "Sebep: ": "Grund: ",
 "Anladım": "Verstanden",
-"Paylaşımınız kaldırıldı": "Ihr Beitrag wurde entfernt"
+"Paylaşımınız kaldırıldı": "Ihr Beitrag wurde entfernt",
+"{id} parça işlemleri": "{id} — Teilaktionen"
 });

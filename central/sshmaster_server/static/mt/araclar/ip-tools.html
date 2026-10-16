@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP Tools — yerel ağınızdaki cihazları ve servisleri bulun (Master Tool aracı)</title>
+<meta name="description" content="IP Tools: yerel ağınızdaki cihazları, adlarını, MAC üreticilerini ve açık servislerini bulur; servis etiketine tıklayıp web, uzak masaüstü ya da paylaşımı açın. Yalnız yerel ağ, yalnız keşif. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="IP Tools — yerel ağınızda ne var?">
+<meta property="og:description" content="Cihazlar, adlar, üreticiler, açık servisler; tıklanabilir etiketler. Yalnız yerel ağ, yalnız keşif. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/ip-tools">
+<link rel="icon" href="/brand/ip.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/ip-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Yerel ağınızda <em>ne var</em>, görün.</h1>
+        <p class="lead">IP Tools; kaydettiğiniz IP aralığını tarar, ağınızdaki cihazları adları, MAC üreticileri ve açık servisleriyle listeler. Servis etiketine tıklayınca web arayüzü, uzak masaüstü ya da paylaşılan klasör açılır. Yalnız yerel ağ, yalnız keşif.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/ip-01-kayitlar-gece.webp" width="1600" height="1000" alt="Kayıtlar ve bulunan cihazlar" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/ip-02-tarama-gunduz.webp" width="1600" height="1000" alt="Tarama sürüyor" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Keşfedin, listeleyin, bağlanın</h2>
+      <p class="sub">Ağınızın envanteri tek ekranda; yeni ve kaybolan cihazlar vurgulanır, sonuçlar CSV ve JSON olarak dışa aktarılır.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 10h18M8 15h4"/></svg></div>
+          <h3>Kayıtlar ve klasörler</h3><p>Her kayda bir ad, renk ve IP aralığı verin; klasörlerle kart düzeninde toplayın, arama kutusuyla bulun. Kayda tıklayınca aralık taranır, sonuçlar sağda listelenir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div>
+          <h3>Üç aşamalı tarama</h3><p>Önce canlılık (işletim sisteminin kendi <code>ping</code> aracı ve ARP tablosu), sonra yalnız canlı cihazlara servis denemesi, en sonda ad çözümleme. Bir /24 aralığı tipik olarak 5–10 saniyede biter; <b>Durdur</b> ile her an kesilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="16" r="3"/></svg></div>
+          <h3>Tıklanabilir servis etiketleri</h3><p>Web etiketi tarayıcıda arayüzü açar, RDP uzak masaüstünü başlatır, SMB paylaşılan klasörü Gezgin'de gösterir. SSH, FTP, VNC, RTSP ve veritabanı etiketleri bağlantı adresini kopyalar.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v8l4 2"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <h3>Yeni ve kaybolan cihazlar</h3><p>Önceki taramaya göre ağa yeni katılan ve artık yanıt vermeyen cihazlar vurgulanır. Eşleştirme MAC adresiyle, MAC yoksa IP ile yapılır; Tümü / Yeni / Kaybolan / Servisli filtreleri hazırdır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M7 3h10M9 11h6"/></svg></div>
+          <h3>Üretici ve cihaz adı</h3><p>MAC üreticisi, uygulamaya gömülü IEEE OUI tablosundan (yaklaşık 40.000 kayıt) çevrimdışı bulunur. Ad için ters DNS ve cihaza gönderilen tek bir mDNS sorgusu kullanılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div>
+          <h3>Cihaz ayrıntıları</h3><p>Çift tık ya da sağ tık ile ayrıntı penceresi: sunucunun karşılama satırı, web sayfası başlığı, <code>Server</code> başlığı ve TLS sertifikasının konu adı, kuruluşu, vereni ve son tarihi. Her alan kopyalanabilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Yalnız keşif, güvenli tasarım</h3><p>Yalnız yerel ve özel ağ adresleri taranır, port listesi sabit 15 kayıttır, yapılan tek şey standart TCP bağlantı denemesidir ve hız sınırları yazılıma gömülüdür. Zafiyet, parola, SNMP ya da SYN taraması yoktur; ekranda "yalnız yetkili olduğunuz ağları tarayın" uyarısı kalıcıdır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></div>
+          <h3>CSV ve JSON dışa aktarım</h3><p>Sonuç listesi tek tuşla CSV (UTF-8 BOM, Excel ile doğrudan açılır) ya da JSON olarak kaydedilir. Envanteri tablo programında ya da kendi betiklerinizde kullanın.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></div>
+          <h3>Tek hesap, şifreli senkron</h3><p>Kayıtlar, klasörler ve ayarlar Mastertool hesabınızla uçtan uca şifreli senkronlanır; sunucu içeriği okuyamaz. Tarama sonuçları hiçbir zaman gönderilmez. 8 arayüz dili, Gece / Gündüz / Sistem teması.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay"><div class="wrap"><h2>Yakından bakın</h2><p class="sub">Kayıttan sonuca: tarama ekranları, ayrıntı penceresi, adres denetimi ve ayarlar; gece ve gündüz temasıyla gerçek görüntüler.</p><div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-01-kayitlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-01-kayitlar-gece-800.webp" srcset="/shots/ip-01-kayitlar-gece-800.webp 800w, /shots/ip-01-kayitlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıtlar ve bulunan cihazlar"></a></figure><div><h3>Kayıtlar solda, cihazlar sağda</h3><p>Kayda tıklayınca aralık taranır ve bulunan cihazlar tek tabloda listelenir. Sütun başlığına tıklayarak sıralayın, arama kutusuyla daraltın.</p><ul><li>Sütunlar: IP, ad (ters DNS / mDNS), MAC, üretici, yanıt süresi, servis etiketleri</li><li>Aralık biçimleri: <code>192.168.1.1-192.168.1.255</code>, <code>192.168.1.1-255</code>, <code>192.168.1.0/24</code>, tek IP; virgülle birden çok</li><li>Aynı kayıt en erken 30 saniye sonra yeniden taranır</li><li>Kayıtlar klasörlerde kart düzeninde; <kbd>Backspace</kbd> üst klasöre çıkar</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-02-tarama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-02-tarama-gunduz-800.webp" srcset="/shots/ip-02-tarama-gunduz-800.webp 800w, /shots/ip-02-tarama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tarama sürüyor"></a></figure><div><h3>Tarama sürerken</h3><p>İlerleme çubuğu aşamayı ve kalan adres sayısını gösterir; <b>Durdur</b> taramayı anında keser, o ana dek bulunanlar listede kalır.</p><ul><li>Canlılık: işletim sisteminin <code>ping</code> aracı çocuk süreç olarak çalışır, ham soket açılmaz, yönetici izni gerekmez</li><li>ARP tablosu okunur: ping'e yanıt vermeyen ama tabloda görünen cihaz da canlı sayılır</li><li>En çok 64 eşzamanlı iş; ping ve bağlantı denemeleri ortak havuzu paylaşır</li><li>Cihaz başına en çok 1 saniye zaman aşımı</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-03-ayrintilar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-03-ayrintilar-gece-800.webp" srcset="/shots/ip-03-ayrintilar-gece-800.webp 800w, /shots/ip-03-ayrintilar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Cihaz ayrıntıları"></a></figure><div><h3>Cihaz ayrıntıları</h3><p>Satıra çift tıklayın: bağlantı açılınca okunan bilgiler tek pencerede toplanır. Hiçbir alan tahmin değildir; yalnız sunucunun kendi gönderdiği veriler gösterilir.</p><ul><li>Karşılama satırı: SSH, FTP ve VNC sunucusunun kendiliğinden gönderdiği ilk satır (biz hiçbir şey göndermeyiz)</li><li>HTTP: tek bir <code>GET /</code> ile sayfa başlığı ve <code>Server</code> başlığı (2 saniye)</li><li>TLS: sertifikanın konu adı, kuruluşu, vereni ve son tarihi</li><li>RDP, SMB, veritabanı, yazıcı ham portu ve RTSP için hiçbir bayt yazılmaz; bağlantı kurulur kurulmaz kapatılır</li><li>Her alan sağ tık menüsünden kopyalanır</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-04-yeni-kaybolan-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-04-yeni-kaybolan-gunduz-800.webp" srcset="/shots/ip-04-yeni-kaybolan-gunduz-800.webp 800w, /shots/ip-04-yeni-kaybolan-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni ve kaybolan cihazlar"></a></figure><div><h3>Neler değişti?</h3><p>Her tarama bir öncekiyle karşılaştırılır: ağa yeni katılanlar ve artık yanıt vermeyenler ayrı renklerle vurgulanır.</p><ul><li>Eşleştirme MAC adresiyle, MAC yoksa IP ile yapılır</li><li>Filtreler: Tümü · Yeni · Kaybolan · Servisli</li><li>Önceki taramalar yalnız bu bilgisayarda saklanır (<code>%APPDATA%\ip-tools\scans\</code>)</li><li><kbd>Ctrl</kbd>+<kbd>E</kbd> ile liste CSV olarak dışa aktarılır</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-05-kayit-formu-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-05-kayit-formu-gece-800.webp" srcset="/shots/ip-05-kayit-formu-gece-800.webp 800w, /shots/ip-05-kayit-formu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt formu ve adres denetimi"></a></figure><div><h3>Adres denetimi kayıt anında</h3><p>Kayıt formu yalnız yerel ve özel ağ adreslerini kabul eder; başka bir adres içeren kayıt kaydedilmez ve nedeni açıklanır.</p><ul><li>Kabul edilen bloklar: RFC 1918 (10/8, 172.16/12, 192.168/16) ve bağlantı-yerel 169.254/16</li><li>En geniş aralık /16 (65.536 adres)</li><li>İnternet adresleri ve IPv6 taranmaz; bu bir ayar değil, tasarım kararıdır</li><li>Ad, renk ve klasör seçimi aynı formda</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-06-ayarlar-tarama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-06-ayarlar-tarama-gunduz-800.webp" srcset="/shots/ip-06-ayarlar-tarama-gunduz-800.webp 800w, /shots/ip-06-ayarlar-tarama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Tarama"></a></figure><div><h3>Sabit port listesi, yalnız daraltılır</h3><p>Ayarlar › Tarama'da 15 portluk liste görünür; istemediğiniz servisleri kapatabilirsiniz ama listeye port ekleyemezsiniz.</p><ul><li>Eşzamanlılık üst sınırı 64, zaman aşımı üst sınırı 1 saniye; ikisi de yalnız aşağı çekilebilir</li><li>Port grupları: Web, SSH, FTP, RDP, SMB, Veritabanı, Yazıcı, VNC, Kamera</li><li>Taramadan önce ve tarama ekranında kalıcı uyarı: yalnız sahibi ya da yetkilisi olduğunuz ağları tarayın</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/ip-07-ayarlar-genel-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-07-ayarlar-genel-gece-800.webp" srcset="/shots/ip-07-ayarlar-genel-gece-800.webp 800w, /shots/ip-07-ayarlar-genel-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Genel"></a></figure><div><h3>Genel ayarlar ve hesap</h3><p>Dil, tema ve başlangıç davranışı Genel sekmesinde; Hesap sekmesinde senkron durumu ve çıkış; Hakkında sekmesinde sürüm, güncelleme denetimi ve lisanslar.</p><ul><li>8 dil: Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский</li><li>Tema: Gece / Gündüz / Sistem</li><li>Windows ile başlat ve sistem tepsisinde kal</li><li>Mastertool hesabıyla tek giriş: ailenin başka bir uygulamasında giriş yaptıysanız şifre yeniden sorulmaz</li></ul></div></div>
+      </div></div></section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/ip-01-kayitlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-01-kayitlar-gece-800.webp" srcset="/shots/ip-01-kayitlar-gece-800.webp 800w, /shots/ip-01-kayitlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıtlar ve bulunan cihazlar"></a><figcaption><b>Kayıtlar ve bulunan cihazlar</b><span>Kayda tıklayın: aralık taranır; IP, ad, MAC, üretici, yanıt süresi ve servisler</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/ip-02-tarama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-02-tarama-gunduz-800.webp" srcset="/shots/ip-02-tarama-gunduz-800.webp 800w, /shots/ip-02-tarama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tarama sürüyor"></a><figcaption><b>Tarama sürüyor</b><span>En çok 64 eşzamanlı bağlantı, cihaz başına 1 sn; ilerleme ve Durdur</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/ip-03-ayrintilar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-03-ayrintilar-gece-800.webp" srcset="/shots/ip-03-ayrintilar-gece-800.webp 800w, /shots/ip-03-ayrintilar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Cihaz ayrıntıları"></a><figcaption><b>Cihaz ayrıntıları</b><span>Karşılama satırı, sayfa başlığı, Server başlığı ve TLS sertifika konu adı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/ip-04-yeni-kaybolan-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-04-yeni-kaybolan-gunduz-800.webp" srcset="/shots/ip-04-yeni-kaybolan-gunduz-800.webp 800w, /shots/ip-04-yeni-kaybolan-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni ve kaybolan cihazlar"></a><figcaption><b>Yeni ve kaybolan cihazlar</b><span>Önceki taramaya göre yeni gelen ve kaybolan cihazlar vurgulanır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/ip-05-kayit-formu-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-05-kayit-formu-gece-800.webp" srcset="/shots/ip-05-kayit-formu-gece-800.webp 800w, /shots/ip-05-kayit-formu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt formu ve adres denetimi"></a><figcaption><b>Kayıt formu ve adres denetimi</b><span>Yalnız özel adresler (10.x, 172.16–31.x, 192.168.x) kabul edilir; en çok /16</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/ip-06-ayarlar-tarama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-06-ayarlar-tarama-gunduz-800.webp" srcset="/shots/ip-06-ayarlar-tarama-gunduz-800.webp 800w, /shots/ip-06-ayarlar-tarama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Tarama"></a><figcaption><b>Ayarlar › Tarama</b><span>Sabit port listesi yalnız kapatılabilir; eşzamanlılık ≤ 64, zaman aşımı ≤ 1 sn</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/ip-07-ayarlar-genel-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-07-ayarlar-genel-gece-800.webp" srcset="/shots/ip-07-ayarlar-genel-gece-800.webp 800w, /shots/ip-07-ayarlar-genel-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Genel"></a><figcaption><b>Ayarlar › Genel</b><span>Dil, Gece/Gündüz/Sistem teması, Windows ile başlat, tepsi ve güncellemeler</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/ip-08-giris-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/ip-08-giris-gunduz-800.webp" srcset="/shots/ip-08-giris-gunduz-800.webp 800w, /shots/ip-08-giris-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Tek giriş"></a><figcaption><b>Tek giriş</b><span>Mastertool hesabıyla bir kez giriş yapın; diğer uygulamalar yeniden sormaz</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik"><div class="wrap"><h2>Teknik özellikler</h2><p class="sub">Neyi nasıl yaptığı ve bilinçli olarak neyi yapmadığı: IP Tools bir keşif ve envanter aracıdır; sınırları ayar değil, tasarımın parçasıdır.</p><div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 / 11, 64 bit (x64)</td></tr><tr><th>Yönetici izni</th><td>Gerekmez; kurulumda "yalnız bu kullanıcı" seçeneği vardır</td></tr><tr><th>Paketler</th><td><code>IP-Tools-Setup-&lt;sürüm&gt;.exe</code> (kurulum) ve <code>IP-Tools-Portable-&lt;sürüm&gt;.exe</code> (kurulumsuz)</td></tr><tr><th>Kurulum klasörü</th><td><code>Program Files\Mastertool\IP Tools</code>; Başlat menüsü: Master Tool › IP Tools</td></tr><tr><th>Ayarlar</th><td><code>%APPDATA%\ip-tools</code> (taşınabilir sürümde de)</td></tr><tr><th>Disk</th><td>Yaklaşık 90 MB</td></tr><tr><th>Hesap</th><td>Mastertool hesabı (ücretsiz); tek girişle ailenin diğer uygulamaları da açılır</td></tr><tr><th>Ağ</th><td>Yerel ağ; internet yalnız hesap, senkron ve güncelleme denetimi için</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>Electron</th><td>33 (Chromium + Node.js) — masaüstü çatısı; yalıtılmış pencereler (<code>contextIsolation</code>, <code>nodeIntegration: false</code>, CSP)</td></tr><tr><th>Ağ katmanı</th><td>Node.js <code>net</code>, <code>tls</code>, <code>dns</code>, <code>dgram</code>, <code>child_process</code>; üçüncü parti tarama kütüphanesi yok</td></tr><tr><th>@napi-rs/keyring</th><td>Tek dış bağımlılık — Windows Kimlik Bilgisi Yöneticisi ile ortak oturum</td></tr><tr><th>OUI tablosu</th><td>IEEE MA-L, yaklaşık 40.000 kayıt, uygulamaya gömülü (çevrimdışı)</td></tr><tr><th>electron-builder</th><td>NSIS kurulum ve taşınabilir paket</td></tr><tr><th>Şifreleme</th><td>PBKDF2 → HKDF (<code>ipt-enc-v1</code>) → AES-256-GCM</td></tr></table></div></div>
+        <div class="spec wide"><h3>Tarama yöntemi</h3><div class="t-wrap"><table><tr><th>1. Canlılık</th><td>İşletim sisteminin kendi <code>ping</code> aracı çocuk süreç olarak çalıştırılır (<code>ping -n 1 -w &lt;ms&gt;</code>); ham soket açılmaz, yönetici izni gerekmez. Ardından ARP tablosu (<code>arp -a</code>) okunur: ping'e yanıt vermeyen ama tabloda görünen cihazlar da canlı sayılır, MAC adresleri buradan alınır.</td></tr><tr><th>2. Servisler</th><td>Yalnız canlı cihazlara, sabit 15 portluk listeye standart TCP bağlantı denemesi (bağlandı / bağlanamadı). Bağlantı açılınca en çok: karşılama satırı okunur (SSH, FTP, VNC), tek bir <code>GET /</code> gönderilir (HTTP, IPP) ya da TLS el sıkışması yapılıp sertifika okunur (HTTPS). Diğer portlara hiçbir bayt yazılmaz.</td></tr><tr><th>3. Adlar</th><td>Ters DNS (<code>dns.reverse</code>) ve cihazın kendisine gönderilen tek bir mDNS PTR sorgusu (5353/udp, tek noktaya yanıt). Üretici gömülü OUI tablosundan; rastgele ("özel") Wi-Fi adresleri "özel adres" olarak gösterilir.</td></tr><tr><th>Taranabilir adresler</th><td>Yalnız RFC 1918 (10/8, 172.16/12, 192.168/16) ve bağlantı-yerel 169.254/16. Başka adres içeren kayıt kaydedilmez. En geniş aralık /16.</td></tr><tr><th>Hız sınırları</th><td>En çok 64 eşzamanlı iş (ping + bağlantı denemeleri ortak havuz) · cihaz başına en çok 1 sn zaman aşımı · aynı kayıt en erken 30 sn sonra yeniden taranır · bir /24 tipik olarak 5–10 sn</td></tr><tr><th>Durdurma</th><td>Her aşamada <b>Durdur</b> ya da <kbd>Esc</kbd>; o ana dek bulunanlar listede kalır</td></tr></table></div></div>
+        <div class="spec wide"><h3>Port listesi (sabit, 15 kayıt)</h3><p>Liste Ayarlar › Tarama'dan yalnız kapatılabilir, genişletilemez. "Bağlantı açılınca" sütunu yapılan tek işlemi gösterir.</p><div class="t-wrap"><table><tr><th>Port</th><td><b>Servis</b></td><td><b>Etiket grubu</b></td><td><b>Bağlantı açılınca</b></td><td><b>Etiket tıklanınca</b></td></tr><tr><th>80</th><td>HTTP</td><td>Web</td><td><code>GET /</code> → başlık, Server</td><td>Tarayıcıda <code>http://ip/</code></td></tr><tr><th>443</th><td>HTTPS</td><td>Web</td><td>TLS sertifika konusu + <code>GET /</code></td><td>Tarayıcıda <code>https://ip/</code></td></tr><tr><th>8080</th><td>HTTP</td><td>Web</td><td><code>GET /</code></td><td>Tarayıcıda <code>http://ip:8080/</code></td></tr><tr><th>8443</th><td>HTTPS</td><td>Web</td><td>TLS + <code>GET /</code></td><td>Tarayıcıda <code>https://ip:8443/</code></td></tr><tr><th>22</th><td>SSH</td><td>SSH</td><td>Karşılama satırı okunur</td><td>Adresi kopyala (<code>ssh ip</code>)</td></tr><tr><th>21</th><td>FTP</td><td>FTP</td><td>Karşılama satırı okunur</td><td>Adresi kopyala (<code>ftp://ip/</code>)</td></tr><tr><th>3389</th><td>Uzak Masaüstü</td><td>RDP</td><td>Hiçbir şey yazılmaz</td><td><code>mstsc /v:ip</code></td></tr><tr><th>445</th><td>Dosya paylaşımı</td><td>SMB</td><td>Hiçbir şey yazılmaz</td><td>Gezgin'de <code>\\ip</code></td></tr><tr><th>5432</th><td>PostgreSQL</td><td>Veritabanı</td><td>Hiçbir şey yazılmaz</td><td>Adresi kopyala (<code>ip:5432</code>)</td></tr><tr><th>3306</th><td>MySQL</td><td>Veritabanı</td><td>Hiçbir şey yazılmaz</td><td>Adresi kopyala (<code>ip:3306</code>)</td></tr><tr><th>1433</th><td>SQL Server</td><td>Veritabanı</td><td>Hiçbir şey yazılmaz</td><td>Adresi kopyala (<code>ip:1433</code>)</td></tr><tr><th>9100</th><td>Yazıcı ham portu (JetDirect)</td><td>Yazıcı</td><td>Hiçbir şey yazılmaz</td><td>Tarayıcıda <code>http://ip/</code></td></tr><tr><th>631</th><td>IPP</td><td>Yazıcı</td><td><code>GET /</code></td><td>Tarayıcıda <code>http://ip/</code></td></tr><tr><th>5900</th><td>VNC</td><td>VNC</td><td>Karşılama satırı okunur (<code>RFB …</code>)</td><td>Adresi kopyala</td></tr><tr><th>554</th><td>RTSP</td><td>Kamera</td><td>Hiçbir şey yazılmaz</td><td>Adresi kopyala (<code>rtsp://ip/</code>)</td></tr></table></div></div>
+        <div class="spec"><h3>Güvenlik ve gizlilik</h3><ul><li>Tarama sonuçları hiçbir zaman sunucuya gönderilmez; yalnız bu bilgisayarda <code>%APPDATA%\ip-tools\scans\</code> altında saklanır.</li><li>Kayıtlar, klasörler ve ayarlar uçtan uca şifreli senkronlanır (PBKDF2 → HKDF → AES-256-GCM); sunucu içeriği okuyamaz.</li><li>Hesap oturumu Windows Kimlik Bilgisi Yöneticisi'nde tutulur; Mastertool uygulamaları arasında ortak oturum.</li><li>Ham soket açılmaz, yönetici izni istenmez; canlılık için işletim sisteminin kendi <code>ping</code> aracı kullanılır.</li><li>Hedefe veri gönderimi en çok tek bir <code>GET /</code> ya da TLS el sıkışmasıdır; diğer portlara hiçbir bayt yazılmaz.</li><li>Kimlik bilgisi kullanılmaz, parola denenmez, zafiyet aranmaz.</li><li>İlk açılışta ve tarama ekranında kalıcı uyarı: "Yalnız sahibi olduğunuz ya da yetkili olduğunuz ağları tarayın."</li></ul></div>
+        <div class="spec"><h3>Performans ve sınırlar</h3><div class="t-wrap"><table><tr><th>Eşzamanlılık</th><td>En çok 64 iş; Ayarlar'dan yalnız düşürülebilir</td></tr><tr><th>Zaman aşımı</th><td>Cihaz başına en çok 1 sn; yalnız düşürülebilir</td></tr><tr><th>HTTP okuma</th><td>2 sn</td></tr><tr><th>Yeniden tarama</th><td>Aynı kayıt en erken 30 sn sonra</td></tr><tr><th>Aralık</th><td>En geniş /16 (65.536 adres)</td></tr><tr><th>Tipik süre</th><td>Bir /24 aralığı 5–10 sn</td></tr><tr><th>Port sayısı</th><td>Sabit 15; eklenemez, kapatılabilir</td></tr><tr><th>Dışa aktarım</th><td>CSV (UTF-8 BOM, Excel uyumlu) ve JSON</td></tr></table></div></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3><div class="specs"><div><div class="t-wrap"><table><tr><th><kbd>Ctrl</kbd>+<kbd>N</kbd></th><td>Yeni kayıt</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>Arama kutusuna git</td></tr><tr><th><kbd>F5</kbd></th><td>Seçili kaydı tara</td></tr><tr><th><kbd>Esc</kbd></th><td>Taramayı durdur / aramayı temizle / pencereyi kapat</td></tr><tr><th><kbd>F2</kbd></th><td>Seçili kaydı düzenle</td></tr></table></div></div><div><div class="t-wrap"><table><tr><th><kbd>Del</kbd></th><td>Seçili kaydı sil</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Sonuçları CSV olarak dışa aktar</td></tr><tr><th><kbd>Backspace</kbd></th><td>Üst klasöre çık</td></tr><tr><th>Çift tık (satır)</th><td>Cihaz ayrıntıları</td></tr></table></div></div></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0 · Ekim 2026</th><td>İlk sürüm: kayıtlar ve klasörler, ping + ARP canlılık, sabit 15 portluk servis denemesi, karşılama / başlık / sertifika okuma, ters DNS + mDNS, OUI üretici, yeni / kaybolan vurgusu, CSV ve JSON, 8 dil, tema, tepsi, Mastertool hesabı ve ortak oturum</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz dilleri</h3><div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div><p>Arapça sağdan sola. Tema: Gece / Gündüz / Sistem.</p></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3><ul><li>Zafiyet denemesi, parola / anahtar deneme ve kimlik bilgisi kullanımı yoktur; tasarım gereği kod tabanına girmez.</li><li>SNMP, SMB, NetBIOS, UPnP gibi protokol sorgulaması yoktur; özel protokol paketi gönderilmez.</li><li>SYN / yarı açık tarama ve ham soket yoktur; port listesi sabittir, genişletilemez.</li><li>İnternet (genel) adresleri ve IPv6 taranmaz.</li><li>64 üstü eşzamanlılık, 1 sn üstü zaman aşımı, 30 sn içinde tekrar tarama ve /16'dan geniş aralık yoktur.</li><li>Ping'i ve ARP'ı engelleyen cihazlar (sıkı güvenlik duvarı) bulunamaz; bu cihazlar için port denemesi yapılmaz.</li><li>Ad çözümleme yerel DNS / mDNS'e bağlıdır; ad yoksa "(ad çözülemedi)" gösterilir.</li><li>MAC ve üretici yalnız aynı alt ağdaki cihazlar için alınabilir; yönlendirici arkasındakilerde boş kalır.</li><li>Rastgele ("özel") Wi-Fi MAC adresleri üreticiye eşlenemez.</li><li>Tarama sonuçları başka bilgisayara senkronlanmaz; yalnız kayıtlar ve ayarlar senkronlanır.</li><li>Yalnız Windows 10 / 11 (x64).</li></ul></div>
+    </div></section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>IP Tools'u edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+[
+ {
+  "stem": "ip-01-kayitlar-gece",
+  "theme": "dark",
+  "title": "Kayıtlar ve bulunan cihazlar",
+  "caption": "Kayda tıklayın: aralık taranır; IP, ad, MAC, üretici, yanıt süresi ve servisler",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-02-tarama-gunduz",
+  "theme": "light",
+  "title": "Tarama sürüyor",
+  "caption": "En çok 64 eşzamanlı bağlantı, cihaz başına 1 sn; ilerleme ve Durdur",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-03-ayrintilar-gece",
+  "theme": "dark",
+  "title": "Cihaz ayrıntıları",
+  "caption": "Karşılama satırı, sayfa başlığı, Server başlığı ve TLS sertifika konu adı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-04-yeni-kaybolan-gunduz",
+  "theme": "light",
+  "title": "Yeni ve kaybolan cihazlar",
+  "caption": "Önceki taramaya göre yeni gelen ve kaybolan cihazlar vurgulanır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-05-kayit-formu-gece",
+  "theme": "dark",
+  "title": "Kayıt formu ve adres denetimi",
+  "caption": "Yalnız özel adresler (10.x, 172.16–31.x, 192.168.x) kabul edilir; en çok /16",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-06-ayarlar-tarama-gunduz",
+  "theme": "light",
+  "title": "Ayarlar › Tarama",
+  "caption": "Sabit port listesi yalnız kapatılabilir; eşzamanlılık ≤ 64, zaman aşımı ≤ 1 sn",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-07-ayarlar-genel-gece",
+  "theme": "dark",
+  "title": "Ayarlar › Genel",
+  "caption": "Dil, Gece/Gündüz/Sistem teması, Windows ile başlat, tepsi ve güncellemeler",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "ip-08-giris-gunduz",
+  "theme": "light",
+  "title": "Tek giriş",
+  "caption": "Mastertool hesabıyla bir kez giriş yapın; diğer uygulamalar yeniden sormaz",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

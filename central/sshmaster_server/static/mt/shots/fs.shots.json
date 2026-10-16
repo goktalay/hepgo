@@ -1,0 +1,101 @@
+[
+ {
+  "stem": "fs-01-kayitlar-gece",
+  "theme": "dark",
+  "title": "Kayıtlar",
+  "caption": "Her kayıtta canlı toplam boyut, dosya ve klasör sayısı, izleme durumu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-02-kayitlar-gunduz",
+  "theme": "light",
+  "title": "Kayıtlar",
+  "caption": "Her kayıtta canlı toplam boyut, dosya ve klasör sayısı, izleme durumu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-03-yeni-kayit-gece",
+  "theme": "dark",
+  "title": "Yeni kayıt",
+  "caption": "Önce klasör sorulur; ad, renk, hariç tutma kalıpları ve boyut sınırı",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-04-arama-gece",
+  "theme": "dark",
+  "title": "Akıllı arama",
+  "caption": "Kök, aksan ve yazım hatasına dayanıklı; vurgulu parça, filtreler, önizleme",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-05-yazim-hatasi-gunduz",
+  "theme": "light",
+  "title": "Yazım hatası düzeltme",
+  "caption": "“teklf bütçe” → teklif, bütçe; tür filtresi ve belge kelime bulutu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-06-kelime-bulutu-3b-gece",
+  "theme": "dark",
+  "title": "3B kelime bulutu",
+  "caption": "Tüm dizinin kelimeleri üç boyutta; döndür, yakınlaştır, kelimeye tıkla ara",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-07-kelime-bulutu-3b-gunduz",
+  "theme": "light",
+  "title": "3B kelime bulutu",
+  "caption": "Tüm dizinin kelimeleri üç boyutta; döndür, yakınlaştır, kelimeye tıkla ara",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-08-kayit-penceresi-gece",
+  "theme": "dark",
+  "title": "Kayıt penceresi",
+  "caption": "Klasör ağacı boyutlarıyla, dosya listesi, önizleme ve canlı durum çubuğu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-09-kayit-icinde-arama-gunduz",
+  "theme": "light",
+  "title": "Kayıt içinde arama",
+  "caption": "Yalnız bu kayıtta ara; sonuçlar alt klasör yoluyla ve vurgulu",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-10-arama-ayarlari-gece",
+  "theme": "dark",
+  "title": "Ayarlar › Arama",
+  "caption": "OCR ve konuşmadan metne isteğe bağlı, varsayılan kapalı; sınırlar",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "fs-11-ocr-gunduz",
+  "theme": "light",
+  "title": "Resimde metin (OCR)",
+  "caption": "Fotoğraftaki yazı bu bilgisayarda okunur ve aranır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

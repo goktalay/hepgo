@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Search — klasörlerinizde akıllı arama (Master Tool aracı)</title>
+<meta name="description" content="File Search: klasörlerinizi dizinler, değişiklikleri izler ve belgelerin içinde akıllı arama yapar — PDF, Word, Excel, kod; isteğe bağlı OCR ve konuşmadan metne; 3B kelime bulutu. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="File Search — klasörlerinizde akıllı arama">
+<meta property="og:description" content="Klasör dizinleme, sürekli izleme, belge içinde akıllı arama, 3B kelime bulutu. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/file-search">
+<link rel="icon" href="/brand/fs.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/fs-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Klasörünüzü <em>arayın</em>, her şeyi bulun.</h1>
+        <p class="lead">File Search; seçtiğiniz klasörü tüm alt klasör ve dosyalarıyla dizinler, değişiklikleri sürekli izler ve yazdığınız metni belgelerin içinde akıllıca arar. İsteğe bağlı olarak resimlerdeki yazıyı ve ses/videodaki konuşmayı da arar.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/fs-01-kayitlar-gece.webp" width="1600" height="1000" alt="Kayıtlar" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/fs-02-kayitlar-gunduz.webp" width="1600" height="1000" alt="Kayıtlar" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Dizinle, izle, bul</h2>
+      <p class="sub">Arka planda çalışır, klasörünüz değiştikçe dizin güncel kalır; aradığınız kelime hangi belgenin içindeyse onu bulur.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M8 14h8M8 11h5"/></svg></div>
+          <h3>Canlı kayıtlar</h3><p>Her klasör bir kayıt: ad, renk (11 seçenek), hariç tutma kalıpları ve boyut sınırı. Kartta toplam boyut, dosya ve klasör sayısı, dizinlenen/bekleyen/okunamayan sayıları ve durum en çok 400 ms'de bir güncellenir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>Sürekli izleme</h3><p>Kök klasörde yinelemeli izleme; olaylar 400 ms'de birleştirilir, eklenen, değişen, taşınan ve silinen yollar anında dizine işlenir. 2000'den fazla değişiklikte ve ağ sürücülerinde 10 dakikada bir fark taraması yapılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg></div>
+          <h3>Belgenin içini okur</h3><p>PDF, Word, Excel, PowerPoint, OpenDocument, RTF, HTML, e-posta (eml), düz metin ve 40'tan fazla kod uzantısı. Üst/alt bilgi, dipnot, yorum, konuşmacı notu ve sayfa adları da dizine girer.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></div>
+          <h3>Akıllı arama</h3><p>Türkçe ve İngilizce kök bulma (<code>raporlarda</code> → rapor), aksan ve büyük/küçük harf katlaması (<code>ŞEHİR</code> = sehir), 3 harften uzun kelimelerde önek eşleşmesi, <code>"tam ifade"</code> ve <code>-hariç</code> sözdizimi.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l4-10 4 10M5.5 13.5h5"/><path d="M14 17c2 0 3-1.2 3-3s-1-3-3-3h-1v6zM19 11v6"/></svg></div>
+          <h3>Yazım hatasını düzeltir</h3><p>Sonuç çıkmazsa dizinde olmayan 4+ harfli kelimeler için sözlükteki yakın yazımlar (Damerau-Levenshtein, 1–2 düzenleme) denenir ve "Yazım hatası düzeltildi" notu gösterilir. Ayarlardan kapatılabilir.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/></svg></div>
+          <h3>Resimdeki yazı (OCR)</h3><p>İsteğe bağlı, varsayılan kapalı. jpg, png, bmp, tif, gif ve webp dosyalarındaki yazı Tesseract ile bu bilgisayarda okunur; 13 dil, en çok 6'sı birlikte (varsayılan Türkçe + İngilizce).</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+          <h3>Konuşmadan metne</h3><p>İsteğe bağlı, varsayılan kapalı. Ses ve video dosyaları FFmpeg ile 16 kHz WAV'a çevrilir, whisper.cpp ile metne dönüştürülür; 4 model boyutu (75–547 MB), 9 dil ya da otomatik algılama.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+          <h3>3B kelime bulutu</h3><p>Tüm dizinin, seçili kaydın ya da arama sonuçlarının en sık kelimeleri WebGL küresinde: 60 / 120 / 200 kelime, sürükleyerek döndürme, tekerlekle yakınlaştırma, kelimeye tıklayınca arama.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Veriniz bilgisayarınızda</h3><p>Dizin, belge metinleri, OCR ve konuşma çıktıları yalnız bu bilgisayarda tutulur; dosyalarınız hiç değiştirilmez. Eşitlenen tek şey kayıt adı, rengi ve ayarlarıdır ve uçtan uca AES-256-GCM ile şifrelidir.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay">
+    <div class="wrap">
+      <h2>Yakından bakın</h2>
+      <p class="sub">Kayıt kartından 3B kelime bulutuna, File Search'ün ekranları ve her birinin arkasındaki teknik ayrıntılar.</p>
+      <div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-01-kayitlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-01-kayitlar-gece-800.webp" srcset="/shots/fs-01-kayitlar-gece-800.webp 800w, /shots/fs-01-kayitlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt kartları: toplam boyut, dosya ve klasör sayısı, izleme durumu"></a></figure><div><h3>Kayıtlar: canlı boyut ve sayılar</h3><p>Ana ekranda her klasör bir kart. Kart, dizinleyici çalıştıkça kendini günceller; hangi kaydın tarandığı, dizinlendiği ya da izlendiği bir bakışta görülür.</p><ul><li>Toplam boyut, dosya ve klasör sayısı, dizinlenen / bekleyen / okunamayan dosya sayısı.</li><li>Durumlar: Taranıyor · Dizinleniyor %n · İzleniyor · Duraklatıldı; en çok 400 ms'de bir yenilenir.</li><li>Tek kayıt ya da tümü duraklatılabilir; tepsi menüsünden de.</li><li>Erişilemeyen kök ("Klasör bulunamadı", "Ağ sürücüsüne ulaşılamıyor") 30 saniyede bir yeniden denenir.</li><li><kbd>Ctrl</kbd>+<kbd>N</kbd> yeni kayıt, <kbd>Enter</kbd> aç, <kbd>F2</kbd> ayarlar, <kbd>Delete</kbd> sil.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-03-yeni-kayit-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-03-yeni-kayit-gece-800.webp" srcset="/shots/fs-03-yeni-kayit-gece-800.webp 800w, /shots/fs-03-yeni-kayit-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni kayıt penceresi: ad, renk, hariç tutma kalıpları ve boyut sınırı"></a></figure><div><h3>Yeni kayıt: önce klasör, sonra kurallar</h3><p>Klasör seçilir, ad olarak klasör adı önerilir. Hariç tutma kalıpları satır başına yazılır; varsayılan liste geliştirme ve sistem klasörlerini baştan dışarıda bırakır.</p><ul><li>Kalıplar: <code>*</code> ad içinde her şey, <code>**</code> alt klasörler dahil, <code>?</code> tek karakter; büyük/küçük harf duyarsız.</li><li><code>/</code> içermeyen kalıp yolun herhangi bir parçasıyla eşleşir.</li><li>Varsayılan hariç tutmalar: <code>node_modules</code>, <code>.git</code>, <code>$RECYCLE.BIN</code>, <code>System Volume Information</code>, <code>~$*</code>, <code>*.tmp</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>.</li><li>Kayıt başına en büyük dosya sınırı (MB); 0 yazılırsa genel ayar (varsayılan 50 MB) geçerlidir.</li><li>Kalıp ya da sınır değişince yalnız fark taraması yapılır; değişmeyen dosyalar yeniden okunmaz.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-09-kayit-icinde-arama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-09-kayit-icinde-arama-gunduz-800.webp" srcset="/shots/fs-09-kayit-icinde-arama-gunduz-800.webp 800w, /shots/fs-09-kayit-icinde-arama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt penceresinde arama: sonuçlar alt klasör yoluyla ve vurgulu"></a></figure><div><h3>Kayıt penceresi: ağaç, liste, önizleme</h3><p>Bir kayıt kendi penceresinde açılır. Solda boyutlarıyla klasör ağacı, ortada dosya listesi, sağda önizleme; aşağıda canlı durum çubuğu. Arama kutusu yalnız bu kaydı arar.</p><ul><li>Kayıt içinde arama en çok 500 sonuç döndürür; her sonuç alt klasör yoluyla ve vurgulu parçayla gösterilir.</li><li>Önizlemede belgenin ilk 300 000 karakteri ve belge kelime bulutu (en sık 40 kelime, kök başına sayılır).</li><li>Listede klasör başına ilk 3000 öğe gösterilir; arama tümünü kapsar.</li><li><kbd>F5</kbd> yeniden tara, <kbd>Backspace</kbd> üst klasör, <kbd>Enter</kbd> dosyayı aç ya da klasöre gir, <kbd>Esc</kbd> aramayı temizle.</li><li>Aç / Klasörde göster / Yolu kopyala işlemleri pencereden yol değil, dizindeki belge kimliğini alır.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-04-arama-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-04-arama-gece-800.webp" srcset="/shots/fs-04-arama-gece-800.webp 800w, /shots/fs-04-arama-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Akıllı arama sonuçları: vurgulu parça, filtreler ve önizleme"></a></figure><div><h3>Akıllı arama: kök, katlama, önek</h3><p>Arama kutusuna yazılan her kelime Türkçe ve İngilizce köküyle, aksansız ve küçük harfe katlanmış biçimiyle, 3 harften uzunsa önek olarak da aranır. Belgenin dili ilk 4000 kelimeden tahmin edilir.</p><ul><li>Dizin: SQLite FTS5, <code>unicode61 remove_diacritics 2</code>; dosya adı, katlanmış içerik ve kökler ayrı sütunlarda.</li><li>Sözdizimi: boşluk VE, <code>"tam ifade"</code> yan yana ve sırayla, <code>-kelime</code> hariç tutar.</li><li>Dosya adları camelCase, alt çizgi, tire ve noktadan bölünür; ad eşleşmesi içerikten 8 kat ağırlıklıdır (bm25).</li><li>Sonuçta ad, kayıt › klasör yolu, ~220 karakterlik vurgulu parça, tarih, boyut ve eşleşme sayısı; sayfa başına 50 sonuç.</li><li>Filtreler: kayıt, tür (13 grup), tarih (7 / 30 gün, 1 yıl), boyut (&lt;1, 1–10, 10–100, &gt;100 MB); sıralama ilgi, en yeni, en büyük, ad.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-05-yazim-hatasi-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-05-yazim-hatasi-gunduz-800.webp" srcset="/shots/fs-05-yazim-hatasi-gunduz-800.webp 800w, /shots/fs-05-yazim-hatasi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yazım hatası düzeltme: teklf bütçe sorgusu teklif ve bütçe olarak arandı"></a></figure><div><h3>Yazım hatası: "teklf" yazın, "teklif"i bulun</h3><p>Sorgu sonuç vermezse devreye girer: dizinde bulunmayan kelimeler için sözlükteki en yakın yazımlar eklenir ve sonucun üstünde "Yazım hatası düzeltildi" notu gösterilir.</p><ul><li>Yalnız 4 harf ve üzeri kelimeler düzeltilir; 4–7 harfte 1, 8 ve üzerinde 2 düzenleme (Damerau-Levenshtein).</li><li>Kelime başına en sık 6 aday denenir.</li><li>Ayarlar › Arama'dan kapatılabilir.</li><li>Belge kelime bulutunda sayılar, 3 harften kısa kelimeler, e-posta ve web adresleri ile Türkçe/İngilizce durak kelimeler çıkarılır; kelimeye tıklayınca o kelimeyle aranır.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-10-arama-ayarlari-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-10-arama-ayarlari-gece-800.webp" srcset="/shots/fs-10-arama-ayarlari-gece-800.webp 800w, /shots/fs-10-arama-ayarlari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Arama: OCR ve konuşmadan metne seçenekleri, sınırlar"></a></figure><div><h3>OCR ve konuşma: isteyince, bu bilgisayarda</h3><p>İkisi de varsayılan kapalıdır; kapalıyken hiçbir şey indirilmez ve çalıştırılmaz, ilgili dosyalar "OCR kapalı" / "Konuşma kapalı" olarak bekler ve adlarıyla bulunur. Açılınca eksik veri indirilir, bekleyenler işlenir.</p><ul><li>OCR: tesseract.js 7 (Tesseract LSTM, WebAssembly); dil verisi dil başına yaklaşık 2–15 MB.</li><li>Konuşma: whisper.cpp 1.7.6, CPU'da; iş parçacığı sayısı çekirdek − 1, en çok 4.</li><li>Modeller: Çok küçük 75 MB · Temel 142 MB (varsayılan) · Küçük 466 MB · Large v3 Turbo q5 547 MB.</li><li>Ses: mp3 wav flac m4a aac ogg opus wma aiff amr; video: mp4 mkv avi mov wmv webm m4v mpg flv 3gp mts.</li><li>Kapatılınca daha önce okunmuş metinler dizinde kalır; indirilen veriler aynı ekrandan silinebilir.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/fs-07-kelime-bulutu-3b-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-07-kelime-bulutu-3b-gunduz-800.webp" srcset="/shots/fs-07-kelime-bulutu-3b-gunduz-800.webp 800w, /shots/fs-07-kelime-bulutu-3b-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="3B kelime bulutu: tüm dizinin kelimeleri bir küre üzerinde"></a></figure><div><h3>3B kelime bulutu: dizininizi tek bakışta</h3><p>Aramanın "3B kelime bulutu" sekmesi tüm dizinin, filtrede seçili kaydın ya da arama sonuçlarının (ilk 500) en sık kelimelerini üç boyutlu kürede gösterir. Ana ekrandan da açılır.</p><ul><li>three.js 0.180 ile WebGL; kelimeler Fibonacci küre dağılımıyla yerleşir, boyut ve parlaklık sıklığa göre, arka yüzdekiler soluk.</li><li>60 / 120 / 200 kelime seçimi (en çok 400).</li><li>Sürükle → döndür, tekerlek → yakınlaştır, çift tık ya da Sıfırla → başa dön; bırakınca yavaş kendi dönüşü (azaltılmış hareket tercihinde durur).</li><li>Üzerine gelince kelimenin sayısı ve belge sayısı, tıklayınca o kelimeyle arama.</li><li>Renkler gece/gündüz temasına uyar.</li></ul></div></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-01-kayitlar-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-01-kayitlar-gece-800.webp" srcset="/shots/fs-01-kayitlar-gece-800.webp 800w, /shots/fs-01-kayitlar-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıtlar"></a><figcaption><b>Kayıtlar</b><span>Her kayıtta canlı toplam boyut, dosya ve klasör sayısı, izleme durumu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/fs-02-kayitlar-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-02-kayitlar-gunduz-800.webp" srcset="/shots/fs-02-kayitlar-gunduz-800.webp 800w, /shots/fs-02-kayitlar-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıtlar"></a><figcaption><b>Kayıtlar</b><span>Her kayıtta canlı toplam boyut, dosya ve klasör sayısı, izleme durumu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-03-yeni-kayit-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-03-yeni-kayit-gece-800.webp" srcset="/shots/fs-03-yeni-kayit-gece-800.webp 800w, /shots/fs-03-yeni-kayit-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yeni kayıt"></a><figcaption><b>Yeni kayıt</b><span>Önce klasör sorulur; ad, renk, hariç tutma kalıpları ve boyut sınırı</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-04-arama-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-04-arama-gece-800.webp" srcset="/shots/fs-04-arama-gece-800.webp 800w, /shots/fs-04-arama-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Akıllı arama"></a><figcaption><b>Akıllı arama</b><span>Kök, aksan ve yazım hatasına dayanıklı; vurgulu parça, filtreler, önizleme</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/fs-05-yazim-hatasi-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-05-yazim-hatasi-gunduz-800.webp" srcset="/shots/fs-05-yazim-hatasi-gunduz-800.webp 800w, /shots/fs-05-yazim-hatasi-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Yazım hatası düzeltme"></a><figcaption><b>Yazım hatası düzeltme</b><span>“teklf bütçe” → teklif, bütçe; tür filtresi ve belge kelime bulutu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-06-kelime-bulutu-3b-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-06-kelime-bulutu-3b-gece-800.webp" srcset="/shots/fs-06-kelime-bulutu-3b-gece-800.webp 800w, /shots/fs-06-kelime-bulutu-3b-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="3B kelime bulutu"></a><figcaption><b>3B kelime bulutu</b><span>Tüm dizinin kelimeleri üç boyutta; döndür, yakınlaştır, kelimeye tıkla ara</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/fs-07-kelime-bulutu-3b-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-07-kelime-bulutu-3b-gunduz-800.webp" srcset="/shots/fs-07-kelime-bulutu-3b-gunduz-800.webp 800w, /shots/fs-07-kelime-bulutu-3b-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="3B kelime bulutu"></a><figcaption><b>3B kelime bulutu</b><span>Tüm dizinin kelimeleri üç boyutta; döndür, yakınlaştır, kelimeye tıkla ara</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-08-kayit-penceresi-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-08-kayit-penceresi-gece-800.webp" srcset="/shots/fs-08-kayit-penceresi-gece-800.webp 800w, /shots/fs-08-kayit-penceresi-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt penceresi"></a><figcaption><b>Kayıt penceresi</b><span>Klasör ağacı boyutlarıyla, dosya listesi, önizleme ve canlı durum çubuğu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/fs-09-kayit-icinde-arama-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-09-kayit-icinde-arama-gunduz-800.webp" srcset="/shots/fs-09-kayit-icinde-arama-gunduz-800.webp 800w, /shots/fs-09-kayit-icinde-arama-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kayıt içinde arama"></a><figcaption><b>Kayıt içinde arama</b><span>Yalnız bu kayıtta ara; sonuçlar alt klasör yoluyla ve vurgulu</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/fs-10-arama-ayarlari-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-10-arama-ayarlari-gece-800.webp" srcset="/shots/fs-10-arama-ayarlari-gece-800.webp 800w, /shots/fs-10-arama-ayarlari-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Arama"></a><figcaption><b>Ayarlar › Arama</b><span>OCR ve konuşmadan metne isteğe bağlı, varsayılan kapalı; sınırlar</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/fs-11-ocr-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/fs-11-ocr-gunduz-800.webp" srcset="/shots/fs-11-ocr-gunduz-800.webp 800w, /shots/fs-11-ocr-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Resimde metin (OCR)"></a><figcaption><b>Resimde metin (OCR)</b><span>Fotoğraftaki yazı bu bilgisayarda okunur ve aranır</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Uygulamanın kaynak kodundan doğrulanmış bileşenler, sınırlar ve varsayılanlar (sürüm 1.0.0).</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 veya 11, 64 bit (x64)</td></tr><tr><th>Kurulum</th><td><code>File-Search-Setup-&lt;sürüm&gt;.exe</code> ya da kurulumsuz <code>File-Search-Portable-&lt;sürüm&gt;.exe</code></td></tr><tr><th>Kurulum yeri</th><td>Tüm kullanıcılar: <code>C:\Program Files\Mastertool\File Search</code> · yalnız bu kullanıcı: <code>%LOCALAPPDATA%\Programs\Mastertool\File Search</code></td></tr><tr><th>Başlat menüsü</th><td>Master Tool › File Search; masaüstü kısayolu</td></tr><tr><th>Hesap</th><td>Mastertool hesabı zorunlu; başka bir Mastertool uygulamasında giriş yapılmışsa şifre sorulmaz (ortak oturum)</td></tr><tr><th>Ek disk</th><td>Arama dizini (sıkıştırılmış belge metinleri dahil); yalnız açılırsa OCR dil verisi (dil başına ~2–15 MB) ve konuşma modeli (75–547 MB)</td></tr><tr><th>Donanım</th><td>Tüm işleme CPU'da, bu bilgisayarda; GPU hızlandırma yok. 3B bulut için WebGL</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>Electron</th><td>33.4.11 (Chromium 130.0.6723.191, Node.js 20.18.3) — masaüstü uygulama</td></tr><tr><th>SQLite (better-sqlite3)</th><td>3.49.2 (11.10.0), WAL — yerel dizin, FTS5 tam metin araması</td></tr><tr><th>pdf.js (pdfjs-dist)</th><td>4.10.38 (legacy) — PDF metni ve başlığı</td></tr><tr><th>fflate</th><td>0.8.3 — DOCX/XLSX/PPTX/ODF (ZIP) okuma</td></tr><tr><th>iconv-lite</th><td>0.6.3 — Windows-1254/1252, RTF ve e-posta karakter kümeleri</td></tr><tr><th>Snowball stemmers</th><td>0.6.0 — Türkçe ve İngilizce kök bulma</td></tr><tr><th>three.js</th><td>0.180.0 — 3B kelime bulutu (WebGL)</td></tr><tr><th>tesseract.js</th><td>7.0.0 (Tesseract LSTM, WebAssembly) — isteğe bağlı OCR</td></tr><tr><th>whisper.cpp</th><td>1.7.6 (<code>whisper-cli</code>, CPU) — isteğe bağlı konuşmadan metne</td></tr><tr><th>FFmpeg (ffmpeg-static)</th><td>6.1.1 — konuşma için 16 kHz mono WAV</td></tr></table></div></div>
+        <div class="spec wide"><h3>Desteklenen türler ve metin çıkarma</h3><div class="t-wrap"><table><tr><th>Metin</th><td>txt md markdown log csv tsv json xml yaml yml ini cfg conf toml properties srt vtt tex rst nfo env — kodlama algılama: BOM, BOM'suz UTF-16, geçerli UTF-8, değilse Windows-1254; ikili dosya (sıfır bayt) atlanır</td></tr><tr><th>Kod</th><td>js mjs cjs ts jsx tsx py java c h cpp hpp cc cs go rs rb php sh bat cmd ps1 sql css scss less vue svelte kt swift m r pl lua dart scala vb vbs asm gradle, Makefile / Dockerfile — metin gibi</td></tr><tr><th>PDF</th><td>pdf — pdf.js ile sayfa metni (en çok 2000 sayfa) ve belge başlığı; parola korumalı PDF "okunamadı"</td></tr><tr><th>Word</th><td>docx docm dotx · odt · rtf — gövde, üst/alt bilgi, dipnot, yorumlar; ODF <code>content.xml</code>; RTF'de <code>\ansicpg</code>, <code>\'hh</code>, <code>\uN</code> çözülür, görünmeyen gruplar atlanır</td></tr><tr><th>Excel</th><td>xlsx xlsm xltx · ods — sayfa adları, paylaşılan metinler, satır içi metin ve sayılar (satır başına sekmeli)</td></tr><tr><th>PowerPoint</th><td>pptx pptm potx · odp — slayt metinleri sırayla ve konuşmacı notları</td></tr><tr><th>Web</th><td>html htm xhtml mht — betik ve stil atılır, HTML varlıkları çözülür, <code>&lt;title&gt;</code> başlık olur</td></tr><tr><th>E-posta</th><td>eml — konu (RFC 2047), gönderen/alıcı/tarih, çok parçalı gövde (quoted-printable, base64, karakter kümesi; düz metin tercih edilir), ek adları</td></tr><tr><th>Resim (OCR, isteğe bağlı)</th><td>jpg jpeg png bmp tif tiff gif webp — 13 dil: Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, İtalyanca, Portekizce, Felemenkçe, Rusça, Arapça, Basitleştirilmiş Çince, Japonca, Korece; en çok 6 dil birlikte</td></tr><tr><th>Ses / video (konuşma, isteğe bağlı)</th><td>mp3 wav flac m4a aac ogg oga opus wma aiff aif amr · mp4 mkv avi mov wmv webm m4v mpg mpeg flv 3gp mts — dil otomatik ya da Türkçe, İngilizce, Almanca, Fransızca, İspanyolca, İtalyanca, Arapça, Rusça, Çince</td></tr></table></div></div>
+        <div class="spec"><h3>Arama motoru</h3><ul><li>FTS5 dizini içeriksiz, <code>unicode61 remove_diacritics 2</code>; üç sütun: dosya adı, katlanmış içerik, kökler.</li><li>Belge metni ayrıca deflate ile saklanır (vurgulu parça ve önizleme için).</li><li>Katlama: küçük harf, aksansız, Türkçe kuralıyla <code>ı → i</code>; <code>ŞEHİR</code>, <code>Şehir</code>, <code>sehir</code> aynı.</li><li>Belge dili ilk ~4000 kelimeden tahmin edilir; dil bilinmiyorsa iki dilin de kökü çıkarılır. Sorgu kelimesi her iki dilin köküyle aranır.</li><li>3 harf ve üzeri kelimeler önek olarak da aranır (<code>kitapl</code> → kitaplık).</li><li>Dosya adı eşleşmesi içerikten 8 kat ağırlıklı (bm25); sıralama ilgi, en yeni, en büyük, ad.</li><li>Yazım düzeltme: Damerau-Levenshtein, 4–7 harfte 1 ve 8+ harfte 2 düzenleme, en sık 6 aday; yalnız sonuç yoksa.</li></ul></div>
+        <div class="spec"><h3>Kayıtlar ve izleme</h3><ul><li>Arayüz ve dizinleyici ayrı süreçlerdir; dizinleyici çökerse 1–30 sn artan beklemeyle son kayıt listesiyle yeniden başlar.</li><li>Tarama: aynı anda 24 dosya bilgisi okunur, 400'lük işlemlerle yazılır; izin verilmeyen alt klasörler atlanır.</li><li>Sembolik bağlar ve bağlantı noktaları izlenmez (döngü ve kayıt dışına taşma olmaz).</li><li>İzleme: kök klasörde tek yinelemeli <code>fs.watch</code>; olaylar 400 ms birleştirilir, sürekli yazılan dosyada en geç 3 sn'de bir işlenir.</li><li>Fark taraması: açılışta, duraklatma sonrası, kayıt ayarı değişince, izleme düşünce ve ağ sürücülerinde (UNC, <code>net use</code> harfleri) 10 dakikada bir.</li><li>Aynı anda metni çıkarılan dosya 1–8 (varsayılan 2); OCR ve konuşma tek tek, ayrı kuyrukta.</li><li>"Windows oturumu açılınca başlat" varsayılan açık (<code>--hidden</code> ile yalnız tepside); pencere kapatılınca izleme tepside sürer.</li></ul></div>
+        <div class="spec"><h3>Güvenlik ve gizlilik</h3><ul><li>Dizin, dosya içerikleri, OCR ve konuşma metinleri yalnız bu bilgisayarda tutulur; dosyalarınız hiçbir zaman değiştirilmez.</li><li>Senkron (kapatılabilir) yalnız kayıt adı, rengi, hariç tutma kalıpları, boyut sınırı ve genel ayarları eşitler; klasör yolları cihaza özeldir.</li><li>Uçtan uca şifreleme: PBKDF2-SHA256 (310 000 tur) + HKDF-SHA256 (<code>fsr-enc-v1</code>), AES-256-GCM; anahtar cihazda şifreden türetilir, sunucu içeriği okuyamaz.</li><li>Oturum Windows DPAPI ile şifreli saklanır; ortak oturum Windows Kimlik Bilgisi Yöneticisi üzerinden, birinde çıkış tüm ailede çıkış.</li><li>Ağ yalnız giriş, senkron, sürüm denetimi (açılış denetimi kapatılabilir) ve seçenek açıkken OCR/konuşma verisi indirme için kullanılır; Windows proxy ayarlarına uyar.</li><li>Pencereler bağlam yalıtımıyla çalışır; önizleme dosyaları yalnız ana sürecin verdiği <code>fsr://</code> adresleriyle açılır (SVG için betik kapalı CSP).</li></ul></div>
+        <div class="spec"><h3>Performans ve sınırlar</h3><div class="t-wrap"><table><tr><th>Dosya başına metin</th><td>En çok 2 000 000 karakter dizinlenir; önizlemede ilk 300 000</td></tr><tr><th>En büyük dosya</th><td>Varsayılan 50 MB (1–4096); kayıt başına ayrıca. Daha büyükler adıyla bulunur</td></tr><tr><th>PDF</th><td>En çok 2000 sayfa</td></tr><tr><th>Sonuç</th><td>Sayfa başına 50 (daha fazla göster); kayıt içinde arama en çok 500</td></tr><tr><th>Değişiklik yansıma</th><td>Yerel diskte 400 ms birleştirme; 2000+ değişiklikte tam fark taraması; ağ sürücüsünde en geç 10 dk</td></tr><tr><th>Kart yenileme</th><td>En çok 400 ms'de bir</td></tr><tr><th>3B bulut</th><td>60 / 120 / 200 kelime, en çok 400; kapsam arama sonuçlarıysa ilk 500 sonuç</td></tr><tr><th>Kayıt listesi</th><td>Klasör başına ilk 3000 öğe gösterilir</td></tr></table></div></div>
+        <div class="spec wide"><h3>Yerel veri</h3><div class="t-wrap"><table><tr><th>Konum</th><td><code>%APPDATA%\Mastertool\File Search\</code></td></tr><tr><th><code>index.db</code></th><td>Dizin: dosya ağacı, FTS5, sıkıştırılmış metinler, kelime bulutları (+ <code>-wal</code>, <code>-shm</code>)</td></tr><tr><th><code>store.json</code></th><td>Kayıtlar ve ayarlar; <code>local</code> bölümünde cihaza özgü klasör yolları</td></tr><tr><th><code>account.json</code></th><td>Oturum (Windows DPAPI ile şifreli, "Beni hatırla")</td></tr><tr><th><code>ocr\</code>, <code>models\</code>, <code>engines\whisper\</code></th><td>OCR dil verileri, konuşma modelleri, gerekirse whisper.cpp</td></tr><tr><th><code>work\</code></th><td>Konuşma için geçici WAV dosyaları; iş bitince silinir</td></tr><tr><th>Ayarlar › Depolama</th><td>Dizin boyutu, Dizini sıfırla (silinir ve tüm kayıtlar baştan taranır), veri klasörünü aç</td></tr></table></div></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3><div class="t-wrap"><table><tr><th><kbd>Ctrl</kbd>+<kbd>N</kbd></th><td>Ana pencere — yeni kayıt</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>Ana ve kayıt penceresi — arama kutusu</td></tr><tr><th><kbd>Enter</kbd> / <kbd>F2</kbd> / <kbd>Delete</kbd></th><td>Ana pencere — seçili kaydı aç / ayarları / sil</td></tr><tr><th><kbd>↑</kbd> / <kbd>↓</kbd></th><td>Ana (arama) ve kayıt penceresi — önceki / sonraki sonuç ya da dosya</td></tr><tr><th><kbd>Esc</kbd></th><td>Ana ve kayıt penceresi — aramayı temizle</td></tr><tr><th><kbd>F5</kbd></th><td>Kayıt penceresi — yeniden tara</td></tr><tr><th><kbd>Backspace</kbd></th><td>Kayıt penceresi — üst klasör</td></tr><tr><th><kbd>Enter</kbd></th><td>Kayıt penceresi — seçili dosyayı aç / klasöre gir</td></tr></table></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0</th><td>İlk sürüm: kayıtlar ve canlı boyut/sayılar, kayıt penceresi (ağaç, liste, önizleme), arka planda izleme ve fark taraması, ayrı dizinleyici süreci; metin/kod, PDF, Word, Excel, PowerPoint, OpenDocument, RTF, HTML ve e-posta okuma; Türkçe/İngilizce kök, katlama, önek, tam ifade, hariç tutma, yazım hatası düzeltme, filtreler ve vurgulu parça; isteğe bağlı OCR ve konuşmadan metne; belge kelime bulutu ve 3B kelime bulutu; Mastertool hesabı, ortak oturum, uçtan uca şifreli senkron, 8 dil, tema, tepsi, Windows ile başlat</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz dilleri ve görünüm</h3><div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div><ul style="margin-top:12px"><li>İlk açılışta Windows dili seçilir; listede yoksa İngilizce.</li><li>Arapça sağdan sola yerleşimle.</li><li>Tema: Gece / Gündüz / Sistem (varsayılan Sistem); panel genişlikleri hatırlanır.</li></ul></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3><ul><li>Eski ikili Office biçimleri (<code>.doc</code>, <code>.xls</code>, <code>.ppt</code>), Outlook <code>.msg</code>, arşivlerin (<code>zip</code>, <code>rar</code>, <code>7z</code>) içi ve şifreli belgeler okunmaz; bunlar adlarıyla bulunur.</li><li>Taranmış (resim içeren) PDF'lerde OCR yapılmaz; OCR yalnız resim dosyalarına uygulanır.</li><li>Kök bulma yalnız Türkçe ve İngilizce içindir; diğer dillerde katlama ve önek araması yapılır. Türkçe kök bulucu ad çekim eklerini kaldırır, fiil çekimlerinde sınırlıdır.</li><li>Anlama göre (anlamsal / vektör) arama bu sürümde yoktur.</li><li>Dosya başına ilk 2 000 000 karakter dizinlenir.</li><li>Yazım hatası düzeltmesi yalnız sonuç bulunamadığında ve dizinde olmayan kelimeler için devreye girer.</li><li>Gerçek bir Windows hizmeti değildir; kullanıcı oturumu kapalıyken ya da uygulamada çıkış yapılmışken izleme yapılmaz (açılışta fark taramasıyla yakalanır).</li><li>Ağ sürücülerinde <code>fs.watch</code> olay kaçırabilir; değişiklikler en geç 10 dakikalık fark taramasıyla yansır.</li><li>Kayıt penceresindeki listede klasör başına ilk 3000 öğe gösterilir (arama tümünü kapsar).</li><li>3B bulut WebGL ister; GPU yoksa yazılım çizimiyle, daha yavaş çalışır.</li><li>GPU hızlandırma yoktur; OCR ve konuşmadan metne CPU'da çalışır.</li><li>Uygulama yalnız Windows için derlenir.</li></ul></div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>File Search'ü edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

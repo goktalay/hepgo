@@ -109,7 +109,8 @@ async function renderVisit(view, id, ctx, sub) {
     moduleToolbar(
       h('button', { class: 'btn', onclick: () => editVisit() }, 'Düzenle'),
       v.kvkk_signed_at
-        ? h('button', { class: 'btn ghost', onclick: () => kvkkSign() }, '✓ KVKK imzalı')
+        ? h('button', { class: 'btn ghost', onclick: () => kvkkSign(), title: v.kvkk_from_code ? t('İmza {code} ziyaretinden devralındı', { code: v.kvkk_from_code }) : '' },
+          v.kvkk_from_code ? t('✓ KVKK imzalı ({code})', { code: v.kvkk_from_code }) : '✓ KVKK imzalı')
         : h('button', { class: 'btn primary', onclick: () => kvkkSign() }, 'KVKK Sözleşmesi & İmza'),
       !v.left_at ? h('button', { class: 'btn success', onclick: () => leave() }, 'Misafir Çıkışı') : null),
     !v.kvkk_signed_at ? h('div', { class: 'alert warn' }, 'KVKK aydınlatma/açık rıza imzası alınmadı. Misafire ekranda sözleşmeyi gösterip parmakla imzalatın.') : null,
@@ -235,7 +236,7 @@ async function renderVisit(view, id, ctx, sub) {
       const hits = people.filter(p => matches(q.value, p.full_name, p.company_name, p.title)).slice(0, 30);
       clear(results, q.value.trim().length < 2 ? h('div', { class: 'empty small' }, 'Aramak için en az 2 harf yazın')
         : hits.length ? hits.map(p => h('button', { class: 'pick', type: 'button', onclick: async () => {
-          try { set(await api.post(`/api/secretariat/visits/${id}/people`, { person_id: p.id })); toast(t('{name} eklendi', { name: p.full_name })); m.close(); }
+          try { set(await api.post(`/api/secretariat/visits/${id}/people`, p.kind === 'family' ? { family_id: p.family_id } : { person_id: p.id })); toast(t('{name} eklendi', { name: p.full_name })); m.close(); }
           catch (err) { toastError(err); }
         } }, h('div', { class: 'grow' }, h('b', null, p.full_name), h('span', { class: 'small muted' },
           [p.title, p.company_name].filter(Boolean).join(' · ')))))
@@ -247,7 +248,7 @@ async function renderVisit(view, id, ctx, sub) {
     m = modal({
       title: 'Gelen Kişi Ekle', wide: true,
       body: h('div', null,
-        field('Rehberde ara (firma kişileri)', q), results,
+        field('Rehberde ara (firma kişileri ve personel aile üyeleri)', q), results,
         h('h3', { class: 'sub-h' }, 'Bulamazsanız yeni kişi'),
         h('div', { class: 'row' }, field('Ad soyad', name), field('Unvan', title)),
         h('div', { class: 'row' }, field('Firma', company), field('Telefon', phone)), companyText,

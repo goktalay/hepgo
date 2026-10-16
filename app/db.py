@@ -2833,6 +2833,10 @@ def _migrate(conn):
         conn.execute('ALTER TABLE kvkk_consent ADD COLUMN version TEXT')
     # Sekreterya misafir KVKK imzası (parmakla; şirkette video kayıt olduğu için aydınlatma + açık rıza)
     gv_cols = {r[1] for r in conn.execute('PRAGMA table_info(guest_visits)')}
+    if 'family_id' not in {r[1] for r in conn.execute('PRAGMA table_info(guest_visit_people)')}:   # gelen kişi personel aile üyesi olabilir
+        conn.execute('ALTER TABLE guest_visit_people ADD COLUMN family_id INTEGER REFERENCES family_members(id) ON DELETE SET NULL')
+    if 'kvkk_from_visit' not in {r[1] for r in conn.execute('PRAGMA table_info(guest_visits)')}:   # KVKK imzası önceki ziyaretten devralındı
+        conn.execute('ALTER TABLE guest_visits ADD COLUMN kvkk_from_visit INTEGER REFERENCES guest_visits(id) ON DELETE SET NULL')
     for col in ('kvkk_signed_at', 'kvkk_signature', 'kvkk_version'):
         if gv_cols and col not in gv_cols:
             conn.execute(f'ALTER TABLE guest_visits ADD COLUMN {col} TEXT')

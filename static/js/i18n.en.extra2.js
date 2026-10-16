@@ -473,5 +473,8 @@ registerCatalog('en', {
 "Döndü": "Returned",
 "{name} fabrikaya döndü mü?": "Has {name} returned to the factory?",
 "Dönüş kaydedildi": "Return recorded",
-"Dışarıda yönetici yok": "No administrators outside"
+"Dışarıda yönetici yok": "No administrators outside",
+"Rehberde ara (firma kişileri ve personel aile üyeleri)": "Search the directory (company contacts and staff family members)",
+"✓ KVKK imzalı ({code})": "✓ KVKK signed ({code})",
+"İmza {code} ziyaretinden devralındı": "Signature inherited from visit {code}"
 });

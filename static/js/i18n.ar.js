@@ -3206,5 +3206,8 @@ registerCatalog('ar', {
 "Döndü": "عاد",
 "{name} fabrikaya döndü mü?": "هل عاد {name} إلى المصنع؟",
 "Dönüş kaydedildi": "سُجّلت العودة",
-"Dışarıda yönetici yok": "لا يوجد مديرون في الخارج"
+"Dışarıda yönetici yok": "لا يوجد مديرون في الخارج",
+"Rehberde ara (firma kişileri ve personel aile üyeleri)": "البحث في الدليل (جهات اتصال الشركات وأفراد عائلات الموظفين)",
+"✓ KVKK imzalı ({code})": "✓ KVKK موقَّع ({code})",
+"İmza {code} ziyaretinden devralındı": "التوقيع مأخوذ من الزيارة {code}"
 });

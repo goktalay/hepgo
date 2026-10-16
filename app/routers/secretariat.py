@@ -20,10 +20,15 @@ sec_user = auth.require_module('secretariat')
 
 @router.get('/people')
 def people(q: str = '', user=Depends(sec_user), conn=db.DB):
-    """Firmalarda kayıtlı kişiler (gelen kişi araması)."""
-    return db.rows(conn.execute(
-        '''SELECT p.id, p.full_name, p.title, p.phone, p.company_id, c.name AS company_name, c.logo AS company_logo
-           FROM company_people p LEFT JOIN companies c ON c.id = p.company_id ORDER BY p.full_name'''))
+    """Gelen kişi araması: firmalarda kayıtlı kişiler + personel aile üyeleri (İK › Aile)."""
+    rows = db.rows(conn.execute(
+        '''SELECT p.id, p.full_name, p.title, p.phone, p.company_id, c.name AS company_name, c.logo AS company_logo, 'person' AS kind
+           FROM company_people p LEFT JOIN companies c ON c.id = p.company_id'''))
+    rows += db.rows(conn.execute(
+        '''SELECT fm.id AS family_id, fm.full_name, fm.relation AS title, fm.phone, NULL AS company_id,
+                  'Aile üyesi · ' || e.first_name || ' ' || e.last_name AS company_name, NULL AS company_logo, 'family' AS kind
+           FROM family_members fm JOIN employees e ON e.id = fm.employee_id'''))
+    return sorted(rows, key=lambda r: (r['full_name'] or '').lower())
 
 
 @router.get('/companies')
@@ -46,6 +51,7 @@ class VisitIn(BaseModel):
 
 class GuestIn(BaseModel):
     person_id: Optional[int] = None          # firmada kayıtlı kişi
+    family_id: Optional[int] = None          # personel aile üyesi (İK › Aile)
     company_id: Optional[int] = None         # yeni kişi bu firmaya eklenir
     full_name: Optional[str] = None
     title: Optional[str] = None
@@ -64,9 +70,14 @@ def _visit(conn, vid):
     if not v:
         raise HTTPException(404, 'Misafir kaydı bulunamadı')
     v['people'] = db.rows(conn.execute(
-        '''SELECT gp.*, c.id AS company_id, c.name AS company_name, c.logo AS company_logo
+        '''SELECT gp.*, c.id AS company_id, c.name AS company_name, c.logo AS company_logo,
+                  e.first_name || ' ' || e.last_name AS family_of
            FROM guest_visit_people gp LEFT JOIN company_people p ON p.id = gp.person_id
-           LEFT JOIN companies c ON c.id = p.company_id WHERE gp.visit_id = ? ORDER BY gp.id''', (vid,)))
+           LEFT JOIN companies c ON c.id = p.company_id
+           LEFT JOIN family_members fm ON fm.id = gp.family_id LEFT JOIN employees e ON e.id = fm.employee_id
+           WHERE gp.visit_id = ? ORDER BY gp.id''', (vid,)))
+    if v.get('kvkk_from_visit'):
+        v['kvkk_from_code'] = (db.row(conn.execute('SELECT code FROM guest_visits WHERE id = ?', (v['kvkk_from_visit'],))) or {}).get('code')
     v['vehicles'] = db.rows(conn.execute(
         '''SELECT v.* FROM guest_visit_vehicles gv JOIN vehicle_visits v ON v.id = gv.vehicle_id
            WHERE gv.visit_id = ? ORDER BY v.entered_at''', (vid,)))
@@ -151,7 +162,7 @@ def kvkk_sign(vid: int, body: KvkkSignIn, user=Depends(sec_user), conn=db.DB):
     if not sig.startswith('data:image/') or len(sig) > 400_000:
         raise HTTPException(400, 'Geçersiz imza')
     ver = kvkk.terms_version(conn)
-    conn.execute('UPDATE guest_visits SET kvkk_signed_at = ?, kvkk_signature = ?, kvkk_version = ? WHERE id = ?',
+    conn.execute('UPDATE guest_visits SET kvkk_signed_at = ?, kvkk_signature = ?, kvkk_version = ?, kvkk_from_visit = NULL WHERE id = ?',
                  (db.now(), sig, ver, vid))
     kvkk.set_consent(conn, 'biometric', 'visit', vid, 1, by_user=user['id'], note='Sekreterya misafir imzası (CCTV/yüz tanıma)', version=ver)
     db.audit(conn, user['id'], 'Misafir KVKK açık rıza imzası aldı', 'guest_visit', vid, ver)
@@ -163,7 +174,17 @@ def kvkk_sign(vid: int, body: KvkkSignIn, user=Depends(sec_user), conn=db.DB):
 def add_guest(vid: int, body: GuestIn, user=Depends(sec_user), conn=db.DB):
     """Gelen kişi: kayıtlı kişi (person_id), bir firmaya yeni kişi (company_id + ad) ya da serbest giriş (ad + firma adı)."""
     v = _visit(conn, vid)
-    if body.person_id:
+    fid = None
+    if body.family_id:   # personel aile üyesi: ad ve yakınlık aile kaydından; firma yerine 'Aile: <personel>'
+        f = db.row(conn.execute("""SELECT fm.*, e.first_name || ' ' || e.last_name AS employee_name FROM family_members fm
+                                   JOIN employees e ON e.id = fm.employee_id WHERE fm.id = ?""", (body.family_id,)))
+        if not f:
+            raise HTTPException(404, 'Aile üyesi bulunamadı')
+        if any(g.get('family_id') == f['id'] for g in v['people']):
+            raise HTTPException(400, f'{f["full_name"]} zaten ekli')
+        pid, fid, name, title, phone = None, f['id'], f['full_name'], f['relation'], f['phone']
+        company_text = f'Aile: {f["employee_name"]}'
+    elif body.person_id:
         p = db.row(conn.execute('SELECT p.*, c.name AS company_name FROM company_people p LEFT JOIN companies c ON c.id = p.company_id '
                                 'WHERE p.id = ?', (body.person_id,)))
         if not p:
@@ -186,9 +207,30 @@ def add_guest(vid: int, body: GuestIn, user=Depends(sec_user), conn=db.DB):
             company_text = None
         else:
             pid, company_text = None, (body.company_text or '').strip() or None
-    conn.execute('INSERT INTO guest_visit_people (visit_id, person_id, full_name, company_text, title, phone) VALUES (?,?,?,?,?,?)',
-                 (vid, pid, name, company_text, title, phone))
+    conn.execute('INSERT INTO guest_visit_people (visit_id, person_id, family_id, full_name, company_text, title, phone) VALUES (?,?,?,?,?,?,?)',
+                 (vid, pid, fid, name, company_text, title, phone))
+    _inherit_kvkk(conn, vid, pid, fid, user['id'])
     return _visit(conn, vid)
+
+
+def _inherit_kvkk(conn, vid, person_id, family_id, by_user):
+    """Kayıtlı kişi (firma kişisi / aile üyesi) daha önceki bir ziyarette geçerli metin sürümüyle KVKK imzası verdiyse,
+    bu ziyaret de imzalı sayılır (imza yeniden istenmez). Serbest girişli misafirde eşleştirme güvenilir olmadığından uygulanmaz."""
+    v = db.row(conn.execute('SELECT kvkk_signed_at FROM guest_visits WHERE id = ?', (vid,)))
+    if not v or v['kvkk_signed_at'] or not (person_id or family_id):
+        return
+    ver = kvkk.terms_version(conn)
+    col, val = ('person_id', person_id) if person_id else ('family_id', family_id)
+    prev = db.row(conn.execute(
+        f"""SELECT g.id, g.kvkk_signed_at, g.kvkk_signature FROM guest_visit_people gp JOIN guest_visits g ON g.id = gp.visit_id
+            WHERE gp.{col} = ? AND g.id != ? AND g.kvkk_signed_at IS NOT NULL AND g.kvkk_version = ?
+            ORDER BY g.kvkk_signed_at DESC LIMIT 1""", (val, vid, ver)))
+    if not prev:
+        return
+    conn.execute('UPDATE guest_visits SET kvkk_signed_at = ?, kvkk_signature = ?, kvkk_version = ?, kvkk_from_visit = ? WHERE id = ?',
+                 (prev['kvkk_signed_at'], prev['kvkk_signature'], ver, prev['id'], vid))
+    kvkk.set_consent(conn, 'biometric', 'visit', vid, 1, by_user=by_user, note=f'Önceki ziyaretteki imza (MS #{prev["id"]})', version=ver)
+    db.audit(conn, by_user, 'Misafir KVKK imzası önceki ziyaretten devralındı', 'guest_visit', vid, f'kaynak ziyaret {prev["id"]}')
 
 
 @router.delete('/visits/{vid}/people/{gid}')

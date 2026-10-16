@@ -3206,5 +3206,8 @@ registerCatalog('ru', {
 "Döndü": "Вернулся",
 "{name} fabrikaya döndü mü?": "{name} вернулся на завод?",
 "Dönüş kaydedildi": "Возвращение записано",
-"Dışarıda yönetici yok": "Администраторов снаружи нет"
+"Dışarıda yönetici yok": "Администраторов снаружи нет",
+"Rehberde ara (firma kişileri ve personel aile üyeleri)": "Поиск в справочнике (контакты компаний и члены семей сотрудников)",
+"✓ KVKK imzalı ({code})": "✓ KVKK подписано ({code})",
+"İmza {code} ziyaretinden devralındı": "Подпись взята из визита {code}"
 });

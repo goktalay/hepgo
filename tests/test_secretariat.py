@@ -11,6 +11,7 @@ os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0',
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import db  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -67,6 +68,35 @@ def main():
             ('Mehmet Yılmaz', 'Roketsan Anonim Şirketi'), ('Zeynep Kaya', 'Roketsan Anonim Şirketi'), ('Can Demir', 'Serbest Ltd.')]
         assert any(p['full_name'] == 'Zeynep Kaya' for p in ok(s.get('/api/secretariat/people')))   # Rehber'e eklendi
         assert s.post(f'/api/secretariat/visits/{vid}/people', json={'full_name': ' '}).status_code == 400
+        # Personel aile üyesi gelen kişi olarak eklenebilir (kişi aramasında görünür)
+        with db.connect() as c:
+            eid = c.execute("INSERT INTO employees (first_name, last_name, status, created_at) VALUES ('Muhammed', 'Kaderoğlu', 'AKTIF', ?)", (db.now(),)).lastrowid
+            fid = c.execute("INSERT INTO family_members (employee_id, full_name, relation, created_at) VALUES (?, 'Tevhide Kaderoğlu', 'Eş', ?)", (eid, db.now())).lastrowid
+            c.commit()
+        fam = next(p for p in ok(s.get('/api/secretariat/people')) if p.get('kind') == 'family')
+        assert fam['full_name'] == 'Tevhide Kaderoğlu' and fam['company_name'] == 'Aile üyesi · Muhammed Kaderoğlu' and fam['family_id'] == fid
+        d = ok(s.post(f'/api/secretariat/visits/{vid}/people', json={'family_id': fid}))
+        fp = next(p for p in d['people'] if p['family_id'] == fid)
+        assert fp['full_name'] == 'Tevhide Kaderoğlu' and fp['company_text'] == 'Aile: Muhammed Kaderoğlu' and fp['title'] == 'Eş' and fp['family_of'] == 'Muhammed Kaderoğlu'
+        assert s.post(f'/api/secretariat/visits/{vid}/people', json={'family_id': fid}).status_code == 400
+        assert s.post(f'/api/secretariat/visits/{vid}/people', json={'family_id': 99999}).status_code == 404
+        # KVKK: ilk ziyarette imza; aynı kayıtlı kişi yeniden gelince imza istenmez (önceki ziyaretten devralınır)
+        assert ok(s.get(f'/api/secretariat/visits/{vid}'))['kvkk_signed_at'] is None
+        sig = 'data:image/png;base64,iVBORw0KGgo='
+        assert ok(s.post(f'/api/secretariat/visits/{vid}/kvkk', json={'signature': sig}))['kvkk_signed_at']
+        v2 = ok(s.post('/api/secretariat/visits', json={'purpose': 'İkinci geliş'}))
+        assert ok(s.get(f"/api/secretariat/visits/{v2['id']}"))['kvkk_signed_at'] is None
+        d2 = ok(s.post(f"/api/secretariat/visits/{v2['id']}/people", json={'person_id': kisi}))   # Mehmet daha önce imzalamıştı
+        assert d2['kvkk_signed_at'] and d2['kvkk_from_visit'] == vid and d2['kvkk_from_code'] == 'MS-0001' and d2['kvkk_signature'] == sig
+        v3 = ok(s.post('/api/secretariat/visits', json={'purpose': 'Aile'}))
+        d3 = ok(s.post(f"/api/secretariat/visits/{v3['id']}/people", json={'family_id': fid}))   # aile üyesi de MS-0001'de imzalı
+        assert d3['kvkk_signed_at'] and d3['kvkk_from_visit'] == vid
+        v4 = ok(s.post('/api/secretariat/visits', json={'purpose': 'Serbest'}))
+        d4 = ok(s.post(f"/api/secretariat/visits/{v4['id']}/people", json={'full_name': 'Can Demir', 'company_text': 'Serbest Ltd.'}))
+        assert d4['kvkk_signed_at'] is None   # serbest girişte eşleştirme yok → imza yine istenir
+        # yeni imza devralmayı sıfırlar
+        d2b = ok(s.post(f"/api/secretariat/visits/{v2['id']}/kvkk", json={'signature': sig}))
+        assert d2b['kvkk_from_visit'] is None
         parked = ok(s.get('/api/secretariat/parked'))
         assert len(parked) == 2
         assert s.post(f'/api/secretariat/visits/{vid}/vehicles', json={'ids': [v3['id']]}).status_code == 400   # çıkmış araç
@@ -75,7 +105,8 @@ def main():
         d = ok(s.post(f'/api/secretariat/visits/{vid}/hosts', json={'ids': [ali]}))
         assert [h['full_name'] for h in d['hosts']] == ['Ali']
         summ = ok(s.get('/api/secretariat/visits'))[0]
-        assert summ['people_count'] == 3 and summ['host_names'] == 'Ali' and '34 ABC 123' in summ['plates']
+        assert summ['host_names'] == 'Ali' and '34 ABC 123' in summ['plates'], summ
+        assert summ['people_count'] == 4, summ['people_count']
         # Kargo: resimli; ilgili kişiye bildirim
         c1 = ok(s.post('/api/secretariat/cargo', data={'recipient_id': str(ayse), 'carrier': 'Aras', 'description': 'Numune'},
                        files={'photo': ('k.jpg', b'\xff\xd8\xff fake', 'image/jpeg')}))['id']
@@ -89,7 +120,7 @@ def main():
         n = {x['key']: x for x in ok(u.get('/api/notifications'))['items']}
         assert n['guest-visit']['count'] == 1 and 'Mehmet Yılmaz' in n['guest-visit']['names'][0]
         g = ok(u.get('/api/me/guests'))
-        assert g[0]['code'] == 'MS-0001' and len(g[0]['people']) == 3
+        assert g[0]['code'] == 'MS-0001' and len(g[0]['people']) == 4
         # Misafirlerim açıldı: bildirim görüldü sayılır ve kalkar
         assert 'guest-visit' not in {x['key'] for x in ok(u.get('/api/notifications'))['items']}
         assert u.get(f'/api/files/{photo}').status_code == 404   # başkasının kargo resmi

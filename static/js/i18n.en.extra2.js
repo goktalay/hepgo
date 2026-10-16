@@ -474,4 +474,4 @@ registerCatalog('en', {
 "{name} fabrikaya döndü mü?": "Has {name} returned to the factory?",
 "Dönüş kaydedildi": "Return recorded",
 "Dışarıda yönetici yok": "No administrators outside"
-}});
+});

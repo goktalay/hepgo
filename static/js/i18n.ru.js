@@ -3207,4 +3207,4 @@ registerCatalog('ru', {
 "{name} fabrikaya döndü mü?": "{name} вернулся на завод?",
 "Dönüş kaydedildi": "Возвращение записано",
 "Dışarıda yönetici yok": "Администраторов снаружи нет"
-}});
+});

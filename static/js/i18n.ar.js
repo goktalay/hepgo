@@ -3207,4 +3207,4 @@ registerCatalog('ar', {
 "{name} fabrikaya döndü mü?": "هل عاد {name} إلى المصنع؟",
 "Dönüş kaydedildi": "سُجّلت العودة",
 "Dışarıda yönetici yok": "لا يوجد مديرون في الخارج"
-}});
+});

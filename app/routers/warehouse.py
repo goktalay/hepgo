@@ -130,7 +130,7 @@ def stock(product_id: Optional[int] = None, user=Depends(stock_user), conn=db.DB
     wip = db.rows(conn.execute(
         "SELECT id, code, status FROM orders WHERE product_id = ? AND status NOT IN ('SIPARIS', 'TAMAMLANDI', 'HURDA') ORDER BY id",
         (pid,)))
-    ids = catalogs.part_ids(product['schema'])
+    ids = catalogs.product_part_ids(product)
     counts = {p: 0 for p in ids}
     pending = {p: 0 for p in ids}
     for r in conn.execute(

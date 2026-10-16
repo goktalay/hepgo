@@ -63,7 +63,7 @@ def create_order(conn, user_id, product, start_date, end_date, note, company_id=
     oid = cur.lastrowid
     conn.executemany(
         'INSERT INTO order_parts (order_id, part_id, updated_at) VALUES (?,?,?)',
-        [(oid, pid, now) for pid in catalogs.part_ids(product['schema'])])
+        [(oid, pid, now) for pid in catalogs.product_part_ids(product)])
     return oid, code
 
 
@@ -144,9 +144,9 @@ def sync_catalog_parts(conn):
     uçaklarda parça takılı kabul edilir; diğerlerinde üretilmemiş olarak başlar."""
     added = 0
     for o in db.rows(conn.execute(
-            'SELECT o.id, o.status, p.schema FROM orders o JOIN products p ON p.id = o.product_id')):
+            'SELECT o.id, o.status, p.schema, p.code, p.printed FROM orders o JOIN products p ON p.id = o.product_id')):
         have = {r[0] for r in conn.execute('SELECT part_id FROM order_parts WHERE order_id = ?', (o['id'],))}
-        missing = [pid for pid in catalogs.part_ids(o['schema']) if pid not in have]
+        missing = [pid for pid in catalogs.product_part_ids(o) if pid not in have]
         state = ASSEMBLY if o['status'] in AFTER_ASSEMBLY else WAITING
         conn.executemany('INSERT INTO order_parts (order_id, part_id, state, updated_at) VALUES (?,?,?,?)',
                          [(o['id'], pid, state, db.now()) for pid in missing])

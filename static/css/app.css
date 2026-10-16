@@ -708,6 +708,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .plane-part { stroke: #1c2230; stroke-width: 3; stroke-linejoin: round; cursor: pointer; transition: fill .15s; }
 .plane-part.cover { stroke: #7a1f1f; stroke-width: 3.5; }
 .plane-part.hot { stroke: #b8860b; stroke-width: 6; filter: brightness(.93); }
+.plane-part.has-img { fill-opacity: .28; }   /* basılı ürün: üstten görünüm resmi görünsün, durum rengi üstte */
+.plane-img { pointer-events: none; }
 .plane-label { font-size: 24px; fill: #3b4555; pointer-events: none; text-anchor: middle; dominant-baseline: central; font-weight: 600; }
 .plane-label.small { font-size: 17px; }
 .plane-label.count { font-size: 30px; font-weight: 800; fill: #16202e; }

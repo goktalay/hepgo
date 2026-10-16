@@ -59,6 +59,27 @@ def plane_json(key):
     return schema(key).plane_json()
 
 
+def is_printed_custom(p):
+    """Ürün Yönetimi'nden açılıp 'Basılıp stokta tutulur' işaretlenen ürün: çizim şeması yok, kendisi tek baskı parçasıdır."""
+    return (p.get('schema') or '') == spares.CUSTOM and bool(p.get('printed'))
+
+
+def product_part_ids(p):
+    """Ürünün üretim parçaları: şemadan; basılı custom üründe ürünün kendi kodu (tek parça, ürünün G-code'uyla basılır)."""
+    ids = part_ids(p['schema'])
+    return ids if ids or not is_printed_custom(p) else [p['code']]
+
+
+def printed_plane(p):
+    """Basılı custom ürünün üretim çizimi: tek parça; zeminde ürünün 2B üstten görünüm resmi (varsa)."""
+    pts = [[10, 10], [390, 10], [390, 290], [10, 290]]
+    part = {'id': p['code'], 'name': p['name'], 'group': 'printed', 'side': 'M', 'section': None, 'layer': 'body', 'area': 380 * 280,
+            'shapes': [{'pts': pts, 'holes': [], 'slots': [], 'inner': []}], 'label_at': [200, 150]}
+    if p.get('image'):
+        part['image'] = p['image']
+    return {'viewBox': [0, 0, 400, 300], 'groups': {'printed': 'Basılı ürün'}, 'sections': {}, 'parts': [part]}
+
+
 def sections(key):
     """Montaj bölümleri {anahtar: ad} ve parça → bölüm eşlemesi."""
     mod = schema(key)

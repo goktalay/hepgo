@@ -244,8 +244,9 @@ def save_assembly_overrides(schema_key: str, body: AssemblyOverridesIn, user=Dep
 @router.get('/{pid}/plane')
 def product_plane(pid: int, user=Depends(auth.current_user), conn=db.DB):
     """Parça çizimi; her parçaya baskı dosyası ve süresi eklenir (ipuçları, yazıcı seçimi, kalan süre)."""
-    key = _get(conn, pid)['schema']
-    plane = catalogs.plane_json(key)
+    p = _get(conn, pid)
+    key = p['schema']
+    plane = catalogs.printed_plane(p) if catalogs.is_printed_custom(p) else catalogs.plane_json(key)
     plane['schema'] = key
     info = semis.print_info(conn)
     plane['parts'] = [{**part, **info.get(part['id'], {})} for part in plane['parts']]
@@ -448,8 +449,12 @@ def gcode_upload(pid: int, body: GcodeIn, user=Depends(products_admin), conn=db.
         meta = gcode.attach(conn, pid, dest)
     except Exception as err:   # bozuk / okunamayan dosya
         raise HTTPException(400, f'G-code okunamadı: {err}')
+    try:   # G-code eklenince ürünün 2B üstten görünümü takım yolundan çizilip ayarlanır (üretimde ve kartlarda görünür)
+        top = gcode.set_top_view(conn, pid, dest)
+    except Exception:   # resim üretilemese de G-code bağlı kalır
+        top = None
     db.audit(conn, user['id'], 'G-code yükledi', 'product', pid, f'{p["code"]}: {dest.name}')
-    return {'ok': True, 'seconds': meta.get('seconds'), 'filament_g': meta.get('filament_g')}
+    return {'ok': True, 'seconds': meta.get('seconds'), 'filament_g': meta.get('filament_g'), 'image': top}
 
 
 @router.delete('/{pid}/gcode')

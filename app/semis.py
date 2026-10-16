@@ -296,10 +296,12 @@ def ensure_versions(conn):
 
 def print_info(conn):
     """Parça kodu → baskı dosyası ve süresi (parça yedeği ürünlerinden)."""
-    return {r['schema'][len(PART_PREFIX):]: {'print_file': r['print_file'], 'print_minutes': r['print_minutes'],
-                                            'gcode_preview': r['gcode_preview']}   # 3B görünüm (app/gcode.py)
-            for r in db.rows(conn.execute(
-                "SELECT schema, print_file, print_minutes, gcode_preview FROM products WHERE schema LIKE ?", (f'{PART_PREFIX}%',)))}
+    rows = db.rows(conn.execute(
+        "SELECT schema, code, print_file, print_minutes, gcode_preview FROM products WHERE schema LIKE ? OR (schema = 'custom' AND printed = 1)",
+        (f'{PART_PREFIX}%',)))
+    return {(r['schema'][len(PART_PREFIX):] if r['schema'].startswith(PART_PREFIX) else r['code']):   # basılı custom: ürün kodu
+            {'print_file': r['print_file'], 'print_minutes': r['print_minutes'], 'gcode_preview': r['gcode_preview']}   # 3B görünüm
+            for r in rows}
 
 
 def tree(conn, root_id):

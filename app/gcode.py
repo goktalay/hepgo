@@ -181,6 +181,53 @@ def render_card(segs, out, w=480, h=300):
     del span
 
 
+def render_top(segs, out, size=1000):
+    """2B üstten görünüm: takım yolunun XY izdüşümü (Z'ye bakılarak alttan üste çizilir; yüksek katmanlar daha açık),
+    saydam zeminli PNG; en-boy oranı parçanınki, uzun kenar `size` piksel."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+    pts = segs.reshape(-1, 3).astype(np.float64)
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    span = np.maximum(hi[:2] - lo[:2], 1e-6)
+    S, pad = 2, 24   # 2 kat büyük çizip küçültme: yumuşak çizgiler
+    k = (size * S - 2 * pad * S) / span.max()
+    W, H = int(span[0] * k + 2 * pad * S), int(span[1] * k + 2 * pad * S)
+    X = (pts[:, 0] - lo[0]) * k + pad * S
+    Y = H - ((pts[:, 1] - lo[1]) * k + pad * S)   # Y yukarı
+    t = (pts[:, 2] - lo[2]) / max(hi[2] - lo[2], 1e-6)
+    low, mid, high = np.array([28, 79, 145]), np.array([33, 158, 199]), np.array([170, 236, 252])
+    col = np.where(t[:, None] < 0.5, low + (mid - low) * (t[:, None] * 2), mid + (high - mid) * ((t[:, None] - 0.5) * 2)).astype(int)
+    img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    width = max(S, int(round(0.45 * k)))   # ~0,45 mm çizgi genişliği
+    for i in np.argsort(pts[0::2, 2], kind='stable'):   # alttan üste
+        j = i * 2
+        d.line([(X[j], Y[j]), (X[j + 1], Y[j + 1])], fill=(*col[j], 255), width=width)
+    img = img.resize((max(1, W // S), max(1, H // S)), Image.LANCZOS)
+    img.save(out, 'PNG', optimize=True)
+
+
+def set_top_view(conn, product_id, path):
+    """G-code'dan 2B üstten görünüm resmi üretir ve ürünün resmi (products.image) olarak ayarlar. Eski resim diskte kalır."""
+    import hashlib
+    path = Path(path)
+    step = 1
+    segs, _ = toolpath(path, step)
+    while len(segs) > MAX_SEGMENTS and step < 16:
+        step *= 2
+        segs, _ = toolpath(path, step)
+    if not len(segs):
+        return None
+    folder = config.UPLOAD_DIR / 'products'
+    folder.mkdir(parents=True, exist_ok=True)
+    tag = hashlib.sha1(f'{path.name}:{path.stat().st_size}:{path.stat().st_mtime_ns}'.encode()).hexdigest()[:12]
+    out = folder / f'gcode-top-{product_id}-{tag}.png'
+    render_top(segs, out)
+    rel = f'products/{out.name}'
+    conn.execute('UPDATE products SET image = ? WHERE id = ?', (rel, product_id))
+    return rel
+
+
 def make_preview(path):
     """Önizleme dosyası (.3d.bin): başlıkta 6 float (min xyz, max xyz), ardından segment uçları (float32)."""
     import numpy as np

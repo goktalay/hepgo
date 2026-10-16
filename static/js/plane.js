@@ -1,6 +1,6 @@
 // Parçalı uçak haritası bileşeni. Geometri, ürünün sunucudaki şemasından (/api/products/{id}/plane) gelir.
 import { closeTipPreview, tipPreview } from './gcode3d.js';
-import { api } from './api.js';
+import { api, fileUrl } from './api.js';
 import { fmtMinutes, h, pref, segmented, setPref } from './ui.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -142,10 +142,16 @@ export function renderPlane(plane, opts = {}) {
   for (const part of plane.parts) {
     const polys = [];
     const into = holder(part);
+    if (part.image) {   // basılı ürün (Ürün Yönetimi): zeminde 2B üstten görünüm resmi; durum rengi üstte yarı saydam
+      const xs = part.shapes[0].pts.map(q => q[0]), ys = part.shapes[0].pts.map(q => q[1]);
+      const [x0, y0] = [Math.min(...xs), Math.min(...ys)];
+      into.g.append(svgEl('image', { href: fileUrl(part.image, 900), x: x0, y: y0, width: Math.max(...xs) - x0, height: Math.max(...ys) - y0,
+        preserveAspectRatio: 'xMidYMid meet', class: 'plane-img' }));
+    }
     for (const shape of part.shapes) {
       const poly = svgEl('polygon', {
         points: shape.pts.map(p => p.join(',')).join(' '),
-        class: `plane-part ${part.group === 'cover' ? 'cover' : ''} layer-${part.layer || 'body'}`,
+        class: `plane-part ${part.group === 'cover' ? 'cover' : ''} ${part.image ? 'has-img' : ''} layer-${part.layer || 'body'}`,
       });
       poly.dataset.id = part.id;
       into.g.append(poly);

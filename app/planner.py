@@ -64,7 +64,7 @@ def printer_availability(conn, now, change_minutes, assume_idle=False):
 def plan(conn, product, quantity, mode='aircraft', change_minutes=15, now=None, assume_idle=False):
     now = (now or datetime.now()).replace(second=0, microsecond=0)
     info = semis.print_info(conn)
-    part_ids = catalogs.part_ids(product['schema'])
+    part_ids = catalogs.product_part_ids(product)
     known = sorted(m for m in (info.get(p, {}).get('print_minutes') for p in part_ids) if m)
     unknown = [p for p in part_ids if not info.get(p, {}).get('print_minutes')]
     fallback = known[len(known) // 2] if known else DEFAULT_MINUTES

@@ -408,8 +408,12 @@ def main():
         assert c.get('/api/mt/apps/ip/download', headers=MT3).content == b'MZiptools'
         r = c.post('/api/ip/auth/sso', json={'sso_token': MT3['Authorization'][7:]}); assert r.status_code == 200 and r.json()['token'], r.text
         assert c.get('/api/ip/me', headers={'Authorization': 'Bearer ' + r.json()['token']}).status_code == 200
-        assert c.get('/araclar/ip-tools', headers={'Host': 'mastertool.download'}).status_code == 404   # sayfa henüz yok
+        tp = c.get('/araclar/ip-tools?lang=en', headers={'Host': 'mastertool.download'})   # araç tanıtım sayfası
+        assert tp.status_code == 200 and '<html lang="en"' in tp.text and '"IP Tools"' in tp.text and '/shots/ip-01-kayitlar-gece-en.webp' in tp.text, tp.text[:200]
+        assert 'canonical" href="https://mastertool.download/araclar/ip-tools?lang=en"' in tp.text and '"isPartOf"' in tp.text
         assert c.get('/araclar/ip-tools', headers={'Host': 'sshmasters.com'}).status_code == 404
+        assert c.get('/araclar/yok', headers={'Host': 'mastertool.download'}).status_code == 404
+        sm2 = c.get('/sitemap.xml', headers={'Host': 'mastertool.download'}).text; assert sm2.count('<loc>https://mastertool.download/araclar/quick-preview') == 8 and sm2.count('/araclar/ip-tools') >= 8, sm2.count('/araclar/')
         # web oturumunda (Hesabım) sso oturumu kapatılınca ailesi düşer; web 'Oturumlar' listesinde görünür
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()

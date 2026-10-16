@@ -29,6 +29,7 @@ import { initAlarms } from './alarms.js';
 import * as boss from './modules/boss.js';
 import * as projectsMod from './modules/projects.js';
 import * as members from './modules/members.js';
+import { installShortcut as installSearchShortcut, searchButton } from './modules/search.js';
 import * as sshmasterMod from './modules/sshmaster.js';
 import * as ticketsMod from './modules/tickets.js';
 import * as smsMod from './modules/sms.js';
@@ -380,6 +381,7 @@ function enterApp() {
     return;
   }
   renderShell(); checkWhatsNew(); startSupportWatch(); checkDevicePush(); uiUpdatesInit();
+  installSearchShortcut();   // Ctrl+K / "/" → sistem geneli arama
   // Web konum paylaşımı (tarayıcı): KVKK rızası + tarayıcı izni + Ayarlar › Gizlilik anahtarı; native kabukta native.js yapar
   initWebLocation(ctx, () => ctx.user?.prefs?.settings?.privacy?.share_location_web !== false);
   document.querySelector('.support-pill')?.remove();
@@ -960,16 +962,19 @@ function immersiveBar(on) {
   if (!immTimer) immTimer = setInterval(tick, 1000);
 }
 
-function fullscreenButton() {
+// Tam ekran: kişisel menüde bir madde (üst çubuk sadeleşsin diye). onPick menüyü kapatır.
+function fullscreenButton(onPick) {
   if (!document.fullscreenEnabled) return null;
-  const btn = h('button', { class: 'icon-btn' });
+  const btn = h('button', { class: 'menu-link', type: 'button' });
   const sync = () => {
     const on = !!document.fullscreenElement;
-    btn.replaceChildren(svgIcon(on ? icons.fullscreenExit : icons.fullscreen));
-    btn.title = on ? 'Tam ekrandan çık' : 'Tam ekran';
+    const label = on ? 'Tam ekrandan çık' : 'Tam ekran';
+    btn.replaceChildren(svgIcon(on ? icons.fullscreenExit : icons.fullscreen), t(label));
+    btn.title = t(label);
     btn.setAttribute('aria-label', btn.title);
   };
   btn.addEventListener('click', () => {
+    onPick?.();
     (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
   });
   // "Sürükleyici" (immersive) modüller — ör. Dron Yönetimi › Canlı Uçuş — sayfalarına data-immersive koyar: tam ekranda HEPGO üst
@@ -1000,8 +1005,20 @@ function renderShell() {
   initAlarms();   // alarm denetleyicisi (saat gelince sesle uyarır)
   membershipMod.initSupportDock?.(ctx);   // firma: aktif canlı destek sohbeti başka sayfadayken köşede görünür
   const menuModules = MODULES.filter(m => m.menu && u.modules.includes(m.key));
+  // Telsiz: düğmesi ve kanal listesi kişisel menünün çapasında durur; menüdeki "Telsiz" maddesi asıl düğmeyi tıklar
+  // (sekreterya/güvenlikte bekleme odasını açma davranışı da aynen korunur). Üye kanal yoksa madde gizlidir.
+  const rdAnchor = radio.button(popup);
+  const rdBtn = rdAnchor.querySelector('.rd-btn');
+  rdBtn.classList.add('rd-hidden');
+  const rdLive = rdBtn.querySelector('.rd-live');
+  const radioItem = h('button', { class: 'menu-link', type: 'button', onclick: e => { e.stopPropagation(); menu.hidden = true; rdBtn.click(); } },
+    svgIcon(icons.radio), 'Telsiz', rdLive);
+  new MutationObserver(() => { radioItem.hidden = rdBtn.hidden; }).observe(rdBtn, { attributes: true, attributeFilter: ['hidden'] });
+  radioItem.hidden = rdBtn.hidden;
   const menu = h('div', { class: 'dropdown', role: 'menu' },
     h('a', { class: 'menu-link', href: '#/settings', onclick: () => { menu.hidden = true; } }, svgIcon(icons.settings), 'Kişisel Ayarlar'),
+    radioItem,
+    fullscreenButton(() => { menu.hidden = true; }),
     (securityOnly() || ctx.meta?.esnaf_pkg) ? null : h('a', { class: 'menu-link', href: '#/meet', onclick: () => { menu.hidden = true; } }, svgIcon(icons.video), 'Görüntülü Toplantı'),
     h('a', { class: 'menu-link', href: '#', onclick: e => { e.preventDefault(); menu.hidden = true; import('./modules/screenshare.js').then(m => m.startScreenShare(ctx)); } }, svgIcon(icons.screen), 'Ekranı Paylaş'),
     u.modules.includes('uyelik') ? h('a', { class: 'menu-link', href: '#/uyelik/live', onclick: () => { menu.hidden = true; } }, svgIcon(icons.message || icons.chat || icons.person), 'Canlı Destek') : null,
@@ -1029,8 +1046,8 @@ function renderShell() {
           ? h('span', { class: 'product wl' }, h('b', null, ctx.meta.company || ''))
           : h('span', { class: 'product' }, h('b', null, 'HEPGO'), 'ERP')),
       spotifyStrip(),
-      h('div', { class: 'header-right' }, radio.button(popup),
-        docsCountdown(), todoButton(), inboxButton(), fullscreenButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu))),
+      h('div', { class: 'header-right' }, searchButton(),
+        docsCountdown(), todoButton(), inboxButton(), appsLauncher(), h('div', { class: 'menu-anchor' }, userBtn, menu, rdAnchor))),
     scroller,
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),

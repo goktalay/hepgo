@@ -476,5 +476,19 @@ registerCatalog('en', {
 "Dışarıda yönetici yok": "No administrators outside",
 "Rehberde ara (firma kişileri ve personel aile üyeleri)": "Search the directory (company contacts and staff family members)",
 "✓ KVKK imzalı ({code})": "✓ KVKK signed ({code})",
-"İmza {code} ziyaretinden devralındı": "Signature inherited from visit {code}"
+"İmza {code} ziyaretinden devralındı": "Signature inherited from visit {code}",
+  // Sistem geneli arama (üst çubuk büyüteci)
+  "Sistemde ara: cari, stok, sipariş, personel, evrak…": "Search everything: accounts, stock, orders, staff, documents…",
+  "En az {n} harf yazın": "Type at least {n} characters",
+  "gez": "navigate",
+  "aç": "open",
+  "kapat": "close",
+  "\"{q}\" için sonuç yok": "No results for \"{q}\"",
+  "Arama başarısız": "Search failed",
+  "Stok / Malzeme": "Stock / Material",
+  "Ziyaret": "Visit",
+  "Proje": "Project",
+  "Satın Alma Talebi": "Purchase Request",
+  "Finans Hesabı": "Finance Account",
+  "Şirketten Haber": "Company News",
 });

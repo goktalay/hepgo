@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from .. import auth, catalogs, db, production
 from ..files import save_upload
-from ..production import (AFTER_ASSEMBLY, IN_ASSEMBLY, ERROR, EVENT_TEXT, PRINTING, WAITING, WAREHOUSE, assembly_info,
+from ..production import (AFTER_ASSEMBLY, IN_ASSEMBLY, ERROR, EVENT_TEXT, PRINTING, WAITING, WAREHOUSE, assembly_info, reject_assembled_part,
                           complete_calibration, complete_covers, complete_electronics, complete_final, complete_section, create_order,
                           order_summaries, recompute)
 
@@ -457,6 +457,24 @@ def send_progress(oid: int, part_id: str, user=Depends(_order_reader), conn=db.D
     pct = round(st['sent'] * 100 / st['total'], 1) if st['total'] else 0
     return {'status': st['status'], 'sent': st['sent'], 'total': st['total'], 'percent': pct,
             'filename': st['filename'], 'printer': st['printer'], 'error': st['error']}
+
+
+@router.post('/{oid}/parts/{part_id}/assembly-error')
+async def assembly_error_part(oid: int, part_id: str, error_code: str = Form(...), description: str = Form(''),
+                              photo: Optional[UploadFile] = File(None), at: str = Form(''),
+                              user=Depends(part_operator), conn=db.DB):
+    """Montaj aşamasında hatalı bulunan (depoda onaylı ya da montajdaki) parça hataya atanır ve yeniden üretime girer;
+    parçanın bölümü monte edildiyse bölüm montajı geri alınır, sipariş montajdan üretime döner."""
+    order = _get_order(conn, oid)
+    if not error_code.strip():
+        raise HTTPException(400, 'Hata kodu zorunlu')
+    when = db.pick_time(at, None, 'Hata zamanı', '')
+    photo_path = await save_upload('errors', photo) if photo and photo.filename else None
+
+    def write():
+        status, undone = reject_assembled_part(conn, order, part_id, user['id'], error_code.strip(), description.strip(), when, photo_path)
+        return {'ok': True, 'status': status, 'undone': undone}
+    return await run_in_threadpool(write)
 
 
 @router.post('/{oid}/parts/{part_id}/error')

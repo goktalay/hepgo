@@ -622,7 +622,7 @@ async function partAction(order, op, part, refresh) {
     return choosePrinter(order, op, part, refresh);
   }
   if (op.state === 'URETIMDE') return inProduction(order, op, part, refresh);
-  return showHistory(order, op, part);
+  return showHistory(order, op, part, refresh, true);
 }
 
 async function choosePrinter(order, op, part, refresh) {
@@ -925,8 +925,10 @@ function reportError(order, op, part, refresh) {
   });
 }
 
-async function showHistory(order, op, part) {
+async function showHistory(order, op, part, refresh, canOperate) {
   const detail = await api.get(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}`);
+  // Montajda hatalı bulunan parça: depoda onaylı ya da montajdaki parça hataya atanıp yeniden üretime alınır
+  const rejectable = canOperate && refresh && ['DEPO', 'MONTAJ'].includes(detail.state) && !AFTER_ASSEMBLY.includes(order.status);
   modal({
     title: t('{id} — İşlem geçmişi', { id: part.id }),
     wide: true,
@@ -935,7 +937,45 @@ async function showHistory(order, op, part) {
         detail.state === 'DEPO' && !detail.approved_at ? h('span', { class: 'badge yellow', style: { marginLeft: '6px' } }, 'Depo onayı bekliyor') : null),
       printBlock(part, detail),
       timeline(detail.events)),
-    actions: [{ label: 'Kapat', class: 'primary' }],
+    actions: [
+      ...(rejectable ? [{ label: 'Montajda Hatalı', class: 'danger', onClick: () => { reportAssemblyError(order, op, part, refresh); } }] : []),
+      { label: 'Kapat', class: 'primary' }],
+  });
+}
+
+function reportAssemblyError(order, op, part, refresh) {
+  const code = h('input', { class: 'input', placeholder: 'Ör. M-101' });
+  const desc = h('textarea', { class: 'input', rows: 3, placeholder: 'Montajda görülen hatanın açıklaması' });
+  const photo = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+  const preview = h('img', { class: 'photo-preview', hidden: true, alt: 'Hata fotoğrafı' });
+  photo.addEventListener('change', () => { const f = photo.files[0]; preview.hidden = !f; if (f) preview.src = URL.createObjectURL(f); });
+  const when = dateTimeInput({});
+  modal({
+    title: t('{id} — Montajda hatalı parça', { id: part.id }),
+    body: h('div', null,
+      h('p', { class: 'muted' }, 'Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.'),
+      field('Hata kodu', code),
+      field('Açıklama', desc),
+      field('Fotoğraf', h('div', null,
+        h('button', { class: 'btn', type: 'button', onclick: () => photo.click() }, svgIcon(icons.camera), 'Fotoğraf Çek'),
+        photo, preview)),
+      field('Hata zamanı', when)),
+    actions: [
+      { label: 'Vazgeç' },
+      {
+        label: 'Hataya Al ve Yeniden Üret', class: 'danger', onClick: async () => {
+          if (!code.value.trim()) throw new Error('Hata kodu zorunlu');
+          const fd = new FormData();
+          fd.append('error_code', code.value.trim());
+          fd.append('description', desc.value.trim());
+          if (photo.files[0]) fd.append('photo', photo.files[0]);
+          if (when.getValue()) fd.append('at', when.getValue());
+          const r = await api.post(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/assembly-error`, fd);
+          toast(r.undone?.length ? t('{id} hataya alındı; geri alınan: {s}', { id: part.id, s: r.undone.join(', ') }) : t('{id} hataya alındı', { id: part.id }), 'err');
+          await refresh();
+        },
+      },
+    ],
   });
 }
 

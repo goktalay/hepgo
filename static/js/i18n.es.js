@@ -3173,5 +3173,13 @@ registerCatalog('es', {
 "Toplu SMS": "SMS masivo",
 "Üyeliğim & Destek": "Mi membresía y soporte",
 "Veri & Yedek": "Datos y copia de seguridad",
-"Paketinizdeki modüller ({n})": "Módulos de su paquete ({n})"
+"Paketinizdeki modüller ({n})": "Módulos de su paquete ({n})",
+"Montajda Hatalı": "Defectuosa en montaje",
+"{id} — Montajda hatalı parça": "{id} — Pieza defectuosa en montaje",
+"Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.": "La pieza se marca como defectuosa y vuelve a producción. Si su sección ya estaba montada, se deshace el montaje de esa sección; si la aeronave estaba en montaje, el pedido vuelve a producción.",
+"Montajda görülen hatanın açıklaması": "Descripción del defecto detectado en montaje",
+"Hataya Al ve Yeniden Üret": "Marcar defectuosa y reproducir",
+"{id} hataya alındı; geri alınan: {s}": "{id} marcada defectuosa; deshecho: {s}",
+"{id} hataya alındı": "{id} marcada defectuosa",
+"Montajda hatalı bulundu, yeniden üretime alındı": "Detectada defectuosa en montaje, devuelta a producción"
 });

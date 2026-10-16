@@ -3173,5 +3173,13 @@ registerCatalog('de', {
 "Toplu SMS": "Massen-SMS",
 "Üyeliğim & Destek": "Meine Mitgliedschaft & Support",
 "Veri & Yedek": "Daten & Sicherung",
-"Paketinizdeki modüller ({n})": "Module in Ihrem Paket ({n})"
+"Paketinizdeki modüller ({n})": "Module in Ihrem Paket ({n})",
+"Montajda Hatalı": "Fehlerhaft in der Montage",
+"{id} — Montajda hatalı parça": "{id} — Fehlerhaftes Teil in der Montage",
+"Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.": "Das Teil wird als fehlerhaft markiert und erneut gefertigt. War sein Abschnitt bereits montiert, wird dessen Montage zurückgenommen; war das Flugzeug in der Montage, geht der Auftrag zurück in die Fertigung.",
+"Montajda görülen hatanın açıklaması": "Beschreibung des in der Montage festgestellten Fehlers",
+"Hataya Al ve Yeniden Üret": "Als fehlerhaft markieren und neu fertigen",
+"{id} hataya alındı; geri alınan: {s}": "{id} als fehlerhaft markiert; zurückgenommen: {s}",
+"{id} hataya alındı": "{id} als fehlerhaft markiert",
+"Montajda hatalı bulundu, yeniden üretime alındı": "In der Montage als fehlerhaft erkannt, zurück in die Fertigung"
 });

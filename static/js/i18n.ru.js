@@ -3173,5 +3173,13 @@ registerCatalog('ru', {
 "Toplu SMS": "Массовые SMS",
 "Üyeliğim & Destek": "Моё членство и поддержка",
 "Veri & Yedek": "Данные и резервные копии",
-"Paketinizdeki modüller ({n})": "Модули в вашем пакете ({n})"
+"Paketinizdeki modüller ({n})": "Модули в вашем пакете ({n})",
+"Montajda Hatalı": "Брак при сборке",
+"{id} — Montajda hatalı parça": "{id} — Бракованная деталь при сборке",
+"Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.": "Деталь помечается как бракованная и возвращается в производство. Если её секция уже была собрана, сборка этой секции отменяется; если самолёт был на сборке, заказ возвращается в производство.",
+"Montajda görülen hatanın açıklaması": "Описание дефекта, обнаруженного при сборке",
+"Hataya Al ve Yeniden Üret": "Пометить браком и изготовить заново",
+"{id} hataya alındı; geri alınan: {s}": "{id} помечена браком; отменено: {s}",
+"{id} hataya alındı": "{id} помечена браком",
+"Montajda hatalı bulundu, yeniden üretime alındı": "Признана бракованной при сборке, возвращена в производство"
 });

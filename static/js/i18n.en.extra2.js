@@ -440,5 +440,13 @@ registerCatalog('en', {
 "Toplu SMS": "Bulk SMS",
 "Üyeliğim & Destek": "My Membership & Support",
 "Veri & Yedek": "Data & Backup",
-"Paketinizdeki modüller ({n})": "Modules in your package ({n})"
+"Paketinizdeki modüller ({n})": "Modules in your package ({n})",
+"Montajda Hatalı": "Faulty in Assembly",
+"{id} — Montajda hatalı parça": "{id} — Faulty part in assembly",
+"Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.": "The part is marked faulty and goes back into production. If its section was already assembled, that section's assembly is undone; if the aircraft was in assembly, the order returns to production.",
+"Montajda görülen hatanın açıklaması": "Description of the fault found in assembly",
+"Hataya Al ve Yeniden Üret": "Mark Faulty and Reproduce",
+"{id} hataya alındı; geri alınan: {s}": "{id} marked faulty; undone: {s}",
+"{id} hataya alındı": "{id} marked faulty",
+"Montajda hatalı bulundu, yeniden üretime alındı": "Found faulty in assembly, sent back to production"
 });

@@ -3173,5 +3173,13 @@ registerCatalog('ar', {
 "Toplu SMS": "رسائل SMS جماعية",
 "Üyeliğim & Destek": "عضويتي والدعم",
 "Veri & Yedek": "البيانات والنسخ الاحتياطي",
-"Paketinizdeki modüller ({n})": "الوحدات في باقتك ({n})"
+"Paketinizdeki modüller ({n})": "الوحدات في باقتك ({n})",
+"Montajda Hatalı": "معيبة في التجميع",
+"{id} — Montajda hatalı parça": "{id} — قطعة معيبة في التجميع",
+"Parça hataya atanır ve yeniden üretime girer. Parçanın bölümü monte edildiyse bölüm montajı geri alınır; uçak montajdaysa sipariş üretime döner.": "تُعلَّم القطعة كمعيبة وتعود إلى الإنتاج. إذا كان قسمها قد جُمِّع بالفعل فيُلغى تجميع ذلك القسم؛ وإذا كانت الطائرة في مرحلة التجميع فيعود الطلب إلى الإنتاج.",
+"Montajda görülen hatanın açıklaması": "وصف العيب الذي ظهر أثناء التجميع",
+"Hataya Al ve Yeniden Üret": "تعليمها كمعيبة وإعادة إنتاجها",
+"{id} hataya alındı; geri alınan: {s}": "تم تعليم {id} كمعيبة؛ ما أُلغي: {s}",
+"{id} hataya alındı": "تم تعليم {id} كمعيبة",
+"Montajda hatalı bulundu, yeniden üretime alındı": "وُجدت معيبة أثناء التجميع وأُعيدت إلى الإنتاج"
 });

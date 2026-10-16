@@ -39,6 +39,7 @@ MIN_ASSEMBLY_STAFF = 2
 MIN_ELECTRONICS_STAFF = 1
 
 EVENT_TEXT = {
+    'MONTAJ_HATASI': 'Montajda hatalı bulundu, yeniden üretime alındı',
     'URETIME_BASLADI': 'Üretime başladı',
     'YAZICIYA_GONDERILDI': 'G-code yazıcıya gönderildi, baskı başlatıldı',
     'DOGRUDAN_DEPO': 'Doğrudan depoya eklendi (Sistem Yöneticisi onayıyla, basılmış)',
@@ -263,6 +264,52 @@ def complete_section(conn, order, section, user_id, at_value, staff_ids):
     if early:
         return recompute(conn, order['id'])
     return advance_to_calibration(conn, order)
+
+
+def reject_assembled_part(conn, order, part_id, user_id, error_code, note, at, photo=None):
+    """Montaj aşamasında hatalı bulunan parça (depoda onaylı ya da montajda) hataya atanır ve yeniden üretime girer.
+    Parçanın bölümü monte edilmişse o bölümün montaj adımı geri alınır: bölümün diğer parçaları depoya döner (onayları
+    korunur); kapak ve birleştirme adımları da yapılmışsa onlar da geri alınır. Uçak montajdaysa sipariş üretime döner.
+    Dönüş: (yeni sipariş durumu, geri alınan adım adları)."""
+    if order['status'] in AFTER_ASSEMBLY:
+        raise HTTPException(400, 'Uçak montaj aşamasını geçmiş; parça değiştirilemez')
+    op = db.row(conn.execute('SELECT * FROM order_parts WHERE order_id = ? AND part_id = ?', (order['id'], part_id)))
+    if not op:
+        raise HTTPException(404, 'Parça bulunamadı')
+    if op['state'] not in (WAREHOUSE, ASSEMBLY):
+        raise HTTPException(400, 'Yalnız depoya girmiş ya da montajdaki parça montaj hatasına atanabilir')
+    names, part_sections = catalogs.sections(order['product_schema'])
+    section = part_sections.get(part_id)
+    covers = set(catalogs.cover_parts(order['product_schema']))
+    steps = {r[0]: r[1] for r in conn.execute('SELECT step, id FROM assembly_steps WHERE order_id = ?', (order['id'],))}
+    to_undo = [st for st in (COVER_STEP, FINAL_STEP) if st in steps]   # sonraki adımlar her durumda geri alınır
+    if section and section in steps:
+        to_undo.append(section)
+    undone = []
+    for st in to_undo:
+        conn.execute('DELETE FROM assembly_steps WHERE id = ?', (steps[st],))
+        undone.append(STEP_TEXT.get(st) or names.get(st, st))
+    back = set()   # geri alınan adımların parçaları depoya döner
+    for st in to_undo:
+        if st in names:
+            back |= {pid for pid, sec in part_sections.items() if sec == st and pid not in covers}
+        elif st == COVER_STEP:
+            back |= covers
+        elif st == FINAL_STEP:
+            back |= {pid for pid in part_sections if pid not in covers}
+    back.discard(part_id)
+    if back:
+        conn.executemany('UPDATE order_parts SET state = ?, updated_at = ? WHERE order_id = ? AND part_id = ? AND state = ?',
+                         [(WAREHOUSE, at, order['id'], pid, ASSEMBLY) for pid in back])
+    conn.execute('UPDATE order_parts SET state = ?, finished_at = ?, updated_at = ?, approved_at = NULL, approved_by = NULL '
+                 'WHERE id = ?', (ERROR, at, at, op['id']))
+    conn.execute('INSERT INTO part_events (order_part_id, event, user_id, error_code, note, photo, at) VALUES (?,?,?,?,?,?,?)',
+                 (op['id'], 'MONTAJ_HATASI', user_id, error_code, note, photo, at))
+    if order['status'] in IN_ASSEMBLY:
+        conn.execute("UPDATE orders SET status = 'URETIM' WHERE id = ?", (order['id'],))
+    db.audit(conn, user_id, 'Montajda hatalı parça bildirdi', 'order_part', op['id'],
+             f'{order["code"]} / {part_id}: {error_code}' + (f' — geri alınan: {", ".join(undone)}' if undone else ''))
+    return recompute(conn, order['id']), undone
 
 
 def advance_to_calibration(conn, order):

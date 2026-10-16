@@ -42,6 +42,18 @@ APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'porta
 TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup-{v}.exe', 'portable': 'IP-Tools-Portable-{v}.exe'},
          'fs': {'name': 'File Search', 'slug': 'file-search', 'setup': 'File-Search-Setup-{v}.exe', 'portable': 'File-Search-Portable-{v}.exe'},
          'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'}}
+TOOLS['ip']['desc'] = {'tr': 'Ağdaki cihazları, açık portları ve servisleri tarar', 'en': 'Scans your network for devices, open ports and services',
+                       'fr': 'Analyse le réseau : appareils, ports ouverts et services', 'de': 'Durchsucht das Netzwerk nach Geräten, offenen Ports und Diensten',
+                       'es': 'Escanea la red en busca de dispositivos, puertos abiertos y servicios', 'ar': 'يفحص الشبكة بحثًا عن الأجهزة والمنافذ المفتوحة والخدمات',
+                       'zh': '扫描网络中的设备、开放端口和服务', 'ru': 'Сканирует сеть: устройства, открытые порты и службы'}
+TOOLS['fs']['desc'] = {'tr': 'Klasörleri dizinler, belgelerin içinde akıllı arama yapar', 'en': 'Indexes folders and searches smartly inside documents',
+                       'fr': 'Indexe des dossiers et recherche intelligemment dans les documents', 'de': 'Indiziert Ordner und durchsucht Dokumente intelligent',
+                       'es': 'Indexa carpetas y busca de forma inteligente dentro de los documentos', 'ar': 'يفهرس المجلدات ويبحث بذكاء داخل المستندات',
+                       'zh': '为文件夹建立索引，并在文档内容中智能搜索', 'ru': 'Индексирует папки и умно ищет по содержимому документов'}
+TOOLS['qp']['desc'] = {'tr': 'Sağ tıkla dosyaları anında önizler (resim, PSD, PDF)', 'en': 'Instantly previews files from the right-click menu (images, PSD, PDF)',
+                       'fr': 'Aperçu instantané des fichiers depuis le clic droit (images, PSD, PDF)', 'de': 'Sofortvorschau von Dateien per Rechtsklick (Bilder, PSD, PDF)',
+                       'es': 'Vista previa instantánea de archivos con clic derecho (imágenes, PSD, PDF)', 'ar': 'يعاين الملفات فورًا من قائمة النقر بزر الماوس الأيمن (صور، PSD، PDF)',
+                       'zh': '通过右键菜单即时预览文件（图片、PSD、PDF）', 'ru': 'Мгновенный предпросмотр файлов из контекстного меню (изображения, PSD, PDF)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
 RELEASE_APPS = APPS | {'mt': LAUNCHER}               # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
@@ -790,7 +802,7 @@ def mt_apps(request: Request):
         for k in APP_ORDER:
             L = lic(conn, u['id'], k)
             out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
-                        'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
+                        'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'description': APPS[k].get('desc'), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
                         'license': L['license'], 'release': release_public(latest_release(conn, k))})
         return {'apps': out, 'launcher': {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}}
 

@@ -357,6 +357,7 @@ def main():
         cat = c.get('/api/mt/apps', headers=MT).json()
         assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
         ipc = cat['apps'][5]
+        assert ipc['description']['en'].startswith('Scans') and len(ipc['description']) == 8 and cat['apps'][0]['description'] is None
         assert ipc['group'] == 'tools' and ipc['name'] == 'IP Tools' and ipc['site'].endswith('/araclar/ip-tools') and cat['apps'][0]['group'] == 'apps'
         assert c.get('/brand/ip.png').headers['content-type'] == 'image/png' and c.get('/brand/qp.svg').headers['content-type'] == 'image/svg+xml'
         assert c.get('/brand/fs-512.png').status_code == 200

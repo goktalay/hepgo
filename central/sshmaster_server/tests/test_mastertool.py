@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -232,7 +232,7 @@ def main():
         r = c.post('/api/sq/releases/1.0.0/setup', data={'filename': 'SQL-Master-Setup-1.0.0.exe'}, files={'file': ('x', exe_sq)}, headers={'X-Release-Key': 'sq-anahtar'})
         assert r.status_code == 200 and os.path.isfile(os.path.join(D, 'releases', 'sq', '1.0.0', 'SQL-Master-Setup-1.0.0.exe')), r.text
         assert c.get('/api/sq/releases/latest', headers=SQ).json()['version'] == '1.0.0'
-        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv'}
+        assert {a['app'] for a in c2.get('/api/mt/account').json()['apps']} == {'sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp'}
         assert c2.get('/indir/' + c2.get('/api/mt/account').json()['apps'][2]['download_url'].split('/indir/')[1]).content == exe_sq
         sid = next(u['id'] for u in c.get('/api/sm/admin/users', headers=ADMIN).json()['users'] if u['email'] == 'yeni@test.com')
         c.put(f'/api/sm/admin/users/{sid}', headers=ADMIN, json={'apps': {'sq': 'KAPALI'}})
@@ -355,7 +355,11 @@ def main():
         SSO = r.json()['sso_token']
         MT = {'Authorization': 'Bearer ' + SSO}
         cat = c.get('/api/mt/apps', headers=MT).json()
-        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        assert [x['app'] for x in cat['apps']] == ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp'] and cat['apps'][1]['exe'] == 'FTP Masters.exe', cat
+        ipc = cat['apps'][5]
+        assert ipc['group'] == 'tools' and ipc['name'] == 'IP Tools' and ipc['site'].endswith('/araclar/ip-tools') and cat['apps'][0]['group'] == 'apps'
+        assert c.get('/brand/ip.png').headers['content-type'] == 'image/png' and c.get('/brand/qp.svg').headers['content-type'] == 'image/svg+xml'
+        assert c.get('/brand/fs-512.png').status_code == 200
         assert cat['apps'][1]['release']['version'] and cat['apps'][1]['icon_png'] == '/brand/fm.png'
         assert c.get('/api/sm/library', headers=MT).json()['code'] == 'wrong_app'          # ortak token uygulama uçlarında geçmez
         d = c.get('/api/mt/apps/fm/download', headers=MT)
@@ -395,10 +399,21 @@ def main():
         assert c.get('/api/mt/apps', headers=MT3).json()['launcher']['release']['version'] == '1.0.0'
         assert c.get('/api/mt/releases/latest', headers=MT3).json()['version'] == '1.0.0'
         assert c.get('/api/mt/apps/mt/download', headers=MT3).content == b'MZmaster'
+        # Araçlar: aynı lisans/oturum/sürüm düzeni; kendi anahtarıyla yükleme, Master Tool'dan indirme, sso ile şifresiz giriş
+        r = c.post('/api/ip/releases/0.1.0/setup', data={'part': '0', 'parts': '1'}, files={'file': ('b', b'MZiptools')}, headers={'X-Release-Key': 'ip-anahtar'})
+        assert r.status_code == 200 and r.json()['size'] == 9, r.text
+        assert c.post('/api/ip/releases/0.2.0/setup', data={'part': '0', 'parts': '1'}, files={'file': ('b', b'MZx')},
+                      headers={'X-Release-Key': 'mt-anahtar'}).status_code == 403
+        assert c.get('/api/mt/apps/ip/download', headers=MT3).content == b'MZiptools'
+        r = c.post('/api/ip/auth/sso', json={'sso_token': MT3['Authorization'][7:]}); assert r.status_code == 200 and r.json()['token'], r.text
+        assert c.get('/api/ip/me', headers={'Authorization': 'Bearer ' + r.json()['token']}).status_code == 200
+        assert c.get('/araclar/ip-tools', headers={'Host': 'mastertool.download'}).status_code == 404   # sayfa henüz yok
+        assert c.get('/araclar/ip-tools', headers={'Host': 'sshmasters.com'}).status_code == 404
         # web oturumunda (Hesabım) sso oturumu kapatılınca ailesi düşer; web 'Oturumlar' listesinde görünür
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()
         assert acc['launcher']['name'] == 'Master Tool' and acc['launcher']['release']['version'] == '1.0.0'
+        assert {x['app']: x['group'] for x in acc['apps']}['fs'] == 'tools' and acc['apps'][0]['group'] == 'apps'
         sid = next(x['id'] for x in acc['sessions'] if x['kind'] == 'sso')
         r = c.post('/api/sq/auth/sso', json={'sso_token': MT3['Authorization'][7:]}); SQ = {'Authorization': 'Bearer ' + r.json()['token']}
         assert c.delete(f'/api/mt/sessions/{sid}', headers=W).json() == {'ok': True}

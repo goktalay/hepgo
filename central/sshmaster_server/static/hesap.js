@@ -161,7 +161,8 @@ const fmtSize = n => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 102
 const fmtDate = s => (s ? new Date(s).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const TABS = () => [['uygulamalar', t('Uygulamalar')], ['cihazlar', t('Cihazlar')], ['guvenlik', t('Şifre')], ['destek', t('Destek')]];
 const TK_STATUS = () => ({ acik: [t('Açık'), 'warn'], yanit_bekliyor: [t('Yanıtlandı'), 'on'], cozuldu: [t('Çözüldü'), ''], kapali: [t('Kapalı'), ''] });
-const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: t('Hesap / genel') });
+const TK_APPS = () => ({ sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master',
+  ...Object.fromEntries((ACC?.apps || []).map(x => [x.app, x.name])), mt: t('Hesap / genel') });   // araçlar sunucudan gelir
 let ACC = null;
 let curTab = null;
 
@@ -192,7 +193,7 @@ function show(tab) {
 }
 
 function paneApps(pane) {
-  const order = [...ACC.apps].sort((a, b) => (b.app === BRAND) - (a.app === BRAND));
+  const order = [...ACC.apps].sort((a, b) => ((a.group === 'tools') - (b.group === 'tools')) || ((b.app === BRAND) - (a.app === BRAND)));
   const L = ACC.launcher, lr = L && L.release;
   const launcher = L ? `<div class="app-card launcher">
       <div class="head"><img src="/brand/mt.png" alt=""><div class="grow"><b>${esc(L.name)}</b>
@@ -202,10 +203,12 @@ function paneApps(pane) {
         ${lr.portable ? `<a class="btn" href="${esc(L.download_url)}?tur=portable">${t('Taşınabilir sürüm')}</a>` : ''}</div>
         <p class="hint">SHA-256: <code>${esc(lr.sha256)}</code></p>` : ''}
     </div>` : '';
-  pane.innerHTML = `${launcher}<div class="apps">${order.map(x => {
+  pane.innerHTML = `${launcher}<div class="apps">${order.map((x, i) => {
+    const head = x.group === 'tools' && (i === 0 || order[i - 1].group !== 'tools')
+      ? `<h3 class="grp-h">${t('Araçlar')}</h3><p class="hint" style="margin-top:-6px">${t('Master Tool altındaki küçük yardımcı uygulamalar; Master Tool\'dan da tek tıkla kurulabilir.')}</p>` : '';
     const r = x.release, off = x.license !== 'AKTIF';
-    return `<div class="app-card ${off ? 'off' : ''}">
-      <div class="head"><img src="/brand/${x.app}.png" alt=""><div class="grow"><b>${esc(x.name)}</b>
+    return `${head}<div class="app-card ${off ? 'off' : ''}">
+      <div class="head"><img src="/brand/${x.app}.png" alt=""><div class="grow"><b>${esc(x.name)}</b>${x.group === 'tools' && x.site ? ` <a class="small" href="${esc(x.site)}" target="_blank" rel="noopener">${t('Tanıtım')}</a>` : ''}
         <div class="muted small">${r ? t('Sürüm {v} · {size} · {date}', { v: esc(r.version), size: fmtSize(r.size), date: fmtDate(r.date) }) : t('İndirilebilir sürüm yakında')}</div></div>
         ${off ? `<span class="badge off">${t('Hesabınızda kapalı')}</span>` : ''}</div>
       ${off ? `<p class="hint">${t('Bu uygulamanın kullanımı hesabınız için kapatılmış. Bilgi için Destek sekmesinden talep açabilirsiniz.')}</p>` : `

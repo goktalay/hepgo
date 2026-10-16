@@ -37,9 +37,15 @@ APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'porta
         'sq': {'name': 'SQL Master', 'setup': 'SQL-Master-Setup-{v}.exe', 'portable': 'SQL-Master-Portable-{v}.exe'},
         'np': {'name': 'Notepad Master', 'setup': 'Notepad-Master-Setup-{v}.exe', 'portable': 'Notepad-Master-Portable-{v}.exe'},
         'cv': {'name': 'Convert Master', 'setup': 'Convert-Master-Setup-{v}.exe', 'portable': 'Convert-Master-Portable-{v}.exe'}}
+# Araçlar: Master Tool altındaki küçük uygulamalar — kendi siteleri yok; tanıtım mastertool.download/araclar/<slug>, indirme Hesabım ve
+# Master Tool'dan. Yeni araç = buraya bir satır + <SLUG büyük harf>_RELEASE_KEY (sunucu .env + GitHub) + static/mt/araclar/<slug>.html.
+TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup-{v}.exe', 'portable': 'IP-Tools-Portable-{v}.exe'},
+         'fs': {'name': 'File Search', 'slug': 'file-search', 'setup': 'File-Search-Setup-{v}.exe', 'portable': 'File-Search-Portable-{v}.exe'},
+         'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'}}
+APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
 RELEASE_APPS = APPS | {'mt': LAUNCHER}               # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
-PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
+PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt') + tuple(TOOLS)      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
 SITES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')
 app = FastAPI(title='Mastertool', docs_url=None, redoc_url=None, openapi_url=None)
 COOKIE = 'sm_session'
@@ -313,7 +319,7 @@ async def prelogin(a: str, request: Request):
 
 def brand_of(a, b):
     br = str((b or {}).get('brand') or '')
-    return br if br in SITES else a
+    return br if br in SITES else (a if a in SITES else 'mt')   # araçların kendi sitesi yok → Mastertool markası
 
 
 @app.post('/api/{a}/auth/register')
@@ -679,7 +685,8 @@ def account(a: str, request: Request):
         apps = []
         for k, meta in APPS.items():
             L = lic(conn, u['id'], k)
-            apps.append({'app': k, 'name': meta['name'], 'license': L['license'], 'sync_enabled': bool(L['sync_enabled']),
+            apps.append({'app': k, 'name': meta['name'], 'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k),
+                         'license': L['license'], 'sync_enabled': bool(L['sync_enabled']),
                          'library': library_meta(conn, u['id'], k), 'release': release_public(latest_release(conn, k)),
                          'download_url': _dl_url(u, k),
                          'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ? AND app = ?', (u['id'], k)).fetchone()[0]})
@@ -765,7 +772,12 @@ def release_latest(a: str, request: Request):
 
 
 # ---------------- Master Tool masaüstü: uygulama kataloğu ve indirme (ortak oturumla) ----------------
-APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv')
+APP_ORDER = ('sm', 'fm', 'sq', 'np', 'cv') + tuple(TOOLS)
+
+
+def app_site(k):
+    """Uygulamanın tanıtım adresi: kendi sitesi ya da (araçlar) mastertool.download/araclar/<slug>."""
+    return f"{settings.PORTAL_URL}/araclar/{TOOLS[k]['slug']}" if k in TOOLS else settings.SITE_URLS[k] + '/'
 
 
 @app.get('/api/mt/apps')
@@ -778,7 +790,7 @@ def mt_apps(request: Request):
         for k in APP_ORDER:
             L = lic(conn, u['id'], k)
             out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
-                        'site': settings.SITE_URLS[k] + '/', 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
+                        'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
                         'license': L['license'], 'release': release_public(latest_release(conn, k))})
         return {'apps': out, 'launcher': {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}}
 
@@ -933,7 +945,8 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
 
 
 # ---------------- destek talepleri (Merkez talep ekranına düşer) ----------------
-TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master', 'mt': 'Hesap / genel'}
+TICKET_APPS = ({'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master'}
+               | {k: v['name'] for k, v in TOOLS.items()} | {'mt': 'Hesap / genel'})
 
 
 def _mz(fn):
@@ -1004,7 +1017,7 @@ async def ticket_notify(request: Request):
         u = conn.execute('SELECT * FROM users WHERE email = ?', (str(b.get('email') or '').lower(),)).fetchone()
     if not u or not mailer.enabled():
         return {'ok': True, 'sent': False}
-    brand = b.get('app') if b.get('app') in APPS else 'mt'
+    brand = b.get('app') if b.get('app') in SITES else 'mt'
     mailer.send_ticket_reply(u['email'], u['name'], str(b.get('code') or '')[:20], str(b.get('subject') or '')[:200],
                              acct(f"/hesabim?talep={int(b.get('id') or 0)}#destek"), brand)
     return {'ok': True, 'sent': True}
@@ -1224,7 +1237,7 @@ def _account_page(request):
         return r
     site = site_of(request)
     qa = APP_ALIASES.get((request.query_params.get('app') or '').lower(), request.query_params.get('app'))
-    brand = qa if site == 'mt' and qa in APPS else site
+    brand = qa if site == 'mt' and qa in SITES else site
     html = (settings.STATIC_DIR / 'hesap.html').read_text(encoding='utf-8')
     html = html.replace('{{SITE}}', site).replace('{{BRAND}}', brand).replace('{{NAME}}', SITE_NAMES[site])
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
@@ -1249,6 +1262,22 @@ BRAND_FILES = {'sm.png': ('sm', 'logo.png', 'image/png'), 'fm.png': ('fm', 'logo
                'cv.png': ('cv', 'logo.png', 'image/png'), 'cv.svg': ('cv', 'favicon.svg', 'image/svg+xml'),
                'sm.svg': ('sm', 'favicon.svg', 'image/svg+xml'), 'fm.svg': ('fm', 'favicon.svg', 'image/svg+xml'),
                'mt.svg': ('mt', 'favicon.svg', 'image/svg+xml'), 'hepgo.png': ('mt', 'hepgo.png', 'image/png')}
+for _k in TOOLS:   # araç simgeleri: /brand/<kod>.png (128), /brand/<kod>-512.png, /brand/<kod>.svg
+    BRAND_FILES |= {f'{_k}.png': ('mt', f'araclar/{_k}.png', 'image/png'), f'{_k}-512.png': ('mt', f'araclar/{_k}-512.png', 'image/png'),
+                    f'{_k}.svg': ('mt', f'araclar/{_k}.svg', 'image/svg+xml')}
+
+
+@app.get('/araclar/{slug}')
+def page_tool(slug: str, request: Request, lang: str = ''):
+    """Araç tanıtım sayfası (yalnız mastertool.download): static/mt/araclar/<slug>.html — SEO etiketleri ana sayfalar gibi."""
+    k = next((k for k, v in TOOLS.items() if v['slug'] == slug), None)
+    p = settings.STATIC_DIR / 'mt' / 'araclar' / f'{slug}.html'
+    if site_of(request) != 'mt' or not k or not p.is_file():
+        return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    with db.connect() as conn:
+        rel = release_public(latest_release(conn, k))
+    return HTMLResponse(seo.render_tool(k, TOOLS[k], p.read_text(encoding='utf-8'), lang, rel),
+                        headers={'Cache-Control': 'no-cache', 'Vary': 'Host'})
 
 
 @app.get('/brand/{name}')

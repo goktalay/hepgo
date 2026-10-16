@@ -139,6 +139,28 @@ def render_index(site, page, lang, rel=None):
     return page.replace('</head>', extra + '</head>', 1)
 
 
+def render_tool(k, meta, page, lang, rel=None):
+    """Araç tanıtım sayfası (mastertool.download/araclar/<slug>): ana sayfa SEO'su + adresler ve yapılandırılmış veri araca göre."""
+    lang = lang if lang in LANGS else 'tr'
+    out = render_index('mt', page, lang, rel)
+    turl = f'{base("mt")}/araclar/{meta["slug"]}'
+    u = lambda l: turl if l == 'tr' else f'{turl}?lang={l}'   # noqa: E731
+    out = re.sub(r'(href|content)="' + re.escape(base('mt')) + r'/(\?lang=([a-z]{2}))?"', lambda m: f'{m[1]}="{u(m[3] or "tr")}"', out)
+    m = re.search(r'<meta name="description" content="([^"]*)">', out)
+    desc = _h.unescape(m.group(1)) if m else ''
+    ld = _app_ld(meta['name'], 'UtilitiesApplication', u(lang), desc, f'{base("mt")}/brand/{k}-512.png', rel, lang)
+    ld['isPartOf'] = {'@type': 'SoftwareApplication', 'name': 'Master Tool', 'url': f'{base("mt")}/#master-tool'}
+    return re.sub(r'<script type="application/ld\+json">.*?</script>',
+                  lambda _: '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace('</', '<\\/') + '</script>',
+                  out, count=1, flags=re.S)
+
+
+def tool_pages():
+    """Yayındaki araç sayfaları (site haritası için): static/mt/araclar/<slug>.html var olanlar."""
+    d = settings.STATIC_DIR / 'mt' / 'araclar'
+    return sorted(f.stem for f in d.glob('*.html')) if d.is_dir() else []
+
+
 def robots(site):
     return (f'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /hesabim\nDisallow: /indir/\nDisallow: /dogrula/\n'
             f'Disallow: /sifre-sifirla/\n\nSitemap: {base(site)}/sitemap.xml\n')
@@ -152,6 +174,12 @@ def sitemap(site):
     urls = ''.join(f'<url><loc>{e(_url(site, l))}</loc>{alts}{imgs if l == "tr" else ""}<changefreq>weekly</changefreq>'
                    f'<priority>{"1.0" if l == "tr" else "0.8"}</priority></url>' for l in LANGS)
     urls += f'<url><loc>{base(site)}/gizlilik</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>'
+    if site == 'mt':   # araç tanıtım sayfaları (8 dil)
+        for slug in tool_pages():
+            t = f'{base("mt")}/araclar/{slug}'
+            ta = ''.join(f'<xhtml:link rel="alternate" hreflang="{HREFLANG.get(l, l)}" href="{e(t if l == "tr" else t + "?lang=" + l)}"/>' for l in LANGS)
+            urls += ''.join(f'<url><loc>{e(t if l == "tr" else t + "?lang=" + l)}</loc>{ta}<changefreq>weekly</changefreq>'
+                            f'<priority>{"0.9" if l == "tr" else "0.7"}</priority></url>' for l in LANGS)
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
             'xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
             f'{urls}</urlset>\n')

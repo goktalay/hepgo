@@ -51,7 +51,10 @@ LEGAL_PROVIDER = os.environ.get('MT_LEGAL_PROVIDER', 'SKYREX HAVACILIK TEKNOLOJ�
 LEGAL_DATE = '16 Ekim 2026'
 RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.get('FTPM_RELEASE_KEY', ''), 'sq': os.environ.get('SQLM_RELEASE_KEY', ''),
                 'np': os.environ.get('NOTEPADM_RELEASE_KEY', ''), 'cv': os.environ.get('CONVERTM_RELEASE_KEY', ''),
-                'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', '')}   # mt = Master Tool masaüstü uygulaması (başlatıcı)
+                'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', ''),
+                # Araçlar (main.TOOLS): anahtar adı = slug'ın tiresiz büyük harfi + _RELEASE_KEY
+                'ip': os.environ.get('IPTOOLS_RELEASE_KEY', ''), 'fs': os.environ.get('FILESEARCH_RELEASE_KEY', ''),
+                'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', '')}   # mt = Master Tool masaüstü uygulaması (başlatıcı)
 # Destek talepleri Merkez'in talep ekranına düşer: Merkez aynı sunucuda UNIX soketinde (ya da MT_MERKEZ_URL) iç anahtarla çağrılır
 MERKEZ_UDS = os.environ.get('MT_MERKEZ_UDS', '/run/hepgo/merkez.sock')
 MERKEZ_URL = os.environ.get('MT_MERKEZ_URL', 'http://merkez').rstrip('/')

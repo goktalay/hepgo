@@ -56,7 +56,8 @@ TOOLS['qp']['desc'] = {'tr': 'Sağ tıkla dosyaları anında önizler (resim, PS
                        'zh': '通过右键菜单即时预览文件（图片、PSD、PDF）', 'ru': 'Мгновенный предпросмотр файлов из контекстного меню (изображения, PSD, PDF)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
-RELEASE_APPS = APPS | {'mt': LAUNCHER}               # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
+MT_CLIENTS = ('desktop', 'android', 'ios')          # Master Tool istemcileri: /api/mt/auth/login'de yalnız ortak (sso) oturum açar
+RELEASE_APPS = APPS | {'mt': LAUNCHER}              # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
 PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt') + tuple(TOOLS)      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
 SITES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')
 app = FastAPI(title='Mastertool', docs_url=None, redoc_url=None, openapi_url=None)
@@ -423,7 +424,7 @@ async def login(a: str, request: Request):
     b = await body(request)
     email = norm_email(b.get('email'))
     auth = need_auth_hash(b.get('auth_hash'))
-    desktop = a == 'mt' and b.get('client') == 'desktop'     # Master Tool masaüstü: ortak (sso) oturum
+    desktop = a == 'mt' and b.get('client') in MT_CLIENTS     # Master Tool masaüstü / Android / iPhone: ortak (sso) oturum
     web = (b.get('client') == 'web' or a == 'mt') and not desktop
     with db.connect() as conn:
         u = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()

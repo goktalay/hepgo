@@ -448,5 +448,16 @@ registerCatalog('en', {
 "Hataya Al ve Yeniden Üret": "Mark Faulty and Reproduce",
 "{id} hataya alındı; geri alınan: {s}": "{id} marked faulty; undone: {s}",
 "{id} hataya alındı": "{id} marked faulty",
-"Montajda hatalı bulundu, yeniden üretime alındı": "Found faulty in assembly, sent back to production"
+"Montajda hatalı bulundu, yeniden üretime alındı": "Found faulty in assembly, sent back to production",
+"Kaldır (sebep ile)": "Remove (with reason)",
+"Paylaşımı kaldır": "Remove post",
+"Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.": "The post is removed from the feed. The reason you write is sent to the post owner as a notification.",
+"Kaldırma sebebi (paylaşım sahibine bildirilir)": "Reason for removal (the post owner will be notified)",
+"Kaldır ve Bildir": "Remove and Notify",
+"Kaldırma sebebi yazın": "Write a reason for removal",
+"Paylaşım kaldırıldı; sebep sahibine bildirildi": "Post removed; the owner has been notified of the reason",
+"Kaldırılan paylaşımlarınız": "Your removed posts",
+"Sebep: ": "Reason: ",
+"Anladım": "Got it",
+"Paylaşımınız kaldırıldı": "Your post was removed"
 });

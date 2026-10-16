@@ -3181,5 +3181,16 @@ registerCatalog('ru', {
 "Hataya Al ve Yeniden Üret": "Пометить браком и изготовить заново",
 "{id} hataya alındı; geri alınan: {s}": "{id} помечена браком; отменено: {s}",
 "{id} hataya alındı": "{id} помечена браком",
-"Montajda hatalı bulundu, yeniden üretime alındı": "Признана бракованной при сборке, возвращена в производство"
+"Montajda hatalı bulundu, yeniden üretime alındı": "Признана бракованной при сборке, возвращена в производство",
+"Kaldır (sebep ile)": "Удалить (с причиной)",
+"Paylaşımı kaldır": "Удалить публикацию",
+"Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.": "Публикация удаляется из ленты. Указанная причина отправляется автору в виде уведомления.",
+"Kaldırma sebebi (paylaşım sahibine bildirilir)": "Причина удаления (автор будет уведомлён)",
+"Kaldır ve Bildir": "Удалить и уведомить",
+"Kaldırma sebebi yazın": "Укажите причину удаления",
+"Paylaşım kaldırıldı; sebep sahibine bildirildi": "Публикация удалена; автор уведомлён о причине",
+"Kaldırılan paylaşımlarınız": "Ваши удалённые публикации",
+"Sebep: ": "Причина: ",
+"Anladım": "Понятно",
+"Paylaşımınız kaldırıldı": "Ваша публикация удалена"
 });

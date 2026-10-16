@@ -33,6 +33,17 @@ def list_feed(since: str = '', located: int = 0, saved: int = 0, limit: int = 60
             'reactions': list(feed.REACTIONS)}
 
 
+@router.get('/removed')
+def removed(user=Depends(auth.current_user), conn=db.DB):
+    """Kaldırılan paylaşımlarım (sebebiyle); açılınca görüldü sayılır, zil bildirimi kalkar."""
+    rows = feed.removed_unseen(conn, user['id'])
+    out = [{'id': r['id'], 'text': feed.snippet(r['text'], r['media']), 'removed_at': r['deleted_at'], 'reason': r['removed_reason'],
+            'removed_by': r['removed_by_name']} for r in rows]
+    feed.mark_removed_seen(conn, user['id'])
+    conn.commit()
+    return out
+
+
 @router.post('/{post_id}/save')
 def save(post_id: int, user=Depends(auth.current_user), conn=db.DB):
     r = feed.toggle_save(conn, post_id, user['id'])
@@ -212,6 +223,34 @@ def reactions(post_id: int, user=Depends(auth.current_user), conn=db.DB):
     if row[0] != user['id'] and not user.get('master') and 'admin' not in user.get('modules', []):
         raise HTTPException(403, 'Tepki verenleri yalnızca paylaşım sahibi görebilir')
     return {'reactions': feed.reactors(conn, post_id)}
+
+
+class RemoveIn(BaseModel):
+    reason: str
+
+
+@router.post('/{post_id}/remove')
+def remove_by_master(post_id: int, body: RemoveIn, user=Depends(auth.current_user), conn=db.DB):
+    """Sistem sahibi (MASTER) başkasının paylaşımını sebep yazarak kaldırır; sebep paylaşım sahibine bildirim olarak gider."""
+    if not user.get('master'):
+        raise HTTPException(403, 'Yalnız sistem sahibi kaldırabilir')
+    reason = ' '.join(body.reason.split()).strip()
+    if len(reason) < 3:
+        raise HTTPException(400, 'Kaldırma sebebi yazın')
+    res = feed.remove_by_master(conn, post_id, user, reason[:500])
+    if not res:
+        raise HTTPException(404, 'Paylaşım bulunamadı')
+    owner_id, text = res
+    db.audit(conn, user['id'], 'Paylaşımı kaldırdı', 'feed_post', post_id, f'{text[:60]} — sebep: {reason[:120]}')
+    conn.commit()
+    if owner_id and owner_id != user['id']:
+        try:
+            from .. import push
+            push.send([owner_id], {'type': 'notif', 'title': 'Paylaşımınız kaldırıldı', 'tag': f'notif-feed-removed-{post_id}',
+                                   'body': f'{reason} — "{text}"', 'url': '/app#/home'})
+        except Exception:   # noqa: BLE001
+            pass
+    return {'ok': True}
 
 
 @router.delete('/{post_id}')

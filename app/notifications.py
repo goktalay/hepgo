@@ -491,6 +491,14 @@ def live_now(conn, user):
     return _result(rows, names, f"#/live/{rows[0]['id']}" if rows else '#/home', 'Katılmak için dokunun')
 
 
+def feed_removed(conn, user):
+    """Paylaşımınız sistem sahibi tarafından sebep yazılarak kaldırıldı (sebebi görmek için açın; açınca görüldü sayılır)."""
+    from . import feed
+    rows = feed.removed_unseen(conn, user['id'])
+    return _result(rows, [f'{r["removed_reason"]} — "{feed.snippet(r["text"], r["media"])}"' for r in rows], '#/home?removed=1',
+                   'Kaldırılan paylaşımınızı ve sebebini görün')
+
+
 def feed_new(conn, user):
     """Şirketten Haberler: görmediğiniz yeni paylaşımlar (tıklayınca ana ekran; ana ekranda görünce kalkar)."""
     from . import feed
@@ -606,6 +614,7 @@ NOTIFICATIONS = [
     # Sonda: dakikalık push taramasında önemli bildirimlerin önüne geçmesin. push=False: telefon bildirimini paylaşım
     # anında routers/feed._announce atar; tarama aynı artış için ikinci kez atmasın (çift bildirim olmasın).
     {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
+    {'key': 'feed-removed', 'roles': None, 'fn': feed_removed, 'title': 'Paylaşımınız kaldırıldı', 'push': False},
     # Telefon bildirimini yayın başlarken routers/live atar (aynı etiketle bitince günceller); tarama ikinci kez atmasın
     {'key': 'live-now', 'roles': None, 'fn': live_now, 'title': 'Canlı yayın', 'push': False},
     {'key': 'certs-expiring', 'roles': None, 'fn': certs_expiring, 'title': 'Süresi yaklaşan / dolan sertifika'},
@@ -677,7 +686,7 @@ _GROUP = {
     'electronics-waiting': 'Üretim', 'calibration-waiting': 'Üretim', 'orders-overdue': 'Üretim',
     'hr-leave-pending': 'İnsan Kaynakları', 'leave-decided': 'İnsan Kaynakları',
     'duty-pending': 'İnsan Kaynakları', 'duty-decided': 'İnsan Kaynakları',
-    'announcements': 'Duyurular', 'feed-new': 'Şirketten Haberler',
+    'announcements': 'Duyurular', 'feed-new': 'Şirketten Haberler', 'feed-removed': 'Şirketten Haberler',
     'guest-visit': 'Sekreterya', 'cargo-waiting': 'Sekreterya',
     'call-waiting': 'Aramalar', 'meeting-soon': 'Toplantılar', 'meeting-invite': 'Toplantılar',
     'mail-unread': 'Mail', 'calendar-due': 'Takvim', 'chat-waiting': 'Mesajlar',

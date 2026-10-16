@@ -3181,5 +3181,16 @@ registerCatalog('ar', {
 "Hataya Al ve Yeniden Üret": "تعليمها كمعيبة وإعادة إنتاجها",
 "{id} hataya alındı; geri alınan: {s}": "تم تعليم {id} كمعيبة؛ ما أُلغي: {s}",
 "{id} hataya alındı": "تم تعليم {id} كمعيبة",
-"Montajda hatalı bulundu, yeniden üretime alındı": "وُجدت معيبة أثناء التجميع وأُعيدت إلى الإنتاج"
+"Montajda hatalı bulundu, yeniden üretime alındı": "وُجدت معيبة أثناء التجميع وأُعيدت إلى الإنتاج",
+"Kaldır (sebep ile)": "إزالة (مع ذكر السبب)",
+"Paylaşımı kaldır": "إزالة المنشور",
+"Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.": "يُزال المنشور من الخلاصة. ويُرسَل السبب الذي تكتبونه إلى صاحب المنشور كإشعار.",
+"Kaldırma sebebi (paylaşım sahibine bildirilir)": "سبب الإزالة (سيُبلَّغ صاحب المنشور)",
+"Kaldır ve Bildir": "إزالة وإبلاغ",
+"Kaldırma sebebi yazın": "اكتبوا سبب الإزالة",
+"Paylaşım kaldırıldı; sebep sahibine bildirildi": "أُزيل المنشور؛ وأُبلغ صاحبه بالسبب",
+"Kaldırılan paylaşımlarınız": "منشوراتكم المُزالة",
+"Sebep: ": "السبب: ",
+"Anladım": "فهمت",
+"Paylaşımınız kaldırıldı": "أُزيل منشوركم"
 });

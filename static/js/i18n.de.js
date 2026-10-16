@@ -3181,5 +3181,16 @@ registerCatalog('de', {
 "Hataya Al ve Yeniden Üret": "Als fehlerhaft markieren und neu fertigen",
 "{id} hataya alındı; geri alınan: {s}": "{id} als fehlerhaft markiert; zurückgenommen: {s}",
 "{id} hataya alındı": "{id} als fehlerhaft markiert",
-"Montajda hatalı bulundu, yeniden üretime alındı": "In der Montage als fehlerhaft erkannt, zurück in die Fertigung"
+"Montajda hatalı bulundu, yeniden üretime alındı": "In der Montage als fehlerhaft erkannt, zurück in die Fertigung",
+"Kaldır (sebep ile)": "Entfernen (mit Begründung)",
+"Paylaşımı kaldır": "Beitrag entfernen",
+"Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.": "Der Beitrag wird aus dem Feed entfernt. Die eingegebene Begründung wird dem Verfasser als Benachrichtigung gesendet.",
+"Kaldırma sebebi (paylaşım sahibine bildirilir)": "Grund der Entfernung (der Verfasser wird benachrichtigt)",
+"Kaldır ve Bildir": "Entfernen und benachrichtigen",
+"Kaldırma sebebi yazın": "Bitte eine Begründung eingeben",
+"Paylaşım kaldırıldı; sebep sahibine bildirildi": "Beitrag entfernt; der Verfasser wurde über den Grund benachrichtigt",
+"Kaldırılan paylaşımlarınız": "Ihre entfernten Beiträge",
+"Sebep: ": "Grund: ",
+"Anladım": "Verstanden",
+"Paylaşımınız kaldırıldı": "Ihr Beitrag wurde entfernt"
 });

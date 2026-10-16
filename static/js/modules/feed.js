@@ -216,7 +216,51 @@ export function renderFeed(container, ctx, opts = {}) {
       canSeeReactors(p) && totalOf(p) ? { ico: IG.heart, label: 'Kimler beğendi', run: () => showReactors(p) } : null,
       ctx.user?.master ? { ico: IG.pin, label: p.pinned ? 'Üstten sabitlemeyi kaldır' : 'Üste sabitle (herkes için)', run: () => togglePin(p) } : null,   // yalnız master
       canDelete(p) ? { ico: IG.trash, label: 'Sil', danger: true, run: () => del(p) } : null,
+      ctx.user?.master && !canDelete(p) && !p.system ? { ico: IG.trash, label: 'Kaldır (sebep ile)', danger: true, run: () => removeWithReason(p) } : null,   // master: başkasının paylaşımı
     ].filter(Boolean));
+  }
+  // Master: başkasının paylaşımını sebep yazarak kaldırır; sebep paylaşım sahibine bildirim olarak gider
+  function removeWithReason(p) {
+    const reason = h('textarea', { class: 'input', rows: 3, placeholder: 'Kaldırma sebebi (paylaşım sahibine bildirilir)' });
+    const close = modal({
+      title: 'Paylaşımı kaldır',
+      body: h('div', null,
+        h('p', { class: 'muted' }, 'Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.'),
+        reason),
+      actions: [
+        { label: 'Vazgeç' },
+        {
+          label: 'Kaldır ve Bildir', class: 'danger', onClick: async () => {
+            if (reason.value.trim().length < 3) throw new Error('Kaldırma sebebi yazın');
+            await api.post(`/api/feed/${p.id}/remove`, { reason: reason.value.trim() });
+            posts = posts.filter(x => x !== p);
+            p._card?.remove();
+            if (!posts.length) draw();
+            toast('Paylaşım kaldırıldı; sebep sahibine bildirildi');
+          },
+        },
+      ],
+    });
+    setTimeout(() => reason.focus(), 50);
+    return close;
+  }
+  // Sahibi: kaldırılan paylaşımlarım ve sebepleri (zil bildiriminden #/home?removed=1 ile gelir; açılınca görüldü sayılır)
+  async function showRemoved() {
+    let rows = [];
+    try { rows = await api.get('/api/feed/removed'); } catch (err) { toastError(err); return; }
+    if (!rows.length) return;
+    modal({
+      title: 'Kaldırılan paylaşımlarınız',
+      body: h('div', { class: 'feed-removed' }, ...rows.map(r => h('div', { class: 'feed-removed-item' },
+        h('div', { class: 'muted small' }, `${fmtDateTime(r.removed_at)}${r.removed_by ? ' · ' + r.removed_by : ''}`),
+        h('div', { class: 'feed-removed-text' }, `“${r.text}”`),
+        h('div', { class: 'feed-removed-reason' }, h('b', null, 'Sebep: '), r.reason)))),
+      actions: [{ label: 'Anladım', class: 'primary' }],
+    });
+  }
+  if (/[?&]removed=1/.test(location.hash)) {
+    history.replaceState(null, '', location.hash.replace(/[?&]removed=1/, ''));
+    setTimeout(showRemoved, 300);
   }
   // Üste sabitle: master; tek sabitli paylaşım olur, herkes için en üstte görünür (yeni paylaşımlar altına gelir)
   async function togglePin(p) {

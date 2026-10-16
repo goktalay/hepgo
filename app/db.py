@@ -3213,6 +3213,10 @@ def _migrate(conn):
     if 'pinned_at' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # Şirketten Haberler: master'ın üste sabitlediği paylaşım
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_at TEXT')
         conn.execute('ALTER TABLE feed_posts ADD COLUMN pinned_by INTEGER REFERENCES users(id)')
+    if 'removed_reason' not in {r[1] for r in conn.execute('PRAGMA table_info(feed_posts)')}:   # master sebep yazarak kaldırdı → sahibine bildirim
+        conn.execute('ALTER TABLE feed_posts ADD COLUMN removed_by INTEGER REFERENCES users(id)')
+        conn.execute('ALTER TABLE feed_posts ADD COLUMN removed_reason TEXT')
+        conn.execute('ALTER TABLE feed_posts ADD COLUMN removed_seen_at TEXT')
     lr_cols = {r[1] for r in conn.execute('PRAGMA table_info(leave_requests)')}
     if 'signed_file' not in lr_cols:   # onaylanan iznin ıslak imzalı formu (İK yükler)
         for col in ('signed_file', 'signed_name', 'signed_at'):

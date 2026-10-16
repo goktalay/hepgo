@@ -231,6 +231,31 @@ def delete(conn, post_id, viewer):
     return True
 
 
+def remove_by_master(conn, post_id, master, reason):
+    """Sistem sahibi (MASTER) bir kullanıcının paylaşımını sebep yazarak kaldırır. Paylaşım akıştan kalkar; sebep sahibine
+    bildirim olarak gider (zil + anlık). Dönüş: (sahibin kullanıcı kimliği, paylaşım özeti) ya da None."""
+    row = conn.execute('SELECT author_id, text, media FROM feed_posts WHERE id = ? AND deleted_at IS NULL', (post_id,)).fetchone()
+    if not row:
+        return None
+    now = db.now()
+    conn.execute('UPDATE feed_posts SET deleted_at = ?, removed_by = ?, removed_reason = ?, pinned_at = NULL, pinned_by = NULL WHERE id = ?',
+                 (now, master['id'], reason, post_id))
+    return row[0], snippet(row[1], row[2])
+
+
+def removed_unseen(conn, user_id):
+    """Sahibinin henüz görmediği, master tarafından kaldırılmış paylaşımları (sebebiyle)."""
+    return db.rows(conn.execute(
+        """SELECT f.id, f.text, f.media, f.deleted_at, f.removed_reason, u.full_name AS removed_by_name
+           FROM feed_posts f LEFT JOIN users u ON u.id = f.removed_by
+           WHERE f.author_id = ? AND f.removed_reason IS NOT NULL AND f.removed_seen_at IS NULL ORDER BY f.deleted_at DESC""", (user_id,)))
+
+
+def mark_removed_seen(conn, user_id):
+    conn.execute('UPDATE feed_posts SET removed_seen_at = ? WHERE author_id = ? AND removed_reason IS NOT NULL AND removed_seen_at IS NULL',
+                 (db.now(), user_id))
+
+
 # ---------- Görülme (ana ekranda akışı gören kullanıcı) + bildirim ----------
 SEEN_KEY = 'feed_seen'
 

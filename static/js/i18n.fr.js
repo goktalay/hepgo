@@ -3181,5 +3181,16 @@ registerCatalog('fr', {
 "Hataya Al ve Yeniden Üret": "Marquer défectueuse et reproduire",
 "{id} hataya alındı; geri alınan: {s}": "{id} marquée défectueuse ; annulé : {s}",
 "{id} hataya alındı": "{id} marquée défectueuse",
-"Montajda hatalı bulundu, yeniden üretime alındı": "Jugée défectueuse au montage, renvoyée en production"
+"Montajda hatalı bulundu, yeniden üretime alındı": "Jugée défectueuse au montage, renvoyée en production",
+"Kaldır (sebep ile)": "Retirer (avec motif)",
+"Paylaşımı kaldır": "Retirer la publication",
+"Paylaşım akıştan kaldırılır. Yazdığınız sebep paylaşım sahibine bildirim olarak gider.": "La publication est retirée du fil. Le motif que vous saisissez est envoyé à son auteur sous forme de notification.",
+"Kaldırma sebebi (paylaşım sahibine bildirilir)": "Motif du retrait (l'auteur sera informé)",
+"Kaldır ve Bildir": "Retirer et notifier",
+"Kaldırma sebebi yazın": "Saisissez un motif de retrait",
+"Paylaşım kaldırıldı; sebep sahibine bildirildi": "Publication retirée ; l'auteur a été informé du motif",
+"Kaldırılan paylaşımlarınız": "Vos publications retirées",
+"Sebep: ": "Motif : ",
+"Anladım": "Compris",
+"Paylaşımınız kaldırıldı": "Votre publication a été retirée"
 });

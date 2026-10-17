@@ -23,6 +23,7 @@ class SessionIn(BaseModel):
     type: str
     center_id: int
     world: Optional[dict] = None
+    airframe: Optional[str] = None   # sabit kanat / VTOL 3B gövdesi: caymaz (varsayılan) | delta
 
 
 class CmdIn(BaseModel):
@@ -68,7 +69,7 @@ async def open_session(body: SessionIn, request: Request, response: Response, us
     if not center:
         raise HTTPException(400, 'Merkez bulunamadı (Dron Yönetimi › Rotalar › Merkezler)')
     try:
-        s = await flightsim.MANAGER.ac(body.type, center, body.world, {'id': user['id'], 'name': user['full_name']})
+        s = await flightsim.MANAGER.ac(body.type, center, body.world, {'id': user['id'], 'name': user['full_name']}, body.airframe)
     except flightsim.SimHata as e:
         _hata(e)
 

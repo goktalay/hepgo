@@ -3349,4 +3349,7 @@ registerCatalog('ru', {
   "Oturum yok": "Нет сессии",
   "SITL yeniden başlatıldı": "SITL перезапущен",
   "Dron Yönetimi › Uçuş Simülatörü": "Управление дронами › Авиасимулятор",
+  "Gövde": "Планер",
+  "Delta kanat": "Дельта-крыло",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: из STEP-модели нашего самолёта · Дельта-крыло: летающее крыло с толкающим винтом",
 });

@@ -3349,4 +3349,7 @@ registerCatalog('fr', {
   "Oturum yok": "Aucune session",
   "SITL yeniden başlatıldı": "SITL redémarré",
   "Dron Yönetimi › Uçuş Simülatörü": "Gestion des drones › Simulateur de vol",
+  "Gövde": "Cellule",
+  "Delta kanat": "Aile delta",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3 : issu du modèle STEP de notre avion · Aile delta : aile volante à hélice propulsive",
 });

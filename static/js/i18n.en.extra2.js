@@ -611,4 +611,7 @@ registerCatalog('en', {
   "Oturum yok": "No session",
   "SITL yeniden başlatıldı": "SITL restarted",
   "Dron Yönetimi › Uçuş Simülatörü": "Drone Management › Flight Simulator",
+  "Gövde": "Fuselage",
+  "Delta kanat": "Delta wing",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: from the STEP model of the aircraft we build · Delta wing: pusher-propeller flying wing",
 });

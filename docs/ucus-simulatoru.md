@@ -62,8 +62,12 @@ Sunucu rüzgârı SITL'e yazar: `SIM_WIND_SPD`, `SIM_WIND_DIR`.
   düzleştirme (pist/kalkış alanı); su seviyesi `water` oranına göre; renkler yüksekliğe göre (çim → kaya → kar).
 - Nesneler: ağaçlar (InstancedMesh, yoğunluk `tree_density`, su/pist/bina üzerinde değil), binalar (`building_count`, kutular, yükseklik
   rastgele 6–40 m, pistten uzak), pist (asfalt, çizgiler, `runway_heading`), gökyüzü (zaman: gün/akşam/gece; gece ışıklar), sis.
-- Dron: sabit kanat `static/models/caymaz.gltf` (ölçek), multirotor/hexa basit geometri (kollar + dönen pervaneler, throttle ile hız),
-  VTOL = uçak + 4 pervane. Yönelim: roll/pitch/yaw → quaternion (NED→ENU dönüşümü dikkat).
+- Dron: sabit kanat / VTOL gövdesi `airframe` (oturum alanı; `caymaz` varsayılan | `delta`): `caymaz` → `static/models/caymaz-sim.glb`
+  (CAYMAZ V3 STEP montajından `tools/step2glb.js` ile; kanat açıklığı 3,03 m, arkadan itişli, `prop` düğümü döner; KHR_mesh_quantization,
+  ~1,5 MB), `delta` → prosedürel delta uçan kanat (2,2 m, elevonlar RC ch1/ch2 ile). Multikopter 60 cm / hexa 90 cm / helikopter 1,5 m
+  prosedürel (gövde, kollar, motorlar, iniş takımı, gimbal; pervaneler gaz ile döner, yüksek devirde bulanık disk). VTOL = gövde + 4 dikey
+  pervane. Seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe, gece halo), yalnız dron gölge düşürür. Yönelim: roll/pitch/yaw →
+  quaternion (NED→ENU dönüşümü dikkat). `caymaz.gltf` (eski basit model) yalnız Cesium oynatma/canlı izlemede (replay3d.js) kullanılır.
 - Kameralar (tuşlar 1–4): **Takip** (3. şahıs, OrbitControls hedefi dron), **Dron kamerası** (FPV, burun; gimbal pitch ↑↓),
   **Serbest** (WASD + fare), **Yer** (merkezden, dronu izler). Çarpışma: `z < h(x,y) + 0.3` ya da bina kutusuyla kesişme ve hız > 1 m/s
   → kırmızı "ÇARPIŞMA" bandı + `cmd crash`; oturum "Sıfırla" ile yeniden başlar.

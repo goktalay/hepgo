@@ -3349,4 +3349,7 @@ registerCatalog('ar', {
   "Oturum yok": "لا توجد جلسة",
   "SITL yeniden başlatıldı": "أُعيد تشغيل SITL",
   "Dron Yönetimi › Uçuş Simülatörü": "إدارة الطائرات › محاكي الطيران",
+  "Gövde": "الهيكل",
+  "Delta kanat": "جناح دلتا",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: من نموذج STEP لطائرتنا · جناح دلتا: جناح طائر بمروحة دافعة",
 });

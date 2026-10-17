@@ -3349,4 +3349,7 @@ registerCatalog('de', {
   "Oturum yok": "Keine Sitzung",
   "SITL yeniden başlatıldı": "SITL neu gestartet",
   "Dron Yönetimi › Uçuş Simülatörü": "Drohnenverwaltung › Flugsimulator",
+  "Gövde": "Rumpf",
+  "Delta kanat": "Deltaflügel",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: aus dem STEP-Modell unseres Flugzeugs · Deltaflügel: Nurflügler mit Druckpropeller",
 });

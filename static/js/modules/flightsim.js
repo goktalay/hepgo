@@ -27,6 +27,8 @@ const COPTER_MODES = ['STABILIZE', 'ALT_HOLD', 'LOITER', 'POSHOLD', 'GUIDED', 'A
 const PLANE_MODES = ['MANUAL', 'FBWA', 'FBWB', 'CRUISE', 'TAKEOFF', 'AUTO', 'LOITER', 'RTL'];
 const VTOL_MODES = [...PLANE_MODES, 'QSTABILIZE', 'QHOVER', 'QLOITER', 'QLAND'];
 const isPlane = type => type === 'sabit_kanat' || type === 'vtol';
+// Sabit kanat / VTOL 3B gövdesi (session.airframe): Caymaz V3 (STEP → GLB) ya da prosedürel delta uçan kanat
+const AIRFRAMES = [['caymaz', 'Caymaz V3'], ['delta', 'Delta kanat']];
 const modesFor = type => (type === 'vtol' ? VTOL_MODES : isPlane(type) ? PLANE_MODES : COPTER_MODES);
 const f1 = v => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(1));
 const f0 = v => (v == null || Number.isNaN(Number(v)) ? '—' : String(Math.round(Number(v))));
@@ -115,7 +117,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   });
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
-  const S = { type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, world: { ...defaults, seed: randomSeed() } };
+  const S = { type: types[0]?.key || 'multirotor', airframe: 'caymaz', center: centers[0]?.id ?? null, world: { ...defaults, seed: randomSeed() } };
 
   // ---------- açık oturumlar ----------
   const openBox = h('div');
@@ -137,7 +139,11 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // ---------- 1. dron tipi ----------
   const typeCards = h('div', { class: 'fs-types' });
-  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); preview?.setType(t.key); } },
+  // Sabit kanat / VTOL gövdesi: Caymaz (ürettiğimiz uçağın STEP'inden türetilen model) ya da prosedürel delta uçan kanat
+  const airframeSeg = segmented(AIRFRAMES, S.airframe, v => { S.airframe = v; preview?.setType(S.type, v); });
+  const airframeRow = h('div', { class: 'fs-airframe', hidden: !isPlane(S.type) }, h('span', { class: 'small muted' }, 'Gövde'), airframeSeg,
+    h('span', { class: 'small muted' }, 'Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat'));
+  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); airframeRow.hidden = !isPlane(t.key); preview?.setType(t.key, S.airframe); } },
     h('span', { class: 'fs-type-ico', html: TYPE_ICON[t.icon] || TYPE_ICON.quad }),
     h('b', null, t.name), h('span', { class: 'small muted' }, t.desc || ''))));
   drawTypes();
@@ -184,7 +190,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     if (S.center == null) { toast('Önce bir merkez seçin', 'err'); return; }
     startBtn.disabled = true;
     try {
-      const s = await be.create({ type: S.type, center_id: S.center, world: { ...S.world } });
+      const s = await be.create({ type: S.type, center_id: S.center, world: { ...S.world }, airframe: isPlane(S.type) ? S.airframe : undefined });
       toast('Simülatör oturumu açıldı');
       location.hash = be.href(s.id);
     } catch (err) {
@@ -197,7 +203,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     openBox,
-    h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards),
+    h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, airframeRow),
     h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList),
     h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '3'), 'Dünya'),
       h('div', { class: 'fs-world-wrap' }, worldForm, previewBox)),
@@ -210,7 +216,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // 3B önizleme (küçük, kendi etrafında dönen kamera); sayfa değişince serbest bırakılır
   try {
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type });
+    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, airframe: S.airframe });
     previewBox.querySelector('.fs-preview-msg')?.remove();
   } catch (err) {
     clear(previewBox, h('div', { class: 'fs-preview-msg' }, tr('3B önizleme açılamadı: {e}', { e: err.message })));
@@ -304,7 +310,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   let sim = null, last = null, socket = null, destroyed = false;
   try {
     sim = await createFlightSim3D(mount, world, {
-      type, origin: { lat: session.center?.lat, lon: session.center?.lon },
+      type, airframe: session.airframe, origin: { lat: session.center?.lat, lon: session.center?.lon },
       onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
       onCollision: info => onCrash(info),
     });
@@ -436,11 +442,11 @@ const SAMPLE_CENTERS = [
 function mockBackend(ctx) {
   let centersP = null;
   const centers = () => (centersP ??= api.get('/api/drone/centers').then(r => (Array.isArray(r) && r.length ? r.map(c => ({ id: c.id, name: c.name, lat: c.lat, lon: c.lon, alt: c.alt ?? 0, location_name: c.location_name })) : SAMPLE_CENTERS)).catch(() => SAMPLE_CENTERS));
-  const mk = async (type, centerId, world) => {
+  const mk = async (type, centerId, world, airframe) => {
     const cs = await centers();
     const center = cs.find(c => String(c.id) === String(centerId)) || cs[0];
     const id = `mock-${++MOCK.seq}`;
-    const s = { id, type, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
+    const s = { id, type, airframe: isPlane(type) ? (airframe === 'delta' ? 'delta' : 'caymaz') : null, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
       created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' }, gcs: { connected: false, addr: null, since: null }, sitl: { pid: 0, port: 0, error: null } };
     s.flight = new MockFlight(s);
     MOCK.sessions.set(id, s);
@@ -458,7 +464,7 @@ function mockBackend(ctx) {
       }
       return pub(MOCK.sessions.get(id));
     },
-    create: async body => { if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 }); return pub(await mk(body.type, body.center_id, body.world)); },
+    create: async body => { if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 }); return pub(await mk(body.type, body.center_id, body.world, body.airframe)); },
     end: async id => { const s = MOCK.sessions.get(id); if (s) { s.state = 'KAPANDI'; s.flight.end('Kullanıcı bitirdi'); MOCK.sessions.delete(id); } return { ok: true }; },
     cmd: async (id, name, params) => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); s.flight.cmd(name, params || {}); return { ok: true }; },
     socket: (id, handlers) => { const s = MOCK.sessions.get(id); if (!s) { handlers.fatal?.('notfound'); return { send() {}, close() {} }; } return s.flight.attach(handlers, pub(s)); },

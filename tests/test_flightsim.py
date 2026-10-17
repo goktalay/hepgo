@@ -142,6 +142,10 @@ def main():
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': 99999}).status_code == 400
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'tree_density': 5}}).status_code == 400
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'time': 'gece'}}).status_code == 400
+        assert a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id'], 'airframe': 'shuttle'}).status_code == 400
+        # airframe (3B gövde): uçakta varsayılan caymaz, delta seçilebilir; kopterde yok sayılır
+        assert flightsim.airframe_dogrula('sabit_kanat', None) == 'caymaz' and flightsim.airframe_dogrula('vtol', 'delta') == 'delta'
+        assert flightsim.airframe_dogrula('multirotor', 'delta') is None
         world = {'seed': 7, 'size_m': 3000, 'tree_density': 0.5, 'wind_ms': 4, 'wind_dir': 90, 'time': 'dusk', 'runway': True}
         s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': world}), 201)
         assert s['type'] == 'multirotor' and s['center']['id'] == c1['id'] and s['center']['lat'] == 39.925 and s['world']['seed'] == 7
@@ -152,8 +156,8 @@ def main():
         g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))))
         assert g and g['state'] == 'HAZIR' and g['sitl']['port'] == sitl.port, g
         # --- limit ---
-        s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id']}), 201)
-        assert s2['udp_port'] != s['udp_port']
+        s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id'], 'airframe': 'delta'}), 201)
+        assert s2['udp_port'] != s['udp_port'] and s2['airframe'] == 'delta' and s['airframe'] is None
         r = a.post('/api/drone/sim/sessions', json={'type': 'vtol', 'center_id': c1['id']})
         assert r.status_code == 409, (r.status_code, r.text)
         assert [x['id'] for x in ok(a.get('/api/drone/sim/sessions'))] == [sid, s2['id']]

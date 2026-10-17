@@ -3493,4 +3493,13 @@ registerCatalog('ar', {
   "kütüphanede": "في المكتبة",
   "Tasarım modülünde 3B dosya (STEP/GLB/OBJ) bulunamadı.": "لم يتم العثور على ملفات ثلاثية الأبعاد (STEP/GLB/OBJ) في وحدة التصميم.",
   "Endüstriyel Tasarım modülündeki çizim sürümlerinin 3B dosyaları. Seçilen dosya kopyalanmaz; GLB ve küçük resim tarayıcıda üretilip sunucuda saklanır.": "ملفات ثلاثية الأبعاد لإصدارات الرسومات في وحدة التصميم الصناعي. لا يُنسخ الملف؛ يُنشأ GLB والصورة المصغرة في المتصفح ويُحفظان على الخادم.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "لا شيء — الطائرة الافتراضية «المحاكي #N»",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "إذا اختُير سجل من مخزون الطائرات، تظهر الطائرة في لوحة العمليات بهذا الاسم؛ وإلا تُستخدم طائرة افتراضية «المحاكي #N» خاصة بالجلسة. المحاكي دائماً SITL؛ السجل مجرد هوية.",
+  "Dron kaydı": "سجل الطائرة",
+  "Dron kaydı (isteğe bağlı)": "سجل الطائرة (اختياري)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "إخفاء/إظهار لوحة العمليات: في العرض البسيط يظهر العالم ثلاثي الأبعاد فقط مع HUD القديم وأوامر الشريط السفلي",
+  "Sade görünüm": "عرض بسيط",
+  "Harekât paneli": "لوحة العمليات",
+  "Rota yüklendi: {n} nokta": "تم تحميل المسار: {n} نقاط",
 });

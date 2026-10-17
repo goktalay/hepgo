@@ -3493,4 +3493,13 @@ registerCatalog('ru', {
   "kütüphanede": "в библиотеке",
   "Tasarım modülünde 3B dosya (STEP/GLB/OBJ) bulunamadı.": "В модуле проектирования нет 3D-файлов (STEP/GLB/OBJ).",
   "Endüstriyel Tasarım modülündeki çizim sürümlerinin 3B dosyaları. Seçilen dosya kopyalanmaz; GLB ve küçük resim tarayıcıda üretilip sunucuda saklanır.": "3D-файлы версий чертежей модуля промышленного дизайна. Файл не копируется; GLB и миниатюра создаются в браузере и хранятся на сервере.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Нет — виртуальный дрон «Симулятор #N»",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Если выбрана запись из реестра дронов, в панели операций дрон отображается под этим именем; иначе используется виртуальный дрон «Симулятор #N» для этого сеанса. Симулятор всегда SITL; запись — только идентификатор.",
+  "Dron kaydı": "Запись дрона",
+  "Dron kaydı (isteğe bağlı)": "Запись дрона (необязательно)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Скрыть/показать панель операций: в простом виде только 3D-мир, старый HUD и команды нижней панели",
+  "Sade görünüm": "Простой вид",
+  "Harekât paneli": "Панель операций",
+  "Rota yüklendi: {n} nokta": "Маршрут загружен: {n} точек",
 });

@@ -30,6 +30,7 @@ class SessionIn(BaseModel):
     world: Optional[dict] = None
     airframe: Optional[str] = None   # ESKİ: sabit kanat / VTOL 3B gövdesi caymaz | delta → model {id:'builtin:…'} olarak eşlenir (§12)
     model: Optional[Union[dict, str]] = None   # görsel model: {id, orient?} ya da kimlik dizgesi ('builtin:caymaz', '12'); eksikse tipin varsayılanı
+    drone_id: Optional[int] = None   # §14 isteğe bağlı: Dron Envanteri kaydı — harekât panelinde telemetri bu dronun adıyla akar (yoksa "Simülatör #N")
 
 
 class ModelPatch(BaseModel):
@@ -134,18 +135,23 @@ async def open_session(body: SessionIn, request: Request, response: Response, us
         def load():
             with db.connect() as conn:
                 # görsel model (§12): `model` {id, orient} ya da eski `airframe`; bilinmeyen kimlik / tip uyumsuzluğu → 400
-                return _centers(conn, body.center_id), flightsim_models.coz(conn, body.type, body.model, body.airframe)
+                drone = None
+                if body.drone_id is not None:   # §14: dron kaydı (yalnız aktif envanter kaydı; sanal/mavlink fark etmez — simülatör SITL'dir)
+                    drone = db.row(conn.execute('SELECT id, code, name, model, protocol FROM drone_drones WHERE id = ? AND active = 1', (body.drone_id,)))
+                return _centers(conn, body.center_id), flightsim_models.coz(conn, body.type, body.model, body.airframe), drone
         try:
-            center, mdl = await loop.run_in_executor(None, load)
+            center, mdl, drone = await loop.run_in_executor(None, load)
         except flightsim.SimHata as e:
             _hata(e)
         if not center:
             raise HTTPException(400, 'Merkez bulunamadı (Dron Yönetimi › Rotalar › Merkezler)')
+        if body.drone_id is not None and not drone:
+            raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone)
         except flightsim.SimHata as e:
             _hata(e)
-        detay = f"{body.type} · {center['name']} · udp {s.udp_port}"
+        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '')
     else:
         raise HTTPException(400, 'mode sitl | replay olmalı')
 
@@ -172,6 +178,27 @@ def get_replay(sid: int, user=Depends(sim_user)):
         raise HTTPException(404, 'Kayıt önbelleği bulunamadı')
     return FileResponse(path, media_type='application/json',
                         headers={'Content-Encoding': 'gzip', 'Cache-Control': 'private, max-age=3600', 'Vary': 'Accept-Encoding'})
+
+
+@router.get('/sessions/{sid}/live')
+def session_live(sid: int, request: Request, user=Depends(sim_user)):
+    """§14 harekât paneli bağlamı (static/ops ?sim=<id>; /api/field/tasks/{id}/live biçimi): sahte görev + tek 'sanal' uçuş + can_command
+    (drone.sim yazma izni). Kayıttan oynatma oturumunda köprü yok → 400."""
+    s = flightsim.MANAGER.get(sid)
+    if s is None:
+        raise HTTPException(404, 'Oturum bulunamadı')
+    from .. import flightsim_hub
+    y = flightsim_hub.live_payload(s, user)
+    if y is None:
+        raise HTTPException(400, 'Bu oturumun harekât paneli köprüsü yok (kayıttan oynatma ya da henüz açılmadı)')
+    y['session'] = s.to_dict(_host(request))
+    return y
+
+
+@router.get('/drones')
+def sim_drones(user=Depends(sim_user), conn=db.DB):
+    """§14 sihirbaz "Dron kaydı (isteğe bağlı)": aktif envanter kayıtları (kod, ad, model, protokol)."""
+    return db.rows(conn.execute('SELECT id, code, name, model, protocol, status FROM drone_drones WHERE active = 1 ORDER BY code COLLATE NOCASE'))
 
 
 @router.get('/sessions/{sid}')

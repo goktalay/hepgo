@@ -652,6 +652,124 @@ def model_testleri(a, mon, c1):
     print('  görsel model kütüphanesi testleri geçti')
 
 
+def hub_testleri(a, c1):
+    """§14 harekât paneli: oturum hub'a sanal köprü olarak kaydolur (bridge_id = -(9000+N)); GET /sessions/{id}/live; /ws/drone/live watch{sim_id}
+    → hello.task/flights + status (sahte kipte kinematikten üretilen MAVLink çerçeveleri); hub komutları (arm, set_mode, GÖKTUNGU kalkış akışı,
+    mission_upload → 3B rota, AUTO, mission_clear, rtl); yetki (drone.sim yazma izni; field.live'sız kullanıcı yalnız simülatörü görür); kapanış."""
+    from app import drone_hub, flightsim_hub
+    sd = ok(a.post('/api/drone/drones', json={'name': 'Sim Dronu', 'protocol': 'mavlink', 'model': 'Quad X'}))
+    assert any(d['id'] == sd['id'] and d['code'] == sd['code'] for d in ok(a.get('/api/drone/sim/drones')))
+    assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': 999999}).status_code == 400
+    s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': sd['id']}), 201)
+    sid, bid = s['id'], -(flightsim.KIMLIK_TABANI + s['id'])
+    assert s['hub'] == {'bridge_id': bid, 'online': True, 'name': f"{sd['code']} Sim Dronu"} and s['drone']['id'] == sd['id'] and s['route'] == [], s
+    assert isinstance(drone_hub.SIMS.get(bid), flightsim_hub.SimBridge) and drone_hub.SIMS[bid].drone_id == sd['id']
+    assert bekle(lambda: ok(a.get(f'/api/drone/sim/sessions/{sid}'))['state'] == 'HAZIR')
+    # --- REST bağlamı (hepgo_ws.js ?sim=) ---
+    lv = ok(a.get(f'/api/drone/sim/sessions/{sid}/live'))
+    assert lv['task']['sim_id'] == sid and lv['task']['id'] is None and lv['task']['code'] == f'SİM #{sid}' and lv['task']['lat'] == 39.925, lv['task']
+    f = lv['flights'][0]
+    assert len(lv['flights']) == 1 and f['protocol'] == 'sanal' and f['sim_bridge_id'] == bid and f['label'] == sd['code'] and f['name'] == 'Sim Dronu' and f['drone_id'] == sd['id'], f
+    assert lv['can_command'] is True and lv['session']['id'] == sid
+    assert a.get('/api/drone/sim/sessions/99999/live').status_code == 404
+    mon = TestClient(app, base_url='https://testserver')
+    mtoken = login(mon, 'montaj', 'sifre-1234')
+    assert ok(mon.get(f'/api/drone/sim/sessions/{sid}/live'))['can_command'] is False
+    assert 'field.live' not in ok(mon.get('/api/auth/me'))['modules']   # montaj: Canlı Uçuş yok, yalnız drone.sim
+
+    def pump(ws, kutu, sn, until=None):
+        bitis = time.time() + sn
+        while time.time() < bitis:
+            m = json.loads(ws.receive_text())
+            if m.get('t') == 'status' and m.get('bridge_id') == bid:
+                kutu['state'].update(m['state'])
+            elif m.get('t') in ('event', 'console') and m.get('bridge_id') == bid:
+                kutu['log'].append(m['text'])
+            elif m.get('t') == 'res':
+                kutu['res'][m['rid']] = m
+            elif m.get('t') == 'hello':
+                kutu['hello'].append(m)
+            elif m.get('t') == 'bridge':
+                kutu['bridge'].append(m)
+            elif m.get('t') == 'error':
+                kutu['err'].append(m)
+            if until and until():
+                return True
+        return bool(until and until())
+
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={token}'}) as live:
+        K = {'state': {}, 'log': [], 'res': {}, 'hello': [], 'bridge': [], 'err': []}
+        assert pump(live, K, 3, lambda: K['hello']) and any(b['bridge_id'] == bid and b.get('simulator') for b in K['hello'][0]['bridges'])   # görevsiz izleyici: hepsi
+        live.send_text(json.dumps({'t': 'watch', 'sim_id': sid}))
+        assert pump(live, K, 3, lambda: len(K['hello']) >= 2)
+        h = K['hello'][-1]
+        assert h['task']['sim_id'] == sid and h['flights'][0]['sim_bridge_id'] == bid and [b['bridge_id'] for b in h['bridges']] == [bid] and h['me']['can_command'] is True, h
+        assert 'mission_start' in h['caps'] and 'param' in h['caps'], h['caps']
+        # telemetri (sahte kinematik → MAVLink çerçeveleri → hub DroneState)
+        assert pump(live, K, 5, lambda: K['state'].get('lat') is not None and K['state'].get('type') == 2 and K['state'].get('mode')), K['state']
+        st = K['state']
+        assert abs(st['lat'] - 39.925) < 0.01 and st['armed'] is False and st['mode'] == 'STABILIZE' and st['fix'] == 3 and st['sats'] == 12 and st['volt'] > 10, st
+        assert st['sensors'].get('gps') == 'ok' and st['home_lat'] is not None and st['mission_count'] == 0, st
+
+        def cmd(rid, name, params=None, sn=12):
+            live.send_text(json.dumps({'t': 'cmd', 'rid': rid, 'bridge_id': bid, 'sysid': 1, 'name': name, 'params': params or {}}))
+            assert pump(live, K, sn, lambda: rid in K['res']), (rid, K['log'][-5:])
+            return K['res'][rid]
+        r = cmd('h1', 'arm')
+        assert r['ok'] is True, r
+        assert pump(live, K, 3, lambda: K['state'].get('armed') is True), K['state']
+        assert any('-> arm' in x for x in K['log']) and any(x.startswith('ARM') for x in K['log']), K['log']
+        r = cmd('h2', 'set_mode', {'mode': 'GUIDED'})
+        assert r['ok'] is True and pump(live, K, 3, lambda: K['state'].get('mode') == 'GUIDED'), (r, K['state'].get('mode'))
+        assert cmd('h2b', 'set_mode', {'mode': 'UCUS'})['ok'] is False
+        # GÖKTUNGU kalkış akışı (sunucu-içi bileşik komut): GUIDED teyit → (ARM var) → NAV_TAKEOFF; sahte kinematik tırmanır
+        r = cmd('h3', 'takeoff', {'alt_rel_m': 25})
+        assert r['ok'] is True and r['result'] == {'kontrol_id': None}, r
+        assert pump(live, K, 8, lambda: (K['state'].get('alt_rel') or 0) > 1 and any('TAKEOFF komutu iletildi' in x for x in K['log'])), (K['state'].get('alt_rel'), K['log'][-6:])
+        # görev yükleme (routes/{id}/mission biçimi) → SITL'e (sahte: bellek) + 3B rota noktaları ({t:'route'} ve session.route)
+        items = [{'seq': 0, 'frame': 6, 'command': 22, 'current': 1, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 0, 'y': 0, 'z': 30.0},
+                 {'seq': 1, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 399260000, 'y': 328380000, 'z': 40.0},
+                 {'seq': 2, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 5, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 399270000, 'y': 328390000, 'z': 50.0}]
+        with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as sws:
+            hs = json.loads(sws.receive_text())
+            assert hs['t'] == 'hello' and hs['session']['route'] == [] and hs['session']['hub']['bridge_id'] == bid, hs['session']['hub']
+            r = cmd('h4', 'mission_upload', {'items': items, 'cruise_speed': 8})
+            assert r['ok'] is True and r['result']['count'] == 3 and r['result']['offset'] == 1, r
+            rt = ws_bekle(sws, lambda m: m['t'] == 'route', 3)
+            assert rt and [p['seq'] for p in rt['points']] == [1, 2] and rt['points'][0] == {'seq': 1, 'cmd': 16, 'lat': 39.926, 'lon': 32.838, 'alt': 40.0}, rt   # TAKEOFF (x/y 0) çizilmez
+        assert ok(a.get(f'/api/drone/sim/sessions/{sid}'))['route'][1]['alt'] == 50.0
+        assert pump(live, K, 3, lambda: K['state'].get('mission_count') == 3), K['state'].get('mission_count')
+        assert cmd('h5', 'set_mode', {'mode': 'AUTO'})['ok'] is True and pump(live, K, 3, lambda: K['state'].get('mode') == 'AUTO')
+        r = cmd('h6', 'mission_download')
+        assert r['ok'] and len(r['result']['items']) == 3
+        r = cmd('h7', 'mission_cancel', {'rota': 'Test'}, 20)   # BRAKE (doğrulanır) + mission_clear → rota silinir
+        assert r['ok'] is True and ok(a.get(f'/api/drone/sim/sessions/{sid}'))['route'] == [] and pump(live, K, 3, lambda: K['state'].get('mission_count') == 0), r
+        assert cmd('h8', 'rtl')['ok'] is True and pump(live, K, 3, lambda: K['state'].get('mode') == 'RTL')
+        assert cmd('h9', 'arm_check')['ok'] is True and K['res']['h9']['result']['bulundu'] is True
+        assert cmd('h10', 'reboot')['ok'] is False
+        # --- yetki: montaj (drone.sim okur, yazamaz; field.live yok) → bağlanır, yalnız simülatörü izler, komut reddedilir ---
+        with mon.websocket_connect('/ws/drone/live', headers={'cookie': f'{auth.COOKIE}={mtoken}'}) as mw:
+            M = {'state': {}, 'log': [], 'res': {}, 'hello': [], 'bridge': [], 'err': []}
+            assert pump(mw, M, 3, lambda: M['hello']) and M['hello'][0]['bridges'] == [] and M['hello'][0]['me']['can_command'] is False, M['hello'][0]
+            mw.send_text(json.dumps({'t': 'watch', 'task_id': 1}))
+            assert pump(mw, M, 3, lambda: M['err']) and 'yetki' in M['err'][0]['error'].lower(), M['err']
+            mw.send_text(json.dumps({'t': 'watch', 'sim_id': sid}))
+            assert pump(mw, M, 3, lambda: len(M['hello']) >= 2) and [b['bridge_id'] for b in M['hello'][-1]['bridges']] == [bid] and M['hello'][-1]['me']['can_command'] is False
+            # (durum yayını ayrı TestClient = ayrı olay döngüsü olduğundan burada beklenmez: hub tek uvicorn döngüsü varsayar; hello.bridges[].drones ile denetlenir)
+            assert M['hello'][-1]['bridges'][0]['drones']['1']['lat'] is not None and M['hello'][-1]['bridges'][0]['simulator'] is True
+            mw.send_text(json.dumps({'t': 'cmd', 'rid': 'm1', 'bridge_id': bid, 'sysid': 1, 'name': 'arm', 'params': {}}))
+            assert pump(mw, M, 5, lambda: 'm1' in M['res']) and M['res']['m1']['ok'] is False and 'yazma izni' in M['res']['m1']['error'], M['res']
+            mw.send_text(json.dumps({'t': 'watch', 'sim_id': 99999}))
+            assert pump(mw, M, 3, lambda: len(M['err']) >= 2) and 'bulunamadı' in M['err'][-1]['error']
+        # --- kapanış: izleyici 'bridge' çevrimdışı alır; SIMS'ten düşer ---
+        ok(a.delete(f'/api/drone/sim/sessions/{sid}'))
+        assert pump(live, K, 5, lambda: any(b['bridge_id'] == bid and b['online'] is False for b in K['bridge'])), K['bridge']
+        assert bid not in drone_hub.SIMS
+    assert a.get(f'/api/drone/sim/sessions/{sid}/live').status_code == 404
+    print('  harekât paneli köprüsü (§14) testleri geçti')
+
+
 def main():
     terrain_birim_testleri()
     sitl = SahteSitl()
@@ -876,6 +994,8 @@ def main():
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
         assert s3['id'] == sid + 10 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+        # --- harekât paneli köprüsü (§14) ---
+        hub_testleri(a, c1)
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi

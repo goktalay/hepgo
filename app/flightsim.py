@@ -14,12 +14,13 @@ Ortam değişkenleri: SIM_UDP_BASE (14550; +99'a kadar boş port aranır), SIM_M
 SIM_PUBLIC_HOST (Mission Planner'a verilecek adres; yoksa istek Host'u), HEPGO_SITL, HEPGO_SITL_DIR (drone_sitl).
 """
 import asyncio
+import contextlib
 import json
 import math
 import os
 import time
 
-from . import db, drone_sitl
+from . import db, drone_sitl, flightsim_hub
 
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
 UDP_BASE = int(os.environ.get('SIM_UDP_BASE', '14550'))
@@ -349,10 +350,18 @@ class _UdpProto(asyncio.DatagramProtocol):
 # Oturum
 # ======================================================================
 class SimSession:
-    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None, model=None):
+    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None, model=None, drone=None):
         self.id = int(sid)
         self.kimlik = KIMLIK_TABANI + self.id
         self.type, self.center, self.world, self.owner = tip, center, world, owner
+        # §14 harekât paneli: hub köprüsü (flightsim_hub.SimBridge; run() içinde attach), isteğe bağlı dron kaydı {id, code, name, model}
+        # (telemetri o dronun adıyla akar; yoksa "Simülatör #N"), SITL'e yüklenen son görevin 3B rota noktaları, komut yürütücü ve bekleyiciler
+        self.hub = None
+        self.drone = dict(drone) if drone else None
+        self.route = []
+        self.komutcu = flightsim_hub.MavKomut(self)
+        self._bekleyenler = []           # [(types, cond, asyncio.Queue)] — _isle içinde dağıtılır (MavKomut ACK/ACK bekleyicileri)
+        self._sahte_gorev, self._sahte_params = [], {}   # sahte kip: hub mission_upload / param_set yankıları
         # Görsel model (§12): kütüphane nesnesi {id, name, source, orient, glb_url, has_prop, …}; yalnız görsel, SITL modelini değiştirmez.
         # `airframe` geriye uyum: dahili caymaz/delta için kısa ad (uçak tiplerinde), aksi None.
         self.model = model if model is not None else _model_eski(tip, airframe)
@@ -382,6 +391,7 @@ class SimSession:
             self.sahte = SahteKinematik(tip, center['lat'], center['lon'], center.get('alt'), world.get('wind_ms'))
         d = _dialect()
         self.mav = d.MAVLink(None, srcSystem=GCS_SYSID, srcComponent=GCS_COMP)   # kodlayıcı
+        self.mav_arac = d.MAVLink(None, srcSystem=1, srcComponent=1)             # sahte kip: hub'a araç çerçeveleri (sysid 1)
         self.parser = d.MAVLink(None)                                             # ayrıştırıcı (SITL → telemetri)
         self.parser.robust_parsing = True
         self.sysid, self.comp, self.vtype = 1, 1, None
@@ -406,7 +416,33 @@ class SimSession:
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
-                'sitl': dict(self.sitl)}
+                'sitl': dict(self.sitl),
+                # §14: harekât paneli köprüsü (bridge_id = -kimlik), dron kaydı, SITL'deki görevin rota noktaları
+                'hub': {'bridge_id': -self.kimlik, 'online': self.hub is not None, 'name': self.hub.name if self.hub else None},
+                'drone': dict(self.drone) if self.drone else None, 'route': list(self.route)}
+
+    # ---- §14: bekleyici kuyrukları (MavKomut) ----
+    @contextlib.contextmanager
+    def bekleyici(self, types, cond=None):
+        """`with s.bekleyici(('COMMAND_ACK',), cond) as q:` — _isle bu türdeki (ve koşulu sağlayan) araç mesajlarını q'ya koyar."""
+        q = asyncio.Queue()
+        ent = (tuple(types), cond, q)
+        self._bekleyenler.append(ent)
+        try:
+            yield q
+        finally:
+            with contextlib.suppress(ValueError):
+                self._bekleyenler.remove(ent)
+
+    def _dagit(self, m):
+        t = m.get_type()
+        for types, cond, q in list(self._bekleyenler):
+            if t in types:
+                try:
+                    if cond is None or cond(m):
+                        q.put_nowait(m)
+                except Exception:   # noqa: BLE001 — koşul hatası bekleyiciyi bozmasın
+                    continue
 
     # ---- yayın ----
     def _yay(self, obj):
@@ -568,6 +604,13 @@ class SimSession:
                 self._isle(m)
             except Exception:   # noqa: BLE001
                 continue
+        if self.hub is not None:   # §14: aynı mesajlar harekât paneline (hub DroneState/olay/konsol); ikinci ayrıştırma yok
+            arac = [m for m in msgs if m.get_type() != 'BAD_DATA' and m.get_srcSystem() != GCS_SYSID]
+            if arac:
+                try:
+                    self.hub.feed_msgs(arac)
+                except Exception:   # noqa: BLE001
+                    pass
 
     def _isle(self, m):
         t = m.get_type()
@@ -576,6 +619,8 @@ class SimSession:
         src = m.get_srcSystem()
         if src == GCS_SYSID:
             return   # GCS yankısı
+        if self._bekleyenler:
+            self._dagit(m)
         te = self.tele
         if t == 'HEARTBEAT':
             if m.type in (6, 18):   # GCS / ONBOARD_CONTROLLER değil, araç lazım
@@ -747,6 +792,135 @@ class SimSession:
             self._gonder(enc.rc_channels_override_encode(s, c, *p['ch']))
         return {'ok': True}
 
+    # ---- §14: harekât paneli (hub) komutları — drone_hub._dispatch → SimBridge.acommand → buraya ----
+    async def hub_komut(self, name, params):
+        """Hub komut sözleşmesi (drone_hub.CMD_NAMES): {'ok', 'result'} | {'ok': False, 'error'}. Gerçek SITL'de MavKomut (pymavlink + ACK),
+        sahte kipte kinematiğe eşleme. Hata metninde 'MAV_RESULT' varsa hub ayrıca konsol satırı yazmaz (COMMAND_ACK satırı düşer)."""
+        p = params if isinstance(params, dict) else {}
+        if name in ('link_open', 'link_close', 'disconnect'):
+            return {'ok': True, 'result': {'sim': True}}
+        if self.state != 'HAZIR':
+            return {'ok': False, 'error': 'Oturum hazır değil (SITL açılıyor ya da hata)'}
+        try:
+            if self.sahte is not None:
+                res = self._sahte_hub_komut(name, p)
+            else:
+                if not self._heartbeat_alindi:
+                    return {'ok': False, 'error': 'SITL henüz kalp atışı göndermedi'}
+                res = await self.komutcu.execute(name, p)
+            if name == 'mission_upload':
+                self._rota_ayarla(flightsim_hub.rota_noktalari(p.get('items') or []))
+            elif name == 'mission_clear':
+                self._rota_ayarla([])
+            return {'ok': True, 'result': res}
+        except (KeyError, TypeError, ValueError) as e:
+            return {'ok': False, 'error': f'Geçersiz parametre: {e}'}
+        except Exception as e:   # noqa: BLE001
+            return {'ok': False, 'error': str(e)[:300]}
+
+    def _rota_ayarla(self, points):
+        """SITL'deki görev değişti: 3B dünyaya rota çizgisi/işaretleri ({t:'route'}; hello/to_dict `route`)."""
+        self.route = list(points or [])
+        self._yay({'t': 'route', 'points': self.route})
+
+    def _sahte_hub_komut(self, name, p):
+        """Sahte kinematikte hub komutları: arm/disarm/set_mode/takeoff/land/rtl/goto/set_home → SahteKinematik.komut; görev/parametre
+        komutları bellek içi (mission_count MISSION_CURRENT ile hub'a yansır)."""
+        k = self.sahte
+        modlar = _modlar(_varsayilan_vtype(self.type))
+        if name == 'arm':
+            k.komut('arm', {}); return {'ack': 0}
+        if name == 'disarm':
+            k.komut('disarm', {}); return {'ack': 0}
+        if name == 'set_mode':
+            mode = str(p.get('mode') or '').upper()
+            if mode not in modlar:
+                raise RuntimeError(f'Bilinmeyen uçuş modu: {mode}')
+            if mode == 'AUTO' and not self._sahte_gorev:
+                raise RuntimeError('Dron komutu reddetti (MAV_RESULT 4): yüklü görev yok')
+            k.komut('mode', {'mode': mode}); return {'mode': mode}
+        if name == 'takeoff':
+            k.komut('takeoff', {'alt': float(p.get('alt_rel_m') or 30)}); return {'ack': 0}
+        if name == 'land':
+            k.komut('mode', {'mode': 'QLAND' if self.type == 'vtol' else 'LAND'}); k.eve = True; return {'mode': 'LAND'}
+        if name == 'rtl':
+            k.komut('rtl', {}); return {'mode': 'RTL'}
+        if name in ('goto', 'altitude_change'):
+            if not k.armed:
+                raise RuntimeError('Dron komutu reddetti (MAV_RESULT 1): araç yerde')
+            if 'GUIDED' in modlar:
+                k.komut('mode', {'mode': 'GUIDED'})
+            k.hedef_alt = float(p.get('alt_rel_m') or k.hedef_alt)
+            return {'lat': p.get('lat'), 'lon': p.get('lon'), 'alt_rel_m': k.hedef_alt}
+        if name == 'set_home':
+            k.komut('set_home', p); return {'ack': 0}
+        if name == 'mission_upload':
+            items = p.get('items') or []
+            if not isinstance(items, list) or len(items) > 500:
+                raise RuntimeError('items listesi gerekli (≤ 500)')
+            self._sahte_gorev = [dict(i) for i in items]
+            return {'count': len(items), 'uploaded': len(items) + 1, 'offset': 1}
+        if name == 'mission_download':
+            return {'items': list(self._sahte_gorev)}
+        if name == 'mission_clear':
+            self._sahte_gorev = []; return {'cleared': True}
+        if name == 'mission_set_current':
+            return {'seq': int(p.get('seq') or 0)}
+        if name == 'mission_start':
+            if not k.armed:
+                raise RuntimeError('Dron komutu reddetti (MAV_RESULT 4): araç ARM değil')
+            k.komut('mode', {'mode': 'AUTO'}); return {'ack': 0}
+        if name == 'param_set':
+            self._sahte_params[str(p['name'])] = float(p['value']); return {'name': p['name'], 'value': float(p['value']), 'type': 9}
+        if name == 'param_get':
+            return {'name': p['name'], 'value': self._sahte_params.get(str(p['name']), 0.0), 'type': 9}
+        if name == 'param_list':
+            return {'requested': True}
+        if name == 'reboot':
+            raise RuntimeError('Simülatörde yeniden başlatma için "Sıfırla" kullanın')
+        raise RuntimeError(f'Desteklenmeyen komut: {name}')
+
+    def _sahte_hub_cerceve(self, n):
+        """Sahte kip (HEPGO_SITL=0): kinematikten MAVLink çerçeveleri üretip hub'a verir (10 Hz konum/yönelim/HUD, 1 Hz HEARTBEAT/SYS_STATUS/GPS,
+        5 sn HOME; MISSION_CURRENT yüklü görev sayısıyla) — harekât paneli SITL'siz de dolar (testler)."""
+        if self.hub is None or self.sahte is None:
+            return
+        k, te, enc = self.sahte, self.tele, self.mav_arac
+        d = _dialect()
+        vt = _varsayilan_vtype(self.type)
+        modlar = _modlar(vt)
+        tbm = int(k.sure_ms)
+        out = []
+        if n % 50 == 0:
+            out.append(enc.heartbeat_encode(vt, 3, (128 if k.armed else 0) | 1, modlar.get(k.mode, 0), 4))
+            bits = sum(d.__dict__[x] for x in ('MAV_SYS_STATUS_SENSOR_3D_GYRO', 'MAV_SYS_STATUS_SENSOR_3D_ACCEL', 'MAV_SYS_STATUS_SENSOR_3D_MAG',
+                                                'MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE', 'MAV_SYS_STATUS_SENSOR_GPS', 'MAV_SYS_STATUS_SENSOR_RC_RECEIVER',
+                                                'MAV_SYS_STATUS_AHRS', 'MAV_SYS_STATUS_SENSOR_BATTERY', 'MAV_SYS_STATUS_PREARM_CHECK'))
+            out.append(enc.sys_status_encode(bits, bits, bits, 300, int(k.batt_v * 1000), 1500 if k.armed else 40, int(te.get('batt_pct') or 0), 0, 0, 0, 0, 0, 0))
+            out.append(enc.gps_raw_int_encode(tbm * 1000, 3, int(k.lat * 1e7), int(k.lon * 1e7), int((k.alt0 + k.alt_rel) * 1000), 80, 100, 0, 0, 12))
+            out.append(enc.mission_current_encode(0, len(self._sahte_gorev)))
+            h = k.home
+            out.append(enc.home_position_encode(int(h['lat'] * 1e7), int(h['lon'] * 1e7), int(float(h.get('alt') or 0) * 1000), 0, 0, 0, [1, 0, 0, 0], 0, 0, 0))
+        if n % 25 == 0:
+            out.append(enc.rc_channels_encode(tbm, 8, *k.rc, *([0] * 10), 200))
+        if n % 5 == 0:
+            hs = math.hypot(k.vn, k.ve)
+            out.append(enc.global_position_int_encode(tbm, int(k.lat * 1e7), int(k.lon * 1e7), int((k.alt0 + k.alt_rel) * 1000), int(k.alt_rel * 1000),
+                                                      int(k.vn * 100), int(k.ve * 100), int(k.vd * 100), int((math.degrees(k.yaw) % 360) * 100)))
+            out.append(enc.attitude_encode(tbm, k.roll, k.pitch, k.yaw, k.rs, k.ps, k.ys))
+            out.append(enc.vfr_hud_encode(hs + k.ruzgar * 0.3, hs, int(math.degrees(k.yaw) % 360), int(k.throttle), k.alt0 + k.alt_rel, -k.vd))
+        if not out:
+            return
+        buf = b''
+        for m in out:
+            try:
+                buf += m.pack(enc)
+                enc.seq = (enc.seq + 1) % 256
+            except Exception:   # noqa: BLE001
+                continue
+        if buf:
+            self.hub.feed(buf)
+
     def _mod_gonder(self, mode):
         mode = mode.upper()
         modlar = _modlar(self.vtype if self.vtype is not None else _varsayilan_vtype(self.type))
@@ -780,6 +954,8 @@ class SimSession:
         await self.loop.run_in_executor(None, drone_sitl.YONETICI.durdur, self.kimlik)
         self.tele.update(mode=None, armed=False, alt_rel=0.0, home=None)
         self._tele_tbm, self._smi_red, self._att_son = -10 ** 9, False, 0.0   # yeni SITL: zaman damgası sıfırdan başlar
+        if self.route:
+            self._rota_ayarla([])   # yeni SITL'de görev yok
         await self._sitl_ac()
 
     # ---- yaşam döngüsü ----
@@ -794,6 +970,7 @@ class SimSession:
                 self._olay(str(e), 2)
                 self._durum('HATA')
             if self.udp_port is not None:
+                flightsim_hub.attach(self)   # §14: harekât paneli köprüsü (SITL açılmadan önce; açılış/hata olayları konsola düşer)
                 await self._sitl_ac()   # gerçek: SITL + TCP; sahte: TCP yalnız sahte_tcp_port verilmişse
             yayin = self.loop.create_task(self._yayin())
             await self._dongu()
@@ -814,6 +991,7 @@ class SimSession:
         son = time.time()
         hedef = son
         hb = 0.0
+        n = 0
         while True:
             hedef += aralik                      # mutlak zamanlama: uyku sapması birikmez (gerçek 50 Hz)
             now = time.time()
@@ -822,9 +1000,12 @@ class SimSession:
             await asyncio.sleep(max(0.0, hedef - now))
             now = time.time()
             dt, son = now - son, now
+            n += 1
             if self.sahte is not None:
                 self.sahte.adim(min(dt, 0.5))
                 self.tele.update(self.sahte.tele())
+                if self.state == 'HAZIR':
+                    self._sahte_hub_cerceve(n)   # §14: harekât paneline MAVLink çerçeveleri
                 if now - hb >= 1.0 and self.gcs_addr is not None:
                     hb = now
                     try:
@@ -881,6 +1062,7 @@ class SimSession:
         if self.state == 'KAPANDI':
             return
         self.state = 'KAPANDI'
+        flightsim_hub.detach(self)   # §14: harekât paneli köprüsü çevrimdışı
         await self._tcp_kapat()
         if self._udp is not None:
             try:
@@ -919,9 +1101,10 @@ class SimManager:
     def acik_sayisi(self):
         return len([s for s in self.sessions.values() if s.state != 'KAPANDI'])
 
-    async def ac(self, tip, center, world, owner, airframe=None, model=None):
+    async def ac(self, tip, center, world, owner, airframe=None, model=None, drone=None):
         """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev.
-        `model`: flightsim_models.coz ile çözülmüş kütüphane nesnesi (router); yoksa `airframe` ile dahili model."""
+        `model`: flightsim_models.coz ile çözülmüş kütüphane nesnesi (router); yoksa `airframe` ile dahili model.
+        `drone` (§14, isteğe bağlı): Dron Envanteri kaydı {id, code, name, model} — harekât panelinde telemetri bu adla akar."""
         if tip not in drone_sitl.TIP_ESLEME:
             raise SimHata('invalid', 'Geçersiz dron tipi')
         airframe = airframe_dogrula(tip, airframe)
@@ -950,7 +1133,7 @@ class SimManager:
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': alt}, world, owner, self, airframe, model)
+                                  'alt': alt}, world, owner, self, airframe, model, drone)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

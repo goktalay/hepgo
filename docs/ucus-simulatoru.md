@@ -327,3 +327,59 @@ açarken gönderilen `model.orient` oturuma özeldir (kütüphane kaydını değ
 
 **Doğrulama (DEV, Playwright SwiftShader):** sihirbaz kart ızgarası + küçük resimler üretildi, PROD'daki CAYMAZ V3 STEP'i (16,9 MB) tasarım
 sürümü olarak eklendi → tarayıcıda GLB'ye dönüştürüldü → yönelim paneli (kanat açıklığı 3,03 m → ölçek) → yüklenen modelle oturum (takip/FPV).
+
+## 14. Harekât paneli: Canlı Uçuş paneliyle kontrol (`app/flightsim_hub.py`, `static/js/modules/flightsim_ops.js`, `static/ops ?sim=`)
+Kullanıcı kararı: "Uçuşun verilerini ve yönetimsel işlemlerini canlı uçuşta kullandığımız panel ile yapalım." Oturum ekranında simülatöre özgü
+HUD paneli ve alt çubuk komutları yerine **Canlı Uçuş harekât ekranı** (GÖKTUNGU arayüzü, `static/ops`) kullanılır; 3B dünya korunur.
+
+**Mimari — oturum = hub'da sanal köprü.** `SimSession.run()` UDP portu açılır açılmaz `flightsim_hub.attach` ile `drone_hub.SIMS`'e bir
+`SimBridge` kaydeder: `bridge_id = -SimSession.kimlik = -(9000+N)` (saha görevlerinin sanal dronları `-drone_id`; 9000 tabanı çakışmayı önler),
+Bridge yüzeyi (`id, name, caps, drones, info, _publish, acommand, can_command`). SITL'in SERIAL0 akışından `SimSession._ayristir`'ın zaten
+ayrıştırdığı mesajlar `SimBridge.feed_msgs → drone_hub._feed_msgs`'e verilir (ikinci ayrıştırma yok): `DroneState`, STATUSTEXT → `event` +
+konsol, COMMAND_ACK → KOMUT satırları, PARAM_VALUE → `params` — gerçek köprüyle aynı kod yolu. Sahte kipte (`HEPGO_SITL=0`) kinematikten MAVLink
+çerçeveleri üretilir (`_sahte_hub_cerceve`: 10 Hz GLOBAL_POSITION_INT/ATTITUDE/VFR_HUD, 1 Hz HEARTBEAT/SYS_STATUS/GPS_RAW_INT/HOME_POSITION/
+MISSION_CURRENT, 2 Hz RC_CHANNELS) → panel SITL'siz de dolar (testler). Oturum kapanınca `detach` → `{t:'bridge', online:false}`.
+
+**Komutlar.** Harekât ekranının komutları hub'ın işleyicisinden geçer (`send_command → _single_command / _start_sequence → _dispatch`):
+GÖKTUNGU kalkış akışı (GUIDED teyit → ARM teyit → NAV_TAKEOFF), rota başlat/duraklat/devam/iptal/sürdür, goto (hedef irtifa korunur), HOME,
+altitude_change, param_set/get/list, mission_upload/download/clear/set_current/start, arm_check (rapor) aynen çalışır. `_dispatch` sanal kaynakta
+`acommand` varsa onu çağırır → `SimSession.hub_komut` → gerçek SITL'de `flightsim_hub.MavKomut` (kopru_core.MavLink.execute'un **asenkron**
+karşılığı: komutlar oturumun TCP yazıcısıyla gider, ACK/MISSION_REQUEST/PARAM_VALUE yanıtları `_isle` içindeki bekleyici kuyruklarından
+(`SimSession.bekleyici`) okunur; mission_upload başa ev (+hız) öğesi ekler, `{count, uploaded, offset}` döndürür, DO_JUMP hedefleri kaydırılır;
+ACK 0/5 kabul, red → `MAV_RESULT n` metni). Sahte kipte `_sahte_hub_komut` kinematiğe eşler. `reboot` reddedilir (Sıfırla kullanılır).
+Simülatörün kendi komutları (`/sessions/{id}/cmd`: arm/disarm/mode/takeoff/rtl/reset/crash/set_home/rc), Mission Planner UDP köprüsü, GCS
+kilidi, sanal kumanda ve kayıttan oynatma değişmez.
+
+**Yetki.** `/ws/drone/live` artık `field.live` **ya da** `drone.sim` ile açılır. `drone.sim`'li ama `field.live`'sız izleyici `sim_only`'dir: hello
+boş, `watch{task_id}` reddedilir, yalnız `watch{sim_id}` ile kendi oturumunu izler (`Viewer.kisitli()` → `allowed`). Komut yetkisi simülatör
+kaynağında `SimBridge.can_command` = `drone.sim` **yazma** izni (Pilot rolü/field.live gerekmez); `hello.me.can_command` sim bağlamında buna göre.
+Denetim kaydı: "Simülatör komutu (harekât paneli)" (`drone_sim`, oturum no).
+
+**Uçlar / sözleşme.** `POST /sessions` `drone_id?` (Dron Envanteri kaydı; `GET /api/drone/sim/drones` liste) → telemetri o dronun kodu/adıyla
+akar, yoksa "Simülatör #N". `GET /sessions/{id}/live` → `{task:{id:null, sim_id, code:'SİM #N', status, location_name, lat, lon, simulator:true},
+flights:[{id: 9000+N, protocol:'sanal', sim_bridge_id:-(9000+N), label, name, drone_id, drone_model}], can_command, session}` —
+`/api/field/tasks/{id}/live` biçimi (kayıttan oynatmada 400). `to_dict`/WS hello `hub {bridge_id, online, name}`, `drone`, `route`. WS `/ws/drone/live`:
+`{t:'watch', sim_id}` → hello `task/flights/bridges` (yalnız oturum köprüsü), `bridges[].simulator=true`. WS `/ws/drone/sim/{id}`: `{t:'route',
+points:[{seq, cmd, lat, lon, alt}]}` — hub `mission_upload` sonrası (yalnız konumlu seyrüsefer öğeleri; TAKEOFF x/y 0 çizilmez), `mission_clear` /
+Sıfırla sonrası boş liste.
+
+**Ön yüz.** Oturum ekranı (`flightsim.js`): `createOpsPanel(stage, {sid})` (`flightsim_ops.js`) `/static/ops/index.html?sim=<id>` iframe'ini
+sağda açar (`--fs-ops-w: clamp(440px, 46%, 720px)`; `.fs-stage.fs-ops` 3B tuval/alt çubuk/olay şeridi sola daralır; eski `.fs-hud` ve `.fs-cmds`
+gizlenir). Alt çubukta **Sade görünüm / Harekât paneli** anahtarı (localStorage `fs.ops.on`; panel kapalıyken eski HUD + ARM/mod/Kalkış/RTL geri
+gelir). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla, Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır.
+**Dron kamerası (2)**: `.fs-fpv` → panel gizlenir, 3B tam alan, askeri HUD (H) aynen; 1/3/4'e dönünce panel geri gelir. Kayıt ve mock
+oturumlarında panel yok (sunucu köprüsü yok). `hepgo_ws.js`: `?sim=` → `SIM_ID`, `baglamUrl()`, `watch{sim_id}`, ilk hello'da Bağlantı Yöneticisi
+(`#yzSeri`) açılır, `html[data-hepgo-sim]` (kart katlı başlamaz — `hepgo_patch.js`), sürdürme anahtarı `hepgo_ops_surdur_sim<N>`, bilgi kutusu
+"Simülatör oturumu bulunamadı → #/drone/sim". Rota: Dron Yönetimi › Rotalar'daki rotalar panelden (İŞLEMLER › Rotayı Yükle) `routes/{id}/mission` →
+`mission_upload` ile SITL'e yüklenir, "Rotayı Başlat" ARM+AUTO yapar; Cesium haritada GÖKTUNGU çizimi, 3B'de `flightsim3d.setRoute(points)`
+(amber çizgi, ara nokta küreleri — ilk yeşil/son kırmızı/LAND-RTL mor — yere inen çubuk; `setWorld` sonrası yeniden çizilir).
+
+**Testler** (`tests/test_flightsim.py hub_testleri`): hub kaydı (`SIMS[-(9000+N)]`), `/live` biçimi, `/ws/drone/live` görevsiz hello'da simülatör
+köprüsü, `watch{sim_id}`, status (sahte çerçeveler: tip, mod, GPS, sensörler, HOME), arm → ARM konsolu, set_mode, GÖKTUNGU takeoff akışı →
+irtifa, mission_upload → `route` + mission_count, AUTO, mission_download, mission_cancel → rota boş, rtl, arm_check, reboot reddi; montaj
+(drone.sim okur) → sim_only hello boş, watch task reddi, watch sim → can_command false, komut reddi; kapanış → bridge offline. Not: hub tek
+uvicorn döngüsü varsayar; ikinci `TestClient` ayrı döngü olduğundan montaj izleyicisinde durum yayını beklenmez.
+
+**Sınırlar.** Kayıttan oynatma kareleri tarayıcıda oynatılır; hub'a telemetri olarak verilmez (panel kapalı; sunucu-taraflı oynatıcı gerekir).
+Mission Planner'dan yüklenen görevler (UDP) 3B rota çizgisine yansımaz (yalnız hub `mission_upload`; mission_download ile okunabilir).
+Harekât ekranındaki görev bağlamına özgü satırlar (uçuş kaydı/sipariş, köprü bağlan/kes) simülatörde "Sanal · otomatik bağlı" olarak görünür.

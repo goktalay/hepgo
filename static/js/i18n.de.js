@@ -3493,4 +3493,13 @@ registerCatalog('de', {
   "kütüphanede": "in Bibliothek",
   "Tasarım modülünde 3B dosya (STEP/GLB/OBJ) bulunamadı.": "Keine 3D-Dateien (STEP/GLB/OBJ) im Designmodul gefunden.",
   "Endüstriyel Tasarım modülündeki çizim sürümlerinin 3B dosyaları. Seçilen dosya kopyalanmaz; GLB ve küçük resim tarayıcıda üretilip sunucuda saklanır.": "3D-Dateien der Zeichnungsversionen im Industriedesign-Modul. Die Datei wird nicht kopiert; GLB und Vorschaubild werden im Browser erzeugt und auf dem Server gespeichert.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Keine — virtuelle Drohne „Simulator #N“",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Wird ein Eintrag aus dem Drohnenbestand gewählt, erscheint die Drohne im Einsatzpanel unter diesem Namen; sonst wird die sitzungsbezogene virtuelle Drohne „Simulator #N“ verwendet. Der Simulator ist immer SITL; der Eintrag ist nur eine Kennung.",
+  "Dron kaydı": "Drohneneintrag",
+  "Dron kaydı (isteğe bağlı)": "Drohneneintrag (optional)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Einsatzpanel aus-/einblenden: in der schlichten Ansicht nur 3D-Welt, altes HUD und Befehle der unteren Leiste",
+  "Sade görünüm": "Schlichte Ansicht",
+  "Harekât paneli": "Einsatzpanel",
+  "Rota yüklendi: {n} nokta": "Route geladen: {n} Punkte",
 });

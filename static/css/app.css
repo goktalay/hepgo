@@ -9040,3 +9040,9 @@ body.immersive .fs-nav { top: 12px; }
   .fs-rc-hint { display: none; }
   .fs-stage.rc-on .fs-mp { display: none; }
 }
+
+/* ===== Uçuş Simülatörü — askeri tarz FPV HUD (flightsim_hud.js; yalnız Dron kamerası kipinde) ===== */
+.fs-mhud { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.fs-mhud[hidden] { display: none; }
+.fs-stage.fs-mhud-on .fs-hud, .fs-stage.fs-mhud-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı HUD içinde */
+.fs-mhud-btn[hidden] { display: none; }

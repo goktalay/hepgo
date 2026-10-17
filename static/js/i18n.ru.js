@@ -3403,6 +3403,13 @@ registerCatalog('ru', {
   "İlk ARM {t}": "Первый ARM {t}",
   "Kayıt yüklendi: {n} kare · {d}": "Запись загружена: {n} кадров · {d}",
   "Dünya boyutu uçuşa göre {n} m yapıldı": "Размер мира задан {n} м по размаху полёта",
+  // Askeri FPV HUD (flightsim_hud.js)
+  "RC YOK": "НЕТ RC",
+  "BATARYA": "БАТАРЕЯ",
+  "GCS KESİLDİ": "НЕТ GCS",
+  "ALÇAK": "НИЗКО",
+  "H: HUD aç/kapa · Shift+H: renk": "H: HUD вкл/выкл · Shift+H: цвет",
+  "Askeri HUD aç/kapa (H) · Shift+H renk": "Военный HUD вкл/выкл (H) · Shift+H цвет",
   "Gerçek arazi": "Реальный рельеф",
   "Prosedürel": "Процедурный",
   "Dünya kipi": "Режим мира",

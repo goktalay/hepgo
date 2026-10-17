@@ -1119,6 +1119,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     get terrainInfo() { return terrain ? { real: !!terrain.real, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null } : null; },
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),
+    getPose: () => { tmpE.setFromQuaternion(cur.q, 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD)
     canvas,
   };
 }

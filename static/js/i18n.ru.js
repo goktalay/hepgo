@@ -3559,4 +3559,13 @@ registerCatalog('ru', {
   "Uçak havalandı": "Самолёт в воздухе",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "Самолёт переводится в TAKEOFF и армируется; через 1 с каретка рампы выбрасывает его под {a}° (триггер катапульты SITL). Тяга включается при обнаружении ускорения пуска.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "Самолёт переводится в TAKEOFF и армируется; пикап разгоняется по полосе и отпускает его на {k} км/ч, после чего самолёт набирает высоту.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Нет — виртуальный дрон «Симулятор #N»",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Если выбрана запись из реестра дронов, в панели операций дрон отображается под этим именем; иначе используется виртуальный дрон «Симулятор #N» для этого сеанса. Симулятор всегда SITL; запись — только идентификатор.",
+  "Dron kaydı": "Запись дрона",
+  "Dron kaydı (isteğe bağlı)": "Запись дрона (необязательно)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Скрыть/показать панель операций: в простом виде только 3D-мир, старый HUD и команды нижней панели",
+  "Sade görünüm": "Простой вид",
+  "Harekât paneli": "Панель операций",
+  "Rota yüklendi: {n} nokta": "Маршрут загружен: {n} точек",
 });

@@ -3559,4 +3559,13 @@ registerCatalog('ar', {
   "Uçak havalandı": "الطائرة في الجو",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "تُنقل الطائرة إلى وضع TAKEOFF وتُسلّح؛ بعد ثانية تطلقها عربة المنصة بزاوية {a}° (مشغّل المقلاع في SITL). يُفتح الخانق عند اكتشاف تسارع الإطلاق.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "تُنقل الطائرة إلى وضع TAKEOFF وتُسلّح؛ يتسارع البيك أب على المدرج ويحرر الطائرة عند سرعة أرضية {k} كم/س ثم تصعد.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "لا شيء — الطائرة الافتراضية «المحاكي #N»",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "إذا اختُير سجل من مخزون الطائرات، تظهر الطائرة في لوحة العمليات بهذا الاسم؛ وإلا تُستخدم طائرة افتراضية «المحاكي #N» خاصة بالجلسة. المحاكي دائماً SITL؛ السجل مجرد هوية.",
+  "Dron kaydı": "سجل الطائرة",
+  "Dron kaydı (isteğe bağlı)": "سجل الطائرة (اختياري)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "إخفاء/إظهار لوحة العمليات: في العرض البسيط يظهر العالم ثلاثي الأبعاد فقط مع HUD القديم وأوامر الشريط السفلي",
+  "Sade görünüm": "عرض بسيط",
+  "Harekât paneli": "لوحة العمليات",
+  "Rota yüklendi: {n} nokta": "تم تحميل المسار: {n} نقاط",
 });

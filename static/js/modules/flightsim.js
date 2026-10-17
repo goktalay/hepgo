@@ -17,6 +17,7 @@ import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo 
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
+import { createOpsPanel } from './flightsim_ops.js';   // §14: Canlı Uçuş harekât paneli (static/ops iframe) — telemetri/komut/rota paneli; 3B yanında
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -88,6 +89,8 @@ function restBackend() {
     end: id => api.del(`${API}/sessions/${encodeURIComponent(id)}`),
     cmd: (id, name, params = {}) => api.post(`${API}/sessions/${encodeURIComponent(id)}/cmd`, { name, params }),
     g3dKey: () => api.get(`${API}/g3d-key`).then(r => r.key),   // Google Map Tiles anahtarı (no-store; yalnız dünya kurulurken)
+    drones: () => api.get(`${API}/drones`),   // §14: sihirbaz "Dron kaydı (isteğe bağlı)" — Dron Envanteri
+    ops: true,                                 // harekât paneli (static/ops ?sim=) kullanılabilir (mock'ta sunucu yok)
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
   };
@@ -135,7 +138,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
   const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
-  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '',
+  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', drone: null,
     world: { ...defaults, seed: randomSeed(), launch: { ...LAUNCH_DEFAULTS, ...(defaults.launch || {}) } } };
   // Etkin dron tipi: canlı kipte seçilen kart, kayıt kipinde seçili logun araç tipi (model kütüphanesi bu tipe göre listelenir)
   const activeType = () => (S.mode === 'replay' ? ((S.logs || []).find(x => x.id === S.log)?.type || 'multirotor') : S.type);
@@ -208,6 +211,12 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · '))))
     : h('div', { class: 'small muted fs-nocenter' }, 'Kayıtlı merkez yok. Önce ', h('a', { href: '#/drone/routes' }, 'Rotalar › Merkezler'), ' bölümünden bir merkez ekleyin.'));
   drawCenters();
+  // ---------- 2b. dron kaydı (isteğe bağlı; §14): harekât panelinde telemetri bu dronun koduyla/adıyla akar; yoksa "Simülatör #N" ----------
+  const droneSel = h('select', { class: 'input fs-drone-sel', onchange: () => { S.drone = droneSel.value ? Number(droneSel.value) : null; } }, h('option', { value: '' }, 'Yok — "Simülatör #N" sanal dronu'));
+  const droneBox = h('div', { class: 'fs-drone-step' },
+    h('p', { class: 'small muted' }, 'Dron Envanteri\'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel "Simülatör #N" sanal dronu kullanılır. Simülatör her durumda SITL\'dir; kayıt yalnız kimliktir.'),
+    h('label', { class: 'fs-drone-row' }, h('span', { class: 'small muted' }, 'Dron kaydı'), droneSel));
+  (be.drones ? be.drones() : Promise.resolve([])).then(rows => { (rows || []).forEach(d => droneSel.append(h('option', { value: d.id }, `${d.code || ''} · ${d.name || ''}${d.model ? ` (${d.model})` : ''}`))); }).catch(() => {});
 
   // ---------- 1R. kayıttan oynat: uçuş logu listesi (ad, tarih, dron, süre, boyut; arama) ----------
   const logList = h('div', { class: 'fs-logs' });
@@ -343,7 +352,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       const model = modelBody(picker.selectionFor(activeType()), mock);
       const s = S.mode === 'replay'
         ? await be.create({ mode: 'replay', log_id: S.log, world: { ...S.world }, model })
-        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, model });
+        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, model, drone_id: S.drone ?? undefined });
       toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
       location.hash = be.href(s.id);
     } catch (err) {
@@ -355,7 +364,8 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
   const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, launchBox, modelBox);
-  const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
+  const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList,
+    h('h4', { class: 'fs-sub-h' }, 'Dron kaydı (isteğe bağlı)'), droneBox);
   const worldNo = h('span', { class: 'fs-no' }, '3');
   const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.');
   const stepWorld = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, worldNo, 'Dünya'), worldHint, h('div', { class: 'fs-world-wrap' }, worldForm, h('div', null, previewBox, previewInfo)));
@@ -472,6 +482,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
+  // §14 harekât paneli: Canlı Uçuş'un panelleri (telemetri, komutlar, rota, ARM CHECK, konsol) 3B'nin yanında iframe; "Sade görünüm" eski HUD + alt çubuk komutlarına döner
+  const opsOk = !replay && !mock && !!be.ops;
+  let ops = null;
+  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları'), onclick: () => { if (!ops) return; const on = ops.toggle(); opsBtn.classList.toggle('primary', !on); opsBtn.textContent = tr(on ? 'Sade görünüm' : 'Harekât paneli'); } }, 'Sade görünüm');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -491,9 +505,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     timeLbl, clockLbl) : null;
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
-    gimbalLbl, mhudBtn,
+    gimbalLbl, mhudBtn, opsBtn,
     replay ? playBar : h('span', { class: 'spacer' }),
-    canWrite && !replay ? h('div', { class: 'pill-group' },
+    canWrite && !replay ? h('div', { class: 'pill-group fs-cmds' },   // .fs-cmds: harekât paneli açıkken gizli (komutlar panelden)
       armBtn, modeSel,
       h('button', { class: 'btn sm fs-takeoff-btn', type: 'button', onclick: () => takeoffDialog() }, LAUNCH_BTN[launch?.method] || 'Kalkış'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => cmd('rtl') }, 'RTL')) : null,
@@ -514,6 +528,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
+  if (opsOk) { ops = createOpsPanel(stage, { sid }); opsBtn.classList.toggle('primary', !ops.enabled); opsBtn.textContent = tr(ops.enabled ? 'Sade görünüm' : 'Harekât paneli'); }
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -569,7 +584,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     if (g3dMode) { msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
     sim = await createFlightSim3D(mount, world, {
       type, model: session.model || session.airframe, launch, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
-      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
+      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât paneli gizli, askeri HUD kalır (§14)
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
       onProgress: progMsg,
       g3dKey: be.g3dKey,
@@ -759,7 +774,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     message: m => {
       if (destroyed) return;
       if (m.t === 'tele') return replay ? undefined : updateHud(m);
-      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); } return; }
+      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) sim?.setRoute(session.route); } return; }
+      if (m.t === 'route') { sim?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null);
       if (m.t === 'launch') return onLaunch(m);
       if (m.t === 'state') { if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay }; return setState(m.state); }
@@ -801,6 +817,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     player?.dispose();
     socket?.close();
     milHud?.dispose();
+    ops?.dispose();
     sim?.dispose();
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');

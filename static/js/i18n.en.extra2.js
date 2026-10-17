@@ -821,4 +821,13 @@ registerCatalog('en', {
   "Uçak havalandı": "Aircraft airborne",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "The aircraft is set to TAKEOFF mode and armed; after 1 s the pneumatic ramp carriage launches it at {a}° (SITL catapult trigger). Throttle opens once the launch acceleration is detected.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "The aircraft is set to TAKEOFF mode and armed; the pickup accelerates along the runway and releases the aircraft at {k} km/h ground speed, after which it climbs.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "None — \"Simulator #N\" virtual drone",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "If a Drone Inventory record is selected, the operations panel shows the drone under that name; otherwise a session-specific \"Simulator #N\" virtual drone is used. The simulator is always SITL; the record is only an identity.",
+  "Dron kaydı": "Drone record",
+  "Dron kaydı (isteğe bağlı)": "Drone record (optional)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Hide/show the operations panel: the plain view shows only the 3D world, the legacy HUD and the bottom-bar commands",
+  "Sade görünüm": "Plain view",
+  "Harekât paneli": "Operations panel",
+  "Rota yüklendi: {n} nokta": "Route loaded: {n} points",
 });

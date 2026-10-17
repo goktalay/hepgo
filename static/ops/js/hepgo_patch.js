@@ -879,7 +879,7 @@
       if (!kok.classList.contains("ayrik") && typeof dronKartAyirToggle === "function") {
         try { dronKartAyirToggle(d.sysid); } catch (e) { console.error("[hepgo] kart ayrılamadı", e); }
       }
-      kok.classList.add("dk-yalniz-baslik");   // katlı başlar (yalnız başlık)
+      if (!document.documentElement.dataset.hepgoSim) kok.classList.add("dk-yalniz-baslik");   // katlı başlar (yalnız başlık); §14 simülatörde açık
       try { if (kok._btnKucult) kok._btnKucult.innerHTML = DK_BUYULT_IKON; } catch (e) {}
       kok.dataset.hepgoSira = String(++sira);
       if (ro) ro.observe(kok);

@@ -3559,4 +3559,13 @@ registerCatalog('fr', {
   "Uçak havalandı": "Avion en vol",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "L’avion passe en mode TAKEOFF et est armé ; après 1 s le chariot de la rampe le lance à {a}° (déclencheur catapulte SITL). Les gaz s’ouvrent dès que l’accélération de lancement est détectée.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "L’avion passe en mode TAKEOFF et est armé ; le pickup accélère sur la piste et le libère à {k} km/h de vitesse sol, puis il monte.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Aucun — drone virtuel « Simulateur #N »",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Si un enregistrement de l’inventaire des drones est choisi, le panneau d’opérations affiche le drone sous ce nom ; sinon un drone virtuel « Simulateur #N » propre à la session est utilisé. Le simulateur est toujours SITL ; l’enregistrement n’est qu’une identité.",
+  "Dron kaydı": "Fiche drone",
+  "Dron kaydı (isteğe bağlı)": "Fiche drone (facultatif)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Masquer/afficher le panneau d’opérations : la vue simple ne montre que le monde 3D, l’ancien HUD et les commandes de la barre inférieure",
+  "Sade görünüm": "Vue simple",
+  "Harekât paneli": "Panneau d’opérations",
+  "Rota yüklendi: {n} nokta": "Itinéraire chargé : {n} points",
 });

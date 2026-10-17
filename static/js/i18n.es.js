@@ -3559,4 +3559,13 @@ registerCatalog('es', {
   "Uçak havalandı": "Avión en el aire",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "El avión pasa a modo TAKEOFF y se arma; tras 1 s el carro de la rampa lo lanza a {a}° (disparo de catapulta SITL). El acelerador se abre al detectar la aceleración de lanzamiento.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "El avión pasa a modo TAKEOFF y se arma; el pickup acelera por la pista y lo libera a {k} km/h de velocidad respecto al suelo, luego asciende.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Ninguno — dron virtual «Simulador #N»",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Si se elige un registro del inventario de drones, el panel de operaciones muestra el dron con ese nombre; si no, se usa un dron virtual «Simulador #N» propio de la sesión. El simulador siempre es SITL; el registro es solo una identidad.",
+  "Dron kaydı": "Registro de dron",
+  "Dron kaydı (isteğe bağlı)": "Registro de dron (opcional)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Ocultar/mostrar el panel de operaciones: la vista simple muestra solo el mundo 3D, el HUD antiguo y los comandos de la barra inferior",
+  "Sade görünüm": "Vista simple",
+  "Harekât paneli": "Panel de operaciones",
+  "Rota yüklendi: {n} nokta": "Ruta cargada: {n} puntos",
 });

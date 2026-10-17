@@ -264,6 +264,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // ---------- dünya ----------
   let terrain = null, gWorld = new T.Group(), buildingsAABB = [], W = { ...WORLD_DEFAULTS };
   scene.add(gWorld);
+  // §14 rota (SITL'e yüklenen görev): çizgi + ara nokta işaretleri; dünyadan bağımsız grup (setWorld yeniden kurulumunda korunur)
+  const gRoute = new T.Group();
+  scene.add(gRoute);
+  let routePts = [];
   let lights = { sun: new T.DirectionalLight(0xffffff, 2), hemi: new T.HemisphereLight(0xbfd8ff, 0x3a4a2a, 0.9), amb: new T.AmbientLight(0xffffff, 0.15) };
   scene.add(lights.sun, lights.hemi, lights.amb, lights.sun.target);
   // Gölge kamerası dronu izler (küçük, keskin): her karede sun.position = dron + güneş yönü × 120 m, target = dron
@@ -1266,6 +1270,29 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     buildRig();   // pist yönü / saat değişmiş olabilir
     if (!tele.has) drone.group.position.set(0, 0, (drone.ground || 0.2) + 0.02);
     if (!preview && camMode === 'follow') resetCamera();
+    if (routePts.length) drawRoute();   // yüzey değişti: rota yere göre yeniden
+  }
+  // §14 rota: points [{seq, cmd, lat, lon, alt}] (alt: ev zeminine göre m; MAV_FRAME_GLOBAL_RELATIVE_ALT). Çizgi (amber), ara nokta küreleri
+  // (ilk yeşil, son kırmızı, LAND/RTL mor), yere inen ince dikey çubuk. Boş liste rotayı siler.
+  function setRoute(points) {
+    routePts = Array.isArray(points) ? points.filter(p => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))) : [];
+    drawRoute();
+  }
+  function drawRoute() {
+    disposeGroup(gRoute);
+    if (!routePts.length) return;
+    const z0 = terrainHeight(0, 0);
+    const v = routePts.map(p => { const l = toLocal(Number(p.lat), Number(p.lon)); return new T.Vector3(l.x, l.y, z0 + Math.max(0.5, num(p.alt, 0))); });
+    if (v.length > 1) gRoute.add(new T.Line(new T.BufferGeometry().setFromPoints(v), new T.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.9 })));
+    const sph = new T.SphereGeometry(1.6, 12, 10);
+    const mats = { a: new T.MeshBasicMaterial({ color: 0x22c55e }), b: new T.MeshBasicMaterial({ color: 0xef4444 }), m: new T.MeshBasicMaterial({ color: 0xffd166 }), l: new T.MeshBasicMaterial({ color: 0xa78bfa }) };
+    const stick = new T.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.35 });
+    v.forEach((p, i) => {
+      const cmd = Number(routePts[i].cmd);
+      const m = new T.Mesh(sph, cmd === 21 || cmd === 20 ? mats.l : i === 0 ? mats.a : i === v.length - 1 ? mats.b : mats.m);
+      m.position.copy(p);
+      gRoute.add(m, new T.Line(new T.BufferGeometry().setFromPoints([p, new T.Vector3(p.x, p.y, terrainHeight(p.x, p.y))]), stick));
+    });
   }
   // Merkez değişti (sihirbaz): gerçek kipte veriler yeni konumdan yüklenir
   async function setOrigin(lat, lon, nw, alt) {
@@ -1288,7 +1315,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     canvas.removeEventListener('pointerup', onPointerUp); canvas.removeEventListener('pointercancel', onPointerUp);
     canvas.removeEventListener('wheel', onWheel);
     controls.dispose();
-    disposeGroup(gWorld); disposeGroup(drone.group);
+    disposeGroup(gWorld); disposeGroup(drone.group); disposeGroup(gRoute);
     renderer.dispose();
     renderer.forceContextLoss?.();
     canvas.remove();
@@ -1298,6 +1325,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
     setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, setKeyboardLock,
     setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; },   // kalkış yöntemi (§13)
+    setRoute, get route() { return routePts.slice(); },   // §14: SITL'deki görevin rota çizgisi/işaretleri
     get modelInfo() { return { type: drone.type, model: drone.model, bbox: drone.bbox || null, props: drone.props.length }; },   // yönelim paneli (§12)
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     get real() { return !!terrain?.real; },

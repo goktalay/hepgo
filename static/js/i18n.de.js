@@ -3559,4 +3559,13 @@ registerCatalog('de', {
   "Uçak havalandı": "Flugzeug abgehoben",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.": "Das Flugzeug wird in TAKEOFF versetzt und scharf geschaltet; nach 1 s schießt der Rampenschlitten es mit {a}° ab (SITL-Katapultauslöser). Gas öffnet, sobald die Startbeschleunigung erkannt wird.",
   "Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.": "Das Flugzeug wird in TAKEOFF versetzt und scharf geschaltet; der Pickup beschleunigt auf der Bahn und gibt es bei {k} km/h frei, dann steigt es.",
+  // §14 Uçuş Simülatörü — harekât paneli
+  "Yok — \"Simülatör #N\" sanal dronu": "Keine — virtuelle Drohne „Simulator #N“",
+  "Dron Envanteri'nden bir kayıt seçilirse harekât panelinde dron o adla görünür; seçilmezse oturuma özel \"Simülatör #N\" sanal dronu kullanılır. Simülatör her durumda SITL'dir; kayıt yalnız kimliktir.": "Wird ein Eintrag aus dem Drohnenbestand gewählt, erscheint die Drohne im Einsatzpanel unter diesem Namen; sonst wird die sitzungsbezogene virtuelle Drohne „Simulator #N“ verwendet. Der Simulator ist immer SITL; der Eintrag ist nur eine Kennung.",
+  "Dron kaydı": "Drohneneintrag",
+  "Dron kaydı (isteğe bağlı)": "Drohneneintrag (optional)",
+  "Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları": "Einsatzpanel aus-/einblenden: in der schlichten Ansicht nur 3D-Welt, altes HUD und Befehle der unteren Leiste",
+  "Sade görünüm": "Schlichte Ansicht",
+  "Harekât paneli": "Einsatzpanel",
+  "Rota yüklendi: {n} nokta": "Route geladen: {n} Punkte",
 });

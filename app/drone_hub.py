@@ -247,12 +247,17 @@ class Viewer:
         self.allowed = set()  # görevin uçuşlarına bağlı köprü kimlikleri (+ sanal dron -drone_id)
         self.task = None      # hello.task {id, code, status, location_name, lat, lon}
         self.flights = []     # hello.flights (task_live ile aynı satırlar)
+        self.sim_id = None    # §14: Uçuş Simülatörü oturumu bağlamı ({t:'watch', sim_id}); allowed = {-(9000+N)}
+        self.sim_only = not can_read(user)   # field.live yok, yalnız drone.sim: görev/köprü akışı görünmez, yalnız izlenen simülatör
+
+    def kisitli(self):
+        return self.task_id is not None or self.sim_id is not None or self.sim_only
 
     def passes(self, bridge_id):
         """Bu izleyiciye bridge_id kaynaklı bir mesaj gider mi? (None: kaynaksız mesaj, herkese)"""
         if bridge_id is None:
             return True
-        if self.task_id is not None:
+        if self.kisitli():
             return bridge_id in self.allowed
         return self.watch is None or self.watch == bridge_id
 
@@ -569,6 +574,12 @@ def _feed_mavlink(bridge, data):
         msgs = bridge.parser.parse_buffer(data) or []
     except Exception:   # noqa: BLE001 — bozuk çerçeve: atla
         return
+    _feed_msgs(bridge, msgs)
+
+
+def _feed_msgs(bridge, msgs):
+    """Ayrıştırılmış MAVLink mesajları → DroneState / STATUSTEXT olayı / COMMAND_ACK konsolu (köprü, SITL sanal dron ve simülatör oturumu
+    — flightsim_hub.SimBridge kendi ayrıştırdığı mesajları ikinci kez çözmeden buraya verir)."""
     for m in msgs:
         try:
             sysid = m.get_srcSystem()
@@ -1433,10 +1444,13 @@ def hello_msg(v):
     """İzleyiciye hello: görev bağlamında yalnız görevin köprüleri/sanal dronları + task/flights; aksi hâlde hepsi."""
     user = v.user
     msg = {'t': 'hello', 'v': PROTO, 'me': {'id': user['id'], 'name': user['full_name'], 'can_command': can_command(user)}}
-    if v.task_id is not None:
+    if v.kisitli():
         bridges = [b for b in [*BRIDGES.values(), *SIMS.values()] if b.id in v.allowed]
-        msg['task'] = v.task
-        msg['flights'] = v.flights
+        if v.task_id is not None or v.sim_id is not None:
+            msg['task'] = v.task
+            msg['flights'] = v.flights
+        if v.sim_id is not None:   # simülatör bağlamında komut yetkisi drone.sim yazma iznidir (SimBridge.can_command)
+            msg['me']['can_command'] = any(getattr(b, 'can_command', None) and b.can_command(user) for b in bridges)
     else:
         bridges = [*BRIDGES.values(), *SIMS.values()]
     msg['caps'] = all_caps(bridges)
@@ -1495,12 +1509,17 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
         if st is None:
             raise RuntimeError('Bu dronun telemetrisi henüz gelmedi')
         return {'ok': True, 'result': arm_check_report(st)}
-    if not can_command(user):
+    if hasattr(b, 'can_command'):   # §14 simülatör oturumu: drone.sim yazma izni (Pilot rolü / field.live gerekmez)
+        if not b.can_command(user):
+            raise RuntimeError('Komut için Uçuş Simülatörü yazma izni gerekir')
+    elif not can_command(user):
         raise RuntimeError('Komut için Canlı Uçuş yazma yetkisi ve Pilot rolü gerekir')
 
     def audit():
         with db.connect() as conn:
-            if sim:
+            if getattr(b, 'sim_id', None) is not None:
+                db.audit(conn, user['id'], 'Simülatör komutu (harekât paneli)', 'drone_sim', b.sim_id, f'{name} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
+            elif sim:
                 db.audit(conn, user['id'], 'Sanal dron komutu', 'drone', b.drone_id, f'{name} · görev {b.task_id} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
             else:
                 db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
@@ -1903,7 +1922,7 @@ async def _mission_resume_at(b, sim, sysid, params, viewer_ws):
 async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
     """Tek komutu köprüye (ya da sanal drona) gönderir, sonucu konsola yazar."""
     if sim:
-        res = await b.acommand(name, params) if isinstance(b, SitlDrone) else b.command(name, params)
+        res = await b.acommand(name, params) if hasattr(b, 'acommand') else b.command(name, params)   # SitlDrone / flightsim_hub.SimBridge eşzamansız
         ok = bool(res.get('ok'))
         err = str(res.get('error') or 'reddedildi')
         if not ok and 'MAV_RESULT' not in err:   # SITL: reddi COMMAND_ACK satırı yazar
@@ -1941,7 +1960,8 @@ async def _dispatch(b, sim, sysid, name, params, viewer_ws=None, rid=None):
 async def ws_live(ws: WebSocket):
     await ws.accept()
     user = await _db(_ws_user, ws.cookies.get(auth.COOKIE))
-    if not user or not can_read(user):
+    # field.live (Canlı Uçuş) ya da drone.sim (Uçuş Simülatörü §14: yalnız watch{sim_id} ile kendi oturumunu izler/komutlar)
+    if not user or not (can_read(user) or 'drone.sim' in user['modules']):
         await _safe_send(ws, {'t': 'error', 'error': 'auth'})
         await ws.close(code=4403)
         return
@@ -1962,7 +1982,21 @@ async def ws_live(ws: WebSocket):
             if t == 'ping':
                 v.put(json.dumps({'t': 'pong'}))
             elif t == 'watch':
-                if msg.get('task_id'):   # Faz 1: görev bağlamı — yalnız görevin köprüleri/sanal dronları; sanal dronlar başlatılır
+                if msg.get('sim_id'):   # §14: Uçuş Simülatörü oturumu — yalnız o oturumun köprüsü (-(9000+N)); komut yetkisi drone.sim yazma
+                    from . import flightsim_hub
+                    try:
+                        b = flightsim_hub.apply_viewer(v, int(msg['sim_id']))
+                    except (TypeError, ValueError):
+                        b = None
+                    if b is None:
+                        v.sim_id, v.task, v.flights, v.allowed = None, None, [], set()
+                        v.put(json.dumps({'t': 'error', 'error': 'Simülatör oturumu bulunamadı'}))
+                        continue
+                elif v.sim_only:
+                    v.put(json.dumps({'t': 'error', 'error': 'Canlı Uçuş izleme yetkiniz yok (yalnız simülatör)'}))
+                    continue
+                elif msg.get('task_id'):   # Faz 1: görev bağlamı — yalnız görevin köprüleri/sanal dronları; sanal dronlar başlatılır
+                    v.sim_id = None
                     try:
                         await _apply_task(v, int(msg['task_id']))
                     except (TypeError, ValueError):
@@ -1973,7 +2007,7 @@ async def ws_live(ws: WebSocket):
                         v.put(json.dumps({'t': 'error', 'error': 'Görev bulunamadı'}))
                         continue
                 else:   # eski davranış: tek köprü ya da hepsi
-                    v.task_id, v.task, v.flights, v.allowed = None, None, [], set()
+                    v.task_id, v.sim_id, v.task, v.flights, v.allowed = None, None, None, [], set()
                     v.watch = int(msg['bridge_id']) if msg.get('bridge_id') else None
                 v.put(hello())
             elif t == 'param_cache':   # v1.1: sunucudaki PARAM_VALUE önbelleği (param_list sonrası ya da yeniden bağlanınca)

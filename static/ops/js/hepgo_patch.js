@@ -756,7 +756,11 @@
 // =====================================================================
 (function hepgoFaz1b() {
   var SOL = 52, UST = 10, ARA = 2, ESIK = 18, sira = 0, cizZaman = null;
+  function sim() { return !!document.documentElement.dataset.hepgoSim; }
+  // §14 simülatör: kart sütunu SAĞ ÜSTTE (üst pencerenin gezinti kapsülü ~44px; eski .fs-hud ile aynı 56px); kılavuz sağ kenardır (hepgo_sim.js)
+  function solKenar(w) { return sim() ? Math.max(0, window.innerWidth - (w || 0) - 12) : SOL; }
   function ustOfset() {
+    if (sim()) return 56;
     // Tam ekranda üst bant haritanın üstünde yüzer (üstten 20px): sütun bandın altından başlar
     var b = document.getElementById("hepgoUstBar");
     if (document.body.classList.contains("hepgo-tam") && b && b.offsetHeight) return Math.round(b.getBoundingClientRect().bottom) + 8;
@@ -772,7 +776,7 @@
     var y = ustOfset();
     sutun().forEach(function (k) {
       if (k._hepgoSurukleniyor) return;
-      k.style.left = SOL + "px"; k.style.top = y + "px";
+      k.style.left = solKenar(k.offsetWidth) + "px"; k.style.top = y + "px";
       y += k.offsetHeight + ARA;
     });
   }
@@ -787,7 +791,8 @@
   function yapis(tasinan, x, y) {
     var w = tasinan.offsetWidth, hgt = tasinan.offsetHeight, iyi = null;
     function dene(nx, ny, d) { if (d <= ESIK && (!iyi || d < iyi.d)) iyi = { x: nx, y: ny, d: d }; }
-    dene(SOL, y, Math.abs(x - SOL));   // sol sütun kılavuzu
+    var kl = solKenar(w);
+    dene(kl, y, Math.abs(x - kl));   // sütun kılavuzu (solda; §14 simülatörde sağda)
     kartlar().forEach(function (k) {
       if (k === tasinan) return;
       var r = k.getBoundingClientRect();
@@ -832,7 +837,7 @@
       try { baslik.releasePointerCapture(ev.pointerId); } catch (e) {}
       if (!oynadi) return;
       var x = parseFloat(kok.style.left) || 0, y = parseFloat(kok.style.top) || 0;
-      if (Math.abs(x - SOL) <= ESIK) {   // sol sütuna geri bırakıldı: dikey konumuna göre sıraya girer
+      if (Math.abs(x - solKenar(kok.offsetWidth)) <= ESIK) {   // sütuna geri bırakıldı: dikey konumuna göre sıraya girer
         delete kok.dataset.hepgoSerbest;
         var liste = sutun().filter(function (k) { return k !== kok; });
         var yer = liste.length;
@@ -842,6 +847,7 @@
         sira = Math.max(sira, liste.length);
       }
       dizPlanla();
+      if (window.hepgoSimKartBirakildi) window.hepgoSimKartBirakildi(kok);   // §14: konum localStorage (serbest değilse kayıt silinir)
     }
     baslik.addEventListener("pointerup", birak);
     baslik.addEventListener("pointercancel", birak);
@@ -883,6 +889,7 @@
       try { if (kok._btnKucult) kok._btnKucult.innerHTML = DK_BUYULT_IKON; } catch (e) {}
       kok.dataset.hepgoSira = String(++sira);
       if (ro) ro.observe(kok);
+      if (window.hepgoSimKartYukle) window.hepgoSimKartYukle(kok);   // §14: kayıtlı sürükleme konumu
       var b = document.createElement("button");
       b.type = "button"; b.className = "hk-bagla";
       b.addEventListener("pointerdown", function (e) { e.stopPropagation(); });

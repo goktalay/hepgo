@@ -1278,6 +1278,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
 
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
+    cameraState: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, az: controls.getAzimuthalAngle(), pol: controls.getPolarAngle(), dist: camera.position.distanceTo(controls.target) }),   // teşhis (§14 testleri: fare ile döndürme çalışıyor mu)
     setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, motionStats, setKeyboardLock,
     setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; },   // kalkış yöntemi (§13)
     setRoute, get route() { return routePts.slice(); },   // §14: SITL'deki görevin rota çizgisi/işaretleri

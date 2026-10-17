@@ -3568,7 +3568,7 @@ registerCatalog('fr', {
   "Sade görünüm": "Vue simple",
   "Harekât paneli": "Panneau d’opérations",
   "Rota yüklendi: {n} nokta": "Itinéraire chargé : {n} points",
-  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "Afficher/masquer le panneau d’opérations (P) : couche glissant depuis la droite au-dessus du monde 3D ; fermé = vue simple (ancien HUD et commandes de la barre inférieure)",
+  "Harekât kartlarını göster/gizle (P): dron kartı, PFD, telemetri karoları ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)": "Afficher/masquer les cartes d’opérations (P) : la carte du drone, le PFD, les tuiles de télémétrie et la console flottent au-dessus du monde 3D ; masquées, la vue simple (HUD classique et commandes de la barre inférieure)",
   "Harekât panelini aç/kapat (P)": "Afficher/masquer le panneau d’opérations (P)",
   "Panel": "Panneau",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "réseau : {hz} Hz · jitter {j} ms · tampon {d} ms",

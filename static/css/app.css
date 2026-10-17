@@ -8909,6 +8909,16 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .fs-time, .fs-seed { display: flex; align-items: center; gap: 8px; }
 .fs-airframe { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .fs-airframe[hidden] { display: none; }
+/* Kalkış yöntemi (§13): sabit kanatta tip kartlarının altında */
+.fs-launch-step { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.fs-launch-step[hidden] { display: none; }
+.fs-launch-step h4 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.fs-launch-step > p { margin: 0 0 8px; }
+.fs-launches { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.fs-launch-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 320px)); gap: 6px 18px; margin-top: 10px; }
+.fs-launch-param[hidden] { display: none; }
+.fs-launch-info { margin-top: 6px; }
+.fs-launch-badge { white-space: nowrap; }
 /* Görsel model kütüphanesi (§12): kart ızgarası + yönelim paneli */
 .fs-model-step { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .fs-model-step > p { margin: 0 0 8px; }

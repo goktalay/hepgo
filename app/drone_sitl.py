@@ -160,8 +160,9 @@ class SitlYoneticisi:
         with self._kilit:
             return dict(self._bilgi.get(int(kimlik)) or {})
 
-    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None):
-        """SITL sürecini başlatır. Dönüş: (port, hata) — başarısızsa port None. Bloklar (~2 sn): iş parçacığında çağrılır."""
+    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None, model=None):
+        """SITL sürecini başlatır. Dönüş: (port, hata) — başarısızsa port None. Bloklar (~2 sn): iş parçacığında çağrılır.
+        `model`: `--model` değerini geçersiz kılar (ör. uçuş simülatörü rampa kalkışı için 'plane-catapult'; TIP_ESLEME değişmez)."""
         kimlik = int(kimlik)
         konsol = konsol or self.konsol
         if self.calisiyor_mu(kimlik):
@@ -169,7 +170,7 @@ class SitlYoneticisi:
         yol, hata = indir(tip, konsol)
         if not yol:
             return None, hata
-        model = TIP_ESLEME.get(tip, TIP_ESLEME['multirotor'])[1]
+        model = model or TIP_ESLEME.get(tip, TIP_ESLEME['multirotor'])[1]
         with self._kilit:
             mesgul = {(v or {}).get('port') for v in self._bilgi.values()}
         port = bos_taban_port(SANAL_PORT_BASI, kullanilan=mesgul)   # Tuzak B
@@ -219,9 +220,9 @@ class SitlYoneticisi:
             return None, f'SITL hemen sonlandı (çıkış kodu {p.returncode}).' + (f' Log: {son}' if son else '')
         with self._kilit:
             self._surecler[kimlik] = p
-            self._bilgi[kimlik] = {'port': port, 'tip': tip, 'dizin': str(dizin), 'pid': p.pid, 'sysid': int(sysid),
+            self._bilgi[kimlik] = {'port': port, 'tip': tip, 'model': model, 'dizin': str(dizin), 'pid': p.pid, 'sysid': int(sysid),
                                    'lat': float(lat), 'lon': float(lon), 'ikili': str(yol)}
-        konsol(f'Sanal dron başladı: {tip} tcp:127.0.0.1:{port} (pid {p.pid})', 'basari')
+        konsol(f'Sanal dron başladı: {tip} ({model}) tcp:127.0.0.1:{port} (pid {p.pid})', 'basari')
         return port, None
 
     def durdur(self, kimlik):

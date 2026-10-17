@@ -652,6 +652,70 @@ def model_testleri(a, mon, c1):
     print('  görsel model kütüphanesi testleri geçti')
 
 
+def kalkis_testleri(a, c1):
+    """§13: world.launch doğrulama (400), parametre seti, sahte kipte üç yöntemin WS `launch` aşama olayları (armed → launch → released)."""
+    S = '/api/drone/sim/sessions'
+    # --- doğrulama ---
+    for bad in ({'method': 'bungee'}, {'angle_deg': 5}, {'angle_deg': 31}, {'release_kmh': 30}, {'release_kmh': 120}, 7, {'angle_deg': True}):
+        assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'launch': bad}}).status_code == 400, bad
+    assert flightsim.world_dogrula({})['launch'] == flightsim.LAUNCH_DEFAULTS
+    assert flightsim.world_dogrula({'launch': {'method': 'ramp', 'angle_deg': 22}})['launch'] == {'method': 'ramp', 'angle_deg': 22.0, 'release_kmh': 70}
+    assert flightsim.launch_normalize('vtol', {'method': 'ramp'})['method'] == 'wheels' and flightsim.launch_normalize('sabit_kanat', {'method': 'ramp'})['method'] == 'ramp'
+    # --- parametre seti ---
+    pr = dict(flightsim.launch_parametreleri({'method': 'ramp', 'angle_deg': 20}, 80))
+    assert pr['TKOFF_THR_MINACC'] == flightsim.RAMP_ACCEL and pr['TKOFF_THR_DELAY'] == 2.0 and pr['TKOFF_LVL_PITCH'] == 20.0 and pr['TKOFF_ALT'] == 80.0 and pr['SERVO7_FUNCTION'] == 0.0, pr
+    pv = dict(flightsim.launch_parametreleri({'method': 'vehicle', 'release_kmh': 72}))
+    assert pv['TKOFF_THR_MINACC'] == 0.0 and pv['TKOFF_ROTATE_SPD'] == 20.0 and 'TKOFF_ALT' not in pv, pv
+    pw = dict(flightsim.launch_parametreleri({'method': 'wheels'}))
+    assert pw['TKOFF_THR_MINACC'] == 0.0 and pw['TKOFF_ROTATE_SPD'] == 12.0, pw
+    assert flightsim.LAUNCH_SITL_MODEL['ramp'] == 'plane-catapult' and flightsim.LAUNCH_SERVO == 7
+    # --- VTOL'de yöntem etkisiz (wheels) ---
+    s = ok(a.post(S, json={'type': 'vtol', 'center_id': c1['id'], 'world': {'launch': {'method': 'vehicle', 'release_kmh': 90}}}), 201)
+    assert s['launch'] == {'method': 'wheels', 'angle_deg': 15, 'release_kmh': 90.0, 'phase': None}, s['launch']
+    ok(a.delete(f"{S}/{s['id']}"))
+    # --- sahte kipte üç yöntem: aşama olayları ---
+    token = a.cookies.get(auth.COOKIE)
+    for launch, beklenen in (({'method': 'ramp', 'angle_deg': 18}, None), ({'method': 'vehicle', 'release_kmh': 60}, 60), ({'method': 'wheels'}, None)):
+        s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'launch': launch, 'runway_heading': 90}}), 201)
+        sid = s['id']
+        assert s['launch']['method'] == launch['method'] and s['launch']['phase'] is None and s['world']['launch']['method'] == launch['method'], s['launch']
+        assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+        with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+            h = json.loads(ws.receive_text())
+            assert h['t'] == 'hello' and h['session']['launch']['method'] == launch['method']
+            ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 60}, 'rid': 'k1'}))
+            fazlar, tele_hiz, son_tele = [], {}, None
+            bitis = time.time() + 12
+            while time.time() < bitis and (not fazlar or fazlar[-1]['phase'] != 'released'):
+                m = json.loads(ws.receive_text())
+                if m['t'] == 'launch':
+                    fazlar.append(m); tele_hiz[m['phase']] = (son_tele or {}).get('groundspeed')
+                elif m['t'] == 'tele':
+                    son_tele = m
+            assert [f['phase'] for f in fazlar] == ['armed', 'launch', 'released'], fazlar
+            assert all(f['method'] == launch['method'] for f in fazlar) and fazlar[0]['alt'] == 60.0
+            t_launch = fazlar[1]['ts'] - fazlar[0]['ts']
+            if launch['method'] == 'ramp':
+                assert 1.0 <= t_launch <= 2.5 and fazlar[1]['angle_deg'] == 18.0 and fazlar[2]['speed_kmh'] >= 8 * 3.6 * 0.9, (t_launch, fazlar)
+                assert (tele_hiz['launch'] or 0) < 1, tele_hiz   # fırlatma anında uçak henüz duruyor
+            elif launch['method'] == 'vehicle':
+                assert t_launch < 0.5 and fazlar[1]['release_kmh'] == 60.0 and 0.9 * beklenen <= fazlar[2]['speed_kmh'] <= 1.1 * beklenen, fazlar
+                assert son_tele['alt_rel'] < 3 or fazlar[2]['speed_kmh'] >= 0.9 * beklenen   # bırakma yer hızında olur
+            else:
+                assert t_launch < 0.5 and son_tele['alt_rel'] >= 1, (t_launch, son_tele)
+            g = ok(a.get(f'{S}/{sid}'))
+            assert g['launch']['phase'] == 'released', g['launch']
+            # havalandı: tırmanıyor, pist yönünde (doğu) ilerledi
+            m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['alt_rel'] > 5, 6)
+            assert m and m['armed'] and m['mode'] == 'TAKEOFF', m
+            # reset → aşama sıfırlanır
+            ws.send_text(json.dumps({'t': 'cmd', 'name': 'reset', 'rid': 'k2'}))
+            assert ws_bekle(ws, lambda x: x['t'] == 'tele' and not x['armed'] and x['alt_rel'] == 0, 3)
+            assert ok(a.get(f'{S}/{sid}'))['launch']['phase'] is None
+        ok(a.delete(f'{S}/{sid}'))
+    print('  kalkış yöntemi testleri geçti')
+
+
 def main():
     terrain_birim_testleri()
     sitl = SahteSitl()
@@ -876,6 +940,8 @@ def main():
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
         assert s3['id'] == sid + 10 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+        # --- sabit kanat kalkış yöntemi (§13) ---
+        kalkis_testleri(a, c1)
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi

@@ -24,6 +24,8 @@
 //        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
 //        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
 
+import { addLandingGear, createLaunchRig } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13): iniş takımı, rampa, pickup
+
 const LIB = '/static/vendor/three/';
 export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
 const TERRAIN_API = '/api/drone/sim';
@@ -900,6 +902,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (!built && plane) built = buildDelta(M);
     if (!built) built = type === 'helikopter' ? buildHeli(M) : buildMulti(type === 'hexarotor' ? 6 : 4, SIZES[type] || 0.6, M);
     if (type === 'vtol') addVtolMotors(built, M);
+    // Tekerlekli kalkış (§13): burun + ana iniş takımı (modelde yoksa); yalnız sabit kanat
+    if (type === 'sabit_kanat' && (launchCfg?.method || 'wheels') === 'wheels') built.gear = addLandingGear(T, built, new T.Box3().setFromObject(built.grp));
     return built;
   };
   async function setType(type, model) {
@@ -919,12 +923,31 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     drone.ground = -bb.min.z * MODEL_SCALE;   // park yüksekliği (iniş takımı / sınır kutusu altı yere değer)
     built.grp.scale.setScalar(MODEL_SCALE);   // 4 km'lik dünyada görünürlük: gerçek boyutun 2.5 katı
     drone.group.add(built.grp);
-    drone.props = built.props; drone.ctrl = built.ctrl || []; drone.lights = built.lights || []; drone.type = type; drone.model = model;
+    drone.props = built.props; drone.ctrl = built.ctrl || []; drone.lights = built.lights || []; drone.type = type; drone.model = model; drone.gear = built.gear || null;
     drone.airframe = (type === 'sabit_kanat' || type === 'vtol') ? ({ 'builtin:caymaz': 'caymaz', 'builtin:delta': 'delta' }[model.id] || null) : null;
     drone.bbox = { size: bb.getSize(new T.Vector3()).toArray(), min: bb.min.toArray(), max: bb.max.toArray() };   // gerçek boyut (m): yönelim paneli bilgi satırı
     if (!tele.has) drone.group.position.set(0, 0, drone.ground + 0.02);   // park: pist merkezinde
+    if (rig || launchCfg) buildRig();   // tip değişti: düzenek yalnız sabit kanatta
   }
   let typeSeq = 0;
+  // ---------- kalkış düzeneği (§13): rampa / pickup; yalnız sabit kanat. setLaunch(cfg) kurar, setLaunchPhase(p) sunucu aşamalarını uygular ----------
+  let launchCfg = opts.launch ? { ...opts.launch } : null, rig = null;
+  const rigLocal = new T.Vector3(), rigPos = new T.Vector3(), rigQ = new T.Quaternion();
+  function buildRig() {
+    rig?.dispose(); rig = null;
+    const m = launchCfg?.method;
+    if (!launchCfg || (m !== 'ramp' && m !== 'vehicle') || drone.type !== 'sabit_kanat') return;
+    rig = createLaunchRig(T, { ...launchCfg, heading: num(W.runway_heading, 0), scale: MODEL_SCALE, night: W.time === 'night', dusk: W.time === 'dusk' });
+    scene.add(rig.group);
+  }
+  async function setLaunch(cfg) {
+    const prevMethod = launchCfg?.method || 'wheels';
+    launchCfg = cfg ? { ...cfg } : null;
+    const nowMethod = launchCfg?.method || 'wheels';
+    if (drone.type === 'sabit_kanat' && (prevMethod === 'wheels') !== (nowMethod === 'wheels')) await setType(drone.type, drone.model);   // iniş takımı ekle/kaldır (düzeneği de kurar)
+    else buildRig();
+  }
+  const setLaunchPhase = p => rig?.setPhase(p === 'armed' ? 'armed' : p === 'launch' ? 'launch' : p === 'released' ? 'released' : 'idle');
   // Küçük resim (§12): model ayrı bir sahnede 3/4 açıdan render hedefine çizilir → PNG Blob (320×240). Ana sahneye dokunmaz.
   async function snapshotModel(type, model, w = 320, h = 240) {
     const M = MAT();
@@ -1042,7 +1065,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       free.yaw = Math.atan2(-tmpV.x, tmpV.y) / DEG;
       free.pitch = Math.asin(clamp(tmpV.z, -1, 1)) / DEG;
     }
-    if (mode === 'ground') camera.position.set(RUNWAY_W / 2 + 25, -70, terrainHeight(RUNWAY_W / 2 + 25, -70) + 3);
+    if (mode === 'ground') {
+      if (rig) { const p = rig.sidePoint(9, -5, 0).add(rig.group.position); camera.position.set(p.x, p.y, terrainHeight(p.x, p.y) + 2.2); }   // rampa / araç yanı (§13)
+      else camera.position.set(RUNWAY_W / 2 + 25, -70, terrainHeight(RUNWAY_W / 2 + 25, -70) + 3);
+    }
     onCamChange?.(mode);
   }
   function resetCamera() {
@@ -1126,6 +1152,20 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       drone.group.position.copy(cur.pos);
       drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
+    }
+    // Kalkış düzeneği (§13): uçak kızakta/kasada iken konumu SITL yerine düzenekten; fırlatma/bırakma sonrası SITL konumuna yumuşak geçiş
+    if (rig) {
+      if (tele.has && rig.carrying && rig.phase !== 'launch' && (cur.pos.z > 3 || (tele.armed && tele.speed > 8))) rig.setPhase('released');   // dizi dışı kalkış (MP ile): serbest bırak
+      if (tele.has && rig.anchored) rig.anchor(cur.pos);   // düzenek SITL uçağını izler (SITL plane yerde ~4 m/s kayar; §13)
+      rig.update(dt, { speed: tele.speed });
+      if (rig.phase !== 'free') {
+        rig.attachWorld(rigPos); rigPos.z += drone.ground || 0;
+        rig.planeQuat(rigQ);
+        const b = rig.blend;
+        if (b < 1) { drone.group.position.lerpVectors(rigPos, tmpV.copy(cur.pos).setZ(cur.pos.z + (drone.ground || 0)), b); drone.group.quaternion.slerpQuaternions(rigQ, cur.q, b); }
+      }
+    }
+    if (tele.has) {
       if (camMode === 'follow') {
         // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur.
         // Düşük kare hızında (yazılım WebGL, 4–10 fps) gerçek geçen süre kadar küçük alt adımlarla ilerler: yay kararlı kalır ve kamera
@@ -1147,6 +1187,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       }
       checkCollision();
     }
+    // İniş takımı tekerlekleri (§13): yerde yer hızıyla döner; havalanınca sabit (geri çekme yok)
+    if (drone.gear && tele.has && cur.pos.z < 1.5 && tele.speed > 0.05) { const w = tele.speed / (drone.gear.radius * MODEL_SCALE) * dt; for (const wh of drone.gear.wheels) wh.rotation.x -= w; }
     // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır; yüksek devirde palalar gizlenir, bulanıklık diski belirir
     const rate = tele.armed ? 12 + tele.throttle * 0.9 : 0;   // rad/s
     propAngle.v += rate * dt;
@@ -1213,6 +1255,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // ---------- kurulum ----------
   await buildWorld(world);
   await setType(opts.type, opts.model ?? opts.airframe);
+  buildRig();
   resize();
   if (!preview) { setCamera('follow'); } else { controls.enabled = false; }
   raf = requestAnimationFrame(frame);
@@ -1220,6 +1263,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   async function setWorld(nw) {
     await buildWorld(nw);
     if (disposed) return;
+    buildRig();   // pist yönü / saat değişmiş olabilir
     if (!tele.has) drone.group.position.set(0, 0, (drone.ground || 0.2) + 0.02);
     if (!preview && camMode === 'follow') resetCamera();
   }
@@ -1236,6 +1280,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     buildSeq++;   // bekleyen gerçek arazi yüklemesi sonuçlarını kullanmaz
     realCache = null;
     g3d?.dispose(); g3d = null;
+    rig?.dispose(); rig = null;
     cancelAnimationFrame(raf);
     ro.disconnect();
     window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp);
@@ -1252,6 +1297,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
     setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, setKeyboardLock,
+    setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; },   // kalkış yöntemi (§13)
     get modelInfo() { return { type: drone.type, model: drone.model, bbox: drone.bbox || null, props: drone.props.length }; },   // yönelim paneli (§12)
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     get real() { return !!terrain?.real; },

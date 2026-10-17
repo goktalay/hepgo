@@ -677,4 +677,7 @@ registerCatalog('en', {
   "OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})": "OSM data unavailable: buildings/forests/water not shown ({e})",
   "Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.": "In real mode the area around the selected center is built from real elevation, satellite imagery and OpenStreetMap buildings; data is downloaded on first use and cached on the server.",
   "Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.": "Procedural world: seeded random terrain, buildings and trees.",
+  "Gövde": "Fuselage",
+  "Delta kanat": "Delta wing",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: from the STEP model of the aircraft we build · Delta wing: pusher-propeller flying wing",
 });

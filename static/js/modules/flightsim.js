@@ -29,6 +29,8 @@ const COPTER_MODES = ['STABILIZE', 'ALT_HOLD', 'LOITER', 'POSHOLD', 'GUIDED', 'A
 const PLANE_MODES = ['MANUAL', 'FBWA', 'FBWB', 'CRUISE', 'TAKEOFF', 'AUTO', 'LOITER', 'RTL'];
 const VTOL_MODES = [...PLANE_MODES, 'QSTABILIZE', 'QHOVER', 'QLOITER', 'QLAND'];
 const isPlane = type => type === 'sabit_kanat' || type === 'vtol';
+// Sabit kanat / VTOL 3B gövdesi (session.airframe): Caymaz V3 (STEP → GLB) ya da prosedürel delta uçan kanat
+const AIRFRAMES = [['caymaz', 'Caymaz V3'], ['delta', 'Delta kanat']];
 const modesFor = type => (type === 'vtol' ? VTOL_MODES : isPlane(type) ? PLANE_MODES : COPTER_MODES);
 const f1 = v => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(1));
 const f0 = v => (v == null || Number.isNaN(Number(v)) ? '—' : String(Math.round(Number(v))));
@@ -121,7 +123,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
   const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
-  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
+  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', airframe: 'caymaz', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
 
   // ---------- açık oturumlar ----------
   const openBox = h('div');
@@ -144,7 +146,11 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // ---------- 1. dron tipi ----------
   const typeCards = h('div', { class: 'fs-types' });
-  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); preview?.setType(t.key); } },
+  // Sabit kanat / VTOL gövdesi: Caymaz (ürettiğimiz uçağın STEP'inden türetilen model) ya da prosedürel delta uçan kanat
+  const airframeSeg = segmented(AIRFRAMES, S.airframe, v => { S.airframe = v; preview?.setType(S.type, v); });
+  const airframeRow = h('div', { class: 'fs-airframe', hidden: !isPlane(S.type) }, h('span', { class: 'small muted' }, 'Gövde'), airframeSeg,
+    h('span', { class: 'small muted' }, 'Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat'));
+  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); airframeRow.hidden = !isPlane(t.key); preview?.setType(t.key, S.airframe); } },
     h('span', { class: 'fs-type-ico', html: TYPE_ICON[t.icon] || TYPE_ICON.quad }),
     h('b', null, t.name), h('span', { class: 'small muted' }, t.desc || ''))));
   drawTypes();
@@ -275,7 +281,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     try {
       const s = S.mode === 'replay'
         ? await be.create({ mode: 'replay', log_id: S.log, world: { ...S.world } })
-        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world } });
+        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, airframe: isPlane(S.type) ? S.airframe : undefined });
       toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
       location.hash = be.href(s.id);
     } catch (err) {
@@ -286,7 +292,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   } }, '▶ Başlat');
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
-  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards);
+  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, airframeRow);
   const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
   const worldNo = h('span', { class: 'fs-no' }, '3');
   const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.');
@@ -318,7 +324,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   try {
     if (S.world.mode === 'real') progInfo(null);
     const c0 = centerOf();
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, origin: c0 ? { lat: c0.lat, lon: c0.lon } : undefined, onProgress: progInfo, onFallback });
+    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, airframe: S.airframe, origin: c0 ? { lat: c0.lat, lon: c0.lon } : undefined, onProgress: progInfo, onFallback });
     previewBox.querySelector('.fs-preview-msg')?.remove();
     if (preview.terrainInfo) progInfo({ stage: 'done', real: preview.real, ...preview.terrainInfo });
   } catch (err) {
@@ -471,7 +477,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   try {
     if (world.mode === 'real') { msg.textContent = tr('Arazi planı alınıyor…'); }
     sim = await createFlightSim3D(mount, world, {
-      type, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
+      type, airframe: session.airframe, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
       onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
       onProgress: progMsg,
@@ -852,11 +858,11 @@ const SAMPLE_CENTERS = [
 function mockBackend(ctx) {
   let centersP = null;
   const centers = () => (centersP ??= api.get('/api/drone/centers').then(r => (Array.isArray(r) && r.length ? r.map(c => ({ id: c.id, name: c.name, lat: c.lat, lon: c.lon, alt: c.alt ?? 0, location_name: c.location_name })) : SAMPLE_CENTERS)).catch(() => SAMPLE_CENTERS));
-  const mk = async (type, centerId, world) => {
+  const mk = async (type, centerId, world, airframe) => {
     const cs = await centers();
     const center = cs.find(c => String(c.id) === String(centerId)) || cs[0];
     const id = `mock-${++MOCK.seq}`;
-    const s = { id, type, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
+    const s = { id, type, airframe: isPlane(type) ? (airframe === 'delta' ? 'delta' : 'caymaz') : null, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
       created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' }, gcs: { connected: false, addr: null, since: null }, sitl: { pid: 0, port: 0, error: null } };
     s.flight = new MockFlight(s);
     MOCK.sessions.set(id, s);
@@ -895,7 +901,7 @@ function mockBackend(ctx) {
     create: async body => {
       if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 });
       if (body.mode === 'replay') { const s = await mkReplay(body.log_id, body.world); MOCK.sessions.delete(s.id); s.id = `${s.id}r`; MOCK.sessions.set(s.id, s); return pub(s); }
-      return pub(await mk(body.type, body.center_id, body.world));
+      return pub(await mk(body.type, body.center_id, body.world, body.airframe));
     },
     end: async id => { const s = MOCK.sessions.get(id); if (s) { s.state = 'KAPANDI'; s.flight?.end('Kullanıcı bitirdi'); MOCK.sessions.delete(id); } return { ok: true }; },
     cmd: async (id, name, params) => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); if (s.mode === 'replay') { if (name !== 'reset') throw Object.assign(new Error('Kayıtta komut yok'), { status: 400 }); return { ok: true }; } s.flight.cmd(name, params || {}); return { ok: true }; },

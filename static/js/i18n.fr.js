@@ -3415,4 +3415,7 @@ registerCatalog('fr', {
   "OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})": "Données OSM indisponibles : bâtiments/forêts/eau non affichés ({e})",
   "Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.": "En mode réel, les environs du centre choisi sont construits à partir de l'altitude réelle, d'images satellite et des bâtiments OpenStreetMap ; les données sont téléchargées à la première utilisation et mises en cache sur le serveur.",
   "Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.": "Monde procédural : terrain, bâtiments et arbres aléatoires (graine).",
+  "Gövde": "Cellule",
+  "Delta kanat": "Aile delta",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3 : issu du modèle STEP de notre avion · Aile delta : aile volante à hélice propulsive",
 });

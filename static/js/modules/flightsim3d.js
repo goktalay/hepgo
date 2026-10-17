@@ -4,8 +4,10 @@
 //   `water` oranına göre; renkler yüksekliğe göre (kum → çim → kaya → kar). 256×256 ızgara, LOD yok.
 // • Nesneler: ağaçlar (InstancedMesh ≤ 20.000, su/pist/bina üzerinde değil), binalar (kutular, 6–40 m), pist (asfalt + çizgiler,
 //   runway_heading), gökyüzü/ışık (day/dusk/night; gece pist ve bina ışıkları), sis.
-// • Dron: sabit kanat static/models/caymaz.gltf (GLTFLoader; yüklenemezse basit uçak geometrisi), multirotor/hexa/heli/vtol basit
-//   geometri + dönen pervaneler (gaz ile hız). Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
+// • Dron: sabit kanat/VTOL gövdesi (airframe) 'caymaz' → static/models/caymaz-sim.glb (CAYMAZ V3 STEP'inden; yüklenemezse delta) ya da
+//   'delta' → prosedürel delta uçan kanat; multikopter (60 cm) / hexa (90 cm) / helikopter (1.5 m) gerçekçi prosedürel geometri.
+//   Pervaneler gaz ile döner (yüksek devirde bulanık disk), elevonlar RC ile, seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe),
+//   yalnız dron gölge düşürür. Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
 // • Kameralar (1–4): Takip (OrbitControls, hedef dron) · Dron kamerası (FPV, burun; gimbal ↑↓) · Serbest (WASD/QE + fare sürükle) · Yer.
 // • Telemetri (50 Hz'e dek): gecikme tamponlu enterpolasyon — kareler kaynak zaman damgasıyla (tele.tbm, yoksa ts) tamponlanır, render zamanı = şimdi − 80 ms,
 //   konum lineer / yönelim slerp; tampon bitince ölü hesap (hız + gövde açısal hızları rs/ps/ys, en çok 300 ms). Takip kamerası kritik sönümlü yay.
@@ -15,8 +17,8 @@
 //   su çokgenleri, gerçek pistler — hepsi arka uç vekilinden (/api/drone/sim/terrain, /tile, /osm; tarayıcı dışa çıkmaz). Yükseklik alınamazsa
 //   prosedürele düşer (onFallback). Prosedürel ayarlar gerçek kipte özelleştirmedir: tree_density orman yoğunluğu ölçeği, building_count ek bina.
 // Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, terrainHeight,
-//        toLocal, setWorld (Promise), setOrigin, setType, clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
-//        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }.
+//        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
+//        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
 
 const LIB = '/static/vendor/three/';
 export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
@@ -240,6 +242,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   const renderer = new T.WebGLRenderer({ antialias: !preview, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, preview ? 1 : 2));
   renderer.outputColorSpace = T.SRGBColorSpace;
+  renderer.shadowMap.enabled = !preview;   // yalnız dron gölge düşürür (castShadow); arazi/pist alır
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
   const canvas = renderer.domElement;
   canvas.className = 'fs3d-canvas';
   canvas.style.cssText = 'display:block;width:100%;height:100%;outline:none;touch-action:none';
@@ -255,7 +259,16 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   let terrain = null, gWorld = new T.Group(), buildingsAABB = [], W = { ...WORLD_DEFAULTS };
   scene.add(gWorld);
   let lights = { sun: new T.DirectionalLight(0xffffff, 2), hemi: new T.HemisphereLight(0xbfd8ff, 0x3a4a2a, 0.9), amb: new T.AmbientLight(0xffffff, 0.15) };
-  scene.add(lights.sun, lights.hemi, lights.amb);
+  scene.add(lights.sun, lights.hemi, lights.amb, lights.sun.target);
+  // Gölge kamerası dronu izler (küçük, keskin): her karede sun.position = dron + güneş yönü × 120 m, target = dron
+  const sunDir = new T.Vector3(0.6, -0.5, 0.9).normalize();
+  if (!preview) {
+    lights.sun.castShadow = true;
+    const sc = lights.sun.shadow.camera;
+    sc.left = sc.bottom = -25; sc.right = sc.top = 25; sc.near = 20; sc.far = 400;
+    lights.sun.shadow.mapSize.set(1024, 1024);
+    lights.sun.shadow.bias = -0.0008;
+  }
 
   const disposeGroup = g => {
     g.traverse(o => {
@@ -274,7 +287,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     scene.background = new T.Color(sky);
     lights.sun.color.set(night ? 0x6f7fb0 : dusk ? 0xffb070 : 0xfff2dc);
     lights.sun.intensity = night ? 0.45 : dusk ? 1.3 : 2.4;
-    lights.sun.position.set(night ? -0.3 : dusk ? -0.9 : 0.6, dusk ? -0.2 : -0.5, night ? 0.5 : dusk ? 0.25 : 0.9).multiplyScalar(size);
+    sunDir.set(night ? -0.3 : dusk ? -0.9 : 0.6, dusk ? -0.2 : -0.5, night ? 0.5 : dusk ? 0.25 : 0.9).normalize();
+    lights.sun.position.copy(sunDir).multiplyScalar(preview ? size : 120);
+    lights.sun.shadow.intensity = night ? 0.35 : dusk ? 0.7 : 1;
     lights.hemi.color.set(night ? 0x1b2a55 : dusk ? 0xf0b088 : 0xbfd8ff);
     lights.hemi.groundColor.set(night ? 0x060a12 : 0x3a4a2a);
     lights.hemi.intensity = night ? 0.5 : dusk ? 0.8 : 0.9;
@@ -288,7 +303,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   function runwayMesh(hdg, L, Wd, night, dusk) {
     const rw = new T.Group();
     rw.rotation.z = -hdg * DEG;
-    rw.add(new T.Mesh(new T.PlaneGeometry(Wd, L), new T.MeshLambertMaterial({ color: night ? 0x1c1f24 : 0x3a3d42 })));
+    const asphalt = new T.Mesh(new T.PlaneGeometry(Wd, L), new T.MeshLambertMaterial({ color: night ? 0x1c1f24 : 0x3a3d42 }));
+    asphalt.receiveShadow = true;   // dron gölgesi piste düşer
+    rw.add(asphalt);
     const white = new T.MeshBasicMaterial({ color: night ? 0x9aa3ad : 0xf5f5f5 });
     for (let y = -L / 2 + 60; y < L / 2 - 60; y += 60) { const d = new T.Mesh(new T.PlaneGeometry(1.2, 30), white); d.position.set(0, y, 0.02); rw.add(d); }
     const kMax = Math.max(1, Math.min(3, Math.floor(Wd / 12)));
@@ -392,6 +409,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     geo.computeVertexNormals();
     const ground = new T.Mesh(geo, new T.MeshLambertMaterial({ vertexColors: true }));
     ground.name = 'arazi';
+    ground.receiveShadow = true;
     gWorld.add(ground);
     if (waterZ > -Infinity) {
       const water = new T.Mesh(new T.PlaneGeometry(size * 1.02, size * 1.02), new T.MeshPhongMaterial({
@@ -441,6 +459,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     tex.generateMipmaps = true; tex.minFilter = T.LinearMipmapLinearFilter;
     // Gece/akşam: doku çarpımsal koyulaştırma (atlas ham kalır, yeniden kullanılır)
     const ground = new T.Mesh(geo, new T.MeshLambertMaterial({ map: tex, color: night ? 0x4c5670 : dusk ? 0xe8b898 : 0xffffff }));
+    ground.receiveShadow = true;
     ground.name = 'arazi';
     gWorld.add(ground);
 
@@ -611,113 +630,190 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   }
 
   // ---------- dron modelleri ----------
-  let drone = { group: new T.Group(), props: [], radius: 3, nose: 2, type: null };
+  // Gövde çerçevesi: burun +Y, sağ kanat +X, üst +Z; birimler metre (gerçek boyut), görünürlük için ×MODEL_SCALE.
+  // Sabit kanat / VTOL gövdesi (airframe): 'caymaz' → static/models/caymaz-sim.glb (CAYMAZ V3 STEP'inden; glTF: Y yukarı, burun +Z,
+  // sol kanat +X → Rx+90°, Rz180°), 'delta' → prosedürel delta uçan kanat. Pervane düğümleri `props` (yerel Z etrafında döner,
+  // userData.dir ±1; userData.disc/blades: yüksek devirde palalar gizlenir, saydam disk belirir). Kontrol yüzeyleri `ctrl`.
+  let drone = { group: new T.Group(), props: [], ctrl: [], lights: [], radius: 3, nose: 2, type: null, airframe: null };
   scene.add(drone.group);
-  const propDisc = (r, dir, mat, bladeMat) => {
+  const MAT = () => ({
+    carbon: new T.MeshStandardMaterial({ color: 0x1f2428, roughness: 0.55, metalness: 0.35 }),
+    dark: new T.MeshStandardMaterial({ color: 0x2b3340, roughness: 0.6, metalness: 0.2 }),
+    body: new T.MeshStandardMaterial({ color: 0x33496f, roughness: 0.5, metalness: 0.15 }),
+    white: new T.MeshStandardMaterial({ color: 0xe9ecf1, roughness: 0.5, metalness: 0.1 }),
+    grey: new T.MeshStandardMaterial({ color: 0x8a939e, roughness: 0.5, metalness: 0.5 }),
+    red: new T.MeshStandardMaterial({ color: 0xd93a2b, roughness: 0.55 }),
+    orange: new T.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.55 }),
+    glass: new T.MeshStandardMaterial({ color: 0x0b1420, roughness: 0.15, metalness: 0.6 }),
+    disc: new T.MeshBasicMaterial({ color: 0x8a939e, transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false }),
+    blade: new T.MeshStandardMaterial({ color: 0x15181c, roughness: 0.6, side: T.DoubleSide }),
+  });
+  const mesh = (geo, mat, x = 0, y = 0, z = 0) => { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; return m; };
+  // Pervane: hub + n pala (hafif hatve açısı) + bulanıklık diski; dönüş ekseni yerel Z
+  const propeller = (r, dir, M, blades = 2, hub = r * 0.12) => {
     const g = new T.Group();
     g.userData.dir = dir;
-    const disc = new T.Mesh(new T.CircleGeometry(r, 20), mat); g.add(disc);
-    for (let k = 0; k < 2; k++) { const b = new T.Mesh(new T.BoxGeometry(r * 2, r * 0.16, 0.02), bladeMat); b.rotation.z = k * Math.PI / 2; g.add(b); }
+    const disc = new T.Mesh(new T.RingGeometry(hub, r, 24, 1), M.disc.clone()); g.add(disc); g.userData.disc = disc;
+    g.add(mesh(new T.CylinderGeometry(hub, hub, hub * 1.2, 10).rotateX(Math.PI / 2), M.dark));
+    const bl = [];
+    for (let k = 0; k < blades; k++) {
+      const b = mesh(new T.BoxGeometry(r - hub * 0.8, r * 0.15, Math.max(0.004, r * 0.012)), M.blade, 0, 0, 0);
+      b.geometry.translate((r + hub * 0.8) / 2, 0, 0);
+      b.rotation.set(0.28 * dir, 0, k * 2 * Math.PI / blades);   // hatve açısı
+      b.rotation.order = 'ZXY';
+      g.add(b); bl.push(b);
+    }
+    g.userData.blades = bl;
     return g;
   };
-  const buildSimple = type => {
+  // Çokrotor (quad/hexa): gövde (üst/alt plaka), kollar, motorlar, iniş takımı, kamera gimbali, CW/CCW pervaneler
+  const buildMulti = (n, span, M) => {
     const grp = new T.Group(), props = [];
-    const dark = new T.MeshLambertMaterial({ color: 0x2b3340 }), body = new T.MeshLambertMaterial({ color: 0x2e4066 }),
-      red = new T.MeshLambertMaterial({ color: 0xd93a2b }), white = new T.MeshLambertMaterial({ color: 0xeef0f4 }),
-      propMat = new T.MeshBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.25, side: T.DoubleSide }),
-      blade = new T.MeshLambertMaterial({ color: 0x111418 });
-    const armGeo = n => { const g = new T.CylinderGeometry(0.05, 0.05, n, 6); g.rotateZ(Math.PI / 2); return g; };
-    if (type === 'multirotor' || type === 'hexarotor' || type === 'vtol') {
-      const n = type === 'hexarotor' ? 6 : 4, L = 1.1;
-      if (type !== 'vtol') {
-        const hub = new T.Mesh(new T.BoxGeometry(0.5, 0.6, 0.18), body); grp.add(hub);
-        const noseMark = new T.Mesh(new T.BoxGeometry(0.2, 0.3, 0.12), red); noseMark.position.set(0, 0.3, 0.1); grp.add(noseMark);   // burun işareti (ileri = +Y)
-      }
-      for (let k = 0; k < n; k++) {
-        const a = (type === 'vtol' ? Math.PI / 4 : Math.PI / n) + k * (2 * Math.PI / n);
-        const arm = new T.Mesh(armGeo(L), dark); arm.rotation.z = a; arm.position.set(Math.cos(a) * L / 2, Math.sin(a) * L / 2, 0); grp.add(arm);
-        const motor = new T.Mesh(new T.CylinderGeometry(0.07, 0.07, 0.12, 8).rotateX(Math.PI / 2), dark); motor.position.set(Math.cos(a) * L, Math.sin(a) * L, 0.06); grp.add(motor);
-        const pr = propDisc(0.32, k % 2 ? 1 : -1, propMat, blade); pr.position.set(Math.cos(a) * L, Math.sin(a) * L, 0.14); grp.add(pr); props.push(pr);
-      }
+    const R = span / 2, bodyW = span * 0.3, bodyH = span * 0.08;
+    grp.add(mesh(new T.CylinderGeometry(bodyW / 2, bodyW / 2, bodyH, 8).rotateX(Math.PI / 2), M.carbon, 0, 0, 0));
+    grp.add(mesh(new T.BoxGeometry(bodyW * 0.7, bodyW * 0.9, bodyH * 1.3), M.body, 0, 0, bodyH * 0.9));   // batarya/üst kapak
+    grp.add(mesh(new T.BoxGeometry(bodyW * 0.3, bodyW * 0.3, bodyH * 0.4), M.orange, 0, bodyW * 0.42, bodyH * 1.6));   // burun işareti (ileri +Y)
+    grp.add(mesh(new T.CylinderGeometry(bodyW * 0.12, bodyW * 0.12, 0.03, 10).rotateX(Math.PI / 2), M.white, 0, -bodyW * 0.1, bodyH * 1.7));   // GPS
+    for (let k = 0; k < n; k++) {
+      const a = Math.PI / n + k * (2 * Math.PI / n), c = Math.cos(a), s = Math.sin(a);
+      const arm = mesh(new T.CylinderGeometry(span * 0.018, span * 0.022, R - bodyW * 0.3, 8), M.carbon, c * (R + bodyW * 0.3) / 2, s * (R + bodyW * 0.3) / 2, 0);
+      arm.rotation.z = a - Math.PI / 2; grp.add(arm);
+      grp.add(mesh(new T.CylinderGeometry(span * 0.045, span * 0.05, span * 0.05, 12).rotateX(Math.PI / 2), M.grey, c * R, s * R, span * 0.03));   // motor
+      const pr = propeller(span * 0.19, k % 2 ? 1 : -1, M); pr.position.set(c * R, s * R, span * 0.062); grp.add(pr); props.push(pr);
     }
-    if (type === 'helikopter') {
-      const fus = new T.Mesh(new T.SphereGeometry(0.45, 12, 10).scale(1, 1.6, 0.9), body); grp.add(fus);
-      const boom = new T.Mesh(new T.CylinderGeometry(0.06, 0.1, 1.6, 8), dark); boom.position.set(0, -1.3, 0.1); grp.add(boom);
-      const fin = new T.Mesh(new T.BoxGeometry(0.04, 0.3, 0.5), red); fin.position.set(0, -2.1, 0.3); grp.add(fin);
-      const mast = new T.Mesh(new T.CylinderGeometry(0.04, 0.04, 0.4, 6).rotateX(Math.PI / 2), dark); mast.position.z = 0.55; grp.add(mast);
-      const main = propDisc(1.6, 1, propMat, blade); main.position.z = 0.76; grp.add(main); props.push(main);
-      const tail = propDisc(0.3, -1, propMat, blade); tail.rotation.y = Math.PI / 2; tail.position.set(0.08, -2.1, 0.3); grp.add(tail); props.push(tail);
-      for (const s of [-1, 1]) { const skid = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 1.4, 6), dark); skid.position.set(s * 0.35, 0, -0.45); grp.add(skid); }
+    for (const sx of [-1, 1]) {   // iniş takımı: iki dikey ayak + kızak çubuğu (her yanda)
+      for (const y of [-span * 0.18, span * 0.18]) grp.add(mesh(new T.CylinderGeometry(span * 0.01, span * 0.01, span * 0.2, 6).rotateX(Math.PI / 2), M.carbon, sx * span * 0.2, y, -span * 0.1));
+      grp.add(mesh(new T.CylinderGeometry(span * 0.01, span * 0.01, span * 0.52, 6), M.carbon, sx * span * 0.2, 0, -span * 0.2));
     }
-    if (type === 'sabit_kanat' || type === 'vtol') {
-      const fus = new T.Mesh(new T.CylinderGeometry(0.12, 0.08, 2.2, 10), body); fus.position.y = 0.1; grp.add(fus);
-      const nose = new T.Mesh(new T.SphereGeometry(0.12, 10, 8), body); nose.position.y = 1.2; grp.add(nose);
-      const wing = new T.Mesh(new T.BoxGeometry(3.6, 0.42, 0.05), white); wing.position.set(0, 0.25, 0.08); grp.add(wing);
-      const tailp = new T.Mesh(new T.BoxGeometry(1.2, 0.3, 0.04), white); tailp.position.set(0, -0.95, 0.05); grp.add(tailp);
-      const fin = new T.Mesh(new T.BoxGeometry(0.04, 0.35, 0.45), red); fin.position.set(0, -0.95, 0.25); grp.add(fin);
-      if (type === 'sabit_kanat') { const pr = propDisc(0.3, 1, propMat, blade); pr.rotation.x = Math.PI / 2; pr.position.set(0, 1.33, 0); grp.add(pr); props.push(pr); }
-    }
-    return { grp, props };
+    // Kamera gimbali (alt ön)
+    const gim = new T.Group(); gim.position.set(0, bodyW * 0.35, -bodyH * 1.3);
+    gim.add(mesh(new T.CylinderGeometry(span * 0.03, span * 0.03, span * 0.04, 10).rotateX(Math.PI / 2), M.dark));
+    gim.add(mesh(new T.SphereGeometry(span * 0.045, 12, 10), M.dark, 0, 0, -span * 0.05));
+    gim.add(mesh(new T.CylinderGeometry(span * 0.02, span * 0.025, span * 0.03, 10), M.glass, 0, span * 0.045, -span * 0.05));   // lens ileri (+Y)
+    grp.add(gim);
+    return { grp, props, ctrl: [], tips: { left: [-R * 0.72, R * 0.72, 0.03], right: [R * 0.72, R * 0.72, 0.03], tail: [0, -R * 0.8, 0.08] } };   // ön kollar kırmızı/yeşil, arka beyaz
   };
-  // caymaz.gltf tamponu `data:` URI'dir; CSP connect-src 'self' data: adresine fetch'i engeller → JSON'u kendimiz çekip tamponu
-  // çözerek bellekte GLB (JSON + BIN parçası) kurar, GLTFLoader.parse ile yükleriz. Dış tampon (uri dosya) varsa olduğu gibi parse edilir.
-  const loadGltfPlane = async () => {
-    const res = await fetch('/static/models/caymaz.gltf', { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`gltf ${res.status}`);
-    const json = await res.json();
-    const buf = json.buffers?.[0];
-    let payload;
-    if (buf && /^data:/.test(buf.uri || '')) {
-      const b64 = buf.uri.slice(buf.uri.indexOf(',') + 1), bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      delete buf.uri; buf.byteLength = bytes.length;
-      const enc = new TextEncoder(), jsonBytes = enc.encode(JSON.stringify(json));
-      const pad4 = n => (4 - (n % 4)) % 4;
-      const jl = jsonBytes.length + pad4(jsonBytes.length), bl = bytes.length + pad4(bytes.length);
-      const glb = new ArrayBuffer(12 + 8 + jl + 8 + bl), dv = new DataView(glb), u8 = new Uint8Array(glb);
-      dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.byteLength, true);
-      dv.setUint32(12, jl, true); dv.setUint32(16, 0x4E4F534A, true); u8.set(jsonBytes, 20); u8.fill(0x20, 20 + jsonBytes.length, 20 + jl);
-      dv.setUint32(20 + jl, bl, true); dv.setUint32(24 + jl, 0x004E4942, true); u8.set(bytes, 28 + jl);
-      payload = glb;
-    } else payload = JSON.stringify(json);
-    return new Promise((resolve, reject) => new GLTFLoader().parse(payload, '/static/models/', g => resolve(g.scene), reject));
+  // Helikopter (1.5 m): gövde + kabin camı, kuyruk bomu, dikey/yatay stabilizatör, ana rotor (3 pala) + kuyruk rotoru, kızaklar
+  const buildHeli = M => {
+    const grp = new T.Group(), props = [];
+    const fus = mesh(new T.SphereGeometry(0.22, 16, 12), M.body); fus.scale.set(0.9, 2.0, 0.85); grp.add(fus);
+    const cab = mesh(new T.SphereGeometry(0.19, 16, 12), M.glass, 0, 0.22, 0.03); cab.scale.set(0.85, 1.1, 0.8); grp.add(cab);
+    grp.add(mesh(new T.BoxGeometry(0.2, 0.3, 0.12), M.dark, 0, -0.05, 0.2));   // motor kaportası
+    const boom = mesh(new T.CylinderGeometry(0.03, 0.05, 1.0, 10), M.white, 0, -0.9, 0.08); grp.add(boom);   // kuyruk bomu −Y boyunca (ince uç arkada)
+    grp.add(mesh(new T.BoxGeometry(0.02, 0.22, 0.3), M.red, 0, -1.38, 0.2));      // dikey stabilizatör
+    grp.add(mesh(new T.BoxGeometry(0.4, 0.12, 0.015), M.white, 0, -1.1, 0.12));   // yatay stabilizatör
+    grp.add(mesh(new T.CylinderGeometry(0.02, 0.02, 0.22, 8).rotateX(Math.PI / 2), M.dark, 0, 0, 0.3));   // mast
+    const main = propeller(0.85, 1, M, 3, 0.07); main.position.z = 0.42; grp.add(main); props.push(main);
+    const tail = propeller(0.17, -1, M, 2, 0.025); tail.rotation.y = Math.PI / 2; tail.position.set(0.06, -1.38, 0.2); grp.add(tail); props.push(tail);
+    for (const s of [-1, 1]) {
+      grp.add(mesh(new T.CylinderGeometry(0.015, 0.015, 0.9, 8), M.grey, s * 0.22, 0.05, -0.3));   // kızak (Y boyunca)
+      for (const y of [-0.2, 0.3]) { const st = mesh(new T.CylinderGeometry(0.012, 0.012, 0.22, 6).rotateX(Math.PI / 2), M.grey, s * 0.16, y, -0.2); st.rotation.y = s * 0.5; grp.add(st); }   // dikey destekler
+    }
+    return { grp, props, ctrl: [], tips: { left: [-0.2, 0.1, -0.05], right: [0.2, 0.1, -0.05], tail: [0, -1.4, 0.36] } };
   };
-  async function setType(type) {
+  // Delta uçan kanat (açıklık 2.2 m, uzunluk ~3.1 m): yuvarlak burunlu gövde, delta kanat, kanat ucu dikey yüzeyler,
+  // arkadan itişli pervane, elevonlar (RC ile hareket). ExtrudeGeometry ile kanat planformu (XY düzlemi, kalınlık Z).
+  const buildDelta = M => {
+    const grp = new T.Group(), props = [], ctrl = [];
+    const span = 2.2, L = 3.1, half = span / 2;
+    const shape = new T.Shape();   // planform (sağ yarı + sol yarı simetrik), burun +Y
+    shape.moveTo(0, 1.35); shape.lineTo(0.22, 1.0); shape.lineTo(half, -1.25); shape.lineTo(half, -1.45); shape.lineTo(0.3, -1.45);
+    shape.lineTo(0, -1.5); shape.lineTo(-0.3, -1.45); shape.lineTo(-half, -1.45); shape.lineTo(-half, -1.25); shape.lineTo(-0.22, 1.0); shape.closePath();
+    const wing = mesh(new T.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 }), M.white, 0, 0, -0.04);
+    grp.add(wing);
+    // CylinderGeometry Y ekseni boyunca = gövde burun ekseni (+Y); burun geniş, kuyruk dar
+    const fus = mesh(new T.CylinderGeometry(0.17, 0.11, L * 0.72, 16), M.white, 0, -0.1, 0.03); grp.add(fus);
+    const nose = mesh(new T.SphereGeometry(0.17, 16, 12), M.white, 0, L * 0.72 / 2 - 0.1, 0.03); nose.scale.set(1, 1.6, 1); grp.add(nose);
+    grp.add(mesh(new T.CylinderGeometry(0.11, 0.06, 0.25, 12), M.dark, 0, -L * 0.72 / 2 - 0.1 - 0.12, 0.03));   // motor kaportası
+    for (const s of [-1, 1]) {   // kanat ucu dikey yüzeyler (yukarı/aşağı)
+      const fin = mesh(new T.BoxGeometry(0.03, 0.5, 0.34), M.red, s * (half - 0.015), -1.2, 0.1); fin.geometry.translate(0, 0, 0); grp.add(fin);
+      const el = mesh(new T.BoxGeometry(0.72, 0.16, 0.025), M.grey, s * 0.72, -1.52, 0); el.geometry.translate(0, -0.08, 0);   // elevon (menteşe ön kenarda)
+      el.userData.ctrl = { roll: s, pitch: 1 }; grp.add(el); ctrl.push(el);
+    }
+    const pr = propeller(0.33, 1, M, 2); pr.rotation.x = -Math.PI / 2; pr.position.set(0, -L * 0.72 / 2 - 0.1 - 0.28, 0.03); grp.add(pr); props.push(pr);
+    return { grp, props, ctrl, tips: { left: [-half, -1.3, 0.28], right: [half, -1.3, 0.28], tail: [0, -1.5, 0.08] } };
+  };
+  // CAYMAZ V3 (STEP → GLB): kanat açıklığı 3.03 m, uzunluk 3.1 m, arkadan itişli; prop düğümü GLB içinde (glTF Z ekseni = burun ekseni)
+  let glbCache = null;
+  const loadCaymaz = () => (glbCache ??= fetch('/static/models/caymaz-sim.glb', { credentials: 'same-origin' })
+    .then(r => { if (!r.ok) throw new Error(`glb ${r.status}`); return r.arrayBuffer(); })
+    .then(ab => new Promise((resolve, reject) => new GLTFLoader().parse(ab, '/static/models/', g => resolve(g.scene), reject)))
+    .catch(e => { glbCache = null; throw e; }));
+  const buildCaymaz = async M => {
+    const sc = (await loadCaymaz()).clone(true);
+    sc.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material = o.material.clone(); } });
+    const inner = new T.Group();
+    inner.rotation.order = 'ZYX';
+    inner.rotation.set(Math.PI / 2, 0, Math.PI);   // glTF (Y yukarı, burun +Z, sol +X) → gövde (burun +Y, sağ +X, üst +Z)
+    inner.add(sc);
+    const grp = new T.Group(); grp.add(inner);
+    const props = [];
+    const prop = sc.getObjectByName('prop');
+    if (prop) {   // GLB pervanesi (Ø 0.81 m) + bulanıklık diski (glTF yerel XY düzlemi = pervane düzlemi)
+      const disc = new T.Mesh(new T.RingGeometry(0.05, 0.405, 24, 1), M.disc.clone()); prop.add(disc);
+      prop.userData.dir = 1; prop.userData.disc = disc; props.push(prop);
+    }
+    return { grp, props, ctrl: [], tips: { left: [-1.5, -0.95, 0.3], right: [1.5, -0.95, 0.3], tail: [0, -1.15, 0.02] } };
+  };
+  // VTOL: uçak gövdesi + kanat altı iki bum + 4 dikey motor/pervane (ileri/geri)
+  const addVtolMotors = (built, M) => {
+    const bb = new T.Box3().setFromObject(built.grp);
+    const sx = (bb.max.x - bb.min.x) * 0.27, L = 1.5;
+    for (const x of [-sx, sx]) {
+      built.grp.add(mesh(new T.CylinderGeometry(0.03, 0.03, L, 8), M.carbon, x, -0.05, -0.02));   // bum Y boyunca (ileri-geri)
+      for (const y of [-L / 2 + 0.05, L / 2 - 0.05]) {
+        built.grp.add(mesh(new T.CylinderGeometry(0.04, 0.045, 0.06, 10).rotateX(Math.PI / 2), M.grey, x, y, 0.02));
+        const pr = propeller(0.28, x * y > 0 ? 1 : -1, M); pr.position.set(x, y, 0.06); built.grp.add(pr); built.props.push(pr);
+      }
+    }
+    return built;
+  };
+  // Seyir ışıkları: sol kırmızı, sağ yeşil (sabit + senkron flaş), kuyruk beyaz strobe; gece/akşam halo (additif sprite)
+  let haloTex = null;
+  const haloTexture = () => {
+    if (haloTex) return haloTex;
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    haloTex = new T.CanvasTexture(cv);
+    return haloTex;
+  };
+  const addNavLights = (built, tips) => {
+    const lights = [];
+    for (const [key, color, kind] of [['left', 0xff2a1a, 'nav'], ['right', 0x22ff55, 'nav'], ['tail', 0xffffff, 'strobe']]) {
+      const p = tips[key]; if (!p) continue;
+      const g = new T.Group(); g.position.set(p[0], p[1], p[2]);
+      const bulb = new T.Mesh(new T.SphereGeometry(0.035, 8, 6), new T.MeshBasicMaterial({ color, toneMapped: false }));
+      const halo = new T.Sprite(new T.SpriteMaterial({ map: haloTexture(), color, transparent: true, opacity: 0.8, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      halo.scale.setScalar(0.5);
+      g.add(bulb, halo); g.userData = { kind, bulb, halo };
+      built.grp.add(g); lights.push(g);
+    }
+    built.lights = lights;
+  };
+  const SIZES = { multirotor: 0.6, hexarotor: 0.9 };
+  async function setType(type, airframe) {
     type = type || 'multirotor';
+    airframe = (type === 'sabit_kanat' || type === 'vtol') ? (airframe === 'delta' ? 'delta' : 'caymaz') : null;
     disposeGroup(drone.group);
+    const M = MAT();
     let built = null;
-    if (type === 'sabit_kanat' || type === 'vtol') {
-      try {
-        // caymaz.gltf: Y yukarı, burun +Z, kanat ±X → gövde çerçevesi (burun +Y, üst +Z): önce X etrafında +90°, sonra Z etrafında 180°
-        const sc = await loadGltfPlane();
-        const inner = new T.Group();
-        inner.rotation.order = 'ZYX';
-        inner.rotation.set(Math.PI / 2, 0, Math.PI);
-        inner.scale.setScalar(1.6);   // ×MODEL_SCALE ile ~6 m kanat açıklığı
-        inner.add(sc);
-        const grp = new T.Group(); grp.add(inner);
-        const props = [];
-        const propMat = new T.MeshBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.25, side: T.DoubleSide }), blade = new T.MeshLambertMaterial({ color: 0x111418 });
-        if (type === 'vtol') {
-          const dark = new T.MeshLambertMaterial({ color: 0x2b3340 });
-          for (const [sx, sy] of [[-1.3, 0.9], [1.3, 0.9], [-1.3, -0.9], [1.3, -0.9]]) {
-            const boom = new T.Mesh(new T.CylinderGeometry(0.05, 0.05, 2, 6), dark); boom.position.set(sx, 0, 0.1); grp.add(boom);
-            const pr = propDisc(0.35, sx * sy > 0 ? 1 : -1, propMat, blade); pr.position.set(sx, sy, 0.2); grp.add(pr); props.push(pr);
-          }
-        } else { const pr = propDisc(0.3, 1, propMat, blade); pr.rotation.x = Math.PI / 2; pr.position.set(0, 1.05, 0.05); grp.add(pr); props.push(pr); }
-        built = { grp, props };
-      } catch { built = null; }   // model yüklenemedi → basit uçak geometrisi
-    }
-    if (!built) built = buildSimple(type);
+    if (airframe === 'caymaz') { try { built = await buildCaymaz(M); } catch { built = null; } }   // GLB yüklenemedi → delta kanat
+    if (!built && airframe) built = buildDelta(M);
+    if (!built) built = type === 'helikopter' ? buildHeli(M) : buildMulti(type === 'hexarotor' ? 6 : 4, SIZES[type] || 0.6, M);
+    if (type === 'vtol') addVtolMotors(built, M);
+    addNavLights(built, built.tips || {});
+    built.grp.traverse(o => { if (o.isMesh && !o.isSprite) o.castShadow = true; });
     // Yarıçap ve burun konumu modelin sınırlayıcı kutusundan (kamera mesafeleri ve FPV için); sonra görünürlük ölçeği
     const bb = new T.Box3().setFromObject(built.grp);
     drone.radius = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, 1) / 2 * MODEL_SCALE;
     drone.nose = (bb.max.y + 0.15) * MODEL_SCALE;
+    drone.ground = -bb.min.z * MODEL_SCALE;   // park yüksekliği (iniş takımı yere değer)
     built.grp.scale.setScalar(MODEL_SCALE);   // 4 km'lik dünyada görünürlük: gerçek boyutun 2.5 katı
     drone.group.add(built.grp);
-    drone.props = built.props; drone.type = type;
-    if (!tele.has) drone.group.position.set(0, 0, 0.25 * MODEL_SCALE);   // park: pist merkezinde
+    drone.props = built.props; drone.ctrl = built.ctrl || []; drone.lights = built.lights || []; drone.type = type; drone.airframe = airframe;
+    if (!tele.has) drone.group.position.set(0, 0, drone.ground + 0.02);   // park: pist merkezinde
   }
 
   // ---------- telemetri: gecikme tamponlu enterpolasyon ----------
@@ -751,6 +847,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     else if (now - net.win >= 1000) { net.hz = Math.round(net.n * 1000 / (now - net.win)); net.jitter = net.n ? Math.round(net.jit / net.n) : 0; net.n = 0; net.jit = 0; net.win = now; }
     tele.at = now; tele.src = src;
     tele.throttle = num(t.throttle, 0); tele.armed = !!t.armed;
+    tele.rc = Array.isArray(t.rc) ? t.rc : null;   // RC kanalları 1000…2000 (1: roll, 2: pitch) → kontrol yüzeyleri
+    tele.speed = Math.hypot(tele.vel.x, tele.vel.y, tele.vel.z);
     tele.last = t;
     if (!tele.has) { tele.has = true; cur.pos.copy(fr.pos); cur.q.copy(fr.q); cur.vel.copy(fr.vel); camSpring.pos.copy(fr.pos); camSpring.vel.set(0, 0, 0); }
   }
@@ -890,6 +988,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       sample(now - RENDER_DELAY);
       tele.speed = cur.vel.length();
       drone.group.position.copy(cur.pos);
+      drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
       if (camMode === 'follow') {
         // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur
@@ -903,9 +1002,31 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       }
       checkCollision();
     }
-    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır
-    const spin = (tele.armed ? 12 + tele.throttle * 0.9 : 0) * dt;
-    if (spin) for (const p of drone.props) p.rotation.z += spin * (p.userData.dir || 1);
+    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır; yüksek devirde palalar gizlenir, bulanıklık diski belirir
+    const rate = tele.armed ? 12 + tele.throttle * 0.9 : 0;   // rad/s
+    propAngle.v += rate * dt;
+    const blur = clamp((rate - 20) / 40, 0, 1);
+    for (const p of drone.props) {
+      p.rotation.z += rate * dt * (p.userData.dir || 1);
+      if (p.userData.disc) p.userData.disc.material.opacity = 0.45 * blur;
+      if (p.userData.blades) for (const b of p.userData.blades) b.visible = blur < 0.85;
+    }
+    // Kontrol yüzeyleri (elevon): RC roll (ch1) / pitch (ch2) → ±20°
+    if (drone.ctrl.length) {
+      const rc = tele.rc || [], rN = rc[0] ? clamp((rc[0] - 1500) / 500, -1, 1) : 0, pN = rc[1] ? clamp((rc[1] - 1500) / 500, -1, 1) : 0;
+      for (const c of drone.ctrl) c.rotation.x = (pN * c.userData.ctrl.pitch - rN * c.userData.ctrl.roll) * 0.35;
+    }
+    // Seyir ışıkları: kırmızı/yeşil 1 Hz çift flaş üzerine sabit; kuyruk beyaz strobe 1 Hz (gece halo büyür)
+    const tt = now / 1000, ph = tt % 1, navOn = ph < 0.08 || (ph > 0.16 && ph < 0.24), strobeOn = ph > 0.5 && ph < 0.58;
+    const night = W.time === 'night', dusk = W.time === 'dusk', haloBase = night ? 0.55 : dusk ? 0.4 : 0.22;   // sprite ölçeği model ölçeğiyle çarpılır
+    for (const l of drone.lights) {
+      const on = l.userData.kind === 'strobe' ? strobeOn : navOn;
+      l.userData.halo.scale.setScalar(haloBase * (on ? 1.8 : l.userData.kind === 'strobe' ? 0 : 0.7));
+      l.userData.halo.visible = l.userData.kind !== 'strobe' || on;
+      l.userData.bulb.visible = l.userData.kind !== 'strobe' || on || !night;
+    }
+    // Gölge: güneş dronu izler
+    if (!preview) { lights.sun.target.position.copy(cur.pos); lights.sun.position.copy(cur.pos).addScaledVector(sunDir, 120); }
     // Kamera kipleri
     if (preview) {
       previewAngle += dt * 0.12;
@@ -944,7 +1065,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
 
   // ---------- kurulum ----------
   await buildWorld(world);
-  await setType(opts.type);
+  await setType(opts.type, opts.airframe);
   resize();
   if (!preview) { setCamera('follow'); } else { controls.enabled = false; }
   raf = requestAnimationFrame(frame);
@@ -952,7 +1073,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   async function setWorld(nw) {
     await buildWorld(nw);
     if (disposed) return;
-    if (!tele.has) drone.group.position.set(0, 0, 0.6);
+    if (!tele.has) drone.group.position.set(0, 0, (drone.ground || 0.2) + 0.02);
     if (!preview && camMode === 'follow') resetCamera();
   }
   // Merkez değişti (sihirbaz): gerçek kipte veriler yeni konumdan yüklenir

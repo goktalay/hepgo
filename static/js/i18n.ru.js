@@ -3415,4 +3415,7 @@ registerCatalog('ru', {
   "OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})": "Данные OSM недоступны: здания/леса/вода не показаны ({e})",
   "Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.": "В реальном режиме окрестности выбранного центра строятся по реальным высотам, спутниковым снимкам и зданиям OpenStreetMap; данные загружаются при первом использовании и кэшируются на сервере.",
   "Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.": "Процедурный мир: случайный рельеф, здания и деревья по сиду.",
+  "Gövde": "Планер",
+  "Delta kanat": "Дельта-крыло",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: из STEP-модели нашего самолёта · Дельта-крыло: летающее крыло с толкающим винтом",
 });

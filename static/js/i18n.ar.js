@@ -3415,4 +3415,7 @@ registerCatalog('ar', {
   "OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})": "بيانات OSM غير متاحة: لا تُعرض المباني/الغابات/المياه ({e})",
   "Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.": "في الوضع الحقيقي تُبنى محيط المركز المحدد من الارتفاعات الحقيقية وصور الأقمار الصناعية ومباني OpenStreetMap؛ تُحمَّل البيانات عند أول استخدام وتُخزَّن مؤقتًا على الخادم.",
   "Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.": "عالم إجرائي: تضاريس ومبانٍ وأشجار عشوائية ببذرة.",
+  "Gövde": "الهيكل",
+  "Delta kanat": "جناح دلتا",
+  "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: من نموذج STEP لطائرتنا · جناح دلتا: جناح طائر بمروحة دافعة",
 });

@@ -505,6 +505,7 @@ class ReplaySession:
         self.loop = None
         self.task = None
         self.end_reason = None
+        self.client = None                   # CAYSIM istemcisi açtıysa {id, name} (docs/caysim-api.md)
         self.replay = {'log_id': int(log['id']), 'file_name': log.get('file_name'), 'size': log.get('size'), 'progress': 0, 'frames': None,
                        'duration_s': None, 'home': None, 'hz': REPLAY_HZ, 'takeoff_t': None, 'start_utc': None, 'vehicle': log.get('vehicle'),
                        'aircraft': log.get('aircraft'), 'pilot': log.get('pilot'), 'modes': None}
@@ -516,6 +517,7 @@ class ReplaySession:
         return {'id': self.id, 'mode': 'replay', 'type': self.type, 'model': dict(self.model) if self.model else None,
                 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': None, 'host': host or self._fs.PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
+                'client': dict(self.client) if self.client else None,
                 'gcs': {'connected': False, 'addr': None, 'since': None}, 'sitl': dict(self.sitl), 'replay': dict(self.replay)}
 
     def _yay(self, obj):

@@ -15,6 +15,7 @@ import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
+import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -140,6 +141,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     clear(openBox, h('div', { class: 'card card-pad fs-open no-collapse' }, h('h3', null, tr('Açık oturumlar ({n})', { n: rows.length })),
       h('div', { class: 'fs-open-list' }, rows.map(s => h('div', { class: 'fs-open-row' },
         h('div', { class: 'fs-open-main' }, h('b', null, TYPE_NAME[s.type] || s.type), s.mode === 'replay' ? h('span', { class: 'badge purple' }, 'Kayıt') : null,
+          s.client ? h('span', { class: 'badge blue', title: tr('CAYSIM istemcisi açtı: {name}', { name: s.client.name }) }, 'CAYSIM') : null,
           h('span', { class: `badge ${STATE_BADGE[s.state] || 'gray'}` }, STATE_TEXT[s.state] || s.state),
           h('div', { class: 'small muted' }, [s.mode === 'replay' ? s.replay?.file_name : s.center?.name, s.owner?.name, s.created_at ? fmtDateTime(s.created_at) : null, s.udp_port ? `UDP ${s.udp_port}` : null].filter(Boolean).join(' · '))),
         h('div', { class: 'pill-group' },
@@ -336,6 +338,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     openBox,
+    mock ? null : clientsCard({ canWrite }).el,   // CAYSIM istemcileri (docs/caysim-api.md)
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
     stepType, stepCenter, stepLog, stepWorld,
     h('div', { class: 'fs-start-row' }, startNote, startBtn));

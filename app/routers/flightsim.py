@@ -103,6 +103,14 @@ def list_sessions(request: Request, user=Depends(sim_user)):
 @router.post('/sessions', status_code=201)
 async def open_session(body: SessionIn, request: Request, response: Response, user=Depends(sim_user)):
     owner = {'id': user['id'], 'name': user['full_name']}
+    s = await oturum_ac(body, owner, user, user['id'])
+    return s.to_dict(_host(request))
+
+
+async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
+    """Oturum açma çekirdeği (web `POST /sessions` ve CAYSIM `POST /api/caysim/v1/sessions` ortak): doğrulama → MANAGER.ac / ac_replay →
+    iz kaydı. `user` kayıttan oynatma log yetkisi için (modules); `client` {id, name} verilirse oturuma CAYSIM işareti konur.
+    Hatalar HTTPException (400 invalid · 409 limit · 503 sitl)."""
     loop = asyncio.get_running_loop()
     if body.mode == 'replay':
         if body.log_id is None:
@@ -148,13 +156,16 @@ async def open_session(body: SessionIn, request: Request, response: Response, us
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}"
     else:
         raise HTTPException(400, 'mode sitl | replay olmalı')
+    if client:
+        s.client = {'id': client['id'], 'name': client['name']}
+        detay += f" · CAYSIM istemcisi {client['name']}"
 
     def audit():
         with db.connect() as conn:
-            db.audit(conn, user['id'], 'Uçuş simülatörü oturumu açtı', 'drone_sim', s.id, detay)
+            db.audit(conn, audit_uid, 'Uçuş simülatörü oturumu açtı', 'drone_sim', s.id, detay)
             conn.commit()
     await loop.run_in_executor(None, audit)
-    return s.to_dict(_host(request))
+    return s
 
 
 @router.get('/sessions/{sid}/replay')
@@ -439,15 +450,23 @@ async def ws_sim(ws: WebSocket, sid: int):
         return
     yazabilir = MODUL in user.get('write_modules', [])
     host = flightsim.PUBLIC_HOST or _req_host(ws) or None
+    await ws_dongu(ws, s, {'t': 'hello', 'session': s.to_dict(host), 'can_command': yazabilir}, yazabilir, user['id'])
+
+
+async def ws_dongu(ws, s, hello, yazabilir, kaynak):
+    """İzleyici döngüsü (web `/ws/drone/sim/{id}` ve CAYSIM `/ws/caysim/v1/sessions/{id}` ortak): izleyici kuyruğu + gönderici görevi,
+    `hello` çerçevesi, ardından istemciden `ping` → `pong`, `cmd` → `res`, `rc` → s.rc (yanıt yok). Bağlantı kopunca izleyici silinir."""
     q = s.izleyici_ekle(ws)
     sender = asyncio.create_task(_sender(ws, q))
-    flightsim._kuyruga(q, json.dumps({'t': 'hello', 'session': s.to_dict(host), 'can_command': yazabilir}, ensure_ascii=False))
+    flightsim._kuyruga(q, json.dumps(hello, ensure_ascii=False))
     try:
         while True:
             raw = await ws.receive_text()
             try:
                 msg = json.loads(raw)
             except ValueError:
+                continue
+            if not isinstance(msg, dict):
                 continue
             t = msg.get('t')
             if t == 'ping':
@@ -461,7 +480,7 @@ async def ws_sim(ws: WebSocket, sid: int):
                     if t == 'rc':
                         await s.rc(msg.get('ch'))
                         continue   # 20 Hz akış: yanıt yok
-                    res = await s.komut(name, msg.get('params') or {}, kaynak=user['id'])
+                    res = await s.komut(name, msg.get('params') or {}, kaynak=kaynak)
                     flightsim._kuyruga(q, json.dumps({'t': 'res', 'name': name, 'rid': msg.get('rid'), **res}, ensure_ascii=False))
                 except flightsim.SimHata as e:
                     flightsim._kuyruga(q, json.dumps({'t': 'res', 'name': name, 'rid': msg.get('rid'), 'ok': False, 'error': str(e)}, ensure_ascii=False))

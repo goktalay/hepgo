@@ -1630,6 +1630,24 @@ CREATE TABLE IF NOT EXISTS drone_sim_models (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_drone_sim_models_type ON drone_sim_models(type);
+-- CAYSIM istemcileri (docs/caysim-api.md §1, §9): Unreal/Cesium masaüstü görselleştirme istemcisi; drone_bridges kalıbı — anahtar şifreli,
+-- kod (<domain>/<key>) yalnız üretim anında gösterilir; istemcinin açtığı oturumların sahibi owner_id.
+CREATE TABLE IF NOT EXISTS drone_sim_clients (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    key_enc     TEXT,                                   -- Bearer anahtarı (cameras.encrypt ile şifreli)
+    platform    TEXT,                                   -- windows | linux | macos | other
+    owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    host        TEXT,                                   -- son bağlanan bilgisayar adı (istemci bildirir)
+    client_ver  TEXT,
+    status      TEXT NOT NULL DEFAULT 'CEVRIMDISI',     -- CEVRIMDISI | CEVRIMICI
+    last_seen   TEXT,
+    note        TEXT,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
 CREATE TABLE IF NOT EXISTS drone_routes (
     id          INTEGER PRIMARY KEY,
     center_id   INTEGER REFERENCES drone_route_centers(id) ON DELETE SET NULL,

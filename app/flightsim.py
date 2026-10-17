@@ -377,6 +377,7 @@ class SimSession:
         self._tcp_r = None
         self._rc_son = 0.0
         self.end_reason = None
+        self.client = None               # CAYSIM istemcisi açtıysa {id, name} (docs/caysim-api.md); web oturumunda None
         self.sahte = None
         if not SITL_ENABLED:
             self.sahte = SahteKinematik(tip, center['lat'], center['lon'], center.get('alt'), world.get('wind_ms'))
@@ -404,6 +405,7 @@ class SimSession:
         return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'model': dict(self.model) if self.model else None,
                 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
+                'client': dict(self.client) if self.client else None,
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
                 'sitl': dict(self.sitl)}

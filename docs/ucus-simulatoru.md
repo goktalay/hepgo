@@ -327,3 +327,14 @@ açarken gönderilen `model.orient` oturuma özeldir (kütüphane kaydını değ
 
 **Doğrulama (DEV, Playwright SwiftShader):** sihirbaz kart ızgarası + küçük resimler üretildi, PROD'daki CAYMAZ V3 STEP'i (16,9 MB) tasarım
 sürümü olarak eklendi → tarayıcıda GLB'ye dönüştürüldü → yönelim paneli (kanat açıklığı 3,03 m → ölçek) → yüklenen modelle oturum (takip/FPV).
+
+## 15. CAYSIM masaüstü istemcisi (`app/caysim.py`, `app/routers/caysim.py`; sözleşme **docs/caysim-api.md**)
+CAYSIM, Unreal Engine 5 + Cesium for Unreal ile yüksek gerçekçilikli görselleştirme istemcisidir (ayrı depo `goktalay/caysim`); **kendi fiziğini
+çalıştırmaz** — SITL, Mission Planner köprüsü, komutlar ve 50 Hz telemetri HEPGO'da kalır. İstemci, Dron Köprüsü kalıbındaki **istemci kodu**
+(`<domain>/<key>`, tablo `drone_sim_clients`, anahtar `cameras.encrypt` ile şifreli, bir kez gösterilir) ile `Authorization: Bearer <key>` kullanarak
+`/api/caysim/v1` (hello/marka/merkezler/tipler/modeller/dünya/arazi vekili/loglar/oturumlar/cmd/mavlink) ve `/ws/caysim/v1/sessions/{id}`
+(web WS ile aynı `hello/tele/event/state/end/res`; `cmd/rc/ping`) uçlarına bağlanır. Oturum açma (`routers/flightsim.oturum_ac`) ve WS döngüsü
+(`ws_dongu`) web ile ortaktır; istemcinin açtığı oturum `session.client:{id,name}` taşır ve sihirbazdaki açık oturum listesinde **CAYSIM** rozetiyle
+görünür. Yönetim: sihirbaz sayfasındaki "CAYSIM istemcileri" kartı (`static/js/modules/flightsim_clients.js`; `GET/POST /api/drone/sim/clients`,
+`PUT`, `POST /{id}/rekey`, `DELETE`; `GET` anahtar döndürmez). Güvenlik: sabit-zamanlı anahtar karşılaştırma, IP başına 10 başarısız/dk (429 / 4429),
+yalnız aktif istemci, CORS yok (OPTIONS 204). Testler `tests/test_caysim.py`. Alan adları, birimler ve Unreal (ESU, Y ters) dönüşüm notları belgede.

@@ -4,8 +4,10 @@ UDP köprüsü (sahte "SITL" TCP sunucusu ile ham bayt gidiş-dönüş, GCS kili
 Çalıştırma: CAYMAZ_FORCE_SECURE_COOKIE=0 .venv/bin/python -m tests.test_flightsim
 """
 import json
+import math
 import os
 import socket
+import struct
 import tempfile
 import threading
 import time
@@ -115,6 +117,174 @@ class SahteSitl:
             self.srv.close()
         except OSError:
             pass
+
+
+def tlog_yaz(yol, lat0=39.925, lon0=32.837, alt0=900.0, sure=60.0):
+    """pymavlink ile küçük bir .tlog (8 bayt big-endian µs zaman damgası + MAVLink2 çerçevesi): 10 sn yerde (disarmed), ARM, 40 sn daire
+    uçuşu (STABILIZE → LOITER), iniş, DISARM. Döner: (ilk ARM zamanı, ARM anındaki konum)."""
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    mav = D.MAVLink(None, srcSystem=1, srcComponent=1)
+    t_abs = 1_700_000_000.0
+    arm_t, arm_pos = None, None
+    with open(yol, 'wb') as f:
+        def yaz(msg, t):
+            f.write(struct.pack('>Q', int(t * 1e6)))
+            f.write(msg.pack(mav))
+            mav.seq = (mav.seq + 1) % 256
+        t = 0.0
+        while t <= sure:
+            armed = 10.0 <= t < 55.0
+            if armed and arm_t is None:
+                arm_t = t
+            mode = 5 if (armed and t >= 20) else 0   # ArduCopter LOITER=5 · STABILIZE=0
+            if 15 <= t < 50 and armed:   # 10–15 dikey tırmanış (yerinde), sonra 100 m yarıçaplı daire
+                ang = (t - 15) / 35 * 2 * math.pi
+                r = 100.0
+                lat, lon, z = lat0 + r * math.cos(ang) / 110574, lon0 + r * math.sin(ang) / (111320 * math.cos(math.radians(lat0))), 30.0
+                vn, ve = -r * 2 * math.pi / 35 * math.sin(ang), r * 2 * math.pi / 35 * math.cos(ang)
+            else:
+                lat, lon, z, vn, ve = lat0, lon0, (30.0 * min(1, (t - 10) / 5) if armed and t < 50 else 0.0), 0.0, 0.0
+            if armed and arm_pos is None:
+                arm_pos = (lat, lon)
+            yaw = math.atan2(ve, vn) if (vn or ve) else 0.0
+            if abs(t - round(t)) < 1e-6:   # 1 Hz
+                yaz(mav.heartbeat_encode(2, 3, (128 if armed else 0) | 1, mode, 4), t_abs + t)   # MAV_TYPE_QUADROTOR, ARDUPILOTMEGA; CUSTOM_MODE bayrağı
+                yaz(mav.sys_status_encode(0, 0, 0, 500, 16200 - int(t * 10), 1200, 95 - int(t // 10), 0, 0, 0, 0, 0, 0), t_abs + t)
+                yaz(mav.gps_raw_int_encode(int((t_abs + t) * 1e6), 3, int(lat * 1e7), int(lon * 1e7), int((alt0 + z) * 1000), 120, 80, 0, 0, 12), t_abs + t)
+                if t == 0:
+                    yaz(mav.statustext_encode(6, b'ArduCopter V4.5.7 (test)'), t_abs + t)
+                if t == 10:
+                    yaz(mav.statustext_encode(6, b'Arming motors'), t_abs + t)
+                if t == 30:
+                    yaz(mav.statustext_encode(4, b'Low battery warning (test)'), t_abs + t)
+            yaz(mav.global_position_int_encode(int(t * 1000), int(lat * 1e7), int(lon * 1e7), int((alt0 + z) * 1000), int(z * 1000),
+                                               int(vn * 100), int(ve * 100), 0, int((math.degrees(yaw) % 360) * 100)), t_abs + t)
+            yaz(mav.attitude_encode(int(t * 1000), 0.1 if armed else 0.0, -0.05 if armed else 0.0, yaw, 0, 0, 0), t_abs + t)
+            yaz(mav.rc_channels_encode(int(t * 1000), 8, 1500, 1500, 1600 if armed else 1000, 1500, 1800, 1000, 1000, 1500, *([0] * 10), 200), t_abs + t)
+            yaz(mav.vfr_hud_encode(math.hypot(vn, ve) + 1, math.hypot(vn, ve), int(math.degrees(yaw) % 360), 55 if armed else 0, alt0 + z, 0.0), t_abs + t)
+            t = round(t + 0.2, 3)   # 5 Hz
+    return arm_t, arm_pos
+
+
+def replay_testleri(a, c1, mon_token_login):
+    """§8: ayrıştırıcı birim testi (.tlog) + /logs yetki kesişimi + replay oturumu + gzip kare ucu + WS (tele yok, cmd yalnız reset)."""
+    import gzip
+    from app import config, flightsim_replay as R
+    yol = config.UPLOAD_DIR / 'flightlogs'
+    yol.mkdir(parents=True, exist_ok=True)
+    tl = yol / 'test-kayit.tlog'
+    arm_t, arm_pos = tlog_yaz(tl)
+    # --- ayrıştırıcı ---
+    d = R.ayristir(tl)
+    assert d['hz'] == R.REPLAY_HZ and d['fields'] == R.FIELDS and d['source'] == 'tlog' and d['type'] == 'multirotor' and d['vehicle'] == 'ArduCopter', (d['hz'], d['type'], d['vehicle'])
+    assert 55 <= d['duration_s'] <= 60.5 and 5 * 55 <= d['n'] <= R.REPLAY_HZ * 61, (d['duration_s'], d['n'])   # 5 Hz kaynak → en çok 5 kare/sn tutulur
+    assert abs(d['takeoff_t'] - arm_t) < 0.3 and abs(d['home']['lat'] - arm_pos[0]) < 1e-6 and abs(d['home']['lon'] - arm_pos[1]) < 1e-6 and abs(d['home']['alt'] - 900) < 0.01, (d['takeoff_t'], d['home'])
+    assert d['modes'] == ['STABILIZE', 'LOITER'], d['modes']
+    metinler = [e['text'] for e in d['events']]
+    assert 'Mod: STABILIZE' in metinler and 'Mod: LOITER' in metinler and 'ARM — motorlar kuruldu' in metinler and 'DISARM — motorlar devre dışı' in metinler and 'Arming motors' in metinler, metinler
+    uyari = next(e for e in d['events'] if 'Low battery' in e['text'])
+    assert uyari['sev'] == 4 and 29.9 <= uyari['t'] <= 30.1, uyari
+    FI = {k: i for i, k in enumerate(d['fields'])}
+    assert d['frames'][0][FI['rc']] is None   # ilk konum karesi RC'den önce (sample-and-hold: henüz bilinmeyen alan None)
+    k0, k30 = next(f for f in d['frames'] if f[FI['rc']]), next(f for f in d['frames'] if f[FI['t']] >= 30)
+    assert k0[FI['armed']] == 0 and k0[FI['alt_rel']] == 0 and k0[FI['rc']][2] == 1000 and k0[FI['sats']] == 12 and k0[FI['fix']] == 3, k0
+    assert k30[FI['armed']] == 1 and 29 <= k30[FI['alt_rel']] <= 31 and k30[FI['mode']] == 1 and k30[FI['rc']][2] == 1600 and 17 <= k30[FI['gs']] <= 18.5 and k30[FI['thr']] == 55, k30
+    assert d['start_utc'].startswith('2023-11-14T22:13:20'), d['start_utc']
+    # --- flight_logs kaydı (analiz TAMAM) ---
+    from app import db
+    with db.connect() as conn:
+        cur = conn.execute('''INSERT INTO flight_logs (task_id, file, file_name, size, status, analysis, aircraft, pilot, location, uploaded_by, uploaded_at)
+                              VALUES (NULL, ?, ?, ?, 'TAMAM', ?, 'CZ-TEST', 'Test Pilot', 'Akyurt', 1, ?)''',
+                           ('flightlogs/test-kayit.tlog', 'test-kayit.tlog', tl.stat().st_size,
+                            json.dumps({'summary': {'vehicle': 'ArduCopter', 'flight_s': 40, 'duration_s': 60, 'home': {'lat': 39.925, 'lng': 32.837}}}), db.now()))
+        lid = cur.lastrowid
+        conn.execute('''INSERT INTO flight_logs (task_id, file, file_name, size, status, uploaded_by, uploaded_at) VALUES (NULL, 'flightlogs/yarim.bin', 'yarim.bin', 10, 'ISLENIYOR', 1, ?)''', (db.now(),))
+        conn.commit()
+    # --- /logs: admin (tools) görür; analizi bitmemiş listelenmez; arama ---
+    m = ok(a.get('/api/drone/sim/meta'))
+    assert m['replay']['logs_allowed'] is True and m['replay']['hz'] == R.REPLAY_HZ and '.tlog' in m['replay']['formats'], m['replay']
+    logs = ok(a.get('/api/drone/sim/logs'))
+    assert [l['id'] for l in logs] == [lid] and logs[0]['ext'] == 'tlog' and logs[0]['type'] == 'multirotor' and logs[0]['cached'] is False and logs[0]['aircraft'] == 'CZ-TEST', logs
+    assert ok(a.get('/api/drone/sim/logs?q=cz-test')) and ok(a.get('/api/drone/sim/logs?q=yokboyle')) == []
+    # montaj: drone.sim var; Araçlar (tools) rolden kapatılır, Saha (field) zaten yok → log listesi boş, oturum açamaz (yazma yok → 403)
+    ok(a.put('/api/roles/perms', params={'name': 'Montaj Personeli'}, json={'changes': [{'node': 'tools', 'cap': 'open', 'value': False}]}))
+    mon = TestClient(app, base_url='https://testserver')
+    login(mon, 'montaj', 'sifre-1234')
+    assert not ({'tools', 'field'} & set(ok(mon.get('/api/auth/me'))['modules'])), ok(mon.get('/api/auth/me'))['modules']
+    assert ok(mon.get('/api/drone/sim/meta'))['replay']['logs_allowed'] is False and ok(mon.get('/api/drone/sim/logs')) == []
+    assert mon.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}).status_code == 403
+    # --- oturum: doğrulama ---
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay'}).status_code == 400
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': 99999}).status_code == 400
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid + 1}).status_code == 400   # ISLENIYOR
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'ucur', 'log_id': lid}).status_code == 400
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'sitl'}).status_code == 400   # type/center_id yok
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'time': 'gece'}}).status_code == 400
+    s = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'seed': 3, 'time': 'night'}}), 201)
+    assert s['mode'] == 'replay' and s['udp_port'] is None and s['type'] == 'multirotor' and s['replay']['log_id'] == lid and s['replay']['file_name'] == 'test-kayit.tlog', s
+    assert s['world']['time'] == 'night' and s['gcs'] == {'connected': False, 'addr': None, 'since': None} and s['state'] in ('BASLIYOR', 'HAZIR'), s
+    sid = s['id']
+    g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))), 10)
+    assert g and g['replay']['frames'] == d['n'] and g['replay']['duration_s'] == d['duration_s'] and g['replay']['home'] == d['home'] and g['replay']['progress'] == 100, g and g['replay']
+    assert g['center']['lat'] == d['home']['lat'] and g['center']['alt'] == d['home']['alt'] and g['replay']['modes'] == ['STABILIZE', 'LOITER'] and g['replay']['takeoff_t'] == d['takeoff_t'], g['center']
+    assert R.onbellek_yolu(lid).exists() and ok(a.get('/api/drone/sim/logs'))[0]['cached'] is True
+    # --- kareler (gzip JSON) ---
+    r = a.get(f'/api/drone/sim/sessions/{sid}/replay')
+    assert r.status_code == 200 and r.headers.get('content-type', '').startswith('application/json'), (r.status_code, r.headers)
+    body = r.json()   # httpx Content-Encoding: gzip açar
+    assert body['v'] == R.ONBELLEK_SURUM and body['n'] == d['n'] and len(body['frames']) == d['n'] and body['fields'] == R.FIELDS and body['home'] == d['home'] and len(body['events']) == len(d['events']), (body['n'], len(body['frames']))
+    with gzip.open(R.onbellek_yolu(lid), 'rt', encoding='utf-8') as f:
+        assert json.load(f)['n'] == d['n']
+    # --- komutlar: yalnız reset; SITL komutları 400 ---
+    assert a.post(f'/api/drone/sim/sessions/{sid}/cmd', json={'name': 'arm'}).status_code == 400
+    assert a.post(f'/api/drone/sim/sessions/{sid}/cmd', json={'name': 'rc', 'params': {'ch': [1500] * 8}}).status_code == 400
+    ok(a.post(f'/api/drone/sim/sessions/{sid}/cmd', json={'name': 'reset'}))
+    # --- WS: hello (mode replay) · tele gelmez · cmd reset → res ok + replay reset yayını · cmd arm → ok:false ---
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hh = json.loads(ws.receive_text())
+        assert hh['t'] == 'hello' and hh['session']['mode'] == 'replay' and hh['session']['state'] == 'HAZIR' and hh['session']['replay']['frames'] == d['n'], hh
+        ws.send_text(json.dumps({'t': 'rc', 'ch': [1500] * 8}))
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'reset', 'rid': 'r1'}))
+        gor = {}
+        bitis = time.time() + 3
+        while time.time() < bitis and not ({'res', 'replay'} <= set(gor)):
+            mm = json.loads(ws.receive_text())
+            assert mm['t'] != 'tele', 'kayıt oturumunda tele yayını olmamalı'
+            gor[mm['t']] = mm
+        assert gor['res']['ok'] is True and gor['res']['rid'] == 'r1' and gor['replay']['action'] == 'reset', gor
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'arm', 'rid': 'r2'}))
+        mm = bekle(lambda: (lambda x: x if x['t'] == 'res' and x.get('rid') == 'r2' else None)(json.loads(ws.receive_text())), 3)
+        assert mm and mm['ok'] is False and 'reset' in mm['error'], mm
+        # kapat → end
+        ok(a.delete(f'/api/drone/sim/sessions/{sid}'))
+        mm = bekle(lambda: (lambda x: x if x['t'] == 'end' else None)(json.loads(ws.receive_text())), 3)
+        assert mm and mm['reason'] == 'kapatildi', mm
+    assert a.get(f'/api/drone/sim/sessions/{sid}/replay').status_code == 404
+    # SITL oturumunda /replay 400; önbellekli ikinci açılış anında HAZIR
+    s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    assert s2['mode'] == 'sitl' and a.get(f"/api/drone/sim/sessions/{s2['id']}/replay").status_code == 400
+    s3 = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}), 201)
+    g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f"/api/drone/sim/sessions/{s3['id']}"))), 5)
+    assert g and g['replay']['frames'] == d['n']
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}).status_code == 409   # limit sayımına dahil
+    ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}")); ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+    # bozuk dosya → HATA (sitl.error), /replay 409
+    bozuk = yol / 'bozuk.bin'
+    bozuk.write_bytes(b'\x00' * 64)
+    with db.connect() as conn:
+        cur = conn.execute('''INSERT INTO flight_logs (task_id, file, file_name, size, status, analysis, uploaded_by, uploaded_at) VALUES (NULL, 'flightlogs/bozuk.bin', 'bozuk.bin', 64, 'TAMAM', '{}', 1, ?)''', (db.now(),))
+        bid = cur.lastrowid
+        conn.commit()
+    s4 = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': bid}), 201)
+    g = bekle(lambda: (lambda r: r if r['state'] in ('HATA', 'HAZIR') else None)(ok(a.get(f"/api/drone/sim/sessions/{s4['id']}"))), 10)
+    assert g and g['state'] == 'HATA' and g['sitl']['error'], g
+    assert a.get(f"/api/drone/sim/sessions/{s4['id']}/replay").status_code == 409
+    ok(a.delete(f"/api/drone/sim/sessions/{s4['id']}"))
+    # log silinince önbellek de silinir
+    ok(a.delete(f'/api/tools/flight-logs/{lid}'))
+    assert not R.onbellek_yolu(lid).exists()
+    print('Kayıttan oynatma testleri geçti.')
 
 
 def main():
@@ -309,6 +479,9 @@ def main():
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
         assert s3['id'] == sid + 2 and s3['udp_port'] == udp_port   # ilk boş port yeniden verilir
+        ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+        # --- kayıttan oynatma (§8) ---
+        replay_testleri(a, c1, None)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     sitl.kapat()
     print('Uçuş Simülatörü testleri geçti.')

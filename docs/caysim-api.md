@@ -69,7 +69,7 @@ Her REST hatası: HTTP durum kodu + gövde `{"detail": {"error": "<kod>", "messa
 | Uç | Yanıt / Davranış |
 |---|---|
 | `GET /hello` | §2.1. İstemci bilgisi başlıklarla ya da sorguyla alınır ve kayda yazılır (`host`, `client_ver`, `platform`, `last_seen`, `status='CEVRIMICI'`). |
-| `GET /brand/logo` | Şirket logosu (PNG/JPEG/WebP/SVG; `Content-Type` dosyaya göre). Yüklü logo yoksa kurulum logosu, o da yoksa `static/img/logo.png`. Kimlik gerekir. |
+| `GET /brand/logo` | Şirket logosu (PNG/JPEG/WebP/SVG; `Content-Type` dosyaya göre). Yüklü logo yoksa kurulum logosu, o da yoksa `static/img/logo.png`. Kimlik gerekir. **`?format=png&size=640`** → her zaman PNG (kare, beyaz zemin, `size` 64…2048 px; SVG sunucuda çevrilir) — Unreal için önerilen yol. |
 | `GET /centers` | `{centers:[{id, name, lat, lon, alt, location_name}]}` — aktif rota merkezleri (Dron Yönetimi › Rotalar › Merkezler). `alt` m MSL ya da null. |
 | `GET /types` | `{types:[{key, name, binary}]}` — `key` ∈ `multirotor, hexarotor, helikopter, sabit_kanat, vtol`; `binary`: SITL ikilisi sunucuda var (yoksa oturum açılışında indirilir, 503 olabilir). |
 | `GET /models?type=` | `{models:[model], defaults:{type: builtin_id}}` — görsel model kütüphanesi (web ile aynı nesne: `{id, name, source (builtin|upload|design), type, types, format, size, ready, orient, has_prop, desc, thumb_url, glb_url}`). `thumb_url`/`glb_url` **CAYSIM yollarına çevrilmiştir** (`/api/caysim/v1/models/{id}/thumb`, `/glb`). `ready=false` → GLB henüz tarayıcıda üretilmemiş; CAYSIM bu modeli gösteremez (tipin dahili modeline düşer). |

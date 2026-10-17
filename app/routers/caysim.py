@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from .. import auth, caysim, config, db, drone_hub, flightsim, flightsim_models, flightsim_replay, sim_terrain
 from . import flightsim as fs
 from .drone import _req_host, bridge_code
-from .system import get_brand_logo
+from .system import get_brand_logo, og_image_bytes
 
 V1 = '/api/caysim/v1'
 router = APIRouter(prefix=V1)            # CAYSIM istemcisi (Bearer)
@@ -144,8 +144,14 @@ def hello(request: Request, host: Optional[str] = None, client_ver: Optional[str
 
 
 @router.get('/brand/logo')
-def brand_logo(client=CLIENT, conn=db.DB):
-    """Şirket logosu (routers/system.get_brand_logo kalıbı); hiçbiri yoksa HEPGO varsayılan logosu."""
+def brand_logo(format: Optional[str] = Query(None), size: int = Query(640, ge=64, le=2048), client=CLIENT, conn=db.DB):
+    """Şirket logosu (routers/system.get_brand_logo kalıbı); hiçbiri yoksa HEPGO varsayılan logosu.
+    `?format=png` → her zaman PNG (kare, beyaz zemin, `size` px; SVG logolar sunucuda çevrilir — Unreal SVG çözemez)."""
+    if (format or '').lower() == 'png':
+        data = og_image_bytes(conn, size=size)
+        if not data:
+            _hata(404, 'not_found', 'Logo yok')
+        return Response(data, media_type='image/png', headers={'Cache-Control': 'private, max-age=3600'})
     try:
         return get_brand_logo(conn)
     except HTTPException:

@@ -55,7 +55,14 @@ KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_ho
 
 WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
                   'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
-_WORLD_KIP = ('procedural', 'real')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); prosedürel ayarlar özelleştirme olur
+_WORLD_KIP = ('procedural', 'real', 'google3d')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); google3d: Google Photorealistic 3D Tiles (§10)
+# Google 3B kipi: Map Tiles API anahtarı (HTTP referrer kısıtlı; tarayıcıya /g3d-key ile verilir, sunucu Google'a istek atmaz ve önbelleklemez)
+GOOGLE_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '').strip()
+
+
+def google3d_etkin():
+    """Google 3B dünya kipi kullanılabilir mi (GOOGLE_MAPS_API_KEY tanımlı). meta.google3d.enabled ve oturum açma denetimi."""
+    return bool(GOOGLE_KEY)
 # alan → (tür, alt, üst) — sayısal alanlar; 'time' ve 'runway' ayrı denetlenir
 _WORLD_SINIR = {'seed': (int, 0, 2 ** 31 - 1), 'size_m': (int, 500, 20000), 'tree_density': (float, 0, 1), 'mountain_height': (float, 0, 3000),
                 'mountain_count': (int, 0, 50), 'building_count': (int, 0, 500), 'runway_heading': (float, 0, 359.99), 'water': (float, 0, 1),
@@ -110,8 +117,10 @@ def world_dogrula(w):
         out['time'] = w['time']
     if 'mode' in w and w['mode'] is not None:
         if w['mode'] not in _WORLD_KIP:
-            raise SimHata('invalid', 'world.mode procedural | real olmalı')
+            raise SimHata('invalid', 'world.mode procedural | real | google3d olmalı')
         out['mode'] = w['mode']
+    if out['mode'] == 'google3d' and not google3d_etkin():
+        raise SimHata('invalid', 'Google 3B kipi sunucuda yapılandırılmamış (GOOGLE_MAPS_API_KEY)')
     return out
 
 
@@ -915,7 +924,7 @@ class SimManager:
         if not self._udp_bos_var():
             raise SimHata('sitl', 'Boş UDP portu yok')
         alt = float(center['alt']) if center.get('alt') is not None else None
-        if alt is None and world.get('mode') == 'real':   # gerçek arazi: SITL ev irtifası gerçek yükseklikten (vekil önbelleği; alınamazsa None)
+        if alt is None and world.get('mode') in ('real', 'google3d'):   # gerçek arazi / Google 3B: SITL ev irtifası açık yükseklik verisinden (vekil önbelleği; alınamazsa None; Google Elevation API kullanılmaz)
             from . import sim_terrain
             try:
                 alt = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, sim_terrain.ev_irtifa, float(center['lat']), float(center['lon'])), 12)

@@ -3428,4 +3428,11 @@ registerCatalog('fr', {
   "Gövde": "Cellule",
   "Delta kanat": "Aile delta",
   "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3 : issu du modèle STEP de notre avion · Aile delta : aile volante à hélice propulsive",
+  "Google 3B (fotogerçekçi)": "Google 3D (photoréaliste)",
+  "Google 3B (fotogerçekçi) · ev {h} m MSL": "Google 3D (photoréaliste) · base {h} m MSL",
+  "Google 3B karoları yükleniyor… %{p}": "Chargement des tuiles 3D Google… {p} %",
+  "Google 3B verisi alınamadı: {e} → prosedürele düşüldü": "Données 3D Google indisponibles : {e} → repli sur le monde procédural",
+  "Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.": "En mode Google 3D, l’environnement est construit de façon photoréaliste à partir des Google Photorealistic 3D Tiles (bâtiments et arbres inclus dans les tuiles) ; les tuiles arrivent au navigateur directement depuis Google et ne sont pas mises en cache sur le serveur ; l’attribution est obligatoire. L’altitude de la base provient de données d’élévation ouvertes.",
+  "yükleniyor %{p}": "chargement {p} %",
+  "Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)": "Décalage du sol Google 3D {o} m (surface des tuiles ↔ altitude de la base)",
 });

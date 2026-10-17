@@ -13,6 +13,7 @@ import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
 import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
+import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -77,6 +78,7 @@ function restBackend() {
     replay: id => api.get(`${API}/sessions/${encodeURIComponent(id)}/replay`),
     end: id => api.del(`${API}/sessions/${encodeURIComponent(id)}`),
     cmd: (id, name, params = {}) => api.post(`${API}/sessions/${encodeURIComponent(id)}/cmd`, { name, params }),
+    g3dKey: () => api.get(`${API}/g3d-key`).then(r => r.key),   // Google Map Tiles anahtarı (no-store; yalnız dünya kurulurken)
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
   };
@@ -159,7 +161,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   // ---------- 2. merkez ----------
   const centerList = h('div', { class: 'fs-centers' });
   const centerOf = () => centers.find(c => c.id === S.center) || null;
-  const drawCenters = () => clear(centerList, centers.length ? centers.map(c => h('button', { type: 'button', class: `fs-center ${S.center === c.id ? 'on' : ''}`, onclick: () => { S.center = c.id; drawCenters(); if (preview) { progInfo(null); preview.setOrigin(c.lat, c.lon, S.world); } } },
+  const drawCenters = () => clear(centerList, centers.length ? centers.map(c => h('button', { type: 'button', class: `fs-center ${S.center === c.id ? 'on' : ''}`, onclick: () => { S.center = c.id; drawCenters(); if (preview) { progInfo(null); preview.setOrigin(c.lat, c.lon, S.world, c.alt); } } },
     h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · '))))
     : h('div', { class: 'small muted fs-nocenter' }, 'Kayıtlı merkez yok. Önce ', h('a', { href: '#/drone/routes' }, 'Rotalar › Merkezler'), ' bölümünden bir merkez ekleyin.'));
   drawCenters();
@@ -200,26 +202,35 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   // ---------- 3. dünya ----------
   let preview = null, rebuildT = 0;
   const progBar = h('div', { class: 'fs-preview-prog', hidden: true });
-  const previewBox = h('div', { class: 'fs-preview' }, h('div', { class: 'fs-preview-msg' }, '3B önizleme hazırlanıyor…'), progBar);
+  const g3dLogo = h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google', hidden: true });   // Google 3B önizlemesinde ToS logosu (sol alt)
+  const previewBox = h('div', { class: 'fs-preview' }, h('div', { class: 'fs-preview-msg' }, '3B önizleme hazırlanıyor…'), progBar, g3dLogo);
   const previewInfo = h('div', { class: 'small muted fs-preview-info' });
   // Gerçek kip yükleme ilerlemesi / özet (önizleme kutusu üstünde şerit + altında bilgi satırı)
   const progInfo = p => {
     if (!p) { progBar.hidden = false; progBar.textContent = tr('Arazi planı alınıyor…'); return; }
     if (p.stage === 'done') {
       progBar.hidden = true;
+      g3dLogo.hidden = !p.google;
       if (p.real) {
         const c = p.counts || {};
         previewInfo.textContent = `${tr('Gerçek arazi · yükseklik {a}…{b} m · ev {h} m MSL', { a: f0(p.hmin), b: f0(p.hmax), h: f0(p.homeElev) })} · ${tr('{b} bina · {f} orman · {w} su · {r} pist', { b: c.buildings ?? 0, f: c.forests ?? 0, w: c.water ?? 0, r: c.runways ?? 0 })}`;
         const info = preview?.terrainInfo;
         if (info?.osmError) previewInfo.textContent += ` · ${tr('OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})', { e: info.osmError })}`;
-      } else previewInfo.textContent = S.world.mode === 'real' ? '' : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
+      } else if (p.google) previewInfo.textContent = `${tr('Google 3B (fotogerçekçi) · ev {h} m MSL', { h: f0(p.homeElev) })} · ${preview?.g3dAttribution?.()?.text || 'Google'}`;
+      else if (S.world.mode === 'procedural') previewInfo.textContent = tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
+      // real/google3d seçiliyken prosedürele düşüldüyse onFallback'in yazdığı uyarı kalır
+      return;
+    }
+    if (p.stage === 'g3d') {   // Google karoları: kök tileset + görünür karolar (%); dolunca şerit gizlenir
+      progBar.hidden = p.pct >= 100; progBar.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: p.pct ?? 0 });
       return;
     }
     progBar.hidden = false;
     progBar.textContent = p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total })
       : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…');
   };
-  const onFallback = e => { previewInfo.textContent = tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); toast(previewInfo.textContent, 'err'); };
+  const fallbackText = (mode, e) => (mode === 'google3d' ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }));
+  const onFallback = e => { previewInfo.textContent = fallbackText(S.world.mode, e); toast(previewInfo.textContent, 'err'); };
   const schedule = () => { clearTimeout(rebuildT); rebuildT = setTimeout(() => { if (S.world.mode === 'real') progInfo(null); preview?.setWorld(S.world); }, 300); };
   const sliders = {};
   const slider = (key, label, min, max, step, fmt = v => v) => {
@@ -238,21 +249,27 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   // Dünya kipi: gerçek arazi (yükseklik + uydu + OSM; prosedürel ayarlar özelleştirme) / prosedürel
   const modeHint = h('p', { class: 'small muted fs-mode-hint' });
   const applyMode = () => {
-    const real = S.world.mode === 'real';
-    for (const k of ['mountain_height', 'mountain_count', 'water']) sliders[k].el.hidden = real;
-    seedBox.hidden = real;
+    const real = S.world.mode === 'real', g3 = S.world.mode === 'google3d';
+    for (const k of ['mountain_height', 'mountain_count', 'water']) sliders[k].el.hidden = real || g3;
+    for (const k of ['tree_density', 'building_count']) sliders[k].el.hidden = g3;   // Google 3B: nesneler karoların içinde; yalnız saat/sis/rüzgâr/pist
+    seedBox.hidden = real || g3;
     sliders.tree_density.lbl.textContent = tr(real ? 'Ağaç sıklığı (orman alanlarına ölçek)' : 'Ağaç sıklığı');
     sliders.building_count.lbl.textContent = tr(real ? 'Ek bina sayısı (0 = yalnız gerçek binalar)' : 'Bina sayısı');
     modeHint.textContent = real
       ? `${tr('Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.')} ${ATTRIBUTION}`
+      : g3 ? tr('Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.')
       : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
   };
-  let bcTouched = false;
-  const worldModeSeg = segmented([['real', 'Gerçek arazi'], ['procedural', 'Prosedürel']], S.world.mode, v => {
+  let bcTouched = false, rwTouched = false;
+  const g3dOn = !!meta.google3d?.enabled;   // yalnız sunucuda GOOGLE_MAPS_API_KEY tanımlıysa üçüncü seçenek
+  if (!g3dOn && S.world.mode === 'google3d') S.world.mode = 'procedural';
+  const worldModeSeg = segmented([['real', 'Gerçek arazi'], ...(g3dOn ? [['google3d', 'Google 3B (fotogerçekçi)']] : []), ['procedural', 'Prosedürel']], S.world.mode, v => {
     S.world.mode = v;
     if (!bcTouched) { S.world.building_count = v === 'real' ? 0 : defaults.building_count; sliders.building_count.inp.value = S.world.building_count; sliders.building_count.out.textContent = S.world.building_count; }
+    if (!rwTouched) { S.world.runway = v !== 'google3d'; runwayCb.checked = S.world.runway; }   // Google 3B: pist varsayılan kapalı (gerçek yüzeyle çakışmasın)
     applyMode(); schedule();
   });
+  runwayCb.addEventListener('change', () => { rwTouched = true; });
   const worldForm = h('div', { class: 'fs-world' },
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Dünya kipi'), worldModeSeg),
     modeHint,
@@ -325,7 +342,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   try {
     if (S.world.mode === 'real') progInfo(null);
     const c0 = centerOf();
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, airframe: S.airframe, origin: c0 ? { lat: c0.lat, lon: c0.lon } : undefined, onProgress: progInfo, onFallback });
+    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, airframe: S.airframe, origin: c0 ? { lat: c0.lat, lon: c0.lon, alt: c0.alt } : undefined, onProgress: progInfo, onFallback, g3dKey: be.g3dKey });
     previewBox.querySelector('.fs-preview-msg')?.remove();
     if (preview.terrainInfo) progInfo({ stage: 'done', real: preview.real, ...preview.terrainInfo });
   } catch (err) {
@@ -436,7 +453,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const rcWarn = h('div', { class: 'fs-rc-warn', hidden: true }, 'Mission Planner joystick de açıksa son gelen RC komutu geçerli olur');
   const rcHint = h('div', { class: 'fs-rc-hint' }, h('span', null, 'W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta'), rcWarn);
   const sticks = h('div', { class: 'fs-sticks', hidden: true }, stickL, stickR, rcHint);
-  const attrib = world.mode === 'real' ? h('div', { class: 'fs-attrib' }, ATTRIBUTION) : null;
+  // Kaynak atfı: gerçek arazi sağ altta metin; Google 3B'de ToS gereği Google logosu + canlı veri sağlayıcı metni (sol alt, MP kutusu üstü)
+  const g3dMode = world.mode === 'google3d';
+  const attribTxt = h('span', null, g3dMode ? 'Google' : ATTRIBUTION);
+  const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
 
@@ -473,8 +493,16 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       worldReady = true;
       if (session.state === 'HAZIR' || mock) msg.hidden = true;
       if (p.real) addEvent(`${tr('Gerçek arazi · yükseklik {a}…{b} m · ev {h} m MSL', { a: f0(p.hmin), b: f0(p.hmax), h: f0(p.homeElev) })} · ${tr('{b} bina · {f} orman · {w} su · {r} pist', { b: p.counts?.buildings ?? 0, f: p.counts?.forests ?? 0, w: p.counts?.water ?? 0, r: p.counts?.runways ?? 0 })}`);
+      if (p.google) addEvent(tr('Google 3B (fotogerçekçi) · ev {h} m MSL', { h: f0(p.homeElev) }));
       const info = sim?.terrainInfo;
       if (p.real && info?.osmError) addEvent(tr('OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})', { e: info.osmError }), 'warning');
+      return;
+    }
+    if (p.stage === 'g3d-ground') { addEvent(tr('Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)', { o: f1(p.offset) })); return; }
+    if (p.stage === 'g3d') {   // Google karoları: yalnız ilk dolum perdede; sonrası atıf satırında "yükleniyor %"
+      if (worldReady) return;
+      if (p.pct >= 100) { if (session.state === 'HAZIR' || mock) msg.hidden = true; return; }
+      msg.hidden = false; msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: p.pct ?? 0 });
       return;
     }
     msg.hidden = false;
@@ -483,12 +511,14 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   };
   try {
     if (world.mode === 'real') { msg.textContent = tr('Arazi planı alınıyor…'); }
+    if (g3dMode) { msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
     sim = await createFlightSim3D(mount, world, {
-      type, airframe: session.airframe, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
+      type, airframe: session.airframe, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
       onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
       onProgress: progMsg,
-      onFallback: e => { const t = tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
+      g3dKey: be.g3dKey,
+      onFallback: e => { const t = g3dMode ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
     });
     if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
     msg.hidden = true;
@@ -497,7 +527,13 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     msg.classList.add('err');
   }
   camBtns[0].classList.add('primary');
-  const gimbalTick = setInterval(() => { if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() }); }, 300);
+  const gimbalTick = setInterval(() => {
+    if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() });
+    if (g3dMode && sim?.google) {   // Google atfı canlı (görünür karoların veri sağlayıcıları) + yükleme yüzdesi
+      const a = sim.g3dAttribution();
+      if (a) { const t = a.loading < 100 ? `${a.text} · ${tr('yükleniyor %{p}', { p: a.loading })}` : a.text; if (attribTxt.textContent !== t) attribTxt.textContent = t; }
+    }
+  }, 300);
 
   // ---------- olaylar / durum ----------
   const setState = st => {
@@ -898,7 +934,8 @@ function mockBackend(ctx) {
   return {
     mock: true,
     meta: async () => ({ types: TYPES.map(([key, name]) => ({ key, name, binary: isPlane(key) ? 'arduplane' : 'arducopter' })), centers: await centers(), world_defaults: WORLD_DEFAULTS, limits: { max_sessions: 2, max_minutes: 120 }, host: location.hostname,
-      replay: { logs_allowed: true, hz: 25, formats: ['.bin', '.log', '.tlog'] } }),
+      replay: { logs_allowed: true, hz: 25, formats: ['.bin', '.log', '.tlog'] }, google3d: { enabled: true } }),
+    g3dKey: async () => 'MOCK-GECERSIZ-ANAHTAR',   // sahte kip: Google 400/403 döner → hata yolu ("… prosedürele düşüldü") denenir
     logs: async () => MOCK_LOGS.map(l => ({ ...l })),
     replay: async id => { const s = MOCK.sessions.get(id); if (!s?.data) throw Object.assign(new Error('Kayıt oturumu değil'), { status: 400 }); return s.data; },
     sessions: async () => [...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').map(pub),

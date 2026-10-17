@@ -3428,4 +3428,11 @@ registerCatalog('ar', {
   "Gövde": "الهيكل",
   "Delta kanat": "جناح دلتا",
   "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: من نموذج STEP لطائرتنا · جناح دلتا: جناح طائر بمروحة دافعة",
+  "Google 3B (fotogerçekçi)": "Google ثلاثي الأبعاد (واقعي)",
+  "Google 3B (fotogerçekçi) · ev {h} m MSL": "Google ثلاثي الأبعاد (واقعي) · المنزل {h} م MSL",
+  "Google 3B karoları yükleniyor… %{p}": "جارٍ تحميل بلاطات Google ثلاثية الأبعاد… {p}%",
+  "Google 3B verisi alınamadı: {e} → prosedürele düşüldü": "تعذر الحصول على بيانات Google ثلاثية الأبعاد: {e} → تم الرجوع إلى العالم الإجرائي",
+  "Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.": "في وضع Google ثلاثي الأبعاد تُبنى البيئة بشكل واقعي من Google Photorealistic 3D Tiles (المباني والأشجار جزء من البلاطات)؛ تصل البلاطات إلى المتصفح مباشرة من Google ولا تُخزَّن على الخادم؛ الإسناد إلزامي. يُؤخذ ارتفاع المنزل من بيانات الارتفاع المفتوحة.",
+  "yükleniyor %{p}": "جارٍ التحميل {p}%",
+  "Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)": "إزاحة أرض Google ثلاثية الأبعاد {o} م (سطح البلاطات ↔ ارتفاع المنزل)",
 });

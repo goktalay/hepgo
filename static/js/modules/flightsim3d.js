@@ -16,6 +16,8 @@
 //   Imagery karoları canvas atlasında (z+3), OSM (Overpass) binalar (çokgen üçgenleme + duvarlar, tek geometri), orman çokgenlerinde ağaçlar,
 //   su çokgenleri, gerçek pistler — hepsi arka uç vekilinden (/api/drone/sim/terrain, /tile, /osm; tarayıcı dışa çıkmaz). Yükseklik alınamazsa
 //   prosedürele düşer (onFallback). Prosedürel ayarlar gerçek kipte özelleştirmedir: tree_density orman yoğunluğu ölçeği, building_count ek bina.
+// • Google 3B (world.mode = 'google3d'; §11): ./flightsim_g3d.js — Photorealistic 3D Tiles kendi grubunda (gWorld dışında; aynı merkez için
+//   yeniden kullanılır), yükseklik/çarpışma karolara ışınla, prosedürel/OSM nesneler kapalı, pist isteğe bağlı; hata → prosedürele düşer.
 // Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, snapCamera (takip yayı dronun üstüne), terrainHeight,
 //        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
 //        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
@@ -599,6 +601,20 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     gWorld.add(home);
   }
 
+  // Google 3B: karolar + isteğe bağlı merkez pisti (ince şerit, yüzey z = 0); ağaç/bina/su/uydu arazi yok. Yükseklik g3d.height (ışın).
+  let g3d = null;
+  function buildGoogle(world) {
+    const Wn = { ...WORLD_DEFAULTS, ...(world || {}) };
+    const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
+    terrain = { W: Wn, size, H: 200, height: g3d.height, waterZ: -Infinity, rand: rng(num(Wn.seed, 12345)), real: false, google: true, homeElev: g3d.homeElev, counts: null };
+    W = Wn;
+    const { night, dusk } = skyAndLights(size);
+    g3d.setTime(Wn.time); g3d.setShadows(!preview && !!opts.g3dShadows);   // gölge isteğe bağlı (normal hesaplama + Lambert; varsayılan Basic: doku rengi doğrudan)
+    scene.add(g3d.group);
+    if (Wn.runway === true) { const rw = runwayMesh(num(Wn.runway_heading, 0), RUNWAY_L, 18, night, dusk); rw.position.z = 0.08; gWorld.add(rw); }
+    addHomeMark();
+  }
+
   // Dünya kurucu: prosedürel anında; gerçek kip veri yükler (ilerleme), alınamazsa prosedürele düşer (onFallback). Son çağrı kazanır.
   let buildSeq = 0, realCache = null;
   const onProgress = opts.onProgress || null, onFallback = opts.onFallback || null;
@@ -606,6 +622,24 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     const seq = ++buildSeq;
     const Wn = { ...WORLD_DEFAULTS, ...(world || {}) };
     let real = null;
+    if (Wn.mode === 'google3d') {
+      const key = `${origin.lat.toFixed(5)},${origin.lon.toFixed(5)}`;
+      try {
+        if (!g3d || g3d.key !== key) {
+          g3d?.dispose(); g3d = null;
+          onProgress?.({ stage: 'g3d', pct: 0 });
+          const G = await import('./flightsim_g3d.js');
+          const g = await G.createGoogleTiles({ T, renderer, camera, origin: { ...origin, alt: opts.origin?.alt }, preview, key: opts.g3dKey, time: Wn.time, onProgress: p => { if (g3d === g) onProgress?.(p); } });
+          if (seq !== buildSeq) { g.dispose(); return; }
+          g.key = key; g3d = g;
+        }
+      } catch (err) {
+        if (seq !== buildSeq) return;
+        onFallback?.(err?.message || String(err));
+        Wn.mode = 'procedural';
+      }
+    }
+    if (Wn.mode !== 'google3d' && g3d) { g3d.dispose(); g3d = null; }
     if (Wn.mode === 'real') {
       const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
       const key = `${origin.lat.toFixed(5)},${origin.lon.toFixed(5)},${size}`;
@@ -625,8 +659,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     }
     disposeGroup(gWorld);
     buildingsAABB = []; waterPolys = [];
-    if (real) buildReal(Wn, real); else buildProcedural(Wn);
-    onProgress?.({ stage: 'done', real: !!real, counts: terrain.counts || null, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null });
+    if (g3d) buildGoogle(Wn); else if (real) buildReal(Wn, real); else buildProcedural(Wn);
+    onProgress?.({ stage: 'done', real: !!real, google: !!g3d, counts: terrain.counts || null, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null });
   }
 
   // ---------- dron modelleri ----------
@@ -956,7 +990,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     const p = cur.pos;
     let hit = null;
     const hz = terrainHeight(p.x, p.y);
-    const onRunway = Math.hypot(p.x, p.y) <= 25 || (W.runway !== false && inRunway(p.x, p.y, num(W.runway_heading, 0), 4));   // pist/kalkış alanında yer teması (koşu, iniş) çarpışma değil
+    const onRunway = Math.hypot(p.x, p.y) <= 25 || ((W.runway !== false || terrain?.google) && inRunway(p.x, p.y, num(W.runway_heading, 0), 4));   // pist/kalkış alanında yer teması (koşu, iniş) çarpışma değil; Google 3B'de pist çizilmese de runway_heading boyunca sanal şerit
     if (p.z < hz + 0.3 && !onRunway) hit = { kind: 'terrain', z: hz };
     else if (terrain && p.z < terrain.waterZ + 0.3) hit = { kind: 'water', z: terrain.waterZ };
     else if (terrain?.real && waterPolys.some(w => p.x >= w.x1 && p.x <= w.x2 && p.y >= w.y1 && p.y <= w.y2 && p.z < w.z + 0.3 && pointInPoly(p.x, p.y, w.pts))) hit = { kind: 'water', z: hz };
@@ -1038,6 +1072,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     }
     // Gölge: güneş dronu izler
     if (!preview) { lights.sun.target.position.copy(cur.pos); lights.sun.position.copy(cur.pos).addScaledVector(sunDir, 120); }
+    // Google 3B karoları: kamera çözünürlüğü + LOD + yer ofseti (kalkışa dek); kamera kipi değişse de aynı camera nesnesi
+    if (g3d) { try { g3d.update(camera, tele.has && tele.armed && tele.speed > 1, now); } catch { /* karo hatası kareyi durdurmasın */ } }
     // Kamera kipleri
     if (preview) {
       previewAngle += dt * 0.12;
@@ -1088,16 +1124,18 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (!preview && camMode === 'follow') resetCamera();
   }
   // Merkez değişti (sihirbaz): gerçek kipte veriler yeni konumdan yüklenir
-  async function setOrigin(lat, lon, nw) {
+  async function setOrigin(lat, lon, nw, alt) {
     origin.lat = num(lat, 0); origin.lon = num(lon, 0);
+    if (opts.origin) opts.origin.alt = alt; else opts.origin = { lat: origin.lat, lon: origin.lon, alt };
     realCache = null;
-    await setWorld(nw || W);
+    await setWorld(nw || W);   // google3d: merkez anahtarı değişti → karolar yeniden kurulur
   }
 
   function dispose() {
     disposed = true;
     buildSeq++;   // bekleyen gerçek arazi yüklemesi sonuçlarını kullanmaz
     realCache = null;
+    g3d?.dispose(); g3d = null;
     cancelAnimationFrame(raf);
     ro.disconnect();
     window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp);
@@ -1116,7 +1154,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     setWorld, setOrigin, setType, clearCollision, resize, dispose, netStats, setKeyboardLock,
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     get real() { return !!terrain?.real; },
-    get terrainInfo() { return terrain ? { real: !!terrain.real, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null } : null; },
+    get google() { return !!g3d; },
+    g3dAttribution: () => (g3d ? g3d.attribution() : null),   // {text, logo, loading} — ToS atfı (.fs-attrib)
+    get terrainInfo() { return terrain ? { real: !!terrain.real, google: !!terrain.google, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null } : null; },
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),
     getPose: () => { tmpE.setFromQuaternion(cur.q, 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD)

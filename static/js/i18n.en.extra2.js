@@ -690,4 +690,11 @@ registerCatalog('en', {
   "Gövde": "Fuselage",
   "Delta kanat": "Delta wing",
   "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: from the STEP model of the aircraft we build · Delta wing: pusher-propeller flying wing",
+  "Google 3B (fotogerçekçi)": "Google 3D (photorealistic)",
+  "Google 3B (fotogerçekçi) · ev {h} m MSL": "Google 3D (photorealistic) · home {h} m MSL",
+  "Google 3B karoları yükleniyor… %{p}": "Loading Google 3D tiles… {p}%",
+  "Google 3B verisi alınamadı: {e} → prosedürele düşüldü": "Google 3D data unavailable: {e} → fell back to procedural",
+  "Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.": "In Google 3D mode the surroundings are built photorealistically from Google Photorealistic 3D Tiles (buildings and trees are part of the tiles); tiles are streamed to the browser directly from Google and are not cached on the server; attribution is mandatory. Home elevation comes from open elevation data.",
+  "yükleniyor %{p}": "loading {p}%",
+  "Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)": "Google 3D ground offset {o} m (tile surface ↔ home elevation)",
 });

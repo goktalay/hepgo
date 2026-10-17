@@ -9,7 +9,8 @@ import {
 } from '../ui.js';
 
 // Canlı Uçuş sekmesi yok: harekât ekranı yalnız saha görevinden açılır (#/field/live?task=<id>; renderLive aşağıda)
-const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']];
+// Uçuş Simülatörü (#/drone/sim[/<oturum>]): flightsim.js dinamik yüklenir; yetki m.can.sim (RBAC 'drone.sim'). `?mock=1` arka uçsuz deneme.
+const TABS = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['sim', 'Uçuş Simülatörü']];
 const DRONE_BADGE = { AKTIF: 'green', BAKIMDA: 'yellow', ARIZALI: 'red', PASIF: 'gray' };
 const SESSION_BADGE = { ACIK: 'green', KAPANDI: 'gray', KOPTU: 'red', KESILDI: 'yellow' };
 // Dron türü (protocol): ürettiğimiz tüm Caymaz dronları MAVLink; sanal dron sunucu içi simülatör (köprü gerekmez); DJI ileride.
@@ -24,7 +25,9 @@ const bridgeWsUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${
 
 export async function render(view, params, ctx) {
   const m = await api.get('/api/drone/meta');
-  const tabs = TABS.filter(([k]) => m.can[k]);
+  // Sahte veri kipi (?mock=1): simülatör arayüzü arka uç/yetki olmadan denenir (sorgu dizesi params'ın herhangi bir parçasında olabilir)
+  const simMock = String(params[0] || '').split('?')[0] === 'sim' && new URLSearchParams(String(params.join('/')).split('?')[1] || '').get('mock') === '1';
+  const tabs = TABS.filter(([k]) => m.can[k] || (k === 'sim' && simMock));
   // Görevden açılan Canlı Uçuş (#/field/live?task=<id>): yetki görev üyeliğiyle sunucuda denetlenir (/api/field/tasks/{id}/live);
   // Dron Yönetimi sekme yetkisi olmayan görev pilotu da açabilmeli.
   {
@@ -42,8 +45,13 @@ export async function render(view, params, ctx) {
   // params[0] 'live?task=5' biçiminde gelebilir (yönlendirici hash'i '/' ile böler, sorgu dizesi ilk parçada kalır)
   const [page, qs] = String(params[0] || '').split('?');
   const want = TABS.some(([k]) => k === page) ? page : tabs[0][0];
-  const cur = m.can[want] ? want : tabs[0][0];
+  const cur = (m.can[want] || (want === 'sim' && simMock)) ? want : tabs[0][0];
   const head = sub => pageHead('Dron Yönetimi', { back: '#/', sub, tabs: moduleTabs(tabs, cur, k => { location.hash = `#/drone/${k}`; }) });
+  if (cur === 'sim') {
+    // Uçuş Simülatörü ayrı modülde (flightsim.js: sihirbaz + tam alan 3B oturum ekranı); yalnız gerekince yüklenir.
+    const fs = await import('./flightsim.js');
+    return fs.render(view, params, ctx, { m, head, mock: simMock });
+  }
   if (cur === 'drones') return params[1] ? renderDroneDetail(view, Number(params[1]), ctx, m) : renderDrones(view, ctx, m, head);
   if (cur === 'routes') {
     // Rotalar sekmesi ayrı modülde (routes.js: sol dar sütun + Cesium harita); yalnız gerekince yüklenir.

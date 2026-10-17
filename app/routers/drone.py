@@ -122,6 +122,7 @@ def meta(user=Depends(auth.current_user)):
             'conn_types': CONN_TYPES, 'route_kinds': ROUTE_KINDS, 'wp_actions': WP_ACTIONS, 'commands': sorted(drone_hub.CMD_NAMES),
             'can': {'drones': 'drone.drones' in user['modules'], 'live': 'field.live' in user['modules'],
                     'routes': 'drone.routes' in user['modules'], 'bridges': 'drone.bridges' in user['modules'],
+                    'sim': 'drone.sim' in user['modules'],
                     'command': drone_hub.can_command(user) if 'write_modules' in user else False}}
 
 

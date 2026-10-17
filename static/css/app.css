@@ -8875,3 +8875,111 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .rd-btn.rd-hidden { display: none; }
 .dropdown .menu-link { position: relative; }
 .dropdown .menu-link .rd-live { position: static; margin-left: auto; width: 9px; height: 9px; }
+
+/* ---------- Uçuş Simülatörü (Dron Yönetimi › Uçuş Simülatörü; flightsim.js / flightsim3d.js) ---------- */
+/* Sihirbaz */
+.fs-step h3 { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.fs-no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; flex: none; }
+.fs-step { margin-bottom: 14px; }
+.fs-open { margin-bottom: 14px; }
+.fs-open-list { display: flex; flex-direction: column; gap: 8px; }
+.fs-open-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); flex-wrap: wrap; }
+.fs-open-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs-open-main .small { flex-basis: 100%; }
+.fs-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.fs-type { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; color: var(--text); transition: border-color .15s, box-shadow .15s; }
+.fs-type:hover { border-color: var(--primary); }
+.fs-type.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); background: var(--primary-soft); }
+.fs-type-ico { width: 34px; height: 34px; color: var(--primary); }
+.fs-type-ico svg { width: 100%; height: 100%; }
+.fs-type b { font-size: 14px; }
+.fs-type .small { line-height: 1.35; }
+.fs-centers { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.fs-center { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; color: var(--text); }
+.fs-center:hover { border-color: var(--primary); }
+.fs-center.on { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 2px var(--primary-soft); }
+.fs-nocenter { padding: 8px 0; }
+.fs-world-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.fs-world-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; }
+.fs-slider { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.fs-slider > span { display: flex; justify-content: space-between; color: var(--muted); font-weight: 600; }
+.fs-slider .fs-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.fs-slider input[type=range] { width: 100%; accent-color: var(--primary); }
+.fs-world-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
+.fs-time, .fs-seed { display: flex; align-items: center; gap: 8px; }
+.fs-preview { position: relative; aspect-ratio: 4 / 3; min-height: 240px; border-radius: var(--radius); overflow: hidden; background: #0b1220; border: 1px solid var(--border); }
+.fs-preview canvas { position: absolute; inset: 0; }
+.fs-preview-msg { position: absolute; inset: 0; display: grid; place-items: center; color: #cbd5e1; font-size: 13px; text-align: center; padding: 16px; }
+.fs-start-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 20px; }
+.fs-start { height: 42px; padding: 0 26px; font-size: 15px; }
+.fs-mock-note { margin-bottom: 14px; }
+@media (max-width: 900px) { .fs-world-wrap { grid-template-columns: 1fr; } .fs-world-grid { grid-template-columns: 1fr; } }
+
+/* Oturum ekranı: tam alan 3B tuval + yüzen paneller (Canlı Uçuş ops-view kalıbı) */
+.fs-stage { position: absolute; inset: 0; background: #0b1220; overflow: hidden; color: #e6e9ef; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.fs-stage:fullscreen { width: 100vw; height: 100vh; }
+.fs-canvas { position: absolute; inset: 0; }
+.fs-canvas canvas { display: block; width: 100%; height: 100%; }
+.fs-msg { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; background: rgba(11, 18, 32, .55); color: #cbd5e1; font-size: 15px; text-align: center; padding: 20px; pointer-events: none; }
+.fs-msg.err { color: #fca5a5; }
+.fs-msg[hidden], .fs-crash[hidden], .fs-ended[hidden], .fs-gimbal[hidden] { display: none; }
+.fs-nav { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; background: rgba(11, 18, 32, .72); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, .08); border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 12.5px; white-space: nowrap; max-width: calc(100% - 20px); }
+.fs-nav b { font-weight: 700; }
+.fs-nav-sub { color: #9aa4b6; overflow: hidden; text-overflow: ellipsis; }
+.fs-nav-back { color: #e6e9ef; text-decoration: none; font-size: 15px; padding: 2px 8px; border-radius: 999px; }
+.fs-nav-back:hover, .fs-nav-btn:hover { background: rgba(255, 255, 255, .12); text-decoration: none; }
+.fs-nav-btn { border: 0; background: transparent; color: #e6e9ef; font-size: 15px; line-height: 1; padding: 3px 7px; border-radius: 999px; cursor: pointer; }
+body.immersive .fs-nav { top: 12px; }
+/* HUD (sağ) — mono rakamlar */
+.fs-hud { position: absolute; top: 56px; right: 12px; z-index: 5; width: 240px; background: rgba(11, 18, 32, .78); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, .08); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; pointer-events: none; }
+.fs-hud-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.fs-hud .badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
+.fs-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; line-height: 1.8; }
+.fs-row > span:first-child { color: #9aa4b6; }
+.fs-rv { display: inline-flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; }
+.fs-rv i { font-style: normal; color: #9aa4b6; font-size: 11px; }
+.fs-v { font-weight: 700; font-size: 14px; }
+.fs-v.warn { color: #fbbf24; }
+.fs-thr { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .14); overflow: hidden; margin: -2px 0 6px; }
+.fs-thr i { display: block; height: 100%; width: 0; background: #22c55e; transition: width .12s linear; }
+.fs-row-rc { align-items: flex-end; }
+.fs-rcs { display: flex; gap: 4px; align-items: flex-end; height: 34px; }
+.fs-rc { width: 14px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.fs-rc i { display: block; width: 8px; height: 50%; background: #38bdf8; border-radius: 2px 2px 0 0; transition: height .12s linear; }
+.fs-rc small { font-size: 9px; color: #9aa4b6; line-height: 1; }
+.fs-wind-arrow { display: inline-block; color: #38bdf8; margin-right: 2px; transition: transform .3s; }
+/* Mission Planner bağlantı kutusu (sol alt) */
+.fs-mp { position: absolute; left: 12px; bottom: 60px; z-index: 5; width: 300px; background: rgba(11, 18, 32, .82); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, .08); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; }
+.fs-mp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.fs-mp-addr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fs-mp-addr code { font-size: 14px; font-weight: 700; color: #ffe08a; }
+.fs-mp-hint { color: #9aa4b6; margin-top: 6px; line-height: 1.4; }
+.fs-mp-hint b { color: #e6e9ef; }
+/* Alt araç çubuğu */
+.fs-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(11, 18, 32, .82); border-top: 1px solid rgba(255, 255, 255, .08); backdrop-filter: blur(6px); flex-wrap: wrap; }
+.fs-bar .pill-group { display: inline-flex; gap: 4px; background: rgba(255, 255, 255, .06); border-radius: 999px; padding: 3px; }
+.fs-bar .btn { background: transparent; border-color: transparent; color: #e6e9ef; }
+.fs-bar .btn:hover { background: rgba(255, 255, 255, .12); }
+.fs-bar .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.fs-bar .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.fs-bar .input.sm { height: 30px; padding: 0 8px; font-size: 13px; background: rgba(255, 255, 255, .08); color: #e6e9ef; border-color: transparent; border-radius: 999px; }
+.fs-bar .input.sm option { color: #111; }
+.fs-gimbal { color: #9aa4b6; }
+/* Olay şeridi (STATUSTEXT) — alt orta, en yeni üstte */
+.fs-events { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); z-index: 4; width: min(520px, 60%); display: flex; flex-direction: column; gap: 2px; pointer-events: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.fs-ev { display: flex; gap: 8px; padding: 3px 10px; border-radius: 6px; background: rgba(11, 18, 32, .72); color: #cfd5e1; }
+.fs-ev:nth-child(n+4) { opacity: .7; } .fs-ev:nth-child(n+6) { opacity: .45; }
+.fs-ev-t { color: #9aa4b6; flex: none; }
+.fs-ev.warn { color: #fbbf24; } .fs-ev.err { color: #f87171; }
+/* ÇARPIŞMA bandı */
+.fs-crash { position: absolute; top: 52px; left: 0; right: 0; z-index: 7; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px 16px; background: rgba(185, 28, 28, .88); color: #fff; font-weight: 800; letter-spacing: .12em; font-size: 18px; animation: fsblink 1s steps(2) infinite; pointer-events: none; }
+.fs-crash-sub { font-weight: 500; letter-spacing: 0; font-size: 13px; opacity: .95; }
+@keyframes fsblink { 50% { background: rgba(127, 29, 29, .88); } }
+.fs-ended { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(11, 18, 32, .7); }
+.fs-ended-box { display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--surface); color: var(--text); padding: 22px 26px; border-radius: var(--radius); min-width: 260px; text-align: center; }
+@media (max-width: 760px) {
+  .fs-hud { width: 200px; top: 50px; font-size: 11.5px; }
+  .fs-mp { width: calc(100% - 24px); bottom: 96px; }
+  .fs-events { display: none; }
+  .fs-nav-sub { display: none; }
+}

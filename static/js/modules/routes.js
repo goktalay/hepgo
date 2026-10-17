@@ -94,7 +94,7 @@ export async function render(view, ctx, m, head, params) {
   const msg = h('div', { class: 'rt-msg' }, '3B harita yükleniyor…');
   const pop = h('div', { class: 'rt-pop', hidden: true });
   // Dron Yönetimi sekmeleri haritanın üstünde küçük kapsülde (sayfa başlığı yok: harita başlık ile alt bilgi arasını kaplar)
-  const NAV = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri']].filter(([k]) => m.can?.[k]);
+  const NAV = [['drones', 'Dron Envanteri'], ['routes', 'Rotalar'], ['bridges', 'Dron Köprüleri'], ['sim', 'Uçuş Simülatörü']].filter(([k]) => m.can?.[k]);
   const nav = h('div', { class: 'rt-nav' },
     h('a', { class: 'rt-nav-back', href: '#/', title: 'Geri', onclick: e => { if (history.length > 1) { e.preventDefault(); history.back(); } } }, '←'),
     NAV.map(([k, l]) => h('a', { class: `rt-nav-tab ${k === 'routes' ? 'on' : ''}`, href: `#/drone/${k}` }, l)));

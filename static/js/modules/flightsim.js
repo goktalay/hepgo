@@ -11,7 +11,7 @@
 //   bu sekmede (bellekte) yaşar; komutlar (arm/disarm/mode/takeoff/rtl/reset/crash) üreticiye uygulanır.
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
-import { CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
+import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 
 const API = '/api/drone/sim';
@@ -30,6 +30,8 @@ const COPTER_MODES = ['STABILIZE', 'ALT_HOLD', 'LOITER', 'POSHOLD', 'GUIDED', 'A
 const PLANE_MODES = ['MANUAL', 'FBWA', 'FBWB', 'CRUISE', 'TAKEOFF', 'AUTO', 'LOITER', 'RTL'];
 const VTOL_MODES = [...PLANE_MODES, 'QSTABILIZE', 'QHOVER', 'QLOITER', 'QLAND'];
 const isPlane = type => type === 'sabit_kanat' || type === 'vtol';
+// Sabit kanat / VTOL 3B gövdesi (session.airframe): Caymaz V3 (STEP → GLB) ya da prosedürel delta uçan kanat
+const AIRFRAMES = [['caymaz', 'Caymaz V3'], ['delta', 'Delta kanat']];
 const modesFor = type => (type === 'vtol' ? VTOL_MODES : isPlane(type) ? PLANE_MODES : COPTER_MODES);
 const f1 = v => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(1));
 const f0 = v => (v == null || Number.isNaN(Number(v)) ? '—' : String(Math.round(Number(v))));
@@ -122,7 +124,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
   const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
-  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
+  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', airframe: 'caymaz', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
 
   // ---------- açık oturumlar ----------
   const openBox = h('div');
@@ -145,14 +147,19 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // ---------- 1. dron tipi ----------
   const typeCards = h('div', { class: 'fs-types' });
-  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); preview?.setType(t.key); } },
+  // Sabit kanat / VTOL gövdesi: Caymaz (ürettiğimiz uçağın STEP'inden türetilen model) ya da prosedürel delta uçan kanat
+  const airframeSeg = segmented(AIRFRAMES, S.airframe, v => { S.airframe = v; preview?.setType(S.type, v); });
+  const airframeRow = h('div', { class: 'fs-airframe', hidden: !isPlane(S.type) }, h('span', { class: 'small muted' }, 'Gövde'), airframeSeg,
+    h('span', { class: 'small muted' }, 'Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat'));
+  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); airframeRow.hidden = !isPlane(t.key); preview?.setType(t.key, S.airframe); } },
     h('span', { class: 'fs-type-ico', html: TYPE_ICON[t.icon] || TYPE_ICON.quad }),
     h('b', null, t.name), h('span', { class: 'small muted' }, t.desc || ''))));
   drawTypes();
 
   // ---------- 2. merkez ----------
   const centerList = h('div', { class: 'fs-centers' });
-  const drawCenters = () => clear(centerList, centers.length ? centers.map(c => h('button', { type: 'button', class: `fs-center ${S.center === c.id ? 'on' : ''}`, onclick: () => { S.center = c.id; drawCenters(); } },
+  const centerOf = () => centers.find(c => c.id === S.center) || null;
+  const drawCenters = () => clear(centerList, centers.length ? centers.map(c => h('button', { type: 'button', class: `fs-center ${S.center === c.id ? 'on' : ''}`, onclick: () => { S.center = c.id; drawCenters(); if (preview) { progInfo(null); preview.setOrigin(c.lat, c.lon, S.world); } } },
     h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · '))))
     : h('div', { class: 'small muted fs-nocenter' }, 'Kayıtlı merkez yok. Önce ', h('a', { href: '#/drone/routes' }, 'Rotalar › Merkezler'), ' bölümünden bir merkez ekleyin.'));
   drawCenters();
@@ -192,17 +199,63 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // ---------- 3. dünya ----------
   let preview = null, rebuildT = 0;
-  const previewBox = h('div', { class: 'fs-preview' }, h('div', { class: 'fs-preview-msg' }, '3B önizleme hazırlanıyor…'));
-  const schedule = () => { clearTimeout(rebuildT); rebuildT = setTimeout(() => preview?.setWorld(S.world), 300); };
+  const progBar = h('div', { class: 'fs-preview-prog', hidden: true });
+  const previewBox = h('div', { class: 'fs-preview' }, h('div', { class: 'fs-preview-msg' }, '3B önizleme hazırlanıyor…'), progBar);
+  const previewInfo = h('div', { class: 'small muted fs-preview-info' });
+  // Gerçek kip yükleme ilerlemesi / özet (önizleme kutusu üstünde şerit + altında bilgi satırı)
+  const progInfo = p => {
+    if (!p) { progBar.hidden = false; progBar.textContent = tr('Arazi planı alınıyor…'); return; }
+    if (p.stage === 'done') {
+      progBar.hidden = true;
+      if (p.real) {
+        const c = p.counts || {};
+        previewInfo.textContent = `${tr('Gerçek arazi · yükseklik {a}…{b} m · ev {h} m MSL', { a: f0(p.hmin), b: f0(p.hmax), h: f0(p.homeElev) })} · ${tr('{b} bina · {f} orman · {w} su · {r} pist', { b: c.buildings ?? 0, f: c.forests ?? 0, w: c.water ?? 0, r: c.runways ?? 0 })}`;
+        const info = preview?.terrainInfo;
+        if (info?.osmError) previewInfo.textContent += ` · ${tr('OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})', { e: info.osmError })}`;
+      } else previewInfo.textContent = S.world.mode === 'real' ? '' : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
+      return;
+    }
+    progBar.hidden = false;
+    progBar.textContent = p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total })
+      : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…');
+  };
+  const onFallback = e => { previewInfo.textContent = tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); toast(previewInfo.textContent, 'err'); };
+  const schedule = () => { clearTimeout(rebuildT); rebuildT = setTimeout(() => { if (S.world.mode === 'real') progInfo(null); preview?.setWorld(S.world); }, 300); };
+  const sliders = {};
   const slider = (key, label, min, max, step, fmt = v => v) => {
     const out = h('b', { class: 'fs-val' }, fmt(S.world[key]));
+    const lbl = h('span', null, label);
     const inp = h('input', { type: 'range', min, max, step, value: S.world[key], oninput: () => { S.world[key] = Number(inp.value); out.textContent = fmt(S.world[key]); schedule(); } });
-    return h('label', { class: 'fs-slider' }, h('span', null, label, out), inp);
+    const el = h('label', { class: 'fs-slider' }, h('span', null, lbl, out), inp);
+    sliders[key] = { el, lbl, inp, out, fmt, label };
+    return el;
   };
   const seedInp = h('input', { class: 'input mono', value: S.world.seed, inputmode: 'numeric', style: { width: '120px' }, onchange: () => { S.world.seed = Number(seedInp.value) || 1; seedInp.value = S.world.seed; schedule(); } });
   const runwayCb = h('input', { type: 'checkbox', checked: S.world.runway !== false, onchange: () => { S.world.runway = runwayCb.checked; schedule(); } });
   const timeSeg = segmented([['day', 'Gündüz'], ['dusk', 'Akşam'], ['night', 'Gece']], S.world.time, v => { S.world.time = v; schedule(); });
+  const seedBox = h('div', { class: 'fs-seed' }, h('span', { class: 'small muted' }, 'Tohum'), seedInp,
+    h('button', { class: 'btn sm', type: 'button', onclick: () => { S.world.seed = randomSeed(); seedInp.value = S.world.seed; schedule(); } }, '🎲 Rastgele tohum'));
+  // Dünya kipi: gerçek arazi (yükseklik + uydu + OSM; prosedürel ayarlar özelleştirme) / prosedürel
+  const modeHint = h('p', { class: 'small muted fs-mode-hint' });
+  const applyMode = () => {
+    const real = S.world.mode === 'real';
+    for (const k of ['mountain_height', 'mountain_count', 'water']) sliders[k].el.hidden = real;
+    seedBox.hidden = real;
+    sliders.tree_density.lbl.textContent = tr(real ? 'Ağaç sıklığı (orman alanlarına ölçek)' : 'Ağaç sıklığı');
+    sliders.building_count.lbl.textContent = tr(real ? 'Ek bina sayısı (0 = yalnız gerçek binalar)' : 'Bina sayısı');
+    modeHint.textContent = real
+      ? `${tr('Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.')} ${ATTRIBUTION}`
+      : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
+  };
+  let bcTouched = false;
+  const worldModeSeg = segmented([['real', 'Gerçek arazi'], ['procedural', 'Prosedürel']], S.world.mode, v => {
+    S.world.mode = v;
+    if (!bcTouched) { S.world.building_count = v === 'real' ? 0 : defaults.building_count; sliders.building_count.inp.value = S.world.building_count; sliders.building_count.out.textContent = S.world.building_count; }
+    applyMode(); schedule();
+  });
   const worldForm = h('div', { class: 'fs-world' },
+    h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Dünya kipi'), worldModeSeg),
+    modeHint,
     h('div', { class: 'fs-world-grid' },
       slider('size_m', 'Dünya boyutu', 1000, 10000, 500, v => `${v} m`),
       slider('tree_density', 'Ağaç sıklığı', 0, 1, 0.05, v => `%${Math.round(v * 100)}`),
@@ -217,8 +270,9 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     h('div', { class: 'fs-world-row' },
       h('label', { class: 'check' }, runwayCb, 'Pist'),
       h('div', { class: 'fs-time' }, h('span', { class: 'small muted' }, 'Saat'), timeSeg),
-      h('div', { class: 'fs-seed' }, h('span', { class: 'small muted' }, 'Tohum'), seedInp,
-        h('button', { class: 'btn sm', type: 'button', onclick: () => { S.world.seed = randomSeed(); seedInp.value = S.world.seed; schedule(); } }, '🎲 Rastgele tohum'))));
+      seedBox));
+  sliders.building_count.inp.addEventListener('input', () => { bcTouched = true; });
+  applyMode();
 
   // ---------- 4. başlat ----------
   const startBtn = h('button', { class: 'btn primary fs-start', disabled: !canWrite || !centers.length, onclick: async () => {
@@ -228,7 +282,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     try {
       const s = S.mode === 'replay'
         ? await be.create({ mode: 'replay', log_id: S.log, world: { ...S.world } })
-        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world } });
+        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, airframe: isPlane(S.type) ? S.airframe : undefined });
       toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
       location.hash = be.href(s.id);
     } catch (err) {
@@ -239,11 +293,11 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   } }, '▶ Başlat');
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
-  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards);
+  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, airframeRow);
   const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
   const worldNo = h('span', { class: 'fs-no' }, '3');
   const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.');
-  const stepWorld = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, worldNo, 'Dünya'), worldHint, h('div', { class: 'fs-world-wrap' }, worldForm, previewBox));
+  const stepWorld = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, worldNo, 'Dünya'), worldHint, h('div', { class: 'fs-world-wrap' }, worldForm, h('div', null, previewBox, previewInfo)));
   const startNote = h('div', { class: 'small muted' });
   const drawMode = () => {
     const rp = S.mode === 'replay';
@@ -269,8 +323,11 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // 3B önizleme (küçük, kendi etrafında dönen kamera); sayfa değişince serbest bırakılır
   try {
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type });
+    if (S.world.mode === 'real') progInfo(null);
+    const c0 = centerOf();
+    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: S.type, airframe: S.airframe, origin: c0 ? { lat: c0.lat, lon: c0.lon } : undefined, onProgress: progInfo, onFallback });
     previewBox.querySelector('.fs-preview-msg')?.remove();
+    if (preview.terrainInfo) progInfo({ stage: 'done', real: preview.real, ...preview.terrainInfo });
   } catch (err) {
     clear(previewBox, h('div', { class: 'fs-preview-msg' }, tr('3B önizleme açılamadı: {e}', { e: err.message })));
   }
@@ -379,7 +436,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const rcWarn = h('div', { class: 'fs-rc-warn', hidden: true }, 'Mission Planner joystick de açıksa son gelen RC komutu geçerli olur');
   const rcHint = h('div', { class: 'fs-rc-hint' }, h('span', null, 'W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta'), rcWarn);
   const sticks = h('div', { class: 'fs-sticks', hidden: true }, stickL, stickR, rcHint);
+  const attrib = world.mode === 'real' ? h('div', { class: 'fs-attrib' }, ATTRIBUTION) : null;
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
+  if (attrib) stage.append(attrib);
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -387,29 +446,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   scroller?.classList.add('ops-scroll');
   clear(view, stage);
 
-  // ---------- 3B ----------
-  let sim = null, last = null, socket = null, destroyed = false, rc = null, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
-  // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
-  const hudCtx = { world, session, replay, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
-    get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
-  milHud = createMilHud(stage, hudCtx, { tr });
-  mhudBtn.classList.toggle('primary', milHud.enabled);
-  try {
-    sim = await createFlightSim3D(mount, world, {
-      type, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
-      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
-      onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş, arazi prosedürel → çarpışma denetimi yok
-    });
-    msg.hidden = true;
-  } catch (err) {
-    msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
-    msg.classList.add('err');
-  }
-  camBtns[0].classList.add('primary');
-  const gimbalTick = setInterval(() => { if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() }); }, 300);
-
-  // ---------- olaylar / durum ----------
-  // Olay şeridi: canlıda saat (şimdi); kayıtta log zamanı (mm:ss) ve MAVLink/DataFlash önem düzeyi (sayı: 0–3 hata, 4 uyarı)
+  // Olay şeridi (3B kurulumundan önce tanımlı: gerçek arazi yükleme özeti de buraya yazılır).
+  // Canlıda saat (şimdi); kayıtta log zamanı (mm:ss) ve MAVLink/DataFlash önem düzeyi (sayı: 0–3 hata, 4 uyarı)
   const sevClass = severity => {
     if (typeof severity === 'number') return severity <= 3 ? 'err' : severity === 4 ? 'warn' : 'info';
     const sev = String(severity || 'info').toLowerCase();
@@ -421,6 +459,47 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     events.prepend(h('div', { class: `fs-ev ${sevClass(severity)}` }, h('span', { class: 'fs-ev-t' }, stamp), h('span', null, text)));
     while (events.children.length > 8) events.lastChild.remove();
   };
+
+  // ---------- 3B ----------
+  let sim = null, last = null, socket = null, destroyed = false, rc = null, worldReady = false, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
+  // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
+  const hudCtx = { world, session, replay, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
+    get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
+  milHud = createMilHud(stage, hudCtx, { tr });
+  mhudBtn.classList.toggle('primary', milHud.enabled);
+  const progMsg = p => {   // gerçek arazi yükleme ilerlemesi (3B tuval üstünde)
+    if (destroyed) return;
+    if (p.stage === 'done') {
+      worldReady = true;
+      if (session.state === 'HAZIR' || mock) msg.hidden = true;
+      if (p.real) addEvent(`${tr('Gerçek arazi · yükseklik {a}…{b} m · ev {h} m MSL', { a: f0(p.hmin), b: f0(p.hmax), h: f0(p.homeElev) })} · ${tr('{b} bina · {f} orman · {w} su · {r} pist', { b: p.counts?.buildings ?? 0, f: p.counts?.forests ?? 0, w: p.counts?.water ?? 0, r: p.counts?.runways ?? 0 })}`);
+      const info = sim?.terrainInfo;
+      if (p.real && info?.osmError) addEvent(tr('OSM verisi alınamadı: binalar/orman/su gösterilmiyor ({e})', { e: info.osmError }), 'warning');
+      return;
+    }
+    msg.hidden = false;
+    msg.textContent = p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total })
+      : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…');
+  };
+  try {
+    if (world.mode === 'real') { msg.textContent = tr('Arazi planı alınıyor…'); }
+    sim = await createFlightSim3D(mount, world, {
+      type, airframe: session.airframe, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
+      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
+      onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
+      onProgress: progMsg,
+      onFallback: e => { const t = tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
+    });
+    if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
+    msg.hidden = true;
+  } catch (err) {
+    msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
+    msg.classList.add('err');
+  }
+  camBtns[0].classList.add('primary');
+  const gimbalTick = setInterval(() => { if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() }); }, 300);
+
+  // ---------- olaylar / durum ----------
   const setState = st => {
     session.state = st;
     stateBadge.className = `badge ${STATE_BADGE[st] || 'gray'}`;
@@ -788,11 +867,11 @@ const SAMPLE_CENTERS = [
 function mockBackend(ctx) {
   let centersP = null;
   const centers = () => (centersP ??= api.get('/api/drone/centers').then(r => (Array.isArray(r) && r.length ? r.map(c => ({ id: c.id, name: c.name, lat: c.lat, lon: c.lon, alt: c.alt ?? 0, location_name: c.location_name })) : SAMPLE_CENTERS)).catch(() => SAMPLE_CENTERS));
-  const mk = async (type, centerId, world) => {
+  const mk = async (type, centerId, world, airframe) => {
     const cs = await centers();
     const center = cs.find(c => String(c.id) === String(centerId)) || cs[0];
     const id = `mock-${++MOCK.seq}`;
-    const s = { id, type, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
+    const s = { id, type, airframe: isPlane(type) ? (airframe === 'delta' ? 'delta' : 'caymaz') : null, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
       created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' }, gcs: { connected: false, addr: null, since: null }, sitl: { pid: 0, port: 0, error: null } };
     s.flight = new MockFlight(s);
     MOCK.sessions.set(id, s);
@@ -831,7 +910,7 @@ function mockBackend(ctx) {
     create: async body => {
       if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 });
       if (body.mode === 'replay') { const s = await mkReplay(body.log_id, body.world); MOCK.sessions.delete(s.id); s.id = `${s.id}r`; MOCK.sessions.set(s.id, s); return pub(s); }
-      return pub(await mk(body.type, body.center_id, body.world));
+      return pub(await mk(body.type, body.center_id, body.world, body.airframe));
     },
     end: async id => { const s = MOCK.sessions.get(id); if (s) { s.state = 'KAPANDI'; s.flight?.end('Kullanıcı bitirdi'); MOCK.sessions.delete(id); } return { ok: true }; },
     cmd: async (id, name, params) => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); if (s.mode === 'replay') { if (name !== 'reset') throw Object.assign(new Error('Kayıtta komut yok'), { status: 400 }); return { ok: true }; } s.flight.cmd(name, params || {}); return { ok: true }; },

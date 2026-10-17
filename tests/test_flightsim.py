@@ -19,8 +19,197 @@ os.environ.update(CAYMAZ_DRONE_PKG='1', CAYMAZ_DATA_DIR=tempfile.mkdtemp(), CAYM
 from fastapi.testclient import TestClient  # noqa: E402
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
-from app import auth, flightsim  # noqa: E402
+from app import auth, flightsim, sim_terrain  # noqa: E402
 from app.main import app  # noqa: E402
+
+
+# ---------------------------------------------------------------- gerçek topoğrafya vekili (ağsız: FETCH sahte)
+def terrarium_png(taban=900.0, egim=0.5):
+    """256×256 terrarium karosu: h(x) = taban + x·egim (satırdan bağımsız). Pillow ile üretilir."""
+    import io
+    from PIL import Image
+    im = Image.new('RGB', (256, 256))
+    px = im.load()
+    for y in range(256):
+        for x in range(256):
+            v = int(round((taban + x * egim + 32768) * 256))
+            px[x, y] = ((v >> 16) & 255, (v >> 8) & 255, v & 255)
+    buf = io.BytesIO()
+    im.save(buf, 'PNG')
+    return buf.getvalue()
+
+
+OVERPASS_ORNEK = {'elements': [
+    {'type': 'way', 'id': 1, 'tags': {'building': 'yes', 'height': '12 m'}, 'geometry': [{'lat': 39.925, 'lon': 32.837}, {'lat': 39.9251, 'lon': 32.837}, {'lat': 39.9251, 'lon': 32.8371}, {'lat': 39.925, 'lon': 32.837}]},
+    {'type': 'way', 'id': 2, 'tags': {'building': 'apartments', 'building:levels': '5'}, 'geometry': [{'lat': 39.926, 'lon': 32.838}, {'lat': 39.9261, 'lon': 32.838}, {'lat': 39.9261, 'lon': 32.8381}]},
+    {'type': 'way', 'id': 3, 'tags': {'building': 'house'}, 'geometry': [{'lat': 39.927, 'lon': 32.839}, {'lat': 39.9271, 'lon': 32.839}, {'lat': 39.9271, 'lon': 32.8391}]},
+    {'type': 'way', 'id': 4, 'tags': {'building': 'yes'}, 'geometry': [{'lat': 39.927, 'lon': 32.839}, {'lat': 39.9271, 'lon': 32.839}]},   # 2 nokta: atlanır
+    {'type': 'relation', 'id': 5, 'tags': {'building': 'yes', 'height': '30'}, 'members': [
+        {'type': 'way', 'role': 'outer', 'geometry': [{'lat': 39.93, 'lon': 32.84}, {'lat': 39.931, 'lon': 32.84}, {'lat': 39.931, 'lon': 32.841}, {'lat': 39.93, 'lon': 32.84}]},
+        {'type': 'way', 'role': 'inner', 'geometry': [{'lat': 39.9302, 'lon': 32.8402}, {'lat': 39.9305, 'lon': 32.8402}, {'lat': 39.9305, 'lon': 32.8405}]}]},
+    {'type': 'way', 'id': 6, 'tags': {'landuse': 'forest'}, 'geometry': [{'lat': 39.92, 'lon': 32.83}, {'lat': 39.921, 'lon': 32.83}, {'lat': 39.921, 'lon': 32.831}]},
+    {'type': 'way', 'id': 7, 'tags': {'natural': 'wood'}, 'geometry': [{'lat': 39.92, 'lon': 32.84}, {'lat': 39.921, 'lon': 32.84}, {'lat': 39.921, 'lon': 32.841}]},
+    {'type': 'way', 'id': 8, 'tags': {'natural': 'water'}, 'geometry': [{'lat': 39.91, 'lon': 32.83}, {'lat': 39.911, 'lon': 32.83}, {'lat': 39.911, 'lon': 32.831}]},
+    {'type': 'way', 'id': 9, 'tags': {'aeroway': 'runway', 'width': '45'}, 'geometry': [{'lat': 39.90, 'lon': 32.85}, {'lat': 39.91, 'lon': 32.85}]},
+    {'type': 'node', 'id': 10, 'tags': {'building': 'yes'}, 'lat': 39.9, 'lon': 32.8},   # geometri yok: atlanır
+]}
+
+
+class SahteFetch:
+    """sim_terrain.FETCH yerine: URL'e göre terrarium PNG / sahte JPEG / Overpass JSON; çağrı sayar; istenirse hata üretir."""
+
+    def __init__(self):
+        self.cagri = []
+        self.hata = None          # KaynakHata örneği: bir sonraki çağrıda fırlatılır (hata_say kez)
+        self.hata_say = 1
+        self.png = terrarium_png()
+
+    def __call__(self, url, timeout=10.0, data=None):
+        self.cagri.append((url, timeout, data))
+        if self.hata is not None:
+            e = self.hata
+            self.hata_say -= 1
+            if self.hata_say <= 0:
+                self.hata, self.hata_say = None, 1
+            raise e
+        if url.startswith('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/'):
+            assert timeout == sim_terrain.TIMEOUT and data is None
+            return self.png
+        if url.startswith('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'):
+            return b'\xff\xd8\xff\xe0SAHTE-JPEG'
+        if url in sim_terrain.OVERPASS_URLS:
+            assert data and 'way["building"]' in data['data'] and 'out geom' in data['data'] and timeout == sim_terrain.OSM_TIMEOUT
+            return json.dumps(OVERPASS_ORNEK).encode()
+        raise AssertionError(f'beklenmeyen URL: {url}')
+
+
+def terrain_birim_testleri():
+    # terrarium çözme (saf PNG çözücü): h = taban + x·egim
+    png = terrarium_png(900.0, 0.5)
+    assert sim_terrain.terrarium_yukseklik(png, 0, 0) == 900.0 and sim_terrain.terrarium_yukseklik(png, 100, 7) == 950.0
+    assert sim_terrain.terrarium_yukseklik(png, 255, 255) == 1027.5 and sim_terrain.terrarium_yukseklik(png, 999, -4) == 1027.5   # kenar kırpma
+    # Web Mercator gidiş-dönüş
+    fx, fy = sim_terrain.lonlat_karo(32.837, 39.925, 13)
+    lon, lat = sim_terrain.karo_lonlat(fx, fy, 13)
+    assert abs(lon - 32.837) < 1e-9 and abs(lat - 39.925) < 1e-9 and int(fx) == 4843 and int(fy) == 3103, (fx, fy)
+    # bina yüksekliği kuralları
+    assert sim_terrain.bina_yuksekligi({'height': '12 m'}) == 12.0 and sim_terrain.bina_yuksekligi({'height': '40 ft'}) == 12.2
+    assert sim_terrain.bina_yuksekligi({'building:levels': '5'}) == 15.0 and sim_terrain.bina_yuksekligi({'building:levels': '5', 'roof:levels': '1'}) == 16.0
+    assert all(6 <= sim_terrain.bina_yuksekligi({}, i) <= 12 for i in range(50)) and sim_terrain.bina_yuksekligi({}, 7) == sim_terrain.bina_yuksekligi({}, 7)
+    assert sim_terrain.bina_yuksekligi({'height': 'yüksek'}, 3) == sim_terrain.bina_yuksekligi({}, 3)
+    # OSM sadeleştirme
+    sade = sim_terrain.osm_sadelestir(OVERPASS_ORNEK)
+    assert [b['h'] for b in sade['buildings']] == [12.0, 15.0, sim_terrain.bina_yuksekligi({}, 3), 30.0], sade['buildings']
+    assert sade['buildings'][0]['poly'] == [[39.925, 32.837], [39.9251, 32.837], [39.9251, 32.8371]]   # kapalı halkanın tekrarlı son noktası atılır
+    assert len(sade['buildings'][3]['poly']) == 3   # relation: yalnız outer; kapalı halka açılır
+    assert len(sade['forests']) == 2 and len(sade['water']) == 1 and len(sade['runways']) == 1
+    assert sade['runways'][0]['heading'] == 0.0 and sade['runways'][0]['width'] == 45.0
+    assert sim_terrain.osm_sadelestir({}) == {'buildings': [], 'forests': [], 'water': [], 'runways': []}
+    # karo planı: z seçimi ve karo sayıları
+    sahte = SahteFetch()
+    sim_terrain.FETCH = sahte
+    try:
+        p = sim_terrain.terrain_plani(39.925, 32.837, 4000)
+        assert p['z'] == 13 and p['img_z'] == 16 and len(p['tiles']) == 4 and 80 <= len(p['img_tiles']) <= 110, (len(p['tiles']), len(p['img_tiles']))
+        assert p['elev_url_template'] == '/api/drone/sim/tile/elev/{z}/{x}/{y}' and p['attribution']['img'] == 'Esri, Maxar, Earthstar Geographics'
+        assert p['home_elev'] == sim_terrain.ev_irtifa(39.925, 32.837) and 900 <= p['home_elev'] <= 1027.5, p['home_elev']
+        assert sim_terrain.terrain_plani(39.925, 32.837, 8000)['z'] == 12 and sim_terrain.terrain_plani(39.925, 32.837, 50)['size_m'] == sim_terrain.SIZE_MIN
+        # ev irtifası karoları: z13 (iki plan + ev_irtifa aynı karo → tek indirme, önbellek) ve z12 (8 km planı) → toplam 2 kaynak çağrısı
+        assert [c[0].split('terrarium/')[1] for c in sahte.cagri] == ['13/4843/3103.png', '12/2421/1551.png'], sahte.cagri
+        # kaynak kapalı → home_elev null (plan yine döner)
+        sim_terrain.karo_yolu('elev', 13, 4843, 3103).unlink()
+        sahte.hata = sim_terrain.KaynakHata(503, 'kapalı')
+        assert sim_terrain.terrain_plani(39.925, 32.837, 4000)['home_elev'] is None
+        for bad in [(91, 0, 4000), (0, 181, 4000), ('x', 0, 4000)]:
+            try:
+                sim_terrain.parametre_dogrula(*bad)
+                raise AssertionError(bad)
+            except ValueError:
+                pass
+    finally:
+        sim_terrain.FETCH = sim_terrain._fetch
+    print('  sim_terrain birim testleri geçti')
+
+
+def vekil_testleri(a, mon, c_altsiz):
+    """REST vekil uçları: /terrain, /tile (önbellek, LRU boyut, hata kodları), /osm (7 gün önbellek); yetki; gerçek kipte ev irtifası."""
+    sahte = SahteFetch()
+    sim_terrain.FETCH = sahte
+    try:
+        p = ok(a.get('/api/drone/sim/terrain', params={'lat': 39.925, 'lon': 32.837, 'size_m': 4000}))
+        assert p['z'] == 13 and p['home_elev'] is not None and p['tiles'] and p['img_tiles']
+        assert a.get('/api/drone/sim/terrain', params={'lat': 99, 'lon': 32.837}).status_code == 400
+        assert a.get('/api/drone/sim/terrain', params={'lon': 32.837}).status_code == 422
+        # karo: ilk istek kaynaktan, ikincisi önbellekten; içerik türü
+        t = p['tiles'][0]
+        n0 = len(sahte.cagri)
+        url = f"/api/drone/sim/tile/elev/{p['z']}/{t['x']}/{t['y']}"
+        r = a.get(url)
+        assert r.status_code == 200 and r.headers['content-type'].startswith('image/png') and r.content == sahte.png and 'max-age=86400' in r.headers['cache-control'], r.headers
+        r2 = a.get(url)
+        assert r2.status_code == 200 and r2.content == sahte.png
+        assert len(sahte.cagri) == n0 + (0 if (t['x'], t['y']) == (4843, 3103) else 1), 'ikinci istek önbellekten gelmeli'
+        r = a.get(f"/api/drone/sim/tile/img/{p['img_z']}/{p['img_tiles'][0]['x']}/{p['img_tiles'][0]['y']}")
+        assert r.status_code == 200 and r.headers['content-type'].startswith('image/jpeg') and r.content.startswith(b'\xff\xd8')
+        assert 'World_Imagery/MapServer/tile/16/' in sahte.cagri[-1][0] and sahte.cagri[-1][0].endswith(f"/{p['img_tiles'][0]['y']}/{p['img_tiles'][0]['x']}"), sahte.cagri[-1]   # {z}/{y}/{x} sırası
+        # geçersiz tür / sınır dışı → 404; URL sabit (SSRF yok): kind yalnız elev|img
+        assert a.get('/api/drone/sim/tile/http/13/1/1').status_code == 404
+        assert a.get('/api/drone/sim/tile/elev/13/99999/1').status_code == 404
+        assert a.get('/api/drone/sim/tile/elev/25/1/1').status_code == 404
+        # kaynak hataları: 503 (ulaşılamadı/zaman aşımı) ve 502 (HTTP hatası)
+        sahte.hata = sim_terrain.KaynakHata(503, 'Kaynak zaman aşımı')
+        r = a.get('/api/drone/sim/tile/elev/12/2421/1540')
+        assert r.status_code == 503 and 'zaman aşımı' in r.text, (r.status_code, r.text)
+        sahte.hata = sim_terrain.KaynakHata(502, 'Kaynak 404 döndü')
+        assert a.get('/api/drone/sim/tile/elev/12/2421/1541').status_code == 502
+        assert a.get('/api/drone/sim/tile/elev/12/2421/1541').status_code == 200   # hata önbelleğe yazılmadı; sonraki deneme başarılı
+        # LRU: sınır düşürülünce eski karolar silinir, toplam sınırın altına iner
+        eski_limit = sim_terrain.CACHE_LIMIT
+        sim_terrain.CACHE_LIMIT = len(sahte.png) * 2 + 10
+        try:
+            for i in range(4):
+                assert a.get(f'/api/drone/sim/tile/elev/12/2400/{1500 + i}').status_code == 200
+            kalan = [pth for pth in sim_terrain.CACHE_DIR.rglob('*') if pth.is_file()]
+            assert sum(pth.stat().st_size for pth in kalan) <= sim_terrain.CACHE_LIMIT, [str(k) for k in kalan]
+            assert sim_terrain.karo_yolu('elev', 12, 2400, 1503).is_file() and not sim_terrain.karo_yolu('elev', 12, 2400, 1500).is_file()
+        finally:
+            sim_terrain.CACHE_LIMIT = eski_limit
+        assert sim_terrain.onbellek_ozeti()['limit'] == eski_limit
+        # OSM: sadeleştirilmiş JSON; ikinci istek önbellekten (7 gün); bayat önbellek yenilenir
+        n0 = len(sahte.cagri)
+        o = ok(a.get('/api/drone/sim/osm', params={'lat': 39.925, 'lon': 32.837, 'size_m': 4000}))
+        assert len(o['buildings']) == 4 and o['buildings'][0] == {'poly': [[39.925, 32.837], [39.9251, 32.837], [39.9251, 32.8371]], 'h': 12.0}, o['buildings'][0]
+        assert len(o['forests']) == 2 and len(o['water']) == 1 and o['runways'][0]['heading'] == 0.0 and o['cached_at'] and o['bbox']['south'] < 39.925 < o['bbox']['north']
+        assert len(sahte.cagri) == n0 + 1 and sahte.cagri[-1][0] == sim_terrain.OVERPASS_URL
+        o2 = ok(a.get('/api/drone/sim/osm', params={'lat': 39.925, 'lon': 32.837, 'size_m': 4000}))
+        assert o2 == o and len(sahte.cagri) == n0 + 1, 'OSM ikinci istek önbellekten gelmeli'
+        yol = sim_terrain.osm_yolu(39.925, 32.837, 4000)
+        os.utime(yol, (time.time() - sim_terrain.OSM_TTL - 5, time.time() - sim_terrain.OSM_TTL - 5))
+        ok(a.get('/api/drone/sim/osm', params={'lat': 39.925, 'lon': 32.837, 'size_m': 4000}))
+        assert len(sahte.cagri) == n0 + 2, 'bayat OSM önbelleği yenilenmeli'
+        # OSM kaynağı kapalı → 503 (ön yüz uyarı gösterir); bozuk yanıt → 502
+        sahte.hata, sahte.hata_say = sim_terrain.KaynakHata(503, 'Kaynağa ulaşılamadı: ConnectError'), 2   # iki Overpass sunucusu da kapalı
+        n1 = len(sahte.cagri)
+        r = a.get('/api/drone/sim/osm', params={'lat': 40.1, 'lon': 33.0, 'size_m': 3000})
+        assert r.status_code == 503 and 'ulaşılamadı' in r.text, (r.status_code, r.text)
+        assert [c[0] for c in sahte.cagri[n1:]] == list(sim_terrain.OVERPASS_URLS), sahte.cagri[n1:]   # yedek de denendi
+        sahte.hata = sim_terrain.KaynakHata(503, 'ilk kapalı')   # yalnız ilki kapalı → yedekten 200
+        assert a.get('/api/drone/sim/osm', params={'lat': 40.2, 'lon': 33.0, 'size_m': 3000}).status_code == 200 and sahte.cagri[-1][0] == sim_terrain.OVERPASS_URLS[1]
+        assert a.get('/api/drone/sim/osm', params={'lat': 40.1, 'lon': 33.0, 'size_m': 50}).status_code == 200   # size_m alt sınıra kırpılır
+        # yetki: salt okuyan GET yapabilir; modülsüz 403
+        assert mon.get('/api/drone/sim/terrain', params={'lat': 39.925, 'lon': 32.837}).status_code == 200
+        assert mon.get(f"/api/drone/sim/tile/elev/{p['z']}/{t['x']}/{t['y']}").status_code == 200
+        # world.mode doğrulama + gerçek kipte merkez irtifası boşsa SITL ev irtifası = terrarium (home_elev)
+        assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'uydu'}}).status_code == 400
+        s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'real', 'building_count': 0}}), 201)
+        assert s['world']['mode'] == 'real' and s['center']['alt'] == sim_terrain.ev_irtifa(39.925, 32.837) and 900 <= s['center']['alt'] <= 1027.5, s['center']
+        ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'procedural'}}), 201)
+        assert s['center']['alt'] is None and s['world']['mode'] == 'procedural'   # prosedürel: dokunulmaz
+        ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+    finally:
+        sim_terrain.FETCH = sim_terrain._fetch
+    print('  vekil (terrain/tile/osm) testleri geçti')
 
 TELE_ALANLARI = {'rs', 'ps', 'ys', 'tbm', 'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
                  'mode', 'armed', 'gps_fix', 'sats', 'batt_v', 'batt_pct', 'throttle', 'rc', 'home', 'gcs_connected', 'gcs_addr'}
@@ -298,12 +487,14 @@ def replay_testleri(a, c1, mon_token_login):
 
 
 def main():
+    terrain_birim_testleri()
     sitl = SahteSitl()
     flightsim.MANAGER.sahte_tcp_port = sitl.port
     with TestClient(app, base_url='https://testserver') as a:
         login(a, 'admin@test', 'admin-sifre-1')
         c1 = ok(a.post('/api/drone/centers', json={'name': 'Test Merkezi', 'lat': 39.925, 'lon': 32.837, 'alt': 900}))
         ok(a.post('/api/drone/centers', json={'name': 'Pasif Merkez', 'lat': 40.0, 'lon': 33.0, 'active': False}))
+        c_altsiz = ok(a.post('/api/drone/centers', json={'name': 'İrtifasız Merkez', 'lat': 39.925, 'lon': 32.837}))
         # salt okuyan rol: Montaj Personeli'ne drone.sim yalnız aç + oku
         ok(a.post('/api/users', json={'username': 'montaj', 'full_name': 'Montaj', 'roles': ['Montaj Personeli'], 'password': 'sifre-1234'}))
         ok(a.put('/api/roles/perms', params={'name': 'Montaj Personeli'},
@@ -313,15 +504,19 @@ def main():
         # --- meta ---
         m = ok(a.get('/api/drone/sim/meta'))
         assert {t['key'] for t in m['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol'} and all(t['binary'] for t in m['types']), m
-        assert [c['id'] for c in m['centers']] == [c1['id']] and m['centers'][0]['alt'] == 900, m   # pasif merkez listelenmez
+        assert {c['id'] for c in m['centers']} == {c1['id'], c_altsiz['id']} and next(c for c in m['centers'] if c['id'] == c1['id'])['alt'] == 900, m   # pasif merkez listelenmez
         assert m['limits'] == {'max_sessions': 2, 'max_minutes': flightsim.MAX_MINUTES} and m['host'] == 'testserver' and m['can_command'] is True, m
-        assert m['world_defaults']['seed'] == 12345
+        assert m['world_defaults']['seed'] == 12345 and m['world_defaults']['mode'] == 'procedural'
 
         # --- oturum aç: doğrulama ---
         assert a.post('/api/drone/sim/sessions', json={'type': 'ucan_hali', 'center_id': c1['id']}).status_code == 400
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': 99999}).status_code == 400
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'tree_density': 5}}).status_code == 400
         assert a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'time': 'gece'}}).status_code == 400
+        assert a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id'], 'airframe': 'shuttle'}).status_code == 400
+        # airframe (3B gövde): uçakta varsayılan caymaz, delta seçilebilir; kopterde yok sayılır
+        assert flightsim.airframe_dogrula('sabit_kanat', None) == 'caymaz' and flightsim.airframe_dogrula('vtol', 'delta') == 'delta'
+        assert flightsim.airframe_dogrula('multirotor', 'delta') is None
         world = {'seed': 7, 'size_m': 3000, 'tree_density': 0.5, 'wind_ms': 4, 'wind_dir': 90, 'time': 'dusk', 'runway': True}
         s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id'], 'world': world}), 201)
         assert s['type'] == 'multirotor' and s['center']['id'] == c1['id'] and s['center']['lat'] == 39.925 and s['world']['seed'] == 7
@@ -332,8 +527,8 @@ def main():
         g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))))
         assert g and g['state'] == 'HAZIR' and g['sitl']['port'] == sitl.port, g
         # --- limit ---
-        s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id']}), 201)
-        assert s2['udp_port'] != s['udp_port']
+        s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c1['id'], 'airframe': 'delta'}), 201)
+        assert s2['udp_port'] != s['udp_port'] and s2['airframe'] == 'delta' and s['airframe'] is None
         r = a.post('/api/drone/sim/sessions', json={'type': 'vtol', 'center_id': c1['id']})
         assert r.status_code == 409, (r.status_code, r.text)
         assert [x['id'] for x in ok(a.get('/api/drone/sim/sessions'))] == [sid, s2['id']]
@@ -364,6 +559,8 @@ def main():
             assert mon.post(f'/api/drone/sim/sessions/{sid}/cmd', json={'name': 'arm'}).status_code == 403
             assert mon.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id']}).status_code == 403
             assert mon.delete(f'/api/drone/sim/sessions/{sid}').status_code == 403
+            # --- gerçek topoğrafya vekili (ağsız) ---
+            vekil_testleri(a, mon, c_altsiz)
             # WS: izler, komut reddedilir
             with mon.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={mtoken}'}) as ws:
                 h = json.loads(ws.receive_text())
@@ -377,6 +574,8 @@ def main():
             guv = TestClient(app, base_url='https://testserver')
             gtoken = login(guv, 'guv', 'sifre-1234')
             assert guv.get('/api/drone/sim/meta').status_code == 403
+            assert guv.get('/api/drone/sim/terrain', params={'lat': 39.925, 'lon': 32.837}).status_code == 403
+            assert guv.get('/api/drone/sim/tile/elev/13/4843/3103').status_code == 403 and guv.get('/api/drone/sim/osm', params={'lat': 39.925, 'lon': 32.837}).status_code == 403
             with guv.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={gtoken}'}) as ws:
                 assert json.loads(ws.receive_text()) == {'t': 'error', 'error': 'auth'}
                 assert close_code(ws) == 4403
@@ -506,7 +705,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 2 and s3['udp_port'] == udp_port   # ilk boş port yeniden verilir
+        assert s3['id'] == sid + 4 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 2 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)

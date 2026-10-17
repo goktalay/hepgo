@@ -4,17 +4,142 @@
 //   `water` oranına göre; renkler yüksekliğe göre (kum → çim → kaya → kar). 256×256 ızgara, LOD yok.
 // • Nesneler: ağaçlar (InstancedMesh ≤ 20.000, su/pist/bina üzerinde değil), binalar (kutular, 6–40 m), pist (asfalt + çizgiler,
 //   runway_heading), gökyüzü/ışık (day/dusk/night; gece pist ve bina ışıkları), sis.
-// • Dron: sabit kanat static/models/caymaz.gltf (GLTFLoader; yüklenemezse basit uçak geometrisi), multirotor/hexa/heli/vtol basit
-//   geometri + dönen pervaneler (gaz ile hız). Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
+// • Dron: sabit kanat/VTOL gövdesi (airframe) 'caymaz' → static/models/caymaz-sim.glb (CAYMAZ V3 STEP'inden; yüklenemezse delta) ya da
+//   'delta' → prosedürel delta uçan kanat; multikopter (60 cm) / hexa (90 cm) / helikopter (1.5 m) gerçekçi prosedürel geometri.
+//   Pervaneler gaz ile döner (yüksek devirde bulanık disk), elevonlar RC ile, seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe),
+//   yalnız dron gölge düşürür. Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
 // • Kameralar (1–4): Takip (OrbitControls, hedef dron) · Dron kamerası (FPV, burun; gimbal ↑↓) · Serbest (WASD/QE + fare sürükle) · Yer.
 // • Telemetri (50 Hz'e dek): gecikme tamponlu enterpolasyon — kareler kaynak zaman damgasıyla (tele.tbm, yoksa ts) tamponlanır, render zamanı = şimdi − 80 ms,
 //   konum lineer / yönelim slerp; tampon bitince ölü hesap (hız + gövde açısal hızları rs/ps/ys, en çok 300 ms). Takip kamerası kritik sönümlü yay.
 //   Çarpışma: z < h(x,y)+0.3 ya da bina kutusu, hız > 1 m/s.
+// • Gerçek arazi (world.mode = 'real'; §9): yükseklik AWS Terrain Tiles terrarium PNG (z 12–13, bilineer örnekleme), uydu doku Esri World
+//   Imagery karoları canvas atlasında (z+3), OSM (Overpass) binalar (çokgen üçgenleme + duvarlar, tek geometri), orman çokgenlerinde ağaçlar,
+//   su çokgenleri, gerçek pistler — hepsi arka uç vekilinden (/api/drone/sim/terrain, /tile, /osm; tarayıcı dışa çıkmaz). Yükseklik alınamazsa
+//   prosedürele düşer (onFallback). Prosedürel ayarlar gerçek kipte özelleştirmedir: tree_density orman yoğunluğu ölçeği, building_count ek bina.
 // Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, terrainHeight,
-//        toLocal, setWorld, setType, clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
-//        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }.
+//        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
+//        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
 
 const LIB = '/static/vendor/three/';
+export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
+const TERRAIN_API = '/api/drone/sim';
+const TILE_PX = 256;
+const MAX_ATLAS = 4096;
+const PARALLEL = 6;
+
+// ---------- Web Mercator ----------
+function lonlatToTile(lon, lat, z) {
+  const n = 2 ** z;
+  const x = (lon + 180) / 360 * n;
+  const lr = Math.max(-85.05112878, Math.min(85.05112878, lat)) * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * n;
+  return [x, y];
+}
+
+// Nokta çokgen içinde mi (ışın yöntemi; pts: [[x, y]…])
+function pointInPoly(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+async function pool(items, n, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; await fn(items[k], k); } });
+  await Promise.all(workers);
+}
+
+async function getJSON(url) {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) { let d = ''; try { d = (await r.json()).detail || ''; } catch { /* */ } throw Object.assign(new Error(d || `HTTP ${r.status}`), { status: r.status }); }
+  return r.json();
+}
+
+async function getBitmap(url) {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw Object.assign(new Error(`karo ${r.status}`), { status: r.status });
+  const blob = await r.blob();
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+  return new Promise((res, rej) => { const im = new Image(); const u = URL.createObjectURL(blob); im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('karo çözülemedi')); }; im.src = u; });
+}
+
+// Gerçek arazi verisini yükler → { sample(x, y) (m, merkez 0), uv(x, y), atlas (canvas), homeElev, hmin, hmax, osm, osmError, meta }
+// onProgress({stage: 'plan'|'elev'|'img'|'osm', done, total})
+export async function loadRealTerrain(T, origin, size, toLocal, onProgress) {
+  const prog = (stage, done, total) => onProgress?.({ stage, done, total });
+  prog('plan', 0, 1);
+  const meta = await getJSON(`${TERRAIN_API}/terrain?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`);
+  const z = meta.z, tiles = meta.tiles || [], iz = meta.img_z, itiles = meta.img_tiles || [];
+  if (!tiles.length) throw new Error('Yükseklik karosu planı boş');
+  const ext = ts => { const xs = ts.map(t => t.x), ys = ts.map(t => t.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; };
+  const E = ext(tiles), nx = E.x1 - E.x0 + 1, ny = E.y1 - E.y0 + 1, mw = nx * TILE_PX, mh = ny * TILE_PX;
+  const mosaic = new Float32Array(mw * mh);
+  const cv = document.createElement('canvas'); cv.width = cv.height = TILE_PX;
+  const c2 = cv.getContext('2d', { willReadFrequently: true });
+  let done = 0, elevOk = 0;
+  // --- yükseklik karoları (terrarium: R·256 + G + B/256 − 32768) ---
+  await pool(tiles, PARALLEL, async t => {
+    try {
+      const bmp = await getBitmap(meta.elev_url_template.replace('{z}', z).replace('{x}', t.x).replace('{y}', t.y));
+      c2.clearRect(0, 0, TILE_PX, TILE_PX); c2.drawImage(bmp, 0, 0); bmp.close?.();
+      const d = c2.getImageData(0, 0, TILE_PX, TILE_PX).data;
+      const ox = (t.x - E.x0) * TILE_PX, oy = (t.y - E.y0) * TILE_PX;
+      for (let py = 0; py < TILE_PX; py++) {
+        let s = py * TILE_PX * 4;
+        const o = (oy + py) * mw + ox;
+        for (let px = 0; px < TILE_PX; px++, s += 4) mosaic[o + px] = d[s] * 256 + d[s + 1] + d[s + 2] / 256 - 32768;
+      }
+      elevOk++;
+    } catch (err) { if (err?.status === 503 || err?.status === 502) throw err; }
+    prog('elev', ++done, tiles.length);
+  });
+  if (!elevOk) throw new Error('Yükseklik verisi alınamadı');
+  const cosLat = Math.cos(origin.lat * Math.PI / 180);
+  const toLL = (x, y) => [origin.lat + y / 110574, origin.lon + x / (111320 * cosLat)];
+  const sampleRaw = (x, y) => {
+    const [lat, lon] = toLL(x, y);
+    const [fx, fy] = lonlatToTile(lon, lat, z);
+    const px = Math.min(mw - 1.001, Math.max(0, (fx - E.x0) * TILE_PX - 0.5)), py = Math.min(mh - 1.001, Math.max(0, (fy - E.y0) * TILE_PX - 0.5));
+    const ix = Math.floor(px), iy = Math.floor(py), ax = px - ix, ay = py - iy;
+    const i0 = iy * mw + ix, i1 = i0 + mw;
+    return (mosaic[i0] * (1 - ax) + mosaic[i0 + 1] * ax) * (1 - ay) + (mosaic[i1] * (1 - ax) + mosaic[i1 + 1] * ax) * ay;
+  };
+  const h0 = sampleRaw(0, 0);
+  const homeElev = meta.home_elev != null ? Number(meta.home_elev) : h0;
+  let hmin = Infinity, hmax = -Infinity;
+  for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) { const v = sampleRaw((i / 63 - 0.5) * size, (j / 63 - 0.5) * size) - h0; hmin = Math.min(hmin, v); hmax = Math.max(hmax, v); }
+  const sample = (x, y) => sampleRaw(x, y) - h0;
+  // --- uydu atlası (karolar canvas'a çizilir; gece/akşam koyulaştırma malzeme renginde — atlas yeniden kullanılabilir) ---
+  const I = ext(itiles.length ? itiles : tiles), inx = I.x1 - I.x0 + 1, iny = I.y1 - I.y0 + 1;
+  const scale = Math.min(1, MAX_ATLAS / Math.max(inx, iny) / TILE_PX);
+  const atlas = document.createElement('canvas');
+  atlas.width = Math.round(inx * TILE_PX * scale); atlas.height = Math.round(iny * TILE_PX * scale);
+  const ac = atlas.getContext('2d');
+  ac.fillStyle = '#3b4a3a'; ac.fillRect(0, 0, atlas.width, atlas.height);
+  done = 0;
+  const ts = TILE_PX * scale;
+  await pool(itiles, PARALLEL, async t => {
+    try {
+      const bmp = await getBitmap(meta.img_url_template.replace('{z}', iz).replace('{x}', t.x).replace('{y}', t.y));
+      ac.drawImage(bmp, (t.x - I.x0) * ts, (t.y - I.y0) * ts, ts, ts); bmp.close?.();
+    } catch { /* eksik karo: zemin rengi kalır */ }
+    prog('img', ++done, itiles.length);
+  });
+  const uv = (x, y) => {
+    const [lat, lon] = toLL(x, y);
+    const [fx, fy] = lonlatToTile(lon, lat, iz);
+    return [(fx - I.x0) / inx, 1 - (fy - I.y0) / iny];
+  };
+  // --- OSM (binalar/orman/su/pist); alınamazsa uyarı ile boş ---
+  prog('osm', 0, 1);
+  let osm = null, osmError = null;
+  try { osm = await getJSON(`${TERRAIN_API}/osm?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`); } catch (err) { osmError = err?.message || String(err); }
+  prog('osm', 1, 1);
+  return { sample, uv, atlas, homeElev, hmin, hmax, osm, osmError, meta };
+}
 let _libs = null;
 const loadLibs = () => (_libs ??= Promise.all(
   ['three.module.min.js', 'OrbitControls.js', 'GLTFLoader.js'].map(f => import(LIB + f)),
@@ -22,7 +147,7 @@ const loadLibs = () => (_libs ??= Promise.all(
 
 export const CAMERA_MODES = [['follow', 'Takip'], ['fpv', 'Dron kamerası'], ['free', 'Serbest'], ['ground', 'Yer']];
 export const WORLD_DEFAULTS = {
-  seed: 12345, size_m: 4000, tree_density: 0.3, mountain_height: 300, mountain_count: 4, building_count: 40,
+  mode: 'procedural', seed: 12345, size_m: 4000, tree_density: 0.3, mountain_height: 300, mountain_count: 4, building_count: 40,
   runway: true, runway_heading: 0, water: 0.1, time: 'day', wind_ms: 3, wind_dir: 270, fog: 0.2,
 };
 const FLAT_R = 300, FLAT_R2 = 600;        // merkez çevresi düzleştirme (pist / kalkış alanı)
@@ -117,6 +242,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   const renderer = new T.WebGLRenderer({ antialias: !preview, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, preview ? 1 : 2));
   renderer.outputColorSpace = T.SRGBColorSpace;
+  renderer.shadowMap.enabled = !preview;   // yalnız dron gölge düşürür (castShadow); arazi/pist alır
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
   const canvas = renderer.domElement;
   canvas.className = 'fs3d-canvas';
   canvas.style.cssText = 'display:block;width:100%;height:100%;outline:none;touch-action:none';
@@ -132,7 +259,16 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   let terrain = null, gWorld = new T.Group(), buildingsAABB = [], W = { ...WORLD_DEFAULTS };
   scene.add(gWorld);
   let lights = { sun: new T.DirectionalLight(0xffffff, 2), hemi: new T.HemisphereLight(0xbfd8ff, 0x3a4a2a, 0.9), amb: new T.AmbientLight(0xffffff, 0.15) };
-  scene.add(lights.sun, lights.hemi, lights.amb);
+  scene.add(lights.sun, lights.hemi, lights.amb, lights.sun.target);
+  // Gölge kamerası dronu izler (küçük, keskin): her karede sun.position = dron + güneş yönü × 120 m, target = dron
+  const sunDir = new T.Vector3(0.6, -0.5, 0.9).normalize();
+  if (!preview) {
+    lights.sun.castShadow = true;
+    const sc = lights.sun.shadow.camera;
+    sc.left = sc.bottom = -25; sc.right = sc.top = 25; sc.near = 20; sc.far = 400;
+    lights.sun.shadow.mapSize.set(1024, 1024);
+    lights.sun.shadow.bias = -0.0008;
+  }
 
   const disposeGroup = g => {
     g.traverse(o => {
@@ -143,29 +279,117 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     while (g.children.length) g.remove(g.children[0]);
   };
 
-  function buildWorld(world) {
-    disposeGroup(gWorld);
-    buildingsAABB = [];
-    terrain = makeTerrain(world);
-    W = terrain.W;
-    const { size, H, height, waterZ, rand } = terrain;
+  // ---------- ortak dünya parçaları (prosedürel + gerçek) ----------
+  function skyAndLights(size) {
     const night = W.time === 'night', dusk = W.time === 'dusk';
-
-    // --- gökyüzü, ışık, sis ---
     const sky = night ? 0x0a1328 : dusk ? 0xe0956a : 0x8fbdea;
     renderer.setClearColor(sky, 1);
     scene.background = new T.Color(sky);
     lights.sun.color.set(night ? 0x6f7fb0 : dusk ? 0xffb070 : 0xfff2dc);
     lights.sun.intensity = night ? 0.45 : dusk ? 1.3 : 2.4;
-    lights.sun.position.set(night ? -0.3 : dusk ? -0.9 : 0.6, dusk ? -0.2 : -0.5, night ? 0.5 : dusk ? 0.25 : 0.9).multiplyScalar(size);
+    sunDir.set(night ? -0.3 : dusk ? -0.9 : 0.6, dusk ? -0.2 : -0.5, night ? 0.5 : dusk ? 0.25 : 0.9).normalize();
+    lights.sun.position.copy(sunDir).multiplyScalar(preview ? size : 120);
+    lights.sun.shadow.intensity = night ? 0.35 : dusk ? 0.7 : 1;
     lights.hemi.color.set(night ? 0x1b2a55 : dusk ? 0xf0b088 : 0xbfd8ff);
     lights.hemi.groundColor.set(night ? 0x060a12 : 0x3a4a2a);
     lights.hemi.intensity = night ? 0.5 : dusk ? 0.8 : 0.9;
     lights.amb.intensity = night ? 0.3 : 0.15;
     const fog = clamp(num(W.fog, 0), 0, 1);
     scene.fog = fog > 0 ? new T.Fog(sky, size * 0.12, size * (1.6 - 1.25 * fog)) : null;
+    return { night, dusk };
+  }
 
-    // --- arazi (256×256 ızgara, yükseklik renkleri) ---
+  // Pist (asfalt, orta çizgiler, eşik çizgileri; heading; gece kenar ışıkları). Konum/yükseklik çağıran verir.
+  function runwayMesh(hdg, L, Wd, night, dusk) {
+    const rw = new T.Group();
+    rw.rotation.z = -hdg * DEG;
+    const asphalt = new T.Mesh(new T.PlaneGeometry(Wd, L), new T.MeshLambertMaterial({ color: night ? 0x1c1f24 : 0x3a3d42 }));
+    asphalt.receiveShadow = true;   // dron gölgesi piste düşer
+    rw.add(asphalt);
+    const white = new T.MeshBasicMaterial({ color: night ? 0x9aa3ad : 0xf5f5f5 });
+    for (let y = -L / 2 + 60; y < L / 2 - 60; y += 60) { const d = new T.Mesh(new T.PlaneGeometry(1.2, 30), white); d.position.set(0, y, 0.02); rw.add(d); }
+    const kMax = Math.max(1, Math.min(3, Math.floor(Wd / 12)));
+    for (const sgn of [-1, 1]) for (let k = -kMax; k <= kMax; k++) { if (!k) continue; const s = new T.Mesh(new T.PlaneGeometry(2.4, 30), white); s.position.set(k * 4.8, sgn * (L / 2 - 22), 0.02); rw.add(s); }
+    for (const sgn of [-1, 1]) { const e = new T.Mesh(new T.PlaneGeometry(0.9, L), white); e.position.set(sgn * (Wd / 2 - 0.6), 0, 0.02); rw.add(e); }
+    if (night || dusk) {
+      const pts = [], cols = [];
+      for (let y = -L / 2; y <= L / 2; y += 60) for (const sgn of [-1, 1]) { pts.push(sgn * (Wd / 2 + 1.5), y, 0.6); cols.push(1, 0.95, 0.8); }
+      for (let x = -Wd / 2; x <= Wd / 2; x += 5) { pts.push(x, -L / 2 - 2, 0.6, x, L / 2 + 2, 0.6); cols.push(0.2, 1, 0.3, 1, 0.25, 0.2); }
+      const pg = new T.BufferGeometry();
+      pg.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
+      pg.setAttribute('color', new T.Float32BufferAttribute(cols, 3));
+      rw.add(new T.Points(pg, new T.PointsMaterial({ size: 0.8, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.95 })));
+    }
+    return rw;
+  }
+
+  // Rastgele kutu binalar (prosedürel; gerçek kipte "ek bina"): pistten uzak, su dışında, mevcut AABB'lerle çakışmaz
+  function boxBuildings(nb, size, height, waterZ, relH, hdg, rand, night) {
+    const bgeo = new T.BoxGeometry(1, 1, 1); bgeo.translate(0, 0, 0.5);
+    const bmat = new T.MeshLambertMaterial({ color: 0xffffff, emissive: night ? 0x3a3418 : 0x000000 });
+    const inst = new T.InstancedMesh(bgeo, bmat, nb);
+    const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p = new T.Vector3(), bc = new T.Color();
+    let placed = 0;
+    for (let tries = 0; placed < nb && tries < nb * 40; tries++) {
+      const ang = rand() * Math.PI * 2, r = 380 + rand() * (size * 0.42 - 380);
+      const x = Math.cos(ang) * r, y = Math.sin(ang) * r, z = height(x, y);
+      if (z < waterZ + 2 || (!terrain.real && z > relH * 0.6) || inRunway(x, y, hdg, 120) || inWater(x, y, z)) continue;
+      const w = 8 + rand() * 18, d = 8 + rand() * 18, hgt = 6 + rand() * 34;
+      if (buildingsAABB.some(b => x + w / 2 > b.x1 - 6 && x - w / 2 < b.x2 + 6 && y + d / 2 > b.y1 - 6 && y - d / 2 < b.y2 + 6)) continue;
+      p.set(x, y, z - 1); sc.set(w, d, hgt + 1);
+      inst.setMatrixAt(placed, m4.compose(p, q, sc));
+      bc.setHSL(0.08 + rand() * 0.05, 0.08 + rand() * 0.15, night ? 0.25 : 0.55 + rand() * 0.3);
+      inst.setColorAt(placed, bc);
+      buildingsAABB.push({ x1: x - w / 2, x2: x + w / 2, y1: y - d / 2, y2: y + d / 2, z2: z + hgt });
+      placed++;
+    }
+    inst.count = placed;
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    gWorld.add(inst);
+  }
+
+  // Ağaçlar: `pick()` bir aday (x, y) üretir (ya da null); su/pist/bina/kar üzerinde değil
+  function trees(nt, pick, height, waterZ, relH, hdg, rand, night) {
+    const crownG = new T.ConeGeometry(1, 1, 6); crownG.rotateX(Math.PI / 2); crownG.translate(0, 0, 0.5);
+    const trunkG = new T.CylinderGeometry(0.12, 0.18, 1, 5); trunkG.rotateX(Math.PI / 2); trunkG.translate(0, 0, 0.5);
+    const crown = new T.InstancedMesh(crownG, new T.MeshLambertMaterial({ color: 0xffffff }), nt);
+    const trunk = new T.InstancedMesh(trunkG, new T.MeshLambertMaterial({ color: night ? 0x2a2017 : 0x5a3f27 }), nt);
+    const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p = new T.Vector3(), cc = new T.Color();
+    let placed = 0;
+    for (let tries = 0; placed < nt && tries < nt * 4; tries++) {
+      const c = pick(); if (!c) continue;
+      const [x, y] = c, r = Math.hypot(x, y);
+      if (r < (W.runway !== false ? 330 : 60)) continue;
+      const z = height(x, y);
+      if (z < waterZ + 2 || (!terrain.real && z > relH * 0.72) || (W.runway !== false && inRunway(x, y, hdg, 60)) || inWater(x, y, z)) continue;
+      if (buildingsAABB.some(b => x > b.x1 - 3 && x < b.x2 + 3 && y > b.y1 - 3 && y < b.y2 + 3)) continue;
+      const hh = 6 + rand() * 9, rr = 1.8 + rand() * 2.2;
+      p.set(x, y, z - 0.3); sc.set(1, 1, hh * 0.35 + 0.3);
+      trunk.setMatrixAt(placed, m4.compose(p, q, sc));
+      p.set(x, y, z + hh * 0.3); sc.set(rr, rr, hh * 0.7);
+      crown.setMatrixAt(placed, m4.compose(p, q, sc));
+      cc.setHSL(0.27 + rand() * 0.08, 0.45 + rand() * 0.2, (night ? 0.12 : 0.22) + rand() * 0.12);
+      crown.setColorAt(placed, cc);
+      placed++;
+    }
+    crown.count = trunk.count = placed;
+    crown.instanceMatrix.needsUpdate = trunk.instanceMatrix.needsUpdate = true;
+    if (crown.instanceColor) crown.instanceColor.needsUpdate = true;
+    gWorld.add(trunk, crown);
+    return placed;
+  }
+
+  // Gerçek kip: su çokgenleri (yerel koordinat, bbox + z); nokta içinde mi
+  let waterPolys = [];
+  const inWater = (x, y, z) => waterPolys.some(w => x >= w.x1 && x <= w.x2 && y >= w.y1 && y <= w.y2 && z < w.z + 1.5 && pointInPoly(x, y, w.pts));
+
+  // ---------- prosedürel dünya ----------
+  function buildProcedural(world) {
+    terrain = makeTerrain(world);
+    W = terrain.W;
+    const { size, H, height, waterZ, rand } = terrain;
+    const { night, dusk } = skyAndLights(size);
     const geo = new T.PlaneGeometry(size, size, GRID - 1, GRID - 1);
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
     const c = new T.Color(), sand = new T.Color(0xc2b280), grass1 = new T.Color(0x4f8a3a), grass2 = new T.Color(0x7a9a46),
@@ -185,213 +409,411 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     geo.computeVertexNormals();
     const ground = new T.Mesh(geo, new T.MeshLambertMaterial({ vertexColors: true }));
     ground.name = 'arazi';
+    ground.receiveShadow = true;
     gWorld.add(ground);
-
-    // --- su ---
     if (waterZ > -Infinity) {
       const water = new T.Mesh(new T.PlaneGeometry(size * 1.02, size * 1.02), new T.MeshPhongMaterial({
         color: night ? 0x0b1d3a : dusk ? 0x3b5f8a : 0x2f6fa8, transparent: true, opacity: 0.86, shininess: 90, specular: 0x88aadd }));
       water.position.z = waterZ;
       gWorld.add(water);
     }
-
-    // --- pist (asfalt, orta çizgiler, eşik çizgileri; heading) ---
     const hdg = num(W.runway_heading, 0);
-    if (W.runway !== false) {
-      const rw = new T.Group();
-      rw.rotation.z = -hdg * DEG;
-      rw.position.z = 0.05;
-      rw.add(new T.Mesh(new T.PlaneGeometry(RUNWAY_W, RUNWAY_L), new T.MeshLambertMaterial({ color: night ? 0x1c1f24 : 0x3a3d42 })));
-      const white = new T.MeshBasicMaterial({ color: night ? 0x9aa3ad : 0xf5f5f5 });
-      for (let y = -RUNWAY_L / 2 + 60; y < RUNWAY_L / 2 - 60; y += 60) { const d = new T.Mesh(new T.PlaneGeometry(1.2, 30), white); d.position.set(0, y, 0.02); rw.add(d); }
-      for (const sgn of [-1, 1]) for (let k = -3; k <= 3; k++) { if (!k) continue; const s = new T.Mesh(new T.PlaneGeometry(2.4, 30), white); s.position.set(k * 4.8, sgn * (RUNWAY_L / 2 - 22), 0.02); rw.add(s); }
-      // Pist kenar çizgileri
-      for (const sgn of [-1, 1]) { const e = new T.Mesh(new T.PlaneGeometry(0.9, RUNWAY_L), white); e.position.set(sgn * (RUNWAY_W / 2 - 0.6), 0, 0.02); rw.add(e); }
-      // Gece: pist kenar ışıkları (nokta bulutu) — beyaz kenar, yeşil/kırmızı eşik
-      if (night || dusk) {
-        const pts = [], cols = [];
-        for (let y = -RUNWAY_L / 2; y <= RUNWAY_L / 2; y += 60) for (const sgn of [-1, 1]) { pts.push(sgn * (RUNWAY_W / 2 + 1.5), y, 0.6); cols.push(1, 0.95, 0.8); }
-        for (let x = -RUNWAY_W / 2; x <= RUNWAY_W / 2; x += 5) { pts.push(x, -RUNWAY_L / 2 - 2, 0.6, x, RUNWAY_L / 2 + 2, 0.6); cols.push(0.2, 1, 0.3, 1, 0.25, 0.2); }
-        const pg = new T.BufferGeometry();
-        pg.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
-        pg.setAttribute('color', new T.Float32BufferAttribute(cols, 3));
-        rw.add(new T.Points(pg, new T.PointsMaterial({ size: 0.8, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.95 })));
-      }
-      gWorld.add(rw);
-    }
-
-    // --- binalar (kutular, 6–40 m; pistten uzak, su dışında) ---
+    if (W.runway !== false) { const rw = runwayMesh(hdg, RUNWAY_L, RUNWAY_W, night, dusk); rw.position.z = 0.05; gWorld.add(rw); }
     const nb = clamp(Math.round(num(W.building_count, 0)), 0, 400);
-    if (nb > 0) {
-      const bgeo = new T.BoxGeometry(1, 1, 1); bgeo.translate(0, 0, 0.5);
-      const bmat = new T.MeshLambertMaterial({ color: 0xffffff, emissive: night ? 0x3a3418 : 0x000000 });
-      const inst = new T.InstancedMesh(bgeo, bmat, nb);
-      const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p = new T.Vector3(), bc = new T.Color();
-      let placed = 0;
-      for (let tries = 0; placed < nb && tries < nb * 40; tries++) {
-        const ang = rand() * Math.PI * 2, r = 380 + rand() * (size * 0.42 - 380);
-        const x = Math.cos(ang) * r, y = Math.sin(ang) * r, z = height(x, y);
-        if (z < waterZ + 2 || z > relH * 0.6 || inRunway(x, y, hdg, 120)) continue;
-        const w = 8 + rand() * 18, d = 8 + rand() * 18, hgt = 6 + rand() * 34;
-        if (buildingsAABB.some(b => x + w / 2 > b.x1 - 6 && x - w / 2 < b.x2 + 6 && y + d / 2 > b.y1 - 6 && y - d / 2 < b.y2 + 6)) continue;
-        p.set(x, y, z - 1); sc.set(w, d, hgt + 1);
-        inst.setMatrixAt(placed, m4.compose(p, q, sc));
-        bc.setHSL(0.08 + rand() * 0.05, 0.08 + rand() * 0.15, night ? 0.25 : 0.55 + rand() * 0.3);
-        inst.setColorAt(placed, bc);
-        buildingsAABB.push({ x1: x - w / 2, x2: x + w / 2, y1: y - d / 2, y2: y + d / 2, z2: z + hgt });
-        placed++;
-      }
-      inst.count = placed;
-      inst.instanceMatrix.needsUpdate = true;
-      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-      gWorld.add(inst);
-    }
-
-    // --- ağaçlar (gövde + taç; InstancedMesh ≤ 20.000; su/pist/bina/kar üzerinde değil) ---
+    if (nb > 0) boxBuildings(nb, size, height, waterZ, relH, hdg, rand, night);
     const density = clamp(num(W.tree_density, 0), 0, 1);
     const nt = Math.min(preview ? 3000 : MAX_TREES, Math.round(density * MAX_TREES));
-    if (nt > 0) {
-      const crownG = new T.ConeGeometry(1, 1, 6); crownG.rotateX(Math.PI / 2); crownG.translate(0, 0, 0.5);
-      const trunkG = new T.CylinderGeometry(0.12, 0.18, 1, 5); trunkG.rotateX(Math.PI / 2); trunkG.translate(0, 0, 0.5);
-      const crown = new T.InstancedMesh(crownG, new T.MeshLambertMaterial({ color: 0xffffff }), nt);
-      const trunk = new T.InstancedMesh(trunkG, new T.MeshLambertMaterial({ color: night ? 0x2a2017 : 0x5a3f27 }), nt);
-      const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p = new T.Vector3(), cc = new T.Color();
-      let placed = 0;
-      for (let tries = 0; placed < nt && tries < nt * 4; tries++) {
-        const x = (rand() - 0.5) * size * 0.98, y = (rand() - 0.5) * size * 0.98, r = Math.hypot(x, y);
-        if (r < 330) continue;
-        const z = height(x, y);
-        if (z < waterZ + 2 || z > relH * 0.72 || (W.runway !== false && inRunway(x, y, hdg, 60))) continue;
-        if (buildingsAABB.some(b => x > b.x1 - 3 && x < b.x2 + 3 && y > b.y1 - 3 && y < b.y2 + 3)) continue;
-        const hh = 6 + rand() * 9, rr = 1.8 + rand() * 2.2;
-        p.set(x, y, z - 0.3); sc.set(1, 1, hh * 0.35 + 0.3);
-        trunk.setMatrixAt(placed, m4.compose(p, q, sc));
-        p.set(x, y, z + hh * 0.3); sc.set(rr, rr, hh * 0.7);
-        crown.setMatrixAt(placed, m4.compose(p, q, sc));
-        cc.setHSL(0.27 + rand() * 0.08, 0.45 + rand() * 0.2, (night ? 0.12 : 0.22) + rand() * 0.12);
-        crown.setColorAt(placed, cc);
-        placed++;
-      }
-      crown.count = trunk.count = placed;
-      crown.instanceMatrix.needsUpdate = trunk.instanceMatrix.needsUpdate = true;
-      if (crown.instanceColor) crown.instanceColor.needsUpdate = true;
-      gWorld.add(trunk, crown);
+    if (nt > 0) trees(nt, () => [(rand() - 0.5) * size * 0.98, (rand() - 0.5) * size * 0.98], height, waterZ, relH, hdg, rand, night);
+    addHomeMark();
+  }
+
+  // ---------- gerçek dünya (terrarium yükseklik + uydu doku + OSM) ----------
+  function buildReal(world, real) {
+    const Wn = { ...WORLD_DEFAULTS, ...(world || {}) };
+    const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
+    const rand = rng(num(Wn.seed, 12345) ^ 0x9E3779B9);
+    const flatR = Wn.runway !== false ? FLAT_R : 60, flatR2 = Wn.runway !== false ? FLAT_R2 : 160;
+    const height = (x, y) => real.sample(x, y) * smooth(flatR, flatR2, Math.hypot(x, y));
+    const H = Math.max(1, real.hmax - real.hmin);
+    terrain = { W: Wn, size, H, height, waterZ: -Infinity, rand, real: true, homeElev: real.homeElev, hmin: real.hmin, hmax: real.hmax, osm: real.osm };
+    W = Wn;
+    const { night, dusk } = skyAndLights(size);
+    const osm = real.osm || { buildings: [], forests: [], water: [], runways: [] };
+    const half = size / 2;
+    const toXY = ll => { const p = toLocal(ll[0], ll[1]); return [p.x, p.y]; };
+    const inside = pts => pts.some(([x, y]) => Math.abs(x) <= half && Math.abs(y) <= half);
+
+    // --- arazi: ızgara z = gerçek yükseklik (merkez 0); UV uydu atlasından ---
+    const geo = new T.PlaneGeometry(size, size, GRID - 1, GRID - 1);
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i);
+      pos.setZ(i, height(x, y));
+      const t = real.uv(x, y);
+      uv.setXY(i, t[0], t[1]);
+    }
+    geo.computeVertexNormals();
+    const tex = new T.CanvasTexture(real.atlas);
+    tex.colorSpace = T.SRGBColorSpace;
+    tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy?.() || 1);
+    tex.generateMipmaps = true; tex.minFilter = T.LinearMipmapLinearFilter;
+    // Gece/akşam: doku çarpımsal koyulaştırma (atlas ham kalır, yeniden kullanılır)
+    const ground = new T.Mesh(geo, new T.MeshLambertMaterial({ map: tex, color: night ? 0x4c5670 : dusk ? 0xe8b898 : 0xffffff }));
+    ground.receiveShadow = true;
+    ground.name = 'arazi';
+    gWorld.add(ground);
+
+    // --- su çokgenleri (OSM natural=water): düz yüzey, en alçak köşe −0.2 m ---
+    waterPolys = [];
+    const waterMat = new T.MeshPhongMaterial({ color: night ? 0x0b1d3a : dusk ? 0x3b5f8a : 0x2f6fa8, transparent: true, opacity: 0.86, shininess: 90, specular: 0x88aadd, side: T.DoubleSide });
+    for (const poly of osm.water) {
+      const pts = poly.map(toXY);
+      if (pts.length < 3 || !inside(pts)) continue;
+      let zmin = Infinity, x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+      for (const [x, y] of pts) { zmin = Math.min(zmin, height(x, y)); x1 = Math.min(x1, x); x2 = Math.max(x2, x); y1 = Math.min(y1, y); y2 = Math.max(y2, y); }
+      const z = zmin - 0.2;
+      const shape = new T.Shape(pts.map(([x, y]) => new T.Vector2(x, y)));
+      const m = new T.Mesh(new T.ShapeGeometry(shape), waterMat);
+      m.position.z = z;
+      gWorld.add(m);
+      waterPolys.push({ pts, z, x1, x2, y1, y2 });
     }
 
-    // Merkez işareti (ev konumu): küçük turuncu disk
+    // --- binalar (OSM): taban çokgen üçgenleme + duvarlar, tek BufferGeometry; AABB çarpışma için ---
+    const hdg0 = num(Wn.runway_heading, 0);
+    const bpos = [], bnorm = [], bcol = [];
+    const roofC = new T.Color(), wallC = new T.Color();
+    let nReal = 0;
+    for (const b of osm.buildings) {
+      const pts = b.poly.map(toXY);
+      if (pts.length >= 4 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+      if (pts.length < 3 || !inside(pts)) continue;
+      let zmin = Infinity, zmax = -Infinity, x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+      for (const [x, y] of pts) { const z = height(x, y); zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); x1 = Math.min(x1, x); x2 = Math.max(x2, x); y1 = Math.min(y1, y); y2 = Math.max(y2, y); }
+      if (x2 - x1 > 600 || y2 - y1 > 600) continue;   // bozuk/çok büyük çokgen
+      // Kalkış alanı: merkez pisti (açıksa) ve 60 m çevresini kesen binalar atlanır (kent merkezinde pist binaların arasından geçer)
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      if (Math.hypot(cx, cy) < 60 || (Wn.runway !== false && (inRunway(cx, cy, hdg0, 50) || pts.some(([x, y]) => inRunway(x, y, hdg0, 50))))) continue;
+      const zb = zmin - 0.6, zt = zmax + clamp(num(b.h, 8), 2, 400);
+      const hue = 0.07 + rand() * 0.06, light = night ? 0.22 : 0.55 + rand() * 0.25;
+      roofC.setHSL(hue, 0.1 + rand() * 0.12, light); wallC.setHSL(hue, 0.08 + rand() * 0.1, light * 0.8);
+      // Saat yönü denetimi (shoelace) — duvar normalleri dışa baksın
+      let area = 0;
+      for (let i = 0; i < pts.length; i++) { const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length]; area += ax * by - bx * ay; }
+      const ccw = area > 0;
+      let tris;
+      try { tris = T.ShapeUtils.triangulateShape(pts.map(([x, y]) => new T.Vector2(x, y)), []); } catch { tris = []; }
+      for (const [a, b2, c] of tris) {
+        const o = ccw ? [a, b2, c] : [a, c, b2];
+        for (const k of o) { bpos.push(pts[k][0], pts[k][1], zt); bnorm.push(0, 0, 1); bcol.push(roofC.r, roofC.g, roofC.b); }
+      }
+      for (let i = 0; i < pts.length; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+        const nx = (by - ay), ny = -(bx - ax), ln = Math.hypot(nx, ny) || 1;
+        const s = ccw ? 1 : -1, n = [nx / ln * s, ny / ln * s, 0];
+        const quad = ccw ? [[ax, ay, zb], [bx, by, zb], [bx, by, zt], [ax, ay, zb], [bx, by, zt], [ax, ay, zt]]
+          : [[ax, ay, zb], [bx, by, zt], [bx, by, zb], [ax, ay, zb], [ax, ay, zt], [bx, by, zt]];
+        for (const v of quad) { bpos.push(...v); bnorm.push(...n); bcol.push(wallC.r, wallC.g, wallC.b); }
+      }
+      buildingsAABB.push({ x1, x2, y1, y2, z2: zt });
+      nReal++;
+    }
+    if (bpos.length) {
+      const bg = new T.BufferGeometry();
+      bg.setAttribute('position', new T.Float32BufferAttribute(bpos, 3));
+      bg.setAttribute('normal', new T.Float32BufferAttribute(bnorm, 3));
+      bg.setAttribute('color', new T.Float32BufferAttribute(bcol, 3));
+      gWorld.add(new T.Mesh(bg, new T.MeshLambertMaterial({ vertexColors: true, emissive: night ? 0x2a2410 : 0x000000 })));
+      if (night || dusk) {   // gece/akşam: bina ışıkları (çatı köşelerinde sıcak noktalar)
+        const lp = [], lc = [];
+        for (const b of buildingsAABB) {
+          for (const [x, y] of [[b.x1 + 1, b.y1 + 1], [b.x2 - 1, b.y2 - 1]]) { lp.push(x, y, b.z2 - 1.2); const warm = 0.75 + rand() * 0.25; lc.push(1, 0.85 * warm, 0.5 * warm); }
+        }
+        const pg = new T.BufferGeometry();
+        pg.setAttribute('position', new T.Float32BufferAttribute(lp, 3));
+        pg.setAttribute('color', new T.Float32BufferAttribute(lc, 3));
+        gWorld.add(new T.Points(pg, new T.PointsMaterial({ size: night ? 1.6 : 1.1, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: night ? 0.95 : 0.6 })));
+      }
+    }
+    terrain.counts = { buildings: nReal, forests: 0, water: waterPolys.length, runways: 0 };
+
+    // --- pistler: merkez pisti (düzleştirilmiş alan; isteğe bağlı) + OSM pistleri ---
+    const hdg = num(Wn.runway_heading, 0);
+    if (Wn.runway !== false) { const rw = runwayMesh(hdg, RUNWAY_L, RUNWAY_W, night, dusk); rw.position.z = 0.05; gWorld.add(rw); }
+    for (const r of osm.runways) {
+      const pts = r.poly.map(toXY);
+      if (pts.length < 2 || !inside(pts)) continue;
+      const [ax, ay] = pts[0], [bx, by] = pts[pts.length - 1];
+      const L = Math.hypot(bx - ax, by - ay);
+      if (L < 100) continue;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      if (Wn.runway !== false && Math.hypot(mx, my) < RUNWAY_L / 2) continue;   // merkez pistiyle çakışır
+      const rw = runwayMesh(num(r.heading, Math.atan2(bx - ax, by - ay) / DEG), L, clamp(num(r.width, 45), 15, 80), night, dusk);
+      rw.position.set(mx, my, height(mx, my) + 0.4);
+      gWorld.add(rw);
+      terrain.counts.runways++;
+    }
+
+    // --- ek kutu binalar (building_count; 0 = yalnız gerçek binalar) ---
+    const nb = clamp(Math.round(num(Wn.building_count, 0)), 0, 400);
+    if (nb > 0) boxBuildings(nb, size, height, -Infinity, H, hdg, rand, night);
+
+    // --- ağaçlar: orman çokgenlerinde (alanla orantılı; tree_density ölçek: 0.3 ≈ 4000 ağaç/km²) ---
+    const density = clamp(num(Wn.tree_density, 0), 0, 1);
+    const forests = [];
+    let totalArea = 0;
+    for (const poly of osm.forests) {
+      const pts = poly.map(toXY);
+      if (pts.length < 3 || !inside(pts)) continue;
+      let area = 0, x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+      for (let i = 0; i < pts.length; i++) { const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length]; area += ax * by - bx * ay; x1 = Math.min(x1, ax); x2 = Math.max(x2, ax); y1 = Math.min(y1, ay); y2 = Math.max(y2, ay); }
+      area = Math.abs(area) / 2;
+      // Dünya sınırına kırp (bbox): dışarıda kalan alan sayılmaz
+      const cx1 = Math.max(x1, -half), cx2 = Math.min(x2, half), cy1 = Math.max(y1, -half), cy2 = Math.min(y2, half);
+      if (cx2 <= cx1 || cy2 <= cy1) continue;
+      forests.push({ pts, area, x1: cx1, x2: cx2, y1: cy1, y2: cy2 });
+      totalArea += area;
+    }
+    terrain.counts.forests = forests.length;
+    if (density > 0 && totalArea > 0) {
+      const want = Math.min(preview ? 3000 : MAX_TREES, Math.round(totalArea * 0.004 * (density / 0.3)));
+      if (want > 0) {
+        // Çokgen başına kota (alan oranı); aday: bbox içinde rastgele, çokgen içi denetimi
+        const cum = []; let acc = 0;
+        for (const f of forests) { acc += f.area / totalArea; cum.push(acc); }
+        const pick = () => {
+          const r = rand(); let i = cum.findIndex(c => r <= c); if (i < 0) i = forests.length - 1;
+          const f = forests[i];
+          const x = f.x1 + rand() * (f.x2 - f.x1), y = f.y1 + rand() * (f.y2 - f.y1);
+          return pointInPoly(x, y, f.pts) ? [x, y] : null;
+        };
+        terrain.counts.trees = trees(want, pick, height, -Infinity, H, hdg, rand, night);
+      }
+    }
+    addHomeMark();
+  }
+
+  function addHomeMark() {
     const home = new T.Mesh(new T.CircleGeometry(3, 24), new T.MeshBasicMaterial({ color: 0xf59e0b }));
     home.position.z = 0.12;
     gWorld.add(home);
   }
 
+  // Dünya kurucu: prosedürel anında; gerçek kip veri yükler (ilerleme), alınamazsa prosedürele düşer (onFallback). Son çağrı kazanır.
+  let buildSeq = 0, realCache = null;
+  const onProgress = opts.onProgress || null, onFallback = opts.onFallback || null;
+  async function buildWorld(world) {
+    const seq = ++buildSeq;
+    const Wn = { ...WORLD_DEFAULTS, ...(world || {}) };
+    let real = null;
+    if (Wn.mode === 'real') {
+      const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
+      const key = `${origin.lat.toFixed(5)},${origin.lon.toFixed(5)},${size}`;
+      try {
+        if (!realCache || realCache.key !== key) {
+          const r = await loadRealTerrain(T, origin, size, toLocal, p => { if (seq === buildSeq) onProgress?.(p); });
+          if (seq !== buildSeq) return;
+          realCache = { key, data: r };
+        }
+        real = realCache.data;
+      } catch (err) {
+        if (seq !== buildSeq) return;
+        realCache = null;
+        onFallback?.(err?.message || String(err));
+        Wn.mode = 'procedural';
+      }
+    }
+    disposeGroup(gWorld);
+    buildingsAABB = []; waterPolys = [];
+    if (real) buildReal(Wn, real); else buildProcedural(Wn);
+    onProgress?.({ stage: 'done', real: !!real, counts: terrain.counts || null, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null });
+  }
+
   // ---------- dron modelleri ----------
-  let drone = { group: new T.Group(), props: [], radius: 3, nose: 2, type: null };
+  // Gövde çerçevesi: burun +Y, sağ kanat +X, üst +Z; birimler metre (gerçek boyut), görünürlük için ×MODEL_SCALE.
+  // Sabit kanat / VTOL gövdesi (airframe): 'caymaz' → static/models/caymaz-sim.glb (CAYMAZ V3 STEP'inden; glTF: Y yukarı, burun +Z,
+  // sol kanat +X → Rx+90°, Rz180°), 'delta' → prosedürel delta uçan kanat. Pervane düğümleri `props` (yerel Z etrafında döner,
+  // userData.dir ±1; userData.disc/blades: yüksek devirde palalar gizlenir, saydam disk belirir). Kontrol yüzeyleri `ctrl`.
+  let drone = { group: new T.Group(), props: [], ctrl: [], lights: [], radius: 3, nose: 2, type: null, airframe: null };
   scene.add(drone.group);
-  const propDisc = (r, dir, mat, bladeMat) => {
+  const MAT = () => ({
+    carbon: new T.MeshStandardMaterial({ color: 0x1f2428, roughness: 0.55, metalness: 0.35 }),
+    dark: new T.MeshStandardMaterial({ color: 0x2b3340, roughness: 0.6, metalness: 0.2 }),
+    body: new T.MeshStandardMaterial({ color: 0x33496f, roughness: 0.5, metalness: 0.15 }),
+    white: new T.MeshStandardMaterial({ color: 0xe9ecf1, roughness: 0.5, metalness: 0.1 }),
+    grey: new T.MeshStandardMaterial({ color: 0x8a939e, roughness: 0.5, metalness: 0.5 }),
+    red: new T.MeshStandardMaterial({ color: 0xd93a2b, roughness: 0.55 }),
+    orange: new T.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.55 }),
+    glass: new T.MeshStandardMaterial({ color: 0x0b1420, roughness: 0.15, metalness: 0.6 }),
+    disc: new T.MeshBasicMaterial({ color: 0x8a939e, transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false }),
+    blade: new T.MeshStandardMaterial({ color: 0x15181c, roughness: 0.6, side: T.DoubleSide }),
+  });
+  const mesh = (geo, mat, x = 0, y = 0, z = 0) => { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; return m; };
+  // Pervane: hub + n pala (hafif hatve açısı) + bulanıklık diski; dönüş ekseni yerel Z
+  const propeller = (r, dir, M, blades = 2, hub = r * 0.12) => {
     const g = new T.Group();
     g.userData.dir = dir;
-    const disc = new T.Mesh(new T.CircleGeometry(r, 20), mat); g.add(disc);
-    for (let k = 0; k < 2; k++) { const b = new T.Mesh(new T.BoxGeometry(r * 2, r * 0.16, 0.02), bladeMat); b.rotation.z = k * Math.PI / 2; g.add(b); }
+    const disc = new T.Mesh(new T.RingGeometry(hub, r, 24, 1), M.disc.clone()); g.add(disc); g.userData.disc = disc;
+    g.add(mesh(new T.CylinderGeometry(hub, hub, hub * 1.2, 10).rotateX(Math.PI / 2), M.dark));
+    const bl = [];
+    for (let k = 0; k < blades; k++) {
+      const b = mesh(new T.BoxGeometry(r - hub * 0.8, r * 0.15, Math.max(0.004, r * 0.012)), M.blade, 0, 0, 0);
+      b.geometry.translate((r + hub * 0.8) / 2, 0, 0);
+      b.rotation.set(0.28 * dir, 0, k * 2 * Math.PI / blades);   // hatve açısı
+      b.rotation.order = 'ZXY';
+      g.add(b); bl.push(b);
+    }
+    g.userData.blades = bl;
     return g;
   };
-  const buildSimple = type => {
+  // Çokrotor (quad/hexa): gövde (üst/alt plaka), kollar, motorlar, iniş takımı, kamera gimbali, CW/CCW pervaneler
+  const buildMulti = (n, span, M) => {
     const grp = new T.Group(), props = [];
-    const dark = new T.MeshLambertMaterial({ color: 0x2b3340 }), body = new T.MeshLambertMaterial({ color: 0x2e4066 }),
-      red = new T.MeshLambertMaterial({ color: 0xd93a2b }), white = new T.MeshLambertMaterial({ color: 0xeef0f4 }),
-      propMat = new T.MeshBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.25, side: T.DoubleSide }),
-      blade = new T.MeshLambertMaterial({ color: 0x111418 });
-    const armGeo = n => { const g = new T.CylinderGeometry(0.05, 0.05, n, 6); g.rotateZ(Math.PI / 2); return g; };
-    if (type === 'multirotor' || type === 'hexarotor' || type === 'vtol') {
-      const n = type === 'hexarotor' ? 6 : 4, L = 1.1;
-      if (type !== 'vtol') {
-        const hub = new T.Mesh(new T.BoxGeometry(0.5, 0.6, 0.18), body); grp.add(hub);
-        const noseMark = new T.Mesh(new T.BoxGeometry(0.2, 0.3, 0.12), red); noseMark.position.set(0, 0.3, 0.1); grp.add(noseMark);   // burun işareti (ileri = +Y)
-      }
-      for (let k = 0; k < n; k++) {
-        const a = (type === 'vtol' ? Math.PI / 4 : Math.PI / n) + k * (2 * Math.PI / n);
-        const arm = new T.Mesh(armGeo(L), dark); arm.rotation.z = a; arm.position.set(Math.cos(a) * L / 2, Math.sin(a) * L / 2, 0); grp.add(arm);
-        const motor = new T.Mesh(new T.CylinderGeometry(0.07, 0.07, 0.12, 8).rotateX(Math.PI / 2), dark); motor.position.set(Math.cos(a) * L, Math.sin(a) * L, 0.06); grp.add(motor);
-        const pr = propDisc(0.32, k % 2 ? 1 : -1, propMat, blade); pr.position.set(Math.cos(a) * L, Math.sin(a) * L, 0.14); grp.add(pr); props.push(pr);
-      }
+    const R = span / 2, bodyW = span * 0.3, bodyH = span * 0.08;
+    grp.add(mesh(new T.CylinderGeometry(bodyW / 2, bodyW / 2, bodyH, 8).rotateX(Math.PI / 2), M.carbon, 0, 0, 0));
+    grp.add(mesh(new T.BoxGeometry(bodyW * 0.7, bodyW * 0.9, bodyH * 1.3), M.body, 0, 0, bodyH * 0.9));   // batarya/üst kapak
+    grp.add(mesh(new T.BoxGeometry(bodyW * 0.3, bodyW * 0.3, bodyH * 0.4), M.orange, 0, bodyW * 0.42, bodyH * 1.6));   // burun işareti (ileri +Y)
+    grp.add(mesh(new T.CylinderGeometry(bodyW * 0.12, bodyW * 0.12, 0.03, 10).rotateX(Math.PI / 2), M.white, 0, -bodyW * 0.1, bodyH * 1.7));   // GPS
+    for (let k = 0; k < n; k++) {
+      const a = Math.PI / n + k * (2 * Math.PI / n), c = Math.cos(a), s = Math.sin(a);
+      const arm = mesh(new T.CylinderGeometry(span * 0.018, span * 0.022, R - bodyW * 0.3, 8), M.carbon, c * (R + bodyW * 0.3) / 2, s * (R + bodyW * 0.3) / 2, 0);
+      arm.rotation.z = a - Math.PI / 2; grp.add(arm);
+      grp.add(mesh(new T.CylinderGeometry(span * 0.045, span * 0.05, span * 0.05, 12).rotateX(Math.PI / 2), M.grey, c * R, s * R, span * 0.03));   // motor
+      const pr = propeller(span * 0.19, k % 2 ? 1 : -1, M); pr.position.set(c * R, s * R, span * 0.062); grp.add(pr); props.push(pr);
     }
-    if (type === 'helikopter') {
-      const fus = new T.Mesh(new T.SphereGeometry(0.45, 12, 10).scale(1, 1.6, 0.9), body); grp.add(fus);
-      const boom = new T.Mesh(new T.CylinderGeometry(0.06, 0.1, 1.6, 8), dark); boom.position.set(0, -1.3, 0.1); grp.add(boom);
-      const fin = new T.Mesh(new T.BoxGeometry(0.04, 0.3, 0.5), red); fin.position.set(0, -2.1, 0.3); grp.add(fin);
-      const mast = new T.Mesh(new T.CylinderGeometry(0.04, 0.04, 0.4, 6).rotateX(Math.PI / 2), dark); mast.position.z = 0.55; grp.add(mast);
-      const main = propDisc(1.6, 1, propMat, blade); main.position.z = 0.76; grp.add(main); props.push(main);
-      const tail = propDisc(0.3, -1, propMat, blade); tail.rotation.y = Math.PI / 2; tail.position.set(0.08, -2.1, 0.3); grp.add(tail); props.push(tail);
-      for (const s of [-1, 1]) { const skid = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 1.4, 6), dark); skid.position.set(s * 0.35, 0, -0.45); grp.add(skid); }
+    for (const sx of [-1, 1]) {   // iniş takımı: iki dikey ayak + kızak çubuğu (her yanda)
+      for (const y of [-span * 0.18, span * 0.18]) grp.add(mesh(new T.CylinderGeometry(span * 0.01, span * 0.01, span * 0.2, 6).rotateX(Math.PI / 2), M.carbon, sx * span * 0.2, y, -span * 0.1));
+      grp.add(mesh(new T.CylinderGeometry(span * 0.01, span * 0.01, span * 0.52, 6), M.carbon, sx * span * 0.2, 0, -span * 0.2));
     }
-    if (type === 'sabit_kanat' || type === 'vtol') {
-      const fus = new T.Mesh(new T.CylinderGeometry(0.12, 0.08, 2.2, 10), body); fus.position.y = 0.1; grp.add(fus);
-      const nose = new T.Mesh(new T.SphereGeometry(0.12, 10, 8), body); nose.position.y = 1.2; grp.add(nose);
-      const wing = new T.Mesh(new T.BoxGeometry(3.6, 0.42, 0.05), white); wing.position.set(0, 0.25, 0.08); grp.add(wing);
-      const tailp = new T.Mesh(new T.BoxGeometry(1.2, 0.3, 0.04), white); tailp.position.set(0, -0.95, 0.05); grp.add(tailp);
-      const fin = new T.Mesh(new T.BoxGeometry(0.04, 0.35, 0.45), red); fin.position.set(0, -0.95, 0.25); grp.add(fin);
-      if (type === 'sabit_kanat') { const pr = propDisc(0.3, 1, propMat, blade); pr.rotation.x = Math.PI / 2; pr.position.set(0, 1.33, 0); grp.add(pr); props.push(pr); }
-    }
-    return { grp, props };
+    // Kamera gimbali (alt ön)
+    const gim = new T.Group(); gim.position.set(0, bodyW * 0.35, -bodyH * 1.3);
+    gim.add(mesh(new T.CylinderGeometry(span * 0.03, span * 0.03, span * 0.04, 10).rotateX(Math.PI / 2), M.dark));
+    gim.add(mesh(new T.SphereGeometry(span * 0.045, 12, 10), M.dark, 0, 0, -span * 0.05));
+    gim.add(mesh(new T.CylinderGeometry(span * 0.02, span * 0.025, span * 0.03, 10), M.glass, 0, span * 0.045, -span * 0.05));   // lens ileri (+Y)
+    grp.add(gim);
+    return { grp, props, ctrl: [], tips: { left: [-R * 0.72, R * 0.72, 0.03], right: [R * 0.72, R * 0.72, 0.03], tail: [0, -R * 0.8, 0.08] } };   // ön kollar kırmızı/yeşil, arka beyaz
   };
-  // caymaz.gltf tamponu `data:` URI'dir; CSP connect-src 'self' data: adresine fetch'i engeller → JSON'u kendimiz çekip tamponu
-  // çözerek bellekte GLB (JSON + BIN parçası) kurar, GLTFLoader.parse ile yükleriz. Dış tampon (uri dosya) varsa olduğu gibi parse edilir.
-  const loadGltfPlane = async () => {
-    const res = await fetch('/static/models/caymaz.gltf', { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`gltf ${res.status}`);
-    const json = await res.json();
-    const buf = json.buffers?.[0];
-    let payload;
-    if (buf && /^data:/.test(buf.uri || '')) {
-      const b64 = buf.uri.slice(buf.uri.indexOf(',') + 1), bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      delete buf.uri; buf.byteLength = bytes.length;
-      const enc = new TextEncoder(), jsonBytes = enc.encode(JSON.stringify(json));
-      const pad4 = n => (4 - (n % 4)) % 4;
-      const jl = jsonBytes.length + pad4(jsonBytes.length), bl = bytes.length + pad4(bytes.length);
-      const glb = new ArrayBuffer(12 + 8 + jl + 8 + bl), dv = new DataView(glb), u8 = new Uint8Array(glb);
-      dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.byteLength, true);
-      dv.setUint32(12, jl, true); dv.setUint32(16, 0x4E4F534A, true); u8.set(jsonBytes, 20); u8.fill(0x20, 20 + jsonBytes.length, 20 + jl);
-      dv.setUint32(20 + jl, bl, true); dv.setUint32(24 + jl, 0x004E4942, true); u8.set(bytes, 28 + jl);
-      payload = glb;
-    } else payload = JSON.stringify(json);
-    return new Promise((resolve, reject) => new GLTFLoader().parse(payload, '/static/models/', g => resolve(g.scene), reject));
+  // Helikopter (1.5 m): gövde + kabin camı, kuyruk bomu, dikey/yatay stabilizatör, ana rotor (3 pala) + kuyruk rotoru, kızaklar
+  const buildHeli = M => {
+    const grp = new T.Group(), props = [];
+    const fus = mesh(new T.SphereGeometry(0.22, 16, 12), M.body); fus.scale.set(0.9, 2.0, 0.85); grp.add(fus);
+    const cab = mesh(new T.SphereGeometry(0.19, 16, 12), M.glass, 0, 0.22, 0.03); cab.scale.set(0.85, 1.1, 0.8); grp.add(cab);
+    grp.add(mesh(new T.BoxGeometry(0.2, 0.3, 0.12), M.dark, 0, -0.05, 0.2));   // motor kaportası
+    const boom = mesh(new T.CylinderGeometry(0.03, 0.05, 1.0, 10), M.white, 0, -0.9, 0.08); grp.add(boom);   // kuyruk bomu −Y boyunca (ince uç arkada)
+    grp.add(mesh(new T.BoxGeometry(0.02, 0.22, 0.3), M.red, 0, -1.38, 0.2));      // dikey stabilizatör
+    grp.add(mesh(new T.BoxGeometry(0.4, 0.12, 0.015), M.white, 0, -1.1, 0.12));   // yatay stabilizatör
+    grp.add(mesh(new T.CylinderGeometry(0.02, 0.02, 0.22, 8).rotateX(Math.PI / 2), M.dark, 0, 0, 0.3));   // mast
+    const main = propeller(0.85, 1, M, 3, 0.07); main.position.z = 0.42; grp.add(main); props.push(main);
+    const tail = propeller(0.17, -1, M, 2, 0.025); tail.rotation.y = Math.PI / 2; tail.position.set(0.06, -1.38, 0.2); grp.add(tail); props.push(tail);
+    for (const s of [-1, 1]) {
+      grp.add(mesh(new T.CylinderGeometry(0.015, 0.015, 0.9, 8), M.grey, s * 0.22, 0.05, -0.3));   // kızak (Y boyunca)
+      for (const y of [-0.2, 0.3]) { const st = mesh(new T.CylinderGeometry(0.012, 0.012, 0.22, 6).rotateX(Math.PI / 2), M.grey, s * 0.16, y, -0.2); st.rotation.y = s * 0.5; grp.add(st); }   // dikey destekler
+    }
+    return { grp, props, ctrl: [], tips: { left: [-0.2, 0.1, -0.05], right: [0.2, 0.1, -0.05], tail: [0, -1.4, 0.36] } };
   };
-  async function setType(type) {
+  // Delta uçan kanat (açıklık 2.2 m, uzunluk ~3.1 m): yuvarlak burunlu gövde, delta kanat, kanat ucu dikey yüzeyler,
+  // arkadan itişli pervane, elevonlar (RC ile hareket). ExtrudeGeometry ile kanat planformu (XY düzlemi, kalınlık Z).
+  const buildDelta = M => {
+    const grp = new T.Group(), props = [], ctrl = [];
+    const span = 2.2, L = 3.1, half = span / 2;
+    const shape = new T.Shape();   // planform (sağ yarı + sol yarı simetrik), burun +Y
+    shape.moveTo(0, 1.35); shape.lineTo(0.22, 1.0); shape.lineTo(half, -1.25); shape.lineTo(half, -1.45); shape.lineTo(0.3, -1.45);
+    shape.lineTo(0, -1.5); shape.lineTo(-0.3, -1.45); shape.lineTo(-half, -1.45); shape.lineTo(-half, -1.25); shape.lineTo(-0.22, 1.0); shape.closePath();
+    const wing = mesh(new T.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 }), M.white, 0, 0, -0.04);
+    grp.add(wing);
+    // CylinderGeometry Y ekseni boyunca = gövde burun ekseni (+Y); burun geniş, kuyruk dar
+    const fus = mesh(new T.CylinderGeometry(0.17, 0.11, L * 0.72, 16), M.white, 0, -0.1, 0.03); grp.add(fus);
+    const nose = mesh(new T.SphereGeometry(0.17, 16, 12), M.white, 0, L * 0.72 / 2 - 0.1, 0.03); nose.scale.set(1, 1.6, 1); grp.add(nose);
+    grp.add(mesh(new T.CylinderGeometry(0.11, 0.06, 0.25, 12), M.dark, 0, -L * 0.72 / 2 - 0.1 - 0.12, 0.03));   // motor kaportası
+    for (const s of [-1, 1]) {   // kanat ucu dikey yüzeyler (yukarı/aşağı)
+      const fin = mesh(new T.BoxGeometry(0.03, 0.5, 0.34), M.red, s * (half - 0.015), -1.2, 0.1); fin.geometry.translate(0, 0, 0); grp.add(fin);
+      const el = mesh(new T.BoxGeometry(0.72, 0.16, 0.025), M.grey, s * 0.72, -1.52, 0); el.geometry.translate(0, -0.08, 0);   // elevon (menteşe ön kenarda)
+      el.userData.ctrl = { roll: s, pitch: 1 }; grp.add(el); ctrl.push(el);
+    }
+    const pr = propeller(0.33, 1, M, 2); pr.rotation.x = -Math.PI / 2; pr.position.set(0, -L * 0.72 / 2 - 0.1 - 0.28, 0.03); grp.add(pr); props.push(pr);
+    return { grp, props, ctrl, tips: { left: [-half, -1.3, 0.28], right: [half, -1.3, 0.28], tail: [0, -1.5, 0.08] } };
+  };
+  // CAYMAZ V3 (STEP → GLB): kanat açıklığı 3.03 m, uzunluk 3.1 m, arkadan itişli; prop düğümü GLB içinde (glTF Z ekseni = burun ekseni)
+  let glbCache = null;
+  const loadCaymaz = () => (glbCache ??= fetch('/static/models/caymaz-sim.glb', { credentials: 'same-origin' })
+    .then(r => { if (!r.ok) throw new Error(`glb ${r.status}`); return r.arrayBuffer(); })
+    .then(ab => new Promise((resolve, reject) => new GLTFLoader().parse(ab, '/static/models/', g => resolve(g.scene), reject)))
+    .catch(e => { glbCache = null; throw e; }));
+  const buildCaymaz = async M => {
+    const sc = (await loadCaymaz()).clone(true);
+    sc.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material = o.material.clone(); } });
+    const inner = new T.Group();
+    inner.rotation.order = 'ZYX';
+    inner.rotation.set(Math.PI / 2, 0, Math.PI);   // glTF (Y yukarı, burun +Z, sol +X) → gövde (burun +Y, sağ +X, üst +Z)
+    inner.add(sc);
+    const grp = new T.Group(); grp.add(inner);
+    const props = [];
+    const prop = sc.getObjectByName('prop');
+    if (prop) {   // GLB pervanesi (Ø 0.81 m) + bulanıklık diski (glTF yerel XY düzlemi = pervane düzlemi)
+      const disc = new T.Mesh(new T.RingGeometry(0.05, 0.405, 24, 1), M.disc.clone()); prop.add(disc);
+      prop.userData.dir = 1; prop.userData.disc = disc; props.push(prop);
+    }
+    return { grp, props, ctrl: [], tips: { left: [-1.5, -0.95, 0.3], right: [1.5, -0.95, 0.3], tail: [0, -1.15, 0.02] } };
+  };
+  // VTOL: uçak gövdesi + kanat altı iki bum + 4 dikey motor/pervane (ileri/geri)
+  const addVtolMotors = (built, M) => {
+    const bb = new T.Box3().setFromObject(built.grp);
+    const sx = (bb.max.x - bb.min.x) * 0.27, L = 1.5;
+    for (const x of [-sx, sx]) {
+      built.grp.add(mesh(new T.CylinderGeometry(0.03, 0.03, L, 8), M.carbon, x, -0.05, -0.02));   // bum Y boyunca (ileri-geri)
+      for (const y of [-L / 2 + 0.05, L / 2 - 0.05]) {
+        built.grp.add(mesh(new T.CylinderGeometry(0.04, 0.045, 0.06, 10).rotateX(Math.PI / 2), M.grey, x, y, 0.02));
+        const pr = propeller(0.28, x * y > 0 ? 1 : -1, M); pr.position.set(x, y, 0.06); built.grp.add(pr); built.props.push(pr);
+      }
+    }
+    return built;
+  };
+  // Seyir ışıkları: sol kırmızı, sağ yeşil (sabit + senkron flaş), kuyruk beyaz strobe; gece/akşam halo (additif sprite)
+  let haloTex = null;
+  const haloTexture = () => {
+    if (haloTex) return haloTex;
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    haloTex = new T.CanvasTexture(cv);
+    return haloTex;
+  };
+  const addNavLights = (built, tips) => {
+    const lights = [];
+    for (const [key, color, kind] of [['left', 0xff2a1a, 'nav'], ['right', 0x22ff55, 'nav'], ['tail', 0xffffff, 'strobe']]) {
+      const p = tips[key]; if (!p) continue;
+      const g = new T.Group(); g.position.set(p[0], p[1], p[2]);
+      const bulb = new T.Mesh(new T.SphereGeometry(0.035, 8, 6), new T.MeshBasicMaterial({ color, toneMapped: false }));
+      const halo = new T.Sprite(new T.SpriteMaterial({ map: haloTexture(), color, transparent: true, opacity: 0.8, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      halo.scale.setScalar(0.5);
+      g.add(bulb, halo); g.userData = { kind, bulb, halo };
+      built.grp.add(g); lights.push(g);
+    }
+    built.lights = lights;
+  };
+  const SIZES = { multirotor: 0.6, hexarotor: 0.9 };
+  async function setType(type, airframe) {
     type = type || 'multirotor';
+    airframe = (type === 'sabit_kanat' || type === 'vtol') ? (airframe === 'delta' ? 'delta' : 'caymaz') : null;
     disposeGroup(drone.group);
+    const M = MAT();
     let built = null;
-    if (type === 'sabit_kanat' || type === 'vtol') {
-      try {
-        // caymaz.gltf: Y yukarı, burun +Z, kanat ±X → gövde çerçevesi (burun +Y, üst +Z): önce X etrafında +90°, sonra Z etrafında 180°
-        const sc = await loadGltfPlane();
-        const inner = new T.Group();
-        inner.rotation.order = 'ZYX';
-        inner.rotation.set(Math.PI / 2, 0, Math.PI);
-        inner.scale.setScalar(1.6);   // ×MODEL_SCALE ile ~6 m kanat açıklığı
-        inner.add(sc);
-        const grp = new T.Group(); grp.add(inner);
-        const props = [];
-        const propMat = new T.MeshBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.25, side: T.DoubleSide }), blade = new T.MeshLambertMaterial({ color: 0x111418 });
-        if (type === 'vtol') {
-          const dark = new T.MeshLambertMaterial({ color: 0x2b3340 });
-          for (const [sx, sy] of [[-1.3, 0.9], [1.3, 0.9], [-1.3, -0.9], [1.3, -0.9]]) {
-            const boom = new T.Mesh(new T.CylinderGeometry(0.05, 0.05, 2, 6), dark); boom.position.set(sx, 0, 0.1); grp.add(boom);
-            const pr = propDisc(0.35, sx * sy > 0 ? 1 : -1, propMat, blade); pr.position.set(sx, sy, 0.2); grp.add(pr); props.push(pr);
-          }
-        } else { const pr = propDisc(0.3, 1, propMat, blade); pr.rotation.x = Math.PI / 2; pr.position.set(0, 1.05, 0.05); grp.add(pr); props.push(pr); }
-        built = { grp, props };
-      } catch { built = null; }   // model yüklenemedi → basit uçak geometrisi
-    }
-    if (!built) built = buildSimple(type);
+    if (airframe === 'caymaz') { try { built = await buildCaymaz(M); } catch { built = null; } }   // GLB yüklenemedi → delta kanat
+    if (!built && airframe) built = buildDelta(M);
+    if (!built) built = type === 'helikopter' ? buildHeli(M) : buildMulti(type === 'hexarotor' ? 6 : 4, SIZES[type] || 0.6, M);
+    if (type === 'vtol') addVtolMotors(built, M);
+    addNavLights(built, built.tips || {});
+    built.grp.traverse(o => { if (o.isMesh && !o.isSprite) o.castShadow = true; });
     // Yarıçap ve burun konumu modelin sınırlayıcı kutusundan (kamera mesafeleri ve FPV için); sonra görünürlük ölçeği
     const bb = new T.Box3().setFromObject(built.grp);
     drone.radius = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, 1) / 2 * MODEL_SCALE;
     drone.nose = (bb.max.y + 0.15) * MODEL_SCALE;
+    drone.ground = -bb.min.z * MODEL_SCALE;   // park yüksekliği (iniş takımı yere değer)
     built.grp.scale.setScalar(MODEL_SCALE);   // 4 km'lik dünyada görünürlük: gerçek boyutun 2.5 katı
     drone.group.add(built.grp);
-    drone.props = built.props; drone.type = type;
-    if (!tele.has) drone.group.position.set(0, 0, 0.25 * MODEL_SCALE);   // park: pist merkezinde
+    drone.props = built.props; drone.ctrl = built.ctrl || []; drone.lights = built.lights || []; drone.type = type; drone.airframe = airframe;
+    if (!tele.has) drone.group.position.set(0, 0, drone.ground + 0.02);   // park: pist merkezinde
   }
 
   // ---------- telemetri: gecikme tamponlu enterpolasyon ----------
@@ -425,6 +847,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     else if (now - net.win >= 1000) { net.hz = Math.round(net.n * 1000 / (now - net.win)); net.jitter = net.n ? Math.round(net.jit / net.n) : 0; net.n = 0; net.jit = 0; net.win = now; }
     tele.at = now; tele.src = src;
     tele.throttle = num(t.throttle, 0); tele.armed = !!t.armed;
+    tele.rc = Array.isArray(t.rc) ? t.rc : null;   // RC kanalları 1000…2000 (1: roll, 2: pitch) → kontrol yüzeyleri
+    tele.speed = Math.hypot(tele.vel.x, tele.vel.y, tele.vel.z);
     tele.last = t;
     if (!tele.has) { tele.has = true; cur.pos.copy(fr.pos); cur.q.copy(fr.q); cur.vel.copy(fr.vel); camSpring.pos.copy(fr.pos); camSpring.vel.set(0, 0, 0); }
   }
@@ -533,6 +957,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     const onRunway = Math.hypot(p.x, p.y) <= 25 || (W.runway !== false && inRunway(p.x, p.y, num(W.runway_heading, 0), 4));   // pist/kalkış alanında yer teması (koşu, iniş) çarpışma değil
     if (p.z < hz + 0.3 && !onRunway) hit = { kind: 'terrain', z: hz };
     else if (terrain && p.z < terrain.waterZ + 0.3) hit = { kind: 'water', z: terrain.waterZ };
+    else if (terrain?.real && waterPolys.some(w => p.x >= w.x1 && p.x <= w.x2 && p.y >= w.y1 && p.y <= w.y2 && p.z < w.z + 0.3 && pointInPoly(p.x, p.y, w.pts))) hit = { kind: 'water', z: hz };
     else {
       const b = buildingsAABB.find(b => p.x > b.x1 && p.x < b.x2 && p.y > b.y1 && p.y < b.y2 && p.z < b.z2 + 0.3);
       if (b) hit = { kind: 'building', z: b.z2 };
@@ -563,6 +988,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       sample(now - RENDER_DELAY);
       tele.speed = cur.vel.length();
       drone.group.position.copy(cur.pos);
+      drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
       if (camMode === 'follow') {
         // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur
@@ -576,9 +1002,31 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       }
       checkCollision();
     }
-    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır
-    const spin = (tele.armed ? 12 + tele.throttle * 0.9 : 0) * dt;
-    if (spin) for (const p of drone.props) p.rotation.z += spin * (p.userData.dir || 1);
+    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır; yüksek devirde palalar gizlenir, bulanıklık diski belirir
+    const rate = tele.armed ? 12 + tele.throttle * 0.9 : 0;   // rad/s
+    propAngle.v += rate * dt;
+    const blur = clamp((rate - 20) / 40, 0, 1);
+    for (const p of drone.props) {
+      p.rotation.z += rate * dt * (p.userData.dir || 1);
+      if (p.userData.disc) p.userData.disc.material.opacity = 0.45 * blur;
+      if (p.userData.blades) for (const b of p.userData.blades) b.visible = blur < 0.85;
+    }
+    // Kontrol yüzeyleri (elevon): RC roll (ch1) / pitch (ch2) → ±20°
+    if (drone.ctrl.length) {
+      const rc = tele.rc || [], rN = rc[0] ? clamp((rc[0] - 1500) / 500, -1, 1) : 0, pN = rc[1] ? clamp((rc[1] - 1500) / 500, -1, 1) : 0;
+      for (const c of drone.ctrl) c.rotation.x = (pN * c.userData.ctrl.pitch - rN * c.userData.ctrl.roll) * 0.35;
+    }
+    // Seyir ışıkları: kırmızı/yeşil 1 Hz çift flaş üzerine sabit; kuyruk beyaz strobe 1 Hz (gece halo büyür)
+    const tt = now / 1000, ph = tt % 1, navOn = ph < 0.08 || (ph > 0.16 && ph < 0.24), strobeOn = ph > 0.5 && ph < 0.58;
+    const night = W.time === 'night', dusk = W.time === 'dusk', haloBase = night ? 0.55 : dusk ? 0.4 : 0.22;   // sprite ölçeği model ölçeğiyle çarpılır
+    for (const l of drone.lights) {
+      const on = l.userData.kind === 'strobe' ? strobeOn : navOn;
+      l.userData.halo.scale.setScalar(haloBase * (on ? 1.8 : l.userData.kind === 'strobe' ? 0 : 0.7));
+      l.userData.halo.visible = l.userData.kind !== 'strobe' || on;
+      l.userData.bulb.visible = l.userData.kind !== 'strobe' || on || !night;
+    }
+    // Gölge: güneş dronu izler
+    if (!preview) { lights.sun.target.position.copy(cur.pos); lights.sun.position.copy(cur.pos).addScaledVector(sunDir, 120); }
     // Kamera kipleri
     if (preview) {
       previewAngle += dt * 0.12;
@@ -616,16 +1064,29 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   }
 
   // ---------- kurulum ----------
-  buildWorld(world);
-  await setType(opts.type);
+  await buildWorld(world);
+  await setType(opts.type, opts.airframe);
   resize();
   if (!preview) { setCamera('follow'); } else { controls.enabled = false; }
   raf = requestAnimationFrame(frame);
 
-  function setWorld(nw) { buildWorld(nw); if (!tele.has) drone.group.position.set(0, 0, 0.6); if (!preview && camMode === 'follow') resetCamera(); }
+  async function setWorld(nw) {
+    await buildWorld(nw);
+    if (disposed) return;
+    if (!tele.has) drone.group.position.set(0, 0, (drone.ground || 0.2) + 0.02);
+    if (!preview && camMode === 'follow') resetCamera();
+  }
+  // Merkez değişti (sihirbaz): gerçek kipte veriler yeni konumdan yüklenir
+  async function setOrigin(lat, lon, nw) {
+    origin.lat = num(lat, 0); origin.lon = num(lon, 0);
+    realCache = null;
+    await setWorld(nw || W);
+  }
 
   function dispose() {
     disposed = true;
+    buildSeq++;   // bekleyen gerçek arazi yüklemesi sonuçlarını kullanmaz
+    realCache = null;
     cancelAnimationFrame(raf);
     ro.disconnect();
     window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp);
@@ -641,8 +1102,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
 
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, terrainHeight, toLocal,
-    setWorld, setType, clearCollision, resize, dispose, netStats, setKeyboardLock,
+    setWorld, setOrigin, setType, clearCollision, resize, dispose, netStats, setKeyboardLock,
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
+    get real() { return !!terrain?.real; },
+    get terrainInfo() { return terrain ? { real: !!terrain.real, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null } : null; },
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),
     getPose: () => { tmpE.setFromQuaternion(cur.q, 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD)

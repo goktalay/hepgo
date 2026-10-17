@@ -53,8 +53,9 @@ TIP_ADLARI = {'multirotor': 'Multikopter', 'hexarotor': 'Hexakopter', 'helikopte
 PLANE_TIPLERI = ('sabit_kanat', 'vtol')
 KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_home', 'rc')
 
-WORLD_DEFAULTS = {'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4, 'building_count': 40,
-                  'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
+WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
+                  'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
+_WORLD_KIP = ('procedural', 'real')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); prosedürel ayarlar özelleştirme olur
 # alan → (tür, alt, üst) — sayısal alanlar; 'time' ve 'runway' ayrı denetlenir
 _WORLD_SINIR = {'seed': (int, 0, 2 ** 31 - 1), 'size_m': (int, 500, 20000), 'tree_density': (float, 0, 1), 'mountain_height': (float, 0, 3000),
                 'mountain_count': (int, 0, 50), 'building_count': (int, 0, 500), 'runway_heading': (float, 0, 359.99), 'water': (float, 0, 1),
@@ -67,6 +68,20 @@ class SimHata(Exception):
     def __init__(self, kod, mesaj):
         super().__init__(mesaj)
         self.kod = kod
+
+
+AIRFRAMES = ('caymaz', 'delta')   # sabit kanat / VTOL 3B gövdesi (ön yüz modeli); varsayılan caymaz
+
+
+def airframe_dogrula(tip, a):
+    """Gövde seçimi yalnız uçak tiplerinde anlamlı: eksikse 'caymaz'; bilinmeyen değer SimHata('invalid'). Kopterlerde None."""
+    if tip not in ('sabit_kanat', 'vtol'):
+        return None
+    if a is None or a == '':
+        return 'caymaz'
+    if not isinstance(a, str) or a not in AIRFRAMES:
+        raise SimHata('invalid', 'airframe caymaz | delta olmalı')
+    return a
 
 
 def world_dogrula(w):
@@ -93,6 +108,10 @@ def world_dogrula(w):
         if w['time'] not in _WORLD_ZAMAN:
             raise SimHata('invalid', 'world.time day | dusk | night olmalı')
         out['time'] = w['time']
+    if 'mode' in w and w['mode'] is not None:
+        if w['mode'] not in _WORLD_KIP:
+            raise SimHata('invalid', 'world.mode procedural | real olmalı')
+        out['mode'] = w['mode']
     return out
 
 
@@ -309,10 +328,11 @@ class _UdpProto(asyncio.DatagramProtocol):
 # Oturum
 # ======================================================================
 class SimSession:
-    def __init__(self, sid, tip, center, world, owner, yonetici):
+    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None):
         self.id = int(sid)
         self.kimlik = KIMLIK_TABANI + self.id
         self.type, self.center, self.world, self.owner = tip, center, world, owner
+        self.airframe = airframe         # sabit kanat / VTOL 3B gövdesi: 'caymaz' | 'delta' (yalnız görsel; SITL modelini değiştirmez)
         self.yonetici = yonetici
         self.state = 'BASLIYOR'          # BASLIYOR | HAZIR | HATA | KAPANDI
         self.udp_port = None
@@ -357,7 +377,7 @@ class SimSession:
 
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
-        return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+        return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
@@ -873,10 +893,11 @@ class SimManager:
     def acik_sayisi(self):
         return len([s for s in self.sessions.values() if s.state != 'KAPANDI'])
 
-    async def ac(self, tip, center, world, owner):
+    async def ac(self, tip, center, world, owner, airframe=None):
         """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev."""
         if tip not in drone_sitl.TIP_ESLEME:
             raise SimHata('invalid', 'Geçersiz dron tipi')
+        airframe = airframe_dogrula(tip, airframe)
         if not center or center.get('lat') is None or center.get('lon') is None:
             raise SimHata('invalid', 'Merkez bulunamadı')
         world = world_dogrula(world)
@@ -892,10 +913,17 @@ class SimManager:
                 raise SimHata('sitl', err or 'SITL ikilisi yok')
         if not self._udp_bos_var():
             raise SimHata('sitl', 'Boş UDP portu yok')
+        alt = float(center['alt']) if center.get('alt') is not None else None
+        if alt is None and world.get('mode') == 'real':   # gerçek arazi: SITL ev irtifası gerçek yükseklikten (vekil önbelleği; alınamazsa None)
+            from . import sim_terrain
+            try:
+                alt = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, sim_terrain.ev_irtifa, float(center['lat']), float(center['lon'])), 12)
+            except Exception:   # noqa: BLE001 — kaynak yok/zaman aşımı: varsayılan EV_IRTIFA ile sürer
+                alt = None
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': float(center['alt']) if center.get('alt') is not None else None}, world, owner, self)
+                                  'alt': alt}, world, owner, self, airframe)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

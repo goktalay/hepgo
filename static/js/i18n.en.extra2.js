@@ -830,7 +830,7 @@ registerCatalog('en', {
   "Sade görünüm": "Plain view",
   "Harekât paneli": "Operations panel",
   "Rota yüklendi: {n} nokta": "Route loaded: {n} points",
-  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "Toggle the operations panel (P): a layer sliding in from the right over the 3D world; when closed, the plain view (legacy HUD and bottom-bar commands)",
+  "Harekât kartlarını göster/gizle (P): dron kartı, PFD, telemetri karoları ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)": "Show/hide the operations cards (P): the drone card, PFD, telemetry tiles and console float over the 3D world; when hidden, the plain view (classic HUD and bottom-bar commands)",
   "Harekât panelini aç/kapat (P)": "Toggle the operations panel (P)",
   "Panel": "Panel",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "net: {hz} Hz · jitter {j} ms · buffer {d} ms",

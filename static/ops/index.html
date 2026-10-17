@@ -813,6 +813,7 @@
      BETİK SIRASI (GÖKTUNGU sırası korunur; yalnız üç HEPGO dosyası eklenir, ws.js yerine hepgo_ws.js yüklenir).
      Klasik <script> (ESM değil), ortak global kapsam.
      - js/hepgo_nomap.js <head>'de Cesium yerine/sonrasında (§14 sim kipi: sahte Cesium + "Haritayı göster" anahtarı).
+     - js/hepgo_sim.js hepgo_ws.js'den sonra (§14 sim kipi: 3B üstünde yüzen kartlar — olay kapısı, tuş iletimi, kart konumu).
      - js/hepgo_stub.js EN BAŞTA: Cesium.Ion.defaultAccessToken='' ve pakette olmayan modüllerin (radar_gorsel,
        prizma_ikon, angajman, surum, kullanici) guard'sız okunan globalleri.
      - jquery / flightindicators / pakette OLMAYAN 64 dosya YÜKLENMEZ (paketteki JS'lerde kullanım yok).
@@ -862,6 +863,8 @@
      (seri.js:7 `let ws`e ATANIR, yeniden bildirilmez); sonunda applyLanguage + ayarlariUygula + bağlan. -->
 <script src="js/hepgo_patch.js"></script>
 <script src="js/hepgo_ws.js"></script>
+<!-- §14 Uçuş Simülatörü (?sim=): şeffaf iframe olay kapısı, tuş iletimi, konsol kenarı, kart konumu, Yerleşimi sıfırla (görev kipinde etkisiz) -->
+<script src="js/hepgo_sim.js"></script>
 <!-- IS50 / IS51: DOM düzelticileri en sonda -->
 <script src="js/pencere_iskelet.js"></script>
 <script src="js/panel_durumcubugu.js"></script>

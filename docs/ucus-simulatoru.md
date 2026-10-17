@@ -460,22 +460,48 @@ flights:[{id: 9000+N, protocol:'sanal', sim_bridge_id:-(9000+N), label, name, dr
 points:[{seq, cmd, lat, lon, alt}]}` — hub `mission_upload` sonrası (yalnız konumlu seyrüsefer öğeleri; TAKEOFF x/y 0 çizilmez), `mission_clear` /
 Sıfırla sonrası boş liste.
 
-**Ön yüz.** Oturum ekranı (`flightsim.js`): 3B dünya her zaman TAM alanı kaplar; `createOpsPanel(stage, {sid, onToggle})` (`flightsim_ops.js`)
-`/static/ops/index.html?sim=<id>` iframe'ini 3B'nin ÜSTÜNDE sağdan kayan yarı saydam koyu katman olarak açar (`.fs-ops-frame`: `--fs-ops-w:
-clamp(440px, 36%, 520px)`, üstten alt çubuğa dek — `--fs-bar-h` çubuk yüksekliğini ResizeObserver ile izler; `translateX` geçişi). Açma/kapama:
-alt çubuk **Panel** düğmesi, sağ kenardaki ince **PANEL** sekmesi (`.fs-ops-tab`; kapalıyken yalnız o kalır) ya da **P** tuşu; tercih localStorage
-`fs.ops.on` (varsayılan açık). `.fs-stage.fs-ops` = panel açık: eski `.fs-hud` ve `.fs-cmds` gizli, sağ sanal kumanda çubuğu/olay şeridi/atıf panelin
-soluna kayar; panel kapalı = **sade görünüm** (eski HUD + ARM/mod/Kalkış/RTL). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla,
-Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır. **Haritasız panel:** sim kipinde (`?sim=`) `index.html` yükleyicisi Cesium.js /
+**Ön yüz — kartlar 3B'nin üstünde yüzer (ayrı panel/pencere yok).** Kullanıcı geri bildirimi: "dron paneli sağda ayrı bir panel içinde çıkıyor;
+uçuş simülasyonuna giremez mi?" → harekât öğeleri doğrudan simülatör ekranının parçasıdır. Oturum ekranı (`flightsim.js`): 3B dünya her zaman
+TAM alanı kaplar; `createOpsPanel(stage, {sid, onToggle})` (`flightsim_ops.js`) `/static/ops/index.html?sim=<id>` iframe'ini 3B tuvalin
+TAMAMINI kaplayan, **tamamen şeffaf** bir katman olarak ekler (`.fs-ops-frame`: `inset 0`, alt çubuğa dek — `--fs-bar-h` ResizeObserver ile;
+zemin/kenarlık/gölge yok; iframe'e `color-scheme` VERİLMEZ — Chrome, iframe öğesi ile iç belgenin renk şeması uyuşmazsa iframe'i opak beyaz çizer).
+İç belge de şeffaftır (`hepgo.css html[data-hepgo-sim]`: html/body/#anaAlan/#haritaAlan transparent; GÖKTUNGU alt barı, HEPGO üst bandı ve görev
+rozeti gizli). Görünen öğeler yüzen HUD kartlarıdır (`.fs-hud` ile aynı dil: `rgba(11,14,17,.72)`, 10 px köşe, ince kenarlık; aralarında 8 px):
+**dron kartı** sağ üstte (`hepgo_patch.js` sim kipinde sütunu SAĞ ÜSTE, `top: 56px` diz(); kartın kendi zemini yok; başlık = ad/mod/irtifa/Sanal
+rozetleri, PFD, telemetri karoları **4 sütun × 2 satır** (IRT HIZ BAT GPS / DURUM MOD TİP KOMUT — GÖKTUNGU'nun yatay kaydırmalı 2 satırlık akışı
+yerine; ARM/DISARM DURUM karosundan, mod MOD karosundan, kalkış/iniş KOMUT karosundan, diğer komutlar PFD'deki İŞLEMLER kutusundan), kart içi
+Haberleşme konsolu; 440 px, <1100 px'te 360 px ve küçük yazı; `max-height` ile kaydırılır, Küçült düğmesiyle yalnız başlık); **KONSOL**
+(`#altOrtaPanel`) alt ortada küçük (560 px / 150 px gövde) ve başlığından katlanabilir (`gcs_alt_orta`). Toast'lar sol üste alınır.
+**Fare/klavye.** iframe normalde `pointer-events: none` → fare/tekerlek 3B'ye gider (OrbitControls döndürme/yakınlaştırma). Üst pencere her
+`pointermove/pointerdown`'da imlecin altındaki iframe öğesini sorar (same-origin `elementFromPoint`); görünür bir öğe (kart, konsol, popup, toast)
+varsa `.fs-ops-hit` ile olayları iframe'e açar; iframe boş alanda (html/body/#anaAlan/#haritaAlan/#cesiumContainer) olay görünce sınıfı
+kendisi kaldırır (`static/ops/js/hepgo_sim.js`), basılı/sürükleme sırasında kaldırmaz. Karta tıklanınca odak üst pencereye geri alınır
+(`{t:'ops-focus'}` → `stage.focus()`, stage `tabindex=-1`); form alanı odaklı değilse iframe'de yakalanan keydown/keyup üst pencereye sentetik
+`KeyboardEvent` olarak iletilir (Escape hariç) → 1–4, H, P, WASD/ok tuşları iframe odaklıyken de çalışır. Dokunmatikte ilk dokunuş (öncesinde
+hareket olmadığı için) kapıyı açar, ikinci dokunuş karta ulaşır (bilinen sınır).
+**Yerleşim/çakışma.** Olay şeridi konsol kutusunun üstündedir: iframe `{t:'ops-layout', con}` ile konsolun üst kenarını bildirir →
+`--fs-con-h`, `.fs-events { bottom: max(--fs-ev-min, bar + con + 8px); width: min(520px, 100% − 660px) }` (Mission Planner kutusu solda,
+kart sağda). Sanal kumanda açıkken üst pencere iframe'e `{t:'fs-state', rc}` gönderir → `html[data-fs-rc]`: konsol ipucu şeridinin üstüne
+(`bottom: 44px`), kart kısalır, olay şeridi çubukların üstünde (`--fs-ev-min: 222px`); <1100 px ve kumanda açıkken konsol gizli; <760 px'te
+konsol/olay şeridi/atıf/MP kutusu gizli. Kart başlığından **sürüklenebilir** (mıknatıs: sağ kenar kılavuzu); konum sağ kenara göre + genişlik
+localStorage `hepgo_sim_kart`, açılışta uygulanır; sol araç grubunda **Yerleşimi sıfırla** (`#btnYerlesimSifirla`: kart sağ üste, konsol açık).
+Göster/gizle: alt çubuk **Panel** düğmesi ya da **P** tuşu; tercih localStorage `fs.ops.on` (varsayılan açık). `.fs-stage.fs-ops` = kartlar
+görünür: eski `.fs-hud` ve `.fs-cmds` gizli; gizli = **sade görünüm** (eski HUD + ARM/mod/Kalkış/RTL; iframe `visibility: hidden`, soket açık
+kalır). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla, Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır.
+**Neden iframe (aynı belgeye gömme değil):** GÖKTUNGU ~30 bin satır klasik (modülsüz) betik ortak sözcüksel kapsamda üst düzey `const/let`
+ve `window` globalleriyle çalışır (`ws`, `dronlar`, `D()`, `Cesium`…), ~10 bin satırlık `stil.css` `html, body, button, input` gibi genel
+seçicileri ve kendi `:root` değişkenlerini tanımlar; aynı belgeye alınması HEPGO SPA'nın globalleri/CSS'iyle çakışır ve bayt bayt kopya
+sözleşmesini bozar. Şeffaf iframe aynı görsel sonucu (3B üstünde yüzen kartlar) yalıtımı koruyarak verir.
+**Haritasız panel:** sim kipinde (`?sim=`) `index.html` yükleyicisi Cesium.js /
 widgets.css'i HİÇ ÇEKMEZ (karo/Google/Esri isteği yok): `js/hepgo_nomap.js` evrensel bir sahte `Cesium` (Proxy: her özellik/çağrı/`new` yine sahte;
 sayıya 0, metne "", yinelemede boş, `then` yok) verir, GÖKTUNGU betikleri (`harita.js:177 new Cesium.Viewer`, entity'ler) değişmeden çalışır ama
-hiçbir şey çizmez; `html[data-hepgo-nomap]` harita araçlarını, alt bar harita alanlarını ve Harita Ayarları'nı gizler, dron kartı katman genişliğine
-uyar (`.dron-kart.ayrik { width: calc(100% - 64px) }`). Sol araç grubunda **Haritayı göster/gizle** anahtarı (`#btnHaritaGoster`, localStorage
-`hepgo_sim_harita = "1"` → sayfa yenilenir, Cesium yüklenir; varsayılan kapalı). Görev kipinde (`?task=`) harita her zaman yüklenir (document.write ile
-parser engelleyici, sonraki betikler Cesium'u senkron bulur). Rota çizimi 3B'de (`setRoute`).
-**Dron kamerası (2)**: `.fs-fpv` → panel ve sekme gizlenir, askeri HUD (H) aynen; 1/3/4'e dönünce panel geri gelir. Kayıt ve mock
+hiçbir şey çizmez; `html[data-hepgo-nomap]` harita araçlarını, alt bar harita alanlarını ve Harita Ayarları'nı gizler. Sol araç grubunda
+**Haritayı göster/gizle** anahtarı (`#btnHaritaGoster`, localStorage `hepgo_sim_harita = "1"` → sayfa yenilenir, Cesium yüklenir; varsayılan
+kapalı; harita açıkken Cesium tuvali opak olduğundan 3B'yi örter ve fare haritaya gider). Görev kipinde (`?task=`) harita her zaman yüklenir
+(document.write ile parser engelleyici, sonraki betikler Cesium'u senkron bulur). Rota çizimi 3B'de (`setRoute`).
+**Dron kamerası (2)**: `.fs-fpv` → kartlar gizlenir (iframe `display: none`), askeri HUD (H) aynen; 1/3/4'e dönünce kartlar geri gelir. Kayıt ve mock
 oturumlarında panel yok (sunucu köprüsü yok). `hepgo_ws.js`: `?sim=` → `SIM_ID`, `baglamUrl()`, `watch{sim_id}`, ilk hello'da Bağlantı Yöneticisi
-(`#yzSeri`) açılır, `html[data-hepgo-sim]` (kart katlı başlamaz — `hepgo_patch.js`), sürdürme anahtarı `hepgo_ops_surdur_sim<N>`, bilgi kutusu
+(`#yzSeri`) açılır, `html[data-hepgo-sim]` (kart katlı başlamaz, sağ üstte — `hepgo_patch.js`), sürdürme anahtarı `hepgo_ops_surdur_sim<N>`, bilgi kutusu
 "Simülatör oturumu bulunamadı → #/drone/sim". Rota: Dron Yönetimi › Rotalar'daki rotalar panelden (İŞLEMLER › Rotayı Yükle) `routes/{id}/mission` →
 `mission_upload` ile SITL'e yüklenir, "Rotayı Başlat" ARM+AUTO yapar; Cesium haritada GÖKTUNGU çizimi, 3B'de `flightsim3d.setRoute(points)`
 (amber çizgi, ara nokta küreleri — ilk yeşil/son kırmızı/LAND-RTL mor — yere inen çubuk; `setWorld` sonrası yeniden çizilir).
@@ -489,6 +515,10 @@ uvicorn döngüsü varsayar; ikinci `TestClient` ayrı döngü olduğundan monta
 **Sınırlar.** Kayıttan oynatma kareleri tarayıcıda oynatılır; hub'a telemetri olarak verilmez (panel kapalı; sunucu-taraflı oynatıcı gerekir).
 Mission Planner'dan yüklenen görevler (UDP) 3B rota çizgisine yansımaz (yalnız hub `mission_upload`; mission_download ile okunabilir).
 Harekât ekranındaki görev bağlamına özgü satırlar (uçuş kaydı/sipariş, köprü bağlan/kes) simülatörde "Sanal · otomatik bağlı" olarak görünür.
+Kartların `backdrop-filter` bulanıklığı iframe sınırını aşmaz (yalnız iframe içi; 3B arka plan bulanıklaşmaz). Tarayıcı doğrulaması (Playwright,
+SwiftShader; sahte kip + gerçek SITL): iframe tam alan/şeffaf, kart sağ üstte 3B'nin üstünde, fareyle döndürme (azimut değişir) ve tekerlek,
+olay kapısı kart/boş alan, 1–4/H/P (iframe odaklıyken de), ARM DURUM karosundan → kaydırmalı onay → "[KOMUT] D1 arm: kabul edildi" + ARMED,
+FPV'de gizli, P ile sade görünüm, sürükleme + Yerleşimi sıfırla, sanal kumanda yerleşimi, dar görünüm 1000×700.
 
 ## 15. CAYSIM masaüstü istemcisi (`app/caysim.py`, `app/routers/caysim.py`; sözleşme **docs/caysim-api.md**)
 CAYSIM, Unreal Engine 5 + Cesium for Unreal ile yüksek gerçekçilikli görselleştirme istemcisidir (ayrı depo `goktalay/caysim`); **kendi fiziğini

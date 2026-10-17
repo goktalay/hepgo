@@ -18,7 +18,7 @@ import { modelPicker } from './flightsim_models.js';   // görsel model kütüph
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
-import { createOpsPanel } from './flightsim_ops.js';   // §14: Canlı Uçuş harekât paneli (static/ops iframe) — telemetri/komut/rota paneli; 3B yanında
+import { createOpsPanel } from './flightsim_ops.js';   // §14: Canlı Uçuş harekât paneli (static/ops şeffaf iframe) — kartlar 3B'nin üstünde yüzer
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -492,11 +492,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
-  // §14 harekât paneli: Canlı Uçuş'un panelleri (telemetri, komutlar, rota, ARM CHECK, konsol) 3B'nin ÜSTÜNDE sağdan kayan katman (iframe);
-  // "Panel" düğmesi / P tuşu / kenar sekmesi açıp kapatır; kapalıyken sade görünüm (eski HUD + alt çubuk komutları)
+  // §14 harekât paneli: Canlı Uçuş'un öğeleri (dron kartı: rozetler + PFD + telemetri karoları + İŞLEMLER; konsol) 3B'nin ÜSTÜNDE yüzen kartlar
+  // (tam alan, tamamen şeffaf iframe; ayrı kutu yok); "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları)
   const opsOk = !replay && !mock && !!be.ops;
   let ops = null;
-  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
+  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât kartlarını göster/gizle (P): dron kartı, PFD, telemetri karoları ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -664,7 +664,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const climb = t.climb != null ? t.climb : (t.vd != null ? -t.vd : null);
     V.climb.textContent = (climb != null && climb > 0.05 ? '+' : '') + f1(climb);
     V.hdg.textContent = f0(t.heading != null ? t.heading : (t.yaw != null ? ((t.yaw * 180 / Math.PI) + 360) % 360 : null)).padStart(3, '0');
-    V.gps.textContent = `${t.gps_fix >= 3 ? '3D' : t.gps_fix === 2 ? '2D' : tr('Yok')} · ${f0(t.sats)} ${tr('uydu')}`;
+    V.gps.textContent = `${t.gps_fix >= 6 ? 'RTK' : t.gps_fix === 5 ? 'RTK FLT' : t.gps_fix === 4 ? 'DGPS' : t.gps_fix === 3 ? '3D' : t.gps_fix === 2 ? '2D' : tr('Yok')} · ${f0(t.sats)} ${tr('uydu')}`;
     V.batt.textContent = `${t.batt_v != null && Number(t.batt_v) > 0 ? Number(t.batt_v).toFixed(2) : '—'} V · %${f0(t.batt_pct)}`;   // SITL'de batarya izleme kapalıysa 0 V gelir
     V.batt.classList.toggle('warn', t.batt_pct != null && t.batt_pct < 25);
     V.thr.textContent = f0(t.throttle);

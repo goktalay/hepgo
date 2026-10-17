@@ -3568,7 +3568,7 @@ registerCatalog('ar', {
   "Sade görünüm": "عرض بسيط",
   "Harekât paneli": "لوحة العمليات",
   "Rota yüklendi: {n} nokta": "تم تحميل المسار: {n} نقاط",
-  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "إظهار/إخفاء لوحة العمليات (P): طبقة تنزلق من اليمين فوق العالم ثلاثي الأبعاد؛ عند الإغلاق عرض بسيط (الواجهة القديمة وأوامر الشريط السفلي)",
+  "Harekât kartlarını göster/gizle (P): dron kartı, PFD, telemetri karoları ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)": "إظهار/إخفاء بطاقات العمليات (P): بطاقة الدرون وPFD وبلاطات القياس عن بُعد ووحدة التحكم تطفو فوق العالم ثلاثي الأبعاد؛ عند الإخفاء العرض البسيط (HUD الكلاسيكي وأوامر الشريط السفلي)",
   "Harekât panelini aç/kapat (P)": "إظهار/إخفاء لوحة العمليات (P)",
   "Panel": "اللوحة",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "الشبكة: {hz} هرتز · الارتجاج {j} مللي ثانية · المخزن المؤقت {d} مللي ثانية",

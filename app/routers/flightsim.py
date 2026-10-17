@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSoc
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_replay
+from .. import auth, db, drone_hub, flightsim, flightsim_replay, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -163,6 +163,41 @@ async def session_cmd(sid: int, body: CmdIn, user=Depends(sim_user)):
         return await s.komut(body.name, body.params or {}, kaynak=user['id'])
     except flightsim.SimHata as e:
         _hata(e)
+
+
+# ---------------- Gerçek topoğrafya vekili (sim_terrain; §8) ----------------
+# Senkron uçlar (FastAPI iş parçacığı havuzu); URL'ler modülde sabit — kullanıcı girdisi yalnız sayı (SSRF yok).
+def _kaynak(e):
+    raise HTTPException(e.kod, str(e))
+
+
+@router.get('/terrain')
+def terrain_plan(lat: float, lon: float, size_m: float = 4000, user=Depends(sim_user)):
+    try:
+        return sim_terrain.terrain_plani(lat, lon, size_m)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get('/tile/{kind}/{z}/{x}/{y}')
+def terrain_tile(kind: str, z: int, x: int, y: int, user=Depends(sim_user)):
+    try:
+        data, ctype = sim_terrain.karo(kind, z, x, y)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except sim_terrain.KaynakHata as e:
+        _kaynak(e)
+    return Response(content=data, media_type=ctype, headers={'Cache-Control': 'private, max-age=86400'})
+
+
+@router.get('/osm')
+def terrain_osm(lat: float, lon: float, size_m: float = 4000, user=Depends(sim_user)):
+    try:
+        return sim_terrain.osm(lat, lon, size_m)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except sim_terrain.KaynakHata as e:
+        _kaynak(e)
 
 
 # ---------------- WebSocket: /ws/drone/sim/{id} ----------------

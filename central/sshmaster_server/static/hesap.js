@@ -11,6 +11,7 @@ view.setAttribute('data-noi18n', '');
 const SITE = document.body.dataset.site || 'sm';
 const BRAND = document.body.dataset.brand || SITE;
 const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: 'Mastertool' };
+const GAME_URLS = { vf: '/oyunlar/volfai/' };   // web oyunları: ?app=vf ile gelen giriş / kayıt sonrası dönüş adresi
 const SNAME = NAMES[SITE] || 'Mastertool';
 const API = '/api/mt';
 const AQ = BRAND !== SITE ? `?app=${BRAND}` : '';   // portalda ürün markası sayfalar arasında korunur
@@ -47,7 +48,7 @@ async function prelogin(email) { return (await api(`${API}/auth/prelogin`, { met
 function msg(el, text, kind = 'err') { el.innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ''; }
 function busy(btn, on, label) { btn.disabled = on; if (label) btn.textContent = on ? t('Lütfen bekleyin…') : label; }
 const qs = new URLSearchParams(location.search);
-const nextUrl = () => { const n = qs.get('sonra') || ''; return /^\/(indir|hesabim)\b/.test(n) ? n : '/hesabim'; };
+const nextUrl = () => { const n = qs.get('sonra') || ''; return /^\/(indir|hesabim|oyunlar)\b/.test(n) ? n : (GAME_URLS[BRAND] || '/hesabim'); };
 
 function pwRules(p) { return p.length >= 8; }
 
@@ -89,6 +90,7 @@ function pageLogin() {
   view.innerHTML = `<h1>${t('Giriş yapın')}</h1>
     <p class="muted small">${t('Mastertool hesabınız tüm Mastertool uygulamalarında aynıdır.')}</p>
     ${qs.get('sonra') ? `<div class="msg info">${t('İndirme bağlantınız kişiye özeldir; devam etmek için giriş yapın.')}</div>` : ''}
+    ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Giriş yapınca oyuna dönersiniz; ilerlemeniz hesabınızda saklanır.')}</div>` : ''}
     ${durum ? `<div class="msg ${durum[1]}">${durum[0]}</div>` : ''}
     <form id="f" autocomplete="on">
       <label for="e">${t('E-posta')}</label><input id="e" type="email" autocomplete="username" required>
@@ -178,6 +180,7 @@ async function pageAccount() {
   view.innerHTML = `<button class="btn sm top-right" id="out">${t('Çıkış')}</button>
     <h1>${t('Merhaba, {name}', { name: esc(ACC.user.name) })}</h1><p class="muted small">${esc(ACC.user.email)} · ${t('Mastertool hesabı')}</p>
     ${qs.get('durum') === 'dogrulandi' ? `<div class="msg ok">${t('E-postanız doğrulandı, hesabınız açıldı.')}</div>` : ''}
+    ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Oyuna dönmek için:')} <a href="${GAME_URLS[BRAND]}">${esc((ACC.games || []).find(g => g.app === BRAND)?.name || BRAND)}</a></div>` : ''}
     <div class="tabs">${TABS().map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="pane"></div>`;
   $('#out').onclick = async () => { await api(`${API}/auth/logout`, { method: 'POST' }).catch(() => {}); location.href = `/giris${AQ}${AQ ? '&' : '?'}durum=cikis`; };
@@ -220,7 +223,21 @@ function paneApps(pane) {
         <span>${t('Şifreli kopya')}</span><span>${x.library.version ? t('{size} · son eşitleme {date}', { size: fmtSize(x.library.size), date: fmtDate(x.library.updated_at) }) + (x.library.device ? ` · ${esc(x.library.device)}` : '') : t('Henüz eşitleme yok')}</span></div>`}
     </div>`;
   }).join('')}</div>
-  <p class="hint">${t('Kayıtlarınız uçtan uca şifrelenir; anahtar yalnız sizin cihazlarınızda bulunur, sunucu içeriği okuyamaz.')}</p>`;
+  <p class="hint">${t('Kayıtlarınız uçtan uca şifrelenir; anahtar yalnız sizin cihazlarınızda bulunur, sunucu içeriği okuyamaz.')}</p>
+  ${paneGames()}`;
+}
+
+function paneGames() {   // web oyunları (kind:'web'): kurulum yok, tarayıcıda açılır; profil hesaba bağlı tek kayıt
+  const games = ACC.games || [];
+  if (!games.length) return '';
+  const lang = window.mtKit?.lang || 'tr';
+  return `<h3 class="grp-h">${t('Oyunlar')}</h3><p class="hint" style="margin-top:-6px">${t('Tarayıcıda oynanan Mastertool oyunları; ilerlemeniz bu hesapta saklanır ve cihazlarınız arasında eşitlenir.')}</p>
+    <div class="apps">${games.map(g => `<div class="app-card">
+      <div class="head"><img src="${esc(g.icon_svg || `/brand/${g.app}.svg`)}" alt=""><div class="grow"><b>${esc(g.name)}</b>${g.site ? ` <a class="small" href="${esc(g.site)}">${t('Tanıtım')}</a>` : ''}
+        <div class="muted small">${esc((g.description && (g.description[lang] || g.description.en)) || '')}</div></div></div>
+      <div class="row"><a class="btn primary" href="${esc(g.url)}">${t('Oyna')}</a></div>
+      <div class="kv" style="margin-top:12px"><span>${t('Oyun profili')}</span><span>${g.has_profile ? `<span class="badge on">${t('Hesapta kayıtlı')}</span>` : t('Henüz kayıt yok; oyunda giriş yapınca oluşur')}</span></div>
+    </div>`).join('')}</div>`;
 }
 
 function paneDevices(pane) {

@@ -139,15 +139,39 @@ def render_index(site, page, lang, rel=None):
     return page.replace('</head>', extra + '</head>', 1)
 
 
-def render_tool(k, meta, page, lang, rel=None):
-    """Araç tanıtım sayfası (mastertool.download/araclar/<slug>): ana sayfa SEO'su + adresler ve yapılandırılmış veri araca göre."""
-    lang = lang if lang in LANGS else 'tr'
+def _subpage(page, lang, turl, rel=None):
+    """Portal alt sayfası (araç / oyun tanıtımı): ana sayfa SEO'su, canonical / hreflang / og:url alt sayfanın adresine çevrilir.
+    Dönüş (html, url_fn, description)."""
     out = render_index('mt', page, lang, rel)
-    turl = f'{base("mt")}/araclar/{meta["slug"]}'
     u = lambda l: turl if l == 'tr' else f'{turl}?lang={l}'   # noqa: E731
     out = re.sub(r'(href|content)="' + re.escape(base('mt')) + r'/(\?lang=([a-z]{2}))?"', lambda m: f'{m[1]}="{u(m[3] or "tr")}"', out)
     m = re.search(r'<meta name="description" content="([^"]*)">', out)
-    desc = _h.unescape(m.group(1)) if m else ''
+    return out, u, (_h.unescape(m.group(1)) if m else '')
+
+
+def _put_ld(out, ld):
+    return re.sub(r'<script type="application/ld\+json">.*?</script>',
+                  lambda _: '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace('</', '<\\/') + '</script>',
+                  out, count=1, flags=re.S)
+
+
+def render_game(k, meta, page, lang):
+    """Oyun tanıtım sayfası (mastertool.download/oyunlar/<slug>/tanitim/): schema.org VideoGame, tarayıcıda ücretsiz oynanır."""
+    lang = lang if lang in LANGS else 'tr'
+    out, u, desc = _subpage(page, lang, f'{base("mt")}/oyunlar/{meta["slug"]}/tanitim/')
+    play = f'{base("mt")}/oyunlar/{meta["slug"]}/'
+    ld = {'@context': 'https://schema.org', '@type': 'VideoGame', 'name': meta['name'], 'description': desc, 'url': u(lang),
+          'image': f'{base("mt")}/brand/{k}-512.png', 'gamePlatform': ['Web browser', 'Android', 'iOS'], 'applicationCategory': 'Game',
+          'operatingSystem': 'Any', 'genre': 'Arcade', 'playMode': 'SinglePlayer', 'inLanguage': list(LANGS), 'isAccessibleForFree': True,
+          'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'TRY', 'availability': 'https://schema.org/InStock', 'url': play},
+          'publisher': {'@type': 'Organization', 'name': 'Mastertool', 'url': f'{base("mt")}/'}}
+    return _put_ld(out, ld)
+
+
+def render_tool(k, meta, page, lang, rel=None):
+    """Araç tanıtım sayfası (mastertool.download/araclar/<slug>): ana sayfa SEO'su + adresler ve yapılandırılmış veri araca göre."""
+    lang = lang if lang in LANGS else 'tr'
+    out, u, desc = _subpage(page, lang, f'{base("mt")}/araclar/{meta["slug"]}', rel)
     ld = _app_ld(meta['name'], 'UtilitiesApplication', u(lang), desc, f'{base("mt")}/brand/{k}-512.png', rel, lang)
     ld['isPartOf'] = {'@type': 'SoftwareApplication', 'name': 'Master Tool', 'url': f'{base("mt")}/#master-tool'}
     shots = _shots('mt', k)
@@ -158,15 +182,19 @@ def render_tool(k, meta, page, lang, rel=None):
     if lang != 'tr':   # araç görüntülerinin İngilizce sürümleri (ana sayfa işlevi yalnız portalın kendi listesine bakar)
         en = {x['stem'] for x in shots if x.get('en')}
         out = re.sub(r'/shots/([0-9a-z._-]+?)(-800)?\.webp', lambda m: f'/shots/{m[1]}-en{m[2] or ""}.webp' if m[1] in en and '-en' not in m[1] else m[0], out)
-    return re.sub(r'<script type="application/ld\+json">.*?</script>',
-                  lambda _: '<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace('</', '<\\/') + '</script>',
-                  out, count=1, flags=re.S)
+    return _put_ld(out, ld)
 
 
 def tool_pages():
     """Yayındaki araç sayfaları (site haritası için): static/mt/araclar/<slug>.html var olanlar."""
     d = settings.STATIC_DIR / 'mt' / 'araclar'
     return sorted(f.stem for f in d.glob('*.html')) if d.is_dir() else []
+
+
+def game_pages():
+    """Yayındaki oyun tanıtım sayfaları (site haritası için): static/mt/oyunlar/<slug>/tanitim/index.html var olanlar."""
+    d = settings.STATIC_DIR / 'mt' / 'oyunlar'
+    return sorted(f.parent.parent.name for f in d.glob('*/tanitim/index.html')) if d.is_dir() else []
 
 
 def robots(site):
@@ -182,9 +210,9 @@ def sitemap(site):
     urls = ''.join(f'<url><loc>{e(_url(site, l))}</loc>{alts}{imgs if l == "tr" else ""}<changefreq>weekly</changefreq>'
                    f'<priority>{"1.0" if l == "tr" else "0.8"}</priority></url>' for l in LANGS)
     urls += f'<url><loc>{base(site)}/gizlilik</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>'
-    if site == 'mt':   # araç tanıtım sayfaları (8 dil)
-        for slug in tool_pages():
-            t = f'{base("mt")}/araclar/{slug}'
+    if site == 'mt':   # araç ve oyun tanıtım sayfaları (8 dil)
+        subs = [f'{base("mt")}/araclar/{s}' for s in tool_pages()] + [f'{base("mt")}/oyunlar/{s}/tanitim/' for s in game_pages()]
+        for t in subs:
             ta = ''.join(f'<xhtml:link rel="alternate" hreflang="{HREFLANG.get(l, l)}" href="{e(t if l == "tr" else t + "?lang=" + l)}"/>' for l in LANGS)
             urls += ''.join(f'<url><loc>{e(t if l == "tr" else t + "?lang=" + l)}</loc>{ta}<changefreq>weekly</changefreq>'
                             f'<priority>{"0.9" if l == "tr" else "0.7"}</priority></url>' for l in LANGS)

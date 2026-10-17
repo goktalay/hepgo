@@ -55,10 +55,34 @@ TOOLS['qp']['desc'] = {'tr': 'Sağ tıkla dosyaları anında önizler (resim, PS
                        'es': 'Vista previa instantánea de archivos con clic derecho (imágenes, PSD, PDF)', 'ar': 'يعاين الملفات فورًا من قائمة النقر بزر الماوس الأيمن (صور، PSD، PDF)',
                        'zh': '通过右键菜单即时预览文件（图片、PSD、PDF）', 'ru': 'Мгновенный предпросмотр файлов из контекстного меню (изображения, PSD, PDF)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
+# Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
+# kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına
+# kopyalanır (tanıtım sayfası static/mt/oyunlar/<slug>/tanitim/ depodan gelir). Simge: static/mt/img/<slug>.svg|.png|-512.png.
+GAMES = {'vf': {'name': 'VOLFAI', 'slug': 'volfai', 'icon': 'volfai'}}
+GAMES['vf']['desc'] = {'tr': "Volfied'in dokunmatik yeniden doğuşu: alanı ele geçir, uzaylıları kuşat", 'en': 'A touch-first rebirth of Volfied: claim the field, trap the aliens',
+                       'fr': "Renaissance tactile de Volfied : conquérez le terrain, encerclez les aliens", 'de': 'Volfied neu für Touch: Fläche erobern, Aliens einkesseln',
+                       'es': 'El renacer táctil de Volfied: conquista el campo, acorrala a los aliens', 'ar': 'ولادة جديدة للمس للعبة Volfied: استولِ على الساحة وحاصر الفضائيين',
+                       'zh': 'Volfied 的触屏新生：占领区域，围困外星人', 'ru': 'Volfied заново для сенсора: захватывай поле, окружай пришельцев'}
+GAME_FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')          # oyun dizinindeki yol parçaları (gizli dosya ve .. yok)
+GAME_MIME = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+             '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json',
+             '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+             '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+             '.woff': 'font/woff', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8'}
+# Oyun dizininin içerik güvenlik politikası: oyun kendi dosyaları + aynı kökendeki /api; satır içi betik yok (VOLFAI: type=module src)
+GAME_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; "
+            "connect-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'")
+# Tanıtım sayfası: site kiti (kit.js/kit.css) + yalnız ziyaretçi izniyle Google Analytics (kit.js gtag betiğini ekler)
+PROMO_CSP = ("default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: "
+             "https://www.googletagmanager.com https://*.google-analytics.com; connect-src 'self' https://*.google-analytics.com "
+             "https://*.analytics.google.com https://www.googletagmanager.com; font-src 'self'; object-src 'none'; base-uri 'self'; "
+             "form-action 'self'; frame-ancestors 'self'")
+PROFILE_MAX = 64 * 1024                               # oyun profili JSON'u üst sınırı (bayt)
 LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
 MT_CLIENTS = ('desktop', 'android', 'ios')          # Master Tool istemcileri: /api/mt/auth/login'de yalnız ortak (sso) oturum açar
+MT_APPS_WEB_MIN = (1, 2, 0)                         # /api/mt/apps?v=<istemci sürümü>: kind:'web' (oyun) kayıtları bu sürümden itibaren verilir
 RELEASE_APPS = APPS | {'mt': LAUNCHER}              # sürüm yükleme / indirme: uygulamalar + Master Tool masaüstü (başlatıcı)
-PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt') + tuple(TOOLS)      # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
+PREFIXES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt') + tuple(TOOLS) + tuple(GAMES)   # mt = Mastertool portalı (web hesabı); kimlik uçları her önekte aynı
 SITES = ('sm', 'fm', 'sq', 'np', 'cv', 'mt')
 app = FastAPI(title='Mastertool', docs_url=None, redoc_url=None, openapi_url=None)
 COOKIE = 'sm_session'
@@ -364,7 +388,8 @@ async def register(a: str, request: Request):
         conn.execute("UPDATE tokens SET used_at = ? WHERE user_id = ? AND kind = 'verify' AND used_at IS NULL", (db.now(), uid))
         tok = new_token(conn, uid, 'verify', settings.VERIFY_HOURS * 3600)
         conn.commit()
-    mailer.send_verify(email, name, acct(f'/dogrula/{tok}'), brand)
+    game = str(b.get('brand') or '')   # oyundan gelen kayıt (?app=vf): doğrulama sonrası Hesabım'da oyuna dönüş gösterilir
+    mailer.send_verify(email, name, acct(f'/dogrula/{tok}' + (f'?app={game}' if game in GAMES else '')), brand)
     return {'ok': True}
 
 
@@ -412,7 +437,8 @@ def verify(tok: str, request: Request):
         s = new_session(conn, u['id'], 'web', ip=client_ip(request))
         conn.execute('UPDATE users SET last_login = ? WHERE id = ?', (db.now(), u['id']))
         conn.commit()
-    resp = RedirectResponse('/hesabim?durum=dogrulandi', status_code=303)
+    game = request.query_params.get('app') or ''
+    resp = RedirectResponse('/hesabim?durum=dogrulandi' + (f'&app={game}' if game in GAMES else ''), status_code=303)
     set_cookie(resp, s)
     return resp
 
@@ -425,7 +451,7 @@ async def login(a: str, request: Request):
     email = norm_email(b.get('email'))
     auth = need_auth_hash(b.get('auth_hash'))
     desktop = a == 'mt' and b.get('client') in MT_CLIENTS     # Master Tool masaüstü / Android / iPhone: ortak (sso) oturum
-    web = (b.get('client') == 'web' or a == 'mt') and not desktop
+    web = (b.get('client') == 'web' or a == 'mt') and not desktop   # oyunlar (GAMES) client:'web' ile çerezli oturum açar; client yoksa Bearer
     with db.connect() as conn:
         u = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
         if not u:
@@ -674,6 +700,49 @@ async def settings_put(a: str, request: Request):
         return {'sync_enabled': bool(lic(conn, u['id'], a)['sync_enabled'])}
 
 
+# ---------------- oyun profili (kullanıcı başına tek JSON; sunucu içeriği yorumlamaz) ----------------
+def need_game(a):
+    if a not in GAMES:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    return a
+
+
+def game_url(k, promo=False):
+    return f"{settings.PORTAL_URL}/oyunlar/{GAMES[k]['slug']}/" + ('tanitim/' if promo else '')
+
+
+@app.get('/api/{a}/profile')
+def profile_get(a: str, request: Request):
+    need_game(a)
+    with db.connect() as conn:
+        u, _ = current(request, conn, a=a)
+        r = conn.execute('SELECT profile, updated_at FROM vf_profiles WHERE user_id = ?', (u['id'],)).fetchone()
+    return {'user': {'id': u['id'], 'name': u['name']}, 'profile': json.loads(r['profile']) if r else None, 'updated_at': r['updated_at'] if r else None}
+
+
+@app.put('/api/{a}/profile')
+async def profile_put(a: str, request: Request):
+    need_game(a)
+    raw = await request.body()
+    if len(raw) > PROFILE_MAX + 4096:
+        raise Err(413, 'too_large', 'Profil 64 KB sınırını aşıyor')
+    try:
+        b = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise Err(400, 'invalid', 'İstek gövdesi geçerli JSON değil')
+    if not isinstance(b, dict) or not isinstance(b.get('profile'), dict):
+        raise Err(400, 'invalid', 'profile bir JSON nesnesi olmalı')
+    text = json.dumps(b['profile'], ensure_ascii=False, separators=(',', ':'))
+    if len(text.encode()) > PROFILE_MAX:
+        raise Err(413, 'too_large', 'Profil 64 KB sınırını aşıyor')
+    with db.connect() as conn:
+        u, _ = current(request, conn, a=a)
+        conn.execute('INSERT INTO vf_profiles (user_id, profile, updated_at) VALUES (?,?,?) '
+                     'ON CONFLICT(user_id) DO UPDATE SET profile = excluded.profile, updated_at = excluded.updated_at', (u['id'], text, db.now()))
+        conn.commit()
+    return {'ok': True}
+
+
 # ---------------- web hesabım (portal) ----------------
 def release_public(r):
     if not r:
@@ -704,9 +773,11 @@ def account(a: str, request: Request):
                          'download_url': _dl_url(u, k),
                          'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ? AND app = ?', (u['id'], k)).fetchone()[0]})
         launcher = {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt')), 'download_url': _dl_url(u, 'mt')}
+        games = [game_entry(k) | {'has_profile': bool(conn.execute('SELECT 1 FROM vf_profiles WHERE user_id = ?', (u['id'],)).fetchone())}
+                 for k in GAMES]
         sm = apps[0]
         # sm alanları üst düzeyde de (v1 hesap sayfası önbellekte kalmış tarayıcılar için)
-        return {'user': user_public(u), 'apps': apps, 'launcher': launcher, 'sessions': sessions, 'sync_enabled': sm['sync_enabled'], 'library': sm['library'],
+        return {'user': user_public(u), 'apps': apps, 'games': games, 'launcher': launcher, 'sessions': sessions, 'sync_enabled': sm['sync_enabled'], 'library': sm['library'],
                 'release': sm['release'], 'download_url': sm['download_url'],
                 'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ?', (u['id'],)).fetchone()[0]}
 
@@ -793,10 +864,24 @@ def app_site(k):
     return f"{settings.PORTAL_URL}/araclar/{TOOLS[k]['slug']}" if k in TOOLS else settings.SITE_URLS[k] + '/'
 
 
+def game_entry(k):
+    """Katalog / Hesabım kaydı (kind:'web'): kurulum, lisans ve sürüm yok; url tarayıcıda açılır, site tanıtım sayfası."""
+    return {'app': k, 'code': k, 'name': GAMES[k]['name'], 'group': 'games', 'kind': 'web', 'url': game_url(k), 'site': game_url(k, promo=True),
+            'icon_svg': f'/brand/{k}.svg', 'icon_png': f'/brand/{k}.png', 'description': GAMES[k].get('desc')}
+
+
+def client_version(v):
+    """'1.2.0' → (1, 2, 0); boş ya da bozuk → (0,). Ön ek 'v' ve '-beta' gibi ekler yok sayılır."""
+    m = re.match(r'^v?(\d{1,4})(?:\.(\d{1,4}))?(?:\.(\d{1,4}))?', (v or '').strip())
+    return tuple(int(x or 0) for x in m.groups()) if m else (0,)
+
+
 @app.get('/api/mt/apps')
-def mt_apps(request: Request):
+def mt_apps(request: Request, v: str = ''):
     """Master Tool'un gösterdiği uygulamalar. Kurulu mu değil mi istemcide belirlenir (Windows kaldırma kayıtları: DisplayName
-    = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.svg (tercih) ve .png (128 px)."""
+    = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.svg (tercih) ve .png (128 px).
+    ?v=<istemci sürümü>: 1.2.0 ve üstü kind:'web' (oyun, group:'games') kayıtlarını da alır; eski istemciler kind'i tanımadığı için
+    v yoksa ya da küçükse bu kayıtlar yanıtta yer almaz."""
     with db.connect() as conn:
         u, _ = current(request, conn, a='mt')
         out = []
@@ -805,6 +890,8 @@ def mt_apps(request: Request):
             out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
                         'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'description': APPS[k].get('desc'), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
                         'license': L['license'], 'release': release_public(latest_release(conn, k))})
+        if client_version(v) >= MT_APPS_WEB_MIN:
+            out += [game_entry(k) for k in GAMES]
         return {'apps': out, 'launcher': {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}}
 
 
@@ -959,7 +1046,7 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
 
 # ---------------- destek talepleri (Merkez talep ekranına düşer) ----------------
 TICKET_APPS = ({'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master'}
-               | {k: v['name'] for k, v in TOOLS.items()} | {'mt': 'Hesap / genel'})
+               | {k: v['name'] for k, v in TOOLS.items()} | {k: v['name'] for k, v in GAMES.items()} | {'mt': 'Hesap / genel'})
 
 
 def _mz(fn):
@@ -1250,7 +1337,7 @@ def _account_page(request):
         return r
     site = site_of(request)
     qa = APP_ALIASES.get((request.query_params.get('app') or '').lower(), request.query_params.get('app'))
-    brand = qa if site == 'mt' and qa in SITES else site
+    brand = qa if site == 'mt' and (qa in SITES or qa in GAMES) else site   # ?app=vf: oyundan gelen kayıt / giriş, dönüş oyuna
     html = (settings.STATIC_DIR / 'hesap.html').read_text(encoding='utf-8')
     html = html.replace('{{SITE}}', site).replace('{{BRAND}}', brand).replace('{{NAME}}', SITE_NAMES[site])
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
@@ -1278,6 +1365,52 @@ BRAND_FILES = {'sm.png': ('sm', 'logo.png', 'image/png'), 'fm.png': ('fm', 'logo
 for _k in TOOLS:   # araç simgeleri: /brand/<kod>.png (128), /brand/<kod>-512.png, /brand/<kod>.svg
     BRAND_FILES |= {f'{_k}.png': ('mt', f'araclar/{_k}.png', 'image/png'), f'{_k}-512.png': ('mt', f'araclar/{_k}-512.png', 'image/png'),
                     f'{_k}.svg': ('mt', f'araclar/{_k}.svg', 'image/svg+xml')}
+for _k, _g in GAMES.items():   # oyun simgeleri: static/mt/img/<icon>.svg|.png|-512.png
+    BRAND_FILES |= {f'{_k}.png': ('mt', f"img/{_g['icon']}.png", 'image/png'), f'{_k}-512.png': ('mt', f"img/{_g['icon']}-512.png", 'image/png'),
+                    f'{_k}.svg': ('mt', f"img/{_g['icon']}.svg", 'image/svg+xml')}
+
+
+@app.get('/oyunlar/{slug}')
+def page_game_root(slug: str, request: Request):
+    """/oyunlar/<slug> → /oyunlar/<slug>/ (oyunun göreli yolları dizin kökü ister)."""
+    if site_of(request) != 'mt' or not any(v['slug'] == slug for v in GAMES.values()):
+        return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    return RedirectResponse(f'/oyunlar/{slug}/', status_code=308)
+
+
+@app.get('/oyunlar/{slug}/{path:path}')
+def page_game(slug: str, path: str, request: Request, lang: str = ''):
+    """Web oyunu (yalnız mastertool.download): static/mt/oyunlar/<slug>/ dizini olduğu gibi sunulur (dağıtımda kopyalanır; depoda yok).
+    '' → index.html; 'tanitim/' → tanıtım sayfası (depodan, SEO + site kiti); diğerleri dosya (sw.js / manifest doğru MIME, önbellek yok)."""
+    k = next((k for k, v in GAMES.items() if v['slug'] == slug), None)
+    nf = HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    if site_of(request) != 'mt' or not k:
+        return nf
+    root = settings.STATIC_DIR / 'mt' / 'oyunlar' / slug
+    if path == 'tanitim':
+        return RedirectResponse(f'/oyunlar/{slug}/tanitim/', status_code=308)
+    if path == 'tanitim/':
+        p = root / 'tanitim' / 'index.html'
+        if not p.is_file():
+            return nf
+        return HTMLResponse(seo.render_game(k, GAMES[k], p.read_text(encoding='utf-8'), lang),
+                            headers={'Cache-Control': 'no-cache', 'Vary': 'Host', 'Content-Security-Policy': PROMO_CSP})
+    parts = path.split('/') if path else ['index.html']
+    if parts[-1] == '':
+        return nf   # alt dizin listesi yok
+    if not all(GAME_FILE_RE.match(x) for x in parts):
+        return nf
+    p = root.joinpath(*parts)
+    if not p.is_file():
+        if path == '':
+            return HTMLResponse(_page_msg(request, f"{GAMES[k]['name']} henüz yayında değil",
+                                          f'Tanıtım: <a href="/oyunlar/{slug}/tanitim/">/oyunlar/{slug}/tanitim/</a>.'), status_code=404)
+        return nf
+    media = GAME_MIME.get(p.suffix.lower(), 'application/octet-stream')
+    hdr = {'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff'}   # sw.js / sürüm değişimi hemen görülsün (ETag ile doğrulanır)
+    if media.startswith('text/html'):
+        hdr['Content-Security-Policy'] = GAME_CSP
+    return FileResponse(p, media_type=media, headers=hdr)
 
 
 @app.get('/araclar/{slug}')

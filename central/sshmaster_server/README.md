@@ -20,6 +20,11 @@ Testler: `cd central/sshmaster_server && ../../.venv/bin/python -m tests.test_ss
   e-posta bağlantıları portala), `MT_PUBLIC_URL`, `FTPM_PUBLIC_URL`, `MT_SMTP_HOST/PORT/USER/PASS` + `MT_MAIL_FROM`
   (yoksa VEILOX_SMTP_* ile register@hepgo.com), `MT_MERKEZ_UDS` (vars. /run/hepgo/merkez.sock — destek talepleri Merkez'e).
 - Testler: `../../.venv/bin/python -m tests.test_sshm` (v1 uyumu) ve `-m tests.test_mastertool`.
+- Oyunlar (`main.GAMES`, kod `vf` = VOLFAI, HTML5): kimlik uçları `/api/vf/auth/*` (web oturumu `client:'web'` → çerez; lisans / kütüphane /
+  sürüm yok), profil `GET|PUT /api/vf/profile` (kullanıcı başına tek JSON, ≤ 64 KB, tablo `vf_profiles`). Oyun `mastertool.download/oyunlar/volfai/`
+  altından sunulur: dosyalar DEPODA DEĞİL (goktalay/Volfia `release/*`: `index.html, manifest.webmanifest, sw.js, css/, js/, icons/`) —
+  dağıtımda `static/mt/oyunlar/volfai/` içine kopyalanır (`.gitignore`); tanıtım sayfası `static/mt/oyunlar/volfai/tanitim/` depodan gelir.
+  Katalogda (`/api/mt/apps?v=<Master Tool sürümü>`) `kind:'web'` kaydı yalnız v ≥ 1.2.0 isteyene verilir (eski istemciler kind'i tanımaz).
 - Site kiti `static/kit.js` + `kit.css` (hepgo.com'daki `central/veilox_server/static/exp2/kit.js` ile BİREBİR aynı dosya — değişince ikisini birlikte güncelleyin):
   dönen vektör dünya (Natural Earth 110m kara noktaları, kamu malı), gece/gündüz, 8 dil (tr kaynak; `static/i18n/<site>.<dil>.json`, Arapça sağdan sola).
   Sayfa metni değişirse çeviri anahtarları da değişir: yeni/eskimiş metinleri sözlüklere ekleyin (anahtar = Türkçe metin).

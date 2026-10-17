@@ -23,3 +23,7 @@ vendor/whisper
 .claude/settings.local.json
 /agent-dist/
 central/veilox_server/static/img/landing/shots/_backup-*/
+
+# VOLFAI oyun dosyaları (goktalay/Volfia release/*; dağıtımda central/sshmaster_server/static/mt/oyunlar/volfai/ altına kopyalanır) — depoda yalnız tanitim/
+central/sshmaster_server/static/mt/oyunlar/volfai/*
+!central/sshmaster_server/static/mt/oyunlar/volfai/tanitim/

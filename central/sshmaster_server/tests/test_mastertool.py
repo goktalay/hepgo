@@ -425,6 +425,124 @@ def main():
         assert c.get('/api/sq/me', headers=SQ).status_code == 401
         c.post('/api/mt/auth/logout', headers=W)
 
+        # ---- VOLFAI (vf, web oyunu): çerezli web oturumu, profil JSON'u, katalog sürüm kapısı, statik sunum, tanıtım sayfası
+        _RATE.clear()
+        MTH = {'Host': 'mastertool.download'}
+        g = TestClient(app, base_url='https://testserver')
+        assert g.get('/api/vf/health').json()['ok'] and g.get('/api/vf/library').status_code == 404   # kütüphane / lisans / sürüm yok
+        k = g.post('/api/vf/auth/prelogin', json={'email': 'eski@test.com'}).json()['kdf']
+        assert k['alg'] == 'PBKDF2-SHA256' and k['salt'] and k['iter'] == settings.KDF_ITER
+        r = g.post('/api/vf/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'device': 'VOLFAI Web (Android)', 'app_version': '0.2.3', 'client': 'web'})
+        assert r.status_code == 200 and 'sm_session' in r.cookies and 'token' not in r.json(), r.text
+        assert r.json()['user']['id'] and r.json()['user']['name'] == 'Eski Kullanıcı' and r.json()['sync_enabled'] is True
+        assert g.get('/api/vf/profile').json() == {'user': {'id': r.json()['user']['id'], 'name': 'Eski Kullanıcı'}, 'profile': None, 'updated_at': None}
+        prof = {'v': 1, 'coins': 37, 'hiScore': 12480, 'upgrades': {'engine': 1}, 'levels': {'1': {'parkurs': {'1': {'honor': 25, 'best': 79230}}}}, 'updatedAt': 1760724000000}
+        assert g.put('/api/vf/profile', json={'profile': prof}).status_code == 403                     # çerezli PUT'ta x-sshm zorunlu (CSRF)
+        assert g.put('/api/vf/profile', headers=W, json={'profile': prof}).json() == {'ok': True}
+        got = g.get('/api/vf/profile').json()
+        assert got['profile'] == prof and got['updated_at'], got
+        assert g.put('/api/vf/profile', headers=W, json={'profile': prof | {'coins': 38}}).json()['ok'] and g.get('/api/vf/profile').json()['profile']['coins'] == 38
+        r = g.put('/api/vf/profile', headers=W | {'Content-Type': 'application/json'}, content=b'{"profile": {bozuk')
+        assert r.status_code == 400 and r.json()['code'] == 'invalid', r.text
+        assert g.put('/api/vf/profile', headers=W, json={'profile': 'metin'}).status_code == 400 and g.put('/api/vf/profile', headers=W, json=[1]).status_code == 400
+        r = g.put('/api/vf/profile', headers=W, json={'profile': {'big': 'x' * (64 * 1024)}})
+        assert r.status_code == 413 and r.json()['code'] == 'too_large', r.text
+        assert g.put('/api/vf/profile', headers=W, json={'profile': {'big': 'x' * (60 * 1024)}}).json()['ok']
+        assert g.get('/api/vf/me').json()['user']['email'] == 'eski@test.com' and 'library' not in g.get('/api/vf/me').json()
+        assert TestClient(app, base_url='https://testserver').get('/api/vf/profile').status_code == 401     # yetkisiz
+        assert TestClient(app, base_url='https://testserver').put('/api/vf/profile', headers=W, json={'profile': {}}).status_code == 401
+        assert g.post('/api/vf/auth/logout', headers=W).json()['ok'] and g.get('/api/vf/profile').status_code == 401
+        # client verilmezse uygulama (Bearer) oturumu; profil Bearer ile de okunur, başka uygulamanın uçlarında geçmez
+        r = g.post('/api/vf/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'device': 'VOLFAI'})
+        VF = {'Authorization': 'Bearer ' + r.json()['token']}
+        assert 'big' in g.get('/api/vf/profile', headers=VF).json()['profile']   # son PUT'taki içerik, Bearer ile
+        assert g.get('/api/sm/library', headers=VF).json()['code'] == 'wrong_app'
+        assert g.get('/api/xx/profile', headers=VF).status_code == 404 and g.get('/api/sm/profile', headers=VF).status_code == 404
+        # katalog: kind:'web' kaydı yalnız ?v=1.2.0 ve üstü isteyen Master Tool'a
+        r = c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'desktop'}); MT4 = {'Authorization': 'Bearer ' + r.json()['sso_token']}
+        base_apps = ['sm', 'fm', 'sq', 'np', 'cv', 'ip', 'fs', 'qp']
+        assert [x['app'] for x in c.get('/api/mt/apps', headers=MT4).json()['apps']] == base_apps
+        assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
+        assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps
+        cat = c.get('/api/mt/apps?v=1.2.0', headers=MT4).json()['apps']
+        assert [x['app'] for x in cat] == base_apps + ['vf'] and [x['app'] for x in c.get('/api/mt/apps?v=v1.10.0-beta', headers=MT4).json()['apps']][-1] == 'vf'
+        vf = cat[-1]
+        assert vf == {'app': 'vf', 'code': 'vf', 'name': 'VOLFAI', 'group': 'games', 'kind': 'web', 'url': 'https://mastertool.download/oyunlar/volfai/',
+                      'site': 'https://mastertool.download/oyunlar/volfai/tanitim/', 'icon_svg': '/brand/vf.svg', 'icon_png': '/brand/vf.png', 'description': vf['description']}, vf
+        assert len(vf['description']) == 8 and vf['description']['en'].startswith('A touch') and all(k not in vf for k in ('release', 'license', 'exe', 'install_dir'))
+        assert c.get('/brand/vf.svg').headers['content-type'] == 'image/svg+xml' and c.get('/brand/vf.png').headers['content-type'] == 'image/png'
+        assert c.get('/brand/vf-512.png').status_code == 200
+        # Hesabım: oyunlar ayrı listede (apps bozulmaz), profil durumu
+        c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
+        acc = c.get('/api/mt/account').json()
+        assert {a['app'] for a in acc['apps']} == set(base_apps) and acc['games'][0]['app'] == 'vf' and acc['games'][0]['has_profile'] is True
+        acc2 = c2.get('/api/mt/account').json(); assert acc2['games'][0]['has_profile'] is False
+        c.post('/api/mt/auth/logout', headers=W)
+        # kayıt / giriş sayfası ?app=vf, doğrulama bağlantısı oyuna işaret eder
+        assert c.get('/kayit?app=vf', headers=MTH).text.count('data-site="mt" data-brand="vf"') == 1
+        k3 = c.post('/api/mt/auth/prelogin', json={'email': 'oyuncu@test.com'}).json()['kdf']
+        c3 = TestClient(app, base_url='https://testserver')
+        assert c3.post('/api/mt/auth/register', json={'name': 'Oyuncu', 'email': 'oyuncu@test.com', 'auth_hash': auth_hash('Oyun-1234', k3), 'brand': 'vf'}).json()['ok']
+        m = mailer.OUTBOX[-1]
+        assert m['from_name'] == 'Mastertool', m['from_name']
+        link = re.search(r'https://sshmasters\.com(/dogrula/[A-Za-z0-9_-]+\?app=vf)', m['text']).group(1)
+        r = c3.get(link, follow_redirects=False)
+        assert r.status_code == 303 and r.headers['location'] == '/hesabim?durum=dogrulandi&app=vf' and 'sm_session' in r.cookies, r.headers
+        assert c3.get('/api/vf/profile').json()['profile'] is None
+        # oyun dizini: dosya yokken 404 (tanıtım bağlantısıyla), geçici dosyalarla doğru MIME, önbellek yok, CSP, yol güvenliği
+        assert c.get('/oyunlar/volfai', headers=MTH, follow_redirects=False).headers['location'] == '/oyunlar/volfai/'
+        assert c.get('/oyunlar/volfai', headers={'Host': 'sshmasters.com'}, follow_redirects=False).status_code == 404
+        assert c.get('/oyunlar/yok/', headers=MTH).status_code == 404
+        r = c.get('/oyunlar/volfai/', headers=MTH); assert r.status_code == 404 and '/oyunlar/volfai/tanitim/' in r.text
+        gdir = os.path.join(settings.STATIC_DIR, 'mt', 'oyunlar', 'volfai')
+        tmpf = {'index.html': '<!doctype html><title>VOLFAI</title><script type="module" src="js/main.js"></script>', 'sw.js': "const CACHE='volfai-test';",
+                'manifest.webmanifest': '{"name":"VOLFAI"}', 'js/main.js': 'export const x = 1;', 'css/style.css': 'body{}', 'icons/icon.svg': '<svg/>'}
+        try:
+            for name, body in tmpf.items():
+                os.makedirs(os.path.dirname(os.path.join(gdir, name)), exist_ok=True)
+                with open(os.path.join(gdir, name), 'w', encoding='utf-8') as f:
+                    f.write(body)
+            r = c.get('/oyunlar/volfai/', headers=MTH)
+            assert r.status_code == 200 and r.text == tmpf['index.html'] and r.headers['content-type'].startswith('text/html'), r.text[:100]
+            assert r.headers['cache-control'] == 'no-cache' and "script-src 'self'" in r.headers['content-security-policy'] and 'unsafe-inline' not in r.headers['content-security-policy'].split('style-src')[0]
+            assert c.get('/oyunlar/volfai/index.html', headers=MTH).text == tmpf['index.html']
+            r = c.get('/oyunlar/volfai/sw.js', headers=MTH); assert r.headers['content-type'].startswith('text/javascript') and r.headers['cache-control'] == 'no-cache' and 'content-security-policy' not in r.headers
+            assert c.get('/oyunlar/volfai/manifest.webmanifest', headers=MTH).headers['content-type'] == 'application/manifest+json'
+            assert c.get('/oyunlar/volfai/js/main.js', headers=MTH).headers['content-type'].startswith('text/javascript')
+            assert c.get('/oyunlar/volfai/css/style.css', headers=MTH).headers['content-type'].startswith('text/css')
+            assert c.get('/oyunlar/volfai/icons/icon.svg', headers=MTH).headers['content-type'] == 'image/svg+xml'
+            assert c.get('/oyunlar/volfai/js/', headers=MTH).status_code == 404 and c.get('/oyunlar/volfai/yok.js', headers=MTH).status_code == 404
+            assert c.get('/oyunlar/volfai/..%2F..%2Findex.html', headers=MTH).status_code == 404 and c.get('/oyunlar/volfai/js/..%2F..%2F..%2Fhesap.js', headers=MTH).status_code == 404
+            assert c.get('/oyunlar/volfai/.gitignore', headers=MTH).status_code == 404
+            assert c.get('/oyunlar/volfai/', headers={'Host': 'sshmasters.com'}).status_code == 404
+        finally:
+            for name in tmpf:
+                os.remove(os.path.join(gdir, name))
+            for sub in ('js', 'css', 'icons'):
+                os.rmdir(os.path.join(gdir, sub))
+        # tanıtım sayfası: site kiti, SEO (8 dil), VideoGame yapılandırılmış verisi, CSP, oynama bağlantısı; depodan gelir
+        assert c.get('/oyunlar/volfai/tanitim', headers=MTH, follow_redirects=False).headers['location'] == '/oyunlar/volfai/tanitim/'
+        tp = c.get('/oyunlar/volfai/tanitim/', headers=MTH)
+        assert tp.status_code == 200 and '<html lang="tr"' in tp.text and 'href="/oyunlar/volfai/"' in tp.text and '/kit.js' in tp.text, tp.text[:300]
+        assert 'canonical" href="https://mastertool.download/oyunlar/volfai/tanitim/"' in tp.text and tp.text.count('hreflang=') == 9
+        assert '"VideoGame"' in tp.text and '"isAccessibleForFree": true' in tp.text and '<meta name="mt-ga" content="G-7SLLGSBLGD">' in tp.text
+        csp = tp.headers['content-security-policy']
+        assert "script-src 'self' https://www.googletagmanager.com" in csp and "frame-ancestors 'self'" in csp and tp.headers['cache-control'] == 'no-cache'
+        assert '<script>' not in tp.text.split('application/ld+json')[0] and 'style="' not in tp.text   # satır içi betik / stil yok (CSP)
+        tpe = c.get('/oyunlar/volfai/tanitim/?lang=en', headers=MTH)
+        assert '<html lang="en"' in tpe.text and 'canonical" href="https://mastertool.download/oyunlar/volfai/tanitim/?lang=en"' in tpe.text and 'claim the field' in tpe.text
+        assert 'dir="rtl"' in c.get('/oyunlar/volfai/tanitim/?lang=ar', headers=MTH).text
+        assert c.get('/oyunlar/volfai/tanitim/volfai.css', headers=MTH).headers['content-type'].startswith('text/css')
+        assert c.get('/oyunlar/volfai/tanitim/volfai.js', headers=MTH).headers['content-type'].startswith('text/javascript')
+        assert c.get('/oyunlar/volfai/tanitim/', headers={'Host': 'ftpmasters.com'}).status_code == 404
+        sm3 = c.get('/sitemap.xml', headers=MTH).text
+        assert sm3.count('<loc>https://mastertool.download/oyunlar/volfai/tanitim/') == 8, sm3.count('/oyunlar/')
+        home = c.get('/', headers=MTH).text
+        assert 'id="oyunlar"' in home and 'href="/oyunlar/volfai/tanitim/"' in home and '/brand/vf.svg' in home
+        for lang in ('en', 'ar', 'zh', 'ru'):   # tanıtım sayfasının ana metinleri sözlükte
+            d = c.get(f'/i18n/mt.{lang}.json').json()
+            assert all(x in d for x in ('Neden VOLFAI', 'HEMEN OYNA', 'Oyunlar', 'Koruma halkası')), lang
+
         # ---- son kullanıcı hiçbir yerde iç adres görmez
         for root, _, files in os.walk(settings.STATIC_DIR):
             for fn in files:

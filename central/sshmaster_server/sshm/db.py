@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS user_apps (             -- uygulama bazında lisans /
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, app)
 );
+CREATE TABLE IF NOT EXISTS vf_profiles (            -- VOLFAI (web oyunu, uygulama kodu vf): kullanıcı başına tek profil JSON'u (≤ 64 KB)
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    profile TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 

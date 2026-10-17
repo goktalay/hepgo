@@ -649,4 +649,5 @@ registerCatalog('en', {
   "Kalkış: {lat}, {lon} · {alt} m MSL": "Take-off: {lat}, {lon} · {alt} m MSL",
   "İlk ARM {t}": "First ARM {t}",
   "Kayıt yüklendi: {n} kare · {d}": "Recording loaded: {n} frames · {d}",
+  "Dünya boyutu uçuşa göre {n} m yapıldı": "World size set to {n} m to fit the flight",
 });

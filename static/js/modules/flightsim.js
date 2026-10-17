@@ -455,6 +455,15 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     try { data = await be.replay(sid); } catch (err) { replayLoaded = false; msg.classList.add('err'); msg.textContent = tr('Kayıt açılamadı: {e}', { e: err.message }); return; }
     if (destroyed) return;
     msg.hidden = true;
+    // Dünya uçuşu kapsasın: evden en uzak kare mesafesinin 2,4 katı (en az seçilen boyut, en çok 20 km) — uçak arazi dışına çıkmasın
+    if (sim && data.home && Array.isArray(data.frames) && data.frames.length) {
+      const FI = Object.fromEntries((data.fields || []).map((k, i) => [k, i]));
+      let maxD = 0;
+      const step = Math.max(1, Math.floor(data.frames.length / 4000));
+      for (let i = 0; i < data.frames.length; i += step) { const f = data.frames[i]; if (f[FI.lat] == null) continue; const p = sim.toLocal(f[FI.lat], f[FI.lon]); maxD = Math.max(maxD, Math.hypot(p.x, p.y)); }
+      const need = Math.min(20000, Math.ceil(maxD * 2.4 / 500) * 500);
+      if (need > (Number(world.size_m) || 0)) { world.size_m = need; sim.setWorld(world); addEvent(tr('Dünya boyutu uçuşa göre {n} m yapıldı', { n: need }), 6); }
+    }
     player = createReplayPlayer(data, {
       onFrame: t => updateHud(t),
       onEvent: (e, t) => addEvent(e.text, e.sev, t),

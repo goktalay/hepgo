@@ -3387,4 +3387,5 @@ registerCatalog('ar', {
   "Kalkış: {lat}, {lon} · {alt} m MSL": "الإقلاع: {lat}, {lon} · {alt} م MSL",
   "İlk ARM {t}": "أول ARM {t}",
   "Kayıt yüklendi: {n} kare · {d}": "تم تحميل التسجيل: {n} إطار · {d}",
+  "Dünya boyutu uçuşa göre {n} m yapıldı": "تم ضبط حجم العالم إلى {n} م ليشمل الرحلة",
 });

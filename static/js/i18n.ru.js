@@ -3387,4 +3387,5 @@ registerCatalog('ru', {
   "Kalkış: {lat}, {lon} · {alt} m MSL": "Взлёт: {lat}, {lon} · {alt} м MSL",
   "İlk ARM {t}": "Первый ARM {t}",
   "Kayıt yüklendi: {n} kare · {d}": "Запись загружена: {n} кадров · {d}",
+  "Dünya boyutu uçuşa göre {n} m yapıldı": "Размер мира задан {n} м по размаху полёта",
 });

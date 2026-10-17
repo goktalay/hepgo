@@ -357,7 +357,7 @@ class SimSession:
 
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
-        return {'id': self.id, 'type': self.type, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+        return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
@@ -896,6 +896,26 @@ class SimManager:
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
                                   'alt': float(center['alt']) if center.get('alt') is not None else None}, world, owner, self)
+        self.sessions[sid] = s
+        s.task = asyncio.get_running_loop().create_task(s.run())
+        return s
+
+    async def ac_replay(self, log, world, owner):
+        """Kayıttan oynatma oturumu (mode 'replay'; flightsim_replay.ReplaySession): SITL/UDP yok. Doğrulama (400) → limit (409) → görev.
+        Log ayrıştırma oturum görevinde arka planda sürer (BASLIYOR → HAZIR / HATA)."""
+        from .flightsim_replay import ReplaySession, UZANTILAR
+        if not log or log.get('status') != 'TAMAM':
+            raise SimHata('invalid', 'Uçuş logu bulunamadı ya da analizi tamamlanmadı')
+        import os
+        ext = os.path.splitext(log.get('file_name') or log.get('file') or '')[1].lower()
+        if ext and ext not in UZANTILAR:
+            raise SimHata('invalid', f'Desteklenmeyen log biçimi: {ext} (.bin, .log, .tlog)')
+        world = world_dogrula(world)
+        if self.acik_sayisi() >= MAX_SESSIONS:
+            raise SimHata('limit', f'En fazla {MAX_SESSIONS} açık oturum')
+        sid = self._next
+        self._next += 1
+        s = ReplaySession(sid, log, world, owner, self)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

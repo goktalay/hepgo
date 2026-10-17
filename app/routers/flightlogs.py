@@ -138,6 +138,11 @@ def delete_log(lid: int, user=Depends(tools_user), conn=db.DB):
         raise HTTPException(400, 'Analiz sürerken silinemez')
     (config.UPLOAD_DIR / log['file']).unlink(missing_ok=True)
     _replay_path(log).unlink(missing_ok=True)
+    try:   # Uçuş Simülatörü kayıttan oynatma önbelleği (DATA_DIR/sim_replay/<id>.json.gz)
+        from ..flightsim_replay import onbellek_yolu
+        onbellek_yolu(lid).unlink(missing_ok=True)
+    except OSError:
+        pass
     conn.execute('DELETE FROM flight_logs WHERE id = ?', (lid,))
     db.audit(conn, user['id'], 'Uçuş logu sildi', 'flight_log', lid, log['file_name'])
     return {'ok': True}

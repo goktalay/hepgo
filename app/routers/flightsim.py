@@ -8,9 +8,10 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim
+from .. import auth, db, drone_hub, flightsim, flightsim_replay
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -20,8 +21,10 @@ MODUL = 'drone.sim'
 
 
 class SessionIn(BaseModel):
-    type: str
-    center_id: int
+    mode: str = 'sitl'                 # 'sitl' (SITL + Mission Planner) | 'replay' (kayıttan oynatma; type/center_id yerine log_id)
+    type: Optional[str] = None
+    center_id: Optional[int] = None
+    log_id: Optional[int] = None
     world: Optional[dict] = None
 
 
@@ -49,9 +52,18 @@ def _centers(conn, cid=None):
 
 @router.get('/meta')
 def meta(request: Request, user=Depends(sim_user), conn=db.DB):
+    mods = set(user.get('modules') or [])
     return {'types': flightsim.tipler(), 'centers': _centers(conn), 'world_defaults': dict(flightsim.WORLD_DEFAULTS),
             'limits': {'max_sessions': flightsim.MAX_SESSIONS, 'max_minutes': flightsim.MAX_MINUTES}, 'host': _host(request),
-            'can_command': MODUL in user.get('write_modules', [])}
+            'can_command': MODUL in user.get('write_modules', []),
+            # Kayıttan oynatma: uçuş logu listesine erişim flightlogs yetkisiyle kesişir (tools → tümü, field → göreve bağlı olanlar)
+            'replay': {'logs_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)}}
+
+
+@router.get('/logs')
+def list_logs(q: Optional[str] = None, user=Depends(sim_user), conn=db.DB):
+    """Kayıttan oynatılabilir uçuş logları (analizi TAMAM; .bin/.log/.tlog) — flightlogs yetkisiyle kesişim; `q` ad/dron/pilot/konum/görev arar."""
+    return flightsim_replay.loglari_listele(conn, user, q)
 
 
 @router.get('/sessions')
@@ -61,23 +73,64 @@ def list_sessions(request: Request, user=Depends(sim_user)):
 
 @router.post('/sessions', status_code=201)
 async def open_session(body: SessionIn, request: Request, response: Response, user=Depends(sim_user)):
-    def load():
-        with db.connect() as conn:
-            return _centers(conn, body.center_id)
-    center = await asyncio.get_running_loop().run_in_executor(None, load)
-    if not center:
-        raise HTTPException(400, 'Merkez bulunamadı (Dron Yönetimi › Rotalar › Merkezler)')
-    try:
-        s = await flightsim.MANAGER.ac(body.type, center, body.world, {'id': user['id'], 'name': user['full_name']})
-    except flightsim.SimHata as e:
-        _hata(e)
+    owner = {'id': user['id'], 'name': user['full_name']}
+    loop = asyncio.get_running_loop()
+    if body.mode == 'replay':
+        if body.log_id is None:
+            raise HTTPException(400, 'log_id gerekir')
+
+        def load_log():
+            with db.connect() as conn:
+                return flightsim_replay.log_getir(conn, body.log_id)
+        log = await loop.run_in_executor(None, load_log)
+        if not log or not flightsim_replay.log_izinli(user, log):
+            raise HTTPException(400, 'Uçuş logu bulunamadı ya da erişim yetkiniz yok')
+        try:
+            s = await flightsim.MANAGER.ac_replay(log, body.world, owner)
+        except flightsim.SimHata as e:
+            _hata(e)
+        detay = f"kayıttan oynatma · {log['file_name']} (log {log['id']})"
+    elif body.mode == 'sitl':
+        if not body.type or body.center_id is None:
+            raise HTTPException(400, 'type ve center_id gerekir')
+
+        def load():
+            with db.connect() as conn:
+                return _centers(conn, body.center_id)
+        center = await loop.run_in_executor(None, load)
+        if not center:
+            raise HTTPException(400, 'Merkez bulunamadı (Dron Yönetimi › Rotalar › Merkezler)')
+        try:
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner)
+        except flightsim.SimHata as e:
+            _hata(e)
+        detay = f"{body.type} · {center['name']} · udp {s.udp_port}"
+    else:
+        raise HTTPException(400, 'mode sitl | replay olmalı')
 
     def audit():
         with db.connect() as conn:
-            db.audit(conn, user['id'], 'Uçuş simülatörü oturumu açtı', 'drone_sim', s.id, f"{body.type} · {center['name']} · udp {s.udp_port}")
+            db.audit(conn, user['id'], 'Uçuş simülatörü oturumu açtı', 'drone_sim', s.id, detay)
             conn.commit()
-    await asyncio.get_running_loop().run_in_executor(None, audit)
+    await loop.run_in_executor(None, audit)
     return s.to_dict(_host(request))
+
+
+@router.get('/sessions/{sid}/replay')
+def get_replay(sid: int, user=Depends(sim_user)):
+    """Kayıt kareleri: önbellekteki gzip JSON olduğu gibi (Content-Encoding: gzip; tarayıcı/httpx açar). Oturum HAZIR değilse 409."""
+    s = flightsim.MANAGER.get(sid)
+    if s is None:
+        raise HTTPException(404, 'Oturum bulunamadı')
+    if getattr(s, 'mode', 'sitl') != 'replay':
+        raise HTTPException(400, 'Bu oturum kayıttan oynatma değil')
+    if s.state != 'HAZIR':
+        raise HTTPException(409, 'Kayıt henüz hazır değil' if s.state == 'BASLIYOR' else (s.sitl.get('error') or 'Kayıt hazırlanamadı'))
+    path = flightsim_replay.onbellek_yolu(s.replay['log_id'])
+    if not path.exists():
+        raise HTTPException(404, 'Kayıt önbelleği bulunamadı')
+    return FileResponse(path, media_type='application/json',
+                        headers={'Content-Encoding': 'gzip', 'Cache-Control': 'private, max-age=3600', 'Vary': 'Accept-Encoding'})
 
 
 @router.get('/sessions/{sid}')

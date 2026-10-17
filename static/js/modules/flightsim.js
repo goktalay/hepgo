@@ -10,7 +10,7 @@
 // • `?mock=1`: arka uç yokken yerel kinematik üretici (WS yerine) — sihirbaz, 3B dünya ve HUD arka uçsuz denenir. Mock oturumlar yalnız
 //   bu sekmede (bellekte) yaşar; komutlar (arm/disarm/mode/takeoff/rtl/reset/crash) üreticiye uygulanır.
 import { api } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
 import { CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
 
 const API = '/api/drone/sim';
@@ -32,6 +32,7 @@ const isPlane = type => type === 'sabit_kanat' || type === 'vtol';
 const modesFor = type => (type === 'vtol' ? VTOL_MODES : isPlane(type) ? PLANE_MODES : COPTER_MODES);
 const f1 = v => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(1));
 const f0 = v => (v == null || Number.isNaN(Number(v)) ? '—' : String(Math.round(Number(v))));
+const clock = sec => { sec = Math.max(0, Math.floor(Number(sec) || 0)); const hh = Math.floor(sec / 3600), mm = Math.floor(sec % 3600 / 60), ss = sec % 60; return `${hh ? `${hh}:` : ''}${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`; };
 const copy = async (txt, what = 'Kopyalandı') => { try { await navigator.clipboard.writeText(txt); toast(what); } catch { toast('Kopyalanamadı; metni elle seçin', 'err'); } };
 const svgIco = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const TYPE_ICON = {
@@ -69,6 +70,8 @@ function restBackend() {
     sessions: () => api.get(`${API}/sessions`),
     session: id => api.get(`${API}/sessions/${encodeURIComponent(id)}`),
     create: body => api.post(`${API}/sessions`, body),
+    logs: q => api.get(`${API}/logs${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+    replay: id => api.get(`${API}/sessions/${encodeURIComponent(id)}/replay`),
     end: id => api.del(`${API}/sessions/${encodeURIComponent(id)}`),
     cmd: (id, name, params = {}) => api.post(`${API}/sessions/${encodeURIComponent(id)}/cmd`, { name, params }),
     socket: (id, handlers) => wsClient(id, handlers),
@@ -117,7 +120,8 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   });
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
-  const S = { type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, world: { ...defaults, seed: randomSeed() } };
+  const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
+  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
 
   // ---------- açık oturumlar ----------
   const openBox = h('div');
@@ -127,12 +131,13 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     if (!rows.length) { clear(openBox); return; }
     clear(openBox, h('div', { class: 'card card-pad fs-open no-collapse' }, h('h3', null, tr('Açık oturumlar ({n})', { n: rows.length })),
       h('div', { class: 'fs-open-list' }, rows.map(s => h('div', { class: 'fs-open-row' },
-        h('div', { class: 'fs-open-main' }, h('b', null, TYPE_NAME[s.type] || s.type), h('span', { class: `badge ${STATE_BADGE[s.state] || 'gray'}` }, STATE_TEXT[s.state] || s.state),
-          h('div', { class: 'small muted' }, [s.center?.name, s.owner?.name, s.created_at ? fmtDateTime(s.created_at) : null, s.udp_port ? `UDP ${s.udp_port}` : null].filter(Boolean).join(' · '))),
+        h('div', { class: 'fs-open-main' }, h('b', null, TYPE_NAME[s.type] || s.type), s.mode === 'replay' ? h('span', { class: 'badge purple' }, 'Kayıt') : null,
+          h('span', { class: `badge ${STATE_BADGE[s.state] || 'gray'}` }, STATE_TEXT[s.state] || s.state),
+          h('div', { class: 'small muted' }, [s.mode === 'replay' ? s.replay?.file_name : s.center?.name, s.owner?.name, s.created_at ? fmtDateTime(s.created_at) : null, s.udp_port ? `UDP ${s.udp_port}` : null].filter(Boolean).join(' · '))),
         h('div', { class: 'pill-group' },
           h('a', { class: 'btn sm primary', href: be.href(s.id) }, 'Devam et'),
           canWrite ? h('button', { class: 'btn sm danger', onclick: async () => {
-            if (!await confirmDialog('Oturumu bitir', 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır.', { okLabel: 'Bitir', danger: true })) return;
+            if (!await confirmDialog('Oturumu bitir', s.mode === 'replay' ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır.', { okLabel: 'Bitir', danger: true })) return;
             await be.end(s.id); toast('Oturum kapatıldı'); drawOpen();
           } }, 'Bitir') : null))))));
   };
@@ -150,6 +155,39 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · '))))
     : h('div', { class: 'small muted fs-nocenter' }, 'Kayıtlı merkez yok. Önce ', h('a', { href: '#/drone/routes' }, 'Rotalar › Merkezler'), ' bölümünden bir merkez ekleyin.'));
   drawCenters();
+
+  // ---------- 1R. kayıttan oynat: uçuş logu listesi (ad, tarih, dron, süre, boyut; arama) ----------
+  const logList = h('div', { class: 'fs-logs' });
+  const logInfo = h('div', { class: 'small muted fs-log-info' });
+  const fmtSize = b => (b == null ? '—' : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+  const drawLogs = () => {
+    if (S.logs === null) { clear(logList, h('div', { class: 'small muted' }, 'Uçuş logları yükleniyor…')); return; }
+    const q = S.q.trim().toLocaleLowerCase('tr');
+    const rows = S.logs.filter(l => !q || [l.file_name, l.aircraft, l.pilot, l.location, l.task_code, l.note, l.vehicle].some(v => String(v || '').toLocaleLowerCase('tr').includes(q)));
+    if (!rows.length) {
+      clear(logList, h('div', { class: 'small muted fs-nocenter' }, S.logs.length ? tr('Aramaya uyan log yok.') : logsAllowed
+        ? ['Oynatılabilir uçuş logu yok. Önce ', h('a', { href: '#/tools/flight-logs' }, 'Araçlar › Uçuş Logu Analizi'), ' bölümünden bir .bin / .tlog yükleyin (analizi tamamlanmış loglar listelenir).']
+        : 'Uçuş loglarına erişim için Araçlar ya da Saha Yönetimi yetkisi gerekir.'));
+      return;
+    }
+    clear(logList, rows.map(l => h('button', { type: 'button', class: `fs-log ${S.log === l.id ? 'on' : ''}`, onclick: () => { S.log = l.id; drawLogs(); preview?.setType(l.type || 'multirotor'); } },
+      h('span', { class: 'fs-log-ico', html: TYPE_ICON[(TYPES.find(x => x[0] === l.type) || [])[3] || 'quad'] }),
+      h('span', { class: 'fs-log-main' },
+        h('b', null, l.file_name, l.ext ? h('span', { class: 'badge gray fs-log-ext' }, l.ext.toUpperCase()) : null, l.cached ? h('span', { class: 'badge green', title: tr('Kareler önbellekte; hemen açılır') }, '⚡') : null),
+        h('span', { class: 'small muted' }, [l.takeoff_utc || l.start_utc ? fmtDateTime(l.takeoff_utc || l.start_utc) : fmtDateTime(l.uploaded_at), l.aircraft, l.pilot, l.location, l.task_code ? tr('Görev {c}', { c: l.task_code }) : null, l.vehicle].filter(Boolean).join(' · '))),
+      h('span', { class: 'fs-log-meta small' }, h('b', null, l.flight_s != null ? fmtDuration(l.flight_s) : (l.duration_s != null ? fmtDuration(l.duration_s) : '—')), h('span', { class: 'muted' }, fmtSize(l.size))))));
+  };
+  const searchInp = h('input', { class: 'input', placeholder: 'Ara: dosya adı, dron, pilot, konum, görev kodu…', value: S.q, oninput: () => { S.q = searchInp.value; drawLogs(); } });
+  const loadLogs = async () => {
+    if (!logsAllowed) { S.logs = []; drawLogs(); return; }
+    try { S.logs = await be.logs(); } catch (err) { S.logs = []; toastError(err); }
+    if (S.log == null && S.logs.length) S.log = S.logs[0].id;
+    drawLogs();
+  };
+  drawLogs();
+  const stepLog = h('div', { class: 'card card-pad fs-step no-collapse', hidden: true }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Uçuş logu'),
+    h('p', { class: 'small muted' }, 'Sisteme yüklenmiş ArduPilot .bin / .log ya da MAVLink .tlog kayıtlarından biri 3B dünyada aynen oynatılır; kontrol sizde değildir. Dünyanın merkezi kaydın kalkış (ilk ARM) noktasıdır.'),
+    h('div', { class: 'fs-log-search' }, searchInp, h('button', { class: 'btn sm', type: 'button', onclick: loadLogs }, '↻ Yenile')), logList, logInfo);
 
   // ---------- 3. dünya ----------
   let preview = null, rebuildT = 0;
@@ -183,31 +221,49 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
 
   // ---------- 4. başlat ----------
   const startBtn = h('button', { class: 'btn primary fs-start', disabled: !canWrite || !centers.length, onclick: async () => {
-    if (S.center == null) { toast('Önce bir merkez seçin', 'err'); return; }
+    if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); return; }
+    if (S.mode === 'sitl' && S.center == null) { toast('Önce bir merkez seçin', 'err'); return; }
     startBtn.disabled = true;
     try {
-      const s = await be.create({ type: S.type, center_id: S.center, world: { ...S.world } });
-      toast('Simülatör oturumu açıldı');
+      const s = S.mode === 'replay'
+        ? await be.create({ mode: 'replay', log_id: S.log, world: { ...S.world } })
+        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world } });
+      toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
       location.hash = be.href(s.id);
     } catch (err) {
-      const msg = { 400: 'Geçersiz ayar; dünya değerlerini ve merkezi kontrol edin', 409: 'Oturum sınırı doldu; açık bir oturumu bitirin', 503: 'SITL hazır değil (ikili ya da boş port yok)' }[err?.status];
+      const msg = { 400: S.mode === 'replay' ? 'Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin' : 'Geçersiz ayar; dünya değerlerini ve merkezi kontrol edin', 409: 'Oturum sınırı doldu; açık bir oturumu bitirin', 503: 'SITL hazır değil (ikili ya da boş port yok)' }[err?.status];
       toast(msg || err.message, 'err');
       startBtn.disabled = false;
     }
   } }, '▶ Başlat');
   const limits = meta.limits || {};
+  // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
+  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards);
+  const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
+  const worldNo = h('span', { class: 'fs-no' }, '3');
+  const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.');
+  const stepWorld = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, worldNo, 'Dünya'), worldHint, h('div', { class: 'fs-world-wrap' }, worldForm, previewBox));
+  const startNote = h('div', { class: 'small muted' });
+  const drawMode = () => {
+    const rp = S.mode === 'replay';
+    stepType.hidden = rp; stepCenter.hidden = rp; stepLog.hidden = !rp; worldHint.hidden = !rp;
+    worldNo.textContent = rp ? '2' : '3';
+    startBtn.disabled = !canWrite || (rp ? !logsAllowed : !centers.length);
+    startBtn.textContent = tr(rp ? '▶ Oynat' : '▶ Başlat');
+    clear(startNote, canWrite
+      ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
+      : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
+    if (rp && S.logs === null) loadLogs();
+    if (rp) { const l = (S.logs || []).find(x => x.id === S.log); if (l) preview?.setType(l.type || 'multirotor'); } else preview?.setType(S.type);
+  };
+  const modeSeg = segmented([['sitl', 'Canlı simülasyon (SITL + Mission Planner)'], ['replay', 'Kayıttan oynat']], S.mode, v => { S.mode = v; drawMode(); });
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     openBox,
-    h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards),
-    h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList),
-    h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '3'), 'Dünya'),
-      h('div', { class: 'fs-world-wrap' }, worldForm, previewBox)),
-    h('div', { class: 'fs-start-row' },
-      h('div', { class: 'small muted' }, canWrite
-        ? tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' })
-        : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.'),
-      startBtn));
+    h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
+    stepType, stepCenter, stepLog, stepWorld,
+    h('div', { class: 'fs-start-row' }, startNote, startBtn));
+  drawMode();
   drawOpen();
 
   // 3B önizleme (küçük, kendi etrafında dönen kamera); sayfa değişince serbest bırakılır
@@ -232,11 +288,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       h('a', { class: 'btn', href: be.href() }, 'Simülatör ana sayfası')));
     return;
   }
+  const replay = session.mode === 'replay';   // kayıttan oynatma: SITL/UDP/komut yok; kareler sunucudan bir kez çekilir, tarayıcıda oynatılır
   const type = session.type, modes = modesFor(type);
   const world = { ...WORLD_DEFAULTS, ...(session.world || {}) };
 
   // ---------- iskelet ----------
-  const stage = h('div', { class: 'fs-stage', 'data-immersive': '1' });
+  const stage = h('div', { class: `fs-stage ${replay ? 'fs-replay' : ''}`, 'data-immersive': '1' });
   const mount = h('div', { class: 'fs-canvas' });
   const msg = h('div', { class: 'fs-msg' }, '3B dünya hazırlanıyor…');
   const crash = h('div', { class: 'fs-crash', hidden: true }, h('b', null, 'ÇARPIŞMA'), h('span', { class: 'fs-crash-sub' }));
@@ -245,7 +302,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const wsBadge = h('span', { class: 'badge gray', title: 'Telemetri bağlantısı (WebSocket)' }, 'Bağlanıyor…');
   const nav = h('div', { class: 'fs-nav' },
     h('a', { class: 'fs-nav-back', href: be.href(), title: 'Simülatör listesine dön' }, '←'),
-    h('b', null, 'Uçuş Simülatörü'), h('span', { class: 'fs-nav-sub' }, `${TYPE_NAME[type] || type} · ${session.center?.name || '—'}`), stateBadge, wsBadge,
+    h('b', null, 'Uçuş Simülatörü'), h('span', { class: 'fs-nav-sub' }, `${TYPE_NAME[type] || type} · ${(replay ? session.replay?.file_name : session.center?.name) || '—'}`), stateBadge, wsBadge,
+    replay ? h('span', { class: 'badge purple', title: 'Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok' }, 'Kayıt') : null,
     mock ? h('span', { class: 'badge purple' }, 'Sahte veri') : null,
     h('button', { class: 'fs-nav-btn', type: 'button', title: 'Tam ekran', onclick: () => { if (document.fullscreenElement) document.exitFullscreen?.(); else stage.requestFullscreen?.(); } }, '⛶'));
 
@@ -270,10 +328,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   V.wind.textContent = `${f1(world.wind_ms)} @ ${f0(world.wind_dir)}°`;
   windArrow.style.transform = `rotate(${(Number(world.wind_dir) || 0) + 90}deg)`;   // ➤ sağa bakar; rüzgâr "nereden" → ok akış yönünü gösterir
 
-  // Mission Planner bağlantı kutusu (sol alt)
+  // Mission Planner bağlantı kutusu (sol alt) — kayıt kipinde yerine kayıt bilgisi kutusu
   const addr = `${session.host || location.hostname}:${session.udp_port || '—'}`;
   const gcsBadge = h('span', { class: 'badge gray' }, 'Bekleniyor');
-  const mp = h('div', { class: 'fs-mp' },
+  const mp = replay ? h('div', { class: 'fs-mp fs-rec' },
+    h('div', { class: 'fs-mp-head' }, h('b', null, 'Kayıttan oynatma'), h('span', { class: 'badge purple' }, (session.replay?.vehicle || '').split(' ')[0] || 'Log')),
+    h('div', { class: 'small fs-mp-hint fs-rec-info' }, '—')) : h('div', { class: 'fs-mp' },
     h('div', { class: 'fs-mp-head' }, h('b', null, 'Mission Planner bağlantısı'), gcsBadge),
     h('div', { class: 'fs-mp-addr' }, h('code', { class: 'mono' }, `UDP ${addr}`), h('button', { class: 'btn sm', type: 'button', onclick: () => copy(addr, 'Adres kopyalandı') }, 'Kopyala')),
     h('div', { class: 'small fs-mp-hint' }, 'Mission Planner › sağ üst bağlantı türü UDP › CONNECT › port ', h('b', null, String(session.udp_port || '—')), '. USB kumanda: Mission Planner › Joystick.'));
@@ -285,17 +345,30 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
     h('option', { value: '' }, 'Mod…'), modes.map(mm => h('option', { value: mm }, mm)));
+  // Kayıt kipi: oynatma çubuğu (Oynat/Duraklat · hız 0.5×–8× · zaman kaydırıcısı · süre · Baştan); komut düğmeleri yok
+  const SPEEDS = [0.5, 1, 2, 4, 8];
+  const playBtn = h('button', { class: 'btn sm primary fs-play-btn', type: 'button', title: tr('Oynat / Duraklat (boşluk)'), onclick: () => player?.toggle() }, '▶');
+  const speedBtns = SPEEDS.map(x => h('button', { class: `btn sm ${x === 1 ? 'primary' : ''}`, type: 'button', 'data-speed': x, onclick: () => player?.setSpeed(x) }, `${x}×`));
+  const seek = h('input', { class: 'fs-seek', type: 'range', min: 0, max: 1000, step: 1, value: 0, 'aria-label': 'Zaman', oninput: () => player?.seekFrac(Number(seek.value) / 1000) });
+  const timeLbl = h('span', { class: 'fs-time-lbl mono' }, '00:00 / 00:00');
+  const clockLbl = h('span', { class: 'fs-clock-lbl small' }, '');
+  const playBar = replay ? h('div', { class: 'fs-playbar' },
+    playBtn,
+    h('button', { class: 'btn sm', type: 'button', title: 'Baştan', onclick: () => player?.restart() }, '↺ ', 'Baştan'),
+    h('div', { class: 'pill-group fs-speeds' }, speedBtns),
+    h('div', { class: 'fs-seek-wrap' }, seek, h('i', { class: 'fs-seek-marks' })),
+    timeLbl, clockLbl) : null;
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
     gimbalLbl,
-    h('span', { class: 'spacer' }),
-    canWrite ? h('div', { class: 'pill-group' },
+    replay ? playBar : h('span', { class: 'spacer' }),
+    canWrite && !replay ? h('div', { class: 'pill-group' },
       armBtn, modeSel,
       h('button', { class: 'btn sm', type: 'button', onclick: () => takeoffDialog() }, 'Kalkış'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => cmd('rtl') }, 'RTL')) : null,
-    canWrite ? h('div', { class: 'pill-group' }, rcBtn) : null,
+    canWrite && !replay ? h('div', { class: 'pill-group' }, rcBtn) : null,
     h('div', { class: 'pill-group' },
-      h('button', { class: 'btn sm', type: 'button', title: 'SITL aynı ayarlarla yeniden başlar; çarpışma kaldırılır', onclick: () => reset() }, '↺ Sıfırla'),
+      replay ? null : h('button', { class: 'btn sm', type: 'button', title: 'SITL aynı ayarlarla yeniden başlar; çarpışma kaldırılır', onclick: () => reset() }, '↺ Sıfırla'),
       h('button', { class: 'btn sm danger', type: 'button', onclick: () => endSession() }, 'Bitir')));
   const ended = h('div', { class: 'fs-ended', hidden: true });
   // Sanal kumanda katmanı: sol çubuk gaz/yaw, sağ çubuk pitch/roll (Mode 2); klavye ipucu; Mission Planner joystick uyarısı
@@ -316,9 +389,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   let sim = null, last = null, socket = null, destroyed = false, rc = null;   // rc: sanal kumanda (virtualRC) ya da null
   try {
     sim = await createFlightSim3D(mount, world, {
-      type, origin: { lat: session.center?.lat, lon: session.center?.lon },
+      type, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
       onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
-      onCollision: info => onCrash(info),
+      onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş, arazi prosedürel → çarpışma denetimi yok
     });
     msg.hidden = true;
   } catch (err) {
@@ -329,20 +402,25 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const gimbalTick = setInterval(() => { if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() }); }, 300);
 
   // ---------- olaylar / durum ----------
-  const addEvent = (text, severity = 'info') => {
+  // Olay şeridi: canlıda saat (şimdi); kayıtta log zamanı (mm:ss) ve MAVLink/DataFlash önem düzeyi (sayı: 0–3 hata, 4 uyarı)
+  const sevClass = severity => {
+    if (typeof severity === 'number') return severity <= 3 ? 'err' : severity === 4 ? 'warn' : 'info';
     const sev = String(severity || 'info').toLowerCase();
-    const cls = /err|crit|alert|emerg/.test(sev) ? 'err' : /warn/.test(sev) ? 'warn' : 'info';
+    return /err|crit|alert|emerg/.test(sev) ? 'err' : /warn/.test(sev) ? 'warn' : 'info';
+  };
+  const addEvent = (text, severity = 'info', at = null) => {
     const now = new Date();
-    events.prepend(h('div', { class: `fs-ev ${cls}` }, h('span', { class: 'fs-ev-t' }, `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`), h('span', null, text)));
+    const stamp = at != null ? clock(at) : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    events.prepend(h('div', { class: `fs-ev ${sevClass(severity)}` }, h('span', { class: 'fs-ev-t' }, stamp), h('span', null, text)));
     while (events.children.length > 8) events.lastChild.remove();
   };
   const setState = st => {
     session.state = st;
     stateBadge.className = `badge ${STATE_BADGE[st] || 'gray'}`;
     stateBadge.textContent = tr(STATE_TEXT[st] || st);
-    if (st === 'BASLIYOR') { msg.hidden = false; msg.textContent = tr('SITL başlıyor…'); }
-    else if (st === 'HATA') { msg.hidden = false; msg.classList.add('err'); msg.textContent = tr('SITL hatası: {e}', { e: session.sitl?.error || '—' }); }
-    else if (st === 'HAZIR' && sim) { msg.hidden = true; msg.classList.remove('err'); }
+    if (st === 'BASLIYOR') { msg.hidden = false; msg.textContent = replay ? tr('Kayıt hazırlanıyor… %{p}', { p: session.replay?.progress ?? 0 }) : tr('SITL başlıyor…'); }
+    else if (st === 'HATA') { msg.hidden = false; msg.classList.add('err'); msg.textContent = replay ? tr('Kayıt açılamadı: {e}', { e: session.sitl?.error || '—' }) : tr('SITL hatası: {e}', { e: session.sitl?.error || '—' }); }
+    else if (st === 'HAZIR' && sim) { msg.hidden = true; msg.classList.remove('err'); if (replay) loadReplay(); }
   };
   const setWs = st => {
     const map = { connecting: ['yellow', 'Bağlanıyor…'], reconnect: ['yellow', 'Yeniden bağlanıyor…'], open: ['green', 'Canlı'], closed: ['red', 'Bağlantı koptu'] };
@@ -386,9 +464,66 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     thrBar.firstChild.style.width = `${Math.max(0, Math.min(100, Number(t.throttle) || 0))}%`;
     drawRcBars(t.rc);
     if (rc) rcWarn.hidden = !t.gcs_connected;
-    if (canWrite) { armBtn.textContent = t.armed ? 'DISARM' : 'ARM'; armBtn.classList.toggle('danger', !!t.armed); if (t.mode && modeSel.value !== t.mode && document.activeElement !== modeSel) modeSel.value = modes.includes(t.mode) ? t.mode : ''; }
+    if (canWrite && !replay) { armBtn.textContent = t.armed ? 'DISARM' : 'ARM'; armBtn.classList.toggle('danger', !!t.armed); if (t.mode && modeSel.value !== t.mode && document.activeElement !== modeSel) modeSel.value = modes.includes(t.mode) ? t.mode : ''; }
     if (t.gcs_connected != null) setGcs(!!t.gcs_connected, t.gcs_addr);
   };
+
+  // ---------- kayıttan oynatma: kareleri çek, enterpolasyonla oynat ----------
+  let player = null, replayLoaded = false;
+  const loadReplay = async () => {
+    if (!replay || replayLoaded) return;
+    replayLoaded = true;
+    msg.hidden = false; msg.classList.remove('err'); msg.textContent = tr('Kareler indiriliyor…');
+    let data;
+    try { data = await be.replay(sid); } catch (err) { replayLoaded = false; msg.classList.add('err'); msg.textContent = tr('Kayıt açılamadı: {e}', { e: err.message }); return; }
+    if (destroyed) return;
+    msg.hidden = true;
+    // Dünya uçuşu kapsasın: evden en uzak kare mesafesinin 2,4 katı (en az seçilen boyut, en çok 20 km) — uçak arazi dışına çıkmasın
+    if (sim && data.home && Array.isArray(data.frames) && data.frames.length) {
+      const FI = Object.fromEntries((data.fields || []).map((k, i) => [k, i]));
+      let maxD = 0;
+      const step = Math.max(1, Math.floor(data.frames.length / 4000));
+      for (let i = 0; i < data.frames.length; i += step) { const f = data.frames[i]; if (f[FI.lat] == null) continue; const p = sim.toLocal(f[FI.lat], f[FI.lon]); maxD = Math.max(maxD, Math.hypot(p.x, p.y)); }
+      const need = Math.min(20000, Math.ceil(maxD * 2.4 / 500) * 500);
+      if (need > (Number(world.size_m) || 0)) { world.size_m = need; sim.setWorld(world); addEvent(tr('Dünya boyutu uçuşa göre {n} m yapıldı', { n: need }), 6); }
+    }
+    player = createReplayPlayer(data, {
+      onFrame: t => updateHud(t),
+      onEvent: (e, t) => addEvent(e.text, e.sev, t),
+      onClear: () => clear(events),
+      onTime: (t, dur, playing) => {
+        seek.value = String(Math.round(1000 * (dur ? t / dur : 0)));
+        timeLbl.textContent = `${clock(t)} / ${clock(dur)}`;
+        if (data.start_utc) { const d = new Date(new Date(data.start_utc).getTime() + t * 1000); clockLbl.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; }
+        playBtn.textContent = playing ? '❚❚' : '▶';
+      },
+      onSpeed: sp => speedBtns.forEach(b => b.classList.toggle('primary', Number(b.dataset.speed) === sp)),
+    });
+    // Kayıt bilgisi kutusu + kaydırıcıda olay/kalkış işaretleri
+    const info = mp.querySelector('.fs-rec-info');
+    if (info) clear(info, h('div', null, h('b', null, session.replay?.file_name || '—')),
+      h('div', null, [data.vehicle, data.n != null ? tr('{n} kare', { n: data.n }) : null, data.hz ? `${data.hz} Hz` : null, fmtDuration(data.duration_s)].filter(Boolean).join(' · ')),
+      data.start_utc ? h('div', null, tr('Kayıt başı: {t}', { t: fmtDateTime(data.start_utc) })) : null,
+      data.home ? h('div', null, tr('Kalkış: {lat}, {lon} · {alt} m MSL', { lat: Number(data.home.lat).toFixed(5), lon: Number(data.home.lon).toFixed(5), alt: f0(data.home.alt) })) : null);
+    const marks = playBar?.querySelector('.fs-seek-marks');
+    if (marks && data.duration_s) {
+      const dur = data.duration_s;
+      clear(marks, (data.events || []).filter(e => e.sev <= 4).slice(0, 60).map(e => h('b', { class: e.sev <= 3 ? 'err' : 'warn', style: { left: `${(e.t / dur * 100).toFixed(2)}%` }, title: `${clock(e.t)} ${e.text}` })),
+        data.takeoff_t != null ? h('b', { class: 'to', style: { left: `${(data.takeoff_t / dur * 100).toFixed(2)}%` }, title: tr('İlk ARM {t}', { t: clock(data.takeoff_t) }) }) : null);
+    }
+    // İlk ARM'den 5 sn önce başla; otomatik oynat
+    player.seek(Math.max(0, (data.takeoff_t ?? 0) - 5));
+    sim?.resetCamera();
+    player.play();
+    addEvent(tr('Kayıt yüklendi: {n} kare · {d}', { n: data.n, d: fmtDuration(data.duration_s) }), 6, player.time());
+  };
+  const onKeyReplay = e => {
+    if (!player || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+    if (e.key === ' ') { player.toggle(); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { player.seek(player.time() - (e.shiftKey ? 30 : 5)); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { player.seek(player.time() + (e.shiftKey ? 30 : 5)); e.preventDefault(); }
+  };
+  if (replay) window.addEventListener('keydown', onKeyReplay);
 
   // ---------- komutlar ----------
   const cmd = async (name, params = {}) => {
@@ -414,7 +549,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   };
   const endSession = async () => {
     if (!canWrite) { location.hash = be.href(); return; }
-    if (!await confirmDialog('Oturumu bitir', 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
+    if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
     try { await be.end(sid); toast('Oturum kapatıldı'); location.hash = be.href(); } catch (err) { toastError(err); }
   };
   const showEnded = reason => {
@@ -429,10 +564,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     fatal: why => { setWs('closed'); showEnded(why === 'auth' ? tr('Bu oturumu izleme yetkiniz yok.') : why === 'notfound' ? tr('Oturum sunucuda yok (kapanmış olabilir).') : why); },
     message: m => {
       if (destroyed) return;
-      if (m.t === 'tele') return updateHud(m);
+      if (m.t === 'tele') return replay ? undefined : updateHud(m);
       if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); } return; }
-      if (m.t === 'event') return addEvent(m.text, m.severity);
-      if (m.t === 'state') return setState(m.state);
+      if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null);
+      if (m.t === 'state') { if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay }; return setState(m.state); }
+      if (m.t === 'replay' && m.action === 'reset') return player?.restart();
       if (m.t === 'end') { setState('KAPANDI'); showEnded(m.reason); socket?.close(); }
     },
   });
@@ -456,7 +592,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     addEvent(tr('Sanal kumanda açık (RC override)'));
   };
   const netTick = setInterval(() => {
-    if (!sim) return;
+    if (!sim || replay) { netLbl.hidden = true; return; }   // kayıt kipinde ağ akışı yok
     const n = sim.netStats();
     netLbl.textContent = tr('net: {hz} Hz · jitter {j} ms', { hz: n.hz, j: n.jitter }) + (n.deadReckoning ? ' · DR' : '');
     netLbl.classList.toggle('warn', n.hz > 0 && (n.hz < 15 || n.jitter > 40));
@@ -466,6 +602,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     destroyed = true;
     clearInterval(gimbalTick); clearInterval(netTick);
     if (rc) { rc.dispose(); rc = null; }   // override serbest bırakılır (soket kapanmadan önce)
+    if (replay) window.removeEventListener('keydown', onKeyReplay);
+    player?.dispose();
     socket?.close();
     sim?.dispose();
     view.classList.remove('ops-view');
@@ -570,7 +708,68 @@ function virtualRC({ plane, stickL, stickR, send, onChange }) {
 }
 
 // ======================================================================
+// Kayıt oynatıcı: sunucudan gelen kare dizisi (fields sırası: flightsim_replay.FIELDS) → zaman t için enterpolasyonlu `tele` nesnesi.
+// requestAnimationFrame ile ilerler (hız 0.5×–8×); kaydırıcı/klavye ile atlama; olaylar zaman geldikçe şeride düşer (atlamada şerit
+// yeniden kurulur: t'den önceki son 8 olay). Sonda durur.
+// ======================================================================
+function createReplayPlayer(data, cb) {
+  const F = data.frames || [], FI = Object.fromEntries((data.fields || []).map((k, i) => [k, i]));
+  const modes = data.modes || [];
+  const EV = (data.events || []).slice().sort((a, b) => a.t - b.t);
+  const dur = Math.max(0.001, Number(data.duration_s) || (F.length ? F[F.length - 1][0] : 0));
+  const col = (fr, k) => (FI[k] == null ? null : fr[FI[k]]);
+  let t = 0, speed = 1, playing = false, raf = 0, last = 0, evIdx = 0, disposed = false;
+  const find = x => { let lo = 0, hi = F.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (F[mid][0] <= x) lo = mid; else hi = mid - 1; } return lo; };
+  const lerp = (a, b, u) => (a == null ? b : b == null ? a : a + (b - a) * u);
+  const lerpAng = (a, b, u) => { if (a == null || b == null) return a ?? b; let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * u; };
+  const frameAt = x => {
+    if (!F.length) return null;
+    const i = find(x), a = F[i], b = F[Math.min(i + 1, F.length - 1)];
+    const span = b[0] - a[0], u = span > 0 && span < 5 ? Math.max(0, Math.min(1, (x - a[0]) / span)) : 0;   // 5 sn'den uzun boşlukta tutma (log kesintisi)
+    const g = k => lerp(col(a, k), col(b, k), u);
+    const yaw = lerpAng(col(a, 'yaw'), col(b, 'yaw'), u);
+    const vn = g('vn'), ve = g('ve'), vd = g('vd');
+    const gs = g('gs'), hdg = col(a, 'hdg') != null ? ((lerpAng(col(a, 'hdg') * Math.PI / 180, col(b, 'hdg') * Math.PI / 180, u) * 180 / Math.PI) + 360) % 360 : null;
+    const mi = col(a, 'mode');
+    return { ts: Date.now(), t: x, lat: g('lat'), lon: g('lon'), alt_msl: g('alt_msl'), alt_rel: g('alt_rel'), roll: lerpAng(col(a, 'roll'), col(b, 'roll'), u), pitch: lerpAng(col(a, 'pitch'), col(b, 'pitch'), u), yaw,
+      vn, ve, vd, airspeed: g('as'), groundspeed: gs != null ? gs : (vn != null ? Math.hypot(vn, ve || 0) : null), heading: hdg, climb: vd != null ? -vd : null,
+      mode: mi != null ? modes[mi] : null, armed: !!col(a, 'armed'), gps_fix: col(a, 'fix'), sats: col(a, 'sats'), batt_v: g('batt_v'), batt_pct: col(a, 'batt_pct'),
+      throttle: g('thr'), rc: col(a, 'rc') || [], home: data.home || null, gcs_connected: null };
+  };
+  const emitFrame = () => { const fr = frameAt(t); if (fr) cb.onFrame?.(fr); cb.onTime?.(t, dur, playing); };
+  const syncEvents = () => {   // atlama: t'den önceki son 8 olayı şeride koy
+    cb.onClear?.();
+    evIdx = 0;
+    while (evIdx < EV.length && EV[evIdx].t <= t) evIdx++;
+    for (const e of EV.slice(Math.max(0, evIdx - 8), evIdx)) cb.onEvent?.(e, e.t);
+  };
+  const pumpEvents = () => { while (evIdx < EV.length && EV[evIdx].t <= t) { cb.onEvent?.(EV[evIdx], EV[evIdx].t); evIdx++; } };
+  const tick = now => {
+    if (disposed) return;
+    raf = requestAnimationFrame(tick);
+    const dt = Math.min(0.25, (now - last) / 1000); last = now;
+    if (!playing) return;
+    t += dt * speed;
+    if (t >= dur) { t = dur; playing = false; }
+    pumpEvents();
+    emitFrame();
+  };
+  const seek = x => { t = Math.max(0, Math.min(dur, Number(x) || 0)); syncEvents(); emitFrame(); };
+  const play = () => { if (t >= dur) t = 0; playing = true; last = performance.now(); cb.onTime?.(t, dur, playing); };
+  const pause = () => { playing = false; cb.onTime?.(t, dur, playing); };
+  raf = requestAnimationFrame(now => { last = now; tick(now); });
+  seek(0);
+  cb.onSpeed?.(speed);
+  return {
+    play, pause, toggle: () => (playing ? pause() : play()), seek, seekFrac: f => seek(f * dur), restart: () => { seek(0); play(); },
+    setSpeed: s => { speed = Number(s) || 1; cb.onSpeed?.(speed); }, time: () => t, duration: () => dur, frameAt, playing: () => playing, speed: () => speed,
+    dispose: () => { disposed = true; cancelAnimationFrame(raf); },
+  };
+}
+
+// ======================================================================
 // MOCK: arka uç yokken yerel kinematik üretici (WS yerine). Oturumlar bellekte (sekme ömrü). Komutlar üreticiye uygulanır.
+// Kayıt kipi (mode 'replay'): sahte log listesi + 2 dakikalık sahte kare dizisi (kalkış, daire, iniş; MSG olayları).
 // ======================================================================
 const MOCK = { sessions: new Map(), seq: 0 };
 const SAMPLE_CENTERS = [
@@ -590,24 +789,97 @@ function mockBackend(ctx) {
     MOCK.sessions.set(id, s);
     return s;
   };
-  const pub = s => { const { flight, ...rest } = s; return rest; };
+  // Kayıt kipi sahte oturumu: SITL/UDP yok; `replay` metası + kareler (mockReplayData) hazır → HAZIR
+  const mkReplay = async (logId, world) => {
+    const log = MOCK_LOGS.find(l => l.id === Number(logId)) || MOCK_LOGS[0];
+    const cs = await centers();
+    const c = cs[0];
+    const data = mockReplayData(log, c);
+    const id = `mock-${++MOCK.seq}`;
+    const s = { id, mode: 'replay', type: log.type, center: { id: null, name: log.file_name, lat: data.home.lat, lon: data.home.lon, alt: data.home.alt }, world: { ...WORLD_DEFAULTS, ...(world || {}) },
+      state: 'HAZIR', udp_port: null, host: location.hostname, created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' },
+      gcs: { connected: false, addr: null, since: null }, sitl: { pid: null, port: null, error: null },
+      replay: { log_id: log.id, file_name: log.file_name, size: log.size, progress: 100, frames: data.n, duration_s: data.duration_s, home: data.home, hz: data.hz, takeoff_t: data.takeoff_t, start_utc: data.start_utc, vehicle: data.vehicle, modes: data.modes } };
+    s.data = data;
+    MOCK.sessions.set(id, s);
+    return s;
+  };
+  const pub = s => { const { flight, data, ...rest } = s; return rest; };
   return {
     mock: true,
-    meta: async () => ({ types: TYPES.map(([key, name]) => ({ key, name, binary: isPlane(key) ? 'arduplane' : 'arducopter' })), centers: await centers(), world_defaults: WORLD_DEFAULTS, limits: { max_sessions: 2, max_minutes: 120 }, host: location.hostname }),
+    meta: async () => ({ types: TYPES.map(([key, name]) => ({ key, name, binary: isPlane(key) ? 'arduplane' : 'arducopter' })), centers: await centers(), world_defaults: WORLD_DEFAULTS, limits: { max_sessions: 2, max_minutes: 120 }, host: location.hostname,
+      replay: { logs_allowed: true, hz: 25, formats: ['.bin', '.log', '.tlog'] } }),
+    logs: async () => MOCK_LOGS.map(l => ({ ...l })),
+    replay: async id => { const s = MOCK.sessions.get(id); if (!s?.data) throw Object.assign(new Error('Kayıt oturumu değil'), { status: 400 }); return s.data; },
     sessions: async () => [...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').map(pub),
     session: async id => {
-      if (!MOCK.sessions.has(id)) {   // sayfa yenilendi: aynı kimlikle varsayılan bir sahte oturum kur
-        const n = Number(String(id).replace('mock-', '')) || 1; MOCK.seq = Math.max(MOCK.seq, n);
-        const s = await mk('multirotor', null, {}); MOCK.sessions.delete(s.id); s.id = id; MOCK.sessions.set(id, s);
+      if (!MOCK.sessions.has(id)) {   // sayfa yenilendi: aynı kimlikle varsayılan bir sahte oturum kur (…r → kayıt kipi)
+        const n = Number(String(id).replace('mock-', '').replace(/r$/, '')) || 1; MOCK.seq = Math.max(MOCK.seq, n);
+        const s = /r$/.test(String(id)) ? await mkReplay(1, {}) : await mk('multirotor', null, {}); MOCK.sessions.delete(s.id); s.id = id; MOCK.sessions.set(id, s);
       }
       return pub(MOCK.sessions.get(id));
     },
-    create: async body => { if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 }); return pub(await mk(body.type, body.center_id, body.world)); },
-    end: async id => { const s = MOCK.sessions.get(id); if (s) { s.state = 'KAPANDI'; s.flight.end('Kullanıcı bitirdi'); MOCK.sessions.delete(id); } return { ok: true }; },
-    cmd: async (id, name, params) => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); s.flight.cmd(name, params || {}); return { ok: true }; },
-    socket: (id, handlers) => { const s = MOCK.sessions.get(id); if (!s) { handlers.fatal?.('notfound'); return { send() {}, close() {} }; } return s.flight.attach(handlers, pub(s)); },
+    create: async body => {
+      if ([...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length >= 2) throw Object.assign(new Error('Oturum sınırı'), { status: 409 });
+      if (body.mode === 'replay') { const s = await mkReplay(body.log_id, body.world); MOCK.sessions.delete(s.id); s.id = `${s.id}r`; MOCK.sessions.set(s.id, s); return pub(s); }
+      return pub(await mk(body.type, body.center_id, body.world));
+    },
+    end: async id => { const s = MOCK.sessions.get(id); if (s) { s.state = 'KAPANDI'; s.flight?.end('Kullanıcı bitirdi'); MOCK.sessions.delete(id); } return { ok: true }; },
+    cmd: async (id, name, params) => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); if (s.mode === 'replay') { if (name !== 'reset') throw Object.assign(new Error('Kayıtta komut yok'), { status: 400 }); return { ok: true }; } s.flight.cmd(name, params || {}); return { ok: true }; },
+    socket: (id, handlers) => {
+      const s = MOCK.sessions.get(id);
+      if (!s) { handlers.fatal?.('notfound'); return { send() {}, close() {} }; }
+      if (s.mode === 'replay') { handlers.status?.('open'); setTimeout(() => { handlers.message?.({ t: 'hello', session: pub(s) }); handlers.message?.({ t: 'event', text: `Kayıt hazır: ${s.replay.frames} kare · ${s.replay.duration_s} sn`, severity: 6 }); }, 0); return { send() {}, close() {} }; }
+      return s.flight.attach(handlers, pub(s));
+    },
     href: id => `#/drone/sim${id ? `/${id}` : ''}?mock=1`,
   };
+}
+
+// Sahte uçuş logu listesi (kayıt kipi) ve 2 dakikalık sahte kare üretici: uçak pistten kalkar, 400 m yarıçapta daire çizer, iner.
+const MOCK_LOGS = [
+  { id: 1, file_name: '00000012.BIN', ext: 'bin', size: 253034496, uploaded_at: '2026-09-26T09:40:00', takeoff_utc: '2026-09-21T13:24:00Z', start_utc: '2026-09-21T13:01:41Z', aircraft: 'CZ-07', pilot: 'A. Yılmaz', location: 'Akyurt', task_code: 'SG-2026-014', vehicle: 'ArduPlane V4.7.1', type: 'sabit_kanat', flight_s: 120, duration_s: 150, cached: true, status: 'TAMAM' },
+  { id: 2, file_name: '20261016T093821-1-4e2a6023.tlog', ext: 'tlog', size: 233827, uploaded_at: '2026-10-16T09:40:00', start_utc: '2026-10-16T06:38:21Z', aircraft: 'Sanal dron', pilot: null, location: null, task_code: null, vehicle: 'ArduCopter', type: 'multirotor', flight_s: 95, duration_s: 120, cached: false, status: 'TAMAM' },
+  { id: 3, file_name: '00000009.BIN', ext: 'bin', size: 491417600, uploaded_at: '2026-09-26T10:19:00', takeoff_utc: '2026-09-20T08:12:00Z', aircraft: 'CZ-05', pilot: 'M. Kaya', location: 'Akyurt', task_code: null, vehicle: 'ArduPlane V4.6.0', type: 'sabit_kanat', flight_s: 1860, duration_s: 2400, cached: false, status: 'TAMAM' },
+];
+function mockReplayData(log, c) {
+  const plane = isPlane(log.type), hz = 25, dur = 120, home = { lat: c.lat, lon: c.lon, alt: Number(c.alt) || 0 };
+  const fields = ['t', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'gs', 'as', 'hdg', 'thr', 'mode', 'armed', 'batt_v', 'batt_pct', 'sats', 'fix', 'rc'];
+  const modes = plane ? ['MANUAL', 'TAKEOFF', 'AUTO', 'RTL'] : ['STABILIZE', 'GUIDED', 'LOITER', 'LAND'];
+  const frames = [], events = [{ t: 0, text: `${log.vehicle || 'ArduPlane'} (sahte kayıt)`, sev: 6 }, { t: 3, text: 'GPS 1: detected as u-blox at 115200 baud', sev: 6 }, { t: 8, text: 'EKF3 IMU0 is using GPS', sev: 6 }];
+  const V = plane ? 22 : 8, R = plane ? 400 : 120, cosLat = Math.cos(home.lat * Math.PI / 180);
+  let x = 0, y = 0, z = 0, yaw = 0, roll = 0, pitch = 0, vx = 0, vy = 0, vz = 0, mode = 0, armed = 0, thr = 0, ang = 0, batt = 100;
+  let phase = 'ground';
+  for (let i = 0; i <= dur * hz; i++) {
+    const t = i / hz, dt = 1 / hz;
+    if (phase === 'ground' && t >= 10) { phase = 'takeoff'; armed = 1; mode = 1; events.push({ t, text: 'Throttle armed', sev: 6 }, { t, text: `Mode ${modes[1]}`, sev: 6 }); }
+    if (phase === 'takeoff') {
+      if (plane) { const sp = Math.min(V, Math.hypot(vx, vy) + 4 * dt); vx = Math.sin(yaw) * sp; vy = Math.cos(yaw) * sp; vz = sp > 15 ? 6 : 0; pitch = sp > 15 ? 0.25 : 0; thr = 95; }
+      else { vz = 2.5; thr = 65; }
+      if (z >= (plane ? 120 : 30)) { phase = 'cruise'; mode = 2; vz = 0; ang = Math.atan2(y, x); events.push({ t, text: `Mode ${modes[2]}`, sev: 6 }, { t, text: 'Reached target altitude', sev: 6 }); }
+    } else if (phase === 'cruise') {
+      const r0 = Math.hypot(x, y), r = r0 + (R - r0) * Math.min(1, dt * 0.4);
+      ang += (V / r) * dt;
+      const nx = Math.cos(ang) * r, ny = Math.sin(ang) * r;
+      vx = (nx - x) / dt; vy = (ny - y) / dt; x = nx - vx * dt; y = ny - vy * dt;
+      vz = ((plane ? 120 : 30) + (plane ? 8 : 2) * Math.sin(t * 0.3) - z) * 0.5;
+      yaw = Math.atan2(vx, vy); roll = plane ? Math.atan((V * V) / (r * 9.81)) : 0.06 * Math.sin(t * 0.8); pitch = (plane ? 0.04 : 0) + vz * 0.02; thr = plane ? 55 : 48;
+      if (t >= 85) { phase = 'rtl'; mode = 3; events.push({ t, text: `Mode ${modes[3]}`, sev: 6 }); if (plane) events.push({ t: t + 0.2, text: 'Low battery warning (sahte)', sev: 4 }); }
+    } else if (phase === 'rtl') {
+      const d = Math.hypot(x, y);
+      if (d > 3) { const sp = Math.min(V, d); vx = -x / d * sp; vy = -y / d * sp; vz = -Math.min(3, z / Math.max(1, d / V)); yaw = Math.atan2(vx, vy); roll = 0; pitch = -0.05; thr = 40; }
+      else { vx = vy = 0; vz = -Math.min(1.5, Math.max(0.3, z * 0.3)); roll = pitch = 0; thr = 25; }
+      if (z <= 0.05 && d <= 3) { z = 0; vz = 0; if (armed) { armed = 0; thr = 0; mode = 0; phase = 'ground'; events.push({ t, text: 'Disarming motors', sev: 6 }); } }
+    }
+    x += vx * dt; y += vy * dt; z = Math.max(0, z + vz * dt);
+    if (armed) batt = Math.max(0, batt - dt * 0.03);
+    const lat = home.lat + y / 110574, lon = home.lon + x / (111320 * cosLat), gs = Math.hypot(vx, vy);
+    const rc = [1500 + Math.round(400 * Math.sin(roll * 2)), 1500 - Math.round(400 * Math.sin(pitch * 2)), 1000 + Math.round(thr * 10), 1500, 1800, 1000, 1000, 1500];
+    frames.push([Number(t.toFixed(3)), Number(lat.toFixed(7)), Number(lon.toFixed(7)), Number((home.alt + z).toFixed(2)), Number(z.toFixed(2)), Number(roll.toFixed(4)), Number(pitch.toFixed(4)), Number(yaw.toFixed(4)),
+      Number(vy.toFixed(2)), Number(vx.toFixed(2)), Number((-vz).toFixed(2)), Number(gs.toFixed(2)), Number((gs + 2).toFixed(2)), Number((((yaw * 180 / Math.PI) + 360) % 360).toFixed(1)), thr, mode, armed,
+      Number((14.2 + 2.6 * batt / 100).toFixed(2)), Math.round(batt), 14, 3, rc]);
+  }
+  return { v: 1, hz, fields, frames, modes, events, duration_s: dur, home, takeoff_t: 10, start_utc: log.start_utc || null, vehicle: log.vehicle || 'ArduPlane', type: log.type, n: frames.length, source: log.ext === 'tlog' ? 'tlog' : 'bin' };
 }
 
 // Basit kinematik uçuş: yerde bekle → arm → kalkış → merkez etrafında daire (uçak: pistten hızlanıp tırmanır; kopter dikey kalkar).

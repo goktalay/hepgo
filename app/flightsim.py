@@ -564,7 +564,8 @@ class SimSession:
         elif src != self.sysid:
             return
         elif t == 'GLOBAL_POSITION_INT':
-            te['lat'], te['lon'] = m.lat / 1e7, m.lon / 1e7
+            if m.lat or m.lon:   # EKF kökeni oluşmadan SITL 0/0 yollar: merkez konumu korunur (3B'de dron 4000 km uzağa gitmesin)
+                te['lat'], te['lon'] = m.lat / 1e7, m.lon / 1e7
             te['alt_msl'], te['alt_rel'] = m.alt / 1000.0, m.relative_alt / 1000.0
             te['vn'], te['ve'], te['vd'] = m.vx / 100.0, m.vy / 100.0, m.vz / 100.0
             if m.hdg != 65535:

@@ -537,7 +537,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     V.climb.textContent = (climb != null && climb > 0.05 ? '+' : '') + f1(climb);
     V.hdg.textContent = f0(t.heading != null ? t.heading : (t.yaw != null ? ((t.yaw * 180 / Math.PI) + 360) % 360 : null)).padStart(3, '0');
     V.gps.textContent = `${t.gps_fix >= 3 ? '3D' : t.gps_fix === 2 ? '2D' : tr('Yok')} · ${f0(t.sats)} ${tr('uydu')}`;
-    V.batt.textContent = `${t.batt_v != null ? Number(t.batt_v).toFixed(2) : '—'} V · %${f0(t.batt_pct)}`;
+    V.batt.textContent = `${t.batt_v != null && Number(t.batt_v) > 0 ? Number(t.batt_v).toFixed(2) : '—'} V · %${f0(t.batt_pct)}`;   // SITL'de batarya izleme kapalıysa 0 V gelir
     V.batt.classList.toggle('warn', t.batt_pct != null && t.batt_pct < 25);
     V.thr.textContent = f0(t.throttle);
     thrBar.firstChild.style.width = `${Math.max(0, Math.min(100, Number(t.throttle) || 0))}%`;
@@ -632,8 +632,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
     try { await be.end(sid); toast('Oturum kapatıldı'); location.hash = be.href(); } catch (err) { toastError(err); }
   };
+  const END_REASON = { kapatildi: 'Oturum kapatıldı', bosta: 'İzleyici ve GCS olmadığından kapatıldı', sure: 'Oturum süresi doldu', sunucu_kapaniyor: 'Sunucu kapanıyor' };
   const showEnded = reason => {
-    clear(ended, h('div', { class: 'fs-ended-box' }, h('b', null, 'Oturum sona erdi'), h('div', { class: 'small muted' }, reason || ''),
+    clear(ended, h('div', { class: 'fs-ended-box' }, h('b', null, 'Oturum sona erdi'), h('div', { class: 'small muted' }, tr(END_REASON[reason] || reason || '')),
       h('a', { class: 'btn primary', href: be.href() }, 'Simülatör ana sayfası')));
     ended.hidden = false;
   };

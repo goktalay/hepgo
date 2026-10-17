@@ -3568,4 +3568,8 @@ registerCatalog('ar', {
   "Sade görünüm": "عرض بسيط",
   "Harekât paneli": "لوحة العمليات",
   "Rota yüklendi: {n} nokta": "تم تحميل المسار: {n} نقاط",
+  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "إظهار/إخفاء لوحة العمليات (P): طبقة تنزلق من اليمين فوق العالم ثلاثي الأبعاد؛ عند الإغلاق عرض بسيط (الواجهة القديمة وأوامر الشريط السفلي)",
+  "Harekât panelini aç/kapat (P)": "إظهار/إخفاء لوحة العمليات (P)",
+  "Panel": "اللوحة",
+  "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "الشبكة: {hz} هرتز · الارتجاج {j} مللي ثانية · المخزن المؤقت {d} مللي ثانية",
 });

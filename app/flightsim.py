@@ -418,7 +418,7 @@ class SahteKinematik:
         hs = math.hypot(self.vn, self.ve)
         return {'lat': round(self.lat, 7), 'lon': round(self.lon, 7), 'alt_msl': round(self.alt0 + self.alt_rel, 2), 'alt_rel': round(self.alt_rel, 2),
                 'roll': round(self.roll, 4), 'pitch': round(self.pitch, 4), 'yaw': round(self.yaw, 4),
-                'rs': round(self.rs, 3), 'ps': round(self.ps, 3), 'ys': round(self.ys, 3), 'tbm': int(self.sure_ms),
+                'rs': round(self.rs, 3), 'ps': round(self.ps, 3), 'ys': round(self.ys, 3), 'tbm': int(self.sure_ms), 'tbm_pos': int(self.sure_ms),
                 'vn': round(self.vn, 2), 've': round(self.ve, 2), 'vd': round(self.vd, 2),
                 'airspeed': round(hs + self.ruzgar * 0.3, 2), 'groundspeed': round(hs, 2), 'heading': round(math.degrees(self.yaw) % 360, 1),
                 'climb': round(-self.vd, 2), 'mode': self.mode, 'armed': self.armed, 'gps_fix': 3, 'sats': 12,
@@ -502,7 +502,7 @@ class SimSession:
         self.param_types = {}
         alt0 = float(center.get('alt') or 0)
         self.tele = {'lat': float(center['lat']), 'lon': float(center['lon']), 'alt_msl': alt0, 'alt_rel': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-                     'rs': 0.0, 'ps': 0.0, 'ys': 0.0, 'tbm': 0,
+                     'rs': 0.0, 'ps': 0.0, 'ys': 0.0, 'tbm': 0, 'tbm_pos': 0,
                      'vn': 0.0, 've': 0.0, 'vd': 0.0, 'airspeed': 0.0, 'groundspeed': 0.0, 'heading': 0.0, 'climb': 0.0, 'mode': None, 'armed': False,
                      'gps_fix': 0, 'sats': 0, 'batt_v': None, 'batt_pct': None, 'throttle': 0.0, 'rc': [0] * 8, 'home': None}
         self._tele_son = 0.0             # son `tele` yayını (duvar saati; bekçi)
@@ -745,7 +745,7 @@ class SimSession:
             te['vn'], te['ve'], te['vd'] = m.vx / 100.0, m.vy / 100.0, m.vz / 100.0
             if m.hdg != 65535:
                 te['heading'] = m.hdg / 100.0
-            te['tbm'] = int(m.time_boot_ms)
+            te['tbm'] = te['tbm_pos'] = int(m.time_boot_ms)   # tbm_pos: konum damgası (ATTITUDE ile farklı zamanlı; istemci ayrı enterpole eder, §5)
             if time.time() - self._att_son > 0.1:   # ATTITUDE akmıyorsa konum yayını tetikler
                 self._tele_yay(te['tbm'])
         elif t == 'ATTITUDE':
@@ -1185,7 +1185,7 @@ class SimSession:
         while True:
             hedef += aralik                      # mutlak zamanlama: uyku sapması birikmez (gerçek 50 Hz)
             now = time.time()
-            if hedef < now - 0.5:
+            if hedef < now - 0.1:   # CPU kıtlığında en çok 5 kare "yetişme" (uzun patlama tarayıcıda yüzlerce Hz'lik yığın olarak görünürdü)
                 hedef = now
             await asyncio.sleep(max(0.0, hedef - now))
             now = time.time()

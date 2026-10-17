@@ -43,10 +43,12 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 
 ## 3. WebSocket (`/ws/drone/sim/{id}`, oturum çerezi; drone_hub `_ws_user` kalıbı)
 - Bağlanınca `{t:'hello', session}`; yetkisiz `{t:'error',error:'auth'}` + 4403; oturum yoksa 4404.
-- `{t:'tele', ts, tbm, lat, lon, alt_msl, alt_rel, roll, pitch, yaw (rad), rs, ps, ys (rad/s; ATTITUDE roll/pitch/yawspeed), vn, ve, vd (m/s),
+- `{t:'tele', ts, tbm, tbm_pos, lat, lon, alt_msl, alt_rel, roll, pitch, yaw (rad), rs, ps, ys (rad/s; ATTITUDE roll/pitch/yawspeed), vn, ve, vd (m/s),
   airspeed, groundspeed, heading (deg), climb, mode, armed, gps_fix, sats, batt_v, batt_pct, throttle (%), rc:[8 kanal], home:{lat,lon,alt},
   gcs_connected, gcs_addr}` — **olay güdümlü**: gerçek SITL'de her ATTITUDE / GLOBAL_POSITION_INT geldiğinde (50 Hz tavan; 250 ms sessizlikte
-  bekçi yayını), sahte kipte 50 Hz. `ts` sunucu alım zamanı (Unix sn, 3 ondalık), `tbm` SITL `time_boot_ms` (sahte: oturum ms). Sayılar
+  bekçi yayını), sahte kipte 50 Hz. `ts` sunucu alım zamanı (Unix sn, 3 ondalık), `tbm` SITL `time_boot_ms` (sahte: oturum ms); `tbm_pos` konum
+  alanlarının damgası (son GLOBAL_POSITION_INT `time_boot_ms`; kare ATTITUDE'da yayınlandığından yönelimle farklı zamanlıdır — istemci iki
+  alanı ayrı zaman çizgilerinde enterpole eder, §5; sahte kipte `tbm` ile aynı). Sayılar
   yuvarlanır (açılar 4, hızlar 2–3 ondalık) — JSON küçük kalır.
 - `{t:'event', text, severity}` (STATUSTEXT ve köprü olayları), `{t:'state', state}`, `{t:'end', reason}`.
 - İstemciden: `{t:'ping'}`, `{t:'cmd', name, params, rid?}` (REST `cmd` ile aynı), `{t:'rc', ch:[…]}` (≈20 Hz; ~40 Hz üstü atılır, yanıt yok;
@@ -93,11 +95,22 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 - HUD (3B üstünde, sağ): mod, arm, yükseklik (AGL/MSL), hava/yer hızı, dikey hız, yön, GPS/uydu, batarya, gaz, RC çubukları, rüzgâr;
   sol alt: **Mission Planner bağlantısı**: `UDP <host>:<port>`, "Bağlı (ip)" / "Bekleniyor"; Kopyala; kısa talimat (Mission Planner › UDP › port).
 - Performans: 60 fps hedef; arazi 256×256 ızgara, LOD yok; ağaç ≤ 20.000 örnek.
-- Akıcılık: **gecikme tamponlu enterpolasyon** — her `tele` karesi kaynak zamanıyla (`ts`) tamponlanır; kaynak saati istemci saatine
-  "en küçük alım−kaynak farkı" ofsetiyle eşlenir (ağ jitter'ı zaman çizgisinden düşer); render zamanı = şimdi − 80 ms; iki kare arası konum
-  lineer, yönelim slerp; tampon biterse ölü hesap (hız + gövde açısal hızları `rs/ps/ys`, en çok 300 ms). Kare hızından bağımsız (rAF delta);
-  pervaneler delta-zamanla döner. Takip kamerası hedefi kritik sönümlü yayla izler (ω = 2π·1.5). HUD altında `net: 48 Hz · jitter 3 ms`
-  (`sim.netStats()`; DR = ölü hesapta).
+- Akıcılık (`static/js/modules/flightsim_interp.js`, `createTimeline`): **uyarlanır gecikme tamponlu enterpolasyon**. Zaman ekseni KAYNAK
+  zamanıdır (`tbm`; yoksa `ts`/alım): oynatma başı (`play`, kaynak ms) her render karesinde geçen gerçek süre × hız oranı kadar ilerler; hedefi
+  "son kare − hedef gecikme"dir ve ona yalnız hız oranıyla (±%6; hatanın 400 ms EMA'sı) yaklaşır → saat ofseti kestirimi yok, SITL saat sapması ve
+  ağ jitter'ı ileri-geri sıçrama üretmez (|hata| > 1 s ya da `tbm` 1 s'den çok geri gidince yeniden senkron). **Hedef gecikme** = 60 ms + 3 × jitter
+  (EMA; jitter = |alım aralığı − kaynak aralığı|), en az 2 kaynak kare aralığı ve 1,5 render karesi, 60…300 ms, saniyede ±10 ms (HUD net satırı:
+  `net: 48 Hz · jitter 3 ms · tampon 72 ms`, DR = ölü hesapta). **Konum ve yönelim ayrı zaman çizgileri**: `tbm_pos` (GLOBAL_POSITION_INT) ve
+  `tbm` (ATTITUDE) — sunucu karesi iki mesajı farklı damgalarla birleştirir; tek çizgide konum ±20 ms ileri-geri giderdi (30 m/s'de 0,6 m). Kareler
+  kaynak zamanına göre **sıralı** eklenir (sırası bozulan kare yerine oturur). Tampon biterse ölü hesap (hız + gövde açısal hızları `rs/ps/ys`, en çok
+  300 ms); ölü hesaptan gerçek kareye dönüşte ve her beklenmedik sıçramada fark 130 ms içinde **yumuşak kapanır** (konum lerp, yönelim slerp —
+  "atlama" yok; > 60 m / > 100° teleport doğrudan). Kare hızından bağımsız (rAF gerçek süresi, kırpılmamış; pervaneler/tekerlekler de kırpılmamış
+  süreyle döner, 2π'ye sarılır). Takip kamerası hedefi kritik sönümlü yayla izler (ω = 2π·1.5; 1/120 s alt adımlarla, düşük kare hızında kararlı).
+  Teşhis: `#/drone/sim/<id>?netsim=jitter30,loss5,delay40` gelen kareleri delay + U(0, 2·jitter) ms gecikmeyle (sıra bozulabilir) iletir, %loss
+  düşürür ve `window.__fsSim` verir (`netStats()`: hz, jitter, delay, deadReckoning, drEnters, drPerMin, snaps; `motionStats(reset)`: ardışık
+  render kareleri arası yönelim farkı ° — ortalama/maks, "jerk" = ardışık farkların farkı, konum farkı, DR giriş/kare sayısı). Tarihçe: canlı
+  sunucuda (Cloudflare tüneli, jitter ≈ 24 ms) sabit 80 ms tampon + "en küçük alım−kaynak farkı" ofseti tamponu boşaltıp sık ölü hesaba düşürüyor,
+  DR → gerçek kare geçişi sert atlıyordu ("sürekli titriyor"; FPV'de tüm sahne) — `tests/test_flightsim_interp.mjs` eski/yeni karşılaştırması.
 - Sanal kumanda (alt çubuk 🎮, yazma izni): iki yarı saydam çubuk (sol gaz/yaw, sağ pitch/roll; Mode 2; dokunmatik + fare) + klavye
   (W/S gaz, A/D yaw, ↑↓ pitch, ←→ roll — yaylı dönüş; Q/E ch5 mod anahtarı 1000/1500/2000; Boşluk gaz 1500). Kopterde gaz çubuğu merkeze
   yaylı (askı), uçakta tutmalı. 20 Hz `{t:'rc', ch}` yalnız açıkken; kapatınca / sayfadan çıkınca tek sefer 8×0. Açıkken 3B'nin WASD/ok
@@ -111,6 +124,11 @@ ekleme, yönelim paneli; kayıt kipinde log listesinin altında, log tipine gör
 Açık oturum varsa liste: devam et / bitir. 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
 
 ## 7. Testler
+- `node tests/test_flightsim_interp.mjs` (tarayıcısız; vendor three.module): telemetri zaman çizgisi (§5) — sentetik 50 Hz sabit kanat dairesi
+  (ATTITUDE/GLOBAL_POSITION_INT farklı damgalı), ağ bozulması (jitter 30/60 ms, %5/%10 kayıp, sırası bozuk teslim, SITL saati %3 yavaş), 60/25
+  fps sanal rAF; eski algoritma (9e639ef) aynı arayüzle karşılaştırılır: yeni jerk ≤ 0,02°, DR ≤ 2/dk, maks adım < 4× ideal, yarım karede konum
+  jerk < eski/2, sıralı ekleme, saat sıfırlama. Sonuç (jitter 30 + %5 kayıp, 60 fps): jerk 0,053° → 0,0009°, maks adım 0,44° → 0,14°, konum jerk
+  0,23 m → 0,0006 m; kötü tünel (60 ms, %10): DR 92/dk → 0.
 - `tests/test_flightsim.py`: meta (tipler, merkezler), oturum açma/limit/kapama (SITL yoksa 503), komut yetkisi (salt okuyan 403),
   WS hello/tele (SITL olmadan `HEPGO_SITL=0` ile sahte telemetri üreticisi), UDP köprüsü (yerel soket ile ham bayt gidiş-dönüş, GCS kilidi).
 - Kayıttan oynatma (§8): pymavlink ile yazılan küçük .tlog → ayrıştırıcı (kare sayısı, ev = ilk ARM, mod adı, olaylar), `GET /logs`
@@ -420,11 +438,20 @@ flights:[{id: 9000+N, protocol:'sanal', sim_bridge_id:-(9000+N), label, name, dr
 points:[{seq, cmd, lat, lon, alt}]}` — hub `mission_upload` sonrası (yalnız konumlu seyrüsefer öğeleri; TAKEOFF x/y 0 çizilmez), `mission_clear` /
 Sıfırla sonrası boş liste.
 
-**Ön yüz.** Oturum ekranı (`flightsim.js`): `createOpsPanel(stage, {sid})` (`flightsim_ops.js`) `/static/ops/index.html?sim=<id>` iframe'ini
-sağda açar (`--fs-ops-w: clamp(440px, 46%, 720px)`; `.fs-stage.fs-ops` 3B tuval/alt çubuk/olay şeridi sola daralır; eski `.fs-hud` ve `.fs-cmds`
-gizlenir). Alt çubukta **Sade görünüm / Harekât paneli** anahtarı (localStorage `fs.ops.on`; panel kapalıyken eski HUD + ARM/mod/Kalkış/RTL geri
-gelir). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla, Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır.
-**Dron kamerası (2)**: `.fs-fpv` → panel gizlenir, 3B tam alan, askeri HUD (H) aynen; 1/3/4'e dönünce panel geri gelir. Kayıt ve mock
+**Ön yüz.** Oturum ekranı (`flightsim.js`): 3B dünya her zaman TAM alanı kaplar; `createOpsPanel(stage, {sid, onToggle})` (`flightsim_ops.js`)
+`/static/ops/index.html?sim=<id>` iframe'ini 3B'nin ÜSTÜNDE sağdan kayan yarı saydam koyu katman olarak açar (`.fs-ops-frame`: `--fs-ops-w:
+clamp(440px, 36%, 520px)`, üstten alt çubuğa dek — `--fs-bar-h` çubuk yüksekliğini ResizeObserver ile izler; `translateX` geçişi). Açma/kapama:
+alt çubuk **Panel** düğmesi, sağ kenardaki ince **PANEL** sekmesi (`.fs-ops-tab`; kapalıyken yalnız o kalır) ya da **P** tuşu; tercih localStorage
+`fs.ops.on` (varsayılan açık). `.fs-stage.fs-ops` = panel açık: eski `.fs-hud` ve `.fs-cmds` gizli, sağ sanal kumanda çubuğu/olay şeridi/atıf panelin
+soluna kayar; panel kapalı = **sade görünüm** (eski HUD + ARM/mod/Kalkış/RTL). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla,
+Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır. **Haritasız panel:** sim kipinde (`?sim=`) `index.html` yükleyicisi Cesium.js /
+widgets.css'i HİÇ ÇEKMEZ (karo/Google/Esri isteği yok): `js/hepgo_nomap.js` evrensel bir sahte `Cesium` (Proxy: her özellik/çağrı/`new` yine sahte;
+sayıya 0, metne "", yinelemede boş, `then` yok) verir, GÖKTUNGU betikleri (`harita.js:177 new Cesium.Viewer`, entity'ler) değişmeden çalışır ama
+hiçbir şey çizmez; `html[data-hepgo-nomap]` harita araçlarını, alt bar harita alanlarını ve Harita Ayarları'nı gizler, dron kartı katman genişliğine
+uyar (`.dron-kart.ayrik { width: calc(100% - 64px) }`). Sol araç grubunda **Haritayı göster/gizle** anahtarı (`#btnHaritaGoster`, localStorage
+`hepgo_sim_harita = "1"` → sayfa yenilenir, Cesium yüklenir; varsayılan kapalı). Görev kipinde (`?task=`) harita her zaman yüklenir (document.write ile
+parser engelleyici, sonraki betikler Cesium'u senkron bulur). Rota çizimi 3B'de (`setRoute`).
+**Dron kamerası (2)**: `.fs-fpv` → panel ve sekme gizlenir, askeri HUD (H) aynen; 1/3/4'e dönünce panel geri gelir. Kayıt ve mock
 oturumlarında panel yok (sunucu köprüsü yok). `hepgo_ws.js`: `?sim=` → `SIM_ID`, `baglamUrl()`, `watch{sim_id}`, ilk hello'da Bağlantı Yöneticisi
 (`#yzSeri`) açılır, `html[data-hepgo-sim]` (kart katlı başlamaz — `hepgo_patch.js`), sürdürme anahtarı `hepgo_ops_surdur_sim<N>`, bilgi kutusu
 "Simülatör oturumu bulunamadı → #/drone/sim". Rota: Dron Yönetimi › Rotalar'daki rotalar panelden (İŞLEMLER › Rotayı Yükle) `routes/{id}/mission` →

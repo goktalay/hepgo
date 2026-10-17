@@ -3568,4 +3568,8 @@ registerCatalog('ru', {
   "Sade görünüm": "Простой вид",
   "Harekât paneli": "Панель операций",
   "Rota yüklendi: {n} nokta": "Маршрут загружен: {n} точек",
+  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "Показать/скрыть панель операций (P): слой, выезжающий справа поверх 3D-мира; закрыт = простой вид (старый HUD и команды нижней панели)",
+  "Harekât panelini aç/kapat (P)": "Показать/скрыть панель операций (P)",
+  "Panel": "Панель",
+  "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "сеть: {hz} Гц · джиттер {j} мс · буфер {d} мс",
 });

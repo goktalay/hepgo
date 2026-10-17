@@ -3572,4 +3572,10 @@ registerCatalog('ar', {
   "Harekât panelini aç/kapat (P)": "إظهار/إخفاء لوحة العمليات (P)",
   "Panel": "اللوحة",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "الشبكة: {hz} هرتز · الارتجاج {j} مللي ثانية · المخزن المؤقت {d} مللي ثانية",
+  "Motor sesi aç/kapa (M)": "تشغيل/إيقاف صوت المحرك (M)",
+  "etkileşim bekleniyor": "بانتظار التفاعل",
+  "hızlı oynatmada sessiz": "صامت عند التشغيل السريع",
+  "Ses düzeyi": "مستوى الصوت",
+  "Ses için sayfaya bir kez tıklayın ya da bir tuşa basın": "انقر على الصفحة مرة أو اضغط مفتاحًا لتفعيل الصوت",
+  "Dron tipine göre sentezlenmiş motor sesi; kameraya uzaklıkla azalır, FPV'de kokpit sesi.": "صوت محرك مُولَّد حسب نوع الدرون؛ يخفت مع البعد عن الكاميرا، وصوت قمرة القيادة في FPV.",
 });

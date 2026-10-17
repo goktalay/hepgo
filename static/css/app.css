@@ -9023,6 +9023,16 @@ body.immersive .fs-nav { top: 12px; }
 .fs-bar .input.sm { height: 30px; padding: 0 8px; font-size: 13px; background: rgba(255, 255, 255, .08); color: #e6e9ef; border-color: transparent; border-radius: 999px; }
 .fs-bar .input.sm option { color: #111; }
 .fs-gimbal { color: #9aa4b6; }
+/* §16 motor sesi: hoparlör düğmesi (🔊/🔇; M), ▾ ile ses düzeyi menüsü; "etkileşim bekleniyor" turuncu nokta (AudioContext askıda) */
+.fs-audio { position: relative; display: inline-flex; gap: 2px; align-items: center; }
+.fs-audio-btn { position: relative; min-width: 36px; }
+.fs-audio-btn.wait::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #f5a524; box-shadow: 0 0 0 2px rgba(11, 18, 32, .9); }
+.fs-audio-more { padding: 0 6px; min-width: 22px; font-size: 11px; }
+.fs-audio-menu { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 8; min-width: 220px; padding: 10px 12px; border-radius: 10px; background: rgba(11, 18, 32, .96); border: 1px solid rgba(255, 255, 255, .12); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); color: #e6e9ef; font-size: 12px; display: grid; gap: 6px; }
+.fs-audio-menu[hidden] { display: none; }
+.fs-audio-menu .fs-audio-row { display: flex; align-items: center; gap: 8px; }
+.fs-audio-menu input[type=range] { flex: 1; accent-color: var(--primary); }
+.fs-audio-menu .fs-audio-hint { color: #f5a524; }
 /* Sanal kumanda: iki yarı saydam çubuk (sol gaz/yaw, sağ pitch/roll), klavye ipucu; HUD altı ağ göstergesi */
 .fs-sticks { position: absolute; left: 0; right: 0; bottom: 70px; height: 150px; z-index: 6; pointer-events: none; }
 .fs-sticks[hidden] { display: none; }

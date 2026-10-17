@@ -3572,4 +3572,10 @@ registerCatalog('ru', {
   "Harekât panelini aç/kapat (P)": "Показать/скрыть панель операций (P)",
   "Panel": "Панель",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "сеть: {hz} Гц · джиттер {j} мс · буфер {d} мс",
+  "Motor sesi aç/kapa (M)": "Звук мотора вкл/выкл (M)",
+  "etkileşim bekleniyor": "ожидается взаимодействие",
+  "hızlı oynatmada sessiz": "без звука при быстром воспроизведении",
+  "Ses düzeyi": "Громкость",
+  "Ses için sayfaya bir kez tıklayın ya da bir tuşa basın": "Нажмите на страницу или клавишу один раз, чтобы включить звук",
+  "Dron tipine göre sentezlenmiş motor sesi; kameraya uzaklıkla azalır, FPV'de kokpit sesi.": "Звук мотора синтезируется по типу дрона; затухает с расстоянием до камеры, в FPV — звук кабины.",
 });

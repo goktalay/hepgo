@@ -17,6 +17,7 @@ import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo 
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
+import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
 import { createOpsPanel } from './flightsim_ops.js';   // §14: Canlı Uçuş harekât paneli (static/ops iframe) — telemetri/komut/rota paneli; 3B yanında
 
 const API = '/api/drone/sim';
@@ -539,6 +540,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
   if (opsOk) { ops = createOpsPanel(stage, { sid, onToggle: on => opsBtn.classList.toggle('primary', on) }); opsBtn.classList.toggle('primary', ops.enabled); }
+  const audio = createEngineAudio(stage, { type, launch, replay, tr, getSim: () => sim, getCrashed: () => !crash.hidden, getSpeed: () => player?.speed() ?? 1 });   // §16: düğmeyi alt çubuğa kendisi ekler; kamera/kalkış aşaması/çarpışma getter'lardan
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -650,7 +652,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const updateHud = t => {
     last = t;
     sim?.setTelemetry(t);
-    milHud?.update(t);
+    milHud?.update(t); audio.update(t);
     const now = performance.now();
     if (now - hudAt < 80) return;
     hudAt = now;
@@ -828,7 +830,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     player?.dispose();
     socket?.close();
     milHud?.dispose();
-    ops?.dispose();
+    audio.dispose(); ops?.dispose();
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;
     view.classList.remove('ops-view');

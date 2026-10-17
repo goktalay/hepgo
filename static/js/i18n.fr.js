@@ -3572,4 +3572,10 @@ registerCatalog('fr', {
   "Harekât panelini aç/kapat (P)": "Afficher/masquer le panneau d’opérations (P)",
   "Panel": "Panneau",
   "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "réseau : {hz} Hz · jitter {j} ms · tampon {d} ms",
+  "Motor sesi aç/kapa (M)": "Son moteur on/off (M)",
+  "etkileşim bekleniyor": "interaction attendue",
+  "hızlı oynatmada sessiz": "muet en lecture rapide",
+  "Ses düzeyi": "Volume",
+  "Ses için sayfaya bir kez tıklayın ya da bir tuşa basın": "Cliquez une fois sur la page ou appuyez sur une touche pour activer le son",
+  "Dron tipine göre sentezlenmiş motor sesi; kameraya uzaklıkla azalır, FPV'de kokpit sesi.": "Son moteur synthétisé selon le type de drone ; s'atténue avec la distance à la caméra, son cockpit en FPV.",
 });

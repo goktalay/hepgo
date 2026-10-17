@@ -500,3 +500,28 @@ CAYSIM, Unreal Engine 5 + Cesium for Unreal ile yüksek gerçekçilikli görsell
 görünür. Yönetim: sihirbaz sayfasındaki "CAYSIM istemcileri" kartı (`static/js/modules/flightsim_clients.js`; `GET/POST /api/drone/sim/clients`,
 `PUT`, `POST /{id}/rekey`, `DELETE`; `GET` anahtar döndürmez). Güvenlik: sabit-zamanlı anahtar karşılaştırma, IP başına 10 başarısız/dk (429 / 4429),
 yalnız aktif istemci, CORS yok (OPTIONS 204). Testler `tests/test_caysim.py`. Alan adları, birimler ve Unreal (ESU, Y ters) dönüşüm notları belgede.
+
+## 16. Motor sesi (`static/js/modules/flightsim_audio.js`; Web Audio API, tamamen sentezlenmiş — ses dosyası yok)
+- **Tipe göre ses modeli** (`AUDIO_MODELS`, SITL tipi; görsel model sesi değiştirmez): **multirotor/hexarotor** 4/6 motor, her motor hafif farklı
+  oranlı (`MOTOR_RATIOS`) testere dalga + 2× kare (ESC) + bant geçiren pervane uğultusu; pala geçiş frekansı 150 Hz (gaz 0) → 600 Hz (gaz 100), batarya < %30'da
+  %4'e kadar düşer; disarm = sessiz. **helikopter** ana rotor "wop-wop" (20–30 Hz LFO ile genlik modülasyonlu alçak gürültü + harmonik), türbin ıslığı
+  900–1500 Hz, kuyruk rotoru (×5,5). **sabit_kanat** (delta/caymaz aynı) benzinli tek silindirli iki zamanlı: devir 1500 (rölanti) → 7500 d/dk,
+  ateşleme f = devir/60 × silindir (25 → 125 Hz) testere + alt harmonik kare + egzoz gürültüsü (lowpass gazla açılır) + 2 pala pervane; armed + gaz 0 = rölanti,
+  disarm sessiz. **vtol** kopter + uçak, karışım hava hızına göre (5 → 20 m/s). **Kalkış yöntemi** (§13): rampa `launch` → pnömatik "pşşt" (bant
+  geçiren gürültü patlaması), `released` → kızak çarpması (80 Hz vuruş); araç → pickup V8 motoru (800 → 4500 d/dk yer hızıyla), `released` → fren
+  gıcırtısı, rölantiye düşer ve susar. Aşama `sim.launchPhase` getter'ından okunur (flightsim.js'e ek bağlantı yok).
+- **Kaynak**: `tele.throttle`, `armed`, `airspeed/groundspeed` (rüzgâr/uğultu), `rs/ps/ys` (±%1,5 titreme), `batt_pct`. Devir gazı üstel yumuşatmayla izler
+  (`smoothFollow`: yukarı τ 0,35 sn, aşağı 0,7 sn — motor ataleti). Kayıttan oynatma kareleri aynı biçim → çalışır; hız ≥ 2× → susar.
+- **Uzaysal**: tek `PannerNode` (equalpower, inverse, `refDistance` 15 m, rolloff 1): dinleyici = 3B kamera (`sim.cameraPose()`: konum + ileri/üst, ENU),
+  kaynak = dron (`sim.position()`); takip/serbest/yer kameralarında 1/r. **FPV** → kaynak dinleyicide (kokpit), lowpass 900 Hz boğukluk + hızla artan rüzgâr
+  gürültüsü (40 m/s'de tam). Doppler küçük (radyal hız, ±%5 sınır). **Çarpışma** (crash bandı görünür → `getCrashed`): kısa patlama + motor grubu 0,08 sn'de
+  durur; "Sıfırla" ile döner.
+- **Aç/kapa**: alt çubukta 🔊/🔇 (`.fs-audio-btn`, başlık "Motor sesi aç/kapa (M)"), **M** tuşu (yazı alanı odaklı değilken), ▾ ile açılır menü (ses düzeyi 0–100,
+  sağ tık da açar). Tercih `localStorage` `fs.audio.on` (varsayılan AÇIK) ve `fs.audio.vol` (70; algısal eğri ^1,6). Tarayıcı autoplay kuralı: AudioContext ilk
+  kullanıcı etkileşiminde (pointerdown/keydown) kurulur ve `resume` edilir; o ana dek sessiz, düğmede turuncu nokta ("etkileşim bekleniyor") ve menüde ipucu.
+  Sekme gizlenince susar (`visibilitychange`), sayfadan çıkınca kapanır (`dispose`: dinleyiciler kalkar, bağlam `close`).
+- **Performans**: tek AudioContext; osilatör/gürültü düğümleri bir kez kurulur (yalnız tipin grubu; vtol ikisi); her güncelleme (≤ 25 Hz) yalnız
+  `setTargetAtTime`; sessizken parametre sürülmez. CSP: Web Audio ağ isteği yapmaz (`media-src` gerekmez).
+- **Testler**: `node tests/test_flightsim_audio.mjs` — saf katman (tip→devir→frekans, yumuşatma, mesafe kazancı, FPV, Doppler, tercihler) + sahte Web Audio
+  düğümleriyle grafik (tek bağlam/düğüm sabitliği, kopter/heli/uçak/vtol parametreleri, uzaysal, aç/kapa, 2× sessiz, kilit, rampa/araç/çarpışma efektleri,
+  dispose, ≤ 25 Hz işleme). Tarayıcı (Playwright, sahte kip): düğme/M/menü/localStorage/FPV ve sayfadan çıkış; konsol hatası yok.

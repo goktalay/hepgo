@@ -166,7 +166,9 @@ Bağlantı: `wss://<domain>/ws/caysim/v1/sessions/<id>?key=<key>`. Sorguda `key`
 | `replay` | `{action:'reset', by}` | kayıttan oynatma sıfırlandı (tüm izleyicilere) |
 | `error` | `{error:'auth'|'not_found'|'rate_limited'|'timeout'}` | kapanış öncesi tek çerçeve |
 
-`launch` çerçevesi v1'de **gönderilmez** (ayrılmış ad; ileride el fırlatma/katapult animasyon tetiği için).
+| `launch` | `{method:'wheels'\|'ramp'\|'vehicle', phase:'armed'\|'launch'\|'released', ts, angle_deg?, release_kmh?, speed_kmh?, alt?}` | yalnız sabit kanat (`world.launch`, docs/ucus-simulatoru.md §13): `armed` = TAKEOFF modu + ARM; `launch` = rampa kızağı fırlatıldı / araç hızlanmaya başladı; `released` = uçak düzenekten ayrıldı (rampa: 1,2 sn sonra servo tetiği; araç: yer hızı ≥ %95·`release_kmh`; tekerlekli: AGL ≥ 1 m). CAYSIM düzenek animasyonunu bu aşamalarla tetikler; gelmezse telemetriden türetir |
+
+`world.launch` (`POST /sessions`, yalnız `sabit_kanat`): `{method:'wheels'|'ramp'|'vehicle', angle_deg: 10…30 (rampa), release_kmh: 40…110 (araç)}`; yanıttaki `session.launch` aynı alanlar + `phase`. SITL tarafı: rampa = ArduPlane `plane-catapult` modeli (15 m/s², 2 sn) + `TKOFF_THR_MINACC 8`; araç = `TKOFF_ROTATE_SPD` = bırakma hızı; tekerlekli = standart TAKEOFF. Not: SITL uçağı disarm hâlde ~4 m/s kendiliğinden kayar; düzeneği (rampa/araç) uçağa demirleyin (HEPGO web böyle yapar).
 
 ### 3.2 İstemci → sunucu
 | `t` | Alanlar | Not |

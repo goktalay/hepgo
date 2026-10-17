@@ -41,8 +41,9 @@ TIP_ADLARI = {'multirotor': 'Multikopter', 'hexarotor': 'Hexakopter', 'helikopte
 PLANE_TIPLERI = ('sabit_kanat', 'vtol')
 KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_home', 'rc')
 
-WORLD_DEFAULTS = {'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4, 'building_count': 40,
-                  'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
+WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
+                  'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
+_WORLD_KIP = ('procedural', 'real')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); prosedürel ayarlar özelleştirme olur
 # alan → (tür, alt, üst) — sayısal alanlar; 'time' ve 'runway' ayrı denetlenir
 _WORLD_SINIR = {'seed': (int, 0, 2 ** 31 - 1), 'size_m': (int, 500, 20000), 'tree_density': (float, 0, 1), 'mountain_height': (float, 0, 3000),
                 'mountain_count': (int, 0, 50), 'building_count': (int, 0, 500), 'runway_heading': (float, 0, 359.99), 'water': (float, 0, 1),
@@ -81,6 +82,10 @@ def world_dogrula(w):
         if w['time'] not in _WORLD_ZAMAN:
             raise SimHata('invalid', 'world.time day | dusk | night olmalı')
         out['time'] = w['time']
+    if 'mode' in w and w['mode'] is not None:
+        if w['mode'] not in _WORLD_KIP:
+            raise SimHata('invalid', 'world.mode procedural | real olmalı')
+        out['mode'] = w['mode']
     return out
 
 
@@ -799,10 +804,17 @@ class SimManager:
                 raise SimHata('sitl', err or 'SITL ikilisi yok')
         if not self._udp_bos_var():
             raise SimHata('sitl', 'Boş UDP portu yok')
+        alt = float(center['alt']) if center.get('alt') is not None else None
+        if alt is None and world.get('mode') == 'real':   # gerçek arazi: SITL ev irtifası gerçek yükseklikten (vekil önbelleği; alınamazsa None)
+            from . import sim_terrain
+            try:
+                alt = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, sim_terrain.ev_irtifa, float(center['lat']), float(center['lon'])), 12)
+            except Exception:   # noqa: BLE001 — kaynak yok/zaman aşımı: varsayılan EV_IRTIFA ile sürer
+                alt = None
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': float(center['alt']) if center.get('alt') is not None else None}, world, owner, self)
+                                  'alt': alt}, world, owner, self)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

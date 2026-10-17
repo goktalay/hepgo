@@ -3400,4 +3400,11 @@ registerCatalog('fr', {
   "İlk ARM {t}": "Premier ARM {t}",
   "Kayıt yüklendi: {n} kare · {d}": "Enregistrement chargé : {n} images · {d}",
   "Dünya boyutu uçuşa göre {n} m yapıldı": "Taille du monde réglée à {n} m pour couvrir le vol",
+  // Askeri FPV HUD (flightsim_hud.js)
+  "RC YOK": "PAS DE RC",
+  "BATARYA": "BATTERIE",
+  "GCS KESİLDİ": "GCS PERDU",
+  "ALÇAK": "BAS",
+  "H: HUD aç/kapa · Shift+H: renk": "H : HUD on/off · Maj+H : couleur",
+  "Askeri HUD aç/kapa (H) · Shift+H renk": "HUD militaire on/off (H) · Maj+H couleur",
 });

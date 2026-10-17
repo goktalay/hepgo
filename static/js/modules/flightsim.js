@@ -12,6 +12,7 @@
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
 import { CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
+import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -341,6 +342,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   // Alt araç çubuğu: kamera 1–4 · Sıfırla · Bitir · ARM/DISARM · mod · Kalkış · RTL (yazma izni)
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
+  const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -360,7 +362,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     timeLbl, clockLbl) : null;
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
-    gimbalLbl,
+    gimbalLbl, mhudBtn,
     replay ? playBar : h('span', { class: 'spacer' }),
     canWrite && !replay ? h('div', { class: 'pill-group' },
       armBtn, modeSel,
@@ -386,11 +388,16 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   clear(view, stage);
 
   // ---------- 3B ----------
-  let sim = null, last = null, socket = null, destroyed = false, rc = null;   // rc: sanal kumanda (virtualRC) ya da null
+  let sim = null, last = null, socket = null, destroyed = false, rc = null, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
+  // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
+  const hudCtx = { world, session, replay, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
+    get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
+  milHud = createMilHud(stage, hudCtx, { tr });
+  mhudBtn.classList.toggle('primary', milHud.enabled);
   try {
     sim = await createFlightSim3D(mount, world, {
       type, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon },
-      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
+      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş, arazi prosedürel → çarpışma denetimi yok
     });
     msg.hidden = true;
@@ -446,6 +453,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const updateHud = t => {
     last = t;
     sim?.setTelemetry(t);
+    milHud?.update(t);
     const now = performance.now();
     if (now - hudAt < 80) return;
     hudAt = now;
@@ -605,6 +613,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     if (replay) window.removeEventListener('keydown', onKeyReplay);
     player?.dispose();
     socket?.close();
+    milHud?.dispose();
     sim?.dispose();
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');

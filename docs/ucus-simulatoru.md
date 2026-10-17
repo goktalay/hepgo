@@ -24,7 +24,7 @@ birebir uçar. HEPGO, SITL ile Mission Planner arasında MAVLink köprüsüdür 
 | `/models…` | Görsel model kütüphanesi (§12): liste, yükleme, tasarım dosyasından ekleme, GLB/küçük resim PUT-GET, yönelim, silme |
 | `GET /sessions/{id}` | `session` |
 | `DELETE /sessions/{id}` | durdurur (SITL kapanır, UDP kapanır) → `{ok}` |
-| `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad) → `{ok}` |
+| `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`; sabit kanatta yönteme göre dizi + WS `launch` olayları, §13), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad) → `{ok}` |
 
 `session` = `{id, type, model:{id,name,source,type,orient,glb_url,thumb_url,has_prop,ready}, airframe, center:{id,name,lat,lon,alt}, world,
 state: 'BASLIYOR'|'HAZIR'|'HATA'|'KAPANDI', udp_port, host, created_at, owner:{id,name}, gcs:{connected:bool, addr:"ip:port"|null, since}, sitl:{pid, port, error}}`
@@ -33,8 +33,10 @@ state: 'BASLIYOR'|'HAZIR'|'HATA'|'KAPANDI', udp_port, host, created_at, owner:{i
 `world` (ön yüz üretir, sunucu doğrular ve saklar; deterministik):
 ```json
 {"mode": "procedural|real|google3d", "seed": 12345, "size_m": 4000, "tree_density": 0.3, "mountain_height": 300, "mountain_count": 4,
- "building_count": 40, "runway": true, "runway_heading": 0, "water": 0.1, "time": "day|dusk|night", "wind_ms": 3, "wind_dir": 270, "fog": 0.2}
+ "building_count": 40, "runway": true, "runway_heading": 0, "water": 0.1, "time": "day|dusk|night", "wind_ms": 3, "wind_dir": 270, "fog": 0.2,
+ "launch": {"method": "wheels|ramp|vehicle", "angle_deg": 15, "release_kmh": 70}}
 ```
+`launch`: sabit kanat kalkış yöntemi (§13; `session.launch` aşama ile döner).
 Sunucu rüzgârı SITL'e yazar: `SIM_WIND_SPD`, `SIM_WIND_DIR`. `mode: "real"` (§9) ve `"google3d"` (§10): merkez irtifası (`center.alt`) boşsa SITL ev irtifası
 terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `EV_IRTIFA`) alınır ve `session.center.alt` olarak döner.
 `google3d` yalnız `GOOGLE_MAPS_API_KEY` tanımlıyken kabul edilir (aksi hâlde 400 `invalid`).
@@ -327,3 +329,58 @@ açarken gönderilen `model.orient` oturuma özeldir (kütüphane kaydını değ
 
 **Doğrulama (DEV, Playwright SwiftShader):** sihirbaz kart ızgarası + küçük resimler üretildi, PROD'daki CAYMAZ V3 STEP'i (16,9 MB) tasarım
 sürümü olarak eklendi → tarayıcıda GLB'ye dönüştürüldü → yönelim paneli (kanat açıklığı 3,03 m → ölçek) → yüklenen modelle oturum (takip/FPV).
+
+## 13. Sabit kanat kalkış yöntemi (`world.launch`; `static/js/modules/flightsim_launch.js`)
+Kullanıcı sihirbazda **Sabit Kanat** seçince tip kartlarının altında **Kalkış yöntemi** kartları açılır (VTOL/kopterde bölüm gizli; dikey kalkış):
+**Tekerlekli kalkış** · **Fırlatma rampası** (parametre: fırlatma açısı 10–30°, varsayılan 15°) · **Araç üstü kalkış** (parametre: bırakma hızı
+40–110 km/h, varsayılan 70; araç tipi pickup). Seçim `world.launch = {method: 'wheels'|'ramp'|'vehicle', angle_deg, release_kmh}` olarak gönderilir;
+sunucu doğrular (`launch_dogrula`; aralık dışı/bilinmeyen → 400 `invalid`), `WORLD_DEFAULTS.launch` ile eksikler dolar, üç dünya kipinde de geçerlidir.
+Sabit kanat dışı tiplerde `method` `wheels` olarak normalize edilir (`launch_normalize`). `session.launch = {method, angle_deg, release_kmh, phase}`
+(`phase`: null | armed | launch | released — geç katılan izleyici düzeneği doğru aşamada görür).
+
+**SITL araştırması (gerçek ikili arduplane 4.7.2, pymavlink):** `--model plane-catapult` **vardır** (SIM_Plane `-catapult` son eki: `launch_accel`
+15 m/s², `launch_time` 2 sn **sabit kodlu**; `SIM_LAUNCH*` türü parametre yok, fırlatma pitch'i parametresi yok). Tetik: **servo 7 çıkışı > 1700**
+(`MAV_CMD_DO_SET_SERVO 7 1900`; `SERVO7_FUNCTION 0`). Ölçüm: `TKOFF_THR_MINACC 8` ile tetikten 0,1 sn sonra "Armed AUTO, xaccel = 8.7 m/s/s" →
+"Triggered AUTO", 1 sn'de yer hızı 24 m/s, 3 sn'de 60 m AGL. Mevcut TKOFF parametreleri: `TKOFF_THR_MINACC/DELAY/MINSPD/MAX/MAX_T/SLEW/IDLE`,
+`TKOFF_ROTATE_SPD`, `TKOFF_LVL_PITCH/LVL_ALT`, `TKOFF_GND_PITCH`, `TKOFF_FLAP_PCNT`, `TKOFF_TDRAG_ELEV/SPD1`, `TKOFF_ACCEL_CNT`, `TKOFF_ALT/DIST`,
+`ARSPD_USE` (SITL varsayılanı 0; dokunulmaz).
+
+| Yöntem | SITL modeli | Parametreler (`launch_parametreleri`; ilk kalp atışında ve `cmd takeoff`ta `TKOFF_ALT` ile) | `cmd takeoff` dizisi (`_kalkis_dizisi`) |
+|---|---|---|---|
+| wheels | `plane` | `TKOFF_THR_MINACC 0`, `TKOFF_THR_MINSPD 0`, `TKOFF_ROTATE_SPD 12`, `TKOFF_LVL_PITCH 15` | mode TAKEOFF + ARM → `armed` → `launch` (pist koşusu) → AGL ≥ 1 m → `released` |
+| ramp | **`plane-catapult`** (`drone_sitl.YONETICI.baslat(..., model=)` geçersizleştirmesi; TIP_ESLEME değişmez) | `TKOFF_THR_MINACC 8`, `TKOFF_THR_DELAY 2`, `TKOFF_THR_MINSPD 0`, `TKOFF_ROTATE_SPD 0`, `TKOFF_LVL_PITCH = açı`, `SERVO7_FUNCTION 0` | mode TAKEOFF + ARM → `armed` → 1,2 sn → `DO_SET_SERVO 7 1900` + `launch {angle_deg}` → yer hızı ≥ 8 m/s ya da AGL ≥ 2 → `released {speed_kmh}`; 2,5 sn sonra servo 1100 (tetik sıfırlanır) |
+| vehicle | `plane` | `TKOFF_THR_MINACC 0`, `TKOFF_THR_MINSPD 0`, **`TKOFF_ROTATE_SPD = bırakma hızı (m/s)`**, `TKOFF_LVL_PITCH 15` | mode TAKEOFF + ARM → `armed` → `launch {release_kmh}` (araç sürüyor) → yer hızı ≥ %95 bırakma hızı ya da AGL ≥ 3 → `released {speed_kmh}` |
+
+WS olayı: `{t:'launch', method, phase:'armed'|'launch'|'released', ts, alt? | angle_deg? | release_kmh? | speed_kmh?}` (olay şeridi metinleri ön yüzde,
+çevrili); `reset` aşamayı sıfırlar (dizi iptal). **Yerde kayma (SITL tuzağı, ölçüldü):** arduplane 4.7.2 SITL plane modeli disarm'da ve gaz 0'da bile
+burun yönünde kendiliğinden ~4 m/s kayar (SIMSTATE gerçek konumu: 30 sn'de 93 m; rüzgâr 0, `SIM_GND_BEHAV` 0/1/2 ve plane-catapult'ta da aynı —
+parametreyle durdurulamadı). Bu yüzden 3B düzenek (rampa römorku / pickup) uçak kızaktayken **SITL uçağının konumuna demirlenir** (`rig.anchor`;
+düzenek pist boyunca uçakla birlikte yavaşça ilerler, tekerlekleri döner); rampa fırlatma animasyonu sırasında demir sabitlenir, `released`
+geçişi SITL konumuna 0,3–0,6 sn'de yapılır. Mission Planner haritasıyla konum tutarlılığı korunur. Araç üstünde SITL'in doğrudan karşılığı yoktur: SITL'de uçak TAKEOFF yer koşusunu kendisi yapar (gaz açık),
+`TKOFF_ROTATE_SPD` bırakma hızına eşit olduğundan uçak o hıza dek yerde kalır; 3B'de pickup bu yer koşusu boyunca uçağın altında (uçakla aynı hızda)
+gider, uçak kasa kızağında yükseltilmiş gösterilir, `released` ile 0,3 sn'de SITL konumuna iner ve araç 4 m/s² ile frenleyip durur (pist dışına da
+sürer; düz zemin varsayımı). Sahte kinematik (`HEPGO_SITL=0`) ve `?mock=1` üç yöntemi de taklit eder (rampa: 1,2 sn bekleme + 0,5 sn'de 22 m/s;
+araç: 2,5 m/s² ivme, bırakma hızında kalkış; tekerlekli: 4 m/s², 12 m/s'de kalkış).
+
+**3B (`flightsim_launch.js`, `flightsim3d.js` `setLaunch(cfg)` / `setLaunchPhase(p)`):**
+- *Tekerlekli:* `addLandingGear` — burun (çatallı) + 2 ana tekerlek, çatallar; yarıçap kanat açıklığından (≈ %4,5, 6–25 cm); modelde `gear|wheel|teker|landing`
+  adlı düğüm varsa eklenmez (Caymaz GLB'de yok → eklenir). Tekerlekler AGL < 1,5 m iken yer hızıyla döner; geri çekme yok.
+- *Rampa:* `createLaunchRig('ramp')` — 4 tekerlekli römork şasisi (çeki demiri, 4 ayak), azimut tablası (Z ekseni, halka), eğim pivotu (X ekseni, açı =
+  `angle_deg`), 6 m çift ray + traversler + uç tamponu, rayın altında pnömatik fırlatma tüpü + piston, şasiden raya eğim silindiri (sarı gövde + krom
+  piston), basınç tüpü + kompresör/valf kutusu + ikaz lambası (gece yanar), kızak (ray pabuçları, yastıklı destekler; `attach` noktası). Uçak kızağa
+  oturur (pitch = açı, pist yönü). "Fırlat": kızak 6 m'yi 0,5 sn'de sabit ivmeyle alır (çıkış hızı 2L/t = 24 m/s ≈ 86 km/h, bilgi satırında), ray sonunda
+  `released` → 0,6 sn'de uçak SITL konumuna/yönelimine slerp ile geçer; kızak 1 sn sonra sönümleyiciyle geri döner. Dizi dışı hareket (hız > 3 m/s ya da
+  AGL > 2 m) düzeneği kendiliğinden serbest bırakır.
+- *Araç:* `createLaunchRig('vehicle')` — pickup: şasi, 4 tekerlek (jant + cıvatalar; dönerler), kaput, ızgara, krom tamponlar, kabin (eğik ön cam, yan/arka
+  camlar, aynalar), kasa (taban, yanlar, arka kapak), kasa kızağı (A-destekler + yastıklar; `attach`), farlar/stoplar (gece yanar), tepe lambası.
+  Başlangıçta kızak pist merkezinde (uçak = SITL evi). `launch`: araç SITL uçağını taşır; `released`: fren.
+- Düzenek pist yönüne döner, dron gibi `MODEL_SCALE` ile büyütülür, gölge düşürür; sihirbaz önizlemesinde de görünür (açı canlı). **Yer** kamerası (4)
+  düzenek varsa onun yanından bakar. Dünya yeniden kurulunca (saat/pist yönü) düzenek yeniden kurulur.
+
+**Oturum ekranı:** üst şeritte yöntem rozeti ("Rampa 20°" / "Araç 70 km/h" / "Tekerlekli"), sağ panelde "Kalkış" satırı, **Kalkış** düğmesi
+yönteme göre "Fırlat" / "Aracı sür" / "Kalkış" (modal ipucu yönteme göre), olay şeridinde aşamalar (FIRLATMA, BIRAKILDI · 68 km/h, …), askeri HUD sol
+alt bloğunda `LAUNCH RAMP 20° · 86 km/h` / `LAUNCH VEH · 70 km/h` / `LAUNCH RWY` satırı. 6 dil.
+
+**Testler (`kalkis_testleri`):** `world.launch` 400'leri (yöntem, açı 5/31, hız 30/120, nesne değil, bool), varsayılanlar, VTOL normalizasyonu,
+parametre setleri (ramp/vehicle/wheels), sahte kipte üç yöntemle `cmd takeoff` → WS `armed → launch → released` (rampa: launch 1,0–2,5 sn sonra,
+fırlatma anında uçak duruyor, released ≥ 26 km/h; araç: released hızı 60 km/h ±%10; tekerlekli: AGL ≥ 1), `session.launch.phase`, reset sonrası null.

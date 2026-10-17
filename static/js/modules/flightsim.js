@@ -15,6 +15,7 @@ import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
+import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -46,6 +47,12 @@ const TYPE_ICON = {
   heli: svgIco('<path d="M3 7h18M12 7v3"/><ellipse cx="11" cy="13" rx="4.5" ry="3"/><path d="M15.5 13h5l-2 2.5M20.5 13v-3M7 18h8"/>'),
   plane: svgIco('<path d="M12 3v18M4 13l8-3 8 3M8 20l4-2 4 2M12 3c1.5 0 2 2 2 4v3M12 3c-1.5 0-2 2-2 4v3"/>'),
   vtol: svgIco('<path d="M12 4v16M5 12l7-2 7 2M9 20l3-1.5 3 1.5"/><circle cx="6" cy="7" r="2"/><circle cx="18" cy="7" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/>'),
+};
+// Kalkış yöntemi simgeleri (§13): tekerlekli (uçak + tekerlekler), rampa (eğik ray + kızak), araç üstü (pickup + uçak)
+const LAUNCH_ICON = {
+  wheels: svgIco('<path d="M3 11h18l-3-3H8l-5 3Z"/><path d="M12 8V5h4"/><path d="M7 11v4M16 11v4"/><circle cx="7" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M3 21h18"/>'),
+  ramp: svgIco('<path d="M3 19 19 7"/><path d="M5 19h14"/><path d="M8 19v-3.5M13 19v-7"/><rect x="12" y="7" width="5" height="3" rx=".6" transform="rotate(-37 14.5 8.5)"/><circle cx="6" cy="21" r="1.4"/><circle cx="17" cy="21" r="1.4"/>'),
+  vehicle: svgIco('<path d="M2 16h20v-4h-6l-2-3H9v3H2Z"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="18.5" r="2"/><path d="M8 9h11l-3-2.2H11L8 9Z"/><path d="M13.5 6.8V5"/>'),
 };
 
 // ======================================================================
@@ -127,7 +134,8 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const centers = meta.centers || [];
   const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
   const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
-  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', world: { ...defaults, seed: randomSeed() } };
+  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '',
+    world: { ...defaults, seed: randomSeed(), launch: { ...LAUNCH_DEFAULTS, ...(defaults.launch || {}) } } };
   // Etkin dron tipi: canlı kipte seçilen kart, kayıt kipinde seçili logun araç tipi (model kütüphanesi bu tipe göre listelenir)
   const activeType = () => (S.mode === 'replay' ? ((S.logs || []).find(x => x.id === S.log)?.type || 'multirotor') : S.type);
 
@@ -156,10 +164,40 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const picker = modelPicker({ getType: activeType, canWrite, mock, getSim: () => preview, onSelect: m => preview?.setType(activeType(), m) });
   const modelBox = h('div', { class: 'fs-model-step' }, h('p', { class: 'small muted' }, 'Dron tipi için görsel gövde: dahili modeller her zaman vardır; sistemdeki STEP/GLB/OBJ dosyaları ya da yüklediğiniz model seçilince tarayıcıda GLB\'ye dönüştürülür.'), picker.el);
   const refreshModels = () => picker.refresh(activeType()).then(m => { if (m) preview?.setType(activeType(), m); });
-  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); refreshModels(); } },
+  const drawTypes = () => clear(typeCards, types.map(t => h('button', { type: 'button', class: `fs-type ${S.type === t.key ? 'on' : ''}`, onclick: () => { S.type = t.key; drawTypes(); drawLaunch(); refreshModels(); } },
     h('span', { class: 'fs-type-ico', html: TYPE_ICON[t.icon] || TYPE_ICON.quad }),
     h('b', null, t.name), h('span', { class: 'small muted' }, t.desc || ''))));
   drawTypes();
+
+  // ---------- 1L. kalkış yöntemi (§13; yalnız Sabit Kanat): tekerlekli · fırlatma rampası (açı) · araç üstü (bırakma hızı) ----------
+  const L = S.world.launch;
+  const launchCards = h('div', { class: 'fs-launches' });
+  const launchInfo = h('div', { class: 'small muted fs-launch-info' });
+  const applyLaunch = () => { preview?.setLaunch({ ...L }); };
+  const angleOut = h('b', { class: 'fs-val' }, `${Math.round(L.angle_deg)}°`);
+  const angleInp = h('input', { type: 'range', min: 10, max: 30, step: 1, value: L.angle_deg, oninput: () => { L.angle_deg = Number(angleInp.value); angleOut.textContent = `${L.angle_deg}°`; drawLaunchInfo(); applyLaunch(); } });
+  const relOut = h('b', { class: 'fs-val' }, `${Math.round(L.release_kmh)} km/h`);
+  const relInp = h('input', { type: 'range', min: 40, max: 110, step: 5, value: L.release_kmh, oninput: () => { L.release_kmh = Number(relInp.value); relOut.textContent = `${L.release_kmh} km/h`; drawLaunchInfo(); applyLaunch(); } });
+  const angleRow = h('label', { class: 'fs-slider fs-launch-param' }, h('span', null, h('span', null, 'Fırlatma açısı'), angleOut), angleInp);
+  const relRow = h('label', { class: 'fs-slider fs-launch-param' }, h('span', null, h('span', null, 'Bırakma hızı'), relOut), relInp);
+  const vehicleRow = h('div', { class: 'small muted fs-launch-param' }, tr('Araç tipi: pickup (kasa kızağı). Araç pist boyunca hızlanır; bırakma hızına ulaşınca uçak serbest kalır ve tırmanır.'));
+  const drawLaunchInfo = () => {
+    const v = rampExitSpeed();
+    launchInfo.textContent = L.method === 'ramp' ? tr('Pnömatik rampa: 6 m ray, 0,5 sn kızak → çıkış hızı ≈ {v} m/s ({k} km/h); açı {a}°. SITL: plane-catapult modeli, servo 7 tetiği; TKOFF_THR_MINACC 8 m/s².', { v: v.toFixed(0), k: Math.round(v * 3.6), a: Math.round(L.angle_deg) })
+      : L.method === 'vehicle' ? tr('Araç üstü: uçak {k} km/h ({v} m/s) yer hızında bırakılır (TKOFF_ROTATE_SPD = bırakma hızı); araç frenleyip durur.', { k: Math.round(L.release_kmh), v: (L.release_kmh / 3.6).toFixed(1) })
+      : tr('Tekerlekli: iniş takımı eklenir; uçak pist boyunca hızlanır, 12 m/s döndürme hızında burun kalkar (ArduPlane TAKEOFF).');
+  };
+  const drawLaunch = () => {
+    launchBox.hidden = !(S.mode === 'sitl' && S.type === 'sabit_kanat');
+    clear(launchCards, LAUNCH_METHODS.map(([key, name, desc]) => h('button', { type: 'button', class: `fs-type fs-launch ${L.method === key ? 'on' : ''}`, 'data-launch': key, onclick: () => { L.method = key; drawLaunch(); applyLaunch(); } },
+      h('span', { class: 'fs-type-ico', html: LAUNCH_ICON[key] }), h('b', null, name), h('span', { class: 'small muted' }, desc))));
+    angleRow.hidden = L.method !== 'ramp'; relRow.hidden = L.method !== 'vehicle'; vehicleRow.hidden = L.method !== 'vehicle';
+    drawLaunchInfo();
+  };
+  const launchBox = h('div', { class: 'fs-launch-step' }, h('h4', null, 'Kalkış yöntemi'),
+    h('p', { class: 'small muted' }, 'Sabit kanat uçağın nasıl havalanacağı: tekerlekli pist koşusu, pnömatik fırlatma rampası ya da pickup üstünden bırakma. Seçim 3B sahnede ve SITL kalkış parametrelerinde uygulanır.'),
+    launchCards, h('div', { class: 'fs-launch-params' }, angleRow, relRow, vehicleRow), launchInfo);
+  drawLaunch();
 
   // ---------- 2. merkez ----------
   const centerList = h('div', { class: 'fs-centers' });
@@ -314,7 +352,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   } }, '▶ Başlat');
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
-  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, modelBox);
+  const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, launchBox, modelBox);
   const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
   const worldNo = h('span', { class: 'fs-no' }, '3');
   const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.');
@@ -330,6 +368,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
       : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
     (rp ? stepLog : stepType).append(modelBox);   // model bölümü: canlı kipte tip kartlarının, kayıt kipinde log listesinin altında
+    drawLaunch();
     if (rp && S.logs === null) loadLogs().then(refreshModels); else refreshModels();
   };
   const modeSeg = segmented([['sitl', 'Canlı simülasyon (SITL + Mission Planner)'], ['replay', 'Kayıttan oynat']], S.mode, v => { S.mode = v; drawMode(); });
@@ -346,7 +385,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   try {
     if (S.world.mode === 'real') progInfo(null);
     const c0 = centerOf();
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: activeType(), model: picker.selectionFor(activeType()) || undefined, origin: c0 ? { lat: c0.lat, lon: c0.lon, alt: c0.alt } : undefined, onProgress: progInfo, onFallback, g3dKey: be.g3dKey });
+    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: activeType(), model: picker.selectionFor(activeType()) || undefined, origin: c0 ? { lat: c0.lat, lon: c0.lon, alt: c0.alt } : undefined, onProgress: progInfo, onFallback, g3dKey: be.g3dKey, launch: { ...L } });
     previewBox.querySelector('.fs-preview-msg')?.remove();
     const sel = picker.selectionFor(activeType()); if (sel) { preview.setType(activeType(), sel).then(() => picker.drawInfo()); picker.redraw(); }
     picker.ensureThumbs();   // 3B sahne hazır: eksik küçük resimler artık üretilebilir (snapshotModel)
@@ -372,6 +411,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const replay = session.mode === 'replay';   // kayıttan oynatma: SITL/UDP/komut yok; kareler sunucudan bir kez çekilir, tarayıcıda oynatılır
   const type = session.type, modes = modesFor(type);
   const world = { ...WORLD_DEFAULTS, ...(session.world || {}) };
+  // Sabit kanat kalkış yöntemi (§13): session.launch {method, angle_deg, release_kmh, phase}; yalnız canlı sabit kanatta
+  const launch = !replay && type === 'sabit_kanat' ? { ...LAUNCH_DEFAULTS, ...(session.launch || world.launch || {}) } : null;
+  const LAUNCH_BTN = { ramp: 'Fırlat', vehicle: 'Aracı sür', wheels: 'Kalkış' };
+  const LAUNCH_PHASE_TEXT = { armed: { ramp: 'Uçak rampada, motor hazır', vehicle: 'Uçak araçta, motor hazır', wheels: 'Pist koşusu başlıyor' },
+    launch: { ramp: 'FIRLATMA', vehicle: 'Araç hızlanıyor', wheels: 'Pist koşusu' }, released: { ramp: 'Uçak rampadan ayrıldı', vehicle: 'BIRAKILDI', wheels: 'Uçak havalandı' } };
 
   // ---------- iskelet ----------
   const stage = h('div', { class: `fs-stage ${replay ? 'fs-replay' : ''}`, 'data-immersive': '1' });
@@ -385,6 +429,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     h('a', { class: 'fs-nav-back', href: be.href(), title: 'Simülatör listesine dön' }, '←'),
     h('b', null, 'Uçuş Simülatörü'), h('span', { class: 'fs-nav-sub' }, `${TYPE_NAME[type] || type} · ${(replay ? session.replay?.file_name : session.center?.name) || '—'}`), stateBadge, wsBadge,
     replay ? h('span', { class: 'badge purple', title: 'Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok' }, 'Kayıt') : null,
+    launch ? h('span', { class: 'badge blue fs-launch-badge', title: tr('Kalkış yöntemi') }, launchLabel(launch, tr)) : null,
     mock ? h('span', { class: 'badge purple' }, 'Sahte veri') : null,
     h('button', { class: 'fs-nav-btn', type: 'button', title: 'Tam ekran', onclick: () => { if (document.fullscreenElement) document.exitFullscreen?.(); else stage.requestFullscreen?.(); } }, '⛶'));
 
@@ -405,6 +450,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     h('div', { class: 'fs-row' }, h('span', null, 'Gaz'), h('span', { class: 'fs-rv' }, V.thr, h('i', null, '%'))), thrBar,
     h('div', { class: 'fs-row fs-row-rc' }, h('span', null, 'RC'), h('div', { class: 'fs-rcs' }, rcBars)),
     h('div', { class: 'fs-row' }, h('span', null, 'Rüzgâr'), h('span', { class: 'fs-rv' }, windArrow, V.wind, h('i', null, 'm/s'))),
+    launch ? h('div', { class: 'fs-row' }, h('span', null, 'Kalkış'), h('span', { class: 'fs-rv' }, h('b', { class: 'fs-v fs-launch-v' }, launchLabel(launch, tr)))) : null,
     netLbl);
   V.wind.textContent = `${f1(world.wind_ms)} @ ${f0(world.wind_dir)}°`;
   windArrow.style.transform = `rotate(${(Number(world.wind_dir) || 0) + 90}deg)`;   // ➤ sağa bakar; rüzgâr "nereden" → ok akış yönünü gösterir
@@ -446,7 +492,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     replay ? playBar : h('span', { class: 'spacer' }),
     canWrite && !replay ? h('div', { class: 'pill-group' },
       armBtn, modeSel,
-      h('button', { class: 'btn sm', type: 'button', onclick: () => takeoffDialog() }, 'Kalkış'),
+      h('button', { class: 'btn sm fs-takeoff-btn', type: 'button', onclick: () => takeoffDialog() }, LAUNCH_BTN[launch?.method] || 'Kalkış'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => cmd('rtl') }, 'RTL')) : null,
     canWrite && !replay ? h('div', { class: 'pill-group' }, rcBtn) : null,
     h('div', { class: 'pill-group' },
@@ -489,7 +535,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   // ---------- 3B ----------
   let sim = null, last = null, socket = null, destroyed = false, rc = null, worldReady = false, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
   // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
-  const hudCtx = { world, session, replay, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
+  const hudCtx = { world, session, replay, launch, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
     get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
   milHud = createMilHud(stage, hudCtx, { tr });
   mhudBtn.classList.toggle('primary', milHud.enabled);
@@ -519,7 +565,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     if (world.mode === 'real') { msg.textContent = tr('Arazi planı alınıyor…'); }
     if (g3dMode) { msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
     sim = await createFlightSim3D(mount, world, {
-      type, model: session.model || session.airframe, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
+      type, model: session.model || session.airframe, launch, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
       onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
       onProgress: progMsg,
@@ -527,6 +573,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       onFallback: e => { const t = g3dMode ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
     });
     if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
+    if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
     msg.hidden = true;
   } catch (err) {
     msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
@@ -661,8 +708,20 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   };
   const takeoffDialog = () => {
     const alt = h('input', { class: 'input', type: 'number', min: 1, max: 500, value: isPlane(type) ? 80 : 30 });
-    modal({ title: 'Kalkış', body: field('Hedef irtifa (m, AGL)', alt, isPlane(type) ? 'Uçak TAKEOFF moduna alınır; pist boyunca hızlanır.' : 'Dron GUIDED modda belirtilen irtifaya yükselir.'),
-      actions: [{ label: 'Vazgeç' }, { label: 'Kalkış', class: 'primary', onClick: () => cmd('takeoff', { alt: Number(alt.value) || 30 }) }] });
+    const m = launch?.method;
+    const hint = m === 'ramp' ? tr('Uçak TAKEOFF moduna alınır ve ARM edilir; 1 sn sonra pnömatik rampa kızağı {a}° açıyla fırlatır (SITL mancınık tetiği). Fırlatma ivmesi algılanınca gaz açılır.', { a: Math.round(launch.angle_deg) })
+      : m === 'vehicle' ? tr('Uçak TAKEOFF moduna alınır ve ARM edilir; pickup pist boyunca hızlanır, {k} km/h yer hızında uçak bırakılır ve tırmanır.', { k: Math.round(launch.release_kmh) })
+      : isPlane(type) ? 'Uçak TAKEOFF moduna alınır; pist boyunca hızlanır.' : 'Dron GUIDED modda belirtilen irtifaya yükselir.';
+    const label = LAUNCH_BTN[m] || 'Kalkış';
+    modal({ title: label, body: field('Hedef irtifa (m, AGL)', alt, hint),
+      actions: [{ label: 'Vazgeç' }, { label, class: 'primary', onClick: () => cmd('takeoff', { alt: Number(alt.value) || 30 }) }] });
+  };
+  // Kalkış aşaması (WS `launch`): 3B düzenek + olay şeridi
+  const onLaunch = m => {
+    if (!launch) return;
+    sim?.setLaunchPhase(m.phase);
+    const txt = (LAUNCH_PHASE_TEXT[m.phase] || {})[launch.method] || m.phase;
+    addEvent(m.phase === 'released' && m.speed_kmh != null ? `${tr(txt)} · ${f0(m.speed_kmh)} km/h` : tr(txt), m.phase === 'released' || m.phase === 'launch' ? 'warning' : 'info');
   };
   const onCrash = info => {
     const kind = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma' }[info.kind] || 'Çarpışma';
@@ -674,6 +733,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const reset = async () => {
     crash.hidden = true;
     sim?.clearCollision();
+    sim?.setLaunchPhase(null);   // uçak yeniden rampaya / araca oturur
     sim?.resetCamera();
     if (canWrite) await cmd('reset'); else toast('Sıfırlamak için yazma izni gerekir', 'err');
   };
@@ -698,6 +758,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       if (m.t === 'tele') return replay ? undefined : updateHud(m);
       if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); } return; }
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null);
+      if (m.t === 'launch') return onLaunch(m);
       if (m.t === 'state') { if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay }; return setState(m.state); }
       if (m.t === 'replay' && m.action === 'reset') return player?.restart();
       if (m.t === 'end') { setState('KAPANDI'); showEnded(m.reason); socket?.close(); }
@@ -918,6 +979,7 @@ function mockBackend(ctx) {
     const id = `mock-${++MOCK.seq}`;
     const mdl = mockModel(type, model);
     const s = { id, type, model: mdl, airframe: isPlane(type) ? ({ 'builtin:caymaz': 'caymaz', 'builtin:delta': 'delta' }[mdl.id] || null) : null, center, world: { ...WORLD_DEFAULTS, ...(world || {}) }, state: 'HAZIR', udp_port: 14550 + MOCK.seq - 1, host: location.hostname,
+      launch: { ...LAUNCH_DEFAULTS, ...((world || {}).launch || {}), method: type === 'sabit_kanat' ? ((world || {}).launch?.method || 'wheels') : 'wheels', phase: null },
       created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' }, gcs: { connected: false, addr: null, since: null }, sitl: { pid: 0, port: 0, error: null } };
     s.flight = new MockFlight(s);
     MOCK.sessions.set(id, s);
@@ -1038,13 +1100,21 @@ class MockFlight {
   }
   emit(m) { this.handlers.forEach(hh => hh.message?.(m)); }
   event(text, severity = 'info') { this.emit({ t: 'event', text, severity }); }
+  launch(phase, extra = {}) { if (this.s.launch) this.s.launch.phase = phase; this.emit({ t: 'launch', method: this.s.launch?.method || 'wheels', phase, ts: Date.now() / 1000, ...extra }); }
   end(reason) { this.emit({ t: 'end', reason }); clearInterval(this.timer); this.timer = 0; }
   cmd(name, p) {
     const S = this.st;
     if (name === 'arm') { S.armed = true; S.auto = false; this.event('Arming motors'); }
     else if (name === 'disarm') { S.armed = false; S.auto = false; S.phase = 'ground'; this.event('Disarming motors'); }
     else if (name === 'mode') { S.mode = p.mode || S.mode; S.auto = false; this.event(`Mode ${S.mode}`); if (S.mode === 'RTL') S.phase = 'rtl'; if (S.mode === 'LAND' || S.mode === 'QLAND') S.phase = 'land'; if ((S.mode === 'AUTO' || S.mode === 'LOITER') && S.armed && S.z > 2) S.phase = 'cruise'; }
-    else if (name === 'takeoff') { S.targetAlt = Number(p.alt) || S.targetAlt; S.auto = false; if (!S.armed) { S.armed = true; this.event('Arming motors'); } S.mode = this.plane ? 'TAKEOFF' : 'GUIDED'; S.phase = 'takeoff'; this.event(`Takeoff to ${S.targetAlt} m`); }
+    else if (name === 'takeoff') {
+      S.targetAlt = Number(p.alt) || S.targetAlt; S.auto = false; if (!S.armed) { S.armed = true; this.event('Arming motors'); } S.mode = this.plane ? 'TAKEOFF' : 'GUIDED'; S.phase = 'takeoff'; this.event(`Takeoff to ${S.targetAlt} m`);
+      if (this.s.type === 'sabit_kanat' && S.z < 1) {   // kalkış yöntemi dizisi (§13): armed → launch → released
+        S.lt = 0; S.lphase = 'armed'; this.launch('armed');
+        const m = this.s.launch?.method;
+        if (m !== 'ramp') { S.lphase = 'launch'; this.launch('launch'); }
+      }
+    }
     else if (name === 'rtl') { S.mode = 'RTL'; S.phase = 'rtl'; S.auto = false; this.event('Mode RTL'); }
     else if (name === 'reset') { this.reset(); this.emit({ t: 'state', state: 'BASLIYOR' }); this.event('SITL yeniden başlatıldı', 'warning'); setTimeout(() => this.emit({ t: 'state', state: 'HAZIR' }), 800); }
     else if (name === 'crash') { S.armed = false; S.phase = 'crashed'; S.auto = false; S.thr = 0; S.vx = S.vy = S.vz = 0; this.event('Crash: Disarming', 'critical'); }
@@ -1055,17 +1125,31 @@ class MockFlight {
     S.t += dt;
     if (S.t > S.gcsAt && !this.s.gcs.connected) { this.s.gcs.connected = true; this.s.gcs.addr = '192.0.2.10:14550'; this.event('GCS bağlandı (192.0.2.10)'); }
     // Otomatik senaryo (komut gelmediyse): 4 sn sonra arm + kalkış
-    if (S.auto && S.phase === 'ground' && S.t > 4) { S.armed = true; S.phase = 'takeoff'; S.mode = this.plane ? 'TAKEOFF' : 'GUIDED'; this.event('Arming motors'); this.event(`Takeoff to ${S.targetAlt} m`); }
+    if (S.auto && S.phase === 'ground' && S.t > 4) { this.cmd('takeoff', { alt: S.targetAlt }); S.auto = false; }
     const V = this.plane ? 22 : 8, R = this.plane ? 450 : 150;
     const hdg = S.yaw;   // yaw: kuzeyden saat yönü
     if (S.phase === 'takeoff' && S.armed) {
       if (this.plane) {
         const sp = Math.hypot(S.vx, S.vy);
-        const ns = Math.min(V, sp + 4 * dt);
+        const m = this.s.type === 'sabit_kanat' ? this.s.launch?.method : 'wheels';
+        let ns, acc = 4, rot = 15;
+        if (S.lphase) S.lt = (S.lt || 0) + dt;
+        if (m === 'ramp' && S.lphase) {
+          if (S.lphase === 'armed') { if (S.lt >= 1.2) { S.lphase = 'launch'; this.launch('launch', { angle_deg: this.s.launch.angle_deg }); } ns = 0; S.thr = 0; }
+          else { acc = 44; rot = 20; ns = Math.min(V, sp + acc * dt); S.thr = 100; if (S.lphase === 'launch' && sp >= 8) { S.lphase = 'released'; this.launch('released', { speed_kmh: Math.round(sp * 36) / 10 }); } }
+        } else if (m === 'vehicle' && S.lphase) {
+          const rel = (Number(this.s.launch.release_kmh) || 70) / 3.6;
+          acc = 2.5; rot = rel; ns = Math.min(V, sp + acc * dt); S.thr = S.lphase === 'released' ? 100 : 0;
+          if (S.lphase === 'launch' && sp >= rel * 0.95) { S.lphase = 'released'; this.launch('released', { speed_kmh: Math.round(sp * 36) / 10 }); }
+        } else {
+          ns = Math.min(V, sp + acc * dt); S.thr = 100;
+          if (S.lphase === 'launch' && S.z >= 1) { S.lphase = 'released'; this.launch('released', { speed_kmh: Math.round(sp * 36) / 10 }); }
+        }
         S.vx = Math.sin(hdg) * ns; S.vy = Math.cos(hdg) * ns;
-        S.vz = sp > 15 ? 7 : 0; S.pitch = sp > 15 ? 16 * Math.PI / 180 : 0; S.thr = sp > 15 ? 85 : 100;   // dik tırmanış: merkez çevresindeki düzlük (300 m) bitmeden irtifa alsın
+        const air = sp > rot;
+        S.vz = air ? 7 : 0; S.pitch = air ? 16 * Math.PI / 180 : 0; if (air) S.thr = 85;   // dik tırmanış: merkez çevresindeki düzlük (300 m) bitmeden irtifa alsın
       } else { S.vx = S.vy = 0; S.vz = 2.5; S.thr = 65; S.pitch = 0; }
-      if (S.z >= S.targetAlt) { S.phase = 'cruise'; S.mode = this.plane ? 'AUTO' : 'LOITER'; S.vz = 0; S.ang = Math.atan2(S.y, S.x); this.event(`Mode ${S.mode}`); this.event('Reached target altitude'); }
+      if (S.z >= S.targetAlt) { S.phase = 'cruise'; S.lphase = null; S.mode = this.plane ? 'AUTO' : 'LOITER'; S.vz = 0; S.ang = Math.atan2(S.y, S.x); this.event(`Mode ${S.mode}`); this.event('Reached target altitude'); }
     } else if (S.phase === 'cruise' && S.armed) {
       // Merkez etrafında daire: konumu açıyla sür, yaw = hız yönü, roll = koordineli dönüş
       const r0 = Math.hypot(S.x, S.y);

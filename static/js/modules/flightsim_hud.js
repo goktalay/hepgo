@@ -10,6 +10,8 @@
 // • Performans: metin ölçümü yok (textAlign ile hizalama), kutu genişlikleri sabit; 60 fps'te < 2 ms hedef.
 // Dışa: createMilHud(stageEl, ctx, { tr }) → { update(tele), setCamMode(mode), toggle(), setEnabled(bool), cycleColor(), get enabled, dispose() }.
 
+import { launchHud } from './flightsim_launch.js';   // kalkış yöntemi satırı (§13)
+
 const COLORS = [['green', '#9cff6a'], ['white', '#f2f5f0'], ['amber', '#ffbf47']];
 const RED = '#ff4444';
 const DEG = Math.PI / 180;
@@ -283,7 +285,7 @@ export function createMilHud(stage, ctx = {}, { tr = s => s } = {}) {
     text(`FOV ${fov.toFixed(0)}°`, rx, ry0 + 36 * S, { align: 'right', px: F * 0.9 });
 
     // --- sol alt: mod · ARM/SAFE · G · gaz · batarya · GPS (Mission Planner kutusunun üstünde) ---
-    const lx = 22 * S, lh = 17 * S, ly0 = bottomLimit - lay.mp - 14 * S - lh * 6;   // sol alttaki kutunun (MP / kayıt bilgisi) üstünde
+    const lx = 22 * S, lh = 17 * S, ly0 = bottomLimit - lay.mp - 14 * S - lh * (ctx.launch ? 7 : 6);   // sol alttaki kutunun (MP / kayıt bilgisi) üstünde
     let ly = ly0;
     text(t.mode || '—', lx, ly, { px: F * 1.2, bold: true }); ly += lh * 1.25;
     text(armed ? 'ARM' : 'SAFE', lx, ly, { px: F * 1.05, bold: true, color: armed ? C : '#cfd6cc' }); ly += lh;
@@ -294,7 +296,8 @@ export function createMilHud(stage, ctx = {}, { tr = s => s } = {}) {
     g.beginPath(); g.rect(lx + 78 * S, ly - 5 * S, 70 * S, 10 * S); stroke(C, 1); g.fillStyle = C; g.fillRect(lx + 78 * S, ly - 5 * S, 70 * S * thr / 100, 10 * S); ly += lh;
     const bp = num(t.batt_pct, null), bv = num(t.batt_v, null);
     text(`BAT ${bv != null ? bv.toFixed(1) + 'V' : '—'} ${bp != null ? bp.toFixed(0) + '%' : ''}`, lx, ly, { px: F * 0.95, color: bp != null && bp < 25 ? RED : C }); ly += lh;
-    text(`GPS ${t.gps_fix >= 3 ? '3D' : t.gps_fix === 2 ? '2D' : '--'} ${t.sats != null ? t.sats + ' SAT' : ''}`, lx, ly, { px: F * 0.95 });
+    text(`GPS ${t.gps_fix >= 3 ? '3D' : t.gps_fix === 2 ? '2D' : '--'} ${t.sats != null ? t.sats + ' SAT' : ''}`, lx, ly, { px: F * 0.95 }); ly += lh;
+    if (ctx.launch) text(launchHud(ctx.launch), lx, ly, { px: F * 0.85, color: 'rgba(230,235,230,.75)' });   // kalkış yöntemi (§13): LAUNCH RAMP 15° · 86 km/h
 
     // --- sağ alt: UTC · T+ · lat/lon · HOME · gimbal ---
     const rxx = W - 22 * S;

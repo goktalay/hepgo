@@ -53,8 +53,15 @@ TIP_ADLARI = {'multirotor': 'Multikopter', 'hexarotor': 'Hexakopter', 'helikopte
 PLANE_TIPLERI = ('sabit_kanat', 'vtol')
 KOMUTLAR = ('arm', 'disarm', 'mode', 'takeoff', 'rtl', 'reset', 'crash', 'set_home', 'rc')
 
+# Sabit kanat kalkış yöntemi (§13): wheels (tekerlekli pist koşusu) · ramp (pnömatik fırlatma rampası; açı 10–30°) · vehicle (pickup üstünden bırakma; hız 40–110 km/h)
+LAUNCH_DEFAULTS = {'method': 'wheels', 'angle_deg': 15, 'release_kmh': 70}
+LAUNCH_METHODS = ('wheels', 'ramp', 'vehicle')
+LAUNCH_SITL_MODEL = {'ramp': 'plane-catapult'}   # SITL `--model` geçersizleştirmesi: mancınık modeli (servo 7 tetiği ile 15 m/s² · 2 sn fırlatma ivmesi)
+LAUNCH_SERVO = 7                                 # SIM_Plane: servos[6] > 1700 → fırlatma (DO_SET_SERVO 7)
+RAMP_ACCEL = 8.0                                 # TKOFF_THR_MINACC (m/s²): fırlatma ivmesi algılanınca gaz
 WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
-                  'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2}
+                  'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2,
+                  'launch': dict(LAUNCH_DEFAULTS)}
 _WORLD_KIP = ('procedural', 'real', 'google3d')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); google3d: Google Photorealistic 3D Tiles (§10)
 # Google 3B kipi: Map Tiles API anahtarı (HTTP referrer kısıtlı; tarayıcıya /g3d-key ile verilir, sunucu Google'a istek atmaz ve önbelleklemez)
 GOOGLE_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '').strip()
@@ -103,6 +110,54 @@ def _airframe_adi(model, tip):
     return {'builtin:caymaz': 'caymaz', 'builtin:delta': 'delta'}.get(model.get('id'))
 
 
+def launch_dogrula(l):
+    """`world.launch` (§13): {method: wheels|ramp|vehicle, angle_deg 10…30, release_kmh 40…110}; eksikler varsayılan. Hatalıysa SimHata('invalid')."""
+    if l is None:
+        return dict(LAUNCH_DEFAULTS)
+    if not isinstance(l, dict):
+        raise SimHata('invalid', 'world.launch bir nesne olmalı')
+    out = dict(LAUNCH_DEFAULTS)
+    if l.get('method') is not None:
+        if l['method'] not in LAUNCH_METHODS:
+            raise SimHata('invalid', 'world.launch.method wheels | ramp | vehicle olmalı')
+        out['method'] = l['method']
+    for k, alt, ust in (('angle_deg', 10, 30), ('release_kmh', 40, 110)):
+        v = l.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not (alt <= v <= ust):
+            raise SimHata('invalid', f'world.launch.{k} {alt}…{ust} arasında olmalı')
+        out[k] = float(v)
+    return out
+
+
+def launch_normalize(tip, launch):
+    """Yalnız sabit kanat yöntem seçer; VTOL dikey, kopterler dikey kalkar → yöntem 'wheels' (etkisiz) olarak saklanır."""
+    l = dict(launch or LAUNCH_DEFAULTS)
+    if tip != 'sabit_kanat':
+        l['method'] = 'wheels'
+    return l
+
+
+def launch_parametreleri(launch, alt=None):
+    """Kalkış yöntemine göre ArduPlane parametreleri (ad, değer) — ilk kalp atışında ve `cmd takeoff`ta yazılır.
+    wheels: ivme tetiği kapalı, pist koşusu; döndürme hızı 12 m/s. ramp: TKOFF_THR_MINACC (fırlatma ivmesi algılanınca gaz), 2 sn gecikme,
+    seviye pitch'i fırlatma açısı; döndürme/asgari hız yok. vehicle: döndürme hızı = bırakma hızı (uçak o hıza dek yerde/araçta kalır; gaz baştan açık)."""
+    m = (launch or {}).get('method', 'wheels')
+    out = []
+    if alt is not None:
+        out.append(('TKOFF_ALT', float(alt)))
+    if m == 'ramp':
+        out += [('TKOFF_THR_MINACC', RAMP_ACCEL), ('TKOFF_THR_DELAY', 2.0), ('TKOFF_THR_MINSPD', 0.0), ('TKOFF_ROTATE_SPD', 0.0),
+                ('TKOFF_LVL_PITCH', float(max(10.0, min(30.0, (launch or {}).get('angle_deg', 15))))), (f'SERVO{LAUNCH_SERVO}_FUNCTION', 0.0)]
+    elif m == 'vehicle':
+        ms = float((launch or {}).get('release_kmh', 70)) / 3.6
+        out += [('TKOFF_THR_MINACC', 0.0), ('TKOFF_THR_MINSPD', 0.0), ('TKOFF_ROTATE_SPD', round(ms, 2)), ('TKOFF_LVL_PITCH', 15.0)]
+    else:
+        out += [('TKOFF_THR_MINACC', 0.0), ('TKOFF_THR_MINSPD', 0.0), ('TKOFF_ROTATE_SPD', 12.0), ('TKOFF_LVL_PITCH', 15.0)]
+    return out
+
+
 def world_dogrula(w):
     """Ön yüzün ürettiği dünya tanımını doğrular; eksik alanlar varsayılanla dolar. Hatalıysa SimHata('invalid')."""
     if w is None:
@@ -110,6 +165,7 @@ def world_dogrula(w):
     if not isinstance(w, dict):
         raise SimHata('invalid', 'world bir nesne olmalı')
     out = dict(WORLD_DEFAULTS)
+    out['launch'] = launch_dogrula(w.get('launch'))
     for k, (tur, alt, ust) in _WORLD_SINIR.items():
         if k not in w or w[k] is None:
             continue
@@ -201,11 +257,13 @@ class SahteKinematik:
     HIZ = 12.0           # m/s
     TIRMANMA = 3.0       # m/s
 
-    def __init__(self, tip, lat, lon, alt, ruzgar_ms):
+    def __init__(self, tip, lat, lon, alt, ruzgar_ms, launch=None, heading=0):
         self.tip = tip
         self.plane = tip in PLANE_TIPLERI
         self.lat0, self.lon0, self.alt0 = float(lat), float(lon), float(alt or 0)
         self.ruzgar = float(ruzgar_ms or 0)
+        self.launch = dict(launch or LAUNCH_DEFAULTS)   # sabit kanat kalkış yöntemi (§13): yer koşusu / rampa / araç taklidi
+        self.heading = math.radians(float(heading or 0))   # pist yönü (kalkış koşusu bu yönde)
         self.sifirla()
 
     def sifirla(self):
@@ -215,6 +273,7 @@ class SahteKinematik:
         self.mode = 'MANUAL' if self.plane else 'STABILIZE'
         self.hedef_alt = 0.0
         self.aci = 0.0
+        self.kalkis = None   # sabit kanat kalkış aşaması: {'faz': 'run'|'air', 'hiz', 'yol', 'tetik'}
         self.roll = self.pitch = self.yaw = 0.0
         self.rs = self.ps = self.ys = 0.0          # açısal hızlar (rad/s; ATTITUDE rollspeed/pitchspeed/yawspeed karşılığı)
         self.vn = self.ve = self.vd = 0.0
@@ -232,6 +291,7 @@ class SahteKinematik:
             self.armed = True
         elif name == 'disarm':
             self.armed = False
+            self.kalkis = None
             if self.alt_rel < 0.5:
                 self.alt_rel, self.hedef_alt = 0.0, 0.0
         elif name == 'mode':
@@ -242,6 +302,8 @@ class SahteKinematik:
             self.mode = 'TAKEOFF' if self.plane else 'GUIDED'
             self.hedef_alt = max(1.0, float(p.get('alt') or (50 if self.plane else 10)))
             self.eve = False
+            if self.plane and self.alt_rel < 1.0:
+                self.kalkis = {'faz': 'run', 'hiz': 0.0, 'yol': 0.0, 'tetik': self.launch.get('method') != 'ramp'}   # rampa: fırlatma tetiğini bekler
         elif name == 'rtl':
             self.mode = 'RTL'
             self.eve = True
@@ -294,6 +356,42 @@ class SahteKinematik:
                     self.armed, self.eve = False, False
                     self.mode = 'MANUAL' if self.plane else 'STABILIZE'
             self.throttle = 50.0
+            return
+        if self.kalkis is not None:   # sabit kanat kalkış koşusu (pist yönünde düz): yöntem taklidi
+            k, m = self.kalkis, self.launch.get('method', 'wheels')
+            if k['faz'] == 'run':
+                if m == 'ramp':
+                    if k['tetik']:
+                        k['hiz'] = min(22.0, k['hiz'] + 44.0 * dt)   # kızak 0,5 sn'de ~22 m/s
+                        if k['hiz'] >= 21.9:
+                            k['faz'] = 'air'
+                    self.throttle = 100.0 if k['tetik'] else 0.0
+                elif m == 'vehicle':
+                    hedef = float(self.launch.get('release_kmh', 70)) / 3.6
+                    k['hiz'] = min(hedef, k['hiz'] + 2.5 * dt)     # araç ivmesi
+                    self.throttle = 0.0
+                    if k['hiz'] >= hedef - 0.01:
+                        k['faz'] = 'air'
+                else:
+                    k['hiz'] = min(12.0, k['hiz'] + 4.0 * dt)       # tekerlekli: 12 m/s döndürme hızı
+                    self.throttle = 100.0
+                    if k['hiz'] >= 11.99:
+                        k['faz'] = 'air'
+            else:
+                self.throttle = 85.0
+                self.alt_rel = min(self.hedef_alt, self.alt_rel + self.TIRMANMA * dt)
+                self.vd = -self.TIRMANMA
+                self.pitch = 0.2
+            self.yaw = self.heading
+            self.vn, self.ve = k['hiz'] * math.cos(self.heading), k['hiz'] * math.sin(self.heading)
+            k['yol'] += k['hiz'] * dt
+            cos_lat = math.cos(math.radians(self.lat0))
+            self.lat = self.lat0 + k['yol'] * math.cos(self.heading) / 110574.0
+            self.lon = self.lon0 + k['yol'] * math.sin(self.heading) / (111320.0 * cos_lat)
+            if self.alt_rel > 1.0:   # havalandı: daireye geç (konumdan açı)
+                dn, de = (self.lat - self.lat0) * 110574.0, (self.lon - self.lon0) * 111320.0 * cos_lat
+                self.aci = math.atan2(de, dn)
+                self.kalkis = None
             return
         if self.alt_rel < self.hedef_alt:   # tırmanış
             self.alt_rel = min(self.hedef_alt, self.alt_rel + self.TIRMANMA * dt)
@@ -377,9 +475,13 @@ class SimSession:
         self._tcp_r = None
         self._rc_son = 0.0
         self.end_reason = None
+        # Sabit kanat kalkış yöntemi (§13): world.launch (yalnız sabit_kanat'ta anlamlı); aşama: None | armed | launch | released
+        self.launch = launch_normalize(tip, world.get('launch'))
+        self.launch_phase = None
+        self._launch_task = None
         self.sahte = None
         if not SITL_ENABLED:
-            self.sahte = SahteKinematik(tip, center['lat'], center['lon'], center.get('alt'), world.get('wind_ms'))
+            self.sahte = SahteKinematik(tip, center['lat'], center['lon'], center.get('alt'), world.get('wind_ms'), self.launch, world.get('runway_heading'))
         d = _dialect()
         self.mav = d.MAVLink(None, srcSystem=GCS_SYSID, srcComponent=GCS_COMP)   # kodlayıcı
         self.parser = d.MAVLink(None)                                             # ayrıştırıcı (SITL → telemetri)
@@ -402,7 +504,7 @@ class SimSession:
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
         return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'model': dict(self.model) if self.model else None,
-                'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+                'center': dict(self.center), 'world': dict(self.world), 'state': self.state, 'launch': {**self.launch, 'phase': self.launch_phase},
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
@@ -483,8 +585,9 @@ class SimSession:
         if SITL_ENABLED:
             c = self.center
             self._olay(f'SITL başlatılıyor ({TIP_ADLARI.get(self.type, self.type)}) · {c.get("name") or ""}', 6)
+            sitl_model = LAUNCH_SITL_MODEL.get(self.launch.get('method')) if self.type == 'sabit_kanat' else None   # rampa: plane-catapult
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.kimlik, self.type, c['lat'], c['lon'], sysid=1,
-                                                                          irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol))
+                                                                          irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol, model=sitl_model))
             if not port:
                 self.sitl['error'] = err or 'SITL başlatılamadı'
                 self._olay(self.sitl['error'], 2)
@@ -639,7 +742,72 @@ class SimSession:
         self._ruzgar_yaz(d)
         for ad, deger in RC_PARAMLAR:   # araçta olmayan ad (kopterde THR_FAILSAFE vb.) sessizce yok sayılır
             self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
+        if self.type == 'sabit_kanat':   # kalkış yöntemi parametreleri (§13)
+            self._param_set(launch_parametreleri(self.launch))
         self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
+
+    def _param_set(self, ciftler):
+        d = _dialect()
+        for ad, deger in ciftler:
+            self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
+
+    # ---- sabit kanat kalkış dizisi (§13) ----
+    def _launch_yay(self, phase, **extra):
+        self.launch_phase = phase
+        self._yay({'t': 'launch', 'method': self.launch.get('method'), 'phase': phase, 'ts': round(time.time(), 3), **extra})
+
+    async def _kalkis_dizisi(self, alt):
+        """Yönteme göre kalkış: parametreler → TAKEOFF + ARM (`armed`) → `launch` (rampa: 1,2 sn sonra servo 7 fırlatma tetiği; araç: araç sürüyor;
+        tekerlekli: pist koşusu) → telemetri izlenir → `released` (rampa: yer hızı ≥ 8 m/s ya da AGL ≥ 2 m; araç: yer hızı ≥ bırakma hızının %95'i ya da
+        AGL ≥ 3 m; tekerlekli: AGL ≥ 1 m). 90 sn'de aşama gelmezse dizi sessizce biter."""
+        m = self.launch.get('method', 'wheels')
+        te = self.tele
+        try:
+            if self.sahte is not None:
+                self.sahte.komut('takeoff', {'alt': alt})
+            else:
+                self._param_set(launch_parametreleri(self.launch, alt))
+                self._mod_gonder('TAKEOFF')
+                await asyncio.sleep(0.3)
+                self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 400, 0, 1, 21196, 0, 0, 0, 0, 0))
+            self._launch_yay('armed', alt=alt)
+            if m == 'ramp':
+                await asyncio.sleep(1.2)
+                if self.sahte is not None:
+                    if self.sahte.kalkis:
+                        self.sahte.kalkis['tetik'] = True
+                else:
+                    self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 183, 0, LAUNCH_SERVO, 1900, 0, 0, 0, 0, 0))   # MAV_CMD_DO_SET_SERVO → mancınık
+                self._launch_yay('launch', angle_deg=self.launch.get('angle_deg'))
+                kosul = lambda: te.get('groundspeed', 0) >= 8 or te.get('alt_rel', 0) >= 2   # noqa: E731
+            elif m == 'vehicle':
+                hedef = float(self.launch.get('release_kmh', 70)) / 3.6
+                self._launch_yay('launch', release_kmh=self.launch.get('release_kmh'))
+                kosul = lambda: te.get('groundspeed', 0) >= hedef * 0.95 or te.get('alt_rel', 0) >= 3   # noqa: E731
+            else:
+                self._launch_yay('launch')
+                kosul = lambda: te.get('alt_rel', 0) >= 1   # noqa: E731
+            bitis = time.time() + 90
+            while time.time() < bitis and self.state == 'HAZIR':
+                if kosul():
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                return
+            hiz = float(te.get('groundspeed') or 0)
+            self._launch_yay('released', speed_kmh=round(hiz * 3.6, 1))
+            if m == 'ramp' and self.sahte is None:
+                await asyncio.sleep(2.5)
+                self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 183, 0, LAUNCH_SERVO, 1100, 0, 0, 0, 0, 0))   # tetik sıfırlanır (yeniden fırlatma)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:   # noqa: BLE001
+            self._olay(f'Kalkış dizisi hatası: {e}'[:200], 3)
+
+    def _kalkis_baslat(self, alt):
+        if self._launch_task is not None and not self._launch_task.done():
+            self._launch_task.cancel()
+        self._launch_task = self.loop.create_task(self._kalkis_dizisi(alt))
 
     def _akis_iste(self, tam=True):
         """tam: REQUEST_DATA_STREAM 10 Hz (ALL) + HOME_POSITION 5 sn. Sonra ya MAV_CMD_SET_MESSAGE_INTERVAL (MESAJ_ARALIKLARI; copter kabul eder,
@@ -708,6 +876,9 @@ class SimSession:
             return {'ok': True}
         if self.state != 'HAZIR':
             raise SimHata('invalid', 'Oturum hazır değil')
+        if name == 'takeoff' and self.type == 'sabit_kanat' and (self.sahte is not None or self._heartbeat_alindi):
+            self._kalkis_baslat(p['alt'])   # yönteme göre dizi (§13): armed → launch → released olayları
+            return {'ok': True}
         if self.sahte is not None:
             self.sahte.komut(name, p)
             if name == 'crash':
@@ -769,6 +940,9 @@ class SimSession:
             raise SimHata('invalid', 'Oturum kapandı')
         self._olay('Sıfırlanıyor', 6)
         self._durum('BASLIYOR')
+        if self._launch_task is not None and not self._launch_task.done():
+            self._launch_task.cancel()
+        self.launch_phase = None
         if self.sahte is not None:
             self.sahte.sifirla()
             if self.yonetici.sahte_tcp_port and self._tcp_w is None:
@@ -881,6 +1055,8 @@ class SimSession:
         if self.state == 'KAPANDI':
             return
         self.state = 'KAPANDI'
+        if self._launch_task is not None and not self._launch_task.done():
+            self._launch_task.cancel()
         await self._tcp_kapat()
         if self._udp is not None:
             try:

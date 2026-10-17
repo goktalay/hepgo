@@ -802,6 +802,20 @@ class SimSession:
     def _launch_yay(self, phase, **extra):
         self.launch_phase = phase
         self._yay({'t': 'launch', 'method': self.launch.get('method'), 'phase': phase, 'ts': round(time.time(), 3), **extra})
+        # §14: aşama harekât paneli konsoluna da düşer (genel konsol yalnız hata/uyarı STATUSTEXT gösterir; bu satır KOMUT gibi doğrudan yazılır)
+        hub = getattr(self, 'hub', None)
+        if hub is not None:
+            m = self.launch.get('method', 'wheels')
+            metin = {'armed': {'ramp': 'Kalkış: TAKEOFF + ARM, uçak rampada', 'vehicle': 'Kalkış: TAKEOFF + ARM, uçak araçta', 'wheels': 'Kalkış: TAKEOFF + ARM, pist koşusu'},
+                     'launch': {'ramp': f"FIRLATMA (rampa {round(float(extra.get('angle_deg') or 0))}°)", 'vehicle': f"Araç hızlanıyor ({round(float(extra.get('release_kmh') or 0))} km/h)", 'wheels': 'Pist koşusu'},
+                     'released': {'ramp': 'Uçak rampadan ayrıldı', 'vehicle': 'BIRAKILDI', 'wheels': 'Uçak havalandı'}}.get(phase, {}).get(m, phase)
+            if extra.get('speed_kmh') is not None:
+                metin += f" · {round(float(extra['speed_kmh']))} km/h"
+            try:
+                flightsim_hub.drone_hub.global_line(hub, hub.sysid, 'SİM', metin, 'uyari' if phase in ('launch', 'released') else 'bilgi')
+                flightsim_hub.drone_hub.console_line(hub, hub.sysid, 'SİM', metin, 'bilgi')
+            except Exception:   # noqa: BLE001 — konsol satırı kalkış dizisini bozmasın
+                pass
 
     async def _kalkis_dizisi(self, alt):
         """Yönteme göre kalkış: parametreler → TAKEOFF + ARM (`armed`) → `launch` (rampa: 1,2 sn sonra servo 7 fırlatma tetiği; araç: araç sürüyor;

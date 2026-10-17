@@ -9102,7 +9102,8 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-ops .fs-canvas, .fs-stage.fs-ops .fs-msg, .fs-stage.fs-ops .fs-crash, .fs-stage.fs-ops .fs-mhud { right: var(--fs-ops-w); }
 .fs-stage.fs-ops .fs-bar, .fs-stage.fs-ops .fs-sticks { right: var(--fs-ops-w); }
 .fs-stage.fs-ops .fs-nav { left: calc((100% - var(--fs-ops-w)) / 2); max-width: calc(100% - var(--fs-ops-w) - 20px); }
-.fs-stage.fs-ops .fs-events { left: calc((100% - var(--fs-ops-w)) / 2); width: min(460px, calc((100% - var(--fs-ops-w)) * .7)); }
+/* olay şeridi: 3B alanın Mission Planner kutusunun (sol, 300px) sağında kalan bölümünde ortalanır — kutunun altına girmez */
+.fs-stage.fs-ops .fs-events { left: calc(324px + (100% - var(--fs-ops-w) - 324px) / 2); width: min(460px, calc(100% - var(--fs-ops-w) - 340px)); }
 .fs-stage.fs-ops .fs-attrib { right: calc(var(--fs-ops-w) + 8px); }
 .fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds { display: none; }   /* veri paneli ve komutlar harekât panelinde */
 .fs-stage.fs-ops .fs-stick[data-side="r"] { right: 40px; }

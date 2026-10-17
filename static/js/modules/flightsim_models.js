@@ -157,7 +157,9 @@ export function modelPicker({ getType, canWrite, getSim, onSelect, mock = false 
   const selected = () => S.sel[S.type] || null;
   const card = m => {
     const on = selected()?.id === m.id;
-    const thumb = m.thumb_url ? h('img', { class: 'fs-model-img', src: `${m.thumb_url}${m.thumb_url.includes('?') ? '&' : '?'}v=${m._v || 0}`, alt: m.name, loading: 'lazy' })
+    // Önbellek damgası yalnız sunucu adreslerine: blob: (sahte kip / yerel küçük resim) sorgu dizesi kabul etmez (ERR_FILE_NOT_FOUND)
+    const thumbSrc = m.thumb_url && !m.thumb_url.startsWith('blob:') ? `${m.thumb_url}${m.thumb_url.includes('?') ? '&' : '?'}v=${m._v || 0}` : m.thumb_url;
+    const thumb = m.thumb_url ? h('img', { class: 'fs-model-img', src: thumbSrc, alt: m.name, loading: 'lazy' })
       : h('div', { class: 'fs-model-img fs-model-ph' }, S.busy.has(m.id) ? '…' : tr('Önizleme hazırlanıyor…'));
     const prog = h('div', { class: 'fs-model-prog', hidden: true }, h('i'), h('span'));
     const status = m.ready ? h('span', { class: 'badge green' }, 'Hazır') : h('span', { class: 'badge yellow' }, S.busy.has(m.id) ? 'Dönüştürülüyor' : 'GLB bekliyor');

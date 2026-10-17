@@ -936,6 +936,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // ---------- kalkış düzeneği (§13): rampa / pickup; yalnız sabit kanat. setLaunch(cfg) kurar, setLaunchPhase(p) sunucu aşamalarını uygular ----------
   let launchCfg = opts.launch ? { ...opts.launch } : null, rig = null;
   const rigLocal = new T.Vector3(), rigPos = new T.Vector3(), rigQ = new T.Quaternion();
+  const gLock = { on: false, pos: new T.Vector3(), t: 1 };   // yerde kilit (frame içinde; §13)
   function buildRig() {
     rig?.dispose(); rig = null;
     const m = launchCfg?.method;
@@ -1109,16 +1110,30 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
     }
-    // Kalkış düzeneği (§13): uçak kızakta/kasada iken konumu SITL yerine düzenekten; fırlatma/bırakma sonrası SITL konumuna yumuşak geçiş
+    // Kalkış düzeneği (§13): uçak kızakta/kasada iken konumu SITL yerine düzenekten (kızağa kilitli); fırlatma/bırakma sonrası SITL konumuna yumuşak geçiş
     if (rig) {
       if (tele.has && rig.carrying && rig.phase !== 'launch' && (cur.pos.z > 3 || (tele.armed && tele.speed > 8))) rig.setPhase('released');   // dizi dışı kalkış (MP ile): serbest bırak
-      if (tele.has && rig.anchored) rig.anchor(cur.pos);   // düzenek SITL uçağını izler (SITL plane yerde ~4 m/s kayar; §13)
+      // Düzenek pist başında SABİT: demir bir kez (ilk telemetri) ya da SITL konumu > 2 m sıçrarsa (reset/set_home); araç yer koşusunda her kare izler (§13)
+      if (tele.has && rig.anchored && (rig.tracking || rig.needsAnchor(cur.pos))) rig.anchor(cur.pos);
       rig.update(dt, { speed: tele.speed });
       if (rig.phase !== 'free') {
         rig.attachWorld(rigPos); rigPos.z += drone.ground || 0;
         rig.planeQuat(rigQ);
         const b = rig.blend;
         if (b < 1) { drone.group.position.lerpVectors(rigPos, tmpV.copy(cur.pos).setZ(cur.pos.z + (drone.ground || 0)), b); drone.group.quaternion.slerpQuaternions(rigQ, cur.q, b); }
+      }
+    }
+    // Yerde kilit (§13): disarm + yerde (AGL < 1 m) + yer hızı < 0,5 m/s iken gösterilen konum dondurulur (EKF'nin cm'lik gezinmesi görünmez);
+    // ARM ya da hareketle 0,4 sn'de SITL konumuna döner; > 1,5 m sıçrama (reset / set_home) kilidi yeniden oturtur. Uçak düzenekteyken düzenek kilitler.
+    if (tele.has && !(rig && rig.phase !== 'free')) {
+      if (!tele.armed && cur.pos.z < 1 && tele.speed < 0.5) {
+        if (!gLock.on || gLock.pos.distanceTo(cur.pos) > 1.5) { gLock.on = true; gLock.pos.copy(cur.pos); }
+        gLock.t = 0;
+        drone.group.position.copy(gLock.pos).setZ(gLock.pos.z + (drone.ground || 0));
+      } else if (gLock.on) {
+        gLock.t = Math.min(1, gLock.t + dt / 0.4);
+        drone.group.position.lerpVectors(tmpV.copy(gLock.pos).setZ(gLock.pos.z + (drone.ground || 0)), drone.group.position, gLock.t);
+        if (gLock.t >= 1) gLock.on = false;
       }
     }
     if (tele.has) {
@@ -1279,7 +1294,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
     setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, motionStats, setKeyboardLock,
-    setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; },   // kalkış yöntemi (§13)
+    setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; }, get groundLocked() { return gLock.on; },   // kalkış yöntemi + yerde kilit (§13)
     setRoute, get route() { return routePts.slice(); },   // §14: SITL'deki görevin rota çizgisi/işaretleri
     get modelInfo() { return { type: drone.type, model: drone.model, bbox: drone.bbox || null, props: drone.props.length }; },   // yönelim paneli (§12)
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },

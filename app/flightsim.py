@@ -60,6 +60,17 @@ LAUNCH_METHODS = ('wheels', 'ramp', 'vehicle')
 LAUNCH_SITL_MODEL = {'ramp': 'plane-catapult'}   # SITL `--model` geçersizleştirmesi: mancınık modeli (servo 7 tetiği ile 15 m/s² · 2 sn fırlatma ivmesi)
 LAUNCH_SERVO = 7                                 # SIM_Plane: servos[6] > 1700 → fırlatma (DO_SET_SERVO 7)
 RAMP_ACCEL = 8.0                                 # TKOFF_THR_MINACC (m/s²): fırlatma ivmesi algılanınca gaz
+# Yerde kayma düzeltmesi (§13; arduplane 4.7.2 SITL ile ölçüldü): SITL ServoModel gaz kanalını SABİT 1000–2000 µs aralığına eşler
+# (filter_range: (pwm-1000)/1000); ArduPlane disarm'da / gaz 0'da çıkışı SERVO3_MIN=SERVO3_TRIM=1100 (varsayılan) yapar → SITL %10 itki
+# (plane: 2,8 N ≈ 1,4 m/s²) → yer sürtünmesi (0,3·v) ile denge 3,97 m/s: uçak disarm'da burun yönünde kayar (60 sn'de 236 m; SIMSTATE = GPS,
+# gürültü değil). SIM_GND_BEHAV plane modelinde okunmaz. SERVO3_MIN/TRIM 1000 → itki 0 → 60 sn'de 0,000 m (rüzgâr 3 m/s'de de). Uçuşta gaz
+# eşlemesi SITL'in varsaydığı 1000–2000 ile birebir örtüşür (0 → 0 itki, 100 → tam itki).
+PLANE_YER_PARAMLARI = (('SERVO3_MIN', 1000.0), ('SERVO3_TRIM', 1000.0))
+# GPS kalitesi: SITL u-blox arka ucu (SIM_GPS1_TYPE 1) PVT carrsoln=fixed bayrağıyla zaten RTK Fixed (fix_type 6) bildirir ve yatay konuma
+# gürültü eklemez (SIM_GPS1_NOISE yalnız irtifa sinüsü). Raporlanan doğruluk (SIM_GPS1_ACC 0,3 → 0,02 m; EKF ağırlığı), uydu sayısı, hız hatası,
+# aksaklık ve irtifa sürüklenmesi RTK düzeyine çekilir. Tüm tiplerde ilk kalp atışında yazılır; parametre adları ikilide doğrulandı.
+GPS_RTK_PARAMLARI = (('SIM_GPS1_ACC', 0.02), ('SIM_GPS1_NUMSATS', 18.0), ('SIM_GPS1_NOISE', 0.0), ('SIM_GPS1_VERR_X', 0.0), ('SIM_GPS1_VERR_Y', 0.0),
+                     ('SIM_GPS1_VERR_Z', 0.0), ('SIM_GPS1_GLTCH_X', 0.0), ('SIM_GPS1_GLTCH_Y', 0.0), ('SIM_GPS1_GLTCH_Z', 0.0), ('SIM_GPS1_DRFTALT', 0.0))
 WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
                   'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2,
                   'launch': dict(LAUNCH_DEFAULTS)}
@@ -143,9 +154,10 @@ def launch_normalize(tip, launch):
 def launch_parametreleri(launch, alt=None):
     """Kalkış yöntemine göre ArduPlane parametreleri (ad, değer) — ilk kalp atışında ve `cmd takeoff`ta yazılır.
     wheels: ivme tetiği kapalı, pist koşusu; döndürme hızı 12 m/s. ramp: TKOFF_THR_MINACC (fırlatma ivmesi algılanınca gaz), 2 sn gecikme,
-    seviye pitch'i fırlatma açısı; döndürme/asgari hız yok. vehicle: döndürme hızı = bırakma hızı (uçak o hıza dek yerde/araçta kalır; gaz baştan açık)."""
+    seviye pitch'i fırlatma açısı; döndürme/asgari hız yok. vehicle: döndürme hızı = bırakma hızı (uçak o hıza dek yerde/araçta kalır; gaz baştan açık).
+    Her yöntemde PLANE_YER_PARAMLARI (SERVO3_MIN/TRIM 1000): disarm'da itki 0 → uçak/düzenek yerde kaymaz."""
     m = (launch or {}).get('method', 'wheels')
-    out = []
+    out = list(PLANE_YER_PARAMLARI)
     if alt is not None:
         out.append(('TKOFF_ALT', float(alt)))
     if m == 'ramp':
@@ -421,7 +433,7 @@ class SahteKinematik:
                 'rs': round(self.rs, 3), 'ps': round(self.ps, 3), 'ys': round(self.ys, 3), 'tbm': int(self.sure_ms), 'tbm_pos': int(self.sure_ms),
                 'vn': round(self.vn, 2), 've': round(self.ve, 2), 'vd': round(self.vd, 2),
                 'airspeed': round(hs + self.ruzgar * 0.3, 2), 'groundspeed': round(hs, 2), 'heading': round(math.degrees(self.yaw) % 360, 1),
-                'climb': round(-self.vd, 2), 'mode': self.mode, 'armed': self.armed, 'gps_fix': 3, 'sats': 12,
+                'climb': round(-self.vd, 2), 'mode': self.mode, 'armed': self.armed, 'gps_fix': 6, 'sats': 18,   # RTK Fixed (gerçek SITL ile tutarlı)
                 'batt_v': round(self.batt_v, 2), 'batt_pct': int(max(0, min(100, (self.batt_v - 10.5) / 2.1 * 100))),
                 'throttle': round(self.throttle, 1), 'rc': list(self.rc), 'home': dict(self.home)}
 
@@ -789,7 +801,8 @@ class SimSession:
         self._ruzgar_yaz(d)
         for ad, deger in RC_PARAMLAR:   # araçta olmayan ad (kopterde THR_FAILSAFE vb.) sessizce yok sayılır
             self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
-        if self.type == 'sabit_kanat':   # kalkış yöntemi parametreleri (§13)
+        self._param_set(GPS_RTK_PARAMLARI)   # RTK düzeyi GPS (fix 6 zaten; doğruluk/uydu/hata sıfırlama)
+        if self.type == 'sabit_kanat':   # kalkış yöntemi + yerde kayma düzeltmesi parametreleri (§13)
             self._param_set(launch_parametreleri(self.launch))
         self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
 

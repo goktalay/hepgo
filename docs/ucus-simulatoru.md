@@ -370,11 +370,32 @@ Sabit kanat dışı tiplerde `method` `wheels` olarak normalize edilir (`launch_
 | vehicle | `plane` | `TKOFF_THR_MINACC 0`, `TKOFF_THR_MINSPD 0`, **`TKOFF_ROTATE_SPD = bırakma hızı (m/s)`**, `TKOFF_LVL_PITCH 15` | mode TAKEOFF + ARM → `armed` → `launch {release_kmh}` (araç sürüyor) → yer hızı ≥ %95 bırakma hızı ya da AGL ≥ 3 → `released {speed_kmh}` |
 
 WS olayı: `{t:'launch', method, phase:'armed'|'launch'|'released', ts, alt? | angle_deg? | release_kmh? | speed_kmh?}` (olay şeridi metinleri ön yüzde,
-çevrili); `reset` aşamayı sıfırlar (dizi iptal). **Yerde kayma (SITL tuzağı, ölçüldü):** arduplane 4.7.2 SITL plane modeli disarm'da ve gaz 0'da bile
-burun yönünde kendiliğinden ~4 m/s kayar (SIMSTATE gerçek konumu: 30 sn'de 93 m; rüzgâr 0, `SIM_GND_BEHAV` 0/1/2 ve plane-catapult'ta da aynı —
-parametreyle durdurulamadı). Bu yüzden 3B düzenek (rampa römorku / pickup) uçak kızaktayken **SITL uçağının konumuna demirlenir** (`rig.anchor`;
-düzenek pist boyunca uçakla birlikte yavaşça ilerler, tekerlekleri döner); rampa fırlatma animasyonu sırasında demir sabitlenir, `released`
-geçişi SITL konumuna 0,3–0,6 sn'de yapılır. Mission Planner haritasıyla konum tutarlılığı korunur. Araç üstünde SITL'in doğrudan karşılığı yoktur: SITL'de uçak TAKEOFF yer koşusunu kendisi yapar (gaz açık),
+çevrili); `reset` aşamayı sıfırlar (dizi iptal).
+
+**Yerde kayma — kök neden ve düzeltme (arduplane 4.7.2 SITL, pymavlink ile ölçüldü; kaynak Plane-4.7.2 `SIM_Plane.cpp`, `SIM_Aircraft.cpp`,
+`ServoModel.cpp`, `SIM_GPS.cpp`):** kayma **fiziksel**, GPS/EKF gürültüsü değil. Disarm, gaz 0, rüzgâr 0 iken 60 sn'de SIMSTATE (gerçek fizik)
+**235,8 m** kuzeye (burun yönü), GPS_RAW_INT 235,1 m, GLOBAL_POSITION_INT (EKF) 236,5 m, hız sabit 3,97 m/s; rüzgâr 3 m/s 270° ve `plane-catapult`
+modelinde aynı. Neden: SITL `ServoModel::filter_range` gaz kanalını **sabit 1000–2000 µs** aralığına eşler ((pwm−1000)/1000); ArduPlane disarm'da
+(ARMING_REQUIRE 1) gaz çıkışını `SERVO3_MIN = SERVO3_TRIM = 1100` (varsayılan; SERVO_OUTPUT_RAW ile görüldü) yapar → SITL **%10 itki**
+(plane: thrust_scale 28 N → 2,8 N ≈ 1,4 m/s²); `SIM_Plane` yer sürtünmesi yalnız `accel.x −= 0,3·v` → denge hızı ≈ 4 m/s. `SIM_GND_BEHAV`
+plane modelinde okunmaz (yalnız `add_twist_forces` çağıran modeller; ölçüm: 1/2'de de 117 m / 30 sn); `SIM_ENGINE_MUL` etkisiz; `ARMING_REQUIRE 2`
+(0 PWM → −%100 itki, FWD_ONLY sıfırlar) durdurur ama hileli. **Düzeltme:** `PLANE_YER_PARAMLARI` = `SERVO3_MIN 1000`, `SERVO3_TRIM 1000`
+(`launch_parametreleri` her yöntemde; ilk kalp atışında ve `cmd takeoff`ta yazılır) → disarm'da itki 0 → 60 sn'de SIMSTATE/GPS **0,000 m**, EKF
+0,014 m (rüzgâr 0 ve 3 m/s; plane ve plane-catapult). Uçuşta gaz eşlemesi SITL'in varsaydığı 1000–2000 ile birebir örtüşür; dünya rüzgârı
+(`SIM_WIND_SPD/DIR`) değişmeden uçuşta etkin kalır (rüzgâr kaymaya katkı yapmıyordu).
+
+**GPS / RTK:** SITL u-blox arka ucu (`SIM_GPS1_TYPE 1`) PVT `flags = carrsoln fixed` yazar → ArduPilot **zaten RTK Fixed (fix_type 6)** bildirir
+(GPS_RAW_INT fix 6 ölçüldü) ve yatay konuma gürültü eklemez (`SIM_GPS1_NOISE` yalnız irtifa sinüsü, `SIM_GPS1_ACC` yalnız raporlanan doğruluk,
+`VERR` hız hatası). `GPS_RTK_PARAMLARI` tüm tiplerde ilk kalp atışında yazılır: `SIM_GPS1_ACC 0.02`, `SIM_GPS1_NUMSATS 18`, `NOISE/VERR_XYZ/GLTCH_XYZ/
+DRFTALT 0` (adlar ikilide `param_request_list` ile doğrulandı). Sahte kip de `gps_fix 6, sats 18` verir. Askeri HUD GPS satırı fix türünü yazar
+(`RTK` / `RTK FLT` / `DGPS` / `3D` / `2D`); web HUD'daki (`flightsim.js`) "3D" metni ayrı iş (öneri: aynı eşleme).
+
+**3B:** düzenek (rampa römorku / pickup) pist başında **sabittir**: demir bir kez atılır (`rig.needsAnchor` → `anchor`), yalnız SITL konumu > 2 m
+sıçrarsa (reset / set_home) yeniden oturtulur; araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler (`rig.tracking`). Uçak
+`released`'a dek kızağa kilitlidir (SITL konumu yok sayılır), `released` geçişi SITL konumuna 0,3–0,6 sn'de slerp/lerp ile yapılır. **Yerde kilit:**
+disarm + AGL < 1 m + yer hızı < 0,5 m/s iken gösterilen konum dondurulur (EKF'nin cm'lik gezinmesi görünmez; `groundLocked`), ARM/hareketle 0,4 sn'de
+SITL konumuna döner, > 1,5 m sıçrama kilidi yeniden oturtur. Mission Planner haritasıyla tutarlılık: SITL artık kaymadığından haritadaki uçak ile 3B'deki
+düzenek/uçak aynı noktadadır (EKF ↔ SIMSTATE farkı 1–2 cm). Araç üstünde SITL'in doğrudan karşılığı yoktur: SITL'de uçak TAKEOFF yer koşusunu kendisi yapar (gaz açık),
 `TKOFF_ROTATE_SPD` bırakma hızına eşit olduğundan uçak o hıza dek yerde kalır; 3B'de pickup bu yer koşusu boyunca uçağın altında (uçakla aynı hızda)
 gider, uçak kasa kızağında yükseltilmiş gösterilir, `released` ile 0,3 sn'de SITL konumuna iner ve araç 4 m/s² ile frenleyip durur (pist dışına da
 sürer; düz zemin varsayımı). Sahte kinematik (`HEPGO_SITL=0`) ve `?mock=1` üç yöntemi de taklit eder (rampa: 1,2 sn bekleme + 0,5 sn'de 22 m/s;
@@ -400,7 +421,8 @@ yönteme göre "Fırlat" / "Aracı sür" / "Kalkış" (modal ipucu yönteme gör
 alt bloğunda `LAUNCH RAMP 20° · 86 km/h` / `LAUNCH VEH · 70 km/h` / `LAUNCH RWY` satırı. 6 dil.
 
 **Testler (`kalkis_testleri`):** `world.launch` 400'leri (yöntem, açı 5/31, hız 30/120, nesne değil, bool), varsayılanlar, VTOL normalizasyonu,
-parametre setleri (ramp/vehicle/wheels), sahte kipte üç yöntemle `cmd takeoff` → WS `armed → launch → released` (rampa: launch 1,0–2,5 sn sonra,
+parametre setleri (ramp/vehicle/wheels; her birinde `SERVO3_MIN/TRIM 1000`; `GPS_RTK_PARAMLARI` doğruluk ≤ 5 cm, ≥ 12 uydu, hata alanları 0),
+sahte kipte yerde kilit (takeoff öncesi 0,6 sn: konum sabit, yer hızı 0, `gps_fix 6`), sahte kipte üç yöntemle `cmd takeoff` → WS `armed → launch → released` (rampa: launch 1,0–2,5 sn sonra,
 fırlatma anında uçak duruyor, released ≥ 26 km/h; araç: released hızı 60 km/h ±%10; tekerlekli: AGL ≥ 1), `session.launch.phase`, reset sonrası null.
 
 ## 14. Harekât paneli: Canlı Uçuş paneliyle kontrol (`app/flightsim_hub.py`, `static/js/modules/flightsim_ops.js`, `static/ops ?sim=`)

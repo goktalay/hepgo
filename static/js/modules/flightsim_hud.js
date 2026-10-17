@@ -296,7 +296,9 @@ export function createMilHud(stage, ctx = {}, { tr = s => s } = {}) {
     g.beginPath(); g.rect(lx + 78 * S, ly - 5 * S, 70 * S, 10 * S); stroke(C, 1); g.fillStyle = C; g.fillRect(lx + 78 * S, ly - 5 * S, 70 * S * thr / 100, 10 * S); ly += lh;
     const bp = num(t.batt_pct, null), bv = num(t.batt_v, null);
     text(`BAT ${bv != null ? bv.toFixed(1) + 'V' : '—'} ${bp != null ? bp.toFixed(0) + '%' : ''}`, lx, ly, { px: F * 0.95, color: bp != null && bp < 25 ? RED : C }); ly += lh;
-    text(`GPS ${t.gps_fix >= 3 ? '3D' : t.gps_fix === 2 ? '2D' : '--'} ${t.sats != null ? t.sats + ' SAT' : ''}`, lx, ly, { px: F * 0.95 }); ly += lh;
+    // GPS fix türü (MAVLink GPS_FIX_TYPE): 6 RTK Fixed (SITL u-blox arka ucu zaten RTK bildirir, §13), 5 RTK Float, 4 DGPS, 3 3D, 2 2D
+    const fix = t.gps_fix >= 6 ? 'RTK' : t.gps_fix === 5 ? 'RTK FLT' : t.gps_fix === 4 ? 'DGPS' : t.gps_fix === 3 ? '3D' : t.gps_fix === 2 ? '2D' : '--';
+    text(`GPS ${fix} ${t.sats != null ? t.sats + ' SAT' : ''}`, lx, ly, { px: F * 0.95 }); ly += lh;
     if (ctx.launch) text(launchHud(ctx.launch), lx, ly, { px: F * 0.85, color: 'rgba(230,235,230,.75)' });   // kalkış yöntemi (§13): LAUNCH RAMP 15° · 86 km/h
 
     // --- sağ alt: UTC · T+ · lat/lon · HOME · gimbal ---

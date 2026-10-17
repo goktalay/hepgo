@@ -4,6 +4,7 @@
 //   runway_heading ile döndürülür ve dron modeli gibi `scale` (MODEL_SCALE) ile büyütülür. `attach` düğümü uçağın oturduğu nokta (kızak / kasa kızağı).
 //   Aşamalar (setPhase): idle → launch (rampa: kızak 6 m'yi 0,5 sn'de ivmelenir; araç: SITL uçağını taşır) → released (uçak SITL konumuna yumuşak
 //   geçiş; rampa kızağı geri döner, araç frenler) → free. update(dt, ctx) her karede: ctx = { planeLocal:{x,y} (SITL uçağının rig yerel konumu, m), speed }.
+//   Düzenek pist başında sabittir (anchor bir kez; needsAnchor > 2 m sıçramada yeniden); uçak released'a dek kızağa kilitlidir (SITL konumu yok sayılır).
 const DEG = Math.PI / 180;
 export const LAUNCH_METHODS = [
   ['wheels', 'Tekerlekli kalkış', 'Burun ve ana iniş takımı eklenir; uçak pist boyunca hızlanır, döndürme hızında havalanır (ArduPlane TAKEOFF).'],
@@ -209,15 +210,19 @@ export function createLaunchRig(T, cfg) {
     if (p === 'launch') { S.phase = 'launch'; S.t = 0; return; }
     if (p === 'released' || p === 'free') { if (S.phase !== 'released' && S.phase !== 'free') { S.phase = 'released'; S.t = 0; } return; }
   }
-  // Demirleme: düzenek, kızak noktası (attach) SITL uçağının yer konumuna gelecek biçimde taşınır. SITL plane modeli yerde kendiliğinden ~4 m/s
-  // kaydığından (docs §13) uçak kızaktayken her karede çağrılır; rampa fırlatma animasyonunda ve bırakma sonrasında demir sabit kalır.
-  const anchorTmp = new T.Vector3();
+  // Demirleme: düzenek, kızak noktası (attach) SITL uçağının yer konumuna gelecek biçimde taşınır. Sunucu SERVO3_MIN/TRIM 1000 yazdığından SITL
+  // uçağı yerde artık kaymaz (docs §13) → düzenek pist başında SABİT durur: demir bir kez atılır (needsAnchor), yalnız SITL konumu > 2 m sıçrarsa
+  // (reset / set_home / eski parametreyle kalan artık) yeniden oturtulur. Araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler.
+  const anchorTmp = new T.Vector3(), anchorLast = new T.Vector3(); let anchorSet = false;
+  const ANCHOR_RESEAT = 2.0;   // m
   function anchor(p) {
     root.position.set(0, 0, 0);
     root.updateMatrixWorld(true);
     built.attach.getWorldPosition(anchorTmp);
     root.position.set(p.x - anchorTmp.x, p.y - anchorTmp.y, 0);
+    anchorLast.set(p.x, p.y, 0); anchorSet = true;
   }
+  const needsAnchor = p => !anchorSet || Math.hypot(p.x - anchorLast.x, p.y - anchorLast.y) > ANCHOR_RESEAT;
   // Her kare. ctx: { speed (m/s) uçağın yer hızı (kızaktayken düzeneğin hızı) }
   function update(dt, ctx) {
     const sp = ctx?.speed || 0;
@@ -232,7 +237,7 @@ export function createLaunchRig(T, cfg) {
         if (S.t > 1.0) built.car.position.y = Math.max(built.carY0, built.car.position.y - dt * 1.2);   // sönümleyici: kızak yavaş geri döner
         if (S.phase === 'released' && S.t > 0.6) S.phase = 'free';
       }
-      S.vehSpeed = S.phase === 'idle' || S.phase === 'armed' ? sp : 0;   // römork uçakla birlikte kayar (SITL kayması), tekerlekleri döner
+      S.vehSpeed = S.phase === 'idle' || S.phase === 'armed' ? sp : 0;   // römork sabit (SITL kayması giderildi); yine de sürüklenirse tekerlekleri döner
     } else if (S.phase === 'released' || S.phase === 'free') {   // araç: bırakma sonrası kendi hızıyla frenler
       S.t += dt;
       S.vehSpeed = Math.max(0, S.vehSpeed - 4.0 * dt);
@@ -248,8 +253,10 @@ export function createLaunchRig(T, cfg) {
     for (const wh of built.wheels) wh.rotation.x -= w;
   }
   return {
-    group: root, method, attach: built.attach, attachWorld, planeQuat, setPhase, update, anchor,
-    get anchored() { return S.phase === 'idle' || S.phase === 'armed' || (S.phase === 'launch' && method === 'vehicle'); },   // demir her karede uçağı izler
+    group: root, method, attach: built.attach, attachWorld, planeQuat, setPhase, update, anchor, needsAnchor,
+    // Demir ne zaman atılır: araç `launch`ta her kare (SITL yer koşusunu taşır); idle/armed'da yalnız gerekiyorsa (ilk kez ya da > 2 m sıçrama)
+    get anchored() { return S.phase === 'idle' || S.phase === 'armed' || (S.phase === 'launch' && method === 'vehicle'); },
+    get tracking() { return S.phase === 'launch' && method === 'vehicle'; },   // her kare izleme
     get phase() { return S.phase; },
     get carrying() { return S.phase === 'idle' || S.phase === 'armed' || S.phase === 'launch'; },   // uçak düzeneğe bağlı gösterilir
     get blend() { return S.phase === 'released' ? Math.min(1, S.t / (method === 'ramp' ? 0.6 : 0.3)) : S.phase === 'free' ? 1 : 0; },   // 0 → kızak, 1 → SITL

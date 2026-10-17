@@ -669,6 +669,14 @@ def kalkis_testleri(a, c1):
     pw = dict(flightsim.launch_parametreleri({'method': 'wheels'}))
     assert pw['TKOFF_THR_MINACC'] == 0.0 and pw['TKOFF_ROTATE_SPD'] == 12.0, pw
     assert flightsim.LAUNCH_SITL_MODEL['ramp'] == 'plane-catapult' and flightsim.LAUNCH_SERVO == 7
+    # yerde kayma düzeltmesi: her yöntemde SERVO3_MIN/TRIM 1000 (SITL gaz eşlemesi 1000–2000 µs; disarm'da itki 0 → uçak/düzenek kaymaz)
+    for pp in (pr, pv, pw):
+        assert pp['SERVO3_MIN'] == 1000.0 and pp['SERVO3_TRIM'] == 1000.0, pp
+    assert dict(flightsim.PLANE_YER_PARAMLARI) == {'SERVO3_MIN': 1000.0, 'SERVO3_TRIM': 1000.0}
+    # RTK düzeyi GPS parametre seti (ilk kalp atışında tüm tiplerde): doğruluk ≤ 5 cm, ≥ 12 uydu, hız/aksaklık/irtifa hataları 0
+    g = dict(flightsim.GPS_RTK_PARAMLARI)
+    assert g['SIM_GPS1_ACC'] <= 0.05 and g['SIM_GPS1_NUMSATS'] >= 12, g
+    assert all(v == 0.0 for k, v in g.items() if 'VERR' in k or 'GLTCH' in k or k.endswith(('NOISE', 'DRFTALT'))) and 'SIM_GPS1_VERR_Z' in g and 'SIM_GPS1_GLTCH_Z' in g, g
     # --- VTOL'de yöntem etkisiz (wheels) ---
     s = ok(a.post(S, json={'type': 'vtol', 'center_id': c1['id'], 'world': {'launch': {'method': 'vehicle', 'release_kmh': 90}}}), 201)
     assert s['launch'] == {'method': 'wheels', 'angle_deg': 15, 'release_kmh': 90.0, 'phase': None}, s['launch']
@@ -683,6 +691,14 @@ def kalkis_testleri(a, c1):
         with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
             h = json.loads(ws.receive_text())
             assert h['t'] == 'hello' and h['session']['launch']['method'] == launch['method']
+            # yerde kilit (sahte kip): disarm'da konum sabit (düzenek/uçak kaymaz), yer hızı 0, GPS RTK Fixed (fix 6; gerçek SITL ile tutarlı)
+            teles, bitis = [], time.time() + 0.6
+            while time.time() < bitis:
+                m = json.loads(ws.receive_text())
+                if m['t'] == 'tele':
+                    teles.append(m)
+            assert len(teles) >= 5, len(teles)
+            assert all(not t['armed'] and t['groundspeed'] == 0 and t['gps_fix'] == 6 and t['sats'] == 18 and (t['lat'], t['lon']) == (teles[0]['lat'], teles[0]['lon']) for t in teles), teles[0]
             ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 60}, 'rid': 'k1'}))
             fazlar, tele_hiz, son_tele = [], {}, None
             bitis = time.time() + 12

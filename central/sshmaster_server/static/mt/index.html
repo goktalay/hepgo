@@ -110,13 +110,23 @@
   @media (max-width: 820px) { .prods { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 640px) { .prods { grid-template-columns: 1fr; } }
 </style>
+<style>
+/* mobil bölümü: dikey telefon görüntüleri */
+#mobil .detail { align-items: start; }
+#mobil .phone-hero { max-width: 300px; margin: 0 auto; border-radius: 28px; }
+#mobil .shots.mobile { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#mobil .shot.phone a { aspect-ratio: 9 / 16; }
+#mobil .shot.phone img { object-position: top center; }
+@media (max-width: 700px) { #mobil .shots.mobile { grid-template-columns: 1fr 1fr; } }
+.store.soon { opacity: .75; cursor: default; }
+</style>
 </head>
 <body>
 
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
-    <nav class="links"><a href="#urunler">Ürünler</a><a href="#araclar">Araçlar</a><a href="#master-tool">Master Tool</a><a href="#ekranlar">Ekranlar</a><a href="#hesap">Tek hesap</a></nav>
+    <nav class="links"><a href="#urunler">Ürünler</a><a href="#araclar">Araçlar</a><a href="#master-tool">Master Tool</a><a href="#mobil">Mobil</a><a href="#ekranlar">Ekranlar</a><a href="#hesap">Tek hesap</a></nav>
     <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
   </div>
 </header>
@@ -184,6 +194,44 @@
           </ul>
           <div class="cta" style="margin-top:22px"><a class="store" href="/hesabim"><span><small>Hesabım sayfanızdan</small><b>Master Tool'u indirin</b></span></a></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="mobil">
+    <div class="wrap">
+      <h2>Master Tool mobil: Android ve iPhone</h2>
+      <p class="sub">Aynı hesap, aynı uygulamalar — telefonda ve tablette. Bilgisayarda kayıtlı bağlantılarınız uçtan uca şifreli senkronla cebinizde.</p>
+      <div class="detail">
+        <div class="hero-shot phone-hero" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/m-02-ana-telefon-gece.webp" width="1170" height="2340" alt="Master Tool mobil ana ekranı" loading="lazy"><img class="hs-light" data-shot-en src="/shots/m-02-ana-telefon-gunduz.webp" width="1170" height="2340" alt="Master Tool mobil ana ekranı (gündüz)" loading="lazy"></div>
+        <div>
+          <h3>Tek uygulama, altı modül</h3>
+          <ul>
+            <li><b>SSH Master</b>: bağlantı kitaplığı, terminal (13 konsol paleti, kısayollar, özel tuş çubuğu), SFTP dosya paneli.</li>
+            <li><b>FTP Masters</b>: FTP, FTPS, FTPES ve SFTP; uzak gezgin, yükleme/indirme kuyruğu, her aktarım kendi bağlantısıyla.</li>
+            <li><b>SQL Master</b>: PostgreSQL, MySQL/MariaDB, SQLite; SSH tüneli; salt okunur koruması; tablo verisi, SQL editörü, CSV/JSON dışa aktarma.</li>
+            <li><b>Notepad Master</b>: SSH/FTP projeleri ve cihaz dosyaları; kodlama ve satır sonu koruma; çakışma denetimiyle kaydetme.</li>
+            <li><b>Convert Master</b>: resim, video ve ses dönüştürme; H.264/H.265 cihazın donanım kodlayıcısıyla.</li>
+            <li><b>IP Tools</b>: yalnız yetkili olduğunuz yerel ağda keşif; 15 sabit port, servis etiketleri.</li>
+            <li>Tablet düzeni (iPad ve Android tablet), 8 arayüz dili, Gece / Gündüz / Sistem teması. Masaüstü sürümlerle aynı arayüz standardı.</li>
+          </ul>
+          <div class="cta" style="margin-top:22px; display:flex; gap:12px; flex-wrap:wrap">
+            <a class="store soon" href="#mobil" aria-disabled="true"><span><small>Google Play</small><b>Yakında</b></span></a>
+            <a class="store soon" href="#mobil" aria-disabled="true"><span><small>App Store</small><b>Yakında</b></span></a>
+          </div>
+        </div>
+      </div>
+      <div class="shots mobile" data-gallery style="margin-top:28px">
+                <figure class="shot" data-theme-shot="dark"><a href="/shots/m-08-sql-baglanti-tablet-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-08-sql-baglanti-tablet-gece-800.webp" srcset="/shots/m-08-sql-baglanti-tablet-gece-800.webp 800w, /shots/m-08-sql-baglanti-tablet-gece.webp 2360w" sizes="(max-width: 700px) 100vw, 33vw" width="2360" height="1640" loading="lazy" decoding="async" alt="SQL Master tablette"></a><figcaption><b>SQL Master tablette</b><span>Nesne ağacı, SQL editörü ve sonuçlar yan yana; salt okunur koruması</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m-10-notepad-proje-tablet-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-10-notepad-proje-tablet-gece-800.webp" srcset="/shots/m-10-notepad-proje-tablet-gece-800.webp 800w, /shots/m-10-notepad-proje-tablet-gece.webp 2360w" sizes="(max-width: 700px) 100vw, 33vw" width="2360" height="1640" loading="lazy" decoding="async" alt="Notepad Master: proje ve editör"></a><figcaption><b>Notepad Master: proje ve editör</b><span>Dosya ağacı, sekmeler, satır numaraları ve dil algılama; kaydet = sunucuya yükle</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m-05-ftp-kitaplik-tablet-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-05-ftp-kitaplik-tablet-gunduz-800.webp" srcset="/shots/m-05-ftp-kitaplik-tablet-gunduz-800.webp 800w, /shots/m-05-ftp-kitaplik-tablet-gunduz.webp 2360w" sizes="(max-width: 700px) 100vw, 33vw" width="2360" height="1640" loading="lazy" decoding="async" alt="FTP Masters tablette"></a><figcaption><b>FTP Masters tablette</b><span>Siteler ve klasörler; FTP, FTPS, FTPES ve SFTP</span></figcaption></figure>
+        
+        <figure class="shot phone" data-theme-shot="dark"><a href="/shots/m-02-ana-telefon-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-02-ana-telefon-gece-800.webp" srcset="/shots/m-02-ana-telefon-gece-800.webp 390w, /shots/m-02-ana-telefon-gece.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="Modüller tek uygulamada"></a><figcaption><b>Modüller tek uygulamada</b><span>SSH, FTP, SQL, Notepad, Convert ve IP Tools; hesapta açık olanlar yeşil noktalı</span></figcaption></figure>
+        <figure class="shot phone" data-theme-shot="light"><a href="/shots/m-03-ssh-kitaplik-telefon-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-03-ssh-kitaplik-telefon-gunduz-800.webp" srcset="/shots/m-03-ssh-kitaplik-telefon-gunduz-800.webp 390w, /shots/m-03-ssh-kitaplik-telefon-gunduz.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="SSH Master: bağlantı kartları"></a><figcaption><b>SSH Master: bağlantı kartları</b><span>Klasörler, renk etiketleri, anahtar ve son klasör rozetleri; masaüstüyle aynı kitaplık</span></figcaption></figure>
+        <figure class="shot phone" data-theme-shot="dark"><a href="/shots/m-14-convert-proje-telefon-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-14-convert-proje-telefon-gece-800.webp" srcset="/shots/m-14-convert-proje-telefon-gece-800.webp 390w, /shots/m-14-convert-proje-telefon-gece.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="Convert Master: iş listesi"></a><figcaption><b>Convert Master: iş listesi</b><span>Sıra, ilerleme ve durum; H.264/H.265 cihazın donanım kodlayıcısıyla</span></figcaption></figure>
+        <figure class="shot phone" data-theme-shot="light"><a href="/shots/m-11-ip-kitaplik-telefon-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-11-ip-kitaplik-telefon-gunduz-800.webp" srcset="/shots/m-11-ip-kitaplik-telefon-gunduz-800.webp 390w, /shots/m-11-ip-kitaplik-telefon-gunduz.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="IP Tools: ağ kayıtları"></a><figcaption><b>IP Tools: ağ kayıtları</b><span>Yalnız yetkili ağlar; 15 sabit port, TCP connect, ters DNS ve mDNS</span></figcaption></figure>
+        <figure class="shot phone" data-theme-shot="dark"><a href="/shots/m-01-giris-telefon-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-01-giris-telefon-gece-800.webp" srcset="/shots/m-01-giris-telefon-gece-800.webp 390w, /shots/m-01-giris-telefon-gece.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="Tek giriş"></a><figcaption><b>Tek giriş</b><span>Masaüstündeki hesabınızla girin; şifre sunucuya gitmez</span></figcaption></figure>
+        <figure class="shot phone" data-theme-shot="light"><a href="/shots/m-15-ayarlar-telefon-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m-15-ayarlar-telefon-gunduz-800.webp" srcset="/shots/m-15-ayarlar-telefon-gunduz-800.webp 390w, /shots/m-15-ayarlar-telefon-gunduz.webp 1170w" sizes="(max-width: 700px) 100vw, 33vw" width="1170" height="2340" loading="lazy" decoding="async" alt="Ayarlar"></a><figcaption><b>Ayarlar</b><span>Genel · Hesap · Hakkında; 8 dil, Gece / Gündüz / Sistem</span></figcaption></figure>
       </div>
     </div>
   </section>

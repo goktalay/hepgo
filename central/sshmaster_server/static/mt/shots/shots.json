@@ -70,5 +70,86 @@
   "w": 1600,
   "h": 1000,
   "en": true
+ },
+ {
+  "stem": "m-02-ana-telefon-gece",
+  "theme": "dark",
+  "title": "Modüller tek uygulamada",
+  "caption": "SSH, FTP, SQL, Notepad, Convert ve IP Tools; hesapta açık olanlar yeşil noktalı",
+  "w": 1170,
+  "h": 2340,
+  "en": true
+ },
+ {
+  "stem": "m-03-ssh-kitaplik-telefon-gunduz",
+  "theme": "light",
+  "title": "SSH Master: bağlantı kartları",
+  "caption": "Klasörler, renk etiketleri, anahtar ve son klasör rozetleri; masaüstüyle aynı kitaplık",
+  "w": 1170,
+  "h": 2340,
+  "en": true
+ },
+ {
+  "stem": "m-08-sql-baglanti-tablet-gece",
+  "theme": "dark",
+  "title": "SQL Master tablette",
+  "caption": "Nesne ağacı, SQL editörü ve sonuçlar yan yana; salt okunur koruması",
+  "w": 2360,
+  "h": 1640,
+  "en": true
+ },
+ {
+  "stem": "m-10-notepad-proje-tablet-gece",
+  "theme": "dark",
+  "title": "Notepad Master: proje ve editör",
+  "caption": "Dosya ağacı, sekmeler, satır numaraları ve dil algılama; kaydet = sunucuya yükle",
+  "w": 2360,
+  "h": 1640,
+  "en": true
+ },
+ {
+  "stem": "m-14-convert-proje-telefon-gece",
+  "theme": "dark",
+  "title": "Convert Master: iş listesi",
+  "caption": "Sıra, ilerleme ve durum; H.264/H.265 cihazın donanım kodlayıcısıyla",
+  "w": 1170,
+  "h": 2340,
+  "en": true
+ },
+ {
+  "stem": "m-11-ip-kitaplik-telefon-gunduz",
+  "theme": "light",
+  "title": "IP Tools: ağ kayıtları",
+  "caption": "Yalnız yetkili ağlar; 15 sabit port, TCP connect, ters DNS ve mDNS",
+  "w": 1170,
+  "h": 2340,
+  "en": true
+ },
+ {
+  "stem": "m-05-ftp-kitaplik-tablet-gunduz",
+  "theme": "light",
+  "title": "FTP Masters tablette",
+  "caption": "Siteler ve klasörler; FTP, FTPS, FTPES ve SFTP",
+  "w": 2360,
+  "h": 1640,
+  "en": true
+ },
+ {
+  "stem": "m-01-giris-telefon-gece",
+  "theme": "dark",
+  "title": "Tek giriş",
+  "caption": "Masaüstündeki hesabınızla girin; şifre sunucuya gitmez",
+  "w": 1170,
+  "h": 2340,
+  "en": true
+ },
+ {
+  "stem": "m-15-ayarlar-telefon-gunduz",
+  "theme": "light",
+  "title": "Ayarlar",
+  "caption": "Genel · Hesap · Hakkında; 8 dil, Gece / Gündüz / Sistem",
+  "w": 1170,
+  "h": 2340,
+  "en": true
  }
 ]

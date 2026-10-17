@@ -207,6 +207,31 @@ def vekil_testleri(a, mon, c_altsiz):
         s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'procedural'}}), 201)
         assert s['center']['alt'] is None and s['world']['mode'] == 'procedural'   # prosedürel: dokunulmaz
         ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        # --- Google 3B kipi (§10): anahtar yokken kapalı (meta, 404, oturum 400); anahtar varsa meta açık, /g3d-key no-store, oturum açılır,
+        #     ev irtifası yine açık veriden (Google Elevation API kullanılmaz); salt okuyan izleyici de anahtarı alır (karoları görmeli)
+        eski_key = flightsim.GOOGLE_KEY
+        try:
+            flightsim.GOOGLE_KEY = ''
+            assert ok(a.get('/api/drone/sim/meta'))['google3d'] == {'enabled': False}
+            assert a.get('/api/drone/sim/g3d-key').status_code == 404
+            r = a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'google3d'}})
+            assert r.status_code == 400 and 'GOOGLE_MAPS_API_KEY' in r.text, (r.status_code, r.text)
+            try:
+                flightsim.world_dogrula({'mode': 'google3d'})
+                raise AssertionError('kapalıyken world_dogrula geçmemeli')
+            except flightsim.SimHata as e:
+                assert e.kod == 'invalid'
+            flightsim.GOOGLE_KEY = 'AIza-test-anahtar'
+            assert flightsim.world_dogrula({'mode': 'google3d', 'runway': False})['mode'] == 'google3d'
+            assert ok(a.get('/api/drone/sim/meta'))['google3d'] == {'enabled': True}
+            r = a.get('/api/drone/sim/g3d-key')
+            assert r.status_code == 200 and r.json() == {'key': 'AIza-test-anahtar'} and r.headers['cache-control'] == 'no-store', (r.headers, r.text)
+            assert mon.get('/api/drone/sim/g3d-key').status_code == 200   # salt okuyan: izlerken karoları çizmek için anahtar gerekir
+            s = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c_altsiz['id'], 'world': {'mode': 'google3d', 'runway': False}}), 201)
+            assert s['world']['mode'] == 'google3d' and s['world']['runway'] is False and s['center']['alt'] == sim_terrain.ev_irtifa(39.925, 32.837), s
+            ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        finally:
+            flightsim.GOOGLE_KEY = eski_key
     finally:
         sim_terrain.FETCH = sim_terrain._fetch
     print('  vekil (terrain/tile/osm) testleri geçti')
@@ -507,6 +532,7 @@ def main():
         assert {c['id'] for c in m['centers']} == {c1['id'], c_altsiz['id']} and next(c for c in m['centers'] if c['id'] == c1['id'])['alt'] == 900, m   # pasif merkez listelenmez
         assert m['limits'] == {'max_sessions': 2, 'max_minutes': flightsim.MAX_MINUTES} and m['host'] == 'testserver' and m['can_command'] is True, m
         assert m['world_defaults']['seed'] == 12345 and m['world_defaults']['mode'] == 'procedural'
+        assert m['google3d'] == {'enabled': bool(flightsim.GOOGLE_KEY)}   # Google 3B kipi: anahtar tanımlıysa açık (testte env yok → False)
 
         # --- oturum aç: doğrulama ---
         assert a.post('/api/drone/sim/sessions', json={'type': 'ucan_hali', 'center_id': c1['id']}).status_code == 400
@@ -705,7 +731,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 4 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 2 oturumu) ilerler; ilk boş port yeniden verilir
+        assert s3['id'] == sid + 5 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu: real, procedural, google3d) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)

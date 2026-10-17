@@ -3418,4 +3418,11 @@ registerCatalog('ru', {
   "Gövde": "Планер",
   "Delta kanat": "Дельта-крыло",
   "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: из STEP-модели нашего самолёта · Дельта-крыло: летающее крыло с толкающим винтом",
+  "Google 3B (fotogerçekçi)": "Google 3D (фотореалистично)",
+  "Google 3B (fotogerçekçi) · ev {h} m MSL": "Google 3D (фотореалистично) · дом {h} м MSL",
+  "Google 3B karoları yükleniyor… %{p}": "Загрузка 3D-тайлов Google… {p} %",
+  "Google 3B verisi alınamadı: {e} → prosedürele düşüldü": "Данные Google 3D недоступны: {e} → переход к процедурному миру",
+  "Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.": "В режиме Google 3D окружение строится фотореалистично из Google Photorealistic 3D Tiles (здания и деревья входят в тайлы); тайлы поступают в браузер напрямую от Google и не кэшируются на сервере; указание источника обязательно. Высота дома берётся из открытых данных о рельефе.",
+  "yükleniyor %{p}": "загрузка {p} %",
+  "Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)": "Смещение поверхности Google 3D {o} м (поверхность тайлов ↔ высота дома)",
 });

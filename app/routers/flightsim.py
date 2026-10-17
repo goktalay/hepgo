@@ -58,7 +58,19 @@ def meta(request: Request, user=Depends(sim_user), conn=db.DB):
             'limits': {'max_sessions': flightsim.MAX_SESSIONS, 'max_minutes': flightsim.MAX_MINUTES}, 'host': _host(request),
             'can_command': MODUL in user.get('write_modules', []),
             # Kayıttan oynatma: uçuş logu listesine erişim flightlogs yetkisiyle kesişir (tools → tümü, field → göreve bağlı olanlar)
-            'replay': {'logs_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)}}
+            'replay': {'logs_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)},
+            # Google Photorealistic 3D Tiles dünya kipi (§10): yalnız GOOGLE_MAPS_API_KEY tanımlıysa; anahtar /g3d-key ile ayrı verilir
+            'google3d': {'enabled': flightsim.google3d_etkin()}}
+
+
+@router.get('/g3d-key')
+def g3d_key(user=Depends(sim_user)):
+    """Google Map Tiles API anahtarı (yalnız oturum/önizleme açılırken; `Cache-Control: no-store`). Anahtar Google Cloud'da HTTP referrer
+    kısıtlı olmalıdır (docs §10); tarayıcı karoları doğrudan Google'dan çeker, sunucu önbelleklemez. Kip kapalıysa 404."""
+    if not flightsim.google3d_etkin():
+        raise HTTPException(404, 'Google 3B kipi yapılandırılmamış')
+    return Response(content=json.dumps({'key': flightsim.GOOGLE_KEY}), media_type='application/json',
+                    headers={'Cache-Control': 'no-store', 'Pragma': 'no-cache'})
 
 
 @router.get('/logs')

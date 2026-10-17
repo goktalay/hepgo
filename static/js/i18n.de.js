@@ -3418,4 +3418,11 @@ registerCatalog('de', {
   "Gövde": "Rumpf",
   "Delta kanat": "Deltaflügel",
   "Caymaz V3: ürettiğimiz uçağın STEP modelinden · Delta kanat: arkadan itişli uçan kanat": "Caymaz V3: aus dem STEP-Modell unseres Flugzeugs · Deltaflügel: Nurflügler mit Druckpropeller",
+  "Google 3B (fotogerçekçi)": "Google 3D (fotorealistisch)",
+  "Google 3B (fotogerçekçi) · ev {h} m MSL": "Google 3D (fotorealistisch) · Home {h} m MSL",
+  "Google 3B karoları yükleniyor… %{p}": "Google-3D-Kacheln werden geladen… {p} %",
+  "Google 3B verisi alınamadı: {e} → prosedürele düşüldü": "Google-3D-Daten nicht verfügbar: {e} → auf prozedural zurückgefallen",
+  "Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.": "Im Google-3D-Modus wird die Umgebung fotorealistisch aus Google Photorealistic 3D Tiles aufgebaut (Gebäude und Bäume sind Teil der Kacheln); die Kacheln kommen direkt von Google in den Browser und werden nicht auf dem Server zwischengespeichert; die Quellenangabe ist Pflicht. Die Home-Höhe stammt aus offenen Höhendaten.",
+  "yükleniyor %{p}": "lädt {p} %",
+  "Google 3B yer ofseti {o} m (karo yüzeyi ↔ ev irtifası)": "Google-3D-Bodenversatz {o} m (Kacheloberfläche ↔ Home-Höhe)",
 });

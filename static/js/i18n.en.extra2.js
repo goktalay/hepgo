@@ -611,4 +611,16 @@ registerCatalog('en', {
   "Oturum yok": "No session",
   "SITL yeniden başlatıldı": "SITL restarted",
   "Dron Yönetimi › Uçuş Simülatörü": "Drone Management › Flight Simulator",
+  // --- Uçuş Simülatörü: sanal kumanda + ağ göstergesi ---
+  "Sanal kumanda": "Virtual controller",
+  "Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.": "Virtual controller: two virtual sticks + keyboard (W/S throttle, A/D yaw, arrow keys pitch/roll, Q/E mode channel, Space = mid throttle). RC_CHANNELS_OVERRIDE 20 Hz.",
+  "Gaz / Yaw": "Throttle / Yaw",
+  "Pitch / Roll": "Pitch / Roll",
+  "Mission Planner joystick de açıksa son gelen RC komutu geçerli olur": "If the Mission Planner joystick is also active, the last RC command received wins",
+  "W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta": "W/S throttle · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mode channel · Space mid throttle",
+  "Sanal kumanda için yazma izni gerekir": "Write permission is required for the virtual controller",
+  "Sanal kumanda kapatıldı (RC override serbest)": "Virtual controller off (RC override released)",
+  "Sanal kumanda açık (RC override)": "Virtual controller on (RC override)",
+  "net: {hz} Hz · jitter {j} ms": "net: {hz} Hz · jitter {j} ms",
+  "Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap": "Telemetry receive rate and jitter (receive interval − source interval); DR = dead reckoning",
 });

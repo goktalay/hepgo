@@ -3349,4 +3349,16 @@ registerCatalog('fr', {
   "Oturum yok": "Aucune session",
   "SITL yeniden başlatıldı": "SITL redémarré",
   "Dron Yönetimi › Uçuş Simülatörü": "Gestion des drones › Simulateur de vol",
+  // --- Uçuş Simülatörü: sanal kumanda + ağ göstergesi ---
+  "Sanal kumanda": "Manette virtuelle",
+  "Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.": "Manette virtuelle : deux manches virtuels + clavier (W/S gaz, A/D lacet, flèches tangage/roulis, Q/E canal de mode, Espace gaz au centre). RC_CHANNELS_OVERRIDE 20 Hz.",
+  "Gaz / Yaw": "Gaz / Lacet",
+  "Pitch / Roll": "Tangage / Roulis",
+  "Mission Planner joystick de açıksa son gelen RC komutu geçerli olur": "Si le joystick Mission Planner est aussi actif, la dernière commande RC reçue l'emporte",
+  "W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta": "W/S gaz · A/D lacet · ↑↓ tangage · ←→ roulis · Q/E canal de mode · Espace gaz au centre",
+  "Sanal kumanda için yazma izni gerekir": "La manette virtuelle nécessite le droit d'écriture",
+  "Sanal kumanda kapatıldı (RC override serbest)": "Manette virtuelle désactivée (RC override libéré)",
+  "Sanal kumanda açık (RC override)": "Manette virtuelle activée (RC override)",
+  "net: {hz} Hz · jitter {j} ms": "réseau : {hz} Hz · jitter {j} ms",
+  "Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap": "Cadence de réception de la télémétrie et jitter (intervalle de réception − intervalle source) ; DR = navigation à l'estime",
 });

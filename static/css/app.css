@@ -8965,6 +8965,21 @@ body.immersive .fs-nav { top: 12px; }
 .fs-bar .input.sm { height: 30px; padding: 0 8px; font-size: 13px; background: rgba(255, 255, 255, .08); color: #e6e9ef; border-color: transparent; border-radius: 999px; }
 .fs-bar .input.sm option { color: #111; }
 .fs-gimbal { color: #9aa4b6; }
+/* Sanal kumanda: iki yarı saydam çubuk (sol gaz/yaw, sağ pitch/roll), klavye ipucu; HUD altı ağ göstergesi */
+.fs-sticks { position: absolute; left: 0; right: 0; bottom: 70px; height: 150px; z-index: 6; pointer-events: none; }
+.fs-sticks[hidden] { display: none; }
+.fs-stick { position: absolute; bottom: 16px; width: 130px; height: 130px; border-radius: 50%; background: rgba(11, 18, 32, .55); border: 1px solid rgba(255, 255, 255, .18); backdrop-filter: blur(4px); pointer-events: auto; touch-action: none; user-select: none; cursor: grab; }
+.fs-stick[data-side="l"] { left: 330px; } .fs-stick[data-side="r"] { right: 270px; }
+.fs-stick::before, .fs-stick::after { content: ''; position: absolute; background: rgba(255, 255, 255, .12); }
+.fs-stick::before { left: 50%; top: 10px; bottom: 10px; width: 1px; } .fs-stick::after { top: 50%; left: 10px; right: 10px; height: 1px; }
+.fs-stick-knob { position: absolute; left: calc(50% - 20px); top: calc(50% - 20px); width: 40px; height: 40px; border-radius: 50%; background: rgba(56, 189, 248, .85); box-shadow: 0 2px 10px rgba(0, 0, 0, .4); transition: transform .05s linear; }
+.fs-stick.on { cursor: grabbing; } .fs-stick.on .fs-stick-knob { background: var(--primary); }
+.fs-stick small { position: absolute; bottom: -18px; left: 0; right: 0; text-align: center; color: #cbd5e1; font-size: 11px; white-space: nowrap; }
+.fs-rc-hint { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); color: #9aa4b6; font-size: 11.5px; text-align: center; background: rgba(11, 18, 32, .6); padding: 3px 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.fs-rc-warn { color: #fbbf24; } .fs-rc-warn[hidden] { display: none; }
+.fs-stage.rc-on .fs-events { bottom: 222px; }
+.fs-rc i.vr { background: #a78bfa; }
+.fs-net { margin-top: 4px; font-size: 10.5px; color: #9aa4b6; text-align: right; } .fs-net.warn { color: #fbbf24; }
 /* Olay şeridi (STATUSTEXT) — alt orta, en yeni üstte */
 .fs-events { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); z-index: 4; width: min(520px, 60%); display: flex; flex-direction: column; gap: 2px; pointer-events: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .fs-ev { display: flex; gap: 8px; padding: 3px 10px; border-radius: 6px; background: rgba(11, 18, 32, .72); color: #cfd5e1; }
@@ -8982,4 +8997,7 @@ body.immersive .fs-nav { top: 12px; }
   .fs-mp { width: calc(100% - 24px); bottom: 96px; }
   .fs-events { display: none; }
   .fs-nav-sub { display: none; }
+  .fs-stick[data-side="l"] { left: 12px; } .fs-stick[data-side="r"] { right: 12px; }
+  .fs-rc-hint { display: none; }
+  .fs-stage.rc-on .fs-mp { display: none; }
 }

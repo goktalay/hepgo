@@ -3349,4 +3349,16 @@ registerCatalog('ar', {
   "Oturum yok": "لا توجد جلسة",
   "SITL yeniden başlatıldı": "أُعيد تشغيل SITL",
   "Dron Yönetimi › Uçuş Simülatörü": "إدارة الطائرات › محاكي الطيران",
+  // --- Uçuş Simülatörü: sanal kumanda + ağ göstergesi ---
+  "Sanal kumanda": "وحدة تحكم افتراضية",
+  "Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.": "وحدة تحكم افتراضية: عصاتان افتراضيتان + لوحة المفاتيح (W/S الدفع، A/D الانعراج، الأسهم الانحدار/الالتفاف، Q/E قناة الوضع، المسافة الدفع في المنتصف). RC_CHANNELS_OVERRIDE 20 هرتز.",
+  "Gaz / Yaw": "الدفع / الانعراج",
+  "Pitch / Roll": "الانحدار / الالتفاف",
+  "Mission Planner joystick de açıksa son gelen RC komutu geçerli olur": "إذا كان جويستيك Mission Planner نشطًا أيضًا فآخر أمر RC مستلم هو الساري",
+  "W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta": "W/S الدفع · A/D الانعراج · ↑↓ الانحدار · ←→ الالتفاف · Q/E قناة الوضع · المسافة الدفع في المنتصف",
+  "Sanal kumanda için yazma izni gerekir": "وحدة التحكم الافتراضية تتطلب صلاحية الكتابة",
+  "Sanal kumanda kapatıldı (RC override serbest)": "وحدة التحكم الافتراضية مغلقة (تحرير RC override)",
+  "Sanal kumanda açık (RC override)": "وحدة التحكم الافتراضية مفعّلة (RC override)",
+  "net: {hz} Hz · jitter {j} ms": "الشبكة: {hz} هرتز · الارتجاج {j} مللي ثانية",
+  "Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap": "معدل استلام القياس عن بُعد والارتجاج (فاصل الاستلام − فاصل المصدر)؛ DR = الحساب الميت",
 });

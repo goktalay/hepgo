@@ -1,7 +1,7 @@
 """Uçuş Simülatörü (`drone.sim`) — sunucu tarafı (sözleşme: docs/ucus-simulatoru.md §1–§4).
 
 Oturum = gerçek ArduPilot SITL süreci (app/drone_sitl.py yöneticisi, kimlik 9000+N) + UDP sunucu (Mission Planner bağlanır)
-+ MAVLink köprüsü (SITL SERIAL0 TCP ↔ UDP, ham bayt) + telemetri ayrıştırıcı (pymavlink) + 20 Hz WebSocket yayını.
++ MAVLink köprüsü (SITL SERIAL0 TCP ↔ UDP, ham bayt) + telemetri ayrıştırıcı (pymavlink) + WebSocket yayını (ATTITUDE/konum geldikçe, 50 Hz tavan; sahte kip 50 Hz).
 
 Kurallar:
 - SERIAL0 TCP bağlantısı oturum boyunca AÇIK tutulur (kapanınca SITL çıkar — drone_sitl Tuzak F).
@@ -28,14 +28,26 @@ MAX_SESSIONS = max(1, int(os.environ.get('SIM_MAX_SESSIONS', '2')))
 MAX_MINUTES = max(1, int(os.environ.get('SIM_MAX_MINUTES', '120')))
 PUBLIC_HOST = os.environ.get('SIM_PUBLIC_HOST', '').strip()
 KIMLIK_TABANI = 9000                  # SITL yöneticisinde oturum kimliği (saha görevlerinin sanal dronlarıyla çakışmaz)
-TELE_HZ = 20
+TELE_HZ = 50                          # sahte kinematik adımı ve yayın üst sınırı (gerçek SITL: her ATTITUDE/GLOBAL_POSITION_INT'te yayın)
+TELE_MIN_ARALIK = 1.0 / TELE_HZ       # sn: iki `tele` arası en az (olay güdümlü yayında 50 Hz tavanı)
+TELE_BEKCI = 0.25                     # sn: SITL'den konum/yönelim gelmese de HUD için en az 4 Hz yayın
 GCS_SESSIZLIK = 30.0                  # sn: GCS kilidi kalkar
 BOSTA_SURE = 600.0                    # sn: izleyici + GCS yokken oturum kapanır
 SITL_BAGLANTI_S = 40                  # SITL SERIAL0'ı dinleyene dek bağlanma denemesi (Tuzak D)
-VIEWER_QUEUE = 32
+VIEWER_QUEUE = 64
 GCS_SYSID, GCS_COMP = 255, 191        # kendi MAVLink kaynağımız (255 = SYSID_MYGCS: RC override kabul edilir; 191 ≠ Mission Planner'ın 190'ı)
 EV_IRTIFA = 100.0
-RC_HZ_MIN_ARALIK = 1.0 / 20
+RC_HZ_MIN_ARALIK = 1.0 / 40           # WS `rc` tavanı (ön yüz 20 Hz gönderir; jitter payı). Serbest bırakma paketi (8×0) sınırlanmaz.
+# Yüksek hızlı akış: MAV_CMD_SET_MESSAGE_INTERVAL (msgid → µs). REQUEST_DATA_STREAM 10 Hz (ALL) de gönderilir; Mission Planner bağlanıp kendi
+# akış isteklerini yolladığında bizim aralıklar ezilebilir → `_dongu` içinde düzenli olarak yeniden istenir.
+MESAJ_ARALIKLARI = ((30, 20000), (33, 20000), (32, 20000), (74, 50000), (65, 100000))   # ATTITUDE, GLOBAL_POSITION_INT, LOCAL_POSITION_NED, VFR_HUD, RC_CHANNELS
+# ArduPlane (50 Hz ana döngü) 20 ms SET_MESSAGE_INTERVAL'ı REDDEDER (MAV_RESULT 2); ArduCopter kabul eder. Red görülürse akış bazlı
+# REQUEST_DATA_STREAM'e geçilir (ikisi de kabul eder; plane ≈ 52 Hz, copter 66 Hz verir — bu yüzden önce SMI denenir, tam 50 Hz).
+AKIS_HIZLARI = ((10, 50), (6, 50), (11, 20), (3, 10))   # EXTRA1 (ATTITUDE), POSITION (GLOBAL_POSITION_INT, LOCAL_POSITION_NED), EXTRA2 (VFR_HUD), RC_CHANNELS
+AKIS_YENILE_S = 3.0                   # sn: mesaj aralıklarını yeniden iste
+TELE_TBM_KAPI = 18                    # ms: iki yayın arası en az SITL zamanı (50 Hz akışta her kare geçer; TCP parçalanmasından bağımsız)
+# Sanal kumanda (RC_CHANNELS_OVERRIDE) için SITL parametreleri: RC failsafe akışı bozmasın (override kesilince RTL/kayıp yok)
+RC_PARAMLAR = (('SIM_RC_FAIL', 0), ('FS_THR_ENABLE', 0), ('THR_FAILSAFE', 0), ('RC_OVERRIDE_TIME', 3.0))
 
 TIP_ADLARI = {'multirotor': 'Multikopter', 'hexarotor': 'Hexakopter', 'helikopter': 'Helikopter', 'sabit_kanat': 'Sabit Kanat', 'vtol': 'VTOL'}
 PLANE_TIPLERI = ('sabit_kanat', 'vtol')
@@ -164,11 +176,15 @@ class SahteKinematik:
         self.hedef_alt = 0.0
         self.aci = 0.0
         self.roll = self.pitch = self.yaw = 0.0
+        self.rs = self.ps = self.ys = 0.0          # açısal hızlar (rad/s; ATTITUDE rollspeed/pitchspeed/yawspeed karşılığı)
         self.vn = self.ve = self.vd = 0.0
-        self.rc = [1500, 1500, 1000, 1500, 1500, 1500, 1500, 1500]
+        self.rc = list(self.RC_VARSAYILAN)
         self.throttle = 0.0
         self.batt_v = 12.6
         self.eve = False
+        self.sure_ms = 0.0                          # time_boot_ms karşılığı
+
+    RC_VARSAYILAN = (1500, 1500, 1000, 1500, 1500, 1500, 1500, 1500)
 
     def komut(self, name, p):
         p = p or {}
@@ -197,11 +213,23 @@ class SahteKinematik:
             else:
                 self.home = {'lat': self.lat, 'lon': self.lon, 'alt': self.alt0 + self.alt_rel}
         elif name == 'rc':
-            self.rc = list(p['ch'])
-            if self.rc[2]:
+            ch = list(p['ch'])
+            if not any(ch):                        # 8×0 = override serbest: kanallar varsayılana döner
+                self.rc = list(self.RC_VARSAYILAN)
+                return
+            self.rc = [v if v else eski for v, eski in zip(ch, self.rc)]   # 0 = o kanalı değiştirme
+            if ch[2]:
                 self.throttle = max(0.0, min(100.0, (self.rc[2] - 1000) / 10.0))
 
     def adim(self, dt):
+        self.sure_ms += dt * 1000.0
+        r0, p0, y0 = self.roll, self.pitch, self.yaw
+        self._adim(dt)
+        if dt > 0:   # açısal hızlar: ardışık açılardan (yaw sarmalı)
+            dy = (self.yaw - y0 + math.pi) % (2 * math.pi) - math.pi
+            self.rs, self.ps, self.ys = (self.roll - r0) / dt, (self.pitch - p0) / dt, dy / dt
+
+    def _adim(self, dt):
         if not self.armed:
             self.vn = self.ve = self.vd = 0.0
             self.roll = self.pitch = 0.0
@@ -251,6 +279,7 @@ class SahteKinematik:
         hs = math.hypot(self.vn, self.ve)
         return {'lat': round(self.lat, 7), 'lon': round(self.lon, 7), 'alt_msl': round(self.alt0 + self.alt_rel, 2), 'alt_rel': round(self.alt_rel, 2),
                 'roll': round(self.roll, 4), 'pitch': round(self.pitch, 4), 'yaw': round(self.yaw, 4),
+                'rs': round(self.rs, 3), 'ps': round(self.ps, 3), 'ys': round(self.ys, 3), 'tbm': int(self.sure_ms),
                 'vn': round(self.vn, 2), 've': round(self.ve, 2), 'vd': round(self.vd, 2),
                 'airspeed': round(hs + self.ruzgar * 0.3, 2), 'groundspeed': round(hs, 2), 'heading': round(math.degrees(self.yaw) % 360, 1),
                 'climb': round(-self.vd, 2), 'mode': self.mode, 'armed': self.armed, 'gps_fix': 3, 'sats': 12,
@@ -316,8 +345,15 @@ class SimSession:
         self.param_types = {}
         alt0 = float(center.get('alt') or 0)
         self.tele = {'lat': float(center['lat']), 'lon': float(center['lon']), 'alt_msl': alt0, 'alt_rel': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                     'rs': 0.0, 'ps': 0.0, 'ys': 0.0, 'tbm': 0,
                      'vn': 0.0, 've': 0.0, 'vd': 0.0, 'airspeed': 0.0, 'groundspeed': 0.0, 'heading': 0.0, 'climb': 0.0, 'mode': None, 'armed': False,
                      'gps_fix': 0, 'sats': 0, 'batt_v': None, 'batt_pct': None, 'throttle': 0.0, 'rc': [0] * 8, 'home': None}
+        self._tele_son = 0.0             # son `tele` yayını (duvar saati; bekçi)
+        self._tele_tbm = -10 ** 9        # son yayının SITL time_boot_ms'i (kapı: TELE_TBM_KAPI)
+        self._att_son = 0.0              # son ATTITUDE alımı (ATTITUDE akıyorsa GLOBAL_POSITION_INT yayın tetiklemez)
+        self._akis_son = 0.0             # son akış isteği
+        self._smi_red = False            # SET_MESSAGE_INTERVAL reddedildi → akış bazlı REQUEST_DATA_STREAM
+        self.att_sayac = 0               # SITL'den gelen ATTITUDE sayısı (akış hızı ölçümü)
 
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
@@ -513,10 +549,18 @@ class SimSession:
             te['vn'], te['ve'], te['vd'] = m.vx / 100.0, m.vy / 100.0, m.vz / 100.0
             if m.hdg != 65535:
                 te['heading'] = m.hdg / 100.0
+            te['tbm'] = int(m.time_boot_ms)
+            if time.time() - self._att_son > 0.1:   # ATTITUDE akmıyorsa konum yayını tetikler
+                self._tele_yay(te['tbm'])
         elif t == 'ATTITUDE':
-            te['roll'], te['pitch'], te['yaw'] = m.roll, m.pitch, m.yaw
+            te['roll'], te['pitch'], te['yaw'] = round(m.roll, 4), round(m.pitch, 4), round(m.yaw, 4)
+            te['rs'], te['ps'], te['ys'] = round(m.rollspeed, 3), round(m.pitchspeed, 3), round(m.yawspeed, 3)
+            te['tbm'] = int(m.time_boot_ms)
+            self.att_sayac += 1
+            self._att_son = time.time()
+            self._tele_yay(te['tbm'])
         elif t == 'VFR_HUD':
-            te['airspeed'], te['groundspeed'], te['throttle'], te['climb'] = m.airspeed, m.groundspeed, m.throttle, m.climb
+            te['airspeed'], te['groundspeed'], te['throttle'], te['climb'] = round(m.airspeed, 2), round(m.groundspeed, 2), m.throttle, round(m.climb, 2)
             te['heading'] = float(m.heading)
         elif t == 'SYS_STATUS':
             te['batt_v'] = m.voltage_battery / 1000.0 if m.voltage_battery != 65535 else None
@@ -531,24 +575,64 @@ class SimSession:
         elif t == 'HOME_POSITION':
             te['home'] = {'lat': m.latitude / 1e7, 'lon': m.longitude / 1e7, 'alt': m.altitude / 1000.0}
         elif t == 'COMMAND_ACK':
-            if m.result not in (0, 5):
+            if m.command == 511:   # SET_MESSAGE_INTERVAL: plane 20 ms'yi reddeder → akış bazlı isteğe geç (tek sefer, olay spam'i yok)
+                if m.result not in (0, 5) and not self._smi_red:
+                    self._smi_red = True
+                    self._akis_iste(tam=False)
+                    self._olay('Mesaj aralığı isteği reddedildi; 50 Hz akış REQUEST_DATA_STREAM ile istendi', 6)
+            elif m.result not in (0, 5):
                 self._olay(f'Komut {m.command} reddedildi (MAV_RESULT {m.result})', 4)
         elif t == 'PARAM_VALUE':
             self.param_types[str(m.param_id).rstrip('\x00')] = m.param_type
 
     def _ilk_heartbeat(self):
-        """İlk araç kalp atışı: veri akışı 10 Hz, HOME iste, rüzgâr parametreleri."""
+        """İlk araç kalp atışı: genel akış 10 Hz + yüksek hızlı mesaj aralıkları, HOME iste, rüzgâr ve RC parametreleri."""
         d = _dialect()
-        self._gonder(self.mav.request_data_stream_encode(self.sysid, self.comp, 0, 10, 1))   # MAV_DATA_STREAM_ALL
-        self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 511, 0, 242, 5000000, 0, 0, 0, 0, 0))   # HOME_POSITION 5 sn
+        self._akis_iste()
         self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 512, 0, 242, 0, 0, 0, 0, 0, 0))         # HOME bir kez
         self._ruzgar_yaz(d)
-        self._olay('SITL kalp atışı alındı; veri akışı 10 Hz istendi', 6)
+        for ad, deger in RC_PARAMLAR:   # araçta olmayan ad (kopterde THR_FAILSAFE vb.) sessizce yok sayılır
+            self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
+        self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
+
+    def _akis_iste(self, tam=True):
+        """tam: REQUEST_DATA_STREAM 10 Hz (ALL) + HOME_POSITION 5 sn. Sonra ya MAV_CMD_SET_MESSAGE_INTERVAL (MESAJ_ARALIKLARI; copter kabul eder,
+        tam 50 Hz) ya da reddedildiyse (`_smi_red`, plane) akış bazlı REQUEST_DATA_STREAM (AKIS_HIZLARI). Sıra önemli: ALL isteği akış
+        kovalarını sıfırlar, hızlı aralıklar sonra yazılır. Mission Planner bağlanınca kendi istekleriyle ezebilir → `_dongu` AKIS_YENILE_S'de bir
+        yeniden ister."""
+        self._akis_son = time.time()
+        if tam:
+            self._gonder(self.mav.request_data_stream_encode(self.sysid, self.comp, 0, 10, 1))   # MAV_DATA_STREAM_ALL
+            self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 511, 0, 242, 5000000, 0, 0, 0, 0, 0))
+        if self._smi_red:
+            for sid, hz in AKIS_HIZLARI:
+                self._gonder(self.mav.request_data_stream_encode(self.sysid, self.comp, sid, hz, 1))
+        else:
+            for msgid, us in MESAJ_ARALIKLARI:
+                self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 511, 0, msgid, us, 0, 0, 0, 0, 0))
 
     def _ruzgar_yaz(self, d=None):
         d = d or _dialect()
         for ad, deger in (('SIM_WIND_SPD', self.world.get('wind_ms', 0)), ('SIM_WIND_DIR', self.world.get('wind_dir', 0))):
             self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
+
+    def _tele_yay(self, tbm=None, zorla=False):
+        """`tele` yayını: gerçek SITL'de her ATTITUDE'da (ATTITUDE akmıyorsa GLOBAL_POSITION_INT'te); kapı SITL zamanıyla (TELE_TBM_KAPI ms) —
+        TCP parçasında birlikte gelen ardışık kareler düşmez, 66 Hz akış ~50 Hz'e iner. Sahte kipte adım başına (zorla).
+        `ts` sunucu alım zamanı (Unix sn), `tbm` SITL time_boot_ms (sahte: oturum ms)."""
+        if not self.viewers:
+            return
+        now = time.time()
+        if not zorla:
+            if tbm is not None:
+                if tbm - self._tele_tbm < TELE_TBM_KAPI:
+                    return
+            elif now - self._tele_son < TELE_MIN_ARALIK * 0.9:
+                return
+        self._tele_tbm = tbm if tbm is not None else self.tele.get('tbm', 0)
+        self._tele_son = now
+        self._yay({'t': 'tele', 'ts': round(now, 3), **self.tele, 'gcs_connected': self.gcs_addr is not None,
+                   'gcs_addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None})
 
     def _gcs_heartbeat(self):
         self._gonder(self.mav.heartbeat_encode(6, 8, 0, 0, 0))   # MAV_TYPE_GCS, MAV_AUTOPILOT_INVALID
@@ -625,9 +709,10 @@ class SimSession:
         self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 176, 0, 1, modlar[mode], 0, 0, 0, 0, 0))   # MAV_CMD_DO_SET_MODE
 
     async def rc(self, ch):
-        """WS `rc` (en çok 20 Hz; fazlası atılır)."""
+        """WS `rc` (en çok ~40 Hz; fazlası atılır). 8×0 = override serbest bırakma: hız sınırı uygulanmaz, her zaman iletilir."""
         now = time.time()
-        if now - self._rc_son < RC_HZ_MIN_ARALIK:
+        serbest = isinstance(ch, (list, tuple)) and len(ch) == 8 and not any(ch)
+        if not serbest and now - self._rc_son < RC_HZ_MIN_ARALIK:
             return
         self._rc_son = now
         await self.komut('rc', {'ch': ch})
@@ -648,6 +733,7 @@ class SimSession:
         await self._tcp_kapat()
         await self.loop.run_in_executor(None, drone_sitl.YONETICI.durdur, self.kimlik)
         self.tele.update(mode=None, armed=False, alt_rel=0.0, home=None)
+        self._tele_tbm, self._smi_red, self._att_son = -10 ** 9, False, 0.0   # yeni SITL: zaman damgası sıfırdan başlar
         await self._sitl_ac()
 
     # ---- yaşam döngüsü ----
@@ -676,12 +762,18 @@ class SimSession:
             await self._temizle()
 
     async def _yayin(self):
-        """20 Hz telemetri (+ sahte kinematik adımı; sahte kipte GCS'ye 1 Hz heartbeat)."""
+        """Sahte kip: 50 Hz kinematik adımı + `tele` (GCS'ye 1 Hz heartbeat). Gerçek SITL: yayın `_isle` içinde olay güdümlüdür; burada
+        yalnız bekçi (TELE_BEKCI içinde ATTITUDE/konum gelmediyse HUD için 4 Hz yayın)."""
         aralik = 1.0 / TELE_HZ
         son = time.time()
+        hedef = son
         hb = 0.0
         while True:
-            await asyncio.sleep(aralik)
+            hedef += aralik                      # mutlak zamanlama: uyku sapması birikmez (gerçek 50 Hz)
+            now = time.time()
+            if hedef < now - 0.5:
+                hedef = now
+            await asyncio.sleep(max(0.0, hedef - now))
             now = time.time()
             dt, son = now - son, now
             if self.sahte is not None:
@@ -695,10 +787,9 @@ class SimSession:
                         self.mav.seq = (self.mav.seq + 1) % 256
                     except Exception:   # noqa: BLE001
                         pass
-            if not self.viewers:
-                continue
-            self._yay({'t': 'tele', 'ts': now, **self.tele, 'gcs_connected': self.gcs_addr is not None,
-                       'gcs_addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None})
+                self._tele_yay(zorla=True)
+            elif now - self._tele_son >= TELE_BEKCI:
+                self._tele_yay(zorla=True)
 
     async def _dongu(self):
         """1 sn: GCS sessizliği, SITL süreci, boşta / süre zaman aşımları, GCS kalp atışı."""
@@ -715,6 +806,8 @@ class SimSession:
                     self._durum('HATA')
                 else:
                     self._gcs_heartbeat()
+                    if self._heartbeat_alindi and now - self._akis_son >= AKIS_YENILE_S:
+                        self._akis_iste(tam=False)   # Mission Planner'ın akış istekleri bizim 50 Hz aralıkları ezmiş olabilir
             if self.viewers:
                 self.last_viewer = now
             if self.gcs_addr is None and not self.viewers and now - max(self.last_viewer, self.gcs_last) > BOSTA_SURE:

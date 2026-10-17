@@ -5,6 +5,8 @@
 // • Oturum ekranı: tam alan 3B tuval (flightsim3d.js) + HUD (sağ), Mission Planner bağlantı kutusu (sol alt), alt araç çubuğu
 //   (kamera 1–4, Sıfırla, Bitir, ARM/DISARM/mod — yazma izni varsa), olay şeridi (STATUSTEXT), ÇARPIŞMA bandı.
 // • WS istemcisi /ws/drone/sim/{id}: hello/tele/event/state/end; ping 10 sn; üstel geri çekilmeli yeniden bağlanma; 4403/4404 kalıcı.
+// • Sanal kumanda (yazma izni; alt çubuk 🎮): iki sanal çubuk + klavye → 20 Hz {t:'rc', ch[8]} (RC_CHANNELS_OVERRIDE); kapatınca 8×0.
+//   Açıkken 3B klavye kilidi (WASD/ok tuşları kumandaya gider). HUD altında ağ göstergesi: 'net: 48 Hz · jitter 3 ms' (sim.netStats()).
 // • `?mock=1`: arka uç yokken yerel kinematik üretici (WS yerine) — sihirbaz, 3B dünya ve HUD arka uçsuz denenir. Mock oturumlar yalnız
 //   bu sekmede (bellekte) yaşar; komutlar (arm/disarm/mode/takeoff/rtl/reset/crash) üreticiye uygulanır.
 import { api } from '../api.js';
@@ -255,6 +257,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const rcBars = Array.from({ length: 8 }, (_, i) => h('div', { class: 'fs-rc', title: tr('Kanal {n}', { n: i + 1 }) }, h('i'), h('small', null, String(i + 1))));
   const thrBar = h('div', { class: 'fs-thr' }, h('i'));
   const windArrow = h('span', { class: 'fs-wind-arrow' }, '➤');
+  const netLbl = h('div', { class: 'fs-net', title: 'Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap' }, '');
   const hud = h('div', { class: 'fs-hud mono' },
     h('div', { class: 'fs-hud-head' }, V.mode, V.arm),
     row('AGL', V.agl, 'm'), row('MSL', V.msl, 'm'),
@@ -262,7 +265,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     row('Yön', V.hdg, '°'), row('GPS', V.gps), row('Batarya', V.batt),
     h('div', { class: 'fs-row' }, h('span', null, 'Gaz'), h('span', { class: 'fs-rv' }, V.thr, h('i', null, '%'))), thrBar,
     h('div', { class: 'fs-row fs-row-rc' }, h('span', null, 'RC'), h('div', { class: 'fs-rcs' }, rcBars)),
-    h('div', { class: 'fs-row' }, h('span', null, 'Rüzgâr'), h('span', { class: 'fs-rv' }, windArrow, V.wind, h('i', null, 'm/s'))));
+    h('div', { class: 'fs-row' }, h('span', null, 'Rüzgâr'), h('span', { class: 'fs-rv' }, windArrow, V.wind, h('i', null, 'm/s'))),
+    netLbl);
   V.wind.textContent = `${f1(world.wind_ms)} @ ${f0(world.wind_dir)}°`;
   windArrow.style.transform = `rotate(${(Number(world.wind_dir) || 0) + 90}deg)`;   // ➤ sağa bakar; rüzgâr "nereden" → ok akış yönünü gösterir
 
@@ -278,6 +282,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
+  const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
     h('option', { value: '' }, 'Mod…'), modes.map(mm => h('option', { value: mm }, mm)));
   const bar = h('div', { class: 'fs-bar' },
@@ -288,11 +293,18 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       armBtn, modeSel,
       h('button', { class: 'btn sm', type: 'button', onclick: () => takeoffDialog() }, 'Kalkış'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => cmd('rtl') }, 'RTL')) : null,
+    canWrite ? h('div', { class: 'pill-group' }, rcBtn) : null,
     h('div', { class: 'pill-group' },
       h('button', { class: 'btn sm', type: 'button', title: 'SITL aynı ayarlarla yeniden başlar; çarpışma kaldırılır', onclick: () => reset() }, '↺ Sıfırla'),
       h('button', { class: 'btn sm danger', type: 'button', onclick: () => endSession() }, 'Bitir')));
   const ended = h('div', { class: 'fs-ended', hidden: true });
-  stage.append(mount, msg, crash, hud, mp, events, bar, nav, ended);
+  // Sanal kumanda katmanı: sol çubuk gaz/yaw, sağ çubuk pitch/roll (Mode 2); klavye ipucu; Mission Planner joystick uyarısı
+  const stickL = h('div', { class: 'fs-stick', 'data-side': 'l' }, h('i', { class: 'fs-stick-knob' }), h('small', null, 'Gaz / Yaw'));
+  const stickR = h('div', { class: 'fs-stick', 'data-side': 'r' }, h('i', { class: 'fs-stick-knob' }), h('small', null, 'Pitch / Roll'));
+  const rcWarn = h('div', { class: 'fs-rc-warn', hidden: true }, 'Mission Planner joystick de açıksa son gelen RC komutu geçerli olur');
+  const rcHint = h('div', { class: 'fs-rc-hint' }, h('span', null, 'W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta'), rcWarn);
+  const sticks = h('div', { class: 'fs-sticks', hidden: true }, stickL, stickR, rcHint);
+  stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -301,7 +313,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   clear(view, stage);
 
   // ---------- 3B ----------
-  let sim = null, last = null, socket = null, destroyed = false;
+  let sim = null, last = null, socket = null, destroyed = false, rc = null;   // rc: sanal kumanda (virtualRC) ya da null
   try {
     sim = await createFlightSim3D(mount, world, {
       type, origin: { lat: session.center?.lat, lon: session.center?.lon },
@@ -343,6 +355,16 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
 
   // ---------- HUD güncelle (en çok ~12 Hz) ----------
   let hudAt = 0;
+  // RC çubukları: sanal kumanda açıkken 1–5 yerel kanal değerleri (anlık), diğerleri telemetriden
+  const drawRcBars = teleRc => {
+    const loc = rc?.channels();
+    for (let i = 0; i < 8; i++) {
+      const v = loc && i < 5 ? loc[i] : Number((teleRc || [])[i]);
+      const pct = Math.max(0, Math.min(100, ((v || 1500) - 1000) / 10));
+      rcBars[i].firstChild.style.height = `${pct}%`;
+      rcBars[i].classList.toggle('vr', !!loc && i < 5);
+    }
+  };
   const updateHud = t => {
     last = t;
     sim?.setTelemetry(t);
@@ -362,7 +384,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     V.batt.classList.toggle('warn', t.batt_pct != null && t.batt_pct < 25);
     V.thr.textContent = f0(t.throttle);
     thrBar.firstChild.style.width = `${Math.max(0, Math.min(100, Number(t.throttle) || 0))}%`;
-    (t.rc || []).slice(0, 8).forEach((v, i) => { const pct = Math.max(0, Math.min(100, ((Number(v) || 1500) - 1000) / 10)); rcBars[i].firstChild.style.height = `${pct}%`; });
+    drawRcBars(t.rc);
+    if (rc) rcWarn.hidden = !t.gcs_connected;
     if (canWrite) { armBtn.textContent = t.armed ? 'DISARM' : 'ARM'; armBtn.classList.toggle('danger', !!t.armed); if (t.mode && modeSel.value !== t.mode && document.activeElement !== modeSel) modeSel.value = modes.includes(t.mode) ? t.mode : ''; }
     if (t.gcs_connected != null) setGcs(!!t.gcs_connected, t.gcs_addr);
   };
@@ -414,15 +437,136 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     },
   });
 
+  // ---------- sanal kumanda (yazma izni): 20 Hz {t:'rc', ch} yalnız açıkken; kapatınca tek sefer 8×0 (override serbest) ----------
+  const rcToggle = () => {
+    if (!canWrite) { toast('Sanal kumanda için yazma izni gerekir', 'err'); return; }
+    if (rc) {
+      rc.dispose();                      // zamanlayıcı durur, dinleyiciler kalkar, 8×0 gönderilir
+      rc = null;
+      sticks.hidden = true; stage.classList.remove('rc-on'); rcBtn.classList.remove('primary');
+      sim?.setKeyboardLock(false);
+      drawRcBars(last?.rc);
+      addEvent(tr('Sanal kumanda kapatıldı (RC override serbest)'));
+      return;
+    }
+    rc = virtualRC({ plane: isPlane(type), stickL, stickR, send: ch => socket?.send({ t: 'rc', ch }), onChange: () => drawRcBars(last?.rc) });
+    sticks.hidden = false; stage.classList.add('rc-on'); rcBtn.classList.add('primary');
+    rcWarn.hidden = !last?.gcs_connected;
+    sim?.setKeyboardLock(true);
+    addEvent(tr('Sanal kumanda açık (RC override)'));
+  };
+  const netTick = setInterval(() => {
+    if (!sim) return;
+    const n = sim.netStats();
+    netLbl.textContent = tr('net: {hz} Hz · jitter {j} ms', { hz: n.hz, j: n.jitter }) + (n.deadReckoning ? ' · DR' : '');
+    netLbl.classList.toggle('warn', n.hz > 0 && (n.hz < 15 || n.jitter > 40));
+  }, 500);
+
   onLeave(() => {
     destroyed = true;
-    clearInterval(gimbalTick);
+    clearInterval(gimbalTick); clearInterval(netTick);
+    if (rc) { rc.dispose(); rc = null; }   // override serbest bırakılır (soket kapanmadan önce)
     socket?.close();
     sim?.dispose();
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');
     document.body.classList.remove('immersive');
   });
+}
+
+// ======================================================================
+// Sanal kumanda: iki sanal çubuk (Mode 2: sol gaz/yaw, sağ pitch/roll; dokunmatik + fare, pointer events) + klavye.
+// ArduPilot RC: ch1 roll, ch2 pitch (ileri = burun aşağı = düşük PWM), ch3 gaz, ch4 yaw, ch5 mod anahtarı; 1000–2000, merkez 1500.
+// Eksenler −1…1: tuş basılıyken KEY_RATE ile uca gider, bırakılınca yaylı (üstel) merkeze döner. Kopterde gaz çubuğu merkeze yaylıdır
+// (1500 ≈ askı); uçakta gaz tutmalıdır (W/S kaydırır, çubuk bırakıldığı yerde kalır). Boşluk = gaz 1500. Q/E = ch5 1000/1500/2000.
+// 20 Hz: tick (klavye entegrasyonu + çizim) → send(channels()). dispose(): zamanlayıcı/dinleyiciler kalkar, 8×0 (override serbest) gönderilir.
+// ======================================================================
+const RC_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+function virtualRC({ plane, stickL, stickR, send, onChange }) {
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const ax = { roll: 0, pitch: 0, thr: plane ? -1 : 0, yaw: 0 };   // thr: −1 = 1000 (uçak boşta), 0 = 1500 (kopter askı)
+  let ch5 = 1500, lastT = performance.now(), disposed = false;
+  const keys = new Set();
+  const drag = { l: null, r: null };          // sürüklenen çubuk: {id, x0, y0, r}
+  const KEY_RATE = 3.5, SPRING = 9, THR_RATE = 0.7;
+  const editable = el => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+  const pwm = v => Math.round(clamp(1500 + v * 500, 1000, 2000));
+  const channels = () => [pwm(ax.roll), pwm(-ax.pitch), pwm(ax.thr), pwm(ax.yaw), ch5, 0, 0, 0];   // 6–8: 0 = o kanala dokunma
+
+  // --- klavye ---
+  const onKeyDown = e => {
+    if (disposed || editable(document.activeElement) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (!RC_KEYS.has(k)) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (k === ' ') { ax.thr = 0; return; }
+    if (k === 'q' || k === 'e') { ch5 = clamp(ch5 + (k === 'e' ? 500 : -500), 1000, 2000); return; }
+    keys.add(k);
+  };
+  const onKeyUp = e => keys.delete(e.key.toLowerCase());
+  const onBlur = () => keys.clear();
+
+  // --- çubuklar (pointer events; touch-action: none) ---
+  const bind = (el, side) => {
+    const knob = el.querySelector('.fs-stick-knob');
+    const down = e => {
+      if (disposed) return;
+      const b = el.getBoundingClientRect();
+      drag[side] = { id: e.pointerId, cx: b.left + b.width / 2, cy: b.top + b.height / 2, r: b.width / 2 - 16 };
+      el.setPointerCapture(e.pointerId); el.classList.add('on');
+      move(e); e.preventDefault();
+    };
+    const move = e => {
+      const d = drag[side];
+      if (!d || e.pointerId !== d.id) return;
+      const x = clamp((e.clientX - d.cx) / d.r, -1, 1), y = clamp(-(e.clientY - d.cy) / d.r, -1, 1);
+      if (side === 'l') { ax.yaw = x; ax.thr = y; } else { ax.roll = x; ax.pitch = y; }
+    };
+    const up = e => { if (drag[side] && e.pointerId === drag[side].id) { drag[side] = null; el.classList.remove('on'); } };
+    el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    return { knob, off: () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.classList.remove('on'); } };
+  };
+  const L = bind(stickL, 'l'), R = bind(stickR, 'r');
+  const draw = () => {
+    const place = (knob, x, y) => { knob.style.transform = `translate(${(x * 40).toFixed(1)}px, ${(-y * 40).toFixed(1)}px)`; };
+    place(L.knob, ax.yaw, ax.thr); place(R.knob, ax.roll, ax.pitch);
+  };
+
+  // --- 20 Hz: klavye entegrasyonu + yay, çizim, gönderim ---
+  const tick = () => {
+    const now = performance.now(), dt = Math.min(0.2, (now - lastT) / 1000); lastT = now;
+    const kax = (neg, pos) => (keys.has(pos) ? 1 : 0) - (keys.has(neg) ? 1 : 0);
+    const decay = Math.exp(-SPRING * dt);
+    const spring = (key, dir) => { if (dir) ax[key] = clamp(ax[key] + dir * KEY_RATE * dt, -1, 1); else { ax[key] *= decay; if (Math.abs(ax[key]) < 0.004) ax[key] = 0; } };
+    if (!drag.r) { spring('roll', kax('arrowleft', 'arrowright')); spring('pitch', kax('arrowdown', 'arrowup')); }
+    if (!drag.l) {
+      spring('yaw', kax('a', 'd'));
+      const t = kax('s', 'w');
+      if (plane) { if (t) ax.thr = clamp(ax.thr + t * THR_RATE * dt, -1, 1); }   // tutmalı gaz
+      else spring('thr', t);                                                     // askıya yaylı
+    }
+    draw();
+    const ch = channels();
+    send(ch);
+    onChange?.(ch);
+  };
+  window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp); window.addEventListener('blur', onBlur);
+  const timer = setInterval(tick, 50);
+  draw();
+  return {
+    channels,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      clearInterval(timer);
+      window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
+      L.off(); R.off();
+      L.knob.style.transform = R.knob.style.transform = '';
+      send([0, 0, 0, 0, 0, 0, 0, 0]);   // override serbest
+    },
+  };
 }
 
 // ======================================================================
@@ -483,7 +627,7 @@ class MockFlight {
     handlers.message?.({ t: 'hello', session: pubSession });
     // Gerçek zamana göre adım: yavaş çizimde (yazılım WebGL) zamanlayıcı seyrekleşse de uçuş gerçek hızda ilerler (en çok 0.25 sn/adım)
     if (!this.timer) { this.lastTick = performance.now(); this.timer = setInterval(() => { const now = performance.now(); const dt = Math.min(0.25, (now - this.lastTick) / 1000); this.lastTick = now; this.step(dt); }, 50); }
-    return { send: obj => { if (obj?.t === 'cmd') this.cmd(obj.name, obj.params || {}); if (obj?.t === 'rc') this.rc = obj.ch; }, close: () => { this.handlers.delete(handlers); if (!this.handlers.size) { clearInterval(this.timer); this.timer = 0; } } };
+    return { send: obj => { if (obj?.t === 'cmd') this.cmd(obj.name, obj.params || {}); if (obj?.t === 'rc') this.rc = Array.isArray(obj.ch) && obj.ch.some(Boolean) ? obj.ch : null; }, close: () => { this.handlers.delete(handlers); if (!this.handlers.size) { clearInterval(this.timer); this.timer = 0; } } };
   }
   emit(m) { this.handlers.forEach(hh => hh.message?.(m)); }
   event(text, severity = 'info') { this.emit({ t: 'event', text, severity }); }
@@ -534,6 +678,16 @@ class MockFlight {
       if (S.phase === 'rtl' && d > 3) { const sp = Math.min(V, d); S.vx = -S.x / d * sp; S.vy = -S.y / d * sp; S.vz = 0; S.yaw = Math.atan2(S.vx, S.vy); S.roll = 0; S.pitch = 0; S.thr = 50; }
       else { S.vx = S.vy = 0; S.vz = -Math.min(1.5, Math.max(0.3, S.z * 0.3)); S.roll = S.pitch = 0; S.thr = 30; if (S.phase === 'rtl') { S.phase = 'land'; S.mode = this.plane ? 'QLAND' : 'LAND'; this.event('Landing'); } }
       if (S.z <= 0.05 && S.phase === 'land') { S.z = 0; S.vz = 0; S.armed = false; S.phase = 'ground'; S.thr = 0; S.mode = this.plane ? 'MANUAL' : 'STABILIZE'; this.event('Disarming motors'); }
+    } else if (S.armed && this.rc && S.phase === 'ground') {
+      // Sanal kumanda (mock): gaz → dikey hız (kopter: 1500 askı), yaw → dönüş, pitch/roll → eğim ve yatay hız
+      const n = i => ((Number(this.rc[i]) || 1500) - 1500) / 500;
+      S.thr = Math.max(0, Math.min(100, ((Number(this.rc[2]) || 1000) - 1000) / 10));
+      S.vz = this.plane ? (S.thr - 50) / 50 * 4 : n(2) * 4;
+      S.yaw += n(3) * 1.6 * dt;
+      S.roll = n(0) * 0.6; S.pitch = -n(1) * 0.5;
+      const sp = this.plane ? 18 : 9, fwd = -S.pitch / 0.5 * sp, side = S.roll / 0.6 * sp;
+      S.vx = Math.sin(S.yaw) * fwd + Math.cos(S.yaw) * side; S.vy = Math.cos(S.yaw) * fwd - Math.sin(S.yaw) * side;
+      if (S.z <= 0 && S.vz < 0) S.vz = 0;
     } else if (!S.armed) { S.vx = S.vy = S.vz = 0; S.thr = 0; S.roll = 0; if (S.phase !== 'crashed') S.pitch = 0; }
     S.x += S.vx * dt; S.y += S.vy * dt; S.z = Math.max(0, S.z + S.vz * dt);
     if (S.armed) { S.batt_pct = Math.max(0, S.batt_pct - dt * 0.02 * (1 + S.thr / 100)); S.batt_v = 14.2 + 2.6 * S.batt_pct / 100; }

@@ -1,4 +1,4 @@
-"""Uçuş Simülatörü (drone.sim) — sözleşme §7: meta, oturum aç/limit/kapat, komut yetkisi (salt okuyan 403), WS hello/tele,
+"""Uçuş Simülatörü (drone.sim) — sözleşme §7: meta, oturum aç/limit/kapat, komut yetkisi (salt okuyan 403), WS hello/tele (50 Hz sahte akış, rc override + serbest bırakma paketi),
 UDP köprüsü (sahte "SITL" TCP sunucusu ile ham bayt gidiş-dönüş, GCS kilidi). SITL yok: HEPGO_SITL=0 sahte kinematik.
 
 Çalıştırma: CAYMAZ_FORCE_SECURE_COOKIE=0 .venv/bin/python -m tests.test_flightsim
@@ -20,7 +20,7 @@ from starlette.websockets import WebSocketDisconnect  # noqa: E402
 from app import auth, flightsim  # noqa: E402
 from app.main import app  # noqa: E402
 
-TELE_ALANLARI = {'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
+TELE_ALANLARI = {'rs', 'ps', 'ys', 'tbm', 'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
                  'mode', 'armed', 'gps_fix', 'sats', 'batt_v', 'batt_pct', 'throttle', 'rc', 'home', 'gcs_connected', 'gcs_addr'}
 
 
@@ -42,6 +42,16 @@ def bekle(fn, sn=5.0, adim=0.05):
             return v
         time.sleep(adim)
     return fn()
+
+
+def ws_bekle(ws, kosul, sn=3.0):
+    """WS'den kosul(msg) doğru olan ilk mesajı döndürür (uykusuz: 50 Hz tele kuyruğunu geriden takip etmez)."""
+    bitis = time.time() + sn
+    while time.time() < bitis:
+        m = json.loads(ws.receive_text())
+        if kosul(m):
+            return m
+    return None
 
 
 def udp_al(sk, beklenen, port):
@@ -189,7 +199,7 @@ def main():
                 h = json.loads(ws.receive_text())
                 assert h['t'] == 'hello' and h['session']['id'] == sid and h['can_command'] is False, h
                 ws.send_text(json.dumps({'t': 'cmd', 'name': 'arm', 'rid': 'r1'}))
-                res = bekle(lambda: (lambda m: m if m['t'] == 'res' else None)(json.loads(ws.receive_text())), 3)
+                res = ws_bekle(ws, lambda m: m['t'] == 'res', 3)
                 assert res and res['ok'] is False and res['rid'] == 'r1', res
         # drone paketine erişimi olmayan rol (Pilot var ama bu kullanıcı 'drone' modülünde değil?) → Pilot drone'a sahiptir; yetkisiz rol: Güvenlik
         ok(a.post('/api/users', json={'username': 'guv', 'full_name': 'Guv', 'roles': ['Güvenlik'], 'password': 'sifre-1234'}))
@@ -223,8 +233,26 @@ def main():
             assert t0['armed'] is True and t0['mode'] == 'LOITER' and t0['alt_rel'] > 0 and len(t0['rc']) == 8 and t0['rc'][2] == 1800, t0
             assert t0['home'] == {'lat': 39.93, 'lon': 32.84, 'alt': 905.0} and t0['gcs_connected'] is False and t0['gcs_addr'] is None, t0
             assert abs(t0['lat'] - 39.925) < 0.01 and abs(t0['lon'] - 32.837) < 0.01 and t0['alt_msl'] > 900, t0
+            assert {'rs', 'ps', 'ys', 'tbm'} <= set(t0) and isinstance(t0['tbm'], int) and t0['tbm'] > 0, t0   # açısal hızlar + SITL zaman damgası
+            # --- 50 Hz sahte akış: 1 sn'de ≥ 40 tele, ardışık ts farkı ort. ≤ 25 ms, ts sunucu alım zamanı (Unix sn) ---
+            ts_liste = []
+            bitis = time.time() + 1.0
+            while time.time() < bitis:
+                m = json.loads(ws.receive_text())
+                if m['t'] == 'tele':
+                    ts_liste.append(m['ts'])
+            farklar = [b - a for a, b in zip(ts_liste, ts_liste[1:])]
+            assert len(ts_liste) >= 40, len(ts_liste)
+            assert sum(farklar) / len(farklar) <= 0.025, sum(farklar) / len(farklar)
+            assert abs(ts_liste[-1] - time.time()) < 2, (ts_liste[-1], time.time())
             ws.send_text(json.dumps({'t': 'ping'}))
-            assert bekle(lambda: json.loads(ws.receive_text())['t'] == 'pong', 2)
+            assert ws_bekle(ws, lambda x: x['t'] == 'pong', 2)
+            # --- RC override: değer paketi hemen ardından serbest bırakma paketi (8×0) hız sınırına takılmaz, kanallar varsayılana döner ---
+            ws.send_text(json.dumps({'t': 'rc', 'ch': [1600, 1400, 1900, 1500, 2000, 1500, 1500, 1500]}))
+            assert ws_bekle(ws, lambda x: x['t'] == 'tele' and x['rc'][2] == 1900 and x['rc'][4] == 2000, 3), 'rc override tele\'ye yansımadı'
+            ws.send_text(json.dumps({'t': 'rc', 'ch': [1650, 1500, 1950, 1500, 1500, 1500, 1500, 1500]}))   # < 25 ms: hız sınırı atar
+            ws.send_text(json.dumps({'t': 'rc', 'ch': [0] * 8}))                                              # serbest: atılmaz
+            assert ws_bekle(ws, lambda x: x['t'] == 'tele' and x['rc'] == list(flightsim.SahteKinematik.RC_VARSAYILAN), 3), 'rc serbest bırakma işlenmedi'
             # WS komutu: crash → disarm + olay; rc akışı
             ws.send_text(json.dumps({'t': 'cmd', 'name': 'crash', 'rid': 'c1'}))
             gor = {'res': None, 'event': None, 'tele': None}
@@ -241,15 +269,15 @@ def main():
             assert gor['event'] and gor['event']['severity'] == 2 and gor['tele'] and gor['tele']['alt_rel'] == 0, gor
             ws.send_text(json.dumps({'t': 'rc', 'ch': [1500, 1500, 1200, 1500, 1500, 1500, 1500, 1500]}))
             ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 30}, 'rid': 'c2'}))
-            m = bekle(lambda: (lambda x: x if x['t'] == 'tele' and x['armed'] else None)(json.loads(ws.receive_text())), 3)
+            m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['armed'], 3)
             assert m and m['mode'] == 'GUIDED', m
             # geçersiz WS komutu → res ok:false
             ws.send_text(json.dumps({'t': 'cmd', 'name': 'mode', 'params': {'mode': 'UCUS'}, 'rid': 'c3'}))
-            m = bekle(lambda: (lambda x: x if x['t'] == 'res' and x.get('rid') == 'c3' else None)(json.loads(ws.receive_text())), 3)
+            m = ws_bekle(ws, lambda x: x['t'] == 'res' and x.get('rid') == 'c3', 3)
             assert m and m['ok'] is False and 'mod' in m['error'].lower(), m
             # reset → state BASLIYOR/HAZIR, kinematik sıfır
             ws.send_text(json.dumps({'t': 'cmd', 'name': 'reset', 'rid': 'c4'}))
-            m = bekle(lambda: (lambda x: x if x['t'] == 'tele' and not x['armed'] and x['alt_rel'] == 0 else None)(json.loads(ws.receive_text())), 3)
+            m = ws_bekle(ws, lambda x: x['t'] == 'tele' and not x['armed'] and x['alt_rel'] == 0, 3)
             assert m, 'reset sonrası sıfır telemetri gelmedi'
 
             # --- UDP köprüsü: GCS (UDP) ↔ sahte SITL (TCP) ham bayt; GCS kilidi ---
@@ -269,7 +297,7 @@ def main():
             # oturumda GCS görünür (REST + tele)
             g = ok(a.get(f'/api/drone/sim/sessions/{sid}'))
             assert g['gcs']['connected'] is True and g['gcs']['addr'] == f'127.0.0.1:{gcs.getsockname()[1]}' and g['gcs']['since'], g
-            m = bekle(lambda: (lambda x: x if x['t'] == 'tele' and x['gcs_connected'] else None)(json.loads(ws.receive_text())), 3)
+            m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['gcs_connected'], 3)
             assert m and m['gcs_addr'] == g['gcs']['addr'], m
             # ikinci adres: iletilmez (kilit); ilk GCS'nin paketi iletilir
             sahtekar = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -300,7 +328,7 @@ def main():
 
             # --- kapat: WS 'end' alır, UDP portu boşalır, oturum listeden düşer ---
             ok(a.delete(f'/api/drone/sim/sessions/{sid}'))
-            m = bekle(lambda: (lambda x: x if x['t'] == 'end' else None)(json.loads(ws.receive_text())), 3)
+            m = ws_bekle(ws, lambda x: x['t'] == 'end', 3)
             assert m and m['reason'] == 'kapatildi', m
         assert ok(a.get('/api/drone/sim/sessions')) == []
         assert a.get(f'/api/drone/sim/sessions/{sid}').status_code == 404

@@ -7,9 +7,12 @@
 // • Dron: sabit kanat static/models/caymaz.gltf (GLTFLoader; yüklenemezse basit uçak geometrisi), multirotor/hexa/heli/vtol basit
 //   geometri + dönen pervaneler (gaz ile hız). Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
 // • Kameralar (1–4): Takip (OrbitControls, hedef dron) · Dron kamerası (FPV, burun; gimbal ↑↓) · Serbest (WASD/QE + fare sürükle) · Yer.
-// • Telemetri enterpolasyonu (20 Hz → kare): hız ile öngörü + üstel yumuşatma. Çarpışma: z < h(x,y)+0.3 ya da bina kutusu, hız > 1 m/s.
+// • Telemetri (50 Hz'e dek): gecikme tamponlu enterpolasyon — kareler kaynak zaman damgasıyla (tele.tbm, yoksa ts) tamponlanır, render zamanı = şimdi − 80 ms,
+//   konum lineer / yönelim slerp; tampon bitince ölü hesap (hız + gövde açısal hızları rs/ps/ys, en çok 300 ms). Takip kamerası kritik sönümlü yay.
+//   Çarpışma: z < h(x,y)+0.3 ya da bina kutusu, hız > 1 m/s.
 // Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, terrainHeight,
-//        toLocal, setWorld, setType, clearCollision, resize, dispose }.
+//        toLocal, setWorld, setType, clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
+//        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }.
 
 const LIB = '/static/vendor/three/';
 let _libs = null;
@@ -391,21 +394,72 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (!tele.has) drone.group.position.set(0, 0, 0.25 * MODEL_SCALE);   // park: pist merkezinde
   }
 
-  // ---------- telemetri ve enterpolasyon ----------
-  const tele = { has: false, target: new T.Vector3(0, 0, 0.6), vel: new T.Vector3(), q: new T.Quaternion(), at: 0, throttle: 0, armed: false, speed: 0, last: null };
-  const cur = { pos: new T.Vector3(0, 0, 0.6), q: new T.Quaternion() };
+  // ---------- telemetri: gecikme tamponlu enterpolasyon ----------
+  // Her `tele` karesi kaynak zaman damgasıyla (ts: sunucu alım zamanı, sn ya da ms) tampona alınır. Kaynak saati istemci saatine `offset`
+  // (gözlenen en küçük alım−kaynak farkı; saat kayması için 2 ms/s yukarı sürüklenir) ile eşlenir → ağ jitter'ı zaman çizgisinden düşer.
+  // Render zamanı = şimdi − RENDER_DELAY: iki kare arası konum lineer, yönelim slerp. Tampon biterse ölü hesap (hız + gövde açısal hızları,
+  // en çok DR_MAX). Kare hızından bağımsız (rAF zamanı). Ağ istatistiği: alım hızı (Hz) ve jitter (alım aralığı − kaynak aralığı, ms).
+  const RENDER_DELAY = 80, DR_MAX = 300, BUF_MAX = 64;
+  const buf = [];                                   // {src, pos, q, vel, rx, ry, rz}
+  const tele = { has: false, at: 0, src: 0, offset: null, throttle: 0, armed: false, speed: 0, last: null };
+  const net = { n: 0, jit: 0, hz: 0, jitter: 0, win: 0, lastArr: 0, lastSrc: 0, dr: false };
+  const cur = { pos: new T.Vector3(0, 0, 0.6), q: new T.Quaternion(), vel: new T.Vector3() };
   function setTelemetry(t) {
     if (!t) return;
+    const now = performance.now();
     const p = (t.lat != null && t.lon != null) ? toLocal(t.lat, t.lon) : { x: num(t.x, 0), y: num(t.y, 0) };
-    tele.target.set(p.x, p.y, num(t.alt_rel, 0));
-    tele.vel.set(num(t.ve, 0), num(t.vn, 0), -num(t.vd, 0));
-    attitudeQuat(T, num(t.roll, 0), num(t.pitch, 0), num(t.yaw, 0), tele.q);
-    tele.at = performance.now();
+    // Kaynak saati: tbm (SITL time_boot_ms; TCP parçalanmasından bağımsız, kesin) > ts (sunucu alım zamanı, sn ya da ms) > alım zamanı
+    let src = num(t.tbm, NaN);
+    if (Number.isNaN(src) || src <= 0) { src = num(t.ts, NaN); if (Number.isNaN(src)) src = now; else if (src < 1e11) src *= 1000; }
+    if (tele.has && src <= tele.src) src = tele.src + 1;                  // tekdüze artan
+    const d = now - src;
+    tele.offset = tele.offset == null ? d : Math.min(d, tele.offset + (now - tele.at) * 0.002);
+    const fr = { src, pos: new T.Vector3(p.x, p.y, num(t.alt_rel, 0)), q: attitudeQuat(T, num(t.roll, 0), num(t.pitch, 0), num(t.yaw, 0)),
+      vel: new T.Vector3(num(t.ve, 0), num(t.vn, 0), -num(t.vd, 0)), rx: num(t.ps, 0), ry: num(t.rs, 0), rz: -num(t.ys, 0) };   // gövde: X sağ, Y burun, Z üst
+    buf.push(fr);
+    if (buf.length > BUF_MAX) buf.splice(0, buf.length - BUF_MAX);
+    // ağ istatistiği (1 sn pencere)
+    if (tele.has) { net.n++; net.jit += Math.abs((now - net.lastArr) - (src - net.lastSrc)); }
+    net.lastArr = now; net.lastSrc = src;
+    if (!net.win) net.win = now;
+    else if (now - net.win >= 1000) { net.hz = Math.round(net.n * 1000 / (now - net.win)); net.jitter = net.n ? Math.round(net.jit / net.n) : 0; net.n = 0; net.jit = 0; net.win = now; }
+    tele.at = now; tele.src = src;
     tele.throttle = num(t.throttle, 0); tele.armed = !!t.armed;
-    tele.speed = Math.hypot(tele.vel.x, tele.vel.y, tele.vel.z);
     tele.last = t;
-    if (!tele.has) { tele.has = true; cur.pos.copy(tele.target); cur.q.copy(tele.q); }
+    if (!tele.has) { tele.has = true; cur.pos.copy(fr.pos); cur.q.copy(fr.q); cur.vel.copy(fr.vel); camSpring.pos.copy(fr.pos); camSpring.vel.set(0, 0, 0); }
   }
+  const netStats = () => ({ hz: net.hz, jitter: net.jitter, delay: RENDER_DELAY, buffered: buf.length, deadReckoning: net.dr });
+  // Render zamanı rt (istemci ms) için konum/yönelim örneği → cur
+  const tmpQa = new T.Quaternion(), tmpAx = new T.Vector3();
+  function sample(rt) {
+    const n = buf.length;
+    if (!n) return;
+    const off = tele.offset, last = buf[n - 1], tl = last.src + off;
+    if (rt >= tl) {   // tampon bitti → ölü hesap (en çok DR_MAX)
+      const dt = Math.min(DR_MAX, rt - tl) / 1000;
+      net.dr = rt - tl > 40;
+      cur.pos.copy(last.pos).addScaledVector(last.vel, dt);
+      cur.vel.copy(last.vel);
+      tmpAx.set(last.rx * dt, last.ry * dt, last.rz * dt);
+      const ang = tmpAx.length();
+      cur.q.copy(last.q);
+      if (ang > 1e-6) { tmpQa.setFromAxisAngle(tmpAx.multiplyScalar(1 / ang), ang); cur.q.multiply(tmpQa); }
+      if (n > 1) buf.splice(0, n - 1);
+      return;
+    }
+    net.dr = false;
+    let i = n - 1;
+    while (i > 0 && buf[i - 1].src + off > rt) i--;
+    if (i === 0) { cur.pos.copy(buf[0].pos); cur.q.copy(buf[0].q); cur.vel.copy(buf[0].vel); return; }
+    const a = buf[i - 1], b = buf[i], span = b.src - a.src;
+    const f = span > 0 ? clamp((rt - (a.src + off)) / span, 0, 1) : 1;
+    cur.pos.lerpVectors(a.pos, b.pos, f);
+    cur.q.slerpQuaternions(a.q, b.q, f);
+    cur.vel.lerpVectors(a.vel, b.vel, f);
+    if (i > 1) buf.splice(0, i - 1);   // a'dan öncekiler artık gerekmez
+  }
+  // Takip kamerası: hedef (dron) kritik sönümlü yayla izlenir; kullanıcının OrbitControls açısı/mesafesi korunur
+  const camSpring = { pos: new T.Vector3(0, 0, 0.6), vel: new T.Vector3(), w: 2 * Math.PI * 1.5 };
 
   // ---------- kameralar ----------
   let camMode = 'follow', gimbal = -10;   // derece; 0 = burun hizası, eksi = aşağı
@@ -432,10 +486,15 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     onCamChange?.(mode);
   }
   function resetCamera() {
+    camSpring.pos.copy(cur.pos); camSpring.vel.set(0, 0, 0);
     camera.position.copy(cur.pos).add(tmpV.copy(followOff).multiplyScalar(Math.max(2, drone.radius)));
     controls.target.copy(cur.pos);
     controls.update();
   }
+  // Sanal kumanda açıkken WASD/QE/ok tuşları/boşluk kumandaya gider (kamera 1–4 ve FPV tekerleği çalışır)
+  let keyLock = false;
+  const RC_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+  const setKeyboardLock = v => { keyLock = !!v; free.keys.clear(); };
   const setGimbal = delta => { gimbal = clamp(gimbal + delta, -90, 30); return gimbal; };
 
   // Klavye: 1–4 kamera, ↑↓ gimbal (FPV), WASD/QE serbest hareket (Shift hızlı). Form alanlarında devre dışı.
@@ -443,6 +502,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   const onKeyDown = e => {
     if (preview || editable(document.activeElement) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key >= '1' && e.key <= '4') { setCamera(Number(e.key)); e.preventDefault(); return; }
+    if (keyLock && RC_KEYS.has(e.key.toLowerCase())) return;
     if (camMode === 'fpv' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { setGimbal(e.key === 'ArrowUp' ? 5 : -5); e.preventDefault(); return; }
     if (camMode === 'free') { const k = e.key.toLowerCase(); if ('wasdqe'.includes(k) || e.key === 'Shift') { free.keys.add(k === 'shift' ? 'shift' : k); e.preventDefault(); } }
   };
@@ -498,17 +558,22 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
-    // Telemetri: hızla öngörü (en çok 0.3 sn) + üstel yumuşatma; yönelim slerp
+    // Telemetri: gecikme tamponlu enterpolasyon (render zamanı = şimdi − 80 ms); tampon bitince ölü hesap
     if (tele.has) {
-      const age = Math.min(0.3, (now - tele.at) / 1000);
-      tmpV.copy(tele.target).addScaledVector(tele.vel, age);
-      const k = 1 - Math.exp(-dt * 10);
-      const before = tmpV2.copy(cur.pos);
-      cur.pos.lerp(tmpV, k);
-      cur.q.slerp(tele.q, 1 - Math.exp(-dt * 12));
+      sample(now - RENDER_DELAY);
+      tele.speed = cur.vel.length();
       drone.group.position.copy(cur.pos);
       drone.group.quaternion.copy(cur.q);
-      if (camMode === 'follow') { camera.position.add(tmpV.copy(cur.pos).sub(before)); controls.target.copy(cur.pos); }
+      if (camMode === 'follow') {
+        // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur
+        tmpV2.copy(camera.position).sub(controls.target);
+        const w = camSpring.w;
+        tmpV.copy(camSpring.pos).sub(cur.pos).multiplyScalar(-w * w).addScaledVector(camSpring.vel, -2 * w);
+        camSpring.vel.addScaledVector(tmpV, dt);
+        camSpring.pos.addScaledVector(camSpring.vel, dt);
+        controls.target.copy(camSpring.pos);
+        camera.position.copy(camSpring.pos).add(tmpV2);
+      }
       checkCollision();
     }
     // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır
@@ -576,7 +641,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
 
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, terrainHeight, toLocal,
-    setWorld, setType, clearCollision, resize, dispose,
+    setWorld, setType, clearCollision, resize, dispose, netStats, setKeyboardLock,
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),

@@ -3349,4 +3349,16 @@ registerCatalog('de', {
   "Oturum yok": "Keine Sitzung",
   "SITL yeniden başlatıldı": "SITL neu gestartet",
   "Dron Yönetimi › Uçuş Simülatörü": "Drohnenverwaltung › Flugsimulator",
+  // --- Uçuş Simülatörü: sanal kumanda + ağ göstergesi ---
+  "Sanal kumanda": "Virtuelle Fernsteuerung",
+  "Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.": "Virtuelle Fernsteuerung: zwei virtuelle Sticks + Tastatur (W/S Gas, A/D Gier, Pfeiltasten Nick/Roll, Q/E Moduskanal, Leertaste Gas Mitte). RC_CHANNELS_OVERRIDE 20 Hz.",
+  "Gaz / Yaw": "Gas / Gier",
+  "Pitch / Roll": "Nick / Roll",
+  "Mission Planner joystick de açıksa son gelen RC komutu geçerli olur": "Ist der Mission-Planner-Joystick ebenfalls aktiv, gilt der zuletzt empfangene RC-Befehl",
+  "W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta": "W/S Gas · A/D Gier · ↑↓ Nick · ←→ Roll · Q/E Moduskanal · Leertaste Gas Mitte",
+  "Sanal kumanda için yazma izni gerekir": "Für die virtuelle Fernsteuerung ist Schreibrecht erforderlich",
+  "Sanal kumanda kapatıldı (RC override serbest)": "Virtuelle Fernsteuerung aus (RC-Override freigegeben)",
+  "Sanal kumanda açık (RC override)": "Virtuelle Fernsteuerung an (RC-Override)",
+  "net: {hz} Hz · jitter {j} ms": "Netz: {hz} Hz · Jitter {j} ms",
+  "Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap": "Telemetrie-Empfangsrate und Jitter (Empfangsintervall − Quellintervall); DR = Koppelnavigation",
 });

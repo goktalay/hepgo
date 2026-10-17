@@ -3349,4 +3349,16 @@ registerCatalog('ru', {
   "Oturum yok": "Нет сессии",
   "SITL yeniden başlatıldı": "SITL перезапущен",
   "Dron Yönetimi › Uçuş Simülatörü": "Управление дронами › Авиасимулятор",
+  // --- Uçuş Simülatörü: sanal kumanda + ağ göstergesi ---
+  "Sanal kumanda": "Виртуальный пульт",
+  "Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.": "Виртуальный пульт: два виртуальных стика + клавиатура (W/S газ, A/D рыскание, стрелки тангаж/крен, Q/E канал режима, Пробел — газ в центр). RC_CHANNELS_OVERRIDE 20 Гц.",
+  "Gaz / Yaw": "Газ / Рыскание",
+  "Pitch / Roll": "Тангаж / Крен",
+  "Mission Planner joystick de açıksa son gelen RC komutu geçerli olur": "Если джойстик Mission Planner тоже активен, действует последняя полученная RC-команда",
+  "W/S gaz · A/D yaw · ↑↓ pitch · ←→ roll · Q/E mod kanalı · Boşluk gaz orta": "W/S газ · A/D рыскание · ↑↓ тангаж · ←→ крен · Q/E канал режима · Пробел газ в центр",
+  "Sanal kumanda için yazma izni gerekir": "Для виртуального пульта требуется право записи",
+  "Sanal kumanda kapatıldı (RC override serbest)": "Виртуальный пульт выключен (RC override снят)",
+  "Sanal kumanda açık (RC override)": "Виртуальный пульт включён (RC override)",
+  "net: {hz} Hz · jitter {j} ms": "сеть: {hz} Гц · джиттер {j} мс",
+  "Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap": "Частота приёма телеметрии и джиттер (интервал приёма − интервал источника); DR = счисление пути",
 });

@@ -3568,4 +3568,8 @@ registerCatalog('de', {
   "Sade görünüm": "Schlichte Ansicht",
   "Harekât paneli": "Einsatzpanel",
   "Rota yüklendi: {n} nokta": "Route geladen: {n} Punkte",
+  "Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)": "Einsatzpanel ein-/ausblenden (P): Ebene, die von rechts über die 3D-Welt gleitet; geschlossen = schlichte Ansicht (altes HUD und Befehle der unteren Leiste)",
+  "Harekât panelini aç/kapat (P)": "Einsatzpanel ein-/ausblenden (P)",
+  "Panel": "Panel",
+  "net: {hz} Hz · jitter {j} ms · tampon {d} ms": "Netz: {hz} Hz · Jitter {j} ms · Puffer {d} ms",
 });

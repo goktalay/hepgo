@@ -236,7 +236,7 @@ def vekil_testleri(a, mon, c_altsiz):
         sim_terrain.FETCH = sim_terrain._fetch
     print('  vekil (terrain/tile/osm) testleri geçti')
 
-TELE_ALANLARI = {'rs', 'ps', 'ys', 'tbm', 'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
+TELE_ALANLARI = {'rs', 'ps', 'ys', 'tbm', 'tbm_pos', 'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
                  'mode', 'armed', 'gps_fix', 'sats', 'batt_v', 'batt_pct', 'throttle', 'rc', 'home', 'gcs_connected', 'gcs_addr'}
 
 
@@ -951,7 +951,7 @@ def main():
             assert t0['armed'] is True and t0['mode'] == 'LOITER' and t0['alt_rel'] > 0 and len(t0['rc']) == 8 and t0['rc'][2] == 1800, t0
             assert t0['home'] == {'lat': 39.93, 'lon': 32.84, 'alt': 905.0} and t0['gcs_connected'] is False and t0['gcs_addr'] is None, t0
             assert abs(t0['lat'] - 39.925) < 0.01 and abs(t0['lon'] - 32.837) < 0.01 and t0['alt_msl'] > 900, t0
-            assert {'rs', 'ps', 'ys', 'tbm'} <= set(t0) and isinstance(t0['tbm'], int) and t0['tbm'] > 0, t0   # açısal hızlar + SITL zaman damgası
+            assert {'rs', 'ps', 'ys', 'tbm', 'tbm_pos'} <= set(t0) and isinstance(t0['tbm'], int) and t0['tbm'] > 0 and t0['tbm_pos'] == t0['tbm'], t0   # açısal hızlar + SITL zaman damgaları (sahte: konum = yönelim)
             # --- 50 Hz sahte akış: 1 sn'de ≥ 40 tele, ardışık ts farkı ort. ≤ 25 ms, ts sunucu alım zamanı (Unix sn) ---
             ts_liste = []
             bitis = time.time() + 1.0

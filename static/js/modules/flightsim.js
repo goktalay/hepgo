@@ -70,8 +70,17 @@ export async function render(view, params, ctx, extra = {}) {
   const canWrite = !!(ctx.user?.master || extra.m?.can?.command || (ctx.user?.write_modules || []).includes('drone'));
   const backend = mock ? mockBackend(ctx) : restBackend();
   const head = extra.head || (sub => h('div', { class: 'page-head' }, h('div', { class: 'page-head-t' }, h('h1', null, 'Uçuş Simülatörü'), sub ? h('div', { class: 'sub' }, sub) : null)));
-  if (sid) return renderSession(view, ctx, backend, sid, { mock, canWrite });
+  if (sid) return renderSession(view, ctx, backend, sid, { mock, canWrite, netsim: parseNetsim(sp.get('netsim')) });
   return renderWizard(view, ctx, backend, head, { mock, canWrite });
+}
+
+// Ağ bozulması test kipi (§5 titreme teşhisi): #/drone/sim/<id>?netsim=jitter30,loss5,delay40 — gelen her `tele` karesi delay + U(0, 2·jitter) ms
+// gecikmeyle (sıra bozulabilir) iletilir, %loss'u düşürülür. Yalnız bu parametreyle açılır; ayrıca window.__fsSim (3B nesnesi: netStats/motionStats) verilir.
+function parseNetsim(s) {
+  if (!s) return null;
+  const o = { jitter: 0, loss: 0, delay: 0 };
+  for (const part of String(s).split(',')) { const m = /^(jitter|loss|delay)(\d+(?:\.\d+)?)$/.exec(part.trim()); if (m) o[m[1]] = Number(m[2]); }
+  return o;
 }
 
 // ======================================================================
@@ -414,7 +423,7 @@ const randomSeed = () => Math.floor(Math.random() * 2147483646) + 1;
 // ======================================================================
 // Oturum ekranı: tam alan 3B + HUD + Mission Planner kutusu + araç çubuğu + olaylar + çarpışma bandı
 // ======================================================================
-async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
+async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null }) {
   let session;
   try { session = await be.session(sid); } catch (err) {
     clear(view, h('div', { class: 'card empty' }, h('p', null, h('b', null, 'Oturum bulunamadı.')), h('p', { class: 'small muted' }, err.message),
@@ -454,7 +463,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const rcBars = Array.from({ length: 8 }, (_, i) => h('div', { class: 'fs-rc', title: tr('Kanal {n}', { n: i + 1 }) }, h('i'), h('small', null, String(i + 1))));
   const thrBar = h('div', { class: 'fs-thr' }, h('i'));
   const windArrow = h('span', { class: 'fs-wind-arrow' }, '➤');
-  const netLbl = h('div', { class: 'fs-net', title: 'Telemetri alım hızı ve jitter (alım aralığı − kaynak aralığı); DR = ölü hesap' }, '');
+  const netLbl = h('div', { class: 'fs-net', title: 'Telemetri alım hızı, jitter (alım aralığı − kaynak aralığı) ve uyarlanır gecikme tamponu; DR = ölü hesap' }, '');
   const hud = h('div', { class: 'fs-hud mono' },
     h('div', { class: 'fs-hud-head' }, V.mode, V.arm),
     row('AGL', V.agl, 'm'), row('MSL', V.msl, 'm'),
@@ -482,10 +491,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
-  // §14 harekât paneli: Canlı Uçuş'un panelleri (telemetri, komutlar, rota, ARM CHECK, konsol) 3B'nin yanında iframe; "Sade görünüm" eski HUD + alt çubuk komutlarına döner
+  // §14 harekât paneli: Canlı Uçuş'un panelleri (telemetri, komutlar, rota, ARM CHECK, konsol) 3B'nin ÜSTÜNDE sağdan kayan katman (iframe);
+  // "Panel" düğmesi / P tuşu / kenar sekmesi açıp kapatır; kapalıyken sade görünüm (eski HUD + alt çubuk komutları)
   const opsOk = !replay && !mock && !!be.ops;
   let ops = null;
-  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât panelini gizle/göster: sade görünümde yalnız 3B dünya, eski HUD ve alt çubuk komutları'), onclick: () => { if (!ops) return; const on = ops.toggle(); opsBtn.classList.toggle('primary', !on); opsBtn.textContent = tr(on ? 'Sade görünüm' : 'Harekât paneli'); } }, 'Sade görünüm');
+  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât panelini aç/kapat (P): 3B dünyanın üstünde sağdan kayan katman; kapalıyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -528,7 +538,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
-  if (opsOk) { ops = createOpsPanel(stage, { sid }); opsBtn.classList.toggle('primary', !ops.enabled); opsBtn.textContent = tr(ops.enabled ? 'Sade görünüm' : 'Harekât paneli'); }
+  if (opsOk) { ops = createOpsPanel(stage, { sid, onToggle: on => opsBtn.classList.toggle('primary', on) }); opsBtn.classList.toggle('primary', ops.enabled); }
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -590,6 +600,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       g3dKey: be.g3dKey,
       onFallback: e => { const t = g3dMode ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
     });
+    if (netsim) window.__fsSim = sim;   // teşhis: Playwright/konsol sim.netStats() · sim.motionStats(true)
     if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
     if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
     msg.hidden = true;
@@ -773,7 +784,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     fatal: why => { setWs('closed'); showEnded(why === 'auth' ? tr('Bu oturumu izleme yetkiniz yok.') : why === 'notfound' ? tr('Oturum sunucuda yok (kapanmış olabilir).') : why); },
     message: m => {
       if (destroyed) return;
-      if (m.t === 'tele') return replay ? undefined : updateHud(m);
+      if (m.t === 'tele') { if (replay) return; if (!netsim) return updateHud(m); if (Math.random() * 100 < netsim.loss) return; return void setTimeout(() => { if (!destroyed) updateHud(m); }, netsim.delay + Math.random() * 2 * netsim.jitter); }
       if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) sim?.setRoute(session.route); } return; }
       if (m.t === 'route') { sim?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null);
@@ -805,7 +816,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
   const netTick = setInterval(() => {
     if (!sim || replay) { netLbl.hidden = true; return; }   // kayıt kipinde ağ akışı yok
     const n = sim.netStats();
-    netLbl.textContent = tr('net: {hz} Hz · jitter {j} ms', { hz: n.hz, j: n.jitter }) + (n.deadReckoning ? ' · DR' : '');
+    netLbl.textContent = tr('net: {hz} Hz · jitter {j} ms · tampon {d} ms', { hz: n.hz, j: n.jitter, d: n.delay }) + (n.deadReckoning ? ' · DR' : '');
     netLbl.classList.toggle('warn', n.hz > 0 && (n.hz < 15 || n.jitter > 40));
   }, 500);
 
@@ -819,6 +830,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
     milHud?.dispose();
     ops?.dispose();
     sim?.dispose();
+    if (window.__fsSim === sim) delete window.__fsSim;
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');
     document.body.classList.remove('immersive');

@@ -9095,29 +9095,35 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-mhud-on .fs-hud, .fs-stage.fs-mhud-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı HUD içinde */
 .fs-mhud-btn[hidden] { display: none; }
 
-/* ===== Uçuş Simülatörü — Canlı Uçuş harekât paneli (§14; flightsim_ops.js): 3B solda, static/ops iframe sağda ===== */
-.fs-stage { --fs-ops-w: clamp(440px, 46%, 720px); }
-.fs-ops-frame { position: absolute; top: 0; right: 0; bottom: 0; width: var(--fs-ops-w); height: 100%; border: 0; border-left: 1px solid rgba(255, 255, 255, .1); background: #0b0e11; z-index: 7; display: block; }
-.fs-ops-frame[hidden] { display: none; }
-.fs-stage.fs-ops .fs-canvas, .fs-stage.fs-ops .fs-msg, .fs-stage.fs-ops .fs-crash, .fs-stage.fs-ops .fs-mhud { right: var(--fs-ops-w); }
-.fs-stage.fs-ops .fs-bar, .fs-stage.fs-ops .fs-sticks { right: var(--fs-ops-w); }
+/* ===== Uçuş Simülatörü — Canlı Uçuş harekât paneli (§14; flightsim_ops.js): 3B tam alan, static/ops iframe 3B'nin ÜSTÜNDE sağdan kayan katman =====
+   .fs-ops-host: panel var (sekme görünür) · .fs-ops: panel açık · .fs-fpv: Dron kamerası (panel + sekme gizli). Katman alt çubuğa dek iner (--fs-bar-h). */
+.fs-stage { --fs-ops-w: clamp(440px, 36%, 520px); --fs-bar-h: 54px; }
+.fs-ops-frame { position: absolute; top: 0; right: 0; width: var(--fs-ops-w); height: calc(100% - var(--fs-bar-h)); border: 0; border-left: 1px solid rgba(255, 255, 255, .12); background: rgba(11, 14, 17, .9); color-scheme: dark; z-index: 7; display: block; transform: translateX(calc(100% + 2px)); transition: transform .28s ease; pointer-events: none; box-shadow: -8px 0 24px rgba(0, 0, 0, .35); }
+.fs-stage.fs-ops .fs-ops-frame { transform: none; pointer-events: auto; }
+.fs-ops-tab { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 5px; min-height: 92px; border: 1px solid rgba(255, 255, 255, .16); border-right: 0; border-radius: 10px 0 0 10px; background: rgba(11, 18, 32, .86); color: #e6e9ef; cursor: pointer; backdrop-filter: blur(6px); transition: right .28s ease, background .15s; font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; }
+.fs-ops-tab:hover { background: rgba(37, 99, 235, .55); }
+.fs-ops-tab .fs-ops-tab-txt { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+.fs-ops-tab .fs-ops-tab-ico { font-size: 16px; line-height: 1; }
+.fs-stage.fs-ops .fs-ops-tab { right: var(--fs-ops-w); }
 .fs-stage.fs-ops .fs-nav { left: calc((100% - var(--fs-ops-w)) / 2); max-width: calc(100% - var(--fs-ops-w) - 20px); }
-/* olay şeridi: 3B alanın Mission Planner kutusunun (sol, 300px) sağında kalan bölümünde ortalanır — kutunun altına girmez */
+/* olay şeridi: 3B'nin panelsiz kalan alanında Mission Planner kutusunun (sol, 300px) sağında ortalanır — kutunun ve panelin altına girmez */
 .fs-stage.fs-ops .fs-events { left: calc(324px + (100% - var(--fs-ops-w) - 324px) / 2); width: min(460px, calc(100% - var(--fs-ops-w) - 340px)); }
 .fs-stage.fs-ops .fs-attrib { right: calc(var(--fs-ops-w) + 8px); }
-.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds { display: none; }   /* veri paneli ve komutlar harekât panelinde */
-.fs-stage.fs-ops .fs-stick[data-side="r"] { right: 40px; }
-/* Dron kamerası (FPV): harekât paneli gizlenir, 3B sahne tam alan; askeri HUD aynen çalışır (alt çubuk kamera düğmeleri 1–4 erişilebilir) */
-.fs-stage.fs-ops.fs-fpv .fs-ops-frame { display: none; }
-.fs-stage.fs-ops.fs-fpv .fs-canvas, .fs-stage.fs-ops.fs-fpv .fs-msg, .fs-stage.fs-ops.fs-fpv .fs-crash, .fs-stage.fs-ops.fs-fpv .fs-mhud,
-.fs-stage.fs-ops.fs-fpv .fs-bar, .fs-stage.fs-ops.fs-fpv .fs-sticks { right: 0; }
+.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds { display: none; }   /* veri paneli ve komutlar harekât panelinde (kapalı = sade görünüm) */
+.fs-stage.fs-ops .fs-stick[data-side="r"] { right: calc(var(--fs-ops-w) + 40px); }
+.fs-stage.fs-ops .fs-rc-hint { left: calc((100% - var(--fs-ops-w)) / 2); }
+.fs-stage.fs-ops-host .fs-crash { z-index: 9; }   /* ÇARPIŞMA bandı katmanın da üstünde */
+/* Dron kamerası (FPV): harekât paneli ve sekme gizlenir, 3B sahne tam alan; askeri HUD aynen çalışır (alt çubuk kamera düğmeleri 1–4 erişilebilir) */
+.fs-stage.fs-fpv .fs-ops-frame, .fs-stage.fs-fpv .fs-ops-tab { display: none; }
 .fs-stage.fs-ops.fs-fpv .fs-nav { left: 50%; max-width: calc(100% - 20px); }
 .fs-stage.fs-ops.fs-fpv .fs-events { left: 50%; width: min(520px, 60%); }
 .fs-stage.fs-ops.fs-fpv .fs-attrib { right: 8px; }
+.fs-stage.fs-ops.fs-fpv .fs-stick[data-side="r"] { right: 270px; }
+.fs-stage.fs-ops.fs-fpv .fs-rc-hint { left: 50%; }
 .fs-ops-btn[hidden] { display: none; }
 /* Sihirbaz: dron kaydı (isteğe bağlı) */
 .fs-sub-h { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .fs-drone-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .fs-drone-sel { min-width: 260px; max-width: 100%; }
-@media (max-width: 1100px) { .fs-stage { --fs-ops-w: 52%; } }
-@media (max-width: 760px) { .fs-stage.fs-ops .fs-ops-frame { display: none; } .fs-stage.fs-ops .fs-canvas, .fs-stage.fs-ops .fs-bar, .fs-stage.fs-ops .fs-msg { right: 0; } .fs-stage.fs-ops .fs-hud { display: block; } }
+@media (max-width: 1100px) { .fs-stage { --fs-ops-w: clamp(400px, 48%, 520px); } }
+@media (max-width: 760px) { .fs-stage { --fs-ops-w: 100%; } .fs-stage.fs-ops .fs-events, .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } .fs-stage.fs-ops .fs-nav { left: 50%; max-width: calc(100% - 20px); } }

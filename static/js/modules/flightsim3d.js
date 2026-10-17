@@ -11,8 +11,10 @@
 //   Pervaneler gaz ile döner (yüksek devirde bulanık disk), elevonlar RC ile, seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe),
 //   yalnız dron gölge düşürür. Yönelim: ArduPilot roll/pitch/yaw (NED) → ENU quaternion (Euler 'ZXY': pitch, roll, −yaw).
 // • Kameralar (1–4): Takip (OrbitControls, hedef dron) · Dron kamerası (FPV, burun; gimbal ↑↓) · Serbest (WASD/QE + fare sürükle) · Yer.
-// • Telemetri (50 Hz'e dek): gecikme tamponlu enterpolasyon — kareler kaynak zaman damgasıyla (tele.tbm, yoksa ts) tamponlanır, render zamanı = şimdi − 80 ms,
-//   konum lineer / yönelim slerp; tampon bitince ölü hesap (hız + gövde açısal hızları rs/ps/ys, en çok 300 ms). Takip kamerası kritik sönümlü yay.
+// • Telemetri (50 Hz'e dek): UYARLANIR gecikme tamponlu enterpolasyon — kareler kaynak zaman damgasıyla (yönelim tele.tbm, konum tele.tbm_pos; yoksa ts)
+//   iki ayrı zaman çizgisinde sıralı tamponlanır; oynatma başı kaynak zamanında gerçek süreyle ilerler, hedef gecikme 60 ms + 3×jitter (60…300 ms,
+//   ±10 ms/s); konum lineer / yönelim slerp; tampon bitince ölü hesap (hız + gövde açısal hızları rs/ps/ys, en çok 300 ms) ve gerçek kareye dönüşte
+//   130 ms yumuşak yakınsama (sıçrama yok). Takip kamerası kritik sönümlü yay. motionStats(): ardışık kare yönelim farkı (titreme ölçümü).
 //   Çarpışma: z < h(x,y)+0.3 ya da bina kutusu, hız > 1 m/s.
 // • Gerçek arazi (world.mode = 'real'; §9): yükseklik AWS Terrain Tiles terrarium PNG (z 12–13, bilineer örnekleme), uydu doku Esri World
 //   Imagery karoları canvas atlasında (z+3), OSM (Overpass) binalar (çokgen üçgenleme + duvarlar, tek geometri), orman çokgenlerinde ağaçlar,
@@ -21,10 +23,12 @@
 // • Google 3B (world.mode = 'google3d'; §11): ./flightsim_g3d.js — Photorealistic 3D Tiles kendi grubunda (gWorld dışında; aynı merkez için
 //   yeniden kullanılır), yükseklik/çarpışma karolara ışınla, prosedürel/OSM nesneler kapalı, pist isteğe bağlı; hata → prosedürele düşer.
 // Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, snapCamera (takip yayı dronun üstüne), terrainHeight,
-//        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
+//        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay (ms, uyarlanır tampon),
+//        buffered, deadReckoning, drEnters, drPerMin, rate}, motionStats(reset) → {frames, angMean, angMax, angJerk, posMean, drEnters, …},
 //        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
 
 import { addLandingGear, createLaunchRig } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13): iniş takımı, rampa, pickup
+import { createTimeline } from './flightsim_interp.js';   // telemetri zaman çizgisi: uyarlanır gecikme tamponlu enterpolasyon (§5)
 
 const LIB = '/static/vendor/three/';
 export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
@@ -230,12 +234,7 @@ function inRunway(x, y, headingDeg, margin = 0) {
   return Math.abs(v) <= RUNWAY_L / 2 + margin && Math.abs(u) <= RUNWAY_W / 2 + margin;
 }
 
-// ArduPilot roll/pitch/yaw (rad, NED) → ENU gövde quaternionu. Gövde: burun +Y, sağ kanat +X, üst +Z.
-// yaw 0 = kuzey (+Y), doğu = +X; saat yönü yaw → +Z etrafında negatif dönüş. Sıra: yaw → pitch (gövde X) → roll (gövde Y).
-function attitudeQuat(T, roll, pitch, yaw, out) {
-  const e = new T.Euler(pitch || 0, roll || 0, -(yaw || 0), 'ZXY');
-  return (out || new T.Quaternion()).setFromEuler(e);
-}
+// attitudeQuat (ArduPilot roll/pitch/yaw → ENU gövde quaternionu) ./flightsim_interp.js'tedir.
 
 export async function createFlightSim3D(mountEl, world, opts = {}) {
   const { T, OrbitControls, GLTFLoader } = await loadLibs();
@@ -977,72 +976,25 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     return new Promise(resolve => cv.toBlob(resolve, 'image/png'));
   }
 
-  // ---------- telemetri: gecikme tamponlu enterpolasyon ----------
-  // Her `tele` karesi kaynak zaman damgasıyla (ts: sunucu alım zamanı, sn ya da ms) tampona alınır. Kaynak saati istemci saatine `offset`
-  // (gözlenen en küçük alım−kaynak farkı; saat kayması için 2 ms/s yukarı sürüklenir) ile eşlenir → ağ jitter'ı zaman çizgisinden düşer.
-  // Render zamanı = şimdi − RENDER_DELAY: iki kare arası konum lineer, yönelim slerp. Tampon biterse ölü hesap (hız + gövde açısal hızları,
-  // en çok DR_MAX). Kare hızından bağımsız (rAF zamanı). Ağ istatistiği: alım hızı (Hz) ve jitter (alım aralığı − kaynak aralığı, ms).
-  const RENDER_DELAY = 80, DR_MAX = 300, BUF_MAX = 64;
-  const buf = [];                                   // {src, pos, q, vel, rx, ry, rz}
-  const tele = { has: false, at: 0, src: 0, offset: null, throttle: 0, armed: false, speed: 0, last: null };
-  const net = { n: 0, jit: 0, hz: 0, jitter: 0, win: 0, lastArr: 0, lastSrc: 0, dr: false };
-  const cur = { pos: new T.Vector3(0, 0, 0.6), q: new T.Quaternion(), vel: new T.Vector3() };
+  // ---------- telemetri: uyarlanır gecikme tamponlu enterpolasyon (./flightsim_interp.js; §5) ----------
+  // Zaman çizgisi (konum/yönelim ayrı tamponlar, sıralı ekleme, uyarlanır hedef gecikme, ölü hesap + yumuşak yakınsama, ağ/hareket istatistiği)
+  // tarayıcısız test edilebilir modüldedir; burada yalnız kare başına yan alanlar (gaz, arm, RC, hız) ve ilk karede kamera yayının oturması.
+  const tl = createTimeline(T, { toLocal });
+  const cur = tl.cur;                                // render edilen konum/yönelim/hız (yumuşatılmış)
+  const tele = { has: false, at: 0, throttle: 0, armed: false, speed: 0, rc: null, last: null };
   function setTelemetry(t) {
     if (!t) return;
     const now = performance.now();
-    const p = (t.lat != null && t.lon != null) ? toLocal(t.lat, t.lon) : { x: num(t.x, 0), y: num(t.y, 0) };
-    // Kaynak saati: tbm (SITL time_boot_ms; TCP parçalanmasından bağımsız, kesin) > ts (sunucu alım zamanı, sn ya da ms) > alım zamanı
-    let src = num(t.tbm, NaN);
-    if (Number.isNaN(src) || src <= 0) { src = num(t.ts, NaN); if (Number.isNaN(src)) src = now; else if (src < 1e11) src *= 1000; }
-    if (tele.has && src <= tele.src) src = tele.src + 1;                  // tekdüze artan
-    const d = now - src;
-    tele.offset = tele.offset == null ? d : Math.min(d, tele.offset + (now - tele.at) * 0.002);
-    const fr = { src, pos: new T.Vector3(p.x, p.y, num(t.alt_rel, 0)), q: attitudeQuat(T, num(t.roll, 0), num(t.pitch, 0), num(t.yaw, 0)),
-      vel: new T.Vector3(num(t.ve, 0), num(t.vn, 0), -num(t.vd, 0)), rx: num(t.ps, 0), ry: num(t.rs, 0), rz: -num(t.ys, 0) };   // gövde: X sağ, Y burun, Z üst
-    buf.push(fr);
-    if (buf.length > BUF_MAX) buf.splice(0, buf.length - BUF_MAX);
-    // ağ istatistiği (1 sn pencere)
-    if (tele.has) { net.n++; net.jit += Math.abs((now - net.lastArr) - (src - net.lastSrc)); }
-    net.lastArr = now; net.lastSrc = src;
-    if (!net.win) net.win = now;
-    else if (now - net.win >= 1000) { net.hz = Math.round(net.n * 1000 / (now - net.win)); net.jitter = net.n ? Math.round(net.jit / net.n) : 0; net.n = 0; net.jit = 0; net.win = now; }
-    tele.at = now; tele.src = src;
+    const r = tl.push(t, now);
+    tele.at = now;
     tele.throttle = num(t.throttle, 0); tele.armed = !!t.armed;
     tele.rc = Array.isArray(t.rc) ? t.rc : null;   // RC kanalları 1000…2000 (1: roll, 2: pitch) → kontrol yüzeyleri
-    tele.speed = fr.vel.length();   // son karenin hızı (çarpışma denetimi için; render döngüsü enterpolasyonlu hızla günceller)
+    tele.speed = r.speed;   // son karenin hızı (çarpışma denetimi için; render döngüsü enterpolasyonlu hızla günceller)
     tele.last = t;
-    if (!tele.has) { tele.has = true; cur.pos.copy(fr.pos); cur.q.copy(fr.q); cur.vel.copy(fr.vel); camSpring.pos.copy(fr.pos); camSpring.vel.set(0, 0, 0); }
+    if (r.first) { tele.has = true; camSpring.pos.copy(cur.pos); camSpring.vel.set(0, 0, 0); }
   }
-  const netStats = () => ({ hz: net.hz, jitter: net.jitter, delay: RENDER_DELAY, buffered: buf.length, deadReckoning: net.dr });
-  // Render zamanı rt (istemci ms) için konum/yönelim örneği → cur
-  const tmpQa = new T.Quaternion(), tmpAx = new T.Vector3();
-  function sample(rt) {
-    const n = buf.length;
-    if (!n) return;
-    const off = tele.offset, last = buf[n - 1], tl = last.src + off;
-    if (rt >= tl) {   // tampon bitti → ölü hesap (en çok DR_MAX)
-      const dt = Math.min(DR_MAX, rt - tl) / 1000;
-      net.dr = rt - tl > 40;
-      cur.pos.copy(last.pos).addScaledVector(last.vel, dt);
-      cur.vel.copy(last.vel);
-      tmpAx.set(last.rx * dt, last.ry * dt, last.rz * dt);
-      const ang = tmpAx.length();
-      cur.q.copy(last.q);
-      if (ang > 1e-6) { tmpQa.setFromAxisAngle(tmpAx.multiplyScalar(1 / ang), ang); cur.q.multiply(tmpQa); }
-      if (n > 1) buf.splice(0, n - 1);
-      return;
-    }
-    net.dr = false;
-    let i = n - 1;
-    while (i > 0 && buf[i - 1].src + off > rt) i--;
-    if (i === 0) { cur.pos.copy(buf[0].pos); cur.q.copy(buf[0].q); cur.vel.copy(buf[0].vel); return; }
-    const a = buf[i - 1], b = buf[i], span = b.src - a.src;
-    const f = span > 0 ? clamp((rt - (a.src + off)) / span, 0, 1) : 1;
-    cur.pos.lerpVectors(a.pos, b.pos, f);
-    cur.q.slerpQuaternions(a.q, b.q, f);
-    cur.vel.lerpVectors(a.vel, b.vel, f);
-    if (i > 1) buf.splice(0, i - 1);   // a'dan öncekiler artık gerekmez
-  }
+  const netStats = tl.netStats, motionStats = tl.motionStats;
+  const advance = rawMs => tl.advance(rawMs);
   // Takip kamerası: hedef (dron) kritik sönümlü yayla izlenir; kullanıcının OrbitControls açısı/mesafesi korunur
   const camSpring = { pos: new T.Vector3(0, 0, 0.6), vel: new T.Vector3(), w: 2 * Math.PI * 1.5 };
   let camSnap = false;   // sonraki karede takip yayı dronun üstüne oturur (kayıtta atlama; kullanıcının bakış açısı/mesafesi korunur)
@@ -1149,9 +1101,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
     const rawDt = Math.max(0, (now - lastT) / 1000), dt = Math.min(0.1, rawDt); lastT = now;
-    // Telemetri: gecikme tamponlu enterpolasyon (render zamanı = şimdi − 80 ms); tampon bitince ölü hesap
+    // Telemetri: uyarlanır gecikme tamponlu enterpolasyon — oynatma başı gerçek geçen süreyle (kırpılmamış) ilerler; tampon bitince ölü hesap
     if (tele.has) {
-      sample(now - RENDER_DELAY);
+      advance(Math.min(2000, rawDt * 1000));
       tele.speed = cur.vel.length();
       drone.group.position.copy(cur.pos);
       drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
@@ -1193,12 +1145,15 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     }
     // İniş takımı tekerlekleri (§13): yerde yer hızıyla döner; havalanınca sabit (geri çekme yok)
     if (drone.gear && tele.has && cur.pos.z < 1.5 && tele.speed > 0.05) { const w = tele.speed / (drone.gear.radius * MODEL_SCALE) * dt; for (const wh of drone.gear.wheels) wh.rotation.x -= w; }
-    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır; yüksek devirde palalar gizlenir, bulanıklık diski belirir
+    // Pervaneler: arm'lıysa en az rölanti, gaz ile hızlanır; yüksek devirde palalar gizlenir, bulanıklık diski belirir.
+    // Düşük kare hızında (Google 3B / yazılım WebGL) kırpılmamış gerçek süre kullanılır (açı 2π'ye sarılır) → devir kare hızına bağlı değişmez
     const rate = tele.armed ? 12 + tele.throttle * 0.9 : 0;   // rad/s
-    propAngle.v += rate * dt;
+    const pdt = Math.min(0.5, rawDt);
+    propAngle.v = (propAngle.v + rate * pdt) % (2 * Math.PI);
     const blur = clamp((rate - 20) / 40, 0, 1);
     for (const p of drone.props) {
-      p.rotation[p.userData.axis || 'z'] += rate * dt * (p.userData.dir || 1);   // kütüphane modeli pervanesi: en ince sınır kutusu ekseni
+      const ax = p.userData.axis || 'z';
+      p.rotation[ax] = (p.rotation[ax] + rate * pdt * (p.userData.dir || 1)) % (2 * Math.PI);   // kütüphane modeli pervanesi: en ince sınır kutusu ekseni
       if (p.userData.disc) p.userData.disc.material.opacity = 0.45 * blur;
       if (p.userData.blades) for (const b of p.userData.blades) b.visible = blur < 0.85;
     }
@@ -1323,7 +1278,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
 
   return {
     setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
-    setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, setKeyboardLock,
+    setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, motionStats, setKeyboardLock,
     setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; },   // kalkış yöntemi (§13)
     setRoute, get route() { return routePts.slice(); },   // §14: SITL'deki görevin rota çizgisi/işaretleri
     get modelInfo() { return { type: drone.type, model: drone.model, bbox: drone.bbox || null, props: drone.props.length }; },   // yönelim paneli (§12)

@@ -336,3 +336,16 @@ body.tam-ekran-modu #konsolYari { background: rgba(0,0,0,.55); }
 body.hepgo-tam #hepgoGorevRozet { display: none !important; }
 /* Bildirimler tam ekranda yüzen üst bandın altından başlasın */
 body.hepgo-tam #umToastKap { top: 76px; }
+
+/* ===== §14 Uçuş Simülatörü: harekât paneli 3B'nin üstünde katman (flightsim_ops.js) =====
+   html[data-hepgo-sim]: panel iframe'i simülatör oturumunda; html[data-hepgo-nomap]: Cesium yüklenmedi (index.html yükleyicisi +
+   hepgo_nomap.js sahte Cesium). Harita alanı boş kalır; dron kartı katman genişliğine uyar; harita araçları, alt bar harita
+   alanları ve Harita Ayarları gizlenir; yalnız Bağlantı Yöneticisi (gizli) ve "Haritayı göster" anahtarı kalır. */
+html[data-hepgo-sim] body { background: transparent; }
+html[data-hepgo-nomap] #cesiumContainer { background: transparent; }
+html[data-hepgo-nomap] #haritaAracGrubu > button:not(#btnHaritaGoster):not(#btnBaglantiPanel) { display: none !important; }
+html[data-hepgo-nomap] #altBar #fareKoordinat, html[data-hepgo-nomap] #altBar #zoomDurum, html[data-hepgo-nomap] #altBar #hrtCacheDurum,
+html[data-hepgo-nomap] #altBar #haritaAtif, html[data-hepgo-nomap] #haritaPopup, html[data-hepgo-nomap] #haritaMenu,
+html[data-hepgo-nomap] #haritaAramaPopup { display: none !important; }
+html[data-hepgo-sim] .dron-kart.ayrik { width: calc(100% - 64px); max-width: 560px; min-width: 300px; }
+html[data-hepgo-sim] #haritaAracGrubu { z-index: 16; }

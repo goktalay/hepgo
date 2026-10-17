@@ -3384,7 +3384,7 @@ registerCatalog('fr', {
   "Önce bir uçuş logu seçin": "Sélectionnez d'abord un journal de vol",
   "Kayıttan oynatma oturumu açıldı": "Session de relecture ouverte",
   "Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin": "Journal impossible à ouvrir ; choisissez un .bin/.tlog dont l'analyse est terminée",
-  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.": "Le monde est construit autour du point de décollage de l'enregistrement (niveau de piste = altitude de décollage). Le terrain est procédural, ne correspond pas au terrain réel ; la détection de collision est désactivée.",
+  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.": "Le monde est construit autour du point de décollage de l'enregistrement (niveau de piste = altitude de décollage) ; la détection de collision est désactivée. En mode procédural le terrain ne correspond pas au réel ; en mode réel les environs du décollage sont construits avec l'altitude réelle et l'imagerie satellite.",
   "▶ Oynat": "▶ Lire",
   "Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.": "Le journal est analysé une fois sur le serveur et mis en cache ; ni SITL ni le pont Mission Planner ne sont ouverts.",
   "Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok": "Relecture : le journal de vol téléversé est rejoué tel quel ; aucun contrôle",

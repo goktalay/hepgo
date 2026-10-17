@@ -3384,7 +3384,7 @@ registerCatalog('ar', {
   "Önce bir uçuş logu seçin": "اختر سجل طيران أولاً",
   "Kayıttan oynatma oturumu açıldı": "تم فتح جلسة إعادة التشغيل",
   "Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin": "تعذر فتح السجل؛ اختر ملف .bin/.tlog اكتمل تحليله",
-  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.": "يُبنى العالم حول نقطة إقلاع التسجيل (مستوى المدرج = ارتفاع الإقلاع). التضاريس إجرائية ولا تطابق التضاريس الحقيقية؛ كشف التصادم معطّل.",
+  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.": "يُبنى العالم حول نقطة إقلاع التسجيل (مستوى المدرج = ارتفاع الإقلاع)؛ كشف التصادم معطّل. في الوضع الإجرائي لا تطابق التضاريس الواقع؛ في الوضع الحقيقي يُبنى محيط نقطة الإقلاع من الارتفاعات الحقيقية وصور الأقمار الصناعية.",
   "▶ Oynat": "▶ تشغيل",
   "Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.": "يُحلَّل السجل مرة واحدة على الخادم ويُخزَّن مؤقتاً؛ لا يُفتح SITL ولا جسر Mission Planner.",
   "Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok": "إعادة تشغيل: يُعرض سجل الطيران المحمّل كما هو؛ لا تحكم",

@@ -295,7 +295,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, airframeRow);
   const stepCenter = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '2'), 'Merkez'), h('p', { class: 'small muted' }, 'Sanal dünyanın merkezi ve kalkış noktası. Mission Planner haritası bu koordinatı gösterir.'), centerList);
   const worldNo = h('span', { class: 'fs-no' }, '3');
-  const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.');
+  const worldHint = h('p', { class: 'small muted', hidden: true }, 'Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.');
   const stepWorld = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, worldNo, 'Dünya'), worldHint, h('div', { class: 'fs-world-wrap' }, worldForm, h('div', null, previewBox, previewInfo)));
   const startNote = h('div', { class: 'small muted' });
   const drawMode = () => {
@@ -308,7 +308,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
       : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
     if (rp && S.logs === null) loadLogs();
-    if (rp) { const l = (S.logs || []).find(x => x.id === S.log); if (l) preview?.setType(l.type || 'multirotor'); } else preview?.setType(S.type);
+    if (rp) { const l = (S.logs || []).find(x => x.id === S.log); if (l) preview?.setType(l.type || 'multirotor'); } else preview?.setType(S.type, S.airframe);
   };
   const modeSeg = segmented([['sitl', 'Canlı simülasyon (SITL + Mission Planner)'], ['replay', 'Kayıttan oynat']], S.mode, v => { S.mode = v; drawMode(); });
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
@@ -570,6 +570,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite }) {
       onFrame: t => updateHud(t),
       onEvent: (e, t) => addEvent(e.text, e.sev, t),
       onClear: () => clear(events),
+      onSeek: () => sim?.snapCamera(),   // atlama: takip kamerası dronun yanına ışınlanır (yayla yüzlerce metre kovalamaz)
       onTime: (t, dur, playing) => {
         seek.value = String(Math.round(1000 * (dur ? t / dur : 0)));
         timeLbl.textContent = `${clock(t)} / ${clock(dur)}`;
@@ -833,7 +834,7 @@ function createReplayPlayer(data, cb) {
     pumpEvents();
     emitFrame();
   };
-  const seek = x => { t = Math.max(0, Math.min(dur, Number(x) || 0)); syncEvents(); emitFrame(); };
+  const seek = x => { t = Math.max(0, Math.min(dur, Number(x) || 0)); syncEvents(); emitFrame(); cb.onSeek?.(t); };
   const play = () => { if (t >= dur) t = 0; playing = true; last = performance.now(); cb.onTime?.(t, dur, playing); };
   const pause = () => { playing = false; cb.onTime?.(t, dur, playing); };
   raf = requestAnimationFrame(now => { last = now; tick(now); });

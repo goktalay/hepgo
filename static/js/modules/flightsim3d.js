@@ -16,7 +16,7 @@
 //   Imagery karoları canvas atlasında (z+3), OSM (Overpass) binalar (çokgen üçgenleme + duvarlar, tek geometri), orman çokgenlerinde ağaçlar,
 //   su çokgenleri, gerçek pistler — hepsi arka uç vekilinden (/api/drone/sim/terrain, /tile, /osm; tarayıcı dışa çıkmaz). Yükseklik alınamazsa
 //   prosedürele düşer (onFallback). Prosedürel ayarlar gerçek kipte özelleştirmedir: tree_density orman yoğunluğu ölçeği, building_count ek bina.
-// Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, terrainHeight,
+// Dışa: createFlightSim3D(mountEl, world, opts) → { setTelemetry, setCamera, getCamera, setGimbal, resetCamera, snapCamera (takip yayı dronun üstüne), terrainHeight,
 //        toLocal, setWorld (Promise), setOrigin, setType(type, airframe), clearCollision, resize, dispose, netStats() → {hz, jitter, delay, buffered, deadReckoning},
 //        setKeyboardLock(bool) (sanal kumanda açıkken WASD/QE/ok/boşluk tuşları 3B'ye gitmez) }. opts: { type, airframe, preview, origin, onProgress, onFallback, … }
 
@@ -848,7 +848,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     tele.at = now; tele.src = src;
     tele.throttle = num(t.throttle, 0); tele.armed = !!t.armed;
     tele.rc = Array.isArray(t.rc) ? t.rc : null;   // RC kanalları 1000…2000 (1: roll, 2: pitch) → kontrol yüzeyleri
-    tele.speed = Math.hypot(tele.vel.x, tele.vel.y, tele.vel.z);
+    tele.speed = fr.vel.length();   // son karenin hızı (çarpışma denetimi için; render döngüsü enterpolasyonlu hızla günceller)
     tele.last = t;
     if (!tele.has) { tele.has = true; cur.pos.copy(fr.pos); cur.q.copy(fr.q); cur.vel.copy(fr.vel); camSpring.pos.copy(fr.pos); camSpring.vel.set(0, 0, 0); }
   }
@@ -884,6 +884,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   }
   // Takip kamerası: hedef (dron) kritik sönümlü yayla izlenir; kullanıcının OrbitControls açısı/mesafesi korunur
   const camSpring = { pos: new T.Vector3(0, 0, 0.6), vel: new T.Vector3(), w: 2 * Math.PI * 1.5 };
+  let camSnap = false;   // sonraki karede takip yayı dronun üstüne oturur (kayıtta atlama; kullanıcının bakış açısı/mesafesi korunur)
+  const snapCamera = () => { camSnap = true; };
 
   // ---------- kameralar ----------
   let camMode = 'follow', gimbal = -10;   // derece; 0 = burun hizası, eksi = aşağı
@@ -982,7 +984,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   function frame(now) {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+    const rawDt = Math.max(0, (now - lastT) / 1000), dt = Math.min(0.1, rawDt); lastT = now;
     // Telemetri: gecikme tamponlu enterpolasyon (render zamanı = şimdi − 80 ms); tampon bitince ölü hesap
     if (tele.has) {
       sample(now - RENDER_DELAY);
@@ -991,12 +993,21 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
       if (camMode === 'follow') {
-        // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur
+        // kritik sönümlü yay: a = −2ω·v − ω²·(x − hedef); kullanıcının kamera−hedef vektörü (OrbitControls) korunur.
+        // Düşük kare hızında (yazılım WebGL, 4–10 fps) gerçek geçen süre kadar küçük alt adımlarla ilerler: yay kararlı kalır ve kamera
+        // dronun gerisinde kalmaz. Atlama (kayıt kaydırıcısı) sonrasında yay doğrudan dronun üstüne oturtulur (snapCamera).
         tmpV2.copy(camera.position).sub(controls.target);
-        const w = camSpring.w;
-        tmpV.copy(camSpring.pos).sub(cur.pos).multiplyScalar(-w * w).addScaledVector(camSpring.vel, -2 * w);
-        camSpring.vel.addScaledVector(tmpV, dt);
-        camSpring.pos.addScaledVector(camSpring.vel, dt);
+        if (camSnap) { camSnap = false; camSpring.pos.copy(cur.pos); camSpring.vel.set(0, 0, 0); }
+        else {
+          const w = camSpring.w;
+          let left = Math.min(0.5, rawDt);
+          while (left > 0) {
+            const h = Math.min(left, 1 / 120); left -= h;
+            tmpV.copy(camSpring.pos).sub(cur.pos).multiplyScalar(-w * w).addScaledVector(camSpring.vel, -2 * w);
+            camSpring.vel.addScaledVector(tmpV, h);
+            camSpring.pos.addScaledVector(camSpring.vel, h);
+          }
+        }
         controls.target.copy(camSpring.pos);
         camera.position.copy(camSpring.pos).add(tmpV2);
       }
@@ -1101,7 +1112,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   }
 
   return {
-    setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, terrainHeight, toLocal,
+    setTelemetry, setCamera, getCamera: () => camMode, setGimbal, getGimbal: () => gimbal, resetCamera, snapCamera, terrainHeight, toLocal,
     setWorld, setOrigin, setType, clearCollision, resize, dispose, netStats, setKeyboardLock,
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     get real() { return !!terrain?.real; },

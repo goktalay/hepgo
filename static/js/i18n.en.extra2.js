@@ -646,7 +646,7 @@ registerCatalog('en', {
   "Önce bir uçuş logu seçin": "Select a flight log first",
   "Kayıttan oynatma oturumu açıldı": "Replay session opened",
   "Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin": "Log could not be opened; pick a .bin/.tlog whose analysis has completed",
-  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.": "The world is built around the recording's take-off point (runway level = take-off altitude). Terrain is procedural; it does not match real terrain and collision detection is off.",
+  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.": "The world is built around the recording's take-off point (runway level = take-off altitude); collision detection is off. In procedural mode the terrain does not match reality; in real mode the take-off surroundings are built from real elevation and satellite imagery.",
   "▶ Oynat": "▶ Play",
   "Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.": "The log is parsed once on the server and cached; no SITL or Mission Planner bridge is opened.",
   "Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok": "Replay: the uploaded flight log is played back as-is; no control",

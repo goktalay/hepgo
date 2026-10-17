@@ -3384,7 +3384,7 @@ registerCatalog('de', {
   "Önce bir uçuş logu seçin": "Wählen Sie zuerst ein Fluglog",
   "Kayıttan oynatma oturumu açıldı": "Wiedergabesitzung geöffnet",
   "Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin": "Log konnte nicht geöffnet werden; wählen Sie eine .bin/.tlog mit abgeschlossener Analyse",
-  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.": "Die Welt wird um den Startpunkt der Aufzeichnung gebaut (Pistenniveau = Starthöhe). Das Gelände ist prozedural, entspricht nicht dem realen Gelände; die Kollisionsprüfung ist aus.",
+  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.": "Die Welt wird um den Startpunkt der Aufzeichnung gebaut (Pistenniveau = Starthöhe); die Kollisionsprüfung ist aus. Im prozeduralen Modus entspricht das Gelände nicht der Realität; im realen Modus wird die Umgebung des Startpunkts aus echten Höhen und Satellitenbildern gebaut.",
   "▶ Oynat": "▶ Abspielen",
   "Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.": "Das Log wird auf dem Server einmal geparst und zwischengespeichert; SITL und Mission-Planner-Brücke werden nicht gestartet.",
   "Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok": "Wiedergabe: das hochgeladene Fluglog wird unverändert abgespielt; keine Steuerung",

@@ -3384,7 +3384,7 @@ registerCatalog('ru', {
   "Önce bir uçuş logu seçin": "Сначала выберите лог полёта",
   "Kayıttan oynatma oturumu açıldı": "Сеанс воспроизведения открыт",
   "Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin": "Не удалось открыть лог; выберите .bin/.tlog с завершённым анализом",
-  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası). Arazi prosedüreldir; gerçek araziyle örtüşmez, çarpışma denetimi kapalıdır.": "Мир строится вокруг точки взлёта записи (уровень полосы = высота взлёта). Рельеф процедурный, не совпадает с реальным; проверка столкновений отключена.",
+  "Dünya kaydın kalkış noktası etrafında kurulur (pist seviyesi = kalkış irtifası); çarpışma denetimi kapalıdır. Prosedürel kipte arazi gerçek araziyle örtüşmez; gerçek kipte kalkış noktasının çevresi gerçek yükseklik ve uydu görüntüsüyle kurulur.": "Мир строится вокруг точки взлёта записи (уровень полосы = высота взлёта); проверка столкновений отключена. В процедурном режиме рельеф не совпадает с реальным; в реальном режиме окрестности взлёта строятся по реальным высотам и спутниковым снимкам.",
   "▶ Oynat": "▶ Воспроизвести",
   "Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.": "Лог разбирается на сервере один раз и кэшируется; SITL и мост Mission Planner не запускаются.",
   "Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok": "Воспроизведение: загруженный лог полёта проигрывается как есть; без управления",

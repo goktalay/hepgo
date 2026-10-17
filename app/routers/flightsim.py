@@ -7,11 +7,13 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from typing import Union
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_replay, sim_terrain
+from .. import auth, db, drone_hub, flightsim, flightsim_models, flightsim_replay, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -26,7 +28,21 @@ class SessionIn(BaseModel):
     center_id: Optional[int] = None
     log_id: Optional[int] = None
     world: Optional[dict] = None
-    airframe: Optional[str] = None   # sabit kanat / VTOL 3B gövdesi: caymaz (varsayılan) | delta
+    airframe: Optional[str] = None   # ESKİ: sabit kanat / VTOL 3B gövdesi caymaz | delta → model {id:'builtin:…'} olarak eşlenir (§12)
+    model: Optional[Union[dict, str]] = None   # görsel model: {id, orient?} ya da kimlik dizgesi ('builtin:caymaz', '12'); eksikse tipin varsayılanı
+
+
+class ModelPatch(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    orient: Optional[dict] = None
+    has_prop: Optional[bool] = None
+
+
+class FromDesignIn(BaseModel):
+    version_id: int
+    type: str
+    name: Optional[str] = None
 
 
 class CmdIn(BaseModel):
@@ -94,27 +110,39 @@ async def open_session(body: SessionIn, request: Request, response: Response, us
 
         def load_log():
             with db.connect() as conn:
-                return flightsim_replay.log_getir(conn, body.log_id)
-        log = await loop.run_in_executor(None, load_log)
+                log = flightsim_replay.log_getir(conn, body.log_id)
+                # görsel model (§12): log'un araç tipine göre kütüphaneden; eksikse tipin varsayılanı
+                mdl = flightsim_models.coz(conn, flightsim_replay.arac_tipi((log or {}).get('vehicle')), body.model) if log and body.model else None
+                return log, mdl
+        try:
+            log, mdl = await loop.run_in_executor(None, load_log)
+        except flightsim.SimHata as e:
+            _hata(e)
         if not log or not flightsim_replay.log_izinli(user, log):
             raise HTTPException(400, 'Uçuş logu bulunamadı ya da erişim yetkiniz yok')
         try:
-            s = await flightsim.MANAGER.ac_replay(log, body.world, owner)
+            s = await flightsim.MANAGER.ac_replay(log, body.world, owner, mdl)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"kayıttan oynatma · {log['file_name']} (log {log['id']})"
     elif body.mode == 'sitl':
         if not body.type or body.center_id is None:
             raise HTTPException(400, 'type ve center_id gerekir')
+        if body.type not in flightsim.TIP_ADLARI:
+            raise HTTPException(400, 'Geçersiz dron tipi')
 
         def load():
             with db.connect() as conn:
-                return _centers(conn, body.center_id)
-        center = await loop.run_in_executor(None, load)
+                # görsel model (§12): `model` {id, orient} ya da eski `airframe`; bilinmeyen kimlik / tip uyumsuzluğu → 400
+                return _centers(conn, body.center_id), flightsim_models.coz(conn, body.type, body.model, body.airframe)
+        try:
+            center, mdl = await loop.run_in_executor(None, load)
+        except flightsim.SimHata as e:
+            _hata(e)
         if not center:
             raise HTTPException(400, 'Merkez bulunamadı (Dron Yönetimi › Rotalar › Merkezler)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}"
@@ -176,6 +204,180 @@ async def session_cmd(sid: int, body: CmdIn, user=Depends(sim_user)):
         return await s.komut(body.name, body.params or {}, kaynak=user['id'])
     except flightsim.SimHata as e:
         _hata(e)
+
+
+# ---------------- Görsel model kütüphanesi (flightsim_models; §12) ----------------
+# Okuma require_module('drone.sim'); POST/PUT/DELETE yazma izni (require_module yöntemden türetir). Kimlikler flightsim_models.kimlik_coz ile
+# doğrulanır (tam sayı ya da builtin:<ad>), dosya yolları yalnız kimlikten türetilir (yol gezinmesi yok). Boyut/uzantı/başlık denetimleri modülde.
+def _mid(mid):
+    k = flightsim_models.kimlik_coz(mid)
+    if not k:
+        raise HTTPException(404, 'Model bulunamadı')
+    return k
+
+
+def _db_mid(mid):
+    k = _mid(mid)
+    if k[0] != 'db':
+        raise HTTPException(400, 'Dahili model üzerinde bu işlem yapılamaz')
+    return k[1]
+
+
+async def _govde(request: Request, sinir):
+    """PUT ham gövdesi (application/octet-stream ya da image/png); Content-Length sınırı önce, okunan boyut sonra denetlenir."""
+    try:
+        cl = int(request.headers.get('content-length') or 0)
+    except ValueError:
+        cl = 0
+    if cl > sinir:
+        raise HTTPException(413, f'Gövde {sinir // 1024 ** 2} MB sınırını aşıyor')
+    data = await request.body()
+    if len(data) > sinir:
+        raise HTTPException(413, f'Gövde {sinir // 1024 ** 2} MB sınırını aşıyor')
+    return data
+
+
+@router.get('/models')
+def list_models(type: Optional[str] = None, user=Depends(sim_user), conn=db.DB):
+    """Kütüphane: dahili (her tip için) + yüklenen/tasarım modelleri. `type` verilirse yalnız o tip (dahili adlar tipe göre: VTOL-Caymaz)."""
+    if type is not None and type not in flightsim.TIP_ADLARI:
+        raise HTTPException(400, 'type geçersiz')
+    return {'models': flightsim_models.listele(conn, type), 'defaults': dict(flightsim_models.VARSAYILAN),
+            'can_write': MODUL in user.get('write_modules', []), 'design_allowed': 'design' in (user.get('modules') or []),
+            'limits': {'max_bytes': flightsim_models.MAX_BYTES, 'formats': list(flightsim_models.UZANTILAR)}}
+
+
+@router.get('/models/design-files')
+def design_files(user=Depends(sim_user), conn=db.DB):
+    """Tasarım modülündeki 3B sürüm dosyaları (STEP/GLB/GLTF/OBJ) — yalnız `design` modülü görünür olan kullanıcıya."""
+    if 'design' not in (user.get('modules') or []):
+        raise HTTPException(403, 'Tasarım dosyaları için Endüstriyel Tasarım modülü yetkisi gerekir')
+    return flightsim_models.tasarim_dosyalari(conn)
+
+
+@router.post('/models', status_code=201)
+async def upload_model(request: Request, file: UploadFile = File(...), type: str = Form(...), name: Optional[str] = Form(None), user=Depends(sim_user)):
+    """Simülatöre doğrudan 3B dosya yükleme (.glb/.gltf/.step/.stp/.obj; ≤ 50 MB; yazma izni)."""
+    data = b''
+    while chunk := await file.read(1024 * 1024):
+        data += chunk
+        if len(data) > flightsim_models.MAX_BYTES:
+            raise HTTPException(413, 'Dosya 50 MB sınırını aşıyor')
+    with db.connect() as conn:
+        try:
+            m = flightsim_models.yukle(conn, user, name, type, file.filename, data)
+        except flightsim.SimHata as e:
+            _hata(e)
+        db.audit(conn, user['id'], 'Simülatör modeli yükledi', 'drone_sim_model', m['id'], f"{file.filename} · {type}")
+        conn.commit()
+    return m
+
+
+@router.post('/models/from-design', status_code=201)
+def model_from_design(body: FromDesignIn, user=Depends(sim_user), conn=db.DB):
+    """Tasarım sürüm dosyasını kütüphaneye ekler (dosya kopyalanmaz; GLB/küçük resim tarayıcıda üretilip PUT edilir)."""
+    if 'design' not in (user.get('modules') or []):
+        raise HTTPException(403, 'Tasarım dosyaları için Endüstriyel Tasarım modülü yetkisi gerekir')
+    try:
+        m = flightsim_models.tasarimdan_ekle(conn, user, body.version_id, body.type, body.name)
+    except flightsim.SimHata as e:
+        _hata(e)
+    db.audit(conn, user['id'], 'Simülatör modeli ekledi (tasarım dosyası)', 'drone_sim_model', m['id'], f"sürüm {body.version_id} · {body.type}")
+    return m
+
+
+@router.get('/models/{mid}')
+def get_model(mid: str, type: Optional[str] = None, user=Depends(sim_user), conn=db.DB):
+    _mid(mid)
+    m = flightsim_models.getir(conn, mid, type)
+    if not m:
+        raise HTTPException(404, 'Model bulunamadı')
+    return m
+
+
+@router.put('/models/{mid}')
+def patch_model(mid: str, body: ModelPatch, user=Depends(sim_user), conn=db.DB):
+    """Ad / tip / yönelim (orient) / pervane bayrağı — yüklenen ve tasarım modelleri."""
+    iid = _db_mid(mid)
+    try:
+        m = flightsim_models.guncelle(conn, iid, body.model_dump(exclude_unset=True))
+    except flightsim.SimHata as e:
+        _hata(e)
+    if not m:
+        raise HTTPException(404, 'Model bulunamadı')
+    return m
+
+
+@router.delete('/models/{mid}')
+def delete_model(mid: str, user=Depends(sim_user), conn=db.DB):
+    iid = _db_mid(mid)
+    r = flightsim_models.sil(conn, iid)
+    if not r:
+        raise HTTPException(404, 'Model bulunamadı')
+    db.audit(conn, user['id'], 'Simülatör modelini sildi', 'drone_sim_model', iid, r['name'])
+    return {'ok': True}
+
+
+@router.get('/models/{mid}/file')
+def model_file(mid: str, user=Depends(sim_user), conn=db.DB):
+    """Özgün dosya (STEP/OBJ/GLTF/GLB) — tarayıcıda GLB'ye dönüştürmek için."""
+    iid = _db_mid(mid)
+    r = flightsim_models._row(conn, iid)
+    p = flightsim_models.dosya_yolu(r) if r else None
+    if not p or not p.is_file():
+        raise HTTPException(404, 'Dosya bulunamadı')
+    return FileResponse(p, filename=r.get('file_name') or p.name, media_type='application/octet-stream',
+                        headers={'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.get('/models/{mid}/glb')
+def model_glb(mid: str, user=Depends(sim_user), conn=db.DB):
+    iid = _db_mid(mid)
+    p = flightsim_models.glb_yolu(conn, iid)
+    if not p:
+        raise HTTPException(404, 'GLB henüz üretilmedi')
+    return FileResponse(p, media_type='model/gltf-binary', headers={'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.put('/models/{mid}/glb')
+async def put_model_glb(mid: str, request: Request, user=Depends(sim_user)):
+    """Tarayıcıda üretilen GLB (ham gövde, ≤ 50 MB, 'glTF' başlığı) → model.glb; `ready=true`."""
+    iid = _db_mid(mid)
+    data = await _govde(request, flightsim_models.MAX_BYTES)
+    with db.connect() as conn:
+        try:
+            m = flightsim_models.glb_kaydet(conn, iid, data)
+        except flightsim.SimHata as e:
+            _hata(e)
+        if not m:
+            raise HTTPException(404, 'Model bulunamadı')
+        conn.commit()
+    return m
+
+
+@router.get('/models/{mid}/thumb')
+def model_thumb(mid: str, type: Optional[str] = None, user=Depends(sim_user), conn=db.DB):
+    _mid(mid)
+    p = flightsim_models.thumb_yolu(conn, mid, type)
+    if not p:
+        raise HTTPException(404, 'Küçük resim yok')
+    return FileResponse(p, media_type='image/png', headers={'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.put('/models/{mid}/thumb')
+async def put_model_thumb(mid: str, request: Request, type: Optional[str] = None, user=Depends(sim_user)):
+    """320×240 PNG (ham gövde, ≤ 2 MB). Dahili modeller için de (ilk kullanıcı üretir; `type` ile VTOL varyantı)."""
+    _mid(mid)
+    data = await _govde(request, flightsim_models.THUMB_MAX)
+    with db.connect() as conn:
+        try:
+            m = flightsim_models.thumb_kaydet(conn, mid, data, type)
+        except flightsim.SimHata as e:
+            _hata(e)
+        if not m:
+            raise HTTPException(404, 'Model bulunamadı')
+        conn.commit()
+    return m
 
 
 # ---------------- Gerçek topoğrafya vekili (sim_terrain; §8) ----------------

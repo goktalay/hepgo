@@ -1613,6 +1613,23 @@ CREATE TABLE IF NOT EXISTS drone_route_centers (
     created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL
 );
+-- Uçuş Simülatörü görsel model kütüphanesi (docs/ucus-simulatoru.md §12): simülatöre yüklenen ya da tasarım modülünden eklenen 3B gövdeler.
+-- Dahili (prosedürel/GLB) modeller tabloda değil koddadır (flightsim_models.BUILTIN; kimlik 'builtin:<ad>'). Dosyalar DATA_DIR/sim_models/<id>/.
+CREATE TABLE IF NOT EXISTS drone_sim_models (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'upload',          -- upload (simülatöre yüklendi) | design (tasarım sürümü dosyası; source_ref = design_drawing_versions.id)
+    source_ref  INTEGER,
+    type        TEXT NOT NULL,                           -- dron tipi (multirotor | hexarotor | helikopter | sabit_kanat | vtol)
+    file_path   TEXT,                                    -- özgün dosya: upload → DATA_DIR göreli (sim_models/<id>/orijinal.<ext>); design → UPLOAD_DIR göreli
+    glb_path    TEXT,                                    -- tarayıcıda dönüştürülüp PUT edilen GLB (DATA_DIR göreli); boşsa ready=false
+    thumb_path  TEXT,                                    -- 320×240 PNG (DATA_DIR göreli)
+    orient_json TEXT,                                    -- {forward, up, scale, rot, prop:{mode, pos, r}} (flightsim_models.orient_dogrula)
+    has_prop    INTEGER NOT NULL DEFAULT 0,              -- modelde döndürülecek pervane düğümü var (prop/propeller/rotor adlı)
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_models_type ON drone_sim_models(type);
 CREATE TABLE IF NOT EXISTS drone_routes (
     id          INTEGER PRIMARY KEY,
     center_id   INTEGER REFERENCES drone_route_centers(id) ON DELETE SET NULL,

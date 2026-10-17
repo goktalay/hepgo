@@ -1,16 +1,18 @@
 // STEP çözümleme işçisi (module worker): occt-import-js (OpenCascade WASM) ana iş parçacığını kilitlemeden çalışır.
-// Mesaj: { id, buffer } → { id, ok, result: { root, meshes:[{name, color, position, normal, index}] } } (dizi tamponları aktarılır).
+// Mesaj: { id, buffer, params? } → { id, ok, result: { root, meshes:[{name, color, position, normal, index}] } } (dizi tamponları aktarılır).
+// params: occt ReadStepFile ayarları ({ linearUnit, linearDeflectionType, linearDeflection, angularDeflection }) — simülatör model dönüşümü
+// (flightsim_models.js) üçgen sayısını sınırlamak için kaba sapma ister; yoksa null (occt varsayılanı; tasarım görüntüleyici).
 import occtimportjs from '/static/vendor/occt/occt-import-js.js';
 
 let occtPromise = null;
 const loadOcct = () => (occtPromise ??= occtimportjs({ locateFile: n => '/static/vendor/occt/' + n }));
 
 self.onmessage = async e => {
-  const { id, buffer } = e.data;
+  const { id, buffer, params } = e.data;
   try {
     const occt = await loadOcct();
     const t0 = performance.now();
-    const res = occt.ReadStepFile(new Uint8Array(buffer), null);
+    const res = occt.ReadStepFile(new Uint8Array(buffer), params || null);
     if (!res || !res.success) throw new Error('STEP dosyası okunamadı');
     const transfer = [];
     const meshes = (res.meshes || []).map(m => {

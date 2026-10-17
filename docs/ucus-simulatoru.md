@@ -20,13 +20,15 @@ birebir uçar. HEPGO, SITL ile Mission Planner arasında MAVLink köprüsüdür 
 | `GET /meta` | `{types:[{key,name,binary}], centers:[{id,name,lat,lon,alt,location_name}], world_defaults, limits:{max_sessions,max_minutes}, host, google3d:{enabled}}` — `host`: Mission Planner'a verilecek adres (`SIM_PUBLIC_HOST` env, yoksa istek Host başlığının ana makinesi); `google3d.enabled`: `GOOGLE_MAPS_API_KEY` tanımlı (§10) |
 | `GET /g3d-key` | `{key}` — Google Map Tiles API anahtarı (§10); `Cache-Control: no-store`; kip kapalıysa 404; salt okuyan izleyici de alır (karoları çizmek için) |
 | `GET /sessions` | Kiracının açık oturumları `[session]` |
-| `POST /sessions` | `{type, center_id, world}` → `session` (201). Hatalar: 400 `invalid`, 409 `limit`, 503 `sitl` (ikili/port yok) |
+| `POST /sessions` | `{type, center_id, world, model?}` → `session` (201). `model`: `{id, orient?}` ya da kimlik dizgesi (§12; eksikse tipin varsayılanı; eski `airframe: caymaz|delta` → `builtin:…` eşlenir). Hatalar: 400 `invalid`, 409 `limit`, 503 `sitl` (ikili/port yok) |
+| `/models…` | Görsel model kütüphanesi (§12): liste, yükleme, tasarım dosyasından ekleme, GLB/küçük resim PUT-GET, yönelim, silme |
 | `GET /sessions/{id}` | `session` |
 | `DELETE /sessions/{id}` | durdurur (SITL kapanır, UDP kapanır) → `{ok}` |
 | `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad) → `{ok}` |
 
-`session` = `{id, type, center:{id,name,lat,lon,alt}, world, state: 'BASLIYOR'|'HAZIR'|'HATA'|'KAPANDI', udp_port, host, created_at,
-owner:{id,name}, gcs:{connected:bool, addr:"ip:port"|null, since}, sitl:{pid, port, error}}`
+`session` = `{id, type, model:{id,name,source,type,orient,glb_url,thumb_url,has_prop,ready}, airframe, center:{id,name,lat,lon,alt}, world,
+state: 'BASLIYOR'|'HAZIR'|'HATA'|'KAPANDI', udp_port, host, created_at, owner:{id,name}, gcs:{connected:bool, addr:"ip:port"|null, since}, sitl:{pid, port, error}}`
+(`airframe` geriye uyum: dahili `builtin:caymaz`/`builtin:delta` için uçak tiplerinde `caymaz`/`delta`, aksi `null`).
 
 `world` (ön yüz üretir, sunucu doğrular ve saklar; deterministik):
 ```json
@@ -77,11 +79,11 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   düzleştirme (pist/kalkış alanı); su seviyesi `water` oranına göre; renkler yüksekliğe göre (çim → kaya → kar).
 - Nesneler: ağaçlar (InstancedMesh, yoğunluk `tree_density`, su/pist/bina üzerinde değil), binalar (`building_count`, kutular, yükseklik
   rastgele 6–40 m, pistten uzak), pist (asfalt, çizgiler, `runway_heading`), gökyüzü (zaman: gün/akşam/gece; gece ışıklar), sis.
-- Dron: sabit kanat / VTOL gövdesi `airframe` (oturum alanı; `caymaz` varsayılan | `delta`): `caymaz` → `static/models/caymaz-sim.glb`
+- Dron: görsel model `session.model` (§12 kütüphanesi; `setType(type, model)`): dahili `builtin:caymaz` → `static/models/caymaz-sim.glb`
   (CAYMAZ V3 STEP montajından `tools/step2glb.js` ile; kanat açıklığı 3,03 m, arkadan itişli, `prop` düğümü döner; KHR_mesh_quantization,
-  ~1,5 MB), `delta` → prosedürel delta uçan kanat (2,2 m, elevonlar RC ch1/ch2 ile). Multikopter 60 cm / hexa 90 cm / helikopter 1,5 m
-  prosedürel (gövde, kollar, motorlar, iniş takımı, gimbal; pervaneler gaz ile döner, yüksek devirde bulanık disk). VTOL = gövde + 4 dikey
-  pervane. Seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe, gece halo), yalnız dron gölge düşürür. Yönelim: roll/pitch/yaw →
+  ~1,5 MB), `builtin:delta` → prosedürel delta uçan kanat (2,2 m, elevonlar RC ch1/ch2 ile). `builtin:quad` 60 cm / `builtin:hexa` 90 cm /
+  `builtin:heli` 1,5 m prosedürel (gövde, kollar, motorlar, iniş takımı, gimbal; pervaneler gaz ile döner, yüksek devirde bulanık disk). VTOL = gövde + 4 dikey
+  pervane. Kütüphane modeli (tasarım/yüklenen) → GLB fetch + yönelim matrisi + ölçek + `drone.ground` sınır kutusu altından (§12). Seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe, gece halo), yalnız dron gölge düşürür. Yönelim: roll/pitch/yaw →
   quaternion (NED→ENU dönüşümü dikkat). `caymaz.gltf` (eski basit model) yalnız Cesium oynatma/canlı izlemede (replay3d.js) kullanılır.
 - Kameralar (tuşlar 1–4): **Takip** (3. şahıs, OrbitControls hedefi dron), **Dron kamerası** (FPV, burun; gimbal pitch ↑↓),
   **Serbest** (WASD + fare), **Yer** (merkezden, dronu izler). Çarpışma: `z < h(x,y) + 0.3` ya da bina kutusuyla kesişme ve hız > 1 m/s
@@ -100,7 +102,8 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   tuşları kilitlenir (kamera 1–4 çalışır); HUD RC çubukları 1–5 yerel değerleri gösterir (mor).
 
 ## 6. Kurulum sihirbazı (`flightsim.js`)
-1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları). 2. Merkez seçimi (liste; ad, konum adı, koordinat; merkez yoksa Rotalar'a bağlantı).
+1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları) + altında **Model** bölümü (§12: görsel kart ızgarası, yükleme, sistemdeki dosyalardan
+ekleme, yönelim paneli; kayıt kipinde log listesinin altında, log tipine göre). 2. Merkez seçimi (liste; ad, konum adı, koordinat; merkez yoksa Rotalar'a bağlantı).
 3. Dünya: kip (Gerçek arazi / Google 3B (fotogerçekçi; yalnız `meta.google3d.enabled`, §10) / Prosedürel, §9), kaydırıcılar/seçimler
 (yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 4. Başlat → oturum ekranı.
 Açık oturum varsa liste: devam et / bitir. 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
@@ -111,6 +114,10 @@ Açık oturum varsa liste: devam et / bitir. 8 dil (i18n.*.js; sözlük dosyalar
 - Kayıttan oynatma (§8): pymavlink ile yazılan küçük .tlog → ayrıştırıcı (kare sayısı, ev = ilk ARM, mod adı, olaylar), `GET /logs`
   yetki kesişimi, `POST /sessions {mode:'replay'}` → HAZIR, `GET /sessions/{id}/replay` gzip JSON, WS'te `tele` yok, `cmd` yalnız `reset`.
 
+- Görsel model kütüphanesi (§12, `model_testleri`): dahili liste (tip filtresi, VTOL adları), yükleme (küçük GLB zarfı / STEP / geçersiz uzantı),
+  GLB PUT (başlık denetimi, 413), küçük resim PUT-GET (PNG; dahili VTOL varyantı), yönelim doğrulama (aynı eksen 400), oturumda model (bilinmeyen /
+  tip uyumsuz / GLB'siz 400; oturuma özel yönelim kütüphaneyi değiştirmez), geriye uyumlu `airframe`, yetki (salt okuyan 403; `design` modülsüz
+  `design-files` 403), tasarım sürümünden ekleme (tek kayıt; silmede özgün dosya kalır), kayıt kipinde model.
 - Gerçek topoğrafya (ağsız, `sim_terrain.FETCH` sahte): terrarium çözme (Pillow ile üretilen küçük PNG, saf çözücü), Web Mercator gidiş-dönüş,
   bina yüksekliği kuralları, OSM sadeleştirme (way/relation outer, kapalı halka, 2 noktalı pist), `/terrain` planı (z seçimi, karo sayıları,
   `home_elev`), `/tile` (önbellek vuruşu, içerik türü, 404 sınırları, 503/502 kaynak hataları, LRU boyut sınırı), `/osm` (7 gün önbellek,
@@ -269,3 +276,54 @@ kullanılmaz. Photorealistic 3D Tiles üçüncü taraf 3B sahnede çizilebilir; 
   önizlemede logo sol altta, metin bilgi satırında. Yükleme ilerlemesi (`tiles.loadProgress`) oturumda ilk dolumda `.fs-msg`, sihirbazda şerit.
 - `?mock=1`: sahte meta `google3d.enabled=true`, sahte anahtar → Google 400/403 → hata yolu denenir (Playwright: sihirbaz + oturum ekranında
   "prosedürele düşüldü" metni, ekran görüntüleri). Gerçek anahtarla deneme DEV'de yapılmadı (anahtar yok).
+
+## 12. Görsel model kütüphanesi (`app/flightsim_models.py`, `static/js/modules/flightsim_models.js`; tablo `drone_sim_models`)
+Kullanıcı sihirbazda dron tipini seçince, tipin altındaki **Model** bölümünde sistemde yüklü 3B gövdelerden görsel olarak seçer: küçük resimli
+kart ızgarası (ad, kaynak rozeti Dahili / Tasarım / Yüklenen, boyut, Hazır / Dönüştürülüyor / GLB bekliyor), seçili kart vurgulu, sağdaki canlı
+3B önizleme seçilen modelle döner. Kayıt kipinde de (log tipine göre) seçilir.
+
+**Kaynaklar.** (a) **Dahili** — kodda sabit (`flightsim_models.BUILTIN`, kimlik `builtin:<ad>`), her tip için her zaman var: sabit kanat
+`builtin:caymaz` (Caymaz V3 GLB) + `builtin:delta`; multirotor `builtin:quad`; hexarotor `builtin:hexa`; helikopter `builtin:heli`; VTOL
+`builtin:caymaz` / `builtin:delta` ("VTOL-Caymaz V3", "VTOL-Delta kanat"; 4 dikey motor eklenir). Varsayılanlar `VARSAYILAN`. (b) **Tasarım** —
+Endüstriyel Tasarım modülündeki sürüm dosyaları (`design_drawing_versions` .step/.stp/.glb/.gltf/.obj; `GET /models/design-files`, yalnız `design`
+modülü olan kullanıcı); "Sistemdeki dosyalardan ekle" → `POST /models/from-design {version_id, type, name?}` → tablo kaydı (`source='design'`,
+`source_ref`; dosya kopyalanmaz, UPLOAD_DIR'den okunur; aynı sürüm+tip tek kayıt). (c) **Yükleme** — `POST /models` (multipart `file`, `type`,
+`name?`; .glb/.gltf/.step/.stp/.obj; ≤ 50 MB; yazma izni) → `DATA_DIR/sim_models/<id>/orijinal.<ext>` (`source='upload'`); GLB ise aynı anda hazır.
+
+**Tablo `drone_sim_models`:** `id, name, source (upload|design), source_ref, type, file_path (upload: DATA_DIR göreli · design: UPLOAD_DIR göreli),
+glb_path, thumb_path (DATA_DIR göreli), orient_json, has_prop, created_by, created_at` (`CREATE TABLE IF NOT EXISTS`, drone tabloları gibi tenant
+sütunu yok). Dosya yolları yalnız kimlikten türetilir; kimlik tam sayı ya da `builtin:[a-z0-9_]+` (`kimlik_coz`; yol gezinmesi yok).
+
+**Uçlar** (okuma `require_module('drone.sim')`; POST/PUT/DELETE yazma izni):
+| Uç | Davranış |
+|---|---|
+| `GET /models?type=` | `{models:[{id, name, source, type, types, thumb_url, glb_url, file_url, format (glb|gltf|step|obj|procedural), size, ready, orient, has_prop, desc, file_name, created_*}], defaults, can_write, design_allowed, limits}` |
+| `GET /models/design-files` | tasarım 3B sürüm dosyaları `[{id, version, file_name, size, drawing_name, project_name, model_id}]` (design modülsüz 403) |
+| `POST /models` · `POST /models/from-design` | yükleme / tasarımdan ekleme → model (201); uzantı/boyut/tip → 400, 413 |
+| `GET /models/{id}` · `PUT /models/{id}` · `DELETE /models/{id}` | tekil; `{name, type, orient, has_prop}` güncelle (dahili 400); sil (kayıt + `sim_models/<id>/`; tasarımın aslı kalır) |
+| `GET /models/{id}/file` | özgün dosya (tarayıcı dönüşümü için) |
+| `GET/PUT /models/{id}/glb` | GLB; PUT ham gövde (`glTF` başlığı, ≤ 50 MB) → `model.glb`, `ready=true` |
+| `GET/PUT /models/{id}/thumb[?type=]` | 320×240 PNG (≤ 2 MB); dahili için `static/models/thumbs/<ad>-<tip>.png` yoksa `DATA_DIR/sim_models/builtin/<ad>-<tip>.png` (ilk kullanıcı üretir) |
+
+**STEP → GLB tarayıcıda** (PROD'da node/occt yok; `tools/step2glb.js` yalnız dahili Caymaz GLB'si için geliştirme aracı): kullanıcı kütüphanede
+hazır olmayan (`ready=false`) bir modeli seçince `flightsim_models.convertToGlb`: dosya `GET /models/{id}/file` → STEP ise `step3d.parseStep`
+(mevcut `step-worker.js` module worker, occt wasm; `params` ile mm + mutlak lineer sapma) kademeli sapma 1,5 → 3 → 6 → 12 → 25 mm, üçgen sayısı
+≤ ~100k olunca durur → mesh'ler renge göre birleştirilir (`BufferGeometryUtils.mergeGeometries`, renkler korunur), mm → m → `GLTFExporter`
+(three r170, `static/vendor/three/GLTFExporter.js`) binary → `PUT /models/{id}/glb`. OBJ → `OBJLoader` (vendor) → GLB; GLTF → `GLTFLoader` → GLB;
+GLB olduğu gibi. Kartta ilerleme çubuğu (indirme / çözümleme / birleştirme / yazma / yükleme %). Salt okuyan kullanıcı hazır olmayan modeli
+seçemez (uyarı). Sonraki kullanıcılar sunucudaki GLB'yi alır.
+
+**Küçük resimler:** `flightsim3d.snapshotModel(type, model)` modeli ayrı bir sahnede (açık arka plan, 3/4 açı) `WebGLRenderTarget`'a çizer →
+PNG Blob → `PUT /models/{id}/thumb` (dahili için `?type=`); sihirbaz açılışında ve seçimde eksikler sırayla üretilir (yazma izni varsa);
+yoksa kartta "Önizleme hazırlanıyor…" yer tutucu. Yönelim kaydedilince küçük resim yenilenir.
+
+**Yönelim (`orient`, yüklenen/tasarım modelleri):** `{forward, up (±x/±y/±z, dik), scale (birim → m), offset [x,y,z] m, prop:{mode: none|tail|nose|manual,
+pos, r}}` (`orient_dogrula`; STEP varsayılanı `+y/+z` — CAD Z yukarı, GLB/OBJ `+z/+y`). Panel: burun/yukarı ekseni seçimleri, 90° Yaw/Pitch/Roll
+düğmeleri, ölçek ya da kanat açıklığı / çapraz uzunluk girilerek otomatik ölçek (önizlemenin sınır kutusu genişliğinden), konum ofseti, pervane:
+modelde `prop|propeller|rotor|pervane` adlı düğüm varsa en ince sınır kutusu ekseni etrafında döndürülür (`has_prop`), yoksa prosedürel pervane
+(kuyruk/burun: sınır kutusu arka/ön ucu; elle konum). Değişiklik canlı önizlemeye uygulanır (`setType`), **Kaydet** → `PUT /models/{id}`; oturum
+açarken gönderilen `model.orient` oturuma özeldir (kütüphane kaydını değiştirmez). `flightsim3d.buildLibrary`: GLB → `R = [f×u, f, u]ᵀ` dönüşü +
+ölçek + ofset; `drone.ground` sınır kutusu altından; seyir ışıkları kanat uçlarına.
+
+**Doğrulama (DEV, Playwright SwiftShader):** sihirbaz kart ızgarası + küçük resimler üretildi, PROD'daki CAYMAZ V3 STEP'i (16,9 MB) tasarım
+sürümü olarak eklendi → tarayıcıda GLB'ye dönüştürüldü → yönelim paneli (kanat açıklığı 3,03 m → ölçek) → yüklenen modelle oturum (takip/FPV).

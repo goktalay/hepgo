@@ -123,19 +123,21 @@ function getWorker() {
   worker.onerror = err => { for (const p of pending.values()) p.reject(new Error('STEP işçisi hata verdi: ' + (err.message || ''))); pending.clear(); worker = null; };
   return worker;
 }
-export async function parseStep(arrayBuffer, { onPhase } = {}) {
+// opts.params: occt ReadStepFile ayarları (ör. { linearUnit:'millimeter', linearDeflectionType:'absolute_value', linearDeflection: 2, angularDeflection: 0.6 });
+// yoksa occt varsayılanı. Simülatör model dönüşümü (flightsim_models.js) üçgen sayısını sınırlamak için kaba sapma verir.
+export async function parseStep(arrayBuffer, { onPhase, params = null } = {}) {
   onPhase?.('CAD çekirdeği yükleniyor…');
   try {
     const w = getWorker();
     const id = ++reqId;
     const buf = arrayBuffer.slice(0);   // işçiye aktarılır; çağıranın tamponu bozulmasın
-    const res = await new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); w.postMessage({ id, buffer: buf }, [buf]); onPhase?.('Model çözümleniyor (büyük dosyalarda 1 dk sürebilir)…'); });
+    const res = await new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); w.postMessage({ id, buffer: buf, params }, [buf]); onPhase?.('Model çözümleniyor (büyük dosyalarda 1 dk sürebilir)…'); });
     return res;
   } catch (err) {   // işçi yüklenemedi / çöktü → ana iş parçacığında dene (arayüz kısa süre kilitlenir)
     console.warn('STEP işçisi başarısız, ana iş parçacığında çözümleniyor:', err && err.message);
     onPhase?.('Model çözümleniyor (yedek yol)…');
     const occt = await loadOcct();
-    const r = occt.ReadStepFile(new Uint8Array(arrayBuffer), null);
+    const r = occt.ReadStepFile(new Uint8Array(arrayBuffer), params || null);
     if (!r || !r.success) throw new Error('STEP dosyası okunamadı');
     const strip = n => ({ name: n.name || '', meshes: (n.meshes || []).slice(), children: (n.children || []).map(strip) });
     return { root: strip(r.root || {}), meshes: (r.meshes || []).map(m => ({ name: m.name || '', color: m.color && m.color.length === 3 ? [...m.color] : null,

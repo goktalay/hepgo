@@ -509,10 +509,12 @@ class ReplaySession:
                        'duration_s': None, 'home': None, 'hz': REPLAY_HZ, 'takeoff_t': None, 'start_utc': None, 'vehicle': log.get('vehicle'),
                        'aircraft': log.get('aircraft'), 'pilot': log.get('pilot'), 'modes': None}
         self._fs = flightsim
+        self.model = flightsim._model_eski(self.type, None)   # görsel model (§12): router kütüphaneden seçileni atar; yoksa tipin dahili modeli
 
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
-        return {'id': self.id, 'mode': 'replay', 'type': self.type, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+        return {'id': self.id, 'mode': 'replay', 'type': self.type, 'model': dict(self.model) if self.model else None,
+                'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': None, 'host': host or self._fs.PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': False, 'addr': None, 'since': None}, 'sitl': dict(self.sitl), 'replay': dict(self.replay)}
 

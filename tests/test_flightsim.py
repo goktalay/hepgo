@@ -444,8 +444,11 @@ def replay_testleri(a, c1, mon_token_login):
     assert a.post('/api/drone/sim/sessions', json={'mode': 'ucur', 'log_id': lid}).status_code == 400
     assert a.post('/api/drone/sim/sessions', json={'mode': 'sitl'}).status_code == 400   # type/center_id yok
     assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'time': 'gece'}}).status_code == 400
-    s = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'seed': 3, 'time': 'night'}}), 201)
+    # görsel model (§12): kayıt kipinde de kütüphaneden seçilir; log tipi (multirotor) ile uyumsuz model 400
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'model': {'id': 'builtin:caymaz'}}).status_code == 400
+    s = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'seed': 3, 'time': 'night'}, 'model': 'builtin:quad'}), 201)
     assert s['mode'] == 'replay' and s['udp_port'] is None and s['type'] == 'multirotor' and s['replay']['log_id'] == lid and s['replay']['file_name'] == 'test-kayit.tlog', s
+    assert s['model']['id'] == 'builtin:quad' and s['model']['source'] == 'builtin' and s['model']['ready'] is True, s['model']
     assert s['world']['time'] == 'night' and s['gcs'] == {'connected': False, 'addr': None, 'since': None} and s['state'] in ('BASLIYOR', 'HAZIR'), s
     sid = s['id']
     g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))), 10)
@@ -509,6 +512,144 @@ def replay_testleri(a, c1, mon_token_login):
     ok(a.delete(f'/api/tools/flight-logs/{lid}'))
     assert not R.onbellek_yolu(lid).exists()
     print('Kayıttan oynatma testleri geçti.')
+
+
+def kucuk_glb():
+    """Geçerli GLB zarfı: 12 bayt başlık + JSON parçası (asset 2.0, boş sahne). Sunucu yalnız başlık/boyut denetler."""
+    js = json.dumps({'asset': {'version': '2.0'}, 'scenes': [{'nodes': []}], 'scene': 0}).encode()
+    js += b' ' * ((4 - len(js) % 4) % 4)
+    toplam = 12 + 8 + len(js)
+    return struct.pack('<III', 0x46546C67, 2, toplam) + struct.pack('<II', len(js), 0x4E4F534A) + js
+
+
+def kucuk_png():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (320, 240), (40, 60, 90)).save(buf, 'PNG')
+    return buf.getvalue()
+
+
+def model_testleri(a, mon, c1):
+    """§12 görsel model kütüphanesi: dahili liste, yükleme (GLB/STEP), GLB/thumb PUT-GET, yönelim, yetki, oturumda model doğrulama, geriye uyumlu airframe."""
+    from app import config, flightsim_models as FM
+    M = '/api/drone/sim/models'
+    # --- liste: dahili modeller her tip için; type filtresi; VTOL adı ---
+    r = ok(a.get(M))
+    assert r['can_write'] is True and r['design_allowed'] is True and r['limits']['max_bytes'] == 50 * 1024 * 1024
+    ids = [m['id'] for m in r['models']]
+    assert ids.count('builtin:caymaz') == 2 and ids.count('builtin:quad') == 1 and all(m['source'] == 'builtin' for m in r['models']), ids
+    sk = ok(a.get(M, params={'type': 'sabit_kanat'}))['models']
+    assert [m['id'] for m in sk] == ['builtin:caymaz', 'builtin:delta'] and sk[0]['name'] == 'Caymaz V3' and sk[0]['glb_url'] == '/static/models/caymaz-sim.glb' and sk[0]['ready'] is True, sk
+    assert sk[0]['thumb_url'] is None and sk[0]['has_prop'] is True and sk[0]['size'] and sk[0]['format'] == 'glb' and sk[1]['format'] == 'procedural'
+    vt = ok(a.get(M, params={'type': 'vtol'}))['models']
+    assert [m['name'] for m in vt] == ['VTOL-Caymaz V3', 'VTOL-Delta kanat'], [m['name'] for m in vt]
+    assert ok(a.get(M, params={'type': 'multirotor'}))['models'][0]['name'] == 'Quad'
+    assert a.get(M, params={'type': 'ucan_hali'}).status_code == 400
+    assert ok(a.get(f'{M}/builtin:heli'))['type'] == 'helikopter' and a.get(f'{M}/builtin:yok').status_code == 404 and a.get(f'{M}/../x').status_code in (404, 400)
+    assert ok(a.get(f'{M}/design-files')) == []   # admin design modülünde; henüz sürüm yok
+    assert mon.get(f'{M}/design-files').status_code == 403   # Montaj: design yok
+    # --- yükleme: GLB (hazır), STEP (dönüşüm bekler), geçersiz uzantı, boş ---
+    glb = kucuk_glb()
+    m1 = ok(a.post(M, files={'file': ('ucak.glb', glb, 'model/gltf-binary')}, data={'type': 'sabit_kanat', 'name': 'Test Uçak'}), 201)
+    assert m1['source'] == 'upload' and m1['name'] == 'Test Uçak' and m1['type'] == 'sabit_kanat' and m1['ready'] is True and m1['format'] == 'glb', m1
+    assert m1['glb_url'] == f"{M}/{m1['id']}/glb" and m1['file_url'] == f"{M}/{m1['id']}/file" and m1['thumb_url'] is None and m1['size'] == len(glb)
+    assert m1['orient'] == {'forward': '+z', 'up': '+y', 'scale': 1.0, 'offset': [0.0, 0.0, 0.0], 'prop': {'mode': 'none', 'pos': [0.0, 0.0, 0.0], 'r': 0.3}}, m1['orient']
+    assert (config.DATA_DIR / 'sim_models' / m1['id'] / 'orijinal.glb').read_bytes() == glb and (config.DATA_DIR / 'sim_models' / m1['id'] / 'model.glb').exists()
+    g = a.get(m1['glb_url'])
+    assert g.status_code == 200 and g.content == glb and g.headers['content-type'].startswith('model/gltf-binary')
+    m2 = ok(a.post(M, files={'file': ('govde.STEP', b'ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n', 'application/octet-stream')}, data={'type': 'multirotor'}), 201)
+    assert m2['ready'] is False and m2['glb_url'] is None and m2['format'] == 'step' and m2['name'] == 'govde' and m2['orient']['forward'] == '+y' and m2['orient']['up'] == '+z', m2
+    assert a.get(m2['file_url']).content.startswith(b'ISO-10303-21') and a.get(f"{M}/{m2['id']}/glb").status_code == 404
+    assert a.post(M, files={'file': ('x.txt', b'abc', 'text/plain')}, data={'type': 'multirotor'}).status_code == 400
+    assert a.post(M, files={'file': ('x.obj', b'', 'text/plain')}, data={'type': 'multirotor'}).status_code == 400
+    assert a.post(M, files={'file': ('x.obj', b'v 0 0 0', 'text/plain')}, data={'type': 'ucan_hali'}).status_code == 400
+    # --- GLB PUT (tarayıcı dönüşümü): geçersiz başlık 400; geçerli → ready ---
+    assert a.put(f"{M}/{m2['id']}/glb", content=b'NOT-GLB-AT-ALL-REALLY-NOT', headers={'content-type': 'application/octet-stream'}).status_code == 400
+    m2b = ok(a.put(f"{M}/{m2['id']}/glb", content=glb, headers={'content-type': 'application/octet-stream'}))
+    assert m2b['ready'] is True and a.get(m2b['glb_url']).content == glb
+    assert a.put(f"{M}/builtin:caymaz/glb", content=glb).status_code == 400   # dahili modele GLB yazılamaz
+    assert a.put(f"{M}/{m2['id']}/glb", content=b'x', headers={'content-length': str(60 * 1024 * 1024)}).status_code == 413
+    # --- küçük resim: PNG dışı 400; model + dahili (VTOL varyantı ayrı) ---
+    png = kucuk_png()
+    assert a.put(f"{M}/{m1['id']}/thumb", content=b'GIF89a', headers={'content-type': 'image/gif'}).status_code == 400
+    m1t = ok(a.put(f"{M}/{m1['id']}/thumb", content=png, headers={'content-type': 'image/png'}))
+    assert m1t['thumb_url'] == f"{M}/{m1['id']}/thumb"
+    t = a.get(m1t['thumb_url'])
+    assert t.status_code == 200 and t.content == png and t.headers['content-type'] == 'image/png'
+    assert a.get(f'{M}/builtin:caymaz/thumb', params={'type': 'vtol'}).status_code == 404
+    bt = ok(a.put(f'{M}/builtin:caymaz/thumb', params={'type': 'vtol'}, content=png, headers={'content-type': 'image/png'}))
+    assert bt['thumb_url'] == f'{M}/builtin:caymaz/thumb?type=vtol' and bt['name'] == 'VTOL-Caymaz V3'
+    assert a.get(f'{M}/builtin:caymaz/thumb', params={'type': 'vtol'}).status_code == 200 and a.get(f'{M}/builtin:caymaz/thumb', params={'type': 'sabit_kanat'}).status_code == 404
+    assert (config.DATA_DIR / 'sim_models' / 'builtin' / 'caymaz-vtol.png').read_bytes() == png
+    assert next(m for m in ok(a.get(M, params={'type': 'vtol'}))['models'] if m['id'] == 'builtin:caymaz')['thumb_url'] == f'{M}/builtin:caymaz/thumb?type=vtol'
+    assert a.put(f'{M}/builtin:yok/thumb', content=png).status_code == 404
+    # --- yönelim / ad / tip güncelleme ---
+    m1o = ok(a.put(f"{M}/{m1['id']}", json={'orient': {'forward': '-x', 'up': '+z', 'scale': 0.001, 'offset': [0, 0.1, 0], 'prop': {'mode': 'tail', 'r': 0.4}}, 'has_prop': False, 'name': ' Uçak 2 '}))
+    assert m1o['orient'] == {'forward': '-x', 'up': '+z', 'scale': 0.001, 'offset': [0.0, 0.1, 0.0], 'prop': {'mode': 'tail', 'pos': [0.0, 0.0, 0.0], 'r': 0.4}} and m1o['has_prop'] is False and m1o['name'] == 'Uçak 2', m1o
+    assert a.put(f"{M}/{m1['id']}", json={'orient': {'forward': '+z', 'up': '-z'}}).status_code == 400   # aynı eksen
+    assert a.put(f"{M}/{m1['id']}", json={'orient': {'forward': 'ileri'}}).status_code == 400
+    assert a.put(f"{M}/{m1['id']}", json={'orient': {'scale': 0}}).status_code == 400
+    assert a.put(f"{M}/{m1['id']}", json={'orient': {'prop': {'mode': 'yan'}}}).status_code == 400
+    assert a.put(f"{M}/{m1['id']}", json={'type': 'ucan_hali'}).status_code == 400
+    assert a.put(f'{M}/builtin:caymaz', json={'name': 'x'}).status_code == 400 and a.put(f'{M}/99999', json={'name': 'x'}).status_code == 404
+    assert FM.orient_dogrula(None) == FM.ORIENT_VARSAYILAN and FM.kimlik_coz('builtin:caymaz') == ('builtin', 'caymaz') and FM.kimlik_coz('12') == ('db', 12)
+    assert FM.kimlik_coz('builtin:../x') is None and FM.kimlik_coz('-1') is None and FM.kimlik_coz('') is None and FM.kimlik_coz('12/thumb') is None
+    # --- oturumda model: bilinmeyen 400, tip uyumsuz 400, hazır olmayan 400, kütüphane modeli 201 (model + airframe None), eski airframe → model ---
+    S = '/api/drone/sim/sessions'
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': {'id': '99999'}}).status_code == 400
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': 'builtin:quad'}).status_code == 400          # kopter modeli uçakta
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': {'id': 'builtin:../x'}}).status_code == 400
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': {'id': m1['id'], 'orient': {'forward': '+z', 'up': '+z'}}}).status_code == 400
+    m3 = ok(a.post(M, files={'file': ('bekleyen.stp', b'ISO-10303-21;', 'application/octet-stream')}, data={'type': 'sabit_kanat'}), 201)
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': m3['id']}).status_code == 400                 # GLB'si yok (ready=false)
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': {'id': m1['id'], 'orient': {'forward': '+x', 'up': '+z', 'scale': 2}}}), 201)
+    assert s['model']['id'] == m1['id'] and s['model']['source'] == 'upload' and s['model']['glb_url'] == m1['glb_url'] and s['airframe'] is None, s['model']
+    assert s['model']['orient']['forward'] == '+x' and s['model']['orient']['scale'] == 2.0 and s['model']['has_prop'] is False   # oturuma özel yönelim
+    assert ok(a.get(f"{M}/{m1['id']}"))['orient']['forward'] == '-x'   # kütüphanedeki kayıt değişmedi
+    ok(a.delete(f"{S}/{s['id']}"))
+    s = ok(a.post(S, json={'type': 'vtol', 'center_id': c1['id'], 'airframe': 'delta'}), 201)                                 # geriye uyum
+    assert s['airframe'] == 'delta' and s['model']['id'] == 'builtin:delta' and s['model']['name'] == 'VTOL-Delta kanat' and s['model']['type'] == 'vtol', s
+    ok(a.delete(f"{S}/{s['id']}"))
+    s = ok(a.post(S, json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
+    assert s['model']['id'] == 'builtin:hexa' and s['airframe'] is None, s
+    ok(a.delete(f"{S}/{s['id']}"))
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': 'builtin:caymaz'}), 201)
+    assert s['airframe'] == 'caymaz' and s['model']['has_prop'] is True and s['model']['thumb_url'] is None, s
+    ok(a.delete(f"{S}/{s['id']}"))
+    # --- yetki: salt okuyan listeler/indirir, yazamaz ---
+    assert ok(mon.get(M))['can_write'] is False and mon.get(m1['glb_url']).status_code == 200 and mon.get(m1t['thumb_url']).status_code == 200
+    assert mon.post(M, files={'file': ('a.glb', glb, 'model/gltf-binary')}, data={'type': 'multirotor'}).status_code == 403
+    assert mon.put(f"{M}/{m1['id']}/glb", content=glb).status_code == 403 and mon.put(f'{M}/builtin:quad/thumb', content=png).status_code == 403
+    assert mon.put(f"{M}/{m1['id']}", json={'name': 'x'}).status_code == 403 and mon.delete(f"{M}/{m1['id']}").status_code == 403
+    assert mon.post(f'{M}/from-design', json={'version_id': 1, 'type': 'multirotor'}).status_code == 403
+    # --- tasarım dosyasından ekleme: proje + çizim + STEP sürümü → design-files listeler → kütüphaneye ekle (dosya kopyalanmaz) ---
+    pr = ok(a.post('/api/design/projects', json={'name': 'Sim Test Projesi'}))
+    dr = ok(a.post(f"/api/design/projects/{pr['id']}/drawings", json={'name': 'Gövde Montajı', 'kind': 'assembly'}))
+    ver = ok(a.post(f"/api/design/drawings/{dr['id']}/version", files={'file': ('govde-v1.step', b'ISO-10303-21;\nDATA;\nENDSEC;', 'application/octet-stream')}))
+    ok(a.post(f"/api/design/drawings/{dr['id']}/version", files={'file': ('cizim.dxf', b'0\nSECTION', 'application/octet-stream')}))   # 3B değil: listelenmez
+    df = ok(a.get(f'{M}/design-files'))
+    assert [d['id'] for d in df] == [ver['id']] and df[0]['file_name'] == 'govde-v1.step' and df[0]['drawing_name'] == 'Gövde Montajı' and df[0]['project_name'] == 'Sim Test Projesi' and df[0]['model_id'] is None, df
+    assert a.post(f'{M}/from-design', json={'version_id': 99999, 'type': 'vtol'}).status_code == 400
+    assert a.post(f'{M}/from-design', json={'version_id': ver['id'], 'type': 'ucan_hali'}).status_code == 400
+    md = ok(a.post(f'{M}/from-design', json={'version_id': ver['id'], 'type': 'vtol'}), 201)
+    assert md['source'] == 'design' and md['source_ref'] == ver['id'] and md['name'] == 'Gövde Montajı' and md['type'] == 'vtol' and md['ready'] is False and md['format'] == 'step' and md['file_name'] == 'govde-v1.step', md
+    assert a.get(md['file_url']).content.startswith(b'ISO-10303-21') and md['size'] == len(b'ISO-10303-21;\nDATA;\nENDSEC;')
+    assert ok(a.post(f'{M}/from-design', json={'version_id': ver['id'], 'type': 'vtol'}), 201)['id'] == md['id']   # aynı sürüm+tip: tek kayıt
+    assert ok(a.get(f'{M}/design-files'))[0]['model_id'] == int(md['id'])
+    assert [m['id'] for m in ok(a.get(M, params={'type': 'vtol'}))['models']] == ['builtin:caymaz', 'builtin:delta', md['id']]
+    ok(a.put(f"{M}/{md['id']}/glb", content=glb))
+    s = ok(a.post(S, json={'type': 'vtol', 'center_id': c1['id'], 'model': md['id']}), 201)
+    assert s['model']['source'] == 'design' and s['airframe'] is None
+    ok(a.delete(f"{S}/{s['id']}"))
+    # --- silme: kayıt + dizin gider; tasarımın özgün dosyası kalır ---
+    ok(a.delete(f"{M}/{md['id']}"))
+    assert a.get(f"{M}/{md['id']}").status_code == 404 and not (config.DATA_DIR / 'sim_models' / md['id']).exists() and a.get(f"/api/design/file?v={ver['id']}").status_code == 200
+    ok(a.delete(f"{M}/{m1['id']}")); ok(a.delete(f"{M}/{m2['id']}")); ok(a.delete(f"{M}/{m3['id']}"))
+    assert a.delete(f"{M}/{m1['id']}").status_code == 404 and a.delete(f'{M}/builtin:quad').status_code == 400
+    assert not (config.DATA_DIR / 'sim_models' / m1['id']).exists()
+    assert all(m['source'] == 'builtin' for m in ok(a.get(M))['models'])
+    print('  görsel model kütüphanesi testleri geçti')
 
 
 def main():
@@ -594,6 +735,8 @@ def main():
                 ws.send_text(json.dumps({'t': 'cmd', 'name': 'arm', 'rid': 'r1'}))
                 res = ws_bekle(ws, lambda m: m['t'] == 'res', 3)
                 assert res and res['ok'] is False and res['rid'] == 'r1', res
+            # --- görsel model kütüphanesi (§12) ---
+            model_testleri(a, mon, c1)
         # drone paketine erişimi olmayan rol (Pilot var ama bu kullanıcı 'drone' modülünde değil?) → Pilot drone'a sahiptir; yetkisiz rol: Güvenlik
         ok(a.post('/api/users', json={'username': 'guv', 'full_name': 'Guv', 'roles': ['Güvenlik'], 'password': 'sifre-1234'}))
         if True:
@@ -731,7 +874,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 5 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu: real, procedural, google3d) ilerler; ilk boş port yeniden verilir
+        assert s3['id'] == sid + 10 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)

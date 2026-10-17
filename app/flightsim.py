@@ -91,6 +91,18 @@ def airframe_dogrula(tip, a):
     return a
 
 
+def _model_eski(tip, airframe):
+    """`model` verilmeden açılan oturum (eski istemci / doğrudan MANAGER.ac): dahili modelin özet nesnesi (DB'siz; §12 kütüphanesinde her zaman var)."""
+    key = {'multirotor': 'quad', 'hexarotor': 'hexa', 'helikopter': 'heli'}.get(tip) or (airframe if airframe in AIRFRAMES else 'caymaz')
+    return {'id': f'builtin:{key}', 'source': 'builtin', 'type': tip, 'orient': None, 'has_prop': True, 'glb_url': None, 'ready': True}
+
+
+def _airframe_adi(model, tip):
+    if not model or tip not in PLANE_TIPLERI:
+        return None
+    return {'builtin:caymaz': 'caymaz', 'builtin:delta': 'delta'}.get(model.get('id'))
+
+
 def world_dogrula(w):
     """Ön yüzün ürettiği dünya tanımını doğrular; eksik alanlar varsayılanla dolar. Hatalıysa SimHata('invalid')."""
     if w is None:
@@ -337,11 +349,14 @@ class _UdpProto(asyncio.DatagramProtocol):
 # Oturum
 # ======================================================================
 class SimSession:
-    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None):
+    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None, model=None):
         self.id = int(sid)
         self.kimlik = KIMLIK_TABANI + self.id
         self.type, self.center, self.world, self.owner = tip, center, world, owner
-        self.airframe = airframe         # sabit kanat / VTOL 3B gövdesi: 'caymaz' | 'delta' (yalnız görsel; SITL modelini değiştirmez)
+        # Görsel model (§12): kütüphane nesnesi {id, name, source, orient, glb_url, has_prop, …}; yalnız görsel, SITL modelini değiştirmez.
+        # `airframe` geriye uyum: dahili caymaz/delta için kısa ad (uçak tiplerinde), aksi None.
+        self.model = model if model is not None else _model_eski(tip, airframe)
+        self.airframe = airframe if model is None else _airframe_adi(self.model, tip)
         self.yonetici = yonetici
         self.state = 'BASLIYOR'          # BASLIYOR | HAZIR | HATA | KAPANDI
         self.udp_port = None
@@ -386,7 +401,8 @@ class SimSession:
 
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
-        return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+        return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'model': dict(self.model) if self.model else None,
+                'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
                         'since': self.gcs_since},
@@ -903,8 +919,9 @@ class SimManager:
     def acik_sayisi(self):
         return len([s for s in self.sessions.values() if s.state != 'KAPANDI'])
 
-    async def ac(self, tip, center, world, owner, airframe=None):
-        """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev."""
+    async def ac(self, tip, center, world, owner, airframe=None, model=None):
+        """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev.
+        `model`: flightsim_models.coz ile çözülmüş kütüphane nesnesi (router); yoksa `airframe` ile dahili model."""
         if tip not in drone_sitl.TIP_ESLEME:
             raise SimHata('invalid', 'Geçersiz dron tipi')
         airframe = airframe_dogrula(tip, airframe)
@@ -933,12 +950,12 @@ class SimManager:
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': alt}, world, owner, self, airframe)
+                                  'alt': alt}, world, owner, self, airframe, model)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s
 
-    async def ac_replay(self, log, world, owner):
+    async def ac_replay(self, log, world, owner, model=None):
         """Kayıttan oynatma oturumu (mode 'replay'; flightsim_replay.ReplaySession): SITL/UDP yok. Doğrulama (400) → limit (409) → görev.
         Log ayrıştırma oturum görevinde arka planda sürer (BASLIYOR → HAZIR / HATA)."""
         from .flightsim_replay import ReplaySession, UZANTILAR
@@ -954,6 +971,8 @@ class SimManager:
         sid = self._next
         self._next += 1
         s = ReplaySession(sid, log, world, owner, self)
+        if model is not None:
+            s.model = model
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

@@ -138,6 +138,39 @@ def geocode_status(user=Depends(auth.current_user)):
     return geocode.STATE
 
 
+# ---- Firma logoları: web'den bul (toplu, arka plan; konum bulma ile aynı kalıp) — app/logofind.py
+class LogoFindIn(BaseModel):
+    only_missing: bool = True          # yalnız logosu olmayanlar (False: seçilenlerin logosu yenilenir)
+    ids: Optional[List[int]] = None
+    supplier: Optional[bool] = None    # True: yalnız tedarikçiler, False: yalnız firmalar, None: hepsi
+
+
+@router.post('/logos/find')
+def logos_find_start(body: LogoFindIn, user=Depends(company_user)):
+    """Logosu olmayan (ya da seçilen) firmaların logosu web'den aranır (site simgeleri → Clearbit → Google → DuckDuckGo ile alan adı).
+    Arka planda çalışır; ilerleme /logos/find/status ile okunur. Firma modülü yetkisi (tedarikçiler için Satın Alma) gerekir."""
+    from .. import logofind
+    mods = set(user['modules'])
+    if body.supplier is None and not {'companies', 'purchasing'} <= mods:   # tek modül yetkisi: yalnız kendi kapsamı
+        body.supplier = 'companies' not in mods
+    if body.supplier is not None:
+        _guard(user, body.supplier)
+    started = logofind.run(db.connect, only_missing=body.only_missing, ids=body.ids, supplier=body.supplier, user_id=user['id'])
+    if not started:
+        raise HTTPException(409, 'Logo taraması zaten çalışıyor')
+    with db.connect() as c:
+        db.audit(c, user['id'], 'Firma logo taraması başlattı', 'settings', None,
+                 f'{len(body.ids)} firma' if body.ids else ('eksikler' if body.only_missing else 'tümü'))
+        c.commit()
+    return {'started': True, **logofind.STATE}
+
+
+@router.get('/logos/find/status')
+def logos_find_status(user=Depends(company_user)):
+    from .. import logofind
+    return logofind.STATE
+
+
 @router.get('/geo')
 def companies_geo(user=Depends(auth.current_user), conn=db.DB):
     """Canlı Konum haritası: konumu bilinen aktif firmalar (logo ile)."""

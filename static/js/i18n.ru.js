@@ -3994,4 +3994,13 @@ registerCatalog('ru', {
   "az önce": "только что",
   "Web tarayıcı": "Веб-браузер",
   "Uygulama": "Приложение",
+  // Firma Yönetimi › Logolarını bul
+  "Logolarını bul": "Найти логотипы",
+  "Logosu olmayan firmaların logosunu web sitelerinden bulur ve kaydeder": "Находит и сохраняет логотипы компаний без логотипа с их сайтов",
+  "{done}/{total} tamamlandı": "{done}/{total} готово",
+  "Logo taraması bitti: {found} bulundu, {skipped} atlandı, {failed} bulunamadı": "Поиск логотипов завершён: найдено {found}, пропущено {skipped}, не найдено {failed}",
+  "Yalnız LOGOSU OLMAYAN aktif firmalar taranır{n}; logosu olan firmalara dokunulmaz. Firmanın web sitesi (yoksa e-posta alanı) üzerinden simgeleri, ardından Clearbit ve Google aranır; alan adı yoksa firma adıyla web araması denenir. Bir seferde en çok 50 firma; bulunamayanlar bir sonraki taramada yeniden denenir.": "Проверяются только активные компании БЕЗ ЛОГОТИПА{n}; компании с логотипом не затрагиваются. Значки ищутся на сайте компании (иначе по домену e-mail), затем в Clearbit и Google; без домена выполняется веб-поиск по названию. Не более 50 компаний за раз; ненайденные повторяются при следующем запуске.",
+  "Küçük (32 piksel altı) ya da boş görseller kabul edilmez. Bulunan logo, elle yüklenen logo gibi firma kartında görünür; dilerseniz firma düzenleme penceresinden değiştirebilirsiniz.": "Маленькие (меньше 32 px) или пустые изображения отклоняются. Найденный логотип отображается на карточке как загруженный; заменить его можно в окне редактирования.",
+  "Eksikleri tara": "Искать недостающие",
+  "{n} firma": "{n} компаний",
 });

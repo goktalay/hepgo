@@ -3994,4 +3994,13 @@ registerCatalog('ar', {
   "az önce": "الآن",
   "Web tarayıcı": "متصفح الويب",
   "Uygulama": "التطبيق",
+  // Firma Yönetimi › Logolarını bul
+  "Logolarını bul": "البحث عن الشعارات",
+  "Logosu olmayan firmaların logosunu web sitelerinden bulur ve kaydeder": "يبحث عن شعارات الشركات التي لا تملك شعارًا من مواقعها ويحفظها",
+  "{done}/{total} tamamlandı": "اكتمل {done}/{total}",
+  "Logo taraması bitti: {found} bulundu, {skipped} atlandı, {failed} bulunamadı": "انتهى البحث عن الشعارات: {found} وُجد، {skipped} تم تخطيه، {failed} لم يُوجد",
+  "Yalnız LOGOSU OLMAYAN aktif firmalar taranır{n}; logosu olan firmalara dokunulmaz. Firmanın web sitesi (yoksa e-posta alanı) üzerinden simgeleri, ardından Clearbit ve Google aranır; alan adı yoksa firma adıyla web araması denenir. Bir seferde en çok 50 firma; bulunamayanlar bir sonraki taramada yeniden denenir.": "تُفحص فقط الشركات النشطة التي لا تملك شعارًا{n}؛ ولا تُمسّ الشركات التي لها شعار. يُبحث عن الأيقونات عبر موقع الشركة (أو نطاق البريد الإلكتروني)، ثم Clearbit وGoogle؛ وإن لم يوجد نطاق تُجرى محاولة بحث على الويب باسم الشركة. بحد أقصى 50 شركة في كل مرة؛ ويُعاد البحث عن غير الموجودة في المرة التالية.",
+  "Küçük (32 piksel altı) ya da boş görseller kabul edilmez. Bulunan logo, elle yüklenen logo gibi firma kartında görünür; dilerseniz firma düzenleme penceresinden değiştirebilirsiniz.": "تُرفض الصور الصغيرة (أقل من 32 بكسل) أو الفارغة. يظهر الشعار الموجود في بطاقة الشركة كشعار مرفوع؛ ويمكنك تغييره من نافذة تعديل الشركة.",
+  "Eksikleri tara": "فحص الناقص",
+  "{n} firma": "{n} شركة",
 });

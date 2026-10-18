@@ -69,6 +69,34 @@ function geocodeBtn(ctx, reload, missingCount) {
   return btn;
 }
 
+// Logolarını bul: logosu olmayan firmaların logosu web'den aranır (site simgeleri → Clearbit → Google → DuckDuckGo ile alan adı);
+// konum bulma düğmesiyle aynı kalıp: ilerleme düğmede, bitince özet bildirim ve liste yenilenir (firma modülü yetkisi yeter)
+function logoFindBtn(ctx, reload, missingCount) {
+  const label = `🖼 ${t('Logolarını bul')}`;
+  const btn = h('button', { class: 'btn', type: 'button', title: t('Logosu olmayan firmaların logosunu web sitelerinden bulur ve kaydeder') }, label);
+  let timer = null;
+  const poll = async () => {
+    try {
+      const s = await api.get('/api/companies/logos/find/status');
+      if (s.running) { btn.disabled = true; btn.textContent = `🖼 ${t('{done}/{total} tamamlandı', { done: s.done, total: s.total })} · ${s.current || ''}`.slice(0, 60); }
+      else {
+        clearInterval(timer); timer = null; btn.disabled = false; btn.textContent = label;
+        if (s.finished_at) { toast(t('Logo taraması bitti: {found} bulundu, {skipped} atlandı, {failed} bulunamadı', { found: s.found, skipped: s.skipped, failed: s.failed })); reload(); }
+      }
+    } catch { clearInterval(timer); timer = null; btn.disabled = false; }
+  };
+  btn.addEventListener('click', async () => {
+    const n = missingCount ? missingCount() : null;
+    const start = async () => { try { await api.post('/api/companies/logos/find', { only_missing: true, supplier: SUP }); btn.disabled = true; timer = setInterval(poll, 1500); poll(); } catch (err) { toastError(err); } };
+    modal({ title: t('Logolarını bul'),
+      body: h('div', null, h('p', { class: 'small', style: { marginTop: 0 } }, t('Yalnız LOGOSU OLMAYAN aktif firmalar taranır{n}; logosu olan firmalara dokunulmaz. Firmanın web sitesi (yoksa e-posta alanı) üzerinden simgeleri, ardından Clearbit ve Google aranır; alan adı yoksa firma adıyla web araması denenir. Bir seferde en çok 50 firma; bulunamayanlar bir sonraki taramada yeniden denenir.', { n: n != null ? ` (${t('{n} firma', { n })})` : '' })),
+        h('p', { class: 'small muted' }, t('Küçük (32 piksel altı) ya da boş görseller kabul edilmez. Bulunan logo, elle yüklenen logo gibi firma kartında görünür; dilerseniz firma düzenleme penceresinden değiştirebilirsiniz.'))),
+      actions: [{ label: t('Vazgeç') }, { label: t('Eksikleri tara'), class: 'primary', onClick: start }] });
+  });
+  api.get('/api/companies/logos/find/status').then(s => { if (s.running) { timer = setInterval(poll, 1500); poll(); } }).catch(() => {});
+  return btn;
+}
+
 export const logoOf = (c, cls = 'co-logo') => (c.logo ? h('img', { class: cls, src: fileUrl(c.logo, 256), alt: c.name })
   : h('span', { class: `${cls} co-initials` }, initials(c.name)));
 
@@ -147,7 +175,8 @@ async function renderList(view, ctx) {
   clear(view,
     pageHead(TITLE, { back: '#/', sub: 'Firmalar, kişiler ve evraklar', tabs: SUP ? null : crmNav('companies', ctx) }),
     moduleToolbar(viewSwitch('companies'), h('button', { class: 'btn primary', onclick: () => companyForm({}, id => { location.hash = `${BASE}/${id}`; }) },
-      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), geocodeBtn(ctx, reload, () => companies.filter(c => c.active && c.lat == null).length)),
+      svgIcon(icons.plus), SUP ? 'Yeni Tedarikçi' : 'Yeni Firma'), geocodeBtn(ctx, reload, () => companies.filter(c => c.active && c.lat == null).length),
+      logoFindBtn(ctx, reload, () => companies.filter(c => c.active && !c.logo).length)),
     stats,
     h('div', { class: 'filters' }, q, act),
     grid);

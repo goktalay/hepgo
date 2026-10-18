@@ -4,7 +4,7 @@
 // Canlı telemetri: /ws/drone/live (oturum çerezi) — harekât ekranı (static/ops) yalnız bir saha görevi bağlamında açılır.
 import { api } from '../api.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleTabs, moduleToolbar, onLeave, pageHead, segmented, statStrip,
+  clear, confirmDialog, every, field, fmtDateTime, goBack, h, matches, modal, moduleToolbar, onLeave, pageHead, segmented, statStrip,
   toast, t as tr,
 } from '../ui.js';
 
@@ -46,7 +46,9 @@ export async function render(view, params, ctx) {
   const [page, qs] = String(params[0] || '').split('?');
   const want = TABS.some(([k]) => k === page) ? page : tabs[0][0];
   const cur = (m.can[want] || (want === 'sim' && simMock)) ? want : tabs[0][0];
-  const head = sub => pageHead('Dron Yönetimi', { back: '#/', sub, tabs: moduleTabs(tabs, cur, k => { location.hash = `#/drone/${k}`; }) });
+  // Alt modül seçici başlık bandında KAPSÜL (silindir) düğmeler: Kameralar'daki gibi segmented({tabs:true}) doğrudan banda verilir
+  // (app.css `.page-head > .seg.seg-tabs` kapsül kuralı); moduleTabs sarmalayıcısı alt çizgili sekme çizerdi.
+  const head = sub => pageHead('Dron Yönetimi', { back: '#/', sub, tabs: segmented(tabs, cur, k => { location.hash = `#/drone/${k}`; }, { tabs: true }) });
   if (cur === 'sim') {
     // Uçuş Simülatörü ayrı modülde (flightsim.js: sihirbaz + tam alan 3B oturum ekranı); yalnız gerekince yüklenir.
     const fs = await import('./flightsim.js');
@@ -436,6 +438,8 @@ async function renderLive(view, ctx, m, head, sp) {
   const onMsg = e => {
     if (e.origin !== location.origin || e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
     if (e.data.t === 'ops-nav' && typeof e.data.hash === 'string' && e.data.hash.startsWith('#/')) location.hash = e.data.hash;
+    // Harekât ekranındaki "← Geri" (hepgo_patch.js Bölüm 13; klavye Escape ile aynı): tam ekrandan çık + önceki sayfaya dön (yoksa göreve)
+    if (e.data.t === 'ops-back') goBack(`#/field/task/${task}`);
   };
   window.addEventListener('message', onMsg);
   onLeave(() => {

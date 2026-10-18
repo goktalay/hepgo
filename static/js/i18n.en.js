@@ -585,4 +585,17 @@ registerCatalog('en', {
   "3B önizleme hazırlanıyor (STEP → STL/GLB; büyük dosyalarda 1 dk sürebilir)…": "Preparing 3D preview (STEP → STL/GLB; large files may take a minute)…",
   "Önizleme üretildi: {tri} üçgen · STL {stl} · GLB {glb} · {s} sn": "Preview generated: {tri} triangles · STL {stl} · GLB {glb} · {s} s",
   "CAD çekirdeği başka bir modeli çözümlüyor, sıra bekleniyor…": "The CAD kernel is processing another model, waiting in queue…",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "Simulations · last {d} days",
+  "toplam {n} kayıt": "{n} records in total",
+  "Uçuş süresi · son {d} gün": "Flight time · last {d} days",
+  "ortalama {t}": "average {t}",
+  "Henüz simülasyon yok": "No simulations yet",
+  "Çarpışma oranı · son {d} gün": "Crash rate · last {d} days",
+  "Son çarpışma: {t}": "Last crash: {t}",
+  "Henüz çarpışma yok": "No crashes yet",
+  "Açık oturum": "Open sessions",
+  "Son simülasyon: {t}": "Last simulation: {t}",
+  "Geri": "Back",
+  "Geri (Esc)": "Back (Esc)",
 });

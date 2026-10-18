@@ -74,6 +74,8 @@
 
 <!-- HEPGO: tam ekran üst bandı (yalnız HEPGO tam ekranındayken görünür): firma logosu + adı, altında görev tanımı, sağda tarih/saat -->
 <div id="hepgoUstBar">
+  <!-- HEPGO: "← Geri" (tam ekran üst bandı; hepgo_patch.js hepgoFaz1b): tam ekrandan çıkar + HEPGO'da önceki sayfaya döner (drone.js ops-back) -->
+  <button id="hepgoUstGeri" type="button" title="Geri (Esc)" aria-label="Geri"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>Geri</span></button>
   <img id="hepgoUstLogo" alt="">
   <div class="hub-orta"><b id="hepgoUstFirma"></b><span id="hepgoUstGorev"></span></div>
   <div id="hepgoUstSaat"></div>

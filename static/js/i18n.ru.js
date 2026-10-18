@@ -4036,4 +4036,15 @@ registerCatalog('ru', {
   "3B önizleme hazırlanıyor (STEP → STL/GLB; büyük dosyalarda 1 dk sürebilir)…": "Подготовка 3D-предпросмотра (STEP → STL/GLB; большие файлы могут занять минуту)…",
   "Önizleme üretildi: {tri} üçgen · STL {stl} · GLB {glb} · {s} sn": "Предпросмотр создан: {tri} треугольников · STL {stl} · GLB {glb} · {s} с",
   "CAD çekirdeği başka bir modeli çözümlüyor, sıra bekleniyor…": "Ядро CAD обрабатывает другую модель, ожидание в очереди…",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "Симуляции · за {d} дней",
+  "toplam {n} kayıt": "всего {n} записей",
+  "Uçuş süresi · son {d} gün": "Время полёта · за {d} дней",
+  "ortalama {t}": "в среднем {t}",
+  "Henüz simülasyon yok": "Симуляций пока нет",
+  "Çarpışma oranı · son {d} gün": "Доля крушений · за {d} дней",
+  "Son çarpışma: {t}": "Последнее крушение: {t}",
+  "Henüz çarpışma yok": "Крушений пока нет",
+  "Son simülasyon: {t}": "Последняя симуляция: {t}",
+  "Geri (Esc)": "Назад (Esc)",
 });

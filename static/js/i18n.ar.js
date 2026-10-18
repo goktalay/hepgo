@@ -4036,4 +4036,15 @@ registerCatalog('ar', {
   "3B önizleme hazırlanıyor (STEP → STL/GLB; büyük dosyalarda 1 dk sürebilir)…": "جارٍ تجهيز المعاينة ثلاثية الأبعاد (STEP ← STL/GLB؛ قد تستغرق الملفات الكبيرة دقيقة)…",
   "Önizleme üretildi: {tri} üçgen · STL {stl} · GLB {glb} · {s} sn": "تم إنشاء المعاينة: {tri} مثلث · STL {stl} · GLB {glb} · {s} ث",
   "CAD çekirdeği başka bir modeli çözümlüyor, sıra bekleniyor…": "نواة CAD تعالج نموذجًا آخر، في انتظار الدور…",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "المحاكاة · آخر {d} يوم",
+  "toplam {n} kayıt": "إجمالي {n} سجل",
+  "Uçuş süresi · son {d} gün": "وقت الطيران · آخر {d} يوم",
+  "ortalama {t}": "المتوسط {t}",
+  "Henüz simülasyon yok": "لا توجد محاكاة بعد",
+  "Çarpışma oranı · son {d} gün": "نسبة التحطم · آخر {d} يوم",
+  "Son çarpışma: {t}": "آخر تحطم: {t}",
+  "Henüz çarpışma yok": "لا يوجد تحطم بعد",
+  "Son simülasyon: {t}": "آخر محاكاة: {t}",
+  "Geri (Esc)": "رجوع (Esc)",
 });

@@ -1467,6 +1467,7 @@ const SUB_PAGES = {
     return p[1] ? `${lbl} #${p[1]}` : lbl; },
   projects: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Proje #${k}` : ({ queue: 'Hareketlere Proje', scan: 'Proje Taraması' }[k] || k); },
   fleet: p => { const k = (p[0] || '').split('?')[0]; return /^\d+$/.test(k) ? `Araç #${k}` : ({ moves: 'Gider Etiketleme', report: 'Rapor', settings: 'Zimmet Formu' }[k] || k); },
+  reports: p => { const k = (p[0] || '').split('?')[0]; return k === 'm' ? `Modül › ${(p[1] || '').split('?')[0]}` : k; },
   production: p => `İş Emri #${p[0]}`,
   users: p => `Kullanıcı #${p[0]}${p[1] ? ` · ${{ edit: 'Bilgileri Düzenle', logs: 'Kullanıcı Logları', logins: 'Giriş Logları' }[p[1]] || p[1]}` : ''}`,
   products: p => `Ürün #${p[0]}`,

@@ -38,7 +38,8 @@ def main():
     with TestClient(app) as a:
         ok(a.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
         allr = ok(a.get('/api/reports'))
-        assert len(allr) == len(reports.REPORTS) >= 20
+        # Dron raporu yalnız dron paketinde, Canlı Konum raporu yalnız sistem sahibinde görünür (bu testte ikisi de yok)
+        assert {r['key'] for r in allr} == {r['key'] for r in reports.REPORTS if r['module'] not in ('drone', 'konum')} and len(allr) >= 20
         for r in allr:   # boş veriyle
             check(ok(a.get(f'/api/reports/{r["key"]}')))
         # Biraz veri: sipariş, üretim, hata, araç girişi, misafir
@@ -70,12 +71,12 @@ def main():
     with TestClient(app) as p:   # Pilot: saha ve stok raporları
         ok(p.post('/api/auth/login', json={'username': 'pilot', 'password': 'sifre-1234'}))
         mods = {r['module'] for r in ok(p.get('/api/reports'))}
-        assert mods == {'field', 'stock'}, mods
+        assert mods == {'field', 'stock', 'announcements'}, mods   # Duyurular herkese açık → haber / duyuru raporları da görünür
         assert p.get('/api/reports/hata-analizi').status_code == 404   # yetkisi olmayan modülün raporu
         check(ok(p.get('/api/reports/ucus-performans')))
     with TestClient(app) as s:
         ok(s.post('/api/auth/login', json={'username': 'sek', 'password': 'sifre-1234'}))
-        assert {r['module'] for r in ok(s.get('/api/reports'))} == {'secretariat'}
+        assert {r['module'] for r in ok(s.get('/api/reports'))} == {'secretariat', 'announcements'}
     with TestClient(app) as g:   # Güvenlik rolü Raporlar modülünü görmez
         ok(g.post('/api/auth/login', json={'username': 'guv', 'password': 'sifre-1234'}))
         assert g.get('/api/reports').status_code == 403

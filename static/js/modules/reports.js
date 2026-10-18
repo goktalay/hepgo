@@ -1,20 +1,27 @@
 // Raporlar: tüm modüllerin raporları. Kullanıcı yalnızca girebildiği modüllerin raporlarını görür (sunucu süzer).
-// Liste: düğmeler (üstte rapor adı, altta modülü), kart / liste görünümü, modül filtresi. Rapor: dönem seçimi; Grafik
-// (göstergeler, çıkarımlar, grafikler) ya da Baskı (göstergeler, tablolar) görünümü; ikisi de antetli yazdırılır.
-// Grafikler Chart.js (static/vendor/chartjs, yerel kopya) ile; gün × saat ısı haritası kendi bileşenimiz.
+// Yerleşim: SOLDA modül ağacı (paketteki modüller, her birinin altında o modülün raporları; arama kutusu; seçili vurgulu;
+// modül düğümleri daraltılabilir, durum cihazda saklanır), SAĞDA seçilen modülün rapor kartları ya da seçilen raporun içeriği.
+// Adresler: #/reports (tümü) · #/reports/m/<modül> (modül özeti) · #/reports/<rapor> (rapor). Mobil genişlikte ağaç üstte açılır-kapanır.
+// Rapor: dönem seçimi; Grafik (göstergeler, çıkarımlar, grafikler) ya da Baskı (göstergeler, tablolar) görünümü; ikisi de antetli
+// yazdırılır; Excel düğmesi (listexport) raporun en büyük tablosunu indirir. Grafikler Chart.js (static/vendor/chartjs, yerel kopya).
 import { api } from '../api.js';
 import { icons } from '../icons.js';
+import { setListExport } from '../listexport.js';
+import { MODULE_NAMES as ALL_MODULE_NAMES } from '../modulenames.js';
 import { foot, head, printPage } from '../print.js';
 import { clear, fmtDateTime, h, matches, moduleToolbar, onLeave, pageHead, pref, segmented, setPref, statStrip, svgIcon, t, toastError, periodRange } from '../ui.js';
 
+// Rapor modülündeki görünen adlar: genel katalog + raporlara özgü kısaltmalar (ızgarada daha okunur)
 export const MODULE_NAMES = {
+  ...ALL_MODULE_NAMES,
   production: 'Üretim Yönetimi', orders: 'İş Emri Yönetimi', warehouse: 'Depo Yönetimi', stock: 'Stok Yönetimi', printers: 'Yazıcı Yönetimi',
   field: 'Saha Yönetimi', companies: 'Firma Yönetimi', documents: 'Evrak Yönetimi', secretariat: 'Sekreterya', security: 'Güvenlik', hr: 'İnsan Kaynakları', mrp: 'MRP', purchasing: 'Satın Alma',
-  admin: 'Yönetim', products: 'Ürün Yönetimi',
+  admin: 'Yönetim', products: 'Ürün Yönetimi', konum: 'Canlı Konum', announcements: 'Duyurular & Haberler',
 };
 const MODULE_TONE = {
   production: '#1f6feb', orders: '#0891b2', warehouse: '#d97706', stock: '#65a30d', printers: '#7c3aed', field: '#16a34a',
   companies: '#db2777', documents: '#9333ea', secretariat: '#ea580c', security: '#dc2626', admin: '#475569', products: '#0d9488',
+  drone: '#0ea5e9', cameras: '#b91c1c', design: '#6d28d9', announcements: '#f59e0b', konum: '#059669', hr: '#2563eb', finance: '#15803d',
 };
 const PALETTE = ['#1f6feb', '#16a34a', '#f59e0b', '#dc2626', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#475569', '#0d9488', '#7c3aed'];
 
@@ -27,28 +34,81 @@ export const loadChart = () => (chartLib ??= new Promise((resolve, reject) => {
   document.head.append(s);
 }));
 
+const modIcon = m => svgIcon(icons[m] || icons.documents);
+
 export async function render(view, params, ctx) {
-  if (params[0]) return renderReport(view, params[0], ctx);
   const list = await api.get('/api/reports');
-  let mode = pref('reports.view', 'card');
-  let mod = '';
-  const q = h('input', { class: 'input', type: 'search', placeholder: 'Rapor ara…', style: { width: '220px' } });
-  const modSel = h('select', { class: 'input', title: 'Modül' });
-  const out = h('div');
+  const p0 = (params[0] || '').split('?')[0];
+  const p1 = (params[1] || '').split('?')[0];
+  const report = p0 && p0 !== 'm' ? list.find(r => r.key === p0) : null;
+  const mod = p0 === 'm' ? p1 : report?.module || '';
+  const side = h('aside', { class: 'rp-side' });
+  const pane = h('section', { class: 'rp-pane' });
+  const headSlot = h('div', { class: 'rp-head' });   // sayfa başlığı tam genişlik bant: ızgaranın ÜSTÜNDE (ağacın üstüne binmesin)
+  // Mobil: ağaç üstte, "Modül ağacı" düğmesiyle açılır-kapanır (geniş ekranda düğme gizli, ağaç her zaman açık)
+  const sideToggle = h('button', { class: 'btn rp-side-toggle', type: 'button', 'aria-expanded': 'false', onclick: () => {
+    const open = side.classList.toggle('open'); sideToggle.setAttribute('aria-expanded', String(open));
+  } }, '☰ ', report ? report.title : mod ? (MODULE_NAMES[mod] || mod) : 'Modül ağacı');
+  clear(view, headSlot, h('div', { class: 'rp-layout' }, sideToggle, side, pane));
+  moduleTree(side, list, { report: report?.key || '', mod });
+  if (p0 && !report && p0 !== 'm') { clear(headSlot, pageHead('Rapor bulunamadı', { back: '#/reports' })); clear(pane, h('div', { class: 'card empty' }, 'Rapor bulunamadı ya da yetkiniz yok')); return; }
+  if (report) return renderReport(pane, report.key, ctx, headSlot);
+  return moduleOverview(pane, list, mod, headSlot);
+}
+
+// ---------- Sol: modül ağacı
+function moduleTree(side, list, sel) {
   const mods = [...new Set(list.map(r => r.module))];
-  const drawChips = () => clear(modSel, [['', 'Tüm modüller', list.length], ...mods.map(m => [m, MODULE_NAMES[m] || m, list.filter(r => r.module === m).length])]
-    .map(([k, label, n]) => h('option', { value: k, selected: mod === k }, `${label} (${n})`)));
-  modSel.addEventListener('change', () => { mod = modSel.value; draw(); });
+  let closed = new Set();
+  try { closed = new Set(JSON.parse(pref('reports.tree.closed', '[]'))); } catch { /* bozuk kayıt: hepsi açık */ }
+  const q = h('input', { class: 'input rp-tree-q', type: 'search', placeholder: 'Rapor ara…', 'aria-label': 'Rapor ara' });
+  const tree = h('nav', { class: 'rp-tree', 'aria-label': 'Modül ağacı' });
   const draw = () => {
-    const rows = list.filter(r => (!mod || r.module === mod) && matches(q.value, r.title, r.desc, MODULE_NAMES[r.module]));
+    const term = q.value.trim();
+    const nodes = mods.map(m => {
+      const rows = list.filter(r => r.module === m && (!term || matches(term, r.title, r.desc, MODULE_NAMES[m] || m)));
+      if (term && !rows.length) return null;
+      const open = term ? true : !closed.has(m);
+      const caret = h('button', { class: 'rp-tree-caret', type: 'button', 'aria-label': open ? 'Daralt' : 'Genişlet', 'aria-expanded': String(open), onclick: e => {
+        e.preventDefault(); e.stopPropagation();
+        if (closed.has(m)) closed.delete(m); else closed.add(m);
+        setPref('reports.tree.closed', JSON.stringify([...closed])); draw();
+      } }, '▸');
+      return h('div', { class: `rp-tree-mod ${open ? 'open' : ''} ${sel.mod === m && !sel.report ? 'on' : ''}`, style: { '--tone': MODULE_TONE[m] || 'var(--primary)' } },
+        h('a', { class: 'rp-tree-h', href: `#/reports/m/${m}`, title: t('{m} raporları', { m: MODULE_NAMES[m] || m }) }, caret,
+          h('span', { class: 'rp-tree-ico' }, modIcon(m)), h('span', { class: 'rp-tree-name' }, MODULE_NAMES[m] || m), h('span', { class: 'rp-tree-n' }, rows.length)),
+        open ? h('div', { class: 'rp-tree-items', role: 'list' }, rows.map(r => h('a', { class: `rp-tree-item ${sel.report === r.key ? 'on' : ''}`, href: `#/reports/${r.key}`, title: r.desc, role: 'listitem',
+          'aria-current': sel.report === r.key ? 'page' : null }, r.title))) : null);
+    }).filter(Boolean);
+    clear(tree, nodes.length ? nodes : h('div', { class: 'empty small' }, 'Rapor bulunamadı'));
+  };
+  q.addEventListener('input', draw);
+  clear(side, h('a', { class: `rp-tree-all ${!sel.mod && !sel.report ? 'on' : ''}`, href: '#/reports' }, h('span', { class: 'rp-tree-ico' }, modIcon('reports')), h('b', null, 'Tüm raporlar'), h('span', { class: 'rp-tree-n' }, list.length)),
+    q, tree);
+  draw();
+  // seçili öğe yan panelin kendi kaydırma kutusunda görünür olsun (sayfa kaydırıcısına dokunulmaz)
+  requestAnimationFrame(() => {
+    const on = tree.querySelector('.rp-tree-item.on, .rp-tree-mod.on');
+    if (on && side.scrollHeight > side.clientHeight) side.scrollTop = Math.max(0, on.offsetTop - side.clientHeight / 2);
+  });
+}
+
+// ---------- Sağ: modül özeti (ya da tüm raporlar): kart / liste
+function moduleOverview(pane, list, mod, headSlot) {
+  let mode = pref('reports.view', 'card');
+  const rows0 = mod ? list.filter(r => r.module === mod) : list;
+  const out = h('div');
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Rapor ara…', style: { width: '220px' } });
+  const draw = () => {
+    const rows = rows0.filter(r => matches(q.value, r.title, r.desc, MODULE_NAMES[r.module]));
     clear(out, !rows.length ? h('div', { class: 'card empty' }, 'Rapor bulunamadı')
       : mode === 'card' ? h('div', { class: 'rp-grid' }, rows.map(r => h('a', { class: 'rp-card', href: `#/reports/${r.key}`, title: r.desc, style: { '--tone': MODULE_TONE[r.module] } },
-        h('span', { class: 'rp-ico' }, svgIcon(icons[r.module] || icons.documents)),
+        h('span', { class: 'rp-ico' }, modIcon(r.module)),
         h('b', null, r.title),
         h('span', { class: 'rp-mod' }, MODULE_NAMES[r.module] || r.module),
         h('small', null, r.desc))))
         : h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, h('table', null,
-          h('thead', null, h('tr', null, ['Rapor', 'Modül', 'Açıklama'].map(t => h('th', null, t)))),
+          h('thead', null, h('tr', null, ['Rapor', 'Modül', 'Açıklama'].map(x => h('th', null, x)))),
           h('tbody', null, rows.map(r => h('tr', { class: 'click', onclick: () => { location.hash = `#/reports/${r.key}`; } },
             h('td', null, h('b', null, r.title)),
             h('td', null, h('span', { class: 'rp-mod-tag', style: { '--tone': MODULE_TONE[r.module] } }, MODULE_NAMES[r.module] || r.module)),
@@ -56,10 +116,9 @@ export async function render(view, params, ctx) {
   };
   q.addEventListener('input', draw);
   const viewSeg = segmented([['card', 'Kart'], ['list', 'Liste']], mode, v => { mode = v; setPref('reports.view', v); draw(); });
-  clear(view, pageHead('Raporlar', { back: '#/', sub: t('{n} rapor · modül raporları', { n: list.length }) }),
-    moduleToolbar(viewSeg),
-    h('div', { class: 'filters' }, modSel, q), out);
-  drawChips();
+  const title = mod ? (MODULE_NAMES[mod] || mod) : 'Raporlar';
+  clear(headSlot, pageHead(title, { back: mod ? '#/reports' : '#/', sub: mod ? t('{n} rapor · soldaki ağaçtan başka bir modül ya da rapor seçin', { n: rows0.length }) : t('{n} rapor · modül raporları', { n: list.length }) }));
+  clear(pane, moduleToolbar(viewSeg), h('div', { class: 'filters' }, q), out);
   draw();
 }
 
@@ -78,7 +137,7 @@ function preset(key) {
   return null;
 }
 
-async function renderReport(view, key, ctx) {
+async function renderReport(view, key, ctx, headSlot) {
   let range = pref(`reports.range2`, 'week');   // varsayılan: bu hafta
   let [from, to] = preset(range) || preset('week');
   let type = pref('reports.type', 'chart');
@@ -109,8 +168,11 @@ async function renderReport(view, key, ctx) {
     try {
       data = await api.get(`/api/reports/${key}?date_from=${fromI.value}&date_to=${toI.value}`);
     } catch (err) { clear(body, h('div', { class: 'card empty' }, err.message)); return; }
-    clear(headBox, pageHead(data.title, { back: '#/reports', sub: h('span', null, h('span', { class: 'rp-mod-tag', style: { '--tone': MODULE_TONE[data.module] } },
+    clear(headBox, pageHead(data.title, { back: `#/reports/m/${data.module}`, sub: h('span', null, h('span', { class: 'rp-mod-tag', style: { '--tone': MODULE_TONE[data.module] } },
       MODULE_NAMES[data.module] || data.module), `  ${data.desc}`) }), moduleToolbar(typeSeg, printBtn));
+    // Excel: raporun en çok satırlı tablosu (grafik görünümünde tablo ekranda olmasa da indirilebilir)
+    const big = [...data.tables].sort((x, y) => y.rows.length - x.rows.length)[0];
+    setListExport(big ? () => ({ columns: big.columns.map(c => c.label), rows: big.rows.map(r => big.columns.map(c => r[c.key] ?? '')) }) : null);
     draw();
   }
 
@@ -175,7 +237,8 @@ async function renderReport(view, key, ctx) {
     `Rapor: ${data.title}`);
   }
 
-  clear(view, headBox, h('div', { class: 'filters' }, rangeSeg, fromI, toI), body);
+  clear(headSlot, headBox);
+  clear(view, h('div', { class: 'filters' }, rangeSeg, fromI, toI), body);
   await load();
 }
 

@@ -2320,6 +2320,19 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
     last_used  TEXT
 );
 
+-- Yüz ile giriş (Face ID tarzı): kullanıcı başına tek kayıt; data = cameras.encrypt(JSON {embeddings:[[128 float]…], slots})
+-- (çok açıdan 5–18 gömme, SFace 128-d). Ham kare / kırpık saklanmaz. mode: face | face_pin (yüz + PIN). Bkz. app/facelogin.py
+CREATE TABLE IF NOT EXISTS user_face (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data       TEXT NOT NULL,
+    model_ver  TEXT NOT NULL,
+    mode       TEXT NOT NULL DEFAULT 'face',
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    count      INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Kullanıcılar arası canlı mesajlaşma (birebir). Dosya: uploads/chat; kind: image | audio | file
 CREATE TABLE IF NOT EXISTS chat_messages (
     id         INTEGER PRIMARY KEY,

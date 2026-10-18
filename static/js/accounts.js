@@ -2,7 +2,8 @@
 // ve adıyla listelenir. Tıklanınca PIN'i varsa 4 haneli PIN, yoksa yalnızca şifre sorulur (kullanıcı adı yazılmaz).
 // Cihazda saklanan: sunucunun verdiği cihaz jetonu (tek başına giriş sağlamaz), ad, kullanıcı adı ve küçük fotoğraf.
 import { api, fileUrl } from './api.js';
-import { clear, field, h, toastError } from './ui.js';
+import { cameraSupported, faceIcon } from './facering.js';
+import { clear, field, h, t, toastError } from './ui.js';
 
 const KEY = 'caymaz.accounts';
 const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
@@ -41,11 +42,15 @@ export async function accountChooser(box, { onLogin, onOther }) {
   } catch { /* sunucuya ulaşılamazsa kayıtlı liste gösterilir */ }
   if (!list.length) return false;
 
+  // Yüz tanıtılmış hesap (politika açık, motor var) → önce yüz; yoksa PIN; yoksa şifre. Kamera yoksa yüz akışı kendisi PIN/şifreye düşer.
+  const faceOk = a => a.has_face && cameraSupported();
+  const open = a => (faceOk(a) ? showFace(a) : a.has_pin ? showPin(a) : showPassword(a));
   const showList = () => clear(box,
     h('div', { class: 'acc-title' }, 'Hesap seçin'),
     h('div', { class: 'acc-list' }, list.map(a => h('div', { class: 'acc-item' },
-      h('button', { type: 'button', class: 'acc-btn', onclick: () => (a.has_pin ? showPin(a) : showPassword(a)) },
-        avatarOf(a), h('b', null, a.full_name), h('small', null, a.has_pin ? 'PIN ile giriş' : 'Şifre ile giriş')),
+      h('button', { type: 'button', class: 'acc-btn', onclick: () => open(a) },
+        avatarOf(a), h('b', null, a.full_name),
+        h('small', null, faceOk(a) ? h('span', { class: 'acc-face' }, faceIcon(), t(a.face_mode === 'face_pin' ? 'Yüz + PIN ile giriş' : 'Yüz ile giriş')) : a.has_pin ? 'PIN ile giriş' : 'Şifre ile giriş')),
       h('button', { type: 'button', class: 'acc-x', title: 'Bu cihazdan kaldır', onclick: () => {
         forgetAccount(a.id); list = list.filter(x => x.id !== a.id); if (list.length) showList(); else onOther();
       } }, '×')))),
@@ -57,7 +62,8 @@ export async function accountChooser(box, { onLogin, onOther }) {
   function showPassword(a) {
     const pw = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
     const submit = h('button', { class: 'btn primary lg', type: 'submit' }, 'Giriş Yap');
-    const form = h('form', { class: 'acc-form' }, ...header(a), field('Şifre', pw), submit);
+    const form = h('form', { class: 'acc-form' }, ...header(a), field('Şifre', pw), submit,
+      a.has_face && cameraSupported() ? h('button', { type: 'button', class: 'btn ghost acc-other', onclick: () => showFace(a) }, faceIcon(), ' ', 'Yüz ile giriş yap') : null);
     form.addEventListener('submit', async e => {
       e.preventDefault();
       submit.disabled = true;
@@ -70,7 +76,16 @@ export async function accountChooser(box, { onLogin, onOther }) {
     pw.focus();
   }
 
-  function showPin(a) {
+  // Yüz ile giriş (face.js): kamera dairesi + halka; eşleşince oturum; başarısızsa PIN / şifreye düşer
+  function showFace(a) {
+    import('./face.js').then(m => m.faceLogin(box, a, {
+      header, onLogin: () => onLogin(null), onPin: showPin, onPassword: showPassword,
+      pinPad: (acc, send, opts) => showPin(acc, { send, ...opts }),
+    })).catch(() => (a.has_pin ? showPin(a) : showPassword(a)));
+  }
+
+  // PIN klavyesi. opts.send(pin): özel gönderim (yüz + PIN kipi) — yoksa /api/auth/login-pin
+  function showPin(a, opts = {}) {
     let pin = '';
     const dots = h('div', { class: 'pin-dots' });
     const err = h('div', { class: 'pin-err' });
@@ -78,13 +93,13 @@ export async function accountChooser(box, { onLogin, onOther }) {
     const draw = () => clear(dots, [0, 1, 2, 3].map(i => h('i', { class: i < pin.length ? 'on' : '' })));
     const submit = async () => {
       try {
-        await api.post('/api/auth/login-pin', { token: a.token, pin });
-        await onLogin(null);
+        if (opts.send) await opts.send(pin);
+        else { await api.post('/api/auth/login-pin', { token: a.token, pin }); await onLogin(null); }
       } catch (ex) {
         pin = ''; draw();
         err.textContent = ex.message;
         dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake');
-        if (ex.status === 401) { a.has_pin = false; setTimeout(() => showPassword(a), 1200); }
+        if (ex.status === 401 || ex.status === 410) { a.has_pin = false; setTimeout(() => showPassword(a), 1200); }
       }
     };
     const press = k => {
@@ -101,8 +116,9 @@ export async function accountChooser(box, { onLogin, onOther }) {
     };
     addEventListener('keydown', onKey);
     draw();
-    clear(box, ...header(a), h('div', { class: 'pin-title' }, 'PIN kodunuzu girin'), dots, err, pad,
-      h('button', { type: 'button', class: 'btn ghost acc-other', onclick: () => showPassword(a) }, 'Şifreyle giriş yap'));
+    clear(box, ...header(a), h('div', { class: 'pin-title' }, opts.title || 'PIN kodunuzu girin'), dots, err, pad,
+      a.has_face && cameraSupported() && !opts.send ? h('button', { type: 'button', class: 'btn ghost acc-other', onclick: () => showFace(a) }, faceIcon(), ' ', 'Yüz ile giriş yap') : null,
+      h('button', { type: 'button', class: 'btn ghost acc-other', onclick: () => (opts.onAlt ? opts.onAlt() : showPassword(a)) }, 'Şifreyle giriş yap'));
   }
 
   showList();

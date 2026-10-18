@@ -202,7 +202,8 @@ from . import drone_hub  # noqa: E402 — Dron Yönetimi: köprü + canlı uçu�
 from .routers import drone as drone_router  # noqa: E402
 from .routers import flightsim as flightsim_router  # noqa: E402 — Uçuş Simülatörü (SITL + Mission Planner köprüsü)
 from .routers import caysim as caysim_router  # noqa: E402 — CAYSIM masaüstü istemci API'si (docs/caysim-api.md)
-for r in (admin.router, auth_routes.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router, drone_router.router, drone_hub.ws_router,
+from .routers import faceauth as faceauth_router  # noqa: E402 — Yüz ile giriş (docs/yuz-tanima.md)
+for r in (admin.router, auth_routes.router, faceauth_router.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router, drone_router.router, drone_hub.ws_router,
           flightsim_router.router, flightsim_router.ws_router, caysim_router.router, caysim_router.admin_router, caysim_router.ws_router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.duties_me_router, hr.duties_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
@@ -277,7 +278,8 @@ async def security_headers(request, call_next):
     h.setdefault('X-Content-Type-Options', 'nosniff')
     h.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
     h.setdefault('X-Frame-Options', 'SAMEORIGIN')
-    h.setdefault('Permissions-Policy', 'payment=(), usb=(), serial=(), bluetooth=(), hid=(), midi=()')
+    # camera/microphone=(self): yüz ile giriş, görüşme, sesle yazdırma yalnız kendi kökenimizde (gömülü üçüncü taraf çerçeve alamaz)
+    h.setdefault('Permissions-Policy', 'payment=(), usb=(), serial=(), bluetooth=(), hid=(), midi=(), camera=(self), microphone=(self)')
     if _is_https(request):
         h.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     h.setdefault('Content-Security-Policy', _SAFE_CSP)

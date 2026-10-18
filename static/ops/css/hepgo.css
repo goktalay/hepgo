@@ -336,3 +336,22 @@ body.tam-ekran-modu #konsolYari { background: rgba(0,0,0,.55); }
 body.hepgo-tam #hepgoGorevRozet { display: none !important; }
 /* Bildirimler tam ekranda yüzen üst bandın altından başlasın */
 body.hepgo-tam #umToastKap { top: 76px; }
+
+/* ---- "← Geri" (tam ekran üst bandı, sol uç; §21 geri bildirim "çok şık olsun") -----------------------
+   Yuvarlak, yarı saydam; üzerine gelince kapsüle genişler ve "Geri" yazısı belirir. Tam ekrandan çıkar + HEPGO'da geri döner.
+   dugme_birlik.css genel düğme sözleşmesi (padding/köşe/yükseklik/yazı `!important`) bu düğmeyi de yakalar → aynı güçte ezilir. */
+#hepgoUstBar #hepgoUstGeri { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0;
+  height: 36px !important; min-height: 36px !important; min-width: 36px; width: auto; padding: 0 9px !important; box-sizing: border-box;
+  border-radius: 999px !important; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.10); color: var(--metin, #e6e9ef);
+  font-size: 13px !important; font-weight: 600 !important; letter-spacing: .02em !important; line-height: 1 !important;
+  cursor: pointer; white-space: nowrap; overflow: hidden; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0,0,0,.25); transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+#hepgoUstBar #hepgoUstGeri > i { font-size: 15px !important; line-height: 1 !important; margin: 0 !important; transition: transform .18s ease; }
+#hepgoUstBar #hepgoUstGeri > span { display: inline-block; max-width: 0; opacity: 0; margin-left: 0; overflow: hidden;
+  transition: max-width .22s ease, opacity .18s ease, margin-left .22s ease; }
+#hepgoUstBar #hepgoUstGeri:hover, #hepgoUstBar #hepgoUstGeri:focus-visible { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.42); box-shadow: 0 4px 14px rgba(0,0,0,.35); outline: none; }
+#hepgoUstBar #hepgoUstGeri:hover > i, #hepgoUstBar #hepgoUstGeri:focus-visible > i { transform: translateX(-2px); }
+#hepgoUstBar #hepgoUstGeri:hover > span, #hepgoUstBar #hepgoUstGeri:focus-visible > span { max-width: 60px; opacity: 1; margin-left: 7px; }
+#hepgoUstBar #hepgoUstGeri:active { transform: scale(.96); }
+:root[data-tema="acik"] #hepgoUstBar #hepgoUstGeri { background: rgba(0,0,0,.08); border-color: rgba(0,0,0,.16); color: #1f2937; }
+:root[data-tema="acik"] #hepgoUstBar #hepgoUstGeri:hover { background: rgba(0,0,0,.14); border-color: rgba(0,0,0,.28); }

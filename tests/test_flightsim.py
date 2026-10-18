@@ -1690,6 +1690,18 @@ def runs_testleri(a, c1, sitl, mon):
     assert ok(a.get(f"{R}/{it2['id']}"))['play_log_id'] is None   # analiz HATA → oynatılamaz
     binsiz = next(x for x in ok(a.get(R, params={'mode': 'sitl'}))['items'] if not x['bin_log_id'])   # .bin'siz satır → 404 (silinen it'in id'si SQLite'ta yeniden kullanılabilir)
     assert a.get(f"{R}/{binsiz['id']}/bin").status_code == 404 and a.get(f'{R}/999999/bin').status_code == 404
+    # istatistik ucu (sayfa üstü 4 kutu): /runs/stats /runs/{rid}'den önce eşleşir; sayılar listeyle tutarlı; days kırpılır
+    st = ok(a.get(f'{R}/stats'))
+    assert set(st) >= {'days', 'total', 'total_all', 'flight_s', 'avg_s', 'crash', 'crash_events', 'crash_rate', 'last_crash_at', 'open_sessions', 'last_run'}, st
+    hepsi = ok(a.get(R, params={'from': '2000-01-01'}))
+    assert st['days'] == 30 and st['total_all'] == hepsi['total'] and st['total'] <= st['total_all'] and st['open_sessions'] == 0, st
+    assert st['crash'] >= 1 and st['last_crash_at'] and 0 < st['crash_rate'] <= 100 and st['flight_s'] >= 0 and st['avg_s'] >= 0, st
+    assert st['last_run'] and st['last_run']['started_at'] == hepsi['items'][0]['started_at'], st['last_run']
+    assert ok(a.get(f'{R}/stats', params={'days': 0}))['days'] == 1 and ok(a.get(f'{R}/stats', params={'days': 99999}))['days'] == 3650
+    s3 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'mode': 'procedural'}}), 201)
+    assert ok(a.get(f'{R}/stats'))['open_sessions'] == 1
+    ok(a.delete(f"{S}/{s3['id']}"))
+    assert ok(a.get(f'{R}/stats'))['open_sessions'] == 0 and ok(a.get(f'{R}/stats'))['total_all'] == hepsi['total'] + 1
     print('  simülasyon kayıtları (§21) testleri geçti')
 
 

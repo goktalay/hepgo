@@ -9466,3 +9466,52 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 .fs-runs-del:hover { background: var(--danger-soft, #fee2e2); }
 .fs-runs-video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
 .fs-runs-empty { margin: 0; }
+
+/* =====================================================================================================================
+   §16–§21 Başlık bandı tek satır · Dron Yönetimi kapsül seçici · Uçuş Simülatörü sekme satırı kapsülü + üst bilgi kutuları ·
+   tam ekran "← Geri" (kullanıcı geri bildirimi 16–21; ui.js pageHead/goBack, drone.js, flightsim.js). Dosyanın SONUNDA: önceki
+   genel .page-head kuralları değiştirilmez, daha özgül kurallarla ezilir.
+   ===================================================================================================================== */
+/* §16 — Masaüstünde başlık + alt başlık TEK satır, sağdaki alt modül seçici / düğmeler alt satıra İNMEZ: kısıldığında önce başlık
+   metni "…" ile kırpılır (flex-shrink 1000, en az 96px), sonra seçici kayar (overflow-x). Telefon (≤640px) düzeni (alt alta) korunur. */
+@media (min-width: 641px) {
+  main#view .page-head { flex-wrap: nowrap; }
+  main#view .page-head > .page-head-t { flex: 1 1000 auto; min-width: 96px; }
+  main#view .page-head > .page-head-t h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  main#view .page-head > .spacer { flex: 1 1 0; min-width: 0; }
+  main#view .page-head > .back, main#view .page-head > .xl-btn, main#view .page-head > .pill-group, main#view .page-head > .head-right { flex: 0 0 auto; }
+  main#view .page-head > .head-right { min-width: 0; max-width: 100%; }
+  /* seçici: tümü görünür kalmaya çalışır (flex-shrink 1 ama başlık 1000 kat önce küçülür); ancak alan bitince içinde kayar */
+  main#view .page-head > .seg.seg-tabs, main#view .page-head > .module-tabs { flex: 0 1 auto; min-width: 0; }
+  main#view .page-head > .module-tabs { margin: 0; overflow-x: auto; }
+  main#view .page-head > .module-tabs .seg.seg-tabs { min-width: max-content; }
+}
+/* §20 — tıklanabilir bilgi kutusu (statStrip onClick) */
+.stat.click { cursor: pointer; transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease; }
+.stat.click:hover, .stat.click:focus-visible { border-color: var(--primary); box-shadow: 0 4px 14px rgba(15, 23, 42, .10); transform: translateY(-1px); outline: none; }
+/* §18/§19 — Uçuş Simülatörü: sekme çubuğu satırı; sağda kapsül [Excel · + Yeni Simülasyon] sekme hizasında; alt çizgi tüm satır */
+.fs-tabs-row { display: flex; align-items: flex-end; gap: 12px; margin: 0 0 14px; border-bottom: 2px solid var(--border); }
+.fs-tabs-row .fs-tabs { margin: 0; flex: 1 1 auto; min-width: 0; }
+.fs-tabs-row .fs-tabs .seg.seg-tabs { border-bottom: 0; }
+.fs-tabs-row .fs-tabs .seg.seg-tabs button { margin-bottom: 0; }
+.fs-tabs-row .module-toolbar.fs-tabs-actions { margin: 0 0 5px; flex: 0 0 auto; justify-content: flex-end; }
+.fs-tabs-actions .pill-group > .btn { height: 30px; }
+.fs-tabs-actions .pill-group > .xl-btn { order: -1; margin: 0; border-color: transparent; }   /* listexport.js düğmesi: kapsülde, Yeni Simülasyon'un solunda */
+.fs-tabs-actions .pill-group > .xl-btn:hover { background: #eaf6ef; }
+.fs-tabs-actions .fs-new-sim:disabled { opacity: .55; cursor: not-allowed; }
+/* §20 — 4 bilgi kutusu (HEPGO pano .stat-strip kalıbı) */
+.fs-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+.fs-stats[hidden] { display: none; }
+@media (max-width: 900px) { .fs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* §21 — Simülatör oturumu üst bandı "← Geri": yuvarlak, yarı saydam; üzerine gelince kapsüle genişler ve "Geri" yazısı belirir */
+.fs-nav .fs-back { flex: none; display: inline-flex; align-items: center; height: 30px; min-width: 30px; padding: 0 7px; margin: -1px 0 -1px -1px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .10); color: #e6e9ef; text-decoration: none; font-weight: 600; font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; cursor: pointer; transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.fs-nav .fs-back-ico { font-size: 15px; line-height: 1; transition: transform .18s ease; }
+.fs-nav .fs-back-txt { display: inline-block; max-width: 0; opacity: 0; margin-left: 0; overflow: hidden; transition: max-width .22s ease, opacity .18s ease, margin-left .22s ease; }
+.fs-nav .fs-back:hover, .fs-nav .fs-back:focus-visible { background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .42); box-shadow: 0 3px 10px rgba(0, 0, 0, .3); text-decoration: none; outline: none; }
+.fs-nav .fs-back:hover .fs-back-ico, .fs-nav .fs-back:focus-visible .fs-back-ico { transform: translateX(-2px); }
+.fs-nav .fs-back:hover .fs-back-txt, .fs-nav .fs-back:focus-visible .fs-back-txt { max-width: 80px; opacity: 1; margin-left: 6px; }
+.fs-nav .fs-back:active { transform: scale(.96); }
+.fs-stage.fs-full .fs-nav .fs-back { height: 34px; min-width: 34px; }
+html[dir="rtl"] .fs-nav .fs-back-ico { display: inline-block; transform: scaleX(-1); }

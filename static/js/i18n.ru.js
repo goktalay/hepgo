@@ -3963,4 +3963,15 @@ registerCatalog('ru', {
   "Ev irtifası arazi verisinden alınacak": "Высота дома будет взята из данных рельефа",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Сохранённая высота {a} м, рельеф {t} м — будет использован рельеф",
   "Arazi {t} m — ev irtifası arazi verisinden": "Рельеф {t} м — высота дома из данных рельефа",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "Симуляции · за {d} дней",
+  "toplam {n} kayıt": "всего {n} записей",
+  "Uçuş süresi · son {d} gün": "Время полёта · за {d} дней",
+  "ortalama {t}": "в среднем {t}",
+  "Henüz simülasyon yok": "Симуляций пока нет",
+  "Çarpışma oranı · son {d} gün": "Доля крушений · за {d} дней",
+  "Son çarpışma: {t}": "Последнее крушение: {t}",
+  "Henüz çarpışma yok": "Крушений пока нет",
+  "Son simülasyon: {t}": "Последняя симуляция: {t}",
+  "Geri (Esc)": "Назад (Esc)",
 });

@@ -328,6 +328,14 @@ def list_runs(request: Request, user=Depends(sim_user), conn=db.DB):
                                   sort=qp.get('sort') or '-started_at', page=_int('page') or 1)
 
 
+@router.get('/runs/stats')
+def runs_stats(days: int = 30, user=Depends(sim_user), conn=db.DB):
+    """Sayfa üstü bilgi kutuları: `{days, total, total_all, flight_s, avg_s, crash, crash_events, crash_rate, last_crash_at, open_sessions, last_run}`.
+    `/runs/{rid}`'den ÖNCE tanımlıdır (yoksa 'stats' tam sayıya çözülemez → 422)."""
+    acik = sum(1 for s in flightsim.MANAGER.sessions.values() if s.state != 'KAPANDI')
+    return flightsim_runs.istatistik(conn, days, acik)
+
+
 @router.get('/runs/{rid}')
 def get_run(rid: int, user=Depends(sim_user), conn=db.DB):
     return _run(conn, rid, user)

@@ -504,4 +504,17 @@ registerCatalog('en', {
   "Ev irtifası arazi verisinden alınacak": "Home altitude will be taken from terrain data",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Saved altitude {a} m, terrain {t} m — terrain will be used",
   "Arazi {t} m — ev irtifası arazi verisinden": "Terrain {t} m — home altitude from terrain data",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "Simulations · last {d} days",
+  "toplam {n} kayıt": "{n} records in total",
+  "Uçuş süresi · son {d} gün": "Flight time · last {d} days",
+  "ortalama {t}": "average {t}",
+  "Henüz simülasyon yok": "No simulations yet",
+  "Çarpışma oranı · son {d} gün": "Crash rate · last {d} days",
+  "Son çarpışma: {t}": "Last crash: {t}",
+  "Henüz çarpışma yok": "No crashes yet",
+  "Açık oturum": "Open sessions",
+  "Son simülasyon: {t}": "Last simulation: {t}",
+  "Geri": "Back",
+  "Geri (Esc)": "Back (Esc)",
 });

@@ -3963,4 +3963,15 @@ registerCatalog('de', {
   "Ev irtifası arazi verisinden alınacak": "Heimathöhe wird aus den Geländedaten übernommen",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Gespeicherte Höhe {a} m, Gelände {t} m — Gelände wird verwendet",
   "Arazi {t} m — ev irtifası arazi verisinden": "Gelände {t} m — Heimathöhe aus Geländedaten",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "Simulationen · letzte {d} Tage",
+  "toplam {n} kayıt": "insgesamt {n} Einträge",
+  "Uçuş süresi · son {d} gün": "Flugzeit · letzte {d} Tage",
+  "ortalama {t}": "Durchschnitt {t}",
+  "Henüz simülasyon yok": "Noch keine Simulation",
+  "Çarpışma oranı · son {d} gün": "Absturzrate · letzte {d} Tage",
+  "Son çarpışma: {t}": "Letzter Absturz: {t}",
+  "Henüz çarpışma yok": "Noch kein Absturz",
+  "Son simülasyon: {t}": "Letzte Simulation: {t}",
+  "Geri (Esc)": "Zurück (Esc)",
 });

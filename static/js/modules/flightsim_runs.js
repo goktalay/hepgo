@@ -237,7 +237,9 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
       : tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu ve ekran kaydı. Oynat, kaydı kayıttan oynat kipinde açar.')),
     tableBox);
   refresh();
-  return { el, refresh, filters: F };
+  // setPeriod(k): kapsül dönemi ('1d' | '7d' | '30d' | 'all') · setFilter({result:'carpisma', …}): Detaylı alanlarını ayarlar (sayfa üstü widget tıklaması)
+  const setFilter = (patch = {}) => { Object.entries(patch).forEach(([k, v]) => { if (k in F) F[k] = v ?? ''; }); F.page = 1; syncPill(); refresh(); };
+  return { el, refresh, filters: F, setPeriod, setFilter };
 }
 
 export const runsQuery = F => Object.entries(F).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');

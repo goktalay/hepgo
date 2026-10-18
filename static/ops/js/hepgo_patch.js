@@ -942,6 +942,23 @@
     dizPlanla();
     try { var v = window.__haritaViewerAl && window.__haritaViewerAl(); if (v) setTimeout(function () { v.resize(); }, 60); } catch (e) {}
   }
+  // "← Geri" (üst bant, sol): tam ekrandan çıkar (parent belgesi tam ekrandadır; aynı köken) ve HEPGO'ya `ops-back` gönderir →
+  // drone.js renderLive goBack(): geçmişte bir adım geri, yoksa görev detayı. iframe dışında (doğrudan açılmış sayfa) history.back().
+  // Klavye Escape ile aynı sonuç: Escape tam ekrandan çıkarır (tarayıcı); GÖKTUNGU betikleri Escape'i popup/onay kapatmada kullandığı
+  // için burada ayrıca Escape dinlenmez.
+  function geri() {
+    var pdoc = null;
+    try { pdoc = window.parent && window.parent !== window ? window.parent.document : null; } catch (e) { pdoc = null; }
+    var devam = function () { if (!parentGonder({ t: "ops-back" })) { try { history.back(); } catch (e) {} } };
+    try {
+      if (pdoc && pdoc.fullscreenElement && pdoc.exitFullscreen) { pdoc.exitFullscreen().then(devam, devam); return; }
+    } catch (e) {}
+    devam();
+  }
+  try {
+    var gb = document.getElementById("hepgoUstGeri");
+    if (gb) gb.addEventListener("click", function (e) { e.preventDefault(); geri(); });
+  } catch (e) {}
   try {
     var pd = window.parent.document;
     pd.addEventListener("fullscreenchange", tamGuncelle);

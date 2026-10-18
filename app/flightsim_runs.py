@@ -283,3 +283,28 @@ def sil(conn, rid):
     n = conn.execute('DELETE FROM drone_sim_runs WHERE id = ?', (int(rid),)).rowcount
     shutil.rmtree(dizin(rid), ignore_errors=True)
     return n
+
+
+# ---------------- özet istatistik (sayfa üstü 4 bilgi kutusu) ----------------
+def istatistik(conn, days=30, acik=0):
+    """Uçuş Simülatörü sayfasının üst kutuları: son `days` gündeki simülasyon sayısı / toplam uçuş süresi / çarpışma oranı + son çarpışma,
+    açık oturum sayısı + son simülasyon. `days` 1..3650 arasına kırpılır; `acik` çağıran verir (flightsim.MANAGER)."""
+    from datetime import datetime, timedelta
+    days = max(1, min(int(days if days is not None else 30), 3650))
+    since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+    r = db.row(conn.execute('''SELECT COUNT(*) AS n, COALESCE(SUM(duration_s), 0) AS flight_s,
+                                      SUM(CASE WHEN result = 'carpisma' THEN 1 ELSE 0 END) AS crash, COALESCE(SUM(crash_count), 0) AS crash_events,
+                                      MAX(CASE WHEN result = 'carpisma' THEN started_at END) AS last_crash_at
+                               FROM drone_sim_runs WHERE substr(started_at, 1, 10) >= ?''', (since,))) or {}
+    n = int(r.get('n') or 0)
+    toplam = conn.execute('SELECT COUNT(*) FROM drone_sim_runs').fetchone()[0]
+    son = db.row(conn.execute('SELECT started_at, ended_at, result, type, mode FROM drone_sim_runs ORDER BY started_at DESC, id DESC LIMIT 1'))
+    crash = int(r.get('crash') or 0)
+    return {
+        'days': days, 'total': n, 'total_all': int(toplam or 0),
+        'flight_s': int(r.get('flight_s') or 0), 'avg_s': int(round((r.get('flight_s') or 0) / n)) if n else 0,
+        'crash': crash, 'crash_events': int(r.get('crash_events') or 0), 'crash_rate': round(100.0 * crash / n, 1) if n else 0.0,
+        'last_crash_at': r.get('last_crash_at'),
+        'open_sessions': int(acik or 0),
+        'last_run': dict(son) if son else None,
+    }

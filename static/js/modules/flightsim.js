@@ -12,7 +12,7 @@
 // • `?mock=1`: arka uç yokken yerel kinematik üretici (WS yerine) — sihirbaz, 3B dünya ve HUD arka uçsuz denenir. Mock oturumlar yalnız
 //   bu sekmede (bellekte) yaşar; komutlar (arm/disarm/mode/takeoff/rtl/reset/crash) üreticiye uygulanır.
 import { api } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, pref, segmented, setPref, toast, toastError, t as tr } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, fmtDuration, goBack, h, modal, onLeave, pref, segmented, setPref, statStrip, toast, toastError, t as tr } from '../ui.js';
 import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
@@ -125,6 +125,7 @@ function restBackend() {
     shareReport: (id, text) => api.post(`${API}/reports/${encodeURIComponent(id)}/share`, { text }),
     // §21: simülasyon kayıtları tablosu (filtre/sıralama/sayfa sorgu dizesi) + silme
     runs: F => api.get(`${API}/runs${runsQuery(F) ? `?${runsQuery(F)}` : ''}`),
+    runStats: (days = 30) => api.get(`${API}/runs/stats?days=${days}`),   // sayfa üstü 4 bilgi kutusu
     runDelete: id => api.del(`${API}/runs/${encodeURIComponent(id)}`),
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
@@ -157,7 +158,9 @@ function wsClient(id, handlers) {
 }
 
 // ======================================================================
-// Simülasyon sayfası (§21): üstte sınır notu + "Yeni Simülasyon" düğmesi · üç sekme (HEPGO .seg-tabs kalıbı, sayaç rozetli):
+// Simülasyon sayfası (§21): üstte 4 bilgi kutusu (HEPGO pano kalıbı: son 30 gün simülasyon · uçuş süresi · çarpışma oranı · açık oturum;
+// tıklanınca ilgili sekme/filtre) · sekme çubuğu satırının SAĞINDA kapsül [Excel · + Yeni Simülasyon] (Excel'i listexport.js `.module-toolbar .module-pills`
+// kalıbıyla aynı kapsüle koyar) · üç sekme (HEPGO .seg-tabs kalıbı, sayaç rozetli):
 // **Simülasyon Kayıtları** (varsayılan; tablo) · **Açık Oturumlar** (devam et / bitir listesi + §17 yarım kayıt şeridi) · **CAYSIM İstemcileri**.
 // Sekme seçimi `#/drone/sim?tab=runs|open|clients` ile gelir ya da localStorage (caymaz.fs.tab) ile hatırlanır (hash'e yazılmaz: yeniden çizim yok).
 // Sihirbaz (Kip, tip, kalkış, model, merkez, dron kaydı, dünya, kayıt seçenekleri) ayrı pencerede: wizardModal.
@@ -210,7 +213,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
           h('a', { class: 'btn sm primary', href: be.href(s.id) }, 'Devam et'),
           canWrite ? h('button', { class: 'btn sm danger', onclick: async () => {
             if (!await confirmDialog('Oturumu bitir', s.mode === 'replay' ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır.', { okLabel: 'Bitir', danger: true })) return;
-            await be.end(s.id); toast('Oturum kapatıldı'); drawOpen();
+            await be.end(s.id); toast('Oturum kapatıldı'); drawOpen(); drawStats();
           } }, 'Bitir') : null))))));
   };
 
@@ -220,7 +223,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
     if (wizardOpen) return;
     wizardOpen = true;
     try {
-      await wizardModal({ be, meta, mock, canWrite, preset, onClosed: () => { wizardOpen = false; drawOpen(); runs?.refresh(); pending?.refresh(); } });
+      await wizardModal({ be, meta, mock, canWrite, preset, onClosed: () => { wizardOpen = false; wizardOnClosed(); } });
     } catch (err) { wizardOpen = false; toastError(err); }
   };
   const pending = mock || !canWrite ? null : pendingCard(tr);   // §17: yarım ekran kayıtları → Paylaş / Sil ("Açık Oturumlar" sekmesinde, listenin altında)
@@ -232,17 +235,44 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
   clear(panes.runs, runs ? runs.el : mockNote('simülasyon kayıtları tablosu'));
   clear(panes.open, openBox, pending ? pending.el : null);
   clear(panes.clients, clients ? clients.el : mockNote('CAYSIM istemci listesi'));
-  const newBtn = h('button', { class: 'btn primary fs-new-sim', type: 'button', disabled: !canWrite, onclick: () => openWizard() }, '+ Yeni Simülasyon');
-  const topNote = h('div', { class: 'small muted' }, canWrite
-    ? tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' })
-    : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları ve kayıtları izleyebilirsiniz.');
+  // "+ Yeni Simülasyon" sekme hizasında, sağda, kapsül içinde; sınır notu ("En çok N eşzamanlı oturum…") sayfada görünmez, düğme ipucunda kalır
+  const newBtn = h('button', { class: 'btn primary fs-new-sim', type: 'button', disabled: !canWrite, onclick: () => openWizard(),
+    title: canWrite
+      ? tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' })
+      : tr('Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları ve kayıtları izleyebilirsiniz.') }, '+ Yeni Simülasyon');
+  // .module-toolbar > .module-pills: listexport.js Excel düğmesini bu kapsüle ekler (CSS order ile Yeni Simülasyon'un soluna)
+  const actions = h('div', { class: 'module-toolbar fs-tabs-actions' }, h('div', { class: 'pill-group module-pills' }, newBtn));
+  // ---------- üst bilgi kutuları (GET /runs/stats; sahte kipte sahte sayılar) ----------
+  const stats = statStrip();
+  stats.classList.add('fs-stats');
+  const statsTab = (key, fn) => { tabs.set(key); showPane(key); fn?.(); panes[key].scrollIntoView?.({ block: 'nearest' }); };
+  const drawStats = async () => {
+    let st;
+    try { st = await be.runStats(30); } catch { st = null; }
+    if (!st) { stats.hidden = true; return; }
+    stats.hidden = false;
+    const lastRun = st.last_run?.started_at ? fmtDateTime(st.last_run.started_at) : null;
+    stats.set([
+      { icon: 'documents', label: tr('Simülasyon · son {d} gün', { d: st.days }), value: st.total, sub: tr('toplam {n} kayıt', { n: st.total_all }), key: 'runs',
+        onClick: () => statsTab('runs', () => runs?.setPeriod('30d')) },
+      { icon: 'flightlog', label: tr('Uçuş süresi · son {d} gün', { d: st.days }), value: st.flight_s ? fmtDuration(st.flight_s) : '0 dk', sub: st.total ? tr('ortalama {t}', { t: fmtDuration(st.avg_s) }) : tr('Henüz simülasyon yok'), key: 'time',
+        onClick: () => statsTab('runs', () => runs?.setPeriod('30d')) },
+      { icon: 'warning', label: tr('Çarpışma oranı · son {d} gün', { d: st.days }), value: `${st.crash_rate}%`, tone: st.crash ? 'alert' : 'ok',
+        sub: st.last_crash_at ? tr('Son çarpışma: {t}', { t: fmtDateTime(st.last_crash_at) }) : tr('Henüz çarpışma yok'), key: 'crash',
+        onClick: () => statsTab('runs', () => { runs?.setPeriod('30d'); runs?.setFilter({ result: 'carpisma' }); }) },
+      { icon: 'drone', label: tr('Açık oturum'), value: st.open_sessions, tone: st.open_sessions ? 'ok' : 'muted', sub: lastRun ? tr('Son simülasyon: {t}', { t: lastRun }) : tr('Henüz simülasyon yok'), key: 'open',
+        onClick: () => statsTab('open') },
+    ]);
+  };
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
-    h('div', { class: 'fs-top-row' }, topNote, newBtn),
-    tabs.el,
+    stats,
+    h('div', { class: 'fs-tabs-row' }, tabs.el, actions),
     panes.runs, panes.open, panes.clients);
   showPane(active);
   drawOpen();
+  drawStats();
+  const wizardOnClosed = () => { drawOpen(); runs?.refresh(); pending?.refresh(); drawStats(); };
   if (openNew && canWrite) openWizard();
   if (mock && !centers.length) toast('Sahte kipte merkez yok', 'err');
 }
@@ -672,8 +702,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const events = h('div', { class: 'fs-events' });
   const stateBadge = h('span', { class: `badge ${STATE_BADGE[session.state] || 'gray'}` }, STATE_TEXT[session.state] || session.state);
   const wsBadge = h('span', { class: 'badge gray', title: 'Telemetri bağlantısı (WebSocket)' }, 'Bağlanıyor…');
+  // "← Geri" (§21 geri bildirim): yuvarlak, yarı saydam, hover'da genişleyip "Geri" yazar; tam ekrandan çıkar + önceki sayfaya döner
+  // (ui.js goBack; klavye Escape ile aynı: tam ekranda Escape'i tarayıcı yakalar ve çıkar, tam ekran dışında Escape → geri; aşağıda onKeyBack)
+  const backBtn = h('a', { class: 'fs-back', href: be.href(), title: tr('Geri (Esc)'), 'aria-label': tr('Geri'),
+    onclick: e => { e.preventDefault(); goBack(be.href()); } }, h('span', { class: 'fs-back-ico', 'aria-hidden': 'true' }, '←'), h('span', { class: 'fs-back-txt' }, 'Geri'));
   const nav = h('div', { class: 'fs-nav' },
-    h('a', { class: 'fs-nav-back', href: be.href(), title: 'Simülatör listesine dön' }, '←'),
+    backBtn,
     h('b', null, 'Uçuş Simülatörü'), h('span', { class: 'fs-nav-sub' }, `${TYPE_NAME[type] || type} · ${(replay ? session.replay?.file_name : session.center?.name) || '—'}`), stateBadge, wsBadge,
     replay ? h('span', { class: 'badge purple', title: 'Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok' }, 'Kayıt') : null,
     launch ? h('span', { class: 'badge blue fs-launch-badge', title: tr('Kalkış yöntemi') }, launchLabel(launch, tr)) : null,
@@ -686,6 +720,13 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const onFullChange = () => { const full = !!document.fullscreenElement; stage.classList.toggle('fs-full', full); document.body.classList.toggle('fs-full', full); const b = nav.querySelector('.fs-full-btn'); if (b) b.title = tr(full ? 'Tam ekrandan çık' : 'Tam ekran'); };
   document.addEventListener('fullscreenchange', onFullChange);
   onFullChange();
+  // Escape (tam ekran dışında; pencere/açılır kutu yokken, odak bir girişte değilken) → Geri düğmesiyle aynı
+  const onKeyBack = e => {
+    if (e.key !== 'Escape' || e.defaultPrevented || document.fullscreenElement) return;
+    if (document.querySelector('.modal-back, .fs-pop') || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName || '')) return;
+    e.preventDefault(); goBack(be.href());
+  };
+  window.addEventListener('keydown', onKeyBack);
 
   // HUD (sağ): sabit satırlar, değerler textContent ile güncellenir (DOM yeniden kurulmaz)
   const val = cls => h('b', { class: `fs-v ${cls || ''}` }, '—');
@@ -1154,6 +1195,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');
     document.removeEventListener('fullscreenchange', onFullChange);
+    window.removeEventListener('keydown', onKeyBack);
     document.body.classList.remove('immersive', 'fs-full');
   });
 }
@@ -1367,6 +1409,10 @@ function mockBackend(ctx) {
     logs: async () => MOCK_LOGS.map(l => ({ ...l })),
     replay: async id => { const s = MOCK.sessions.get(id); if (!s?.data) throw Object.assign(new Error('Kayıt oturumu değil'), { status: 400 }); return s.data; },
     sessions: async () => [...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').map(pub),
+    // sayfa üstü 4 bilgi kutusu (sahte sayılar; açık oturum sayısı gerçek sahte oturumlardan)
+    runStats: async () => ({ days: 30, total: 12, total_all: 47, flight_s: 12 * 14 * 60 + 35, avg_s: 14 * 60, crash: 2, crash_events: 2, crash_rate: 16.7,
+      last_crash_at: new Date(Date.now() - 2 * 86400e3).toISOString(), open_sessions: [...MOCK.sessions.values()].filter(s => s.state !== 'KAPANDI').length,
+      last_run: { started_at: new Date(Date.now() - 3600e3).toISOString(), result: 'tamam', type: 'multirotor', mode: 'sitl' } }),
     session: async id => {
       if (!MOCK.sessions.has(id)) {   // sayfa yenilendi: aynı kimlikle varsayılan bir sahte oturum kur (…r → kayıt kipi)
         const n = Number(String(id).replace('mock-', '').replace(/r$/, '')) || 1; MOCK.seq = Math.max(MOCK.seq, n);

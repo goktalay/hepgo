@@ -278,15 +278,23 @@ export function moduleTabs(options, active, onChange) {
 let navDepth = 0;
 if (typeof window !== 'undefined') window.addEventListener('hashchange', () => { navDepth++; });
 
+// Geri: sabit adrese atlamak yerine geçmişte bir adım geri. Bu oturumda hiç gezinme olmadıysa (doğrudan derin bağlantı / ilk yükleme)
+// history.back() siteden çıkarabilir → o durumda `fallback` adresine gidilir. Tam ekrandaysa (Canlı Uçuş / simülatör oturumu) önce
+// tam ekrandan çıkar — ekrandaki "← Geri" düğmesi klavye Escape ile aynı sonucu verir. → true: geçmişte geri gidildi.
+export function goBack(fallback = '#/') {
+  const go = () => { if (navDepth > 0) { history.back(); return true; } location.hash = fallback; return false; };
+  if (document.fullscreenElement) { (document.exitFullscreen?.() || Promise.resolve()).catch(() => {}).then(go); return true; }
+  return go();
+}
+
 // Sayfa başlığı bandı. `tabs`: alt-modül seçicisi (segmented), başlık bandının sağında üstte durur.
 // `right`: başlıkta kalması gereken öğeler (ör. sekme seçici). Alt-modüle ait EYLEM düğmeleri bantta değil,
 // aşağıdaki ayrı toolbar'da (moduleToolbar) yer almalıdır.
+// Yerleşim (app.css sonu, "§16 başlık bandı"): başlık + alt başlık TEK satır, sığmazsa "…" ile kırpılır; sağdaki seçici/düğmeler alt satıra inmez.
 export function pageHead(title, { back, sub, right, tabs } = {}) {
   return h('div', { class: 'page-head' },
     back ? h('a', { class: 'back', href: back, 'aria-label': 'Geri', onclick: e => {
-      // Geri tuşu: sabit adrese atlamak yerine geçmişte bir adım geri. Bu oturumda hiç gezinme olmadıysa
-      // (doğrudan derin bağlantı / ilk yükleme) history.back() siteden çıkarabilir → o durumda href'e düş.
-      if (navDepth > 0) { e.preventDefault(); history.back(); }
+      if (navDepth > 0) { e.preventDefault(); goBack(back); }
     } }, '←') : null,
     h('div', { class: 'page-head-t' }, h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null),
     h('div', { class: 'spacer' }),
@@ -402,8 +410,10 @@ export function peoplePicker(people, { empty = 'Kişi yok', selected = [], sub =
 export function statStrip() {
   const el = h('div', { class: 'stat-strip' });
   el.set = stats => {
+    // s.onClick: kutu tıklanabilir (ör. Uçuş Simülatörü üst kutuları → ilgili sekme/filtre); s.key → data-stat (test/stil)
     clear(el, stats.filter(Boolean).map(s =>
-      h('div', { class: `stat ${s.tone || ''}${s.icon && icons[s.icon] ? ' has-ic' : ''}` },
+      h('div', { class: `stat ${s.tone || ''}${s.icon && icons[s.icon] ? ' has-ic' : ''}${s.onClick ? ' click' : ''}`, 'data-stat': s.key || null,
+        ...(s.onClick ? { role: 'button', tabindex: '0', onclick: s.onClick, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); s.onClick(e); } } } : {}) },
         s.icon && icons[s.icon] ? h('span', { class: 'stat-ic' }, svgIcon(icons[s.icon])) : null,
         h('div', { class: 'stat-main' },
           h('span', { class: 'v' }, s.value ?? '—'),

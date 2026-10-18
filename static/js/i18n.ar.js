@@ -3963,4 +3963,15 @@ registerCatalog('ar', {
   "Ev irtifası arazi verisinden alınacak": "سيؤخذ ارتفاع نقطة المنزل من بيانات التضاريس",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "الارتفاع المحفوظ {a} م، التضاريس {t} م — ستُستخدم التضاريس",
   "Arazi {t} m — ev irtifası arazi verisinden": "التضاريس {t} م — ارتفاع المنزل من بيانات التضاريس",
+  // --- Uçuş Simülatörü: üst bilgi kutuları (§20) + sekme satırı kapsülü + tam ekran "← Geri" (§21) ---
+  "Simülasyon · son {d} gün": "المحاكاة · آخر {d} يوم",
+  "toplam {n} kayıt": "إجمالي {n} سجل",
+  "Uçuş süresi · son {d} gün": "وقت الطيران · آخر {d} يوم",
+  "ortalama {t}": "المتوسط {t}",
+  "Henüz simülasyon yok": "لا توجد محاكاة بعد",
+  "Çarpışma oranı · son {d} gün": "نسبة التحطم · آخر {d} يوم",
+  "Son çarpışma: {t}": "آخر تحطم: {t}",
+  "Henüz çarpışma yok": "لا يوجد تحطم بعد",
+  "Son simülasyon: {t}": "آخر محاكاة: {t}",
+  "Geri (Esc)": "رجوع (Esc)",
 });

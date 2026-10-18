@@ -34,6 +34,7 @@ TELE_MIN_ARALIK = 1.0 / TELE_HZ       # sn: iki `tele` arası en az (olay güdü
 TELE_BEKCI = 0.25                     # sn: SITL'den konum/yönelim gelmese de HUD için en az 4 Hz yayın
 GCS_SESSIZLIK = 30.0                  # sn: GCS kilidi kalkar
 BOSTA_SURE = 600.0                    # sn: izleyici + GCS yokken oturum kapanır
+PARAM_DOKUM_S = max(0.0, float(os.environ.get('SIM_PARAM_DUMP_S', '6') or 6))   # §21: kapanışta PARAM_REQUEST_LIST bekleme üst sınırı (sn)
 SITL_BAGLANTI_S = 40                  # SITL SERIAL0'ı dinleyene dek bağlanma denemesi (Tuzak D)
 VIEWER_QUEUE = 64
 GCS_SYSID, GCS_COMP = 255, 191        # kendi MAVLink kaynağımız (255 = SYSID_MYGCS: RC override kabul edilir; 191 ≠ Mission Planner'ın 190'ı)
@@ -490,6 +491,12 @@ class SimSession:
         # §19 kayıt seçenekleri: rec.bin → SITL DataFlash .BIN açık (yalnız armed süre), kapanışta uçuş loglarına kaydedilir (flightsim_bin)
         self.rec = {'bin': bool((rec or {}).get('bin'))}
         self.bin_sonuc = None            # kapanışta {log_id, file_name, size} | {error} | None
+        # §21 simülasyon kaydı (flightsim_runs): oturumun gördüğü son parametre değerleri (PARAM_VALUE; kapanışta PARAM_REQUEST_LIST ile tamamlanır),
+        # ekran kaydı bağı (rec_finish → video_bagla) ve kapanışta yazılan drone_sim_runs satırı
+        self.param_son = {}
+        self._param_count = None
+        self.video = None
+        self.run_sonuc = None
         # §14 harekât paneli: hub köprüsü (flightsim_hub.SimBridge; run() içinde attach), isteğe bağlı dron kaydı {id, code, name, model}
         # (telemetri o dronun adıyla akar; yoksa "Simülatör #N"), SITL'e yüklenen son görevin 3B rota noktaları, komut yürütücü ve bekleyiciler
         self.hub = None
@@ -741,6 +748,12 @@ class SimSession:
         """SITL'den PARAM_VALUE (gerçek SITL `_isle`; sahte kipte `_sahte_param_ayristir`): tip önbelleği + kalıcı izleyici."""
         ad = str(m.param_id).rstrip('\x00')
         self.param_types[ad] = m.param_type
+        try:   # §21: son değer dökümü (kapanışta params.param)
+            self.param_son[ad] = float(m.param_value)
+            if m.param_count and 0 < int(m.param_count) < 65535:
+                self._param_count = int(m.param_count)
+        except (TypeError, ValueError):
+            pass
         if ad.startswith('SERVO') and ad.endswith('_FUNCTION') and ad[5:-9].isdigit() and 1 <= int(ad[5:-9]) <= 8:
             try:
                 self.tele['servo_fn'][int(ad[5:-9]) - 1] = int(round(float(m.param_value)))
@@ -784,8 +797,8 @@ class SimSession:
                 self._gcs_gonder(data)
                 if SITL_ENABLED:
                     self._ayristir(data)
-                elif self.param_izleyici is not None:
-                    self._sahte_param_ayristir(data)
+                else:
+                    self._sahte_param_ayristir(data)   # sahte kip: PARAM_VALUE → kalıcı izleyici (varsa) + son değer dökümü (§21)
         except asyncio.CancelledError:
             return
         except Exception:   # noqa: BLE001
@@ -1481,9 +1494,43 @@ class SimSession:
         else:
             self._olay('Uçuş logu yok (armed süre olmadı); .bin kaydedilmedi', 6)
 
+    # ---- §21: simülasyon kaydı (drone_sim_runs) ----
+    async def _param_dokumu(self, sure=PARAM_DOKUM_S):
+        """Kapanmadan önce SITL'den tam parametre listesi: PARAM_REQUEST_LIST → PARAM_VALUE'lar `param_son`a dolar (`_param_value_gozlendi`).
+        Liste zaten büyük ölçüde biliniyorsa (Mission Planner açılışta çekmişti) istenmez; en çok `sure` sn beklenir (count'un %95'i gelince erken)."""
+        if self.sahte is not None or not self._heartbeat_alindi or self._tcp_w is None:
+            return
+        if self._param_count and len(self.param_son) >= 0.95 * self._param_count:
+            return
+        try:
+            self._gonder(self.mav.param_request_list_encode(self.sysid, self.comp))
+        except Exception:   # noqa: BLE001
+            return
+        t0 = time.time()
+        while time.time() - t0 < sure:
+            await asyncio.sleep(0.25)
+            if self._param_count and len(self.param_son) >= 0.95 * self._param_count:
+                break
+
+    async def _run_kaydet(self):
+        """`drone_sim_runs` satırı + params.param + scripts.zip (flightsim_runs.kaydet; iş parçacığı). Hata oturumu düşürmez."""
+        from . import flightsim_runs
+        try:
+            self.run_sonuc = await asyncio.get_running_loop().run_in_executor(None, flightsim_runs.kaydet, self)
+        except Exception as e:   # noqa: BLE001
+            self._olay(f'Simülasyon kaydı yazılamadı: {e}'[:200], 4)
+            return
+        if self.run_sonuc:
+            self._olay(f'Simülasyon kaydedildi: #{self.run_sonuc["id"]} · {self.run_sonuc["params_count"]} parametre'
+                       + (f' · {self.run_sonuc["scripts_count"]} script' if self.run_sonuc.get('scripts_count') else ''), 6)
+
     async def _temizle(self):
         if self.state == 'KAPANDI':
             return
+        try:
+            await self._param_dokumu()   # §21: son parametreler (SITL hâlâ çalışıyor)
+        except Exception:   # noqa: BLE001
+            pass
         await self._bin_kapat()
         self.state = 'KAPANDI'
         if self._launch_task is not None and not self._launch_task.done():
@@ -1506,7 +1553,8 @@ class SimSession:
             except Exception:   # noqa: BLE001
                 drone_sitl.YONETICI.durdur(self.kimlik)
         await self._bin_kaydet()
-        self._yay({'t': 'end', 'reason': self.end_reason or 'kapatildi'})
+        await self._run_kaydet()   # §21: özet + .bin + video + parametreler + scriptler tek satırda
+        self._yay({'t': 'end', 'reason': self.end_reason or 'kapatildi', 'run': dict(self.run_sonuc) if self.run_sonuc else None})
         self.yonetici.sessions.pop(self.id, None)
 
 

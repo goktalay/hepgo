@@ -543,6 +543,8 @@ class ReplaySession:
         self.task = None
         self.end_reason = None
         self.client = None                   # CAYSIM istemcisi açtıysa {id, name} (docs/caysim-api.md)
+        self.video = None                    # §21: ekran kaydı bağı (rec_finish → flightsim_runs.video_bagla)
+        self.run_sonuc = None
         self.replay = {'log_id': int(log['id']), 'file_name': log.get('file_name'), 'size': log.get('size'), 'progress': 0, 'frames': None,
                        'duration_s': None, 'home': None, 'hz': REPLAY_HZ, 'takeoff_t': None, 'start_utc': None, 'vehicle': log.get('vehicle'),
                        'aircraft': log.get('aircraft'), 'pilot': log.get('pilot'), 'modes': None}
@@ -663,7 +665,15 @@ class ReplaySession:
         if self.state == 'KAPANDI':
             return
         self.state = 'KAPANDI'
-        self._yay({'t': 'end', 'reason': self.end_reason or 'kapatildi'})
+        # §21: kayıttan oynatma oturumu da Simülasyon Kayıtları'na düşer (mode replay, kaynak log; parametre/script yok)
+        from . import flightsim_runs
+        run = None
+        try:
+            run = await asyncio.get_running_loop().run_in_executor(None, flightsim_runs.kaydet, self)
+        except Exception:   # noqa: BLE001 — kayıt hatası kapanışı bozmasın
+            run = None
+        self.run_sonuc = run
+        self._yay({'t': 'end', 'reason': self.end_reason or 'kapatildi', 'run': dict(run) if run else None})
         self.yonetici.sessions.pop(self.id, None)
 
 

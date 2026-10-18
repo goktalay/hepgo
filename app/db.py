@@ -1646,6 +1646,46 @@ CREATE TABLE IF NOT EXISTS drone_sim_events (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_drone_sim_events_type ON drone_sim_events(type, id);
+-- Uçuş Simülatörü KAYITLARI (docs/ucus-simulatoru.md §21): her oturum (canlı SITL ya da kayıttan oynatma) kapanışında bir satır — özet rapor,
+-- .bin uçuş logu, ekran kaydı (video), son parametre dökümü (.param) ve SITL scripts/ içeriği (zip) ile İLİŞKİ. Dosyalar DATA_DIR/sim_runs/<id>/.
+CREATE TABLE IF NOT EXISTS drone_sim_runs (
+    id              INTEGER PRIMARY KEY,
+    session_id      INTEGER NOT NULL,                   -- SimSession.id (sunucu yeniden başlayınca 1'den başlar)
+    session_kimlik  INTEGER,                            -- SITL kimliği (KIMLIK_TABANI + id); kayıttan oynatmada NULL
+    owner_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    owner_name      TEXT,
+    drone_id        INTEGER REFERENCES drone_drones(id) ON DELETE SET NULL,
+    drone_code      TEXT,
+    type            TEXT,                               -- multirotor | hexarotor | helikopter | sabit_kanat | vtol
+    model_id        TEXT,                               -- görsel model kimliği ('builtin:caymaz' | '12')
+    model_name      TEXT,
+    center_id       INTEGER REFERENCES drone_route_centers(id) ON DELETE SET NULL,
+    center_name     TEXT,                               -- merkez adı (kayıttan oynatmada log adı)
+    lat REAL, lon REAL,
+    world           TEXT,                               -- JSON: dünya ayarları
+    launch          TEXT,                               -- JSON: kalkış yöntemi (sabit kanat)
+    started_at      TEXT NOT NULL,
+    ended_at        TEXT,
+    duration_s      INTEGER,
+    mode            TEXT NOT NULL DEFAULT 'sitl',       -- sitl | replay
+    result          TEXT NOT NULL DEFAULT 'tamam',      -- tamam | carpisma | hata
+    end_reason      TEXT,                               -- kapatildi | bosta | sure | sunucu_kapaniyor | hata
+    crash_count     INTEGER NOT NULL DEFAULT 0,
+    summary_event_id INTEGER REFERENCES drone_sim_events(id) ON DELETE SET NULL,
+    bin_log_id      INTEGER REFERENCES flight_logs(id) ON DELETE SET NULL,     -- kapanışta kaydedilen SITL .BIN (§19)
+    source_log_id   INTEGER REFERENCES flight_logs(id) ON DELETE SET NULL,     -- kayıttan oynatma kaynağı
+    video_rec_id    TEXT,                               -- flightsim_rec kimliği (sim_rec/<id>.webm; saklanan ya da yarım)
+    video_post_id   INTEGER,                            -- Şirketten Haberler paylaşımı (feed_posts.id)
+    video_path      TEXT,                               -- paylaşılan videonun UPLOAD_DIR göreli yolu (feed/<ad>.webm)
+    params_path     TEXT,                               -- DATA_DIR göreli: sim_runs/<id>/params.param (Mission Planner AD,DEĞER)
+    params_count    INTEGER NOT NULL DEFAULT 0,
+    scripts_path    TEXT,                               -- DATA_DIR göreli: sim_runs/<id>/scripts.zip (SITL scripts/ içeriği)
+    scripts_count   INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_started ON drone_sim_runs(started_at);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_owner ON drone_sim_runs(owner_id);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_center ON drone_sim_runs(center_id);
 CREATE TABLE IF NOT EXISTS drone_sim_clients (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,

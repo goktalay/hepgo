@@ -598,4 +598,9 @@ registerCatalog('en', {
   "Son simülasyon: {t}": "Last simulation: {t}",
   "Geri": "Back",
   "Geri (Esc)": "Back (Esc)",
+  // Fabrika › 3B tam ekran: kayan paneller / tutamaçlar
+  'Sol paneli aç': 'Open left panel',
+  'Sol paneli kapat': 'Close left panel',
+  'Sağ paneli aç': 'Open right panel',
+  'Sağ paneli kapat': 'Close right panel',
 });

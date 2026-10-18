@@ -4047,4 +4047,9 @@ registerCatalog('ar', {
   "Henüz çarpışma yok": "لا يوجد تحطم بعد",
   "Son simülasyon: {t}": "آخر محاكاة: {t}",
   "Geri (Esc)": "رجوع (Esc)",
+  // Fabrika › 3B tam ekran: kayan paneller / tutamaçlar
+  'Sol paneli aç': 'فتح اللوحة اليسرى',
+  'Sol paneli kapat': 'إغلاق اللوحة اليسرى',
+  'Sağ paneli aç': 'فتح اللوحة اليمنى',
+  'Sağ paneli kapat': 'إغلاق اللوحة اليمنى',
 });

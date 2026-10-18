@@ -7,6 +7,13 @@ import { isStep, parseStep, viewStep } from '../step3d.js';
 import { viewer as gcodeViewer } from '../gcode3d.js';
 import { createCfdView } from '../cfd2d.js';
 import { createCfdViz } from '../cfdviz.js';
+import { ensurePreview, fetchStep, liveOnHover, openGlbModal, previewBusy } from './design_preview.js';
+
+// Önizleme üretimi (STEP → STL/GLB/PNG) yazma izni ister: Master ya da design modülünde 'yaz' yetkisi
+const canWriteDesign = u => !!(u && (u.master || !u.write_modules || u.write_modules.includes('design')));
+const stlName = fileName => `${(fileName || 'model').replace(/\.(step|stp)$/i, '')}.stl`;
+// Kart içindeki düğme: üstteki <a> bağlantısını tetiklemesin
+const stopLink = fn => e => { e.preventDefault(); e.stopPropagation(); fn(e); };
 
 const KIND = { assembly: 'Montaj Çizimi', drawing: 'Çizim', part: 'Parça' };
 const KIND_BADGE = { assembly: 'blue', drawing: 'gray', part: 'green' };
@@ -49,12 +56,38 @@ function kindGlyph(kind) {
   return tpl.content.firstElementChild;
 }
 
-function projCard(p) {
-  const thumb = p.thumb_vid
-    ? h('img', { src: `/api/design/file?v=${p.thumb_vid}`, alt: p.name, loading: 'lazy' })
-    : h('span', { class: 'dz-proj-ico' }, designIcon());
+// Proje kartı: projedeki son STEP sürümünün 3B küçük resmi (fare gelince dönen canlı GLB; "3B" düğmesi pencere açar);
+// önizleme yoksa yazma izinli kullanıcı sayfayı açınca tarayıcıda üretilir (ilerleme kartta). STEP yoksa yüklenen resim ya da simge.
+function projCard(p, ctx) {
+  const st = p.step || null, canWrite = canWriteDesign(ctx.user), isMaster = !!ctx.user.master;
+  const thumbEl = h('div', { class: `dz-proj-thumb ${p.thumb_vid || (st && st.preview_thumb) ? 'has-img' : ''}` });
+  const prog = h('div', { class: 'dz-prog', hidden: true }, h('i'), h('span', { class: 'small' }));
+  const tools = h('div', { class: 'dz-thumb-tools' });
+  const glbUrl = () => (st && st.preview_glb ? `/api/design/file?g=${st.id}` : null);
+  const draw = () => {
+    clear(thumbEl);
+    if (st && st.preview_thumb) thumbEl.append(h('img', { class: 'dz-thumb-3d', src: `/api/design/file?t=${st.id}&r=${st.preview_at || ''}`, alt: p.name, loading: 'lazy' }));
+    else if (p.thumb_vid) thumbEl.append(h('img', { src: `/api/design/file?v=${p.thumb_vid}`, alt: p.name, loading: 'lazy' }));
+    else thumbEl.append(h('span', { class: 'dz-proj-ico' }, designIcon()));
+    thumbEl.classList.toggle('has-img', !!(p.thumb_vid || (st && st.preview_thumb)));
+    clear(tools, glbUrl() ? h('button', { class: 'btn xs dz-tool', type: 'button', title: t('3B görüntüle'), onclick: stopLink(() => openGlbModal({ name: `${p.name} · ${st.name}`, glbUrl: glbUrl(), stlUrl: st.preview_stl ? `/api/design/file?s=${st.id}` : null, stlName: stlName(st.file_name), canDownload: isMaster })) }, '🧊 ' + t('3B')) : null,
+      st && canWrite && !previewBusy(st.id) ? h('button', { class: 'btn xs ghost dz-tool', type: 'button', title: t('Önizlemeyi yeniden üret'), onclick: stopLink(() => make(true)) }, '↻') : null);
+    thumbEl.append(tools, prog);
+  };
+  const make = force => {
+    if (!st || !canWrite || (!force && st.preview_glb && st.preview_stl && st.preview_thumb)) return;
+    prog.hidden = false; prog.querySelector('span').textContent = t('Önizleme hazırlanıyor…');
+    ensurePreview(st.id, s => { prog.querySelector('i').style.width = `${s.pct}%`; prog.querySelector('span').textContent = t('Önizleme hazırlanıyor %{p}', { p: s.pct }); })
+      .then(r => { Object.assign(st, { preview_thumb: true, preview_glb: true, preview_stl: true, preview_at: Date.now() }); prog.hidden = true; draw(); })
+      .catch(err => { prog.querySelector('span').textContent = t('Önizleme üretilemedi'); console.warn('önizleme:', err?.message || err); });
+  };
+  draw();
+  liveOnHover(thumbEl, glbUrl);
+  if (st && isStep(st.file_name) && !(st.preview_glb && st.preview_stl && st.preview_thumb)) {
+    if (canWrite) make(false); else if (!st.preview_thumb) thumbEl.append(h('div', { class: 'dz-mcard-spin small muted' }, t('Önizleme bekliyor')));
+  }
   return h('a', { class: 'card dz-proj', href: `#/design/${p.id}` },
-    h('div', { class: `dz-proj-thumb ${p.thumb_vid ? 'has-img' : ''}` }, thumb),
+    thumbEl,
     h('div', { class: 'dz-proj-body' },
       h('b', { class: 'dz-proj-name' }, p.name),
       p.description ? h('div', { class: 'small muted dz-proj-desc' }, p.description) : null,
@@ -66,7 +99,7 @@ async function renderProjects(view, ctx) {
   const load = async () => {
     let list;
     try { list = await api.get('/api/design/projects'); } catch (err) { return clear(body, h('div', { class: 'card empty' }, err.message)); }
-    clear(body, list.length ? h('div', { class: 'dz-proj-grid' }, list.map(projCard))
+    clear(body, list.length ? h('div', { class: 'dz-proj-grid' }, list.map(p => projCard(p, ctx)))
       : h('div', { class: 'card empty' }, 'Henüz proje yok. “Yeni Proje” ile başlayın.'));
   };
   const newProject = () => {
@@ -107,60 +140,36 @@ async function deleteRequests() {
   modal({ title: 'Silme Talepleri', wide: true, body: list, actions: [{ label: 'Kapat' }] });
 }
 
-// ---------- STEP dosyası indirme (ilerlemeli) ve 3B önizleme resmi üretimi (arka planda, sırayla) ----------
-async function fetchStep(vid, onProgress) {
-  const resp = await fetch(`/api/design/file?v=${vid}`, { credentials: 'same-origin' });
-  if (!resp.ok) throw new Error('Dosya alınamadı');
-  const total = +resp.headers.get('content-length') || 0;
-  if (!resp.body || !resp.body.getReader) return resp.arrayBuffer();
-  const reader = resp.body.getReader(), parts = [];
-  let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value); got += value.length;
-    onProgress?.(total ? got / total : null, got, total);
-  }
-  const out = new Uint8Array(got); let o = 0;
-  for (const p of parts) { out.set(p, o); o += p.length; }
-  return out.buffer;
-}
-const thumbJobs = new Map();   // vid → Promise<url>
-function makeThumb(vid) {
-  if (thumbJobs.has(vid)) return thumbJobs.get(vid);
-  const job = (async () => {
-    const buf = await fetchStep(vid);
-    const host = h('div', { style: { position: 'fixed', left: '-2000px', top: '0', width: '480px', height: '360px' } });
-    document.body.append(host);
-    let v = null;
-    try {
-      v = await viewStep(host, buf);
-      const dataUrl = v.snapshot(480, 360);
-      const blob = await (await fetch(dataUrl)).blob();
-      const fd = new FormData(); fd.append('file', blob, `step-${vid}.png`);
-      const r = await upload(`/api/design/versions/${vid}/thumb`, fd);
-      return r.thumb;
-    } finally { v?.dispose(); host.remove(); }
-  })();
-  thumbJobs.set(vid, job);
-  job.catch(() => {}).finally(() => thumbJobs.delete(vid));
-  return job;
-}
-
-// ---------- Proje: montaj / çizim kartları (yalnız 3B önizleme + ad) ----------
-function montajCard(d, pid) {
-  const cur = d.current;
+// ---------- Proje: montaj / çizim kartları (3B önizleme + ad) ----------
+// STEP sürümü: küçük resim (PNG) + fare gelince dönen canlı GLB; "3B görüntüle" hızlı GLB penceresi (büyük STEP her seferinde çözümlenmez);
+// Master'a "STL indir"; yazma izinli kullanıcıya "↻ yeniden üret". Önizlemesi olmayan STEP: yazma izinli kullanıcı açınca tarayıcıda üretilir.
+function montajCard(d, pid, ctx) {
+  const cur = d.current, pv = (cur && cur.preview) || {}, canWrite = canWriteDesign(ctx.user), isMaster = !!ctx.user.master;
   const thumb = h('div', { class: 'dz-mcard-thumb' });
-  const spin = h('div', { class: 'dz-mcard-spin small muted' }, '3B önizleme hazırlanıyor…');
-  const draw = url => {
-    if (url) clear(thumb, h('img', { src: url, alt: d.name, loading: 'lazy' }));
-    else if (cur && isImg(cur.file_name)) clear(thumb, h('img', { src: `/api/design/file?v=${cur.id}`, alt: d.name, loading: 'lazy' }));
-    else clear(thumb, h('span', { class: 'dz-mcard-ico', style: { color: KIND_COLOR[d.kind] || '#5d6879' } }, kindGlyph(d.kind)));
+  const prog = h('div', { class: 'dz-prog', hidden: true }, h('i'), h('span', { class: 'small' }));
+  const tools = h('div', { class: 'dz-thumb-tools' });
+  const draw = () => {
+    clear(thumb);
+    if (pv.thumb) thumb.append(h('img', { class: 'dz-thumb-3d', src: `${pv.thumb}&r=${pv.at || ''}`, alt: d.name, loading: 'lazy' }));
+    else if (cur && isImg(cur.file_name)) thumb.append(h('img', { src: `/api/design/file?v=${cur.id}`, alt: d.name, loading: 'lazy' }));
+    else thumb.append(h('span', { class: 'dz-mcard-ico', style: { color: KIND_COLOR[d.kind] || '#5d6879' } }, kindGlyph(d.kind)));
+    clear(tools,
+      pv.glb ? h('button', { class: 'btn xs dz-tool', type: 'button', title: t('Hızlı 3B önizleme (GLB)'), onclick: stopLink(() => openGlbModal({ name: d.name, glbUrl: pv.glb, stlUrl: pv.stl, stlName: stlName(cur.file_name), canDownload: isMaster })) }, '🧊 ' + t('3B görüntüle')) : null,
+      pv.stl && isMaster ? h('a', { class: 'btn xs ghost dz-tool', href: `${pv.stl}&dl=1`, download: stlName(cur.file_name), title: t('STL indir'), onclick: e => e.stopPropagation() }, '⬇ STL') : null,
+      cur && isStep(cur.file_name) && canWrite && !previewBusy(cur.id) ? h('button', { class: 'btn xs ghost dz-tool', type: 'button', title: t('Önizlemeyi yeniden üret'), onclick: stopLink(() => make(true)) }, '↻') : null);
+    thumb.append(tools, prog);
   };
-  draw(cur && cur.thumb_path ? `/api/design/file?t=${cur.id}` : null);
-  if (cur && isStep(cur.file_name) && !cur.thumb_path) {   // STEP var, önizleme yok → arka planda üret
-    thumb.append(spin);
-    makeThumb(cur.id).then(url => draw(`${url}&r=${Date.now()}`)).catch(() => { spin.textContent = 'Önizleme alınamadı'; });
+  const make = force => {
+    if (!cur || !canWrite || (!force && pv.glb && pv.stl && pv.thumb)) return;
+    prog.hidden = false; prog.querySelector('span').textContent = t('Önizleme hazırlanıyor…');
+    ensurePreview(cur.id, s => { prog.querySelector('i').style.width = `${s.pct}%`; prog.querySelector('span').textContent = t('Önizleme hazırlanıyor %{p}', { p: s.pct }); })
+      .then(r => { Object.assign(pv, r.preview || {}); pv.at = Date.now(); prog.hidden = true; draw(); })
+      .catch(err => { prog.querySelector('span').textContent = t('Önizleme üretilemedi'); console.warn('önizleme:', err?.message || err); });
+  };
+  draw();
+  liveOnHover(thumb, () => pv.glb || null);
+  if (cur && isStep(cur.file_name) && !(pv.glb && pv.stl && pv.thumb)) {
+    if (canWrite) make(false); else if (!pv.thumb) thumb.append(h('div', { class: 'dz-mcard-spin small muted' }, t('Önizleme bekliyor')));
   }
   return h('a', { class: 'card dz-mcard', href: `#/design/${pid}/${d.id}`, title: 'Montaj detayı: 3B görünüm, eşleştirme, CFD' },
     thumb,
@@ -181,7 +190,7 @@ async function renderProject(view, pid, ctx) {
       moduleToolbar(h('button', { class: 'btn primary', onclick: () => acts.addDrawing() }, '+ Montaj / Çizim Ekle')),
       body);
     const flat = []; const walk = ns => ns.forEach(n => { flat.push(n); walk(n.children || []); }); walk(p.tree || []);
-    clear(body, flat.length ? h('div', { class: 'dz-grid' }, flat.map(d => montajCard(d, pid)))
+    clear(body, flat.length ? h('div', { class: 'dz-grid' }, flat.map(d => montajCard(d, pid, ctx)))
       : h('div', { class: 'card empty' }, 'Bu projede çizim yok. “+ Montaj / Çizim Ekle” ile ekleyin.'));
   };
   load();
@@ -220,9 +229,12 @@ function designActions(pid, reload, isMaster) {
         prog.hidden = false; status.hidden = false; status.textContent = t('Yükleniyor… ({s})', { s: fmtSize(f.size) }); button.textContent = 'Yükleniyor…';
         const r = await upload(`/api/design/drawings/${d.id}/version`, fd, p => { bar.style.width = `${p}%`; pct.textContent = `%${p}`; });
         toast('Sürüm yüklendi', 'success');
-        if (isStep(f.name) && r && r.id) {
-          status.textContent = '3B önizleme hazırlanıyor (CAD çekirdeği çözümlüyor, büyük dosyalarda 1 dk sürebilir)…'; bar.style.width = '100%'; pct.textContent = '3B';
-          try { await makeThumb(r.id); } catch { /* önizleme olmadan da devam */ }
+        if (isStep(f.name) && r && r.id) {   // STEP → STL + GLB + PNG önizleme tarayıcıda (CAD çekirdeği; büyük dosyalarda 1 dk sürebilir)
+          status.textContent = t('3B önizleme hazırlanıyor (STEP → STL/GLB; büyük dosyalarda 1 dk sürebilir)…'); bar.style.width = '0%'; pct.textContent = '3B';
+          try {
+            const res = await ensurePreview(r.id, s => { bar.style.width = `${s.pct}%`; pct.textContent = `%${s.pct}`; status.textContent = s.text || ''; });
+            toast(t('Önizleme üretildi: {tri} üçgen · STL {stl} · GLB {glb} · {s} sn', { tri: res.tris.toLocaleString('tr-TR'), stl: fmtSize(res.stl), glb: fmtSize(res.glb), s: (res.ms / 1000).toFixed(1) }), 'success');
+          } catch (err) { toast(t('Önizleme üretilemedi') + ': ' + (err?.message || err), 'err'); }
         }
         reload();
       } }],
@@ -276,7 +288,14 @@ async function renderDetail(view, pid, did, vid, ctx) {
   let d;
   try { d = await api.get(`/api/design/drawings/${did}`); } catch (err) { return clear(view, pageHead('Endüstriyel Tasarım', { back: `#/design/${pid}` }), h('div', { class: 'card empty' }, err.message)); }
   const cur = vid && d.current && d.current.id !== vid ? await api.get(`/api/design/drawings/${did}/versions`).then(vs => vs.find(v => v.id === vid) || d.current).catch(() => d.current) : d.current;
-  const reloadInfo = async () => { try { d = await api.get(`/api/design/drawings/${did}`); drawInfo(); } catch { /* */ } };
+  const reloadInfo = async () => {
+    try { d = await api.get(`/api/design/drawings/${did}`); } catch { return; }
+    if ((d.current && d.current.id) !== (cur && cur.id)) {   // yeni sürüm yüklendi: sahne + bilgiler baştan (eski stüdyo kapatılır)
+      document.removeEventListener('fullscreenchange', onFs); studio?.dispose();
+      return renderDetail(view, pid, did, null, ctx);
+    }
+    drawInfo();
+  };
   const acts = designActions(pid, reloadInfo, isMaster);
   const infoEl = h('div', { class: 'dz-info card' });
   const stage = h('div', { class: 'stp-stage-in' });
@@ -287,6 +306,7 @@ async function renderDetail(view, pid, did, vid, ctx) {
   const subEl = h('div', { class: 'sub' });
   const drawInfo = () => {
     const sp = d.specs || {}, st = d.stats || {};
+    if (cur && d.current && d.current.id === cur.id) Object.assign(cur, d.current);   // yenilenen önizleme alanları (preview) güncel sürüme yansır
     subEl.textContent = d.product ? `${d.product.code} — ${d.product.name}` : 'Mamul eşleştirilmedi';
     const mamulSel = h('select', { class: 'input sm', 'aria-label': 'Mamul' }, h('option', { value: '' }, '— mamul seçin —'), (d.mamuls || []).map(m => h('option', { value: m.id, selected: d.product && d.product.id === m.id }, `${m.code} — ${m.name}`)));
     mamulSel.addEventListener('change', async () => {
@@ -294,8 +314,23 @@ async function renderDetail(view, pid, did, vid, ctx) {
     });
     const empty = sp.empty_g ?? (st.printed_weight_g || null);
     const upBtn = h('button', { class: 'btn xs ghost', type: 'button', onclick: () => acts.newVersion(dd()) }, cur ? '⬆ STEP değiştir' : '⬆ STEP yükle');
+    // Önizleme araçları: hızlı GLB penceresi, STL indir (Master), yeniden üret (yazma izni) — ayrıntılı STEP görünümü aşağıdaki sahnede kalır
+    const pv = (cur && cur.preview) || {}, pvProg = h('span', { class: 'small muted', hidden: true });
+    const regen = async () => {
+      if (!cur || !isStep(cur.file_name)) return;
+      pvProg.hidden = false;
+      try {
+        const res = await ensurePreview(cur.id, s => { pvProg.textContent = t('Önizleme hazırlanıyor %{p}', { p: s.pct }); });
+        toast(t('Önizleme üretildi: {tri} üçgen · STL {stl} · GLB {glb} · {s} sn', { tri: res.tris.toLocaleString('tr-TR'), stl: fmtSize(res.stl), glb: fmtSize(res.glb), s: (res.ms / 1000).toFixed(1) }), 'success');
+        await reloadInfo();
+      } catch (err) { toastError(err); pvProg.hidden = true; }
+    };
+    const pvTools = cur && isStep(cur.file_name) ? h('span', { class: 'pill-group dz-pv-tools' },
+      pv.glb ? h('button', { class: 'btn xs', type: 'button', title: t('Hızlı 3B önizleme (GLB)'), onclick: () => openGlbModal({ name: d.name, glbUrl: pv.glb, stlUrl: pv.stl, stlName: stlName(cur.file_name), canDownload: isMaster }) }, '🧊 ' + t('Hızlı 3B')) : null,
+      pv.stl && isMaster ? h('a', { class: 'btn xs', href: `${pv.stl}&dl=1`, download: stlName(cur.file_name), title: t('STEP\'ten üretilen birleşik ikili STL (mm)') }, '⬇ ' + t('STL indir')) : null,
+      canWriteDesign(ctx.user) ? h('button', { class: 'btn xs ghost', type: 'button', title: pv.glb ? t('Önizlemeyi yeniden üret') : t('STL / GLB önizlemesi üret'), onclick: regen }, pv.glb ? '↻' : '↻ ' + t('Önizleme üret')) : null, pvProg) : null;
     clear(infoEl,
-      h('div', { class: 'dz-info-head small muted' }, cur ? `v${cur.version} · ${cur.file_name}${cur.size ? ` · ${fmtSize(cur.size)}` : ''} · ${fmtDateTime(cur.created_at)}` : 'Henüz dosya yüklenmedi', upBtn),
+      h('div', { class: 'dz-info-head small muted' }, cur ? `v${cur.version} · ${cur.file_name}${cur.size ? ` · ${fmtSize(cur.size)}` : ''} · ${fmtDateTime(cur.created_at)}` : 'Henüz dosya yüklenmedi', upBtn, pvTools),
       h('div', { class: 'dz-tiles' },
         tile('Eşleştirilen mamul', mamulSel),
         tile('Toplam kalkış ağırlığı', fmtNum(sp.mtow_g, 'g'), 'MTOW'),

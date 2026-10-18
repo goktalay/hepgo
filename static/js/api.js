@@ -57,7 +57,7 @@ export const api = {
   post: (url, body) => request('POST', url, body ?? {}),
   put: (url, body) => request('PUT', url, body),
   patch: (url, body) => request('PATCH', url, body ?? {}),
-  del: url => request('DELETE', url),
+  del: (url, body) => request('DELETE', url, body),   // body isteğe bağlı (ör. toplu silme: id listesi)
 };
 
 // Büyük dosyalar için ilerleme bildiren yükleme (fetch yükleme ilerlemesi vermez).

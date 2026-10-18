@@ -124,12 +124,72 @@ def main():
         assert all(not (config.UPLOAD_DIR / s['crop']).exists() for s in files)
         assert g.get(f'/api/faces/groups/{r["id"]}').status_code == 404
 
+        # Son tanınan yüz (Eğitim başlığı avatarı): Ali'nin grubundaki EN SON görülme; Mehmet'in grubu silindi → yok
+        lf = ok(g.get(f'/api/faces/last-face?keys=user:{ali},person:{mehmet},bozuk,user:x'))['faces']
+        assert f'person:{mehmet}' not in lf and lf[f'user:{ali}']['crop'].startswith('camfaces/')
+        with db.connect() as c:
+            newest = c.execute('SELECT s.crop, s.at FROM face_sightings s JOIN face_groups g ON g.id = s.group_id WHERE g.user_id = ? '
+                               'ORDER BY s.at DESC, s.id DESC LIMIT 1', (ali,)).fetchone()
+        assert lf[f'user:{ali}']['crop'] == newest[0] and lf[f'user:{ali}']['at'] == newest[1] and lf[f'user:{ali}']['camera_name'] == 'Ana Giriş'
+        assert ok(g.get('/api/faces/last-face'))['faces'] == {}
+        ali_crop = lf[f'user:{ali}']['crop']
+
+        # Düşük çözünürlüklü önizleme (32'li duvar): ?w=320 → küçültülmüş JPEG, ayrı ETag, 304 desteği
+        from io import BytesIO
+        from PIL import Image
+        buf = BytesIO()
+        Image.new('RGB', (1280, 720), (30, 90, 160)).save(buf, 'JPEG')
+        (live / f'{cid}.jpg').write_bytes(buf.getvalue())
+        full = g.get(f'/api/cameras/{cid}/frame')
+        small = g.get(f'/api/cameras/{cid}/frame?w=320')
+        assert small.status_code == 200 and small.headers['etag'] != full.headers['etag']
+        assert Image.open(BytesIO(small.content)).width == 320 and len(small.content) < len(full.content)
+        assert g.get(f'/api/cameras/{cid}/frame?w=320', headers={'If-None-Match': small.headers['etag']}).status_code == 304
+        assert Image.open(BytesIO(g.get(f'/api/cameras/{cid}/frame?w=9999').content)).width == 640   # en büyük önizleme kademesi
+
+        # Eğitim fotoğrafları toplu silme: DELETE /api/cameras/face/photos {ids}
+        from app import faceenroll
+        crop_bytes = buf.getvalue()
+        before = len(ok(g.get(f'/api/faces/enroll?subject_type=user&user_id={ali}'))['faces'])   # atamayla otomatik eklenenler olabilir
+        with db.connect() as c:
+            e1 = faceenroll.enroll_precomputed(c, 'user', ali, None, None, crop_bytes, unit(11).tobytes(), 1, source='manual')
+            e2 = faceenroll.enroll_precomputed(c, 'user', ali, None, None, crop_bytes, unit(12).tobytes(), 1, source='manual')
+            e3 = faceenroll.enroll_precomputed(c, 'user', ali, None, None, crop_bytes, unit(13).tobytes(), 1, source='manual')
+            c.commit()
+        assert e1 and e2 and e3
+        assert len(ok(g.get(f'/api/faces/enroll?subject_type=user&user_id={ali}'))['faces']) == before + 3
+        assert g.request('DELETE', '/api/cameras/face/photos', json={'ids': []}).status_code == 400
+        assert ok(g.request('DELETE', '/api/cameras/face/photos', json={'ids': [e1, e2, 999999, 'x']}))['deleted'] == 2
+        left = {f['id'] for f in ok(g.get(f'/api/faces/enroll?subject_type=user&user_id={ali}'))['faces']}
+        assert e3 in left and e1 not in left and e2 not in left and len(left) == before + 1
+
     # Kameralar modülü yalnızca sistem yöneticisine açık: Sekreter de Güvenlik kullanıcısı da göremez
     for uname in ('sek', 'guv'):
         with TestClient(app) as s:
             ok(s.post('/api/auth/login', json={'username': uname, 'password': 'sifre-1234'}))
             assert s.get('/api/cameras').status_code == 403 and s.get('/api/faces/groups').status_code == 403
             assert s.get(f'/api/files/{grp["items"][0]["crop"]}').status_code == 404
+            assert s.get(f'/api/faces/last-face?keys=user:{ali}').status_code == 403
+            assert s.request('DELETE', '/api/cameras/face/photos', json={'ids': [e3]}).status_code == 403
+
+    # Rehber: fotoğrafı olmayan kişide yüz tanımanın EN SON tanıdığı yüz avatar olur (rehberi gören görür; kamera yetkisi gerekmez).
+    # Eğitim fotoğrafı (face_enroll) olsa da son tanınan yüz önceliklidir; kamera medyasının geneli yine kapalı kalır.
+    with TestClient(app) as s:
+        ok(s.post('/api/auth/login', json={'username': 'sek', 'password': 'sifre-1234'}))
+        ppl = {p['key']: p for p in ok(s.get('/api/directory?kind=user'))['people']}
+        pa = ppl[f'user:{ali}']
+        assert not pa.get('photo') and pa['face_avatar'].startswith(f'/api/directory/face-avatar/user/{ali}') and pa['face_camera'] == 'Ana Giriş'
+        r = s.get(pa['face_avatar'])
+        assert r.status_code == 200 and r.headers['content-type'] == 'image/jpeg' and r.content == (config.UPLOAD_DIR / ali_crop).read_bytes()
+        assert s.get(f'/api/files/{ali_crop}').status_code == 404                       # kamera medyası genel olarak kapalı
+        assert s.get(f'/api/directory/face-avatar/person/{mehmet}').status_code == 404  # tanınma yok
+        assert s.get('/api/directory/face-avatar/bozuk/1').status_code == 404
+        d = ok(s.get(f'/api/directory/user/{ali}'))
+        assert d['face_avatar'].startswith('/api/directory/face-avatar/') and d['face_at']
+        assert 'face' not in d['sections']   # kamera yetkisi olmayan görülme listesini görmez; yalnız avatar
+    with TestClient(app) as s:   # Güvenlik rolü: Rehber yok → uç kapalı
+        ok(s.post('/api/auth/login', json={'username': 'guv', 'password': 'sifre-1234'}))
+        assert s.get(f'/api/directory/face-avatar/user/{ali}').status_code == 403
     print('Kamera ve yüz tanıma testleri geçti.')
 
 

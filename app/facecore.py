@@ -398,6 +398,26 @@ def avatars(conn, keys):
     return {'avatars': out}
 
 
+def last_faces(conn, keys):
+    """Kişi başına EN SON tanınan yüz: kişiye atanmış grupların en yeni görülmesi (kırpık + tam kare + an + kamera).
+    keys: ['user:5','person:3','family:2','visitor:7'] → {key: {sighting_id, group_id, crop, frame, at, camera_name}}.
+    Yüz Tanıma › Eğitim başlığındaki avatar ve Rehber'de fotoğrafı olmayan kişinin avatarı buradan beslenir.
+    (Görülme kırpıkları zaten face_sightings'te saklanır; ayrı tablo gerekmez.)"""
+    col = {'user': 'user_id', 'person': 'person_id', 'family': 'family_id', 'visitor': 'visitor_id'}
+    out = {}
+    for k in (keys or [])[:400]:
+        kind, _, sid = str(k).partition(':')
+        if kind not in col or not sid.isdigit():
+            continue
+        r = db.row(conn.execute(
+            f'''SELECT s.id AS sighting_id, s.group_id, s.crop, s.frame, s.at, c.name AS camera_name
+                FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+                WHERE g.{col[kind]} = ? ORDER BY s.at DESC, s.id DESC LIMIT 1''', (int(sid),)))
+        if r and r.get('crop'):
+            out[k] = r
+    return {'faces': out}
+
+
 def cameras_list(conn):
     """Kamera listesi (şifre hariç) — Kameralar sekmesi. Canlı kare yaşı yerel live dizininden."""
     import time
@@ -643,6 +663,8 @@ def rpc(conn, method, args):
         return subject_shots(conn, a.get('kind'), a.get('id'), a.get('limit', 12))
     if method == 'avatars':
         return avatars(conn, a.get('keys') or [])
+    if method == 'last_faces':
+        return last_faces(conn, a.get('keys') or [])
     if method == 'push_config':
         return push_config(conn, a.get('cfg') or {})
     if method == 'watch':

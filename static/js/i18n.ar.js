@@ -3963,4 +3963,18 @@ registerCatalog('ar', {
   "Ev irtifası arazi verisinden alınacak": "سيؤخذ ارتفاع نقطة المنزل من بيانات التضاريس",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "الارتفاع المحفوظ {a} م، التضاريس {t} م — ستُستخدم التضاريس",
   "Arazi {t} m — ev irtifası arazi verisinden": "التضاريس {t} م — ارتفاع المنزل من بيانات التضاريس",
+  // Kameralar 32'li · Yüz Tanıma › Eğitim "Seç" kipi · son tanınan yüz avatarı · Rehber yüz rozeti
+  "Seçilenleri sil": "حذف المحدد",
+  "Seçimi kaldır": "إلغاء التحديد",
+  "Fotoğraf seçin": "اختر الصور",
+  "{n} seçildi": "تم تحديد {n}",
+  "{n} eğitim fotoğrafı silinsin mi? Bu işlem geri alınamaz.": "هل تريد حذف {n} صورة تدريب؟ لا يمكن التراجع عن هذا الإجراء.",
+  "{n} fotoğraf silindi": "تم حذف {n} صورة",
+  "{n} eğitim fotoğrafı": "{n} صورة تدريب",
+  "Son tanınma: {when} · {cam}": "آخر تعرّف: {when} · {cam}",
+  "Son tanınma {when}": "آخر تعرّف {when}",
+  "Kamerada henüz tanınmadı": "لم يُتعرّف عليه بالكاميرا بعد",
+  "{name} · son tanınma": "{name} · آخر تعرّف",
+  "Olaya git": "الانتقال إلى الحدث",
+  "Yüz tanımada son görülme: {when} · {cam}": "آخر رصد بالتعرّف على الوجه: {when} · {cam}",
 });

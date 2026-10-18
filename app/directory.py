@@ -45,32 +45,61 @@ def people(conn, q='', kind='all'):
     return out
 
 
+def last_faces(conn, keys):
+    """Kişi başına en son tanınan yüz (facecore.last_faces; dağıtık kurulumda fabrikadan). Hata/eski ajan → {}."""
+    if not keys:
+        return {}
+    from . import facebridge, facecore
+    try:
+        return (facebridge.rpc('last_faces', keys=keys) if facebridge.remote() else facecore.last_faces(conn, keys)).get('faces', {})
+    except Exception:   # noqa: BLE001
+        return {}
+
+
 def _fill_avatars(conn, people):
-    """Fotoğrafı olmayanlara yüz kırpığı ata: önce eğitim fotoğrafı (face_enroll, bulutta), yoksa tanınan en iyi kırpık (fabrikada)."""
+    """Fotoğrafı olmayanlara yüz kırpığı ata — öncelik: yüz tanımada EN SON tanınan yüz (face_sightings; fabrikada),
+    yoksa eğitim fotoğrafı (face_enroll, bulutta). Son tanınan yüz `face_avatar` (Rehber yetkisiyle sunulan uç) +
+    `face_at` / `face_camera` olarak döner; arayüz bunu küçük "yüz tanıma" rozetiyle gösterir."""
     missing = [p for p in people if not p.get('photo')]
     if not missing:
         return
-    # Eğitim kırpıkları (bulut) — en yeni
+    faces = last_faces(conn, [p['key'] for p in missing])
+    for p in missing:
+        f = faces.get(p['key'])
+        if f and f.get('crop'):
+            p['face_avatar'] = f"/api/directory/face-avatar/{p['type']}/{p['id']}?v={(f.get('at') or '')[:19]}"
+            p['face_at'], p['face_camera'] = f.get('at'), f.get('camera_name')
+    # Kalanlar: eğitim kırpıkları (bulut) — en yeni
+    rest = [p for p in missing if not p.get('face_avatar')]
+    if not rest:
+        return
     enroll = {}
     for r in conn.execute('SELECT subject_type, user_id, person_id, family_id, crop FROM face_enroll ORDER BY id DESC'):
         key = f'{r[0]}:{r[1] or r[2] or r[3]}'
         enroll.setdefault(key, r[4])
-    for p in missing:
+    for p in rest:
         if enroll.get(p['key']):
             p['photo'] = enroll[p['key']]
-    # Kalanlar için tanınan en iyi kırpık (fabrika)
-    rest = [p for p in missing if not p.get('photo')]
-    if not rest:
-        return
-    from . import facebridge, facecore
-    keys = [p['key'] for p in rest]
+
+
+def face_avatar_bytes(conn, type, id):
+    """Kişinin en son tanınan yüz kırpığı (JPEG bayt, content-type) — Rehber yetkisiyle sunulur (kamera medyası guard'ından
+    bağımsız; yalnız bu kişinin KIRPIĞI açılır, tam kare/klip değil). Yoksa None."""
+    if type not in TYPE_LABEL:
+        return None
+    f = last_faces(conn, [f'{type}:{int(id)}']).get(f'{type}:{int(id)}')
+    if not f or not f.get('crop'):
+        return None
+    from . import config, facebridge
     try:
-        av = (facebridge.rpc('avatars', keys=keys) if facebridge.remote() else facecore.avatars(conn, keys)).get('avatars', {})
+        if facebridge.remote():
+            return facebridge.media(f['crop'])
+        full = (config.UPLOAD_DIR / f['crop']).resolve()
+        if not str(full).startswith(str(config.UPLOAD_DIR.resolve())) or not full.is_file():
+            return None
+        return full.read_bytes(), 'image/jpeg'
     except Exception:   # noqa: BLE001
-        av = {}
-    for p in rest:
-        if av.get(p['key']):
-            p['photo'] = av[p['key']]
+        return None
 
 
 TYPE_LABEL = {'user': 'Personel', 'person': 'Firma kişisi', 'family': 'Aile üyesi'}
@@ -83,6 +112,10 @@ def detail(conn, viewer, type, id):
     if not person:
         raise LookupError('Kişi bulunamadı')
     out = {'type': type, 'id': id, 'type_label': TYPE_LABEL[type], **person, 'sections': {}}
+    if not out.get('photo'):   # fotoğrafı yoksa: en son tanınan yüz avatar olur (Rehber yetkisiyle sunulan uç)
+        out['key'] = f'{type}:{id}'
+        _fill_avatars(conn, [out])
+        out.pop('key', None)
     s = out['sections']
     # Yüz tanıma kayıtları (Kameralar yetkisi / İK — medya erişimiyle aynı)
     if _can(viewer, 'cameras', 'hr'):

@@ -14,6 +14,18 @@ const tc = str => (str || '').toLocaleLowerCase('tr').replace(/(^|[\s\-/·.(,])(
 
 let canShare = false;   // Kişilerim'den paylaşılan Rehber'e ekleyebilir mi (Firma Yönetimi yazma yetkisi)
 
+// Kişi avatarı: kayıtlı fotoğraf varsa o; yoksa yüz tanımada EN SON tanınan yüz (face_avatar — Rehber yetkisiyle sunulan uç)
+// küçük "yüz tanıma" rozetiyle; o da yoksa baş harf avatarı.
+const FACE_ICON = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><circle cx="12" cy="11" r="3.2"/><path d="M7.5 17.5a5 5 0 0 1 9 0"/></svg>';
+function personAvatar(p, size) {
+  const name = tc(p.name || p.full_name);
+  if (p.photo || !p.face_avatar) return avatar({ full_name: name, photo: p.photo }, size);
+  const tip = t('Yüz tanımada son görülme: {when} · {cam}', { when: p.face_at ? fmtDateTime(p.face_at) : '—', cam: p.face_camera || '—' });
+  return h('span', { class: `avatar gd-face ${size}`, title: tip },
+    h('img', { src: p.face_avatar, alt: '', loading: 'lazy' }),
+    h('span', { class: 'gd-face-badge', 'aria-label': 'Yüz tanıma', html: FACE_ICON }));
+}
+
 export async function render(view, params, ctx) {
   canShare = (ctx.user.write_modules || ctx.user.modules || []).includes('companies');
   if (params[0] && params[1]) return detail(view, params[0], params[1], ctx);
@@ -70,7 +82,7 @@ async function list(view) {
       p.phone ? h('small', { class: 'muted' }, p.phone) : null),
     h('span', { class: 'badge yellow', title: 'Yalnızca siz görürsünüz' }, MINE_SRC[p.source] || 'Kişilerim'))
     : h('a', { class: `card gd-card ${TYPE_BADGE[p.type][0] === 'green' ? 'fam' : ''}`, href: `#/rehber/${p.type}/${p.id}` },
-    avatar({ full_name: tc(p.name), photo: p.photo }, 44),
+    personAvatar(p, 44),
     h('div', { class: 'gd-info' },
       h('b', { title: tc(p.name) }, tc(p.name)),
       p.subtitle ? h('small', { class: 'muted', title: tc(p.subtitle) }, tc(p.subtitle)) : null,
@@ -254,7 +266,7 @@ async function detail(view, type, id, ctx) {
   const s = d.sections || {};
   const row = (label, val) => val ? h('div', { class: 'gd-row' }, h('span', { class: 'muted' }, label), h('b', null, val)) : null;
   const info = h('section', { class: 'card card-pad' },
-    h('div', { class: 'gd-head' }, avatar({ full_name: tc(d.full_name), photo: d.photo }, 64),
+    h('div', { class: 'gd-head' }, personAvatar(d, 'lg'),
       h('div', null, h('h2', { style: { margin: 0 } }, tc(d.full_name)), h('span', { class: `badge ${TYPE_BADGE[type][0]}` }, d.type_label))),
     h('div', { class: 'gd-rows' },
       row('Görev', tc(d.title)), row('Departman', tc(d.department)), row('Firma', tc(d.company)), row('Yakınlık', tc(d.relation)),

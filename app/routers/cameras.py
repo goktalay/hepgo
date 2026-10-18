@@ -236,9 +236,39 @@ def _ping_watch(cid: int):
         _last_watch[cid] = 0   # başarısızsa bir sonraki karede tekrar dene
 
 
+FRAME_WIDTHS = (240, 320, 480, 640)   # ?w= önizleme genişlikleri (32'li duvar: 320) — küçültülmüş kare önbelleklenir
+
+
+def _small_frame(path, w):
+    """Canlı karenin küçültülmüş kopyası (DATA_DIR/cache/live/<cid>.<w>.jpg); kaynak kare değiştiyse yeniden üretilir.
+    Çok kameralı duvarlarda (16/32'li) tarayıcıya tam çözünürlük yerine küçük JPEG gider → bant genişliği ve çözme yükü düşer."""
+    out = config.DATA_DIR / 'cache' / 'live' / f'{path.stem}.{w}.jpg'
+    st = path.stat()
+    try:
+        if out.exists() and out.stat().st_mtime_ns >= st.st_mtime_ns:
+            return out
+    except OSError:
+        pass
+    try:
+        from PIL import Image
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(path) as im:
+            im = im.convert('RGB')
+            if im.width > w:
+                im.thumbnail((w, w * 4))
+            tmp = out.with_suffix('.tmp.jpg')
+            im.save(tmp, 'JPEG', quality=78, optimize=True)
+            tmp.replace(out)
+        import os
+        os.utime(out, ns=(st.st_mtime_ns, st.st_mtime_ns))   # kaynakla aynı zaman damgası → güncellik kıyası
+        return out
+    except Exception:   # noqa: BLE001 — bozuk kare vb.: tam kare döner
+        return path
+
+
 @router.get('/{cid}/frame')
-def frame(cid: int, request: Request, user=Depends(cam_user)):
-    """İzleme ekranı: kameranın son karesi (kamera servisi yazar). Değişmediyse 304."""
+def frame(cid: int, request: Request, w: int = 0, user=Depends(cam_user)):
+    """İzleme ekranı: kameranın son karesi (kamera servisi yazar). Değişmediyse 304. `w` verilirse küçültülmüş önizleme."""
     path = LIVE_DIR / f'{cid}.jpg'
     if not path.exists():
         # Dağıtık kurulum: canlı kare fabrikada; talep üzerine ajandan getirilir (+ izleme sinyali)
@@ -252,11 +282,13 @@ def frame(cid: int, request: Request, user=Depends(cam_user)):
             return Response(data, media_type=ctype, headers={'Cache-Control': 'no-store'})
         raise HTTPException(404, 'Görüntü yok')
     st = path.stat()
-    etag = hashlib.md5(f'{st.st_mtime_ns}-{st.st_size}'.encode()).hexdigest()
+    w = next((x for x in FRAME_WIDTHS if x >= w), FRAME_WIDTHS[-1]) if w > 0 else 0   # kademeye yuvarla (önbellek dosyası az olsun)
+    etag = hashlib.md5(f'{st.st_mtime_ns}-{st.st_size}-{w}'.encode()).hexdigest()
     headers = {'ETag': etag, 'Cache-Control': 'no-store', 'X-Frame-Age': f'{time.time() - st.st_mtime:.1f}'}
     if request.headers.get('if-none-match') == etag:
         return Response(status_code=304, headers=headers)
-    return Response(path.read_bytes(), media_type='image/jpeg', headers=headers)
+    src = _small_frame(path, w) if w else path
+    return Response(src.read_bytes(), media_type='image/jpeg', headers=headers)
 
 
 class NameIn(BaseModel):
@@ -711,12 +743,10 @@ class EnrollIdsIn(BaseModel):
     ids: list = []
 
 
-@faces_router.post('/enroll/delete')
-def enroll_delete_bulk(body: EnrollIdsIn, user=Depends(cam_user), conn=db.DB):
-    """Birden çok eğitim izini toplu siler (Yapay Zeka alt modülü)."""
+def _delete_enroll_many(conn, ids, by):
     from .. import faceenroll
     n = 0
-    for i in (body.ids or []):
+    for i in (ids or [])[:500]:
         try:
             if faceenroll.delete(conn, int(i)):
                 n += 1
@@ -725,7 +755,36 @@ def enroll_delete_bulk(body: EnrollIdsIn, user=Depends(cam_user), conn=db.DB):
     if n:
         conn.commit()
         _push_enroll(conn)
+        db.audit(conn, by, 'Yüz tanıma eğitimi: fotoğraflar toplu silindi', 'face_enroll', None, f'{n} fotoğraf')
     return {'ok': True, 'deleted': n}
+
+
+@faces_router.post('/enroll/delete')
+def enroll_delete_bulk(body: EnrollIdsIn, user=Depends(cam_user), conn=db.DB):
+    """Birden çok eğitim izini toplu siler (Yapay Zeka alt modülü)."""
+    return _delete_enroll_many(conn, body.ids, user['id'])
+
+
+@router.delete('/face/photos')
+def face_photos_delete(body: EnrollIdsIn, user=Depends(cam_user), conn=db.DB):
+    """Yüz Tanıma › Eğitim "Seç → Seçilenleri sil": gövdede id listesi ({ids:[…]}); yazma yetkisi (cam_user DELETE) gerekir."""
+    if not body.ids:
+        raise HTTPException(400, 'Silinecek fotoğraf seçin')
+    return _delete_enroll_many(conn, body.ids, user['id'])
+
+
+@faces_router.get('/last-face')
+def last_face(keys: str = '', user=Depends(cam_user), conn=db.DB):
+    """Kişi başına en son tanınan yüz (Eğitim başlığındaki avatar). keys=user:5,person:3,… → {faces:{key:{crop,frame,at,camera_name,…}}}."""
+    key_list = [k.strip() for k in keys.split(',') if ':' in k][:400]
+    if not key_list:
+        return {'faces': {}}
+    try:
+        return _face(conn, 'last_faces', keys=key_list)
+    except HTTPException as e:
+        if 'Bilinmeyen' in str(getattr(e, 'detail', '')):   # fabrika yüz ajanı henüz güncellenmedi
+            return {'faces': {}}
+        raise
 
 
 class EnrollFrameIn(BaseModel):

@@ -9466,3 +9466,57 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 .fs-runs-del:hover { background: var(--danger-soft, #fee2e2); }
 .fs-runs-video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
 .fs-runs-empty { margin: 0; }
+
+/* ---------- Kameralar: 32'li duvar (8×4) + küçük karo ölçeği ---------- */
+.cw-grid.l32 { grid-template-columns: repeat(8, 1fr); gap: 3px; padding: 3px; }
+.cw-grid.l32 .cw-tile { border-radius: 3px; }
+.cw-grid.l32 .cw-head { top: 2px; left: 2px; right: 2px; }
+.cw-grid.l32 .cw-sel, .cw-grid.l16 .cw-sel { font-size: 10px; padding: 1px 4px; max-width: 85%; }
+.cw-grid.l32 .cw-over { font-size: 10px; }
+.cw-grid.l32 .cw-tile.max { border-radius: 0; }
+@media (max-width: 1100px) { .cw-grid.l32 { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 700px) { .cw-grid.l32 { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- Yüz Tanıma › Eğitim: Seç kipi, son tanınan yüz avatarı ---------- */
+.fr-person { flex-direction: row; align-items: center; gap: 10px; }
+.fr-person-t { display: flex; flex-direction: column; min-width: 0; }
+.fr-person-t b, .fr-person-t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.avatar.fr-ava-sm { width: 30px; height: 30px; font-size: 11px; }
+.avatar.fr-ava-lg { width: 60px; height: 60px; font-size: 20px; }
+.fr-last { position: relative; padding: 0; border: 2px solid var(--surface); cursor: zoom-in; overflow: visible;
+  box-shadow: 0 0 0 2px var(--primary), 0 2px 8px rgba(0,0,0,.18); transition: transform .12s, box-shadow .12s; }
+.fr-last img { border-radius: 50%; }
+.fr-last:hover { transform: scale(1.06); box-shadow: 0 0 0 2px var(--primary), 0 4px 14px rgba(0,0,0,.25); }
+.fr-last-dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: #16a34a; border: 2px solid var(--surface); }
+.fr-ava-lg .fr-last-dot { width: 14px; height: 14px; }
+.fr-last-view { display: flex; flex-direction: column; gap: 10px; }
+.fr-last-meta { display: flex; align-items: center; gap: 12px; }
+.fr-last-crop { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px var(--primary); }
+.fr-selbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; padding: 8px 10px; border-radius: 10px;
+  background: var(--surface-2, rgba(127,127,127,.08)); }
+.fr-selbar .spacer { flex: 1; }
+.fr-sel-count { font-weight: 600; font-size: 13px; }
+.fr-sel-del[hidden] { display: none; }
+.fr-crops.selecting .fr-crop { cursor: pointer; }
+.fr-crop { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: box-shadow .12s, transform .12s; }
+.fr-crop.selected { box-shadow: 0 0 0 3px var(--primary); transform: scale(.96); }
+.fr-crop.selected img { filter: brightness(.88); }
+.fr-pick { position: absolute; top: 5px; right: 5px; z-index: 2; width: 24px; height: 24px; padding: 0; border-radius: 50%;
+  border: 2px solid #fff; background: rgba(0,0,0,.28); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; transition: background .12s, border-color .12s; }
+.fr-pick::after { content: '✓'; color: #fff; font-size: 14px; font-weight: 700; line-height: 1; opacity: 0; transform: scale(.6); transition: opacity .12s, transform .12s; }
+.fr-pick:hover { border-color: var(--primary); }
+.fr-pick[aria-pressed="true"] { background: var(--primary); border-color: #fff; }
+.fr-pick[aria-pressed="true"]::after { opacity: 1; transform: scale(1); }
+.fr-ev.focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+
+/* ---------- Rehber: yüz tanıma yedek avatarı + rozet ---------- */
+.avatar.gd-face { position: relative; overflow: visible; box-shadow: 0 0 0 2px var(--primary-soft); }
+.avatar.gd-face img { border-radius: 50%; }
+.gd-face-badge { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary); color: #fff; border: 2px solid var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.gd-face-badge svg { width: 10px; height: 10px; }
+.avatar.gd-face.lg .gd-face-badge { width: 24px; height: 24px; }
+.avatar.gd-face.lg .gd-face-badge svg { width: 13px; height: 13px; }
+.fr-subject-sub { display: block; }
+.fr-frame img.fr-last-crop { width: 64px; max-height: none; background: none; border-radius: 50%; }

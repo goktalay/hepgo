@@ -3963,4 +3963,18 @@ registerCatalog('ru', {
   "Ev irtifası arazi verisinden alınacak": "Высота дома будет взята из данных рельефа",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Сохранённая высота {a} м, рельеф {t} м — будет использован рельеф",
   "Arazi {t} m — ev irtifası arazi verisinden": "Рельеф {t} м — высота дома из данных рельефа",
+  // Kameralar 32'li · Yüz Tanıma › Eğitim "Seç" kipi · son tanınan yüz avatarı · Rehber yüz rozeti
+  "Seçilenleri sil": "Удалить выбранные",
+  "Seçimi kaldır": "Снять выделение",
+  "Fotoğraf seçin": "Выберите фото",
+  "{n} seçildi": "Выбрано: {n}",
+  "{n} eğitim fotoğrafı silinsin mi? Bu işlem geri alınamaz.": "Удалить {n} обучающих фото? Это действие нельзя отменить.",
+  "{n} fotoğraf silindi": "Удалено фото: {n}",
+  "{n} eğitim fotoğrafı": "Обучающих фото: {n}",
+  "Son tanınma: {when} · {cam}": "Последнее распознавание: {when} · {cam}",
+  "Son tanınma {when}": "Последнее распознавание {when}",
+  "Kamerada henüz tanınmadı": "Камерой ещё не распознан",
+  "{name} · son tanınma": "{name} · последнее распознавание",
+  "Olaya git": "К событию",
+  "Yüz tanımada son görülme: {when} · {cam}": "Последний раз распознан камерой: {when} · {cam}",
 });

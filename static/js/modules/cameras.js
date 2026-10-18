@@ -1,10 +1,12 @@
-// Güvenlik → Kameralar: izleme duvarı (1 / 4 / 6 / 9 / 12 / 16'lı; düzen ve hangi karede hangi kamera kullanıcıya göre
+// Güvenlik → Kameralar: izleme duvarı (1 / 4 / 6 / 9 / 12 / 16 / 32'li; düzen ve hangi karede hangi kamera kullanıcıya göre
 // sunucuda saklanır) ve kamera listesi (ONVIF ile ağda bulma, elle ekleme). Görüntü, kamera servisinin yazdığı son kare
 // (/api/cameras/<id>/frame) kısa aralıklarla çekilerek gösterilir; değişmeyen kare için sunucu 304 döner.
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, h, modal, onLeave, segmented, t, toast, toastError } from '../ui.js';
 
-const LAYOUTS = [1, 4, 6, 9, 12, 16];
+const LAYOUTS = [1, 4, 6, 9, 12, 16, 32];
+// Çok kameralı duvarlarda tam kare yerine küçültülmüş önizleme istenir (/frame?w=): 32'li → 320 px, 12/16'lı → 480 px
+const previewWidth = layout => (layout >= 32 ? 320 : layout >= 12 ? 480 : 0);
 const STATUS = { CANLI: ['green', 'Canlı'], HATA: ['red', 'Bağlanamıyor'], KOPTU: ['yellow', 'Koptu'], KAPALI: ['gray', 'Kapalı'] };
 const statusBadge = c => {
   const [cls, label] = STATUS[c.active ? c.status : 'KAPALI'] || ['gray', 'Bekliyor'];
@@ -72,22 +74,22 @@ async function renderWall(box) {
       const scale = Math.min(W / img.naturalWidth, H / img.naturalHeight);
       const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
       const ox = (W - dw) / 2, oy = (H - dh) / 2;
-      cx.lineWidth = Math.max(2, Math.round(W / 320)); cx.font = `${Math.max(12, Math.round(W / 36))}px sans-serif`;
+      cx.lineWidth = Math.max(1, Math.round(W / 320)); cx.font = `${Math.max(W < 220 ? 9 : 12, Math.round(W / 36))}px sans-serif`;
       for (const b of boxes) {
         const x = ox + b.x * dw, y = oy + b.y * dh, w = b.w * dw, hgt = b.h * dh;
         const col = b.known ? '#16a34a' : '#dc2626';
         cx.strokeStyle = col; cx.strokeRect(x, y, w, hgt);
         const label = b.known ? (b.label || 'Tanınan') : null;
         if (label) {
-          const tw = cx.measureText(label).width + 10, th = Math.max(16, Math.round(W / 28));
+          const tw = cx.measureText(label).width + 10, th = Math.max(W < 220 ? 12 : 16, Math.round(W / 28));
           cx.fillStyle = col; cx.fillRect(x, y + hgt, Math.max(w, tw), th);
           cx.fillStyle = '#fff'; cx.textBaseline = 'middle'; cx.fillText(label, x + 5, y + hgt + th / 2);
         }
       }
     };
     sel.addEventListener('change', () => { cfg.slots[i] = camId(); save(); etag = null; img.removeAttribute('src'); loop(); });
-    el.addEventListener('dblclick', e => { if (e.target !== sel) el.classList.toggle('max'); });
-    const period = () => (fixedFps ? Math.round(1000 / fixedFps) : (cfg.layout <= 4 ? 250 : cfg.layout <= 9 ? 400 : 600));
+    el.addEventListener('dblclick', e => { if (e.target !== sel) { el.classList.toggle('max'); etag = null; } });   // büyütmede tam çözünürlüğe geç
+    const period = () => (fixedFps ? Math.round(1000 / fixedFps) : (cfg.layout <= 4 ? 250 : cfg.layout <= 9 ? 400 : cfg.layout <= 16 ? 600 : 1000));
     let timer;
     async function loop() {
       clearTimeout(timer);
@@ -95,7 +97,8 @@ async function renderWall(box) {
       const id = camId();
       if (!id) { over.textContent = 'Kamera seçin'; over.hidden = false; return; }
       try {
-        const r = await fetch(`/api/cameras/${id}/frame`, { headers: etag ? { 'If-None-Match': etag } : {}, credentials: 'same-origin' });
+        const pw = el.classList.contains('max') ? 0 : previewWidth(cfg.layout);   // büyütülmüş kare: tam çözünürlük
+        const r = await fetch(`/api/cameras/${id}/frame${pw ? `?w=${pw}` : ''}`, { headers: etag ? { 'If-None-Match': etag } : {}, credentials: 'same-origin' });
         if (r.status === 200) {
           etag = r.headers.get('ETag');
           const next = URL.createObjectURL(await r.blob());
@@ -121,6 +124,7 @@ async function renderWall(box) {
     clear(grid, tiles.map(t => t.el));
   }
   const layoutSeg = segmented(LAYOUTS.map(n => [String(n), `${n}'lı`]), String(cfg.layout), v => { cfg.layout = Number(v); save(); draw(); });
+  layoutSeg.classList.add('cw-layouts');
   const fullBtn = h('button', { class: 'btn', type: 'button', onclick: () => setFull(!wall.classList.contains('cw-full')) }, 'Tam ekran');
   function setFull(on) {
     wall.classList.toggle('cw-full', on);

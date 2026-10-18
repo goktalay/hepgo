@@ -504,4 +504,18 @@ registerCatalog('en', {
   "Ev irtifası arazi verisinden alınacak": "Home altitude will be taken from terrain data",
   "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Saved altitude {a} m, terrain {t} m — terrain will be used",
   "Arazi {t} m — ev irtifası arazi verisinden": "Terrain {t} m — home altitude from terrain data",
+  // Kameralar 32'li · Yüz Tanıma › Eğitim "Seç" kipi · son tanınan yüz avatarı · Rehber yüz rozeti
+  "Seçilenleri sil": "Delete selected",
+  "Seçimi kaldır": "Deselect all",
+  "Fotoğraf seçin": "Select photos",
+  "{n} seçildi": "{n} selected",
+  "{n} eğitim fotoğrafı silinsin mi? Bu işlem geri alınamaz.": "Delete {n} training photos? This cannot be undone.",
+  "{n} fotoğraf silindi": "{n} photos deleted",
+  "{n} eğitim fotoğrafı": "{n} training photos",
+  "Son tanınma: {when} · {cam}": "Last recognized: {when} · {cam}",
+  "Son tanınma {when}": "Last recognized {when}",
+  "Kamerada henüz tanınmadı": "Not yet recognized on camera",
+  "{name} · son tanınma": "{name} · last recognition",
+  "Olaya git": "Go to event",
+  "Yüz tanımada son görülme: {when} · {cam}": "Last seen by face recognition: {when} · {cam}",
 });

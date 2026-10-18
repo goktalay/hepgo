@@ -21,6 +21,13 @@ const TOOLS = [
     modules: ['production', 'printers', 'orders'] },
   { key: 'network', title: 'Ağ Tarayıcı', icon: 'network', desc: 'Sunucunun ağındaki bilgisayarlar: IP, bilgisayar adı, MAC, üretici', modules: ['admin'] },
   { key: 'terminal', title: 'Terminal', icon: 'terminal', desc: 'Sistem sahibi için yerel kabuk (SSH benzeri) — sahada olmadan komut çalıştırın', master: true },
+  // Master Tool ailesi — web sürümleri (tool_<ad>.js; arka uç app/routers/tools_<ad>.py). Yetki: Araçlar modülü.
+  { key: 'ssh', title: 'SSH Master', icon: 'terminal', desc: 'Tarayıcıdan SSH: çoklu sekme, parola/anahtar, kopyala/yapıştır', mt: 'tool_ssh' },
+  { key: 'ftp', title: 'FTP Master', icon: 'folderOpen', desc: 'FTP / FTPS / SFTP: uzak dizin, yükle/indir, yeniden adlandır/sil', mt: 'tool_ftp' },
+  { key: 'sql', title: 'SQL Master', icon: 'reports', desc: 'SQLite · MySQL · PostgreSQL: sorgu editörü, sayfalı sonuç, Excel', mt: 'tool_sql' },
+  { key: 'notepad', title: 'Notepad Master', icon: 'note', desc: 'Çok sekmeli metin editörü: satır numarası, vurgu, bul/değiştir, sunucuya kaydet', mt: 'tool_notepad' },
+  { key: 'convert', title: 'Convert Master', icon: 'refresh', desc: 'Görsel, PDF, metin kodlama, JSON/CSV/XLSX, Base64/Hex/URL, birim dönüştürme', mt: 'tool_convert' },
+  { key: 'volfai', title: 'VOLFAI', icon: 'apps', desc: 'Master Tool oyunu — tarayıcıda tam ekran', mt: 'tool_volfai' },
 ];
 // Kullanıcının görebileceği araçlar (modül koşulu olanlar o modüllerden birine sahip olana; master koşulu yalnız sistem sahibine)
 export const visibleTools = ctx => TOOLS.filter(t => (t.master ? (t.key === 'terminal' ? ctx.user.console : ctx.user.master) : (!t.modules || t.modules.some(m => ctx.user.modules.includes(m)))));
@@ -30,6 +37,8 @@ export async function render(view, params, ctx) {
   if (params[0] === 'production-errors') return renderProductionErrors(view, ctx);
   if (params[0] === 'network') return ctx.user.modules.includes('admin') ? renderNetscan(view) : clear(view, h('div', { class: 'card empty' }, 'Bu araç yalnızca Sistem Yöneticisine açıktır.'));
   if (params[0] === 'terminal') { const con = await import('./console.js'); return con.render(view, params.slice(1), ctx); }
+  const mt = TOOLS.find(t => t.key === params[0] && t.mt);   // Master Tool web sürümleri: tembel yüklenen ayrı ES modülleri
+  if (mt) { const m = await import(`./${mt.mt}.js`); return m.render(view, params.slice(1), ctx); }
   if (params[0] === 'flight-log') {
     if (params[2] === '3d') return render3D(view, Number(params[1]), `#/tools/flight-log/${params[1]}`);
     return params[1] ? renderReportView(view, Number(params[1]), '#/tools/flight-log', ctx) : renderFlightLogs(view, ctx);

@@ -1478,7 +1478,8 @@ const SUB_PAGES = {
     if (sub) return sub;
     return p[0] === 'report' ? `Uçuş raporu #${p[1]}` : d ? `Dron Yönetimi · ${d}${p[1] ? ` #${p[1]}` : ''}` : p.join('/');
   },
-  tools: p => (p[0] === 'flight-log' ? `Uçuş Logu Analizi${p[1] ? ` · Rapor #${p[1]}` : ''}` : p.join('/')),
+  tools: p => (p[0] === 'flight-log' ? `Uçuş Logu Analizi${p[1] ? ` · Rapor #${p[1]}` : ''}`
+    : ({ ssh: 'SSH Master', ftp: 'FTP Master', sql: 'SQL Master', notepad: 'Notepad Master', convert: 'Convert Master', volfai: 'VOLFAI' }[p[0]] || p.join('/'))),
 };
 let currentPage = null;
 let hiddenPage = null;   // sekme arka plandayken kapatılan sayfa; öne gelince yeniden giriş yazılır

@@ -1,0 +1,106 @@
+"""Araçlar › Master Tool web sürümleri — ortak yardımcılar.
+
+Yetki: Araçlar modülü (auth.require_module('tools')). WebSocket uçları oturum çerezini doğrular (ws_user).
+Bağlantı bilgileri (sunucu/kullanıcı/parola) yalnız süreç belleğinde tutulur; veritabanına PAROLA YAZILMAZ.
+Geçici dosyalar DATA_DIR/tools/tmp altında saklanır ve 1 saat sonra silinir.
+"""
+import asyncio
+import re
+import secrets
+import time
+from pathlib import Path
+
+from .. import auth, config
+
+tools_user = auth.require_module('tools')
+
+TOOLS_DIR = config.DATA_DIR / 'tools'
+TMP_DIR = TOOLS_DIR / 'tmp'
+TMP_TTL = 3600   # geçici dosya ömrü (sn)
+_last_sweep = [0.0]
+
+HOST_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9.\-:\[\]_]{0,252}$')   # alan adı / IPv4 / IPv6 — başta '-' yok (ssh seçeneği sanılmasın)
+USER_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._\-@]{0,63}$')
+
+
+def _ws_lookup(token):
+    from ..drone_hub import _ws_user   # oturum çerezi → kullanıcı + roller + modül izinleri (/ws/drone/live kalıbı)
+    u = _ws_user(token)
+    return u if u and 'tools' in u.get('modules', []) else None
+
+
+async def ws_user(ws):
+    """WebSocket için oturum çerezinden kullanıcı; Araçlar modülü yetkisi yoksa None."""
+    return await asyncio.to_thread(_ws_lookup, ws.cookies.get(auth.COOKIE))
+
+
+def check_host(host: str) -> str:
+    host = (host or '').strip()
+    if not HOST_RE.match(host):
+        raise ValueError('Geçersiz sunucu adresi')
+    return host
+
+
+def check_port(port) -> int:
+    try:
+        p = int(port)
+    except (TypeError, ValueError):
+        raise ValueError('Geçersiz port') from None
+    if not (1 <= p <= 65535):
+        raise ValueError('Geçersiz port')
+    return p
+
+
+def check_user(name: str) -> str:
+    name = (name or '').strip()
+    if not USER_RE.match(name):
+        raise ValueError('Geçersiz kullanıcı adı')
+    return name
+
+
+def safe_name(name: str, default='dosya') -> str:
+    """Dosya adı: dizin ayracı/kontrol karakteri yok, gizli dosya yok, en çok 120 karakter."""
+    name = (name or '').replace('\\', '/').split('/')[-1].strip()
+    name = re.sub(r'[\x00-\x1f\x7f]', '', name).lstrip('.')
+    return (name or default)[:120]
+
+
+def user_dir(kind: str, uid: int) -> Path:
+    p = TOOLS_DIR / kind / str(int(uid))
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def sweep_tmp(force=False):
+    """1 saatten eski geçici dosyaları siler (en çok dakikada bir tarar)."""
+    now = time.time()
+    if not force and now - _last_sweep[0] < 60:
+        return
+    _last_sweep[0] = now
+    if not TMP_DIR.exists():
+        return
+    for p in TMP_DIR.iterdir():
+        try:
+            if p.is_file() and now - p.stat().st_mtime > TMP_TTL:
+                p.unlink()
+        except OSError:
+            pass
+
+
+def new_tmp(name: str) -> tuple[str, Path]:
+    """Geçici çıktı dosyası: (indirme jetonu, yol). Jeton = rastgele + güvenli ad."""
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    sweep_tmp()
+    token = f'{secrets.token_urlsafe(12)}__{safe_name(name)}'
+    return token, TMP_DIR / token
+
+
+def tmp_path(token: str) -> Path:
+    """İndirme jetonu → dosya yolu; yoksa/eskiyse None."""
+    token = safe_name(token, '')
+    if not token or '__' not in token:
+        return None
+    p = TMP_DIR / token
+    if not p.is_file() or time.time() - p.stat().st_mtime > TMP_TTL:
+        return None
+    return p

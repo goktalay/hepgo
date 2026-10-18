@@ -394,6 +394,11 @@ def tlog_yaz(yol, lat0=39.925, lon0=32.837, alt0=900.0, sure=60.0):
                                                int(vn * 100), int(ve * 100), 0, int((math.degrees(yaw) % 360) * 100)), t_abs + t)
             yaz(mav.attitude_encode(int(t * 1000), 0.1 if armed else 0.0, -0.05 if armed else 0.0, yaw, 0, 0, 0), t_abs + t)
             yaz(mav.rc_channels_encode(int(t * 1000), 8, 1500, 1500, 1600 if armed else 1000, 1500, 1800, 1000, 1000, 1500, *([0] * 10), 200), t_abs + t)
+            # servo ÇIKIŞI (3B kontrol yüzeyleri; §8 servo alanı): armed'da aileron +120 µs, gaz 1600, flap kanalı (SERVO5) t ≥ 50'de 1900 (iniş flapı)
+            yaz(mav.servo_output_raw_encode(int(t * 1000), 0, 1620 if armed else 1500, 1480, 1600 if armed else 1000, 1500, 1900 if (armed and t >= 50) else 1100, 1100, 0, 0), t_abs + t)
+            if t == 0:
+                yaz(mav.param_value_encode(b'SERVO5_FUNCTION', 3.0, 9, 1000, 5), t_abs + t)   # servo_fn[4] = 3 (flap_auto)
+                yaz(mav.param_value_encode(b'SERVO12_FUNCTION', 4.0, 9, 1000, 12), t_abs + t)   # 8 kanal dışı: yoksayılır
             yaz(mav.vfr_hud_encode(math.hypot(vn, ve) + 1, math.hypot(vn, ve), int(math.degrees(yaw) % 360), 55 if armed else 0, alt0 + z, 0.0), t_abs + t)
             t = round(t + 0.2, 3)   # 5 Hz
     return arm_t, arm_pos
@@ -422,6 +427,22 @@ def replay_testleri(a, c1, mon_token_login):
     k0, k30 = next(f for f in d['frames'] if f[FI['rc']]), next(f for f in d['frames'] if f[FI['t']] >= 30)
     assert k0[FI['armed']] == 0 and k0[FI['alt_rel']] == 0 and k0[FI['rc']][2] == 1000 and k0[FI['sats']] == 12 and k0[FI['fix']] == 3, k0
     assert k30[FI['armed']] == 1 and 29 <= k30[FI['alt_rel']] <= 31 and k30[FI['mode']] == 1 and k30[FI['rc']][2] == 1600 and 17 <= k30[FI['gs']] <= 18.5 and k30[FI['thr']] == 55, k30
+    # §8 servo alanı (önbellek v3): SERVO_OUTPUT_RAW → servo[8]; SERVOn_FUNCTION → servo_fn (yalnız 1…8)
+    assert R.ONBELLEK_SURUM >= 3 and 'servo' in FI and d['servo_fn'] == [None, None, None, None, 3, None, None, None], d['servo_fn']
+    assert k0[FI['servo']] == [1500, 1480, 1000, 1500, 1100, 1100, 0, 0] and k30[FI['servo']] == [1620, 1480, 1600, 1500, 1100, 1100, 0, 0], (k0[FI['servo']], k30[FI['servo']])
+    k52 = next(f for f in d['frames'] if f[FI['t']] >= 52)
+    assert k52[FI['servo']][4] == 1900, k52[FI['servo']]   # iniş flapı
+    # eski sürüm önbelleği yeniden üretilir
+    eski = R.onbellek_yolu(777001)
+    with gzip.open(eski, 'wt', encoding='utf-8') as f:
+        json.dump({**d, 'v': 2}, f)
+    try:
+        R.onbellek_meta(eski)
+        raise AssertionError('eski önbellek kabul edildi')
+    except ValueError:
+        pass
+    assert R.hazirla(777001, tl)['v'] == R.ONBELLEK_SURUM and R.onbellek_meta(eski)['v'] == R.ONBELLEK_SURUM
+    eski.unlink()
     assert d['start_utc'].startswith('2023-11-14T22:13:20'), d['start_utc']
     # --- flight_logs kaydı (analiz TAMAM) ---
     from app import db
@@ -453,10 +474,14 @@ def replay_testleri(a, c1, mon_token_login):
     assert a.post('/api/drone/sim/sessions', json={'mode': 'ucur', 'log_id': lid}).status_code == 400
     assert a.post('/api/drone/sim/sessions', json={'mode': 'sitl'}).status_code == 400   # type/center_id yok
     assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'time': 'gece'}}).status_code == 400
+    assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'launch': {'method': 'mancinik'}}}).status_code == 400   # §13 kayıtta da doğrulanır
     # görsel model (§12): kayıt kipinde de kütüphaneden seçilir; log tipi (multirotor) ile uyumsuz model 400
     assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'model': {'id': 'builtin:caymaz'}}).status_code == 400
-    s = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'seed': 3, 'time': 'night'}, 'model': 'builtin:quad'}), 201)
+    s = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'seed': 3, 'time': 'night', 'launch': {'method': 'ramp', 'angle_deg': 20}}, 'model': 'builtin:quad'}), 201)
     assert s['mode'] == 'replay' and s['udp_port'] is None and s['type'] == 'multirotor' and s['replay']['log_id'] == lid and s['replay']['file_name'] == 'test-kayit.tlog', s
+    # §8/§13: kalkış yöntemi kayıt oturumunda kabul edilir (world.launch) ve session.launch döner; log kopter → yöntem wheels'a normalize, phase hep None
+    assert s['world']['launch'] == {'method': 'ramp', 'angle_deg': 20.0, 'release_kmh': 70} and s['launch'] == {'method': 'wheels', 'angle_deg': 20.0, 'release_kmh': 70, 'phase': None}, (s['world']['launch'], s['launch'])
+    assert R.ReplaySession.__init__ and flightsim.launch_normalize('sabit_kanat', s['world']['launch'])['method'] == 'ramp'   # ArduPlane logunda rampa korunur
     assert s['model']['id'] == 'builtin:quad' and s['model']['source'] == 'builtin' and s['model']['ready'] is True, s['model']
     assert s['world']['time'] == 'night' and s['gcs'] == {'connected': False, 'addr': None, 'since': None} and s['state'] in ('BASLIYOR', 'HAZIR'), s
     # §8 kök neden: merkez (kalkış noktası) ayrıştırma bitmeden de analiz özetinden bilinir → ön yüz dünyayı (0,0)'da kurmaz
@@ -481,7 +506,7 @@ def replay_testleri(a, c1, mon_token_login):
     token = a.cookies.get(auth.COOKIE)
     with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
         hh = json.loads(ws.receive_text())
-        assert hh['t'] == 'hello' and hh['session']['mode'] == 'replay' and hh['session']['state'] == 'HAZIR' and hh['session']['replay']['frames'] == d['n'], hh
+        assert hh['t'] == 'hello' and hh['session']['mode'] == 'replay' and hh['session']['state'] == 'HAZIR' and hh['session']['replay']['frames'] == d['n'] and hh['session']['launch']['phase'] is None, hh
         ws.send_text(json.dumps({'t': 'rc', 'ch': [1500] * 8}))
         ws.send_text(json.dumps({'t': 'cmd', 'name': 'reset', 'rid': 'r1'}))
         gor = {}

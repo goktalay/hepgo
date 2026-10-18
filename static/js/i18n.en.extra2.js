@@ -1076,4 +1076,5 @@ registerCatalog('en', {
   "Sanal dronla uçuşta HEPGO panelinden ya da Mission Planner'dan değiştirilen parametreler kalıcıdır: aynı dronla SITL yeniden başlatılınca varsayilan.parm ile ve ilk kalp atışında PARAM_SET ile geri yüklenir.": "Parameters changed from the HEPGO panel or Mission Planner while flying the virtual drone are persistent: when SITL is restarted with the same drone they are restored via varsayilan.parm and re-written with PARAM_SET on the first heartbeat.",
   "Yüklenemedi": "Could not load",
   "SITL (araç)": "SITL (vehicle)",
+  "Kayıttaki sabit kanat uçağın kalkış düzeneği: rampa ya da araç 3B sahnede kurulur; ARM, fırlatma ve bırakma aşamaları logdan (ARM anı, ilk hareket, yer hızı/irtifa) türetilir. SITL parametresi yazılmaz.": "Launch rig for the fixed-wing aircraft in the recording: the ramp or vehicle is built in the 3D scene; the ARM, launch and release phases are derived from the log (ARM time, first movement, ground speed/altitude). No SITL parameters are written.",
 });

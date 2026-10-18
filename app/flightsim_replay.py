@@ -4,12 +4,15 @@ Kullanıcı sisteme yüklenmiş bir uçuş logunu (flight_logs: ArduPilot DataFl
 AÇILMAZ, komut yok: log sunucuda bir kez ayrıştırılır, sabit frekansta (REPLAY_HZ, varsayılan 25 Hz) yeniden örneklenir, gzip JSON
 olarak önbelleğe yazılır (`DATA_DIR/sim_replay/<log_id>.json.gz`) ve tarayıcı kareleri tek seferde çekip 3B dünyada oynatır.
 
-Kare biçimi (`fields` ile aynı sırada dizi; `rc` 8 kanallı iç dizi):
+Kare biçimi (`fields` ile aynı sırada dizi; `rc` ve `servo` 8 kanallı iç dizi):
   [t, lat, lon, alt_msl, alt_rel, roll, pitch, yaw (rad), vn, ve, vd (m/s), gs, as (m/s), hdg (°), thr (%), mode (modes dizini),
-   armed (0/1), batt_v, batt_pct, sats, fix, rc]
+   armed (0/1), batt_v, batt_pct, sats, fix, rc, servo]
+  `servo`: servo ÇIKIŞLARI µs (DataFlash RCOU C1…C8 · tlog SERVO_OUTPUT_RAW servo1…8_raw) — 3B kontrol yüzeylerinin (elevon/aileron/elevator/
+  rudder/flap) birincil kaynağı (§5, §8). `rc` RC GİRİŞİ (RCIN / RC_CHANNELS): AUTO/TAKEOFF gibi modlarda kumanda ortada durur, yüzeyler otopilotun
+  servo çıkışıyla oynar; bu yüzden yalnız `rc` ile kayıtta flap/elevon hareket etmiyordu (sürüm 3 ile `servo` eklendi).
 Önbellek JSON: {v, hz, fields, frames, modes:[ad…], events:[{t,text,sev}], duration_s, home:{lat,lon,alt}, takeoff_t, start_utc,
-                vehicle, type, n}
-- `home`: ilk ARM anındaki konum (ARM/EV 10 · tlog: HEARTBEAT armed geçişi); yoksa ORGN/HOME_POSITION; yoksa ilk geçerli konum.
+                vehicle, type, n, servo_fn:[SERVO1…8_FUNCTION | null] (PARM / PARAM_VALUE; 3B flap/elevon kanal eşlemesi için)}
+- `home`: ilk ARM anındaki konum (ARM/EV 10/STAT.Armed · tlog: HEARTBEAT armed geçişi); yoksa ORGN/HOME_POSITION; yoksa ilk geçerli konum.
   `home.alt` MSL; `alt_rel = alt_msl − home.alt` (3B dünyada pist seviyesi 0 = merkez alt).
 - Alanlar ArduPilot sürümüne göre değişir (NKF1/XKF1, ThO/ThrOut, BAT.RemPct…); okuma toleranslıdır (flightlog.analyze kalıbı).
 """
@@ -18,6 +21,7 @@ import gzip
 import json
 import math
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -26,12 +30,14 @@ from . import config, db
 REPLAY_HZ = int(os.environ.get('SIM_REPLAY_HZ', '25'))          # 20–50 Hz
 REPLAY_MAX_FRAMES = 150000                                       # üstü seyreltilir (2 saat × 25 Hz = 180k)
 MAX_EVENTS = 400
-ONBELLEK_SURUM = 2
+ONBELLEK_SURUM = 3   # 3: `servo` kare alanı + `servo_fn` (kayıtta kontrol yüzeyleri)
 FIELDS = ['t', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'gs', 'as', 'hdg', 'thr', 'mode', 'armed',
-          'batt_v', 'batt_pct', 'sats', 'fix', 'rc']
-BIN_TIPLERI = ['GPS', 'POS', 'ATT', 'RCIN', 'BAT', 'CURR', 'MODE', 'ARM', 'EV', 'MSG', 'NKF1', 'XKF1', 'CTUN', 'ARSP', 'ORGN']
-TLOG_TIPLERI = ['HEARTBEAT', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'SYS_STATUS', 'VFR_HUD', 'GPS_RAW_INT',
-                'STATUSTEXT', 'HOME_POSITION']
+          'batt_v', 'batt_pct', 'sats', 'fix', 'rc', 'servo']
+BIN_TIPLERI = ['GPS', 'POS', 'ATT', 'RCIN', 'RCOU', 'BAT', 'CURR', 'MODE', 'ARM', 'EV', 'STAT', 'MSG', 'NKF1', 'XKF1', 'CTUN', 'ARSP', 'ORGN', 'PARM']
+TLOG_TIPLERI = ['HEARTBEAT', 'GLOBAL_POSITION_INT', 'ATTITUDE', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'SERVO_OUTPUT_RAW', 'SYS_STATUS', 'VFR_HUD',
+                'GPS_RAW_INT', 'STATUSTEXT', 'HOME_POSITION', 'PARAM_VALUE']
+SERVO_N = 8
+_SERVO_FN_RE = re.compile(r'^SERVO(\d+)_FUNCTION$')
 UZANTILAR = ('.bin', '.log', '.tlog')
 
 
@@ -87,7 +93,8 @@ class _Toplayici:
         self.adim = 1.0 / hz
         self.cur = {'lat': None, 'lon': None, 'alt_msl': None, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'vn': None, 've': None, 'vd': None,
                     'gs': None, 'as': None, 'hdg': None, 'thr': None, 'mode': None, 'armed': 0, 'batt_v': None, 'batt_pct': None,
-                    'sats': None, 'fix': None, 'rc': None}
+                    'sats': None, 'fix': None, 'rc': None, 'servo': None}
+        self.servo_fn = [None] * SERVO_N   # SERVOn_FUNCTION (PARM/PARAM_VALUE); 3B flap (2/3) ve elevon (77/78) kanal eşlemesi
         self.frames = []
         self.events = []
         self.modes = []          # ad listesi (kare 'mode' dizini)
@@ -138,6 +145,14 @@ class _Toplayici:
                 self.home_bekliyor = True   # ARM konumdan önce geldi (kayıt kurulu başladı): ilk konumda ev atanır
             self.takeoff_t = t
 
+    def parametre(self, ad, deger):
+        m = _SERVO_FN_RE.match(str(ad or '').strip().rstrip('\x00'))
+        if m and 1 <= int(m.group(1)) <= SERVO_N and deger is not None:
+            try:
+                self.servo_fn[int(m.group(1)) - 1] = int(float(deger))
+            except (TypeError, ValueError):
+                pass
+
     def olay(self, t, text, sev=6):
         if len(self.events) < MAX_EVENTS:
             self.events.append({'t': _r(t, 2), 'text': str(text)[:200], 'sev': int(sev)})
@@ -154,7 +169,7 @@ class _Toplayici:
         self.frames.append([_r(t, 3), round(c['lat'], 7), round(c['lon'], 7), _r(c['alt_msl'], 2), None, _r(c['roll'], 4), _r(c['pitch'], 4),
                             _r(c['yaw'], 4), _r(c['vn'], 2), _r(c['ve'], 2), _r(c['vd'], 2), _r(c['gs'], 2), _r(c['as'], 2), _r(c['hdg'], 1),
                             _r(c['thr'], 1), c['mode'], c['armed'], _r(c['batt_v'], 2), c['batt_pct'], c['sats'], c['fix'],
-                            list(c['rc']) if c['rc'] else None])
+                            list(c['rc']) if c['rc'] else None, list(c['servo']) if c['servo'] else None])
 
     def bitir(self, kaynak):
         if len(self.frames) < 2:
@@ -186,7 +201,7 @@ class _Toplayici:
         return {'v': ONBELLEK_SURUM, 'hz': self.hz, 'fields': FIELDS, 'frames': frames, 'modes': self.modes, 'events': self.events,
                 'duration_s': _r(duration, 2), 'home': {'lat': round(home[0], 7), 'lon': round(home[1], 7), 'alt': _r(home[2], 2)},
                 'takeoff_t': _r(self.takeoff_t, 2), 'start_utc': self.start_utc, 'vehicle': self.vehicle, 'type': arac_tipi(self.vehicle),
-                'n': len(frames), 'source': kaynak}
+                'n': len(frames), 'source': kaynak, 'servo_fn': list(self.servo_fn)}
 
 
 def _mode_names(firmware):
@@ -195,7 +210,8 @@ def _mode_names(firmware):
 
 
 def _bin_ayristir(path, hz, ilerleme=None):
-    """ArduPilot DataFlash (.bin / .log): GPS/POS, ATT, RCIN, BAT, MODE, ARM/EV, MSG, NKF1/XKF1 (VN/VE/VD), CTUN, ARSP, ORGN."""
+    """ArduPilot DataFlash (.bin / .log): GPS/POS, ATT, RCIN, RCOU (servo çıkışı), BAT, MODE, ARM/EV, MSG, NKF1/XKF1 (VN/VE/VD), CTUN, ARSP,
+    ORGN, PARM (SERVOn_FUNCTION)."""
     from pymavlink import mavutil
     from .flightlog import WARN_RE
     log = mavutil.mavlink_connection(str(path), zero_time_base=False, progress_callback=ilerleme) if ilerleme else \
@@ -254,6 +270,11 @@ def _bin_ayristir(path, hz, ilerleme=None):
             c['hdg'] = float(m.Yaw) % 360.0
         elif tp == 'RCIN':
             c['rc'] = [int(getattr(m, f'C{i}', 0) or 0) for i in range(1, 9)]
+        elif tp == 'RCOU':
+            c['servo'] = [int(getattr(m, f'C{i}', 0) or 0) for i in range(1, SERVO_N + 1)]
+        elif tp == 'PARM':
+            T.parametre(getattr(m, 'Name', None), getattr(m, 'Value', None))
+            continue   # parametre kare yazdırmaz
         elif tp in ('BAT', 'CURR'):
             if getattr(m, 'Inst', getattr(m, 'Instance', 0)) not in (0, None):
                 continue
@@ -272,6 +293,10 @@ def _bin_ayristir(path, hz, ilerleme=None):
                 T.mod_degis(t, names.get(num, f'Mod {num}'))
         elif tp == 'ARM':
             T.arm(t, bool(m.ArmState))
+        elif tp == 'STAT':
+            # ArduPlane durum mesajı (Armed 0/1, ~5 Hz). KÖK NEDEN: ARM sonrası başlayan kayıtlarda (LOG_DISARMED 0 — SITL .bin kaydı dahil) ARM/EV 10
+            # olayı logda yoktur → `armed` hiç 1 olmuyordu → kayıtta motor sesi ve kontrol yüzeyleri (ctrlInputs disarm → nötr) hiç çalışmıyordu.
+            T.arm(t, bool(getattr(m, 'Armed', 0)))
         elif tp == 'EV':
             if m.Id in (10, 11):
                 T.arm(t, m.Id == 10)
@@ -366,6 +391,11 @@ def _tlog_ayristir(path, hz):
                 c['hdg'] = math.degrees(m.yaw) % 360.0
         elif tp in ('RC_CHANNELS', 'RC_CHANNELS_RAW'):
             c['rc'] = [int(getattr(m, f'chan{i}_raw', 0) or 0) for i in range(1, 9)]
+        elif tp == 'SERVO_OUTPUT_RAW':
+            c['servo'] = [int(getattr(m, f'servo{i}_raw', 0) or 0) for i in range(1, SERVO_N + 1)]
+        elif tp == 'PARAM_VALUE':
+            T.parametre(m.param_id, m.param_value)
+            continue
         elif tp == 'SYS_STATUS':
             c['batt_v'] = m.voltage_battery / 1000.0 if m.voltage_battery not in (65535, 0) else c['batt_v']
             c['batt_pct'] = m.battery_remaining if m.battery_remaining >= 0 else None
@@ -494,6 +524,9 @@ class ReplaySession:
         self.log = dict(log)                 # flight_logs satırı: id, file, file_name, size, aircraft, …
         self.world, self.owner, self.yonetici = world, owner, yonetici
         self.type = arac_tipi(log.get('vehicle'))
+        # Sabit kanat kalkış yöntemi (§13) kayıtta da: world.launch (sunucu doğruladı) → session.launch; düzenek/aşamalar ön yüzde logdan türetilir
+        # (sunucu `launch` olayı yaymaz, `phase` her zaman None). Tip HAZIR'da firmware'den kesinleşince yeniden normalize edilir.
+        self.launch = flightsim.launch_normalize(self.type, (world or {}).get('launch'))
         # Merkez = kaydın kalkış noktası. Ayrıştırma bitmeden de bilinsin (ön yüz dünyayı doğru yerde kurar; §8 kök neden: BASLIYOR'da
         # center null → 3B dünya (0,0)'da yükleniyordu): uçuş logu analizinin özetindeki ev (home.lat/lng/alt) ön değer; ayrıştırma
         # sonucu (ilk ARM konumu) HAZIR'da üzerine yazar.
@@ -519,7 +552,7 @@ class ReplaySession:
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
         return {'id': self.id, 'mode': 'replay', 'type': self.type, 'model': dict(self.model) if self.model else None,
-                'center': dict(self.center), 'world': dict(self.world), 'state': self.state,
+                'center': dict(self.center), 'world': dict(self.world), 'state': self.state, 'launch': {**self.launch, 'phase': None},
                 'udp_port': None, 'host': host or self._fs.PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'client': dict(self.client) if self.client else None,
                 'gcs': {'connected': False, 'addr': None, 'since': None}, 'sitl': dict(self.sitl), 'replay': dict(self.replay)}
@@ -585,6 +618,7 @@ class ReplaySession:
                                    takeoff_t=meta.get('takeoff_t'), start_utc=meta.get('start_utc'), vehicle=meta.get('vehicle') or self.replay['vehicle'],
                                    modes=meta.get('modes'))
                 self.type = meta.get('type') or self.type
+                self.launch = self._fs.launch_normalize(self.type, self.world.get('launch'))
                 h = meta.get('home') or {}
                 self.center.update(lat=h.get('lat'), lon=h.get('lon'), alt=h.get('alt'))
                 self._olay(f'Kayıt hazır: {meta.get("n")} kare · {meta.get("duration_s")} sn', 6)

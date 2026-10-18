@@ -4,8 +4,8 @@
 // ilk etkileşim (resume) kilidi, sekme gizlenme, oynatma hızı ≥ 2× sessizliği, FPV kokpit, kalkış efektleri, çarpışma, dispose.
 // Çalıştırma: node tests/test_flightsim_audio.mjs
 import assert from 'node:assert/strict';
-import { AUDIO_MODELS, MOTOR_RATIOS, REF_DISTANCE, TAU_UP, TAU_DOWN, audioModel, copterBpf, planeRpm, firingHz, heliBpf, vtolMix, vehicleRpm,
-  engineTargets, smoothFollow, distanceGain, fpvParams, dopplerFactor, createAudioPrefs, createEngineAudio } from '../static/js/modules/flightsim_audio.js';
+import { AUDIO_MODELS, MOTOR_RATIOS, REF_DISTANCE, TAU_UP, TAU_DOWN, SPIN_UP, SPIN_DOWN, COPTER_IDLE, audioModel, copterBpf, planeRpm, firingHz, heliBpf, vtolMix, vehicleRpm,
+  engineTargets, smoothFollow, spinStep, distanceGain, fpvParams, dopplerFactor, createAudioPrefs, createEngineAudio } from '../static/js/modules/flightsim_audio.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log('  ✓', name); };
@@ -287,6 +287,50 @@ test('kayıttan oynatma: tele biçimi aynı (thr/armed/airspeed) → kopter sesi
   for (let i = 0; i < 20; i++) tick(a, { armed: true, throttle: 55, airspeed: 4, groundspeed: 4, mode: 'AUTO' });
   assert.ok(a.graph.copter.bus.gain.value > 0.3);
   const u = a.stats.updates; a.dispose(); tick(a, { armed: true, throttle: 55 }); assert.equal(a.stats.updates, u);
+});
+test('ARM rampası (saf): spinStep kopter 0,6 sn / heli 3 sn / uçak 0,8 sn ile 0 → 1, DISARM 1 sn ile 1 → 0; kopter rölanti belirgin (≥ 0,3)', () => {
+  assert.deepEqual(SPIN_UP, { copter: 0.6, heli: 3.0, plane: 0.8, vtol: 0.6 }); assert.equal(SPIN_DOWN, 1.0);
+  let v = 0; for (let i = 0; i < 6; i++) v = spinStep(v, true, 0.05, 'copter'); close(v, 0.5, 1e-9);      // 0,3 sn → yarı devir
+  for (let i = 0; i < 6; i++) v = spinStep(v, true, 0.05, 'copter'); close(v, 1, 1e-9);                    // 0,6 sn → rölanti
+  for (let i = 0; i < 10; i++) v = spinStep(v, false, 0.05, 'copter'); close(v, 0.5, 1e-9);               // DISARM 0,5 sn → yarı
+  for (let i = 0; i < 10; i++) v = spinStep(v, false, 0.05, 'copter'); close(v, 0, 1e-9);                 // 1 sn → sessiz
+  let h = 0; for (let i = 0; i < 20; i++) h = spinStep(h, true, 0.05, 'heli'); close(h, 1 / 3, 1e-9);     // heli 1 sn → 1/3 (3 sn'de tam)
+  let pl = 0; for (let i = 0; i < 8; i++) pl = spinStep(pl, true, 0.05, 'plane'); close(pl, 0.5, 1e-9);   // uçak 0,4 sn → yarı (marş sürüyor)
+  close(spinStep(0.5, true, -1, 'copter'), 0.5); close(spinStep(2, true, 0, 'x'), 1); close(spinStep(null, true, 0.3, 'copter'), 0.5, 1e-9);
+  assert.ok(COPTER_IDLE >= 0.3); close(engineTargets('multirotor', { armed: true, throttle: 0 }).copter, COPTER_IDLE);
+});
+test('ARM sesi grafikte: kopter ARM anında düşük, 0,6 sn sonra rölanti (bus ≥ 0,3, 150 Hz); DISARM 1 sn\'de 0; uçak marş 0,8 sn sonra susar; heli 3 sn sarmal', () => {
+  const a = mk('multirotor'); a.unlock();
+  for (let i = 0; i < 20; i++) tick(a, { armed: false, throttle: 0 });
+  assert.equal(a.graph.copter.bus.gain.value, 0, 'disarm sessiz');
+  tick(a, { armed: true, throttle: 0 });   // ARM anı: ilk kare (dt 0,05) → spin 1/12
+  const g0 = a.graph.copter.bus.gain.value; assert.ok(g0 > 0 && g0 < 0.1, `ARM anında rampa başı: ${g0}`); close(a.smooth.spin, 1 / 12, 1e-9);
+  for (let i = 0; i < 5; i++) tick(a, { armed: true, throttle: 0 });   // 0,3 sn → yarı
+  close(a.smooth.spin, 0.5, 1e-9); assert.ok(a.graph.copter.motors[0].o.frequency.value < 150 && a.graph.copter.motors[0].o.frequency.value > 90, 'devir yükseliyor');
+  for (let i = 0; i < 8; i++) tick(a, { armed: true, throttle: 0 });
+  close(a.smooth.spin, 1); close(a.graph.copter.bus.gain.value, COPTER_IDLE, 1e-9); close(a.graph.copter.motors[0].o.frequency.value, 150, 1e-6);   // rölanti: belirgin vızıltı
+  for (let i = 0; i < 10; i++) tick(a, { armed: false, throttle: 0 });   // DISARM 0,5 sn → yarı
+  close(a.smooth.spin, 0.5, 1e-9); close(a.graph.copter.bus.gain.value, COPTER_IDLE * 0.5, 1e-9);
+  for (let i = 0; i < 12; i++) tick(a, { armed: false, throttle: 0 });
+  assert.equal(a.graph.copter.bus.gain.value, 0, 'DISARM 1 sn sonra sessiz'); a.dispose();
+  // kayıtta aynı yol: replay kareleri armed taşır
+  const r = mk('multirotor', { replay: true }); r.unlock();
+  tick(r, { armed: true, throttle: 0, mode: 'STABILIZE' }); assert.ok(r.graph.copter.bus.gain.value > 0, 'kayıtta ARM anında ses başlar'); r.dispose();
+  // uçak: marş
+  const p = mk('sabit_kanat'); p.unlock();
+  tick(p, { armed: false }); assert.equal(p.graph.plane.starter.g.gain.value, 0);
+  tick(p, { armed: true, throttle: 0 }); close(p.graph.plane.starter.g.gain.value, 0.22); assert.ok(p.graph.plane.starterN.g.gain.value > 0, 'marş gürültüsü');
+  const fire0 = p.graph.plane.fire.o.frequency.value; assert.ok(fire0 < 25 && fire0 > 2, `marşta ateşleme rölantinin altında: ${fire0}`);
+  for (let i = 0; i < 16; i++) tick(p, { armed: true, throttle: 0 });   // 0,85 sn
+  close(p.smooth.spin, 1); assert.equal(p.graph.plane.starter.g.gain.value, 0, 'marş sustu'); close(p.graph.plane.fire.o.frequency.value, 25, 1e-6); close(p.graph.plane.bus.gain.value, 0.3, 1e-9);
+  for (let i = 0; i < 22; i++) tick(p, { armed: false, throttle: 0 });
+  assert.equal(p.graph.plane.bus.gain.value, 0, 'uçak DISARM 1 sn sonra sessiz'); assert.equal(p.graph.plane.starter.g.gain.value, 0); p.dispose();
+  // heli: 3 sn sarmal
+  const hh = mk('helikopter'); hh.unlock();
+  for (let i = 0; i < 20; i++) tick(hh, { armed: true, throttle: 0 });   // 1 sn → 1/3
+  close(hh.smooth.spin, 1 / 3, 1e-9); const lfo1 = hh.graph.heli.lfo.frequency.value; assert.ok(lfo1 > 5 && lfo1 < 12, `rotor devir alıyor: ${lfo1}`);
+  for (let i = 0; i < 41; i++) tick(hh, { armed: true, throttle: 0 });
+  close(hh.smooth.spin, 1); close(hh.graph.heli.lfo.frequency.value, 20, 1e-6); close(hh.graph.heli.bus.gain.value, 0.35, 1e-9); hh.dispose();
 });
 test('performans: 50 Hz tele → ≤ 25 Hz işleme; parametre yazımı sınırlı', () => {
   const a = mk('multirotor', { getSim: () => fakeSim() }); a.unlock();

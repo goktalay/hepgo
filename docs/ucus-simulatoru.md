@@ -215,12 +215,28 @@ ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, k
   RCIN (C1–C8), BAT/CURR (Volt, RemPct; Inst 0), MODE (ModeNum → firmware mod adı), ARM/EV 10–11 (ARM/DISARM; ilk ARM = ev + `takeoff_t`),
   EV 25 / ORGN (ev yedeği), MSG (olaylar; uyarı ifadeleri sev 4), NKF1/XKF1 (VN/VE/VD; yoksa GPS Spd/GCrs), CTUN (ThO/ThrOut → gaz %, As),
   ARSP. `.tlog` → `mavutil.mavlogfile` (8 bayt BE µs + çerçeve; `_timestamp`): HEARTBEAT (araç; armed, mod adı), GLOBAL_POSITION_INT,
-  ATTITUDE, RC_CHANNELS(_RAW), SYS_STATUS, VFR_HUD, GPS_RAW_INT, STATUSTEXT, HOME_POSITION. Yeniden örnekleme: sample-and-hold,
-  `SIM_REPLAY_HZ` (25); 150.000 kareyi aşarsa seyreltme. `alt_rel = alt_msl − home.alt`.
-- **Önbellek:** `DATA_DIR/sim_replay/<log_id>.json.gz` = `{v:1, hz, fields, frames, modes, events:[{t,text,sev}], duration_s, home,
-  takeoff_t, start_utc, vehicle, type, n, source}`; `fields` = `[t, lat, lon, alt_msl, alt_rel, roll, pitch, yaw, vn, ve, vd, gs, as, hdg,
-  thr, mode, armed, batt_v, batt_pct, sats, fix, rc]` (rc 8'li iç dizi). Sürüm uyuşmazsa yeniden üretilir; log silinince
-  (`DELETE /api/tools/flight-logs/{id}`) önbellek de silinir. Örnek: 253 MB ArduPlane .bin (97 dk) → 27 sn, 111k kare, 2,4 MB gz.
+  ATTITUDE, RC_CHANNELS(_RAW), SERVO_OUTPUT_RAW, SYS_STATUS, VFR_HUD, GPS_RAW_INT, STATUSTEXT, HOME_POSITION, PARAM_VALUE. Yeniden örnekleme:
+  sample-and-hold, `SIM_REPLAY_HZ` (25); 150.000 kareyi aşarsa seyreltme. `alt_rel = alt_msl − home.alt`.
+- **Önbellek (v3):** `DATA_DIR/sim_replay/<log_id>.json.gz` = `{v:3, hz, fields, frames, modes, events:[{t,text,sev}], duration_s, home,
+  takeoff_t, start_utc, vehicle, type, n, source, servo_fn}`; `fields` = `[t, lat, lon, alt_msl, alt_rel, roll, pitch, yaw, vn, ve, vd, gs, as, hdg,
+  thr, mode, armed, batt_v, batt_pct, sats, fix, rc, servo]` (rc ve servo 8'li iç dizi). Sürüm uyuşmazsa yeniden üretilir (v2 önbellekler ilk açılışta
+  otomatik); log silinince (`DELETE /api/tools/flight-logs/{id}`) önbellek de silinir. Örnek: 253 MB ArduPlane .bin (97 dk) → 37 sn, 112k kare.
+- **Kontrol yüzeyleri kayıtta çalışmıyordu — kök neden (düzeltildi, v3):** kareler yalnız RC **girişini** (`rc` = RCIN / RC_CHANNELS) taşıyordu; 3B
+  `ctrlInputs` servo yoksa `rc`den türetir, ama gerçek uçuşta (AUTO/TAKEOFF/FBWA) kumanda ortada durur ve yüzeyleri otopilotun **servo çıkışı** oynatır;
+  SITL kaydında RC girişi hiç yoksa `rc` null → hiçbir yüzey oynamaz; flap zaten yalnız moddan türetiliyordu (TAKEOFF/LAND). Şimdi DataFlash **RCOU
+  C1…C8** / tlog **SERVO_OUTPUT_RAW servo1…8_raw** → kare `servo` (µs; `tele.servo` ile canlıdaki yol: servo_fn eşlemesi, flap kanalı 2/3, elevon 77/78)
+  ve **PARM/PARAM_VALUE `SERVOn_FUNCTION`** → önbellek `servo_fn` (oynatıcı `tele.servo_fn`e koyar). Örnek .bin: `servo_fn = [78, 77, 70, 61, 0, 0, 0, 0]`
+  (elevon R/L, gaz) → elevonlar servo çıkışıyla oynar; `sim.ctrlState().source === 'servo'`.
+- **Kalkış yöntemi kayıtta (§13):** seçili logun aracı sabit kanat (ArduPlane) ise sihirbazda **Kalkış yöntemi** kartları (tekerlekli / rampa+açı /
+  araç+hız) log listesinin altında görünür (kopter logunda gizli); `world.launch` kayıt oturumuna da gönderilir, sunucu doğrular (400) ve `session.launch`
+  (`phase` hep null; `launch_normalize` log tipine göre, kopter → wheels) döner. Sunucu `launch` olayı YAYMAZ: aşamalar ön yüzde log karelerinden türetilir
+  (`flightsim_launch.js replayLaunchTimeline/replayLaunchPhaseAt`): her ARM segmenti için `arm` (armed 0→1) → **armed** (uçak kızakta/kasada, düzenek
+  uçağın log konumuna demirlenir), ilk hareket (yer hızı > 2 m/s ya da ARM anına göre AGL artışı > 0,5 m) → **launch**, bırakma (rampa: yer hızı ≥ 8 m/s
+  ya da AGL artışı > 3 m; araç: yer hızı ≥ %95 bırakma hızı ya da AGL > 3 m; tekerlekli: AGL > 1 m) → **released**; uçuş sonu DISARM'da released kalır;
+  hareketsiz segmentin (kalkış öncesi kalibrasyon ARM'ı) DISARM'ı → idle (düzenek başa). Oynatıcı zamanına göre uygulanır: her karede `applyReplayLaunch(t)`
+  (değişimde `sim.setLaunchPhase`, panel, olay şeridi — aynı §13 metinleri), atlama/Baştan'da `snap` (geri sarmada düzenek `idle`a döner, released ofset sönümü
+  kurulmaz: uçak doğrudan log konumunda). Kızak kilidi canlıdaki gibi: released'a dek uçak kızakta, sonra log konumu. Ses efektleri (§16: pşşt, kızak, araç
+  motoru) `sim.launchPhase` üzerinden kayıtta da çalışır. Test: `node tests/test_flightsim_launch.mjs`.
 - **WS:** `hello`/`state`(+`replay`)/`event`/`end`; `tele` YOK. İstemci `cmd` yalnız `reset` (diğerleri `res ok:false`); `reset` tüm
   izleyicilere `{t:'replay', action:'reset'}` yayınlar (ön yüz "Baştan"). `rc` yoksayılır.
 - **Ön yüz (`flightsim.js`):** aynı sahne (`flightsim3d.js`; `origin` = ev, çarpışma denetimi kapalı), "● Kayıt" rozeti, kayıt
@@ -426,7 +442,8 @@ Kullanıcı sihirbazda **Sabit Kanat** seçince tip kartlarının altında **Kal
 40–110 km/h, varsayılan 70; araç tipi pickup). Seçim `world.launch = {method: 'wheels'|'ramp'|'vehicle', angle_deg, release_kmh}` olarak gönderilir;
 sunucu doğrular (`launch_dogrula`; aralık dışı/bilinmeyen → 400 `invalid`), `WORLD_DEFAULTS.launch` ile eksikler dolar, üç dünya kipinde de geçerlidir.
 Sabit kanat dışı tiplerde `method` `wheels` olarak normalize edilir (`launch_normalize`). `session.launch = {method, angle_deg, release_kmh, phase}`
-(`phase`: null | armed | launch | released — geç katılan izleyici düzeneği doğru aşamada görür).
+(`phase`: null | armed | launch | released — geç katılan izleyici düzeneği doğru aşamada görür). **Kayıttan oynatmada da sorulur** (sabit kanat log):
+düzenek sahnede, aşamalar logdan türetilir — bkz. §8 "Kalkış yöntemi kayıtta".
 
 **SITL araştırması (gerçek ikili arduplane 4.7.2, pymavlink):** `--model plane-catapult` **vardır** (SIM_Plane `-catapult` son eki: `launch_accel`
 15 m/s², `launch_time` 2 sn **sabit kodlu**; `SIM_LAUNCH*` türü parametre yok, fırlatma pitch'i parametresi yok). Tetik: **servo 7 çıkışı > 1700**
@@ -501,6 +518,8 @@ araç: 2,5 m/s² ivme, bırakma hızında kalkış; tekerlekli: 4 m/s², 12 m/s'
   Başlangıçta kızak pist merkezinde (uçak = SITL evi). `launch`: araç SITL uçağını taşır; `released`: fren.
 - Düzenek pist yönüne döner, dron gibi `MODEL_SCALE` ile büyütülür, gölge düşürür; sihirbaz önizlemesinde de görünür (açı canlı). **Yer** kamerası (4)
   düzenek varsa onun yanından bakar. Dünya yeniden kurulunca (saat/pist yönü) düzenek yeniden kurulur.
+- `setLaunchPhase(p, snap)`: hedef aşama mevcut aşamadan ÖNCE ise (kayıt geri sarma / Baştan) önce `idle` (kızak/araç başa); `snap` released ofset sönümünü
+  (`rel`) kurmaz. Canlıda `snap` kullanılmaz.
 
 **Oturum ekranı:** üst şeritte yöntem rozeti ("Rampa 20°" / "Araç 70 km/h" / "Tekerlekli"), sağ panelde "Kalkış" satırı, **Kalkış** düğmesi
 yönteme göre "Fırlat" / "Aracı sür" / "Kalkış" (modal ipucu yönteme göre), olay şeridinde aşamalar (FIRLATMA, BIRAKILDI · 68 km/h, …), askeri HUD sol
@@ -661,7 +680,13 @@ yalnız aktif istemci, CORS yok (OPTIONS 204). Testler `tests/test_caysim.py`. A
   %4'e kadar düşer; disarm = sessiz. **helikopter** ana rotor "wop-wop" (20–30 Hz LFO ile genlik modülasyonlu alçak gürültü + harmonik), türbin ıslığı
   900–1500 Hz, kuyruk rotoru (×5,5). **sabit_kanat** (delta/caymaz aynı) benzinli tek silindirli iki zamanlı: devir 1500 (rölanti) → 7500 d/dk,
   ateşleme f = devir/60 × silindir (25 → 125 Hz) testere + alt harmonik kare + egzoz gürültüsü (lowpass gazla açılır) + 2 pala pervane; armed + gaz 0 = rölanti,
-  disarm sessiz. **vtol** kopter + uçak, karışım hava hızına göre (5 → 20 m/s). **Kalkış yöntemi** (§13): rampa `launch` → pnömatik "pşşt" (bant
+  disarm sessiz.
+- **ARM sesi (kullanıcı isteği: "ARM olduğunda motor çalışıp ses çıksın")** — `spinStep(cur, armed, dt, kind)` 0…1 motor durumu, kazanç ve devir bununla
+  çarpılır: ARM geçişinde devir 0 → rölanti rampası **kopter 0,6 sn** (ESC başlatma; rölanti kazancı `COPTER_IDLE` 0,3 — belirgin vızıltı, pala geçişi
+  150 Hz × 0,35 → 150 Hz), **helikopter 3 sn** rotor sarmalı (LFO 3 → 20 Hz, türbin ile), **sabit kanat 0,8 sn marş** ("cranking": testere 80–120 Hz +
+  bant geçiren gürültü `starter/starterN`, ateşleme rölantinin altından çıkar) sonra rölanti; **DISARM'da 1 sn'de sönme** (`SPIN_DOWN`). Canlıda ve kayıtta
+  aynı yol (replay kareleri `armed` taşır; ARM anında ses başlar); Bitir/dispose → duruş. Önceki davranış: kazanç ARM'da anında 0,22'ye sıçrıyor, DISARM'da
+  anında kesiliyordu (rampa yok). Test: `node tests/test_flightsim_audio.mjs` ("ARM rampası", "ARM sesi grafikte"). **vtol** kopter + uçak, karışım hava hızına göre (5 → 20 m/s). **Kalkış yöntemi** (§13): rampa `launch` → pnömatik "pşşt" (bant
   geçiren gürültü patlaması), `released` → kızak çarpması (80 Hz vuruş); araç → pickup V8 motoru (800 → 4500 d/dk yer hızıyla), `released` → fren
   gıcırtısı, rölantiye düşer ve susar. Aşama `sim.launchPhase` getter'ından okunur (flightsim.js'e ek bağlantı yok).
 - **Kaynak**: `tele.throttle`, `armed`, `airspeed/groundspeed` (rüzgâr/uğultu), `rs/ps/ys` (±%1,5 titreme), `batt_pct`. Devir gazı üstel yumuşatmayla izler

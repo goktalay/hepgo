@@ -5,6 +5,8 @@
 //   Aşamalar (setPhase): idle → launch (rampa: kızak 6 m'yi 0,5 sn'de ivmelenir; araç: SITL uçağını taşır) → released (uçak SITL konumuna yumuşak
 //   geçiş; rampa kızağı geri döner, araç frenler) → free. update(dt, ctx) her karede: ctx = { planeLocal:{x,y} (SITL uçağının rig yerel konumu, m), speed }.
 //   Düzenek pist başında sabittir (anchor bir kez; needsAnchor > 2 m sıçramada yeniden); uçak released'a dek kızağa kilitlidir (SITL konumu yok sayılır).
+// • Kayıttan oynatma (§8): sunucu `launch` olayı yaymaz; aşamalar log karelerinden türetilir (`replayLaunchTimeline` → `replayLaunchPhaseAt`),
+//   oynatıcı zamanına göre (atlama/baştan ile yeniden hesaplanır).
 const DEG = Math.PI / 180;
 export const LAUNCH_METHODS = [
   ['wheels', 'Tekerlekli kalkış', 'Burun ve ana iniş takımı eklenir; uçak pist boyunca hızlanır, döndürme hızında havalanır (ArduPlane TAKEOFF).'],
@@ -299,4 +301,42 @@ export function createLaunchRig(T, cfg) {
     sidePoint: (dx, dy, dz) => tmp.set(dx * scale, dy * scale, dz * scale).applyQuaternion(tmpQ.setFromEuler(new T.Euler(0, 0, root.rotation.z))),   // yer kamerası için yan nokta
     dispose() { root.traverse(o => { o.geometry?.dispose?.(); const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []); ms.forEach(m => m.dispose?.()); }); root.removeFromParent(); },
   };
+}
+
+// ---------- kayıttan oynatma: aşamalar logdan (§8) ----------
+// frames: önbellek kareleri (fields sırası), FI: alan → dizin. Her ARM segmenti için { arm, launch, release, disarm }:
+//   arm: `armed` 0→1 anı · launch: ilk hareket (yer hızı > 2 m/s ya da ARM anına göre AGL artışı > 0,5 m) · release: yönteme göre bırakma
+//   (rampa: yer hızı ≥ 8 m/s ya da AGL artışı > 3 m — SITL dizisiyle aynı eşik; araç: yer hızı ≥ %95 bırakma hızı ya da AGL > 3 m; tekerlekli: AGL > 1 m)
+//   · disarm: `armed` 1→0 (yoksa null). Gerçek loglarda kalkış öncesi kalibrasyon ARM'ları hareketsiz segment olur → DISARM'da düzenek `idle`a döner.
+export const REPLAY_MOVE_SPEED = 2, REPLAY_RAMP_RELEASE = 8, REPLAY_RELEASE_AGL = 3, REPLAY_MOVE_CLIMB = 0.5, REPLAY_WHEELS_AGL = 1;
+export function replayLaunchTimeline(frames, FI, launch) {
+  const segs = [];
+  const col = (f, k) => (FI?.[k] == null ? null : f[FI[k]]);
+  const m = launch?.method || 'wheels', relSpeed = m === 'ramp' ? REPLAY_RAMP_RELEASE : m === 'vehicle' ? 0.95 * (Number(launch?.release_kmh) || 70) / 3.6 : Infinity;
+  const relClimb = m === 'wheels' ? REPLAY_WHEELS_AGL : REPLAY_RELEASE_AGL;
+  let cur = null, prevArmed = false, agl0 = null;
+  for (const f of frames || []) {
+    const t = col(f, 't') ?? f[0], armed = !!col(f, 'armed'), gs = Number(col(f, 'gs')) || 0, agl = col(f, 'alt_rel');
+    if (armed && !prevArmed) { cur = { arm: t, launch: null, release: null, disarm: null }; agl0 = agl; segs.push(cur); }
+    else if (!armed && prevArmed && cur) { cur.disarm = t; cur = null; }
+    if (cur && armed) {
+      if (agl0 == null) agl0 = agl;
+      const climb = agl != null && agl0 != null ? agl - agl0 : 0;
+      if (cur.launch == null && (gs > REPLAY_MOVE_SPEED || climb > REPLAY_MOVE_CLIMB)) cur.launch = t;
+      if (cur.launch != null && cur.release == null && (gs >= relSpeed || climb > relClimb)) cur.release = t;
+    }
+    prevArmed = armed;
+  }
+  return segs;
+}
+// t anındaki aşama: ARM öncesi 'idle'; ARM → 'armed'; ilk hareket → 'launch'; bırakma → 'released' (uçuş sonu DISARM'da kalır); hareketsiz
+// segmentin DISARM'ı → 'idle' (uçak yeniden kızağa oturur).
+export function replayLaunchPhaseAt(segs, t) {
+  let s = null;
+  for (const x of segs || []) { if (x.arm <= t) s = x; else break; }
+  if (!s) return 'idle';
+  if (s.disarm != null && t >= s.disarm) return s.release != null ? 'released' : 'idle';
+  if (s.release != null && t >= s.release) return 'released';
+  if (s.launch != null && t >= s.launch) return 'launch';
+  return 'armed';
 }

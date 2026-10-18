@@ -8,7 +8,8 @@
 //   küçük frekans çarpanı (±%5 sınır). Çarpışma (crash bandı görünür): kısa çarpma + motor durması; "Sıfırla" ile yeniden.
 // Ses modelleri (tip = SITL TIP_ESLEME anahtarı):
 //   multirotor/hexarotor  4/6 pervane: her motor ayrı testere dalga (hafif farklı oran → "vızıltı" vuruşu), 2× kare (ESC/elektrik), bant geçiren
-//                         pervane uğultusu. Pala geçiş frekansı 150 Hz (gaz 0) → 600 Hz (gaz 100). Disarm = sessiz.
+//                         pervane uğultusu. Pala geçiş frekansı 150 Hz (gaz 0) → 600 Hz (gaz 100). Armed + gaz 0 = belirgin rölanti vızıltısı
+//                         (MOT_SPIN_ARM öykünmesi); disarm = sessiz.
 //   helikopter            ana rotor "wop-wop": 20–30 Hz LFO ile genlik modülasyonlu alçak gürültü + rotor harmoniği; türbin ıslığı (900–1500 Hz);
 //                         kuyruk rotoru (BPF × 5,5). Armed → rotor %70 devir, gaz ile %100.
 //   sabit_kanat (delta/caymaz aynı)  benzinli tek silindirli iki zamanlı: devir 1500 (rölanti) → 7500 (tam gaz); ateşleme f = devir/60 × silindir;
@@ -16,6 +17,9 @@
 //   vtol                  kopter + uçak; karışım hava hızına göre (5 → 20 m/s arasında kopterden uçağa).
 //   Kalkış yöntemi: rampa (launch) → pnömatik "pşşt" (bant geçiren gürültü patlaması) + released → kızak çarpması (80 Hz vuruş);
 //                   araç (vehicle) → pickup motoru (V8 4 zamanlı, 800 → 4500 d/dk hızla), released → fren gürültüsü, rölantiye düşer, 3 sn'de susar.
+//   ARM/DISARM geçişi (`spinStep`): ARM olunca motor HEMEN çalışır — devir 0 → rölanti rampası: kopter 0,6 sn (ESC başlatma), helikopter 3 sn (rotor
+//                   sarmalı), sabit kanat 0,8 sn marş ("cranking": testere 90 Hz + gürültü) sonra rölanti; DISARM'da 1 sn'de sönme. Canlıda ve
+//                   kayıtta aynı (replay kareleri `armed` taşır); Bitir/dispose → duruş.
 // Kaynak: tele.throttle (%), armed, airspeed/groundspeed, rs/ps/ys (küçük modülasyon), batt_pct (düşük bataryada %4'e kadar devir düşüşü).
 // Aç/kapa: alt çubukta 🔊/🔇 (M tuşu), ▾ ile ses düzeyi (0–100). Varsayılan AÇIK; tarayıcı kuralı gereği ilk kullanıcı etkileşiminde resume —
 // o ana dek sessiz (düğmede turuncu nokta). Sekme gizlenince susar (visibilitychange), sayfadan çıkınca kapanır (dispose). Kayıt oynatma hızı ≥ 2× → susar.
@@ -24,6 +28,10 @@ export const AUDIO_PREF_ON = 'fs.audio.on', AUDIO_PREF_VOL = 'fs.audio.vol';
 export const REF_DISTANCE = 15;      // m: bu mesafeye kadar tam ses, sonrası 1/r
 export const TAU_UP = 0.35, TAU_DOWN = 0.7;   // sn: devir gazı yukarı/aşağı takip zaman sabitleri (motor ataleti; aşağı daha yavaş)
 export const MUTE_SPEED = 2;         // kayıt oynatma hızı ≥ bu → sessiz
+// ARM geçişi: motor başlatma süresi (sn; devir 0 → rölanti, doğrusal) ve DISARM sönme süresi (sn). Kopter ESC başlatma 0,6; heli rotor sarmalı 3;
+// uçak marş 0,8 (bu sürede marş sesi duyulur); vtol kopter gibi.
+export const SPIN_UP = { copter: 0.6, heli: 3.0, plane: 0.8, vtol: 0.6 }, SPIN_DOWN = 1.0;
+export const COPTER_IDLE = 0.3;      // armed + gaz 0 kopter bus kazancı (belirgin rölanti vızıltısı)
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const num = (v, d = 0) => (v == null || Number.isNaN(Number(v)) ? d : Number(v));
 
@@ -61,7 +69,7 @@ export function engineTargets(type, t, ctx = {}) {
     bpf: 0, rpm: 0, fire: 0, heliBpf: 0, vehicle: 0, vehicleRpm: 0 };
   if (m.kind === 'copter' || m.kind === 'vtol') {
     out.bpf = copterBpf(thr, t?.batt_pct);
-    out.copter = armed ? 0.22 + 0.55 * thr / 100 : 0;    // disarm = sessiz
+    out.copter = armed ? COPTER_IDLE + 0.5 * thr / 100 : 0;    // armed + gaz 0 = rölanti (belirgin); disarm = sessiz
   }
   if (m.kind === 'plane' || m.kind === 'vtol') {
     out.rpm = armed ? planeRpm(thr, m) : 0;
@@ -81,6 +89,8 @@ export function engineTargets(type, t, ctx = {}) {
   return out;
 }
 
+// Motor başlatma/durma durumu 0…1 (`spin`): armed → +dt/SPIN_UP[kind], disarm → −dt/SPIN_DOWN (doğrusal; kırpılır). Ses kazancı ve devir bununla çarpılır.
+export const spinStep = (cur, armed, dt, kind = 'copter') => clamp(num(cur) + (armed ? Math.max(0, dt) / (SPIN_UP[kind] || SPIN_UP.copter) : -Math.max(0, dt) / SPIN_DOWN), 0, 1);
 // Üstel yumuşatma (motor ataleti): yukarı tauUp, aşağı tauDown; dt sn
 export const smoothFollow = (cur, target, dt, tauUp = TAU_UP, tauDown = TAU_DOWN) => {
   const tau = target > cur ? tauUp : tauDown;
@@ -126,7 +136,7 @@ export function createEngineAudio(stage, opts = {}) {
   const nowMs = opts.now || (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const TC = 0.05;   // setTargetAtTime zaman sabiti (sn)
   let ctx = null, G = null, disposed = false, lastUpd = 0, lastPhase = null, lastCrash = false, prevDist = null;
-  const sm = { thr: 0, rpm: 0, bpf: 150, vehRpm: 800, veh: 0 };   // yumuşatılan değerler
+  const sm = { thr: 0, rpm: 0, bpf: 150, vehRpm: 800, veh: 0, spin: 0 };   // yumuşatılan değerler; spin: motor başlatma/durma 0…1 (ARM rampası)
   const stats = { updates: 0, paramSets: 0 };
 
   // --- yardımcılar: AudioParam hedefleme (sahte düğümlerde setTargetAtTime yoksa value) ---
@@ -172,7 +182,9 @@ export function createEngineAudio(stage, opts = {}) {
       const sub = osc('square', 12.5, lp, 0.1);
       const exhaust = noise('lowpass', 220, 0.7, bus, 0.12);
       const prop = osc('sine', 50, bus, 0.06);
-      g.plane = { bus, lp, fire, sub, exhaust, prop };
+      const starter = osc('sawtooth', 90, src, 0);       // marş motoru (ARM'da 0,8 sn "cranking"; bus dışında — rölanti kazancından bağımsız)
+      const starterN = noise('bandpass', 700, 1.5, src, 0);
+      g.plane = { bus, lp, fire, sub, exhaust, prop, starter, starterN };
     }
     if (model.kind === 'heli') {
       const bus = ctx.createGain(); bus.gain.value = 0; bus.connect(src);
@@ -260,6 +272,7 @@ export function createEngineAudio(stage, opts = {}) {
     sm.rpm = smoothFollow(sm.rpm, tg.rpm, dt);
     sm.vehRpm = smoothFollow(sm.vehRpm, tg.vehicleRpm || 800, dt, 0.5, 1.2);
     sm.veh = smoothFollow(sm.veh, tg.vehicle, dt, 0.3, 1.5);
+    sm.spin = spinStep(sm.spin, tg.armed, dt, model.kind);   // ARM → motor başlatma rampası; DISARM → 1 sn sönme
     const vol = prefs.effective();
     drawBtn();
     if (!G) { if (vol > 0) build(); if (!G) return; }
@@ -282,31 +295,36 @@ export function createEngineAudio(stage, opts = {}) {
     P(G.fpv.frequency, fpvOn ? fp.lowpass : 20000, 0.1);
     P(G.wind.g.gain, fpvOn ? fp.wind : 0, 0.15); if (fpvOn) P(G.wind.fl.frequency, fp.windFreq, 0.2);
     const wob = 1 + tg.wobble * 0.015 * Math.sin(now / 90);   // gövde açısal hızı → ±%1,5 küçük titreme
-    const armed = tg.armed;
+    const armed = tg.armed, spin = sm.spin;
     if (G.copter) {
-      const f = sm.bpf * doppler * wob, gBase = armed ? (0.22 + 0.55 * sm.thr / 100) * (model.kind === 'vtol' ? 1 - tg.mix * 0.85 : 1) : 0;
+      // devir ve kazanç spin ile: ARM'da 0,6 sn'de 0 → rölanti (150 Hz × 0,35 → 150 Hz), DISARM'da 1 sn'de sönüm
+      const f = sm.bpf * (0.35 + 0.65 * spin) * doppler * wob, gBase = (COPTER_IDLE + 0.5 * sm.thr / 100) * spin * (model.kind === 'vtol' ? 1 - tg.mix * 0.85 : 1);
       P(G.copter.bus.gain, gBase);
       G.copter.motors.forEach((mo, i) => P(mo.o.frequency, f * G.copter.ratios[i], 0.08));
       P(G.copter.esc.o.frequency, f * 2.01, 0.08);
       P(G.copter.whirr.fl.frequency, 300 + 3 * sm.thr, 0.1);
     }
     if (G.plane) {
-      const rpm = armed ? Math.max(sm.rpm, model.idleRpm) : Math.max(0, sm.rpm);
+      // marş (cranking): armed ve spin < 1 iken marş motoru duyulur, ateşleme devri 0 → rölantiye çıkar; sonra gaz izlenir. DISARM: devir ve kazanç spin ile söner.
+      const cranking = armed && spin < 1;
+      const rpm = Math.max(sm.rpm, model.idleRpm) * (0.12 + 0.88 * spin);
       const f = Math.max(5, firingHz(rpm, model.cylinders)) * doppler * wob;
-      const gBase = armed || sm.rpm > 200 ? (0.3 + 0.6 * sm.thr / 100) * (model.kind === 'vtol' ? 0.25 + 0.75 * tg.mix : 1) * (armed ? 1 : clamp(sm.rpm / model.idleRpm, 0, 1)) : 0;
+      const gBase = (0.3 + 0.6 * sm.thr / 100) * (model.kind === 'vtol' ? 0.25 + 0.75 * tg.mix : 1) * spin * (cranking ? 0.6 : 1);
       P(G.plane.bus.gain, gBase);
+      P(G.plane.starter.g.gain, cranking ? 0.22 : 0, 0.03); P(G.plane.starterN.g.gain, cranking ? 0.12 : 0, 0.03);
+      P(G.plane.starter.o.frequency, (80 + 40 * spin) * wob, 0.05);
       P(G.plane.fire.o.frequency, f, 0.08); P(G.plane.sub.o.frequency, f / 2, 0.08);
       P(G.plane.prop.o.frequency, f * model.blades, 0.08);
       P(G.plane.lp.frequency, 900 + 14 * sm.thr, 0.1);
       P(G.plane.exhaust.fl.frequency, 150 + 6 * sm.thr, 0.1); P(G.plane.exhaust.g.gain, 0.08 + 0.12 * sm.thr / 100, 0.1);
     }
     if (G.heli) {
-      const bpf = tg.heliBpf || 20, spin = armed ? 1 : 0;   // rotor: armed → döner (ses), disarm → durur
-      P(G.heli.bus.gain, armed ? 0.35 + 0.5 * sm.thr / 100 : 0, 0.5);
+      const bpf = (tg.heliBpf || 20) * (0.15 + 0.85 * spin);   // rotor sarmalı: ARM'da 3 sn'de devir alır (pala geçişi 3 → 20 Hz), DISARM'da 1 sn'de durur
+      P(G.heli.bus.gain, (0.35 + 0.5 * sm.thr / 100) * spin, 0.2);
       P(G.heli.lfo.frequency, bpf * doppler, 0.3);
       P(G.heli.rotorH.o.frequency, bpf * 3 * doppler * wob, 0.2);
       P(G.heli.tail.o.frequency, bpf * 5.5 * doppler, 0.2);
-      P(G.heli.turbine.o.frequency, (900 + 600 * sm.thr / 100) * doppler, 0.3);
+      P(G.heli.turbine.o.frequency, (900 + 600 * sm.thr / 100) * (0.3 + 0.7 * spin) * doppler, 0.3);
       P(G.heli.turbineH.fl.frequency, 2000 + 1200 * sm.thr / 100, 0.3);
       P(G.heli.rotorN.fl.frequency, 250 + 120 * spin, 0.3);
     }

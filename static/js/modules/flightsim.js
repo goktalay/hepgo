@@ -18,7 +18,7 @@ import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dro
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
-import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
+import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed, replayLaunchTimeline, replayLaunchPhaseAt } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13; kayıtta aşamalar logdan §8)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
 import { createOpsPanel } from './flightsim_panel.js';
 import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, myRecsCard, pendingCard, recOptionsBox, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler / sakla; kayıt seçenekleri kutusu; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
@@ -223,15 +223,19 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       : L.method === 'vehicle' ? tr('Araç üstü: uçak {k} km/h ({v} m/s) yer hızında bırakılır (TKOFF_ROTATE_SPD = bırakma hızı); araç frenleyip durur.', { k: Math.round(L.release_kmh), v: (L.release_kmh / 3.6).toFixed(1) })
       : tr('Tekerlekli: iniş takımı eklenir; uçak pist boyunca hızlanır, 12 m/s döndürme hızında burun kalkar (ArduPlane TAKEOFF).');
   };
+  const launchDesc = h('p', { class: 'small muted' }, 'Sabit kanat uçağın nasıl havalanacağı: tekerlekli pist koşusu, pnömatik fırlatma rampası ya da pickup üstünden bırakma. Seçim 3B sahnede ve SITL kalkış parametrelerinde uygulanır.');
+  // Kayıt kipinde de sorulur (kullanıcı isteği): seçili logun aracı sabit kanat (ArduPlane) ise kartlar görünür; düzenek 3B'de kurulur, aşamalar logdan türetilir (§8)
   const drawLaunch = () => {
-    launchBox.hidden = !(S.mode === 'sitl' && S.type === 'sabit_kanat');
+    launchBox.hidden = activeType() !== 'sabit_kanat';
+    launchDesc.textContent = tr(S.mode === 'replay'
+      ? 'Kayıttaki sabit kanat uçağın kalkış düzeneği: rampa ya da araç 3B sahnede kurulur; ARM, fırlatma ve bırakma aşamaları logdan (ARM anı, ilk hareket, yer hızı/irtifa) türetilir. SITL parametresi yazılmaz.'
+      : 'Sabit kanat uçağın nasıl havalanacağı: tekerlekli pist koşusu, pnömatik fırlatma rampası ya da pickup üstünden bırakma. Seçim 3B sahnede ve SITL kalkış parametrelerinde uygulanır.');
     clear(launchCards, LAUNCH_METHODS.map(([key, name, desc]) => h('button', { type: 'button', class: `fs-type fs-launch ${L.method === key ? 'on' : ''}`, 'data-launch': key, onclick: () => { L.method = key; drawLaunch(); applyLaunch(); } },
       h('span', { class: 'fs-type-ico', html: LAUNCH_ICON[key] }), h('b', null, name), h('span', { class: 'small muted' }, desc))));
     angleRow.hidden = L.method !== 'ramp'; relRow.hidden = L.method !== 'vehicle'; vehicleRow.hidden = L.method !== 'vehicle';
     drawLaunchInfo();
   };
-  const launchBox = h('div', { class: 'fs-launch-step' }, h('h4', null, 'Kalkış yöntemi'),
-    h('p', { class: 'small muted' }, 'Sabit kanat uçağın nasıl havalanacağı: tekerlekli pist koşusu, pnömatik fırlatma rampası ya da pickup üstünden bırakma. Seçim 3B sahnede ve SITL kalkış parametrelerinde uygulanır.'),
+  const launchBox = h('div', { class: 'fs-launch-step' }, h('h4', null, 'Kalkış yöntemi'), launchDesc,
     launchCards, h('div', { class: 'fs-launch-params' }, angleRow, relRow, vehicleRow), launchInfo);
   drawLaunch();
 
@@ -263,7 +267,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
         : 'Uçuş loglarına erişim için Araçlar ya da Saha Yönetimi yetkisi gerekir.'));
       return;
     }
-    clear(logList, rows.map(l => h('button', { type: 'button', class: `fs-log ${S.log === l.id ? 'on' : ''}`, onclick: () => { S.log = l.id; drawLogs(); refreshModels(); } },
+    clear(logList, rows.map(l => h('button', { type: 'button', class: `fs-log ${S.log === l.id ? 'on' : ''}`, onclick: () => { S.log = l.id; drawLogs(); drawLaunch(); refreshModels(); } },
       h('span', { class: 'fs-log-ico', html: TYPE_ICON[(TYPES.find(x => x[0] === l.type) || [])[3] || 'quad'] }),
       h('span', { class: 'fs-log-main' },
         h('b', null, l.file_name, l.ext ? h('span', { class: 'badge gray fs-log-ext' }, l.ext.toUpperCase()) : null, l.cached ? h('span', { class: 'badge green', title: tr('Kareler önbellekte; hemen açılır') }, '⚡') : null),
@@ -276,6 +280,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     try { S.logs = await be.logs(); } catch (err) { S.logs = []; toastError(err); }
     if (S.log == null && S.logs.length) S.log = S.logs[0].id;
     drawLogs();
+    drawLaunch();   // seçili logun tipi sabit kanat ise Kalkış yöntemi kartları (§8)
   };
   drawLogs();
   const stepLog = h('div', { class: 'card card-pad fs-step no-collapse', hidden: true }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Uçuş logu'),
@@ -505,7 +510,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     clear(startNote, canWrite
       ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
       : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
-    (rp ? stepLog : stepType).append(modelBox);   // model bölümü: canlı kipte tip kartlarının, kayıt kipinde log listesinin altında
+    (rp ? stepLog : stepType).append(launchBox, modelBox);   // kalkış yöntemi + model bölümü: canlı kipte tip kartlarının, kayıt kipinde log listesinin altında
     recOpts.sync();   // .bin seçeneği yalnız canlı SITL'de
     drawLaunch();
     if (rp && S.logs === null) loadLogs().then(refreshModels); else refreshModels();
@@ -555,8 +560,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const replay = session.mode === 'replay';   // kayıttan oynatma: SITL/UDP/komut yok; kareler sunucudan bir kez çekilir, tarayıcıda oynatılır
   const type = session.type, modes = modesFor(type);
   const world = { ...WORLD_DEFAULTS, ...(session.world || {}) };
-  // Sabit kanat kalkış yöntemi (§13): session.launch {method, angle_deg, release_kmh, phase}; yalnız canlı sabit kanatta
-  const launch = !replay && type === 'sabit_kanat' ? { ...LAUNCH_DEFAULTS, ...(session.launch || world.launch || {}) } : null;
+  // Sabit kanat kalkış yöntemi (§13): session.launch {method, angle_deg, release_kmh, phase}. Canlıda aşamalar sunucudan (WS `launch`); kayıtta
+  // (§8) sunucu olay yaymaz, aşamalar log karelerinden türetilir (replayLaunchTimeline) ve oynatıcı zamanına göre uygulanır (atlamada `snap`).
+  const launch = type === 'sabit_kanat' ? { ...LAUNCH_DEFAULTS, ...(session.launch || world.launch || {}) } : null;
   const LAUNCH_BTN = { ramp: 'Fırlat', vehicle: 'Aracı sür', wheels: 'Kalkış' };
   const LAUNCH_PHASE_TEXT = { armed: { ramp: 'Uçak rampada, motor hazır', vehicle: 'Uçak araçta, motor hazır', wheels: 'Pist koşusu başlıyor' },
     launch: { ramp: 'FIRLATMA', vehicle: 'Araç hızlanıyor', wheels: 'Pist koşusu' }, released: { ramp: 'Uçak rampadan ayrıldı', vehicle: 'BIRAKILDI', wheels: 'Uçak havalandı' } };
@@ -847,7 +853,17 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   };
 
   // ---------- kayıttan oynatma: kareleri çek, enterpolasyonla oynat ----------
-  let player = null, replayLoaded = false;
+  let player = null, replayLoaded = false, replaySegs = null, replayPhase = null;
+  // Kayıtta kalkış aşaması (§8): t anındaki aşama; değişimde düzenek + panel + olay şeridi. snap (atlama/baştan): ofset sönümü yok, olay yazılmaz.
+  const applyReplayLaunch = (t, snap = false) => {
+    if (!launch || !replaySegs) return;
+    const ph = replayLaunchPhaseAt(replaySegs, t);
+    if (ph === replayPhase && !snap) return;
+    const changed = ph !== replayPhase;
+    replayPhase = ph;
+    sim?.setLaunchPhase(ph === 'idle' ? null : ph, snap); ops?.setLaunchPhase(ph === 'idle' ? null : ph);
+    if (changed && !snap && ph !== 'idle') { const txt = (LAUNCH_PHASE_TEXT[ph] || {})[launch.method] || ph; addEvent(tr(txt), ph === 'released' || ph === 'launch' ? 'warning' : 'info', t); }
+  };
   const loadReplay = async () => {
     if (!replay || replayLoaded) return;
     replayLoaded = true;
@@ -867,11 +883,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       if (grow) { world.size_m = need; addEvent(tr('Dünya boyutu uçuşa göre {n} m yapıldı', { n: need }), 6); }
       if (!await syncOrigin() && grow) await sim.setWorld(world);   // merkez değiştiyse setOrigin zaten yeni boyutla kurar
     }
+    if (launch) { const FIr = Object.fromEntries((data.fields || []).map((k, i) => [k, i])); replaySegs = replayLaunchTimeline(data.frames, FIr, launch); }
     player = createReplayPlayer(data, {
-      onFrame: t => updateHud(t),
+      onFrame: t => { updateHud(t); applyReplayLaunch(t.t); },
       onEvent: (e, t) => addEvent(e.text, e.sev, t),
       onClear: () => clear(events),
-      onSeek: () => sim?.snapCamera(),   // atlama: takip kamerası dronun yanına ışınlanır (yayla yüzlerce metre kovalamaz)
+      onSeek: t => { sim?.snapCamera(); applyReplayLaunch(t, true); },   // atlama: takip kamerası dronun yanına ışınlanır (yayla yüzlerce metre kovalamaz); düzenek aşaması anında
       onTime: (t, dur, playing) => {
         seek.value = String(Math.round(1000 * (dur ? t / dur : 0)));
         timeLbl.textContent = `${clock(t)} / ${clock(dur)}`;
@@ -1136,7 +1153,8 @@ function virtualRC({ plane, stickL, stickR, send, onChange, throttle0 = null }) 
 }
 
 // ======================================================================
-// Kayıt oynatıcı: sunucudan gelen kare dizisi (fields sırası: flightsim_replay.FIELDS) → zaman t için enterpolasyonlu `tele` nesnesi.
+// Kayıt oynatıcı: sunucudan gelen kare dizisi (fields sırası: flightsim_replay.FIELDS) → zaman t için enterpolasyonlu `tele` nesnesi
+// (`servo`/`rc` sample-and-hold; `servo` yoksa 3B yüzeyler `rc`den türetir — eski önbellekler sunucuda v3 ile yeniden üretilir).
 // requestAnimationFrame ile ilerler (hız 0.5×–8×); kaydırıcı/klavye ile atlama; olaylar zaman geldikçe şeride düşer (atlamada şerit
 // yeniden kurulur: t'den önceki son 8 olay). Sonda durur.
 // ======================================================================
@@ -1162,7 +1180,7 @@ function createReplayPlayer(data, cb) {
     return { ts: Date.now(), t: x, lat: g('lat'), lon: g('lon'), alt_msl: g('alt_msl'), alt_rel: g('alt_rel'), roll: lerpAng(col(a, 'roll'), col(b, 'roll'), u), pitch: lerpAng(col(a, 'pitch'), col(b, 'pitch'), u), yaw,
       vn, ve, vd, airspeed: g('as'), groundspeed: gs != null ? gs : (vn != null ? Math.hypot(vn, ve || 0) : null), heading: hdg, climb: vd != null ? -vd : null,
       mode: mi != null ? modes[mi] : null, armed: !!col(a, 'armed'), gps_fix: col(a, 'fix'), sats: col(a, 'sats'), batt_v: g('batt_v'), batt_pct: col(a, 'batt_pct'),
-      throttle: g('thr'), rc: col(a, 'rc') || [], home: data.home || null, gcs_connected: null };
+      throttle: g('thr'), rc: col(a, 'rc') || [], servo: col(a, 'servo') || null, servo_fn: data.servo_fn || null, home: data.home || null, gcs_connected: null };   // servo: RCOU/SERVO_OUTPUT_RAW µs → 3B kontrol yüzeyleri (§8; önbellek v3)
   };
   const emitFrame = () => { const fr = frameAt(t); if (fr) cb.onFrame?.(fr); cb.onTime?.(t, dur, playing); };
   const syncEvents = () => {   // atlama: t'den önceki son 8 olayı şeride koy
@@ -1228,6 +1246,7 @@ function mockBackend(ctx) {
     const data = mockReplayData(log, c);
     const id = `mock-${++MOCK.seq}`;
     const s = { id, mode: 'replay', type: log.type, model: mockModel(log.type, model), center: { id: null, name: log.file_name, lat: data.home.lat, lon: data.home.lon, alt: data.home.alt }, world: { ...WORLD_DEFAULTS, ...(world || {}) },
+      launch: { ...LAUNCH_DEFAULTS, ...((world || {}).launch || {}), method: log.type === 'sabit_kanat' ? ((world || {}).launch?.method || 'wheels') : 'wheels', phase: null },
       state: 'HAZIR', udp_port: null, host: location.hostname, created_at: new Date().toISOString(), owner: { id: ctx.user?.id, name: ctx.user?.full_name || ctx.user?.username || '—' },
       gcs: { connected: false, addr: null, since: null }, sitl: { pid: null, port: null, error: null },
       replay: { log_id: log.id, file_name: log.file_name, size: log.size, progress: 100, frames: data.n, duration_s: data.duration_s, home: data.home, hz: data.hz, takeoff_t: data.takeoff_t, start_utc: data.start_utc, vehicle: data.vehicle, modes: data.modes } };

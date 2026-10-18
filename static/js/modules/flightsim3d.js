@@ -1022,7 +1022,16 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     if (drone.type === 'sabit_kanat' && (prevMethod === 'wheels') !== (nowMethod === 'wheels')) await setType(drone.type, drone.model);   // iniş takımı ekle/kaldır (düzeneği de kurar)
     else buildRig();
   }
-  const setLaunchPhase = p => rig?.setPhase(p === 'armed' ? 'armed' : p === 'launch' ? 'launch' : p === 'released' ? 'released' : 'idle');
+  // setLaunchPhase(p, snap): canlıda sunucu `launch` olayı; kayıtta oynatıcı zamanından türetilen aşama (§8). Geri sarma (hedef aşama mevcut
+  // aşamadan önce: atlama/baştan) önce `idle` → kızak/araç başa döner. `snap` (atlama): released ofset sönümü kurulmaz — uçak doğrudan log konumunda.
+  const PHASE_ORDER = { idle: 0, armed: 1, launch: 2, released: 3, free: 3 };
+  const setLaunchPhase = (p, snap = false) => {
+    if (!rig) return;
+    const np = p === 'armed' ? 'armed' : p === 'launch' ? 'launch' : p === 'released' ? 'released' : 'idle';
+    if ((PHASE_ORDER[np] ?? 0) < (PHASE_ORDER[rig.phase] ?? 0)) rig.setPhase('idle');
+    if (snap) { rel.on = false; rel.armed = false; }
+    rig.setPhase(np);
+  };
   // Küçük resim (§12): model ayrı bir sahnede 3/4 açıdan render hedefine çizilir → PNG Blob (320×240). Ana sahneye dokunmaz.
   async function snapshotModel(type, model, w = 320, h = 240) {
     const M = MAT();

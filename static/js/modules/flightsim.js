@@ -2,9 +2,10 @@
 // drone.js `sim` sayfasında dinamik yükler: import('./flightsim.js').then(mod => mod.render(view, params, ctx, { m, head, mock }))
 // • Sihirbaz (§6): dron tipi kartları → merkez seçimi (/api/drone/sim/meta centers) → dünya kaydırıcıları + "Rastgele tohum" + küçük 3B
 //   önizleme → Başlat (POST /api/drone/sim/sessions). Açık oturum varsa üstte liste: devam et / bitir.
-// • Oturum ekranı: tam alan 3B tuval (flightsim3d.js) + YERLİ harekât paneli (§14, flightsim_panel.js: 3B üstünde yüzen kartlar — başlık/PFD/
-//   telemetri karoları/İŞLEMLER sağ üstte, KONSOL alt ortada; hub soketi ve komutlar panelde; Panel düğmesi / P gizleyince sade görünüm:
-//   eski HUD (sağ) + alt çubuk ARM/mod/Kalkış/RTL + olay şeridi), Mission Planner bağlantı kutusu (sol alt), alt araç çubuğu, ÇARPIŞMA bandı.
+// • Oturum ekranı: tam alan 3B tuval (flightsim3d.js) + YERLİ harekât paneli (§14, flightsim_panel.js: GÖKTUNGU dron kartı görünümünde TEK kart
+//   sağ üstte — başlık şeridi / PFD / telemetri karoları / İŞLEMLER / Haberleşme konsolu; hub soketi ve komutlar panelde; Panel düğmesi / P
+//   gizleyince sade görünüm: eski HUD (sağ) + alt çubuk ARM/mod/Kalkış/RTL + olay şeridi), Mission Planner bağlantı kutusu (sol alt), alt araç
+//   çubuğu, ÇARPIŞMA bandı. Tam ekran (⛶) BELGEYE uygulanır (document.documentElement): body'ye eklenen pencereler/bildirimler tam ekranda görünür.
 // • WS istemcisi /ws/drone/sim/{id}: hello/tele/event/state/end; ping 10 sn; üstel geri çekilmeli yeniden bağlanma; 4403/4404 kalıcı.
 // • Sanal kumanda (yazma izni; alt çubuk 🎮): iki sanal çubuk + klavye → 20 Hz {t:'rc', ch[8]} (RC_CHANNELS_OVERRIDE); kapatınca 8×0.
 //   Açıkken 3B klavye kilidi (WASD/ok tuşları kumandaya gider). HUD altında ağ göstergesi: 'net: 48 Hz · jitter 3 ms' (sim.netStats()).
@@ -454,7 +455,14 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     replay ? h('span', { class: 'badge purple', title: 'Kayıttan oynatma: yüklü uçuş logu aynen oynatılır; kontrol yok' }, 'Kayıt') : null,
     launch ? h('span', { class: 'badge blue fs-launch-badge', title: tr('Kalkış yöntemi') }, launchLabel(launch, tr)) : null,
     mock ? h('span', { class: 'badge purple' }, 'Sahte veri') : null,
-    h('button', { class: 'fs-nav-btn', type: 'button', title: 'Tam ekran', onclick: () => { if (document.fullscreenElement) document.exitFullscreen?.(); else stage.requestFullscreen?.(); } }, '⛶'));
+    h('button', { class: 'fs-nav-btn fs-full-btn', type: 'button', title: 'Tam ekran', onclick: () => { (document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.())?.then(() => onFullChange()).catch(() => {}); } }, '⛶'));
+  // Tam ekran BELGEYE (document.documentElement) uygulanır, sahneye değil: ui.js modal()/toast() ve açılır menüler body'ye eklenir; sahne
+  // (.fs-stage) tam ekran öğesi olsaydı bunlar tam ekran öğesinin dışında kalır ve GÖRÜNMEZDİ (kullanıcı: "tam ekrandayken mesaj pencereleri
+  // arkada kalıyor, takeoff yüksekliği görünmüyor"). Belge tam ekranda: app.js `immersive` (data-immersive) üst başlığı/alt barı gizler,
+  // body.fs-full + .fs-stage.fs-full sahneyi tüm ekrana yayar; çıkınca (Escape / ⛶) düzen eski hâline döner.
+  const onFullChange = () => { const full = !!document.fullscreenElement; stage.classList.toggle('fs-full', full); document.body.classList.toggle('fs-full', full); const b = nav.querySelector('.fs-full-btn'); if (b) b.title = tr(full ? 'Tam ekrandan çık' : 'Tam ekran'); };
+  document.addEventListener('fullscreenchange', onFullChange);
+  onFullChange();
 
   // HUD (sağ): sabit satırlar, değerler textContent ile güncellenir (DOM yeniden kurulmaz)
   const val = cls => h('b', { class: `fs-v ${cls || ''}` }, '—');
@@ -492,10 +500,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
-  // §14 harekât paneli (flightsim_panel.js; iframe YOK): başlık rozetleri + PFD + telemetri karoları + İŞLEMLER + KONSOL 3B'nin ÜSTÜNDE yüzen kartlar;
-  // "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları). Kayıt/sahte kipte hub yok: PFD/telemetri çalışır, komut kartları yok
+  // §14 harekât paneli (flightsim_panel.js; iframe YOK): GÖKTUNGU dron kartı görünümünde TEK kart (başlık şeridi + PFD + telemetri karoları + İŞLEMLER +
+  // Haberleşme konsolu) 3B'nin ÜSTÜNDE; "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları). Kayıt/sahte kipte hub yok: PFD/telemetri çalışır, İŞLEMLER yok
   let ops = null;
-  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', title: tr('Harekât kartlarını göster/gizle (P): başlık, uçuş göstergesi, telemetri karoları, işlemler ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
+  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', title: tr('Harekât panelini göster/gizle (P): dron kartı (başlık, uçuş göstergesi, telemetri karoları, işlemler ve haberleşme konsolu) 3B dünyanın üstünde; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -838,7 +846,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (window.__fsSim === sim) delete window.__fsSim;
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');
-    document.body.classList.remove('immersive');
+    document.removeEventListener('fullscreenchange', onFullChange);
+    document.body.classList.remove('immersive', 'fs-full');
   });
 }
 

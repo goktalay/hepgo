@@ -1,26 +1,31 @@
-// Uçuş Simülatörü — YERLİ harekât paneli (docs/ucus-simulatoru.md §14). iframe YOK: panel, simülatör sayfasının kendi HTML/JS'idir (ui.js `h()`,
-// mevcut HUD stilleri). Kullanıcı kararı: "sistem HTML değil mi? neden komple bir objeye ihtiyaç duyuyorsun; gerekiyorsa aynı görünümde mevcut
-// altyapı üzerine bir panel yarat". Önceki şeffaf iframe canlıda (HEPGO koyu teması) bembeyaz çiziliyordu: üst belgede html[data-theme=dark]
-// { color-scheme: dark } iframe öğesine miras kalır, GÖKTUNGU iç belgesi color-scheme bildirmez (normal) → Chromium, iframe öğesi ile iç belgenin
-// kullanılan renk şeması uyuşmazsa iframe'i OPAK zeminle çizer. Burada iframe olmadığı için kartlar her temada koyu yarı saydamdır.
+// Uçuş Simülatörü — YERLİ harekât paneli (docs/ucus-simulatoru.md §14). iframe YOK: panel, simülatör sayfasının kendi HTML/JS'idir (ui.js `h()`).
+// Kullanıcı kararları (birebir): "sistem HTML değil mi? … aynı görünümde mevcut altyapı üzerine bir panel yarat" → iframe kaldırıldı;
+// "paneller arasına boşluk koymuşsun; TEK bir panel olacak, duruma göre küçülüp büyüyecek; orijinal CSS yapısına birebir uy" → ayrı kartlar
+// kaldırıldı: GÖKTUNGU harekât ekranının DRON KARTI (static/ops/css/stil.css `.dron-kart.ayrik`) tek gövde olarak yeniden kurulur.
 //
-// Görünüm — 3B'nin üstünde yüzen yarı saydam kartlar (.fs-pn-card: rgba(11,14,17,.72), 10 px köşe, ince kenarlık, blur), ayrı zemin yok:
-//   sağ üstte sütun (.fs-pn-col, 440 px; <1100 px 360 px): BAŞLIK (ad, mod, ARM, oturum durumu, GPS, MP, hub) · UÇUŞ GÖSTERGESİ (PFD canvas:
-//   mavi/kahverengi suni ufuk, pitch merdiveni, roll yayı, sol hız / sağ irtifa bandı, alt yön şeridi, köşe etiketleri) · TELEMETRİ karoları 4×2
-//   (İrtifa, Hız, Batarya, GPS / Durum[ARM], Mod[liste], Tip, Komut[Kalkış|Fırlat|Aracı sür / İniş]) · İŞLEMLER (katlanabilir: Kalkış, RTL, İniş,
-//   İrtifa, Hedefe git, Ev, Rota seç→Yükle→Başlat/Duraklat/Sürdür/İptal, Sıfırla, Yerleşimi sıfırla); KONSOL kartı alt ortada küçük, katlanabilir.
+// Görünüm — TEK KART (.fs-pn-kart; stil.css .dron-kart.ayrik: --panel-arka zemin, 1 px --cizgi kenarlık, 6 px köşe, 0 8px 32px gölge; 400 px
+//   [hepgo.css], <1100 px 340 px, <760 px tam genişlik), sağ üstte, başlığından sürüklenir, içerik taşarsa kart içinde kaydırılır (max-height = alan):
+//   BAŞLIK ŞERİDİ (.dron-kart-baslik: --dugme-arka zemin, 10 px dolgu, 600): durum noktası (.dk-nokta) · dron adı (.dk-ad) · özet (.dk-baslik-ozet:
+//     irtifa + kip) · ARM rozeti · MP · HUB (hepgo.css .hk-bagla kapsülleri) · küçült (.dk-kucult-btn: yalnız başlık kalır, .dk-yalniz-baslik)
+//   GÖVDE (.dron-kart-icerik: Consolas 12 px): ÜST SATIR (.dk-ust-satir: UÇUŞA HAZIR rozeti [.dk-hazir-rozet; tıkla → ARM/DISARM onayı] + İŞLEMLER
+//     düğmesi [.dk-islem-btn; İŞLEMLER bölümünü açar/kapar]) · bölümler — her biri .dk-konsol-bas başlık şeridinden katlanır (ok döner):
+//     UÇUŞ GÖSTERGESİ (PFD canvas; .dk-pfd-canvas 8 px köşe) · TELEMETRİ 4×2 karo (.dk-tel-hucre: ikon 20 px, Consolas 12 px kalın değer, 9 px
+//     büyük harf etiket; DURUM/MOD/KOMUT tıklanır) · İŞLEMLER (.dk-islem-izgara 3 sütun .dk-islem-hucre + .dk-islem-grup grup başlıkları: Uçuş /
+//     Hedef / Rota / Sim) · HABERLEŞME konsolu (.dk-konsol-govde: #0b0f14 zemin, 10,5 px mono; satır = saat ETİKET metin) — alt ortadaki ayrı
+//     KONSOL kutusu KALKTI (madde 3: tek konsol, kart içinde). Panel HER TEMADA koyudur (GÖKTUNGU koyu tema değişkenleri .fs-pn üzerinde --gt-*).
 // Veri/komut yolu — telemetri (PFD/karolar) simülatörün /ws/drone/sim tele'sinden (update(t)); hub durumu, konsol satırları ve KOMUTLAR için
 //   bu modül kendi /ws/drone/live soketini açar ({t:'watch', sim_id} → hello/status/console/res; flightsim_hub.SimBridge) ve komutları hub
 //   {t:'cmd', rid, bridge_id: -(9000+N), sysid: 1, name, params} ile gönderir (GÖKTUNGU kalkış/rota akışları sunucuda yürür). Simülatöre ÖZGÜ iki
 //   komut sim WS yolundan gider (cmdSim): Sıfırla (reset) ve sabit kanat kalkış düzeneği (rampa/araç/tekerlek: takeoff{alt}, §13).
-// Davranış — Panel düğmesi / P → kartlar gizli (sade görünüm: eski .fs-hud + alt çubuk komutları); FPV'de kartlar gizli (askeri HUD kalır);
-//   yazma izni / hub komut yetkisi yoksa düğmeler pasif; kayıt (replay) ve sahte (mock) kiplerinde hub yoktur → komut kartları gizli, PFD/telemetri
-//   çalışır. Sütun ve konsol başlığından sürüklenir (localStorage fs.panel.col / fs.panel.con), katlama fs.panel.fold, açık/kapalı fs.ops.on.
+// Davranış — Panel düğmesi / P → kart gizli (sade görünüm: eski .fs-hud + alt çubuk komutları); FPV'de kart gizli (askeri HUD kalır);
+//   yazma izni / hub komut yetkisi yoksa düğmeler pasif; kayıt (replay) ve sahte (mock) kiplerinde hub yoktur → İŞLEMLER yok, PFD/telemetri
+//   çalışır. Kart başlığından sürüklenir (localStorage fs.panel.col), katlama fs.panel.fold, küçült fs.panel.min, açık/kapalı fs.ops.on.
+// Pencereler (ARM onayı, kalkış, hedef) ui.js modal() ile body'ye eklenir; tam ekran document.documentElement'e alındığı için (flightsim.js) görünürler.
 // Dışa: createOpsPanel(stage, opts) → { el, enabled, toggle(v), setFpv(v), update(tele), setState(st), setRoute(points), setGcs(on), log(text, sev, tag), dispose() }
 import { api } from '../api.js';
 import { confirmDialog, field, h, modal, toast, toastError, t as tr } from '../ui.js';
 
-const KEY_ON = 'fs.ops.on', KEY_COL = 'fs.panel.col', KEY_CON = 'fs.panel.con', KEY_FOLD = 'fs.panel.fold';
+const KEY_ON = 'fs.ops.on', KEY_COL = 'fs.panel.col', KEY_FOLD = 'fs.panel.fold', KEY_MIN = 'fs.panel.min';
 const DEG = Math.PI / 180;
 const num = (v, d = null) => (v == null || Number.isNaN(Number(v)) ? d : Number(v));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -41,6 +46,34 @@ const gpsText = fix => (fix >= 6 ? 'RTK' : fix === 5 ? 'RTK FLT' : fix === 4 ? '
 const lsGet = (k, d = null) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch { return d; } };
 const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
 const editable = el => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+// İkonlar: GÖKTUNGU dron kartı Font Awesome kullanır (fa-arrows-up-down, fa-gauge-high, fa-battery-*, fa-satellite-dish, fa-lock/-open, fa-microchip,
+// fa-fan, fa-plane-departure/-arrival …); burada aynı anlamda satır içi SVG (flightsim.js svgIco kalıbı) — dış yazı tipine bağımlılık yok
+const svg = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const ICO = {
+  alt: svg('<path d="M8 4v16M8 4 5 7M8 4l3 3M16 20V4M16 20l-3-3M16 20l3-3"/>'),
+  spd: svg('<path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16l4-6"/><circle cx="12" cy="16" r="1.6"/><path d="M4 16h2M18 16h2"/>'),
+  bat: svg('<rect x="2.5" y="8" width="16" height="8" rx="1.6"/><path d="M21 11v2"/><rect class="fill" x="4.5" y="10" width="12" height="4" fill="currentColor" stroke="none"/>'),
+  gps: svg('<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 7a13 13 0 0 1 13 13"/><path d="M4 20l5-5"/><circle cx="10" cy="14" r="1.6"/>'),
+  lock: svg('<rect x="5" y="11" width="14" height="9" rx="1.6"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  unlock: svg('<rect x="5" y="11" width="14" height="9" rx="1.6"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>'),
+  mode: svg('<rect x="7" y="7" width="10" height="10" rx="1.6"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>'),
+  fan: svg('<circle cx="12" cy="12" r="2"/><path d="M12 10c0-4 2.5-6.5 5-5.5s.5 5.5-5 5.5M14 12c4 0 6.5 2.5 5.5 5s-5.5.5-5.5-5M12 14c0 4-2.5 6.5-5 5.5s-.5-5.5 5-5.5M10 12c-4 0-6.5-2.5-5.5-5s5.5-.5 5.5 5"/>'),
+  takeoff: svg('<path d="M3 20h18"/><path d="M3.5 14.5l3.5-.8 3.8 1.9 7.6-4.5c1.2-.7 2.7-.2 2.6 1.2l-.1.5-9.3 5.3-8.1-3.6z"/><path d="M8 9l3 1.5"/>'),
+  land: svg('<path d="M3 20h18"/><path d="M3.5 9.5l3.6 1 2.4 3.6 8.6 2.1c1.4.3 2.6-.7 2.1-1.9l-.3-.5-10.4-2.5-6-1.8z"/><path d="M9 6l1 3.5"/>'),
+  rtl: svg('<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M12 20v-4"/><path d="M9.5 14.5 12 12l2.5 2.5"/>'),
+  home: svg('<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/>'),
+  goto: svg('<circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'),
+  upload: svg('<path d="M12 16V5M12 5 8 9M12 5l4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>'),
+  play: svg('<path d="M7 5v14l11-7z" fill="currentColor"/>'),
+  pause: svg('<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>'),
+  resume: svg('<path d="M5 5v14l8-7z" fill="currentColor"/><path d="M15 5v14" stroke-width="2.4"/>'),
+  cancel: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  reset: svg('<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>'),
+  layout: svg('<rect x="3" y="4" width="18" height="16" rx="1.6"/><path d="M3 10h18M9 10v10M15 10v10"/>'),
+  up: svg('<path d="M6 15l6-6 6 6"/>'),
+  down: svg('<path d="M6 9l6 6 6-6"/>'),
+  chat: svg('<path d="M4 5h16v10H9l-5 4z"/>'),
+};
 
 export function createOpsPanel(stage, opts = {}) {
   const { sid, session = {}, type = 'multirotor', modes = [], launch = null, canWrite = false, hub = true, cmdSim = null, onToggle = null, onReset = null } = opts;
@@ -50,78 +83,105 @@ export function createOpsPanel(stage, opts = {}) {
   let tele = null, hubState = {}, hubOnline = false, hubCan = null, gcs = !!session.gcs?.connected, state = session.state || 'HAZIR', routePts = session.route || [];
   let disposed = false, hubWs = null, hubTimer = 0, hubPing = 0, hubRetry = 0, hubClosed = false, ridSeq = 0;
   const pending = new Map();   // rid → {resolve, timer, name}
-  const fold = lsGet(KEY_FOLD, {});
+  const fold = lsGet(KEY_FOLD, { ops: true });   // İŞLEMLER varsayılan katlı (GÖKTUNGU'da İŞLEMLER düğmesi açar)
   const isPlane = type === 'sabit_kanat' || type === 'vtol';
   const launchBtnText = () => (tele?.armed && (num(tele.alt_rel, 0) > 2 || (launch && launch.phase && launch.phase !== 'armed')) ? 'İniş' : (LAUNCH_BTN[launch?.method] || 'Kalkış'));
   const canCmd = () => canWrite && hub && hubOnline && hubCan !== false && state === 'HAZIR';
+  const ico = (k, cls = '') => h('i', { class: `fs-pn-ico ${cls}`, html: ICO[k] });
 
-  // ---------- kart iskeleti ----------
-  const card = (key, title, body, { extra = null, foldable = true, cls = '' } = {}) => {
-    const foldBtn = foldable ? h('button', { class: 'fs-pn-fold', type: 'button', title: tr('Katla / aç'), onclick: e => { e.stopPropagation(); setFold(key, !el.classList.contains('folded')); } }, '▾') : null;
-    const head = h('div', { class: 'fs-pn-h' }, h('span', { class: 'fs-pn-title' }, title), extra, h('span', { class: 'spacer' }), foldBtn);
-    const el = h('div', { class: `fs-pn-card ${cls}`, 'data-card': key }, head, body);
+  // ---------- bölüm iskeleti (stil.css .dk-konsol-bas başlık şeridi: ok + ad + araçlar; başlıktan katlanır) ----------
+  const bolum = (key, title, body, { extra = null, cls = '' } = {}) => {
+    const ok = h('span', { class: 'fs-pn-ok', html: ICO.down });
+    const head = h('div', { class: 'fs-pn-bas', role: 'button', tabindex: 0, title: tr('Katla / aç'), onclick: () => setFold(key, !el.classList.contains('folded')),
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); head.click(); } } }, ok, h('span', { class: 'fs-pn-bas-ad' }, title), extra);
+    const el = h('div', { class: `fs-pn-bolum ${cls}`, 'data-card': key }, head, body);
     if (fold[key]) el.classList.add('folded');
-    el._head = head;
     return el;
   };
-  const setFold = (key, v) => { const el = root.querySelector(`[data-card="${key}"]`); el?.classList.toggle('folded', v); fold[key] = v; lsSet(KEY_FOLD, fold); if (key === 'pfd' && !v) pfdDirty = true; };
+  const setFold = (key, v) => { const el = root.querySelector(`[data-card="${key}"]`); el?.classList.toggle('folded', v); fold[key] = v; lsSet(KEY_FOLD, fold); if (key === 'pfd' && !v) { pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame); } if (key === 'ops') islemBtn.classList.toggle('acik', !v); };
 
-  // --- BAŞLIK kartı: ad · mod · ARM · oturum durumu · GPS · MP · hub ---
-  const B = { name: h('b', { class: 'fs-pn-name' }, session.hub?.name || (session.drone ? `${session.drone.code || ''} ${session.drone.name || ''}`.trim() : null) || tr('Simülatör #{n}', { n: sid })),
-    mode: h('span', { class: 'badge blue' }, '—'), arm: h('span', { class: 'badge gray' }, 'DISARMED'), st: h('span', { class: 'badge green' }, 'Hazır'),
-    gps: h('span', { class: 'badge gray', title: 'GPS' }, 'GPS —'), mp: h('span', { class: 'badge gray', title: tr('Mission Planner (UDP) bağlantısı') }, 'MP'),
-    hub: h('span', { class: 'badge gray', title: tr('Harekât hub bağlantısı (/ws/drone/live)') }, 'HUB') };
-  const headCard = card('head', '', h('div', { class: 'fs-pn-body fs-pn-badges' }, B.name, B.mode, B.arm, B.st, B.gps, B.mp, hub ? B.hub : null), { foldable: false, cls: 'fs-pn-head' });   // tip TİP karosunda
+  // --- BAŞLIK ŞERİDİ (.dron-kart-baslik): nokta · ad · özet (irtifa + kip) · ARM · MP · HUB · küçült ---
+  const B = {
+    nokta: h('span', { class: 'fs-pn-nokta', title: tr('Oturum durumu') }),
+    name: h('span', { class: 'fs-pn-ad' }, session.hub?.name || (session.drone ? `${session.drone.code || ''} ${session.drone.name || ''}`.trim() : null) || tr('Simülatör #{n}', { n: sid })),
+    irt: h('span', { class: 'fs-pn-ozet-irt' }, ''), kip: h('span', { class: 'fs-pn-ozet-kip' }, ''),
+    arm: h('span', { class: 'fs-pn-rozet yok' }, 'DISARMED'),
+    hub: h('span', { class: 'fs-pn-rozet yok', title: tr('Harekât hub bağlantısı (/ws/drone/live)') }, 'HUB'),
+  };   // Mission Planner durumu sol alttaki MP kutusunda (başlıkta yer dar: ad kesilmesin)
+  const minBtn = h('button', { class: 'fs-pn-kucult', type: 'button', title: tr('Küçült (yalnız başlık)'), html: ICO.up, onclick: e => { e.stopPropagation(); setMin(!kart.classList.contains('yalniz-baslik')); } });
+  const baslik = h('div', { class: 'fs-pn-baslik' }, B.nokta, B.name, h('span', { class: 'fs-pn-ozet' }, B.irt, B.kip), B.arm, hub ? B.hub : null, minBtn);
+  const setMin = v => { kart.classList.toggle('yalniz-baslik', v); minBtn.innerHTML = v ? ICO.down : ICO.up; minBtn.title = tr(v ? 'Geri büyüt' : 'Küçült (yalnız başlık)'); lsSet(KEY_MIN, v ? 1 : null); if (!v) { pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame); } };
 
-  // --- PFD kartı ---
+  // --- ÜST SATIR (.dk-ust-satir): UÇUŞA HAZIR rozeti (tıkla → ARM/DISARM) + İŞLEMLER düğmesi ---
+  const hazirMetin = h('span', { class: 'fs-pn-hazir-metin' }, '—');
+  const hazirBtn = h('button', { class: 'fs-pn-hazir bilinmiyor', type: 'button', title: tr('ARM / DISARM (onaylı)'), onclick: () => { if (!hazirBtn.classList.contains('off')) armToggle(); } }, hazirMetin);
+  const islemBtn = h('button', { class: `fs-pn-islem-btn ${fold.ops ? '' : 'acik'}`, type: 'button', title: tr('İşlemler bölümünü aç/kapat'), onclick: () => setFold('ops', !fold.ops) }, h('span', { class: 'fs-pn-islem-metin' }, 'İŞLEMLER'));
+  const ustSatir = h('div', { class: 'fs-pn-ust' }, hazirBtn, hub ? islemBtn : null);
+
+  // --- UÇUŞ GÖSTERGESİ (PFD) ---
   const canvas = h('canvas', { class: 'fs-pn-pfd' });
   const g = canvas.getContext('2d');
-  const pfdCard = card('pfd', 'UÇUŞ GÖSTERGESİ', h('div', { class: 'fs-pn-body fs-pn-pfd-wrap' }, canvas));
+  const pfdBolum = bolum('pfd', 'UÇUŞ GÖSTERGESİ', h('div', { class: 'fs-pn-pfd-wrap' }, canvas));
 
-  // --- TELEMETRİ karoları 4×2 ---
-  const tile = (key, label, { click = null, title = null } = {}) => {
-    const v = h('b', null, '—'), sub = h('i', null, '');
-    const el = h('div', { class: `fs-pn-tile ${click ? 'act' : ''}`, 'data-tile': key, role: click ? 'button' : null, tabindex: click ? 0 : null, title }, h('small', null, label), v, sub);
+  // --- TELEMETRİ karoları 4×2 (.dk-tel-hucre: ikon · değer · etiket) ---
+  const tile = (key, label, icon, { click = null, title = null } = {}) => {
+    const v = h('b', { class: 'fs-pn-tile-v' }, '—'), sub = h('small', { class: 'fs-pn-tile-sub' }, '');
+    const i = ico(icon);
+    const el = h('div', { class: `fs-pn-tile ${click ? 'act' : ''}`, 'data-tile': key, role: click ? 'button' : null, tabindex: click ? 0 : null, title }, i, v, sub, h('span', { class: 'fs-pn-tile-et' }, label));
     if (click) { el.addEventListener('click', e => { e.stopPropagation(); if (el.classList.contains('off')) return; click(el); }); el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }); }
-    return Object.assign(el, { v, sub });
+    return Object.assign(el, { v, sub, i });
   };
   const T = {
-    alt: tile('alt', 'İRTİFA'), spd: tile('spd', 'HIZ'), bat: tile('bat', 'BATARYA'), gps: tile('gps', 'GPS'),
-    arm: tile('arm', 'DURUM', { click: () => armToggle(), title: tr('ARM / DISARM (onaylı)') }),
-    mode: tile('mode', 'MOD', { click: el => modeMenu(el), title: tr('Uçuş modu seç') }),
-    type: tile('type', 'TİP'),
-    cmd: tile('cmd', 'KOMUT', { click: () => (launchBtnText() === 'İniş' ? land() : takeoffDialog()), title: tr('Kalkış / iniş') }),
+    alt: tile('alt', 'İRTİFA', 'alt'), spd: tile('spd', 'HIZ', 'spd'), bat: tile('bat', 'BATARYA', 'bat'), gps: tile('gps', 'GPS', 'gps'),
+    arm: tile('arm', 'DURUM', 'lock', { click: () => armToggle(), title: tr('ARM / DISARM (onaylı)') }),
+    mode: tile('mode', 'MOD', 'mode', { click: el => modeMenu(el), title: tr('Uçuş modu seç') }),
+    type: tile('type', 'TİP', 'fan'),
+    cmd: tile('cmd', 'KOMUT', 'takeoff', { click: () => (launchBtnText() === 'İniş' ? land() : takeoffDialog()), title: tr('Kalkış / iniş') }),
   };
   T.type.v.textContent = tr(TYPE_NAME[type] || type); T.type.sub.textContent = session.sitl || session.mode === 'replay' ? (session.mode === 'replay' ? tr('Kayıt') : 'SITL') : '';
-  const tilesCard = card('tiles', 'TELEMETRİ', h('div', { class: 'fs-pn-tiles' }, T.alt, T.spd, T.bat, T.gps, T.arm, T.mode, T.type, T.cmd));
+  const tilesBolum = bolum('tiles', 'TELEMETRİ', h('div', { class: 'fs-pn-tiles' }, T.alt, T.spd, T.bat, T.gps, T.arm, T.mode, T.type, T.cmd));
 
-  // --- İŞLEMLER kartı ---
-  const btn = (label, fn, cls = '') => h('button', { class: `btn sm ${cls}`, type: 'button', onclick: fn }, label);
-  const routeSel = h('select', { class: 'input sm fs-pn-route' }, h('option', { value: '' }, 'Rota seçin…'));
-  const routeInfo = h('span', { class: 'small muted fs-pn-route-info' }, '');
-  const altInp = h('input', { class: 'input sm fs-pn-num', type: 'number', min: 1, max: 500, value: isPlane ? 80 : 30, title: tr('Hedef irtifa (m, AGL)') });
-  const gotoBtn = btn('Hedefe git', () => gotoDialog());
-  const lbl = s => h('span', { class: 'fs-pn-lbl' }, s);
-  const opsBody = h('div', { class: 'fs-pn-body fs-pn-ops-body' },
-    h('div', { class: 'fs-pn-row' }, lbl('Uçuş'), btn(launchBtnText(), () => takeoffDialog(), 'primary fs-pn-takeoff'), btn('İniş', () => land()), btn('RTL', () => hubCmd('rtl')), btn('Ev konumu', () => setHome())),
-    h('div', { class: 'fs-pn-row' }, lbl('Hedef'), h('span', { class: 'fs-pn-grp' }, altInp, btn('İrtifa', () => hubCmd('altitude_change', { alt_rel_m: Number(altInp.value) || 30 }))), gotoBtn),
-    h('div', { class: 'fs-pn-row fs-pn-route-row' }, lbl('Rota'), routeSel, btn('Yükle', () => routeUpload(), 'fs-pn-route-up'), btn('Başlat', () => hubCmd('mission_start', { rota: routeName() }), 'fs-pn-route-start')),
-    h('div', { class: 'fs-pn-row' }, lbl(''), btn('Duraklat', () => hubCmd('mission_pause', { davranis: 'bekle' })), btn('Sürdür', () => hubCmd('mission_resume', {})), btn('İptal', () => hubCmd('mission_cancel', { rota: routeName() }), 'danger'), routeInfo),
-    h('div', { class: 'fs-pn-row' }, lbl('Sim'), btn('↺ Sıfırla', () => { onReset ? onReset() : cmdSim?.('reset'); }, 'fs-pn-free'), btn('Yerleşimi sıfırla', () => resetLayout(), 'fs-pn-free'), h('span', { class: 'spacer' }), h('span', { class: 'small muted fs-pn-perm' }, '')));
-  const opsCard = card('ops', 'İŞLEMLER', opsBody);
+  // --- İŞLEMLER (.dk-islem-izgara 3 sütun; .dk-islem-grup grup başlıkları; .dk-islem-hucre: ikon + metin) ---
+  const hucre = (label, icon, fn, cls = '') => h('button', { class: `fs-pn-hucre ${cls}`, type: 'button', onclick: fn }, ico(icon, 'fs-pn-hucre-ico'), h('span', { class: 'fs-pn-hucre-metin' }, label));
+  const grup = s => h('div', { class: 'fs-pn-grup' }, s);
+  const routeSel = h('select', { class: 'fs-pn-girdi fs-pn-route' }, h('option', { value: '' }, 'Rota seçin…'));
+  const routeInfo = h('div', { class: 'fs-pn-not fs-pn-route-info' }, '');
+  const altInp = h('input', { class: 'fs-pn-girdi fs-pn-num', type: 'number', min: 1, max: 500, value: isPlane ? 80 : 30, title: tr('Hedef irtifa (m, AGL)') });
+  const opsBody = h('div', { class: 'fs-pn-izgara fs-pn-ops-body' },
+    grup('Uçuş'),
+    hucre(LAUNCH_BTN[launch?.method] || 'Kalkış', 'takeoff', () => takeoffDialog(), 'fs-pn-takeoff'), hucre('İniş', 'land', () => land()), hucre('RTL', 'rtl', () => hubCmd('rtl')),   // akıllı Kalkış/İniş KOMUT karosunda; burada sabit
+    hucre('Ev konumu', 'home', () => setHome()),
+    grup('Hedef'),
+    h('label', { class: 'fs-pn-hucre fs-pn-hucre-girdi', title: tr('Hedef irtifa (m, AGL)') }, altInp, h('span', { class: 'fs-pn-hucre-metin' }, 'm AGL')),
+    hucre('İrtifa', 'alt', () => hubCmd('altitude_change', { alt_rel_m: Number(altInp.value) || 30 })), hucre('Hedefe git', 'goto', () => gotoDialog()),
+    grup('Rota'),
+    h('div', { class: 'fs-pn-tam' }, routeSel),
+    hucre('Yükle', 'upload', () => routeUpload(), 'fs-pn-route-up'), hucre('Başlat', 'play', () => hubCmd('mission_start', { rota: routeName() }), 'fs-pn-route-start'),
+    hucre('Duraklat', 'pause', () => hubCmd('mission_pause', { davranis: 'bekle' })), hucre('Sürdür', 'resume', () => hubCmd('mission_resume', {})),
+    hucre('İptal', 'cancel', () => hubCmd('mission_cancel', { rota: routeName() }), 'tehlikeli'),
+    h('div', { class: 'fs-pn-tam' }, routeInfo),
+    grup('Sim'),
+    hucre('↺ Sıfırla', 'reset', () => { onReset ? onReset() : cmdSim?.('reset'); }, 'fs-pn-free'), hucre('Yerleşimi sıfırla', 'layout', () => resetLayout(), 'fs-pn-free'),
+    h('div', { class: 'fs-pn-tam fs-pn-not fs-pn-perm' }, ''));
+  const opsBolum = bolum('ops', 'İŞLEMLER', opsBody);
 
-  // --- KONSOL kartı (alt orta) ---
-  const conBody = h('div', { class: 'fs-pn-con-body mono' });
-  const conCard = card('con', 'KONSOL', conBody, { cls: 'fs-pn-con', extra: h('button', { class: 'fs-pn-clear', type: 'button', title: tr('Konsolu temizle'), onclick: e => { e.stopPropagation(); conBody.replaceChildren(); } }, '⌫') });
+  // --- HABERLEŞME konsolu (.dk-konsol: kart altında, katlanır; sayaç + temizle) ---
+  const conBody = h('div', { class: 'fs-pn-kon-govde' });
+  const conCount = h('span', { class: 'fs-pn-kon-sayac' }, '0');
+  const conBolum = bolum('con', 'Haberleşme', conBody, { cls: 'fs-pn-kon', extra: h('span', { class: 'fs-pn-kon-araclar' }, conCount,
+    h('button', { class: 'fs-pn-kon-btn', type: 'button', title: tr('Konsolu temizle'), onclick: e => { e.stopPropagation(); conBody.replaceChildren(); conCount.textContent = '0'; } }, '⌫')) });
+  conBolum.querySelector('.fs-pn-bas-ad').before(ico('chat', 'fs-pn-kon-ikon'));   // GÖKTUNGU sırası: ok · ikon · ad · sayaç · araçlar
 
-  const col = h('div', { class: 'fs-pn-col' }, headCard, pfdCard, tilesCard, hub ? opsCard : null);
-  const root = h('div', { class: 'fs-pn' }, col, conCard);
+  const govde = h('div', { class: 'fs-pn-govde' }, ustSatir, pfdBolum, tilesBolum, hub ? opsBolum : null, conBolum);
+  const kart = h('div', { class: 'fs-pn-kart' }, baslik, govde);
+  const root = h('div', { class: 'fs-pn' }, kart);
   root.id = 'fs-pn';
   stage.append(root);
   stage.classList.add('fs-ops-host');
-  if (!hub) { stage.classList.add('fs-pn-nohub'); for (const k of ['arm', 'mode', 'cmd']) T[k].classList.add('off'); }
+  if (!hub) { stage.classList.add('fs-pn-nohub'); for (const k of ['arm', 'mode', 'cmd']) T[k].classList.add('off'); hazirBtn.classList.add('off'); }
+  if (lsGet(KEY_MIN)) setMin(true);
 
-  // ---------- konsol satırları ----------
+  // ---------- konsol satırları (.dk-kons-satir: ts · etiket · metin) ----------
   const log = (text, sev = 'bilgi', tag = 'SİM', ts = null) => {
     if (disposed || !text) return;
     const d = ts ? new Date(ts * 1000) : new Date();
@@ -130,24 +190,25 @@ export function createOpsPanel(stage, opts = {}) {
     const atBottom = conBody.scrollTop + conBody.clientHeight >= conBody.scrollHeight - 6;
     conBody.append(h('div', { class: `fs-pn-line ${cls}` }, h('span', { class: 't' }, stamp), h('span', { class: 'tag' }, tag), h('span', { class: 'x' }, text)));
     while (conBody.children.length > 200) conBody.firstChild.remove();
+    conCount.textContent = String(conBody.children.length);
     if (atBottom) conBody.scrollTop = conBody.scrollHeight;
   };
 
   // ---------- hub soketi (/ws/drone/live, watch sim_id) ----------
   const hubSend = obj => { if (hubWs && hubWs.readyState === 1) hubWs.send(JSON.stringify(obj)); };
-  const setHubBadge = (tone, text, title) => { B.hub.className = `badge ${tone}`; B.hub.textContent = text; if (title) B.hub.title = title; };
+  const setHubBadge = (tone, text, title) => { B.hub.className = `fs-pn-rozet ${tone}`; B.hub.textContent = text; if (title) B.hub.title = title; };
   const openHub = () => {
     if (hubClosed || disposed) return;
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/drone/live`;
-    try { hubWs = new WebSocket(url); } catch (err) { setHubBadge('red', 'HUB', err.message); return; }
-    setHubBadge('yellow', 'HUB…', tr('Harekât hub bağlantısı kuruluyor'));
+    try { hubWs = new WebSocket(url); } catch (err) { setHubBadge('kotu', 'HUB', err.message); return; }
+    setHubBadge('baglaniyor', 'HUB…', tr('Harekât hub bağlantısı kuruluyor'));
     hubWs.onopen = () => { hubRetry = 0; hubSend({ t: 'watch', sim_id: Number(sid) }); hubPing = setInterval(() => hubSend({ t: 'ping' }), 10000); };
     hubWs.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onHub(m); };
     hubWs.onclose = ev => {
       clearInterval(hubPing); hubOnline = false; applyPerm();
       for (const [rid, p] of pending) { clearTimeout(p.timer); p.resolve({ ok: false, error: tr('Hub bağlantısı kapandı') }); pending.delete(rid); }
       if (hubClosed || disposed) return;
-      setHubBadge(ev.code === 4403 ? 'red' : 'yellow', 'HUB', ev.code === 4403 ? tr('Harekât hub yetkisi yok') : tr('Hub bağlantısı koptu; yeniden deneniyor'));
+      setHubBadge(ev.code === 4403 ? 'kotu' : 'baglaniyor', 'HUB', ev.code === 4403 ? tr('Harekât hub yetkisi yok') : tr('Hub bağlantısı koptu; yeniden deneniyor'));
       if (ev.code === 4403) return;
       hubTimer = setTimeout(openHub, Math.min(10000, 500 * 2 ** Math.min(hubRetry++, 5)));
     };
@@ -159,12 +220,12 @@ export function createOpsPanel(stage, opts = {}) {
       hubOnline = !!b;
       hubCan = m.me ? m.me.can_command !== false : null;
       if (b?.drones) { const d0 = b.drones['1'] || Object.values(b.drones)[0]; if (d0) hubState = { ...hubState, ...d0 }; }
-      setHubBadge(hubOnline ? 'green' : 'yellow', 'HUB', hubOnline ? tr('Harekât hub bağlı · köprü {id}', { id: b.bridge_id }) : tr('Oturum köprüsü hub\'da yok'));
+      setHubBadge(hubOnline ? 'bagli' : 'baglaniyor', 'HUB', hubOnline ? tr('Harekât hub bağlı · köprü {id}', { id: b.bridge_id }) : tr('Oturum köprüsü hub\'da yok'));
       applyPerm(); return;
     }
     if (m.t === 'status') { if (m.bridge_id === bridgeId) { hubState = m.state || hubState; drawTiles(); } return; }
     if (m.t === 'console') { if (m.bridge_id !== bridgeId || m.tag === 'STATUS') return; log(m.repeat > 1 ? `${m.text} ×${m.repeat}` : m.text, m.sev, m.tag, m.ts); return; }   // STATUSTEXT satırları sim WS 'event' olarak zaten gelir (tekrar yok)
-    if (m.t === 'bridge') { if (m.bridge_id === bridgeId) { hubOnline = !!m.online; setHubBadge(hubOnline ? 'green' : 'red', 'HUB', hubOnline ? tr('Harekât hub bağlı') : tr('Oturum köprüsü çevrimdışı')); applyPerm(); } return; }
+    if (m.t === 'bridge') { if (m.bridge_id === bridgeId) { hubOnline = !!m.online; setHubBadge(hubOnline ? 'bagli' : 'kotu', 'HUB', hubOnline ? tr('Harekât hub bağlı') : tr('Oturum köprüsü çevrimdışı')); applyPerm(); } return; }
     if (m.t === 'res') { const p = pending.get(m.rid); if (p) { clearTimeout(p.timer); pending.delete(m.rid); p.resolve(m); } return; }
     if (m.t === 'error') { log(m.error || 'hata', 'hata', 'HUB'); }
   };
@@ -181,7 +242,7 @@ export function createOpsPanel(stage, opts = {}) {
     return r;
   });
 
-  // ---------- komut diyalogları ----------
+  // ---------- komut diyalogları (ui.js modal → body; tam ekranda görünür: flightsim.js documentElement.requestFullscreen) ----------
   const armToggle = async () => {
     if (!canCmd()) return hubCmd('arm');
     if (tele?.armed) { if (await confirmDialog('DISARM', tr('Motorlar durdurulsun mu? Havadaysa dron düşer.'), { okLabel: 'DISARM', danger: true })) hubCmd('disarm'); return; }
@@ -190,15 +251,16 @@ export function createOpsPanel(stage, opts = {}) {
       actions: [{ label: 'Vazgeç' }, { label: 'ARM', class: 'danger', onClick: () => { hubCmd('arm', force.checked ? { force: true } : {}); } }] });
   };
   let menuEl = null;
-  // Mod menüsü panel KÖKÜNE eklenir (karonun içine değil): sütun overflow:auto olduğundan karo içindeki absolute menü sütunun kaydırma
-  // yüksekliğini büyütür, kapanınca içerik kayar (mousedown/mouseup farklı öğelere düşer); tıklama karoya kabarmasın (yeniden açılır)
+  // Mod menüsü (stil.css .dk-mod-popup: 3 sütun .dk-mod-btn) panel KÖKÜNE eklenir (karonun içine değil): kart overflow:auto olduğundan karo
+  // içindeki absolute menü kartın kaydırma yüksekliğini büyütür, kapanınca içerik kayar; tıklama karoya kabarmasın (yeniden açılır)
   const closeMenu = () => { menuEl?.remove(); menuEl = null; document.removeEventListener('pointerdown', onDocDown, true); };
   const onDocDown = e => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); };
   const modeMenu = anchor => {
     if (menuEl) return closeMenu();
-    const r = anchor.getBoundingClientRect(), s = stage.getBoundingClientRect();
-    menuEl = h('div', { class: 'fs-pn-menu', style: { left: `${Math.round(r.left - s.left)}px`, top: `${Math.round(r.bottom - s.top + 4)}px`, minWidth: `${Math.round(r.width)}px` }, onclick: e => e.stopPropagation() },
-      modes.map(m => h('button', { type: 'button', class: `fs-pn-menu-it ${tele?.mode === m ? 'on' : ''}`, onclick: e => { e.stopPropagation(); closeMenu(); hubCmd('set_mode', { mode: m }); } }, m)));
+    const r = anchor.getBoundingClientRect(), s = stage.getBoundingClientRect(), w = 232;
+    menuEl = h('div', { class: 'fs-pn-menu', style: { left: `${Math.round(clamp(r.left - s.left, 4, s.width - w - 4))}px`, top: `${Math.round(r.bottom - s.top + 4)}px` }, onclick: e => e.stopPropagation() },
+      h('div', { class: 'fs-pn-menu-bas' }, tr('Uçuş modu seç')),
+      h('div', { class: 'fs-pn-mod-izgara' }, modes.map(m => h('button', { type: 'button', class: `fs-pn-mod-btn ${tele?.mode === m ? 'aktif' : ''}`, onclick: e => { e.stopPropagation(); closeMenu(); if (tele?.mode !== m) hubCmd('set_mode', { mode: m }); } }, m))));
     root.append(menuEl);
     document.addEventListener('pointerdown', onDocDown, true);
   };
@@ -261,6 +323,7 @@ export function createOpsPanel(stage, opts = {}) {
     root.querySelectorAll('.fs-pn-ops-body button:not(.fs-pn-free), .fs-pn-ops-body select, .fs-pn-ops-body input').forEach(b => { b.disabled = !ok; });
     root.querySelectorAll('.fs-pn-ops-body .fs-pn-free').forEach(b => { b.disabled = !canWrite; });
     for (const k of ['arm', 'mode', 'cmd']) T[k].classList.toggle('off', !ok);
+    hazirBtn.classList.toggle('off', !ok);
     const perm = root.querySelector('.fs-pn-perm');
     if (perm) perm.textContent = ok ? '' : !canWrite ? tr('Komutlar için yazma izni gerekir') : !hubOnline ? tr('Hub bağlantısı bekleniyor') : hubCan === false ? tr('Hub komut yetkisi yok') : state !== 'HAZIR' ? tr('Oturum hazır değil') : '';
   };
@@ -274,34 +337,51 @@ export function createOpsPanel(stage, opts = {}) {
     const now = performance.now();
     if (now - tilesAt > 100) { tilesAt = now; drawTiles(); }
   };
+  const STATE_TONE = { BASLIYOR: 'baglaniyor', HAZIR: 'bagli', HATA: 'kotu', KAPANDI: 'yok' };
+  const drawHazir = () => {   // UÇUŞA HAZIR rozeti (stil.css .dk-hazir-rozet.hazir / .ucusta / .hazir-degil / .bilinmiyor)
+    const armed = !!tele?.armed;
+    let cls = 'bilinmiyor', txt = '—';
+    if (!hub) { cls = 'bilinmiyor'; txt = tr(session.mode === 'replay' ? 'KAYITTAN OYNATMA' : 'SAHTE VERİ'); }
+    else if (state === 'HATA') { cls = 'hazir-degil'; txt = tr('SITL HATASI'); }
+    else if (state === 'KAPANDI') { cls = 'bilinmiyor'; txt = tr('OTURUM KAPANDI'); }
+    else if (state !== 'HAZIR') { cls = 'bilinmiyor'; txt = tr('SITL BAŞLIYOR…'); }
+    else if (armed) { cls = 'ucusta'; txt = `ARMED · ${tr('UÇUŞTA')}`; }
+    else if (hubState.prearm?.length) { cls = 'hazir-uyari'; txt = `DISARMED · ${tr('PREARM UYARISI')}`; }
+    else { cls = 'hazir'; txt = `DISARMED · ${tr('UÇUŞA HAZIR')}`; }
+    hazirBtn.className = `fs-pn-hazir ${cls} ${hazirBtn.classList.contains('off') ? 'off' : ''}`; hazirMetin.textContent = txt;
+    B.nokta.className = `fs-pn-nokta ${hub ? (STATE_TONE[state] || 'yok') : 'sanal'}`;
+  };
   const drawTiles = () => {
     const t = tele || {};
-    B.mode.textContent = t.mode || hubState.mode || '—';
-    const armed = !!t.armed;
-    B.arm.textContent = armed ? 'ARMED' : 'DISARMED'; B.arm.className = `badge ${armed ? 'red' : 'gray'}`;
-    B.gps.textContent = `GPS ${gpsText(t.gps_fix)} · ${f0(t.sats)}`; B.gps.className = `badge ${t.gps_fix >= 3 ? 'green' : 'gray'}`;
-    B.mp.className = `badge ${gcs ? 'green' : 'gray'}`; B.mp.title = gcs ? tr('Mission Planner bağlı') : tr('Mission Planner bekleniyor');
-    T.alt.v.textContent = f1(t.alt_rel); T.alt.sub.textContent = `MSL ${f0(t.alt_msl)} m`;
-    T.spd.v.textContent = f1(t.groundspeed); T.spd.sub.textContent = tr('hava {v} m/s', { v: f1(t.airspeed) });
+    const armed = !!t.armed, mode = t.mode || hubState.mode || '—';
+    B.irt.textContent = t.alt_rel != null ? `${f0(t.alt_rel)} m` : ''; B.kip.textContent = mode === '—' ? '' : mode;
+    B.arm.textContent = armed ? 'ARMED' : 'DISARMED'; B.arm.className = `fs-pn-rozet ${armed ? 'kotu' : 'yok'}`;
+    T.alt.v.textContent = `${f1(t.alt_rel)} m`; T.alt.sub.textContent = `MSL ${f0(t.alt_msl)} m`;
+    T.spd.v.textContent = `${f1(t.groundspeed)} m/s`; T.spd.sub.textContent = t.groundspeed != null ? `${(Number(t.groundspeed) * 3.6).toFixed(1)} km/h` : '';   // GÖKTUNGU: m/s + km/h (hava hızı PFD'de IAS)
     const bv = num(t.batt_v), bp = num(t.batt_pct);
-    T.bat.v.textContent = bp != null ? `%${f0(bp)}` : '—'; T.bat.sub.textContent = bv != null && bv > 0 ? `${bv.toFixed(2)} V` : '—'; T.bat.classList.toggle('warn', bp != null && bp < 25);
-    T.gps.v.textContent = gpsText(t.gps_fix); T.gps.sub.textContent = tr('{n} uydu', { n: f0(t.sats) });
-    T.arm.v.textContent = armed ? 'ARM' : 'DISARM'; T.arm.classList.toggle('armed', armed); T.arm.sub.textContent = hubState.prearm?.length && !armed ? tr('PreArm uyarısı') : armed ? tr('uçuşta') : tr('hazır');
-    T.mode.v.textContent = t.mode || '—'; T.mode.sub.textContent = tr('değiştir');
+    T.bat.v.textContent = bp != null ? `${f0(bp)}%` : '—'; T.bat.sub.textContent = bv != null && bv > 0 ? `${bv.toFixed(2)} V` : '';
+    T.bat.classList.toggle('warn', bp != null && bp < 25); T.bat.classList.toggle('iyi', bp != null && bp >= 25);
+    const fill = T.bat.i.querySelector('.fill'); if (fill) fill.setAttribute('width', String(bp != null ? Math.max(0, Math.min(12, 12 * bp / 100)) : 0));
+    T.gps.v.textContent = `${gpsText(t.gps_fix)} · ${f0(t.sats)}`; T.gps.sub.textContent = tr('{n} uydu', { n: f0(t.sats) }) + (gcs ? ' · MP' : '');   // MP: Mission Planner (UDP) bağlı
+    T.gps.className = `fs-pn-tile ${t.gps_fix >= 3 ? 'iyi' : t.gps_fix === 2 ? 'warn' : 'kotu'}`;
+    T.arm.v.textContent = armed ? 'ARMED' : 'DISARM'; T.arm.classList.toggle('iyi', armed); T.arm.sub.textContent = hubState.prearm?.length && !armed ? tr('PreArm uyarısı') : armed ? tr('uçuşta') : tr('hazır');
+    T.arm.i.innerHTML = armed ? ICO.unlock : ICO.lock;
+    T.mode.v.textContent = mode; T.mode.sub.textContent = tr('değiştir');
     const cmdTxt = launchBtnText();
     T.cmd.v.textContent = tr(cmdTxt); T.cmd.sub.textContent = cmdTxt === 'İniş' ? 'LAND' : (launch ? tr('düzenek') : 'TAKEOFF');
-    const tk = root.querySelector('.fs-pn-takeoff'); if (tk && tk.textContent !== tr(cmdTxt)) tk.textContent = tr(cmdTxt);
+    T.cmd.classList.toggle('land', cmdTxt === 'İniş'); T.cmd.classList.toggle('takeoff', cmdTxt !== 'İniş'); T.cmd.i.innerHTML = cmdTxt === 'İniş' ? ICO.land : ICO.takeoff;
     if (t.mode !== lastMode) { lastMode = t.mode; drawRoute(); }
+    drawHazir();
   };
   const frame = () => {
     raf = 0;
     if (disposed || !on) return;
-    if (pfdDirty && !pfdCard.classList.contains('folded')) { pfdDirty = false; drawPfd(); }
+    if (pfdDirty && !pfdBolum.classList.contains('folded') && !kart.classList.contains('yalniz-baslik')) { pfdDirty = false; drawPfd(); }
   };
 
   // ---------- PFD çizimi (GÖKTUNGU benzeri: mavi gök / kahverengi yer) ----------
   let W = 0, H = 0, dpr = 1;
-  const resizePfd = () => {   // kartlar gizliyken (P / FPV / katlı) tuval ölçüsüzdür → çizme (negatif yarıçap hatası)
+  const resizePfd = () => {   // kart gizliyken (P / FPV / katlı / küçük) tuval ölçüsüzdür → çizme (negatif yarıçap hatası)
     const w = canvas.clientWidth || 0, hh = Math.round(w * 0.47);
     if (w < 40 || hh < 20) return false;
     dpr = Math.min(devicePixelRatio || 1, 2);
@@ -310,7 +390,7 @@ export function createOpsPanel(stage, opts = {}) {
     return true;
   };
   const txt = (s, x, y, { px = 11, align = 'left', base = 'middle', color = '#f1f5f9', bold = false } = {}) => {
-    g.font = `${bold ? '700 ' : ''}${px}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`; g.textAlign = align; g.textBaseline = base;
+    g.font = `${bold ? '700 ' : ''}${px}px Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace`; g.textAlign = align; g.textBaseline = base;
     g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineJoin = 'round'; g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
   };
   const line = (x1, y1, x2, y2, color = '#f1f5f9', w = 1.2) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineWidth = w; g.strokeStyle = color; g.stroke(); };
@@ -375,7 +455,7 @@ export function createOpsPanel(stage, opts = {}) {
     txt(agl.toFixed(agl < 10 ? 1 : 0), rx + 8, cy, { align: 'left', px: 15, bold: true });
     txt('AGL m', W - 4, 9, { align: 'right', px: 9, color: '#cbd5e1' });
     txt(msl != null ? `MSL ${msl.toFixed(0)}` : '', W - 4, ah - 9, { align: 'right', px: 9.5, color: '#cbd5e1' });
-    txt(`${climb > 0.05 ? '+' : ''}${climb.toFixed(1)}`, W - 4, cy + 22, { align: 'right', px: 10, color: climb < -3 ? '#fbbf24' : '#cbd5e1' });
+    txt(`VS ${climb > 0.05 ? '+' : ''}${climb.toFixed(1)}`, rx - 6, ah - 24, { align: 'right', px: 9.5, color: climb < -3 ? '#fbbf24' : '#cbd5e1' });   // dikey hız: ufuk alanı sağ alt, BAT'ın üstü (bant tick etiketleriyle çakışmaz)
     // --- alt: yön şeridi ---
     const hsY = ah, hpd = aw / 90;   // ±45°
     g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, hsY, W, hsH);
@@ -403,43 +483,39 @@ export function createOpsPanel(stage, opts = {}) {
     if (t.mode === 'AUTO' && hubState.mission_count) txt(`WP ${hubState.mission_seq ?? '—'}/${hubState.mission_count}${hubState.wp_dist != null ? ` · ${Math.round(hubState.wp_dist)} m` : ''}`, cx, 10, { align: 'center', px: 10, color: '#fde68a' });
   }
 
-  // ---------- sürükleme (sütun ve konsol başlığından) + yerleşim ----------
-  const dragSetup = (el, head, key, place) => {
-    let d = null;
-    head.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || e.target.closest('button, input, select')) return;
-      const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect();
-      d = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, s, w: r.width, h: r.height };
-      head.setPointerCapture(e.pointerId); el.classList.add('dragging'); e.preventDefault();
-    });
-    head.addEventListener('pointermove', e => {
-      if (!d || e.pointerId !== d.id) return;
-      const x = clamp(e.clientX - d.dx - d.s.left, 0, Math.max(0, d.s.width - d.w)), y = clamp(e.clientY - d.dy - d.s.top, 0, Math.max(0, d.s.height - 40));
-      place(x, y, d.s);
-    });
-    const up = e => { if (!d || e.pointerId !== d.id) return; d = null; el.classList.remove('dragging'); const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect(); lsSet(key, { x: Math.round(r.left - s.left), y: Math.round(r.top - s.top), r: Math.round(s.right - r.right), w: Math.round(s.width) }); };
-    head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
-  };
-  const placeCol = (x, y) => { col.classList.add('free'); col.style.left = `${x}px`; col.style.top = `${y}px`; col.style.right = 'auto'; };
-  const placeCon = (x, y) => { conCard.classList.add('free'); conCard.style.left = `${x}px`; conCard.style.top = `${y}px`; conCard.style.bottom = 'auto'; conCard.style.transform = 'none'; };
-  dragSetup(col, headCard, KEY_COL, placeCol);   // başlık kartının tamamı sütunun tutamacıdır (rozetler tıklanabilir değil)
-  dragSetup(conCard, conCard._head, KEY_CON, placeCon);
+  // ---------- sürükleme (kart başlığından; stil.css .dron-kart.ayrik .dron-kart-baslik cursor:grab) + yerleşim ----------
+  let d = null;
+  baslik.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button, input, select')) return;
+    const r = kart.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    d = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, s, w: r.width };
+    baslik.setPointerCapture(e.pointerId); kart.classList.add('dragging'); e.preventDefault();
+  });
+  baslik.addEventListener('pointermove', e => {
+    if (!d || e.pointerId !== d.id) return;
+    placeKart(clamp(e.clientX - d.dx - d.s.left, 0, Math.max(0, d.s.width - d.w)), clamp(e.clientY - d.dy - d.s.top, 0, Math.max(0, d.s.height - 40)));
+  });
+  const dragUp = e => { if (!d || e.pointerId !== d.id) return; d = null; kart.classList.remove('dragging'); const r = kart.getBoundingClientRect(), s = stage.getBoundingClientRect(); lsSet(KEY_COL, { x: Math.round(r.left - s.left), y: Math.round(r.top - s.top), r: Math.round(s.right - r.right), w: Math.round(s.width) }); };
+  baslik.addEventListener('pointerup', dragUp); baslik.addEventListener('pointercancel', dragUp);
+  const placeKart = (x, y) => { kart.classList.add('free'); kart.style.left = `${x}px`; kart.style.top = `${y}px`; kart.style.right = 'auto'; };
   const applyLayout = () => {
     const s = stage.getBoundingClientRect();
-    const c = lsGet(KEY_COL); if (c && typeof c.r === 'number') { const w = col.offsetWidth || 440; placeCol(clamp(s.width - c.r - w, 0, Math.max(0, s.width - w)), clamp(c.y, 0, Math.max(0, s.height - 60))); }
-    const k = lsGet(KEY_CON); if (k && typeof k.x === 'number') { const w = conCard.offsetWidth || 560; placeCon(clamp(k.x, 0, Math.max(0, s.width - w)), clamp(k.y, 0, Math.max(0, s.height - 60))); }
+    const c = lsGet(KEY_COL); if (c && typeof c.r === 'number') { const w = kart.offsetWidth || 400; placeKart(clamp(s.width - c.r - w, 0, Math.max(0, s.width - w)), clamp(c.y, 0, Math.max(0, s.height - 60))); }
   };
   const resetLayout = () => {
-    lsSet(KEY_COL, null); lsSet(KEY_CON, null); lsSet(KEY_FOLD, null);
-    col.classList.remove('free'); col.style.cssText = ''; conCard.classList.remove('free'); conCard.style.cssText = '';
+    lsSet(KEY_COL, null); lsSet(KEY_FOLD, null); lsSet(KEY_MIN, null);
+    kart.classList.remove('free'); kart.style.cssText = '';
     for (const k of Object.keys(fold)) delete fold[k];
-    root.querySelectorAll('.fs-pn-card.folded').forEach(e => e.classList.remove('folded'));
+    fold.ops = true;
+    root.querySelectorAll('.fs-pn-bolum.folded').forEach(e => e.classList.remove('folded'));
+    opsBolum.classList.add('folded'); islemBtn.classList.remove('acik');
+    setMin(false);
     pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame);
     toast(tr('Yerleşim sıfırlandı'));
   };
   // alt çubuk sarınca yükselir: kapsayıcının alt sınırı (--fs-bar-h) çubuğun üstünde kalır
   const bar = stage.querySelector('.fs-bar');
-  const onResize = () => { if (bar) stage.style.setProperty('--fs-bar-h', `${bar.offsetHeight || 54}px`); if (col.classList.contains('free') || conCard.classList.contains('free')) applyLayout(); resizePfd(); pfdDirty = true; if (!raf && on) raf = requestAnimationFrame(frame); };
+  const onResize = () => { if (bar) stage.style.setProperty('--fs-bar-h', `${bar.offsetHeight || 54}px`); if (kart.classList.contains('free')) applyLayout(); resizePfd(); pfdDirty = true; if (!raf && on) raf = requestAnimationFrame(frame); };
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
   ro?.observe(stage); if (bar) ro?.observe(bar);
 
@@ -455,7 +531,7 @@ export function createOpsPanel(stage, opts = {}) {
   applyPerm();
   drawTiles(); drawRoute();
   requestAnimationFrame(() => { resizePfd(); pfdDirty = true; if (on) frame(); });
-  if (hub) { openHub(); loadRoutes(); } else { B.st.textContent = tr(session.mode === 'replay' ? 'Kayıt' : 'Sahte veri'); B.st.className = 'badge purple'; }
+  if (hub) { openHub(); loadRoutes(); }
 
   const apiObj = {
     el: root,
@@ -463,7 +539,7 @@ export function createOpsPanel(stage, opts = {}) {
     toggle(v) { on = v == null ? !on : !!v; try { localStorage.setItem(KEY_ON, on ? '1' : '0'); } catch { /* */ } apply(); onToggle?.(on); return on; },
     setFpv(v) { stage.classList.toggle('fs-fpv', !!v); if (v) closeMenu(); else { pfdDirty = true; if (on && !raf) raf = requestAnimationFrame(frame); } },
     update,
-    setState(st) { state = st; if (hub) { const tone = { BASLIYOR: 'yellow', HAZIR: 'green', HATA: 'red', KAPANDI: 'gray' }[st] || 'gray'; B.st.className = `badge ${tone}`; B.st.textContent = tr({ BASLIYOR: 'Başlıyor', HAZIR: 'Hazır', HATA: 'Hata', KAPANDI: 'Kapandı' }[st] || st); } applyPerm(); },
+    setState(st) { state = st; drawHazir(); applyPerm(); },
     setRoute(points) { routePts = points || []; drawRoute(); },
     setGcs(v) { gcs = !!v; },
     setLaunchPhase(ph) { if (launch) { launch.phase = ph; drawTiles(); } },

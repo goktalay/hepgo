@@ -8962,7 +8962,11 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 
 /* Oturum ekranı: tam alan 3B tuval + yüzen paneller (Canlı Uçuş ops-view kalıbı) */
 .fs-stage { position: absolute; inset: 0; background: #0b1220; overflow: hidden; color: #e6e9ef; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-.fs-stage:fullscreen { width: 100vw; height: 100vh; }
+/* Tam ekran (flightsim.js ⛶): BELGE tam ekrandadır (document.documentElement) — ui.js modal()/toast() ve açılır menüler body'de kalır ve görünür
+   (sahne tam ekran öğesi olsaydı dışında kalır, görünmezlerdi). body.immersive (app.js, data-immersive) üst başlık/alt barı gizler; .fs-full sahneyi
+   tüm ekrana sabitler; çıkınca (Escape / ⛶) sınıflar kalkar, düzen eski hâline döner. */
+body.fs-full .app-header, body.fs-full .app-footer, body.fs-full #immBar { display: none !important; }
+body.fs-full main#view.ops-view { position: fixed; inset: 0; z-index: 50; }
 .fs-canvas { position: absolute; inset: 0; }
 .fs-canvas canvas { display: block; width: 100%; height: 100%; }
 .fs-msg { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; background: rgba(11, 18, 32, .55); color: #cbd5e1; font-size: 15px; text-align: center; padding: 20px; pointer-events: none; }
@@ -9105,84 +9109,149 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-mhud-on .fs-hud, .fs-stage.fs-mhud-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı HUD içinde */
 .fs-mhud-btn[hidden] { display: none; }
 
-/* ===== Uçuş Simülatörü — YERLİ harekât paneli (§14; flightsim_panel.js): kartlar 3B dünyanın ÜSTÜNDE yüzer, iframe YOK =====
-   .fs-pn: tam alan kapsayıcı, pointer-events:none (fare/tekerlek 3B'ye, OrbitControls'a gider); kartlar (.fs-pn-card) pointer-events:auto.
-   Kartlar HER TEMADA koyu yarı saydamdır (rgba(11,14,17,.72), 10 px köşe, ince kenarlık, blur) — HEPGO açık/koyu temasından bağımsız; önceki
-   iframe çözümünde koyu temada (html[data-theme=dark] { color-scheme: dark } iframe'e miras, iç belge normal) Chrome iframe'i OPAK beyaz çiziyordu.
-   .fs-ops-host: panel var · .fs-ops: kartlar görünür (eski .fs-hud/.fs-cmds/.fs-events gizli) · .fs-fpv: Dron kamerası (kartlar gizli, askeri HUD kalır)
-   · .fs-pn-nohub: kayıt/sahte kip (komut kartı yok, karolar pasif). Sütun sağ üstte 440 px (<1100 px 360 px), konsol alt ortada; başlıktan sürüklenir. */
+/* ===== Uçuş Simülatörü — YERLİ harekât paneli (§14; flightsim_panel.js): TEK KART, GÖKTUNGU dron kartı görünümü BİREBİR, iframe YOK =====
+   Kullanıcı geri bildirimi: "paneller arasına boşluk koymuşsun; tek bir panel olacak, duruma göre küçülüp büyüyecek; orijinal CSS yapısına birebir
+   uy". Kurallar static/ops/css/stil.css + hepgo.css'ten kopyalanıp .fs-pn altına kapsamlandı (kaynak sınıf adı her kuralın yanında):
+   .fs-pn-kart = .dron-kart.ayrik (zemin --panel-arka, 1 px --cizgi, 6 px köşe, 0 8px 32px gölge; 400 px hepgo.css) · .fs-pn-baslik = .dron-kart-baslik
+   · .fs-pn-nokta = .dk-nokta · .fs-pn-ad = .dk-ad · .fs-pn-ozet = .dk-baslik-ozet · .fs-pn-rozet = hepgo.css .hk-bagla kapsülü · .fs-pn-kucult =
+   .dk-kucult-btn · .yalniz-baslik = .dk-yalniz-baslik · .fs-pn-govde = .dron-kart-icerik (Consolas 12 px) · .fs-pn-ust/.fs-pn-hazir/.fs-pn-islem-btn =
+   .dk-ust-satir/.dk-hazir-rozet/.dk-islem-btn · .fs-pn-bas = .dk-konsol-bas (bölüm başlık şeridi; katlanır) · .fs-pn-pfd = .dk-pfd-canvas ·
+   .fs-pn-tile = .dk-tel-hucre (+ .dk-tel-deger/.dk-tel-etiket) · .fs-pn-izgara/.fs-pn-grup/.fs-pn-hucre = .dk-islem-izgara/.dk-islem-grup/
+   .dk-islem-hucre · .fs-pn-girdi = .dk-irtifa · .fs-pn-kon-* = .dk-konsol-* · .fs-pn-menu/.fs-pn-mod-* = .dk-mini-popup/.dk-mod-popup.
+   Renk değişkenleri GÖKTUNGU KOYU teması (stil.css :root) — HEPGO açık/koyu temasından bağımsız, kart her temada koyu.
+   .fs-pn: tam alan kapsayıcı, pointer-events:none (fare/tekerlek 3B'ye); kart pointer-events:auto. .fs-ops-host: panel var · .fs-ops: kart görünür
+   (eski .fs-hud/.fs-cmds/.fs-events gizli) · .fs-fpv: Dron kamerası (kart gizli, askeri HUD kalır) · .fs-pn-nohub: kayıt/sahte kip (İŞLEMLER yok). */
 .fs-stage { --fs-bar-h: 54px; }   /* alt çubuk yüksekliği (flightsim_panel.js ResizeObserver günceller) */
-.fs-pn { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); z-index: 7; pointer-events: none; display: none; color: #e6e9ef; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.fs-pn { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); z-index: 7; pointer-events: none; display: none;
+  --gt-panel: #0b0e11; --gt-cizgi: #1e2630; --gt-interceptor: #35d0ff; --gt-metin: #cfd8e3; --gt-soluk: #5c6b7a; --gt-iyi: #3ddc84; --gt-kotu: #ff5d5d; --gt-uyari: #ffc94d;
+  --gt-panel-arka: rgba(11, 14, 17, .94); --gt-giris-arka: #060809; --gt-dugme-arka: #141a21; --gt-dugme-hover: #1c2530; --gt-vurgu: var(--gt-interceptor);
+  --gt-mono: Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", "Noto Sans Mono", monospace;
+  color: var(--gt-metin); font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", Roboto, Ubuntu, "DejaVu Sans", "Liberation Sans", sans-serif; }
 .fs-stage.fs-ops .fs-pn { display: block; }
 .fs-stage.fs-ops.fs-fpv .fs-pn { display: none; }
-.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds, .fs-stage.fs-ops .fs-events { display: none; }   /* veri paneli, komutlar ve olay şeridi kartlarda */
-.fs-stage.fs-ops-host .fs-crash { z-index: 9; }   /* ÇARPIŞMA bandı kartların da üstünde */
-.fs-pn-col { position: absolute; top: 56px; right: 12px; width: 440px; display: flex; flex-direction: column; gap: 8px; pointer-events: auto; max-height: calc(100% - 64px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
-.fs-pn-col.free { right: auto; }
-.fs-pn-card { background: rgba(11, 14, 17, .72); border: 1px solid rgba(255, 255, 255, .1); border-radius: 10px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); box-shadow: 0 4px 18px rgba(0, 0, 0, .3); color: #e6e9ef; font-size: 12px; flex: none; }
-.fs-pn-card.dragging { opacity: .85; }
-.fs-pn-h { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: grab; font-weight: 700; font-size: 11px; letter-spacing: .06em; color: #cbd5e1; user-select: none; touch-action: none; border-bottom: 1px solid rgba(255, 255, 255, .06); }
-.fs-pn-card.folded .fs-pn-h { border-bottom: 0; }
-.fs-pn-head .fs-pn-h { display: none; }
-.fs-pn-head { cursor: grab; position: sticky; top: 0; z-index: 2; user-select: none; touch-action: none; }   /* sütun kaydırılsa da başlık (tutamaç) görünür */
-.fs-pn-head .fs-pn-body { padding: 6px 10px; }
-.fs-pn-badges .badge { font-size: 10.5px; padding: 1px 6px; line-height: 1.5; }
-.fs-pn-fold, .fs-pn-clear { border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
-.fs-pn-fold:hover, .fs-pn-clear:hover { background: rgba(255, 255, 255, .12); }
-.fs-pn-card.folded .fs-pn-fold { transform: rotate(-90deg); }
-.fs-pn-card.folded .fs-pn-body, .fs-pn-card.folded .fs-pn-tiles { display: none; }
-.fs-pn-body { padding: 8px 10px; }
-.fs-pn-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.fs-pn-badges .badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
-.fs-pn-name { font-size: 13px; margin-right: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-.fs-pn-pfd-wrap { padding: 6px; }
-.fs-pn-pfd { display: block; width: 100%; height: 200px; border-radius: 8px; background: #0b1220; }
-.fs-pn-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; }
-.fs-pn-tile { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); border-radius: 8px; padding: 7px 3px; text-align: center; display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
-.fs-pn-tile small { color: #9aa4b6; font-size: 9.5px; letter-spacing: .05em; }
-.fs-pn-tile b { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fs-pn-tile i { font-style: normal; color: #9aa4b6; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fs-pn-tile.act { cursor: pointer; border-color: rgba(56, 189, 248, .35); }
-.fs-pn-tile.act:hover { background: rgba(56, 189, 248, .14); }
-.fs-pn-tile.act.off { cursor: default; opacity: .55; border-color: rgba(255, 255, 255, .08); }
-.fs-pn-tile.act.off:hover { background: rgba(255, 255, 255, .05); }
-.fs-pn-tile.armed b { color: #f87171; }
-.fs-pn-tile.warn b { color: #fbbf24; }
-.fs-pn-menu { position: absolute; z-index: 20; pointer-events: auto; background: rgba(11, 14, 17, .96); border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); display: grid; padding: 4px; gap: 2px; min-width: 110px; max-height: 60%; overflow-y: auto; }   /* panel köküne eklenir (flightsim_panel.js modeMenu) */
-.fs-pn-menu-it { border: 0; background: transparent; color: #e6e9ef; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
-.fs-pn-menu-it:hover { background: rgba(255, 255, 255, .12); } .fs-pn-menu-it.on { color: #38bdf8; font-weight: 700; }
-.fs-pn-ops-body { display: grid; gap: 6px; }
-.fs-pn-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.fs-pn-grp { display: inline-flex; align-items: center; gap: 3px; }
-.fs-pn-lbl { width: 38px; flex: none; color: #9aa4b6; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
-.fs-pn-route-info { color: #9aa4b6; font-size: 11px; }
-.fs-pn .btn { background: rgba(255, 255, 255, .09); border-color: transparent; color: #e6e9ef; height: 28px; padding: 0 9px; font-size: 12px; }
-.fs-pn .btn:hover { background: rgba(255, 255, 255, .16); }
-.fs-pn .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-.fs-pn .btn.danger { background: rgba(185, 28, 28, .75); border-color: transparent; color: #fff; }
-.fs-pn .btn:disabled { opacity: .45; cursor: default; }
-.fs-pn .input.sm { height: 28px; padding: 0 6px; font-size: 12px; background: rgba(255, 255, 255, .09); color: #e6e9ef; border: 1px solid rgba(255, 255, 255, .12); border-radius: 6px; }
-.fs-pn .input.sm option { color: #111; }
-.fs-pn-num { width: 64px; }
-.fs-pn-route { max-width: 190px; min-width: 120px; }
-.fs-pn-perm { color: #fbbf24; }
-.fs-pn .small.muted { color: #9aa4b6; }
-/* konsol: alt ortada; sağ sütun (440 + 12 + 8) ile simetrik boşluk bırakır → sütunla çakışmaz; <1100 px'te MP kutusunun sağına yaslanır */
-.fs-pn-con { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: min(560px, calc(100% - 920px)); min-width: 300px; pointer-events: auto; }
-.fs-pn-con.free { transform: none; }
-.fs-pn-con-body { height: 150px; overflow-y: auto; font-size: 11.5px; padding: 4px 8px; scrollbar-width: thin; }
-.fs-pn-line { display: flex; gap: 6px; line-height: 1.45; color: #cfd5e1; }
-.fs-pn-line .t { color: #9aa4b6; flex: none; } .fs-pn-line .tag { color: #38bdf8; flex: none; min-width: 48px; } .fs-pn-line .x { word-break: break-word; }
-.fs-pn-line.err .x { color: #f87171; } .fs-pn-line.warn .x { color: #fbbf24; } .fs-pn-line.ok .x { color: #4ade80; }
-.fs-pn-check { display: grid; gap: 4px; margin-top: 10px; }
-.fs-stage.rc-on .fs-pn-con:not(.free) { bottom: 230px; }
-.fs-stage.rc-on .fs-pn-col:not(.free) { max-height: calc(100% - 64px - 226px); }
+.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds, .fs-stage.fs-ops .fs-events { display: none; }   /* veri paneli, komutlar ve olay şeridi kartta */
+.fs-stage.fs-ops-host .fs-crash { z-index: 9; }   /* ÇARPIŞMA bandı kartın da üstünde */
+.fs-pn-ico { display: inline-block; line-height: 0; flex: none; } .fs-pn-ico svg { width: 100%; height: 100%; display: block; }
+/* --- kart (.dron-kart.ayrik): sağ üstte, başlığından sürüklenir, içerik taşarsa gövde kaydırılır (max-height = alan) --- */
+.fs-pn-kart { position: absolute; top: 56px; right: 12px; width: 400px; max-height: calc(100% - 64px); display: flex; flex-direction: column; pointer-events: auto;
+  background: var(--gt-panel-arka); border: 1px solid var(--gt-cizgi); border-radius: 6px; box-shadow: 0 8px 32px rgba(0, 0, 0, .55); color: var(--gt-metin); overflow: hidden; }
+.fs-pn-kart.free { right: auto; }
+.fs-pn-kart.dragging { opacity: .85; }
+/* başlık şeridi (.dron-kart-baslik): 10 px dolgu, 600, --dugme-arka zemin, alt çizgi; ayrık kartta tutamaç (grab) */
+.fs-pn-baslik { flex: none; display: flex; align-items: center; padding: 10px; font-weight: 600; font-size: 12px; user-select: none; touch-action: none; cursor: grab;
+  background: var(--gt-dugme-arka); color: var(--gt-metin); border-bottom: 1px solid var(--gt-cizgi); }
+.fs-pn-baslik:hover { background: var(--gt-dugme-hover); }
+.fs-pn-baslik:active { cursor: grabbing; }
+.fs-pn-nokta { width: 8px; height: 8px; border-radius: 50%; background: var(--gt-soluk); flex: none; margin-right: 8px; }   /* .dk-nokta: durum LED'i */
+.fs-pn-nokta.bagli { background: var(--gt-iyi); } .fs-pn-nokta.baglaniyor { background: var(--gt-uyari); } .fs-pn-nokta.kotu { background: var(--gt-kotu); } .fs-pn-nokta.sanal { background: #b48cff; }
+.fs-pn-ad { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }   /* .dk-ad */
+.fs-pn-ozet { display: inline-flex; align-items: baseline; gap: 6px; flex: none; margin-left: 8px; font-size: 10px; font-weight: 600; letter-spacing: .2px; white-space: nowrap; overflow: hidden; }   /* .dk-baslik-ozet */
+.fs-pn-ozet-irt { color: var(--gt-metin); font-variant-numeric: tabular-nums; } .fs-pn-ozet-irt:empty { display: none; }
+.fs-pn-ozet-kip { color: var(--gt-soluk); font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; } .fs-pn-ozet-kip:empty { display: none; }
+/* rozet kapsülleri (hepgo.css .hk-bagla): 22 px, 11 px 600, ince kenarlık; durum rengi yalnız yazı/kenarlıkta */
+.fs-pn-rozet { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; margin-left: 6px; border-radius: 11px; border: 1px solid var(--gt-cizgi); background: rgba(255, 255, 255, .04);
+  color: var(--gt-metin); font-size: 11px; font-weight: 600; white-space: nowrap; flex: none; font-family: var(--gt-mono); }
+.fs-pn-rozet.bagli { color: #22c55e; border-color: rgba(34, 197, 94, .55); }
+.fs-pn-rozet.baglaniyor { color: var(--gt-uyari); border-color: rgba(255, 201, 77, .5); }
+.fs-pn-rozet.yok { color: #8a94a3; }
+.fs-pn-rozet.kotu { color: var(--gt-kotu); border-color: rgba(255, 93, 93, .55); }
+.fs-pn-rozet.sanal { color: #b48cff; border-color: rgba(180, 140, 255, .5); }
+.fs-pn-kucult { background: none; border: none; color: var(--gt-soluk); cursor: pointer; padding: 2px 5px; margin-left: 6px; font-size: 11px; line-height: 1; display: inline-flex; }   /* .dk-kucult-btn */
+.fs-pn-kucult:hover { color: #fff; }
+.fs-pn-kucult svg { width: 12px; height: 12px; }
+.fs-pn-kart.yalniz-baslik .fs-pn-baslik { border-bottom: none; }   /* .dk-yalniz-baslik: yalnız başlık şeridi kalır */
+.fs-pn-kart.yalniz-baslik > :not(.fs-pn-baslik) { display: none !important; }
+/* gövde (.dron-kart-icerik): 10 px dolgu, Consolas 12 px; bölümler tek gövdede, aralarında boşluk yok (ince çizgi) */
+.fs-pn-govde { padding: 10px; font-family: var(--gt-mono); font-size: 12px; line-height: 1.5; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; min-height: 0; }
+/* üst satır (.dk-ust-satir): UÇUŞA HAZIR rozeti (%50) + İŞLEMLER düğmesi (%50) */
+.fs-pn-ust { display: flex; gap: 6px; align-items: stretch; margin: 0 0 8px; }
+.fs-pn-hazir { flex: 1 1 50%; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--gt-cizgi); border-radius: 5px; background: var(--gt-giris-arka); color: var(--gt-metin);
+  font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .6px; cursor: pointer; text-align: left; transition: background .15s, border-color .15s; }   /* .dk-hazir-rozet */
+.fs-pn-hazir:hover { filter: brightness(1.12); }
+.fs-pn-hazir-metin { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-pn-hazir.hazir { border-color: rgba(76, 175, 80, .55); background: rgba(76, 175, 80, .12); color: #8fe39a; }
+.fs-pn-hazir.hazir-uyari { border-color: rgba(240, 178, 60, .55); background: rgba(240, 178, 60, .12); color: #f3cd7c; }
+.fs-pn-hazir.hazir-degil { border-color: rgba(224, 85, 85, .6); background: rgba(224, 85, 85, .14); color: #f09b9b; }
+.fs-pn-hazir.ucusta { border-color: rgba(90, 170, 255, .55); background: rgba(90, 170, 255, .12); color: #9fcaff; }
+.fs-pn-hazir.bilinmiyor { border-color: rgba(140, 150, 160, .35); color: #c2cbd6; }
+.fs-pn-hazir.off { cursor: default; } .fs-pn-hazir.off:hover { filter: none; }
+.fs-pn-islem-btn { flex: 1 1 50%; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 8px; border: 1px solid rgba(90, 170, 255, .45); border-radius: 5px;
+  background: rgba(90, 170, 255, .12); color: #9fcaff; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .6px; cursor: pointer; white-space: nowrap; overflow: hidden; transition: background .15s, border-color .15s; }   /* .dk-islem-btn */
+.fs-pn-islem-btn:hover, .fs-pn-islem-btn.acik { background: rgba(90, 170, 255, .24); border-color: rgba(90, 170, 255, .7); color: #fff; }
+.fs-pn-islem-metin { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* bölüm (.dk-konsol): üst çizgi; başlık şeridi (.dk-konsol-bas: 3px 6px, 11 px, soluk, --dugme-arka) ok ile katlanır */
+.fs-pn-bolum { border-top: 1px solid var(--gt-cizgi); margin-top: 2px; }
+.fs-pn-bas { display: flex; align-items: center; gap: 6px; padding: 3px 6px; cursor: pointer; user-select: none; font-size: 11px; color: var(--gt-soluk); background: var(--gt-dugme-arka); }
+.fs-pn-bas:hover { background: var(--gt-dugme-hover); }
+.fs-pn-bas:focus-visible { outline: 1px solid var(--gt-vurgu); outline-offset: -1px; }
+.fs-pn-ok { display: inline-flex; width: 9px; height: 9px; transition: transform .15s; }   /* .dk-konsol-ok */
+.fs-pn-ok svg { width: 9px; height: 9px; }
+.fs-pn-bolum.folded .fs-pn-ok { transform: rotate(-90deg); }
+.fs-pn-bas-ad { flex: 1; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }   /* .dk-konsol-ad */
+.fs-pn-bolum.folded > :not(.fs-pn-bas) { display: none; }
+.fs-pn-kon-ikon { width: 11px; height: 11px; color: var(--gt-vurgu); }   /* .dk-konsol-ikon */
+.fs-pn-kon-araclar { display: flex; gap: 4px; align-items: center; }
+.fs-pn-kon-sayac { font-family: monospace; font-size: 10px; padding: 0 4px; border-radius: 6px; background: var(--gt-panel); border: 1px solid var(--gt-cizgi); color: var(--gt-soluk); }   /* .dk-konsol-sayac */
+.fs-pn-kon-btn { background: none; border: none; cursor: pointer; color: var(--gt-soluk); font-size: 10px; padding: 1px 4px; border-radius: 3px; line-height: 1.2; }   /* .dk-konsol-btn */
+.fs-pn-kon-btn:hover { background: var(--gt-panel); color: var(--gt-metin); }
+/* PFD (.dk-pfd-canvas): zemin/kenarlık YOK, 8 px köşe; genişlik × 0,47 */
+.fs-pn-pfd-wrap { padding: 4px 0 0; }
+.fs-pn-pfd { display: block; width: 100%; height: 178px; background: transparent; border-radius: 8px; border: none; }
+/* telemetri karoları (.dk-tel-hucre): ikon 20 px · Consolas 12 px kalın değer · 9 px büyük harf etiket; 4×2 ızgara, 6 px aralık */
+.fs-pn-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 6px 0 4px; }
+.fs-pn-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px; background: rgba(0, 0, 0, .18); border: 1px solid var(--gt-cizgi); border-radius: 5px; text-align: center; min-width: 0; position: relative; }
+.fs-pn-tile .fs-pn-ico { width: 20px; height: 20px; color: var(--gt-interceptor); }
+.fs-pn-tile[data-tile="arm"] .fs-pn-ico, .fs-pn-tile[data-tile="type"] .fs-pn-ico { color: var(--gt-soluk); }
+.fs-pn-tile.iyi .fs-pn-ico { color: var(--gt-iyi); } .fs-pn-tile.warn .fs-pn-ico { color: var(--gt-uyari); } .fs-pn-tile.kotu .fs-pn-ico { color: var(--gt-kotu); }
+.fs-pn-tile.takeoff .fs-pn-ico, .fs-pn-tile.takeoff .fs-pn-tile-v { color: var(--gt-iyi); }   /* .dk-tkland.takeoff */
+.fs-pn-tile.land .fs-pn-ico, .fs-pn-tile.land .fs-pn-tile-v { color: var(--gt-uyari); }   /* .dk-tkland.land */
+.fs-pn-tile-v { font-family: var(--gt-mono); font-size: 12px; font-weight: 700; color: var(--gt-metin); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }   /* .dk-tel-deger */
+.fs-pn-tile-sub { font-size: 9px; color: var(--gt-soluk); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }   /* .dk-kmh */
+.fs-pn-tile-sub:empty { display: none; }
+.fs-pn-tile-et { font-size: 9px; letter-spacing: .1em; color: var(--gt-soluk); text-transform: uppercase; }   /* .dk-tel-etiket */
+.fs-pn-tile.act { cursor: pointer; transition: background .12s, border-color .12s, transform .08s; }   /* .dk-hucre-btn */
+.fs-pn-tile.act:hover { background: var(--gt-cizgi); border-color: var(--gt-vurgu); }
+.fs-pn-tile.act:active { transform: scale(.97); }
+.fs-pn-tile.act.off { cursor: default; opacity: .4; }
+.fs-pn-tile.act.off:hover { background: rgba(0, 0, 0, .18); border-color: var(--gt-cizgi); }
+.fs-pn-tile.act.off:active { transform: none; }
+/* İŞLEMLER (.dk-islem-izgara 3 sütun; .dk-islem-grup grup başlığı; .dk-islem-hucre: 74 px, ikon 19 px, 10 px metin) */
+.fs-pn-izgara { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 7px 0 2px; }
+.fs-pn-grup { grid-column: 1 / -1; margin: 6px 0 1px; padding: 3px 2px 4px; border-bottom: 1px solid var(--gt-cizgi); color: var(--gt-soluk); font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.fs-pn-grup:first-child { margin-top: 0; }
+.fs-pn-hucre { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 74px; min-width: 0; padding: 9px 5px; border: 1px solid var(--gt-cizgi); border-radius: 6px;
+  background: var(--gt-dugme-arka); color: var(--gt-metin); font: inherit; cursor: pointer; text-align: center; transition: background .15s, border-color .15s, transform .1s; }
+.fs-pn-hucre:hover:not(:disabled) { background: var(--gt-dugme-hover); border-color: rgba(90, 170, 255, .55); }
+.fs-pn-hucre:active:not(:disabled) { transform: scale(.97); }
+.fs-pn-hucre:disabled { opacity: .4; cursor: not-allowed; }
+.fs-pn-hucre-ico { width: 19px; height: 19px; color: var(--gt-interceptor); }
+.fs-pn-hucre-metin { font-size: 10px; font-weight: 600; line-height: 1.25; letter-spacing: .2px; word-break: break-word; }
+.fs-pn-hucre.tehlikeli { border-color: rgba(224, 85, 85, .45); } .fs-pn-hucre.tehlikeli .fs-pn-hucre-ico { color: #f09b9b; }
+.fs-pn-hucre.tehlikeli:hover:not(:disabled) { background: rgba(224, 85, 85, .16); border-color: rgba(224, 85, 85, .75); }
+.fs-pn-hucre-girdi { cursor: default; gap: 5px; } .fs-pn-hucre-girdi:hover { background: var(--gt-dugme-arka); border-color: var(--gt-cizgi); }
+.fs-pn-girdi { width: 56px; padding: 3px 4px; border: 1px solid var(--gt-cizgi); border-radius: 3px; background: var(--gt-giris-arka); color: var(--gt-metin); font: inherit; font-size: 11px; text-align: center; }   /* .dk-irtifa */
+.fs-pn-girdi:disabled { opacity: .4; }
+.fs-pn-girdi option { color: #111; }
+.fs-pn-route { width: 100%; text-align: left; padding: 5px 6px; }
+.fs-pn-tam { grid-column: 1 / -1; min-width: 0; }
+.fs-pn-not { font-size: 10px; color: var(--gt-soluk); line-height: 1.4; } .fs-pn-not:empty { display: none; }
+.fs-pn-perm { color: var(--gt-uyari); }
+/* Haberleşme konsolu (.dk-konsol-govde): #0b0f14 zemin, 10,5 px mono; satır (.dk-kons-satir) = saat · ETİKET · metin */
+.fs-pn-kon-govde { max-height: 168px; overflow-y: auto; overflow-x: hidden; background: #0b0f14; padding: 3px 4px; font-family: var(--gt-mono); font-size: 10.5px; line-height: 1.45; scrollbar-width: thin; }
+.fs-pn-line { display: flex; gap: 5px; white-space: pre-wrap; word-break: break-word; align-items: baseline; color: var(--gt-metin); }
+.fs-pn-line .t { color: #5b6b7a; flex: 0 0 auto; }   /* .dk-kons-ts */
+.fs-pn-line .tag { color: #7aa2c8; flex: 0 0 auto; min-width: 48px; font-weight: 600; }   /* .dk-kons-etiket */
+.fs-pn-line .x { min-width: 0; }
+.fs-pn-line.err .x { color: var(--gt-kotu); } .fs-pn-line.warn .x { color: var(--gt-uyari); } .fs-pn-line.ok .x { color: var(--gt-iyi); }
+/* mod menüsü (.dk-mini-popup + .dk-mod-popup 232 px: .dk-mod-izgara 3 sütun, .dk-mod-btn) — panel köküne eklenir (flightsim_panel.js modeMenu) */
+.fs-pn-menu { position: absolute; z-index: 20; pointer-events: auto; width: 232px; padding: 0 0 10px; background: var(--gt-panel-arka); border: 1px solid var(--gt-cizgi); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); font-size: 11px; color: var(--gt-metin); overflow: hidden; font-family: var(--gt-mono); }
+.fs-pn-menu-bas { padding: 6px 10px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gt-soluk); background: var(--gt-dugme-arka); border-bottom: 1px solid var(--gt-cizgi); }
+.fs-pn-mod-izgara { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 10px 10px 0; }
+.fs-pn-mod-btn { padding: 8px 2px; font: inherit; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; background: transparent; border: 1px solid var(--gt-cizgi); border-radius: 4px; color: var(--gt-metin); cursor: pointer; transition: background .12s, border-color .12s; }
+.fs-pn-mod-btn:hover { background: var(--gt-cizgi); border-color: var(--gt-vurgu); }
+.fs-pn-mod-btn.aktif { background: var(--gt-vurgu); border-color: var(--gt-vurgu); color: #fff; cursor: default; }
+.fs-pn-check { display: grid; gap: 4px; margin-top: 10px; }   /* kalkış penceresi kontrol listesi (ui.js modal, body'de) */
+.fs-stage.rc-on .fs-pn-kart:not(.free) { max-height: calc(100% - 64px - 226px); }   /* sanal kumanda çubuklarının üstünde kalır */
 .fs-stage.fs-ops .fs-attrib { bottom: 8px; right: 12px; max-width: 30%; }
-.fs-ops-btn[hidden] { display: none; }
-/* Sihirbaz: dron kaydı (isteğe bağlı) */
-.fs-sub-h { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
-.fs-drone-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-.fs-drone-sel { min-width: 260px; max-width: 100%; }
-@media (max-width: 1100px) { .fs-pn-col { width: 360px; } .fs-pn-pfd { height: 170px; } .fs-pn-con-body { height: 110px; } .fs-pn-tile b { font-size: 12.5px; } .fs-stage.rc-on .fs-pn-con { display: none; }
-  .fs-pn-con:not(.free) { left: 324px; transform: none; width: calc(100% - 324px - 384px); min-width: 0; } }
-@media (max-width: 760px) { .fs-pn-con, .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } }
+@media (max-width: 1100px) { .fs-pn-kart { width: 340px; } .fs-pn-pfd { height: 152px; } .fs-pn-kon-govde { max-height: 120px; } }
+@media (max-width: 760px) { .fs-pn-kart { width: calc(100% - 24px); top: 50px; } .fs-pn-hucre { min-height: 60px; } .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } }

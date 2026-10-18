@@ -451,29 +451,44 @@ ile açılır; `watch{sim_id}` ile izleyici yalnız oturum köprüsünü görür
 `GET /sessions/{id}/live`, `session.hub/drone/route`, WS `/ws/drone/sim` `{t:'route', points}` aynen (panel ve testler kullanır).
 
 **Ön yüz — `flightsim_panel.js` `createOpsPanel(stage, {sid, session, type, modes, launch, canWrite, hub, getSim, cmdSim, onReset, onToggle})`.**
-Kartlar 3B'nin ÜSTÜNDE yüzen yarı saydam HUD kartlarıdır (`.fs-pn-card`: rgba(11,14,17,.72), 10 px köşe, ince kenarlık, blur; ayrı zemin yok).
-Kapsayıcı `.fs-pn` tam alan ve `pointer-events: none` (fare/tekerlek 3B'ye, OrbitControls'a gider), kartlar `pointer-events: auto` — olay kapısı,
-elementFromPoint, tuş iletimi gibi iframe hileleri yok. Sağ üstte sütun `.fs-pn-col` (440 px; <1100 px 360 px; `max-height` ile kaydırılır, başlık
-kartı `sticky`):
-- **BAŞLIK**: dron adı (Dron Envanteri kaydı ya da "Simülatör #N"), mod, ARMED/DISARMED, oturum durumu (Hazır/Başlıyor/Hata/Kapandı; kayıt/sahte
-  kipte "Kayıt"/"Sahte veri"), GPS (RTK/RTK FLT/DGPS/3D/2D · uydu), MP (Mission Planner UDP bağlı), HUB (hub soketi: sarı kuruluyor / yeşil bağlı /
-  kırmızı yetki yok-çevrimdışı). Başlık kartı sütunun sürükleme tutamacıdır.
-- **UÇUŞ GÖSTERGESİ (PFD)**: canvas 2D (genişlik × 0,47) — mavi gök / kahverengi yer suni ufuk (roll ile döner, pitch ile kayar; ±25°, 5° merdiven),
-  roll yayı + sarı işaretçi, sarı uçak sembolü, sol yer hızı bandı (IAS küçük), sağ AGL bandı (MSL, dikey hız), alt yön şeridi (N/E/S/W, ev yönü yeşil
-  üçgen, sayısal heading), köşeler: mod / ARMED / GPS / BAT; AUTO'da WP n/m · mesafe. Yönelim 3B'nin render ettiği enterpolasyonlu pozdan
-  (`sim.getPose()`), diğer değerler tele'den; rAF ile kart görünürken çizilir (gizli/katlı/FPV'de çizilmez — tuval ölçüsüz).
-- **TELEMETRİ** 4×2 karo: İRTİFA (AGL / MSL), HIZ (yer / hava), BATARYA (% / V), GPS (fix / uydu); DURUM (ARM/DISARM — tıklanır: ARM onay penceresi
-  [Zorla seçeneği] / DISARM onayı), MOD (tıklanır: tipe göre mod menüsü — panel köküne eklenir, karo içine değil; sütunun kaydırma yüksekliğini
-  büyütmesin ve tıklama karoya kabarıp menüyü yeniden açmasın), TİP, KOMUT (Kalkış / Fırlat / Aracı sür — yönteme göre; havada İniş).
-- **İŞLEMLER** (katlanabilir): Uçuş: Kalkış · İniş · RTL · Ev konumu; Hedef: irtifa girişi + İrtifa (altitude_change) · Hedefe git (lat/lon/alt
-  penceresi; goto); Rota: Dron Yönetimi › Rotalar listesi (`GET /api/drone/routes`; oturum merkezininkiler önce) → Yükle (`routes/{id}/mission` →
-  hub `mission_upload{items, cruise_speed}` → `{t:'route'}` → 3B çizgi + "SITL'de n rota noktası") → Başlat (`mission_start{rota}`) · Duraklat
-  (`mission_pause{davranis:'bekle'}`) · Sürdür (`mission_resume`) · İptal (`mission_cancel`); Sim: ↺ Sıfırla (simülatör `reset`; flightsim.js
-  `reset()`), Yerleşimi sıfırla. Yetki yoksa düğmeler pasif ve nedeni yazılır (yazma izni / hub bağlantısı / hub komut yetkisi / oturum hazır değil).
-- **KONSOL** kartı alt ortada (560 px; sağ sütunla simetrik boşluk: `min(560px, 100% − 920px)`; <1100 px'te MP kutusunun sağına yaslanır
-  `left: 324px`), katlanabilir, temizlenebilir, başlığından sürüklenir; satırlar `saat ETİKET metin` (KOMUT/ROTA/SİM/STATUS/HUB; sev → renk).
-  Kaynaklar: hub `console` çerçeveleri (STATUS etiketi atlanır) + simülatörün kendi olayları (`addEvent` → `ops.log`; STATUSTEXT'ler sim WS `event`
-  olarak 'STATUS' etiketiyle) → her satır bir kez. Panel açıkken eski olay şeridi (`.fs-events`) gizlidir.
+Kullanıcı geri bildirimi (birebir): "panel güzel ama amatörce görünüyor, paneller arasına boşluk koymuşsun; tek bir panel olacak, duruma göre
+küçülüp büyüyecek; orijinal CSS yapısına birebir uy" → ayrı yüzen kartlar KALKTI; panel GÖKTUNGU harekât ekranının **DRON KARTI**'nın
+(`static/ops/css/stil.css` `.dron-kart.ayrik`, `hepgo.css`) birebir taşınmış TEK gövdesidir. Kurallar `.fs-pn` altına kapsamlı kopyalandı
+(app.css; her kuralın yanında kaynak sınıf): kart `.fs-pn-kart` = `.dron-kart.ayrik` (zemin `--panel-arka` rgba(11,14,17,.94), 1 px `--cizgi`
+#1e2630, 6 px köşe, 0 8px 32px gölge; 400 px — hepgo.css; <1100 px 340 px; <760 px tam genişlik), GÖKTUNGU koyu tema değişkenleri `--gt-*`
+olarak `.fs-pn` üzerinde (HEPGO açık/koyu temasından bağımsız: kart her temada koyu; beyaz piksel koyu temada %0,13). Kapsayıcı `.fs-pn` tam
+alan, `pointer-events: none` (fare/tekerlek 3B'ye), kart `pointer-events: auto`. Kart sağ üstte; **başlık şeridinden sürüklenir**; `max-height`
+= alan (sanal kumanda açıkken çubukların üstü); içerik taşarsa gövde kart İÇİNDE kaydırılır (başlık sabit) — panel içeriğe göre küçülüp büyür.
+- **BAŞLIK ŞERİDİ** (`.dron-kart-baslik`: 10 px dolgu, 600, `--dugme-arka` zemin, alt çizgi): durum LED'i (`.dk-nokta`: yeşil hazır / sarı
+  başlıyor / kırmızı hata / mor kayıt-sahte) · dron adı (`.dk-ad`; Dron Envanteri kaydı ya da "Simülatör #N") · özet (`.dk-baslik-ozet`: irtifa +
+  kip) · ARMED/DISARMED ve HUB rozetleri (hepgo.css `.hk-bagla` kapsülü: 22 px, 11 px; bağlı yeşil / kuruluyor sarı / yetki yok kırmızı) ·
+  **küçült** (`.dk-kucult-btn`: yalnız başlık şeridi kalır, `.dk-yalniz-baslik`; localStorage `fs.panel.min`). Mission Planner durumu sol alttaki
+  MP kutusunda ve GPS karosu alt yazısında ("· MP").
+- **GÖVDE** (`.dron-kart-icerik`: 10 px dolgu, Consolas/mono 12 px). Üst satır (`.dk-ust-satir`): **UÇUŞA HAZIR rozeti** (`.dk-hazir-rozet`:
+  "DISARMED · UÇUŞA HAZIR" yeşil / "ARMED · UÇUŞTA" mavi / "DISARMED · PREARM UYARISI" amber / "SITL HATASI" kırmızı / "SAHTE VERİ", "KAYITTAN
+  OYNATMA" gri; tıkla → ARM onay penceresi [Zorla] / DISARM onayı) + **İŞLEMLER** düğmesi (`.dk-islem-btn`; İŞLEMLER bölümünü açar/kapar; GÖKTUNGU'da
+  bu düğme İŞLEMLER popup'ını açar). Bölümler tek gövdede, ARALARINDA BOŞLUK YOK (ince `--cizgi`); her bölüm `.dk-konsol-bas` tarzı başlık
+  şeridinden katlanır (ok döner; `fs.panel.fold`):
+  - **UÇUŞ GÖSTERGESİ (PFD)**: canvas 2D (`.dk-pfd-canvas`: zemin/kenarlık yok, 8 px köşe; genişlik × 0,47) — mavi gök / kahverengi yer suni ufuk
+    (roll ile döner, pitch ile kayar; ±25°, 5° merdiven), roll yayı + sarı işaretçi, sarı uçak sembolü, sol yer hızı bandı (IAS küçük), sağ AGL
+    bandı (MSL), ufuk alanı köşeleri: mod / ARMED / GPS / VS (dikey hız) / BAT; alt yön şeridi (N/E/S/W, ev yönü yeşil üçgen, sayısal heading);
+    AUTO'da WP n/m · mesafe. Yönelim 3B'nin render ettiği enterpolasyonlu pozdan (`sim.getPose()`), diğer değerler tele'den; rAF ile kart
+    görünürken çizilir (gizli/katlı/küçük/FPV'de çizilmez — tuval ölçüsüz).
+  - **TELEMETRİ** 4×2 karo (`.dk-tel-hucre`: ikon 20 px [satır içi SVG; GÖKTUNGU'daki Font Awesome anlamları], Consolas 12 px kalın değer, 9 px
+    büyük harf etiket; 6 px aralık, rgba(0,0,0,.18) zemin, 5 px köşe): İRTİFA (m / MSL), HIZ (m/s / km/h), BATARYA (% / V; <%25 amber), GPS
+    (fix · uydu; 3D+ yeşil / 2D amber / yok kırmızı); DURUM (kilit ikonu; tıklanır: ARM/DISARM), MOD (tıklanır: `.dk-mod-popup` 3 sütun
+    `.dk-mod-btn` menüsü — panel köküne eklenir), TİP, KOMUT (Kalkış / Fırlat / Aracı sür yeşil; havada İniş amber — `.dk-tkland`).
+  - **İŞLEMLER** (varsayılan katlı; `.dk-islem-izgara` 3 sütun, `.dk-islem-grup` grup başlıkları, `.dk-islem-hucre` 74 px ikon+metin hücreleri):
+    UÇUŞ: Kalkış · İniş · RTL · Ev konumu; HEDEF: irtifa girişi (`.dk-irtifa`) + İrtifa (altitude_change) · Hedefe git (lat/lon/alt penceresi;
+    goto); ROTA: Dron Yönetimi › Rotalar listesi (`GET /api/drone/routes`; oturum merkezininkiler önce) → Yükle (`routes/{id}/mission` → hub
+    `mission_upload{items, cruise_speed}` → `{t:'route'}` → 3B çizgi + "SITL'de n rota noktası") · Başlat (`mission_start{rota}`) · Duraklat
+    (`mission_pause{davranis:'bekle'}`) · Sürdür (`mission_resume`) · İptal (`mission_cancel`; tehlikeli kırmızı); SİM: ↺ Sıfırla (simülatör
+    `reset`), Yerleşimi sıfırla. Yetki yoksa hücreler pasif ve nedeni yazılır (yazma izni / hub bağlantısı / hub komut yetkisi / oturum hazır değil).
+  - **HABERLEŞME** konsolu (`.dk-konsol`: kart altında, katlanır; `.dk-konsol-bas` başlık: ok · ikon · ad · satır sayacı · temizle; `.dk-konsol-govde`
+    #0b0f14 zemin, 10,5 px mono, en çok 168 px, kaydırılır): satırlar `saat ETİKET metin` (KOMUT/ROTA/SİM/STATUS/HUB; sev → renk). Alt ortadaki
+    ayrı KONSOL kutusu KALKTI (tek konsol, kart içinde). Kaynaklar: hub `console` çerçeveleri (STATUS etiketi atlanır) + simülatörün kendi
+    olayları (`addEvent` → `ops.log`; STATUSTEXT'ler sim WS `event` olarak 'STATUS' etiketiyle) → her satır bir kez. Panel açıkken eski olay
+    şeridi (`.fs-events`) gizlidir.
 **Kalkış penceresi**: hedef irtifa + GÖKTUNGU kalkış kontrol listesi (6 zorunlu madde, "Hepsini onayla"); eksik madde varsa gönderilmez. Kopter/VTOL/
 helikopter: hub `takeoff{alt_rel_m, kontrol:[{sira, anahtar, soru, grup, cevap, zorunlu, kaynak}]}` → sunucu `drone_takeoff_checks` kaydı + kalkış
 akışı ("Kontrol listesi onaylandı (kayıt #k), takeoff a m" konsol satırı). Sabit kanat (§13 fırlatma düzeneği: tekerlekli/rampa/araç): simülatör
@@ -485,28 +500,36 @@ PFD rAF). Hub durumu/konsol/komut sonuçları için panel KENDİ `/ws/drone/live
 aynı (mission_upload/start 65 sn, bileşik 35 sn, diğer 12 sn); hata → konsol + toast. Simülatöre özgü iki komut sim WS/REST yolundan gider:
 `reset` ve sabit kanat `takeoff` (düzenek). Kayıt (replay) ve sahte (`?mock=1`) kiplerinde hub yoktur (`hub:false`): İŞLEMLER kartı yok, DURUM/MOD/
 KOMUT karoları pasif; PFD/telemetri/konsol çalışır.
-**Davranış.** Alt çubuk **Panel** düğmesi / **P** → kartlar gizli (sade görünüm: eski `.fs-hud` + `.fs-cmds` + olay şeridi); tercih localStorage
-`fs.ops.on`. Dron kamerası (2/FPV): `.fs-fpv` → kartlar gizli, askeri HUD (H) kalır. Sütun ve konsol başlığından sürüklenir (`fs.panel.col` {x, y, r},
-`fs.panel.con` {x, y}; yeniden boyutlanmada sağ kenara göre uygulanır), katlama `fs.panel.fold`; **Yerleşimi sıfırla** üçünü siler. Sanal kumanda
-(`.rc-on`): konsol çubukların üstüne (`bottom: 230px`), sütun kısalır; <1100 px'te konsol gizli; <760 px'te konsol/atıf/MP kutusu gizli. Alt çubuk
-sarınca `--fs-bar-h` ResizeObserver ile güncellenir (kapsayıcı çubuğun üstünde kalır). ÇARPIŞMA bandı kartların üstünde (z 9). Tuşlar (1–4, H, P,
-WASD/ok) sayfanın kendi dinleyicilerinde; form alanı odaklıyken yok sayılır. Renk şeması: kartlar HEPGO açık/koyu temasından bağımsız koyu —
-beyaz ekran yok.
-**Dosyalar.** Yeni `static/js/modules/flightsim_panel.js`; `flightsim.js` (import, `createOpsPanel(stage, …)`, `addEvent(text, sev, at, tag)` →
-`ops.log`, `updateHud → ops.update`, `setState/setGcs/setRoute/setLaunchPhase/setFpv`, dispose); `static/css/app.css` (`.fs-pn*`; `.fs-ops-frame`
-kuralları kaldırıldı); SİLİNDİ: `flightsim_ops.js`, `static/ops/js/hepgo_sim.js`, `static/ops/js/hepgo_nomap.js`; GERİ ALINDI (c1de8a2^):
-`static/ops/index.html` (Cesium her zaman yüklenir), `static/ops/css/hepgo.css`, `static/ops/js/hepgo_ws.js`, `static/ops/js/hepgo_patch.js`;
-i18n 6 dil (97 anahtar; `i18n.en.extra2/de/fr/es/ru/ar.js`). Arka uç değişmedi.
+**Davranış.** Alt çubuk **Panel** düğmesi / **P** → kart gizli (sade görünüm: eski `.fs-hud` + `.fs-cmds` + olay şeridi); tercih localStorage
+`fs.ops.on`. Dron kamerası (2/FPV): `.fs-fpv` → kart gizli, askeri HUD (H) kalır. Kart başlık şeridinden sürüklenir (`fs.panel.col` {x, y, r};
+yeniden boyutlanmada sağ kenara göre uygulanır), bölüm katlama `fs.panel.fold` (İŞLEMLER varsayılan katlı), küçült `fs.panel.min`;
+**Yerleşimi sıfırla** hepsini siler. Sanal kumanda (`.rc-on`): kart kısalır (çubukların üstünde kalır). Alt çubuk sarınca `--fs-bar-h`
+ResizeObserver ile güncellenir. ÇARPIŞMA bandı kartın üstünde (z 9). Tuşlar (1–4, H, P, WASD/ok) sayfanın kendi dinleyicilerinde; form alanı
+odaklıyken yok sayılır.
+**Tam ekran (⛶).** Kullanıcı: "tam ekrandayken mesaj pencereleri arkada kalıyor, mesela takeoff yüksekliği görünmüyor" — neden: tam ekran
+`.fs-stage`'e uygulanıyordu; ui.js `modal()`/`toast()`, mod menüsü ve ses menüsü gibi body'ye eklenen öğeler tam ekran ÖĞESİNİN DIŞINDA kalır ve
+tarayıcı onları çizmez. Çözüm: tam ekran **belgeye** uygulanır (`document.documentElement.requestFullscreen()`; flightsim.js); `fullscreenchange`
+(ve düğme `then`) → `body.fs-full` + `.fs-stage.fs-full`: app.css `body.fs-full` HEPGO üst başlığı/alt barı gizler (app.js `immersive`
+kalıbıyla aynı), `main#view.ops-view` ekrana sabitlenir; kalkış penceresi, ARM onayı, mod menüsü, bildirimler ve ses menüsü sahnenin üstünde görünür
+(modal z 7000). Escape / ⛶ ile çıkınca sınıflar kalkar, düzen eski hâline döner.
+**Dosyalar.** `static/js/modules/flightsim_panel.js` (tek kart; PFD/hub/komut yolu değişmedi); `flightsim.js` (import, `createOpsPanel(stage, …)`,
+`addEvent(text, sev, at, tag)` → `ops.log`, `updateHud → ops.update`, `setState/setGcs/setRoute/setLaunchPhase/setFpv`, dispose; tam ekran
+belgeye + `fs-full`); `static/css/app.css` (`.fs-pn*` GÖKTUNGU dron kartı kuralları, `body.fs-full`); i18n 6 dil (`i18n.en.extra2/de/fr/es/ru/ar.js`).
+Arka uç değişmedi. Kaynak tasarım: `static/ops/css/stil.css` (`.dron-kart*`, `.dk-*`), `static/ops/css/hepgo.css`.
 
 **Testler.** `tests/test_flightsim.py hub_testleri` (hub kaydı, `/live`, `watch{sim_id}`, status, arm, set_mode, kalkış akışı, mission_upload →
-route, AUTO, mission_cancel, rtl, arm_check, reboot reddi, montaj yetkisi, kapanış) değişmeden yeşil. Tarayıcı doğrulaması (Playwright, SwiftShader;
-`/tmp/flsim/nt/n1_sahte.py`, `n2_sitl.py`, `n3_rampa.py`): iframe yok, `.fs-pn` tam alan `pointer-events:none`, sütun sağ üstte 440 px (4 kart), konsol
-alt ortada; kart zemini rgba(11,14,17,.72); beyaz piksel oranı açık tema %4,8 (sahne), koyu tema %0,13, dar %5,9; fare ile döndürme (azimut) ve tekerlek
-boş alanda çalışır, kart üstünde pointerdown tuvale ulaşmaz; 2 → FPV kartlar gizli, H askeri HUD, 1 geri, P sade görünüm (`fs.ops.on=0`) ve Panel
-düğmesiyle geri; DURUM karosu → ARM penceresi → ARMED + konsol "-> arm / ARM"; MOD karosu → menü → GUIDED; Kalkış → kontrol listesi → "Kontrol
-listesi onaylandı (kayıt #k)… TAKEOFF komutu iletildi" → tırmanış; rota seç → Yükle → 3B'de 4 nokta → Başlat → AUTO ("D1 göreve gönderildi");
-sürükleme → `fs.panel.col` → Yerleşimi sıfırla; sanal kumanda yerleşimi; dar 1000×700 (sütun 360, konsol MP'nin sağında, çakışma yok); gerçek SITL
-multikopter (RTK, dron kaydı adı, ARM/kalkış/rota/AUTO/RTL) ve sabit kanat rampa (KOMUT "Fırlat", FIRLATMA → havada, RTL).
+route, AUTO, mission_cancel, rtl, arm_check, reboot reddi, montaj yetkisi, kapanış) değişmeden yeşil. Tarayıcı doğrulaması (Playwright, SwiftShader,
+sahte kip; `/tmp/flsim/p2/p1_panel.py`): TEK kart (`.fs-pn-kart` 1 adet; eski `.fs-pn-card/.fs-pn-col/.fs-pn-con` yok), sağ üstte 400 px, zemin
+rgba(11,14,17,.94), 6 px köşe, başlık zemini #141a21, gövde Consolas/mono, bölümler [pfd, tiles, ops(katlı), con], 8 karo, konsol kart içinde; beyaz
+piksel oranı açık tema %4,8 (sahne), koyu tema %0,13; fare ile döndürme boş alanda çalışır, kart üstünde pointerdown tuvale ulaşmaz; tam ekran:
+kodda yalnız `document.documentElement.requestFullscreen` (sahneye değil), ⛶ → `document.fullscreenElement` = HTML, `body.fs-full` +
+`.fs-stage.fs-full` (headless shell `fullscreenchange` olayı üretmez, çıkış tamamlanmaz → düzen CSS sınıfıyla doğrulandı): sahne 0,0 × görünüm
+alanı, üst başlık gizli; kalkış penceresi (irtifa alanı + kontrol listesi), ARM penceresi, mod menüsü (8 mod), bildirim sahnenin ÜSTÜNDE
+(`elementFromPoint` modal/menü/toast içinde; modal-back body'de, z 7000); PFD başlığından katlama (588 → 407 px) ve geri; İŞLEMLER düğmesi → bölüm
+açılır, kart 613 px (max-height sınırı), gövde kaydırılır; küçült → 44 px yalnız başlık, geri büyüt; UÇUŞA HAZIR rozeti → ARM penceresi → ARMED ·
+UÇUŞTA; MOD karosu → GUIDED; KOMUT karosu → kalkış penceresi → 25 m → tırmanış 23,8 m, konsol satırları kart içinde ("Kontrol listesi onaylandı
+(kayıt #2), takeoff 25 m … TAKEOFF komutu iletildi"); başlıktan sürükleme → `fs.panel.col` → Yerleşimi sıfırla; dar 1000×700 (kart 340 px, alan
+içinde), mobil 600×800 (kart = alan − 24 px); koyu tema. Görüntüler `/tmp/flsim/p2/shots/p1-*.png`.
 
 **Sınırlar / açık kalanlar.** 3B sahnede yere tıklayarak hedef seçme yok (Hedefe git koordinatla; `flightsim3d` yer kesişimi eklenince bağlanır).
 Kayıttan oynatma kareleri hub'a verilmez (komut kartı yok). Mission Planner'dan (UDP) yüklenen görevler 3B rotaya yansımaz (yalnız hub

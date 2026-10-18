@@ -1009,16 +1009,28 @@ params.param / scripts.zip); `GET /runs/{id}/bin` (.bin dosyası, drone.sim okum
 silinir — özet, .bin, video kendi yerlerinde kalır; iz kaydı). Dosya yolları yalnız satır kimliğinden türetilir ve DB'deki göreli yol beklenenle
 karşılaştırılır (yol gezinmesi yok).
 
-**Ön yüz (`flightsim.js renderWizard` → sayfa; `wizardModal` → pencere; `flightsim_runs.js runsTable`).** Sayfa: üst satır (sınır notu + **"+ Yeni
-Simülasyon"** düğmesi; yazma izni yoksa pasif) · açık oturumlar şeridi (devam et / bitir) · yarım kayıt şeridi (`pendingCard`, §17) · **"Simülasyon
-Kayıtları"** kartı · CAYSIM istemcileri kartı. Eski "Kayıtlarım" ve "Son simülasyon raporları" kartları tabloya taşındı (Video / Rapor düğmeleri).
+**Ön yüz (`flightsim.js renderWizard` → sayfa; `wizardModal` → pencere; `flightsim_runs.js runsTable`).** Geri bildirim (birebir): "alt alta üç yapı
+var, bunları bir tab ile gösterelim: Simülasyon Kayıtları / Açık Oturumlar / CAYSIM İstemcileri; çok fazla filtre: tarihi 'son 1 gün, 1 hafta, 1 ay'
+yapalım; Tarih ile 'Detaylı' düğmesi aynı kapsülde, Detaylı'ya tıklayınca küçük bir box açılsın; her satırda Oynat/Rapor/Video bir kapsülde; sadece
+master'da kırmızı 'Download' düğmesi, tıklayınca combobox neyi indirecekse listelesin." Sayfa: üst satır (sınır notu + **"+ Yeni Simülasyon"** düğmesi;
+yazma izni yoksa pasif) · **üç sekme** (`simTabBar`, HEPGO `.seg.seg-tabs` kalıbı + sayaç rozeti `.fs-tab-n`; 0 iken gizli): **Simülasyon Kayıtları**
+(varsayılan) · **Açık Oturumlar** (rozet = `GET /sessions` sayısı; devam et / bitir listesi; §17 yarım kayıt şeridi `pendingCard` listenin altında —
+ikisi de "bitmemiş iş") · **CAYSIM İstemcileri** (rozet = istemci sayısı, `clientsCard({ onCount })`). Seçim `#/drone/sim?tab=runs|open|clients` ile
+gelir ya da `localStorage caymaz.fs.tab` ile hatırlanır (hash'e yazılmaz; yeniden çizim yok). Pencere kapanışında açık oturum rozeti yenilenir.
+Sahte kipte (`?mock=1`) kayıt ve istemci sekmeleri "Sahte veri kipinde … yok." notu gösterir.
 Tablo (HEPGO `.table-wrap > table.table` kalıbı): tarih/saat (+ `#oturum · kapanış nedeni`), kullanıcı, dron tipi/model (kayıt rozeti), merkez/konum
 (+ koordinat), dünya kipi, kalkış yöntemi (sabit kanat), süre, sonuç rozeti (**ÇARPIŞMA** kırmızı `×n` / Tamam yeşil / Hata turuncu; çarpışma
-satırı `row-alert`), ekler (SVG simgeler: video, .bin [analiz sürüyorsa sarı], parametre, script — emoji yok), işlemler: **Oynat** (`play_log_id`
-∧ yazma izni; pencereyi kayıttan oynat kipinde o log seçili açar → dünya seçimi → Başlat → mevcut replay akışı), **Rapor** (`showReport`),
-**Video** (modal `<video>` + İndir), **.bin** (indir), **Parametreler** / **Script** (yalnız `ctx.user.master`; `<a download>`), **Sil**
-(`can_delete`; onay). Filtreler: tarih aralığı (iki `date`), merkez / tip / kullanıcı (facet açılır listeleri, sayılarla), sonuç, kaynak (canlı /
-kayıt), arama (250 ms gecikmeli), Temizle; sıralama sütun başlığından (▲/▼); 25'li sayfalama (‹ Sayfa p / n ›). Boş durum metni.
+satırı `row-alert`), ekler (SVG simgeler: video, .bin [analiz sürüyorsa sarı], parametre, script — emoji yok), işlemler: **kapsül** (`.pill-group
+.fs-runs-rowpill`) **Oynat** (`play_log_id` ∧ yazma izni; pasifse soluk; pencereyi kayıttan oynat kipinde o log seçili açar → dünya seçimi → Başlat →
+mevcut replay akışı) · **Rapor** (`showReport`; `has_summary` yoksa pasif) · **Video** (yalnız `has_video`; modal `<video>` + İndir); **yalnız
+`ctx.user.master`**: kırmızı **Download ▾** düğmesi → açılır menü (`popover`, body'ye fixed; dışarı tıklama / Escape / kaydırma kapatır): "Uçuş logu
+(.bin)" · "Parametreler (.param)" · "Script arşivi (.zip)" · "Video (.webm)" · "Rapor (yazdır)" (`<a download>`; olmayanlar pasif). Master olmayanda
+Download YOK — .bin indirme yalnız Download menüsünde; master olmayan .bin'i Oynat ile kullanır. **Sil** küçük simge, kapsülün sağında (`can_delete`;
+onay). ≤1560 px'te Download + Sil kapsülün altına sağa hizalı sarar. **Filtre çubuğu** tek satır: kapsül **Son 1 gün · 1 hafta (varsayılan) · 1 ay ·
+Tümü** (`from` = bugün − n gün, `to` boş) + aynı kapsülde **Detaylı** (aktif ayrıntı filtresi sayısı rozeti) → açılır kutu (`.fs-runs-detail-box`):
+tarih aralığı (iki `date`; dolu ise dönem `custom`, kapsülde seçili dönem yok), merkez / tip / kullanıcı (facet listeleri, sayılarla), sonuç, kaynak
+(canlı / kayıt), arama; **Uygula** (değerler o ana kadar bekler) / **Temizle** (hepsi sıfır, 1 hafta). Sağda kayıt sayısı; boş durumda "Tüm kayıtları
+göster". Sıralama sütun başlığından (▲/▼); 25'li sayfalama (‹ Sayfa p / n ›).
 **Pencere** (`ui.js modal`, `wide` + `.fs-wizard-modal` 1240 px, gövde kaydırılabilir): başlık **"Yeni Simülasyon Başlat"**, gövde = Kip · 1 Dron tipi
 (+ kalkış yöntemi + model) · 2 Merkez (+ dron kaydı) · 1 Uçuş logu (kayıt kipi) · 3 Dünya (+ 3B önizleme) · Kayıt seçenekleri · not; altbilgi
 **"İptal et"** + **"▶ Başlat"** (primary; kayıt kipinde "▶ Oynat"). Başlat → mevcut akış: tam ekran + ekran paylaşımı izni → `POST /sessions` →

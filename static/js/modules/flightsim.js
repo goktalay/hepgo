@@ -12,7 +12,7 @@
 // • `?mock=1`: arka uç yokken yerel kinematik üretici (WS yerine) — sihirbaz, 3B dünya ve HUD arka uçsuz denenir. Mock oturumlar yalnız
 //   bu sekmede (bellekte) yaşar; komutlar (arm/disarm/mode/takeoff/rtl/reset/crash) üreticiye uygulanır.
 import { api } from '../api.js';
-import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, segmented, toast, toastError, t as tr } from '../ui.js';
+import { clear, confirmDialog, field, fmtDateTime, fmtDuration, h, modal, onLeave, pref, segmented, setPref, toast, toastError, t as tr } from '../ui.js';
 import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
 import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
@@ -90,7 +90,7 @@ export async function render(view, params, ctx, extra = {}) {
   const backend = mock ? mockBackend(ctx) : restBackend();
   const head = extra.head || (sub => h('div', { class: 'page-head' }, h('div', { class: 'page-head-t' }, h('h1', null, 'Uçuş Simülatörü'), sub ? h('div', { class: 'sub' }, sub) : null)));
   if (sid) return renderSession(view, ctx, backend, sid, { mock, canWrite, netsim: parseNetsim(sp.get('netsim')) });
-  return renderWizard(view, ctx, backend, head, { mock, canWrite, openNew: sp.get('new') === '1' });   // ?new=1: "Yeni Simülasyon Başlat" penceresi açık gelir
+  return renderWizard(view, ctx, backend, head, { mock, canWrite, openNew: sp.get('new') === '1', tab: sp.get('tab') });   // ?new=1: "Yeni Simülasyon Başlat" penceresi açık gelir · ?tab=runs|open|clients
 }
 
 // Ağ bozulması test kipi (§5 titreme teşhisi): #/drone/sim/<id>?netsim=jitter30,loss5,delay40 — gelen her `tele` karesi delay + U(0, 2·jitter) ms
@@ -157,10 +157,26 @@ function wsClient(id, handlers) {
 }
 
 // ======================================================================
-// Simülasyon sayfası (§21): üstte "Yeni Simülasyon" düğmesi · açık oturumlar şeridi · yarım kayıt şeridi · "Simülasyon Kayıtları" tablosu ·
-// CAYSIM istemcileri kartı. Sihirbaz (Kip, tip, kalkış, model, merkez, dron kaydı, dünya, kayıt seçenekleri) ayrı pencerede: wizardModal.
+// Simülasyon sayfası (§21): üstte sınır notu + "Yeni Simülasyon" düğmesi · üç sekme (HEPGO .seg-tabs kalıbı, sayaç rozetli):
+// **Simülasyon Kayıtları** (varsayılan; tablo) · **Açık Oturumlar** (devam et / bitir listesi + §17 yarım kayıt şeridi) · **CAYSIM İstemcileri**.
+// Sekme seçimi `#/drone/sim?tab=runs|open|clients` ile gelir ya da localStorage (caymaz.fs.tab) ile hatırlanır (hash'e yazılmaz: yeniden çizim yok).
+// Sihirbaz (Kip, tip, kalkış, model, merkez, dron kaydı, dünya, kayıt seçenekleri) ayrı pencerede: wizardModal.
 // ======================================================================
-async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = false }) {
+const SIM_TABS = [['runs', 'Simülasyon Kayıtları'], ['open', 'Açık Oturumlar'], ['clients', 'CAYSIM İstemcileri']];
+// Sayaç rozetli sekme çubuğu (ui.js segmented({tabs:true}) ile aynı sınıflar; rozet için el yapımı). → { el, set(key), count(key, n) }
+function simTabBar(options, active, onChange) {
+  const badges = {};
+  const btns = options.map(([key, label]) => {
+    badges[key] = h('span', { class: 'fs-tab-n', 'data-n': '0' }, '0');
+    return h('button', { type: 'button', role: 'tab', 'data-tab': key, class: key === active ? 'on' : '', 'aria-selected': key === active ? 'true' : 'false',
+      onclick: () => { set(key); onChange(key); } }, label, badges[key]);
+  });
+  const set = key => btns.forEach(b => { const on = b.dataset.tab === key; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  const count = (key, n) => { const bd = badges[key]; if (!bd) return; bd.textContent = String(n); bd.dataset.n = String(n); };
+  return { el: h('div', { class: 'module-tabs fs-tabs' }, h('div', { class: 'seg seg-tabs', role: 'tablist' }, btns)), set, count };
+}
+
+async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = false, tab = null }) {
   let meta;
   try { meta = await be.meta(); } catch (err) {
     clear(view, head('Uçuş Simülatörü'), h('div', { class: 'card empty' }, h('p', null, h('b', null, 'Simülatör servisi yanıt vermedi.')), h('p', { class: 'small muted' }, err.message),
@@ -170,12 +186,20 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
   const centers = meta.centers || [];
   const limits = meta.limits || {};
 
-  // ---------- açık oturumlar ----------
-  const openBox = h('div');
+  // ---------- sekmeler ----------
+  const tabKeys = SIM_TABS.map(([k]) => k);
+  let active = tabKeys.includes(tab) ? tab : (tabKeys.includes(pref('fs.tab', 'runs')) ? pref('fs.tab', 'runs') : 'runs');
+  const panes = { runs: h('div', { class: 'fs-pane', 'data-pane': 'runs', role: 'tabpanel' }), open: h('div', { class: 'fs-pane', 'data-pane': 'open', role: 'tabpanel' }), clients: h('div', { class: 'fs-pane', 'data-pane': 'clients', role: 'tabpanel' }) };
+  const showPane = key => { active = key; Object.entries(panes).forEach(([k, p]) => { p.hidden = k !== key; }); setPref('fs.tab', key); };
+  const tabs = simTabBar(SIM_TABS, active, showPane);
+
+  // ---------- açık oturumlar (sekme: Açık Oturumlar; rozet = açık oturum sayısı) ----------
+  const openBox = h('div', { class: 'fs-open-box' });
   const drawOpen = async () => {
     let rows = [];
     try { rows = await be.sessions(); } catch { rows = []; }
-    if (!rows.length) { clear(openBox); return; }
+    tabs.count('open', rows.length);
+    if (!rows.length) { clear(openBox, h('div', { class: 'card empty fs-open-empty' }, h('p', null, 'Açık oturum yok.'), h('p', { class: 'small muted' }, canWrite ? '"+ Yeni Simülasyon" ile oturum açın; açık oturumlar burada "Devam et / Bitir" ile listelenir.' : 'Açık oturumlar burada listelenir.'))); return; }
     clear(openBox, h('div', { class: 'card card-pad fs-open no-collapse' }, h('h3', null, tr('Açık oturumlar ({n})', { n: rows.length })),
       h('div', { class: 'fs-open-list' }, rows.map(s => h('div', { class: 'fs-open-row' },
         h('div', { class: 'fs-open-main' }, h('b', null, TYPE_NAME[s.type] || s.type), s.mode === 'replay' ? h('span', { class: 'badge purple' }, 'Kayıt') : null,
@@ -190,7 +214,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
           } }, 'Bitir') : null))))));
   };
 
-  // ---------- sayfa: Yeni Simülasyon + kayıt tablosu ----------
+  // ---------- sayfa: Yeni Simülasyon + sekmeler ----------
   let wizardOpen = false;
   const openWizard = async (preset = {}) => {
     if (wizardOpen) return;
@@ -199,10 +223,15 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
       await wizardModal({ be, meta, mock, canWrite, preset, onClosed: () => { wizardOpen = false; drawOpen(); runs?.refresh(); pending?.refresh(); } });
     } catch (err) { wizardOpen = false; toastError(err); }
   };
-  const pending = mock || !canWrite ? null : pendingCard(tr);   // §17: yarım ekran kayıtları → Paylaş / Sil (tablo üstünde şerit)
+  const pending = mock || !canWrite ? null : pendingCard(tr);   // §17: yarım ekran kayıtları → Paylaş / Sil ("Açık Oturumlar" sekmesinde, listenin altında)
   const runs = mock ? null : runsTable({ be, tr, canWrite, user: ctx.user,
     onPlay: r => openWizard({ mode: 'replay', log: r.play_log_id }),   // kayıttan oynat kipinde sihirbaz (dünya seçimi + Başlat → mevcut replay akışı)
     onReport: async r => { const sum = await be.report(r.summary_event_id); await showReport(sum, { tr, be, canWrite }); } });
+  const clients = mock ? null : clientsCard({ canWrite, onCount: n => tabs.count('clients', n) });   // CAYSIM istemcileri (docs/caysim-api.md)
+  const mockNote = what => h('div', { class: 'card empty' }, h('p', { class: 'small muted' }, tr('Sahte veri kipinde {what} yok.', { what })));
+  clear(panes.runs, runs ? runs.el : mockNote('simülasyon kayıtları tablosu'));
+  clear(panes.open, openBox, pending ? pending.el : null);
+  clear(panes.clients, clients ? clients.el : mockNote('CAYSIM istemci listesi'));
   const newBtn = h('button', { class: 'btn primary fs-new-sim', type: 'button', disabled: !canWrite, onclick: () => openWizard() }, '+ Yeni Simülasyon');
   const topNote = h('div', { class: 'small muted' }, canWrite
     ? tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' })
@@ -210,10 +239,9 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = fal
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     h('div', { class: 'fs-top-row' }, topNote, newBtn),
-    openBox,
-    pending ? pending.el : null,
-    runs ? runs.el : null,
-    mock ? null : clientsCard({ canWrite }).el);   // CAYSIM istemcileri (docs/caysim-api.md)
+    tabs.el,
+    panes.runs, panes.open, panes.clients);
+  showPane(active);
   drawOpen();
   if (openNew && canWrite) openWizard();
   if (mock && !centers.length) toast('Sahte kipte merkez yok', 'err');

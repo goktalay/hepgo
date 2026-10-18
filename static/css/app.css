@@ -9388,6 +9388,15 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 /* ---- Uçuş Simülatörü §21: sayfa üst satırı, "Yeni Simülasyon Başlat" penceresi, Simülasyon Kayıtları tablosu ---- */
 .fs-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
 .fs-new-sim { white-space: nowrap; }
+/* §21 sekmeler: Simülasyon Kayıtları · Açık Oturumlar · CAYSIM İstemcileri (HEPGO .seg-tabs kalıbı) + sayaç rozeti */
+.fs-tabs { margin: 0 0 14px; }
+.fs-tabs .seg.seg-tabs { display: flex; width: 100%; min-width: 0; }
+.fs-tabs .seg.seg-tabs button { display: inline-flex; align-items: center; gap: 7px; }
+.fs-tab-n { display: inline-block; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.fs-tabs button.on .fs-tab-n { background: var(--primary); border-color: var(--primary); color: #fff; }
+.fs-tab-n[data-n="0"] { display: none; }
+.fs-pane[hidden] { display: none; }
+.fs-open-empty { margin-bottom: 14px; }
 .modal.fs-wizard-modal { max-width: 1240px; width: min(1240px, 96vw); }
 .modal.fs-wizard-modal .modal-body { background: var(--bg); }
 .modal.fs-wizard-modal .fs-step { margin-bottom: 12px; }
@@ -9397,16 +9406,39 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 .fs-runs-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .fs-runs-head h3 { margin: 0; }
 .fs-runs-pager { display: flex; align-items: center; gap: 8px; }
-.fs-runs-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 12px; }
-.fs-runs-filters .input.sm { height: 32px; padding: 4px 8px; font-size: 13px; width: auto; min-width: 0; }
-.fs-runs-filters select.input.sm { max-width: 190px; }
-.fs-runs-f { display: inline-flex; align-items: center; gap: 6px; }
-.fs-runs-q { flex: 1 1 220px; }
-.fs-runs-count { margin-left: auto; white-space: nowrap; }
+/* filtre kapsülü (§21 geri bildirim): [Son 1 gün · 1 hafta · 1 ay · Tümü | Detaylı(n)] + sağda kayıt sayısı; Detaylı → .fs-pop açılır kutu */
+.fs-runs-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.fs-runs-pill { gap: 2px; }
+.fs-runs-pill > .btn.sm { height: 28px; padding: 0 12px; font-size: 13px; color: var(--muted); font-weight: 500; border-radius: 999px; }
+.fs-runs-pill > .btn.sm:hover { color: var(--text); background: var(--surface); }
+.fs-runs-pill > .btn.sm.on { background: var(--surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 2px rgba(15, 23, 42, .1); }
+.fs-runs-pill > .btn.sm.open { background: var(--surface); color: var(--text); }
+.fs-runs-sep { width: 1px; height: 18px; background: var(--border-strong, var(--border)); margin: 0 3px; flex: none; }
+.fs-runs-detail { display: inline-flex; align-items: center; gap: 6px; }
+.fs-runs-dn { display: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.fs-runs-detail.on .fs-runs-dn { display: inline-block; }
+.fs-runs-count { white-space: nowrap; }
+.fs-runs-note { margin: 10px 0 12px; }
+/* açılır kutu (popover; body'ye eklenir, fixed) — Detaylı filtre kutusu ve Download menüsü */
+.fs-pop { position: fixed; z-index: 9000; background: var(--surface); border: 1px solid var(--border-strong, var(--border)); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, .22); padding: 8px; }
+.fs-runs-detail-box { display: flex; flex-direction: column; gap: 8px; padding: 4px; }
+.fs-pop-title { font-weight: 700; font-size: 14px; padding: 2px 2px 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+.fs-pop-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; }
+.fs-pop-row > .small { white-space: nowrap; }
+.fs-pop-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fs-pop-ctl .input.sm { height: 32px; padding: 4px 8px; font-size: 13px; width: 100%; min-width: 0; flex: 1 1 0; }
+.fs-pop-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 2px; }
+.fs-dl-menu { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+.fs-dl-item { display: flex; align-items: center; gap: 8px; text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text); text-decoration: none; width: 100%; }
+.fs-dl-item:hover, .fs-dl-item:focus-visible { background: var(--surface-2); outline: none; }
+.fs-dl-item[disabled] { color: var(--faint, var(--muted)); opacity: .55; cursor: not-allowed; }
+.fs-dl-item .fs-runs-bi { width: 16px; height: 16px; margin: 0; flex: none; }
 .table.fs-runs th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .table.fs-runs th.sortable:hover, .table.fs-runs th.sortable.on { color: var(--primary); }
 .fs-runs-sort { display: inline-block; width: 1em; font-size: 10px; margin-left: 2px; }
+.table.fs-runs th, .table.fs-runs td { padding: 9px 10px; }
 .table.fs-runs td { vertical-align: top; }
+.table.fs-runs td.actions { vertical-align: middle; }
 .fs-runs-mode { margin-left: 6px; }
 .fs-runs-att { display: inline-flex; gap: 6px; align-items: center; }
 .fs-runs-ico { display: inline-flex; width: 20px; height: 20px; color: var(--muted); opacity: .45; }
@@ -9414,7 +9446,17 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 .fs-runs-ico.wait { color: var(--warning, #c77d00); }
 .fs-runs-ico svg, .fs-runs-bi svg { width: 100%; height: 100%; }
 .fs-runs-bi { display: inline-flex; width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
-.fs-runs-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.fs-runs-actions .btn.xs { display: inline-flex; align-items: center; }
+/* satır işlemleri: kapsül [Oynat · Rapor · Video] (pasifler soluk) + MASTER: kırmızı Download ▾ + Sil simgesi */
+.fs-runs-actions { display: flex; gap: 6px; flex-wrap: nowrap; align-items: center; justify-content: flex-end; }
+@media (max-width: 1560px) { .fs-runs-actions { flex-wrap: wrap; max-width: 230px; margin-left: auto; row-gap: 4px; } }
+.fs-runs-rowpill { padding: 2px; gap: 2px; }
+.fs-runs-rowpill > .btn.xs { height: 24px; padding: 0 9px; display: inline-flex; align-items: center; border-radius: 999px; }
+.fs-runs-rowpill > .btn.xs:disabled { opacity: .45; cursor: not-allowed; background: transparent; }
+.fs-runs-dl { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.fs-runs-dl.open, .fs-runs-dl:hover { background: var(--danger-hover, #b91c1c); border-color: var(--danger-hover, #b91c1c); }
+.fs-runs-caret { font-size: 10px; margin-left: 2px; }
+.fs-runs-del { width: 26px; height: 26px; color: var(--danger); }
+.fs-runs-del svg { width: 15px; height: 15px; }
+.fs-runs-del:hover { background: var(--danger-soft, #fee2e2); }
 .fs-runs-video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
 .fs-runs-empty { margin: 0; }

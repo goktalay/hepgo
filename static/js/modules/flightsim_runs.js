@@ -1,10 +1,14 @@
 // Uçuş Simülatörü — "Simülasyon Kayıtları" tablosu (docs/ucus-simulatoru.md §21): her oturumun kapanışında yazılan drone_sim_runs satırları.
 // Kullanıcı isteği: "Yapılan uçuşların kayıtları Simülasyon altında tablo şeklinde olsun; tarihe göre, konuma göre ve benzeri seçim yapabilelim …
 // kayıtları oynatabilelim; ama sadece master kullanıcısı script ve parametreleri download edebilsin, bu düğmeler yalnız master kullanıcısına görünsün."
+// Geri bildirim (§21 sekmeler): "çok fazla filtre: tarihi 'son 1 gün / 1 hafta / 1 ay' yapalım; Tarih ile 'Detaylı' düğmesi aynı kapsülde; Detaylı'ya
+// tıklarsa küçük bir kutu açılsın, diğerlerini orada seçsin. Her satırda Oynat / Rapor / Video bir kapsülde; yalnız master'da kırmızı 'Download' düğmesi,
+// tıklayınca açılır liste neyi indirecekse listelesin."
 // Sütunlar: tarih/saat · kullanıcı · dron tipi/model · merkez/konum · dünya kipi · kalkış yöntemi · süre · sonuç (ÇARPIŞMA kırmızı / Tamam yeşil / Hata)
-// · ekler (video, .bin, parametre, script simgeleri) · işlemler: Oynat (bin_log_id analizi TAMAM → kayıttan oynat kipinde sihirbaz) · Rapor ·
-// Video (izle/indir) · .bin indir · Parametreler indir ve Script indir (YALNIZ MASTER: istemci `user.master`; sunucu uçları da 403) · Sil.
-// Filtreler: tarih aralığı, merkez, dron tipi, kullanıcı, sonuç, kaynak (canlı/kayıt), arama; sıralama sütun başlığından; 25'li sayfalama.
+// · ekler (video, .bin, parametre, script simgeleri) · işlemler: kapsül [Oynat · Rapor · Video] (pasifler soluk; video yoksa gizli) + MASTER: kırmızı
+// **Download ▾** menüsü (.bin / .param / scripts.zip / video / rapor yazdır; olmayanlar pasif; sunucu uçları da 403) + Sil simgesi (can_delete).
+// Filtre çubuğu: kapsül [Son 1 gün · 1 hafta · 1 ay · Tümü | Detaylı(•n)] + sağda kayıt sayısı; Detaylı → açılır kutu (tarih aralığı, merkez, tip,
+// kullanıcı, sonuç, kaynak, arama; Uygula / Temizle). Sıralama sütun başlığından; 25'li sayfalama.
 // Dışa: runsTable({ be, tr, canWrite, user, onPlay, onReport }) → { el, refresh }
 
 import { clear, confirmDialog, fmtDateTime, fmtDuration, h, modal, toast, toastError } from '../ui.js';
@@ -18,6 +22,11 @@ const RESULT = { tamam: ['green', 'Tamam'], carpisma: ['red', 'ÇARPIŞMA'], hat
 const END_REASON = { kapatildi: 'Bitir', bosta: 'boşta kapandı', sure: 'süre doldu', sunucu_kapaniyor: 'sunucu kapandı' };
 const COLS = [['started_at', 'Tarih / saat'], ['owner', 'Kullanıcı'], ['type', 'Dron tipi / model'], ['center', 'Merkez / konum'], [null, 'Dünya'], [null, 'Kalkış'],
   ['duration_s', 'Süre'], ['result', 'Sonuç'], [null, 'Ekler'], [null, '']];
+// Hızlı tarih kapsülü: anahtar → gün sayısı (0 = Tümü). Varsayılan 1 hafta.
+const PERIODS = [['1d', 'Son 1 gün', 1], ['7d', '1 hafta', 7], ['30d', '1 ay', 30], ['all', 'Tümü', 0]];
+const DETAIL_KEYS = ['center_id', 'type', 'owner_id', 'result', 'mode', 'q'];
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const sinceDays = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
 const ico = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 export const RUN_ICON = {
   video: ico('<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>'),
@@ -27,42 +36,111 @@ export const RUN_ICON = {
   report: ico('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/><path d="M8 12h8M8 16h5"/>'),
   play: ico('<path d="M7 4l12 8-12 8z"/>'),
   trash: ico('<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/>'),
+  download: ico('<path d="M12 4v11M7 10l5 5 5-5M4 19h16"/>'),
+  print: ico('<path d="M7 8V3h10v5M5 8h14a2 2 0 0 1 2 2v6h-4v4H7v-4H3v-6a2 2 0 0 1 2-2z"/>'),
 };
+
+// Açılır kutu (popover): çapaya göre belgeye sabit konumda (fixed) — tablo kaydırma kutusu kesmesin. Dışarı tıklama / Escape / kaydırma kapatır.
+// Aynı anda tek kutu açık kalır. Dönen nesne: { el, close }.
+let OPEN_POP = null;
+export function popover(anchor, content, { cls = '', align = 'left', width } = {}) {
+  OPEN_POP?.close();
+  const el = h('div', { class: `fs-pop ${cls}`.trim(), role: 'dialog' }, content);
+  if (width) el.style.width = `${width}px`;
+  document.body.append(el);
+  const place = () => {
+    const r = anchor.getBoundingClientRect(), w = el.offsetWidth, hh = el.offsetHeight;
+    let left = align === 'right' ? r.right - w : r.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = r.bottom + 6;
+    if (top + hh > window.innerHeight - 8 && r.top - hh - 6 > 8) top = r.top - hh - 6;
+    el.style.left = `${Math.round(left)}px`; el.style.top = `${Math.round(top)}px`;
+  };
+  place();
+  const onDoc = e => { if (!el.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); anchor.focus?.(); } };
+  const onScroll = e => { if (!el.contains(e.target)) place(); };
+  const close = () => {
+    if (OPEN_POP?.el !== el) return;
+    OPEN_POP = null; el.remove(); anchor.classList.remove('open'); anchor.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onDoc, true); document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', place);
+  };
+  setTimeout(() => { document.addEventListener('pointerdown', onDoc, true); }, 0);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', place);
+  anchor.classList.add('open'); anchor.setAttribute('aria-expanded', 'true');
+  OPEN_POP = { el, close };
+  return OPEN_POP;
+}
 
 export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null, onReport = null } = {}) {
   const master = !!user?.master;
-  const F = { from: '', to: '', center_id: '', type: '', owner_id: '', result: '', mode: '', q: '', sort: '-started_at', page: 1 };
+  // Sorgu durumu: period (hızlı kapsül; 'custom' = Detaylı kutusundan elle tarih aralığı) → from/to; diğerleri Detaylı kutusundan.
+  const F = { from: sinceDays(7), to: '', center_id: '', type: '', owner_id: '', result: '', mode: '', q: '', sort: '-started_at', page: 1 };
+  let period = '7d';
   let data = { items: [], total: 0, page: 1, pages: 1, facets: { centers: [], owners: [], types: [] } };
+  let facets = { centers: [], owners: [], types: [] };
   const tableBox = h('div', { class: 'fs-runs-table' });
   const pager = h('div', { class: 'fs-runs-pager small muted' });
   const count = h('span', { class: 'fs-runs-count small muted' });
-  const sel = (key, label, allText) => {
-    const s = h('select', { class: 'input sm', 'data-f': key, title: tr(label), onchange: () => { F[key] = s.value; F.page = 1; refresh(); } }, h('option', { value: '' }, tr(allText)));
-    return s;
-  };
-  const fromInp = h('input', { class: 'input sm', type: 'date', 'data-f': 'from', title: tr('Başlangıç tarihi'), onchange: () => { F.from = fromInp.value; F.page = 1; refresh(); } });
-  const toInp = h('input', { class: 'input sm', type: 'date', 'data-f': 'to', title: tr('Bitiş tarihi'), onchange: () => { F.to = toInp.value; F.page = 1; refresh(); } });
-  const centerSel = sel('center_id', 'Merkez / konum', 'Tüm merkezler');
-  const typeSel = sel('type', 'Dron tipi', 'Tüm tipler');
-  const ownerSel = sel('owner_id', 'Kullanıcı', 'Tüm kullanıcılar');
-  const resultSel = sel('result', 'Sonuç', 'Tüm sonuçlar');
-  [['tamam', 'Tamam'], ['carpisma', 'ÇARPIŞMA'], ['hata', 'Hata']].forEach(([v, l]) => resultSel.append(h('option', { value: v }, tr(l))));
-  const modeSel = sel('mode', 'Kaynak', 'Canlı + kayıt');
-  [['sitl', 'Canlı simülasyon'], ['replay', 'Kayıttan oynatma']].forEach(([v, l]) => modeSel.append(h('option', { value: v }, tr(l))));
-  let qT = 0;
-  const qInp = h('input', { class: 'input sm fs-runs-q', 'data-f': 'q', placeholder: tr('Ara: model, log adı, merkez, kullanıcı, oturum no'), oninput: () => { clearTimeout(qT); qT = setTimeout(() => { F.q = qInp.value; F.page = 1; refresh(); }, 250); } });
-  const resetBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => { Object.assign(F, { from: '', to: '', center_id: '', type: '', owner_id: '', result: '', mode: '', q: '', page: 1 }); fromInp.value = toInp.value = qInp.value = ''; [centerSel, typeSel, ownerSel, resultSel, modeSel].forEach(s => { s.value = ''; }); refresh(); } }, tr('Temizle'));
-  const filters = h('div', { class: 'fs-runs-filters' },
-    h('label', { class: 'fs-runs-f' }, h('span', { class: 'small muted' }, tr('Tarih')), fromInp, h('span', { class: 'muted' }, '–'), toInp),
-    centerSel, typeSel, ownerSel, resultSel, modeSel, qInp, resetBtn, count);
 
-  const fillFacets = f => {
-    const keep = (s, opts, fmt) => { const v = s.value; while (s.options.length > 1) s.remove(1); opts.forEach(o => s.append(h('option', { value: String(o.id ?? o) }, fmt(o)))); s.value = v; if (s.value !== v) s.value = ''; };
-    keep(centerSel, f.centers || [], c => `${c.name || '—'} (${c.n})`);
-    keep(typeSel, f.types || [], t => tr(TYPE_NAME[t] || t));
-    keep(ownerSel, f.owners || [], o => `${o.name || '—'} (${o.n})`);
-    // sonuç/kaynak sabit seçenekler (facet yok)
+  // ---------- filtre kapsülü: Son 1 gün · 1 hafta · 1 ay · Tümü | Detaylı(•n) ----------
+  const detailCount = () => DETAIL_KEYS.filter(k => F[k] !== '').length + (period === 'custom' ? 1 : 0);
+  const detailBadge = h('span', { class: 'fs-runs-dn', 'aria-hidden': 'true' });
+  const detailBtn = h('button', { class: 'btn sm fs-runs-detail', type: 'button', 'data-f': 'detail', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    title: tr('Ayrıntılı filtreler: tarih aralığı, merkez, tip, kullanıcı, sonuç, kaynak, arama'), onclick: () => openDetail() }, tr('Detaylı'), detailBadge);
+  const periodBtns = PERIODS.map(([k, label]) => h('button', { class: `btn sm ${period === k ? 'on' : ''}`, type: 'button', 'data-period': k, onclick: () => setPeriod(k) }, tr(label)));
+  const pill = h('div', { class: 'pill-group fs-runs-pill' }, periodBtns, h('span', { class: 'fs-runs-sep', 'aria-hidden': 'true' }), detailBtn);
+  const syncPill = () => {
+    periodBtns.forEach(b => b.classList.toggle('on', b.dataset.period === period));
+    const n = detailCount();
+    detailBadge.textContent = n ? String(n) : '';
+    detailBtn.classList.toggle('on', n > 0);
   };
+  const setPeriod = k => {
+    period = k; const days = PERIODS.find(p => p[0] === k)?.[2] ?? 0;
+    F.from = days ? sinceDays(days) : ''; F.to = ''; F.page = 1;
+    syncPill(); refresh();
+  };
+  const filters = h('div', { class: 'fs-runs-filters' }, pill, count);
+
+  // ---------- Detaylı kutusu: değerler Uygula'ya kadar bekler; Temizle hepsini sıfırlar (kapsül 1 haftaya döner) ----------
+  const openDetail = () => {
+    const D = { ...F };
+    const opt = (v, l) => h('option', { value: v }, l);
+    const selOf = (key, allText, opts, fmt) => h('select', { class: 'input sm', 'data-f': key }, opt('', tr(allText)), opts.map(o => opt(String(o.id ?? o), fmt(o))));
+    const fromInp = h('input', { class: 'input sm', type: 'date', 'data-f': 'from', value: period === 'custom' ? D.from : '' });
+    const toInp = h('input', { class: 'input sm', type: 'date', 'data-f': 'to', value: D.to });
+    const centerSel = selOf('center_id', 'Tüm merkezler', facets.centers || [], c => `${c.name || '—'} (${c.n})`);
+    const typeSel = selOf('type', 'Tüm tipler', facets.types || [], t => tr(TYPE_NAME[t] || t));
+    const ownerSel = selOf('owner_id', 'Tüm kullanıcılar', facets.owners || [], o => `${o.name || '—'} (${o.n})`);
+    const resultSel = selOf('result', 'Tüm sonuçlar', [['tamam', 'Tamam'], ['carpisma', 'ÇARPIŞMA'], ['hata', 'Hata']].map(([id, l]) => ({ id, l })), o => tr(o.l));
+    const modeSel = selOf('mode', 'Canlı + kayıt', [['sitl', 'Canlı simülasyon'], ['replay', 'Kayıttan oynatma']].map(([id, l]) => ({ id, l })), o => tr(o.l));
+    const qInp = h('input', { class: 'input sm', type: 'search', 'data-f': 'q', value: D.q, placeholder: tr('Ara: model, log adı, merkez, kullanıcı, oturum no') });
+    [centerSel, typeSel, ownerSel, resultSel, modeSel].forEach(s => { s.value = D[s.dataset.f] || ''; if (s.value !== (D[s.dataset.f] || '')) s.value = ''; });
+    const row = (label, ...ctrls) => h('label', { class: 'fs-pop-row' }, h('span', { class: 'small muted' }, tr(label)), h('span', { class: 'fs-pop-ctl' }, ctrls));
+    const apply = () => {
+      const from = fromInp.value, to = toInp.value;
+      if (from || to) { period = 'custom'; F.from = from; F.to = to; }
+      else if (period === 'custom') { period = '7d'; F.from = sinceDays(7); F.to = ''; }
+      [centerSel, typeSel, ownerSel, resultSel, modeSel, qInp].forEach(c => { F[c.dataset.f] = c.value.trim(); });
+      F.page = 1; pop.close(); syncPill(); refresh();
+    };
+    const clearAll = () => { DETAIL_KEYS.forEach(k => { F[k] = ''; }); pop.close(); setPeriod('7d'); };
+    const pop = popover(detailBtn, h('div', { class: 'fs-runs-detail-box' },
+      h('div', { class: 'fs-pop-title' }, tr('Ayrıntılı filtre')),
+      row('Tarih aralığı', fromInp, h('span', { class: 'muted' }, '–'), toInp),
+      row('Merkez / konum', centerSel), row('Dron tipi', typeSel), row('Kullanıcı', ownerSel), row('Sonuç', resultSel), row('Kaynak', modeSel),
+      row('Arama', qInp),
+      h('div', { class: 'fs-pop-foot' },
+        h('button', { class: 'btn sm', type: 'button', 'data-act': 'clear', onclick: clearAll }, tr('Temizle')),
+        h('button', { class: 'btn sm primary', type: 'button', 'data-act': 'apply', onclick: apply }, tr('Uygula')))), { cls: 'fs-runs-pop', width: 340 });
+    qInp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+    setTimeout(() => (period === 'custom' ? fromInp : centerSel).focus(), 0);
+  };
+
+  const fillFacets = f => { facets = { centers: f.centers || [], owners: f.owners || [], types: f.types || [] }; };
 
   const attachments = r => h('span', { class: 'fs-runs-att' },
     r.has_video ? h('span', { class: 'fs-runs-ico on', title: tr('Ekran kaydı (video)'), html: RUN_ICON.video }) : null,
@@ -78,20 +156,37 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
       wide: true, actions: [{ label: tr('İndir'), onClick: () => { const a = h('a', { href: `${src}?dl=1`, download: '' }); document.body.append(a); a.click(); a.remove(); return true; } }, 'spacer', { label: tr('Kapat') }] });
   };
 
+  // ---------- satır işlemleri: kapsül [Oynat · Rapor · Video] + MASTER: Download ▾ (menü) + Sil simgesi ----------
+  const dlMenu = (btn, r) => {
+    const item = (label, icon, { href, download, onclick, enabled, title }) => enabled
+      ? (href ? h('a', { class: 'fs-dl-item', role: 'menuitem', href, download: download || '', title: title || '', onclick: () => pop.close() }, h('span', { class: 'fs-runs-bi', html: icon }), label)
+        : h('button', { class: 'fs-dl-item', role: 'menuitem', type: 'button', title: title || '', onclick: () => { pop.close(); onclick(); } }, h('span', { class: 'fs-runs-bi', html: icon }), label))
+      : h('button', { class: 'fs-dl-item', role: 'menuitem', type: 'button', disabled: true, 'aria-disabled': 'true', title: tr('Bu kayıtta yok') }, h('span', { class: 'fs-runs-bi', html: icon }), label);
+    const pop = popover(btn, h('div', { class: 'fs-dl-menu', role: 'menu', 'aria-label': tr('İndir') },
+      item(tr('Uçuş logu (.bin)'), RUN_ICON.bin, { href: `${API}/${r.id}/bin`, download: r.bin_file_name || '', enabled: !!r.bin_log_id, title: r.bin_file_name || '' }),
+      item(tr('Parametreler (.param)'), RUN_ICON.params, { href: `${API}/${r.id}/params`, enabled: !!r.has_params, title: tr('Son parametre dökümü (.param) — yalnız MASTER') }),
+      item(tr('Script arşivi (.zip)'), RUN_ICON.script, { href: `${API}/${r.id}/scripts`, enabled: !!r.has_scripts, title: tr('SITL scripts/ içeriği (zip) — yalnız MASTER') }),
+      item(tr('Video (.webm)'), RUN_ICON.video, { href: `${API}/${r.id}/video?dl=1`, enabled: !!r.has_video }),
+      item(tr('Rapor (yazdır)'), RUN_ICON.print, { enabled: !!(r.has_summary && onReport), onclick: async () => { try { await onReport?.(r); setTimeout(() => window.print(), 700); } catch (err) { toastError(err); } } })),
+    { cls: 'fs-runs-pop', align: 'right' });
+    pop.el.querySelector('.fs-dl-item:not([disabled])')?.focus();
+  };
   const actions = r => {
     const btn = (label, icon, attrs, cls = '') => h('button', { class: `btn xs ${cls}`, type: 'button', ...attrs }, h('span', { class: 'fs-runs-bi', html: icon }), label);
-    const link = (label, icon, href, title) => h('a', { class: 'btn xs', href, download: '', title }, h('span', { class: 'fs-runs-bi', html: icon }), label);
+    const playOk = !!(r.play_log_id && onPlay && canWrite);
+    const dl = master ? h('button', { class: 'btn xs danger fs-runs-dl', type: 'button', 'data-act': 'download', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      title: tr('İndir: .bin, parametreler, script arşivi, video, rapor — yalnız MASTER'), onclick: e => dlMenu(e.currentTarget, r) },
+      h('span', { class: 'fs-runs-bi', html: RUN_ICON.download }), 'Download', h('span', { class: 'fs-runs-caret', 'aria-hidden': 'true' }, '▾')) : null;
     return h('div', { class: 'fs-runs-actions' },
-      btn(tr('Oynat'), RUN_ICON.play, { disabled: !(r.play_log_id && onPlay && canWrite), 'data-act': 'play', title: r.play_log_id ? tr('Kayıttan oynat kipinde aç') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, 'primary'),
-      r.has_summary ? btn(tr('Rapor'), RUN_ICON.report, { 'data-act': 'report', onclick: async () => { try { await onReport?.(r); } catch (err) { toastError(err); } } }) : null,
-      r.has_video ? btn(tr('Video'), RUN_ICON.video, { 'data-act': 'video', onclick: () => videoDialog(r) }) : null,
-      r.bin_log_id ? link('.bin', RUN_ICON.bin, `${API}/${r.id}/bin`, r.bin_file_name || '') : null,
-      master && r.has_params ? link(tr('Parametreler'), RUN_ICON.params, `${API}/${r.id}/params`, tr('Son parametre dökümü (.param) — yalnız MASTER')) : null,
-      master && r.has_scripts ? link(tr('Script'), RUN_ICON.script, `${API}/${r.id}/scripts`, tr('SITL scripts/ içeriği (zip) — yalnız MASTER')) : null,
-      r.can_delete ? btn('', RUN_ICON.trash, { 'data-act': 'del', title: tr('Kaydı sil'), onclick: async () => {
+      h('div', { class: 'pill-group fs-runs-rowpill' },
+        btn(tr('Oynat'), RUN_ICON.play, { disabled: !playOk, 'data-act': 'play', title: r.play_log_id ? tr('Kayıttan oynat kipinde aç') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, playOk ? 'primary' : ''),
+        btn(tr('Rapor'), RUN_ICON.report, { disabled: !r.has_summary, 'data-act': 'report', title: r.has_summary ? tr('Özet raporu aç') : tr('Özet rapor yok'), onclick: async () => { try { await onReport?.(r); } catch (err) { toastError(err); } } }),
+        r.has_video ? btn(tr('Video'), RUN_ICON.video, { 'data-act': 'video', title: tr('Ekran kaydını izle'), onclick: () => videoDialog(r) }) : null),
+      dl,
+      r.can_delete ? h('button', { class: 'icon-btn xs fs-runs-del', type: 'button', 'data-act': 'del', title: tr('Kaydı sil'), 'aria-label': tr('Kaydı sil'), html: RUN_ICON.trash, onclick: async () => {
         if (!await confirmDialog(tr('Kaydı sil'), tr('Simülasyon kaydı ve parametre/script dosyaları silinir; özet rapor, .bin uçuş logu ve video kendi yerlerinde kalır.'), { okLabel: tr('Sil'), danger: true })) return;
         try { await be.runDelete(r.id); toast(tr('Kayıt silindi')); refresh(); } catch (err) { toastError(err); }
-      } }, 'danger ghost') : null);
+      } }) : null);
   };
 
   const draw = () => {
@@ -119,14 +214,16 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
     });
     clear(tableBox, data.items.length
       ? h('div', { class: 'table-wrap' }, h('table', { class: 'table fs-runs' }, h('thead', null, head), h('tbody', null, rows)))
-      : h('div', { class: 'card empty fs-runs-empty' }, h('p', null, data.total === 0 && !hasFilter() ? tr('Henüz simülasyon kaydı yok. "Yeni Simülasyon" ile başlayın; oturum bitince kayıt burada görünür.') : tr('Filtreye uyan kayıt yok.'))));
+      : h('div', { class: 'card empty fs-runs-empty' }, h('p', null, data.total === 0 && !hasFilter() ? tr('Henüz simülasyon kaydı yok. "Yeni Simülasyon" ile başlayın; oturum bitince kayıt burada görünür.') : tr('Filtreye uyan kayıt yok.')),
+          hasFilter() ? h('p', null, h('button', { class: 'btn sm', type: 'button', 'data-act': 'show-all', onclick: () => { DETAIL_KEYS.forEach(k => { F[k] = ''; }); setPeriod('all'); } }, tr('Tüm kayıtları göster'))) : null));
     count.textContent = tr('{n} kayıt', { n: data.total });
+    syncPill();
     clear(pager, data.pages > 1 ? [
       h('button', { class: 'btn xs', type: 'button', disabled: data.page <= 1, onclick: () => { F.page = data.page - 1; refresh(); } }, '‹'),
       h('span', null, tr('Sayfa {p} / {n}', { p: data.page, n: data.pages })),
       h('button', { class: 'btn xs', type: 'button', disabled: data.page >= data.pages, onclick: () => { F.page = data.page + 1; refresh(); } }, '›')] : null);
   };
-  const hasFilter = () => !!(F.from || F.to || F.center_id || F.type || F.owner_id || F.result || F.mode || F.q);
+  const hasFilter = () => !!(F.from || F.to || DETAIL_KEYS.some(k => F[k]));
 
   const refresh = async () => {
     try { data = await be.runs({ ...F }); } catch (err) { data = { items: [], total: 0, page: 1, pages: 1, facets: data.facets }; toastError(err); }
@@ -134,11 +231,11 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
     draw();
   };
   const el = h('div', { class: 'card card-pad fs-runs-card no-collapse' },
-    h('div', { class: 'fs-runs-head' }, h('h3', null, tr('Simülasyon Kayıtları')), pager),
-    h('p', { class: 'small muted' }, master
-      ? tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Parametre ve script indirme yalnız sistem sahibine (MASTER) açıktır.')
+    h('div', { class: 'fs-runs-head' }, filters, pager),
+    h('p', { class: 'small muted fs-runs-note' }, master
+      ? tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.')
       : tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu ve ekran kaydı. Oynat, kaydı kayıttan oynat kipinde açar.')),
-    filters, tableBox);
+    tableBox);
   refresh();
   return { el, refresh, filters: F };
 }

@@ -1,7 +1,7 @@
 // CAYSIM istemcileri kartı (Uçuş Simülatörü sihirbaz sayfası; sözleşme docs/caysim-api.md §9).
 // CAYSIM = Unreal Engine 5 + Cesium masaüstü görselleştirme istemcisi; HEPGO'ya istemci koduyla (<domain>/<key>) bağlanır, fizik/SITL burada kalır.
 // Kart: liste (ad, platform, durum, son görülme, sürüm, açık oturum) · "İstemci ekle" → kod BİR KEZ gösterilir (kopyala) · "Kodu yenile" · "Sil".
-// flightsim.js tek satırla bağlar: clientsCard({ canWrite }).el sihirbazın üstüne konur. Sahte veri kipinde (mock) kart çizilmez.
+// flightsim.js bağlar: clientsCard({ canWrite, onCount }).el "CAYSIM İstemcileri" sekmesine konur; onCount(n) sekme rozetini besler. Sahte kipte (mock) kart çizilmez.
 import { api } from '../api.js';
 import { clear, confirmDialog, field, h, modal, toast, toastError, t as tr } from '../ui.js';
 
@@ -52,16 +52,17 @@ function addForm(platforms, onDone) {
   });
 }
 
-export function clientsCard({ canWrite }) {
+export function clientsCard({ canWrite, onCount = null }) {
   const el = h('div', { class: 'fs-clients' });
   let rows = [], platforms = ['windows', 'linux', 'macos', 'other'];
   const draw = () => {
-    if (!rows.length && !canWrite) { clear(el); return; }
+    onCount?.(rows.length);
+    if (!rows.length && !canWrite) { clear(el, h('div', { class: 'card empty' }, h('p', null, 'Kayıtlı CAYSIM istemcisi yok.'))); return; }
     clear(el, h('div', { class: 'card card-pad fs-open no-collapse' },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' } },
         h('h3', { style: { margin: 0 } }, tr('CAYSIM istemcileri ({n})', { n: rows.length })),
         canWrite ? h('button', { class: 'btn sm primary', onclick: () => addForm(platforms, refresh) }, 'İstemci ekle') : null),
-      h('p', { class: 'small muted' }, 'CAYSIM, Unreal Engine 5 + Cesium ile çalışan masaüstü görselleştirme istemcisidir; fizik ve SITL HEPGO\'da kalır. İstemci, kodla bağlanır; açtığı oturumlar aşağıdaki listede CAYSIM rozetiyle görünür.'),
+      h('p', { class: 'small muted' }, 'CAYSIM, Unreal Engine 5 + Cesium ile çalışan masaüstü görselleştirme istemcisidir; fizik ve SITL HEPGO\'da kalır. İstemci, kodla bağlanır; açtığı oturumlar "Açık Oturumlar" sekmesinde CAYSIM rozetiyle görünür.'),
       rows.length ? h('div', { class: 'fs-open-list' }, rows.map(c => h('div', { class: 'fs-open-row' },
         h('div', { class: 'fs-open-main' }, h('b', null, c.name),
           c.active ? null : h('span', { class: 'badge gray' }, 'Pasif'),

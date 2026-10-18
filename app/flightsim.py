@@ -20,7 +20,7 @@ import math
 import os
 import time
 
-from . import db, drone_sitl, flightsim_hub, flightsim_mission
+from . import db, drone_params, drone_sitl, flightsim_hub, flightsim_mission
 
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
 UDP_BASE = int(os.environ.get('SIM_UDP_BASE', '14550'))
@@ -66,6 +66,10 @@ RAMP_ACCEL = 8.0                                 # TKOFF_THR_MINACC (m/s²): fı
 # gürültü değil). SIM_GND_BEHAV plane modelinde okunmaz. SERVO3_MIN/TRIM 1000 → itki 0 → 60 sn'de 0,000 m (rüzgâr 3 m/s'de de). Uçuşta gaz
 # eşlemesi SITL'in varsaydığı 1000–2000 ile birebir örtüşür (0 → 0 itki, 100 → tam itki).
 PLANE_YER_PARAMLARI = (('SERVO3_MIN', 1000.0), ('SERVO3_TRIM', 1000.0))
+# Flaplar (yalnız sabit_kanat; VTOL hariç): SERVO5/6 = flap_auto (3) → ArduPlane kalkışta TKOFF_FLAP_PCNT, inişte LAND_FLAP_PERCNT ile flapları kendisi
+# açar; 3B model (flightsim3d.js) SERVOn_FUNCTION kodlarını `tele.servo_fn` ile eşler. Oturum BAŞLANGIÇ değeridir ama dron yapılandırması sayılır:
+# kullanıcı MP/panelden değiştirirse kalıcı kaydedilir (drone_params hariç listesine GİRMEZ) ve kayıtlı değer varsa oturum bu başlangıcı yazmaz.
+FLAP_PARAMLARI = (('SERVO5_FUNCTION', 3.0), ('SERVO6_FUNCTION', 3.0), ('TKOFF_FLAP_PCNT', 50.0), ('LAND_FLAP_PERCNT', 100.0))
 # GPS kalitesi: SITL u-blox arka ucu (SIM_GPS1_TYPE 1) PVT carrsoln=fixed bayrağıyla zaten RTK Fixed (fix_type 6) bildirir ve yatay konuma
 # gürültü eklemez (SIM_GPS1_NOISE yalnız irtifa sinüsü). Raporlanan doğruluk (SIM_GPS1_ACC 0,3 → 0,02 m; EKF ağırlığı), uydu sayısı, hız hatası,
 # aksaklık ve irtifa sürüklenmesi RTK düzeyine çekilir. Tüm tiplerde ilk kalp atışında yazılır; parametre adları ikilide doğrulandı.
@@ -481,6 +485,10 @@ class SimSession:
         # (telemetri o dronun adıyla akar; yoksa "Simülatör #N"), SITL'e yüklenen son görevin 3B rota noktaları, komut yürütücü ve bekleyiciler
         self.hub = None
         self.drone = dict(drone) if drone else None
+        # Kalıcı parametreler (drone_params; yalnız dron kaydı seçiliyse): panel param_set + Mission Planner PARAM_SET yankıları kaydedilir,
+        # açılışta kayıtlılar varsayilan.parm + ilk kalp atışında PARAM_SET ile yüklenir
+        self.param_izleyici = drone_params.Izleyici(self.drone['id'], self._olay) if self.drone and self.drone.get('id') else None
+        self.kayitli_params = []
         self.route = []
         self.komutcu = flightsim_hub.MavKomut(self)
         self.gorev = flightsim_mission.GorevIzleyici(self)   # §18: görev izleme (MP yüklemesi algılama), iz, çarpışma/özet kayıtları
@@ -531,7 +539,8 @@ class SimSession:
                      'rs': 0.0, 'ps': 0.0, 'ys': 0.0, 'tbm': 0, 'tbm_pos': 0,
                      'vn': 0.0, 've': 0.0, 'vd': 0.0, 'airspeed': 0.0, 'groundspeed': 0.0, 'heading': 0.0, 'climb': 0.0, 'mode': None, 'armed': False,
                      'gps_fix': 0, 'sats': 0, 'batt_v': None, 'batt_pct': None, 'throttle': 0.0, 'rc': [0] * 8, 'home': None,
-                     'servo': None}   # SERVO_OUTPUT_RAW 1…8 µs (gerçek SITL; kontrol yüzeyi animasyonu, §5) — sahte kipte None → istemci rc'den türetir
+                     'servo': None,   # SERVO_OUTPUT_RAW 1…8 µs (gerçek SITL; kontrol yüzeyi animasyonu, §5) — sahte kipte None → istemci rc'den türetir
+                     'servo_fn': [None] * 8}   # SERVO1..8_FUNCTION (PARAM_VALUE'dan; 3B model flap/aileron eşlemesi için)
         self._tele_son = 0.0             # son `tele` yayını (duvar saati; bekçi)
         self._tele_tbm = -10 ** 9        # son yayının SITL time_boot_ms'i (kapı: TELE_TBM_KAPI)
         self._att_son = 0.0              # son ATTITUDE alımı (ATTITUDE akıyorsa GLOBAL_POSITION_INT yayın tetiklemez)
@@ -551,7 +560,9 @@ class SimSession:
                 # §14: harekât paneli köprüsü (bridge_id = -kimlik), dron kaydı, SITL'deki görevin rota noktaları
                 'hub': {'bridge_id': -self.kimlik, 'online': self.hub is not None, 'name': self.hub.name if self.hub else None},
                 'drone': dict(self.drone) if self.drone else None, 'route': list(self.route), 'mission': self.gorev.yayin_alanlari(),
-                'rec': {**self.rec, 'bin_log': dict(self.bin_sonuc) if self.bin_sonuc else None}}
+                'rec': {**self.rec, 'bin_log': dict(self.bin_sonuc) if self.bin_sonuc else None},
+                'params': {'tracked': self.param_izleyici is not None, 'loaded': len(self.kayitli_params),
+                           'saved': self.param_izleyici.kayit_sayisi if self.param_izleyici else 0}}
 
     # ---- §14: bekleyici kuyrukları (MavKomut) ----
     @contextlib.contextmanager
@@ -616,6 +627,8 @@ class SimSession:
             return
         self.gcs_last = now
         self.gcs_rx += 1
+        if self.param_izleyici is not None:   # Mission Planner PARAM_SET'leri ham geçer; izleyici yalnız niyeti not eder (yankı PARAM_VALUE kaydettirir)
+            self.param_izleyici.gcs_bayt(data)
         if self._tcp_w is not None and not self._tcp_w.is_closing():
             try:
                 self._tcp_w.write(data)
@@ -653,9 +666,10 @@ class SimSession:
             c = self.center
             self._olay(f'SITL başlatılıyor ({TIP_ADLARI.get(self.type, self.type)}) · {c.get("name") or ""}', 6)
             sitl_model = LAUNCH_SITL_MODEL.get(self.launch.get('method')) if self.type == 'sabit_kanat' else None   # rampa: plane-catapult
+            await self._kayitli_oku()
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.kimlik, self.type, c['lat'], c['lon'], sysid=1,
                                                                           irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol, model=sitl_model,
-                                                                          log_bin=self.rec['bin']))
+                                                                          log_bin=self.rec['bin'], ekstra_parm=drone_params.parm_satirlari(self.kayitli_params)))
             if port and self.rec['bin']:
                 self._olay('DataFlash kaydı açık: uçuş logu (.bin) oturum kapanışında Uçuş Logları\'na kaydedilir', 6)
             if not port:
@@ -665,6 +679,7 @@ class SimSession:
                 return False
             self.sitl.update(port=port, pid=drone_sitl.YONETICI.bilgi(self.kimlik).get('pid'), error=None)
         else:
+            await self._kayitli_oku()
             port = self.yonetici.sahte_tcp_port
             self.sitl.update(port=port, pid=None, error=None)
         if port:
@@ -688,6 +703,51 @@ class SimSession:
         self._durum('HAZIR')
         return True
 
+    async def _kayitli_oku(self):
+        """Dron kaydının kalıcı parametreleri (drone_sitl_params) → `kayitli_params` (SITL açılışından önce; okunamazsa boş)."""
+        self.kayitli_params = []
+        if self.param_izleyici is None:
+            return
+        try:
+            self.kayitli_params = await self.loop.run_in_executor(None, drone_params.yukle, self.param_izleyici.drone_id)
+        except Exception as e:   # noqa: BLE001
+            self._olay(f'Kayıtlı parametreler okunamadı: {e}'[:200], 4)
+
+    def _kayitli_yaz(self):
+        """İlk kalp atışında kayıtlı parametreleri PARAM_SET ile yeniden yazar (eeprom'daki eski değer parm dosyasını ezebilir); yankılar
+        tabana işlenir (yeniden kaydedilmez). Olay: "N kayıtlı parametre yüklendi"."""
+        if not self.kayitli_params or self.param_izleyici is None:
+            return
+        self.param_izleyici.yukleme_isaretle([r['name'] for r in self.kayitli_params])
+        for r in self.kayitli_params:
+            self._gonder(self.mav.param_set_encode(self.sysid, self.comp, str(r['name']).encode(), float(r['value']), int(r.get('ptype') or 9)))
+        self._olay(f'{len(self.kayitli_params)} kayıtlı parametre yüklendi ({self.drone.get("code") or self.drone.get("name") or ""})'.replace(' ()', ''), 6)
+
+    def _param_value_gozlendi(self, m):
+        """SITL'den PARAM_VALUE (gerçek SITL `_isle`; sahte kipte `_sahte_param_ayristir`): tip önbelleği + kalıcı izleyici."""
+        ad = str(m.param_id).rstrip('\x00')
+        self.param_types[ad] = m.param_type
+        if ad.startswith('SERVO') and ad.endswith('_FUNCTION') and ad[5:-9].isdigit() and 1 <= int(ad[5:-9]) <= 8:
+            try:
+                self.tele['servo_fn'][int(ad[5:-9]) - 1] = int(round(float(m.param_value)))
+            except (TypeError, ValueError):
+                pass
+        if self.param_izleyici is not None:
+            try:
+                self.param_izleyici.param_value(ad, m.param_value, m.param_type, m.param_index, m.param_count)
+            except Exception:   # noqa: BLE001
+                pass
+
+    def _sahte_param_ayristir(self, data):
+        """Sahte kip (HEPGO_SITL=0): sahte SITL'den gelen baytlarda yalnız PARAM_VALUE aranır (Mission Planner yankısı sınaması)."""
+        try:
+            msgs = self.parser.parse_buffer(data) or []
+        except Exception:   # noqa: BLE001
+            return
+        for m in msgs:
+            if m.get_type() == 'PARAM_VALUE':
+                self._param_value_gozlendi(m)
+
     async def _tcp_kapat(self):
         if self._tcp_task is not None:
             self._tcp_task.cancel()
@@ -710,6 +770,8 @@ class SimSession:
                 self._gcs_gonder(data)
                 if SITL_ENABLED:
                     self._ayristir(data)
+                elif self.param_izleyici is not None:
+                    self._sahte_param_ayristir(data)
         except asyncio.CancelledError:
             return
         except Exception:   # noqa: BLE001
@@ -818,20 +880,28 @@ class SimSession:
             elif m.result not in (0, 5):
                 self._olay(f'Komut {m.command} reddedildi (MAV_RESULT {m.result})', 4)
         elif t == 'PARAM_VALUE':
-            self.param_types[str(m.param_id).rstrip('\x00')] = m.param_type
+            self._param_value_gozlendi(m)
 
     def _ilk_heartbeat(self):
-        """İlk araç kalp atışı: genel akış 10 Hz + yüksek hızlı mesaj aralıkları, HOME iste, rüzgâr ve RC parametreleri."""
+        """İlk araç kalp atışı: genel akış 10 Hz + yüksek hızlı mesaj aralıkları, HOME iste, kayıtlı parametreler (dron kaydı), rüzgâr ve RC
+        parametreleri (oturum ayarları kayıtlılardan SONRA yazılır: son söz oturumun)."""
         d = _dialect()
         self._akis_iste()
         self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 512, 0, 242, 0, 0, 0, 0, 0, 0))         # HOME bir kez
+        self._kayitli_yaz()
         self._ruzgar_yaz(d)
         for ad, deger in RC_PARAMLAR:   # araçta olmayan ad (kopterde THR_FAILSAFE vb.) sessizce yok sayılır
             self._gonder(self.mav.param_set_encode(self.sysid, self.comp, ad.encode(), float(deger), d.MAV_PARAM_TYPE_REAL32))
         self._param_set(GPS_RTK_PARAMLARI)   # RTK düzeyi GPS (fix 6 zaten; doğruluk/uydu/hata sıfırlama)
         if self.type == 'sabit_kanat':   # kalkış yöntemi + yerde kayma düzeltmesi parametreleri (§13)
             self._param_set(launch_parametreleri(self.launch))
+            self._param_set(self.flap_parametreleri())   # otomatik flaplar (kayıtlı değeri olanlar atlanır: kullanıcı yapılandırması)
         self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
+
+    def flap_parametreleri(self):
+        """FLAP_PARAMLARI'ndan dronun kalıcı kaydında olmayanlar (kayıtlı SERVOn_FUNCTION / *_FLAP_* kullanıcı kararıdır, ezilmez)."""
+        kayitli = {r['name'] for r in self.kayitli_params}
+        return [(a, v) for a, v in FLAP_PARAMLARI if a not in kayitli]
 
     def _param_set(self, ciftler):
         d = _dialect()
@@ -1110,7 +1180,10 @@ class SimSession:
                 raise RuntimeError('Dron komutu reddetti (MAV_RESULT 4): araç ARM değil')
             k.komut('mode', {'mode': 'AUTO'}); return {'ack': 0}
         if name == 'param_set':
-            self._sahte_params[str(p['name'])] = float(p['value']); return {'name': p['name'], 'value': float(p['value']), 'type': 9}
+            self._sahte_params[str(p['name'])] = float(p['value'])
+            if self.param_izleyici is not None:   # sahte yankı: gerçek SITL'de PARAM_VALUE _isle'den gelir
+                self.param_izleyici.param_value(str(p['name']), float(p['value']), 9)
+            return {'name': p['name'], 'value': float(p['value']), 'type': 9}
         if name == 'param_get':
             return {'name': p['name'], 'value': self._sahte_params.get(str(p['name']), 0.0), 'type': 9}
         if name == 'param_list':
@@ -1190,6 +1263,7 @@ class SimSession:
             if self.yonetici.sahte_tcp_port and self._tcp_w is None:
                 await self._sitl_ac()
             else:
+                await self._kayitli_oku()   # gerçek SITL'de _sitl_ac okur; sahte kipte TCP açık kalır (kayıtlı parametre sınaması)
                 self._durum('HAZIR')
             return
         await self._tcp_kapat()

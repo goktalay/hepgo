@@ -91,9 +91,86 @@ def schema_checks():
         assert 'ix_drone_drones_bridge' not in idx and 'ix_field_flights_bridge' in idx, idx
         assert 'source' in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'drone_%'")}
-        assert {'drone_bridges', 'drone_drones', 'drone_bridge_sessions', 'drone_route_centers', 'drone_routes', 'drone_waypoints'} <= tables, tables
+        assert {'drone_bridges', 'drone_drones', 'drone_bridge_sessions', 'drone_route_centers', 'drone_routes', 'drone_waypoints', 'drone_sitl_params'} <= tables, tables
         fk = conn.execute('PRAGMA foreign_key_check').fetchall()
         assert not fk, fk
+
+
+def param_izleme_testleri(a, sd):
+    """Kalıcı parametreler (app/drone_params.py) — hub tarafı: SitlDrone benzeri köprüde _feed_msgs PARAM_VALUE → izleyici (taban / hepgo bekleyen /
+    hariç / yükleme yankısı / sitl farkı); send_command param_set niyeti; REST uçları yetkisi (okuyan GET 200, DELETE/POST 403)."""
+    import asyncio
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    from app import drone_params, drone_sitl
+
+    class SahteKopru:
+        def __init__(self, iz):
+            self.id, self.drones, self.param_izleyici, self.sysid = -sd['id'], {}, iz, 1
+            self.parser = drone_hub._mav()
+    olay = []
+    iz = drone_params.Izleyici(sd['id'], lambda m, sev: olay.append((m, sev)))
+    kp = SahteKopru(iz)
+    enc = D.MAVLink(None, srcSystem=1, srcComponent=1)
+
+    def pv(ad, v, t=9):   # SITL'den gelen ham PARAM_VALUE çerçevesi (köprü ayrıştırıcısından geçer)
+        b = enc.param_value_encode(ad.encode(), float(v), t, 50, 1).pack(enc)
+        enc.seq = (enc.seq + 1) % 256
+        return b
+
+    async def besle(*msgs):
+        drone_hub._feed_mavlink(kp, b''.join(msgs))
+        await asyncio.sleep(0.25)   # 200 ms toplu 'params' zamanlayıcısı
+    P = f"/api/drone/drones/{sd['id']}/sitl-params"
+    assert ok(a.get(P))['count'] == 0
+    asyncio.run(besle(pv('WP_RADIUS', 100), pv('RTL_ALT', 1500, 6), pv('STAT_RUNTIME', 99, 6)))   # ilk görülen: taban
+    assert iz.taban == {'WP_RADIUS': 100.0, 'RTL_ALT': 1500.0, 'STAT_RUNTIME': 99.0} and ok(a.get(P))['count'] == 0 and kp.drones[1].params['WP_RADIUS'][0] == 100.0
+    iz.hepgo_set('WP_RADIUS', 150, user_id=1)                 # send_command yolu: niyet → yankı kaydeder
+    asyncio.run(besle(pv('WP_RADIUS', 100)))                 # köprü çekirdeğinin tip için ara okuması (eski değer): niyet düşmez, kayıt yok
+    assert ok(a.get(P))['count'] == 0 and 'WP_RADIUS' in iz.bekleyen
+    asyncio.run(besle(pv('WP_RADIUS', 150)))
+    it = ok(a.get(P))['items']
+    assert len(it) == 1 and it[0]['name'] == 'WP_RADIUS' and it[0]['value'] == 150 and it[0]['source'] == 'hepgo' and it[0]['updated_by'] == 1 and it[0]['ptype'] == 9, it
+    assert olay and 'WP_RADIUS = 150 (HEPGO)' in olay[-1][0], olay
+    asyncio.run(besle(pv('STAT_RUNTIME', 120, 6), pv('LOG_BITMASK', 0, 6), pv('MAV_SYSID', 2, 6)))   # hariç → kayıt yok (taban güncellenir)
+    assert ok(a.get(P))['count'] == 1 and iz.taban['STAT_RUNTIME'] == 120.0
+    asyncio.run(besle(pv('RTL_ALT', 1500, 6)))              # değişmedi → kayıt yok
+    asyncio.run(besle(pv('RTL_ALT', 1800, 6)))              # tam liste (param_count 50) alınmadı → niyetsiz fark kaydedilmez
+    assert ok(a.get(P))['count'] == 1 and iz.taban_tam is False and iz.param_count == 50
+    asyncio.run(besle(*[pv(f'P{i:03d}', i, 6) for i in range(45)]))   # liste akışı: %90'ı görüldü → taban tam
+    assert iz.taban_tam is True and ok(a.get(P))['count'] == 1
+    asyncio.run(besle(pv('BARO1_GND_PRESS', 101300, 9), pv('BARO1_GND_PRESS', 101310, 9), pv('INS_GYROFFS_X', 0.01, 9), pv('INS_GYROFFS_X', 0.02, 9)))   # araç kalibrasyonu: hariç
+    assert ok(a.get(P))['count'] == 1
+    asyncio.run(besle(pv('RTL_ALT', 2000, 6)))              # bekleyen yok, tabandan farklı → sitl
+    it = {x['name']: x for x in ok(a.get(P))['items']}
+    assert it['RTL_ALT']['source'] == 'sitl' and it['RTL_ALT']['value'] == 2000 and it['RTL_ALT']['ptype'] == 6, it
+    rows = drone_params.yukle(sd['id'])
+    iz.yukleme_isaretle([r['name'] for r in rows])          # açılış yazımı: yankılar yalnız tabana
+    eski = {r['name']: r['updated_at'] for r in rows}
+    time.sleep(1.05)
+    asyncio.run(besle(pv('RTL_ALT', 2000, 6), pv('WP_RADIUS', 150)))
+    assert {r['name']: r['updated_at'] for r in drone_params.yukle(sd['id'])} == eski and iz.yukleme == set()
+    parm = drone_sitl.parm_metni(7, True, drone_params.parm_satirlari(rows))
+    assert parm.index('LOG_FILE_DSRMROT 1') < parm.index('# HEPGO kayitli parametreler') < parm.index('RTL_ALT 2000') < parm.index('WP_RADIUS 150'), parm
+    assert drone_sitl.parm_metni(7).count('\n') == 6 and '# HEPGO' not in drone_sitl.parm_metni(7, False, [])
+    # .param çözümleyici / üretici
+    gec, atl = drone_params.param_ayristir('# x\nWP_RADIUS,120\nRTL_ALT 1500\nANGLE_MAX\t3000\nSIM_WIND_DIR,90\nBOZUK\n')
+    assert gec == [('WP_RADIUS', 120.0), ('RTL_ALT', 1500.0), ('ANGLE_MAX', 3000.0)] and [x['reason'] for x in atl] == ['hariç', 'biçim'], (gec, atl)
+    assert drone_params.param_metni([{'name': 'A', 'value': 1.0}, {'name': 'B', 'value': 0.25}]) == 'A,1\nB,0.25\n'
+    # yetki: Montaj Personeli'ne drone.drones yalnız aç + oku → GET 200, DELETE/POST 403; drone paketi dışı rol → 403
+    ok(a.post('/api/users', json={'username': 'okur@test', 'full_name': 'Okur', 'roles': [auth.ASSEMBLER], 'password': 'Gizli-Parola-77'}))
+    ok(a.put('/api/roles/perms', params={'name': auth.ASSEMBLER},
+             json={'changes': [{'node': 'drone.drones', 'cap': 'open', 'value': True}, {'node': 'drone.drones', 'cap': 'read', 'value': True}]}))
+    with TestClient(app, base_url='https://testserver') as o:
+        login(o, 'okur@test', 'Gizli-Parola-77')
+        r = ok(o.get(P))
+        assert r['count'] == 2 and r['can_write'] is False and ok(o.get('/api/drone/meta'))['write']['drones'] is False
+        assert o.get(f'{P}/export').status_code == 200
+        assert o.delete(P).status_code == 403 and o.delete(f'{P}/WP_RADIUS').status_code == 403
+        assert o.post(f'{P}/import', json={'text': 'WP_RADIUS,1'}).status_code == 403
+    assert ok(a.get('/api/drone/meta'))['write']['drones'] is True
+    ok(a.delete(P))
+    assert ok(a.get(P))['count'] == 0
+    print('  kalıcı parametre (hub izleme + yetki) testleri geçti')
 
 
 def main():
@@ -521,6 +598,9 @@ def main():
             assert any(x['bridge_id'] == b2['id'] for x in hello['bridges']) or True   # b2 kapanmış olabilir; hello görevsizdir
         with db.connect() as conn:
             assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Saha görevinden uçağı kaldırdı'").fetchone()[0] == 1
+
+        # --- kalıcı parametreler (drone_sitl_params): hub izleme + REST yetkisi ---
+        param_izleme_testleri(a, sd)
 
         # --- köprü kodu yenileme: {key, code} ---
         rk = ok(a.post(f"/api/drone/bridges/{b['id']}/rekey"))

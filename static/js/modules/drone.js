@@ -211,10 +211,78 @@ async function renderDroneDetail(view, id, ctx, m) {
               m.can.live && ['BASLANGIC', 'GOREVDE'].includes(f.task_status) && f.task_id ? h('a', { class: 'btn sm', href: liveHref(f.task_id), onclick: e => e.stopPropagation() }, 'Canlı Uçuş') : null,
               f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}`, onclick: e => e.stopPropagation() }, 'Uçuş Raporu') : null)))))))
           : h('div', { class: 'small muted' }, 'Bu dron henüz bir saha görevine eklenmedi. Görev detayı › Uçuş Yönetimi › "Dron Ekle" ile ya da Yeni Saha Görevi penceresinden eklenir.')),
+      d.protocol === 'sanal' ? sitlParamsCard(d, m) : null,
       sessions.length ? h('div', { class: 'card card-pad', style: { marginTop: '14px' } }, h('h3', null, 'Köprü oturumları'), sessionsTable(sessions)) : null);
   };
   clear(view, box);
   await load();
+}
+
+// ======================================================================
+// Sanal dron KALICI PARAMETRELERİ (tablo drone_sitl_params; app/drone_params.py): HEPGO panelinden ya da Mission Planner'dan değiştirilen
+// her parametre dron kaydına yazılır, aynı dronla SITL yeniden açılınca geri yüklenir. Arama, tek tek sil, tümünü sıfırla, .param dışa/içe aktar.
+// ======================================================================
+const PARAM_SOURCE_BADGE = { hepgo: 'blue', mp: 'purple', sitl: 'gray' };
+const fmtParam = v => { const n = Number(v); return Number.isInteger(n) ? String(n) : n.toFixed(6).replace(/\.?0+$/, ''); };
+
+function sitlParamsCard(d, m) {
+  const canWrite = !!m.write?.drones;
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Parametre ara…', style: { width: '220px' } });
+  const title = h('h3', null, tr('Kayıtlı parametreler ({n})', { n: 0 }));
+  const body = h('div');
+  const excl = h('div', { class: 'small muted', style: { marginTop: '8px' } });
+  const pick = h('input', { type: 'file', accept: '.param,.parm,.txt', hidden: true });
+  let items = [];
+  const draw = () => {
+    title.textContent = tr('Kayıtlı parametreler ({n})', { n: items.length });
+    const list = items.filter(p => matches(q.value, p.name, p.source_text, p.updated_by_name));
+    clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
+      h('thead', null, h('tr', null, ['Parametre', 'Değer', 'Kaynak', 'Güncelleme', 'Kullanıcı', ''].map(c => h('th', null, c)))),
+      h('tbody', null, list.map(p => h('tr', null,
+        h('td', null, h('b', { class: 'mono' }, p.name)),
+        h('td', { class: 'mono num' }, fmtParam(p.value)),
+        h('td', null, h('span', { class: `badge ${PARAM_SOURCE_BADGE[p.source] || 'gray'}` }, tr(p.source_text || p.source))),
+        h('td', { class: 'small muted' }, p.updated_at ? fmtDateTime(p.updated_at) : '—'),
+        h('td', null, p.updated_by_name || h('span', { class: 'muted' }, '—')),
+        h('td', { class: 'num' }, canWrite ? h('button', { class: 'btn sm danger', title: 'Bu parametrenin kaydını sil (sonraki açılışta firmware varsayılanı)', onclick: async () => {
+          if (!await confirmDialog('Parametreyi sil', tr('{name} kaydı silinsin mi? Çalışan SITL etkilenmez; sonraki açılışta firmware varsayılanı kullanılır.', { name: p.name }), { okLabel: 'Sil', danger: true })) return;
+          await api.del(`/api/drone/drones/${d.id}/sitl-params/${encodeURIComponent(p.name)}`); toast(tr('{name} silindi', { name: p.name })); load();
+        } }, 'Sil') : null))))))
+      : h('div', { class: 'small muted' }, items.length ? 'Aramaya uyan parametre yok'
+        : 'Henüz kayıtlı parametre yok. Sanal dronla uçarken HEPGO panelinden ya da Mission Planner\'dan değiştirilen her parametre burada kalıcı olur; aynı dronla SITL yeniden açılınca geri yüklenir.'));
+  };
+  const load = async () => {
+    const r = await api.get(`/api/drone/drones/${d.id}/sitl-params`);
+    items = r.items || [];
+    const ex = r.excluded || { prefixes: [], names: [] };
+    excl.textContent = tr('Kaydedilmeyenler (oturum/simülatör ayarı ya da sayaç): {prefixes} ön ekleri ve {names}', { prefixes: ex.prefixes.join(', '), names: ex.names.join(', ') });
+    draw();
+  };
+  q.addEventListener('input', draw);
+  pick.addEventListener('change', async () => {
+    const f = pick.files?.[0]; pick.value = '';
+    if (!f) return;
+    const text = await f.text();
+    const r = await api.post(`/api/drone/drones/${d.id}/sitl-params/import`, { text });
+    toast(tr('{n} parametre içe aktarıldı, {s} atlandı', { n: r.imported, s: r.skipped_count }));
+    load();
+  });
+  const tools = h('div', { class: 'pill-group' },
+    q,
+    h('a', { class: 'btn sm', href: `/api/drone/drones/${d.id}/sitl-params/export`, download: `${d.code}.param`, title: 'Mission Planner .param biçiminde indir (AD,DEĞER)' }, 'Dışa aktar (.param)'),
+    canWrite ? h('button', { class: 'btn sm', onclick: () => pick.click(), title: 'Mission Planner .param dosyasını kayıtlara ekle (hariç tutulanlar atlanır)' }, 'İçe aktar') : null,
+    canWrite ? h('button', { class: 'btn sm danger', onclick: async () => {
+      if (!items.length) { toast('Kayıtlı parametre yok'); return; }
+      if (!await confirmDialog('Tümünü sıfırla', tr('{code} dronunun {n} kayıtlı parametresi silinsin mi? Sonraki SITL açılışı firmware varsayılanlarıyla olur. Geri alınamaz.', { code: d.code, n: items.length }), { okLabel: 'Sıfırla', danger: true })) return;
+      const r = await api.del(`/api/drone/drones/${d.id}/sitl-params`); toast(tr('{n} parametre silindi', { n: r.deleted })); load();
+    } }, 'Tümünü sıfırla') : null,
+    pick);
+  const card = h('div', { class: 'card card-pad dr-params', style: { marginTop: '14px' } },
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } }, title, tools),
+    h('p', { class: 'small muted' }, 'Sanal dronla uçuşta HEPGO panelinden ya da Mission Planner\'dan değiştirilen parametreler kalıcıdır: aynı dronla SITL yeniden başlatılınca varsayilan.parm ile ve ilk kalp atışında PARAM_SET ile geri yüklenir.'),
+    body, excl);
+  load().catch(e => clear(body, h('div', { class: 'small muted' }, e.message || 'Yüklenemedi')));
+  return card;
 }
 
 const sessionsTable = rows => h('div', { class: 'table-wrap' }, h('table', null,

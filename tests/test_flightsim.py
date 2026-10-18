@@ -1180,6 +1180,128 @@ def gorev_rapor_testleri(a, c1):
     print('  görev çizimi / çarpışma / özet rapor (§18) testleri geçti')
 
 
+def param_testleri(a, c1, sitl, mon):
+    """Kalıcı parametreler (app/drone_params.py; tablo drone_sitl_params): dron kaydıyla açılan oturumda panel `param_set` → kayıt (hepgo, kullanıcı);
+    Mission Planner PARAM_SET (UDP ham) + SITL PARAM_VALUE yankısı → kayıt (mp); hariç tutulanlar (SIM_WIND_*, TKOFF_*, LOG_*) kaydedilmez; tabandan
+    farklı PARAM_VALUE → sitl; yeniden yüklemede parm içeriği + PARAM_SET yazımı; REST uçları (liste/export/import/sil/sıfırla), yetki."""
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    from app import db, drone_params, drone_sitl
+    S = '/api/drone/sim/sessions'
+    pd_ = ok(a.post('/api/drone/drones', json={'name': 'Kalıcı Sanal', 'protocol': 'sanal', 'model': 'Quad X'}))
+    md = ok(a.post('/api/drone/drones', json={'name': 'Gerçek', 'protocol': 'mavlink'}))
+    P = f"/api/drone/drones/{pd_['id']}/sitl-params"
+    # hariç tutma listesi: ön ekler + oturum parametreleri (flightsim'den türetilir)
+    assert drone_params.haric_mi('SIM_WIND_SPD') and drone_params.haric_mi('TKOFF_ALT') and drone_params.haric_mi('LOG_BITMASK') and drone_params.haric_mi('STAT_RUNTIME')
+    assert drone_params.haric_mi('MAV1_EXTRA1') and drone_params.haric_mi('SR0_POSITION') and drone_params.haric_mi('SERVO3_MIN') and drone_params.haric_mi('SIM_GPS1_ACC') and drone_params.haric_mi('FS_THR_ENABLE') and drone_params.haric_mi('MIS_TOTAL') and drone_params.haric_mi('SIM_SPEEDUP')
+    assert not drone_params.haric_mi('WP_RADIUS') and not drone_params.haric_mi('SIM_BATT_VOLTAGE') and not drone_params.haric_mi('WPNAV_SPEED')
+    assert drone_params.haric_mi(f'SERVO{flightsim.LAUNCH_SERVO}_FUNCTION') and not drone_params.haric_mi('SERVO9_FUNCTION')
+    # flaplar (sabit kanat oturum başlangıcı; dron yapılandırması sayılır → kaydedilir, TKOFF_ ön ekine rağmen)
+    assert [a for a, _ in flightsim.FLAP_PARAMLARI] == ['SERVO5_FUNCTION', 'SERVO6_FUNCTION', 'TKOFF_FLAP_PCNT', 'LAND_FLAP_PERCNT']
+    assert not any(drone_params.haric_mi(a) for a, _ in flightsim.FLAP_PARAMLARI) and drone_params.haric_mi('TKOFF_ALT')
+    r = ok(a.get(P))
+    assert r['items'] == [] and r['count'] == 0 and 'STAT_' in r['excluded']['prefixes'] and 'MAV_SYSID' in r['excluded']['names'] and r['can_write'] is True, r
+    assert a.get(f"/api/drone/drones/{md['id']}/sitl-params").status_code == 400   # yalnız sanal dron
+    assert a.get('/api/drone/drones/999999/sitl-params').status_code == 404
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0   # önceki oturumların TCP'leri kapanmış olmalı
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': pd_['id']}), 201)
+    sid, bid = s['id'], -(flightsim.KIMLIK_TABANI + s['id'])
+    assert s['params'] == {'tracked': True, 'loaded': 0, 'saved': 0}, s['params']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    assert ses.param_izleyici is not None and ses.param_izleyici.drone_id == pd_['id']
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5), len(sitl.baglar)
+    # (a) panel param_set (hub komutu, REST yolu) → sahte yankı → kayıt hepgo + kullanıcı
+    r = ok(a.post('/api/drone/live/cmd', json={'bridge_id': bid, 'name': 'param_set', 'params': {'name': 'WPNAV_SPEED', 'value': 1234}}))
+    assert r['ok'] is True, r
+    it = bekle(lambda: (lambda x: x if x['count'] == 1 else None)(ok(a.get(P))), 3)
+    assert it and it['items'][0]['name'] == 'WPNAV_SPEED' and it['items'][0]['value'] == 1234 and it['items'][0]['source'] == 'hepgo' and it['items'][0]['updated_by'] == 1 and it['items'][0]['updated_by_name'], it
+    # hariç: oturum parametresi → kaydedilmez
+    ok(a.post('/api/drone/live/cmd', json={'bridge_id': bid, 'name': 'param_set', 'params': {'name': 'SIM_WIND_SPD', 'value': 5}}))
+    ok(a.post('/api/drone/live/cmd', json={'bridge_id': bid, 'name': 'param_set', 'params': {'name': 'TKOFF_ALT', 'value': 60}}))
+    time.sleep(0.3)
+    assert [x['name'] for x in ok(a.get(P))['items']] == ['WPNAV_SPEED']
+    # (b) Mission Planner: UDP'den ham PARAM_SET (SITL'e geçer) + sahte SITL'in PARAM_VALUE yankısı → kayıt mp
+    gcs_enc = D.MAVLink(None, srcSystem=255, srcComponent=190)
+    arac = D.MAVLink(None, srcSystem=1, srcComponent=1)
+    gcs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    gcs.bind(('127.0.0.1', 0)); gcs.settimeout(2)
+    once = len(sitl.alinan)
+    pset = gcs_enc.param_set_encode(1, 1, b'WP_RADIUS', 123.0, 9).pack(gcs_enc)
+    gcs.sendto(pset, ('127.0.0.1', s['udp_port']))
+    assert bekle(lambda: len(sitl.alinan) > once and bytes(sitl.alinan).endswith(pset), 3), 'PARAM_SET SITL\'e ham geçmeli'
+    assert bekle(lambda: 'WP_RADIUS' in ses.param_izleyici.bekleyen, 2), ses.param_izleyici.bekleyen
+    sitl.yaz(arac.param_value_encode(b'WP_RADIUS', 123.0, 9, 900, 17).pack(arac))
+    it = bekle(lambda: (lambda x: x if x['count'] == 2 else None)(ok(a.get(P))), 3)
+    wr = next(x for x in it['items'] if x['name'] == 'WP_RADIUS')
+    assert wr['value'] == 123 and wr['source'] == 'mp' and wr['ptype'] == 9 and wr['updated_by'] is None, wr
+    # MP yankısı hariç parametre için → kaydedilmez; açılış param akışı (ilk görülen) taban olur, sonra farklı değer → sitl
+    gcs.sendto(gcs_enc.param_set_encode(1, 1, b'LOG_BITMASK', 0.0, 6).pack(gcs_enc), ('127.0.0.1', s['udp_port']))
+    arac.seq = 5
+    sitl.yaz(arac.param_value_encode(b'LOG_BITMASK', 0.0, 6, 900, 18).pack(arac) + arac.param_value_encode(b'ANGLE_MAX', 3000.0, 6, 900, 19).pack(arac))
+    time.sleep(0.4)
+    assert ok(a.get(P))['count'] == 2 and ses.param_izleyici.taban.get('ANGLE_MAX') == 3000.0, ses.param_izleyici.taban
+    sitl.yaz(arac.param_value_encode(b'ANGLE_MAX', 3000.0, 6, 900, 19).pack(arac))   # değişmedi → kayıt yok
+    time.sleep(0.3)
+    assert ok(a.get(P))['count'] == 2
+    sitl.yaz(arac.param_value_encode(b'ANGLE_MAX', 2600.0, 6, 900, 19).pack(arac))   # tam liste alınmadan niyetsiz fark → kayıt yok (araç kalibrasyonu olabilir)
+    time.sleep(0.3)
+    assert ok(a.get(P))['count'] == 2 and ses.param_izleyici.taban_tam is False and ses.param_izleyici.param_count == 900
+    ses.param_izleyici.tam_liste_isaretle()   # MP param listesi tamamlandı sayılır (900 PARAM_VALUE yerine)
+    sitl.yaz(arac.param_value_encode(b'ANGLE_MAX', 2500.0, 6, 900, 19).pack(arac))
+    it = bekle(lambda: (lambda x: x if x['count'] == 3 else None)(ok(a.get(P))), 3)
+    assert next(x for x in it['items'] if x['name'] == 'ANGLE_MAX')['source'] == 'sitl'
+    assert ok(a.get(f'{S}/{sid}'))['params']['saved'] == 3
+    # yeniden yükleme: parm içeriği (HEPGO varsayılanlarından sonra) + reset sonrası PARAM_SET yazımı; yankılar yeniden kaydedilmez
+    rows = drone_params.yukle(pd_['id'])
+    parm = drone_sitl.parm_metni(1, False, drone_params.parm_satirlari(rows))
+    assert parm.index('MAV_SYSID 1') < parm.index('LOG_BACKEND_TYPE 0') < parm.index('# HEPGO kayitli') < parm.index('ANGLE_MAX 2500') < parm.index('WPNAV_SPEED 1234') < parm.index('WP_RADIUS 123'), parm
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'reset'}))
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['params']['loaded'] == 3, 3), ok(a.get(f'{S}/{sid}'))['params']
+    once = len(sitl.alinan)
+    ses.loop.call_soon_threadsafe(ses._kayitli_yaz)
+    assert bekle(lambda: len(sitl.alinan) >= once + 3 * 25, 3)
+    pr = D.MAVLink(None); pr.robust_parsing = True
+    yazilan = {str(m.param_id).rstrip('\x00'): (m.param_value, m.param_type) for m in (pr.parse_buffer(bytes(sitl.alinan[once:])) or []) if m.get_type() == 'PARAM_SET'}
+    assert yazilan == {'ANGLE_MAX': (2500.0, 6), 'WP_RADIUS': (123.0, 9), 'WPNAV_SPEED': (1234.0, 9)}, yazilan
+    eski = {x['name']: x['updated_at'] for x in ok(a.get(P))['items']}
+    time.sleep(1.1)
+    sitl.yaz(arac.param_value_encode(b'WP_RADIUS', 123.0, 9, 900, 17).pack(arac))   # yükleme yankısı
+    time.sleep(0.4)
+    assert {x['name']: x['updated_at'] for x in ok(a.get(P))['items']} == eski, 'yükleme yankısı yeniden kaydetmemeli'
+    assert ses.param_izleyici.yukleme == {'ANGLE_MAX', 'WPNAV_SPEED'}
+    # tele.servo_fn: SERVOn_FUNCTION yankıları (3B flap eşlemesi); kayıtlı SERVO5_FUNCTION varsa oturum flap başlangıcını yazmaz
+    sitl.yaz(arac.param_value_encode(b'SERVO5_FUNCTION', 3.0, 2, 900, 30).pack(arac) + arac.param_value_encode(b'SERVO9_FUNCTION', 4.0, 2, 900, 31).pack(arac))
+    assert bekle(lambda: ses.tele['servo_fn'][4] == 3, 2) and ses.tele['servo_fn'] == [None, None, None, None, 3, None, None, None], ses.tele['servo_fn']
+    assert ses.flap_parametreleri() == list(flightsim.FLAP_PARAMLARI)
+    ses.kayitli_params = ses.kayitli_params + [{'name': 'SERVO5_FUNCTION', 'value': 0.0, 'ptype': 2}]
+    assert [a for a, _ in ses.flap_parametreleri()] == ['SERVO6_FUNCTION', 'TKOFF_FLAP_PCNT', 'LAND_FLAP_PERCNT']
+    ses.kayitli_params = ses.kayitli_params[:-1]
+    # REST: export (.param), tek sil, import (yorum/boşluk/virgül; hariç ve bozuk atlanır), sıfırla, yetki
+    ex = a.get(f'{P}/export')
+    assert ex.status_code == 200 and ex.headers['content-disposition'] == f'attachment; filename="{pd_["code"]}.param"', ex.headers
+    assert ex.text.splitlines()[0].startswith('#NOTE: HEPGO') and 'WP_RADIUS,123' in ex.text and 'ANGLE_MAX,2500' in ex.text and 'WPNAV_SPEED,1234' in ex.text, ex.text
+    ok(a.delete(f'{P}/WP_RADIUS'))
+    assert a.delete(f'{P}/WP_RADIUS').status_code == 404
+    assert [x['name'] for x in ok(a.get(P))['items']] == ['ANGLE_MAX', 'WPNAV_SPEED']
+    im = ok(a.post(f'{P}/import', json={'text': '#NOTE: MP\nRTL_ALT,150\nSIM_WIND_SPD,3\nBOZUK\nWPNAV_SPEED 900\nlog_bitmask\t0\nFS_THR_ENABLE,1\nABC,xx\n'}))
+    assert im['imported'] == 2 and im['skipped_count'] == 5 and im['count'] == 3 and {x['reason'] for x in im['skipped']} == {'hariç', 'biçim', 'değer'}, im
+    it = ok(a.get(P))['items']
+    assert {x['name']: x['value'] for x in it} == {'ANGLE_MAX': 2500, 'RTL_ALT': 150, 'WPNAV_SPEED': 900} and all(x['source'] == 'hepgo' for x in it if x['name'] != 'ANGLE_MAX'), it
+    assert a.post(f'{P}/import', json={'text': 'x' * 2_000_001}).status_code == 400
+    # salt okuyan (drone.sim var, drone.drones yok) → 403
+    assert mon.get(P).status_code == 403 and mon.delete(P).status_code == 403
+    assert ok(a.delete(P)) == {'ok': True, 'deleted': 3} and ok(a.get(P))['count'] == 0
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action IN ('Sanal dron parametreleri içe aktardı', 'Sanal dron parametrelerini sıfırladı', 'Sanal dron parametresi sildi')").fetchone()[0] == 3
+    gcs.close()
+    ok(a.delete(f'{S}/{sid}'))
+    # dron kaydı seçilmeyen oturumda izleme yok
+    s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    assert s2['params'] == {'tracked': False, 'loaded': 0, 'saved': 0}
+    ok(a.delete(f"{S}/{s2['id']}"))
+    print('  kalıcı parametre testleri geçti')
+
+
 def main():
     terrain_birim_testleri()
     sitl = SahteSitl()
@@ -1428,6 +1550,8 @@ def main():
         hub_testleri(a, c1)
         # --- görev çizimi / çarpışma / özet rapor (§18) ---
         gorev_rapor_testleri(a, c1)
+        # --- kalıcı parametreler (drone_sitl_params) ---
+        param_testleri(a, c1, sitl, mon)
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi

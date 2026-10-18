@@ -163,6 +163,9 @@ Açık oturum varsa liste: devam et / bitir; "Yarım kayıt" ve "Kayıtlarım" k
   doğrulama, `session.rec`, sahte .BIN dosyalarıyla (`MANAGER.sahte_bin_dosyalari`) kapanış → `flight_logs` satırı (aircraft "Simülatör · Multikopter",
   pilot sahip, location merkez, dosya `UPLOAD_DIR/flightlogs/`), DELETE yanıtı `bin`, analiz kuyruğu, boyut sınırı (`error`, dosya silinir), dosya yok → null.
 
+- Kalıcı parametreler (§20 `param_testleri`): dron kaydıyla oturum → hub `param_set` → kayıt (hepgo, kullanıcı); UDP PARAM_SET + sahte SITL
+  PARAM_VALUE yankısı → kayıt (mp); hariç tutulanlar kaydedilmez; tabandan farklı → sitl; parm içeriği; reset sonrası PARAM_SET yazımı; yükleme
+  yankısı yeniden kaydetmez; export/import/sil/sıfırla; salt okuyan 403; dron kaydı seçilmeyen oturumda `tracked:false`.
 - Görsel model kütüphanesi (§12, `model_testleri`): dahili liste (tip filtresi, VTOL adları), yükleme (küçük GLB zarfı / STEP / geçersiz uzantı),
   GLB PUT (başlık denetimi, 413), küçük resim PUT-GET (PNG; dahili VTOL varyantı), yönelim doğrulama (aynı eksen 400), oturumda model (bilinmeyen /
   tip uyumsuz / GLB'siz 400; oturuma özel yönelim kütüphaneyi değiştirmez), geriye uyumlu `airframe`, yetki (salt okuyan 403; `design` modülsüz
@@ -744,6 +747,28 @@ Kullanıcı isteği: "Simülasyon sonunda tüm veri, aynı dronun içinde kaydet
   LOG_DISARMED 0 ile boyut sınırlı kalır (ArduCopter ≈ 1–2 MB/dk). Sahte kip (`HEPGO_SITL=0`): `MANAGER.sahte_bin_dosyalari` test kancası.
 - **Doğrulama (DEV, gerçek SITL):** `/tmp/flsim/rp2/rp2_e2e.py` — bin:true oturum → arm + takeoff → Bitir → `SIM-…bin` Uçuş Logları'nda (analiz TAMAM)
   → Kayıttan oynat listesinde → gerçek arazi kipinde oynat → dünya yüklü (olay şeridi "Gerçek arazi · yükseklik …", atıf görünür).
+
+## 20. Kalıcı parametreler — dron kaydı seçili oturumlar (`app/drone_params.py`; tablo `drone_sitl_params`; ayrıntı docs/dron-kopru-protokolu.md)
+Kullanıcı isteği: "sanal dron ile yaptığımız uçuşlar esnasında, gerek sistemden gerekse Mission Planner üzerinde bir parametre değiştirdiğimizde
+kalıcı olarak kaydetsin; aynı dronu tekrar kullandığımızda eski parametreler ile gelsin."
+- Sihirbazda **dron kaydı** seçildiyse (`drone_id`) oturum `drone_params.Izleyici(drone_id)` taşır; `session.params = {tracked, loaded, saved}`
+  (`to_dict`/hello). Dron kaydı seçilmemiş oturumda izleme yok (`tracked:false`).
+- **Kayıt:** harekât paneli `param_set` (hub) → yankı → `hepgo`; Mission Planner PARAM_SET (UDP ham geçer, `_udp_geldi` → `gcs_bayt` niyet) →
+  SITL PARAM_VALUE yankısı (`_isle` → `_param_value_gozlendi`) → `mp`; niyetsiz fark → `sitl`. Her kayıt olay şeridine düşer: "Parametre kalıcı
+  kaydedildi: WP_RADIUS = 123 (Mission Planner)". Oturumun kendi yazdığı SIM_WIND_*/SIM_GPS1_*/TKOFF_*/RC/SERVO3 seti, akış hızları (MAVn_*/SRn_*)
+  ve STAT_/LOG_/*_TOTAL/MAV_SYSID hariçtir (`haric_mi`).
+- **Yükleme:** `_sitl_ac` → `_kayitli_oku` → `drone_sitl.YONETICI.baslat(..., ekstra_parm=…)` (varsayilan.parm sonu) → `_ilk_heartbeat` içinde
+  `_kayitli_yaz` (PARAM_SET, kayıtlı ptype; oturum parametrelerinden ÖNCE → oturum ayarları son söz) → olay "N kayıtlı parametre yüklendi (D-0001)".
+  `reset` aynı yolu izler. Sahte kip: `_sahte_hub_komut param_set` sahte yankı üretir; sahte SITL'den gelen baytlarda yalnız PARAM_VALUE aranır.
+- **UI:** Dron Yönetimi › Dron Envanteri › sanal dron detayı "Kayıtlı parametreler (N)" kartı (drone.js; flightsim.js'e dokunulmadı).
+- **Flaplar (yalnız `sabit_kanat`; `FLAP_PARAMLARI`):** ilk kalp atışında `SERVO5_FUNCTION 3`, `SERVO6_FUNCTION 3` (flap_auto), `TKOFF_FLAP_PCNT 50`,
+  `LAND_FLAP_PERCNT 100` yazılır → ArduPlane kalkış/inişte flapları kendisi açar. Dron yapılandırması sayılır: kullanıcı MP/panelden değiştirirse
+  kalıcı kaydedilir (`drone_params.HARIC_DEGIL` TKOFF_ ön ekini aşar) ve dronun kaydında olan ad oturum başlangıcında YAZILMAZ (`flap_parametreleri`).
+  `tele.servo_fn` = SERVO1..8_FUNCTION (PARAM_VALUE'dan; None = bilinmiyor) — 3B model flap/aileron eşlemesi için.
+- **Testler:** `tests/test_flightsim.py param_testleri` ve `tests/test_drone.py param_izleme_testleri` (§7). Gerçek SITL doğrulaması:
+  `/tmp/flsim/pr/dogrula.py` — sabit kanat oturumu (dron kaydıyla) → pymavlink `udpout` (MP gibi) `PARAM_SET WP_RADIUS 123` → kayıt `mp`;
+  hub `param_set RTL_RADIUS 777` → `hepgo`; kapat → yeniden aç → `params.loaded 2`, varsayilan.parm'da satırlar, `PARAM_REQUEST_READ` → 123 / 777;
+  yükleme yankıları `updated_at` değiştirmez; dron sayfası ekran görüntüsü.
 
 ## 18. Görev çizimi, iniş dairesi, çarpışma kaydı ve özet rapor (`app/flightsim_mission.py`, `static/js/modules/flightsim_mission.js`, `static/js/modules/flightsim_report.js`; tablo `drone_sim_events`)
 Kullanıcı isteği (birebir): "1. Dron üzerine Mission Planner üzerinden ya da kendi sistemimizden bir görev yüklersek haritaya şık bir şekilde çizsin.

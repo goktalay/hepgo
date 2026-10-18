@@ -492,15 +492,13 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   V.wind.textContent = `${f1(world.wind_ms)} @ ${f0(world.wind_dir)}°`;
   windArrow.style.transform = `rotate(${(Number(world.wind_dir) || 0) + 90}deg)`;   // ➤ sağa bakar; rüzgâr "nereden" → ok akış yönünü gösterir
 
-  // Mission Planner bağlantı kutusu (sol alt) — kayıt kipinde yerine kayıt bilgisi kutusu
+  // Mission Planner bağlantısı (§14): harekât panelinde MISSION PLANNER bölümü; panel kapalı/FPV'de panelin yüzen koyu kutusu (flightsim_panel.js placeMp) —
+  // eski sol alt .fs-mp kutusu (beyaz .btn/.badge) KALKTI. Kayıt kipinde yerine kayıt bilgisi kutusu
   const addr = `${session.host || location.hostname}:${session.udp_port || '—'}`;
-  const gcsBadge = h('span', { class: 'badge gray' }, 'Bekleniyor');
+  const mpOpts = replay ? null : { addr, port: session.udp_port, copy: a => copy(a, 'Adres kopyalandı') };
   const mp = replay ? h('div', { class: 'fs-mp fs-rec' },
     h('div', { class: 'fs-mp-head' }, h('b', null, 'Kayıttan oynatma'), h('span', { class: 'badge purple' }, (session.replay?.vehicle || '').split(' ')[0] || 'Log')),
-    h('div', { class: 'small fs-mp-hint fs-rec-info' }, '—')) : h('div', { class: 'fs-mp' },
-    h('div', { class: 'fs-mp-head' }, h('b', null, 'Mission Planner bağlantısı'), gcsBadge),
-    h('div', { class: 'fs-mp-addr' }, h('code', { class: 'mono' }, `UDP ${addr}`), h('button', { class: 'btn sm', type: 'button', onclick: () => copy(addr, 'Adres kopyalandı') }, 'Kopyala')),
-    h('div', { class: 'small fs-mp-hint' }, 'Mission Planner › sağ üst bağlantı türü UDP › CONNECT › port ', h('b', null, String(session.udp_port || '—')), '. USB kumanda: Mission Planner › Joystick.'));
+    h('div', { class: 'small fs-mp-hint fs-rec-info' }, '—')) : null;
 
   // Alt araç çubuğu: kamera 1–4 · Sıfırla · Bitir · ARM/DISARM · mod · Kalkış · RTL (yazma izni)
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
@@ -550,9 +548,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const g3dMode = world.mode === 'google3d';
   const attribTxt = h('span', null, g3dMode ? 'Google' : ATTRIBUTION);
   const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
-  stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
+  stage.append(mount, msg, crash, hud, ...(mp ? [mp] : []), events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
-  ops = createOpsPanel(stage, { sid, session, type, modes, launch, canWrite, hub: !replay && !mock, getSim: () => sim, cmdSim: (name, params) => cmd(name, params), onReset: () => reset(), onToggle: on => opsBtn.classList.toggle('primary', on) });
+  ops = createOpsPanel(stage, { sid, session, type, modes, launch, canWrite, hub: !replay && !mock, mp: mpOpts, getSim: () => sim, cmdSim: (name, params) => cmd(name, params), onReset: () => reset(), onToggle: on => opsBtn.classList.toggle('primary', on) });
   opsBtn.classList.toggle('primary', ops.enabled);
   const audio = createEngineAudio(stage, { type, launch, replay, tr, getSim: () => sim, getCrashed: () => !crash.hidden, getSpeed: () => player?.speed() ?? 1 });   // §16: düğmeyi alt çubuğa kendisi ekler; kamera/kalkış aşaması/çarpışma getter'lardan
   // §17 ekran kaydı: rozet üst şeride, anahtar alt çubuğa; 3B hazır olunca başlar (Başlat'ta alınan ekran paylaşımı akışı varsa o, yoksa 3B+HUD tuvali)
@@ -656,7 +654,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const [tone, text] = map[st] || ['gray', st];
     wsBadge.className = `badge ${tone}`; wsBadge.textContent = tr(text);
   };
-  const setGcs = (connected, a) => { gcsBadge.className = `badge ${connected ? 'green' : 'gray'}`; gcsBadge.textContent = connected ? tr('Bağlı ({ip})', { ip: a || '' }) : tr('Bekleniyor'); ops?.setGcs(connected); };
+  const setGcs = (connected, a) => { ops?.setGcs(connected, a); };   // tek yer: panel rozeti (bölüm başlığı / yüzen kutu) + GPS karosu
   setGcs(!!session.gcs?.connected, session.gcs?.addr);
   if (session.state !== 'HAZIR') setState(session.state);
 
@@ -731,7 +729,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       onSpeed: sp => speedBtns.forEach(b => b.classList.toggle('primary', Number(b.dataset.speed) === sp)),
     });
     // Kayıt bilgisi kutusu + kaydırıcıda olay/kalkış işaretleri
-    const info = mp.querySelector('.fs-rec-info');
+    const info = mp?.querySelector('.fs-rec-info');
     if (info) clear(info, h('div', null, h('b', null, session.replay?.file_name || '—')),
       h('div', null, [data.vehicle, data.n != null ? tr('{n} kare', { n: data.n }) : null, data.hz ? `${data.hz} Hz` : null, fmtDuration(data.duration_s)].filter(Boolean).join(' · ')),
       data.start_utc ? h('div', null, tr('Kayıt başı: {t}', { t: fmtDateTime(data.start_utc) })) : null,

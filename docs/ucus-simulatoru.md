@@ -93,7 +93,8 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   **Serbest** (WASD + fare), **Yer** (merkezden, dronu izler). Çarpışma: `z < h(x,y) + 0.3` ya da bina kutusuyla kesişme ve hız > 1 m/s
   → kırmızı "ÇARPIŞMA" bandı + `cmd crash`; oturum "Sıfırla" ile yeniden başlar.
 - HUD (3B üstünde, sağ): mod, arm, yükseklik (AGL/MSL), hava/yer hızı, dikey hız, yön, GPS/uydu, batarya, gaz, RC çubukları, rüzgâr;
-  sol alt: **Mission Planner bağlantısı**: `UDP <host>:<port>`, "Bağlı (ip)" / "Bekleniyor"; Kopyala; kısa talimat (Mission Planner › UDP › port).
+  **Mission Planner bağlantısı** (`UDP <host>:<port>`, "Bağlı (ip)" / "Bekleniyor"; Kopyala; kısa talimat) harekât panelinin MISSION PLANNER
+  bölümünde; panel kapalı/FPV'de sol altta koyu yüzen kutu (§14).
 - Performans: 60 fps hedef; arazi 256×256 ızgara, LOD yok (gerçek kipte ek 192×192 "uzak arazi" halkası, §9); ağaç ≤ 20.000 örnek.
 - Sis / görüş uzaklığı (`skyAndLights(size, horizon)`): prosedürelde `Fog(size·0,12 … size·(1,6 − 1,25·fog))` (dünya kenarında biter). Gerçek arazi
   ve Google 3B kipinde ufuk dünya boyutuna değil **görüş uzaklığına** bağlıdır: `far = horizon·(1,25 − fog)` (`horizon` = uzak arazi yarıçapı 24 km /
@@ -510,8 +511,18 @@ alan, `pointer-events: none` (fare/tekerlek 3B'ye), kart `pointer-events: auto`.
 - **BAŞLIK ŞERİDİ** (`.dron-kart-baslik`: 10 px dolgu, 600, `--dugme-arka` zemin, alt çizgi): durum LED'i (`.dk-nokta`: yeşil hazır / sarı
   başlıyor / kırmızı hata / mor kayıt-sahte) · dron adı (`.dk-ad`; Dron Envanteri kaydı ya da "Simülatör #N") · özet (`.dk-baslik-ozet`: irtifa +
   kip) · ARMED/DISARMED ve HUB rozetleri (hepgo.css `.hk-bagla` kapsülü: 22 px, 11 px; bağlı yeşil / kuruluyor sarı / yetki yok kırmızı) ·
-  **küçült** (`.dk-kucult-btn`: yalnız başlık şeridi kalır, `.dk-yalniz-baslik`; localStorage `fs.panel.min`). Mission Planner durumu sol alttaki
-  MP kutusunda ve GPS karosu alt yazısında ("· MP").
+  **küçült** (`.dk-kucult-btn`: yalnız başlık şeridi kalır, `.dk-yalniz-baslik`; localStorage `fs.panel.min`). Mission Planner durumu
+  MISSION PLANNER bölümünün başlık rozetinde ve GPS karosu alt yazısında ("· MP").
+- **MISSION PLANNER bölümü** (İŞLEMLER ile HABERLEŞME arasında; kullanıcı: "alttaki Mission Planner bağlantı panelinde beyaz düğmeler var, onlar da
+  uygun renkte olacak ve panel içine collapse şekilde yerleşecek"): UDP adres (mono, seçilebilir) · **Kopyala** (panelin koyu düğmesi `.fs-pn-btn`;
+  `.btn` beyaz düğme panelde yok) · kısa gri talimat; durum rozeti ("Bekleniyor" / "Bağlı ip:port", `.fs-pn-rozet`) bölüm **başlığında** → katlıyken
+  de okunur. GCS bağlı değilken açık, bağlanınca kendiliğinden katlanır; kullanıcı elle katlar/açarsa tercihi kalır (`fs.panel.fold.mp`; "Yerleşimi
+  sıfırla" otomatiğe döndürür). Panel kapalıyken (sade görünüm) ya da FPV'de **aynı DOM** (`placeMp`) sol altta koyu yüzen kutuya (`.fs-mp.fs-pn-yuzen`)
+  taşınır; panel görünürken sol altta MP kutusu YOK. `setGcs(on, addr)` tek yerden günceller (flightsim.js yalnız iletir). Kayıt kipinde MP yok.
+- **Kaydırma çubukları** (kullanıcı: "scroll ince ve panele uygun renkte"): gövde, konsol ve panel içindeki her kaydırılan öğe 6 px, ray panel
+  zemini (`--gt-panel-arka`), tutamaç koyu gri yarı saydam yuvarlak (`.fs-pn ::-webkit-scrollbar*`); Firefox `scrollbar-width: thin` +
+  `scrollbar-color` yalnız `@supports not selector(::-webkit-scrollbar)` içinde (Chromium'da `scrollbar-width` tanımlanırsa `::-webkit-scrollbar`
+  yok sayılır). Panel kökü ve yüzen kutu `color-scheme: dark` (select/number yerleşik açılır listeleri koyu; `option` zemin/metin panel renkleri).
 - **GÖVDE** (`.dron-kart-icerik`: 10 px dolgu, Consolas/mono 12 px). Üst satır (`.dk-ust-satir`): **UÇUŞA HAZIR rozeti** (`.dk-hazir-rozet`:
   "DISARMED · UÇUŞA HAZIR" yeşil / "ARMED · UÇUŞTA" mavi / "DISARMED · PREARM UYARISI" amber / "SITL HATASI" kırmızı / "SAHTE VERİ", "KAYITTAN
   OYNATMA" gri; tıkla → ARM onay penceresi [Zorla] / DISARM onayı) + **İŞLEMLER** düğmesi (`.dk-islem-btn`; İŞLEMLER bölümünü açar/kapar; GÖKTUNGU'da

@@ -9135,11 +9135,24 @@ body.immersive .fs-nav { top: 12px; }
    .fs-pn: tam alan kapsayıcı, pointer-events:none (fare/tekerlek 3B'ye); kart pointer-events:auto. .fs-ops-host: panel var · .fs-ops: kart görünür
    (eski .fs-hud/.fs-cmds/.fs-events gizli) · .fs-fpv: Dron kamerası (kart gizli, askeri HUD kalır) · .fs-pn-nohub: kayıt/sahte kip (İŞLEMLER yok). */
 .fs-stage { --fs-bar-h: 54px; }   /* alt çubuk yüksekliği (flightsim_panel.js ResizeObserver günceller) */
-.fs-pn { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); z-index: 7; pointer-events: none; display: none;
+.fs-pn, .fs-pn-yuzen {   /* GÖKTUNGU koyu tema değişkenleri: panel kökü + yüzen MP kutusu (panel kapalıyken sahnede ayrı durur) */
   --gt-panel: #0b0e11; --gt-cizgi: #1e2630; --gt-interceptor: #35d0ff; --gt-metin: #cfd8e3; --gt-soluk: #5c6b7a; --gt-iyi: #3ddc84; --gt-kotu: #ff5d5d; --gt-uyari: #ffc94d;
   --gt-panel-arka: rgba(11, 14, 17, .94); --gt-giris-arka: #060809; --gt-dugme-arka: #141a21; --gt-dugme-hover: #1c2530; --gt-vurgu: var(--gt-interceptor);
   --gt-mono: Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono", "Liberation Mono", "Ubuntu Mono", "Noto Sans Mono", monospace;
-  color: var(--gt-metin); font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", Roboto, Ubuntu, "DejaVu Sans", "Liberation Sans", sans-serif; }
+  --gt-kaydir-tutamac: rgba(120, 135, 150, .45);   /* kaydırma tutamacı: koyu gri yarı saydam */
+  color: var(--gt-metin); color-scheme: dark;   /* yerleşik select/number açılır listeleri ve okları koyu (beyaz zemin kalmasın) */
+  font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", Roboto, Ubuntu, "DejaVu Sans", "Liberation Sans", sans-serif; }
+.fs-pn { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); z-index: 7; pointer-events: none; display: none; }
+/* kaydırma çubukları (kullanıcı: "scroll ince ve panele uygun renkte"): 6 px, ray panel zemini renginde, tutamaç koyu gri yarı saydam yuvarlak —
+   gövde, haberleşme konsolu, mod menüsü ve panel içindeki her kaydırılan öğe; Firefox: scrollbar-width/scrollbar-color */
+@supports not selector(::-webkit-scrollbar) {   /* Firefox (Chromium'da scrollbar-width tanımlanırsa ::-webkit-scrollbar YOK SAYILIR → yalnız burada; app.css 3204 kalıbı) */
+  .fs-pn, .fs-pn *, .fs-pn-yuzen, .fs-pn-yuzen * { scrollbar-width: thin; scrollbar-color: var(--gt-kaydir-tutamac) var(--gt-panel-arka); }
+}
+.fs-pn ::-webkit-scrollbar, .fs-pn-yuzen ::-webkit-scrollbar { width: 6px; height: 6px; }
+.fs-pn ::-webkit-scrollbar-track, .fs-pn ::-webkit-scrollbar-corner, .fs-pn-yuzen ::-webkit-scrollbar-track { background: var(--gt-panel-arka); margin: 0; }
+.fs-pn ::-webkit-scrollbar-thumb, .fs-pn-yuzen ::-webkit-scrollbar-thumb { background: var(--gt-kaydir-tutamac); border-radius: 3px; border: none; min-height: 24px; }
+.fs-pn ::-webkit-scrollbar-thumb:hover, .fs-pn-yuzen ::-webkit-scrollbar-thumb:hover { background: rgba(140, 155, 170, .7); }
+.fs-pn ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .fs-stage.fs-ops .fs-pn { display: block; }
 .fs-stage.fs-ops.fs-fpv .fs-pn { display: none; }
 .fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds, .fs-stage.fs-ops .fs-events { display: none; }   /* veri paneli, komutlar ve olay şeridi kartta */
@@ -9175,7 +9188,7 @@ body.immersive .fs-nav { top: 12px; }
 .fs-pn-kart.yalniz-baslik .fs-pn-baslik { border-bottom: none; }   /* .dk-yalniz-baslik: yalnız başlık şeridi kalır */
 .fs-pn-kart.yalniz-baslik > :not(.fs-pn-baslik) { display: none !important; }
 /* gövde (.dron-kart-icerik): 10 px dolgu, Consolas 12 px; bölümler tek gövdede, aralarında boşluk yok (ince çizgi) */
-.fs-pn-govde { padding: 10px; font-family: var(--gt-mono); font-size: 12px; line-height: 1.5; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; min-height: 0; }
+.fs-pn-govde { padding: 10px; font-family: var(--gt-mono); font-size: 12px; line-height: 1.5; overflow-y: auto; overflow-x: hidden; min-height: 0; }   /* kaydırma çubuğu: .fs-pn ::-webkit-scrollbar (6 px) */
 /* üst satır (.dk-ust-satir): UÇUŞA HAZIR rozeti (%50) + İŞLEMLER düğmesi (%50) */
 .fs-pn-ust { display: flex; gap: 6px; align-items: stretch; margin: 0 0 8px; }
 .fs-pn-hazir { flex: 1 1 50%; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--gt-cizgi); border-radius: 5px; background: var(--gt-giris-arka); color: var(--gt-metin);
@@ -9244,13 +9257,34 @@ body.immersive .fs-nav { top: 12px; }
 .fs-pn-hucre-girdi { cursor: default; gap: 5px; } .fs-pn-hucre-girdi:hover { background: var(--gt-dugme-arka); border-color: var(--gt-cizgi); }
 .fs-pn-girdi { width: 56px; padding: 3px 4px; border: 1px solid var(--gt-cizgi); border-radius: 3px; background: var(--gt-giris-arka); color: var(--gt-metin); font: inherit; font-size: 11px; text-align: center; }   /* .dk-irtifa */
 .fs-pn-girdi:disabled { opacity: .4; }
-.fs-pn-girdi option { color: #111; }
+.fs-pn-girdi option { background: var(--gt-giris-arka); color: var(--gt-metin); }   /* color-scheme: dark ile açılır liste koyu; seçenek metni açık */
+/* koyu düğme (hepgo.css .hk düğme kalıbı: --dugme-arka zemin, ince kenarlık) — MP Kopyala vb.; .btn (beyaz) panelde KULLANILMAZ */
+.fs-pn-btn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border: 1px solid var(--gt-cizgi); border-radius: 4px; background: var(--gt-dugme-arka); color: var(--gt-metin);
+  font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .2px; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+.fs-pn-btn:hover { background: var(--gt-dugme-hover); border-color: rgba(90, 170, 255, .55); color: #fff; }
+.fs-pn-btn:active { transform: scale(.97); }
+/* MISSION PLANNER bölümü (TEK bileşen; flightsim_panel.js placeMp): adres mono seçilebilir · Kopyala koyu · talimat gri; rozet bölüm başlığında */
+.fs-pn-mp { padding: 7px 0 4px; }
+.fs-pn-mp-adres { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fs-pn-mp-kod { font-family: var(--gt-mono); font-size: 12.5px; font-weight: 700; color: #ffe08a; user-select: text; -webkit-user-select: text; cursor: text; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-pn-mp-not { margin-top: 6px; } .fs-pn-mp-not b { color: var(--gt-metin); }
+.fs-pn-mp-yuva { display: inline-flex; flex: none; }
+.fs-pn-mp-rozet { height: 18px; margin-left: 0; padding: 0 7px; font-size: 10px; border-radius: 9px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 16px; }
+.fs-pn-mp-rozet.yok { color: #8a94a3; }
+/* yüzen MP kutusu (.fs-mp konumu: sol alt, 300 px): panel kapalı (sade görünüm) ya da FPV'de gösterilir; panel görünürken hidden — KOYU, beyaz düğme yok */
+.fs-mp.fs-pn-yuzen { background: var(--gt-panel-arka); border: 1px solid var(--gt-cizgi); border-radius: 6px; padding: 8px 10px; font-family: var(--gt-mono); font-size: 12px; backdrop-filter: none; box-shadow: 0 8px 32px rgba(0, 0, 0, .45); }
+.fs-mp.fs-pn-yuzen[hidden] { display: none; }
+.fs-pn-yuzen-bas { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; letter-spacing: .04em; color: var(--gt-soluk); }
+.fs-pn-yuzen-bas b { font-weight: 600; color: var(--gt-soluk); letter-spacing: .06em; white-space: nowrap; }   /* bölüm başlığıyla aynı dil (.fs-pn-bas-ad) */
+.fs-pn-yuzen-bas .fs-pn-mp-rozet { flex: 0 1 auto; min-width: 0; }
+.fs-stage.fs-ops .fs-mp.fs-pn-yuzen { display: none; }   /* panel görünürken sol altta MP kutusu YOK (bilgi panelde) */
+.fs-stage.fs-ops.fs-fpv .fs-mp.fs-pn-yuzen:not([hidden]) { display: block; }   /* FPV: panel gizli → yüzen kutu */
 .fs-pn-route { width: 100%; text-align: left; padding: 5px 6px; }
 .fs-pn-tam { grid-column: 1 / -1; min-width: 0; }
 .fs-pn-not { font-size: 10px; color: var(--gt-soluk); line-height: 1.4; } .fs-pn-not:empty { display: none; }
 .fs-pn-perm { color: var(--gt-uyari); }
 /* Haberleşme konsolu (.dk-konsol-govde): #0b0f14 zemin, 10,5 px mono; satır (.dk-kons-satir) = saat · ETİKET · metin */
-.fs-pn-kon-govde { max-height: 168px; overflow-y: auto; overflow-x: hidden; background: #0b0f14; padding: 3px 4px; font-family: var(--gt-mono); font-size: 10.5px; line-height: 1.45; scrollbar-width: thin; }
+.fs-pn-kon-govde { max-height: 168px; overflow-y: auto; overflow-x: hidden; background: #0b0f14; padding: 3px 4px; font-family: var(--gt-mono); font-size: 10.5px; line-height: 1.45; }
 .fs-pn-line { display: flex; gap: 5px; white-space: pre-wrap; word-break: break-word; align-items: baseline; color: var(--gt-metin); }
 .fs-pn-line .t { color: #5b6b7a; flex: 0 0 auto; }   /* .dk-kons-ts */
 .fs-pn-line .tag { color: #7aa2c8; flex: 0 0 auto; min-width: 48px; font-weight: 600; }   /* .dk-kons-etiket */

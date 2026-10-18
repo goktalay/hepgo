@@ -11,8 +11,14 @@
 //     düğmesi [.dk-islem-btn; İŞLEMLER bölümünü açar/kapar]) · bölümler — her biri .dk-konsol-bas başlık şeridinden katlanır (ok döner):
 //     UÇUŞ GÖSTERGESİ (PFD canvas; .dk-pfd-canvas 8 px köşe) · TELEMETRİ 4×2 karo (.dk-tel-hucre: ikon 20 px, Consolas 12 px kalın değer, 9 px
 //     büyük harf etiket; DURUM/MOD/KOMUT tıklanır) · İŞLEMLER (.dk-islem-izgara 3 sütun .dk-islem-hucre + .dk-islem-grup grup başlıkları: Uçuş /
-//     Hedef / Rota / Sim) · HABERLEŞME konsolu (.dk-konsol-govde: #0b0f14 zemin, 10,5 px mono; satır = saat ETİKET metin) — alt ortadaki ayrı
+//     Hedef / Rota / Sim) · MISSION PLANNER (UDP adres mono + Kopyala [koyu düğme] + kısa talimat; rozet Bekleniyor/Bağlı ip:port bölüm
+//     BAŞLIĞINDA → katlıyken de okunur; GCS bağlı değilken açık, bağlanınca kendiliğinden katlanır, kullanıcı elle katlar/açarsa tercihi kalır
+//     [fs.panel.fold.mp]) · HABERLEŞME konsolu (.dk-konsol-govde: #0b0f14 zemin, 10,5 px mono; satır = saat ETİKET metin) — alt ortadaki ayrı
 //     KONSOL kutusu KALKTI (madde 3: tek konsol, kart içinde). Panel HER TEMADA koyudur (GÖKTUNGU koyu tema değişkenleri .fs-pn üzerinde --gt-*).
+//   Kullanıcı geri bildirimi: "scroll ince ve panele uygun renkte olacak; alttaki Mission Planner bağlantı panelinde beyaz düğmeler var, onlar da
+//   uygun renkte olacak ve panel içine collapse şekilde yerleşecek" → sol alttaki ayrı MP kutusu panel açıkken KALKAR; aynı MP bileşeni (TEK DOM,
+//   placeMp taşır) panel kapalıyken (sade görünüm) ya da FPV'de sol altta KOYU kutuda (.fs-pn-yuzen; beyaz düğme yok) gösterilir. Kayıt kipinde
+//   MP yok (flightsim.js kayıt bilgisi kutusu). Kaydırma çubukları ince 6 px, panel zemini renginde (app.css .fs-pn ::-webkit-scrollbar).
 // Veri/komut yolu — telemetri (PFD/karolar) simülatörün /ws/drone/sim tele'sinden (update(t)); hub durumu, konsol satırları ve KOMUTLAR için
 //   bu modül kendi /ws/drone/live soketini açar ({t:'watch', sim_id} → hello/status/console/res; flightsim_hub.SimBridge) ve komutları hub
 //   {t:'cmd', rid, bridge_id: -(9000+N), sysid: 1, name, params} ile gönderir (GÖKTUNGU kalkış/rota akışları sunucuda yürür). Simülatöre ÖZGÜ iki
@@ -21,7 +27,8 @@
 //   yazma izni / hub komut yetkisi yoksa düğmeler pasif; kayıt (replay) ve sahte (mock) kiplerinde hub yoktur → İŞLEMLER yok, PFD/telemetri
 //   çalışır. Kart başlığından sürüklenir (localStorage fs.panel.col), katlama fs.panel.fold, küçült fs.panel.min, açık/kapalı fs.ops.on.
 // Pencereler (ARM onayı, kalkış, hedef) ui.js modal() ile body'ye eklenir; tam ekran document.documentElement'e alındığı için (flightsim.js) görünürler.
-// Dışa: createOpsPanel(stage, opts) → { el, enabled, toggle(v), setFpv(v), update(tele), setState(st), setRoute(points), setGcs(on), log(text, sev, tag), dispose() }
+// Dışa: createOpsPanel(stage, opts) → { el, enabled, toggle(v), setFpv(v), update(tele), setState(st), setRoute(points), setGcs(on, addr), log(text, sev, tag), dispose() }
+//   opts.mp = { addr: 'host:port', port, copy(addr) } → MISSION PLANNER bölümü + yüzen kutu; null/yok → MP yok (kayıt kipi)
 import { api } from '../api.js';
 import { confirmDialog, field, h, modal, toast, toastError, t as tr } from '../ui.js';
 
@@ -76,7 +83,7 @@ const ICO = {
 };
 
 export function createOpsPanel(stage, opts = {}) {
-  const { sid, session = {}, type = 'multirotor', modes = [], launch = null, canWrite = false, hub = true, cmdSim = null, onToggle = null, onReset = null } = opts;
+  const { sid, session = {}, type = 'multirotor', modes = [], launch = null, canWrite = false, hub = true, cmdSim = null, onToggle = null, onReset = null, mp = null } = opts;
   const getSim = opts.getSim || (() => null);
   const bridgeId = session.hub?.bridge_id ?? null;
   let on = (localStorage.getItem(KEY_ON) ?? '1') !== '0';
@@ -107,7 +114,7 @@ export function createOpsPanel(stage, opts = {}) {
     irt: h('span', { class: 'fs-pn-ozet-irt' }, ''), kip: h('span', { class: 'fs-pn-ozet-kip' }, ''),
     arm: h('span', { class: 'fs-pn-rozet yok' }, 'DISARMED'),
     hub: h('span', { class: 'fs-pn-rozet yok', title: tr('Harekât hub bağlantısı (/ws/drone/live)') }, 'HUB'),
-  };   // Mission Planner durumu sol alttaki MP kutusunda (başlıkta yer dar: ad kesilmesin)
+  };   // Mission Planner durumu MISSION PLANNER bölümünün başlık rozetinde (kart başlığında yer dar: ad kesilmesin)
   const minBtn = h('button', { class: 'fs-pn-kucult', type: 'button', title: tr('Küçült (yalnız başlık)'), html: ICO.up, onclick: e => { e.stopPropagation(); setMin(!kart.classList.contains('yalniz-baslik')); } });
   const baslik = h('div', { class: 'fs-pn-baslik' }, B.nokta, B.name, h('span', { class: 'fs-pn-ozet' }, B.irt, B.kip), B.arm, hub ? B.hub : null, minBtn);
   const setMin = v => { kart.classList.toggle('yalniz-baslik', v); minBtn.innerHTML = v ? ICO.down : ICO.up; minBtn.title = tr(v ? 'Geri büyüt' : 'Küçült (yalnız başlık)'); lsSet(KEY_MIN, v ? 1 : null); if (!v) { pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame); } };
@@ -165,6 +172,27 @@ export function createOpsPanel(stage, opts = {}) {
     h('div', { class: 'fs-pn-tam fs-pn-not fs-pn-perm' }, ''));
   const opsBolum = bolum('ops', 'İŞLEMLER', opsBody);
 
+  // --- MISSION PLANNER (UDP adres · Kopyala · talimat; rozet bölüm başlığında) — TEK bileşen: panel görünürken bölümde, değilse sol alt koyu kutuda ---
+  let gcsAddr = session.gcs?.addr || '';
+  const mpRozet = mp ? h('span', { class: 'fs-pn-rozet fs-pn-mp-rozet yok', title: tr('Mission Planner (UDP) bağlantısı') }, tr('Bekleniyor')) : null;
+  const mpBody = mp ? h('div', { class: 'fs-pn-mp' },
+    h('div', { class: 'fs-pn-mp-adres' }, h('code', { class: 'fs-pn-mp-kod' }, `UDP ${mp.addr}`),
+      h('button', { class: 'fs-pn-btn', type: 'button', onclick: e => { e.stopPropagation(); mp.copy?.(mp.addr); } }, 'Kopyala')),
+    h('div', { class: 'fs-pn-not fs-pn-mp-not' }, 'Mission Planner › sağ üst bağlantı türü UDP › CONNECT › port ', h('b', null, String(mp.port || '—')), '. USB kumanda: Mission Planner › Joystick.')) : null;
+  const mpYuvaBas = mp ? h('span', { class: 'fs-pn-mp-yuva' }) : null;   // rozet yuvası (bölüm başlığı)
+  const mpBolum = mp ? bolum('mp', 'MISSION PLANNER', mpBody, { cls: 'fs-pn-mp-bolum', extra: mpYuvaBas }) : null;   // büyük harf elle: CSS uppercase tr'de "MİSSİON" yapar
+  const mpYuvaYuzen = mp ? h('span', { class: 'fs-pn-mp-yuva' }) : null;   // rozet yuvası (yüzen kutu başlığı)
+  const mpYuzen = mp ? h('div', { class: 'fs-mp fs-pn-yuzen', hidden: true, title: tr('Mission Planner (UDP) bağlantısı') }, h('div', { class: 'fs-pn-yuzen-bas' }, h('b', null, 'MISSION PLANNER'), mpYuvaYuzen)) : null;
+  // Otomatik katlama: kullanıcı tercihi yoksa (fold.mp tanımsız) GCS bağlıyken katlı, değilken açık
+  const applyMpFold = () => { if (mpBolum) mpBolum.classList.toggle('folded', fold.mp == null ? gcs : !!fold.mp); };
+  const placeMp = () => {
+    if (!mp) return;
+    const panelde = on && !stage.classList.contains('fs-fpv');
+    (panelde ? mpYuvaBas : mpYuvaYuzen).append(mpRozet);
+    (panelde ? mpBolum : mpYuzen).append(mpBody);
+    mpYuzen.hidden = panelde;
+  };
+
   // --- HABERLEŞME konsolu (.dk-konsol: kart altında, katlanır; sayaç + temizle) ---
   const conBody = h('div', { class: 'fs-pn-kon-govde' });
   const conCount = h('span', { class: 'fs-pn-kon-sayac' }, '0');
@@ -172,11 +200,13 @@ export function createOpsPanel(stage, opts = {}) {
     h('button', { class: 'fs-pn-kon-btn', type: 'button', title: tr('Konsolu temizle'), onclick: e => { e.stopPropagation(); conBody.replaceChildren(); conCount.textContent = '0'; } }, '⌫')) });
   conBolum.querySelector('.fs-pn-bas-ad').before(ico('chat', 'fs-pn-kon-ikon'));   // GÖKTUNGU sırası: ok · ikon · ad · sayaç · araçlar
 
-  const govde = h('div', { class: 'fs-pn-govde' }, ustSatir, pfdBolum, tilesBolum, hub ? opsBolum : null, conBolum);
+  const govde = h('div', { class: 'fs-pn-govde' }, ustSatir, pfdBolum, tilesBolum, hub ? opsBolum : null, mpBolum, conBolum);
   const kart = h('div', { class: 'fs-pn-kart' }, baslik, govde);
   const root = h('div', { class: 'fs-pn' }, kart);
   root.id = 'fs-pn';
   stage.append(root);
+  if (mpYuzen) stage.append(mpYuzen);   // .fs-pn panel kapalıyken display:none → yüzen MP kutusu sahnede ayrı durur (koyu, --gt-* değişkenleri kendi kuralında)
+  applyMpFold();
   stage.classList.add('fs-ops-host');
   if (!hub) { stage.classList.add('fs-pn-nohub'); for (const k of ['arm', 'mode', 'cmd']) T[k].classList.add('off'); hazirBtn.classList.add('off'); }
   if (lsGet(KEY_MIN)) setMin(true);
@@ -373,6 +403,13 @@ export function createOpsPanel(stage, opts = {}) {
     if (t.mode !== lastMode) { lastMode = t.mode; drawRoute(); }
     drawHazir();
   };
+  // Mission Planner (UDP) durumu TEK yerden: rozet (bölüm başlığı / yüzen kutu), GPS karosu alt yazısı ("· MP"), otomatik katlama
+  const setGcs = (v, addr) => {
+    const was = gcs; gcs = !!v; gcsAddr = addr || '';
+    if (mpRozet) { mpRozet.className = `fs-pn-rozet fs-pn-mp-rozet ${gcs ? 'bagli' : 'yok'}`; mpRozet.textContent = gcs ? tr('Bağlı ({ip})', { ip: gcsAddr }) : tr('Bekleniyor'); }
+    if (was !== gcs) applyMpFold();
+    drawTiles();
+  };
   const frame = () => {
     raf = 0;
     if (disposed || !on) return;
@@ -509,6 +546,7 @@ export function createOpsPanel(stage, opts = {}) {
     fold.ops = true;
     root.querySelectorAll('.fs-pn-bolum.folded').forEach(e => e.classList.remove('folded'));
     opsBolum.classList.add('folded'); islemBtn.classList.remove('acik');
+    applyMpFold();   // MP katlama tercihi silindi → otomatik (GCS bağlıysa katlı)
     setMin(false);
     pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame);
     toast(tr('Yerleşim sıfırlandı'));
@@ -520,7 +558,7 @@ export function createOpsPanel(stage, opts = {}) {
   ro?.observe(stage); if (bar) ro?.observe(bar);
 
   // ---------- göster/gizle (Panel düğmesi, P) ----------
-  const apply = () => { stage.classList.toggle('fs-ops', on); if (on) { pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame); } else closeMenu(); };
+  const apply = () => { stage.classList.toggle('fs-ops', on); if (on) { pfdDirty = true; if (!raf) raf = requestAnimationFrame(frame); } else closeMenu(); placeMp(); };
   const onKey = e => {
     if (e.ctrlKey || e.metaKey || e.altKey || editable(document.activeElement)) return;
     if (e.key === 'p' || e.key === 'P') { apiObj.toggle(); e.preventDefault(); }
@@ -529,7 +567,7 @@ export function createOpsPanel(stage, opts = {}) {
   apply();
   applyLayout();
   applyPerm();
-  drawTiles(); drawRoute();
+  setGcs(gcs, gcsAddr); drawRoute();
   requestAnimationFrame(() => { resizePfd(); pfdDirty = true; if (on) frame(); });
   if (hub) { openHub(); loadRoutes(); }
 
@@ -537,11 +575,11 @@ export function createOpsPanel(stage, opts = {}) {
     el: root,
     get enabled() { return on; },
     toggle(v) { on = v == null ? !on : !!v; try { localStorage.setItem(KEY_ON, on ? '1' : '0'); } catch { /* */ } apply(); onToggle?.(on); return on; },
-    setFpv(v) { stage.classList.toggle('fs-fpv', !!v); if (v) closeMenu(); else { pfdDirty = true; if (on && !raf) raf = requestAnimationFrame(frame); } },
+    setFpv(v) { stage.classList.toggle('fs-fpv', !!v); if (v) closeMenu(); else { pfdDirty = true; if (on && !raf) raf = requestAnimationFrame(frame); } placeMp(); },
     update,
     setState(st) { state = st; drawHazir(); applyPerm(); },
     setRoute(points) { routePts = points || []; drawRoute(); },
-    setGcs(v) { gcs = !!v; },
+    setGcs,
     setLaunchPhase(ph) { if (launch) { launch.phase = ph; drawTiles(); } },
     log,
     hubCmd,
@@ -552,7 +590,7 @@ export function createOpsPanel(stage, opts = {}) {
       if (raf) cancelAnimationFrame(raf);
       ro?.disconnect(); closeMenu();
       window.removeEventListener('keydown', onKey);
-      root.remove(); stage.classList.remove('fs-ops', 'fs-ops-host', 'fs-fpv', 'fs-pn-nohub');
+      root.remove(); mpYuzen?.remove(); stage.classList.remove('fs-ops', 'fs-ops-host', 'fs-fpv', 'fs-pn-nohub');
     },
   };
   return apiObj;

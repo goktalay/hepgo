@@ -6,7 +6,7 @@ Native bildirim gönderimi app/push_native.py; konumlar location_pings tablosund
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from .. import auth, db, push_native, worktime
@@ -114,6 +114,29 @@ def location_latest(user=Depends(auth.current_user), conn=db.DB):
         WHERE u.location_off = 0
         ORDER BY lp.at DESC'''))
     return {'people': rows}
+
+
+@router.get('/location/history')
+def location_history(user_id: int, hours: float = 24, from_: Optional[str] = Query(None, alias='from'), to: Optional[str] = None,
+                     limit: int = 500, user=Depends(auth.current_user), conn=db.DB):
+    """Bir kişinin konum İZİ (Canlı Konum › kişi seçimi): son `hours` saat ya da [from_, to] aralığı (sunucu yerel ISO, created_at'e
+    göre). Zaman sırasıyla noktalar; aynı yetki kuralı /location/latest ile. Kişi başına en çok 500 sinyal saklandığından iz de en çok o kadar."""
+    allowed = user.get('master') or any(r in user.get('roles', []) for r in (auth.ADMIN, auth.SECURITY, auth.HR))
+    if not allowed:
+        raise HTTPException(403, 'Yetki yok')
+    u = conn.execute('SELECT id, full_name, photo, last_seen, location_off FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not u:
+        raise HTTPException(404, 'Kullanıcı bulunamadı')
+    from datetime import datetime, timedelta
+    hours = max(0.1, min(hours or 24, 24 * 31))
+    start = (from_ or (datetime.now() - timedelta(hours=hours)).isoformat(timespec='seconds'))[:19]
+    end = (to or '9999')[:19]
+    rows = db.rows(conn.execute('''SELECT lat, lng, accuracy, COALESCE(at, created_at) AS at, created_at, platform FROM location_pings
+                                   WHERE user_id = ? AND created_at >= ? AND created_at <= ? ORDER BY id DESC LIMIT ?''',
+                                (user_id, start, end, max(1, min(limit, 500)))))
+    rows.reverse()   # eskiden yeniye (çizgi başlangıç → bitiş)
+    return {'user': {'id': u[0], 'full_name': u[1], 'photo': u[2], 'last_seen': u[3], 'location_off': bool(u[4])},
+            'from': start, 'to': None if not to else end, 'hours': hours, 'points': rows}
 
 
 class DeviceInfoIn(BaseModel):

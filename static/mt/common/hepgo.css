@@ -1,0 +1,35 @@
+/* Master Tool web sürümleri — HEPGO köprü çekirdeği stilleri: pencere şeridi, sunucu dosya diyaloğu.
+   Uygulamaların kendi common.css değişkenlerini (--surface, --border, --accent…) kullanır; görünümlerini değiştirmez. */
+#mt-winbar { display: flex; align-items: stretch; gap: 2px; padding: 4px 8px 0; background: var(--bg-2); border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
+#mt-winbar.hidden, #mt-winhost.hidden, .mt-hidden { display: none !important; }
+.mt-wtab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.mt-wtab:hover { background: var(--surface); }
+.mt-wtab.on { background: var(--surface); color: var(--text); border-color: var(--border); }
+.mt-wtab .i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+.mt-wtab .x { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; opacity: .6; }
+.mt-wtab .x:hover { opacity: 1; background: var(--surface-3); }
+.mt-wtab.main { padding-inline: 10px; }
+#mt-winhost { flex: 1; min-height: 0; display: flex; }
+body.mt-winmode { display: flex; flex-direction: column; height: 100vh; }
+body.mt-winmode > .app { flex: 1; min-height: 0; }
+.mt-win { display: none; flex: 1; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.mt-win.on { display: block; }
+
+.mt-dialog .mt-fs-bar { display: flex; gap: 6px; align-items: center; }
+.mt-dialog .mt-fs-bar .input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; }
+.mt-dialog .icon-btn { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); cursor: pointer; }
+.mt-dialog .icon-btn:hover { color: var(--text); background: var(--surface-3); }
+.mt-dialog .i { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mt-fs-list { height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-2); padding: 4px; }
+.mt-fs-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: default; font-size: 13px; color: var(--text); }
+.mt-fs-item .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-fs-item .s { color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.mt-fs-item:hover { background: var(--surface-2); }
+.mt-fs-item.sel { background: var(--surface-3); outline: 1px solid var(--accent); }
+.mt-fs-item.dim { opacity: .45; }
+.mt-fs-item .i { color: var(--accent); flex: none; }
+.mt-fs-empty { color: var(--text-3); font-size: 12px; padding: 24px; text-align: center; }
+.mt-fs-hint { font-size: 11.5px; color: var(--text-3); }
+.mt-fs-hint code { color: var(--text-2); font-family: var(--mono); }
+.mt-dialog .spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: mtspin .7s linear infinite; vertical-align: middle; }
+@keyframes mtspin { to { transform: rotate(360deg); } }

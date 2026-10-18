@@ -2645,6 +2645,14 @@ CREATE TABLE IF NOT EXISTS voice_call_segments (
     text       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_voice_call_segments ON voice_call_segments(call_id);
+CREATE TABLE IF NOT EXISTS tools_mt_store (            -- Araçlar › Master Tool web sürümleri: kullanıcı başına uygulama verisi
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    app        TEXT NOT NULL,                          -- sqlmaster | notepadmaster | convertmaster
+    key        TEXT NOT NULL,                          -- store | secrets | history | local …
+    json       TEXT NOT NULL,                          -- masaüstü uygulamadaki JSON şemasıyla birebir
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, app, key)
+);
 """
 
 

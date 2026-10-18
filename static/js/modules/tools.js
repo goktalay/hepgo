@@ -24,9 +24,10 @@ const TOOLS = [
   // Master Tool ailesi — web sürümleri (tool_<ad>.js; arka uç app/routers/tools_<ad>.py). Yetki: Araçlar modülü.
   { key: 'ssh', title: 'SSH Master', icon: 'terminal', desc: 'Tarayıcıdan SSH: çoklu sekme, parola/anahtar, kopyala/yapıştır', mt: 'tool_ssh' },
   { key: 'ftp', title: 'FTP Master', icon: 'folderOpen', desc: 'FTP / FTPS / SFTP: uzak dizin, yükle/indir, yeniden adlandır/sil', mt: 'tool_ftp' },
-  { key: 'sql', title: 'SQL Master', icon: 'reports', desc: 'SQLite · MySQL · PostgreSQL: sorgu editörü, sayfalı sonuç, Excel', mt: 'tool_sql' },
-  { key: 'notepad', title: 'Notepad Master', icon: 'note', desc: 'Çok sekmeli metin editörü: satır numarası, vurgu, bul/değiştir, sunucuya kaydet', mt: 'tool_notepad' },
-  { key: 'convert', title: 'Convert Master', icon: 'refresh', desc: 'Görsel, PDF, metin kodlama, JSON/CSV/XLSX, Base64/Hex/URL, birim dönüştürme', mt: 'tool_convert' },
+  // SQL / Notepad / Convert Master: masaüstü uygulamaların orijinal arayüzleri (static/mt/<uygulama>) aynı kökenli iframe'de; tool_mtframe.js
+  { key: 'sql', title: 'SQL Master', icon: 'reports', desc: 'Bağlantı kütüphanesi, nesne ağacı, SQL editörü, görsel sorgu oluşturucu (SQLite · MySQL · PostgreSQL)', mt: 'tool_mtframe' },
+  { key: 'notepad', title: 'Notepad Master', icon: 'note', desc: 'SSH/SFTP, FTP ve sunucudaki klasörlerde dosya düzenleyen kod editörü (Monaco)', mt: 'tool_mtframe' },
+  { key: 'convert', title: 'Convert Master', icon: 'refresh', desc: 'Resim, video ve ses dönüştürme projeleri; önizleme, kuyruk ve ilerleme', mt: 'tool_mtframe' },
   { key: 'volfai', title: 'VOLFAI', icon: 'apps', desc: 'Master Tool oyunu — tarayıcıda tam ekran', mt: 'tool_volfai' },
 ];
 // Kullanıcının görebileceği araçlar (modül koşulu olanlar o modüllerden birine sahip olana; master koşulu yalnız sistem sahibine)

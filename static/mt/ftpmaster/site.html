@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>FTP Masters</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="mastertool.css">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <div class="site">
+    <header class="site-bar">
+      <button class="icon-btn" id="btnLocal"></button>
+      <span class="status-dot" id="dot"></span>
+      <div class="site-title">
+        <span class="site-name" id="siteName"></span>
+        <span class="site-sub" id="siteSub"></span>
+      </div>
+      <span class="tag proto" id="siteProto"></span>
+      <div class="bar-actions">
+        <button class="btn sm ghost" id="btnReconnect"></button>
+        <button class="icon-btn" id="btnTheme"></button>
+        <button class="icon-btn" id="btnSettings"></button>
+        <button class="icon-btn" id="btnTransfers"></button>
+      </div>
+    </header>
+
+    <div class="site-body" id="body">
+      <aside class="col col-local" id="colLocal">
+        <div class="panel-head">
+          <span class="panel-ico">{monitor}</span>
+          <span class="panel-title" data-t="site.local"></span>
+          <div class="panel-actions">
+            <button class="icon-btn" data-a="places"></button>
+            <button class="icon-btn" data-a="up"></button>
+            <button class="icon-btn" data-a="refresh"></button>
+            <button class="icon-btn" data-a="mkdir"></button>
+          </div>
+        </div>
+        <div class="path-bar"><input class="path-input" spellcheck="false"></div>
+        <div class="file-list" tabindex="0"></div>
+      </aside>
+      <div class="vsplit" id="splitLocal"></div>
+
+      <section class="col col-remote" id="colRemote">
+        <div class="panel-head">
+          <span class="panel-ico">{server}</span>
+          <span class="panel-title" data-t="site.remote"></span>
+          <div class="panel-actions">
+            <button class="icon-btn" data-a="home"></button>
+            <button class="icon-btn" data-a="up"></button>
+            <button class="icon-btn" data-a="refresh"></button>
+            <button class="icon-btn" data-a="mkdir"></button>
+          </div>
+        </div>
+        <div class="path-bar"><input class="path-input" spellcheck="false"></div>
+        <div class="file-list" tabindex="0"></div>
+      </section>
+      <div class="vsplit" id="splitTransfers"></div>
+
+      <aside class="col col-transfers" id="colTransfers">
+        <div class="panel-head">
+          <span class="panel-ico">{swap}</span>
+          <span class="panel-title"><span data-t="site.transfers"></span><span class="badge hidden" id="trBadge"></span></span>
+          <div class="panel-actions">
+            <button class="icon-btn" data-a="clear"></button>
+            <button class="icon-btn" data-a="cancelAll"></button>
+          </div>
+        </div>
+        <div class="tree" id="tree">
+          <div class="tree-head" id="treeHead"></div>
+          <div class="tree-body" id="treeBody" tabindex="0">
+            <div class="tree-spacer" id="treeSpacer"></div>
+            <div class="tree-rows" id="treeRows"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="status-bar">
+      <span id="stLocal"></span>
+      <span class="sep"></span>
+      <span id="stRemote"></span>
+      <span class="grow"></span>
+      <span id="stActive"></span>
+      <span class="speed down" id="stDown"></span>
+      <span class="speed up" id="stUp"></span>
+      <button class="limit-chip" id="stLimit"></button>
+    </footer>
+  </div>
+
+  <script src="../mtcore.js"></script>
+  <script src="bridge.js"></script>
+  <script src="i18n.js"></script>
+  <script src="ui.js"></script>
+  <script src="settings.js"></script>
+  <script src="mastertool.js"></script>
+  <script src="filelist.js"></script>
+  <script src="transfers.js"></script>
+  <script src="site.js"></script>
+</body>
+</html>

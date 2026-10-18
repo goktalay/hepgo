@@ -22,8 +22,8 @@ const TOOLS = [
   { key: 'network', title: 'Ağ Tarayıcı', icon: 'network', desc: 'Sunucunun ağındaki bilgisayarlar: IP, bilgisayar adı, MAC, üretici', modules: ['admin'] },
   { key: 'terminal', title: 'Terminal', icon: 'terminal', desc: 'Sistem sahibi için yerel kabuk (SSH benzeri) — sahada olmadan komut çalıştırın', master: true },
   // Master Tool ailesi — web sürümleri (tool_<ad>.js; arka uç app/routers/tools_<ad>.py). Yetki: Araçlar modülü.
-  { key: 'ssh', title: 'SSH Master', icon: 'terminal', desc: 'Tarayıcıdan SSH: çoklu sekme, parola/anahtar, kopyala/yapıştır', mt: 'tool_ssh' },
-  { key: 'ftp', title: 'FTP Master', icon: 'folderOpen', desc: 'FTP / FTPS / SFTP: uzak dizin, yükle/indir, yeniden adlandır/sil', mt: 'tool_ftp' },
+  { key: 'ssh', title: 'SSH Master', icon: 'terminal', desc: 'Masaüstü SSH Master\'ın web sürümü: bağlantı kartları, bölünebilir konsollar, SFTP paneli, kısayollar', mt: 'tool_sshmaster' },
+  { key: 'ftp', title: 'FTP Masters', icon: 'folderOpen', desc: 'Masaüstü FTP Masters\'ın web sürümü: FTP / FTPS / SFTP siteleri, iki panel, aktarım kuyruğu, hız sınırı', mt: 'tool_ftpmaster' },
   { key: 'sql', title: 'SQL Master', icon: 'reports', desc: 'SQLite · MySQL · PostgreSQL: sorgu editörü, sayfalı sonuç, Excel', mt: 'tool_sql' },
   { key: 'notepad', title: 'Notepad Master', icon: 'note', desc: 'Çok sekmeli metin editörü: satır numarası, vurgu, bul/değiştir, sunucuya kaydet', mt: 'tool_notepad' },
   { key: 'convert', title: 'Convert Master', icon: 'refresh', desc: 'Görsel, PDF, metin kodlama, JSON/CSV/XLSX, Base64/Hex/URL, birim dönüştürme', mt: 'tool_convert' },

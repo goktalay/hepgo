@@ -49,6 +49,35 @@ const IG = {
   image: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>',
   camera: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>',
 };
+// ---------- Medya önbelleği / ön yükleme (TikTok gibi: görünür + sonraki paylaşımların medyası arka planda iner, bir daha inmez)
+// Medya adresleri değişmez (rastgele dosya adı) → sunucu 1 yıl immutable verir; service worker (sw.js) /api/files/feed/… yanıtlarını
+// Cache Storage 'feed-media' deposunda tutar (300 MB, en eski erişilen silinir) ve Range (video) isteklerini de oradan karşılar.
+// Burada: görünmeye yaklaşan kartın ve sonraki PREFETCH_AHEAD paylaşımın medyası SW'ye "ön yükle" diye bildirilir (sayfa kapansa da
+// SW indirmeyi sürdürür); SW yoksa düşük öncelikli fetch ile tarayıcının HTTP önbelleği ısıtılır.
+const PREFETCH_AHEAD = 3;
+const prefetched = new Set();
+const mediaSrc = m => (m.type === 'image' ? fileUrl(m.path, 1000) : m.type === 'video' ? fileUrl(m.path) : null);
+function prefetchMedia(items) {
+  const urls = [];
+  for (const m of items) { const u = mediaSrc(m); if (u && !prefetched.has(u)) { prefetched.add(u); urls.push(u); } }
+  if (!urls.length) return;
+  const sw = navigator.serviceWorker?.controller;
+  if (sw) { try { sw.postMessage({ t: 'feed-prefetch', urls }); return; } catch { /* aşağı düş */ } }
+  for (const u of urls) fetch(u, { credentials: 'same-origin', priority: 'low' }).then(r => r.body?.cancel?.()).catch(() => {});
+}
+// Akıştaki posts dizisinde k'inci karttan itibaren (kendisi + sonraki PREFETCH_AHEAD paylaşım) medyayı ön yükler
+function prefetchFrom(posts, k) {
+  const items = [];
+  for (const p of posts.slice(Math.max(0, k), k + 1 + PREFETCH_AHEAD)) for (const m of (p.media || [])) if (m.type === 'image' || m.type === 'video') items.push(m);
+  prefetchMedia(items);
+}
+// Ses tercihi (TikTok gibi tek düğme): akış videoları varsayılan sessiz oynar; açılırsa tüm videolar sesli, seçim hatırlanır
+const SOUND_KEY = 'feed.sound';
+const soundOn = () => localStorage.getItem(SOUND_KEY) === '1';
+const setSound = on => { try { localStorage.setItem(SOUND_KEY, on ? '1' : '0'); } catch { /* */ } document.dispatchEvent(new CustomEvent('feed-sound', { detail: on })); };
+const SND_ON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const SND_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M22 9l-6 6"/><path d="M16 9l6 6"/></svg>';
+
 // "34 dakika önce" (kısa: "34 dk") — Instagram gibi göreli zaman; bir haftadan eskiyse tarih
 function ago(iso, short) {
   const t = iso ? new Date(iso).getTime() : NaN;
@@ -75,17 +104,51 @@ export function renderFeed(container, ctx, opts = {}) {
   // Tam ekran: akıştaki tüm resim + videolar ekrandaki sırayla (paylaşımıyla birlikte → sağ şeritte kalp / yorum / paylaş)
   const viewerItems = () => posts.flatMap(q => (q.media || []).filter(x => x.type === 'image' || x.type === 'video').map(x => ({ ...x, post: q })));
   const openAt = (m, p) => {
+    playing?.pause();   // tam ekrana geçerken akıştaki video dursun
     const items = viewerItems();
     openViewer(items, Math.max(0, items.findIndex(x => x.post === p && x.path === m.path)), viewerActs);
   };
+  // TikTok gibi video: kart görünür olunca (≥%60) kendiliğinden oynar (preload=auto), çıkınca durur; aynı anda tek video oynar.
+  // Ses: sağ alttaki düğme (tercih hatırlanır); ses açıkken tarayıcı sesli oynatmaya izin vermezse sessize düşer.
+  let playing = null;
+  const playObs = new IntersectionObserver(es => {
+    for (const e of es) {
+      const v = e.target;
+      if (e.intersectionRatio >= 0.6 && !document.hidden) {
+        if (playing && playing !== v) { playing.pause(); }
+        playing = v; v.preload = 'auto'; v.muted = !soundOn();
+        v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+      } else { v.pause(); if (playing === v) playing = null; }
+    }
+  }, { threshold: [0, 0.6] });
+  const onVis = () => { if (document.hidden) playing?.pause(); else if (playing) playing.play().catch(() => {}); };
+  document.addEventListener('visibilitychange', onVis);
+  const onSound = e => body.querySelectorAll('video.feed-v').forEach(v => { v.muted = !e.detail; v.closest('.feed-vid')?.querySelector('.feed-snd')?.replaceChildren(svgSpan(e.detail ? SND_ON : SND_OFF)); });
+  document.addEventListener('feed-sound', onSound);
+  onLeave(() => { playObs.disconnect(); document.removeEventListener('visibilitychange', onVis); document.removeEventListener('feed-sound', onSound); });
   const mediaEl = (m, p, plus = 0) => {
     if (m.type === 'audio') return h('audio', { class: 'feed-audio', src: fileUrl(m.path), controls: true, preload: 'none' });
-    if (m.type === 'video') return h('button', { class: 'feed-media feed-vid', type: 'button', title: 'Tam ekran aç', onclick: () => openAt(m, p) },
-      h('video', { src: videoUrl(m.path), preload: 'metadata', muted: true, playsinline: true, tabindex: -1 }), h('span', { class: 'feed-play' }, '▶'),
-      plus ? h('span', { class: 'feed-mplus' }, `+${plus}`) : null);
+    if (m.type === 'video') {
+      const v = h('video', { class: 'feed-v', src: videoUrl(m.path), preload: 'metadata', muted: true, playsinline: true, loop: true, tabindex: -1 });
+      v.muted = true;   // öznitelik sonradan eklenince IDL muted değişmez; sessiz başlasın (ses tercihi görünürken uygulanır)
+      v.addEventListener('play', () => box.classList.add('playing'));
+      v.addEventListener('pause', () => box.classList.remove('playing'));
+      const snd = h('button', { class: 'feed-snd', type: 'button', title: 'Ses aç / kapat', 'aria-label': 'Ses aç / kapat',
+        onclick: e => { e.stopPropagation(); setSound(!soundOn()); } }, svgSpan(soundOn() ? SND_ON : SND_OFF));
+      const box = h('div', { class: 'feed-media feed-vid', role: 'button', tabindex: 0, title: 'Tam ekran aç',
+        onclick: () => openAt(m, p), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAt(m, p); } } },
+        v, h('span', { class: 'feed-play' }, '▶'), snd, plus ? h('span', { class: 'feed-mplus' }, `+${plus}`) : null);
+      playObs.observe(v);
+      return box;
+    }
     return h('button', { class: 'feed-media', type: 'button', title: 'Tam ekran aç', onclick: () => openAt(m, p) },
       h('img', { src: fileUrl(m.path, 1000), alt: '', loading: 'lazy' }), plus ? h('span', { class: 'feed-mplus' }, `+${plus}`) : null);
   };
+  // Ön yükleme: kart ekrana 1200 px yaklaşınca kendisinin + sonraki 3 paylaşımın medyası arka planda indirilir (bir kez)
+  const nearObs = new IntersectionObserver(es => {
+    es.forEach(e => { if (!e.isIntersecting) return; nearObs.unobserve(e.target); const k = posts.findIndex(x => x.id === +e.target.dataset.pid); if (k >= 0) prefetchFrom(posts, k); });
+  }, { rootMargin: '0px 0px 1200px 0px' });
+  onLeave(() => nearObs.disconnect());
   const isAdmin = () => ctx.user.master || ctx.user.modules.includes('admin');
   // Başkasının paylaşımını kimse silemez (yönetici / sistem sahibi dahil); sistem olaylarını yönetici kaldırabilir
   const canDelete = p => (p.system ? isAdmin() : p.author_id === ctx.user.id);
@@ -139,6 +202,7 @@ export function renderFeed(container, ctx, opts = {}) {
       aud.length ? h('div', { class: 'feed-auds' }, aud.map(m => mediaEl(m, p))) : null,
       footer(p, c => reCard(p, c), vis.length > 0));
     p._card = card; card.dataset.pid = p.id; viewObs.observe(card);   // ekranda görünce 'görüldü' kaydı
+    if (vis.length) nearObs.observe(card);   // yaklaşınca medya ön yükleme (kendisi + sonrakiler)
     return card;
   };
 
@@ -953,7 +1017,7 @@ function openViewer(items, start, act) {
     z = { s: 1, x: 0, y: 0 };
     overlay.classList.remove('zoomed');
     for (const x of [sl.prev, sl.next]) if (x?.media.tagName === 'VIDEO') { x.media.pause(); x.media.style.transform = ''; }
-    if (sl.cur?.media.tagName === 'VIDEO') { sl.cur.media.controls = true; sl.cur.media.play().catch(() => {}); }
+    if (sl.cur?.media.tagName === 'VIDEO') { sl.cur.media.controls = true; sl.cur.media.muted = !soundOn(); sl.cur.media.play().catch(() => {}); }
     if (sl.cur) sl.cur.media.style.transform = '';
     if (!sheet.hidden) closeSheet();
     drawRail(); drawCap();

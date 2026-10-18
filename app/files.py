@@ -230,7 +230,9 @@ async def save_upload_stream(kind, upload: UploadFile, max_bytes):
 # Yüklenen dosyaların adı rastgele ve değişmez olduğundan tarayıcı da uzun süre önbelleğe alır.
 THUMB_WIDTHS = (64, 128, 256, 512, 1024, 1600)
 THUMB_EXT = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif'}
-FILE_CACHE = {'Cache-Control': 'private, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff'}
+# 1 yıl + immutable: dosya adı rastgele/değişmez olduğundan tarayıcı yeniden doğrulamaya (ETag) bile gitmez; Şirketten Haberler
+# medyası ikinci açılışta ağdan inmez. (Starlette FileResponse ETag + Last-Modified + Accept-Ranges başlıklarını kendisi ekler.)
+FILE_CACHE = {'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff'}
 # Tarayıcıda betik çalıştırabilen türler (ör. firma logosu .svg): doğrudan açılınca betikler kapalı (sandbox), dış kaynak yok
 ACTIVE_EXT = {'.svg', '.svgz', '.html', '.htm', '.xhtml', '.xml'}
 ACTIVE_HEADERS = {**FILE_CACHE, 'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"}

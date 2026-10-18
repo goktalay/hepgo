@@ -1,5 +1,6 @@
 """Uçuş Simülatörü ekran kaydı (§17): tarayıcı MediaRecorder parçalarını oturum boyunca akıtır, Bitir'de kayıt Şirketten Haberler
-medya deposuna taşınır ve oturum SAHİBİ adına paylaşım açılır.
+medya deposuna taşınır ve oturum SAHİBİ adına paylaşım açılır — ya da (paylaşım seçeneği kapalıysa) `sakla` ile sunucuda 'kept'
+durumunda tutulur: "Kayıtlarım" (`listem`) → indir (`dosya`) / sonradan paylaş (`bitir`) / sil; `SIM_REC_KEEP_DAYS` (30) sonra temizlenir.
 
 Dosyalar `DATA_DIR/sim_rec/<rec_id>.webm` (+ `.json` meta, isteğe bağlı `.png` küçük resim). Meta JSON diskte tutulur: sayfa kapanır
 ya da sunucu yeniden başlarsa yarım kayıt bulunur ("Yarım kayıt" bildirimi → paylaş / sil). 24 saatten eski açık kayıtlar temizlenir.
@@ -20,6 +21,8 @@ MAX_MB = max(1, min(2048, int(os.environ.get('SIM_REC_MAX_MB', '1024') or 1024))
 MAX_BYTES = MAX_MB * 1024 * 1024
 THUMB_MAX = 2 * 1024 * 1024
 TTL_S = 24 * 3600                      # yarım kayıt saklama süresi
+KEEP_DAYS = max(1, int(os.environ.get('SIM_REC_KEEP_DAYS', '30') or 30))   # paylaşılmadan saklanan (state 'kept') kayıtların ömrü
+KEEP_S = KEEP_DAYS * 24 * 3600
 MIMES = {'video/webm': '.webm', 'video/mp4': '.mp4', 'video/x-matroska': '.mkv'}
 _ID = re.compile(r'^[0-9a-f]{16}$')
 TIP_ADLARI = {'multirotor': 'Multirotor', 'hexarotor': 'Hexarotor', 'helikopter': 'Helikopter', 'sabit_kanat': 'Sabit kanat', 'vtol': 'VTOL'}
@@ -141,9 +144,58 @@ def metin(m, duration_s=None, lang='tr'):
     return ' · '.join(p for p in parts if p)
 
 
+def sakla(rec_id, user, write, duration_s=None, text=None):
+    """Bitir (paylaşım KAPALI; §17 kayıt seçenekleri): dosya `sim_rec` altında kalır, state 'kept' — "Kayıtlarım" listesinden indirilir /
+    sonradan paylaşılır / silinir; KEEP_DAYS sonra temizlenir. Dönüş {rec_id, size, text, duration_s}."""
+    m = meta_oku(rec_id)
+    if not yetkili(m, user, write):
+        raise RecHata(403, 'Bu kayda yetkiniz yok')
+    if m['state'] == 'done':
+        raise RecHata(409, 'Kayıt zaten paylaşıldı')
+    if not _yol(rec_id, m['ext']).exists() or m['size'] <= 0:
+        raise RecHata(400, 'Kayıt boş')
+    txt = ' '.join((text or '').split())[:300] or metin(m, duration_s)
+    m.update(state='kept', kept_at=db.now(), ts=time.time(), duration_s=duration_s, text=txt)
+    _meta_yaz(m)
+    return {'rec_id': rec_id, 'size': m['size'], 'text': txt, 'duration_s': duration_s}
+
+
+def listem(user):
+    """Kullanıcının saklanan (paylaşılmamış, bitmiş) kayıtları — sahip ya da başlatan."""
+    temizle()
+    out = []
+    if not REC_DIR.exists():
+        return out
+    for p in REC_DIR.glob('*.json'):
+        try:
+            m = json.loads(p.read_text(encoding='utf-8'))
+        except (ValueError, OSError):
+            continue
+        if m.get('state') != 'kept' or user['id'] not in (m.get('user_id'), m.get('owner_id')):
+            continue
+        out.append({'id': m['id'], 'sid': m.get('sid'), 'type': m.get('type'), 'center': m.get('center'), 'mode': m.get('mode'), 'size': m['size'],
+                    'started_at': m.get('started_at'), 'kept_at': m.get('kept_at'), 'seconds': round(m.get('duration_s') or (m.get('seq', -1) + 1) * 10),
+                    'text': m.get('text') or metin(m, m.get('duration_s')), 'ext': m.get('ext'), 'mime': m.get('mime'), 'thumb': bool(m.get('thumb')),
+                    'file_name': f"ucus-simulatoru-{m.get('sid')}-{(m.get('started_at') or '')[:16].replace(':', '-').replace('T', '-')}{m.get('ext', '.webm')}"})
+    out.sort(key=lambda x: x['kept_at'] or '', reverse=True)
+    return out
+
+
+def dosya(rec_id, user, write):
+    """İndirme: (yol, mime, görünen ad). Yalnız 'kept' (saklanan) ya da açık kayıt; sahip/başlatan/yazma izni."""
+    m = meta_oku(rec_id)
+    if not yetkili(m, user, write):
+        raise RecHata(403, 'Bu kayda yetkiniz yok')
+    p = _yol(rec_id, m['ext'])
+    if not p.exists() or m['size'] <= 0:
+        raise RecHata(404, 'Kayıt dosyası yok')
+    ad = f"ucus-simulatoru-{m.get('sid')}-{(m.get('started_at') or '')[:16].replace(':', '-').replace('T', '-')}{m['ext']}"
+    return p, m.get('mime') or 'video/webm', ad
+
+
 def bitir(conn, rec_id, user, write, duration_s=None, text=None):
     """Son parça geldikten sonra: dosya Şirketten Haberler medya deposuna taşınır, oturum SAHİBİ adına paylaşım açılır.
-    Dönüş {post_id, path, thumb, text, owner_id}. Oturum kapanmış olsa da çalışır (yarım kayıt → paylaşım)."""
+    Dönüş {post_id, path, thumb, text, owner_id}. Oturum kapanmış olsa da çalışır (yarım kayıt → paylaşım; saklanan 'kept' kayıt → paylaşım)."""
     m = meta_oku(rec_id)
     if not yetkili(m, user, write):
         raise RecHata(403, 'Bu kayda yetkiniz yok')
@@ -152,6 +204,9 @@ def bitir(conn, rec_id, user, write, duration_s=None, text=None):
     src = _yol(rec_id, m['ext'])
     if not src.exists() or m['size'] <= 0:
         raise RecHata(400, 'Kayıt boş')
+    if m['state'] == 'kept':
+        duration_s = duration_s if duration_s is not None else m.get('duration_s')
+        text = text or m.get('text')
     feed_dir = config.UPLOAD_DIR / 'feed'
     feed_dir.mkdir(parents=True, exist_ok=True)
     name = f'{secrets.token_hex(8)}{m["ext"]}'
@@ -200,8 +255,8 @@ def bekleyenler(user, acik_sidler=()):
             m = json.loads(p.read_text(encoding='utf-8'))
         except (ValueError, OSError):
             continue
-        if m.get('state') == 'done' or user['id'] not in (m.get('user_id'), m.get('owner_id')) or m.get('sid') in set(acik_sidler):
-            continue
+        if m.get('state') not in ('open', 'full') or user['id'] not in (m.get('user_id'), m.get('owner_id')) or m.get('sid') in set(acik_sidler):
+            continue   # 'kept' (saklanan) kayıtlar "Kayıtlarım" listesindedir (listem), yarım değildir
         if m.get('size', 0) <= 0:
             continue
         out.append({'id': m['id'], 'sid': m.get('sid'), 'type': m.get('type'), 'center': m.get('center'), 'mode': m.get('mode'), 'size': m['size'],
@@ -219,7 +274,7 @@ def temizle(now=None):
     for p in REC_DIR.glob('*.json'):
         try:
             m = json.loads(p.read_text(encoding='utf-8'))
-            if now - float(m.get('ts') or 0) < TTL_S:
+            if now - float(m.get('ts') or 0) < (KEEP_S if m.get('state') == 'kept' else TTL_S):
                 continue
             for ext in (m.get('ext', '.webm'), '.png'):
                 try:

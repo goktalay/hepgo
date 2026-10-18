@@ -9302,3 +9302,34 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-ops .fs-attrib { bottom: 8px; right: 12px; max-width: 30%; }
 @media (max-width: 1100px) { .fs-pn-kart { width: 340px; } .fs-pn-pfd { height: 152px; } .fs-pn-kon-govde { max-height: 120px; } }
 @media (max-width: 760px) { .fs-pn-kart { width: calc(100% - 24px); top: 50px; } .fs-pn-hucre { min-height: 60px; } .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } }
+
+/* Uçuş Simülatörü — §17/§19 kayıt seçenekleri kutusu (sihirbaz, Başlat üstünde) */
+.fs-rec-opts .fs-rec-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 6px 0; }
+.fs-rec-opts .fs-rec-opt > .small { flex-basis: 100%; padding-left: 26px; margin-top: -4px; }
+.fs-rec-opts .fs-rec-opt-sub { margin-left: 26px; }
+.fs-rec-opts .fs-rec-opt-sub.off { opacity: .45; }
+.fs-rec-opts .fs-rec-opt[hidden] { display: none; }
+.fs-rec-mine { margin-bottom: 14px; }
+/* §8 ön hazırlık kartı: adım listesi (○ bekliyor / ◐ sürüyor / ✓ bitti / ✗ hata) + ilerleme çubuğu */
+.fs-prep { min-width: 360px; }
+.fs-prep-title { margin-bottom: 10px; }
+.fs-prep-steps { display: flex; flex-direction: column; gap: 10px; }
+.fs-prep-step { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.fs-prep-step[data-state="ok"] { border-color: rgba(34, 197, 94, .5); }
+.fs-prep-step[data-state="err"] { border-color: rgba(239, 68, 68, .6); }
+.fs-prep-row { display: flex; align-items: center; gap: 10px; }
+.fs-prep-lbl { flex: 1; font-weight: 600; }
+.fs-prep-pct { font-size: 12px; color: var(--muted); min-width: 36px; text-align: right; }
+.fs-prep-ico { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); flex: none; box-sizing: border-box; position: relative; }
+.fs-prep-ico.run { border-color: var(--primary, #2f80ed); border-top-color: transparent; animation: fs-prep-spin .9s linear infinite; }
+.fs-prep-ico.ok { border-color: #22c55e; background: #22c55e; }
+.fs-prep-ico.ok::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.fs-prep-ico.err { border-color: #ef4444; background: #ef4444; }
+.fs-prep-bar { height: 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; margin: 8px 0 2px 26px; }
+.fs-prep-bar i { display: block; height: 100%; width: 0; background: var(--primary, #2f80ed); transition: width .3s; }
+.fs-prep-bar[hidden] { display: none; }
+.fs-prep-sub { padding-left: 26px; min-height: 1em; }
+.fs-prep-sub:empty { display: none; }
+.fs-prep-step[data-state="err"] .fs-prep-sub { color: #ef4444; }
+.fs-prep-note { margin: 12px 0 0; }
+@keyframes fs-prep-spin { to { transform: rotate(360deg); } }

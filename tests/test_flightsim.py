@@ -459,6 +459,8 @@ def replay_testleri(a, c1, mon_token_login):
     assert s['mode'] == 'replay' and s['udp_port'] is None and s['type'] == 'multirotor' and s['replay']['log_id'] == lid and s['replay']['file_name'] == 'test-kayit.tlog', s
     assert s['model']['id'] == 'builtin:quad' and s['model']['source'] == 'builtin' and s['model']['ready'] is True, s['model']
     assert s['world']['time'] == 'night' and s['gcs'] == {'connected': False, 'addr': None, 'since': None} and s['state'] in ('BASLIYOR', 'HAZIR'), s
+    # §8 kök neden: merkez (kalkış noktası) ayrıştırma bitmeden de analiz özetinden bilinir → ön yüz dünyayı (0,0)'da kurmaz
+    assert s['center']['lat'] == 39.925 and s['center']['lon'] == 32.837 and s['center']['name'] == 'test-kayit.tlog', s['center']
     sid = s['id']
     g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))), 10)
     assert g and g['replay']['frames'] == d['n'] and g['replay']['duration_s'] == d['duration_s'] and g['replay']['home'] == d['home'] and g['replay']['progress'] == 100, g and g['replay']
@@ -500,9 +502,10 @@ def replay_testleri(a, c1, mon_token_login):
     # SITL oturumunda /replay 400; önbellekli ikinci açılış anında HAZIR
     s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id']}), 201)
     assert s2['mode'] == 'sitl' and a.get(f"/api/drone/sim/sessions/{s2['id']}/replay").status_code == 400
-    s3 = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}), 201)
+    s3 = ok(a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid, 'world': {'mode': 'real', 'size_m': 3000}}), 201)   # gerçek arazi kipi kayıtta da kabul edilir
+    assert s3['world']['mode'] == 'real' and s3['center']['lat'] == 39.925, s3
     g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f"/api/drone/sim/sessions/{s3['id']}"))), 5)
-    assert g and g['replay']['frames'] == d['n']
+    assert g and g['replay']['frames'] == d['n'] and g['center']['lat'] == d['home']['lat'] and g['center']['alt'] == d['home']['alt']
     assert a.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}).status_code == 409   # limit sayımına dahil
     ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}")); ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
     # bozuk dosya → HATA (sitl.error), /replay 409
@@ -749,6 +752,110 @@ def rec_testleri(a, c1):
     assert list(flightsim_rec.REC_DIR.iterdir()) == [], list(flightsim_rec.REC_DIR.iterdir())
     ok(a.delete(f"{S}/{s2['id']}"))
     print('  ekran kaydı (§17) testleri geçti')
+
+
+def rec_sakla_testleri(a, c1):
+    """§17 kayıt seçenekleri: finish share:false → paylaşım YOK, dosya sunucuda 'kept' → /rec/mine listesi, /rec/{id}/file indirme (yetki),
+    pending'e düşmez, temizle korur (KEEP_S), /rec/{id}/share → paylaşım; sil."""
+    from app import flightsim_rec
+    S = '/api/drone/sim/sessions'
+    WEBM = b'\x1aE\xdf\xa3' + bytes(range(256)) * 20
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    r = ok(a.post(f"{S}/{s['id']}/rec/start", json={'mime': 'video/webm;codecs=vp9,opus'}), 201)
+    rid = r['rec_id']; R = f'/api/drone/sim/rec/{rid}'
+    ok(a.put(f'{R}/chunk?seq=0', content=WEBM))
+    n0 = len(ok(a.get('/api/feed'))['posts'])
+    fin = ok(a.post(f'{R}/finish', json={'duration_s': 12, 'share': False, 'text': 'Flight Simulator recording · kept'}))
+    assert fin == {'ok': True, 'kept': True, 'rec_id': rid, 'size': len(WEBM), 'text': 'Flight Simulator recording · kept', 'file': f'{R}/file', 'link': None}, fin
+    assert len(ok(a.get('/api/feed'))['posts']) == n0   # paylaşım açılmadı
+    assert flightsim_rec.meta_oku(rid)['state'] == 'kept' and (flightsim_rec.REC_DIR / f'{rid}.webm').exists()
+    mine = ok(a.get('/api/drone/sim/rec/mine'))
+    assert mine['keep_days'] == flightsim_rec.KEEP_DAYS and len(mine['items']) == 1, mine
+    it = mine['items'][0]
+    assert it['id'] == rid and it['seconds'] == 12 and it['size'] == len(WEBM) and it['text'] == 'Flight Simulator recording · kept' and it['type'] == 'multirotor' and it['file_name'].endswith('.webm') and it['kept_at'], it
+    assert ok(a.get('/api/drone/sim/rec/pending'))['items'] == []
+    ok(a.delete(f"{S}/{s['id']}"))
+    assert ok(a.get('/api/drone/sim/rec/pending'))['items'] == []   # saklanan kayıt yarım değildir
+    f = a.get(f'{R}/file')
+    assert f.status_code == 200 and f.content == WEBM and 'attachment' in f.headers.get('content-disposition', '') and f.headers['content-type'].startswith('video/webm'), (f.status_code, f.headers)
+    mon = TestClient(app, base_url='https://testserver')
+    login(mon, 'montaj', 'sifre-1234')
+    assert mon.get(f'{R}/file').status_code == 403 and ok(mon.get('/api/drone/sim/rec/mine'))['items'] == []
+    assert a.get('/api/drone/sim/rec/0123456789abcdef/file').status_code == 404
+    assert flightsim_rec.temizle() == 0 and (flightsim_rec.REC_DIR / f'{rid}.webm').exists()   # 24 saat kuralı saklanana uygulanmaz
+    assert a.put(f'{R}/chunk?seq=1', content=WEBM).status_code == 409   # kapalı
+    # sonradan paylaş: saklanan metin/süre ile feed'e; dosya feed deposuna taşınır, listeden düşer
+    sh = ok(a.post(f'{R}/share', json={}))
+    assert sh['post_id'] and sh['text'] == 'Flight Simulator recording · kept' and sh['link'] == '#/home', sh
+    p = next(x for x in ok(a.get('/api/feed'))['posts'] if x['id'] == sh['post_id'])
+    assert p['author_id'] == s['owner']['id'] and p['media'][0]['path'].endswith('.webm')
+    assert ok(a.get('/api/drone/sim/rec/mine'))['items'] == [] and a.get(f'{R}/file').status_code == 404
+    # sakla → sil; sakla → KEEP_S aşımı → temizle
+    s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    for i in range(2):
+        r2 = ok(a.post(f"{S}/{s2['id']}/rec/start", json={}), 201)
+        ok(a.put(f"/api/drone/sim/rec/{r2['rec_id']}/chunk?seq=0", content=WEBM))
+        ok(a.post(f"/api/drone/sim/rec/{r2['rec_id']}/finish", json={'share': False}))
+        if i == 0:
+            ok(a.delete(f"/api/drone/sim/rec/{r2['rec_id']}"))
+        else:
+            m2 = flightsim_rec.meta_oku(r2['rec_id']); m2['ts'] = time.time() - flightsim_rec.KEEP_S - 5; flightsim_rec._meta_yaz(m2)
+            assert flightsim_rec.temizle() == 1
+        assert ok(a.get('/api/drone/sim/rec/mine'))['items'] == [] and not (flightsim_rec.REC_DIR / f"{r2['rec_id']}.webm").exists()
+    ok(a.delete(f"{S}/{s2['id']}"))
+    print('  kayıt saklama (§17 share:false) testleri geçti')
+
+
+def bin_testleri(a, c1):
+    """§19 .bin uçuş logu: SITL parm içeriği (LOG_BACKEND_TYPE 1 / LOG_DISARMED 0 / LOG_FILE_DSRMROT 1), oturum `rec.bin` → session.rec,
+    kapanışta (sahte .BIN dosyaları) flight_logs kaydı (aircraft/pilot/location, dosya UPLOAD_DIR/flightlogs, DELETE yanıtı `bin`), boyut sınırı, dosya yok → null."""
+    import pathlib
+    from app import config, db, drone_sitl, flightsim_bin
+    S = '/api/drone/sim/sessions'
+    p1, p0 = drone_sitl.parm_metni(1, True), drone_sitl.parm_metni(7, False)
+    assert 'LOG_BACKEND_TYPE 1\n' in p1 and 'LOG_DISARMED 0\n' in p1 and 'LOG_FILE_DSRMROT 1\n' in p1 and 'MAV_SYSID 1\n' in p1, p1
+    assert 'LOG_BACKEND_TYPE 0\n' in p0 and 'LOG_DISARMED 0\n' in p0 and 'DSRMROT' not in p0 and 'MAV_SYSID 7\n' in p0, p0
+    assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': 'evet'}).status_code in (400, 422)   # rec nesne olmalı (pydantic 422)
+    s0 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    assert s0['rec'] == {'bin': False, 'bin_log': None}, s0['rec']
+    assert ok(a.delete(f"{S}/{s0['id']}")) == {'ok': True, 'bin': None}
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': {'bin': True}}), 201)
+    assert s['rec'] == {'bin': True, 'bin_log': None}, s['rec']
+    bekle(lambda: ok(a.get(f"{S}/{s['id']}"))['state'] == 'HAZIR' or None)
+    d = pathlib.Path(tempfile.mkdtemp())
+    buyuk, kucuk = d / '00000002.BIN', d / '00000001.BIN'
+    buyuk.write_bytes(b'\xa3\x95\x80\x80' + bytes(4096)); kucuk.write_bytes(b'\xa3\x95\x80\x80' + bytes(96))   # ikincisi yalnız başlık (< 1 KB)
+    flightsim.MANAGER.sahte_bin_dosyalari = [buyuk, kucuk]
+    r = ok(a.delete(f"{S}/{s['id']}"))
+    b = r['bin']
+    assert b and b['log_id'] and b['file_name'].startswith(f"SIM-{s['id']}-") and b['file_name'].endswith('.bin') and b['size'] == 4100, r
+    assert not buyuk.exists() and not kucuk.exists()   # taşındı / artık silindi
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT * FROM flight_logs WHERE id = ?', (b['log_id'],)))
+    assert row['aircraft'] == 'Simülatör · Multikopter' and row['pilot'] == s['owner']['name'] and row['location'] == 'Test Merkezi' and row['task_id'] is None and row['size'] == 4100, dict(row)
+    assert row['file'].startswith('flightlogs/') and (config.UPLOAD_DIR / row['file']).stat().st_size == 4100 and row['file_name'] == b['file_name']
+    assert 'Uçuş Simülatörü oturumu' in (row['note'] or '')
+    bekle(lambda: db.row(db.connect().execute('SELECT status FROM flight_logs WHERE id = ?', (b['log_id'],)))['status'] != 'ISLENIYOR' or None, 20)   # analiz kuyruğuna girdi (sahte dosya → HATA)
+    # boyut sınırı: aşan dosya kaydedilmez (error) ve silinir
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'rec': {'bin': True}}), 201)
+    bekle(lambda: ok(a.get(f"{S}/{s['id']}"))['state'] == 'HAZIR' or None)
+    big = d / '00000003.BIN'; big.write_bytes(bytes(8192))
+    eski = flightsim_bin.MAX_BYTES; flightsim_bin.MAX_BYTES = 4096
+    try:
+        flightsim.MANAGER.sahte_bin_dosyalari = [big]
+        r = ok(a.delete(f"{S}/{s['id']}"))
+    finally:
+        flightsim_bin.MAX_BYTES = eski
+    assert r['bin'] and 'sınır' in r['bin']['error'] and not big.exists(), r
+    # dosya yok (armed süre olmadı) → null
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': {'bin': True}}), 201)
+    bekle(lambda: ok(a.get(f"{S}/{s['id']}"))['state'] == 'HAZIR' or None)
+    flightsim.MANAGER.sahte_bin_dosyalari = []
+    assert ok(a.delete(f"{S}/{s['id']}"))['bin'] is None
+    flightsim.MANAGER.sahte_bin_dosyalari = None
+    with db.connect() as conn:
+        conn.execute('DELETE FROM flight_logs WHERE id = ?', (b['log_id'],)); conn.commit()   # sonraki /logs listeleri etkilenmesin
+    print('  .bin uçuş logu (§19) testleri geçti')
 
 
 def kalkis_testleri(a, c1):
@@ -1173,6 +1280,9 @@ def main():
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- ekran kaydı (§17) ---
         rec_testleri(a, c1)
+        rec_sakla_testleri(a, c1)
+        # --- .bin uçuş logu (§19) ---
+        bin_testleri(a, c1)
         # --- sabit kanat kalkış yöntemi (§13) ---
         kalkis_testleri(a, c1)
         # --- harekât paneli köprüsü (§14) ---

@@ -125,8 +125,10 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları) + altında **Model** bölümü (§12: görsel kart ızgarası, yükleme, sistemdeki dosyalardan
 ekleme, yönelim paneli; kayıt kipinde log listesinin altında, log tipine göre). 2. Merkez seçimi (liste; ad, konum adı, koordinat; merkez yoksa Rotalar'a bağlantı).
 3. Dünya: kip (Gerçek arazi / Google 3B (fotogerçekçi; yalnız `meta.google3d.enabled`, §10) / Prosedürel, §9), kaydırıcılar/seçimler
-(yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 4. Başlat → oturum ekranı.
-Açık oturum varsa liste: devam et / bitir. 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
+(yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 3b. **Kayıt** kutusu
+(`recOptionsBox`, §17/§19; yalnız yazma izni): ☐ Ekran kaydı al (video) › ☐ Şirketten Haberler'de paylaş · ☐ Uçuş logunu (.bin) kaydet (yalnız canlı).
+4. Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya verisi) → oturum ekranı.
+Açık oturum varsa liste: devam et / bitir; "Yarım kayıt" ve "Kayıtlarım" kutuları (§17). 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
 
 ## 7. Testler
 - `node tests/test_flightsim_interp.mjs` (tarayıcısız; vendor three.module): telemetri zaman çizgisi (§5) — sentetik 50 Hz sabit kanat dairesi
@@ -137,7 +139,14 @@ Açık oturum varsa liste: devam et / bitir. 8 dil (i18n.*.js; sözlük dosyalar
 - `tests/test_flightsim.py`: meta (tipler, merkezler), oturum açma/limit/kapama (SITL yoksa 503), komut yetkisi (salt okuyan 403),
   WS hello/tele (SITL olmadan `HEPGO_SITL=0` ile sahte telemetri üreticisi), UDP köprüsü (yerel soket ile ham bayt gidiş-dönüş, GCS kilidi).
 - Kayıttan oynatma (§8): pymavlink ile yazılan küçük .tlog → ayrıştırıcı (kare sayısı, ev = ilk ARM, mod adı, olaylar), `GET /logs`
-  yetki kesişimi, `POST /sessions {mode:'replay'}` → HAZIR, `GET /sessions/{id}/replay` gzip JSON, WS'te `tele` yok, `cmd` yalnız `reset`.
+  yetki kesişimi, `POST /sessions {mode:'replay'}` → HAZIR, `GET /sessions/{id}/replay` gzip JSON, WS'te `tele` yok, `cmd` yalnız `reset`;
+  oturum açılır açılmaz `center` analiz özetindeki ev (kök neden testi), `world.mode:'real'` kabul, HAZIR'da `center` = ayrıştırılan ev.
+- Kayıt saklama (§17 `rec_sakla_testleri`): `finish {share:false}` → feed'e paylaşım yok, `kept`; `GET /rec/mine` listesi; `GET /rec/{id}/file`
+  indirme (salt okuyan 403, bilinmeyen 404); `pending`'e düşmez; `temizle` 24 saat kuralını saklanana uygulamaz (KEEP_S aşımında siler);
+  `POST /rec/{id}/share` → feed paylaşımı (saklanan metin), listeden düşer; sil.
+- .bin uçuş logu (§19 `bin_testleri`): `drone_sitl.parm_metni` (LOG_BACKEND_TYPE 1 / LOG_DISARMED 0 / LOG_FILE_DSRMROT 1; kapalıyken 0), `rec`
+  doğrulama, `session.rec`, sahte .BIN dosyalarıyla (`MANAGER.sahte_bin_dosyalari`) kapanış → `flight_logs` satırı (aircraft "Simülatör · Multikopter",
+  pilot sahip, location merkez, dosya `UPLOAD_DIR/flightlogs/`), DELETE yanıtı `bin`, analiz kuyruğu, boyut sınırı (`error`, dosya silinir), dosya yok → null.
 
 - Görsel model kütüphanesi (§12, `model_testleri`): dahili liste (tip filtresi, VTOL adları), yükleme (küçük GLB zarfı / STEP / geçersiz uzantı),
   GLB PUT (başlık denetimi, 413), küçük resim PUT-GET (PNG; dahili VTOL varyantı), yönelim doğrulama (aynı eksen 400), oturumda model (bilinmeyen /
@@ -162,6 +171,21 @@ ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, k
   `type` firmware'den (ArduPlane → sabit_kanat, heli → helikopter, diğer → multirotor), `replay: {log_id, file_name, size, progress (%),
   frames, duration_s, home:{lat,lon,alt}, hz, takeoff_t, start_utc, vehicle, aircraft, pilot, modes}`. Durumlar: BASLIYOR (ayrıştırma;
   `progress` DFReader ilerlemesi, WS `state` ile yayınlanır) → HAZIR → KAPANDI; hata → HATA (`sitl.error`).
+  `center` oturum açılır açılmaz **analiz özetindeki ev** (`flight_logs.analysis.summary.home.lat/lng/alt`) ile dolu gelir; HAZIR'da ayrıştırma sonucu
+  (ilk ARM konumu, kalkış anı irtifası) üzerine yazar ve WS `state` iletisi `center` alanını da taşır.
+- **Dünya yüklenmiyordu — kök neden (düzeltildi):** ön yüz `renderSession` dünyayı `session.center.lat ?? session.replay.home.lat` ile kuruyordu;
+  oturum BASLIYOR'ken (ayrıştırma sürüyor) ikisi de null → `origin (0,0)` (Gine Körfezi) ile `/terrain?lat=0&lon=0` / Google karoları yükleniyor ya da
+  düşüyordu ve HAZIR'da merkez yeniden konumlanmıyordu; önbellekli loglarda bile `hash` ayrıştırma bitmeden değiştiği için aynı yol izleniyordu. Düzeltme
+  üç katlı: (1) sunucu `center`'ı analiz özetinden ön doldurur (yukarıda); (2) ön yüz merkez bilinmiyorsa 3B kurulumunu HAZIR'a erteler (`buildSim`),
+  HAZIR'da merkez/irtifa değiştiyse `sim.setOrigin` ile dünyayı kaydın kalkış noktasına taşır (`syncOrigin`; olay şeridinde not), dünya boyutunu uçuşa
+  göre büyütür (`fitWorldSize`); (3) **ön hazırlık kartı** oturum ekranına geçmeden sunucunun HAZIR olmasını bekler (aşağıda).
+- **Ön hazırlık kartı (sihirbaz `prepareSession`):** Oynat/Başlat → `POST /sessions` → modal kart, adımlar: **Log ayrıştırılıyor %** (ReplaySession
+  `progress`; `GET /sessions/{id}` 600 ms yoklama; canlıda "SITL başlatılıyor… N sn") → **Kareler indiriliyor** (`GET /sessions/{id}/replay`; veri
+  `REPLAY_STASH` ile oturum ekranına devredilir, yeniden çekilmez) → **Dünya hazırlanıyor** (sihirbaz önizleme örneği `preview.setOrigin(ev, world, alt)`
+  ile kaydın kalkış noktasına taşınır: `/terrain` + yükseklik/uydu karoları + `/osm` indirilir — sunucu disk ve tarayıcı önbelleği ısınır; Google 3B'de kök
+  tileset havuzda kalır (§11) — ilerleme `onProgress` → yüzde; prosedürelde anında) → "Her şey hazır olunca oturum ekranı açılır" → `location.hash`.
+  **İptal** (ya da hata sonrası Kapat) oturumu kapatır (`DELETE`), ekran paylaşımı akışını ve tam ekranı bırakır. Canlı SITL oturumunda da aynı kart
+  (SITL HAZIR + dünya verisi). Replay dünyası boyutu: uçuşun evden en uzak noktasının 2,4 katı (500 m'ye yuvarlı, ≤ 20 km).
 - **Ayrıştırma (sunucu, bir kez, iş parçacığında):** `.bin/.log` → `mavutil.mavlink_connection` (DFReader): GPS (Lat/Lng/Alt MSL,
   Spd, GCrs, VZ, Status, NSats, GWk/GMS → `start_utc`), POS (EKF konumu; varsa GPS'e tercih), ATT (Roll/Pitch/Yaw ° → rad; `hdg`),
   RCIN (C1–C8), BAT/CURR (Volt, RemPct; Inst 0), MODE (ModeNum → firmware mod adı), ARM/EV 10–11 (ARM/DISARM; ilk ARM = ev + `takeoff_t`),
@@ -675,3 +699,33 @@ kullanıcı kimse onun kullanıcısıyla paylaşım olarak yüklesin." + "Başla
   video kartı; ffmpeg ile webm süresi/ses parçası/5. sn kare parlaklığı; kayıt kapalı → rozet yok; Bitir'siz çıkış → yarım kayıt kutusu → Sil.
 - **Sınırlar**: headless'ta gerçek ekran paylaşımı sınanamaz (kullanıcı tarayıcısında kutu çıkar); yedek yolda DOM paneli kayda girmez; Safari'de mp4 ve
   `getDisplayMedia` davranışı tarayıcıya bağlı; `fullscreenchange` olayı bazı gömülü tarayıcılarda gelmez (sınıf oturum ekranı açılınca da uygulanır).
+- **Kayıt seçenekleri (kullanıcı isteği: "kayıt işini seçenekli yapalım: girişte sorsun")** — sihirbazda Başlat'ın üstünde **Kayıt** kutusu (`recOptionsBox`,
+  `flightsim_record.js`), tercihler localStorage: ☐ **Ekran kaydı al (video)** (`fs.rec.on`, varsayılan açık; kapalıysa Başlat'ta ekran paylaşımı izni
+  istenmez, alt çubuk anahtarı aynı tercihi okur) › girintili ☐ **Şirketten Haberler'de paylaş** (`fs.rec.share`, varsayılan açık; yalnız video açıkken) ·
+  ☐ **Uçuş logunu (.bin) kaydet** (`fs.rec.bin`, varsayılan açık; yalnız canlı SITL — §19). Paylaşım kapalıysa Bitir'de `finish {share:false}` → dosya
+  `DATA_DIR/sim_rec`'te **saklanır** (`state: 'kept'`, `SIM_REC_KEEP_DAYS` = 30 gün), pencere "✓ Video sunucuda saklandı" + **Videoyu indir** + "Şirketten
+  Haberler'de paylaş"; sihirbazda **"Kayıtlarım (n)"** kutusu (`myRecsCard`): İndir / Paylaş / Sil. Uçlar: `POST /rec/{id}/finish {share:false}` →
+  `{kept:true, rec_id, size, text, file}`; `GET /rec/mine` → `{items:[{id, text, size, seconds, kept_at, type, center, mode, ext, mime, thumb, file_name}],
+  keep_days}`; `GET /rec/{id}/file` (attachment; sahip/başlatan/yazma izni); `POST /rec/{id}/share` → finish (saklanan metin/süre). `pending` saklananları
+  listelemez; `temizle` saklananlara 24 saat yerine KEEP_S uygular.
+
+## 18. (ayrılmış) Görev çizimi / çarpışma / rapor — ayrı dal (flightsim_mission.js, flightsim_report.js)
+
+## 19. Uçuş logu (.bin) kaydı — SITL DataFlash → Uçuş Logları (`app/flightsim_bin.py`, `drone_sitl.parm_metni`)
+Kullanıcı isteği: "Simülasyon sonunda tüm veri, aynı dronun içinde kaydettiğimiz .bin dosyası formatında uçuşu kaydetsin, bu da seçenekli olsun."
+- **Seçenek:** sihirbaz Kayıt kutusu ☐ "Uçuş logunu (.bin) kaydet" → `POST /sessions {rec:{bin:true}}` (yalnız `mode:'sitl'`); `session.rec = {bin, bin_log}`.
+- **SITL parametreleri** (`varsayilan.parm`, `parm_metni(sysid, log_bin)`): `bin:true` → `LOG_BACKEND_TYPE 1` (dosya), `LOG_DISARMED 0` (yalnız armed
+  süre yazılır), `LOG_FILE_DSRMROT 1` (disarm'da dosya kapanır/döner); kapalıyken `LOG_BACKEND_TYPE 0` (GÖKTUNGU: tek sanal dron 43 GB .BIN üretmişti).
+  Dosyalar SITL çalışma dizininde `DATA_DIR/sitl_calisma/<kimlik>/logs/*.BIN`; `baslat` önceki artıkları siler (`bin_temizle`).
+- **Kapanış (`SimSession._temizle`):** `_bin_kapat` — armed ise zorla disarm (MAV_CMD_COMPONENT_ARM_DISARM 0/21196) + 1,5 sn bekleme (dosya kapanır) →
+  TCP/UDP kapanır → SITL durur → `_bin_kaydet`: `drone_sitl.bin_dosyalari` (büyükten küçüğe) → `flightsim_bin.kaydet`: en büyük .BIN
+  `UPLOAD_DIR/flightlogs/<rastgele>.bin`'e taşınır, `flight_logs` satırı (file_name **`SIM-<oturum>-<YYYYMMDD-HHMM>.bin`**, aircraft "Simülatör · <tip>
+  [· <dron kodu>]", pilot = oturum sahibi, location = merkez adı, note "Uçuş Simülatörü oturumu #N (SITL DataFlash)", task yok), iz kaydı,
+  `flight_analysis.start` (analiz kuyruğu) → TAMAM olunca Araçlar › Uçuş Logu Analizi ve sihirbazın Kayıttan oynat listesinde görünür; kalan .BIN'ler
+  silinir. `< 1 KB` (yalnız başlık, armed süre yok) → kaydedilmez (null). Sonuç `DELETE /sessions/{id}` yanıtında `bin: {log_id, file_name, size} |
+  {error} | null` ve olay şeridinde; ön yüz Bitir'de toast ("Uçuş logu kaydedildi: … — analiz bitince …"). Sunucu kapanışında (`sunucu_kapaniyor`) ve
+  boşta/süre kapanışlarında da kaydedilir. `kapat()` bekleme süresi 30 sn.
+- **Boyut/disk:** `SIM_BIN_MAX_MB` (varsayılan 500) — aşan dosya kaydedilmez (`error`, uyarı) ve silinir; oturum süresi `SIM_MAX_MINUTES` (120) ve
+  LOG_DISARMED 0 ile boyut sınırlı kalır (ArduCopter ≈ 1–2 MB/dk). Sahte kip (`HEPGO_SITL=0`): `MANAGER.sahte_bin_dosyalari` test kancası.
+- **Doğrulama (DEV, gerçek SITL):** `/tmp/flsim/rp2/rp2_e2e.py` — bin:true oturum → arm + takeoff → Bitir → `SIM-…bin` Uçuş Logları'nda (analiz TAMAM)
+  → Kayıttan oynat listesinde → gerçek arazi kipinde oynat → dünya yüklü (olay şeridi "Gerçek arazi · yükseklik …", atıf görünür).

@@ -142,6 +142,42 @@ def bos_taban_port(baslangic, adim=PORT_ADIM, deneme=200, kullanilan=()):
     return None
 
 
+def parm_metni(sysid, log_bin=False):
+    """SITL `--defaults` dosyası içeriği (Tuzak A). `log_bin`: DataFlash .BIN kaydı (LOG_BACKEND_TYPE 1 = dosya) yalnız armed süre
+    (LOG_DISARMED 0) ve disarm'da dosya kapanır/döner (LOG_FILE_DSRMROT 1) → oturum kapanışında son .BIN uçuş loglarına kaydedilir
+    (flightsim_bin). Kapalıyken kayıt tamamen kapalı: GÖKTUNGU'da tek sanal dron 43 GB .BIN üretmişti."""
+    satirlar = [
+        'FRAME_CLASS 1',            # çok rotorlu için anlamlı; plane'de yok sayılır
+        'FS_GCS_ENABLE 0',          # GCS kalp atışı kaybı failsafe'i test akışını bozmasın
+        f'MAV_SYSID {int(sysid)}',  # eeprom'daki eski değere karşı komut satırıyla birlikte
+        'ARMING_SKIPCHK 16',        # yalnız INS biti ("PreArm: 3D Accel calibration needed"; ARMING_CHECK bu sürümde yok)
+    ]
+    if log_bin:
+        satirlar += ['LOG_BACKEND_TYPE 1', 'LOG_DISARMED 0', 'LOG_FILE_DSRMROT 1']
+    else:
+        satirlar += ['LOG_BACKEND_TYPE 0', 'LOG_DISARMED 0']
+    return '\n'.join(satirlar) + '\n'
+
+
+def calisma_dizini(kimlik):
+    return CALISMA_KOKU / str(int(kimlik))
+
+
+def bin_dosyalari(kimlik):
+    """Örneğin çalışma dizinindeki DataFlash dosyaları (`logs/*.BIN`), boyuta göre büyükten küçüğe."""
+    logs = calisma_dizini(kimlik) / 'logs'
+    if not logs.is_dir():
+        return []
+    out = [f for f in logs.iterdir() if f.is_file() and f.suffix.upper() == '.BIN']
+    out.sort(key=lambda f: (f.stat().st_size, f.stat().st_mtime), reverse=True)
+    return out
+
+
+def bin_temizle(kimlik):
+    for f in bin_dosyalari(kimlik):
+        f.unlink(missing_ok=True)
+
+
 class SitlYoneticisi:
     """Kiracı başına SITL süreçleri: kimlik (drone_id) → Popen."""
 
@@ -160,9 +196,10 @@ class SitlYoneticisi:
         with self._kilit:
             return dict(self._bilgi.get(int(kimlik)) or {})
 
-    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None, model=None):
+    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None, model=None, log_bin=False):
         """SITL sürecini başlatır. Dönüş: (port, hata) — başarısızsa port None. Bloklar (~2 sn): iş parçacığında çağrılır.
-        `model`: `--model` değerini geçersiz kılar (ör. uçuş simülatörü rampa kalkışı için 'plane-catapult'; TIP_ESLEME değişmez)."""
+        `model`: `--model` değerini geçersiz kılar (ör. uçuş simülatörü rampa kalkışı için 'plane-catapult'; TIP_ESLEME değişmez).
+        `log_bin`: DataFlash .BIN kaydı açık (uçuş simülatörü "Uçuş logunu kaydet"; docs/ucus-simulatoru.md §19) — yalnız armed süre."""
         kimlik = int(kimlik)
         konsol = konsol or self.konsol
         if self.calisiyor_mu(kimlik):
@@ -183,20 +220,10 @@ class SitlYoneticisi:
             return None, f'SITL çalışma dizini oluşturulamadı: {e}'
         parm = dizin / 'varsayilan.parm'     # Tuzak A: gerçek defaults dosyası
         try:
-            parm.write_text(
-                'FRAME_CLASS 1\n'            # çok rotorlu için anlamlı; plane'de yok sayılır
-                'FS_GCS_ENABLE 0\n'          # GCS kalp atışı kaybı failsafe'i test akışını bozmasın
-                f'MAV_SYSID {int(sysid)}\n'  # eeprom'daki eski değere karşı komut satırıyla birlikte
-                'ARMING_SKIPCHK 16\n'        # yalnız INS biti ("PreArm: 3D Accel calibration needed"; ARMING_CHECK bu sürümde yok)
-                'LOG_BACKEND_TYPE 0\n'       # dataflash kaydı kapalı (GÖKTUNGU'da tek sanal dron 43 GB .BIN üretti)
-                'LOG_DISARMED 0\n', encoding='utf-8')
+            parm.write_text(parm_metni(sysid, log_bin), encoding='utf-8')
         except OSError as e:
             return None, f'SITL varsayılan parametre dosyası yazılamadı: {e}'
-        logs = dizin / 'logs'
-        if logs.is_dir():
-            for f in logs.iterdir():
-                if f.suffix.upper() == '.BIN':
-                    f.unlink(missing_ok=True)
+        bin_temizle(kimlik)   # önceki oturumun .BIN artıkları (kaydedilmişse zaten taşındı)
         yuk = float(irtifa if irtifa is not None else EV_IRTIFA)
         komut = [str(yol), '--model', model, '--home', f'{float(lat):.7f},{float(lon):.7f},{yuk:.1f},0',
                  '--base-port', str(port), '--defaults', str(parm), '--sysid', str(int(sysid))]

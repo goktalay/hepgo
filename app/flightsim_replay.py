@@ -494,7 +494,11 @@ class ReplaySession:
         self.log = dict(log)                 # flight_logs satırı: id, file, file_name, size, aircraft, …
         self.world, self.owner, self.yonetici = world, owner, yonetici
         self.type = arac_tipi(log.get('vehicle'))
-        self.center = {'id': None, 'name': log.get('file_name'), 'lat': None, 'lon': None, 'alt': None}
+        # Merkez = kaydın kalkış noktası. Ayrıştırma bitmeden de bilinsin (ön yüz dünyayı doğru yerde kurar; §8 kök neden: BASLIYOR'da
+        # center null → 3B dünya (0,0)'da yükleniyordu): uçuş logu analizinin özetindeki ev (home.lat/lng/alt) ön değer; ayrıştırma
+        # sonucu (ilk ARM konumu) HAZIR'da üzerine yazar.
+        self.center = {'id': None, 'name': log.get('file_name'), 'lat': _num(log.get('home_lat')), 'lon': _num(log.get('home_lon')),
+                       'alt': _num(log.get('home_alt'))}
         self.state = 'BASLIYOR'
         self.udp_port = None
         self.created_at = db.now()
@@ -530,7 +534,7 @@ class ReplaySession:
 
     def _durum(self, state):
         self.state = state
-        self._yay({'t': 'state', 'state': state, 'replay': dict(self.replay)})
+        self._yay({'t': 'state', 'state': state, 'replay': dict(self.replay), 'center': dict(self.center)})   # center: ön yüz dünyayı kalkış noktasına taşır (§8)
 
     def izleyici_ekle(self, ws):
         q = asyncio.Queue(maxsize=self._fs.VIEWER_QUEUE)
@@ -678,7 +682,11 @@ def loglari_listele(conn, user, q=None, limit=300):
 
 def log_getir(conn, lid):
     return db.row(conn.execute('''SELECT l.id, l.task_id, l.file, l.file_name, l.size, l.status, l.aircraft, l.pilot, l.location,
-                                         json_extract(l.analysis, '$.summary.vehicle') AS vehicle FROM flight_logs l WHERE l.id = ?''', (lid,)))
+                                         json_extract(l.analysis, '$.summary.vehicle') AS vehicle,
+                                         json_extract(l.analysis, '$.summary.home.lat') AS home_lat,
+                                         json_extract(l.analysis, '$.summary.home.lng') AS home_lon,
+                                         json_extract(l.analysis, '$.summary.home.alt') AS home_alt
+                                  FROM flight_logs l WHERE l.id = ?''', (lid,)))
 
 
 if __name__ == '__main__':

@@ -15,7 +15,7 @@ import { api } from '../api.js';
 import { clear, h, modal, toast } from '../ui.js';
 
 const API = '/api/drone/sim';
-export const REC_PREF_ON = 'fs.rec.on', REC_PREF_MIC = 'fs.rec.mic';
+export const REC_PREF_ON = 'fs.rec.on', REC_PREF_MIC = 'fs.rec.mic', REC_PREF_SHARE = 'fs.rec.share', REC_PREF_BIN = 'fs.rec.bin';
 export const CHUNK_MAX = 8 * 1024 * 1024;
 export const TIMESLICE_MS = 10000;
 export const TARGET = { width: 1280, height: 720, fps: 30, videoBps: 2500000, audioBps: 128000 };
@@ -26,6 +26,9 @@ const ls = { get: k => { try { return localStorage.getItem(k); } catch { return 
 export const recPrefs = {
   get on() { return ls.get(REC_PREF_ON) !== '0'; }, set on(v) { ls.set(REC_PREF_ON, v ? '1' : '0'); },
   get mic() { return ls.get(REC_PREF_MIC) === '1'; }, set mic(v) { ls.set(REC_PREF_MIC, v ? '1' : '0'); },
+  // Kayıt seçenekleri (sihirbaz "Kayıt" kutusu): paylaş (varsayılan AÇIK; kapalıysa video sunucuda saklanır → "Kayıtlarım"), .bin uçuş logu (yalnız canlı SITL; varsayılan AÇIK)
+  get share() { return ls.get(REC_PREF_SHARE) !== '0'; }, set share(v) { ls.set(REC_PREF_SHARE, v ? '1' : '0'); },
+  get bin() { return ls.get(REC_PREF_BIN) !== '0'; }, set bin(v) { ls.set(REC_PREF_BIN, v ? '1' : '0'); },
 };
 export const clock = sec => { sec = Math.max(0, Math.floor(Number(sec) || 0)); const hh = Math.floor(sec / 3600), mm = Math.floor(sec % 3600 / 60), ss = sec % 60; return `${hh ? `${hh}:` : ''}${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`; };
 export const fmtBytes = n => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
@@ -77,8 +80,11 @@ function restRec() {
     chunk: (rid, seq, blob) => raw('PUT', `${API}/rec/${rid}/chunk?seq=${seq}`, blob, 'application/octet-stream'),
     thumb: (rid, blob) => raw('PUT', `${API}/rec/${rid}/thumb`, blob, 'image/png'),
     finish: (rid, body) => api.post(`${API}/rec/${rid}/finish`, body),
+    share: rid => api.post(`${API}/rec/${rid}/share`, {}),
     del: rid => api.del(`${API}/rec/${rid}`),
     pending: () => api.get(`${API}/rec/pending`),
+    mine: () => api.get(`${API}/rec/mine`),
+    fileUrl: rid => `${API}/rec/${rid}/file`,
   };
 }
 
@@ -277,9 +283,10 @@ export function createRecorder(stage, opts = {}) {
   const finishWithDialog = async () => {
     if (!hasData()) { await stop(); return null; }
     await stop();
+    const share = opts.share ? opts.share() : recPrefs.share;   // §17 kayıt seçeneği: paylaş / yalnız sunucuda sakla
     const bar = h('div', { class: 'fs-rec-bar' }, h('i'));
     const txt = h('div', { class: 'small muted' }, tr('Kayıt yükleniyor… %{p}', { p: 0 }));
-    const body = h('div', { class: 'fs-rec-up' }, h('p', null, tr('Ekran kaydı Şirketten Haberler\'e paylaşılıyor ({s}, {b}).', { s: clock(seconds), b: fmtBytes(total) })), bar, txt);
+    const body = h('div', { class: 'fs-rec-up' }, h('p', null, share ? tr('Ekran kaydı Şirketten Haberler\'e paylaşılıyor ({s}, {b}).', { s: clock(seconds), b: fmtBytes(total) }) : tr('Ekran kaydı sunucuya kaydediliyor ({s}, {b}); paylaşılmaz, "Kayıtlarım" listesinden indirilebilir.', { s: clock(seconds), b: fmtBytes(total) })), bar, txt);
     let close = null, result = null;
     const done = new Promise(resolve => {
       const m = modal({ title: tr('Kayıt yükleniyor'), body, actions: [], onClose: () => resolve(result) });
@@ -290,12 +297,20 @@ export function createRecorder(stage, opts = {}) {
       await drain(setPct);
       const rid = await recIdP;
       if (!rid) throw lastErr || new Error(tr('Kayıt sunucuda açılamadı'));
-      result = await rest.finish(rid, { duration_s: Math.round(seconds * 10) / 10, mime, text: opts.text?.() || undefined });
+      result = await rest.finish(rid, { duration_s: Math.round(seconds * 10) / 10, mime, text: opts.text?.() || undefined, share });
       setPct(1);
-      clear(body, h('p', { class: 'fs-rec-ok' }, '✓ ', tr('Şirketten Haberler\'e paylaşıldı')), h('p', { class: 'small muted' }, result.text || ''),
-        h('div', { class: 'pill-group' }, h('a', { class: 'btn sm primary', href: result.link || '#/home' }, tr('Paylaşımı aç')), h('button', { class: 'btn sm', type: 'button', onclick: () => close?.() }, tr('Kapat'))));
-      toast(tr('Şirketten Haberler\'e paylaşıldı'));
-      setTimeout(() => close?.(), 10000);
+      if (result.kept) {
+        clear(body, h('p', { class: 'fs-rec-ok' }, '✓ ', tr('Video sunucuda saklandı (paylaşılmadı)')), h('p', { class: 'small muted' }, result.text || ''),
+          h('div', { class: 'pill-group' }, h('a', { class: 'btn sm primary', href: result.file || rest.fileUrl?.(rid), download: '' }, tr('Videoyu indir')),
+            h('button', { class: 'btn sm', type: 'button', onclick: async ({ target }) => { target.disabled = true; try { await rest.share(rid); toast(tr('Şirketten Haberler\'e paylaşıldı')); close?.(); } catch (err) { toast(err.message, 'err'); target.disabled = false; } } }, tr('Şirketten Haberler\'de paylaş')),
+            h('button', { class: 'btn sm', type: 'button', onclick: () => close?.() }, tr('Kapat'))));
+        toast(tr('Video sunucuda saklandı; sihirbazdaki "Kayıtlarım" kutusundan indirebilir ya da paylaşabilirsiniz'));
+      } else {
+        clear(body, h('p', { class: 'fs-rec-ok' }, '✓ ', tr('Şirketten Haberler\'e paylaşıldı')), h('p', { class: 'small muted' }, result.text || ''),
+          h('div', { class: 'pill-group' }, h('a', { class: 'btn sm primary', href: result.link || '#/home' }, tr('Paylaşımı aç')), h('button', { class: 'btn sm', type: 'button', onclick: () => close?.() }, tr('Kapat'))));
+        toast(tr('Şirketten Haberler\'e paylaşıldı'));
+        setTimeout(() => close?.(), 10000);
+      }
     } catch (err) {
       lastErr = err;
       clear(body, h('p', { class: 'fs-rec-err' }, tr('Kayıt yüklenemedi: {e}', { e: err.message })),
@@ -313,7 +328,7 @@ export function createRecorder(stage, opts = {}) {
         actions: [{ label: tr('Vazgeç') }, { label: tr('Sil'), class: 'danger', onClick: () => resolve('delete') }, { label: tr('Durdur ve paylaş'), class: 'primary', onClick: () => resolve('share') }], onClose: () => resolve(null) }));
       if (!choice) return;
       recPrefs.on = false;
-      if (choice === 'share') { await finishWithDialog(); }
+      if (choice === 'share') { await finishWithDialog(); }   // paylaşım tercihi kapalıysa yalnız saklar
       else { aborted = true; await stop(); queue.length = 0; const rid = await recIdP; if (rid) rest.del(rid).catch(() => {}); state = 'idle'; blobs.length = 0; keepBytes = 0; total = uploaded = 0; seq = 0; recIdP = null; recId = null; }
       drawBtn(); emit();
       return;
@@ -358,4 +373,44 @@ export function pendingCard(tr, rest = restRec()) {
   };
   draw();
   return { el: box, refresh: draw };
+}
+
+// ======================================================================
+// Sihirbaz: "Kayıtlarım" — paylaşılmadan saklanan videolar (finish share:false) → İndir / Şirketten Haberler'de paylaş / Sil
+// ======================================================================
+export function myRecsCard(tr, rest = restRec()) {
+  const box = h('div', { class: 'fs-rec-mine' });
+  const draw = async () => {
+    let items = [], days = 30;
+    try { const r = await rest.mine(); items = r.items || []; days = r.keep_days || days; } catch { items = []; }
+    if (!items.length) { clear(box); return; }
+    clear(box, h('div', { class: 'card card-pad fs-open no-collapse' }, h('h3', null, tr('Kayıtlarım ({n})', { n: items.length })),
+      h('p', { class: 'small muted' }, tr('Paylaşılmadan saklanan ekran kayıtları {d} gün tutulur: indirin, Şirketten Haberler\'e paylaşın ya da silin.', { d: days })),
+      h('div', { class: 'fs-open-list' }, items.map(it => h('div', { class: 'fs-open-row' },
+        h('div', { class: 'fs-open-main' }, h('b', null, it.text), h('div', { class: 'small muted' }, [clock(it.seconds), fmtBytes(it.size), it.kept_at ? it.kept_at.replace('T', ' ').slice(0, 16) : null].filter(Boolean).join(' · '))),
+        h('div', { class: 'pill-group' },
+          h('a', { class: 'btn sm', href: rest.fileUrl(it.id), download: it.file_name || '' }, tr('İndir')),
+          h('button', { class: 'btn sm primary', type: 'button', onclick: async ({ target }) => { target.disabled = true; try { await rest.share(it.id); toast(tr('Şirketten Haberler\'e paylaşıldı')); } catch (err) { toast(err.message, 'err'); } draw(); } }, tr('Paylaş')),
+          h('button', { class: 'btn sm danger', type: 'button', onclick: async ({ target }) => { target.disabled = true; try { await rest.del(it.id); } catch (err) { toast(err.message, 'err'); } draw(); } }, tr('Sil'))))))));
+  };
+  draw();
+  return { el: box, refresh: draw };
+}
+
+// ======================================================================
+// Sihirbaz: "Kayıt" seçenekleri kutusu (Başlat düğmesinin üstünde): ☐ ekran kaydı (video) › ☐ Şirketten Haberler'de paylaş · ☐ uçuş logu (.bin; yalnız canlı)
+// Tercihler localStorage (recPrefs); alt çubuktaki kayıt anahtarı aynı tercihi okur.
+// ======================================================================
+export function recOptionsBox(tr, { getMode = () => 'sitl' } = {}) {
+  const videoCb = h('input', { type: 'checkbox', checked: recPrefs.on, onchange: () => { recPrefs.on = videoCb.checked; sync(); } });
+  const shareCb = h('input', { type: 'checkbox', checked: recPrefs.share, onchange: () => { recPrefs.share = shareCb.checked; sync(); } });
+  const binCb = h('input', { type: 'checkbox', checked: recPrefs.bin, onchange: () => { recPrefs.bin = binCb.checked; sync(); } });
+  const shareRow = h('label', { class: 'check fs-rec-opt fs-rec-opt-sub' }, shareCb, tr('Şirketten Haberler\'de paylaş'), h('span', { class: 'small muted' }, tr('kapalıysa video sunucuda saklanır: Bitir\'de "Videoyu indir", sihirbazda "Kayıtlarım"')));
+  const binRow = h('label', { class: 'check fs-rec-opt' }, binCb, tr('Uçuş logunu (.bin) kaydet'), h('span', { class: 'small muted' }, tr('SITL DataFlash kaydı (yalnız armed süre); Bitir\'de Uçuş Logları\'na eklenir ve Kayıttan oynat listesinde görünür')));
+  const el = h('div', { class: 'card card-pad fs-step fs-rec-opts no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '●'), tr('Kayıt')),
+    h('label', { class: 'check fs-rec-opt' }, videoCb, tr('Ekran kaydı al (video)'), h('span', { class: 'small muted' }, tr('Başlat\'tan Bitir\'e ekran + ses; kapalıysa ekran paylaşımı izni istenmez'))),
+    shareRow, binRow);
+  const sync = () => { shareCb.disabled = !videoCb.checked; shareRow.classList.toggle('off', !videoCb.checked); binRow.hidden = getMode() === 'replay'; };
+  sync();
+  return { el, sync, get video() { return recPrefs.on; }, get share() { return recPrefs.share; }, get bin() { return recPrefs.bin && getMode() !== 'replay'; } };
 }

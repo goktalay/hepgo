@@ -31,6 +31,7 @@ class SessionIn(BaseModel):
     airframe: Optional[str] = None   # ESKİ: sabit kanat / VTOL 3B gövdesi caymaz | delta → model {id:'builtin:…'} olarak eşlenir (§12)
     model: Optional[Union[dict, str]] = None   # görsel model: {id, orient?} ya da kimlik dizgesi ('builtin:caymaz', '12'); eksikse tipin varsayılanı
     drone_id: Optional[int] = None   # §14 isteğe bağlı: Dron Envanteri kaydı — harekât panelinde telemetri bu dronun adıyla akar (yoksa "Simülatör #N")
+    rec: Optional[dict] = None       # §19 kayıt seçenekleri: {bin: bool} — SITL DataFlash .BIN kaydı, kapanışta Uçuş Logları'na (yalnız sitl)
 
 
 class ModelPatch(BaseModel):
@@ -156,10 +157,10 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
         if body.drone_id is not None and not drone:
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec)
         except flightsim.SimHata as e:
             _hata(e)
-        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '')
+        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
     else:
         raise HTTPException(400, 'mode sitl | replay olmalı')
     if client:
@@ -222,7 +223,9 @@ def get_session(sid: int, request: Request, user=Depends(sim_user)):
 
 @router.delete('/sessions/{sid}')
 async def close_session(sid: int, user=Depends(sim_user)):
-    if not await flightsim.MANAGER.kapat(sid, 'kapatildi'):
+    """Kapatır (SITL/UDP kapanır). §19: `rec.bin` açıksa kapanışta DataFlash .BIN uçuş loglarına kaydedilir → `bin: {log_id, file_name, size} | {error} | null`."""
+    s = flightsim.MANAGER.get(sid)
+    if s is None or not await flightsim.MANAGER.kapat(sid, 'kapatildi'):
         raise HTTPException(404, 'Oturum bulunamadı')
 
     def audit():
@@ -230,7 +233,7 @@ async def close_session(sid: int, user=Depends(sim_user)):
             db.audit(conn, user['id'], 'Uçuş simülatörü oturumunu kapattı', 'drone_sim', sid, None)
             conn.commit()
     await asyncio.get_running_loop().run_in_executor(None, audit)
-    return {'ok': True}
+    return {'ok': True, 'bin': getattr(s, 'bin_sonuc', None)}
 
 
 @router.post('/sessions/{sid}/cmd')
@@ -255,6 +258,7 @@ class RecFinishIn(BaseModel):
     duration_s: Optional[float] = None
     mime: Optional[str] = None
     text: Optional[str] = None   # istemcinin kendi dilinde ürettiği metin (aynı yapı); boşsa sunucu Türkçe üretir
+    share: bool = True           # False: Şirketten Haberler'e paylaşmaz, dosya sunucuda saklanır ("Kayıtlarım": indir / sonradan paylaş / sil)
 
 
 def _rec_hata(e):
@@ -299,6 +303,14 @@ async def rec_thumb(rec_id: str, request: Request, user=Depends(sim_user)):
 
 @router.post('/rec/{rec_id}/finish')
 async def rec_finish(rec_id: str, body: RecFinishIn, user=Depends(sim_user), conn=db.DB):
+    """Bitir: `share` (varsayılan) → Şirketten Haberler paylaşımı; `share:false` → dosya sunucuda saklanır (`kept`), `{kept:true, rec_id, size, text,
+    file: '/api/drone/sim/rec/<id>/file'}` döner."""
+    if not body.share:
+        try:
+            r = flightsim_rec.sakla(rec_id, user, _yazar(user), body.duration_s, body.text)
+        except flightsim_rec.RecHata as e:
+            _rec_hata(e)
+        return {'ok': True, 'kept': True, 'rec_id': rec_id, 'size': r['size'], 'text': r['text'], 'file': f'/api/drone/sim/rec/{rec_id}/file', 'link': None}
     try:
         r = flightsim_rec.bitir(conn, rec_id, user, _yazar(user), body.duration_s, body.text)
     except flightsim_rec.RecHata as e:
@@ -308,6 +320,29 @@ async def rec_finish(rec_id: str, body: RecFinishIn, user=Depends(sim_user), con
     from .feed import _announce
     await _announce(conn, r['post_id'], owner, r['text'], [{'type': 'video', 'path': r['path']}])
     return {'ok': True, 'post_id': r['post_id'], 'path': r['path'], 'thumb': r['thumb'], 'text': r['text'], 'size': r['size'], 'link': '#/home'}
+
+
+@router.post('/rec/{rec_id}/share')
+async def rec_share(rec_id: str, body: RecFinishIn, user=Depends(sim_user), conn=db.DB):
+    """Saklanan ('kept') kaydı sonradan Şirketten Haberler'e paylaşır (finish ile aynı; metin/süre saklanandan)."""
+    body.share = True
+    return await rec_finish(rec_id, body, user, conn)
+
+
+@router.get('/rec/mine')
+def rec_mine(user=Depends(sim_user)):
+    """"Kayıtlarım": kullanıcının paylaşılmadan saklanan videoları → indir / paylaş / sil."""
+    return {'items': flightsim_rec.listem(user), 'keep_days': flightsim_rec.KEEP_DAYS}
+
+
+@router.get('/rec/{rec_id}/file')
+def rec_file(rec_id: str, user=Depends(sim_user)):
+    """Saklanan kaydı indir (sahip / başlatan / yazma izni)."""
+    try:
+        p, mime, ad = flightsim_rec.dosya(rec_id, user, _yazar(user))
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return FileResponse(p, media_type=mime, filename=ad, headers={'Cache-Control': 'private, no-store'})
 
 
 @router.delete('/rec/{rec_id}')

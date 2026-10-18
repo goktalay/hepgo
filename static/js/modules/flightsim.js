@@ -21,9 +21,22 @@ import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü ist
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
 import { createOpsPanel } from './flightsim_panel.js';
-import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, pendingCard, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
+import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, myRecsCard, pendingCard, recOptionsBox, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler / sakla; kayıt seçenekleri kutusu; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
 
 const API = '/api/drone/sim';
+// §8 ön hazırlık: sihirbazın hazırlık kartında indirilen kayıt kareleri oturum ekranına devredilir (aynı belge; be.replay yeniden çekilmez)
+const REPLAY_STASH = new Map();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Kayıt dünyası uçuşu kapsasın: evden en uzak kare mesafesinin 2,4 katı (500 m'ye yuvarlı, en çok 20 km) — uçak arazi dışına çıkmasın
+function fitWorldSize(data, home) {
+  if (!data?.home || !Array.isArray(data.frames) || !data.frames.length) return 0;
+  const FI = Object.fromEntries((data.fields || []).map((k, i) => [k, i]));
+  const lat0 = Number(home?.lat ?? data.home.lat), lon0 = Number(home?.lon ?? data.home.lon), cos = Math.cos(lat0 * Math.PI / 180);
+  let maxD = 0;
+  const step = Math.max(1, Math.floor(data.frames.length / 4000));
+  for (let i = 0; i < data.frames.length; i += step) { const f = data.frames[i]; if (f[FI.lat] == null) continue; maxD = Math.max(maxD, Math.hypot((f[FI.lon] - lon0) * 111320 * cos, (f[FI.lat] - lat0) * 110574)); }
+  return Math.min(20000, Math.ceil(maxD * 2.4 / 500) * 500);
+}
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
 const TYPES = [
   ['multirotor', 'Multikopter', 'Dört rotor; dikey kalkış, hassas konum tutma. ArduCopter.', 'quad'],
@@ -269,8 +282,10 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   const g3dLogo = h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google', hidden: true });   // Google 3B önizlemesinde ToS logosu (sol alt)
   const previewBox = h('div', { class: 'fs-preview' }, h('div', { class: 'fs-preview-msg' }, '3B önizleme hazırlanıyor…'), progBar, g3dLogo);
   const previewInfo = h('div', { class: 'small muted fs-preview-info' });
-  // Gerçek kip yükleme ilerlemesi / özet (önizleme kutusu üstünde şerit + altında bilgi satırı)
+  // Gerçek kip yükleme ilerlemesi / özet (önizleme kutusu üstünde şerit + altında bilgi satırı). prepTap: hazırlık kartı (Başlat sonrası) aynı ilerlemeyi dinler
+  let prepTap = null;
   const progInfo = p => {
+    if (p) prepTap?.(p);
     if (!p) { progBar.hidden = false; progBar.textContent = tr('Arazi planı alınıyor…'); return; }
     if (p.stage === 'done') {
       progBar.hidden = true;
@@ -355,6 +370,90 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   sliders.building_count.inp.addEventListener('input', () => { bcTouched = true; });
   applyMode();
 
+  // ---------- 3b. kayıt seçenekleri (§17/§19): ☐ ekran kaydı (video) › ☐ Şirketten Haberler'de paylaş · ☐ uçuş logu (.bin; yalnız canlı) ----------
+  const recOpts = recOptionsBox(tr, { getMode: () => S.mode });
+
+  // ---------- 3c. ön hazırlık kartı (§8): oturum ekranına geçmeden ÖNCE sunucu HAZIR (log ayrıştırma % / SITL) → kareler indirilir → dünya verisi
+  // (arazi/Google karoları) sihirbaz önizleme örneğiyle ön yüklenir (aynı /terrain + /osm + karolar; Google kök tileset havuzda) → hash. İptal oturumu kapatır.
+  const prepareSession = async s => {
+    const rp = s.mode === 'replay';
+    const steps = [['server', rp ? tr('Log ayrıştırılıyor') : tr('SITL başlatılıyor')], ...(rp ? [['frames', tr('Kareler indiriliyor')]] : []), ['world', tr('Dünya hazırlanıyor')]];
+    const R = {};
+    const list = h('div', { class: 'fs-prep-steps' }, steps.map(([key, label]) => {
+      const ico = h('i', { class: 'fs-prep-ico wait' }), pct = h('span', { class: 'fs-prep-pct mono' }, ''), sub = h('div', { class: 'small muted fs-prep-sub' }, ''), bar = h('div', { class: 'fs-prep-bar' }, h('i'));
+      const row = h('div', { class: 'fs-prep-step', 'data-step': key }, h('div', { class: 'fs-prep-row' }, ico, h('span', { class: 'fs-prep-lbl' }, label), pct), bar, sub);
+      R[key] = { row, ico, pct, sub, bar };
+      return row;
+    }));
+    const setStep = (key, state, pct = null, text = null) => {
+      const r = R[key]; if (!r) return;
+      r.ico.className = `fs-prep-ico ${state}`; r.row.dataset.state = state;
+      if (pct != null) { r.pct.textContent = `%${Math.round(pct)}`; r.bar.hidden = false; r.bar.firstChild.style.width = `${Math.max(0, Math.min(100, pct))}%`; }
+      else if (state === 'ok') { r.pct.textContent = '✓'; r.bar.hidden = true; }
+      else if (state === 'err') { r.pct.textContent = '✗'; r.bar.hidden = true; }
+      else r.bar.hidden = true;
+      if (text != null) r.sub.textContent = text;
+    };
+    Object.keys(R).forEach(k => { R[k].bar.hidden = true; });
+    const title = rp ? `${s.replay?.file_name || ''}` : `${TYPE_NAME[s.type] || s.type} · ${s.center?.name || ''} · ${tr({ real: 'Gerçek arazi', google3d: 'Google 3B (fotogerçekçi)', procedural: 'Prosedürel' }[S.world.mode] || S.world.mode)}`;
+    let cancelled = false, finished = false, closeFn = null, cancelBtn = null;
+    const closed = new Promise(resolve => {
+      const m = modal({ title: tr(rp ? 'Kayıt hazırlanıyor' : 'Simülatör hazırlanıyor'), body: h('div', { class: 'fs-prep' }, h('div', { class: 'small muted fs-prep-title' }, title), list, h('p', { class: 'small muted fs-prep-note' }, tr('Her şey hazır olunca oturum ekranı açılır.'))),
+        actions: [{ label: tr('İptal'), class: 'danger', onClick: () => { cancelled = true; } }], onClose: () => { if (!finished) cancelled = true; resolve(); } });
+      closeFn = m.close; cancelBtn = m.el.querySelector('.modal-foot .btn');
+    });
+    const progPct = p => (p.stage === 'g3d' ? p.pct : p.stage === 'elev' ? 10 + 30 * (p.done / Math.max(1, p.total)) : p.stage === 'img' ? 40 + 45 * (p.done / Math.max(1, p.total)) : p.stage === 'osm' ? 90 : p.stage === 'plan' ? 5 : null);
+    const progText = p => (p.stage === 'g3d' ? tr('Google 3B karoları yükleniyor… %{p}', { p: p.pct ?? 0 }) : p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…'));
+    let cur = 'server';
+    const run = async () => {
+      // 1) sunucu HAZIR: kayıtta ayrıştırma yüzdesi (ReplaySession progress), canlıda SITL açılışı — GET /sessions/{id} yoklaması
+      setStep('server', 'run', rp ? (s.replay?.progress ?? 0) : null, rp ? (s.replay?.frames ? tr('Önbellekten') : '') : tr('SITL süreci başlıyor; ilk kalp atışı bekleniyor…'));
+      let g = s;
+      const t0 = Date.now();
+      while (!cancelled && g.state === 'BASLIYOR') {
+        await sleep(mock ? 50 : 600);
+        g = await be.session(s.id);
+        setStep('server', 'run', rp ? (g.replay?.progress ?? 0) : null, rp ? '' : tr('SITL başlıyor… {s} sn', { s: Math.round((Date.now() - t0) / 1000) }));
+      }
+      if (cancelled) return false;
+      if (g.state !== 'HAZIR') { setStep('server', 'err', null, g.sitl?.error || tr('Hata')); return false; }
+      Object.assign(s, g);
+      setStep('server', 'ok', null, rp ? tr('{n} kare · {d}', { n: g.replay?.frames, d: fmtDuration(g.replay?.duration_s) }) : tr('SITL hazır (tcp {p})', { p: g.sitl?.port ?? '—' }));
+      // 2) kareler (gzip JSON) → oturum ekranına devredilir
+      let data = null;
+      if (rp) {
+        cur = 'frames'; setStep('frames', 'run');
+        data = await be.replay(s.id);
+        if (cancelled) return false;
+        REPLAY_STASH.set(String(s.id), data);
+        setStep('frames', 'ok', null, tr('{n} kare · {d}', { n: data.n, d: fmtDuration(data.duration_s) }));
+      }
+      // 3) dünya verisi: önizleme örneği kaydın kalkış noktasına (ya da merkeze) taşınır → /terrain + /osm + karolar indirilir (sunucu ve tarayıcı
+      //    önbelleği ısınır; Google kök tileset havuzda kalır) — oturum ekranı aynı veriyi anında kurar
+      cur = 'world'; setStep('world', 'run', S.world.mode === 'procedural' ? null : 0);
+      const home = rp ? (g.replay?.home || g.center) : g.center;
+      if (preview && home && home.lat != null) {
+        const w = { ...S.world };
+        if (rp && data) { const need = fitWorldSize(data, home); if (need > (Number(w.size_m) || 0)) w.size_m = need; }
+        prepTap = p => { if (p.stage !== 'done') setStep('world', 'run', progPct(p), progText(p)); };
+        try { await preview.setOrigin(home.lat, home.lon, w, home.alt); } finally { prepTap = null; }
+        if (cancelled) return false;
+        const info = preview.terrainInfo;
+        setStep('world', 'ok', null, info?.real ? tr('Gerçek arazi · yükseklik {a}…{b} m · ev {h} m MSL', { a: f0(info.hmin), b: f0(info.hmax), h: f0(info.homeElev) }) : info?.google ? tr('Google 3B (fotogerçekçi) · ev {h} m MSL', { h: f0(info.homeElev) }) : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.'));
+      } else setStep('world', 'ok');
+      return !cancelled;
+    };
+    let ok = false;
+    try { ok = await run(); } catch (err) { setStep(cur, 'err', null, err?.message || String(err)); ok = false; }
+    prepTap = null;
+    if (ok && !cancelled) { finished = true; closeFn?.(); return true; }
+    if (!cancelled) { if (cancelBtn) cancelBtn.textContent = tr('Kapat'); await closed; }   // hata: kart açık kalır, kullanıcı kapatır
+    REPLAY_STASH.delete(String(s.id));
+    be.end(s.id).catch(() => {});
+    closeFn?.();
+    return false;
+  };
+
   // ---------- 4. başlat ----------
   const startBtn = h('button', { class: 'btn primary fs-start', disabled: !canWrite || !centers.length, onclick: async () => {
     if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); return; }
@@ -363,19 +462,23 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     // §17: otomatik tam ekran (kullanıcı etkinleştirmesi içinde; reddedilirse sessiz) + kayıt açıksa ekran paylaşımı izni BİR KEZ, oturum açılmadan önce
     enterFullscreen();
     if (!mock && recPrefs.on) { const { stream, reason } = await acquireDisplayStream(); stashStream(stream); if (!stream && reason === 'denied') toast(tr('Ekran paylaşımı reddedildi; 3B sahne + HUD kaydedilecek (panel kayda girmez)')); }
+    const geriAl = () => { startBtn.disabled = false; takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen(); };   // §17: oturum açılamadı/iptal → paylaşım akışı ve tam ekran bırakılır
+    let s;
     try {
       const model = modelBody(picker.selectionFor(activeType()), mock);
-      const s = S.mode === 'replay'
+      s = S.mode === 'replay'
         ? await be.create({ mode: 'replay', log_id: S.log, world: { ...S.world }, model })
-        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, model, drone_id: S.drone ?? undefined });
-      toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
-      location.hash = be.href(s.id);
+        : await be.create({ mode: 'sitl', type: S.type, center_id: S.center, world: { ...S.world }, model, drone_id: S.drone ?? undefined, rec: { bin: recOpts.bin } });
     } catch (err) {
       const msg = { 400: S.mode === 'replay' ? 'Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin' : 'Geçersiz ayar; dünya değerlerini ve merkezi kontrol edin', 409: 'Oturum sınırı doldu; açık bir oturumu bitirin', 503: 'SITL hazır değil (ikili ya da boş port yok)' }[err?.status];
       toast(msg || err.message, 'err');
-      startBtn.disabled = false;
-      takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen();   // §17: oturum açılamadı → paylaşım akışı ve tam ekran bırakılır
+      geriAl();
+      return;
     }
+    // §8 ön hazırlık: her şey (sunucu HAZIR + kareler + dünya verisi) hazır olunca içeri gir
+    if (!await prepareSession(s)) { geriAl(); drawOpen(); return; }
+    toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
+    location.hash = be.href(s.id);
   } }, '▶ Başlat');
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
@@ -396,6 +499,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
       : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
     (rp ? stepLog : stepType).append(modelBox);   // model bölümü: canlı kipte tip kartlarının, kayıt kipinde log listesinin altında
+    recOpts.sync();   // .bin seçeneği yalnız canlı SITL'de
     drawLaunch();
     if (rp && S.logs === null) loadLogs().then(refreshModels); else refreshModels();
   };
@@ -404,9 +508,11 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     openBox,
     mock || !canWrite ? null : pendingCard(tr).el,   // §17: yarım ekran kayıtları (Bitir denmeden kapanan oturumlar) → Paylaş / Sil
+    mock || !canWrite ? null : myRecsCard(tr).el,   // §17: paylaşılmadan saklanan videolar → İndir / Paylaş / Sil
     mock ? null : clientsCard({ canWrite }).el,   // CAYSIM istemcileri (docs/caysim-api.md)
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
     stepType, stepCenter, stepLog, stepWorld,
+    canWrite ? recOpts.el : null,   // §17/§19 kayıt seçenekleri (Başlat'ın üstünde)
     h('div', { class: 'fs-start-row' }, startNote, startBtn));
   drawMode();
   drawOpen();
@@ -609,28 +715,59 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     msg.textContent = p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total })
       : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…');
   };
-  try {
-    if (world.mode === 'real') { msg.textContent = tr('Arazi planı alınıyor…'); }
-    if (g3dMode) { msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
-    sim = await createFlightSim3D(mount, world, {
-      type, model: session.model || session.airframe, launch, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
-      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât kartları gizli, askeri HUD kalır (§14)
-      onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
-      onProgress: progMsg,
-      g3dKey: be.g3dKey,
-      onFallback: e => { const t = g3dMode ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
-    });
-    if (netsim) window.__fsSim = sim;   // teşhis: Playwright/konsol sim.netStats() · sim.motionStats(true)
-    if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
-    if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
-    msg.hidden = true;
-    const disp = takeStashedStream();   // §17: Başlat'ta alınan ekran paylaşımı (varsa); kayıt tercihi açıksa hemen başla (HAZIR beklenmez)
-    if (rec && (disp || recPrefs.on)) rec.start(disp).catch(() => {}); else disp?.getTracks().forEach(t => t.stop());
-  } catch (err) {
-    msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
-    msg.classList.add('err');
-  }
-  camBtns[0].classList.add('primary');
+  // Dünya merkezi: canlıda merkez; kayıtta kaydın kalkış noktası (session.center = ev; ayrıştırma bitmeden analiz özetinden ön değer). §8 KÖK NEDEN
+  // (eski): oturum BASLIYOR'ken center/replay.home null → origin (0,0) ile kuruluyor, HAZIR'da yeniden konumlanmıyordu → gerçek arazi/Google (0,0)'da
+  // (okyanus) yükleniyor ya da düşüyordu. Şimdi: merkez bilinmiyorsa 3B kurulumu HAZIR'a ertelenir; HAZIR'da merkez değişmişse `setOrigin` ile taşınır.
+  const originOf = () => ({ lat: session.center?.lat ?? session.replay?.home?.lat ?? null, lon: session.center?.lon ?? session.replay?.home?.lon ?? null, alt: session.center?.alt ?? session.replay?.home?.alt ?? null });
+  let simOrigin = null, simBuilding = null;
+  const buildSim = () => {
+    if (sim || simBuilding || destroyed) return simBuilding || Promise.resolve(sim);
+    const o = originOf();
+    if (o.lat == null || o.lon == null) {   // merkez henüz yok (kayıt ayrıştırılıyor): HAZIR'da kurulur
+      msg.hidden = false; msg.textContent = replay ? tr('Kayıt hazırlanıyor… %{p}', { p: session.replay?.progress ?? 0 }) : tr('SITL başlıyor…');
+      return Promise.resolve(null);
+    }
+    simBuilding = (async () => {
+      try {
+        if (world.mode === 'real') { msg.hidden = false; msg.textContent = tr('Arazi planı alınıyor…'); }
+        if (g3dMode) { msg.hidden = false; msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
+        simOrigin = { ...o };
+        const s3 = await createFlightSim3D(mount, world, {
+          type, model: session.model || session.airframe, launch, origin: { ...o },
+          onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât kartları gizli, askeri HUD kalır (§14)
+          onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
+          onProgress: progMsg,
+          g3dKey: be.g3dKey,
+          onFallback: e => { const t = g3dMode ? tr('Google 3B verisi alınamadı: {e} → prosedürele düşüldü', { e }) : tr('Gerçek veri alınamadı, prosedürele düşüldü: {e}', { e }); addEvent(t, 'warning'); toast(t, 'err'); if (attrib) attrib.hidden = true; },
+        });
+        if (destroyed) { s3.dispose(); return null; }
+        sim = s3;
+        if (netsim) window.__fsSim = sim;   // teşhis: Playwright/konsol sim.netStats() · sim.motionStats(true)
+        if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
+        if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
+        msg.hidden = true;
+        camBtns[0].classList.add('primary');
+        const disp = takeStashedStream();   // §17: Başlat'ta alınan ekran paylaşımı (varsa); kayıt tercihi açıksa hemen başla (HAZIR beklenmez)
+        if (rec && (disp || recPrefs.on)) rec.start(disp).catch(() => {}); else disp?.getTracks().forEach(t => t.stop());
+        return sim;
+      } catch (err) {
+        msg.hidden = false; msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
+        msg.classList.add('err');
+        return null;
+      } finally { simBuilding = null; }
+    })();
+    return simBuilding;
+  };
+  // HAZIR'da merkez değişmişse (kayıt: ayrıştırma sonucu ilk ARM konumu ≠ analiz özeti) dünya yeni merkeze taşınır (gerçek kipte veriler yeniden yüklenir)
+  const syncOrigin = async () => {
+    const o = originOf();
+    if (!sim || !simOrigin || o.lat == null || (Math.abs(o.lat - simOrigin.lat) < 1e-6 && Math.abs(o.lon - simOrigin.lon) < 1e-6 && Math.abs((o.alt ?? 0) - (simOrigin.alt ?? 0)) < 0.5)) return false;
+    simOrigin = { ...o };
+    addEvent(tr('Dünya merkezi kaydın kalkış noktasına taşındı: {lat}, {lon}', { lat: Number(o.lat).toFixed(5), lon: Number(o.lon).toFixed(5) }));
+    await sim.setOrigin(o.lat, o.lon, world, o.alt);
+    return true;
+  };
+  await buildSim();
   const gimbalTick = setInterval(() => {
     if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() });
     if (g3dMode && sim?.google) {   // Google atfı canlı (görünür karoların veri sağlayıcıları) + yükleme yüzdesi
@@ -646,7 +783,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     stateBadge.textContent = tr(STATE_TEXT[st] || st);
     if (st === 'BASLIYOR') { msg.hidden = false; msg.textContent = replay ? tr('Kayıt hazırlanıyor… %{p}', { p: session.replay?.progress ?? 0 }) : tr('SITL başlıyor…'); }
     else if (st === 'HATA') { msg.hidden = false; msg.classList.add('err'); msg.textContent = replay ? tr('Kayıt açılamadı: {e}', { e: session.sitl?.error || '—' }) : tr('SITL hatası: {e}', { e: session.sitl?.error || '—' }); }
-    else if (st === 'HAZIR' && sim) { msg.hidden = true; msg.classList.remove('err'); if (replay) loadReplay(); }
+    else if (st === 'HAZIR') {
+      msg.classList.remove('err');
+      if (!sim) buildSim().then(() => { if (sim && replay) loadReplay(); });   // merkez şimdi biliniyor: 3B burada kurulur (§8)
+      else { msg.hidden = true; if (replay) loadReplay(); }
+    }
     ops?.setState(st);
   };
   const setWs = st => {
@@ -701,19 +842,21 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const loadReplay = async () => {
     if (!replay || replayLoaded) return;
     replayLoaded = true;
-    msg.hidden = false; msg.classList.remove('err'); msg.textContent = tr('Kareler indiriliyor…');
-    let data;
-    try { data = await be.replay(sid); } catch (err) { replayLoaded = false; msg.classList.add('err'); msg.textContent = tr('Kayıt açılamadı: {e}', { e: err.message }); return; }
+    let data = REPLAY_STASH.get(String(sid));   // §8 ön hazırlık: sihirbazın hazırlık kartı indirdiyse yeniden çekilmez
+    REPLAY_STASH.delete(String(sid));
+    if (!data) {
+      msg.hidden = false; msg.classList.remove('err'); msg.textContent = tr('Kareler indiriliyor…');
+      try { data = await be.replay(sid); } catch (err) { replayLoaded = false; msg.classList.add('err'); msg.textContent = tr('Kayıt açılamadı: {e}', { e: err.message }); return; }
+    }
     if (destroyed) return;
     msg.hidden = true;
-    // Dünya uçuşu kapsasın: evden en uzak kare mesafesinin 2,4 katı (en az seçilen boyut, en çok 20 km) — uçak arazi dışına çıkmasın
-    if (sim && data.home && Array.isArray(data.frames) && data.frames.length) {
-      const FI = Object.fromEntries((data.fields || []).map((k, i) => [k, i]));
-      let maxD = 0;
-      const step = Math.max(1, Math.floor(data.frames.length / 4000));
-      for (let i = 0; i < data.frames.length; i += step) { const f = data.frames[i]; if (f[FI.lat] == null) continue; const p = sim.toLocal(f[FI.lat], f[FI.lon]); maxD = Math.max(maxD, Math.hypot(p.x, p.y)); }
-      const need = Math.min(20000, Math.ceil(maxD * 2.4 / 500) * 500);
-      if (need > (Number(world.size_m) || 0)) { world.size_m = need; sim.setWorld(world); addEvent(tr('Dünya boyutu uçuşa göre {n} m yapıldı', { n: need }), 6); }
+    // Merkez = kaydın kalkış noktası (ayrıştırma sonucu); dünya uçuşu kapsasın: evden en uzak kare mesafesinin 2,4 katı (en az seçilen boyut, en çok 20 km)
+    if (sim) {
+      const o = originOf();
+      const need = fitWorldSize(data, o.lat != null ? o : data.home);
+      const grow = need > (Number(world.size_m) || 0);
+      if (grow) { world.size_m = need; addEvent(tr('Dünya boyutu uçuşa göre {n} m yapıldı', { n: need }), 6); }
+      if (!await syncOrigin() && grow) await sim.setWorld(world);   // merkez değiştiyse setOrigin zaten yeni boyutla kurar
     }
     player = createReplayPlayer(data, {
       onFrame: t => updateHud(t),
@@ -793,9 +936,13 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (!canWrite) { location.hash = be.href(); return; }
     if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
     try {
-      if (rec?.hasData) await rec.finishWithDialog();   // §17: son parça + finish → Şirketten Haberler paylaşımı (ilerleme penceresi; hata → indir)
+      if (rec?.hasData) await rec.finishWithDialog();   // §17: son parça + finish → Şirketten Haberler paylaşımı ya da sunucuda sakla (ilerleme penceresi; hata → indir)
       exitFullscreen();
-      await be.end(sid); toast('Oturum kapatıldı'); location.hash = be.href();
+      const r = await be.end(sid);   // §19: rec.bin açıksa sunucu kapanışta DataFlash .bin'i Uçuş Logları'na kaydeder → r.bin
+      toast('Oturum kapatıldı');
+      if (r?.bin?.log_id) toast(tr('Uçuş logu kaydedildi: {f} ({kb} KB) — analiz bitince Uçuş Logları ve Kayıttan oynat listesinde', { f: r.bin.file_name, kb: Math.round((r.bin.size || 0) / 1024) }));
+      else if (r?.bin?.error) toast(r.bin.error, 'err');
+      location.hash = be.href();
     } catch (err) { toastError(err); }
   };
   const END_REASON = { kapatildi: 'Oturum kapatıldı', bosta: 'İzleyici ve GCS olmadığından kapatıldı', sure: 'Oturum süresi doldu', sunucu_kapaniyor: 'Sunucu kapanıyor' };
@@ -816,7 +963,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       if (m.t === 'route') { sim?.setRoute(m.points || []); ops?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler + panel rota durumu
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null, 'STATUS');
       if (m.t === 'launch') return onLaunch(m);
-      if (m.t === 'state') { if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay }; return setState(m.state); }
+      if (m.t === 'state') {
+        if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay };
+        if (m.center) session.center = { ...(session.center || {}), ...m.center };   // kayıt: ayrıştırma bitti → merkez = ilk ARM konumu (§8)
+        else if (replay && m.replay?.home) session.center = { ...(session.center || {}), lat: m.replay.home.lat, lon: m.replay.home.lon, alt: m.replay.home.alt };
+        return setState(m.state);
+      }
       if (m.t === 'replay' && m.action === 'reset') return player?.restart();
       if (m.t === 'end') { setState('KAPANDI'); showEnded(m.reason); socket?.close(); }
     },

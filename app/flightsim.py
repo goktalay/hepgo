@@ -460,10 +460,13 @@ class _UdpProto(asyncio.DatagramProtocol):
 # Oturum
 # ======================================================================
 class SimSession:
-    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None, model=None, drone=None):
+    def __init__(self, sid, tip, center, world, owner, yonetici, airframe=None, model=None, drone=None, rec=None):
         self.id = int(sid)
         self.kimlik = KIMLIK_TABANI + self.id
         self.type, self.center, self.world, self.owner = tip, center, world, owner
+        # §19 kayıt seçenekleri: rec.bin → SITL DataFlash .BIN açık (yalnız armed süre), kapanışta uçuş loglarına kaydedilir (flightsim_bin)
+        self.rec = {'bin': bool((rec or {}).get('bin'))}
+        self.bin_sonuc = None            # kapanışta {log_id, file_name, size} | {error} | None
         # §14 harekât paneli: hub köprüsü (flightsim_hub.SimBridge; run() içinde attach), isteğe bağlı dron kaydı {id, code, name, model}
         # (telemetri o dronun adıyla akar; yoksa "Simülatör #N"), SITL'e yüklenen son görevin 3B rota noktaları, komut yürütücü ve bekleyiciler
         self.hub = None
@@ -535,7 +538,8 @@ class SimSession:
                 'sitl': dict(self.sitl),
                 # §14: harekât paneli köprüsü (bridge_id = -kimlik), dron kaydı, SITL'deki görevin rota noktaları
                 'hub': {'bridge_id': -self.kimlik, 'online': self.hub is not None, 'name': self.hub.name if self.hub else None},
-                'drone': dict(self.drone) if self.drone else None, 'route': list(self.route)}
+                'drone': dict(self.drone) if self.drone else None, 'route': list(self.route),
+                'rec': {**self.rec, 'bin_log': dict(self.bin_sonuc) if self.bin_sonuc else None}}
 
     # ---- §14: bekleyici kuyrukları (MavKomut) ----
     @contextlib.contextmanager
@@ -637,7 +641,10 @@ class SimSession:
             self._olay(f'SITL başlatılıyor ({TIP_ADLARI.get(self.type, self.type)}) · {c.get("name") or ""}', 6)
             sitl_model = LAUNCH_SITL_MODEL.get(self.launch.get('method')) if self.type == 'sabit_kanat' else None   # rampa: plane-catapult
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.kimlik, self.type, c['lat'], c['lon'], sysid=1,
-                                                                          irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol, model=sitl_model))
+                                                                          irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol, model=sitl_model,
+                                                                          log_bin=self.rec['bin']))
+            if port and self.rec['bin']:
+                self._olay('DataFlash kaydı açık: uçuş logu (.bin) oturum kapanışında Uçuş Logları\'na kaydedilir', 6)
             if not port:
                 self.sitl['error'] = err or 'SITL başlatılamadı'
                 self._olay(self.sitl['error'], 2)
@@ -1255,15 +1262,46 @@ class SimSession:
         if self.task is not None and not self.task.done() and self.task is not asyncio.current_task():
             self.task.cancel()
             try:
-                await asyncio.wait_for(asyncio.shield(self.task), 10)
+                await asyncio.wait_for(asyncio.shield(self.task), 30)   # .bin kapanışı: disarm beklemesi + SITL durdurma + dosya taşıma
             except (asyncio.CancelledError, asyncio.TimeoutError, Exception):   # noqa: BLE001
                 pass
         else:
             await self._temizle()
 
+    async def _bin_kapat(self):
+        """§19: SITL kapanmadan önce DataFlash dosyası kapansın — armed ise zorla disarm (LOG_FILE_DSRMROT 1 → dosya döner) + kısa bekleme."""
+        if not self.rec['bin'] or self.sahte is not None:
+            return
+        try:
+            if self._heartbeat_alindi and self._tcp_w is not None and self.tele.get('armed'):
+                self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
+                await asyncio.sleep(1.5)
+            elif self._heartbeat_alindi:
+                await asyncio.sleep(0.5)
+        except Exception:   # noqa: BLE001
+            pass
+
+    async def _bin_kaydet(self):
+        """§19: çalışma dizinindeki en büyük .BIN → Uçuş Logları (flightsim_bin.kaydet); sonuç `bin_sonuc` (DELETE yanıtı) + olay."""
+        if not self.rec['bin']:
+            return
+        from . import flightsim_bin
+        yollar = drone_sitl.bin_dosyalari(self.kimlik) if SITL_ENABLED else list(self.yonetici.sahte_bin_dosyalari or [])
+        try:
+            self.bin_sonuc = await asyncio.get_running_loop().run_in_executor(None, flightsim_bin.kaydet, self.to_dict(), yollar)
+        except Exception as e:   # noqa: BLE001
+            self.bin_sonuc = {'error': f'Uçuş logu kaydedilemedi: {e}'[:300]}
+        if self.bin_sonuc and self.bin_sonuc.get('error'):
+            self._olay(self.bin_sonuc['error'], 4)
+        elif self.bin_sonuc:
+            self._olay(f'Uçuş logu kaydedildi: {self.bin_sonuc["file_name"]} ({self.bin_sonuc["size"] // 1024} KB) — analiz kuyruğunda', 6)
+        else:
+            self._olay('Uçuş logu yok (armed süre olmadı); .bin kaydedilmedi', 6)
+
     async def _temizle(self):
         if self.state == 'KAPANDI':
             return
+        await self._bin_kapat()
         self.state = 'KAPANDI'
         if self._launch_task is not None and not self._launch_task.done():
             self._launch_task.cancel()
@@ -1280,6 +1318,7 @@ class SimSession:
                 await asyncio.get_running_loop().run_in_executor(None, drone_sitl.YONETICI.durdur, self.kimlik)
             except Exception:   # noqa: BLE001
                 drone_sitl.YONETICI.durdur(self.kimlik)
+        await self._bin_kaydet()
         self._yay({'t': 'end', 'reason': self.end_reason or 'kapatildi'})
         self.yonetici.sessions.pop(self.id, None)
 
@@ -1292,6 +1331,7 @@ class SimManager:
         self.sessions = {}
         self._next = 1
         self.sahte_tcp_port = None   # HEPGO_SITL=0: testin sahte "SITL" TCP sunucusu (köprü yolu sınaması)
+        self.sahte_bin_dosyalari = None   # HEPGO_SITL=0: testin sahte .BIN dosyaları (§19 kapanış kaydı sınaması)
 
     def get(self, sid):
         try:
@@ -1306,10 +1346,13 @@ class SimManager:
     def acik_sayisi(self):
         return len([s for s in self.sessions.values() if s.state != 'KAPANDI'])
 
-    async def ac(self, tip, center, world, owner, airframe=None, model=None, drone=None):
+    async def ac(self, tip, center, world, owner, airframe=None, model=None, drone=None, rec=None):
         """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev.
         `model`: flightsim_models.coz ile çözülmüş kütüphane nesnesi (router); yoksa `airframe` ile dahili model.
-        `drone` (§14, isteğe bağlı): Dron Envanteri kaydı {id, code, name, model} — harekât panelinde telemetri bu adla akar."""
+        `drone` (§14, isteğe bağlı): Dron Envanteri kaydı {id, code, name, model} — harekât panelinde telemetri bu adla akar.
+        `rec` (§19, isteğe bağlı): {bin: bool} — SITL DataFlash .BIN kaydı; kapanışta Uçuş Logları'na."""
+        if rec is not None and not isinstance(rec, dict):
+            raise SimHata('invalid', 'rec nesne olmalı')
         if tip not in drone_sitl.TIP_ESLEME:
             raise SimHata('invalid', 'Geçersiz dron tipi')
         airframe = airframe_dogrula(tip, airframe)
@@ -1338,7 +1381,7 @@ class SimManager:
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': alt}, world, owner, self, airframe, model, drone)
+                                  'alt': alt}, world, owner, self, airframe, model, drone, rec)
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

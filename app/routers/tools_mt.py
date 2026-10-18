@@ -1,17 +1,21 @@
-"""Araçlar › Master Tool web köprüsü — ortak arka uç (SSH Master + FTP Masters).
+"""Araçlar › Master Tool web köprüsü — ortak arka uç (SSH Master · FTP Masters · SQL Master · Notepad Master · Convert Master).
 
-Masaüstü uygulamaların ana süreci (main.js) burada: kalıcı depo, bağlantı/klasör/kısayol/ayar işlemleri, yerel dosya
-yöneticisi ve kimlik doğrulama. Renderer'lar birebir taşındı; preload.js'in IPC kanalları aynı adla
-POST /api/tools/mt/<app>/invoke {m: '<kanal>', a: <arg>} üzerinden çağrılır (dönüş {ok, v, store?}).
+İki köprü biçimi tek dosyada:
+1) SSH Master + FTP Masters (IPC kanalı kalıbı): masaüstü ana sürecin (main.js) karşılığı — kalıcı depo, bağlantı/klasör/
+   kısayol/ayar işlemleri, yerel dosya yöneticisi. preload.js'in IPC kanalları aynı adla
+   POST /api/tools/mt/<app>/invoke {m: '<kanal>', a: <arg>} üzerinden çağrılır (dönüş {ok, v, store?}); açılış GET /<app>/boot.
+   "Bilgisayarım" paneli: kullanıcının HEPGO'daki kişisel alanı DATA_DIR/tools/files/<uid>; arayüze Windows yolu gibi sanal
+   sürücü H:\\ ile sunulur (renderer'lar Windows yol mantığıyla çalışır); /<app>/files/upload|download.
+   Sunucudan arayüze giden metinler {$t: 'i18n anahtarı', $p: {...}} nesneleridir; renderer kendi i18n.js sözlüğüyle çevirir.
+2) SQL / Notepad / Convert Master (anahtar-değer + dosya alanı kalıbı): tools_sql.py / tools_notepad.py / tools_convert.py
+   buradaki kv_get/kv_set, protect/unprotect, app_dir/files_root/resolve/list_dir yardımcılarını kullanır. HTTP uçları:
+   GET /account (masaüstündeki account:state karşılığı) ve /<app>/fs/list|mkdir|upload|download|delete|rename|usage
+   (kullanıcının "yerel" alanı DATA_DIR/tools/<app>/<uid>/files — Electron'daki dosya diyaloglarının karşılığı).
 
-Depo: tools_mt_store(user_id, app, key='store', json) — masaüstü store.json ile AYNI JSON şeması (folders, connections,
-shortcuts, settings, syncMeta). Şifreler masaüstünde safeStorage ile 'enc:' önekiyle saklanırdı; burada aynı önekle
-Fernet (DATA_DIR/tools/mt_secret.key, 0600) kullanılır. Şifre hiçbir zaman arayüze gönderilmez (hasPassword/hasPassphrase).
-
-"Bilgisayarım" paneli: kullanıcının HEPGO'daki kişisel alanı DATA_DIR/tools/files/<uid>; arayüze Windows yolu gibi
-sanal sürücü H:\\ ile sunulur (renderer'lar Windows yol mantığıyla çalışır).
-
-Sunucudan arayüze giden metinler {$t: 'i18n anahtarı', $p: {...}} nesneleridir; renderer kendi i18n.js sözlüğüyle çevirir.
+Depo: tools_mt_store(user_id, app, key, json) — masaüstü store.json/secrets.json/history ile AYNI JSON şeması
+(key='store' → folders, connections|projects, settings, …; 'secrets', 'history'). Şifreler masaüstünde safeStorage ile
+'enc:' önekiyle saklanırdı; burada aynı önekle Fernet kullanılır. TEK anahtar kaynağı: DATA_DIR/tools/mt_secret.key (0600);
+eski app_kv.tools_mt_fernet kaydı varsa dosya yokken ona taşınır. Şifre hiçbir zaman arayüze gönderilmez (hasPassword…).
 """
 import asyncio
 import base64
@@ -30,11 +34,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .. import config, db
-from .tools_common import TOOLS_DIR, tools_user
+from .tools_common import TOOLS_DIR, safe_name, tools_user
 
 router = APIRouter(prefix='/api/tools/mt')
-APPS = ('sshmaster', 'ftpmaster')
+IPC_APPS = ('sshmaster', 'ftpmaster')                       # boot/invoke/files (IPC kanalı kalıbı)
+KV_APPS = ('sqlmaster', 'notepadmaster', 'convertmaster')   # kv + fs kalıbı
+APPS = IPC_APPS + KV_APPS
 VERSION = 'HEPGO web'
+MAX_UPLOAD = 512 * 1024 * 1024
+_kv_lock = threading.Lock()
 LANGS = ('tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru')
 DRIVE = 'H:\\'                 # sanal sürücü: kullanıcının HEPGO kişisel alanı
 FILES_DIR = TOOLS_DIR / 'files'
@@ -59,13 +67,24 @@ class MtError(Exception):
 _fernet = [None]
 
 
+def _legacy_kv_key():
+    """Önceki sürümün app_kv.tools_mt_fernet kaydı (varsa) — dosyaya taşınır ki eski 'enc:' değerler açılabilsin."""
+    try:
+        with db.connect() as conn:
+            r = conn.execute("SELECT v FROM app_kv WHERE k = 'tools_mt_fernet'").fetchone()
+        return r[0].strip().encode('ascii') if r and r[0] else None
+    except Exception:   # noqa: BLE001 — tablo yok / DB kapalı
+        return None
+
+
 def fernet():
+    """Tek anahtar kaynağı: DATA_DIR/tools/mt_secret.key. Dosya varsa o; yoksa app_kv'deki eski anahtar; o da yoksa yeni üretilir."""
     if _fernet[0] is None:
         from cryptography.fernet import Fernet
         p = TOOLS_DIR / 'mt_secret.key'
         if not p.exists():
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(Fernet.generate_key())
+            p.write_bytes(_legacy_kv_key() or Fernet.generate_key())
             p.chmod(0o600)
         _fernet[0] = Fernet(p.read_bytes().strip())
     return _fernet[0]
@@ -88,6 +107,126 @@ def decrypt(value) -> str:
     except Exception:   # noqa: BLE001 — anahtar değişmiş/bozuk kayıt: boş şifre
         return ''
     return value
+
+
+# SQL/Notepad/Convert tarafının adları (aynı Fernet, aynı 'enc:' öneki)
+protect = encrypt
+unprotect = decrypt
+
+
+# ---------------------------------------------------------------------------
+# Anahtar-değer deposu (SQL/Notepad/Convert: key = store | secrets | history …; JSON şeması masaüstüyle aynı)
+# ---------------------------------------------------------------------------
+def check_app(app: str) -> str:
+    if app not in APPS:
+        raise HTTPException(404, 'Bilinmeyen uygulama')
+    return app
+
+
+def kv_get(uid: int, app: str, key: str, default=None):
+    with db.connect() as conn:
+        r = conn.execute('SELECT json FROM tools_mt_store WHERE user_id = ? AND app = ? AND key = ?', (uid, app, key)).fetchone()
+    if not r:
+        return default
+    try:
+        return json.loads(r[0])
+    except ValueError:
+        return default
+
+
+def kv_set(uid: int, app: str, key: str, value) -> None:
+    text = json.dumps(value, ensure_ascii=False)
+    with _kv_lock, db.connect() as conn:
+        conn.execute('INSERT INTO tools_mt_store (user_id, app, key, json, updated_at) VALUES (?, ?, ?, ?, ?) '
+                     'ON CONFLICT(user_id, app, key) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at',
+                     (uid, app, key, text, db.now()))
+        conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Kullanıcı dosya alanı (SQL/Notepad/Convert): DATA_DIR/tools/<app>/<uid>/{files,cache,work,converted…}; yollar '/a/b'
+# ---------------------------------------------------------------------------
+def app_dir(app: str, uid: int, *parts: str) -> Path:
+    p = TOOLS_DIR / app / str(int(uid))
+    for x in parts:
+        p = p / x
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def files_root(app: str, uid: int) -> Path:
+    return app_dir(app, uid, 'files')
+
+
+_SEG_RE = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def norm_rel(rel: str) -> str:
+    """'/a/b' biçimine getirir; '..' ve gizli kontrol karakterleri temizlenir. Kök = '/'."""
+    parts = []
+    for s in str(rel or '').replace('\\', '/').split('/'):
+        s = _SEG_RE.sub('', s).strip()
+        if s in ('', '.'):
+            continue
+        if s == '..':
+            if parts:
+                parts.pop()
+            continue
+        parts.append(s[:200])
+    return '/' + '/'.join(parts)
+
+
+def resolve(root: Path, rel: str) -> Path:
+    rel = norm_rel(rel)
+    p = (root / rel.lstrip('/')).resolve() if rel != '/' else root.resolve()
+    if p != root.resolve() and root.resolve() not in p.parents:
+        raise HTTPException(400, 'Geçersiz yol')
+    return p
+
+
+def entry(root: Path, p: Path) -> dict:
+    try:
+        st = p.stat()
+    except OSError:
+        return None
+    is_dir = p.is_dir()
+    return {'name': p.name, 'path': '/' + p.relative_to(root).as_posix(), 'isDir': is_dir, 'isLink': p.is_symlink(),
+            'size': 0 if is_dir else st.st_size, 'mtime': int(st.st_mtime * 1000)}
+
+
+def list_dir(root: Path, rel: str) -> list:
+    d = resolve(root, rel)
+    if not d.is_dir():
+        raise HTTPException(404, 'Klasör bulunamadı')
+    out = [entry(root, p) for p in sorted(d.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))]
+    return [e for e in out if e]
+
+
+def dir_size(p: Path) -> int:
+    total = 0
+    if not p.exists():
+        return 0
+    for f in p.rglob('*'):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def rm(p: Path) -> None:
+    if p.is_dir() and not p.is_symlink():
+        shutil.rmtree(p, ignore_errors=True)
+    else:
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +264,11 @@ def resolve_lang(code):
 # Depo (store.json karşılığı) — tools_mt_store tablosu
 # ---------------------------------------------------------------------------
 def uid_hex():
+    """Masaüstündeki crypto.randomBytes(8).toString('hex') ile aynı biçimde kimlik."""
     return secrets.token_hex(8)
+
+
+uid8 = uid_hex
 
 
 def default_store(app, lang):
@@ -620,7 +763,7 @@ HANDLERS = {
 
 
 def _ctx(app, user, lang=None):
-    if app not in APPS:
+    if app not in IPC_APPS:
         raise HTTPException(404, 'Bilinmeyen uygulama')
     store_lang = None
     try:   # yalnız kayıtlı ayar okunur; depo henüz yoksa varsayılanlar istenen dilde sonra oluşur
@@ -696,6 +839,96 @@ def files_download(app: str, path: str, user=Depends(tools_user)):
     if not p.is_file():
         raise HTTPException(404, 'Dosya bulunamadı')
     return FileResponse(p, filename=p.name, media_type='application/octet-stream')
+
+
+# ---------------------------------------------------------------------------
+# HTTP: hesap ve dosya alanı (SQL / Notepad / Convert Master; static/mt/common/hepgo.js köprüsü)
+# ---------------------------------------------------------------------------
+@router.get('/account')
+def account(user=Depends(tools_user)):
+    """Masaüstündeki account:state karşılığı: oturum HEPGO'nun; Master Tool senkronu yok (state 'off')."""
+    return {'loggedIn': True, 'user': {'id': user['id'], 'email': user['username'], 'name': user.get('full_name') or user['username']},
+            'email': user['username'], 'syncEnabled': False, 'state': 'off', 'lastSyncAt': None, 'error': None, 'hepgo': True,
+            'notice': None, 'appVersion': 'HEPGO'}
+
+
+class PathBody(BaseModel):
+    path: str = '/'
+    name: str = ''
+
+
+@router.get('/{app}/fs/list')
+def fs_list(app: str, path: str = '/', user=Depends(tools_user)):
+    return {'root': '/', 'items': list_dir(files_root(check_app(app), user['id']), path)}
+
+
+@router.post('/{app}/fs/mkdir')
+def fs_mkdir(app: str, body: PathBody, user=Depends(tools_user)):
+    root = files_root(check_app(app), user['id'])
+    base = resolve(root, body.path)
+    target = (base / safe_name(body.name, '')) if body.name else base
+    if target == root or not safe_name(target.name, ''):
+        raise HTTPException(400, 'Geçersiz klasör adı')
+    target.mkdir(parents=True, exist_ok=True)
+    return {'ok': True, 'path': '/' + target.relative_to(root).as_posix()}
+
+
+@router.post('/{app}/fs/upload')
+async def fs_upload(app: str, files: list[UploadFile], dir: str = Form('/'), user=Depends(tools_user)):   # noqa: A002
+    root = files_root(check_app(app), user['id'])
+    d = resolve(root, dir)
+    d.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for f in files:
+        # Klasör yüklemesinde (webkitdirectory) dosya adı göreli yol taşır: alt klasörler korunur
+        rel = norm_rel(f.filename or 'dosya').lstrip('/')
+        target = resolve(root, '/' + (d.relative_to(root).as_posix() + '/' if d != root else '') + rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        size = 0
+        with target.open('wb') as out:
+            while chunk := await f.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD:
+                    out.close()
+                    target.unlink(missing_ok=True)
+                    raise HTTPException(413, 'Dosya çok büyük (en çok 512 MB)')
+                out.write(chunk)
+        saved.append(entry(root, target))
+    return {'ok': True, 'items': saved}
+
+
+@router.get('/{app}/fs/download')
+def fs_download(app: str, path: str, user=Depends(tools_user)):
+    p = resolve(files_root(check_app(app), user['id']), path)
+    if not p.is_file():
+        raise HTTPException(404, 'Dosya bulunamadı')
+    return FileResponse(p, filename=p.name)
+
+
+@router.post('/{app}/fs/delete')
+def fs_delete(app: str, body: PathBody, user=Depends(tools_user)):
+    root = files_root(check_app(app), user['id'])
+    p = resolve(root, body.path)
+    if p == root.resolve():
+        raise HTTPException(400, 'Kök silinemez')
+    rm(p)
+    return {'ok': True}
+
+
+@router.post('/{app}/fs/rename')
+def fs_rename(app: str, body: PathBody, user=Depends(tools_user)):
+    root = files_root(check_app(app), user['id'])
+    p = resolve(root, body.path)
+    name = safe_name(body.name, '')
+    if not p.exists() or not name:
+        raise HTTPException(400, 'Geçersiz ad')
+    p.rename(p.parent / name)
+    return {'ok': True, 'path': '/' + (p.parent / name).relative_to(root).as_posix()}
+
+
+@router.get('/{app}/fs/usage')
+def fs_usage(app: str, user=Depends(tools_user)):
+    return {'bytes': dir_size(files_root(check_app(app), user['id']))}
 
 
 def audit(uid, action, detail):

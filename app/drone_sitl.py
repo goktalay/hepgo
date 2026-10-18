@@ -182,6 +182,38 @@ def bin_temizle(kimlik):
         f.unlink(missing_ok=True)
 
 
+TERRAIN_DAT_LIMIT = int(os.environ.get('SITL_TERRAIN_DAT_MB', '64')) * 1024 * 1024   # çalışma dizini `terrain/*.DAT` toplam üst sınırı
+
+
+def terrain_temizle(kimlik, limit=None):
+    """ArduPilot arazi önbelleği (`terrain/N39E033.DAT`, 1°×1° başına bir dosya; GCS/HEPGO TERRAIN_DATA ile dolar) oturumlar arası KALIR — aynı
+    bölgede yeni oturum arazi bloklarını yeniden istemez. Toplam `limit` (varsayılan 64 MB) aşılırsa en eski erişilenler silinir. Dönüş: silinen sayısı."""
+    limit = TERRAIN_DAT_LIMIT if limit is None else int(limit)
+    dizin = calisma_dizini(kimlik) / 'terrain'
+    if not dizin.is_dir():
+        return 0
+    dosyalar = []
+    for f in dizin.iterdir():
+        if f.is_file() and f.suffix.upper() == '.DAT':
+            try:
+                st = f.stat()
+                dosyalar.append((st.st_mtime, st.st_blocks * 512, f))   # seyrek dosya: gerçek disk kullanımı
+            except OSError:
+                pass
+    dosyalar.sort()
+    toplam, silinen = sum(d[1] for d in dosyalar), 0
+    for _, boyut, f in dosyalar:
+        if toplam <= limit:
+            break
+        try:
+            f.unlink()
+            toplam -= boyut
+            silinen += 1
+        except OSError:
+            pass
+    return silinen
+
+
 class SitlYoneticisi:
     """Kiracı başına SITL süreçleri: kimlik (drone_id) → Popen."""
 
@@ -229,6 +261,7 @@ class SitlYoneticisi:
         except OSError as e:
             return None, f'SITL varsayılan parametre dosyası yazılamadı: {e}'
         bin_temizle(kimlik)   # önceki oturumun .BIN artıkları (kaydedilmişse zaten taşındı)
+        terrain_temizle(kimlik)   # arazi .DAT önbelleği kalır; yalnız disk sınırı aşılırsa en eskiler silinir (§18)
         yuk = float(irtifa if irtifa is not None else EV_IRTIFA)
         komut = [str(yol), '--model', model, '--home', f'{float(lat):.7f},{float(lon):.7f},{yuk:.1f},0',
                  '--base-port', str(port), '--defaults', str(parm), '--sysid', str(int(sysid))]

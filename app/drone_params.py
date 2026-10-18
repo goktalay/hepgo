@@ -56,7 +56,7 @@ def oturum_adlari():
         adlar = {'SIM_WIND_SPD', 'SIM_WIND_DIR', 'SIM_SPEEDUP'}
         try:
             from . import flightsim as fs
-            for grup in (fs.RC_PARAMLAR, fs.GPS_RTK_PARAMLARI, fs.PLANE_YER_PARAMLARI):
+            for grup in (fs.RC_PARAMLAR, fs.GPS_RTK_PARAMLARI, fs.PLANE_YER_PARAMLARI, fs.TERRAIN_PARAMLARI):   # TERRAIN_ENABLE/SPACING: §18 arazi sunumu oturum ayarı
                 adlar |= {a for a, _ in grup}
             for m in ('ramp', 'vehicle', 'wheels'):
                 adlar |= {a for a, _ in fs.launch_parametreleri({'method': m, 'angle_deg': 15, 'release_kmh': 70}, 50)}

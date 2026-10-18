@@ -75,6 +75,15 @@ FLAP_PARAMLARI = (('SERVO5_FUNCTION', 3.0), ('SERVO6_FUNCTION', 3.0), ('TKOFF_FL
 # aksaklık ve irtifa sürüklenmesi RTK düzeyine çekilir. Tüm tiplerde ilk kalp atışında yazılır; parametre adları ikilide doğrulandı.
 GPS_RTK_PARAMLARI = (('SIM_GPS1_ACC', 0.02), ('SIM_GPS1_NUMSATS', 18.0), ('SIM_GPS1_NOISE', 0.0), ('SIM_GPS1_VERR_X', 0.0), ('SIM_GPS1_VERR_Y', 0.0),
                      ('SIM_GPS1_VERR_Z', 0.0), ('SIM_GPS1_GLTCH_X', 0.0), ('SIM_GPS1_GLTCH_Y', 0.0), ('SIM_GPS1_GLTCH_Z', 0.0), ('SIM_GPS1_DRFTALT', 0.0))
+# Arazi (§18): gerçek arazi / Google 3B kiplerinde sunucu GCS gibi SITL'in TERRAIN_REQUEST'lerine sim_terrain (terrarium z13) verisiyle TERRAIN_DATA
+# yanıtlar → SITL fiziği gerçek topoğrafyayı görür (önceden yalnız Mission Planner yollardı; MP yoksa düz zemin). Oturum parametreleri (kalıcı kayda girmez):
+# TERRAIN_ENABLE 1 (ArduPilot varsayılanı 1; kullanıcı kapatmışsa açılır), TERRAIN_SPACING 100 m. TERRAIN_FOLLOW'a dokunulmaz (kullanıcı MP'den açabilir).
+# SIM_TERRAIN_SERVE=0 → sunum kapalı (ölçüm/acil durum). Prosedürel kipte kapalı (yükseklik istemcide üretilir; sunucu bilmez).
+TERRAIN_PARAMLARI = (('TERRAIN_ENABLE', 1.0), ('TERRAIN_SPACING', 100.0))
+TERRAIN_SERVE = os.environ.get('SIM_TERRAIN_SERVE', '1') != '0'
+TERRAIN_KIPLER = ('real', 'google3d')
+TERRAIN_HATA_OLAY_S = 60.0            # sn: yükseklik kaynağı hatası uyarısı en çok bu sıklıkta
+BLOK_HATA = 56                        # tüm istek başarısız (iş parçacığı hatası): 56 parça atlandı sayılır
 WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
                   'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2,
                   'landing_circle_m': 30, 'launch': dict(LAUNCH_DEFAULTS)}   # landing_circle_m: görev bitiş noktasındaki iniş dairesi çapı (§18)
@@ -493,6 +502,10 @@ class SimSession:
         self.komutcu = flightsim_hub.MavKomut(self)
         self.gorev = flightsim_mission.GorevIzleyici(self)   # §18: görev izleme (MP yüklemesi algılama), iz, çarpışma/özet kayıtları
         self._bekleyenler = []           # [(types, cond, asyncio.Queue)] — _isle içinde dağıtılır (MavKomut ACK/ACK bekleyicileri)
+        # §18 arazi sunumu: SITL TERRAIN_REQUEST → sim_terrain → TERRAIN_DATA (gerçek arazi / Google 3B; SIM_TERRAIN_SERVE); sayaçlar + son TERRAIN_REPORT
+        self.arazi = {'serve': bool(TERRAIN_SERVE and SITL_ENABLED and world.get('mode') in TERRAIN_KIPLER), 'requests': 0, 'blocks': 0, 'skipped': 0,
+                      'errors': 0, 'last_ts': None, 'report': None}
+        self._arazi_is, self._arazi_sonraki, self._arazi_hata_son = None, None, 0.0
         self._sahte_gorev, self._sahte_params = [], {}   # sahte kip: hub mission_upload / param_set yankıları
         # Görsel model (§12): kütüphane nesnesi {id, name, source, orient, glb_url, has_prop, …}; yalnız görsel, SITL modelini değiştirmez.
         # `airframe` geriye uyum: dahili caymaz/delta için kısa ad (uçak tiplerinde), aksi None.
@@ -562,7 +575,8 @@ class SimSession:
                 'drone': dict(self.drone) if self.drone else None, 'route': list(self.route), 'mission': self.gorev.yayin_alanlari(),
                 'rec': {**self.rec, 'bin_log': dict(self.bin_sonuc) if self.bin_sonuc else None},
                 'params': {'tracked': self.param_izleyici is not None, 'loaded': len(self.kayitli_params),
-                           'saved': self.param_izleyici.kayit_sayisi if self.param_izleyici else 0}}
+                           'saved': self.param_izleyici.kayit_sayisi if self.param_izleyici else 0},
+                'terrain': {**self.arazi, 'report': dict(self.arazi['report']) if self.arazi['report'] else None}}   # §18 arazi sunumu sayaçları + son TERRAIN_REPORT
 
     # ---- §14: bekleyici kuyrukları (MavKomut) ----
     @contextlib.contextmanager
@@ -869,8 +883,14 @@ class SimSession:
             te['servo'] = [m.servo1_raw, m.servo2_raw, m.servo3_raw, m.servo4_raw, m.servo5_raw, m.servo6_raw, m.servo7_raw, m.servo8_raw]
         elif t == 'STATUSTEXT':
             self._olay(str(m.text).rstrip('\x00'), m.severity)
-        elif t == 'TERRAIN_REPORT':   # §18: ArduPilot arazi veritabanına (SRTM; GCS'ten TERRAIN_DATA ile dolar) göre AGL → 3B tutarlılık süzgeci. Veri yoksa terrain_height 0 → None
-            te['terrain_agl'] = round(float(m.current_height), 2) if (int(getattr(m, 'loaded', 0) or 0) > 0 and abs(float(m.terrain_height)) > 0.5) else None
+        elif t == 'TERRAIN_REPORT':   # §18: ArduPilot arazi veritabanına (SRTM; GCS'ten / bizden TERRAIN_DATA ile dolar) göre AGL → 3B tutarlılık süzgeci. Veri yoksa terrain_height 0 → None
+            yuklu = int(getattr(m, 'loaded', 0) or 0)
+            te['terrain_agl'] = round(float(m.current_height), 2) if (yuklu > 0 and abs(float(m.terrain_height)) > 0.5) else None
+            te['terrain_h'] = round(float(m.terrain_height), 1) if te['terrain_agl'] is not None else None   # SITL'in bulunduğu noktadaki arazi yüksekliği (m MSL)
+            self.arazi['report'] = {'lat': m.lat / 1e7, 'lon': m.lon / 1e7, 'spacing': int(m.spacing), 'terrain_height': round(float(m.terrain_height), 1),
+                                    'current_height': round(float(m.current_height), 1), 'pending': int(m.pending), 'loaded': yuklu, 'ts': round(time.time(), 1)}
+        elif t == 'TERRAIN_REQUEST':   # §18: SITL arazi bloğu istiyor → sim_terrain'den TERRAIN_DATA (yalnız gerçek arazi / Google 3B kipi)
+            self._terrain_istek(m)
         elif t == 'HOME_POSITION':
             te['home'] = {'lat': m.latitude / 1e7, 'lon': m.longitude / 1e7, 'alt': m.altitude / 1000.0}
         elif t == 'COMMAND_ACK':
@@ -898,7 +918,52 @@ class SimSession:
         if self.type == 'sabit_kanat':   # kalkış yöntemi + yerde kayma düzeltmesi parametreleri (§13)
             self._param_set(launch_parametreleri(self.launch))
             self._param_set(self.flap_parametreleri())   # otomatik flaplar (kayıtlı değeri olanlar atlanır: kullanıcı yapılandırması)
+        if self.arazi['serve']:   # §18: arazi veritabanı açık, 100 m ızgara; istekler sim_terrain'den yanıtlanır
+            self._param_set(TERRAIN_PARAMLARI)
+            self._olay('Arazi verisi: SITL\'in arazi istekleri gerçek yükseklik verisinden (terrarium z13) yanıtlanıyor — fizik gerçek topoğrafyayı görür', 6)
         self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
+
+    # ---- §18 arazi sunumu (TERRAIN_REQUEST → TERRAIN_DATA) ----
+    def _terrain_istek(self, m):
+        """SITL'in TERRAIN_REQUEST'i (blok SW köşesi, grid_spacing, 56 bit maske): blok yükseklikleri iş parçacığında sim_terrain'den (karo indirme
+        bloklayabilir) hesaplanır, olay döngüsünde TERRAIN_DATA olarak yazılır. Aynı anda tek iş; iş sürerken gelen son istek sıraya alınır (SITL
+        yanıtlanmayan parçaları zaten yeniden ister). Mission Planner bağlıysa o da yanıtlayabilir (aynı SRTM kaynağı değilse 1–3 m fark; SITL son geleni yazar)."""
+        if not self.arazi['serve'] or self.loop is None:
+            return
+        self.arazi['requests'] += 1
+        istek = (int(m.lat), int(m.lon), int(m.grid_spacing), int(m.mask))
+        if self._arazi_is is not None and not self._arazi_is.done():
+            self._arazi_sonraki = istek
+            return
+        self._arazi_baslat(istek)
+
+    def _arazi_baslat(self, istek):
+        from . import sim_terrain
+        lat, lon, spacing, mask = istek
+        self._arazi_is = self.loop.run_in_executor(None, sim_terrain.terrain_bloklari, lat, lon, spacing, mask)
+        self._arazi_is.add_done_callback(lambda fut, istek=istek: self._arazi_bitti(fut, istek))
+
+    def _arazi_bitti(self, fut, istek):
+        lat, lon, spacing, _mask = istek
+        try:
+            bloklar, atlanan = fut.result()
+        except Exception as e:   # noqa: BLE001 — kaynak hatası: SITL bloğu yeniden ister
+            bloklar, atlanan = [], BLOK_HATA
+            self.arazi['errors'] += 1
+            if time.time() - self._arazi_hata_son > TERRAIN_HATA_OLAY_S:
+                self._arazi_hata_son = time.time()
+                self._olay(f'Arazi verisi alınamadı (SITL düz zeminde kalabilir): {e}'[:200], 4)
+        for bit, data in bloklar:
+            self._gonder(self.mav.terrain_data_encode(lat, lon, spacing, bit, data))
+        self.arazi['blocks'] += len(bloklar)
+        self.arazi['skipped'] += atlanan
+        self.arazi['last_ts'] = round(time.time(), 1)
+        if atlanan and atlanan != BLOK_HATA and time.time() - self._arazi_hata_son > TERRAIN_HATA_OLAY_S:
+            self._arazi_hata_son = time.time()
+            self._olay(f'Arazi verisi: {atlanan} parça alınamadı (yükseklik kaynağı); SITL yeniden isteyecek', 4)
+        sonraki, self._arazi_sonraki = self._arazi_sonraki, None
+        if sonraki is not None and self._tcp_w is not None:
+            self._arazi_baslat(sonraki)
 
     def flap_parametreleri(self):
         """FLAP_PARAMLARI'ndan dronun kalıcı kaydında olmayanlar (kayıtlı SERVOn_FUNCTION / *_FLAP_* kullanıcı kararıdır, ezilmez)."""

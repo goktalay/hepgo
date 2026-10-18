@@ -133,9 +133,113 @@ def terrain_birim_testleri():
                 raise AssertionError(bad)
             except ValueError:
                 pass
+        # --- ArduPilot arazi protokolü (§18): TERRAIN_REQUEST (blok SW köşesi, spacing, 56 bit maske) → TERRAIN_DATA parçaları ---
+        sahte.hata = None
+        la, lo = sim_terrain.konum_ofset(39.925, 32.837, 1000, 1000)   # Location::offset: 1 km kuzey/doğu
+        assert abs(la - 39.925 - 0.0089832) < 1e-6 and abs(lo - 32.837 - 0.0089832 / math.cos(math.radians(39.925 + 0.0044916))) < 1e-6, (la, lo)
+        h_ev = sim_terrain.yukseklik(39.925, 32.837)   # bilineer; sahte karo h = 900 + x·0,5 (piksel sütunu) → doğuya artar, kuzeye sabit
+        assert 900 <= h_ev <= 1027.5 and abs(h_ev - sim_terrain.ev_irtifa(39.925, 32.837)) < 0.6, (h_ev, sim_terrain.ev_irtifa(39.925, 32.837))
+        assert sim_terrain.yukseklik(39.925, 32.837 + 0.001) > h_ev and abs(sim_terrain.yukseklik(39.925 + 0.001, 32.837) - h_ev) < 1e-6
+        assert sim_terrain.BLOK_BIT == 56 and sim_terrain.PARCA == 4 and (sim_terrain.BLOK_MUL_X, sim_terrain.BLOK_MUL_Y) == (7, 8)
+        lat7, lon7 = int(39.925e7), int(32.837e7)
+        bl, atl = sim_terrain.terrain_bloklari(lat7, lon7, 100, (1 << 56) - 1)
+        assert atl == 0 and [b for b, _ in bl] == list(range(56)) and all(len(d) == 16 and all(isinstance(v, int) for v in d) for _, d in bl), (atl, len(bl))
+        d0 = dict(bl)[0]
+        assert d0[0] == int(round(h_ev)), (d0[0], h_ev)                                   # SW köşe = istek konumu
+        assert d0[4] == d0[0] and d0[8] == d0[0] and d0[12] == d0[0], d0                   # data[i]: i//4 kuzey adımı (sahte karoda sabit), i%4 doğu adımı
+        assert 2 <= d0[1] - d0[0] <= 5 and d0[3] > d0[2] > d0[1], d0                     # 100 m doğu ≈ +3,5 m (0,5 m/px, ≈ 14 m/px)
+        # gridbit = kuzey_parça·8 + doğu_parça: bit 1 → 400 m doğu (≈ +14 m), bit 8 → 400 m kuzey (sahte karoda aynı değer)
+        d1, d8 = dict(bl)[1], dict(bl)[8]
+        assert 10 <= d1[0] - d0[0] <= 18 and d8[0] == d0[0], (d1[0], d8[0], d0[0])
+        bl2, _ = sim_terrain.terrain_bloklari(lat7, lon7, 100, 0b101)
+        assert [b for b, _ in bl2] == [0, 2] and dict(bl2)[0] == d0, bl2                 # yalnız maskedeki parçalar
+        assert sim_terrain.terrain_bloklari(lat7, lon7, 0, 7) == ([], 0)
+        bl3, atl3 = sim_terrain.terrain_bloklari(lat7, lon7, 100, 0b11, yukseklik_fn=lambda la_, lo_: 1e6 if lo_ > 32.8371 else -1e6)   # int16 kırpma
+        assert atl3 == 0 and dict(bl3)[0][0] == -32768 and dict(bl3)[1][0] == 32767, bl3
+        sayac = {'n': 0}
+
+        def hatali(la_, lo_):
+            sayac['n'] += 1
+            if sayac['n'] % 2 == 0:
+                raise sim_terrain.KaynakHata(503, 'kapalı')
+            return 500.0
+        bl4, atl4 = sim_terrain.terrain_bloklari(lat7, lon7, 100, 0b111, yukseklik_fn=hatali)
+        assert atl4 == 3 and bl4 == [], (bl4, atl4)                                      # kaynak hatası → parça atlanır (SITL yeniden ister)
+        assert sim_terrain.terrain_bloklari(lat7, lon7, 100, 1, yukseklik_fn=lambda la_, lo_: 123.4) == ([(0, [123] * 16)], 0)
     finally:
         sim_terrain.FETCH = sim_terrain._fetch
     print('  sim_terrain birim testleri geçti')
+
+
+def arazi_sunum_testleri(a, c_altsiz):
+    """§18 arazi sunumu (oturum yolu, sahte kipte): gerçek arazi kipinde `terrain` özeti; SITL_ENABLED=0 → serve False; sunum açılınca `_isle(TERRAIN_REQUEST)`
+    → iş parçacığında sim_terrain → TERRAIN_DATA (lat/lon/spacing yankı, gridbit, int16) `_gonder`; TERRAIN_REPORT → tele.terrain_agl/terrain_h + rapor;
+    prosedürel kipte kapalı; TERRAIN_ENABLE/SPACING oturum parametresi (drone_params hariç)."""
+    from app import drone_params
+    sahte = SahteFetch()
+    sim_terrain.FETCH = sahte
+    try:
+        s = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c_altsiz['id'], 'world': {'mode': 'real'}}), 201)
+        sid = s['id']
+        assert s['terrain'] == {'serve': False, 'requests': 0, 'blocks': 0, 'skipped': 0, 'errors': 0, 'last_ts': None, 'report': None}, s['terrain']   # sahte kip: sunum yok
+        ses = flightsim.MANAGER.get(sid)
+        assert bekle(lambda: ses.state == 'HAZIR' or None)
+        assert flightsim.TERRAIN_PARAMLARI == (('TERRAIN_ENABLE', 1.0), ('TERRAIN_SPACING', 100.0)) and flightsim.TERRAIN_KIPLER == ('real', 'google3d')
+        assert all(drone_params.haric_mi(ad) for ad, _ in flightsim.TERRAIN_PARAMLARI) and not drone_params.haric_mi('TERRAIN_FOLLOW')
+        d = flightsim._dialect()
+        ayristir = d.MAVLink(None)
+        arac = d.MAVLink(None, srcSystem=ses.sysid, srcComponent=1)
+        gond = []
+        ses._gonder = lambda msg: gond.append(msg) or True
+        req = lambda mask: next(iter(ayristir.parse_buffer(arac.terrain_request_encode(int(39.925e7), int(32.837e7), 100, mask).pack(arac)) or []))   # noqa: E731
+        ses._isle(req((1 << 56) - 1))   # sunum kapalı: sayaç bile artmaz
+        time.sleep(0.3)
+        assert gond == [] and ses.arazi['requests'] == 0
+        ses.arazi['serve'] = True   # gerçek SITL kipi gibi
+        ses._isle(req((1 << 54) | 0b101))   # bit 0, 2, 54
+        assert bekle(lambda: ses.arazi['blocks'] == 3 or None), ses.arazi
+        assert ses.arazi['requests'] == 1 and ses.arazi['skipped'] == 0 and ses.arazi['errors'] == 0 and ses.arazi['last_ts'], ses.arazi
+        assert [m.get_type() for m in gond] == ['TERRAIN_DATA'] * 3 and [m.gridbit for m in gond] == [0, 2, 54], gond
+        m0 = gond[0]
+        assert (m0.lat, m0.lon, m0.grid_spacing) == (int(39.925e7), int(32.837e7), 100) and len(m0.data) == 16 and m0.data[0] == int(round(sim_terrain.yukseklik(39.925, 32.837))), m0
+        bl, _ = sim_terrain.terrain_bloklari(int(39.925e7), int(32.837e7), 100, 1 << 54)
+        assert list(gond[2].data) == bl[0][1]
+        # iş sürerken gelen istekler: son istek sıraya alınır (ilk bitince işlenir); SITL yanıtlanmayan parçaları yeniden ister
+        gond.clear()
+        ses._isle(req(0b1)); ses._isle(req(0b10)); ses._isle(req(0b100))
+        assert bekle(lambda: (ses.arazi['requests'] == 4 and ses._arazi_is.done() and ses._arazi_sonraki is None) or None), (ses.arazi, ses._arazi_sonraki)
+        time.sleep(0.2)
+        assert 1 <= len(gond) <= 3 and gond[0].gridbit == 0 and gond[-1].gridbit in (0, 2), [m.gridbit for m in gond]
+        # kaynak hatası: parça atlanır, sayaç + tek sarı olay (önbellekler boşaltılır ki kaynak gerçekten sorulsun)
+        gond.clear()
+        olaylar = []
+        ses._olay = lambda t, sev=6: olaylar.append((t, sev))
+        sahte.hata, sahte.hata_say = sim_terrain.KaynakHata(503, 'kapalı'), 99
+        sim_terrain._coz.clear()
+        for p in sim_terrain.CACHE_DIR.glob('elev/13/*/*.png'):
+            p.unlink()
+        ses._isle(req(0b11))
+        assert bekle(lambda: ses.arazi['skipped'] == 2 or None), ses.arazi
+        assert gond == [] and ses.arazi['blocks'] >= 4 and any('Arazi verisi' in t and sev == 4 for t, sev in olaylar), (ses.arazi, olaylar)
+        sahte.hata = None
+        # TERRAIN_REPORT → tele + özet (loaded > 0 ve terrain_height ≠ 0 iken AGL)
+        rep = next(iter(ayristir.parse_buffer(arac.terrain_report_encode(int(39.925e7), int(32.837e7), 100, 912.5, 37.2, 3, 12).pack(arac)) or []))
+        ses._isle(rep)
+        assert ses.tele['terrain_agl'] == 37.2 and ses.tele['terrain_h'] == 912.5, ses.tele
+        g = ok(a.get(f'/api/drone/sim/sessions/{sid}'))
+        assert g['terrain']['report'] == {'lat': 39.925, 'lon': 32.837, 'spacing': 100, 'terrain_height': 912.5, 'current_height': 37.2, 'pending': 3, 'loaded': 12, 'ts': g['terrain']['report']['ts']}, g['terrain']
+        assert g['terrain']['requests'] == 5 and g['terrain']['blocks'] >= 4 and g['terrain']['skipped'] == 2, g['terrain']
+        rep0 = next(iter(ayristir.parse_buffer(arac.terrain_report_encode(int(39.925e7), int(32.837e7), 100, 0.0, 0.0, 56, 0).pack(arac)) or []))
+        ses._isle(rep0)
+        assert ses.tele['terrain_agl'] is None and ses.tele['terrain_h'] is None
+        ok(a.delete(f'/api/drone/sim/sessions/{sid}'))
+        # prosedürel kip: sunum kapalı (gerçek SITL'de de)
+        s2 = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'procedural'}}), 201)
+        assert s2['terrain']['serve'] is False
+        ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}"))
+    finally:
+        sim_terrain.FETCH = sim_terrain._fetch
+    print('  arazi sunumu (TERRAIN_REQUEST → TERRAIN_DATA) testleri geçti')
 
 
 def vekil_testleri(a, mon, c_altsiz):
@@ -1508,6 +1612,7 @@ def main():
             assert mon.delete(f'/api/drone/sim/sessions/{sid}').status_code == 403
             # --- gerçek topoğrafya vekili (ağsız) ---
             vekil_testleri(a, mon, c_altsiz)
+            arazi_sunum_testleri(a, c_altsiz)   # §18 SITL arazi sunumu (TERRAIN_REQUEST → TERRAIN_DATA)
             # WS: izler, komut reddedilir
             with mon.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={mtoken}'}) as ws:
                 h = json.loads(ws.receive_text())
@@ -1667,7 +1772,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 10 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
+        assert s3['id'] == sid + 12 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + arazi sunumunun 2 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- ekran kaydı (§17) ---
         rec_testleri(a, c1)

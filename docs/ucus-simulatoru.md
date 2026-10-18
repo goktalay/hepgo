@@ -292,6 +292,12 @@ GD) → eve göre **+951 m**; 3B'de `terrainHeight` aynı noktada aynı değeri 
 uydu 90 karo (z16, 2 MB) 12.5 sn → 2.6 sn; `/osm` soğuk 46 sn (Overpass; 7996 bina, 242 orman, 31 su; 1.3 MB sade JSON), sıcak 1 sn.
 Tarayıcıda önizleme/oturum dünyası sıcak önbellekle 3–9 sn (yazılım WebGL).
 
+**SITL arazi sunumu (sunucu GCS gibi; §18 ayrıntı).** Gerçek arazi ve Google 3B kiplerinde sunucu SITL'in `TERRAIN_REQUEST`'lerine **aynı terrarium
+karolarından** (z 13, bilineer `sim_terrain.yukseklik`; ev irtifası `ev_irtifa` ile aynı kaynak, EGM96 MSL) `TERRAIN_DATA` yanıtlar → SITL fiziği
+gerçek topoğrafyayı görür (Mission Planner gerekmez). `sim_terrain.terrain_bloklari(lat_e7, lon_e7, spacing, mask)` ArduPilot blok düzenini üretir
+(28×32 nokta = 7 kuzey × 8 doğu adet 4×4 parça; `gridbit = kuzey_parça·8 + doğu_parça`, `data[i]` → kuzey `i//4`, doğu `i%4`; konum `konum_ofset` =
+`Location::offset`); çözülmüş karolar bellekte LRU (`COZ_LIMIT` 48 ≈ 10 MB); 56 parça (896 örnek) soğuk 0,14 sn, sıcak 0,02 sn.
+
 ## 10. Askeri tarz FPV HUD (`static/js/modules/flightsim_hud.js`)
 Kamera kipi **Dron kamerası (2)** seçilince 3B'nin üstünde tam ekran şeffaf bir canvas katmanı (`.fs-mhud`, canvas 2D, devicePixelRatio,
 her rAF) açılır; diğer kiplerde kapanır ve çizim döngüsü durur. Açıkken sahnede `fs-mhud-on` sınıfı: sağdaki uçuş veri paneli ve ÇARPIŞMA
@@ -884,9 +890,36 @@ Salt okuyan izleyicinin 3B algısı sunucuya gitmez. Rapor `REASON.sitl_hit` = "
 (Mission Planner/MAVProxy terrain modülü) `TERRAIN_REQUEST`→`TERRAIN_DATA` ile yollar. PROD'da MP bağlı oturumlar sonrası `sitl_calisma/*/terrain/N39E03x.DAT`
 var (oturum 9'da alt_rel −2…+15 m ile "hit ground": SITL arazi üstünde); DEV e2e'de (MP yok) `TERRAIN_REPORT.terrain_height = 0`, fizik **düz zemin**
 (ev irtifası) → Google 3B tepeleri uçağın 70–130 m üstünde kalır; eski kodda bu "yüksekte çarpışma" + zorla disarm demekti, yeni kodda aday teyitsiz
-düşer. Sunucu `TERRAIN_REPORT` → `tele.terrain_agl` (yalnız `loaded > 0 ∧ terrain_height ≠ 0`); 3B'de `|(z − h) − terrain_agl| > COLL_AGL_DISAGREE_M
-(30 m)` ise örnek kaba karodandır → o karede arazi/su denetimi yok. Açık iş: HEPGO'nun `TERRAIN_REQUEST`'e `sim_terrain` vekilinden `TERRAIN_DATA` ile
-yanıt vermesi (SITL fiziği MP olmadan da gerçek araziyi görür).
+düşer. Sunucu `TERRAIN_REPORT` → `tele.terrain_agl` (yalnız `loaded > 0 ∧ terrain_height ≠ 0`) + `tele.terrain_h` (SITL'in bulunduğu noktadaki arazi
+yüksekliği, m MSL); 3B'de `|(z − h) − terrain_agl| > COLL_AGL_DISAGREE_M (30 m)` ise örnek kaba karodandır → o karede arazi/su denetimi yok.
+
+**SITL arazi sunumu — sunucu GCS gibi `TERRAIN_DATA` yollar (`SimSession._terrain_istek`, `sim_terrain.terrain_bloklari`).** Gerçek arazi ve Google 3B
+kiplerinde (`TERRAIN_KIPLER`; prosedürelde kapalı — yükseklik istemcide üretilir, sunucu bilmez; sahte kipte `HEPGO_SITL=0` etkisiz; `SIM_TERRAIN_SERVE=0`
+tamamen kapatır) `_isle` SITL'in `TERRAIN_REQUEST`'ini (blok SW köşesi lat/lon 1e7, `grid_spacing`, 56 bit `mask`) alır → iş parçacığında
+(`run_in_executor`; karo indirme bloklayabilir) `sim_terrain.terrain_bloklari` → olay döngüsünde her istenen parça için `TERRAIN_DATA(lat, lon, spacing,
+gridbit, data[16] int16 m)`; aynı anda tek iş, iş sürerken gelen **son** istek sıraya alınır (SITL yanıtlanmayan parçaları zaten yeniden ister). Yükseklik
+kaynağı hatasında parça atlanır (SITL yeniden ister), sayaç + 60 sn'de en çok bir sarı olay. Yükseklik = ev irtifasıyla **aynı terrarium z13 karoları**
+(bilineer, EGM96 MSL ≈ ArduPilot SRTM MSL; birim tutarlı) → SITL zemini (`home_alt + h(loc) − h(home)`) ev noktasında `center.alt`'a oturur. Oturum
+başında (ilk kalp atışı) `TERRAIN_PARAMLARI` = **TERRAIN_ENABLE 1, TERRAIN_SPACING 100** (oturum parametresi → `drone_params.oturum_adlari` hariç listesi;
+kalıcı kayda girmez); **TERRAIN_FOLLOW'a dokunulmaz** (0; kullanıcı MP'den açabilir; kalkış/iniş/RTL davranışı değişmez). Mission Planner bağlıyken MP de
+aynı isteklere `TERRAIN_DATA` yollar: SITL son geleni yazar; MP'nin SRTM'i ile terrarium farkı 1–3 m (kabul). SITL arazi önbelleği `sitl_calisma/<kimlik>/terrain/N39E033.DAT`
+(1°×1° başına seyrek dosya; görünür 2,7 MB, disk 24 KB) **oturumlar arası kalır** → aynı bölgede yeni oturum istek atmaz (`drone_sitl.terrain_temizle`:
+toplam disk kullanımı `SITL_TERRAIN_DAT_MB` (64) aşılırsa en eski erişilenler silinir). Oturum özeti `GET /sessions/{id}` → `terrain: {serve, requests, blocks,
+skipped, errors, last_ts, report:{lat, lon, spacing, terrain_height, current_height, pending, loaded, ts}}` (son `TERRAIN_REPORT`). Olay: "Arazi verisi:
+SITL'in arazi istekleri gerçek yükseklik verisinden (terrarium z13) yanıtlanıyor…".
+**Ölçüm** (gerçek SITL arduplane, gerçek arazi kipi, Bedesten alt'sız merkez → ev 741,8 m MSL; `/tmp/flsim/ts/e2e_ts.py 0|1`, 3B'li `e2e_ts3b.py`):
+- ÖNCE (`SIM_TERRAIN_SERVE=0`): `TERRAIN_REPORT loaded 0 / pending 672`, `terrain_height 0`, `.DAT` 0 bayt; GUIDED 315°, 3,2 km, 80 m AGL → uçak 976 m'lik
+  tepenin **191,5 m içinden** geçti (alt_msl − terrarium en düşük −191,5 m), temas/çarpışma yok, 200 sn sonunda hâlâ armed.
+- SONRA (`=1`): ilk kalp atışından 4,7 sn sonra `loaded 56`, 28 sn'de **`loaded 504 / pending 0`** (14 istek, 560 parça, 0 atlanan); SITL `terrain_height`
+  741,7 ↔ terrarium bilineer 741,5 (**fark 0,2 m**); uçuşta SITL `terrain_agl` ↔ `alt_msl − terrarium` farkı ≤ 2 m. Aynı GUIDED uçuş: 37 sn'de yamaçta
+  **"SIM Hit ground at 5,67 m/s"** → `crash sitl_hit` 12,65 m/s, alt_msl **831,0 m ↔ terrarium 831,9 m**, alt_rel 89 m (ev üstünde — gerçek yamaç).
+- SONRA + 3B açık (Playwright, gerçek arazi): 3B `z − h` ile SITL AGL **medyan fark 1,7 m**; 3B arazi adayı → SITL teyidi → `crash terrain` 11,2 m/s,
+  ÇARPIŞMA bandı "Arazi ile temas · 11.2 m/s"; alt_msl 830,7 ↔ terrarium 831–834 m; sayfa hatası 0 (`/tmp/flsim/ts/ts-3b-carpma.png`).
+- Önbellek: dolu `.DAT` ile yeni oturum → **0 istek**, 504 blok diskten 14 sn'de (SITL'in kendi disk IO temposu).
+Not: `tele.terrain_h` HUD'da gösterilmiyor (isteğe bağlı küçük "arazi AGL/yükseklik" göstergesi `flightsim.js` tarafında yapılabilir). Testler
+`tests/test_flightsim.py terrain_birim_testleri` (konum_ofset, bilineer, 56 parça/gridbit/4×4 düzeni, maske, int16 kırpma, kaynak hatası → atlama) ve
+`arazi_sunum_testleri` (sahte kipte serve False; `_isle(TERRAIN_REQUEST)` → `TERRAIN_DATA` lat/lon/spacing yankı + gridbit sırası; sıraya alma; kaynak
+hatası → skipped + sarı olay; `TERRAIN_REPORT` → tele/özet; prosedürelde kapalı; TERRAIN_* hariç listesinde, TERRAIN_FOLLOW değil).
 
 **Ölçüm** (gerçek SITL arduplane + Google 3B gerçek karolar, Playwright swiftshader, `/tmp/flsim/cr/e2e_cr.py`, port 8796, Bedesten 1500 m, tekerlekli):
 - ÖNCE (PROD oturum 9): 18:49:26–18:51:16 arasında **17 crash satırı** (16 `sitl` "SIM Hit ground at 0,2–4,3 m/s", 1 `terrain` 33 m/s), her biri kırmızı bant.

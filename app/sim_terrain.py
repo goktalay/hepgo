@@ -8,6 +8,9 @@ Tarayıcı dış kaynaklara doğrudan gitmez; üç önbellekli uç sunulur (rout
 
 Güvenlik: URL'ler sabit şablon (SSRF yok); z/x/y sayı ve sınır denetimli; kaynak hataları 502 (HTTP) / 503 (ulaşılamadı, zaman aşımı).
 Testler `FETCH` işlevini sahte ile değiştirir (ağsız).
+
+ArduPilot arazi protokolü (§18, `terrain_bloklari`): SITL'in `TERRAIN_REQUEST`'ine (blok SW köşesi lat/lon 1e7, grid_spacing, 56 bitlik maske)
+sunucu GCS gibi `TERRAIN_DATA` (gridbit 0..55, 4×4 int16 m) üretir; yükseklik aynı terrarium karolarından (z 13, bilineer; ev irtifasıyla aynı kaynak).
 """
 import hashlib
 import json
@@ -291,6 +294,87 @@ def ev_irtifa(lat, lon, z=13):
     tx, ty = int(math.floor(fx)), int(math.floor(fy))
     data, _ = karo('elev', z, tx, ty)
     return round(terrarium_yukseklik(data, (fx - tx) * 256, (fy - ty) * 256), 1)
+
+
+# ---------------------------------------------------------------- ArduPilot arazi protokolü (TERRAIN_REQUEST → TERRAIN_DATA; §18)
+# ArduPilot AP_Terrain: blok 28×32 ızgara noktası = 7 (kuzey, x) × 8 (doğu, y) adet 4×4 MAVLink parçası; TERRAIN_REQUEST.mask biti
+# `gridbit = (x/4)·8 + (y/4)`; TERRAIN_DATA.data[i] → ızgara [idx_x + i//4][idx_y + i%4]; nokta konumu = SW köşe + (x·spacing kuzey, y·spacing doğu)
+# (Location::offset). Yükseklik int16 m, MSL (SRTM/EGM96; terrarium da EGM96 MSL).
+ARAZI_Z = 13                      # yükseklik karosu seviyesi (≈ 14 m/px, 40° enlemde); ev irtifasıyla (ev_irtifa) aynı kaynak
+BLOK_MUL_X, BLOK_MUL_Y, PARCA = 7, 8, 4
+BLOK_BIT = BLOK_MUL_X * BLOK_MUL_Y   # 56
+M_PER_DEG = 1e7 * 0.011131884502145034   # ArduPilot LOCATION_SCALING_FACTOR: metre / derece (≈ 111 318,8)
+COZ_LIMIT = 48                    # bellekte çözülmüş karo (256×256×3 B ≈ 196 KB) sayısı — LRU
+_coz = {}                         # (z, x, y) → (son erişim, (w, h, kanal, pix))
+_coz_kilit = threading.Lock()
+
+
+def _cozulmus_karo(z, x, y):
+    """Çözülmüş terrarium karosu (bellek LRU → disk önbelleği/kaynak). Kaynak yoksa KaynakHata."""
+    k = (int(z), int(x), int(y))
+    with _coz_kilit:
+        v = _coz.get(k)
+        if v is not None:
+            v[0] = time.time()
+            return v[1]
+    data, _ = karo('elev', *k)
+    png = png_coz(data)
+    with _coz_kilit:
+        _coz[k] = [time.time(), png]
+        while len(_coz) > COZ_LIMIT:
+            del _coz[min(_coz, key=lambda kk: _coz[kk][0])]
+    return png
+
+
+def _piksel(z, gx, gy):
+    """Küresel piksel koordinatı (karo·256 + piksel) → yükseklik (m); karo sınırını aşan komşu piksel komşu karodan okunur."""
+    lim = 256 * 2 ** z
+    gx %= lim
+    gy = max(0, min(lim - 1, gy))
+    w, _h, kanal, pix = _cozulmus_karo(z, gx // 256, gy // 256)
+    i = ((gy % 256) * w + (gx % 256)) * kanal
+    return pix[i] * 256 + pix[i + 1] + pix[i + 2] / 256.0 - 32768.0
+
+
+def yukseklik(lat, lon, z=ARAZI_Z):
+    """(lat, lon) yüksekliği (m MSL), terrarium karosundan bilineer (piksel merkezleri; ön yüz `sampleRaw` ile aynı yöntem). Kaynak yoksa KaynakHata."""
+    fx, fy = lonlat_karo(lon, lat, z)
+    px, py = fx * 256 - 0.5, fy * 256 - 0.5
+    x0, y0 = int(math.floor(px)), int(math.floor(py))
+    ax, ay = px - x0, py - y0
+    h00, h10 = _piksel(z, x0, y0), _piksel(z, x0 + 1, y0)
+    h01, h11 = _piksel(z, x0, y0 + 1), _piksel(z, x0 + 1, y0 + 1)
+    return (h00 * (1 - ax) + h10 * ax) * (1 - ay) + (h01 * (1 - ax) + h11 * ax) * ay
+
+
+def konum_ofset(lat, lon, kuzey_m, dogu_m):
+    """ArduPilot Location::offset: (lat, lon) derece + kuzey/doğu metre → (lat, lon) derece (boylam ölçeği orta enlemde)."""
+    dlat = kuzey_m / M_PER_DEG
+    return lat + dlat, lon + dogu_m / (M_PER_DEG * max(0.01, math.cos(math.radians(lat + dlat / 2))))
+
+
+def terrain_bloklari(lat_e7, lon_e7, spacing, mask, yukseklik_fn=None):
+    """TERRAIN_REQUEST → [(gridbit, [16 int16 m])] (yalnız maskede istenen parçalar; yüksekliği alınamayan parça atlanır → SITL yeniden ister).
+    `yukseklik_fn(lat, lon)` → m (varsayılan `yukseklik`); hata (KaynakHata/ValueError/zlib.error) o parçayı düşürür. Dönüş ikinci öğe: atlanan parça sayısı."""
+    fn = yukseklik_fn or yukseklik
+    lat0, lon0, spacing, mask = lat_e7 / 1e7, lon_e7 / 1e7, int(spacing), int(mask)
+    if spacing <= 0:
+        return [], 0
+    out, atlanan = [], 0
+    for bit in range(BLOK_BIT):
+        if not (mask >> bit) & 1:
+            continue
+        bx, by = (bit // BLOK_MUL_Y) * PARCA, (bit % BLOK_MUL_Y) * PARCA   # kuzey (x) / doğu (y) ızgara indisleri
+        data = []
+        try:
+            for i in range(PARCA * PARCA):
+                la, lo = konum_ofset(lat0, lon0, (bx + i // PARCA) * spacing, (by + i % PARCA) * spacing)
+                data.append(max(-32768, min(32767, int(round(fn(la, lo))))))
+        except (KaynakHata, ValueError, zlib.error, OSError):
+            atlanan += 1
+            continue
+        out.append((bit, data))
+    return out, atlanan
 
 
 def terrain_plani(lat, lon, size_m, uzak=False):

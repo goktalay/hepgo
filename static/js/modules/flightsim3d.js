@@ -1062,7 +1062,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // tarayıcısız test edilebilir modüldedir; burada yalnız kare başına yan alanlar (gaz, arm, RC, hız) ve ilk karede kamera yayının oturması.
   const tl = createTimeline(T, { toLocal });
   const cur = tl.cur;                                // render edilen konum/yönelim/hız (yumuşatılmış)
-  const tele = { has: false, at: 0, throttle: 0, armed: false, speed: 0, rc: null, servo: null, servoFn: null, mode: null, last: null };
+  const tele = { has: false, at: 0, throttle: 0, armed: false, speed: 0, rc: null, servo: null, servoFn: null, mode: null, terrainAgl: null, last: null };
   function setTelemetry(t) {
     if (!t) return;
     const now = performance.now();
@@ -1073,6 +1073,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     tele.servo = Array.isArray(t.servo) ? t.servo : null;   // SERVO_OUTPUT_RAW 1…8 µs (gerçek SITL): kontrol yüzeylerinin birincil kaynağı
     tele.servoFn = Array.isArray(t.servo_fn) ? t.servo_fn : null;   // isteğe bağlı SERVOn_FUNCTION listesi (4 aileron, 19 elevator, 21 rudder, 2/3 flap, 77/78 elevon L/R)
     tele.mode = t.mode || null;
+    tele.terrainAgl = typeof t.terrain_agl === 'number' ? t.terrain_agl : null;   // ArduPilot TERRAIN_REPORT AGL (SRTM): 3B arazi örneğiyle tutarlılık süzgeci (§18)
     tele.speed = r.speed;   // son karenin hızı (çarpışma denetimi için; render döngüsü enterpolasyonlu hızla günceller)
     tele.last = t;
     if (r.first) { tele.has = true; camSpring.pos.copy(cur.pos); camSpring.vel.set(0, 0, 0); }
@@ -1148,28 +1149,55 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     canvas.addEventListener('wheel', onWheel, { passive: false });
   }
 
-  // ---------- çarpışma ----------
-  let collided = false;
+  // ---------- çarpışma (§5/§18) ----------
+  // 3B algısı SITL fiziğinin yerine geçmez: arazi teması sunucuda yalnız ADAYDIR (SITL "SIM Hit ground" teyidi), bina/su kesindir. Sahte tetiklemeyi
+  // kesmek için: histerezis (COLL_HOLD_S boyunca sürekli z < h + 0,3), hız > COLL_SPEED_MIN, yerde kilit / düzenek (idle·armed·launch) / released
+  // sönümü sırasında ve ARM'dan sonraki ilk COLL_ARM_GRACE_MS kapalı; arazi yüksekliği bir karede COLL_JUMP_M'den fazla değişirse (karo yüklenmesi,
+  // uzak halka geçişi) o kare atlanır; Google 3B'de dronun altında yüklü karo yoksa (kaba kök karo / komşu hücre / 0) örnek yok sayılır; gerçek
+  // arazide ana kare dışı (uzak halka, kaba) arazi teması denetlenmez. Bir tespitten sonra COLL_COOLDOWN_MS yeniden denetim yok (sunucu adayı
+  // düşürürse yeniden tespit edilebilir; kesin çarpışmada sunucu disarm eder → armed düşer).
+  // SITL'in kendi arazi AGL'si (TERRAIN_REPORT, SRTM) ile 3B'nin z − h'si COLL_AGL_DISAGREE_M'den fazla ayrışıyorsa 3B örneği kaba karodandır (Google LOD) → arazi/su denetimi o karede yapılmaz.
+  const COLL_HOLD_S = 0.4, COLL_HOLD_BUILDING_S = 0.1, COLL_SPEED_MIN = 2, COLL_ARM_GRACE_MS = 3000, COLL_JUMP_M = 20, COLL_COOLDOWN_MS = 4000, COLL_AGL_DISAGREE_M = 30;
+  const coll = { below: 0, kind: null, lastH: null, armedAt: -Infinity, prevArmed: false, hitAt: -Infinity, skipped: 0, checks: 0 };
   const terrainHeight = (x, y) => (terrain ? terrain.height(x, y) : 0);
   // Düzenek temas noktaları: Google'da önbelleksiz ince ışın (eğim için). Düzenek merkezden ≤ 20 m uzakta ve merkez yüzeyi 0'a oturtulduğundan
   // gerçek fark birkaç m'dir; |h| > 8 m ölçüm kaba kök karodandır (e2e'de ilk 2,5 sn'de −280 m görüldü) → 0 sayılır, ince karo gelince yeniden örneklenir
   const rigSurf = (x, y) => { if (!g3d) return terrainHeight(x, y); const h = g3d.heightFine(x, y); return Math.abs(h) > 8 ? 0 : h; };
-  function checkCollision() {
-    if (collided || !tele.has || !tele.armed || tele.speed <= 1) return;
+  function checkCollision(now, dt) {
+    if (!tele.has) return;
+    if (tele.armed && !coll.prevArmed) coll.armedAt = now;
+    coll.prevArmed = tele.armed;
+    const reset = () => { coll.below = 0; coll.kind = null; };
+    if (!tele.armed || tele.speed <= COLL_SPEED_MIN || now - coll.hitAt < COLL_COOLDOWN_MS || now - coll.armedAt < COLL_ARM_GRACE_MS) return reset();
+    if ((rig && rig.carrying) || rel.on || gLock.on) return reset();   // düzenek üstünde / bırakma sönümü / yerde kilit
     const p = cur.pos;
-    let hit = null;
+    coll.checks++;
+    const outsideMain = terrain && !terrain.google && (Math.abs(p.x) > terrain.size / 2 || Math.abs(p.y) > terrain.size / 2);   // uzak halka: kaba
+    const noTile = terrain?.google && g3d && !g3d.hasSurface(p.x, p.y);   // Google: altında yüklü karo yok (0 / komşu hücre) → arazi örneği güvenilmez
     const hz = terrainHeight(p.x, p.y);
-    const onRunway = Math.hypot(p.x, p.y) <= 25 || ((W.runway !== false || terrain?.google) && inRunway(p.x, p.y, num(W.runway_heading, 0), 4));   // pist/kalkış alanında yer teması (koşu, iniş) çarpışma değil; Google 3B'de pist çizilmese de runway_heading boyunca sanal şerit
-    if (p.z < hz + 0.3 && !onRunway) hit = { kind: 'terrain', z: hz };
-    else if (terrain && p.z < terrain.waterZ + 0.3) hit = { kind: 'water', z: terrain.waterZ };
-    else if (terrain?.real && waterPolys.some(w => p.x >= w.x1 && p.x <= w.x2 && p.y >= w.y1 && p.y <= w.y2 && p.z < w.z + 0.3 && pointInPoly(p.x, p.y, w.pts))) hit = { kind: 'water', z: hz };
+    const jump = coll.lastH != null && Math.abs(hz - coll.lastH) > COLL_JUMP_M;
+    coll.lastH = hz;
+    const disagree = tele.terrainAgl != null && Math.abs((p.z - hz) - tele.terrainAgl) > COLL_AGL_DISAGREE_M;
+    let hit = null;
+    if (jump || noTile || outsideMain || disagree) coll.skipped++;
     else {
+      const onRunway = Math.hypot(p.x, p.y) <= 25 || ((W.runway !== false || terrain?.google) && inRunway(p.x, p.y, num(W.runway_heading, 0), 4));   // pist/kalkış alanında yer teması (koşu, iniş) çarpışma değil; Google 3B'de pist çizilmese de runway_heading boyunca sanal şerit
+      if (p.z < hz + 0.3 && !onRunway) hit = { kind: 'terrain', z: hz };
+    }
+    if (!hit && terrain && !noTile && !disagree && p.z < terrain.waterZ + 0.3) hit = { kind: 'water', z: terrain.waterZ };
+    else if (!hit && terrain?.real && !outsideMain && waterPolys.some(w => p.x >= w.x1 && p.x <= w.x2 && p.y >= w.y1 && p.y <= w.y2 && p.z < w.z + 0.3 && pointInPoly(p.x, p.y, w.pts))) hit = { kind: 'water', z: hz };
+    if (!hit) {
       const b = buildingsAABB.find(b => p.x > b.x1 && p.x < b.x2 && p.y > b.y1 && p.y < b.y2 && p.z < b.z2 + 0.3);
       if (b) hit = { kind: 'building', z: b.z2 };
     }
-    if (hit) { collided = true; onCollision?.({ ...hit, x: p.x, y: p.y, alt: p.z, speed: tele.speed }); }
+    if (!hit) return reset();
+    if (coll.kind !== hit.kind) { coll.kind = hit.kind; coll.below = 0; }
+    coll.below += dt;
+    if (coll.below < (hit.kind === 'building' ? COLL_HOLD_BUILDING_S : COLL_HOLD_S)) return;   // histerezis: sürekli temas gerekir
+    coll.hitAt = now; reset();
+    onCollision?.({ ...hit, x: p.x, y: p.y, alt: p.z, dz: hit.z - p.z, speed: tele.speed, held: true });
   }
-  const clearCollision = () => { collided = false; };
+  const clearCollision = () => { coll.hitAt = -Infinity; coll.below = 0; coll.kind = null; coll.lastH = null; };
 
   // ---------- boyut ----------
   function resize() {
@@ -1329,7 +1357,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
         controls.target.copy(camSpring.pos);
         camera.position.copy(camSpring.pos).add(tmpV2);
       }
-      checkCollision();
+      checkCollision(now, dt);
     }
     // İniş takımı tekerlekleri (§13): yerde yer hızıyla döner; havalanınca sabit (geri çekme yok)
     if (drone.gear && tele.has && cur.pos.z < 1.5 && tele.speed > 0.05) { const w = tele.speed / (drone.gear.radius * MODEL_SCALE) * dt; for (const wh of drone.gear.wheels) wh.rotation.x -= w; }
@@ -1464,6 +1492,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     get google() { return !!g3d; },
     g3dAttribution: () => (g3d ? g3d.attribution() : null),   // {text, logo, loading} — ToS atfı (.fs-attrib)
     get g3dOffset() { return g3d ? g3d.groundOffset : null; },   // teşhis: toplam yer ofseti (karo yüzeyi ↔ ev irtifası)
+    collisionState: () => { const p = cur.pos, hz = terrainHeight(p.x, p.y); return { z: p.z, h: hz, dz: p.z - hz, sitlAgl: tele.terrainAgl, below: coll.below, kind: coll.kind, skipped: coll.skipped, checks: coll.checks, armed: tele.armed, speed: tele.speed, noTile: !!(terrain?.google && g3d && !g3d.hasSurface(p.x, p.y)), grounded: gLock.on, rel: rel.on, rig: rig ? rig.phase : null }; },   // teşhis (§18 e2e): her karede z−h
     get terrainInfo() { return terrain ? { real: !!terrain.real, google: !!terrain.google, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null, farSize: terrain.farSize || 0 } : null; },
     rigState: () => (rig ? { phase: rig.phase, surface: rig.surface, x: rig.group.position.x, y: rig.group.position.y } : null),   // teşhis (§13 e2e): düzenek yüzey oturması
     setFreeView: (x, y, z, yawDeg, pitchDeg) => { setCamera('free'); camera.position.set(x, y, z); free.yaw = num(yawDeg, 0); free.pitch = num(pitchDeg, 0); },   // teşhis (§9 e2e): serbest kamerayı ufka yönelt (yaw: 0 kuzey, + batıya)

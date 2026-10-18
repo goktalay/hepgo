@@ -170,6 +170,7 @@ export async function createGoogleTiles(opts) {
   // İnce örnekleme (önbelleksiz, tam noktaya ışın): kalkış düzeneğinin 4 temas noktası (±3 m) aynı 25 m hücreye düştüğünden eğim için gerekir (§13);
   // karo yoksa hücre önbelleğine düşer
   const heightFine = (x, y) => { const v = sampleRaw(x, y); return v == null ? height(x, y) : v; };
+  const hasSurface = (x, y) => sampleRaw(x, y) != null;   // dronun altında yüklü karo var mı (çarpışma denetimi; yoksa height() komşu/0 verir → güvenilmez)
 
   // ---- kök tileset yüklemesi (anahtar/ağ hatası → reject); havuzdan gelen örnekte kök zaten yüklü ----
   if (!tiles.root) await new Promise((res, rej) => {
@@ -231,7 +232,7 @@ export async function createGoogleTiles(opts) {
   }
 
   return {
-    group, tiles, height, heightFine, update, attribution, dispose,
+    group, tiles, height, heightFine, hasSurface, update, attribution, dispose,
     get rootRequests() { return entry.rootRequests; },
     setTime(t) { time = t || 'day'; retint(); },
     setShadows(v) { shadows = !!v; retint(); },

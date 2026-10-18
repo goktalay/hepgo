@@ -7,7 +7,7 @@
 
 import { clear, fmtDateTime, fmtDuration, h, modal, toast, toastError } from '../ui.js';
 
-const REASON = { terrain: 'arazi', water: 'su', building: 'bina', sitl: 'SITL (otopilot çarpışma algısı)', manual: 'el ile' };
+const REASON = { terrain: 'arazi', water: 'su', building: 'bina', sitl_hit: 'SITL yer teması (fizik)', sitl: 'SITL (otopilot çarpışma algısı)', manual: 'el ile' };
 const SOURCE = { mp: 'Mission Planner', hepgo: 'HEPGO paneli' };
 const f1 = v => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toFixed(1));
 const f0 = v => (v == null || !Number.isFinite(Number(v)) ? '—' : String(Math.round(Number(v))));

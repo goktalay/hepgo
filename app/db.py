@@ -1637,7 +1637,7 @@ CREATE TABLE IF NOT EXISTS drone_sim_events (
     id          INTEGER PRIMARY KEY,
     session_id  INTEGER NOT NULL,                       -- SimSession.id (sunucu yeniden başlayınca 1'den başlar; satır kimliği oturum belleğinde tutulur)
     owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    type        TEXT NOT NULL,                          -- crash | mission_end | summary
+    type        TEXT NOT NULL,                          -- crash | warning (autopilot_detect) | mission_end | summary
     lat REAL, lon REAL, alt_msl REAL, alt_rel REAL,
     t           REAL,                                   -- Unix sn (olay anı)
     speed       REAL,                                   -- m/s (yer hızı)

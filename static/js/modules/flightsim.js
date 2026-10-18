@@ -944,13 +944,19 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const txt = (LAUNCH_PHASE_TEXT[m.phase] || {})[launch.method] || m.phase;
     addEvent(m.phase === 'released' && m.speed_kmh != null ? `${tr(txt)} · ${f0(m.speed_kmh)} km/h` : tr(txt), m.phase === 'released' || m.phase === 'launch' ? 'warning' : 'info');
   };
-  const CRASH_KIND = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma', sitl: 'Otopilot çarpışma algısı' };
-  const onCrash = info => {
-    const kind = CRASH_KIND[info.kind] || 'Çarpışma';
+  const CRASH_KIND = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma', sitl_hit: 'SITL yer teması', sitl: 'Otopilot çarpışma algısı' };
+  // ÇARPIŞMA bandı yalnız sunucunun KESİN `crash` çerçevesiyle açılır (§18): 3B arazi teması sunucuda adaydır (SITL fizik teyidi), bina/su kesindir.
+  const showCrash = (reason, speed) => {
+    if (!crash.hidden) return;
+    const k = tr(CRASH_KIND[reason] || 'Çarpışma');
     crash.hidden = false;
-    crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k: tr(kind), v: f1(info.speed) });
-    addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k: tr(kind), v: f1(info.speed) }), 'error');
-    if (canWrite) be.cmd(sid, 'crash', { kind: info.kind, speed: info.speed }).catch(() => {});
+    crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k, v: f1(speed) });
+    addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k, v: f1(speed) }), 'error');
+  };
+  const onCrash = info => {
+    if (mock) { showCrash(info.kind, info.speed); be.cmd(sid, 'crash', { kind: info.kind, speed: info.speed }).catch(() => {}); return; }
+    if (!canWrite) return;   // salt okuyan izleyicinin 3B algısı sunucuya gitmez; bant sunucu çerçevesiyle gelir
+    be.cmd(sid, 'crash', { kind: info.kind, speed: info.speed, dz: info.dz }).catch(() => {});
   };
   const reset = async () => {
     crash.hidden = true;
@@ -995,7 +1001,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
         return;
       }
       if (m.t === 'mission_cur') { sim?.setMissionCurrent(m.seq); return; }   // §18: aktif bacak (MISSION_CURRENT)
-      if (m.t === 'crash') { if (crash.hidden) { crash.hidden = false; crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k: tr(CRASH_KIND[m.reason] || 'Çarpışma'), v: f1(m.speed) }); addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k: tr(CRASH_KIND[m.reason] || 'Çarpışma'), v: f1(m.speed) }), 'error'); } return; }   // §18: sunucu kaydı (SITL algısı / başka izleyici)
+      if (m.t === 'crash') return showCrash(m.reason, m.speed);   // §18: sunucunun kesin çarpışma kaydı (SITL fizik teması / 3B bina-su / teyitli arazi)
+      if (m.t === 'warn') return addEvent(tr('Otopilot çarpışma tespiti (ArduPlane yazılımsal) — çarpışma kaydı değil: {t}', { t: m.text || '' }), 'warning');   // §18: sarı uyarı, bant yok
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null, 'STATUS');
       if (m.t === 'launch') return onLaunch(m);
       if (m.t === 'state') {

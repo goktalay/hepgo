@@ -903,7 +903,9 @@ def kalkis_testleri(a, c1):
     # yerde kayma düzeltmesi: her yöntemde SERVO3_MIN/TRIM 1000 (SITL gaz eşlemesi 1000–2000 µs; disarm'da itki 0 → uçak/düzenek kaymaz)
     for pp in (pr, pv, pw):
         assert pp['SERVO3_MIN'] == 1000.0 and pp['SERVO3_TRIM'] == 1000.0, pp
-    assert dict(flightsim.PLANE_YER_PARAMLARI) == {'SERVO3_MIN': 1000.0, 'SERVO3_TRIM': 1000.0}
+    assert dict(flightsim.PLANE_YER_PARAMLARI) == {'SERVO3_MIN': 1000.0, 'SERVO3_TRIM': 1000.0, 'CRASH_DETECT': 0.0}   # §18: ArduPlane yazılımsal tespit kapalı
+    from app import drone_params
+    assert 'CRASH_DETECT' in drone_params.oturum_adlari()   # oturum parametresi: dron kaydına kalıcı yazılmaz
     # RTK düzeyi GPS parametre seti (ilk kalp atışında tüm tiplerde): doğruluk ≤ 5 cm, ≥ 12 uydu, hız/aksaklık/irtifa hataları 0
     g = dict(flightsim.GPS_RTK_PARAMLARI)
     assert g['SIM_GPS1_ACC'] <= 0.05 and g['SIM_GPS1_NUMSATS'] >= 12, g
@@ -1203,6 +1205,109 @@ def gorev_rapor_testleri(a, c1):
     assert a.get(f'{S}/99999/summary').status_code == 404
     ok(a.delete(f'{S}/{sid}'))
     print('  görev çizimi / çarpışma / özet rapor (§18) testleri geçti')
+
+
+def carpisma_siniflama_testleri(a, c1):
+    """§18 sahte çarpışma düzeltmesi: STATUSTEXT sınıflandırma; yerde/yavaş "SIM Hit ground" → kayıt yok; sert temas havada → `sitl_hit`; ArduPlane
+    "Crash: Disarming" → sarı uyarı + `warning` satırı (crash değil); 3B arazi adayı: SITL teyidiyle `terrain` tek kayıt, teyitsiz düşer; bina kesin;
+    30 sn tekilleştirme."""
+    import asyncio
+    from app import db, flightsim_mission as fm
+    S = fm.statustext_sinifla
+    assert S('SIM Hit ground at 0.325623 m/s') == ('sitl_hit', 0.325623)
+    assert S('SIM Hit ground at 12.30095 m/s') == ('sitl_hit', 12.30095)
+    assert S('SIM Hit ground at -4.5 m/s') == ('sitl_hit', 4.5)
+    assert S('Crash: Disarming') == ('autopilot_detect', None) and S('Crash detected') == ('autopilot_detect', None)
+    assert S('Flare crash detected: speed=3.2') == ('autopilot_detect', None)
+    assert S('Crash check disabled') == (None, None) and S('Saved crash_dump.bin') == (None, None) and S('Arming motors') == (None, None)
+    assert S('PreArm: no crash') == (None, None) and S('') == (None, None)
+    assert fm.CARPISMA_TEKIL_S == 30.0 and fm.SITL_HIT_HIZ_MIN == 3.0 and fm.ADAY_TEYIT_S == 3.0
+
+    class Oturum:   # GorevIzleyici'nin kullandığı SimSession yüzü (gerçek SITL kipi: sahte=None)
+        def __init__(self):
+            self.id = 9999; self.owner = {'id': 1}; self.sahte = None; self.route = []; self.world = {}; self.center = {'lat': 39.925, 'lon': 32.837, 'alt': 900}
+            self.tele = {'lat': 39.925, 'lon': 32.837, 'alt_msl': 900.0, 'alt_rel': 0.0, 'groundspeed': 0.3, 'mode': 'MANUAL', 'armed': True, 'home': None}
+            self.yayin, self.olaylar, self.disarm = [], [], 0
+            self.loop = asyncio.new_event_loop()
+        def _yay(self, m): self.yayin.append(m)
+        def _olay(self, t, sev=6): self.olaylar.append((t, sev))
+        def zorla_disarm(self): self.disarm += 1
+
+    o = Oturum(); g = fm.GorevIzleyici(o)
+    g._kaydet = lambda *a, **k: g.__dict__.setdefault('kayitlar', []).append((a[0], a[7]))   # DB yerine bellek
+    # yerde durağan / taksi: PROD oturum 9 metinleri → kayıt YOK
+    for h in (0.229691, 0.325623, 1.504598, 2.507468, 4.340408):   # 4,34 ≥ 3 ama yerde (AGL 0, yer hızı 0,3) → yine yok
+        assert g.sitl_temas(h, f'SIM Hit ground at {h} m/s') is None
+    o.tele.update(alt_rel=0.2, groundspeed=2.9)
+    assert g.sitl_temas(2.9, 'SIM Hit ground at 2.9 m/s') is None
+    assert g.crashes == [] and o.yayin == [] and o.disarm == 0
+    # normal iniş (havadan, düşey 1,2 m/s, yer hızı 14): çarpışma değil
+    o.tele.update(alt_rel=0.0, groundspeed=14.0)
+    assert g.sitl_temas(1.2, 'SIM Hit ground at 1.2 m/s') is None and g.crashes == []
+    # sert temas (düşey 9,8, yer hızı 21) → sitl_hit, zorla disarm, yayın
+    o.tele.update(alt_rel=-0.5, groundspeed=21.0)
+    c = g.sitl_temas(9.8, 'SIM Hit ground at 9.800000 m/s')
+    assert c and c['reason'] == 'sitl_hit' and c['speed'] == 21.0 and c['sitl_vz'] == 9.8 and c['sitl_text'].startswith('SIM Hit') and o.disarm == 1
+    assert o.yayin[-1]['t'] == 'crash' and o.yayin[-1]['reason'] == 'sitl_hit' and g.kayitlar[-1][0] == 'crash'
+    # 30 sn içinde ikinci temas (yerde sürüklenme) → yeni kayıt yok
+    assert g.sitl_temas(5.0, 'SIM Hit ground at 5.0 m/s') is c and len(g.crashes) == 1 and o.disarm == 1
+    g.crashes[-1]['t'] -= 31
+    # ArduPlane yazılımsal tespit → warning, crash değil; 30 sn tekil
+    w = g.otopilot_tespit('Crash: Disarming')
+    assert w and w['reason'] == 'autopilot_detect' and g.kayitlar[-1][0] == 'warning' and o.yayin[-1]['t'] == 'warn' and o.olaylar[-1][1] == 4 and 'Otopilot' in o.olaylar[-1][0]
+    assert g.otopilot_tespit('Crash detected') is None and len(g.warnings) == 1 and len(g.crashes) == 1
+    # 3B arazi adayı: gerçek SITL kipinde kayıt yok, disarm yok; SITL teması 0,5 sn sonra → terrain kaydı (hız = 3B hızı), tek kayıt, disarm
+    o.tele.update(alt_rel=30.0, groundspeed=25.0)
+    async def aday_senaryo():
+        k, d = g.ucboyut_bildirim('terrain', 25.4, {'dz': -0.4})
+        assert k is None and d is False and g._aday and len(g.crashes) == 1
+        await asyncio.sleep(0.5)
+        c2 = g.sitl_temas(0.9, 'SIM Hit ground at 0.9 m/s')   # düşey yavaş olsa da aday teyidi
+        assert c2 and c2['reason'] == 'terrain' and c2['speed'] == 25.4 and c2['sitl_vz'] == 0.9 and len(g.crashes) == 2 and o.disarm == 2 and g._aday is None
+        await asyncio.sleep(0.1)   # iptal edilen düşürme görevi
+        g.crashes[-1]['t'] -= 31
+        # teyitsiz aday → ADAY_TEYIT_S sonra düşer, sarı olay, kayıt yok
+        fm.ADAY_TEYIT_S = 0.3
+        try:
+            k, d = g.ucboyut_bildirim('terrain', 12.0, {})
+            assert k is None and d is False
+            await asyncio.sleep(0.6)
+        finally:
+            fm.ADAY_TEYIT_S = 3.0
+        assert g._aday is None and len(g.crashes) == 2 and 'doğrulanmadı' in o.olaylar[-1][0] and o.olaylar[-1][1] == 4
+        # bina: kesin
+        k, d = g.ucboyut_bildirim('building', 18.0, {})
+        assert k and d is True and k['reason'] == 'building' and len(g.crashes) == 3
+        # sahte kip: arazi doğrudan
+        g.crashes[-1]['t'] -= 31; o.sahte = object()
+        k, d = g.ucboyut_bildirim('terrain', 7.0, {})
+        assert k and d is True and k['reason'] == 'terrain'
+    o.loop.run_until_complete(aday_senaryo())
+    oz_crash = [c['reason'] for c in g.crashes]
+    assert oz_crash == ['sitl_hit', 'terrain', 'building', 'terrain'] and len(g.warnings) == 1
+    o.loop.close()
+    # REST: sahte kipte `cmd crash` kind building → {'crash': True}; SITL metni yerde yavaş → kayıt yok
+    S_ = '/api/drone/sim/sessions'
+    s = ok(a.post(S_, json={'type': 'sabit_kanat', 'center_id': c1['id']}), 201)
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S_}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    arac = D.MAVLink(None, srcSystem=1, srcComponent=1)
+    for _ in range(3):
+        ses.loop.call_soon_threadsafe(ses._isle, arac.statustext_encode(6, b'SIM Hit ground at 0.325623 m/s'))
+    ses.loop.call_soon_threadsafe(ses._isle, arac.statustext_encode(2, b'Crash: Disarming'))
+    time.sleep(0.6)
+    with db.connect() as conn:
+        rows = db.rows(conn.execute('SELECT type FROM drone_sim_events WHERE session_id = ? ORDER BY id', (sid,)))
+    assert [r['type'] for r in rows] == ['warning'] and ses.gorev.crashes == [], rows
+    r = ok(a.post(f'{S_}/{sid}/cmd', json={'name': 'crash', 'params': {'kind': 'building', 'speed': 9.0}}))
+    assert r == {'ok': True, 'crash': True, 'pending': False}, r
+    assert bekle(lambda: len(ses.gorev.crashes) == 1 and ses.gorev.crashes[0]['reason'] == 'building', 2)
+    o2 = ok(a.get(f'{S_}/{sid}/summary'))
+    assert o2['crash_count'] == 1 and o2['autopilot_detect_count'] == 1 and o2['crash']['reason'] == 'building'
+    ok(a.delete(f'{S_}/{sid}'))
+    print('  çarpışma sınıflandırma (§18 sahte çarpışma) testleri geçti')
 
 
 def param_testleri(a, c1, sitl, mon):
@@ -1575,6 +1680,7 @@ def main():
         hub_testleri(a, c1)
         # --- görev çizimi / çarpışma / özet rapor (§18) ---
         gorev_rapor_testleri(a, c1)
+        carpisma_siniflama_testleri(a, c1)
         # --- kalıcı parametreler (drone_sitl_params) ---
         param_testleri(a, c1, sitl, mon)
         # --- kayıttan oynatma (§8) ---

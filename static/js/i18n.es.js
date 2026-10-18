@@ -3887,4 +3887,7 @@ registerCatalog('es', {
   "Yüklenemedi": "No se pudo cargar",
   "SITL (araç)": "SITL (vehículo)",
   "Kayıttaki sabit kanat uçağın kalkış düzeneği: rampa ya da araç 3B sahnede kurulur; ARM, fırlatma ve bırakma aşamaları logdan (ARM anı, ilk hareket, yer hızı/irtifa) türetilir. SITL parametresi yazılmaz.": "Dispositivo de despegue del avión de ala fija de la grabación: la rampa o el vehículo se construyen en la escena 3D; las fases ARM, lanzamiento y suelta se derivan del registro (momento de ARM, primer movimiento, velocidad respecto al suelo/altitud). No se escriben parámetros SITL.",
+  "SITL yer teması": "Impacto contra el suelo SITL",
+  "SITL yer teması (fizik)": "Impacto contra el suelo SITL (física)",
+  "Otopilot çarpışma tespiti (ArduPlane yazılımsal) — çarpışma kaydı değil: {t}": "Detección de choque del piloto automático (software ArduPlane) — no es un registro de colisión: {t}",
 });

@@ -838,11 +838,66 @@ LOITER halka. Ev: yeşil disk + "H". İrtifa: frame 3/6 göreli (ev zemini = ev 
 daire: CanvasTexture düzlem (beyaz+sarı **kesikli halka**, iç çember, ortada kalın **H**) + ince kenar torusu; 4 örnek noktadan eğime oturur (`terrainHeight`),
 su seviyesinin altına inmez; gece (`world.time = night`) daha parlak doku + `PointLight`. Uçak/kopter ayrımı yok.
 
-**Çarpışma kaydı.** Kaynaklar: 3B çarpışma algılaması (`onCollision` → `cmd crash {kind: terrain|water|building, speed}`) ve SITL/ArduPilot STATUSTEXT
-(`"SIM Hit ground at X m/s"`, `"Crash: Disarming…"` → sebep `sitl`, hız metinden). `GorevIzleyici.carpisma` → `crash` olayı: lat/lon/alt_msl/alt_rel, hız,
-mod, sebep, o anki hedef WP (`target_seq`), görev bitiş noktası, `deviation_m`/`dz_m`; 5 sn içinde ikinci bildirim (3B + SITL aynı olay) tekilleştirilir
-(SITL metni ilk kayda eklenir). WS yayını `{t:'crash', …, ts}` (diğer izleyicilerde kırmızı bant + olay). Not: `cmd crash` zorla disarm eder; uçak havadaysa
-SITL'in gerçek yere çarpması 5 sn sonra **ikinci** çarpışma olarak kaydedilir (rapor sonuncusunu gösterir, `crash_count`).
+**Çarpışma kaydı — SITL fiziği asıl kaynak (sahte çarpışma düzeltmesi).** Kullanıcı geri bildirimi: "Bazen çarpışma olmamasına rağmen çarpışma oldu
+gibi hata veriyor" (yerde ve "bayağı yüksekte de"). PROD kanıtı (oturum 9, Bedesten 1500 m, sabit kanat MANUAL): 17 `crash` satırının 16'sı
+`reason: sitl`, hepsi **"SIM Hit ground at 0,2–4,3 m/s"**, 18:49–18:51 arasında dakikada 8 kayıt; alt_rel −2…+15 m (SITL'in SRTM arazisi ev
+irtifasından farklı: uçak eğimli arazide yerde). Oturum 5/7/8'de aynı metinler (1–2,5 m/s). Kök nedenler:
+1. `"SIM Hit ground at %f m/s"` ArduPilot **SITL fizik motorunun** (SIM_Aircraft::update_dynamics) havadan yere **her** temasta yazdığı bilgi satırıdır;
+   sayı **düşey hız**tır (velocity_ef.z). Yerde taksi zıplaması, iniş, disarm sonrası sürüklenme, yerde titreşim → 1 sn'den uzun aralıkla tekrarlanır.
+   Eski kod her "hit ground" metnini çarpışma sayıyordu; 5 sn tekilleştirme aralığı dışındaki her mesaj yeni kayıt + ÇARPIŞMA bandı (WS `crash`) oluyordu.
+2. 3B `checkCollision` (Google 3B / gerçek arazi) tek karede `z < h + 0,3` ile tetikleniyor ve **zorla disarm** ediyordu; Google karo yüzeyi ile SITL'in
+   SRTM arazisi birkaç m farklı olabilir (oturum 9 id 84: `terrain`, 33 m/s, SITL alt_rel −4,6 m — SITL'de yerde değil), karo yüklenmesi/komşu hücre/0
+   değerleri, uzak halka geçişi, düzenek/yerde kilit anları sahte tetikleyebiliyordu (oturum 8: TAKEOFF koşusunda `terrain` 21,6 m/s).
+3. ArduPlane yazılımsal tespiti ("Crash: Disarming", "Crash detected"; `CRASH_DETECT`, `is_flying` sezgisi) fiziksel temas değildir; eski eşleme çarpışma
+   sayıyordu (PROD'da görülmedi; CRASH_DETECT varsayılanı 0).
+
+Yeni kural (`app/flightsim_mission.py`):
+- `statustext_sinifla(txt)` → `('sitl_hit', düşey hız)` ("hit ground at X"), `('autopilot_detect', None)` ("crash" içeren; "crash check"/"crash_dump"
+  hariç), `(None, None)`.
+- `sitl_temas(vz)`: 3B arazi **adayı** bekliyorsa teyit → `crash` sebep `terrain` (hız = 3B yer hızı ∨ vz, `sitl_vz`, `sitl_text`); son çarpışma
+  CARPISMA_TEKIL_S (**30 sn**) içindeyse metin ilk kayda eklenir (yeni satır yok); aksi hâlde yalnız **vz ≥ SITL_HIT_HIZ_MIN (3 m/s)** ve araç
+  yerde-durağan değilken (`alt_rel < 1 m ∧ yer hızı < 3 m/s` değil) `crash` sebep **`sitl_hit`**. Diğer temaslar (taksi, normal iniş 0,5–1,5 m/s,
+  yerde zıplama) **yok sayılır**. Her çarpışma kaydı `SimSession.zorla_disarm()` (sahte: kinematik sıfırlanır; SITL: 400/21196) + kırmızı olay.
+- `otopilot_tespit`: çarpışma DEĞİL → sarı olay "Otopilot çarpışma tespiti (ArduPlane yazılımsal): … — çarpışma kaydı yapılmadı" (severity 4),
+  `drone_sim_events` **`type='warning'`** (`reason: autopilot_detect`), WS `{t:'warn', kind:'autopilot_detect', text}`; 30 sn tekil. Rapor
+  `autopilot_detect_count`; `crash_count`'a girmez. Ayrıca sabit kanatta oturum başında **`CRASH_DETECT 0`** (PLANE_YER_PARAMLARI; oturum parametresi →
+  dron kaydına kalıcı yazılmaz).
+- `ucboyut_bildirim(kind, speed)` (`cmd crash`): **bina/su kesin** (SITL bina bilmez) ve sahte kipte her tür kesin → kayıt + disarm, yanıt
+  `{crash: true}`; gerçek SITL'de **arazi ADAYDIR**: `ADAY_TEYIT_S` (3 sn) içinde SITL "Hit ground" gelirse `terrain` kaydı, gelmezse düşer + sarı olay
+  "3B arazi teması (… m/s) SITL fiziğiyle doğrulanmadı — çarpışma sayılmadı"; yanıt `{crash: false, pending: true}`. Disarm yalnız kesin kayıtta.
+- `reason` değerleri: `terrain` | `water` | `building` | `sitl_hit` | `manual` (eski satırlarda `sitl`); `warning` satırında `autopilot_detect`.
+
+3B algısı (`flightsim3d.js checkCollision(now, dt)`): **histerezis** — COLL_HOLD_S 0,4 sn boyunca sürekli `z < h + 0,3` (bina 0,1 sn); hız >
+COLL_SPEED_MIN 2 m/s; devre dışı: disarm, düzenek taşıyor (idle/armed/launch), `released` sönümü (`rel.on`), yerde kilit (`gLock.on`), ARM'dan sonraki
+COLL_ARM_GRACE_MS 3 sn; arazi yüksekliği bir karede COLL_JUMP_M 20 m'den fazla değişirse kare atlanır (karo yüklenmesi / uzak halka geçişi); Google
+3B'de dronun altında yüklü karo yoksa (`g3d.hasSurface` → `height()` komşu hücre/0 verir) arazi/su örneği yok sayılır; gerçek arazide ana kare dışı
+(uzak halka, kaba) arazi/su denetlenmez; bina AABB her yerde. Tespitten sonra COLL_COOLDOWN_MS 4 sn yeniden denetim yok (sunucu adayı düşürürse
+yeniden tespit edilebilir). `onCollision({kind, z, x, y, alt, dz, speed})`. Teşhis: `__fsSim.collisionState()` → `{z, h, dz, below, kind, skipped,
+checks, noTile, grounded, rel, rig}` (e2e her 250 ms örnekler).
+
+Ön yüz (`flightsim.js`): **ÇARPIŞMA bandı yalnız sunucunun kesin `crash` çerçevesiyle** açılır (`showCrash(reason, speed)`: "ÇARPIŞMA · <neden> · <hız>
+m/s · Sıfırla…"; neden `CRASH_KIND`: arazi/su/bina/**SITL yer teması**). 3B tespiti `cmd crash {kind, speed, dz}` gönderir; arazi için bilgi satırı
+"3B arazi teması algılandı (… m/s) — SITL fizik teyidi bekleniyor". `warn` çerçevesi → sarı olay satırı, bant yok. Mock kipte 3B tespiti doğrudan bant.
+Salt okuyan izleyicinin 3B algısı sunucuya gitmez. Rapor `REASON.sitl_hit` = "SITL yer teması (fizik)".
+
+**SITL arazi verisi bulgusu.** ArduPilot SITL fiziği araziyi (SRTM `terrain/*.DAT`) yalnız veri varsa kullanır; veriyi SITL internetten indirmez, **GCS**
+(Mission Planner/MAVProxy terrain modülü) `TERRAIN_REQUEST`→`TERRAIN_DATA` ile yollar. PROD'da MP bağlı oturumlar sonrası `sitl_calisma/*/terrain/N39E03x.DAT`
+var (oturum 9'da alt_rel −2…+15 m ile "hit ground": SITL arazi üstünde); DEV e2e'de (MP yok) `TERRAIN_REPORT.terrain_height = 0`, fizik **düz zemin**
+(ev irtifası) → Google 3B tepeleri uçağın 70–130 m üstünde kalır; eski kodda bu "yüksekte çarpışma" + zorla disarm demekti, yeni kodda aday teyitsiz
+düşer. Sunucu `TERRAIN_REPORT` → `tele.terrain_agl` (yalnız `loaded > 0 ∧ terrain_height ≠ 0`); 3B'de `|(z − h) − terrain_agl| > COLL_AGL_DISAGREE_M
+(30 m)` ise örnek kaba karodandır → o karede arazi/su denetimi yok. Açık iş: HEPGO'nun `TERRAIN_REQUEST`'e `sim_terrain` vekilinden `TERRAIN_DATA` ile
+yanıt vermesi (SITL fiziği MP olmadan da gerçek araziyi görür).
+
+**Ölçüm** (gerçek SITL arduplane + Google 3B gerçek karolar, Playwright swiftshader, `/tmp/flsim/cr/e2e_cr.py`, port 8796, Bedesten 1500 m, tekerlekli):
+- ÖNCE (PROD oturum 9): 18:49:26–18:51:16 arasında **17 crash satırı** (16 `sitl` "SIM Hit ground at 0,2–4,3 m/s", 1 `terrain` 33 m/s), her biri kırmızı bant.
+- SONRA A) MANUAL armed yerde 60 sn + gaz %30 60 sn: crash **0**, uyarı 0, bant yok; 3B z−h: yerde −0,1…−2,6 m, `checks` 11 (hız kapısı), kaba kök karo
+  örnekleri (`noTile` 18, ilk 10 sn'de h −651 m) atlandı.
+- B) TAKEOFF 120 m + CRUISE 110 sn (~2,3 km): crash **0**, bant yok; 3B 225 denetim, 6 atlanan kare, 22 kare `z < h+0,3` (Google tepesi, SITL düz zemin) →
+  2 arazi adayı → SITL teyidi yok → düştü (sarı olay ×2, sayaçlı), disarm YOK (eski kod: crash + disarm).
+- C) MANUAL tam gaz burun aşağı: **1 crash** `sitl_hit` 18,5 m/s (SITL "Hit ground at 11,19 m/s" düşey), zorla disarm, bant "ÇARPIŞMA · SITL yer teması ·
+  18.5 m/s"; sonraki 8 sn'de sürüklenme temasları yeni satır üretmedi (30 sn tekil). Sayfa hatası 0. Testler `tests/test_flightsim.py carpisma_siniflama_testleri`: sınıflandırma; PROD metinleri yerde → 0 kayıt; normal iniş → 0; sert
+temas havada → `sitl_hit` + disarm; 30 sn tekil; ArduPlane tespiti → `warning` + sarı olay; 3B arazi adayı teyitli → `terrain` tek kayıt; teyitsiz →
+düşer + sarı olay; bina kesin; sahte kip arazi kesin; REST `cmd crash building` → `{crash:true}`; summary `crash_count`/`autopilot_detect_count`.
 
 **Özet rapor.** `GET /sessions/{id}/summary` → sunucu 1 Hz izden (`_dongu` → `tik()`; ≤ 7400 örnek) hesaplar: `{session:{type, type_name, model, drone, center,
 world_mode, world_time, launch, landing_circle_m, wind}, flight:{start_ts, end_ts, duration_s, air_s (armed ∧ AGL>1), max_agl, max_msl, max_speed, dist_m
@@ -863,7 +918,7 @@ Düğmeler: "Raporu Şirketten Haberler'e ekle" (yazma izni; pencere açık kal�
 `@media print` yalnız pencereyi basar), "Devam". Sihirbazda **"Son simülasyon raporları"** kutusu (`reportsCard`, `GET /reports`) → aynı modal. Sahte kipte
 (`?mock=1`) rapor tarayıcıda basit üretilir; geçmiş yok. CSS: `.fs-rp*` (app.css sonu).
 
-**Tablo** `drone_sim_events(id, session_id, owner_id, type 'crash'|'mission_end'|'summary', lat, lon, alt_msl, alt_rel, t, speed, mode, detail JSON, created_at)`
+**Tablo** `drone_sim_events(id, session_id, owner_id, type 'crash'|'warning'|'mission_end'|'summary', lat, lon, alt_msl, alt_rel, t, speed, mode, detail JSON, created_at)`
 (`CREATE IF NOT EXISTS`). `session_id` sunucu yeniden başlayınca 1'den başlar; güncellemeler satır kimliğiyle yapılır (çakışma yok).
 
 **İzleyici kuyruğu**: tele dışı (`route`, `crash`, `event`, `state`, `mission_cur`, …) çerçeveler dolu kuyrukta en eski **tele**'nin yerini alır (`_kuyruga(onemli)`)

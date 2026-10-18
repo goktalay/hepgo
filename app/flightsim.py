@@ -65,7 +65,7 @@ RAMP_ACCEL = 8.0                                 # TKOFF_THR_MINACC (m/s²): fı
 # (plane: 2,8 N ≈ 1,4 m/s²) → yer sürtünmesi (0,3·v) ile denge 3,97 m/s: uçak disarm'da burun yönünde kayar (60 sn'de 236 m; SIMSTATE = GPS,
 # gürültü değil). SIM_GND_BEHAV plane modelinde okunmaz. SERVO3_MIN/TRIM 1000 → itki 0 → 60 sn'de 0,000 m (rüzgâr 3 m/s'de de). Uçuşta gaz
 # eşlemesi SITL'in varsaydığı 1000–2000 ile birebir örtüşür (0 → 0 itki, 100 → tam itki).
-PLANE_YER_PARAMLARI = (('SERVO3_MIN', 1000.0), ('SERVO3_TRIM', 1000.0))
+PLANE_YER_PARAMLARI = (('SERVO3_MIN', 1000.0), ('SERVO3_TRIM', 1000.0), ('CRASH_DETECT', 0.0))   # CRASH_DETECT 0: ArduPlane yazılımsal çarpışma tespiti/disarm kapalı — çarpışma kararı SITL fiziği + 3B (§18)
 # Flaplar (yalnız sabit_kanat; VTOL hariç): SERVO5/6 = flap_auto (3) → ArduPlane kalkışta TKOFF_FLAP_PCNT, inişte LAND_FLAP_PERCNT ile flapları kendisi
 # açar; 3B model (flightsim3d.js) SERVOn_FUNCTION kodlarını `tele.servo_fn` ile eşler. Oturum BAŞLANGIÇ değeridir ama dron yapılandırması sayılır:
 # kullanıcı MP/panelden değiştirirse kalıcı kaydedilir (drone_params hariç listesine GİRMEZ) ve kayıtlı değer varsa oturum bu başlangıcı yazmaz.
@@ -869,6 +869,8 @@ class SimSession:
             te['servo'] = [m.servo1_raw, m.servo2_raw, m.servo3_raw, m.servo4_raw, m.servo5_raw, m.servo6_raw, m.servo7_raw, m.servo8_raw]
         elif t == 'STATUSTEXT':
             self._olay(str(m.text).rstrip('\x00'), m.severity)
+        elif t == 'TERRAIN_REPORT':   # §18: ArduPilot arazi veritabanına (SRTM; GCS'ten TERRAIN_DATA ile dolar) göre AGL → 3B tutarlılık süzgeci. Veri yoksa terrain_height 0 → None
+            te['terrain_agl'] = round(float(m.current_height), 2) if (int(getattr(m, 'loaded', 0) or 0) > 0 and abs(float(m.terrain_height)) > 0.5) else None
         elif t == 'HOME_POSITION':
             te['home'] = {'lat': m.latitude / 1e7, 'lon': m.longitude / 1e7, 'alt': m.altitude / 1000.0}
         elif t == 'COMMAND_ACK':
@@ -1022,6 +1024,14 @@ class SimSession:
     def _gcs_heartbeat(self):
         self._gonder(self.mav.heartbeat_encode(6, 8, 0, 0, 0))   # MAV_TYPE_GCS, MAV_AUTOPILOT_INVALID
 
+    def zorla_disarm(self):
+        """Çarpışma kaydı sonrası (§18): sahte kinematik sıfırlanır; gerçek SITL'e zorla disarm (400, magic 21196). Kırmızı olay satırı."""
+        if self.sahte is not None:
+            self.sahte.komut('crash', {})
+        elif self._heartbeat_alindi:
+            self._gonder(self.mav.command_long_encode(self.sysid, self.comp, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
+        self._olay('ÇARPIŞMA — araç zorla disarm edildi', 2)
+
     # ---- komutlar ----
     async def komut(self, name, params, kaynak=None):
         """REST ve WS `cmd`: sözleşme §2. Hatalı ad/parametre → SimHata('invalid')."""
@@ -1050,10 +1060,12 @@ class SimSession:
         if name == 'takeoff' and self.type == 'sabit_kanat' and (self.sahte is not None or self._heartbeat_alindi):
             self._kalkis_baslat(p['alt'])   # yönteme göre dizi (§13): armed → launch → released olayları
             return {'ok': True}
+        if name == 'crash':   # §18: 3B algılaması — bina/su (ve sahte kip) kesin → kayıt + zorla disarm; gerçek SITL'de arazi ADAY (SITL "Hit ground" teyidi bekler)
+            kayit, disarm = self.gorev.ucboyut_bildirim(p.get('kind') or 'manual', p.get('speed'), p)
+            if disarm:
+                self.zorla_disarm()
+            return {'ok': True, 'crash': kayit is not None, 'pending': kayit is None and not disarm}
         if self.sahte is not None:
-            if name == 'crash':
-                self.gorev.carpisma(p.get('kind') or 'manual', p.get('speed'))   # §18: koordinat kaydı (kinematik sıfırlanmadan önce)
-                self._olay('ÇARPIŞMA — araç zorla disarm edildi', 2)
             self.sahte.komut(name, p)
             return {'ok': True}
         if not self._heartbeat_alindi:
@@ -1064,10 +1076,6 @@ class SimSession:
             self._gonder(enc.command_long_encode(s, c, 400, 0, 1, 21196, 0, 0, 0, 0, 0))
         elif name == 'disarm':
             self._gonder(enc.command_long_encode(s, c, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
-        elif name == 'crash':
-            self.gorev.carpisma(p.get('kind') or 'manual', p.get('speed'))   # §18
-            self._gonder(enc.command_long_encode(s, c, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
-            self._olay('ÇARPIŞMA — araç zorla disarm edildi', 2)
         elif name == 'mode':
             self._mod_gonder(p['mode'])
         elif name == 'takeoff':

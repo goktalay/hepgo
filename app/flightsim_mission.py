@@ -8,8 +8,12 @@ Her SimSession'a bir `GorevIzleyici` bağlanır:
   seq'idir (ev öğesi 0; HEPGO yüklemesinde ofset eklenir) → MISSION_CURRENT ile birebir eşleşir.
 - GÖREV BİTİŞ NOKTASI: görev yüklenince son konumlu öğe (LAND → o konum, RTL → ev, aksi son WP) `mission_end` olayı olarak `drone_sim_events`'e
   yazılır; görev değişirse aynı satır güncellenir.
-- ÇARPIŞMA: 3B çarpışma algılaması (`cmd crash {kind, speed}`) ya da SITL STATUSTEXT ("SIM Hit ground at …", "Crash: Disarming") → `crash` olayı
-  (koordinat, irtifa, hız, mod, sebep, o anki hedef WP, görev bitiş noktası). 5 sn içinde ikinci bildirim (3B + SITL aynı olay) tekilleştirilir.
+- ÇARPIŞMA: asıl kaynak SITL FİZİĞİ — STATUSTEXT "SIM Hit ground at X m/s" (X = düşey hız; `statustext_sinifla` → 'sitl_hit'). X ≥ SITL_HIT_HIZ_MIN ve
+  araç yerde-durağan değilse `crash` (sebep `sitl_hit`). Yavaş temaslar (taksi zıplaması, iniş, yerde titreşim; PROD'da 0,2–4,3 m/s ile dakikada 8
+  sahte kayıt görüldü) çarpışma DEĞİLDİR. ArduPlane'in yazılımsal tespiti ("Crash: Disarming", "Crash detected" → 'autopilot_detect') çarpışma
+  sayılmaz: sarı uyarı olayı + `warning` satırı. 3B algılaması (`cmd crash {kind, speed}`): bina/su kesin (SITL bina bilmez); ARAZİ yalnız ADAYDIR —
+  ADAY_TEYIT_S içinde SITL "Hit ground" gelirse `crash` (sebep `terrain`), gelmezse yok sayılır (Google karo / SRTM farkı). Sahte kipte 3B doğrudan.
+  Çarpışma kaydı aracı zorla disarm eder. CARPISMA_TEKIL_S içinde ikinci bildirim tekilleştirilir (metin ilk kayda eklenir).
 - İZ ve ÖZET: `_dongu` 1 Hz'de telemetri izi (en çok TRACK_MAX örnek) + anlık istatistikler (en yüksek AGL/MSL, en yüksek hız, kat edilen mesafe,
   ARM sayısı, havada süre, modlar, batarya). `ozet()` raporu üretir: temel uçuş bilgileri, görev bilgisi, çarpışma, SAPMA (çarpışma ↔ görev bitiş
   noktası yatay mesafe + yükseklik farkı; çarpışma yoksa dronun son konumu ↔ bitiş noktası; iniş dairesi yarıçapıyla karşılaştırma) ve güvenlik notu.
@@ -19,19 +23,44 @@ Tablo: drone_sim_events (app/db.py). DB yazımları olay döngüsünü tıkamaz 
 import asyncio
 import json
 import math
+import re
 import time
 
 from . import db
 
 TRACK_MAX = 7400            # 1 Hz · 120 dk + pay
 TRACK_RAPOR = 600           # rapora giden seyreltilmiş iz örneği sayısı
-CARPISMA_TEKIL_S = 5.0      # 3B ve SITL aynı çarpışmayı bildirirse tek kayıt
+CARPISMA_TEKIL_S = 30.0     # ikinci bildirim (3B + SITL, yerde sürüklenme temasları) tek kayıt
+SITL_HIT_HIZ_MIN = 3.0      # "SIM Hit ground at X m/s": X (düşey hız) bu eşiğin altında → temas, çarpışma değil (iniş ≈ 0,5–1,5; sert iniş 2–3)
+YERDE_AGL_M = 1.0           # bu AGL altında ve yer hızı YERDE_HIZ_MS altında hiçbir metin çarpışma sayılmaz
+YERDE_HIZ_MS = 3.0
+ADAY_TEYIT_S = 3.0          # 3B arazi adayı bu süre içinde SITL temasıyla teyit edilmezse düşer
+OTOPILOT_TEKIL_S = 30.0     # ArduPlane yazılımsal tespit uyarısı tekilleştirme
+ADAY_OLAY_ARALIK_S = 60.0   # teyitsiz 3B adayı olayı: ilk ikisi hemen, sonra en çok bu aralıkla
 INDIR_GECIKME_S = 0.4       # MP MISSION_ACK sonrası indirme gecikmesi (SITL görevi kaydetsin)
 MP_TRANSFER_S = 3.0         # SITL→MP MISSION_REQUEST(_INT) görüldükten sonra bu süre MP transferi 'sürüyor' sayılır: toplam-farkı tetiği bastırılır
 TOTAL_TETIK_ARALIK_S = 3.0  # MISSION_CURRENT.total farkı kaynaklı indirmeler arası en az süre (ACK tetiği anlıktır)
-CARPISMA_METINLERI = ('hit ground', 'crash')   # SITL / ArduPilot STATUSTEXT (küçük harf arama)
+_HIT_RE = re.compile(r'hit ground at\s*(-?\d+(?:\.\d+)?)')   # SITL SIM_Aircraft: "SIM Hit ground at %f m/s" (velocity_ef.z, m/s)
+_OTOPILOT_HARIC = ('crash check', 'no crash', 'crash_dump', 'crash dump')
 GCS_COMP = 191              # flightsim.GCS_COMP (döngüsel içe alma olmasın)
-SEBEP_ADLARI = {'terrain': 'arazi', 'water': 'su', 'building': 'bina', 'sitl': 'SITL', 'manual': 'el ile'}
+SEBEP_ADLARI = {'terrain': 'arazi', 'water': 'su', 'building': 'bina', 'sitl_hit': 'SITL yer teması', 'sitl': 'SITL', 'manual': 'el ile'}
+
+
+def statustext_sinifla(txt):
+    """SITL / ArduPilot STATUSTEXT → ('sitl_hit', düşey hız | None) fiziksel yer teması; ('autopilot_detect', None) ArduPlane yazılımsal çarpışma
+    tespiti ("Crash: Disarming", "Crash detected", "Flare crash detected…"); (None, None) ilgisiz. "Crash check"/"crash_dump" metinleri ilgisizdir."""
+    low = str(txt or '').lower()
+    m = _HIT_RE.search(low)
+    if m:
+        try:
+            return 'sitl_hit', abs(float(m.group(1)))
+        except ValueError:
+            return 'sitl_hit', None
+    if 'hit ground' in low:
+        return 'sitl_hit', None
+    if 'crash' in low and not any(k in low for k in _OTOPILOT_HARIC):
+        return 'autopilot_detect', None
+    return None, None
 
 
 def mesafe_m(lat1, lon1, lat2, lon2):
@@ -100,6 +129,12 @@ class GorevIzleyici:
         self.max_seq = 0
         self.end = None                 # görev bitiş noktası {lat, lon, alt_rel, cmd, seq}
         self.crashes = []
+        self._aday = None               # 3B arazi teması adayı {t, kind, speed, …}: SITL "Hit ground" teyidi bekler
+        self._aday_task = None
+        self._aday_dusen = 0            # teyitsiz düşen 3B arazi adayı sayısı
+        self._aday_olay_son = 0.0
+        self._otopilot_son = 0.0
+        self.warnings = []              # ArduPlane yazılımsal tespit uyarıları (çarpışma değil)
         self._indir_task = None
         self._mp_istek_son = 0.0        # SITL'in MP'ye son MISSION_REQUEST(_INT) gönderme anı (MP yüklemesi sürüyor)
         self._total_ref = None          # son yükleme/indirme SONRASI ilk gözlenen MISSION_CURRENT.total (ArduPilot'un sayımı bizimkiyle birebir olmayabilir)
@@ -180,15 +215,11 @@ class GorevIzleyici:
                 self.indir_planla('mp')
         elif t == 'STATUSTEXT':
             txt = str(m.text).rstrip('\x00')
-            low = txt.lower()
-            if any(k in low for k in CARPISMA_METINLERI) and 'crash check' not in low and 'no crash' not in low:
-                hiz = None
-                for parca in low.replace('m/s', ' ').split():
-                    try:
-                        hiz = float(parca)
-                    except ValueError:
-                        continue
-                self.carpisma('sitl', hiz, txt)
+            tur, hiz = statustext_sinifla(txt)
+            if tur == 'sitl_hit':
+                self.sitl_temas(hiz, txt)
+            elif tur == 'autopilot_detect':
+                self.otopilot_tespit(txt)
 
     def indir_planla(self, source='mp'):
         """SITL'den görevi indir (tek seferde bir indirme; kısa gecikme). Sahte kipte bellek içi görev."""
@@ -250,18 +281,90 @@ class GorevIzleyici:
                 'landing_circle_m': float((self.s.world or {}).get('landing_circle_m') or 30)}
 
     # ---------------- çarpışma ----------------
-    def carpisma(self, sebep, hiz=None, detay_metin=None):
+    def yerde_duragan(self):
+        te = self.s.tele
+        return float(te.get('alt_rel') or 0) < YERDE_AGL_M and float(te.get('groundspeed') or 0) < YERDE_HIZ_MS
+
+    def sitl_temas(self, vz, txt):
+        """SITL fiziği yere temas etti ("SIM Hit ground at vz m/s"). 3B arazi adayı bekliyorsa teyit → `terrain` çarpışması; yoksa yalnız sert temas
+        (vz ≥ SITL_HIT_HIZ_MIN) ve yerde-durağan değilken `sitl_hit` çarpışması. Diğer temaslar (taksi zıplaması, normal iniş) yok sayılır."""
+        now = time.time()
+        aday, self._aday = self._aday, None
+        if self._aday_task is not None and not self._aday_task.done():
+            self._aday_task.cancel()
+        if aday is not None and now - aday['t'] <= ADAY_TEYIT_S:
+            c = self.carpisma(aday['kind'], max(float(aday.get('speed') or 0), float(vz or 0)), txt, vz=vz)
+            self.s.zorla_disarm()
+            return c
+        if self.crashes and now - self.crashes[-1]['t'] < CARPISMA_TEKIL_S:
+            return self.carpisma('sitl_hit', vz, txt, vz=vz)   # az önceki çarpışmanın yer teması (disarm sonrası düşüş/sürüklenme): metin ilk kayda eklenir
+        if vz is None:
+            vz_ok = float(self.s.tele.get('groundspeed') or 0) >= SITL_HIT_HIZ_MIN
+        else:
+            vz_ok = vz >= SITL_HIT_HIZ_MIN
+        if not vz_ok or self.yerde_duragan():
+            return None
+        c = self.carpisma('sitl_hit', max(float(vz or 0), float(self.s.tele.get('groundspeed') or 0)), txt, vz=vz)
+        self.s.zorla_disarm()
+        return c
+
+    def otopilot_tespit(self, txt):
+        """ArduPlane yazılımsal çarpışma tespiti (is_flying sezgisi; CRASH_DETECT): çarpışma kaydı DEĞİL — sarı uyarı + `warning` satırı."""
+        now = time.time()
+        if now - self._otopilot_son < OTOPILOT_TEKIL_S:
+            return None
+        self._otopilot_son = now
+        te = self.s.tele
+        w = {'t': round(now, 3), 'reason': 'autopilot_detect', 'text': txt, 'lat': te.get('lat'), 'lon': te.get('lon'), 'alt_rel': te.get('alt_rel'),
+             'speed': te.get('groundspeed'), 'mode': te.get('mode')}
+        self.warnings.append(w)
+        self._kaydet('warning', w['lat'], w['lon'], te.get('alt_msl'), w['alt_rel'], w['speed'], w['mode'], w, tekil=False, t=now)
+        self.s._olay(f'Otopilot çarpışma tespiti (ArduPlane yazılımsal): "{txt}" — fiziksel temas değil, çarpışma kaydı yapılmadı', 4)
+        self.s._yay({'t': 'warn', 'kind': 'autopilot_detect', 'text': txt, 'ts': round(now, 3)})
+        return w
+
+    def ucboyut_bildirim(self, kind, speed, ekstra=None):
+        """3B çarpışma algılaması (`cmd crash`). Döner: (kayıt | None, disarm_gerekli). Bina/su ve sahte kip: kesin. Gerçek SITL'de ARAZİ adaydır:
+        SITL fiziği ADAY_TEYIT_S içinde "Hit ground" demezse (3B arazi ↔ SITL SRTM farkı) yok sayılır ve sarı olay yazılır."""
+        kind = kind or 'manual'
+        if kind != 'terrain' or self.s.sahte is not None:
+            return self.carpisma(kind, speed), True
+        now = time.time()
+        if self.crashes and now - self.crashes[-1]['t'] < CARPISMA_TEKIL_S:
+            return self.crashes[-1], False
+        self._aday = {'t': now, 'kind': kind, 'speed': speed, 'extra': dict(ekstra or {})}
+        if self._aday_task is not None and not self._aday_task.done():
+            self._aday_task.cancel()
+        loop = self.s.loop or asyncio.get_event_loop()
+        self._aday_task = loop.create_task(self._aday_dusur())
+        return None, False
+
+    async def _aday_dusur(self):
+        try:
+            await asyncio.sleep(ADAY_TEYIT_S)
+        except asyncio.CancelledError:
+            return
+        a, self._aday = self._aday, None
+        if a is None:
+            return
+        self._aday_dusen += 1
+        now = time.time()
+        if self._aday_dusen <= 2 or now - self._aday_olay_son >= ADAY_OLAY_ARALIK_S:   # olay şeridi spam'i yok: ilk ikisi hemen, sonra en çok dakikada bir (sayaçla)
+            self._aday_olay_son = now
+            self.s._olay(f"3B arazi teması ({float(a.get('speed') or 0):.1f} m/s) SITL fiziğiyle doğrulanmadı — çarpışma sayılmadı (3B arazi ↔ SITL arazi verisi farkı; toplam {self._aday_dusen})", 4)
+
+    def carpisma(self, sebep, hiz=None, detay_metin=None, vz=None):
         now = time.time()
         if self.crashes and now - self.crashes[-1]['t'] < CARPISMA_TEKIL_S:
             c = self.crashes[-1]
-            if sebep == 'sitl' and c.get('reason') in ('terrain', 'water', 'building'):
+            if detay_metin and not c.get('sitl_text'):
                 c['sitl_text'] = detay_metin   # 3B kaydına SITL metni eklenir
             return c
         te = self.s.tele
         hiz = float(hiz) if hiz is not None else float(te.get('groundspeed') or 0)
         c = {'t': round(now, 3), 'lat': te.get('lat'), 'lon': te.get('lon'), 'alt_msl': te.get('alt_msl'), 'alt_rel': te.get('alt_rel'),
              'speed': round(hiz, 2), 'mode': te.get('mode'), 'reason': sebep or 'manual', 'target_seq': self.mission_seq,
-             'mission_end': dict(self.end) if self.end else None, 'sitl_text': detay_metin if sebep == 'sitl' else None}
+             'mission_end': dict(self.end) if self.end else None, 'sitl_text': detay_metin, 'sitl_vz': round(float(vz), 2) if vz is not None else None}
         if self.end and c['lat'] is not None:
             c['deviation_m'] = round(mesafe_m(c['lat'], c['lon'], self.end['lat'], self.end['lon']) or 0, 1)
             c['dz_m'] = round(float(c.get('alt_rel') or 0) - float(self.end.get('alt_rel') or 0), 1)
@@ -315,7 +418,7 @@ class GorevIzleyici:
                        'batt': dict(self.batt), 'last_pos': son, 'home': dict(te['home']) if te.get('home') else None, 'armed': bool(te.get('armed'))},
             'mission': {'source': self.source, 'count': len(pts), 'completed': completed, 'end': dict(self.end) if self.end else None, 'points': pts,
                         'current': self.mission_seq, 'total': self.mission_total} if pts else None,
-            'crash': crash, 'crash_count': len(self.crashes), 'deviation': sapma, 'safety': safety, 'track': iz,
+            'crash': crash, 'crash_count': len(self.crashes), 'autopilot_detect_count': len(self.warnings), 'deviation': sapma, 'safety': safety, 'track': iz,
         }
         out['safety_note'] = guvenlik_notu(out)
         return out
@@ -343,6 +446,8 @@ class GorevIzleyici:
         if self.ended is not None:
             return
         self.ended = time.time()
+        if self._aday_task is not None and not self._aday_task.done():
+            self._aday_task.cancel()
         if not self.track and not self.crashes and not self.s.route:
             return   # hiç telemetri gelmedi (SITL açılamadı): rapor anlamsız
         try:

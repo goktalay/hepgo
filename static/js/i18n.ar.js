@@ -3887,4 +3887,7 @@ registerCatalog('ar', {
   "Yüklenemedi": "تعذر التحميل",
   "SITL (araç)": "SITL (المركبة)",
   "Kayıttaki sabit kanat uçağın kalkış düzeneği: rampa ya da araç 3B sahnede kurulur; ARM, fırlatma ve bırakma aşamaları logdan (ARM anı, ilk hareket, yer hızı/irtifa) türetilir. SITL parametresi yazılmaz.": "منصة إقلاع الطائرة ذات الجناح الثابت في التسجيل: تُبنى المنحدر أو المركبة في المشهد ثلاثي الأبعاد؛ وتُستخلص مراحل التسليح والإطلاق والإفلات من السجل (لحظة التسليح، أول حركة، السرعة الأرضية/الارتفاع). لا تُكتب معاملات SITL.",
+  "SITL yer teması": "ارتطام بالأرض في SITL",
+  "SITL yer teması (fizik)": "ارتطام بالأرض في SITL (فيزياء)",
+  "Otopilot çarpışma tespiti (ArduPlane yazılımsal) — çarpışma kaydı değil: {t}": "كشف تحطم من الطيار الآلي (برمجي، ArduPlane) — ليس سجل تصادم: {t}",
 });

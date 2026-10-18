@@ -661,6 +661,96 @@ def model_testleri(a, mon, c1):
     print('  görsel model kütüphanesi testleri geçti')
 
 
+def rec_testleri(a, c1):
+    """§17 ekran kaydı: start/chunk(sıra, tekrar, boyut)/thumb/finish → feed_posts (oturum sahibi adına, media video+thumb), yetki (salt okuyan 403),
+    boyut sınırı (413 → 'full'), yarım kayıt listesi (pending; oturum kapanınca), 24 saat temizliği, silme."""
+    from app import config, flightsim_rec
+    S = '/api/drone/sim/sessions'
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'launch': {'method': 'ramp'}}}), 201)
+    sid = s['id']
+    WEBM = b'\x1aE\xdf\xa3' + bytes(range(256)) * 40   # sahte webm: EBML başlığı + dolgu
+    # --- start: yazma izni olan; salt okuyan 403; olmayan oturum 404 ---
+    r = ok(a.post(f'{S}/{sid}/rec/start', json={'mime': 'video/webm;codecs=vp9,opus'}), 201)
+    rid = r['rec_id']
+    assert len(rid) == 16 and r['ext'] == '.webm' and r['chunk_max'] == 8 * 1024 ** 2 and r['max_bytes'] == flightsim_rec.MAX_BYTES, r
+    assert a.post(f'{S}/99999/rec/start', json={}).status_code == 404
+    mon = TestClient(app, base_url='https://testserver')
+    login(mon, 'montaj', 'sifre-1234')
+    assert mon.post(f'{S}/{sid}/rec/start', json={}).status_code == 403
+    assert mon.put(f'/api/drone/sim/rec/{rid}/chunk?seq=0', content=WEBM).status_code == 403
+    # --- parçalar: sıralı; tekrar yok sayılır; atlama 409; kötü kimlik 404; parça sınırı 413 ---
+    R = f'/api/drone/sim/rec/{rid}'
+    c0 = ok(a.put(f'{R}/chunk?seq=0', content=WEBM, headers={'Content-Type': 'application/octet-stream'}))
+    assert c0 == {'ok': True, 'seq': 0, 'size': len(WEBM), 'max_bytes': flightsim_rec.MAX_BYTES}, c0
+    c1b = ok(a.put(f'{R}/chunk?seq=1', content=WEBM))
+    assert c1b['seq'] == 1 and c1b['size'] == 2 * len(WEBM)
+    assert ok(a.put(f'{R}/chunk?seq=1', content=WEBM))['size'] == 2 * len(WEBM)   # yinelenen gönderim: idempotent
+    assert a.put(f'{R}/chunk?seq=3', content=WEBM).status_code == 409
+    assert a.put('/api/drone/sim/rec/zzzz/chunk?seq=0', content=WEBM).status_code == 404
+    assert a.put('/api/drone/sim/rec/0123456789abcdef/chunk?seq=0', content=WEBM).status_code == 404
+    assert a.put(f'{R}/chunk?seq=2', content=b'', headers={'Content-Length': str(9 * 1024 ** 2)}).status_code == 413
+    assert (flightsim_rec.REC_DIR / f'{rid}.webm').stat().st_size == 2 * len(WEBM)
+    # --- küçük resim: PNG dışı 415 ---
+    PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 64
+    assert a.put(f'{R}/thumb', content=b'GIF89a').status_code == 415
+    ok(a.put(f'{R}/thumb', content=PNG))
+    # --- oturumun kapanması kaydı silmez: kapat → yarım kayıt listesinde; bitir → paylaşım oturum SAHİBİ adına ---
+    pend = ok(a.get('/api/drone/sim/rec/pending'))
+    assert pend['items'] == [] and pend['max_mb'] == flightsim_rec.MAX_MB, pend   # oturum açıkken yarım sayılmaz
+    ok(a.delete(f'{S}/{sid}'))
+    pend = ok(a.get('/api/drone/sim/rec/pending'))['items']
+    assert len(pend) == 1 and pend[0]['id'] == rid and pend[0]['type'] == 'sabit_kanat' and pend[0]['center'] == 'Test Merkezi' and pend[0]['size'] == 2 * len(WEBM) and pend[0]['seconds'] == 20, pend
+    assert pend[0]['text'].startswith('Uçuş Simülatörü kaydı · Sabit kanat · Test Merkezi · rampa · '), pend[0]['text']
+    assert ok(mon.get('/api/drone/sim/rec/pending'))['items'] == []   # başkasının yarım kaydı görünmez
+    fin = ok(a.post(f'{R}/finish', json={'duration_s': 23.4, 'mime': 'video/webm'}))
+    assert fin['ok'] and fin['post_id'] and fin['path'].startswith('feed/') and fin['path'].endswith('.webm') and fin['thumb'].endswith('.png') and fin['link'] == '#/home', fin
+    assert fin['text'].startswith('Uçuş Simülatörü kaydı · Sabit kanat · Test Merkezi · rampa · 00:23 · 20'), fin['text']
+    assert (config.UPLOAD_DIR / fin['path']).read_bytes() == 2 * WEBM and (config.UPLOAD_DIR / fin['thumb']).read_bytes() == PNG
+    assert not (flightsim_rec.REC_DIR / f'{rid}.webm').exists() and not (flightsim_rec.REC_DIR / f'{rid}.json').exists()
+    assert a.post(f'{R}/finish', json={}).status_code == 404   # bitti: meta silindi
+    posts = ok(a.get('/api/feed'))['posts']
+    p = next(x for x in posts if x['id'] == fin['post_id'])
+    assert p['kind'] == 'USER' and p['author_id'] == s['owner']['id'] and p['text'] == fin['text'] and p['media'] == [{'type': 'video', 'path': fin['path'], 'thumb': fin['thumb']}], p
+    assert a.get(f"/api/files/{fin['path']}").status_code == 200 and mon.get(f"/api/files/{fin['path']}").status_code == 200   # akış medyası tüm kullanıcılara (giriş zorunlu)
+    assert ok(a.get('/api/drone/sim/rec/pending'))['items'] == []
+    # --- yazma izinli BAŞKA kullanıcı kaydeder → paylaşım yine oturum sahibi (admin) adına; istemci metni kullanılır; mp4 uzantısı ---
+    pil = TestClient(app, base_url='https://testserver')
+    login(pil, 'pilot', 'sifre-1234')
+    s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    r2 = ok(pil.post(f"{S}/{s2['id']}/rec/start", json={'mime': 'video/mp4'}), 201)
+    assert r2['ext'] == '.mp4'
+    R2 = f"/api/drone/sim/rec/{r2['rec_id']}"
+    ok(pil.put(f'{R2}/chunk?seq=0', content=WEBM))
+    fin2 = ok(pil.post(f'{R2}/finish', json={'duration_s': 5, 'text': '  Flight Simulator recording · Multirotor  '}))
+    p2 = next(x for x in ok(a.get('/api/feed'))['posts'] if x['id'] == fin2['post_id'])
+    assert p2['author_id'] == s['owner']['id'] and p2['text'] == 'Flight Simulator recording · Multirotor' and p2['media'][0]['path'].endswith('.mp4') and 'thumb' not in p2['media'][0], p2
+    # --- boyut sınırı: aşan parça 413 ve kayıt 'full' (sonraki parça 409); yine de bitirilebilir ---
+    r3 = ok(a.post(f"{S}/{s2['id']}/rec/start", json={}), 201)
+    R3 = f"/api/drone/sim/rec/{r3['rec_id']}"
+    ok(a.put(f'{R3}/chunk?seq=0', content=WEBM))
+    m3 = flightsim_rec.meta_oku(r3['rec_id']); m3['max_bytes'] = len(WEBM) + 10; flightsim_rec._meta_yaz(m3)
+    assert a.put(f'{R3}/chunk?seq=1', content=WEBM).status_code == 413
+    assert flightsim_rec.meta_oku(r3['rec_id'])['state'] == 'full'
+    assert a.put(f'{R3}/chunk?seq=1', content=b'x').status_code == 409
+    assert ok(a.post(f'{R3}/finish', json={'duration_s': 10}))['size'] == len(WEBM)
+    # --- boş kayıt bitirilemez (400); silme (salt okuyan 403); 24 saat temizliği (bozuk meta da kalkar) ---
+    r4 = ok(a.post(f"{S}/{s2['id']}/rec/start", json={}), 201)
+    R4 = f"/api/drone/sim/rec/{r4['rec_id']}"
+    assert a.post(f'{R4}/finish', json={}).status_code == 400
+    assert mon.delete(R4).status_code == 403
+    ok(a.delete(R4))
+    assert a.delete(R4).status_code == 404 and not (flightsim_rec.REC_DIR / f"{r4['rec_id']}.json").exists()
+    r5 = ok(a.post(f"{S}/{s2['id']}/rec/start", json={}), 201)
+    ok(a.put(f"/api/drone/sim/rec/{r5['rec_id']}/chunk?seq=0", content=WEBM))
+    m5 = flightsim_rec.meta_oku(r5['rec_id']); m5['ts'] = time.time() - flightsim_rec.TTL_S - 5; flightsim_rec._meta_yaz(m5)
+    (flightsim_rec.REC_DIR / 'bozuk.json').write_text('{', encoding='utf-8')
+    assert flightsim_rec.temizle() == 1
+    assert not (flightsim_rec.REC_DIR / f"{r5['rec_id']}.webm").exists() and not (flightsim_rec.REC_DIR / 'bozuk.json').exists()
+    assert list(flightsim_rec.REC_DIR.iterdir()) == [], list(flightsim_rec.REC_DIR.iterdir())
+    ok(a.delete(f"{S}/{s2['id']}"))
+    print('  ekran kaydı (§17) testleri geçti')
+
+
 def kalkis_testleri(a, c1):
     """§13: world.launch doğrulama (400), parametre seti, sahte kipte üç yöntemin WS `launch` aşama olayları (armed → launch → released)."""
     S = '/api/drone/sim/sessions'
@@ -1081,6 +1171,8 @@ def main():
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
         assert s3['id'] == sid + 10 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+        # --- ekran kaydı (§17) ---
+        rec_testleri(a, c1)
         # --- sabit kanat kalkış yöntemi (§13) ---
         kalkis_testleri(a, c1)
         # --- harekât paneli köprüsü (§14) ---

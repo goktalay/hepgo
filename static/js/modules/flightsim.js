@@ -20,7 +20,8 @@ import { modelPicker } from './flightsim_models.js';   // görsel model kütüph
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
-import { createOpsPanel } from './flightsim_panel.js';   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
+import { createOpsPanel } from './flightsim_panel.js';
+import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, pendingCard, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -359,6 +360,9 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); return; }
     if (S.mode === 'sitl' && S.center == null) { toast('Önce bir merkez seçin', 'err'); return; }
     startBtn.disabled = true;
+    // §17: otomatik tam ekran (kullanıcı etkinleştirmesi içinde; reddedilirse sessiz) + kayıt açıksa ekran paylaşımı izni BİR KEZ, oturum açılmadan önce
+    enterFullscreen();
+    if (!mock && recPrefs.on) { const { stream, reason } = await acquireDisplayStream(); stashStream(stream); if (!stream && reason === 'denied') toast(tr('Ekran paylaşımı reddedildi; 3B sahne + HUD kaydedilecek (panel kayda girmez)')); }
     try {
       const model = modelBody(picker.selectionFor(activeType()), mock);
       const s = S.mode === 'replay'
@@ -370,6 +374,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       const msg = { 400: S.mode === 'replay' ? 'Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin' : 'Geçersiz ayar; dünya değerlerini ve merkezi kontrol edin', 409: 'Oturum sınırı doldu; açık bir oturumu bitirin', 503: 'SITL hazır değil (ikili ya da boş port yok)' }[err?.status];
       toast(msg || err.message, 'err');
       startBtn.disabled = false;
+      takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen();   // §17: oturum açılamadı → paylaşım akışı ve tam ekran bırakılır
     }
   } }, '▶ Başlat');
   const limits = meta.limits || {};
@@ -398,6 +403,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
   clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
     mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
     openBox,
+    mock || !canWrite ? null : pendingCard(tr).el,   // §17: yarım ekran kayıtları (Bitir denmeden kapanan oturumlar) → Paylaş / Sil
     mock ? null : clientsCard({ canWrite }).el,   // CAYSIM istemcileri (docs/caysim-api.md)
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
     stepType, stepCenter, stepLog, stepWorld,
@@ -549,6 +555,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   ops = createOpsPanel(stage, { sid, session, type, modes, launch, canWrite, hub: !replay && !mock, getSim: () => sim, cmdSim: (name, params) => cmd(name, params), onReset: () => reset(), onToggle: on => opsBtn.classList.toggle('primary', on) });
   opsBtn.classList.toggle('primary', ops.enabled);
   const audio = createEngineAudio(stage, { type, launch, replay, tr, getSim: () => sim, getCrashed: () => !crash.hidden, getSpeed: () => player?.speed() ?? 1 });   // §16: düğmeyi alt çubuğa kendisi ekler; kamera/kalkış aşaması/çarpışma getter'lardan
+  // §17 ekran kaydı: rozet üst şeride, anahtar alt çubuğa; 3B hazır olunca başlar (Başlat'ta alınan ekran paylaşımı akışı varsa o, yoksa 3B+HUD tuvali)
+  const recText = () => [tr('Uçuş Simülatörü kaydı'), replay ? `${tr('kayıttan oynatma')}${session.replay?.file_name ? ` · ${session.replay.file_name}` : ''}` : [tr(TYPE_NAME[type] || type), session.center?.name, launch ? tr(launchLabel(launch, tr)) : null].filter(Boolean).join(' · '),
+    clock(rec?.seconds ?? 0), fmtDateTime(session.created_at)].filter(Boolean).join(' · ');
+  const rec = mock || !canWrite ? null : createRecorder(stage, { sid, tr, getSim: () => sim, getHudCanvas: () => stage.querySelector('.fs-mhud'), audio, text: recText, onEvent: (t, sev) => addEvent(t, sev) });
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -616,6 +626,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
     if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
     msg.hidden = true;
+    const disp = takeStashedStream();   // §17: Başlat'ta alınan ekran paylaşımı (varsa); kayıt tercihi açıksa hemen başla (HAZIR beklenmez)
+    if (rec && (disp || recPrefs.on)) rec.start(disp).catch(() => {}); else disp?.getTracks().forEach(t => t.stop());
   } catch (err) {
     msg.textContent = tr('3B dünya açılamadı: {e}', { e: err.message });
     msg.classList.add('err');
@@ -782,7 +794,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const endSession = async () => {
     if (!canWrite) { location.hash = be.href(); return; }
     if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
-    try { await be.end(sid); toast('Oturum kapatıldı'); location.hash = be.href(); } catch (err) { toastError(err); }
+    try {
+      if (rec?.hasData) await rec.finishWithDialog();   // §17: son parça + finish → Şirketten Haberler paylaşımı (ilerleme penceresi; hata → indir)
+      exitFullscreen();
+      await be.end(sid); toast('Oturum kapatıldı'); location.hash = be.href();
+    } catch (err) { toastError(err); }
   };
   const END_REASON = { kapatildi: 'Oturum kapatıldı', bosta: 'İzleyici ve GCS olmadığından kapatıldı', sure: 'Oturum süresi doldu', sunucu_kapaniyor: 'Sunucu kapanıyor' };
   const showEnded = reason => {
@@ -841,6 +857,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     player?.dispose();
     socket?.close();
     milHud?.dispose();
+    if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
     audio.dispose(); ops?.dispose();
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;

@@ -620,3 +620,47 @@ yalnız aktif istemci, CORS yok (OPTIONS 204). Testler `tests/test_caysim.py`. A
 - **Testler**: `node tests/test_flightsim_audio.mjs` — saf katman (tip→devir→frekans, yumuşatma, mesafe kazancı, FPV, Doppler, tercihler) + sahte Web Audio
   düğümleriyle grafik (tek bağlam/düğüm sabitliği, kopter/heli/uçak/vtol parametreleri, uzaysal, aç/kapa, 2× sessiz, kilit, rampa/araç/çarpışma efektleri,
   dispose, ≤ 25 Hz işleme). Tarayıcı (Playwright, sahte kip): düğme/M/menü/localStorage/FPV ve sayfadan çıkış; konsol hatası yok.
+
+## 17. Ekran kaydı → Şirketten Haberler (`app/flightsim_rec.py`, `static/js/modules/flightsim_record.js`)
+Kullanıcı isteği: "Başlat dediğim andan itibaren ekranı video olarak kaydetsin, ses ile birlikte; Bitir dediğim anda videoyu Şirketten Haberler bölümüne,
+kullanıcı kimse onun kullanıcısıyla paylaşım olarak yüklesin." + "Başlat dediğim anda otomatik tam ekran açılsın."
+- **Otomatik tam ekran**: sihirbazda **Başlat / Oynat** tıklaması içinde (kullanıcı etkinleştirmesi) `document.documentElement.requestFullscreen()`
+  (`enterFullscreen`; mevcut §14 kalıbı: belgeye, sahneye değil; oturum ekranı açılınca `onFullChange` → `body.fs-full` + `.fs-stage.fs-full`). Tarayıcı
+  reddederse sessizce geçilir. Oturum açılamazsa (400/409/503) tam ekrandan çıkılır. **Bitir**'de `exitFullscreen` (kayıt yüklendikten sonra, oturum kapanmadan önce).
+- **Kayıt kaynağı — karar**: (a) **`getDisplayMedia`** tercih: gerçek ekran (harekât paneli / HUD / pencereler dahil), sistem sesi seçeneği; izin kutusu Başlat
+  tıklamasında **bir kez** (tam ekran isteğiyle aynı etkinleştirme içinde, oturum açılmadan önce; `preferCurrentTab`, `selfBrowserSurface:'include'`,
+  `systemAudio:'include'`). Alınan akış `stashStream` ile oturum ekranına taşınır. (b) **Yedek**: kullanıcı reddederse / API yoksa (headless, eski tarayıcı) →
+  3B tuval + askeri HUD tuvali birleşik 720p tuvale çizilir (`sim.addFrameHook`: render SONRASI aynı rAF turunda `drawImage`; `preserveDrawingBuffer`
+  gerekmez) → `canvas.captureStream(30)`; bilgi verilir ("panel kayda girmez"). html2canvas benzeri DOM birleşimi uygulanmadı (pahalı; (a) zaten DOM'u kapsar).
+  Kullanıcı ekran paylaşımını tarayıcı çubuğundan durdurursa kayıt orada kesilir (olay şeridinde uyarı), Bitir'de kısmi video paylaşılır.
+- **Ses**: motor sesi (§16) `audio.captureStream()` — master çıkışına bağlı `MediaStreamAudioDestinationNode` (kullanıcının duyduğu gibi; ses kapalıysa sessiz) +
+  ekran paylaşımı sistem sesi varsa o (o zaman motor kaynağı eklenmez: aynı ses iki kez girmez) + isteğe bağlı mikrofon (`fs.rec.mic`, varsayılan kapalı;
+  localStorage) — ayrı bir karışım `AudioContext`inde tek ses parçasına birleşir.
+- **Biçim**: `MediaRecorder` mime sırası `video/webm;codecs=vp9,opus` → vp8,opus → h264,opus → webm → `video/mp4` (Safari); 1280×720 hedef, 2,5 Mb/s video,
+  128 kb/s ses; `timeslice` 10 sn. Rozet: üst şeritte kırmızı **● KAYIT 03:21** (`.fs-rec-badge`; yükleme bekleyen varsa ↑), alt çubukta **⏺ Kayıt** anahtarı
+  (`.fs-rec-btn`, **R** tuşu). Tercih `fs.rec.on` (varsayılan AÇIK; kapalıysa Başlat'ta izin istenmez, kayıt yapılmaz). Oturum sırasında kapatma → pencere:
+  "Durdur ve paylaş" / "Sil" / Vazgeç; açma → tıklama içinde ekran paylaşımı izni, yoksa yedek.
+- **Akıtma** (parçalar bitmeden değil, oturum boyunca): `POST /api/drone/sim/sessions/{id}/rec/start {mime}` → `{rec_id, max_bytes, chunk_max, ext}`;
+  `PUT /api/drone/sim/rec/{rec_id}/chunk?seq=N` (ham gövde, ≤ 8 MB; istemci büyük parçaları diler) sunucu `DATA_DIR/sim_rec/<rec_id>.<ext>`'e ekler —
+  sıralı `seq`: tekrar (= son) yok sayılır (idempotent), atlama 409 ("beklenen N"), parça sınırı 413; `PUT …/thumb` (PNG ≤ 2 MB; istemci 2. sn'de 3B/birleşik
+  tuvalden 320 px kare); `POST …/finish {duration_s, mime, text?}` → dosya `UPLOAD_DIR/feed/<token>.<ext>`'e (+ `.png` küçük resim) taşınır, `feed_posts`'a
+  **oturum sahibi** adına (`kind USER`, `media [{type:'video', path, thumb}]`) paylaşım açılır, `_announce` ile anlık/push bildirimi; dönüş
+  `{post_id, path, thumb, text, link:'#/home'}`. Metin: istemci kendi dilinde `text` gönderir ("Uçuş Simülatörü kaydı · <tip> · <merkez> · <yöntem> · <süre> ·
+  <tarih>", `tr()`); boşsa sunucu Türkçe üretir (`flightsim_rec.metin`). `DELETE …/rec/{rec_id}` siler. Ağ hatasında parça 5 kez üstel beklemeyle yinelenir.
+- **Boyut sınırı**: `SIM_REC_MAX_MB` (varsayılan 1024, en çok 2048); aşan parça 413 → kayıt sunucuda `full`, istemci kaydı durdurur ve uyarır; şimdiye kadarki
+  kısım Bitir'de paylaşılır. İndirme yedeği için parçalar tarayıcı belleğinde ≤ 600 MB tutulur (yükleme hatasında "Dosyayı indir").
+- **Yarım kayıt**: sayfa kapanır / ağ kopar / Bitir'siz çıkılırsa meta (`<rec_id>.json`) ve veri sunucuda **24 saat** kalır (`temizle`: start/pending çağrılarında).
+  `GET /api/drone/sim/rec/pending` → kullanıcının (sahip ya da başlatan) oturumu kapanmış, bitmemiş kayıtları; sihirbazda **"Yarım kayıt (n)"** kutusu
+  (`pendingCard`): **Paylaş** (finish) / **Sil**. Geri okuyla çıkışta kuyruktaki parçalar arka planda akıtılmaya devam eder (aynı belge; fetch sürer).
+- **Yetki**: `require_module('drone.sim')` yöntemden yazma izni ister (POST/PUT/DELETE) → kayıt uçları yazma izni; ayrıca modül `basla` oturum sahibi ya da yazma
+  izni, parça/bitir/sil başlatan ya da sahip ya da yazma izni denetler. Paylaşım **yalnız oturum sahibi** adına (sahip silinmişse bitiren adına). Sahte kipte
+  (`?mock=1`) ve salt okuyan izleyicide kayıtçı kurulmaz.
+- **Bitir akışı** (`flightsim.js endSession`): onay → `rec.finishWithDialog()` (son parça → kuyruk boşalır: "Kayıt yükleniyor… %" çubuğu → finish →
+  "✓ Şirketten Haberler'e paylaşıldı" + **Paylaşımı aç** (`#/home`) / hata → "Kayıt yüklenemedi" + **Dosyayı indir**) → tam ekrandan çık → `DELETE /sessions/{id}`.
+- **Testler**: `tests/test_flightsim.py rec_testleri` — start (403 salt okuyan, 404 oturum), chunk (sıra/tekrar/atlama 409/kötü kimlik 404/parça 413), thumb 415,
+  pending (oturum açıkken boş; kapanınca listede; başkası görmez), finish → `feed_posts` (sahip, media video+thumb, dosyalar taşındı, meta silindi, medya sunulur),
+  yazma izinli başka kullanıcı → yine sahip adına + istemci metni + mp4 uzantısı, boyut sınırı (413 → full → 409), boş kayıt 400, silme, 24 saat temizliği.
+  Playwright (headless shell, `getDisplayMedia` yok → yedek yol): Başlat → rozet "KAYIT 00:1x" → sunucuda parça → Bitir → yükleme → paylaşıldı → `#/home`'da
+  video kartı; ffmpeg ile webm süresi/ses parçası/5. sn kare parlaklığı; kayıt kapalı → rozet yok; Bitir'siz çıkış → yarım kayıt kutusu → Sil.
+- **Sınırlar**: headless'ta gerçek ekran paylaşımı sınanamaz (kullanıcı tarayıcısında kutu çıkar); yedek yolda DOM paneli kayda girmez; Safari'de mp4 ve
+  `getDisplayMedia` davranışı tarayıcıya bağlı; `fullscreenchange` olayı bazı gömülü tarayıcılarda gelmez (sınıf oturum ekranı açılınca da uygulanır).

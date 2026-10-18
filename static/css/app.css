@@ -9029,6 +9029,19 @@ body.immersive .fs-nav { top: 12px; }
 .fs-gimbal { color: #9aa4b6; }
 /* §16 motor sesi: hoparlör düğmesi (🔊/🔇; M), ▾ ile ses düzeyi menüsü; "etkileşim bekleniyor" turuncu nokta (AudioContext askıda) */
 .fs-audio { position: relative; display: inline-flex; gap: 2px; align-items: center; }
+/* §17 ekran kaydı: üst şeritte kırmızı rozet (askeri HUD'un ● REC noktasıyla uyumlu), alt çubukta anahtar, Bitir'de yükleme çubuğu */
+.fs-rec-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 7px; border-radius: 999px; background: rgba(255, 68, 68, .16); border: 1px solid rgba(255, 68, 68, .45); color: #ff6b6b; font-weight: 700; font-size: 11.5px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.fs-rec-badge .fs-rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4444; box-shadow: 0 0 6px rgba(255, 68, 68, .9); animation: fs-rec-blink 1.2s steps(1) infinite; }
+.fs-rec-badge.paused { color: #c9ced8; background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .18); }
+.fs-rec-badge.paused .fs-rec-dot { background: #9aa4b6; box-shadow: none; animation: none; }
+@keyframes fs-rec-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .25; } }
+.fs-rec-btn.off { opacity: .7; }
+.fs-rec-btn.danger.primary { background: #c0392b; border-color: #c0392b; color: #fff; }
+.fs-rec-bar { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin: 10px 0 6px; }
+.fs-rec-bar i { display: block; height: 100%; width: 0; background: var(--primary, #2f80ed); transition: width .3s; }
+.fs-rec-ok { color: #2e9e5b; font-weight: 700; margin: 0 0 6px; }
+.fs-rec-err { color: #c0392b; font-weight: 600; margin: 0 0 6px; }
+.fs-rec-pending { margin-bottom: 14px; }
 .fs-audio-btn { position: relative; min-width: 36px; }
 .fs-audio-btn.wait::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #f5a524; box-shadow: 0 0 0 2px rgba(11, 18, 32, .9); }
 .fs-audio-more { padding: 0 6px; min-width: 22px; font-size: 11px; }

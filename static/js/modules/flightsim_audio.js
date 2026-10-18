@@ -386,6 +386,19 @@ export function createEngineAudio(stage, opts = {}) {
     setEnabled: on => { if (!!on !== prefs.enabled) toggle(); return prefs.enabled; },
     setVolume: v => { prefs.setVolume(v); if (slider) slider.value = String(prefs.volume); if (G) P(G.master.gain, prefs.effective(), 0.05); drawBtn(); return prefs.volume; },
     unlock,
+    // §17 ekran kaydı: master çıkışına bağlı MediaStreamAudioDestinationNode → MediaStream (kullanıcının duyduğu motor sesi; ses kapalıysa sessiz).
+    // Bağlam yoksa (Web Audio desteklenmiyor) null. Askıdaysa resume denenir (Başlat tıklaması aktivasyonu sayfa geçişinde korunur).
+    captureStream() {
+      if (disposed) return null;
+      build();
+      if (!ctx || !G || typeof ctx.createMediaStreamDestination !== 'function') return null;
+      try {
+        const dest = ctx.createMediaStreamDestination();
+        G.master.connect(dest);
+        if (ctx.state !== 'running') ctx.resume?.().then(() => { prefs.setUnlocked(ctx?.state === 'running'); drawBtn(); }).catch(() => {});
+        return dest.stream;
+      } catch { return null; }
+    },
     get enabled() { return prefs.enabled; }, get context() { return ctx; }, get graph() { return G; }, get smooth() { return { ...sm }; }, get stats() { return { ...stats }; },
     dispose() {
       if (disposed) return;

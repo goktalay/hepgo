@@ -1307,7 +1307,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       camera.updateProjectionMatrix();
     }
     renderer.render(scene, camera);
+    if (frameHooks.size) frameHooks.forEach(fn => { try { fn(canvas); } catch { /* kanca hatası kareyi bozmaz */ } });   // §17: render SONRASI (aynı rAF turu; preserveDrawingBuffer gerekmez)
   }
+  const frameHooks = new Set();   // §17 ekran kaydı: her karede render edilen tuvali okuyan kancalar (drawImage → birleşik kayıt tuvali)
 
   // ---------- kurulum ----------
   await buildWorld(world);
@@ -1396,5 +1398,6 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     cameraPose: () => { camera.updateMatrixWorld(); const e = camera.matrixWorld.elements; return { x: e[12], y: e[13], z: e[14], fx: -e[8], fy: -e[9], fz: -e[10], ux: e[4], uy: e[5], uz: e[6] }; },   // §16 uzaysal ses: dinleyici konumu + ileri/üst (ENU)
     getPose: () => { tmpE.setFromQuaternion(cur.q, 'ZXY'); return { roll: tmpE.y, pitch: tmpE.x, yaw: -tmpE.z }; },   // render edilen (enterpolasyonlu) yönelim, rad (FPV HUD)
     canvas,
+    addFrameHook: fn => { frameHooks.add(fn); return () => frameHooks.delete(fn); },   // §17: render sonrası kanca (kayıt birleşimi)
   };
 }

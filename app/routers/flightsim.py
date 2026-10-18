@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_models, flightsim_replay, sim_terrain
+from .. import auth, db, drone_hub, flightsim, flightsim_models, flightsim_rec, flightsim_replay, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -242,6 +242,88 @@ async def session_cmd(sid: int, body: CmdIn, user=Depends(sim_user)):
         return await s.komut(body.name, body.params or {}, kaynak=user['id'])
     except flightsim.SimHata as e:
         _hata(e)
+
+
+# ---------------- Ekran kaydı (flightsim_rec; §17) ----------------
+# Tarayıcı MediaRecorder parçaları oturum boyunca akıtılır; Bitir'de dosya Şirketten Haberler deposuna taşınır, oturum SAHİBİ adına paylaşım.
+# Yetki: start oturum sahibi ya da drone.sim yazma izni; chunk/thumb/finish/delete başlatan, sahip ya da yazma izni. GET /rec/pending yarım kayıtlar.
+class RecStartIn(BaseModel):
+    mime: Optional[str] = None
+
+
+class RecFinishIn(BaseModel):
+    duration_s: Optional[float] = None
+    mime: Optional[str] = None
+    text: Optional[str] = None   # istemcinin kendi dilinde ürettiği metin (aynı yapı); boşsa sunucu Türkçe üretir
+
+
+def _rec_hata(e):
+    raise HTTPException(e.kod, str(e))
+
+
+def _yazar(user):
+    return MODUL in user.get('write_modules', [])
+
+
+@router.post('/sessions/{sid}/rec/start', status_code=201)
+def rec_start(sid: int, body: RecStartIn, user=Depends(sim_user)):
+    s = flightsim.MANAGER.get(sid)
+    if s is None:
+        raise HTTPException(404, 'Oturum bulunamadı')
+    try:
+        m = flightsim_rec.basla(s.to_dict(), user, _yazar(user), body.mime)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'rec_id': m['id'], 'max_bytes': m['max_bytes'], 'chunk_max': flightsim_rec.CHUNK_MAX, 'ext': m['ext']}
+
+
+@router.put('/rec/{rec_id}/chunk')
+async def rec_chunk(rec_id: str, request: Request, seq: int = 0, user=Depends(sim_user)):
+    data = await _govde(request, flightsim_rec.CHUNK_MAX)
+    try:
+        m = await asyncio.get_running_loop().run_in_executor(None, flightsim_rec.parca, rec_id, user, _yazar(user), seq, data)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True, 'seq': m['seq'], 'size': m['size'], 'max_bytes': m.get('max_bytes')}
+
+
+@router.put('/rec/{rec_id}/thumb')
+async def rec_thumb(rec_id: str, request: Request, user=Depends(sim_user)):
+    data = await _govde(request, flightsim_rec.THUMB_MAX)
+    try:
+        flightsim_rec.kucuk_resim(rec_id, user, _yazar(user), data)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True}
+
+
+@router.post('/rec/{rec_id}/finish')
+async def rec_finish(rec_id: str, body: RecFinishIn, user=Depends(sim_user), conn=db.DB):
+    try:
+        r = flightsim_rec.bitir(conn, rec_id, user, _yazar(user), body.duration_s, body.text)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    conn.commit()
+    owner = db.row(conn.execute('SELECT id, full_name FROM users WHERE id = ?', (r['owner_id'],))) or {'id': user['id'], 'full_name': user['full_name']}
+    from .feed import _announce
+    await _announce(conn, r['post_id'], owner, r['text'], [{'type': 'video', 'path': r['path']}])
+    return {'ok': True, 'post_id': r['post_id'], 'path': r['path'], 'thumb': r['thumb'], 'text': r['text'], 'size': r['size'], 'link': '#/home'}
+
+
+@router.delete('/rec/{rec_id}')
+def rec_delete(rec_id: str, user=Depends(sim_user)):
+    try:
+        flightsim_rec.sil(rec_id, user, _yazar(user))
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True}
+
+
+@router.get('/rec/pending')
+def rec_pending(user=Depends(sim_user)):
+    """Kullanıcının yarım kayıtları (oturumu kapanmış, bitirilmemiş): paylaşıma dönüştür (finish) ya da sil."""
+    acik = [s.id for s in flightsim.MANAGER.sessions.values() if s.state != 'KAPANDI']
+    return {'items': flightsim_rec.bekleyenler(user, acik), 'max_mb': flightsim_rec.MAX_MB}
 
 
 # ---------------- Görsel model kütüphanesi (flightsim_models; §12) ----------------

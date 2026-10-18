@@ -3960,4 +3960,7 @@ registerCatalog('ru', {
   "Özet rapor yok": "Сводного отчёта нет",
   "Ekran kaydını izle": "Смотреть запись экрана",
   "Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.": "По завершении каждого сеанса: сводный отчёт, лог полёта .bin, запись экрана, последний дамп параметров и архив скриптов SITL. Меню Download доступно только владельцу системы (MASTER).",
+  "Ev irtifası arazi verisinden alınacak": "Высота дома будет взята из данных рельефа",
+  "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Сохранённая высота {a} м, рельеф {t} м — будет использован рельеф",
+  "Arazi {t} m — ev irtifası arazi verisinden": "Рельеф {t} м — высота дома из данных рельефа",
 });

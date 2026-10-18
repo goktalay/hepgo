@@ -501,4 +501,7 @@ registerCatalog('en', {
   "Özet rapor yok": "No summary report",
   "Ekran kaydını izle": "Watch screen recording",
   "Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.": "At the end of each session: summary report, .bin flight log, screen recording, final parameter dump and SITL script archive. The Download menu is available to the system owner (MASTER) only.",
+  "Ev irtifası arazi verisinden alınacak": "Home altitude will be taken from terrain data",
+  "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Saved altitude {a} m, terrain {t} m — terrain will be used",
+  "Arazi {t} m — ev irtifası arazi verisinden": "Terrain {t} m — home altitude from terrain data",
 });

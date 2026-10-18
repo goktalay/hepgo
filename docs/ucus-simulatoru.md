@@ -292,6 +292,16 @@ GD) → eve göre **+951 m**; 3B'de `terrainHeight` aynı noktada aynı değeri 
 uydu 90 karo (z16, 2 MB) 12.5 sn → 2.6 sn; `/osm` soğuk 46 sn (Overpass; 7996 bina, 242 orman, 31 su; 1.3 MB sade JSON), sıcak 1 sn.
 Tarayıcıda önizleme/oturum dünyası sıcak önbellekle 3–9 sn (yazılım WebGL).
 
+**EV İRTİFASI KURALI (`SimManager.ac`; 18 Ekim düzeltmesi).** Gerçek arazi ve Google 3B kiplerinde SITL ev irtifası **her zaman** `sim_terrain.ev_irtifa`
+(terrarium z13 bilineer, MSL) ile kurulur; merkez kaydındaki `alt` bu kiplerde **kullanılmaz** ve `session.center.alt_entered` olarak saklanır
+(`center.alt` = kullanılan değer). Kayıtlı değer araziden `EV_FARK_UYARI` (15 m) fazla sapıyorsa sihirbazın merkez kartında uyarı ("Kayıtlı irtifa
+1500 m, arazi 742 m — arazi kullanılacak"; `/terrain home_elev`) ve oturum olay şeridine not (`alt_not`, SITL açılışında). Arazi alınamazsa kayıtlı
+değer / `EV_IRTIFA` ile sürer ve uyarı düşer. Prosedürel kipte kayıtlı `alt` aynen (0/boş → `EV_IRTIFA`), arazi sunumu zaten kapalı → uyumsuzluk yok.
+KÖK NEDEN (PROD, 18 Ekim): merkezler `Ankara 39.3775/34.2904 alt 0` ve `Bedesten 39.8565/33.3998 alt 1500` kayıtlıyken arazi sunumu açıldı → SITL yüzeyi
+terrarium'dan (≈ 1000 / 742 m) öğreniyor ama ev irtifası kullanıcının girdiği 0 / 1500 m ile kuruluyordu → uçak yerin ~1000 m altında / ~760 m üstünde
+doğuyor, fizik "takla" atıyordu (drone_sim_runs #1–2 `carpisma`). Doğrulama (gerçek arduplane, rampa, gerçek arazi): yerde `alt_rel` 0±1, `terrain_agl`
+0±2, 60 sn pitch/roll < 5° (`tools/flightsim_ev_irtifa_dogrula.py`). Kalkış yöntemleri etkilenmez.
+
 **SITL arazi sunumu (sunucu GCS gibi; §18 ayrıntı).** Gerçek arazi ve Google 3B kiplerinde sunucu SITL'in `TERRAIN_REQUEST`'lerine **aynı terrarium
 karolarından** (z 13, bilineer `sim_terrain.yukseklik`; ev irtifası `ev_irtifa` ile aynı kaynak, EGM96 MSL) `TERRAIN_DATA` yanıtlar → SITL fiziği
 gerçek topoğrafyayı görür (Mission Planner gerekmez). `sim_terrain.terrain_bloklari(lat_e7, lon_e7, spacing, mask)` ArduPilot blok düzenini üretir

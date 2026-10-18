@@ -5381,7 +5381,10 @@ tr.att-unmatched td:first-child { background: color-mix(in srgb, #fef3c7 50%, va
 .seg.seg-tabs .seg-ico { opacity: .85; }
 
 /* Modül alt-sekme çubuğu: her zaman başlığın altında, tam genişlik */
-.module-tabs { margin: 4px 0 16px; overflow-x: auto; scrollbar-width: thin; }
+/* Sekme çubuğu: yatay taşma kaydırılabilir ama ÇUBUK GÖRÜNMEZ (Windows/klasik scrollbar'da sekmelerin yanında dikey+yatay çubuk çıkıyordu:
+   .seg-tabs button margin-bottom:-2px alt kenardan taşıyordu → overflow-y gizli); dikey yön asla kaydırılmaz. Yalnız sekme çubuğunda. */
+.module-tabs { margin: 4px 0 16px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none; }
+.module-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .module-tabs .seg.seg-tabs { min-width: max-content; }
 .att-absent-row td { color: var(--faint); }
 
@@ -9389,8 +9392,11 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
 .fs-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
 .fs-new-sim { white-space: nowrap; }
 /* §21 sekmeler: Simülasyon Kayıtları · Açık Oturumlar · CAYSIM İstemcileri (HEPGO .seg-tabs kalıbı) + sayaç rozeti */
-.fs-tabs { margin: 0 0 14px; }
-.fs-tabs .seg.seg-tabs { display: flex; width: 100%; min-width: 0; }
+.fs-tabs { margin: 0 0 14px; overflow: hidden; }
+.fs-tabs .seg.seg-tabs { display: flex; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.fs-tabs .seg.seg-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.fs-center-alt { display: block; line-height: 1.35; }
+.fs-center-alt.warn { color: var(--warning); font-weight: 600; }
 .fs-tabs .seg.seg-tabs button { display: inline-flex; align-items: center; gap: 7px; }
 .fs-tab-n { display: inline-block; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 .fs-tabs button.on .fs-tab-n { background: var(--primary); border-color: var(--primary); color: #fff; }

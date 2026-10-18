@@ -3960,4 +3960,7 @@ registerCatalog('de', {
   "Özet rapor yok": "Kein Zusammenfassungsbericht",
   "Ekran kaydını izle": "Bildschirmaufnahme ansehen",
   "Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.": "Zum Ende jeder Sitzung: Zusammenfassungsbericht, .bin-Fluglog, Bildschirmaufnahme, letzter Parameterdump und SITL-Skriptarchiv. Das Download-Menü steht nur dem Systemeigentümer (MASTER) zur Verfügung.",
+  "Ev irtifası arazi verisinden alınacak": "Heimathöhe wird aus den Geländedaten übernommen",
+  "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "Gespeicherte Höhe {a} m, Gelände {t} m — Gelände wird verwendet",
+  "Arazi {t} m — ev irtifası arazi verisinden": "Gelände {t} m — Heimathöhe aus Geländedaten",
 });

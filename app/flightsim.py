@@ -39,6 +39,7 @@ SITL_BAGLANTI_S = 40                  # SITL SERIAL0'ı dinleyene dek bağlanma 
 VIEWER_QUEUE = 64
 GCS_SYSID, GCS_COMP = 255, 191        # kendi MAVLink kaynağımız (255 = SYSID_MYGCS: RC override kabul edilir; 191 ≠ Mission Planner'ın 190'ı)
 EV_IRTIFA = 100.0
+EV_FARK_UYARI = 15.0                  # m: merkez kaydındaki `alt` ile arazi yüksekliği farkı bundan büyükse sihirbaz/olay şeridinde uyarı (§9 ev irtifası kuralı)
 RC_HZ_MIN_ARALIK = 1.0 / 40           # WS `rc` tavanı (ön yüz 20 Hz gönderir; jitter payı). Serbest bırakma paketi (8×0) sınırlanmaz.
 # Yüksek hızlı akış: MAV_CMD_SET_MESSAGE_INTERVAL (msgid → µs). REQUEST_DATA_STREAM 10 Hz (ALL) de gönderilir; Mission Planner bağlanıp kendi
 # akış isteklerini yolladığında bizim aralıklar ezilebilir → `_dongu` içinde düzenli olarak yeniden istenir.
@@ -491,6 +492,7 @@ class SimSession:
         # §19 kayıt seçenekleri: rec.bin → SITL DataFlash .BIN açık (yalnız armed süre), kapanışta uçuş loglarına kaydedilir (flightsim_bin)
         self.rec = {'bin': bool((rec or {}).get('bin'))}
         self.bin_sonuc = None            # kapanışta {log_id, file_name, size} | {error} | None
+        self.alt_not = None              # §9 ev irtifası kuralı: merkez `alt` ≠ arazi (ya da arazi alınamadı) notu; SITL açılışında olay şeridine düşer
         # §21 simülasyon kaydı (flightsim_runs): oturumun gördüğü son parametre değerleri (PARAM_VALUE; kapanışta PARAM_REQUEST_LIST ile tamamlanır),
         # ekran kaydı bağı (rec_finish → video_bagla) ve kapanışta yazılan drone_sim_runs satırı
         self.param_son = {}
@@ -571,7 +573,7 @@ class SimSession:
     # ---- dışa görünüm ----
     def to_dict(self, host=None):
         return {'id': self.id, 'mode': 'sitl', 'type': self.type, 'airframe': self.airframe, 'model': dict(self.model) if self.model else None,
-                'center': dict(self.center), 'world': dict(self.world), 'state': self.state, 'launch': {**self.launch, 'phase': self.launch_phase},
+                'center': dict(self.center), 'alt_note': self.alt_not, 'world': dict(self.world), 'state': self.state, 'launch': {**self.launch, 'phase': self.launch_phase},
                 'udp_port': self.udp_port, 'host': host or PUBLIC_HOST or None, 'created_at': self.created_at, 'owner': dict(self.owner),
                 'client': dict(self.client) if self.client else None,
                 'gcs': {'connected': self.gcs_addr is not None, 'addr': f'{self.gcs_addr[0]}:{self.gcs_addr[1]}' if self.gcs_addr else None,
@@ -935,6 +937,11 @@ class SimSession:
             self._param_set(TERRAIN_PARAMLARI)
             self._olay('Arazi verisi: SITL\'in arazi istekleri gerçek yükseklik verisinden (terrarium z13) yanıtlanıyor — fizik gerçek topoğrafyayı görür', 6)
         self._olay('SITL kalp atışı alındı; veri akışı istendi (ATTITUDE/konum 50 Hz)', 6)
+        # §9 ev irtifası kuralı: izleyiciler artık bağlı (HAZIR öncesi yayınlar WS'ye ulaşmaz) → kullanılan ev irtifası + uyumsuzluk notu olay şeridine
+        c = self.center
+        self._olay(f'Ev irtifası {float(c.get("alt") or EV_IRTIFA):.1f} m MSL ({"arazi verisi (terrarium)" if self.world.get("mode") in TERRAIN_KIPLER and c.get("alt") is not None else "merkez kaydı/varsayılan"})', 6)
+        if self.alt_not:
+            self._olay(self.alt_not, 4)
 
     # ---- §18 arazi sunumu (TERRAIN_REQUEST → TERRAIN_DATA) ----
     def _terrain_istek(self, m):
@@ -1606,17 +1613,26 @@ class SimManager:
                 raise SimHata('sitl', err or 'SITL ikilisi yok')
         if not self._udp_bos_var():
             raise SimHata('sitl', 'Boş UDP portu yok')
-        alt = float(center['alt']) if center.get('alt') is not None else None
-        if alt is None and world.get('mode') in ('real', 'google3d'):   # gerçek arazi / Google 3B: SITL ev irtifası açık yükseklik verisinden (vekil önbelleği; alınamazsa None; Google Elevation API kullanılmaz)
+        girilen = float(center['alt']) if center.get('alt') is not None else None
+        alt, alt_not = girilen, None
+        if world.get('mode') in TERRAIN_KIPLER:
+            # §9 EV İRTİFASI KURALI: gerçek arazi / Google 3B kiplerinde SITL ev irtifası HER ZAMAN yükseklik verisinden (terrarium z13 bilineer;
+            # vekil önbelleği; Google Elevation API kullanılmaz). Merkez kaydındaki `alt` burada KULLANILMAZ: SITL fiziği aynı veriden TERRAIN_DATA
+            # alır (§18); ev irtifası yüzeyden farklı kurulursa (Ankara 0 m / Bedesten 1500 m kayıtları; gerçek 1000 / 742 m) uçak yerin yüzlerce metre
+            # altında/üstünde doğar ve fizik çıldırır (takla). Girilen değer `alt_entered` olarak saklanır; fark > EV_FARK_UYARI ise olay şeridine not.
             from . import sim_terrain
             try:
                 alt = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, sim_terrain.ev_irtifa, float(center['lat']), float(center['lon'])), 12)
-            except Exception:   # noqa: BLE001 — kaynak yok/zaman aşımı: varsayılan EV_IRTIFA ile sürer
-                alt = None
+                if girilen is not None and abs(girilen - alt) > EV_FARK_UYARI:
+                    alt_not = f'Merkezin kayıtlı irtifası {girilen:.0f} m, arazi {alt:.0f} m — SITL ev irtifası arazi değeriyle kuruldu (kayıtlı değer yok sayıldı)'
+            except Exception as e:   # noqa: BLE001 — kaynak yok/zaman aşımı: girilen değer ya da EV_IRTIFA ile sürer (arazi sunumu aynı kaynaktan; o da başarısız olur → düz zemin)
+                alt = girilen
+                alt_not = f'Arazi yüksekliği alınamadı ({str(e)[:80]}); SITL ev irtifası {girilen if girilen is not None else EV_IRTIFA:.0f} m (kayıtlı/varsayılan) ile kuruldu'
         sid = self._next
         self._next += 1
         s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': alt}, world, owner, self, airframe, model, drone, rec)
+                                  'alt': alt, 'alt_entered': girilen}, world, owner, self, airframe, model, drone, rec)
+        s.alt_not = alt_not
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())
         return s

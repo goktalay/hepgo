@@ -3960,4 +3960,7 @@ registerCatalog('ar', {
   "Özet rapor yok": "لا يوجد تقرير ملخّص",
   "Ekran kaydını izle": "مشاهدة تسجيل الشاشة",
   "Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.": "عند إغلاق كل جلسة: تقرير ملخّص، سجل طيران .bin، تسجيل الشاشة، آخر تفريغ للمعلمات وأرشيف سكربتات SITL. قائمة Download متاحة لمالك النظام (MASTER) فقط.",
+  "Ev irtifası arazi verisinden alınacak": "سيؤخذ ارتفاع نقطة المنزل من بيانات التضاريس",
+  "Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak": "الارتفاع المحفوظ {a} م، التضاريس {t} م — ستُستخدم التضاريس",
+  "Arazi {t} m — ev irtifası arazi verisinden": "التضاريس {t} م — ارتفاع المنزل من بيانات التضاريس",
 });

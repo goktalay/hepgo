@@ -318,8 +318,21 @@ def vekil_testleri(a, mon, c_altsiz):
         assert s['world']['mode'] == 'real' and s['center']['alt'] == sim_terrain.ev_irtifa(39.925, 32.837) and 900 <= s['center']['alt'] <= 1027.5, s['center']
         ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
         s = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c_altsiz['id'], 'world': {'mode': 'procedural'}}), 201)
-        assert s['center']['alt'] is None and s['world']['mode'] == 'procedural'   # prosedürel: dokunulmaz
+        assert s['center']['alt'] is None and s['center']['alt_entered'] is None and s['world']['mode'] == 'procedural'   # prosedürel: dokunulmaz
         ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        # §9 EV İRTİFASI KURALI: gerçek arazi kipinde merkez kaydındaki `alt` (1500 m; PROD "Bedesten" vakası) KULLANILMAZ → SITL ev irtifası
+        # terrarium (≈ 900–1027 m); girilen değer `alt_entered`; fark > 15 m → oturum notu (olay şeridi). Prosedürelde kayıtlı değer aynen kullanılır.
+        c_yanlis = ok(a.post('/api/drone/centers', json={'name': 'Yanlış İrtifalı Merkez', 'lat': 39.925, 'lon': 32.837, 'alt': 1500}))
+        s = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c_yanlis['id'], 'world': {'mode': 'real', 'building_count': 0}}), 201)
+        h_ev = sim_terrain.ev_irtifa(39.925, 32.837)
+        assert s['center']['alt'] == h_ev and s['center']['alt_entered'] == 1500.0 and abs(h_ev - 1500) > flightsim.EV_FARK_UYARI, s['center']
+        ses = flightsim.MANAGER.get(s['id'])
+        assert ses.alt_not and '1500 m' in ses.alt_not and f'{h_ev:.0f} m' in ses.alt_not and 'arazi' in ses.alt_not, ses.alt_not
+        ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        s = ok(a.post('/api/drone/sim/sessions', json={'type': 'sabit_kanat', 'center_id': c_yanlis['id'], 'world': {'mode': 'procedural'}}), 201)
+        assert s['center']['alt'] == 1500.0 and s['center']['alt_entered'] == 1500.0 and flightsim.MANAGER.get(s['id']).alt_not is None, s['center']
+        ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        ok(a.delete(f"/api/drone/centers/{c_yanlis['id']}"))
         # --- Google 3B kipi (§10): anahtar yokken kapalı (meta, 404, oturum 400); anahtar varsa meta açık, /g3d-key no-store, oturum açılır,
         #     ev irtifası yine açık veriden (Google Elevation API kullanılmaz); salt okuyan izleyici de anahtarı alır (karoları görmeli)
         eski_key = flightsim.GOOGLE_KEY
@@ -1925,7 +1938,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 12 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 3 oturumu + arazi sunumunun 2 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
+        assert s3['id'] == sid + 14 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 5 oturumu + arazi sunumunun 2 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- ekran kaydı (§17) ---
         rec_testleri(a, c1)

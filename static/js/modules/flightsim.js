@@ -313,8 +313,28 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed }) 
   // ---------- 2. merkez ----------
   const centerList = h('div', { class: 'fs-centers' });
   const centerOf = () => centers.find(c => c.id === S.center) || null;
+  // §9 EV İRTİFASI KURALI: gerçek arazi / Google 3B kiplerinde SITL ev irtifası HER ZAMAN yükseklik verisinden (terrarium) kurulur; merkez kaydındaki
+  // `alt` yalnız prosedürel kipte kullanılır. Kayıtlı değer araziden 15 m'den fazla sapıyorsa (Ankara 0 m / Bedesten 1500 m kayıtları → gerçek 1000 / 742 m)
+  // seçili merkez kartında uyarı: "Kayıtlı irtifa 1500 m, arazi 742 m — arazi kullanılacak". Arazi yüksekliği /api/drone/sim/terrain `home_elev` (önbellekli).
+  const EV_FARK_UYARI = 15, elevCache = new Map();   // center.id → number | null (alınamadı) | Promise
+  const terrainMode = () => S.world.mode === 'real' || S.world.mode === 'google3d';
+  const homeElev = c => {
+    if (!elevCache.has(c.id)) {
+      elevCache.set(c.id, api.get(`/api/drone/sim/terrain?lat=${Number(c.lat)}&lon=${Number(c.lon)}&size_m=1000`).then(r => (r && r.home_elev != null ? Number(r.home_elev) : null)).catch(() => null)
+        .then(v => { elevCache.set(c.id, v); if (S.center === c.id) drawCenters(); return v; }));
+    }
+    const v = elevCache.get(c.id);
+    return typeof v === 'number' ? v : null;
+  };
+  const altNote = c => {   // seçili merkez; yalnız arazi kiplerinde
+    if (!terrainMode() || S.center !== c.id) return null;
+    const e = homeElev(c);
+    if (e == null) return h('span', { class: 'small muted fs-center-alt' }, tr('Ev irtifası arazi verisinden alınacak'));
+    if (c.alt != null && Math.abs(Number(c.alt) - e) > EV_FARK_UYARI) return h('span', { class: 'small fs-center-alt warn' }, '⚠ ', tr('Kayıtlı irtifa {a} m, arazi {t} m — arazi kullanılacak', { a: f0(c.alt), t: f0(e) }));
+    return h('span', { class: 'small muted fs-center-alt' }, tr('Arazi {t} m — ev irtifası arazi verisinden', { t: f0(e) }));
+  };
   const drawCenters = () => clear(centerList, centers.length ? centers.map(c => h('button', { type: 'button', class: `fs-center ${S.center === c.id ? 'on' : ''}`, onclick: () => { S.center = c.id; drawCenters(); if (preview) { progInfo(null); preview.setOrigin(c.lat, c.lon, S.world, c.alt); } } },
-    h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · '))))
+    h('b', null, c.name), h('span', { class: 'small muted' }, [c.location_name, `${Number(c.lat).toFixed(5)}, ${Number(c.lon).toFixed(5)}`, c.alt != null ? `${f0(c.alt)} m` : null].filter(Boolean).join(' · ')), altNote(c)))
     : h('div', { class: 'small muted fs-nocenter' }, 'Kayıtlı merkez yok. Önce ', h('a', { href: '#/drone/routes' }, 'Rotalar › Merkezler'), ' bölümünden bir merkez ekleyin.'));
   drawCenters();
   // ---------- 2b. dron kaydı (isteğe bağlı; §14): harekât panelinde telemetri bu dronun koduyla/adıyla akar; yoksa "Simülatör #N" ----------
@@ -420,6 +440,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed }) 
       ? `${tr('Gerçek kipte seçili merkezin çevresi gerçek yükseklik, uydu görüntüsü ve OpenStreetMap binalarıyla kurulur; veriler ilk kullanımda indirilip sunucuda önbelleklenir.')} ${ATTRIBUTION}`
       : g3 ? tr('Google 3B kipinde çevre Google Photorealistic 3D Tiles ile fotogerçekçi kurulur (binalar ve ağaçlar karoların içinde); karolar tarayıcıya doğrudan Google’dan gelir, sunucuda önbelleklenmez; atıf zorunludur. Ev irtifası açık yükseklik verisinden alınır.')
       : tr('Prosedürel dünya: tohumlu rastgele arazi, binalar ve ağaçlar.');
+    drawCenters();   // §9: arazi kiplerinde merkez kartında ev irtifası notu/uyarısı
   };
   let bcTouched = false, rwTouched = false;
   const g3dOn = !!meta.google3d?.enabled;   // yalnız sunucuda GOOGLE_MAPS_API_KEY tanımlıysa üçüncü seçenek

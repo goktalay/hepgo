@@ -729,3 +729,83 @@ Kullanıcı isteği: "Simülasyon sonunda tüm veri, aynı dronun içinde kaydet
   LOG_DISARMED 0 ile boyut sınırlı kalır (ArduCopter ≈ 1–2 MB/dk). Sahte kip (`HEPGO_SITL=0`): `MANAGER.sahte_bin_dosyalari` test kancası.
 - **Doğrulama (DEV, gerçek SITL):** `/tmp/flsim/rp2/rp2_e2e.py` — bin:true oturum → arm + takeoff → Bitir → `SIM-…bin` Uçuş Logları'nda (analiz TAMAM)
   → Kayıttan oynat listesinde → gerçek arazi kipinde oynat → dünya yüklü (olay şeridi "Gerçek arazi · yükseklik …", atıf görünür).
+
+## 18. Görev çizimi, iniş dairesi, çarpışma kaydı ve özet rapor (`app/flightsim_mission.py`, `static/js/modules/flightsim_mission.js`, `static/js/modules/flightsim_report.js`; tablo `drone_sim_events`)
+Kullanıcı isteği (birebir): "1. Dron üzerine Mission Planner üzerinden ya da kendi sistemimizden bir görev yüklersek haritaya şık bir şekilde çizsin.
+2. Görevin son adımında daire içinde H çizsin, dairenin çapını girişte parametre olarak girelim. 3. Topoğrafyadan ya da bir durumdan dolayı dron
+çarpışırsa bunu tespit edip çarpışma koordinatını kaydedelim. 4. Görev yüklü ise son koordinatı da kaydetsin. 5. Simülasyon sonunda bir özet rapor
+sunalım. 6. Temel uçuş bilgileri ile görev bitiş noktası ile çarpışma noktası arasındaki mesafeyi/sapmayı metre olarak kırmızı gösterelim. 7. Bu
+sayede güvenlik önlemi alabilelim." Ek istek: "Simülasyon esnasında Mission Planner üzerinden bir görev yüklenirse anlık olarak bildirim gelsin ve
+haritaya çizsin."
+
+**Görev izleme (sunucu; `GorevIzleyici`, her `SimSession.gorev`).** Görev iki kaynaktan gelir:
+- **HEPGO paneli**: `hub_komut mission_upload` → `SimSession._rota_ayarla(points, source='hepgo', total=uploaded)`.
+- **Mission Planner (UDP)**: MP'nin yüklemesi köprüden ham geçer; sunucu SITL→MP akışını ayrıştırırken **SITL'in MP'ye yolladığı `MISSION_ACK`**'ı
+  (hedef bileşen bizim 191 değil) yakalar → 0,4 sn sonra görevi SITL'den **kendisi indirir** (`MavKomut.mission_download`, bekleyici kalıbı) →
+  `_rota_ayarla(points, source='mp', total=count)`. `MISSION_CLEAR_ALL` da ACK verir → indirme boş → çizim kalkar. Yedek tetik: `MISSION_CURRENT.total`
+  son yükleme/indirme sonrası ilk gözlenen değerden (referans) farklılaşırsa indirilir (ACK kaçmışsa); ArduPilot sayımı bizim `uploaded` ile birebir
+  olmayabildiğinden mutlak sayı karşılaştırılmaz. Transfer sürerken (`MISSION_REQUEST(_INT)` görüldükten sonra 3 sn; hub görev komutları `transfer()`)
+  ve indirmeden sonra 3 sn bu tetik bastırılır (ArduPilot yükleme sırasında total'ı yeni sayıya çeker → eski kod çoklu indirme/toast üretiyordu).
+  Ölçüm (gerçek SITL arduplane, pymavlink udpout "Mission Planner gibi" 3 WP): MISSION_ACK → 3B çizim **0,51 s**, temizleme → çizim kalktı 0,95 s; tek
+  indirme, tek toast, tek olay satırı.
+- Rota noktalarının `seq` değeri **SITL seq**'idir (`rota_noktalari(items, offset)`: HEPGO yüklemesinde ev/hız öğesi ofseti, indirilen listede ev atlandığı
+  için 1) → `MISSION_CURRENT.seq` ile birebir eşleşir; `MISSION_CURRENT.seq` değişimi `{t:'mission_cur', seq, total}` yayınıdır (3B'de aktif bacak).
+- Yayın: `{t:'route', points:[{seq, cmd, lat, lon, alt, alt_rel, frame}], source:'hepgo'|'mp', home, current, end, landing_circle_m}`; `session.route` +
+  `session.mission` (aynı ek alanlar; hello/to_dict). Olay şeridi: "Mission Planner'dan görev yüklendi: N nokta" / "… görev temizlendi" / "HEPGO panelinden
+  görev yüklendi: N nokta" (`event`, severity 6) → ön yüzde MP kaynaklıysa **toast** (3 sn içinde aynı metin tekrar etmez) + olay şeridi + panel konsolu.
+- **Görev bitiş noktası** (`gorev_bitis`): son konumlu öğe LAND (21) → o konum (AGL 0), RTL (20) → ev, aksi son WP. `mission_end` olayı olarak kaydedilir;
+  görev değişince aynı satır güncellenir (satır kimliği oturum belleğinde).
+
+**3B çizim (`flightsim_mission.js createMissionLayer`; `flightsim3d.js setMission/setMissionCurrent`, `setRoute` geriye uyum).** Yarı saydam **tüp** bacaklar
+(gelecek amber, geçilen soluk yeşil, aktif parlak beyaz-sarı + hale, daha kalın) + merkez çizgisi; her bacağın yere projeksiyonu **kesikli gölge çizgisi**
+(24 alt parça, arazi profilini izler) + her WP'den zemine dikey çubuk; WP küreleri + **billboard etiket** (`seq · alt m`, `sizeAttenuation:false` → uzaktan
+okunur; aktif sarı kenar, geçilen yeşil); ikonlar: TAKEOFF koni ↑ (yeşil), LAND ters koni (mor), RTL oktahedron (mor; son WP'den eve mor kesikli hat),
+LOITER halka. Ev: yeşil disk + "H". İrtifa: frame 3/6 göreli (ev zemini = ev konumunun yerel arazi yüksekliği), frame 0/5 MSL → ev irtifasıyla göreliye.
+`setWorld` sonrası yeniden çizilir (yüzey değişti). Teşhis: `__fsSim.mission`, `__fsSim.missionObjects`.
+
+**İniş dairesi.** `world.landing_circle_m` (10–200, varsayılan 30; `_WORLD_SINIR`, sihirbaz kaydırıcısı "İniş dairesi çapı") → görevin bitiş noktasında yere oturan
+daire: CanvasTexture düzlem (beyaz+sarı **kesikli halka**, iç çember, ortada kalın **H**) + ince kenar torusu; 4 örnek noktadan eğime oturur (`terrainHeight`),
+su seviyesinin altına inmez; gece (`world.time = night`) daha parlak doku + `PointLight`. Uçak/kopter ayrımı yok.
+
+**Çarpışma kaydı.** Kaynaklar: 3B çarpışma algılaması (`onCollision` → `cmd crash {kind: terrain|water|building, speed}`) ve SITL/ArduPilot STATUSTEXT
+(`"SIM Hit ground at X m/s"`, `"Crash: Disarming…"` → sebep `sitl`, hız metinden). `GorevIzleyici.carpisma` → `crash` olayı: lat/lon/alt_msl/alt_rel, hız,
+mod, sebep, o anki hedef WP (`target_seq`), görev bitiş noktası, `deviation_m`/`dz_m`; 5 sn içinde ikinci bildirim (3B + SITL aynı olay) tekilleştirilir
+(SITL metni ilk kayda eklenir). WS yayını `{t:'crash', …, ts}` (diğer izleyicilerde kırmızı bant + olay). Not: `cmd crash` zorla disarm eder; uçak havadaysa
+SITL'in gerçek yere çarpması 5 sn sonra **ikinci** çarpışma olarak kaydedilir (rapor sonuncusunu gösterir, `crash_count`).
+
+**Özet rapor.** `GET /sessions/{id}/summary` → sunucu 1 Hz izden (`_dongu` → `tik()`; ≤ 7400 örnek) hesaplar: `{session:{type, type_name, model, drone, center,
+world_mode, world_time, launch, landing_circle_m, wind}, flight:{start_ts, end_ts, duration_s, air_s (armed ∧ AGL>1), max_agl, max_msl, max_speed, dist_m
+(armed, <500 m sıçramalar hariç), arm_count, modes, last_mode, batt{first/last v,pct}, last_pos, home}, mission:{source, count, completed (seq < en yüksek
+MISSION_CURRENT), end, points, current, total}|null, crash, crash_count, deviation:{from:'crash'|'last', dist_m, dz_m, in_circle (≤ çap/2)}|null,
+safety:{code: crash_deviation|crash_no_mission|in_circle|out_of_circle|no_mission, dist_m, reason}, safety_note (TR), track:[[t,lat,lon,alt_rel]…≤600]}`;
+`summary` olayı olarak `drone_sim_events`'e yazılır (oturum başına tek satır, güncellenir; dönen `id`). Oturum **her nedenle** kapanırken de yazılır
+(`_temizle` → `kapanis()`; Bitir'de üretilmiş rapor varsa yalnız `ended_at/end_reason/duration_s` güncellenir — kullanıcının gördüğü rapor korunur).
+`GET /reports?limit=20&mine=0|1` → `{items:[{id, session_id, owner, created_at, type_name, center, duration_s, max_agl, dist_m, crash, deviation_m, in_circle,
+mission, safety_code}]}`; `GET /reports/{id}` → rapor; `POST /reports/{id}/share {text?}` → Şirketten Haberler metin paylaşımı (rapor sahibi adına; yazma izni;
+`text` istemcinin dilinde, boşsa `rapor_metni` TR) + `_announce`.
+Ön yüz (`flightsim_report.js`): Bitir akışı = onay → kayıt yüklemesi (§17) → **rapor modalı** (tam ekranda; belge tam ekran olduğu için görünür) → tam ekrandan
+çık → `DELETE`. Modal: özet karoları (süre, havada, en yüksek AGL/hız, mesafe, ARM) · temel uçuş bilgileri · görev bilgisi · **ÇARPIŞMA** bölümü (kırmızı:
+koordinat, irtifa, zaman, hız, mod, neden, hedef WP) · **SAPMA** kartı (çarpışma ↔ bitiş noktası: büyük KIRMIZI yazı, yatay m + yükseklik farkı; çarpışma
+yoksa son konum ↔ bitiş noktası: iniş dairesi içinde yeşil, dışında turuncu) · güvenlik notu (`safety.code` ile kendi dilinde) · **2B mini harita** (canvas: ızgara,
+rota + WP numaraları, dron izi mavi, ev H yeşil, bitiş H beyaz, iniş dairesi kesikli, çarpışma kırmızı X + bitişe kesikli hat, ölçek çubuğu, kuzey oku).
+Düğmeler: "Raporu Şirketten Haberler'e ekle" (yazma izni; pencere açık kalır, düğme "✓ Paylaşıldı"), "PDF / Yazdır" (`window.print`; `body.fs-rp-printing` +
+`@media print` yalnız pencereyi basar), "Devam". Sihirbazda **"Son simülasyon raporları"** kutusu (`reportsCard`, `GET /reports`) → aynı modal. Sahte kipte
+(`?mock=1`) rapor tarayıcıda basit üretilir; geçmiş yok. CSS: `.fs-rp*` (app.css sonu).
+
+**Tablo** `drone_sim_events(id, session_id, owner_id, type 'crash'|'mission_end'|'summary', lat, lon, alt_msl, alt_rel, t, speed, mode, detail JSON, created_at)`
+(`CREATE IF NOT EXISTS`). `session_id` sunucu yeniden başlayınca 1'den başlar; güncellemeler satır kimliğiyle yapılır (çakışma yok).
+
+**İzleyici kuyruğu**: tele dışı (`route`, `crash`, `event`, `state`, `mission_cur`, …) çerçeveler dolu kuyrukta en eski **tele**'nin yerini alır (`_kuyruga(onemli)`)
+— yavaş izleyicide tekil olaylar düşmez (eski davranışta 50 Hz tele crash çerçevesini düşürüyordu).
+
+**Testler** (`tests/test_flightsim.py gorev_rapor_testleri`): birim (`mesafe_m`, `gorev_bitis`, `rota_noktalari offset`), `landing_circle_m` doğrulama/meta, MP
+yüklemesi algılama (sahte kipte `_isle(MISSION_ACK hedef 190)` → route `source:'mp'` + olay; bize gelen ACK tetiklemez), `MISSION_CURRENT` → `mission_cur`,
+`mission_end` satırı + güncelleme, kalkış → `cmd crash` → `crash` çerçevesi + satır (sebep, hedef WP, sapma), SITL metni tekilleştirme, summary (istatistikler,
+sapma = haversine, güvenlik notu, tek satır), reports listesi/tek rapor/404, yetki (salt okuyan görür, paylaşamaz 403; `mine=1`), paylaşım → `feed_posts` (sahip
+adına, TR metin / istemci metni), kapanışta `ended_at`, çarpışmasız görev (son konum ↔ bitiş, iniş dairesi içinde). E2E (`/tmp/flsim/ms/e2e_ms.py`, gerçek SITL
+arduplane, port 8789): HEPGO rotası → 3B görüntü (`ms-01`, iniş dairesi `ms-02`), pymavlink udpout MP yüklemesi → gecikme 0,51 s + toast (`ms-03`), temizleme,
+kalkış → crash → Bitir → rapor modalı (`ms-05/06`, kırmızı sapma 457,5 m) → paylaşım → sihirbaz rapor listesi (`ms-07/08`).
+
+**Sınırlar / açık**: MP yüklemesi algısı SITL'in ACK'ına dayanır (MP'nin paketleri ayrıştırılmaz; UDP→TCP ham geçer); ArduPilot MISSION_CURRENT.total farkı yedek
+tetiği 3 sn sakinlik ister. Çarpışma koordinatı telemetrinin son karesidir (50 Hz; ≤ 20 ms). Sahte kipte (HEPGO_SITL=0) MISSION_CURRENT.total tetiği kapalıdır.
+PDF üretimi tarayıcı yazdırma diyaloğuyla (sunucu PDF yok). Rapor paylaşımı metindir (video kaydına yorum olarak eklenmez).

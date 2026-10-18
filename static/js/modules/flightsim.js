@@ -22,6 +22,7 @@ import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './f
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
 import { createOpsPanel } from './flightsim_panel.js';
 import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, myRecsCard, pendingCard, recOptionsBox, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler / sakla; kayıt seçenekleri kutusu; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
+import { reportsCard, showReport } from './flightsim_report.js';   // §18: Bitir'de özet rapor modalı (çarpışma/sapma kırmızı, mini harita) + sihirbazda son raporlar
 
 const API = '/api/drone/sim';
 // §8 ön hazırlık: sihirbazın hazırlık kartında indirilen kayıt kareleri oturum ekranına devredilir (aynı belge; be.replay yeniden çekilmez)
@@ -116,6 +117,11 @@ function restBackend() {
     cmd: (id, name, params = {}) => api.post(`${API}/sessions/${encodeURIComponent(id)}/cmd`, { name, params }),
     g3dKey: () => api.get(`${API}/g3d-key`).then(r => r.key),   // Google Map Tiles anahtarı (no-store; yalnız dünya kurulurken)
     drones: () => api.get(`${API}/drones`),   // §14: sihirbaz "Dron kaydı (isteğe bağlı)" — Dron Envanteri
+    // §18: özet rapor (Bitir'de kapatmadan önce), rapor geçmişi, tek rapor, metin paylaşımı
+    summary: id => api.get(`${API}/sessions/${encodeURIComponent(id)}/summary`),
+    reports: (limit = 20) => api.get(`${API}/reports?limit=${limit}`),
+    report: id => api.get(`${API}/reports/${encodeURIComponent(id)}`),
+    shareReport: (id, text) => api.post(`${API}/reports/${encodeURIComponent(id)}/share`, { text }),
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
   };
@@ -362,7 +368,8 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       slider('fog', 'Sis', 0, 1, 0.05, v => `%${Math.round(v * 100)}`),
       slider('wind_ms', 'Rüzgâr hızı', 0, 20, 0.5, v => `${v} m/s`),
       slider('wind_dir', 'Rüzgâr yönü', 0, 359, 1, v => `${v}°`),
-      slider('runway_heading', 'Pist yönü', 0, 359, 1, v => `${v}°`)),
+      slider('runway_heading', 'Pist yönü', 0, 359, 1, v => `${v}°`),
+      slider('landing_circle_m', 'İniş dairesi çapı', 10, 200, 5, v => `${v} m`)),   // §18: görev bitiş noktasındaki H dairesi
     h('div', { class: 'fs-world-row' },
       h('label', { class: 'check' }, runwayCb, 'Pist'),
       h('div', { class: 'fs-time' }, h('span', { class: 'small muted' }, 'Saat'), timeSeg),
@@ -509,6 +516,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     openBox,
     mock || !canWrite ? null : pendingCard(tr).el,   // §17: yarım ekran kayıtları (Bitir denmeden kapanan oturumlar) → Paylaş / Sil
     mock || !canWrite ? null : myRecsCard(tr).el,   // §17: paylaşılmadan saklanan videolar → İndir / Paylaş / Sil
+    mock ? null : reportsCard({ be, tr, canWrite }).el,   // §18: son simülasyon raporları (aynı rapor modalı)
     mock ? null : clientsCard({ canWrite }).el,   // CAYSIM istemcileri (docs/caysim-api.md)
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
     stepType, stepCenter, stepLog, stepWorld,
@@ -688,6 +696,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
 
   // ---------- 3B ----------
   let sim = null, last = null, socket = null, destroyed = false, rc = null, worldReady = false, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
+  let lastRouteToast = '', lastRouteToastAt = 0;   // §18: aynı MP görev bildirimi 3 sn içinde tekrar toast olmaz
   // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
   const hudCtx = { world, session, replay, launch, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
     get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
@@ -918,8 +927,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const txt = (LAUNCH_PHASE_TEXT[m.phase] || {})[launch.method] || m.phase;
     addEvent(m.phase === 'released' && m.speed_kmh != null ? `${tr(txt)} · ${f0(m.speed_kmh)} km/h` : tr(txt), m.phase === 'released' || m.phase === 'launch' ? 'warning' : 'info');
   };
+  const CRASH_KIND = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma', sitl: 'Otopilot çarpışma algısı' };
   const onCrash = info => {
-    const kind = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma' }[info.kind] || 'Çarpışma';
+    const kind = CRASH_KIND[info.kind] || 'Çarpışma';
     crash.hidden = false;
     crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k: tr(kind), v: f1(info.speed) });
     addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k: tr(kind), v: f1(info.speed) }), 'error');
@@ -937,6 +947,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
     try {
       if (rec?.hasData) await rec.finishWithDialog();   // §17: son parça + finish → Şirketten Haberler paylaşımı ya da sunucuda sakla (ilerleme penceresi; hata → indir)
+      if (!replay) { try { const sum = await be.summary(sid); await showReport(sum, { tr, be, canWrite }); } catch (err) { toastError(err); } }   // §18: özet rapor (kapatmadan önce, tam ekranda — modal görünür)
       exitFullscreen();
       const r = await be.end(sid);   // §19: rec.bin açıksa sunucu kapanışta DataFlash .bin'i Uçuş Logları'na kaydeder → r.bin
       toast('Oturum kapatıldı');
@@ -959,8 +970,15 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     message: m => {
       if (destroyed) return;
       if (m.t === 'tele') { if (replay) return; if (!netsim) return updateHud(m); if (Math.random() * 100 < netsim.loss) return; return void setTimeout(() => { if (!destroyed) updateHud(m); }, netsim.delay + Math.random() * 2 * netsim.jitter); }
-      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) { sim?.setRoute(session.route); ops?.setRoute(session.route); } } return; }
-      if (m.t === 'route') { sim?.setRoute(m.points || []); ops?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler + panel rota durumu
+      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) { sim?.setMission({ ...(session.mission || {}), points: session.route }); ops?.setRoute(session.route); } } return; }
+      if (m.t === 'route') {   // §14/§18: SITL'deki görev (HEPGO paneli ya da Mission Planner) → 3B tüp rota + iniş dairesi H + panel rota durumu; MP yüklemesinde anlık toast
+        sim?.setMission(m); ops?.setRoute(m.points || []);
+        const n = m.points?.length || 0;
+        if (m.source === 'mp') { const t = n ? tr("Mission Planner'dan görev yüklendi: {n} nokta", { n }) : tr("Mission Planner'dan görev temizlendi"); if (t !== lastRouteToast || performance.now() - lastRouteToastAt > 3000) { toast(t); lastRouteToast = t; lastRouteToastAt = performance.now(); } }   // olay şeridi satırı sunucu `event`inden gelir (tekrar yok)
+        return;
+      }
+      if (m.t === 'mission_cur') { sim?.setMissionCurrent(m.seq); return; }   // §18: aktif bacak (MISSION_CURRENT)
+      if (m.t === 'crash') { if (crash.hidden) { crash.hidden = false; crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k: tr(CRASH_KIND[m.reason] || 'Çarpışma'), v: f1(m.speed) }); addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k: tr(CRASH_KIND[m.reason] || 'Çarpışma'), v: f1(m.speed) }), 'error'); } return; }   // §18: sunucu kaydı (SITL algısı / başka izleyici)
       if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null, 'STATUS');
       if (m.t === 'launch') return onLaunch(m);
       if (m.t === 'state') {
@@ -1242,6 +1260,11 @@ function mockBackend(ctx) {
       if (s.mode === 'replay') { handlers.status?.('open'); setTimeout(() => { handlers.message?.({ t: 'hello', session: pub(s) }); handlers.message?.({ t: 'event', text: `Kayıt hazır: ${s.replay.frames} kare · ${s.replay.duration_s} sn`, severity: 6 }); }, 0); return { send() {}, close() {} }; }
       return s.flight.attach(handlers, pub(s));
     },
+    // §18 sahte kip: özet rapor tarayıcıda üretilir (kinematikten); rapor geçmişi yok
+    summary: async id => { const s = MOCK.sessions.get(id); if (!s) throw Object.assign(new Error('Oturum yok'), { status: 404 }); return s.flight?.summary?.() || { v: 1, session_id: id, session: { type: s.type, type_name: TYPE_NAME[s.type], center: s.center, world_mode: s.world.mode, landing_circle_m: s.world.landing_circle_m || 30 }, flight: {}, mission: null, crash: null, deviation: null, safety: { code: 'no_mission' }, track: [] }; },
+    reports: async () => ({ items: [] }),
+    report: async () => { throw Object.assign(new Error('Sahte kipte rapor geçmişi yok'), { status: 404 }); },
+    shareReport: async () => ({ ok: true }),
     href: id => `#/drone/sim${id ? `/${id}` : ''}?mock=1`,
   };
 }

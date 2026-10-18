@@ -20,7 +20,7 @@ import math
 import os
 import time
 
-from . import db, drone_sitl, flightsim_hub
+from . import db, drone_sitl, flightsim_hub, flightsim_mission
 
 SITL_ENABLED = os.environ.get('HEPGO_SITL', '1') != '0'
 UDP_BASE = int(os.environ.get('SIM_UDP_BASE', '14550'))
@@ -73,7 +73,7 @@ GPS_RTK_PARAMLARI = (('SIM_GPS1_ACC', 0.02), ('SIM_GPS1_NUMSATS', 18.0), ('SIM_G
                      ('SIM_GPS1_VERR_Z', 0.0), ('SIM_GPS1_GLTCH_X', 0.0), ('SIM_GPS1_GLTCH_Y', 0.0), ('SIM_GPS1_GLTCH_Z', 0.0), ('SIM_GPS1_DRFTALT', 0.0))
 WORLD_DEFAULTS = {'mode': 'procedural', 'seed': 12345, 'size_m': 4000, 'tree_density': 0.3, 'mountain_height': 300, 'mountain_count': 4,
                   'building_count': 40, 'runway': True, 'runway_heading': 0, 'water': 0.1, 'time': 'day', 'wind_ms': 3, 'wind_dir': 270, 'fog': 0.2,
-                  'launch': dict(LAUNCH_DEFAULTS)}
+                  'landing_circle_m': 30, 'launch': dict(LAUNCH_DEFAULTS)}   # landing_circle_m: görev bitiş noktasındaki iniş dairesi çapı (§18)
 _WORLD_KIP = ('procedural', 'real', 'google3d')   # real: gerçek yükseklik + uydu doku + OSM (sim_terrain vekili); google3d: Google Photorealistic 3D Tiles (§10)
 # Google 3B kipi: Map Tiles API anahtarı (HTTP referrer kısıtlı; tarayıcıya /g3d-key ile verilir, sunucu Google'a istek atmaz ve önbelleklemez)
 GOOGLE_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '').strip()
@@ -85,7 +85,7 @@ def google3d_etkin():
 # alan → (tür, alt, üst) — sayısal alanlar; 'time' ve 'runway' ayrı denetlenir
 _WORLD_SINIR = {'seed': (int, 0, 2 ** 31 - 1), 'size_m': (int, 500, 20000), 'tree_density': (float, 0, 1), 'mountain_height': (float, 0, 3000),
                 'mountain_count': (int, 0, 50), 'building_count': (int, 0, 500), 'runway_heading': (float, 0, 359.99), 'water': (float, 0, 1),
-                'wind_ms': (float, 0, 30), 'wind_dir': (float, 0, 359.99), 'fog': (float, 0, 1)}
+                'wind_ms': (float, 0, 30), 'wind_dir': (float, 0, 359.99), 'fog': (float, 0, 1), 'landing_circle_m': (float, 10, 200)}
 _WORLD_ZAMAN = ('day', 'dusk', 'night')
 
 
@@ -247,14 +247,24 @@ def _rc_dogrula(ch):
     return out
 
 
-def _kuyruga(q, txt):
-    """İzleyici kuyruğu kalıbı (drone_hub.Viewer.put): dolunca en eskisi atılır — eski telemetri değersiz."""
+def _kuyruga(q, txt, onemli=False):
+    """İzleyici kuyruğu kalıbı (drone_hub.Viewer.put): dolunca en eskisi atılır — eski telemetri değersiz. `onemli` (tele dışı: route, crash,
+    event, state…) çerçeve dolu kuyrukta en eski TELE çerçevesinin yerini alır; yavaş izleyicide tekil olaylar düşmez (§18)."""
     try:
         q.put_nowait(txt)
     except asyncio.QueueFull:
         try:
-            q.get_nowait()
-        except asyncio.QueueEmpty:
+            if onemli:
+                dq = q._queue   # asyncio.Queue iç deque'i: en eski tele'yi çıkar (yoksa en eskisi)
+                for i, eski in enumerate(dq):
+                    if '"t": "tele"' in eski[:16]:
+                        del dq[i]
+                        break
+                else:
+                    q.get_nowait()
+            else:
+                q.get_nowait()
+        except (asyncio.QueueEmpty, AttributeError, IndexError):
             pass
         try:
             q.put_nowait(txt)
@@ -473,6 +483,7 @@ class SimSession:
         self.drone = dict(drone) if drone else None
         self.route = []
         self.komutcu = flightsim_hub.MavKomut(self)
+        self.gorev = flightsim_mission.GorevIzleyici(self)   # §18: görev izleme (MP yüklemesi algılama), iz, çarpışma/özet kayıtları
         self._bekleyenler = []           # [(types, cond, asyncio.Queue)] — _isle içinde dağıtılır (MavKomut ACK/ACK bekleyicileri)
         self._sahte_gorev, self._sahte_params = [], {}   # sahte kip: hub mission_upload / param_set yankıları
         # Görsel model (§12): kütüphane nesnesi {id, name, source, orient, glb_url, has_prop, …}; yalnız görsel, SITL modelini değiştirmez.
@@ -538,7 +549,7 @@ class SimSession:
                 'sitl': dict(self.sitl),
                 # §14: harekât paneli köprüsü (bridge_id = -kimlik), dron kaydı, SITL'deki görevin rota noktaları
                 'hub': {'bridge_id': -self.kimlik, 'online': self.hub is not None, 'name': self.hub.name if self.hub else None},
-                'drone': dict(self.drone) if self.drone else None, 'route': list(self.route),
+                'drone': dict(self.drone) if self.drone else None, 'route': list(self.route), 'mission': self.gorev.yayin_alanlari(),
                 'rec': {**self.rec, 'bin_log': dict(self.bin_sonuc) if self.bin_sonuc else None}}
 
     # ---- §14: bekleyici kuyrukları (MavKomut) ----
@@ -567,8 +578,9 @@ class SimSession:
     # ---- yayın ----
     def _yay(self, obj):
         txt = json.dumps(obj, ensure_ascii=False)
+        onemli = obj.get('t') != 'tele'
         for q in list(self.viewers.values()):
-            _kuyruga(q, txt)
+            _kuyruga(q, txt, onemli)
 
     def _olay(self, text, severity=6):
         self._yay({'t': 'event', 'text': str(text)[:300], 'severity': int(severity), 'ts': time.time()})
@@ -745,6 +757,11 @@ class SimSession:
             return   # GCS yankısı
         if self._bekleyenler:
             self._dagit(m)
+        if t in ('MISSION_CURRENT', 'MISSION_ACK', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'STATUSTEXT'):
+            try:
+                self.gorev.mesaj(m)   # §18: MP görev yüklemesi / aktif WP / SITL çarpışma metni
+            except Exception:   # noqa: BLE001
+                pass
         te = self.tele
         if t == 'HEARTBEAT':
             if m.type in (6, 18):   # GCS / ONBOARD_CONTROLLER değil, araç lazım
@@ -961,9 +978,10 @@ class SimSession:
             self._kalkis_baslat(p['alt'])   # yönteme göre dizi (§13): armed → launch → released olayları
             return {'ok': True}
         if self.sahte is not None:
-            self.sahte.komut(name, p)
             if name == 'crash':
+                self.gorev.carpisma(p.get('kind') or 'manual', p.get('speed'))   # §18: koordinat kaydı (kinematik sıfırlanmadan önce)
                 self._olay('ÇARPIŞMA — araç zorla disarm edildi', 2)
+            self.sahte.komut(name, p)
             return {'ok': True}
         if not self._heartbeat_alindi:
             raise SimHata('invalid', 'SITL henüz kalp atışı göndermedi')
@@ -974,6 +992,7 @@ class SimSession:
         elif name == 'disarm':
             self._gonder(enc.command_long_encode(s, c, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
         elif name == 'crash':
+            self.gorev.carpisma(p.get('kind') or 'manual', p.get('speed'))   # §18
             self._gonder(enc.command_long_encode(s, c, 400, 0, 0, 21196, 0, 0, 0, 0, 0))
             self._olay('ÇARPIŞMA — araç zorla disarm edildi', 2)
         elif name == 'mode':
@@ -1009,6 +1028,8 @@ class SimSession:
         if self.state != 'HAZIR':
             return {'ok': False, 'error': 'Oturum hazır değil (SITL açılıyor ya da hata)'}
         try:
+            if name.startswith('mission_'):
+                self.gorev.transfer()   # §18: kendi görev transferimiz — MP indirme tetiği bastırılır
             if self.sahte is not None:
                 res = self._sahte_hub_komut(name, p)
             else:
@@ -1016,19 +1037,27 @@ class SimSession:
                     return {'ok': False, 'error': 'SITL henüz kalp atışı göndermedi'}
                 res = await self.komutcu.execute(name, p)
             if name == 'mission_upload':
-                self._rota_ayarla(flightsim_hub.rota_noktalari(p.get('items') or []))
+                self._rota_ayarla(flightsim_hub.rota_noktalari(p.get('items') or [], offset=int(res.get('offset') or 0)), source='hepgo', total=res.get('uploaded'))
             elif name == 'mission_clear':
-                self._rota_ayarla([])
+                self._rota_ayarla([], source='hepgo')
             return {'ok': True, 'result': res}
         except (KeyError, TypeError, ValueError) as e:
             return {'ok': False, 'error': f'Geçersiz parametre: {e}'}
         except Exception as e:   # noqa: BLE001
             return {'ok': False, 'error': str(e)[:300]}
 
-    def _rota_ayarla(self, points):
-        """SITL'deki görev değişti: 3B dünyaya rota çizgisi/işaretleri ({t:'route'}; hello/to_dict `route`)."""
+    def _rota_ayarla(self, points, source='hepgo', total=None):
+        """SITL'deki görev değişti (HEPGO yüklemesi ya da Mission Planner'dan indirilen görev): 3B dünyaya rota ({t:'route', points, source, home,
+        current, end, landing_circle_m}; hello/to_dict `route` + `mission`), görev bitiş noktası kaydı (§18) ve olay şeridine bildirim."""
+        onceki = len(self.route)
         self.route = list(points or [])
-        self._yay({'t': 'route', 'points': self.route})
+        self.gorev.rota(self.route, source, total)
+        self._yay({'t': 'route', 'points': self.route, **self.gorev.yayin_alanlari()})
+        kaynak = "Mission Planner'dan" if source == 'mp' else 'HEPGO panelinden'
+        if self.route:
+            self._olay(f'{kaynak} görev yüklendi: {len(self.route)} nokta', 6)
+        elif onceki:
+            self._olay(f'{kaynak} görev temizlendi', 6)
 
     def _sahte_hub_komut(self, name, p):
         """Sahte kinematikte hub komutları: arm/disarm/set_mode/takeoff/land/rtl/goto/set_home → SahteKinematik.komut; görev/parametre
@@ -1165,7 +1194,7 @@ class SimSession:
         self.tele.update(mode=None, armed=False, alt_rel=0.0, home=None)
         self._tele_tbm, self._smi_red, self._att_son = -10 ** 9, False, 0.0   # yeni SITL: zaman damgası sıfırdan başlar
         if self.route:
-            self._rota_ayarla([])   # yeni SITL'de görev yok
+            self._rota_ayarla([], source=self.gorev.source or 'hepgo')   # yeni SITL'de görev yok
         await self._sitl_ac()
 
     # ---- yaşam döngüsü ----
@@ -1233,6 +1262,10 @@ class SimSession:
         while True:
             await asyncio.sleep(1.0)
             now = time.time()
+            try:
+                self.gorev.tik()   # §18: 1 Hz iz + istatistikler
+            except Exception:   # noqa: BLE001
+                pass
             if self.gcs_addr is not None and now - self.gcs_last > GCS_SESSIZLIK:
                 self._olay(f'GCS bağlantısı kesildi ({self.gcs_addr[0]}:{self.gcs_addr[1]}, {int(GCS_SESSIZLIK)} sn sessizlik)', 4)
                 self.gcs_addr, self.gcs_since = None, None
@@ -1305,6 +1338,10 @@ class SimSession:
         self.state = 'KAPANDI'
         if self._launch_task is not None and not self._launch_task.done():
             self._launch_task.cancel()
+        try:
+            await asyncio.wait_for(self.gorev.kapanis(), 5)   # §18: özet raporu satırı (Bitir dışı kapanışlar için de)
+        except Exception:   # noqa: BLE001
+            pass
         flightsim_hub.detach(self)   # §14: harekât paneli köprüsü çevrimdışı
         await self._tcp_kapat()
         if self._udp is not None:

@@ -1632,6 +1632,20 @@ CREATE TABLE IF NOT EXISTS drone_sim_models (
 CREATE INDEX IF NOT EXISTS ix_drone_sim_models_type ON drone_sim_models(type);
 -- CAYSIM istemcileri (docs/caysim-api.md §1, §9): Unreal/Cesium masaüstü görselleştirme istemcisi; drone_bridges kalıbı — anahtar şifreli,
 -- kod (<domain>/<key>) yalnız üretim anında gösterilir; istemcinin açtığı oturumların sahibi owner_id.
+-- Uçuş Simülatörü olayları (docs/ucus-simulatoru.md §18): çarpışma koordinatı, görev bitiş noktası ve oturum özet raporu (detail JSON = rapor).
+CREATE TABLE IF NOT EXISTS drone_sim_events (
+    id          INTEGER PRIMARY KEY,
+    session_id  INTEGER NOT NULL,                       -- SimSession.id (sunucu yeniden başlayınca 1'den başlar; satır kimliği oturum belleğinde tutulur)
+    owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    type        TEXT NOT NULL,                          -- crash | mission_end | summary
+    lat REAL, lon REAL, alt_msl REAL, alt_rel REAL,
+    t           REAL,                                   -- Unix sn (olay anı)
+    speed       REAL,                                   -- m/s (yer hızı)
+    mode        TEXT,
+    detail      TEXT,                                   -- JSON: crash {reason, target_seq, mission_end, deviation_m…} · mission_end {source, count, end} · summary = rapor
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_events_type ON drone_sim_events(type, id);
 CREATE TABLE IF NOT EXISTS drone_sim_clients (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,

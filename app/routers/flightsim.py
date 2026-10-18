@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_models, flightsim_rec, flightsim_replay, sim_terrain
+from .. import auth, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -245,6 +245,55 @@ async def session_cmd(sid: int, body: CmdIn, user=Depends(sim_user)):
         return await s.komut(body.name, body.params or {}, kaynak=user['id'])
     except flightsim.SimHata as e:
         _hata(e)
+
+
+# ---------------- Görev / çarpışma / özet rapor (flightsim_mission; §18) ----------------
+class ShareIn(BaseModel):
+    text: Optional[str] = None   # istemcinin kendi dilinde rapor metni; boşsa sunucu Türkçe üretir
+
+
+@router.get('/sessions/{sid}/summary')
+async def session_summary(sid: int, user=Depends(sim_user)):
+    """Oturum özet raporu (Bitir akışı: kayıt yüklemesinden sonra, kapatmadan önce): istatistikler sunucu izinden; `summary` olayı olarak
+    drone_sim_events'e yazılır/güncellenir (dönen `id` ile GET /reports/{id}, paylaşım). Kayıttan oynatma oturumunda 400."""
+    s = flightsim.MANAGER.get(sid)
+    if s is None:
+        raise HTTPException(404, 'Oturum bulunamadı')
+    if getattr(s, 'gorev', None) is None:
+        raise HTTPException(400, 'Bu oturumun özet raporu yok (kayıttan oynatma)')
+    return await s.gorev.ozet_kaydet()
+
+
+@router.get('/reports')
+def list_reports(limit: int = 20, mine: int = 0, user=Depends(sim_user), conn=db.DB):
+    """Son simülasyon raporları (sihirbaz "Son simülasyon raporları"); `mine=1` yalnız kendi oturumlarım."""
+    return {'items': flightsim_mission.raporlar(conn, limit, user['id'] if mine else None)}
+
+
+@router.get('/reports/{rid}')
+def get_report(rid: int, user=Depends(sim_user), conn=db.DB):
+    d = flightsim_mission.rapor(conn, rid)
+    if not d:
+        raise HTTPException(404, 'Rapor bulunamadı')
+    return d
+
+
+@router.post('/reports/{rid}/share')
+async def share_report(rid: int, body: ShareIn, user=Depends(sim_user), conn=db.DB):
+    """Raporu metin olarak Şirketten Haberler'e paylaş (yazma izni; paylaşım rapor sahibi adına, sahip yoksa paylaşan)."""
+    d = flightsim_mission.rapor(conn, rid)
+    if not d:
+        raise HTTPException(404, 'Rapor bulunamadı')
+    owner_id = (d.get('owner') or {}).get('id') or user['id']
+    owner = db.row(conn.execute('SELECT id, full_name FROM users WHERE id = ?', (owner_id,))) or {'id': user['id'], 'full_name': user['full_name']}
+    txt = (body.text or '').strip()[:4000] or flightsim_mission.rapor_metni(d)
+    from .. import feed
+    pid = feed.add_post(conn, owner['id'], txt, None)
+    db.audit(conn, user['id'], 'Uçuş simülatörü raporunu paylaştı', 'feed', pid, f'rapor {rid} · oturum {d.get("session_id")}')
+    conn.commit()
+    from .feed import _announce
+    await _announce(conn, pid, owner, txt, [])
+    return {'ok': True, 'post_id': pid, 'text': txt, 'link': '#/home'}
 
 
 # ---------------- Ekran kaydı (flightsim_rec; §17) ----------------

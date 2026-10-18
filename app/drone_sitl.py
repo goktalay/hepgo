@@ -142,10 +142,12 @@ def bos_taban_port(baslangic, adim=PORT_ADIM, deneme=200, kullanilan=()):
     return None
 
 
-def parm_metni(sysid, log_bin=False):
+def parm_metni(sysid, log_bin=False, ekstra=None):
     """SITL `--defaults` dosyası içeriği (Tuzak A). `log_bin`: DataFlash .BIN kaydı (LOG_BACKEND_TYPE 1 = dosya) yalnız armed süre
     (LOG_DISARMED 0) ve disarm'da dosya kapanır/döner (LOG_FILE_DSRMROT 1) → oturum kapanışında son .BIN uçuş loglarına kaydedilir
-    (flightsim_bin). Kapalıyken kayıt tamamen kapalı: GÖKTUNGU'da tek sanal dron 43 GB .BIN üretmişti."""
+    (flightsim_bin). Kapalıyken kayıt tamamen kapalı: GÖKTUNGU'da tek sanal dron 43 GB .BIN üretmişti.
+    `ekstra`: dronun KAYITLI parametreleri (`AD DEĞER` satırları; drone_params.parm_satirlari) — HEPGO varsayılanlarından SONRA yazılır
+    (aynı ad varsa son satır geçerli); simülatör oturum parametreleri kalp atışında PARAM_SET ile sonra gelir."""
     satirlar = [
         'FRAME_CLASS 1',            # çok rotorlu için anlamlı; plane'de yok sayılır
         'FS_GCS_ENABLE 0',          # GCS kalp atışı kaybı failsafe'i test akışını bozmasın
@@ -156,6 +158,8 @@ def parm_metni(sysid, log_bin=False):
         satirlar += ['LOG_BACKEND_TYPE 1', 'LOG_DISARMED 0', 'LOG_FILE_DSRMROT 1']
     else:
         satirlar += ['LOG_BACKEND_TYPE 0', 'LOG_DISARMED 0']
+    if ekstra:
+        satirlar += ['# HEPGO kayitli parametreler (drone_sitl_params)'] + [str(s).strip() for s in ekstra if str(s).strip()]
     return '\n'.join(satirlar) + '\n'
 
 
@@ -196,10 +200,11 @@ class SitlYoneticisi:
         with self._kilit:
             return dict(self._bilgi.get(int(kimlik)) or {})
 
-    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None, model=None, log_bin=False):
+    def baslat(self, kimlik, tip, lat, lon, sysid, irtifa=None, konsol=None, model=None, log_bin=False, ekstra_parm=None):
         """SITL sürecini başlatır. Dönüş: (port, hata) — başarısızsa port None. Bloklar (~2 sn): iş parçacığında çağrılır.
         `model`: `--model` değerini geçersiz kılar (ör. uçuş simülatörü rampa kalkışı için 'plane-catapult'; TIP_ESLEME değişmez).
-        `log_bin`: DataFlash .BIN kaydı açık (uçuş simülatörü "Uçuş logunu kaydet"; docs/ucus-simulatoru.md §19) — yalnız armed süre."""
+        `log_bin`: DataFlash .BIN kaydı açık (uçuş simülatörü "Uçuş logunu kaydet"; docs/ucus-simulatoru.md §19) — yalnız armed süre.
+        `ekstra_parm`: dronun kayıtlı parametreleri (`AD DEĞER` satırları) → varsayilan.parm sonuna (drone_params)."""
         kimlik = int(kimlik)
         konsol = konsol or self.konsol
         if self.calisiyor_mu(kimlik):
@@ -220,7 +225,7 @@ class SitlYoneticisi:
             return None, f'SITL çalışma dizini oluşturulamadı: {e}'
         parm = dizin / 'varsayilan.parm'     # Tuzak A: gerçek defaults dosyası
         try:
-            parm.write_text(parm_metni(sysid, log_bin), encoding='utf-8')
+            parm.write_text(parm_metni(sysid, log_bin, ekstra_parm), encoding='utf-8')
         except OSError as e:
             return None, f'SITL varsayılan parametre dosyası yazılamadı: {e}'
         bin_temizle(kimlik)   # önceki oturumun .BIN artıkları (kaydedilmişse zaten taşındı)

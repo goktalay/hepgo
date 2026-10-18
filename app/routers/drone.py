@@ -11,9 +11,10 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from .. import agentkeys, auth, db, drone_hub
+from .. import agentkeys, auth, db, drone_hub, drone_params
 
 router = APIRouter(prefix='/api/drone')
 drones_user = auth.require_module('drone.drones')
@@ -88,6 +89,10 @@ class CmdIn(BaseModel):
     params: dict = {}
 
 
+class ParamImportIn(BaseModel):
+    text: str                       # Mission Planner .param içeriği (AD,DEĞER satırları)
+
+
 def _clean(s, n=200):
     s = (s or '').strip()
     return s[:n] or None
@@ -123,7 +128,8 @@ def meta(user=Depends(auth.current_user)):
             'can': {'drones': 'drone.drones' in user['modules'], 'live': 'field.live' in user['modules'],
                     'routes': 'drone.routes' in user['modules'], 'bridges': 'drone.bridges' in user['modules'],
                     'sim': 'drone.sim' in user['modules'],
-                    'command': drone_hub.can_command(user) if 'write_modules' in user else False}}
+                    'command': drone_hub.can_command(user) if 'write_modules' in user else False},
+            'write': {'drones': 'drone.drones' in user.get('write_modules', [])}}
 
 
 # ---------------- Dron envanteri ----------------
@@ -235,6 +241,67 @@ def delete_drone(did: int, user=Depends(drones_user), conn=db.DB):
         return {'ok': True, 'deactivated': True}
     conn.execute('DELETE FROM drone_drones WHERE id = ?', (did,))
     db.audit(conn, user['id'], 'Dron sildi', 'drone', did, old['code'])
+    return {'ok': True}
+
+
+# ---------------- Sanal dron kalıcı parametreleri (drone_params; tablo drone_sitl_params) ----------------
+def _sanal_dron(conn, did):
+    d = db.row(conn.execute('SELECT id, code, name, protocol FROM drone_drones WHERE id = ?', (did,)))
+    if not d:
+        raise HTTPException(404, 'Dron bulunamadı')
+    if d['protocol'] != 'sanal':
+        raise HTTPException(400, 'Kalıcı parametreler yalnız sanal dronlarda tutulur')
+    return d
+
+
+@router.get('/drones/{did}/sitl-params')
+def list_sitl_params(did: int, user=Depends(drones_user), conn=db.DB):
+    """Dronun kayıtlı SITL parametreleri + hariç tutma listesi (okuma yetkisi yeter)."""
+    _sanal_dron(conn, did)
+    items = drone_params.yukle(did, conn)
+    return {'items': items, 'count': len(items), 'excluded': drone_params.haric_listesi(), 'can_write': 'drone.drones' in user.get('write_modules', [])}
+
+
+@router.get('/drones/{did}/sitl-params/export')
+def export_sitl_params(did: int, user=Depends(drones_user), conn=db.DB):
+    """Mission Planner `.param` dosyası (`AD,DEĞER`)."""
+    d = _sanal_dron(conn, did)
+    rows = drone_params.yukle(did, conn)
+    body = drone_params.param_metni(rows, f"HEPGO {d['code']} {d['name']} · {len(rows)} parametre · {db.now()}")
+    return PlainTextResponse(body, media_type='text/plain; charset=utf-8',
+                             headers={'Content-Disposition': f'attachment; filename="{d["code"]}.param"'})
+
+
+@router.post('/drones/{did}/sitl-params/import')
+def import_sitl_params(did: int, body: ParamImportIn, user=Depends(drones_user), conn=db.DB):
+    """`.param` metnini kayıtlara yazar (source hepgo); hariç/bozuk satırlar atlanır. Çalışan SITL'e sonraki açılışta yüklenir."""
+    d = _sanal_dron(conn, did)
+    if len(body.text) > 2_000_000:
+        raise HTTPException(400, 'Dosya çok büyük (en çok 2 MB)')
+    try:
+        r = drone_params.ice_aktar(did, body.text, user['id'], conn)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.audit(conn, user['id'], 'Sanal dron parametreleri içe aktardı', 'drone', did, f"{d['code']} · {r['imported']} parametre, {r['skipped_count']} atlandı")
+    return r
+
+
+@router.delete('/drones/{did}/sitl-params')
+def reset_sitl_params(did: int, user=Depends(drones_user), conn=db.DB):
+    """Tümünü sıfırla: dronun kayıtlı parametreleri silinir (çalışan SITL etkilenmez; sonraki açılış firmware varsayılanlarıyla)."""
+    d = _sanal_dron(conn, did)
+    n = drone_params.sil(did, None, conn)
+    db.audit(conn, user['id'], 'Sanal dron parametrelerini sıfırladı', 'drone', did, f"{d['code']} · {n} parametre")
+    return {'ok': True, 'deleted': n}
+
+
+@router.delete('/drones/{did}/sitl-params/{name}')
+def delete_sitl_param(did: int, name: str, user=Depends(drones_user), conn=db.DB):
+    d = _sanal_dron(conn, did)
+    n = drone_params.sil(did, name, conn)
+    if not n:
+        raise HTTPException(404, 'Parametre kaydı bulunamadı')
+    db.audit(conn, user['id'], 'Sanal dron parametresi sildi', 'drone', did, f"{d['code']} · {name.upper()}")
     return {'ok': True}
 
 

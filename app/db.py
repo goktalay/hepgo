@@ -1707,6 +1707,18 @@ CREATE TABLE IF NOT EXISTS drone_takeoff_checks (
     created_at        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_drone_takeoff_checks_task ON drone_takeoff_checks(task_id);
+-- Sanal dron (SITL) kalıcı parametreleri (app/drone_params.py): HEPGO'dan ya da Mission Planner'dan değiştirilen her parametre dron
+-- kaydına yazılır; aynı dronla SITL yeniden açılınca varsayilan.parm + PARAM_SET ile geri yüklenir. source: hepgo | mp | sitl
+CREATE TABLE IF NOT EXISTS drone_sitl_params (
+    drone_id    INTEGER NOT NULL REFERENCES drone_drones(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,                        -- ArduPilot parametre adı (≤ 16 karakter, büyük harf)
+    value       REAL NOT NULL,
+    ptype       INTEGER,                              -- MAV_PARAM_TYPE (1..10); PARAM_VALUE'dan öğrenilir
+    updated_at  TEXT NOT NULL,
+    updated_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    source      TEXT NOT NULL DEFAULT 'hepgo',        -- hepgo (panel/içe aktarma) | mp (Mission Planner PARAM_SET) | sitl (araçta kendiliğinden değişti)
+    PRIMARY KEY (drone_id, name)
+);
 -- Uçuş videoları (parça parça yüklenir; boyut sınırı yok)
 CREATE TABLE IF NOT EXISTS flight_videos (
     id          INTEGER PRIMARY KEY,

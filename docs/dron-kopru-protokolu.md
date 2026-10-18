@@ -73,6 +73,34 @@ ve eski kodu anında geçersiz kılar. `GET /bridges` satırları anahtarı/kodu
   kapanınca hemen durur. Sunucu açılışında önceki süreçten kalan SITL'ler (bu kiracının çalışma kökü) temizlenir.
   `HEPGO_SITL=0` yalnız testler için eski sunucu içi kinematik simülatörü seçer.
 
+### Sanal dron kalıcı parametreleri (`app/drone_params.py`; tablo `drone_sitl_params(drone_id, name, value, ptype, updated_at, updated_by, source)`)
+Kullanıcı isteği: sanal dronla uçuşta HEPGO'dan ya da Mission Planner'dan değiştirilen parametre kalıcı olsun; aynı dron tekrar kullanılınca
+eski parametrelerle gelsin. Hem saha görevinin sanal dronu (`SitlDrone`, drone_id) hem simülatör oturumu (`SimSession`, sihirbazda dron kaydı
+seçildiyse) aynı `drone_params.Izleyici`yi kullanır:
+- **İzleme:** SITL'den gelen her PARAM_VALUE bilinen değerle karşılaştırılır. (a) `param_set` komutu (`send_command` → `hepgo_set` niyeti) →
+  yankı gelince kayıt `source='hepgo'` + kullanıcı. (b) Mission Planner PARAM_SET: UDP'den ham geçer, izleyici baytları ayrıca ayrıştırıp niyeti
+  not eder (`gcs_bayt`) → SITL yankısı → `source='mp'`. (c) Niyet yokken tabandan farklı değer → `source='sitl'` — yalnız ilk TAM parametre
+  listesi (param_count'un %90'ı görüldü; MP bağlanınca çeker) alındıktan sonra. Taban = SITL'den ilk görülen değer; açılışta HEPGO'nun yazdığı
+  kayıtlıların yankıları (`yukleme_isaretle`) yalnız tabana işlenir. Niyet yalnız hedef değerle eşleşen yankıda tüketilir (köprü çekirdeği tip için
+  önce PARAM_REQUEST_READ yapar; o eski değerli yankı niyeti düşürmez), 30 sn'de zaman aşımına uğrar.
+- **Hariç (hiç kaydedilmez):** ön ekler `STAT_ LOG_ SIM_WIND_ SIM_GPS1_ TKOFF_ MAV1_ MAV2_ MAV3_ SR0_ SR1_ SR2_ SR3_ INS_GYROFFS_ INS_GYR2OFFS_
+  INS_GYR3OFFS_` (MAVn_/SRn_: akış hızları — REQUEST_DATA_STREAM bunları değiştirir; INS_GYR*OFFS_: açılış gyro kalibrasyonu — gerçek SITL'de sahte
+  "sitl" kaydı üretiyordu); adlar `MIS_TOTAL FENCE_TOTAL RALLY_TOTAL FORMAT_VERSION SYSID_THISMAV MAV_SYSID SIM_SPEEDUP SIM_RC_FAIL FS_THR_ENABLE
+  THR_FAILSAFE RC_OVERRIDE_TIME SERVO3_MIN SERVO3_TRIM TKOFF_THR_MINACC BARO1_GND_PRESS BARO2_GND_PRESS BARO3_GND_PRESS GND_ABS_PRESS ARSPD_OFFSET
+  ARSPD2_OFFSET` (açılış/ARM yer basıncı ve hava hızı kalibrasyonu) ve simülatör
+  oturumunun kalp atışında yazdığı set (`flightsim.RC_PARAMLAR / GPS_RTK_PARAMLARI / PLANE_YER_PARAMLARI / launch_parametreleri`, ör. `SERVO7_FUNCTION`;
+  `drone_params.oturum_adlari`). Diğer `SIM_*` (ör. SIM_BATT_VOLTAGE) kaydedilir. `GET …/sitl-params` yanıtı `excluded{prefixes,names}` döner.
+- **Yükleme:** SITL açılışında kayıtlılar `varsayilan.parm` sonuna (`parm_metni(..., ekstra)`: HEPGO varsayılanlarından SONRA, aynı ad varsa son
+  satır geçerli) yazılır; ayrıca ilk kalp atışında (hub: ilk DroneState; simülatör: `_ilk_heartbeat`, oturum parametrelerinden ÖNCE) PARAM_SET ile
+  yeniden yazılır — eeprom.bin'deki eski değer defaults dosyasını ezebilir. Olay şeridi/konsol: "N kayıtlı parametre yüklendi [(k yazılamadı)]".
+- **REST (`routers/drone.py`, yetki `drone.drones`: GET okuma, DELETE/POST yazma; yalnız `protocol='sanal'`, aksi 400):**
+  `GET /api/drone/drones/{id}/sitl-params` → `{items[{name,value,ptype,source,source_text,updated_at,updated_by,updated_by_name}],count,excluded,can_write}` ·
+  `DELETE …/sitl-params` (tümünü sıfırla, `{deleted}`) · `DELETE …/sitl-params/{name}` · `POST …/sitl-params/import {text}` (.param: `AD,DEĞER` /
+  `AD DEĞER` / sekme; `#` yorum; hariç ve bozuk satırlar atlanır → `{imported,skipped[],skipped_count,count}`; ≤ 2 MB, ≤ 2000 parametre) ·
+  `GET …/sitl-params/export` → `text/plain` `.param` (`#NOTE:` başlığı + `AD,DEĞER`), `Content-Disposition: attachment; filename="D-0001.param"`.
+  Dron detayı (drone.js, sanal dron) "Kayıtlı parametreler (N)" kartı: arama, tek tek sil, Tümünü sıfırla (onaylı), Dışa/İçe aktar.
+  Çalışan SITL silme/içe aktarmadan etkilenmez; değişiklik sonraki açılışta uygulanır. Dron silinince kayıtlar da silinir (ON DELETE CASCADE).
+
 ## v1.1 (isteğe bağlı; köprü `auth`/`pair` çerçevesinde `caps:[…]` bildirir, sunucu `hello.caps` ile tarayıcıya açar)
 
 Tanınan caps: `set_home`, `param`, `arm_force`, `reboot`, `mission_set_current`, `altitude_change`, `link`, `mission_start`, `mission_clear` (ayrıca yer tutucu `bakim`, `log` — v1.2).

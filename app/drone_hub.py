@@ -34,7 +34,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from . import auth, cameras, config, db, drone_sitl
+from . import auth, cameras, config, db, drone_params, drone_sitl
 
 ws_router = APIRouter()
 
@@ -606,6 +606,13 @@ def _feed_msgs(bridge, msgs):
             continue
         if m.get_type() == 'COMMAND_ACK':
             _command_ack(bridge, sysid, m)
+        elif m.get_type() == 'PARAM_VALUE':   # sanal dron (SitlDrone): kalıcı parametre izleyicisi (drone_params); simülatör oturumu kendi _isle'sinde
+            iz = getattr(bridge, 'param_izleyici', None)
+            if iz is not None:
+                try:
+                    iz.param_value(str(m.param_id).rstrip('\x00'), m.param_value, m.param_type, m.param_index, m.param_count)
+                except Exception:   # noqa: BLE001
+                    pass
         st = bridge.drones.setdefault(sysid, DroneState(sysid))
         if st.feed(m):
             _emit(bridge, st)
@@ -1252,6 +1259,9 @@ class SitlDrone:
         self.last_viewer = time.time()
         self.task = None
         self.state = 'BASLIYOR'   # BASLIYOR | HAZIR | HATA
+        # Kalıcı parametreler (drone_params): PARAM_VALUE yankıları _feed_msgs'ten izleyiciye; açılışta kayıtlılar parm + PARAM_SET ile yüklenir
+        self.param_izleyici = drone_params.Izleyici(self.drone_id, self._event)
+        self.kayitli_params = []
 
     def info(self):
         return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
@@ -1295,6 +1305,19 @@ class SitlDrone:
     def command(self, name, params):   # eşzamanlı yol (yalnız eski simülatör); SITL'de kullanılmaz
         return {'ok': False, 'error': 'SITL komutu eşzamansız yürütülür'}
 
+    def _kayitli_yaz(self, kayitlar):   # iş parçacığı: her kayıt için köprü çekirdeğiyle PARAM_SET (yankı bekler); sonuç olay şeridine
+        self.param_izleyici.yukleme_isaretle([r['name'] for r in kayitlar])
+        ok = hata = 0
+        for r in kayitlar:
+            try:
+                self.link.execute('param_set', {'name': r['name'], 'value': float(r['value']), 'type': int(r.get('ptype') or 9)}, self.sysid)
+                ok += 1
+            except Exception:   # noqa: BLE001 — araçta olmayan ad (başka tip) ya da zaman aşımı
+                hata += 1
+        metin = f'{ok} kayıtlı parametre yüklendi' + (f' ({hata} yazılamadı)' if hata else '')
+        if self.loop is not None and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(self._event, metin, 4 if hata else 6)
+
     def _connect(self, port):
         core = drone_sitl.kopru_cekirdegi()
         end = time.time() + SITL_CONNECT_S
@@ -1315,8 +1338,13 @@ class SitlDrone:
         status = 'KAPANDI'
         try:
             self._event(f'SITL başlatılıyor ({self.tip}) · {self.name}', 6)
+            try:
+                self.kayitli_params = await ex(None, drone_params.yukle, self.drone_id)
+            except Exception as e:   # noqa: BLE001 — kayıt okunamasa da SITL açılır
+                self.kayitli_params = []
+                self._event(f'Kayıtlı parametreler okunamadı: {e}'[:200], 4)
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.drone_id, self.tip, self.home[0], self.home[1], self.sysid,
-                                                                          konsol=self._konsol))
+                                                                          konsol=self._konsol, ekstra_parm=drone_params.parm_satirlari(self.kayitli_params)))
             if not port:
                 self.state = 'HATA'
                 self._event(err or 'SITL başlatılamadı', 2)
@@ -1332,6 +1360,7 @@ class SitlDrone:
             self.state = 'HAZIR'
             self._event(f'Sanal dron (SITL) bağlandı: tcp:127.0.0.1:{port}', 6)
             n = 0
+            yuklenecek = list(self.kayitli_params)
             while True:
                 await asyncio.sleep(1.0)
                 n += 1
@@ -1339,6 +1368,9 @@ class SitlDrone:
                     self._event('SITL süreci sonlandı', 2)
                     status = 'KOPTU'
                     break
+                if yuklenecek and self.drones:   # ilk kalp atışı geldi: kayıtlı parametreleri PARAM_SET ile doğrula/yeniden yaz (parm'a yazılamayanlar için)
+                    kayitlar, yuklenecek = yuklenecek, []
+                    await ex(None, self._kayitli_yaz, kayitlar)
                 if n % 5 == 0:   # izleyici var mı
                     now = time.time()
                     if any(v.task_id == self.task_id for v in VIEWERS.values()):
@@ -1525,6 +1557,10 @@ async def send_command(user, bridge_id, sysid, name, params, viewer_ws=None, rid
                 db.audit(conn, user['id'], 'Dron komutu', 'drone_bridge', b.id, f'{name} · sysid {sysid} · {json.dumps(params or {}, ensure_ascii=False)[:200]}')
             conn.commit()
     params = dict(params or {})
+    if sim and name == 'param_set':   # kalıcı parametre izleme (drone_params): yankı PARAM_VALUE gelince kullanıcı adına kaydedilir
+        iz = getattr(b, 'param_izleyici', None) or getattr(getattr(b, 's', None), 'param_izleyici', None)
+        if iz is not None:
+            iz.hepgo_set(params.get('name'), params.get('value'), user.get('id'))
     if name in SEQ_CMDS:
         return await _start_sequence(user, b, sim, sysid, name, params, viewer_ws, audit)
     return await _single_command(b, sim, int(sysid), name, params, viewer_ws, rid, audit)

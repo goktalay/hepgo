@@ -11,6 +11,7 @@ import { MASCOT_LIST, mascotPreview, setMascot, setMascot3D, setMascotSound, app
 import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
 import { mailboxesSection, socialSection } from './mysettings.js';
+import { faceSection } from './facesetup.js';
 
 // Mobilde (≤800px) Ayarlar iOS tarzı ana liste + alt-sayfa olur; görünüm genişliği değişince yeniden çizilir.
 const SET_MQ = matchMedia('(max-width: 800px)');
@@ -553,7 +554,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
           line('Paralel yükleme sayısı', 'Aynı anda en çok kaç dosya yüklensin (1–6)', concSel),
           line('Maksimum yükleme hızı (KB/sn, 0 = sınırsız)', 'Tüm yüklemelerin toplam üst hızı', speed),
           h('p', { class: 'small muted' }, 'Hızı sınırlamak, büyük bir toplu aktarımın tüm bağlantıyı doldurup fabrika cihazlarını (ör. saha ajanı) çevrimdışı bırakmasını önler. Yükleme penceresinden de aktarım sürerken değiştirebilirsiniz.')); } },
-    { key: 'account', title: 'Hesap', desc: 'Kullanıcı bilgileri, şifre, PIN', icon: 'person',
+    { key: 'account', title: 'Hesap', desc: 'Kullanıcı bilgileri, şifre, PIN, yüz ile giriş', icon: 'person',
       body: () => card('Hesap', null,
         h('div', { class: 'set-account' }, avatar(ctx.user, 'lg'), h('div', null, h('b', null, ctx.user.full_name), h('div', { class: 'small muted' }, ctx.user.username))),
         h('dl', { class: 'sys-kv' }, h('dt', null, 'Roller'), h('dd', null, (ctx.user.master ? [...(ctx.user.real_roles || []), 'MASTER (tüm yetkiler)'] : ctx.user.roles).join(', ') || '—'),
@@ -562,7 +563,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         h('h4', { class: 'set-sub' }, 'PIN ile giriş'),
         h('p', { class: 'small muted' }, 'Bu cihazda bir kez şifreyle giriş yaptıktan sonra giriş ekranında adınıza dokunup 4 haneli PIN ile girebilirsiniz.'),
         pinToggle,
-        ctx.user.has_pin ? h('div', { class: 'set-actions left' }, h('button', { class: 'btn', type: 'button', onclick: () => pinModal(true) }, 'PIN\'i Değiştir')) : null) },
+        ctx.user.has_pin ? h('div', { class: 'set-actions left' }, h('button', { class: 'btn', type: 'button', onclick: () => pinModal(true) }, 'PIN\'i Değiştir')) : null,
+        faceSection(ctx)) },   // Yüz ile giriş: tanıt / ikinci tarama / kip / sil (modules/facesetup.js)
   ]).filter(x => x.key !== 'mascot' || ctx.user.ai);   // Claude API anahtarı yoksa maskot ayarı da gizli
   // Mobilde iOS Ayarlar gibi: gruplanmış renkli ikonlu satır listesi; kategoriye dokununca alt-sayfa açılır.
   const COLORS = { ui: '#0a84ff', notifications: '#ff3b30', sounds: '#ff2d55', screensaver: '#5856d6', voice: '#34c759',

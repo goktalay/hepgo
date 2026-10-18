@@ -27,6 +27,9 @@ DEFAULTS = {
     'session_hours': 12,       # oturum geçerlilik süresi (saat)
     'pin_enabled': True,       # PIN ile girişe izin ver
     'pin_length': 4,           # PIN hane sayısı
+    'face_enabled': True,      # yüz ile girişe izin ver (güvenilir cihazda; bkz. app/facelogin.py)
+    'face_threshold': 45,      # yüz eşleşme eşiği (kosinüs × 100; SFace: 36 aynı kişi, 45 sıkı, 60 çok sıkı)
+    'face_liveness': True,     # girişte canlılık adımı (rastgele yöne baş çevirme) zorunlu
 }
 
 COMMON = {'12345678', '123456789', '1234567890', 'password', 'password1', 'parola', 'parola1', 'sifre', 'sifre123',
@@ -34,7 +37,8 @@ COMMON = {'12345678', '123456789', '1234567890', 'password', 'password1', 'parol
           'deneme', 'deneme123', 'abc123', '1q2w3e4r', 'asdasd', '123123', 'gokkubbe', 'caymaz'}
 
 _INT = {'min_length': (4, 64), 'expire_days': (0, 3650), 'reuse_block': (0, 24), 'lockout_fails': (3, 100),
-        'ip_fails': (0, 500), 'lockout_minutes': (1, 1440), 'session_hours': (1, 720), 'pin_length': (4, 8)}
+        'ip_fails': (0, 500), 'lockout_minutes': (1, 1440), 'session_hours': (1, 720), 'pin_length': (4, 8),
+        'face_threshold': (30, 80)}
 
 
 def get(conn):

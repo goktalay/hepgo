@@ -1340,6 +1340,10 @@ function securityBody(view) {
       card('PIN ile giriş', 'Cihazda 4+ haneli PIN ile hızlı giriş.',
         tog('pin_enabled', 'PIN ile girişe izin ver', 'Kapatılırsa hiçbir kullanıcı PIN kullanamaz; herkes şifreyle girer'),
         num('pin_length', 'PIN hane sayısı', 'Yeni PIN’ler bu kadar haneli olur', { min: 4, max: 8, suffix: 'hane' })),
+      card('Yüz ile giriş', 'Güvenilir cihazda kamerayla (Face ID tarzı) giriş. Yüz özeti sunucuda şifreli saklanır; kullanıcı Kişisel Ayarlar › Hesap’tan tanıtır.',
+        tog('face_enabled', 'Yüz ile girişe izin ver', 'Kapatılırsa kimse yüzle giremez ve yeni yüz tanıtılamaz; mevcut kayıtlar silinmez'),
+        num('face_threshold', 'Eşleşme eşiği', 'Kosinüs benzerliği × 100. 45 önerilir; düşük = daha hoşgörülü (yanlış kabul riski), yüksek = daha sıkı (ışık değişiminde ret).', { min: 30, max: 80, suffix: '%' }),
+        tog('face_liveness', 'Canlılık adımı (baş çevirme)', 'Eşleşmeden sonra rastgele bir yöne hafifçe bakılması istenir; fotoğrafla kandırmayı zorlaştırır')),
       h('div', { class: 'set-actions left' }, saveBtn, resetBtn));
   };
   const apply = data => { for (const k in P) if (k in data) P[k].set(data[k]); };
@@ -1719,7 +1723,7 @@ function moduleMgmtBody(view, ctx) {
 }
 
 const GROUPS = [
-  { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş ve PIN', icon: 'lock', body: securityBody },
+  { key: 'security', title: 'Güvenlik', desc: 'Şifre kuralları, giriş, PIN ve yüz', icon: 'lock', body: securityBody },
   { key: 'support', title: 'Merkez Destek', desc: 'Veilox destek girişleri: onay ve aktif oturumlar', icon: 'lock', body: supportBody, master: true },
   { key: 'ai', title: 'Yapay Zeka', desc: 'Maskot asistanı: token kullanımı ve kotalar', icon: 'bolt', body: aiBody, needs: 'ai' },
   { key: 'ai-changes', title: 'YZ Onayları', desc: 'Yapay zekanın önerdiği kayıt değişiklikleri', icon: 'bolt', body: aiChangesBody, needs: 'ai' },

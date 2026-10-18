@@ -160,11 +160,17 @@ class DevicesIn(BaseModel):
 @router.post('/auth/devices')
 def devices(body: DevicesIn, conn=db.DB):
     """Giriş ekranı: bu cihazda kayıtlı hesaplar (geçersiz / pasif olanlar dönmez)."""
+    from .. import facelogin
+    pol = policy.get(conn)
+    face_on = bool(pol['face_enabled']) and facelogin.engine_available()
     out = []
     for t in body.tokens[:10]:
         u = _device_user(conn, t)
         if u and u['active']:
-            out.append({'token': t, 'id': u['id'], 'username': u['username'], 'full_name': u['full_name'], 'has_pin': bool(u['pin_hash'])})
+            fr = facelogin.record(conn, u['id']) if face_on else None
+            out.append({'token': t, 'id': u['id'], 'username': u['username'], 'full_name': u['full_name'],
+                        'has_pin': bool(u['pin_hash']) and bool(pol['pin_enabled']),
+                        'has_face': bool(fr and fr['enabled'] and fr['count']), 'face_mode': (fr or {}).get('mode') if fr else None})
     return out
 
 

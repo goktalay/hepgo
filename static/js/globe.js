@@ -85,8 +85,9 @@ export function createGlobe(canvas, opts = {}) {
     ctx.stroke();
   }
 
+  let paused = false;   // yüz ile giriş (kamera + kare kodlama) sürerken küre durur: ana iş parçacığı ve pil kameraya kalsın
   function frame(ts) {
-    if (!alive) return;
+    if (!alive || paused) return;
     if (last) rot += o.speed * Math.min(0.1, (ts - last) / 1000);
     last = ts;
     draw();
@@ -96,12 +97,15 @@ export function createGlobe(canvas, opts = {}) {
   const onVisibility = () => {
     cancelAnimationFrame(raf);
     last = 0;
-    if (!document.hidden && !still && alive) raf = requestAnimationFrame(frame);
+    if (!document.hidden && !still && alive && !paused) raf = requestAnimationFrame(frame);
   };
+  // window 'hepgo:globe' {detail: {pause: true|false}} — face.js yüz akışı boyunca duraklatır
+  const onPause = e => { paused = !!(e.detail && e.detail.pause); onVisibility(); };
 
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('hepgo:globe', onPause);
   loadLand().then(l => { land = l; draw(); });
   resize();
   if (!still) raf = requestAnimationFrame(frame);
@@ -112,6 +116,7 @@ export function createGlobe(canvas, opts = {}) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('hepgo:globe', onPause);
     },
   };
 }

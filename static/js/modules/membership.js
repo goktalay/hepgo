@@ -2,8 +2,9 @@
 // paylaşımıyla), destek talepleri (dosya ekli, değerlendirme), ödeme takibi ve ödeme bildirimi, üyelik sözleşmeleri.
 // Veriler merkezdedir; burası güvenli federasyon bağlantısıyla okur / yazar. Aktif canlı sohbet başka sayfadayken de köşede görünür.
 import { api } from '../api.js';
-import { moduleName } from '../modulenames.js';
-import { clear, every, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, statStrip, t, toast, toastError } from '../ui.js';
+import { icons } from '../icons.js';
+import { MODULE_DESC, moduleName } from '../modulenames.js';
+import { clear, every, field, fmtDate, fmtDateTime, h, modal, pageHead, segmented, statStrip, svgIcon, t, toast, toastError } from '../ui.js';
 import { CATEGORY, PRIORITY, STATUS_FIRM, badge, chatMessage, composer, fmtM, formData, ratingBox, starsOf, threadView } from './supportkit.js';
 import { docView, printDoc, proofRows } from './contractdoc.js';
 
@@ -60,9 +61,15 @@ function supportCard(st, ctx, compact) {
 
 async function overview(view, ctx) {
   loading(view);
-  let d, tickets = [], ct = null;
+  let d, tickets = [], ct = null, modInfo = null;
+  // Modül kutucukları yerel sunucudan gelir (merkez gerekmez); merkez verisi alınamazsa hata kartı + kutucuklar yine gösterilir.
+  const modP = api.get('/api/membership/modules').catch(() => null);
   try { [d, tickets, ct] = await Promise.all([api.get('/api/membership'), api.get('/api/membership/tickets').catch(() => []), api.get('/api/membership/contracts').catch(() => null)]); }
-  catch (e) { return clear(view, h('div', { class: 'card empty' }, e.message)); }
+  catch (e) {
+    modInfo = await modP;
+    return clear(view, h('div', { class: 'card empty' }, e.message), modInfo ? modulesSection(modInfo, null, ctx) : null);
+  }
+  modInfo = await modP;
   const c = d.company || {};
   const [, pl] = PAY[d.pay_status] || ['', d.pay_status];
   const strip = statStrip();
@@ -95,14 +102,68 @@ async function overview(view, ctx) {
         showFee(d.fee) ? h('div', { class: 'mb2-months' }, [...(d.months || [])].reverse().map(m => h('div', { class: `mb2-m ${m.status}`, title: `${m.period} · ${(PAY[m.status] || [])[1] || m.status}${m.paid ? ` · ${money2(m.paid)}` : ''}` },
           h('b', null, m.period.slice(5)), h('small', null, m.period.slice(0, 4))))) : h('p', { class: 'small muted' }, HIDE_PRICES ? 'Açık beta döneminde ücretsiz.' : 'Paketiniz ücretsiz.'),
         showFee(d.fee) ? h('div', { class: 'mb2-legend small muted' }, ...['odendi', 'kismi', 'bekliyor', 'gecikti'].map(k => h('span', { class: `mb2-lg ${k}` }, PAY[k][1]))) : null),
-      mods.length ? h('section', { class: 'card card-pad mb2-mods' }, h('h3', null, t('Paketinizdeki modüller ({n})', { n: mods.length })),
-        h('div', { class: 'mb2-chips' }, mods.map(m => h('span', { class: 'sk-tagchip', title: m }, t(moduleName(m)))))) : null));
+      modInfo ? modulesSection(modInfo, d, ctx)
+        : mods.length ? h('section', { class: 'card card-pad mb2-mods' }, h('h3', null, t('Paketinizdeki modüller ({n})', { n: mods.length })),
+          h('div', { class: 'mb2-chips' }, mods.map(m => h('span', { class: 'sk-tagchip', title: m }, t(moduleName(m)))))) : null));
+}
+
+// ---------------- Paketinizdeki Modüller: etkileşimli kutucuklar ----------------
+// state: open (tıklanınca modüle gider) · locked (yetki yok: kilit, tıklanmaz) · off (Modül Yönetimi'nden kapalı) · missing (pakette yok: soluk; tıklanınca yükseltme bilgisi)
+const LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const STATE_LABEL = { locked: 'Yetkiniz yok', off: 'Kapalı', missing: 'Pakette yok' };
+function modulesSection(info, d, ctx) {
+  const list = info.modules || [];
+  const inPkg = list.filter(m => m.state !== 'missing');
+  const open = list.filter(m => m.state === 'open');
+  let filter = 'all';
+  const grid = h('div', { class: 'mb2-modgrid' });
+  const draw = () => clear(grid, list.filter(m => filter === 'all' || (filter === 'mine' ? m.state === 'open' : m.state === 'missing')).map(m => tile(m)));
+  const tile = m => {
+    const name = t(moduleName(m.key));
+    const el = h(m.state === 'open' ? 'a' : 'div', {
+      class: `mb2-mod ${m.state}`, 'data-key': m.key, tabindex: m.state === 'locked' ? -1 : 0, role: m.state === 'open' ? null : 'button',
+      href: m.state === 'open' ? `#/${m.key}` : null,
+      title: m.state === 'open' ? t('{m} modülüne git', { m: name }) : m.state === 'locked' ? 'Bu modül paketinizde var ancak rolünüzde açık değil; yöneticinizden yetki isteyin.'
+        : m.state === 'off' ? 'Modül, Program Ayarları › Modül Yönetimi\'nden kapatılmış.' : 'Bu modül paketinizde yok; yükseltme bilgisi için tıklayın.',
+      onclick: m.state === 'missing' ? () => upgradeInfo(m, d, ctx) : null,
+      onkeydown: m.state === 'missing' ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); upgradeInfo(m, d, ctx); } } : null,
+    },
+    h('span', { class: 'mb2-mod-ico' }, svgIcon(icons[m.key] || icons.apps)),
+    h('span', { class: 'mb2-mod-t' }, h('b', null, name), h('small', null, t(MODULE_DESC[m.key] || ''))),
+    m.state === 'locked' ? h('span', { class: 'mb2-mod-lock', 'aria-label': 'Yetkiniz yok' }, svgIcon(LOCK_SVG)) : null,
+    STATE_LABEL[m.state] ? h('span', { class: `mb2-mod-badge ${m.state}` }, STATE_LABEL[m.state]) : h('span', { class: 'mb2-mod-go' }, '→'));
+    return el;
+  };
+  draw();
+  return h('section', { class: 'card card-pad mb2-mods' },
+    h('div', { class: 'mb-sec-h mb2-mods-h' }, h('h3', null, t('Paketinizdeki modüller ({n})', { n: inPkg.length })),
+      h('small', { class: 'muted' }, t('{a} açık · {k} kilitli · {y} pakette yok', { a: open.length, k: inPkg.length - open.length, y: list.length - inPkg.length })),
+      h('span', { class: 'spacer' }),
+      segmented([['all', 'Tümü'], ['mine', 'Açık'], ['missing', 'Pakette yok']], filter, v => { filter = v; draw(); })),
+    grid);
+}
+
+function upgradeInfo(m, d, ctx) {
+  const name = t(moduleName(m.key));
+  modal({ title: t('{m} — pakette yok', { m: name }),
+    body: h('div', { class: 'mb2-upg' },
+      h('div', { class: 'mb2-upg-ico' }, svgIcon(icons[m.key] || icons.apps)),
+      h('p', null, h('b', null, name), ' ', t(MODULE_DESC[m.key] || ''), '.'),
+      h('p', { class: 'small muted' }, d?.package?.name ? t('Mevcut paketiniz: {p}. Bu modül paketinize dâhil değil.', { p: d.package.name }) : 'Bu modül mevcut paketinize dâhil değil.'),
+      h('p', { class: 'small' }, 'Paketinizi yükseltmek ya da modülü tek başına eklemek için destek ekibimize ulaşın; aynı gün içinde etkinleştirilir.')),
+    actions: [{ label: 'Kapat' }, 'spacer',
+      { label: '💬 Canlı destek', onClick: () => { location.hash = '#/uyelik/live'; } },
+      { label: 'Destek talebi aç', class: 'primary', onClick: async () => {
+        let st = null;
+        try { st = await api.get('/api/membership/support-status'); } catch { /* çevrimdışı: formu yine aç */ }
+        setTimeout(() => newTicket(st, () => { location.hash = '#/uyelik/tickets'; }, { subject: t('Paket yükseltme: {m}', { m: name }), category: 'oneri' }), 50);
+      } }] });
 }
 
 // ---------------- Destek talepleri ----------------
-function newTicket(st, done) {
-  const subj = h('input', { class: 'input', maxlength: 200, placeholder: 'Kısaca konu (ör. Aylık rapor açılmıyor)' });
-  const cat = h('select', { class: 'input' }, Object.entries(CATEGORY).map(([k, v]) => h('option', { value: k }, v)));
+function newTicket(st, done, prefill = {}) {
+  const subj = h('input', { class: 'input', maxlength: 200, placeholder: 'Kısaca konu (ör. Aylık rapor açılmıyor)', value: prefill.subject || '' });
+  const cat = h('select', { class: 'input' }, Object.entries(CATEGORY).map(([k, v]) => h('option', { value: k, selected: k === prefill.category }, v)));
   const pr = h('select', { class: 'input' }, Object.entries(PRIORITY).map(([k, v]) => h('option', { value: k, selected: k === 'normal' }, v[1])));
   const sla = h('small', { class: 'hint' });
   const drawSla = () => { const hrs = st?.sla_first?.[pr.value]; sla.textContent = hrs ? t('Bu öncelikte ilk yanıt hedefimiz: {m}', { m: fmtM(hrs * 60) }) : ''; };

@@ -43,6 +43,48 @@ def overview(user=Depends(member_user)):
     return central_client.call('GET', '/membership')
 
 
+@router.get('/modules')
+def modules(user=Depends(member_user), conn=db.DB):
+    """Üyelik › "Paketinizdeki Modüller" kutucukları: firmanın tüm modül kataloğu ve her birinin bu kullanıcı için durumu.
+    Merkeze gitmez; yerel kurulumun paket kurallarından (CAYMAZ_MODULES, esnaf / dron paketi, Modül Yönetimi'nde kapatılanlar)
+    ve kullanıcının rol yetkilerinden türetilir.
+      open    paket içinde, kullanıcı açabilir          → tıklanınca modüle gider
+      locked  paket içinde, kullanıcının yetkisi yok     → kilit; tıklanmaz
+      off     paket içinde, master Modül Yönetimi'nden kapatmış
+      missing pakette yok                               → soluk + "Pakette yok"; tıklanınca yükseltme bilgisi"""
+    import json
+
+    from .. import modules_tier, rbac
+    hidden = {'users', 'orders', 'master', 'mikro', 'uyelik'}   # alt sekme / ayarlardan açılan / bu sayfa
+    keys = [n['key'] for n in rbac.catalog() if n['parent'] is None and n['key'] not in hidden]
+    titles = {k: t for k, t, _ in rbac.CATALOG}
+    try:
+        row = conn.execute("SELECT v FROM app_kv WHERE k = 'modules.disabled'").fetchone()
+        off = set(json.loads(row[0])) if row and row[0] else set()
+    except (ValueError, TypeError):
+        off = set()
+    esnaf = {'pos', 'sections', 'services', 'reservations', 'waiter'}
+    drone_ok = auth.drone_visible(conn)
+    mine = {m.split('.')[0] for m in user['modules']}
+    out = []
+    for k in keys:
+        in_pkg = (k in config.MODULES) if config.MODULES is not None else True
+        if k in esnaf and not config.ESNAF_PKG:
+            in_pkg = False
+        if k == 'drone' and not drone_ok:
+            in_pkg = False
+        if not in_pkg:
+            state = 'missing'
+        elif k in off and modules_tier.tier(k) not in ('required', 'always'):
+            state = 'off'
+        elif k in mine:
+            state = 'open'
+        else:
+            state = 'locked'
+        out.append({'key': k, 'title': titles.get(k, k), 'state': state, 'tier': modules_tier.tier(k)})
+    return {'modules': out, 'in_package': sum(1 for m in out if m['state'] != 'missing')}
+
+
 @router.get('/support-status')
 def support_status(user=Depends(member_user)):
     return central_client.call('GET', '/support/status', timeout=6)

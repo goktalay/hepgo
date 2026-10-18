@@ -1019,5 +1019,368 @@ def urun_baski_listesi(conn, p):
             'charts': [{'title': 'En uzun parça baskı süresi (saat)', 'type': 'bar', 'labels': labels, 'datasets': [{'label': 'Saat', 'data': data}]}], 'tables': tables}
 
 
+# ================================================================ YENİ MODÜLLER (dron / kamera / tasarım / firma / haberler / konum)
+
+def _share(n, total):
+    return f'%{pct(n, total)}'
+
+
+def _mb(n):
+    return f'{n / 1048576:.1f} MB' if n else '—'
+
+
+@report('sim-ucus', 'drone', 'Uçuş Simülatörü Özeti', 'Simülatör koşuları: uçuş sayısı, toplam süre, çarpışma ve hata oranı; tür, pilot ve merkez dağılımı')
+def sim_ucus(conn, p):
+    a, b = rng(p)
+    runs = db.rows(conn.execute('''SELECT owner_name, drone_code, type, model_name, center_name, started_at, ended_at, duration_s, mode, result, end_reason, crash_count
+                                   FROM drone_sim_runs WHERE started_at BETWEEN ? AND ? ORDER BY started_at''', (a, b)))
+    ds = days(p)
+    per_day = Counter(r['started_at'][:10] for r in runs)
+    crash_day = Counter(r['started_at'][:10] for r in runs if r['result'] == 'carpisma')
+    total_s = sum(r['duration_s'] or 0 for r in runs)
+    crashes = sum(r['crash_count'] or 0 for r in runs)
+    crash_runs = sum(1 for r in runs if r['result'] == 'carpisma')
+    errs = sum(1 for r in runs if r['result'] == 'hata')
+    types = Counter(r['type'] or 'bilinmiyor' for r in runs)
+    pilots = defaultdict(lambda: {'n': 0, 's': 0, 'c': 0})
+    for r in runs:
+        x = pilots[r['owner_name'] or '—']
+        x['n'] += 1
+        x['s'] += r['duration_s'] or 0
+        x['c'] += r['crash_count'] or 0
+    centers = Counter(r['center_name'] or '—' for r in runs)
+    dur_s = [r['duration_s'] for r in runs if r['duration_s']]
+    type_tr = {'multirotor': 'Multirotor', 'hexarotor': 'Hexarotor', 'helikopter': 'Helikopter', 'sabit_kanat': 'Sabit kanat', 'vtol': 'VTOL'}
+    result_tr = {'tamam': 'Tamam', 'carpisma': 'Çarpışma', 'hata': 'Hata'}
+    pilot_n = Counter({k: v['n'] for k, v in pilots.items()})
+    ins = []
+    if runs:
+        ins.append(f'{len(runs)} koşunun {crash_runs} tanesi çarpışmayla bitti ({_share(crash_runs, len(runs))}); toplam uçuş süresi {dur(total_s / 60)}.')
+        worst = max(pilots.items(), key=lambda kv: kv[1]['c'])
+        if worst[1]['c']:
+            ins.append(f'En çok çarpışma: {worst[0]} ({worst[1]["c"]} çarpışma / {worst[1]["n"]} koşu).')
+        if dur_s:
+            ins.append(f'Ortanca koşu süresi {dur(median(dur_s) / 60)}; en uzun {dur(max(dur_s) / 60)}.')
+    return {
+        'kpis': [{'icon': 'drone', 'label': 'Koşu', 'value': len(runs)}, {'icon': 'flightlog', 'label': 'Toplam süre', 'value': dur(total_s / 60) if runs else '—'},
+                 {'icon': 'warning', 'label': 'Çarpışma', 'value': crashes, 'sub': f'{crash_runs} koşu', 'tone': 'alert' if crashes else 'ok'},
+                 {'icon': 'warning', 'label': 'Hata ile biten', 'value': errs, 'tone': 'alert' if errs else ''},
+                 {'icon': 'users', 'label': 'Pilot', 'value': len(pilots)}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük koşu ve çarpışma', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Koşu', 'data': series(ds, per_day)}, {'label': 'Çarpışmalı koşu', 'data': series(ds, crash_day), 'line': True}]},
+                   {'title': 'Hava aracı türü', 'type': 'doughnut', 'labels': [type_tr.get(k, k) for k in types], 'datasets': [{'label': 'Koşu', 'data': list(types.values())}]},
+                   {'title': 'Pilot başına koşu', 'type': 'hbar', 'labels': [k for k, _ in top(pilot_n)], 'datasets': [{'label': 'Koşu', 'data': [v for _, v in top(pilot_n)]}]},
+                   {'title': 'Koşu başlangıç saatleri', 'type': 'heat', 'wide': True, 'heat': heat([r['started_at'] for r in runs])}],
+        'tables': [{'title': 'Pilot özeti', 'columns': [col('pilot', 'Pilot'), col('n', 'Koşu', 'num'), col('sure', 'Toplam süre', 'num'), col('c', 'Çarpışma', 'num'), col('oran', 'Çarpışma / koşu', 'num')],
+                    'rows': [{'pilot': k, 'n': v['n'], 'sure': dur(v['s'] / 60), 'c': v['c'], 'oran': _share(v['c'], v['n'])} for k, v in sorted(pilots.items(), key=lambda kv: -kv[1]['n'])]},
+                   {'title': 'Merkez dağılımı', 'columns': [col('merkez', 'Rota merkezi'), col('n', 'Koşu', 'num')], 'rows': [{'merkez': k, 'n': v} for k, v in centers.most_common()]},
+                   {'title': 'Koşular', 'sub': 'Dönemdeki tüm simülatör koşuları (en yeni üstte)',
+                    'columns': [col('at', 'Başlangıç'), col('pilot', 'Pilot'), col('drone', 'Dron'), col('tur', 'Tür'), col('mod', 'Mod'), col('sure', 'Süre', 'num'), col('sonuc', 'Sonuç'), col('c', 'Çarpışma', 'num')],
+                    'rows': [{'at': fmt_dt(r['started_at']), 'pilot': r['owner_name'] or '—', 'drone': r['drone_code'] or r['model_name'] or '—', 'tur': type_tr.get(r['type'], r['type'] or '—'),
+                              'mod': 'Kayıttan oynatma' if r['mode'] == 'replay' else 'SITL', 'sure': dur((r['duration_s'] or 0) / 60) if r['duration_s'] else '—',
+                              'sonuc': result_tr.get(r['result'], r['result']), 'c': r['crash_count'] or 0} for r in reversed(runs)][:300]}],
+    }
+
+
+@report('kamera-olay', 'cameras', 'Kamera Olayları', 'Kameralarda yüz görülme sayıları, tanınan / tanımsız kişiler, İSG (KKD) alarmları ve yoğun saatler')
+def kamera_olay(conn, p):
+    a, b = rng(p)
+    sights = db.rows(conn.execute('''SELECT s.at, s.camera_id, c.name AS cam,
+                                            (g.user_id IS NOT NULL OR g.person_id IS NOT NULL OR g.family_id IS NOT NULL OR g.visitor_id IS NOT NULL) AS known
+                                     FROM face_sightings s JOIN face_groups g ON g.id = s.group_id LEFT JOIN cameras c ON c.id = s.camera_id
+                                     WHERE s.at BETWEEN ? AND ?''', (a, b)))
+    alarms = db.rows(conn.execute('SELECT at, camera_name, missing, acknowledged_at FROM isg_alarms WHERE at BETWEEN ? AND ?', (a, b)))
+    ds = days(p)
+    per_day = Counter(s['at'][:10] for s in sights)
+    alarm_day = Counter(x['at'][:10] for x in alarms)
+    known = sum(1 for s in sights if s['known'])
+    cam_name = lambda s: (s['cam'] or f'Kamera #{s["camera_id"]}') if s['camera_id'] else 'Bilinmeyen kamera'   # noqa: E731
+    cams = Counter(cam_name(s) for s in sights)
+    acam = Counter(x['camera_name'] or '—' for x in alarms)
+    missing = Counter()
+    for x in alarms:
+        for m in (x['missing'] or '').split(','):
+            if m.strip():
+                missing[m.strip()] += 1
+    unack = sum(1 for x in alarms if not x['acknowledged_at'])
+    ins = []
+    if sights:
+        ins.append(f'{len(sights)} görülmenin {_share(known, len(sights))} kadarı tanınan kişilere ait; en yoğun kamera {cams.most_common(1)[0][0]}.')
+    if alarms:
+        ins.append(f'{len(alarms)} İSG alarmının {unack} tanesi henüz onaylanmadı' + (f'; en sık eksik: {missing.most_common(1)[0][0]}.' if missing else '.'))
+    return {
+        'kpis': [{'icon': 'cameras', 'label': 'Yüz görülme', 'value': len(sights)},
+                 {'icon': 'person', 'label': 'Tanınan', 'value': known, 'sub': _share(known, len(sights)) if sights else None, 'tone': 'ok'},
+                 {'icon': 'warning', 'label': 'Tanımsız', 'value': len(sights) - known, 'tone': 'alert' if len(sights) - known else ''},
+                 {'icon': 'warning', 'label': 'İSG alarmı', 'value': len(alarms), 'sub': f'{unack} onaysız' if unack else None, 'tone': 'alert' if unack else ''}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük yüz görülme ve İSG alarmı', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Görülme', 'data': series(ds, per_day)}, {'label': 'İSG alarmı', 'data': series(ds, alarm_day), 'line': True}]},
+                   {'title': 'Kamera başına görülme', 'type': 'hbar', 'labels': [k for k, _ in top(cams)], 'datasets': [{'label': 'Görülme', 'data': [v for _, v in top(cams)]}]},
+                   {'title': 'Eksik KKD türleri', 'type': 'doughnut', 'labels': list(missing), 'datasets': [{'label': 'Alarm', 'data': list(missing.values())}]},
+                   {'title': 'Görülme saatleri', 'type': 'heat', 'wide': True, 'heat': heat([s['at'] for s in sights])}],
+        'tables': [{'title': 'Kamera özeti', 'columns': [col('cam', 'Kamera'), col('n', 'Görülme', 'num'), col('alarm', 'İSG alarmı', 'num')],
+                    'rows': [{'cam': k, 'n': v, 'alarm': acam.get(k, 0)} for k, v in cams.most_common()] + [{'cam': k, 'n': 0, 'alarm': v} for k, v in acam.items() if k not in cams]},
+                   {'title': 'İSG alarmları', 'columns': [col('at', 'Zaman'), col('cam', 'Kamera'), col('missing', 'Eksik KKD'), col('durum', 'Durum')],
+                    'rows': [{'at': fmt_dt(x['at']), 'cam': x['camera_name'] or '—', 'missing': x['missing'] or '—', 'durum': 'Onaylandı' if x['acknowledged_at'] else 'Onaysız'}
+                             for x in sorted(alarms, key=lambda x: x['at'], reverse=True)][:300]}],
+    }
+
+
+@report('tasarim-surum', 'design', 'Tasarım Proje ve Sürüm Raporu', 'Endüstriyel Tasarım: dönemde açılan proje, çizim ve yüklenen sürüm sayıları; proje başına etkinlik; CFD koşuları')
+def tasarim_surum(conn, p):
+    a, b = rng(p)
+    ds = days(p)
+    projects = db.rows(conn.execute('SELECT id, name, created_at, archived FROM design_projects'))
+    drawings = db.rows(conn.execute('SELECT id, project_id, kind, created_at FROM design_drawings'))
+    versions = db.rows(conn.execute('''SELECT v.created_at, v.size, v.file_name, d.project_id, d.name AS drawing, u.full_name AS who
+                                       FROM design_drawing_versions v JOIN design_drawings d ON d.id = v.drawing_id LEFT JOIN users u ON u.id = v.uploaded_by
+                                       WHERE v.created_at BETWEEN ? AND ?''', (a, b)))
+    notes = db.rows(conn.execute('SELECT n.created_at, d.project_id FROM design_drawing_notes n JOIN design_drawings d ON d.id = n.drawing_id WHERE n.created_at BETWEEN ? AND ?', (a, b)))
+    try:
+        cfd = db.rows(conn.execute('SELECT c.created_at, c.status, d.project_id FROM design_cfd_runs c JOIN design_drawings d ON d.id = c.drawing_id WHERE c.created_at BETWEEN ? AND ?', (a, b)))
+    except Exception:   # noqa: BLE001 — eski şema: CFD tablosu yok
+        cfd = []
+    pname = {x['id']: x['name'] for x in projects}
+    new_proj = [x for x in projects if a <= x['created_at'] <= b]
+    new_draw = [x for x in drawings if a <= x['created_at'] <= b]
+    v_day = Counter(v['created_at'][:10] for v in versions)
+    d_day = Counter(x['created_at'][:10] for x in new_draw)
+    kind = Counter({'drawing': 'Çizim', 'assembly': 'Montaj', 'folder': 'Klasör'}.get(x['kind'], x['kind']) for x in new_draw)
+    per_proj = defaultdict(lambda: {'draw': 0, 'ver': 0, 'note': 0, 'cfd': 0, 'size': 0})
+    for x in new_draw:
+        per_proj[x['project_id']]['draw'] += 1
+    for v in versions:
+        per_proj[v['project_id']]['ver'] += 1
+        per_proj[v['project_id']]['size'] += v['size'] or 0
+    for n in notes:
+        per_proj[n['project_id']]['note'] += 1
+    for c in cfd:
+        per_proj[c['project_id']]['cfd'] += 1
+    who = Counter(v['who'] or '—' for v in versions)
+    ordered = sorted(per_proj.items(), key=lambda kv: -kv[1]['ver'])
+    ins = []
+    if versions:
+        busiest = ordered[0]
+        ins.append(f'En çok sürüm yüklenen proje {pname.get(busiest[0], "?")} ({busiest[1]["ver"]} sürüm); toplam yüklenen dosya {_mb(sum(v["size"] or 0 for v in versions))}.')
+        ins.append(f'En aktif tasarımcı {who.most_common(1)[0][0]} ({who.most_common(1)[0][1]} sürüm).')
+    if cfd:
+        done = sum(1 for c in cfd if c['status'] == 'done')
+        ins.append(f'{len(cfd)} CFD koşusunun {done} tanesi tamamlandı.')
+    return {
+        'kpis': [{'icon': 'design', 'label': 'Yeni proje', 'value': len(new_proj), 'sub': f'toplam {len(projects)}'},
+                 {'icon': 'file', 'label': 'Yeni çizim / montaj', 'value': len(new_draw), 'sub': f'toplam {len(drawings)}'},
+                 {'icon': 'upload', 'label': 'Yüklenen sürüm', 'value': len(versions)}, {'icon': 'note', 'label': 'Not', 'value': len(notes)}, {'icon': 'tools', 'label': 'CFD koşusu', 'value': len(cfd)}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük sürüm yüklemesi ve yeni çizim', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Sürüm', 'data': series(ds, v_day)}, {'label': 'Yeni çizim', 'data': series(ds, d_day)}]},
+                   {'title': 'Proje başına sürüm', 'type': 'hbar', 'labels': [pname.get(k, '?') for k, _ in ordered[:12]], 'datasets': [{'label': 'Sürüm', 'data': [v['ver'] for _, v in ordered[:12]]}]},
+                   {'title': 'Yeni öğe türü', 'type': 'doughnut', 'labels': list(kind), 'datasets': [{'label': 'Adet', 'data': list(kind.values())}]}],
+        'tables': [{'title': 'Proje etkinliği', 'columns': [col('proje', 'Proje'), col('draw', 'Yeni çizim', 'num'), col('ver', 'Sürüm', 'num'), col('size', 'Yüklenen boyut', 'num'), col('note', 'Not', 'num'), col('cfd', 'CFD', 'num')],
+                    'rows': [{'proje': pname.get(k, '?'), 'draw': v['draw'], 'ver': v['ver'], 'size': _mb(v['size']), 'note': v['note'], 'cfd': v['cfd']} for k, v in ordered]},
+                   {'title': 'Tasarımcı başına sürüm', 'columns': [col('who', 'Kullanıcı'), col('n', 'Sürüm', 'num')], 'rows': [{'who': k, 'n': v} for k, v in who.most_common()]},
+                   {'title': 'Yüklenen sürümler', 'columns': [col('at', 'Zaman'), col('proje', 'Proje'), col('drawing', 'Çizim'), col('file', 'Dosya'), col('size', 'Boyut', 'num'), col('who', 'Yükleyen')],
+                    'rows': [{'at': fmt_dt(v['created_at']), 'proje': pname.get(v['project_id'], '?'), 'drawing': v['drawing'], 'file': v['file_name'] or '—', 'size': _mb(v['size']), 'who': v['who'] or '—'}
+                             for v in sorted(versions, key=lambda v: v['created_at'], reverse=True)][:300]}],
+    }
+
+
+@report('firma-veri-doluluk', 'companies', 'Firma Veri Doluluğu', 'Firmalarda logo, konum, telefon, e-posta, web ve adres bilgilerinin doluluk oranı; eksik alanı olan firmalar; dönemde eklenen firmalar')
+def firma_veri_doluluk(conn, p):
+    a, b = rng(p)
+    has_geo = 'lat' in {r[1] for r in conn.execute('PRAGMA table_info(companies)')}
+    rows = db.rows(conn.execute(f'''SELECT id, name, logo, phone, email, website, address, created_at, active{", lat, lng, geo_source" if has_geo else ""}
+                                    FROM companies WHERE active = 1 ORDER BY name'''))
+    addr_n = {r[0]: r[1] for r in conn.execute('SELECT company_id, COUNT(*) FROM company_addresses GROUP BY company_id')}
+    people_n = {r[0]: r[1] for r in conn.execute('SELECT company_id, COUNT(*) FROM company_people WHERE company_id IS NOT NULL GROUP BY company_id')}
+    has_geo_row = lambda r: has_geo and r.get('lat') is not None   # noqa: E731
+    fields = [('logo', 'Logo', lambda r: bool(r['logo'])), ('konum', 'Konum', has_geo_row), ('phone', 'Telefon', lambda r: bool(r['phone'])),
+              ('email', 'E-posta', lambda r: bool(r['email'])), ('web', 'Web sitesi', lambda r: bool(r['website'])),
+              ('adres', 'Adres', lambda r: bool(r['address']) or bool(addr_n.get(r['id']))), ('kisi', 'İlgili kişi', lambda r: bool(people_n.get(r['id'])))]
+    n = len(rows)
+    full = {k: sum(1 for r in rows if f(r)) for k, _, f in fields}
+    missing_rows = []
+    for r in rows:
+        miss = [label for k, label, f in fields if not f(r)]
+        if miss:
+            missing_rows.append({'firma': r['name'], 'eksik': ', '.join(miss), 'n': len(miss), 'dolu': _share(len(fields) - len(miss), len(fields))})
+    missing_rows.sort(key=lambda x: -x['n'])
+    new_rows = [r for r in rows if a <= r['created_at'] <= b]
+    ds = days(p)
+    new_day = Counter(r['created_at'][:10] for r in new_rows)
+    geo_src = Counter((r.get('geo_source') or 'elle') for r in rows if has_geo_row(r))
+    score = pct(sum(full.values()), n * len(fields)) if n else 0
+    ins = []
+    if n:
+        weakest = min(fields, key=lambda f: full[f[0]])
+        ins.append(f'Genel doluluk %{score}; en zayıf alan {weakest[1]} ({_share(full[weakest[0]], n)} dolu).')
+        ins.append(f'{n - len(missing_rows)} firmanın tüm bilgileri tam; {sum(1 for x in missing_rows if x["n"] >= 4)} firmada 4 ve üzeri alan eksik.')
+        if full['logo'] < n:
+            ins.append(f'{n - full["logo"]} firmanın logosu yok: Firma Yönetimi › “Logolarını bul” ile web\'den aranabilir.')
+    return {
+        'kpis': [{'icon': 'companies', 'label': 'Aktif firma', 'value': n},
+                 {'icon': 'tag', 'label': 'Genel doluluk', 'value': f'%{score}', 'tone': 'ok' if score >= 80 else 'alert' if n and score < 50 else ''},
+                 {'icon': 'upload', 'label': 'Logolu', 'value': full['logo'], 'sub': _share(full['logo'], n) if n else None},
+                 {'icon': 'konum', 'label': 'Konumlu', 'value': full['konum'], 'sub': _share(full['konum'], n) if n else None},
+                 {'icon': 'plus', 'label': 'Dönemde eklenen', 'value': len(new_rows)}],
+        'insights': ins,
+        'charts': [{'title': 'Alan doluluk oranı (%)', 'type': 'hbar', 'max': 100, 'labels': [label for _, label, _ in fields], 'datasets': [{'label': 'Dolu %', 'data': [pct(full[k], n) for k, _, _ in fields]}]},
+                   {'title': 'Konum kaynağı', 'type': 'doughnut', 'labels': list(geo_src), 'datasets': [{'label': 'Firma', 'data': list(geo_src.values())}]},
+                   {'title': 'Dönemde eklenen firmalar', 'type': 'bar', 'wide': True, 'labels': day_labels(ds), 'datasets': [{'label': 'Yeni firma', 'data': series(ds, new_day)}]}],
+        'tables': [{'title': 'Alan doluluğu', 'columns': [col('alan', 'Alan'), col('dolu', 'Dolu', 'num'), col('eksik', 'Eksik', 'num'), col('oran', 'Oran', 'num')],
+                    'rows': [{'alan': label, 'dolu': full[k], 'eksik': n - full[k], 'oran': _share(full[k], n)} for k, label, _ in fields]},
+                   {'title': 'Eksik bilgisi olan firmalar', 'sub': 'Eksik alan sayısına göre sıralı',
+                    'columns': [col('firma', 'Firma'), col('eksik', 'Eksik alanlar'), col('n', 'Eksik', 'num'), col('dolu', 'Doluluk', 'num')], 'rows': missing_rows[:300]},
+                   {'title': 'Dönemde eklenen firmalar', 'columns': [col('at', 'Eklendi'), col('firma', 'Firma'), col('logo', 'Logo'), col('konum', 'Konum')],
+                    'rows': [{'at': fmt_dt(r['created_at']), 'firma': r['name'], 'logo': 'Var' if r['logo'] else 'Yok', 'konum': 'Var' if has_geo_row(r) else 'Yok'}
+                             for r in sorted(new_rows, key=lambda r: r['created_at'], reverse=True)]}],
+    }
+
+
+@report('haber-etkilesim', 'announcements', 'Şirketten Haberler Etkileşimi', 'Paylaşım, tepki, yorum ve görüntüleme sayıları; paylaşım türleri; en çok etkileşim alan paylaşımlar ve yazarlar')
+def haber_etkilesim(conn, p):
+    a, b = rng(p)
+    ds = days(p)
+    posts = db.rows(conn.execute('''SELECT f.id, f.kind, f.text, f.created_at, f.media, u.full_name AS who FROM feed_posts f LEFT JOIN users u ON u.id = f.author_id
+                                    WHERE f.created_at BETWEEN ? AND ? AND f.deleted_at IS NULL''', (a, b)))
+    ids = [x['id'] for x in posts]
+
+    def count_by(table, where=''):
+        if not ids:
+            return {}
+        q = f'SELECT post_id, COUNT(*) FROM {table} WHERE post_id IN ({",".join("?" * len(ids))}) {where} GROUP BY post_id'
+        return {r[0]: r[1] for r in conn.execute(q, ids)}
+    reacts, comments, views = count_by('feed_reactions'), count_by('feed_comments', 'AND deleted_at IS NULL'), count_by('feed_views')
+    react_day = Counter(r[0][:10] for r in conn.execute('SELECT created_at FROM feed_reactions WHERE created_at BETWEEN ? AND ?', (a, b)))
+    comment_day = Counter(r[0][:10] for r in conn.execute('SELECT created_at FROM feed_comments WHERE created_at BETWEEN ? AND ? AND deleted_at IS NULL', (a, b)))
+    post_day = Counter(x['created_at'][:10] for x in posts)
+    kind_tr = {'USER': 'Kullanıcı paylaşımı', 'HIRE': 'İşe alım', 'TERMINATION': 'Ayrılış', 'FLIGHT': 'Uçuş', 'ORDER': 'Sipariş', 'MEETING': 'Toplantı', 'ANNOUNCE': 'Duyuru', 'LIVE': 'Canlı yayın', 'SIM': 'Simülatör'}
+    kinds = Counter(kind_tr.get(x['kind'], x['kind'] or '—') for x in posts)
+    authors = defaultdict(lambda: {'n': 0, 'r': 0, 'c': 0, 'v': 0})
+    for x in posts:
+        au = authors[x['who'] or 'Sistem']
+        au['n'] += 1
+        au['r'] += reacts.get(x['id'], 0)
+        au['c'] += comments.get(x['id'], 0)
+        au['v'] += views.get(x['id'], 0)
+
+    def score(x):
+        return reacts.get(x['id'], 0) * 2 + comments.get(x['id'], 0) * 3 + views.get(x['id'], 0)
+    tot_r, tot_c, tot_v = sum(reacts.values()), sum(comments.values()), sum(views.values())
+    media_n = sum(1 for x in posts if x['media'] and x['media'] not in ('[]', 'null'))
+    by_author = sorted(authors.items(), key=lambda kv: -kv[1]['n'])
+    ins = []
+    if posts:
+        best = max(posts, key=score)
+        ins.append(f'En çok etkileşim alan paylaşım: “{(best["text"] or kind_tr.get(best["kind"], best["kind"]) or "")[:60]}” '
+                   f'({reacts.get(best["id"], 0)} tepki, {comments.get(best["id"], 0)} yorum, {views.get(best["id"], 0)} görüntüleme).')
+        ins.append(f'Paylaşım başına ortalama {round(tot_r / len(posts), 1)} tepki ve {round(tot_c / len(posts), 1)} yorum; {_share(media_n, len(posts))} paylaşımda görsel / video var.')
+        ins.append(f'En çok paylaşan {by_author[0][0]} ({by_author[0][1]["n"]} paylaşım).')
+    return {
+        'kpis': [{'icon': 'announcements', 'label': 'Paylaşım', 'value': len(posts)}, {'icon': 'chat', 'label': 'Tepki', 'value': tot_r}, {'icon': 'note', 'label': 'Yorum', 'value': tot_c},
+                 {'icon': 'read', 'label': 'Görüntüleme', 'value': tot_v}, {'icon': 'users', 'label': 'Paylaşan', 'value': len(authors)}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük paylaşım ve etkileşim', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Paylaşım', 'data': series(ds, post_day)}, {'label': 'Tepki', 'data': series(ds, react_day), 'line': True}, {'label': 'Yorum', 'data': series(ds, comment_day), 'line': True}]},
+                   {'title': 'Paylaşım türü', 'type': 'doughnut', 'labels': list(kinds), 'datasets': [{'label': 'Paylaşım', 'data': list(kinds.values())}]},
+                   {'title': 'Yazar başına paylaşım', 'type': 'hbar', 'labels': [k for k, _ in by_author[:12]], 'datasets': [{'label': 'Paylaşım', 'data': [v['n'] for _, v in by_author[:12]]}]},
+                   {'title': 'Paylaşım saatleri', 'type': 'heat', 'wide': True, 'heat': heat([x['created_at'] for x in posts])}],
+        'tables': [{'title': 'En çok etkileşim alan paylaşımlar',
+                    'columns': [col('at', 'Tarih'), col('who', 'Paylaşan'), col('kind', 'Tür'), col('text', 'Metin'), col('r', 'Tepki', 'num'), col('c', 'Yorum', 'num'), col('v', 'Görüntüleme', 'num')],
+                    'rows': [{'at': fmt_dt(x['created_at']), 'who': x['who'] or 'Sistem', 'kind': kind_tr.get(x['kind'], x['kind'] or '—'), 'text': (x['text'] or '')[:90] or '—',
+                              'r': reacts.get(x['id'], 0), 'c': comments.get(x['id'], 0), 'v': views.get(x['id'], 0)} for x in sorted(posts, key=score, reverse=True)[:50]]},
+                   {'title': 'Yazar özeti', 'columns': [col('who', 'Paylaşan'), col('n', 'Paylaşım', 'num'), col('r', 'Tepki', 'num'), col('c', 'Yorum', 'num'), col('v', 'Görüntüleme', 'num')],
+                    'rows': [{'who': k, **v} for k, v in by_author]}],
+    }
+
+
+@report('duyuru-okunma', 'announcements', 'Duyuru Okunma Raporu', 'Dönemde yayımlanan duyurular, önem düzeyi dağılımı ve duyuru başına okuyan kullanıcı oranı')
+def duyuru_okunma(conn, p):
+    a, b = rng(p)
+    ds = days(p)
+    anns = db.rows(conn.execute('''SELECT an.id, an.title, an.level, an.pinned, an.created_at, u.full_name AS who,
+                                          (SELECT COUNT(*) FROM announcement_reads r WHERE r.announcement_id = an.id) AS reads
+                                   FROM announcements an LEFT JOIN users u ON u.id = an.created_by WHERE an.created_at BETWEEN ? AND ? ORDER BY an.created_at DESC''', (a, b)))
+    users_n = conn.execute('SELECT COUNT(*) FROM users WHERE active = 1').fetchone()[0] or 0
+    read_day = Counter(r[0][:10] for r in conn.execute('SELECT read_at FROM announcement_reads WHERE read_at BETWEEN ? AND ?', (a, b)))
+    ann_day = Counter(x['created_at'][:10] for x in anns)
+    level_tr = {'BILGI': 'Bilgi', 'ONEMLI': 'Önemli', 'KRITIK': 'Kritik'}
+    levels = Counter(level_tr.get(x['level'], x['level']) for x in anns)
+    tot_reads = sum(x['reads'] for x in anns)
+    avg = pct(tot_reads, len(anns) * users_n) if anns and users_n else 0
+    ins = []
+    if anns:
+        low = [x for x in anns if users_n and pct(x['reads'], users_n) < 50]
+        ins.append(f'Ortalama okunma oranı %{avg}; {len(low)} duyuru kullanıcıların yarısından azı tarafından okundu.')
+        crit = [x for x in anns if x['level'] == 'KRITIK']
+        if crit:
+            worst = min(crit, key=lambda x: x['reads'])
+            ins.append(f'Kritik duyuru “{worst["title"][:50]}” yalnızca {worst["reads"]} kişi tarafından okundu.')
+    return {
+        'kpis': [{'icon': 'announcements', 'label': 'Duyuru', 'value': len(anns)}, {'icon': 'read', 'label': 'Toplam okuma', 'value': tot_reads},
+                 {'icon': 'users', 'label': 'Ortalama okunma', 'value': f'%{avg}', 'tone': 'ok' if avg >= 70 else 'alert' if anns and avg < 40 else ''},
+                 {'icon': 'warning', 'label': 'Kritik', 'value': levels.get('Kritik', 0), 'tone': 'alert' if levels.get('Kritik') else ''}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük duyuru ve okuma', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Duyuru', 'data': series(ds, ann_day)}, {'label': 'Okuma', 'data': series(ds, read_day), 'line': True}]},
+                   {'title': 'Önem düzeyi', 'type': 'doughnut', 'labels': list(levels), 'datasets': [{'label': 'Duyuru', 'data': list(levels.values())}]},
+                   {'title': 'Duyuru başına okunma oranı (%)', 'type': 'hbar', 'max': 100, 'labels': [x['title'][:40] for x in anns[:15]], 'datasets': [{'label': 'Okunma %', 'data': [pct(x['reads'], users_n) for x in anns[:15]]}]}],
+        'tables': [{'title': 'Duyurular', 'columns': [col('at', 'Yayın'), col('title', 'Başlık'), col('level', 'Düzey'), col('who', 'Yayınlayan'), col('reads', 'Okuyan', 'num'), col('oran', 'Oran', 'num')],
+                    'rows': [{'at': fmt_dt(x['created_at']), 'title': x['title'] + (' 📌' if x['pinned'] else ''), 'level': level_tr.get(x['level'], x['level']), 'who': x['who'] or '—',
+                              'reads': x['reads'], 'oran': _share(x['reads'], users_n)} for x in anns]}],
+    }
+
+
+@report('konum-sinyal', 'konum', 'Canlı Konum Sinyalleri', 'Mobil uygulamadan gelen günlük konum sinyali sayısı, kişi ve platform dağılımı, sinyal doğruluğu ve yoğun saatler')
+def konum_sinyal(conn, p):
+    a, b = rng(p)
+    ds = days(p)
+    pings = db.rows(conn.execute('''SELECT l.user_id, u.full_name AS who, l.accuracy, l.platform, COALESCE(l.at, l.created_at) AS at
+                                    FROM location_pings l LEFT JOIN users u ON u.id = l.user_id WHERE l.created_at BETWEEN ? AND ?''', (a, b)))
+    per_day = Counter(x['at'][:10] for x in pings)
+    users_day = defaultdict(set)
+    for x in pings:
+        users_day[x['at'][:10]].add(x['user_id'])
+    who = Counter(x['who'] or f'#{x["user_id"]}' for x in pings)
+    plat = Counter((x['platform'] or 'bilinmiyor').lower() for x in pings)
+    acc = [x['accuracy'] for x in pings if x['accuracy'] is not None]
+    per_user = defaultdict(lambda: {'n': 0, 'days': set(), 'acc': [], 'last': ''})
+    for x in pings:
+        u = per_user[x['who'] or f'#{x["user_id"]}']
+        u['n'] += 1
+        u['days'].add(x['at'][:10])
+        u['last'] = max(u['last'], x['at'] or '')
+        if x['accuracy'] is not None:
+            u['acc'].append(x['accuracy'])
+    active_days = [d for d in ds if per_day.get(d)]
+    ins = []
+    if pings:
+        ins.append(f'{len(ds)} günün {len(active_days)} tanesinde sinyal alındı; günlük ortalama {round(len(pings) / max(1, len(active_days)))} sinyal, '
+                   f'{round(sum(len(s) for s in users_day.values()) / max(1, len(active_days)), 1)} kişi.')
+        if acc:
+            ins.append(f'Ortanca konum doğruluğu {round(median(acc))} m; sinyallerin {_share(sum(1 for v in acc if v <= 50), len(acc))} kadarı 50 m ve altı.')
+        ins.append(f'En çok sinyal gönderen {who.most_common(1)[0][0]} ({who.most_common(1)[0][1]}).')
+    return {
+        'kpis': [{'icon': 'konum', 'label': 'Sinyal', 'value': len(pings)}, {'icon': 'users', 'label': 'Kişi', 'value': len(per_user)},
+                 {'icon': 'calendar', 'label': 'Sinyalli gün', 'value': f'{len(active_days)} / {len(ds)}'},
+                 {'icon': 'radar', 'label': 'Ortanca doğruluk', 'value': f'{round(median(acc))} m' if acc else '—'}],
+        'insights': ins,
+        'charts': [{'title': 'Günlük sinyal ve kişi', 'type': 'bar', 'wide': True, 'labels': day_labels(ds),
+                    'datasets': [{'label': 'Sinyal', 'data': series(ds, per_day)}, {'label': 'Kişi', 'data': [len(users_day.get(d, ())) for d in ds], 'line': True, 'axis': 'y2'}]},
+                   {'title': 'Platform', 'type': 'doughnut', 'labels': list(plat), 'datasets': [{'label': 'Sinyal', 'data': list(plat.values())}]},
+                   {'title': 'Kişi başına sinyal', 'type': 'hbar', 'labels': [k for k, _ in top(who)], 'datasets': [{'label': 'Sinyal', 'data': [v for _, v in top(who)]}]},
+                   {'title': 'Sinyal saatleri', 'type': 'heat', 'wide': True, 'heat': heat([x['at'] for x in pings])}],
+        'tables': [{'title': 'Kişi özeti', 'columns': [col('who', 'Kişi'), col('n', 'Sinyal', 'num'), col('days', 'Gün', 'num'), col('acc', 'Ortanca doğruluk', 'num'), col('last', 'Son sinyal')],
+                    'rows': [{'who': k, 'n': v['n'], 'days': len(v['days']), 'acc': f'{round(median(v["acc"]))} m' if v['acc'] else '—', 'last': fmt_dt(v['last'])}
+                             for k, v in sorted(per_user.items(), key=lambda kv: -kv[1]['n'])]},
+                   {'title': 'Günlük sinyal', 'columns': [col('gun', 'Gün'), col('n', 'Sinyal', 'num'), col('kisi', 'Kişi', 'num')],
+                    'rows': [{'gun': f'{d[8:10]}.{d[5:7]}.{d[:4]}', 'n': per_day.get(d, 0), 'kisi': len(users_day.get(d, ()))} for d in ds if per_day.get(d)]}],
+    }
+
+
 def visible(user):
-    return [r for r in REPORTS if r['module'] in user['modules']]
+    """Kullanıcının girebildiği modüllerin raporları. 'konum' (Canlı Konum) rol tabanlı bir modül değildir; yalnızca
+    sistem sahibine (master) açıktır — ana ekrandaki Canlı Konum kutusuyla aynı kural."""
+    mods = set(user['modules']) | ({'konum'} if user.get('master') else set())
+    return [r for r in REPORTS if r['module'] in mods]

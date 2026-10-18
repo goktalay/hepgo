@@ -1432,6 +1432,159 @@ def param_testleri(a, c1, sitl, mon):
     print('  kalıcı parametre testleri geçti')
 
 
+def runs_testleri(a, c1, sitl, mon):
+    """§21 Simülasyon Kayıtları (drone_sim_runs): oturum kapanışında satır (özet + .bin + video + params.param + scripts.zip ilişkileri), liste
+    filtreleri/sıralama/sayfalama, MASTER yetkisi (params/scripts 403 → master 200), video ucu, silme (dosyalar dahil)."""
+    import io
+    import zipfile
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    from app import config, db, drone_sitl, flightsim_runs
+    S = '/api/drone/sim/sessions'
+    R = '/api/drone/sim/runs'
+    once = ok(a.get(R))
+    assert set(once) == {'items', 'total', 'page', 'pages', 'per_page', 'facets'} and once['per_page'] == 25, once.keys()
+    n0 = once['total']
+    assert n0 >= 1 and all(it['mode'] in ('sitl', 'replay') and it['result'] in ('tamam', 'carpisma', 'hata') for it in once['items'])   # önceki testlerin oturumları
+    assert any(it['mode'] == 'replay' and it['source_log_id'] for it in once['items']), 'kayıttan oynatma oturumları da kaydedilir'
+    hepsi = ok(a.get(R, params={'result': 'carpisma'}))
+    assert hepsi['total'] >= 1 and all(it['crash_count'] >= 1 for it in hepsi['items']), 'çarpışmalı oturum (gorev_rapor_testleri) → carpisma'
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'mode': 'procedural', 'launch': {'method': 'ramp', 'angle_deg': 20}}}), 201)
+    sid, kimlik = s['id'], flightsim.KIMLIK_TABANI + s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5)
+    # (b) son parametreler: sahte SITL'den PARAM_VALUE'lar → param_son; sahte hub param_set → _sahte_params
+    arac = D.MAVLink(None, srcSystem=1, srcComponent=1)
+    sitl.yaz(arac.param_value_encode(b'WP_RADIUS', 90.0, 9, 20, 3).pack(arac) + arac.param_value_encode(b'ARSPD_FBW_MIN', 12.5, 9, 20, 4).pack(arac))
+    assert bekle(lambda: ses.param_son.get('ARSPD_FBW_MIN') == 12.5), ses.param_son
+    assert ses._param_count == 20
+    ses._sahte_params['RTL_ALT'] = 100.0
+    # (c) scriptler: SITL çalışma dizini scripts/ (Lua) + APM/scripts (MP MAVFTP yolu)
+    d = drone_sitl.calisma_dizini(kimlik)
+    (d / 'scripts').mkdir(parents=True, exist_ok=True)
+    (d / 'scripts' / 'hello.lua').write_text('-- test\nreturn update, 1000\n')
+    (d / 'APM' / 'scripts').mkdir(parents=True, exist_ok=True)
+    (d / 'APM' / 'scripts' / 'mp.lua').write_text('-- mp\n')
+    assert [x[0] for x in flightsim_runs.script_dosyalari(d)] == ['scripts/hello.lua', 'APM/scripts/mp.lua']
+    # ekran kaydı: start + parça + finish share:false (saklanan) → kapanışta video_rec_id
+    rid = ok(a.post(f'{S}/{sid}/rec/start', json={'mime': 'video/webm'}), 201)['rec_id']
+    ok(a.put(f'/api/drone/sim/rec/{rid}/chunk?seq=0', content=b'\x1aE\xdf\xa3' + b'v' * 500, headers={'Content-Type': 'application/octet-stream'}))
+    ok(a.post(f'/api/drone/sim/rec/{rid}/finish', json={'share': False, 'duration_s': 7}))
+    assert ses.video == {'rec_id': rid, 'post_id': None, 'path': None}, ses.video
+    # özet raporu (Bitir akışı) → summary_event_id
+    sm = ok(a.get(f'{S}/{sid}/summary'))
+    # .bin: sahte DataFlash dosyası (bin_testleri kalıbı; oturum rec.bin ile açılmadı → kaydedilmez) — kayıt seçeneği açık ikinci oturumda sınanır
+    # (a) kapanış → satır
+    ok(a.delete(f'{S}/{sid}'))
+    lst = ok(a.get(R))
+    assert lst['total'] == n0 + 1
+    it = lst['items'][0]
+    assert it['session_id'] == sid and it['session_kimlik'] == kimlik and it['mode'] == 'sitl' and it['result'] == 'tamam' and it['crash_count'] == 0, it
+    assert it['summary_event_id'] == sm['id'] and it['has_summary'] and it['bin_log_id'] is None and it['play_log_id'] is None, it
+    assert it['type'] == 'sabit_kanat' and it['center_id'] == c1['id'] and it['center_name'] == 'Test Merkezi' and it['lat'] == 39.925 and it['owner_id'] == 1, it
+    assert it['world']['mode'] == 'procedural' and it['launch']['method'] == 'ramp' and it['launch']['angle_deg'] == 20 and it['model_id'] == 'builtin:caymaz', it
+    assert it['video_rec_id'] == rid and it['has_video'] and it['video_post_id'] is None, it
+    assert it['params_count'] >= 3 and it['has_params'] and it['params_path'] == f"sim_runs/{it['id']}/params.param", it
+    assert it['scripts_count'] == 2 and it['has_scripts'] and it['scripts_path'] == f"sim_runs/{it['id']}/scripts.zip", it
+    assert it['started_at'] == s['created_at'] and it['ended_at'] and it['duration_s'] is not None and it['end_reason'] == 'kapatildi' and it['can_delete'] is True
+    metin = (config.DATA_DIR / it['params_path']).read_text(encoding='utf-8')
+    assert metin.startswith('#NOTE: HEPGO Uçuş Simülatörü oturum #') and 'WP_RADIUS,90\n' in metin and 'ARSPD_FBW_MIN,12.5\n' in metin and 'RTL_ALT,100\n' in metin, metin
+    assert ok(a.get(f"{R}/{it['id']}"))['id'] == it['id'] and a.get(f'{R}/999999').status_code == 404
+    # MASTER yetkisi: admin (master değil) ve salt okuyan → 403; master → dosyalar
+    assert a.get(f"{R}/{it['id']}/params").status_code == 403 and a.get(f"{R}/{it['id']}/scripts").status_code == 403
+    assert mon.get(f"{R}/{it['id']}/params").status_code == 403 and mon.get(f"{R}/{it['id']}/scripts").status_code == 403
+    assert ok(mon.get(R))['total'] == n0 + 1 and ok(mon.get(f"{R}/{it['id']}"))['can_delete'] is False   # okuma herkese
+    config.MASTER_USERNAMES.add('admin@test')
+    try:
+        r = a.get(f"{R}/{it['id']}/params")
+        assert r.status_code == 200 and 'WP_RADIUS,90' in r.text and 'attachment' in r.headers.get('content-disposition', '') and r.headers['content-disposition'].endswith('params.param"'), (r.status_code, r.headers)
+        r = a.get(f"{R}/{it['id']}/scripts")
+        assert r.status_code == 200 and r.headers['content-type'] == 'application/zip'
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            assert sorted(z.namelist()) == ['APM/scripts/mp.lua', 'scripts/hello.lua'] and z.read('scripts/hello.lua').startswith(b'-- test')
+    finally:
+        config.MASTER_USERNAMES.discard('admin@test')
+    assert a.get(f"{R}/{it['id']}/params").status_code == 403
+    # video: saklanan kayıt dosyası
+    r = a.get(f"{R}/{it['id']}/video")
+    assert r.status_code == 200 and r.content.endswith(b'v' * 500) and r.headers['content-type'].startswith('video/webm'), r.headers
+    assert 'attachment' in a.get(f"{R}/{it['id']}/video?dl=1").headers.get('content-disposition', '')
+    # filtreler / sıralama / sayfalama / facets
+    assert ok(a.get(R, params={'type': 'sabit_kanat'}))['items'][0]['id'] == it['id']
+    assert all(x['type'] == 'multirotor' for x in ok(a.get(R, params={'type': 'multirotor'}))['items'])
+    assert ok(a.get(R, params={'center_id': c1['id'], 'owner_id': 1, 'result': 'tamam', 'mode': 'sitl'}))['items'][0]['id'] == it['id']
+    rp = ok(a.get(R, params={'mode': 'replay'}))
+    assert rp['total'] >= 1 and all(x['mode'] == 'replay' for x in rp['items'])
+    assert ok(a.get(R, params={'q': 'Test Merkezi'}))['total'] >= 1 and ok(a.get(R, params={'q': 'böyle bir şey yok'}))['total'] == 0
+    assert ok(a.get(R, params={'q': str(sid)}))['items'][0]['id'] == it['id']   # oturum numarası
+    gun = it['started_at'][:10]
+    assert ok(a.get(R, params={'from': gun, 'to': gun}))['total'] == n0 + 1 and ok(a.get(R, params={'from': '2099-01-01'}))['total'] == 0 and ok(a.get(R, params={'to': '2000-01-01'}))['total'] == 0
+    asc = [(x['started_at'], x['id']) for x in ok(a.get(R, params={'sort': 'started_at'}))['items']]
+    assert asc == sorted(asc), asc   # artan: ikincil anahtar (id) da artan — aynı saniyede açılan oturumlar; satır id'si kapanış sırasıdır, started_at'tan bağımsız
+    desc_ = [(x['started_at'], x['id']) for x in ok(a.get(R, params={'sort': '-started_at'}))['items']]
+    assert desc_ == sorted(desc_, reverse=True) and desc_[0][1] == it['id'], desc_
+    sure = [x['duration_s'] for x in ok(a.get(R, params={'sort': '-duration_s'}))['items']]
+    assert sure == sorted(sure, reverse=True)
+    tur = [x['type'] for x in ok(a.get(R, params={'sort': 'type'}))['items']]
+    assert tur == sorted(tur)
+    p = ok(a.get(R, params={'page': 99}))
+    assert p['page'] == p['pages'] >= 1 and p['total'] == n0 + 1 and len(p['items']) >= 1 and p['pages'] == (p['total'] + 24) // 25, (p['page'], p['pages'], p['total'])
+    if p['pages'] > 1:   # 25'li sayfalama: ilk sayfa dolu, sayfalar kesişmez
+        s1 = {x['id'] for x in ok(a.get(R, params={'page': 1}))['items']}
+        assert len(s1) == 25 and not (s1 & {x['id'] for x in p['items']})
+    assert a.get(R, params={'page': 'x'}).status_code == 400 and a.get(R, params={'center_id': 'y'}).status_code == 400
+    fc = lst['facets']
+    assert any(c['id'] == c1['id'] and c['name'] == 'Test Merkezi' and c['n'] >= 1 for c in fc['centers']) and any(o['id'] == 1 for o in fc['owners']) and 'sabit_kanat' in fc['types'], fc
+    # video_bagla: oturum kapandıktan SONRA paylaşım → satıra post_id + yol
+    sh = ok(a.post(f'/api/drone/sim/rec/{rid}/share', json={}))
+    g = ok(a.get(f"{R}/{it['id']}"))
+    assert g['video_post_id'] == sh['post_id'] and g['video_path'] == sh['path'] and g['video_rec_id'] == rid, g
+    r = a.get(f"{R}/{it['id']}/video")   # artık Şirketten Haberler dosyası
+    assert r.status_code == 200 and r.content.endswith(b'v' * 500)
+    # silme: salt okuyan 403 (DELETE yazma izni); sahip → satır + dizin gider, özet/video kalır
+    assert mon.delete(f"{R}/{it['id']}").status_code == 403
+    assert (config.DATA_DIR / 'sim_runs' / str(it['id'])).is_dir()
+    ok(a.delete(f"{R}/{it['id']}"))
+    assert a.get(f"{R}/{it['id']}").status_code == 404 and a.delete(f"{R}/{it['id']}").status_code == 404
+    assert not (config.DATA_DIR / 'sim_runs' / str(it['id'])).exists() and ok(a.get(R))['total'] == n0
+    assert ok(a.get(f"/api/drone/sim/reports/{sm['id']}"))['id'] == sm['id']   # özet raporu bağımsız kalır
+    with db.connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM feed_posts WHERE id = ?', (sh['post_id'],)).fetchone()[0] == 1
+    # .bin kaydı açık oturum (rec.bin) + sahte DataFlash → bin_log_id; analiz sahte dosyada HATA → play_log_id None, .bin indirme ucu çalışır
+    s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': {'bin': True}}), 201)
+    assert bekle(lambda: ok(a.get(f"{S}/{s2['id']}"))['state'] == 'HAZIR')
+    import tempfile
+    binf = os.path.join(tempfile.mkdtemp(), '00000003.BIN')
+    with open(binf, 'wb') as f:
+        f.write(b'\xa3\x95\x80' + b'\x00' * 4097)
+    flightsim.MANAGER.sahte_bin_dosyalari = [binf]
+    try:
+        r = ok(a.delete(f"{S}/{s2['id']}"))
+    finally:
+        flightsim.MANAGER.sahte_bin_dosyalari = None
+    assert r['bin'] and r['bin']['log_id']
+    it2 = ok(a.get(R))['items'][0]
+    assert it2['session_id'] == s2['id'] and it2['bin_log_id'] == r['bin']['log_id'] and it2['bin_file_name'] == r['bin']['file_name'] and it2['bin_file_name'].startswith('SIM-'), it2
+    rb = a.get(f"{R}/{it2['id']}/bin")
+    assert rb.status_code == 200 and len(rb.content) == 4100 and r['bin']['file_name'] in rb.headers.get('content-disposition', ''), rb.headers
+    assert ok(a.get(R, params={'q': 'SIM-'}))['items'][0]['id'] == it2['id']   # log adı araması
+    bekle(lambda: ok(a.get(f"{R}/{it2['id']}"))['bin_status'] != 'ISLENIYOR' or None, 20)
+    assert ok(a.get(f"{R}/{it2['id']}"))['play_log_id'] is None   # analiz HATA → oynatılamaz
+    binsiz = next(x for x in ok(a.get(R, params={'mode': 'sitl'}))['items'] if not x['bin_log_id'])   # .bin'siz satır → 404 (silinen it'in id'si SQLite'ta yeniden kullanılabilir)
+    assert a.get(f"{R}/{binsiz['id']}/bin").status_code == 404 and a.get(f'{R}/999999/bin').status_code == 404
+    print('  simülasyon kayıtları (§21) testleri geçti')
+
+
+def runs_kapanis_testi():
+    """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
+    from app import db
+    with db.connect() as conn:
+        rows = db.rows(conn.execute("SELECT mode, result, end_reason FROM drone_sim_runs ORDER BY id DESC LIMIT 3"))
+    assert rows and all(r['mode'] in ('sitl', 'replay') for r in rows), rows
+    print('  kapanış kaydı:', rows[0])
+
+
 def main():
     terrain_birim_testleri()
     sitl = SahteSitl()
@@ -1685,7 +1838,10 @@ def main():
         param_testleri(a, c1, sitl, mon)
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)
+        # --- simülasyon kayıtları (§21) ---
+        runs_testleri(a, c1, sitl, mon)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
+    runs_kapanis_testi()
     sitl.kapat()
     print('Uçuş Simülatörü testleri geçti.')
 

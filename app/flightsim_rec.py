@@ -157,7 +157,7 @@ def sakla(rec_id, user, write, duration_s=None, text=None):
     txt = ' '.join((text or '').split())[:300] or metin(m, duration_s)
     m.update(state='kept', kept_at=db.now(), ts=time.time(), duration_s=duration_s, text=txt)
     _meta_yaz(m)
-    return {'rec_id': rec_id, 'size': m['size'], 'text': txt, 'duration_s': duration_s}
+    return {'rec_id': rec_id, 'size': m['size'], 'text': txt, 'duration_s': duration_s, 'sid': m.get('sid')}
 
 
 def listem(user):
@@ -229,7 +229,39 @@ def bitir(conn, rec_id, user, write, duration_s=None, text=None):
         _yol(rec_id, '.json').unlink()
     except OSError:
         pass
-    return {'post_id': pid, 'path': media['path'], 'thumb': media.get('thumb'), 'text': txt, 'owner_id': owner_id, 'size': m['size']}
+    return {'post_id': pid, 'path': media['path'], 'thumb': media.get('thumb'), 'text': txt, 'owner_id': owner_id, 'size': m['size'], 'sid': m.get('sid')}
+
+
+def oturum_kaydi(sid, started_at=None):
+    """§21: oturuma (sid) ait en yeni ekran kaydı meta'sı (open/full/kept; bitirilmiş kayıtların meta'sı silinir → router `video_bagla` bağlar).
+    `started_at` verilirse yalnız oturum başlangıcından sonra açılan kayıtlar (sunucu yeniden başlayınca sid tekrar eder)."""
+    if sid is None or not REC_DIR.exists():
+        return None
+    en_yeni = None
+    for p in REC_DIR.glob('*.json'):
+        try:
+            m = json.loads(p.read_text(encoding='utf-8'))
+        except (ValueError, OSError):
+            continue
+        if m.get('sid') != sid or m.get('size', 0) <= 0:
+            continue
+        if started_at and (m.get('started_at') or '') < started_at[:19]:
+            continue
+        if en_yeni is None or (m.get('started_at') or '') > (en_yeni.get('started_at') or ''):
+            en_yeni = m
+    return en_yeni
+
+
+def video_yolu(rec_id):
+    """§21 video izleme: saklanan/yarım kaydın dosya yolu ve mime; yoksa None (meta silinmiş → paylaşım yolu kullanılır)."""
+    try:
+        m = meta_oku(rec_id)
+    except RecHata:
+        return None
+    p = _yol(rec_id, m.get('ext', '.webm'))
+    if not p.exists() or m.get('size', 0) <= 0:
+        return None
+    return p, m.get('mime') or 'video/webm', m.get('ext', '.webm')
 
 
 def sil(rec_id, user, write):

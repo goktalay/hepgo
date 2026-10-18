@@ -935,3 +935,76 @@ kalkış → crash → Bitir → rapor modalı (`ms-05/06`, kırmızı sapma 457
 **Sınırlar / açık**: MP yüklemesi algısı SITL'in ACK'ına dayanır (MP'nin paketleri ayrıştırılmaz; UDP→TCP ham geçer); ArduPilot MISSION_CURRENT.total farkı yedek
 tetiği 3 sn sakinlik ister. Çarpışma koordinatı telemetrinin son karesidir (50 Hz; ≤ 20 ms). Sahte kipte (HEPGO_SITL=0) MISSION_CURRENT.total tetiği kapalıdır.
 PDF üretimi tarayıcı yazdırma diyaloğuyla (sunucu PDF yok). Rapor paylaşımı metindir (video kaydına yorum olarak eklenmez).
+
+## 21. Simülasyon Kayıtları — tablo, "Yeni Simülasyon Başlat" penceresi, her şeyin kaydı (`app/flightsim_runs.py`, `static/js/modules/flightsim_runs.js`; tablo `drone_sim_runs`)
+Kullanıcı isteği (birebir): "Yapılan uçuşların kayıtları Simülasyon altında tablo şeklinde olsun; tarihe göre, konuma göre ve benzeri seçim
+yapabilelim; Yeni Simülasyon düğmesi olsun; bu simülasyon ekranındaki seçenekler ayrı bir box ile açılsın, header'ında 'Yeni Simülasyon Başlat'
+desin, footer'da 'Başlat' ve 'İptal et' düğmesi olsun; başlattığında standart simülasyon başlasın; simülasyon bitince kaydetsin ama sadece
+simülasyonu değil her şeyi kaydetsin: bin dosyasını, son parametreleri, içine script yüklediysek onu da. Sonra kayıtları oynatabilelim; ama sadece
+master kullanıcısı script ve parametreleri download edebilsin, bu düğmeler yalnız master kullanıcısına görünsün."
+
+**Tablo `drone_sim_runs`** (`CREATE IF NOT EXISTS`, app/db.py): `id, session_id, session_kimlik (KIMLIK_TABANI+id; replay NULL), owner_id/owner_name,
+drone_id/drone_code, type, model_id/model_name, center_id/center_name, lat, lon, world JSON, launch JSON, started_at, ended_at, duration_s,
+mode 'sitl'|'replay', result 'tamam'|'carpisma'|'hata', end_reason, crash_count, summary_event_id → drone_sim_events(summary), bin_log_id →
+flight_logs (§19), source_log_id → flight_logs (kayıttan oynatma kaynağı), video_rec_id (flightsim_rec kimliği), video_post_id (feed_posts),
+video_path (UPLOAD_DIR göreli feed/…), params_path/params_count (DATA_DIR göreli `sim_runs/<id>/params.param`), scripts_path/scripts_count
+(`sim_runs/<id>/scripts.zip`), created_at`; indeks started_at / owner_id / center_id.
+
+**Kapanışta kayıt (`SimSession._temizle`, `ReplaySession._temizle` → `flightsim_runs.kaydet`, iş parçacığı).** Sıra: (1) `_param_dokumu` —
+gerçek SITL'de, ilk kalp atışı alınmışsa ve bilinen liste `param_count`'un %95'inden azsa `PARAM_REQUEST_LIST` gönderilir, PARAM_VALUE'lar
+`param_son`a dolar (`_param_value_gozlendi`; en çok `SIM_PARAM_DUMP_S` = 6 sn, %95 gelince erken); Mission Planner açılışta listeyi çekmişse
+istenmez. (2) `_bin_kapat` → özet (`gorev.kapanis`, summary satırı) → TCP/UDP → SITL durur → `_bin_kaydet` (§19). (3) `kaydet(s)`: satır INSERT
+(ilişkiler: `gorev.summary_id`, `bin_sonuc.log_id`, `s.video` ya da `flightsim_rec.oturum_kaydi(sid)` → bitirilmemiş/saklanan kaydın rec_id'si),
+**SON PARAMETRELER** = `param_son` ∪ kalıcı izleyici tabanı (`drone_params.Izleyici.taban`) ∪ sahte kip `_sahte_params` → Mission Planner
+`.param` biçimi (`drone_params.param_metni`, `#NOTE: HEPGO Uçuş Simülatörü oturum #N · tip · merkez · tarih · N parametre`), **SCRIPTLER** =
+SITL çalışma dizini (`drone_sitl.calisma_dizini(kimlik)`; SITL kökü = cwd: `terrain/`, `logs/` orada) altındaki `scripts/` (ArduPilot Lua
+`SCR_ENABLE`) ve `APM/scripts/` (Mission Planner MAVFTP'nin gösterdiği yol; SITL posix dosya sistemi cwd'ye göre çözer) içeriği varsa
+`scripts.zip` (≤ 50 MB); UPDATE params/scripts yolları. `result`: `sitl.error` → hata, `crash_count>0` → carpisma, aksi tamam. Olay şeridi
+"Simülasyon kaydedildi: #id · N parametre [· M script]"; WS `end` çerçevesine `run {id, params_count, scripts_count}` eklenir. Kayıttan oynatma
+oturumu da kaydedilir (mode replay, source_log_id, parametre/script yok). Sunucu kapanışı / boşta / süre kapanışları da kaydeder.
+**Video bağı:** `POST /rec/{id}/finish` (share true/false) ve `/share` → `flightsim_runs.video_bagla(sid, rec_id, post_id, path)`: oturum açıksa
+`s.video` (kapanışta satıra), kapanmışsa aynı rec_id ya da aynı session_id'li son satır güncellenir (yarım kayıt sonradan paylaşımı dahil).
+
+**REST (`/api/drone/sim/runs`; okuma `drone.sim`):** `GET /runs?from&to&center_id&type&owner_id&result&mode&q&sort&page` → `{items, total,
+page, pages, per_page:25, facets:{centers[{id,name,n}], owners[{id,name,n}], types[]}}`; `sort` ∈ started_at | owner | type | center |
+duration_s | result | mode (başında `-` azalan; ikincil anahtar id aynı yön); `q` merkez/kullanıcı/model/dron kodu/log adı LIKE ya da oturum no;
+`from/to` `YYYY-MM-DD` (started_at günü); geçersiz sayı 400. Satır alanları + `bin_status/bin_file_name`, `source_file_name`, `has_params/
+has_scripts/has_video/has_summary`, `play_log_id` (bin_log_id analizi TAMAM, yoksa source_log_id TAMAM), `can_delete`. `GET /runs/{id}`;
+`GET /runs/{id}/params` ve `GET /runs/{id}/scripts` **yalnız MASTER** (`user.master`; aksi 403; `Content-Disposition` SIM-<oturum>-<tarih>-
+params.param / scripts.zip); `GET /runs/{id}/bin` (.bin dosyası, drone.sim okuma izniyle; uçuş logu yetkisi gerekmez); `GET /runs/{id}/video[?dl=1]`
+(paylaşılmışsa `UPLOAD_DIR/feed/…`, değilse `sim_rec/<rec>.webm`); `DELETE /runs/{id}` (sahip ya da yazma izni; satır + `sim_runs/<id>/`
+silinir — özet, .bin, video kendi yerlerinde kalır; iz kaydı). Dosya yolları yalnız satır kimliğinden türetilir ve DB'deki göreli yol beklenenle
+karşılaştırılır (yol gezinmesi yok).
+
+**Ön yüz (`flightsim.js renderWizard` → sayfa; `wizardModal` → pencere; `flightsim_runs.js runsTable`).** Sayfa: üst satır (sınır notu + **"+ Yeni
+Simülasyon"** düğmesi; yazma izni yoksa pasif) · açık oturumlar şeridi (devam et / bitir) · yarım kayıt şeridi (`pendingCard`, §17) · **"Simülasyon
+Kayıtları"** kartı · CAYSIM istemcileri kartı. Eski "Kayıtlarım" ve "Son simülasyon raporları" kartları tabloya taşındı (Video / Rapor düğmeleri).
+Tablo (HEPGO `.table-wrap > table.table` kalıbı): tarih/saat (+ `#oturum · kapanış nedeni`), kullanıcı, dron tipi/model (kayıt rozeti), merkez/konum
+(+ koordinat), dünya kipi, kalkış yöntemi (sabit kanat), süre, sonuç rozeti (**ÇARPIŞMA** kırmızı `×n` / Tamam yeşil / Hata turuncu; çarpışma
+satırı `row-alert`), ekler (SVG simgeler: video, .bin [analiz sürüyorsa sarı], parametre, script — emoji yok), işlemler: **Oynat** (`play_log_id`
+∧ yazma izni; pencereyi kayıttan oynat kipinde o log seçili açar → dünya seçimi → Başlat → mevcut replay akışı), **Rapor** (`showReport`),
+**Video** (modal `<video>` + İndir), **.bin** (indir), **Parametreler** / **Script** (yalnız `ctx.user.master`; `<a download>`), **Sil**
+(`can_delete`; onay). Filtreler: tarih aralığı (iki `date`), merkez / tip / kullanıcı (facet açılır listeleri, sayılarla), sonuç, kaynak (canlı /
+kayıt), arama (250 ms gecikmeli), Temizle; sıralama sütun başlığından (▲/▼); 25'li sayfalama (‹ Sayfa p / n ›). Boş durum metni.
+**Pencere** (`ui.js modal`, `wide` + `.fs-wizard-modal` 1240 px, gövde kaydırılabilir): başlık **"Yeni Simülasyon Başlat"**, gövde = Kip · 1 Dron tipi
+(+ kalkış yöntemi + model) · 2 Merkez (+ dron kaydı) · 1 Uçuş logu (kayıt kipi) · 3 Dünya (+ 3B önizleme) · Kayıt seçenekleri · not; altbilgi
+**"İptal et"** + **"▶ Başlat"** (primary; kayıt kipinde "▶ Oynat"). Başlat → mevcut akış: tam ekran + ekran paylaşımı izni → `POST /sessions` →
+pencere gizlenir, **hazırlık kartı** (§8 `prepareSession`, sihirbaz önizlemesiyle dünya ön yüklemesi) → `location.hash` oturum ekranı
+(hashchange pencereyi kapatır → önizleme serbest). Hata/iptal → pencere geri gelir. Pencere kapanışı → açık oturumlar, yarım kayıt, tablo
+yenilenir. `#/drone/sim?new=1` pencereyi açık getirir (testler). Sahte kipte (`?mock=1`) tablo yok.
+
+**Testler** (`tests/test_flightsim.py runs_testleri`): önceki testlerin oturumları listede (replay satırı `source_log_id`, çarpışmalı oturum
+`carpisma`), sabit kanat oturumu: sahte SITL PARAM_VALUE (`param_son`, `_param_count`), sahte param_set, `scripts/hello.lua` + `APM/scripts/mp.lua`,
+ekran kaydı (start/chunk/finish share:false → `s.video`), summary → kapat → satır alanları (ilişkiler, world/launch JSON, model, konum,
+params_count ≥ 3, scripts_count 2, video_rec_id) + `params.param` içeriği (`WP_RADIUS,90`, `ARSPD_FBW_MIN,12.5`, `RTL_ALT,100`); MASTER:
+admin/salt okuyan 403 → `config.MASTER_USERNAMES` ile 200 (.param metni, zip içeriği) → yine 403; video (saklanan dosya, `?dl=1` attachment);
+filtreler (type, center_id+owner_id+result+mode, mode replay, q merkez/oturum no/yok, from/to, sıralama artan/azalan/duration/type, page 99 →
+düzeltme, 400'ler), facets; kapanış sonrası paylaşım → `video_post_id/video_path` + feed dosyasından video; silme (salt okuyan 403; satır + dizin
+gider, özet ve paylaşım kalır); `rec.bin` oturumu + sahte .BIN → `bin_log_id`, `/bin` indirme, `q=SIM-`, analiz HATA → `play_log_id` null.
+Playwright (`/tmp/flsim/rn/e2e_rn.py`, port 8797, headless shell): tablo (filtre, sıralama), pencere (başlık/altbilgi), Başlat → oturum, master /
+master olmayan kullanıcıda Parametreler-Script düğme görünürlüğü.
+
+**Sınırlar / açık**: parametre dökümü SITL kapanmadan en çok 6 sn bekler; MP bağlanmamış ve döküm yarım kalmışsa `.param` o ana kadar görülen
+değerleri içerir (eksik olabilir). Script arşivi yalnız SITL çalışma dizininden (`scripts/`, `APM/scripts/`); MAVFTP'nin başka bir kök göstermesi
+hâlinde dizin adı `flightsim_runs.SCRIPT_DIZINLERI`'ne eklenir. Kayıt satırı silinirken video/özet/.bin silinmez (kendi yüzeylerinden silinir).
+Oynat yalnız analizi TAMAM .bin'li kayıtlarda etkindir (kayıt seçeneği kapalı oturumlar oynatılamaz).

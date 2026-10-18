@@ -21,8 +21,9 @@ import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü ist
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed, replayLaunchTimeline, replayLaunchPhaseAt } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13; kayıtta aşamalar logdan §8)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
 import { createOpsPanel } from './flightsim_panel.js';
-import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, myRecsCard, pendingCard, recOptionsBox, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler / sakla; kayıt seçenekleri kutusu; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
-import { reportsCard, showReport } from './flightsim_report.js';   // §18: Bitir'de özet rapor modalı (çarpışma/sapma kırmızı, mini harita) + sihirbazda son raporlar
+import { acquireDisplayStream, createRecorder, enterFullscreen, exitFullscreen, pendingCard, recOptionsBox, recPrefs, stashStream, takeStashedStream } from './flightsim_record.js';   // §17: ekran kaydı (Başlat→Bitir) → Şirketten Haberler / sakla; kayıt seçenekleri kutusu; otomatik tam ekran   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
+import { showReport } from './flightsim_report.js';   // §18: Bitir'de özet rapor modalı (çarpışma/sapma kırmızı, mini harita); kayıt tablosundan "Rapor"
+import { runsTable, runsQuery } from './flightsim_runs.js';   // §21: Simülasyon Kayıtları tablosu (filtre/sıralama/sayfalama; Oynat/Rapor/Video/.bin; MASTER: parametre/script)
 
 const API = '/api/drone/sim';
 // §8 ön hazırlık: sihirbazın hazırlık kartında indirilen kayıt kareleri oturum ekranına devredilir (aynı belge; be.replay yeniden çekilmez)
@@ -89,7 +90,7 @@ export async function render(view, params, ctx, extra = {}) {
   const backend = mock ? mockBackend(ctx) : restBackend();
   const head = extra.head || (sub => h('div', { class: 'page-head' }, h('div', { class: 'page-head-t' }, h('h1', null, 'Uçuş Simülatörü'), sub ? h('div', { class: 'sub' }, sub) : null)));
   if (sid) return renderSession(view, ctx, backend, sid, { mock, canWrite, netsim: parseNetsim(sp.get('netsim')) });
-  return renderWizard(view, ctx, backend, head, { mock, canWrite });
+  return renderWizard(view, ctx, backend, head, { mock, canWrite, openNew: sp.get('new') === '1' });   // ?new=1: "Yeni Simülasyon Başlat" penceresi açık gelir
 }
 
 // Ağ bozulması test kipi (§5 titreme teşhisi): #/drone/sim/<id>?netsim=jitter30,loss5,delay40 — gelen her `tele` karesi delay + U(0, 2·jitter) ms
@@ -122,6 +123,9 @@ function restBackend() {
     reports: (limit = 20) => api.get(`${API}/reports?limit=${limit}`),
     report: id => api.get(`${API}/reports/${encodeURIComponent(id)}`),
     shareReport: (id, text) => api.post(`${API}/reports/${encodeURIComponent(id)}/share`, { text }),
+    // §21: simülasyon kayıtları tablosu (filtre/sıralama/sayfa sorgu dizesi) + silme
+    runs: F => api.get(`${API}/runs${runsQuery(F) ? `?${runsQuery(F)}` : ''}`),
+    runDelete: id => api.del(`${API}/runs/${encodeURIComponent(id)}`),
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
   };
@@ -153,26 +157,18 @@ function wsClient(id, handlers) {
 }
 
 // ======================================================================
-// Sihirbaz + açık oturum listesi
+// Simülasyon sayfası (§21): üstte "Yeni Simülasyon" düğmesi · açık oturumlar şeridi · yarım kayıt şeridi · "Simülasyon Kayıtları" tablosu ·
+// CAYSIM istemcileri kartı. Sihirbaz (Kip, tip, kalkış, model, merkez, dron kaydı, dünya, kayıt seçenekleri) ayrı pencerede: wizardModal.
 // ======================================================================
-async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
+async function renderWizard(view, ctx, be, head, { mock, canWrite, openNew = false }) {
   let meta;
   try { meta = await be.meta(); } catch (err) {
     clear(view, head('Uçuş Simülatörü'), h('div', { class: 'card empty' }, h('p', null, h('b', null, 'Simülatör servisi yanıt vermedi.')), h('p', { class: 'small muted' }, err.message),
       h('p', { class: 'small muted' }, 'Arka uç hazır değilse arayüzü sahte veriyle denemek için adrese ?mock=1 ekleyin: ', h('a', { href: '#/drone/sim?mock=1' }, '#/drone/sim?mock=1'))));
     return;
   }
-  const types = (meta.types?.length ? meta.types : TYPES.map(([key, name]) => ({ key, name }))).map(t => {
-    const d = TYPES.find(x => x[0] === t.key) || [t.key, t.name, '', 'quad'];
-    return { key: t.key, name: t.name || d[1], desc: d[2], icon: d[3], binary: t.binary };
-  });
   const centers = meta.centers || [];
-  const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
-  const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
-  const S = { mode: 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: null, logs: null, q: '', drone: null,
-    world: { ...defaults, seed: randomSeed(), launch: { ...LAUNCH_DEFAULTS, ...(defaults.launch || {}) } } };
-  // Etkin dron tipi: canlı kipte seçilen kart, kayıt kipinde seçili logun araç tipi (model kütüphanesi bu tipe göre listelenir)
-  const activeType = () => (S.mode === 'replay' ? ((S.logs || []).find(x => x.id === S.log)?.type || 'multirotor') : S.type);
+  const limits = meta.limits || {};
 
   // ---------- açık oturumlar ----------
   const openBox = h('div');
@@ -193,6 +189,53 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
             await be.end(s.id); toast('Oturum kapatıldı'); drawOpen();
           } }, 'Bitir') : null))))));
   };
+
+  // ---------- sayfa: Yeni Simülasyon + kayıt tablosu ----------
+  let wizardOpen = false;
+  const openWizard = async (preset = {}) => {
+    if (wizardOpen) return;
+    wizardOpen = true;
+    try {
+      await wizardModal({ be, meta, mock, canWrite, preset, onClosed: () => { wizardOpen = false; drawOpen(); runs?.refresh(); pending?.refresh(); } });
+    } catch (err) { wizardOpen = false; toastError(err); }
+  };
+  const pending = mock || !canWrite ? null : pendingCard(tr);   // §17: yarım ekran kayıtları → Paylaş / Sil (tablo üstünde şerit)
+  const runs = mock ? null : runsTable({ be, tr, canWrite, user: ctx.user,
+    onPlay: r => openWizard({ mode: 'replay', log: r.play_log_id }),   // kayıttan oynat kipinde sihirbaz (dünya seçimi + Başlat → mevcut replay akışı)
+    onReport: async r => { const sum = await be.report(r.summary_event_id); await showReport(sum, { tr, be, canWrite }); } });
+  const newBtn = h('button', { class: 'btn primary fs-new-sim', type: 'button', disabled: !canWrite, onclick: () => openWizard() }, '+ Yeni Simülasyon');
+  const topNote = h('div', { class: 'small muted' }, canWrite
+    ? tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' })
+    : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları ve kayıtları izleyebilirsiniz.');
+  clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
+    mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
+    h('div', { class: 'fs-top-row' }, topNote, newBtn),
+    openBox,
+    pending ? pending.el : null,
+    runs ? runs.el : null,
+    mock ? null : clientsCard({ canWrite }).el);   // CAYSIM istemcileri (docs/caysim-api.md)
+  drawOpen();
+  if (openNew && canWrite) openWizard();
+  if (mock && !centers.length) toast('Sahte kipte merkez yok', 'err');
+}
+
+// ======================================================================
+// "Yeni Simülasyon Başlat" penceresi (§6/§21): sihirbaz içeriği modalda — başlık, kaydırılabilir gövde, altbilgi "İptal et" + "Başlat".
+// Başlat → mevcut prepareSession akışı (hazırlık kartı; pencere bu sırada gizlenir) → oturum ekranı (hash değişimi pencereyi kapatır).
+// preset: { mode: 'replay', log } (kayıt tablosundan Oynat).
+// ======================================================================
+async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed }) {
+  const types = (meta.types?.length ? meta.types : TYPES.map(([key, name]) => ({ key, name }))).map(t => {
+    const d = TYPES.find(x => x[0] === t.key) || [t.key, t.name, '', 'quad'];
+    return { key: t.key, name: t.name || d[1], desc: d[2], icon: d[3], binary: t.binary };
+  });
+  const centers = meta.centers || [];
+  const defaults = { ...WORLD_DEFAULTS, ...(meta.world_defaults || {}) };
+  const logsAllowed = meta.replay ? meta.replay.logs_allowed !== false : true;
+  const S = { mode: preset.mode === 'replay' ? 'replay' : 'sitl', type: types[0]?.key || 'multirotor', center: centers[0]?.id ?? null, log: preset.log ?? null, logs: null, q: '', drone: null,
+    world: { ...defaults, seed: randomSeed(), launch: { ...LAUNCH_DEFAULTS, ...(defaults.launch || {}) } } };
+  // Etkin dron tipi: canlı kipte seçilen kart, kayıt kipinde seçili logun araç tipi (model kütüphanesi bu tipe göre listelenir)
+  const activeType = () => (S.mode === 'replay' ? ((S.logs || []).find(x => x.id === S.log)?.type || 'multirotor') : S.type);
 
   // ---------- 1. dron tipi ----------
   const typeCards = h('div', { class: 'fs-types' });
@@ -466,15 +509,15 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     return false;
   };
 
-  // ---------- 4. başlat ----------
-  const startBtn = h('button', { class: 'btn primary fs-start', disabled: !canWrite || !centers.length, onclick: async () => {
-    if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); return; }
-    if (S.mode === 'sitl' && S.center == null) { toast('Önce bir merkez seçin', 'err'); return; }
-    startBtn.disabled = true;
+  // ---------- 4. başlat (pencere altbilgisindeki "Başlat"; startBtn modal kurulduktan sonra atanır) ----------
+  let startBtn = null, back = null;
+  const start = async () => {
+    if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); return true; }
+    if (S.mode === 'sitl' && S.center == null) { toast('Önce bir merkez seçin', 'err'); return true; }
     // §17: otomatik tam ekran (kullanıcı etkinleştirmesi içinde; reddedilirse sessiz) + kayıt açıksa ekran paylaşımı izni BİR KEZ, oturum açılmadan önce
     enterFullscreen();
     if (!mock && recPrefs.on) { const { stream, reason } = await acquireDisplayStream(); stashStream(stream); if (!stream && reason === 'denied') toast(tr('Ekran paylaşımı reddedildi; 3B sahne + HUD kaydedilecek (panel kayda girmez)')); }
-    const geriAl = () => { startBtn.disabled = false; takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen(); };   // §17: oturum açılamadı/iptal → paylaşım akışı ve tam ekran bırakılır
+    const geriAl = () => { takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen(); if (back) back.hidden = false; };   // §17: oturum açılamadı/iptal → paylaşım akışı ve tam ekran bırakılır, pencere geri gelir
     let s;
     try {
       const model = modelBody(picker.selectionFor(activeType()), mock);
@@ -485,13 +528,15 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
       const msg = { 400: S.mode === 'replay' ? 'Log açılamadı; analizi tamamlanmış bir .bin/.tlog seçin' : 'Geçersiz ayar; dünya değerlerini ve merkezi kontrol edin', 409: 'Oturum sınırı doldu; açık bir oturumu bitirin', 503: 'SITL hazır değil (ikili ya da boş port yok)' }[err?.status];
       toast(msg || err.message, 'err');
       geriAl();
-      return;
+      return true;
     }
-    // §8 ön hazırlık: her şey (sunucu HAZIR + kareler + dünya verisi) hazır olunca içeri gir
-    if (!await prepareSession(s)) { geriAl(); drawOpen(); return; }
+    // §8 ön hazırlık: pencere gizlenir, hazırlık kartı görünür; her şey (sunucu HAZIR + kareler + dünya verisi) hazır olunca içeri gir
+    if (back) back.hidden = true;
+    if (!await prepareSession(s)) { geriAl(); return true; }
     toast(S.mode === 'replay' ? 'Kayıttan oynatma oturumu açıldı' : 'Simülatör oturumu açıldı');
-    location.hash = be.href(s.id);
-  } }, '▶ Başlat');
+    location.hash = be.href(s.id);   // hashchange → pencere kapanır (önizleme serbest kalır)
+    return true;
+  };
   const limits = meta.limits || {};
   // Kip seçimi: canlı simülasyon (SITL + Mission Planner; kontrol kullanıcıda) · kayıttan oynat (yüklü uçuş logu; kontrol yok)
   const stepType = h('div', { class: 'card card-pad fs-step no-collapse' }, h('h3', null, h('span', { class: 'fs-no' }, '1'), 'Dron tipi'), typeCards, launchBox, modelBox);
@@ -505,8 +550,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     const rp = S.mode === 'replay';
     stepType.hidden = rp; stepCenter.hidden = rp; stepLog.hidden = !rp; worldHint.hidden = !rp;
     worldNo.textContent = rp ? '2' : '3';
-    startBtn.disabled = !canWrite || (rp ? !logsAllowed : !centers.length);
-    startBtn.textContent = tr(rp ? '▶ Oynat' : '▶ Başlat');
+    if (startBtn) { startBtn.disabled = !canWrite || (rp ? !logsAllowed : !centers.length); startBtn.textContent = tr(rp ? '▶ Oynat' : '▶ Başlat'); }
     clear(startNote, canWrite
       ? (rp ? tr('Kayıt sunucuda bir kez ayrıştırılır ve önbelleğe alınır; SITL ve Mission Planner köprüsü açılmaz.') : tr('En çok {n} eşzamanlı oturum · oturum süresi {m} dk', { n: limits.max_sessions ?? '—', m: limits.max_minutes ?? '—' }))
       : 'Oturum açmak için Dron Yönetimi yazma izni gerekir; açık oturumları izleyebilirsiniz.');
@@ -516,25 +560,28 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     if (rp && S.logs === null) loadLogs().then(refreshModels); else refreshModels();
   };
   const modeSeg = segmented([['sitl', 'Canlı simülasyon (SITL + Mission Planner)'], ['replay', 'Kayıttan oynat']], S.mode, v => { S.mode = v; drawMode(); });
-  clear(view, head(mock ? 'Uçuş Simülatörü · sahte veri kipi (arka uç yok)' : 'Uçuş Simülatörü · SITL + Mission Planner köprüsü, 3B dünya'),
-    mock ? h('div', { class: 'alert warn fs-mock-note' }, 'Sahte veri kipi: oturum sunucuda açılmaz; telemetri tarayıcıda üretilir. Gerçek kullanım için adresten ?mock=1 kaldırın.') : null,
-    openBox,
-    mock || !canWrite ? null : pendingCard(tr).el,   // §17: yarım ekran kayıtları (Bitir denmeden kapanan oturumlar) → Paylaş / Sil
-    mock || !canWrite ? null : myRecsCard(tr).el,   // §17: paylaşılmadan saklanan videolar → İndir / Paylaş / Sil
-    mock ? null : reportsCard({ be, tr, canWrite }).el,   // §18: son simülasyon raporları (aynı rapor modalı)
-    mock ? null : clientsCard({ canWrite }).el,   // CAYSIM istemcileri (docs/caysim-api.md)
+  const body = h('div', { class: 'fs-wizard' },
     h('div', { class: 'fs-mode-row' }, h('span', { class: 'small muted' }, 'Kip'), modeSeg),
     stepType, stepCenter, stepLog, stepWorld,
     canWrite ? recOpts.el : null,   // §17/§19 kayıt seçenekleri (Başlat'ın üstünde)
-    h('div', { class: 'fs-start-row' }, startNote, startBtn));
+    h('div', { class: 'fs-start-row' }, startNote));
+  // Pencere: başlık "Yeni Simülasyon Başlat", kaydırılabilir gövde, altbilgi "İptal et" + "Başlat" (primary). Kapanış: önizleme serbest, sayfa yenilenir.
+  let disposed = false;
+  const m = modal({ title: tr('Yeni Simülasyon Başlat'), body, wide: true,
+    actions: [{ label: tr('İptal et'), class: 'ghost fs-wizard-cancel' }, { label: tr('▶ Başlat'), class: 'primary fs-start', onClick: start }],
+    onClose: () => { disposed = true; clearTimeout(rebuildT); preview?.dispose(); preview = null; onClosed?.(); } });
+  m.el.classList.add('fs-wizard-modal');
+  back = m.el.parentElement;
+  startBtn = m.el.querySelector('.modal-foot .btn.primary');
   drawMode();
-  drawOpen();
 
-  // 3B önizleme (küçük, kendi etrafında dönen kamera); sayfa değişince serbest bırakılır
+  // 3B önizleme (küçük, kendi etrafında dönen kamera); pencere kapanınca serbest bırakılır (sayfa değişiminde de)
   try {
     if (S.world.mode === 'real') progInfo(null);
     const c0 = centerOf();
-    preview = await createFlightSim3D(previewBox, S.world, { preview: true, type: activeType(), model: picker.selectionFor(activeType()) || undefined, origin: c0 ? { lat: c0.lat, lon: c0.lon, alt: c0.alt } : undefined, onProgress: progInfo, onFallback, g3dKey: be.g3dKey, launch: { ...L } });
+    const p = await createFlightSim3D(previewBox, S.world, { preview: true, type: activeType(), model: picker.selectionFor(activeType()) || undefined, origin: c0 ? { lat: c0.lat, lon: c0.lon, alt: c0.alt } : undefined, onProgress: progInfo, onFallback, g3dKey: be.g3dKey, launch: { ...L } });
+    if (disposed) { p.dispose(); return m; }
+    preview = p;
     previewBox.querySelector('.fs-preview-msg')?.remove();
     const sel = picker.selectionFor(activeType()); if (sel) { preview.setType(activeType(), sel).then(() => picker.drawInfo()); picker.redraw(); }
     picker.ensureThumbs();   // 3B sahne hazır: eksik küçük resimler artık üretilebilir (snapshotModel)
@@ -543,6 +590,7 @@ async function renderWizard(view, ctx, be, head, { mock, canWrite }) {
     clear(previewBox, h('div', { class: 'fs-preview-msg' }, tr('3B önizleme açılamadı: {e}', { e: err.message })));
   }
   onLeave(() => { clearTimeout(rebuildT); preview?.dispose(); preview = null; });
+  return m;
 }
 
 const randomSeed = () => Math.floor(Math.random() * 2147483646) + 1;

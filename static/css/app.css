@@ -9384,3 +9384,37 @@ html[data-theme="dark"] .fs-rp-dev.green { color: #4ade80; } html[data-theme="da
   body.fs-rp-printing .fs-rp-map { background: #0b1220 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body.fs-rp-printing .fs-rp-crash, body.fs-rp-printing .fs-rp-dev, body.fs-rp-printing .fs-rp-safety { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---- Uçuş Simülatörü §21: sayfa üst satırı, "Yeni Simülasyon Başlat" penceresi, Simülasyon Kayıtları tablosu ---- */
+.fs-top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+.fs-new-sim { white-space: nowrap; }
+.modal.fs-wizard-modal { max-width: 1240px; width: min(1240px, 96vw); }
+.modal.fs-wizard-modal .modal-body { background: var(--bg); }
+.modal.fs-wizard-modal .fs-step { margin-bottom: 12px; }
+.modal.fs-wizard-modal .fs-start-row { margin: 0; }
+.modal.fs-wizard-modal .fs-mode-row { margin-bottom: 12px; }
+.fs-runs-card { margin-bottom: 14px; }
+.fs-runs-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fs-runs-head h3 { margin: 0; }
+.fs-runs-pager { display: flex; align-items: center; gap: 8px; }
+.fs-runs-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 12px; }
+.fs-runs-filters .input.sm { height: 32px; padding: 4px 8px; font-size: 13px; width: auto; min-width: 0; }
+.fs-runs-filters select.input.sm { max-width: 190px; }
+.fs-runs-f { display: inline-flex; align-items: center; gap: 6px; }
+.fs-runs-q { flex: 1 1 220px; }
+.fs-runs-count { margin-left: auto; white-space: nowrap; }
+.table.fs-runs th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.table.fs-runs th.sortable:hover, .table.fs-runs th.sortable.on { color: var(--primary); }
+.fs-runs-sort { display: inline-block; width: 1em; font-size: 10px; margin-left: 2px; }
+.table.fs-runs td { vertical-align: top; }
+.fs-runs-mode { margin-left: 6px; }
+.fs-runs-att { display: inline-flex; gap: 6px; align-items: center; }
+.fs-runs-ico { display: inline-flex; width: 20px; height: 20px; color: var(--muted); opacity: .45; }
+.fs-runs-ico.on { color: var(--primary); opacity: 1; }
+.fs-runs-ico.wait { color: var(--warning, #c77d00); }
+.fs-runs-ico svg, .fs-runs-bi svg { width: 100%; height: 100%; }
+.fs-runs-bi { display: inline-flex; width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
+.fs-runs-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.fs-runs-actions .btn.xs { display: inline-flex; align-items: center; }
+.fs-runs-video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+.fs-runs-empty { margin: 0; }

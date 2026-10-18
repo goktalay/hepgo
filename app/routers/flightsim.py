@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, sim_terrain
+from .. import auth, config, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -296,6 +296,116 @@ async def share_report(rid: int, body: ShareIn, user=Depends(sim_user), conn=db.
     return {'ok': True, 'post_id': pid, 'text': txt, 'link': '#/home'}
 
 
+# ---------------- Simülasyon kayıtları (flightsim_runs; §21) ----------------
+# Her oturum kapanışında bir satır: özet + .bin + video + son parametreler (.param) + scripts (zip). Liste/tek kayıt/video okuma izni;
+# parametre ve script indirme YALNIZ MASTER (403); silme sahip ya da yazma izni (DELETE → require_module yazma ister).
+def _master(user):
+    if not user.get('master'):
+        raise HTTPException(403, 'Bu dosyayı yalnız sistem sahibi (MASTER) indirebilir')
+
+
+def _run(conn, rid, user):
+    r = flightsim_runs.getir(conn, rid, user)
+    if not r:
+        raise HTTPException(404, 'Simülasyon kaydı bulunamadı')
+    return r
+
+
+@router.get('/runs')
+def list_runs(request: Request, user=Depends(sim_user), conn=db.DB):
+    """`?from&to&center_id&type&owner_id&result&mode&q&sort&page` → `{items, total, page, pages, per_page, facets:{centers, owners, types}}`.
+    `sort`: started_at | owner | type | center | duration_s | result | mode (başına - → azalan)."""
+    qp = request.query_params
+
+    def _int(k):
+        v = qp.get(k)
+        try:
+            return int(v) if v not in (None, '') else None
+        except ValueError:
+            raise HTTPException(400, f'{k} tam sayı olmalı')
+    return flightsim_runs.listele(conn, user, dfrom=qp.get('from') or None, dto=qp.get('to') or None, center_id=_int('center_id'), type=qp.get('type') or None,
+                                  owner_id=_int('owner_id'), result=qp.get('result') or None, mode=qp.get('mode') or None, q=qp.get('q') or None,
+                                  sort=qp.get('sort') or '-started_at', page=_int('page') or 1)
+
+
+@router.get('/runs/{rid}')
+def get_run(rid: int, user=Depends(sim_user), conn=db.DB):
+    return _run(conn, rid, user)
+
+
+@router.get('/runs/{rid}/params')
+def run_params(rid: int, user=Depends(sim_user), conn=db.DB):
+    """Son parametre dökümü (.param, Mission Planner biçimi) — YALNIZ MASTER."""
+    _master(user)
+    r = _run(conn, rid, user)
+    d = flightsim_runs.dosya(r, 'params')
+    if not d:
+        raise HTTPException(404, 'Bu kaydın parametre dökümü yok')
+    return FileResponse(d[0], media_type=d[2], filename=d[1], headers={'Cache-Control': 'private, no-store'})
+
+
+@router.get('/runs/{rid}/scripts')
+def run_scripts(rid: int, user=Depends(sim_user), conn=db.DB):
+    """SITL scripts/ içeriği (zip) — YALNIZ MASTER."""
+    _master(user)
+    r = _run(conn, rid, user)
+    d = flightsim_runs.dosya(r, 'scripts')
+    if not d:
+        raise HTTPException(404, 'Bu kaydın script arşivi yok')
+    return FileResponse(d[0], media_type=d[2], filename=d[1], headers={'Cache-Control': 'private, no-store'})
+
+
+@router.get('/runs/{rid}/bin')
+def run_bin(rid: int, user=Depends(sim_user), conn=db.DB):
+    """Kapanışta kaydedilen SITL .BIN uçuş logu (flight_logs; §19) — drone.sim okuma izniyle indirme."""
+    r = _run(conn, rid, user)
+    if not r.get('bin_log_id'):
+        raise HTTPException(404, 'Bu kaydın .bin uçuş logu yok')
+    lg = db.row(conn.execute('SELECT file, file_name FROM flight_logs WHERE id = ?', (r['bin_log_id'],)))
+    if not lg or not lg.get('file') or '..' in lg['file']:
+        raise HTTPException(404, 'Uçuş logu dosyası bulunamadı')
+    p = config.UPLOAD_DIR / lg['file']
+    if not p.is_file():
+        raise HTTPException(404, 'Uçuş logu dosyası bulunamadı')
+    return FileResponse(p, media_type='application/octet-stream', filename=lg.get('file_name') or p.name, headers={'Cache-Control': 'private, no-store'})
+
+
+@router.get('/runs/{rid}/video')
+def run_video(rid: int, dl: int = 0, user=Depends(sim_user), conn=db.DB):
+    """Ekran kaydı: paylaşılmışsa Şirketten Haberler dosyası (UPLOAD_DIR/feed/…), değilse saklanan/yarım kayıt (sim_rec)."""
+    r = _run(conn, rid, user)
+    p, mime = None, 'video/webm'
+    if r.get('video_path') and '..' not in r['video_path'] and r['video_path'].startswith('feed/'):
+        cand = config.UPLOAD_DIR / r['video_path']
+        if cand.is_file():
+            p = cand
+            mime = {'.mp4': 'video/mp4', '.mkv': 'video/x-matroska'}.get(cand.suffix.lower(), 'video/webm')
+    if p is None and r.get('video_rec_id'):
+        v = flightsim_rec.video_yolu(r['video_rec_id'])
+        if v:
+            p, mime = v[0], v[1]
+    if p is None:
+        raise HTTPException(404, 'Bu kaydın videosu yok')
+    ts = (r.get('started_at') or '')[:16].replace(':', '-').replace('T', '-')
+    ad = f"ucus-simulatoru-{r['session_id']}-{ts}{p.suffix}"
+    hdr = {'Cache-Control': 'private, no-store'}
+    if dl:
+        return FileResponse(p, media_type=mime, filename=ad, headers=hdr)
+    return FileResponse(p, media_type=mime, headers=hdr)
+
+
+@router.delete('/runs/{rid}')
+def delete_run(rid: int, user=Depends(sim_user), conn=db.DB):
+    """Kayıt satırı + params/scripts dosyaları silinir (sahip ya da yazma izni). Özet, .bin ve video kendi yerlerinde kalır."""
+    r = _run(conn, rid, user)
+    if not (user.get('master') or r.get('owner_id') == user['id'] or _yazar(user)):
+        raise HTTPException(403, 'Bu kaydı silme yetkiniz yok')
+    flightsim_runs.sil(conn, rid)
+    db.audit(conn, user['id'], 'Uçuş simülatörü kaydını sildi', 'drone_sim_run', rid, f"oturum {r.get('session_id')} · {r.get('started_at')}")
+    conn.commit()
+    return {'ok': True}
+
+
 # ---------------- Ekran kaydı (flightsim_rec; §17) ----------------
 # Tarayıcı MediaRecorder parçaları oturum boyunca akıtılır; Bitir'de dosya Şirketten Haberler deposuna taşınır, oturum SAHİBİ adına paylaşım.
 # Yetki: start oturum sahibi ya da drone.sim yazma izni; chunk/thumb/finish/delete başlatan, sahip ya da yazma izni. GET /rec/pending yarım kayıtlar.
@@ -359,11 +469,14 @@ async def rec_finish(rec_id: str, body: RecFinishIn, user=Depends(sim_user), con
             r = flightsim_rec.sakla(rec_id, user, _yazar(user), body.duration_s, body.text)
         except flightsim_rec.RecHata as e:
             _rec_hata(e)
+        flightsim_runs.video_bagla(r.get('sid'), rec_id, conn=conn)   # §21: simülasyon kaydına video bağı (saklanan dosya)
+        conn.commit()
         return {'ok': True, 'kept': True, 'rec_id': rec_id, 'size': r['size'], 'text': r['text'], 'file': f'/api/drone/sim/rec/{rec_id}/file', 'link': None}
     try:
         r = flightsim_rec.bitir(conn, rec_id, user, _yazar(user), body.duration_s, body.text)
     except flightsim_rec.RecHata as e:
         _rec_hata(e)
+    flightsim_runs.video_bagla(r.get('sid'), rec_id, r['post_id'], r['path'], conn=conn)   # §21: paylaşım kimliği + dosya yolu
     conn.commit()
     owner = db.row(conn.execute('SELECT id, full_name FROM users WHERE id = ?', (r['owner_id'],))) or {'id': user['id'], 'full_name': user['full_name']}
     from .feed import _announce

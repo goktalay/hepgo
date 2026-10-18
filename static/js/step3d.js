@@ -116,6 +116,7 @@ export function applyOverlay(tree, ov) {
 // Dönen: { root, meshes: [{ name, color:[r,g,b]|null, position: Float32Array, normal: Float32Array|null, index: Uint32Array|null }] }
 let worker = null, reqId = 0;
 const pending = new Map();
+export const stepWorkerBusy = () => pending.size > 0;   // işçi tek ve iptal edilemez: başka bir STEP çözümleniyorsa sıradaki bekler (design_preview.js bunu kullanıcıya söyler)
 function getWorker() {
   if (worker) return worker;
   worker = new Worker('/static/js/step-worker.js', { type: 'module' });

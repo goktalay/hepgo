@@ -3280,8 +3280,12 @@ def _migrate(conn):
         conn.execute('ALTER TABLE design_drawings ADD COLUMN step_tree TEXT')
     if 'specs' not in dd_cols:   # montaj genel bilgileri (JSON: mtow_g, payload_g, empty_g, wingspan_mm, length_mm, cruise_kmh, endurance_min, battery, notes)
         conn.execute('ALTER TABLE design_drawings ADD COLUMN specs TEXT')
-    if 'thumb_path' not in {r[1] for r in conn.execute('PRAGMA table_info(design_drawing_versions)')}:   # STEP sürümünün 3B önizleme resmi (tarayıcıda üretilir)
+    ddv_cols = {r[1] for r in conn.execute('PRAGMA table_info(design_drawing_versions)')}
+    if 'thumb_path' not in ddv_cols:   # STEP sürümünün 3B önizleme resmi (tarayıcıda üretilir)
         conn.execute('ALTER TABLE design_drawing_versions ADD COLUMN thumb_path TEXT')
+    for col in ('preview_stl', 'preview_glb', 'preview_thumb', 'preview_at'):   # STEP → STL / GLB / PNG önizleme (tarayıcıda üretilir; UPLOAD_DIR/design/preview/<id>.*)
+        if col not in ddv_cols:
+            conn.execute(f'ALTER TABLE design_drawing_versions ADD COLUMN {col} TEXT')
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS design_cfd_runs (   -- 3B CFD analizi (OpenFOAM) koşuları: durum dizini, parametreler, sonuç özeti
             id INTEGER PRIMARY KEY,

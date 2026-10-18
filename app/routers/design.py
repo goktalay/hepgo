@@ -4,7 +4,7 @@ geçmişi. Her yeni dosya yüklemesi yeni bir sürümdür; eski sürümler (dosy
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from .. import auth, db
@@ -52,7 +52,9 @@ class CopyIn(BaseModel):
 
 @router.get('/projects')
 def projects(user=Depends(design_user), conn=db.DB):
-    return db.rows(conn.execute(
+    """Proje kartları: çizim sayısı, resim küçük resmi (thumb_vid) + projedeki SON STEP sürümü ve onun 3B önizlemesi (step: {id, name,
+    file_name, preview_thumb, preview_glb, preview_stl}) — kart küçük resmi/canlı 3B; önizleme yoksa yazma izinli kullanıcı tarayıcıda üretir."""
+    rows = db.rows(conn.execute(
         '''SELECT p.*, u.full_name AS created_by_name,
                   (SELECT COUNT(*) FROM design_drawings d WHERE d.project_id = p.id) AS drawing_count,
                   (SELECT v.id FROM design_drawing_versions v JOIN design_drawings d2 ON d2.id = v.drawing_id
@@ -61,6 +63,19 @@ def projects(user=Depends(design_user), conn=db.DB):
                     ORDER BY v.created_at DESC LIMIT 1) AS thumb_vid
            FROM design_projects p LEFT JOIN users u ON u.id = p.created_by
            WHERE p.archived = 0 ORDER BY p.id DESC'''))
+    steps = {}
+    for v in db.rows(conn.execute(
+            '''SELECT d.project_id, v.id, v.drawing_id, d.name, v.version, v.file_name, v.created_at,
+                      v.preview_thumb IS NOT NULL AS has_thumb, v.preview_glb IS NOT NULL AS has_glb, v.preview_stl IS NOT NULL AS has_stl
+               FROM design_drawing_versions v JOIN design_drawings d ON d.id = v.drawing_id
+               WHERE (lower(v.file_name) LIKE '%.step' OR lower(v.file_name) LIKE '%.stp')
+                 AND v.version = (SELECT MAX(v2.version) FROM design_drawing_versions v2 WHERE v2.drawing_id = v.drawing_id)
+               ORDER BY v.created_at, v.id''')):   # çizim başına yalnız güncel sürüm; proje için en son yüklenen kalır
+        steps[v['project_id']] = {k: v[k] for k in ('id', 'drawing_id', 'name', 'version', 'file_name', 'created_at')} | {
+            'preview_thumb': bool(v['has_thumb']), 'preview_glb': bool(v['has_glb']), 'preview_stl': bool(v['has_stl'])}
+    for p in rows:
+        p['step'] = steps.get(p['id'])
+    return rows
 
 
 @router.post('/projects')
@@ -94,6 +109,8 @@ def _tree(conn, pid):
     by_parent = {}
     for d in drawings:
         d['current'] = cur.get(d['id'])
+        if d['current']:
+            d['current']['preview'] = preview_info(d['current'])
         d['children'] = []
         by_parent.setdefault(d['parent_id'], []).append(d)
     def build(pid_):
@@ -178,7 +195,8 @@ def versions(did: int, user=Depends(design_user), conn=db.DB):
     if not db.row(conn.execute('SELECT id FROM design_drawings WHERE id = ?', (did,))):
         raise HTTPException(404, 'Çizim bulunamadı')
     return db.rows(conn.execute(
-        '''SELECT v.id, v.version, v.file_name, v.file_path, v.note, v.created_at, u.full_name AS uploaded_by_name
+        '''SELECT v.id, v.version, v.file_name, v.file_path, v.size, v.note, v.created_at, v.thumb_path,
+                  v.preview_stl, v.preview_glb, v.preview_thumb, v.preview_at, u.full_name AS uploaded_by_name
            FROM design_drawing_versions v LEFT JOIN users u ON u.id = v.uploaded_by
            WHERE v.drawing_id = ? ORDER BY v.version DESC''', (did,)))
 
@@ -210,6 +228,67 @@ async def set_version_thumb(vid: int, file: UploadFile = File(...), user=Depends
     with db.connect() as conn:
         conn.execute('UPDATE design_drawing_versions SET thumb_path = ? WHERE id = ?', (path, vid))
     return {'ok': True, 'thumb': f'/api/design/file?t={vid}'}
+
+
+# ---------- STEP → STL / GLB / PNG önizleme (tarayıcıda üretilir; sunucuda node/occt yok) ----------
+PREVIEW_MAX = 50 * 1024 * 1024        # STL ve GLB üst sınırı
+PREVIEW_THUMB_MAX = 2 * 1024 * 1024   # 480×360 PNG
+PREVIEW_KINDS = {'stl': ('preview_stl', '.stl', 'model/stl'), 'glb': ('preview_glb', '.glb', 'model/gltf-binary'), 'thumb': ('preview_thumb', '.png', 'image/png')}
+
+
+def _preview_ok(kind, data):
+    """Gövde biçim denetimi: STL ikili (80 bayt başlık + üçgen sayısı + n·50 bayt), GLB ('glTF' + sürüm 2), PNG imzası."""
+    if kind == 'stl':
+        if len(data) < 84 + 50:
+            return False
+        n = int.from_bytes(data[80:84], 'little')
+        return n > 0 and len(data) == 84 + 50 * n
+    if kind == 'glb':
+        return len(data) >= 20 and data[:4] == b'glTF' and int.from_bytes(data[4:8], 'little') == 2
+    return data[:8] == b'\x89PNG\r\n\x1a\n'
+
+
+def preview_info(v):
+    """Sürüm satırı → önizleme özeti (kart/detay): hangi dosyalar var, adresleri, üretim zamanı."""
+    vid = v['id']
+    return {'stl': f'/api/design/file?s={vid}' if v.get('preview_stl') else None, 'glb': f'/api/design/file?g={vid}' if v.get('preview_glb') else None,
+            'thumb': f'/api/design/file?t={vid}' if (v.get('preview_thumb') or v.get('thumb_path')) else None, 'at': v.get('preview_at')}
+
+
+@router.put('/versions/{vid}/preview')
+async def put_version_preview(vid: int, kind: str, request: Request, user=Depends(design_user)):
+    """Tarayıcıda STEP'ten üretilen önizleme dosyası (ham gövde): kind=stl (ikili STL, birleşik tek gövde, mm; ≤ 50 MB) ·
+    kind=glb (renkli binary glTF; ≤ 50 MB) · kind=thumb (480×360 PNG; ≤ 2 MB) → UPLOAD_DIR/design/preview/<vid>.<uzantı>;
+    sütun preview_stl / preview_glb / preview_thumb + preview_at. Yazma izni gerekir (design_user PUT'ta 'yaz' ister). Yeniden üretim üzerine yazar."""
+    from .. import config
+    if kind not in PREVIEW_KINDS:
+        raise HTTPException(400, 'kind: stl | glb | thumb')
+    col, ext, _ = PREVIEW_KINDS[kind]
+    limit = PREVIEW_THUMB_MAX if kind == 'thumb' else PREVIEW_MAX
+    try:
+        cl = int(request.headers.get('content-length') or 0)
+    except ValueError:
+        cl = 0
+    if cl > limit:
+        raise HTTPException(413, f'Gövde {limit // 1024 ** 2} MB sınırını aşıyor')
+    with db.connect() as conn:
+        v = db.row(conn.execute('SELECT id, drawing_id, file_name FROM design_drawing_versions WHERE id = ?', (vid,)))
+        if not v:
+            raise HTTPException(404, 'Sürüm bulunamadı')
+    data = await request.body()
+    if len(data) > limit:
+        raise HTTPException(413, f'Gövde {limit // 1024 ** 2} MB sınırını aşıyor')
+    if not _preview_ok(kind, data):
+        raise HTTPException(400, {'stl': 'Geçerli bir ikili STL değil', 'glb': 'Geçerli bir GLB (binary glTF) değil', 'thumb': 'Küçük resim PNG olmalı'}[kind])
+    folder = config.UPLOAD_DIR / 'design' / 'preview'
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f'{vid}{ext}').write_bytes(data)
+    with db.connect() as conn:
+        conn.execute(f'UPDATE design_drawing_versions SET {col} = ?, preview_at = ? WHERE id = ?', (f'design/preview/{vid}{ext}', db.now(), vid))
+        row = db.row(conn.execute('SELECT * FROM design_drawing_versions WHERE id = ?', (vid,)))
+        if kind == 'stl':
+            db.audit(conn, user['id'], 'STEP önizlemesi üretildi (STL)', 'design_drawing', v['drawing_id'], f"{v['file_name'] or ''} · {len(data) // 1024} KB")
+    return {'ok': True, 'kind': kind, 'size': len(data), 'preview': preview_info(row)}
 
 
 class SpecsIn(BaseModel):
@@ -245,8 +324,11 @@ def drawing_detail(did: int, user=Depends(design_user), conn=db.DB):
     """Montaj detay sayfası: çizim, güncel sürüm, proje, mamul, bilgiler, eşleşme istatistikleri (basılan parça ağırlığı, süre)."""
     d = dict(_drawing(conn, did))
     proj = db.row(conn.execute('SELECT id, name FROM design_projects WHERE id = ?', (d['project_id'],)))
-    cur = db.row(conn.execute('SELECT id, version, file_name, size, note, created_at, thumb_path FROM design_drawing_versions WHERE drawing_id = ? ORDER BY version DESC LIMIT 1', (did,)))
-    mamul = db.row(conn.execute('SELECT id, code, name, weight_g FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
+    cur = db.row(conn.execute('''SELECT id, version, file_name, size, note, created_at, thumb_path, preview_stl, preview_glb, preview_thumb, preview_at
+                                 FROM design_drawing_versions WHERE drawing_id = ? ORDER BY version DESC LIMIT 1''', (did,)))
+    if cur:
+        cur['preview'] = preview_info(cur)
+    mamul =db.row(conn.execute('SELECT id, code, name, weight_g FROM products WHERE id = ?', (d['product_id'],))) if d['product_id'] else None
     links = db.rows(conn.execute('''SELECT l.mesh_key, l.mesh_name, p.id, p.code, p.name, p.weight_g, p.gcode_meta, p.print_minutes
                                     FROM design_step_links l JOIN products p ON p.id = l.product_id WHERE l.drawing_id = ?''', (did,)))
     weight = 0.0; minutes = 0.0; weighed = 0
@@ -678,13 +760,25 @@ def delete_part(part_id: int, user=Depends(design_user), conn=db.DB):
 
 
 # ---------- Dosya servisi: önizleme tüm tasarımcılara, indirme (dl=1) yalnızca Master ----------
+# t=<vid>: PNG küçük resim (STEP önizlemesi; preview_thumb öncelikli, yoksa eski thumb_path) · s=<vid>: STL önizleme (indirme adı "<çizim adı>.stl")
+# g=<vid>: GLB önizleme (hızlı 3B görüntüleyici). Türetilmiş STL/GLB de "indirme yalnız Master" kuralına uyar; görüntüleyici inline okur.
 @router.get('/file')
-def design_file(v: int = None, p: int = None, t: int = None, dl: int = 0, user=Depends(design_user), conn=db.DB):
+def design_file(v: int = None, p: int = None, t: int = None, s: int = None, g: int = None, dl: int = 0, user=Depends(design_user), conn=db.DB):
     from fastapi.responses import FileResponse
     from .. import config
     row = None
+    media = None
     if t:   # sürümün 3B önizleme resmi
-        row = db.row(conn.execute("SELECT thumb_path AS file_path, 'onizleme.png' AS file_name FROM design_drawing_versions WHERE id = ?", (t,)))
+        row = db.row(conn.execute("SELECT COALESCE(preview_thumb, thumb_path) AS file_path, 'onizleme.png' AS file_name FROM design_drawing_versions WHERE id = ?", (t,)))
+        media = 'image/png'
+    elif s or g:
+        col = 'preview_stl' if s else 'preview_glb'
+        row = db.row(conn.execute(f'SELECT {col} AS file_path, file_name FROM design_drawing_versions WHERE id = ?', (s or g,)))
+        if row and row['file_path']:
+            import re
+            stem = re.sub(r'\.(step|stp)$', '', row['file_name'] or 'model', flags=re.I) or 'model'
+            row['file_name'] = f"{stem}.{'stl' if s else 'glb'}"
+        media = 'model/stl' if s else 'model/gltf-binary'
     elif v:
         row = db.row(conn.execute('SELECT file_path, file_name FROM design_drawing_versions WHERE id = ?', (v,)))
     elif p:
@@ -696,7 +790,8 @@ def design_file(v: int = None, p: int = None, t: int = None, dl: int = 0, user=D
     path = config.UPLOAD_DIR / row['file_path']
     if not path.is_file():
         raise HTTPException(404, 'Dosya bulunamadı')
-    return FileResponse(path, filename=row['file_name'], content_disposition_type='attachment' if dl else 'inline')
+    return FileResponse(path, filename=row['file_name'], content_disposition_type='attachment' if dl else 'inline', media_type=media,
+                        headers={'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'} if (t or s or g) else None)
 
 
 # ---------- Silme talepleri (yalnızca Master görür/karara bağlar) ----------

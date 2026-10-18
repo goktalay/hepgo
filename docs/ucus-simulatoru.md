@@ -134,7 +134,13 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 - Sanal kumanda (alt çubuk 🎮, yazma izni): iki yarı saydam çubuk (sol gaz/yaw, sağ pitch/roll; Mode 2; dokunmatik + fare) + klavye
   (W/S gaz, A/D yaw, ↑↓ pitch, ←→ roll — yaylı dönüş; Q/E ch5 mod anahtarı 1000/1500/2000; Boşluk gaz 1500). Kopterde gaz çubuğu merkeze
   yaylı (askı), uçakta tutmalı. 20 Hz `{t:'rc', ch}` yalnız açıkken; kapatınca / sayfadan çıkınca tek sefer 8×0. Açıkken 3B'nin WASD/ok
-  tuşları kilitlenir (kamera 1–4 çalışır); HUD RC çubukları 1–5 yerel değerleri gösterir (mor).
+  tuşları kilitlenir (kamera 1–4 çalışır); HUD RC çubukları 1–5 yerel değerleri gösterir (mor). Yön uzlaşımı (gerçek SITL ile ölçüldü):
+  sol çubuk EN ÜST → ch3 2000 (SITL RC_CHANNELS 2000, FBWA'da SERVO3 1900, HUD Gaz %100), EN ALT → 1000 (%0); W gazı artırır. Uçakta
+  çubuk yerde/disarm'da altta (1000) başlar; kumanda **uçuş sırasında** (armed) açılırsa `throttle0` = telemetri gazı → çubuk o gazda başlar
+  (ArduPlane TAKEOFF/AUTO gazı RC'den bağımsız verir: çubuk altta iken HUD %100 "ters" görünmesin, FBWA'ya geçişte gaz aniden kesilmesin).
+  Elevon yönü (SITL ölçümü): ch2=2000 → SERVO2 1835 → uçuşta pitch −4°→+19° (burun yukarı) → elevon `deg` −20,9 = arka kenar YUKARI
+  (Caymaz GLB `te_down` −1 ve delta +1 tutarlı); roll sağa: sol elevon +25 (TE aşağı), sağ −22,7 (TE yukarı). Kalkışta flaplar AŞAĞI (+17,5°,
+  `TKOFF_FLAP_PCNT` 50) — ArduPlane uzlaşımı, ters değil.
 
 ## 6. Kurulum sihirbazı (`flightsim.js`)
 1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları) + altında **Model** bölümü (§12: görsel kart ızgarası, yükleme, sistemdeki dosyalardan

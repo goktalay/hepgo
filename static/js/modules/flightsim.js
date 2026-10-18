@@ -1004,7 +1004,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       addEvent(tr('Sanal kumanda kapatıldı (RC override serbest)'));
       return;
     }
-    rc = virtualRC({ plane: isPlane(type), stickL, stickR, send: ch => socket?.send({ t: 'rc', ch }), onChange: () => drawRcBars(last?.rc) });
+    rc = virtualRC({ plane: isPlane(type), stickL, stickR, send: ch => socket?.send({ t: 'rc', ch }), onChange: () => drawRcBars(last?.rc),
+      throttle0: last?.armed ? last.throttle : null });   // uçuştayken açılırsa gaz çubuğu mevcut gazdan başlar (yerde/disarm: 1000)
     sticks.hidden = false; stage.classList.add('rc-on'); rcBtn.classList.add('primary');
     rcWarn.hidden = !last?.gcs_connected;
     sim?.setKeyboardLock(true);
@@ -1044,9 +1045,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
 // 20 Hz: tick (klavye entegrasyonu + çizim) → send(channels()). dispose(): zamanlayıcı/dinleyiciler kalkar, 8×0 (override serbest) gönderilir.
 // ======================================================================
 const RC_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
-function virtualRC({ plane, stickL, stickR, send, onChange }) {
+function virtualRC({ plane, stickL, stickR, send, onChange, throttle0 = null }) {
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const ax = { roll: 0, pitch: 0, thr: plane ? -1 : 0, yaw: 0 };   // thr: −1 = 1000 (uçak boşta), 0 = 1500 (kopter askı)
+  // thr: −1 = 1000 (uçak boşta), 0 = 1500 (kopter askı). Uçakta kumanda uçuş sırasında açılırsa (throttle0: telemetri gazı %) çubuk o gazda başlar:
+  // ArduPlane TAKEOFF/AUTO'da gazı RC'den bağımsız verir; çubuk altta (1000) iken HUD %100 "ters" görünmesin, FBWA'ya geçişte gaz aniden kesilmesin.
+  const thr0 = plane && throttle0 != null && Number.isFinite(Number(throttle0)) ? clamp(Number(throttle0) / 50 - 1, -1, 1) : null;
+  const ax = { roll: 0, pitch: 0, thr: plane ? (thr0 ?? -1) : 0, yaw: 0 };
   let ch5 = 1500, lastT = performance.now(), disposed = false;
   const keys = new Set();
   const drag = { l: null, r: null };          // sürüklenen çubuk: {id, x0, y0, r}

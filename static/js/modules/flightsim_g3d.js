@@ -167,6 +167,9 @@ export async function createGoogleTiles(opts) {
     hCache.set(k, v);
     return v;
   };
+  // İnce örnekleme (önbelleksiz, tam noktaya ışın): kalkış düzeneğinin 4 temas noktası (±3 m) aynı 25 m hücreye düştüğünden eğim için gerekir (§13);
+  // karo yoksa hücre önbelleğine düşer
+  const heightFine = (x, y) => { const v = sampleRaw(x, y); return v == null ? height(x, y) : v; };
 
   // ---- kök tileset yüklemesi (anahtar/ağ hatası → reject); havuzdan gelen örnekte kök zaten yüklü ----
   if (!tiles.root) await new Promise((res, rej) => {
@@ -181,7 +184,7 @@ export async function createGoogleTiles(opts) {
   }).catch(err => { disposeNow(); throw err; });
 
   // ---- kare güncellemesi: kamera çözünürlüğü, LOD, yer ofseti, ilerleme ----
-  let groundOffset = 0, offsetFrozen = false, offsetReported = false, lastOffsetT = 0, lastPct = -1, disposed = false;
+  let groundOffset = 0, offsetFrozen = false, offsetReported = false, firstOffsetT = 0, lastOffsetT = 0, lastPct = -1, disposed = false;
   function update(cam, airborne = false, now = performance.now()) {
     if (disposed) return;
     if (cam && cam !== camera) { tiles.deleteCamera?.(camera); tiles.setCamera(cam); }
@@ -195,8 +198,11 @@ export async function createGoogleTiles(opts) {
       const z = sampleRaw(0, 0);
       if (z != null && Math.abs(z) > 0.02) {
         group.position.z -= z; groundOffset -= z; group.updateMatrixWorld(true); hCache.clear();
-        if (!offsetReported) { offsetReported = true; onProgress?.({ stage: 'g3d-ground', offset: groundOffset }); }   // ilk düzeltme olay şeridine
+        if (!firstOffsetT) firstOffsetT = now;
       }
+      // Olay şeridine TOPLAM ofset: ilk ölçüm kaba kök karodadır (Ankara'da −1204 m görüldü) ve yanıltır; karolar dolunca ya da ilk düzeltmeden
+      // 3 sn sonra (ince LOD oturmuş) bir kez yazılır
+      if (!offsetReported && firstOffsetT && (tiles.loadProgress >= 0.99 || now - firstOffsetT > 3000)) { offsetReported = true; onProgress?.({ stage: 'g3d-ground', offset: groundOffset }); }
     }
     const pct = Math.round(tiles.loadProgress * 100);
     if (pct !== lastPct) { lastPct = pct; onProgress?.({ stage: 'g3d', pct }); }
@@ -225,7 +231,7 @@ export async function createGoogleTiles(opts) {
   }
 
   return {
-    group, tiles, height, update, attribution, dispose,
+    group, tiles, height, heightFine, update, attribution, dispose,
     get rootRequests() { return entry.rootRequests; },
     setTime(t) { time = t || 'day'; retint(); },
     setShadows(v) { shadows = !!v; retint(); },

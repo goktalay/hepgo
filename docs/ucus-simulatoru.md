@@ -94,7 +94,11 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   → kırmızı "ÇARPIŞMA" bandı + `cmd crash`; oturum "Sıfırla" ile yeniden başlar.
 - HUD (3B üstünde, sağ): mod, arm, yükseklik (AGL/MSL), hava/yer hızı, dikey hız, yön, GPS/uydu, batarya, gaz, RC çubukları, rüzgâr;
   sol alt: **Mission Planner bağlantısı**: `UDP <host>:<port>`, "Bağlı (ip)" / "Bekleniyor"; Kopyala; kısa talimat (Mission Planner › UDP › port).
-- Performans: 60 fps hedef; arazi 256×256 ızgara, LOD yok; ağaç ≤ 20.000 örnek.
+- Performans: 60 fps hedef; arazi 256×256 ızgara, LOD yok (gerçek kipte ek 192×192 "uzak arazi" halkası, §9); ağaç ≤ 20.000 örnek.
+- Sis / görüş uzaklığı (`skyAndLights(size, horizon)`): prosedürelde `Fog(size·0,12 … size·(1,6 − 1,25·fog))` (dünya kenarında biter). Gerçek arazi
+  ve Google 3B kipinde ufuk dünya boyutuna değil **görüş uzaklığına** bağlıdır: `far = horizon·(1,25 − fog)` (`horizon` = uzak arazi yarıçapı 24 km /
+  Google 30 km; fog 0,2 → 25 km, fog 1 → 6 km; fog 0 → sis yok), `near = 0,12·far`. Eski formül 4 km dünyada sisi 5,4 km'de kapatıyordu → 20 km'deki
+  dağlar iki kipte de hiç görünmüyordu ("dağlar gerçek yüksekliklerini göstermiyor" geri bildiriminin kök nedeni; §9/§11). Kamera `far` 60 km.
 - Akıcılık (`static/js/modules/flightsim_interp.js`, `createTimeline`): **uyarlanır gecikme tamponlu enterpolasyon**. Zaman ekseni KAYNAK
   zamanıdır (`tbm`; yoksa `ts`/alım): oynatma başı (`play`, kaynak ms) her render karesinde geçen gerçek süre × hız oranı kadar ilerler; hedefi
   "son kare − hedef gecikme"dir ve ona yalnız hız oranıyla (±%6; hatanın 400 ms EMA'sı) yaklaşır → saat ofseti kestirimi yok, SITL saat sapması ve
@@ -192,7 +196,8 @@ Veri kaynakları (anahtar gerektirmez; URL'ler sunucuda sabit, SSRF yok; tarayı
 Vekil uçları (`require_module('drone.sim')`, GET; salt okuyan rol de kullanır):
 | Uç | Yanıt |
 |---|---|
-| `GET /api/drone/sim/terrain?lat&lon&size_m` | `{z, tiles:[{x,y}], img_z, img_tiles:[{x,y}], elev_url_template, img_url_template, home_elev, bbox, size_m, attribution}`; `home_elev` merkez karosundan (alınamazsa null); 400 geçersiz parametre |
+| `GET /api/drone/sim/terrain?lat&lon&size_m` | `{z, tiles:[{x,y}], img_z, img_tiles:[{x,y}], elev_url_template, img_url_template, home_elev, bbox, size_m, far:false, attribution}`; `home_elev` merkez karosundan (alınamazsa null); 400 geçersiz parametre |
+| `GET /api/drone/sim/terrain?lat&lon&far=1[&size_m]` | **Uzak arazi planı** (ufuk): kenar 24–64 km (varsayılan 48), yükseklik **z 10** (2×2…3×3 karo, ≈ 110 m/px), uydu **z 12** (≤ 64 karo, ≈ 30 m/px), `far:true`; `home_elev` yine z 13 merkez karosundan (ana planla aynı referans, önbellekten) |
 | `GET /api/drone/sim/tile/{elev\|img}/{z}/{x}/{y}` | PNG/JPEG baytları, `Cache-Control: private, max-age=86400`; disk önbelleği `DATA_DIR/sim_terrain/{kind}/{z}/{x}/{y}` (LRU, erişimde mtime; sınır `SIM_TERRAIN_CACHE_MB`, varsayılan 2048 → %85'e temizlenir); kaynak 10 sn zaman aşımı; 404 geçersiz tür/sınır, 502 kaynak HTTP hatası, 503 ulaşılamadı/zaman aşımı (hata önbelleğe yazılmaz) |
 | `GET /api/drone/sim/osm?lat&lon&size_m` | `{buildings:[{poly:[[lat,lon]…], h}], forests:[poly], water:[poly], runways:[{poly, heading, width}], cached_at, bbox}`; bina `h`: `height` → `building:levels`×3 (+çatı katı) → deterministik 6–12 m; kapalı halkaların tekrarlı son noktası atılır; 7 gün önbellek `DATA_DIR/sim_terrain/osm/<sha1>.json`; Overpass 60 sn; 503 kaynak kapalı (iki sunucu da), 502 bozuk yanıt |
 
@@ -206,6 +211,17 @@ N bina · N orman · N su · N pist"), oturumda `.fs-msg` ve olay şeridi; atıf
 tüm karolar 502/503) `onFallback` → prosedürele düşer ve "Gerçek veri alınamadı, prosedürele düşüldü" uyarısı; OSM alınamazsa arazi gerçek kalır,
 "OSM verisi alınamadı" uyarısı. Aynı merkez+boyut için yüklenen veri örnek içinde önbelleklenir (`setWorld` yalnız sahneyi yeniden kurar;
 `setOrigin` merkez değişince yeniden yükler). Sihirbaz önizlemesi gerçek kipte aynı veriyle (uydu dokulu yükseklik + binalar) döner.
+
+**Uzak arazi halkası (ufuktaki dağlar):** ana dünya `size_m` (1–12 km) dışında arazi yoktu → 4 km dünyada 20 km'deki dağlar hiç yoktu, üstelik sis
+5,4 km'de kapanıyordu (§5). Oturum ekranında (önizlemede değil; kamera ufku görmez) `loadRealTerrain(…, withFar=true)` OSM ile **paralel**
+`/terrain?far=1` planını yükler (`loadMosaic` ortak yükleyici; yükseklik z 10 + uydu z 12, ≈ 1–2 MB) ve `buildReal` 192×192 ızgaralı 48 km'lik
+`uzak-arazi` örgüsü kurar: yükseklikler **ana arazi ile aynı h0 referansı** (ikisi de terrarium MSL; merkez 0), ana kare içinde ana arazinin 2 m
+altında saklı, kenardan 1,5 km dışarıya dek ana kenar değeriyle `smoothstep` karışımı (dikişsiz), sonrası tamamen z 10 verisi; aynı gece/akşam
+renk çarpanı; uzak kenar sisle (fog ufku 24 km·(1,25 − fog)) kaybolur. `terrainHeight(x, y)` ana kare dışında uzak araziden örnekler (serbest
+kamera zemin kısıtı, rota çubukları, çarpışma). Alınamazsa (ağ/502) sessizce yok sayılır (`console.warn`), ana dünya etkilenmez; `terrainInfo.farSize`.
+**Yükseklik ölçeği doğrulaması (Ankara):** terrarium verisi z birimi metre, ölçekleme/abartı yok; sunucu profili (z 10 ↔ z 13 farkı ≤ 8 m):
+ev 907,9 m MSL; K 18 km 1358 m; GD 16/18/20 km 1532/1664/1649 m; 20 km içinde en yüksek nokta **Elmadağ 1859 m MSL** (39,8029/32,9893; 18,7 km
+GD) → eve göre **+951 m**; 3B'de `terrainHeight` aynı noktada aynı değeri verir (e2e `/tmp/flsim/terr/e2e_terr.py` profili, aşağıda).
 
 Ölçümler (DEV, Ankara 39.925/32.837, 4 km): `/terrain` soğuk 1.1 sn (merkez karosu + plan), sıcak 0.15 sn; yükseklik 4 karo 2.4 sn → 0.15 sn;
 uydu 90 karo (z16, 2 MB) 12.5 sn → 2.6 sn; `/osm` soğuk 46 sn (Overpass; 7996 bina, 242 orman, 31 su; 1.3 MB sade JSON), sıcak 1 sn.
@@ -278,10 +294,17 @@ kullanılmaz. Photorealistic 3D Tiles üçüncü taraf 3B sahnede çizilebilir; 
   düz-dünya yaklaşıklığıdır (1° = 110574 m); Ankara'da meridyen yarıçapı %0,4 farklı → 2 km'de ≈ 8 m kayma (real kipiyle aynı).
 - **Yer ofseti (`groundOffset`):** karolar elipsoid yüksekliğinde, ev irtifası MSL (Türkiye'de geoid farkı ~30–40 m) → merkeze aşağı ışın
   (`tiles.raycast`, `firstHitOnly`) ile yüzey z'si ölçülür ve grup z kaydırılır (yüzey z = 0). Dron kalkmadan (armed ∧ hız > 1 m/s değil)
-  her 400 ms yenilenir (ince LOD geldikçe), kalkışta dondurulur.
+  her 400 ms yenilenir (ince LOD geldikçe), kalkışta dondurulur. Olay şeridine yazılan ofset **toplam** değerdir ve karolar dolunca ya da ilk
+  düzeltmeden 3 sn sonra bir kez yazılır (ilk ölçüm kaba kök karodadır: Ankara'da −1204 m görülüp sonra −33 m'ye oturuyordu; teşhis `sim.g3dOffset`).
+  `g3d.heightFine(x, y)` önbelleksiz tam-nokta ışını: kalkış düzeneğinin temas noktaları (±3 m) aynı 25 m hücreye düştüğünden eğim için gerekir.
 - **Yükseklik/çarpışma:** `terrainHeight(x, y)` → `g3d.height`: 25 m hücreli önbellek, aşağı ışın; karo yüklenince/boşalınca ve ofset
   değişince geçersiz; karo yoksa komşu hücre, yoksa 0. Çarpışma mevcut mantıkla (bina çatıları karoda olduğu için doğal gelir); pist
-  çizilmese de `runway_heading` boyunca 1200×40 m sanal şerit kalkış/iniş koşusu için muaf.
+  çizilmese de `runway_heading` boyunca 1200×40 m sanal şerit kalkış/iniş koşusu için muaf. Kalkış düzeneği (§13) aynı `terrainHeight` ile
+  karo yüzeyine oturur ve karolar yüklendikçe (500 ms'de bir yeniden örnekleme) ince LOD yüzeyine iner — "rampa haritanın üzerinde uçuyor"
+  izleniminin kök nedeni düzeneğin `z = 0` varsayımıyla eğimli/ofsetli karo yüzeyinin üstünde ya da içinde durmasıydı.
+- **Uzak dağlar:** 3D Tiles LOD küreseldir; `errorTarget 16`, `maxDepth ∞`, LRU 350 MB ve kamera `far` 60 km uzak karoları **engellemez**
+  (dünya boyutu kırpması yoktur — `size_m` yalnız pist/sis içindi). Ufuktaki dağların görünmemesinin kök nedeni sis formülüydü (4 km dünyada
+  5,4 km'de kapanıyordu); artık `skyAndLights(size, 30 km)` → fog 0,2'de 31 km görüş (§5). Uzak bölge için kaba karolar (az bellek) doğal gelir.
 - **Havuz:** aynı merkez için `TilesRenderer` sihirbaz önizlemesi ile oturum ekranı arasında paylaşılır (`POOL`; `dispose` askıya alır,
   10 dk sonra atar) → kök tileset isteği oturum başına **1** (ölçüm: önizleme + oturum + kalkış = 1 root, ~1000 glb, 0 hata).
 - DEV ölçümü (Ankara, gerçek anahtar, Referer `gokkubbe.hepgo.com`): önizleme ilk karolar 1,5–7 sn (yazılım WebGL), oturum dünyası < 1 sn
@@ -390,15 +413,29 @@ plane modelinde okunmaz (yalnız `add_twist_forces` çağıran modeller; ölçü
 DRFTALT 0` (adlar ikilide `param_request_list` ile doğrulandı). Sahte kip de `gps_fix 6, sats 18` verir. Askeri HUD GPS satırı fix türünü yazar
 (`RTK` / `RTK FLT` / `DGPS` / `3D` / `2D`); web HUD'daki (`flightsim.js`) "3D" metni ayrı iş (öneri: aynı eşleme).
 
-**3B:** düzenek (rampa römorku / pickup) pist başında **sabittir**: demir bir kez atılır (`rig.needsAnchor` → `anchor`), yalnız SITL konumu > 2 m
-sıçrarsa (reset / set_home) yeniden oturtulur; araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler (`rig.tracking`). Uçak
-`released`'a dek kızağa kilitlidir (SITL konumu yok sayılır), `released` geçişi SITL konumuna 0,3–0,6 sn'de slerp/lerp ile yapılır. **Yerde kilit:**
-disarm + AGL < 1 m + yer hızı < 0,5 m/s iken gösterilen konum dondurulur (EKF'nin cm'lik gezinmesi görünmez; `groundLocked`), ARM/hareketle 0,4 sn'de
+**3B:** düzenek (rampa römorku / pickup) pist başında **sabittir**: demir bir kez atılır (`rig.needsAnchor` → `anchor(p, terrainHeight)`), yalnız SITL
+konumu > 2 m sıçrarsa (reset / set_home) yeniden oturtulur; araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler (`rig.tracking`).
+**Yüzeye oturma:** düzenek `z = 0` varsayımıyla değil, altındaki yüzeye göre durur — 4 temas noktası (tekerlekler; rampa ±0,95/±1,3 m, pickup
+±0,92/−1,6…1,85 m × ölçek) `terrainHeight` ile örneklenir (gerçek arazi ızgarası / Google 3B karo ışını) → yükseklik (ortalama) + eğim (ön/arka →
+pitch, sağ/sol → roll, ≤ 20°; Euler `ZXY`: yerel roll, pitch, sonra pist yönü); eğimden doğan kızak XY kayması ikinci geçişte düzeltilir (SITL uçağı
+kızakta kalır). `rig.resurface(terrainHeight)` her 500 ms yeniden örnekler ve hedefe 0,25 sn'de yumuşak yaklaşır → Google 3B'de karolar yüklendikçe
+(kaba → ince LOD, `groundOffset` değişimi) düzenek zıplamadan yüzeye iner; uçak kızakta düzenekle birlikte (`planeQuat` = düzeneğin dünya
+yönelimi × rampa eğimi). Teşhis: `sim.rigState()` → `{phase, surface:{z, pitch_deg, roll_deg}, x, y}`.
+Uçak `released`'a dek kızağa kilitlidir (SITL konumu yok sayılır). **`released` geçişi (ofset sönümü):** eski 0,3–0,6 sn'lik düz lerp uçağı
+SITL'in henüz yerdeki (z ≈ 0, hızlanıyor) konumuna indiriyordu — "rampadan çıkarken rampanın altına inip oradan yükseliyor". Artık `released`
+anında kızak ucu (3B konum + yönelim) ile SITL konumu/yönelimi arasındaki fark ölçülür (`rel.off`, `rel.dq = q_kızak · q_SITL⁻¹`) ve uçağa eklenir;
+yatay ofset ve yönelim farkı `k = min(1 − smooth(0…3 sn), 1 − smooth(AGL 4,5…15 m))` ile 3 sn'de ya da AGL 15 m'de sıfıra iner; **dikey ofset
+yalnız uçağın kendi tırmanışıyla erir** (`kz` azalması ≤ v_z·dt/off_z → gösterilen z hiçbir karede düşmez; 6 sn'den sonra her durumda 1 sn'de
+kapanır). Uçak rampa ucundan çıkıp doğal tırmanır, asla rampa/kasa altına inmez; araçta aynı mantık (kasa kızağı yüksekliği). Teşhis:
+`sim.releaseBlend()` → `{t, kz, off}`, `sim.shownZ()` (gösterilen z, alt_rel ölçeği). SITL tarafında ek parametre gerekmedi (`plane-catapult`'ta
+fırlatma pitch'i parametresi yok; `TKOFF_LVL_PITCH` = açı zaten yazılıyor). **Yerde kilit:**
+disarm + AGL < 1 m + yer hızı < 0,5 m/s iken gösterilen konum dondurulur (EKF'nin cm'lik gezinmesi görünmez; `groundLocked`; kilit z'si
+altındaki yüzeyden aşağı olmaz → tekerlekli uçak eğimli gerçek yüzeye gömülmez), ARM/hareketle 0,4 sn'de
 SITL konumuna döner, > 1,5 m sıçrama kilidi yeniden oturtur. Mission Planner haritasıyla tutarlılık: SITL artık kaymadığından haritadaki uçak ile 3B'deki
 düzenek/uçak aynı noktadadır (EKF ↔ SIMSTATE farkı 1–2 cm). Araç üstünde SITL'in doğrudan karşılığı yoktur: SITL'de uçak TAKEOFF yer koşusunu kendisi yapar (gaz açık),
 `TKOFF_ROTATE_SPD` bırakma hızına eşit olduğundan uçak o hıza dek yerde kalır; 3B'de pickup bu yer koşusu boyunca uçağın altında (uçakla aynı hızda)
-gider, uçak kasa kızağında yükseltilmiş gösterilir, `released` ile 0,3 sn'de SITL konumuna iner ve araç 4 m/s² ile frenleyip durur (pist dışına da
-sürer; düz zemin varsayımı). Sahte kinematik (`HEPGO_SITL=0`) ve `?mock=1` üç yöntemi de taklit eder (rampa: 1,2 sn bekleme + 0,5 sn'de 22 m/s;
+gider, uçak kasa kızağında yükseltilmiş gösterilir, `released` ile kasa ofseti sönümlenerek SITL konumuna geçer (aşağı inmez) ve araç 4 m/s² ile
+frenleyip durur (pist dışına da sürer; yüzey oturması 500 ms'de bir yeniden örneklenir). Sahte kinematik (`HEPGO_SITL=0`) ve `?mock=1` üç yöntemi de taklit eder (rampa: 1,2 sn bekleme + 0,5 sn'de 22 m/s;
 araç: 2,5 m/s² ivme, bırakma hızında kalkış; tekerlekli: 4 m/s², 12 m/s'de kalkış).
 
 **3B (`flightsim_launch.js`, `flightsim3d.js` `setLaunch(cfg)` / `setLaunchPhase(p)`):**
@@ -408,8 +445,8 @@ araç: 2,5 m/s² ivme, bırakma hızında kalkış; tekerlekli: 4 m/s², 12 m/s'
   `angle_deg`), 6 m çift ray + traversler + uç tamponu, rayın altında pnömatik fırlatma tüpü + piston, şasiden raya eğim silindiri (sarı gövde + krom
   piston), basınç tüpü + kompresör/valf kutusu + ikaz lambası (gece yanar), kızak (ray pabuçları, yastıklı destekler; `attach` noktası). Uçak kızağa
   oturur (pitch = açı, pist yönü). "Fırlat": kızak 6 m'yi 0,5 sn'de sabit ivmeyle alır (çıkış hızı 2L/t = 24 m/s ≈ 86 km/h, bilgi satırında), ray sonunda
-  `released` → 0,6 sn'de uçak SITL konumuna/yönelimine slerp ile geçer; kızak 1 sn sonra sönümleyiciyle geri döner. Dizi dışı hareket (hız > 3 m/s ya da
-  AGL > 2 m) düzeneği kendiliğinden serbest bırakır.
+  `released` → uçak kızak ucu ofsetiyle SITL'i izler, ofset 3 sn / AGL 15 m'de sönümlenir (yukarıda); kızak 1 sn sonra sönümleyiciyle geri döner.
+  Dizi dışı hareket (hız > 8 m/s ya da AGL > 3 m) düzeneği kendiliğinden serbest bırakır.
 - *Araç:* `createLaunchRig('vehicle')` — pickup: şasi, 4 tekerlek (jant + cıvatalar; dönerler), kaput, ızgara, krom tamponlar, kabin (eğik ön cam, yan/arka
   camlar, aynalar), kasa (taban, yanlar, arka kapak), kasa kızağı (A-destekler + yastıklar; `attach`), farlar/stoplar (gece yanar), tepe lambası.
   Başlangıçta kızak pist merkezinde (uçak = SITL evi). `launch`: araç SITL uçağını taşır; `released`: fren.
@@ -419,6 +456,17 @@ araç: 2,5 m/s² ivme, bırakma hızında kalkış; tekerlekli: 4 m/s², 12 m/s'
 **Oturum ekranı:** üst şeritte yöntem rozeti ("Rampa 20°" / "Araç 70 km/h" / "Tekerlekli"), sağ panelde "Kalkış" satırı, **Kalkış** düğmesi
 yönteme göre "Fırlat" / "Aracı sür" / "Kalkış" (modal ipucu yönteme göre), olay şeridinde aşamalar (FIRLATMA, BIRAKILDI · 68 km/h, …), askeri HUD sol
 alt bloğunda `LAUNCH RAMP 20° · 86 km/h` / `LAUNCH VEH · 70 km/h` / `LAUNCH RWY` satırı. 6 dil.
+
+**E2E ölçümü (gerçek SITL arduplane, Ankara, rampa 15° / araç 70 km/h, gerçek arazi ve Google 3B gerçek anahtar + Referer; `/tmp/flsim/terr/e2e_terr.py`,
+görüntüler `/tmp/flsim/terr/shots/`):** `released` sunucudan rampada komuttan 2,1 sn, araçta 3,8 sn sonra (31–33 km/h / 67 km/h). Tarayıcı içi rAF kaydı
+(gösterilen z `shownZ` ↔ SITL z, dikey katsayı `kz`): rampa-gerçek arazi `4,96 (kızak ucu) → 10,5 (SITL 5,9; kz 0,95) → 19,5 (16,8) → 40,0 (39,1) → 60,1`,
+rampa-Google `4,94 → 5,10 → 17,0 → 49,0 → 56,5`, araç-gerçek `4,65 (kasa) → 9,0 → 10,5 → 25,1 → 44,0` — **hiçbir karede düşüş yok** (eski kodda uçak
+0,6 sn'de z≈0'a iniyordu); 20 sn'de AGL 60 m, çarpışma yok. Düzenek: gerçek arazide merkez düzleştirmesi içinde z 0 / 0°; Google 3B'de rampa
+`z −0,03 m, pitch 0,70°, roll 0,01°`; araç ilk kaba karoda `z −3,4 m, pitch −0,96°` iken 12 sn'de (ince karolar) `z 0,007 m, pitch 0,28°, roll 0,18°`
+— kullanıcıdaki "haritanın üzerinde uçuyor" izlenimi bu ilk kaba-karo yüksekliğiydi (yeniden örnekleme ile kendiliğinden oturur). Kaba kök karo
+ilk 2,5 sn'de −280 m ölçtürebildiğinden Google'da |h| > 8 m örnek yok sayılır (`rigSurf`; düzenek merkezden ≤ 20 m uzakta, gerçek fark birkaç m).
+Google toplam yer ofseti −32,7…−33,3 m (olay şeridine artık bu yazılır). Not: yazılım WebGL'de (4–8 fps) `released` ekran görüntüleri çekim gecikmesiyle ~60 m'de yakalanır;
+anlık kanıt zaman serisidir.
 
 **Testler (`kalkis_testleri`):** `world.launch` 400'leri (yöntem, açı 5/31, hız 30/120, nesne değil, bool), varsayılanlar, VTOL normalizasyonu,
 parametre setleri (ramp/vehicle/wheels; her birinde `SERVO3_MIN/TRIM 1000`; `GPS_RTK_PARAMLARI` doğruluk ≤ 5 cm, ≥ 12 uydu, hata alanları 0),

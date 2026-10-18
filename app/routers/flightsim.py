@@ -425,9 +425,9 @@ def _kaynak(e):
 
 
 @router.get('/terrain')
-def terrain_plan(lat: float, lon: float, size_m: float = 4000, user=Depends(sim_user)):
+def terrain_plan(lat: float, lon: float, size_m: float = None, far: int = 0, user=Depends(sim_user)):
     try:
-        return sim_terrain.terrain_plani(lat, lon, size_m)
+        return sim_terrain.terrain_plani(lat, lon, size_m, uzak=bool(far))   # far=1: ufuk için kaba uzak arazi planı (§9)
     except ValueError as e:
         raise HTTPException(400, str(e))
 

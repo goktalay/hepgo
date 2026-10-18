@@ -76,12 +76,9 @@ async function getBitmap(url) {
   return new Promise((res, rej) => { const im = new Image(); const u = URL.createObjectURL(blob); im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('karo çözülemedi')); }; im.src = u; });
 }
 
-// Gerçek arazi verisini yükler → { sample(x, y) (m, merkez 0), uv(x, y), atlas (canvas), homeElev, hmin, hmax, osm, osmError, meta }
-// onProgress({stage: 'plan'|'elev'|'img'|'osm', done, total})
-export async function loadRealTerrain(T, origin, size, toLocal, onProgress) {
-  const prog = (stage, done, total) => onProgress?.({ stage, done, total });
-  prog('plan', 0, 1);
-  const meta = await getJSON(`${TERRAIN_API}/terrain?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`);
+// Karo planından (/terrain yanıtı) yükseklik mozaiği + uydu atlası → { sampleRaw(x, y) (m MSL, bilineer), uv(x, y), atlas, elevOk }.
+// prog(stage, done, total); `quiet` → eksik yükseklik karosu hata değil (uzak arazi isteğe bağlı).
+async function loadMosaic(meta, toLL, prog, quiet = false) {
   const z = meta.z, tiles = meta.tiles || [], iz = meta.img_z, itiles = meta.img_tiles || [];
   if (!tiles.length) throw new Error('Yükseklik karosu planı boş');
   const ext = ts => { const xs = ts.map(t => t.x), ys = ts.map(t => t.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; };
@@ -103,12 +100,10 @@ export async function loadRealTerrain(T, origin, size, toLocal, onProgress) {
         for (let px = 0; px < TILE_PX; px++, s += 4) mosaic[o + px] = d[s] * 256 + d[s + 1] + d[s + 2] / 256 - 32768;
       }
       elevOk++;
-    } catch (err) { if (err?.status === 503 || err?.status === 502) throw err; }
+    } catch (err) { if (!quiet && (err?.status === 503 || err?.status === 502)) throw err; }
     prog('elev', ++done, tiles.length);
   });
   if (!elevOk) throw new Error('Yükseklik verisi alınamadı');
-  const cosLat = Math.cos(origin.lat * Math.PI / 180);
-  const toLL = (x, y) => [origin.lat + y / 110574, origin.lon + x / (111320 * cosLat)];
   const sampleRaw = (x, y) => {
     const [lat, lon] = toLL(x, y);
     const [fx, fy] = lonlatToTile(lon, lat, z);
@@ -117,11 +112,6 @@ export async function loadRealTerrain(T, origin, size, toLocal, onProgress) {
     const i0 = iy * mw + ix, i1 = i0 + mw;
     return (mosaic[i0] * (1 - ax) + mosaic[i0 + 1] * ax) * (1 - ay) + (mosaic[i1] * (1 - ax) + mosaic[i1 + 1] * ax) * ay;
   };
-  const h0 = sampleRaw(0, 0);
-  const homeElev = meta.home_elev != null ? Number(meta.home_elev) : h0;
-  let hmin = Infinity, hmax = -Infinity;
-  for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) { const v = sampleRaw((i / 63 - 0.5) * size, (j / 63 - 0.5) * size) - h0; hmin = Math.min(hmin, v); hmax = Math.max(hmax, v); }
-  const sample = (x, y) => sampleRaw(x, y) - h0;
   // --- uydu atlası (karolar canvas'a çizilir; gece/akşam koyulaştırma malzeme renginde — atlas yeniden kullanılabilir) ---
   const I = ext(itiles.length ? itiles : tiles), inx = I.x1 - I.x0 + 1, iny = I.y1 - I.y0 + 1;
   const scale = Math.min(1, MAX_ATLAS / Math.max(inx, iny) / TILE_PX);
@@ -143,12 +133,40 @@ export async function loadRealTerrain(T, origin, size, toLocal, onProgress) {
     const [fx, fy] = lonlatToTile(lon, lat, iz);
     return [(fx - I.x0) / inx, 1 - (fy - I.y0) / iny];
   };
-  // --- OSM (binalar/orman/su/pist); alınamazsa uyarı ile boş ---
+  return { sampleRaw, uv, atlas, elevOk };
+}
+
+// Gerçek arazi verisini yükler → { sample(x, y) (m, merkez 0), uv(x, y), atlas (canvas), homeElev, hmin, hmax, osm, osmError, meta,
+//   far: { sample(x, y) (m, aynı merkez 0 referansı), uv, atlas, size } | null }
+// onProgress({stage: 'plan'|'elev'|'img'|'osm', done, total}). `withFar`: ufuk için kaba "uzak arazi" halkası (/terrain?far=1: 48 km, z 10 /
+// uydu z 12; §9) OSM ile paralel yüklenir; alınamazsa sessizce yok (ana dünya etkilenmez).
+export async function loadRealTerrain(T, origin, size, toLocal, onProgress, withFar = false) {
+  const prog = (stage, done, total) => onProgress?.({ stage, done, total });
+  prog('plan', 0, 1);
+  const meta = await getJSON(`${TERRAIN_API}/terrain?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`);
+  const cosLat = Math.cos(origin.lat * Math.PI / 180);
+  const toLL = (x, y) => [origin.lat + y / 110574, origin.lon + x / (111320 * cosLat)];
+  const main = await loadMosaic(meta, toLL, prog);
+  const { sampleRaw, uv, atlas } = main;
+  const h0 = sampleRaw(0, 0);
+  const homeElev = meta.home_elev != null ? Number(meta.home_elev) : h0;
+  let hmin = Infinity, hmax = -Infinity;
+  for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) { const v = sampleRaw((i / 63 - 0.5) * size, (j / 63 - 0.5) * size) - h0; hmin = Math.min(hmin, v); hmax = Math.max(hmax, v); }
+  const sample = (x, y) => sampleRaw(x, y) - h0;
+  // --- uzak arazi (isteğe bağlı) + OSM (binalar/orman/su/pist; alınamazsa uyarı ile boş) — paralel ---
   prog('osm', 0, 1);
-  let osm = null, osmError = null;
-  try { osm = await getJSON(`${TERRAIN_API}/osm?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`); } catch (err) { osmError = err?.message || String(err); }
+  let osm = null, osmError = null, far = null;
+  const farP = withFar ? (async () => {
+    try {
+      const fm = await getJSON(`${TERRAIN_API}/terrain?lat=${origin.lat}&lon=${origin.lon}&far=1`);
+      const f = await loadMosaic(fm, toLL, () => {}, true);
+      far = { sample: (x, y) => f.sampleRaw(x, y) - h0, uv: f.uv, atlas: f.atlas, size: Number(fm.size_m) || 48000, z: fm.z };   // ana arazi ile aynı h0 referansı (ikisi de MSL)
+    } catch (err) { console.warn('Uzak arazi alınamadı:', err?.message || err); }
+  })() : Promise.resolve();
+  const osmP = getJSON(`${TERRAIN_API}/osm?lat=${origin.lat}&lon=${origin.lon}&size_m=${Math.round(size)}`).then(o => { osm = o; }, err => { osmError = err?.message || String(err); });
+  await Promise.all([farP, osmP]);
   prog('osm', 1, 1);
-  return { sample, uv, atlas, homeElev, hmin, hmax, osm, osmError, meta };
+  return { sample, uv, atlas, homeElev, hmin, hmax, osm, osmError, meta, far };
 }
 let _libs = null;
 const loadLibs = () => (_libs ??= Promise.all(
@@ -166,6 +184,9 @@ const GRID = 256;                         // arazi ızgarası
 const MAX_TREES = 20000;
 const MODEL_SCALE = 2.5;                  // dron modelleri (görünürlük için büyütülür; kamera mesafeleri yarıçapa bağlı)
 const DEG = Math.PI / 180;
+const G3D_HORIZON = 30000;                // Google 3B: sis ufku tabanı (m); kamera far 60 km
+const REL_T = 3.0, REL_AGL = 15, REL_TMAX = 6.0;   // released ofset sönümü (§13): 3 sn ya da AGL 15 m; dikey ofset yalnız tırmanışla erir, en geç 6 sn
+const RIG_SURF_MS = 500;                  // düzenek yüzey yeniden örnekleme aralığı (Google karoları yüklendikçe yeniden oturur; §13)
 
 // ---------- Tohumlu rastgele sayı (mulberry32) ----------
 function rng(seed) {
@@ -289,7 +310,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   };
 
   // ---------- ortak dünya parçaları (prosedürel + gerçek) ----------
-  function skyAndLights(size) {
+  // `horizon` (m): gerçek arazi / Google 3B kipinde görüş uzaklığı tabanı (uzak arazi yarıçapı); sis ufku dünya boyutuna değil buna bağlanır —
+  // eski formül 4 km dünyada sisi 5,4 km'de kapatıyor, 20 km'deki dağlar hiç görünmüyordu (§9). Prosedürelde (horizon yok) eski davranış.
+  function skyAndLights(size, horizon = 0) {
     const night = W.time === 'night', dusk = W.time === 'dusk';
     const sky = night ? 0x0a1328 : dusk ? 0xe0956a : 0x8fbdea;
     renderer.setClearColor(sky, 1);
@@ -304,7 +327,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     lights.hemi.intensity = night ? 0.5 : dusk ? 0.8 : 0.9;
     lights.amb.intensity = night ? 0.3 : 0.15;
     const fog = clamp(num(W.fog, 0), 0, 1);
-    scene.fog = fog > 0 ? new T.Fog(sky, size * 0.12, size * (1.6 - 1.25 * fog)) : null;
+    if (horizon > 0) {   // görüş uzaklığı: fog 0 → sis yok; 0,2 (varsayılan) → ≈ 1,05·ufuk (25 km); 1 → 0,25·ufuk (6 km)
+      const farF = horizon * (1.25 - fog);
+      scene.fog = fog > 0 ? new T.Fog(sky, farF * 0.12, farF) : null;
+    } else scene.fog = fog > 0 ? new T.Fog(sky, size * 0.12, size * (1.6 - 1.25 * fog)) : null;
     return { night, dusk };
   }
 
@@ -442,13 +468,15 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
     const rand = rng(num(Wn.seed, 12345) ^ 0x9E3779B9);
     const flatR = Wn.runway !== false ? FLAT_R : 60, flatR2 = Wn.runway !== false ? FLAT_R2 : 160;
-    const height = (x, y) => real.sample(x, y) * smooth(flatR, flatR2, Math.hypot(x, y));
+    const half = size / 2, far = real.far || null;
+    const mainH = (x, y) => real.sample(x, y) * smooth(flatR, flatR2, Math.hypot(x, y));
+    // Ana kare dışında yükseklik uzak araziden (kamera zemin kısıtı, çarpışma, rota çubukları); uzak arazi yoksa kenar değeri (sample kırpar)
+    const height = far ? (x, y) => (Math.abs(x) > half || Math.abs(y) > half ? far.sample(x, y) : mainH(x, y)) : mainH;
     const H = Math.max(1, real.hmax - real.hmin);
-    terrain = { W: Wn, size, H, height, waterZ: -Infinity, rand, real: true, homeElev: real.homeElev, hmin: real.hmin, hmax: real.hmax, osm: real.osm };
+    terrain = { W: Wn, size, H, height, waterZ: -Infinity, rand, real: true, homeElev: real.homeElev, hmin: real.hmin, hmax: real.hmax, osm: real.osm, farSize: far ? far.size : 0 };
     W = Wn;
-    const { night, dusk } = skyAndLights(size);
+    const { night, dusk } = skyAndLights(size, far ? far.size / 2 : 0);
     const osm = real.osm || { buildings: [], forests: [], water: [], runways: [] };
-    const half = size / 2;
     const toXY = ll => { const p = toLocal(ll[0], ll[1]); return [p.x, p.y]; };
     const inside = pts => pts.some(([x, y]) => Math.abs(x) <= half && Math.abs(y) <= half);
 
@@ -471,6 +499,30 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     ground.receiveShadow = true;
     ground.name = 'arazi';
     gWorld.add(ground);
+
+    // --- uzak arazi halkası (§9): ufka dek kaba ızgara (48 km, terrarium z 10 + uydu z 12). Ana kare içinde ana arazinin 2 m altında saklı;
+    // kenardan 1,5 km dışarıya dek ana kenar değeriyle karışır (dikişsiz), sonra tamamen uzak veri. Sis ufku far.size/2'ye bağlı (skyAndLights).
+    if (far) {
+      const FG = 192, BLEND = 1500;
+      const fgeo = new T.PlaneGeometry(far.size, far.size, FG - 1, FG - 1);
+      const fpos = fgeo.attributes.position, fuv = fgeo.attributes.uv;
+      for (let i = 0; i < fpos.count; i++) {
+        const x = fpos.getX(i), y = fpos.getY(i), d = Math.max(Math.abs(x), Math.abs(y)) - half;
+        let z;
+        if (d <= 0) z = mainH(x, y) - 2;
+        else { const w = smooth(0, BLEND, d); z = (1 - w) * mainH(x, y) + w * far.sample(x, y); }
+        fpos.setZ(i, z);
+        const t = far.uv(x, y);
+        fuv.setXY(i, t[0], t[1]);
+      }
+      fgeo.computeVertexNormals();
+      const ftex = new T.CanvasTexture(far.atlas);
+      ftex.colorSpace = T.SRGBColorSpace;
+      ftex.anisotropy = tex.anisotropy; ftex.generateMipmaps = true; ftex.minFilter = T.LinearMipmapLinearFilter;
+      const fground = new T.Mesh(fgeo, new T.MeshLambertMaterial({ map: ftex, color: night ? 0x4c5670 : dusk ? 0xe8b898 : 0xffffff }));
+      fground.name = 'uzak-arazi';
+      gWorld.add(fground);
+    }
 
     // --- su çokgenleri (OSM natural=water): düz yüzey, en alçak köşe −0.2 m ---
     waterPolys = [];
@@ -615,7 +667,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     const size = clamp(num(Wn.size_m, 4000), 1000, 20000);
     terrain = { W: Wn, size, H: 200, height: g3d.height, waterZ: -Infinity, rand: rng(num(Wn.seed, 12345)), real: false, google: true, homeElev: g3d.homeElev, counts: null };
     W = Wn;
-    const { night, dusk } = skyAndLights(size);
+    const { night, dusk } = skyAndLights(size, G3D_HORIZON);   // karolar küresel LOD'lu: ufuk dünya boyutuna değil görüş uzaklığına bağlı (uzak dağlar kaba karolarla gelir)
     g3d.setTime(Wn.time); g3d.setShadows(!preview && !!opts.g3dShadows);   // gölge isteğe bağlı (normal hesaplama + Lambert; varsayılan Basic: doku rengi doğrudan)
     scene.add(g3d.group);
     if (Wn.runway === true) { const rw = runwayMesh(num(Wn.runway_heading, 0), RUNWAY_L, 18, night, dusk); rw.position.z = 0.08; gWorld.add(rw); }
@@ -652,7 +704,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       const key = `${origin.lat.toFixed(5)},${origin.lon.toFixed(5)},${size}`;
       try {
         if (!realCache || realCache.key !== key) {
-          const r = await loadRealTerrain(T, origin, size, toLocal, p => { if (seq === buildSeq) onProgress?.(p); });
+          const r = await loadRealTerrain(T, origin, size, toLocal, p => { if (seq === buildSeq) onProgress?.(p); }, !preview);   // oturumda uzak arazi halkası da (önizleme kamerası ufku görmez)
           if (seq !== buildSeq) return;
           realCache = { key, data: r };
         }
@@ -935,7 +987,10 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   let typeSeq = 0;
   // ---------- kalkış düzeneği (§13): rampa / pickup; yalnız sabit kanat. setLaunch(cfg) kurar, setLaunchPhase(p) sunucu aşamalarını uygular ----------
   let launchCfg = opts.launch ? { ...opts.launch } : null, rig = null;
-  const rigLocal = new T.Vector3(), rigPos = new T.Vector3(), rigQ = new T.Quaternion();
+  const rigPos = new T.Vector3(), rigQ = new T.Quaternion();
+  let rigSurfT = 0;   // düzenek yüzey örneklemesi son zamanı (ms)
+  // released geçişi (§13): kızak ucu ↔ SITL farkı (off, dq) → k ile sönümlenir; kz dikey ofsetin ayrı (yalnız tırmanışla eriyen) katsayısı
+  const rel = { on: false, armed: false, t: 0, kz: 1, off: new T.Vector3(), dq: new T.Quaternion(), lastPos: new T.Vector3(), lastQ: new T.Quaternion() };
   const gLock = { on: false, pos: new T.Vector3(), t: 1 };   // yerde kilit (frame içinde; §13)
   function buildRig() {
     rig?.dispose(); rig = null;
@@ -1068,6 +1123,9 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // ---------- çarpışma ----------
   let collided = false;
   const terrainHeight = (x, y) => (terrain ? terrain.height(x, y) : 0);
+  // Düzenek temas noktaları: Google'da önbelleksiz ince ışın (eğim için). Düzenek merkezden ≤ 20 m uzakta ve merkez yüzeyi 0'a oturtulduğundan
+  // gerçek fark birkaç m'dir; |h| > 8 m ölçüm kaba kök karodandır (e2e'de ilk 2,5 sn'de −280 m görüldü) → 0 sayılır, ince karo gelince yeniden örneklenir
+  const rigSurf = (x, y) => { if (!g3d) return terrainHeight(x, y); const h = g3d.heightFine(x, y); return Math.abs(h) > 8 ? 0 : h; };
   function checkCollision() {
     if (collided || !tele.has || !tele.armed || tele.speed <= 1) return;
     const p = cur.pos;
@@ -1110,24 +1168,49 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
       drone.group.position.z += drone.ground || 0;   // alt_rel gövde orijini değil tekerlek/kızak yüksekliği: yerde model piste gömülmesin
       drone.group.quaternion.copy(cur.q);
     }
-    // Kalkış düzeneği (§13): uçak kızakta/kasada iken konumu SITL yerine düzenekten (kızağa kilitli); fırlatma/bırakma sonrası SITL konumuna yumuşak geçiş
+    // Kalkış düzeneği (§13): uçak kızakta/kasada iken konumu SITL yerine düzenekten (kızağa kilitli). Düzenek altındaki yüzeye oturur
+    // (terrainHeight: gerçek arazi ızgarası / Google karo ışını; 4 temas noktası → yükseklik + eğim; karolar yüklendikçe 500 ms'de bir yeniden).
     if (rig) {
       if (tele.has && rig.carrying && rig.phase !== 'launch' && (cur.pos.z > 3 || (tele.armed && tele.speed > 8))) rig.setPhase('released');   // dizi dışı kalkış (MP ile): serbest bırak
       // Düzenek pist başında SABİT: demir bir kez (ilk telemetri) ya da SITL konumu > 2 m sıçrarsa (reset/set_home); araç yer koşusunda her kare izler (§13)
-      if (tele.has && rig.anchored && (rig.tracking || rig.needsAnchor(cur.pos))) rig.anchor(cur.pos);
+      if (tele.has && rig.anchored && (rig.tracking || rig.needsAnchor(cur.pos))) { rig.anchor(cur.pos, rigSurf); rigSurfT = now; }
+      else if (now - rigSurfT > RIG_SURF_MS) { rigSurfT = now; rig.resurface(rigSurf); }
       rig.update(dt, { speed: tele.speed });
-      if (rig.phase !== 'free') {
+      if (rig.carrying) {
         rig.attachWorld(rigPos); rigPos.z += drone.ground || 0;
         rig.planeQuat(rigQ);
-        const b = rig.blend;
-        if (b < 1) { drone.group.position.lerpVectors(rigPos, tmpV.copy(cur.pos).setZ(cur.pos.z + (drone.ground || 0)), b); drone.group.quaternion.slerpQuaternions(rigQ, cur.q, b); }
+        drone.group.position.copy(rigPos); drone.group.quaternion.copy(rigQ);
+        rel.lastPos.copy(rigPos); rel.lastQ.copy(rigQ); rel.armed = tele.has;
+      } else if (rel.armed) {
+        // released anı: kızak ucu (3B) ile SITL konumu/yönelimi arasındaki fark ölçülür ve uçağa uygulanır; aşağıda yumuşakça sıfıra iner.
+        // (Eski 0,6 sn'lik düz lerp uçağı SITL'in yerdeki (z≈0) konumuna indiriyordu: "rampanın altına inip oradan yükseliyor".)
+        rel.armed = false; rel.on = true; rel.t = 0; rel.kz = 1;
+        rel.off.copy(rel.lastPos).sub(tmpV.copy(cur.pos).setZ(cur.pos.z + (drone.ground || 0)));
+        rel.dq.copy(rel.lastQ).multiply(tmpQ.copy(cur.q).invert());   // dq · cur.q = kızak yönelimi
       }
+    }
+    if (rel.on) {
+      rel.t += dt;
+      const k = Math.min(1 - smooth(0, REL_T, rel.t), 1 - smooth(REL_AGL * 0.3, REL_AGL, cur.pos.z));   // yatay ofset + yönelim: 3 sn ya da AGL 15 m
+      // Dikey ofset yalnız uçağın kendi tırmanışıyla erir (gösterilen z asla düşmez → rampa/kasa altına inmez); 6 sn'den sonra her durumda 1 sn'de kapanır
+      if (rel.off.z > 0.01) {
+        const vz = Math.max(0, cur.vel.z);
+        rel.kz = Math.max(k, rel.kz - vz * dt / rel.off.z);
+        if (rel.t > REL_TMAX) rel.kz = Math.max(0, rel.kz - dt);
+      } else rel.kz = k;
+      tmpV.copy(cur.pos).setZ(cur.pos.z + (drone.ground || 0));
+      tmpV.x += rel.off.x * k; tmpV.y += rel.off.y * k; tmpV.z += rel.off.z * rel.kz;
+      drone.group.position.copy(tmpV);
+      tmpQ.copy(rel.dq).multiply(cur.q);
+      drone.group.quaternion.slerpQuaternions(cur.q, tmpQ, k);
+      if (k <= 0 && rel.kz <= 0) rel.on = false;
     }
     // Yerde kilit (§13): disarm + yerde (AGL < 1 m) + yer hızı < 0,5 m/s iken gösterilen konum dondurulur (EKF'nin cm'lik gezinmesi görünmez);
     // ARM ya da hareketle 0,4 sn'de SITL konumuna döner; > 1,5 m sıçrama (reset / set_home) kilidi yeniden oturtur. Uçak düzenekteyken düzenek kilitler.
-    if (tele.has && !(rig && rig.phase !== 'free')) {
+    // Kilitli konumun z'si altındaki yüzeyden aşağı olmaz (tekerlekli uçak eğimli/ofsetli gerçek yüzeye gömülmez).
+    if (tele.has && !(rig && rig.carrying) && !rel.on) {
       if (!tele.armed && cur.pos.z < 1 && tele.speed < 0.5) {
-        if (!gLock.on || gLock.pos.distanceTo(cur.pos) > 1.5) { gLock.on = true; gLock.pos.copy(cur.pos); }
+        if (!gLock.on || gLock.pos.distanceTo(cur.pos) > 1.5) { gLock.on = true; gLock.pos.copy(cur.pos); gLock.pos.z = Math.max(gLock.pos.z, terrainHeight(gLock.pos.x, gLock.pos.y)); }
         gLock.t = 0;
         drone.group.position.copy(gLock.pos).setZ(gLock.pos.z + (drone.ground || 0));
       } else if (gLock.on) {
@@ -1302,7 +1385,12 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     get real() { return !!terrain?.real; },
     get google() { return !!g3d; },
     g3dAttribution: () => (g3d ? g3d.attribution() : null),   // {text, logo, loading} — ToS atfı (.fs-attrib)
-    get terrainInfo() { return terrain ? { real: !!terrain.real, google: !!terrain.google, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null } : null; },
+    get g3dOffset() { return g3d ? g3d.groundOffset : null; },   // teşhis: toplam yer ofseti (karo yüzeyi ↔ ev irtifası)
+    get terrainInfo() { return terrain ? { real: !!terrain.real, google: !!terrain.google, homeElev: terrain.homeElev ?? null, hmin: terrain.hmin ?? null, hmax: terrain.hmax ?? null, counts: terrain.counts || null, osmError: realCache?.data?.osmError || null, farSize: terrain.farSize || 0 } : null; },
+    rigState: () => (rig ? { phase: rig.phase, surface: rig.surface, x: rig.group.position.x, y: rig.group.position.y } : null),   // teşhis (§13 e2e): düzenek yüzey oturması
+    setFreeView: (x, y, z, yawDeg, pitchDeg) => { setCamera('free'); camera.position.set(x, y, z); free.yaw = num(yawDeg, 0); free.pitch = num(pitchDeg, 0); },   // teşhis (§9 e2e): serbest kamerayı ufka yönelt (yaw: 0 kuzey, + batıya)
+    get releaseBlend() { return rel.on ? { t: rel.t, kz: rel.kz, off: rel.off.toArray() } : null; },   // teşhis: released ofset sönümü
+    shownZ: () => drone.group.position.z - (drone.ground || 0),   // teşhis: gösterilen uçak z'si (kızak/ofset dahil), alt_rel ölçeğinde
     set onCollision(fn) { onCollision = fn; },
     position: () => ({ x: cur.pos.x, y: cur.pos.y, z: cur.pos.z }),
     cameraPose: () => { camera.updateMatrixWorld(); const e = camera.matrixWorld.elements; return { x: e[12], y: e[13], z: e[14], fx: -e[8], fy: -e[9], fz: -e[10], ux: e[4], uy: e[5], uz: e[6] }; },   // §16 uzaysal ses: dinleyici konumu + ileri/üst (ENU)

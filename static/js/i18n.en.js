@@ -537,4 +537,9 @@ registerCatalog('en', {
   "{n} gün önce": "{n} d ago",
   "Web tarayıcı": "Web browser",
   "Uygulama": "App",
+  // Fabrika › 3B tam ekran: kayan paneller / tutamaçlar
+  'Sol paneli aç': 'Open left panel',
+  'Sol paneli kapat': 'Close left panel',
+  'Sağ paneli aç': 'Open right panel',
+  'Sağ paneli kapat': 'Close right panel',
 });

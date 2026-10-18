@@ -1283,6 +1283,8 @@ export async function render(view, params, ctx) {
     return ms <= 5 * 60000 ? '#16a34a' : ms <= 60 * 60000 ? '#f59e0b' : '#dc2626';
   };
   function toggleFullscreen() {
+    // 3B sahne açıkken aynı kalıp (belge tam ekranı + body.fs-full + kayan paneller); 2B planda eski davranış (sahne öğesi tam ekran)
+    if (fab3d && !el3d.hidden) { fab3d.toggleFullscreen(); return; }
     const target = stage;
     if (!document.fullscreenElement) { (target.requestFullscreen || target.webkitRequestFullscreen)?.call(target); }
     else { (document.exitFullscreen || document.webkitExitFullscreen)?.call(document); }
@@ -1399,6 +1401,10 @@ function injectStyle() {
   .fab-floor.add{border-style:dashed;color:var(--muted,#6b7280)}
   .fab-stage{flex:1;position:relative;border:1px solid var(--line,#e5e7eb);border-radius:10px;overflow:hidden;background:var(--bg2,#f8fafc);touch-action:none}
   .fab-3d{position:absolute;inset:0;z-index:3;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
+  /* 3B tam ekran (factory3d.js ⛶): belge tam ekranda, body.fs-full üst başlık/alt barı gizler (app.css); sahne kutusu sabit konumla tüm ekranı kaplar.
+     z-index 50 < toast (70) < modal (7000) → mesaj/uyarı pencereleri 3B'nin ÜSTÜNDE kalır. Çıkınca sınıf kalkar, normal yerleşim aynen döner. */
+  body.fs-full .fab-stage.fab-fs{position:fixed;inset:0;z-index:50;width:100vw;height:100vh;border:0;border-radius:0;background:#0b1220}
+  body.fs-full .fab-stage.fab-fs .fab-3d{border-radius:0}
   .fab-3d canvas{border-radius:inherit;cursor:grab}
   .fab-3d canvas:active{cursor:grabbing}
   .fab-svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}

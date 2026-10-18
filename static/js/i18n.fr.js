@@ -3994,4 +3994,9 @@ registerCatalog('fr', {
   "az önce": "à l'instant",
   "Web tarayıcı": "Navigateur web",
   "Uygulama": "Application",
+  // Fabrika › 3B tam ekran: kayan paneller / tutamaçlar
+  'Sol paneli aç': 'Ouvrir le panneau gauche',
+  'Sol paneli kapat': 'Fermer le panneau gauche',
+  'Sağ paneli aç': 'Ouvrir le panneau droit',
+  'Sağ paneli kapat': 'Fermer le panneau droit',
 });

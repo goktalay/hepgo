@@ -1,4 +1,5 @@
 import { FA } from '../fa-icons.js';
+import { t as tr } from '../ui.js';   // tam ekran / panel tutamaçları metinleri (6 dil)
 // HEPGO Fabrika — Canlı İzleme 3B sahnesi (Three.js, yerel kopya) — vantra-facility-os esinli.
 // • Kat planı ARKA PLAN RESMİNDEKİ duvar çizgileri otomatik tespit edilir ve 3B beyaz duvar olarak yükseltilir
 //   (koyu piksel taraması → yatay/dikey segmentler → InstancedMesh). Polygon oda çizmek gerekmez.
@@ -170,11 +171,54 @@ export async function createFactory3D(mountEl, opts = {}) {
     hudM.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   };
   MODES.forEach(([k, lbl]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.m = k; b.innerHTML = lbl; b.onclick = () => setMouseMode(k); hudM.appendChild(b); });
-  // ⛶ Tam ekran: 3B kapsayıcı tam ekrana geçer; sol/sağ paneller kapsayıcıya göre konumlandığından kenarlara yaslanır, sahne büyür
-  const fsBtn = document.createElement('button'); fsBtn.type = 'button'; fsBtn.className = 'f3d-fs'; fsBtn.innerHTML = `${FA.expand} Tam ekran`; hudM.appendChild(fsBtn);
-  const fsTarget = () => mountEl.closest('.fab-3d') || mountEl;
-  fsBtn.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); else fsTarget().requestFullscreen?.().catch(() => {}); };
-  const onFs = () => { const on = !!document.fullscreenElement && (document.fullscreenElement === fsTarget() || fsTarget().contains(document.fullscreenElement)); fsBtn.innerHTML = `${on ? FA.compress : FA.expand} ${on ? 'Tam ekrandan çık' : 'Tam ekran'}`; fsTarget().classList.toggle('f3d-fullscreen', on); setTimeout(() => { try { resize(); } catch {} }, 60); };
+  // ⛶ Tam ekran (Uçuş Simülatörü kalıbı): BELGE tam ekrana alınır (document.documentElement) + body.fs-full → üst başlık/alt bar gizlenir,
+  // .fab-stage.fab-fs sabit konumla tüm ekranı kaplar, sahne 100vw×100vh olur (ResizeObserver → renderer.setSize / camera.aspect).
+  // Belge tam ekranda olduğundan ui.js modal()/toast() pencereleri body'de kalır ve 3B'nin ÜSTÜNDE görünür (sahne tam ekran öğesi olsaydı görünmezlerdi).
+  // Sol/sağ cam paneller tam ekranda 3B üzerinde kenardan kayarak açılıp kapanan kaplama panellere dönüşür (tutamaç düğmeleri); çıkınca eski yerleşim.
+  const fsBtn = document.createElement('button'); fsBtn.type = 'button'; fsBtn.className = 'f3d-fs'; fsBtn.innerHTML = `${FA.expand} ${tr('Tam ekran')}`; hudM.appendChild(fsBtn);
+  const fsStage = () => mountEl.closest('.fab-stage') || mountEl;
+  let fsWanted = false;   // tam ekranı BU sahne istedi mi (uygulama menüsündeki genel ⛶ ile karışmasın)
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); return; }
+    fsWanted = true;
+    const p = document.documentElement.requestFullscreen?.();
+    if (p && p.catch) p.catch(() => { fsWanted = false; });
+  };
+  fsBtn.onclick = toggleFullscreen;
+  // tutamaçlar: sol/sağ kenarda yarı saydam ikon düğme → ilgili panel kayarak açılır / kapanır (ikisi aynı anda açık olabilir)
+  const mkHandle = side => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = `f3d-handle ${side}`; b.hidden = true;
+    b.innerHTML = FA['chevron-right'];
+    b.onclick = () => setPanelOpen(side, !panelOpen[side]);
+    mountEl.appendChild(b); return b;
+  };
+  const panelOpen = { l: false, r: false };
+  const handles = { l: mkHandle('l'), r: mkHandle('r') };
+  const setPanelOpen = (side, open) => {
+    panelOpen[side] = !!open;
+    const pane = side === 'l' ? hud : hudR;
+    pane.classList.toggle('f3d-open', !!open);
+    handles[side].classList.toggle('on', !!open);
+    const lbl = side === 'l' ? (open ? 'Sol paneli kapat' : 'Sol paneli aç') : (open ? 'Sağ paneli kapat' : 'Sağ paneli aç');
+    handles[side].title = tr(lbl); handles[side].setAttribute('aria-label', tr(lbl)); handles[side].setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const applyFull = on => {
+    fsBtn.innerHTML = `${on ? FA.compress : FA.expand} ${on ? tr('Tam ekrandan çık') : tr('Tam ekran')}`;
+    mountEl.classList.toggle('f3d-fullscreen', on);
+    fsStage().classList.toggle('fab-fs', on);
+    document.body.classList.toggle('fs-full', on); document.body.classList.toggle('fab-fs-full', on);
+    handles.l.hidden = handles.r.hidden = !on;
+    // girişte iki panel de kapalı (sahne tüm ekran); çıkışta sınıflar temizlenir → normal yerleşim değişmeden döner
+    setPanelOpen('l', false); setPanelOpen('r', false);
+    setTimeout(() => { try { resize(); } catch {} }, 60);
+    requestAnimationFrame(() => { try { resize(); } catch {} });
+  };
+  const onFs = () => {
+    const on = !!document.fullscreenElement && fsWanted;
+    if (!document.fullscreenElement) fsWanted = false;
+    if (on !== mountEl.classList.contains('f3d-fullscreen')) applyFull(on);
+    else if (on) setTimeout(() => { try { resize(); } catch {} }, 60);
+  };
   document.addEventListener('fullscreenchange', onFs);
   mountEl.appendChild(hudM); setMouseMode('orbit');
 
@@ -631,7 +675,16 @@ export async function createFactory3D(mountEl, opts = {}) {
     },
     setDark(d) { dark = !!d; P = dark ? PAL.dark : PAL.light; makeMats(); buildBase(); hud.classList.toggle('f3d-dark', dark); hudC.classList.toggle('f3d-dark', dark); },
     resize,
-    dispose() { stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); document.removeEventListener('fullscreenchange', onFs); disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove(); hud.remove(); hudR.remove(); hudC.remove(); clearInterval(clkTimer); },
+    toggleFullscreen,   // factory.js Canlı panelindeki "⛶ Tam ekran" düğmesi de aynı kalıbı kullanır
+    isFullscreen: () => mountEl.classList.contains('f3d-fullscreen'),
+    setPanelOpen,   // test/teşhis: 'l' | 'r' paneli aç/kapa
+    dispose() {
+      stop(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); document.removeEventListener('fullscreenchange', onFs);
+      if (mountEl.classList.contains('f3d-fullscreen')) applyFull(false);   // modülden tam ekranda çıkıldıysa body/stage sınıfları temizlensin
+      if (document.fullscreenElement && fsWanted) document.exitFullscreen?.().catch(() => {});
+      disposeGroup(gWorld); disposeGroup(gBg); disposeGroup(gZones); disposeGroup(gPrinters); disposeGroup(gLive); renderer.dispose(); renderer.domElement.remove();
+      hud.remove(); hudR.remove(); hudC.remove(); handles.l.remove(); handles.r.remove(); clearInterval(clkTimer);
+    },
   };
 }
 
@@ -859,8 +912,38 @@ function ensureHudStyle() {
   .f3d-modes button svg,.f3d-fs svg{width:14px;height:14px;vertical-align:-2px;margin-right:5px}
   .f3d-cam-hd svg{width:14px;height:14px;vertical-align:-2px;margin-right:4px}
   .f3d-modes .f3d-fs{margin-left:4px;border-left:1px solid rgba(28,34,51,.12)!important;border-radius:0 999px 999px 0}
-  .f3d-fullscreen{width:100vw!important;height:100vh!important;max-width:none!important;border-radius:0!important;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
-  .f3d-fullscreen>canvas{height:100%!important;width:100%!important}   /* yalnız sahne büyür; paneller/çubuklar kendi boyutunda */   /* sağ sütundaki kartlar küçülünce ikon sağa yaslı kalsın */
+  /* ---- TAM EKRAN (Uçuş Simülatörü kalıbı): .fab-3d.f3d-fullscreen tüm ekranı kaplar; sol/sağ cam paneller 3B ÜSTÜNDE kenardan kayan kaplama
+     panellere dönüşür (transform .22s); kenarlarda yarı saydam tutamaç düğmeleri; panel içi ince kaydırma çubuğu; açık/koyu tema (data-theme) ---- */
+  .f3d-fullscreen{--f3d-pw:340px;border-radius:0!important;background:radial-gradient(120% 95% at 50% 0%,#f4f3ff 0%,#eaeefa 48%,#e1e7f2 100%)}
+  [data-theme="dark"] .f3d-fullscreen{background:radial-gradient(120% 95% at 50% 0%,#141a2c 0%,#0f1424 48%,#0b1020 100%)}
+  .f3d-fullscreen>canvas{height:100%!important;width:100%!important}
+  .f3d-fullscreen .f3d-hud{position:absolute!important;top:0!important;bottom:0!important;height:auto!important;width:var(--f3d-pw)!important;max-width:min(var(--f3d-pw),92vw)!important;
+    padding:14px 12px;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;z-index:12!important;pointer-events:auto;
+    background:rgba(255,255,255,.58);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+    transition:transform .22s cubic-bezier(.4,0,.2,1),visibility .22s;visibility:hidden;will-change:transform;
+    scrollbar-width:thin;scrollbar-color:rgba(100,110,140,.32) transparent}
+  .f3d-fullscreen .f3d-hud::-webkit-scrollbar{width:5px}.f3d-fullscreen .f3d-hud::-webkit-scrollbar-thumb{background:rgba(100,110,140,.32);border-radius:99px}.f3d-fullscreen .f3d-hud::-webkit-scrollbar-track{background:transparent}
+  .f3d-fullscreen .f3d-hud:not(.f3d-right){left:0!important;right:auto!important;transform:translateX(-100%);border-right:1px solid rgba(255,255,255,.7);box-shadow:8px 0 32px -10px rgba(24,32,64,.25)}
+  .f3d-fullscreen .f3d-hud.f3d-right{right:0!important;left:auto!important;transform:translateX(100%);border-left:1px solid rgba(255,255,255,.7);box-shadow:-8px 0 32px -10px rgba(24,32,64,.25)}
+  .f3d-fullscreen .f3d-hud.f3d-open{transform:translateX(0);visibility:visible}
+  .f3d-fullscreen .f3d-hud .f3d-card{flex:0 0 auto;max-height:none}
+  .f3d-fullscreen .f3d-hud.f3d-right .f3d-card{flex:0 1 auto}
+  .f3d-fullscreen .f3d-hud.f3d-dark{background:rgba(10,14,24,.74);border-color:rgba(130,150,210,.22);box-shadow:0 0 40px -8px rgba(0,0,0,.6)}
+  .f3d-handle{position:absolute;top:50%;z-index:13;width:24px;height:72px;margin-top:-36px;border:1px solid rgba(255,255,255,.7);background:rgba(28,34,51,.38);color:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:0;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 6px 18px -6px rgba(24,32,64,.35);
+    transition:left .22s cubic-bezier(.4,0,.2,1),right .22s cubic-bezier(.4,0,.2,1),background .15s;opacity:.85}
+  .f3d-handle:hover{background:rgba(124,108,240,.85);opacity:1}
+  .f3d-handle[hidden]{display:none}
+  .f3d-handle svg{width:12px;height:12px;fill:currentColor;transition:transform .22s}
+  .f3d-handle.l{left:0;border-left:0;border-radius:0 12px 12px 0}
+  .f3d-handle.l.on{left:min(var(--f3d-pw),92vw)}
+  .f3d-handle.l.on svg{transform:rotate(180deg)}
+  .f3d-handle.r{right:0;border-right:0;border-radius:12px 0 0 12px}
+  .f3d-handle.r svg{transform:rotate(180deg)}
+  .f3d-handle.r.on{right:min(var(--f3d-pw),92vw)}
+  .f3d-handle.r.on svg{transform:rotate(0deg)}
+  [data-theme="dark"] .f3d-handle{background:rgba(255,255,255,.16);border-color:rgba(130,150,210,.3)}
+  [data-theme="dark"] .f3d-handle:hover{background:rgba(157,140,255,.75)}
   .f3d-togs{display:flex;flex-direction:column;gap:7px}
   .f3d-tog{display:flex;align-items:center;gap:10px;font-size:12px;color:#2a3040;cursor:pointer;user-select:none}
   .f3d-tog span{display:flex;align-items:center;gap:7px}

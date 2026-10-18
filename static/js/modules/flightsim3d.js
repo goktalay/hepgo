@@ -29,6 +29,7 @@
 
 import { addLandingGear, createLaunchRig } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13): iniş takımı, rampa, pickup
 import { createTimeline } from './flightsim_interp.js';   // telemetri zaman çizgisi: uyarlanır gecikme tamponlu enterpolasyon (§5)
+import { createMissionLayer } from './flightsim_mission.js';   // §18: görev çizimi (tüp bacaklar, WP etiketleri, ikonlar) + iniş dairesi H
 
 const LIB = '/static/vendor/three/';
 export const ATTRIBUTION = 'Uydu: Esri, Maxar, Earthstar Geographics · Yükseklik: Mapzen / AWS Terrain Tiles · Binalar: © OpenStreetMap';
@@ -176,7 +177,7 @@ const loadLibs = () => (_libs ??= Promise.all(
 export const CAMERA_MODES = [['follow', 'Takip'], ['fpv', 'Dron kamerası'], ['free', 'Serbest'], ['ground', 'Yer']];
 export const WORLD_DEFAULTS = {
   mode: 'procedural', seed: 12345, size_m: 4000, tree_density: 0.3, mountain_height: 300, mountain_count: 4, building_count: 40,
-  runway: true, runway_heading: 0, water: 0.1, time: 'day', wind_ms: 3, wind_dir: 270, fog: 0.2,
+  runway: true, runway_heading: 0, water: 0.1, time: 'day', wind_ms: 3, wind_dir: 270, fog: 0.2, landing_circle_m: 30,   // landing_circle_m: görev bitiş noktasındaki iniş dairesi çapı (§18)
 };
 const FLAT_R = 300, FLAT_R2 = 600;        // merkez çevresi düzleştirme (pist / kalkış alanı)
 const RUNWAY_L = 1200, RUNWAY_W = 40;     // pist boyutları (m)
@@ -284,9 +285,8 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // ---------- dünya ----------
   let terrain = null, gWorld = new T.Group(), buildingsAABB = [], W = { ...WORLD_DEFAULTS };
   scene.add(gWorld);
-  // §14 rota (SITL'e yüklenen görev): çizgi + ara nokta işaretleri; dünyadan bağımsız grup (setWorld yeniden kurulumunda korunur)
-  const gRoute = new T.Group();
-  scene.add(gRoute);
+  // §14/§18 rota (SITL'e yüklenen görev): görev katmanı (flightsim_mission.js) — dünyadan bağımsız grup (setWorld yeniden kurulumunda yeniden çizilir)
+  const mission = createMissionLayer(T, { scene, toLocal, terrainHeight: (x, y) => terrainHeight(x, y), getWorld: () => W, getHomeAlt: () => opts.origin?.alt, waterZ: () => (terrain ? terrain.waterZ : -Infinity) });
   let routePts = [];
   let lights = { sun: new T.DirectionalLight(0xffffff, 2), hemi: new T.HemisphereLight(0xbfd8ff, 0x3a4a2a, 0.9), amb: new T.AmbientLight(0xffffff, 0.15) };
   scene.add(lights.sun, lights.hemi, lights.amb, lights.sun.target);
@@ -1325,30 +1325,19 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     buildRig();   // pist yönü / saat değişmiş olabilir
     if (!tele.has) drone.group.position.set(0, 0, (drone.ground || 0.2) + 0.02);
     if (!preview && camMode === 'follow') resetCamera();
-    if (routePts.length) drawRoute();   // yüzey değişti: rota yere göre yeniden
+    if (routePts.length) mission.redraw();   // yüzey değişti: rota/iniş dairesi yere göre yeniden
   }
-  // §14 rota: points [{seq, cmd, lat, lon, alt}] (alt: ev zeminine göre m; MAV_FRAME_GLOBAL_RELATIVE_ALT). Çizgi (amber), ara nokta küreleri
-  // (ilk yeşil, son kırmızı, LAND/RTL mor), yere inen ince dikey çubuk. Boş liste rotayı siler.
-  function setRoute(points) {
-    routePts = Array.isArray(points) ? points.filter(p => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))) : [];
-    drawRoute();
+  // §14/§18 görev: setMission({points [{seq, cmd, lat, lon, alt_rel, frame}], source, home, current, end, landing_circle_m}) — flightsim_mission.js çizer
+  // (tüp bacaklar: geçilen yeşil / aktif parlak / gelecek amber; WP etiketleri; TAKEOFF/LAND/RTL/LOITER ikonları; ev H; bitiş noktasında iniş dairesi H).
+  // setRoute(points) geriye uyum: yalnız noktalar. setMissionCurrent(seq): MISSION_CURRENT → aktif bacak. Boş liste görevi siler.
+  function setMission(d) {
+    const pts = Array.isArray(d?.points) ? d.points.filter(p => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))) : [];
+    routePts = pts;
+    if (!pts.length) { mission.set(null); return; }
+    mission.set({ ...(d || {}), points: pts });
   }
-  function drawRoute() {
-    disposeGroup(gRoute);
-    if (!routePts.length) return;
-    const z0 = terrainHeight(0, 0);
-    const v = routePts.map(p => { const l = toLocal(Number(p.lat), Number(p.lon)); return new T.Vector3(l.x, l.y, z0 + Math.max(0.5, num(p.alt, 0))); });
-    if (v.length > 1) gRoute.add(new T.Line(new T.BufferGeometry().setFromPoints(v), new T.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.9 })));
-    const sph = new T.SphereGeometry(1.6, 12, 10);
-    const mats = { a: new T.MeshBasicMaterial({ color: 0x22c55e }), b: new T.MeshBasicMaterial({ color: 0xef4444 }), m: new T.MeshBasicMaterial({ color: 0xffd166 }), l: new T.MeshBasicMaterial({ color: 0xa78bfa }) };
-    const stick = new T.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.35 });
-    v.forEach((p, i) => {
-      const cmd = Number(routePts[i].cmd);
-      const m = new T.Mesh(sph, cmd === 21 || cmd === 20 ? mats.l : i === 0 ? mats.a : i === v.length - 1 ? mats.b : mats.m);
-      m.position.copy(p);
-      gRoute.add(m, new T.Line(new T.BufferGeometry().setFromPoints([p, new T.Vector3(p.x, p.y, terrainHeight(p.x, p.y))]), stick));
-    });
-  }
+  function setRoute(points) { setMission({ ...(mission.data || {}), points, end: null }); }
+  const setMissionCurrent = seq => mission.setCurrent(seq);
   // Merkez değişti (sihirbaz): gerçek kipte veriler yeni konumdan yüklenir
   async function setOrigin(lat, lon, nw, alt) {
     origin.lat = num(lat, 0); origin.lon = num(lon, 0);
@@ -1370,7 +1359,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     canvas.removeEventListener('pointerup', onPointerUp); canvas.removeEventListener('pointercancel', onPointerUp);
     canvas.removeEventListener('wheel', onWheel);
     controls.dispose();
-    disposeGroup(gWorld); disposeGroup(drone.group); disposeGroup(gRoute);
+    disposeGroup(gWorld); disposeGroup(drone.group); mission.dispose();
     renderer.dispose();
     renderer.forceContextLoss?.();
     canvas.remove();
@@ -1381,7 +1370,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     cameraState: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, az: controls.getAzimuthalAngle(), pol: controls.getPolarAngle(), dist: camera.position.distanceTo(controls.target) }),   // teşhis (§14 testleri: fare ile döndürme çalışıyor mu)
     setWorld, setOrigin, setType, snapshotModel, clearCollision, resize, dispose, netStats, motionStats, setKeyboardLock,
     setLaunch, setLaunchPhase, get launchPhase() { return rig ? rig.phase : null; }, get groundLocked() { return gLock.on; },   // kalkış yöntemi + yerde kilit (§13)
-    setRoute, get route() { return routePts.slice(); },   // §14: SITL'deki görevin rota çizgisi/işaretleri
+    setRoute, setMission, setMissionCurrent, get route() { return routePts.slice(); }, get mission() { return mission.data; }, get missionObjects() { return mission.objectCount; },   // §14/§18: SITL'deki görev (çizim flightsim_mission.js)
     get modelInfo() { return { type: drone.type, model: drone.model, bbox: drone.bbox || null, props: drone.props.length }; },   // yönelim paneli (§12)
     get collided() { return collided; }, get world() { return W; }, get waterZ() { return terrain ? terrain.waterZ : -Infinity; },
     get real() { return !!terrain?.real; },

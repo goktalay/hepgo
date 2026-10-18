@@ -298,7 +298,7 @@ class MavKomut:
                 out.append({'seq': len(out), 'frame': it.frame, 'command': it.command, 'current': it.current, 'autocontinue': it.autocontinue,
                             'param1': it.param1, 'param2': it.param2, 'param3': it.param3, 'param4': it.param4, 'x': it.x, 'y': it.y, 'z': it.z, 'mission_type': 0})
             s._gonder(s.mav.mission_ack_encode(s.sysid, s.comp, 0, 0))
-            return {'items': out}
+            return {'items': out, 'count': int(cnt.count)}   # count: SITL'deki toplam öğe (ev dâhil; §18 MISSION_CURRENT.total karşılaştırması)
 
     async def _mission_clear(self):
         s = self.s
@@ -376,8 +376,10 @@ async def _al(q, timeout):
         return None
 
 
-def rota_noktalari(items):
-    """mission_upload öğeleri → 3B rota çizimi için [{seq, cmd, lat, lon, alt}] (yalnız konumlu seyrüsefer öğeleri; alt = frame 6 göreli m)."""
+def rota_noktalari(items, offset=0):
+    """Görev öğeleri → 3B rota çizimi için [{seq, cmd, lat, lon, alt, alt_rel, frame}] (yalnız konumlu seyrüsefer öğeleri). `seq` SITL seq'idir:
+    öğenin kendi seq'i + `offset` (HEPGO yüklemesinde ev/hız öğeleri; SITL'den indirilen listede ev atlandığı için 1) → MISSION_CURRENT ile eşleşir.
+    alt/alt_rel: frame 3/6 (göreli) m; frame 0/5 (MSL) öğeler de olduğu gibi aktarılır (ön yüz ev irtifasıyla düzeltir)."""
     out = []
     for it in items or []:
         try:
@@ -387,5 +389,6 @@ def rota_noktalari(items):
             continue
         if cmd not in NAV_CMDS or (not x and not y):
             continue
-        out.append({'seq': int(it.get('seq', len(out))), 'cmd': cmd, 'lat': x / 1e7, 'lon': y / 1e7, 'alt': float(it.get('z') or 0)})
+        z = float(it.get('z') or 0)
+        out.append({'seq': int(it.get('seq', len(out))) + int(offset or 0), 'cmd': cmd, 'lat': x / 1e7, 'lon': y / 1e7, 'alt': z, 'alt_rel': z, 'frame': int(it.get('frame', 6) or 0)})
     return out

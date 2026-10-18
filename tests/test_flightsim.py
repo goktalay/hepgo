@@ -914,7 +914,11 @@ def hub_testleri(a, c1):
             r = cmd('h4', 'mission_upload', {'items': items, 'cruise_speed': 8})
             assert r['ok'] is True and r['result']['count'] == 3 and r['result']['offset'] == 1, r
             rt = ws_bekle(sws, lambda m: m['t'] == 'route', 3)
-            assert rt and [p['seq'] for p in rt['points']] == [1, 2] and rt['points'][0] == {'seq': 1, 'cmd': 16, 'lat': 39.926, 'lon': 32.838, 'alt': 40.0}, rt   # TAKEOFF (x/y 0) çizilmez
+            # TAKEOFF (x/y 0) çizilmez; seq = SITL seq (ev öğesi ofseti +1 → MISSION_CURRENT ile eşleşir); §18 alanları: source/home/end/landing_circle_m
+            assert rt and [p['seq'] for p in rt['points']] == [2, 3] and {k: rt['points'][0][k] for k in ('seq', 'cmd', 'lat', 'lon', 'alt', 'alt_rel')} == {'seq': 2, 'cmd': 16, 'lat': 39.926, 'lon': 32.838, 'alt': 40.0, 'alt_rel': 40.0}, rt
+            assert rt['source'] == 'hepgo' and rt['end'] == {'lat': 39.927, 'lon': 32.839, 'alt_rel': 50.0, 'cmd': 16, 'seq': 3, 'alt_msl': 950.0} and rt['landing_circle_m'] == 30 and rt['home']['lat'] == 39.925, rt
+            ev = ws_bekle(sws, lambda m: m['t'] == 'event' and 'görev yüklendi' in m['text'], 3)
+            assert ev and ev['text'] == 'HEPGO panelinden görev yüklendi: 2 nokta', ev
         assert ok(a.get(f'/api/drone/sim/sessions/{sid}'))['route'][1]['alt'] == 50.0
         assert pump(live, K, 3, lambda: K['state'].get('mission_count') == 3), K['state'].get('mission_count')
         assert cmd('h5', 'set_mode', {'mode': 'AUTO'})['ok'] is True and pump(live, K, 3, lambda: K['state'].get('mode') == 'AUTO')
@@ -945,6 +949,128 @@ def hub_testleri(a, c1):
         assert bid not in drone_hub.SIMS
     assert a.get(f'/api/drone/sim/sessions/{sid}/live').status_code == 404
     print('  harekât paneli köprüsü (§14) testleri geçti')
+
+
+def gorev_rapor_testleri(a, c1):
+    """§18: landing_circle_m doğrulama; Mission Planner yüklemesi algılama (MISSION_ACK → sunucu indirir → route source 'mp' + olay); MISSION_CURRENT →
+    mission_cur; görev bitiş noktası (mission_end) kaydı/güncellemesi; crash → drone_sim_events (koordinat, sebep, hedef WP, sapma); SITL çarpışma metni
+    tekilleştirme; summary ucu (istatistikler, sapma, güvenlik notu, satır güncellenir); reports listesi + tek rapor + paylaşım; yetki; kapanışta özet."""
+    from app import db, flightsim_hub, flightsim_mission
+    from pymavlink.dialects.v20 import ardupilotmega as D
+    S = '/api/drone/sim/sessions'
+    # --- birim: bitiş noktası ve mesafe ---
+    assert abs(flightsim_mission.mesafe_m(39.925, 32.837, 39.926, 32.837) - 111.2) < 1.0
+    assert flightsim_mission.gorev_bitis([{'seq': 2, 'cmd': 16, 'lat': 1.0, 'lon': 2.0, 'alt_rel': 40}, {'seq': 3, 'cmd': 20, 'lat': 1.0, 'lon': 2.0}], {'lat': 9.0, 'lon': 8.0}) == {'lat': 9.0, 'lon': 8.0, 'alt_rel': 0.0, 'cmd': 20, 'seq': 3}
+    assert flightsim_mission.gorev_bitis([{'seq': 1, 'cmd': 21, 'lat': 1.0, 'lon': 2.0, 'alt_rel': 0}])['cmd'] == 21 and flightsim_mission.gorev_bitis([]) is None
+    assert flightsim_hub.rota_noktalari([{'seq': 0, 'command': 16, 'x': 10, 'y': 20, 'z': 5, 'frame': 6}], offset=1) == [{'seq': 1, 'cmd': 16, 'lat': 1e-6, 'lon': 2e-6, 'alt': 5.0, 'alt_rel': 5.0, 'frame': 6}]
+    # --- doğrulama ---
+    assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'landing_circle_m': 5}}).status_code == 400
+    assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'landing_circle_m': 'on'}}).status_code == 400
+    assert ok(a.get('/api/drone/sim/meta'))['world_defaults']['landing_circle_m'] == 30
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'landing_circle_m': 60}}), 201)
+    sid = s['id']
+    assert s['world']['landing_circle_m'] == 60 and s['mission'] == {'source': None, 'home': {'lat': 39.925, 'lon': 32.837, 'alt': 900.0}, 'current': None, 'end': None, 'landing_circle_m': 60.0}, s['mission']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    token = a.cookies.get(auth.COOKIE)
+    mon = TestClient(app, base_url='https://testserver')
+    login(mon, 'montaj', 'sifre-1234')
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hh = json.loads(ws.receive_text())
+        assert hh['t'] == 'hello' and hh['session']['mission']['landing_circle_m'] == 60
+        # --- Mission Planner yüklemesi: sahte kipte SITL görevi bellekte; SITL'in MP'ye yolladığı MISSION_ACK (hedef bileşen 190) ayrıştırıcıdan geçer ---
+        ses._sahte_gorev = [{'seq': 0, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 399260000, 'y': 328380000, 'z': 40.0},
+                            {'seq': 1, 'frame': 6, 'command': 16, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 399270000, 'y': 328390000, 'z': 50.0},
+                            {'seq': 2, 'frame': 6, 'command': 21, 'current': 0, 'autocontinue': 1, 'param1': 0, 'param2': 0, 'param3': 0, 'param4': 0, 'x': 399280000, 'y': 328400000, 'z': 0.0}]
+        arac = D.MAVLink(None, srcSystem=1, srcComponent=1)
+        ses.loop.call_soon_threadsafe(ses._isle, arac.mission_ack_encode(255, 190, 0, 0))
+        rt = ws_bekle(ws, lambda m: m['t'] == 'route', 4)
+        assert rt and rt['source'] == 'mp' and [p['seq'] for p in rt['points']] == [1, 2, 3] and rt['points'][2]['cmd'] == 21, rt
+        assert rt['end'] == {'lat': 39.928, 'lon': 32.84, 'alt_rel': 0.0, 'cmd': 21, 'seq': 3, 'alt_msl': 900.0}, rt['end']   # LAND → o konum, yer seviyesi
+        ev = ws_bekle(ws, lambda m: m['t'] == 'event' and 'Mission Planner' in m['text'], 3)
+        assert ev and ev['text'] == "Mission Planner'dan görev yüklendi: 3 nokta" and ev['severity'] == 6, ev
+        g = ok(a.get(f'{S}/{sid}'))
+        assert g['mission']['source'] == 'mp' and g['mission']['end']['cmd'] == 21 and len(g['route']) == 3
+        # ikinci ACK hızlıca: indirme tekrarlanmaz (tek görev); bize gelen ACK (bileşen 191) tetiklemez
+        ses.loop.call_soon_threadsafe(ses._isle, arac.mission_ack_encode(255, 191, 0, 0))
+        assert ws_bekle(ws, lambda m: m['t'] == 'route', 1.2) is None
+        # MISSION_CURRENT → mission_cur yayını, aktif WP
+        ses.loop.call_soon_threadsafe(ses._isle, arac.mission_current_encode(2, 4, 0, 0))
+        mc = ws_bekle(ws, lambda m: m['t'] == 'mission_cur', 3)
+        assert mc and mc['seq'] == 2 and mc['total'] == 4 and ses.gorev.mission_seq == 2, mc
+        # mission_end satırı yazıldı; görev değişince aynı satır güncellenir
+        def satirlar(tur):
+            with db.connect() as conn:
+                return db.rows(conn.execute('SELECT * FROM drone_sim_events WHERE session_id = ? AND type = ? ORDER BY id', (sid, tur)))
+        assert bekle(lambda: len(satirlar('mission_end')) == 1, 3)
+        me = satirlar('mission_end')[0]
+        assert me['lat'] == 39.928 and me['lon'] == 32.84 and me['alt_rel'] == 0.0 and json.loads(me['detail'])['source'] == 'mp' and me['owner_id'] == 1, dict(me)
+        ses._sahte_gorev = ses._sahte_gorev[:2]
+        ses.loop.call_soon_threadsafe(ses._isle, arac.mission_ack_encode(255, 190, 0, 0))
+        rt = ws_bekle(ws, lambda m: m['t'] == 'route', 4)
+        assert rt and len(rt['points']) == 2 and rt['end']['alt_rel'] == 50.0 and rt['end']['seq'] == 2, rt
+        assert bekle(lambda: len(satirlar('mission_end')) == 1 and satirlar('mission_end')[0]['alt_rel'] == 50.0 and satirlar('mission_end')[0]['id'] == me['id'], 3), satirlar('mission_end')
+        # --- uçuş: kalkış → birkaç saniye → crash (3B algılaması: kind terrain, hız) ---
+        ok(a.post(f'{S}/{sid}/cmd', json={'name': 'takeoff', 'params': {'alt': 30}}))
+        assert ws_bekle(ws, lambda m: m['t'] == 'tele' and m['armed'] and m['alt_rel'] > 3, 6)
+        ws_bekle(ws, lambda m: False, 1.2)   # 1 Hz iz örnekleri (kuyruk okunarak beklenir: 50 Hz tele crash çerçevesini düşürmesin)
+        ok(a.post(f'{S}/{sid}/cmd', json={'name': 'crash', 'params': {'kind': 'terrain', 'speed': 11.5}}))
+        cr = ws_bekle(ws, lambda m: m['t'] == 'crash', 3)
+        assert cr and cr['reason'] == 'terrain' and cr['speed'] == 11.5 and cr['alt_rel'] > 3 and cr['target_seq'] == 2 and cr['mission_end']['seq'] == 2 and cr['deviation_m'] > 50, (cr, ses.gorev.crashes, satirlar('crash'))
+        assert bekle(lambda: len(satirlar('crash')) == 1, 3)
+        c = satirlar('crash')[0]
+        assert c['speed'] == 11.5 and c['lat'] and c['alt_rel'] > 3 and json.loads(c['detail'])['reason'] == 'terrain', dict(c)
+        # SITL metni aynı çarpışma (5 sn içinde): yeni satır yok, metin eklenir
+        ses.loop.call_soon_threadsafe(ses._isle, arac.statustext_encode(2, b'SIM Hit ground at 9.800000 m/s'))
+        ws_bekle(ws, lambda m: False, 0.5)
+        assert len(satirlar('crash')) == 1 and ses.gorev.crashes[0]['sitl_text'].startswith('SIM Hit ground') and len(ses.gorev.crashes) == 1
+        # --- özet ---
+        o = ok(a.get(f'{S}/{sid}/summary'))
+        assert o['id'] and o['session_id'] == sid and o['session']['type'] == 'multirotor' and o['session']['landing_circle_m'] == 60 and o['session']['center']['name'] == 'Test Merkezi', o['session']
+        f = o['flight']
+        assert f['duration_s'] >= 1 and f['max_agl'] > 3 and f['arm_count'] >= 1 and f['max_speed'] >= 0 and 'GUIDED' in f['modes'] and f['batt']['first_v'] and len(o['track']) >= 1, f
+        assert o['mission']['source'] == 'mp' and o['mission']['count'] == 2 and o['mission']['completed'] == 1 and o['mission']['end']['seq'] == 2, o['mission']
+        assert o['crash']['reason'] == 'terrain' and o['crash_count'] == 1
+        d = o['deviation']
+        assert d['from'] == 'crash' and d['in_circle'] is False and abs(d['dist_m'] - flightsim_mission.mesafe_m(o['crash']['lat'], o['crash']['lon'], 39.927, 32.839)) < 0.2 and d['dz_m'] == round(o['crash']['alt_rel'] - 50.0, 1), d
+        assert o['safety']['code'] == 'crash_deviation' and 'sapma' in o['safety_note'] and str(round(d['dist_m'])) in o['safety_note'], o['safety_note']
+        o2 = ok(a.get(f'{S}/{sid}/summary'))
+        assert o2['id'] == o['id'] and len(satirlar('summary')) == 1   # tek satır, güncellenir
+        # --- raporlar ---
+        rs = ok(a.get('/api/drone/sim/reports?limit=5'))['items']
+        assert rs and rs[0]['id'] == o['id'] and rs[0]['crash'] is True and rs[0]['deviation_m'] == d['dist_m'] and rs[0]['type_name'] == 'Multikopter' and rs[0]['owner_name'], rs[0]
+        r1 = ok(a.get(f"/api/drone/sim/reports/{o['id']}"))
+        assert r1['id'] == o['id'] and r1['crash']['reason'] == 'terrain' and r1['saved_at']
+        assert a.get('/api/drone/sim/reports/999999').status_code == 404
+        # yetki: salt okuyan görür, paylaşamaz; paylaşım → feed_posts (sahip adına) + metin
+        assert ok(mon.get('/api/drone/sim/reports'))['items'][0]['id'] == o['id'] and ok(mon.get(f"/api/drone/sim/reports/{o['id']}"))['id'] == o['id']
+        assert mon.post(f"/api/drone/sim/reports/{o['id']}/share", json={}).status_code == 403
+        assert ok(mon.get(f'{S}/{sid}/summary'))['id'] == o['id']
+        assert ok(mon.get('/api/drone/sim/reports?mine=1'))['items'] == []
+        sh = ok(a.post(f"/api/drone/sim/reports/{o['id']}/share", json={}))
+        assert sh['post_id'] and 'Uçuş Simülatörü raporu' in sh['text'] and 'ÇARPIŞMA' in sh['text'] and 'Sapma' in sh['text'], sh['text']
+        with db.connect() as conn:
+            fp = db.row(conn.execute('SELECT author_id, text FROM feed_posts WHERE id = ?', (sh['post_id'],)))
+        assert fp['author_id'] == 1 and fp['text'] == sh['text']
+        sh2 = ok(a.post(f"/api/drone/sim/reports/{o['id']}/share", json={'text': 'Flight report (en)'}))
+        assert sh2['text'] == 'Flight report (en)'
+        # kapanış: özet satırı güncellenir (ended_at dolu)
+        ok(a.delete(f'{S}/{sid}'))
+        assert ws_bekle(ws, lambda m: m['t'] == 'end', 3)
+    assert bekle(lambda: json.loads(satirlar('summary')[0]['detail']).get('ended_at') is not None, 3)
+    assert json.loads(satirlar('summary')[0]['detail'])['end_reason'] == 'kapatildi'
+    # çarpışma yok + görev: dronun son konumu ↔ bitiş noktası (iniş dairesi içinde)
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    ses._rota_ayarla([{'seq': 1, 'cmd': 16, 'lat': 39.9251, 'lon': 32.837, 'alt': 20.0, 'alt_rel': 20.0}], source='hepgo', total=2)   # ev 11 m uzakta; daire 30 m → yarıçap 15
+    o = ok(a.get(f'{S}/{sid}/summary'))
+    assert o['crash'] is None and o['deviation']['from'] == 'last' and 10 < o['deviation']['dist_m'] < 12 and o['deviation']['in_circle'] is True and o['safety']['code'] == 'in_circle', o['deviation']
+    assert o['mission']['source'] == 'hepgo' and o['mission']['completed'] == 0
+    assert a.get(f'{S}/99999/summary').status_code == 404
+    ok(a.delete(f'{S}/{sid}'))
+    print('  görev çizimi / çarpışma / özet rapor (§18) testleri geçti')
 
 
 def main():
@@ -1177,6 +1303,8 @@ def main():
         kalkis_testleri(a, c1)
         # --- harekât paneli köprüsü (§14) ---
         hub_testleri(a, c1)
+        # --- görev çizimi / çarpışma / özet rapor (§18) ---
+        gorev_rapor_testleri(a, c1)
         # --- kayıttan oynatma (§8) ---
         replay_testleri(a, c1, None)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi

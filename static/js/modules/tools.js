@@ -27,7 +27,7 @@ const TOOLS = [
   { key: 'sql', title: 'SQL Master', icon: 'reports', desc: 'SQLite · MySQL · PostgreSQL: sorgu editörü, sayfalı sonuç, Excel', mt: 'tool_sql' },
   { key: 'notepad', title: 'Notepad Master', icon: 'note', desc: 'Çok sekmeli metin editörü: satır numarası, vurgu, bul/değiştir, sunucuya kaydet', mt: 'tool_notepad' },
   { key: 'convert', title: 'Convert Master', icon: 'refresh', desc: 'Görsel, PDF, metin kodlama, JSON/CSV/XLSX, Base64/Hex/URL, birim dönüştürme', mt: 'tool_convert' },
-  { key: 'volfai', title: 'VOLFAI', icon: 'apps', desc: 'Master Tool oyunu — tarayıcıda tam ekran', mt: 'tool_volfai' },
+  { key: 'volfai', title: 'VOLFAI', icon: 'apps', desc: 'Volfied’in dokunmatik yeniden yapımı — HEPGO içinde, ilerleme hesabınızda', mt: 'tool_volfai' },
 ];
 // Kullanıcının görebileceği araçlar (modül koşulu olanlar o modüllerden birine sahip olana; master koşulu yalnız sistem sahibine)
 export const visibleTools = ctx => TOOLS.filter(t => (t.master ? (t.key === 'terminal' ? ctx.user.console : ctx.user.master) : (!t.modules || t.modules.some(m => ctx.user.modules.includes(m)))));

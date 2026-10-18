@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#04060d">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VOLFAI">
+  <meta name="description" content="VOLFAI - Volfied'in dokunmatik yeniden yapımı. 30 bölüm, HEPCOIN, hangar yükseltmeleri.">
+  <title>VOLFAI</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="hud">
+      <div class="hud-row">
+        <div class="hud-box"><span class="lbl">SKOR</span><span id="score" class="val">0</span></div>
+        <div class="hud-box center"><span id="percent" class="pct">0<small>%</small></span><span class="lbl">HEDEF %80</span></div>
+        <div class="hud-box right"><span class="lbl">HEPCOIN</span><span id="hud-coins" class="val coin">0</span></div>
+      </div>
+      <div class="hud-row small">
+        <div class="hud-box"><span><span id="lives" class="lives"></span><span id="armor" class="armor-pips"></span><span id="defl" class="defl-pips"></span></span></div>
+        <div class="hud-box center"><span id="levelname" class="lvl">BÖLÜM 1</span></div>
+        <div class="hud-box right"><span id="timer" class="timer">150</span></div>
+      </div>
+      <div id="powers" class="powers"></div>
+    </header>
+
+    <main id="field">
+      <canvas id="game"></canvas>
+    </main>
+
+    <footer id="controls">
+      <div id="hint" class="hint">Parmağını ekranda sürükle. Mavi halka: güvendesin. Boş alana girince halka kalkar, hat çizilir.</div>
+      <button id="btn-fire" class="fire hidden" aria-label="Lazer">LAZER</button>
+      <button id="btn-pause" class="icon-btn" aria-label="Duraklat">II</button>
+    </footer>
+  </div>
+
+  <canvas id="stick"></canvas>
+
+  <!-- BAŞLIK -->
+  <div id="screen-title" class="screen">
+    <div class="logo">VOLFAI</div>
+    <div class="tag">Volfied'in dokunmatik yeniden doğuşu</div>
+    <div id="title-user" class="user-chip">Misafir</div>
+    <button id="btn-start" class="big-btn">OYNA</button>
+    <div class="row-btns">
+      <button id="btn-hangar-t" class="big-btn ghost">HANGAR</button>
+      <button id="btn-settings-t" class="big-btn ghost">AYARLAR</button>
+    </div>
+    <details class="howto">
+      <summary>NASIL OYNANIR</summary>
+      <ul>
+        <li><b>Sürükle:</b> Parmağını ekranın herhangi bir yerine koyup sürükle, gemi o yöne gider.</li>
+        <li><b>Hat çiz:</b> Kenardan boş alana gir. Kenara döndüğünde boss'un olmadığı taraf senin olur.</li>
+        <li><b>%80</b> alanı ele geçir, parkuru bitir. Fazlası onur puanı ve bonus.</li>
+        <li><b>Mavi halka</b> varken güvendesin. Çizerken halka kalkar, düşman hatta değerse fitil yanar.</li>
+        <li><b>Kutuları kuşat:</b> S hız, T dondur, L lazer, P kalkan, E ek can, B bonus.</li>
+        <li><b>HEPCOIN</b> parkurda rastgele düşer; hattınla üstünden geç ya da kuşat. Hangar'da yeni gemi al, zırh ve saptırıcı geliştir.</li>
+        <li><b>Zırh:</b> kalkan yokken darbeyi gövde emer; dayanım bitince can gider. <b>Saptırıcılar</b> arkadan gelen güdümlü füzeleri imha eder.</li>
+        <li><b>Süre:</b> geri sayar, son 10 saniyede uyarır. Süre dolunca can gider ve 30 sn ek süre verilir.</li>
+        <li><b>Onur puanı</b> topla: her bölümün parkurlarını yeterli onurla bitirince sonraki bölüm açılır.</li>
+      </ul>
+      <p class="kbd">Klavye: Ok tuşları / WASD, Boşluk = lazer, P = duraklat</p>
+    </details>
+  </div>
+
+  <!-- BÖLÜM SEÇİMİ -->
+  <div id="screen-levels" class="screen panel hidden">
+    <div class="panel-head">
+      <button class="back" data-back="title">‹</button>
+      <div class="panel-title">BÖLÜMLER</div>
+      <div id="levels-honor" class="honor-chip">★ 0</div>
+    </div>
+    <div class="progress-line"><div id="levels-progress"></div></div>
+    <div class="diff-bar"><div id="diff-seg" class="seg diff-seg"></div><div id="diff-desc" class="diff-desc"></div></div>
+    <div class="carousel-wrap"><button class="car-arrow left" id="car-left" aria-label="Önceki bölüm">‹</button><div id="level-carousel" class="carousel"></div><button class="car-arrow right" id="car-right" aria-label="Sonraki bölüm">›</button></div>
+    <div id="level-dots" class="dots"></div>
+    <div id="parkur-panel" class="parkur-panel">
+      <div class="parkur-head"><span id="parkur-title">BÖLÜM 1</span><span id="parkur-honor">ONUR 0 / 75</span></div>
+      <div id="parkur-grid" class="parkur-grid"></div>
+      <button id="btn-play-parkur" class="big-btn">PARKUR 1'E BAŞLA</button>
+    </div>
+  </div>
+
+  <!-- HANGAR -->
+  <div id="screen-hangar" class="screen panel hidden">
+    <div class="panel-head">
+      <button class="back" data-back="prev">‹</button>
+      <div class="panel-title">HANGAR</div>
+      <div id="hangar-coins" class="coin-chip">0</div>
+    </div>
+    <div class="ship-preview"><canvas id="ship-canvas" width="240" height="140"></canvas><div id="ship-stats" class="ship-stats"></div></div>
+    <div class="hangar-sub">GEMİLER</div>
+    <div id="ship-list" class="ship-list"></div>
+    <div class="hangar-sub">YÜKSELTMELER</div>
+    <div id="upgrade-list" class="upgrade-list"></div>
+  </div>
+
+  <!-- AYARLAR -->
+  <div id="screen-settings" class="screen panel hidden">
+    <div class="panel-head">
+      <button class="back" data-back="prev">‹</button>
+      <div class="panel-title">AYARLAR</div>
+      <div></div>
+    </div>
+    <section class="card">
+      <h3>HESAP</h3>
+      <div id="acct-info" class="acct-info">HEPGO oturumu okunuyor…</div>
+    </section>
+    <section class="card">
+      <h3>ŞİRKET SKOR TABLOSU</h3>
+      <div id="leaderboard" class="stats">Yükleniyor…</div>
+    </section>
+    <section class="card">
+      <h3>GÖRÜNÜM</h3>
+      <div class="opt-label">Oyun alanı çözünürlüğü <small>(sonraki parkurda geçerli)</small></div>
+      <div id="opt-field" class="seg"></div>
+      <div class="opt-label">Gemi ve nesne boyutu</div>
+      <div id="opt-scale" class="seg"></div>
+      <div class="opt-note">Büyük ekranlı telefonlarda (ör. iPhone Pro Max) "BÜYÜK" alan + ×1.6 boyut önerilir.</div>
+    </section>
+    <section class="card">
+      <h3>OYUN</h3>
+      <label class="switch"><span>Ses</span><input id="set-sound" type="checkbox"></label>
+      <label class="switch"><span>Titreşim</span><input id="set-vibrate" type="checkbox"></label>
+    </section>
+    <section class="card">
+      <h3>İSTATİSTİK</h3>
+      <div id="stats" class="stats"></div>
+      <button id="btn-reset" class="big-btn ghost small danger">İLERLEMEYİ SIFIRLA</button>
+    </section>
+  </div>
+
+  <!-- PARKUR GİRİŞ -->
+  <div id="screen-intro" class="screen hidden">
+    <div class="lvl-no">BÖLÜM <span id="intro-no">1</span> · PARKUR <span id="intro-p">1</span>/<span id="intro-n">5</span></div>
+    <div class="lvl-name" id="intro-name">VOLFAI YÖRÜNGESİ</div>
+    <div class="creature-line">YARATIK: <span id="intro-creature">UZAY AMİBİ</span></div>
+    <div class="diff-line" id="intro-diff">ACEMİ</div>
+    <div class="lvl-sub">HAZIR OL</div>
+  </div>
+
+  <!-- PARKUR SONU -->
+  <div id="screen-clear" class="screen hidden">
+    <div class="lvl-no" id="clear-title">PARKUR TAMAMLANDI</div>
+    <div class="honor-big">+<span id="clear-honor">0</span> ONUR</div>
+    <div id="clear-honor-note" class="note"></div>
+    <div id="clear-diff" class="note"></div>
+    <table class="bonus">
+      <tr><td>Ele geçirilen</td><td id="clear-pct">0%</td></tr>
+      <tr><td>Fazla alan bonusu</td><td id="clear-over">0</td></tr>
+      <tr><td>Zaman bonusu</td><td id="clear-time">0</td></tr>
+      <tr id="clear-special-row" class="hidden"><td>ÖZEL BİTİRİŞ</td><td id="clear-special">0</td></tr>
+      <tr><td>HEPCOIN</td><td id="clear-coins" class="coin">+0</td></tr>
+      <tr><td>Skor</td><td id="clear-score">0</td></tr>
+    </table>
+    <div id="clear-unlock" class="unlock hidden">YENİ BÖLÜM AÇILDI!</div>
+    <button id="btn-next" class="big-btn">SONRAKİ PARKUR</button>
+    <button id="btn-clear-levels" class="big-btn ghost">BÖLÜMLER</button>
+  </div>
+
+  <div id="screen-pause" class="screen hidden">
+    <div class="lvl-no">DURAKLATILDI</div>
+    <button id="btn-resume" class="big-btn">DEVAM</button>
+    <button id="btn-quit" class="big-btn ghost">BÖLÜMLER</button>
+  </div>
+
+  <div id="screen-over" class="screen hidden">
+    <div class="lvl-no">OYUN BİTTİ</div>
+    <div class="final">SKOR <span id="over-score">0</span></div>
+    <div class="note">Topladığın HEPCOIN kasanda kaldı: <span id="over-coins" class="coin">+0</span></div>
+    <button id="btn-again" class="big-btn">TEKRAR DENE</button>
+    <button id="btn-menu" class="big-btn ghost">BÖLÜMLER</button>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

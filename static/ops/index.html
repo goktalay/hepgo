@@ -18,19 +18,9 @@
 <script>
   // Cesium worker/asset betiklerinin doğru yerden yüklenmesi için (HEPGO replay3d.js ile aynı CDN sürümü)
   window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/";
-  // §14 Uçuş Simülatörü (?sim=): panel 3B dünyanın üstünde katmandır, harita gereksizdir → Cesium.js + widgets.css HİÇ ÇEKİLMEZ
-  // (js/hepgo_nomap.js sahte Cesium verir). Kullanıcı "Haritayı göster" derse (localStorage hepgo_sim_harita = "1") yüklenir.
-  // Görev kipinde (?task=) her zaman yüklenir. document.write: parser engelleyici, sonraki betikler Cesium'u senkron bulur.
-  (function () {
-    var q = new URLSearchParams(location.search), sim = !q.get("task") && parseInt(q.get("sim"), 10) > 0, harita = false;
-    try { harita = localStorage.getItem("hepgo_sim_harita") === "1"; } catch (e) {}
-    window.HEPGO_NOMAP = sim && !harita;
-    if (window.HEPGO_NOMAP) { document.documentElement.dataset.hepgoNomap = "1"; return; }
-    document.write('<script src="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Cesium.js" integrity="sha384-D1oR8FyBDsJWkPeydGJTh8nJg5/++9sqchzJuu+oGQPmgbwu3aJmoVj3BTowr6t6" crossorigin="anonymous"><\/script>' +
-      '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Widgets/widgets.css" integrity="sha384-ghEeMdcWWzRv/BPeUcX835vcKDGrxvROXisl/Btpv3GeekBUXTSPVcFJpI1Tcrgp" crossorigin="anonymous">');
-  })();
 </script>
-<script src="js/hepgo_nomap.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Cesium.js" integrity="sha384-D1oR8FyBDsJWkPeydGJTh8nJg5/++9sqchzJuu+oGQPmgbwu3aJmoVj3BTowr6t6" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.145.0/Build/Cesium/Widgets/widgets.css" integrity="sha384-ghEeMdcWWzRv/BPeUcX835vcKDGrxvROXisl/Btpv3GeekBUXTSPVcFJpI1Tcrgp" crossorigin="anonymous">
 <!-- Font Awesome Pro 7.3.1 (HEPGO vendor; all.min.css yok, dört dosya eşdeğerdir) -->
 <link rel="stylesheet" href="/static/vendor/fontawesome/css/fontawesome.min.css">
 <link rel="stylesheet" href="/static/vendor/fontawesome/css/solid.min.css">
@@ -812,8 +802,6 @@
 <!-- =====================================================================================================
      BETİK SIRASI (GÖKTUNGU sırası korunur; yalnız üç HEPGO dosyası eklenir, ws.js yerine hepgo_ws.js yüklenir).
      Klasik <script> (ESM değil), ortak global kapsam.
-     - js/hepgo_nomap.js <head>'de Cesium yerine/sonrasında (§14 sim kipi: sahte Cesium + "Haritayı göster" anahtarı).
-     - js/hepgo_sim.js hepgo_ws.js'den sonra (§14 sim kipi: 3B üstünde yüzen kartlar — olay kapısı, tuş iletimi, kart konumu).
      - js/hepgo_stub.js EN BAŞTA: Cesium.Ion.defaultAccessToken='' ve pakette olmayan modüllerin (radar_gorsel,
        prizma_ikon, angajman, surum, kullanici) guard'sız okunan globalleri.
      - jquery / flightindicators / pakette OLMAYAN 64 dosya YÜKLENMEZ (paketteki JS'lerde kullanım yok).
@@ -863,8 +851,6 @@
      (seri.js:7 `let ws`e ATANIR, yeniden bildirilmez); sonunda applyLanguage + ayarlariUygula + bağlan. -->
 <script src="js/hepgo_patch.js"></script>
 <script src="js/hepgo_ws.js"></script>
-<!-- §14 Uçuş Simülatörü (?sim=): şeffaf iframe olay kapısı, tuş iletimi, konsol kenarı, kart konumu, Yerleşimi sıfırla (görev kipinde etkisiz) -->
-<script src="js/hepgo_sim.js"></script>
 <!-- IS50 / IS51: DOM düzelticileri en sonda -->
 <script src="js/pencere_iskelet.js"></script>
 <script src="js/panel_durumcubugu.js"></script>

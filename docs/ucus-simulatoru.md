@@ -425,100 +425,94 @@ parametre setleri (ramp/vehicle/wheels; her birinde `SERVO3_MIN/TRIM 1000`; `GPS
 sahte kipte yerde kilit (takeoff öncesi 0,6 sn: konum sabit, yer hızı 0, `gps_fix 6`), sahte kipte üç yöntemle `cmd takeoff` → WS `armed → launch → released` (rampa: launch 1,0–2,5 sn sonra,
 fırlatma anında uçak duruyor, released ≥ 26 km/h; araç: released hızı 60 km/h ±%10; tekerlekli: AGL ≥ 1), `session.launch.phase`, reset sonrası null.
 
-## 14. Harekât paneli: Canlı Uçuş paneliyle kontrol (`app/flightsim_hub.py`, `static/js/modules/flightsim_ops.js`, `static/ops ?sim=`)
-Kullanıcı kararı: "Uçuşun verilerini ve yönetimsel işlemlerini canlı uçuşta kullandığımız panel ile yapalım." Oturum ekranında simülatöre özgü
-HUD paneli ve alt çubuk komutları yerine **Canlı Uçuş harekât ekranı** (GÖKTUNGU arayüzü, `static/ops`) kullanılır; 3B dünya korunur.
+## 14. Harekât paneli: YERLİ panel (`app/flightsim_hub.py`, `static/js/modules/flightsim_panel.js`; iframe YOK)
+Kullanıcı kararı: "Uçuşun verilerini ve yönetimsel işlemlerini canlı uçuşta kullandığımız panel ile yapalım" → önce GÖKTUNGU harekât ekranı
+(`static/ops`) şeffaf iframe'le gömüldü; canlıda (Chrome, koyu tema) Panel açılınca ekran BEMBEYAZ oldu. İkinci karar (birebir): "sistem HTML değil mi?
+neden komple bir objeye ihtiyaç duyuyorsun; gerekiyorsa aynı görünümde mevcut altyapı üzerine bir panel yarat" → iframe tamamen kaldırıldı; panel
+simülatör sayfasının kendi HTML/JS'idir (ui.js `h()`, `.fs-hud` dili). `static/ops`, `hepgo.css`, `hepgo_ws.js`, `hepgo_patch.js` sim-kipi
+eklerinden (`?sim=`, `html[data-hepgo-sim]`, haritasız sahte Cesium, `hepgo_sim.js`, `hepgo_nomap.js`) arındırıldı — görev kipi (`?task=`) c1de8a2
+öncesi hâlindedir.
 
-**Mimari — oturum = hub'da sanal köprü.** `SimSession.run()` UDP portu açılır açılmaz `flightsim_hub.attach` ile `drone_hub.SIMS`'e bir
-`SimBridge` kaydeder: `bridge_id = -SimSession.kimlik = -(9000+N)` (saha görevlerinin sanal dronları `-drone_id`; 9000 tabanı çakışmayı önler),
-Bridge yüzeyi (`id, name, caps, drones, info, _publish, acommand, can_command`). SITL'in SERIAL0 akışından `SimSession._ayristir`'ın zaten
-ayrıştırdığı mesajlar `SimBridge.feed_msgs → drone_hub._feed_msgs`'e verilir (ikinci ayrıştırma yok): `DroneState`, STATUSTEXT → `event` +
-konsol, COMMAND_ACK → KOMUT satırları, PARAM_VALUE → `params` — gerçek köprüyle aynı kod yolu. Sahte kipte (`HEPGO_SITL=0`) kinematikten MAVLink
-çerçeveleri üretilir (`_sahte_hub_cerceve`: 10 Hz GLOBAL_POSITION_INT/ATTITUDE/VFR_HUD, 1 Hz HEARTBEAT/SYS_STATUS/GPS_RAW_INT/HOME_POSITION/
-MISSION_CURRENT, 2 Hz RC_CHANNELS) → panel SITL'siz de dolar (testler). Oturum kapanınca `detach` → `{t:'bridge', online:false}`.
+**Beyaz ekranın kök nedeni (kanıtlı).** HEPGO koyu teması `html[data-theme="dark"] { color-scheme: dark }` (app.css) tanımlar; `<iframe>` öğesi
+`color-scheme`'i üst belgeden MİRAS alır (dark), GÖKTUNGU iç belgesi (`static/ops/index.html`) hiçbir `color-scheme`/meta bildirmez (normal/light).
+Chromium, iframe öğesinin ve gömülü belgenin kullanılan renk şeması uyuşmazsa iframe'i (şeffaf isteyen CSS'e rağmen) OPAK tuvalle — beyaz —
+çizer (CSS Color Adjust: "If the embedded document's used color scheme differs from the embedder's, the canvas is rendered opaque"). Testler açık
+temada koştuğundan (data-theme yok → normal = normal) görülmedi; kullanıcı koyu temada. Ölçüm (Playwright, eski kod f95e95a, sahte kip, 1400×840,
+beyaz = RGB ≥ 250): açık tema %4,8 (sahne), koyu tema %49,7 (iframe opak); iç belgeye `color-scheme: dark` ya da iframe'e `color-scheme: normal`
+verilince %0,13. Yerli panelde iframe olmadığından kartlar her temada koyu yarı saydamdır (koyu temada ölçüm %0,13).
 
-**Komutlar.** Harekât ekranının komutları hub'ın işleyicisinden geçer (`send_command → _single_command / _start_sequence → _dispatch`):
-GÖKTUNGU kalkış akışı (GUIDED teyit → ARM teyit → NAV_TAKEOFF), rota başlat/duraklat/devam/iptal/sürdür, goto (hedef irtifa korunur), HOME,
-altitude_change, param_set/get/list, mission_upload/download/clear/set_current/start, arm_check (rapor) aynen çalışır. `_dispatch` sanal kaynakta
-`acommand` varsa onu çağırır → `SimSession.hub_komut` → gerçek SITL'de `flightsim_hub.MavKomut` (kopru_core.MavLink.execute'un **asenkron**
-karşılığı: komutlar oturumun TCP yazıcısıyla gider, ACK/MISSION_REQUEST/PARAM_VALUE yanıtları `_isle` içindeki bekleyici kuyruklarından
-(`SimSession.bekleyici`) okunur; mission_upload başa ev (+hız) öğesi ekler, `{count, uploaded, offset}` döndürür, DO_JUMP hedefleri kaydırılır;
-ACK 0/5 kabul, red → `MAV_RESULT n` metni). Sahte kipte `_sahte_hub_komut` kinematiğe eşler. `reboot` reddedilir (Sıfırla kullanılır).
-Simülatörün kendi komutları (`/sessions/{id}/cmd`: arm/disarm/mode/takeoff/rtl/reset/crash/set_home/rc), Mission Planner UDP köprüsü, GCS
-kilidi, sanal kumanda ve kayıttan oynatma değişmez.
+**Mimari — oturum = hub'da sanal köprü (değişmedi).** `SimSession.run()` UDP portu açılınca `flightsim_hub.attach` ile `drone_hub.SIMS`'e `SimBridge`
+kaydeder: `bridge_id = -(9000+N)`; SITL mesajları `SimBridge.feed_msgs → drone_hub._feed_msgs` (DroneState, STATUSTEXT → event + konsol, COMMAND_ACK
+→ KOMUT satırları); sahte kipte kinematikten MAVLink çerçeveleri üretilir (`_sahte_hub_cerceve`). Komutlar hub işleyicisinden (`send_command →
+_single_command / _start_sequence → _dispatch → SimSession.hub_komut → MavKomut` asenkron pymavlink; sahte kipte `_sahte_hub_komut`): GÖKTUNGU kalkış
+akışı (GUIDED teyit → ARM teyit → NAV_TAKEOFF; sabit kanatta TKOFF_ALT + TAKEOFF modu + ARM), rota başlat/duraklat/sürdür/iptal, goto, altitude_change,
+set_home, mission_upload/download/clear/set_current, param_*, arm_check; `reboot` reddedilir. Yetki: `/ws/drone/live` `field.live` ya da `drone.sim`
+ile açılır; `watch{sim_id}` ile izleyici yalnız oturum köprüsünü görür (`sim_only`); komut yetkisi `drone.sim` YAZMA izni (`SimBridge.can_command`).
+`GET /sessions/{id}/live`, `session.hub/drone/route`, WS `/ws/drone/sim` `{t:'route', points}` aynen (panel ve testler kullanır).
 
-**Yetki.** `/ws/drone/live` artık `field.live` **ya da** `drone.sim` ile açılır. `drone.sim`'li ama `field.live`'sız izleyici `sim_only`'dir: hello
-boş, `watch{task_id}` reddedilir, yalnız `watch{sim_id}` ile kendi oturumunu izler (`Viewer.kisitli()` → `allowed`). Komut yetkisi simülatör
-kaynağında `SimBridge.can_command` = `drone.sim` **yazma** izni (Pilot rolü/field.live gerekmez); `hello.me.can_command` sim bağlamında buna göre.
-Denetim kaydı: "Simülatör komutu (harekât paneli)" (`drone_sim`, oturum no).
+**Ön yüz — `flightsim_panel.js` `createOpsPanel(stage, {sid, session, type, modes, launch, canWrite, hub, getSim, cmdSim, onReset, onToggle})`.**
+Kartlar 3B'nin ÜSTÜNDE yüzen yarı saydam HUD kartlarıdır (`.fs-pn-card`: rgba(11,14,17,.72), 10 px köşe, ince kenarlık, blur; ayrı zemin yok).
+Kapsayıcı `.fs-pn` tam alan ve `pointer-events: none` (fare/tekerlek 3B'ye, OrbitControls'a gider), kartlar `pointer-events: auto` — olay kapısı,
+elementFromPoint, tuş iletimi gibi iframe hileleri yok. Sağ üstte sütun `.fs-pn-col` (440 px; <1100 px 360 px; `max-height` ile kaydırılır, başlık
+kartı `sticky`):
+- **BAŞLIK**: dron adı (Dron Envanteri kaydı ya da "Simülatör #N"), mod, ARMED/DISARMED, oturum durumu (Hazır/Başlıyor/Hata/Kapandı; kayıt/sahte
+  kipte "Kayıt"/"Sahte veri"), GPS (RTK/RTK FLT/DGPS/3D/2D · uydu), MP (Mission Planner UDP bağlı), HUB (hub soketi: sarı kuruluyor / yeşil bağlı /
+  kırmızı yetki yok-çevrimdışı). Başlık kartı sütunun sürükleme tutamacıdır.
+- **UÇUŞ GÖSTERGESİ (PFD)**: canvas 2D (genişlik × 0,47) — mavi gök / kahverengi yer suni ufuk (roll ile döner, pitch ile kayar; ±25°, 5° merdiven),
+  roll yayı + sarı işaretçi, sarı uçak sembolü, sol yer hızı bandı (IAS küçük), sağ AGL bandı (MSL, dikey hız), alt yön şeridi (N/E/S/W, ev yönü yeşil
+  üçgen, sayısal heading), köşeler: mod / ARMED / GPS / BAT; AUTO'da WP n/m · mesafe. Yönelim 3B'nin render ettiği enterpolasyonlu pozdan
+  (`sim.getPose()`), diğer değerler tele'den; rAF ile kart görünürken çizilir (gizli/katlı/FPV'de çizilmez — tuval ölçüsüz).
+- **TELEMETRİ** 4×2 karo: İRTİFA (AGL / MSL), HIZ (yer / hava), BATARYA (% / V), GPS (fix / uydu); DURUM (ARM/DISARM — tıklanır: ARM onay penceresi
+  [Zorla seçeneği] / DISARM onayı), MOD (tıklanır: tipe göre mod menüsü — panel köküne eklenir, karo içine değil; sütunun kaydırma yüksekliğini
+  büyütmesin ve tıklama karoya kabarıp menüyü yeniden açmasın), TİP, KOMUT (Kalkış / Fırlat / Aracı sür — yönteme göre; havada İniş).
+- **İŞLEMLER** (katlanabilir): Uçuş: Kalkış · İniş · RTL · Ev konumu; Hedef: irtifa girişi + İrtifa (altitude_change) · Hedefe git (lat/lon/alt
+  penceresi; goto); Rota: Dron Yönetimi › Rotalar listesi (`GET /api/drone/routes`; oturum merkezininkiler önce) → Yükle (`routes/{id}/mission` →
+  hub `mission_upload{items, cruise_speed}` → `{t:'route'}` → 3B çizgi + "SITL'de n rota noktası") → Başlat (`mission_start{rota}`) · Duraklat
+  (`mission_pause{davranis:'bekle'}`) · Sürdür (`mission_resume`) · İptal (`mission_cancel`); Sim: ↺ Sıfırla (simülatör `reset`; flightsim.js
+  `reset()`), Yerleşimi sıfırla. Yetki yoksa düğmeler pasif ve nedeni yazılır (yazma izni / hub bağlantısı / hub komut yetkisi / oturum hazır değil).
+- **KONSOL** kartı alt ortada (560 px; sağ sütunla simetrik boşluk: `min(560px, 100% − 920px)`; <1100 px'te MP kutusunun sağına yaslanır
+  `left: 324px`), katlanabilir, temizlenebilir, başlığından sürüklenir; satırlar `saat ETİKET metin` (KOMUT/ROTA/SİM/STATUS/HUB; sev → renk).
+  Kaynaklar: hub `console` çerçeveleri (STATUS etiketi atlanır) + simülatörün kendi olayları (`addEvent` → `ops.log`; STATUSTEXT'ler sim WS `event`
+  olarak 'STATUS' etiketiyle) → her satır bir kez. Panel açıkken eski olay şeridi (`.fs-events`) gizlidir.
+**Kalkış penceresi**: hedef irtifa + GÖKTUNGU kalkış kontrol listesi (6 zorunlu madde, "Hepsini onayla"); eksik madde varsa gönderilmez. Kopter/VTOL/
+helikopter: hub `takeoff{alt_rel_m, kontrol:[{sira, anahtar, soru, grup, cevap, zorunlu, kaynak}]}` → sunucu `drone_takeoff_checks` kaydı + kalkış
+akışı ("Kontrol listesi onaylandı (kayıt #k), takeoff a m" konsol satırı). Sabit kanat (§13 fırlatma düzeneği: tekerlekli/rampa/araç): simülatör
+yolu `cmdSim('takeoff', {alt})` (rampa kızağı / pickup / pist koşusu sim'de yürür; onay satırı konsola yazılır).
+**Veri/komut yolu — tek yol**: telemetri (PFD/karolar/rozetler) simülatörün `/ws/drone/sim` tele'sinden (`ops.update(t)`, 50 Hz; karolar 10 Hz,
+PFD rAF). Hub durumu/konsol/komut sonuçları için panel KENDİ `/ws/drone/live` soketini açar (`{t:'watch', sim_id}` → hello [`me.can_command`,
+`bridges[].drones` ilk durum] / status [mission_count, mission_seq, wp_dist, prearm] / console / bridge / res; ping 10 sn, üstel yeniden bağlanma,
+4403 kalıcı). Komutlar `{t:'cmd', rid, bridge_id: -(9000+N), sysid: 1, name, params}` → `res{rid, ok, result|error}`; zaman aşımı hepgo_ws.js ile
+aynı (mission_upload/start 65 sn, bileşik 35 sn, diğer 12 sn); hata → konsol + toast. Simülatöre özgü iki komut sim WS/REST yolundan gider:
+`reset` ve sabit kanat `takeoff` (düzenek). Kayıt (replay) ve sahte (`?mock=1`) kiplerinde hub yoktur (`hub:false`): İŞLEMLER kartı yok, DURUM/MOD/
+KOMUT karoları pasif; PFD/telemetri/konsol çalışır.
+**Davranış.** Alt çubuk **Panel** düğmesi / **P** → kartlar gizli (sade görünüm: eski `.fs-hud` + `.fs-cmds` + olay şeridi); tercih localStorage
+`fs.ops.on`. Dron kamerası (2/FPV): `.fs-fpv` → kartlar gizli, askeri HUD (H) kalır. Sütun ve konsol başlığından sürüklenir (`fs.panel.col` {x, y, r},
+`fs.panel.con` {x, y}; yeniden boyutlanmada sağ kenara göre uygulanır), katlama `fs.panel.fold`; **Yerleşimi sıfırla** üçünü siler. Sanal kumanda
+(`.rc-on`): konsol çubukların üstüne (`bottom: 230px`), sütun kısalır; <1100 px'te konsol gizli; <760 px'te konsol/atıf/MP kutusu gizli. Alt çubuk
+sarınca `--fs-bar-h` ResizeObserver ile güncellenir (kapsayıcı çubuğun üstünde kalır). ÇARPIŞMA bandı kartların üstünde (z 9). Tuşlar (1–4, H, P,
+WASD/ok) sayfanın kendi dinleyicilerinde; form alanı odaklıyken yok sayılır. Renk şeması: kartlar HEPGO açık/koyu temasından bağımsız koyu —
+beyaz ekran yok.
+**Dosyalar.** Yeni `static/js/modules/flightsim_panel.js`; `flightsim.js` (import, `createOpsPanel(stage, …)`, `addEvent(text, sev, at, tag)` →
+`ops.log`, `updateHud → ops.update`, `setState/setGcs/setRoute/setLaunchPhase/setFpv`, dispose); `static/css/app.css` (`.fs-pn*`; `.fs-ops-frame`
+kuralları kaldırıldı); SİLİNDİ: `flightsim_ops.js`, `static/ops/js/hepgo_sim.js`, `static/ops/js/hepgo_nomap.js`; GERİ ALINDI (c1de8a2^):
+`static/ops/index.html` (Cesium her zaman yüklenir), `static/ops/css/hepgo.css`, `static/ops/js/hepgo_ws.js`, `static/ops/js/hepgo_patch.js`;
+i18n 6 dil (97 anahtar; `i18n.en.extra2/de/fr/es/ru/ar.js`). Arka uç değişmedi.
 
-**Uçlar / sözleşme.** `POST /sessions` `drone_id?` (Dron Envanteri kaydı; `GET /api/drone/sim/drones` liste) → telemetri o dronun kodu/adıyla
-akar, yoksa "Simülatör #N". `GET /sessions/{id}/live` → `{task:{id:null, sim_id, code:'SİM #N', status, location_name, lat, lon, simulator:true},
-flights:[{id: 9000+N, protocol:'sanal', sim_bridge_id:-(9000+N), label, name, drone_id, drone_model}], can_command, session}` —
-`/api/field/tasks/{id}/live` biçimi (kayıttan oynatmada 400). `to_dict`/WS hello `hub {bridge_id, online, name}`, `drone`, `route`. WS `/ws/drone/live`:
-`{t:'watch', sim_id}` → hello `task/flights/bridges` (yalnız oturum köprüsü), `bridges[].simulator=true`. WS `/ws/drone/sim/{id}`: `{t:'route',
-points:[{seq, cmd, lat, lon, alt}]}` — hub `mission_upload` sonrası (yalnız konumlu seyrüsefer öğeleri; TAKEOFF x/y 0 çizilmez), `mission_clear` /
-Sıfırla sonrası boş liste.
+**Testler.** `tests/test_flightsim.py hub_testleri` (hub kaydı, `/live`, `watch{sim_id}`, status, arm, set_mode, kalkış akışı, mission_upload →
+route, AUTO, mission_cancel, rtl, arm_check, reboot reddi, montaj yetkisi, kapanış) değişmeden yeşil. Tarayıcı doğrulaması (Playwright, SwiftShader;
+`/tmp/flsim/nt/n1_sahte.py`, `n2_sitl.py`, `n3_rampa.py`): iframe yok, `.fs-pn` tam alan `pointer-events:none`, sütun sağ üstte 440 px (4 kart), konsol
+alt ortada; kart zemini rgba(11,14,17,.72); beyaz piksel oranı açık tema %4,8 (sahne), koyu tema %0,13, dar %5,9; fare ile döndürme (azimut) ve tekerlek
+boş alanda çalışır, kart üstünde pointerdown tuvale ulaşmaz; 2 → FPV kartlar gizli, H askeri HUD, 1 geri, P sade görünüm (`fs.ops.on=0`) ve Panel
+düğmesiyle geri; DURUM karosu → ARM penceresi → ARMED + konsol "-> arm / ARM"; MOD karosu → menü → GUIDED; Kalkış → kontrol listesi → "Kontrol
+listesi onaylandı (kayıt #k)… TAKEOFF komutu iletildi" → tırmanış; rota seç → Yükle → 3B'de 4 nokta → Başlat → AUTO ("D1 göreve gönderildi");
+sürükleme → `fs.panel.col` → Yerleşimi sıfırla; sanal kumanda yerleşimi; dar 1000×700 (sütun 360, konsol MP'nin sağında, çakışma yok); gerçek SITL
+multikopter (RTK, dron kaydı adı, ARM/kalkış/rota/AUTO/RTL) ve sabit kanat rampa (KOMUT "Fırlat", FIRLATMA → havada, RTL).
 
-**Ön yüz — kartlar 3B'nin üstünde yüzer (ayrı panel/pencere yok).** Kullanıcı geri bildirimi: "dron paneli sağda ayrı bir panel içinde çıkıyor;
-uçuş simülasyonuna giremez mi?" → harekât öğeleri doğrudan simülatör ekranının parçasıdır. Oturum ekranı (`flightsim.js`): 3B dünya her zaman
-TAM alanı kaplar; `createOpsPanel(stage, {sid, onToggle})` (`flightsim_ops.js`) `/static/ops/index.html?sim=<id>` iframe'ini 3B tuvalin
-TAMAMINI kaplayan, **tamamen şeffaf** bir katman olarak ekler (`.fs-ops-frame`: `inset 0`, alt çubuğa dek — `--fs-bar-h` ResizeObserver ile;
-zemin/kenarlık/gölge yok; iframe'e `color-scheme` VERİLMEZ — Chrome, iframe öğesi ile iç belgenin renk şeması uyuşmazsa iframe'i opak beyaz çizer).
-İç belge de şeffaftır (`hepgo.css html[data-hepgo-sim]`: html/body/#anaAlan/#haritaAlan transparent; GÖKTUNGU alt barı, HEPGO üst bandı ve görev
-rozeti gizli). Görünen öğeler yüzen HUD kartlarıdır (`.fs-hud` ile aynı dil: `rgba(11,14,17,.72)`, 10 px köşe, ince kenarlık; aralarında 8 px):
-**dron kartı** sağ üstte (`hepgo_patch.js` sim kipinde sütunu SAĞ ÜSTE, `top: 56px` diz(); kartın kendi zemini yok; başlık = ad/mod/irtifa/Sanal
-rozetleri, PFD, telemetri karoları **4 sütun × 2 satır** (IRT HIZ BAT GPS / DURUM MOD TİP KOMUT — GÖKTUNGU'nun yatay kaydırmalı 2 satırlık akışı
-yerine; ARM/DISARM DURUM karosundan, mod MOD karosundan, kalkış/iniş KOMUT karosundan, diğer komutlar PFD'deki İŞLEMLER kutusundan), kart içi
-Haberleşme konsolu; 440 px, <1100 px'te 360 px ve küçük yazı; `max-height` ile kaydırılır, Küçült düğmesiyle yalnız başlık); **KONSOL**
-(`#altOrtaPanel`) alt ortada küçük (560 px / 150 px gövde) ve başlığından katlanabilir (`gcs_alt_orta`). Toast'lar sol üste alınır.
-**Fare/klavye.** iframe normalde `pointer-events: none` → fare/tekerlek 3B'ye gider (OrbitControls döndürme/yakınlaştırma). Üst pencere her
-`pointermove/pointerdown`'da imlecin altındaki iframe öğesini sorar (same-origin `elementFromPoint`); görünür bir öğe (kart, konsol, popup, toast)
-varsa `.fs-ops-hit` ile olayları iframe'e açar; iframe boş alanda (html/body/#anaAlan/#haritaAlan/#cesiumContainer) olay görünce sınıfı
-kendisi kaldırır (`static/ops/js/hepgo_sim.js`), basılı/sürükleme sırasında kaldırmaz. Karta tıklanınca odak üst pencereye geri alınır
-(`{t:'ops-focus'}` → `stage.focus()`, stage `tabindex=-1`); form alanı odaklı değilse iframe'de yakalanan keydown/keyup üst pencereye sentetik
-`KeyboardEvent` olarak iletilir (Escape hariç) → 1–4, H, P, WASD/ok tuşları iframe odaklıyken de çalışır. Dokunmatikte ilk dokunuş (öncesinde
-hareket olmadığı için) kapıyı açar, ikinci dokunuş karta ulaşır (bilinen sınır).
-**Yerleşim/çakışma.** Olay şeridi konsol kutusunun üstündedir: iframe `{t:'ops-layout', con}` ile konsolun üst kenarını bildirir →
-`--fs-con-h`, `.fs-events { bottom: max(--fs-ev-min, bar + con + 8px); width: min(520px, 100% − 660px) }` (Mission Planner kutusu solda,
-kart sağda). Sanal kumanda açıkken üst pencere iframe'e `{t:'fs-state', rc}` gönderir → `html[data-fs-rc]`: konsol ipucu şeridinin üstüne
-(`bottom: 44px`), kart kısalır, olay şeridi çubukların üstünde (`--fs-ev-min: 222px`); <1100 px ve kumanda açıkken konsol gizli; <760 px'te
-konsol/olay şeridi/atıf/MP kutusu gizli. Kart başlığından **sürüklenebilir** (mıknatıs: sağ kenar kılavuzu); konum sağ kenara göre + genişlik
-localStorage `hepgo_sim_kart`, açılışta uygulanır; sol araç grubunda **Yerleşimi sıfırla** (`#btnYerlesimSifirla`: kart sağ üste, konsol açık).
-Göster/gizle: alt çubuk **Panel** düğmesi ya da **P** tuşu; tercih localStorage `fs.ops.on` (varsayılan açık). `.fs-stage.fs-ops` = kartlar
-görünür: eski `.fs-hud` ve `.fs-cmds` gizli; gizli = **sade görünüm** (eski HUD + ARM/mod/Kalkış/RTL; iframe `visibility: hidden`, soket açık
-kalır). Simülatöre özgü düğmeler (kamera 1–4, HUD, Sanal kumanda, Sıfırla, Bitir, Mission Planner kutusu, oynatma çubuğu) alt çubukta kalır.
-**Neden iframe (aynı belgeye gömme değil):** GÖKTUNGU ~30 bin satır klasik (modülsüz) betik ortak sözcüksel kapsamda üst düzey `const/let`
-ve `window` globalleriyle çalışır (`ws`, `dronlar`, `D()`, `Cesium`…), ~10 bin satırlık `stil.css` `html, body, button, input` gibi genel
-seçicileri ve kendi `:root` değişkenlerini tanımlar; aynı belgeye alınması HEPGO SPA'nın globalleri/CSS'iyle çakışır ve bayt bayt kopya
-sözleşmesini bozar. Şeffaf iframe aynı görsel sonucu (3B üstünde yüzen kartlar) yalıtımı koruyarak verir.
-**Haritasız panel:** sim kipinde (`?sim=`) `index.html` yükleyicisi Cesium.js /
-widgets.css'i HİÇ ÇEKMEZ (karo/Google/Esri isteği yok): `js/hepgo_nomap.js` evrensel bir sahte `Cesium` (Proxy: her özellik/çağrı/`new` yine sahte;
-sayıya 0, metne "", yinelemede boş, `then` yok) verir, GÖKTUNGU betikleri (`harita.js:177 new Cesium.Viewer`, entity'ler) değişmeden çalışır ama
-hiçbir şey çizmez; `html[data-hepgo-nomap]` harita araçlarını, alt bar harita alanlarını ve Harita Ayarları'nı gizler. Sol araç grubunda
-**Haritayı göster/gizle** anahtarı (`#btnHaritaGoster`, localStorage `hepgo_sim_harita = "1"` → sayfa yenilenir, Cesium yüklenir; varsayılan
-kapalı; harita açıkken Cesium tuvali opak olduğundan 3B'yi örter ve fare haritaya gider). Görev kipinde (`?task=`) harita her zaman yüklenir
-(document.write ile parser engelleyici, sonraki betikler Cesium'u senkron bulur). Rota çizimi 3B'de (`setRoute`).
-**Dron kamerası (2)**: `.fs-fpv` → kartlar gizlenir (iframe `display: none`), askeri HUD (H) aynen; 1/3/4'e dönünce kartlar geri gelir. Kayıt ve mock
-oturumlarında panel yok (sunucu köprüsü yok). `hepgo_ws.js`: `?sim=` → `SIM_ID`, `baglamUrl()`, `watch{sim_id}`, ilk hello'da Bağlantı Yöneticisi
-(`#yzSeri`) açılır, `html[data-hepgo-sim]` (kart katlı başlamaz, sağ üstte — `hepgo_patch.js`), sürdürme anahtarı `hepgo_ops_surdur_sim<N>`, bilgi kutusu
-"Simülatör oturumu bulunamadı → #/drone/sim". Rota: Dron Yönetimi › Rotalar'daki rotalar panelden (İŞLEMLER › Rotayı Yükle) `routes/{id}/mission` →
-`mission_upload` ile SITL'e yüklenir, "Rotayı Başlat" ARM+AUTO yapar; Cesium haritada GÖKTUNGU çizimi, 3B'de `flightsim3d.setRoute(points)`
-(amber çizgi, ara nokta küreleri — ilk yeşil/son kırmızı/LAND-RTL mor — yere inen çubuk; `setWorld` sonrası yeniden çizilir).
-
-**Testler** (`tests/test_flightsim.py hub_testleri`): hub kaydı (`SIMS[-(9000+N)]`), `/live` biçimi, `/ws/drone/live` görevsiz hello'da simülatör
-köprüsü, `watch{sim_id}`, status (sahte çerçeveler: tip, mod, GPS, sensörler, HOME), arm → ARM konsolu, set_mode, GÖKTUNGU takeoff akışı →
-irtifa, mission_upload → `route` + mission_count, AUTO, mission_download, mission_cancel → rota boş, rtl, arm_check, reboot reddi; montaj
-(drone.sim okur) → sim_only hello boş, watch task reddi, watch sim → can_command false, komut reddi; kapanış → bridge offline. Not: hub tek
-uvicorn döngüsü varsayar; ikinci `TestClient` ayrı döngü olduğundan montaj izleyicisinde durum yayını beklenmez.
-
-**Sınırlar.** Kayıttan oynatma kareleri tarayıcıda oynatılır; hub'a telemetri olarak verilmez (panel kapalı; sunucu-taraflı oynatıcı gerekir).
-Mission Planner'dan yüklenen görevler (UDP) 3B rota çizgisine yansımaz (yalnız hub `mission_upload`; mission_download ile okunabilir).
-Harekât ekranındaki görev bağlamına özgü satırlar (uçuş kaydı/sipariş, köprü bağlan/kes) simülatörde "Sanal · otomatik bağlı" olarak görünür.
-Kartların `backdrop-filter` bulanıklığı iframe sınırını aşmaz (yalnız iframe içi; 3B arka plan bulanıklaşmaz). Tarayıcı doğrulaması (Playwright,
-SwiftShader; sahte kip + gerçek SITL): iframe tam alan/şeffaf, kart sağ üstte 3B'nin üstünde, fareyle döndürme (azimut değişir) ve tekerlek,
-olay kapısı kart/boş alan, 1–4/H/P (iframe odaklıyken de), ARM DURUM karosundan → kaydırmalı onay → "[KOMUT] D1 arm: kabul edildi" + ARMED,
-FPV'de gizli, P ile sade görünüm, sürükleme + Yerleşimi sıfırla, sanal kumanda yerleşimi, dar görünüm 1000×700.
+**Sınırlar / açık kalanlar.** 3B sahnede yere tıklayarak hedef seçme yok (Hedefe git koordinatla; `flightsim3d` yer kesişimi eklenince bağlanır).
+Kayıttan oynatma kareleri hub'a verilmez (komut kartı yok). Mission Planner'dan (UDP) yüklenen görevler 3B rotaya yansımaz (yalnız hub
+`mission_upload`). GÖKTUNGU'nun ARM CHECK raporu/parametre düzenleyici/Bağlantı Yöneticisi panelde yok (hub `arm_check`/`param_*` uçları hazır).
+Dar görünümde (<1100 px, 700 px yükseklik) sütun kaydırılır (başlık sabit). Kalkış kontrol listesi maddeleri sabittir (GÖKTUNGU'nun
+kalkis_kontrol.js listesi değil; aynı kayıt tablosu).
 
 ## 15. CAYSIM masaüstü istemcisi (`app/caysim.py`, `app/routers/caysim.py`; sözleşme **docs/caysim-api.md**)
 CAYSIM, Unreal Engine 5 + Cesium for Unreal ile yüksek gerçekçilikli görselleştirme istemcisidir (ayrı depo `goktalay/caysim`); **kendi fiziğini

@@ -9105,28 +9105,84 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-mhud-on .fs-hud, .fs-stage.fs-mhud-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı HUD içinde */
 .fs-mhud-btn[hidden] { display: none; }
 
-/* ===== Uçuş Simülatörü — Canlı Uçuş harekât paneli (§14; flightsim_ops.js): kartlar 3B dünyanın ÜSTÜNDE yüzer =====
-   static/ops iframe'i 3B tuvalin tamamını kaplar ve TAMAMEN ŞEFFAFTIR (iç belge de şeffaf; hepgo.css html[data-hepgo-sim]); ayrı bir kutu/pencere
-   yoktur. iframe normalde pointer-events:none'dır (fare/tekerlek 3B'ye, OrbitControls'a gider); flightsim_ops.js imleç iframe içindeki görünür bir
-   öğenin (dron kartı, konsol, popup) üstündeyken .fs-ops-hit ile olayları iframe'e açar, iframe boş alanda geri kapatır. Tuşlar iframe'den üst
-   pencereye sentetik KeyboardEvent olarak iletilir (hepgo_sim.js). .fs-ops-host: panel var · .fs-ops: kartlar görünür · .fs-fpv: Dron kamerası
-   (kartlar gizli). --fs-bar-h alt çubuk yüksekliği; --fs-con-h iframe'deki konsol kutusunun üst kenarı (olay şeridi onun üstüne çıkar).
-   NOT: iframe'e color-scheme VERİLMEZ — Chrome, iframe öğesi ile iç belgenin renk şeması uyuşmazsa iframe'i OPAK (beyaz) zeminle çizer. */
-.fs-stage { --fs-bar-h: 54px; --fs-con-h: 40px; --fs-ev-min: 0px; }
-.fs-ops-frame { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); border: 0; background: transparent; z-index: 7; display: block; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s; }
-.fs-stage.fs-ops .fs-ops-frame { opacity: 1; visibility: visible; transition-delay: 0s; }
-.fs-stage.fs-ops .fs-ops-frame.fs-ops-hit { pointer-events: auto; }
-.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds { display: none; }   /* veri paneli ve komutlar harekât kartlarında (gizli = sade görünüm) */
-/* olay şeridi: alt ortadaki konsol kutusunun üstünde; Mission Planner kutusu (sol 312px) ile dron kartı (sağ ~420px) arasında kalır */
-.fs-stage.fs-ops .fs-events { bottom: max(var(--fs-ev-min), calc(var(--fs-bar-h) + var(--fs-con-h) + 8px)); width: min(520px, calc(100% - 660px)); }
-.fs-stage.rc-on { --fs-ev-min: 222px; }
+/* ===== Uçuş Simülatörü — YERLİ harekât paneli (§14; flightsim_panel.js): kartlar 3B dünyanın ÜSTÜNDE yüzer, iframe YOK =====
+   .fs-pn: tam alan kapsayıcı, pointer-events:none (fare/tekerlek 3B'ye, OrbitControls'a gider); kartlar (.fs-pn-card) pointer-events:auto.
+   Kartlar HER TEMADA koyu yarı saydamdır (rgba(11,14,17,.72), 10 px köşe, ince kenarlık, blur) — HEPGO açık/koyu temasından bağımsız; önceki
+   iframe çözümünde koyu temada (html[data-theme=dark] { color-scheme: dark } iframe'e miras, iç belge normal) Chrome iframe'i OPAK beyaz çiziyordu.
+   .fs-ops-host: panel var · .fs-ops: kartlar görünür (eski .fs-hud/.fs-cmds/.fs-events gizli) · .fs-fpv: Dron kamerası (kartlar gizli, askeri HUD kalır)
+   · .fs-pn-nohub: kayıt/sahte kip (komut kartı yok, karolar pasif). Sütun sağ üstte 440 px (<1100 px 360 px), konsol alt ortada; başlıktan sürüklenir. */
+.fs-stage { --fs-bar-h: 54px; }   /* alt çubuk yüksekliği (flightsim_panel.js ResizeObserver günceller) */
+.fs-pn { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - var(--fs-bar-h)); z-index: 7; pointer-events: none; display: none; color: #e6e9ef; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.fs-stage.fs-ops .fs-pn { display: block; }
+.fs-stage.fs-ops.fs-fpv .fs-pn { display: none; }
+.fs-stage.fs-ops .fs-hud, .fs-stage.fs-ops .fs-cmds, .fs-stage.fs-ops .fs-events { display: none; }   /* veri paneli, komutlar ve olay şeridi kartlarda */
 .fs-stage.fs-ops-host .fs-crash { z-index: 9; }   /* ÇARPIŞMA bandı kartların da üstünde */
-/* Dron kamerası (FPV): kartlar gizlenir, 3B sahne tam alan; askeri HUD aynen çalışır (alt çubuk kamera düğmeleri 1–4 erişilebilir) */
-.fs-stage.fs-fpv .fs-ops-frame { display: none; }
-.fs-stage.fs-ops.fs-fpv .fs-events { bottom: max(var(--fs-ev-min), 60px); width: min(520px, 60%); }
+.fs-pn-col { position: absolute; top: 56px; right: 12px; width: 440px; display: flex; flex-direction: column; gap: 8px; pointer-events: auto; max-height: calc(100% - 64px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.fs-pn-col.free { right: auto; }
+.fs-pn-card { background: rgba(11, 14, 17, .72); border: 1px solid rgba(255, 255, 255, .1); border-radius: 10px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); box-shadow: 0 4px 18px rgba(0, 0, 0, .3); color: #e6e9ef; font-size: 12px; flex: none; }
+.fs-pn-card.dragging { opacity: .85; }
+.fs-pn-h { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: grab; font-weight: 700; font-size: 11px; letter-spacing: .06em; color: #cbd5e1; user-select: none; touch-action: none; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.fs-pn-card.folded .fs-pn-h { border-bottom: 0; }
+.fs-pn-head .fs-pn-h { display: none; }
+.fs-pn-head { cursor: grab; position: sticky; top: 0; z-index: 2; user-select: none; touch-action: none; }   /* sütun kaydırılsa da başlık (tutamaç) görünür */
+.fs-pn-head .fs-pn-body { padding: 6px 10px; }
+.fs-pn-badges .badge { font-size: 10.5px; padding: 1px 6px; line-height: 1.5; }
+.fs-pn-fold, .fs-pn-clear { border: 0; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.fs-pn-fold:hover, .fs-pn-clear:hover { background: rgba(255, 255, 255, .12); }
+.fs-pn-card.folded .fs-pn-fold { transform: rotate(-90deg); }
+.fs-pn-card.folded .fs-pn-body, .fs-pn-card.folded .fs-pn-tiles { display: none; }
+.fs-pn-body { padding: 8px 10px; }
+.fs-pn-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.fs-pn-badges .badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
+.fs-pn-name { font-size: 13px; margin-right: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.fs-pn-pfd-wrap { padding: 6px; }
+.fs-pn-pfd { display: block; width: 100%; height: 200px; border-radius: 8px; background: #0b1220; }
+.fs-pn-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 8px; }
+.fs-pn-tile { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); border-radius: 8px; padding: 7px 3px; text-align: center; display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
+.fs-pn-tile small { color: #9aa4b6; font-size: 9.5px; letter-spacing: .05em; }
+.fs-pn-tile b { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-pn-tile i { font-style: normal; color: #9aa4b6; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-pn-tile.act { cursor: pointer; border-color: rgba(56, 189, 248, .35); }
+.fs-pn-tile.act:hover { background: rgba(56, 189, 248, .14); }
+.fs-pn-tile.act.off { cursor: default; opacity: .55; border-color: rgba(255, 255, 255, .08); }
+.fs-pn-tile.act.off:hover { background: rgba(255, 255, 255, .05); }
+.fs-pn-tile.armed b { color: #f87171; }
+.fs-pn-tile.warn b { color: #fbbf24; }
+.fs-pn-menu { position: absolute; z-index: 20; pointer-events: auto; background: rgba(11, 14, 17, .96); border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); display: grid; padding: 4px; gap: 2px; min-width: 110px; max-height: 60%; overflow-y: auto; }   /* panel köküne eklenir (flightsim_panel.js modeMenu) */
+.fs-pn-menu-it { border: 0; background: transparent; color: #e6e9ef; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: left; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+.fs-pn-menu-it:hover { background: rgba(255, 255, 255, .12); } .fs-pn-menu-it.on { color: #38bdf8; font-weight: 700; }
+.fs-pn-ops-body { display: grid; gap: 6px; }
+.fs-pn-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.fs-pn-grp { display: inline-flex; align-items: center; gap: 3px; }
+.fs-pn-lbl { width: 38px; flex: none; color: #9aa4b6; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
+.fs-pn-route-info { color: #9aa4b6; font-size: 11px; }
+.fs-pn .btn { background: rgba(255, 255, 255, .09); border-color: transparent; color: #e6e9ef; height: 28px; padding: 0 9px; font-size: 12px; }
+.fs-pn .btn:hover { background: rgba(255, 255, 255, .16); }
+.fs-pn .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.fs-pn .btn.danger { background: rgba(185, 28, 28, .75); border-color: transparent; color: #fff; }
+.fs-pn .btn:disabled { opacity: .45; cursor: default; }
+.fs-pn .input.sm { height: 28px; padding: 0 6px; font-size: 12px; background: rgba(255, 255, 255, .09); color: #e6e9ef; border: 1px solid rgba(255, 255, 255, .12); border-radius: 6px; }
+.fs-pn .input.sm option { color: #111; }
+.fs-pn-num { width: 64px; }
+.fs-pn-route { max-width: 190px; min-width: 120px; }
+.fs-pn-perm { color: #fbbf24; }
+.fs-pn .small.muted { color: #9aa4b6; }
+/* konsol: alt ortada; sağ sütun (440 + 12 + 8) ile simetrik boşluk bırakır → sütunla çakışmaz; <1100 px'te MP kutusunun sağına yaslanır */
+.fs-pn-con { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: min(560px, calc(100% - 920px)); min-width: 300px; pointer-events: auto; }
+.fs-pn-con.free { transform: none; }
+.fs-pn-con-body { height: 150px; overflow-y: auto; font-size: 11.5px; padding: 4px 8px; scrollbar-width: thin; }
+.fs-pn-line { display: flex; gap: 6px; line-height: 1.45; color: #cfd5e1; }
+.fs-pn-line .t { color: #9aa4b6; flex: none; } .fs-pn-line .tag { color: #38bdf8; flex: none; min-width: 48px; } .fs-pn-line .x { word-break: break-word; }
+.fs-pn-line.err .x { color: #f87171; } .fs-pn-line.warn .x { color: #fbbf24; } .fs-pn-line.ok .x { color: #4ade80; }
+.fs-pn-check { display: grid; gap: 4px; margin-top: 10px; }
+.fs-stage.rc-on .fs-pn-con:not(.free) { bottom: 230px; }
+.fs-stage.rc-on .fs-pn-col:not(.free) { max-height: calc(100% - 64px - 226px); }
+.fs-stage.fs-ops .fs-attrib { bottom: 8px; right: 12px; max-width: 30%; }
 .fs-ops-btn[hidden] { display: none; }
 /* Sihirbaz: dron kaydı (isteğe bağlı) */
 .fs-sub-h { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .fs-drone-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .fs-drone-sel { min-width: 260px; max-width: 100%; }
-@media (max-width: 760px) { .fs-stage.fs-ops .fs-events, .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } }
+@media (max-width: 1100px) { .fs-pn-col { width: 360px; } .fs-pn-pfd { height: 170px; } .fs-pn-con-body { height: 110px; } .fs-pn-tile b { font-size: 12.5px; } .fs-stage.rc-on .fs-pn-con { display: none; }
+  .fs-pn-con:not(.free) { left: 324px; transform: none; width: calc(100% - 324px - 384px); min-width: 0; } }
+@media (max-width: 760px) { .fs-pn-con, .fs-stage.fs-ops .fs-attrib, .fs-stage.fs-ops .fs-mp { display: none; } }

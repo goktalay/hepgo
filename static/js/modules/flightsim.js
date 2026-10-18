@@ -2,8 +2,9 @@
 // drone.js `sim` sayfasında dinamik yükler: import('./flightsim.js').then(mod => mod.render(view, params, ctx, { m, head, mock }))
 // • Sihirbaz (§6): dron tipi kartları → merkez seçimi (/api/drone/sim/meta centers) → dünya kaydırıcıları + "Rastgele tohum" + küçük 3B
 //   önizleme → Başlat (POST /api/drone/sim/sessions). Açık oturum varsa üstte liste: devam et / bitir.
-// • Oturum ekranı: tam alan 3B tuval (flightsim3d.js) + HUD (sağ), Mission Planner bağlantı kutusu (sol alt), alt araç çubuğu
-//   (kamera 1–4, Sıfırla, Bitir, ARM/DISARM/mod — yazma izni varsa), olay şeridi (STATUSTEXT), ÇARPIŞMA bandı.
+// • Oturum ekranı: tam alan 3B tuval (flightsim3d.js) + YERLİ harekât paneli (§14, flightsim_panel.js: 3B üstünde yüzen kartlar — başlık/PFD/
+//   telemetri karoları/İŞLEMLER sağ üstte, KONSOL alt ortada; hub soketi ve komutlar panelde; Panel düğmesi / P gizleyince sade görünüm:
+//   eski HUD (sağ) + alt çubuk ARM/mod/Kalkış/RTL + olay şeridi), Mission Planner bağlantı kutusu (sol alt), alt araç çubuğu, ÇARPIŞMA bandı.
 // • WS istemcisi /ws/drone/sim/{id}: hello/tele/event/state/end; ping 10 sn; üstel geri çekilmeli yeniden bağlanma; 4403/4404 kalıcı.
 // • Sanal kumanda (yazma izni; alt çubuk 🎮): iki sanal çubuk + klavye → 20 Hz {t:'rc', ch[8]} (RC_CHANNELS_OVERRIDE); kapatınca 8×0.
 //   Açıkken 3B klavye kilidi (WASD/ok tuşları kumandaya gider). HUD altında ağ göstergesi: 'net: 48 Hz · jitter 3 ms' (sim.netStats()).
@@ -18,7 +19,7 @@ import { modelPicker } from './flightsim_models.js';   // görsel model kütüph
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
 import { LAUNCH_DEFAULTS, LAUNCH_METHODS, launchLabel, rampExitSpeed } from './flightsim_launch.js';   // sabit kanat kalkış yöntemi (§13)
 import { createEngineAudio } from './flightsim_audio.js';   // §16: tipe göre sentezlenmiş motor sesi (Web Audio); 🔊 düğmesi + M tuşu alt çubukta
-import { createOpsPanel } from './flightsim_ops.js';   // §14: Canlı Uçuş harekât paneli (static/ops şeffaf iframe) — kartlar 3B'nin üstünde yüzer
+import { createOpsPanel } from './flightsim_panel.js';   // §14: YERLİ harekât paneli (iframe yok) — kartlar 3B'nin üstünde yüzer; hub soketi + komutlar panelde
 
 const API = '/api/drone/sim';
 // Dron tipleri (SITL TIP_ESLEME anahtarları); meta.types gelirse adlar oradan, açıklama/simge buradan
@@ -100,7 +101,6 @@ function restBackend() {
     cmd: (id, name, params = {}) => api.post(`${API}/sessions/${encodeURIComponent(id)}/cmd`, { name, params }),
     g3dKey: () => api.get(`${API}/g3d-key`).then(r => r.key),   // Google Map Tiles anahtarı (no-store; yalnız dünya kurulurken)
     drones: () => api.get(`${API}/drones`),   // §14: sihirbaz "Dron kaydı (isteğe bağlı)" — Dron Envanteri
-    ops: true,                                 // harekât paneli (static/ops ?sim=) kullanılabilir (mock'ta sunucu yok)
     socket: (id, handlers) => wsClient(id, handlers),
     href: id => `#/drone/sim${id ? `/${id}` : ''}`,
   };
@@ -492,11 +492,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
-  // §14 harekât paneli: Canlı Uçuş'un öğeleri (dron kartı: rozetler + PFD + telemetri karoları + İŞLEMLER; konsol) 3B'nin ÜSTÜNDE yüzen kartlar
-  // (tam alan, tamamen şeffaf iframe; ayrı kutu yok); "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları)
-  const opsOk = !replay && !mock && !!be.ops;
+  // §14 harekât paneli (flightsim_panel.js; iframe YOK): başlık rozetleri + PFD + telemetri karoları + İŞLEMLER + KONSOL 3B'nin ÜSTÜNDE yüzen kartlar;
+  // "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları). Kayıt/sahte kipte hub yok: PFD/telemetri çalışır, komut kartları yok
   let ops = null;
-  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', hidden: !opsOk, title: tr('Harekât kartlarını göster/gizle (P): dron kartı, PFD, telemetri karoları ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
+  const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', title: tr('Harekât kartlarını göster/gizle (P): başlık, uçuş göstergesi, telemetri karoları, işlemler ve konsol 3B dünyanın üstünde yüzer; gizliyken sade görünüm (eski HUD ve alt çubuk komutları)'), onclick: () => { if (!ops) return; ops.toggle(); } }, 'Panel');
   const armBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => cmd(last?.armed ? 'disarm' : 'arm') }, 'ARM');
   const rcBtn = h('button', { class: 'btn sm', type: 'button', title: 'Sanal kumanda: iki sanal çubuk + klavye (W/S gaz, A/D yaw, ok tuşları pitch/roll, Q/E mod kanalı, Boşluk gaz orta). RC_CHANNELS_OVERRIDE 20 Hz.', onclick: () => rcToggle() }, '🎮 ', 'Sanal kumanda');
   const modeSel = h('select', { class: 'input sm fs-modesel', onchange: () => { if (modeSel.value) cmd('mode', { mode: modeSel.value }); } },
@@ -539,7 +538,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
   stage.append(mount, msg, crash, hud, mp, events, sticks, bar, nav, ended);
   if (attrib) stage.append(attrib);
-  if (opsOk) { ops = createOpsPanel(stage, { sid, onToggle: on => opsBtn.classList.toggle('primary', on) }); opsBtn.classList.toggle('primary', ops.enabled); }
+  ops = createOpsPanel(stage, { sid, session, type, modes, launch, canWrite, hub: !replay && !mock, getSim: () => sim, cmdSim: (name, params) => cmd(name, params), onReset: () => reset(), onToggle: on => opsBtn.classList.toggle('primary', on) });
+  opsBtn.classList.toggle('primary', ops.enabled);
   const audio = createEngineAudio(stage, { type, launch, replay, tr, getSim: () => sim, getCrashed: () => !crash.hidden, getSpeed: () => player?.speed() ?? 1 });   // §16: düğmeyi alt çubuğa kendisi ekler; kamera/kalkış aşaması/çarpışma getter'lardan
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
@@ -555,11 +555,13 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const sev = String(severity || 'info').toLowerCase();
     return /err|crit|alert|emerg/.test(sev) ? 'err' : /warn/.test(sev) ? 'warn' : 'info';
   };
-  const addEvent = (text, severity = 'info', at = null) => {
+  // tag: panel konsolu etiketi ('SİM' yerel olaylar, 'STATUS' dronun STATUSTEXT'i — hub'ın aynı satırı panelde atlanır, tekrar olmaz)
+  const addEvent = (text, severity = 'info', at = null, tag = 'SİM') => {
     const now = new Date();
     const stamp = at != null ? clock(at) : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     events.prepend(h('div', { class: `fs-ev ${sevClass(severity)}` }, h('span', { class: 'fs-ev-t' }, stamp), h('span', null, text)));
     while (events.children.length > 8) events.lastChild.remove();
+    ops?.log(text, { err: 'hata', warn: 'uyari', info: 'bilgi' }[sevClass(severity)], tag);
   };
 
   // ---------- 3B ----------
@@ -596,7 +598,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (g3dMode) { msg.textContent = tr('Google 3B karoları yükleniyor… %{p}', { p: 0 }); }
     sim = await createFlightSim3D(mount, world, {
       type, model: session.model || session.airframe, launch, origin: { lat: session.center?.lat ?? session.replay?.home?.lat, lon: session.center?.lon ?? session.replay?.home?.lon, alt: session.center?.alt ?? session.replay?.home?.alt },
-      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât paneli gizli, askeri HUD kalır (§14)
+      onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât kartları gizli, askeri HUD kalır (§14)
       onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
       onProgress: progMsg,
       g3dKey: be.g3dKey,
@@ -627,13 +629,14 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (st === 'BASLIYOR') { msg.hidden = false; msg.textContent = replay ? tr('Kayıt hazırlanıyor… %{p}', { p: session.replay?.progress ?? 0 }) : tr('SITL başlıyor…'); }
     else if (st === 'HATA') { msg.hidden = false; msg.classList.add('err'); msg.textContent = replay ? tr('Kayıt açılamadı: {e}', { e: session.sitl?.error || '—' }) : tr('SITL hatası: {e}', { e: session.sitl?.error || '—' }); }
     else if (st === 'HAZIR' && sim) { msg.hidden = true; msg.classList.remove('err'); if (replay) loadReplay(); }
+    ops?.setState(st);
   };
   const setWs = st => {
     const map = { connecting: ['yellow', 'Bağlanıyor…'], reconnect: ['yellow', 'Yeniden bağlanıyor…'], open: ['green', 'Canlı'], closed: ['red', 'Bağlantı koptu'] };
     const [tone, text] = map[st] || ['gray', st];
     wsBadge.className = `badge ${tone}`; wsBadge.textContent = tr(text);
   };
-  const setGcs = (connected, a) => { gcsBadge.className = `badge ${connected ? 'green' : 'gray'}`; gcsBadge.textContent = connected ? tr('Bağlı ({ip})', { ip: a || '' }) : tr('Bekleniyor'); };
+  const setGcs = (connected, a) => { gcsBadge.className = `badge ${connected ? 'green' : 'gray'}`; gcsBadge.textContent = connected ? tr('Bağlı ({ip})', { ip: a || '' }) : tr('Bekleniyor'); ops?.setGcs(connected); };
   setGcs(!!session.gcs?.connected, session.gcs?.addr);
   if (session.state !== 'HAZIR') setState(session.state);
 
@@ -652,7 +655,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const updateHud = t => {
     last = t;
     sim?.setTelemetry(t);
-    milHud?.update(t); audio.update(t);
+    milHud?.update(t); audio.update(t); ops?.update(t);
     const now = performance.now();
     if (now - hudAt < 80) return;
     hudAt = now;
@@ -750,7 +753,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   // Kalkış aşaması (WS `launch`): 3B düzenek + olay şeridi
   const onLaunch = m => {
     if (!launch) return;
-    sim?.setLaunchPhase(m.phase);
+    sim?.setLaunchPhase(m.phase); ops?.setLaunchPhase(m.phase);
     const txt = (LAUNCH_PHASE_TEXT[m.phase] || {})[launch.method] || m.phase;
     addEvent(m.phase === 'released' && m.speed_kmh != null ? `${tr(txt)} · ${f0(m.speed_kmh)} km/h` : tr(txt), m.phase === 'released' || m.phase === 'launch' ? 'warning' : 'info');
   };
@@ -787,9 +790,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     message: m => {
       if (destroyed) return;
       if (m.t === 'tele') { if (replay) return; if (!netsim) return updateHud(m); if (Math.random() * 100 < netsim.loss) return; return void setTimeout(() => { if (!destroyed) updateHud(m); }, netsim.delay + Math.random() * 2 * netsim.jitter); }
-      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) sim?.setRoute(session.route); } return; }
-      if (m.t === 'route') { sim?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler
-      if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null);
+      if (m.t === 'hello') { if (m.session) { Object.assign(session, m.session); setState(session.state); setGcs(!!session.gcs?.connected, session.gcs?.addr); if (Array.isArray(session.route)) { sim?.setRoute(session.route); ops?.setRoute(session.route); } } return; }
+      if (m.t === 'route') { sim?.setRoute(m.points || []); ops?.setRoute(m.points || []); if (m.points?.length) addEvent(tr('Rota yüklendi: {n} nokta', { n: m.points.length })); return; }   // §14: SITL'deki görev → 3B çizgi/işaretler + panel rota durumu
+      if (m.t === 'event') return addEvent(m.text, m.severity, replay ? (player?.time() ?? null) : null, 'STATUS');
       if (m.t === 'launch') return onLaunch(m);
       if (m.t === 'state') { if (m.replay) session.replay = { ...(session.replay || {}), ...m.replay }; return setState(m.state); }
       if (m.t === 'replay' && m.action === 'reset') return player?.restart();

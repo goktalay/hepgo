@@ -53,13 +53,6 @@ var FLIGHTS = [];        // GET /api/field/tasks/<id>/live → flights: {id, ord
 var GOREV_ID = (function(){   // iframe ?task=<id> (drone.js renderLive); yoksa null → bilgi kutusu, soket açılmaz
   try { const n = parseInt(new URLSearchParams(location.search).get("task"), 10); return (n > 0) ? n : null; } catch (e) { return null; }
 })();
-// §14 Uçuş Simülatörü: sayfa ?sim=<oturum no> ile (flightsim_ops.js iframe) açılır; görev yerine simülatör oturumu bağlamı:
-// GET /api/drone/sim/sessions/<id>/live aynı {task, flights, can_command} biçimini verir, soket {t:'watch', sim_id} gönderir,
-// sunucu yalnız oturumun köprüsünü (bridge_id = -(9000+N), protocol 'sanal') yayınlar. Komut yetkisi drone.sim yazma iznidir.
-var SIM_ID = (function(){
-  try { const n = parseInt(new URLSearchParams(location.search).get("sim"), 10); return (!GOREV_ID && n > 0) ? n : null; } catch (e) { return null; }
-})();
-if (SIM_ID) try { document.documentElement.dataset.hepgoSim = "1"; } catch (e) {}   // hepgo.css / hepgo_patch.js kancası
 var GOREV_BILGI = null;  // {id, code, status, location_name, lat?, lon?} (REST live → hello.task ile güncellenir)
 var LINK_DURUM = {};     // flight id → "aciliyor" | "acik" (link_open gönderildi / kabul edildi; telemetri gelene dek "bağlanıyor")
 var LINK_ZAMAN = {};     // flight id → ms (link_open kabul zamanı; LINK_TELEMETRI_SN içinde telemetri gelmezse düşer)
@@ -175,9 +168,8 @@ function gorunenSysid(bridgeId, sysid){
 
 // ---------------- Görev bağlamı: uçuşlar (dron adı, grup, köprü, link) ----------------
 function hwVar(v){ return v !== null && v !== undefined; }
-function baglamUrl(){ return SIM_ID ? "/api/drone/sim/sessions/" + SIM_ID + "/live" : "/api/field/tasks/" + GOREV_ID + "/live"; }
-function ucusYukle(){   // REST: görevin uçuşları (ya da §14 simülatör oturumu); 403/404 → hepgoBaslat bilgi kutusu gösterir
-  return hwFetch(baglamUrl()).then(y => {
+function ucusYukle(){   // REST: görevin uçuşları; 403/404 → hepgoBaslat bilgi kutusu gösterir
+  return hwFetch("/api/field/tasks/" + GOREV_ID + "/live").then(y => {
     if (y && y.task) gorevBilgiAyarla(y.task);
     ucuslariAyarla(y && y.flights);
     if (y && typeof y.can_command === "boolean") window.HEPGO_YETKI = y.can_command;   // hello.me.can_command gelince yenilenir
@@ -571,13 +563,6 @@ function helloIsle(m){
     ilkHello = false;
     hwKonsol("HEPGO", hwT("Canlı uçuş sunucusuna bağlandı", "Connected to live flight server") + (me.name ? " · " + me.name : "") +
              (me.can_command ? "" : " · " + hwT("izleyici (komut yetkisi yok)", "viewer (no command permission)")), "basari");
-    if (SIM_ID){   // §14: simülatörde dron kartı hemen görünsün — Bağlantı Yöneticisi açılır (Canlı Uçuş'ta kullanıcı düğmeyle açar)
-      try {
-        if (typeof window.yuzenPanelAc === "function") window.yuzenPanelAc("yzSeri");
-        else document.getElementById("yzSeri")?.classList.remove("yuzen-gizli");
-        if (typeof window.hepgoYzSeriKonumla === "function") window.hepgoYzSeriKonumla();
-      } catch (e) { console.error("[HEPGO WS] bağlantı paneli açılamadı", e); }
-    }
   }
 }
 function statusIsle(m){
@@ -843,7 +828,6 @@ function wsBaglan(){
     durumYaz("bagli");
     // İzleyici görevle sınırlanır: sunucu hello{task, flights, bridges} ile yanıtlar ve görevin sanal dronlarını başlatır
     if (GOREV_ID) try { s.send(JSON.stringify({t: "watch", task_id: GOREV_ID})); } catch (e) {}
-    else if (SIM_ID) try { s.send(JSON.stringify({t: "watch", sim_id: SIM_ID})); } catch (e) {}   // §14 simülatör oturumu
     if (pingZaman) clearInterval(pingZaman);
     pingZaman = setInterval(() => { if (gercekWsAcik()) gercekWs.send(JSON.stringify({t: "ping"})); }, 20000);
   };
@@ -1015,7 +999,7 @@ function gorevDurumTazele(dronlar){
 }
 // Sürdürme kaydı (GÖKTUNGU _surdurme_kaydet / surdurulebilir_paketi): yarım kalan görevin kalınan noktası. Tarayıcıda görev başına
 // saklanır; dron çevrimiçi ve aktif görev kaydı yokken "kaldığı yerden devam" önerilir.
-function surdurmeAnahtar(){ return "hepgo_ops_surdur_" + (GOREV_ID || (SIM_ID ? "sim" + SIM_ID : "x")); }
+function surdurmeAnahtar(){ return "hepgo_ops_surdur_" + (GOREV_ID || "x"); }
 function surdurmeKayitlari(){ return hwYerel(surdurmeAnahtar(), {}) || {}; }
 function surdurmeKaydet(sysid){
   const g = GOREV[sysid];
@@ -1406,7 +1390,7 @@ window.hepgoUcus = {
   gorev: () => GOREV_BILGI
 };
 window.HEPGO_WS = {
-  durum: () => DURUM, kopruler: () => KOPRULER, ucuslar: () => FLIGHTS, gorevId: () => GOREV_ID, simId: () => SIM_ID, gorevBilgi: () => GOREV_BILGI,
+  durum: () => DURUM, kopruler: () => KOPRULER, ucuslar: () => FLIGHTS, gorevId: () => GOREV_ID, gorevBilgi: () => GOREV_BILGI,
   linkDurum: () => LINK_DURUM, bekleyen: () => BEKLEYEN, gorev: () => GOREV, rotalar: () => ROTALAR, rotaGorunur: () => ROTA_GORUNUR,
   kopruOf: (g) => KOPRU_OF[g] || null, gorunenSysid: gorunenSysid, ucusBul: ucusBul, cmd: cmdGonder,
   rotaYenile: rotaListesiYenile, ucusYenile: ucusYukle, baglan: wsBaglan, gercek: () => gercekWs
@@ -1442,7 +1426,7 @@ function parentTema(){
   } catch (e) { console.error("[HEPGO WS] ayarlar uygulanamadı", e); }
   setInterval(telemetriDongu, 200);
   baglantiListesiYayinla();   // boş liste: "KAYITLI BAĞLANTI YOK" (uçuşlar gelince dolar)
-  if (!GOREV_ID && !SIM_ID){
+  if (!GOREV_ID){
     // Serbest uçuş yok (kullanıcı kararı 5): soket açılmaz, harita + bilgi kutusu
     durumYaz("gorevsiz");
     bilgiKutuGoster(hwT("CANLI UÇUŞ", "LIVE FLIGHT"),
@@ -1459,12 +1443,6 @@ function parentTema(){
   }).catch(e => {
     const yetki = !!(e && e.status === 403), yok = !!(e && e.status === 404);
     durumYaz(yetki ? "yetki" : "koptu");
-    if (SIM_ID){   // §14: simülatör oturumu kapanmış / yetki yok
-      bilgiKutuGoster(yetki ? hwT("YETKİ YOK", "NO PERMISSION") : yok ? hwT("SİMÜLATÖR OTURUMU BULUNAMADI", "SIMULATOR SESSION NOT FOUND") : hwT("OTURUM YÜKLENEMEDİ", "SESSION COULD NOT BE LOADED"),
-        yetki ? hwT("Uçuş Simülatörü modülü yetkisi gerekir.", "Flight Simulator module permission is required.") : ((e && e.message) || ""),
-        hwT("Simülatöre git", "Go to simulator"), "#/drone/sim");
-      return;
-    }
     bilgiKutuGoster(yetki ? hwT("YETKİ YOK", "NO PERMISSION") : yok ? hwT("GÖREV BULUNAMADI", "TASK NOT FOUND") : hwT("GÖREV YÜKLENEMEDİ", "TASK COULD NOT BE LOADED"),
       yetki ? hwT("Bu görevin canlı uçuşunu izlemek için görev üyesi ya da saha yöneticisi olmanız gerekir.", "You must be a task member or field manager to watch this task's live flight.")
             : ((e && e.message) || ""),

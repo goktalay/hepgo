@@ -203,13 +203,13 @@ from .routers import drone as drone_router  # noqa: E402
 from .routers import flightsim as flightsim_router  # noqa: E402 — Uçuş Simülatörü (SITL + Mission Planner köprüsü)
 from .routers import caysim as caysim_router  # noqa: E402 — CAYSIM masaüstü istemci API'si (docs/caysim-api.md)
 from .routers import faceauth as faceauth_router  # noqa: E402 — Yüz ile giriş (docs/yuz-tanima.md)
-from .routers import tools_convert, tools_ftp, tools_notepad, tools_sql, tools_ssh  # noqa: E402 — Araçlar › Master Tool web sürümleri
+from .routers import tools_convert, tools_ftp, tools_mt, tools_notepad, tools_sql, tools_ssh  # noqa: E402 — Araçlar › Master Tool web sürümleri
 for r in (admin.router, auth_routes.router, faceauth_router.router, users.router, orders.router, warehouse.router, field.router, flightlogs.router, drone_router.router, drone_hub.ws_router,
           flightsim_router.router, flightsim_router.ws_router, caysim_router.router, caysim_router.admin_router, caysim_router.ws_router,
           printers.router, products.router, companies.router, documents.router, belge.router, signatures.router,
           crm.router, planner.router, production_errors.router, secretariat.router, secretariat.me_router, calls.router, calls.me_router, calls.any_router, chat.router, mail.router, meeting_room.router, meetings.router, hr.router, hr.me_router, hr.duties_me_router, hr.duties_router, hr.docs_router, master.router, mikro.router, mrp.router, netscan.router, purchasing.router, sales.router, voice.router, voice.ws_router, security.router,
           cameras.router, cameras.faces_router, reports.router, announcements.router, system.router, assistant.router, meet.router, meet.ws_router, radio.router, radio.ws_router, cleaning.router, usertasks.router, todos.router, ui_updates_router.router, surveys.router, pos.router, sections.router, services.router, reservations.router, waiter.router, beta.router, design.router, console.ws_router, ssh_hosts.router, ssh_hosts.ws_router, notes.router, filemanager.router, filemanager.public, agent_hub.ws_router, files.router, directory.router, feed.router, federation.router, screenshare.router, screenshare.ws_router, finance.router, live_router.router, live_router.ws_router, certs_router.router, fleet_router.router, boss_router.router, roles_router.router, projects_router.router, social_router.router, contacts_router.router, spotify_router.router,
-          tools_ssh.router, tools_ssh.ws_router, tools_ftp.router, tools_sql.router, tools_notepad.router, tools_convert.router,
+          tools_mt.router, tools_ssh.router, tools_ssh.ws_router, tools_ftp.router, tools_ftp.ws_router, tools_sql.router, tools_notepad.router, tools_convert.router,
           central.router, central.fed_router, sshmaster_admin.router, sshmaster_admin.fed, support_router.router, support_router.fed, membership.router, factory.router, mobile.router, worktime_router.router, kvkk_router.router, search_router.router):
     app.include_router(r)
 

@@ -3462,6 +3462,11 @@ def _migrate(conn):
     # ('mikro:<sth_RECno_RECno>' veya açılış için 'mikro-open:<kod>'). Çift sayımı ve tekrar aktarımı önler.
     if 'mikro_key' not in {r[1] for r in conn.execute('PRAGMA table_info(material_moves)')}:
         conn.execute('ALTER TABLE material_moves ADD COLUMN mikro_key TEXT')
+    # Araçlar › Master Tool web sürümleri (SSH Master, FTP Masters): kullanıcı başına depo — masaüstü store.json ile aynı
+    # JSON şeması (folders, connections, shortcuts, settings, syncMeta); şifreler Fernet ile 'enc:' önekli (tools_mt.py).
+    conn.execute('''CREATE TABLE IF NOT EXISTS tools_mt_store (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, app TEXT NOT NULL, key TEXT NOT NULL,
+        json TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, app, key))''')
     _migrate_drone_links(conn)
 
 

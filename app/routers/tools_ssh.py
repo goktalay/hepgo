@@ -1,56 +1,623 @@
-"""Araçlar › SSH Master (web) — tarayıcıdan dış sunucuya SSH.
+"""Araçlar › SSH Master (web) — paramiko arka ucu (masaüstü main.js'teki ssh2 mantığının karşılığı).
 
-Arka uç: sistem `ssh` istemcisi (openssh-client) bir PTY içinde çalıştırılır; paramiko/asyncssh GEREKMEZ (PROD'da ek paket yok).
-Bağlantı DIŞA DOĞRU kurulur; merkez sunucuda kabuk açılmaz. Sunucu/kullanıcı/parola/anahtar yalnız bu WebSocket oturumunun
-belleğinde kalır; hiçbir yere yazılmaz (anahtar geçici 0600 dosyaya yazılır, bağlantı bitince silinir). shell=True yok.
-
-Protokol (/ws/tools/ssh): ilk ileti {t:'connect', host, port, username, password?, key?} → ardından {t:'i', d} giriş, {t:'r', r, c} boyut.
+WebSocket /ws/tools/ssh: tek bağlantı = bir terminal penceresi; her çağrı bölme kimliği (pane) taşır.
+  metin  {t:'call', id, m, a}  → {t:'ret', id, ok, v|e, store?}     (ssh:start, sftp:*)
+  metin  {t:'send', m, a}      → yanıt yok                            (ssh:resize, ssh:stop, ssh:lastDir, transfer:cancel)
+  ikili  [1B uzunluk][pane][veri]  → kabuğa yazılır; sunucudan aynı biçimde kabuk çıktısı gelir
+  olay   {t:'ev', ch, d}       (ssh:closed, transfer:progress)
+Kimlik: parola / özel anahtar (+parola); klavye etkileşimli parola ile tamamlanır. Host anahtarı: bağlantı kaydındaki
+parmak izi (sha256/base64) ile karşılaştırılır; yeni sunucular DATA_DIR/tools/ssh_known_hosts'a eklenir (AutoAdd).
+SFTP: bölmenin ana kanalı listeleme için; her aktarım kendi SFTP kanalını açar (iptal = kanalı kapatmak).
+Hatalar renderer i18n anahtarlarıyla ({$t: 'main.errAuth'}) döner; parola DB'ye şifreli (Fernet) yazılır, arayüze gitmez.
 """
 import asyncio
+import base64
+import errno
+import hashlib
 import json
-import os
-import pty
-import shutil
-import signal
-import subprocess
-import tempfile
+import posixpath
+import socket
+import stat as st_mod
+import threading
+import time
 from pathlib import Path
 
+import paramiko
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from .. import config, db
-from .console import _read, _set_winsize
-from .tools_common import check_host, check_port, check_user, tools_user, ws_user
+from . import tools_mt
+from .tools_common import TOOLS_DIR, tools_user, ws_user
+from .tools_mt import T, MtError
 
 router = APIRouter(prefix='/api/tools/ssh')
 ws_router = APIRouter()
+APP = 'sshmaster'
+
+# Kabuk her prompt'ta OSC 7 ile bulunduğu klasörü bildirir (bash + zsh) — main.js ile aynı
+OSC7_INIT = ("__sm_osc7(){ printf '\\033]7;file://%s\\007' \"$PWD\"; }; "
+             'PROMPT_COMMAND="__sm_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; '
+             'precmd_functions+=(__sm_osc7) 2>/dev/null')
+CHUNK = 256 * 1024
 
 
 @router.get('/status')
 def status(user=Depends(tools_user)):
-    return {'backend': 'openssh', 'available': bool(shutil.which('ssh'))}
+    return {'backend': 'paramiko', 'available': True, 'version': paramiko.__version__}
 
 
-def _known_hosts():
-    p = config.DATA_DIR / 'tools' / 'ssh_known_hosts'
+# ---------------------------------------------------------------------------
+# Bağlantı yardımcıları
+# ---------------------------------------------------------------------------
+class HostKeyMismatch(Exception):
+    def __init__(self, old, new):
+        super().__init__('HOSTKEY')
+        self.old, self.new = old, new
+
+
+class Cancelled(Exception):
+    pass
+
+
+def fingerprint(key) -> str:
+    return base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode('ascii')
+
+
+def known_hosts_path() -> Path:
+    p = TOOLS_DIR / 'ssh_known_hosts'
     p.parent.mkdir(parents=True, exist_ok=True)
+    if not p.exists():
+        p.touch()
     return p
 
 
-def _cmd(host, port, username, key_path=None):
-    opts = ['-p', str(port), '-o', 'StrictHostKeyChecking=accept-new', '-o', f'UserKnownHostsFile={_known_hosts()}',
-            '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=20', '-o', 'ServerAliveCountMax=3',
-            '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'NumberOfPasswordPrompts=1']
-    if key_path:
-        opts += ['-o', 'PreferredAuthentications=publickey', '-o', 'IdentitiesOnly=yes', '-i', key_path]
-    else:
-        opts += ['-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'PubkeyAuthentication=no']
-    return ['ssh', *opts, f'{username}@{host}']
+class _Policy(paramiko.MissingHostKeyPolicy):
+    """Bilinmeyen host anahtarı: kayıtlı parmak iziyle çelişiyorsa reddet, değilse known_hosts'a ekle (AutoAdd)."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    def missing_host_key(self, client, hostname, key):
+        fp = fingerprint(key)
+        if self.conn.get('hostKey') and self.conn['hostKey'] != fp and not self.conn.get('acceptNewHostKey'):
+            raise HostKeyMismatch(self.conn['hostKey'], fp)
+        client.get_host_keys().add(hostname, key.get_name(), key)
+        try:
+            client.save_host_keys(str(known_hosts_path()))
+        except OSError:
+            pass
 
 
-async def _err(ws, msg, code=4400):
+def load_pkey(uid, key_path, passphrase):
+    """Özel anahtar: kullanıcının kişisel alanındaki (H:\\) dosyadan."""
     try:
-        await ws.send_text(f'\x1b[31m{msg}\x1b[0m\r\n')
+        real = tools_mt.to_real(uid, key_path)
+    except MtError:
+        raise FileNotFoundError(key_path) from None
+    if not real.is_file():
+        raise FileNotFoundError(key_path)
+    return paramiko.PKey.from_path(str(real), passphrase=passphrase or None)
+
+
+def connect_client(uid, conn):
+    """Çözülmüş bağlantı kaydıyla paramiko SSHClient açar; (client, fingerprint) döner."""
+    host = str(conn.get('host') or '').strip()
+    port = int(conn.get('port') or 22)
+    username = str(conn.get('username') or '').strip()
+    client = paramiko.SSHClient()
+    client.load_host_keys(str(known_hosts_path()))
+    client.set_missing_host_key_policy(_Policy(conn))
+    kw = dict(hostname=host, port=port, username=username, timeout=15, banner_timeout=15, auth_timeout=20,
+              allow_agent=False, look_for_keys=False)
+    if conn.get('authType') == 'key' and conn.get('keyPath'):
+        kw['pkey'] = load_pkey(uid, conn['keyPath'], conn.get('passphrase'))
+    else:
+        kw['password'] = conn.get('password') or ''
+    client.connect(**kw)
+    t = client.get_transport()
+    t.set_keepalive(20)
+    fp = fingerprint(t.get_remote_server_key())
+    if conn.get('hostKey') and conn['hostKey'] != fp and not conn.get('acceptNewHostKey'):
+        client.close()
+        raise HostKeyMismatch(conn['hostKey'], fp)
+    return client, fp
+
+
+def friendly_error(err):
+    """ssh2 hatalarının main.js'teki karşılığı: renderer i18n anahtarı (ya da ham metin)."""
+    msg = str(err) or err.__class__.__name__
+    if isinstance(err, HostKeyMismatch):
+        return T('main.errHostKey', old=err.old, new=err.new)
+    if isinstance(err, paramiko.BadHostKeyException):
+        return T('main.errHostKey', old=fingerprint(err.expected_key), new=fingerprint(err.key))
+    if isinstance(err, paramiko.AuthenticationException) or 'uthentication' in msg and 'failed' in msg:
+        return T('main.errAuth')
+    if isinstance(err, paramiko.ssh_exception.NoValidConnectionsError):
+        inner = list(err.errors.values())
+        return friendly_error(inner[0]) if inner else T('main.errRefused')
+    if isinstance(err, socket.gaierror) or 'getaddrinfo' in msg or 'Name or service not known' in msg:
+        return T('main.errDns')
+    if isinstance(err, ConnectionRefusedError) or 'refused' in msg.lower():
+        return T('main.errRefused')
+    if isinstance(err, (socket.timeout, TimeoutError)) or 'timed out' in msg.lower() or 'Timeout' in msg:
+        return T('main.errTimeout')
+    if getattr(err, 'errno', None) in (errno.EHOSTUNREACH, errno.ENETUNREACH) or 'unreachable' in msg.lower():
+        return T('main.errUnreach')
+    if isinstance(err, FileNotFoundError):
+        return T('main.errKeyFile')
+    if isinstance(err, paramiko.PasswordRequiredException):
+        return T('main.errAuth')
+    return msg
+
+
+def test_connection(uid, store, form):
+    """conn:test — bağlan, 'uname -sr; hostname' ile sunucu bilgisi al."""
+    conn = tools_mt.merge_form_with_stored(store, form)
+    if not conn.get('host') or not conn.get('username'):
+        return {'ok': False, 'message': T('main.errHostUser')}
+    started = time.time()
+    try:
+        client, fp = connect_client(uid, conn)
+    except Exception as e:   # noqa: BLE001
+        return {'ok': False, 'message': friendly_error(e)}
+    info = ''
+    try:
+        _, out, _ = client.exec_command('uname -sr 2>/dev/null; hostname 2>/dev/null', timeout=10)
+        info = ' · '.join(x for x in out.read().decode('utf-8', 'replace').strip().split('\n') if x)
+    except Exception:   # noqa: BLE001
+        pass
+    client.close()
+    return {'ok': True, 'ms': int((time.time() - started) * 1000), 'fingerprint': fp, 'info': info, 'firstTime': not conn.get('hostKey')}
+
+
+# ---------------------------------------------------------------------------
+# SFTP yardımcıları
+# ---------------------------------------------------------------------------
+def sftp_entry(d, e):
+    mode = e.st_mode or 0
+    return {'name': e.filename, 'path': posixpath.join(d, e.filename), 'isDir': st_mod.S_ISDIR(mode), 'isLink': st_mod.S_ISLNK(mode),
+            'size': e.st_size or 0, 'mtime': int((e.st_mtime or 0) * 1000)}
+
+
+def remote_walk(sftp, root):
+    """root altındaki tüm dosyaları (rel, size) ve klasörleri verir."""
+    files, dirs, queue = [], [''], ['']
+    while queue:
+        rel = queue.pop(0)
+        for e in sftp.listdir_attr(posixpath.join(root, rel) if rel else root):
+            r = posixpath.join(rel, e.filename) if rel else e.filename
+            mode = e.st_mode or 0
+            if st_mod.S_ISDIR(mode):
+                dirs.append(r)
+                queue.append(r)
+            elif st_mod.S_ISREG(mode):
+                files.append((r, e.st_size or 0))
+    return files, dirs
+
+
+def local_walk(root: Path):
+    files, dirs, queue = [], [''], ['']
+    while queue:
+        rel = queue.pop(0)
+        for e in sorted((root / rel).iterdir() if rel else root.iterdir()):
+            r = f'{rel}/{e.name}' if rel else e.name
+            if e.is_dir():
+                dirs.append(r)
+                queue.append(r)
+            elif e.is_file():
+                files.append((r, e.stat().st_size))
+    return files, dirs
+
+
+def remote_exists(sftp, p):
+    try:
+        sftp.stat(p)
+        return True
+    except OSError:
+        return False
+
+
+def unique_remote_path(sftp, p):
+    if not remote_exists(sftp, p):
+        return p
+    d, base = posixpath.split(p)
+    stem, ext = posixpath.splitext(base)
+    i = 1
+    while True:
+        cand = posixpath.join(d, f'{stem} ({i}){ext}')
+        if not remote_exists(sftp, cand):
+            return cand
+        i += 1
+
+
+def remote_remove(sftp, p):
+    try:
+        st = sftp.lstat(p)
+    except OSError:
+        return
+    if not st_mod.S_ISDIR(st.st_mode or 0):
+        sftp.remove(p)
+        return
+    files, dirs = remote_walk(sftp, p)
+    for rel, _ in files:
+        sftp.remove(posixpath.join(p, rel))
+    for d in sorted(dirs, key=len, reverse=True):
+        sftp.rmdir(posixpath.join(p, d) if d else p)
+
+
+def xfer_download(sftp, remote, local: Path, step, job):
+    with sftp.open(remote, 'rb') as rf:
+        size = rf.stat().st_size
+        rf.prefetch(size)
+        with open(local, 'wb') as lf:
+            while True:
+                if job['cancelled']:
+                    raise Cancelled()
+                b = rf.read(CHUNK)
+                if not b:
+                    break
+                lf.write(b)
+                step(len(b))
+
+
+def xfer_upload(sftp, local: Path, remote, step, job):
+    with open(local, 'rb') as lf, sftp.open(remote, 'wb') as wf:
+        wf.set_pipelined(True)
+        while True:
+            if job['cancelled']:
+                raise Cancelled()
+            b = lf.read(CHUNK)
+            if not b:
+                break
+            wf.write(b)
+            step(len(b))
+
+
+# ---------------------------------------------------------------------------
+# Terminal penceresi: bir WebSocket, birden çok bölme (pane) → her biri kendi SSH bağlantısı
+# ---------------------------------------------------------------------------
+class Window:
+    def __init__(self, ws, user, lang):
+        self.ws, self.user, self.lang = ws, user, lang
+        self.uid = user['id']
+        self.loop = asyncio.get_running_loop()
+        self.q = asyncio.Queue()
+        self.sessions = {}    # pane → dict(client, chan, sftp, conn, wq)
+        self.transfers = {}   # id → job
+        self.lock = threading.Lock()
+        self.closed = False
+
+    # --- arayüze ileti (iş parçacığından güvenli) ---
+    def emit(self, item):
+        if not self.closed:
+            self.loop.call_soon_threadsafe(self.q.put_nowait, item)
+
+    def event(self, ch, d):
+        self.emit({'t': 'ev', 'ch': ch, 'd': d})
+
+    @staticmethod
+    def frame(pane, data: bytes) -> bytes:
+        p = pane.encode('utf-8')
+        return bytes([len(p)]) + p + data
+
+    async def sender(self):
+        while True:
+            item = await self.q.get()
+            if isinstance(item, (bytes, bytearray)):
+                await self.ws.send_bytes(bytes(item))
+            else:
+                await self.ws.send_text(json.dumps(item, ensure_ascii=False))
+
+    # --- oturumlar ---
+    def session(self, pane):
+        s = self.sessions.get(pane)
+        if not s:
+            raise MtError(T('main.errNoSession'))
+        return s
+
+    def close_session(self, pane):
+        s = self.sessions.pop(pane, None)
+        if not s:
+            return
+        try:
+            s['wq'].put(None)
+        except Exception:   # noqa: BLE001
+            pass
+        for step in (lambda: s['chan'] and s['chan'].close(), lambda: s['sftp'] and s['sftp'].close(), s['client'].close):
+            try:
+                step()
+            except Exception:   # noqa: BLE001
+                pass
+
+    def close_all(self):
+        self.closed = True
+        for pane in list(self.sessions):
+            self.close_session(pane)
+        for job in list(self.transfers.values()):
+            self.cancel_job(job)
+
+    def pane_sftp(self, pane):
+        s = self.session(pane)
+        with s['lock']:
+            if s['sftp'] is None or s['sftp'].sock.closed:
+                s['sftp'] = s['client'].open_sftp()
+            return s['sftp']
+
+    def _reader(self, pane, s):
+        chan = s['chan']
+        try:
+            while True:
+                data = chan.recv(65536)
+                if not data:
+                    break
+                self.emit(self.frame(pane, data))
+        except Exception:   # noqa: BLE001
+            pass
+        finally:
+            if self.sessions.get(pane) is s:
+                self.close_session(pane)
+                self.event('ssh:closed', {'pane': pane})
+
+    def _writer(self, s):
+        while True:
+            d = s['wq'].get()
+            if d is None:
+                break
+            try:
+                s['chan'].sendall(d)
+            except Exception:   # noqa: BLE001
+                break
+
+    # --- ssh:start ---
+    def ssh_start(self, a):
+        import queue
+        pane, conn_id = str(a.get('pane')), a.get('connId')
+        self.close_session(pane)
+        store = tools_mt.read_store(self.uid, APP, self.lang)
+        try:
+            conn = tools_mt.resolve_connection(store, conn_id)
+        except MtError as e:
+            return {'ok': False, 'message': e.msg}, None
+        try:
+            client, fp = connect_client(self.uid, conn)
+        except Exception as e:   # noqa: BLE001
+            return {'ok': False, 'message': friendly_error(e)}, None
+        pub = tools_mt.remember_host_key(self.uid, APP, conn_id, fp)
+        try:
+            chan = client.invoke_shell(term='xterm-256color', width=int(a.get('cols') or 120), height=int(a.get('rows') or 30))
+        except Exception as e:   # noqa: BLE001
+            client.close()
+            return {'ok': False, 'message': friendly_error(e)}, pub
+        s = {'client': client, 'chan': chan, 'sftp': None, 'conn': conn, 'wq': queue.Queue(), 'lock': threading.Lock()}
+        self.sessions[pane] = s
+        threading.Thread(target=self._reader, args=(pane, s), daemon=True, name=f'ssh-rd-{pane}').start()
+        threading.Thread(target=self._writer, args=(s,), daemon=True, name=f'ssh-wr-{pane}').start()
+        if conn.get('rememberLastDir'):   # son klasörü takip et / oraya git
+            init = ' ' + OSC7_INIT
+            if conn.get('lastDir'):
+                init += f"; cd -- {tools_mt.shq(conn['lastDir'])} 2>/dev/null"
+            init += '; clear\r'
+            s['wq'].put(init.encode('utf-8'))
+        tools_mt.audit(self.uid, 'SSH Master bağlantısı açtı', f"{conn.get('username')}@{conn.get('host')}:{conn.get('port')}")
+        return {'ok': True, 'startDir': conn.get('lastDir') if conn.get('rememberLastDir') and conn.get('lastDir') else None,
+                'name': conn.get('name'), 'host': conn.get('host'), 'username': conn.get('username')}, pub
+
+    # --- gönderimler (yanıtsız) ---
+    def on_send(self, m, a):
+        a = a or {}
+        if m == 'ssh:resize':
+            s = self.sessions.get(str(a.get('pane')))
+            if s:
+                try:
+                    s['chan'].resize_pty(width=int(a.get('cols') or 80), height=int(a.get('rows') or 24))
+                except Exception:   # noqa: BLE001
+                    pass
+        elif m == 'ssh:stop':
+            self.close_session(str(a.get('pane')))
+        elif m == 'ssh:lastDir':
+            s = self.sessions.get(str(a.get('pane')))
+            d = a.get('dir')
+            if s and d and s['conn'].get('rememberLastDir') and s['conn'].get('lastDir') != d:
+                s['conn']['lastDir'] = d
+                cid = s['conn']['id']
+
+                def fn(store):
+                    c = next((x for x in store['connections'] if x.get('id') == cid), None)
+                    if c and c.get('rememberLastDir'):
+                        c['lastDir'] = d
+                tools_mt.with_store(self.uid, APP, fn)
+        elif m == 'transfer:cancel':
+            job = self.transfers.get(a if isinstance(a, str) else a.get('id'))
+            if job:
+                self.cancel_job(job)
+
+    def write_bytes(self, raw: bytes):
+        n = raw[0]
+        pane = raw[1:1 + n].decode('utf-8', 'replace')
+        s = self.sessions.get(pane)
+        if s:
+            s['wq'].put(bytes(raw[1 + n:]))
+
+    # --- çağrılar ---
+    def call(self, m, a):
+        a = a or {}
+        if m == 'ssh:start':
+            return self.ssh_start(a)
+        pane = str(a.get('pane'))
+        if m == 'sftp:realpath':
+            return self.pane_sftp(pane).normalize(a.get('p') or '.'), None
+        if m == 'sftp:list':
+            d = a.get('dir') or '/'
+            sftp = self.pane_sftp(pane)
+            try:
+                return [sftp_entry(d, e) for e in sftp.listdir_attr(d)], None
+            except Exception as e:   # noqa: BLE001
+                raise MtError(friendly_error(e)) from None
+        if m == 'sftp:stat':
+            st = self.pane_sftp(pane).stat(a.get('p'))
+            return {'isDir': st_mod.S_ISDIR(st.st_mode or 0), 'size': st.st_size or 0}, None
+        if m == 'sftp:mkdir':
+            self.pane_sftp(pane).mkdir(a.get('p'))
+            return True, None
+        if m == 'sftp:rename':
+            self.pane_sftp(pane).rename(a.get('from'), a.get('to'))
+            return True, None
+        if m == 'sftp:delete':
+            sftp = self.pane_sftp(pane)
+            if not a.get('isDir'):
+                sftp.remove(a.get('p'))
+            else:
+                remote_remove(sftp, a.get('p'))
+            return True, None
+        if m == 'sftp:download':
+            return self.download(a), None
+        if m == 'sftp:upload':
+            return self.upload(a), None
+        raise MtError(f'Bilinmeyen kanal: {m}')
+
+    # --- aktarımlar: her aktarım kendi SFTP kanalını açar; iptal kanalı kapatır ---
+    def progress(self, base):
+        state = {**base, 'phase': 'scan', 'total': 0, 'done': 0, 'files': 0, 'fileIndex': 0, 'current': '', 'error': None}
+        last = [0.0]
+
+        def send():
+            self.event('transfer:progress', dict(state))
+
+        def add(n):
+            state['done'] += n
+            now = time.time()
+            if now - last[0] > 0.15:
+                last[0] = now
+                send()
+
+        def file(i, rel):
+            state['fileIndex'] = i
+            state['current'] = rel
+            send()
+
+        def finish(phase, error=None):
+            state['phase'] = phase
+            state['error'] = error
+            send()
+        return state, send, add, file, finish
+
+    def cancel_job(self, job):
+        job['cancelled'] = True
+        try:
+            if job.get('sftp'):
+                job['sftp'].close()
+        except Exception:   # noqa: BLE001
+            pass
+
+    def run_transfer(self, a, kind, name, work, cleanup):
+        tid, pane = a.get('id'), str(a.get('pane'))
+        job = {'cancelled': False, 'sftp': None}
+        self.transfers[tid] = job
+        state, send, add, file, finish = self.progress({'id': tid, 'pane': pane, 'kind': kind, 'name': name})
+        send()
+        try:
+            s = self.session(pane)
+            job['sftp'] = s['client'].open_sftp()
+            work(job['sftp'], state, send, add, file, job)
+            if job['cancelled']:
+                raise Cancelled()
+            finish('done')
+            return {'ok': True}
+        except Exception as e:   # noqa: BLE001
+            if job['cancelled'] or isinstance(e, Cancelled):
+                for _ in range(8):
+                    try:
+                        cleanup()
+                        break
+                    except Exception:   # noqa: BLE001
+                        time.sleep(0.5)
+                finish('cancelled')
+                return {'ok': False, 'cancelled': True}
+            msg = e.msg if isinstance(e, MtError) else friendly_error(e)
+            finish('error', msg)
+            return {'ok': False, 'message': msg}
+        finally:
+            self.transfers.pop(tid, None)
+            try:
+                if job['sftp']:
+                    job['sftp'].close()
+            except Exception:   # noqa: BLE001
+                pass
+
+    def download(self, a):
+        remote = a.get('remotePath')
+        name = posixpath.basename(remote)
+        local_dir = tools_mt.to_real(self.uid, a.get('localDir'))
+        target = [None]
+
+        def work(sftp, state, send, add, file, job):
+            st = sftp.stat(remote)
+            target[0] = tools_mt.unique_local_path(local_dir / name)
+            if st_mod.S_ISDIR(st.st_mode or 0):
+                files, dirs = remote_walk(sftp, remote)
+                state.update(phase='transfer', total=sum(s for _, s in files), files=len(files))
+                send()
+                for d in dirs:
+                    (target[0] / d if d else target[0]).mkdir(parents=True, exist_ok=True)
+                for i, (rel, _) in enumerate(files):
+                    if job['cancelled']:
+                        raise Cancelled()
+                    file(i + 1, rel)
+                    xfer_download(sftp, posixpath.join(remote, rel), target[0] / rel, add, job)
+            else:
+                state.update(phase='transfer', total=st.st_size or 0, files=1, fileIndex=1, current=name)
+                send()
+                xfer_download(sftp, remote, target[0], add, job)
+
+        def cleanup():   # iptalde yarım inen dosya/klasörü sil
+            if target[0] and target[0].exists():
+                if target[0].is_dir():
+                    import shutil
+                    shutil.rmtree(target[0], ignore_errors=True)
+                else:
+                    target[0].unlink(missing_ok=True)
+        return self.run_transfer(a, 'download', name, work, cleanup)
+
+    def upload(self, a):
+        local = tools_mt.to_real(self.uid, a.get('localPath'))
+        name = local.name
+        remote_dir = a.get('remoteDir') or '/'
+        target = [None]
+        pane = str(a.get('pane'))
+
+        def work(sftp, state, send, add, file, job):
+            if not local.exists():
+                raise MtError(f'Dosya bulunamadı: {name}')
+            target[0] = unique_remote_path(sftp, posixpath.join(remote_dir, name))
+            if local.is_dir():
+                files, dirs = local_walk(local)
+                state.update(phase='transfer', total=sum(s for _, s in files), files=len(files))
+                send()
+                for d in dirs:
+                    try:
+                        sftp.mkdir(posixpath.join(target[0], d) if d else target[0])
+                    except OSError:
+                        pass   # zaten var
+                for i, (rel, _) in enumerate(files):
+                    if job['cancelled']:
+                        raise Cancelled()
+                    file(i + 1, rel)
+                    xfer_upload(sftp, local / rel, posixpath.join(target[0], rel), add, job)
+            else:
+                state.update(phase='transfer', total=local.stat().st_size, files=1, fileIndex=1, current=name)
+                send()
+                xfer_upload(sftp, local, target[0], add, job)
+
+        def cleanup():   # iptalde sunucuya yarım yüklenen hedefi, bölmenin ana SFTP kanalıyla sil
+            if target[0]:
+                remote_remove(self.pane_sftp(pane), target[0])
+        try:
+            return self.run_transfer(a, 'upload', name, work, cleanup)
+        finally:
+            tools_mt.cleanup_upload_tmp(self.uid, local)
+
+
+async def _reject(ws, msg, code=4403):
+    try:
+        await ws.send_text(json.dumps({'t': 'ev', 'ch': 'error', 'd': msg}))
         await ws.close(code=code)
     except Exception:   # noqa: BLE001
         pass
@@ -61,90 +628,40 @@ async def ws_ssh(ws: WebSocket):
     await ws.accept()
     user = await ws_user(ws)
     if not user:
-        return await _err(ws, 'Yetkisiz: Araçlar modülü yetkisi gerekir.', 4403)
-    if not shutil.which('ssh'):
-        return await _err(ws, 'Sunucuda ssh istemcisi yok (openssh-client).')
-    try:
-        first = json.loads(await asyncio.wait_for(ws.receive_text(), 30))
-        if first.get('t') != 'connect':
-            raise ValueError('İlk ileti bağlantı bilgisi olmalı')
-        host, port, username = check_host(first.get('host')), check_port(first.get('port', 22)), check_user(first.get('username'))
-    except (asyncio.TimeoutError, ValueError, TypeError) as e:
-        return await _err(ws, str(e) or 'Bağlantı bilgisi alınamadı')
-    except WebSocketDisconnect:
-        return
-    password = (first.get('password') or '')
-    key = (first.get('key') or '').strip()
-    key_file = None
-    if key:
-        fd, key_file = tempfile.mkstemp(prefix='mt-sshkey-')
-        os.write(fd, key.encode() + b'\n')
-        os.close(fd)
-        os.chmod(key_file, 0o600)
+        return await _reject(ws, 'Yetkisiz: Araçlar modülü yetkisi gerekir.')
+    win = Window(ws, user, tools_mt.ws_ctx(user, APP)['lang'])
+    sender = asyncio.create_task(win.sender())
 
-    def audit():
-        with db.connect() as conn:
-            db.audit(conn, user['id'], 'SSH Master bağlantısı açtı', 'tools', None, f'{username}@{host}:{port}')
-            conn.commit()
-    await asyncio.to_thread(audit)
-
-    await ws.send_text(f'\x1b[90m{username}@{host}:{port} bağlanılıyor…\x1b[0m\r\n')
-    master_fd, slave_fd = pty.openpty()
-    _set_winsize(master_fd, int(first.get('rows') or 24), int(first.get('cols') or 80))
-    env = dict(os.environ, TERM='xterm-256color')
-    proc = subprocess.Popen(_cmd(host, port, username, key_file), stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-                            start_new_session=True, env=env)
-    os.close(slave_fd)
-    loop = asyncio.get_event_loop()
-    pw_sent = [not password]
-
-    async def pty_to_ws():
+    async def handle_call(obj):
         try:
-            while True:
-                data = await loop.run_in_executor(None, _read, master_fd)
-                if not data:
-                    break
-                text = data.decode('utf-8', 'replace')
-                if not pw_sent[0] and ('assword:' in text or 'Password:' in text or 'passphrase' in text):
-                    pw_sent[0] = True
-                    os.write(master_fd, password.encode() + b'\n')
-                    continue   # parolayı ekrana yansıtma
-                await ws.send_text(text)
-        except Exception:   # noqa: BLE001
-            pass
-        finally:
-            try:
-                await ws.send_text('\r\n\x1b[90m[SSH oturumu kapandı]\x1b[0m\r\n')
-                await ws.close()
-            except Exception:   # noqa: BLE001
-                pass
+            v, store = await asyncio.to_thread(win.call, obj.get('m'), obj.get('a'))
+            ret = {'t': 'ret', 'id': obj.get('id'), 'ok': True, 'v': v}
+            if store:
+                ret['store'] = store
+        except MtError as e:
+            ret = {'t': 'ret', 'id': obj.get('id'), 'ok': False, 'e': e.msg}
+        except Exception as e:   # noqa: BLE001
+            ret = {'t': 'ret', 'id': obj.get('id'), 'ok': False, 'e': friendly_error(e)}
+        win.emit(ret)
 
-    reader = asyncio.create_task(pty_to_ws())
     try:
         while True:
+            msg = await ws.receive()
+            if msg['type'] == 'websocket.disconnect':
+                break
+            if msg.get('bytes'):
+                win.write_bytes(msg['bytes'])
+                continue
             try:
-                obj = json.loads(await ws.receive_text())
+                obj = json.loads(msg.get('text') or '')
             except ValueError:
                 continue
-            if obj.get('t') == 'i':
-                os.write(master_fd, str(obj.get('d', '')).encode('utf-8'))
-            elif obj.get('t') == 'r':
-                _set_winsize(master_fd, int(obj.get('r', 24)), int(obj.get('c', 80)))
-    except (WebSocketDisconnect, Exception):   # noqa: BLE001
+            if obj.get('t') == 'call':
+                asyncio.create_task(handle_call(obj))
+            elif obj.get('t') == 'send':
+                await asyncio.to_thread(win.on_send, obj.get('m'), obj.get('a'))
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
-        reader.cancel()
-        for step in (lambda: proc.send_signal(signal.SIGHUP), proc.terminate, lambda: os.close(master_fd)):
-            try:
-                step()
-            except Exception:   # noqa: BLE001
-                pass
-        if key_file:
-            Path(key_file).unlink(missing_ok=True)
-        try:
-            await asyncio.to_thread(proc.wait, 5)
-        except Exception:   # noqa: BLE001
-            try:
-                proc.kill()
-            except Exception:   # noqa: BLE001
-                pass
+        sender.cancel()
+        await asyncio.to_thread(win.close_all)

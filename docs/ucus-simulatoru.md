@@ -85,7 +85,22 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   rastgele 6–40 m, pistten uzak), pist (asfalt, çizgiler, `runway_heading`), gökyüzü (zaman: gün/akşam/gece; gece ışıklar), sis.
 - Dron: görsel model `session.model` (§12 kütüphanesi; `setType(type, model)`): dahili `builtin:caymaz` → `static/models/caymaz-sim.glb`
   (CAYMAZ V3 STEP montajından `tools/step2glb.js` ile; kanat açıklığı 3,03 m, arkadan itişli, `prop` düğümü döner; KHR_mesh_quantization,
-  ~1,5 MB), `builtin:delta` → prosedürel delta uçan kanat (2,2 m, elevonlar RC ch1/ch2 ile). `builtin:quad` 60 cm / `builtin:hexa` 90 cm /
+  ~1,5 MB), `builtin:delta` → prosedürel delta uçan kanat (2,2 m, elevonlar).
+- **Kontrol yüzeyleri (Caymaz GLB + delta + kütüphane GLB'si; ortak katman `updateCtrl`)**: STEP montajındaki arka kenar parçaları FL1/FR1
+  (dış, X 911…1450 mm) → `elevon_l`/`elevon_r`, FL2/FR2 (iç, X 370…908 mm) → `flap_l`/`flap_r` gövdeyle birleştirilmez; her biri ayrı GLB düğümü,
+  düğüm orijini = menteşe pivotu (yüzeyin kanada bakan ön kenarının ortası, Z ortası; glTF m: elevon_l [1,147, −0,004, −0,962], flap_l [0,674, −0,001,
+  −0,959], elevon_r [−1,146, −0,004, −0,962], flap_r [−0,676, −0,001, −0,962]; kord 0,138 m, açıklık 0,539 m), yerel X = menteşe ekseni (ön kenar
+  köşelerinin PCA'sı; düz arka kenar → gövde Y'ye dik), `extras {surface, side, hinge:'x', te_down:-1}` (yerel X etrafında negatif dönüş arka kenarı
+  aşağı indirir). Kuyruk/rudder parçası montajda yok (uçan kanat); eklenirse `CTRL_PARTS` satırı (rudder_l/r, dikey menteşe). Kütüphane GLB'lerinde de
+  `elevon|flap|aileron|elevator|rudder[_l|_r]` adlı düğümler aynı katmanla oynar. **Kaynak önceliği**: `tele.servo` (SERVO_OUTPUT_RAW 1…8 µs; sunucu
+  `MESAJ_ARALIKLARI` ile 20 Hz ister; ArduPlane SERVO1 aileron, SERVO2 elevator, SERVO4 rudder, flap SERVO5/6 — `tele.servo_fn` verilirse işlev
+  kodlarına (4/19/21/2/3/77/78) göre), yoksa `tele.rc` (sahte kip, kayıt). **Eşleme** (ArduPilot SERVOn_MIN/TRIM/MAX 1100/1500/1900): ±400 µs → ±1;
+  aileron + = sağa yatış (sağ yüzey arka kenar yukarı, sol aşağı), elevator + = burun yukarı (arka kenar yukarı), rudder + = sağa; uçan kanatta elevon
+  L = e − a, R = e + a (ArduPlane `channel_function_mixer`; SITL zaten karışımı verir, servo_fn 77/78 ise doğrudan); açılar elevon/aileron/elevator/rudder
+  ±25°, flap 0…+35° yalnız aşağı (1100 → 0 %, 1900 → 100 %; işlev atanmamış kanal da 1100 verir → 0). Servo hızı 400°/s (60°/0,15 s) + 40 ms
+  1. derece gecikme; disarm → nötr. **Flap**: TAKEOFF'ta `TKOFF_FLAP_PCNT`, LAND'de `LAND_FLAP_PERCNT` SERVOn_FUNCTION 2/3 atanmış kanala SITL'den
+  yansır; flap kanalı dinlenmede / servo yoksa moddan öykünür (TAKEOFF %50, LAND/QLAND %100). Teşhis: `sim.ctrlState()` → {source, armed, mode, servo,
+  rc, inputs, surfaces[{name, deg (arka kenar aşağı +), tgt}]}; `window.__fsSim` (`?netsim=delay0`). `builtin:quad` 60 cm / `builtin:hexa` 90 cm /
   `builtin:heli` 1,5 m prosedürel (gövde, kollar, motorlar, iniş takımı, gimbal; pervaneler gaz ile döner, yüksek devirde bulanık disk). VTOL = gövde + 4 dikey
   pervane. Kütüphane modeli (tasarım/yüklenen) → GLB fetch + yönelim matrisi + ölçek + `drone.ground` sınır kutusu altından (§12). Seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe, gece halo), yalnız dron gölge düşürür. Yönelim: roll/pitch/yaw →
   quaternion (NED→ENU dönüşümü dikkat). `caymaz.gltf` (eski basit model) yalnız Cesium oynatma/canlı izlemede (replay3d.js) kullanılır.

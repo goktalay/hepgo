@@ -41,7 +41,7 @@ EV_IRTIFA = 100.0
 RC_HZ_MIN_ARALIK = 1.0 / 40           # WS `rc` tavanı (ön yüz 20 Hz gönderir; jitter payı). Serbest bırakma paketi (8×0) sınırlanmaz.
 # Yüksek hızlı akış: MAV_CMD_SET_MESSAGE_INTERVAL (msgid → µs). REQUEST_DATA_STREAM 10 Hz (ALL) de gönderilir; Mission Planner bağlanıp kendi
 # akış isteklerini yolladığında bizim aralıklar ezilebilir → `_dongu` içinde düzenli olarak yeniden istenir.
-MESAJ_ARALIKLARI = ((30, 20000), (33, 20000), (32, 20000), (74, 50000), (65, 100000))   # ATTITUDE, GLOBAL_POSITION_INT, LOCAL_POSITION_NED, VFR_HUD, RC_CHANNELS
+MESAJ_ARALIKLARI = ((30, 20000), (33, 20000), (32, 20000), (74, 50000), (65, 100000), (36, 50000))   # ATTITUDE, GLOBAL_POSITION_INT, LOCAL_POSITION_NED, VFR_HUD, RC_CHANNELS, SERVO_OUTPUT_RAW
 # ArduPlane (50 Hz ana döngü) 20 ms SET_MESSAGE_INTERVAL'ı REDDEDER (MAV_RESULT 2); ArduCopter kabul eder. Red görülürse akış bazlı
 # REQUEST_DATA_STREAM'e geçilir (ikisi de kabul eder; plane ≈ 52 Hz, copter 66 Hz verir — bu yüzden önce SMI denenir, tam 50 Hz).
 AKIS_HIZLARI = ((10, 50), (6, 50), (11, 20), (3, 10))   # EXTRA1 (ATTITUDE), POSITION (GLOBAL_POSITION_INT, LOCAL_POSITION_NED), EXTRA2 (VFR_HUD), RC_CHANNELS
@@ -530,7 +530,8 @@ class SimSession:
         self.tele = {'lat': float(center['lat']), 'lon': float(center['lon']), 'alt_msl': alt0, 'alt_rel': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
                      'rs': 0.0, 'ps': 0.0, 'ys': 0.0, 'tbm': 0, 'tbm_pos': 0,
                      'vn': 0.0, 've': 0.0, 'vd': 0.0, 'airspeed': 0.0, 'groundspeed': 0.0, 'heading': 0.0, 'climb': 0.0, 'mode': None, 'armed': False,
-                     'gps_fix': 0, 'sats': 0, 'batt_v': None, 'batt_pct': None, 'throttle': 0.0, 'rc': [0] * 8, 'home': None}
+                     'gps_fix': 0, 'sats': 0, 'batt_v': None, 'batt_pct': None, 'throttle': 0.0, 'rc': [0] * 8, 'home': None,
+                     'servo': None}   # SERVO_OUTPUT_RAW 1…8 µs (gerçek SITL; kontrol yüzeyi animasyonu, §5) — sahte kipte None → istemci rc'den türetir
         self._tele_son = 0.0             # son `tele` yayını (duvar saati; bekçi)
         self._tele_tbm = -10 ** 9        # son yayının SITL time_boot_ms'i (kapı: TELE_TBM_KAPI)
         self._att_son = 0.0              # son ATTITUDE alımı (ATTITUDE akıyorsa GLOBAL_POSITION_INT yayın tetiklemez)
@@ -802,6 +803,8 @@ class SimSession:
             te['sats'] = m.satellites_visible if m.satellites_visible != 255 else None
         elif t == 'RC_CHANNELS':
             te['rc'] = [m.chan1_raw, m.chan2_raw, m.chan3_raw, m.chan4_raw, m.chan5_raw, m.chan6_raw, m.chan7_raw, m.chan8_raw]
+        elif t == 'SERVO_OUTPUT_RAW':   # servo çıkışları µs (ArduPlane: 1 aileron, 2 elevator, 3 gaz, 4 rudder; flap SERVOn_FUNCTION 2/3) → 3B kontrol yüzeyleri (§5)
+            te['servo'] = [m.servo1_raw, m.servo2_raw, m.servo3_raw, m.servo4_raw, m.servo5_raw, m.servo6_raw, m.servo7_raw, m.servo8_raw]
         elif t == 'STATUSTEXT':
             self._olay(str(m.text).rstrip('\x00'), m.severity)
         elif t == 'HOME_POSITION':

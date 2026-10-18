@@ -246,7 +246,7 @@ def vekil_testleri(a, mon, c_altsiz):
     print('  vekil (terrain/tile/osm) testleri geçti')
 
 TELE_ALANLARI = {'rs', 'ps', 'ys', 'tbm', 'tbm_pos', 'ts', 'lat', 'lon', 'alt_msl', 'alt_rel', 'roll', 'pitch', 'yaw', 'vn', 've', 'vd', 'airspeed', 'groundspeed', 'heading', 'climb',
-                 'mode', 'armed', 'gps_fix', 'sats', 'batt_v', 'batt_pct', 'throttle', 'rc', 'home', 'gcs_connected', 'gcs_addr'}
+                 'mode', 'armed', 'gps_fix', 'sats', 'batt_v', 'batt_pct', 'throttle', 'rc', 'home', 'gcs_connected', 'gcs_addr', 'servo'}
 
 
 def ok(r, code=200):
@@ -1384,6 +1384,19 @@ def main():
                 pass
             ses = flightsim.MANAGER.get(sid)
             assert ses.gcs_rx == 2 and ses.gcs_atilan == 1 and ses.sitl_rx == len(b'\xfd\x05SITL-TELE-1') + len(b'SITL-TELE-2'), (ses.gcs_rx, ses.gcs_atilan, ses.sitl_rx)
+            # SERVO_OUTPUT_RAW (araç sysid'den) → tele.servo 1…8 µs (3B kontrol yüzeyleri, §5); sahte kipte başlangıç None; GCS yankısı işlenmez
+            assert ses.tele['servo'] is None
+            d = flightsim._dialect()
+            ayristir = d.MAVLink(None)   # başlık (sysid) ancak pack ile oluşur → bayt → mesaj
+            arac = d.MAVLink(None, srcSystem=ses.sysid, srcComponent=1)
+            for m_ in ayristir.parse_buffer(arac.servo_output_raw_encode(123456, 0, 1620, 1380, 1100, 1500, 1750, 1750, 1500, 0).pack(arac)) or []:
+                ses._isle(m_)
+            assert ses.tele['servo'] == [1620, 1380, 1100, 1500, 1750, 1750, 1500, 0], ses.tele['servo']
+            gcs_mav = d.MAVLink(None, srcSystem=flightsim.GCS_SYSID, srcComponent=flightsim.GCS_COMP)
+            for m_ in ayristir.parse_buffer(gcs_mav.servo_output_raw_encode(1, 0, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000).pack(gcs_mav)) or []:
+                ses._isle(m_)   # GCS yankısı: işlenmez
+            assert ses.tele['servo'][0] == 1620
+            assert (36, 50000) in flightsim.MESAJ_ARALIKLARI   # SERVO_OUTPUT_RAW 20 Hz istenir
             # kilit sessizlikte kalkar (süreyi kısaltarak): yeni adres GCS olur
             ses.gcs_last -= flightsim.GCS_SESSIZLIK + 1
             sahtekar.sendto(b'YENI-GCS', ('127.0.0.1', udp_port))

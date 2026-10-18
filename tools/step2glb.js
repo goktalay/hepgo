@@ -3,11 +3,28 @@
 // Eksenler: STEP (X sağ kanat, Y burun, Z yukarı, mm) → glTF (X SOL, Y yukarı, Z burun, m) — flightsim3d.js'teki caymaz dönüşümüyle aynı
 // (Rx+90°, Rz180° → gövde: burun +Y, sağ kanat +X, üst +Z). Orijin: kanat ortası (STEP Y=Y0). Renge göre iki mesh'e birleştirilir;
 // arkaya prosedürel motor + "prop" düğümü (2 palalı pervane, Ø 0.81 m; glTF Z ekseni etrafında döner).
+// KONTROL YÜZEYLERİ (ayrı düğümler, menteşe pivotlu): STEP montajında arka kenar yüzeyleri FL1/FL2 (sol) ve FR1/FR2 (sağ) ayrı parçadır
+// (koyu renk, kord ≈ 138 mm, Y 100…240). Dıştakiler (FL1/FR1, X 911…1450) elevon, içtekiler (FL2/FR2, X 370…908) flap. Her biri gövdeyle
+// BİRLEŞTİRİLMEZ; kendi düğümüne yazılır: düğüm orijini = menteşe pivotu (yüzeyin gövdeye/kanada bakan ÖN kenarının ortası, Z ortası),
+// düğüm yerel X ekseni = menteşe ekseni (ön kenar köşelerinden PCA ile; süpürülü kenarda kanat süpürmesine paralel çıkar), köşeler pivota göre.
+// Düğüm `extras`: {surface, side, hinge:'x', te_down: -1} — te_down: yerel X etrafında arka kenarı AŞAĞI indiren dönüş işareti
+// (glTF'de Y yukarı, arka kenar −Z'de → rotation.x < 0 arka kenarı aşağı indirir). flightsim3d.js bu düğümleri adıyla bulur
+// (elevon_l/elevon_r/flap_l/flap_r; kuyruk/rudder parçası montajda yoktur — uçan kanat). Kuyruk eklenirse CTRL_PARTS'a satır eklenir.
 const fs = require('fs');
 const occtimportjs = require('occt-import-js');
 const [,, STEP, OUT, LD = '2.0', AD = '0.6', QUANT = '1'] = process.argv;
 const Y0 = 1200, SCALE = 0.001;
 const quant = QUANT !== '0';
+// STEP parça adı (düğüm adı, boşluklar sadeleştirilmiş) → kontrol yüzeyi düğümü
+const CTRL_PARTS = [
+  { re: /^FL1\b/i, name: 'elevon_l', surface: 'elevon', side: 'l' },
+  { re: /^FR1\b/i, name: 'elevon_r', surface: 'elevon', side: 'r' },
+  { re: /^FL2\b/i, name: 'flap_l', surface: 'flap', side: 'l' },
+  { re: /^FR2\b/i, name: 'flap_r', surface: 'flap', side: 'r' },
+  { re: /^(RUD|RL|RUDDER)[_ -]?L\b/i, name: 'rudder_l', surface: 'rudder', side: 'l', hingeUp: true },
+  { re: /^(RUD|RR|RUDDER)[_ -]?R\b/i, name: 'rudder_r', surface: 'rudder', side: 'r', hingeUp: true },
+];
+const toGl = (x, y, z) => [-x * SCALE, z * SCALE, (y - Y0) * SCALE];   // STEP mm → glTF m
 
 (async () => {
   const occt = await occtimportjs();
@@ -15,21 +32,85 @@ const quant = QUANT !== '0';
   const res = occt.ReadStepFile(buf, { linearUnit: 'millimeter', linearDeflectionType: 'absolute_value', linearDeflection: Number(LD), angularDeflection: Number(AD) });
   if (!res.success) throw new Error('STEP okunamadı');
 
-  // ---- renge göre birleştirme ----
+  // ---- montaj ağacından mesh → parça adı (mesh.name çoğu parçada boş) ----
+  const meshName = new Map();
+  const walk = n => { for (const mi of n.meshes || []) if (!meshName.has(mi)) meshName.set(mi, (n.name || '').replace(/\s+/g, ' ').trim()); for (const c of n.children || []) walk(c); };
+  walk(res.root);
+  // "part 2" alt montajında mesh adları dolu, düğüm adı ortak ("caymaz - v3 part 2") → önce mesh.name, boşsa düğüm adı
+  const partName = i => ((res.meshes[i].name || '').replace(/\s+/g, ' ').trim()) || meshName.get(i) || '';
+  const ctrlOf = i => CTRL_PARTS.find(c => c.re.test(partName(i))) || null;
+
+  // ---- renge göre birleştirme (kontrol yüzeyleri hariç) ----
   const groups = { white: { pos: [], nor: [], idx: [], color: [0.90, 0.91, 0.94, 1], name: 'govde_beyaz' }, dark: { pos: [], nor: [], idx: [], color: [0.22, 0.24, 0.27, 1], name: 'govde_koyu' } };
+  const ctrls = [];   // ayrı düğümler
   let triTotal = 0;
-  for (const m of res.meshes) {
+  res.meshes.forEach((m, mi) => {
     const p = m.attributes.position.array, nrm = m.attributes.normal?.array, ix = m.index?.array;
-    if (!p || !ix) continue;
-    const g = (m.color && m.color[0] > 0.6) ? groups.white : groups.dark;
+    if (!p || !ix) return;
+    const c = ctrlOf(mi);
+    let g;
+    if (c) {
+      g = { pos: [], nor: [], idx: [], color: [0.20, 0.22, 0.25, 1], name: c.name, ctrl: c, raw: p, part: partName(mi) };
+      ctrls.push(g);
+    } else g = (m.color && m.color[0] > 0.6) ? groups.white : groups.dark;
     const base = g.pos.length / 3;
     for (let k = 0; k < p.length; k += 3) {
-      const x = p[k], y = p[k + 1], z = p[k + 2];
-      g.pos.push(-x * SCALE, z * SCALE, (y - Y0) * SCALE);
+      g.pos.push(...toGl(p[k], p[k + 1], p[k + 2]));
       if (nrm) g.nor.push(-nrm[k], nrm[k + 2], nrm[k + 1]); else g.nor.push(0, 1, 0);
     }
     for (let k = 0; k < ix.length; k++) g.idx.push(base + ix[k]);
     triTotal += ix.length / 3;
+  });
+
+  // ---- kontrol yüzeyleri: pivot (ön kenar ortası) + menteşe ekseni (ön kenar köşelerinin PCA'sı) → yerel çerçeveye taşı ----
+  for (const g of ctrls) {
+    const p = g.raw, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (let k = 0; k < p.length; k += 3) for (let a = 0; a < 3; a++) { if (p[k + a] < mn[a]) mn[a] = p[k + a]; if (p[k + a] > mx[a]) mx[a] = p[k + a]; }
+    // Ön kenar: STEP +Y burun → yüzeyin en büyük Y'li köşeleri (kanada bakan kenar). Rudder'da (dikey yüzey) menteşe dikeydir (hingeUp).
+    const edge = [];
+    const tol = Math.max(3, (mx[1] - mn[1]) * 0.04);
+    for (let k = 0; k < p.length; k += 3) if (p[k + 1] >= mx[1] - tol) edge.push([p[k], p[k + 1], p[k + 2]]);
+    const cen = [0, 0, 0]; for (const e of edge) for (let a = 0; a < 3; a++) cen[a] += e[a] / edge.length;
+    // 2B PCA (menteşe düzlemi: yatay yüzeyde X–Y, dikey yüzeyde Z–Y)
+    const ia = g.ctrl.hingeUp ? 2 : 0;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const e of edge) { const dx = e[ia] - cen[ia], dy = e[1] - cen[1]; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);   // ana eksen açısı (STEP düzleminde)
+    let dir = [0, 0, 0]; dir[ia] = Math.cos(th); dir[1] = Math.sin(th);
+    const pivotStep = [cen[0], mx[1], (mn[2] + mx[2]) / 2];
+    const pivot = toGl(...pivotStep);
+    let d = [-dir[0], dir[2], dir[1]];                 // glTF menteşe yönü (birim)
+    if (d[g.ctrl.hingeUp ? 1 : 0] < 0) d = d.map(v => -v);   // glTF +X (sol) / +Y (yukarı) yönünde → düğüm dönüşü ≈ birim, yerel +Z = burun
+    // Yerel çerçeve: X = menteşe (d), diğerleri d'ye dik; glTF +Y'yi mümkün olduğunca koru (yatay yüzey) → Z = X × Y_dünya normalize, Y = Z × X
+    const up = g.ctrl.hingeUp ? [0, 0, 1] : [0, 1, 0];   // rudder'da menteşe ≈ Y; "yukarı" yerine burun (+Z) korunur
+    let Z = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+    const zl = Math.hypot(...Z) || 1; Z = Z.map(v => v / zl);
+    const Yl = [Z[1] * d[2] - Z[2] * d[1], Z[2] * d[0] - Z[0] * d[2], Z[0] * d[1] - Z[1] * d[0]];
+    // Dönüş matrisi R sütunları (d, Yl, Z): yerel → dünya; yerel = R^T (v − pivot). glTF node.rotation = quaternion(R)
+    const R = [d, Yl, Z];   // sütunlar
+    const q = matToQuat(R);
+    const loc = (v) => { const r = [v[0] - pivot[0], v[1] - pivot[1], v[2] - pivot[2]]; return [r[0] * R[0][0] + r[1] * R[0][1] + r[2] * R[0][2], r[0] * R[1][0] + r[1] * R[1][1] + r[2] * R[1][2], r[0] * R[2][0] + r[1] * R[2][1] + r[2] * R[2][2]]; };
+    const locN = (v) => [v[0] * R[0][0] + v[1] * R[0][1] + v[2] * R[0][2], v[0] * R[1][0] + v[1] * R[1][1] + v[2] * R[1][2], v[0] * R[2][0] + v[1] * R[2][1] + v[2] * R[2][2]];
+    for (let k = 0; k < g.pos.length; k += 3) {
+      const v = loc([g.pos[k], g.pos[k + 1], g.pos[k + 2]]); g.pos[k] = v[0]; g.pos[k + 1] = v[1]; g.pos[k + 2] = v[2];
+      const n = locN([g.nor[k], g.nor[k + 1], g.nor[k + 2]]); g.nor[k] = n[0]; g.nor[k + 1] = n[1]; g.nor[k + 2] = n[2];
+    }
+    const chord = (mx[1] - mn[1]) * SCALE, span = (g.ctrl.hingeUp ? mx[2] - mn[2] : mx[0] - mn[0]) * SCALE;
+    g.node = { translation: pivot.map(v => +v.toFixed(5)), rotation: q.map(v => +v.toFixed(6)),
+      extras: { surface: g.ctrl.surface, side: g.ctrl.side, hinge: 'x', te_down: -1, chord_m: +chord.toFixed(3), span_m: +span.toFixed(3), step_part: g.part,
+        hinge_dir_body: [+(-d[0]).toFixed(4), +d[2].toFixed(4), +d[1].toFixed(4)] } };   // gövde çerçevesi (sağ +X, burun +Y, üst +Z) menteşe yönü
+    console.log(`${g.name.padEnd(10)} ← ${String(g.part).padEnd(10)} pivot glTF [${g.node.translation.join(', ')}] menteşe gövde(x,y,z) [${g.node.extras.hinge_dir_body.join(', ')}] kord ${chord.toFixed(3)} m açıklık ${span.toFixed(3)} m`);
+    delete g.raw;
+  }
+  function matToQuat(C) {   // C: sütun vektörleri [c0,c1,c2] → m[r][c] = C[c][r]
+    const m = (r, c) => C[c][r];
+    const tr = m(0, 0) + m(1, 1) + m(2, 2);
+    let x, y, z, w;
+    if (tr > 0) { const s = Math.sqrt(tr + 1) * 2; w = 0.25 * s; x = (m(2, 1) - m(1, 2)) / s; y = (m(0, 2) - m(2, 0)) / s; z = (m(1, 0) - m(0, 1)) / s; }
+    else if (m(0, 0) > m(1, 1) && m(0, 0) > m(2, 2)) { const s = Math.sqrt(1 + m(0, 0) - m(1, 1) - m(2, 2)) * 2; w = (m(2, 1) - m(1, 2)) / s; x = 0.25 * s; y = (m(0, 1) + m(1, 0)) / s; z = (m(0, 2) + m(2, 0)) / s; }
+    else if (m(1, 1) > m(2, 2)) { const s = Math.sqrt(1 + m(1, 1) - m(0, 0) - m(2, 2)) * 2; w = (m(0, 2) - m(2, 0)) / s; x = (m(0, 1) + m(1, 0)) / s; y = 0.25 * s; z = (m(1, 2) + m(2, 1)) / s; }
+    else { const s = Math.sqrt(1 + m(2, 2) - m(0, 0) - m(1, 1)) * 2; w = (m(1, 0) - m(0, 1)) / s; x = (m(0, 2) + m(2, 0)) / s; y = (m(1, 2) + m(2, 1)) / s; z = 0.25 * s; }
+    return [x, y, z, w];
   }
 
   // ---- prosedürel motor (arkadan itişli, gövde arkası STEP Y 100…280) ve pervane ----
@@ -82,7 +163,7 @@ const quant = QUANT !== '0';
   // Pervane palaları dönük dursun: hub'a göre ±X boyunca kutu yeterli; dönme ekseni Z.
 
   // ---- GLB yaz ----
-  const meshes = [groups.white, groups.dark, eng, prop].filter(g => g.idx.length);
+  const meshes = [groups.white, groups.dark, ...ctrls, eng, prop].filter(g => g.idx.length);
   const bin = []; let binLen = 0;
   const bufferViews = [], accessors = [];
   const pushView = (arr, target) => {
@@ -105,7 +186,7 @@ const quant = QUANT !== '0';
       // KHR_mesh_quantization: konum SHORT (ölçek düğümde), normal BYTE normalized
       const ext = Math.max(...mx.map((v, i) => Math.max(Math.abs(v), Math.abs(mn[i]))), 1e-6);
       const q = 32767 / ext;
-      const ps = new Int16Array(nv * 4);   // 4 bileşen? glTF VEC3 SHORT stride 6 → 8'e hizalama için byteStride 8
+      const ps = new Int16Array(nv * 4);   // glTF VEC3 SHORT stride 6 → 8'e hizalama için byteStride 8
       for (let i = 0; i < nv; i++) { ps[i * 4] = Math.round(posF[i * 3] * q); ps[i * 4 + 1] = Math.round(posF[i * 3 + 1] * q); ps[i * 4 + 2] = Math.round(posF[i * 3 + 2] * q); ps[i * 4 + 3] = 0; }
       const bv = pushView(ps, 34962); bufferViews[bv].byteStride = 8;
       const [qmn, qmx] = minmax(ps, 4);
@@ -132,6 +213,7 @@ const quant = QUANT !== '0';
     const node = { name: g === prop ? 'prop' : g.name, mesh: gmeshes.length - 1 };
     if (scaleNode) node.scale = [scaleNode, scaleNode, scaleNode];
     if (g === prop) node.translation = [0, 0, zProp];
+    if (g.node) Object.assign(node, g.node);   // kontrol yüzeyi: pivot + menteşe çerçevesi + extras
     nodes.push(node);
     console.log(g.name.padEnd(14), 'vertex', nv, 'üçgen', g.idx.length / 3);
   }
@@ -151,5 +233,5 @@ const quant = QUANT !== '0';
   const jh = Buffer.alloc(8); jh.writeUInt32LE(jsonBuf.length, 0); jh.writeUInt32LE(0x4E4F534A, 4);
   const bh = Buffer.alloc(8); bh.writeUInt32LE(binBuf.length, 0); bh.writeUInt32LE(0x004E4942, 4);
   fs.writeFileSync(OUT, Buffer.concat([head, jh, jsonBuf, bh, binBuf]));
-  console.log('STEP üçgen', triTotal, 'toplam vertex', vertsTotal, '→', OUT, (total / 1024).toFixed(0), 'KB', quant ? '(quantized)' : '(float)');
+  console.log('STEP üçgen', triTotal, 'toplam vertex', vertsTotal, 'kontrol yüzeyi', ctrls.length, '→', OUT, (total / 1024).toFixed(0), 'KB', quant ? '(quantized)' : '(float)');
 })().catch(e => { console.error(e); process.exit(1); });

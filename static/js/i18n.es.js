@@ -3977,4 +3977,13 @@ registerCatalog('es', {
   "{name} · son tanınma": "{name} · último reconocimiento",
   "Olaya git": "Ir al evento",
   "Yüz tanımada son görülme: {when} · {cam}": "Última detección por reconocimiento facial: {when} · {cam}",
+  // Firma Yönetimi › Logolarını bul
+  "Logolarını bul": "Buscar logotipos",
+  "Logosu olmayan firmaların logosunu web sitelerinden bulur ve kaydeder": "Busca y guarda los logotipos de las empresas sin logotipo desde sus sitios web",
+  "{done}/{total} tamamlandı": "{done}/{total} completados",
+  "Logo taraması bitti: {found} bulundu, {skipped} atlandı, {failed} bulunamadı": "Búsqueda de logotipos finalizada: {found} encontrados, {skipped} omitidos, {failed} no encontrados",
+  "Yalnız LOGOSU OLMAYAN aktif firmalar taranır{n}; logosu olan firmalara dokunulmaz. Firmanın web sitesi (yoksa e-posta alanı) üzerinden simgeleri, ardından Clearbit ve Google aranır; alan adı yoksa firma adıyla web araması denenir. Bir seferde en çok 50 firma; bulunamayanlar bir sonraki taramada yeniden denenir.": "Solo se analizan las empresas activas SIN LOGOTIPO{n}; las que ya lo tienen no se modifican. Los iconos se buscan en el sitio web (o el dominio del correo), luego en Clearbit y Google; sin dominio se intenta una búsqueda web por nombre. Máximo 50 empresas por pasada; las no encontradas se reintentan en la siguiente.",
+  "Küçük (32 piksel altı) ya da boş görseller kabul edilmez. Bulunan logo, elle yüklenen logo gibi firma kartında görünür; dilerseniz firma düzenleme penceresinden değiştirebilirsiniz.": "Se rechazan las imágenes pequeñas (menos de 32 px) o vacías. El logotipo encontrado aparece en la tarjeta como uno subido; puede reemplazarlo desde la ventana de edición.",
+  "Eksikleri tara": "Buscar faltantes",
+  "{n} firma": "{n} empresas",
 });

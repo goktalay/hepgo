@@ -518,4 +518,14 @@ registerCatalog('en', {
   "{name} · son tanınma": "{name} · last recognition",
   "Olaya git": "Go to event",
   "Yüz tanımada son görülme: {when} · {cam}": "Last seen by face recognition: {when} · {cam}",
+  // Firma Yönetimi › Logolarını bul
+  "Logolarını bul": "Find logos",
+  "Logosu olmayan firmaların logosunu web sitelerinden bulur ve kaydeder": "Finds and saves logos of companies without one from their websites",
+  "{done}/{total} tamamlandı": "{done}/{total} done",
+  "Logo taraması bitti: {found} bulundu, {skipped} atlandı, {failed} bulunamadı": "Logo scan finished: {found} found, {skipped} skipped, {failed} not found",
+  "Yalnız LOGOSU OLMAYAN aktif firmalar taranır{n}; logosu olan firmalara dokunulmaz. Firmanın web sitesi (yoksa e-posta alanı) üzerinden simgeleri, ardından Clearbit ve Google aranır; alan adı yoksa firma adıyla web araması denenir. Bir seferde en çok 50 firma; bulunamayanlar bir sonraki taramada yeniden denenir.": "Only active companies WITHOUT A LOGO are scanned{n}; companies with a logo are left untouched. Icons are looked up via the company website (or e-mail domain), then Clearbit and Google; without a domain a web search by company name is attempted. At most 50 companies per run; those not found are retried on the next scan.",
+  "Küçük (32 piksel altı) ya da boş görseller kabul edilmez. Bulunan logo, elle yüklenen logo gibi firma kartında görünür; dilerseniz firma düzenleme penceresinden değiştirebilirsiniz.": "Small (under 32 px) or empty images are rejected. A found logo appears on the company card like an uploaded one; you can replace it from the company edit dialog.",
+  "Vazgeç": "Cancel",
+  "Eksikleri tara": "Scan missing",
+  "{n} firma": "{n} companies",
 });

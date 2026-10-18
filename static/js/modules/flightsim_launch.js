@@ -199,9 +199,10 @@ export function createLaunchRig(T, cfg) {
   const tmp = new T.Vector3(), tmpQ = new T.Quaternion();
   const attachWorld = (pos, q) => { root.updateMatrixWorld(true); built.attach.getWorldPosition(pos); if (q) built.attach.getWorldQuaternion(q); return pos; };
   // Uçak kızağa oturduğunda yönelim: rampa → pist yönü + eğim; araç → pist yönü düz
-  const planeQuat = out => {
-    const e = new T.Euler(method === 'ramp' ? built.ang : 0, 0, -(Number(cfg.heading) || 0) * DEG, 'ZXY');
-    return (out || new T.Quaternion()).setFromEuler(e);
+  const planeQuat = out => {   // kızaktaki uçak: düzeneğin (yüzeye oturmuş) dünya yönelimi × rampa eğimi
+    const e = new T.Euler(method === 'ramp' ? built.ang : 0, 0, 0, 'ZXY');
+    root.updateMatrixWorld(true);
+    return root.getWorldQuaternion(out || new T.Quaternion()).multiply(tmpQ.setFromEuler(e));
   };
   function setPhase(p) {
     if (p === S.phase) return;
@@ -213,19 +214,53 @@ export function createLaunchRig(T, cfg) {
   // Demirleme: düzenek, kızak noktası (attach) SITL uçağının yer konumuna gelecek biçimde taşınır. Sunucu SERVO3_MIN/TRIM 1000 yazdığından SITL
   // uçağı yerde artık kaymaz (docs §13) → düzenek pist başında SABİT durur: demir bir kez atılır (needsAnchor), yalnız SITL konumu > 2 m sıçrarsa
   // (reset / set_home / eski parametreyle kalan artık) yeniden oturtulur. Araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler.
+  // Yüzeye oturma: `surf(x, y)` (sahne terrainHeight) ile 4 temas noktası (tekerlekler) örneklenir → düzenek yüksekliği (ortalama) + eğim
+  // (ön/arka → pitch, sağ/sol → roll; Euler 'ZXY': yerel roll, yerel pitch, sonra pist yönü). Hedef değerlere 0,25 sn'de yumuşak yaklaşır
+  // (Google 3B'de karolar yüklendikçe `resurface` yeniden örnekler, düzenek zıplamaz). Eğim sonrası attach XY kayması ikinci geçişte düzeltilir.
   const anchorTmp = new T.Vector3(), anchorLast = new T.Vector3(); let anchorSet = false;
   const ANCHOR_RESEAT = 2.0;   // m
-  function anchor(p) {
-    root.position.set(0, 0, 0);
+  const yaw = -(Number(cfg.heading) || 0) * DEG;
+  const SURF = { tz: 0, tp: 0, tr: 0, z: 0, p: 0, r: 0, set: false };   // hedef (t*) ve gösterilen yüzey oturması
+  const contacts = () => {   // temas noktaları, root yerel (ölçekli, yaw'sız): [x, y]
+    const s = scale, by = built.body ? built.body.position.y : 0;
+    return method === 'ramp' ? [[-0.95, -1.3], [0.95, -1.3], [-0.95, 1.3], [0.95, 1.3]].map(([x, y]) => [x * s, y * s])
+      : [[-0.92, -1.6], [0.92, -1.6], [-0.92, 1.85], [0.92, 1.85]].map(([x, y]) => [x * s, (y + by) * s]);
+  };
+  const applySurf = () => { root.position.z = SURF.z; root.rotation.set(SURF.p, SURF.r, yaw, 'ZXY'); };
+  function fit(surf) {
+    if (typeof surf !== 'function') return;
+    const c = Math.cos(yaw), s = Math.sin(yaw), pts = contacts();
+    const hs = pts.map(([x, y]) => { const wx = c * x - s * y + root.position.x, wy = s * x + c * y + root.position.y; const h = surf(wx, wy); return Number.isFinite(h) ? h : 0; });
+    const Lx = Math.abs(pts[1][0] - pts[0][0]) || 1, Ly = Math.abs(pts[2][1] - pts[0][1]) || 1;
+    const tz = (hs[0] + hs[1] + hs[2] + hs[3]) / 4;
+    const tp = Math.atan2((hs[2] + hs[3] - hs[0] - hs[1]) / 2, Ly);     // ileri yükseliyorsa burun yukarı (+X dönüşü)
+    const tr = -Math.atan2((hs[1] + hs[3] - hs[0] - hs[2]) / 2, Lx);    // sağ yükseliyorsa sağ yukarı (−Y dönüşü)
+    const lim = 20 * DEG;
+    SURF.tz = tz; SURF.tp = Math.max(-lim, Math.min(lim, tp)); SURF.tr = Math.max(-lim, Math.min(lim, tr));
+    if (!SURF.set) { SURF.set = true; SURF.z = SURF.tz; SURF.p = SURF.tp; SURF.r = SURF.tr; applySurf(); }
+  }
+  function anchor(p, surf) {
+    root.position.set(0, 0, 0); root.rotation.set(0, 0, yaw, 'ZXY');
     root.updateMatrixWorld(true);
     built.attach.getWorldPosition(anchorTmp);
     root.position.set(p.x - anchorTmp.x, p.y - anchorTmp.y, 0);
+    if (surf) {
+      SURF.set = false; fit(surf);   // yeni demirde yüzeye hemen otur
+      root.updateMatrixWorld(true); built.attach.getWorldPosition(anchorTmp);   // eğimden doğan attach XY kaymasını düzelt (SITL uçağı kızakta kalsın)
+      root.position.x += p.x - anchorTmp.x; root.position.y += p.y - anchorTmp.y;
+    } else applySurf();
     anchorLast.set(p.x, p.y, 0); anchorSet = true;
   }
   const needsAnchor = p => !anchorSet || Math.hypot(p.x - anchorLast.x, p.y - anchorLast.y) > ANCHOR_RESEAT;
+  const resurface = surf => { if (anchorSet) fit(surf); };
   // Her kare. ctx: { speed (m/s) uçağın yer hızı (kızaktayken düzeneğin hızı) }
   function update(dt, ctx) {
     const sp = ctx?.speed || 0;
+    if (SURF.set) {   // yüzey oturmasına yumuşak yaklaşma (τ ≈ 0,25 sn)
+      const a = Math.min(1, dt / 0.25);
+      SURF.z += (SURF.tz - SURF.z) * a; SURF.p += (SURF.tp - SURF.p) * a; SURF.r += (SURF.tr - SURF.r) * a;
+      applySurf();
+    }
     if (method === 'ramp') {
       if (S.phase === 'launch') {
         S.t += dt;
@@ -253,7 +288,8 @@ export function createLaunchRig(T, cfg) {
     for (const wh of built.wheels) wh.rotation.x -= w;
   }
   return {
-    group: root, method, attach: built.attach, attachWorld, planeQuat, setPhase, update, anchor, needsAnchor,
+    group: root, method, attach: built.attach, attachWorld, planeQuat, setPhase, update, anchor, needsAnchor, resurface,
+    get surface() { return { z: SURF.z, pitch_deg: SURF.p / DEG, roll_deg: SURF.r / DEG }; },   // teşhis: düzeneğin yüzey oturması
     // Demir ne zaman atılır: araç `launch`ta her kare (SITL yer koşusunu taşır); idle/armed'da yalnız gerekiyorsa (ilk kez ya da > 2 m sıçrama)
     get anchored() { return S.phase === 'idle' || S.phase === 'armed' || (S.phase === 'launch' && method === 'vehicle'); },
     get tracking() { return S.phase === 'launch' && method === 'vehicle'; },   // her kare izleme

@@ -116,6 +116,13 @@ def terrain_birim_testleri():
         assert sim_terrain.terrain_plani(39.925, 32.837, 8000)['z'] == 12 and sim_terrain.terrain_plani(39.925, 32.837, 50)['size_m'] == sim_terrain.SIZE_MIN
         # ev irtifası karoları: z13 (iki plan + ev_irtifa aynı karo → tek indirme, önbellek) ve z12 (8 km planı) → toplam 2 kaynak çağrısı
         assert [c[0].split('terrarium/')[1] for c in sahte.cagri] == ['13/4843/3103.png', '12/2421/1551.png'], sahte.cagri
+        # uzak arazi planı (?far=1; §9): 48 km varsayılan, yükseklik z 10 (2×2…3×3 karo), uydu z 12 (≤ 64 karo), ev irtifası yine z13 karosundan (önbellekte → yeni çağrı yok)
+        n0 = len(sahte.cagri)
+        f = sim_terrain.terrain_plani(39.925, 32.837, None, uzak=True)
+        assert f['far'] is True and f['z'] == 10 and f['img_z'] == 12 and f['size_m'] == 48000 and 4 <= len(f['tiles']) <= 9 and 36 <= len(f['img_tiles']) <= 64, (f['z'], len(f['tiles']), len(f['img_tiles']))
+        assert f['home_elev'] == p['home_elev'] and len(sahte.cagri) == n0, 'uzak plan ev irtifasını z13 önbellekli karodan okur'
+        assert sim_terrain.terrain_plani(39.925, 32.837, 5000, uzak=True)['size_m'] == sim_terrain.UZAK_SIZE_MIN and sim_terrain.terrain_plani(39.925, 32.837, 99999, uzak=True)['size_m'] == sim_terrain.UZAK_SIZE_MAX
+        assert p['far'] is False and sim_terrain.terrain_plani(39.925, 32.837, None)['size_m'] == 4000
         # kaynak kapalı → home_elev null (plan yine döner)
         sim_terrain.karo_yolu('elev', 13, 4843, 3103).unlink()
         sahte.hata = sim_terrain.KaynakHata(503, 'kapalı')
@@ -140,6 +147,8 @@ def vekil_testleri(a, mon, c_altsiz):
         assert p['z'] == 13 and p['home_elev'] is not None and p['tiles'] and p['img_tiles']
         assert a.get('/api/drone/sim/terrain', params={'lat': 99, 'lon': 32.837}).status_code == 400
         assert a.get('/api/drone/sim/terrain', params={'lon': 32.837}).status_code == 422
+        f = ok(a.get('/api/drone/sim/terrain', params={'lat': 39.925, 'lon': 32.837, 'far': 1}))   # uzak arazi planı (§9)
+        assert f['far'] is True and f['z'] == 10 and f['img_z'] == 12 and f['size_m'] == 48000 and f['home_elev'] == p['home_elev'], (f['z'], f['size_m'])
         # karo: ilk istek kaynaktan, ikincisi önbellekten; içerik türü
         t = p['tiles'][0]
         n0 = len(sahte.cagri)

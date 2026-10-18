@@ -36,6 +36,9 @@ HEADERS = {'User-Agent': 'HEPGO-FlightSim/1.0 (+https://hepgo.com; drone flight 
 IMG_Z_EK = 3                 # uydu dokusu yükseklik karolarından 3 seviye ince (≈ 2–4 m/px)
 KINDS = {'elev': ('image/png', ELEV_URL), 'img': ('image/jpeg', IMG_URL)}
 SIZE_MIN, SIZE_MAX = 1000, 12000
+# Uzak arazi halkası (§9): ana dünyanın dışında ufka dek kaba arazi — yükseklik z 10 (≈ 100–150 m/px), uydu z 12 (≈ 30 m/px); kenar 24–64 km
+UZAK_SIZE_MIN, UZAK_SIZE_MAX, UZAK_SIZE_VARSAYILAN = 24000, 64000, 48000
+UZAK_Z, UZAK_IMG_Z = 10, 12
 _kilit = threading.Lock()
 _toplam = None               # önbellek bayt sayacı (ilk kullanımda taranır)
 
@@ -104,15 +107,15 @@ def _karolar(lat, lon, size_m, z):
     return [{'x': x % lim, 'y': y} for y in ys for x in xs if 0 <= y < lim]
 
 
-def parametre_dogrula(lat, lon, size_m):
+def parametre_dogrula(lat, lon, size_m, uzak=False):
     try:
         lat, lon = float(lat), float(lon)
-        size_m = int(float(size_m if size_m is not None else 4000))
+        size_m = int(float(size_m if size_m is not None else (UZAK_SIZE_VARSAYILAN if uzak else 4000)))
     except (TypeError, ValueError):
         raise ValueError('lat, lon, size_m sayı olmalı')
     if not (-85 <= lat <= 85 and -180 <= lon <= 180):
         raise ValueError('lat −85…85, lon −180…180 olmalı')
-    size_m = max(SIZE_MIN, min(SIZE_MAX, size_m))
+    size_m = max(UZAK_SIZE_MIN, min(UZAK_SIZE_MAX, size_m)) if uzak else max(SIZE_MIN, min(SIZE_MAX, size_m))
     return lat, lon, size_m
 
 
@@ -290,19 +293,21 @@ def ev_irtifa(lat, lon, z=13):
     return round(terrarium_yukseklik(data, (fx - tx) * 256, (fy - ty) * 256), 1)
 
 
-def terrain_plani(lat, lon, size_m):
-    """GET /terrain yanıtı. Yükseklik karoları z (12–13), uydu karoları z+IMG_Z_EK; `home_elev` merkez yüksekliği (alınamazsa null)."""
-    lat, lon, size_m = parametre_dogrula(lat, lon, size_m)
-    z = _z_sec(size_m)
-    img_z = z + IMG_Z_EK
+def terrain_plani(lat, lon, size_m, uzak=False):
+    """GET /terrain yanıtı. Yükseklik karoları z (12–13), uydu karoları z+IMG_Z_EK; `home_elev` merkez yüksekliği (alınamazsa null).
+    `uzak=True` (`?far=1`): ufuk için kaba "uzak arazi" planı — kenar 24–64 km (varsayılan 48), yükseklik z 10, uydu z 12; `home_elev`
+    yine z 13 merkez karosundan (ana dünya ile aynı referans; ön yüz uzak ızgarayı ana arazinin h0'ına göre hizalar)."""
+    lat, lon, size_m = parametre_dogrula(lat, lon, size_m, uzak)
+    z = UZAK_Z if uzak else _z_sec(size_m)
+    img_z = UZAK_IMG_Z if uzak else z + IMG_Z_EK
     s, w, n, e = bbox(lat, lon, size_m)
     try:
-        home = ev_irtifa(lat, lon, z)
+        home = ev_irtifa(lat, lon, 13 if uzak else z)
     except (KaynakHata, ValueError, zlib.error):
         home = None
     return {'z': z, 'tiles': _karolar(lat, lon, size_m, z), 'img_z': img_z, 'img_tiles': _karolar(lat, lon, size_m, img_z),
             'elev_url_template': '/api/drone/sim/tile/elev/{z}/{x}/{y}', 'img_url_template': '/api/drone/sim/tile/img/{z}/{x}/{y}',
-            'home_elev': home, 'bbox': {'south': s, 'west': w, 'north': n, 'east': e}, 'size_m': size_m, 'attribution': ATTRIBUTION}
+            'home_elev': home, 'bbox': {'south': s, 'west': w, 'north': n, 'east': e}, 'size_m': size_m, 'far': bool(uzak), 'attribution': ATTRIBUTION}
 
 
 # ---------------------------------------------------------------- Overpass (OSM) sadeleştirme

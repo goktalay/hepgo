@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 tmp = tempfile.mkdtemp()
-os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0',
+os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0', CAYMAZ_GCODE_SYNC='1',
                   CAYMAZ_ADMIN_USERNAME='admin@test', CAYMAZ_ADMIN_PASSWORD='admin-sifre-1')
 
 from fastapi.testclient import TestClient  # noqa: E402

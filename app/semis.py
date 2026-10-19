@@ -6,6 +6,8 @@ Ayrı sipariş verilmez. Parça yedeği: şemadaki her parça bir yedek parça �
 ortak olan parça tek üründür (aynı stok). Ağaçta yarı mamulün altındaki parçalar şemadan (üyelik) bulunur.
 """
 import copy
+import os
+import threading
 
 from . import db, spares
 from . import plane as caymaz
@@ -305,21 +307,39 @@ def ensure_versions(conn):
         return None
     from . import config, gcode
     folder = config.UPLOAD_DIR / gcode.FOLDER
-    mids = []
+    mids, bekleyen = [], []
     for ver, part_codes in AUTO_VERSIONS:
         mids.append(create_version(conn, ver))
         schemas = tuple(f'{PART_PREFIX}{k}' for k in part_codes)
         for r in db.rows(conn.execute(f'''SELECT id, print_file FROM products WHERE gcode_file IS NULL AND print_file IS NOT NULL
                                          AND schema IN ({','.join('?' * len(schemas))})''', schemas)):
             src = folder / f'{r["print_file"]}.gcode'
-            if not src.is_file():
-                continue
-            try:
-                gcode.attach(conn, r['id'], src)
-                conn.commit()
-            except Exception as e:   # noqa: BLE001 — bir dosya bozuksa diğerleri bağlansın
-                print('[semis] gcode bağlanamadı', src.name, e)
+            if src.is_file():
+                bekleyen.append((r['id'], src))
+    if bekleyen:
+        # Büyük G-code'ların (60 MB'a kadar) ayrıştırılması dakikalar sürebilir; açılışı bloklamasın diye arka planda bağlanır.
+        # Testler/komut satırı için CAYMAZ_GCODE_SYNC=1 senkron çalıştırır.
+        if os.environ.get('CAYMAZ_GCODE_SYNC') == '1':
+            _gcode_bagla(bekleyen, conn)
+        else:
+            threading.Thread(target=_gcode_bagla, args=(bekleyen, None), daemon=True, name='semis-gcode').start()
     return mids[-1]
+
+
+def _gcode_bagla(bekleyen, conn=None):
+    """Sürüme özel parçaların G-code'unu bağlar (ensure_versions'tan; conn verilmezse kendi bağlantısını açar)."""
+    from . import gcode
+    for pid, src in bekleyen:
+        try:
+            if conn is not None:
+                gcode.attach(conn, pid, src)
+                conn.commit()
+            else:
+                with db.connect() as c:
+                    gcode.attach(c, pid, src)
+                    c.commit()
+        except Exception as e:   # noqa: BLE001 — bir dosya bozuksa diğerleri bağlansın
+            print('[semis] gcode bağlanamadı', src.name, e)
 
 
 def print_info(conn):

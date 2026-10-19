@@ -309,6 +309,44 @@ def main():
             while m.get('t') != 'res':
                 m = ws.receive_json()
             assert m['ok'] is True
+            # Kalkış paritesi (HEPGO drone_hub _takeoff_flow): panelin hub yolu takeoff{alt_rel_m, kontrol} → sahte SITL'e giden komut SIRASI
+            # mode GUIDED → arm → takeoff; pilot ARM düğmesine basmaz. Sahte kinematik komutları sarmalanarak kaydedilir.
+            ss = flightsim.MANAGER.sessions[sid]
+            ss.sahte.komut('disarm', {})
+            kayit = []
+            orj = ss.sahte.komut
+            ss.sahte.komut = lambda name, p, _o=orj: (kayit.append((name, dict(p or {}))), _o(name, p))[1]
+            try:
+                kontrol = [{'sira': 0, 'anahtar': 'alan', 'soru': 'Alan boş', 'grup': 'sim', 'cevap': True, 'zorunlu': True, 'kaynak': 'flightsim_panel'}]
+                ws.send_json({'t': 'cmd', 'rid': 'to1', 'bridge_id': -(9000 + sid), 'sysid': 1, 'name': 'takeoff', 'params': {'alt_rel_m': 25, 'kontrol': kontrol}})
+                m = ws.receive_json()
+                while not (m.get('t') == 'res' and m.get('rid') == 'to1'):
+                    m = ws.receive_json()
+                assert m['ok'] is True, m
+                t0 = time.time()
+                while time.time() - t0 < 15 and [k for k, _ in kayit][-1:] != ['takeoff']:
+                    m = ws.receive_json()
+                assert [k for k, _ in kayit] == ['mode', 'arm', 'takeoff'] and kayit[0][1] == {'mode': 'GUIDED'} and kayit[2][1]['alt'] == 25.0, kayit
+                assert ss.sahte.armed and ss.sahte.hedef_alt == 25.0
+                # zorunlu madde onaysız → kalkış gönderilmez
+                ws.send_json({'t': 'cmd', 'rid': 'to2', 'bridge_id': -(9000 + sid), 'sysid': 1, 'name': 'takeoff', 'params': {'alt_rel_m': 25, 'kontrol': [{**kontrol[0], 'cevap': False}]}})
+                m = ws.receive_json()
+                while not (m.get('t') == 'res' and m.get('rid') == 'to2'):
+                    m = ws.receive_json()
+                assert m['ok'] is False, m
+                # sanal kumanda: WS rc → sahte SITL RC override (ch5 2000); 8×0 → serbest (varsayılan kanallar)
+                ws.send_json({'t': 'rc', 'ch': [1600, 1400, 1900, 1500, 2000, 0, 0, 0]})
+                t0 = time.time()
+                while time.time() - t0 < 5 and not (kayit and kayit[-1][0] == 'rc'):
+                    m = ws.receive_json()
+                assert kayit[-1] == ('rc', {'ch': [1600, 1400, 1900, 1500, 2000, 0, 0, 0]}) and ss.sahte.rc[4] == 2000 and ss.sahte.rc[2] == 1900, (kayit[-1], ss.sahte.rc)
+                ws.send_json({'t': 'rc', 'ch': [0] * 8})
+                t0 = time.time()
+                while time.time() - t0 < 5 and ss.sahte.rc[4] != 1500:
+                    m = ws.receive_json()
+                assert list(ss.sahte.rc) == list(flightsim.SahteKinematik.RC_VARSAYILAN), ss.sahte.rc
+            finally:
+                ss.sahte.komut = orj
         # başkası (geçerli oturum, sahibi değil) → {'t':'error','error':'not_found'} + 4404; çerezsiz → auth
         with c.websocket_connect(f'/ws/fly/{sid}', headers=HV) as ws:
             assert ws.receive_json() == {'t': 'error', 'error': 'not_found'}

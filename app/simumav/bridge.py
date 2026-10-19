@@ -363,6 +363,28 @@ def launch_dogrula(l):
     return out
 
 
+HEARTBEAT_WAIT_S = 90.0   # kalp atışı (≈ 5 sn) + EKF/GPS konum oturması (≈ 20–40 sn)
+
+
+async def kalp_atisi_bekle(s, sure=HEARTBEAT_WAIT_S):
+    """Sim yolu kalkış komutu (sabit kanat düzeneği / elden atış: `takeoff{alt}` → flightsim._kalkis_dizisi) HAZIR'dan hemen sonra gelebilir;
+    oturum HAZIR'a SITL TCP bağlanınca geçer, kalp atışı birkaç sn sonra gelir → çekirdek 'SITL henüz kalp atışı göndermedi' derdi; TAKEOFF
+    modu da EKF konumu olmadan 'requires position' ile reddedilir. Kalp atışı + EKF/GPS konumu (drone_hub.kalkis_konum_hazir) `sure`
+    içinde beklenir (sahte kipte hemen). Dönüş: hazır mı."""
+    from .. import drone_hub as hub   # shim (app.drone_hub = app.simumav.shim.drone_hub)
+    hazir = lambda: (s.sahte is not None or getattr(s, '_heartbeat_alindi', False)) and hub.kalkis_konum_hazir(s)   # noqa: E731
+    if hazir():
+        return True
+    s._olay('Kalkış için SITL kalp atışı ve EKF/GPS konumu bekleniyor (otopilot açılıyor)…', 5)
+    bitis = time.time() + sure
+    while time.time() < bitis and s.state == 'HAZIR':
+        if hazir():
+            s._olay('Otopilot kalkışa hazır', 6)
+            return True
+        await asyncio.sleep(0.25)
+    return hazir()
+
+
 def elden_atis_ayarla(s, params):
     """WS cmd takeoff{launch:'hand', hand_speed_ms, hand_pitch_deg}: çekirdeğin kalkış dizisi 'ramp' (mancınık) kalıbıyla koşar; elden atış için
     düşük ivme/kısa fırlatma — SITL'de TKOFF_THR_MINACC düşürülür, seviye pitch'i el açısına eşitlenir (HEPGO dosyasına dokunulmaz; parametreler PARAM_SET)."""

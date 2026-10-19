@@ -35,7 +35,8 @@ RELEASE_DIR = DATA_DIR / 'releases'
 STATIC_DIR = BASE / 'static'
 PUBLIC_URL = os.environ.get('SSHM_PUBLIC_URL', 'https://sshmasters.com').rstrip('/')
 PORTAL_URL = os.environ.get('MT_PUBLIC_URL', 'https://mastertool.download').rstrip('/')
-# Hesap portalı (mastertool.download) yayında mı: 1 iken ürün sitelerindeki giriş/kayıt/hesap sayfaları portala yönlenir ve e-posta
+# Hesap portalı (mastertool.download) yayında mı: 1 iken ürün sitelerindeki Hesabım / doğrulama / sıfırlama / indirme portala yönlenir
+# (giriş, kayıt, şifremi unuttum ürün sitesinde yerinde kalır) ve e-posta
 # bağlantıları portala gider. 0 iken (DNS / tünel hazır olana dek) hesap sayfaları sshmasters.com'da çalışmaya devam eder.
 PORTAL_LIVE = os.environ.get('MT_PORTAL_LIVE', '0') == '1'
 SITE_URLS = {'sm': PUBLIC_URL, 'fm': os.environ.get('FTPM_PUBLIC_URL', 'https://ftpmasters.com').rstrip('/'),

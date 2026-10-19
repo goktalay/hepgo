@@ -4,6 +4,8 @@
 // (uygulama ile aynı türetme; sözleşme docs/sshmaster-api.md v2). Tuz /api/mt/auth/prelogin'den gelir.
 // Çok dil: görünen her metin t('Türkçe kaynak', {değişken}) ile yazılır; sözlük /i18n/hesap.<dil>.json (kit.js yükler).
 // #view kitin otomatik çevirisinin dışındadır (data-noi18n); dil değişince geçerli sayfa yeniden çizilir.
+// Giriş / kayıt / şifremi unuttum her ürün sitesinde (sshmasters.com …) yerinde çalışır — aynı Mastertool hesabı. Giriş sonrası dönüş
+// sunucunun doğruladığı data-next (yalnız göreli yol; ürün sitesinde varsayılan /web/<uygulama>/). data-web: Hesabım'da "web'de aç".
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
@@ -13,8 +15,19 @@ const BRAND = document.body.dataset.brand || SITE;
 const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: 'Mastertool' };
 const GAME_URLS = { vf: '/oyunlar/volfai/', sv: 'https://simumav.com/' };   // web oyunları: ?app=vf|sv ile gelen giriş / kayıt sonrası dönüş adresi (sv kendi sitesinde)
 const SNAME = NAMES[SITE] || 'Mastertool';
+const PORTAL = document.body.dataset.portal || 'https://mastertool.download';
+const WEB = document.body.dataset.web || '';   // sunucu üretir: /web/<slug>/ ya da bilinen ürün sitesi adresi
+// Dönüş adresi yalnız aynı sitede göreli yol: '/' ile başlar, '//' ile başlamaz, ters bölü / boşluk / denetim karakteri yok (sunucuda da aynı denetim)
+const okNext = n => typeof n === 'string' && n.length <= 512 && n.startsWith('/') && !n.startsWith('//') && !/[\x00-\x20\x7f\\]/.test(n);
+const NEXT = okNext(document.body.dataset.next) ? document.body.dataset.next : '';
 const API = '/api/mt';
 const AQ = BRAND !== SITE ? `?app=${BRAND}` : '';   // portalda ürün markası sayfalar arasında korunur
+const LQ = (() => {   // giriş / kayıt / şifremi unuttum arasında marka ve ?next korunur
+  const p = new URLSearchParams(location.search), o = new URLSearchParams();
+  if (BRAND !== SITE) o.set('app', BRAND);
+  if (okNext(p.get('next'))) o.set('next', p.get('next'));
+  return o.toString() ? `?${o}` : '';
+})();
 const enc = new TextEncoder();
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const t = (s, v) => (window.mtKit ? window.mtKit.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
@@ -48,14 +61,17 @@ async function prelogin(email) { return (await api(`${API}/auth/prelogin`, { met
 function msg(el, text, kind = 'err') { el.innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ''; }
 function busy(btn, on, label) { btn.disabled = on; if (label) btn.textContent = on ? t('Lütfen bekleyin…') : label; }
 const qs = new URLSearchParams(location.search);
-const nextUrl = () => { const n = qs.get('sonra') || ''; return /^\/(indir|hesabim|oyunlar)\b/.test(n) ? n : (GAME_URLS[BRAND] || '/hesabim'); };
+const nextUrl = () => { const n = qs.get('sonra') || ''; return /^\/(indir|hesabim|oyunlar)\b/.test(n) ? n : (NEXT || GAME_URLS[BRAND] || '/hesabim'); };
+// Ürün sitelerinde: "Mastertool hesabı ile" rozeti (hesap mastertool.download hesabıdır)
+const mtWith = () => (SITE === 'mt' ? '' : `<a class="mt-with" href="${esc(PORTAL)}/" target="_blank" rel="noopener"><img src="/brand/mt.svg" alt="" width="20" height="20"><span>${t('Mastertool hesabı ile')}</span><b>${esc(PORTAL.replace(/^https?:\/\//, ''))}</b></a>`);
+const webAppName = () => { const m = /^\/web\/([a-z]+)\//.exec(NEXT); return m && { sshmaster: 'SSH Master', ftpmaster: 'FTP Masters', sqlmaster: 'SQL Master', notepadmaster: 'Notepad Master', convertmaster: 'Convert Master' }[m[1]]; };
 
 function pwRules(p) { return p.length >= 8; }
 
 // ---------- sayfalar ----------
 function pageRegister() {
   document.title = `${t('Hesap oluştur')} — ${SNAME}`;
-  view.innerHTML = `<h1>${t('Hesap oluşturun')}</h1><p class="muted small">${t('Tek Mastertool hesabıyla tüm Mastertool uygulamalarını indirin, kayıtlarınızı cihazlar arasında şifreli eşitleyin.')}</p>
+  view.innerHTML = `${mtWith()}<h1>${t('Hesap oluşturun')}</h1><p class="muted small">${t('Tek Mastertool hesabıyla tüm Mastertool uygulamalarını indirin, kayıtlarınızı cihazlar arasında şifreli eşitleyin.')}</p>
     <form id="f" autocomplete="on">
       <label for="n">${t('Ad soyad')}</label><input id="n" autocomplete="name" required>
       <label for="e">${t('E-posta')}</label><input id="e" type="email" autocomplete="email" required>
@@ -65,7 +81,7 @@ function pageRegister() {
       <button class="btn primary block" id="b">${t('Hesap oluştur')}</button>
       <div id="m"></div>
     </form>
-    <div class="links"><a href="/giris${AQ}">${t('Zaten hesabım var')}</a></div>`;
+    <div class="links"><a href="/giris${LQ}">${t('Zaten hesabım var')}</a></div>`;
   $('#f').onsubmit = async ev => {
     ev.preventDefault();
     const m = $('#m'), b = $('#b'), name = $('#n').value.trim(), email = $('#e').value.trim(), p = $('#p').value;
@@ -87,8 +103,10 @@ function pageLogin() {
   const durum = { 'dogrulama-gecersiz': [t('Doğrulama bağlantısı geçersiz ya da süresi dolmuş. Giriş yapmayı deneyin ya da yeniden kayıt olun.'), 'err'],
     askida: [t('Hesabınız askıya alınmış.'), 'err'], sifirlandi: [t('Şifreniz değişti. Yeni şifrenizle giriş yapın.'), 'ok'],
     cikis: [t('Çıkış yaptınız.'), 'info'] }[qs.get('durum')];
-  view.innerHTML = `<h1>${t('Giriş yapın')}</h1>
+  const wn = webAppName();
+  view.innerHTML = `${mtWith()}<h1>${t('Giriş yapın')}</h1>
     <p class="muted small">${t('Mastertool hesabınız tüm Mastertool uygulamalarında aynıdır.')}</p>
+    ${wn ? `<div class="msg info">${t('Giriş yapınca {name} tarayıcınızda açılır.', { name: esc(wn) })}</div>` : ''}
     ${qs.get('sonra') ? `<div class="msg info">${t('İndirme bağlantınız kişiye özeldir; devam etmek için giriş yapın.')}</div>` : ''}
     ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Giriş yapınca oyuna dönersiniz; ilerlemeniz hesabınızda saklanır.')}</div>` : ''}
     ${durum ? `<div class="msg ${durum[1]}">${durum[0]}</div>` : ''}
@@ -98,7 +116,7 @@ function pageLogin() {
       <button class="btn primary block" id="b">${t('Giriş yap')}</button>
       <div id="m"></div>
     </form>
-    <div class="links"><a href="/sifremi-unuttum${AQ}">${t('Şifremi unuttum')}</a><a href="/kayit${AQ}">${t('Hesap oluştur')}</a></div>`;
+    <div class="links"><a href="/sifremi-unuttum${LQ}">${t('Şifremi unuttum')}</a><a href="/kayit${LQ}">${t('Hesap oluştur')}</a></div>`;
   $('#f').onsubmit = async ev => {
     ev.preventDefault();
     const m = $('#m'), b = $('#b'), email = $('#e').value.trim(), p = $('#p').value;
@@ -118,10 +136,10 @@ function pageLogin() {
 
 function pageForgot() {
   document.title = `${t('Şifremi unuttum')} — ${SNAME}`;
-  view.innerHTML = `<h1>${t('Şifremi unuttum')}</h1><p class="muted small">${t('Kayıtlı e-posta adresinize şifre sıfırlama bağlantısı gönderelim.')}</p>
+  view.innerHTML = `${mtWith()}<h1>${t('Şifremi unuttum')}</h1><p class="muted small">${t('Kayıtlı e-posta adresinize şifre sıfırlama bağlantısı gönderelim.')}</p>
     <form id="f"><label for="e">${t('E-posta')}</label><input id="e" type="email" autocomplete="email" required>
       <button class="btn primary block" id="b">${t('Bağlantı gönder')}</button><div id="m"></div></form>
-    <div class="links"><a href="/giris${AQ}">${t('Girişe dön')}</a></div>`;
+    <div class="links"><a href="/giris${LQ}">${t('Girişe dön')}</a></div>`;
   $('#f').onsubmit = async ev => {
     ev.preventDefault();
     const b = $('#b');
@@ -177,9 +195,10 @@ async function pageAccount() {
   $('#box').classList.add('wide');
   const tab = curTab || (location.hash || '').slice(1);
   const cur = TABS().some(x => x[0] === tab) ? tab : (qs.get('talep') ? 'destek' : 'uygulamalar');
-  view.innerHTML = `<button class="btn sm top-right" id="out">${t('Çıkış')}</button>
+  view.innerHTML = `<div class="top-right acc-acts"><a class="btn sm" href="${SITE === 'mt' ? '' : esc(PORTAL)}/uygulamalar">${t('Uygulamalar')}</a><button class="btn sm" id="out">${t('Çıkış')}</button></div>
     <h1>${t('Merhaba, {name}', { name: esc(ACC.user.name) })}</h1><p class="muted small">${esc(ACC.user.email)} · ${t('Mastertool hesabı')}</p>
     ${qs.get('durum') === 'dogrulandi' ? `<div class="msg ok">${t('E-postanız doğrulandı, hesabınız açıldı.')}</div>` : ''}
+    ${WEB && (SITE === 'mt' || qs.get('durum') === 'dogrulandi') ? `<div class="msg info web-open"><span>${t('{name} web sürümünü tarayıcınızda hemen açabilirsiniz.', { name: esc(NAMES[BRAND] || '') })}</span> <a class="btn sm primary" href="${esc(WEB)}">${t('{name} web\'de aç', { name: esc(NAMES[BRAND] || '') })}</a></div>` : ''}
     ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Oyuna dönmek için:')} <a href="${GAME_URLS[BRAND]}">${esc((ACC.games || []).find(g => g.app === BRAND)?.name || BRAND)}</a></div>` : ''}
     <div class="tabs">${TABS().map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="pane"></div>`;
@@ -215,10 +234,11 @@ function paneApps(pane) {
         <div class="muted small">${r ? t('Sürüm {v} · {size} · {date}', { v: esc(r.version), size: fmtSize(r.size), date: fmtDate(r.date) }) : t('İndirilebilir sürüm yakında')}</div></div>
         ${off ? `<span class="badge off">${t('Hesabınızda kapalı')}</span>` : ''}</div>
       ${off ? `<p class="hint">${t('Bu uygulamanın kullanımı hesabınız için kapatılmış. Bilgi için Destek sekmesinden talep açabilirsiniz.')}</p>` : `
-      ${r ? `<div class="row"><a class="btn primary" href="${esc(x.download_url)}">${t('İndir (Windows)')}</a>
-        ${r.portable ? `<a class="btn" href="${esc(x.download_url)}?tur=portable">${t('Taşınabilir sürüm')}</a>` : ''}</div>
-        ${r.notes ? `<p class="muted small" style="white-space:pre-wrap">${esc(r.notes)}</p>` : ''}
-        <p class="hint">SHA-256: <code>${esc(r.sha256)}</code> · ${t('Bu bağlantı size özeldir ve yalnız bu hesapla oturum açmışken çalışır.')}</p>` : ''}
+      ${r || x.web ? `<div class="row">${x.web ? `<a class="btn ${r ? '' : 'primary'}" href="${esc(x.web)}">${t('Web\'de aç')}</a>` : ''}
+        ${r ? `<a class="btn primary" href="${esc(x.download_url)}">${t('İndir (Windows)')}</a>` : ''}
+        ${r && r.portable ? `<a class="btn" href="${esc(x.download_url)}?tur=portable">${t('Taşınabilir sürüm')}</a>` : ''}</div>
+        ${r && r.notes ? `<p class="muted small" style="white-space:pre-wrap">${esc(r.notes)}</p>` : ''}
+        ${r ? `<p class="hint">SHA-256: <code>${esc(r.sha256)}</code> · ${t('Bu bağlantı size özeldir ve yalnız bu hesapla oturum açmışken çalışır.')}</p>` : ''}` : ''}
       <div class="kv" style="margin-top:12px"><span>${t('Senkronizasyon')}</span><span>${x.sync_enabled ? `<span class="badge on">${t('Açık')}</span>` : `<span class="badge">${t('Kapalı (uygulama ayarlarından)')}</span>`}</span>
         <span>${t('Şifreli kopya')}</span><span>${x.library.version ? t('{size} · son eşitleme {date}', { size: fmtSize(x.library.size), date: fmtDate(x.library.updated_at) }) + (x.library.device ? ` · ${esc(x.library.device)}` : '') : t('Henüz eşitleme yok')}</span></div>`}
     </div>`;

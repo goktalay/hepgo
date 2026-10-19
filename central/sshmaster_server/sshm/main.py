@@ -1,8 +1,8 @@
 """Mastertool hesap ve senkronizasyon servisi: tek hesapla SSH Master (sm) ve FTP Masters (fm).
 Sözleşmeler: docs/sshmaster-api.md (v2, /api/sm — geriye dönük uyumlu), docs/ftpmasters-api.md (/api/fm), portal /api/mt.
 
-- Siteler Host başlığıyla ayrılır: mastertool.download (hesap portalı), sshmasters.com ve ftpmasters.com (ürün / indirme sayfası;
-  MT_PORTAL_LIVE=1 iken giriş / kayıt / hesap sayfaları portala yönlenir).
+- Siteler Host başlığıyla ayrılır: mastertool.download (hesap portalı + /uygulamalar web başlatıcısı), ürün siteleri (sshmasters.com …:
+  tanıtım, site içi giriş / kayıt; MT_PORTAL_LIVE=1 iken Hesabım, doğrulama, şifre sıfırlama ve indirme portala yönlenir).
 - Kimlik uçları (/auth/*, /me) üç önekte de aynıdır; kütüphane / ayar / sürüm uçları uygulamaya özeldir (/api/sm, /api/fm).
   Uygulama oturumu kendi uygulamasının uçlarını kullanır; yönetici o uygulamanın lisansını KAPALI yaparsa giriş ve indirme kapanır.
 
@@ -88,6 +88,14 @@ PROMO_CSP = ("default-src 'self'; script-src 'self' https://www.googletagmanager
              "https://www.googletagmanager.com https://*.google-analytics.com; connect-src 'self' https://*.google-analytics.com "
              "https://*.analytics.google.com https://www.googletagmanager.com; font-src 'self'; object-src 'none'; base-uri 'self'; "
              "form-action 'self'; frame-ancestors 'self'")
+# Web sürümleri (mtweb servisi; Cloudflare tüneli /web, /static/mt, /api/tools, /ws/tools yollarını ona verir): her Mastertool
+# hostunda /web/<slug>/ adresinde çalışır, oturumu aynı hosttaki sm_session çerezinden /api/mt/me ile doğrular. Araçlarda (IP Tools …)
+# web sürümü YOK (sunucudan ağ taraması güvenlik nedeniyle sunulmaz) — yalnız indirme.
+WEB_APPS = {'sm': 'sshmaster', 'fm': 'ftpmaster', 'sq': 'sqlmaster', 'np': 'notepadmaster', 'cv': 'convertmaster'}
+# Hesap sayfaları ve başlatıcı (/uygulamalar): satır içi betik yok; iframe yalnız aynı köken (/web/, /oyunlar/)
+ACCOUNT_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
+               "font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+LAUNCHER_CSP = ACCOUNT_CSP.replace("connect-src 'self';", "connect-src 'self'; frame-src 'self';")
 PROFILE_MAX = 64 * 1024                               # oyun profili JSON'u üst sınırı (bayt)
 LAUNCHER = {'name': 'Master Tool', 'setup': 'Master-Tool-Setup-{v}.exe', 'portable': 'Master-Tool-Portable-{v}.exe'}
 MT_CLIENTS = ('desktop', 'android', 'ios')          # Master Tool istemcileri: /api/mt/auth/login'de yalnız ortak (sso) oturum açar
@@ -360,6 +368,18 @@ def site_of(request):
     return settings.DEFAULT_SITE if settings.DEFAULT_SITE in SITES else 'sm'
 
 
+NEXT_BAD = re.compile(r'[\x00-\x20\x7f\\]')
+
+
+def safe_next(v):
+    """Giriş sonrası dönüş adresi (açık yönlendirme yok): yalnız aynı sitede göreli yol — '/' ile başlar, '//' ile başlamaz, ters bölü,
+    boşluk ve denetim karakteri içermez, ≤ 512 karakter. Geçersizse ''."""
+    v = str(v or '')
+    if not v.startswith('/') or v.startswith('//') or len(v) > 512 or NEXT_BAD.search(v):
+        return ''
+    return v
+
+
 def acct(path):
     return f'{settings.ACCOUNT_URL}{path}'
 
@@ -421,8 +441,7 @@ async def register(a: str, request: Request):
         conn.execute("UPDATE tokens SET used_at = ? WHERE user_id = ? AND kind = 'verify' AND used_at IS NULL", (db.now(), uid))
         tok = new_token(conn, uid, 'verify', settings.VERIFY_HOURS * 3600)
         conn.commit()
-    game = str(b.get('brand') or '')   # oyundan gelen kayıt (?app=vf): doğrulama sonrası Hesabım'da oyuna dönüş gösterilir
-    mailer.send_verify(email, name, acct(f'/dogrula/{tok}' + (f'?app={game}' if game in GAMES else '')), brand)
+    mailer.send_verify(email, name, acct(f'/dogrula/{tok}' + _verify_q(b)), brand)
     return {'ok': True}
 
 
@@ -438,8 +457,15 @@ async def resend_verify(a: str, request: Request):
             conn.execute("UPDATE tokens SET used_at = ? WHERE user_id = ? AND kind = 'verify' AND used_at IS NULL", (db.now(), u['id']))
             tok = new_token(conn, u['id'], 'verify', settings.VERIFY_HOURS * 3600)
             conn.commit()
-            mailer.send_verify(email, u['name'], acct(f'/dogrula/{tok}'), brand)
+            mailer.send_verify(email, u['name'], acct(f'/dogrula/{tok}' + _verify_q(b)), brand)
     return {'ok': True}
+
+
+def _verify_q(b):
+    """Doğrulama bağlantısına kaydın geldiği yer: oyun (?app=vf) ya da ürün sitesi (?app=sm) — doğrulama sonrası Hesabım'da oyuna dönüş
+    ya da '<uygulama> web'de aç' düğmesi gösterilir (yalnız bilinen kodlar)."""
+    g = str((b or {}).get('brand') or '')
+    return f'?app={g}' if g in GAMES or g in WEB_APPS else ''
 
 
 def to_portal(request):
@@ -471,7 +497,7 @@ def verify(tok: str, request: Request):
         conn.execute('UPDATE users SET last_login = ? WHERE id = ?', (db.now(), u['id']))
         conn.commit()
     game = request.query_params.get('app') or ''
-    resp = RedirectResponse('/hesabim?durum=dogrulandi' + (f'&app={game}' if game in GAMES else ''), status_code=303)
+    resp = RedirectResponse('/hesabim?durum=dogrulandi' + (f'&app={game}' if game in GAMES or game in WEB_APPS else ''), status_code=303)
     set_cookie(resp, s)
     return resp
 
@@ -572,6 +598,16 @@ def me(a: str, request: Request):
         if a in APPS:
             out |= {'sync_enabled': bool(lic(conn, u['id'], a)['sync_enabled']), 'library': library_meta(conn, u['id'], a)}
         return out
+
+
+@app.get('/api/{a}/session')
+def session_state(a: str, request: Request):
+    """Hafif oturum durumu (site başlığındaki Giriş / kullanıcı adı için; çerez HttpOnly olduğundan sayfa bunu sorar): oturum yoksa da 200."""
+    need_prefix(a)
+    with db.connect() as conn:
+        u, _ = current(request, conn, require=False, web_only=True)
+    out = {'user': {'name': u['name'], 'email': u['email']} if u else None}
+    return JSONResponse(out, headers={'Cache-Control': 'private, no-store'})
 
 
 @app.post('/api/{a}/auth/forgot')
@@ -818,7 +854,7 @@ def account(a: str, request: Request):
             apps.append({'app': k, 'name': meta['name'], 'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k),
                          'license': L['license'], 'sync_enabled': bool(L['sync_enabled']),
                          'library': library_meta(conn, u['id'], k), 'release': release_public(latest_release(conn, k)),
-                         'download_url': _dl_url(u, k),
+                         'download_url': _dl_url(u, k), 'web': f'/web/{WEB_APPS[k]}/' if k in WEB_APPS else None,
                          'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ? AND app = ?', (u['id'], k)).fetchone()[0]})
         launcher = {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt')), 'download_url': _dl_url(u, 'mt')}
         games = [game_entry(k) | {'has_profile': bool(conn.execute(f'SELECT 1 FROM {k}_profiles WHERE user_id = ?', (u['id'],)).fetchone())}
@@ -925,22 +961,31 @@ def client_version(v):
 
 
 @app.get('/api/mt/apps')
-def mt_apps(request: Request, v: str = ''):
+def mt_apps(request: Request, v: str = '', web: int = 0):
     """Master Tool'un gösterdiği uygulamalar. Kurulu mu değil mi istemcide belirlenir (Windows kaldırma kayıtları: DisplayName
     = name, InstallLocation; yoksa Program Files\\Mastertool\\<name>\\<exe>). Simge: /brand/<kod>.svg (tercih) ve .png (128 px).
     ?v=<istemci sürümü>: 1.2.0 ve üstü kind:'web' (oyun, group:'games') kayıtlarını da alır; eski istemciler kind'i tanımadığı için
-    v yoksa ya da küçükse bu kayıtlar yanıtta yer almaz."""
+    v yoksa ya da küçükse bu kayıtlar yanıtta yer almaz.
+    ?web=1 (mastertool.download/uygulamalar başlatıcısı): oyunlar her zaman; her kayda 'web' (web sürümü yolu /web/<slug>/ ya da null)
+    ve web (çerez) oturumunda kişiye özel 'download_url' (/indir/<dl_token>/<kod>) eklenir."""
     with db.connect() as conn:
-        u, _ = current(request, conn, a='mt')
+        u, s = current(request, conn, a='mt')
+        webui = web == 1
+        personal = webui and s['kind'] == 'web'
         out = []
         for k in APP_ORDER:
             L = lic(conn, u['id'], k)
             out.append({'app': k, 'name': APPS[k]['name'], 'exe': f"{APPS[k]['name']}.exe", 'install_dir': f"Mastertool\\{APPS[k]['name']}",
                         'group': 'tools' if k in TOOLS else 'apps', 'site': app_site(k), 'description': APPS[k].get('desc'), 'icon_png': f'/brand/{k}.png', 'icon_svg': f'/brand/{k}.svg',
-                        'license': L['license'], 'release': release_public(latest_release(conn, k))})
-        if client_version(v) >= MT_APPS_WEB_MIN:
+                        'license': L['license'], 'release': release_public(latest_release(conn, k))}
+                       | ({'web': f'/web/{WEB_APPS[k]}/' if k in WEB_APPS else None} if webui else {})
+                       | ({'download_url': _dl_url(u, k)} if personal else {}))
+        if webui or client_version(v) >= MT_APPS_WEB_MIN:
             out += [game_entry(k) for k in GAMES]
-        return {'apps': out, 'launcher': {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}}
+        launcher = {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt'))}
+        if personal:
+            launcher['download_url'] = _dl_url(u, 'mt')
+        return {'apps': out, 'launcher': launcher}
 
 
 @app.get('/api/mt/apps/{a}/download')
@@ -1568,15 +1613,29 @@ def page_og(request: Request):
     return FileResponse(p, media_type='image/png', headers={'Cache-Control': 'public, max-age=86400'})
 
 
+SITE_AUTH_PAGES = ('/giris', '/kayit', '/sifremi-unuttum')   # ürün sitelerinde YERİNDE çalışır (portal yönlendirmesi yok)
+
+
 def _account_page(request):
-    if (r := to_portal(request)):
+    """Hesap sayfaları (hesap.html + hesap.js). Giriş / kayıt / şifremi unuttum her sitede yerinde açılır (aynı Mastertool hesabı); Hesabım,
+    şifre sıfırlama ve doğrulama MT_PORTAL_LIVE=1 iken portalda. Giriş sonrası dönüş: ?next= (safe_next), yoksa ürün sitesinde /web/<slug>/.
+    Oturum varken /giris kendiliğinden yönlenmez (mtweb ile yönlendirme döngüsü olmasın)."""
+    path = request.url.path.rstrip('/') or '/'
+    if path not in SITE_AUTH_PAGES and (r := to_portal(request)):
         return r
     site = site_of(request)
     qa = APP_ALIASES.get((request.query_params.get('app') or '').lower(), request.query_params.get('app'))
     brand = qa if site == 'mt' and (qa in SITES or qa in GAMES) else site   # ?app=vf: oyundan gelen kayıt / giriş, dönüş oyuna
+    nxt = safe_next(request.query_params.get('next'))
+    if not nxt and site in WEB_APPS:
+        nxt = f'/web/{WEB_APPS[site]}/'
+    web = ''
+    if brand in WEB_APPS:   # Hesabım'da "<uygulama> web'de aç" (kendi sitesinde; yalnız bilinen SITE_URLS)
+        web = f'/web/{WEB_APPS[brand]}/' if brand == site else f'{settings.SITE_URLS[brand]}/web/{WEB_APPS[brand]}/'
     html = (settings.STATIC_DIR / 'hesap.html').read_text(encoding='utf-8')
-    html = html.replace('{{SITE}}', site).replace('{{BRAND}}', brand).replace('{{NAME}}', SITE_NAMES[site])
-    return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
+    for k, v in {'SITE': site, 'BRAND': brand, 'NAME': SITE_NAMES[site], 'NEXT': nxt, 'WEB': web, 'PORTAL': settings.PORTAL_URL}.items():
+        html = html.replace('{{' + k + '}}', _hesc(v))
+    return HTMLResponse(html, headers={'Cache-Control': 'no-cache', 'Content-Security-Policy': ACCOUNT_CSP})
 
 
 @app.get('/kayit')
@@ -1590,6 +1649,38 @@ def page_account(request: Request):
 @app.get('/sifre-sifirla/{tok}')
 def page_reset(tok: str, request: Request):
     return _account_page(request)
+
+
+@app.get('/uygulamalar')
+def page_launcher(request: Request):
+    """Master Tool web başlatıcısı (yalnız mastertool.download): masaüstü Master Tool ana ekranının web karşılığı. Katalog /api/mt/apps?web=1;
+    web sürümü olanlar aynı sayfada sekmede (iframe /web/<slug>/, aynı köken) açılır; oturum yoksa sayfa içinde giriş / kayıt."""
+    if site_of(request) != 'mt':
+        return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    html = (settings.STATIC_DIR / 'uygulamalar.html').read_text(encoding='utf-8').replace('{{PORTAL}}', _hesc(settings.PORTAL_URL))
+    return HTMLResponse(html, headers={'Cache-Control': 'no-cache', 'Content-Security-Policy': LAUNCHER_CSP})
+
+
+@app.get('/web')
+@app.get('/web/{path:path}')
+def page_web_fallback(request: Request, path: str = ''):
+    """YEDEK: üretimde /web/* tünelde mtweb servisine gider ve buraya hiç gelmez. Yerel çalıştırma / mtweb yokken: mastertool.download/web/ →
+    /uygulamalar; oturum yoksa giriş akışı (/giris?next=/web/<slug>/); oturum varsa 'web sürümü şu an kullanılamıyor' sayfası."""
+    site = site_of(request)
+    slug = path.split('/')[0]
+    if not slug:
+        if site == 'mt':
+            return RedirectResponse('/uygulamalar', status_code=302)
+        slug = WEB_APPS.get(site, '')
+    if slug not in WEB_APPS.values():
+        return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    with db.connect() as conn:
+        u, _ = current(request, conn, require=False, web_only=True)
+    if not u:
+        return RedirectResponse(f'/giris?next=/web/{slug}/', status_code=302)
+    name = next(SITE_NAMES[k] for k, v in WEB_APPS.items() if v == slug)
+    return HTMLResponse(_page_msg(request, f'{name} web sürümü şu an kullanılamıyor',
+                                  'Lütfen biraz sonra yeniden deneyin ya da masaüstü sürümünü Hesabım sayfanızdan indirin.'), status_code=503)
 
 
 BRAND_FILES = {'sm.png': ('sm', 'logo.png', 'image/png'), 'fm.png': ('fm', 'logo.png', 'image/png'), 'mt.png': ('mt', 'logo.png', 'image/png'),
@@ -1690,7 +1781,8 @@ def page_i18n(name: str, request: Request):
 
 @app.get('/{name}')
 def page_asset(name: str, request: Request):
-    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'kit.js': 'text/javascript', 'kit.css': 'text/css'}
+    shared = {'site.css': 'text/css', 'hesap.js': 'text/javascript', 'kit.js': 'text/javascript', 'kit.css': 'text/css',
+              'mtsite.js': 'text/javascript', 'mtsite.css': 'text/css', 'uygulamalar.js': 'text/javascript', 'uygulamalar.css': 'text/css'}
     per_site = {'favicon.svg': 'image/svg+xml', 'logo.png': 'image/png'}
     if name in shared and (settings.STATIC_DIR / name).is_file():
         return _static(settings.STATIC_DIR / name, shared[name])

@@ -1,0 +1,37 @@
+/* Mastertool siteleri: başlıkta oturum durumu, "Web'de aç" düğmesi ve "Tarayıcıda ya da masaüstünde" bölümü (mtsite.js ile). */
+.mt-auth { display: inline-flex; align-items: center; gap: 8px; }
+.mt-auth.in { gap: 6px; }
+.mt-user { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 3px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--head); text-decoration: none; font-size: 13.5px; font-weight: 600; max-width: 200px; }
+.mt-user:hover { border-color: var(--acc); }
+.mt-av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: linear-gradient(135deg, #22d3ee, #6366f1); color: #06101c; font-weight: 800; font-size: 13px; }
+.mt-un { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-webbtn { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 10px; background: linear-gradient(135deg, #22d3ee, #6366f1);
+  color: #06101c; font-weight: 700; font-size: 14px; text-decoration: none; white-space: nowrap; }
+.mt-webbtn:hover { filter: brightness(1.08); }
+.mt-out { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.mt-out:hover { color: var(--head); border-color: var(--acc); }
+.mt-out svg { width: 16px; height: 16px; }
+.store.web { background: linear-gradient(135deg, #22d3ee, #6366f1); color: #06101c; box-shadow: 0 10px 30px rgba(34, 211, 238, .25); }
+.store.web small { color: #0b2236; }
+.store.web svg { stroke: #06101c; }
+html[data-theme=light] .store.web { background: linear-gradient(135deg, #22d3ee, #6366f1); color: #06101c; box-shadow: 0 10px 30px rgba(79, 70, 229, .25); }
+html[data-theme=light] .store.web small { color: #0b2236; }
+html[data-theme=light] .store.web svg { stroke: #06101c; }
+.webdesk { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.webdesk .wd { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 10px; }
+.webdesk .wd h3 { margin: 0; font-size: 18px; color: var(--head); display: flex; align-items: center; gap: 10px; }
+.webdesk .wd h3 svg { width: 22px; height: 22px; color: var(--acc); flex: none; }
+.webdesk .wd p { margin: 0; color: var(--muted); font-size: 15px; }
+.webdesk .wd ul { margin: 0; padding-inline-start: 18px; color: var(--muted); font-size: 14.5px; }
+.webdesk .wd .go { margin-top: auto; padding-top: 6px; }
+.webdesk .wd .go a { font-weight: 700; color: var(--acc); text-decoration: none; }
+@media (max-width: 960px) { .webdesk { grid-template-columns: 1fr; } }
+@media (max-width: 1200px) { .mt-un { display: none; } .mt-user { padding: 0 3px; } }
+/* telefon: kit.css başlıktaki Giriş / Kayıt düğmelerini gizler; burada yalnız "Giriş" (oturum varsa yalnız simge) kalır */
+@media (max-width: 560px) {
+  header.top .mt-auth .navbtn { display: inline; margin: 0; }
+  header.top .mt-auth .mt-webbtn, header.top .mt-auth .mt-out { display: none; }
+  .store.web, .store { max-width: 100%; }
+}
+@media (max-width: 420px) { header.top .mt-auth { display: none; } }   /* dar telefonda başlık sığmaz: giriş kahraman bölümündeki "Web'de aç" ile */

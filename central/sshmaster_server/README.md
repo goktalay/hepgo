@@ -28,3 +28,23 @@ Testler: `cd central/sshmaster_server && ../../.venv/bin/python -m tests.test_ss
 - Site kiti `static/kit.js` + `kit.css` (hepgo.com'daki `central/veilox_server/static/exp2/kit.js` ile BİREBİR aynı dosya — değişince ikisini birlikte güncelleyin):
   dönen vektör dünya (Natural Earth 110m kara noktaları, kamu malı), gece/gündüz, 8 dil (tr kaynak; `static/i18n/<site>.<dil>.json`, Arapça sağdan sola).
   Sayfa metni değişirse çeviri anahtarları da değişir: yeni/eskimiş metinleri sözlüklere ekleyin (anahtar = Türkçe metin).
+
+## Web sürümleri, site içi giriş ve Master Tool web başlatıcısı
+- **Web sürümleri** ayrı servis (mtweb): her Mastertool hostunda `/web/sshmaster/`, `/web/ftpmaster/`, `/web/sqlmaster/`, `/web/notepadmaster/`,
+  `/web/convertmaster/` (`main.WEB_APPS`). Cloudflare tüneli `^/(web|static/mt|api/tools|ws/tools)(/|$)` yollarını mtweb'e verir; mtweb aynı hosttaki
+  `sm_session` çerezini `GET /api/mt/me` ile doğrular, oturum yoksa `302 /giris?next=/web/<app>/`. Bu serviste `/web/*` yalnız YEDEK
+  (yerel çalıştırma: oturumsuz → giriş akışı, portalda `/web/` → `/uygulamalar`, oturumlu → 503 "şu an kullanılamıyor"). Araçların (IP Tools …) web sürümü yok.
+- **Site içi giriş / kayıt**: `/giris`, `/kayit`, `/sifremi-unuttum` her ürün sitesinde YERİNDE çalışır (MT_PORTAL_LIVE=1 iken de; "Mastertool hesabı ile"
+  rozeti). Hesabım, doğrulama ve şifre sıfırlama portalda kalır. Dönüş `?next=` → `safe_next` (yalnız `/` ile başlayan, `//` ile başlamayan, ters bölü /
+  boşluk / denetim karakteri içermeyen göreli yol; yoksa ürün sitesinde `/web/<app>/`) → `hesap.html` `data-next`. Ürün sitesinden kayıtta doğrulama
+  bağlantısı `?app=<site>` taşır; doğrulama sonrası Hesabım "<uygulama> web'de aç" (yalnız `SITE_URLS` adresi) gösterir. Çerez host'a özeldir: portalda
+  açılan oturum ürün sitesinde geçmez (orada yeniden giriş).
+- **Başlıkta oturum**: `static/mtsite.js` + `mtsite.css` (ürün siteleri + portal ana sayfası) `GET /api/<site>/session` (oturumsuz da 200, `{user:null}`)
+  ile Giriş / Kayıt ol ↔ ad + "Web'de aç" + Çıkış. Ürün ana sayfalarında birincil "Web'de aç", ikincil "İndir (.exe)" ve "Tarayıcıda ya da masaüstünde" bölümü.
+- **`mastertool.download/uygulamalar`** (`static/uygulamalar.{html,js,css}`): masaüstü Master Tool ana ekranının (mastertool/src/renderer) web karşılığı —
+  aynı kutucuklar, bölümler (Uygulamalar / Araçlar / Oyunlar / Master Tool), hesap rozeti, bağlam menüsü; web sürümleri aynı sayfada sekmede (iframe, YALNIZ
+  aynı köken `/web/<slug>/` ve `/oyunlar/<slug>/`), ayrıca yeni sekmede; `#sshmaster` ile doğrudan açılır. Katalog `GET /api/mt/apps?web=1`
+  (her kayda `web` yolu, çerez oturumunda kişiye özel `download_url`, oyunlar her zaman; `web` parametresiz yanıt masaüstü için değişmedi). Oturum yoksa
+  sayfa içinde giriş / kayıt. Sözlük `mt` + `hesap` (`data-dicts`).
+- Güvenlik: hesap sayfaları ve başlatıcı `ACCOUNT_CSP` / `LAUNCHER_CSP` (satır içi betik yok, `frame-src 'self'`, `frame-ancestors 'self'`);
+  robots.txt `Disallow: /web/` (portalda ayrıca `/uygulamalar`), site haritasına girmez.

@@ -11,7 +11,9 @@
 <meta property="og:url" content="https://sshmasters.com/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/kit.css">
+<link rel="stylesheet" href="/mtsite.css">
 <script src="/kit.js" data-site="sm" defer></script>
+<script src="/mtsite.js" defer></script>
 <style>
   :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
   * { box-sizing: border-box; }
@@ -106,7 +108,7 @@
       SSH Master
     </a>
     <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#kisayollar">Kısayollar</a><a href="#nasil">Başlarken</a><a href="#indir">İndir</a></nav>
-    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Hesap oluştur</b></span></a><span data-mt-button></span>
+    <span data-kit-controls></span><span class="mt-auth" data-mt-auth="sm" data-web="/web/sshmaster/"><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/kayit"><span><b>Kayıt ol</b></span></a></span><span data-mt-button></span>
   </div>
 </header>
 
@@ -118,16 +120,32 @@
         <h1>Tüm sunucularınız <em>tek pencerede</em>.</h1>
         <p class="lead">SSH Master; bağlantı kartları ve klasörler, tam özellikli terminal, bölünmüş görünüm, komut kısayolları ve SFTP dosya yöneticisini tek Windows uygulamasında toplar.</p>
         <div class="cta">
-          <a class="store" href="/kayit">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
-            <span><small>Hesap oluşturun</small><b>İndirin</b></span>
-          </a>
+          <a class="store web" href="/web/sshmaster/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span><small>Tarayıcıda, kurulumsuz</small><b>Web'de aç</b></span></a>
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Windows için</small><b>İndir (.exe)</b></span></a>
           <span class="note">Windows için · Hesabım sayfanızdan kişiye özel indirme</span>
         </div>
       </div>
       <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/03-bolunmus-terminal-gece.webp" width="1600" height="1000" alt="Bölünmüş terminal" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/04-bolunmus-terminal-gunduz.webp" width="1600" height="1000" alt="Bölünmüş terminal" loading="lazy"></div><!--/HERO-->
     </div>
   </section>
+
+  <section class="alt" id="web">
+    <div class="wrap">
+      <h2>Tarayıcıda ya da masaüstünde</h2>
+      <p class="sub">Aynı Mastertool hesabıyla iki yoldan çalışın. İkisi de aynı hesaba girer; hangisinin işinize uyduğunu siz seçin.</p>
+      <div class="webdesk">
+        <div class="wd"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Web sürümü</h3>
+          <p>Kurulum gerektirmez; tarayıcınızda açılır, Mastertool hesabınızla giriş yaparsınız.</p>
+          <ul><li>İşlemler Mastertool sunucusu üzerinden yürür.</li><li>Sunucu yalnız internetten erişilebilen adreslere ulaşır; yerel ağınızı, VPN'inizi ve bilgisayarınızdaki dosyaları doğrudan göremez.</li></ul>
+          <div class="go"><a href="/web/sshmaster/">Web'de aç →</a></div></div>
+        <div class="wd"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Masaüstü (Windows)</h3>
+          <p>Bilgisayarınızda çalışır; yerel ağınıza, VPN'e ve dosyalarınıza doğrudan erişir.</p>
+          <ul><li>Hesabım sayfanızdaki size özel bağlantıdan indirin.</li><li>Master Tool ile tüm Mastertool uygulamalarını tek pencereden kurup açın.</li></ul>
+          <div class="go"><a href="/hesabim">İndir (.exe) →</a></div></div>
+      </div>
+    </div>
+  </section>
+
 
   <section id="ozellikler">
     <div class="wrap">
@@ -283,10 +301,8 @@
       <h2>SSH Master'ı edinin</h2>
       <p class="sub" style="margin-left:auto;margin-right:auto">Hesap oluşturun, size özel bağlantıdan indirin. Bağlantılarınız cihazlarınız arasında uçtan uca şifreli eşitlenir.</p>
       <div class="cta">
-        <a class="store" href="/kayit">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
-            <span><small>Hesap oluşturun</small><b>İndirin</b></span>
-          </a>
+        <a class="store web" href="/web/sshmaster/"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span><small>Tarayıcıda, kurulumsuz</small><b>Web'de aç</b></span></a>
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Windows için</small><b>İndir (.exe)</b></span></a>
       </div>
     </div>
   </section>

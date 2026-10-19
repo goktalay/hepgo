@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Tool — Uygulamalar</title>
+<meta name="description" content="Master Tool web: tüm Mastertool uygulamalarını tarayıcıda açın ya da Windows için indirin.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b0f17">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<link rel="stylesheet" href="/uygulamalar.css">
+<script src="/kit.js" data-site="mt" data-dicts="hesap" defer></script>
+</head>
+<body data-portal="{{PORTAL}}">
+<div class="mtl" id="app" data-noi18n>
+  <header class="topbar">
+    <a class="brand" href="/uygulamalar" id="home">
+      <img src="/brand/mt.svg" alt="" width="38" height="38">
+      <div>
+        <div class="brand-name">Master Tool</div>
+        <div class="brand-sub" id="stats"></div>
+      </div>
+    </a>
+    <span class="grow"></span>
+    <div class="actions">
+      <span data-kit-controls></span>
+      <button class="btn ghost icon hidden" id="btnRefresh" type="button"></button>
+      <button class="account-chip hidden" id="btnAccount" type="button"><span class="ac-avatar"></span><span class="ac-name"></span></button>
+      <a class="mt-link" href="/" id="portal"><img src="/brand/mt.svg" alt=""><span>mastertool.download</span></a>
+    </div>
+  </header>
+  <nav class="tabbar hidden" id="tabbar"></nav>
+  <main class="content" id="content"><div class="empty-note">Yükleniyor…</div></main>
+  <div class="frames" id="frames"></div>
+</div>
+<script src="/uygulamalar.js"></script>
+</body>
+</html>

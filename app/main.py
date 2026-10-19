@@ -35,7 +35,7 @@ async def lifespan(app):
     from . import cfd
     cfd.recover_on_start()   # yarım kalan CFD koşuları 'failed', kuyruktakiler sürer
     from . import semis
-    with db.connect() as conn:   # CAYMAZ V3: V2 olan firmada ürün ağacı + yeni parçaların G-code'u (bir kez; idempotent)
+    with db.connect() as conn:   # CAYMAZ V3 / V4: V2 olan firmada ürün ağaçları + yeni parçaların G-code'u (bir kez; idempotent)
         try:
             semis.ensure_versions(conn)
         except Exception as e:   # noqa: BLE001

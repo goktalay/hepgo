@@ -9,7 +9,7 @@ Her ürün tipi bir şemaya bağlıdır; şema, uçağın parçalarını ve çiz
 from fastapi import HTTPException
 
 from . import plane as caymaz
-from . import plane_v2, plane_v3, semis, spares
+from . import plane_v2, plane_v3, plane_v4, semis, spares
 
 class CustomSchema:
     """Ürün Yönetimi'nden açılan ürün: çizim şeması yok (yapısı ürün ağacı ve reçeteyle tanımlanır)."""
@@ -32,6 +32,7 @@ SCHEMAS = {
     'caymaz': {'module': caymaz, 'title': 'CAYMAZ delta kanat'},
     'caymaz-v2': {'module': plane_v2, 'title': 'CAYMAZ V2 delta kanat (büyük kapaklar, karbon takviye, kelepçeli kanat)'},
     'caymaz-v3': {'module': plane_v3, 'title': 'CAYMAZ V3 delta kanat (V2 + yeniden çizilen L4, R4 ve gövde 01)'},
+    'caymaz-v4': {'module': plane_v4, 'title': 'CAYMAZ V4 delta kanat (V2 + yeniden çizilen L2, L3, R2, R3, burun 08, 09 ve servo kapağı)'},
     **spares.SCHEMAS,   # yedek parçalar: tek parçalı şemalar (kamera tutucu, klipsler)
     **semis.SCHEMAS,    # yarı mamuller: CAYMAZ'ın dört ana yapısı (sol/sağ kanat, gövde, elektronik)
 }

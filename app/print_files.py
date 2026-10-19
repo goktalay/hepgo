@@ -91,4 +91,12 @@ PRINT_FILES = {
     'L4-V3': ('CAYMAZ - L4V3_ABS_8h38m', 518),
     'R4-V3': ('CAYMAZ - R4V3_ABS_8h36m', 516),
     '01-V3': ('CAYMAZ O1 - V3_ABS_1d2h27m', 1587),
+    # CAYMAZ V4 (2026-10-19): L2, L3, R2, R3 kanat parçaları, 08 / 09 burun parçaları ('V3' çizimleri) ve servo kapağı
+    'L2-V4': ('L2 - V3 _ABS_7h33m', 453),
+    'L3-V4': ('L3 - V3_ABS_7h4m', 424),
+    'R2-V4': ('R2 - V3_ABS_7h41m', 461),
+    'R3-V4': ('R3 - V3_ABS_7h7m', 427),
+    '08-V4': ('O8 - V3_ABS_16h46m', 1006),
+    '09-V4': ('O9 - V3_ABS_4h10m', 250),
+    'SERVO-KAPAK-V2': ('SERVO KAPAK - V2_ABS_7h0m', 420),
 }

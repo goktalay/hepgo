@@ -14,7 +14,8 @@
 import { api } from '../api.js';
 import { clear, confirmDialog, field, fmtDateTime, fmtDuration, goBack, h, modal, onLeave, pref, segmented, setPref, statStrip, toast, toastError, t as tr } from '../ui.js';
 import { ATTRIBUTION, CAMERA_MODES, WORLD_DEFAULTS, createFlightSim3D } from './flightsim3d.js';
-import { createMilHud } from './flightsim_hud.js';   // askeri tarz FPV HUD (Dron kamerası kipi; H aç/kapa)
+import { createMilHud } from './flightsim_hud.js';   // askeri tarz HUD (Gimbal kamerası 'fpv' kipi; H aç/kapa)
+import { createFpvOsd, createFpvPrefs } from './flightsim_fpv_osd.js';   // §22: GERÇEK FPV ('pilot') OSD + tercihler (fs.fpv.*, fs.cam)
 import { G3D_LOGO } from './flightsim_g3d.js';   // Google 3B kipi (§11): logo yolu; kütüphane yalnız kip seçilince dinamik yüklenir
 import { modelPicker } from './flightsim_models.js';   // görsel model kütüphanesi (§12): kart ızgarası, yükleme, tarayıcıda STEP→GLB, yönelim paneli
 import { clientsCard } from './flightsim_clients.js';   // CAYSIM masaüstü istemcileri kartı (docs/caysim-api.md §9): kod bir kez gösterilir, rekey, sil
@@ -84,6 +85,7 @@ export async function render(view, params, ctx, extra = {}) {
   const [path, qs] = joined.split('?');
   const sp = new URLSearchParams(qs || '');
   const mock = extra.mock || sp.get('mock') === '1';
+  if (mock && sp.get('bank')) MOCK.bankDeg = Number(sp.get('bank')) || null;   // teşhis (§22 FPV görüntüleri): sahte seyir dönüşünde yatış açısı (°); yarıçap V²/(g·tan)
   const parts = path.split('/').filter(Boolean);   // ['sim', '<id>']
   const sid = parts[1] || null;
   const canWrite = !!(ctx.user?.master || extra.m?.can?.command || (ctx.user?.write_modules || []).includes('drone'));
@@ -762,6 +764,36 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const camBtns = CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));   // etiket ayrı çocuk: çeviri kataloğundan karşılığı bulunur
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
+  // §22 FPV (pilot) kipi ayarları — yalnız FPV'de görünür, TEK kapsül "FPV 120° ▾" (alt çubuk sığsın; kayıt kipinde oynatma çubuğu da var) → ses menüsü
+  // kalıbında açılır menü: OSD (O), Analog efekt (fs.fpv.analog), PiP takip kamerası (fs.fpv.pip), Pervane/burun görünür (fs.fpv.nose), FOV kaydırıcısı (tekerlek)
+  const fpvPrefs = createFpvPrefs();
+  const fpvRow = (label, title, get, set) => {
+    const inp = h('input', { type: 'checkbox', onchange: () => set(inp.checked) });
+    const row = h('label', { class: 'fs-audio-row fs-fpv-row', title }, inp, h('span', null, label));
+    row.__sync = () => { inp.checked = !!get(); };
+    return row;
+  };
+  const fpvRows = [
+    fpvRow('OSD', tr('FPV OSD aç/kapa (O)'), () => osd?.enabled, v => { osd?.setEnabled(v); drawFpvBtns(); }),
+    fpvRow(tr('Analog efekt'), tr('Analog FPV efekti: doygunluk, tarama çizgisi, mesafe/RSSI ile artan parazit'), () => fpvPrefs.analog, v => { fpvPrefs.setAnalog(v); osd?.setAnalog(v); sim?.setFpvAnalog(v); drawFpvBtns(); }),
+    fpvRow(tr('PiP takip kamerası'), tr('Resim içinde resim: sağ üstte takip kamerası (20 fps)'), () => fpvPrefs.pip, v => { fpvPrefs.setPip(v); sim?.setPip(v); drawFpvBtns(); }),
+    fpvRow(tr('Pervane/burun görünür'), tr('Pervane/burun görünür: kamera biraz geride, gövde ucu kadrajda'), () => fpvPrefs.nose, v => { fpvPrefs.setNose(v); sim?.setFpvNose(v); drawFpvBtns(); }),
+  ];
+  const fovInp = h('input', { type: 'range', min: 90, max: 150, step: 5, 'aria-label': 'FOV', oninput: () => { sim?.setPilotFov(Number(fovInp.value)); drawFpvBtns(); } });
+  const fovOut = h('b', { class: 'mono' }, '');
+  const fpvMenu = h('div', { class: 'fs-audio-menu fs-fpv-menu', hidden: true }, ...fpvRows, h('div', { class: 'fs-audio-row' }, h('span', null, 'FOV'), fovInp, fovOut),
+    h('div', { class: 'small muted' }, tr('O: OSD · tekerlek: FOV · C: kamera')));
+  const fpvFovTxt = h('span', { class: 'fs-fpv-fov' }, '');
+  const fpvBtn = h('button', { class: 'btn sm fs-fpv-btn', type: 'button', title: tr('FPV ayarları: OSD, analog efekt, PiP, burun, görüş açısı'), onclick: () => { fpvMenu.hidden = !fpvMenu.hidden; } }, 'FPV ', fpvFovTxt, ' ▾');
+  const fpvCtl = h('span', { class: 'fs-audio pill-group fs-fpv-ctl', hidden: true }, fpvBtn, fpvMenu);
+  const onDocClickFpv = e => { if (!fpvMenu.hidden && !fpvCtl.contains(e.target)) fpvMenu.hidden = true; };
+  document.addEventListener('click', onDocClickFpv, true);
+  const drawFpvBtns = () => {
+    fpvRows.forEach(r => r.__sync());
+    const fov = sim?.getPilotFov?.() ?? fpvPrefs.fov;
+    fovInp.value = String(fov); fovOut.textContent = `${fov}°`; fpvFovTxt.textContent = `${fov}°`;
+    fpvBtn.classList.toggle('primary', !!osd?.enabled);
+  };
   // §14 harekât paneli (flightsim_panel.js; iframe YOK): GÖKTUNGU dron kartı görünümünde TEK kart (başlık şeridi + PFD + telemetri karoları + İŞLEMLER +
   // Haberleşme konsolu) 3B'nin ÜSTÜNDE; "Panel" düğmesi / P tuşu gösterip gizler; gizliyken sade görünüm (eski HUD + alt çubuk komutları). Kayıt/sahte kipte hub yok: PFD/telemetri çalışır, İŞLEMLER yok
   let ops = null;
@@ -785,7 +817,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     timeLbl, clockLbl) : null;
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
-    gimbalLbl, mhudBtn, opsBtn,
+    gimbalLbl, mhudBtn, fpvCtl, opsBtn,
     replay ? playBar : h('span', { class: 'spacer' }),
     canWrite && !replay ? h('div', { class: 'pill-group fs-cmds' },   // .fs-cmds: harekât paneli açıkken gizli (komutlar panelden)
       armBtn, modeSel,
@@ -814,7 +846,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   // §17 ekran kaydı: rozet üst şeride, anahtar alt çubuğa; 3B hazır olunca başlar (Başlat'ta alınan ekran paylaşımı akışı varsa o, yoksa 3B+HUD tuvali)
   const recText = () => [tr('Uçuş Simülatörü kaydı'), replay ? `${tr('kayıttan oynatma')}${session.replay?.file_name ? ` · ${session.replay.file_name}` : ''}` : [tr(TYPE_NAME[type] || type), session.center?.name, launch ? tr(launchLabel(launch, tr)) : null].filter(Boolean).join(' · '),
     clock(rec?.seconds ?? 0), fmtDateTime(session.created_at)].filter(Boolean).join(' · ');
-  const rec = mock || !canWrite ? null : createRecorder(stage, { sid, tr, getSim: () => sim, getHudCanvas: () => stage.querySelector('.fs-mhud'), audio, text: recText, onEvent: (t, sev) => addEvent(t, sev) });
+  const rec = mock || !canWrite ? null : createRecorder(stage, { sid, tr, getSim: () => sim, getHudCanvas: () => stage.querySelector('.fs-mhud'), getOsdCanvas: () => stage.querySelector('.fs-osd'), audio, text: recText, onEvent: (t, sev) => addEvent(t, sev) });   // §22: FPV OSD da yedek yolda kayda girer; kayıt kamerayı değiştirmez
 
   // Tam alan yerleşimi (Canlı Uçuş iframe kalıbı): main#view mutlak konumlu, scroller kaydırmaz
   view.classList.add('ops-view');
@@ -839,13 +871,19 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   };
 
   // ---------- 3B ----------
-  let sim = null, last = null, socket = null, destroyed = false, rc = null, worldReady = false, milHud = null;   // rc: sanal kumanda (virtualRC) ya da null
+  let sim = null, last = null, socket = null, destroyed = false, rc = null, worldReady = false, milHud = null, osd = null;   // rc: sanal kumanda (virtualRC) ya da null
   let lastRouteToast = '', lastRouteToastAt = 0;   // §18: aynı MP görev bildirimi 3 sn içinde tekrar toast olmaz
-  // Askeri FPV HUD bağlamı: getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
+  // Askeri HUD bağlamı (gimbal kamerası): getter'lar her karede okunur (3B'nin render ettiği yönelim, gimbal, çarpışma)
   const hudCtx = { world, session, replay, launch, fov: 78, t0: Date.parse(session.created_at) || Date.now(),
     get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; } };
   milHud = createMilHud(stage, hudCtx, { tr });
   mhudBtn.classList.toggle('primary', milHud.enabled);
+  // §22 FPV OSD bağlamı (pilot kamerası): yönelim 3B'den, FOV/PiP dikdörtgeni 3B'den, sanal kumanda açıkken alt satırlar yukarı
+  const osdCtx = { session, replay, t0: hudCtx.t0,
+    get pose() { return sim?.getPose?.() || null; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; },
+    get fov() { return sim?.getPilotFov?.() ?? fpvPrefs.fov; }, get pip() { return !!sim?.getPip?.(); }, get pipRect() { return sim?.pipRect; }, get rcOn() { return !!rc; } };
+  osd = createFpvOsd(stage, osdCtx, { tr });
+  drawFpvBtns();
   const progMsg = p => {   // gerçek arazi yükleme ilerlemesi (3B tuval üstünde)
     if (destroyed) return;
     if (p.stage === 'done') {
@@ -887,7 +925,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
         simOrigin = { ...o };
         const s3 = await createFlightSim3D(mount, world, {
           type, model: session.model || session.airframe, launch, origin: { ...o },
-          onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; milHud?.setCamMode(mode); ops?.setFpv(mode === 'fpv'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); },   // FPV: harekât kartları gizli, askeri HUD kalır (§14)
+          camera: fpvPrefs.cam, pilotFov: fpvPrefs.fov, fpvAnalog: fpvPrefs.analog, fpvNose: fpvPrefs.nose,   // §22: oturumlar arası kalıcı kamera/FPV tercihleri (localStorage)
+          onPilotFov: v => { fpvPrefs.setFov(v); drawFpvBtns(); },
+          // Kamera değişimi: gimbal kamerası ('fpv') → gimbal etiketi + askeri HUD; FPV ('pilot') → OSD + FPV düğmeleri; ikisinde de harekât kartları gizli
+          // (kullanıcı: "kamera görünümünde kontrol panelim gizlensin"), sanal kumanda çubukları görünür kalır (§14/§22)
+          onCameraChange: mode => { camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; fpvCtl.hidden = mode !== 'pilot'; milHud?.setCamMode(mode); osd?.setCamMode(mode); ops?.setFpv(mode === 'fpv' || mode === 'pilot'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); fpvPrefs.setCam(mode); drawFpvBtns(); },
           onCollision: replay ? null : info => onCrash(info),   // kayıt: gerçek uçuş → çarpışma denetimi yok
           onProgress: progMsg,
           g3dKey: be.g3dKey,
@@ -899,7 +941,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
         if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, ...sim.terrainInfo });
         if (launch && session.launch?.phase) sim.setLaunchPhase(session.launch.phase);   // oturuma geç katılan izleyici: aşama sunucudan
         msg.hidden = true;
-        camBtns[0].classList.add('primary');
+        sim.setPip(fpvPrefs.pip);
+        camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === sim.getCamera()));   // kalıcı seçim (fs.cam) uygulanmış olabilir
+        drawFpvBtns();
         const disp = takeStashedStream();   // §17: Başlat'ta alınan ekran paylaşımı (varsa); kayıt tercihi açıksa hemen başla (HAZIR beklenmez)
         if (rec && (disp || recPrefs.on)) rec.start(disp).catch(() => {}); else disp?.getTracks().forEach(t => t.stop());
         return sim;
@@ -967,7 +1011,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const updateHud = t => {
     last = t;
     sim?.setTelemetry(t);
-    milHud?.update(t); audio.update(t); ops?.update(t);
+    milHud?.update(t); osd?.update(t); audio.update(t); ops?.update(t);
     const now = performance.now();
     if (now - hudAt < 80) return;
     hudAt = now;
@@ -1187,7 +1231,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     if (replay) window.removeEventListener('keydown', onKeyReplay);
     player?.dispose();
     socket?.close();
-    milHud?.dispose();
+    milHud?.dispose(); osd?.dispose();
     if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
     audio.dispose(); ops?.dispose();
     sim?.dispose();
@@ -1195,6 +1239,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     view.classList.remove('ops-view');
     scroller?.classList.remove('ops-scroll');
     document.removeEventListener('fullscreenchange', onFullChange);
+    document.removeEventListener('click', onDocClickFpv, true);
     window.removeEventListener('keydown', onKeyBack);
     document.body.classList.remove('immersive', 'fs-full');
   });
@@ -1363,7 +1408,7 @@ function createReplayPlayer(data, cb) {
 // MOCK: arka uç yokken yerel kinematik üretici (WS yerine). Oturumlar bellekte (sekme ömrü). Komutlar üreticiye uygulanır.
 // Kayıt kipi (mode 'replay'): sahte log listesi + 2 dakikalık sahte kare dizisi (kalkış, daire, iniş; MSG olayları).
 // ======================================================================
-const MOCK = { sessions: new Map(), seq: 0 };
+const MOCK = { sessions: new Map(), seq: 0, bankDeg: null };
 const SAMPLE_CENTERS = [
   { id: 1, name: 'Örnek Merkez · Akyurt', lat: 40.1305, lon: 33.0876, alt: 1050, location_name: 'Ankara' },
   { id: 2, name: 'Örnek Merkez · Kıyı', lat: 36.8841, lon: 30.7056, alt: 30, location_name: 'Antalya' },
@@ -1535,7 +1580,7 @@ class MockFlight {
     if (S.t > S.gcsAt && !this.s.gcs.connected) { this.s.gcs.connected = true; this.s.gcs.addr = '192.0.2.10:14550'; this.event('GCS bağlandı (192.0.2.10)'); }
     // Otomatik senaryo (komut gelmediyse): 4 sn sonra arm + kalkış
     if (S.auto && S.phase === 'ground' && S.t > 4) { this.cmd('takeoff', { alt: S.targetAlt }); S.auto = false; }
-    const V = this.plane ? 22 : 8, R = this.plane ? 450 : 150;
+    const V = this.plane ? 22 : 8, R = MOCK.bankDeg ? Math.max(20, V * V / (9.81 * Math.tan(MOCK.bankDeg * Math.PI / 180))) : this.plane ? 450 : 150;   // ?bank=20: yatış açısından yarıçap (teşhis)
     const hdg = S.yaw;   // yaw: kuzeyden saat yönü
     if (S.phase === 'takeoff' && S.armed) {
       if (this.plane) {
@@ -1569,7 +1614,7 @@ class MockFlight {
       const za = S.targetAlt + (this.plane ? 10 : 3) * Math.sin(S.t * 0.25);
       S.vz = (za - S.z) * 0.5;
       S.yaw = Math.atan2(S.vx, S.vy);
-      S.roll = this.plane ? Math.atan((V * V) / (r * g)) : 0.08 * Math.sin(S.t * 0.7);
+      S.roll = this.plane || MOCK.bankDeg ? Math.atan((V * V) / (r * g)) : 0.08 * Math.sin(S.t * 0.7);
       S.pitch = (this.plane ? 2 : 0) * Math.PI / 180 + S.vz * 0.02;
       S.thr = this.plane ? 55 : 48;
       S.x -= S.vx * dt; S.y -= S.vy * dt;   // aşağıda ortak entegrasyon ekler

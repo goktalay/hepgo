@@ -9125,6 +9125,16 @@ body.immersive .fs-nav { top: 12px; }
 .fs-stage.fs-mhud-on .fs-hud, .fs-stage.fs-mhud-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı HUD içinde */
 .fs-mhud-btn[hidden] { display: none; }
 
+/* ===== Uçuş Simülatörü — FPV OSD (flightsim_fpv_osd.js; yalnız FPV 'pilot' kipinde; §22) ===== */
+.fs-osd { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.fs-osd[hidden] { display: none; }
+.fs-stage.fs-osd-on .fs-hud, .fs-stage.fs-osd-on .fs-crash { display: none; }   /* sağ veri paneli ve ÇARPIŞMA bandı OSD içinde (kırmızı ÇARPIŞMA uyarısı) */
+.fs-fpv-ctl[hidden] { display: none; }
+.fs-fpv-menu { min-width: 240px; }
+.fs-fpv-menu .fs-fpv-row { cursor: pointer; }
+.fs-fpv-menu .fs-fpv-row input { accent-color: var(--primary); }
+.fs-fpv-fov { opacity: .75; font-size: 11px; }
+
 /* ===== Uçuş Simülatörü — YERLİ harekât paneli (§14; flightsim_panel.js): TEK KART, GÖKTUNGU dron kartı görünümü BİREBİR, iframe YOK =====
    Kullanıcı geri bildirimi: "paneller arasına boşluk koymuşsun; tek bir panel olacak, duruma göre küçülüp büyüyecek; orijinal CSS yapısına birebir
    uy". Kurallar static/ops/css/stil.css + hepgo.css'ten kopyalanıp .fs-pn altına kapsamlandı (kaynak sınıf adı her kuralın yanında):

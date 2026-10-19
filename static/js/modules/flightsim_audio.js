@@ -4,7 +4,8 @@
 //   15 m referans), FPV kokpit süzgeci (`fpvParams`), tercih/durum makinesi (`createAudioPrefs`: localStorage `fs.audio.on`, `fs.audio.vol`).
 // • Katman 2 (`createEngineAudio(stage, opts)`): tek AudioContext, osilatör/gürültü düğümleri BİR KEZ kurulur, her güncelleme yalnız
 //   AudioParam.setTargetAtTime (≤ 25 Hz) → CPU < %2. Uzaysal: PannerNode (equalpower, inverse 1/r) dinleyici = 3B kamera (`sim.cameraPose()`),
-//   kaynak = dron (`sim.position()`); FPV'de kaynak dinleyicide (kokpit), lowpass boğukluk + hızla artan rüzgâr. Doppler: radyal hıza göre
+//   kaynak = dron (`sim.position()`); gimbal kamerasında ('fpv') kaynak dinleyicide (kokpit), lowpass boğukluk + hızla artan rüzgâr; GERÇEK FPV'de ('pilot', §22)
+//   motor daha yakın/yüksek (×1,3, süzgeç açık) + hıza bağlı güçlü filtreli rüzgâr gürültüsü. Doppler: radyal hıza göre
 //   küçük frekans çarpanı (±%5 sınır). Çarpışma (crash bandı görünür): kısa çarpma + motor durması; "Sıfırla" ile yeniden.
 // Ses modelleri (tip = SITL TIP_ESLEME anahtarı):
 //   multirotor/hexarotor  4/6 pervane: her motor ayrı testere dalga (hafif farklı oran → "vızıltı" vuruşu), 2× kare (ESC/elektrik), bant geçiren
@@ -98,8 +99,12 @@ export const smoothFollow = (cur, target, dt, tauUp = TAU_UP, tauDown = TAU_DOWN
 };
 // Mesafe kazancı: ref'e kadar 1, sonra ref/d (inverse, rolloff 1); PannerNode ile aynı eğri (HUD/test için)
 export const distanceGain = (d, ref = REF_DISTANCE) => (d <= ref ? 1 : ref / d);
-// FPV kokpit: lowpass kesim (boğuk) ve rüzgâr kazancı (hızla artan, 40 m/s'de tam)
-export const fpvParams = airspeed => ({ lowpass: 900, wind: clamp(num(airspeed) / 40, 0, 1) * 0.5, windFreq: 500 + 35 * clamp(num(airspeed), 0, 60) });
+// Kamera kipine göre kokpit süzgeci: 'fpv' (gimbal kamerası) lowpass 900 Hz boğukluk + rüzgâr (40 m/s'de 0,5); 'pilot' (GERÇEK FPV, §22) motor daha
+// yakın/yüksek (boost 1,3; süzgeç açık 20 kHz) + hıza bağlı daha güçlü rüzgâr gürültüsü (35 m/s'de 0,8, frekans hızla yükselir); diğer kipler boost 1, rüzgâr 0.
+export const PILOT_BOOST = 1.3;
+export const fpvParams = (airspeed, mode = 'fpv') => (mode === 'pilot'
+  ? { lowpass: 20000, wind: clamp(num(airspeed) / 35, 0, 1) * 0.8, windFreq: 350 + 45 * clamp(num(airspeed), 0, 60), boost: PILOT_BOOST }
+  : { lowpass: 900, wind: clamp(num(airspeed) / 40, 0, 1) * 0.5, windFreq: 500 + 35 * clamp(num(airspeed), 0, 60), boost: 1 });
 // Doppler çarpanı: vr = radyal hız (m/s; + uzaklaşıyor) → f × (1 − 0,5·vr/343), ±%5 sınır (küçük, isteğe bağlı)
 export const dopplerFactor = vr => clamp(1 - 0.5 * num(vr) / 343, 0.95, 1.05);
 
@@ -276,11 +281,12 @@ export function createEngineAudio(stage, opts = {}) {
     const vol = prefs.effective();
     drawBtn();
     if (!G) { if (vol > 0) build(); if (!G) return; }
-    P(G.master.gain, crashed ? vol * 0.9 : vol, 0.08);
-    if (vol <= 0) return;   // sessizken parametre sürmeye gerek yok (CPU)
-    // uzaysal: dinleyici = kamera, kaynak = dron; FPV'de kaynak dinleyicide, boğuk + rüzgâr
+    // uzaysal: dinleyici = kamera, kaynak = dron; gimbal kamerası/FPV'de kaynak dinleyicide (kokpit); 'fpv' boğuk + rüzgâr, 'pilot' yakın/yüksek + güçlü rüzgâr (§22)
     const cam = sim?.getCamera?.() || 'follow';
-    const fpvOn = cam === 'fpv';
+    const fpvOn = cam === 'fpv' || cam === 'pilot';
+    const fp = fpvParams(t.airspeed ?? t.groundspeed, cam);
+    P(G.master.gain, (crashed ? vol * 0.9 : vol) * (fpvOn ? fp.boost : 1), 0.08);
+    if (vol <= 0) return;   // sessizken parametre sürmeye gerek yok (CPU)
     let doppler = 1, dist = 0;
     if (sim?.cameraPose && sim?.position) {
       const c = sim.cameraPose(), d = sim.position();
@@ -291,7 +297,6 @@ export function createEngineAudio(stage, opts = {}) {
       if (!fpvOn && prevDist != null && dt > 0) doppler = dopplerFactor((dist - prevDist) / dt);
       prevDist = dist;
     }
-    const fp = fpvParams(t.airspeed ?? t.groundspeed);
     P(G.fpv.frequency, fpvOn ? fp.lowpass : 20000, 0.1);
     P(G.wind.g.gain, fpvOn ? fp.wind : 0, 0.15); if (fpvOn) P(G.wind.fl.frequency, fp.windFreq, 0.2);
     const wob = 1 + tg.wobble * 0.015 * Math.sin(now / 90);   // gövde açısal hızı → ±%1,5 küçük titreme

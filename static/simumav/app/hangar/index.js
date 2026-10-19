@@ -7,6 +7,7 @@ import { screen, plusButton, btn, miniBtn, hSelector, statsBars, toast, toastErr
 import { stagger } from '../ui/transition.js';
 import { loadThree, makeStage, lights } from '../core/three.js';
 import { buildDrone, animateDrone, loadGlb, TYPE_TEMPLATE } from './procmodels.js';
+import * as sfx from '../ui/sfx.js';
 
 export const TYPES = ['multirotor', 'plane', 'heli', 'vtol', 'fpv', 'interceptor'];
 // hız / menzil / dayanıklılık / çeviklik (0–100)
@@ -70,6 +71,7 @@ export async function mount(root, ctx) {
       h('b', {}, d.name), h('small', {}, d.is_default ? `★ ${t('common.default')}` : (d.model_key?.startsWith('proc:') ? t('hangar.proc_model') : d.model_key || '')));
     const sw = h('i', { class: 'swatch on' }); sw.style.background = d.color || '#38bdf8'; sw.style.width = '22px'; sw.style.height = '22px';
     c.querySelector('.thumb').append(sw);
+    c.addEventListener('pointerenter', () => sfx.takeoff());   // kart hover: kalkış sesi
     return c;
   };
 
@@ -152,8 +154,9 @@ export async function mount(root, ctx) {
       try {
         const d = await api.post('/api/hangar', { name, type: draft.type, model_key: draft.model_key, color: draft.color });
         setStep(3);
-        // Hangara iniş animasyonu
-        const stage3 = h('div', { class: 'model-stage land-anim' });
+        // Hangara iniş animasyonu: model yukarıdan iner, yere değince toz halkası + ışık patlaması + iniş sesi
+        const stage3 = h('div', { class: 'model-stage land-anim' }, h('span', { class: 'land-dust' }), h('span', { class: 'land-dust d2' }), h('span', { class: 'land-flash' }));
+        sfx.takeoff(); setTimeout(() => sfx.land(), 650);
         clear(body, stage3, h('h2', { class: 'title xl appear' }, name), h('p', { class: 'sub appear' }, t('hangar.landed')),
           h('div', { class: 'btn-row appear' }, btn(t('hangar.to_hangar'), () => { wizDispose?.(); wizDispose = null; mount(root, ctx); }, 'primary lg'), btn(t('common.menu'), () => ctx.go('menu'), 'ghost')));
         if (pv) { stage3.append(prevHost); pv.stage.resize(); pv.setModel({ ...d, type: draft.type, model_key: draft.model_key, color: draft.color }); }

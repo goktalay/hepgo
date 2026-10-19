@@ -66,14 +66,14 @@ GAMES['vf']['desc'] = {'tr': "Volfied'in dokunmatik yeniden doğuşu: alanı ele
                        'fr': "Renaissance tactile de Volfied : conquérez le terrain, encerclez les aliens", 'de': 'Volfied neu für Touch: Fläche erobern, Aliens einkesseln',
                        'es': 'El renacer táctil de Volfied: conquista el campo, acorrala a los aliens', 'ar': 'ولادة جديدة للمس للعبة Volfied: استولِ على الساحة وحاصر الفضائيين',
                        'zh': 'Volfied 的触屏新生：占领区域，围困外星人', 'ru': 'Volfied заново для сенсора: захватывай поле, окружай пришельцев'}
-GAMES['sv']['desc'] = {'tr': 'Gerçek ArduPilot fiziğiyle dron simülasyonu: hangar, mürettebat, parkur, görev ve Mission Planner bağlantısı',
-                       'en': 'Drone simulation on real ArduPilot physics: hangar, crew, tracks, missions and a Mission Planner link',
-                       'fr': 'Simulation de drone sur la physique ArduPilot : hangar, équipage, circuits, missions et liaison Mission Planner',
-                       'de': 'Drohnensimulation mit echter ArduPilot-Physik: Hangar, Crew, Strecken, Missionen und Mission-Planner-Anbindung',
-                       'es': 'Simulación de drones con física ArduPilot real: hangar, tripulación, circuitos, misiones y enlace a Mission Planner',
-                       'ar': 'محاكاة طائرات بدون طيار بفيزياء ArduPilot الحقيقية: الحظيرة والطاقم والمسارات والمهام واتصال Mission Planner',
-                       'zh': '基于真实 ArduPilot 物理的无人机模拟：机库、机组、赛道、任务与 Mission Planner 连接',
-                       'ru': 'Симуляция дронов на реальной физике ArduPilot: ангар, экипаж, трассы, миссии и связь с Mission Planner'}
+GAMES['sv']['desc'] = {'tr': 'ArduPilot SITL fiziği, Google 3B dünyası ve Mission Planner bağlantısıyla tarayıcıda çalışan dron simülasyon oyunu',
+                       'en': 'A drone simulation game that runs in the browser on ArduPilot SITL physics, the Google 3D world and a Mission Planner link',
+                       'fr': 'Jeu de simulation de drone dans le navigateur : physique ArduPilot SITL, monde 3D de Google et liaison Mission Planner',
+                       'de': 'Drohnen-Simulationsspiel im Browser mit ArduPilot-SITL-Physik, Googles 3D-Welt und Mission-Planner-Anbindung',
+                       'es': 'Juego de simulación de drones en el navegador con física ArduPilot SITL, el mundo 3D de Google y enlace a Mission Planner',
+                       'ar': 'لعبة محاكاة طائرات بدون طيار تعمل في المتصفح بفيزياء ArduPilot SITL وعالم Google ثلاثي الأبعاد واتصال Mission Planner',
+                       'zh': '在浏览器中运行的无人机模拟游戏：ArduPilot SITL 物理、Google 3D 世界与 Mission Planner 连接',
+                       'ru': 'Игра-симулятор дрона в браузере: физика ArduPilot SITL, 3D-мир Google и связь с Mission Planner'}
 GAME_FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')          # oyun dizinindeki yol parçaları (gizli dosya ve .. yok)
 GAME_MIME = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
              '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json',
@@ -1585,8 +1585,11 @@ for _k, _g in GAMES.items():   # oyun simgeleri: static/mt/img/<icon>.svg|.png|-
 @app.get('/oyunlar/{slug}')
 def page_game_root(slug: str, request: Request):
     """/oyunlar/<slug> → /oyunlar/<slug>/ (oyunun göreli yolları dizin kökü ister)."""
-    if site_of(request) != 'mt' or not any(v['slug'] == slug for v in GAMES.values()):
+    k = next((k for k, v in GAMES.items() if v['slug'] == slug), None)
+    if site_of(request) != 'mt' or not k:
         return HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
+    if GAMES[k].get('site'):   # kendi sitesinde çalışan oyun (SIMUMAV): portal yolu siteye gider
+        return RedirectResponse(game_url(k), status_code=307)
     return RedirectResponse(f'/oyunlar/{slug}/', status_code=308)
 
 
@@ -1598,6 +1601,8 @@ def page_game(slug: str, path: str, request: Request, lang: str = ''):
     nf = HTMLResponse(_page_msg(request, 'Sayfa bulunamadı', '<a href="/">Ana sayfaya dönün</a>.'), status_code=404)
     if site_of(request) != 'mt' or not k:
         return nf
+    if GAMES[k].get('site'):   # kendi sitesinde çalışan oyun (SIMUMAV): /oyunlar/<slug>/ → site, /oyunlar/<slug>/tanitim/ → tanıtım (307)
+        return RedirectResponse(game_url(k, promo=path.startswith('tanitim')), status_code=307)
     root = settings.STATIC_DIR / 'mt' / 'oyunlar' / slug
     if path == 'tanitim':
         return RedirectResponse(f'/oyunlar/{slug}/tanitim/', status_code=308)

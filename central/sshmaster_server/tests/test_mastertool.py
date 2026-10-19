@@ -475,12 +475,19 @@ def main():
         # SIMUMAV (sv): kendi sitesinde çalışan oyun — url/site simumav.com, ikonlar, açıklama 8 dil
         sv = cat[-1]
         assert sv['app'] == 'sv' and sv['name'] == 'SIMUMAV' and sv['kind'] == 'web' and sv['group'] == 'games' and sv['url'] == 'https://simumav.com/' and sv['site'] == 'https://simumav.com/', sv
-        assert len(sv['description']) == 8 and sv['description']['en'].startswith('Drone simulation')
+        assert set(sv['description']) == {'tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'} and sv['description']['en'].startswith('A drone simulation game') and 'SITL' in sv['description']['tr']
+        assert {'app', 'name', 'group', 'kind', 'url', 'site', 'icon_svg', 'icon_png', 'description'} <= set(sv) and sv['icon_svg'] == '/brand/sv.svg' and sv['icon_png'] == '/brand/sv.png'
         assert c.get('/brand/sv.svg').headers['content-type'] == 'image/svg+xml' and c.get('/brand/sv.png').status_code == 200 and c.get('/brand/sv-512.png').status_code == 200
+        assert 'sv' not in [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']]   # sürüm kapısı oyunların tümünü kapsar
+        # portal yolları kendi sitesine 307: /oyunlar/simumav, /oyunlar/simumav/, /oyunlar/simumav/tanitim/ (yalnız mastertool.download)
+        for pth in ('/oyunlar/simumav', '/oyunlar/simumav/', '/oyunlar/simumav/tanitim', '/oyunlar/simumav/tanitim/', '/oyunlar/simumav/index.html'):
+            r = c.get(pth, headers=MTH, follow_redirects=False); assert r.status_code == 307 and r.headers['location'] == 'https://simumav.com/', (pth, r.status_code)
+        assert c.get('/oyunlar/simumav/', headers={'Host': 'sshmasters.com'}, follow_redirects=False).status_code == 404
         # Hesabım: oyunlar ayrı listede (apps bozulmaz), profil durumu
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()
         assert {a['app'] for a in acc['apps']} == set(base_apps) and acc['games'][0]['app'] == 'vf' and acc['games'][0]['has_profile'] is True
+        assert [g['app'] for g in acc['games']] == ['vf', 'sv'] and acc['games'][1]['has_profile'] is False and acc['games'][1]['url'] == 'https://simumav.com/'   # SIMUMAV kartı (sv_profiles henüz yok)
         acc2 = c2.get('/api/mt/account').json(); assert acc2['games'][0]['has_profile'] is False
         c.post('/api/mt/auth/logout', headers=W)
         # ---- SIMUMAV hesap servisi tarafı: Bearer /api/sv/me (verified), sv_profiles (kullanıcı Bearer + sunucu X-Simumav-Secret), CORS yalnız sv
@@ -496,6 +503,9 @@ def main():
         assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': 999999, 'profile': {}}).status_code == 404
         assert g.put('/api/vf/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {}}).status_code == 401   # yalnız sv
         assert g.get('/api/sv/profile', headers=SV).json()['profile'] == {'flights': 3, 'hours': 1.5}
+        c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})   # Hesabım › Oyunlar: SIMUMAV profili artık kayıtlı
+        assert [(x['app'], x['has_profile']) for x in c.get('/api/mt/account').json()['games']] == [('vf', True), ('sv', True)]
+        c.post('/api/mt/auth/logout', headers=W)
         # Merkez › Mastertool: SIMUMAV sunucusunun yazdığı özet admin yanıtında games.sv; VOLFAI profili (hiScore/levels.parkurs) games.vf
         g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {
             'pilot': 'Eski', 'pilots': 2, 'drones': 3, 'flights': 7, 'hours': 2.25, 'last_flight_at': '2026-10-18T10:00:00', 'version': '1.4.0', 'updated_at': 'x'}})
@@ -625,9 +635,12 @@ def main():
         assert sm3.count('<loc>https://mastertool.download/oyunlar/volfai/tanitim/') == 8, sm3.count('/oyunlar/')
         home = c.get('/', headers=MTH).text
         assert 'id="oyunlar"' in home and 'href="/oyunlar/volfai/tanitim/"' in home and '/brand/vf.svg' in home
-        for lang in ('en', 'ar', 'zh', 'ru'):   # tanıtım sayfasının ana metinleri sözlükte
+        assert 'href="https://simumav.com/"' in home and '/brand/sv.svg' in home and '<h3>SIMUMAV</h3>' in home and 'Oyna → · Tanıtım →' in home   # SIMUMAV kartı
+        sv_p = re.search(r'/brand/sv\.svg" alt=""><h3>SIMUMAV</h3>\s*<p>([^<]+)</p>', home).group(1)
+        for lang in ('en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'):   # tanıtım sayfasının ve ana sayfa oyun kartlarının metinleri sözlükte (8 dil)
             d = c.get(f'/i18n/mt.{lang}.json').json()
-            assert all(x in d for x in ('Neden VOLFAI', 'HEMEN OYNA', 'Oyunlar', 'Koruma halkası')), lang
+            assert all(x in d for x in ('Neden VOLFAI', 'HEMEN OYNA', 'Oyunlar', 'Koruma halkası', 'Oyna → · Tanıtım →', sv_p)), lang
+        assert c.get('/sitemap.xml', headers=MTH).text.count('simumav') == 0   # dış site; site haritasında yalnız portalın kendi sayfaları
 
         # ---- son kullanıcı hiçbir yerde iç adres görmez
         for root, _, files in os.walk(settings.STATIC_DIR):

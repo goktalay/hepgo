@@ -11,7 +11,7 @@ view.setAttribute('data-noi18n', '');
 const SITE = document.body.dataset.site || 'sm';
 const BRAND = document.body.dataset.brand || SITE;
 const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: 'Mastertool' };
-const GAME_URLS = { vf: '/oyunlar/volfai/' };   // web oyunları: ?app=vf ile gelen giriş / kayıt sonrası dönüş adresi
+const GAME_URLS = { vf: '/oyunlar/volfai/', sv: 'https://simumav.com/' };   // web oyunları: ?app=vf|sv ile gelen giriş / kayıt sonrası dönüş adresi (sv kendi sitesinde)
 const SNAME = NAMES[SITE] || 'Mastertool';
 const API = '/api/mt';
 const AQ = BRAND !== SITE ? `?app=${BRAND}` : '';   // portalda ürün markası sayfalar arasında korunur

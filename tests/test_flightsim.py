@@ -1836,6 +1836,155 @@ def runs_testleri(a, c1, sitl, mon):
     print('  simülasyon kayıtları (§21) testleri geçti')
 
 
+def guc_testleri(a, c1, sitl, mon):
+    """§23 güç ve yakıt: saf model (yakıt L/dk, batarya Wh, SIM_Plane tam gaz hızı ↔ SIM_PLN_THR_MUL, hız parametreleri, GucDurumu adımı/bitiş),
+    doğrulama/varsayılanlar (CAYMAZ; kopterde yakıt yok), dron kaydı seçenekleri (GET/PUT sim-power; öneri), sihirbaz gövdesi `power` (400'ler),
+    `speed` komutu (SIM_SPEEDUP; sahte kinematik hızlanır, tele.speedup), oturumda yakıt/batarya düşüşü + bitince kırmızı olay + `warn`, summary/run
+    satırı alanları, ölçümlerin dron kaydına yazılması ve sonraki öneri; sahte kipte itki ölçeği desteği yok → hız parametreleri yalnız ArduPilot."""
+    from app import db, drone_params, drone_sitl, flightsim_mission, flightsim_power as P
+    S = '/api/drone/sim/sessions'
+    # --- saf fonksiyonlar ---
+    assert abs(P.plane_tam_gaz_hizi() - 31.85) < 0.1, P.plane_tam_gaz_hizi()                      # stok SIM_Plane tam gaz seviye hızı
+    mul = P.thr_mul_icin(45)
+    assert 1.95 < mul < 2.05 and abs(P.plane_tam_gaz_hizi(mul) - 45) < 0.05, (mul, P.plane_tam_gaz_hizi(mul))   # hız √mul ile ölçeklenir
+    assert P.thr_mul_icin(P.plane_tam_gaz_hizi()) == 1.0 and P.thr_mul_icin(0) == 1.0
+    hp = dict(P.hiz_parametreleri(45))
+    assert hp == {'AIRSPEED_MAX': 45.0, 'AIRSPEED_CRUISE': 24.5, 'THR_MAX': 100.0, 'SIM_PLN_THR_MUL': mul}, hp   # cruise = v × 12/22 (ArduPlane varsayılan oranı)
+    hp = dict(P.hiz_parametreleri(45, [{'name': 'AIRSPEED_MAX', 'value': 30}, {'name': 'AIRSPEED_CRUISE', 'value': 18}], itki_olcegi=False))
+    assert hp == {'AIRSPEED_MAX': 45.0, 'AIRSPEED_CRUISE': 27.0, 'THR_MAX': 100.0}, hp   # kayıtlı oran 18/30 korunur; yamasız ikilide çarpan yok
+    assert dict(P.hiz_parametreleri(45, {'AIRSPEED_MIN': 30}))['AIRSPEED_CRUISE'] == 32.0 and P.hiz_parametreleri(None) == []
+    assert abs(P.yakit_lpm(45, 100, 25) - 0.108) < 1e-9 and abs(P.yakit_lpm(45, 0, 25) - 0.054) < 1e-9 and P.yakit_lpm(45, 50, 0) == 0   # (162 km/h ÷ 60) ÷ 25 × (0,5+0,5·gaz)
+    assert P.batarya_wh(10000, 4) == 148.0 and P.servo_joule([1600, 1500], [1500, 1500]) == 0.05 and P.servo_joule([0, 1500], [1500, 1500]) == 0
+    assert P.olculen_km_per_l(300, 0.02) == 15.0 and P.olculen_km_per_l(299, 0.02) is None and P.olculen_km_per_l(5000, 0.01) is None
+    assert P.ortalama_w(0.5, 60) == 30.0 and P.ortalama_w(0.5, 59) is None
+    # doğrulama + varsayılanlar
+    d = P.dogrula(None, 'sabit_kanat')
+    assert d == {'max_speed_ms': 45.0, 'fuel_l': 5.0, 'fuel_km_per_l': 25.0, 'elec_cells': 4, 'elec_mah': 10000.0, 'elec_w': 30.0}, d
+    assert P.dogrula({'max_speed_ms': 60}, 'multirotor')['max_speed_ms'] is None and P.dogrula(None, 'multirotor')['fuel_l'] == 0.0
+    assert P.dogrula({'fuel_l': 7, 'elec_cells': 6.4}, 'vtol', {'fuel_km_per_l': 18.5, 'elec_w': 42})['fuel_km_per_l'] == 18.5 and P.dogrula({'elec_cells': 6.4}, 'vtol')['elec_cells'] == 6
+    for kotu in ({'fuel_l': -1}, {'elec_cells': 0}, {'max_speed_ms': 'hızlı'}, {'elec_mah': 10}, {'fuel_km_per_l': 0}, 5):
+        try:
+            P.dogrula(kotu, 'sabit_kanat'); raise AssertionError(kotu)
+        except ValueError:
+            pass
+    # GucDurumu: 10 Hz sentetik telemetri (armed 1 sn sonra, 40 m/s, gaz %80) 60 sn → yakıt/batarya/mesafe; 0,05 L tank 34,7 sn'de biter
+    # (L/dk = (144 km/h ÷ 60) ÷ 25 × 0,9 = 0,0864); 1S 100 mAh (0,37 Wh) @ 20 W + servo 60 sn'de bitmez; zaman kaynağı SITL ms
+    g = P.GucDurumu({'max_speed_ms': 45, 'fuel_l': 0.05, 'fuel_km_per_l': 25, 'elec_cells': 1, 'elec_mah': 100, 'elec_w': 20})
+    biten = []
+    for i in range(601):
+        biten += g.adim({'armed': i >= 10, 'groundspeed': 40.0, 'throttle': 80.0, 'servo': [1500 + 100 * (i % 2), 1500]}, i * 100)
+    assert biten == ['fuel'] and 34 < g.fuel_empty_t < 36.5, (biten, g.fuel_empty_t)
+    t = g.tele_alanlari()
+    assert t['speedup'] == 1.0 and t['fuel'] == {'l': 0.0, 'pct': 0.0, 'lpm': round(0.0864, 4), 'range_km': 0.0, 'empty': True} and t['elec']['cells'] == 1, t
+    assert abs(g.dist_m - 40.0 * 59.1) < 1e-6 and abs(g.armed_s - 59.1) < 1e-6 and abs(g.time_s - 60.0) < 1e-6, (g.dist_m, g.armed_s, g.time_s)   # armed adım 10…600 = 591 × 0,1 sn
+    assert abs(g.fuel_used - 0.05) < 1e-9 and 0.33 < g.wh_used < 0.37 and 19 < t['elec']['w'] < 24 and t['elec']['empty'] is False, (g.fuel_used, g.wh_used, t['elec'])
+    o = g.ozet()
+    assert o['fuel']['start_l'] == 0.05 and o['fuel']['km_per_l'] == round(2.364 / 0.05, 2) and o['elec']['wh_cap'] == 0.37 and o['max_speed_seen'] == 40.0 and o['speedup'] == {'max': 1.0, 'changes': 0, 'last': 1.0}, o
+    assert 'elec_w_last' in P.drona_yazilacaklar(o) and 'fuel_km_per_l_last' in P.drona_yazilacaklar(o), P.drona_yazilacaklar(o)   # mesafe 2,36 km, yakıt ≥ 0,02 L, süre ≥ 60 s
+    g.sifirla_zaman(); assert g.adim({'armed': True, 'groundspeed': 40.0, 'throttle': 80.0}, 0) == [] and g.adim({'armed': True, 'groundspeed': 40.0, 'throttle': 80.0}, 100) == []   # yeni SITL saati: ilk kare dt yok
+    g.hiz_ayarla(4); g.hiz_ayarla(4); g.hiz_ayarla(1)
+    assert g.ozet()['speedup'] == {'max': 4.0, 'changes': 2, 'last': 1.0}
+    assert drone_params.haric_mi('SIM_PLN_THR_MUL') and drone_params.haric_mi('SIM_SPEEDUP') and not drone_params.haric_mi('AIRSPEED_MAX')
+    assert drone_sitl.hiz_olcegi_destegi('sabit_kanat') is False and drone_sitl.hiz_olcegi_destegi('multirotor') is False   # sahte kip: ikili yok
+    # --- dron kaydı seçenekleri (drone_sitl_options) ---
+    dr = ok(a.post('/api/drone/drones', json={'name': 'Güç Uçağı', 'protocol': 'sanal', 'model': 'Caymaz sabit kanat'}))
+    did = dr['id']
+    pd = ok(a.get('/api/drone/sim/power-defaults', params={'type': 'sabit_kanat', 'drone_id': did}))
+    assert pd['suggested'] == d and pd['from_drone'] == {} and pd['stock_max_ms'] == 31.8 and pd['thr_mul'] == mul and pd['thr_scale_supported'] is False and pd['speedups'] == [1, 2, 4, 8], pd
+    assert ok(a.get('/api/drone/sim/power-defaults', params={'type': 'multirotor'}))['suggested']['fuel_l'] == 0.0
+    r = ok(a.get(f'/api/drone/drones/{did}/sim-power'))
+    assert r['options'] == {} and r['type'] == 'sabit_kanat' and r['suggested'] == d and r['can_write'] is True, r
+    r = ok(a.put(f'/api/drone/drones/{did}/sim-power', json={'max_speed_ms': 50, 'fuel_l': 6.5, 'elec_w_last': 28}))
+    assert r['written'] == 3 and r['options']['max_speed_ms'] == 50 and r['options']['fuel_l'] == 6.5 and r['options']['elec_w_last'] == 28 and r['options']['updated_at'], r
+    assert a.put(f'/api/drone/drones/{did}/sim-power', json={'fuel_l': -3}).status_code == 400 and a.put('/api/drone/drones/999999/sim-power', json={}).status_code == 404
+    assert mon.put(f'/api/drone/drones/{did}/sim-power', json={'fuel_l': 1}).status_code == 403   # salt okuyan yazamaz
+    sug = ok(a.get('/api/drone/sim/power-defaults', params={'type': 'sabit_kanat', 'drone_id': did}))
+    assert sug['from_drone'] == {'max_speed_ms': 50.0, 'fuel_l': 6.5, 'elec_w': 28.0} and sug['suggested']['max_speed_ms'] == 50.0 and sug['suggested']['fuel_km_per_l'] == 25.0, sug
+    assert next(x for x in ok(a.get('/api/drone/sim/drones')) if x['id'] == did)['power'] == {'max_speed_ms': 50.0, 'fuel_l': 6.5, 'elec_w': 28.0}
+    ok(a.put(f'/api/drone/drones/{did}/sim-power', json={'max_speed_ms': None}))   # null → silinir
+    assert 'max_speed_ms' not in ok(a.get(f'/api/drone/drones/{did}/sim-power'))['options']
+    # --- oturum: start gövdesi `power` ---
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'power': {'fuel_l': 'çok'}}).status_code == 400
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'power': {'elec_cells': 40}}).status_code == 400
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'power': 7}).status_code == 422   # pydantic: power nesne olmalı
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    # dron kaydıyla + küçük tank/batarya: yakıt 0,05 L @ 1 km/L (12 m/s sahte uçuşta ~5 sn), batarya 1S 100 mAh (0,37 Wh) @ 20 W (~67 sn sim)
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': did, 'power': {'fuel_l': 0.05, 'fuel_km_per_l': 1, 'elec_cells': 1, 'elec_mah': 100, 'elec_w': 20}}), 201)
+    sid = s['id']
+    assert s['power'] == {'max_speed_ms': None, 'fuel_l': 0.05, 'fuel_km_per_l': 1.0, 'elec_cells': 1, 'elec_mah': 100.0, 'elec_w': 20.0}, s['power']   # kopter: azami hız yok; dron önerisi (6,5 L) gövdeyle ezildi
+    assert s['speedup'] == 1.0 and s['speed_scale']['supported'] is False and s['speed_scale']['thr_mul'] is None and s['power_state']['fuel']['l'] == 0.05 and s['power_state']['elec']['wh'] == 0.37, s
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    cmd = lambda name, params=None: a.post(f'{S}/{sid}/cmd', json={'name': name, 'params': params or {}})   # noqa: E731
+    assert cmd('speed', {'factor': 3}).status_code == 400 and cmd('speed', {}).status_code == 400 and cmd('speed', {'factor': True}).status_code == 400
+    assert ok(cmd('speed', {'factor': 8})) == {'ok': True, 'factor': 8.0}
+    assert ok(a.get(f'{S}/{sid}'))['speedup'] == 8.0 and ses.sahte.speedup == 8.0
+    ok(cmd('takeoff', {'alt': 20}))
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        assert json.loads(ws.receive_text())['t'] == 'hello'
+        t0 = ws_bekle(ws, lambda m: m['t'] == 'tele' and m['armed'], 3)
+        assert t0 and t0['speedup'] == 8 and t0['fuel'] and t0['elec'] and t0['fuel']['l'] <= 0.05 and t0['elec']['pct'] <= 100, t0
+        w0 = time.time()
+        fuel_warn = elec_warn = None
+        olaylar = []
+        t_son = t0
+        while time.time() - w0 < 12 and not (fuel_warn and elec_warn):
+            m = json.loads(ws.receive_text())
+            if m['t'] == 'tele':
+                t_son = m
+            elif m['t'] == 'warn':
+                if m['kind'] == 'fuel_empty':
+                    fuel_warn = m
+                elif m['kind'] == 'elec_empty':
+                    elec_warn = m
+            elif m['t'] == 'event':
+                olaylar.append(m)
+        assert fuel_warn and 'YAKIT BİTTİ' in fuel_warn['text'], fuel_warn
+        assert elec_warn and 'BATARYA BİTTİ' in elec_warn['text'], elec_warn
+        assert any(e['severity'] == 2 and 'YAKIT BİTTİ' in e['text'] for e in olaylar) and any(e['severity'] == 2 and 'BATARYA BİTTİ' in e['text'] for e in olaylar), olaylar
+        t_son = ws_bekle(ws, lambda m: m['t'] == 'tele' and m['fuel']['empty'] and m['elec']['empty'], 3) or t_son   # warn'dan sonraki ilk tam-boş kare
+        assert t_son['fuel']['empty'] is True and t_son['fuel']['l'] == 0 and t_son['elec']['empty'] is True and t_son['elec']['wh'] == 0 and t_son['armed'] is True, t_son   # uçuş sürer
+        assert t_son['tbm'] > (time.time() - w0) * 1000 * 3, (t_son['tbm'], time.time() - w0)   # sahte SITL saati gerçek zamandan hızlı (8×)
+    assert ses.guc.speedup_max == 8.0 and ses.guc.dist_m >= 300, (ses.guc.dist_m, ses.guc.armed_s)
+    ok(cmd('speed', {'factor': 1}))
+    sm = ok(a.get(f'{S}/{sid}/summary'))
+    pw = sm['power']
+    assert pw['settings']['fuel_l'] == 0.05 and pw['fuel']['used_l'] == 0.05 and pw['fuel']['left_l'] == 0 and pw['fuel']['empty_t'] is not None and pw['fuel']['km_per_l'] is not None, pw
+    assert pw['elec']['wh_cap'] == 0.37 and pw['elec']['wh_used'] == 0.37 and pw['elec']['empty_t'] is not None and pw['elec']['cells'] == 1 and pw['speedup']['max'] == 8.0 and pw['speedup']['changes'] == 2, pw
+    assert pw['elec']['w_avg'] is not None and 'Güç ve yakıt:' in flightsim_mission.rapor_metni(sm), flightsim_mission.rapor_metni(sm)
+    ok(a.delete(f'{S}/{sid}'))
+    it = ok(a.get('/api/drone/sim/runs'))['items'][0]
+    # özet ile kapanış arasında uçuş sürdü: mesafe arttı, yakıt bitmişti → kapanıştaki km/L özetten büyük/eşit; ortalama W aynı (sabit 20 W, servo yok)
+    assert it['session_id'] == sid and it['fuel_used_l'] == 0.05 and it['fuel_km_per_l'] >= pw['fuel']['km_per_l'] and it['elec_wh'] == 0.37 and it['elec_w_avg'] == pw['elec']['w_avg'] and it['speedup_max'] == 8.0, it
+    assert it['power']['settings']['elec_mah'] == 100.0 and it['power']['fuel']['empty_t'] is not None, it['power']
+    # ölçümler dron kaydına yazıldı → sonraki öneri
+    opts = ok(a.get(f'/api/drone/drones/{did}/sim-power'))['options']
+    assert opts['fuel_km_per_l_last'] == it['fuel_km_per_l'] and opts['elec_w_last'] == it['elec_w_avg'], opts
+    sug = ok(a.get('/api/drone/sim/power-defaults', params={'type': 'sabit_kanat', 'drone_id': did}))['suggested']
+    assert sug['fuel_km_per_l'] == it['fuel_km_per_l'] and sug['elec_w'] == it['elec_w_avg'] and sug['fuel_l'] == 6.5, sug
+    with db.connect() as conn:
+        assert db.row(conn.execute('SELECT fuel_used_l, speedup_max, power FROM drone_sim_runs WHERE id = ?', (it['id'],)))['speedup_max'] == 8.0
+    # --- sabit kanat: hız parametreleri sahte SITL'e yazılır (AIRSPEED_MAX/CRUISE, THR_MAX; itki ölçeği desteği yok → SIM_PLN_THR_MUL yok + sarı olay); yükleme işareti
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'drone_id': did, 'power': {'max_speed_ms': 40}}), 201)
+    sid = s['id']
+    assert s['power']['max_speed_ms'] == 40.0 and s['power']['fuel_l'] == 6.5 and s['speed_scale'] == {'supported': False, 'thr_mul': P.thr_mul_icin(40), 'thr_mul_sitl': None, 'stock_ms': 31.8}, s
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ses = flightsim.MANAGER.get(sid)
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5)
+    assert dict(ses.hiz_parametreleri()) == {'AIRSPEED_MAX': 40.0, 'AIRSPEED_CRUISE': 21.8, 'THR_MAX': 100.0}, ses.hiz_parametreleri()
+    once = len(sitl.alinan)
+    olaylar = []
+    ses._olay = lambda text, severity=6: olaylar.append((text, severity))
+    ses._hiz_yaz()
+    assert bekle(lambda: len(sitl.alinan) > once and b'AIRSPEED_MAX' in bytes(sitl.alinan[once:]) and b'THR_MAX' in bytes(sitl.alinan[once:]), 3)
+    assert b'SIM_PLN_THR_MUL' not in bytes(sitl.alinan[once:]) and {'AIRSPEED_MAX', 'AIRSPEED_CRUISE', 'THR_MAX'} <= ses.param_izleyici.yukleme
+    assert olaylar and olaylar[0][1] == 4 and 'itki ölçeği' in olaylar[0][0] and 'Azami hız 40 m/s' in olaylar[0][0], olaylar
+    ok(a.delete(f'{S}/{sid}'))
+    print('  güç ve yakıt (§23) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2101,6 +2250,8 @@ def main():
         replay_testleri(a, c1, None)
         # --- simülasyon kayıtları (§21) ---
         runs_testleri(a, c1, sitl, mon)
+        # --- güç ve yakıt (§23) ---
+        guc_testleri(a, c1, sitl, mon)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

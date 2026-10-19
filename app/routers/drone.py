@@ -93,6 +93,16 @@ class ParamImportIn(BaseModel):
     text: str                       # Mission Planner .param içeriği (AD,DEĞER satırları)
 
 
+class SimPowerIn(BaseModel):
+    """§23 dron kaydı güç/yakıt seçenekleri (drone_sitl_options): None = kaydı sil (tip varsayılanına dön)."""
+    max_speed_ms: Optional[float] = None
+    fuel_l: Optional[float] = None
+    fuel_km_per_l_last: Optional[float] = None
+    elec_cells: Optional[int] = None
+    elec_mah: Optional[float] = None
+    elec_w_last: Optional[float] = None
+
+
 def _clean(s, n=200):
     s = (s or '').strip()
     return s[:n] or None
@@ -311,6 +321,41 @@ def delete_sitl_param(did: int, name: str, user=Depends(drones_user), conn=db.DB
         raise HTTPException(404, 'Parametre kaydı bulunamadı')
     db.audit(conn, user['id'], 'Sanal dron parametresi sildi', 'drone', did, f"{d['code']} · {name.upper()}")
     return {'ok': True}
+
+
+# ---------------- §23 güç ve yakıt seçenekleri (drone_sitl_options; docs/ucus-simulatoru.md §23) ----------------
+@router.get('/drones/{did}/sim-power')
+def get_sim_power(did: int, user=Depends(drones_user), conn=db.DB):
+    """Dron kaydının simülasyon güç/yakıt seçenekleri: kayıtlı anahtarlar (`options`), sihirbaz önerisi (`suggested`: kayıtlı + tip varsayılanı)."""
+    from .. import flightsim_power
+    d = db.row(conn.execute('SELECT id, code, name, protocol, model FROM drone_drones WHERE id = ?', (did,)))
+    if not d:
+        raise HTTPException(404, 'Dron bulunamadı')
+    tip = drone_sitl.model_tipi(d.get('model'))
+    opts = drone_params.secenekleri_oku(did, conn)
+    return {'drone': d, 'type': tip, 'options': opts, 'suggested': flightsim_power.dogrula({}, tip, drone_params.guc_onerisi(did, conn)),
+            'defaults': flightsim_power.varsayilanlar(tip), 'limits': {k: list(v) for k, v in flightsim_power.SINIRLAR.items()},
+            'can_write': 'drone.drones' in user.get('write_modules', [])}
+
+
+@router.put('/drones/{did}/sim-power')
+def put_sim_power(did: int, body: SimPowerIn, user=Depends(drones_user), conn=db.DB):
+    """Seçenekleri yazar (yalnız gönderilen alanlar; `null` gönderilen alan silinir). Sınır dışı değer 400."""
+    from .. import flightsim_power
+    d = db.row(conn.execute('SELECT id, code, name, model FROM drone_drones WHERE id = ?', (did,)))
+    if not d:
+        raise HTTPException(404, 'Dron bulunamadı')
+    sinir = {'max_speed_ms': 'max_speed_ms', 'fuel_l': 'fuel_l', 'fuel_km_per_l_last': 'fuel_km_per_l', 'elec_cells': 'elec_cells', 'elec_mah': 'elec_mah', 'elec_w_last': 'elec_w'}
+    degerler = {}
+    for k, v in body.model_dump(exclude_unset=True).items():
+        if v is not None:
+            alt, ust = flightsim_power.SINIRLAR[sinir[k]]
+            if not (alt <= float(v) <= ust):
+                raise HTTPException(400, f'{k} {alt:g}…{ust:g} arasında olmalı')
+        degerler[k] = v
+    n = drone_params.secenek_yaz(did, degerler, user['id'], conn)
+    db.audit(conn, user['id'], 'Dron simülasyon güç/yakıt seçeneklerini güncelledi', 'drone', did, f"{d['code']} · " + ', '.join(f'{k}={v}' for k, v in degerler.items()))
+    return {'ok': True, 'written': n, 'options': drone_params.secenekleri_oku(did, conn)}
 
 
 # ---------------- Köprüler ----------------

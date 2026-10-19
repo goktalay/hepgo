@@ -1681,6 +1681,12 @@ CREATE TABLE IF NOT EXISTS drone_sim_runs (
     params_count    INTEGER NOT NULL DEFAULT 0,
     scripts_path    TEXT,                               -- DATA_DIR göreli: sim_runs/<id>/scripts.zip (SITL scripts/ içeriği)
     scripts_count   INTEGER NOT NULL DEFAULT 0,
+    power           TEXT,                               -- JSON (§23): güç ve yakıt ayarları + sonuç (flightsim_power.GucDurumu.ozet)
+    fuel_used_l     REAL,                               -- harcanan yakıt (L)
+    fuel_km_per_l   REAL,                               -- ölçülen tüketim (km/L; geçerli ölçüm yoksa NULL)
+    elec_wh         REAL,                               -- elektronik batarya harcaması (Wh)
+    elec_w_avg      REAL,                               -- ölçülen ortalama güç (W)
+    speedup_max     REAL,                               -- oturumda kullanılan en yüksek SIM_SPEEDUP
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_started ON drone_sim_runs(started_at);
@@ -2942,6 +2948,10 @@ def _migrate(conn):
     for col in ('joined_at', 'last_seen'):   # toplantı ekranına katılım
         if inv_cols and col not in inv_cols:
             conn.execute(f'ALTER TABLE team_meeting_invites ADD COLUMN {col} TEXT')
+    run_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_sim_runs)')}
+    for col, ddl in (('power', 'TEXT'), ('fuel_used_l', 'REAL'), ('fuel_km_per_l', 'REAL'), ('elec_wh', 'REAL'), ('elec_w_avg', 'REAL'), ('speedup_max', 'REAL')):
+        if run_cols and col not in run_cols:   # Uçuş Simülatörü §23 güç ve yakıt sütunları
+            conn.execute(f'ALTER TABLE drone_sim_runs ADD COLUMN {col} {ddl}')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
     if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün
         conn.execute('ALTER TABLE mail_boxes ADD COLUMN sync_error TEXT')

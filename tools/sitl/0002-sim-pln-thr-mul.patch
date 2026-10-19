@@ -1,0 +1,55 @@
+--- a/libraries/SITL/SIM_Plane.cpp
++++ b/libraries/SITL/SIM_Plane.cpp
+@@ -498,15 +498,23 @@
+     motor_mask |= (1U<<2);
+     rpm[2] = thrust * 7000;
+     
+-    // scale thrust to newtons
+-    thrust *= thrust_scale;
++    // scale thrust to newtons. SIM_PLN_THR_MUL (HEPGO): engine power multiplier, 1 = stock model; level full-throttle
++    // speed scales with sqrt(mul). The noise term keeps using the unscaled throttle fraction.
++    float thr_mul = 1.0f;
++    if (sitl != nullptr) {
++        const float mul = sitl->plane_thr_mul.get();
++        if (mul > 0) {
++            thr_mul = mul;
++        }
++    }
++    thrust *= thrust_scale * thr_mul;
+ 
+     accel_body = Vector3f(thrust, 0, 0) + force;
+     accel_body /= mass;
+ 
+     // add some noise
+     if (thrust_scale > 0) {
+-        add_noise(fabsf(thrust) / thrust_scale);
++        add_noise(fabsf(thrust) / (thrust_scale * thr_mul));
+     }
+ 
+     if (on_ground() && !tailsitter) {
+--- a/libraries/SITL/SITL.cpp
++++ b/libraries/SITL/SITL.cpp
+@@ -534,6 +534,13 @@
+     // @User: Advanced
+     AP_GROUPINFO("SRV_REV",       2, SIM,  srv_rev_mask, 0),
+ 
++    // @Param: PLN_THR_MUL
++    // @DisplayName: Plane thrust multiplier
++    // @Description: Multiplier applied to the SIM_Plane model thrust (thrust_scale). 1 keeps the stock model (about 31 m/s full-throttle level speed for the default 2 kg airframe). Level full-throttle speed scales with the square root of this value, so 2.0 gives about 44 m/s. Ignored by other models.
++    // @Range: 0.1 10
++    // @User: Advanced
++    AP_GROUPINFO("PLN_THR_MUL",   3, SIM,  plane_thr_mul, 1),
++
+     // @Param: LED_LAYOUT
+     // @DisplayName: LED layout
+     // @Description: LED layout config value
+--- a/libraries/SITL/SITL.h
++++ b/libraries/SITL/SITL.h
+@@ -215,6 +215,7 @@
+     AP_Float engine_mul;  // engine multiplier
+     AP_Int32 engine_fail; // mask of engine/motor servo outputs to fail
+     AP_Int32 srv_rev_mask; // mask of servo outputs mounted reversed on the simulated airframe (PWM mirrored about 1500us)
++    AP_Float plane_thr_mul; // SIM_Plane thrust multiplier (1 = stock thrust_scale); sets the full-throttle level speed of the simulated plane
+ 
+     // initial offset on GPS lat/lon, used to shift origin
+     AP_Float gps_init_lat_ofs;

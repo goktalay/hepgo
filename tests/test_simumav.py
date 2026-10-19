@@ -114,7 +114,8 @@ def main():
         me = c.get('/api/session').json(); assert me['user']['id'] == s['user']['id'] and me['active_flight'] is None
         tr = c.get('/api/tracks').json()['tracks'][0]
         assert tr['name'] == 'TRTEST' and abs(tr['lat'] - 40.0990) < 1e-6 and tr['is_default'] and tr['world_mode'] == 'google3d' and tr['gates'] == []
-        d0 = c.get('/api/hangar').json()['drones'][0]; assert d0['name'] == 'FPV-1' and d0['type'] == 'fpv' and d0['model_key'] == 'proc:quad250' and d0['proc']
+        d0 = c.get('/api/hangar').json()['drones'][0]; assert d0['name'] == 'FPV-1' and d0['type'] == 'fpv' and d0['model_key'] == 'glb:iris_fpv' and not d0['proc']
+        assert d0['preview'] == '/static/simumav/models/iris_fpv.glb' and d0['orient']['forward'] == '+x' and d0['model_label'] == 'Iris FPV' and c.get(d0['preview']).status_code == 200
         p0 = c.get('/api/crew').json()['pilots'][0]; assert p0['character'] == 'p01' and p0['name'] == 'ali'
         assert c.get('/api/meta').json()['authenticated'] is True
         # dev login kapalıyken token zorunlu; geçersiz token (hesap servisi erişilemez) → 503
@@ -137,6 +138,8 @@ def main():
         cat = c.get('/api/hangar/catalog').json()['types']
         keys = {t['key']: [m['key'] for m in t['models']] for t in cat}
         assert 'proc:interceptor' in keys['interceptor'] and 'proc:quad250' in keys['fpv'] and 'builtin:caymaz' in keys['plane'] and 'builtin:quad' in keys['multirotor']
+        assert keys['fpv'][0] == 'glb:iris_fpv' and keys['interceptor'][0] == 'glb:jet' and keys['heli'][0] == 'glb:heli' and keys['vtol'][0] == 'glb:standard_vtol' and 'glb:typhoon_h480' in keys['multirotor']
+        assert all(c.get(m['glb']).status_code == 200 for t in cat for m in t['models'] if m['key'].startswith('glb:'))   # gerçekçi GLB'ler sunuluyor
         inter = next(m for t in cat for m in t['models'] if m['key'] == 'proc:interceptor')
         assert inter['proc'] and inter['defaults']['AIRSPEED_MAX'] == 170 and inter['defaults']['THR_MAX'] == 100 and inter['defaults']['TKOFF_THR_MAX'] == 100
         r = c.post('/api/hangar', json={'name': 'Ok', 'type': 'interceptor', 'model_key': 'proc:interceptor', 'params': inter['defaults'], 'color': '#00ff88'}, headers=H)
@@ -149,6 +152,7 @@ def main():
         assert c.post('/api/hangar', json={'name': 'K', 'type': 'plane', 'model_key': 'proc:quad250'}, headers=H).status_code == 422   # tip/model uyumsuz
         assert c.post('/api/hangar', json={'name': 'K', 'type': 'uzaygemisi', 'model_key': 'builtin:quad'}, headers=H).status_code == 422
         assert c.post('/api/hangar', json={'name': 'x' * 41, 'type': 'plane', 'model_key': 'builtin:delta'}, headers=H).status_code == 422
+        ok = next(d for d in c.get('/api/hangar').json()['drones'] if d['id'] == okid); assert ok['model_key'] == 'proc:interceptor' and ok['preview'] == '/static/simumav/models/jet.glb' and ok['orient'] and not ok['proc']   # eski anahtar → GLB görseli (MODEL_YUKSELT)
         r = c.put(f'/api/hangar/{okid}', json={'name': 'Ok-2', 'is_default': True, 'params': {'THR_MAX': 90}}, headers=H)
         assert r.json()['name'] == 'Ok-2' and r.json()['is_default'] and r.json()['params'] == {'THR_MAX': 90.0}
         for i in range(config.QUOTA['drones']):

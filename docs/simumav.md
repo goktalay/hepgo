@@ -103,7 +103,7 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
 - `drones(id, user_id, name, type ('multirotor'|'plane'|'heli'|'fpv'|'interceptor'|'vtol'), model_key (flightsim_models
   anahtarı ya da 'proc:<şablon>'), params JSON (SITL parametre farkları; interceptor: ARSPD_FBW_MAX 170 m/s ≈ 600 km/h,
   THR_MAX 100, hızlı rate PID'ler), color, preview (dönen 3B için GLB yolu), is_default)`
-  — kayıtta otomatik **1 hazır FPV dron** (`type 'fpv'`, model 'proc:quad250', ad "FPV-1").
+  — kayıtta otomatik **1 hazır FPV dron** (`type 'fpv'`, model 'glb:iris_fpv', ad "FPV-1").
 - `tracks(id, user_id, name, lat, lon, alt_mode 'terrain', radius_m, wind {speed_ms, dir_deg, gust}, time_of_day, weather,
   world_mode ('real'|'google3d'|'procedural' — HEPGO'daki üç kip: Gerçek arazi / Google 3B / Prosedürel; varsayılan 'google3d'),
   world JSON (HEPGO `flightsim3d.js` WORLD_DEFAULTS alt kümesi — GERÇEK anahtarlar: seed, size_m, tree_density, mountain_height, mountain_count,
@@ -131,9 +131,13 @@ Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmal
 - `GET /api/hangar` → `{drones:[{id,name,type,model_key,params,color,preview (GLB|null),proc,is_default}], quota}`; `POST /api/hangar {name ≤40,type,model_key,params?,color '#rrggbb'}`
   (201); `PUT /api/hangar/{id} {name?,model_key?,params?,color?,is_default?}`; `DELETE` (uçuştaki dron 409 `in_use`); kota 20 → 409 `quota`;
   params beyaz liste dışı → 422 `param_rejected` + `name`.
-  `GET /api/hangar/catalog` → `{types:[{key,label,models:[{key,label,glb,thumb,defaults,proc,desc}]}]}` — tipler multirotor (builtin:quad, builtin:hexa),
-  fpv (`proc:quad250`), plane (builtin:caymaz GLB, builtin:delta), interceptor (`proc:interceptor`), heli (builtin:heli), vtol (builtin:caymaz).
-  `proc:true` = GLB yok, ön yüz prosedürel çizer. Interceptor varsayılanları ArduPlane 4.6+ adlarıyla: AIRSPEED_MAX 170, AIRSPEED_MIN 24, AIRSPEED_CRUISE 95,
+  `GET /api/hangar/catalog` → `{types:[{key,label,models:[{key,label,glb,thumb,defaults,proc,desc,orient?,has_prop?}]}]}` — her tipte önce **gerçekçi GLB
+  modeller** (`glb:*`, static/simumav/models/*.glb, kaynak/lisans LICENSES.md, üretim tools/simumav_models_build.py; ilk model tipin varsayılanı): fpv `glb:iris_fpv`
+  (3DR Iris + FPV kamera), multirotor `glb:iris` / `glb:x500` / `glb:typhoon_h480` (hexa), plane `glb:rc_cessna` / `glb:believer`, interceptor `glb:jet` / `glb:zephyr`,
+  heli `glb:heli`, vtol `glb:standard_vtol`; ardından dahili (builtin:quad/hexa/caymaz/delta/heli) ve prosedürel şablonlar (`proc:quad250`, `proc:interceptor`) yedek.
+  GLB'ler glTF Y yukarı, burun +X (orient {forward:'+x', up:'+y'}), pervaneler `rotor_*`/`propeller` düğümleri, kontrol yüzeyleri flightsim3d CTRL_RE adlarıyla.
+  Dron kayıtları `preview` (GLB url), `orient`, `has_prop`, `model_label` döndürür; eski prosedürel/dahili anahtarlar `bridge.MODEL_YUKSELT` ile aynı sınıfın GLB'sine
+  yükseltilir (model_key değişmez). `proc:true` = GLB yok, ön yüz prosedürel çizer. Yeni kullanıcının hazır dronu FPV-1 `glb:iris_fpv`. Interceptor varsayılanları ArduPlane 4.6+ adlarıyla: AIRSPEED_MAX 170, AIRSPEED_MIN 24, AIRSPEED_CRUISE 95,
   THR_MAX 100, TKOFF_THR_MAX 100, LIM_ROLL_CD 7500, hızlı PTCH_/RLL_ oran döngüleri, TECS_CLMB_MAX 30 (eski `ARSPD_FBW_*` adları beyaz listede ama 4.7.2'de yok).
 - `GET /api/crew` → `{pilots:[{…, svg}], quota}`; `POST /api/crew {name, character p01…p10}`; `PUT /api/crew/{id} {name?,character?,is_default?}`; `DELETE`
   (son pilot 409 `last_pilot`); `GET /api/crew/characters` → `{characters:[{key,label,gender,svg:'/app/img/pilots/<key>.svg'}]}` (pilot kayıtlarının `svg` alanı da aynı yol; tek doğruluk kaynağı
@@ -202,8 +206,8 @@ Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmal
   Uç ayrıntıları (static/simumav/app/fly; tests/test_simumav_fly.mjs):
   • Sihirbaz adımları `wizard.js` createWizard: drone → track → launch (yalnız plane/interceptor/vtol) → mission → pilot; parkur değişince görev sıfırlanır;
     `payload()` = POST /api/fly/start gövdesi (launch: {method, angle_deg 10–30, release_kmh 40–110, hand_speed_ms 6–8, hand_pitch_deg 10–15}; kopterde
-    {method:'wheels'}). Tip eşlemesi: plane/interceptor → sabit_kanat, heli → helikopter, fpv/multirotor → multirotor. Model: 'proc:quad250' → builtin:quad,
-    'proc:caymaz' → builtin:caymaz, 'proc:interceptor' → builtin:delta, kütüphane anahtarı + preview GLB → {id, glb_url}. Dron önizlemesi: dronun çevresinde dönen
+    {method:'wheels'}). Tip eşlemesi: plane/interceptor → sabit_kanat, heli → helikopter, fpv/multirotor → multirotor. Model: sunucu `preview`+`orient` verdiyse gerçekçi GLB {id, glb_url, orient, has_prop} (glb:* ve yükseltilmiş proc:*);
+    'proc:quad250' → builtin:quad, 'proc:caymaz' → builtin:caymaz, 'proc:interceptor' → builtin:delta, kütüphane anahtarı + preview GLB → {id, glb_url}. Dron önizlemesi: dronun çevresinde dönen
     serbest kamera (preview:true dünya turu yaptığından kullanılmaz).
   • Dünya: `worldFromTrack(track, maps_key)` — world_mode 'real'|'google3d'|'procedural' (google3d anahtar yoksa prosedürel); track.world alanları
     (size_m, trees_pct|tree_density, extra_buildings|building_count, fog_pct|fog, runway_deg|runway_heading, runway, time_of_day|time) HEPGO WORLD_DEFAULTS'a; rüzgâr

@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { fuelLpm, batteryWh, servoJoule, measuredKmPerL, avgW, elecVolts, createPowerSim, powerWarnings, fuelText, elecText, rangeText, minText, defaultsFor, isPlaneType,
   createSpeedPill, SPEEDUPS, CAYMAZ_DEFAULTS, LIMITS, POWER_FIELDS,
-  gaugeLevel, gaugeColor, gaugeArc, fuelGauge, elecGauge, gaugeModels, createPowerAcc, powerDetailRows, GAUGE_LOW_PCT, GAUGE_CRIT_PCT, GAUGE_COLORS } from '../static/js/modules/flightsim_power.js';
+  gaugeLevel, gaugeColor, gaugeArc, fuelGauge, elecGauge, gaugeModels, createPowerAcc, powerDetailRows, GAUGE_LOW_PCT, GAUGE_CRIT_PCT, GAUGE_COLORS,
+  needleAngle, niceScaleMax, scaleTicks, zoneArc, arcPath, easeNeedle, speedGauge, engineGauge, dashModels, GAUGE_SWEEP, ENGINE_RED_PCT, NEEDLE_SNAP } from '../static/js/modules/flightsim_power.js';
 import { osdWarnings, osdBattery, osdFuelText, osdPowerRows, LOW_FUEL_PCT } from '../static/js/modules/flightsim_fpv_osd.js';
 import { hudPowerBars } from '../static/js/modules/flightsim_hud.js';
 
@@ -194,6 +195,56 @@ test('gimbal HUD dikey barlar: BAT (V · kalan dk) + FUEL (L · menzil); düşü
   const e = hudPowerBars({ elec: { pct: 0, v: 14, wh: 0, empty: true }, fuel: { l: 0, pct: 0, empty: true } }); assert.ok(e[0].empty && e[1].empty && e[0].low);
   const s = hudPowerBars({ batt_v: 15.4, batt_pct: 61 }); assert.equal(s.length, 1); assert.equal(s[0].l1, '15.4V'); assert.equal(s[0].l2, '');
   assert.deepEqual(hudPowerBars({}), []); assert.deepEqual(hudPowerBars(null), []);
+});
+
+console.log('Analog kadranlar (§23.6 yeniden tasarım: 240° süpürme, ölçek, bölgeler, ibre)');
+test('ibre açısı: min → −120°, orta → 0°, max → +120°; aralık dışı kırpılır; geçersiz aralık/değer → min', () => {
+  assert.equal(GAUGE_SWEEP, 240);
+  assert.equal(needleAngle(0, 0, 100), -120); assert.equal(needleAngle(50, 0, 100), 0); assert.equal(needleAngle(100, 0, 100), 120); assert.equal(needleAngle(25, 0, 100), -60);
+  assert.equal(needleAngle(140, 0, 100), 120); assert.equal(needleAngle(-5, 0, 100), -120); assert.equal(needleAngle(0.75, 0, 1), 60);
+  assert.equal(needleAngle(null, 0, 100), -120); assert.equal(needleAngle(5, 10, 10), -120); assert.equal(needleAngle(50, 0, 100, 270), 0);
+});
+test('ölçek üst sınırı: azami × 1,2 güzel adıma yuvarlanır (162 km/h → 200/50; 45 → 60/10; 400 → 500/100); ana bölme 4–6', () => {
+  assert.deepEqual(niceScaleMax(162), { max: 200, step: 50 }); assert.deepEqual(niceScaleMax(45), { max: 60, step: 10 }); assert.deepEqual(niceScaleMax(400), { max: 500, step: 100 });
+  assert.deepEqual(niceScaleMax(8, 1), { max: 8, step: 2 }); assert.deepEqual(niceScaleMax(100 / 1.2), { max: 100, step: 20 });
+  for (const v of [12, 33, 77, 162, 250, 540, 1000]) { const s = niceScaleMax(v); assert.ok(s.max >= v * 1.2 - 1e-9 && s.max / s.step >= 4 && s.max / s.step <= 6, `${v} → ${JSON.stringify(s)}`); }
+});
+test('çentikler: ana + ara (0…100 adım 20, ara 2 → 11 çentik, 6 ana); yakıt 0…1 adım ¼; açılar −120…120; geçersiz → []', () => {
+  const t = scaleTicks(100, 20, 2);
+  assert.equal(t.length, 11); assert.equal(t.filter(x => x.major).length, 6); assert.equal(t[0].a, -120); assert.equal(t[10].a, 120); assert.equal(t[1].v, 10); assert.ok(!t[1].major);
+  const f = scaleTicks(1, 0.25, 2); assert.equal(f.length, 9); assert.deepEqual(f.filter(x => x.major).map(x => x.v), [0, 0.25, 0.5, 0.75, 1]);
+  assert.deepEqual(scaleTicks(100, 0), []); assert.deepEqual(scaleTicks(0, 10), []);
+});
+test('bölge yayı: azami 162 → ölçek 200 kırmızı [162, 200] = 74,4° … 120°; batarya kırmızı [0, 15], mavi [90, 100]; boş aralık null; SVG yay yolu', () => {
+  const r = zoneArc(162, 200, 0, 200); close(r.a0, 74.4, 0.01); assert.equal(r.a1, 120);
+  assert.deepEqual(zoneArc(0, 15, 0, 100), { a0: -120, a1: -84 }); assert.deepEqual(zoneArc(90, 100, 0, 100), { a0: 96, a1: 120 });
+  assert.equal(zoneArc(100, 100, 0, 100), null); assert.equal(zoneArc(null, 5, 0, 100), null); assert.equal(zoneArc(5, 10, 10, 10), null);
+  const d = arcPath(-120, 120, 46); assert.ok(d.startsWith('M ') && d.includes(' A 46 46 0 1 1 '), d);   // 240° → büyük yay bayrağı
+  assert.ok(arcPath(0, 90, 10).includes(' A 10 10 0 0 1 ')); assert.equal(arcPath(0, 0, 10, 50, 50), 'M 50.00 40.00 A 10 10 0 0 1 50.00 40.00');
+});
+test('ibre yumuşatma: üstel yaklaşım (tau), NEEDLE_SNAP altında hedefe oturur, dt yoksa hedef; birikerek yakınsar', () => {
+  const a = easeNeedle(0, 100, 0.22); close(a, 100 * (1 - Math.exp(-1)), 1e-9);
+  assert.equal(easeNeedle(99.99, 100, 0.016), 100); assert.equal(easeNeedle(0, 100, 0), 100); assert.equal(easeNeedle(null, 42, 0.016), 42);
+  let c = -120; for (let i = 0; i < 200; i++) c = easeNeedle(c, 60, 0.016); assert.equal(c, 60);
+  assert.ok(easeNeedle(0, 100, 0.016) < easeNeedle(0, 100, 0.05)); assert.ok(NEEDLE_SNAP > 0 && NEEDLE_SNAP < 1);
+});
+test('hız / motor kadranı ve dashModels: yer hızı km/h, ölçek azami × 1,2, kırmızı bölge, IAS, uyarı üçgeni (çarpışma / aşırı hız / stall); gaz % ya da ×1000 RPM; yakıtsız dron', () => {
+  const S = { max_speed_ms: 45 }, t = { groundspeed: 37.2, airspeed: 33.3, throttle: 72, armed: true, alt_rel: 120, fuel: { l: 4.9, pct: 98, range_km: 116, lpm: 0.01 }, elec: { pct: 99, v: 16.8, wh: 146, w: 30, cells: 4, min_left: 314 } };
+  const sp = speedGauge(t, S, { plane: true });
+  assert.equal(sp.max, 200); assert.equal(sp.step, 50); assert.equal(sp.main, '134'); assert.equal(sp.unit, 'KM/H'); assert.equal(sp.sub, 'IAS 120'); assert.ok(!sp.warn); assert.equal(sp.level, 'ok');
+  close(sp.red.a0, 74.4, 0.01); close(sp.angle, needleAngle(133.92, 0, 200), 0.01);
+  assert.ok(speedGauge(t, S, { plane: true, collision: true }).warn && speedGauge(t, S, { plane: true, collision: true }).warnKind === 'crash');
+  const ov = speedGauge({ ...t, groundspeed: 50 }, S, { plane: true }); assert.ok(ov.warn && ov.warnKind === 'over' && ov.angle === 96);   // 180 km/h, ölçek 200
+  const st = speedGauge({ ...t, airspeed: 8, groundspeed: 8 }, S, { plane: true }); assert.ok(st.warn && st.warnKind === 'stall');
+  assert.ok(!speedGauge({ ...t, airspeed: 8, groundspeed: 8, alt_rel: 2 }, S, { plane: true }).warn);   // yerde stall yok
+  const cp = speedGauge({ groundspeed: 10 }, { max_speed_ms: null }, { plane: false }); assert.equal(cp.max, 100); assert.equal(cp.red, null); assert.equal(cp.sub, '');
+  const en = engineGauge(t); assert.equal(en.main, '72'); assert.equal(en.unit, '% GAZ'); assert.equal(en.max, 100); assert.deepEqual(en.red, { a0: needleAngle(ENGINE_RED_PCT, 0, 100), a1: 120 }); assert.equal(en.level, 'ok');
+  assert.equal(engineGauge({ throttle: 95 }).level, 'low');
+  const rpm = engineGauge({ throttle: 80, rpm: 6400 }); assert.equal(rpm.main, '6.4'); assert.equal(rpm.unit, '×1000 RPM'); assert.equal(rpm.max, 8); assert.equal(rpm.sub, '80 %');
+  const d = dashModels(t, S, { plane: true }); assert.ok(d.fuel && d.speed && d.engine && d.elec); assert.equal(d.fuel.main, '4.90 L'); assert.equal(d.fuel.angle, needleAngle(0.98, 0, 1)); assert.equal(d.elec.angle, needleAngle(99, 0, 100));
+  const nf = dashModels({ ...t, fuel: null }, S); assert.equal(nf.fuel, null); assert.ok(nf.speed && nf.elec);
+  assert.deepEqual(dashModels({ groundspeed: 5 }, S), { fuel: null, speed: null, engine: null, elec: null });   // güç kaynağı yok → hepsi gizli
+  assert.equal(speedGauge(null, S), null); assert.equal(engineGauge(null), null);
 });
 
 console.log(`\n${n} test geçti`);

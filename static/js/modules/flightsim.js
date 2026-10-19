@@ -853,9 +853,10 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const g3dMode = world.mode === 'google3d';
   const attribTxt = h('span', null, g3dMode ? 'Google' : ATTRIBUTION);
   const attrib = world.mode === 'real' || g3dMode ? h('div', { class: `fs-attrib ${g3dMode ? 'fs-attrib-g3d' : ''}` }, g3dMode ? h('img', { class: 'fs-g3d-logo', src: G3D_LOGO, alt: 'Google' }) : null, attribTxt) : null;
-  // §23.6 güç paneli: sağ altta iki SVG kadran (YAKIT · BATARYA), her kamera kipinde ve panelden bağımsız; FPV OSD / gimbal HUD açıkken onlar çizer (CSS gizler).
+  // §23.6 güç paneli: alt çubuğun üstünde ortada dört otomobil tarzı kadran (YAKIT · HIZ · MOTOR · BATARYA), takip/serbest/yer kiplerinde ve panelden bağımsız;
+  // FPV OSD / gimbal HUD açıkken onlar çizer (CSS gizler). Hız kadranı azami hızı session.power'dan; uyarı üçgeni çarpışma bandından (getCollision).
   // Ayrıntı kutusu kayıt/sahte kipte istemci modelinin özetinden (mesafe, harcanan, ölçülen), canlıda kendi mesafe toplayıcısından.
-  const gauges = createPowerGauges(stage, { h, tr, getSettings: () => session.power || null, getSummary: () => clientPower?.summary() || null });
+  const gauges = createPowerGauges(stage, { h, tr, getSettings: () => session.power || null, getSummary: () => clientPower?.summary() || null, plane: isPlane(type), getCollision: () => !crash.hidden });
   stage.append(mount, msg, crash, hud, ...(mp ? [mp] : []), events, sticks, gauges.el, bar, nav, ended);
   if (attrib) stage.append(attrib);
   ops = createOpsPanel(stage, { sid, session, type, modes, launch, canWrite, hub: !replay && !mock, mp: mpOpts, getSim: () => sim, cmdSim: (name, params) => cmd(name, params), onReset: () => reset(), onToggle: on => opsBtn.classList.toggle('primary', on),

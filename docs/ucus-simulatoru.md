@@ -1275,3 +1275,30 @@ yazma `drone.drones`). `GET /api/drone/sim/drones` satırlarına `power` öneris
   ölçülen **15,35 km/L**, ortalama **49,1 W**; kırmızı olaylar + `warn` çerçeveleri; `crash` kaydı yok, uçuş kapanışa dek armed sürdü (power.time_s 81,3 ↔ armed_s 72,3 —
   fark kalkış öncesi). Kapanışta dron kaydına `fuel_km_per_l_last 15,35`, `elec_w_last 49,1` yazıldı; sonraki `power-defaults` bunları önerdi; `drone_sim_runs`
   satırı `fuel_used_l 0,15 · fuel_km_per_l 15,35 · elec_wh 1,11 · elec_w_avg 49,1 · speedup_max 4`.
+
+### 23.6 Güç paneli — yakıt ve batarya kadranları (`createPowerGauges`; CSS `.fs-power`)
+Kullanıcı geri bildirimi: "Yakıt ve batarya göstergeleri görünmüyor; çok şık bir şekilde göstergeler görünsün" (önce: yakıt yalnız panel içinde küçük karo,
+panel kapalıyken hiç yok; FPV'de küçük metin satırları). Çözüm: **her kamera kipinde**, sahne üstünde, harekât panelinden **bağımsız** ve her zaman
+görünen güç paneli.
+- **Yerleşim:** sağ altta, alt çubuğun üstünde (`bottom: var(--fs-bar-h) + 10 px`, `z-index 8`); harekât kartı açıkken kartın **solunda** (`.fs-ops:not(.fs-fpv)` →
+  `right: 424 px`); sanal kumanda çubuklarıyla çakışmaz (sağ çubuk `right 270 px`, panel ≈ 250 px); tam ekranda aynı; arazi atfı (`.fs-attrib`) kadranların
+  soluna kayar (`.fs-power-on`). ≥ 1800 px `scale(1.18)`; ≤ 760 px **kompakt yatay çubuklar** (`.fs-gauge-c`: etiket · çubuk · değer · ikincil; tam
+  genişlik; sanal kumanda açıkken çubukların üstünde).
+- **Kadran:** cam/koyu yarı saydam kapsayıcı (blur + saturate; `html[data-theme=dark]` biraz daha koyu); iki düğme `.fs-gauge[data-g=fuel|elec]`:
+  etiket (YAKIT / BATARYA), 104 px SVG **270° yay** (`pathLength 100`, `stroke-dasharray "{0…75} 100"`, `rotate(135)`; iz + parlak dolu yay, `feGaussianBlur`
+  ışıma), üstte ikon (pompa / pil), ortada büyük değer (`4.82 L` / `%99`), altta ikincil (`≈ 113 km` / `16.8 V · ≈ 5 sa 14 dk`), kadran altında anlık tüketim
+  (`0.41 L/sa` / `31 W · 4S`). Renk `gaugeLevel`: **yeşil ≥ 30 % · sarı < 30 % · kırmızı < 15 %** (`data-level`; kırmızıda yay + ikon nabız, halka dalgası);
+  bitince (`empty`) kırmızı rozet **YAKIT BİTTİ / BATARYA BİTTİ** (kırmızı olay satırı + toast sunucu/istemci modelinden ayrıca gelir).
+- **Kaynaklar:** `tele.fuel` yoksa (0 L, elektrikli dron) yalnız batarya; `tele.elec` yoksa SITL pili (`batt_v/batt_pct`, "SITL pili" notu) — o da yoksa
+  yalnız yakıt; ikisi de yoksa kapsayıcı gizli. Kayıttan oynatma ve sahte kip: aynı DOM, `createPowerSim` durumu `updateHud` ile gelir (atlamada
+  `gauges.reset()`).
+- **Ayrıntı kutusu** (tıklama; `.fs-power-pop`, HEPGO tema değişkenleri `--surface/--text/--border`): Başlangıç (L / Wh · S mAh), Tüketim ayarı (km/L / W),
+  Harcanan, Anlık, Ölçülen (km/L / ort. W; yetersiz veri "henüz yok"), Mesafe · süre. Kayıt/sahte kipte `createPowerSim.summary()`, canlıda
+  `createPowerAcc` (kare zamanı `t` → `tbm` → `ts`; > 5 sn boşluk atlanır; yalnız armed mesafe). Uyarı sesi yok → "sessiz" düğmesi gerekmedi.
+- **FPV OSD** (`fs-osd-on` → kadranlar gizli): sol altta `osdPowerRows` → **BAT** üstte, **FUEL** altta: etiket + değer satırı (`16.8V 99% 4S 314min` /
+  `4.82L 96% 113km`), altında 120 px yatay çubuk (beyaz kontur, çeyrek çentikler; dolgu beyaz / sarı < 30 / kırmızı < 15; alarmda yanıp söner). **Gimbal HUD**
+  (`fs-mhud-on`): `hudPowerBars` → sol bloğun sağında iki **dikey** fosfor bar (BAT · FUEL; 56 px, çentikli, dolgu alttan), altında % · V/L · dk/km; düşükte
+  kırmızı + dolgu yanıp söner (üstteki uyarı kutuları korunur). HUD/OSD kapatılınca (H / O) SVG kadranlar görünür. Takip/serbest/yer kiplerinde SVG kadranlar.
+- **Doğrulama:** `node tests/test_flightsim_power.mjs` (23): eşikler/yay, yakıt-batarya modelleri, `gaugeModels` kaynak seçimi, toplayıcı, ayrıntı satırları,
+  `osdPowerRows`, `hudPowerBars`. Playwright sahte kip (`/tmp/flsim/gauge/e2e_gauge.py`, port 8730): takip panel açık/kapalı, ayrıntı, FPV, gimbal (HUD'lu /
+  HUD'suz), serbest, sanal kumanda (panel açık/kapalı), tam ekran, 1280/1920/390 px, sarı → kırmızı → bitti (0,05 L · 1S 100 mAh), açık tema, kayıttan oynatma.

@@ -3,8 +3,10 @@
 // yakıt/elektronik uyarıları), simülasyon hızı kapsülü (sahte h ile). Çalıştırma: node tests/test_flightsim_power.mjs
 import assert from 'node:assert/strict';
 import { fuelLpm, batteryWh, servoJoule, measuredKmPerL, avgW, elecVolts, createPowerSim, powerWarnings, fuelText, elecText, rangeText, minText, defaultsFor, isPlaneType,
-  createSpeedPill, SPEEDUPS, CAYMAZ_DEFAULTS, LIMITS, POWER_FIELDS } from '../static/js/modules/flightsim_power.js';
-import { osdWarnings, osdBattery, osdFuelText, LOW_FUEL_PCT } from '../static/js/modules/flightsim_fpv_osd.js';
+  createSpeedPill, SPEEDUPS, CAYMAZ_DEFAULTS, LIMITS, POWER_FIELDS,
+  gaugeLevel, gaugeColor, gaugeArc, fuelGauge, elecGauge, gaugeModels, createPowerAcc, powerDetailRows, GAUGE_LOW_PCT, GAUGE_CRIT_PCT, GAUGE_COLORS } from '../static/js/modules/flightsim_power.js';
+import { osdWarnings, osdBattery, osdFuelText, osdPowerRows, LOW_FUEL_PCT } from '../static/js/modules/flightsim_fpv_osd.js';
+import { hudPowerBars } from '../static/js/modules/flightsim_hud.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log('  ✓', name); };
@@ -120,6 +122,78 @@ test('simülasyon hızı kapsülü: 1×/2×/4×/8× düğmeleri, seçim (set) ve
   pill.set(4); assert.ok(pill.el.children[2].classList.has('primary') && !pill.el.children[0].classList.has('primary') && pill.el.classList.has('fast')); assert.equal(pill.value, 4);
   pill.set(1); assert.ok(!pill.el.classList.has('fast'));
   pill.setEnabled(false); assert.ok(pill.el.children.every(b => b.disabled));
+});
+
+console.log('Güç paneli kadranları (§23.6)');
+test('seviye eşikleri: ≥ 30 yeşil, < 30 sarı, < 15 kırmızı, ≤ 0 / empty bitti; renkler; 270° yay uzunluğu (pathLength 100 → 75)', () => {
+  assert.equal(GAUGE_LOW_PCT, 30); assert.equal(GAUGE_CRIT_PCT, 15);
+  assert.equal(gaugeLevel(96), 'ok'); assert.equal(gaugeLevel(30), 'ok'); assert.equal(gaugeLevel(29.9), 'low'); assert.equal(gaugeLevel(15), 'low'); assert.equal(gaugeLevel(14.9), 'crit');
+  assert.equal(gaugeLevel(0), 'empty'); assert.equal(gaugeLevel(50, true), 'empty'); assert.equal(gaugeLevel(null), 'empty');
+  assert.equal(gaugeColor(96), GAUGE_COLORS.ok); assert.equal(gaugeColor(20), '#fbbf24'); assert.equal(gaugeColor(5), '#ef4444');
+  assert.equal(gaugeArc(100), 75); assert.equal(gaugeArc(50), 37.5); assert.equal(gaugeArc(0), 0); assert.equal(gaugeArc(140), 75); assert.equal(gaugeArc(-3), 0);
+});
+test('yakıt kadranı: ana "4.82 L", ikincil "≈ 113 km", anlık "0.41 L/sa", rozet yok; bitince rozet YAKIT BİTTİ + 0 km', () => {
+  const m = fuelGauge({ l: 4.8213, pct: 96.4, lpm: 0.00683, range_km: 113.2 });
+  assert.equal(m.kind, 'fuel'); assert.equal(m.main, '4.82 L'); assert.equal(m.pctText, '%96'); assert.equal(m.sub, '≈ 113 km'); assert.equal(m.rate, '0.41 L/sa'); assert.equal(m.level, 'ok'); assert.equal(m.badge, null); assert.equal(m.arc, 72.3);
+  const e = fuelGauge({ l: 0, pct: 0, lpm: 0, range_km: 0, empty: true });
+  assert.equal(e.level, 'empty'); assert.equal(e.badge, 'YAKIT BİTTİ'); assert.equal(e.sub, '0 km'); assert.equal(e.arc, 0); assert.ok(e.empty);
+  assert.equal(fuelGauge({ l: 0.6, pct: 12 }).level, 'crit'); assert.equal(fuelGauge(null), null);
+});
+test('batarya kadranı: elektronik ("%99", "16.8 V · ≈ 5 sa 14 dk", "31 W · 4S"); bitince BATARYA BİTTİ; SITL pili yedeği (sitl: true, "SITL pili")', () => {
+  const m = elecGauge({ pct: 99.2, v: 16.78, min_left: 314, w: 31.4, cells: 4, wh: 146 });
+  assert.equal(m.main, '%99'); assert.equal(m.sub, '16.8 V · ≈ 5 sa 14 dk'); assert.equal(m.rate, '31 W · 4S'); assert.equal(m.pctText, '16.8 V'); assert.equal(m.sitl, false); assert.equal(m.badge, null);
+  const e = elecGauge({ pct: 0, v: 14, min_left: null, w: 30, cells: 4, wh: 0, empty: true });
+  assert.equal(e.level, 'empty'); assert.equal(e.badge, 'BATARYA BİTTİ'); assert.equal(e.sub, '14.0 V');
+  const s = elecGauge(null, { batt_v: 15.4, batt_pct: 61 });
+  assert.ok(s.sitl); assert.equal(s.main, '%61'); assert.equal(s.rate, 'SITL pili'); assert.equal(s.sub, '15.4 V'); assert.equal(s.badge, null);
+  const g = elecGauge(null, { batt_v: 15.4, batt_pct: null });   // yüzde yok → gerilimden kaba kestirim (4S, 3,85 V/hücre ≈ %50)
+  assert.ok(g.pct > 40 && g.pct < 60, String(g.pct));
+  assert.equal(elecGauge(null, { batt_v: 0, batt_pct: null }), null); assert.equal(elecGauge(null, null), null);
+});
+test('gaugeModels: yakıt 0 L (elektrikli) → yalnız batarya; batarya tanımsız → yalnız yakıt; hiçbiri yok → ikisi de null', () => {
+  const a = gaugeModels({ fuel: null, elec: { pct: 80, v: 16, wh: 100, w: 30, cells: 4 } }); assert.equal(a.fuel, null); assert.ok(a.elec);
+  const b = gaugeModels({ fuel: { l: 3, pct: 60, range_km: 75, lpm: 0.01 }, elec: null, batt_v: 0 }); assert.ok(b.fuel); assert.equal(b.elec, null);
+  const c = gaugeModels({}); assert.equal(c.fuel, null); assert.equal(c.elec, null); assert.deepEqual(gaugeModels(null), { fuel: null, elec: null });
+});
+test('mesafe/süre toplayıcısı: kayıt t (sn) / SITL tbm (ms) / ts (ms); yalnız armed mesafe; > 5 sn boşluk ve geri zaman atlanır; reset', () => {
+  const a = createPowerAcc();
+  a.step({ t: 0, armed: true, groundspeed: 20 }); a.step({ t: 1, armed: true, groundspeed: 20 }); a.step({ t: 2, armed: false, groundspeed: 20 });
+  close(a.dist_m, 20); close(a.time_s, 2); close(a.armed_s, 1);
+  a.step({ t: 10, armed: true, groundspeed: 20 }); close(a.dist_m, 20);   // 8 sn boşluk: atlanır
+  a.step({ t: 5, armed: true, groundspeed: 20 }); close(a.dist_m, 20);    // geri: atlanır
+  a.reset(); assert.equal(a.dist_m, 0);
+  const b = createPowerAcc(); b.step({ tbm: 1000, armed: true, gs: 10 }); b.step({ tbm: 3000, armed: true, gs: 10 }); close(b.dist_m, 20);
+  const c = createPowerAcc(); c.step({ ts: 5000, armed: true, groundspeed: 5 }); c.step({ ts: 6000, armed: true, groundspeed: 5 }); close(c.dist_m, 5);
+  const d = createPowerAcc(); d.step({ armed: true, groundspeed: 5 }); d.step(null); assert.equal(d.dist_m, 0);   // zaman alanı yok
+});
+test('ayrıntı satırları: başlangıç / tüketim ayarı / harcanan / anlık / ölçülen / mesafe — kayıt özetinden ya da canlı toplayıcıdan; kaynak yoksa "—"', () => {
+  const S = { fuel_l: 5, fuel_km_per_l: 25, elec_cells: 4, elec_mah: 10000, elec_w: 30 };
+  const t = { fuel: { l: 4.5, pct: 90, lpm: 0.04, range_km: 112.5 }, elec: { pct: 90, v: 16.5, wh: 133.2, w: 31, cells: 4 } };
+  const r = powerDetailRows(t, S, { dist_m: 12000, time_s: 600, fuel: { used_l: 0.5, km_per_l: 24 }, elec: { wh_used: 14.8, w_avg: 29.6 } });
+  assert.equal(r.length, 6);
+  assert.deepEqual(r[0], ['Başlangıç', '5.00 L', '148 Wh · 4S 10000 mAh']); assert.deepEqual(r[1], ['Tüketim ayarı', '25 km/L', '30 W']);
+  assert.deepEqual(r[2], ['Harcanan', '0.50 L', '14.8 Wh']); assert.deepEqual(r[3], ['Anlık', '2.40 L/sa', '31 W']);
+  assert.deepEqual(r[4], ['Ölçülen', '24 km/L', 'ort. 29.6 W']); assert.deepEqual(r[5], ['Mesafe', '12 km · 10 dk', '']);
+  const live = powerDetailRows(t, S, { dist_m: 12000, time_s: 600 });   // canlı: harcanan = başlangıç − kalan; ölçülen hesaplanır
+  assert.equal(live[2][1], '0.50 L'); assert.equal(live[4][1], '24 km/L'); assert.equal(live[2][2], '14.8 Wh'); assert.equal(live[4][2], 'ort. 88.8 W');
+  const none = powerDetailRows({ fuel: null, elec: t.elec }, S, { dist_m: 100, time_s: 10 });
+  assert.equal(none[0][1], '—'); assert.equal(none[4][2], 'henüz yok'); assert.equal(none[5][1], '100 m · 0 dk');
+  assert.equal(powerDetailRows(t, S, null, s => `[${s}]`)[0][0], '[Başlangıç]');
+});
+test('FPV OSD güç satırları: BAT (elektronik: V % S min) üstte, FUEL (L % km) altta; seviye kadranlarla aynı; SITL pili; hiçbiri yoksa []', () => {
+  const r = osdPowerRows({ elec: { v: 16.2, pct: 61.4, cells: 4, min_left: 120.4, empty: false }, fuel: { l: 4.1432, pct: 82.86, range_km: 103.58 } });
+  assert.deepEqual(r.map(x => [x.key, x.label, x.level, x.value]), [['bat', 'BAT', 'ok', '16.2V 61% 4S 120min'], ['fuel', 'FUEL', 'ok', '4.14L 83% 104km']]);
+  const s = osdPowerRows({ batt_v: 15.4, batt_pct: 22 }); assert.equal(s.length, 1); assert.equal(s[0].level, 'low'); assert.equal(s[0].value, '15.4V 22% 4S');
+  const e = osdPowerRows({ fuel: { l: 0, pct: 0, range_km: 0, empty: true } }); assert.equal(e[0].level, 'empty'); assert.equal(e[0].pct, 0);
+  assert.deepEqual(osdPowerRows({}), []); assert.equal(osdPowerRows({ fuel: { l: 0.3, pct: 6, range_km: 7.5 } })[0].level, 'crit');
+});
+test('gimbal HUD dikey barlar: BAT (V · kalan dk) + FUEL (L · menzil); düşük < 25 / < 20 kırmızı; bitti; SITL pili yüzdesi', () => {
+  const b = hudPowerBars({ elec: { pct: 99, v: 16.8, min_left: 312, empty: false }, fuel: { l: 4.71, pct: 94, range_km: 111 } });
+  assert.deepEqual(b, [{ label: 'BAT', pct: 99, low: false, empty: false, l1: '16.8V', l2: '312min' }, { label: 'FUEL', pct: 94, low: false, empty: false, l1: '4.71L', l2: '111km' }]);
+  const l = hudPowerBars({ elec: { pct: 20, v: 14.5, min_left: 3 }, fuel: { l: 0.5, pct: 10, range_km: 2.5 } }); assert.ok(l[0].low && l[1].low); assert.equal(l[1].l2, '2.5km');
+  const e = hudPowerBars({ elec: { pct: 0, v: 14, wh: 0, empty: true }, fuel: { l: 0, pct: 0, empty: true } }); assert.ok(e[0].empty && e[1].empty && e[0].low);
+  const s = hudPowerBars({ batt_v: 15.4, batt_pct: 61 }); assert.equal(s.length, 1); assert.equal(s[0].l1, '15.4V'); assert.equal(s[0].l2, '');
+  assert.deepEqual(hudPowerBars({}), []); assert.deepEqual(hudPowerBars(null), []);
 });
 
 console.log(`\n${n} test geçti`);

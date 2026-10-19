@@ -4252,4 +4252,13 @@ registerCatalog('ru', {
   "Yakıt / batarya sütunları": "Столбцы топливо / батарея",
   "harcanan yakıt ve ölçülen km/L · batarya Wh ve ortalama W": "израсходованное топливо и измеренные км/л · Вт·ч батареи и средние Вт",
   "Simülasyon hızı (en yüksek)": "Скорость симуляции (пик)",
+  "Güç paneli: ayrıntı için tıklayın": "Панель энергии: нажмите для подробностей",
+  "Yakıt: mesafe + gaz kolu · Batarya: saatlik W + servo · Biterse yalnız uyarı, uçuş sürer": "Топливо: расстояние + газ · Батарея: Вт в час + сервоприводы · При опустошении только предупреждение, полёт продолжается",
+  "Tüketim ayarı": "Настройка расхода",
+  "Harcanan": "Израсходовано",
+  "Anlık": "Текущее",
+  "Ölçülen": "Измерено",
+  "henüz yok": "пока нет",
+  "ort.": "ср.",
+  "SITL pili": "Батарея SITL",
 });

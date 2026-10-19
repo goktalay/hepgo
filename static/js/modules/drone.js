@@ -234,14 +234,23 @@ function sitlParamsCard(d, m) {
   const body = h('div');
   const excl = h('div', { class: 'small muted', style: { marginTop: '8px' } });
   const pick = h('input', { type: 'file', accept: '.param,.parm,.txt', hidden: true });
+  // Montaj parametreleri (SERVOn_REVERSED; app/drone_params.py montaj_mi): kayıtta/dışa aktarımda gerçek uçak değeri korunur, SITL'e açılışta 0 yazılır
+  // (ArduPilot SITL fiziği servo PWM'ini doğrudan yüzeye çevirir; sanal montaj düz). Seçenek: gerçek değer SITL'e de gitsin (test/karşılaştırma).
+  const revBox = h('input', { type: 'checkbox', disabled: !canWrite });
+  const revLabel = h('label', { class: 'small', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px' },
+    title: 'Açıkken kayıtlı SERVOn_REVERSED değeri simülasyona gerçek değeriyle yazılır: sanal uçakta kontrol ters çalışabilir. Sonraki oturum açılışında geçerli.' },
+  revBox, 'Simülasyonda servo ters çevirmeyi uygula (sim_apply_servo_reverse; test/karşılaştırma — varsayılan kapalı)');
   let items = [];
+  let mountBadge = 'montaj (simülasyonda nötr)';
   const draw = () => {
     title.textContent = tr('Kayıtlı parametreler ({n})', { n: items.length });
     const list = items.filter(p => matches(q.value, p.name, p.source_text, p.updated_by_name));
     clear(body, list.length ? h('div', { class: 'table-wrap' }, h('table', null,
       h('thead', null, h('tr', null, ['Parametre', 'Değer', 'Kaynak', 'Güncelleme', 'Kullanıcı', ''].map(c => h('th', null, c)))),
       h('tbody', null, list.map(p => h('tr', null,
-        h('td', null, h('b', { class: 'mono' }, p.name)),
+        h('td', null, h('b', { class: 'mono' }, p.name), p.mount ? h('span', { class: 'badge orange', style: { marginLeft: '6px' },
+          title: 'Donanım montaj parametresi: gerçek uçak değeri kayıtta ve .param dışa aktarımında korunur; simülasyona (SITL) açılışta 0 yazılır — sanal uçakta servo montajı düzdür' },
+        tr(mountBadge)) : null),
         h('td', { class: 'mono num' }, fmtParam(p.value)),
         h('td', null, h('span', { class: `badge ${PARAM_SOURCE_BADGE[p.source] || 'gray'}` }, tr(p.source_text || p.source))),
         h('td', { class: 'small muted' }, p.updated_at ? fmtDateTime(p.updated_at) : '—'),
@@ -257,10 +266,20 @@ function sitlParamsCard(d, m) {
     const r = await api.get(`/api/drone/drones/${d.id}/sitl-params`);
     items = r.items || [];
     const ex = r.excluded || { prefixes: [], names: [] };
-    excl.textContent = tr('Kaydedilmeyenler (oturum/simülatör ayarı ya da sayaç): {prefixes} ön ekleri ve {names}', { prefixes: ex.prefixes.join(', '), names: ex.names.join(', ') });
+    if (ex.mount_badge) mountBadge = ex.mount_badge;
+    excl.textContent = tr('Kaydedilmeyenler (oturum/simülatör ayarı ya da sayaç): {prefixes} ön ekleri ve {names}. Montaj parametreleri ({mount}) kaydedilir ama simülasyonda nötr (0) uygulanır.',
+      { prefixes: ex.prefixes.join(', '), names: ex.names.join(', '), mount: ex.mount || 'SERVO1..16_REVERSED' });
+    revBox.checked = !!r.options?.sim_apply_servo_reverse;
     draw();
   };
   q.addEventListener('input', draw);
+  revBox.addEventListener('change', async () => {
+    try {
+      const r = await api.put(`/api/drone/drones/${d.id}/sitl-params/options`, { sim_apply_servo_reverse: revBox.checked });
+      revBox.checked = !!r.options?.sim_apply_servo_reverse;
+      toast(revBox.checked ? 'Servo ters çevirme simülasyona uygulanacak (sonraki oturum açılışında)' : 'Servo ters çevirme simülasyonda nötr (sonraki oturum açılışında)');
+    } catch (e) { revBox.checked = !revBox.checked; toast(e.message || 'Kaydedilemedi'); }
+  });
   pick.addEventListener('change', async () => {
     const f = pick.files?.[0]; pick.value = '';
     if (!f) return;
@@ -282,7 +301,7 @@ function sitlParamsCard(d, m) {
   const card = h('div', { class: 'card card-pad dr-params', style: { marginTop: '14px' } },
     h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } }, title, tools),
     h('p', { class: 'small muted' }, 'Sanal dronla uçuşta HEPGO panelinden ya da Mission Planner\'dan değiştirilen parametreler kalıcıdır: aynı dronla SITL yeniden başlatılınca varsayilan.parm ile ve ilk kalp atışında PARAM_SET ile geri yüklenir.'),
-    body, excl);
+    body, excl, revLabel);
   load().catch(e => clear(body, h('div', { class: 'small muted' }, e.message || 'Yüklenemedi')));
   return card;
 }

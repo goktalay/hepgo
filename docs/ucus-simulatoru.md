@@ -818,6 +818,38 @@ kalıcı olarak kaydetsin; aynı dronu tekrar kullandığımızda eski parametre
   hub `param_set RTL_RADIUS 777` → `hepgo`; kapat → yeniden aç → `params.loaded 2`, varsayilan.parm'da satırlar, `PARAM_REQUEST_READ` → 123 / 777;
   yükleme yankıları `updated_at` değiştirmez; dron sayfası ekran görüntüsü.
 
+### 20.1 Donanım montaj parametreleri — `SERVOn_REVERSED` simülasyonda nötr (`drone_params.montaj_mi`, `sitl_kayitlari`; tablo `drone_sitl_options`)
+Kullanıcı bildirimi (Gökkubbe canlı, dron 5 CAYMAZ): "Caymaz parametrelerinde kanat servolarının yerleşimi dolayısıyla SERVO1_REVERSED=1,
+SERVO2_REVERSED=0 kullanıyoruz; bu şekilde düzenlediğimizde uçak simülasyonda düzgün uçmuyor."
+- **Kök neden.** Gerçek uçakta `SERVOn_REVERSED` servo **montaj yönünü** düzeltir (servo ters takılıysa PWM ters çevrilir, yüzey doğru yöne
+  gider). ArduPilot SITL'in uçak fizik modeli (`SIM_Plane`) ise servo PWM'ini **doğrudan** kontrol yüzeyi açısına çevirir — sanal uçakta montaj
+  hep "düz"dür. Dolayısıyla REVERSED=1 sanal uçakta aileronu gerçekten ters çalıştırır: otopilot sağa yatış komutu verir, yüzey sola yatırır →
+  kontrol döngüsü pozitif geri beslemeye girer (çırpınma/takla). Gerçek uçakla aynı davranış için SITL'e montaj düzeltmesi **yazılmamalıdır**.
+- **Sınıf:** `MONTAJ_DESENI` = `SERVO1..16_REVERSED` (`montaj_mi`). **`RCn_REVERSED` bilerek dışarıda:** RC girişleri kumanda tarafıdır; SITL'de
+  sanal kumanda / Mission Planner joystick de aynı gerçek kumanda yönüyle çalışmalı (RC ters çevirme pilot girişinde anlamlıdır, fizikte değil);
+  nötrlenirse kumanda yönü gerçek uçaktan sapar → olduğu gibi gider. `SERVOn_FUNCTION/MIN/MAX/TRIM` de montaj değildir (SITL'de aynı anlam).
+- **Davranış.** (1) Kullanıcı MP'den ya da sayfadan kaydeder → kalıcı kayıtta **değer korunur**; `.param` dışa aktarımı gerçek değeri (1) yazar,
+  başına `#NOTE: … montaj (simülasyonda nötr) — gerçek uçak değeri korunur` yorum satırı düşer (MP yorumları yok sayar; `param_ayristir` da).
+  (2) Oturum açılışında `sitl_kayitlari(rows, secenekler)` montaj satırlarını **0**'a çeker: varsayilan.parm (`parm_satirlari`) + ilk kalp atışı
+  `_kayitli_yaz` PARAM_SET'leri; olay şeridine sarı uyarı "SERVO1_REVERSED: Simülasyonda servo ters çevirme montaj parametresidir; sanal uçakta
+  nötr uygulanır (SITL'e 0 yazıldı; kayıt ve .param dışa aktarımı gerçek değeri korur)". Oturum **sırasında** MP/panelden SERVOn_REVERSED≠0
+  yazılırsa izleyici kalıcı kaydeder ama SITL'de etkisi vardır (kontrol tersine döner) → `Izleyici.montaj_uyarisi` sarı olay: "…bu oturumda
+  SITL'de etkili, yeni oturumda 0 yazılır". Harekât paneli sanal dronu (`drone_hub.SitlDrone`) aynı kuralı uygular.
+  (3) Dron detay sayfası "Kayıtlı parametreler" kartında bu adlar turuncu **"montaj (simülasyonda nötr)"** rozeti taşır (`items[].mount`;
+  `excluded.mount/mount_badge`). (4) Dron başına seçenek **`sim_apply_servo_reverse`** (varsayılan kapalı; tablo `drone_sitl_options`
+  anahtar/değer, `drone_params.SECENEKLER`/`secenekler`/`secenek_yaz`; REST `PUT /api/drone/drones/{id}/sitl-params/options`, listede `options`;
+  kartta onay kutusu): açıkken gerçek değer SITL'e gider (test/karşılaştırma) ve açılışta sarı olay "sim_apply_servo_reverse AÇIK …". Oturum
+  özeti `params.mount_neutral` (0 yazılan adlar) + `params.servo_reverse_applied`. (5) 3B elevon/aileron görselleştirmesi `SERVO_OUTPUT_RAW`
+  PWM'inden okunur (servo_fn ile kanal eşlemesi): SITL'e 0 yazıldığında PWM ile fizik aynı yönde → 3B tutarlı; değişiklik gerekmedi.
+- **CAYMAZ elevon kurulumu SITL'de.** HEPGO oturum başlangıcı SERVO1/2_FUNCTION'a dokunmaz (ArduPlane varsayılanı **4 aileron / 19 elevator**;
+  PROD kaydı da 4/19, REVERSED 0). SITL modeli `plane` / `plane-catapult` kanal 1'i aileron, kanal 2'yi elevator olarak okur; `ELEVON_OUTPUT` /
+  `MIXING_GAIN` karışımı ArduPlane içinde yapılır, fizik karışım sonrası PWM'i görür → 4/19 doğru kurulumdur. 77/78 (elevon sol/sağ) yalnız
+  `plane-elevon` SITL modelinde doğru uçar; HEPGO bu modeli kullanmaz → 77/78 yazılmamalı. Gerçek uçak 4/19 + MIXING ile uçuyorsa SITL'de de aynı.
+- **Ölçüm (gerçek SITL arduplane, `/tmp/flsim/srvrev/olc.py`):** SERVO1_REVERSED=1 kayıtlı dron, anahtar kapalı → takeoff → 60 sn: yatış/irtifa
+  kararlı (rapor commit mesajında ve bu bölümün altındaki ölçüm notunda); anahtar açık → kontrol ters, uçak kararsız (karşılaştırma).
+- **Testler:** `param_testleri` montaj bloğu — montaj_mi/haric_mi, içe aktarım, `parm_satirlari` 0/1, export 1 + NOTE, seçenek REST (403),
+  reset sonrası `params.mount_neutral`/`servo_reverse_applied`, PARAM_SET değerleri, sarı olaylar, `Izleyici.montaj_uyarisi` metinleri.
+
 ## 18. Görev çizimi, iniş dairesi, çarpışma kaydı ve özet rapor (`app/flightsim_mission.py`, `static/js/modules/flightsim_mission.js`, `static/js/modules/flightsim_report.js`; tablo `drone_sim_events`)
 Kullanıcı isteği (birebir): "1. Dron üzerine Mission Planner üzerinden ya da kendi sistemimizden bir görev yüklersek haritaya şık bir şekilde çizsin.
 2. Görevin son adımında daire içinde H çizsin, dairenin çapını girişte parametre olarak girelim. 3. Topoğrafyadan ya da bir durumdan dolayı dron

@@ -1452,7 +1452,7 @@ def param_testleri(a, c1, sitl, mon):
     assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0   # önceki oturumların TCP'leri kapanmış olmalı
     s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': pd_['id']}), 201)
     sid, bid = s['id'], -(flightsim.KIMLIK_TABANI + s['id'])
-    assert s['params'] == {'tracked': True, 'loaded': 0, 'saved': 0}, s['params']
+    assert s['params'] == {'tracked': True, 'loaded': 0, 'saved': 0, 'mount_neutral': [], 'servo_reverse_applied': False}, s['params']
     assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
     ses = flightsim.MANAGER.get(sid)
     assert ses.param_izleyici is not None and ses.param_izleyici.drone_id == pd_['id']
@@ -1535,16 +1535,83 @@ def param_testleri(a, c1, sitl, mon):
     it = ok(a.get(P))['items']
     assert {x['name']: x['value'] for x in it} == {'ANGLE_MAX': 2500, 'RTL_ALT': 150, 'WPNAV_SPEED': 900} and all(x['source'] == 'hepgo' for x in it if x['name'] != 'ANGLE_MAX'), it
     assert a.post(f'{P}/import', json={'text': 'x' * 2_000_001}).status_code == 400
+    # --- montaj parametreleri (SERVOn_REVERSED): kayıt + .param dışa aktarımı gerçek değer (1); SITL'e seçenek kapalıyken 0, açıkken 1; uyarı metni;
+    #     RCn_REVERSED montaj sayılmaz (kumanda yönü; olduğu gibi gider) ---
+    assert drone_params.montaj_mi('SERVO1_REVERSED') and drone_params.montaj_mi('servo16_reversed') and not drone_params.montaj_mi('SERVO17_REVERSED')
+    assert not drone_params.montaj_mi('RC1_REVERSED') and not drone_params.montaj_mi('SERVO1_FUNCTION') and not drone_params.montaj_mi('SERVO0_REVERSED')
+    assert not drone_params.haric_mi('SERVO1_REVERSED') and not drone_params.haric_mi('RC1_REVERSED')   # kaydedilir
+    assert ok(a.post(f'{P}/import', json={'text': 'SERVO1_REVERSED,1\nSERVO2_REVERSED,0\nRC1_REVERSED,1\n'}))['imported'] == 3
+    r = ok(a.get(P))
+    assert r['options'] == {'sim_apply_servo_reverse': False} and r['excluded']['mount'] == 'SERVO1..16_REVERSED' and r['excluded']['mount_badge'] == 'montaj (simülasyonda nötr)', r
+    mnt = {x['name']: x['mount'] for x in r['items']}
+    assert mnt == {'ANGLE_MAX': False, 'RC1_REVERSED': False, 'RTL_ALT': False, 'SERVO1_REVERSED': True, 'SERVO2_REVERSED': True, 'WPNAV_SPEED': False}, mnt
+    rows = drone_params.yukle(pd_['id'])
+    satir = drone_params.parm_satirlari(rows)
+    assert 'SERVO1_REVERSED 0' in satir and 'SERVO2_REVERSED 0' in satir and 'RC1_REVERSED 1' in satir, satir
+    sitl_r, notr = drone_params.sitl_kayitlari(rows)
+    assert notr == ['SERVO1_REVERSED'] and {x['name']: x['value'] for x in sitl_r}['SERVO1_REVERSED'] == 0.0 and {x['name']: x['value'] for x in sitl_r}['RC1_REVERSED'] == 1.0
+    assert 'SERVO1_REVERSED 1' in drone_params.parm_satirlari(rows, {'sim_apply_servo_reverse': True})
+    ex = a.get(f'{P}/export').text
+    assert 'SERVO1_REVERSED,1' in ex and 'SERVO2_REVERSED,0' in ex and '#NOTE: SERVO1_REVERSED, SERVO2_REVERSED: montaj (simülasyonda nötr)' in ex, ex
+    assert drone_params.param_ayristir(ex)[0].count(('SERVO1_REVERSED', 1.0)) == 1   # yorum satırı MP ayrıştırmasını bozmaz
+    # seçenek REST (yazma yetkisi; salt okuyan 403) → anahtar AÇIK: oturum yeniden açılışında SITL'e gerçek değer (1)
+    assert ok(a.put(f'{P}/options', json={'sim_apply_servo_reverse': True}))['options'] == {'sim_apply_servo_reverse': True}
+    assert drone_params.secenekler(pd_['id']) == {'sim_apply_servo_reverse': True} and mon.put(f'{P}/options', json={'sim_apply_servo_reverse': False}).status_code == 403
+    olaylar = []
+    eski_olay = ses._olay
+    ses._olay = lambda t, s=6: (olaylar.append((str(t), int(s))), eski_olay(t, s))
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'reset'}))
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['params']['loaded'] == 6, 3), ok(a.get(f'{S}/{sid}'))['params']
+    g = ok(a.get(f'{S}/{sid}'))['params']
+    assert g['servo_reverse_applied'] is True and g['mount_neutral'] == [], g
+    assert ses.param_izleyici.montaj_uygula is True
+    once = len(sitl.alinan)
+    ses.loop.call_soon_threadsafe(ses._kayitli_yaz)
+    assert bekle(lambda: len(sitl.alinan) >= once + 6 * 25, 3)
+    yazilan = {str(m.param_id).rstrip('\x00'): m.param_value for m in (pr.parse_buffer(bytes(sitl.alinan[once:])) or []) if m.get_type() == 'PARAM_SET'}
+    assert yazilan['SERVO1_REVERSED'] == 1.0 and yazilan['RC1_REVERSED'] == 1.0, yazilan
+    assert any('sim_apply_servo_reverse AÇIK' in t and s == 4 for t, s in olaylar), olaylar
+    # anahtar KAPALI (varsayılan): parm + PARAM_SET'te 0, sarı uyarı olayı; RC1_REVERSED 1 kalır
+    ok(a.put(f'{P}/options', json={'sim_apply_servo_reverse': False}))
+    olaylar.clear()
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'reset'}))
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['params']['mount_neutral'] == ['SERVO1_REVERSED'], 3), ok(a.get(f'{S}/{sid}'))['params']
+    assert ok(a.get(f'{S}/{sid}'))['params']['servo_reverse_applied'] is False and ses.param_izleyici.montaj_uygula is False
+    parm = drone_sitl.parm_metni(1, False, drone_params.parm_satirlari(ses.kayitli_params, ses.sim_secenek))
+    assert 'SERVO1_REVERSED 0' in parm and 'RC1_REVERSED 1' in parm and 'SERVO1_REVERSED 1' not in parm, parm
+    once = len(sitl.alinan)
+    ses.loop.call_soon_threadsafe(ses._kayitli_yaz)
+    assert bekle(lambda: len(sitl.alinan) >= once + 6 * 25, 3)
+    yazilan = {str(m.param_id).rstrip('\x00'): m.param_value for m in (pr.parse_buffer(bytes(sitl.alinan[once:])) or []) if m.get_type() == 'PARAM_SET'}
+    assert yazilan['SERVO1_REVERSED'] == 0.0 and yazilan['SERVO2_REVERSED'] == 0.0 and yazilan['RC1_REVERSED'] == 1.0, yazilan
+    assert bekle(lambda: any(drone_params.MONTAJ_UYARI in t and s == 4 and t.startswith('SERVO1_REVERSED') for t, s in olaylar), 2), olaylar
+    assert {x['name']: x['value'] for x in ok(a.get(P))['items']}['SERVO1_REVERSED'] == 1, 'kalıcı kayıt korunur'
+    ses._olay = eski_olay
+    # oturum sırasında MP SERVO1_REVERSED=1 → kayıt + montaj uyarısı (izleyici); anahtar açıkken farklı metin; SITL kaynağı uyarı üretmez
+    uy = []
+    izl = drone_params.Izleyici(pd_['id'], lambda t, s: uy.append((t, s)))
+    izl.mp_set('SERVO3_REVERSED', 1.0)
+    assert izl.param_value('SERVO3_REVERSED', 1.0, 2, 900, 40) == {'name': 'SERVO3_REVERSED', 'value': 1.0, 'source': 'mp'}
+    assert [s for _, s in uy] == [6, 4] and uy[1][0] == f'SERVO3_REVERSED: {drone_params.MONTAJ_UYARI}. Kayıt korunur (dışa aktarımda gerçek değer); bu oturumda SITL\'de etkili, yeni oturumda 0 yazılır', uy
+    izl2 = drone_params.Izleyici(pd_['id'], lambda t, s: uy.append((t, s)), montaj_uygula=True)
+    izl2.hepgo_set('SERVO4_REVERSED', 1.0, 1)
+    izl2.param_value('SERVO4_REVERSED', 1.0, 2, 900, 41)
+    assert 'sim_apply_servo_reverse' in uy[-1][0] and uy[-1][1] == 4, uy[-1]
+    izl2.hepgo_set('SERVO4_REVERSED', 0.0, 1)
+    izl2.param_value('SERVO4_REVERSED', 0.0, 2, 900, 41)   # 0'a dönüş: uyarı yok
+    assert uy[-1][1] == 6
+    assert ok(a.get(P))['count'] == 8
     # salt okuyan (drone.sim var, drone.drones yok) → 403
     assert mon.get(P).status_code == 403 and mon.delete(P).status_code == 403
-    assert ok(a.delete(P)) == {'ok': True, 'deleted': 3} and ok(a.get(P))['count'] == 0
+    assert ok(a.delete(P)) == {'ok': True, 'deleted': 8} and ok(a.get(P))['count'] == 0
     with db.connect() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action IN ('Sanal dron parametreleri içe aktardı', 'Sanal dron parametrelerini sıfırladı', 'Sanal dron parametresi sildi')").fetchone()[0] == 3
+        assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action IN ('Sanal dron parametreleri içe aktardı', 'Sanal dron parametrelerini sıfırladı', 'Sanal dron parametresi sildi')").fetchone()[0] == 4
+        assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE action = 'Sanal dron simülasyon seçeneği değiştirdi'").fetchone()[0] == 2
     gcs.close()
     ok(a.delete(f'{S}/{sid}'))
     # dron kaydı seçilmeyen oturumda izleme yok
     s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
-    assert s2['params'] == {'tracked': False, 'loaded': 0, 'saved': 0}
+    assert s2['params'] == {'tracked': False, 'loaded': 0, 'saved': 0, 'mount_neutral': [], 'servo_reverse_applied': False}
     ok(a.delete(f"{S}/{s2['id']}"))
     print('  kalıcı parametre testleri geçti')
 

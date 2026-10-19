@@ -1338,13 +1338,18 @@ class SitlDrone:
         status = 'KAPANDI'
         try:
             self._event(f'SITL başlatılıyor ({self.tip}) · {self.name}', 6)
+            secenek = dict(drone_params.SECENEKLER)
             try:
                 self.kayitli_params = await ex(None, drone_params.yukle, self.drone_id)
+                secenek = await ex(None, drone_params.secenekler, self.drone_id)
             except Exception as e:   # noqa: BLE001 — kayıt okunamasa da SITL açılır
                 self.kayitli_params = []
                 self._event(f'Kayıtlı parametreler okunamadı: {e}'[:200], 4)
+            self.param_izleyici.montaj_uygula = bool(secenek.get('sim_apply_servo_reverse'))
+            # montaj parametreleri (SERVOn_REVERSED; drone_params modül açıklaması): SITL'e seçenek kapalıyken 0 gider, kayıt korunur
+            sitl_kayit, notr = drone_params.sitl_kayitlari(self.kayitli_params, secenek)
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.drone_id, self.tip, self.home[0], self.home[1], self.sysid,
-                                                                          konsol=self._konsol, ekstra_parm=drone_params.parm_satirlari(self.kayitli_params)))
+                                                                          konsol=self._konsol, ekstra_parm=drone_params.parm_satirlari(self.kayitli_params, secenek)))
             if not port:
                 self.state = 'HATA'
                 self._event(err or 'SITL başlatılamadı', 2)
@@ -1360,7 +1365,9 @@ class SitlDrone:
             self.state = 'HAZIR'
             self._event(f'Sanal dron (SITL) bağlandı: tcp:127.0.0.1:{port}', 6)
             n = 0
-            yuklenecek = list(self.kayitli_params)
+            yuklenecek = list(sitl_kayit)
+            if notr:
+                self._event(f"{', '.join(notr)}: {drone_params.MONTAJ_UYARI} (SITL'e 0 yazılır; kayıt gerçek değeri korur)", 4)
             while True:
                 await asyncio.sleep(1.0)
                 n += 1

@@ -19,6 +19,13 @@ HARİÇ (hiç kaydedilmez): STAT_*, LOG_*, SIM_WIND_*, SIM_GPS1_*, TKOFF_*, MAV1
   PLANE_YER_PARAMLARI / launch_parametreleri — `oturum_adlari`). Diğer SIM_* (ör. SIM_BATT_VOLTAGE) kaydedilir.
 YÜKLEME: `yukle` → `parm_satirlari` varsayilan.parm'a (HEPGO varsayılanlarından sonra) eklenir; ayrıca ilk kalp atışında PARAM_SET ile
   yeniden yazılır (eeprom.bin'deki eski değer defaults dosyasını ezebilir) ve olay şeridine "N kayıtlı parametre yüklendi" düşer.
+MONTAJ PARAMETRELERİ (`montaj_mi`: SERVO1..16_REVERSED): gerçek uçakta servo montaj yönünü düzeltir; ArduPilot SITL'in uçak fiziği ise servo
+  PWM'ini doğrudan kontrol yüzeyi açısına çevirir (sanal montaj hep "düz") → REVERSED=1 sanal uçakta yüzeyi gerçekten ters çalıştırır ve kontrol
+  tersine döner (CAYMAZ: SERVO1_REVERSED=1 ile uçak simülasyonda düzgün uçmuyordu). Kural: kalıcı kayıtta ve .param dışa aktarımında değer
+  KORUNUR (gerçek uçağa 1 çıkar); SITL'e açılışta (`sitl_kayitlari` → parm + PARAM_SET) 0 yazılır. Dron seçeneği `sim_apply_servo_reverse`
+  (tablo drone_sitl_options; varsayılan kapalı) açılırsa gerçek değer gider (test/karşılaştırma). RCn_REVERSED'e DOKUNULMAZ: RC girişleri kumanda
+  tarafıdır; SITL'de de sanal kumanda / Mission Planner joystick aynı gerçek kumanda yönüyle çalışmalı (RC ters çevirme SITL fiziğinde değil,
+  pilot girişinde anlamlıdır) — nötrlenirse kumanda yönü gerçek uçaktan sapar.
 """
 import re
 import threading
@@ -41,6 +48,13 @@ TABAN_TAM_ORAN = 0.9      # param_count'un bu oranı görülünce "ilk tam param
 # Ön ek hariç olsa da KAYDEDİLEN adlar: flap yüzdeleri dron yapılandırmasıdır (flightsim.FLAP_PARAMLARI oturum başlangıcı; kullanıcı değiştirirse kalıcı)
 HARIC_DEGIL = frozenset({'TKOFF_FLAP_PCNT', 'LAND_FLAP_PERCNT'})
 AD_DESENI = re.compile(r'^[A-Z][A-Z0-9_]{0,15}$')
+# Donanım montaj parametreleri: kalıcı kayıt/dışa aktarımda korunur, SITL'e nötr (0) gider (modül açıklaması). RCn_REVERSED bilerek dışarıda.
+MONTAJ_DESENI = re.compile(r'^SERVO([1-9]|1[0-6])_REVERSED$')
+MONTAJ_ACIKLAMA = 'SERVO1..16_REVERSED'
+MONTAJ_ROZET = 'montaj (simülasyonda nötr)'
+MONTAJ_UYARI = 'Simülasyonda servo ters çevirme montaj parametresidir; sanal uçakta nötr uygulanır'
+# Dron simülasyon seçenekleri (tablo drone_sitl_options): anahtar → varsayılan. sim_apply_servo_reverse: SITL'e kayıtlı SERVOn_REVERSED gerçek değeriyle gider.
+SECENEKLER = {'sim_apply_servo_reverse': False}
 KAYNAKLAR = {'hepgo': 'HEPGO', 'mp': 'Mission Planner', 'sitl': 'SITL (araç)'}
 MAX_PARAM = 2000          # dron başına kayıt üst sınırı (içe aktarma)
 _oturum_cache = None
@@ -79,7 +93,66 @@ def haric_mi(name):
 
 
 def haric_listesi():
-    return {'prefixes': list(HARIC_ONEKLER), 'names': sorted(set(HARIC_ADLAR) | set(oturum_adlari()))}
+    return {'prefixes': list(HARIC_ONEKLER), 'names': sorted(set(HARIC_ADLAR) | set(oturum_adlari())), 'mount': MONTAJ_ACIKLAMA, 'mount_badge': MONTAJ_ROZET}
+
+
+def montaj_mi(name):
+    """Donanım montaj parametresi mi (SERVOn_REVERSED, n=1..16): kayıtta korunur, SITL'e varsayılan olarak 0 yazılır."""
+    return bool(MONTAJ_DESENI.match(str(name or '').upper()))
+
+
+def sitl_kayitlari(rows, secenekler=None):
+    """Kayıtlı satırların SITL'e gidecek biçimi: montaj parametreleri `sim_apply_servo_reverse` kapalıyken 0'a çekilir (sanal montaj düz),
+    diğerleri olduğu gibi. Dönüş: ([{name, value, ptype}], nötrlenen adlar listesi)."""
+    uygula = bool((secenekler or {}).get('sim_apply_servo_reverse', SECENEKLER['sim_apply_servo_reverse']))
+    out, notr = [], []
+    for r in rows:
+        v = float(r['value'])
+        if not uygula and montaj_mi(r['name']) and v != 0.0:
+            v = 0.0
+            notr.append(str(r['name']))
+        out.append({'name': r['name'], 'value': v, 'ptype': r.get('ptype')})
+    return out, notr
+
+
+# ---------------- dron simülasyon seçenekleri (drone_sitl_options) ----------------
+def _secenek_deger(key, raw):
+    v = SECENEKLER[key]
+    if isinstance(v, bool):
+        return str(raw).strip().lower() in ('1', 'true', 'evet', 'on', 'yes')
+    return raw
+
+
+def secenekler(drone_id, conn=None):
+    """Dronun simülasyon seçenekleri (varsayılanlarla birleşik): {sim_apply_servo_reverse: bool}."""
+    sql = 'SELECT key, value FROM drone_sitl_options WHERE drone_id = ?'
+    if conn is not None:
+        rows = conn.execute(sql, (int(drone_id),)).fetchall()
+    else:
+        with db.connect() as c:
+            rows = c.execute(sql, (int(drone_id),)).fetchall()
+    out = dict(SECENEKLER)
+    for k, v in rows:
+        if k in SECENEKLER:
+            out[k] = _secenek_deger(k, v)
+    return out
+
+
+def secenek_yaz(drone_id, key, value, user_id=None, conn=None):
+    """Tek seçeneği yazar (UPSERT); bilinmeyen anahtar → KeyError. Dönüş: yazılan (çözümlenmiş) değer."""
+    if key not in SECENEKLER:
+        raise KeyError(key)
+    v = bool(value) if isinstance(SECENEKLER[key], bool) else str(value)
+    args = (int(drone_id), key, '1' if v is True else '0' if v is False else str(v), db.now(), user_id)
+    sql = '''INSERT INTO drone_sitl_options (drone_id, key, value, updated_at, updated_by) VALUES (?,?,?,?,?)
+             ON CONFLICT(drone_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by'''
+    if conn is not None:
+        conn.execute(sql, args)
+    else:
+        with db.connect() as c:
+            c.execute(sql, args)
+            c.commit()
+    return v
 
 
 def _ad(name):
@@ -99,6 +172,7 @@ def yukle(drone_id, conn=None):
             rows = db.rows(c.execute(sql, (int(drone_id),)))
     for r in rows:
         r['source_text'] = KAYNAKLAR.get(r['source'], r['source'])
+        r['mount'] = montaj_mi(r['name'])   # montaj parametresi: UI rozeti "montaj (simülasyonda nötr)"
     return rows
 
 
@@ -142,6 +216,9 @@ def sil(drone_id, name=None, conn=None):
 def param_metni(rows, baslik=None):
     """Mission Planner `.param` biçimi: `AD,DEĞER` satırları (# yorum). Tam sayı değerler ondalıksız yazılır."""
     out = [f'#NOTE: {baslik}'] if baslik else []
+    montaj = [str(r['name']) for r in rows if montaj_mi(r['name'])]
+    if montaj and baslik:   # gerçek uçağa giden dosyada montaj değeri korunur; yorum satırı MP tarafından yok sayılır
+        out.append(f"#NOTE: {', '.join(montaj)}: {MONTAJ_ROZET} — gerçek uçak değeri korunur")
     for r in rows:
         v = float(r['value'])
         out.append(f"{r['name']},{int(v) if v == int(v) and abs(v) < 1e15 else repr(v)}")
@@ -195,9 +272,10 @@ def ice_aktar(drone_id, text, user_id=None, conn=None):
     return {'imported': len(gecerli), 'skipped': atlanan[:50], 'skipped_count': len(atlanan), 'count': toplam}
 
 
-def parm_satirlari(rows):
-    """varsayilan.parm'a eklenecek `AD DEĞER` satırları (drone_sitl.parm_metni `ekstra`)."""
-    return [f"{r['name']} {float(r['value']):g}" for r in rows if not haric_mi(r['name'])]
+def parm_satirlari(rows, secenekler=None):
+    """varsayilan.parm'a eklenecek `AD DEĞER` satırları (drone_sitl.parm_metni `ekstra`); montaj parametreleri `sitl_kayitlari` ile nötrlenir."""
+    sitl, _ = sitl_kayitlari(rows, secenekler)
+    return [f"{r['name']} {float(r['value']):g}" for r in sitl if not haric_mi(r['name'])]
 
 
 # ---------------- canlı izleme ----------------
@@ -205,9 +283,10 @@ class Izleyici:
     """Bir dronun (drone_id) çalışan SITL'i için PARAM_VALUE izleyicisi. Olay döngüsünde çağrılır (kısa sqlite yazımı).
     `bildir(metin, severity)`: olay şeridi/konsol (isteğe bağlı)."""
 
-    def __init__(self, drone_id, bildir=None):
+    def __init__(self, drone_id, bildir=None, montaj_uygula=False):
         self.drone_id = int(drone_id)
         self.bildir = bildir
+        self.montaj_uygula = bool(montaj_uygula)   # sim_apply_servo_reverse: açıkken montaj kaydı uyarısı farklı (SITL'de gerçek değer kalıcı)
         self.taban = {}       # ad → son bilinen değer (SITL'den öğrenilen)
         self.bekleyen = {}    # ad → (source, user_id, hedef, zaman): PARAM_SET gönderildi, yankı bekleniyor
         self.yukleme = set()  # açılışta bizim yazdığımız kayıtlılar: yankı yalnız tabana işlenir
@@ -321,7 +400,14 @@ class Izleyici:
         self.kayit_sayisi += 1
         self.son_kayit = {'name': n, 'value': v, 'source': source}
         self._bildir(f'Parametre kalıcı kaydedildi: {n} = {v:g} ({KAYNAKLAR.get(source, source)})', 6)
+        if montaj_mi(n) and v != 0.0 and source != 'sitl':   # montaj parametresi: bu oturumda SITL'de etkili (kontrol tersine döner), yeni oturumda 0 yazılır
+            self._bildir(self.montaj_uyarisi(n), 4)
         return self.son_kayit
+
+    def montaj_uyarisi(self, n):
+        if self.montaj_uygula:
+            return f'{n}: {MONTAJ_UYARI} — bu dronda "sim_apply_servo_reverse" AÇIK: gerçek değer SITL\'e de uygulanıyor (sanal uçakta kontrol ters çalışabilir)'
+        return f'{n}: {MONTAJ_UYARI}. Kayıt korunur (dışa aktarımda gerçek değer); bu oturumda SITL\'de etkili, yeni oturumda 0 yazılır'
 
     def _bildir(self, metin, sev):
         if self.bildir is not None:

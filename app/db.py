@@ -1759,8 +1759,8 @@ CREATE TABLE IF NOT EXISTS drone_sitl_params (
     source      TEXT NOT NULL DEFAULT 'hepgo',        -- hepgo (panel/içe aktarma) | mp (Mission Planner PARAM_SET) | sitl (araçta kendiliğinden değişti)
     PRIMARY KEY (drone_id, name)
 );
--- Sanal dron simülasyon seçenekleri (app/drone_params.py SECENEKLER): dron başına anahtar/değer; ör. sim_apply_servo_reverse = '1'
--- (montaj parametresi SERVOn_REVERSED'in kayıtlı değeri SITL'e de gider; varsayılan kapalı → sanal uçakta nötr 0).
+-- Sanal dron simülasyon seçenekleri: dron başına anahtar/değer (ayrılmış; şu an okunan seçenek yok). Eski 'sim_apply_servo_reverse' kayıtları yok
+-- sayılır: montaj parametreleri artık SITL yaması SIM_SRV_REV ile sanal uçakta aynen uygulanır (docs/ucus-simulatoru.md §20.1).
 CREATE TABLE IF NOT EXISTS drone_sitl_options (
     drone_id    INTEGER NOT NULL REFERENCES drone_drones(id) ON DELETE CASCADE,
     key         TEXT NOT NULL,

@@ -55,5 +55,5 @@ DEV: `HEPGO_SITL_DIR=/opt/hepgo/sitl/bin` (eski resmi ikililer `bin-4.7.2-orig/`
 yeniden açılmalı (ikili süreç başlangıcında yüklenir).
 
 ## Doğrulama
-`/tmp/flsim/srvrev2/dogrula.py <ikili dizini> rev10,rev00,rev10_mask0,copter,copter_mask1` — gerçek SITL ile tekerlekli kalkış,
+`tools/sitl/dogrula_srv_rev.py <ikili dizini> rev10,rev00,rev10_mask0,copter,copter_mask1` (çıktı dizini DOGRULA_OUT, varsayılan /tmp/flsim/srvrev2) — gerçek SITL ile tekerlekli kalkış,
 60 sn roll/irtifa istatistiği (sonuçlar §20.1 ölçüm notunda ve commit mesajında).

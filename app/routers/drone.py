@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from .. import agentkeys, auth, db, drone_hub, drone_params
+from .. import agentkeys, auth, db, drone_hub, drone_params, drone_sitl
 
 router = APIRouter(prefix='/api/drone')
 drones_user = auth.require_module('drone.drones')
@@ -91,10 +91,6 @@ class CmdIn(BaseModel):
 
 class ParamImportIn(BaseModel):
     text: str                       # Mission Planner .param içeriği (AD,DEĞER satırları)
-
-
-class SitlOptionsIn(BaseModel):
-    sim_apply_servo_reverse: Optional[bool] = None   # montaj parametresi SERVOn_REVERSED gerçek değeriyle SITL'e gitsin (test/karşılaştırma; varsayılan kapalı)
 
 
 def _clean(s, n=200):
@@ -250,7 +246,7 @@ def delete_drone(did: int, user=Depends(drones_user), conn=db.DB):
 
 # ---------------- Sanal dron kalıcı parametreleri (drone_params; tablo drone_sitl_params) ----------------
 def _sanal_dron(conn, did):
-    d = db.row(conn.execute('SELECT id, code, name, protocol FROM drone_drones WHERE id = ?', (did,)))
+    d = db.row(conn.execute('SELECT id, code, name, protocol, model FROM drone_drones WHERE id = ?', (did,)))
     if not d:
         raise HTTPException(404, 'Dron bulunamadı')
     if d['protocol'] != 'sanal':
@@ -261,23 +257,17 @@ def _sanal_dron(conn, did):
 @router.get('/drones/{did}/sitl-params')
 def list_sitl_params(did: int, user=Depends(drones_user), conn=db.DB):
     """Dronun kayıtlı SITL parametreleri + hariç tutma listesi (okuma yetkisi yeter)."""
-    _sanal_dron(conn, did)
-    items = drone_params.yukle(did, conn)
-    return {'items': items, 'count': len(items), 'excluded': drone_params.haric_listesi(), 'options': drone_params.secenekler(did, conn),
-            'can_write': 'drone.drones' in user.get('write_modules', [])}
-
-
-@router.put('/drones/{did}/sitl-params/options')
-def set_sitl_options(did: int, body: SitlOptionsIn, user=Depends(drones_user), conn=db.DB):
-    """Dron simülasyon seçenekleri (drone_sitl_options): sim_apply_servo_reverse. Çalışan oturum etkilenmez; sonraki açılışta geçerli."""
     d = _sanal_dron(conn, did)
-    degisen = []
-    for k, v in body.model_dump(exclude_none=True).items():
-        drone_params.secenek_yaz(did, k, v, user['id'], conn)
-        degisen.append(f'{k}={int(bool(v))}')
-    if degisen:
-        db.audit(conn, user['id'], 'Sanal dron simülasyon seçeneği değiştirdi', 'drone', did, f"{d['code']} · {', '.join(degisen)}")
-    return {'ok': True, 'options': drone_params.secenekler(did, conn)}
+    items = drone_params.yukle(did, conn)
+    # §20.1 sanal montaj: SITL ikilisi SIM_SRV_REV tanıyor mu (rozet metni) + kayıtlı SERVOn_REVERSED'den üretilen maske
+    tip = drone_sitl.model_tipi(d.get('model'))
+    sanal_montaj = drone_sitl.sanal_montaj_destegi(tip)
+    motor = []
+    mask = drone_params.srv_rev_mask(items, tip, motor)
+    return {'items': items, 'count': len(items), 'excluded': drone_params.haric_listesi(), 'can_write': 'drone.drones' in user.get('write_modules', []),
+            'mount': {'virtual_mount': sanal_montaj, 'srv_rev_mask': mask, 'motor_skipped': motor,
+                      'badge': drone_params.MONTAJ_ROZET if sanal_montaj else drone_params.MONTAJ_ROZET_NOTR,
+                      'note': None if sanal_montaj else drone_params.MONTAJ_DESTEK_YOK}}
 
 
 @router.get('/drones/{did}/sitl-params/export')

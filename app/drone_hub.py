@@ -1260,8 +1260,9 @@ class SitlDrone:
         self.task = None
         self.state = 'BASLIYOR'   # BASLIYOR | HAZIR | HATA
         # Kalıcı parametreler (drone_params): PARAM_VALUE yankıları _feed_msgs'ten izleyiciye; açılışta kayıtlılar parm + PARAM_SET ile yüklenir
-        self.param_izleyici = drone_params.Izleyici(self.drone_id, self._event)
+        self.param_izleyici = drone_params.Izleyici(self.drone_id, self._event, srv_rev_yaz=self._srv_rev_yaz, tip=self.tip)
         self.kayitli_params = []
+        self.montaj = {'virtual_mount': True, 'mask': 0, 'neutral': [], 'reversed': [], 'motor_skipped': []}   # §20.1 sanal montaj (SIM_SRV_REV) bilgisi
 
     def info(self):
         return {'bridge_id': self.id, 'name': self.name, 'host': self.host, 'platform': self.platform, 'bridge_ver': self.ver, 'caps': self.caps,
@@ -1311,12 +1312,21 @@ class SitlDrone:
         for r in kayitlar:
             try:
                 self.link.execute('param_set', {'name': r['name'], 'value': float(r['value']), 'type': int(r.get('ptype') or 9)}, self.sysid)
-                ok += 1
+                if r['name'] != drone_params.SIM_SRV_REV:   # üretilen sanal montaj maskesi kayıt sayılmaz
+                    ok += 1
             except Exception:   # noqa: BLE001 — araçta olmayan ad (başka tip) ya da zaman aşımı
                 hata += 1
         metin = f'{ok} kayıtlı parametre yüklendi' + (f' ({hata} yazılamadı)' if hata else '')
         if self.loop is not None and not self.loop.is_closed():
             self.loop.call_soon_threadsafe(self._event, metin, 4 if hata else 6)
+
+    def _srv_rev_yaz(self, mask):
+        """İzleyici geri çağrısı (olay döngüsü): SERVOn_REVERSED değişti → SIM_SRV_REV maskesi SITL'e (köprü çekirdeği, iş parçacığında)."""
+        self.montaj['mask'] = int(mask)
+        if self.link is None or self.loop is None or self.loop.is_closed():
+            return
+        self.loop.run_in_executor(None, self.link.execute, 'param_set', {'name': drone_params.SIM_SRV_REV, 'value': float(mask),
+                                                                          'type': drone_params.SIM_SRV_REV_PTYPE}, self.sysid)
 
     def _connect(self, port):
         core = drone_sitl.kopru_cekirdegi()
@@ -1338,18 +1348,19 @@ class SitlDrone:
         status = 'KAPANDI'
         try:
             self._event(f'SITL başlatılıyor ({self.tip}) · {self.name}', 6)
-            secenek = dict(drone_params.SECENEKLER)
             try:
                 self.kayitli_params = await ex(None, drone_params.yukle, self.drone_id)
-                secenek = await ex(None, drone_params.secenekler, self.drone_id)
             except Exception as e:   # noqa: BLE001 — kayıt okunamasa da SITL açılır
                 self.kayitli_params = []
                 self._event(f'Kayıtlı parametreler okunamadı: {e}'[:200], 4)
-            self.param_izleyici.montaj_uygula = bool(secenek.get('sim_apply_servo_reverse'))
-            # montaj parametreleri (SERVOn_REVERSED; drone_params modül açıklaması): SITL'e seçenek kapalıyken 0 gider, kayıt korunur
-            sitl_kayit, notr = drone_params.sitl_kayitlari(self.kayitli_params, secenek)
+            # montaj parametreleri (SERVOn_REVERSED; drone_params modül açıklaması, §20.1): SITL'e aynen + SIM_SRV_REV maskesi (sanal montaj);
+            # ikili SIM_SRV_REV tanımıyorsa (resmi ikili) 0 gider, kayıt korunur, sarı uyarı
+            sanal_montaj = await ex(None, drone_sitl.sanal_montaj_destegi, self.tip)
+            self.param_izleyici.sanal_montaj = sanal_montaj
+            sitl_kayit, self.montaj = drone_params.sitl_kayitlari(self.kayitli_params, sanal_montaj, self.tip)
+            self.param_izleyici.srv_rev_mask = self.montaj['mask'] if sanal_montaj else None
             port, err = await ex(None, lambda: drone_sitl.YONETICI.baslat(self.drone_id, self.tip, self.home[0], self.home[1], self.sysid,
-                                                                          konsol=self._konsol, ekstra_parm=drone_params.parm_satirlari(self.kayitli_params, secenek)))
+                                                                          konsol=self._konsol, ekstra_parm=drone_params.parm_satirlari(self.kayitli_params, sanal_montaj, self.tip)))
             if not port:
                 self.state = 'HATA'
                 self._event(err or 'SITL başlatılamadı', 2)
@@ -1365,9 +1376,10 @@ class SitlDrone:
             self.state = 'HAZIR'
             self._event(f'Sanal dron (SITL) bağlandı: tcp:127.0.0.1:{port}', 6)
             n = 0
-            yuklenecek = list(sitl_kayit)
-            if notr:
-                self._event(f"{', '.join(notr)}: {drone_params.MONTAJ_UYARI} (SITL'e 0 yazılır; kayıt gerçek değeri korur)", 4)
+            yuklenecek = list(sitl_kayit) if self.kayitli_params else []   # kayıt yoksa yalnız SIM_SRV_REV=0 satırı kalır → parm yeter
+            olay = drone_params.montaj_olayi(self.montaj)
+            if olay:
+                self._event(*olay)
             while True:
                 await asyncio.sleep(1.0)
                 n += 1

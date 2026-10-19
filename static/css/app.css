@@ -9347,25 +9347,25 @@ body.immersive .fs-nav { top: 12px; }
 .fs-prep-note { margin: 12px 0 0; }
 @keyframes fs-prep-spin { to { transform: rotate(360deg); } }
 
-/* ===== Uçuş Simülatörü §23.6: güç paneli (.fs-power; flightsim_power.js createPowerGauges) — sağ altta, alt çubuğun üstünde, her kamera kipinde,
+/* ===== Uçuş Simülatörü §23.6: güç paneli (.fs-gauges; flightsim_power.js createPowerGauges) — sağ altta, alt çubuğun üstünde, her kamera kipinde,
    harekât panelinden BAĞIMSIZ. İki cam kadran (YAKIT · BATARYA): 270° SVG yay (yeşil → sarı < 30 % → kırmızı < 15 % + nabız; bitince rozet), ortada
    büyük değer, altta ikincil (menzil / gerilim + süre), kadran altında anlık tüketim (L/sa, W). Panel açıkken kartın SOLUNDA (400 px kart + 12 px);
    sanal kumanda çubuklarıyla çakışmaz (sağ çubuk right 270 px, panel ~ 250 px); FPV OSD (fs-osd-on) ve gimbal HUD (fs-mhud-on) kendi çizimlerini
    yapar → gizli. ≥ 1800 px %118 ölçek; ≤ 760 px kompakt yatay çubuklar (.fs-gauge-c). Tıklanınca .fs-power-pop ayrıntı kutusu (HEPGO tema değişkenleri). */
-.fs-power { --fsg-bg: rgba(11, 18, 32, .66); --fsg-line: rgba(255, 255, 255, .1); --fsg-text: #eef2f7; --fsg-dim: #9aa4b6; --fsg-track: rgba(255, 255, 255, .13);
+.fs-gauges { --fsg-bg: rgba(11, 18, 32, .66); --fsg-line: rgba(255, 255, 255, .1); --fsg-text: #eef2f7; --fsg-dim: #9aa4b6; --fsg-track: rgba(255, 255, 255, .13);
   position: absolute; right: 12px; bottom: calc(var(--fs-bar-h) + 10px); z-index: 8; display: flex; gap: 6px; padding: 6px 8px 8px; border-radius: 18px;
   background: var(--fsg-bg); backdrop-filter: blur(10px) saturate(1.25); -webkit-backdrop-filter: blur(10px) saturate(1.25); border: 1px solid var(--fsg-line);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06); color: var(--fsg-text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-html[data-theme="dark"] .fs-power { --fsg-bg: rgba(8, 12, 20, .7); }
-.fs-power[hidden] { display: none; }
-.fs-stage.fs-ops:not(.fs-fpv) .fs-power { right: 424px; }   /* harekât kartının (400 px) solunda */
-.fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-power { bottom: calc(var(--fs-bar-h) + 66px); }   /* panel + sanal kumanda: klavye ipucu şeridinin üstünde (çubuklarla x'te çakışmaz) */
-.fs-stage.fs-osd-on .fs-power, .fs-stage.fs-mhud-on .fs-power { display: none; }   /* FPV OSD / gimbal HUD kendi güç çubuklarını çizer */
+html[data-theme="dark"] .fs-gauges { --fsg-bg: rgba(8, 12, 20, .7); }
+.fs-gauges[hidden] { display: none; }
+.fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { right: 424px; }   /* harekât kartının (400 px) solunda */
+.fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-gauges { bottom: calc(var(--fs-bar-h) + 66px); }   /* panel + sanal kumanda: klavye ipucu şeridinin üstünde (çubuklarla x'te çakışmaz) */
+.fs-stage.fs-osd-on .fs-gauges, .fs-stage.fs-mhud-on .fs-gauges { display: none; }   /* FPV OSD / gimbal HUD kendi güç çubuklarını çizer */
 .fs-stage.fs-power-on .fs-attrib:not(.fs-attrib-g3d) { right: 276px; }   /* arazi atfı kadranların soluna */
 .fs-stage.fs-power-on .fs-hud .fs-row-fuel { display: none; }   /* sağ HUD'daki yakıt satırı kadranla çift olmasın */
 .fs-stage.fs-power-on.fs-ops .fs-attrib:not(.fs-attrib-g3d) { right: 12px; }
 .fs-gauge { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 118px; padding: 2px 4px 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; border-radius: 14px; transition: background .15s; }
-.fs-gauge:hover, .fs-power.open .fs-gauge { background: rgba(255, 255, 255, .06); }
+.fs-gauge:hover, .fs-gauges.open .fs-gauge { background: rgba(255, 255, 255, .06); }
 .fs-gauge[hidden] { display: none; }
 .fs-gauge-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .14em; color: var(--fsg-dim); text-transform: uppercase; line-height: 1.2; }
 .fs-gauge-dial { position: relative; display: block; width: 104px; height: 104px; }
@@ -9402,10 +9402,10 @@ html[data-theme="dark"] .fs-power { --fsg-bg: rgba(8, 12, 20, .7); }
 .fs-power-row.fs-power-head { border-top: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); padding-bottom: 1px; }
 .fs-power-span { grid-column: 2 / -1; }
 .fs-power-foot { margin-top: 6px; color: var(--muted); line-height: 1.35; }
-@media (min-width: 1800px) { .fs-power { transform: scale(1.18); transform-origin: bottom right; } }
+@media (min-width: 1800px) { .fs-gauges { transform: scale(1.18); transform-origin: bottom right; } }
 @media (max-width: 760px) {   /* mobil: kompakt yatay çubuklar (etiket · çubuk · değer · ikincil), tam genişlik */
-  .fs-power, .fs-stage.fs-ops:not(.fs-fpv) .fs-power { left: 12px; right: 12px; flex-direction: column; gap: 4px; padding: 6px 10px; border-radius: 12px; }
-  .fs-stage.rc-on .fs-power { bottom: calc(var(--fs-bar-h) + 232px); }   /* sanal kumanda çubuklarının üstünde */
+  .fs-gauges, .fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: 12px; right: 12px; flex-direction: column; gap: 4px; padding: 6px 10px; border-radius: 12px; }
+  .fs-stage.rc-on .fs-gauges { bottom: calc(var(--fs-bar-h) + 232px); }   /* sanal kumanda çubuklarının üstünde */
   .fs-gauge { width: 100%; flex-direction: row; gap: 8px; padding: 2px 0; border-radius: 8px; }
   .fs-gauge-dial, .fs-gauge-rate { display: none; }
   .fs-gauge-lbl { flex: none; width: 58px; text-align: left; }

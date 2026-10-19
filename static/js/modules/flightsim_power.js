@@ -218,7 +218,7 @@ export function createPowerGauges(stage, { h, tr, getSettings = () => null, getS
   const pop = h('div', { class: 'fs-power-pop', hidden: true, role: 'dialog' },
     h('div', { class: 'fs-power-pop-h' }, h('b', null, tr('Güç ve yakıt')), h('button', { class: 'fs-power-x', type: 'button', title: tr('Kapat'), onclick: () => togglePop(false) }, '×')),
     popBody, h('div', { class: 'fs-power-foot small' }, tr('Yakıt: mesafe + gaz kolu · Batarya: saatlik W + servo · Biterse yalnız uyarı, uçuş sürer')));
-  const el = h('div', { class: 'fs-power', hidden: true }, G.fuel.el, G.elec.el, pop);
+  const el = h('div', { class: 'fs-gauges', hidden: true }, G.fuel.el, G.elec.el, pop);
   const onDocClick = e => { if (popOpen && !el.contains(e.target)) togglePop(false); };
   document.addEventListener('click', onDocClick, true);
   const togglePop = v => { popOpen = v == null ? !popOpen : !!v; pop.hidden = !popOpen; el.classList.toggle('open', popOpen); if (popOpen) drawPop(); };

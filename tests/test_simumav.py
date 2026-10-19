@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 import app.simumav.main as smain  # noqa: E402
 from app import flightsim, sim_terrain  # noqa: E402
 from app.simumav import bridge, config  # noqa: E402
+from app.simumav.db import connect as sdb_connect  # noqa: E402
 
 ORIGIN = 'http://127.0.0.1:8600'
 H = {'Origin': ORIGIN}
@@ -95,7 +96,11 @@ def main():
         assert "'unsafe-inline'" not in r.headers['content-security-policy'].split('script-src')[1].split(';')[0]
         # statik yönlendirmeler
         assert c.get('/sim/api.js').status_code == 200 and 'export const api' in c.get('/api.js').text and c.get('/static/js/api.js').status_code == 200
-        assert c.get('/sim/flightsim.js').status_code == 200 and c.get('/ui.js').status_code == 200 and c.get('/main.js').status_code == 404
+        assert c.get('/sim/flightsim.js').status_code == 200 and 'yerine' in c.get('/ui.js').text[:300] and c.get('/sim/ui.js').status_code == 200 and c.get('/main.js').status_code == 404
+        assert c.get('/static/img/google-logo.png').headers['content-type'] == 'image/png' and c.get('/static/models/caymaz-sim.glb').status_code == 200
+        assert c.get('/static/vendor/three/three.module.min.js').status_code == 200 and c.get('/app/simapi.js').status_code == 200 and c.get('/i18n.js').status_code == 200
+        assert c.get('/api/drone/sim/terrain?lat=40&lon=33').status_code == 401 and c.get('/api/drone/sim/tile/img/13/1/1').status_code == 401   # arazi vekili oturum ister
+        csp = c.get('/app/').headers['content-security-policy']; assert 'https://cdn.jsdelivr.net' in csp and 'https://maps.gstatic.com' in csp and 'https://*.ggpht.com' in csp
         assert c.get('/').status_code == 200 and c.get('/app/').status_code == 200 and c.get('/brand/simumav.svg').status_code == 200
         # oturumsuz API → 401 {detail:{error}}
         r = c.get('/api/hangar'); assert r.status_code == 401 and r.json()['detail']['error'] == 'unauthorized'
@@ -263,6 +268,23 @@ def main():
         CK = {'Cookie': f"smsid={c.cookies['smsid']}"}   # TestClient WS'e çerez eklemez
         with c.websocket_connect(f'/ws/fly/{sid}', headers=CK) as ws:
             hello = ws.receive_json(); assert hello['t'] == 'hello' and hello['session']['id'] == sid and hello['flight_id'] == fid and len(hello['gates']) == 2, json.dumps(hello)[:600]
+            # TEK soket: hub alanları da hello'da (flightsim_panel.js watch beklemeden); bridge_id = -(9000+sim_id)
+            assert hello['me']['can_command'] is True and hello['bridges'] and hello['bridges'][0]['bridge_id'] == -(9000 + sid) and hello['bridges'][0]['sim_id'] == sid, json.dumps(hello)[:400]
+            assert hello['session']['hub']['bridge_id'] == -(9000 + sid) and 'console' in hello['caps']
+            ws.send_json({'t': 'watch', 'sim_id': sid}); m = ws.receive_json()
+            while m.get('t') != 'hello':
+                m = ws.receive_json()
+            assert m['bridges'][0]['bridge_id'] == -(9000 + sid)
+            # hub komutu (set_mode) bridge_id ile → res{rid, ok}; status mesajı aynı sokette
+            ws.send_json({'t': 'cmd', 'rid': 'h1', 'bridge_id': -(9000 + sid), 'sysid': 1, 'name': 'set_mode', 'params': {'mode': 'GUIDED'}})
+            m = ws.receive_json(); gorulen = set()
+            while not (m.get('t') == 'res' and m.get('rid') == 'h1'):
+                gorulen.add(m.get('t')); m = ws.receive_json()
+            assert m['ok'] is True, m
+            ws.send_json({'t': 'cmd', 'rid': 'h2', 'bridge_id': 12345, 'name': 'arm'}); m = ws.receive_json()
+            while not (m.get('t') == 'res' and m.get('rid') == 'h2'):
+                m = ws.receive_json()
+            assert m['ok'] is False and 'ait' in m['error']
             ws.send_json({'t': 'ping'});
             m = ws.receive_json()
             while m.get('t') not in ('pong',):
@@ -305,12 +327,57 @@ def main():
             pass
         assert c.get('/api/session').json()['active_flight'] is None and c.get('/api/crew').json()['pilots'][0]['flights'] == 1
         assert c.post(f'/api/fly/{fv}/stop', headers=HVW).json()['ok']
+        # ---- ikinci uçuş: launch nesnesi (hand, sabit kanat), GET /fly/{id} start biçimi, kayıt (video) REST akışı
+        pl = c.post('/api/hangar', json={'name': 'Kanat', 'type': 'plane', 'model_key': 'builtin:delta'}, headers=H).json()
+        r = c.post('/api/fly/start', json={'drone_id': pl['id'], 'pilot_id': pilot_id, 'track_id': t2['id'], 'launch': {'method': 'hand', 'hand_speed_ms': 9}}, headers=H); assert r.status_code == 422
+        r = c.post('/api/fly/start', json={'drone_id': pl['id'], 'pilot_id': pilot_id, 'track_id': t2['id'], 'launch': {'method': 'hand', 'hand_speed_ms': 7.5, 'hand_pitch_deg': 12}, 'record': {'video': True, 'bin': False}}, headers=H)
+        assert r.status_code == 201, r.text
+        f2 = r.json(); fid2, sid2 = f2['flight_id'], f2['sim_id']
+        g = c.get(f'/api/fly/{fid2}').json()
+        assert g['flight_id'] == fid2 and g['sim_id'] == sid2 and g['ws'] == f'/ws/fly/{sid2}' and g['session']['id'] == sid2 and g['launch'] == {'method': 'hand', 'angle_deg': 15.0, 'release_kmh': 70.0, 'hand_speed_ms': 7.5, 'hand_pitch_deg': 12.0}
+        assert g['record'] == {'bin': False, 'video': True} and g['drone']['name'] == 'Kanat' and g['track']['gates'] and g['mp']['port'] and g['pilot']['name'] == 'ali'
+        for _ in range(100):
+            if flightsim.MANAGER.sessions[sid2].state == 'HAZIR':
+                break
+            time.sleep(0.05)
+        with c.websocket_connect(f'/ws/fly/{sid2}', headers=CK) as ws:
+            assert ws.receive_json()['t'] == 'hello'
+            ws.send_json({'t': 'cmd', 'rid': 'k1', 'name': 'takeoff', 'params': {'alt': 60, 'launch': 'hand', 'hand_speed_ms': 7.5, 'hand_pitch_deg': 12}})
+            m = ws.receive_json(); evler = []
+            while not (m.get('t') == 'res' and m.get('rid') == 'k1'):
+                evler.append(m.get('t')); m = ws.receive_json()
+            assert m['ok'] is True, m
+            t0 = time.time()
+            while time.time() - t0 < 5:
+                m = ws.receive_json()
+                if m.get('t') == 'launch' and m.get('phase') == 'armed':
+                    break
+            assert m.get('t') == 'launch' and m.get('phase') == 'armed', m
+        s2 = flightsim.MANAGER.sessions[sid2]; assert s2.launch.get('hand') and s2.launch['method'] == 'ramp' and s2.launch['hand_speed_ms'] == 7.5
+        # kayıt: start → chunk (sıralı) → thumb → finish(kept) → file → flights.video_path; sahiplik
+        r = c.post(f'/api/fly/{fid2}/rec/start', json={'mime': 'video/webm'}, headers=H); assert r.status_code == 201, r.text
+        rid = r.json()['rec_id']; assert r.json()['ext'] == '.webm' and r.json()['chunk_max'] == 8 * 1024 * 1024
+        assert c.put(f'/api/fly/rec/{rid}/chunk?seq=0', content=b'\x1aE\xdf\xa3' + b'v' * 500, headers=H | {'Content-Type': 'application/octet-stream'}).json()['size'] == 504
+        assert c.put(f'/api/fly/rec/{rid}/chunk?seq=1', content=b'w' * 300, headers=H | {'Content-Type': 'application/octet-stream'}).json()['size'] == 804
+        assert c.put(f'/api/fly/rec/{rid}/chunk?seq=3', content=b'x', headers=H | {'Content-Type': 'application/octet-stream'}).status_code == 409   # atlama
+        assert c.put(f'/api/fly/rec/{rid}/chunk?seq=1', content=b'w' * 300, headers=HVW | {'Content-Type': 'application/octet-stream'}).status_code == 403   # başkası
+        assert c.put(f'/api/fly/rec/{rid}/thumb', content=terrarium_png(), headers=H | {'Content-Type': 'image/png'}).json()['ok']
+        assert c.put(f'/api/fly/rec/{rid}/thumb', content=b'degil', headers=H | {'Content-Type': 'image/png'}).status_code == 415
+        r = c.post(f'/api/fly/rec/{rid}/finish', json={'duration_s': 12.5, 'mime': 'video/webm', 'text': 'SIMUMAV test'}, headers=H)
+        assert r.json()['kept'] is True and r.json()['size'] == 804 and r.json()['file'] == f'/api/fly/rec/{rid}/file', r.text
+        r = c.get(f'/api/fly/rec/{rid}/file'); assert r.status_code == 200 and len(r.content) == 804 and r.headers['content-type'].startswith('video/webm')
+        assert c.get(f'/api/fly/rec/{rid}/file', headers=HV).status_code == 403 and c.get('/api/fly/rec/zzzz/file').status_code == 404
+        assert c.post(f'/api/fly/{fid2}/stop', headers=H).json()['ok']
+        with sdb_connect() as conn:
+            assert conn.execute('SELECT video_path FROM flights WHERE id = ?', (fid2,)).fetchone()[0] == f'sim_rec/{rid}.webm'
+        assert c.get(f'/api/ops/{fid2}').json()['launch'] == 'hand'
+        assert c.delete(f'/api/fly/rec/{rid}', headers=H).json()['ok'] and c.get(f'/api/fly/rec/{rid}/file').status_code == 404
         # ops: liste, sahiplik 404, replay yok (sahte kipte .bin yok) → 404 no_bin, silme
-        ops = c.get('/api/ops').json(); assert ops['total'] == 1 and ops['flights'][0]['id'] == fid and ops['stats']['flights'] == 1
+        ops = c.get('/api/ops').json(); assert ops['total'] == 2 and ops['flights'][0]['id'] == fid2 and ops['stats']['flights'] == 2
         assert c.get(f'/api/ops/{fid}', headers=HV).status_code == 404 and c.delete(f'/api/ops/{fid}', headers=HVW).status_code == 404
         r = c.get(f'/api/ops/{fid}/replay'); assert r.status_code == 404 and r.json()['detail']['error'] == 'no_bin'
         assert c.get(f'/api/ops/{fid}/bin').status_code == 404
-        assert c.delete(f'/api/ops/{fid}', headers=H).json()['ok'] and c.get('/api/ops').json()['total'] == 0
+        assert c.delete(f'/api/ops/{fid}', headers=H).json()['ok'] and c.get('/api/ops').json()['total'] == 1
         # denetim kayıtları
         from app.simumav import db as sdb
         with sdb.connect() as conn:

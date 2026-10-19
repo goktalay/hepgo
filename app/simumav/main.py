@@ -22,15 +22,20 @@ from . import bridge, db
 from .routers import crew, fly, hangar, meta, missions, ops, session, settings, tracks
 
 log = logging.getLogger('simumav')
-CSP = ("default-src 'self'; script-src 'self' https://maps.googleapis.com https://*.cesium.com; style-src 'self' 'unsafe-inline'; "
-       "connect-src 'self' https://mastertool.download https://maps.googleapis.com https://*.googleapis.com https://*.cesium.com "
-       "https://*.arcgisonline.com https://*.amazonaws.com https://tile.googleapis.com wss://simumav.com wss://www.simumav.com ws://127.0.0.1:8600 ws://localhost:8600; "
-       "img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; "
-       "base-uri 'self'; form-action 'self'")
+# CSP (§7): inline script yok; Google Maps JS + 3B karolar (googleapis/gstatic/ggpht), Cesium (replay3d.js cdn.jsdelivr.net v1.145 sabit + ion/arcgis),
+# arazi/uydu (arcgisonline, amazonaws terrarium), hesap servisi (mastertool.download), kendi WS'si.
+CSP = ("default-src 'self'; "
+       "script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://cdn.jsdelivr.net https://*.cesium.com; "
+       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+       "connect-src 'self' https://mastertool.download https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.ggpht.com "
+       "https://tile.googleapis.com https://cdn.jsdelivr.net https://*.cesium.com https://*.arcgisonline.com https://*.amazonaws.com "
+       "wss://simumav.com wss://www.simumav.com ws://127.0.0.1:8600 ws://localhost:8600; "
+       "img-src 'self' data: blob: https:; media-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob: https://cdn.jsdelivr.net; "
+       "child-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'")
 HEADERS = {'Content-Security-Policy': CSP, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin',
            'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self), gamepad=(self), display-capture=(self)',
            'X-Frame-Options': 'DENY', 'Cross-Origin-Opener-Policy': 'same-origin'}
-JS_KOK = re.compile(r'^(ui|i18n|icons|segicons|fa-icons|imgopt|step3d|gcode3d|engine3d)\.js$')
+JS_KOK = re.compile(r'^(i18n|icons|segicons|fa-icons|imgopt|step3d|gcode3d|engine3d)\.js$')   # ui.js → fly/simui.js (ayrı route)
 
 
 @asynccontextmanager
@@ -90,14 +95,33 @@ def simapi():
     return _js(config.SM_STATIC / 'app' / 'simapi.js')
 
 
+@app.get('/sim/ui.js')
+@app.get('/ui.js')
+def simui():
+    """HEPGO modüllerinin `../ui.js` içe aktarımı → ince SIMUMAV ui (fly/simui.js; HEPGO ui.js kabuğa bağlıdır)."""
+    return _js(config.SM_STATIC / 'app' / 'fly' / 'simui.js')
+
+
+@app.get('/static/img/google-logo.png')
+def google_logo():
+    """flightsim_g3d.js G3D_LOGO sabiti (Google 3B atıf logosu) — HEPGO static'teki aynı dosya."""
+    p = config.STATIC_DIR / 'img' / 'google-logo.png'
+    if not p.is_file():
+        return JSONResponse({'detail': {'error': 'not_found', 'message': 'Bulunamadı'}}, status_code=404)
+    return FileResponse(p, media_type='image/png', headers={'Cache-Control': 'public, max-age=86400'})
+
+
 @app.get('/{name}.js')
 def kok_js(name: str):
     """Modüllerin kök seviye bağımlılıkları (ui.js, i18n.js, step3d.js …) — yalnız beyaz liste."""
     f = f'{name}.js'
     p = config.STATIC_DIR / 'js' / f
-    if not JS_KOK.match(f) or not p.is_file():
-        return JSONResponse({'detail': {'error': 'not_found', 'message': 'Bulunamadı'}}, status_code=404)
-    return _js(p)
+    if JS_KOK.match(f) and p.is_file():
+        return _js(p)
+    site = config.SM_STATIC / 'site' / f   # tanıtım sitesinin kök betikleri (/site.js …) — mount'tan önce bu route yakalar
+    if re.fullmatch(r'[a-z0-9_-]+\.js', f) and site.is_file():
+        return _js(site)
+    return JSONResponse({'detail': {'error': 'not_found', 'message': 'Bulunamadı'}}, status_code=404)
 
 
 @app.get('/healthz')

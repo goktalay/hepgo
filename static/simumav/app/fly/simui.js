@@ -101,3 +101,9 @@ export function pref(key, fallback) { try { const v = localStorage.getItem(`sm.$
 export function setPref(key, value) { try { localStorage.setItem(`sm.${key}`, JSON.stringify(value)); } catch { /* */ } }
 export const statStrip = () => h('div', { class: 'stat-strip' });
 export const avatar = () => h('span', { class: 'avatar' });
+
+// replay3d.js (`pageHead`) içe aktarır: HEPGO sayfa başlığı — SIMUMAV'da kabuk başlığı yok, yalın başlık bloğu (çekirdek ajanı eklemesi; Cesium replay 2B'ye düşmesin)
+export function pageHead(title, { back, sub, right } = {}) {
+  return h('div', { class: 'page-head sm-page-head' }, back ? h('a', { class: 'back', href: back, 'aria-label': 'Geri' }, '←') : null,
+    h('div', { class: 'page-head-t' }, h('h1', null, title), sub ? h('div', { class: 'sub' }, sub) : null), h('div', { class: 'spacer' }), right || null);
+}

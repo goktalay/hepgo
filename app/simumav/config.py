@@ -54,6 +54,8 @@ os.environ['SIM_MAX_SESSIONS'] = str(MAX_FLIGHTS)
 os.environ['SIM_MAX_MINUTES'] = str(FLIGHT_MINUTES)
 os.environ.setdefault('SIM_UDP_BASE', os.environ.get('SIMUMAV_UDP_BASE', '14550'))    # SITL↔MP köprüsünün iç UDP aralığı (güvenlik duvarında kapalı)
 os.environ.setdefault('SIM_BIN_MAX_MB', '50')                                           # §7: .bin ≤ 50 MB
+os.environ.setdefault('SIM_REC_MAX_MB', '300')                                          # §7: video ≤ 300 MB (flightsim_rec)
+os.environ.setdefault('SIM_REC_KEEP_DAYS', '3650')                                      # videolar flights kaydıyla yaşar (kota silince gider)
 os.environ.setdefault('SIM_PUBLIC_HOST', os.environ.get('SIMUMAV_PUBLIC_HOST', ''))
 
 VERSION = '0.1.0'

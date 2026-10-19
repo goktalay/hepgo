@@ -10,15 +10,17 @@ Güvenlik: WS açılışında çerez doğrulanır, oturum sahibi değilse 4403; 
 `komut` doğrulamasından geçer (KOMUTLAR + aralıklar)."""
 import asyncio
 import json
+import re
 import secrets
 import time
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .. import auth, bridge, config, db
-from ... import drone_hub, flightsim, flightsim_hub, flightsim_models, sim_terrain
+from ... import drone_hub, flightsim, flightsim_hub, flightsim_models, flightsim_rec, sim_terrain
 from .common import User, flight_api, hata_cevir, sahip
 
 router = APIRouter(prefix='/api/fly')
@@ -31,13 +33,32 @@ class RecordIn(BaseModel):
     bin: bool = True
 
 
+class LaunchIn(BaseModel):
+    method: str = Field('wheels', max_length=8)
+    angle_deg: Optional[float] = Field(None, ge=10, le=30)
+    release_kmh: Optional[float] = Field(None, ge=40, le=110)
+    hand_speed_ms: Optional[float] = Field(None, ge=6, le=8)
+    hand_pitch_deg: Optional[float] = Field(None, ge=10, le=15)
+
+
 class StartIn(BaseModel):
     drone_id: int
     pilot_id: int
     track_id: int
     mission_id: Optional[int] = None
-    launch: str = Field('wheels', max_length=8)
+    launch: Union[LaunchIn, str, None] = None     # {method, angle_deg, release_kmh, hand_speed_ms, hand_pitch_deg} ya da yalnız yöntem adı
     record: Optional[RecordIn] = None
+
+
+class RecStartIn(BaseModel):
+    mime: Optional[str] = Field(None, max_length=40)
+
+
+class RecFinishIn(BaseModel):
+    duration_s: Optional[float] = Field(None, ge=0, le=36000)
+    mime: Optional[str] = Field(None, max_length=40)
+    text: Optional[str] = Field(None, max_length=300)
+    share: Optional[bool] = None
 
 
 class StopIn(BaseModel):
@@ -59,8 +80,9 @@ async def start(body: StartIn, request: Request, user=User):
         mission = sahip(conn, 'missions', body.mission_id, user) if body.mission_id is not None else None
         if mission and mission['track_id'] != track['id']:
             raise auth.hata(422, 'invalid', 'Görev bu parkura ait değil')
+    launch = body.launch.model_dump(exclude_none=True) if isinstance(body.launch, LaunchIn) else {'method': body.launch or 'wheels'}
     try:
-        out = await bridge.ucus_baslat(user, pilot, drone, track, mission, body.launch, body.record.model_dump() if body.record else None, request)
+        out = await bridge.ucus_baslat(user, pilot, drone, track, mission, launch, body.record.model_dump() if body.record else None, request)
     except bridge.BridgeHata as e:
         if e.error in ('server_full', 'flight_active'):
             db.audit_bagimsiz('quota', user['id'], auth.client_ip(request), e.message)
@@ -79,10 +101,117 @@ def status(fid: int, request: Request, user=User):
     out = flight_api(f)
     d = bridge.ucus_durumu(fid)
     out['live'] = d
+    out['flight_id'] = f['id']
+    out['sim_id'] = d['sim_id'] if d else None
+    out['state'] = d['state'] if d else 'KAPANDI'
+    s = bridge.oturum(d['sim_id']) if d else None
+    out['session'] = s.to_dict(bridge.host_adi(request)) if s is not None else None
+    snap = out.get('snapshot') or {}
+    out['launch'] = snap.get('launch') or {'method': f.get('launch') or 'wheels'}
+    out['record'] = snap.get('record') or {'bin': True, 'video': False}
     if d and d.get('mp'):
         out['mp'] = {'host': bridge.host_adi(request), 'port': d['mp']['port'], 'proto': 'tcp', 'locked_ip': d['mp']['locked_ip'], 'connected': d['mp']['connected']}
+    else:
+        out['mp'] = None
     out['ws'] = f"/ws/fly/{d['sim_id']}" if d else None
     return out
+
+
+# ---------------- ekran kaydı (flightsim_rec kalıbı; dosyalar core/sim_rec; video → flights.video_path) ----------------
+def _rec_hata(e):
+    raise auth.hata(e.kod, 'rec', str(e))
+
+
+def _rec_user(user):
+    return {'id': user['id'], 'full_name': user['display_name']}
+
+
+@router.post('/{fid}/rec/start', status_code=201)
+def rec_start(fid: int, body: RecStartIn, user=User):
+    with db.connect() as conn:
+        _ucus(conn, fid, user)
+    d = bridge.ucus_durumu(fid)
+    s = bridge.oturum(d['sim_id']) if d else None
+    if s is None:
+        raise auth.hata(404, 'not_found', 'Süren uçuş bulunamadı')
+    try:
+        m = flightsim_rec.basla(s.to_dict(), _rec_user(user), False, body.mime)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    with db.connect() as conn:
+        conn.execute('UPDATE flights SET video_path = ?, updated_at = ? WHERE id = ?', (f"sim_rec/{m['id']}{m['ext']}", db.now(), fid))
+        conn.commit()
+    return {'rec_id': m['id'], 'max_bytes': m['max_bytes'], 'chunk_max': flightsim_rec.CHUNK_MAX, 'ext': m['ext']}
+
+
+async def _govde(request, sinir):
+    try:
+        cl = int(request.headers.get('content-length') or 0)
+    except ValueError:
+        cl = 0
+    if cl > sinir:
+        raise auth.hata(413, 'too_large', f'Gövde {sinir // 1024 ** 2} MB sınırını aşıyor')
+    data = await request.body()
+    if len(data) > sinir:
+        raise auth.hata(413, 'too_large', f'Gövde {sinir // 1024 ** 2} MB sınırını aşıyor')
+    return data
+
+
+def _rid(rid):
+    if not re.fullmatch(r'[0-9a-f]{16}', rid or ''):
+        raise auth.hata(404, 'not_found', 'Kayıt bulunamadı')
+    return rid
+
+
+@router.put('/rec/{rid}/chunk')
+async def rec_chunk(rid: str, request: Request, seq: int = 0, user=User):
+    data = await _govde(request, flightsim_rec.CHUNK_MAX)
+    try:
+        m = await asyncio.get_running_loop().run_in_executor(None, flightsim_rec.parca, _rid(rid), _rec_user(user), False, seq, data)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True, 'seq': m['seq'], 'size': m['size'], 'max_bytes': m.get('max_bytes')}
+
+
+@router.put('/rec/{rid}/thumb')
+async def rec_thumb(rid: str, request: Request, user=User):
+    data = await _govde(request, flightsim_rec.THUMB_MAX)
+    try:
+        flightsim_rec.kucuk_resim(_rid(rid), _rec_user(user), False, data)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True}
+
+
+@router.post('/rec/{rid}/finish')
+def rec_finish(rid: str, body: RecFinishIn, user=User):
+    """Bitir: video sunucuda saklanır (paylaşım yok) → `{ok, kept:true, rec_id, size, text, file}`; flights.video_path bu kayda işaret eder."""
+    try:
+        r = flightsim_rec.sakla(_rid(rid), _rec_user(user), False, body.duration_s, body.text)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return {'ok': True, 'kept': True, 'rec_id': rid, 'size': r['size'], 'text': r['text'], 'file': f'/api/fly/rec/{rid}/file', 'link': None}
+
+
+@router.get('/rec/{rid}/file')
+def rec_file(rid: str, user=User):
+    try:
+        p, mime, ad = flightsim_rec.dosya(_rid(rid), _rec_user(user), False)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    return FileResponse(p, media_type=mime, filename=ad.replace('ucus-simulatoru', 'simumav'), headers={'Cache-Control': 'private, no-store'})
+
+
+@router.delete('/rec/{rid}')
+def rec_delete(rid: str, user=User):
+    try:
+        flightsim_rec.sil(_rid(rid), _rec_user(user), False)
+    except flightsim_rec.RecHata as e:
+        _rec_hata(e)
+    with db.connect() as conn:
+        conn.execute('UPDATE flights SET video_path = NULL WHERE user_id = ? AND video_path LIKE ?', (user['id'], f'sim_rec/{rid}%'))
+        conn.commit()
+    return {'ok': True}
 
 
 @router.post('/{fid}/stop')
@@ -281,7 +410,25 @@ async def _ws_ac(ws):
     return user
 
 
+SIM_KOMUT = set(flightsim.KOMUTLAR)   # arm, disarm, mode, takeoff, rtl, reset, crash, set_home, rc — çekirdek SimSession.komut
+
+
+def _hello(s, user, host):
+    """TEK soket: HEPGO sim `hello{session…}` + hub `hello{bridges, me, caps}` alanları birlikte (flightsim_panel.js watch beklemeden de dolu)."""
+    hub = getattr(s, 'hub', None)
+    bridges = [hub.info()] if hub is not None else []
+    return {'t': 'hello', 'v': drone_hub.PROTO, 'session': s.to_dict(host), 'can_command': True, 'gates': list(getattr(s, 'sm_gates', []) or []),
+            'flight_id': getattr(s, 'sm_flight_id', None), 'me': {'id': user['id'], 'name': user['display_name'], 'can_command': True},
+            'bridges': bridges, 'caps': drone_hub.all_caps([hub]) if hub is not None else list(drone_hub.CAPS),
+            'task': hub.task_info() if hub is not None else None, 'flights': [hub.flight_info()] if hub is not None else []}
+
+
 async def _sim_ws(ws, sid):
+    """`/ws/fly/{sim_id}`: sim mesajları (tele/event/state/route/launch/end — SimSession izleyici kuyruğu) + hub mesajları (status/console/konsol/params/
+    event — drone_hub Viewer, yalnız bu oturumun köprüsü) aynı akışta. İstemci: `ping`, `watch{sim_id}` (hello yeniden), `rc{ch}`,
+    `cmd{rid, name, params, bridge_id?, sysid?}` → `res{rid, name, ok, error?, result?}`: çekirdek komutları (KOMUTLAR; takeoff{alt, launch:'hand', …}
+    dâhil) SimSession.komut ile, hub komutları (set_mode, land, goto, mission_*, param_*, altitude_change, arm_check, arm{force} …) drone_hub.send_command
+    ile (bileşik kalkış/görev akışları). `param_cache`/`console_hist` hub kalıbı."""
     user = await _ws_ac(ws)
     if not user:
         return
@@ -291,12 +438,19 @@ async def _sim_ws(ws, sid):
         await ws.close(code=4404)
         return
     host = bridge.host_adi(ws)
-    hello = {'t': 'hello', 'session': s.to_dict(host), 'can_command': True, 'gates': list(getattr(s, 'sm_gates', []) or []),
-             'flight_id': getattr(s, 'sm_flight_id', None), 'me': {'id': user['id'], 'name': user['display_name']}}
+    hu = _hub_user(user)
     q = s.izleyici_ekle(ws)
+    v = drone_hub.Viewer(ws, hu)
+    v.sim_only = True
+    v.q = q                      # hub yayınları aynı kuyruğa
+    hub = getattr(s, 'hub', None)
+    if hub is not None:
+        flightsim_hub.apply_viewer(v, s.id)
+    drone_hub.VIEWERS[ws] = v
     sender = asyncio.create_task(_sender(ws, q))
-    flightsim._kuyruga(q, json.dumps(hello, ensure_ascii=False))
+    flightsim._kuyruga(q, json.dumps(_hello(s, user, host), ensure_ascii=False))
     oran = _Oran(*config.RATE['ws'])
+    yanit = lambda **k: flightsim._kuyruga(q, json.dumps({'t': 'res', **k}, ensure_ascii=False))   # noqa: E731
     try:
         while True:
             raw = await ws.receive_text()
@@ -304,7 +458,7 @@ async def _sim_ws(ws, sid):
                 db.audit_bagimsiz('rate', user['id'], None, 'ws 100/s')
                 await ws.close(code=4429)
                 break
-            if len(raw) > 8192:
+            if len(raw) > 65536:
                 continue
             try:
                 msg = json.loads(raw)
@@ -315,19 +469,63 @@ async def _sim_ws(ws, sid):
             t = msg.get('t')
             if t == 'ping':
                 flightsim._kuyruga(q, json.dumps({'t': 'pong'}))
-            elif t in ('cmd', 'rc'):
-                name = 'rc' if t == 'rc' else str(msg.get('name') or '')[:20]
+            elif t == 'watch':
+                if getattr(s, 'hub', None) is not None and v.sim_id is None:
+                    flightsim_hub.apply_viewer(v, s.id)
+                flightsim._kuyruga(q, json.dumps(_hello(s, user, host), ensure_ascii=False))
+            elif t == 'rc':
                 try:
-                    if t == 'rc':
-                        await s.rc(msg.get('ch'))
+                    await s.rc(msg.get('ch'))
+                except flightsim.SimHata:
+                    pass
+            elif t in ('param_cache', 'console_hist'):
+                b = getattr(s, 'hub', None)
+                st = b.drones.get(int(msg.get('sysid') or 1)) if b is not None else None
+                if t == 'param_cache':
+                    flightsim._kuyruga(q, json.dumps({'t': 'param_cache', 'bridge_id': b.id if b else None, 'sysid': msg.get('sysid'), 'params': dict(st.params) if st else {}}, ensure_ascii=False))
+                else:
+                    flightsim._kuyruga(q, json.dumps({'t': 'console_hist', 'bridge_id': b.id if b else None, 'sysid': msg.get('sysid'), 'lines': list(st.console) if st else []}, ensure_ascii=False))
+            elif t == 'cmd':
+                name = str(msg.get('name') or '')[:30]
+                rid = str(msg.get('rid') or secrets.token_hex(8))[:40]
+                params = msg.get('params') if isinstance(msg.get('params'), dict) else {}
+                b = getattr(s, 'hub', None)
+                if msg.get('bridge_id') is not None and b is not None:
+                    try:
+                        if int(msg['bridge_id']) != b.id:
+                            yanit(rid=rid, name=name, ok=False, error='Bu oturum size ait değil')
+                            continue
+                    except (TypeError, ValueError):
+                        yanit(rid=rid, name=name, ok=False, error='bridge_id geçersiz')
                         continue
-                    res = await s.komut(name, msg.get('params') or {}, kaynak=user['id'])
-                    flightsim._kuyruga(q, json.dumps({'t': 'res', 'name': name, 'rid': msg.get('rid'), **res}, ensure_ascii=False))
-                except flightsim.SimHata as e:
-                    flightsim._kuyruga(q, json.dumps({'t': 'res', 'name': name, 'rid': msg.get('rid'), 'ok': False, 'error': str(e)}, ensure_ascii=False))
+                sim_yolu = name in SIM_KOMUT and (name not in ('arm', 'disarm') or b is None) and not (name == 'takeoff' and 'alt_rel_m' in params and 'alt' not in params)
+                if sim_yolu:
+                    try:
+                        if name == 'takeoff' and params.get('launch') == 'hand':
+                            bridge.elden_atis_ayarla(s, params)
+                        res = await s.komut(name, params, kaynak=user['id'])
+                        yanit(rid=rid, name=name, **res)
+                    except flightsim.SimHata as e:
+                        yanit(rid=rid, name=name, ok=False, error=str(e))
+                    continue
+                if b is None:
+                    yanit(rid=rid, name=name, ok=False, error='Oturum paneli henüz hazır değil')
+                    continue
+
+                async def run_cmd(m=msg, rid=rid, name=name, params=params, b=b):
+                    try:
+                        res = await drone_hub.send_command(hu, b.id, int(m.get('sysid') or 1), name, params, ws, rid)
+                        yanit(rid=rid, name=name, **res)
+                    except Exception as e:   # noqa: BLE001
+                        yanit(rid=rid, name=name, ok=False, error=str(e)[:200])
+                if name in drone_hub.SEQ_CMDS:
+                    asyncio.get_running_loop().create_task(run_cmd())
+                else:
+                    await run_cmd()
     except (WebSocketDisconnect, Exception):   # noqa: BLE001
         pass
     finally:
+        drone_hub.VIEWERS.pop(ws, None)
         s.izleyici_sil(ws)
         sender.cancel()
 

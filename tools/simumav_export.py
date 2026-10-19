@@ -39,6 +39,9 @@ PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'a
                'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py']
 JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
+            # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)
+            'static/js/ui.js', 'static/js/i18n.js', 'static/js/icons.js', 'static/js/segicons.js', 'static/js/fa-icons.js', 'static/js/step3d.js',
+            'static/js/engine3d.js', 'static/js/gcode3d.js', 'static/js/imgopt.js', 'static/img/google-logo.png', 'static/models/caymaz-sim.glb',
             'run-simumav.sh', 'deploy/simumav/**', 'docs/simumav.md', 'tests/test_simumav*']
 
 # HEPGO'ya özgü app/ modülleri: SIMUMAV ağacına girmemeli (ERP veritabanı/kullanıcı/yetki/akış). Zincirde çıkarsa UYARI.

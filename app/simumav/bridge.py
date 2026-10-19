@@ -339,6 +339,47 @@ def bos_mp_port():
 
 
 # ---- uçuş başlat / durdur ----
+HAND_DEFAULTS = {'hand_speed_ms': 7.0, 'hand_pitch_deg': 12.0}
+
+
+def launch_dogrula(l):
+    """fly/start `launch`: {method, angle_deg 10–30, release_kmh 40–110, hand_speed_ms 6–8, hand_pitch_deg 10–15}; dize ise yalnız yöntem."""
+    if isinstance(l, str) or l is None:
+        l = {'method': l or 'wheels'}
+    if not isinstance(l, dict):
+        raise BridgeHata(422, 'invalid', 'launch nesne ya da yöntem adı olmalı')
+    m = l.get('method') or 'wheels'
+    if m not in LAUNCHES:
+        raise BridgeHata(422, 'invalid', 'launch.method wheels | ramp | vehicle | hand olmalı')
+    out = {'method': m}
+    for k, (alt, ust, vars_) in {'angle_deg': (10, 30, 15.0), 'release_kmh': (40, 110, 70.0), 'hand_speed_ms': (6, 8, 7.0), 'hand_pitch_deg': (10, 15, 12.0)}.items():
+        v = l.get(k)
+        if v is None:
+            out[k] = vars_
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not (alt <= v <= ust):
+            raise BridgeHata(422, 'invalid', f'launch.{k} {alt}…{ust} olmalı')
+        out[k] = float(v)
+    return out
+
+
+def elden_atis_ayarla(s, params):
+    """WS cmd takeoff{launch:'hand', hand_speed_ms, hand_pitch_deg}: çekirdeğin kalkış dizisi 'ramp' (mancınık) kalıbıyla koşar; elden atış için
+    düşük ivme/kısa fırlatma — SITL'de TKOFF_THR_MINACC düşürülür, seviye pitch'i el açısına eşitlenir (HEPGO dosyasına dokunulmaz; parametreler PARAM_SET)."""
+    try:
+        hiz = float(params.get('hand_speed_ms') or HAND_DEFAULTS['hand_speed_ms'])
+        aci = float(params.get('hand_pitch_deg') or HAND_DEFAULTS['hand_pitch_deg'])
+    except (TypeError, ValueError):
+        hiz, aci = HAND_DEFAULTS['hand_speed_ms'], HAND_DEFAULTS['hand_pitch_deg']
+    hiz, aci = max(6.0, min(8.0, hiz)), max(10.0, min(15.0, aci))
+    s.launch = {**(s.launch or {}), 'method': 'ramp', 'angle_deg': aci, 'hand': True, 'hand_speed_ms': hiz, 'hand_pitch_deg': aci}
+    if s.sahte is None and getattr(s, '_heartbeat_alindi', False):
+        try:   # elden atış: ivme eşiği düşük (kol hareketi ~4 m/s²), 1 sn gaz gecikmesi, el açısı
+            s._param_set((('TKOFF_THR_MINACC', 4.0), ('TKOFF_THR_DELAY', 1.0), ('TKOFF_LVL_PITCH', aci), ('TKOFF_THR_MINSPD', 0.0), ('TKOFF_ROTATE_SPD', 0.0)))
+        except Exception:   # noqa: BLE001
+            pass
+
+
 def _world(track, drone_type, launch):
     w = db.j(track.get('wind')) if isinstance(track.get('wind'), str) else (track.get('wind') or {})
     tw = db.j(track.get('world')) if isinstance(track.get('world'), str) else (track.get('world') or {})
@@ -349,18 +390,17 @@ def _world(track, drone_type, launch):
         mode = 'real'
     out = {'mode': mode, 'size_m': int(max(500, min(20000, (track.get('radius_m') or 2000) * 2))), 'time': TIME_CEKIRDEK.get(track.get('time_of_day'), 'day'),
            'wind_ms': float(max(0, min(30, w.get('speed_ms') or 0))), 'wind_dir': float(max(0, min(359.99, w.get('dir_deg') or 0))),
-           'fog': FOG.get(track.get('weather'), 0.1), 'runway': drone_type in ('plane', 'interceptor'),
-           'launch': {'method': LAUNCH_CEKIRDEK.get(launch, 'wheels')}}
+           'fog': FOG.get(track.get('weather'), 0.1), 'runway': drone_type in ('plane', 'interceptor') and launch.get('method') != 'hand',
+           'launch': {'method': LAUNCH_CEKIRDEK.get(launch.get('method'), 'wheels'), 'angle_deg': launch.get('angle_deg', 15.0), 'release_kmh': launch.get('release_kmh', 70.0)}}
     out.update({k: tw[k] for k in WORLD_KEYS if k in tw and tw[k] is not None})   # parkurun dünya ayarları (seed, pist yönü, ağaç yoğunluğu …)
-    if launch == 'hand':
-        out['launch'].update(angle_deg=12, release_kmh=40)
+    if launch.get('method') == 'hand':
+        out['launch'].update(angle_deg=launch.get('hand_pitch_deg', 12.0), release_kmh=40)
     return out
 
 
 async def ucus_baslat(user, pilot, drone, track, mission, launch, record, request=None):
     """Kotalar → çekirdek oturum → flights satırı → MP köprüsü. Dönüş: {flight_id, sim_id, mp, ws}. Hatalar BridgeHata."""
-    if launch not in LAUNCHES:
-        raise BridgeHata(422, 'invalid', 'launch wheels | ramp | vehicle | hand olmalı')
+    launch = launch_dogrula(launch)
     if drone['type'] not in TIP_ESLEME:
         raise BridgeHata(422, 'invalid', 'Dron tipi geçersiz')
     params = params_dogrula(db.j(drone.get('params')))
@@ -403,14 +443,18 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
         t = db.now()
         snap = {'drone': {'id': drone['id'], 'name': drone['name'], 'type': drone['type'], 'model_key': drone['model_key'], 'color': drone.get('color')},
                 'pilot': {'id': pilot['id'], 'name': pilot['name'], 'character': pilot['character']},
-                'track': {'id': track['id'], 'name': track['name'], 'lat': track['lat'], 'lon': track['lon']},
-                'mission': {'id': mission['id'], 'name': mission['name'], 'kind': mission['kind']} if mission else None}
+                'track': {'id': track['id'], 'name': track['name'], 'lat': track['lat'], 'lon': track['lon'], 'radius_m': track.get('radius_m'), 'world_mode': track.get('world_mode'),
+                          'world': db.j(track.get('world')) if isinstance(track.get('world'), str) else (track.get('world') or {}),
+                          'gates': db.j(track.get('gates'), []) if isinstance(track.get('gates'), str) else list(track.get('gates') or []),
+                          'wind': db.j(track.get('wind')) if isinstance(track.get('wind'), str) else (track.get('wind') or {}), 'time_of_day': track.get('time_of_day'), 'weather': track.get('weather')},
+                'mission': {'id': mission['id'], 'name': mission['name'], 'kind': mission['kind'], 'plan': db.j(mission.get('plan'))} if mission else None,
+                'launch': launch, 'record': {'bin': bool((record or {}).get('bin', True)), 'video': bool((record or {}).get('video'))}}
         with db.connect() as conn:
             fid = conn.execute('INSERT INTO flights (user_id, pilot_id, drone_id, track_id, mission_id, launch, started_at, mp_port, snapshot, created_at, updated_at) '
-                               'VALUES (?,?,?,?,?,?,?,?,?,?,?)', (user['id'], pilot['id'], drone['id'], track['id'], mission['id'] if mission else None, launch,
+                               'VALUES (?,?,?,?,?,?,?,?,?,?,?)', (user['id'], pilot['id'], drone['id'], track['id'], mission['id'] if mission else None, launch['method'],
                                                                   s.created_at, port, json.dumps(snap, ensure_ascii=False), t, t)).lastrowid
             conn.execute('INSERT INTO sim_runs_link (flight_id, sim_id) VALUES (?,?)', (fid, s.id))
-            db.audit(conn, 'fly_start', user['id'], request and _ip(request), f'flight {fid} sim {s.id} {drone["type"]} {track["name"]} mp {port}')
+            db.audit(conn, 'fly_start', user['id'], request and _ip(request), f'flight {fid} sim {s.id} {drone["type"]} {track["name"]} {launch["method"]} mp {port}')
             conn.commit()
         mp = MpKopru(s, port)
         try:
@@ -419,6 +463,8 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
             mp = None
         s.sm_gates = db.j(track.get('gates'), []) if isinstance(track.get('gates'), str) else list(track.get('gates') or [])   # FPV halkaları (WS hello + durum)
         s.sm_flight_id = fid
+        if launch['method'] == 'hand':
+            s.launch = {**s.launch, 'hand': True, 'hand_speed_ms': launch['hand_speed_ms'], 'hand_pitch_deg': launch['hand_pitch_deg']}
         a = {'sim_id': s.id, 'user_id': user['id'], 'mp': mp, 'task': None, 'started': time.time(), 'mission': mission, 'gates_result': None}
         _AKTIF[fid] = a
         a['task'] = loop.create_task(_izle(fid, s, mp))

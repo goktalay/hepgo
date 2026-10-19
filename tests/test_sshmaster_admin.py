@@ -46,6 +46,15 @@ def mastertool_tickets(a):
     # Merkez talep ekranında: Mastertool · FTP Masters, kanal mastertool, etiket uygulama
     row = next(x for x in a.get('/api/central/support/tickets?view=all').json()['tickets'] if x['id'] == tid)
     assert row['company_name'] == 'Mastertool · FTP Masters' and row['channel'] == 'mastertool' and row['tags'] == 'FTP Masters' and row['slug'] == 'mastertool', row
+    # SIMUMAV (app sv; docs/simumav.md §9): etiket SIMUMAV, firma adı 'Mastertool · SIMUMAV'; Merkez listesinde source=simumav|mastertool|company filtresi
+    sv = plain.post('/api/federation/mastertool/tickets', headers=K, json={'email': 'pilot@test.com', 'name': 'Pilot', 'app': 'sv', 'subject': '[Uçuş / Simülasyon] Düşüyor',
+                    'body': 'Kalkışta çakılıyor.\n\n--- SIMUMAV bağlamı ---\nSürüm: 1.2.0', 'category': 'teknik'}).json()
+    row2 = next(x for x in a.get('/api/central/support/tickets?view=all').json()['tickets'] if x['id'] == sv['id'])
+    assert row2['company_name'] == 'Mastertool · SIMUMAV' and row2['tags'] == 'SIMUMAV' and row2['channel'] == 'mastertool', row2
+    ids = lambda src: {x['id'] for x in a.get(f'/api/central/support/tickets?view=all&source={src}').json()['tickets']}   # noqa: E731
+    assert sv['id'] in ids('simumav') and tid not in ids('simumav') and tid in ids('mastertool') and sv['id'] not in ids('mastertool')
+    assert sv['id'] not in ids('company') and tid not in ids('company') and {tid, sv['id']} <= ids('')
+    assert plain.get('/api/federation/mastertool/tickets?email=pilot@test.com', headers=K).json()[0]['app'] == 'sv'
     sent = []
     orig = sshmaster_admin.notify_reply
     sshmaster_admin.notify_reply = lambda t: sent.append(t)

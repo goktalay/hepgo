@@ -1229,21 +1229,42 @@ def _who(u):
     return {'email': u['email'], 'name': u['name']}
 
 
+def _ticket_user(request, conn, a, user_id=None):
+    """Talep uçlarının kimliği: web çerezi (Hesabım › Destek) YA DA `a == 'sv'` + X-Simumav-Secret: SIMUMAV sunucusu kullanıcı adına
+    (user_id sorgu/gövde; `profile_put` kalıbı, docs/simumav.md §9). Dönüş (user, sunucu_mu). Sunucu yolunda IP oran sınırı uygulanmaz
+    (tek iç IP; SIMUMAV kendi 5/sa/kullanıcı sınırını uygular)."""
+    sec = request.headers.get('x-simumav-secret')
+    if a == 'sv' and sec is not None:
+        if not settings.SIMUMAV_SHARED_SECRET or not hmac.compare_digest(sec, settings.SIMUMAV_SHARED_SECRET):
+            raise Err(403, 'forbidden', 'Yetkisiz')
+        try:
+            uid = int(user_id if user_id is not None else request.query_params.get('user_id'))
+        except (TypeError, ValueError):
+            raise Err(422, 'invalid', 'user_id gerekir')
+        u = conn.execute("SELECT * FROM users WHERE id = ? AND status = 'AKTIF'", (uid,)).fetchone()
+        if not u:
+            raise Err(404, 'not_found', 'Kullanıcı bulunamadı')
+        return u, True
+    u, _ = current(request, conn, web_only=True)
+    return u, False
+
+
 @app.get('/api/{a}/tickets')
 def tickets(a: str, request: Request):
     need_prefix(a)
     with db.connect() as conn:
-        u, _ = current(request, conn, web_only=True)
+        u, _ = _ticket_user(request, conn, a)
     return _mz(lambda: merkez.call('GET', '/api/federation/mastertool/tickets', params={'email': u['email']}))
 
 
 @app.post('/api/{a}/tickets')
 async def ticket_create(a: str, request: Request):
     need_prefix(a)
-    rate(request, 'ticket', 10, 600)
     b = await body(request)
     with db.connect() as conn:
-        u, _ = current(request, conn, web_only=True)
+        u, srv = _ticket_user(request, conn, a, b.get('user_id'))
+    if not srv:
+        rate(request, 'ticket', 10, 600)
     ta = str(b.get('app') or 'mt')
     payload = _who(u) | {'app': ta if ta in TICKET_APPS else 'mt', 'subject': str(b.get('subject') or '')[:200],
                          'body': str(b.get('body') or '')[:8000], 'category': str(b.get('category') or 'teknik')[:20]}
@@ -1254,26 +1275,28 @@ async def ticket_create(a: str, request: Request):
 def ticket_get(a: str, tid: int, request: Request):
     need_prefix(a)
     with db.connect() as conn:
-        u, _ = current(request, conn, web_only=True)
+        u, _ = _ticket_user(request, conn, a)
     return _mz(lambda: merkez.call('GET', f'/api/federation/mastertool/tickets/{tid}', params={'email': u['email']}))
 
 
 @app.post('/api/{a}/tickets/{tid}/messages')
 async def ticket_reply(a: str, tid: int, request: Request):
     need_prefix(a)
-    rate(request, 'ticket-msg', 30, 600)
     b = await body(request)
     with db.connect() as conn:
-        u, _ = current(request, conn, web_only=True)
+        u, srv = _ticket_user(request, conn, a, b.get('user_id'))
+    if not srv:
+        rate(request, 'ticket-msg', 30, 600)
     return _mz(lambda: merkez.call('POST', f'/api/federation/mastertool/tickets/{tid}/messages',
                                    json=_who(u) | {'body': str(b.get('body') or '')[:8000]}))
 
 
 @app.post('/api/{a}/tickets/{tid}/close')
-def ticket_close(a: str, tid: int, request: Request):
+async def ticket_close(a: str, tid: int, request: Request):
     need_prefix(a)
+    b = await body(request) if int(request.headers.get('content-length') or 0) > 0 else {}
     with db.connect() as conn:
-        u, _ = current(request, conn, web_only=True)
+        u, _ = _ticket_user(request, conn, a, b.get('user_id'))
     return _mz(lambda: merkez.call('POST', f'/api/federation/mastertool/tickets/{tid}/close', json=_who(u)))
 
 
@@ -1287,8 +1310,9 @@ async def ticket_notify(request: Request):
     if not u or not mailer.enabled():
         return {'ok': True, 'sent': False}
     brand = b.get('app') if b.get('app') in SITES else 'mt'
-    mailer.send_ticket_reply(u['email'], u['name'], str(b.get('code') or '')[:20], str(b.get('subject') or '')[:200],
-                             acct(f"/hesabim?talep={int(b.get('id') or 0)}#destek"), brand)
+    # SIMUMAV talebi: bağlantı oyunun "Taleplerim" ayrıntısına (simumav.com/app/#/support/<id>); Hesabım › Destek'te de görünür
+    url = f"{settings.SIMUMAV_SITE}/app/#/support/{int(b.get('id') or 0)}" if b.get('app') == 'sv' else acct(f"/hesabim?talep={int(b.get('id') or 0)}#destek")
+    mailer.send_ticket_reply(u['email'], u['name'], str(b.get('code') or '')[:20], str(b.get('subject') or '')[:200], url, brand)
     return {'ok': True, 'sent': True}
 
 

@@ -503,6 +503,31 @@ def main():
         assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': 999999, 'profile': {}}).status_code == 404
         assert g.put('/api/vf/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {}}).status_code == 401   # yalnız sv
         assert g.get('/api/sv/profile', headers=SV).json()['profile'] == {'flights': 3, 'hours': 1.5}
+        # ---- SIMUMAV destek köprüsü (docs/simumav.md §9): /api/sv/tickets* X-Simumav-Secret + user_id (sunucu-sunucu) → Merkez mastertool federasyonu,
+        # e-posta oturumdaki kullanıcıdan; yanlış gizli 403, user_id yok 422, başka önek 401 (çerez yok); IP oran sınırı sunucu yolunda uygulanmaz
+        calls = []
+
+        def fake2(method, path, json=None, params=None):
+            calls.append((method, path, json, params))
+            return [{'id': 5, 'code': 'T-0005', 'app': 'sv', 'status': 'acik'}] if method == 'GET' and path.endswith('/tickets') else {'id': 5, 'code': 'T-0005', 'messages': []}
+        merkez.call, orig2 = fake2, merkez.call
+        try:
+            SVS = {'X-Simumav-Secret': 'sv-gizli'}
+            assert g.get(f'/api/sv/tickets?user_id={uid}', headers=SVS).json()[0]['code'] == 'T-0005' and calls[-1][3] == {'email': 'eski@test.com'}
+            r = g.post('/api/sv/tickets', headers=SVS, json={'user_id': uid, 'app': 'sv', 'subject': '[Uçuş] Düşüyor', 'body': 'x', 'category': 'teknik'})
+            assert r.status_code == 200 and r.json()['code'] == 'T-0005' and calls[-1][2] == {'email': 'eski@test.com', 'name': 'Eski Kullanıcı', 'app': 'sv', 'subject': '[Uçuş] Düşüyor', 'body': 'x', 'category': 'teknik'}, (r.text, calls[-1])
+            assert g.get(f'/api/sv/tickets/5?user_id={uid}', headers=SVS).json()['id'] == 5 and calls[-1][3] == {'email': 'eski@test.com'}
+            assert g.post('/api/sv/tickets/5/messages', headers=SVS, json={'user_id': uid, 'body': 'teşekkürler'}).json()['id'] == 5 and calls[-1][2]['body'] == 'teşekkürler'
+            assert g.post('/api/sv/tickets/5/close', headers=SVS, json={'user_id': uid}).json()['id'] == 5
+            assert g.get(f'/api/sv/tickets?user_id={uid}', headers={'X-Simumav-Secret': 'yanlis'}).status_code == 403
+            assert g.get('/api/sv/tickets', headers=SVS).status_code == 422 and g.get('/api/sv/tickets?user_id=999999', headers=SVS).status_code == 404
+            assert g.get(f'/api/vf/tickets?user_id={uid}', headers=SVS).status_code == 401 and g.get('/api/sv/tickets', headers=SV).status_code == 401   # Bearer web_only'de geçmez
+            assert all(g.post('/api/sv/tickets', headers=SVS, json={'user_id': uid, 'app': 'sv', 'subject': 's', 'body': 'b'}).status_code == 200 for _ in range(12))   # IP oranı yok
+        finally:
+            merkez.call = orig2
+        # Merkez yanıt bildirimi: sv talebinde e-posta bağlantısı SIMUMAV "Taleplerim" ayrıntısına
+        r = c.post('/api/mt/internal/ticket-reply', headers=ADMIN, json={'id': 5, 'code': 'T-0005', 'subject': 'Düşüyor', 'email': 'eski@test.com', 'app': 'sv'})
+        assert r.json()['sent'] is True and 'https://simumav.com/app/#/support/5' in mailer.OUTBOX[-1]['text'], mailer.OUTBOX[-1]['text']
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})   # Hesabım › Oyunlar: SIMUMAV profili artık kayıtlı
         assert [(x['app'], x['has_profile']) for x in c.get('/api/mt/account').json()['games']] == [('vf', True), ('sv', True)]
         c.post('/api/mt/auth/logout', headers=W)

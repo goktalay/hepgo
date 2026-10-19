@@ -150,11 +150,18 @@ VIEWS = {
 
 
 @router.get('/tickets')
-def tickets(view: str = 'open', q: str = '', category: str = '', priority: str = '', slug: str = '', user=Depends(staff_user), conn=db.DB):
+def tickets(view: str = 'open', q: str = '', category: str = '', priority: str = '', slug: str = '', source: str = '', user=Depends(staff_user), conn=db.DB):
+    """source: '' tümü | 'company' firmalar (federasyon) | 'mastertool' Mastertool araçları (slug mastertool) | 'simumav' SIMUMAV oyunu (etiket SIMUMAV)."""
     _central()
     w, a = [VIEWS.get(view, VIEWS['open']) if view != 'overdue' else VIEWS['open']], {'me': user['id']}
     if q:
         w.append('(t.subject LIKE :q OR t.company_name LIKE :q OR t.code LIKE :q OR t.opened_by_name LIKE :q)'); a['q'] = f'%{q.strip()}%'
+    if source == 'company':
+        w.append("t.slug != 'mastertool'")
+    elif source == 'mastertool':
+        w.append("t.slug = 'mastertool' AND COALESCE(t.tags, '') != 'SIMUMAV'")
+    elif source == 'simumav':
+        w.append("t.slug = 'mastertool' AND t.tags = 'SIMUMAV'")
     if category:
         w.append('t.category = :cat'); a['cat'] = category
     if priority:

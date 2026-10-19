@@ -110,6 +110,9 @@ async function ticketList(view, raw) {
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Konu, firma, kod, kişi ara…' });
   const cat = h('select', { class: 'input' }, h('option', { value: '' }, 'Tüm kategoriler'), Object.entries(CATEGORY).map(([k, v]) => h('option', { value: k }, v)));
   const pri = h('select', { class: 'input' }, h('option', { value: '' }, 'Tüm öncelikler'), Object.entries(PRIORITY).map(([k, v]) => h('option', { value: k }, v[1])));
+  // Kaynak: firmalar (federasyon) / Mastertool araçları (Hesabım › Destek) / SIMUMAV oyunu (simumav.com "Sorun bildir"; etiket SIMUMAV)
+  const src = h('select', { class: 'input', 'aria-label': 'Kaynak' }, [['', 'Tüm kaynaklar'], ['company', 'Firmalar'], ['mastertool', 'Mastertool'], ['simumav', 'SIMUMAV']].map(([k, v]) => h('option', { value: k }, v)));
+  src.value = qs.get('source') || '';
   const side = h('nav', { class: 'card dm-views' });
   const out = h('div', { class: 'dm-tlist' });
   const bulkBar = h('div', { class: 'dm-bulk', hidden: true });
@@ -118,7 +121,7 @@ async function ticketList(view, raw) {
   try { staff = (await api.get('/api/central/support/staff')).staff; } catch { /* */ }
   const load = async () => {
     try {
-      data = await api.get(`/api/central/support/tickets?view=${cur}&category=${cat.value}&priority=${pri.value}&slug=${encodeURIComponent(slug)}`);
+      data = await api.get(`/api/central/support/tickets?view=${cur}&category=${cat.value}&priority=${pri.value}&slug=${encodeURIComponent(slug)}&source=${src.value}`);
     } catch (e) { return clear(out, h('div', { class: 'card empty' }, e.message)); }
     draw();
   };
@@ -152,7 +155,7 @@ async function ticketList(view, raw) {
           h('div', { class: 'dm-trow-main' },
             h('div', { class: 'dm-trow-top' }, h('span', { class: 'mono small muted' }, x.code), x.support_unread ? h('span', { class: 'tk-dot', title: 'Yeni firma mesajı' }) : null,
               x.channel === 'chat' ? h('span', { class: 'sk-tagchip', title: 'Canlı destekten' }, '💬') : null,
-              x.channel === 'mastertool' ? h('span', { class: 'sk-tagchip', title: 'Mastertool kullanıcısı (Hesabım › Destek)' }, x.tags || 'Mastertool') : null, h('b', null, x.subject)),
+              x.channel === 'mastertool' ? h('span', { class: 'sk-tagchip', title: x.tags === 'SIMUMAV' ? 'SIMUMAV oyuncusu (simumav.com › Sorun bildir)' : 'Mastertool kullanıcısı (Hesabım › Destek)' }, x.tags || 'Mastertool') : null, h('b', null, x.subject)),
             h('div', { class: 'small muted' }, `${x.company_name || x.slug} · ${x.opened_by_name || '—'} · ${CATEGORY[x.category] || x.category || ''} · ${t('{n} mesaj', { n: x.msg_count })}`)),
           h('div', { class: 'dm-trow-side' },
             h('div', { class: 'dm-badges' }, badge(PRIORITY, x.priority), badge(STATUS, x.status)),
@@ -162,8 +165,8 @@ async function ticketList(view, raw) {
     drawBulk();
   };
   q.addEventListener('input', draw);
-  [cat, pri].forEach(el => el.addEventListener('change', load));
-  clear(view, h('div', { class: 'dm-tickets' }, side, h('div', { class: 'dm-tmain' }, h('div', { class: 'filters' }, q, cat, pri), bulkBar, out)));
+  [cat, pri, src].forEach(el => el.addEventListener('change', load));
+  clear(view, h('div', { class: 'dm-tickets' }, side, h('div', { class: 'dm-tmain' }, h('div', { class: 'filters' }, q, cat, pri, src), bulkBar, out)));
   await load();
   every(20000, load);
 }

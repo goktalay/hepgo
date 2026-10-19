@@ -1,0 +1,12 @@
+# cloudflared config.yml `ingress:` listesine EKLENECEK parça (catch-all `service: http_status:404` satırının ÜSTÜNE).
+# DNS: Cloudflare'da CNAME simumav.com ve www → <tünel-id>.cfargotunnel.com (proxied) — kullanıcı panelden ekler.
+  - hostname: simumav.com
+    service: unix:/run/hepgo/simumav.sock
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+  - hostname: www.simumav.com
+    service: unix:/run/hepgo/simumav.sock
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s

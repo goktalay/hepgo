@@ -1,7 +1,7 @@
 // Uçuş Simülatörü — kayıttan oynatmada kalkış aşamalarının logdan türetilmesi (static/js/modules/flightsim_launch.js, §8/§13) tarayıcısız birim testi.
 // Çalıştırma: node tests/test_flightsim_launch.mjs
 import assert from 'node:assert/strict';
-import { replayLaunchTimeline, replayLaunchPhaseAt, REPLAY_RAMP_RELEASE, LAUNCH_DEFAULTS, launchLabel } from '../static/js/modules/flightsim_launch.js';
+import { replayLaunchTimeline, replayLaunchPhaseAt, REPLAY_RAMP_RELEASE, LAUNCH_DEFAULTS, launchLabel, surfaceLock, surfaceFit, isFineSample, RIG_LOCK_DELTA, RIG_FINE_ERR } from '../static/js/modules/flightsim_launch.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log('  ✓', name); };
@@ -52,5 +52,54 @@ test('AGL referansı ARM anı (baro kayması): ARM anında AGL 5 m olan kayıtta
 test('yardımcılar: varsayılanlar ve etiket', () => {
   assert.deepEqual(LAUNCH_DEFAULTS, { method: 'wheels', angle_deg: 15, release_kmh: 70 });
   assert.equal(launchLabel({ method: 'ramp', angle_deg: 20 }), 'Rampa 20°'); assert.equal(launchLabel({ method: 'vehicle', release_kmh: 72 }), 'Araç 72 km/h'); assert.equal(launchLabel(null), 'Tekerlekli');
+});
+// ---------- §13 yüzey kilidi (surfaceLock / surfaceFit): Google 3B karo niteliğiyle kabul ----------
+const F = (z, err = 0.5) => ({ z, fine: true, err, dem: 0 });     // ince karo örneği
+const C = (z, err = 60) => ({ z, fine: false, err, dem: 0 });     // kaba/kök karo örneği
+test('ilk örnekler kaba (kök karo −280 m): değer KULLANILMAZ → DEM yedeği (0), kilit yok; 8 m eşiği yok (ince 12 m kabul edilir)', () => {
+  let L = surfaceLock(null, [C(-280), C(-281), C(-279), C(-280)]);
+  assert.deepEqual(L.hs, [0, 0, 0, 0]); assert.equal(L.locked, false); assert.equal(L.event, 'init');
+  L = surfaceLock(L, [F(12.1), F(12.3), F(11.9), F(12.0)]);   // eğimli/dağlık merkez: ince karoda |h| > 8 m gerçek değerdir
+  assert.deepEqual(L.hs, [12.1, 12.3, 11.9, 12.0]); assert.equal(L.locked, true); assert.equal(L.event, 'lock'); assert.equal(L.err, 0.5);
+});
+test('kısmen ince: önceki kabul edilmiş değer korunur (hold); hiç değer yokken ince olanlar alınır, kaba olanlar DEM ile dolar', () => {
+  let L = surfaceLock(null, [F(1.0), C(-50), F(1.2), { z: 1.1, fine: false, err: 30, dem: 0.9 }]);
+  assert.deepEqual(L.hs, [1.0, 0, 1.2, 0.9]); assert.equal(L.locked, false); assert.equal(L.event, 'init');
+  const L2 = surfaceLock(L, [C(-100), C(-100), C(-100), C(-100)]);
+  assert.deepEqual(L2.hs, L.hs); assert.equal(L2.event, 'hold'); assert.equal(L2.locked, false);
+});
+test('kilitliyken küçük düzeltme (|Δ| ≤ 0,35) uygulanır, büyük sıçrama (LOD kabalaşması / başka karo) yok sayılır; ince bayrağı düşerse eski değer kalır', () => {
+  let L = surfaceLock(null, [F(2.0), F(2.1), F(2.2), F(2.3)]);
+  L = surfaceLock(L, [F(2.2), F(2.1), F(5.0), F(2.3)]);          // 3. nokta +2,8 m: yok say
+  assert.deepEqual(L.hs, [2.2, 2.1, 2.2, 2.3]); assert.equal(L.event, 'ignore'); assert.equal(L.ignored, 1); assert.equal(L.locked, true);
+  L = surfaceLock(L, [F(2.2), F(2.1), C(40), F(2.3)]);           // kaba karo geri geldi: tut
+  assert.deepEqual(L.hs, [2.2, 2.1, 2.2, 2.3]); assert.equal(L.event, 'hold'); assert.equal(L.locked, true);
+  L = surfaceLock(L, [F(2.25), F(2.0), F(2.25), F(2.3)]);
+  assert.deepEqual(L.hs, [2.25, 2.0, 2.25, 2.3]); assert.equal(L.event, 'adjust');
+  assert.equal(RIG_LOCK_DELTA, 0.35); assert.equal(RIG_FINE_ERR, 2);
+});
+test('daha ince karo gelince (geometricError küçüldü) yeniden kilitlenir: büyük fark da kabul edilir', () => {
+  let L = surfaceLock(null, [F(2.0, 1.8), F(2.0, 1.8), F(2.0, 1.8), F(2.0, 1.8)]);
+  assert.equal(L.err, 1.8);
+  L = surfaceLock(L, [F(3.5, 0.6), F(3.4, 0.6), F(3.6, 0.6), F(3.5, 0.6)]);
+  assert.deepEqual(L.hs, [3.5, 3.4, 3.6, 3.5]); assert.equal(L.event, 'relock'); assert.equal(L.err, 0.6);
+  L = surfaceLock(L, [F(1.0, 1.8), F(1.0, 1.8), F(1.0, 1.8), F(1.0, 1.8)]);   // kabalaştı: sıçrama yok sayılır
+  assert.deepEqual(L.hs, [3.5, 3.4, 3.6, 3.5]); assert.equal(L.event, 'ignore'); assert.equal(L.ignored, 4);
+});
+test('Google yer ofseti değişince (karolar toptan kaydı) saklı değerler aynı miktarda kayar; yaprak karo da ince sayılır (isFineSample yalnız bayrağa bakar)', () => {
+  let L = surfaceLock(null, [F(1.0), F(1.0), F(1.0), F(1.0)], -30);
+  L = surfaceLock(L, [C(0), C(0), C(0), C(0)], -32.5);   // ofset −30 → −32,5: yüzey 2,5 m aşağı kaydı
+  assert.deepEqual(L.hs.map(v => +v.toFixed(3)), [-1.5, -1.5, -1.5, -1.5]); assert.equal(L.event, 'hold'); assert.equal(L.offset, -32.5);
+  L = surfaceLock(L, [F(-1.4), F(-1.5), F(-1.6), F(-1.5)], -32.5);   // ince karolarla küçük düzeltme (kayma sonrası sıçrama olmaz)
+  assert.equal(L.event, 'adjust');
+  assert.equal(isFineSample({ z: 1, fine: true, err: 5 }), true); assert.equal(isFineSample({ z: 1, fine: false, err: 0 }), false); assert.equal(isFineSample(null), false);
+});
+test('surfaceFit: ortalama z, ileri yükseliş → +pitch, sağ yükseliş → −roll, ±20° sınırı', () => {
+  let f = surfaceFit([0, 0, 1, 1], 1.9, 2.6);
+  assert.equal(+f.z.toFixed(3), 0.5); assert.equal(+(f.p * 180 / Math.PI).toFixed(1), 20.0, 'atan2(1, 2,6) = 21° → 20° sınırı'); assert.equal(Math.abs(f.r), 0);
+  f = surfaceFit([0, 0.2, 0, 0.2], 1.9, 2.6);
+  assert.equal(Math.abs(f.p), 0); assert.ok(f.r < 0, 'sağ yüksek → roll negatif'); assert.equal(+(f.r * 180 / Math.PI).toFixed(1), -6.0);
+  f = surfaceFit([0, 0, 0.3, 0.3], 1.9, 2.6);
+  assert.equal(+(f.p * 180 / Math.PI).toFixed(1), 6.6);
 });
 console.log(`\n${n} test geçti`);

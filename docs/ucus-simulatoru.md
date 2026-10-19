@@ -385,9 +385,11 @@ kullanılmaz. Photorealistic 3D Tiles üçüncü taraf 3B sahnede çizilebilir; 
   `g3d.heightFine(x, y)` önbelleksiz tam-nokta ışını: kalkış düzeneğinin temas noktaları (±3 m) aynı 25 m hücreye düştüğünden eğim için gerekir.
 - **Yükseklik/çarpışma:** `terrainHeight(x, y)` → `g3d.height`: 25 m hücreli önbellek, aşağı ışın; karo yüklenince/boşalınca ve ofset
   değişince geçersiz; karo yoksa komşu hücre, yoksa 0. Çarpışma mevcut mantıkla (bina çatıları karoda olduğu için doğal gelir); pist
-  çizilmese de `runway_heading` boyunca 1200×40 m sanal şerit kalkış/iniş koşusu için muaf. Kalkış düzeneği (§13) aynı `terrainHeight` ile
-  karo yüzeyine oturur ve karolar yüklendikçe (500 ms'de bir yeniden örnekleme) ince LOD yüzeyine iner — "rampa haritanın üzerinde uçuyor"
-  izleniminin kök nedeni düzeneğin `z = 0` varsayımıyla eğimli/ofsetli karo yüzeyinin üstünde ya da içinde durmasıydı.
+  çizilmese de `runway_heading` boyunca 1200×40 m sanal şerit kalkış/iniş koşusu için muaf. Kalkış düzeneği (§13) `g3d.surfaceAt(x, y, fineErr)`
+  ile karo yüzeyine oturur: önbelleksiz tam-nokta ışını **yalnız karo grubuna** (`tiles.raycast` → `activeTiles` sahneleri; uçak/düzenek/kamera
+  yardımcıları denenmez) atılır ve ölçüm `{z, fine, err, leaf}` döner — `err` çarpılan karonun `geometricError`'ı (`load-model` olayındaki `tile`
+  sahneye eşlenir; havuzdan gelen karolar `activeTiles` taramasıyla), `fine` = `err ≤ fineErr` (2 m) ya da yaprak karo. Kaba/kök karo ölçümü
+  (ilk saniyelerde −280 m görülmüştü) `fine=false` ile düzeneğe hiç uygulanmaz (§13 yüzey kilidi).
 - **Uzak dağlar:** 3D Tiles LOD küreseldir; `errorTarget 16`, `maxDepth ∞`, LRU 350 MB ve kamera `far` 60 km uzak karoları **engellemez**
   (dünya boyutu kırpması yoktur — `size_m` yalnız pist/sis içindi). Ufuktaki dağların görünmemesinin kök nedeni sis formülüydü (4 km dünyada
   5,4 km'de kapanıyordu); artık `skyAndLights(size, 30 km)` → fog 0,2'de 31 km görüş (§5). Uzak bölge için kaba karolar (az bellek) doğal gelir.
@@ -503,11 +505,30 @@ DRFTALT 0` (adlar ikilide `param_request_list` ile doğrulandı). Sahte kip de `
 **3B:** düzenek (rampa römorku / pickup) pist başında **sabittir**: demir bir kez atılır (`rig.needsAnchor` → `anchor(p, terrainHeight)`), yalnız SITL
 konumu > 2 m sıçrarsa (reset / set_home) yeniden oturtulur; araç `launch` aşamasında SITL yer koşusunu taşıdığı için her kare izler (`rig.tracking`).
 **Yüzeye oturma:** düzenek `z = 0` varsayımıyla değil, altındaki yüzeye göre durur — 4 temas noktası (tekerlekler; rampa ±0,95/±1,3 m, pickup
-±0,92/−1,6…1,85 m × ölçek) `terrainHeight` ile örneklenir (gerçek arazi ızgarası / Google 3B karo ışını) → yükseklik (ortalama) + eğim (ön/arka →
-pitch, sağ/sol → roll, ≤ 20°; Euler `ZXY`: yerel roll, pitch, sonra pist yönü); eğimden doğan kızak XY kayması ikinci geçişte düzeltilir (SITL uçağı
-kızakta kalır). `rig.resurface(terrainHeight)` her 500 ms yeniden örnekler ve hedefe 0,25 sn'de yumuşak yaklaşır → Google 3B'de karolar yüklendikçe
-(kaba → ince LOD, `groundOffset` değişimi) düzenek zıplamadan yüzeye iner; uçak kızakta düzenekle birlikte (`planeQuat` = düzeneğin dünya
-yönelimi × rampa eğimi). Teşhis: `sim.rigState()` → `{phase, surface:{z, pitch_deg, roll_deg}, x, y}`.
+±0,92/−1,6…1,85 m × ölçek) `rigSurf(x, y)` ile örneklenir → yükseklik (ortalama) + eğim (ön/arka → pitch, sağ/sol → roll, ≤ 20°; `surfaceFit`;
+Euler `ZXY`: yerel roll, pitch, sonra pist yönü); eğimden doğan kızak XY kayması ikinci geçişte düzeltilir (SITL uçağı kızakta kalır).
+`rig.resurface(rigSurf, offset)` her 500 ms yeniden örnekler ve hedefe 0,25 sn'de yumuşak yaklaşır; uçak kızakta düzenekle birlikte (`planeQuat` =
+düzeneğin dünya yönelimi × rampa eğimi).
+*Örnek kaynağı (`flightsim3d.js rigSurf`):* **Google 3B** → `g3d.surfaceAt` (§11; ışın yalnız karo grubuna; `{z, fine, err}`; karo yoksa `fine=false`,
+yedek `dem = 0`: merkez yüzeyi `groundOffset` ile 0'a oturur) · **gerçek arazi** → arazi **örgüsüne** ışın (`terrain.mesh`, yalnız o nesne; ızgara
+bilineer interpolasyonu ile görünen üçgenler arasındaki fark giderilir), örgü dışında `terrain.height` · **prosedürel** → analitik `terrain.height`
+(her zaman ince).
+*Yüzey kilidi (`flightsim_launch.js surfaceLock`, saf; `RIG_FINE_ERR` 2 m, `RIG_LOCK_DELTA` 0,35 m):* Google'da aşağı ışın önce **kaba** karoya
+çarpar (kök/ara LOD, onlarca m hata), ince karo sonra gelir ve LOD kamera ile kabalaşıp incelebilir. Eski "|h| > 8 m → 0" eşiği eğimli/dağlık
+merkezlerde gerçek yükseklikleri de atıyordu (düzenek `z = 0`'da yüzeyin üstünde/içinde) ve her LOD değişiminde düzenek oynuyordu — **kök neden**.
+Artık: (1) 4 nokta da ince (`geometricError ≤ 2 m` ya da yaprak karo) ve kilit yoksa değerler alınır ve **kilitlenir**; (2) kilitliyken 4 nokta ince
+→ nokta başına |Δ| ≤ 0,35 m küçük düzeltme uygulanır, daha büyük sıçrama (LOD kabalaşması, başka karo) **yok sayılır**; (3) herhangi bir nokta ince
+değilse önceki kabul edilmiş değerler **korunur** (kilit düşmez; hiç değer yoksa ince olanlar alınır, kaba olanlar `dem` ile dolar — kök karo asla
+kullanılmaz); (4) daha ince karo gelirse (`err` küçüldü) **yeniden kilitlenir**; (5) `groundOffset` değişirse saklı değerler aynı miktarda kayar.
+Yeni demirde (`anchor`) kilit sıfırlanır. Testler: `node tests/test_flightsim_launch.mjs` (surfaceLock/surfaceFit 6 test).
+Teşhis: `sim.rigState()` → `{phase, surface:{z, pitch_deg, roll_deg}, x, y}`; **`window.__fsRig()`** (her oturumda) → `{h, target, pitch, roll, fine,
+geomErr, locked, lockErr, accepted[4], samples[4]:{z, fine, err, dem}, event (init|lock|relock|adjust|ignore|hold), locks, ignored, holds, fits, offset,
+google, real, mesh, g3dOffset, g3dLoading, shownZ, rel}`; **`?rigdiag=1`** sahnenin sol üstünde canlı kutu (`.fs-rigdiag`, 500 ms).
+*Doğrulama (DEV, gerçek Google anahtarı, Playwright SwiftShader; `/tmp/flsim/rigsurf/e2e_rig.py`, `?rigdiag=1` + `__fsRig()` saniyede bir):*
+Bedesten (39,8565/33,3998; eğimli) rampa: t = 3/10 sn karo yok → `hold` (h 0, kaba değer uygulanmadı), t ≈ 25 sn ilk ince ölçüm → **kilit**
+(yaprak karo, geometricError 4,01 m; 4 nokta −0,27/−0,02/0,37/0,68 m → h 0,19 m, pitch 5,9°, roll −3,4°), son 30 sn'de |Δh| = **0,009 m**,
+yoksayılan 0, 638 glb, 0 hata; Fırlat → `released` sönümü 2,1 sn'de başladı, gösterilen z hiçbir karede düşmedi (4,85 → 15,9 → 29 m).
+Prosedürel (Ankara) regresyon yok: h 0, kilit anında, |Δh| 0. Diğer merkezler (TRTEST, Ankara düz; araç; gerçek arazi) aynı betikle koşulur.
 Uçak `released`'a dek kızağa kilitlidir (SITL konumu yok sayılır). **`released` geçişi (ofset sönümü):** eski 0,3–0,6 sn'lik düz lerp uçağı
 SITL'in henüz yerdeki (z ≈ 0, hızlanıyor) konumuna indiriyordu — "rampadan çıkarken rampanın altına inip oradan yükseliyor". Artık `released`
 anında kızak ucu (3B konum + yönelim) ile SITL konumu/yönelimi arasındaki fark ölçülür (`rel.off`, `rel.dq = q_kızak · q_SITL⁻¹`) ve uçağa eklenir;

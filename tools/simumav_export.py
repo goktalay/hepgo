@@ -39,6 +39,9 @@ PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'a
                'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py']
 JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
+            # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)
+            'static/js/ui.js', 'static/js/i18n.js', 'static/js/icons.js', 'static/js/segicons.js', 'static/js/fa-icons.js', 'static/js/step3d.js',
+            'static/js/engine3d.js', 'static/js/gcode3d.js', 'static/js/imgopt.js', 'static/img/google-logo.png', 'static/models/caymaz-sim.glb',
             'run-simumav.sh', 'deploy/simumav/**', 'docs/simumav.md', 'tests/test_simumav*']
 
 # HEPGO'ya özgü app/ modülleri: SIMUMAV ağacına girmemeli (ERP veritabanı/kullanıcı/yetki/akış). Zincirde çıkarsa UYARI.
@@ -161,21 +164,22 @@ def glob_coz(src: Path, desen: str) -> list[Path]:
 
 
 def py_ic_importlar(dosya: Path) -> tuple[list[str], set[str], bool]:
-    """(göreli app/ modülleri, üçüncü parti üst düzey adlar, multipart gerekiyor mu). Söz dizimi hatasında boş + uyarı yok."""
+    """(göreli import hedefleri [(level, ad)…], üçüncü parti üst düzey adlar, multipart gerekiyor mu). `from . import x` dosyanın kendi paketine
+    göre çözülür (app/simumav/routers/x.py içindeki `..` = app/simumav). Söz dizimi hatasında boş + uyarı yok."""
     try:
         agac = ast.parse(dosya.read_text(encoding='utf-8'), filename=str(dosya))
     except (SyntaxError, UnicodeDecodeError):
         return [], set(), False
-    goreli: list[str] = []
+    goreli: list[tuple[int, str]] = []
     ucuncu: set[str] = set()
     multipart = False
     for n in ast.walk(agac):
         if isinstance(n, ast.ImportFrom):
             if n.level:                                   # from . import x  |  from .x import y  |  from .x.y import z
                 if n.module:
-                    goreli.append(n.module.split('.')[0])
+                    goreli.append((n.level, n.module.split('.')[0]))
                 else:
-                    goreli.extend(a.name for a in n.names)
+                    goreli.extend((n.level, a.name) for a in n.names)
             else:
                 ust = (n.module or '').split('.')[0]
                 if ust and ust not in STDLIB:
@@ -190,11 +194,22 @@ def py_ic_importlar(dosya: Path) -> tuple[list[str], set[str], bool]:
     return goreli, ucuncu, multipart
 
 
-def py_modul_yolu(src: Path, ad: str) -> Path | None:
-    for aday in (src / 'app' / f'{ad}.py', src / 'app' / ad / '__init__.py'):
+def py_modul_yolu(src: Path, ad: str, kaynak: Path | None = None, level: int = 1) -> Path | None:
+    """Göreli import hedefi: `kaynak` dosyasının paketinden `level` kadar yukarı (1 = kendi paketi) → <paket>/<ad>.py ya da <paket>/<ad>/__init__.py.
+    kaynak verilmezse app/ kökü varsayılır."""
+    paket = (kaynak.parent if kaynak is not None else src / 'app')
+    for _ in range(max(0, level - 1)):
+        paket = paket.parent
+    for aday in (paket / f'{ad}.py', paket / ad / '__init__.py'):
         if aday.is_file():
             return aday
     return None
+
+
+def shim_modulu(src: Path, ad: str) -> Path | None:
+    """HEPGO'ya özgü modülün SIMUMAV karşılığı (app/simumav/shim/<ad>.py): varsa zincir uyarısı yerine not düşülür (sys.modules ile sağlanır)."""
+    aday = src / 'app' / 'simumav' / 'shim' / f'{ad}.py'
+    return aday if aday.is_file() else None
 
 
 JS_IMPORT_RE = re.compile(r"""(?:import|export)\s*(?:[\w*{}\s,$]*?\s*from\s*)?['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)""")
@@ -234,16 +249,20 @@ def coz(src: Path, rapor: Rapor, include_hepgo: bool) -> set[Path]:
         ucuncu |= u
         multipart |= mp
         kaynak = d.relative_to(src).as_posix()
-        for ad in goreli:
-            yol = py_modul_yolu(src, ad)
+        for level, ad in goreli:
+            yol = py_modul_yolu(src, ad, d, level)
             if yol is None:
                 if ad not in ('simumav',):       # app/simumav alt paketi zaten manifestte
-                    rapor.not_(f'{kaynak}: göreli import çözülemedi: .{ad}')
+                    rapor.not_(f'{kaynak}: göreli import çözülemedi: {"." * level}{ad}')
                 continue
             if yol in gorulen or yol in secilen:
                 continue
-            if ad in HEPGO_OZGU and not include_hepgo:
-                rapor.uyar(f"HEPGO'ya özgü modül zincirde: app/{ad} ← {kaynak} (kopyalanmadı; bridge ile sağlanmalı)")
+            app_kok = yol.parent == src / 'app' and yol.name == f'{ad}.py'   # yalnız app/<ad>.py HEPGO'ya özgü olabilir (app/simumav/auth.py değil)
+            if app_kok and ad in HEPGO_OZGU and not include_hepgo:
+                if shim_modulu(src, ad) is not None:
+                    rapor.not_(f'app/{ad} ← {kaynak}: SIMUMAV shim ile sağlanır (app/simumav/shim/{ad}.py)')
+                else:
+                    rapor.uyar(f"HEPGO'ya özgü modül zincirde: app/{ad} ← {kaynak} (kopyalanmadı; shim ile sağlanmalı: app/simumav/shim/{ad}.py)")
                 gorulen.add(yol)
                 continue
             rapor.py_zincir[yol.relative_to(src).as_posix()] = kaynak

@@ -11,7 +11,7 @@ import tempfile
 D = tempfile.mkdtemp()
 os.environ.update(SSHM_DATA_DIR=D, SSHM_ENV_FILE=os.path.join(D, 'yok.env'), VEILOX_ENV_FILE=os.path.join(D, 'yok2.env'),
                   SSHM_MAIL_TEST='1', SSHM_CENTRAL_SECRET='merkez-gizli', SSHM_RELEASE_KEY='sm-anahtar', FTPM_RELEASE_KEY='fm-anahtar',
-                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
+                  SQLM_RELEASE_KEY='sq-anahtar', NOTEPADM_RELEASE_KEY='np-anahtar', CONVERTM_RELEASE_KEY='cv-anahtar', MASTERTOOL_RELEASE_KEY='mt-anahtar', IPTOOLS_RELEASE_KEY='ip-anahtar', SIMUMAV_RELEASE_KEY='sv-anahtar', SIMUMAV_MT_SHARED_SECRET='sv-gizli', SSHM_SECURE_COOKIE='0', SSHM_SALT_KEY='test-tuz', SSHM_PUBLIC_URL='https://sshmasters.com', MT_PORTAL_LIVE='0')
 
 # ---- v1 (SSH Master) şemasıyla dolu bir veritabanı: geçiş verileri korumalı
 V1 = """
@@ -465,19 +465,90 @@ def main():
         assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps
         cat = c.get('/api/mt/apps?v=1.2.0', headers=MT4).json()['apps']
-        assert [x['app'] for x in cat] == base_apps + ['vf'] and [x['app'] for x in c.get('/api/mt/apps?v=v1.10.0-beta', headers=MT4).json()['apps']][-1] == 'vf'
-        vf = cat[-1]
+        assert [x['app'] for x in cat] == base_apps + ['vf', 'sv'] and [x['app'] for x in c.get('/api/mt/apps?v=v1.10.0-beta', headers=MT4).json()['apps']][-2:] == ['vf', 'sv']
+        vf = cat[-2]
         assert vf == {'app': 'vf', 'code': 'vf', 'name': 'VOLFAI', 'group': 'games', 'kind': 'web', 'url': 'https://mastertool.download/oyunlar/volfai/',
                       'site': 'https://mastertool.download/oyunlar/volfai/tanitim/', 'icon_svg': '/brand/vf.svg', 'icon_png': '/brand/vf.png', 'description': vf['description']}, vf
         assert len(vf['description']) == 8 and vf['description']['en'].startswith('A touch') and all(k not in vf for k in ('release', 'license', 'exe', 'install_dir'))
         assert c.get('/brand/vf.svg').headers['content-type'] == 'image/svg+xml' and c.get('/brand/vf.png').headers['content-type'] == 'image/png'
         assert c.get('/brand/vf-512.png').status_code == 200
+        # SIMUMAV (sv): kendi sitesinde çalışan oyun — url/site simumav.com, ikonlar, açıklama 8 dil
+        sv = cat[-1]
+        assert sv['app'] == 'sv' and sv['name'] == 'SIMUMAV' and sv['kind'] == 'web' and sv['group'] == 'games' and sv['url'] == 'https://simumav.com/' and sv['site'] == 'https://simumav.com/', sv
+        assert len(sv['description']) == 8 and sv['description']['en'].startswith('Drone simulation')
+        assert c.get('/brand/sv.svg').headers['content-type'] == 'image/svg+xml' and c.get('/brand/sv.png').status_code == 200 and c.get('/brand/sv-512.png').status_code == 200
         # Hesabım: oyunlar ayrı listede (apps bozulmaz), profil durumu
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()
         assert {a['app'] for a in acc['apps']} == set(base_apps) and acc['games'][0]['app'] == 'vf' and acc['games'][0]['has_profile'] is True
         acc2 = c2.get('/api/mt/account').json(); assert acc2['games'][0]['has_profile'] is False
         c.post('/api/mt/auth/logout', headers=W)
+        # ---- SIMUMAV hesap servisi tarafı: Bearer /api/sv/me (verified), sv_profiles (kullanıcı Bearer + sunucu X-Simumav-Secret), CORS yalnız sv
+        r = g.post('/api/sv/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'device': 'SIMUMAV Web'}); assert r.status_code == 200, r.text
+        SV = {'Authorization': 'Bearer ' + r.json()['token']}
+        me = g.get('/api/sv/me', headers=SV).json(); assert me['user']['verified'] is True and me['user']['email'] == 'eski@test.com'
+        assert g.get('/api/sv/profile', headers=SV).json()['profile'] is None
+        assert g.put('/api/sv/profile', headers=SV, json={'profile': {'pilot': 'Eski'}}).json()['ok'] and g.get('/api/sv/profile', headers=SV).json()['profile'] == {'pilot': 'Eski'}
+        assert g.get('/api/vf/profile', headers=VF).json()['profile'].get('pilot') is None   # tablolar ayrı (vf_profiles / sv_profiles)
+        uid = me['user']['id']
+        assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'yanlis'}, json={'user_id': uid, 'profile': {'flights': 3}}).status_code == 403
+        assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {'flights': 3, 'hours': 1.5}}).json()['ok']
+        assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': 999999, 'profile': {}}).status_code == 404
+        assert g.put('/api/vf/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {}}).status_code == 401   # yalnız sv
+        assert g.get('/api/sv/profile', headers=SV).json()['profile'] == {'flights': 3, 'hours': 1.5}
+        acc3 = c.get('/api/mt/account', headers={'Authorization': SV['Authorization']})
+        assert acc3.status_code == 401   # account yalnız web çerezi (Bearer ile değil); SIMUMAV /me kullanır
+        r = g.options('/api/sv/me', headers={'Origin': 'https://simumav.com', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization'})
+        assert r.status_code == 204 and r.headers['access-control-allow-origin'] == 'https://simumav.com' and 'Authorization' in r.headers['access-control-allow-headers']
+        r = g.get('/api/sv/me', headers=SV | {'Origin': 'https://simumav.com'}); assert r.headers.get('access-control-allow-origin') == 'https://simumav.com' and r.headers.get('vary') == 'Origin'
+        assert 'access-control-allow-origin' not in g.get('/api/sv/me', headers=SV | {'Origin': 'https://kotu.example'}).headers
+        assert 'access-control-allow-origin' not in g.get('/api/vf/me', headers=VF | {'Origin': 'https://simumav.com'}).headers   # yalnız /api/sv/
+        assert g.options('/api/vf/me', headers={'Origin': 'https://simumav.com', 'Access-Control-Request-Method': 'GET'}).status_code != 204
+        # ---- web paketleri: /api/sv/web-releases (X-Release-Key), tar güvenliği, sha, 409, latest atomik
+        import hashlib as _hl, io as _io, tarfile as _tf
+        def paket(version, ver_icerik=None, kotu_yol=None, symlink=False, eksik=False, kok=''):
+            buf = _io.BytesIO()
+            on = f'{kok}/' if kok else ''
+            with _tf.open(fileobj=buf, mode='w:gz') as tf:
+                def ekle(ad, data):
+                    ti = _tf.TarInfo(on + ad); ti.size = len(data); tf.addfile(ti, _io.BytesIO(data))
+                ekle('VERSION', (ver_icerik if ver_icerik is not None else version).encode() + b'\n')
+                if not eksik:
+                    ekle('run-simumav.sh', b'#!/bin/sh\n'); ekle('requirements.txt', b'fastapi\n')
+                ekle('app/simumav/main.py', b'# x\n')
+                if kotu_yol:
+                    ekle(kotu_yol, b'x')
+                if symlink:
+                    ti = _tf.TarInfo('link'); ti.type = _tf.SYMTYPE; ti.linkname = '/etc/passwd'; tf.addfile(ti)
+            data = buf.getvalue()
+            return data, _hl.sha256(data).hexdigest()
+        data, sha = paket('0.1.0')
+        gonder = lambda d, s, v='0.1.0', key='sv-anahtar': c.post(f'/api/sv/web-releases', headers={'X-Release-Key': key}, data={'version': v, 'sha256': s, 'notes': 'ilk'}, files={'package': (f'simumav-{v}.tar.gz', d, 'application/gzip')})   # noqa: E731
+        assert gonder(data, sha, key='yanlis').status_code == 403
+        assert c.post('/api/sv/web-releases', data={'version': '0.1.0', 'sha256': sha}, files={'package': ('x.tar.gz', data)}).status_code == 403
+        r = gonder(data, 'ab' * 32); assert r.status_code == 422 and r.json()['code'] == 'bad_sha256', r.text
+        assert gonder(data, 'kısa').json()['code'] == 'bad_sha256'
+        d2, s2 = paket('0.1.0', kotu_yol='../../etc/cron.d/x'); r = gonder(d2, s2); assert r.status_code == 422 and r.json()['code'] == 'unsafe_archive', r.text
+        d3, s3 = paket('0.1.0', kotu_yol='/etc/x'); assert gonder(d3, s3).json()['code'] == 'unsafe_archive'
+        d4, s4 = paket('0.1.0', symlink=True); assert gonder(d4, s4).json()['code'] == 'unsafe_archive'
+        assert not (settings.RELEASE_DIR / 'sv' / '0.1.0').exists()   # hata: sürüm klasörü silinir
+        d5, s5 = paket('0.1.0', ver_icerik='0.0.9'); assert gonder(d5, s5).json()['code'] == 'version_mismatch'
+        d6, s6 = paket('0.1.0'); assert gonder(b'degil' + d6[5:], _hl.sha256(b'degil' + d6[5:]).hexdigest()).json()['code'] == 'not_gzip'
+        assert gonder(data, sha, v='sürüm').status_code == 422
+        assert gonder(data, sha).status_code == 429   # anahtarlı uçta oran sınırı 10/dk/IP
+        _RATE.clear()
+        d8, s8 = paket('0.1.0', eksik=True); assert gonder(d8, s8).json()['code'] == 'incomplete'
+        assert c.get('/api/sv/web-releases/latest').status_code == 404
+        r = gonder(data, sha); assert r.status_code == 201 and r.json()['version'] == '0.1.0' and r.json()['file'] == 'sv/0.1.0/simumav-0.1.0.tar.gz', r.text
+        assert (settings.RELEASE_DIR / 'sv' / '0.1.0' / 'simumav-0.1.0.tar.gz.sha256').read_text() == f'{sha}  simumav-0.1.0.tar.gz\n'
+        assert (settings.RELEASE_DIR / 'sv' / '0.1.0' / 'simumav-0.1.0.tar.gz').read_bytes() == data
+        assert (settings.RELEASE_DIR / 'sv' / 'latest').read_text() == '0.1.0\n' and not (settings.RELEASE_DIR / 'sv' / 'latest.tmp').exists()
+        assert gonder(data, sha).status_code == 409
+        d7, s7 = paket('0.2.0', kok='simumav-0.2.0'); assert gonder(d7, s7, v='v0.2.0').status_code == 201 and (settings.RELEASE_DIR / 'sv' / 'latest').read_text().strip() == '0.2.0'   # tek kök klasör + v öneki
+        lt = c.get('/api/sv/web-releases/latest').json(); assert lt['version'] == '0.2.0' and lt['sha256'] == s7 and lt['size'] == len(d7)
+        assert c.get('/api/sv/web-releases').status_code == 403
+        lst = c.get('/api/sv/web-releases', headers=ADMIN).json(); assert lst['latest'] == '0.2.0' and [x['version'] for x in lst['releases']] == ['0.2.0', '0.1.0']
+        assert c.get('/api/vf/web-releases', headers=ADMIN).status_code == 404 and not (settings.RELEASE_DIR / 'sv' / 'sürüm').exists()
         # kayıt / giriş sayfası ?app=vf, doğrulama bağlantısı oyuna işaret eder
         assert c.get('/kayit?app=vf', headers=MTH).text.count('data-site="mt" data-brand="vf"') == 1
         k3 = c.post('/api/mt/auth/prelogin', json={'email': 'oyuncu@test.com'}).json()['kdf']

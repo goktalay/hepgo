@@ -51,6 +51,25 @@ bash deploy.sh /opt/hepgo/sshmaster/data/releases/sv/<v>/simumav-<v>.tar.gz
 `hepgo-simumav.service` içinde `EnvironmentFile=/opt/hepgo/simumav/.env` ve `WorkingDirectory=/opt/hepgo/simumav` beklenir;
 `.env` yayın sırasında hiç dokunulmaz (rsync `--exclude .env`, yedeğe de alınmaz).
 
+## Ortam değişkenleri (`/opt/hepgo/simumav/.env`; gerçek değer yazılmaz)
+
+| Anahtar | Açıklama |
+|---|---|
+| `SIMUMAV_DATA_DIR` | `/opt/hepgo/simumav-data` (simumav.db, `core/` çekirdek verisi, `files/`) |
+| `SIMUMAV_SECRET` | 32+ bayt rastgele |
+| `SIMUMAV_MT_URL` / `SIMUMAV_MT_INTERNAL` | `https://mastertool.download` / `http://127.0.0.1:8095` (sunucu-sunucu belirteç doğrulaması) |
+| `SIMUMAV_MT_APP` | `sv` |
+| `SIMUMAV_MT_SHARED_SECRET` | hesap servisi `.env`'deki aynı değer (`sv_profiles` yazımı, `X-Simumav-Secret`) |
+| `SIMUMAV_PUBLIC_HOST` | MP bağlantı satırında gösterilen sunucu adı/IP |
+| `SIMUMAV_MAX_FLIGHTS` · `SIMUMAV_FLIGHT_MINUTES` | eşzamanlı uçuş (6) · uçuş süresi (≤ 45) |
+| `SIMUMAV_MP_PORT_BASE` · `SIMUMAV_MP_PORT_COUNT` | MP TCP aralığı (15600 / 400 → 15600–15999); ufw: `allow 15600:15999/tcp` |
+| `SIMUMAV_UDP_BASE` | iç SITL↔MP UDP aralığı (14550…); DIŞA KAPALI |
+| `GOOGLE_MAPS_API_KEY` | referrer listesine `simumav.com` eklenir |
+| `HEPGO_SITL_DIR` | `/opt/hepgo/sitl/bin` (arducopter/arduplane ikilileri) |
+| `SIMUMAV_ALLOWED_ORIGINS` | ek CSRF kökenleri (isteğe bağlı) |
+
+`SIMUMAV_DEV_LOGIN` PROD'da ASLA 1 yapılmaz. Hesap servisi tarafı: `SIMUMAV_MT_SHARED_SECRET`, `SIMUMAV_RELEASE_KEY`.
+
 ## Doğrulama
 
 - `systemctl status hepgo-simumav-deploy.path hepgo-simumav`; `tail -f /var/log/hepgo-simumav-deploy.log`

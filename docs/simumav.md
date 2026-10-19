@@ -11,7 +11,12 @@ ajan bu dosyayı da günceller.
   HEPGO'nun `app.main` uygulaması İÇE AKTARILMAZ. Simülasyon çekirdeği (`app/flightsim.py`, `flightsim_hub.py`,
   `flightsim_mission.py`, `flightsim_rec.py`, `flightsim_bin.py`, `flightsim_replay.py`, `flightsim_runs.py`,
   `sim_terrain.py`, `drone_sitl.py`, `drone_params.py`, `flightsim_models.py`) **değiştirilmeden** yeniden kullanılır;
-  HEPGO'ya özgü bağımlılıkları (kullanıcı/yetki/DB) `app/simumav/bridge.py` adaptörüyle sağlanır.
+  HEPGO'ya özgü bağımlılıkları (kullanıcı/yetki/DB) `app/simumav/bridge.py` adaptörü + **`app/simumav/shim/`** karşılıklarıyla sağlanır:
+  çekirdeğin `from . import config | db | drone_hub | feed | flightlog | flight_analysis` istekleri, `app/simumav/config.py` içe aktarılırken
+  (`shim.kur()`, çekirdekten ÖNCE) `sys.modules['app.<ad>']`'a kaydedilen shim modülleriyle karşılanır (GERÇEKLEŞTİ). shim/config: DATA_DIR =
+  `SIMUMAV_DATA_DIR/core`, UPLOAD_DIR = `core/uploads`; shim/db: yalnız çekirdek tabloları (`core/core.db`); shim/drone_hub: HEPGO drone_hub'ın saf
+  bölümleri (DroneState, Viewer, konsol, send_command + kalkış/görev akışları; köprü WS'si ve saha görevi yok); feed/flight_analysis no-op; flightlog
+  `_mode_names`/`WARN_RE`. Replay alt süreci `python -m app.simumav.replay_worker` (HEPGO `app.flightsim_replay` girişi `app.config` ister).
 - **Kimlik: mastertool.download hesap servisi**, uygulama kodu **`sv`** (`sm` SSH Master'a ait, ÇAKIŞIR) (`central/sshmaster_server/sshm/main.py`
   `GAMES['sv'] = {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': 'https://simumav.com'}`).
   Kayıt/giriş/şifre sıfırlama uçları zaten genel: `POST /api/sv/auth/prelogin|register|login|logout|forgot|reset/{tok}`
@@ -19,12 +24,16 @@ ajan bu dosyayı da günceller.
   `/tmp/volfai/src/js/account.js`). Kullanıcı profili: `sv_profiles(user_id, profile JSON, updated_at)` (vf_profiles kalıbı)
   — yalnız hesap servisinde görünen özet (pilot adı, toplam uçuş, saat) için; asıl oyun verisi simumav DB'de.
 - **SIMUMAV oturumu:** tarayıcı önce hesap servisine (`https://mastertool.download/api/sv/auth/login`, CORS: Origin
-  `https://simumav.com` izinli) giriş yapar, dönen belirteci `POST /api/session` ile simumav'a verir; simumav belirteci
-  hesap servisinde `GET /api/sv/account` (Bearer) ile doğrular, kullanıcıyı `users` tablosuna eşler (mt_user_id, email,
-  display_name) ve **kendi HttpOnly çerezini** (`smsid`, 30 gün, Secure, SameSite=Lax) açar. Çıkış ikisini de kapatır.
+  `https://simumav.com` izinli) giriş yapar (client verilmez → Bearer belirteç), dönen belirteci `POST /api/session {token}` ile simumav'a verir;
+  simumav belirteci hesap servisinde `GET /api/sv/me` (Bearer; `/account` yalnız web çerezi kabul eder) ile doğrular (`user.verified` false → 403
+  `unverified`), kullanıcıyı `users` tablosuna eşler (mt_user_id, email, display_name) ve **kendi HttpOnly çerezini** (`smsid`, 30 gün, Secure,
+  SameSite=Lax) açar. Çıkış ikisini de kapatır: `DELETE /api/session {token?}` hesap servisi belirtecini de `/api/sv/auth/logout` ile kapatır
+  (simumav belirteci saklamaz; istemci gönderir).
   Geliştirmede `SIMUMAV_DEV_LOGIN=1` iken `POST /api/session {dev_user:'ad'}` hesap servisine gitmeden oturum açar.
 - **Veri:** `SIMUMAV_DATA_DIR` (PROD `/opt/hepgo/simumav-data`, DEV `/tmp/simumav-data`), DB `simumav.db` (sqlite,
-  WAL), dosyalar `files/` (bin, video, modeller, önizlemeler). Tablolar §3.
+  WAL), dosyalar `files/previews/` (parkur önizlemeleri); çekirdek verisi `core/` (core.db, `uploads/flightlogs/*.bin`, `sim_runs/<id>/params.param`,
+  `sim_replay/<log>.json.gz`, `sitl_calisma/`, `sim_terrain/` karo önbelleği). flights satırı `bin_path/params_path/replay_cache` core-göreli yol tutar;
+  indirmeler `bridge.dosya_yolu` ile core kökü dışına çıkışı reddeder. Tablolar §3.
 - **Yayın:** systemd `hepgo-simumav` (User=hepgo, `SIMUMAV_UDS=/run/hepgo/simumav.sock`, WorkingDirectory
   `/opt/hepgo/caymazbuild`, ExecStart `run-simumav.sh`), cloudflared ingress `simumav.com` + `www.simumav.com` →
   `unix:/run/hepgo/simumav.sock`. DNS: Cloudflare'da CNAME `simumav.com`/`www` → `294f79b9-1cf7-4cbc-b806-a7f70a1e0404.cfargotunnel.com`
@@ -97,34 +106,72 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
   — kayıtta otomatik **1 hazır FPV dron** (`type 'fpv'`, model 'proc:quad250', ad "FPV-1").
 - `tracks(id, user_id, name, lat, lon, alt_mode 'terrain', radius_m, wind {speed_ms, dir_deg, gust}, time_of_day, weather,
   world_mode ('real'|'google3d'|'procedural' — HEPGO'daki üç kip: Gerçek arazi / Google 3B / Prosedürel; varsayılan 'google3d'),
-  world JSON (HEPGO WORLD_DEFAULTS alanları: size_m, trees_pct, extra_buildings, fog_pct, runway_deg, runway, time_of_day),
+  world JSON (HEPGO `flightsim3d.js` WORLD_DEFAULTS alt kümesi — GERÇEK anahtarlar: seed, size_m, tree_density, mountain_height, mountain_count,
+  building_count, runway, runway_heading, water, fog, landing_circle_m; `flightsim.world_dogrula` aralıkları; rüzgâr/saat/hava ayrı sütunlardan),
   gates JSON (FPV HALKALARI: [{i, lat, lon, agl_m, yaw_deg, radius_m, kind:'ring'|'gate'}] ≤ 50; yarıçap 1–20 m; parkur yarıçapı
   içinde; yalnız 3B kiplerde çizilir — her üç kip de 3B'dir), preview_png, is_default)`
   — kayıtta otomatik **TRTEST** (TR TEST Kalecik: lat 40.0990, lon 33.4101; ajan doğrular), is_default=1.
 - `missions(id, user_id, track_id, name, kind ('corridor'|'free'|'spray'|'fpv_flags'|'fpv_gates'|'survey'), — `fpv_gates`: parkurun halkalarını sırayla geçme (plan: {order:[gate i…], laps}), plan JSON (waypoint'ler +
   tür parametreleri; HEPGO flightsim_mission ile uyumlu `route` biçimi), preview_png)`
 - `flights(id, user_id, pilot_id, drone_id, track_id, mission_id NULL, launch ('wheels'|'ramp'|'vehicle'|'hand'), started_at,
-  ended_at, duration_s, result ('ok'|'crash'|'abort'), summary JSON (flightsim_mission summary), bin_path, video_path,
-  params_path, mp_port, replay_cache)` — Operasyon modülünün kaynağı.
+  ended_at, duration_s, result ('ok'|'crash'|'abort'), summary JSON (flightsim_mission summary + `gates:{passed,missed,laps,best_lap_s}` stop gövdesinden),
+  bin_path, video_path, params_path, mp_port, replay_cache, core_log_id, core_run_id, snapshot JSON (dron/pilot/parkur/görev adları — kayıt silinse
+  de kart dolu))` — Operasyon modülünün kaynağı. `hand` (elden atış) çekirdekte düşük ivmeli mancınık (`ramp`, angle 12°, 40 km/h) olarak koşar.
 - `sim_runs_link(flight_id, sim_id)` — çalışan SimSession eşlemesi (bellekte de tutulur).
+- `sessions(id, user_id, token_hash sha256, created_at, last_seen, ip, ua)`, `audit(id, ts, ip, user_id, event, detail)` (§7), `schema_version`.
 
 ## 4. REST yüzeyi (`/api/...`; JSON; hata `{detail:{error,message}}`; oturum zorunlu — `session` hariç)
 
-- `POST /api/session {token}` | `{dev_user}` → `{user}`; `GET /api/session` → `{user, pilots_count, ...}`; `DELETE /api/session`
-- `GET/PUT /api/settings` → `{lang, theme, sound, analog_fpv, ...}`
-- `GET /api/hangar` → `{drones:[…]}`; `POST /api/hangar {name,type,model_key,params?,color}`; `PUT/DELETE /api/hangar/{id}`;
-  `GET /api/hangar/catalog` → `{types:[{key,label,models:[{key,label,glb,thumb,defaults}]}]}` (flightsim_models + proc şablonları)
-- `GET /api/crew`; `POST /api/crew {name, character}`; `PUT/DELETE /api/crew/{id}`; `GET /api/crew/characters` → 10 karakter
-  `{key, label, gender, svg}`
-- `GET /api/tracks`; `POST /api/tracks {name,lat,lon,radius_m,wind,time_of_day,weather}`; `PUT/DELETE /api/tracks/{id}`;
-  `GET /api/tracks/{id}/preview.png`
-- `GET /api/missions`; `POST /api/missions {track_id,name,kind,plan}`; `PUT/DELETE /api/missions/{id}`
-- `POST /api/fly/start {drone_id, pilot_id, track_id, mission_id?, launch, record:{video,bin}}` → `{flight_id, sim_id, mp:{host,port,proto:'tcp'}, ws}`
-  `GET /api/fly/{flight_id}` durum; `POST /api/fly/{flight_id}/stop`; `WS /ws/fly/{sim_id}` (HEPGO `/ws/drone/live` ile aynı
-  mesaj biçimi; flightsim_panel.js değişmeden çalışır)
-- `GET /api/ops` → `{flights:[… + track.preview_png, drone.preview, pilot]}`; `GET /api/ops/{id}` (summary, replay hazır mı);
-  `GET /api/ops/{id}/replay` (flightsim_replay çıktısı; .bin'den); `GET /api/ops/{id}/bin` indirme; `DELETE /api/ops/{id}`
-- `GET /api/meta` → `{maps_key, version, mt_url, lang_list}`
+Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmalı (yoksa `Sec-Fetch-Site: same-origin`); aksi 403 `csrf`. Yazma uçları
+60/dk/kullanıcı, okuma 300/dk, `POST /api/session` 10/dk/IP → 429 `rate_limited` + `Retry-After`. Kayıt başkasına aitse 404 (varlık sızmaz).
+
+- `POST /api/session {token}` | `{dev_user}` → `{user, pilots_count, drones_count, tracks_count, missions_count, flights_count, active_flight, settings}`
+  (`Set-Cookie: smsid`); hatalar 401 `bad_token`, 403 `unverified`, 503 `account_service`. `GET /api/session` aynı gövde; `DELETE /api/session {token?}`.
+- `GET/PUT /api/settings` → `{lang, theme ('dark'|'light'|'auto'), sound, analog_fpv, music, volume 0–1, reduced_motion, units, langs[], themes[]}`
+- `GET /api/hangar` → `{drones:[{id,name,type,model_key,params,color,preview (GLB|null),proc,is_default}], quota}`; `POST /api/hangar {name ≤40,type,model_key,params?,color '#rrggbb'}`
+  (201); `PUT /api/hangar/{id} {name?,model_key?,params?,color?,is_default?}`; `DELETE` (uçuştaki dron 409 `in_use`); kota 20 → 409 `quota`;
+  params beyaz liste dışı → 422 `param_rejected` + `name`.
+  `GET /api/hangar/catalog` → `{types:[{key,label,models:[{key,label,glb,thumb,defaults,proc,desc}]}]}` — tipler multirotor (builtin:quad, builtin:hexa),
+  fpv (`proc:quad250`), plane (builtin:caymaz GLB, builtin:delta), interceptor (`proc:interceptor`), heli (builtin:heli), vtol (builtin:caymaz).
+  `proc:true` = GLB yok, ön yüz prosedürel çizer. Interceptor varsayılanları ArduPlane 4.6+ adlarıyla: AIRSPEED_MAX 170, AIRSPEED_MIN 24, AIRSPEED_CRUISE 95,
+  THR_MAX 100, TKOFF_THR_MAX 100, LIM_ROLL_CD 7500, hızlı PTCH_/RLL_ oran döngüleri, TECS_CLMB_MAX 30 (eski `ARSPD_FBW_*` adları beyaz listede ama 4.7.2'de yok).
+- `GET /api/crew` → `{pilots:[{…, svg}], quota}`; `POST /api/crew {name, character p01…p10}`; `PUT /api/crew/{id} {name?,character?,is_default?}`; `DELETE`
+  (son pilot 409 `last_pilot`); `GET /api/crew/characters` → `{characters:[{key,label,gender,svg:'/brand/crew/<key>.svg'}]}` (SVG'ler ön yüz ekibinden).
+- `GET /api/tracks` → `{tracks:[{…, wind, world, gates, preview_png, is_default}], quota, google3d}`; `POST /api/tracks {name,lat,lon,radius_m 200–5000,
+  wind{speed_ms 0–30,dir_deg,gust 0–20}, time_of_day day|dusk|night, weather clear|cloudy|rain|fog|snow, world_mode real|google3d|procedural, world{…}, gates[…]}`;
+  `PUT /api/tracks/{id}` (kısmi; `is_default`); `DELETE` (son parkur 409); `GET /api/tracks/{id}/preview.png` (512×512; Esri uydu + terrarium gölgesi;
+  `files/previews/` önbelleği; kaynak yoksa 502/503 `tile_source`). Halka/dünya hatası 422 `invalid` (denetim: `plan_reject`).
+- `GET /api/missions[?track_id]` → `{missions:[…], quota}`; `POST /api/missions {track_id,name,kind,plan}` — plan `{items:[{seq,command,frame,x(lat·1e7),y,z,param1..4}],…}`
+  ≤ 500 öğe, parkur yarıçapı içinde, z 0–1000, kalibrasyon/reboot komutları yasak; `fpv_gates` planı `{order:[halka i…], laps 1–10}`; red 422 `plan_rejected`.
+- `POST /api/fly/start {drone_id, pilot_id, track_id, mission_id?, launch: {method wheels|ramp|vehicle|hand, angle_deg 10–30, release_kmh 40–110,
+  hand_speed_ms 6–8, hand_pitch_deg 10–15} | 'yöntem', record:{bin (vars. true), video}}` → 201
+  `{flight_id, sim_id, mp:{host,port,proto:'tcp'}|null, ws:'/ws/fly/<sim_id>', state}`; 409 `flight_active` (`flight_id`), 429 `server_full` (`retry_after`,
+  `Retry-After`), 422 görev başka parkura ait, 503 `sitl`/`no_port`. Görev planı SITL hazır olunca `mission_upload` ile yüklenir.
+  `GET /api/fly/{flight_id}` → start biçimi: `{flight_id, sim_id, state, mp, ws, session (to_dict), drone, track (gates/world/wind dâhil), pilot, mission (plan),
+  launch (nesne), record, ended_at?, live:{sim_id,state,gates,elapsed_s,remaining_s,mp:{port,locked_ip,connected,rejected,…},sitl,tele}}`.
+  **Ekran kaydı (flightsim_rec kalıbı; dosyalar `core/sim_rec/`, ≤ 300 MB, video → flights.video_path):** `POST /api/fly/{flight_id}/rec/start {mime}` → 201
+  `{rec_id, max_bytes, chunk_max, ext}`; `PUT /api/fly/rec/{rid}/chunk?seq=N` (octet-stream ≤ 8 MB, sıralı; atlama 409, başkası 403);
+  `PUT /api/fly/rec/{rid}/thumb` (PNG ≤ 2 MB); `POST /api/fly/rec/{rid}/finish {duration_s, mime, text}` → `{ok, kept:true, rec_id, size, text, file}`;
+  `GET /api/fly/rec/{rid}/file`; `DELETE /api/fly/rec/{rid}` (flights.video_path temizlenir). Paylaşım yok.
+  `POST /api/fly/{flight_id}/stop {gates?:{passed,missed,laps,best_lap_s}, reason?}` → `{ok, flight}` (bitmişse `already:true`).
+  `WS /ws/fly/{sim_id}` **TEK soket** (§2 uyum notları): sim mesajları (`tele/event/state/route/launch/end`) + hub mesajları (`status/console/konsol/params/
+  event/bridge`) aynı akışta. `hello{v, session, can_command:true, gates, flight_id, me:{id,name,can_command:true}, bridges:[hub.info() — bridge_id = −(9000+sim_id),
+  sim_id, drones], caps, task, flights}`; `watch{sim_id}` → hello yeniden. İstemci `ping`, `rc{ch}`, `cmd{rid, name, params, bridge_id?, sysid?}` →
+  `res{rid, name, ok, error?, result?}`: çekirdek komutları (`arm/disarm/mode/takeoff{alt}/rtl/reset/crash/set_home`; `takeoff{alt, launch:'hand',
+  hand_speed_ms, hand_pitch_deg}` → `bridge.elden_atis_ayarla`: oturum `launch` 'ramp' kalıbı + TKOFF_THR_MINACC 4 / TKOFF_LVL_PITCH el açısı, `launch{phase}`
+  olayları) SimSession.komut ile; hub komutları (`set_mode, land, goto, mission_*, param_*, altitude_change, arm{force}, arm_check`, takeoff{alt_rel_m}) drone_hub
+  shim `send_command` (bileşik akışlar) ile; `bridge_id` kendi köprüsü değilse `ok:false`. `param_cache`, `console_hist` hub kalıbı. Çerez yoksa
+  `{t:'error',error:'auth'}`+4403, sahibi değilse `not_found`+4404, > 100 msj/sn → 4429. Aynı döngü `/ws/drone/sim/{sid}` ve `/ws/drone/live` yollarında da
+  (HEPGO modülleri değişmeden; `/ws/drone/live` yalnız izleme + kendi köprüsüne komut).
+- **Uyumluluk yüzeyi `/api/drone/sim/*`** (HEPGO sim modülleri için, oturum sahipliğiyle): `meta` (centers = parkurlar, `simumav:true`), `g3d-key`,
+  `sessions` (kendi), `sessions/{id}` GET/DELETE, `sessions/{id}/cmd`, `sessions/{id}/summary`, `sessions/{id}/live`, `terrain`, `tile/{kind}/{z}/{x}/{y}`,
+  `osm`, `models` (yalnız dahili, salt okunur), `models/{mid}`, `runs/stats`, `reports` (boş), `rec/pending` (boş). Yükleme/ekran kaydı uçları yok (v1).
+- `GET /api/ops[?limit&offset]` → `{flights:[… + track{…,preview_png}, drone{…,preview}, pilot, mission, has_bin, has_replay], total, stats}`;
+  `GET /api/ops/{id}` (+ `summary`, `replay_ready`, `replay_possible`); `GET /api/ops/{id}/replay` (gzip JSON; ilk çağrıda .bin alt süreçte ayrıştırılır;
+  404 `no_bin`, 422 `replay_failed`); `GET /api/ops/{id}/bin`; `GET /api/ops/{id}/params` (Mission Planner .param); `DELETE /api/ops/{id}` (süren uçuş 409).
+- `GET /api/meta` (oturumsuz 200) → `{version, mt_url, mt_app, lang_list, dev_login, limits{max_flights, flight_minutes, drones, pilots, tracks, missions,
+  flights, disk_bytes}, sitl, google3d, types, launches, mission_kinds, weather, time_of_day, world_modes, mp{proto,port_range,host}, active_flights,
+  authenticated, maps_key (yalnız oturumlu; aksi null)}`. `GET /healthz`.
 
 ## 5. Oyun arayüzü ilkeleri
 
@@ -247,7 +294,11 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
   200 değilse **önceki sürüme geri döner**. Günlük `/var/log/hepgo-simumav-deploy.log`. `.env` (`/opt/hepgo/simumav/.env`,
   `EnvironmentFile`) hiç dokunulmaz. Ayrıntı `deploy/simumav/README.md`.
 
-### 6.2 Hesap servisi ucu: `POST /api/sv/web-releases` (çekirdek ajanı yazar; sözleşme bağlayıcı)
+### 6.2 Hesap servisi ucu: `POST /api/sv/web-releases` (çekirdek ajanı yazar; sözleşme bağlayıcı) — GERÇEKLEŞTİ
+
+Uygulama: `sshm/main.py` `web_release_upload` / `web_release_latest` / `web_release_list` (`GET /api/sv/web-releases`, Merkez anahtarı ile liste +
+`latest`), `_tar_dogrula` (yalnız listeler; `unsafe_archive`, `version_mismatch`, `incomplete`); tablo `web_releases(… created_by 'release-key'|'central')`;
+oran 10/dk/IP; hata halinde sürüm klasörü silinir. Parçalı uç (`/part`) v1'de YOK. Testler `tests/test_mastertool.py`.
 
 - Kimlik: `X-Release-Key` başlığı; `settings.RELEASE_KEYS['sv'] = os.environ.get('SIMUMAV_RELEASE_KEY', '')`;
   `hmac.compare_digest`; anahtar tanımsız ya da uyuşmuyorsa 403 (`_release_auth` kalıbı; merkez oturumu da geçerli).
@@ -268,3 +319,32 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
 - İsteğe bağlı parçalı uç `POST /api/sv/web-releases/{version}/part` (`file, part, parts, sha256`; `/api/{a}/releases/{version}/{kind}`
   kalıbı; son parçada yukarıdaki denetimlerin tümü). `scripts/upload-mastertool.sh` paket > 90 MB ise bunu kullanır; v1'de paket
   küçük kalmalı (vendor three ~2 MB, xterm ~0.3 MB), uç yoksa büyük paket yüklemesi başarısız olur.
+
+## 8. Gerçekleşme notları (çekirdek ajanı; sshmaster'a birleştirme için)
+
+- **Hesap servisi (sv):** `GAMES['sv']` (`site`/`promo` → simumav.com; `game_url` dış site), `sv_profiles` (+ `vf_profiles`; profil uçları `{kod}_profiles`),
+  `PUT /api/sv/profile` ayrıca `X-Simumav-Secret` (settings.SIMUMAV_SHARED_SECRET = `SIMUMAV_MT_SHARED_SECRET`) + `{user_id, profile}` ile sunucudan;
+  `user_public` → `verified` alanı (`/me`, `/account`, login yanıtı); CORS orta katmanı yalnız `/api/sv/*` ve yalnız `https://simumav.com`/`www`
+  (Authorization, Content-Type, X-SSHM; credentials yok; OPTIONS 204); `RELEASE_KEYS['sv']`; ikonlar `static/mt/img/simumav.svg|png|-512.png`;
+  `/api/mt/apps?v≥1.2.0` ve Hesabım `games` listesinde SIMUMAV (url/site simumav.com). SIMUMAV özetini `bridge._profil_ozeti` uçuş bitişinde yazar.
+- **Güvenlik (§7) uygulaması:** yalıtım = shim (`core/` kökü, `core.db`; HEPGO DB/dosya yok; `app.main`/`app.auth` hiç yüklenmez — test doğrular);
+  SITL çalışma dizini `core/sitl_calisma/<kimlik>` (çekirdek yönetir; `artiklari_temizle` açılışta); kimlik §1; girdi pydantic + enum/aralıklar
+  (`bridge.params_dogrula` beyaz liste: ARSPD_/AIRSPEED_/THR_/TKOFF_/PTCH_/RLL_/YAW_/WP_/LIM_/NAVL1_/TECS_/TRIM_/KFF_/RTL_/LAND_/FLAP_/ATC_/PSC_/ACRO_/
+  PILOT_/MOT_/LOIT_/WPNAV_/Q_/STAB_/… ≤ 60 ad, |değer| ≤ 1e6; yasak SERIAL/LOG_/SYSID/BRD_/SCR_/NET_/SRn_/MAV/FENCE_/GPS/INS_/COMPASS_/AHRS_/EKx_/FS_/
+  ARMING_/RC*/CAN_/BATT/STAT_/FORMAT_/MIS_/RALLY_/TERRAIN_/SIM_WIND/SIM_GPS/SIM_RC/SIM_SPEEDUP), görev planı ≤ 500 + yarıçap, dosya yolları yalnız DB +
+  `dosya_yolu`; kotalar (1 uçuş/kullanıcı, `SIMUMAV_MAX_FLIGHTS` → 429 bekleme odası, 45 dk = çekirdek `SIM_MAX_MINUTES`, 20/20/20/50/100 kayıt, disk 1 GB,
+  .bin 50 MB = `SIM_BIN_MAX_MB`); oran sınırları `auth.oran`; MP TCP `bridge.MpKopru` (rastgele port, ilk IP kilidi, tek bağlantı, 60 sn boşta kapanır,
+  uçuş bitince kapanır; iç UDP 127.0.0.1 ↔ SimSession GCS portu — çekirdeğin UDP soketi 0.0.0.0'a bağlıdır, güvenlik duvarında kapalı tutulur);
+  CSP/başlıklar `main.HEADERS` (script-src inline yok; `wss://simumav.com`); denetim `audit` tablosu (login/logout/fly_start/fly_stop/quota/rate/
+  param_reject/plan_reject/csrf/mp_reject/ops_delete); 500 → genel mesaj, traceback günlüğe; `maps_key` yalnız oturumlu.
+- **Statik yollar (main.py):** `/` site, `/app` oyun kabuğu, `/brand`, `/vendor` ve `/static/vendor` → static/vendor, `/static/models`, `/static/img/google-logo.png`,
+  `/sim` → static/js/modules, `/sim/api.js` + `/api.js` + `/static/js/api.js` → `simapi.js`, `/ui.js` + `/sim/ui.js` → `static/simumav/app/fly/simui.js`
+  (+ `pageHead` eklendi: replay3d.js Cesium yolu), kök `/<ad>.js` beyaz listesi (i18n, icons, segicons, fa-icons, imgopt, step3d, gcode3d, engine3d; aksi hâlde
+  tanıtım sitesinin kök betikleri `/site.js`). CSP: Google Maps JS/gstatic/ggpht/tile.googleapis, cdn.jsdelivr.net (Cesium v1.145), cesium/arcgis/amazonaws. `simapi.js` HEPGO api.js'in tüm dışa aktarımlarını karşılar (+ `ws()`, `session`, `unauthorized()`, `trackPreviewUrl`); 401 → `/?giris=1&sonra=…`.
+- **TRTEST:** tesisin resmî koordinatı açık kaynaklarda yok; Kalecik ilçe merkezi (40.0972N 33.4083E, 725 m) yakınındaki 40.0990/33.4101 kullanıldı.
+- **Testler:** `tests/test_simumav.py` (SITL yok, sahte kip; shim yüklemesi, oturum/CSRF/oran, CRUD+kota, beyaz liste, önizleme, fly/MP IP kilidi/WS tek soket
+  (hub cmd)/hand launch/kayıt REST/stop, ops, meta, yönlendirme yolları, arazi vekili 401), `central/sshmaster_server/tests/test_mastertool.py` (sv, CORS, web-releases). `tools/simumav_export.py` paket-göreli import çözümü ve shim
+  farkındalığı eklendi (`--dry-run` uyarısız).
+- **Uçtan uca (DEV, gerçek SITL, Playwright headless shell):** `/tmp/simumav-e2e/*.png` (00-tanıtım … 14-ops-replay) + `konsol.txt`. Bulgular: `#/fly` için
+  `fly/index.js` `render(view, params, ctx)` dışa aktarır, kabuk `app.js` `mod.mount(view, ctx)` çağırır → "mod.mount is not a function" (Uç/oyun arayüzü
+  uyumu; çekirdek dosyası değil). `/brand/icons/*.svg`, `/brand/crew/p01.svg` 404 (marka ajanı). Replay (ops) ve .bin/params gerçek SITL ile doğrulandı.

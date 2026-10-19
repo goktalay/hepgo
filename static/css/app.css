@@ -8922,6 +8922,10 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .fs-launch-param[hidden] { display: none; }
 .fs-launch-info { margin-top: 6px; }
 .fs-launch-badge { white-space: nowrap; }
+/* §13.1 kontrol düzeni kartları (kalkış kartlarıyla aynı ızgara) + rozetler */
+.fs-layout-step h4 { margin-top: 2px; }
+.fs-layout-badge { white-space: nowrap; }
+.fs-model-layout { white-space: nowrap; }
 /* Görsel model kütüphanesi (§12): kart ızgarası + yönelim paneli */
 .fs-model-step { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .fs-model-step > p { margin: 0 0 8px; }

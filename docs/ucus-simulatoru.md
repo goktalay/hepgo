@@ -414,8 +414,22 @@ kart ızgarası (ad, kaynak rozeti Dahili / Tasarım / Yüklenen, boyut, Hazır 
 3B önizleme seçilen modelle döner. Kayıt kipinde de (log tipine göre) seçilir.
 
 **Kaynaklar.** (a) **Dahili** — kodda sabit (`flightsim_models.BUILTIN`, kimlik `builtin:<ad>`), her tip için her zaman var: sabit kanat
-`builtin:caymaz` (Caymaz V3 GLB) + `builtin:delta`; multirotor `builtin:quad`; hexarotor `builtin:hexa`; helikopter `builtin:heli`; VTOL
-`builtin:caymaz` / `builtin:delta` ("VTOL-Caymaz V3", "VTOL-Delta kanat"; 4 dikey motor eklenir). Varsayılanlar `VARSAYILAN`. (b) **Tasarım** —
+`builtin:caymaz` (Caymaz V3 GLB) + `builtin:delta` + **`builtin:talon`** (Talon V-kuyruk; aşağıda); multirotor `builtin:quad`; hexarotor `builtin:hexa`;
+helikopter `builtin:heli`; VTOL `builtin:caymaz` / `builtin:delta` ("VTOL-Caymaz V3", "VTOL-Delta kanat"; 4 dikey motor eklenir). Varsayılanlar
+`VARSAYILAN`. Her dahili modelin **`layout`** alanı (§13.1 kontrol düzeni: caymaz/delta `elevon`, talon `vtail`) ve isteğe bağlı **`orient`**
+alanı vardır (`builtin_api` döndürür; yönelimli dahili GLB'ler — talon — ön yüzde kütüphane modeli gibi `buildLibrary` ile yüklenir, `BUILTIN_GLB`
+yedek tablosu dize ile gelen kimliği de karşılar). Yüklenen/tasarım modellerinde `layout` null'dur; sihirbaz düzeni 3B'ye yüklenen yüzey düğüm
+adlarından tahmin eder (`sim.ctrlLayout()`: ruddervator → vtail, elevon → elevon, aileron/elevator/rudder → classic).
+
+**Talon V-kuyruk (`static/models/talon-vtail.glb` = `static/simumav/models/talon_vtail.glb`, 44 KB, 3 108 üçgen).** Kaynak arandı
+(Gazebo Fuel API 503, Poly Pizza API anahtar istiyor, PX4-SITL_gazebo-classic / ArduPilot Gazebo depolarında V-kuyruklu model yok) →
+**prosedürel üretim, dış kaynak yok** (`tools/simumav_models_build.py --talon`, trimesh): X-UAV Talon ölçüleri (açıklık 1,72 m, uzunluk 1,10 m),
+eliptik kesit loft'u gövde (turuncu burun kapağı `accent`, kabin camı), kambur profilli uzun kanat (3° dihedral, turuncu uçlar), ince kuyruk bumu,
+**V-kuyruk 37°**, gövde arkasında tek **itici** pervane (`propeller` düğümü, YZ düzlemi). Kontrol yüzeyi düğümleri menteşe çizgisinde:
+`aileron_l/r` (açıklığın 0,45–0,82 m'si, kordun arka %26'sı), `ruddervator_l/r` (kordun arka %45'i); düğüm yerel çerçevesi flightsim3d
+varsayımıyla uyumlu (yerel X = menteşe ekseni sola, yerel Y = yüzey üst normali, −Z = kord → `te_down = −1`, extras gerekmez). glTF çerçevesi
+SIMUMAV standardı (burun +X, yukarı +Y, sağ +Z; `orient {forward:'+x', up:'+y'}`). Lisans satırı `static/simumav/models/LICENSES.md`
+(HEPGO üretimi, paketle serbestçe dağıtılır). (b) **Tasarım** —
 Endüstriyel Tasarım modülündeki sürüm dosyaları (`design_drawing_versions` .step/.stp/.glb/.gltf/.obj; `GET /models/design-files`, yalnız `design`
 modülü olan kullanıcı); "Sistemdeki dosyalardan ekle" → `POST /models/from-design {version_id, type, name?}` → tablo kaydı (`source='design'`,
 `source_ref`; dosya kopyalanmaz, UPLOAD_DIR'den okunur; aynı sürüm+tip tek kayıt). (c) **Yükleme** — `POST /models` (multipart `file`, `type`,
@@ -582,6 +596,80 @@ anlık kanıt zaman serisidir.
 parametre setleri (ramp/vehicle/wheels; her birinde `SERVO3_MIN/TRIM 1000`; `GPS_RTK_PARAMLARI` doğruluk ≤ 5 cm, ≥ 12 uydu, hata alanları 0),
 sahte kipte yerde kilit (takeoff öncesi 0,6 sn: konum sabit, yer hızı 0, `gps_fix 6`), sahte kipte üç yöntemle `cmd takeoff` → WS `armed → launch → released` (rampa: launch 1,0–2,5 sn sonra,
 fırlatma anında uçak duruyor, released ≥ 26 km/h; araç: released hızı 60 km/h ±%10; tekerlekli: AGL ≥ 1), `session.launch.phase`, reset sonrası null.
+
+### 13.1 Kontrol düzeni — Aileron + Elevatör (T-kuyruk) · Elevon (delta kanat) · V-kuyruk (ruddervator) (`session.layout`; `flightsim.LAYOUT_PARAMLARI`, `static/js/modules/flightsim_airframe.js`)
+Kullanıcı isteği: "Aileron + Elevatör (T-kuyruk) · Elevon (delta kanat) · V-kuyruk ayrımı … Caymaz delta elevon kontrol ediyor, onu da tanıtalım".
+Sihirbazda **Sabit Kanat** seçilince Kalkış yöntemi kartlarının altında **Kontrol düzeni** kartları açılır (`.fs-layout[data-layout]`; kayıt
+kipinde ve diğer tiplerde gizli); bilgi satırı SITL modelini ve parametre setini yazar. **Model seçilince modelin düzeni seçilir** (Caymaz /
+Delta → Elevon, Talon → V-kuyruk; yüklenen GLB'de yüzey düğüm adlarından), kullanıcı sonra kartlardan değiştirebilir; model kartlarında düzen
+rozeti ("Elevon · Önerilen" seçili düzene uyanlarda yeşil, listede öne alınır). Oturum gövdesi `layout: classic | elevon | vtail` (eksikse
+modelin düzeni → `classic`; VTOL/kopterde null; bilinmeyen değer 400). Oturum nesnesi: `layout` (istenen), `layout_effective` (SITL'de
+fiilen uçan), `layout_sitl_model` (`plane[-elevon|-vtail][-catapult]`), `layout_skipped` (kalıcı kayıt yüzünden yazılmayanlar). Üst şeritte
+rozet (etkin ≠ istenen ise sarı), sağ HUD'da "Düzen" satırı, Simülasyon Kayıtları tablosunda **Detaylı → "Düzen sütunu"** (Kalkış'tan sonra;
+`drone_sim_runs.layout` = etkin düzen), özet raporda "Kontrol düzeni · SITL modeli" satırı (`summary.session.layout*`).
+
+**Parametre setleri (`LAYOUT_PARAMLARI`; ArduPlane 4.7 `SRV_Channel.h` kodları: 4 Aileron · 19 Elevator · 21 Rudder · 77 ElevonLeft · 78 ElevonRight ·
+79 VTailLeft · 80 VTailRight) — oturum BAŞLANGIÇ setidir ama dron yapılandırması sayılır (FLAP_PARAMLARI gibi): kalıcı kayıtta olan ad yazılmaz,
+kullanıcı MP/panelden değiştirirse kalıcı kaydedilir; `varsayilan.parm`'a da yazılır (SITL ilk andan doğru) ve ilk kalp atışında PARAM_SET yinelenir:**
+
+| Düzen | SERVO1 | SERVO2 | SERVO4 | REVERSED (1/2/4) | MIXING_GAIN | SITL modeli |
+|---|---|---|---|---|---|---|
+| classic | 4 aileron | 19 elevator | 21 rudder | 0 / 0 / 0 | — | `plane` |
+| elevon | **78** elevon R | **77** elevon L | 0 (rudder yok) | **1 / 1** / 0 | 0,5 | **`plane-elevon`** |
+| vtail | 4 aileron | **80** V-kuyruk R | **79** V-kuyruk L | 0 / **1** / 0 | 0,5 | **`plane-vtail`** |
+
+*Gerekçe.* Karışım ArduPlane içindedir (`SRV_Channels::channel_function_mixer`, kazanç `MIXING_GAIN` varsayılan 0,5 = doymaz: elevon L = g(e − a),
+R = g(e + a); V-kuyruk L = g(e + r), R = g(e − r); + = arka kenar yukarı). **SITL fiziği (`SIM_Plane.cpp`) kanal sabitlidir** ve karışımı geri
+çözer: `-elevon` son eki kanal 1/2'yi elevon çifti (aileron = (ch2−ch1)/2, elevator = −(ch2+ch1)/2), `-vtail` kanal 2/4'ü ruddervator çifti
+(elevator = (ch4−ch2)/2, rudder = (ch4+ch2)/2) olarak okur; düz `plane` 1 aileron / 2 elevator / 4 rudder. Bu yüzden düzen ↔ SITL modeli birlikte
+seçilir ve setler **ArduPilot'un kendi SITL kurulumlarıdır** (`Tools/autotest/default_params/plane-elevons.parm`: SERVO1 78, SERVO2 77,
+SERVO1/2_REVERSED 1; `plane-vtail.parm`: SERVO2 80, SERVO4 79, SERVO2_REVERSED 1 — Plane-4.7.2 etiketinden doğrulandı). REVERSED burada karışım
+işaretini SITL fiziğinin beklediği yöne çevirir; kalıcı kayıtta `SERVOn_REVERSED` yoksa `SIM_SRV_REV` maskesine girmez (stok davranış = autotest).
+**Elevon düzeni kararı:** eski §20.1 notu "77/78 yazılmamalı" düz `plane` modeli içindi; düzen seçimiyle SITL modeli de `-elevon` olduğundan artık
+gerçek ArduPlane elevon kurulumu (77/78 + MIXING_GAIN) kullanılır. **Kalıcı kayıt önceliği:** CAYMAZ'ın PROD kaydı 4/19 ise (dron 5) Elevon seçilse
+de kalıcı değerler yazılmaz; SITL model son eki **etkin** fonksiyonlardan türetilir (`layout_etkin_fn`: ArduPlane varsayılanı ← düzen seti ← kalıcı
+kayıt; `sitl_model_eki`: {1,2} = {77,78} → `-elevon`, {2,4} = {79,80} → `-vtail`, aksi düz — çift başka kanaldaysa fizik göremez) → düz `plane` ile
+açılır, eski davranış birebir korunur; konsola sarı not "Kontrol düzeni Elevon: dronun kalıcı kaydı öncelikli (SERVO1_FUNCTION, …) → SITL fiilen
+Aileron + Elevatör kurulumuyla uçuyor (model plane)". Oturum sırasında MP'den fonksiyon değiştirilse SITL modeli değişmez (yeni oturumda).
+Rampa ile birleşir: `plane-vtail-catapult` (SIM_Plane son ekleri `strstr` ile; constructor `plane` ön ekiyle eşleşir).
+
+**3B (`flightsim_airframe.js`, saf; `flightsim3d.js updateCtrl` buradan beslenir):** `CTRL_RE` artık `ruddervator` düğümlerini de tanır.
+`controlInputs({servo, fn, rev, rc, mode, armed})`: SERVO_OUTPUT_RAW → **mantıksal** çıkış (`logicalOutputs`: SERVOn_REVERSED kanalında işaret
+geri çevrilir — gerçek uçakta ters monteli servo PWM'i geri çevirir, yüzey mantıksal yöne gider; sunucu `tele.servo_rev` SERVO1..8_REVERSED
+PARAM_VALUE'dan) → işlev kodlarıyla eksenler: 4/19/21 doğrudan; 77/78 ve 79/80 çiftleri **doğrudan yüzey çıkışı** olarak alınır ve eksenler
+geri çözülür (e = (L+R)/2, a = (R−L)/2 ya da r = (L−R)/2). `surfaceTarget(surface, side, o)` düğüm adına göre (° arka kenar aşağı +): aileron
+±a, elevator −e, rudder +r, elevon L −(e−a) / R −(e+a), **ruddervator L −(e+r) / R −(e−r)**, flap +f. Böylece düğüm adı düzenden farklı modelde de
+(Caymaz + V-kuyruk düzeni, Talon + klasik düzen) yüzeyler tutarlı oynar: V-kuyrukta sağa sapma komutunda **sol ruddervator arka kenarı yukarı,
+sağ aşağı**; burun yukarıda ikisi yukarı. Teşhis: `window.__fsCtrl()` (= `sim.ctrlState()`: servo, servoFn, servoRev, layout, inputs
+{ail, ele, rud, flap, elevonL/R, vtailL/R}, surfaces[{name, deg, tgt}]), `window.__fsTele()` (son kare), `sim.ctrlLayout()`.
+
+**SIMUMAV:** `drones.airframe` sütunu (init'te `ALTER TABLE` ile eklenir; `bridge.AIRFRAMES`, `airframe_dogrula`, `drone_airframe`: sütun → katalog
+modelinin `airframe` → classic; yalnız plane/interceptor), `POST/PUT /api/hangar {airframe}` (422 bilinmeyen; model değişip düzen gönderilmezse
+yeni modelin düzeni), `drone_api().airframe`, katalog modellerinde `airframe` (`GLB_MODELS`: talon_vtail vtail, rc_cessna/believer/jet classic,
+zephyr elevon; `PROC_MODELS` interceptor elevon; dahili `layout`), `glb:talon_vtail` kataloğa eklendi (`MODEL_ESLEME → builtin:talon`),
+uçuş açılışı `MANAGER.ac(..., layout=drone_airframe(drone))`, `flights.snapshot.drone.airframe`. Ön yüz: hangar sihirbazı model adımında
+sabit kanat ailesinde "Kontrol düzeni" kartları (`.airframe-card`, modelin düzeni rozetli; `draft.airframe`), hangar kartı/alt yazısında düzen
+etiketi; `fly/wizard.js` `AIRFRAMES/airframeOf/airframeForModel/airframeLabel/needsAirframe` (dron bilgi satırında düzen); i18n `airframe.*` 7 dil.
+
+**Doğrulama (GERÇEK SITL arduplane 4.7.2 yamalı `/opt/hepgo/sitl/bin`, Playwright headless shell + SwiftShader; `/tmp/flsim/airframe/e2e_airframe.py`,
+port 8740, görüntüler `/tmp/flsim/airframe/*.png`, ölçüm `olcum.json`; tele roll/pitch radyan → derece):** dört oturum, tekerlekli kalkış 60 m
+(ARM'siz Kalkış komutu), 60 sn:
+| Senaryo | SITL modeli (`varsayilan.parm` satırları) | Kalkış / 60 sn | FBWA + sanal kumanda (ilk tepki 0,35 s; 3B hedef ° arka kenar aşağı +) |
+|---|---|---|---|
+| vtail (Talon) | `plane-vtail` · SERVO1 4 · SERVO2 80 · SERVO4 79 · SERVO2_REVERSED 1 | launch 1,1 s → released 3,2 s; AGL 58–62 m; TAKEOFF sonrası loiter bankası 45° (ROLL_LIMIT), takla yok | **sağa rudder (ch4 1900)**: servo2 1764 (R, REVERSED → mantıksal −0,63), servo4 1623 (L +0,37) → **ruddervator_l −9,1° (arka kenar YUKARI), ruddervator_r +15,8° (AŞAĞI)**, yaw −137° → −111° (sağa) · sağa yatış: aileron_l +6,6° / aileron_r −6,6°, roll 1° → 49° · burun aşağı (ch2 1100): ruddervator'lar ikisi +2,8° → +7,8°, pitch 72° → 40° |
+| elevon (Caymaz) | `plane-elevon` · SERVO1 78 · SERVO2 77 · SERVO4 0 · REVERSED 1/1/0 · MIXING_GAIN 0,5 | aynı; AGL 58–62 m; takla yok | sağa yatış: elevon_l +5,7° (aşağı) / elevon_r −1,6° (yukarı), roll 0° → 41° · burun aşağı: elevonlar +2,1° → +9,6°, pitch 71° → 40° · rudder komutu etkisiz (SERVO4 0) |
+| classic (Caymaz, 3B elevonlar eksenlerden) | `plane` · 4 / 19 / 21 · REVERSED 0 | aynı; AGL 59–61 m | sağa yatış: roll 1° → 50°, elevon_l +7,8° / elevon_r −3,4° (e ± a) · burun aşağı: pitch 50° → 6° · sağa rudder (ch4 1896 → rud +1): yaw −126° → −93° |
+| kalici (dron kaydı SERVO1/2_FUNCTION 4/19 + SERVO1_REVERSED 1, düzen Elevon) | **`plane`** (kalıcı öncelikli); parm: 4/19 + REVERSED 1/0 + düzen setinden SERVO4 0 / MIXING_GAIN | 45 sn kararlı; AGL 59–61 m | konsol (sarı): "Kontrol düzeni Elevon (delta kanat): dronun kalıcı kaydı öncelikli (SERVO1_FUNCTION, SERVO2_FUNCTION, SERVO1_REVERSED, SERVO2_REVERSED) → SITL fiilen Aileron + Elevatör (T-kuyruk) kurulumuyla uçuyor (model plane); yazılan: SERVO4_FUNCTION 0, SERVO4_REVERSED 0, MIXING_GAIN 0.5"; oturum `layout elevon / layout_effective classic / layout_sitl_model plane` |
+Konsol notu (bilgi) diğerlerinde: "Kontrol düzeni V-kuyruk (ruddervator): SITL modeli plane-vtail · yazılan SERVO1_FUNCTION 4, SERVO2_FUNCTION 80, …".
+3B `servo_fn [4, 80, –, 79, 3, 3]` / `servo_rev [0, 1, –, 0]` telemetriyle geldi; Talon yüzey düğümleri `aileron_r/l`, `ruddervator_r/l`. Sihirbaz:
+Sabit Kanat → düzen Elevon (Caymaz varsayılan), Talon kartı seçilince düzen V-kuyruk + model rozetleri ("Elevon · Önerilen" → "V-kuyruk · Önerilen"),
+dönen önizleme Talon (wizard-0*.png); konsol hatası yok. Not: `ctrlState()` girişleri son kareden taze hesaplar (düşük fps'te kare gecikmesi
+servo ile eşleşmiyordu).
+
+**Testler:** `node tests/test_flightsim_airframe.mjs` (9: setler, CTRL_RE, layoutForModel, logicalOutputs, klasik/elevon/V-kuyruk girişleri ve
+yüzey hedefleri, flap, easeSurface), `tests.test_flightsim duzen_testleri` (400, model → düzen, setler = autotest, kalıcı öncelik/etkin
+düzen/son ek, `builtin:talon` kütüphane + GLB, oturum alanları, WS `servo_fn/servo_rev`, dron kaydı 4/19 → etkin classic + `plane`),
+`tests.test_simumav` (katalog airframe, hangar POST/PUT/422, kopterde null), `tests/test_simumav_fly.mjs`, `tests.test_simumav_models`.
 
 ## 14. Harekât paneli: YERLİ panel (`app/flightsim_hub.py`, `static/js/modules/flightsim_panel.js`; iframe YOK)
 Kullanıcı kararı: "Uçuşun verilerini ve yönetimsel işlemlerini canlı uçuşta kullandığımız panel ile yapalım" → önce GÖKTUNGU harekât ekranı
@@ -880,9 +968,10 @@ SERVO2 normalken (0) düzgün uçması lazım" — sanal uçak gerçek uçağın
   yazılmaz; sarı olay "SERVO1_REVERSED: **SITL ikilisi sanal montaj desteklemiyor; servo ters çevirme nötr uygulandı** (SITL'e 0 yazıldı; kayıt ve
   .param dışa aktarımı gerçek değeri korur)"; oturum içi REVERSED≠0 kaydında `Izleyici.montaj_uyarisi` (bu oturumda SITL'de etkili, yeni oturumda 0);
   kartta turuncu rozet "montaj (simülasyonda nötr)" + `mount.note`. İkili yoksa `indir` resmi sürümü çeker → bu yol.
-- **CAYMAZ elevon kurulumu SITL'de.** HEPGO oturum başlangıcı SERVO1/2_FUNCTION'a dokunmaz (ArduPlane varsayılanı **4 aileron / 19 elevator**;
-  PROD kaydı da 4/19). SITL modeli `plane` / `plane-catapult` kanal 1'i aileron, kanal 2'yi elevator okur; `ELEVON_OUTPUT` / `MIXING_GAIN` karışımı
-  ArduPlane içinde, fizik karışım sonrası PWM'i görür → 4/19 doğru kurulumdur. 77/78 yalnız `plane-elevon` modelinde doğru uçar → yazılmamalı.
+- **CAYMAZ elevon kurulumu SITL'de.** (Güncel: §13.1 kontrol düzeni.) Düz `plane` / `plane-catapult` modeli kanal 1'i aileron, kanal 2'yi elevator
+  okur → 4/19 o modelde doğru kurulumdur; 77/78 yalnız `plane-elevon` modelinde doğru uçar. §13.1 ile Elevon düzeni seçilince SITL **`plane-elevon`**
+  ile açılır ve ArduPlane'in kendi elevon kurulumu (SERVO1 78 / SERVO2 77 / REVERSED 1/1 / MIXING_GAIN 0,5) yazılır; dronun **kalıcı kaydında**
+  SERVO1/2_FUNCTION varsa (PROD dron 5: 4/19) kalıcı değer öncelikli, son ek etkin fonksiyonlardan türetilir → düz `plane`, eski davranış aynen.
 - **Ölçüm (gerçek SITL, yamalı arduplane/arducopter 4.7.2, `tools/sitl/dogrula_srv_rev.py`, tekerlekli kalkış 50 m, CAYMAZ FUNCTION 4/19):**
   (a) SERVO1_REVERSED=1 / SERVO2=0, SIM_SRV_REV=1 → 60 sn kararlı (takla yok, irtifa 50 m tutuldu); (b) 0/0, SIM_SRV_REV=0 → kararlı (eski davranış);
   (c) 1/0 ama MP ile SIM_SRV_REV=0 zorlandı (stok davranış) → takla + "SIM Hit ground" (kontrol); (d) copter SERVO1_REVERSED=1 → motor kanalı, bit yok →

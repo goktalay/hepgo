@@ -694,7 +694,7 @@ def model_testleri(a, mon, c1):
     ids = [m['id'] for m in r['models']]
     assert ids.count('builtin:caymaz') == 2 and ids.count('builtin:quad') == 1 and all(m['source'] == 'builtin' for m in r['models']), ids
     sk = ok(a.get(M, params={'type': 'sabit_kanat'}))['models']
-    assert [m['id'] for m in sk] == ['builtin:caymaz', 'builtin:delta'] and sk[0]['name'] == 'Caymaz V3' and sk[0]['glb_url'] == '/static/models/caymaz-sim.glb' and sk[0]['ready'] is True, sk
+    assert [m['id'] for m in sk] == ['builtin:caymaz', 'builtin:delta', 'builtin:talon'] and sk[0]['name'] == 'Caymaz V3' and sk[0]['glb_url'] == '/static/models/caymaz-sim.glb' and sk[0]['ready'] is True, sk
     assert sk[0]['thumb_url'] is None and sk[0]['has_prop'] is True and sk[0]['size'] and sk[0]['format'] == 'glb' and sk[1]['format'] == 'procedural'
     vt = ok(a.get(M, params={'type': 'vtol'}))['models']
     assert [m['name'] for m in vt] == ['VTOL-Caymaz V3', 'VTOL-Delta kanat'], [m['name'] for m in vt]
@@ -1080,6 +1080,90 @@ def kalkis_testleri(a, c1):
             assert ok(a.get(f'{S}/{sid}'))['launch']['phase'] is None
         ok(a.delete(f'{S}/{sid}'))
     print('  kalkış yöntemi testleri geçti')
+
+
+def duzen_testleri(a, c1):
+    """§13.1 kontrol düzeni: layout doğrulama (400), model → varsayılan düzen, parametre setleri (ArduPilot autotest ile aynı), kalıcı kayıt
+    önceliği (yazılacak/atlanan, etkin düzen, SITL model son eki), oturum alanları (layout, layout_effective, layout_sitl_model), model kütüphanesi
+    (builtin:talon vtail + orient; caymaz/delta elevon), sahte kipte servo_fn/servo_rev tele alanları."""
+    from app import drone_params, flightsim_models
+    S = '/api/drone/sim/sessions'
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'layout': 'canard'}).status_code == 400
+    assert flightsim.LAYOUTS == ('classic', 'elevon', 'vtail') and flightsim.LAYOUT_SITL_EKI == {'elevon': '-elevon', 'vtail': '-vtail'}
+    assert flightsim.layout_dogrula('multirotor', 'vtail') is None and flightsim.layout_dogrula('vtol', 'elevon') is None
+    assert flightsim.layout_dogrula('sabit_kanat', None, {'id': 'builtin:caymaz', 'layout': 'elevon'}) == 'elevon'
+    assert flightsim.layout_dogrula('sabit_kanat', None, {'id': 'builtin:talon', 'layout': 'vtail'}) == 'vtail'
+    assert flightsim.layout_dogrula('sabit_kanat', None, {'id': '5'}) == 'classic' and flightsim.layout_dogrula('sabit_kanat', 'vtail', {'layout': 'elevon'}) == 'vtail'
+    # --- parametre setleri: ArduPilot Tools/autotest/default_params (plane-elevons.parm, plane-vtail.parm) ile aynı; REVERSED/4. kanal nötrlenir ---
+    pv = dict(flightsim.LAYOUT_PARAMLARI['vtail']); pe = dict(flightsim.LAYOUT_PARAMLARI['elevon']); pc = dict(flightsim.LAYOUT_PARAMLARI['classic'])
+    assert (pv['SERVO1_FUNCTION'], pv['SERVO2_FUNCTION'], pv['SERVO4_FUNCTION'], pv['SERVO2_REVERSED'], pv['SERVO1_REVERSED'], pv['MIXING_GAIN']) == (4.0, 80.0, 79.0, 1.0, 0.0, 0.5), pv
+    assert (pe['SERVO1_FUNCTION'], pe['SERVO2_FUNCTION'], pe['SERVO4_FUNCTION'], pe['SERVO1_REVERSED'], pe['SERVO2_REVERSED'], pe['MIXING_GAIN']) == (78.0, 77.0, 0.0, 1.0, 1.0, 0.5), pe
+    assert (pc['SERVO1_FUNCTION'], pc['SERVO2_FUNCTION'], pc['SERVO4_FUNCTION'], pc['SERVO1_REVERSED'], pc['SERVO2_REVERSED']) == (4.0, 19.0, 21.0, 0.0, 0.0), pc
+    for ad in ('SERVO1_FUNCTION', 'SERVO2_REVERSED', 'MIXING_GAIN'):   # dron yapılandırması: kalıcı kaydedilir (oturum hariç listesinde DEĞİL)
+        assert not drone_params.haric_mi(ad), ad
+    # --- kalıcı kayıt önceliği ---
+    yaz, atla = flightsim.layout_parametreleri('vtail', ())
+    assert dict(yaz) == pv and atla == []
+    yaz, atla = flightsim.layout_parametreleri('elevon', ['SERVO1_FUNCTION', 'SERVO2_FUNCTION', 'MIXING_GAIN'])
+    assert atla == ['SERVO1_FUNCTION', 'SERVO2_FUNCTION', 'MIXING_GAIN'] and 'SERVO1_FUNCTION' not in dict(yaz) and dict(yaz)['SERVO1_REVERSED'] == 1.0
+    # etkin fonksiyonlar → SITL son eki: düzen seti → kalıcı kayıt ezer
+    assert flightsim.sitl_model_eki(flightsim.layout_etkin_fn('vtail')) == '-vtail' and flightsim.sitl_model_eki(flightsim.layout_etkin_fn('elevon')) == '-elevon'
+    assert flightsim.sitl_model_eki(flightsim.layout_etkin_fn('classic')) == '' and flightsim.layout_etkin(flightsim.layout_etkin_fn('vtail')) == 'vtail'
+    caymaz = [{'name': 'SERVO1_FUNCTION', 'value': 4.0}, {'name': 'SERVO2_FUNCTION', 'value': 19.0}, {'name': 'SERVO1_REVERSED', 'value': 1.0}]   # PROD dron 5 kaydı (§20.1)
+    fn = flightsim.layout_etkin_fn('elevon', caymaz)
+    assert fn[1] == 4 and fn[2] == 19 and fn[4] == 0 and flightsim.sitl_model_eki(fn) == '' and flightsim.layout_etkin(fn) == 'classic', fn   # kalıcı 4/19 → düz plane (eski davranış)
+    assert flightsim.sitl_model_eki({1: 77, 2: 77, 4: 21}) == '' and flightsim.sitl_model_eki({1: 4, 2: 79, 4: 79}) == '' and flightsim.sitl_model_eki({1: 4, 2: 79, 4: 80}) == '-vtail'
+    assert flightsim.sitl_model_eki({1: 4, 2: 19, 4: 21, 5: 77, 6: 78}) == '', 'çift başka kanalda: fizik göremez → düz'
+    # --- model kütüphanesi: builtin:talon (vtail, orient, GLB var), caymaz/delta elevon ---
+    ml = ok(a.get('/api/drone/sim/models?type=sabit_kanat'))['models']
+    byid = {m['id']: m for m in ml}
+    assert byid['builtin:talon']['layout'] == 'vtail' and byid['builtin:talon']['orient']['forward'] == '+x' and byid['builtin:talon']['glb_url'] == '/static/models/talon-vtail.glb' and byid['builtin:talon']['size'] > 10000, byid['builtin:talon']
+    assert byid['builtin:caymaz']['layout'] == 'elevon' and byid['builtin:delta']['layout'] == 'elevon' and byid['builtin:talon']['types'] == ['sabit_kanat']
+    assert 'builtin:talon' not in {m['id'] for m in ok(a.get('/api/drone/sim/models?type=vtol'))['models']}
+    assert flightsim_models.kimlik_coz('builtin:talon') == ('builtin', 'talon')
+    r = a.get('/static/models/talon-vtail.glb'); assert r.status_code == 200 and r.content[:4] == b'glTF'
+    # --- oturumlar: düzen alanları; model → varsayılan düzen; VTOL/kopterde None ---
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': 'builtin:talon'}), 201)
+    assert s['layout'] == 'vtail' and s['layout_effective'] == 'vtail' and s['layout_skipped'] == [] and s['model']['id'] == 'builtin:talon', s
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    g = ok(a.get(f'{S}/{sid}'))
+    assert g['layout_sitl_model'] == 'plane-vtail', g['layout_sitl_model']   # sahte kipte de hesaplanır (bilgi); gerçek SITL bu modelle açılır
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hello = json.loads(ws.receive_text()); assert hello['session']['layout'] == 'vtail'
+        t = ws_bekle(ws, lambda x: x['t'] == 'tele', 3); assert t and 'servo_fn' in t and 'servo_rev' in t and len(t['servo_rev']) == 8, t and list(t)
+    ok(a.delete(f'{S}/{sid}'))
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'model': 'builtin:caymaz', 'layout': 'classic'}), 201)
+    assert s['layout'] == 'classic', s['layout']; ok(a.delete(f"{S}/{s['id']}"))
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id']}), 201)   # model/düzen verilmedi → varsayılan Caymaz → elevon
+    assert s['layout'] == 'elevon' and s['model']['id'] == 'builtin:caymaz'; ok(a.delete(f"{S}/{s['id']}"))
+    s = ok(a.post(S, json={'type': 'vtol', 'center_id': c1['id'], 'layout': 'vtail'}), 201)
+    assert s['layout'] is None; ok(a.delete(f"{S}/{s['id']}"))
+    # --- dron kaydı ile: kalıcı 4/19 (CAYMAZ) → elevon istenir, etkin classic, atlananlar listede ---
+    d = ok(a.post('/api/drone/drones', json={'name': 'Düzen Sanal', 'protocol': 'sanal', 'model': 'Caymaz plane'}))
+    from app import db as _db
+    with _db.connect() as conn:   # kalıcı kayıt doğrudan tabloya (import ucu denetim kaydı sayacını — param_testleri — oynatmasın)
+        conn.executemany('INSERT INTO drone_sitl_params (drone_id, name, value, ptype, updated_at, updated_by, source) VALUES (?,?,?,?,?,?,?)',
+                         [(d['id'], 'SERVO1_FUNCTION', 4.0, 9, _db.now(), 1, 'hepgo'), (d['id'], 'SERVO2_FUNCTION', 19.0, 9, _db.now(), 1, 'hepgo')])
+        conn.commit()
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'drone_id': d['id'], 'layout': 'elevon'}), 201)
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    g = ok(a.get(f'{S}/{sid}'))
+    assert g['layout'] == 'elevon' and g['layout_effective'] == 'classic' and g['layout_sitl_model'] == 'plane', (g['layout'], g['layout_effective'], g['layout_sitl_model'])   # kalıcı 4/19 öncelikli → düz plane
+    # konsol notu (_layout_yaz; sahte kipte ilk kalp atışı yok → doğrudan): sarı uyarı, atlanan adlar ve fiilen uçan kurulum
+    ses = flightsim.MANAGER.get(sid); olaylar = []
+    ses._olay = lambda text, severity=6: olaylar.append((text, severity))
+    ses._param_set = lambda ciftler: olaylar.append(('SET', dict(ciftler)))
+    ses._layout_yaz()
+    yaz = next(o[1] for o in olaylar if o[0] == 'SET'); met = next(o for o in olaylar if o[0] != 'SET')
+    assert 'SERVO1_FUNCTION' not in yaz and 'SERVO2_FUNCTION' not in yaz and yaz['SERVO1_REVERSED'] == 1.0 and yaz['MIXING_GAIN'] == 0.5, yaz
+    assert met[1] == 4 and 'kalıcı kaydı öncelikli' in met[0] and 'SERVO1_FUNCTION' in met[0] and 'Aileron + Elevatör' in met[0] and 'model plane' in met[0], met
+    assert g['layout_skipped'] == [] and ok(a.get(f'{S}/{sid}'))['layout_skipped'] == ['SERVO1_FUNCTION', 'SERVO2_FUNCTION'], 'atlananlar _layout_yaz sonrası'
+    ok(a.delete(f'{S}/{sid}'))
+    ok(a.delete(f"/api/drone/drones/{d['id']}"))
+    print('  kontrol düzeni testleri geçti')
 def hub_testleri(a, c1):
     """§14 harekât paneli: oturum hub'a sanal köprü olarak kaydolur (bridge_id = -(9000+N)); GET /sessions/{id}/live; /ws/drone/live watch{sim_id}
     → hello.task/flights + status (sahte kipte kinematikten üretilen MAVLink çerçeveleri); hub komutları (arm, set_mode, GÖKTUNGU kalkış akışı,
@@ -2239,6 +2323,7 @@ def main():
         bin_testleri(a, c1)
         # --- sabit kanat kalkış yöntemi (§13) ---
         kalkis_testleri(a, c1)
+        duzen_testleri(a, c1)   # §13.1 kontrol düzeni
         # --- harekât paneli köprüsü (§14) ---
         hub_testleri(a, c1)
         # --- görev çizimi / çarpışma / özet rapor (§18) ---

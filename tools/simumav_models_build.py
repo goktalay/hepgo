@@ -378,7 +378,7 @@ def rapor(out_path):
     g = pygltflib.GLTF2().load(str(out_path))
     adlar = [n.name for n in g.nodes if n.name]
     props = [a for a in adlar if re.search(r'prop|propeller|rotor|pervane', a, re.I) and not re.search(r'_v\d+$', a)]
-    ctrl = [a for a in adlar if re.match(r'^(elevon|flap|aileron|elevator|rudder)(_?(l|r|left|right))?$', a, re.I)]
+    ctrl = [a for a in adlar if re.match(r'^(elevon|flap|aileron|elevator|rudder|ruddervator)(_?(l|r|left|right))?$', a, re.I)]
     return {'tri': tri, 'textures': dokular, 'bytes': Path(out_path).stat().st_size, 'ext_m': ext, 'props': props, 'ctrl': ctrl, 'nodes': len(adlar)}
 
 
@@ -464,17 +464,201 @@ def fpv_ekleri():
     return parcalar
 
 
+# ---------- prosedürel Talon tarzı V-kuyruk uçağı (dış kaynak yok; HEPGO üretimi) ----------
+# X-UAV Talon benzeri: kanat açıklığı 1,72 m, uzunluk 1,10 m, tek itici pervane (gövde arkası), uzun düz kanat (hafif dihedral), ince kuyruk bumu,
+# V-kuyruk (iki yüzey 37° yukarı açılı; ruddervator'lar). glTF çerçevesi SIMUMAV standardı: burun +X, yukarı +Y, sağ +Z, metre.
+# Kontrol yüzeyi düğümleri `aileron_l/r`, `ruddervator_l/r` menteşe çizgisinde durur; düğüm yerel çerçevesi flightsim3d CTRL_RE/te_down
+# varsayımına göre: yerel X = menteşe ekseni (SOLA, −d), yerel Y = yüzey üst normali, yerel −Z = kord (arka kenara doğru). Yerel X etrafında +θ
+# arka kenarı yüzey normali yönünde (YUKARI) kaldırır → te_down = −1 (flightsim3d varsayılanı; extras gerekmez). Pervane düğümü `propeller`
+# (PROP_RE; düzlemi YZ → en ince eksen X = dönüş ekseni).
+TALON = {'span': 1.72, 'length': 1.10}
+
+
+def _profil(kord, kalinlik=0.11, kambur=0.025, n=14):
+    """Basit kambur hava profili: (N,2) [kord ekseni (0 hücum → −kord arka), kalınlık] kapalı döngü (üst arkadan öne, alt önden arkaya)."""
+    xs = (1 - np.cos(np.linspace(0, math.pi, n))) / 2            # kosinüs dağılımı: hücum kenarında yoğun
+    yt = 5 * kalinlik * (0.2969 * np.sqrt(xs) - 0.1260 * xs - 0.3516 * xs ** 2 + 0.2843 * xs ** 3 - 0.1036 * xs ** 4)
+    yc = kambur * 4 * xs * (1 - xs)
+    ust = np.stack([-xs * kord, (yc + yt) * kord], axis=1)[::-1]   # arka → ön
+    alt = np.stack([-xs * kord, (yc - yt) * kord], axis=1)[1:-1]   # ön → arka (uçlar tekrar etmesin)
+    return np.vstack([ust, alt])
+
+
+def _loft(kesitler, kapak=True):
+    """Aynı nokta sayılı (N,3) kesitler → yan yüzeyler + uç kapakları (fan) Trimesh."""
+    K, N = len(kesitler), len(kesitler[0])
+    V = np.vstack(kesitler)
+    F = []
+    for k in range(K - 1):
+        for i in range(N):
+            a, b = k * N + i, k * N + (i + 1) % N
+            c, d = a + N, b + N
+            F += [[a, b, d], [a, d, c]]
+    if kapak:
+        for k, ters in ((0, True), (K - 1, False)):
+            for i in range(1, N - 1):
+                t = [k * N, k * N + i, k * N + i + 1]
+                F.append(t[::-1] if ters else t)
+    m = trimesh.Trimesh(V, np.array(F), process=False)
+    m.fix_normals()
+    return m
+
+
+def _elips(x, ry, rz, cy=0.0, n=20):
+    th = np.linspace(0, 2 * math.pi, n, endpoint=False)
+    return np.stack([np.full(n, x), cy + ry * np.sin(th), rz * np.cos(th)], axis=1)
+
+
+def _kanat_parca(z0, z1, le, kord, y0, dihedral, bas=0.0, bit=1.0, adim=4, tap=lambda z: 1.0):
+    """Kanat/kuyruk yüzeyi parçası: z (açıklık) z0→z1, hücum kenarı le(z), kord kord(z), yükseklik y0 + dihedral; profilin kord oranı [bas, bit]
+    (bas 0 = hücum kenarı; aileron için [0.74, 1] gibi). Dünya çerçevesinde (N,3) kesitlerle loft."""
+    kes = []
+    for z in np.linspace(z0, z1, adim):
+        c = kord(z)
+        p = _profil(c)
+        # profil kord oranı aralığı: x oranı −p[:,0]/c ∈ [0,1]
+        r = -p[:, 0] / c
+        sel = p.copy()
+        sel[:, 0] = -(np.clip(r, bas, bit)) * c
+        pts = np.stack([le(z) + sel[:, 0], y0 + math.tan(dihedral) * (abs(z) - abs(z0 if abs(z0) < abs(z1) else z1)) + sel[:, 1], np.full(len(sel), z)], axis=1)
+        kes.append(pts)
+    return _loft(kes)
+
+
+def _yuzey_yerel(b, kord0, kord1, bas, cy=0.0, adim=3):
+    """Kontrol yüzeyi, düğüm yerel çerçevesinde: menteşe X ekseni boyunca (x ∈ [−b/2, b/2]), kord −Z (menteşe z=0 → arka kenar), kalınlık Y.
+    kord0/kord1: yüzeyin x=−b/2 / +b/2 ucundaki TAM profil kordu; bas: menteşenin kord oranı (yüzey = profilin [bas, 1] kısmı)."""
+    kes = []
+    for t in np.linspace(0, 1, adim):
+        c = kord0 + (kord1 - kord0) * t
+        p = _profil(c)
+        r = -p[:, 0] / c
+        q = p.copy()
+        q[:, 0] = -(np.clip(r, bas, 1.0) - bas) * c            # menteşe → 0, arka kenar → −(1−bas)c
+        kes.append(np.stack([np.full(len(q), -b / 2 + b * t), q[:, 1] + cy, q[:, 0]], axis=1))
+    return _loft(kes)
+
+
+def _dugum_T(konum, d, n):
+    """Düğüm matrisi: yerel X = −d (menteşe ekseni sola), yerel Y = n (üst normal), yerel Z = X × Y; öteleme konum."""
+    ex = -np.asarray(d, float); ex /= np.linalg.norm(ex)
+    ey = np.asarray(n, float); ey -= ex * ex.dot(ey); ey /= np.linalg.norm(ey)
+    ez = np.cross(ex, ey)
+    T = np.eye(4); T[:3, 0], T[:3, 1], T[:3, 2], T[:3, 3] = ex, ey, ez, konum
+    return T
+
+
+def _mat(mesh, renk, ad=None, metal=0.05, rough=0.6):
+    mesh.visual = trimesh.visual.TextureVisuals(material=pbr(renk, None, ad=ad, metal=metal, rough=rough))
+    return mesh
+
+
+def talon_vtail():
+    """→ trimesh.Scene: Talon tarzı V-kuyruk uçağı (bkz. TALON açıklaması)."""
+    BEYAZ, GRI, KOYU, CAM = (0.93, 0.93, 0.95, 1.0), (0.80, 0.81, 0.84, 1.0), (0.10, 0.10, 0.11, 1.0), (0.15, 0.25, 0.35, 1.0)
+    TURUNCU = (1.0, 0.45, 0.05, 1.0)
+    sc = trimesh.Scene()
+    parcalar = []   # (düğüm, mesh)
+    # --- gövde: eliptik kesitler x 0.55 (burun) → −0.27 (motor); kanat bölgesinde en kalın
+    govde = [(0.55, 0.006, 0.006, 0.01), (0.52, 0.03, 0.028, 0.012), (0.46, 0.052, 0.046, 0.014), (0.38, 0.066, 0.056, 0.012), (0.26, 0.072, 0.06, 0.008),
+             (0.08, 0.072, 0.06, 0.004), (-0.06, 0.066, 0.056, 0.0), (-0.16, 0.052, 0.046, -0.004), (-0.23, 0.036, 0.032, -0.006), (-0.27, 0.03, 0.028, -0.006)]
+    parcalar.append(('base_link', _mat(_loft([_elips(x, ry, rz, cy) for x, ry, rz, cy in govde]), BEYAZ)))
+    # burun kapağı (vurgu rengi) ve kabin camı şeridi
+    parcalar.append(('base_link', _mat(_loft([_elips(x, ry * 1.01, rz * 1.01, cy) for x, ry, rz, cy in govde[:3]]), TURUNCU, ad='accent')))
+    cam = _loft([_elips(x, ry * 1.012, rz * 1.012, cy) for x, ry, rz, cy in ((0.45, 0.054, 0.047, 0.014), (0.40, 0.064, 0.054, 0.013), (0.34, 0.07, 0.058, 0.011))])
+    cam.vertices = cam.vertices[:]; parcalar.append(('base_link', _mat(cam, CAM, metal=0.6, rough=0.2)))
+    # kuyruk bumu + motor kaportası
+    bum = trimesh.creation.cylinder(radius=0.016, height=0.31, sections=18); bum.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+    bum.apply_translation([-0.27 - 0.155, -0.004, 0]); parcalar.append(('base_link', _mat(bum, KOYU, metal=0.4, rough=0.4)))
+    mot = trimesh.creation.cylinder(radius=0.024, height=0.05, sections=20); mot.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+    mot.apply_translation([-0.295, -0.006, 0]); parcalar.append(('base_link', _mat(mot, KOYU, metal=0.6, rough=0.3)))
+    # --- kanat: hücum kenarı x 0.28 (kök) → 0.25 (uç), kord 0.235 → 0.15, z 0 → ±0.86, dihedral 3°, kök yüksekliği 0.045
+    span2 = TALON['span'] / 2
+    le = lambda z: 0.28 - 0.03 * (abs(z) / span2)                   # noqa: E731
+    kord = lambda z: 0.235 - 0.085 * (abs(z) / span2)                # noqa: E731
+    dih = math.radians(3)
+    a0, a1, menteşe = 0.45, 0.82, 0.74                                # aileron z aralığı, menteşe kord oranı
+    for s in (1, -1):
+        zs = lambda z: s * z                                          # noqa: E731
+        # iç kanat (tam profil) 0 → a0, aileron bölgesi kanat kısmı (ön %74) a0 → a1, uç (tam profil, vurgu) a1 → span2
+        for (z0, z1, bit, renk, ad) in ((0.0, a0, 1.0, BEYAZ, None), (a0, a1, menteşe, BEYAZ, None), (a1, span2, 1.0, TURUNCU, 'accent')):
+            kes = []
+            for z in np.linspace(z0, z1, 4):
+                c = kord(z); p = _profil(c); r = -p[:, 0] / c; q = p.copy(); q[:, 0] = -np.clip(r, 0.0, bit) * c
+                kes.append(np.stack([le(z) + q[:, 0], 0.045 + math.tan(dih) * z + q[:, 1], np.full(len(q), zs(z))], axis=1))
+            if s < 0:
+                kes = kes[::-1]
+            parcalar.append(('base_link', _mat(_loft(kes), renk, ad=ad)))
+        # aileron düğümü: menteşe çizgisi orta noktası; d = açıklık yönü (sağ: +Z), n = yukarı (dihedral)
+        zm = (a0 + a1) / 2
+        hx = lambda z: le(z) - menteşe * kord(z)                      # noqa: E731
+        konum = [hx(zm), 0.045 + math.tan(dih) * zm + 0.002, zs(zm)]
+        d = [hx(a1) - hx(a0), math.tan(dih) * (a1 - a0), zs(a1 - a0)]
+        n = [0, math.cos(dih), -s * math.sin(dih)]
+        b = a1 - a0
+        k0, k1 = (kord(a0), kord(a1)) if s < 0 else (kord(a1), kord(a0))   # yerel x artınca z azalır (sola): sağda x=−b/2 ↔ z=a1
+        parcalar.append((f'aileron_{"r" if s > 0 else "l"}', _mat(_yuzey_yerel(b, k0, k1, menteşe), GRI), _dugum_T(konum, d, n)))
+    # --- V-kuyruk: kök (bum üstü) x_le −0.44, kord 0.13 → 0.09, düzlem içi yarı açıklık 0.27, 37° yukarı; ruddervator menteşe %55
+    phi = math.radians(37)
+    tle = lambda u: -0.44 - 0.03 * (u / 0.27)                         # noqa: E731  u: düzlem içi mesafe
+    tkord = lambda u: 0.13 - 0.04 * (u / 0.27)                        # noqa: E731
+    rm = 0.55
+    for s in (1, -1):
+        d = np.array([0.0, math.sin(phi), s * math.cos(phi)])          # yüzey açıklık yönü (yukarı-dışa)
+        n = np.array([0.0, math.cos(phi), -s * math.sin(phi)])         # üst normal (yukarı-içe)
+        kok = np.array([0.0, -0.004 + 0.012, s * 0.006])
+        kes = []
+        for u in np.linspace(0.02, 0.27, 4):
+            c = tkord(u); p = _profil(c, kalinlik=0.09, kambur=0.0); r = -p[:, 0] / c; q = p.copy(); q[:, 0] = -np.clip(r, 0.0, rm) * c
+            pts = kok + d * u + np.outer(q[:, 0], [1.0, 0.0, 0.0]) + np.outer(q[:, 1], n) + np.array([tle(u), 0, 0])
+            kes.append(pts)
+        if s < 0:
+            kes = kes[::-1]
+        parcalar.append(('base_link', _mat(_loft(kes), BEYAZ)))
+        u0, u1 = 0.03, 0.265
+        um = (u0 + u1) / 2
+        hx = lambda u: tle(u) - rm * tkord(u)                           # noqa: E731
+        konum = kok + d * um + np.array([hx(um), 0, 0])
+        dd = d * (u1 - u0) + np.array([hx(u1) - hx(u0), 0, 0])
+        k0, k1 = (tkord(u0), tkord(u1)) if s < 0 else (tkord(u1), tkord(u0))
+        parcalar.append((f'ruddervator_{"r" if s > 0 else "l"}', _mat(_yuzey_yerel(u1 - u0, k0, k1, rm), GRI), _dugum_T(konum, dd, n)))
+    # --- pervane (itici; gövde arkası): iki pal + göbek; düzlem YZ
+    gobek = trimesh.creation.cylinder(radius=0.012, height=0.03, sections=16); gobek.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0, 1, 0]))
+    pal = []
+    for k in range(2):
+        b = trimesh.creation.box([0.006, 0.26, 0.026]); b.apply_transform(trimesh.transformations.rotation_matrix(math.radians(22), [0, 1, 0]))
+        b.apply_transform(trimesh.transformations.rotation_matrix(k * math.pi, [1, 0, 0])); pal.append(b)
+    prop = trimesh.util.concatenate([gobek] + pal)
+    parcalar.append(('propeller', _mat(prop, KOYU, metal=0.3, rough=0.5), trimesh.transformations.translation_matrix([-0.335, -0.006, 0])))
+    # --- sahne: düğümler
+    sc.graph.update(frame_to='base_link', frame_from=sc.graph.base_frame, matrix=np.eye(4))
+    sayac = {}
+    for p in parcalar:
+        ad, mesh = p[0], p[1]
+        if len(p) > 2 and ad not in sc.graph.nodes:
+            sc.graph.update(frame_to=ad, frame_from='base_link', matrix=p[2])
+        n = sayac.get(ad, 0); sayac[ad] = n + 1
+        sc.add_geometry(mesh, node_name=f'{ad}_v{n}', geom_name=f'{ad}_g{n}', parent_node_name=ad)
+    return sc
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--src', required=True, type=Path)
+    ap.add_argument('--src', type=Path)
     ap.add_argument('--out', required=True, type=Path)
     ap.add_argument('--only', default='')
     ap.add_argument('--glb', action='append', default=[], help='hazır GLB: ad=yol[,scale=..,yaw_deg=..,pitch_deg=..,rename=a:b;c:d,ground=1]')
+    ap.add_argument('--talon', action='store_true', help='prosedürel Talon tarzı V-kuyruk uçağı (talon_vtail.glb; kaynak gerekmez)')
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     secim = {s for s in a.only.split(',') if s}
     sonuc = {}
-    for ad, cfg in tanimlar(a.src).items():
+    if a.talon:
+        out = a.out / 'talon_vtail.glb'
+        glb_yaz(talon_vtail(), out)
+        sonuc['talon_vtail'] = rapor(out)
+        print('== talon_vtail (prosedürel)\n  ', json.dumps(sonuc['talon_vtail']))
+    for ad, cfg in (tanimlar(a.src).items() if a.src else ()):
         if secim and ad not in secim:
             continue
         kaynak = Path(cfg.get('sdf') or cfg.get('glb'))

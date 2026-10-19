@@ -33,6 +33,7 @@ class SessionIn(BaseModel):
     drone_id: Optional[int] = None   # §14 isteğe bağlı: Dron Envanteri kaydı — harekât panelinde telemetri bu dronun adıyla akar (yoksa "Simülatör #N")
     rec: Optional[dict] = None       # §19 kayıt seçenekleri: {bin: bool} — SITL DataFlash .BIN kaydı, kapanışta Uçuş Logları'na (yalnız sitl)
     power: Optional[dict] = None     # §23 güç ve yakıt: {max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}; eksikler dron kaydı önerisi → tip varsayılanı
+    layout: Optional[str] = None     # §13.1 kontrol düzeni (yalnız sabit kanat): classic | elevon | vtail; eksikse modelin düzeni (Caymaz/Delta elevon, Talon vtail), yoksa classic
 
 
 class ModelPatch(BaseModel):
@@ -158,7 +159,7 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
         if body.drone_id is not None and not drone:
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')

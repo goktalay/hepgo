@@ -12,15 +12,15 @@ ajan bu dosyayı da günceller.
   `flightsim_mission.py`, `flightsim_rec.py`, `flightsim_bin.py`, `flightsim_replay.py`, `flightsim_runs.py`,
   `sim_terrain.py`, `drone_sitl.py`, `drone_params.py`, `flightsim_models.py`) **değiştirilmeden** yeniden kullanılır;
   HEPGO'ya özgü bağımlılıkları (kullanıcı/yetki/DB) `app/simumav/bridge.py` adaptörüyle sağlanır.
-- **Kimlik: mastertool.download hesap servisi**, uygulama kodu **`sm`** (`central/sshmaster_server/sshm/main.py`
-  `GAMES['sm'] = {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': 'https://simumav.com'}`).
-  Kayıt/giriş/şifre sıfırlama uçları zaten genel: `POST /api/sm/auth/prelogin|register|login|logout|forgot|reset/{tok}`
+- **Kimlik: mastertool.download hesap servisi**, uygulama kodu **`sv`** (`sm` SSH Master'a ait, ÇAKIŞIR) (`central/sshmaster_server/sshm/main.py`
+  `GAMES['sv'] = {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': 'https://simumav.com'}`).
+  Kayıt/giriş/şifre sıfırlama uçları zaten genel: `POST /api/sv/auth/prelogin|register|login|logout|forgot|reset/{tok}`
   (VOLFAI `vf` ile aynı akış: istemci PBKDF2 `computeAuthHash`, bkz. `static/mt/volfai/js/account.js` eski sürümü
-  `/tmp/volfai/src/js/account.js`). Kullanıcı profili: `sm_profiles(user_id, profile JSON, updated_at)` (vf_profiles kalıbı)
+  `/tmp/volfai/src/js/account.js`). Kullanıcı profili: `sv_profiles(user_id, profile JSON, updated_at)` (vf_profiles kalıbı)
   — yalnız hesap servisinde görünen özet (pilot adı, toplam uçuş, saat) için; asıl oyun verisi simumav DB'de.
-- **SIMUMAV oturumu:** tarayıcı önce hesap servisine (`https://mastertool.download/api/sm/auth/login`, CORS: Origin
+- **SIMUMAV oturumu:** tarayıcı önce hesap servisine (`https://mastertool.download/api/sv/auth/login`, CORS: Origin
   `https://simumav.com` izinli) giriş yapar, dönen belirteci `POST /api/session` ile simumav'a verir; simumav belirteci
-  hesap servisinde `GET /api/sm/account` (Bearer) ile doğrular, kullanıcıyı `users` tablosuna eşler (mt_user_id, email,
+  hesap servisinde `GET /api/sv/account` (Bearer) ile doğrular, kullanıcıyı `users` tablosuna eşler (mt_user_id, email,
   display_name) ve **kendi HttpOnly çerezini** (`smsid`, 30 gün, Secure, SameSite=Lax) açar. Çıkış ikisini de kapatır.
   Geliştirmede `SIMUMAV_DEV_LOGIN=1` iken `POST /api/session {dev_user:'ad'}` hesap servisine gitmeden oturum açar.
 - **Veri:** `SIMUMAV_DATA_DIR` (PROD `/opt/hepgo/simumav-data`, DEV `/tmp/simumav-data`), DB `simumav.db` (sqlite,
@@ -139,7 +139,7 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
   (IP, user, olay, ayrıntı); hata yanıtları iç ayrıntı sızdırmaz (traceback yok, genel mesaj). Google anahtarı yalnız
   `/api/meta` ile oturumlu kullanıcıya verilir (referrer kısıtı Cloudflare tarafında ek koruma değildir — kullanıcı anahtar
   kısıtına simumav.com ekler).
-- **Hesap servisi tarafı:** `sm` için CORS yalnız `https://simumav.com`; register'da e-posta doğrulama zorunlu; `sm_profiles`
+- **Hesap servisi tarafı:** `sv` için CORS yalnız `https://simumav.com`; register'da e-posta doğrulama zorunlu; `sv_profiles`
   yazımı yalnız simumav sunucusundan (paylaşılan gizli `SIMUMAV_MT_SHARED_SECRET` başlığı) ya da kullanıcı Bearer'ı ile.
 - **Bağımlılıklar:** three.js/xterm vendor'dan (CDN yok); Cesium ve Google yalnız resmi alanlar. `npm`/pip yeni paket gerekirse
   raporda belirtilir, kurulmaz.
@@ -149,7 +149,7 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
 1. `deploy/simumav/hepgo-simumav.service` kopyala → `systemctl enable --now hepgo-simumav`; `.env`'e SIMUMAV_* ekle.
 2. cloudflared `config.yml` ingress'e `simumav.com`, `www.simumav.com` → `unix:/run/hepgo/simumav.sock`; `systemctl restart cloudflared`.
 3. Kullanıcı: Cloudflare DNS CNAME (tünel) + Google anahtarı referrer `simumav.com`.
-4. Hesap servisi: `GAMES['sm']` + `sm_profiles` tablosu + CORS Origin `https://simumav.com` → hepgo-sshmasters restart;
+4. Hesap servisi: `GAMES['sv']` + `sv_profiles` tablosu + CORS Origin `https://simumav.com` → hepgo-sshmasters restart;
    mastertool.download › Oyunlar listesinde SIMUMAV (ikon `static/brand/simumav.svg|png`, tanıtım bağlantısı simumav.com).
 5. Dışarıdan: `https://simumav.com/` tanıtım 200, `/app` oturumsuz → tanıtım/giriş; `/api/meta` 200; MP TCP portu dış IP'den
    yalnız kilitli IP ile.

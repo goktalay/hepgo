@@ -3,21 +3,32 @@
 // uçlarıyla iç anahtarla çağırır. Kullanıcıların şifreleri ve kütüphaneleri burada görünmez (uçtan uca şifreli; sunucu da okuyamaz).
 // Kullanıcıların destek talepleri Destek Merkezi'nde "Mastertool · <uygulama>" adıyla görünür.
 import { api, upload } from '../api.js';
+import { setListExport } from '../listexport.js';
 import { clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, statStrip, toast, toastError } from '../ui.js';
 
 const SUBS = [['users', 'Kullanıcılar'], ['releases', 'Sürümler']];
 const APPS = [['sm', 'SSH Master'], ['fm', 'FTP Masters'], ['sq', 'SQL Master'], ['np', 'Notepad Master'], ['cv', 'Convert Master']];
-const APPN = Object.fromEntries(APPS);
+// Oyunlar (hesap servisi GAMES): aynı Mastertool hesabı; kullanım özeti sv_profiles / vf_profiles'tan gelir (SIMUMAV sunucusu uçuş bitiminde ve
+// giriş/çıkışta yazar; VOLFAI tarayıcıdan). Tabloda araçlarla birlikte 9 sütun 1920 px'e sığmaz → sütun grupları sekmeli ("Araçlar | Oyunlar").
+const GAMES = [['sv', 'SIMUMAV'], ['vf', 'VOLFAI']];
+const GROUPS = [['tools', 'Araçlar'], ['games', 'Oyunlar']];
+const APPN = Object.fromEntries([...APPS, ...GAMES]);
+const GAMEN = Object.fromEntries(GAMES);
 const ST = { AKTIF: ['green', 'Aktif'], BEKLIYOR: ['yellow', 'E-posta bekliyor'], ASKIDA: ['red', 'Askıda'] };
 const size = n => (n == null ? '—' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
 const badge = s => { const [c, l] = ST[s] || ['', s]; return h('span', { class: `badge ${c}` }, l); };
 const used = a => a && (a.app_sessions || a.downloads || a.lib_version);
+const played = g => g && g.has_profile;
+const hours = v => (v >= 10 ? Math.round(v) : (Math.round((v || 0) * 10) / 10)).toLocaleString('tr-TR');
+// Oyun hücresi / Excel metni: sv "N uçuş · H sa · P pilot", vf "Skor S · P parkur"
+const gameText = (k, g) => (k === 'sv' ? `${g.flights || 0} uçuş · ${hours(g.hours)} sa · ${g.pilots || 0} pilot` : `Skor ${(g.hi_score || 0).toLocaleString('tr-TR')} · ${g.parkurs || 0} parkur`);
+const gameLast = (k, g) => (k === 'sv' && g.last_flight_at) || g.last_at;
 
 export async function render(view, params) {
   const sub = SUBS.some(s => s[0] === params[0]) ? params[0] : 'users';
   const nav = segmented(SUBS, sub, v => { location.hash = `#/sshmaster/${v}`; }, { tabs: true });
   const body = h('div');
-  clear(view, pageHead('Mastertool', { back: '#/', sub: 'SSH Master, FTP Masters, SQL Master, Notepad Master ve Convert Master — tek hesap, uygulama lisansları ve sürümler', tabs: nav }), body);
+  clear(view, pageHead('Mastertool', { back: '#/', sub: 'SSH Master, FTP Masters, SQL Master, Notepad Master, Convert Master, SIMUMAV ve VOLFAI — tek hesap, uygulama lisansları, oyun kullanımı ve sürümler', tabs: nav }), body);
   return sub === 'releases' ? releasesView(body) : usersView(body);
 }
 
@@ -29,43 +40,68 @@ function appCell(a) {
     : h('span', { class: 'muted' }, 'Kullanmadı'));
 }
 
+function gameCell(k, g) {
+  if (!g) return h('td', null, '—');
+  if (!played(g)) return h('td', { class: 'small' }, h('span', { class: 'muted' }, 'Kullanmadı'));
+  const last = gameLast(k, g);
+  return h('td', { class: 'small' }, gameText(k, g),
+    h('div', { class: 'muted' }, last ? `Son ${k === 'sv' ? 'uçuş' : 'kayıt'} ${fmtDateTime(last)}` : '—', k === 'sv' && g.last_version ? ` · v${g.last_version}` : ''));
+}
+
 async function usersView(view) {
   const stats = statStrip();
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Ad ya da e-posta ara…', style: { width: '260px' } });
   const st = h('select', { class: 'input' }, h('option', { value: '' }, 'Tüm durumlar'), Object.entries(ST).map(([k, [, l]]) => h('option', { value: k }, l)));
-  const ap = h('select', { class: 'input' }, h('option', { value: '' }, 'Tüm uygulamalar'), APPS.map(([k, l]) => h('option', { value: k }, `${l} kullananlar`)));
+  const ap = h('select', { class: 'input' }, h('option', { value: '' }, 'Tüm uygulamalar'),
+    h('optgroup', { label: 'Araçlar' }, APPS.map(([k, l]) => h('option', { value: k }, `${l} kullananlar`))),
+    h('optgroup', { label: 'Oyunlar' }, GAMES.map(([k, l]) => h('option', { value: k }, `${l} oynayanlar`))));
+  let grp = sessionStorage.getItem('mt-col-grp') === 'games' ? 'games' : 'tools';
   const list = h('div');
   let rows = [];
+  const matches = u => (!st.value || u.status === st.value) && (!ap.value || (GAMEN[ap.value] ? played(u.games?.[ap.value]) : used(u.apps?.[ap.value])))
+    && (!q.value.trim() || `${u.name} ${u.email}`.toLocaleLowerCase('tr').includes(q.value.trim().toLocaleLowerCase('tr')));
   const draw = () => {
-    const t = q.value.trim().toLocaleLowerCase('tr');
-    const shown = rows.filter(u => (!st.value || u.status === st.value) && (!ap.value || used(u.apps?.[ap.value]))
-      && (!t || `${u.name} ${u.email}`.toLocaleLowerCase('tr').includes(t)));
+    const shown = rows.filter(matches);
+    const cols = grp === 'games' ? GAMES : APPS;
     clear(list, shown.length ? h('div', { class: 'table-wrap' }, h('table', null,
-      h('thead', null, h('tr', null, ['Kullanıcı', 'Durum', 'Kayıt', 'Son giriş', ...APPS.map(a => a[1])].map(c => h('th', null, c)))),
+      h('thead', null, h('tr', null, ['Kullanıcı', 'Durum', 'Kayıt', 'Son giriş', ...cols.map(a => a[1])].map(c => h('th', null, c)))),
       h('tbody', null, shown.map(u => h('tr', { class: 'click', onclick: () => userModal(u.id, load) },
         h('td', null, h('b', null, u.name), h('div', { class: 'small muted' }, u.email), u.note ? h('div', { class: 'small muted' }, `Not: ${u.note}`) : null),
         h('td', null, badge(u.status)),
         h('td', { class: 'small' }, fmtDateTime(u.created_at)),
         h('td', { class: 'small' }, u.last_login ? fmtDateTime(u.last_login) : '—'),
-        APPS.map(([k]) => appCell(u.apps?.[k])))))))
+        grp === 'games' ? GAMES.map(([k]) => gameCell(k, u.games?.[k])) : APPS.map(([k]) => appCell(u.apps?.[k])))))))
       : h('div', { class: 'card empty' }, rows.length ? 'Filtreye uyan kullanıcı yok' : 'Henüz kayıtlı kullanıcı yok'));
   };
+  const seg = segmented(GROUPS, grp, v => { grp = v; sessionStorage.setItem('mt-col-grp', v); draw(); });
+  const setGrp = v => { if (grp !== v) { grp = v; sessionStorage.setItem('mt-col-grp', v); seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', GROUPS[i][0] === v)); } };
   const load = async () => {
     const d = await api.get('/api/central/sshm/users');
     rows = d.users;
     const s = d.stats;
     const per = s.apps || {};
+    const g = s.games || {};
     stats.set([
       { icon: 'users', label: 'Kullanıcı', value: s.users, sub: `${s.active} aktif · ${s.pending} bekliyor` },
       { icon: 'warning', label: 'Askıda', value: s.suspended, tone: s.suspended ? 'alert' : '' },
       ...APPS.map(([k, l]) => ({ icon: 'tools', label: l, value: per[k]?.release ? per[k].release.version : '—',
         sub: `${per[k]?.users || 0} kullanıcı · ${per[k]?.downloads || 0} indirme` })),
+      { icon: 'drone', label: 'SIMUMAV', key: 'sv', value: g.sv?.release ? g.sv.release.version : '—', onClick: () => { setGrp('games'); draw(); },
+        sub: `${g.sv?.users || 0} kullanıcı · ${g.sv?.flights || 0} uçuş` },
+      { icon: 'apps', label: 'VOLFAI', key: 'vf', value: g.vf?.users || 0, onClick: () => { setGrp('games'); draw(); }, sub: 'kullanıcı' },
     ]);
     draw();
   };
+  // Başlıktaki genel Excel düğmesi (listexport): görünen sekme değil, araç VE oyun sütunlarının tümü; filtredeki satırlar
+  const appText = a => (!a ? '' : a.license !== 'AKTIF' ? 'Kapalı' : used(a) ? `${a.app_sessions || 0} oturum · ${a.downloads || 0} indirme · senkron ${a.sync_enabled ? 'açık' : 'kapalı'}` : 'Kullanmadı');
+  const gText = (k, g) => (!g ? '' : !played(g) ? 'Kullanmadı' : `${gameText(k, g)}${gameLast(k, g) ? ` · son ${fmtDateTime(gameLast(k, g))}` : ''}`);
+  setListExport(() => ({ columns: ['Ad', 'E-posta', 'Durum', 'Kayıt', 'Son giriş', ...APPS.map(a => a[1]), ...GAMES.map(a => a[1]), 'Not'],
+    rows: rows.filter(matches).map(u => [u.name, u.email, ST[u.status]?.[1] || u.status, fmtDateTime(u.created_at), u.last_login ? fmtDateTime(u.last_login) : '',
+      ...APPS.map(([k]) => appText(u.apps?.[k])), ...GAMES.map(([k]) => gText(k, u.games?.[k])), u.note || '']) }));
   q.addEventListener('input', draw);
-  [st, ap].forEach(el => el.addEventListener('change', draw));
-  clear(view, stats, h('div', { class: 'filters' }, q, st, ap, h('span', { class: 'spacer' }),
+  st.addEventListener('change', draw);
+  ap.addEventListener('change', () => { if (ap.value) setGrp(GAMEN[ap.value] ? 'games' : 'tools'); draw(); });
+  clear(view, stats, h('div', { class: 'filters' }, q, st, ap, seg, h('span', { class: 'spacer' }),
     h('a', { class: 'btn', href: 'https://mastertool.download', target: '_blank', rel: 'noopener' }, 'mastertool.download')), list);
   try { await load(); } catch (e) { clear(list, h('div', { class: 'card empty' }, e.message)); }
 }
@@ -101,6 +137,18 @@ async function userModal(uid, reload) {
       h('h3', null, 'Uygulamalar'),
       APPS.map(appBlock),
       h('p', { class: 'small muted' }, 'Kütüphaneler uçtan uca şifrelidir; içeriği sunucuda ve burada görüntülenemez.'),
+      h('h3', null, 'Oyunlar'),
+      GAMES.map(([k, l]) => {
+        const g = d.games?.[k];
+        const last = g && gameLast(k, g);
+        return h('div', { class: 'card card-pad', style: { marginBottom: '10px' } },
+          h('div', { class: 'row', style: { alignItems: 'center' } }, h('b', null, l),
+            h('span', { class: `badge ${played(g) ? 'green' : ''}` }, played(g) ? 'Kullanıyor' : 'Kullanmadı'),
+            k === 'sv' && g?.last_version ? h('span', { class: 'small muted' }, `v${g.last_version}`) : null),
+          played(g) ? h('div', { class: 'small muted' }, gameText(k, g)
+            + (k === 'sv' ? ` · ${g.drones || 0} dron${g.pilot ? ` · pilot ${g.pilot}` : ''}` : ` · ${g.levels || 0} bölüm`)
+            + (last ? ` · son ${k === 'sv' ? 'uçuş' : 'kayıt'} ${fmtDateTime(last)}` : '')) : null);
+      }),
       h('h3', null, 'Oturumlar'),
       d.sessions.length ? h('table', null, h('thead', null, h('tr', null, ['Cihaz', 'Tür', 'Sürüm', 'IP', 'Son görülme'].map(c => h('th', null, c)))),
         h('tbody', null, d.sessions.map(s => h('tr', null, h('td', null, s.device || '—'), h('td', null, s.kind === 'web' ? 'Web' : (APPN[s.app || 'sm'] || 'Uygulama')),

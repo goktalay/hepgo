@@ -1306,6 +1306,47 @@ def _admin_apps(conn, uid):
     return out
 
 
+def _num(v, f=float):
+    try:
+        return f(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _admin_games(conn, uid):
+    """Oyun kullanım özeti (Merkez › Mastertool). sv: SIMUMAV sunucusunun X-Simumav-Secret ile yazdığı özet (app/simumav/bridge.py
+    _profil_ozeti: pilot, pilots, drones, flights, hours, last_flight_at, version). vf: VOLFAI'nin tarayıcıdan yazdığı profil
+    (hiScore, levels{N: {parkurs{…}}}); sunucu içeriği yorumlamaz, yalnız sayım. Profil yoksa has_profile False, alanlar 0/None."""
+    out = {}
+    for k in GAMES:
+        r = conn.execute(f'SELECT profile, updated_at FROM {k}_profiles WHERE user_id = ?', (uid,)).fetchone()
+        try:
+            p = json.loads(r['profile']) if r else {}
+        except ValueError:
+            p = {}
+        p = p if isinstance(p, dict) else {}
+        g = {'has_profile': bool(r), 'last_at': r['updated_at'] if r else None}
+        if k == 'sv':
+            g |= {'flights': _num(p.get('flights'), int), 'hours': round(_num(p.get('hours')), 2), 'pilots': _num(p.get('pilots'), int),
+                  'drones': _num(p.get('drones'), int), 'pilot': p.get('pilot') or None, 'last_flight_at': p.get('last_flight_at') or None,
+                  'last_version': p.get('version') or None}
+        else:
+            levels = p.get('levels') if isinstance(p.get('levels'), dict) else {}
+            g |= {'hi_score': _num(p.get('hiScore') if 'hiScore' in p else p.get('hi_score'), int), 'levels': len(levels),
+                  'parkurs': sum(len(v.get('parkurs') or {}) for v in levels.values() if isinstance(v, dict)), 'coins': _num(p.get('coins'), int)}
+        out[k] = g
+    return out
+
+
+def _games_stats(conn, users):
+    """Üst kartlar: oyun başına kullanıcı (profili olan) sayısı; SIMUMAV için toplam uçuş/saat ve son web paketi sürümü."""
+    sv = [u['games']['sv'] for u in users if u['games']['sv']['has_profile']]
+    rel = conn.execute("SELECT version, created_at FROM web_releases WHERE app = 'sv' ORDER BY id DESC LIMIT 1").fetchone()
+    return {'sv': {'name': GAMES['sv']['name'], 'users': len(sv), 'flights': sum(x['flights'] for x in sv), 'hours': round(sum(x['hours'] for x in sv), 1),
+                   'release': dict(rel) if rel else None},
+            'vf': {'name': GAMES['vf']['name'], 'users': sum(1 for u in users if u['games']['vf']['has_profile']), 'release': None}}
+
+
 @app.get('/api/sm/admin/users')
 def admin_users(request: Request):
     central(request)
@@ -1315,8 +1356,8 @@ def admin_users(request: Request):
         for r in rows:
             apps = _admin_apps(conn, r['id'])
             sm = apps['sm']   # v1 alanları üst düzeyde (eski yönetim ekranı)
-            users.append(dict(r) | {'apps': apps, 'sync_enabled': int(sm['sync_enabled']), 'lib_version': sm['lib_version'] or None,
-                                    'lib_size': sm['lib_size'] or None, 'lib_updated': sm['lib_updated'],
+            users.append(dict(r) | {'apps': apps, 'games': _admin_games(conn, r['id']), 'sync_enabled': int(sm['sync_enabled']),
+                                    'lib_version': sm['lib_version'] or None, 'lib_size': sm['lib_size'] or None, 'lib_updated': sm['lib_updated'],
                                     'app_sessions': sum(x['app_sessions'] for x in apps.values()),
                                     'downloads': sum(x['downloads'] for x in apps.values())})
         stats = {'users': len(rows), 'active': sum(1 for r in rows if r['status'] == 'AKTIF'),
@@ -1326,7 +1367,8 @@ def admin_users(request: Request):
                  'apps': {k: {'name': m['name'], 'release': release_public(latest_release(conn, k)),
                               'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE app = ?', (k,)).fetchone()[0],
                               'users': sum(1 for x in users if x['apps'][k]['app_sessions'] or x['apps'][k]['downloads'])}
-                          for k, m in APPS.items()}}
+                          for k, m in APPS.items()},
+                 'games': _games_stats(conn, users)}
     return {'users': users, 'stats': stats}
 
 
@@ -1342,7 +1384,8 @@ def admin_user(uid: int, request: Request):
                                           'ORDER BY last_seen DESC', (uid,))]
         downloads = [dict(x) for x in conn.execute('''SELECT d.at, d.app, d.kind, d.ip, r.version FROM downloads d LEFT JOIN releases r ON r.id = d.release_id
                                                        WHERE d.user_id = ? ORDER BY d.id DESC LIMIT 50''', (uid,))]
-        return {'user': dict(u), 'apps': _admin_apps(conn, uid), 'library': library_meta(conn, uid, 'sm'), 'sessions': sessions, 'downloads': downloads}
+        return {'user': dict(u), 'apps': _admin_apps(conn, uid), 'games': _admin_games(conn, uid), 'library': library_meta(conn, uid, 'sm'),
+                'sessions': sessions, 'downloads': downloads}
 
 
 @app.put('/api/sm/admin/users/{uid}')

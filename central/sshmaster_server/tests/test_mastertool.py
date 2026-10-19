@@ -496,6 +496,21 @@ def main():
         assert g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': 999999, 'profile': {}}).status_code == 404
         assert g.put('/api/vf/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {}}).status_code == 401   # yalnız sv
         assert g.get('/api/sv/profile', headers=SV).json()['profile'] == {'flights': 3, 'hours': 1.5}
+        # Merkez › Mastertool: SIMUMAV sunucusunun yazdığı özet admin yanıtında games.sv; VOLFAI profili (hiScore/levels.parkurs) games.vf
+        g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {
+            'pilot': 'Eski', 'pilots': 2, 'drones': 3, 'flights': 7, 'hours': 2.25, 'last_flight_at': '2026-10-18T10:00:00', 'version': '1.4.0', 'updated_at': 'x'}})
+        assert g.put('/api/vf/profile', headers=VF | W, json={'profile': prof | {'coins': 38}}).json()['ok']   # son vf PUT'u 'big' idi; oyun profili geri
+        au = c.get('/api/sm/admin/users', headers=ADMIN).json()
+        eski = next(u for u in au['users'] if u['id'] == uid)
+        sv_g = eski['games']['sv']
+        assert sv_g['has_profile'] and sv_g['flights'] == 7 and sv_g['hours'] == 2.25 and sv_g['pilots'] == 2 and sv_g['drones'] == 3 and sv_g['pilot'] == 'Eski' \
+            and sv_g['last_flight_at'] == '2026-10-18T10:00:00' and sv_g['last_version'] == '1.4.0' and sv_g['last_at'], sv_g
+        vf_g = eski['games']['vf']
+        assert vf_g['has_profile'] and vf_g['hi_score'] == 12480 and vf_g['levels'] == 1 and vf_g['parkurs'] == 1 and vf_g['coins'] == 38, vf_g
+        gs = au['stats']['games']
+        assert gs['sv']['users'] == 1 and gs['sv']['flights'] == 7 and gs['sv']['hours'] == 2.2 and gs['vf']['users'] == 1, gs
+        assert c.get(f'/api/sm/admin/users/{uid}', headers=ADMIN).json()['games']['sv']['flights'] == 7
+        assert all(not u['games']['sv']['has_profile'] for u in au['users'] if u['id'] != uid)
         acc3 = c.get('/api/mt/account', headers={'Authorization': SV['Authorization']})
         assert acc3.status_code == 401   # account yalnız web çerezi (Bearer ile değil); SIMUMAV /me kullanır
         r = g.options('/api/sv/me', headers={'Origin': 'https://simumav.com', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization'})

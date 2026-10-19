@@ -67,7 +67,7 @@ def mastertool_tickets(a):
 
 def main():
     env = dict(os.environ, SSHM_DATA_DIR=SD, SSHM_ENV_FILE=os.path.join(SD, 'x'), VEILOX_ENV_FILE=os.path.join(SD, 'y'), SSHM_MAIL_TEST='1',
-               SSHM_CENTRAL_SECRET='ic-anahtar', SSHM_SECURE_COOKIE='0')
+               SSHM_CENTRAL_SECRET='ic-anahtar', SSHM_SECURE_COOKIE='0', SIMUMAV_MT_SHARED_SECRET='sv-gizli')
     srv = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'sshm.main:app', '--port', str(PORT), '--log-level', 'warning'],
                            cwd=os.path.join(ROOT, 'central', 'sshmaster_server'), env=env)
     try:
@@ -90,6 +90,15 @@ def main():
             det = a.get(f"/api/central/sshm/users/{u['id']}").json()
             assert det['user']['status'] == 'AKTIF' and det['user']['note'] == 'test', det
             assert a.post(f"/api/central/sshm/users/{u['id']}/reset-mail").json()['sent'] == 'reset'
+            # oyun kullanımı (SIMUMAV sunucusunun hesap servisine yazdığı özet) vekil yanıtında games + stats.games
+            assert det['games']['sv']['has_profile'] is False and det['games']['vf']['has_profile'] is False
+            assert httpx.put(B + '/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': u['id'], 'profile': {
+                'pilot': 'Kullanıcı Bir', 'pilots': 1, 'drones': 2, 'flights': 5, 'hours': 1.5, 'last_flight_at': '2026-10-19T09:00:00', 'version': '1.4.0'}}).status_code == 200
+            d = a.get('/api/central/sshm/users').json()
+            sv = d['users'][0]['games']['sv']
+            assert sv['has_profile'] and sv['flights'] == 5 and sv['hours'] == 1.5 and sv['pilots'] == 1 and sv['drones'] == 2 and sv['last_version'] == '1.4.0', sv
+            assert d['stats']['games']['sv'] == {'name': 'SIMUMAV', 'users': 1, 'flights': 5, 'hours': 1.5, 'release': None} and d['stats']['games']['vf']['users'] == 0, d['stats']['games']
+            assert a.get(f"/api/central/sshm/users/{u['id']}").json()['games']['sv']['flights'] == 5
             # uygulama lisansı (FTP Masters kapat / aç)
             assert a.put(f"/api/central/sshm/users/{u['id']}", json={'apps': {'fm': 'KAPALI'}}).json()['ok']
             det = a.get(f"/api/central/sshm/users/{u['id']}").json()

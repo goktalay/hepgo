@@ -1115,6 +1115,8 @@ def _tar_dogrula(path, version):
                     raise Err(422, 'unsafe_archive', f'Pakette {TAR_MAX_UYE} üyeden fazla girdi var')
                 ad = m.name.replace('\\', '/')
                 parcalar = [p for p in ad.split('/') if p not in ('', '.')]
+                if not parcalar and m.isdir():   # `tar -C . .` paketlerinde kök girdisi "./" — zararsız, atla
+                    continue
                 if ad.startswith('/') or '..' in parcalar or ad.startswith('~') or not parcalar or (len(parcalar[0]) == 2 and parcalar[0][1] == ':'):
                     raise Err(422, 'unsafe_archive', f'Pakette geçersiz yol: {ad[:80]}')
                 if m.issym() or m.islnk() or m.isdev() or m.isfifo() or not (m.isfile() or m.isdir()):

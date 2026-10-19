@@ -153,3 +153,48 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
    mastertool.download › Oyunlar listesinde SIMUMAV (ikon `static/brand/simumav.svg|png`, tanıtım bağlantısı simumav.com).
 5. Dışarıdan: `https://simumav.com/` tanıtım 200, `/app` oturumsuz → tanıtım/giriş; `/api/meta` 200; MP TCP portu dış IP'den
    yalnız kilitli IP ile.
+
+### 6.1 Yayın akışı (HEPGO → goktalay/simumav → mastertool.download → sunucu)
+
+- **Kaynak HEPGO deposudur.** `tools/simumav_export.py [--dest ~/mt-work/simumav] [--version X.Y.Z] [--dry-run]` SIMUMAV çalışır
+  ağacını üretir: manifest (`app/simumav/**`, flightsim çekirdeği, `static/simumav/**`, `static/js/modules/flightsim*.js`
+  + `replay3d.js` + `flightsim_g3d.js`, `static/vendor/three|xterm/**`, `run-simumav.sh`, `deploy/simumav/**`, `docs/simumav.md`,
+  `tests/test_simumav*`) + AST ile çözülen `from . import` zinciri + JS göreli import zinciri (+ `/vendor/<ad>/` başvuruları).
+  `app/main`, `app/db`, `app/config`, `app/feed`, `app/drone_hub`, `app/flightlog`, `app/flight_analysis` gibi HEPGO'ya özgü
+  modüller zincirde çıkarsa **UYARI verilir ve kopyalanmaz** — çekirdek bunları `app/simumav/bridge.py` ile (ör. `sys.modules`
+  enjeksiyonu ya da çekirdekte `try: from . import db` yedekleri) almalıdır. `./api.js` kopyalanmaz (`simapi.js`, §2).
+  Üretilenler: `requirements.txt` (yalnız gerçekten import edilen üçüncü parti paketler, HEPGO sürüm kısıtlarıyla; uvicorn her
+  zaman), `VERSION`, `README.md`, `.gitignore`. Hedefte `.git`, `.github`, `scripts`, `CHANGELOG.md` korunur, geri kalanı silinir.
+  Test: `tests/test_simumav_export.py`.
+- **goktalay/simumav** (main): `git tag vX.Y.Z && git push origin vX.Y.Z` → `.github/workflows/release.yml` (ubuntu, python 3.12):
+  pip, pyflakes + `node --check`, `python -m tests.test_simumav` (SITL yok), `simumav-X.Y.Z.tar.gz` (deterministik tar; `.github`,
+  `scripts`, `dist`, `.venv`, `.env*` hariç; `VERSION` içinde) + `.sha256`, ≤ 95 MB denetimi, GitHub Release (softprops v2),
+  `scripts/upload-mastertool.sh` → hesap servisi. `ci.yml` her push/PR'da pyflakes + node --check + testler.
+- **Sunucu (root):** `deploy/simumav/hepgo-simumav-deploy.path` `data/releases/sv/latest` değişimini izler →
+  `hepgo-simumav-deploy.service` → `deploy/simumav/deploy.sh`: sha256 → gzip/yol/symlink denetimi → `/opt/hepgo/simumav.new`
+  → `.venv` (requirements hash değiştiyse pip) → `simumav.prev` yedeği → `rsync -a --delete --exclude .venv --exclude .env`
+  → `chown -R root:root` → `systemctl restart hepgo-simumav` → `curl --unix-socket /run/hepgo/simumav.sock http://x/api/meta`
+  200 değilse **önceki sürüme geri döner**. Günlük `/var/log/hepgo-simumav-deploy.log`. `.env` (`/opt/hepgo/simumav/.env`,
+  `EnvironmentFile`) hiç dokunulmaz. Ayrıntı `deploy/simumav/README.md`.
+
+### 6.2 Hesap servisi ucu: `POST /api/sv/web-releases` (çekirdek ajanı yazar; sözleşme bağlayıcı)
+
+- Kimlik: `X-Release-Key` başlığı; `settings.RELEASE_KEYS['sv'] = os.environ.get('SIMUMAV_RELEASE_KEY', '')`;
+  `hmac.compare_digest`; anahtar tanımsız ya da uyuşmuyorsa 403 (`_release_auth` kalıbı; merkez oturumu da geçerli).
+- Form (multipart): `version` (zorunlu; `VERSION_RE`, baştaki `v` atılır → aksi 422 `invalid_version`), `package` (zorunlu;
+  dosya ≤ **95 MB** → aksi 422 `too_large`/413; ilk 2 bayt `1f 8b` gzip imzası → aksi 422 `not_gzip`), `sha256` (zorunlu; hex 64;
+  sunucuda hesaplananla eşleşmeli → aksi 422 `bad_sha256`).
+- İçerik denetimi (`tarfile`, açılmaz, yalnız listelenir): her üye adı normalize edilir; mutlak yol, `..` bileşeni, sembolik/sert
+  bağ (`issym()/islnk()`), aygıt/fifo üyesi → 422 `unsafe_archive`. Kökte (`VERSION` ya da `./VERSION` ya da tek kök klasör
+  altında) `VERSION` üyesi okunur ve `version` ile eşleşmeli → aksi 422 `version_mismatch`. `requirements.txt` ve `run-simumav.sh`
+  yoksa 422 `incomplete`.
+- Aynı sürüm varsa **409 `exists`** (dosya ve DB kaydı dokunulmaz). Kayıt: `data/releases/sv/<v>/simumav-<v>.tar.gz` +
+  `simumav-<v>.tar.gz.sha256` (`<sha>  simumav-<v>.tar.gz` biçimi) — hepgo kullanıcısı 0644; `web_releases(id, app, version,
+  file, size, sha256, created_at, created_by)` tablosu (INSERT; `UNIQUE(app, version)`); son olarak `data/releases/sv/latest`
+  dosyasına `<v>\n` **atomik** yazılır (`latest.tmp` + `os.replace`) — path unit bunu izler. Hata halinde sürüm klasörü silinir,
+  `latest` değişmez.
+- Yanıt 201 `{ok, version, sha256, size}`. `GET /api/sv/web-releases/latest` → `{version, sha256, size, created_at}` (açık; dışarıdan
+  doğrulama için). Oran sınırı: anahtarlı uçta 10/dk/IP.
+- İsteğe bağlı parçalı uç `POST /api/sv/web-releases/{version}/part` (`file, part, parts, sha256`; `/api/{a}/releases/{version}/{kind}`
+  kalıbı; son parçada yukarıdaki denetimlerin tümü). `scripts/upload-mastertool.sh` paket > 90 MB ise bunu kullanır; v1'de paket
+  küçük kalmalı (vendor three ~2 MB, xterm ~0.3 MB), uç yoksa büyük paket yüklemesi başarısız olur.

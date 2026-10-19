@@ -46,6 +46,11 @@ def main():
             pg.screenshot(path=str(OUT / '01-acilis.png'))
             pg.wait_for_timeout(2500)
             pg.screenshot(path=str(OUT / '02-acilis-sonra.png'))
+            # açılış: dört çözünürlükte dron/başlık çakışma denetimi (dron izdüşümü metin bloğunun sağında olmalı)
+            for w, h in ((1440, 900), (1920, 1080), (1280, 720), (390, 844)):
+                c2 = b.new_context(viewport={'width': w, 'height': h}, locale='tr-TR'); p2 = c2.new_page()
+                p2.goto(base + '/?lang=tr', wait_until='networkidle'); p2.wait_for_selector('#hero3d.on', state='attached', timeout=60000); p2.wait_for_timeout(3000)
+                p2.screenshot(path=str(OUT / f'01-acilis-{w}x{h}.png')); c2.close()
             # kaydırma bölümleri
             for i, sec in enumerate(['modules', 'physics', 'fpv', 'cta'], start=3):
                 pg.evaluate(f"document.getElementById('{sec}').scrollIntoView({{block: 'start', behavior: 'instant'}})")

@@ -79,8 +79,10 @@ p { margin: 0; }
 .hero-vignette { position: absolute; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 60% at 50% 50%, transparent 40%, rgba(5, 7, 15, .75) 100%),
   linear-gradient(180deg, rgba(5, 7, 15, .5), transparent 30%, transparent 70%, var(--bg) 100%); }
 .hero-copy { position: relative; z-index: 1; width: min(1160px, 92vw); padding-top: 14vh; }
+.hero-copy::before { content: ""; position: absolute; inset: -10% 25% -12% -12%; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(ellipse at 35% 55%, rgba(5, 7, 15, .78) 0%, rgba(5, 7, 15, .45) 45%, transparent 72%); }
 .hero-copy .lead { text-shadow: 0 2px 18px rgba(0, 0, 0, .8); }
-.hero-copy h1 { background: linear-gradient(90deg, #fff 0%, #cfeeff 40%, var(--cyan) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; }
+.hero-copy h1 { background: linear-gradient(90deg, #fff 0%, #cfeeff 40%, var(--cyan) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 4px 22px rgba(0, 0, 0, .85)); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 2rem; }
 .scroll-hint { position: absolute; bottom: 1.6rem; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: .75rem; letter-spacing: .3em; text-transform: uppercase; text-decoration: none; display: grid; justify-items: center; gap: .4rem; }
 .scroll-hint i { width: 1px; height: 44px; background: linear-gradient(var(--cyan), transparent); animation: drop 1.8s ease-in-out infinite; }

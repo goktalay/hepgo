@@ -108,7 +108,7 @@ export function startHero(canvas, { reduced = false } = {}) {
   const particles = makeParticles(); scene.add(particles);
   const drone = makeDrone(); scene.add(drone.group);
   const trailL = new Trail(scene, AMBER, 110), trailR = new Trail(scene, AMBER, 110);
-  const tmp = new THREE.Vector3(), mouse = { x: 0, y: 0 }, target = { x: 0, y: 0 };
+  const tmp = new THREE.Vector3(), look = new THREE.Vector3(), mouse = { x: 0, y: 0 }, target = { x: 0, y: 0 };
 
   function resize() {
     const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
@@ -141,10 +141,22 @@ export function startHero(canvas, { reduced = false } = {}) {
     trailR.push(tmp.set(-1.9, .1, 1.9).applyMatrix4(drone.group.matrixWorld));
     // kamera: yavaş dolly (geriden yaklaş), hafif yörünge + fare parallax
     mouse.x += (target.x - mouse.x) * .04; mouse.y += (target.y - mouse.y) * .04;
-    const dolly = 24 - Math.min(11, t * .5) + (camera.aspect < 1 ? 9 : 0);   // dikey ekranda daha geriden
+    const narrow = camera.aspect < 1;           // dikey ekran: dron küçük ve başlığın üstünde
+    const dolly = 26 - Math.min(8, t * .4) + (narrow ? 12 : 0);
     camera.position.set(dx + Math.sin(t * .18) * 4 + mouse.x * 3, dy + 3.5 + mouse.y * 1.2, dz + dolly);
-    const narrow = camera.aspect < 1;           // dikey ekran: dron üst yarıda, metnin üstünde kalmasın
-    camera.lookAt(dx - (narrow ? 1.5 : 7.5), dy - (narrow ? 5 : .3), dz - 8);   // yatay: dron kadrajın sağ üçte birinde (metin solda)
+    // Kadraj kilidi: dron ekranda sabit NDC hedefinde (yatay: sağ üçte bir, başlık satırının üstü; dikey: üst orta).
+    // Metin bloğu sol ~%60'ı kaplar; salınım/parallax kamerayı oynatır, hedef izdüşüm ise sabit kalır.
+    const NX = narrow ? 0.05 : 0.58, NY = narrow ? 0.55 : 0.5;
+    look.set(dx, dy, dz); camera.lookAt(look);
+    for (let i = 0; i < 2; i++) {               // iki düzeltme adımı: dronun izdüşümünü hedefe getir
+      camera.updateMatrixWorld();
+      const p = tmp.set(dx, dy, dz).project(camera);
+      const d = camera.position.distanceTo(drone.group.position), tanv = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const ex = (p.x - NX) * d * tanv * camera.aspect, ey = (p.y - NY) * d * tanv;
+      const right = tmp.setFromMatrixColumn(camera.matrixWorld, 0).clone(), up = tmp.setFromMatrixColumn(camera.matrixWorld, 1).clone();
+      look.addScaledVector(right, ex).addScaledVector(up, ey);
+      camera.lookAt(look);
+    }
     // arazi periyodik: kamera sarınca arazi sabit kalır (periyot = PERIOD); parçacıklar akar
     const pp = particles.geometry.attributes.position;
     for (let i = 0; i < pp.count; i++) {

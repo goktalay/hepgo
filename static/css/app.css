@@ -9806,3 +9806,44 @@ html[dir="rtl"] .fs-nav .fs-back-ico { display: inline-block; transform: scaleX(
   .rp-side { display: none; position: static; max-height: 60dvh; }
   .rp-side.open { display: flex; }
 }
+
+/* Uçuş Simülatörü — §23 güç ve yakıt: sihirbaz bölümü (iki sütun: Motor · Elektronik batarya), göstergeler, simülasyon hızı kapsülü */
+.fs-power .fs-pw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; margin-top: 6px; }
+.fs-power .fs-pw-col h4.fs-sub-h { margin: 0 0 6px; }
+.fs-pw-row { display: grid; grid-template-columns: minmax(120px, 1fr) 150px; align-items: center; gap: 4px 12px; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+.fs-pw-row:last-child { border-bottom: 0; }
+.fs-pw-row[hidden] { display: none; }
+.fs-pw-lbl { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.fs-pw-src { font-size: 10px; text-transform: none; letter-spacing: 0; }
+.fs-pw-src:empty { display: none; }
+.fs-pw-ctl { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
+.fs-pw-ctl .fs-pw-inp { width: 104px; text-align: right; font-variant-numeric: tabular-nums; }
+.fs-pw-ctl i { font-style: normal; font-size: 12px; color: var(--muted); min-width: 34px; }
+.fs-pw-hint { grid-column: 1 / -1; margin-top: -2px; line-height: 1.35; }
+.fs-pw-info { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--primary-soft); color: var(--text); font-variant-numeric: tabular-nums; }
+.fs-pw-warn { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: rgba(251, 191, 36, .14); border: 1px solid rgba(251, 191, 36, .45); color: var(--text); }
+.fs-pw-warn[hidden] { display: none; }
+@media (max-width: 900px) { .fs-power .fs-pw-grid { grid-template-columns: 1fr; } }
+.fs-v.err { color: #f87171; font-weight: 700; }
+.fs-row-fuel[hidden] { display: none; }
+/* simülasyon hızı kapsülü: üst çubukta (koyu zemin) ve panelde */
+.fs-speed-pill { gap: 2px; }
+.fs-speed-pill .fs-speed-btn { min-width: 34px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+.fs-nav .fs-speed-pill { margin-left: 2px; }
+.fs-nav .fs-speed-pill .btn { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); color: #e6e9ef; }
+.fs-nav .fs-speed-pill .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.fs-nav .fs-speed-pill.fast .btn.primary { background: #f59e0b; border-color: #f59e0b; color: #1a1300; }
+.fs-pn-speed { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fs-pn-speed .fs-pn-speed-pill .btn { padding: 3px 8px; font-size: 10.5px; }
+.fs-pn-speed .fs-pn-speed-pill.fast .btn.primary { background: #f59e0b; border-color: #f59e0b; color: #1a1300; }
+.fs-pn-tile.kotu .fs-pn-tile-v { color: var(--gt-kotu); }
+/* rapor: güç ve yakıt bölümü */
+.fs-rp-power .fs-rp-pw-tiles { margin: 6px 0 10px; }
+.fs-rp-tile.red b { color: #ef4444; }
+.fs-rp-kv.red b { color: #ef4444; }
+/* kayıt tablosu: yakıt/batarya sütunları + Detaylı kutusu onayı */
+.fs-runs .fs-runs-fuel, .fs-runs .fs-runs-elec { white-space: nowrap; }
+.fs-runs .fs-runs-fuel .badge, .fs-runs .fs-runs-elec .badge { display: block; margin-bottom: 2px; width: max-content; }
+.fs-runs-speed { margin-left: 4px; }
+.fs-pop-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 0 2px; }
+.fs-pop-check > .small { flex-basis: 100%; padding-left: 24px; margin-top: -4px; }

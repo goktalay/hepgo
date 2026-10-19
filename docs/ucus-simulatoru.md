@@ -20,11 +20,14 @@ birebir uçar. HEPGO, SITL ile Mission Planner arasında MAVLink köprüsüdür 
 | `GET /meta` | `{types:[{key,name,binary}], centers:[{id,name,lat,lon,alt,location_name}], world_defaults, limits:{max_sessions,max_minutes}, host, google3d:{enabled}}` — `host`: Mission Planner'a verilecek adres (`SIM_PUBLIC_HOST` env, yoksa istek Host başlığının ana makinesi); `google3d.enabled`: `GOOGLE_MAPS_API_KEY` tanımlı (§10) |
 | `GET /g3d-key` | `{key}` — Google Map Tiles API anahtarı (§10); `Cache-Control: no-store`; kip kapalıysa 404; salt okuyan izleyici de alır (karoları çizmek için) |
 | `GET /sessions` | Kiracının açık oturumları `[session]` |
-| `POST /sessions` | `{type, center_id, world, model?}` → `session` (201). `model`: `{id, orient?}` ya da kimlik dizgesi (§12; eksikse tipin varsayılanı; eski `airframe: caymaz|delta` → `builtin:…` eşlenir). Hatalar: 400 `invalid`, 409 `limit`, 503 `sitl` (ikili/port yok) |
+| `POST /sessions` | `{type, center_id, world, model?, drone_id?, rec?, power?}` → `session` (201). `model`: `{id, orient?}` ya da kimlik dizgesi (§12; eksikse tipin varsayılanı; eski `airframe: caymaz|delta` → `builtin:…` eşlenir). `power` (§23): `{max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}` — eksikler dron kaydı önerisi → tip varsayılanı. Hatalar: 400 `invalid`, 409 `limit`, 503 `sitl` (ikili/port yok) |
 | `/models…` | Görsel model kütüphanesi (§12): liste, yükleme, tasarım dosyasından ekleme, GLB/küçük resim PUT-GET, yönelim, silme |
 | `GET /sessions/{id}` | `session` |
 | `DELETE /sessions/{id}` | durdurur (SITL kapanır, UDP kapanır) → `{ok}` |
-| `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`; sabit kanatta yönteme göre dizi + WS `launch` olayları, §13), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad) → `{ok}` |
+| `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`; sabit kanatta yönteme göre dizi + WS `launch` olayları, §13), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad), `speed` (`params.factor` 1 \| 2 \| 4 \| 8 → SITL `SIM_SPEEDUP` canlı, §23) → `{ok}` |
+| `GET /power-defaults?type&drone_id` | §23 sihirbaz "Güç ve yakıt": `{type, defaults, suggested, from_drone, limits, stock_max_ms, thr_mul, thr_scale_supported, speedups}` |
+| `GET /drones` | sihirbaz dron kaydı listesi; her satırda `power` (dron kaydındaki güç/yakıt önerisi, §23) |
+| `GET/PUT /api/drone/drones/{id}/sim-power` | dron kaydı güç/yakıt seçenekleri (`drone_sitl_options`: max_speed_ms, fuel_l, fuel_km_per_l_last, elec_cells, elec_mah, elec_w_last; PUT yalnız gönderilen alanlar, `null` siler; §23) |
 
 `session` = `{id, type, model:{id,name,source,type,orient,glb_url,thumb_url,has_prop,ready}, airframe, center:{id,name,lat,lon,alt}, world,
 state: 'BASLIYOR'|'HAZIR'|'HATA'|'KAPANDI', udp_port, host, created_at, owner:{id,name}, gcs:{connected:bool, addr:"ip:port"|null, since}, sitl:{pid, port, error}}`
@@ -147,7 +150,8 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları) + altında **Model** bölümü (§12: görsel kart ızgarası, yükleme, sistemdeki dosyalardan
 ekleme, yönelim paneli; kayıt kipinde log listesinin altında, log tipine göre). 2. Merkez seçimi (liste; ad, konum adı, koordinat; merkez yoksa Rotalar'a bağlantı).
 3. Dünya: kip (Gerçek arazi / Google 3B (fotogerçekçi; yalnız `meta.google3d.enabled`, §10) / Prosedürel, §9), kaydırıcılar/seçimler
-(yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 3b. **Kayıt** kutusu
+(yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 3a. **Güç ve yakıt**
+kutusu (§23; `createPowerSection`): azami hız (yalnız uçak) · yakıt L + km/L · batarya S / mAh / W — dron kaydından öneri rozeti. 3b. **Kayıt** kutusu
 (`recOptionsBox`, §17/§19; yalnız yazma izni): ☐ Ekran kaydı al (video) › ☐ Şirketten Haberler'de paylaş · ☐ Uçuş logunu (.bin) kaydet (yalnız canlı).
 4. Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya verisi) → oturum ekranı.
 Açık oturum varsa liste: devam et / bitir; "Yarım kayıt" ve "Kayıtlarım" kutuları (§17). 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
@@ -1173,3 +1177,101 @@ Sanal kumanda açıkken 1–5/C çalışır (C `RC_KEYS` dışında).
   sanal kumanda FPV'de görünür, O, C döngüsü, gimbal kamerası HUD çalışır, yenileme sonrası kamera FPV kalır (fs.cam), tam ekran, kayıtta FPV + HUD;
   konsol hatası yok.
 
+
+## 23. Güç ve yakıt — azami hız, simülasyon hızı, yakıt ve elektronik batarya (`app/flightsim_power.py`, `static/js/modules/flightsim_power.js`; SITL yaması `SIM_PLN_THR_MUL` `tools/sitl/0002-sim-pln-thr-mul.patch`; tablo `drone_sitl_options`, `drone_sim_runs.power…`)
+Kullanıcı isteği (özet): **(2)** "CAYMAZ'da 222cc karbüratörlü motor var; sim'de hız yarı yarıya düşük kalıyor; tam gazda 45 m/s olmalı. Sihirbazda Azami
+hız alanı (dron kaydından; CAYMAZ 45)." **(3)** "Oturum içinde 1×/2×/4×/8× simülasyon hızı → SIM_SPEEDUP canlı; telemetri/kayıt/.bin/replay SITL zamanıyla
+tutarlı; video gerçek zaman." **(4)** "Yakıt (L) ve tüketim (km/L); her kamera kipinde yakıt göstergesi; biterse yalnız kırmızı uyarı, uçuş sürer; raporda mesafe,
+harcanan yakıt, ölçülen km/L → dron kaydına." **(5)** "Elektronik batarya: hücre, mAh, saatlik W; her kipte gösterge; sonunda ortalama W drona yazılır; HUD'daki
+pil alanı artık bu bataryayı göstersin." Tüm göstergeler kayıttan oynatmada da görünsün; sihirbazda "Güç ve yakıt" bölümü (CAYMAZ varsayılanları 45 m/s, 5 L,
+25 km/L, 4S 10000 mAh 30 W); Simülasyon Kayıtları tablosunda yakıt/batarya sütunları (Detaylı kipte).
+
+### 23.1 Azami hız — SITL fiziği ve ArduPilot sınırları
+**Araştırma (ArduPilot Plane-4.7.2 kaynağı, `libraries/SITL/SIM_Plane.cpp`):** `plane` modelinde itki = gaz (0…1) × `thrust_scale`, `thrust_scale = m·g /
+hover_throttle` = 2 kg · 9,81 / 0,7 = **28 N**; sürükleme = ½ρV²S·(c_drag_p + CL²/(π·e·AR)) (S 0,45 m², b 1,88 m, c_drag_p 0,1, e 0,9; `default_coefficients`).
+Seviye uçuşta T = D çözümü: **tam gaz ≈ 31,8 m/s** (`flightsim_power.plane_tam_gaz_hizi`). Stok SITL'de bu hızı değiştiren **parametre yok**: `SIM_ENGINE_MUL`
+yalnız `SIM_ENGINE_FAIL` maskesindeki motorlara uygulanır ve plane modelinde hiç okunmaz; `-jet/-heavy` son ekleri kütleyi değiştirir (hız 102 m/s "jet" 22 kg);
+JSON katsayı dosyası (`plane:model.json`) aerodinamiği değiştirir ama uçuş karakterini de bozar (c_drag_p). Kullanıcı tarafında ise hız ayrıca ArduPlane'in
+`AIRSPEED_MAX` (varsayılan 22 m/s; FBWB/CRUISE/AUTO hedef üst sınırı, TECS) ve `THR_MAX` sınırlarıyla kesilir — "yarı yarıya düşük" gözlemi bu ikisinin
+bileşimidir (otomatik gaz modlarında 22 m/s hedefi + stok fizik 31,8 m/s tavanı).
+
+**Çözüm (iki katman):**
+1. **SITL yaması `SIM_PLN_THR_MUL`** (`tools/sitl/0002-sim-pln-thr-mul.patch`, 0001 üstüne; `SITL::var_info3` idx 3, float, varsayılan 1): `SIM_Plane::calculate_forces`
+   itkiyi `thrust_scale × mul` ile ölçekler; gürültü terimi ölçeksiz gaz oranıyla hesaplanır; diğer modeller (copter, quadplane'in rotorları) etkilenmez (quadplane
+   ileri itkisi plane modeli olduğundan etkilenir). Tam gaz seviye hızı √mul ile ölçeklenir → `thr_mul_icin(v) = D(v) / T(1)`: **45 m/s → 1,993**. İkili desteği
+   `drone_sitl.hiz_olcegi_destegi` (dosyada `\0PLN_THR_MUL\0` imzası; `sanal_montaj_destegi` kalıbı). Yamalı ikililer: `/opt/hepgo/sitl/bin-new`
+   (`.version`: `…+hepgo-sim-srv-rev+pln-thr-mul (fb773567 + 0001 + 0002)`); PROD'a yerleştirme kullanıcı onayıyla (README).
+2. **ArduPilot parametreleri** (ilk kalp atışında, kayıtlılardan SONRA; `SimSession._hiz_yaz` → `flightsim_power.hiz_parametreleri`): `AIRSPEED_MAX = v`,
+   `AIRSPEED_CRUISE = v × oran` (oran = dronun kayıtlı `AIRSPEED_CRUISE/AIRSPEED_MAX`; yoksa ArduPlane varsayılanı 12/22 → 45 için 24,5; kayıtlı `AIRSPEED_MIN`'in
+   altına inmez), `THR_MAX 100`, yamalı ikilide `SIM_PLN_THR_MUL`. Yankılar `param_izleyici.yukleme_isaretle` ile kalıcı kayda GİRMEZ (oturum ayarı; kullanıcı
+   sonra MP/panelden değiştirirse kaydedilir). `SIM_PLN_THR_MUL` `drone_params.HARIC_ADLAR`'da. Uçak tiplerinde azami hız yoksa bile `SIM_PLN_THR_MUL 1`
+   yazılır (eeprom'da önceki oturumdan kalan çarpan silinsin). Yamasız ikilide sarı olay: "SITL ikilisi itki ölçeği desteklemiyor; azami hız yalnız ArduPilot
+   sınırlarına uygulandı (stok fizik tam gazda ≈ 32 m/s verir)". Kopterlerde `max_speed_ms` yok sayılır (null).
+`session.speed_scale = {supported, thr_mul, thr_mul_sitl (PARAM_VALUE'dan gözlenen), stock_ms}`.
+
+### 23.2 Simülasyon hızı (`cmd speed {factor}` → `SIM_SPEEDUP`)
+Panel "Sim" grubunda ve üst çubukta (nav) **1×/2×/4×/8×** kapsülü (`createSpeedPill`; yazma izni; seçili düğme `tele.speedup` ile eşitlenir — SITL'in
+bildirdiği PARAM_VALUE). Gerçek SITL'de `PARAM_SET SIM_SPEEDUP` canlı; sahte kipte kinematik adımı `dt × speedup` (saat `sure_ms` hızlı akar). `reset`
+sonrası yeni SITL'e seçili hız yeniden yazılır (`speedup_istek`). Zaman tutarlılığı: telemetri `tbm` (SITL time_boot_ms) hızlı akar → istemci enterpolasyonu
+(§5 `net.clock` kaynak saat/gerçek zaman oranı) ve yakıt/batarya entegrasyonu SITL zamanını izler; `.bin` DataFlash zaten SITL saatiyle → kayıttan oynatma süresi
+simülasyon süresidir; ekran kaydı (video) gerçek zamandadır. WS `tele` yayını hızlandırılmış kipte **duvar saatinde 50 Hz tavanında** kalır (`_tele_yay`:
+`TELE_TBM_KAPI` SITL ms kapısı 4×'te 200 Hz yayına dönerdi). **Not:** Mission Planner da aynı SITL'e bağlıdır; MP de hızlandırılmış uçuşu görür (MP'nin
+HUD saati SITL zamanı kadar hızlı akar) — olay şeridinde belirtilir. Rapor/kayıt: `power.speedup = {max, changes, last}`, `drone_sim_runs.speedup_max`,
+tabloda sonuç rozetinin yanında "4×".
+
+### 23.3 Yakıt ve elektronik batarya modeli (`flightsim_power.GucDurumu` ↔ `createPowerSim`)
+- **Yakıt** (yalnız armed): `L/dk = (v_km/h ÷ 60) ÷ (km/L) × (0,5 + 0,5·gaz)` — mesafe tabanlı + gaz kolu ağırlıklı (gaz %100'de 2×, %0'da ½). Kalan menzil =
+  kalan L × km/L. `fuel_l = 0` → gösterge yok (elektrikli; kopter varsayılanı). Ölçülen km/L = kat edilen km ÷ harcanan L (≥ 0,3 km ve ≥ 0,02 L).
+- **Elektronik batarya** (telemetri aktığı sürece; SITL'in `SIM_BATT`/`SYS_STATUS` pili DEĞİL): Wh = mAh/1000 × hücre × 3,7; harcama = W × saat + servo
+  aktivitesi (Σ|Δpwm| µs × 0,0005 J; 1000 µs tam sapma 0,5 J). Anlık W = son 30 sn kayan pencere → kalan süre = kalan Wh ÷ W. Gösterge gerilimi kestirimi
+  hücre × (3,5 + 0,7·kalan oran). Ortalama W = harcanan Wh ÷ saat (≥ 60 s).
+- **Zaman kaynağı** SITL `time_boot_ms` (speedup'ta hızlı; `reset`te saat sıfırlanır → `sifirla_zaman`, seviyeler korunur: tank/batarya değişmedi); > 5 sn boşluk
+  entegre edilmez. Sahte kipte kinematik saati.
+- **Bitiş:** yalnız uyarı — kırmızı olay (severity 2 "YAKIT BİTTİ — … simülasyon sürüyor" / "ELEKTRONİK BATARYA BİTTİ — …") + WS `{t:'warn', kind:'fuel_empty'|'elec_empty'}`
+  (ön yüz toast); `tele.fuel.empty` / `tele.elec.empty`; HUD/OSD/panel kırmızı; uçuş ve SITL etkilenmez.
+- **Yayın:** her `tele` karesine `fuel: {l, pct, lpm, range_km, empty} | null`, `elec: {wh, pct, w, min_left, cells, v, empty} | null`, `speedup`;
+  `session.power` (ayarlar), `session.power_state` (anlık). **Göstergeler:** sağ HUD "Batarya" satırı elektronik bataryayı (yoksa SITL pili) ve "Yakıt" satırı
+  (L · % · menzil); harekât paneli BATARYA karosu (%, V, kalan süre, nS) + yeni **YAKIT** karosu; gimbal HUD (`flightsim_hud.js`) `BAT 16.2V 61% 120min` +
+  `FUEL 4.14L 83% 104km` + uyarı kutuları (BATARYA BİTTİ / YAKIT BİTTİ / DÜŞÜK YAKIT); FPV OSD (`flightsim_fpv_osd.js` `osdBattery/osdFuelText/osdWarnings`)
+  pil bloğu + yakıt satırı + çubuklar + uyarılar (DÜŞÜK YAKIT < 20 %, YAKIT BİTTİ, DÜŞÜK PİL < 25 %, BATARYA BİTTİ). Serbest/yer kameralarında sağ HUD ve panel.
+- **Kayıttan oynatma ve sahte kip:** sunucu yakıt alanı üretmez; `ReplaySession.power` = kaydın canlı oturumundaki ayarlar (`drone_sim_runs.power.settings`,
+  `bin_log_id` = log; dış .bin'de null → gösterge yok). Ön yüz `createPowerSim(session.power)` ile karelerden (yer hızı, gaz, armed, servo) oynatıcı zamanıyla aynı
+  modeli hesaplar; atlama/baştan → `rebuild(data, t)` (≤ 4 Hz örnekleme ile baştan o ana entegre). Sahte kip (`?mock=1`) aynı yol (`tele.ts`).
+- **Özet/kayıt/dron:** `summary.power = {settings, dist_m, time_s, armed_s, max_speed_seen, fuel{start_l, used_l, left_l, pct, km_per_l, empty_t}, elec{wh_cap,
+  wh_used, wh_left, pct, w_avg, empty_t, cells, mah, w_set}, speedup{max, changes, last}}`; rapor modalında **"⚡ Güç ve yakıt"** bölümü (karolar: mesafe,
+  harcanan yakıt, ölçülen km/L, batarya Wh, ortalama W; bitiş anları kırmızı) ve paylaşım metninde satır (`rapor_metni` / `powerLines`). `drone_sim_runs`:
+  `power` JSON + `fuel_used_l, fuel_km_per_l, elec_wh, elec_w_avg, speedup_max` (ALTER ile eklenir); tabloda Detaylı kutusundaki **"Yakıt / batarya sütunları"**
+  onayı (`localStorage fs.runs.power`) Sonuç'tan sonra iki sütun açar. Kapanışta geçerli ölçümler dron kaydına yazılır (`flightsim_runs.kaydet` →
+  `drone_params.secenek_yaz`: `fuel_km_per_l_last`, `elec_w_last`) + olay "Dron kaydına yazıldı (sonraki simülasyonda önerilir): …".
+
+### 23.4 Sihirbaz "Güç ve yakıt" ve dron kaydı
+Kart (`createPowerSection`; Dünya'dan sonra, Kayıt'tan önce; kayıt kipinde gizli): iki sütun **Motor** (Azami hız m/s — yalnız uçak; Yakıt L; Tüketim km/L) ·
+**Elektronik batarya** (Hücre sayısı S; Kapasite mAh; Saatlik tüketim W); bilgi satırı (azami hız km/h + stok SITL, yakıt menzili, batarya Wh ≈ dk); yamasız ikilide sarı
+not. Değerler `GET /power-defaults?type&drone_id` ile gelir: dron kaydındaki seçenekler (`drone_sitl_options`: `max_speed_ms, fuel_l, fuel_km_per_l_last, elec_cells,
+elec_mah, elec_w_last`) "dron kaydından" rozetiyle, yoksa tip varsayılanı (CAYMAZ / kopter yakıtsız). Tip ya da dron kaydı değişince yenilenir; kullanıcı yazınca
+rozet kalkar. Başlat → `power` gövdesi. Dron kaydı uçları `GET/PUT /api/drone/drones/{id}/sim-power` (PUT yalnız gönderilenler; `null` siler; sınır dışı 400;
+yazma `drone.drones`). `GET /api/drone/sim/drones` satırlarına `power` önerisi eklendi.
+
+### 23.5 Doğrulama
+- `tests/test_flightsim.py guc_testleri`: saf model (31,85 m/s stok; 45 → 1,993; hız parametreleri/oran; L/dk; Wh; servo J; eşikler), `dogrula` (sınırlar, kopter),
+  `GucDurumu` sentetik 60 sn (0,05 L tank 34,7 sn'de biter; mesafe/süre; özet; reset), `power-defaults`, `sim-power` GET/PUT (403/400/404, null siler), `/drones`
+  önerisi, start gövdesi (400/422), sahte oturumda `speed` (400'ler; 8× → `tele.speedup`, SITL saati gerçek zamandan hızlı), küçük tank/batarya → `warn fuel_empty/
+  elec_empty` + kırmızı olaylar, uçuş sürer; summary/run satırı alanları; ölçümler dron kaydına → sonraki öneri; sabit kanatta `_hiz_yaz` sahte SITL'e AIRSPEED_MAX/
+  CRUISE/THR_MAX (yükleme işareti), itki ölçeği yok → `SIM_PLN_THR_MUL` yazılmaz + sarı olay.
+- `node tests/test_flightsim_power.mjs` (15): JS saf model (sunucuyla birebir sayılar), `createPowerSim` adım/bitiş/rebuild, metinler, OSD pil/yakıt alanları ve
+  uyarılar, hız kapsülü. `test_flightsim_fpv.mjs` (12) geçer (osdWarnings imzası genişletildi).
+- Gerçek SITL (`tools/sitl/dogrula_guc.py <ikili dizini> hiz,speedup,yakit`; sunucu betikten PID ile açılır/kapanır): ölçümler aşağıda.
+**Ölçüm (gerçek SITL arduplane 4.7.2, prosedürel dünya, rüzgâr 0, tekerlekli kalkış 120 m, FBWA + RC gaz %100, pitch nötr, 70 sn; `/tmp/flsim/guc/`):**
+- ÖNCE — yamasız ikili (`/opt/hepgo/sitl/bin`, yalnız 0001): SITL `AIRSPEED_MAX 45, AIRSPEED_CRUISE 24.5, THR_MAX 100`, `SIM_PLN_THR_MUL` yok (sarı olay);
+  tam gazda **yer hızı 32,7 m/s, hava hızı 29,4 m/s** (stok fizik tavanı ≈ 31,8; hafif tırmanış) — kullanıcının "yarı yarıya düşük" gözlemi.
+- SONRA — yamalı ikili (`bin-new`, 0001 + 0002): `SIM_PLN_THR_MUL 1.9931` yazıldı/okundu; tam gazda **yer hızı 47,6 m/s (son 25 sn ort.; en yüksek 48,0), hava hızı
+  41,9 m/s**, ~4 m/s tırmanışta → hedef 45 m/s **±%10 içinde** (yer +5,8 %, hava −6,9 %). Uçuş kararlı (FBWA, 523 m AGL'ye tırmandı).
+- Simülasyon hızı 4× (`cmd speed 4` → `SIM_SPEEDUP 4` PARAM_VALUE yankısı, `session.speedup 4`): ARM'den SITL saatinde **120 sn → gerçek 30,0 sn (oran 4,00)**;
+  WS tele yayını duvar saatinde 50 Hz tavanında. `.bin` kaydı 6,0 MB, analiz `flight_s 123,0 / duration_s 123,3` (SITL zamanı), kayıttan oynatma oturumu
+  `duration_s 123,26 · 1849 kare` ve `session.power` kaydın ayarlarıyla doldu (göstergeler karelerden). Rapor `power.speedup {max 4, changes 2}`,
+  `power.armed_s 121,3` (sim) ↔ `flight.duration_s 42` (gerçek; rapor süresi duvar saatidir — simülasyon süreleri `power` altındadır).
+- Yakıt/batarya (0,15 L @ 10 km/L; 1S 300 mAh @ 60 W; 4×): REST `power_state` 3 sn'de bir — yakıt 90 % → 65 → 43 → 24 → 3 → **0 (empty)**, menzil 1,35 km → 0;
+  batarya 71 % → 53 → 35 → 16 → **0 (empty)**, anlık W 60–76 (servo katkısı). Özet: `fuel.empty_t 69,4 s`, `elec.empty_t 66,5 s` (sim), harcanan 0,15 L, mesafe 2,3 km →
+  ölçülen **15,35 km/L**, ortalama **49,1 W**; kırmızı olaylar + `warn` çerçeveleri; `crash` kaydı yok, uçuş kapanışa dek armed sürdü (power.time_s 81,3 ↔ armed_s 72,3 —
+  fark kalkış öncesi). Kapanışta dron kaydına `fuel_km_per_l_last 15,35`, `elec_w_last 49,1` yazıldı; sonraki `power-defaults` bunları önerdi; `drone_sim_runs`
+  satırı `fuel_used_l 0,15 · fuel_km_per_l 15,35 · elec_wh 1,11 · elec_w_avg 49,1 · speedup_max 4`.

@@ -32,6 +32,7 @@ class SessionIn(BaseModel):
     model: Optional[Union[dict, str]] = None   # görsel model: {id, orient?} ya da kimlik dizgesi ('builtin:caymaz', '12'); eksikse tipin varsayılanı
     drone_id: Optional[int] = None   # §14 isteğe bağlı: Dron Envanteri kaydı — harekât panelinde telemetri bu dronun adıyla akar (yoksa "Simülatör #N")
     rec: Optional[dict] = None       # §19 kayıt seçenekleri: {bin: bool} — SITL DataFlash .BIN kaydı, kapanışta Uçuş Logları'na (yalnız sitl)
+    power: Optional[dict] = None     # §23 güç ve yakıt: {max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}; eksikler dron kaydı önerisi → tip varsayılanı
 
 
 class ModelPatch(BaseModel):
@@ -157,10 +158,12 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
         if body.drone_id is not None and not drone:
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
+        pw = s.power
+        detay += f" · güç: {pw.get('max_speed_ms') or '-'} m/s, {pw.get('fuel_l'):g} L @ {pw.get('fuel_km_per_l'):g} km/L, {pw.get('elec_cells')}S {pw.get('elec_mah'):g} mAh {pw.get('elec_w'):g} W"
     else:
         raise HTTPException(400, 'mode sitl | replay olmalı')
     if client:
@@ -209,8 +212,34 @@ def session_live(sid: int, request: Request, user=Depends(sim_user)):
 
 @router.get('/drones')
 def sim_drones(user=Depends(sim_user), conn=db.DB):
-    """§14 sihirbaz "Dron kaydı (isteğe bağlı)": aktif envanter kayıtları (kod, ad, model, protokol)."""
-    return db.rows(conn.execute('SELECT id, code, name, model, protocol, status FROM drone_drones WHERE active = 1 ORDER BY code COLLATE NOCASE'))
+    """§14 sihirbaz "Dron kaydı (isteğe bağlı)": aktif envanter kayıtları (kod, ad, model, protokol) + §23 güç/yakıt önerisi (`power`:
+    dron kaydındaki son ölçümler/ayarlar; boş sözlük = tip varsayılanı)."""
+    from .. import drone_params
+    rows = db.rows(conn.execute('SELECT id, code, name, model, protocol, status FROM drone_drones WHERE active = 1 ORDER BY code COLLATE NOCASE'))
+    for r in rows:
+        try:
+            r['power'] = drone_params.guc_onerisi(r['id'], conn)
+        except Exception:   # noqa: BLE001
+            r['power'] = {}
+    return rows
+
+
+@router.get('/power-defaults')
+def power_defaults(type: Optional[str] = None, drone_id: Optional[int] = None, user=Depends(sim_user), conn=db.DB):   # noqa: A002
+    """§23 sihirbaz "Güç ve yakıt" bölümü: tip varsayılanı (CAYMAZ 45 m/s · 5 L · 25 km/L · 4S 10000 mAh 30 W; kopter yakıtsız) + dron kaydı önerisi
+    + sınırlar + stok SITL tam gaz hızı + ikilinin itki ölçeği desteği."""
+    from .. import drone_params, drone_sitl, flightsim_power
+    tip = type if type in flightsim.TIP_ADLARI else 'sabit_kanat'
+    oneri = {}
+    if drone_id is not None:
+        try:
+            oneri = drone_params.guc_onerisi(drone_id, conn)
+        except Exception:   # noqa: BLE001
+            oneri = {}
+    out = flightsim_power.dogrula({}, tip, oneri)
+    return {'type': tip, 'defaults': flightsim_power.varsayilanlar(tip), 'suggested': out, 'from_drone': oneri, 'limits': {k: list(v) for k, v in flightsim_power.SINIRLAR.items()},
+            'stock_max_ms': round(flightsim_power.plane_tam_gaz_hizi(), 1), 'thr_mul': flightsim_power.thr_mul_icin(out['max_speed_ms']) if out.get('max_speed_ms') else None,
+            'thr_scale_supported': drone_sitl.hiz_olcegi_destegi(tip) if flightsim.SITL_ENABLED else False, 'speedups': list(flightsim_power.SPEEDUPS)}
 
 
 @router.get('/sessions/{sid}')

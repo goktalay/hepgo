@@ -104,7 +104,8 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   `builtin:heli` 1,5 m prosedürel (gövde, kollar, motorlar, iniş takımı, gimbal; pervaneler gaz ile döner, yüksek devirde bulanık disk). VTOL = gövde + 4 dikey
   pervane. Kütüphane modeli (tasarım/yüklenen) → GLB fetch + yönelim matrisi + ölçek + `drone.ground` sınır kutusu altından (§12). Seyir ışıkları (sol kırmızı / sağ yeşil / kuyruk beyaz strobe, gece halo), yalnız dron gölge düşürür. Yönelim: roll/pitch/yaw →
   quaternion (NED→ENU dönüşümü dikkat). `caymaz.gltf` (eski basit model) yalnız Cesium oynatma/canlı izlemede (replay3d.js) kullanılır.
-- Kameralar (tuşlar 1–4): **Takip** (3. şahıs, OrbitControls hedefi dron), **Dron kamerası** (FPV, burun; gimbal pitch ↑↓),
+- Kameralar (tuşlar 1–5, **C** döngü; seçim `localStorage fs.cam` ile oturumlar/kayıtlar arası kalıcı): **Takip** (3. şahıs, OrbitControls hedefi dron),
+  **FPV** (`pilot`; pilot gözü — burna sabit, gövdeyle döner, ufuk yatar, OSD; §22), **Gimbal kamerası** (`fpv`; burun, gimbal pitch ↑↓/tekerlek, askeri HUD §10),
   **Serbest** (WASD + fare), **Yer** (merkezden, dronu izler). Çarpışma: `z < h(x,y) + 0.3` ya da bina kutusuyla kesişme ve hız > 1 m/s
   → kırmızı "ÇARPIŞMA" bandı + `cmd crash`; oturum "Sıfırla" ile yeniden başlar.
 - HUD (3B üstünde, sağ): mod, arm, yükseklik (AGL/MSL), hava/yer hızı, dikey hız, yön, GPS/uydu, batarya, gaz, RC çubukları, rüzgâr;
@@ -309,7 +310,7 @@ gerçek topoğrafyayı görür (Mission Planner gerekmez). `sim_terrain.terrain_
 `Location::offset`); çözülmüş karolar bellekte LRU (`COZ_LIMIT` 48 ≈ 10 MB); 56 parça (896 örnek) soğuk 0,14 sn, sıcak 0,02 sn.
 
 ## 10. Askeri tarz FPV HUD (`static/js/modules/flightsim_hud.js`)
-Kamera kipi **Dron kamerası (2)** seçilince 3B'nin üstünde tam ekran şeffaf bir canvas katmanı (`.fs-mhud`, canvas 2D, devicePixelRatio,
+Kamera kipi **Gimbal kamerası (3; kod adı `fpv`, eski adı "Dron kamerası")** seçilince 3B'nin üstünde tam ekran şeffaf bir canvas katmanı (`.fs-mhud`, canvas 2D, devicePixelRatio,
 her rAF) açılır; diğer kiplerde kapanır ve çizim döngüsü durur. Açıkken sahnede `fs-mhud-on` sınıfı: sağdaki uçuş veri paneli ve ÇARPIŞMA
 bandı gizlenir (HUD kapsar). **H** aç/kapa (kapatınca panel geri gelir), **Shift+H** renk (yeşil fosfor `#9cff6a` → beyaz → amber);
 alt çubukta FPV'de görünen "HUD" düğmesi; tercihler `localStorage` (`fs.mhud.on`, `fs.mhud.color`). Tüm çizgiler/metinler ince siyah dış
@@ -643,7 +644,7 @@ aynı (mission_upload/start 65 sn, bileşik 35 sn, diğer 12 sn); hata → konso
 `reset` ve sabit kanat `takeoff` (düzenek). Kayıt (replay) ve sahte (`?mock=1`) kiplerinde hub yoktur (`hub:false`): İŞLEMLER kartı yok, DURUM/MOD/
 KOMUT karoları pasif; PFD/telemetri/konsol çalışır.
 **Davranış.** Alt çubuk **Panel** düğmesi / **P** → kart gizli (sade görünüm: eski `.fs-hud` + `.fs-cmds` + olay şeridi); tercih localStorage
-`fs.ops.on`. Dron kamerası (2/FPV): `.fs-fpv` → kart gizli, askeri HUD (H) kalır. Kart başlık şeridinden sürüklenir (`fs.panel.col` {x, y, r};
+`fs.ops.on`. Gimbal kamerası (3, `fpv`) ve FPV (2, `pilot`): `.fs-fpv` → kart gizli; gimbal kamerasında askeri HUD (H), FPV'de OSD (O) kalır (§22). Kart başlık şeridinden sürüklenir (`fs.panel.col` {x, y, r};
 yeniden boyutlanmada sağ kenara göre uygulanır), bölüm katlama `fs.panel.fold` (İŞLEMLER varsayılan katlı), küçült `fs.panel.min`;
 **Yerleşimi sıfırla** hepsini siler. Sanal kumanda (`.rc-on`): kart kısalır (çubukların üstünde kalır). Alt çubuk sarınca `--fs-bar-h`
 ResizeObserver ile güncellenir. ÇARPIŞMA bandı kartın üstünde (z 9). Tuşlar (1–4, H, P, WASD/ok) sayfanın kendi dinleyicilerinde; form alanı
@@ -1063,3 +1064,63 @@ master olmayan kullanıcıda Parametreler-Script düğme görünürlüğü.
 değerleri içerir (eksik olabilir). Script arşivi yalnız SITL çalışma dizininden (`scripts/`, `APM/scripts/`); MAVFTP'nin başka bir kök göstermesi
 hâlinde dizin adı `flightsim_runs.SCRIPT_DIZINLERI`'ne eklenir. Kayıt satırı silinirken video/özet/.bin silinmez (kendi yüzeylerinden silinir).
 Oynat yalnız analizi TAMAM .bin'li kayıtlarda etkindir (kayıt seçeneği kapalı oturumlar oynatılamaz).
+
+## 22. FPV kipi — pilot gözü kamerası (`pilot`; `static/js/modules/flightsim_fpv_osd.js`, 3B `flightsim3d.js`)
+Kullanıcı isteği: mevcut "Dron kamerası" aslında **gimbal/görev kamerası**ydı (eğim ok tuşu/tekerlek, askeri HUD, FOV 78, ufuk sabit); yanına **gerçek FPV**
+(pilot gözü: kamera burna sabit, gövdeyle yatar) istendi. Eski kipin kod adı `fpv` **değişmedi** (CSS `.fs-fpv`, ses, testler); yalnız etiketi
+"Gimbal kamerası" oldu (i18n anahtarı `Dron kamerası` → `Gimbal kamerası`, 6 dil). Yeni kipin kod adı `pilot`, etiketi "FPV".
+
+| Tuş | Kod | Etiket | Kamera | Üst katman | Panel |
+|---|---|---|---|---|---|
+| 1 | `follow` | Takip | OrbitControls, kritik sönümlü yay | — | görünür |
+| 2 | `pilot` | **FPV** | burun + küçük ileri ofset, gövdeyle döner (roll/pitch/yaw tam, **ufuk yatar**), gimbal yok, FOV **120°** (90–150, tekerlek ±5), near **0,05** | **OSD** (`.fs-osd`, O) | kart gizli (`.fs-fpv`), sanal kumanda çubukları görünür |
+| 3 | `fpv` | Gimbal kamerası | burun, gimbal ↑↓/tekerlek (−90…+30), ufuk sabit, FOV 78 | askeri HUD (`.fs-mhud`, H) | kart gizli |
+| 4 | `free` | Serbest | WASD/QE + fare | — | görünür |
+| 5 | `ground` | Yer | merkezden izler, teleobjektif | — | görünür |
+
+**C** kamera döngüsü (`nextCameraMode`: 1→2→3→4→5→1); seçim `localStorage fs.cam` (oturum/kayıt arası kalıcı; `createFlightSim3D opts.camera`).
+Sanal kumanda açıkken 1–5/C çalışır (C `RC_KEYS` dışında).
+
+- **3B (`flightsim3d.js`)**: `pilot` kipinde kamera konumu = gösterilen gövde konumu (kilit/düzenek dahil `drone.group`) + gövde çerçevesinde
+  `(0, nose + back, up)`; **"Pervane/burun görünür"** (`fs.fpv.nose`, varsayılan açık) → `back = −0,08·yarıçap`, `up = 0,05·yarıçap + 0,03` (kopterde birkaç
+  cm: pervane uçları kadrajın kenarında; Caymaz'da ~30 cm geride: gövde ucu altta); kapalı → `+0,02·yarıçap` ileri. Yönelim `drone.group.quaternion × X(90°)`.
+  **Son işleme** (yalnız `pilot`): sahne → `WebGLRenderTarget` (MSAA 4) → tam ekran quad `ShaderMaterial`: hafif **barrel/balıkgözü** (`uv' = c + d·(1 + k·r²)·s`,
+  k 0,12, s köşeleri kadrajda tutar — siyah köşe yok) + **vinyet** (0,28) + analog kipte **doygunluk ×1,35, kontrast 1,08, R↑/B↓** kayması. Ek maliyet tek
+  tam ekran geçiş; diğer kiplerde doğrudan render (maliyet yok). `EffectComposer` vendor'da yok, kendi quad'ı (OrthographicCamera + PlaneGeometry 2×2).
+  **PiP** (`fs.fpv.pip`, varsayılan açık): ayrı `PerspectiveCamera` (FOV 50, takip konumu `followOff × yarıçap`, araziye gömülmez) **20 fps** ile 240×135·dpr
+  render hedefine (gölge haritası yenilenmez), her karede sağ üste (`PIP_SIZE` 240×135, kenar 12 px; `setViewport/setScissor` CSS px) **blit**; tam ekranda
+  aynı. Dışa: `setPilotFov/getPilotFov`, `setFpvAnalog`, `setFpvNose`, `setPip/getPip`, `pipRect()`, `pipStats()`; `opts.camera/pilotFov/fpvAnalog/fpvNose`,
+  `onPilotFov`. `wheel`: `fpv` → gimbal ±3°, `pilot` → FOV ±5° (`fs.fpv.fov`). `dispose` render hedeflerini/materyalleri bırakır.
+- **OSD (`createFpvOsd(stage, ctx, {tr})`)**: askeri HUD'dan ayrı dosya/katman; Betaflight/analog tarzı — beyaz monospace (500/700), ince siyah kontur
+  (`strokeText`), metin ölçümü yok. Yalnız `camMode === 'pilot'` iken çizilir (kendi rAF'ı; diğer kiplerde canvas gizli, döngü durur); açıkken
+  `.fs-stage.fs-osd-on` (sağ veri paneli ve ÇARPIŞMA bandı gizli — OSD kapsar). **Alanlar**: üst sol **mod** + **ARM/DISARM**; üst orta **FLY mm:ss**
+  (canlı: oturum başı `t0`; kayıt: log zamanı `t.t`, altında "▸ REPLAY") — gezinti kapsülünün altına yerleşir (`.fs-nav` ölçülür); üst sağ PiP çerçevesi +
+  "TAKİP" etiketi + **FOV**; orta küçük artı + **yatan yapay ufuk** (`horizonLine`: odak `f = (H/2)/tan(fov/2)`, burun yukarı → ufuk aşağı `f·tan(pitch)`,
+  sağa yatış → sağ uç yukarı; ±10/20° kısa çentikler, ufukla döner; merkezde boşluk); sol **hız km/h** (büyük), sağ **AGL m** (yoksa MSL) + dikey hız ▲/▼;
+  alt sol **pil V + % + çubuk + hücre (nS)** (`battPct`: `tele.batt_pct` varsa o, yoksa gerilimden 3,5→0 %…4,2→100 %/hücre; MP/kayıt bilgisi kutusunun
+  üstüne çıkar, sanal kumanda açıkken satırlar çubukların üstüne); alt orta **RSSI** (`tele.rssi` yoksa "RSSI --"; SITL'de sabit %99 YOK) + **SAT n fix** +
+  lat/lon; alt sağ **HOME mesafe + EVE OKU** (`homeVector`: ENU düz dünya; ok `relBearing = kerteriz − yön`, gövde yönüne göre döner; `tele.home`
+  GPS evi; kayıtta `data.home`); **uyarılar** merkez altında kırmızı yanıp söner (`osdWarnings`): ÇARPIŞMA, DÜŞÜK PİL (< %25), ALÇAK (armed, AGL < 10 m,
+  yer hızı > 3 m/s), RSSI DÜŞÜK (< 30). **O** OSD aç/kapa (`fs.osd.on`). Yönelim 3B'nin render ettiği `sim.getPose()` (enterpolasyonlu).
+- **Analog efekt** (`fs.fpv.analog`, varsayılan KAPALI): OSD katmanında tarama çizgisi deseni (1×3 px, bir kez) + rastgele yatay kayma/parazit şeritleri ve
+  benekler, yoğunluk `analogNoise(rssi, evMesafesi)` (RSSI varsa %60'ın altında doğrusal 0→1; yoksa eve uzaklıkla 3 km'de 0,6); renk doygunluğu 3B
+  gölgelendiricisinde (`sim.setFpvAnalog`).
+- **Alt çubuk**: FPV'de tek kapsül **"FPV 120° ▾"** (`.fs-fpv-ctl`, ses menüsü kalıbı `.fs-audio-menu`): OSD · Analog efekt · PiP takip kamerası ·
+  Pervane/burun görünür (onay kutuları) + FOV kaydırıcısı (90–150) + ipucu; dışarı tıklama kapatır. Gimbal kamerasında eski "Gimbal −10°" etiketi + HUD düğmesi.
+  Kayıt kipinde oynatma çubuğuyla birlikte tek satıra sığar (1360 px'te alt çubuk 57 px).
+- **Ses (§16)**: `fpvParams(airspeed, mode)` — `pilot`: süzgeç açık (20 kHz), master **×1,3** (`PILOT_BOOST`), rüzgâr `min(hız/35, 1)·0,8` (frekans
+  350 + 45·hız), kaynak dinleyicide; `fpv`: eski (900 Hz, 0,5); diğer kipler boost 1, rüzgâr 0.
+- **Kayıt/oynatma (§8)**: aynı 3B örneği → FPV ve OSD kayıtta da seçilir (kareler `tele` biçiminde; süre log zamanı). **Ekran kaydı (§17)**:
+  `getDisplayMedia` ekranı yakalar (OSD DOM üstünde → kayda girer); yedek yolda birleşik tuvale `.fs-mhud` ve `.fs-osd` (`getOsdCanvas`) de çizilir.
+  Kayıt başlatmak kamerayı değiştirmez.
+- **Sahte kip teşhisi**: `#/drone/sim/mock-1?mock=1&bank=20` → sahte seyir dönüşü yarıçapı `V²/(g·tan 20°)` (kopterde de yatış) — FPV görüntüleri için;
+  `netsim=delay0` ile `window.__fsSim` (`getCamera/getPilotFov/getPip/pipStats`).
+- **Performans**: OSD çizimi ≈ **1,1 ms/kare** (SwiftShader, 1360×820; `canvas.__osd.stats()`); PiP 20 fps'e sınırlı (`pipStats().renders`); son işleme tek
+  geçiş. Yazılım WebGL'de (headless shell) rAF kare süresi takip 490 ms / FPV 760 ms / FPV+PiP 850 ms — SwiftShader'a özgü; gerçek GPU'da 60 fps hedef.
+- **Testler**: `node tests/test_flightsim_fpv.mjs` (12): kip sırası/etiket/döngü, FOV/PiP sabitleri, eve vektör/ok açısı, ufuk çizgisi (pitch/roll/FOV),
+  pil yüzdesi/hücre, uyarılar, analog parazit, saat, tercihler (localStorage), ses `pilot` (saf + sahte grafik). Mevcut `test_flightsim_audio.mjs` (27),
+  `test_flightsim_launch.mjs` (5) ve `tests.test_flightsim` geçer. Playwright (`/tmp/flsim/fpv/fpv_shots.py`, port 8990, HEPGO_SITL=0, sahte kip; görüntüler
+  `/tmp/flsim/fpv/shots/`): etiket sırası, FPV (OSD görünür, HUD/panel gizli, roll ≈ 18°, PiP), tekerlek FOV 110/150 sınır, menü (analog/PiP, dışarı tık),
+  sanal kumanda FPV'de görünür, O, C döngüsü, gimbal kamerası HUD çalışır, yenileme sonrası kamera FPV kalır (fs.cam), tam ekran, kayıtta FPV + HUD;
+  konsol hatası yok.
+

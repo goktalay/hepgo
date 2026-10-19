@@ -1,56 +1,78 @@
-# SIMUMAV — kurulum (PROD; docs/simumav.md §6)
+# SIMUMAV sunucu kurulumu ve otomatik yayın
 
-Sözleşme ve güvenlik kuralları: `docs/simumav.md` (§7 bağlayıcı). Kod `app/simumav/`, ayrı ASGI uygulaması; HEPGO ERP ile veri paylaşmaz.
+Belge sözleşmesi: `docs/simumav.md` §1 (yayın), §6 (yayın ve doğrulama), §7 (güvenlik). PROD'a uygulama **kullanıcı onayıyla**.
 
-## 1. Veri dizini ve .env
+## Dosyalar
 
+| Dosya | Görev |
+|---|---|
+| `hepgo-simumav.service` | Uygulama servisi (User=hepgo, `SIMUMAV_UDS=/run/hepgo/simumav.sock`, `ExecStart=run-simumav.sh`) — çekirdek ajanı yazar |
+| `hepgo-simumav-deploy.path` | root; `/opt/hepgo/sshmaster/data/releases/sv/latest` değişince `hepgo-simumav-deploy.service`'i tetikler |
+| `hepgo-simumav-deploy.service` | root oneshot; `deploy.sh`'ı çalıştırır |
+| `deploy.sh` | sha256 → güvenli aç → venv/pip → yedek (`simumav.prev`) → rsync → restart → sağlık → gerekirse geri dön |
+| `cloudflared-ingress.yml` | `simumav.com`, `www.simumav.com` → `unix:/run/hepgo/simumav.sock` parçası |
+
+## Akış (uçtan uca)
+
+1. Geliştirici goktalay/simumav deposunda `vX.Y.Z` etiketi atar → GitHub Actions `release.yml`: testler, `simumav-X.Y.Z.tar.gz`
+   + sha256, GitHub Release, `scripts/upload-mastertool.sh` → `POST https://mastertool.download/api/sv/web-releases`
+   (`X-Release-Key: $SIMUMAV_RELEASE_KEY`).
+2. Hesap servisi (hepgo-sshmasters, hepgo kullanıcısı) paketi doğrular (anahtar, sürüm, gzip, boyut ≤ 95 MB, iç `VERSION`,
+   yol gezinme/symlink reddi, sha256), `data/releases/sv/<v>/simumav-<v>.tar.gz` + `.sha256` yazar, `web_releases` tablosuna
+   kaydeder ve `data/releases/sv/latest` dosyasına sürümü **atomik** (tmp + rename) yazar.
+3. `hepgo-simumav-deploy.path` (root) `latest` değişimini görür → `deploy.sh`:
+   - `latest` → `<v>` → `releases/sv/<v>/simumav-<v>.tar.gz`; sha256 dosyasıyla doğrular; aynı sürüm kuruluysa çıkar.
+   - gzip imzası, `tar -t` ile mutlak yol / `..` / sembolik-sert bağ taraması; `/opt/hepgo/simumav.new`'e açar; `VERSION` eşleşmeli.
+   - `.venv` yoksa `python3 -m venv` + pip; `requirements.txt` sha256'sı `.venv/.requirements.sha256`'dan farklıysa `pip install -r`.
+   - Mevcut kurulum `/opt/hepgo/simumav.prev`'e (venv ve .env hariç) yedeklenir; `rsync -a --delete --exclude .venv --exclude .env`
+     ile `/opt/hepgo/simumav`'a geçer; `chown -R root:root` (hepgo yalnız okur); `.env` 640 root:hepgo korunur.
+   - `systemctl restart hepgo-simumav`; 30 sn içinde `curl --unix-socket /run/hepgo/simumav.sock http://x/api/meta` 200 → TAMAM.
+   - Değilse journal son 30 satır günlüğe, `simumav.prev` geri rsync, restart, tekrar sağlık; sonuç günlüğe.
+   - Günlük: `/var/log/hepgo-simumav-deploy.log`.
+
+## İlk kurulum (root; PROD'da onayla)
+
+```bash
+# 1) hesap servisi anahtarı: /opt/hepgo/sshmaster/.env → SIMUMAV_RELEASE_KEY=<GitHub secret ile aynı>; systemctl restart hepgo-sshmasters
+# 2) uygulama servisi ve env
+install -d -o root -g root /opt/hepgo/simumav
+install -m 640 -o root -g hepgo /dev/null /opt/hepgo/simumav/.env   # GOOGLE_MAPS_API_KEY, SIMUMAV_SECRET, SIMUMAV_DATA_DIR=/opt/hepgo/simumav-data,
+                                                                  # SIMUMAV_MT_URL=https://mastertool.download, SIMUMAV_MT_INTERNAL=http://127.0.0.1:8095
+install -d -o hepgo -g hepgo -m 750 /opt/hepgo/simumav-data
+cp hepgo-simumav.service hepgo-simumav-deploy.path hepgo-simumav-deploy.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable hepgo-simumav                      # ilk paket gelince deploy.sh başlatır
+systemctl enable --now hepgo-simumav-deploy.path
+# 3) ilk paketi elle yaymak için (etiket atılmışsa):
+bash deploy.sh /opt/hepgo/sshmaster/data/releases/sv/<v>/simumav-<v>.tar.gz
+# 4) cloudflared ingress parçası + systemctl restart cloudflared; DNS CNAME ve Google referrer kullanıcı ekler (§6).
 ```
-sudo mkdir -p /opt/hepgo/simumav-data && sudo chown hepgo:hepgo /opt/hepgo/simumav-data && sudo chmod 750 /opt/hepgo/simumav-data
-```
 
-`/opt/hepgo/caymazbuild/.env` dosyasına (gerçek değerleri buraya YAZMAYIN; yalnız anahtar adları):
+`hepgo-simumav.service` içinde `EnvironmentFile=/opt/hepgo/simumav/.env` ve `WorkingDirectory=/opt/hepgo/simumav` beklenir;
+`.env` yayın sırasında hiç dokunulmaz (rsync `--exclude .env`, yedeğe de alınmaz).
+
+## Ortam değişkenleri (`/opt/hepgo/simumav/.env`; gerçek değer yazılmaz)
 
 | Anahtar | Açıklama |
-| --- | --- |
-| `SIMUMAV_SECRET` | 32+ bayt rastgele (dev imzaları vb.) |
-| `SIMUMAV_MT_URL` | `https://mastertool.download` (tarayıcının giriş yaptığı hesap servisi) |
-| `SIMUMAV_MT_INTERNAL` | `http://127.0.0.1:8095` (sunucu-sunucu belirteç doğrulaması) |
-| `SIMUMAV_MT_APP` | `sv` (hesap servisindeki oyun kodu) |
-| `SIMUMAV_MT_SHARED_SECRET` | hesap servisi `.env`'deki `SIMUMAV_MT_SHARED_SECRET` ile AYNI (sv_profiles yazımı, `X-Simumav-Secret`) |
-| `SIMUMAV_PUBLIC_HOST` | MP bağlantı satırında gösterilen sunucu adı/IP (ör. sunucunun genel IP'si) |
-| `SIMUMAV_MAX_FLIGHTS` | eşzamanlı uçuş (varsayılan 6) |
-| `SIMUMAV_MP_PORT_BASE` / `SIMUMAV_MP_PORT_COUNT` | MP TCP aralığı (varsayılan 15600 / 400 → 15600–15999) |
-| `GOOGLE_MAPS_API_KEY` | ortak anahtar (zaten var; referrer listesine `simumav.com` eklenir) |
-| `HEPGO_SITL_DIR` | `/opt/hepgo/sitl/bin` (servis dosyasında da var) |
+|---|---|
+| `SIMUMAV_DATA_DIR` | `/opt/hepgo/simumav-data` (simumav.db, `core/` çekirdek verisi, `files/`) |
+| `SIMUMAV_SECRET` | 32+ bayt rastgele |
+| `SIMUMAV_MT_URL` / `SIMUMAV_MT_INTERNAL` | `https://mastertool.download` / `http://127.0.0.1:8095` (sunucu-sunucu belirteç doğrulaması) |
+| `SIMUMAV_MT_APP` | `sv` |
+| `SIMUMAV_MT_SHARED_SECRET` | hesap servisi `.env`'deki aynı değer (`sv_profiles` yazımı, `X-Simumav-Secret`) |
+| `SIMUMAV_PUBLIC_HOST` | MP bağlantı satırında gösterilen sunucu adı/IP |
+| `SIMUMAV_MAX_FLIGHTS` · `SIMUMAV_FLIGHT_MINUTES` | eşzamanlı uçuş (6) · uçuş süresi (≤ 45) |
+| `SIMUMAV_MP_PORT_BASE` · `SIMUMAV_MP_PORT_COUNT` | MP TCP aralığı (15600 / 400 → 15600–15999); ufw: `allow 15600:15999/tcp` |
+| `SIMUMAV_UDP_BASE` | iç SITL↔MP UDP aralığı (14550…); DIŞA KAPALI |
+| `GOOGLE_MAPS_API_KEY` | referrer listesine `simumav.com` eklenir |
+| `HEPGO_SITL_DIR` | `/opt/hepgo/sitl/bin` (arducopter/arduplane ikilileri) |
+| `SIMUMAV_ALLOWED_ORIGINS` | ek CSRF kökenleri (isteğe bağlı) |
 
-İsteğe bağlı: `SIMUMAV_UDP_BASE` (iç SITL↔MP UDP aralığı, varsayılan 14550; dışa KAPALI), `SIMUMAV_ALLOWED_ORIGINS` (ek CSRF kökenleri).
-`SIMUMAV_DEV_LOGIN` PROD'da ASLA 1 yapılmaz.
+`SIMUMAV_DEV_LOGIN` PROD'da ASLA 1 yapılmaz. Hesap servisi tarafı: `SIMUMAV_MT_SHARED_SECRET`, `SIMUMAV_RELEASE_KEY`.
 
-## 2. Servis
+## Doğrulama
 
-```
-sudo cp deploy/simumav/hepgo-simumav.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now hepgo-simumav
-sudo systemctl status hepgo-simumav --no-pager; curl --unix-socket /run/hepgo/simumav.sock http://x/api/meta
-```
-
-## 3. cloudflared
-
-`deploy/simumav/cloudflared-ingress.yml` parçasını `/etc/cloudflared/config.yml` ingress'ine ekle → `sudo systemctl restart cloudflared`.
-Cloudflare DNS: CNAME `simumav.com`, `www` → tünel (proxied) — kullanıcı panelden.
-
-## 4. Güvenlik duvarı
-
-Mission Planner TCP aralığı yalnız aralık olarak açık: `sudo ufw allow 15600:15999/tcp comment 'SIMUMAV MP'`. UDP 14550–14649 (iç köprü) DIŞA KAPALI kalır.
-
-## 5. Hesap servisi (mastertool.download)
-
-`central/sshmaster_server` güncel sürümü dağıt (`GAMES['sv']`, `sv_profiles`, CORS `https://simumav.com`, `/api/sv/web-releases`), `.env`'e
-`SIMUMAV_MT_SHARED_SECRET` ve `SIMUMAV_RELEASE_KEY` ekle → `sudo systemctl restart hepgo-sshmasters`.
-İkon dosyaları: `static/mt/img/simumav.svg|png|-512.png` (depoda).
-
-## 6. Doğrulama (dışarıdan)
-
-- `https://simumav.com/` 200 (tanıtım), `https://simumav.com/app/` (oturumsuz → tanıtım/giriş), `https://simumav.com/api/meta` 200 (`maps_key` null).
-- Oturum açıp uçuş başlat → `mp.port` → Mission Planner `TCP <sunucu> <port>`; başka bir IP'den aynı porta bağlantı reddedilir.
-- `journalctl -u hepgo-simumav -f`; denetim kayıtları `simumav.db` → `audit` tablosu.
+- `systemctl status hepgo-simumav-deploy.path hepgo-simumav`; `tail -f /var/log/hepgo-simumav-deploy.log`
+- `curl --unix-socket /run/hepgo/simumav.sock http://x/api/meta` → `{"version": "<v>", ...}`
+- Dışarıdan `https://simumav.com/api/meta` 200 ve `version` eşit.
+- Geri dönüş testi: bozuk `run-simumav.sh` içeren bir paket → günlükte "GERİ DÖNÜLDÜ", `/api/meta` eski sürümü verir.

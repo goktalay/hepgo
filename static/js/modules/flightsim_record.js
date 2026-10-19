@@ -90,7 +90,7 @@ function restRec() {
 
 // ======================================================================
 // Kayıtçı
-// opts: { sid, tr, getSim (3B: canvas, addFrameHook), getHudCanvas (askeri HUD tuvali ya da null), audio (createEngineAudio nesnesi), displayStream (Başlat'ta
+// opts: { sid, tr, getSim (3B: canvas, addFrameHook), getHudCanvas (askeri HUD tuvali ya da null), getOsdCanvas (FPV OSD tuvali §22 ya da null), audio (createEngineAudio nesnesi), displayStream (Başlat'ta
 //         alınan akış ya da null), text: () => paylaşım metni (kullanıcının dilinde), onEvent(text, sev), rest (test: sahte), MR (test), now (test) }
 // ======================================================================
 export function createRecorder(stage, opts = {}) {
@@ -148,6 +148,8 @@ export function createRecorder(stage, opts = {}) {
         g.drawImage(src, 0, 0, W, H);
         const hud = opts.getHudCanvas?.();
         if (hud && !hud.hidden && hud.width) g.drawImage(hud, 0, 0, W, H);
+        const osd = opts.getOsdCanvas?.();   // §22 FPV OSD (pilot kamerası); kayıt başlarken seçili kamera korunur
+        if (osd && !osd.hidden && osd.width) g.drawImage(osd, 0, 0, W, H);
       } catch { /* tuval henüz boyutsuz */ }
     };
     if (sim.addFrameHook) unhook = sim.addFrameHook(draw);   // render SONRASI aynı turda (buffer henüz temizlenmemiş)

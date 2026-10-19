@@ -44,8 +44,12 @@ def _glb(model_key):
     return None
 
 
+# Pilot karakter SVG'leri: static/simumav/app/img/pilots/p01..p10.svg (/app mount'u) — crew/characters ve pilot kayıtları aynı yolu verir
+PILOT_SVG = '/app/img/pilots/{key}.svg'
+
+
 def pilot_api(p):
-    return {**p, 'is_default': bool(p.get('is_default')), 'svg': f"/brand/crew/{p.get('character', 'p01')}.svg"}
+    return {**p, 'is_default': bool(p.get('is_default')), 'svg': PILOT_SVG.format(key=p.get('character') or 'p01')}
 
 
 def track_api(t):

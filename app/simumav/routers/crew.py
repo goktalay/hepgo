@@ -1,11 +1,12 @@
-"""`/api/crew` — pilotlar (≤ 20) ve 10 karakter (p01 pilot şapkalı erkek; en az 4 kadın). SVG'ler /brand/crew/<key>.svg (ön yüz üretir)."""
+"""`/api/crew` — pilotlar (≤ 20) ve 10 karakter (p01 pilot şapkalı erkek; en az 4 kadın). SVG'ler static/simumav/app/img/pilots/<key>.svg
+(tek doğruluk kaynağı: `common.PILOT_SVG`; /app/img/pilots/<key>.svg)."""
 from typing import Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from .. import auth, bridge, config, db
-from .common import User, kota, pilot_api, sahip
+from .common import PILOT_SVG, User, kota, pilot_api, sahip
 
 router = APIRouter(prefix='/api/crew')
 CHARACTERS = [
@@ -31,7 +32,7 @@ class PilotPatch(BaseModel):
 
 @router.get('/characters')
 def characters(user=User):
-    return {'characters': [{**c, 'svg': f"/brand/crew/{c['key']}.svg"} for c in CHARACTERS]}
+    return {'characters': [{**c, 'svg': PILOT_SVG.format(key=c['key'])} for c in CHARACTERS]}
 
 
 @router.get('')

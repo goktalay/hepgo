@@ -159,6 +159,9 @@ def main():
 
         # ---- crew
         chars = c.get('/api/crew/characters').json()['characters']
+        assert all(ch['svg'] == f"/app/img/pilots/{ch['key']}.svg" for ch in chars), chars   # pilot SVG tek doğruluk kaynağı (common.PILOT_SVG)
+        assert c.get('/api/crew').json()['pilots'][0]['svg'].startswith('/app/img/pilots/')
+        assert c.get('/app/img/pilots/p01.svg').status_code == 200 and c.get('/app', follow_redirects=False).status_code == 307
         assert len(chars) == 10 and chars[0]['key'] == 'p01' and chars[0]['gender'] == 'm' and sum(1 for x in chars if x['gender'] == 'f') >= 4
         assert c.post('/api/crew', json={'name': 'Ayşe', 'character': 'p99'}, headers=H).status_code == 422
         pid = c.post('/api/crew', json={'name': 'Ayşe', 'character': 'p04'}, headers=H).json()['id']
@@ -193,6 +196,14 @@ def main():
         items = [{'seq': 1, 'command': 16, 'frame': 3, 'x': int(40.1002e7), 'y': int(33.4003e7), 'z': 60}]
         r = c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Koridor', 'kind': 'corridor', 'plan': {'items': items}}, headers=H); assert r.status_code == 201, r.text
         mid = r.json()['id']
+        # oyun arayüzü editörünün `route.points` biçimi (lat/lon/alt_rel/cmd) kabul edilir ve bridge.plan_items MAVLink öğelerine çevirir
+        pts = [{'seq': 0, 'cmd': 22, 'lat': t2['lat'], 'lon': t2['lon'], 'alt_rel': 50, 'frame': 3}, {'seq': 1, 'cmd': 16, 'lat': t2['lat'] + 0.001, 'lon': t2['lon'], 'alt_rel': 60, 'frame': 3}]
+        r = c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Editör', 'kind': 'free', 'plan': {'kind': 'free', 'route': {'points': pts}, 'shape': [], 'params': {'alt': 50}}}, headers=H)
+        assert r.status_code == 201, r.text
+        it = bridge.plan_items(r.json()['plan']); assert len(it) == 2 and it[0]['command'] == 22 and it[1]['x'] == int(round((t2['lat'] + 0.001) * 1e7)) and it[1]['z'] == 60, it
+        r = c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Editör uzak', 'kind': 'free', 'plan': {'route': {'points': [{'cmd': 16, 'lat': 41.0, 'lon': 33.4, 'alt_rel': 50}]}}}, headers=H)
+        assert r.status_code == 422 and r.json()['detail']['error'] == 'plan_rejected'
+        assert c.get('/api/drone/routes', headers=H).json() == []
         r = c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Uzak', 'kind': 'free', 'plan': {'items': [{'command': 16, 'x': int(41e7), 'y': int(33.4e7), 'z': 50}]}}, headers=H)
         assert r.status_code == 422 and r.json()['detail']['error'] == 'plan_rejected'
         r = c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Çok', 'kind': 'free', 'plan': {'items': items * 501}}, headers=H); assert r.status_code == 422
@@ -200,7 +211,7 @@ def main():
         assert c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Tur', 'kind': 'fpv_gates', 'plan': {'order': [7], 'laps': 3}}, headers=H).status_code == 422
         assert c.post('/api/missions', json={'track_id': t2['id'], 'name': 'Tur', 'kind': 'fpv_gates', 'plan': {'order': [0], 'laps': 11}}, headers=H).status_code == 422
         assert c.post('/api/missions', json={'track_id': t2['id'], 'name': 'x', 'kind': 'yok', 'plan': {}}, headers=H).status_code == 422
-        assert len(c.get(f"/api/missions?track_id={t2['id']}").json()['missions']) == 2
+        assert len(c.get(f"/api/missions?track_id={t2['id']}").json()['missions']) == 3   # Koridor + Editör + Tur
 
         # ---- sahiplik: ikinci kullanıcı başkasının kayıtlarını göremez (404)
         HV, HVW = oturum(c, 'veli')

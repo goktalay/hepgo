@@ -15,7 +15,7 @@ Kullanım:
     zinciri kapanana dek izlenir. Çözülen modül HEPGO_OZGU kümesindeyse (app/main.py, app/db.py, ...) UYARI verilir ve
     kopyalanMAZ (--include-hepgo ile zorlanabilir) — çekirdek bunları app/simumav/bridge.py ile almalıdır (§1, §7).
   * JS: JS_CEKIRDEK + static/simumav/** taranır; `import ... from './x.js'`, `import('./x.js')`, `export ... from './x.js'`
-    göreli zinciri izlenir. `./api.js` kopyalanmaz (simumav `simapi.js` sağlar, §2). `/vendor/<ad>/` ya da
+    göreli zinciri izlenir. HEPGO `static/js/api.js` kopyalanmaz (simumav `simapi.js` sağlar, §2). `/vendor/<ad>/` ya da
     `../vendor/<ad>/` başvuruları o vendor klasörünü tamamen ekler.
   * requirements.txt: Python dosyalarındaki üçüncü parti üst düzey importlar → PIP_ADI eşlemesi → HEPGO requirements.txt
     satırındaki sürüm kısıtı ile. uvicorn[standard] her zaman (run-simumav.sh), python-multipart Form/File/UploadFile
@@ -47,8 +47,9 @@ MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, '
 # HEPGO'ya özgü app/ modülleri: SIMUMAV ağacına girmemeli (ERP veritabanı/kullanıcı/yetki/akış). Zincirde çıkarsa UYARI.
 HEPGO_OZGU = {'main', 'db', 'config', 'auth', 'feed', 'users', 'rbac', 'permissions', 'tenants', 'mail', 'chat', 'notify',
               'push', 'drone_hub', 'flightlog', 'flight_analysis', 'documents', 'crm', 'hr', 'planner', 'console'}
-# Göreli JS importu kopyalanmaz: simumav kendi api köprüsünü sağlar (static/simumav/app/simapi.js, /sim/api.js yönlendirmesi)
-JS_DISLANAN = {'api.js'}
+# Göreli JS importu kopyalanmaz: YALNIZ HEPGO static/js/api.js (simumav kendi api köprüsünü sağlar: static/simumav/app/simapi.js, /sim/api.js
+# yönlendirmesi). static/simumav/app/core/api.js gerçek bir SIMUMAV dosyasıdır ve kopyalanır.
+JS_DISLANAN = {'static/js/api.js'}
 
 # Hedefte asla silinmeyen girdiler (yayın deposunun kendi dosyaları)
 KORUNAN = {'.git', '.github', 'scripts', 'CHANGELOG.md', 'README.md', '.gitignore', 'VERSION'}
@@ -138,6 +139,7 @@ class Rapor:
     def __init__(self):
         self.uyarilar: list[str] = []
         self.notlar: list[str] = []
+        self.shim: list[str] = []      # HEPGO'ya özgü modül → SIMUMAV shim eşlemesi (tasarım gereği; not/uyarı değil)
         self.py_zincir: dict[str, str] = {}    # modül → kimden geldi
         self.js_zincir: dict[str, str] = {}
         self.vendor: set[str] = set()
@@ -260,7 +262,7 @@ def coz(src: Path, rapor: Rapor, include_hepgo: bool) -> set[Path]:
             app_kok = yol.parent == src / 'app' and yol.name == f'{ad}.py'   # yalnız app/<ad>.py HEPGO'ya özgü olabilir (app/simumav/auth.py değil)
             if app_kok and ad in HEPGO_OZGU and not include_hepgo:
                 if shim_modulu(src, ad) is not None:
-                    rapor.not_(f'app/{ad} ← {kaynak}: SIMUMAV shim ile sağlanır (app/simumav/shim/{ad}.py)')
+                    rapor.shim.append(f'app/{ad} ← {kaynak} → app/simumav/shim/{ad}.py')
                 else:
                     rapor.uyar(f"HEPGO'ya özgü modül zincirde: app/{ad} ← {kaynak} (kopyalanmadı; shim ile sağlanmalı: app/simumav/shim/{ad}.py)")
                 gorulen.add(yol)
@@ -312,13 +314,12 @@ def coz(src: Path, rapor: Rapor, include_hepgo: bool) -> set[Path]:
             if not ref_yol.startswith('.'):
                 continue                                  # çıplak belirteç ya da mutlak URL: dokunma
             hedef = (d.parent / ref_yol).resolve()
-            if hedef.name in JS_DISLANAN:
-                try:
-                    hg = hedef.relative_to(src).as_posix()
-                except ValueError:
-                    hg = str(hedef)
-                rapor.not_(f'{kaynak}: {hg} kopyalanmadı (simumav simapi.js ile sağlar; bu yol route ile yönlendirilmeli)')
-                continue
+            try:
+                hg = hedef.relative_to(src).as_posix()
+            except ValueError:
+                hg = str(hedef)
+            if hg in JS_DISLANAN:
+                continue                                  # HEPGO api.js: simumav main.py /api.js + /sim/api.js → simapi.js (§2); not gerekmez
             if not hedef.is_file():
                 rapor.uyar(f'{kaynak}: göreli JS importu bulunamadı: {ref_yol}')
                 continue
@@ -414,7 +415,7 @@ def main(argv=None) -> int:
         print(json.dumps({'version': version, 'dry_run': a.dry_run, 'dosyalar': rapor.dosyalar, 'silinen': rapor.silinen,
                           'py_zincir': rapor.py_zincir, 'js_zincir': rapor.js_zincir, 'vendor': sorted(rapor.vendor),
                           'requirements': rapor.requirements, 'eksik_glob': rapor.eksik_glob, 'uyarilar': rapor.uyarilar,
-                          'notlar': rapor.notlar}, ensure_ascii=False, indent=1))
+                          'notlar': rapor.notlar, 'shim': rapor.shim}, ensure_ascii=False, indent=1))
         return 0
     on = '[KURU] ' if a.dry_run else ''
     print(f'{on}SIMUMAV {version}: {src} → {dest}')
@@ -430,6 +431,8 @@ def main(argv=None) -> int:
     if rapor.vendor:
         print('Vendor: ' + ', '.join(sorted(rapor.vendor)))
     print('requirements.txt: ' + ' | '.join(rapor.requirements))
+    if rapor.shim:
+        print('Shim ile sağlanan HEPGO modülleri: ' + ', '.join(rapor.shim))
     for n in rapor.notlar:
         print(f'  not: {n}')
     for u in rapor.uyarilar:

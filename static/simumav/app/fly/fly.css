@@ -74,6 +74,9 @@
 .fs-speed-gauge .g-label { fill: #38bdf8; font: 700 8.5px system-ui, sans-serif; letter-spacing: .12em; text-anchor: middle; }
 .fs-speed-gauge.interceptor .g-label { fill: #f87171; } .fs-speed-gauge.over .g-val { fill: #f87171; }
 .fs-stage.fs-fpv .fs-speed-gauge, .fs-stage.fs-osd-on .fs-speed-gauge { opacity: .85; }
+/* yüzen MISSION PLANNER kutusu (.fs-mp.fs-pn-yuzen: panel kapalı ya da FPV/gimbal) sol altta → gösterge kutunun üstüne çıkar (üst üste binmesin) */
+.fs-stage:not(.fs-ops) .fs-speed-gauge { bottom: calc(var(--fs-bar-h, 54px) + 14px + 150px); }
+.fs-stage.fs-fpv .fs-speed-gauge { display: none; }   /* FPV OSD / gimbal HUD kendi hız göstergesini çizer; sol alttaki HUD metniyle çakışmasın */
 .fs-hand-lbl { position: absolute; right: 14px; bottom: calc(var(--fs-bar-h, 54px) + 14px); z-index: 5; font-size: 12px; color: #fbbf24; background: rgba(11,18,32,.6); padding: 4px 10px; border-radius: 8px; pointer-events: none; }
 .fs-stage.fs-mhud-on .fs-hand-lbl, .fs-stage.fs-osd-on .fs-hand-lbl { bottom: calc(var(--fs-bar-h, 54px) + 54px); }
 .fs-mp-lock { display: block; margin-top: 4px; color: #fbbf24; }

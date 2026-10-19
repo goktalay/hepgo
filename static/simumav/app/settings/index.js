@@ -34,7 +34,7 @@ export async function mount(root, ctx) {
     if (!await confirmDlg(t('settings.logout_q'), { danger: true })) return;
     try { await api.del('/api/session'); } catch (e) { toastErr(e); }
     // Hesap servisi oturumunu da kapat (uygulama kodu `sv`); başarısız olsa da yerel çıkış tamamlanır
-    try { await fetch(`${mtUrl}/api/sv/auth/logout`, { method: 'POST', credentials: 'include', mode: 'cors' }); } catch { /* ağ */ }
+    if (!ctx.state.meta?.dev_login) { try { await fetch(`${mtUrl}/api/sv/auth/logout`, { method: 'POST', credentials: 'include', mode: 'cors' }); } catch { /* ağ */ } }   // dev oturumunda hesap servisi belirteci yok
     localStorage.removeItem('sm:lang');
     toast(t('settings.bye'), 'ok');
     setTimeout(() => { location.href = '/'; }, 400);

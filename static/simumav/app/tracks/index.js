@@ -8,7 +8,8 @@ import { stagger } from '../ui/transition.js';
 import { terrainViewer } from './terrain3d.js';
 import { loadGoogleMaps, pickerMap } from './gmap.js';
 
-export const WORLD_DEFAULTS = { size_m: 4000, tree_density: 0.3, building_count: 40, runway: true, runway_heading: 0, time: 'day', fog: 0.2 };
+export const WORLD_DEFAULTS = { size_m: 4000, tree_density: 0.3, building_count: 40, runway: true, runway_heading: 0, fog: 0.2 };
+const WORLD_KEYS = ['seed', 'size_m', 'tree_density', 'mountain_height', 'mountain_count', 'building_count', 'runway', 'runway_heading', 'water', 'fog', 'landing_circle_m'];
 export const PRESETS = [
   { name: 'TR TEST Kalecik', lat: 40.0990, lon: 33.4101 },
   { name: 'Ankara', lat: 39.9250, lon: 32.8370 },
@@ -18,7 +19,11 @@ export const PRESETS = [
 ];
 const WEATHER = ['clear', 'cloudy', 'fog', 'rain'];
 const MAX_VIEWERS = 6;
-const newTrack = () => ({ name: '', lat: PRESETS[0].lat, lon: PRESETS[0].lon, radius_m: 1500, wind: { speed_ms: 3, dir_deg: 270, gust: 1 }, time_of_day: 12, weather: 'clear', world_mode: 'google3d', world: { ...WORLD_DEFAULTS }, gates: [] });
+// Gerçek API (docs/simumav.md §3–§4): time_of_day 'day'|'dusk'|'night'; world yalnız WORLD_DEFAULTS alt kümesi (seed, size_m, tree_density, mountain_*, building_count,
+// runway, runway_heading, water, fog, landing_circle_m); gates i 0..n-1 (görünümde i+1), radius 1–20, agl 1–120.
+const TIMES = ['day', 'dusk', 'night'];
+const normTime = v => (TIMES.includes(v) ? v : (Number.isFinite(Number(v)) ? (Number(v) < 6 || Number(v) >= 20 ? 'night' : Number(v) >= 17 ? 'dusk' : 'day') : 'day'));
+const newTrack = () => ({ name: '', lat: PRESETS[0].lat, lon: PRESETS[0].lon, radius_m: 1500, wind: { speed_ms: 3, dir_deg: 270, gust: 1 }, time_of_day: 'day', weather: 'clear', world_mode: 'google3d', world: { ...WORLD_DEFAULTS }, gates: [] });
 
 export async function mount(root, ctx) {
   const viewers = [];
@@ -57,7 +62,7 @@ export async function mount(root, ctx) {
   let edDispose = null;
   async function openEditor(existing) {
     viewers.splice(0).forEach(v => v.dispose());
-    const T = existing ? JSON.parse(JSON.stringify({ ...newTrack(), ...existing, wind: { ...newTrack().wind, ...(existing.wind || {}) }, world: { ...WORLD_DEFAULTS, ...(existing.world || {}) }, gates: existing.gates || [] })) : newTrack();
+    const T = existing ? JSON.parse(JSON.stringify({ ...newTrack(), ...existing, time_of_day: normTime(existing.time_of_day), wind: { ...newTrack().wind, ...(existing.wind || {}) }, world: { ...WORLD_DEFAULTS, ...(existing.world || {}) }, gates: (existing.gates || []).map((g, i) => ({ ...g, i })) })) : newTrack();
     const ed = h('div', { class: 'screen track-editor' });
     const mapBox = h('div', { class: 'card ed-map' });
     const prevBox = h('div', { class: 'card ed-3d' });
@@ -93,13 +98,12 @@ export async function mount(root, ctx) {
       sl('fog', t('world.fog'), 0, 1, 0.05, v => `${Math.round(v * 100)}%`),
       h('div', { class: 'field row' }, h('label', {}, t('world.runway')), switchEl(T.world.runway !== false, v => { T.world.runway = v; dirty(); }, t('world.runway'))),
       sl('runway_heading', t('world.runway_heading'), 0, 359, 1, v => `${v}°`),
-      h('div', { class: 'field' }, h('label', {}, t('world.time')), segment([{ value: 'day', label: t('world.day') }, { value: 'dusk', label: t('world.dusk') }, { value: 'night', label: t('world.night') }], T.world.time, v => { T.world.time = v; })),
     );
     procBox.hidden = T.world_mode !== 'procedural';
-    const windSpd = range({ min: 0, max: 30, step: 0.5, value: T.wind.speed_ms, format: v => `${v} m/s`, onInput: v => { T.wind.speed_ms = v; T.world.wind_ms = v; } });
+    const windSpd = range({ min: 0, max: 30, step: 0.5, value: T.wind.speed_ms, format: v => `${v} m/s`, onInput: v => { T.wind.speed_ms = v; } });
     const windGust = range({ min: 0, max: 15, step: 0.5, value: T.wind.gust, format: v => `+${v} m/s`, onInput: v => { T.wind.gust = v; } });
-    const windDial = dial({ value: T.wind.dir_deg, min: 0, max: 360, label: t('tracks.wind_dir'), unit: '°', onChange: v => { T.wind.dir_deg = Math.round(v) % 360; T.world.wind_dir = T.wind.dir_deg; } });
-    const tod = range({ min: 0, max: 24, step: 0.5, value: T.time_of_day, format: v => `${String(Math.floor(v)).padStart(2, '0')}:${v % 1 ? '30' : '00'}`, onInput: v => { T.time_of_day = v; T.world.time = v < 6 || v >= 20 ? 'night' : (v >= 17 ? 'dusk' : 'day'); } });
+    const windDial = dial({ value: T.wind.dir_deg, min: 0, max: 360, label: t('tracks.wind_dir'), unit: '°', onChange: v => { T.wind.dir_deg = Math.round(v) % 360; } });
+    const todSeg = segment(TIMES.map(v => ({ value: v, label: t(`world.${v}`) })), T.time_of_day, v => { T.time_of_day = v; });
     const radius = range({ min: 200, max: 5000, step: 100, value: T.radius_m, format: v => `${v} m`, onInput: v => { T.radius_m = v; dirty(); } });
     const weatherSeg = segment(WEATHER.map(w => ({ value: w, label: t(`weather.${w}`) })), T.weather, v => { T.weather = v; });
 
@@ -107,14 +111,14 @@ export async function mount(root, ctx) {
     const gateList = h('div', { class: 'gate-list' });
     const addBtn = btn(t('tracks.add_gate'), () => { addMode = !addMode; addBtn.classList.toggle('primary', addMode); note.hidden = !addMode; }, '');
     const note = h('div', { class: 'map-note', hidden: true }, t('tracks.add_gate_hint'));
-    const renumber = () => T.gates.forEach((g, i) => { g.i = i + 1; });
-    const addGate = ({ lat: la, lon: lo }) => { if (T.gates.length >= 50) { toast(t('tracks.gates_max'), 'err'); return; } T.gates.push({ i: T.gates.length + 1, lat: la, lon: lo, agl_m: 10, yaw_deg: 0, radius_m: 5, kind: 'ring' }); dirty(); };
+    const renumber = () => T.gates.forEach((g, i) => { g.i = i; });   // sunucu: i 0..n-1 (görünümde i+1)
+    const addGate = ({ lat: la, lon: lo }) => { if (T.gates.length >= 50) { toast(t('tracks.gates_max'), 'err'); return; } T.gates.push({ i: T.gates.length, lat: la, lon: lo, agl_m: 10, yaw_deg: 0, radius_m: 5, kind: 'ring' }); dirty(); };
     const onPick = (p, isDrag) => { if (addMode) addGate(p); else { T.lat = p.lat; T.lon = p.lon; latInp.value = p.lat.toFixed(5); lonInp.value = p.lon.toFixed(5); dirty(); } };
     function gateListRender() {
       clear(gateList, T.gates.map((g, i) => {
         const num = (key, min, max, step, unit) => { const inp = h('input', { class: 'input sm', type: 'number', min, max, step, value: g[key] }); inp.addEventListener('change', () => { g[key] = Math.max(min, Math.min(max, Number(inp.value) || min)); inp.value = g[key]; terrain?.refreshGates(); }); return h('label', { class: 'gf' }, h('small', {}, unit), inp); };
         return h('div', { class: 'gate-row' },
-          h('b', { class: 'gnum' }, g.i),
+          h('b', { class: 'gnum' }, String(g.i + 1)),
           num('agl_m', 1, 120, 1, 'AGL m'), num('yaw_deg', 0, 359, 1, '°'), num('radius_m', 1, 20, 0.5, 'R m'),
           h('button', { class: `mini-btn kind ${g.kind}`, type: 'button', title: t('tracks.kind'), onclick: () => { g.kind = g.kind === 'gate' ? 'ring' : 'gate'; dirty(); } }, g.kind === 'gate' ? '▭' : '◯'),
           miniBtn(svg('0 0 24 24', CHEV_L), () => { if (i > 0) { [T.gates[i - 1], T.gates[i]] = [T.gates[i], T.gates[i - 1]]; renumber(); dirty(); } }, '', t('common.up')),
@@ -128,7 +132,7 @@ export async function mount(root, ctx) {
       h('h3', {}, t('tracks.location')), search, h('div', { class: 'two' }, latInp, lonInp), presetSel, h('div', { class: 'kv' }, h('span', {}, t('tracks.center')), coordOut),
       h('h3', {}, t('tracks.world_mode')), worldSeg, procBox,
       h('h3', {}, t('tracks.wind')), h('div', { class: 'wind-row' }, windDial, h('div', { class: 'col' }, h('div', { class: 'field' }, h('label', {}, t('tracks.wind_speed'), ' ', windSpd.out), windSpd.inp), h('div', { class: 'field' }, h('label', {}, t('tracks.gust'), ' ', windGust.out), windGust.inp))),
-      h('div', { class: 'field' }, h('label', {}, t('tracks.time_of_day'), ' ', tod.out), tod.inp),
+      h('div', { class: 'field' }, h('label', {}, t('tracks.time_of_day')), todSeg),
       h('div', { class: 'field' }, h('label', {}, t('tracks.weather')), weatherSeg),
       h('div', { class: 'field' }, h('label', {}, t('tracks.radius'), ' ', radius.out), radius.inp),
       h('h3', {}, t('tracks.gates')), h('p', { class: 'sub small' }, t('tracks.gates_hint')), addBtn, gateList,
@@ -150,7 +154,9 @@ export async function mount(root, ctx) {
 
     async function save() {
       if (!T.name.trim()) { nameInp.focus(); toast(t('tracks.name_req'), 'err'); return; }
-      const body = { name: T.name.trim(), lat: T.lat, lon: T.lon, radius_m: T.radius_m, wind: T.wind, time_of_day: T.time_of_day, weather: T.weather, world_mode: T.world_mode, world: { ...T.world, wind_ms: T.wind.speed_ms, wind_dir: T.wind.dir_deg }, gates: T.gates };
+      renumber();
+      const world = Object.fromEntries(WORLD_KEYS.filter(k => T.world[k] != null).map(k => [k, T.world[k]]));
+      const body = { name: T.name.trim(), lat: T.lat, lon: T.lon, radius_m: T.radius_m, wind: T.wind, time_of_day: normTime(T.time_of_day), weather: T.weather, world_mode: T.world_mode, world, gates: T.gates };
       try {
         if (existing) await api.put(`/api/tracks/${existing.id}`, body); else await api.post('/api/tracks', body);
         toast(t('common.saved'), 'ok'); edDispose?.(); edDispose = null; mount(root, ctx);

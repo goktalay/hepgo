@@ -323,7 +323,7 @@ export async function openSession(view, start, picked, ctx = {}) {
       overlay = createOverlay3D(stage, sim, T);
       if (isHand) { hand = createHandOverlay(overlay, sim, T, { cfg: hcfg, headingDeg: world.runway_heading, scale: 2.5 }); hand.anchorAt(0, 0); window.__smHand = hand; }
       if (gates.length) {
-        gateLayer = createGateLayer(overlay, sim, T, gates, gatePlan, { onEvent: evs => { for (const e of evs) { if (e.type === 'pass') addEvent(tr('Halka #{i} geçildi', { i: e.i }), 'info', 'HALKA'); else if (e.type === 'miss') addEvent(tr('Halka #{i} kaçırıldı', { i: e.i }), 'warning', 'HALKA'); else if (e.type === 'wrong_way') addEvent(tr('Halka #{i}: ters yön!', { i: e.i }), 'error', 'HALKA'); else if (e.type === 'lap') addEvent(tr('Tur {n} tamamlandı{s}', { n: e.lap, s: e.lap_s != null ? ` · ${e.lap_s.toFixed(1)} sn` : '' }), 'info', 'HALKA'); else if (e.type === 'finish') { addEvent(tr('Parkur tamamlandı!'), 'info', 'HALKA'); toast(tr('Parkur tamamlandı!')); } } } });
+        gateLayer = createGateLayer(overlay, sim, T, gates, gatePlan, { onEvent: evs => { for (const e of evs) { if (e.type === 'pass') addEvent(tr('Halka #{i} geçildi', { i: e.i + 1 }), 'info', 'HALKA'); else if (e.type === 'miss') addEvent(tr('Halka #{i} kaçırıldı', { i: e.i + 1 }), 'warning', 'HALKA'); else if (e.type === 'wrong_way') addEvent(tr('Halka #{i}: ters yön!', { i: e.i + 1 }), 'error', 'HALKA'); else if (e.type === 'lap') addEvent(tr('Tur {n} tamamlandı{s}', { n: e.lap, s: e.lap_s != null ? ` · ${e.lap_s.toFixed(1)} sn` : '' }), 'info', 'HALKA'); else if (e.type === 'finish') { addEvent(tr('Parkur tamamlandı!'), 'info', 'HALKA'); toast(tr('Parkur tamamlandı!')); } } } });
         window.__smGates = gateLayer;
       }
       sim.addFrameHook(() => overlay?.update());
@@ -398,7 +398,7 @@ export async function openSession(view, start, picked, ctx = {}) {
       const body = {};
       if (gateLayer) body.gates = gateLayer.body();
       const r = await net.post(`/api/fly/${encodeURIComponent(fid)}/stop`, body);
-      const sum = r?.summary || (r?.flight ? r : null);
+      const sum = r?.flight?.summary || r?.summary || null;   // POST stop → {ok, flight:{…, summary:{session, flight, mission, crash, gates}}}
       await showFlightReport(MReport, sum || {}, body.gates || r?.gates || null, { pilot, drone, track });
       if (document.fullscreenElement) await document.exitFullscreen?.().catch(() => {});
       toast('Uçuş kaydedildi');

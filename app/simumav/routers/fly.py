@@ -374,6 +374,12 @@ def c_rec_pending(user=User):
     return {'items': [], 'max_mb': 0}
 
 
+@ws_router.get('/api/drone/routes')
+def c_routes(user=User):
+    """flightsim_panel.js (hub:true) HEPGO rota listesini ister; SIMUMAV'da kayıtlı rota yok → boş liste (404 yerine)."""
+    return []
+
+
 # ---------------- WebSocket ----------------
 def _hub_user(u):
     """drone_hub izleyici/komut kalıbının beklediği kullanıcı sözlüğü (yalnız drone.sim yetkisi; field.live yok)."""

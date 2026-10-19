@@ -138,7 +138,7 @@ export function createGateLayer(overlay, sim, T, gates, plan = {}, opts = {}) {
     } else mesh = new T.Mesh(new T.TorusGeometry(R, tube, 12, 48), mat);   // torus XY düzleminde → yaw ile döndürülür (normal +Y → n)
     if (G.kind !== 'gate') mesh.rotation.x = Math.PI / 2;   // torus XY düzleminden dikey XZ'ye (normal +Y); kapı çubukları zaten XZ'de
     const holder = new T.Group(); holder.add(mesh);
-    const lbl = makeLabel(T, String(G.i)); lbl.position.set(0, 0, R + tube * 3 + 0.6 * scale); holder.add(lbl);
+    const lbl = makeLabel(T, String(G.i + 1));   // halka i 0..n-1 → görünümde 1..n lbl.position.set(0, 0, R + tube * 3 + 0.6 * scale); holder.add(lbl);
     holder.position.set(G.x, G.y, G.z); holder.rotation.z = -G.yaw_deg * DEG;
     overlay.add(holder);
     meshes.set(G.i, { holder, mat, lbl, G });
@@ -169,7 +169,8 @@ export function createGateLayer(overlay, sim, T, gates, plan = {}, opts = {}) {
     const clock = s => (s == null ? '--:--.-' : `${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(1).padStart(4, '0')}`);
     const line1 = st.finished ? 'BİTTİ' : `TUR ${Math.min(st.laps + 1, st.laps_total)}/${st.laps_total}`;
     const line2 = `${st.passed}/${st.gates_total} ✓ ${st.missed} ✗ · ${clock(st.finished ? st.best_lap_s : st.current_lap_s)}${st.best_lap_s != null && !st.finished ? ` · EN İYİ ${clock(st.best_lap_s)}` : ''}`;
-    const w = Math.max(g.measureText(line2).width, 160) + 24, x0 = W / 2 - w / 2, y0 = 54 * S;
+    const cam = sim?.getCamera?.();
+    const w = Math.max(g.measureText(line2).width, 160) + 24, x0 = W / 2 - w / 2, y0 = (cam === 'fpv' || cam === 'pilot' ? 128 : 54) * S;   // HUD yön şeridi / OSD FLY sayacı üstte
     box(x0, y0, w, 44 * S);
     g.textAlign = 'center'; g.fillStyle = '#38bdf8'; g.fillText(line1, W / 2, y0 + 13 * S); g.fillStyle = '#f1f5f9'; g.fillText(line2, W / 2, y0 + 31 * S);
     if (!G || !dronePos) return;
@@ -189,7 +190,7 @@ export function createGateLayer(overlay, sim, T, gates, plan = {}, opts = {}) {
     else { const r = Math.max(14 * S, Math.min(120 * S, 60 * S * G.radius_m / Math.max(1, dist) * 8)); g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-r - 6, 0); g.lineTo(-r + 6, 0); g.moveTo(r - 6, 0); g.lineTo(r + 6, 0); g.moveTo(0, -r - 6); g.lineTo(0, -r + 6); g.moveTo(0, r - 6); g.lineTo(0, r + 6); g.stroke(); }
     g.restore();
     g.textAlign = 'center'; g.fillStyle = '#f1f5f9';
-    const label = `#${G.i} · ${dist >= 1000 ? `${(dist / 1000).toFixed(2)} km` : `${Math.round(dist)} m`}`;
+    const label = `#${G.i + 1} · ${dist >= 1000 ? `${(dist / 1000).toFixed(2)} km` : `${Math.round(dist)} m`}`;
     const lx = Math.min(W - 60, Math.max(60, tx)), ly = Math.min(H - 24, Math.max(24, ty + (off ? 26 : 0) + 22 * S));
     g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.6)'; g.strokeText(label, lx, ly); g.fillText(label, lx, ly);
   });

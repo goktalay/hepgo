@@ -27,6 +27,9 @@ const TYPE_ICON = {
 };
 const svgIco = s => h('i', { class: 'sm-ico', html: s || TYPE_ICON.multirotor });
 
+/** Kabuk başka rotaya geçerken: sihirbaz/sahne temizliği (onLeave kayıtları: 3B önizleme, WS, ses, kayıt). */
+export function unmount() { runLeave(); }
+
 export async function render(view, params = {}, ctx = {}) {
   ensureCss();
   runLeave();   // önceki sahne/sihirbaz temizliği
@@ -164,7 +167,7 @@ async function renderWizard(view, ctx) {
     const ms = W.missionsFor();
     const list = h('div', { class: 'sm-cards sm-cards-missions' });
     const drawList = () => clear(list, [card(W.state.mission_id == null, { icon: h('i', { class: 'sm-ico', html: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="16"/><path d="M14 24h20M24 14v20"/></svg>' }), title: 'Serbest uçuş', sub: 'Görev yok; Mission Planner ile de rota yükleyebilirsiniz.', onClick: () => { W.set('mission_id', null); drawList(); drawFoot(); } }),
-      ...ms.map(m => card(m.id === W.state.mission_id, { icon: m.preview_png ? h('img', { class: 'sm-card-img', src: m.preview_png, alt: '' }) : h('i', { class: 'sm-ico', html: '<svg viewBox="0 0 48 48"><path d="M6 38 18 14l10 14 8-8 6 18z"/></svg>' }), title: m.name, sub: `${m.kind}${m.kind === 'fpv_gates' ? ` · ${m.plan?.laps || 1} tur` : ''}${Array.isArray(m.plan?.route) ? ` · ${m.plan.route.length} nokta` : ''}`, onClick: () => { W.set('mission_id', m.id); drawList(); drawFoot(); } }))]);
+      ...ms.map(m => card(m.id === W.state.mission_id, { icon: m.preview_png ? h('img', { class: 'sm-card-img', src: m.preview_png, alt: '' }) : h('i', { class: 'sm-ico', html: '<svg viewBox="0 0 48 48"><path d="M6 38 18 14l10 14 8-8 6 18z"/></svg>' }), title: m.name, sub: `${m.kind}${m.kind === 'fpv_gates' ? ` · ${m.plan?.laps || 1} tur` : ''}${Array.isArray(m.plan?.route?.points) ? ` · ${m.plan.route.points.length} nokta` : Array.isArray(m.plan?.items) ? ` · ${m.plan.items.length} nokta` : ''}`, onClick: () => { W.set('mission_id', m.id); drawList(); drawFoot(); } }))]);
     drawList();
     body.append(list, ms.length ? null : h('p', { class: 'small muted' }, tr('Bu parkur için kayıtlı görev yok (Görevler modülünden ekleyin).')));
   };

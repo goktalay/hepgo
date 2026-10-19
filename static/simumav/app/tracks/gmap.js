@@ -4,11 +4,13 @@ export function loadGoogleMaps(key, lang = 'tr') {
   if (!key) return Promise.resolve(null);
   if (window.google?.maps?.importLibrary) return window.google.maps.importLibrary('maps').then(() => window.google);
   loadingP ??= new Promise((resolve, reject) => {
+    // `loading=async` ile API, betik onload'unda henüz hazır değildir (importLibrary yok) → `callback` ile hazır sinyali (inline script yok; CSP uyumlu)
+    const cb = '__smGmapsReady';
+    window[cb] = async () => { try { await window.google.maps.importLibrary('maps'); await window.google.maps.importLibrary('marker'); resolve(window.google); } catch (e) { loadingP = null; reject(e); } finally { delete window[cb]; } };
     const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&language=${encodeURIComponent(lang)}`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&language=${encodeURIComponent(lang)}&callback=${cb}`;
     s.async = true;
-    s.onload = async () => { try { await window.google.maps.importLibrary('maps'); await window.google.maps.importLibrary('marker'); resolve(window.google); } catch (e) { reject(e); } };
-    s.onerror = () => { loadingP = null; reject(new Error('Google Maps yüklenemedi')); };
+    s.onerror = () => { loadingP = null; delete window[cb]; reject(new Error('Google Maps yüklenemedi')); };
     document.head.append(s);
   });
   return loadingP;
@@ -32,7 +34,7 @@ export async function pickerMap(google, host, { lat, lon, radius_m = 1000, onPic
     setGates: gates => {
       gateMarkers.forEach(m => m.setMap(null)); gateMarkers = [];
       for (const g of gates) {
-        const m = new google.maps.Marker({ position: { lat: g.lat, lng: g.lon }, map, draggable: true, label: { text: String(g.i), color: '#fff', fontWeight: '700' },
+        const m = new google.maps.Marker({ position: { lat: g.lat, lng: g.lon }, map, draggable: true, label: { text: String(g.i + 1), color: '#fff', fontWeight: '700' },
           icon: { path: google.maps.SymbolPath.CIRCLE, scale: 14, fillColor: g.kind === 'gate' ? '#a78bfa' : '#38bdf8', fillOpacity: 0.85, strokeColor: '#fff', strokeWeight: 2 } });
         m.addListener('dragend', () => onGateMove?.(g, { lat: m.getPosition().lat(), lon: m.getPosition().lng() }));
         gateMarkers.push(m);

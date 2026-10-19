@@ -1,5 +1,7 @@
-"""`/api/missions` — görevler (≤ 50). plan JSON: HEPGO görev biçimi {items:[{seq, command, frame, x(lat·1e7), y(lon·1e7), z, param1..4}], …} +
-tür parametreleri; fpv_gates: {order:[halka i…], laps 1–10}. Doğrulama: ≤ 500 öğe, tüm konumlu öğeler parkur yarıçapı içinde, z 0–1000 m."""
+"""`/api/missions` — görevler (≤ 50). plan JSON: HEPGO görev biçimi {items:[{seq, command, frame, x(lat·1e7), y(lon·1e7), z, param1..4}], …} YA DA
+oyun arayüzü editörünün `route` biçimi {route:{points:[{seq, cmd, lat, lon, alt_rel, frame}]}, shape, params, order, laps} (flightsim_mission `route`;
+bridge._gorev_yukle items'a çevirir) + tür parametreleri; fpv_gates: {order:[halka i…], laps 1–10}. Doğrulama: ≤ 500 öğe, tüm konumlu öğeler parkur
+yarıçapı içinde, z 0–1000 m."""
 import json
 from typing import Optional
 
@@ -28,6 +30,17 @@ class MissionPatch(BaseModel):
     plan: Optional[dict] = None
 
 
+def plan_ogeleri(plan):
+    """plan.items (HEPGO) ya da plan.route.points / plan.route (editör) → öğe listesi (doğrulama için; biçim dönüşümü bridge'de)."""
+    items = plan.get('items')
+    if isinstance(items, list) and items:
+        return items
+    route = plan.get('route')
+    if isinstance(route, dict):
+        return route.get('points') or []
+    return route or []
+
+
 def plan_dogrula(plan, kind, track, request, user):
     def red(msg):
         db.audit_bagimsiz('plan_reject', user['id'], auth.client_ip(request), msg)
@@ -38,14 +51,15 @@ def plan_dogrula(plan, kind, track, request, user):
         red('plan bir nesne olmalı')
     if len(json.dumps(plan)) > PLAN_BYTES:
         red('plan çok büyük (256 KB)')
-    items = plan.get('items') or plan.get('route') or []
+    items = plan_ogeleri(plan)
     if not isinstance(items, list) or len(items) > PLAN_MAX:
         red(f'plan en çok {PLAN_MAX} nokta içerebilir')
     for it in items:
         if not isinstance(it, dict):
             red('görev öğesi bir nesne olmalı')
         try:
-            x, y, z = it.get('x'), it.get('y'), float(it.get('z') or 0)
+            x, y = it.get('x'), it.get('y')
+            z = float((it.get('z') if it.get('z') is not None else it.get('alt_rel', it.get('alt'))) or 0)
             lat = float(x) / 1e7 if x not in (None, 0) and abs(float(x)) > 1000 else float(it.get('lat', x or 0))
             lon = float(y) / 1e7 if y not in (None, 0) and abs(float(y)) > 1000 else float(it.get('lon', y or 0))
             cmd = int(it.get('command', it.get('cmd', 16)) or 16)

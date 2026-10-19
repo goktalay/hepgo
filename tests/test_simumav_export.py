@@ -1,5 +1,5 @@
 """tools/simumav_export.py — geçici sahte HEPGO ağacıyla: manifest + eksik glob uyarısı, Python import zinciri çözümü,
-HEPGO'ya özgü modül uyarısı (kopyalanmaz / --include-hepgo), JS göreli zinciri + api.js dışlama + vendor ekleme,
+HEPGO'ya özgü modül uyarısı (kopyalanmaz / --include-hepgo), JS göreli zinciri + HEPGO api.js dışlama (SIMUMAV core/api.js kopyalanır) + vendor ekleme,
 requirements çıkarımı, hedef temizleme/koruma kuralları, kuru çalıştırma, yanlış hedef reddi.
 
 Çalıştırma: .venv/bin/python -m tests.test_simumav_export
@@ -43,11 +43,13 @@ def sahte_hepgo(kok: Path):
     yaz(kok, 'static/js/modules/flightsim.js', "import { a } from './flightsim_panel.js';\nimport { ui } from '../ui.js';\n"
                                               "// import { x } from './yorumda.js';\n/* import y from './blokta.js' */\n"
                                               "import * as THREE from '/vendor/three/three.module.js';\n")
-    yaz(kok, 'static/js/modules/flightsim_panel.js', "import { get } from './api.js';\nconst m = await import('./flightsim_hud.js');\n")
+    yaz(kok, 'static/js/modules/flightsim_panel.js', "import { get } from '../api.js';\nconst m = await import('./flightsim_hud.js');\n")
     yaz(kok, 'static/js/modules/flightsim_hud.js', '')
     yaz(kok, 'static/js/modules/replay3d.js', "export { z } from '../vendor/xterm/xterm.js';\n")
     yaz(kok, 'static/js/modules/flightsim_g3d.js', '')
-    yaz(kok, 'static/js/modules/api.js', '')
+    yaz(kok, 'static/js/api.js', '')                             # HEPGO api.js: kopyalanmaz (simapi.js route'u)
+    yaz(kok, 'static/simumav/app/core/api.js', "import * as S from '../simapi.js';\n")   # SIMUMAV'ın kendi api.js'i: kopyalanır
+    yaz(kok, 'static/simumav/app/simapi.js', '')
     yaz(kok, 'static/js/ui.js', "import { t } from './i18n.js';\n")
     yaz(kok, 'static/js/i18n.js', '')
     yaz(kok, 'static/vendor/three/three.module.js', '')
@@ -97,11 +99,12 @@ class ExportTest(unittest.TestCase):
         self.assertTrue(any('app/drone_hub ←' in u for u in r['uyarilar']))
         # JS zinciri: flightsim.js → flightsim_panel.js (manifest) → dinamik import hud; ../ui.js → i18n.js; yorumdakiler yok
         self.assertIn('static/js/ui.js', d); self.assertIn('static/js/i18n.js', d)
-        self.assertEqual(r['js_zincir']['static/js/i18n.js'], 'static/js/ui.js')
+        self.assertIn('static/js/ui.js', d)                       # kök bağımlılıklar manifestte (main.py /<ad>.js beyaz listesi)
         self.assertFalse(any('yorumda' in u or 'blokta' in u for u in r['uyarilar']), r['uyarilar'])
-        # api.js dışlanır, vendor three/xterm eklenir, chartjs eklenmez
-        self.assertNotIn('static/js/modules/api.js', d)
-        self.assertTrue(any('api.js kopyalanmadı' in n for n in r['notlar']))
+        # HEPGO api.js dışlanır (not/uyarı üretmez), SIMUMAV core/api.js kopyalanır; vendor three/xterm eklenir, chartjs eklenmez
+        self.assertNotIn('static/js/api.js', d)
+        self.assertIn('static/simumav/app/core/api.js', d)
+        self.assertFalse(any('api.js' in n for n in r['notlar'] + r['uyarilar']), r['notlar'] + r['uyarilar'])
         self.assertIn('static/vendor/three/jsm/x.js', d); self.assertIn('static/vendor/xterm/xterm.js', d)
         self.assertFalse(any(p.startswith('static/vendor/chartjs') for p in d))
         self.assertEqual(sorted(r['vendor']), ['three', 'xterm'])
@@ -133,7 +136,8 @@ class ExportTest(unittest.TestCase):
         self.assertTrue((self.dest / 'static/simumav/app/index.html').exists())
         self.assertTrue((self.dest / 'docs/simumav.md').exists())
         self.assertFalse((self.dest / 'app/db.py').exists())
-        self.assertFalse((self.dest / 'static/js/modules/api.js').exists())
+        self.assertFalse((self.dest / 'static/js/api.js').exists())
+        self.assertTrue((self.dest / 'static/simumav/app/core/api.js').exists())
         # ikinci çalıştırma deterministik: aynı dosya listesi
         r2 = self.calistir('--version', '1.2.3')
         self.assertEqual(r['dosyalar'], r2['dosyalar'])

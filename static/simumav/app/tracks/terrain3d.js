@@ -50,7 +50,7 @@ export async function terrainViewer(host, { spin = 0.25, onPick = null, tilt = 0
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, z, 6), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5 })); pole.rotation.x = Math.PI / 2; pole.position.set(l.x, l.y, z / 2);
       grp.userData.pole = pole; gateGroup.add(grp); gateGroup.add(pole);
       // sıra etiketi (sprite)
-      const c = document.createElement('canvas'); c.width = 64; c.height = 64; const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.font = 'bold 40px sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(String(g.i ?? ''), 32, 34);
+      const c = document.createElement('canvas'); c.width = 64; c.height = 64; const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.font = 'bold 40px sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(String(g.i != null ? g.i + 1 : ''), 32, 34);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false })); sp.scale.setScalar(0.16); sp.position.set(l.x, l.y, z + rr + 0.1); gateGroup.add(sp);
     }
   };

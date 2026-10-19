@@ -68,7 +68,7 @@ static/simumav/sim/  → HEPGO simülatör ön yüz modülleri (`static/js/modul
                           /static/img/google-logo.png, /static/models/caymaz-sim.glb (+ /static/models/*) → HEPGO static (salt okunur dosya yolları)
                           /api/drone/sim/terrain|tile|osm (GET; parkur world_mode 'real' ve Google 3B yer ofseti için flightsim3d/g3d sabit TERRAIN_API)
                             → simumav'da aynı yolda vekil (HEPGO app/sim_terrain.py; oturum zorunlu, hız sınırı)
-                          /api/drone/routes (flightsim_panel.js hub:true iken GET) → 404 dönebilir (panel boş liste sayar); /api/drone/sim/g3d-key çağrılmaz
+                          /api/drone/routes (flightsim_panel.js hub:true iken GET) → `[]` (routers/fly.py c_routes; 404 değil); /api/drone/sim/g3d-key çağrılmaz
                             (Uç `g3dKey` getter'ı /api/meta maps_key verir)
                         Uç modülünün HEPGO modüllerine verdiği YAN ETKİLER/UYUM NOTLARI (static/simumav/app/fly/session.js):
                           • flightsim_panel.js hub soketini `${location.host}/ws/drone/live` yoluna açar → sayfa düzeyinde WebSocket sarmalayıcısı YALNIZ bu yolu
@@ -108,8 +108,8 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
   world_mode ('real'|'google3d'|'procedural' — HEPGO'daki üç kip: Gerçek arazi / Google 3B / Prosedürel; varsayılan 'google3d'),
   world JSON (HEPGO `flightsim3d.js` WORLD_DEFAULTS alt kümesi — GERÇEK anahtarlar: seed, size_m, tree_density, mountain_height, mountain_count,
   building_count, runway, runway_heading, water, fog, landing_circle_m; `flightsim.world_dogrula` aralıkları; rüzgâr/saat/hava ayrı sütunlardan),
-  gates JSON (FPV HALKALARI: [{i, lat, lon, agl_m, yaw_deg, radius_m, kind:'ring'|'gate'}] ≤ 50; yarıçap 1–20 m; parkur yarıçapı
-  içinde; yalnız 3B kiplerde çizilir — her üç kip de 3B'dir), preview_png, is_default)`
+  gates JSON (FPV HALKALARI: [{i, lat, lon, agl_m, yaw_deg, radius_m, kind:'ring'|'gate'}] ≤ 50; `i` 0..n-1 benzersiz (arayüz i+1 gösterir); yarıçap 1–20 m; agl 1–120 m;
+  parkur yarıçapı içinde; yalnız 3B kiplerde çizilir — her üç kip de 3B'dir), preview_png, is_default)`
   — kayıtta otomatik **TRTEST** (TR TEST Kalecik: lat 40.0990, lon 33.4101; ajan doğrular), is_default=1.
 - `missions(id, user_id, track_id, name, kind ('corridor'|'free'|'spray'|'fpv_flags'|'fpv_gates'|'survey'), — `fpv_gates`: parkurun halkalarını sırayla geçme (plan: {order:[gate i…], laps}), plan JSON (waypoint'ler +
   tür parametreleri; HEPGO flightsim_mission ile uyumlu `route` biçimi), preview_png)`
@@ -136,12 +136,14 @@ Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmal
   `proc:true` = GLB yok, ön yüz prosedürel çizer. Interceptor varsayılanları ArduPlane 4.6+ adlarıyla: AIRSPEED_MAX 170, AIRSPEED_MIN 24, AIRSPEED_CRUISE 95,
   THR_MAX 100, TKOFF_THR_MAX 100, LIM_ROLL_CD 7500, hızlı PTCH_/RLL_ oran döngüleri, TECS_CLMB_MAX 30 (eski `ARSPD_FBW_*` adları beyaz listede ama 4.7.2'de yok).
 - `GET /api/crew` → `{pilots:[{…, svg}], quota}`; `POST /api/crew {name, character p01…p10}`; `PUT /api/crew/{id} {name?,character?,is_default?}`; `DELETE`
-  (son pilot 409 `last_pilot`); `GET /api/crew/characters` → `{characters:[{key,label,gender,svg:'/brand/crew/<key>.svg'}]}` (SVG'ler ön yüz ekibinden).
+  (son pilot 409 `last_pilot`); `GET /api/crew/characters` → `{characters:[{key,label,gender,svg:'/app/img/pilots/<key>.svg'}]}` (pilot kayıtlarının `svg` alanı da aynı yol; tek doğruluk kaynağı
+  `routers/common.PILOT_SVG` → `static/simumav/app/img/pilots/p01..p10.svg`).
 - `GET /api/tracks` → `{tracks:[{…, wind, world, gates, preview_png, is_default}], quota, google3d}`; `POST /api/tracks {name,lat,lon,radius_m 200–5000,
   wind{speed_ms 0–30,dir_deg,gust 0–20}, time_of_day day|dusk|night, weather clear|cloudy|rain|fog|snow, world_mode real|google3d|procedural, world{…}, gates[…]}`;
   `PUT /api/tracks/{id}` (kısmi; `is_default`); `DELETE` (son parkur 409); `GET /api/tracks/{id}/preview.png` (512×512; Esri uydu + terrarium gölgesi;
   `files/previews/` önbelleği; kaynak yoksa 502/503 `tile_source`). Halka/dünya hatası 422 `invalid` (denetim: `plan_reject`).
 - `GET /api/missions[?track_id]` → `{missions:[…], quota}`; `POST /api/missions {track_id,name,kind,plan}` — plan `{items:[{seq,command,frame,x(lat·1e7),y,z,param1..4}],…}`
+  YA DA oyun arayüzü editörünün biçimi `{kind, route:{points:[{seq,cmd,lat,lon,alt_rel,frame}]}, shape, params, order, laps}` (`bridge.plan_items` SITL yüklemesinde items'a çevirir)
   ≤ 500 öğe, parkur yarıçapı içinde, z 0–1000, kalibrasyon/reboot komutları yasak; `fpv_gates` planı `{order:[halka i…], laps 1–10}`; red 422 `plan_rejected`.
 - `POST /api/fly/start {drone_id, pilot_id, track_id, mission_id?, launch: {method wheels|ramp|vehicle|hand, angle_deg 10–30, release_kmh 40–110,
   hand_speed_ms 6–8, hand_pitch_deg 10–15} | 'yöntem', record:{bin (vars. true), video}}` → 201
@@ -248,7 +250,8 @@ Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmal
   okuma 300/dk, WS mesaj 100/sn; aşımda 429. Hesap servisindeki login/register oran sınırı korunur.
 - **MP TCP:** rastgele port (aralıktan), ilk bağlanan IP kilidi, aynı anda tek bağlantı, 60 sn bağlanılmazsa kapanır, uçuş
   bitince kapanır; MAVLink akışı yalnız o uçuşun SITL'ine. Portlar güvenlik duvarında yalnız aralık olarak açık.
-- **Başlıklar/CSP:** `default-src 'self'; script-src 'self' https://maps.googleapis.com https://*.cesium.com; connect-src 'self'
+- **Başlıklar/CSP:** `default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://maps.googleapis.com https://cdn.jsdelivr.net https://*.cesium.com
+  ('unsafe-eval': Cesium 1.145 CDN paketindeki Knockout `(0,eval)("this")` yüklemede eval ister — HEPGO CSP'si ile aynı; inline script yine yok); connect-src 'self'
   https://mastertool.download https://maps.googleapis.com https://*.googleapis.com https://*.cesium.com https://*.arcgisonline.com
   https://*.amazonaws.com wss://simumav.com; img-src 'self' data: blob: https:; frame-ancestors 'none'; object-src 'none'`,
   `X-Content-Type-Options`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`. Inline script yok.
@@ -345,6 +348,15 @@ oran 10/dk/IP; hata halinde sürüm klasörü silinir. Parçalı uç (`/part`) v
 - **Testler:** `tests/test_simumav.py` (SITL yok, sahte kip; shim yüklemesi, oturum/CSRF/oran, CRUD+kota, beyaz liste, önizleme, fly/MP IP kilidi/WS tek soket
   (hub cmd)/hand launch/kayıt REST/stop, ops, meta, yönlendirme yolları, arazi vekili 401), `central/sshmaster_server/tests/test_mastertool.py` (sv, CORS, web-releases). `tools/simumav_export.py` paket-göreli import çözümü ve shim
   farkındalığı eklendi (`--dry-run` uyarısız).
-- **Uçtan uca (DEV, gerçek SITL, Playwright headless shell):** `/tmp/simumav-e2e/*.png` (00-tanıtım … 14-ops-replay) + `konsol.txt`. Bulgular: `#/fly` için
-  `fly/index.js` `render(view, params, ctx)` dışa aktarır, kabuk `app.js` `mod.mount(view, ctx)` çağırır → "mod.mount is not a function" (Uç/oyun arayüzü
-  uyumu; çekirdek dosyası değil). `/brand/icons/*.svg`, `/brand/crew/p01.svg` 404 (marka ajanı). Replay (ops) ve .bin/params gerçek SITL ile doğrulandı.
+- **Uçtan uca (DEV, gerçek SITL, Playwright headless shell):** `/tmp/simumav-e2e/*.png` (00-tanıtım … 14-ops-replay) + `konsol.txt`. Bulgular (bütünleştirme ajanı
+  DÜZELTTİ): `#/fly` için `fly/index.js` `render(view, params, ctx)` dışa aktarır, kabuk `app.js` `mod.mount(view, ctx)` çağırırdı → router artık iki imzayı da
+  destekler (`mount(view, ctx)` ya da `render(view, {id}, ctx{i18n,toast,go,user,settings,meta})`; `unmount()` dışa aktarımı ayrılırken çağrılır; `ctx.go('#/ops')` hash
+  biçimini de kabul eder). `/brand/crew/p01.svg` 404 → `/app/img/pilots/<key>.svg` (common.PILOT_SVG). Replay (ops) ve .bin/params gerçek SITL ile doğrulandı.
+- **Bütünleştirme (oyun arayüzü ↔ gerçek API; E2E betiği ve kareler /tmp/simumav-e2e2):** `tools/simumav_export.py` yalnız HEPGO `static/js/api.js`'i dışlar
+  (SIMUMAV `app/core/api.js` kopyalanır; shim eşlemeleri ayrı "Shim" satırı, `--dry-run` not/uyarı 0). Parkur editörü: `time_of_day` 'day|dusk|night' (saat
+  kaydırıcısı yerine segment), `world` yalnız WORLD_KEYS, halka `i` 0..n-1 (görünüm +1; gates.js/OSD/harita etiketleri de +1). Görev editörü `route.points` biçimi
+  sunucuda kabul edilir (`missions.plan_ogeleri` doğrular, `bridge.plan_items` MAVLink öğelerine çevirir). `GET /app` → `/app/` 307 (tanıtım sitesi girişten sonra
+  `/app`'e yönlendirir). CSP `script-src`'ye `'unsafe-eval'` (Cesium CDN paketi Knockout eval; §7) + `'wasm-unsafe-eval'` (3DTilesRenderer/draco). Uçuş özeti: `POST stop`
+  yanıtı `{ok, flight:{summary}}` → rapor `flight.summary`'den. Google Maps yükleyici `callback=` ile (loading=async'te onload erken). Hız göstergesi yüzen MP
+  kutusunun üstüne; FPV/gimbal'da gizli; halka OSD kutusu FPV/gimbal'da yön şeridinin altında. Geliştirici oturumunda çıkış hesap servisine gitmez.
+  SwiftShader'da 3B sahne karesi ~10–15 sn sürdüğünden "bırakma +0,5/1/2 sn" kareleri zaman damgasıyla değil aşama (elde/kol ileri/bırakma) ile alınır.

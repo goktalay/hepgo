@@ -479,10 +479,40 @@ def _ip(request):
     return client_ip(request)
 
 
+def plan_items(plan):
+    """Görev planı → HEPGO/MAVLink öğe listesi [{seq, command, frame, current, autocontinue, param1..4, x(lat·1e7), y(lon·1e7), z}].
+    plan.items varsa olduğu gibi; editörün `route.points` ({seq, cmd, lat, lon, alt_rel, frame}) biçimi çevrilir."""
+    if not isinstance(plan, dict):
+        return []
+    items = plan.get('items')
+    if isinstance(items, list) and items:
+        return items
+    route = plan.get('route')
+    pts = route.get('points') if isinstance(route, dict) else (route or [])
+    out = []
+    for i, p in enumerate(pts or []):
+        if not isinstance(p, dict):
+            continue
+        if 'command' in p and ('x' in p or 'y' in p):
+            out.append(p)
+            continue
+        try:
+            lat, lon = float(p.get('lat') or 0), float(p.get('lon') or 0)
+            z = float((p.get('alt_rel') if p.get('alt_rel') is not None else p.get('alt', p.get('z'))) or 0)
+            cmd = int(p.get('cmd') or p.get('command') or 16)
+            frame = int(p.get('frame', 3) or 3)
+        except (TypeError, ValueError):
+            continue
+        out.append({'seq': int(p.get('seq', i) or 0), 'command': cmd, 'frame': frame, 'current': 0, 'autocontinue': 1,
+                    'param1': float(p.get('param1') or 0), 'param2': float(p.get('param2') or 0), 'param3': float(p.get('param3') or 0), 'param4': float(p.get('param4') or 0),
+                    'x': int(round(lat * 1e7)), 'y': int(round(lon * 1e7)), 'z': z})
+    return out
+
+
 async def _gorev_yukle(s, mission):
     """Görev planı (HEPGO `route`/items biçimi) SITL hazır olunca hub komutuyla yüklenir; hata uçuşu düşürmez."""
     plan = db.j(mission.get('plan')) if isinstance(mission.get('plan'), str) else (mission.get('plan') or {})
-    items = plan.get('items') or plan.get('route') or []
+    items = plan_items(plan)
     if not items:
         return
     for _ in range(90):

@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config  # noqa: F401 — ilk: çekirdek yollarını yönlendirir
@@ -22,10 +22,11 @@ from . import bridge, db
 from .routers import crew, fly, hangar, meta, missions, ops, session, settings, tracks
 
 log = logging.getLogger('simumav')
-# CSP (§7): inline script yok; Google Maps JS + 3B karolar (googleapis/gstatic/ggpht), Cesium (replay3d.js cdn.jsdelivr.net v1.145 sabit + ion/arcgis),
+# CSP (§7): inline script yok; 'unsafe-eval' ZORUNLU: Cesium 1.145 CDN paketi (replay3d.js / görev harita katmanı) içindeki Knockout `(0,eval)("this")`
+# yüklemede eval ister, aksi hâlde Cesium hiç açılmaz (HEPGO app.main CSP'si ile aynı); 'wasm-unsafe-eval': 3DTilesRenderer/draco WebAssembly. Google Maps JS + 3B karolar (googleapis/gstatic/ggpht), Cesium (replay3d.js cdn.jsdelivr.net v1.145 sabit + ion/arcgis),
 # arazi/uydu (arcgisonline, amazonaws terrarium), hesap servisi (mastertool.download), kendi WS'si.
 CSP = ("default-src 'self'; "
-       "script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://cdn.jsdelivr.net https://*.cesium.com; "
+       "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://cdn.jsdelivr.net https://*.cesium.com; "
        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
        "connect-src 'self' https://mastertool.download https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.ggpht.com "
        "https://tile.googleapis.com https://cdn.jsdelivr.net https://*.cesium.com https://*.arcgisonline.com https://*.amazonaws.com "
@@ -122,6 +123,12 @@ def kok_js(name: str):
     if re.fullmatch(r'[a-z0-9_-]+\.js', f) and site.is_file():
         return _js(site)
     return JSONResponse({'detail': {'error': 'not_found', 'message': 'Bulunamadı'}}, status_code=404)
+
+
+@app.get('/app')
+def app_kabuk():
+    """`/app` (eğik çizgisiz; tanıtım sitesi girişten sonra buraya yönlendirir) → `/app/` (StaticFiles html=True index.html)."""
+    return RedirectResponse('/app/', status_code=307)
 
 
 @app.get('/healthz')

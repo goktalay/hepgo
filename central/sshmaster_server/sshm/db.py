@@ -1,5 +1,5 @@
 """Mastertool hesap veritabanı (data/sshm.db, stdlib sqlite3): tek kullanıcı hesabı, uygulama bazında lisans / kütüphane / sürüm.
-Uygulama kodları: sm = SSH Master, fm = FTP Masters. Kütüphane blob'u uçtan uca şifrelidir: sunucu okuyamaz.
+Uygulama kodları: sm = SSH Master, fm = FTP Masters; oyunlar vf = VOLFAI, sv = SIMUMAV (<kod>_profiles). Kütüphane blob'u uçtan uca şifrelidir: sunucu okuyamaz.
 Eski SSH Master şeması (uygulama sütunsuz) init() içinde yerinde taşınır; mevcut veriler sm'e bağlanır."""
 import os
 import sqlite3
@@ -110,6 +110,23 @@ CREATE TABLE IF NOT EXISTS vf_profiles (            -- VOLFAI (web oyunu, uygula
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     profile TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sv_profiles (            -- SIMUMAV (simumav.com, uygulama kodu sv): hesap servisinde görünen özet (pilot adı, uçuş, saat)
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    profile TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS web_releases (           -- web uygulaması paketleri (SIMUMAV tar.gz; GitHub Actions → /api/sv/web-releases)
+    id INTEGER PRIMARY KEY,
+    app TEXT NOT NULL,
+    version TEXT NOT NULL,
+    file TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT,                               -- 'release-key' | 'central'
+    UNIQUE (app, version)
 );
 """
 

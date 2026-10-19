@@ -18,6 +18,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import shutil
@@ -58,11 +59,21 @@ APPS |= TOOLS                                          # lisans, oturum, senkron
 # Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
 # kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına
 # kopyalanır (tanıtım sayfası static/mt/oyunlar/<slug>/tanitim/ depodan gelir). Simge: static/mt/img/<slug>.svg|.png|-512.png.
-GAMES = {'vf': {'name': 'VOLFAI', 'slug': 'volfai', 'icon': 'volfai'}}
+GAMES = {'vf': {'name': 'VOLFAI', 'slug': 'volfai', 'icon': 'volfai'},
+         # SIMUMAV: kendi sitesinde çalışan oyun (site → url/tanıtım simumav.com; mastertool.download altında dosya sunulmaz); profil sv_profiles
+         'sv': {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': settings.SIMUMAV_SITE, 'promo': settings.SIMUMAV_SITE + '/'}}
 GAMES['vf']['desc'] = {'tr': "Volfied'in dokunmatik yeniden doğuşu: alanı ele geçir, uzaylıları kuşat", 'en': 'A touch-first rebirth of Volfied: claim the field, trap the aliens',
                        'fr': "Renaissance tactile de Volfied : conquérez le terrain, encerclez les aliens", 'de': 'Volfied neu für Touch: Fläche erobern, Aliens einkesseln',
                        'es': 'El renacer táctil de Volfied: conquista el campo, acorrala a los aliens', 'ar': 'ولادة جديدة للمس للعبة Volfied: استولِ على الساحة وحاصر الفضائيين',
                        'zh': 'Volfied 的触屏新生：占领区域，围困外星人', 'ru': 'Volfied заново для сенсора: захватывай поле, окружай пришельцев'}
+GAMES['sv']['desc'] = {'tr': 'Gerçek ArduPilot fiziğiyle dron simülasyonu: hangar, mürettebat, parkur, görev ve Mission Planner bağlantısı',
+                       'en': 'Drone simulation on real ArduPilot physics: hangar, crew, tracks, missions and a Mission Planner link',
+                       'fr': 'Simulation de drone sur la physique ArduPilot : hangar, équipage, circuits, missions et liaison Mission Planner',
+                       'de': 'Drohnensimulation mit echter ArduPilot-Physik: Hangar, Crew, Strecken, Missionen und Mission-Planner-Anbindung',
+                       'es': 'Simulación de drones con física ArduPilot real: hangar, tripulación, circuitos, misiones y enlace a Mission Planner',
+                       'ar': 'محاكاة طائرات بدون طيار بفيزياء ArduPilot الحقيقية: الحظيرة والطاقم والمسارات والمهام واتصال Mission Planner',
+                       'zh': '基于真实 ArduPilot 物理的无人机模拟：机库、机组、赛道、任务与 Mission Planner 连接',
+                       'ru': 'Симуляция дронов на реальной физике ArduPilot: ангар, экипаж, трассы, миссии и связь с Mission Planner'}
 GAME_FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')          # oyun dizinindeki yol parçaları (gizli dosya ve .. yok)
 GAME_MIME = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
              '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json',
@@ -109,6 +120,28 @@ def need_prefix(a, apps_only=False):
     if a not in (APPS if apps_only else PREFIXES):
         raise Err(404, 'not_found', 'Bulunamadı')
     return a
+
+
+SV_CORS_ORIGINS = {settings.SIMUMAV_SITE, settings.SIMUMAV_SITE.replace('https://', 'https://www.')}
+
+
+@app.middleware('http')
+async def _sv_cors(request: Request, call_next):
+    """CORS yalnız SIMUMAV yolları (/api/sv/*) ve yalnız simumav.com kökeni: tarayıcı hesap servisine simumav.com'dan Bearer ile giriş yapar.
+    Çerez gönderilmez (credentials yok); izinli başlıklar Authorization, Content-Type, X-SSHM."""
+    origin = request.headers.get('origin')
+    izinli = origin in SV_CORS_ORIGINS and request.url.path.startswith('/api/sv/')
+    if izinli and request.method == 'OPTIONS':
+        resp = Response(status_code=204)
+    else:
+        resp = await call_next(request)
+    if izinli:
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-SSHM'
+        resp.headers['Access-Control-Max-Age'] = '600'
+        resp.headers['Vary'] = 'Origin'
+    return resp
 
 
 @app.exception_handler(Err)
@@ -205,7 +238,7 @@ def need_auth_hash(v, field='auth_hash'):
 
 
 def user_public(u):
-    return {'id': u['id'], 'email': u['email'], 'name': u['name']}
+    return {'id': u['id'], 'email': u['email'], 'name': u['name'], 'verified': bool(u['verified_at']) or u['status'] == 'AKTIF'}
 
 
 def lic(conn, uid, a):
@@ -708,7 +741,10 @@ def need_game(a):
 
 
 def game_url(k, promo=False):
-    return f"{settings.PORTAL_URL}/oyunlar/{GAMES[k]['slug']}/" + ('tanitim/' if promo else '')
+    g = GAMES[k]
+    if g.get('site'):   # kendi sitesinde çalışan oyun (SIMUMAV): url = site, tanıtım = promo
+        return (g.get('promo') or g['site'] + '/') if promo else g['site'] + '/'
+    return f"{settings.PORTAL_URL}/oyunlar/{g['slug']}/" + ('tanitim/' if promo else '')
 
 
 @app.get('/api/{a}/profile')
@@ -716,7 +752,7 @@ def profile_get(a: str, request: Request):
     need_game(a)
     with db.connect() as conn:
         u, _ = current(request, conn, a=a)
-        r = conn.execute('SELECT profile, updated_at FROM vf_profiles WHERE user_id = ?', (u['id'],)).fetchone()
+        r = conn.execute(f'SELECT profile, updated_at FROM {a}_profiles WHERE user_id = ?', (u['id'],)).fetchone()
     return {'user': {'id': u['id'], 'name': u['name']}, 'profile': json.loads(r['profile']) if r else None, 'updated_at': r['updated_at'] if r else None}
 
 
@@ -736,8 +772,20 @@ async def profile_put(a: str, request: Request):
     if len(text.encode()) > PROFILE_MAX:
         raise Err(413, 'too_large', 'Profil 64 KB sınırını aşıyor')
     with db.connect() as conn:
-        u, _ = current(request, conn, a=a)
-        conn.execute('INSERT INTO vf_profiles (user_id, profile, updated_at) VALUES (?,?,?) '
+        sec = request.headers.get('x-simumav-secret')
+        if a == 'sv' and sec is not None:   # SIMUMAV sunucusu (paylaşılan gizli): kullanıcı adına özet yazar (§7 hesap servisi tarafı)
+            if not settings.SIMUMAV_SHARED_SECRET or not hmac.compare_digest(sec, settings.SIMUMAV_SHARED_SECRET):
+                raise Err(403, 'forbidden', 'Yetkisiz')
+            try:
+                uid = int(b.get('user_id'))
+            except (TypeError, ValueError):
+                raise Err(422, 'invalid', 'user_id gerekir')
+            u = conn.execute("SELECT * FROM users WHERE id = ? AND status = 'AKTIF'", (uid,)).fetchone()
+            if not u:
+                raise Err(404, 'not_found', 'Kullanıcı bulunamadı')
+        else:
+            u, _ = current(request, conn, a=a)
+        conn.execute(f'INSERT INTO {a}_profiles (user_id, profile, updated_at) VALUES (?,?,?) '
                      'ON CONFLICT(user_id) DO UPDATE SET profile = excluded.profile, updated_at = excluded.updated_at', (u['id'], text, db.now()))
         conn.commit()
     return {'ok': True}
@@ -773,7 +821,7 @@ def account(a: str, request: Request):
                          'download_url': _dl_url(u, k),
                          'downloads': conn.execute('SELECT COUNT(*) FROM downloads WHERE user_id = ? AND app = ?', (u['id'], k)).fetchone()[0]})
         launcher = {'name': LAUNCHER['name'], 'release': release_public(latest_release(conn, 'mt')), 'download_url': _dl_url(u, 'mt')}
-        games = [game_entry(k) | {'has_profile': bool(conn.execute('SELECT 1 FROM vf_profiles WHERE user_id = ?', (u['id'],)).fetchone())}
+        games = [game_entry(k) | {'has_profile': bool(conn.execute(f'SELECT 1 FROM {k}_profiles WHERE user_id = ?', (u['id'],)).fetchone())}
                  for k in GAMES]
         sm = apps[0]
         # sm alanları üst düzeyde de (v1 hesap sayfası önbellekte kalmış tarayıcılar için)
@@ -1042,6 +1090,125 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
             conn.execute('UPDATE releases SET portable_file = ?, portable_size = ? WHERE id = ?', (name, size, r['id']))
         conn.commit()
     return {'ok': True, 'version': version, 'kind': kind, 'sha256': sha, 'size': size}
+
+
+# ---------------- web uygulaması paketleri (SIMUMAV: GitHub Actions → tar.gz; sunucudaki root yayın birimi `latest` dosyasını izler) ----------------
+WEB_RELEASE_APPS = {'sv': 'simumav'}          # kod → paket adı öneki (simumav-<v>.tar.gz)
+TAR_MAX_UYE = 20000
+
+
+def _tar_dogrula(path, version):
+    """Paket güvenliği (docs/simumav.md §6.2): gzip imzası (`not_gzip`); tar yalnız LİSTELENİR, açılmaz; üye adı normalize edilir — mutlak yol,
+    `..` bileşeni, sembolik/sert bağ, aygıt/fifo → `unsafe_archive`; üye sayısı ≤ TAR_MAX_UYE; kökte (`VERSION`, `./VERSION` ya da tek kök klasör
+    altında) VERSION == version (`version_mismatch`); `requirements.txt` ve `run-simumav.sh` yoksa `incomplete`."""
+    import tarfile
+    with open(path, 'rb') as f:
+        if f.read(2) != b'\x1f\x8b':
+            raise Err(422, 'not_gzip', 'Paket gzip değil')
+    kokler, ver_icerik, dosyalar = set(), None, set()
+    try:
+        with tarfile.open(path, 'r:gz') as tf:
+            n = 0
+            while (m := tf.next()) is not None:
+                n += 1
+                if n > TAR_MAX_UYE:
+                    raise Err(422, 'unsafe_archive', f'Pakette {TAR_MAX_UYE} üyeden fazla girdi var')
+                ad = m.name.replace('\\', '/')
+                parcalar = [p for p in ad.split('/') if p not in ('', '.')]
+                if ad.startswith('/') or '..' in parcalar or ad.startswith('~') or not parcalar or (len(parcalar[0]) == 2 and parcalar[0][1] == ':'):
+                    raise Err(422, 'unsafe_archive', f'Pakette geçersiz yol: {ad[:80]}')
+                if m.issym() or m.islnk() or m.isdev() or m.isfifo() or not (m.isfile() or m.isdir()):
+                    raise Err(422, 'unsafe_archive', f'Pakette bağ/aygıt girdisi: {ad[:80]}')
+                kokler.add(parcalar[0])
+                if m.isfile():
+                    dosyalar.add('/'.join(parcalar))
+                    if parcalar[-1] == 'VERSION' and len(parcalar) <= 2:
+                        fo = tf.extractfile(m)
+                        ver_icerik = (fo.read(64).decode('utf-8', 'replace').strip() if fo else '')
+    except tarfile.TarError as e:
+        raise Err(422, 'unsafe_archive', f'Paket okunamadı: {str(e)[:120]}')
+    tek_kok = next(iter(kokler)) if len(kokler) == 1 and 'VERSION' not in dosyalar else None   # tek kök klasör altında paket
+    on = f'{tek_kok}/' if tek_kok else ''
+    if ver_icerik is None or f'{on}VERSION' not in dosyalar:
+        raise Err(422, 'version_mismatch', 'Pakette kök VERSION dosyası yok')
+    if ver_icerik.lstrip('vV') != version:
+        raise Err(422, 'version_mismatch', f'Paketteki VERSION ({ver_icerik[:20]}) sürümle eşleşmiyor')
+    if f'{on}requirements.txt' not in dosyalar or f'{on}run-simumav.sh' not in dosyalar:
+        raise Err(422, 'incomplete', 'Pakette requirements.txt / run-simumav.sh yok')
+
+
+@app.post('/api/{a}/web-releases')
+async def web_release_upload(a: str, request: Request, version: str = Form(...), package: UploadFile = File(...), sha256: str = Form(...), notes: str = Form('')):
+    """SIMUMAV web paketi (tar.gz ≤ 95 MB): X-Release-Key (SIMUMAV_RELEASE_KEY) ya da Merkez anahtarı. Kayıt RELEASE_DIR/sv/<v>/simumav-<v>.tar.gz +
+    web_releases satırı; `RELEASE_DIR/sv/latest` dosyasına sürüm ATOMİK yazılır (tmp + os.replace) — root yayın birimi (deploy/simumav) izler."""
+    if a not in WEB_RELEASE_APPS:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    rate(request, 'web-release', 10)
+    _release_auth(request, a)
+    kim = 'release-key' if request.headers.get('x-release-key') else 'central'
+    version = _version(version)
+    sha = (sha256 or '').strip().lower()
+    if not re.fullmatch(r'[0-9a-f]{64}', sha):
+        raise Err(422, 'bad_sha256', 'sha256 geçersiz (64 hex)')
+    with db.connect() as conn:
+        if conn.execute('SELECT 1 FROM web_releases WHERE app = ? AND version = ?', (a, version)).fetchone():
+            raise Err(409, 'exists', 'Bu sürüm zaten yüklü')
+    d = settings.RELEASE_DIR / a / version
+    d.mkdir(parents=True, exist_ok=True)
+    name = f'{WEB_RELEASE_APPS[a]}-{version}.tar.gz'
+    tmp = d / f'.{name}.part'
+    try:
+        size = 0
+        h = hashlib.sha256()
+        with open(tmp, 'wb') as f:
+            while chunk := await package.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.WEB_RELEASE_MAX:
+                    raise Err(413, 'too_large', 'Paket 95 MB sınırını aşıyor')
+                h.update(chunk)
+                f.write(chunk)
+        if size < 64:
+            raise Err(422, 'invalid', 'Paket boş')
+        if h.hexdigest() != sha:
+            raise Err(422, 'bad_sha256', 'sha256 dosya ile eşleşmiyor')
+        _tar_dogrula(tmp, version)
+        tmp.replace(d / name)
+        os.chmod(d / name, 0o644)
+        (d / f'{name}.sha256').write_text(f'{sha}  {name}\n')
+    except Err:
+        shutil.rmtree(d, ignore_errors=True)   # hata: sürüm klasörü silinir, latest değişmez
+        raise
+    with db.connect() as conn:
+        conn.execute('INSERT INTO web_releases (app, version, file, size, sha256, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)',
+                     (a, version, f'{a}/{version}/{name}', size, sha, notes.strip()[:4000] or None, db.now(), kim))
+        conn.commit()
+    latest_tmp = settings.RELEASE_DIR / a / 'latest.tmp'
+    latest_tmp.write_text(version + '\n')
+    os.replace(latest_tmp, settings.RELEASE_DIR / a / 'latest')   # atomik: path unit bunu izler
+    return JSONResponse({'ok': True, 'app': a, 'version': version, 'sha256': sha, 'size': size, 'file': f'{a}/{version}/{name}'}, status_code=201)
+
+
+@app.get('/api/{a}/web-releases/latest')
+def web_release_latest(a: str):
+    """Açık uç (dışarıdan yayın doğrulaması): son web paketi {version, sha256, size, created_at}; yoksa 404."""
+    if a not in WEB_RELEASE_APPS:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    with db.connect() as conn:
+        r = conn.execute('SELECT version, sha256, size, created_at FROM web_releases WHERE app = ? ORDER BY id DESC LIMIT 1', (a,)).fetchone()
+    if not r:
+        raise Err(404, 'no_release', 'Henüz yayımlanmış paket yok')
+    return dict(r)
+
+
+@app.get('/api/{a}/web-releases')
+def web_release_list(a: str, request: Request):
+    if a not in WEB_RELEASE_APPS:
+        raise Err(404, 'not_found', 'Bulunamadı')
+    central(request)
+    with db.connect() as conn:
+        rows = conn.execute('SELECT id, app, version, file, size, sha256, notes, created_at FROM web_releases WHERE app = ? ORDER BY id DESC', (a,)).fetchall()
+    latest = settings.RELEASE_DIR / a / 'latest'
+    return {'releases': [dict(r) for r in rows], 'latest': latest.read_text().strip() if latest.is_file() else None}
 
 
 # ---------------- destek talepleri (Merkez talep ekranına düşer) ----------------

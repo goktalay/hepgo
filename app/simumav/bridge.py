@@ -24,7 +24,7 @@ from pathlib import Path
 from . import config, db  # noqa: F401 — config önce: çekirdek yollarını yönlendirir
 from .. import config as core_config  # noqa: E402
 from .. import db as core_db  # noqa: E402
-from .. import drone_params, drone_sitl, flightsim, flightsim_models, flightsim_replay  # noqa: E402
+from .. import drone_sitl, flightsim, flightsim_models, flightsim_replay  # noqa: E402
 
 TIP_ESLEME = {'multirotor': 'multirotor', 'fpv': 'multirotor', 'plane': 'sabit_kanat', 'interceptor': 'sabit_kanat', 'heli': 'helikopter', 'vtol': 'vtol'}
 TYPES = tuple(TIP_ESLEME)
@@ -118,7 +118,7 @@ def params_dogrula(p):
     out = {}
     for k, v in p.items():
         ad = str(k or '').strip().upper()
-        if not PARAM_AD.match(ad) or ad.startswith(PARAM_YASAK_ONEK) or drone_params.haric_mi(ad) and ad not in PARAM_AD_IZIN:
+        if not PARAM_AD.match(ad) or ad.startswith(PARAM_YASAK_ONEK):
             raise BridgeHata(422, 'param_rejected', f'Parametre izinli listede değil: {ad[:20]}', name=ad[:20])
         if not (ad in PARAM_AD_IZIN or ad.startswith(PARAM_ONEK_IZIN)):
             raise BridgeHata(422, 'param_rejected', f'Parametre izinli listede değil: {ad}', name=ad)
@@ -380,9 +380,12 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
             with core_db.connect() as conn:
                 mdl = flightsim_models.coz(conn, ctip, {'id': _core_model_id(drone['model_key'])})
             # Kullanıcının parametreleri çekirdeğin kalıcı parametre tablosuna (SITL defaults + ilk kalp atışında PARAM_SET); dron id'si tekil
-            drone_params.sil(drone['id'])
-            for ad, deger in params.items():
-                drone_params.kaydet(drone['id'], ad, deger, source='hepgo', user_id=user['id'])
+            # drone_params.kaydet TKOFF_* gibi oturum adlarını hariç tutar; SIMUMAV beyaz listesi geçerli → doğrudan yazılır (aynı tablo, çekirdek yukle() okur)
+            with core_db.connect() as conn:
+                conn.execute('DELETE FROM drone_sitl_params WHERE drone_id = ?', (int(drone['id']),))
+                conn.executemany('INSERT INTO drone_sitl_params (drone_id, name, value, ptype, updated_at, updated_by, source) VALUES (?,?,?,?,?,?,?)',
+                                 [(int(drone['id']), ad, float(deger), 9, core_db.now(), user['id'], 'hepgo') for ad, deger in params.items()])
+                conn.commit()
             return mdl
         try:
             mdl = await loop.run_in_executor(None, hazirla)

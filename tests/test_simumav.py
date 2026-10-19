@@ -62,6 +62,18 @@ def giris(c, ad):
     return r.json()
 
 
+def oturum(c, ad):
+    """Aynı TestClient üzerinden ek kullanıcı: çerez başlığı ile (ayrı TestClient nesnesi her istekte kendi olay döngüsünü kapatır ve
+    sunucudaki oturum görevlerini iptal eder — test artefaktı). Dönüş: (okuma başlıkları, yazma başlıkları)."""
+    asil = c.cookies.get('smsid')
+    r = c.post('/api/session', json={'dev_user': ad}, headers=H)
+    assert r.status_code == 200, r.text
+    tok = r.cookies.get('smsid')
+    c.cookies.clear()
+    c.cookies.set('smsid', asil)
+    return {'Cookie': f'smsid={tok}'}, {'Cookie': f'smsid={tok}', 'Origin': ORIGIN}
+
+
 def main():
     # ---- shim: HEPGO'ya özgü modüller SIMUMAV karşılıklarıyla yüklendi
     for k in ('app.config', 'app.db', 'app.drone_hub', 'app.feed', 'app.flightlog', 'app.flight_analysis'):
@@ -72,6 +84,8 @@ def main():
     from app import config as core_cfg
     assert str(core_cfg.DATA_DIR).startswith(D) and str(core_cfg.UPLOAD_DIR).startswith(D)
     sim_terrain.FETCH = SahteFetch()
+    config.RATE['write'] = (100000, 60)   # CRUD/kota sınamaları 60/dk yazma sınırını aşar; oran sınırı ayrı sınanır (session 10/dk)
+    config.RATE['read'] = (100000, 60)
 
     with TestClient(smain.app, base_url=ORIGIN) as c:
         # ---- meta oturumsuz: 200, maps_key yok; güvenlik başlıkları
@@ -90,6 +104,7 @@ def main():
         s = giris(c, 'ali')
         assert s['user']['display_name'] == 'ali' and s['pilots_count'] == 1 and s['drones_count'] == 1 and s['tracks_count'] == 1
         assert 'smsid' in c.cookies
+        s_tok = c.cookies['smsid']
         me = c.get('/api/session').json(); assert me['user']['id'] == s['user']['id'] and me['active_flight'] is None
         tr = c.get('/api/tracks').json()['tracks'][0]
         assert tr['name'] == 'TRTEST' and abs(tr['lat'] - 40.0990) < 1e-6 and tr['is_default'] and tr['world_mode'] == 'google3d' and tr['gates'] == []
@@ -135,7 +150,7 @@ def main():
             if r.status_code != 201:
                 break
         assert r.status_code == 409 and r.json()['detail']['error'] == 'quota' and len(c.get('/api/hangar').json()['drones']) == config.QUOTA['drones']
-        assert c.delete(f'/api/hangar/{okid}', headers=H).json()['ok'] and c.get(f'/api/hangar/catalog').status_code == 200
+        assert c.delete(f'/api/hangar/{okid}', headers=H).json()['ok'] and c.get('/api/hangar/catalog').status_code == 200
 
         # ---- crew
         chars = c.get('/api/crew/characters').json()['characters']
@@ -183,9 +198,9 @@ def main():
         assert len(c.get(f"/api/missions?track_id={t2['id']}").json()['missions']) == 2
 
         # ---- sahiplik: ikinci kullanıcı başkasının kayıtlarını göremez (404)
-        c2 = TestClient(smain.app, base_url=ORIGIN); giris(c2, 'veli')
-        assert c2.get(f"/api/tracks/{tid0}/preview.png").status_code == 404 and c2.put(f'/api/missions/{mid}', json={'name': 'x'}, headers=H).status_code == 404
-        assert c2.delete(f"/api/hangar/{d0['id']}", headers=H).status_code == 404
+        HV, HVW = oturum(c, 'veli')
+        assert c.get(f"/api/tracks/{tid0}/preview.png", headers=HV).status_code == 404 and c.put(f'/api/missions/{mid}', json={'name': 'x'}, headers=HVW).status_code == 404
+        assert c.delete(f"/api/hangar/{d0['id']}", headers=HVW).status_code == 404
 
         # ---- fly/start (sahte kip): flight kaydı + MP TCP dinleyici + IP kilidi
         drone_id = d0['id']
@@ -203,7 +218,7 @@ def main():
         assert c.delete(f'/api/hangar/{drone_id}', headers=H).status_code == 409
         st = c.get(f'/api/fly/{fid}').json()
         assert st['active'] and st['live']['sim_id'] == sid and st['live']['mp']['port'] == port and st['live']['mp']['locked_ip'] is None and st['live']['gates'] and st['mp']['connected'] is False
-        assert c2.get(f'/api/fly/{fid}').status_code == 404
+        assert c.get(f'/api/fly/{fid}', headers=HV).status_code == 404
         # MP TCP: 127.0.0.1'den bağlan, GCS kalp atışı gönder → SITL (sahte kip) kalp atışı TCP'den döner
         from pymavlink.dialects.v20 import ardupilotmega as D20
         enc = D20.MAVLink(None, srcSystem=255, srcComponent=190)
@@ -245,8 +260,9 @@ def main():
             time.sleep(0.05)
         assert c.get(f'/api/fly/{fid}').json()['live']['mp']['rejected'] >= 2
         # WS hello (çerezle) + başkası 4403
-        with c.websocket_connect(f'/ws/fly/{sid}') as ws:
-            hello = ws.receive_json(); assert hello['t'] == 'hello' and hello['session']['id'] == sid and hello['flight_id'] == fid and len(hello['gates']) == 2
+        CK = {'Cookie': f"smsid={c.cookies['smsid']}"}   # TestClient WS'e çerez eklemez
+        with c.websocket_connect(f'/ws/fly/{sid}', headers=CK) as ws:
+            hello = ws.receive_json(); assert hello['t'] == 'hello' and hello['session']['id'] == sid and hello['flight_id'] == fid and len(hello['gates']) == 2, json.dumps(hello)[:600]
             ws.send_json({'t': 'ping'});
             m = ws.receive_json()
             while m.get('t') not in ('pong',):
@@ -255,24 +271,24 @@ def main():
             while m.get('t') != 'res':
                 m = ws.receive_json()
             assert m['ok'] is True
-        try:
-            with c2.websocket_connect(f'/ws/fly/{sid}') as ws:
-                ws.receive_json()
-            assert False, 'başkası bağlanamamalı'
-        except Exception as e:   # noqa: BLE001 — 4403 kapanışı WebSocketDisconnect
-            assert '4403' in str(getattr(e, 'code', '')) or getattr(e, 'code', None) == 4403, e
+        # başkası (geçerli oturum, sahibi değil) → {'t':'error','error':'not_found'} + 4404; çerezsiz → auth
+        with c.websocket_connect(f'/ws/fly/{sid}', headers=HV) as ws:
+            assert ws.receive_json() == {'t': 'error', 'error': 'not_found'}
+        with c.websocket_connect(f'/ws/fly/{sid}', headers={'Cookie': 'smsid=yok'}) as ws:
+            assert ws.receive_json() == {'t': 'error', 'error': 'auth'}
         # uyumluluk yüzeyi: /api/drone/sim/sessions/{id}, cmd, meta
-        assert c.get(f'/api/drone/sim/sessions/{sid}').json()['id'] == sid and c2.get(f'/api/drone/sim/sessions/{sid}').status_code == 404
+        assert c.get(f'/api/drone/sim/sessions/{sid}').json()['id'] == sid and c.get(f'/api/drone/sim/sessions/{sid}', headers=HV).status_code == 404
         assert c.post(f'/api/drone/sim/sessions/{sid}/cmd', json={'name': 'mode', 'params': {'mode': 'LOITER'}}, headers=H).json()['ok']
         cm = c.get('/api/drone/sim/meta').json(); assert cm['simumav'] and cm['centers'][0]['name'] == 'TRTEST' and cm['limits']['max_minutes'] == 45
         # sunucu genel sınır (2): veli bir uçuş açar, üçüncü kullanıcı 429 bekleme odası
-        tv = c2.get('/api/tracks').json()['tracks'][0]; dv = c2.get('/api/hangar').json()['drones'][0]; pv = c2.get('/api/crew').json()['pilots'][0]
-        r = c2.post('/api/fly/start', json={'drone_id': dv['id'], 'pilot_id': pv['id'], 'track_id': tv['id'], 'launch': 'wheels'}, headers=H); assert r.status_code == 201, r.text
+        tv = c.get('/api/tracks', headers=HV).json()['tracks'][0]; dv = c.get('/api/hangar', headers=HV).json()['drones'][0]; pv = c.get('/api/crew', headers=HV).json()['pilots'][0]
+        r = c.post('/api/fly/start', json={'drone_id': dv['id'], 'pilot_id': pv['id'], 'track_id': tv['id'], 'launch': 'wheels'}, headers=HVW); assert r.status_code == 201, r.text
         fv = r.json()['flight_id']
-        c3 = TestClient(smain.app, base_url=ORIGIN); giris(c3, 'can')
-        t3 = c3.get('/api/tracks').json()['tracks'][0]; d3 = c3.get('/api/hangar').json()['drones'][0]; p3 = c3.get('/api/crew').json()['pilots'][0]
-        r = c3.post('/api/fly/start', json={'drone_id': d3['id'], 'pilot_id': p3['id'], 'track_id': t3['id'], 'launch': 'wheels'}, headers=H)
-        assert r.status_code == 429 and r.json()['detail']['error'] == 'server_full' and 'Retry-After' in r.headers
+        assert bridge.aktif_sayisi() == 2
+        HC, HCW = oturum(c, 'can')
+        t3 = c.get('/api/tracks', headers=HC).json()['tracks'][0]; d3 = c.get('/api/hangar', headers=HC).json()['drones'][0]; p3 = c.get('/api/crew', headers=HC).json()['pilots'][0]
+        r = c.post('/api/fly/start', json={'drone_id': d3['id'], 'pilot_id': p3['id'], 'track_id': t3['id'], 'launch': 'wheels'}, headers=HCW)
+        assert r.status_code == 429 and r.json()['detail']['error'] == 'server_full' and 'Retry-After' in r.headers, r.text
         # stop (gates sonucu ile) → flights satırı tamam; MP dinleyici kapandı
         s1.close()
         assert c.post(f'/api/fly/{fid}/stop', json={'gates': {'passed': 3, 'missed': 1, 'laps': 1, 'best_lap_s': 42.5}}, headers=H).json()['ok']
@@ -288,10 +304,10 @@ def main():
         except OSError:
             pass
         assert c.get('/api/session').json()['active_flight'] is None and c.get('/api/crew').json()['pilots'][0]['flights'] == 1
-        assert c2.post(f'/api/fly/{fv}/stop', headers=H).json()['ok']
+        assert c.post(f'/api/fly/{fv}/stop', headers=HVW).json()['ok']
         # ops: liste, sahiplik 404, replay yok (sahte kipte .bin yok) → 404 no_bin, silme
         ops = c.get('/api/ops').json(); assert ops['total'] == 1 and ops['flights'][0]['id'] == fid and ops['stats']['flights'] == 1
-        assert c2.get(f'/api/ops/{fid}').status_code == 404 and c2.delete(f'/api/ops/{fid}', headers=H).status_code == 404
+        assert c.get(f'/api/ops/{fid}', headers=HV).status_code == 404 and c.delete(f'/api/ops/{fid}', headers=HVW).status_code == 404
         r = c.get(f'/api/ops/{fid}/replay'); assert r.status_code == 404 and r.json()['detail']['error'] == 'no_bin'
         assert c.get(f'/api/ops/{fid}/bin').status_code == 404
         assert c.delete(f'/api/ops/{fid}', headers=H).json()['ok'] and c.get('/api/ops').json()['total'] == 0
@@ -306,12 +322,14 @@ def main():
         # ---- oran sınırı: /api/session 10/dk/IP → 429 + Retry-After
         from app.simumav import auth as sauth
         sauth.oran_sifirla()
-        codes = [c3.post('/api/session', json={'dev_user': 'can'}, headers=H).status_code for _ in range(11)]
+        codes = [c.post('/api/session', json={'dev_user': 'can'}, headers=HCW).status_code for _ in range(11)]
         assert codes[:10] == [200] * 10 and codes[10] == 429, codes
-        r = c3.post('/api/session', json={'dev_user': 'can'}, headers=H); assert r.status_code == 429 and r.headers.get('Retry-After') and r.json()['detail']['error'] == 'rate_limited'
+        r = c.post('/api/session', json={'dev_user': 'can'}, headers=HCW); assert r.status_code == 429 and r.headers.get('Retry-After') and r.json()['detail']['error'] == 'rate_limited'
         sauth.oran_sifirla()
         # çıkış
-        assert c.delete('/api/session', headers=H).json()['ok'] and c.get('/api/session').status_code == 401
+        c.cookies.clear(); c.cookies.set('smsid', s_tok)   # oran sınaması jar'a 'can' çerezi yazdı; ali'ye dön
+        r1 = c.delete('/api/session', headers=H); r2 = c.get('/api/session')
+        assert r1.json()['ok'] and r2.status_code == 401, (r1.text, r2.status_code, r2.text[:200])
     print('test_simumav: TAMAM')
 
 

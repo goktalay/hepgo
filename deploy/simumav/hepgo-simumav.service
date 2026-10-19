@@ -1,19 +1,19 @@
 [Unit]
-Description=SIMUMAV dron simülasyon oyunu (simumav.com) — Unix soketi, Cloudflare tüneli önünde; MP TCP 15600–15999
+Description=SIMUMAV dron simülasyon oyunu (simumav.com) — Unix soketi, Cloudflare tüneli önünde; Mission Planner TCP 15600–15999
 After=network.target hepgo-sshmasters.service
 
 [Service]
 User=hepgo
 Group=hepgo
-WorkingDirectory=/opt/hepgo/caymazbuild
-# .env: /opt/hepgo/caymazbuild/.env (SIMUMAV_* anahtarları; bkz. deploy/simumav/README.md)
-Environment=SIMUMAV_ENV_FILE=/opt/hepgo/caymazbuild/.env
+# Kurulum kökü deploy.sh ile /opt/hepgo/simumav (root:root, hepgo yalnız okur); .env 640 root:hepgo, yayında dokunulmaz
+WorkingDirectory=/opt/hepgo/simumav
+EnvironmentFile=/opt/hepgo/simumav/.env
 Environment=SIMUMAV_UDS=/run/hepgo/simumav.sock
 Environment=SIMUMAV_DATA_DIR=/opt/hepgo/simumav-data
 Environment=HEPGO_SITL_DIR=/opt/hepgo/sitl/bin
 RuntimeDirectory=hepgo
 RuntimeDirectoryPreserve=yes
-ExecStart=/opt/hepgo/caymazbuild/run-simumav.sh
+ExecStart=/opt/hepgo/simumav/run-simumav.sh
 Restart=always
 RestartSec=3
 KillMode=mixed

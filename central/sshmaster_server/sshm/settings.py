@@ -54,13 +54,18 @@ RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.g
                 'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', ''),
                 # Araçlar (main.TOOLS): anahtar adı = slug'ın tiresiz büyük harfi + _RELEASE_KEY
                 'ip': os.environ.get('IPTOOLS_RELEASE_KEY', ''), 'fs': os.environ.get('FILESEARCH_RELEASE_KEY', ''),
-                'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', '')}   # mt = Master Tool masaüstü uygulaması (başlatıcı)
+                'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', ''),
+                'sv': os.environ.get('SIMUMAV_RELEASE_KEY', '')}   # mt = Master Tool masaüstü (başlatıcı); sv = SIMUMAV web paketi (/api/sv/web-releases)
 # Destek talepleri Merkez'in talep ekranına düşer: Merkez aynı sunucuda UNIX soketinde (ya da MT_MERKEZ_URL) iç anahtarla çağrılır
 MERKEZ_UDS = os.environ.get('MT_MERKEZ_UDS', '/run/hepgo/merkez.sock')
 MERKEZ_URL = os.environ.get('MT_MERKEZ_URL', 'http://merkez').rstrip('/')
 CENTRAL_SECRET = os.environ.get('SSHM_CENTRAL_SECRET', '') or os.environ.get('VEILOX_CENTRAL_API_SECRET', '')
 SALT_KEY = os.environ.get('SSHM_SALT_KEY', '') or 'sshm-dev-salt-key'   # bilinmeyen e-postaya deterministik tuz (varlık sızmasın)
 SECURE_COOKIE = os.environ.get('SSHM_SECURE_COOKIE', '1') != '0'
+# SIMUMAV sunucusunun sv_profiles yazımı için paylaşılan gizli (X-Simumav-Secret; simumav .env'deki SIMUMAV_MT_SHARED_SECRET ile aynı)
+SIMUMAV_SHARED_SECRET = os.environ.get('SIMUMAV_MT_SHARED_SECRET', '')
+SIMUMAV_SITE = os.environ.get('SIMUMAV_PUBLIC_URL', 'https://simumav.com').rstrip('/')
+WEB_RELEASE_MAX = 95 * 1024 * 1024   # Cloudflare tek istek sınırı altında
 TOKEN_DAYS = 30            # uygulama/web oturumu: bu kadar gün kullanılmazsa düşer (her istekte uzar)
 VERIFY_HOURS = 24          # e-posta doğrulama bağlantısı
 RESET_MINUTES = 60         # şifre sıfırlama bağlantısı

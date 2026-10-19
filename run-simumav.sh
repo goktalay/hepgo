@@ -5,7 +5,7 @@
 #   SIMUMAV_MAX_FLIGHTS, SIMUMAV_MP_PORT_BASE, SIMUMAV_PUBLIC_HOST, GOOGLE_MAPS_API_KEY, HEPGO_SITL_DIR (SITL ikilileri), HEPGO_SITL (0 = sahte kip).
 set -euo pipefail
 cd "$(dirname "$0")"
-[ -d .venv ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
+[ -x .venv/bin/uvicorn ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }   # PROD: deploy.sh kurar
 export SIMUMAV_DATA_DIR="${SIMUMAV_DATA_DIR:-/opt/hepgo/simumav-data}"
 if [ -n "${SIMUMAV_UDS:-}" ]; then
   mkdir -p "$(dirname "$SIMUMAV_UDS")"

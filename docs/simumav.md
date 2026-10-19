@@ -58,9 +58,40 @@ static/simumav/app/     oyun arayüzü (index.html, app.js, modüller hangar/cre
 static/simumav/brand/   ikon (SVG kaynak + 32/64/180/512 PNG), og görseli, modül ikonları
 static/simumav/vendor → three.js ve xterm vb. için HEPGO `static/vendor` aynen kullanılır (mount: /vendor → static/vendor)
 static/simumav/sim/  → HEPGO simülatör ön yüz modülleri (`static/js/modules/flightsim*.js`, `flightsim_g3d.js`, `replay3d.js`)
-                        aynen yeniden kullanılır (mount: /sim → static/js/modules); `api.js` yerine `static/simumav/app/simapi.js`
-                        (aynı dışa aktarımlar: get/post/put/del/ws/upload) — modüller `./api.js` import ettiği için
-                        `/sim/api.js` yolu simumav uygulamasında `simapi.js`'e yönlendirilir (route ile).
+                        aynen yeniden kullanılır (mount: /sim → static/js/modules). DİKKAT: bu modüller `../api.js` ve `../ui.js` içe aktarır
+                        (ÜST dizin) → /sim altında `/api.js` ve `/ui.js` köküne çözülürler. Çekirdek YÖNLENDİRMELERİ (route; Uç ajanı bulgusu):
+                          /api.js  (ve /sim/api.js, /app/simapi.js) → static/simumav/app/simapi.js   (aynı dışa aktarımlar: api{get,post,put,del}, upload, fileUrl, videoUrl, logActivity)
+                          /ui.js   (ve /sim/ui.js)                  → static/simumav/app/fly/simui.js (İNCE ui.js: h, clear, toast, toastError, modal, confirmDialog, field,
+                                                                      fmtDateTime, fmtDuration, t, segmented, goBack, onLeave, pref, setPref — HEPGO ui.js kabuğa/ikon
+                                                                      kataloglarına bağlı olduğundan kullanılmaz; pencere/bildirim body'ye eklenir, tam ekranda görünür)
+                          /static/vendor/three/*  → static/vendor/three  (flightsim3d/g3d/models LIB sabiti MUTLAK `/static/vendor/three/`; `/vendor` mount'u yetmez)
+                          /static/img/google-logo.png, /static/models/caymaz-sim.glb (+ /static/models/*) → HEPGO static (salt okunur dosya yolları)
+                          /api/drone/sim/terrain|tile|osm (GET; parkur world_mode 'real' ve Google 3B yer ofseti için flightsim3d/g3d sabit TERRAIN_API)
+                            → simumav'da aynı yolda vekil (HEPGO app/sim_terrain.py; oturum zorunlu, hız sınırı)
+                          /api/drone/routes (flightsim_panel.js hub:true iken GET) → 404 dönebilir (panel boş liste sayar); /api/drone/sim/g3d-key çağrılmaz
+                            (Uç `g3dKey` getter'ı /api/meta maps_key verir)
+                        Uç modülünün HEPGO modüllerine verdiği YAN ETKİLER/UYUM NOTLARI (static/simumav/app/fly/session.js):
+                          • flightsim_panel.js hub soketini `${location.host}/ws/drone/live` yoluna açar → sayfa düzeyinde WebSocket sarmalayıcısı YALNIZ bu yolu
+                            start.ws (/ws/fly/{sim_id}) adresine çevirir (installWsBridge; uçuş bitince kaldırılır). Panel `{t:'watch', sim_id}` gönderir,
+                            `hello{bridges:[{bridge_id, sim_id, drones}], me:{can_command}}` + `status{bridge_id,state}` + `console{bridge_id,text,sev,tag}` + `res{rid,ok,error}`
+                            bekler; komut `{t:'cmd', rid, bridge_id, sysid:1, name, params}`. ⇒ /ws/fly/{sim_id} TEK soket: sim mesajları (tele/hello{session}/
+                            state/launch/crash/warn/event/route/mission_cur/end) + hub mesajları aynı akışta; `hello` HEM `session` HEM `bridges`/`me` içerir;
+                            bridge_id = session.hub.bridge_id (yoksa −(9000+sim_id)); sim_id sayısal. Uç kendi soketinden de aynı `cmd/res` biçimini kullanır
+                            (takeoff{alt, launch:'hand', hand_speed_ms, hand_pitch_deg} · arm/disarm/mode/rtl/land/reset/crash{kind,speed,dz}).
+                          • Panel MP bölümü "UDP …" yazar → Uç DOM sonrası `tcp:<host>:<port>` + "ilk bağlanan IP kilitlenir" notuna çevirir (patchMpBox).
+                          • flightsim_record.js: REST `opts.rest` ile → POST /api/fly/{flight_id}/rec/start {mime} → {rec_id}; PUT /api/fly/rec/{rid}/chunk?seq=N (octet-stream);
+                            PUT /api/fly/rec/{rid}/thumb (png); POST /api/fly/rec/{rid}/finish {duration_s, mime, text} → {kept:true, file}; DELETE /api/fly/rec/{rid};
+                            GET /api/fly/rec/{rid}/file. Video → flights.video_path. (Paylaşım yok; `share` getter false.)
+                          • flightsim_audio.js: `AUDIO_MODELS.interceptor` çalışma zamanında eklenir (yüksek devir: idle 4200 / max 19000 rpm, 2 silindir, 3 pala).
+                          • flightsim_hud.js `launchHud` 'hand' bilmez → elden atışta HUD'a `launch` verilmez; Uç kendi "LAUNCH HAND · 7 m/s · 12°" etiketini çizer.
+                          • flightsim3d.js sahnesi dışa verilmez → pilot figürü ve FPV halkaları ayrı saydam kaplamada (fly/overlay3d.js; kamera sim.cameraPose()
+                            + FOV ile eşlenir; derinlik birleşimi yok: kaplama nesneleri hep üstte çizilir).
+                          • flightsim3d.js `launch.method:'hand'` → düzenek ve iniş takımı YOK (yalnız 'wheels' iniş takımı, 'ramp'/'vehicle' düzenek ekler).
+                          • localStorage anahtarları HEPGO ile aynı (fs.panel.*, fs.fpv.*, fs.cam, fs.audio.*, fs.mhud.*) — simumav.com ayrı origin, çakışmaz.
+static/simumav/app/fly/  Uç modülü: index.js (render(view, params, ctx)), wizard.js (saf adım makinesi, tip/model/dünya eşlemeleri, hız ölçeği), session.js
+                        (oturum sahnesi, WS köprüsü, komutlar, kayıt adaptörü, özet rapor), hand_launch.js (elden atış: saf zaman çizelgesi + pilot figürü),
+                        gates.js (FPV halkaları: saf geçiş algılama/izleyici/replay + 3B/OSD), overlay3d.js, simui.js, net.js, fly.css, fly-sim.css
+                        (HEPGO app.css fs-* bloklarının kopyası; HEPGO dosyasına dokunulmaz).
 tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_ui.mjs
 ```
 
@@ -151,6 +182,36 @@ Durum değiştiren (POST/PUT/DELETE) her istekte `Origin` izinli kökenden olmal
   üstünde görev araçları: koridor, serbest, ilaçlama dilimleme, FPV bayrak, tarama. `plan` HEPGO görev biçimi.
 - Uç: sihirbaz (dron → parkur → kalkış yöntemi [sabit kanatta: rampa/araç/tekerlek/**elden atış**] → görev opsiyonel →
   BAŞLA) → mevcut HEPGO simülasyon sahnesi + dron paneli + HUD/FPV birebir; MP TCP bilgisi panelde.
+  Uç ayrıntıları (static/simumav/app/fly; tests/test_simumav_fly.mjs):
+  • Sihirbaz adımları `wizard.js` createWizard: drone → track → launch (yalnız plane/interceptor/vtol) → mission → pilot; parkur değişince görev sıfırlanır;
+    `payload()` = POST /api/fly/start gövdesi (launch: {method, angle_deg 10–30, release_kmh 40–110, hand_speed_ms 6–8, hand_pitch_deg 10–15}; kopterde
+    {method:'wheels'}). Tip eşlemesi: plane/interceptor → sabit_kanat, heli → helikopter, fpv/multirotor → multirotor. Model: 'proc:quad250' → builtin:quad,
+    'proc:caymaz' → builtin:caymaz, 'proc:interceptor' → builtin:delta, kütüphane anahtarı + preview GLB → {id, glb_url}. Dron önizlemesi: dronun çevresinde dönen
+    serbest kamera (preview:true dünya turu yaptığından kullanılmaz).
+  • Dünya: `worldFromTrack(track, maps_key)` — world_mode 'real'|'google3d'|'procedural' (google3d anahtar yoksa prosedürel); track.world alanları
+    (size_m, trees_pct|tree_density, extra_buildings|building_count, fog_pct|fog, runway_deg|runway_heading, runway, time_of_day|time) HEPGO WORLD_DEFAULTS'a; rüzgâr
+    tracks.wind'den. Kurulum HEPGO flightsim.js renderSession ile aynı (createFlightSim3D opts: camera, pilotFov, fpvAnalog, fpvNose, onPilotFov, g3dKey, onFallback).
+  • Kameralar: HEPGO CAMERA_MODES (Takip · FPV 'pilot' + OSD · Gimbal 'fpv' + askeri HUD · Serbest · Yer); FPV dron başlangıçta 'pilot'. Ayarlar.analog_fpv → analog OSD.
+  • Interceptor: hız kadranı 600 km/h (SVG; kırmızı bölge %85+), ses modeli yüksek devir; HUD'da mach yok. Diğer ölçekler: plane/vtol 200, fpv 150, heli 120, kopter 100.
+  • ELDEN ATIŞ (`hand_launch.js`, HAND): omuz 1,6 m; SITL başlangıç irtifası 1,8 m (çekirdek); bırakma 7 m/s (6–8), burun yukarı 12° (10–15), yalpa 3°;
+    geri sayım 3 sn → kol geri 0,25 sn → ileri 0,45 sn → BIRAKMA (t=0,7 sn) → ofset 1,2 sn'de SITL'e erir. Görsel: telemetri kaydırması (shimTelemetry:
+    alt_rel += 1,6 m, 0,55 m ileri, pitch/roll hedefe karışır; elde iken hız 0) + saydam kaplamada pilot figürü (kapsül gövde, şapka, kol pivotları; pist yönü;
+    SITL yer noktasının 0,6 m gerisinde). Akış: panel/KOMUT "Kalkış" → cmdSim('takeoff') → geri sayım (AT!) → WS cmd takeoff{launch:'hand', hand_speed_ms,
+    hand_pitch_deg} → sunucu `launch{phase: armed|launch|released}` (yoksa yerel zamanlayıcı ileri taşır; aşamalar geri gitmez).
+    REPLAY (ops ajanı): `replayHandTimeline(frames, FI)` → segmentler {arm, launch, release, disarm} (ilk hareket gs > 2 ya da tırmanış > 0,5 m; bırakma gs ≥ 5 ya da
+    tırmanış > 1 m); `replayHandPhaseAt(segs, t)` → 'idle'|'armed'|'launch'|'released'; `replayHandPhaseStart(segs, t)` aşama başı; görsel `handPoseAt(phase, t − başı)`;
+    figür için `createHandFigure(T)` + `createHandOverlay(overlay, sim, T, {cfg, headingDeg})` (overlay3d.js). Replay zaman çizelgesinde `launch.method==='hand'` dalı
+    HEPGO replayLaunchTimeline yerine bunları kullanır (HEPGO fonksiyonu 'hand' için yalnız tırmanış > 3 m'de bırakır).
+  • FPV HALKALARI (`gates.js`): yerel ENU'da halka merkezi (toLocal(lat,lon), terrainHeight + agl_m), normal n = (sin yaw, cos yaw); geçiş = dron merkezi düzlemi
+    ileri yönde kesti (d0<0→d1≥0) ve kesişim noktası yarıçap içinde ('gate': kare); yarıçap dışında ≤ 3×r → KAÇIRMA (sıra ilerler); ileriki halka içinden geçiş →
+    aradakiler kaçırıldı; sıradaki halkadan ters geçiş → ters yön uyarısı. Aynı karede çoklu geçiş s'ye göre sırayla işlenir. Görev `fpv_gates` → plan.order/laps;
+    yoksa i sırası, 1 tur. 3B: neon torus / kapı çerçevesi, sıradaki mavi nabız, geçilen yeşil, kaçırılan kırmızı, gelecek amber; OSD (kendi 2B tuvali): sıradaki
+    halka halkası/kenar oku + "#i · mesafe", üst orta TUR n/N · geçilen/toplam ✓ ✗ · tur süresi · EN İYİ. Uçuş bitince POST /api/fly/{id}/stop gövdesi
+    `{gates:{passed, missed, best_lap_s, laps}}`; özet raporda (HEPGO reportBody + halka karoları) gösterilir; sunucu flights.summary.gates olarak saklar.
+    REPLAY: `replayGatesAt(frames, FI, gates, plan, origin, t, {terrainHeight, step})` → t anındaki istatistik + statusOf(i); `createGateTracker` saf.
+  • Oturum: tam ekran (BAŞLA tıklamasında), kamera düğmeleri, Panel (P), HUD (H, gimbal), OSD (O, FPV), ses, kayıt (video → /api/fly/.../rec), "Uçuşu Bitir" →
+    POST /api/fly/{id}/stop → özet rapor → "Operasyon'a git" (#/ops); ← Geri uçuşu arka planda bırakır (#/fly/{id} ile geri dönülür: GET /api/fly/{id}
+    `{flight_id, sim_id, mp, ws, session, drone, track, pilot, mission, launch, record, ended_at?}` döner).
 - Operasyon: büyük kartlar (parkur görseli + dronun dönen 3B'si + tarih + pilot); tıkla → replay (HEPGO replay dünyası).
 - Ayarlar: tema (koyu/açık/otomatik), dil (tr, en, de, fr, es, ru, ar), ses, FPV analog efekt, hesap bilgisi, çıkış.
 - Dil dosyaları `static/simumav/app/i18n/<lang>.json`; tanıtım sitesi de aynı dilleri destekler.

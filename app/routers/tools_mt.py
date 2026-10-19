@@ -46,6 +46,7 @@ _kv_lock = threading.Lock()
 LANGS = ('tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru')
 DRIVE = 'H:\\'                 # sanal sürücü: kullanıcının HEPGO kişisel alanı
 FILES_DIR = TOOLS_DIR / 'files'
+UPLOAD_GUARD = None    # mtweb kancası: callable(uid, app) → denetleyici(eklenen_bayt, yeni_dosya) (kota; HEPGO'da yok)
 _locks = defaultdict(threading.Lock)   # (uid, app) → depo kilidi (oku-değiştir-yaz)
 
 
@@ -879,19 +880,27 @@ async def fs_upload(app: str, files: list[UploadFile], dir: str = Form('/'), use
     d = resolve(root, dir)
     d.mkdir(parents=True, exist_ok=True)
     saved = []
+    check = UPLOAD_GUARD(user['id'], app) if UPLOAD_GUARD else None
     for f in files:
         # Klasör yüklemesinde (webkitdirectory) dosya adı göreli yol taşır: alt klasörler korunur
         rel = norm_rel(f.filename or 'dosya').lstrip('/')
         target = resolve(root, '/' + (d.relative_to(root).as_posix() + '/' if d != root else '') + rel)
+        if check:
+            check(-(target.stat().st_size if target.is_file() else 0), not target.exists())
         target.parent.mkdir(parents=True, exist_ok=True)
         size = 0
         with target.open('wb') as out:
             while chunk := await f.read(1024 * 1024):
                 size += len(chunk)
-                if size > MAX_UPLOAD:
+                try:
+                    if size > MAX_UPLOAD:
+                        raise HTTPException(413, f'Dosya çok büyük (en çok {MAX_UPLOAD // (1024 * 1024)} MB)')
+                    if check:
+                        check(len(chunk), False)
+                except HTTPException:
                     out.close()
                     target.unlink(missing_ok=True)
-                    raise HTTPException(413, 'Dosya çok büyük (en çok 512 MB)')
+                    raise
                 out.write(chunk)
         saved.append(entry(root, target))
     return {'ok': True, 'items': saved}

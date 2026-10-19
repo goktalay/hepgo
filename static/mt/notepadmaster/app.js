@@ -21,6 +21,8 @@ const KINDS = {
   file: { icon: 'fileCode', short: 'FILE' },
 };
 const isRemote = (c) => c.kind === 'ssh' || c.kind === 'ftp';
+// mtweb: uzak (SSH/FTP) bağlantılar sunucu yapılandırmasıyla kapalı olabilir → yalnız kullanıcının dosya alanı
+const REMOTE_OFF = !!(window.MT && MT.web && MT.web.remote === false);
 
 let data = { folders: [], connections: [], settings: {} };
 let currentFolder = null;
@@ -481,7 +483,7 @@ async function editConnection(conn, folderId) {
   const isNew = !conn;
   const s = data.settings || {};
   const c = conn || {
-    kind: 'ssh', name: '', host: '', protocol: 'sftp', port: 22, username: '', loginMethod: 'normal', authType: 'password', keyPath: '',
+    kind: REMOTE_OFF ? 'local' : 'ssh', name: '', host: '', protocol: 'sftp', port: 22, username: '', loginMethod: 'normal', authType: 'password', keyPath: '',
     comments: '', folderId: folderId ?? currentFolder, color: COLORS[data.connections.length % COLORS.length],
     rootDir: '', localPath: '', nameEncoding: 'auto', showHidden: true, exclude: '', restoreTabs: true,
     editorMode: 'global', editor: s.editor,
@@ -661,6 +663,14 @@ async function editConnection(conn, folderId) {
   body.querySelectorAll('#f-kind button').forEach((b) => (b.onclick = () => { setKind(b.dataset.v); invalidateTest(); }));
   // Var olan bağlantının türü değiştirilemez (çalışma kopyası ve sekmeler türe bağlı)
   if (!isNew) body.querySelectorAll('#f-kind button').forEach((b) => (b.disabled = b.dataset.v !== kind));
+  if (REMOTE_OFF) {
+    body.querySelectorAll('#f-kind button').forEach((b) => {
+      if (b.dataset.v !== 'ssh' && b.dataset.v !== 'ftp') return;
+      b.disabled = true;
+      b.title = MT.web.t('desktopOnly');
+      b.querySelector('small').textContent = MT.web.t('desktopOnly');
+    });
+  }
   setLogin(loginMethod);
   setKind(kind);
 

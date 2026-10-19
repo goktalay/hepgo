@@ -49,16 +49,19 @@
     // --- Hesap: HEPGO oturumu ------------------------------------------------------------------
     accountState: () => MT.get('/api/tools/mt/account'),
     login: async () => ({ ok: true }),
-    logout: async () => { await MT.post('/api/auth/logout').catch(() => {}); try { window.top.location.href = '/'; } catch { location.href = '/'; } },
+    logout: async () => {
+      if (MT.web) { try { window.top.MTWEB.logout(); } catch { MT.web.logout(); } return; }   // mtweb: Mastertool hesabından çıkış
+      await MT.post('/api/auth/logout').catch(() => {}); try { window.top.location.href = '/'; } catch { location.href = '/'; }
+    },
     syncNow: async () => {},
     setSyncEnabled: async () => ({ ok: false, code: 'hepgo' }),
     deleteRemoteLibrary: async () => ({ ok: false, code: 'hepgo' }),
-    openWeb: (page) => { window.open(page === 'mastertool' ? 'https://mastertool.download/' : '/#/', '_blank', 'noopener'); },
+    openWeb: (page) => { window.open(page === 'mastertool' || MT.web ? 'https://mastertool.download/' : '/#/', '_blank', 'noopener'); },
     onAccountStatus: (cb) => { MT.get('/api/tools/mt/account').then(cb).catch(() => {}); return MT.on('account:status')(cb); },
     onUpdateAvailable: MT.on('app:update'),
     onLibraryBackup: MT.on('account:backup'),
     openMastertool: () => window.open('https://mastertool.download/', '_blank', 'noopener'),
-    about: async () => ({ version: MT.version, electron: 'HEPGO', chrome: (navigator.userAgentData && navigator.userAgentData.brands.map((b) => `${b.brand} ${b.version}`).join(', ')) || navigator.userAgent, node: '-', openAtLogin: false }),
+    about: async () => ({ version: MT.version, electron: MT.web ? 'Web' : 'HEPGO', chrome: (navigator.userAgentData && navigator.userAgentData.brands.map((b) => `${b.brand} ${b.version}`).join(', ')) || navigator.userAgent, node: '-', openAtLogin: false }),
     checkUpdate: async () => ({ ok: true, version: null, newer: false }),
     openLicenses: () => window.open('https://mastertool.download/', '_blank', 'noopener'),
 

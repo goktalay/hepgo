@@ -13,6 +13,7 @@ from pathlib import Path
 from .. import auth, config
 
 tools_user = auth.require_module('tools')
+BRAND = 'HEPGO'   # arayüzde görünen alan etiketi (mtweb: 'Mastertool')
 
 TOOLS_DIR = config.DATA_DIR / 'tools'
 TMP_DIR = TOOLS_DIR / 'tmp'

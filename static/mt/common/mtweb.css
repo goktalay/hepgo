@@ -1,0 +1,24 @@
+/* Mastertool web (mtweb) — üst şerit ve bilgi sayfası. Yalnız mtweb servisinde yüklenir. */
+#mtweb-strip { position: fixed; top: 0; left: 0; right: 0; height: 32px; z-index: 900; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+  background: #0b1220; color: #cbd5e1; border-bottom: 1px solid rgba(148, 163, 184, .18); font: 12.5px/1 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+#mtweb-strip .mw-app { display: inline-flex; align-items: center; gap: 8px; color: #f1f5f9; }
+#mtweb-strip .mw-app img { width: 18px; height: 18px; border-radius: 4px; }
+#mtweb-strip .mw-sp { flex: 1; }
+#mtweb-strip .mw-link { color: #7dd3fc; text-decoration: none; white-space: nowrap; }
+#mtweb-strip .mw-link:hover { text-decoration: underline; }
+#mtweb-strip .mw-user { color: #94a3b8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#mtweb-strip .mw-out { background: transparent; color: #e2e8f0; border: 1px solid rgba(148, 163, 184, .35); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+#mtweb-strip .mw-out:hover { background: rgba(148, 163, 184, .15); }
+body.mtweb-has-strip { padding-top: 32px; }
+@media (max-width: 720px) { #mtweb-strip .mw-link:first-of-type, #mtweb-strip .mw-user { display: none; } }
+
+/* Bilgi sayfası (yakında / kapalı / doğrulama) */
+body.mtweb-info { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0b1220; color: #e2e8f0;
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.mtweb-card { max-width: 480px; margin: 24px; padding: 36px 32px; text-align: center; background: #111a2e; border: 1px solid rgba(148, 163, 184, .2); border-radius: 16px; }
+.mtweb-card img { border-radius: 16px; }
+.mtweb-card h1 { margin: 16px 0 8px; font-size: 24px; }
+.mtweb-card p { color: #94a3b8; margin: 0 0 24px; }
+.mtweb-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.mtweb-btn { display: inline-block; padding: 9px 16px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, .35); color: #e2e8f0; text-decoration: none; }
+.mtweb-btn.primary { background: linear-gradient(135deg, #22d3ee, #6366f1); border-color: transparent; color: #06101c; font-weight: 600; }

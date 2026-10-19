@@ -9,6 +9,7 @@ Kaynak dosyalar kullanıcının sunucudaki alanındadır (DATA_DIR/tools/convert
 Motorlar: resimler Pillow; video/ses ffmpeg (sunucuda yoksa orijinal "ffmpeg bulunamadı" hatası); konuşmadan metne
 (whisper) ve OCR (tesseract) bu sunucuda kurulu değil → ayarlarda "motor yok", indirme kapalı.
 """
+import contextlib
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .tools_common import safe_name, tools_user
+from . import tools_common as tc
 from . import tools_mt as mt
 
 router = APIRouter(prefix='/api/tools/convert')
@@ -64,6 +66,12 @@ MIME = {'mp4': 'video/mp4', 'm4v': 'video/mp4', 'mov': 'video/mp4', 'webm': 'vid
         'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'flac': 'audio/flac', 'aac': 'audio/aac', 'm4a': 'audio/mp4', 'ogg': 'audio/ogg', 'oga': 'audio/ogg', 'opus': 'audio/ogg',
         'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp', 'avif': 'image/avif', 'bmp': 'image/bmp',
         'ico': 'image/x-icon', 'svg': 'image/svg+xml'}
+# mtweb kancaları (app/mtweb; HEPGO'da varsayılanlar → davranış değişmez)
+JOB_GATE = None          # callable(uid, src: Path, out: Path, cancel) → bağlam yöneticisi: eşzamanlılık / giriş boyutu / kota
+FFMPEG_PREFIX = []       # ör. ['nice', '-n', '15'] — dönüştürücü süreç düşük öncelikle
+FFMPEG_THREADS = 0       # > 0 → çıktıdan önce '-threads N'
+FFMPEG_TIMEOUT = 0       # sn; > 0 → aşımda süreç öldürülür (ConvertError 'timeout')
+MAX_CONCURRENCY = 32     # proje başına eşzamanlı dosya tavanı
 PIL_WRITE = {'jpg': 'JPEG', 'jpeg': 'JPEG', 'png': 'PNG', 'webp': 'WEBP', 'gif': 'GIF', 'bmp': 'BMP', 'tiff': 'TIFF', 'tif': 'TIFF', 'ico': 'ICO', 'avif': 'AVIF'}
 
 
@@ -151,7 +159,7 @@ ERR_TEXT = {
     'canceled': 'İptal edildi', 'unreadable': 'Dosya okunamadı (bozuk ya da desteklenmeyen biçim)', 'no_video': 'Dosyada görüntü akışı yok',
     'no_audio': 'Dosyada ses yok', 'unsupported': 'Bu biçim desteklenmiyor', 'ffmpeg_missing': 'ffmpeg bulunamadı: video/ses dönüştürme bu sunucuda kapalı',
     'engine_missing': 'Konuşma motoru (whisper) bu sunucuda kurulu değil', 'download_failed': 'İndirme başarısız: {msg}',
-    'ENOENT': 'Dosya bulunamadı', 'EACCES': 'Erişim izni yok', 'ENOSPC': 'Diskte yer kalmadı',
+    'timeout': 'Süre sınırı aşıldı', 'ENOENT': 'Dosya bulunamadı', 'EACCES': 'Erişim izni yok', 'ENOSPC': 'Diskte yer kalmadı',
 }
 
 
@@ -174,9 +182,20 @@ def run_ffmpeg(args, duration=0, on_progress=None, cancel=None):
         raise ConvertError('ffmpeg_missing')
     if cancel and cancel.is_set():
         raise ConvertError('canceled')
-    proc = subprocess.Popen([FFMPEG, '-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', *args],
+    if FFMPEG_THREADS > 0 and args:
+        args = [*args[:-1], '-threads', str(int(FFMPEG_THREADS)), args[-1]]
+    proc = subprocess.Popen([*FFMPEG_PREFIX, FFMPEG, '-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', *args],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors='replace')
     err_lines = []
+    timed_out = threading.Event()
+    watchdog = None
+    if FFMPEG_TIMEOUT > 0:
+        def _kill():
+            timed_out.set()
+            proc.kill()
+        watchdog = threading.Timer(FFMPEG_TIMEOUT, _kill)
+        watchdog.daemon = True
+        watchdog.start()
 
     def read_err():
         for ln in proc.stderr:
@@ -193,6 +212,10 @@ def run_ffmpeg(args, duration=0, on_progress=None, cancel=None):
             proc.kill()
     proc.wait()
     t.join(timeout=2)
+    if watchdog:
+        watchdog.cancel()
+    if timed_out.is_set():
+        raise ConvertError('timeout')
     if cancel and cancel.is_set():
         raise ConvertError('canceled')
     if proc.returncode != 0:
@@ -209,7 +232,7 @@ def probe(file):
     if not FFMPEG:
         info['unreadable'] = True
         return info
-    r = subprocess.run([FFMPEG, '-hide_banner', '-nostdin', '-i', str(file)], capture_output=True, text=True, errors='replace', timeout=60)
+    r = subprocess.run([*FFMPEG_PREFIX, FFMPEG, '-hide_banner', '-nostdin', '-i', str(file)], capture_output=True, text=True, errors='replace', timeout=60)
     err = r.stderr
     d = re.search(r'Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)', err)
     if d:
@@ -634,7 +657,7 @@ class ProjectRunner:
 
     def concurrency(self):
         p = self.project()
-        return max(1, min(32, int((p or {}).get('concurrency') or 2)))
+        return max(1, min(MAX_CONCURRENCY, int((p or {}).get('concurrency') or 2)))
 
     def pump(self):
         if self.closed:
@@ -669,7 +692,9 @@ class ProjectRunner:
             def prog(x):
                 it['progress'] = x
                 self.touch(rel)
-            r = convert(self.src_path(rel), self.out_path(rel), p['type'], p['targetExt'], p.get('options'), on_progress=prog, cancel=cancel)
+            src, out = self.src_path(rel), self.out_path(rel)
+            with (JOB_GATE(self.uid, src, out, cancel) if JOB_GATE else contextlib.nullcontext()):
+                r = convert(src, out, p['type'], p['targetExt'], p.get('options'), on_progress=prog, cancel=cancel)
             it.update({'status': 'done', 'progress': 1, 'outSize': r['size'], 'srcSize': f['size'], 'srcMtime': f['mtime'], 'finishedAt': mt.now_ms(),
                        'out': self.out_map.get(rel)})
             it['took'] = it['finishedAt'] - it['startedAt']
@@ -1185,8 +1210,9 @@ def pj_proxy(body: Body, user=Depends(tools_user)):
         if not out.exists():
             def prog(x):
                 r.send('preview:progress', {'rel': b.get('rel'), 'which': b.get('which'), 'progress': x})
-            run_ffmpeg(['-i', str(abs_path), '-vf', "scale=-2:'min(480,ih)'", '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '96k',
-                        '-movflags', '+faststart', str(out)], duration=info['duration'], on_progress=prog)
+            with (JOB_GATE(user['id'], abs_path, out, None) if JOB_GATE else contextlib.nullcontext()):
+                run_ffmpeg(['-i', str(abs_path), '-vf', "scale=-2:'min(480,ih)'", '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '96k',
+                            '-movflags', '+faststart', str(out)], duration=info['duration'], on_progress=prog)
         return {'url': media_url(user['id'], out)}
     return wrap(make)
 
@@ -1319,7 +1345,7 @@ def ocr_delete(body: Body, user=Depends(tools_user)):
 @router.get('/storage/info')
 def storage_info(user=Depends(tools_user)):
     uid = user['id']
-    return {'converted': mt.dir_size(mt.app_dir(APP, uid, 'converted')), 'cache': mt.dir_size(cache_dir(uid)), 'models': 0, 'dir': f'HEPGO · tools/convertmaster/{uid}'}
+    return {'converted': mt.dir_size(mt.app_dir(APP, uid, 'converted')), 'cache': mt.dir_size(cache_dir(uid)), 'models': 0, 'dir': f'{tc.BRAND} · tools/convertmaster/{uid}'}
 
 
 @router.post('/storage/clearConverted')

@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from .tools_common import check_host, check_port, safe_name, tools_user
 from . import tools_mt as mt
+from . import tools_common as tc
 
 router = APIRouter(prefix='/api/tools/notepad')
 APP = 'notepadmaster'
@@ -38,6 +39,11 @@ PROTOCOLS = {'ftp': 21, 'ftps-implicit': 990, 'ftps-ssl': 21, 'ftps-tls': 21, 's
 LANGS = (None, 'tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru')
 MAX_FILE_BYTES = 50 * 1024 * 1024
 SESSION_IDLE = 3600
+# mtweb kancaları (app/mtweb; HEPGO'da varsayılanlar → davranış değişmez)
+ALLOW_REMOTE = True      # False → SSH/FTP/SFTP bağlantısı hiç açılmaz (yalnız kullanıcının dosya alanı)
+REMOTE_GUARD = None      # callable(uid, conn) → uzak bağlantı açılmadan önce (SSRF / kota denetimi)
+WRITE_GUARD = None       # callable(uid, nbytes) → yerel alana yazmadan önce (kota)
+PUBLIC_PATH = None       # callable(Path) → str; arayüze giden sunucu yolları (çalışma kopyası) gizlenir
 
 try:
     import paramiko
@@ -132,7 +138,7 @@ def public_conn(uid, c):
 def public_store(uid, s=None):
     s = s or load_store(uid)
     return {'folders': s['folders'], 'settings': s['settings'], 'connections': [public_conn(uid, c) for c in s['connections']],
-            'cacheDir': 'HEPGO · tools/notepadmaster/cache'}
+            'cacheDir': f'{tc.BRAND} · tools/notepadmaster/cache'}
 
 
 def _local_exists(uid, rel):
@@ -264,6 +270,7 @@ class LocalRemote:
     """Kullanıcının sunucudaki dosya alanı (masaüstündeki 'Bu bilgisayardaki klasör')."""
 
     def __init__(self, uid, conn):
+        self.uid = uid
         self.root = mt.files_root(APP, uid)
         self.closed = True
         self.fingerprint = None
@@ -296,11 +303,15 @@ class LocalRemote:
 
     def write_file(self, p, buf):
         f = self._p(p)
+        if WRITE_GUARD:
+            WRITE_GUARD(self.uid, len(buf) - (f.stat().st_size if f.is_file() else 0), not f.exists())
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(buf)
 
     def mkdir(self, p):
         f = self._p(p)
+        if WRITE_GUARD:
+            WRITE_GUARD(self.uid, 0, True)
         if f.exists():
             raise RemoteError('EEXIST', 'EEXIST')
         f.mkdir(parents=True)
@@ -597,6 +608,10 @@ class FtpRemote:
 def create_remote(uid, conn):
     if conn.get('kind') in ('local', 'file'):
         return LocalRemote(uid, conn)
+    if not ALLOW_REMOTE:
+        raise RemoteError('REMOTE_OFF', 'Bu özellik masaüstü sürümünde')
+    if REMOTE_GUARD:
+        REMOTE_GUARD(uid, conn)
     if conn.get('kind') == 'ssh' or conn.get('protocol') == 'sftp':
         return SftpRemote(uid, conn)
     return FtpRemote(uid, conn)
@@ -652,6 +667,10 @@ def friendly_error(err) -> str:
 # --- Proje oturumu (project.js ProjectSession) ---------------------------------------------------------------
 NETWORK_ERR = re.compile(r'reset|broken pipe|not connected|closed|timed out|timeout|EOF', re.I)
 _SAFE_SEG = re.compile(r'[<>:"|?*\x00-\x1f]')
+
+
+def public_path(p):
+    return PUBLIC_PATH(p) if PUBLIC_PATH else str(p)
 
 
 def safe_segment(s):
@@ -771,8 +790,8 @@ class ProjectSession:
         cp = self.write_cache(p, buf)
         d = decode(buf, encoding or 'auto', fallback or 'windows-1254')
         if d.get('binary'):
-            return {'binary': True, 'size': len(buf), 'cachePath': str(cp)}
-        return {**d, 'size': len(buf), 'mtime': st['mtime'], 'cachePath': str(cp)}
+            return {'binary': True, 'size': len(buf), 'cachePath': public_path(cp)}
+        return {**d, 'size': len(buf), 'mtime': st['mtime'], 'cachePath': public_path(cp)}
 
     def save(self, p, text, encoding='utf8', bom=False, expect=None, force=False, allow_lossy=False):
         self.check(p)
@@ -795,7 +814,7 @@ class ProjectSession:
             st = self.stat(p)
         except Exception:   # noqa: BLE001
             pass
-        return {'ok': True, 'size': st['size'], 'mtime': st['mtime'], 'cachePath': str(cp)}
+        return {'ok': True, 'size': st['size'], 'mtime': st['mtime'], 'cachePath': public_path(cp)}
 
     def create_file(self, p):
         self.check(p)
@@ -1171,7 +1190,7 @@ def proj_open(body: Body, user=Depends(tools_user)):
     except Exception as err:   # noqa: BLE001
         return {'ok': False, 'message': friendly_error(err), 'code': getattr(err, 'code', None)}
     SESSIONS[sid] = ses
-    return {'ok': True, 'sid': sid, **info, 'cacheRoot': str(ses.cache_root)}
+    return {'ok': True, 'sid': sid, **info, 'cacheRoot': public_path(ses.cache_root)}
 
 
 @router.get('/proj/status')

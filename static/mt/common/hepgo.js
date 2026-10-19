@@ -7,7 +7,9 @@
 // Her uygulamanın bridge.js'i window.api'yi preload ile aynı ad/imzalarla bu çekirdek üzerinden kurar.
 (function (root) {
   const SUPPORTED = ['tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'];
-  const MT = { app: null, isChild: window.parent !== window && !!safeParent(), version: 'HEPGO' };
+  // mtweb (Mastertool web servisi): sunucu yapılandırması window.MTWEB (/web/config.js + mtweb.js). HEPGO'da yok → eski davranış.
+  const WEB = root.MTWEB || null;
+  const MT = { app: null, isChild: window.parent !== window && !!safeParent(), version: WEB ? 'Web' : 'HEPGO', web: WEB };
   root.MT = MT;
 
   function safeParent() { try { return window.parent.MT || null; } catch { return null; } }
@@ -15,6 +17,7 @@
   // --- Dil ----------------------------------------------------------------------------------
   // Uygulama ayarı (settings.language) önce; yoksa HEPGO'nun dili (caymaz.lang); o da yoksa Türkçe.
   MT.hepgoLang = () => {
+    if (WEB && WEB.lang) return SUPPORTED.includes(WEB.lang) ? WEB.lang : 'en';   // mtweb: site dili → tarayıcı dili → en
     let l = 'tr';
     try { l = localStorage.getItem('caymaz.lang') || 'tr'; } catch { /* yok */ }
     l = String(l).toLowerCase().split(/[-_]/)[0];
@@ -42,7 +45,10 @@
     zh: { choose: '选择', cancel: '取消', upload: '上传文件', uploadDir: '上传文件夹', newFolder: '新建文件夹', up: '上级文件夹', home: '根目录', empty: '空文件夹', name: '文件名', folderName: '文件夹名', main: '主窗口', newTab: '在新标签页打开', close: '关闭', closeDirty: '有未保存的更改，关闭窗口将丢失。', storage: '您在服务器上的空间', delete: '删除', deleteAsk: '删除？' },
     ru: { choose: 'Выбрать', cancel: 'Отмена', upload: 'Загрузить файлы', uploadDir: 'Загрузить папку', newFolder: 'Новая папка', up: 'Родительская папка', home: 'Корень', empty: 'Пустая папка', name: 'Имя файла', folderName: 'Имя папки', main: 'Главное окно', newTab: 'Открыть в новой вкладке', close: 'Закрыть', closeDirty: 'Есть несохранённые изменения. При закрытии окна они будут потеряны.', storage: 'Ваше место на сервере', delete: 'Удалить', deleteAsk: 'Удалить?' },
   };
-  MT.t = (k) => (STR[MT.lang()] || STR.en)[k] || STR.en[k] || k;
+  MT.t = (k) => {
+    if (WEB && k === 'storage' && WEB.t) return WEB.t('files');   // mtweb: "Sunucudaki alanınız" yerine "Dosyalarınız"
+    return (STR[MT.lang()] || STR.en)[k] || STR.en[k] || k;
+  };
 
   // --- REST ---------------------------------------------------------------------------------
   class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }

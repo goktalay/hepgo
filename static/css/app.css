@@ -9361,8 +9361,8 @@ body.immersive .fs-nav { top: 12px; }
 html[data-theme="dark"] .fs-gauges { --fsg-face: #2a2f3a; --fsg-face2: #1f242e; --fsg-ring: rgba(96, 104, 122, .9); --fsg-edge: #454c5c; --fsg-tick: #aab2c2; --fsg-tick2: #5c6474; --fsg-num: #b4bccb;
   --fsg-needle: #eef1f6; --fsg-pin: #cfd5e0; --fsg-pin2: #2a2f3a; --fsg-digit: #f3f5f9; --fsg-unit: #9ba4b5; --fsg-sub: rgba(255, 255, 255, .92); --fsg-ico: #9ba4b5; --fsg-shadow: 0 8px 22px rgba(0, 0, 0, .55), 0 1px 0 rgba(255, 255, 255, .08) inset; }
 .fs-gauges[hidden] { display: none; }
-.fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: calc((100% - 412px) / 2); }   /* harekât kartı (400 px + 12 px) solundaki alanın ortası */
-.fs-stage.fs-replay.fs-ops:not(.fs-fpv) .fs-gauges { left: calc((100% - 412px) / 2 + 70px); }   /* kayıt: sol alttaki kayıt bilgi kutusuyla çakışmasın */
+.fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: 50%; }   /* kullanıcı isteği: panel açıkken de ekranın yatay ortası */
+.fs-stage.fs-replay.fs-ops:not(.fs-fpv) .fs-gauges { left: 50%; }
 .fs-stage.rc-on .fs-gauges { bottom: calc(var(--fs-bar-h) + 58px); transform: translateX(-50%) scale(.86); }   /* sanal kumanda: klavye ipucu şeridinin üstünde, küçük (çubuklar kenarlarda) */
 .fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-gauges { bottom: calc(var(--fs-bar-h) + 170px); }   /* panel + sanal kumanda: sol çubuğun üstüne kayar */
 .fs-stage.fs-osd-on .fs-gauges, .fs-stage.fs-mhud-on .fs-gauges { display: none; }   /* FPV OSD / gimbal HUD kendi güç çubuklarını çizer */

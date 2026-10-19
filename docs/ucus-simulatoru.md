@@ -1276,29 +1276,35 @@ yazma `drone.drones`). `GET /api/drone/sim/drones` satırlarına `power` öneris
   fark kalkış öncesi). Kapanışta dron kaydına `fuel_km_per_l_last 15,35`, `elec_w_last 49,1` yazıldı; sonraki `power-defaults` bunları önerdi; `drone_sim_runs`
   satırı `fuel_used_l 0,15 · fuel_km_per_l 15,35 · elec_wh 1,11 · elec_w_avg 49,1 · speedup_max 4`.
 
-### 23.6 Güç paneli — yakıt ve batarya kadranları (`createPowerGauges`; CSS `.fs-power`)
-Kullanıcı geri bildirimi: "Yakıt ve batarya göstergeleri görünmüyor; çok şık bir şekilde göstergeler görünsün" (önce: yakıt yalnız panel içinde küçük karo,
-panel kapalıyken hiç yok; FPV'de küçük metin satırları). Çözüm: **her kamera kipinde**, sahne üstünde, harekât panelinden **bağımsız** ve her zaman
-görünen güç paneli.
-- **Yerleşim:** sağ altta, alt çubuğun üstünde (`bottom: var(--fs-bar-h) + 10 px`, `z-index 8`); harekât kartı açıkken kartın **solunda** (`.fs-ops:not(.fs-fpv)` →
-  `right: 424 px`); sanal kumanda çubuklarıyla çakışmaz (sağ çubuk `right 270 px`, panel ≈ 250 px); tam ekranda aynı; arazi atfı (`.fs-attrib`) kadranların
-  soluna kayar (`.fs-power-on`). ≥ 1800 px `scale(1.18)`; ≤ 760 px **kompakt yatay çubuklar** (`.fs-gauge-c`: etiket · çubuk · değer · ikincil; tam
-  genişlik; sanal kumanda açıkken çubukların üstünde).
-- **Kadran:** cam/koyu yarı saydam kapsayıcı (blur + saturate; `html[data-theme=dark]` biraz daha koyu); iki düğme `.fs-gauge[data-g=fuel|elec]`:
-  etiket (YAKIT / BATARYA), 104 px SVG **270° yay** (`pathLength 100`, `stroke-dasharray "{0…75} 100"`, `rotate(135)`; iz + parlak dolu yay, `feGaussianBlur`
-  ışıma), üstte ikon (pompa / pil), ortada büyük değer (`4.82 L` / `%99`), altta ikincil (`≈ 113 km` / `16.8 V · ≈ 5 sa 14 dk`), kadran altında anlık tüketim
-  (`0.41 L/sa` / `31 W · 4S`). Renk `gaugeLevel`: **yeşil ≥ 30 % · sarı < 30 % · kırmızı < 15 %** (`data-level`; kırmızıda yay + ikon nabız, halka dalgası);
-  bitince (`empty`) kırmızı rozet **YAKIT BİTTİ / BATARYA BİTTİ** (kırmızı olay satırı + toast sunucu/istemci modelinden ayrıca gelir).
-- **Kaynaklar:** `tele.fuel` yoksa (0 L, elektrikli dron) yalnız batarya; `tele.elec` yoksa SITL pili (`batt_v/batt_pct`, "SITL pili" notu) — o da yoksa
-  yalnız yakıt; ikisi de yoksa kapsayıcı gizli. Kayıttan oynatma ve sahte kip: aynı DOM, `createPowerSim` durumu `updateHud` ile gelir (atlamada
-  `gauges.reset()`).
-- **Ayrıntı kutusu** (tıklama; `.fs-power-pop`, HEPGO tema değişkenleri `--surface/--text/--border`): Başlangıç (L / Wh · S mAh), Tüketim ayarı (km/L / W),
-  Harcanan, Anlık, Ölçülen (km/L / ort. W; yetersiz veri "henüz yok"), Mesafe · süre. Kayıt/sahte kipte `createPowerSim.summary()`, canlıda
-  `createPowerAcc` (kare zamanı `t` → `tbm` → `ts`; > 5 sn boşluk atlanır; yalnız armed mesafe). Uyarı sesi yok → "sessiz" düğmesi gerekmedi.
-- **FPV OSD** (`fs-osd-on` → kadranlar gizli): sol altta `osdPowerRows` → **BAT** üstte, **FUEL** altta: etiket + değer satırı (`16.8V 99% 4S 314min` /
-  `4.82L 96% 113km`), altında 120 px yatay çubuk (beyaz kontur, çeyrek çentikler; dolgu beyaz / sarı < 30 / kırmızı < 15; alarmda yanıp söner). **Gimbal HUD**
-  (`fs-mhud-on`): `hudPowerBars` → sol bloğun sağında iki **dikey** fosfor bar (BAT · FUEL; 56 px, çentikli, dolgu alttan), altında % · V/L · dk/km; düşükte
-  kırmızı + dolgu yanıp söner (üstteki uyarı kutuları korunur). HUD/OSD kapatılınca (H / O) SVG kadranlar görünür. Takip/serbest/yer kiplerinde SVG kadranlar.
-- **Doğrulama:** `node tests/test_flightsim_power.mjs` (23): eşikler/yay, yakıt-batarya modelleri, `gaugeModels` kaynak seçimi, toplayıcı, ayrıntı satırları,
-  `osdPowerRows`, `hudPowerBars`. Playwright sahte kip (`/tmp/flsim/gauge/e2e_gauge.py`, port 8730): takip panel açık/kapalı, ayrıntı, FPV, gimbal (HUD'lu /
-  HUD'suz), serbest, sanal kumanda (panel açık/kapalı), tam ekran, 1280/1920/390 px, sarı → kırmızı → bitti (0,05 L · 1S 100 mAh), açık tema, kayıttan oynatma.
+### 23.6 Güç paneli — otomobil tarzı analog kadranlar (`createPowerGauges`; CSS `.fs-gauges`)
+Kullanıcı geri bildirimi (1): "Yakıt ve batarya göstergeleri görünmüyor; çok şık bir şekilde göstergeler görünsün" → her kamera kipinde, panelden
+bağımsız güç paneli. Geri bildirim (2): "Göstergeler resimdeki gibi olsun, tam ortada altta olsun, bu şıklıkta olsun" (referans: otomobil gösterge paneli —
+açık düz kadranlar, ince çentikli ölçek, siyah ibre, kırmızı/mavi uç bölgeleri, kadran altında dijital değer) → **yeniden tasarım**:
+- **Yerleşim:** takip/serbest/yer kiplerinde alt çubuğun hemen üstünde (`bottom: var(--fs-bar-h) + 8 px`), **yatayda tam ortada** (`left 50 %` +
+  `translateX(−50 %)`), harekât panelinden bağımsız; panel açıkken panelin solundaki boş alanın ortasında (`.fs-ops:not(.fs-fpv)` → `left: (100 % − 412 px) / 2`).
+  Sanal kumanda açıkken (`rc-on`) %86 küçülüp klavye ipucu şeridinin üstüne kayar (çubuklar kenarlarda; panel + kumanda → sol çubuğun üstüne). Tam ekranda aynı.
+  Boyut: büyük 150 px (HIZ · MOTOR), küçük 110 px (YAKIT · BATARYA); ≥ 1800 px ölçek 1,2; ≤ 1300 px 0,9; ≤ 760 px **iki satır** (hız + motor üstte,
+  yakıt + batarya altta; ölçek 0,8). FPV OSD (`fs-osd-on`) ve gimbal HUD (`fs-mhud-on`) kendi çubuklarını çizer → kadranlar gizli (değişmedi).
+- **Dört kadran** (`.fs-gauge[data-g=fuel|speed|engine|elec]`, SVG viewBox 100×100, **240° süpürme** −120° … +120°): **YAKIT** (ibre 0…1, E ¼ ½ ¾ F,
+  boş uç 0…⅛ kırmızı, pompa ikonu, dijital `4.90 L`, altında `≈ 116 km · %98`), **HIZ** (yer hızı km/h; ölçek 0 … `niceScaleMax(azami × 1,2)` —
+  CAYMAZ 45 m/s = 162 km/h → 0…200 adım 50; azami üstü kırmızı bölge; dijital `134` + `KM/H`; uçakta `IAS 120`; **uyarı üçgeni** yanıp söner: çarpışma
+  bandı, aşırı hız (> azami × 1,02) ya da stall (uçak, armed, > 10 m AGL, IAS < azami × 0,25); kopterde 0…100, bölge yok), **MOTOR** (gaz kolu 0…100 %,
+  kırmızı ≥ 90; dijital `72` + `% GAZ`; SITL `rpm` gelirse ×1000 RPM ölçeği), **BATARYA** (0…100 %, düşük uç 0…15 kırmızı, üst uç 90…100 mavi, pil
+  ikonu, dijital `%99`, altında `16.8 V · ≈ 5 sa 14 dk`; SITL pili yedeğinde "SITL pili"). Yakıt 0 L (elektrikli) → yakıt kadranı yerine mavi **ELEKTRİK**
+  rozeti (`.no-fuel::before`); batarya yoksa gizli; ikisi de yoksa kapsayıcı gizli.
+- **Görünüm temaya göre** (`--fsg-*` değişkenleri; sabit renk yok): açık temada beyaz/açık gri yüzey (`#f7f8fa`), ince dış halka, ana/ara çentikler,
+  gri rakamlar, **siyah ibre** + koyu merkez pimi, koyu dijital; `html[data-theme=dark]` → antrasit yüzey (`#2a2f3a`), açık çentik/rakam/ibre/dijital.
+  Kırmızı/mavi bölge yayları iki temada aynı. İbre **rAF ile yumuşatılır** (`easeNeedle`: üstel yaklaşım τ 0,22 sn, 0,04° altında oturur; DOM yazımı
+  ≤ 10 Hz, ibre aradaki kareleri doldurur). Seviye `gaugeLevel` (yeşil ≥ 30 · sarı < 30 · kırmızı < 15): sarıda dijital turuncu, kritikte kadran yüzeyi
+  **kırmızı nabız** + dijital kırmızı; bitince kadranın üstünde **YAKIT BİTTİ / BATARYA BİTTİ** rozeti.
+- **Tıklama:** kadran grubuna tıklayınca `.fs-power-pop` ayrıntı kutusu kadranların üstünde ortada açılır (Başlangıç / Tüketim ayarı / Harcanan / Anlık /
+  Ölçülen / Mesafe · süre; kayıt-sahte kipte `createPowerSim.summary()`, canlıda `createPowerAcc`). Sağ HUD "Yakıt" satırı kadran görünürken gizli, panel
+  YAKIT karosu kalır. Kayıttan oynatmada aynı kadranlar (atlamada `gauges.reset()`).
+- **Saf yardımcılar** (`flightsim_power.js`): `needleAngle(v, min, max, sweep)`, `niceScaleMax(vmax, factor)` (adım 1/2/2,5/5/10/20 × 10ⁿ, 4–6 ana bölme),
+  `scaleTicks(max, step, minor)`, `zoneArc(from, to, min, max)`, `arcPath(a0, a1, r)`, `easeNeedle(cur, target, dt, tau)`, `speedGauge(t, settings, {plane,
+  collision})`, `engineGauge(t, {rpmMax})`, `dashModels(t, settings, opts)`; eski `fuelGauge`/`elecGauge` modelleri `angle` alanı kazandı, `gaugeArc` (270°)
+  OSD/HUD çubukları için korunur.
+- **Doğrulama:** `node tests/test_flightsim_power.mjs` (29: +6 ibre açısı, ölçek, çentik, bölge/yay yolu, yumuşatma, hız-motor-dashModels). Playwright
+  sahte kip (`/tmp/flsim/gauge2/e2e_gauge2.py`, port 8731, görüntüler `/tmp/flsim/gauge2/g2-*.png`): takip panel açık/kapalı, ayrıntı, FPV, gimbal,
+  serbest, sanal kumanda (panel açık/kapalı), tam ekran, 1280/1920/390 px, sarı → kırmızı → bitti, **açık tema** (panel/sade/ayrıntı/kumanda/kritik) ve
+  **koyu tema** ayrı, kayıttan oynatma.

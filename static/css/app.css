@@ -9347,50 +9347,75 @@ body.immersive .fs-nav { top: 12px; }
 .fs-prep-note { margin: 12px 0 0; }
 @keyframes fs-prep-spin { to { transform: rotate(360deg); } }
 
-/* ===== Uçuş Simülatörü §23.6: güç paneli (.fs-gauges; flightsim_power.js createPowerGauges) — sağ altta, alt çubuğun üstünde, her kamera kipinde,
-   harekât panelinden BAĞIMSIZ. İki cam kadran (YAKIT · BATARYA): 270° SVG yay (yeşil → sarı < 30 % → kırmızı < 15 % + nabız; bitince rozet), ortada
-   büyük değer, altta ikincil (menzil / gerilim + süre), kadran altında anlık tüketim (L/sa, W). Panel açıkken kartın SOLUNDA (400 px kart + 12 px);
-   sanal kumanda çubuklarıyla çakışmaz (sağ çubuk right 270 px, panel ~ 250 px); FPV OSD (fs-osd-on) ve gimbal HUD (fs-mhud-on) kendi çizimlerini
-   yapar → gizli. ≥ 1800 px %118 ölçek; ≤ 760 px kompakt yatay çubuklar (.fs-gauge-c). Tıklanınca .fs-power-pop ayrıntı kutusu (HEPGO tema değişkenleri). */
-.fs-gauges { --fsg-bg: rgba(11, 18, 32, .66); --fsg-line: rgba(255, 255, 255, .1); --fsg-text: #eef2f7; --fsg-dim: #9aa4b6; --fsg-track: rgba(255, 255, 255, .13);
-  position: absolute; right: 12px; bottom: calc(var(--fs-bar-h) + 10px); z-index: 8; display: flex; gap: 6px; padding: 6px 8px 8px; border-radius: 18px;
-  background: var(--fsg-bg); backdrop-filter: blur(10px) saturate(1.25); -webkit-backdrop-filter: blur(10px) saturate(1.25); border: 1px solid var(--fsg-line);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .06); color: var(--fsg-text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-html[data-theme="dark"] .fs-gauges { --fsg-bg: rgba(8, 12, 20, .7); }
+/* ===== Uçuş Simülatörü §23.6: güç paneli (.fs-gauges; flightsim_power.js createPowerGauges) — otomobil gösterge paneli tarzı DÖRT analog kadran
+   (YAKIT küçük · HIZ büyük · MOTOR büyük · BATARYA küçük), takip/serbest/yer kiplerinde alt çubuğun hemen üstünde YATAYDA TAM ORTADA, harekât panelinden
+   bağımsız (panel açıkken panelin solundaki boş alanın ortasında). Renkler TEMAYA GÖRE --fsg-* değişkenlerinden: açık temada beyaz/açık gri yüzey, siyah ibre,
+   koyu dijital; koyu temada (html[data-theme=dark]) antrasit yüzey, açık çentik/rakam/ibre/dijital. Kırmızı/mavi bölgeler iki temada aynı. Sanal kumanda
+   açıkken küçülüp yukarı kayar (çubuklar kenarlarda); FPV OSD (fs-osd-on) ve gimbal HUD (fs-mhud-on) kendi çizimlerini yapar → gizli. Büyük 150 px, küçük
+   110 px (1440); ≥ 1800 px ölçek 1.2; ≤ 1300 px 0.9; ≤ 760 px iki satır (hız + motor üstte, yakıt + batarya altta). Tıklanınca .fs-power-pop ayrıntı kutusu. */
+.fs-gauges { --fsg-face: #f7f8fa; --fsg-face2: #eceef3; --fsg-ring: rgba(255, 255, 255, .92); --fsg-edge: #d9dde6; --fsg-tick: #aab1bf; --fsg-tick2: #d2d7e0; --fsg-num: #9aa2b1;
+  --fsg-needle: #1c2130; --fsg-pin: #2a3040; --fsg-pin2: #e6e9ef; --fsg-digit: #1f2533; --fsg-unit: #8b93a3; --fsg-sub: rgba(255, 255, 255, .92); --fsg-lbl: rgba(255, 255, 255, .85); --fsg-ico: #7c8595;
+  --fsg-red: #e2443a; --fsg-blue: #2f8fe0; --fsg-shadow: 0 8px 22px rgba(0, 0, 0, .28), 0 1px 0 rgba(255, 255, 255, .6) inset;
+  position: absolute; left: 50%; bottom: calc(var(--fs-bar-h) + 8px); z-index: 8; display: flex; align-items: flex-end; justify-content: center; gap: 2px; padding: 0 6px;
+  transform: translateX(-50%); transform-origin: bottom center; color: var(--fsg-digit); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+html[data-theme="dark"] .fs-gauges { --fsg-face: #2a2f3a; --fsg-face2: #1f242e; --fsg-ring: rgba(96, 104, 122, .9); --fsg-edge: #454c5c; --fsg-tick: #aab2c2; --fsg-tick2: #5c6474; --fsg-num: #b4bccb;
+  --fsg-needle: #eef1f6; --fsg-pin: #cfd5e0; --fsg-pin2: #2a2f3a; --fsg-digit: #f3f5f9; --fsg-unit: #9ba4b5; --fsg-sub: rgba(255, 255, 255, .92); --fsg-ico: #9ba4b5; --fsg-shadow: 0 8px 22px rgba(0, 0, 0, .55), 0 1px 0 rgba(255, 255, 255, .08) inset; }
 .fs-gauges[hidden] { display: none; }
-.fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { right: 424px; }   /* harekât kartının (400 px) solunda */
-.fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-gauges { bottom: calc(var(--fs-bar-h) + 66px); }   /* panel + sanal kumanda: klavye ipucu şeridinin üstünde (çubuklarla x'te çakışmaz) */
+.fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: calc((100% - 412px) / 2); }   /* harekât kartı (400 px + 12 px) solundaki alanın ortası */
+.fs-stage.fs-replay.fs-ops:not(.fs-fpv) .fs-gauges { left: calc((100% - 412px) / 2 + 70px); }   /* kayıt: sol alttaki kayıt bilgi kutusuyla çakışmasın */
+.fs-stage.rc-on .fs-gauges { bottom: calc(var(--fs-bar-h) + 58px); transform: translateX(-50%) scale(.86); }   /* sanal kumanda: klavye ipucu şeridinin üstünde, küçük (çubuklar kenarlarda) */
+.fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-gauges { bottom: calc(var(--fs-bar-h) + 170px); }   /* panel + sanal kumanda: sol çubuğun üstüne kayar */
 .fs-stage.fs-osd-on .fs-gauges, .fs-stage.fs-mhud-on .fs-gauges { display: none; }   /* FPV OSD / gimbal HUD kendi güç çubuklarını çizer */
-.fs-stage.fs-power-on .fs-attrib:not(.fs-attrib-g3d) { right: 276px; }   /* arazi atfı kadranların soluna */
 .fs-stage.fs-power-on .fs-hud .fs-row-fuel { display: none; }   /* sağ HUD'daki yakıt satırı kadranla çift olmasın */
-.fs-stage.fs-power-on.fs-ops .fs-attrib:not(.fs-attrib-g3d) { right: 12px; }
-.fs-gauge { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 118px; padding: 2px 4px 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; border-radius: 14px; transition: background .15s; }
-.fs-gauge:hover, .fs-gauges.open .fs-gauge { background: rgba(255, 255, 255, .06); }
+.fs-stage.fs-power-on:not(.fs-osd-on):not(.fs-mhud-on) .fs-events { bottom: calc(var(--fs-bar-h) + 196px); }   /* ortadaki olay şeridi kadranların üstüne */
+.fs-stage.fs-power-on.rc-on:not(.fs-osd-on):not(.fs-mhud-on) .fs-events { bottom: calc(var(--fs-bar-h) + 214px); }
+.fs-gauge { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; margin: 0; }
 .fs-gauge[hidden] { display: none; }
-.fs-gauge-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .14em; color: var(--fsg-dim); text-transform: uppercase; line-height: 1.2; }
-.fs-gauge-dial { position: relative; display: block; width: 104px; height: 104px; }
+.fs-gauge.big { width: 150px; } .fs-gauge.small { width: 110px; margin-bottom: 6px; }
+.fs-gauge-dial { position: relative; display: block; width: 100%; aspect-ratio: 1; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25)); transition: filter .2s; }
+.fs-gauge:hover .fs-gauge-dial, .fs-gauges.open .fs-gauge-dial { filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .35)) brightness(1.03); }
 .fs-gauge-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.fs-gauge-track { fill: none; stroke: var(--fsg-track); stroke-width: 7; stroke-linecap: round; }
-.fs-gauge-fill { fill: none; stroke: #22c55e; stroke-width: 7; stroke-linecap: round; transition: stroke-dasharray .35s ease, stroke .35s; }
-.fs-gauge-ico { position: absolute; left: 50%; top: 17px; width: 16px; height: 16px; transform: translateX(-50%); color: var(--fsg-dim); }
+.fs-gauge-ring { fill: none; stroke: var(--fsg-ring); stroke-width: 5; stroke-linecap: round; }
+.fs-gauge-face { fill: var(--fsg-face); stroke: var(--fsg-edge); stroke-width: .8; transition: fill .3s; }
+.fs-gauge-zone { fill: none; stroke-width: 3.6; stroke-linecap: butt; }
+.fs-gauge-zone.red { stroke: var(--fsg-red); } .fs-gauge-zone.blue { stroke: var(--fsg-blue); }
+.fs-gauge-zone[hidden] { display: none; }
+.fs-gauge-tick { stroke: var(--fsg-tick2); stroke-width: .9; stroke-linecap: round; }
+.fs-gauge-tick.major { stroke: var(--fsg-tick); stroke-width: 1.5; }
+.fs-gauge-num { fill: var(--fsg-num); font-size: 6.4px; font-weight: 600; text-anchor: middle; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.fs-gauge.small .fs-gauge-num { font-size: 7px; }
+.fs-gauge-needle path { fill: var(--fsg-needle); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .35)); }
+.fs-gauge-pin { fill: var(--fsg-pin); } .fs-gauge-pin2 { fill: var(--fsg-pin2); }
+.fs-gauge-warn path { fill: var(--fsg-red); stroke: none; } .fs-gauge-warn path.w { fill: none; stroke: var(--fsg-face); stroke-width: 1.3; stroke-linecap: round; }
+.fs-gauge-warn[hidden] { display: none; }
+.fs-gauge-warn { animation: fs-gauge-blink .7s steps(1) infinite; }
+.fs-gauge-ico { position: absolute; left: 50%; top: 55.5%; width: 9.5%; height: 9.5%; transform: translateX(-50%); color: var(--fsg-ico); }
+.fs-gauge-ico[hidden] { display: none; }
 .fs-gauge-ico svg { width: 100%; height: 100%; display: block; }
-.fs-gauge-main { position: absolute; left: 0; right: 0; top: 36px; text-align: center; font-size: 19px; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--fsg-text); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
-.fs-gauge-pct { position: absolute; left: 0; right: 0; top: 58px; text-align: center; font-size: 11px; font-weight: 600; color: var(--fsg-text); opacity: .85; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.fs-gauge-sub { position: absolute; left: -8px; right: -8px; top: 86px; text-align: center; font-size: 10.5px; color: var(--fsg-dim); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }   /* yayın alt uçlarının altında (boşlukta) */
-.fs-gauge-rate { font-size: 10.5px; color: var(--fsg-dim); font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: -2px; line-height: 1.2; }
-.fs-gauge-badge { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 2px 8px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; box-shadow: 0 0 0 1px rgba(255, 255, 255, .25), 0 2px 10px rgba(220, 38, 38, .7); }
+.fs-gauge-digits { position: absolute; left: 8%; right: 8%; top: 67%; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.fs-gauge-main { font-size: 15px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--fsg-digit); transition: color .3s; }
+.fs-gauge.big .fs-gauge-main { font-size: 22px; }
+.fs-gauge-unit { margin-top: 2px; font-size: 7px; font-weight: 700; letter-spacing: .12em; color: var(--fsg-unit); text-transform: uppercase; }
+.fs-gauge.big .fs-gauge-unit { font-size: 8.5px; }
+.fs-gauge-unit[hidden] { display: none; }
+.fs-gauge-sub { position: absolute; left: -12%; right: -12%; top: 93%; text-align: center; font-size: 9.5px; font-weight: 600; color: var(--fsg-sub); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; text-shadow: 0 1px 2px rgba(0, 0, 0, .7), 0 0 6px rgba(0, 0, 0, .45); }
+.fs-gauge.big .fs-gauge-sub { top: 92%; font-size: 10px; }
+.fs-gauge-sub[hidden] { display: none; }
+.fs-gauge-lbl { margin-top: 12px; font-size: 8.5px; font-weight: 700; letter-spacing: .16em; color: var(--fsg-lbl); text-transform: uppercase; line-height: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.fs-gauge-badge { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); z-index: 2; padding: 2px 8px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 9px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; box-shadow: 0 0 0 1px rgba(255, 255, 255, .3), 0 2px 10px rgba(220, 38, 38, .7); }
 .fs-gauge-badge[hidden] { display: none; }
-.fs-gauge[data-level="low"] .fs-gauge-main { color: #fde68a; }
-.fs-gauge[data-level="crit"] .fs-gauge-main, .fs-gauge[data-level="empty"] .fs-gauge-main { color: #fca5a5; }
-.fs-gauge[data-level="crit"] .fs-gauge-fill { animation: fs-gauge-pulse 1s ease-in-out infinite; }   /* nabız yalnız dolu yayda (hafif; metinler hep okunur) */
-.fs-gauge[data-level="crit"] .fs-gauge-ico, .fs-gauge[data-level="empty"] .fs-gauge-ico { color: #f87171; }
-.fs-gauge[data-level="crit"] .fs-gauge-track, .fs-gauge[data-level="empty"] .fs-gauge-track { stroke: rgba(239, 68, 68, .28); }
-.fs-gauge[data-level="empty"] .fs-gauge-sub { display: none; }   /* rozet ikincil satırın yerine geçer */
-.fs-gauge[data-level="empty"] .fs-gauge-rate { opacity: .6; }
-@keyframes fs-gauge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-.fs-gauge-c { display: none; }   /* kompakt satır yalnız mobilde */
+.fs-gauge[data-level="low"] .fs-gauge-main { color: #d98c00; }
+html[data-theme="dark"] .fs-gauge[data-level="low"] .fs-gauge-main { color: #fcd34d; }
+.fs-gauge[data-level="crit"] .fs-gauge-main, .fs-gauge[data-level="empty"] .fs-gauge-main, .fs-gauge.warn .fs-gauge-main { color: var(--fsg-red); }
+.fs-gauge[data-level="crit"] .fs-gauge-ico, .fs-gauge[data-level="empty"] .fs-gauge-ico { color: var(--fsg-red); }
+.fs-gauge[data-level="crit"] .fs-gauge-face, .fs-gauge.warn .fs-gauge-face { animation: fs-gauge-face-pulse 1s ease-in-out infinite; }   /* kritik: kadran yüzeyi kırmızı nabız */
+.fs-gauge[data-level="empty"] .fs-gauge-face { fill: color-mix(in srgb, var(--fsg-face) 82%, var(--fsg-red)); }
+.fs-gauge[data-level="empty"] .fs-gauge-sub { opacity: .7; }
+.fs-gauges.no-fuel::before { content: attr(data-nofuel); align-self: center; margin: 0 8px 46px 0; padding: 3px 9px; border-radius: 999px; font-size: 8.5px; font-weight: 800; letter-spacing: .14em; color: #fff; background: rgba(47, 143, 224, .85); box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }   /* elektrikli dron: yakıt kadranı yerine rozet */
+@keyframes fs-gauge-face-pulse { 0%, 100% { fill: var(--fsg-face); } 50% { fill: color-mix(in srgb, var(--fsg-face) 72%, var(--fsg-red)); } }
+@keyframes fs-gauge-blink { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }
 /* ayrıntı kutusu: kadranların üstünde, HEPGO tema değişkenleri */
-.fs-power-pop { position: absolute; right: 0; bottom: calc(100% + 8px); width: 318px; z-index: 9; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); padding: 10px 12px 8px; font-size: 12px; cursor: default; }
+.fs-power-pop { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 10px); width: 318px; z-index: 9; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); padding: 10px 12px 8px; font-size: 12px; cursor: default; }
 .fs-power-pop[hidden] { display: none; }
 .fs-power-pop-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
 .fs-power-x { border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 6px; }
@@ -9402,20 +9427,14 @@ html[data-theme="dark"] .fs-gauges { --fsg-bg: rgba(8, 12, 20, .7); }
 .fs-power-row.fs-power-head { border-top: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); padding-bottom: 1px; }
 .fs-power-span { grid-column: 2 / -1; }
 .fs-power-foot { margin-top: 6px; color: var(--muted); line-height: 1.35; }
-@media (min-width: 1800px) { .fs-gauges { transform: scale(1.18); transform-origin: bottom right; } }
-@media (max-width: 760px) {   /* mobil: kompakt yatay çubuklar (etiket · çubuk · değer · ikincil), tam genişlik */
-  .fs-gauges, .fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: 12px; right: 12px; flex-direction: column; gap: 4px; padding: 6px 10px; border-radius: 12px; }
-  .fs-stage.rc-on .fs-gauges { bottom: calc(var(--fs-bar-h) + 232px); }   /* sanal kumanda çubuklarının üstünde */
-  .fs-gauge { width: 100%; flex-direction: row; gap: 8px; padding: 2px 0; border-radius: 8px; }
-  .fs-gauge-dial, .fs-gauge-rate { display: none; }
-  .fs-gauge-lbl { flex: none; width: 58px; text-align: left; }
-  .fs-gauge-c { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-  .fs-gauge-cbar { flex: 1; height: 8px; border-radius: 999px; background: var(--fsg-track); overflow: hidden; }
-  .fs-gauge-cbar i { display: block; height: 100%; width: 0; border-radius: 999px; background: #22c55e; transition: width .35s; }
-  .fs-gauge-cv { font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .fs-gauge-cs { font-size: 10.5px; color: var(--fsg-dim); white-space: nowrap; }
-  .fs-gauge[data-level="crit"] .fs-gauge-cbar i, .fs-gauge[data-level="empty"] .fs-gauge-cs { animation: fs-gauge-pulse 1s ease-in-out infinite; color: #fca5a5; }
-  .fs-power-pop { width: auto; left: 0; }
+@media (min-width: 1800px) { .fs-gauges { transform: translateX(-50%) scale(1.2); } .fs-stage.rc-on .fs-gauges { transform: translateX(-50%) scale(1.03); } }
+@media (max-width: 1300px) { .fs-gauges { transform: translateX(-50%) scale(.9); } .fs-stage.rc-on .fs-gauges { transform: translateX(-50%) scale(.78); } }
+@media (max-width: 760px) {   /* mobil: iki satır — hız + motor üstte, yakıt + batarya altta */
+  .fs-gauges, .fs-stage.fs-ops:not(.fs-fpv) .fs-gauges { left: 50%; display: grid; grid-template-columns: 1fr 1fr; justify-items: center; align-items: end; gap: 0 10px; transform: translateX(-50%) scale(.8); }
+  .fs-gauge.big { width: 140px; order: 1; } .fs-gauge.small { width: 110px; order: 2; margin-bottom: 0; }
+  .fs-gauge-lbl { margin-top: 4px; }
+  .fs-stage.rc-on .fs-gauges, .fs-stage.rc-on.fs-ops:not(.fs-fpv) .fs-gauges { bottom: calc(var(--fs-bar-h) + 232px); transform: translateX(-50%) scale(.7); }   /* sanal kumanda çubuklarının üstünde */
+  .fs-power-pop { width: calc(100vw - 24px); }
 }
 /* ===== Uçuş Simülatörü §18: özet rapor modalı (.fs-rp*) — flightsim_report.js; CSS'in SONUNDA (panel .fs-pn/.fs-mp kurallarından ayrı) ===== */
 .fs-rp { display: grid; gap: 14px; font-size: 13px; }

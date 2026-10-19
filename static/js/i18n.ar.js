@@ -4261,4 +4261,9 @@ registerCatalog('ar', {
   "henüz yok": "ليس بعد",
   "ort.": "متوسط",
   "SITL pili": "بطارية SITL",
+  // --- Uçuş Simülatörü §23.6: güç paneli kadranları (HIZ · MOTOR · birimler) ---
+  "MOTOR": "المحرك",
+  "% GAZ": "% دواسة",
+  "×1000 RPM": "×1000 د/د",
+  "ELEKTRİK": "كهربائي",
 });

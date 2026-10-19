@@ -93,7 +93,6 @@ def param_oku(gcs, ad, deneme=3):
 
 
 def param_yaz(gcs, ad, deger, ptype=6):
-    from pymavlink import mavutil
     for _ in range(3):
         gcs.mav.param_set_send(1, 1, ad.encode(), float(deger), ptype)
         t1 = time.time()

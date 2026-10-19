@@ -279,8 +279,9 @@ def main():
         # portal yayında: ürün sitelerinin hesap sayfaları portala yönlenir (marka korunur), portal kendi sayfasını verir
         settings.PORTAL_LIVE = True
         try:
-            r = c.get('/giris?sonra=/hesabim', headers={'Host': 'www.sshmasters.com'}, follow_redirects=False)
-            assert r.status_code == 302 and r.headers['location'] == 'https://mastertool.download/giris?sonra=/hesabim&app=sm', r.headers
+            r = c.get('/hesabim?sonra=/indir/x', headers={'Host': 'www.sshmasters.com'}, follow_redirects=False)
+            assert r.status_code == 302 and r.headers['location'] == 'https://mastertool.download/hesabim?sonra=/indir/x&app=sm', r.headers
+            assert c.get('/sifre-sifirla/abc', headers={'Host': 'sqlmaster.app'}, follow_redirects=False).headers['location'].startswith('https://mastertool.download/sifre-sifirla/abc')
             r = c.get('/dogrula/abc', headers={'Host': 'ftpmasters.com'}, follow_redirects=False)
             assert r.headers['location'] == 'https://mastertool.download/dogrula/abc?app=fm'
             assert c.get('/indir/dl/fm', headers={'Host': 'ftpmasters.com'}, follow_redirects=False).headers['location'].startswith('https://mastertool.download/indir/dl/fm')
@@ -289,6 +290,97 @@ def main():
             assert c.get('/', headers={'Host': 'sshmasters.com'}).status_code == 200   # ürün sayfası yönlenmez
         finally:
             settings.PORTAL_LIVE = False
+
+        # ---- site içi giriş / kayıt (ürün sitelerinde yerinde, MT_PORTAL_LIVE=1 iken de), next doğrulaması, oturum durumu
+        settings.PORTAL_LIVE = True
+        try:
+            anon = TestClient(app, base_url='https://testserver')
+            HOSTS = (('sshmasters.com', 'sm', 'sshmaster'), ('www.ftpmasters.com', 'fm', 'ftpmaster'), ('sqlmaster.app', 'sq', 'sqlmaster'),
+                     ('notepadmaster.com', 'np', 'notepadmaster'), ('convertmaster.app', 'cv', 'convertmaster'))
+            for host, site, slug in HOSTS:
+                for path in ('/giris', '/kayit', '/sifremi-unuttum'):
+                    r = anon.get(path, headers={'Host': host}, follow_redirects=False)
+                    assert r.status_code == 200 and f'data-site="{site}"' in r.text and f'data-next="/web/{slug}/"' in r.text, (host, path, r.status_code)
+                    csp = r.headers['content-security-policy']
+                    assert "script-src 'self';" in csp and "frame-ancestors 'self'" in csp and '<script>' not in r.text
+                assert anon.get('/hesabim', headers={'Host': host}, follow_redirects=False).status_code == 302   # Hesabım portalda kalır
+                home = anon.get('/', headers={'Host': host}).text   # ana sayfa: Web'de aç (birincil) + İndir (.exe) + bölüm + başlıkta oturum
+                assert f'<a class="store web" href="/web/{slug}/">' in home and '<b>İndir (.exe)</b>' in home and 'id="web"' in home, host
+                assert f'data-mt-auth="{site}" data-web="/web/{slug}/"' in home and '/mtsite.js' in home and '/mtsite.css' in home and 'Kayıt ol' in home
+            r = anon.get('/giris', headers={'Host': 'sshmasters.com'})
+            assert 'data-portal="https://mastertool.download"' in r.text and 'data-brand="sm"' in r.text
+            for bad in ('//evil.com', 'https://evil.com', '/\\evil.com', '/\\/evil.com', '\\/evil.com', 'javascript:alert(1)', '/a b', '/x\r\nLocation: //evil.com',
+                        '///evil.com', ' /x', 'evil.com', '/' + 'a' * 600):
+                r = anon.get('/giris', params={'next': bad}, headers={'Host': 'ftpmasters.com'})
+                assert r.status_code == 200 and 'data-next="/web/ftpmaster/"' in r.text, (bad, re.search(r'data-next="[^"]*"', r.text))
+                r = anon.get('/giris', params={'next': bad}, headers={'Host': 'mastertool.download'})
+                assert 'data-next=""' in r.text, bad   # portalda varsayılan dönüş hesap.js'te (Hesabım / oyun)
+            from sshm.main import safe_next
+            assert safe_next('/web/sqlmaster/?a=1#x') == '/web/sqlmaster/?a=1#x' and safe_next('/\\evil.com') == '' and safe_next(None) == ''
+            r = anon.get('/giris?next=/web/sqlmaster/', headers={'Host': 'sshmasters.com'})
+            assert 'data-next="/web/sqlmaster/"' in r.text
+            r = anon.get('/giris?next=/web/sshmaster/%22%3E%3Cscript%3E', headers={'Host': 'mastertool.download'})
+            assert '<script>' not in r.text and 'data-next="/web/sshmaster/&quot;&gt;&lt;script&gt;"' in r.text   # öznitelik kaçışlı
+            # oturum durumu (başlık için): oturumsuz da 200
+            assert anon.get('/api/sm/session').json() == {'user': None}
+            st = c2.get('/api/fm/session')
+            assert st.status_code == 200 and st.json()['user']['email'] == 'yeni@test.com' and st.headers['cache-control'] == 'private, no-store'
+            # kayıt ürün sitesinden: doğrulama bağlantısı (ACCOUNT_URL) ?app=<site> ile; doğrulama sonrası Hesabım "web'de aç" gösterir
+            k3 = anon.post('/api/sm/auth/prelogin', json={'email': 'web@test.com'}).json()['kdf']
+            assert anon.post('/api/mt/auth/register', json={'name': 'Web Kişi', 'email': 'web@test.com', 'auth_hash': auth_hash('Web-12345', k3), 'brand': 'sm'}).json()['ok']
+            link = re.search(r'https://[a-z.]+(/dogrula/[A-Za-z0-9_-]+\?app=sm)\b', mailer.OUTBOX[-1]['text']).group(1)
+            r = anon.get(link, headers={'Host': 'mastertool.download'}, follow_redirects=False)
+            assert r.status_code == 303 and r.headers['location'] == '/hesabim?durum=dogrulandi&app=sm', r.headers
+            r = anon.get('/hesabim?durum=dogrulandi&app=sm', headers={'Host': 'mastertool.download'})
+            assert 'data-brand="sm"' in r.text and 'data-web="https://sshmasters.com/web/sshmaster/"' in r.text
+            assert 'data-web=""' in anon.get('/hesabim?app=xx', headers={'Host': 'mastertool.download'}).text
+            anon.post('/api/mt/auth/resend-verify', json={'email': 'zzz@test.com', 'brand': 'https://evil.com'})   # bilinmeyen marka: ?app eklenmez
+        finally:
+            settings.PORTAL_LIVE = False
+
+        # ---- mastertool.download/uygulamalar (Master Tool web başlatıcısı) ve katalog ?web=1
+        MT = {'Host': 'mastertool.download'}
+        r = c2.get('/uygulamalar', headers=MT)
+        csp = r.headers['content-security-policy']
+        assert r.status_code == 200 and '/uygulamalar.js' in r.text and '<script>' not in r.text and "frame-src 'self'" in csp and "script-src 'self';" in csp
+        assert 'data-portal="https://mastertool.download"' in r.text and 'data-dicts="hesap"' in r.text
+        assert c2.get('/uygulamalar', headers={'Host': 'sshmasters.com'}).status_code == 404
+        assert c2.get('/uygulamalar.js').headers['content-type'].startswith('text/javascript') and c2.get('/uygulamalar.css').headers['content-type'].startswith('text/css')
+        assert c2.get('/mtsite.js').status_code == 200 and c2.get('/mtsite.css').status_code == 200
+        cat = c2.get('/api/mt/apps?web=1').json()
+        ca = {a['app']: a for a in cat['apps']}
+        assert ca['sm']['web'] == '/web/sshmaster/' and ca['cv']['web'] == '/web/convertmaster/' and ca['ip']['web'] is None and ca['fs']['web'] is None
+        assert ca['fm']['download_url'].startswith('/indir/') and ca['fm']['download_url'].endswith('/fm') and 'vf' in ca and 'sv' in ca and ca['vf']['kind'] == 'web'
+        assert cat['launcher']['download_url'].endswith('/mt')
+        plain = c2.get('/api/mt/apps').json()['apps']   # masaüstü / eski istemci yanıtı değişmedi
+        assert all('web' not in a and 'download_url' not in a for a in plain) and not any(a.get('kind') == 'web' for a in plain)
+        anon = TestClient(app, base_url='https://testserver')   # yukarıdaki doğrulama oturum açtı; yeni, oturumsuz istemci
+        assert anon.get('/api/mt/apps?web=1').status_code == 401
+        acc = {a['app']: a for a in c2.get('/api/mt/account').json()['apps']}
+        assert acc['np']['web'] == '/web/notepadmaster/' and acc['qp']['web'] is None
+        # /web yedeği (üretimde tünel /web'i mtweb'e verir): oturumsuz → giriş akışı, portalda /web/ → /uygulamalar
+        r = anon.get('/web/sshmaster/', headers={'Host': 'sshmasters.com'}, follow_redirects=False)
+        assert r.status_code == 302 and r.headers['location'] == '/giris?next=/web/sshmaster/'
+        assert anon.get('/web/', headers=MT, follow_redirects=False).headers['location'] == '/uygulamalar'
+        assert anon.get('/web', headers={'Host': 'ftpmasters.com'}, follow_redirects=False).headers['location'] == '/giris?next=/web/ftpmaster/'
+        assert anon.get('/web/iptools/', follow_redirects=False).status_code == 404
+        assert c2.get('/web/ftpmaster/', headers={'Host': 'ftpmasters.com'}).status_code == 503
+        # robots: /web/ dizine girmez; site haritasında yok
+        for host in ('sshmasters.com', 'mastertool.download', 'convertmaster.app'):
+            assert 'Disallow: /web/' in c.get('/robots.txt', headers={'Host': host}).text and '/web/' not in c.get('/sitemap.xml', headers={'Host': host}).text
+        assert 'Disallow: /uygulamalar' in c.get('/robots.txt', headers=MT).text
+        mh = c.get('/', headers=MT).text
+        assert 'href="/uygulamalar"' in mh and 'data-mt-auth="mt"' in mh
+        # çeviriler: başlatıcı (mt + hesap sözlüğü) ve ürün sayfalarının yeni metinleri 7 dilde
+        ujs = open(os.path.join(settings.STATIC_DIR, 'uygulamalar.js'), encoding='utf-8').read()
+        ukeys = {k.replace("\\'", "'") for k in re.findall(r"\bt\('((?:[^'\\]|\\.)*)'", ujs)}
+        assert len(ukeys) > 40, len(ukeys)
+        for lang in ('en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'):
+            d = c.get(f'/i18n/mt.{lang}.json').json() | c.get(f'/i18n/hesap.{lang}.json').json()
+            assert not [k for k in ukeys if k not in d], (lang, [k for k in ukeys if k not in d][:5])
+            for site in ('sm', 'fm', 'sq', 'np', 'cv'):
+                d = c.get(f'/i18n/{site}.{lang}.json').json()
+                assert all(k in d for k in ("Web'de aç", 'Kayıt ol', 'İndir (.exe)', 'Tarayıcıda ya da masaüstünde', 'Masaüstü (Windows)', 'Çıkış')), (site, lang)
 
         # ---- site kiti ve çeviri sözlükleri (8 dil; Türkçe kaynak sayfanın kendisi)
         for a in ('/kit.js', '/kit.css'):

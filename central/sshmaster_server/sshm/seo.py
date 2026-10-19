@@ -198,8 +198,10 @@ def game_pages():
 
 
 def robots(site):
+    # /web/: tarayıcı sürümleri (oturum ister, dizine girmez); /uygulamalar: portal başlatıcısı (uygulama kabuğu)
     return (f'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /hesabim\nDisallow: /indir/\nDisallow: /dogrula/\n'
-            f'Disallow: /sifre-sifirla/\n\nSitemap: {base(site)}/sitemap.xml\n')
+            f'Disallow: /sifre-sifirla/\nDisallow: /web/\n' + ('Disallow: /uygulamalar\n' if site == 'mt' else '')
+            + f'\nSitemap: {base(site)}/sitemap.xml\n')
 
 
 def sitemap(site):

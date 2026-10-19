@@ -64,3 +64,12 @@ textarea { min-height: 110px; resize: vertical; }
 .bubble .who { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .badge.warn { background: rgba(251,191,36,.15); color: #fbbf24; }
 .badge.off { background: rgba(248,113,113,.15); color: var(--bad); }
+/* ürün sitelerinde giriş / kayıt: "Mastertool hesabı ile" rozeti; Hesabım üst düğmeleri; doğrulama sonrası "web'de aç" */
+.mt-with { display: inline-flex; align-items: center; gap: 8px; margin: -4px 0 12px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); font-size: 12.5px; text-decoration: none; }
+.mt-with img { width: 20px; height: 20px; border-radius: 6px; }
+.mt-with b { color: var(--head); font-weight: 700; }
+.mt-with:hover { border-color: var(--acc); }
+.acc-acts { display: flex; gap: 8px; }
+.msg.web-open { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.msg.web-open .btn { text-decoration: none; }

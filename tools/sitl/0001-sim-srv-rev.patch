@@ -1,0 +1,90 @@
+diff --git a/libraries/SITL/SIM_Aircraft.cpp b/libraries/SITL/SIM_Aircraft.cpp
+index 00cf876..67d3dd9 100644
+--- a/libraries/SITL/SIM_Aircraft.cpp
++++ b/libraries/SITL/SIM_Aircraft.cpp
+@@ -693,11 +693,40 @@ void Aircraft::update_home()
+     }
+ }
+ 
++/*
++  apply simulated reverse-mounted servos (SIM_SRV_REV bitmask, bit0=SERVO1):
++  mirror the PWM of each flagged channel about 1500us. The vehicle code
++  reverses the output for a reversed servo (SERVOn_REVERSED=1); a reversed
++  mounting on the airframe reverses it back, so the net surface/motor
++  response matches the real aircraft. Applies to every model (plane, copter,
++  ...) since all of them read input.servos. A PWM of 0 (no output) is kept.
++ */
++void Aircraft::apply_servo_reverse_mask(struct sitl_input &input) const
++{
++    const uint32_t mask = sitl != nullptr ? uint32_t(sitl->srv_rev_mask.get()) : 0;
++    if (mask == 0) {
++        return;
++    }
++    for (uint8_t i = 0; i < ARRAY_SIZE(input.servos); i++) {
++        if ((mask & (1U << i)) == 0 || input.servos[i] == 0) {
++            continue;
++        }
++        const uint16_t pwm = constrain_int16(input.servos[i], 1000, 2000);
++        input.servos[i] = 3000 - pwm;
++    }
++}
++
+ void Aircraft::update_model(const struct sitl_input &input)
+ {
+     local_ground_level = 0.0f;
+     if (sitl != nullptr) {
+-        update(input);
++        if (sitl->srv_rev_mask.get() != 0) {
++            struct sitl_input rev_input = input;
++            apply_servo_reverse_mask(rev_input);
++            update(rev_input);
++        } else {
++            update(input);
++        }
+     } else {
+         time_advance();
+     }
+diff --git a/libraries/SITL/SIM_Aircraft.h b/libraries/SITL/SIM_Aircraft.h
+index 43ebd2a..0dfeb4f 100644
+--- a/libraries/SITL/SIM_Aircraft.h
++++ b/libraries/SITL/SIM_Aircraft.h
+@@ -95,6 +95,9 @@ public:
+ 
+     void update_model(const struct sitl_input &input);
+ 
++    // mirror PWM of channels flagged in SIM_SRV_REV about 1500us (simulated reverse-mounted servos)
++    void apply_servo_reverse_mask(struct sitl_input &input) const;
++
+     void update_home();
+ 
+     /* fill a sitl_fdm structure from the simulator state */
+diff --git a/libraries/SITL/SITL.cpp b/libraries/SITL/SITL.cpp
+index b12b1c8..bda837b 100644
+--- a/libraries/SITL/SITL.cpp
++++ b/libraries/SITL/SITL.cpp
+@@ -527,6 +527,13 @@ const AP_Param::GroupInfo SIM::var_info3[] = {
+     // @Values: 0:Disable, 1:Enable
+     AP_GROUPINFO("ODOM_ENABLE",   1, SIM,  odom_enable, 0),
+ 
++    // @Param: SRV_REV
++    // @DisplayName: Reverse-mounted servo mask
++    // @Description: Bitmask of output channels whose servo is mounted reversed on the simulated airframe (bit0=SERVO1). The physics model mirrors the PWM of these channels about 1500us before use, so a real-aircraft parameter set with SERVOn_REVERSED=1 flies correctly in SITL (the vehicle code reverses the output, the simulated mounting reverses it back). 0 keeps the historical behaviour (all servos mounted normally).
++    // @Bitmask: 0:SERVO1,1:SERVO2,2:SERVO3,3:SERVO4,4:SERVO5,5:SERVO6,6:SERVO7,7:SERVO8,8:SERVO9,9:SERVO10,10:SERVO11,11:SERVO12,12:SERVO13,13:SERVO14,14:SERVO15,15:SERVO16
++    // @User: Advanced
++    AP_GROUPINFO("SRV_REV",       2, SIM,  srv_rev_mask, 0),
++
+     // @Param: LED_LAYOUT
+     // @DisplayName: LED layout
+     // @Description: LED layout config value
+diff --git a/libraries/SITL/SITL.h b/libraries/SITL/SITL.h
+index c548c31..a1c7352 100644
+--- a/libraries/SITL/SITL.h
++++ b/libraries/SITL/SITL.h
+@@ -214,6 +214,7 @@ public:
+     AP_Float drift_time;  // period in minutes
+     AP_Float engine_mul;  // engine multiplier
+     AP_Int32 engine_fail; // mask of engine/motor servo outputs to fail
++    AP_Int32 srv_rev_mask; // mask of servo outputs mounted reversed on the simulated airframe (PWM mirrored about 1500us)
+ 
+     // initial offset on GPS lat/lon, used to shift origin
+     AP_Float gps_init_lat_ofs;

@@ -4252,4 +4252,13 @@ registerCatalog('fr', {
   "Yakıt / batarya sütunları": "Colonnes carburant / batterie",
   "harcanan yakıt ve ölçülen km/L · batarya Wh ve ortalama W": "carburant consommé et km/L mesurés · Wh batterie et W moyens",
   "Simülasyon hızı (en yüksek)": "Vitesse de simulation (pic)",
+  "Güç paneli: ayrıntı için tıklayın": "Panneau d'énergie : cliquer pour les détails",
+  "Yakıt: mesafe + gaz kolu · Batarya: saatlik W + servo · Biterse yalnız uyarı, uçuş sürer": "Carburant : distance + manette des gaz · Batterie : W horaires + servos · À sec, seulement un avertissement, le vol continue",
+  "Tüketim ayarı": "Réglage de consommation",
+  "Harcanan": "Consommé",
+  "Anlık": "Instantané",
+  "Ölçülen": "Mesuré",
+  "henüz yok": "pas encore",
+  "ort.": "moy.",
+  "SITL pili": "Batterie SITL",
 });

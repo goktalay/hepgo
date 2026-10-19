@@ -1,4 +1,4 @@
-// Uçuş Simülatörü — askeri tarz FPV HUD (Dron kamerası kipinde 3B'nin üstünde tam ekran şeffaf canvas). Sözleşme: docs/ucus-simulatoru.md §9.
+// Uçuş Simülatörü — askeri tarz HUD (Gimbal kamerası kipinde — kod adı 'fpv', tuş 3 — 3B'nin üstünde tam ekran şeffaf canvas). Sözleşme: docs/ucus-simulatoru.md §10. GERÇEK FPV ('pilot') için ayrı OSD: flightsim_fpv_osd.js (§22).
 // • Yalnız kamera kipi 'fpv' iken çizilir (her rAF, devicePixelRatio); diğer kiplerde canvas gizli, döngü durur. 'H' aç/kapa, Shift+H renk
 //   (yeşil → beyaz → amber); tercihler localStorage (fs.mhud.on / fs.mhud.color). Açıkken sahnedeki .fs-stage'e `fs-mhud-on` sınıfı
 //   eklenir (CSS sağdaki uçuş veri panelini ve ÇARPIŞMA bandını gizler; HUD bunları kapsar).

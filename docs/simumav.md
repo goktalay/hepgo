@@ -65,9 +65,12 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
   THR_MAX 100, hızlı rate PID'ler), color, preview (dönen 3B için GLB yolu), is_default)`
   — kayıtta otomatik **1 hazır FPV dron** (`type 'fpv'`, model 'proc:quad250', ad "FPV-1").
 - `tracks(id, user_id, name, lat, lon, alt_mode 'terrain', radius_m, wind {speed_ms, dir_deg, gust}, time_of_day, weather,
-  world_mode 'google3d' (SABİT; başka seçenek yok), preview_png, is_default)`
+  world_mode ('real'|'google3d'|'procedural' — HEPGO'daki üç kip: Gerçek arazi / Google 3B / Prosedürel; varsayılan 'google3d'),
+  world JSON (HEPGO WORLD_DEFAULTS alanları: size_m, trees_pct, extra_buildings, fog_pct, runway_deg, runway, time_of_day),
+  gates JSON (FPV HALKALARI: [{i, lat, lon, agl_m, yaw_deg, radius_m, kind:'ring'|'gate'}] ≤ 50; yarıçap 1–20 m; parkur yarıçapı
+  içinde; yalnız 3B kiplerde çizilir — her üç kip de 3B'dir), preview_png, is_default)`
   — kayıtta otomatik **TRTEST** (TR TEST Kalecik: lat 40.0990, lon 33.4101; ajan doğrular), is_default=1.
-- `missions(id, user_id, track_id, name, kind ('corridor'|'free'|'spray'|'fpv_flags'|'survey'), plan JSON (waypoint'ler +
+- `missions(id, user_id, track_id, name, kind ('corridor'|'free'|'spray'|'fpv_flags'|'fpv_gates'|'survey'), — `fpv_gates`: parkurun halkalarını sırayla geçme (plan: {order:[gate i…], laps}), plan JSON (waypoint'ler +
   tür parametreleri; HEPGO flightsim_mission ile uyumlu `route` biçimi), preview_png)`
 - `flights(id, user_id, pilot_id, drone_id, track_id, mission_id NULL, launch ('wheels'|'ramp'|'vehicle'|'hand'), started_at,
   ended_at, duration_s, result ('ok'|'crash'|'abort'), summary JSON (flightsim_mission summary), bin_path, video_path,
@@ -100,8 +103,14 @@ tests/test_simumav.py   REST + oturum + bridge (SITL yok) · tests/test_simumav_
 - Hangar: ortada dönen 3B model (three.js, HEPGO vendor), "+" devasa düğme → tür kartları yarış oyunu araç seçimi gibi
   yatay kaydırma + ok tuşları; isim ver → kaydet → hangara iner (animasyon).
 - Mürettebat: 10 karakter (SVG, p01 pilot şapkalı erkek, en az 4 kadın) kart; seçim + isim.
-- Parkur: TRTEST hazır; yeni parkur: konum (Google harita tıkla / ara), rüzgâr kadranı, saat, hava; kart üstünde dönen
-  mini 3B arazi (gerçek arazi karosu + uydu dokusu).
+- Parkur: TRTEST hazır; yeni parkur: konum (Google harita tıkla / ara), **dünya kipi 3 seçenek** (Gerçek arazi · Google 3B ·
+  Prosedürel — HEPGO sihirbazındaki "Dünya" adımının oyun görünümlü karşılığı: dünya boyutu, ağaç sıklığı, ek bina, sis, rüzgâr
+  hızı/yönü, pist yönü/pist, saat Gündüz/Akşam/Gece), **FPV halkaları editörü**: harita/3B önizleme üstünde tıklayarak halka ekle
+  (sıra numarası, yükseklik AGL, yön, yarıçap, tür halka/kapı; sürükle-taşı, sil), halkalar 3B önizlemede çizilir; kart üstünde
+  dönen mini 3B arazi (gerçek arazi karosu + uydu dokusu) + halkalar.
+- Uç: parkurun halkaları sahnede çizilir (neon halka/kapı, sıradaki halka vurgulu, geçilen yeşil), geçiş algılama (dron merkezi
+  halka düzleminden yarıçap içinde geçti), OSD/HUD'da sıradaki halka oku + mesafe + tur sayacı + süre; uçuş özetine halka
+  istatistiği (geçilen/kaçırılan, en iyi tur).
 - Görevler: "+" → parkur seç (kartlar) → isim → tam ekran Cesium (HEPGO routes.js'teki Cesium kullanımıyla aynı kaynak)
   üstünde görev araçları: koridor, serbest, ilaçlama dilimleme, FPV bayrak, tarama. `plan` HEPGO görev biçimi.
 - Uç: sihirbaz (dron → parkur → kalkış yöntemi [sabit kanatta: rampa/araç/tekerlek/**elden atış**] → görev opsiyonel →

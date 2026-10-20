@@ -4581,4 +4581,7 @@ registerCatalog('de', {
   "Havada dairesel yörüngede uçan hedefler.": "Ziele, die in der Luft Kreisbahnen fliegen.",
   "Radar, istasyon, EO kulesi ve görev.": "Radar, Station, EO-Turm und Mission.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "Aufzeichnungsoptionen und Übersicht aller Auswahlen.",
+  "Sırada ({n}.)": "In Warteschlange (Nr. {n})",
+  "Sırada": "In Warteschlange",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Die Analyse läuft in einem separaten Prozess; Sie können die Seite verlassen. Der Bericht öffnet sich automatisch, sobald er fertig ist.",
 });

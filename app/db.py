@@ -2154,7 +2154,8 @@ CREATE TABLE IF NOT EXISTS flight_logs (
     analyzed_at TEXT,
     flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL,
     source      TEXT NOT NULL DEFAULT 'UPLOAD',  -- UPLOAD (elle yükleme) | BRIDGE (dron köprüsünden uçuş sonrası .bin)
-    origin      TEXT                             -- SIM (SITL simülasyon logu) | REAL (gerçek uçuş) | NULL (dosya okunamadı); flight_log_origin_doldur
+    origin      TEXT,                            -- SIM (SITL simülasyon logu) | REAL (gerçek uçuş) | NULL (dosya okunamadı); flight_log_origin_doldur
+    progress    INTEGER                          -- ISLENIYOR iken analiz ilerlemesi 0…100; NULL = kuyrukta sırada (flight_analysis)
 );
 CREATE INDEX IF NOT EXISTS ix_flight_logs_task ON flight_logs(task_id);
 
@@ -3306,6 +3307,8 @@ def _migrate(conn):
     if 'origin' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # uçuşun kendisi: SIM (SITL simülasyonu) | REAL (gerçek uçuş)
         conn.execute('ALTER TABLE flight_logs ADD COLUMN origin TEXT')
     flight_log_origin_doldur(conn)
+    if 'progress' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # analiz ilerlemesi (alt süreç; NULL = sırada)
+        conn.execute('ALTER TABLE flight_logs ADD COLUMN progress INTEGER')
     if 'fuel' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # uçuş yakıtı: başlangıç/bitiş litre + itkiye göre dağıtılmış tüketim özeti (JSON)
         conn.execute('ALTER TABLE flight_logs ADD COLUMN fuel TEXT')
     if 'duration_min' not in {r[1] for r in conn.execute('PRAGMA table_info(online_meetings)')}:   # görüntülü toplantı süresi (davet metni: 15:00 – 16:00)

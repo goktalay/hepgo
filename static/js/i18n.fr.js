@@ -4581,4 +4581,7 @@ registerCatalog('fr', {
   "Havada dairesel yörüngede uçan hedefler.": "Cibles volant en orbite circulaire.",
   "Radar, istasyon, EO kulesi ve görev.": "Radar, station, tour EO et mission.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "Options d'enregistrement et récapitulatif de tous les choix.",
+  "Sırada ({n}.)": "En file d'attente (n° {n})",
+  "Sırada": "En file d'attente",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "L'analyse s'exécute dans un processus séparé ; vous pouvez quitter la page. Le rapport s'ouvre automatiquement une fois prêt.",
 });

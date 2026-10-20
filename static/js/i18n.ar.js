@@ -4581,4 +4581,7 @@ registerCatalog('ar', {
   "Havada dairesel yörüngede uçan hedefler.": "أهداف تطير في مدارات دائرية.",
   "Radar, istasyon, EO kulesi ve görev.": "الرادار، المحطة، برج EO والمهمة.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "خيارات التسجيل وملخص جميع الاختيارات.",
+  "Sırada ({n}.)": "في قائمة الانتظار (رقم {n})",
+  "Sırada": "في قائمة الانتظار",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "يجري التحليل في عملية منفصلة؛ يمكنك مغادرة الصفحة. يُفتح التقرير تلقائيًا عند الجهوزية.",
 });

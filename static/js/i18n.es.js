@@ -4581,4 +4581,7 @@ registerCatalog('es', {
   "Havada dairesel yörüngede uçan hedefler.": "Objetivos que vuelan en órbitas circulares.",
   "Radar, istasyon, EO kulesi ve görev.": "Radar, estación, torre EO y misión.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "Opciones de grabación y resumen de todas las selecciones.",
+  "Sırada ({n}.)": "En cola (n.º {n})",
+  "Sırada": "En cola",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "El análisis se ejecuta en un proceso aparte; puede salir de la página. El informe se abrirá solo cuando esté listo.",
 });

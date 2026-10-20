@@ -1,6 +1,7 @@
 """ArduPilot DataFlash (.bin / .log) uçuş logu analizi.
 
-pymavlink ile log okunur; özet değerler, zaman serileri (grafikler için seyreltilmiş), uçuş izi,
+İkili .BIN hızlı akış okuyucuyla (dataflash; sonuç pymavlink yoluyla birebir aynı — docs/ucus-simulatoru.md §8.4), metin .log / .tlog
+pymavlink ile okunur; analiz sunucuda alt süreçte çalışır (flight_analysis). Özet değerler, zaman serileri (grafikler için seyreltilmiş), uçuş izi,
 modlar, olaylar/hatalar ve otomatik değerlendirme bulguları JSON olarak döner. Alan adları ArduPilot
 sürümüne göre değiştiğinden (ör. BAT.RemPct, VIBE.Clip / Clip0..2, XKF2 / NKF2) okuma toleranslıdır.
 """
@@ -103,7 +104,17 @@ def _in(intervals, t):
     return any(a <= t <= b for a, b in intervals)
 
 
-def analyze(path):
+def analyze(path, ilerleme=None):
+    """Uçuş logu analizi. İkili DataFlash (.BIN) → akış okuyucu (dataflash, numpy; 700 MB'lık logda ~10 sn / ~0,4 GB);
+    metin .log / .tlog → pymavlink. İki yolun sonucu BİREBİR aynıdır (tests/test_binanalyze). `ilerleme(yüzde)` 0…100.
+    Sunucuda ALT SÜREÇTE çalıştırılır (flight_analysis; `python -m app.flightlog analyze`)."""
+    from . import dataflash
+    if dataflash.ikili_mi(path):
+        return _analyze_hizli(path, ilerleme)
+    return _analyze_pymavlink(path, ilerleme)
+
+
+def _analyze_pymavlink(path, ilerleme=None):
     log = mavutil.mavlink_connection(str(path), zero_time_base=False)
     t0 = None
     s = {k: [] for k in ('alt', 'gs', 'as', 'volt', 'curr', 'vx', 'vy', 'vz', 'roll', 'droll', 'pitch', 'dpitch',
@@ -120,10 +131,14 @@ def analyze(path):
     gps_time_ref = None   # (log saniyesi, unix zamanı)
     count = 0
 
+    say = 0
     while True:
         m = log.recv_match(type=TYPES)
         if m is None:
             break
+        say += 1
+        if ilerleme and say % 20000 == 0:
+            ilerleme(min(99, int(getattr(log, 'percent', 0) or 0)))
         tp = m.get_type()
         if tp == 'PARM':
             params += 1
@@ -361,6 +376,430 @@ def analyze(path):
         'track': _thin(track, MAX_TRACK),
         'series': {k: [[_r(t), _r(v, 2)] for t, v in _thin(vals, MAX_POINTS)] for k, vals in s.items()},
     }
+    return result
+
+
+# ---------- Hızlı analiz (ikili DataFlash; dataflash akış okuyucusu) ----------
+# _analyze_pymavlink ile BİREBİR aynı sonuç (aynı JSON; tests/test_binanalyze): değerler pymavlink ile bit bit aynı okunur
+# (dataflash.oku kesin=True), tipler arası dosya sırası gereken yerlerde (BAT+CURR, XKF2+NKF2, POS'tan önceki BARO, t0) '_ofs' kullanılır,
+# toplamlar/en büyük-en küçükler Python listeleri üzerinde aynı sırayla hesaplanır (numpy ikili toplamı / SIMD sin-hypot farkı olmasın).
+_HIZLI_SUTUN = {
+    'MSG': ['Message'], 'MODE': ['ModeNum', 'Mode', 'Rsn'],
+    'GPS': ['I', 'Status', 'Lat', 'Lng', 'Spd', 'GWk', 'GMS', 'NSats', 'HDop'],
+    'POS': ['Lat', 'Lng', 'RelHomeAlt'],
+    'BAT': ['Inst', 'Instance', 'Volt', 'Curr', 'CurrTot', 'EnrgTot', 'RemPct'],
+    'CURR': ['Inst', 'Instance', 'Volt', 'Curr', 'CurrTot', 'EnrgTot', 'RemPct'],
+    'BARO': ['I', 'Alt'], 'CTUN': ['ThO', 'ThrOut', 'As'], 'ARSP': ['I', 'Airspeed'],
+    'ATT': ['Roll', 'Pitch', 'DesRoll', 'DesPitch'],
+    'VIBE': ['IMU', 'VibeX', 'VibeY', 'VibeZ', 'Clip', 'Clip0', 'Clip1', 'Clip2'],
+    'XKF2': ['C', 'VWN', 'VWE'], 'NKF2': ['C', 'VWN', 'VWE'],
+    'ERR': ['Subsys', 'ECode'], 'EV': ['Id'], 'ARM': ['ArmState'], 'STAT': ['isFlying'],
+    'ORGN': ['Type', 'Lat', 'Lng', 'Alt'], 'PARM': [],
+}
+_SERI = ('alt', 'gs', 'as', 'volt', 'curr', 'vx', 'vy', 'vz', 'roll', 'droll', 'pitch', 'dpitch', 'sats', 'hdop', 'wind', 'thr')
+
+
+def _thin_idx(n, limit):
+    """_thin ile aynı seçim, indeks olarak."""
+    if n <= limit:
+        return list(range(n))
+    step = n / limit
+    out = [int(i * step) for i in range(limit)]
+    out.append(n - 1)
+    return out
+
+
+def _analyze_hizli(path, ilerleme=None):
+    import numpy as np
+    from . import dataflash
+    istek = {tp: ([] if tp == 'PARM' else ['TimeUS', 'TimeMS']) + c for tp, c in _HIZLI_SUTUN.items()}
+    D = dataflash.oku(str(path), istek, ilerleme=(lambda y: ilerleme(int(y * 0.9))) if ilerleme else None, kesin=True, ofs=True,
+                       tanimsizda_dur=True)
+    if ilerleme:
+        ilerleme(90)
+    BOS = np.empty(0)
+
+    def sutun(tp, ad, maske=None):
+        """Zorunlu alan (pymavlink'te m.<ad>): yoksa ve kullanılacak satır varsa AttributeError (eski yol gibi)."""
+        c = D[tp]
+        if ad in c:
+            return c[ad]
+        if maske is None or np.any(maske):
+            raise AttributeError(ad)
+        return np.zeros(len(c['_ofs']))
+
+    def ya(tp, ad, vars_=0):
+        """getattr(m, ad, vars_) karşılığı (vars_ sabit, tamsayı)."""
+        c = D[tp]
+        return c[ad] if ad in c else np.full(len(c['_ofs']), vars_, dtype=np.int64)
+
+    def sifir_mi(tp, ad):
+        """getattr(m, ad, 0) in (0, None) karşılığı (NaN dolgu → hayır)."""
+        c = D[tp]
+        return (c[ad] == 0) if ad in c else np.ones(len(c['_ofs']), bool)
+
+    params = len(D['PARM']['_ofs']) if 'PARM' in D else 0
+    T = {}
+    ilk = None
+    count = 0
+    for tp, c in D.items():
+        if tp == 'PARM' or not len(c['_ofs']):
+            continue
+        if 'TimeUS' in c:
+            tus = c['TimeUS']
+        elif 'TimeMS' in c:
+            tus = c['TimeMS'] * 1000
+        else:
+            continue
+        T[tp] = tus.astype(np.float64) / 1e6
+        count += len(tus)
+        if ilk is None or c['_ofs'][0] < ilk[0]:
+            ilk = (int(c['_ofs'][0]), float(T[tp][0]))
+    if ilk is None or count == 0:
+        raise ValueError('Logda okunabilir uçuş verisi bulunamadı')
+    t0 = ilk[1]
+    for tp in T:
+        T[tp] = T[tp] - t0
+
+    s = {k: (BOS, BOS) for k in _SERI}
+    firmware = board = None
+    msgs, modes, events, errors = [], [], [], []
+    arm_flags, stat_flags = [], []
+    bat = {'first': None, 'last': None, 'min_v': None, 'max_a': 0.0, 'mah': None, 'wh': None, 'pct': None}
+    clips = {}
+    origin = None
+    gps_time_ref = None
+
+    # MSG (sürüm / kart, ilk 200 mesaj)
+    if 'MSG' in T:
+        for t, text in zip(T['MSG'].tolist(), sutun('MSG', 'Message')):
+            text = str(text)
+            if firmware is None and text.startswith(('ArduPlane', 'ArduCopter', 'ArduRover', 'ArduSub', 'ArduHeli',
+                                                     'Blimp', 'AntennaTracker')):
+                firmware = text
+            elif board is None and ' ' in text and any(text.startswith(b) for b in (
+                    'Pixhawk', 'CubeOrange', 'CubeBlack', 'CubePurple', 'CubeYellow', 'Matek', 'fmuv', 'PX4v',
+                    'Durandal', 'KakuteH', 'SpeedyBee', 'Holybro', 'MicoAir', 'mRo', 'Pixracer', 'omnibus')):
+                board = text.split(' ')[0]
+            if len(msgs) < MAX_MESSAGES:
+                msgs.append({'t': _r(t), 'text': text, 'warn': bool(WARN_RE.search(text))})
+    if 'MODE' in T:
+        c = D['MODE']
+        num = c['ModeNum'] if 'ModeNum' in c else c.get('Mode')
+        num = num.tolist() if num is not None else [None] * len(T['MODE'])
+        rsn = c['Rsn'].tolist() if 'Rsn' in c else [None] * len(T['MODE'])
+        modes = list(zip(T['MODE'].tolist(), num, rsn))
+
+    # GPS (birincil alıcı, I = 0)
+    gt = glat = glng = gspd = BOS
+    if 'GPS' in T:
+        tg = T['GPS']
+        keep = sifir_mi('GPS', 'I')
+        ok3 = keep & (ya('GPS', 'Status') >= 3)
+        gt, glat, glng, gspd = tg[ok3], sutun('GPS', 'Lat', ok3)[ok3], sutun('GPS', 'Lng', ok3)[ok3], sutun('GPS', 'Spd', ok3)[ok3]
+        s['gs'] = (gt, gspd)
+        gwk = ya('GPS', 'GWk')[ok3]
+        ix = np.flatnonzero(gwk > 0)
+        if len(ix):
+            i = int(ix[0])
+            wk = gwk[i].item()
+            gms = sutun('GPS', 'GMS', ok3)[ok3][i].item()
+            gps_time_ref = (gt[i].item(), 315964800 + wk * 604800 + gms / 1000.0 - 18)
+        s['sats'] = (tg[keep], ya('GPS', 'NSats')[keep])
+        s['hdop'] = (tg[keep], ya('GPS', 'HDop')[keep])
+    # POS (EKF konumu) + POS'tan önceki BARO irtifası
+    pt = plat = plng = prel = BOS
+    prel_ok = np.zeros(0, bool)
+    alt_t, alt_v = [], []
+    ilk_pos = None
+    if 'POS' in T:
+        c = D['POS']
+        pt, plat, plng = T['POS'], sutun('POS', 'Lat'), sutun('POS', 'Lng')
+        if 'RelHomeAlt' in c:
+            prel = c['RelHomeAlt']
+            prel_ok = np.isfinite(prel)
+        else:
+            prel = np.full(len(pt), np.nan)
+            prel_ok = np.zeros(len(pt), bool)
+        ilk_pos = int(c['_ofs'][0])
+    if 'BARO' in T:
+        m = sifir_mi('BARO', 'I')
+        if ilk_pos is not None:
+            m &= D['BARO']['_ofs'] < ilk_pos
+        alt_t.append(T['BARO'][m])
+        alt_v.append(sutun('BARO', 'Alt', m)[m])
+    if 'POS' in T:
+        alt_t.append(pt[prel_ok])
+        alt_v.append(prel[prel_ok])
+    if alt_t:
+        s['alt'] = (np.concatenate(alt_t), np.concatenate(alt_v))
+    # Hava hızı: ARSP; logda hiç ARSP yoksa CTUN.As
+    if 'ARSP' in T:
+        m = sifir_mi('ARSP', 'I')
+        s['as'] = (T['ARSP'][m], sutun('ARSP', 'Airspeed', m)[m])
+    if 'CTUN' in T:
+        c, tc = D['CTUN'], T['CTUN']
+        if 'ThO' in c:
+            v = c['ThO']
+            s['thr'] = (tc, np.where(v <= 1.5, v * 100, v))
+        elif 'ThrOut' in c:
+            v = c['ThrOut']
+            if v.dtype.kind == 'f':
+                v2 = np.where(v > 1.5, v / 100.0, v)
+                s['thr'] = (tc, np.where(v2 <= 1.5, v2 * 100, v2))
+            else:   # tamsayı ThrOut: eski yoldaki int/float karışımı birebir
+                out = []
+                for x in v.tolist():
+                    x = x / 100.0 if x > 1.5 else x
+                    out.append(x * 100 if x <= 1.5 else x)
+                arr = np.empty(len(out), dtype=object)
+                arr[:] = out
+                s['thr'] = (tc, arr)
+        if 'ARSP' not in D and 'As' in c:
+            m = np.isfinite(c['As'])
+            s['as'] = (tc[m], c['As'][m])
+    if 'ATT' in T:
+        ta = T['ATT']
+        s['roll'], s['pitch'] = (ta, sutun('ATT', 'Roll')), (ta, sutun('ATT', 'Pitch'))
+        s['droll'], s['dpitch'] = (ta, sutun('ATT', 'DesRoll')), (ta, sutun('ATT', 'DesPitch'))
+    if 'VIBE' in T:
+        m = sifir_mi('VIBE', 'IMU')
+        tv = T['VIBE'][m]
+        s['vx'], s['vy'], s['vz'] = ((tv, sutun('VIBE', k, m)[m]) for k in ('VibeX', 'VibeY', 'VibeZ'))
+        if np.any(m):
+            son = int(np.flatnonzero(m)[-1])
+            for f in ('Clip', 'Clip0', 'Clip1', 'Clip2'):
+                if f in D['VIBE']:
+                    clips[f] = D['VIBE'][f][son].item()
+
+    def birlestir(tipler, alanlar):
+        """Birden çok tipin satırları dosya sırasıyla: (t, {alan: (değerler, var_mı)})."""
+        parca = [tp for tp in tipler if tp in T]
+        if not parca:
+            return None, None
+        ofs = np.concatenate([D[tp]['_ofs'] for tp in parca])
+        sira = np.argsort(ofs, kind='stable')
+        tt = np.concatenate([T[tp] for tp in parca])[sira]
+        out = {}
+        for a in alanlar:
+            if all(a in D[tp] for tp in parca):
+                out[a] = (np.concatenate([D[tp][a] for tp in parca])[sira], None)
+            else:
+                v = np.concatenate([D[tp][a].astype(np.float64) if a in D[tp] else np.full(len(T[tp]), np.nan) for tp in parca])[sira]
+                var = np.concatenate([np.full(len(T[tp]), a in D[tp]) for tp in parca])[sira]
+                out[a] = (v, var)
+        return tt, out
+
+    # Rüzgâr (XKF2 / NKF2, çekirdek C = 0)
+    wind_vn = wind_ve = []
+    tw, W = birlestir(('XKF2', 'NKF2'), ('C', 'VWN', 'VWE'))
+    if tw is not None:
+        cv, cvar = W['C']
+        m = (cv == 0) if cvar is None else np.where(cvar, cv == 0, True)
+        if np.any(m) and (W['VWN'][1] is not None or W['VWE'][1] is not None) and not (
+                (W['VWN'][1] is None or W['VWN'][1][m].all()) and (W['VWE'][1] is None or W['VWE'][1][m].all())):
+            raise AttributeError('VWN')
+        wind_vn, wind_ve = W['VWN'][0][m].tolist(), W['VWE'][0][m].tolist()
+        s['wind'] = (tw[m], np.array([math.hypot(a, b) for a, b in zip(wind_vn, wind_ve)], dtype=np.float64))
+    wind_dirs = bool(wind_vn)
+    # Batarya (BAT / eski CURR; birincil örnek)
+    tb, B = birlestir(('BAT', 'CURR'), ('Inst', 'Instance', 'Volt', 'Curr', 'CurrTot', 'EnrgTot', 'RemPct'))
+    if tb is not None:
+        n = len(tb)
+        inst = np.zeros(n)
+        for a in ('Instance', 'Inst'):   # getattr(m, 'Inst', getattr(m, 'Instance', 0))
+            v, var = B[a]
+            inst = np.where(np.ones(n, bool) if var is None else var, v, inst)
+        keep = inst == 0
+        v, var = B['Volt']
+        keep &= np.isfinite(v) & (v > 0.5) & (True if var is None else var)
+        if np.any(keep):
+            V = v[keep]
+            s['volt'] = (tb[keep], V)
+            a, avar = B['Curr']
+            am = keep & np.isfinite(a) & (True if avar is None else avar)
+            s['curr'] = (tb[am], a[am])
+            bat['max_a'] = max([0.0] + a[am].tolist())
+            vl = V.tolist()
+            bat['first'], bat['last'], bat['min_v'] = vl[0], vl[-1], min(vl)
+            son = int(np.flatnonzero(keep)[-1])
+            ct, ctvar = B['CurrTot']
+            bat['mah'] = _num(ct[son].item()) if (ctvar is None or ctvar[son]) else None
+            et, etvar = B['EnrgTot']
+            em = keep & np.isfinite(et) & (True if etvar is None else etvar)
+            if np.any(em):
+                bat['wh'] = et[int(np.flatnonzero(em)[-1])].item()
+            rp, rpvar = B['RemPct']
+            if rpvar is None:
+                bat['pct'] = rp[son].item()
+            else:
+                pm = keep & rpvar
+                if np.any(pm):
+                    bat['pct'] = rp[int(np.flatnonzero(pm)[-1])].item()
+    if 'ERR' in T:
+        for t, sub, code in zip(T['ERR'].tolist(), sutun('ERR', 'Subsys').tolist(), sutun('ERR', 'ECode').tolist()):
+            errors.append({'t': _r(t), 'subsys': sub, 'code': code, 'text': ERR_SUBSYS.get(sub, f'Alt sistem {sub}'), 'resolved': code == 0})
+    if 'EV' in T:
+        for t, i in zip(T['EV'].tolist(), sutun('EV', 'Id').tolist()):
+            events.append({'t': _r(t), 'id': i, 'text': EV_TEXT.get(i, f'Olay #{i}')})
+            if i in (10, 11):
+                arm_flags.append((t, i == 10))
+    if 'ARM' in T:
+        arm_flags += [(t, bool(a)) for t, a in zip(T['ARM'].tolist(), sutun('ARM', 'ArmState').tolist())]
+    if 'STAT' in T:
+        stat_flags = [(t, bool(f)) for t, f in zip(T['STAT'].tolist(), ya('STAT', 'isFlying').tolist())]
+    if 'ORGN' in T:
+        m = np.flatnonzero(ya('ORGN', 'Type') == 0)
+        if len(m):
+            i = int(m[0])
+            origin = tuple(sutun('ORGN', k)[i].item() for k in ('Lat', 'Lng', 'Alt'))
+    if ilerleme:
+        ilerleme(94)
+
+    duration = max((v[0][-1].item() for v in s.values() if len(v[0])), default=0)
+    if len(gt):
+        duration = max(duration, gt[-1].item())
+
+    arm_flags.sort()
+    if arm_flags and not arm_flags[0][1]:
+        arm_flags.insert(0, (0.0, True))
+    armed = _intervals(arm_flags + [(duration, arm_flags[-1][1])] if arm_flags else [])
+
+    gtl = gt.tolist()
+    if stat_flags:
+        flying = _intervals(stat_flags + [(duration, stat_flags[-1][1])])
+    else:
+        gs_by_t = {round(t, 1): v for t, v in zip(gtl, gspd.tolist())}
+        flags = []
+        for tt, rel in zip(pt[prel_ok].tolist(), prel[prel_ok].tolist()):
+            on = (rel > 2.0 or (gs_by_t.get(round(tt, 1)) or 0) > 4.0) and (not armed or _in(armed, tt))
+            flags.append((tt, on))
+        flying = [iv for iv in _intervals(flags) if iv[1] - iv[0] > 3]
+    flight_s = sum(b - a for a, b in flying)
+    armed_s = sum(b - a for a, b in armed)
+
+    def air(tarr):
+        if not flying:
+            return np.ones(len(tarr), bool)
+        m = np.zeros(len(tarr), bool)
+        for a, b in flying:
+            m |= (tarr >= a) & (tarr <= b)
+        return m
+
+    home = origin or ((glat[0].item(), glng[0].item(), None) if len(gt) else None)
+    distance = 0.0
+    max_home = 0.0
+    prev = None
+    ga = air(gt).tolist()
+    glatl, glngl = glat.tolist(), glng.tolist()
+    for lat, lng, ia in zip(glatl, glngl, ga):
+        if ia:
+            if prev:
+                d = _haversine(prev, (lat, lng))
+                if d < 500:
+                    distance += d
+            prev = (lat, lng)
+            if home:
+                max_home = max(max_home, _haversine(home, (lat, lng)))
+    if len(gt):
+        track = [[round(glatl[i], 7), round(glngl[i], 7), 1 if ga[i] else 0] for i in _thin_idx(len(gt), MAX_TRACK)]
+    elif len(pt):
+        pa = air(pt)
+        track = [[round(plat[i].item(), 7), round(plng[i].item(), 7), 1 if pa[i] else 0] for i in _thin_idx(len(pt), MAX_TRACK)]
+    else:
+        track = []
+
+    def stat(key, fn, only_air=True):
+        tt, vv = s[key]
+        if not len(tt):
+            return None
+        vals = (vv[air(tt)] if only_air else vv).tolist()
+        return fn(vals) if vals else None
+
+    mean = lambda v: sum(v) / len(v)
+    climb = []
+    at, av = s['alt'][0].tolist(), s['alt'][1].tolist()
+    aa = air(s['alt'][0]).tolist()
+    j = 0
+    for i in range(1, len(at)):
+        while at[i] - at[j] > 1.0:
+            j += 1
+        if j and aa[i]:
+            k = j - 1
+            climb.append((av[i] - av[k]) / (at[i] - at[k]))
+
+    def track_err(des, act):
+        vd, (ta_, va) = s[des][1], s[act]
+        n = min(len(vd), len(va))
+        m = air(ta_[:n])
+        return (va[:n][m] - vd[:n][m]).tolist()
+    rms = lambda v: math.sqrt(sum(x * x for x in v) / len(v)) if v else None
+
+    names = _mode_names(firmware)
+    mode_rows = []
+    for i, (tt, num, rsn) in enumerate(modes):
+        end = modes[i + 1][0] if i + 1 < len(modes) else duration
+        mode_rows.append({'t': _r(tt), 'name': names.get(num, f'Mod {num}'), 'dur': _r(end - tt), 'reason': rsn})
+
+    wind_dir = None
+    if wind_dirs and (stat('wind', mean) or 0) >= 0.5:
+        vn = mean(wind_vn)
+        ve = mean(wind_ve)
+        wind_dir = round((math.degrees(math.atan2(-ve, -vn)) + 360) % 360)
+
+    takeoff = flying[0][0] if flying else None
+    landing = flying[-1][1] if flying else None
+    to_utc = None
+    if gps_time_ref:
+        to_utc = lambda tt: datetime.fromtimestamp(gps_time_ref[1] + (tt - gps_time_ref[0]), timezone.utc).isoformat()
+
+    summary = {
+        'firmware': firmware, 'board': board, 'params': params,
+        'vehicle': (firmware or 'Bilinmiyor').split(' ')[0],
+        'start_utc': to_utc(0) if to_utc else None,
+        'takeoff_utc': to_utc(takeoff) if to_utc and takeoff is not None else None,
+        'landing_utc': to_utc(landing) if to_utc and landing is not None else None,
+        'takeoff_t': _r(takeoff), 'landing_t': _r(landing),
+        'duration_s': _r(duration), 'armed_s': _r(armed_s), 'flight_s': _r(flight_s), 'flights': len(flying),
+        'distance_m': round(distance), 'max_home_m': round(max_home),
+        'home': {'lat': home[0], 'lng': home[1], 'alt': home[2]} if home else None,
+        'alt_max': _r(stat('alt', max)), 'alt_avg': _r(stat('alt', mean)),
+        'gs_max': _r(stat('gs', max)), 'gs_avg': _r(stat('gs', mean)),
+        'as_max': _r(stat('as', max)), 'as_avg': _r(stat('as', mean)),
+        'climb_max': _r(max(climb) if climb else None), 'sink_max': _r(-min(climb) if climb else None),
+        'roll_max': _r(stat('roll', lambda v: max(abs(x) for x in v))),
+        'pitch_max': _r(stat('pitch', lambda v: max(abs(x) for x in v))),
+        'roll_err_rms': _r(rms(track_err('droll', 'roll'))), 'pitch_err_rms': _r(rms(track_err('dpitch', 'pitch'))),
+        'thr_avg': _r(stat('thr', mean)),
+        'bat_start_v': _r(bat['first'], 2), 'bat_end_v': _r(bat['last'], 2), 'bat_min_v': _r(bat['min_v'], 2),
+        'bat_max_a': _r(bat['max_a']), 'bat_avg_a': _r(stat('curr', mean)),
+        'bat_used_mah': _r(bat['mah'], 0), 'bat_used_wh': _r(bat['wh']), 'bat_end_pct': bat['pct'],
+        'sats_min': stat('sats', min), 'sats_avg': _r(stat('sats', mean)), 'hdop_max': _r(stat('hdop', max), 2),
+        'vibe_max': [_r(stat(k, max, False)) for k in ('vx', 'vy', 'vz')],
+        'clips': sum(clips.values()) if clips else 0,
+        'wind_avg': _r(stat('wind', mean)), 'wind_max': _r(stat('wind', max)), 'wind_dir': wind_dir,
+    }
+
+    def seri(k):
+        tt, vv = s[k]
+        if not len(tt):
+            return []
+        idx = _thin_idx(len(tt), MAX_POINTS)
+        return [[_r(a), _r(b, 2)] for a, b in zip(tt[idx].tolist(), vv[idx].tolist())]
+
+    result = {
+        'summary': summary,
+        'findings': _findings(summary, errors, msgs),
+        'modes': mode_rows,
+        'events': events[:MAX_MESSAGES],
+        'errors': errors,
+        'messages': msgs,
+        'flying': [[_r(a), _r(b)] for a, b in flying],
+        'track': track,
+        'series': {k: seri(k) for k in _SERI},
+    }
+    if ilerleme:
+        ilerleme(100)
     return result
 
 
@@ -618,23 +1057,70 @@ def _replay_pymavlink(path):
     return {'fields': ['t', 'lat', 'lng', 'alt', 'roll', 'pitch', 'yaw', 'gs', 'as', 'thr', 'volt', 'rpm'], 'samples': samples}
 
 
+def _alt_surec_kisitla(ebeveyn=None):
+    """Analiz alt süreci: düşük öncelik (nice), bellek tavanı (RLIMIT_AS), ebeveyn ölünce SIGKILL (PR_SET_PDEATHSIG).
+    Değerler ortamdan: FLIGHTLOG_ANALIZ_NICE, FLIGHTLOG_ANALIZ_BELLEK_MB (flight_analysis bunları geçirir)."""
+    import os
+    try:
+        n = int(os.environ.get('FLIGHTLOG_ANALIZ_NICE', '10') or 10)
+        if n > 0:
+            os.nice(n)
+    except (OSError, ValueError):
+        pass
+    try:
+        mb = int(os.environ.get('FLIGHTLOG_ANALIZ_BELLEK_MB', '0') or 0)
+        if mb > 0:
+            import resource
+            resource.setrlimit(resource.RLIMIT_AS, (mb * 1024 * 1024, mb * 1024 * 1024))
+    except (OSError, ValueError, ImportError):
+        pass
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGKILL)   # PR_SET_PDEATHSIG
+    except (OSError, AttributeError):
+        pass
+    if ebeveyn and os.getppid() != ebeveyn:   # ebeveyn prctl'den önce öldüyse
+        os._exit(3)
+
+
 def _main(argv):
-    """Alt süreç: `python -m app.flightlog replay <log> <çıktı.json>` — 3B oynatma verisini üretir, atomik yazar. Çıkış 0 = tamam;
-    hata stdout'ta `ERR <mesaj>`. (pymavlink/numpy ayrıştırması sunucu sürecinin olay döngüsünü ve belleğini meşgul etmesin.)"""
+    """Alt süreç:
+      `python -m app.flightlog replay <log> <çıktı.json>` — 3B oynatma verisi;
+      `python -m app.flightlog analyze <log> <çıktı.json> [ebeveyn pid]` — uçuş logu analizi (flight_analysis kuyruğu); ilerleme stdout'a
+      `P <yüzde>` satırları.
+    Çıktı atomik yazılır. Çıkış 0 = tamam (`OK`); hata stdout'ta `ERR <mesaj>`. (Ayrıştırma sunucu sürecinin olay döngüsünü ve belleğini
+    meşgul etmesin.)"""
     import json
     import os
     import sys
-    if len(argv) != 3 or argv[0] != 'replay':
-        print('ERR kullanım: replay <log> <çıktı>', flush=True)
+    if len(argv) not in (3, 4) or argv[0] not in ('replay', 'analyze'):
+        print('ERR kullanım: replay|analyze <log> <çıktı> [ebeveyn pid]', flush=True)
         sys.exit(2)
     try:
-        data = replay(argv[1])
+        if argv[0] == 'analyze':
+            _alt_surec_kisitla(int(argv[3]) if len(argv) == 4 else None)
+            son = [-1]
+
+            def ilerleme(y):
+                if y != son[0]:
+                    son[0] = y
+                    print(f'P {y}', flush=True)
+            data = analyze(argv[1], ilerleme)
+        else:
+            data = replay(argv[1])
+    except MemoryError:
+        print('ERR Analiz bellek sınırını aştı (FLIGHTLOG_ANALIZ_BELLEK_MB)', flush=True)
+        sys.exit(1)
     except Exception as e:   # noqa: BLE001
-        print(f'ERR {e}'[:300], flush=True)
+        print(f'ERR {e}'[:300].replace('\n', ' '), flush=True)
         sys.exit(1)
     tmp = argv[2] + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(data, f, separators=(',', ':'))
+        if argv[0] == 'analyze':
+            json.dump(data, f, ensure_ascii=False)
+        else:
+            json.dump(data, f, separators=(',', ':'))
     os.replace(tmp, argv[2])
     print('OK', flush=True)
 

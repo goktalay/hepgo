@@ -1559,4 +1559,7 @@ registerCatalog('en', {
   "Havada dairesel yörüngede uçan hedefler.": "Targets flying circular orbits in the air.",
   "Radar, istasyon, EO kulesi ve görev.": "Radar, station, EO tower and mission.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "Recording options and a summary of all choices.",
+  "Sırada ({n}.)": "Queued (#{n})",
+  "Sırada": "Queued",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Analysis runs in a separate process; you can leave this page. The report opens automatically when ready.",
 });

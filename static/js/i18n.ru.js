@@ -4581,4 +4581,7 @@ registerCatalog('ru', {
   "Havada dairesel yörüngede uçan hedefler.": "Цели, летающие по круговым орбитам.",
   "Radar, istasyon, EO kulesi ve görev.": "Радар, станция, вышка EO и задание.",
   "Kayıt seçenekleri ve tüm seçimlerin özeti.": "Параметры записи и сводка всех выборов.",
+  "Sırada ({n}.)": "В очереди (№ {n})",
+  "Sırada": "В очереди",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Анализ выполняется в отдельном процессе; можно покинуть страницу. Отчёт откроется сам, когда будет готов.",
 });

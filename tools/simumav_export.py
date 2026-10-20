@@ -105,6 +105,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env 2>/dev/null || true     # GOOGLE_MAPS_API_KEY, SIMUMAV_SECRET, SIMUMAV_MT_URL, SIMUMAV_DATA_DIR
 SIMUMAV_DEV_LOGIN=1 PORT=8600 ./run-simumav.sh    # http://127.0.0.1:8600
 python -m tests.test_simumav                      # SITL gerekmez
+python -m tests.test_simumav_power                # güç ve yakıt (§10); SITL gerekmez
+node tests/test_simumav_power.mjs && node tests/test_simumav_fly.mjs
 ```
 
 SITL (ArduPilot) kurulu değilse uçuş sahte kinematikle çalışır (`HEPGO_SITL=0`).

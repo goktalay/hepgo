@@ -2127,6 +2127,158 @@ def kamera_testleri(a, c1, sitl):
     print('  kamera türü (§22.3) testleri geçti')
 
 
+def hedef_icept_testleri(a, c1, sitl):
+    """§24 hedefler + §25 INTERCEPTOR: saf kinematik (durum/yerel/latlon), doğrulama sınırları (400), önleme izleyicisi (histerezis, ARM şartı,
+    sıfırlama), puan/rozet, ADSB alanları; tailsitter SITL kurulumu (TIP_ESLEME, parm sırası, Q_TAILSIT_ENABLE, itki çarpanı uyumu, güç varsayılanı);
+    sahte kipte INTERCEPTOR oturumu (yerde burun yukarı att_body, dikey tırmanış, yatayda görünüm = gövde); hedefli oturumda WS `target` önleme olayı
+    (simülasyon hızı 8×), GCS'ye ADSB_VEHICLE, kapanışta drone_sim_runs.targets/intercept_count, özet; kayıttan oynatmada tip + hedefler."""
+    from app import db, drone_sitl, flightsim_icept as I, flightsim_power as P, flightsim_replay as R, flightsim_targets as FT
+    S = '/api/drone/sim/sessions'
+    # --- saf kinematik (ön yüz flightsim_targets.js ile aynı formül; tests/test_flightsim_targets.mjs aynı vektörleri sınar) ---
+    h = {'diameter_m': 600, 'speed_ms': 30, 'dir': 'cw', 'phase_deg': 0, 'east_m': 100, 'north_m': -50, 'alt_m': 150}
+    s0 = FT.durum(h, 0)
+    assert abs(s0['x'] - 400) < 1e-9 and abs(s0['y'] + 50) < 1e-9 and s0['z'] == 150 and abs(s0['heading'] - 180) < 1e-9 and s0['roll'] > 0, s0   # doğu noktası, güneye (cw), sağa yatış
+    tur = 2 * math.pi * 300 / 30
+    s1 = FT.durum(h, tur / 4)
+    assert abs(s1['x'] - 100) < 1e-6 and abs(s1['y'] + 350) < 1e-6 and abs(s1['heading'] - 270) < 1e-6, s1   # çeyrek tur: güney noktası, batıya
+    assert abs(math.degrees(s0['roll']) - math.degrees(math.atan(900 / (300 * FT.G)))) < 1e-9
+    hc = dict(h, dir='ccw')
+    assert abs(FT.durum(hc, 0)['heading'] - 0) < 1e-9 and FT.durum(hc, 0)['roll'] < 0   # ccw: doğu noktasında kuzeye, sola yatış
+    lat, lon = FT.latlon(39.9, 32.8, 1000, 2000)
+    x, y = FT.yerel(39.9, 32.8, lat, lon)
+    assert abs(x - 1000) < 1e-6 and abs(y - 2000) < 1e-6
+    # --- doğrulama ---
+    assert FT.dogrula(None) is None and FT.dogrula([]) is None and FT.dogrula({'items': []}) is None
+    c = FT.dogrula([{'model': 'tgt:lancet', 'alt_m': 150, 'diameter_m': 600}, {'model': 'builtin:quad', 'alt_m': 40, 'diameter_m': 100, 'dir': 'ccw', 'name': '<b>X</b>'}])
+    assert c['radius_m'] == FT.YARICAP_VARSAYILAN and len(c['items']) == 2 and c['items'][0]['speed_ms'] == round(110 / 3.6, 2) and c['items'][0]['dir'] == 'cw'
+    assert c['items'][1]['phase_deg'] == 137.5 and c['items'][1]['name'] == 'bX/b' and c['items'][0]['glb_url'] == '/static/simumav/models/tgt_lancet.glb', c   # isim temizlenir; görsel bilgi gömülü
+    kotu = [[{'model': 'yok', 'alt_m': 100, 'diameter_m': 300}], [{'model': 'tgt:lancet', 'alt_m': 9, 'diameter_m': 300}], [{'model': 'tgt:lancet', 'alt_m': 3001, 'diameter_m': 300}],
+            [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 49}], [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 5001}], [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 300, 'speed_ms': 84}],
+            [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 300, 'dir': 'up'}], [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 300, 'east_m': 20001}],
+            [{'model': 'tgt:lancet', 'alt_m': True, 'diameter_m': 300}], [{'model': 'tgt:lancet'}] * 9, {'items': [{'model': 'tgt:lancet'}], 'radius_m': 4}, 'x', [5]]
+    for k in kotu:
+        try:
+            FT.dogrula(k); raise AssertionError(k)
+        except FT.HedefHata:
+            pass
+    assert FT.dogrula([{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 300, 'speed_ms': 83.33}])['items'][0]['speed_ms'] == 83.33   # azami hız sınırında kabul
+    # --- önleme izleyicisi: hedefin üstünden geç (ARM'lı) → 1 önleme; histerezis içinde kal → yeni sayılmaz; uzaklaş + geri gel → 2.; disarm'da sayılmaz ---
+    cfg = FT.dogrula({'items': [{'model': 'tgt:sw300', 'alt_m': 100, 'diameter_m': 400, 'speed_ms': 20}], 'radius_m': 20})
+    iz = FT.HedefIzleyici(cfg)
+    st = FT.durum(cfg['items'][0], 30)
+    assert iz.adim(10, 0, 0, 0, True) == []                                        # ARM t=10
+    o = iz.adim(30, st['x'] + 5, st['y'], st['z'], True)
+    assert len(o) == 1 and o[0]['first'] and o[0]['n'] == 1 and o[0]['after_s'] == 20.0 and o[0]['dist_m'] == 5.0, o
+    st = FT.durum(cfg['items'][0], 31)
+    assert iz.adim(31, st['x'] + 25, st['y'], st['z'], True) == []                  # 25 m < 1,5 × 20 → hâlâ içeride
+    st = FT.durum(cfg['items'][0], 32)
+    assert iz.adim(32, st['x'] + 40, st['y'], st['z'], True) == []                  # çıktı
+    st = FT.durum(cfg['items'][0], 33)
+    o = iz.adim(33, st['x'], st['y'], st['z'] + 3, True)
+    assert len(o) == 1 and o[0]['n'] == 2 and not o[0]['first'], o
+    st = FT.durum(cfg['items'][0], 40)
+    iz.adim(39, 0, 0, 0, True)
+    assert iz.adim(40, st['x'], st['y'], st['z'], False) == []                       # disarm: önleme yok
+    oz = iz.ozet()
+    assert oz['total'] == 2 and oz['hit_targets'] == 1 and oz['all_hit'] and oz['items'][0]['first_s'] == 20.0 and oz['items'][0]['min_dist_m'] == 0.0, oz
+    assert oz['score'] == 1000 - 100 + 100 + 150 and set(oz['badges']) == {'first', 'quick', 'close'}, oz   # tek hedef: 'ace' yok
+    iz.adim(1, 0, 0, 0, False)                                                      # SITL yeniden başladı (t geri): ARM zamanı yeniden ölçülür
+    assert iz.t_arm is None and not iz.iz[0]['inside']
+    p2 = FT.puan({'items': [{'intercepts': 1, 'first_s': 300, 'min_dist_m': 9}, {'intercepts': 3, 'first_s': 10, 'min_dist_m': 2}], 'all_hit': True, 'count': 2, 'total': 5})
+    assert p2 == {'score': max(200, 1000 - 1500) + (950 + 200 + 150), 'badges': ['first', 'quick', 'ace', 'close', 'hunter']}, p2
+    ad = FT.adsb_alanlari(cfg, 39.925, 32.837, 900.0, 0.0)
+    assert len(ad) == 1 and ad[0][0] == FT.ADSB_ICAO_TABANI and ad[0][3] == 1 and ad[0][4] == int((900 + 100) * 1000) and ad[0][6] == 2000 and ad[0][8] == b'TGT1', ad
+    # --- §25 tailsitter kurulumu ---
+    assert drone_sitl.TIP_ESLEME['interceptor'] == ('arduplane', 'quadplane-copter_tailsitter') and drone_sitl.model_tipi('Tailsitter önleyici') == 'interceptor'
+    pm = drone_sitl.parm_metni(1, False, ['Q_TAILSIT_ENABLE 0', 'AIRSPEED_MAX 99'], 'interceptor').splitlines()
+    assert pm.index('Q_TAILSIT_ENABLE 1') < pm.index('Q_TAILSIT_ENABLE 0') and 'Q_TAILSIT_MOTMX 3' in pm and 'Q_FRAME_CLASS 1' in pm and 'Q_RTL_MODE 1' in pm, pm[:8]   # tip seti önce, kayıtlı sonra (son söz kaydın)
+    assert 'Q_TAILSIT_ENABLE 1' not in drone_sitl.parm_metni(1, False, None, 'sabit_kanat')
+    assert abs(I.tam_gaz_hizi(4) - 95.1) < 0.5 and abs(I.tam_gaz_hizi(7) - 117.3) < 0.5 and 6.0 < I.thr_mul_icin(111.1) < 6.2 and I.thr_mul_icin(10) == 0.1, I.thr_mul_icin(111.1)   # ölçüm uyumu (CRUISE seviye uçuş)
+    assert dict(P.hiz_parametreleri(111.1, None, True, tip='interceptor'))['SIM_PLN_THR_MUL'] == I.thr_mul_icin(111.1) and P.dogrula(None, 'interceptor')['max_speed_ms'] == 111.1
+    assert P.dogrula(None, 'interceptor')['fuel_l'] == 0.0 and abs(P.stok_hiz('interceptor') - math.sqrt(I.HIZ_A + I.HIZ_B)) < 1e-9
+    # --- sahte kipte INTERCEPTOR oturumu + hedefler ---
+    for govde in ({'type': 'interceptor', 'center_id': c1['id'], 'targets': [{'model': 'yok'}]}, {'type': 'interceptor', 'center_id': c1['id'], 'targets': {'items': [], 'radius_m': 500}},
+                  {'type': 'interceptor', 'center_id': c1['id'], 'targets': [{'model': 'tgt:lancet', 'alt_m': 100, 'diameter_m': 10}]}):
+        assert a.post(S, json=govde).status_code == 400, govde
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    hedef = {'model': 'tgt:octopus', 'alt_m': 30, 'diameter_m': 300, 'speed_ms': 30, 'dir': 'cw', 'phase_deg': 0, 'name': 'Av'}
+    s = ok(a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'targets': {'items': [hedef], 'radius_m': 25}}), 201)
+    sid = s['id']
+    assert s['vertical'] is True and s['model']['id'] == 'builtin:icept_x4' and s['model']['glb_url'] == '/static/simumav/models/icept_x4.glb' and s['launch']['method'] == 'wheels', s['model']
+    assert s['power']['max_speed_ms'] == 111.1 and s['targets']['radius_m'] == 25 and s['targets']['items'][0]['glb_url'] == '/static/simumav/models/tgt_octopus.glb', s['targets']
+    assert s['targets_state']['count'] == 1 and s['targets_state']['total'] == 0
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    token = a.cookies.get(auth.COOKIE)
+    gcs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    gcs.settimeout(2)
+    try:
+        with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+            hl = json.loads(ws.receive_text())
+            assert hl['t'] == 'hello' and hl['session']['targets']['items'][0]['name'] == 'Av'
+            m = ws_bekle(ws, lambda m: m['t'] == 'tele')
+            assert m['att_body'][1] == round(math.pi / 2, 4) and m['pitch'] == 0, m.get('att_body')   # yerde kuyruk üstünde: gövde burun yukarı, görünüm düz
+            # GCS: ilk paket kilitler → ADSB_VEHICLE (msgid 246) 2 Hz
+            gcs.sendto(b'\xfd\x09\x00\x00\x00\xff\xbe\x00\x00\x00' + b'\x00' * 11, ('127.0.0.1', s['udp_port']))
+            from pymavlink.dialects.v20 import ardupilotmega as d
+            par = d.MAVLink(None); par.robust_parsing = True
+            adsb, bitis = None, time.time() + 3
+            while time.time() < bitis and adsb is None:
+                try:
+                    data, _ = gcs.recvfrom(4096)
+                except socket.timeout:
+                    break
+                for msg in par.parse_buffer(data) or []:
+                    if msg.get_type() == 'ADSB_VEHICLE':
+                        adsb = msg
+            assert adsb is not None and adsb.ICAO_address == FT.ADSB_ICAO_TABANI and adsb.callsign.rstrip('\x00') == 'TGT1' and adsb.get_srcComponent() == FT.ADSB_COMP, adsb
+            assert abs(adsb.altitude / 1000 - (900 + 30)) < 0.01 and adsb.hor_velocity == 3000 and adsb.flags & 0x40
+            # dikey kalkış (30 m): tırmanırken yatay hız 0, gövde burun yukarı; hedef irtifada yatay daire, görünüm = gövde
+            ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 30}, 'rid': 'i1'}))
+            ws.send_text(json.dumps({'t': 'cmd', 'name': 'speed', 'params': {'factor': 8}, 'rid': 'i2'}))
+            m = ws_bekle(ws, lambda m: m['t'] == 'tele' and 5 < m['alt_rel'] < 25, 5)
+            assert m and m['groundspeed'] == 0 and m['att_body'][1] == round(math.pi / 2, 4) and m['mode'] == 'GUIDED', m
+            m = ws_bekle(ws, lambda m: m['t'] == 'tele' and m['alt_rel'] >= 30 and m['groundspeed'] > 1, 5)
+            assert m and m['att_body'] == [m['roll'], m['pitch'], m['yaw']], m
+            # önleme: sahte dron R=150 m saat yönünde 12 m/s, hedef aynı dairede 30 m/s → 8× hızda ~8 sn içinde yakalar
+            ev = ws_bekle(ws, lambda m: m['t'] == 'target', 20)
+            assert ev and ev['kind'] == 'intercept' and ev['first'] and ev['name'] == 'Av' and ev['dist_m'] <= 25 and ev['state']['total'] == 1, ev
+            olay = ws_bekle(ws, lambda m: m['t'] == 'event' and 'ÖNLEME' in m['text'], 3)
+            assert olay and olay['severity'] == 5, olay
+    finally:
+        gcs.close()
+    g = ok(a.get(f'{S}/{sid}'))
+    assert g['targets_state']['total'] >= 1 and g['targets_state']['score'] > 0
+    sm = ok(a.get(f'{S}/{sid}/summary'))
+    assert sm['targets']['total'] >= 1 and sm['session']['type'] == 'interceptor', sm.get('targets')
+    ok(a.delete(f'{S}/{sid}'))
+    it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['session_id'] == sid)
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT type, targets, intercept_count FROM drone_sim_runs WHERE id = ?', (it['id'],)))
+    tj = json.loads(row['targets'])
+    assert row['type'] == 'interceptor' and row['intercept_count'] >= 1 and tj['config']['items'][0]['model'] == 'tgt:octopus' and tj['result']['total'] == row['intercept_count'], row
+    # kayıttan oynatma: kaydın tipi (INTERCEPTOR; firmware adı ArduPlane der) + hedefleri
+    with db.connect() as conn:
+        lid = conn.execute('SELECT MAX(id) FROM flight_logs').fetchone()[0]
+        conn.execute('UPDATE drone_sim_runs SET bin_log_id = ? WHERE id = ?', (lid, it['id']))
+        conn.commit()
+    try:
+        r = R.ReplaySession(1, {'id': lid, 'file_name': 'i.bin', 'vehicle': 'ArduPlane'}, {}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        rd = r.to_dict()
+        assert r.type == 'interceptor' and rd['vertical'] is True and rd['targets']['items'][0]['name'] == 'Av' and r.model['id'] == 'builtin:icept_x4', rd.get('targets')
+    finally:
+        with db.connect() as conn:
+            conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
+            conn.commit()
+    assert 'body' in R.FIELDS and R.ONBELLEK_SURUM == 4 and 'SIM' in R.BIN_TIPLERI
+    # meta: hedef kataloğu + INTERCEPTOR modelleri
+    m = ok(a.get('/api/drone/sim/meta'))
+    keys = {x['key'] for x in m['targets']['models']}
+    assert {'tgt:sw300', 'tgt:lancet', 'tgt:altius', 'tgt:octopus', 'builtin:icept_x4', 'builtin:quad'} <= keys and m['targets']['max'] == 8, keys
+    mods = ok(a.get('/api/drone/sim/models', params={'type': 'interceptor'}))
+    assert {x['id'] for x in mods['models'] if x['source'] == 'builtin'} == {'builtin:icept_x4', 'builtin:p1sun', 'builtin:sting'}, mods['models']
+    print('  hedefler (§24) + INTERCEPTOR (§25) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2153,7 +2305,7 @@ def main():
 
         # --- meta ---
         m = ok(a.get('/api/drone/sim/meta'))
-        assert {t['key'] for t in m['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol'} and all(t['binary'] for t in m['types']), m
+        assert {t['key'] for t in m['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol', 'interceptor'} and all(t['binary'] for t in m['types']), m
         assert {c['id'] for c in m['centers']} == {c1['id'], c_altsiz['id']} and next(c for c in m['centers'] if c['id'] == c1['id'])['alt'] == 900, m   # pasif merkez listelenmez
         assert m['limits'] == {'max_sessions': 2, 'max_minutes': flightsim.MAX_MINUTES} and m['host'] == 'testserver' and m['can_command'] is True, m
         assert m['world_defaults']['seed'] == 12345 and m['world_defaults']['mode'] == 'procedural'
@@ -2397,6 +2549,7 @@ def main():
         guc_testleri(a, c1, sitl, mon)
         # --- kamera türü (§22.3) ---
         kamera_testleri(a, c1, sitl)
+        hedef_icept_testleri(a, c1, sitl)   # §24 hedefler + §25 INTERCEPTOR
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

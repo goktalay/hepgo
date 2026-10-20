@@ -6,7 +6,7 @@ Bu belge hesap servisi / Merkez / masterworld sunucusu arasındaki sözleşmedir
 
 ## 1. Mimari
 
-- **Harita:** MapLibre GL JS **v5.x** (küre projeksiyonu), sürüm sabit, jsdelivr'den (`https://cdn.jsdelivr.net/npm/maplibre-gl@5.x.y/dist/`).
+- **Harita:** MapLibre GL JS **6.15.0** (5.x'in devamı; küre projeksiyonu), sürüm sabit ve **yerel** (`static/vendor/maplibre-gl/`; ES modülü + worker aynı kökenden — CDN yok).
   Altlık: OpenFreeMap vektör stil (anahtarsız) + NASA GIBS raster (uydu / gece ışıkları; kamu malı). Altlıklar "veri kaynağı" sayılmaz,
   istemci doğrudan yükler. Cesium KULLANILMAZ (kullanıcı kararı 2026-10-20).
 - **masterworld sunucusu:** ayrı depo `goktalay/masterworld` (bağımsız FastAPI uygulaması `app.main:app` + `static/`). PROD:
@@ -138,25 +138,25 @@ değişmeyebilir — masterworld sunucusu her çekişte kopyayı bütünüyle de
   - item sayısı en fazla 5000 (aşarsa seyreltilir, `truncated: true`).
 - `GET /api/tile/{slug}/{z}/{x}/{y}` → raster karo vekili (radar vb.; z ≤ 8; önbellek; yalnız adaptörün sabit karo şablonu).
 - `GET /api/media/{slug}/{item_id}` → kamera görüntüsü vekili (JPEG/PNG/WebP; ≤ 2 MB; önbellek ≥ 10 sn; içerik türü doğrulanır).
-- `GET /api/radio/{slug}/{item_id}` → `{stream_url (yalnız https), name, codec, bitrate, homepage, country, tags}` — ses tarayıcıda doğrudan çalınır
+- Radyo için ayrı uç YOK: akış adresi öğenin `p.stream` alanındadır (yalnız https), ses tarayıcıda doğrudan çalınır
   (§5; yayıncı akışını vekillemek bant genişliği + yeniden yayın sorunu olur).
 
 ### 4.1 Adaptör arayüzü (`app/sources/<ad>.py`)
 
 ```python
-META = {'mode': 'global'|'bbox'|'point', 'ttl': 30, 'rate_per_min': 30, 'hosts': ('api.adsb.lol',), 'kind': 'aircraft', 'needs_key': False}
+META = {'mode': 'global'|'bbox'|'point'|'tile', 'ttl': 30, 'rate_per_min': 30, 'burst': 1, 'hosts': ('api.adsb.lol',), 'kind': 'aircraft', 'needs_key': False}
 async def fetch(ctx, src, q) -> dict   # ctx.get_json(url, headers=…) / ctx.get_bytes / ctx.get_text — yalnız META['hosts'] ve https
 ```
 `ctx` istekleri: host beyaz listesi (adaptörün `hosts`'u), DNS çözümü sonrası özel/iç ağ adresi reddi (127/8, 10/8, 172.16/12, 192.168/16, 169.254/16,
 100.64/10, ::1, fc00::/7, fe80::/10), yönlendirme izlenmez ya da her adımda aynı denetim, yanıt ≤ 8 MB (büyük statik veri kümeleri adaptörde
 açıkça ≤ 40 MB), süre ≤ 15 sn, kaynak başına token bucket (`rate_per_min`), aynı anahtara eşzamanlı istekler tek istekte birleştirilir (singleflight),
-hata sonrası üstel geri çekilme; kaynak hatası istemciye `{error:'source_unavailable'}` + son başarılı önbellek (varsa, `stale: true`).
+hata sonrası üstel geri çekilme; `burst` = tek yenilemede birden çok dosya isteyen adaptörün kova kapasitesi; oran/TTL varsayılanı adaptör META'sıdır (kayıttaki `rate_per_min`/`ttl_s` doluysa onu ezer); kaynak hatası istemciye `{error:'source_unavailable'}` + son başarılı önbellek (varsa, `stale: true`).
 
 ## 5. Güvenlik (tüm dünyaya açık servis)
 
 - Açık vekil yok: `slug` yalnız kayıttaki etkin kaynaklar; URL istemciden ALINMAZ (yalnız bbox/z/lat/lon sayısal, sınırlı).
 - IP başına oran sınırı (`cf-connecting-ip`): veri 120/dk, medya 60/dk, karo 600/dk → 429 + `Retry-After`.
-- CSP: `default-src 'self'`; script `'self' https://cdn.jsdelivr.net https://www.googletagmanager.com` (inline YOK); style `'self' https://cdn.jsdelivr.net`;
+- CSP: `default-src 'self'`; script `'self' https://www.googletagmanager.com https://static.cloudflareinsights.com` (inline YOK); style `'self'`;
   img `'self' data: blob: https://gibs.earthdata.nasa.gov https://tiles.openfreemap.org`; connect `'self' https://mastertool.download https://tiles.openfreemap.org
   https://gibs.earthdata.nasa.gov` + GA; media `https:` (radyo akışları); worker `blob:`; `frame-ancestors 'none'`.
 - Hata yanıtları tek tip (`{error:<kod>}`); kaynak adresi / istisna metni sızdırılmaz. API anahtarları istemciye, günlüğe ve audit'e yazılmaz.

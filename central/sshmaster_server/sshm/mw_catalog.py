@@ -61,67 +61,61 @@ XLSX_MAX = 5 * 1024 * 1024
 UNZIP_MAX = 60 * 1024 * 1024          # sıkıştırılmış bomba: açılmış toplam boyut sınırı
 
 # ---------------- yerleşik katalog (slug → öneriler) ----------------
-# kind, adapter, params, attribution, attribution_url, default_on, rate_per_min, ttl_s. Excel'de bulunan ama burada olmayan satır: kind =
+# kind, adapter, params, attribution, attribution_url, default_on (oran / TTL: masterworld adaptörünün META varsayılanı; yönetici ezebilir). Excel'de bulunan ama burada olmayan satır: kind =
 # kategorinin ilk türü, adapter NULL (yalnız katalog). Atıf metinleri kaynağın lisans / kullanım koşullarına göre yazılmıştır.
 KNOWN = {
     # hava trafiği
     'adsb-lol': {'kind': 'aircraft', 'adapter': 'adsb_lol', 'attribution': '© adsb.lol contributors (ODbL)', 'attribution_url': 'https://adsb.lol/',
-                 'default_on': 1, 'rate_per_min': 30, 'ttl_s': 10},
+                 'default_on': 1},
     'adsb-fi': {'kind': 'aircraft', 'adapter': 'adsb_fi', 'attribution': 'Veri: adsb.fi (kişisel / ticari olmayan kullanım)',
-                'attribution_url': 'https://adsb.fi/', 'rate_per_min': 30, 'ttl_s': 10},
+                'attribution_url': 'https://adsb.fi/'},
     'airplanes-live': {'kind': 'aircraft', 'adapter': 'airplanes_live', 'attribution': 'Veri: airplanes.live (ticari olmayan kullanım)',
-                       'attribution_url': 'https://airplanes.live/', 'rate_per_min': 20, 'ttl_s': 15},
+                       'attribution_url': 'https://airplanes.live/', 'enabled': 0},   # veri merkezi IP'lerine 403; erişim onayı gelene dek kapalı
     'opensky-network': {'kind': 'aircraft', 'adapter': 'opensky', 'attribution': 'The OpenSky Network (araştırma / ticari olmayan)',
-                        'attribution_url': 'https://opensky-network.org/', 'rate_per_min': 6, 'ttl_s': 30},
+                        'attribution_url': 'https://opensky-network.org/'},
     'gcmb-io': {'kind': 'aircraft'}, 'freeflight-api': {'kind': 'aircraft'},
     # deniz
-    'aisstream-io': {'kind': 'vessel', 'adapter': 'aisstream', 'attribution': 'AIS: aisstream.io', 'attribution_url': 'https://aisstream.io/', 'ttl_s': 60},
+    'aisstream-io': {'kind': 'vessel', 'adapter': 'aisstream', 'attribution': 'AIS: aisstream.io', 'attribution_url': 'https://aisstream.io/'},
     'kystverket': {'kind': 'vessel'}, 'danimarka-dma-ais': {'kind': 'vessel'}, 'noaa-marinecadastre': {'kind': 'vessel'},
     'nga-navigational-warnings': {'kind': 'warning'},
     # uzay
     'celestrak': {'kind': 'satellite', 'adapter': 'celestrak', 'params': {'groups': ['stations', 'visual', 'gps-ops']},
-                  'attribution': 'Yörünge verisi: CelesTrak (T.S. Kelso)', 'attribution_url': 'https://celestrak.org/', 'rate_per_min': 1, 'ttl_s': 7200},
+                  'attribution': 'Yörünge verisi: CelesTrak (T.S. Kelso)', 'attribution_url': 'https://celestrak.org/'},
     'space-track-org': {'kind': 'satellite'}, 'n2yo': {'kind': 'satellite'}, 'satnogs-db': {'kind': 'satellite'},
     'open-notify': {'kind': 'iss', 'adapter': 'wheretheiss', 'attribution': 'ISS konumu: wheretheiss.at', 'attribution_url': 'https://wheretheiss.at/',
-                    'default_on': 1, 'rate_per_min': 20, 'ttl_s': 5},
+                    'default_on': 1},
     'noaa-swpc': {'kind': 'aurora', 'adapter': 'swpc_aurora', 'attribution': 'NOAA Space Weather Prediction Center',
-                  'attribution_url': 'https://www.swpc.noaa.gov/', 'rate_per_min': 2, 'ttl_s': 300},
+                  'attribution_url': 'https://www.swpc.noaa.gov/'},
     # doğal olaylar
     'usgs-earthquake': {'kind': 'quake', 'adapter': 'usgs', 'params': {'feed': 'all_day'}, 'attribution': 'USGS Earthquake Hazards Program',
-                        'attribution_url': 'https://earthquake.usgs.gov/', 'default_on': 1, 'rate_per_min': 2, 'ttl_s': 60},
+                        'attribution_url': 'https://earthquake.usgs.gov/', 'default_on': 1},
     'emsc-seismicportal': {'kind': 'quake', 'adapter': 'emsc', 'attribution': 'EMSC – Euro-Mediterranean Seismological Centre (CC BY 4.0)',
-                           'attribution_url': 'https://www.seismicportal.eu/', 'rate_per_min': 2, 'ttl_s': 60},
+                           'attribution_url': 'https://www.seismicportal.eu/'},
     'afad-deprem': {'kind': 'quake', 'adapter': 'afad', 'attribution': 'T.C. İçişleri Bakanlığı AFAD Deprem Dairesi',
-                    'attribution_url': 'https://deprem.afad.gov.tr/', 'rate_per_min': 2, 'ttl_s': 60},
-    'nasa-firms': {'kind': 'fire', 'adapter': 'firms', 'attribution': 'NASA FIRMS (LANCE / EOSDIS)', 'attribution_url': 'https://firms.modaps.eosdis.nasa.gov/',
-                   'rate_per_min': 2, 'ttl_s': 1800},
+                    'attribution_url': 'https://deprem.afad.gov.tr/'},
+    'nasa-firms': {'kind': 'fire', 'adapter': 'firms', 'attribution': 'NASA FIRMS (LANCE / EOSDIS)', 'attribution_url': 'https://firms.modaps.eosdis.nasa.gov/'},
     'gdacs': {'kind': 'disaster', 'adapter': 'gdacs', 'attribution': 'GDACS – Global Disaster Alert and Coordination System (AB JRC / BM OCHA)',
-              'attribution_url': 'https://www.gdacs.org/', 'rate_per_min': 2, 'ttl_s': 600},
-    'nasa-eonet': {'kind': 'event', 'adapter': 'eonet', 'attribution': 'NASA EONET', 'attribution_url': 'https://eonet.gsfc.nasa.gov/',
-                   'rate_per_min': 2, 'ttl_s': 900},
+              'attribution_url': 'https://www.gdacs.org/'},
+    'nasa-eonet': {'kind': 'event', 'adapter': 'eonet', 'attribution': 'NASA EONET', 'attribution_url': 'https://eonet.gsfc.nasa.gov/'},
     'smithsonian-gvp': {'kind': 'volcano'}, 'blitzortung': {'kind': 'lightning'},
     # meteoroloji
     'open-meteo': {'kind': 'forecast', 'adapter': 'open_meteo', 'params': {'mode': 'point'}, 'attribution': 'Weather data by Open-Meteo.com (CC BY 4.0)',
-                   'attribution_url': 'https://open-meteo.com/', 'rate_per_min': 60, 'ttl_s': 900},
+                   'attribution_url': 'https://open-meteo.com/'},
     'noaa-nws-api': {'kind': 'alert'},
-    'noaa-ndbc': {'kind': 'buoy', 'adapter': 'ndbc', 'attribution': 'NOAA National Data Buoy Center', 'attribution_url': 'https://www.ndbc.noaa.gov/',
-                  'rate_per_min': 2, 'ttl_s': 1800},
+    'noaa-ndbc': {'kind': 'buoy', 'adapter': 'ndbc', 'attribution': 'NOAA National Data Buoy Center', 'attribution_url': 'https://www.ndbc.noaa.gov/'},
     'aviationweather-gov': {'kind': 'metar', 'adapter': 'metar', 'attribution': 'NOAA Aviation Weather Center (aviationweather.gov)',
-                            'attribution_url': 'https://aviationweather.gov/', 'rate_per_min': 10, 'ttl_s': 600},
-    'rainviewer': {'kind': 'radar', 'adapter': 'rainviewer', 'attribution': 'Radar: RainViewer', 'attribution_url': 'https://www.rainviewer.com/',
-                   'rate_per_min': 60, 'ttl_s': 300},
-    'sondehub': {'kind': 'sonde', 'adapter': 'sondehub', 'attribution': 'Radyosonde: SondeHub', 'attribution_url': 'https://sondehub.org/',
-                 'rate_per_min': 6, 'ttl_s': 30},
+                            'attribution_url': 'https://aviationweather.gov/'},
+    'rainviewer': {'kind': 'radar', 'adapter': 'rainviewer', 'attribution': 'Radar: RainViewer', 'attribution_url': 'https://www.rainviewer.com/'},
+    'sondehub': {'kind': 'sonde', 'adapter': 'sondehub', 'attribution': 'Radyosonde: SondeHub', 'attribution_url': 'https://sondehub.org/'},
     # çevre
     'openaq': {'kind': 'airquality'},
     'sensor-community': {'kind': 'airquality', 'adapter': 'sensor_community', 'attribution': '© Sensor.Community contributors (ODbL)',
-                         'attribution_url': 'https://sensor.community/', 'rate_per_min': 2, 'ttl_s': 300},
-    'safecast': {'kind': 'radiation', 'adapter': 'safecast', 'attribution': 'Safecast (CC0)', 'attribution_url': 'https://safecast.org/',
-                 'rate_per_min': 6, 'ttl_s': 900},
+                         'attribution_url': 'https://sensor.community/'},
+    'safecast': {'kind': 'radiation', 'adapter': 'safecast', 'attribution': 'Safecast (CC0)', 'attribution_url': 'https://safecast.org/'},
     'copernicus': {'kind': 'imagery'},
     # kamera
     'windy-webcams-api-v3': {'kind': 'camera', 'adapter': 'windy_webcams', 'attribution': 'Webcams provided by windy.com',
-                             'attribution_url': 'https://www.windy.com/webcams', 'rate_per_min': 10, 'ttl_s': 300},
+                             'attribution_url': 'https://www.windy.com/webcams'},
     'abd-eyalet-511': {'kind': 'camera'},
     # kara ulaşımı
     'mobility-database': {'kind': 'transit'}, 'gbfs': {'kind': 'bike'}, 'transitland': {'kind': 'transit'},
@@ -133,7 +127,7 @@ KNOWN = {
     # altyapı
     'cloudflare-radar': {'kind': 'internet'},
     'telegeography-submarine-cable-map': {'kind': 'cable', 'adapter': 'submarine_cables', 'attribution': '© TeleGeography – Submarine Cable Map (CC BY-NC-SA 3.0)',
-                                          'attribution_url': 'https://www.submarinecablemap.com/', 'rate_per_min': 1, 'ttl_s': 86400},
+                                          'attribution_url': 'https://www.submarinecablemap.com/'},
     'global-power-plant-database': {'kind': 'plant'}, 'opencellid': {'kind': 'cell'},
     # haber
     'gdelt-2-0': {'kind': 'news'}, 'acled': {'kind': 'news'}, 'reliefweb-api': {'kind': 'news'},
@@ -427,7 +421,7 @@ def _new_from_excel(rec):
     return rec | {'kind': k.get('kind') or CATEGORIES[rec['category']][0], 'adapter': adapter, 'params': k.get('params') or {},
                   'attribution': k.get('attribution'), 'attribution_url': k.get('attribution_url'), 'default_on': k.get('default_on', 0),
                   'rate_per_min': k.get('rate_per_min'), 'ttl_s': k.get('ttl_s'), 'sort': k.get('sort') or rec['row'] * 10,
-                  'enabled': 1 if adapter and not rec['key_required'] else 0, 'origin': 'excel'}
+                  'enabled': k.get('enabled', 1 if adapter and not rec['key_required'] else 0), 'origin': 'excel'}
 
 
 def ensure_builtins(conn):

@@ -100,6 +100,7 @@ try:
         pg.goto(f'{BASE}/#/drone/sim?new=1', wait_until='domcontentloaded')
         pg.wait_for_selector('.fs-wizard .fs-types', timeout=60000)
         pg.wait_for_timeout(6000)
+        pg.evaluate("window.__fsWz.goto('targets')"); pg.wait_for_timeout(300)   # §6 adım adım sihirbaz: Hedefler adımı
         for _ in range(3):
             pg.locator('.fs-tg-add').click(); pg.wait_for_timeout(300)
         pg.locator('.fs-tg-card').nth(1).locator('select.fs-tg-model').select_option('tgt:octopus')

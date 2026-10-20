@@ -93,7 +93,8 @@ try:
         pg.evaluate("document.querySelector('.fs-types').scrollIntoView({block: 'start'})")
         pg.wait_for_timeout(1500)
         shot(pg, 'hepgo-01-wizard-interceptor.png')
-        # ---- 02 Hedefler bölümü: 2 hedef (Lancet + Octopus)
+        # ---- 02 Hedefler bölümü: 2 hedef (Lancet + Octopus) — §6 adım adım sihirbaz: Hedefler adımına atla
+        pg.evaluate("window.__fsWz.goto('targets')"); pg.wait_for_timeout(300)
         pg.locator('.fs-tg-add').click(); pg.wait_for_timeout(300)
         pg.locator('.fs-tg-add').click(); pg.wait_for_timeout(300)
         pg.locator('.fs-tg-card').nth(1).locator('select.fs-tg-model').select_option('tgt:octopus')

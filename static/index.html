@@ -16,8 +16,12 @@
 <script>try { var t = localStorage.getItem('caymaz.theme'); if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.dataset.theme = 'dark'; } catch (e) {}</script>
 <!-- Açılış ekranı: stil dosyaları ve JS modülleri inene kadar beyaz sayfa yerine logo + dönen gösterge (anında çizilir) -->
 <style>
-  html, body { margin: 0; background: #f8f9fb; }
-  html[data-theme="dark"], html[data-theme="dark"] body { background: #0f172a; }
+  /* Zemin YALNIZ body'de (html'e verilmez): html'in kendi zemini olursa body zemini sıradan blok olarak çizilir ve Görünüm ›
+     "Gövde arka planı" deseni (.scroller::before, z-index:-1) onun altında kalıp görünmez. var(--bg): "Sayfa zemini" rengi
+     koyu temada da uygulansın (sabit renk onu eziyordu); app.css yüklenene dek yedek renk. */
+  html, body { margin: 0; }
+  body { background: var(--bg, #f8f9fb); }
+  html[data-theme="dark"] body { background: var(--bg, #0f172a); }
   #splash { position: fixed; inset: 0; z-index: 2147483000; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 26px; background: #f8f9fb; transition: opacity .3s ease; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   html[data-theme="dark"] #splash { background: #0f172a; }

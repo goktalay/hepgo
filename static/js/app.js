@@ -1209,7 +1209,8 @@ function initPanelCollapse(viewEl) {
     // Footer: son çocuk aksiyon satırı ise header renginde bant yap
     if (card) {
       const last = el.lastElementChild;
-      if (last && last !== head && !last.classList.contains('panel-foot')
+      // Seçim ızgaraları (radio grubu: görsel seçiciler) eylem satırı değildir → bant yapılmaz (yoksa sağa yaslanıp karta oturmuyordu)
+      if (last && last !== head && !last.classList.contains('panel-foot') && !last.matches('[role="radiogroup"], .no-foot')
           && (last.querySelector(':scope > .btn, :scope > button, :scope > a.btn') || /foot|save|action|sign|actions/i.test(last.className))
           && (last.tagName === 'DIV' || last.tagName === 'FOOTER') && last.children.length <= 10) {
         last.classList.add('panel-foot');

@@ -82,6 +82,17 @@ MS_MAIL_SCOPE = 'https://outlook.office.com/IMAP.AccessAsUser.All https://outloo
 MS_GRAPH_SCOPE = 'https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read offline_access'
 
 
+# Yenileme jetonu geçersiz (süresi doldu / izin geri alındı) hatasının imzası: hesap yeniden bağlanmalı
+REAUTH_MARK = 'bağlantısının süresi doldu ya da izin geri alındı'
+
+
+def needs_reauth(box):
+    """Google / Microsoft hesabının bağlantısı (yenileme jetonu) geçersiz mi? → Ayarlar'da "Yeniden bağlan" gösterilir."""
+    if (box or {}).get('auth_type') not in ('google', 'microsoft'):
+        return False
+    return any(REAUTH_MARK in (box.get(k) or '') for k in ('last_error', 'sync_error'))
+
+
 def access_token(refresh, kind='google', scope=None):
     """Yenileme jetonundan erişim jetonu (süresi dolmadan önbellekten). Microsoft'ta kaynak (Outlook / Graph) kapsamla seçilir."""
     key = (kind, scope or '', hashlib.sha256(refresh.encode()).hexdigest())
@@ -101,7 +112,7 @@ def access_token(refresh, kind='google', scope=None):
     except httpx.HTTPError as e:
         raise MailError(f'{who}\'a bağlanılamadı: {e}') from e
     if r.status_code != 200:
-        raise MailError(f'{who} bağlantısının süresi doldu ya da izin geri alındı; Mail Hesaplarım’dan yeniden bağlayın.')
+        raise MailError(f'{who} {REAUTH_MARK}; Mail Hesaplarım’dan yeniden bağlayın.')
     d = r.json()
     _tokens[key] = (d['access_token'], time.time() + int(d.get('expires_in', 3600)))
     return d['access_token']

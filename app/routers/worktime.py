@@ -32,6 +32,7 @@ def get_schedule(user=Depends(auth.current_user), conn=db.DB):
     sch['monthly_std_hours'] = _monthly_std_hours(sch)
     sch['can_edit'] = _can_edit(user)
     sch['all_roles'] = auth.all_roles()   # "konumu her zaman açık roller" seçimi için tüm roller
+    sch['defined'] = worktime.schedule_defined(conn)   # Rahatsız etmeyin › Mesai sonrası: sistem programı var mı
     return sch
 
 

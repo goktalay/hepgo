@@ -43,7 +43,9 @@ def _boxes(conn, user):
 
 
 def _public(b):
-    return {k: b.get(k) for k in PUBLIC}
+    out = {k: b.get(k) for k in PUBLIC}
+    out['needs_reauth'] = mail.needs_reauth(b)   # Ayarlar › Mail Hesaplarım: "Yeniden bağlan" düğmesi
+    return out
 
 
 def oauth_available():
@@ -250,7 +252,8 @@ def _redirect_uri(request, prov):
 
 
 @router.get('/oauth/{prov}/start')
-def oauth_start(prov: str, request: Request, user=Depends(auth.current_user)):
+def oauth_start(prov: str, request: Request, hint: str = '', user=Depends(auth.current_user)):
+    """Yetki adresi. hint: yeniden bağlamada aynı hesabın e-postası (sağlayıcı hesap seçiminde onu önerir)."""
     av = oauth_available()
     if prov not in av:
         raise HTTPException(404, 'Bilinmeyen sağlayıcı')
@@ -264,10 +267,14 @@ def oauth_start(prov: str, request: Request, user=Depends(auth.current_user)):
     if prov == 'google':
         q = {'client_id': config.GOOGLE_CLIENT_ID, 'redirect_uri': _redirect_uri(request, prov), 'response_type': 'code', 'scope': G_SCOPES,
              'access_type': 'offline', 'prompt': 'consent', 'include_granted_scopes': 'true', 'state': state}
+        if '@' in hint:
+            q['login_hint'] = hint.strip()[:200]
         return {'url': f'{G_AUTH}?{urlencode(q)}'}
     q = {'client_id': config.MS_CLIENT_ID, 'redirect_uri': _redirect_uri(request, prov), 'response_type': 'code', 'response_mode': 'query',
          'scope': f'openid email profile offline_access {mail.MS_MAIL_SCOPE} https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/Contacts.Read',
          'prompt': 'select_account', 'state': state}
+    if '@' in hint:
+        q['login_hint'] = hint.strip()[:200]
     return {'url': f'https://login.microsoftonline.com/{config.MS_TENANT or "common"}/oauth2/v2.0/authorize?{urlencode(q)}'}
 
 

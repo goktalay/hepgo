@@ -204,10 +204,10 @@ export function mascotPreview(id, threeD = can3d()) {
 const TRICKS = ['wave', 'jump', 'wobble', 'spin', 'pop', 'dance', 'peek'];
 const POS_KEY = 'caymaz.mascotPos';
 
-// ---- Robotik "mırıldanma" sesi (Web Audio ile sentezlenir; dosya yok). Varsayılan KAPALI. ----
+// ---- Maskot sesleri (Web Audio ile sentezlenir; dosya yok). Varsayılan KAPALI ("Maskot sesli" ayarı).
 // Tarayıcılar ilk kullanıcı etkileşiminden önce sesi engeller: AudioContext ilk dokunuşta açılır/sürdürülür.
-let mascotSound = false;        // kullanıcı ayarı (users.prefs.settings.mascotSound)
-let audioCtx = null;
+let mascotSound = false;        // kullanıcı ayarı (users.prefs.settings.mascotSound — anahtar adı geriye uyumlu)
+let audioCtx = null, master = null;
 function ensureAudio() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -217,39 +217,15 @@ function ensureAudio() {
     return audioCtx;
   } catch { return null; }
 }
-// Ayarlar › Maskot › "Robotik ses" anahtarı
+// Tüm maskot sesleri ortak, KISIK bir ana kazançtan geçer (rahatsız etmesin)
+const out = ac => {
+  if (!master || master.context !== ac) { master = ac.createGain(); master.gain.value = 0.55; master.connect(ac.destination); }
+  return master;
+};
+// Ayarlar › Maskot › "Maskot sesli" anahtarı
 export function setMascotSound(on) { mascotSound = on === true; if (mascotSound) ensureAudio(); }
 
-// Kısa, sevimli robotik mırıltı: 2-4 hızlı "blip" (kare/testere dalga), bant-geçiren süzgeç, her blipte kısa zarf.
-function playMumble() {
-  if (!mascotSound || document.hidden) return;
-  const ac = audioCtx;
-  if (!ac || ac.state !== 'running') return;
-  try {
-    const bp = ac.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 850; bp.Q.value = 5;
-    bp.connect(ac.destination);
-    const n = 2 + Math.floor(Math.random() * 3);   // 2-4 blip
-    let tt = ac.currentTime + 0.01;
-    for (let i = 0; i < n; i++) {
-      const dur = 0.07 + Math.random() * 0.06;
-      const osc = ac.createOscillator();
-      osc.type = Math.random() < 0.5 ? 'square' : 'sawtooth';
-      osc.frequency.setValueAtTime(120 + Math.random() * 380, tt);
-      osc.frequency.linearRampToValueAtTime(120 + Math.random() * 380, tt + dur);
-      const g = ac.createGain();
-      g.gain.setValueAtTime(0.0001, tt);
-      g.gain.linearRampToValueAtTime(0.05 + Math.random() * 0.025, tt + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0008, tt + dur);
-      osc.connect(g); g.connect(bp);
-      osc.start(tt); osc.stop(tt + dur + 0.02);
-      tt += dur + 0.03 + Math.random() * 0.05;
-    }
-  } catch { /* ses engellendi: sessizce geç */ }
-}
-
-// ---- Her maskota ÖZGÜ karakteristik ses (Web Audio ile sentez; dosya yok). mascotSound açıkken arada bir çalar.
-function _tone(ac, { type = 'sine', f0, f1, dur, gain = 0.05, when = 0, vib, dest } = {}) {
+function _tone(ac, { type = 'sine', f0, f1, dur, gain = 0.05, when = 0, vib, dest, filter } = {}) {
   const t0 = ac.currentTime + when;
   const osc = ac.createOscillator(); osc.type = type;
   osc.frequency.setValueAtTime(f0, t0);
@@ -258,7 +234,9 @@ function _tone(ac, { type = 'sine', f0, f1, dur, gain = 0.05, when = 0, vib, des
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.linearRampToValueAtTime(gain, t0 + Math.min(0.03, dur * 0.3));
   g.gain.exponentialRampToValueAtTime(0.0006, t0 + dur);
-  osc.connect(g); g.connect(dest || ac.destination);
+  let node = osc;
+  if (filter) { const bq = ac.createBiquadFilter(); bq.type = filter[0]; bq.frequency.value = filter[1]; bq.Q.value = filter[2] || 1; osc.connect(bq); node = bq; }
+  node.connect(g); g.connect(dest || out(ac));
   if (vib) { const lfo = ac.createOscillator(); lfo.frequency.value = vib[0]; const lg = ac.createGain(); lg.gain.value = vib[1]; lfo.connect(lg); lg.connect(osc.frequency); lfo.start(t0); lfo.stop(t0 + dur); }
   osc.start(t0); osc.stop(t0 + dur + 0.03);
 }
@@ -269,25 +247,65 @@ function _noise(ac, { dur, gain = 0.05, when = 0, f = 1200, q = 1 } = {}) {
   const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
   const g = ac.createGain(), t0 = ac.currentTime + when;
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(gain, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0006, t0 + dur);
-  src.connect(bp); bp.connect(g); g.connect(ac.destination);
+  src.connect(bp); bp.connect(g); g.connect(out(ac));
   src.start(t0); src.stop(t0 + dur + 0.02);
 }
+// "Ho-ho" gibi ünlü sesi: testere dalga + iki formant süzgeci (ağız rezonansı)
+function _vowel(ac, { f0, f1, dur, when = 0, gain = 0.05, formants = [600, 1000] }) {
+  formants.forEach((fr, i) => _tone(ac, { type: 'sawtooth', f0, f1, dur, when, gain: gain * (i ? 0.55 : 1), filter: ['bandpass', fr, 6] }));
+}
+// Her maskota KENDİ karakterine uygun, kısa ve sevimli ses
 const MASCOT_SOUNDS = {
+  kubbe: ac => { _vowel(ac, { f0: 150, f1: 132, dur: 0.2, gain: 0.09, formants: [520, 900] }); _vowel(ac, { f0: 140, f1: 118, dur: 0.26, when: 0.24, gain: 0.09, formants: [520, 900] }); },   // tok kahkaha "ho-ho"
+  robo: ac => [[880, 0], [660, 0.1], [990, 0.2], [740, 0.3]].forEach(([f, w]) => _tone(ac, { type: 'square', f0: f, dur: 0.075, gain: 0.03, when: w, filter: ['lowpass', 2400, 0.7] })),   // bip-bop
   kedi: ac => { _tone(ac, { type: 'triangle', f0: 620, f1: 900, dur: 0.13, gain: 0.06, vib: [12, 20] }); _tone(ac, { type: 'triangle', f0: 880, f1: 500, dur: 0.24, gain: 0.055, when: 0.12, vib: [10, 18] }); },   // miyav
-  drone: ac => { _tone(ac, { type: 'sawtooth', f0: 92, f1: 104, dur: 0.9, gain: 0.045, vib: [22, 8] }); _tone(ac, { type: 'square', f0: 184, dur: 0.9, gain: 0.015, vib: [22, 10] }); },   // pervane vızıltısı
-  ari: ac => _tone(ac, { type: 'sawtooth', f0: 205, f1: 235, dur: 0.7, gain: 0.04, vib: [32, 30] }),   // arı vızıltısı
-  uzayli: ac => _tone(ac, { type: 'sine', f0: 520, f1: 720, dur: 0.75, gain: 0.05, vib: [9, 130] }),   // uzaylı theremin
   hayalet: ac => _tone(ac, { type: 'sine', f0: 175, f1: 115, dur: 1.05, gain: 0.045, vib: [5, 14] }),   // ürpertici "uuu"
-  penguen: ac => { _noise(ac, { dur: 0.07, gain: 0.05, f: 900, q: 1.5 }); _noise(ac, { dur: 0.06, gain: 0.045, when: 0.1, f: 1500, q: 2 }); },   // cıyak
+  penguen: ac => { _noise(ac, { dur: 0.07, gain: 0.05, f: 900, q: 1.5 }); _noise(ac, { dur: 0.06, gain: 0.045, when: 0.1, f: 1500, q: 2 }); _tone(ac, { type: 'square', f0: 700, f1: 520, dur: 0.08, gain: 0.015, when: 0.1 }); },   // cıyak cıyak
+  uzayli: ac => _tone(ac, { type: 'sine', f0: 520, f1: 720, dur: 0.75, gain: 0.05, vib: [9, 130] }),   // uzaylı theremin
+  drone: ac => { _tone(ac, { type: 'sawtooth', f0: 92, f1: 104, dur: 0.9, gain: 0.045, vib: [22, 8] }); _tone(ac, { type: 'square', f0: 184, dur: 0.9, gain: 0.015, vib: [22, 10] }); },   // pervane vızıltısı
+  slime: ac => { _tone(ac, { type: 'sine', f0: 180, f1: 420, dur: 0.12, gain: 0.06 }); _tone(ac, { type: 'sine', f0: 300, f1: 260, dur: 0.4, gain: 0.05, when: 0.1, vib: [18, 60] }); },   // jöle "blop-boing"
   buyucu: ac => [660, 880, 1100, 1320].forEach((f, i) => _tone(ac, { type: 'sine', f0: f, dur: 0.1, gain: 0.045, when: i * 0.07 })),   // büyü ışıltısı
-  dino: ac => { _tone(ac, { type: 'sawtooth', f0: 150, f1: 68, dur: 0.6, gain: 0.06, vib: [7, 10] }); _noise(ac, { dur: 0.5, gain: 0.03, f: 300, q: 0.8 }); },   // kükreme
-  jele: ac => _tone(ac, { type: 'sine', f0: 300, f1: 260, dur: 0.4, gain: 0.05, vib: [18, 60] }),   // jöle "boing"
+  dino: ac => { _tone(ac, { type: 'sawtooth', f0: 150, f1: 68, dur: 0.6, gain: 0.06, vib: [7, 10] }); _noise(ac, { dur: 0.5, gain: 0.03, f: 300, q: 0.8 }); },   // minik kükreme
+  ari: ac => _tone(ac, { type: 'sawtooth', f0: 205, f1: 235, dur: 0.7, gain: 0.04, vib: [32, 30] }),   // arı vızıltısı
 };
+function _play(ac, id) { try { (MASCOT_SOUNDS[id] || MASCOT_SOUNDS.robo)(ac); } catch { /* ses engellendi: sessiz */ } }
 function playMascotSound(id) {
   if (!mascotSound || document.hidden) return;
   const ac = audioCtx;
   if (!ac || ac.state !== 'running') return;
-  try { if (MASCOT_SOUNDS[id]) MASCOT_SOUNDS[id](ac); else playMumble(); } catch { /* ses engellendi: sessiz */ }
+  _play(ac, id);
+}
+// Ayarlar › Maskot: "Sesini dinle" (kullanıcı jestiyle çağrılır; "Maskot sesli" kapalı olsa da çalar)
+export function previewMascotSound(id) {
+  const ac = ensureAudio();
+  if (!ac) return;
+  if (ac.state === 'running') _play(ac, id);
+  else ac.resume().then(() => _play(ac, id)).catch(() => {});
+}
+
+// Ayarlar › Maskot seçici: kutucukta CANLI maskot (köşedeki maskotun aynı canlandırması: boşta salınım + rastgele numaralar).
+// Yalnız görünürken oynar (IntersectionObserver); "hareketleri azalt" açıkken durağan kalır. Kutucuk DOM'dan çıkınca kendiliğinden durur.
+export function mascotLivePreview(id, threeD) {
+  const fig = h('span', { class: 'mascot-fig mascot-live' }, mascotPreview(id, threeD), h('span', { class: 'm-burst' }));
+  let visible = false, timer = 0;
+  const list = MASCOTS[id]?.tricks || TRICKS;
+  const trick = () => {
+    if (!fig.isConnected || reduceMotion()) return;
+    const tr = list[Math.floor(Math.random() * list.length)];
+    fig.classList.add(`trick-${tr}`);
+    setTimeout(() => fig.classList.remove(`trick-${tr}`), 1700);
+  };
+  const loop = () => {
+    clearTimeout(timer);
+    if (!fig.isConnected && timer) { io.disconnect(); return; }
+    if (visible) trick();
+    timer = setTimeout(loop, 2600 + Math.random() * 3200);
+  };
+  const io = new IntersectionObserver(es => { visible = es.some(e => e.isIntersecting); }, { threshold: 0.4 });
+  io.observe(fig);
+  timer = setTimeout(loop, 600 + Math.random() * 1800);
+  fig.playTrick = trick;   // üzerine gelince / seçilince hemen bir numara
+  return fig;
 }
 
 let mounted = false;

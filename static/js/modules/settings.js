@@ -2,12 +2,12 @@
 // aynı uygulanır. Bölümler: Arayüz, Bildirimler, Sesler, Gizlilik, Pano, Hesap. Değişiklik anında uygulanır ve kaydedilir.
 import { api, getUploadCfg, setUploadCfg } from '../api.js';
 import { applySettings, deviceNotify, setDeviceNotify } from '../prefs.js';
-import { ANIMATIONS, showScreensaver } from '../screensaver.js';
+import { ANIMATIONS, createAnimPreview, showScreensaver } from '../screensaver.js';
 import { DEFAULTS, EVENTS, SOUND_NAMES, playSound } from '../sounds.js';
 import { segIconByKey } from '../segicons.js';
 import { disablePush, enablePush, pushState, pushSupport } from '../push.js';
 import { CALL_BACKGROUNDS, CALL_BG_LABELS } from './voice.js';
-import { MASCOT_LIST, mascotPreview, setMascot, setMascot3D, setMascotSound, applyMascotHidden, has3d } from './mascot.js';
+import { MASCOT_LIST, mascotLivePreview, previewMascotSound, setMascot, setMascot3D, setMascotSound, applyMascotHidden, has3d } from './mascot.js';
 import { avatar, clear, confirmDialog, field, fmtDateTime, h, modal, pageHead, segmented, t, toast, toastError } from '../ui.js';
 import { setLang, getLang } from '../i18n.js';
 import { mailboxesSection, socialSection } from './mysettings.js';
@@ -17,6 +17,69 @@ import { faceSection } from './facesetup.js';
 const SET_MQ = matchMedia('(max-width: 800px)');
 let _setRedraw = null;
 SET_MQ.addEventListener('change', () => { if (_setRedraw && location.hash.startsWith('#/settings')) _setRedraw(); });
+let _notifSel = null;   // Bildirimler › seçili modül (yeniden çizimde korunur)
+
+const CHECK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>';
+const reducedMotion = () => document.documentElement.classList.contains('reduce-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Görsel seçici (erişilebilir radio grubu): her seçenek önizlemeli bir kart. Ok tuşları / Home / End ile gezinilir ve seçilir,
+// Boşluk / Enter seçer; seçili kart vurgulu + onay işaretli. options: [{ key, label, sub?, preview: () => Node, extra?: Node }]
+function visualRadio(label, options, value, onChange, cls = '') {
+  const grp = h('div', { class: `vr-grid ${cls}`.trim(), role: 'radiogroup', 'aria-label': label });
+  let cur = String(value);
+  const items = options.map(o => {
+    const el = h('div', { class: 'vr-opt', role: 'radio', tabindex: '-1', 'data-k': String(o.key) },
+      h('span', { class: 'vr-prev', 'aria-hidden': 'true' }, o.preview()),
+      h('span', { class: 'vr-lbl' }, h('b', null, o.label), o.sub ? h('small', null, o.sub) : null),
+      h('span', { class: 'vr-check', 'aria-hidden': 'true', html: CHECK_SVG }),
+      o.extra || null);
+    el.addEventListener('click', e => { if (!e.target.closest('.vr-extra')) pick(String(o.key)); });
+    return el;
+  });
+  const sync = () => {
+    const any = items.some(el => el.dataset.k === cur);
+    items.forEach((el, i) => {
+      const on = el.dataset.k === cur;
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-checked', on ? 'true' : 'false');
+      el.tabIndex = (on || (!any && i === 0)) ? 0 : -1;
+    });
+  };
+  const pick = (k, focus) => {
+    const el = items.find(x => x.dataset.k === k);
+    if (focus) el?.focus();
+    if (k === cur) return;
+    cur = k; sync(); onChange(k, el);
+  };
+  grp.addEventListener('keydown', e => {
+    const el = e.target.closest('.vr-opt');
+    if (!el || e.target !== el) return;   // kart içindeki düğmeler (ör. "Sesini dinle") kendi tuşlarını kullanır
+    const i = items.indexOf(el), n = items.length;
+    const go = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: n - 1 }[e.key];
+    if (go != null) { e.preventDefault(); pick(items[(go + n) % n].dataset.k, true); }
+    else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pick(el.dataset.k); }
+  });
+  grp.append(...items);
+  sync();
+  return grp;
+}
+
+// Tema önizlemesi: mini pencere (başlık çubuğu, yan menü, kart) — sabit açık / koyu renklerle; "Sisteme göre" yarı yarıya
+const themeWin = mode => h('span', { class: `thp-win thp-${mode}` },
+  h('span', { class: 'thp-bar' }, h('i'), h('i'), h('i')),
+  h('span', { class: 'thp-body' },
+    h('span', { class: 'thp-side' }, h('i', { class: 'on' }), h('i'), h('i'), h('i')),
+    h('span', { class: 'thp-main' },
+      h('span', { class: 'thp-card' }, h('i', { class: 't' }), h('i'), h('i', { class: 's' }), h('em')),
+      h('span', { class: 'thp-card' }, h('i', { class: 't' }), h('i', { class: 's' })))));
+const themePreview = k => k === 'system' ? h('span', { class: 'thp-split' }, themeWin('light'), themeWin('dark'), h('span', { class: 'thp-sys' }, 'A')) : themeWin(k);
+// Yazı / öğe boyutu önizlemesi: "Aa" + satır + düğme GERÇEK ölçekte (sayfanın mevcut ölçeği bölünerek)
+const scalePreview = v => {
+  const el = h('span', { class: 'sp-prev' }, h('span', { class: 'sp-top' }, h('span', { class: 'sp-aa' }, 'Aa'), h('span', { class: 'sp-btn' }, 'Kaydet')),
+    h('span', { class: 'sp-row' }, h('span', { class: 'sp-txt' }, 'Örnek metin satırı')));
+  el.style.setProperty('--s', String(v));
+  return el;
+};
 
 export async function renderSettings(view, ctx, { changePassword, modules }, sub0) {
   let [sub, subQuery = ''] = (sub0 || '').split('?');   // OAuth dönüşü: #/settings/mailboxes?msg=…
@@ -34,8 +97,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     mascotStyle: cur.mascotStyle || 'samimi',
     mascotOff: !!cur.mascotOff,           // başka bir ayar kaydedilince gizli maskot geri gelmesin
     mascot3d: cur.mascot3d !== false,
-    mascotSound: !!cur.mascotSound,       // robotik mırıldanma sesi (varsayılan kapalı)
-    dnd: { calls: false, messages: false, until: null, dur: 'always', ...(cur.dnd || {}) },
+    mascotSound: !!cur.mascotSound,       // "Maskot sesli": her maskotun kendi sesi (varsayılan kapalı; anahtar adı geriye uyumlu)
+    dnd: { calls: false, messages: false, until: null, dur: 'always', ...(cur.dnd || {}) },   // dur: always | 1 | 2 | 4 | today | offhours
     muteNotif: Array.isArray(cur.muteNotif) ? cur.muteNotif : [],
     muteAlert: Array.isArray(cur.muteAlert) ? cur.muteAlert : [],
     toolbarAlign: cur.toolbarAlign || 'center',
@@ -64,13 +127,21 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     return h('label', { class: 'set-toggle' }, cb, h('span', null, h('b', null, label), hint ? h('small', null, hint) : null));
   };
   const line = (label, hint, control) => h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, label), hint ? h('small', null, hint) : null), control);
+  // Başlık + açıklama üstte, geniş denetim (görsel seçici) altta
+  const block = (label, hint, control) => h('div', { class: 'set-block' }, h('div', { class: 'set-block-h' }, h('b', null, label), hint ? h('small', null, hint) : null), control);
   const card = (title, sub, ...kids) => h('section', { class: 'card card-pad set-card' }, h('h3', null, title), sub ? h('p', { class: 'small muted' }, sub) : null, ...kids);
 
   // ---------- Arayüz
-  const themeSeg = segmented([['light', 'Açık tema'], ['dark', 'Koyu tema'], ['system', 'Sisteme göre']], s.theme, v => { s.theme = v; save(); });
+  const themeSeg = visualRadio('Tema', [
+    { key: 'light', label: 'Açık', sub: 'Aydınlık ortam için', preview: () => themePreview('light') },
+    { key: 'dark', label: 'Koyu', sub: 'Gece ve karanlık ortam', preview: () => themePreview('dark') },
+    { key: 'system', label: 'Sisteme göre', sub: 'Cihazın ayarını izler', preview: () => themePreview('system') },
+  ], s.theme, v => { s.theme = v; save(); }, 'vr-theme');
   // Dil: arayüz ve yazdırma şablonları seçilen dilde görünür. Şimdilik Türkçe + İngilizce.
   const langSeg = segmented([['tr', 'Türkçe'], ['en', 'English'], ['de', 'Deutsch'], ['fr', 'Français'], ['es', 'Español'], ['ar', 'العربية'], ['ru', 'Русский']], s.lang, v => { s.lang = v; setLang(v); save('Dil güncellendi'); });
-  const scaleSeg = segmented([['0.9', 'Küçük'], ['1', 'Normal'], ['1.1', 'Büyük'], ['1.25', 'Çok büyük']], String(s.scale), v => { s.scale = Number(v); save(); });
+  const scaleSeg = visualRadio('Yazı ve öğe boyutu', [['0.9', 'Küçük'], ['1', 'Normal'], ['1.1', 'Büyük'], ['1.25', 'Çok büyük']]
+    .map(([k, l]) => ({ key: k, label: l, sub: `%${Math.round(Number(k) * 100)}`, preview: () => scalePreview(k) })),
+    String(s.scale), v => { s.scale = Number(v); save(); }, 'vr-scale');
   const startSel = h('select', { class: 'input' }, h('option', { value: 'dashboard' }, 'Kişisel pano'),
     modules.map(m => h('option', { value: m.key, selected: s.start === m.key }, m.title)));
   startSel.addEventListener('change', () => { s.start = startSel.value; save(); });
@@ -178,10 +249,34 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
   const ssAfter = h('select', { class: 'input' }, [[30, '30 saniye'], [60, '1 dakika'], [120, '2 dakika'], [300, '5 dakika'], [600, '10 dakika'],
     [900, '15 dakika'], [1800, '30 dakika'], [3600, '1 saat']].map(([v, l]) => h('option', { value: v, selected: s.screensaver.after === v }, l)));
   ssAfter.addEventListener('change', () => { s.screensaver.after = Number(ssAfter.value); save(); });
-  const anims = h('div', { class: 'set-anims' });
-  const drawAnims = () => clear(anims, ANIMATIONS.map(([k, t, d]) => h('button', { type: 'button', class: `set-anim ${s.screensaver.anim === k ? 'on' : ''}`,
-    onclick: () => { s.screensaver.anim = k; save(); drawAnims(); } }, h('b', null, t), h('small', null, d))));
-  drawAnims();
+  // Her karede o animasyonun CANLI küçük önizlemesi. Yalnız görünen kareler oynar (IntersectionObserver; aynı anda en çok
+  // MAX_LIVE tanesi — en çok görüneni önce); "hareketleri azalt" açıksa tek durağan kare çizilir.
+  const animsBox = () => {
+    const MAX_LIVE = 6;
+    const still = reducedMotion();
+    const live = new Map();   // canvas → { ctl, ratio }
+    const reconcile = () => {
+      const vis = [...live.values()].filter(v => v.ratio > 0).sort((a, b) => b.ratio - a.ratio);
+      const on = new Set(vis.slice(0, MAX_LIVE));
+      live.forEach(v => (on.has(v) ? v.ctl.play() : v.ctl.pause()));
+    };
+    const io = still ? null : new IntersectionObserver(es => {
+      for (const e of es) { const v = live.get(e.target); if (v) v.ratio = e.isIntersecting ? e.intersectionRatio : 0; }
+      reconcile();
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+    const prev = k => {
+      const cv = h('canvas', { class: 'ss-prev-cv' });
+      const box = h('span', { class: 'ss-prev' }, cv);
+      requestAnimationFrame(() => {   // kare yerleşince boyut bilinsin
+        const ctl = createAnimPreview(cv, k, { still });
+        live.set(cv, { ctl, ratio: 0 });
+        io?.observe(cv);
+      });
+      return box;
+    };
+    return visualRadio('Animasyon', ANIMATIONS.map(([k, tl, d]) => ({ key: k, label: tl, sub: d, preview: () => prev(k) })),
+      s.screensaver.anim, v => { s.screensaver.anim = v; save(); }, 'vr-anims');
+  };
 
   // ---------- PIN (Hesap)
   const pinCb = h('input', { type: 'checkbox', checked: !!ctx.user.has_pin });
@@ -214,34 +309,80 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     cb.addEventListener('change', () => onChange(cb.checked));
     return h('label', { class: `set-toggle ${disabled ? 'dim' : ''}` }, cb, h('span', null, h('b', null, label), hint ? h('small', null, hint) : null));
   };
+  // Solda modül seçici (simge + ad + açık tür sayısı), sağda seçilen modülün türleri; mobilde üstte açılır seçici.
+  const NOTIF_ICON = { 'Destek Merkezi': 'inbox', Telsiz: 'phone', Sistem: 'server', 'Yapay Zeka': 'chip', 'KVKK / Veri Koruma': 'lock',
+    Depo: 'box', 'Satın Alma': 'money', Üretim: 'layers', 'İnsan Kaynakları': 'users', Duyurular: 'bell', 'Şirketten Haberler': 'globe',
+    Sekreterya: 'guest', Aramalar: 'phone', Toplantılar: 'meeting', Mail: 'mailDot', Takvim: 'calendar', Mesajlar: 'message',
+    'Evrak / İmza': 'edit', Yazıcılar: 'print', 'Saha Yönetimi': 'flag', 'Canlı Yayın': 'media', Sertifikalar: 'report',
+    Sözleşmeler: 'note', Yapılacaklar: 'checkBox', Diğer: 'card' };
   const notifTypesBox = () => {
     const box = h('div', { class: 'set-types' }, h('div', { class: 'small muted' }, 'Yükleniyor…'));
     api.get('/api/notifications/types').then(d => {
-      const rows = [h('h4', { class: 'set-sub' }, 'Bildirim türleri'),
-        h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Almak istemediğiniz bildirimleri kapatın.')];
-      if (!d.notifications.length) rows.push(h('p', { class: 'small muted' }, 'Size uygun bildirim türü yok.'));
-      // Modüle göre grupla (ilk görülme sırası korunur); her grubun başına ince bir modül başlığı
-      const groups = [];
-      const byGroup = new Map();
-      for (const t of d.notifications) {
-        const g = t.group || 'Diğer';
-        if (!byGroup.has(g)) { byGroup.set(g, []); groups.push(g); }
-        byGroup.get(g).push(t);
+      const head = [h('h4', { class: 'set-sub' }, 'Bildirim türleri'),
+        h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Bir modül seçin; almak istemediğiniz bildirimleri kapatın.')];
+      const mods = [];
+      for (const x of d.notifications) {
+        const g = x.group || 'Diğer';
+        let m = mods.find(y => y.key === g);
+        if (!m) { m = { key: g, title: g, icon: NOTIF_ICON[g] || 'bell', items: [] }; mods.push(m); }
+        m.items.push(x);
       }
-      for (const g of groups) {
-        rows.push(h('div', { class: 'set-grp' }, g));
-        for (const t of byGroup.get(g)) rows.push(typeToggle(t.title, !s.muteNotif.includes(t.key), on => {
-          s.muteNotif = s.muteNotif.filter(k => k !== t.key); if (!on) s.muteNotif.push(t.key); save('Bildirim tercihleri güncellendi');
+      if (d.alerts.length) mods.push({ key: '__alerts', title: 'Üretim / yazıcı uyarıları', icon: 'bolt', alert: true, items: d.alerts });
+      if (!mods.length) { clear(box, head, h('p', { class: 'small muted' }, 'Size uygun bildirim türü yok.')); return; }
+      const muted = m => (m.alert ? s.muteAlert : s.muteNotif);
+      const isOn = (m, it) => !muted(m).includes(it.key);
+      const setOn = (m, it, on) => {
+        if (it.critical) return;
+        const L = muted(m).filter(k => k !== it.key);
+        if (!on) L.push(it.key);
+        if (m.alert) s.muteAlert = L; else s.muteNotif = L;
+      };
+      const count = m => m.items.filter(it => isOn(m, it)).length;
+      if (!mods.some(m => m.key === _notifSel)) _notifSel = mods[0].key;
+      const list = h('div', { class: 'nt-list', role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': 'Modüller' });
+      const pick = h('select', { class: 'input nt-pick', 'aria-label': 'Modül' });
+      const panel = h('div', { class: 'nt-panel', role: 'tabpanel', id: 'nt-panel' });
+      const ico = m => h('span', { class: 'nt-ico', 'aria-hidden': 'true' }, segIconByKey(m.icon) || segIconByKey('bell'));
+      const badge = m => {
+        const n = count(m), all = m.items.length;
+        return h('span', { class: `nt-badge ${n === 0 ? 'off' : n < all ? 'part' : ''}`, title: t('{n} / {all} tür açık', { n, all }) }, `${n}/${all}`);
+      };
+      const drawList = () => {
+        clear(list, mods.map(m => {
+          const on = m.key === _notifSel;
+          return h('button', { type: 'button', class: `nt-mod ${on ? 'on' : ''}`, role: 'tab', 'aria-selected': on ? 'true' : 'false',
+            'aria-controls': 'nt-panel', tabindex: on ? '0' : '-1', 'data-k': m.key, onclick: () => select(m.key) },
+            ico(m), h('span', { class: 'nt-name' }, m.title), badge(m));
         }));
-      }
-      if (d.alerts.length) {
-        rows.push(h('h4', { class: 'set-sub' }, 'Uyarı türleri'),
-          h('p', { class: 'small muted', style: { marginTop: '-4px' } }, 'Üretim / yazıcı uyarıları. Kritik güvenlik uyarıları kapatılamaz.'));
-        for (const a of d.alerts) rows.push(typeToggle(a.title, !s.muteAlert.includes(a.key), on => {
-          s.muteAlert = s.muteAlert.filter(k => k !== a.key); if (!on) s.muteAlert.push(a.key); save('Uyarı tercihleri güncellendi');
-        }, a.critical, a.critical ? 'Kritik güvenlik uyarısı — kapatılamaz' : null));
-      }
-      clear(box, rows);
+        clear(pick, mods.map(m => h('option', { value: m.key, selected: m.key === _notifSel }, `${t(m.title)} (${count(m)}/${m.items.length})`)));
+      };
+      const drawPanel = () => {
+        const m = mods.find(x => x.key === _notifSel);
+        const changeable = m.items.filter(it => !it.critical);
+        const bulk = on => { changeable.forEach(it => setOn(m, it, on)); save(m.alert ? 'Uyarı tercihleri güncellendi' : 'Bildirim tercihleri güncellendi'); drawList(); drawPanel(); };
+        clear(panel,
+          h('div', { class: 'nt-head' }, ico(m),
+            h('div', { class: 'grow' }, h('b', null, m.title),
+              h('small', null, m.alert ? 'Üretim / yazıcı uyarıları. Kritik güvenlik uyarıları kapatılamaz.' : t('{n} bildirim türü', { n: m.items.length }))),
+            changeable.length > 1 ? h('div', { class: 'nt-bulk' },
+              h('button', { class: 'btn xs ghost', type: 'button', onclick: () => bulk(true) }, 'Tümünü aç'),
+              h('button', { class: 'btn xs ghost', type: 'button', onclick: () => bulk(false) }, 'Tümünü kapat')) : null),
+          m.items.map(it => typeToggle(it.title, isOn(m, it), on => {
+            setOn(m, it, on); save(m.alert ? 'Uyarı tercihleri güncellendi' : 'Bildirim tercihleri güncellendi'); drawList();
+          }, it.critical, it.critical ? 'Kritik güvenlik uyarısı — kapatılamaz' : null)));
+      };
+      const select = (k, focus) => {
+        _notifSel = k; drawList(); drawPanel();
+        if (focus) list.querySelector(`.nt-mod[data-k="${CSS.escape(k)}"]`)?.focus();
+      };
+      list.addEventListener('keydown', e => {
+        const i = mods.findIndex(m => m.key === _notifSel), n = mods.length;
+        const go = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: n - 1 }[e.key];
+        if (go != null) { e.preventDefault(); select(mods[(go + n) % n].key, true); }
+      });
+      pick.addEventListener('change', () => select(pick.value));
+      drawList(); drawPanel();
+      clear(box, head, pick, h('div', { class: 'nt-wrap' }, list, panel));
     }).catch(() => clear(box, h('p', { class: 'small muted' }, 'Türler yüklenemedi')));
     return box;
   };
@@ -299,7 +440,7 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
 
   // ---------- Rahatsız Etmeyin (arama / mesaj; süreli ya da sürekli)
   const dndUntil = dur => {
-    if (dur === 'always') return null;
+    if (dur === 'always' || dur === 'offhours') return null;   // mesai sonrası: sunucu her an mesai saatine göre karar verir
     const d = new Date();
     if (dur === 'today') d.setHours(23, 59, 0, 0); else d.setHours(d.getHours() + Number(dur));
     const p = n => String(n).padStart(2, '0');
@@ -311,8 +452,8 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     { key: 'ui', title: 'Arayüz', desc: 'Tema, boyut, görünüm, açılış sayfası', icon: 'card',
       body: () => card('Arayüz', 'Uygulamanın görünümü ve açılış sayfası.',
         line('Dil', 'Arayüz ve yazdırma şablonlarının dili', langSeg),
-        line('Tema', 'Koyu tema gece ve karanlık ortam için; "Sisteme göre" cihazın ayarını izler', themeSeg),
-        line('Yazı ve öğe boyutu', 'Sayfa içeriğini büyütür / küçültür', scaleSeg),
+        block('Tema', 'Koyu tema gece ve karanlık ortam için; "Sisteme göre" cihazın ayarını izler', themeSeg),
+        block('Yazı ve öğe boyutu', 'Sayfa içeriğini büyütür / küçültür', scaleSeg),
         toggle(s, 'compact', 'Sıkı görünüm', 'Kart ve tablo boşluklarını azaltır, ekrana daha çok bilgi sığar'),
         toggle(s, 'motion', 'Hareketleri azalt', 'Geçiş ve animasyonları kapatır'),
         line('Metin biçimi', 'Tüm görünen metinlerin yazımı (kodlar ve giriş alanları hariç)', textCaseSeg),
@@ -342,18 +483,17 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         toggle(s.screensaver, 'lock', 'Çıkarken şifre / PIN sor', ctx.user.has_pin
           ? 'Bekleme ekranından dönmek için PIN\'iniz istenir (PIN açık); istenirse şifreyle de açılır'
           : 'Bekleme ekranından dönmek için şifreniz istenir. PIN açarsanız (Hesap) PIN ile açılır'),
-        h('div', { class: 'set-row' }, h('div', { class: 'grow' }, h('b', null, 'Animasyon'), h('small', null, 'Seçip "Önizle" ile deneyin'))),
-        anims,
+        block('Animasyon', 'Seçip "Önizle" ile tam ekranda deneyin', animsBox()),
         h('div', { class: 'set-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => showScreensaver(s.screensaver.anim, { preview: true }) }, '▶ Önizle'))) },
     { key: 'voice', title: 'Görüşme Ayarları', desc: 'Sesli görüşme arka planı', icon: 'phone',
       body: () => {
-        const grid = h('div', { class: 'set-bg-grid' });
-        const drawBg = () => clear(grid, Object.keys(CALL_BACKGROUNDS).map(k => h('button', {
-          type: 'button', class: `set-bg ${(s.callBg || 'aurora') === k ? 'on' : ''}`, style: { background: CALL_BACKGROUNDS[k] },
-          onclick: () => { s.callBg = k; save('Görüşme arka planı güncellendi'); drawBg(); } },
-          h('span', { class: 'set-bg-name' }, CALL_BG_LABELS[k]), (s.callBg || 'aurora') === k ? h('span', { class: 'set-bg-on' }, '✓') : null)));
-        drawBg();
-        return card('Görüşme Ayarları', 'Sesli görüşme ekranının arka planını seçin. Gelen arama ve görüşme ekranında uygulanır.', grid);
+        // Önizleme: seçilen arka plan üzerinde küçük bir görüşme ekranı (kişi, ad, kapat / aç düğmeleri)
+        const callPrev = k => h('span', { class: 'cb-prev', style: { background: CALL_BACKGROUNDS[k] } },
+          h('i', { class: 'cb-av' }), h('i', { class: 'cb-nm' }), h('span', { class: 'cb-btns' }, h('i', { class: 'cb-end' }), h('i', { class: 'cb-ok' })));
+        const grid = visualRadio('Görüşme arka planı', Object.keys(CALL_BACKGROUNDS).map(k => ({ key: k, label: CALL_BG_LABELS[k], preview: () => callPrev(k) })),
+          s.callBg || 'aurora', k => { s.callBg = k; save('Görüşme arka planı güncellendi'); }, 'vr-call');
+        return card('Görüşme Ayarları', null,
+          block('Arka plan', 'Sesli görüşme ekranının arka planı. Gelen arama ve görüşme ekranında uygulanır.', grid));
       } },
     { key: 'radio', title: 'Telsiz Kanallarım', desc: 'Kanal oluştur, kişi davet et, davetleri onayla', icon: 'bell2',
       body: () => {
@@ -440,13 +580,15 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
     { key: 'social', title: 'Sosyal Medya', desc: 'Hesaplarınızın paylaşımları Şirketten Haberler’de (yalnız size)', icon: 'globe', body: () => { const q = subQuery; subQuery = ''; return socialSection(q); } },
     { key: 'mascot', title: 'Maskot', desc: 'Köşedeki yapay zeka asistanı karakteri', icon: 'card',
       body: () => {
-        const grid = h('div', { class: 'set-mascot-grid' });
-        const draw = () => clear(grid, MASCOT_LIST.map(m => h('button', {
-          type: 'button', class: `set-mascot ${s.mascot === m.id ? 'on' : ''}`,
-          onclick: () => { s.mascot = m.id; setMascot(m.id); save('Maskot değiştirildi'); draw(); } },
-          h('span', { class: 'set-mascot-fig' }, mascotPreview(m.id, s.mascot3d !== false && has3d(m.id))),
-          h('b', null, m.name), h('small', null, m.desc),
-          s.mascot === m.id ? h('span', { class: 'set-mascot-on' }, '✓') : null)));
+        // Kutucuklarda canlı (görünürken oynayan) maskot + "Sesini dinle" düğmesi
+        const grid = h('div', { class: 'set-mascot-wrap' });
+        const draw = () => clear(grid, visualRadio('Maskot', MASCOT_LIST.map(m => ({
+          key: m.id, label: m.name, sub: m.desc,
+          preview: () => mascotLivePreview(m.id, s.mascot3d !== false && has3d(m.id)),
+          extra: h('button', { type: 'button', class: 'vr-extra set-mascot-play', title: 'Sesini dinle', 'aria-label': t('{n}: sesini dinle', { n: m.name }),
+            onclick: e => { e.stopPropagation(); previewMascotSound(m.id); e.currentTarget.closest('.vr-opt')?.querySelector('.mascot-live')?.playTrick?.(); },
+            html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>' }),
+        })), s.mascot, (id, el) => { s.mascot = id; setMascot(id); save('Maskot değiştirildi'); el?.querySelector('.mascot-live')?.playTrick?.(); }, 'vr-mascot'));
         draw();
         const styleSel = h('select', { class: 'input' }, [['samimi', 'Samimi (varsayılan)'], ['ciddi', 'Ciddi ve profesyonel'],
           ['sakaci', 'Şakacı'], ['alayci', 'Alaycı (iğneleyici)'], ['coskulu', 'Coşkulu'], ['bilgic', 'Bilgiç / akademik']]
@@ -467,32 +609,93 @@ export async function renderSettings(view, ctx, { changePassword, modules }, sub
         return card('Maskot', 'Ekranın köşesinde duran, sürekli hareket eden ve tıklayınca yapay zekayla sohbet açan asistanınızı seçin. Maskotu köşede sürükleyerek istediğiniz yere taşıyabilirsiniz.',
           h('label', { class: 'set-toggle' }, showChk, h('span', null, h('b', null, 'Maskotu göster'), h('small', null, 'Köşedeki yapay zeka asistanını gösterir ya da gizler'))),
           h('label', { class: 'set-toggle' }, d3Chk, h('span', null, h('b', null, '3D maskot'), h('small', null, 'Üç boyutlu, canlı karakter (gözleri imleci izler, düşünür, konuşur). Kapalıysa klasik çizim; “Hareketleri azalt” açıkken de klasik çizim kullanılır.'))),
-          h('label', { class: 'set-toggle' }, soundChk, h('span', null, h('b', null, 'Robotik ses'), h('small', null, 'Maskot arada bir robotik mırıldanma sesi çıkarır'))),
+          h('label', { class: 'set-toggle' }, soundChk, h('span', null, h('b', null, 'Maskot sesli'), h('small', null, 'Maskot arada bir kendi sesini çıkarır (kedi miyavlar, robot bip-bop yapar…). Her karakterin sesini kutucuğundaki hoparlör düğmesiyle dinleyebilirsiniz.'))),
           h('h4', { class: 'set-sub' }, 'Karakter'),
           grid,
           h('h4', { class: 'set-sub' }, 'Konuşma tarzı'),
           line('Asistanın üslubu', 'Cevapların tonu bu seçime göre değişir', styleSel));
       } },
-    { key: 'dnd', title: 'Rahatsız Etmeyin', desc: 'Aramalara / mesajlara süreli ya da sürekli kapan', icon: 'bell',
+    { key: 'dnd', title: 'Rahatsız Etmeyin', desc: 'Aramalara / mesajlara süreli, sürekli ya da mesai sonrası kapan', icon: 'bell',
       body: () => {
-        const status = h('div', { class: `set-dnd-status ${(s.dnd.calls || s.dnd.messages) ? 'on' : ''}` });
+        // "Mesai sonrası": mesai bitiminden ertesi mesai başlangıcına kadar (hafta sonu tüm gün). Sistemde mesai programı
+        // (Program Ayarları › Mesai) kayıtlıysa o kullanılır; değilse / kullanıcı isterse kendi saatleri (varsayılan 08:30–18:00).
+        // Sunucu da aynı kuralla bastırır (auth.dnd_state).
+        s.dnd.work = { from: '08:30', to: '18:00', ...(s.dnd.work || {}) };
+        let sched = null;   // /api/worktime/schedule → { defined, days, holidays }
+        const hm = x => { const [a, b] = String(x || '0:0').split(':').map(Number); return (a || 0) * 60 + (b || 0); };
+        const useSystem = () => !!sched?.defined && s.dnd.workSrc !== 'custom';
+        const offNow = (now = new Date()) => {
+          const cur = now.getHours() * 60 + now.getMinutes(), wd = now.getDay() || 7;   // 1=Pzt … 7=Paz
+          if (useSystem()) {
+            const p = n => String(n).padStart(2, '0');
+            if ((sched.holidays || []).includes(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`)) return true;
+            const day = sched.days[String(wd)];
+            return !day?.on || !(hm(day.from) <= cur && cur < hm(day.to));
+          }
+          if (wd >= 6) return true;
+          let a = hm(s.dnd.work.from), b = hm(s.dnd.work.to);
+          if (a >= b) { a = hm('08:30'); b = hm('18:00'); }
+          return !(a <= cur && cur < b);
+        };
+        const dayName = i => new Date(2024, 0, i).toLocaleDateString(getLang() || 'tr', { weekday: 'short' });   // 1 Ocak 2024 = Pazartesi
+        const schedSummary = () => {
+          const on = [1, 2, 3, 4, 5, 6, 7].filter(i => sched.days[String(i)]?.on);
+          if (!on.length) return t('Mesai günü tanımlı değil');
+          const same = on.every(i => sched.days[String(i)].from === sched.days[String(on[0])].from && sched.days[String(i)].to === sched.days[String(on[0])].to);
+          const contiguous = on.every((d, k) => !k || d === on[k - 1] + 1);
+          if (same) {
+            const days = contiguous && on.length > 1 ? `${dayName(on[0])}–${dayName(on[on.length - 1])}` : on.map(dayName).join(', ');
+            return `${days} ${sched.days[String(on[0])].from}–${sched.days[String(on[0])].to}`;
+          }
+          return on.map(i => `${dayName(i)} ${sched.days[String(i)].from}–${sched.days[String(i)].to}`).join(' · ');
+        };
+        const status = h('div', { class: 'set-dnd-status' });
         const refresh = () => {
           const active = s.dnd.calls || s.dnd.messages;
-          const ch = [s.dnd.calls ? 'aramalar' : null, s.dnd.messages ? 'mesajlar' : null].filter(Boolean).join(' ve ');
-          status.className = `set-dnd-status ${active ? 'on' : ''}`;
-          status.textContent = !active ? '🟢 Şu an herkese açıksınız.'
-            : t('🔕 {ch} kapalı — {rest}', { ch: ch[0].toUpperCase() + ch.slice(1), rest: s.dnd.until ? 'bitiş: ' + fmtDateTime(s.dnd.until) : 'sürekli (siz açana kadar)' });
+          const ch = [s.dnd.calls ? t('aramalar') : null, s.dnd.messages ? t('mesajlar') : null].filter(Boolean).join(t(' ve '));
+          const Ch = ch ? ch[0].toLocaleUpperCase(getLang() || 'tr') + ch.slice(1) : '';
+          const off = s.dnd.dur === 'offhours';
+          const closedNow = active && (!off || offNow());
+          status.className = `set-dnd-status ${closedNow ? 'on' : active ? 'wait' : ''}`;
+          status.textContent = !active ? t('🟢 Şu an herkese açıksınız.')
+            : off ? (closedNow ? t('🌙 {ch} mesai sonrası kapalı — şu an mesai dışı, kapalısınız.', { ch: Ch })
+              : t('🕘 {ch} mesai sonrası kapanır — şu an mesai saati, açıksınız.', { ch: Ch }))
+            : t('🔕 {ch} kapalı — {rest}', { ch: Ch, rest: s.dnd.until ? t('bitiş: {d}', { d: fmtDateTime(s.dnd.until) }) : t('sürekli (siz açana kadar)') });
         };
         const onDnd = () => { s.dnd.until = (s.dnd.calls || s.dnd.messages) ? dndUntil(s.dnd.dur || 'always') : null; refresh(); };
         const durSel = h('select', { class: 'input' }, [['always', 'Sürekli (ben açana kadar)'], ['1', '1 saat'], ['2', '2 saat'],
-          ['4', '4 saat'], ['today', 'Bugün gece yarısına kadar']].map(([v, l]) => h('option', { value: v, selected: (s.dnd.dur || 'always') === v }, l)));
-        durSel.addEventListener('change', () => { s.dnd.dur = durSel.value; onDnd(); save('Rahatsız etmeyin güncellendi'); });
+          ['4', '4 saat'], ['today', 'Bugün gece yarısına kadar'], ['offhours', 'Mesai sonrası']].map(([v, l]) => h('option', { value: v, selected: (s.dnd.dur || 'always') === v }, l)));
+        const work = h('div', { class: 'set-dnd-work' });
+        const drawWork = () => {
+          work.hidden = s.dnd.dur !== 'offhours';
+          if (work.hidden) return;
+          const from = h('input', { class: 'input', type: 'time', value: s.dnd.work.from, 'aria-label': 'Mesai başlangıcı' });
+          const to = h('input', { class: 'input', type: 'time', value: s.dnd.work.to, 'aria-label': 'Mesai bitişi' });
+          [from, to].forEach(i => i.addEventListener('change', () => {
+            if (!from.value || !to.value || hm(from.value) >= hm(to.value)) { toast('Mesai bitişi başlangıçtan sonra olmalı', 'err'); from.value = s.dnd.work.from; to.value = s.dnd.work.to; return; }
+            s.dnd.work = { from: from.value, to: to.value }; refresh(); save('Mesai saatleri güncellendi');
+          }));
+          const custom = h('div', { class: 'set-line top' },
+            h('span', { class: 'grow' }, h('b', null, 'Mesai saatlerim'), h('small', null, 'Hafta içi bu saatler dışında ve hafta sonu tüm gün kapalı kalırsınız.')),
+            h('span', { class: 'set-vol' }, from, '–', to));
+          clear(work,
+            sched?.defined ? line('Mesai saatleri', 'Sistemdeki mesai programı ya da kendi saatleriniz',
+              segmented([['system', 'Sistem mesai saatleri'], ['custom', 'Kendi saatlerim']], useSystem() ? 'system' : 'custom',
+                v => { s.dnd.workSrc = v; drawWork(); refresh(); save('Rahatsız etmeyin güncellendi'); })) : null,
+            useSystem()
+              ? h('p', { class: 'small muted set-dnd-sum' }, t('Mesai: {s}. Bu saatler dışında, hafta sonu ve tatillerde tüm gün kapalı kalırsınız.', { s: schedSummary() }))
+              : custom);
+        };
+        durSel.addEventListener('change', () => { s.dnd.dur = durSel.value; onDnd(); drawWork(); save('Rahatsız etmeyin güncellendi'); });
+        api.get('/api/worktime/schedule').then(d => { sched = d; drawWork(); refresh(); }).catch(() => { sched = null; drawWork(); });
+        drawWork();
         refresh();
-        return card('Rahatsız Etmeyin', 'Kendinizi aramalara ve/veya mesajlara kapatabilirsiniz. Süre seçebilir ya da sürekli kapalı kalabilirsiniz; süre dolunca otomatik açılır.',
+        return card('Rahatsız Etmeyin', 'Kendinizi aramalara ve/veya mesajlara kapatabilirsiniz. Süre seçebilir, sürekli kapalı kalabilir ya da yalnız mesai sonrasında kapanabilirsiniz; süre dolunca otomatik açılır.',
           status,
           toggle(s.dnd, 'calls', 'Aramalara kapat', 'Kimse sizi sesli arayamaz; arayan “rahatsız etmeyin” uyarısı görür', onDnd),
           toggle(s.dnd, 'messages', 'Mesajlara kapat', 'Kimse size yeni mesaj gönderemez', onDnd),
-          line('Süre', 'Kapalı kalma süresi; “Sürekli” seçilirse siz açana kadar', durSel)); } },
+          line('Süre', '“Sürekli”: siz açana kadar · “Mesai sonrası”: mesai bitiminden ertesi mesai başlangıcına, hafta sonu tüm gün', durSel),
+          work); } },
     { key: 'privacy', title: 'Gizlilik', desc: 'Çevrimiçi durumu, okundu / iletildi bilgisi, mesajlar', icon: 'lock',
       body: () => card('Gizlilik', 'Diğer kullanıcıların sizinle ilgili neler görebileceği.',
         toggle(s.privacy, 'hide_online', 'Çevrimiçi durumumu gizle', 'Aktif kullanıcılar listesinde ve mesajlaşmada görünmezsiniz (sistem yöneticisi hariç)'),

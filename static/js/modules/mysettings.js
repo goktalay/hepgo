@@ -36,21 +36,36 @@ export function mailboxesSection(query = '') {
       h('p', { class: 'small muted' }, 'Bağladığınız hesaplar Kişisel › Mail ekranında Outlook gibi birlikte görünür: tüm gelen kutuları, klasörler, arama, yeni e-posta, yanıt / iletme, taslak. Davetler takviminize, yazıştığınız kişiler kişisel rehberinize eklenir. Hesaplarınızı ve postalarınızı yönetici dahil kimse göremez.'),
       h('div', { class: 'set-actions left' }, h('button', { class: 'btn primary', type: 'button', onclick: addWizard }, '＋ Mail hesabı ekle'),
         d.boxes.length ? h('a', { class: 'btn', href: '#/mail' }, 'Mail’e git') : null),
-      d.boxes.length ? h('div', { class: 'mbx-list' }, d.boxes.map((b, i) => h('div', { class: 'mbx' },
+      d.boxes.length ? h('div', { class: 'mbx-list' }, d.boxes.map((b, i) => {
+        // Bağlantısı (yenileme jetonu) geçersiz Google / Microsoft hesabı: tek bir uyarı + "Yeniden bağlan" (Eşitle / Düzenle gizli).
+        // Aynı hata hem posta (last_error) hem takvim/kişi eşitlemesine (sync_error) yazıldığından iki kez görünüyordu.
+        const reauth = !!b.needs_reauth;
+        const who = b.auth_type === 'microsoft' ? 'Microsoft' : 'Google';
+        return h('div', { class: `mbx ${reauth ? 'mbx-reauth' : ''}` },
         h('span', { class: 'mail-acc-dot', style: { background: b.color || PROV_COLOR[b.provider] || '#475569' } }, PROV_ICON[b.provider] || '@'),
         h('div', { class: 'grow' }, h('div', { class: 'mbx-e' }, b.email),
           h('div', { class: 'small muted' }, [P[b.provider]?.title || b.provider, b.auth_type === 'google' ? 'Google ile bağlı' : b.auth_type === 'microsoft' ? 'Microsoft ile bağlı' : 'şifreyle',
             b.name].filter(Boolean).join(' · ')),
-          b.last_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.last_error}`)
-            : h('div', { class: 'small muted' }, b.last_ok ? t('Son erişim: {d}', { d: fmtDateTime(b.last_ok) }) : '',
-              b.last_sync ? t(' · Takvim/kişi eşitleme: {d}', { d: fmtDateTime(b.last_sync) }) : ''),
-          b.sync_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.sync_error}`) : null),
+          reauth ? h('div', { class: 'small fin-late mbx-warn', role: 'status' },
+            t('⚠ {who} bağlantısının süresi doldu ya da izin geri alındı. Yeniden bağlamak için “Yeniden bağlan” düğmesine basın.', { who }))
+            : [b.last_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.last_error}`)
+              : h('div', { class: 'small muted' }, b.last_ok ? t('Son erişim: {d}', { d: fmtDateTime(b.last_ok) }) : '',
+                b.last_sync ? t(' · Takvim/kişi eşitleme: {d}', { d: fmtDateTime(b.last_sync) }) : ''),
+              b.sync_error && b.sync_error !== b.last_error ? h('div', { class: 'small fin-late' }, `⚠ ${b.sync_error}`) : null]),
         h('div', { class: 'mbx-acts' },
           i > 0 ? h('button', { class: 'btn xs ghost', type: 'button', title: 'Yukarı taşı', onclick: async () => {
             const ids = d.boxes.map(x => x.id); [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
             try { await api.put('/api/mail/boxes-order', { ids }); load(); } catch (e) { toastError(e); }
           } }, '↑') : null,
-          b.auth_type !== 'password' ? h('button', { class: 'btn xs', type: 'button', title: 'Takvim ve kişileri şimdi eşitle', onclick: async e => {
+          // Aynı hesap için Google / Microsoft bağlanma akışını yeniden başlatır (hint: sağlayıcı bu hesabı önerir; dönüşte kayıt güncellenir)
+          reauth ? h('button', { class: 'btn xs primary', type: 'button', disabled: !provs.oauth?.[b.auth_type],
+            title: provs.oauth?.[b.auth_type] ? t('{who} ile yeniden bağlan', { who }) : 'Bu sunucuda henüz ayarlanmadı: yönetici Program Ayarları › Entegrasyonlar’dan anahtarı girmeli',
+            onclick: async e => {
+              e.currentTarget.disabled = true;
+              try { location.href = (await api.get(`/api/mail/oauth/${b.auth_type}/start?hint=${encodeURIComponent(b.email)}`)).url; }
+              catch (err) { toastError(err); load(); }
+            } }, '↻ Yeniden bağlan') : null,
+          !reauth && b.auth_type !== 'password' ? h('button', { class: 'btn xs', type: 'button', title: 'Takvim ve kişileri şimdi eşitle', onclick: async e => {
             e.currentTarget.disabled = true;
             try {
               const r = await api.post(`/api/mail/${b.id}/sync`, {});
@@ -59,11 +74,12 @@ export function mailboxesSection(query = '') {
               load();
             } catch (err) { toastError(err); load(); }
           } }, '⟳ Eşitle') : null,
-          h('button', { class: 'btn xs', type: 'button', onclick: () => editBox(b) }, 'Düzenle'),
+          reauth ? null : h('button', { class: 'btn xs', type: 'button', onclick: () => editBox(b) }, 'Düzenle'),
           h('button', { class: 'btn xs danger', type: 'button', onclick: async () => {
             if (!await confirmDialog('Hesabı ayır', t('{e} hesabı ayrılsın mı? Postalarınız sunucuda kalır; yalnızca bu uygulamadaki bağlantı ve takvim öğeleri kaldırılır.', { e: b.email }), { okLabel: 'Ayır', danger: true })) return;
             try { await api.del(`/api/mail/boxes/${b.id}`); toast('Hesap ayrıldı'); load(); } catch (e) { toastError(e); }
-          } }, 'Ayır'))))) : h('p', { class: 'small muted' }, 'Henüz bağlı hesap yok.')));
+          } }, 'Ayır')));
+      })) : h('p', { class: 'small muted' }, 'Henüz bağlı hesap yok.')));
   };
 
   function addWizard() {

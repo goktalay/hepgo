@@ -190,6 +190,91 @@ const SCENES = {
   },
 };
 
+// Yıkım sahnesinin küçük önizlemesi: ekran yakalamadan, düşüp seken renkli kartlar (birkaç saniyede bir yeniden)
+const MINI_ACCENTS = ['#4a8ae0', '#22c55e', '#f59e0b', '#a855f7', '#ef4444'];
+function miniGravity() {
+  let bodies = [], born = -99, lastT = 0;
+  return (c, w, h, t) => {
+    if (t - born > 5 || !bodies.length) {
+      born = t;
+      bodies = Array.from({ length: 9 }, (_, i) => {
+        const bw = rnd(70, 120), bh = rnd(34, 54);
+        return { x: 40 + (i % 3) * (w / 3) + rnd(-10, 10), y: 40 + Math.floor(i / 3) * 64, w: bw, h: bh, vx: rnd(-90, 90), vy: rnd(-120, 0),
+          a: 0, va: rnd(-2, 2), col: MINI_ACCENTS[i % MINI_ACCENTS.length] };
+      });
+    }
+    const dt = Math.min(0.05, Math.max(0, t - lastT)); lastT = t;
+    c.clearRect(0, 0, w, h);
+    for (const b of bodies) {
+      if (t - born > 0.5) {   // önce yerinde durur, sonra çöker
+        b.vy += 1100 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va * dt;
+        if (b.y + b.h / 2 > h - 4) { b.y = h - 4 - b.h / 2; b.vy *= -0.38; b.vx *= 0.8; b.va *= 0.6; }
+        if (b.x - b.w / 2 < 0 || b.x + b.w / 2 > w) { b.vx *= -0.6; b.x = Math.min(w - b.w / 2, Math.max(b.w / 2, b.x)); }
+      }
+      c.save(); c.translate(b.x, b.y); c.rotate(b.a);
+      c.fillStyle = 'rgba(236, 242, 250, 0.92)';
+      c.beginPath(); c.roundRect ? c.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, 8) : c.rect(-b.w / 2, -b.h / 2, b.w, b.h); c.fill();
+      c.fillStyle = b.col; c.fillRect(-b.w / 2 + 8, -b.h / 2 + 8, b.w * 0.45, 5);
+      c.fillStyle = 'rgba(100, 116, 139, 0.45)'; c.fillRect(-b.w / 2 + 8, -b.h / 2 + 18, b.w * 0.7, 4);
+      c.restore();
+    }
+  };
+}
+
+// Ayarlar › Bekleme ekranı: seçim karesinde CANLI küçük önizleme. Sahneler sanal 640 px genişlikte çizilip kareye ölçeklenir
+// (tam ekrandakiyle aynı görünüm). play()/pause() dışarıdan (görünürlük gözlemcisi) çağrılır; ~30 kare/sn ile sınırlı.
+// still=true (hareketleri azalt): tek bir temsilî kare çizilir, döngü kurulmaz.
+const PV_W = 640;
+export function createAnimPreview(canvas, anim, { still = false } = {}) {
+  let raf = 0, globe = null, draw = null, cur = null, t0 = performance.now(), last = 0, alive = true, swapAt = 0;
+  const c = canvas.getContext('2d');
+  const pool = ANIMATIONS.map(a => a[0]).filter(k => k !== 'random');
+  const fit = () => {
+    const r = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+    const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    return { W, H };
+  };
+  const setup = a => {
+    globe?.destroy(); globe = null; cur = a; draw = null;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, canvas.width, canvas.height);
+    if (a !== 'globe') draw = a === 'gravity' ? miniGravity() : (SCENES[a] || SCENES.wave)();
+  };
+  const frame = t => {
+    const { W, H } = fit(), k = W / PV_W, vh = H / k;
+    c.setTransform(k, 0, 0, k, 0, 0);
+    draw(c, PV_W, vh, t);
+  };
+  const first = anim === 'random' ? pool[Math.floor(Math.random() * pool.length)] : anim;
+  setup(first);
+  const startGlobe = () => { if (!globe) globe = createGlobe(canvas, { size: 0.38, speed: 14, color: '120,180,255', land: 0.8, grid: 0.25, back: 0.08 }); };
+  if (still) {   // tek kare: sahneyi ~3 sn ileri sarıp son durumu bırak
+    if (cur === 'globe') { startGlobe(); setTimeout(() => { globe?.destroy(); globe = null; }, 1500); }
+    else for (let i = 0; i < 90; i++) frame(i / 30);
+    return { play() {}, pause() {}, destroy() { globe?.destroy(); globe = null; } };
+  }
+  const loop = now => {
+    raf = 0;
+    if (!alive) return;
+    if (!canvas.isConnected) { api.destroy(); return; }   // ayar sayfasından çıkıldı
+    if (anim === 'random' && now > swapAt) {   // Rastgele: birkaç saniyede bir başka sahne
+      swapAt = now + 3500;
+      let next = cur; while (next === cur) next = pool[Math.floor(Math.random() * pool.length)];
+      setup(next); t0 = now;
+    }
+    if (cur === 'globe') startGlobe();
+    else if (now - last >= 33) { last = now; frame((now - t0) / 1000); }
+    raf = requestAnimationFrame(loop);
+  };
+  const api = {
+    play() { if (!alive || raf) return; if (anim === 'random' && !swapAt) swapAt = performance.now() + 3500; raf = requestAnimationFrame(loop); },
+    pause() { cancelAnimationFrame(raf); raf = 0; globe?.destroy(); globe = null; if (cur === 'globe') { /* son kare tuvalde kalır */ } },
+    destroy() { alive = false; api.pause(); },
+  };
+  if (cur !== 'globe') for (let i = 0; i < 60; i++) frame(i / 30);   // görünür olana dek dolu bir ilk kare dursun (~2 sn ileri sarılmış)
+  return api;
+}
+
 export function showScreensaver(anim = cfg.anim, { preview = false, unlock = false } = {}) {
   if (overlay) return;
   if (preview && anim === 'gravity') primeMotionPermission();   // önizleme bir kullanıcı jesti → iOS izni iste

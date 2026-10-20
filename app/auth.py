@@ -189,21 +189,68 @@ def all_nodes():
     return rbac.node_keys()
 
 
-def dnd_state(prefs):
+_WORK_CACHE = {'t': 0.0, 'v': None}   # (sistem mesai programı tanımlı mı, program) — 60 sn önbellek
+
+
+def _system_schedule():
+    """Program Ayarları'ndaki mesai programı; tanımlı değilse None (Rahatsız etmeyin › Mesai sonrası için)."""
+    import time as _t
+    from . import worktime
+    if _t.time() - _WORK_CACHE['t'] < 60:
+        return _WORK_CACHE['v']
+    v = None
+    try:
+        conn = db.connect()
+        try:
+            if worktime.schedule_defined(conn):
+                v = worktime.get_schedule(conn)
+        finally:
+            conn.close()
+    except Exception:   # noqa: BLE001 — veritabanı yoksa kişisel saatlere düşülür
+        v = None
+    _WORK_CACHE.update(t=_t.time(), v=v)
+    return v
+
+
+def dnd_off_hours(d, now=None):
+    """"Mesai sonrası" süresi seçiliyken şu an mesai dışı mı? Sistem programı tanımlıysa (ve kullanıcı kendi saatlerini
+    seçmediyse) o program + tatiller; değilse kişisel saatler (varsayılan hafta içi 08:30–18:00). Hafta sonu tüm gün."""
+    from . import worktime
+    now = now or datetime.now()
+    if (d or {}).get('workSrc') != 'custom':
+        sch = _system_schedule()
+        if sch is not None:
+            if now.date().isoformat() in sch['holidays']:
+                return True
+            day = sch['days'][str(now.isoweekday())]
+            if not day['on']:
+                return True
+            cur = now.hour * 60 + now.minute
+            return not (worktime._hm(day['from']) <= cur < worktime._hm(day['to']))
+    w = (d or {}).get('work') or {}
+    return worktime.is_off_hours_custom(now, w.get('from'), w.get('to'))
+
+
+def dnd_state(prefs, now=None):
     """Rahatsız etmeyin (Ayarlar → Gizlilik): {'calls':bool,'messages':bool}.
 
     prefs ham JSON metni ya da çözülmüş sözlük olabilir. `until` verilmişse süre geçtiyse kapalı sayılır
-    (süreli); until yoksa seçili kanallar sürekli kapalıdır."""
+    (süreli); until yoksa seçili kanallar sürekli kapalıdır. dur='offhours' (Mesai sonrası): yalnız mesai dışında
+    (mesai bitiminden ertesi mesai başlangıcına, hafta sonu tüm gün) kapalıdır."""
     try:
         if isinstance(prefs, str):
             prefs = json.loads(prefs) if prefs else {}
         d = (prefs or {}).get('settings', {}).get('dnd') or {}
     except (ValueError, AttributeError):
         return {'calls': False, 'messages': False}
+    if d.get('dur') == 'offhours':
+        if not (d.get('calls') or d.get('messages')) or not dnd_off_hours(d, now):
+            return {'calls': False, 'messages': False}
+        return {'calls': bool(d.get('calls')), 'messages': bool(d.get('messages'))}
     until = d.get('until')
     if until:
         try:
-            if datetime.now() > datetime.fromisoformat(until):
+            if (now or datetime.now()) > datetime.fromisoformat(until):
                 return {'calls': False, 'messages': False}
         except (ValueError, TypeError):
             pass

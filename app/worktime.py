@@ -56,6 +56,26 @@ def get_schedule(conn):
     return out
 
 
+def schedule_defined(conn):
+    """Program Ayarları'nda mesai programı kaydedilmiş mi? (kaydedilmemişse yalnız varsayılanlar vardır)"""
+    return conn.execute('SELECT 1 FROM app_kv WHERE k = ?', (KV,)).fetchone() is not None
+
+
+# "Rahatsız etmeyin › Mesai sonrası" için kişisel varsayılan (sistemde mesai programı yoksa): hafta içi 08:30–18:00
+DND_DEFAULT_FROM, DND_DEFAULT_TO = '08:30', '18:00'
+
+
+def is_off_hours_custom(dt, start=None, end=None):
+    """Kişisel mesai saatlerine göre mesai DIŞI mı? Hafta sonu (Cumartesi/Pazar) tüm gün mesai dışıdır."""
+    if dt.isoweekday() >= 6:
+        return True
+    cur = dt.hour * 60 + dt.minute
+    a, b = _hm(start or DND_DEFAULT_FROM), _hm(end or DND_DEFAULT_TO)
+    if a >= b:   # hatalı / ters aralık: varsayılana dön
+        a, b = _hm(DND_DEFAULT_FROM), _hm(DND_DEFAULT_TO)
+    return not (a <= cur < b)
+
+
 def set_schedule(conn, data):
     sch = {'days': {}, 'holidays': [], 'overtime_multiplier': 1.5}
     days = (data or {}).get('days') or {}

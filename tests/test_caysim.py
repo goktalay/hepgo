@@ -132,7 +132,7 @@ def main():
         assert r.status_code == 200 and r.headers['content-type'].startswith('image/') and len(r.content) > 100, (r.status_code, r.headers)
         hata(a.get(f'{V1}/brand/logo'), 401, 'auth')
         assert [x['id'] for x in ok(a.get(f'{V1}/centers', headers=B(key)))['centers']] == [c1['id']]
-        assert {t['key'] for t in ok(a.get(f'{V1}/types', headers=B(key)))['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol'}
+        assert {t['key'] for t in ok(a.get(f'{V1}/types', headers=B(key)))['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol', 'interceptor'}
         m = ok(a.get(f'{V1}/models', params={'type': 'sabit_kanat'}, headers=B(key)))
         cay = next(x for x in m['models'] if x['id'] == 'builtin:caymaz')
         assert cay['glb_url'] == f'{V1}/models/builtin:caymaz/glb' and cay['file_url'] is None and m['defaults']['sabit_kanat'] == 'builtin:caymaz', cay

@@ -1634,6 +1634,16 @@ def param_testleri(a, c1, sitl, mon):
     assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 1, 'SERVO1_FUNCTION': 4}, 'multirotor') == 1 and drone_params.srv_rev_mask({'SERVO9_REVERSED': 1}, 'multirotor') == 1 << 8
     assert drone_params.srv_rev_mask({'SERVO5_REVERSED': 1, 'SERVO4_REVERSED': 1}, 'vtol') == 8 and drone_params.srv_rev_mask({'SERVO1_REVERSED': 1}, 'helikopter') == 1
     assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 1, 'SERVO1_FUNCTION': 33}, 'sabit_kanat') == 0 and drone_params.srv_rev_mask({'SERVO3_REVERSED': 1, 'SERVO3_FUNCTION': 70}, 'sabit_kanat') == 4
+    # SITL modelinin nötr montajı (plane-elevon REV 1/1, plane-vtail REV2 1): etkin değer = kayıt ?? düzen seti ?? 0; bit = etkin XOR nötr
+    from app import flightsim as _fs
+    assert _fs.sitl_notr_mask('-elevon') == 3 and _fs.sitl_notr_mask('-vtail') == 2 and _fs.sitl_notr_mask('') == 0
+    ev = {'SERVO1_REVERSED': 1.0, 'SERVO2_REVERSED': 1.0, 'SERVO4_REVERSED': 0.0}
+    assert drone_params.srv_rev_mask({'SERVO1_FUNCTION': 78, 'SERVO2_FUNCTION': 77}, 'sabit_kanat', None, 3, ev) == 0          # kayıtta REVERSED yok → düzen seti (nötr) → 0
+    assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 0, 'SERVO2_REVERSED': 0}, 'sabit_kanat', None, 3, ev) == 3             # CAYMAZ 78/77 + REV 0/0 → fizik iki kanalı yansıtır
+    assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 1, 'SERVO2_REVERSED': 0}, 'sabit_kanat', None, 3, ev) == 2
+    assert drone_params.srv_rev_mask({'SERVO2_REVERSED': 0}, 'sabit_kanat', None, 2, {'SERVO2_REVERSED': 1.0}) == 2               # V-kuyruk
+    assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 1}, 'sabit_kanat', None, 0, {'SERVO1_REVERSED': 0.0}) == 1               # klasik: eski davranış
+    assert drone_params.sitl_kayitlari([{'name': 'SERVO1_REVERSED', 'value': 0}], True, 'sabit_kanat', 3, ev)[1]['mask'] == 1
     _, bm = drone_params.sitl_kayitlari([{'name': 'SERVO1_REVERSED', 'value': 1.0}], True, 'multirotor')
     assert bm == {'virtual_mount': True, 'mask': 0, 'neutral': [], 'reversed': [], 'motor_skipped': ['SERVO1_REVERSED']} and 'motor (ESC)' in drone_params.montaj_olayi(bm)[0] and drone_params.montaj_olayi(bm)[1] == 6, bm
     assert not drone_params.haric_mi('SERVO1_REVERSED') and not drone_params.haric_mi('RC1_REVERSED')   # kaydedilir

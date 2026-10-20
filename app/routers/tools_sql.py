@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from .. import config
 from .tools_common import check_host, check_port, new_tmp, safe_name, tmp_path, tools_user
+from . import tools_common as tc
 from . import tools_mt as mt
 
 router = APIRouter(prefix='/api/tools/sql')
@@ -37,6 +38,13 @@ LANGS = (None, 'tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru')
 DEFAULT_LIMIT, DEFAULT_BATCH = 10_000, 500
 SESSION_IDLE = 3600
 MAX_HISTORY, MAX_SQL = 5000, 20_000
+# mtweb kancaları (HEPGO'da varsayılanlar → davranış değişmez)
+APP_DB_READONLY = True    # False → 'caymaz.db' istisnası kapalı (ad, kullanıcının dosya alanındaki sıradan bir dosyadır)
+ALLOW_SSH_AGENT = True    # False → SSH tünelinde ajan kimlik doğrulaması reddedilir
+SQLITE_GUARD = None       # callable(SqliteConn, uid) → bağlantı açılınca (yetkilendirici, sayfa tavanı, süre sınırı)
+EXPORT_MAX = None         # dışa aktarma dosyası bayt tavanı
+ROW_LIMIT_MAX = None      # sorgu başına satır tavanı
+PUBLIC_PATH = None        # callable(str) → str; arayüze giden SQLite dosya yolu (sunucu yolu gizlenir)
 
 try:
     import paramiko
@@ -542,9 +550,11 @@ class SqliteConn:
         fp = (cfg.get('filePath') or '').strip()
         self.label = fp or ':memory:'
         self.app_db = False
+        self.started = time.time()
+        self.path = None
         if not fp:
             uri, ro_forced = ':memory:', False
-        elif fp in ('caymaz.db', Path(config.DB_PATH).name, str(config.DB_PATH)):
+        elif APP_DB_READONLY and fp in ('caymaz.db', Path(config.DB_PATH).name, str(config.DB_PATH)):
             # Uygulamanın kendi veritabanı yalnız salt okunur açılır
             uri, ro_forced, self.app_db = f'file:{config.DB_PATH}?mode=ro', True, True
         else:
@@ -553,11 +563,14 @@ class SqliteConn:
                 raise ValueError(f'Dosya bulunamadı: {fp}')
             p.parent.mkdir(parents=True, exist_ok=True)
             uri, ro_forced = str(p), False
+            self.path = p
         self.db = sqlite3.connect(uri, uri=uri.startswith('file:'), check_same_thread=False, isolation_level=None, timeout=15)
         self.db.execute('PRAGMA foreign_keys = ON')
         self.read_only = bool(cfg.get('readOnly')) or ro_forced
         if self.read_only:
             self.db.execute('PRAGMA query_only = ON')
+        if SQLITE_GUARD:
+            SQLITE_GUARD(self, uid)
 
     def _all(self, sql, *params):
         cur = self.db.execute(sql, params)
@@ -575,6 +588,7 @@ class SqliteConn:
         self.db.execute(f"PRAGMA query_only = {'ON' if on else 'OFF'}")
 
     def query(self, sql, database, limit, batch, cancel):
+        self.started = time.time()
         cur = self.db.execute(sql)
         if not cur.description:
             cmd = (re.match(r'\w+', sql.strip()) or re.match(r'', '')).group(0).upper() or 'OK'
@@ -620,7 +634,8 @@ class SqliteConn:
     def get_children(self, parent):
         if not parent:
             dbs = [d for d in self._all('PRAGMA database_list') if d['name'] != 'temp']
-            return [{'id': f"db:{d['name']}", 'kind': 'database', 'name': d['name'], 'detail': d['file'] or None, 'hasChildren': True,
+            return [{'id': f"db:{d['name']}", 'kind': 'database', 'name': d['name'],
+                     'detail': (PUBLIC_PATH(d['file']) if PUBLIC_PATH and d['file'] else d['file']) or None, 'hasChildren': True,
                      'path': {'database': d['name'], 'schema': d['name']}} for d in dbs]
         p = parent['path']
         schema = p.get('schema') or 'main'
@@ -762,10 +777,24 @@ class MysqlConn(DbApiConn):
               'database': cfg.get('database') or None, 'connect_timeout': 20, 'read_timeout': 600, 'charset': 'utf8mb4', 'autocommit': False, 'program_name': 'SQL Master'}
         if ssl_mode in ('require', 'verify-full'):
             kw['ssl'] = {'check_hostname': ssl_mode == 'verify-full'}
-        self.cn = pymysql.connect(**{k: v for k, v in kw.items() if k != 'program_name'})
+        self.hostaddr = cfg.get('hostaddr')
+        self.cn = self._open({k: v for k, v in kw.items() if k != 'program_name'})
         self.current_db = cfg.get('database') or None
         self.tls = ssl_mode in ('require', 'verify-full')
         self.set_read_only(bool(cfg.get('readOnly')))
+
+    def _open(self, kw):
+        """mtweb: NET kancasının doğruladığı IP'ye soket önceden açılır (defer_connect); TLS ad doğrulaması host adıyla."""
+        if not self.hostaddr:
+            return self.pymysql.connect(**kw)
+        cn = self.pymysql.connect(**kw, defer_connect=True)
+        sock = socket.create_connection((self.hostaddr, int(kw['port'])), timeout=kw.get('connect_timeout') or 20)
+        try:
+            cn.connect(sock)
+        except Exception:
+            sock.close()
+            raise
+        return cn
 
     def type_name(self, c):
         return {0: 'DECIMAL', 1: 'TINYINT', 2: 'SMALLINT', 3: 'INT', 4: 'FLOAT', 5: 'DOUBLE', 7: 'TIMESTAMP', 8: 'BIGINT', 9: 'MEDIUMINT', 10: 'DATE', 11: 'TIME',
@@ -787,8 +816,8 @@ class MysqlConn(DbApiConn):
 
     def cancel(self):
         try:
-            k = self.pymysql.connect(host=self.cn.host, port=self.cn.port, user=self.cn.user, password=self.cn.password.decode() if isinstance(self.cn.password, bytes) else self.cn.password,
-                                     connect_timeout=5)
+            k = self._open(dict(host=self.cn.host, port=self.cn.port, user=self.cn.user, password=self.cn.password.decode() if isinstance(self.cn.password, bytes) else self.cn.password,
+                                connect_timeout=5))
             k.kill(self.cn.thread_id())
             k.close()
         except Exception:   # noqa: BLE001
@@ -892,8 +921,9 @@ class PostgresConn(DbApiConn):
 
     def _connect(self, db):
         cfg = self.cfg
+        extra = {'hostaddr': cfg['hostaddr']} if cfg.get('hostaddr') else {}   # mtweb: doğrulanmış IP (host yalnız TLS adı)
         return self.psycopg.connect(host=cfg.get('host') or 'localhost', port=int(cfg.get('port') or 5432), user=cfg.get('user') or '', password=cfg.get('password') or '',
-                                    dbname=db, connect_timeout=20, sslmode=(cfg.get('ssl') or {}).get('mode', 'prefer'), application_name='SQL Master', autocommit=True)
+                                    dbname=db, connect_timeout=20, sslmode=(cfg.get('ssl') or {}).get('mode', 'prefer'), application_name='SQL Master', autocommit=True, **extra)
 
     def type_name(self, c):
         return getattr(c, 'type_display', None) or str(getattr(c, 'type_code', ''))
@@ -1054,7 +1084,18 @@ class Tunnel:
             raise ValueError('SSH tüneli için paramiko paketi kurulu değil')
         ssh = cfg['ssh']
         host, port = check_host(ssh.get('host')), check_port(ssh.get('port') or 22)
-        sock = socket.create_connection((host, port), timeout=cfg.get('connectTimeoutMs', 20000) / 1000)
+        if not ALLOW_SSH_AGENT and ssh.get('auth') == 'agent':
+            raise tc.NetDenied('SSH ajanı ile kimlik doğrulama web sürümünde kapalı; anahtar ya da parola kullanın')
+        target, target_port = cfg.get('host') or 'localhost', int(cfg.get('port') or 0)
+        timeout = cfg.get('connectTimeoutMs', 20000) / 1000
+        if tc.NET_GUARD:
+            # mtweb: önce SSH sunucusu, sonra tünel hedefi yerelde doğrulanır (hedef IP olarak istenir; SSH sunucusu ad çözmez);
+            # ikisi de geçerse doğrulanan IP'ye bağlanılır
+            ssh_ip = tc.net_target(host, port, uid, APP)
+            target = tc.net_target(target, target_port, uid, APP, 'data')
+            sock = socket.create_connection((ssh_ip, port), timeout=timeout)
+        else:
+            sock = socket.create_connection((host, port), timeout=timeout)
         self.tr = paramiko.Transport(sock)
         self.tr.set_keepalive(15)
         self.tr.start_client(timeout=20)
@@ -1082,7 +1123,7 @@ class Tunnel:
         except paramiko.AuthenticationException:
             self.tr.close()
             raise ValueError('All configured authentication methods failed') from None
-        self.target = (cfg.get('host') or 'localhost', int(cfg.get('port') or 0))
+        self.target = (target, target_port)
         self.srv = socket.socket()
         self.srv.bind(('127.0.0.1', 0))
         self.srv.listen(8)
@@ -1129,7 +1170,9 @@ class Tunnel:
 
 
 def open_connection(cfg, uid):
-    """Bağlantı açma (open.ts): gerekiyorsa önce SSH tüneli, sonra sağlayıcı."""
+    """Bağlantı açma (open.ts): gerekiyorsa önce SSH tüneli, sonra sağlayıcı.
+    mtweb (NET kancası): doğrudan bağlantıda hedef doğrulanır ve sürücü IP'ye bağlanır (MySQL hazır soket, PG hostaddr);
+    tünelde SSH sunucusu ve tünel hedefi doğrulanır (veritabanı istemcisi yalnız yerel tünel ucuna bağlanır)."""
     provider = cfg['provider']
     if provider in ('mssql', 'duckdb'):
         raise ValueError({'mssql': 'SQL Server sürücüsü bu sunucuda kurulu değil', 'duckdb': 'DuckDB sürücüsü bu sunucuda kurulu değil'}[provider])
@@ -1139,6 +1182,10 @@ def open_connection(cfg, uid):
     if (cfg.get('ssh') or {}).get('enabled'):
         tunnel = Tunnel({**cfg, 'port': cfg.get('port') or provider_meta(provider)['defaultPort']}, uid)
         cfg = {**cfg, 'host': tunnel.host, 'port': tunnel.port}
+    elif tc.NET_GUARD:
+        port = int(cfg.get('port') or provider_meta(provider)['defaultPort'])
+        cfg = {**cfg, 'port': port, 'host': cfg.get('host') or 'localhost',
+               'hostaddr': tc.net_target(cfg.get('host') or 'localhost', port, uid, APP)}
     try:
         conn = MysqlConn(cfg) if provider == 'mysql' else PostgresConn(cfg)
     except Exception:
@@ -1161,6 +1208,8 @@ def friendly_error(err):
     """Sürücü/ağ hatalarını kullanıcı dostu metne çevirir (errors.ts); veritabanının kendi mesajı korunur."""
     if isinstance(err, HTTPException):
         return err.detail
+    if isinstance(err, tc.NetDenied):
+        return str(err)
     msg = redact(str(err) or err.__class__.__name__)
     low = msg.lower()
     if 'refused' in low:
@@ -1193,7 +1242,8 @@ class Session:
         self.seq = 0
         self.lock = threading.RLock()
         self.exec_lock = threading.Lock()   # bağlantıda aynı anda tek çalıştırma
-        self.last = time.time()
+        self.last = self.created = time.time()
+        self.release = None                 # mtweb: eşzamanlı oturum yeri
 
     def send(self, ch, data):
         with self.lock:
@@ -1251,6 +1301,9 @@ class Session:
             except Exception:   # noqa: BLE001
                 pass
             self.conn = None
+        rel, self.release = self.release, None
+        if rel:
+            rel()
 
 
 def error_message(e):
@@ -1348,6 +1401,8 @@ def export_query(conn, sql, fmt, database, path, cancel, on_progress):
                         first = False
                 rows += len(ev['rows'])
                 on_progress(rows)
+                if EXPORT_MAX and out.tell() > EXPORT_MAX:
+                    raise ValueError(f'Dışa aktarma boyut sınırı aşıldı (en çok {EXPORT_MAX // (1024 * 1024)} MB)')
             if cancel.is_set():
                 break
         if fmt == 'json':
@@ -1611,9 +1666,14 @@ def cw_connect(body: Body, user=Depends(tools_user)):
     if not c:
         return {'ok': False, 'message': 'Bağlantı bulunamadı'}
     try:
+        release = tc.conn_slot(uid, APP)
+    except Exception as err:   # noqa: BLE001 — eşzamanlı oturum sınırı (mtweb)
+        return {'ok': False, 'message': friendly_error(err)}
+    try:
         cfg = resolve_config(uid, c, sec, b.get('password') if b.get('password') else None)
         conn, fp = open_connection(cfg, uid)
     except Exception as err:   # noqa: BLE001
+        release()
         return {'ok': False, 'message': friendly_error(err)}
     if fp and not c['ssh'].get('hostKey'):
         c['ssh']['hostKey'] = fp
@@ -1621,6 +1681,7 @@ def cw_connect(body: Body, user=Depends(tools_user)):
     save_store(uid, s)
     ses = Session(uid, c['id'], c.get('readOnly', True))
     ses.conn = conn
+    ses.release = release
     sid = secrets.token_urlsafe(12)
     SESSIONS[sid] = ses
     try:
@@ -1685,6 +1746,11 @@ def db_execute(body: Body, user=Depends(tools_user)):
         raise HTTPException(400, 'SQL metni yok')
     settings = load_store(user['id'])['settings']
     req['limit'] = req.get('limit') or settings.get('rowLimit') or DEFAULT_LIMIT
+    if ROW_LIMIT_MAX:
+        try:
+            req['limit'] = max(1, min(int(req['limit']), ROW_LIMIT_MAX))
+        except (TypeError, ValueError):
+            req['limit'] = ROW_LIMIT_MAX
     return s.execute(str(b.get('runId') or secrets.token_hex(4)), req)
 
 

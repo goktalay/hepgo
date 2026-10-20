@@ -25,6 +25,7 @@ from pathlib import Path
 import paramiko
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
+from . import tools_common as tc
 from . import tools_mt
 from .tools_common import TOOLS_DIR, tools_user, ws_user
 from .tools_mt import T, MtError
@@ -38,6 +39,7 @@ OSC7_INIT = ("__sm_osc7(){ printf '\\033]7;file://%s\\007' \"$PWD\"; }; "
              'PROMPT_COMMAND="__sm_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"; '
              'precmd_functions+=(__sm_osc7) 2>/dev/null')
 CHUNK = 256 * 1024
+KNOWN_HOSTS = None   # mtweb kancası: callable(uid) → kullanıcıya ayrı known_hosts yolu (HEPGO: ortak dosya)
 
 
 @router.get('/status')
@@ -62,8 +64,8 @@ def fingerprint(key) -> str:
     return base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode('ascii')
 
 
-def known_hosts_path() -> Path:
-    p = TOOLS_DIR / 'ssh_known_hosts'
+def known_hosts_path(uid=None) -> Path:
+    p = KNOWN_HOSTS(uid) if KNOWN_HOSTS is not None else TOOLS_DIR / 'ssh_known_hosts'
     p.parent.mkdir(parents=True, exist_ok=True)
     if not p.exists():
         p.touch()
@@ -72,8 +74,8 @@ def known_hosts_path() -> Path:
 
 class _Policy(paramiko.MissingHostKeyPolicy):
     """Bilinmeyen host anahtarı: kayıtlı parmak iziyle çelişiyorsa reddet, değilse known_hosts'a ekle (AutoAdd)."""
-    def __init__(self, conn):
-        self.conn = conn
+    def __init__(self, conn, uid=None):
+        self.conn, self.uid = conn, uid
 
     def missing_host_key(self, client, hostname, key):
         fp = fingerprint(key)
@@ -81,7 +83,7 @@ class _Policy(paramiko.MissingHostKeyPolicy):
             raise HostKeyMismatch(self.conn['hostKey'], fp)
         client.get_host_keys().add(hostname, key.get_name(), key)
         try:
-            client.save_host_keys(str(known_hosts_path()))
+            client.save_host_keys(str(known_hosts_path(self.uid)))
         except OSError:
             pass
 
@@ -97,21 +99,31 @@ def load_pkey(uid, key_path, passphrase):
     return paramiko.PKey.from_path(str(real), passphrase=passphrase or None)
 
 
-def connect_client(uid, conn):
-    """Çözülmüş bağlantı kaydıyla paramiko SSHClient açar; (client, fingerprint) döner."""
+def connect_client(uid, conn, app=APP):
+    """Çözülmüş bağlantı kaydıyla paramiko SSHClient açar; (client, fingerprint) döner.
+    mtweb: soket NET kancasının doğruladığı IP'ye önceden açılır (hostname yalnız known_hosts anahtarı olarak kalır);
+    ajan / port yönlendirme / X11 hiçbir zaman istenmez (allow_agent=False, yalnız kabuk + SFTP kanalı açılır)."""
     host = str(conn.get('host') or '').strip()
     port = int(conn.get('port') or 22)
     username = str(conn.get('username') or '').strip()
     client = paramiko.SSHClient()
-    client.load_host_keys(str(known_hosts_path()))
-    client.set_missing_host_key_policy(_Policy(conn))
+    client.load_host_keys(str(known_hosts_path(uid)))
+    client.set_missing_host_key_policy(_Policy(conn, uid))
     kw = dict(hostname=host, port=port, username=username, timeout=15, banner_timeout=15, auth_timeout=20,
               allow_agent=False, look_for_keys=False)
     if conn.get('authType') == 'key' and conn.get('keyPath'):
         kw['pkey'] = load_pkey(uid, conn['keyPath'], conn.get('passphrase'))
     else:
         kw['password'] = conn.get('password') or ''
-    client.connect(**kw)
+    sock = tc.net_socket(host, port, 15, uid, app)
+    if sock is not None:
+        kw['sock'] = sock
+    try:
+        client.connect(**kw)
+    except BaseException:
+        if sock is not None:
+            sock.close()
+        raise
     t = client.get_transport()
     t.set_keepalive(20)
     fp = fingerprint(t.get_remote_server_key())
@@ -124,6 +136,8 @@ def connect_client(uid, conn):
 def friendly_error(err):
     """ssh2 hatalarının main.js'teki karşılığı: renderer i18n anahtarı (ya da ham metin)."""
     msg = str(err) or err.__class__.__name__
+    if isinstance(err, tc.NetDenied):
+        return msg
     if isinstance(err, HostKeyMismatch):
         return T('main.errHostKey', old=err.old, new=err.new)
     if isinstance(err, paramiko.BadHostKeyException):
@@ -244,6 +258,9 @@ def remote_remove(sftp, p):
 
 
 def xfer_download(sftp, remote, local: Path, step, job):
+    check = job.get('space')   # mtweb: alan kotası (parça parça)
+    if check:
+        check(0, True)
     with sftp.open(remote, 'rb') as rf:
         size = rf.stat().st_size
         rf.prefetch(size)
@@ -254,6 +271,13 @@ def xfer_download(sftp, remote, local: Path, step, job):
                 b = rf.read(CHUNK)
                 if not b:
                     break
+                if check:
+                    try:
+                        check(len(b), False)
+                    except MtError:   # kota aşıldı: yarım dosya kalmasın
+                        lf.close()
+                        local.unlink(missing_ok=True)
+                        raise
                 lf.write(b)
                 step(len(b))
 
@@ -321,6 +345,8 @@ class Window:
             s['wq'].put(None)
         except Exception:   # noqa: BLE001
             pass
+        if s.get('release'):
+            s['release']()
         for step in (lambda: s['chan'] and s['chan'].close(), lambda: s['sftp'] and s['sftp'].close(), s['client'].close):
             try:
                 step()
@@ -377,16 +403,22 @@ class Window:
         except MtError as e:
             return {'ok': False, 'message': e.msg}, None
         try:
+            release = tc.conn_slot(self.uid, APP)
+        except Exception as e:   # noqa: BLE001 — eşzamanlı oturum sınırı (mtweb)
+            return {'ok': False, 'message': friendly_error(e)}, None
+        try:
             client, fp = connect_client(self.uid, conn)
         except Exception as e:   # noqa: BLE001
+            release()
             return {'ok': False, 'message': friendly_error(e)}, None
         pub = tools_mt.remember_host_key(self.uid, APP, conn_id, fp)
         try:
             chan = client.invoke_shell(term='xterm-256color', width=int(a.get('cols') or 120), height=int(a.get('rows') or 30))
         except Exception as e:   # noqa: BLE001
             client.close()
+            release()
             return {'ok': False, 'message': friendly_error(e)}, pub
-        s = {'client': client, 'chan': chan, 'sftp': None, 'conn': conn, 'wq': queue.Queue(), 'lock': threading.Lock()}
+        s = {'client': client, 'chan': chan, 'sftp': None, 'conn': conn, 'wq': queue.Queue(), 'lock': threading.Lock(), 'release': release}
         self.sessions[pane] = s
         threading.Thread(target=self._reader, args=(pane, s), daemon=True, name=f'ssh-rd-{pane}').start()
         threading.Thread(target=self._writer, args=(s,), daemon=True, name=f'ssh-wr-{pane}').start()
@@ -509,7 +541,7 @@ class Window:
 
     def run_transfer(self, a, kind, name, work, cleanup):
         tid, pane = a.get('id'), str(a.get('pane'))
-        job = {'cancelled': False, 'sftp': None}
+        job = {'cancelled': False, 'sftp': None, 'space': tools_mt.space_check(self.uid, APP) if kind == 'download' else None}
         self.transfers[tid] = job
         state, send, add, file, finish = self.progress({'id': tid, 'pane': pane, 'kind': kind, 'name': name})
         send()
@@ -544,7 +576,7 @@ class Window:
 
     def download(self, a):
         remote = a.get('remotePath')
-        name = posixpath.basename(remote)
+        name = tools_mt.safe_segment(posixpath.basename(str(remote or '').rstrip('/')))
         local_dir = tools_mt.to_real(self.uid, a.get('localDir'))
         target = [None]
 
@@ -556,12 +588,12 @@ class Window:
                 state.update(phase='transfer', total=sum(s for _, s in files), files=len(files))
                 send()
                 for d in dirs:
-                    (target[0] / d if d else target[0]).mkdir(parents=True, exist_ok=True)
+                    tools_mt.safe_join(target[0], d).mkdir(parents=True, exist_ok=True)
                 for i, (rel, _) in enumerate(files):
                     if job['cancelled']:
                         raise Cancelled()
                     file(i + 1, rel)
-                    xfer_download(sftp, posixpath.join(remote, rel), target[0] / rel, add, job)
+                    xfer_download(sftp, posixpath.join(remote, rel), tools_mt.safe_join(target[0], rel), add, job)
             else:
                 state.update(phase='transfer', total=st.st_size or 0, files=1, fileIndex=1, current=name)
                 send()

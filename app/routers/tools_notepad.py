@@ -342,8 +342,16 @@ class SftpRemote:
         c = self.conn
         host, port = check_host(c.get('host')), check_port(c.get('port') or 22)
         user, password = credentials(c)
-        sock = socket.create_connection((host, port), timeout=20)
-        tr = paramiko.Transport(sock)
+        self._release = tc.conn_slot(self.uid, APP)
+        sock = None
+        try:
+            sock = tc.net_socket(host, port, 20, self.uid, APP) or socket.create_connection((host, port), timeout=20)
+            tr = paramiko.Transport(sock)
+        except Exception:
+            if sock is not None:
+                sock.close()
+            self._release()
+            raise
         tr.set_keepalive(20)
         try:
             tr.start_client(timeout=20)
@@ -366,6 +374,7 @@ class SftpRemote:
             self.sftp = paramiko.SFTPClient.from_transport(tr)
         except Exception:
             tr.close()
+            self._release()
             raise
         self.ssh = tr
         self.closed = False
@@ -442,6 +451,9 @@ class SftpRemote:
                 self.ssh.close()
         except Exception:   # noqa: BLE001
             pass
+        rel, self._release = getattr(self, '_release', None), None
+        if rel:
+            rel()
 
 
 class _ImplicitFTPTLS(ftplib.FTP_TLS):
@@ -473,6 +485,8 @@ def _mlsd_time(s):
 
 class FtpRemote:
     def __init__(self, uid, conn):
+        self.uid = uid
+        self._release = None
         self.conn = conn
         self.client = None
         self.fingerprint = None
@@ -493,8 +507,11 @@ class FtpRemote:
         else:
             cl = ftplib.FTP(timeout=30)
         cl.encoding = 'latin-1' if c.get('nameEncoding') == 'ascii' else 'utf-8'
+        from .tools_ftp import harden_ftp
+        harden_ftp(cl, self.uid, APP)
+        self._release = tc.conn_slot(self.uid, APP)
         try:
-            cl.connect(host, port)
+            cl.connect(tc.net_target(host, port, self.uid, APP), port)
             if proto in ('ftps-tls', 'ftps-ssl'):
                 cl.auth()
             user, password = credentials(c)
@@ -510,6 +527,8 @@ class FtpRemote:
                 cl.close()
             except Exception:   # noqa: BLE001
                 pass
+            self._release()
+            self._release = None
             raise
         self.client = cl
         self.closed = False
@@ -594,6 +613,9 @@ class FtpRemote:
 
     def close(self):
         self.closed = True
+        rel, self._release = self._release, None
+        if rel:
+            rel()
         if not self.client:
             return
         try:
@@ -622,6 +644,8 @@ def friendly_error(err) -> str:
     if isinstance(err, HTTPException):
         return err.detail
     msg = str(err) or err.__class__.__name__
+    if isinstance(err, tc.NetDenied):
+        return msg
     if isinstance(err, OSError) and err.strerror:
         msg = err.strerror
     code = getattr(err, 'code', None)
@@ -769,6 +793,8 @@ class ProjectSession:
 
     def write_cache(self, p, buf):
         f = self.cache_path(p)
+        if WRITE_GUARD:   # mtweb: çalışma kopyası da alan kotasına sayılır
+            WRITE_GUARD(self.uid, len(buf) - (f.stat().st_size if f.is_file() else 0), not f.exists())
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(buf)
         return f

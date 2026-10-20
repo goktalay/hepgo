@@ -1,5 +1,5 @@
 [Unit]
-Description=Mastertool web uygulamaları (Notepad Master · Convert Master) — Unix soketi, Cloudflare tüneli önünde (docs/mtweb.md)
+Description=Mastertool web uygulamaları (Notepad · Convert · SSH · FTP · SQL Master) — Unix soketi, Cloudflare tüneli önünde (docs/mtweb.md)
 After=network.target hepgo-sshmasters.service
 
 [Service]
@@ -26,9 +26,11 @@ ProtectHome=true
 PrivateTmp=true
 LimitNOFILE=8192
 # Dönüştürücü (ffmpeg) süreçleri ayrıca nice -n 15 + -threads 2 ile çalışır; servis toplamı da sınırlı
+# SSH/FTP/SQL: dışarı bağlantılar yalnız app/mtweb/guard.py'den geçer (özel/yerel ağ, sunucunun kendisi, 25/465/587 reddi);
+# her SSH bölmesi ~3 iş parçacığı, genel tavan MTWEB_NET_SESSIONS=300 oturum → TasksMax buna göre.
 CPUQuota=200%
 MemoryMax=2G
-TasksMax=256
+TasksMax=2048
 
 [Install]
 WantedBy=multi-user.target

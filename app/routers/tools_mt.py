@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .. import config, db
+from . import tools_common
 from .tools_common import TOOLS_DIR, safe_name, tools_user
 
 router = APIRouter(prefix='/api/tools/mt')
@@ -415,7 +416,7 @@ def to_real(uid, win_path) -> Path:
     """'H:\\Belgeler\\a.txt' → gerçek yol. Sürücü dışı ya da '..' içeren yol reddedilir."""
     s = str(win_path or '').strip().replace('/', '\\')
     if not s[:2].upper() == DRIVE[:2]:
-        raise MtError('Yalnızca H:\\ sürücüsü (HEPGO kişisel alanı) kullanılabilir')
+        raise MtError(f'Yalnızca H:\\ sürücüsü ({tools_common.BRAND} kişisel alanı) kullanılabilir')
     parts = [x for x in s[2:].split('\\') if x and x != '.']
     if any(x == '..' or '\x00' in x for x in parts):
         raise MtError('Geçersiz yol')
@@ -474,6 +475,37 @@ def unique_local_path(p: Path) -> Path:
         if not cand.exists():
             return cand
         i += 1
+
+
+_BAD_SEG = re.compile(r'[/\\\x00]')
+
+
+def safe_segment(name) -> str:
+    """Uzak sunucudan / istemciden gelen TEK dosya adı: ayraç, '..', '.' ve NUL içeremez (yerel alandan kaçış yok)."""
+    n = str(name or '')
+    if not n or n in ('.', '..') or _BAD_SEG.search(n):
+        raise MtError(f'Geçersiz dosya adı: {n[:80]}')
+    return n
+
+
+def safe_join(base: Path, rel) -> Path:
+    """base / 'a/b' — her parça safe_segment'ten geçer ('' → base)."""
+    parts = [x for x in str(rel or '').split('/') if x]
+    return base.joinpath(*[safe_segment(x) for x in parts]) if parts else base
+
+
+def space_check(uid, app):
+    """mtweb alan kotası denetleyicisi (UPLOAD_GUARD) — check(eklenen_bayt, yeni_dosya); aşımda MtError. HEPGO'da None."""
+    if UPLOAD_GUARD is None:
+        return None
+    inner = UPLOAD_GUARD(uid, app)
+
+    def check(nbytes, new_file):
+        try:
+            inner(nbytes, new_file)
+        except HTTPException as e:
+            raise MtError(e.detail) from None
+    return check
 
 
 def cleanup_upload_tmp(uid, real_path: Path):
@@ -730,6 +762,9 @@ def h_local_special(ctx, a):
 
 
 def h_local_mkdir(ctx, p):
+    check = space_check(ctx['uid'], ctx['app'])
+    if check:
+        check(0, True)
     to_real(ctx['uid'], p).mkdir()
     return None, False
 
@@ -820,10 +855,23 @@ async def files_upload(app: str, file: UploadFile, dir: str = Form(DRIVE), user=
     d.mkdir(parents=True, exist_ok=True)
     name = Path((file.filename or 'dosya').replace('\\', '/')).name.strip() or 'dosya'
     target = unique_local_path(d / name)
+    check = UPLOAD_GUARD(user['id'], app) if UPLOAD_GUARD else None   # mtweb: alan kotası
 
     def write():
+        if check:
+            check(0, True)
         with open(target, 'wb') as f:
-            shutil.copyfileobj(file.file, f, 1024 * 1024)
+            if not check:
+                shutil.copyfileobj(file.file, f, 1024 * 1024)
+            else:
+                try:
+                    while chunk := file.file.read(1024 * 1024):
+                        check(len(chunk), False)
+                        f.write(chunk)
+                except HTTPException:
+                    f.close()
+                    target.unlink(missing_ok=True)
+                    raise
         if '.ssh' in target.parts:
             target.chmod(0o600)
     await asyncio.to_thread(write)

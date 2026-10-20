@@ -1,23 +1,25 @@
 """mtweb kotaları (docs/mtweb.md §Kotalar) ve HEPGO araç router'larına takılan kancalar.
 
-Dosya alanı: kullanıcının iki uygulamadaki tüm dizinleri (DATA_DIR/tools/{notepadmaster,convertmaster}/<uid>: files, cache,
-converted, work) toplamı ≤ MTWEB_SPACE_MB; girdi sayısı ≤ MTWEB_MAX_FILES; tek yükleme ≤ MTWEB_UPLOAD_MB.
+Dosya alanı: kullanıcının tüm uygulama dizinleri (DATA_DIR/tools/{notepadmaster,convertmaster,sqlmaster}/<uid>: files, cache,
+converted, work, keys + SSH/FTP Master'ın H:\\ alanı DATA_DIR/tools/files/<uid>) toplamı ≤ MTWEB_SPACE_MB; girdi sayısı
+≤ MTWEB_MAX_FILES; tek yükleme ≤ MTWEB_UPLOAD_MB. SSH/FTP indirmeleri ve SQLite dosyaları da bu alana sayılır.
 Convert: kullanıcı başına MTWEB_CONVERT_USER_JOBS, genel MTWEB_CONVERT_JOBS eşzamanlı iş; giriş ≤ MTWEB_CONVERT_INPUT_MB;
 ffmpeg `nice` + `-threads` + süre sınırı; Pillow piksel tavanı.
 """
 import contextlib
 import os
+import sqlite3
 import threading
 import time
 from collections import defaultdict
 
 from fastapi import HTTPException
 
-from app.routers import tools_common, tools_convert, tools_mt, tools_notepad
+from app.routers import tools_common, tools_convert, tools_ftp, tools_mt, tools_notepad, tools_sql, tools_ssh
 
-from . import config, db
+from . import config, db, guard
 
-APP_DIRS = ('notepadmaster', 'convertmaster')
+APP_DIRS = ('notepadmaster', 'convertmaster', 'sqlmaster', 'files')   # 'files' = SSH/FTP Master H:\\ alanı
 _usage = {}                    # uid → [bitiş, bayt, girdi]
 _usage_lock = threading.Lock()
 _user_jobs = defaultdict(lambda: threading.BoundedSemaphore(max(1, config.CONVERT_USER_JOBS)))
@@ -152,10 +154,57 @@ def _job_gate(uid, src, out, cancel):
     db.audit(uid, 'convertmaster', 'convert', size)
 
 
+# --- SQLite (SQL Master): yalnız kullanıcı alanı; ATTACH / VACUUM INTO / load_extension / geçici nesne yok; boyut + süre ----
+_SQLITE_DENY_PRAGMA = {'max_page_count', 'writable_schema', 'temp_store_directory', 'data_store_directory', 'mmap_size',
+                       'hard_heap_limit', 'soft_heap_limit', 'trusted_schema', 'cache_size', 'page_size'}
+_SQLITE_DENY_FUNC = {'load_extension', 'readfile', 'writefile', 'edit', 'fts3_tokenizer'}
+_SQLITE_DENY_ACT = {sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH, sqlite3.SQLITE_CREATE_TEMP_INDEX, sqlite3.SQLITE_CREATE_TEMP_TABLE,
+                    sqlite3.SQLITE_CREATE_TEMP_TRIGGER, sqlite3.SQLITE_CREATE_TEMP_VIEW}
+
+
+def _sqlite_authorizer(action, a1, a2, dbname, trigger):
+    if action in _SQLITE_DENY_ACT:          # ATTACH, VACUUM INTO (içte ATTACH), DETACH, TEMP nesneleri
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_PRAGMA and str(a1 or '').lower() in _SQLITE_DENY_PRAGMA:
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_FUNCTION and str(a2 or '').lower() in _SQLITE_DENY_FUNC:
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
+def _sqlite_guard(sc, uid):
+    """tools_sql.SqliteConn açılınca: sayfa tavanı = kalan alan kotası (bellek içi: MTWEB_SQL_MEMORY_MB), yetkilendirici,
+    ifade süre sınırı (MTWEB_SQL_TIMEOUT_S; ilerleme işleyicisi)."""
+    con = sc.db
+    page = con.execute('PRAGMA page_size').fetchone()[0] or 4096
+    cur = con.execute('PRAGMA page_count').fetchone()[0] or 0
+    if sc.path is None:
+        allow = config.SQL_MEMORY_MB * config.MB
+    else:
+        used, _ = usage(uid, fresh=True)
+        allow = max(0, config.SPACE_BYTES - used)
+    con.execute(f'PRAGMA max_page_count = {int(cur + allow // page) or 1}')
+    con.set_authorizer(_sqlite_authorizer)
+    limit = max(1, config.SQL_TIMEOUT_S)
+    con.set_progress_handler(lambda: 1 if time.time() - sc.started > limit else 0, 20000)
+    invalidate(uid)
+
+
 def install():
     """HEPGO araç router'larının kancalarını mtweb'e göre ayarlar (yalnız mtweb sürecinde çağrılır)."""
     tools_common.BRAND = 'Mastertool'
-    tools_notepad.ALLOW_REMOTE = False
+    # Dış bağlantılar: SSRF koruması + oran + eşzamanlılık + denetim (guard.py)
+    tools_common.NET_GUARD = guard.resolve_target
+    tools_common.CONN_GATE = guard.acquire
+    tools_ssh.KNOWN_HOSTS = lambda uid: _known_hosts(uid)
+    tools_ftp.POOL_MAX = max(1, config.FTP_POOL)
+    tools_sql.APP_DB_READONLY = False
+    tools_sql.ALLOW_SSH_AGENT = False
+    tools_sql.SQLITE_GUARD = _sqlite_guard
+    tools_sql.EXPORT_MAX = config.UPLOAD_BYTES
+    tools_sql.ROW_LIMIT_MAX = config.SQL_ROW_LIMIT
+    tools_sql.PUBLIC_PATH = _sql_public_path
+    tools_notepad.ALLOW_REMOTE = 'notepadmaster' not in config.DISABLED_APPS
     tools_notepad.WRITE_GUARD = _write_guard
     tools_notepad.PUBLIC_PATH = _public_path
     tools_mt.UPLOAD_GUARD = _upload_guard
@@ -168,6 +217,23 @@ def install():
     tools_convert.FFMPEG_TIMEOUT = config.CONVERT_TIMEOUT_S
     if tools_convert.Image is not None:
         tools_convert.Image.MAX_IMAGE_PIXELS = config.IMAGE_MAX_PIXELS
+
+
+def _sql_public_path(f):
+    """SQLite dosyasının sunucu yolu → kullanıcının alanındaki göreli yol ('/e2e.db'); arayüze sunucu yolu gitmez."""
+    from pathlib import Path
+    try:
+        parts = Path(f).resolve().relative_to(tools_common.TOOLS_DIR.resolve()).parts
+    except (ValueError, OSError):
+        return Path(f).name
+    return '/' + '/'.join(parts[3:]) if len(parts) > 3 and parts[2] == 'files' else Path(f).name
+
+
+def _known_hosts(uid):
+    """Kullanıcıya ayrı known_hosts (bir kullanıcının kabul ettiği anahtar başkasını etkilemez)."""
+    d = tools_common.TOOLS_DIR / 'ssh_known_hosts.d'
+    d.mkdir(parents=True, exist_ok=True)
+    return d / str(int(uid or 0))
 
 
 def _which(name):

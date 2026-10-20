@@ -7,6 +7,7 @@ Geçici dosyalar DATA_DIR/tools/tmp altında saklanır ve 1 saat sonra silinir.
 import asyncio
 import re
 import secrets
+import socket
 import time
 from pathlib import Path
 
@@ -14,6 +15,44 @@ from .. import auth, config
 
 tools_user = auth.require_module('tools')
 BRAND = 'HEPGO'   # arayüzde görünen alan etiketi (mtweb: 'Mastertool')
+
+# --- mtweb kancaları (app/mtweb; HEPGO'da hepsi None → davranış değişmez: firmalar LAN cihazlarına bağlanabilir) -------
+# NET_GUARD(host, port, uid, app, kind) → doğrulanmış IP (str). Her dış bağlantı (SSH/SFTP/FTP/SQL/SSH tüneli) açılmadan
+#   önce çağrılır; bağlantı bu IP'ye yapılır (DNS yeniden bağlama yok). kind: 'connect' (oran sınırı + denetim kaydı) |
+#   'data' (FTP veri kanalı / tünel hedefi: yalnız adres + port denetimi). Reddederse NetDenied.
+# CONN_GATE(uid, app) → release(); kullanıcı/genel eşzamanlı oturum sınırı aşılırsa NetDenied.
+# WS_USER(ws) → kullanıcı | None (async); WebSocket kimliği (mtweb: Mastertool oturumu).
+NET_GUARD = None
+CONN_GATE = None
+WS_USER = None
+
+
+class NetDenied(Exception):
+    """Dış bağlantı politikası reddi (mtweb). Mesaj arayüze olduğu gibi gider."""
+
+
+def net_target(host, port, uid=None, app=None, kind='connect'):
+    """Bağlanılacak adres: kanca yoksa host aynen (HEPGO), varsa doğrulanmış IP."""
+    if NET_GUARD is None:
+        return host
+    return NET_GUARD(host, int(port), uid, app, kind)
+
+
+def net_socket(host, port, timeout, uid=None, app=None):
+    """Kanca varsa doğrulanmış IP'ye bağlı TCP soketi; kanca yoksa None (çağıran kendi yolunu kullanır)."""
+    if NET_GUARD is None:
+        return None
+    ip = NET_GUARD(host, int(port), uid, app, 'connect')
+    return socket.create_connection((ip, int(port)), timeout=timeout)
+
+
+def _noop():
+    return None
+
+
+def conn_slot(uid, app):
+    """Eşzamanlı oturum yeri: release() döner (HEPGO'da sınır yok)."""
+    return CONN_GATE(uid, app) if CONN_GATE else _noop
 
 TOOLS_DIR = config.DATA_DIR / 'tools'
 TMP_DIR = TOOLS_DIR / 'tmp'
@@ -32,6 +71,8 @@ def _ws_lookup(token):
 
 async def ws_user(ws):
     """WebSocket için oturum çerezinden kullanıcı; Araçlar modülü yetkisi yoksa None."""
+    if WS_USER is not None:
+        return await WS_USER(ws)
     return await asyncio.to_thread(_ws_lookup, ws.cookies.get(auth.COOKIE))
 
 

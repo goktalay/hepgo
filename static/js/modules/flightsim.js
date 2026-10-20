@@ -432,7 +432,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed }) 
     const rows = S.logs.filter(l => !q || [l.file_name, l.aircraft, l.pilot, l.location, l.task_code, l.note, l.vehicle].some(v => String(v || '').toLocaleLowerCase('tr').includes(q)));
     if (!rows.length) {
       clear(logList, h('div', { class: 'small muted fs-nocenter' }, S.logs.length ? tr('Aramaya uyan log yok.') : logsAllowed
-        ? ['Oynatılabilir uçuş logu yok. Önce ', h('a', { href: '#/tools/flight-logs' }, 'Araçlar › Uçuş Logu Analizi'), ' bölümünden bir .bin / .tlog yükleyin (analizi tamamlanmış loglar listelenir).']
+        ? ['Oynatılabilir uçuş logu yok. Önce ', h('a', { href: '#/tools/flight-log' }, 'Araçlar › Uçuş Logu Analizi'), ' bölümünden bir .bin / .tlog yükleyin (analizi tamamlanmış loglar listelenir).']
         : 'Uçuş loglarına erişim için Araçlar ya da Saha Yönetimi yetkisi gerekir.'));
       return;
     }

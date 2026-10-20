@@ -10132,3 +10132,31 @@ html[data-theme="dark"] .set-dnd-status.on { background: #3a2a12; border-color: 
 .fs-cam-menu .fs-cam-types { display: grid; grid-template-columns: repeat(3, 1fr); }
 .fs-cam-menu .fs-cam-types .btn { white-space: normal; line-height: 1.2; height: auto; min-height: 30px; padding: 4px 6px; }
 .fs-cam-menu .fs-cam-row > .pill-group { flex: none; }
+
+/* ---------- Uçuş Simülatörü §24 hedefler: sihirbaz bölümü, radar, rapor ---------- */
+.fs-targets h3 .badge { margin-left: 4px; font-weight: 500; }
+.fs-tg-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; margin: 6px 0 10px; }
+.fs-tg-card { border: 1px solid var(--border); border-left: 3px solid #e5533f; border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.fs-tg-head { display: flex; align-items: center; gap: 8px; }
+.fs-tg-no { flex: none; width: 24px; height: 24px; border-radius: 50%; background: #e5533f; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+.fs-tg-model { flex: 1; min-width: 0; }
+.fs-tg-desc { line-height: 1.35; }
+.fs-tg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.fs-tg-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.fs-tg-lbl { color: var(--muted); }
+.fs-tg-ctl { display: inline-flex; align-items: center; gap: 6px; }
+.fs-tg-ctl .fs-tg-inp { width: 100%; max-width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
+.fs-tg-ctl i { font-style: normal; color: var(--muted); font-size: 12px; }
+.fs-tg-dir.seg button { height: 26px; padding: 0 9px; font-size: 12px; }
+.fs-tg-sum { border-top: 1px dashed var(--border); padding-top: 5px; }
+.fs-tg-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; }
+.fs-tg-rad { flex-direction: row; align-items: center; gap: 8px; }
+.fs-tg-rad .fs-tg-inp { width: 76px; }
+.fs-tg-err { color: var(--danger, #dc2626); margin-top: 6px; }
+.fs-tg-empty { padding: 4px 0 8px; }
+.fs-radar { filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .45)); }
+.fs-rp-tg-tiles { grid-template-columns: repeat(4, 1fr); }
+.fs-rp-tile.green b { color: #16a34a; }
+.fs-rp-kv.green b { color: #15803d; }
+.fs-rp-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+@media (max-width: 760px) { .fs-tg-list { grid-template-columns: 1fr; } .fs-rp-tg-tiles { grid-template-columns: repeat(2, 1fr); } }

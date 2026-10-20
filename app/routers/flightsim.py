@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, config, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, sim_terrain
+from .. import auth, config, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, flightsim_targets, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -35,6 +35,7 @@ class SessionIn(BaseModel):
     power: Optional[dict] = None     # §23 güç ve yakıt: {max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}; eksikler dron kaydı önerisi → tip varsayılanı
     camera: Optional[str] = None     # §22.3 kamera türü: day | thermal | night (varsayılan day; kayıtta kaydın türü öncelikli)
     layout: Optional[str] = None     # §13.1 kontrol düzeni (yalnız sabit kanat): classic | elevon | vtail; eksikse modelin düzeni (Caymaz/Delta elevon, Talon vtail), yoksa classic
+    targets: Optional[Union[list, dict]] = None   # §24 hedefler: [{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}] ya da {items, radius_m}
 
 
 class ModelPatch(BaseModel):
@@ -81,7 +82,11 @@ def meta(request: Request, user=Depends(sim_user), conn=db.DB):
             # Kayıttan oynatma: uçuş logu listesine erişim flightlogs yetkisiyle kesişir (tools → tümü, field → göreve bağlı olanlar)
             'replay': {'logs_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)},
             # Google Photorealistic 3D Tiles dünya kipi (§10): yalnız GOOGLE_MAPS_API_KEY tanımlıysa; anahtar /g3d-key ile ayrı verilir
-            'google3d': {'enabled': flightsim.google3d_etkin()}}
+            'google3d': {'enabled': flightsim.google3d_etkin()},
+            # §24 hedefler: seçilebilen modeller (hedef modelleri + sistemdeki dron türleri) ve sınırlar
+            'targets': {'models': flightsim_targets.katalog(), 'max': flightsim_targets.HEDEF_MAX, 'diameter_m': list(flightsim_targets.CAP_SINIR),
+                        'alt_m': list(flightsim_targets.IRTIFA_SINIR), 'radius_m': list(flightsim_targets.YARICAP_SINIR), 'radius_default': flightsim_targets.YARICAP_VARSAYILAN,
+                        'offset_m': flightsim_targets.OFSET_SINIR}}
 
 
 @router.get('/g3d-key')
@@ -160,7 +165,8 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
         if body.drone_id is not None and not drone:
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
-            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera)
+            s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera,
+                                           targets=body.targets)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')

@@ -1474,3 +1474,83 @@ açık düz kadranlar, ince çentikli ölçek, siyah ibre, kırmızı/mavi uç b
   sahte kip (`/tmp/flsim/gauge2/e2e_gauge2.py`, port 8731, görüntüler `/tmp/flsim/gauge2/g2-*.png`): takip panel açık/kapalı, ayrıntı, FPV, gimbal,
   serbest, sanal kumanda (panel açık/kapalı), tam ekran, 1280/1920/390 px, sarı → kırmızı → bitti, **açık tema** (panel/sade/ayrıntı/kumanda/kritik) ve
   **koyu tema** ayrı, kayıttan oynatma.
+
+## 24. Hedefler — dairesel yörüngede sürekli uçan kinematik hedefler (`app/flightsim_targets.py`, `static/js/modules/flightsim_targets.js`, sihirbaz `flightsim_targets_ui.js`)
+Kullanıcı isteği: "Uçuşa geçeceğimizde Hedefler diye bir bölüm ekle; sistemdeki dron türleri gelsin ve seçelim, hedefin uçacağı irtifa gelsin, dairesel bir yörüngede
+uçsun ve bizden yörüngenin çapını sorsun. Simülasyona girdiğimizde havada sürekli uçan seçtiğimiz hedef olsun."
+
+**Sihirbaz** (canlı kip; isteğe bağlı kart "◎ Hedefler"): en çok 8 hedef; her biri model (meta `targets.models`: hedef modelleri `tgt:*` + sistemdeki dron türlerinin
+dahili modelleri `builtin:*`), irtifa (m, ev noktasına göre), yörünge çapı (m), hız (km/h; varsayılan modelin seyir hızı, üst sınır modelin azami hızı), yön (saat yönü /
+tersi), yörünge merkezi (uçuş merkezinden doğu/kuzey ofset, m); ortak **önleme yarıçapı** (5–200 m, varsayılan 25). Kart altında tur süresi ve yatış açısı; sihirbaz
+önizlemesinde yörüngeler ve modeller çizilir. Oturum gövdesi `targets: {items:[{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}], radius_m}`
+(liste de kabul). Sunucu doğrulaması (`dogrula`, 400): bilinmeyen model, irtifa 10–3000, çap 50–5000, hız 1…azami, ofset ±20 km, > 8 öğe, yarıçap; ad temizlenir;
+modelin görsel bilgisi (glb_url, orient, kind, model_name) öğeye gömülür → oturum yanıtı, kayıt ve kayıttan oynatma katalogdan bağımsız.
+
+**Kinematik** (sunucu `durum` = istemci `targetState`, birebir; vektör testi): zaman t = SITL `time_boot_ms`/1000 (sahte kipte kinematik saati) → simülasyon hızı
+hedefleri de hızlandırır, istemci hedefi dronun enterpolasyon oynatma başıyla (`timeline.play`) çizer (aynı gecikme), kayıtta `tt = t0 + kare t` (.bin TimeUS; önbellek v4
+`t0`) aynı yörüngeyi yeniden üretir. R = çap/2, ω = v/R; cw θ = θ0 − ωt, ccw θ = θ0 + ωt; yön hız vektöründen, yatış atan(v²/Rg) (cw sağa). Yerel ENU flightsim3d ile aynı.
+
+**3B** (`flightsim3d.setTargets`): modeller ×2,5 (dron gibi), yatış + yön, pervaneler döner (bulanık disk), ekran boyutlu etiket (ad, uzaklık, bağıl irtifa; yarıçap içinde
+sarı), kesikli kırmızı yörünge çizgisi, önlemede genişleyen halka (`flashTarget`), sol üstte **radar** (burun yukarı, menzil basamağı en uzak hedefe göre). Tüm kamera
+kiplerinde ve PiP'te görünür; `targetsInfo()` teşhis.
+
+**Önleme** (`HedefIzleyici`; istemci eşleniği `createInterceptTracker`): ARM'lı dron bir hedefe yarıçap içine girince önleme (geçiş başına bir; çıkış 1,5×R histerezisi);
+WS `{t:'target', kind:'intercept', i, name, dist_m, n, first, after_s, tt, state}` + olay şeridi "ÖNLEME · ad · m · ilk önleme N sn" (sev 5) + toast. Özet raporda
+"◎ Hedefler" bölümü: önlenen hedef/toplam, toplam önleme, ilk önleme süresi (ilk ARM'dan), hedef başına yarıçap içi süre ve en yakın geçiş, **puan** (hedef başına ilk
+önleme 1000 − 5·sn (≥ 200), her ek geçiş +100, ≤ 5 m +150) ve rozetler (ilk önleme, hızlı avcı ≤ 60 sn, as = tüm hedefler, yakın geçiş, avcı ≥ 5). Kayıt:
+`drone_sim_runs.targets` (JSON {config, result}) + `intercept_count` (göç: ALTER; SIMUMAV shim şeması da). Kayıttan oynatmada hedefler kaydın canlı oturumundan
+(bin_log_id) gelir, önlemeler istemcide yeniden hesaplanır.
+
+**Mission Planner:** hedefler GCS'ye `ADSB_VEHICLE` olarak 2 Hz yayınlanır (kaynak sysid 1 / comp 156 MAV_COMP_ID_ADSB; ICAO 0xE0C000+i, çağrı adı `TGT<n>`, geometrik
+irtifa MSL, yön/hız, SIMULATED bayrağı; yalnız GCS'ye — SITL'e gitmez) → MP haritasında trafik olarak görünür (gerçek SITL ile ölçüldü: ICAO 14729216, TGT1, 980 m).
+
+**Hedef modelleri** (static/simumav/models, LICENSES.md; tools/icept_models_build.py): Switchblade 300 `tgt_sw300` (0,94 MB; seyir 101, atılım 161 km/h — AeroVironment
+veri sayfası), ZALA Lancet-3 `tgt_lancet` (0,45 MB; seyir 80–110 → 110, dalış 300), Altius-600M `tgt_altius` (0,25 MB; kullanıcının ZIP'indeki FBX three.js FBXLoader ile;
+seyir ~60 / azami ~90 km/h — kaynaklar tutarsız: bazıları knot verir, kullanıcı değeri alındı), Octopus-100 `tgt_octopus` (1,10 MB; normatif azami 300 (geliştirilmiş 360),
+seyir kaynakta yok → 200 km/h seçildi: elektrikli pervaneli önleyicilerde seyir/azami ≈ 0,6–0,7). Dahili modellerin hedef hızları `BUILTIN_HIZ`.
+
+## 25. INTERCEPTOR — 4 pervaneli tailsitter (`app/flightsim_icept.py`; `drone_sitl.TIP_ESLEME['interceptor']`)
+Kullanıcı isteği: "4 pervane ile dikey kalkıp havada yatay hareket ediyor, o yüzden 400 km/h hızlara çıkabiliyor; ayrı bir tür olarak INTERCEPTOR altında ekle."
+
+**SITL:** ArduPlane 4.7.2 (yamalı) `--model quadplane-copter_tailsitter` (SIM_QuadPlane: "+" quad, kuvvetler ROTATION_PITCH_270; yerde kuyruk üstünde). Parametre seti
+ArduPilot autotest `quadplane.parm` + `quadplane-copter_tailsitter.parm` + HEPGO ekleri, `varsayilan.parm`'a tip satırları olarak (`drone_sitl.tip_parm_satirlari`; kayıtlı
+parametrelerden önce) + ilk kalp atışında `OTURUM_PARAMLARI`. **Tuzaklar (ölçüldü):** (1) autotest setinde `Q_TAILSIT_ENABLE` yok — ArduPlane MOTMX'ten kendisi açınca
+VTOL görünümü kurulmuyor, kontrolcü motorları doyuruyor (M3 1150 / M4 1950 µs), araç **hiç kalkmıyor**; `Q_TAILSIT_ENABLE 1` açıkça yazılır. (2) RTL_ALTITUDE 20 +
+AIRSPEED_CRUISE 60 (12/22 oranı) ile 110 m/s'den RTL'de TECS gazı keser → motor itkisi (copter tailsitter'da kontrol otoritesi) düşer, irtifa salınır, uçak yere vurdu
+("SIM Hit ground 12,5 / 7,9 m/s"); "Airspeed sensor re-enabled" anında ani dalış. Kararlı set: RTL_ALTITUDE 100, AIRSPEED_CRUISE = 0,8 × azami, TRIM_THROTTLE 55,
+ROLL_LIMIT_DEG 45, ARSPD_OPTIONS 0, THR_MIN 0 (THR_MIN 10 askıda servo3 itkisini × SIM_PLN_THR_MUL büyütüp QRTL'de sürekli tırmandırdı), Q_RTL_MODE 1.
+
+**Kalkış/iniş:** `cmd takeoff` → GUIDED + ARM + NAV_TAKEOFF (VTOL kalkışı; ARM'dan hemen sonra "Already flying" reddi görülürse 3 sn'de bir yinelenir); pist/rampa yok
+(`launch.method` wheels olarak normalize, sihirbazda kalkış kartı yok). Yatay uçuş FBWA/FBWB/CRUISE/AUTO (geçiş ~1–5 sn), dönüş RTL → eve yaklaşınca QRTL (VTOL yaklaşma)
+→ dikey iniş. Kipler: QHOVER, QLOITER, GUIDED, FBWA, FBWB, CRUISE, AUTO, LOITER, RTL, QRTL, QLAND.
+
+**Azami hız** (`flightsim_power.thr_mul_tip`): yatayda itki = dörtlü motorlar + SIM_Plane itkisi (SERVO3; HEPGO yaması SIM_PLN_THR_MUL yalnız bunu ölçekler — tailsitter'da
+**etkili**, ölçüldü). CRUISE seviye uçuş (75 m AGL, rüzgâr 0) uyumu v² = 2756 + 1572·mul → 400 km/h için mul ≈ 6,10. Varsayılan güç (INTERCEPTOR_VARSAYILAN): 111,1 m/s,
+yakıt yok, 6S 8000 mAh 40 W.
+
+**SITL ölçümleri** (DEV, yamalı arduplane 4.7.2, Ankara 900 m; `/tmp/icept-sitl/exp.py` doğrudan + `tools/sitl/dogrula_icept.py` HEPGO sunucusu üzerinden):
+| Ölçüm | Sonuç |
+|---|---|
+| Yerde gövde (SIMSTATE) | pitch 90,0° (kuyruk üstünde) |
+| Dikey kalkış 0 → 75 m (GUIDED NAV_TAKEOFF 80) | 18,7 sn (≈ 4 m/s), yatay hız ≤ 0,14 m/s, gövde pitch ort. 87,8°; ATTITUDE (VTOL görünümü) pitch −2° |
+| Yatay geçiş (CRUISE) | gövde pitch < 30°'ye 4,6 sn |
+| SIM_PLN_THR_MUL 1 / 4 / 7 / 10 | ~70 (FBWA, tırmanışta) / 95,1 / 117,3 m/s (CRUISE seviye) / 167 m/s (FBWA, 42 m/s tırmanışta) |
+| mul 6,099 (400 km/h hedefi), CRUISE gaz %100, 60–70 sn | **108,8–111,3 m/s ort. (392–401 km/h)**, en yüksek 117,5 m/s; irtifa 79–112 m; gövde pitch −4…−8° |
+| RTL (kararlı set) | 290 sn: RTL → QRTL, VTOL geçişinde ~280 m tırmanarak yavaşlar, dikey iniş (gövde pitch ort. 80°), disarm, çarpışma yok |
+| Hedef ADSB | GCS'de ADSB_VEHICLE (TGT1, comp 156, 980 m MSL, 30,6 m/s) |
+
+**Telemetri / 3B:** ArduPlane ATTITUDE'ı Q kiplerinde ve geçişte "VTOL görünümü"yle yollar (askıda pitch ≈ 0; `quadplane.show_vtol_view`). HUD/OSD bunu kullanır; 3B gövde
+SITL'in gerçek yönelimi `tele.att_body` (SIMSTATE, aynı EXTRA1 tikinde — INTERCEPTOR'da `tele` yayını SIMSTATE'te) ile çizilir (`flightsim_interp` push). Gimbal/FPV
+kameraları ve `getPose` askıda gövde · Rx(−90°·h) "VTOL görünümü" çerçevesini kullanır (h = burun yükselişi 30°→70°). Yerde `drone.ground` = −bbox.min.y (kuyruk).
+Kayıttan oynatma: .bin `SIM` mesajı → kare `body` alanı (önbellek v4); tip `drone_sim_runs.type` (firmware adı ArduPlane der). Ses: 4 elektrik motoru (kopter modeli).
+Sahte kinematik: dikey tırmanış (yatay hız 0, gövde burun yukarı), hedef irtifada yatay daire.
+
+**Modeller** (dahili `builtin:icept_x4|p1sun|sting`; GLB'ler SIMUMAV ile ortak, HEPGO `/static/simumav/models/` yolundan yükler — kopya yok; GLB yüklenemezse prosedürel
+`buildIcept`): `icept_x4` (kullanıcının STEP montajı, `tools/step_mapped2glb.py` saf Python FACETED_BREP + MAPPED_ITEM → 17 düğüm; gerçek ölçü 0,252 m; 0,60 MB),
+`p1sun` (0,448 m; 0,63 MB), `sting` (0,45 m kabulü; pervaneler bağlantısız bileşenlerden ayrıldı; 1,92 MB). Pervaneler `prop_N` (göbek orijinli, gövde ekseni etrafında).
+Tümü burun +X, yukarı +Y, metre; ≤ 55 k üçgen, doku ≤ 1024².
+
+**Testler:** `tests.test_flightsim` `hedef_icept_testleri` (kinematik vektörleri, doğrulama 400'leri, izleyici histerezis/ARM/sıfırlama, puan, ADSB alanları, parm sırası,
+itki uyumu, sahte INTERCEPTOR oturumu att_body/dikey tırmanış, WS `target` + olay, GCS ADSB_VEHICLE, runs.targets/intercept_count, replay tipi + hedefler, meta/modeller);
+`node tests/test_flightsim_targets.mjs` (Python vektörleriyle birebir, izleyici, puan, doğrulama, radar); `tests.test_step2glb`; `tests.test_simumav_icept`.
+Görsel: `tests/icept_shots_hepgo.py` (gerçek SITL), `tests/icept_shots_simumav.py` → /tmp/icept-shots.

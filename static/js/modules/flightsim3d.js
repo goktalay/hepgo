@@ -334,6 +334,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // Isı değerleri mutlak; gölgelendirici termal kazancı (thermalGain: gece sahnesi aydınlatmasını normalize eder) uygular → malzeme ısı / kazanç ile çizilir
   const heatMat = v => { const k = Math.round(clamp(v, 0, 1) * 64); if (!heatMats.has(k)) heatMats.set(k, new T.MeshBasicMaterial({ color: new T.Color(k / 64, k / 64, k / 64), fog: true })); return heatMats.get(k); };
   const heatWorld = [];   // dünya içinden etiketli nesneler (su) — buildWorld her kurulumda boşaltır
+  const heatRoots = [];   // ek sıcak kökler (§24 hedef grubu): gövde ılık-sıcak, pervane/motor düğümleri (ad /prop|motor|engine/) sıcak
   let heatList = [], heatAt = -Infinity;
   const THERMAL_SKY = new T.Color(0.07, 0.07, 0.075), thermalSky = new T.Color();
   const collectHeat = now => {
@@ -349,6 +350,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
     });
     add(drone.group, 0.74, 0.9);
     add(rig?.group, 0.58, 0.58);
+    for (const r of heatRoots) r.traverse(o => { if (o.isMesh) out.push({ o, m: heatMat((o.userData.heat ?? (/prop|motor|engine|blade/i.test(o.name + ' ' + (o.parent?.name || '')) ? 0.92 : 0.72)) / tg) }); });
     for (const o of heatWorld) out.push({ o, m: heatMat((o.userData.heat ?? 0.06) / tg) });
     out.tg = tg;
     heatList = out;
@@ -1384,6 +1386,7 @@ export async function createFlightSim3D(mountEl, world, opts = {}) {
   // tg.sel kilit durumu (oto = en yakın; Tab / Shift+Tab döngü). HUD/OSD son 3 sn'de sembolojiyi çizdiyse (tg.hudAt) araç kameralarında sahne etiketleri gizlenir.
   const tg = { cfg: null, items: [], group: new T.Group(), seq: 0, rel: [], lastRel: 0, radar: null, radarOn: !preview, flash: new Map(), shown: false, sel: { i: null, auto: true }, hudAt: -Infinity };
   scene.add(tg.group);
+  heatRoots.push(tg.group);   // termal: hedefler sıcak görünsün (§22.3)
   const targetTime = () => {
     if (preview) return performance.now() / 1000;                     // sihirbaz önizlemesi: yerel saat
     const l = tele.last;

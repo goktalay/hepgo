@@ -28,6 +28,7 @@ from pathlib import Path
 import paramiko
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
+from . import tools_common as tc
 from . import tools_mt
 from .tools_common import tools_user, ws_user
 from .tools_mt import T, MtError
@@ -41,6 +42,7 @@ TEXT_EXT = {'txt', 'htm', 'html', 'css', 'js', 'json', 'xml', 'php', 'asp', 'asp
 FINISHED = ('done', 'error', 'cancelled', 'skipped')
 CHUNK = 64 * 1024
 SLICE = 16 * 1024
+POOL_MAX = 20   # mtweb kancası: site başına aktarım bağlantısı tavanı (HEPGO: 20)
 
 
 @router.get('/caps')
@@ -212,6 +214,27 @@ def _mlsd_time(v):
         return 0
 
 
+def harden_ftp(c, uid, app):
+    """mtweb (NET kancası varken): veri kanalı yalnız kontrol bağlantısının IP'sine (PASV yanıtındaki IP yok sayılır,
+    port engel listesinden geçer); aktif kip (PORT/EPRT) kapalı. HEPGO'da dokunulmaz."""
+    if tc.NET_GUARD is None:
+        return c
+    c.trust_server_pasv_ipv4_address = False
+    orig = c.makepasv
+
+    def makepasv():
+        _, port = orig()
+        peer = c.sock.getpeername()[0]
+        tc.net_target(peer, port, uid, app, 'data')
+        return peer, port
+
+    def makeport():
+        raise tc.NetDenied('Aktif FTP kipi (PORT) web sürümünde kapalı')
+    c.makepasv = makepasv
+    c.makeport = makeport
+    return c
+
+
 class FtpRemote:
     parallel = False
     fingerprint = None
@@ -239,7 +262,8 @@ class FtpRemote:
         else:
             c = ftplib.FTP(timeout=30, encoding=enc)
         try:
-            c.connect(host, port)
+            harden_ftp(c, self.uid, APP)
+            c.connect(tc.net_target(host, port, self.uid, APP), port)
             if proto in ('ftps-ssl', 'ftps-tls'):
                 c.auth()
             if proto != 'ftp':
@@ -423,7 +447,7 @@ class SftpRemote:
         if self.ssh is None:
             user, password = credentials(self.conn)
             c = {**self.conn, 'username': user, 'password': password}
-            self.ssh, self.fingerprint = tools_ssh.connect_client(self.uid, c)
+            self.ssh, self.fingerprint = tools_ssh.connect_client(self.uid, c, app=APP)
         self.sftp = self.ssh.open_sftp()
         return self
 
@@ -540,6 +564,8 @@ def friendly_error(err):
     if isinstance(err, Cancelled):
         return 'cancelled'
     msg = str(err) or err.__class__.__name__
+    if isinstance(err, tc.NetDenied):
+        return msg
     code = _ftp_code(err) if isinstance(err, ftplib.Error) else None
     if isinstance(err, tools_ssh.HostKeyMismatch):
         return T('main.errHostKey', old=err.old, new=err.new)
@@ -708,7 +734,7 @@ class Session:
     # --- aktarım bağlantı havuzu ---
     def max_concurrent(self):
         try:
-            return max(1, min(20, int(self.options().get('maxConcurrent') or 1)))
+            return max(1, min(POOL_MAX, int(self.options().get('maxConcurrent') or 1)))
         except (TypeError, ValueError):
             return 1
 
@@ -973,7 +999,17 @@ class Session:
                     node['dst'] = str(dst)
             dst.parent.mkdir(parents=True, exist_ok=True)
             node['partial'] = str(dst)
-            remote.download(node['src'], dst, on_bytes, ctl, opts)
+            check = tools_mt.space_check(self.uid, APP)   # mtweb: alan kotası (parça parça)
+            if check:
+                check(0, True)
+                on_bytes = lambda n: (check(n, False), self.add_done(node, n))   # noqa: E731
+            try:
+                remote.download(node['src'], dst, on_bytes, ctl, opts)
+            except MtError:
+                if check:   # kota aşıldı: yarım dosya kalmasın
+                    node['partial'] = None
+                    dst.unlink(missing_ok=True)
+                raise
             node['partial'] = None
         else:
             dst = node['dst']
@@ -1011,7 +1047,7 @@ class Session:
         """items: [{path, name, isDir, size, mtime}] (uzak), local_dir: H:\\… hedef klasör."""
         real_dir = tools_mt.to_real(self.uid, local_dir)
         for it in items:
-            dst = real_dir / it['name']
+            dst = real_dir / tools_mt.safe_segment(it.get('name'))
             if not it.get('isDir'):
                 node = self.add_node(name=it['name'], isDir=False, kind='download', src=it['path'], dst=str(dst), size=it.get('size') or 0,
                                      mtime=it.get('mtime'), dstDir=local_dir, startT=time.time())
@@ -1040,6 +1076,7 @@ class Session:
                 for e in lst:
                     if root['cancelled']:
                         return
+                    tools_mt.safe_segment(e['name'])   # sunucudan gelen ad yerel alandan kaçamaz
                     if e['isDir']:
                         d = self.add_node(parentId=dir_node['id'], rootId=root['id'], name=e['name'], isDir=True, kind='download', src=e['path'],
                                           dst=str(Path(dir_node['dst']) / e['name']), scanning=True)
@@ -1243,6 +1280,7 @@ class Window:
         self.loop = asyncio.get_running_loop()
         self.q = asyncio.Queue()
         self.session = None
+        self.release = None
         self.closed = False
 
     def emit(self, item):
@@ -1259,8 +1297,11 @@ class Window:
 
     def close_session(self):
         s, self.session = self.session, None
+        rel, self.release = self.release, None
         if s:
             s.close()
+        if rel:
+            rel()
 
     def need(self):
         if not self.session:
@@ -1277,6 +1318,10 @@ class Window:
             return {'ok': False, 'message': e.msg}, None
         cid = conn['id']
         pub = [None]
+        try:
+            self.release = tc.conn_slot(self.uid, APP)
+        except Exception as e:   # noqa: BLE001 — eşzamanlı oturum sınırı (mtweb)
+            return {'ok': False, 'message': friendly_error(e)}, None
 
         def on_host_key(fp):
             pub[0] = tools_mt.remember_host_key(self.uid, APP, cid, fp) or pub[0]

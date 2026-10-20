@@ -1,33 +1,39 @@
-"""mtweb — Mastertool hesabıyla giriş yapan kullanıcılara Notepad Master ve Convert Master web sürümleri (docs/mtweb.md).
+"""mtweb — Mastertool hesabıyla giriş yapan kullanıcılara Mastertool uygulamalarının web sürümleri (docs/mtweb.md):
+Notepad Master, Convert Master, SSH Master, FTP Masters, SQL Master.
 
-HEPGO araç router'ları (tools_mt, tools_notepad, tools_convert) KOPYALANMADAN dahil edilir; `tools_common.tools_user`
-bağımlılığı `dependency_overrides` ile Mastertool kullanıcısına çevrilir. Veri dizini / veritabanı mtweb'e özeldir (config.py).
+HEPGO araç router'ları (tools_mt, tools_notepad, tools_convert, tools_ssh, tools_ftp, tools_sql) KOPYALANMADAN dahil edilir;
+`tools_common.tools_user` bağımlılığı `dependency_overrides` ile, WebSocket kimliği `tools_common.WS_USER` kancasıyla Mastertool
+kullanıcısına çevrilir. Dış bağlantılar guard.py'den geçer (SSRF / oran / eşzamanlılık / denetim). Veri dizini mtweb'e özeldir.
 
-Yollar (Cloudflare deseni ^/(web|static/mt|api/tools)(/|$)):
+Yollar (Cloudflare deseni ^/(web|static/mt|api/tools|ws/tools)(/|$)):
   /web/                      host'a göre yönlendirme          /web/healthz            sağlık
-  /web/notepadmaster/        Notepad Master (oturum gerekir)   /web/convertmaster/     Convert Master
-  /web/sshmaster|ftpmaster|sqlmaster/  "Web sürümü yakında" bilgi sayfası
+  /web/<app>/                uygulama (oturum gerekir; config.PAGES)   /web/sqlmaster/ → /web/sqlmaster/renderer/main/
   /web/common/, /static/mt/  ortak ön yüz dosyaları            /web/config.js          sayfa yapılandırması (kullanıcı, marka)
-  /api/tools/...             yalnız beyaz listedeki araç uçları (uzak bağlantı uçları 403)
+  /web/vendor/xterm/         SSH Master terminali (xterm.js)
+  /api/tools/...             yalnız beyaz listedeki araç uçları
+  /ws/tools/ssh, /ws/tools/ftp   WebSocket (Origin == Host; boşta 30 dk / en çok 8 sa)
 """
+import asyncio
 import json
 import logging
 import re
 import time
 import traceback
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config  # noqa: F401 — ilk: çekirdek yollarını mtweb veri dizinine yönlendirir
-from app.routers import tools_common, tools_convert, tools_mt, tools_notepad  # noqa: E402
+from app.routers import tools_common, tools_convert, tools_ftp, tools_mt, tools_notepad, tools_sql, tools_ssh  # noqa: E402
 
-from . import auth, db, quota  # noqa: E402
+from . import auth, db, guard, quota  # noqa: E402
 
 log = logging.getLogger('mtweb')
 
@@ -40,30 +46,69 @@ HEADERS = {'Content-Security-Policy': CSP, 'X-Content-Type-Options': 'nosniff', 
            'X-Frame-Options': 'SAMEORIGIN', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
            'Cross-Origin-Opener-Policy': 'same-origin'}
 
-APP_OF = {'notepad': 'notepadmaster', 'convert': 'convertmaster'}
+APP_OF = {'notepad': 'notepadmaster', 'convert': 'convertmaster', 'ssh': 'sshmaster', 'ftp': 'ftpmaster', 'sql': 'sqlmaster'}
+WS_APP = {'/ws/tools/ssh': 'sshmaster', '/ws/tools/ftp': 'ftpmaster'}
 # Beyaz liste: (desen, uygulama | None)
 API_ALLOW = [
     (re.compile(r'^/api/tools/mt/account$'), None),
-    (re.compile(r'^/api/tools/mt/(notepadmaster|convertmaster)/fs/(list|mkdir|upload|download|delete|rename|usage)$'), 1),
-    (re.compile(r'^/api/tools/(notepad)/[A-Za-z]+(/[A-Za-z]+)?$'), 'map'),
-    (re.compile(r'^/api/tools/(convert)/[A-Za-z]+(/[A-Za-z]+)?$'), 'map'),
+    (re.compile(r'^/api/tools/mt/(notepadmaster|convertmaster|sqlmaster)/fs/(list|mkdir|upload|download|delete|rename|usage)$'), 1),
+    (re.compile(r'^/api/tools/mt/(sshmaster|ftpmaster)/(boot|invoke|files/upload|files/download)$'), 1),
+    (re.compile(r'^/api/tools/(notepad|convert|sql)/[A-Za-z]+(/[A-Za-z]+)?$'), 'map'),
+    (re.compile(r'^/api/tools/(ssh)/status$'), 'map'),
+    (re.compile(r'^/api/tools/(ftp)/caps$'), 'map'),
     (re.compile(r'^/api/tools/(convert)/media/[0-9a-f]{40}/[^/]+$'), 'map'),
 ]
-# Uzak bağlantı / dışarıya ağ açan uçlar: bu serviste kapalı
-API_BLOCK = re.compile(r'^/api/tools/notepad/(browse/|keys/)|^/api/tools/convert/(speech|ocr)/download$')
-UPLOAD_PATH = re.compile(r'^/api/tools/mt/(notepadmaster|convertmaster)/fs/upload$')
-DOWNLOAD_PATH = re.compile(r'/fs/download$|/pj/exportOutputs$|/pj/file$|/pj/exportTranscript$|/proj/cache$')
+# Sunucuya model indiren uçlar: bu serviste kapalı
+API_BLOCK = re.compile(r'^/api/tools/convert/(speech|ocr)/download$')
+UPLOAD_PATH = re.compile(r'^/api/tools/mt/(notepadmaster|convertmaster|sqlmaster)/fs/upload$|^/api/tools/mt/(sshmaster|ftpmaster)/files/upload$')
+DOWNLOAD_PATH = re.compile(r'/fs/download$|/files/download$|/db/download$|/pj/exportOutputs$|/pj/file$|/pj/exportTranscript$|/proj/cache$')
 UNSAFE = ('POST', 'PUT', 'PATCH', 'DELETE')
 REMOTE_OFF = 'Bu özellik masaüstü sürümünde'
 _users = {}   # mt_id → (bitiş, yerel kullanıcı)
+
+
+async def _sweeper():
+    """Sunucuda kalan bağlantı oturumları: SQL ve Notepad uzak oturumları boşta MTWEB_WS_IDLE_S / en çok MTWEB_WS_MAX_S;
+    Notepad klasör seçicisi 15 dk. (WebSocket oturumları WsGate ile kapanır.)"""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(sweep_sessions)
+        except Exception:   # noqa: BLE001
+            log.exception('oturum süpürücü')
+
+
+def sweep_sessions(now=None):
+    now = now or time.time()
+    for reg in (tools_sql.SESSIONS, tools_notepad.SESSIONS):
+        for k, s in list(reg.items()):
+            if reg is tools_notepad.SESSIONS and s.is_local:
+                continue
+            born = getattr(s, 'created', None) or s.__dict__.setdefault('mt_born', now)
+            if now - s.last > config.WS_IDLE_S or now - born > config.WS_MAX_S:
+                reg.pop(k, None)
+                try:
+                    s.close()
+                except Exception:   # noqa: BLE001
+                    pass
+    for k, br in list(tools_notepad.BROWSERS.items()):
+        if now - br['at'] > 900:
+            tools_notepad.BROWSERS.pop(k, None)
+            try:
+                br['remote'].close()
+            except Exception:   # noqa: BLE001
+                pass
 
 
 @asynccontextmanager
 async def lifespan(app):
     db.init()
     quota.install()
+    tools_common.WS_USER = ws_user
     log.info('mtweb · veri %s · hesap %s', config.DATA_DIR, config.ACCOUNT_URL)
+    task = asyncio.create_task(_sweeper())
     yield
+    task.cancel()
     await auth.close()
 
 
@@ -87,9 +132,17 @@ def _api_app(path):
     return False, None
 
 
+def _page_of(path):
+    """/web/<app>/<sayfa> → (uygulama, static/mt/<app>/ altındaki dosya) | (None, None)."""
+    m = re.match(r'^/web/([a-z]+)/(.*)$', path)
+    if not m or m.group(1) not in config.APPS:
+        return None, None
+    f = config.PAGES.get(m.group(1), {}).get(m.group(2))
+    return (m.group(1), f) if f else (None, None)
+
+
 def _html_app(path):
-    m = re.match(r'^/web/([a-z]+)/(?:(index|project)\.html)?$', path)
-    return m.group(1) if m and m.group(1) in config.APPS else None
+    return _page_of(path)[0]
 
 
 def _login_redirect(request):
@@ -110,15 +163,38 @@ async def _resolve_user(request):
         return None, None
     if not u['verified']:
         return None, _err(403, 'E-posta adresinizi doğrulayın')
+    return _local_user(u, auth.client_ip(request)), None
+
+
+def _local_user(u, ip):
     t = time.time()
     hit = _users.get(u['id'])
     if hit and hit[0] > t and hit[1]['username'] == u['email']:
-        return hit[1], None
-    local = db.user_for(u)
-    local['name'] = u['name']
-    _users[u['id']] = (t + config.ACCOUNT_CACHE_S, local)
-    db.audit(local['id'], None, 'session', None, auth.client_ip(request))
-    return local, None
+        local = hit[1]
+    else:
+        local = db.user_for(u)
+        local['name'] = u['name']
+        _users[u['id']] = (t + config.ACCOUNT_CACHE_S, local)
+        db.audit(local['id'], None, 'session', None, ip)
+    if ip:
+        guard.CLIENT_IP[local['id']] = ip
+    return local
+
+
+async def ws_user(ws):
+    """tools_common.WS_USER kancası: WebSocket'in sm_session çerezi → yerel kullanıcı (doğrulanmamış / oturumsuz → None)."""
+    tok = ws.cookies.get(config.COOKIE)
+    if not tok:
+        return None
+    try:
+        u = await auth.account_user(tok)
+    except auth.AccountUnavailable:
+        return None
+    if not u or not u['verified']:
+        return None
+    local = _local_user(u, auth.client_ip(ws))
+    db.audit(local['id'], WS_APP.get(ws.url.path), 'ws', None, auth.client_ip(ws))
+    return local
 
 
 def _secure(resp, path):
@@ -198,7 +274,7 @@ async def _guard(request, path, call_next):
     if path.startswith('/static/mt/') and path.endswith('.html'):   # çıplak HTML yerine kimlikli sayfa
         m = re.match(r'^/static/mt/([a-z]+)/', path)
         return RedirectResponse(f'/web/{m.group(1)}/' if m else '/web/', status_code=302)
-    app_name = _html_app(path)
+    app_name, page = _page_of(path)
     if app_name:
         if app_name in config.DISABLED_APPS:
             return HTMLResponse(_info_page(app_name, 'disabled'), status_code=503)
@@ -210,6 +286,9 @@ async def _guard(request, path, call_next):
         if not user:
             return _login_redirect(request)
         request.state.mt_user = user
+        if request.method in ('GET', 'HEAD'):
+            html = (config.MT_STATIC / app_name / page).read_text(encoding='utf-8')
+            return HTMLResponse(_inject(html, app_name))
     elif path == '/web/config.js':
         user, _ = await _resolve_user(request)
         request.state.mt_user = user
@@ -254,35 +333,80 @@ def account(request: Request):
             'appVersion': 'Mastertool web'}
 
 
-def _remote_kind(form):
-    return (form or {}).get('kind') not in ('local', 'file')
-
-
-@app.post('/api/tools/notepad/conn/save')
-def np_conn_save(body: tools_notepad.Body, request: Request):
-    u = current_user(request)
-    form = tools_notepad._b(body).get('form') or {}
-    if form.get('id'):
-        old = tools_notepad.find_conn(tools_notepad.load_store(u['id']), form['id'])
-        if old and old.get('kind') not in ('local', 'file'):
-            raise HTTPException(403, REMOTE_OFF)
-        if old and not form.get('kind'):
-            form['kind'] = old['kind']
-    if _remote_kind(form):
-        raise HTTPException(403, REMOTE_OFF)
-    return tools_notepad.conn_save(tools_notepad.Body(form=form), u)
-
-
-@app.post('/api/tools/notepad/conn/test')
-def np_conn_test(body: tools_notepad.Body, request: Request):
-    current_user(request)
-    if _remote_kind(tools_notepad._b(body).get('form')):
-        raise HTTPException(403, REMOTE_OFF)
-    return {'ok': True, 'ms': 0}
-
-
-for r in (tools_mt.router, tools_notepad.router, tools_convert.router):
+for r in (tools_mt.router, tools_notepad.router, tools_convert.router, tools_ssh.router, tools_ssh.ws_router, tools_ftp.router,
+          tools_ftp.ws_router, tools_sql.router):
     app.include_router(r)
+
+
+# --- WebSocket kapısı (saf ASGI): Origin == Host, uygulama açık, IP başına tavan, boşta / en uzun ömür ---------------------
+_ws_per_ip = {}
+
+
+class WsGate:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'websocket':
+            return await self.inner(scope, receive, send)
+        path = scope.get('path') or ''
+        h = Headers(scope=scope)
+        req = SimpleNamespace(headers=h, client=SimpleNamespace(host=(scope.get('client') or ('', 0))[0]))
+        ip = auth.client_ip(req)
+        app_name = WS_APP.get(path)
+
+        async def reject(code, action=None):
+            await receive()   # websocket.connect
+            if action:
+                db.audit(None, app_name, action, None, ip, path[:100])
+            await send({'type': 'websocket.close', 'code': code})
+
+        if not app_name:
+            return await reject(4404)
+        if not h.get('origin') or not auth.origin_ok(req):
+            return await reject(4403, 'csrf')
+        if app_name in config.DISABLED_APPS:
+            return await reject(4403, 'blocked')
+        if _ws_per_ip.get(ip, 0) >= config.WS_PER_IP:
+            return await reject(4429, 'rate')
+        _ws_per_ip[ip] = _ws_per_ip.get(ip, 0) + 1
+        start = last = time.monotonic()
+        closed = [False]
+
+        async def recv():
+            nonlocal last
+            while True:
+                now = time.monotonic()
+                left = min(last + config.WS_IDLE_S - now, start + config.WS_MAX_S - now)
+                if left <= 0 or closed[0]:
+                    if not closed[0]:
+                        closed[0] = True
+                        try:
+                            await send({'type': 'websocket.close', 'code': 4408})
+                        except Exception:   # noqa: BLE001
+                            pass
+                    return {'type': 'websocket.disconnect', 'code': 4408}
+                try:
+                    msg = await asyncio.wait_for(receive(), timeout=left)
+                except asyncio.TimeoutError:
+                    continue
+                if msg['type'] == 'websocket.receive':
+                    last = time.monotonic()
+                return msg
+
+        async def snd(msg):
+            if closed[0] and msg.get('type') in ('websocket.send', 'websocket.close'):
+                return
+            await send(msg)
+        try:
+            await self.inner(scope, recv, snd)
+        finally:
+            _ws_per_ip[ip] = _ws_per_ip.get(ip, 1) - 1
+            if _ws_per_ip[ip] <= 0:
+                _ws_per_ip.pop(ip, None)
+
+
+app.add_middleware(WsGate)
 
 
 # --- sayfalar ------------------------------------------------------------------------------------------------------
@@ -307,11 +431,17 @@ def _js_str(obj):
     return json.dumps(obj, ensure_ascii=False).replace('</', '<\\/').replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
 
 
+@app.get('/web/mtcore.js')
+def mtcore_js():
+    """SSH Master / FTP Masters ortak köprü çekirdeği (sayfalardan ../mtcore.js)."""
+    return FileResponse(config.MT_STATIC / 'mtcore.js', media_type='text/javascript; charset=utf-8')
+
+
 @app.get('/web/config.js')
 def config_js(request: Request, app: str = ''):
     u = getattr(request.state, 'mt_user', None)
     app_name = app if app in config.APP_NAMES else ''
-    cfg = {'app': app_name, 'appName': config.APP_NAMES.get(app_name, 'Mastertool'), 'remote': False,
+    cfg = {'app': app_name, 'appName': config.APP_NAMES.get(app_name, 'Mastertool'), 'remote': True,
            'user': {'name': u.get('name') or u['full_name'], 'email': u['email']} if u else None,
            'downloadUrl': config.DOWNLOAD_URL, 'allAppsUrl': config.ALL_APPS_URL, 'logoutUrl': '/api/mt/auth/logout', 'loginUrl': '/giris',
            'apps': list(config.APPS), 'disabled': sorted(config.DISABLED_APPS)}
@@ -319,30 +449,36 @@ def config_js(request: Request, app: str = ''):
 
 
 def _inject(html, app_name):
-    html = html.replace('<link rel="stylesheet" href="../common/hepgo.css">',
-                        '<link rel="stylesheet" href="../common/hepgo.css">\n  <link rel="stylesheet" href="../common/mtweb.css">', 1)
-    html = html.replace('<script src="../common/hepgo.js"></script>',
-                        f'<script src="/web/config.js?app={app_name}"></script>\n  <script src="../common/mtweb.js"></script>\n'
-                        '  <script src="../common/hepgo.js"></script>', 1)
-    return html
+    """Sayfaya mtweb yapılandırması + katmanı eklenir (HEPGO'nun HTML dosyaları değişmez)."""
+    if '<script src="../common/hepgo.js"></script>' in html:   # Notepad / Convert (aynı göreli yollar)
+        html = html.replace('<link rel="stylesheet" href="../common/hepgo.css">',
+                            '<link rel="stylesheet" href="../common/hepgo.css">\n  <link rel="stylesheet" href="../common/mtweb.css">', 1)
+        return html.replace('<script src="../common/hepgo.js"></script>',
+                            f'<script src="/web/config.js?app={app_name}"></script>\n  <script src="../common/mtweb.js"></script>\n'
+                            '  <script src="../common/hepgo.js"></script>', 1)
+    # SSH / FTP (../mtcore.js) ve SQL (../../../common/hepgo.js): ilk betikten önce; xterm /web/vendor altından
+    html = html.replace('/static/vendor/xterm/', '/web/vendor/xterm/')
+    html = html.replace('</head>', '  <link rel="stylesheet" href="/web/common/mtweb.css">\n</head>', 1)
+    i = html.find('<script src=')
+    head = f'<script src="/web/config.js?app={app_name}"></script>\n  <script src="/web/common/mtweb.js"></script>\n  '
+    return html[:i] + head + html[i:] if i >= 0 else html
 
 
 @app.get('/web/{app_name}')
 def web_app_slash(app_name: str):
     if app_name in config.APPS or app_name in config.SOON_APPS:
-        return RedirectResponse(f'/web/{app_name}/', status_code=307)
+        return RedirectResponse(config.APP_HOME.get(app_name, f'/web/{app_name}/'), status_code=307)
     return HTMLResponse(_info_page(None, 'notfound'), status_code=404)
 
 
 @app.get('/web/{app_name}/')
-@app.get('/web/{app_name}/{page}.html')
-def web_app(app_name: str, page: str = 'index'):
+def web_app(app_name: str):
+    """Uygulama sayfaları ara katmanda (_guard) sunulur; burada yalnız alt sayfaya yönlenen kök, yakında ve bulunamadı."""
+    if app_name in config.APP_HOME:
+        return RedirectResponse(config.APP_HOME[app_name], status_code=302)
     if app_name in config.SOON_APPS:
         return HTMLResponse(_info_page(app_name, 'soon'))
-    if app_name not in config.APPS or page not in ('index', 'project'):
-        return HTMLResponse(_info_page(None, 'notfound'), status_code=404)
-    html = (config.MT_STATIC / app_name / f'{page}.html').read_text(encoding='utf-8')
-    return HTMLResponse(_inject(html, app_name))
+    return HTMLResponse(_info_page(None, 'notfound'), status_code=404)
 
 
 def _info_page(app_name, kind):
@@ -380,6 +516,7 @@ def _mount(path, directory):
 
 
 _mount('/web/common', config.MT_STATIC / 'common')
+_mount('/web/vendor/xterm', config.STATIC_DIR / 'vendor' / 'xterm')
 for _a in config.APPS:
     _mount(f'/web/{_a}', config.MT_STATIC / _a)
 _mount('/static/mt', config.MT_STATIC)

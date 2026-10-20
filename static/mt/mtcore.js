@@ -14,6 +14,9 @@
   const BASE = `/api/tools/mt/${APP}`;
   const HASH_KEY = { sshmaster: 'ssh', ftpmaster: 'ftp' }[APP] || APP;
   const EMBEDDED = (() => { try { return window.parent !== window && window.parent.location.origin === location.origin; } catch { return false; } })();
+  // mtweb (Mastertool web servisi): /web/config.js + mtweb.js window.MTWEB'i kurar. HEPGO'da yok → eski davranış.
+  const WEB = root.MTWEB || null;
+  const unauthorized = () => { try { (EMBEDDED ? window.parent : window).dispatchEvent(new Event('caymaz:unauthorized')); } catch { /* */ } };
 
   // --- Olaylar (ipcRenderer.on karşılığı) ---------------------------------------------------------
   const listeners = new Map();
@@ -51,13 +54,16 @@
   function bootSync() {
     let lang = '';
     try { lang = localStorage.getItem('caymaz.lang') || ''; } catch { /* yok */ }
+    if (WEB && WEB.lang) lang = WEB.lang;
     const xhr = new XMLHttpRequest();
     xhr.open('GET', `${BASE}/boot?lang=${encodeURIComponent(lang)}`, false);
     try { xhr.send(); } catch { /* ağ yok */ }
     if (xhr.status === 200) {
       try { return JSON.parse(xhr.responseText); } catch { /* bozuk */ }
     }
-    const notice = xhr.status === 401 ? 'HEPGO oturumu açık değil. Lütfen yeniden giriş yapın.'
+    if (WEB && xhr.status === 401) setTimeout(unauthorized, 0);
+    const notice = WEB ? (xhr.status === 403 ? (WEB.t ? WEB.t('disabled') : 'Unavailable') : 'Mastertool')
+      : xhr.status === 401 ? 'HEPGO oturumu açık değil. Lütfen yeniden giriş yapın.'
       : xhr.status === 403 ? 'Araçlar modülü yetkiniz yok.' : 'HEPGO sunucusuna ulaşılamadı.';
     setTimeout(() => {
       const el = document.createElement('div');
@@ -102,7 +108,7 @@
     });
     let data = null;
     try { data = await r.json(); } catch { /* boş */ }
-    if (r.status === 401) { if (EMBEDDED) window.parent.location.reload(); throw new Error('Oturum kapandı'); }
+    if (r.status === 401) { if (WEB) unauthorized(); else if (EMBEDDED) window.parent.location.reload(); throw new Error('Oturum kapandı'); }
     if (!r.ok || !data) throw new Error((data && (data.detail || data.e)) || `İstek başarısız (${r.status})`);
     if (data.store) { store = data.store; emit('store:changed', store); }
     if (!data.ok) throw errorOf(data.e);
@@ -254,6 +260,7 @@
       accountState: async () => acctState(),
       login: async () => ({ ok: true }),
       logout: async () => {
+        if (WEB && WEB.logout) return WEB.logout();   // mtweb: Mastertool hesabından çıkış
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
         (EMBEDDED ? window.parent : window).location.href = '/';
       },
@@ -266,7 +273,7 @@
         if (allowed[page]) window.open(`${site}${allowed[page]}?${webQuery()}&app=${APP === 'ftpmaster' ? 'fm' : 'sm'}`, '_blank', 'noopener');
       },
       openMastertool: async () => window.open(`https://mastertool.download/?${webQuery()}`, '_blank', 'noopener'),
-      about: async () => ({ version: boot.version, electron: 'HEPGO web', chrome: chromeVer, openAtLogin: false }),
+      about: async () => ({ version: boot.version, electron: WEB ? 'Web' : 'HEPGO web', chrome: chromeVer, openAtLogin: false }),
       checkUpdate: async () => ({ ok: true, newer: false, latest: boot.version, version: boot.version }),
       openLicenses: async () => window.open('https://www.electronjs.org/docs/latest#license', '_blank', 'noopener'),
       onAccountStatus: (cb) => { const off = on('account:status')(cb); setTimeout(() => cb(acctState()), 0); return off; },
@@ -312,5 +319,5 @@
     };
   }
 
-  root.MTCore = { APP, BASE, EMBEDDED, boot, on, emit, tr, invoke, wsClient, commonApi, navigate, resolvePaths, applyAppTheme, getStore: () => store };
+  root.MTCore = { APP, BASE, EMBEDDED, WEB, boot, on, emit, tr, invoke, wsClient, commonApi, navigate, resolvePaths, applyAppTheme, getStore: () => store };
 })(window);

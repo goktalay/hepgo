@@ -1,5 +1,5 @@
-"""mtweb testleri (docs/mtweb.md): kimlik (302/401/403, önbellek, yalnız sm_session iletimi), Origin/Referer reddi, uzak özellik uçlarının
-kapalı olması, beyaz liste dışı araç uçları (SSH/FTP/SQL) 404, kotalar (tek yükleme, alan, dosya sayısı, gövde, Convert giriş boyutu,
+"""mtweb testleri (docs/mtweb.md): kimlik (302/401/403, önbellek, yalnız sm_session iletimi), Origin/Referer reddi, uzak bağlantıların
+SSRF korumasından geçmesi (ayrıntı: tests/test_mtweb_net.py), beyaz liste dışı uçlar 404, kotalar (tek yükleme, alan, dosya sayısı, gövde, Convert giriş boyutu,
 oran sınırı), yol kaçışı (../, mutlak yol, sembolik bağ), devre dışı uygulama, /web/ yönlendirmeleri, bilgi sayfaları, güvenlik
 başlıkları, iç hata sızdırmama, denetim günlüğü (içerik yok), kullanıcı yalıtımı, Notepad yerel proje ve Convert png→jpg.
 
@@ -70,7 +70,7 @@ def test_auth(anon, a):
     assert '/web/config.js?app=notepadmaster' in html and '../common/mtweb.js' in html and '../common/mtweb.css' in html
     assert html.index('mtweb.js') < html.index('hepgo.js')
     cfg = a.get('/web/config.js?app=notepadmaster').text
-    assert cfg.startswith('window.MTWEB = ') and 'Ali Yılmaz' in cfg and '"remote": false' in cfg
+    assert cfg.startswith('window.MTWEB = ') and 'Ali Yılmaz' in cfg and '"remote": true' in cfg
     # Hesap servisine yalnız sm_session çerezi gider; ~60 sn önbellek
     calls = mtweb_fake_mt.STATE['me_calls']
     for _ in range(5):
@@ -102,28 +102,29 @@ def test_origin(a):
     assert client().post('/api/tools/notepad/settings', json=body).status_code == 403
 
 
-def test_remote_closed(a):
-    for path, body in (('/api/tools/notepad/browse/open', {'form': {'kind': 'ssh', 'host': '127.0.0.1'}}),
-                       ('/api/tools/notepad/browse/list', {'token': 'x'}), ('/api/tools/notepad/keys/upload', {}),
-                       ('/api/tools/convert/speech/download', {}), ('/api/tools/convert/ocr/download', {}),
-                       ('/api/tools/notepad/conn/save', {'form': {'kind': 'ssh', 'host': '10.0.0.1', 'username': 'x'}}),
-                       ('/api/tools/notepad/conn/save', {'form': {'kind': 'ftp', 'host': '10.0.0.1'}}),
-                       ('/api/tools/notepad/conn/save', {'form': {'host': '10.0.0.1'}}),
-                       ('/api/tools/notepad/conn/test', {'form': {'kind': 'ssh', 'host': '127.0.0.1', 'username': 'x'}})):
-        r = a.post(path, json=body, headers=O)
+def test_remote_guarded(a):
+    # Model indiren Convert uçları kapalı
+    for path in ('/api/tools/convert/speech/download', '/api/tools/convert/ocr/download'):
+        r = a.post(path, json={}, headers=O)
         assert r.status_code == 403 and r.json()['detail'] == 'Bu özellik masaüstü sürümünde', (path, r.status_code, r.text)
-    # Diğer araç uygulamaları (SSH/FTP/SQL Master) bu serviste yok
-    for path in ('/api/tools/ssh/status', '/api/tools/ftp/caps', '/api/tools/sql/drivers', '/api/tools/mt/sshmaster/boot',
-                 '/api/tools/mt/ftpmaster/boot', '/api/tools/mt/sqlmaster/fs/list', '/api/tools/volfai/profile', '/api/auth/me', '/api/users'):
-        assert a.get(path).status_code == 404, path
-    assert a.post('/api/tools/mt/sshmaster/invoke', json={'m': 'store:get'}, headers=O).status_code == 404
-    # Savunma derinliği: depo elle bozulsa da uzak bağlantı açılmaz
+    # Notepad uzak klasörleri açık, ama bağlantı SSRF korumasından geçer (yerel / özel adres reddi)
+    for form in ({'kind': 'ssh', 'host': '127.0.0.1', 'username': 'x'}, {'kind': 'ftp', 'host': '10.0.0.1', 'username': 'x'}):
+        r = ok(a.post('/api/tools/notepad/conn/test', json={'form': form}, headers=O))
+        assert r['ok'] is False and 'yerel / özel' in r['message'], r
+    r = ok(a.post('/api/tools/notepad/browse/open', json={'form': {'kind': 'ssh', 'host': '169.254.169.254', 'username': 'x'}}, headers=O))
+    assert r['ok'] is False and 'yerel / özel' in r['message'], r
     try:
-        tools_notepad.create_remote(1, {'kind': 'ssh', 'host': '127.0.0.1', 'port': 22})
+        tools_notepad.create_remote(1, {'kind': 'ssh', 'host': '127.0.0.1', 'port': 22, 'username': 'x'}).connect()
         raise AssertionError('uzak bağlantı açıldı')
-    except tools_notepad.RemoteError as e:
-        assert e.code == 'REMOTE_OFF'
+    except quota.guard.Denied:
+        pass
     ok(a.post('/api/tools/notepad/conn/test', json={'form': {'kind': 'local', 'localPath': '/'}}, headers=O))
+    # SSH / FTP / SQL Master uçları beyaz listede; HEPGO'nun geri kalanı yok
+    for path in ('/api/tools/ssh/status', '/api/tools/ftp/caps', '/api/tools/sql/drivers', '/api/tools/mt/sshmaster/boot',
+                 '/api/tools/mt/ftpmaster/boot', '/api/tools/mt/sqlmaster/fs/list'):
+        assert a.get(path).status_code == 200, path
+    for path in ('/api/tools/volfai/profile', '/api/auth/me', '/api/users', '/api/tools/mt/volfai/boot', '/api/tools/mt/sqlmaster/boot'):
+        assert a.get(path).status_code == 404, path
 
 
 def test_notepad(a):
@@ -268,10 +269,19 @@ def test_pages(anon, a):
                       ('mastertool.download', '/uygulamalar'), ('sshmasters.com', '/'), ('simumav.com:8443', '/')):
         r = anon.get('/web/', headers={'Host': host}, follow_redirects=False)
         assert r.status_code == 302 and r.headers['location'] == loc, (host, r.headers)
-    for name in ('sshmaster', 'ftpmaster', 'sqlmaster'):
-        r = anon.get(f'/web/{name}/')
-        assert r.status_code == 200 and 'coming soon' in r.text and 'href="/#indir"' in r.text, name
+    for name, page in (('sshmaster', '/web/sshmaster/'), ('ftpmaster', '/web/ftpmaster/'), ('sqlmaster', '/web/sqlmaster/renderer/main/')):
+        r = anon.get(page, follow_redirects=False)
+        assert r.status_code == 302 and r.headers['location'].startswith('/giris?next='), (name, r.status_code)
+        html = a.get(page).text
+        assert f'/web/config.js?app={name}' in html and '/web/common/mtweb.js' in html and 'coming soon' not in html, name
+        assert html.index('mtweb.js') < html.index('bridge.js'), name
         assert anon.get(f'/web/{name}', follow_redirects=False).status_code == 307
+    assert a.get('/web/sqlmaster/', follow_redirects=False).headers['location'] == '/web/sqlmaster/renderer/main/'
+    t = a.get('/web/sshmaster/terminal.html').text
+    assert '/web/vendor/xterm/xterm.min.js' in t and '/static/vendor/' not in t
+    assert anon.get('/web/vendor/xterm/xterm.min.js').status_code == 200
+    assert '/web/config.js?app=ftpmaster' in a.get('/web/ftpmaster/site.html').text
+    assert '/web/config.js?app=sqlmaster' in a.get('/web/sqlmaster/renderer/conn/conn.html').text
     assert anon.get('/web/yok/').status_code == 404
     ok(anon.get('/web/healthz'))
     # Statik ortak dosyalar oturumsuz da sunulur; çıplak HTML kimlikli sayfaya yönlenir
@@ -305,7 +315,7 @@ def test_audit():
     con = sqlite3.connect(Path(D) / 'mtweb.db')
     rows = con.execute('SELECT user_id, app, action, size, ip, detail FROM mtweb_audit').fetchall()
     acts = {r[2] for r in rows}
-    assert {'session', 'csrf', 'blocked', 'notepad/proj/save', 'mt/notepadmaster/fs/upload', 'quota', 'rate', 'convert'} <= acts, acts
+    assert {'session', 'csrf', 'blocked', 'net', 'notepad/proj/save', 'mt/notepadmaster/fs/upload', 'quota', 'rate', 'convert'} <= acts, acts
     assert not any('GIZLI' in str(r) for r in rows)
     assert all(r[4] for r in rows if r[2] == 'notepad/proj/save')
     # 90 günden eski kayıtlar temizlenir
@@ -325,7 +335,7 @@ def main():
     test_auth(anon, a)
     ok(b.get('/api/tools/notepad/store'))
     test_origin(a)
-    test_remote_closed(a)
+    test_remote_guarded(a)
     sid = test_notepad(a)
     test_paths(a)
     test_isolation(a, b)

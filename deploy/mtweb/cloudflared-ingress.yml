@@ -1,18 +1,19 @@
 # cloudflared config.yml `ingress:` listesine eklenecek parça — mevcut hesap servisi (mastertool.download ve ürün siteleri)
 # kurallarının ÜSTÜNE (ilk eşleşen kural kazanır). Yol deseni yalnız mtweb öneklerini alır; geri kalan istekler hesap servisinde kalır.
+# /ws/tools: SSH Master + FTP Masters WebSocket uçları (cloudflared WebSocket'i kendiliğinden taşır).
 # Sonra: systemctl restart cloudflared.
   - hostname: mastertool.download
-    path: ^/(web|static/mt|api/tools)(/|$)
+    path: ^/(web|static/mt|api/tools|ws/tools)(/|$)
     service: unix:/run/hepgo/mtweb.sock
   - hostname: notepadmaster.com
-    path: ^/(web|static/mt|api/tools)(/|$)
+    path: ^/(web|static/mt|api/tools|ws/tools)(/|$)
     service: unix:/run/hepgo/mtweb.sock
   - hostname: www.notepadmaster.com
-    path: ^/(web|static/mt|api/tools)(/|$)
+    path: ^/(web|static/mt|api/tools|ws/tools)(/|$)
     service: unix:/run/hepgo/mtweb.sock
   - hostname: convertmaster.app
-    path: ^/(web|static/mt|api/tools)(/|$)
+    path: ^/(web|static/mt|api/tools|ws/tools)(/|$)
     service: unix:/run/hepgo/mtweb.sock
   - hostname: www.convertmaster.app
-    path: ^/(web|static/mt|api/tools)(/|$)
+    path: ^/(web|static/mt|api/tools|ws/tools)(/|$)
     service: unix:/run/hepgo/mtweb.sock

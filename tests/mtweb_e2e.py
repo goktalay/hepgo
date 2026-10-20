@@ -1,7 +1,11 @@
 """mtweb uçtan uca: sahte hesap servisi + uvicorn (yerel port) + Playwright (headless Chromium).
-Notepad Master: yeni yerel proje → yeni dosya → Monaco'da yaz → Ctrl+S (sunucuda içerik doğrulanır).
-Convert Master: resim yükle → png→jpg projesi → proje penceresinde Başlat → çıktı doğrulanır. Bilgi sayfası + uzak türlerin kapalılığı.
-Konsol CSP ihlalleri toplanır (sıfır olmalı). Ekran görüntüleri /tmp/mtweb-shots. Sunucular PID ile kapatılır.
+Notepad Master: yeni yerel proje → yeni dosya → Monaco'da yaz → Ctrl+S (sunucuda içerik doğrulanır); SSH/FTP türleri açık.
+Convert Master: resim yükle → png→jpg projesi → proje penceresinde Başlat → çıktı doğrulanır.
+SSH Master: yerel paramiko test sunucusu (tests/mtweb_sshd.py) → terminal sayfasında komut çıktısı.
+FTP Masters: yerel test FTP sunucusu (tests/mtweb_ftpd.py; PASV'de 10.0.0.1 ilan eder — yok sayılmalı) → site penceresinde liste.
+SQL Master: SQLite bağlantısı → bağlantı penceresinde sorgu → sonuç ızgarası.
+Servis MTWEB_ALLOW_PRIVATE=1 ile çalışır (yalnız test: yerel sunuculara izin). Konsol CSP ihlalleri toplanır (sıfır olmalı).
+Ekran görüntüleri /tmp/mtweb-shots2 (MTWEB_SHOTS ile değişir). Sunucular PID ile kapatılır.
 
 Çalıştırma: LD_LIBRARY_PATH=… CHROMIUM_PATH=… .venv/bin/python -m tests.mtweb_e2e
 """
@@ -19,8 +23,11 @@ from pathlib import Path
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
+from tests.mtweb_ftpd import FtpServer
+from tests.mtweb_sshd import SshServer
+
 ROOT = Path(__file__).resolve().parent.parent
-SHOTS = Path('/tmp/mtweb-shots')
+SHOTS = Path(os.environ.get('MTWEB_SHOTS') or '/tmp/mtweb-shots2')
 PORT, FAKE = 8797, 8796
 BASE = f'http://127.0.0.1:{PORT}'
 TOK = 'tok-ali-0123456789abcdef'
@@ -41,7 +48,14 @@ def main():
     SHOTS.mkdir(parents=True, exist_ok=True)
     data = tempfile.mkdtemp(prefix='mtweb-e2e-')
     env = {k: v for k, v in os.environ.items() if not k.startswith(('CAYMAZ_', 'MTWEB_'))}
-    env.update(MTWEB_DATA_DIR=data, MTWEB_ACCOUNT_URL=f'http://127.0.0.1:{FAKE}', CAYMAZ_ENV_FILE=os.path.join(data, 'yok.env'))
+    env.update(MTWEB_DATA_DIR=data, MTWEB_ACCOUNT_URL=f'http://127.0.0.1:{FAKE}', CAYMAZ_ENV_FILE=os.path.join(data, 'yok.env'),
+               MTWEB_ALLOW_PRIVATE='1')
+    remote = Path(tempfile.mkdtemp(prefix='mtweb-e2e-uzak-'))
+    (remote / 'merhaba.txt').write_text('selam\n')
+    (remote / 'belgeler').mkdir()
+    ssh = SshServer(remote).start()
+    ftp = FtpServer(remote, pasv_ip='10.0.0.1').start()
+    SERVERS.update(ssh=ssh, ftp=ftp)
     procs = []
     try:
         procs.append(subprocess.Popen([sys.executable, '-m', 'tests.mtweb_fake_mt', '--port', str(FAKE)], cwd=ROOT, env=env))
@@ -60,7 +74,13 @@ def main():
                 p.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 os.kill(p.pid, signal.SIGKILL)
+        ssh.stop()
+        ftp.stop()
         shutil.rmtree(data, ignore_errors=True)
+        shutil.rmtree(remote, ignore_errors=True)
+
+
+SERVERS = {}
 
 
 def run(data):
@@ -95,9 +115,9 @@ def steps(b, ctx, page, data):
     assert 'Ali Yılmaz' in page.inner_text('#mtweb-strip')
     page.click('#btnNewConn')
     page.wait_for_selector('#f-kind')
-    assert page.is_disabled('#f-kind button[data-v=ssh]') and page.is_disabled('#f-kind button[data-v=ftp]')
-    assert 'masaüstü' in page.inner_text('#f-kind button[data-v=ssh]').lower()
+    assert not page.is_disabled('#f-kind button[data-v=ssh]') and not page.is_disabled('#f-kind button[data-v=ftp]')   # uzak klasörler açık
     page.screenshot(path=str(SHOTS / '01-notepad-form.png'))
+    page.click('#f-kind button[data-v=local]')
     page.fill('#f-name', 'Notlarım')
     page.fill('#f-lpath', '/')
     page.locator('.modal footer .btn', has_text='aç').first.click()
@@ -160,11 +180,102 @@ def steps(b, ctx, page, data):
     page.screenshot(path=str(SHOTS / '04-convert-done.png'))
     print('Convert: mavi.png → mavi.jpg', out.stat().st_size, 'bayt')
 
-    # --- bilgi sayfası
+    ssh_ftp_sql(page, data)
+
+
+def api(page, path, body):
+    """Sayfanın kendi kökeninden JSON POST (Origin başlığı tarayıcıdan)."""
+    return page.evaluate("""async ([path, body]) => {
+        const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        return [r.status, await r.json()];
+    }""", [path, body])
+
+
+def poll_text(target, sel, needle, timeout=20):
+    t = time.time()
+    while time.time() - t < timeout:
+        try:
+            if needle in target.inner_text(sel):
+                return True
+        except Exception:   # noqa: BLE001
+            pass
+        time.sleep(0.25)
+    raise AssertionError(f'{needle!r} görünmedi ({sel})')
+
+
+def ssh_ftp_sql(page, data):
+    ssh, ftp = SERVERS['ssh'], SERVERS['ftp']
+    # --- SSH Master
     page.goto(BASE + '/web/sshmaster/')
-    page.wait_for_selector('.mtweb-card')
-    assert 'yakında' in page.inner_text('.mtweb-card'), page.inner_text('.mtweb-card')
-    page.screenshot(path=str(SHOTS / '05-sshmaster-soon.png'))
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    st, r = api(page, '/api/tools/mt/sshmaster/invoke', {'m': 'conn:save', 'a': {'name': 'Test sunucusu', 'host': '127.0.0.1', 'port': ssh.port,
+                                                                            'username': 'test', 'password': 'parola'}})
+    assert st == 200 and r['ok'], r
+    cid = r['v']
+    page.reload()
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(SHOTS / '05-ssh-main.png'))
+    page.goto(BASE + f'/web/sshmaster/terminal.html?ids={cid}')
+    page.wait_for_selector('.xterm-screen', timeout=20000)
+    poll_text(page, 'body', 'Test SSH sunucusu')
+    page.click('.xterm-screen')
+    page.keyboard.type('echo mtweb-e2e-merhaba')
+    page.keyboard.press('Enter')
+    poll_text(page, '.xterm-rows', 'mtweb-e2e-merhaba')
+    t = time.time()
+    while page.inner_text('.xterm-rows').count('mtweb-e2e-merhaba') < 2 and time.time() - t < 10:   # yankı + çıktı
+        time.sleep(0.2)
+    assert page.inner_text('.xterm-rows').count('mtweb-e2e-merhaba') >= 2, page.inner_text('.xterm-rows')
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(SHOTS / '06-ssh-terminal.png'))
+    print('SSH: komut çıktısı terminalde görüldü')
+
+    # --- FTP Masters (PASV'de 10.0.0.1 ilan eden sunucu: veri kanalı kontrol IP'sine gider)
+    page.goto(BASE + '/web/ftpmaster/')
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    st, r = api(page, '/api/tools/mt/ftpmaster/invoke', {'m': 'conn:save', 'a': {'name': 'Test FTP', 'protocol': 'ftp', 'host': '127.0.0.1', 'port': ftp.port,
+                                                                            'username': 'test', 'password': 'parola'}})
+    assert st == 200 and r['ok'], r
+    fid = r['v']
+    page.reload()
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(SHOTS / '07-ftp-main.png'))
+    page.goto(BASE + f'/web/ftpmaster/site.html?id={fid}')
+    poll_text(page, 'body', 'merhaba.txt')
+    poll_text(page, 'body', 'belgeler')
+    assert ftp.data_peers and set(ftp.data_peers) == {'127.0.0.1'}, ftp.data_peers
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(SHOTS / '08-ftp-site.png'))
+    print('FTP: uzak liste görüldü (PASV IP yok sayıldı)')
+
+    # --- SQL Master (SQLite, kullanıcının alanında)
+    page.goto(BASE + '/web/sqlmaster/')
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    assert page.url.endswith('/web/sqlmaster/renderer/main/'), page.url
+    st, r = api(page, '/api/tools/sql/conn/save', {'form': {'provider': 'sqlite', 'name': 'Yerel SQLite', 'filePath': '/e2e.db', 'readOnly': False}})
+    assert st == 200, r
+    sid_conn = r['id']
+    page.reload()
+    page.wait_for_selector('#mtweb-strip .mw-user')
+    page.wait_for_timeout(800)
+    page.screenshot(path=str(SHOTS / '09-sql-main.png'))
+    page.goto(BASE + f'/web/sqlmaster/renderer/conn/conn.html?id={sid_conn}')
+    page.wait_for_selector('#btnNewSql')
+    poll_text(page, '#stServer', 'SQLite')
+    page.click('#btnNewSql')
+    ed = page.locator('.cm-content >> visible=true').first
+    ed.wait_for(timeout=20000)
+    ed.click()
+    page.keyboard.type('select 40 + 2 as cevap, sqlite_version() as surum')
+    page.keyboard.press('Control+Enter')
+    poll_text(page, '#tabHost', 'cevap')
+    poll_text(page, '#tabHost', '42')
+    page.wait_for_timeout(600)
+    page.screenshot(path=str(SHOTS / '10-sql-query.png'))
+    assert (Path(data) / 'tools' / 'sqlmaster' / '1' / 'files' / 'e2e.db').exists()
+    print('SQL: sorgu sonucu ızgarada görüldü')
 
 
 if __name__ == '__main__':

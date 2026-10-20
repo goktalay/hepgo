@@ -3,7 +3,8 @@
 users          — Mastertool hesabına (mt_id) karşılık yerel kullanıcı satırı; araç kodu `id`, `username`, `full_name` bekler
 tools_mt_store — araç uygulamalarının kalıcı deposu (HEPGO şemasıyla aynı)
 app_kv, audit_logs — tools_mt yardımcılarının dokunduğu HEPGO tabloları (aynı şema)
-mtweb_audit    — denetim günlüğü (zaman, kullanıcı, uygulama, işlem, boyut, istemci IP; İÇERİK YAZILMAZ; 90 gün)
+mtweb_audit    — denetim günlüğü (zaman, kullanıcı, uygulama, işlem, boyut, istemci IP; İÇERİK YAZILMAZ; 90 gün).
+                 Dış bağlantı kayıtlarında (action='net') ayrıca host, rip (çözülen IP), port, result — parola/komut/sorgu YOK.
 """
 import threading
 import time
@@ -60,6 +61,10 @@ def connect():
 def init():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        cols = {r[1] for r in conn.execute('PRAGMA table_info(mtweb_audit)')}
+        for col, typ in (('host', 'TEXT'), ('rip', 'TEXT'), ('port', 'INTEGER'), ('result', 'TEXT')):
+            if col not in cols:   # eski kurulumlar: sütun eklenir
+                conn.execute(f'ALTER TABLE mtweb_audit ADD COLUMN {col} {typ}')
         conn.commit()
     purge(force=True)
 
@@ -88,6 +93,18 @@ def audit(user_id, app, action, size=None, ip=None, detail=None):
                          (time.time(), user_id, app, str(action)[:80], size, (ip or '')[:64], (detail or '')[:300] or None))
             conn.commit()
     except Exception:   # noqa: BLE001 — denetim hatası isteği düşürmez
+        pass
+    purge()
+
+
+def net_audit(user_id, app, host, rip, port, result, ip=None):
+    """Dış bağlantı kaydı: kullanıcı, uygulama, host, çözülen IP, port, sonuç, istemci IP. Parola/komut/sorgu yazılmaz."""
+    try:
+        with connect() as conn:
+            conn.execute('INSERT INTO mtweb_audit (at, user_id, app, action, ip, host, rip, port, result) VALUES (?,?,?,?,?,?,?,?,?)',
+                         (time.time(), user_id, app, 'net', (ip or '')[:64], str(host or '')[:255], (rip or '')[:64] or None, port, str(result)[:120]))
+            conn.commit()
+    except Exception:   # noqa: BLE001
         pass
     purge()
 

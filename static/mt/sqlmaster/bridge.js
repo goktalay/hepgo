@@ -33,14 +33,17 @@
     // Dosya diyaloğu: kullanıcının sunucudaki dosya alanı (SQLite dosyası seç/yükle ya da kaydet)
     openFileDialog: (opts = {}) => MT.pickPath({ mode: opts.save ? 'save' : 'file', start: opts.defaultPath || '/', exts: EXTS[opts.provider] || null,
       defaultName: opts.save && opts.defaultPath ? opts.defaultPath.split(/[\\/]/).pop() : '' }),
-    about: async () => ({ version: MT.version, electron: 'HEPGO', chrome: (navigator.userAgentData && navigator.userAgentData.brands.map((b) => `${b.brand} ${b.version}`).join(', ')) || navigator.userAgent, node: '-' }),
+    about: async () => ({ version: MT.version, electron: MT.web ? 'Web' : 'HEPGO', chrome: (navigator.userAgentData && navigator.userAgentData.brands.map((b) => `${b.brand} ${b.version}`).join(', ')) || navigator.userAgent, node: '-' }),
     checkUpdate: async () => ({ ok: true, version: null, newer: false }),
     openLicenses: async () => window.open('https://mastertool.download/', '_blank', 'noopener'),
 
     // --- Hesap: HEPGO oturumu ------------------------------------------------------------------
     accountState: () => MT.get('/api/tools/mt/account'),
     login: async () => ({ ok: true }),
-    logout: async () => { await MT.post('/api/auth/logout').catch(() => {}); try { window.top.location.href = '/'; } catch { location.href = '/'; } },
+    logout: async () => {
+      if (MT.web) { try { window.top.MTWEB.logout(); } catch { MT.web.logout(); } return; }   // mtweb: Mastertool hesabından çıkış
+      await MT.post('/api/auth/logout').catch(() => {}); try { window.top.location.href = '/'; } catch { location.href = '/'; }
+    },
     syncNow: async () => {},
     setSyncEnabled: async () => ({ ok: false, code: 'hepgo' }),
     deleteRemoteLibrary: async () => ({ ok: false, code: 'hepgo' }),

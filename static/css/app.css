@@ -8922,6 +8922,11 @@ html[dir="rtl"] .fold.open .fold-chev { transform: rotate(90deg); }
 .fs-launch-param[hidden] { display: none; }
 .fs-launch-info { margin-top: 6px; }
 .fs-launch-badge { white-space: nowrap; }
+/* §27 INTERCEPTOR fırlatıcıları: 4 kart 2×2 (dar sihirbaz sütununda okunur), kart rozeti */
+.fs-launches.fs-launches-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 860px) { .fs-launches.fs-launches-4 { grid-template-columns: 1fr; } }
+.fs-launch-badge2 { margin-left: 6px; font-size: 10px; vertical-align: 1px; white-space: nowrap; }
+.fs-scope-btns .fs-scope-btn { display: inline-flex; align-items: center; }
 /* §13.1 kontrol düzeni kartları (kalkış kartlarıyla aynı ızgara) + rozetler */
 .fs-layout-step h4 { margin-top: 2px; }
 .fs-layout-badge { white-space: nowrap; }

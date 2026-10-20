@@ -189,7 +189,8 @@ sunucuya 0–1), dağ yüksekliği/sayısı, bina sayısı, rüzgâr hızı/yön
 ya da segment (dünya kipi, saat, hedef yönü); aç/kapat alanları HEPGO'nun genel anahtar görünümü. Yer kontrol bölümü (§26) zaten kaydırıcı + sayı
 kutusuydu (SIMUMAV ile ortak modül; dokunulmadı).
 
-**Kalkış seçenekleri veriden.** `flightsim_wizard.js LAUNCH_OPTIONS` = `[{ key, types, name, desc, params, icon, note? }]` (bugün `wheels` / `ramp` /
+**§27 INTERCEPTOR'da** Kalkış adımı fırlatıcı kartlarıdır (4'lü / 8'li / yerden tekli / el fırlatıcısı; 2×2 ızgara, açıklama metni tipe göre `launchStepDesc`;
+dolu hücre `loaded4`/`loaded8` → `loaded`, el fırlatıcısında nişan yönü/açısı; önizleme düzeneğin çevresinde döner). **Kalkış seçenekleri veriden.** `flightsim_wizard.js LAUNCH_OPTIONS` = `[{ key, types, name, desc, params, icon, note? }]` (bugün `wheels` / `ramp` /
 `vehicle`, `types: ['sabit_kanat']`, ad/açıklama `flightsim_launch.LAUNCH_METHODS`'tan) + `LAUNCH_PARAM_DEFS` (`angle_deg`, `release_kmh`: etiket, min,
 max, adım, birim). Kalkış adımı `launchOptionsFor(tip)` boş değilse görünür; kartlar ve görünen ayar kaydırıcıları bu listeden üretilir; tip değişince
 seçili yöntem o tipte yoksa ilk seçeneğe geçer (`normLaunchMethod`). **Yeni fırlatıcı eklemek** (ör. INTERCEPTOR 4'lü / 8'li fırlatıcı, yerden tekli, el
@@ -1714,7 +1715,7 @@ AIRSPEED_CRUISE 60 (12/22 oranı) ile 110 m/s'den RTL'de TECS gazı keser → mo
 ROLL_LIMIT_DEG 45, ARSPD_OPTIONS 0, THR_MIN 0 (THR_MIN 10 askıda servo3 itkisini × SIM_PLN_THR_MUL büyütüp QRTL'de sürekli tırmandırdı), Q_RTL_MODE 1.
 
 **Kalkış/iniş:** `cmd takeoff` → GUIDED + ARM + NAV_TAKEOFF (VTOL kalkışı; ARM'dan hemen sonra "Already flying" reddi görülürse 3 sn'de bir yinelenir); pist/rampa yok
-(`launch.method` wheels olarak normalize, sihirbazda kalkış kartı yok). Yatay uçuş FBWA/FBWB/CRUISE/AUTO (geçiş ~1–5 sn), dönüş RTL → eve yaklaşınca QRTL (VTOL yaklaşma)
+(fırlatıcı seçilmezse `launch.method` wheels: pad'den düzeneksiz; **§27 fırlatıcılar**: 4'lü / 8'li kutu, yerden tekli tüp, el fırlatıcısı + nişangâh). Yatay uçuş FBWA/FBWB/CRUISE/AUTO (geçiş ~1–5 sn), dönüş RTL → eve yaklaşınca QRTL (VTOL yaklaşma)
 → dikey iniş. Kipler: QHOVER, QLOITER, GUIDED, FBWA, FBWB, CRUISE, AUTO, LOITER, RTL, QRTL, QLAND.
 
 **Azami hız** (`flightsim_power.thr_mul_tip`): yatayda itki = dörtlü motorlar + SIM_Plane itkisi (SERVO3; HEPGO yaması SIM_PLN_THR_MUL yalnız bunu ölçekler — tailsitter'da
@@ -1764,7 +1765,7 @@ interceptors?, difficulty?, radius_m?, prep_s?}`. Sunucu doğrulaması (`gcs_dog
 menzil, tam sayı olmayan dalga/interceptor, bilinmeyen zorluk, tohum 0…2³¹−1; görev INTERCEPTOR dışında 400. Tohum yoksa sunucu üretir. Meta `site` (sınırlar).
 
 **Yerleşim** (`yerlesim(pist yönü)` = istemci `siteLayout`; yerel ENU, merkez = pad/rampa/araç başlangıcı; f ileri, r sağ): istasyon (−40 f, +55 r), kule (−40, +85),
-interceptor rafı (−14, +34); hepsi pist yönüne döner. Prosedürel dünyada saha çevresinde ağaç yok (`opts.site`); gerçek/Google 3B'de gerçek nesnelerle çakışabilir.
+interceptor rafı (−14, +34); hepsi pist yönüne döner. §27: kutu fırlatıcı seçiliyse raf yerine ⌈n / hücre⌉ kutu ev noktasında yan yana (raf yok); tüp/el fırlatıcısında raf yedek deposu. Prosedürel dünyada saha çevresinde ağaç yok (`opts.site`); gerçek/Google 3B'de gerçek nesnelerle çakışabilir.
 
 **3B modeller** (`flightsim_gcs3d.js`, prosedürel, ağ isteği yok; `userData.heat` termal ipucu): **istasyon** — 20 ft askerî shelter (nervürler, köşe dökümleri, kapı,
 pencere bandı, klima ünitesi + fan), çatıda uydu çanağı ve ekipman kutusu, teleskopik anten direği + kırbaç antenler, jeneratör + egzoz, beton taban (konteyner ılık
@@ -1831,3 +1832,94 @@ bitiş, konuşlandırma + görev saati tabanı, puan/rütbe, sahte kipte oturum:
 Görsel: `tests/gcs_shots_hepgo.py` (→ /tmp/gcs-shots/hepgo-*.png; `GCS_REAL=1 HEPGO_SITL_DIR=/opt/hepgo/sitl/bin` gerçek SITL).
 **Sınırlar**: tek SITL aracı (aynı anda tek interceptor); sahte kipte (HEPGO_SITL=0) dron sabit dairede uçar (önleme kendiliğinden olabilir); `?mock=1` istemci
 kipi sahayı/görevi kurmaz; görüş hattı (arazi örtmesi) hesaplanmaz; radar terrain'i yüklü dünyayı gösterir (prosedürel dünya dışı koyu zemin).
+
+## 27. INTERCEPTOR fırlatıcıları — 4'lü / 8'li kutu, yerden tekli tüp, el fırlatıcısı + nişangâh ekranı (`static/js/modules/flightsim_launcher*.js`, `flightsim_scope_ui.js`, `app/flightsim_launcher.py`)
+Kullanıcı isteği (birebir): "INTERCEPTOR içinde fırlatıcı olarak 4'lü, 8'li, yerden tekli, pilot elindeki bir silah benzeri aparattan çıkmalı; eğer böyle bir aparatı
+seçerse aparatın üstünde küçük bir ekran olmalı, ekranda havaya doğru havadaki hedefleri görmeli."
+
+**Yöntemler** (`world.launch.method`; yalnız INTERCEPTOR'da etkin, sabit kanat §13 yöntemleri değişmedi): `pod4` (2×2 dikey hücreli kutu) · `pod8` (4×2) · `tube`
+(üç ayaklı sehpada tek dikey tüp) · `handheld` (pilotun omzundaki silah benzeri el fırlatıcısı + nişan biriminin üstünde küçük EKRAN). Ek alanlar: `loaded` (dolu
+hücre 1…hücre; görevsiz uçuşta), `aim_az_deg` (0…360, gerçek kuzeyden) ve `aim_el_deg` (10…85°) — el fırlatıcısı nişanı. `method` yoksa / `wheels` ise
+INTERCEPTOR eskisi gibi pad'den düzeneksiz kalkar (eski gövdeler ve CAYSIM aynen).
+- **Sunucu doğrulaması** (`launch_dogrula` + `flightsim_launcher.ek_alanlar`; 400 `invalid`): bilinmeyen yöntem, `loaded` tam sayı değil / 1…hücre dışında, `aim_*`
+  sınır dışı ya da sayı değil (bool/dize). Fırlatıcı yönteminde eksikler varsayılanla dolar (`loaded` = hücre sayısı, nişan 0° / 55°); sabit kanat gövdesi
+  değişmedi (alan verilmedikçe çıktı aynı). `launch_normalize`: sabit kanat yalnız wheels/ramp/vehicle, INTERCEPTOR yalnız fırlatıcılar (yoksa `wheels`), diğer
+  tipler `wheels`; fırlatıcı olmayan yöntemde fırlatıcı alanları atılır. `cmd takeoff {alt, aim?: {az_deg, el_deg}}` (aim yalnız sınır denetimi; el fırlatıcısında
+  oturumun nişanını günceller → WS `launch` olayı nişanı taşır, geç katılan izleyici `session.launch`tan görür).
+- **SIMUMAV** (`bridge.launch_dogrula`, `routers/fly.py LaunchIn`): aynı yöntemler + `loaded` (1…8; hücre sınırı köprüde), `aim_az_deg` 0…360, `aim_el_deg` 10…85 —
+  yalnız SINIRLAR, dron tipi zorlaması yok (çekirdek `launch_normalize` tipe göre ayıklar). `flights.launch` metin sütunu yöntem adını saklar (CHECK yok → **DB
+  göçü gerekmez**), `snapshot.launch` tam nesne. Sihirbaz: INTERCEPTOR'da "Kalkış yöntemi" adımı fırlatıcı kartlarına dönüşür (ayrı durum `ilaunch`; sabit kanat
+  `launch` durumu etkilenmez), adımda düzenek önizlemesi döner.
+
+**Kalkış dizisi** (`SimSession._icept_kalkis`; gerçek SITL ArduPlane 4.7.2 `quadplane-copter_tailsitter`): GUIDED + ARM → WS `launch{phase:'armed'}` → NAV_TAKEOFF
+→ `launch` (kapak açıldı; görevde `cell` = ateşlenen hücre sırası) → AGL ≥ 1,5 m `released`. Kutu/tüp: dikey NAV_TAKEOFF hedef irtifaya (askıda bekler).
+El fırlatıcısı: NAV_TAKEOFF **8 m** → **QHOVER + RC yaw ile VTOL görünümü yönü nişan azimutuna** (|hata| < 6°; en çok 7 sn) → GUIDED + **MAV_CMD_DO_REPOSITION**
+nişan noktasına (`aim_noktasi` = istemci `aimWaypoint`, vektör testli: nişan ışınında 500 m yol, irtifa 30…350 m, yatay ≥ 120 m) → ArduPlane sabit kanada
+geçer ve nişan doğrultusunda uçar, noktada loiter. *Gerekçe (ölçüldü):* tailsitter askıda iken geçiş, ATTITUDE'daki "VTOL görünümü" yönünde olur (bu oturumda
+askı yönü 49°); doğrudan DO_REPOSITION ile 120° nişanda çıkış kerterizi 48,9° (71° sapma) ölçüldü. GUIDED askıda `MAV_CMD_CONDITION_YAW` etkisiz (yön
+değişmedi); Euler/SIMSTATE yaw burun yukarı (pitch ≈ 90°) iken anlamsız sıçrar, doğru ölçüt ATTITUDE yaw'ıdır. QHOVER'da RC yaw ~50°/sn döndürür, gaz orta
+irtifayı tutar (20 m ± 0,2). Sahte kinematik (`HEPGO_SITL=0`) nişan ışını boyunca tırmanır (yatay hız = tırmanma / tan(el), gövde nişan açısında).
+
+**Gerçek SITL ölçümleri** (DEV, yamalı arduplane 4.7.2, Ankara 900 m, rüzgâr 0; `tools/sitl/dogrula_launcher.py` HEPGO sunucusu + pymavlink GCS):
+| Senaryo | Sonuç |
+|---|---|
+| 4'lü fırlatıcı, takeoff 50 m | `launch` 1,6 sn · `released` 3,7 sn; 45 m'ye 12,7 sn; tırmanışta azami yatay hız **0,15 m/s**, gövde pitch ort. 87,9°; yatay kayma 0,7 m; askıda irtifa **50,0–50,2 m**; ARM sürdü, çarpışma yok |
+| El fırlatıcısı, nişan az 120° / el 30° | `released` 3,2 sn; QHOVER yön hizalama → GUIDED; evden 40 m uzaklaşmada **çıkış kerterizi 112,0° (sapma 8°)**, 10,2 sn; t = 15 sn 93,7 m/s, 209 m; nişan noktasına en yakın 58 m; noktada loiter (irtifa 250 m'ye oturur); ARM sürdü, çarpışma yok |
+| (düzeltme öncesi) aynı nişan, doğrudan DO_REPOSITION | çıkış kerterizi 48,9° (askı yönü), sapma 71° → hizalama eklendi |
+
+**Hücre envanteri** (saf `cellStates`): durumlar `spent` (ateşlendi; kapak açık, dip isli, LED kırmızı) · `active` (sıradaki; kapak açık, dron hücrede, LED amber —
+ARM'da yanıp söner, çıkınca kırmızı) · `loaded` (dolu; kapak kapalı, LED yeşil) · `empty` (yüklenmemiş; açık, kırmızı). Ateşleme sırası: fırlatıcı 0'ın hücreleri
+(arka sıra soldan sağa, sonra ön sıra), sonra fırlatıcı 1 … Ön yüzde dil bağımsız sayaç plakası (▮▮▯▯ `2/4`). Görevsiz uçuşta `loaded` dolu hücre, etkin hücre
+ilk hücre (her "Sıfırla"da aynı hücreye yeniden oturur).
+**"Yer kontrolünü koru" ile envanter — tasarım ve gerekçe:** görevin interceptor sayısı (1–20) TEK envanterdir; fırlatıcı sayısı türetilir. Kutularda
+**⌈n / hücre⌉ kutu** yan yana kurulur (`bankLayout`; sıra merkezi = SITL evi), son kutu kısmen dolu, **10'lu raf kurulmaz** (`rackCountFor` = 0); etkin hücre =
+`icept.used` (§26 sayaç; "Sıradaki interceptor" → sonraki hücre, WS `defend next` ile `launcherUi.sync`). Tüp ve el fırlatıcısında fırlatıcı tektir, raf
+**yedek deposu** olarak kalır (sayım §26 ile aynı). *Neden:* (1) görev puanı/raporu ve sunucu mantığı (`SavunmaGorevi.icept`) değişmeden kalır — fırlatıcı yalnız
+görsel envanter katmanıdır; (2) SITL aracı her konuşlandırmada AYNI ev noktasında yeniden doğar (§26 kararı); hücreler arası mesafe görsel bir ofsettir ve
+`released` ofset sönümüyle (§13: yatay 3 sn / AGL 15 m) kapanır — her hücre için ayrı ev (SITL'i yeni konumla yeniden başlatma) MP bağlantısı/kayıt bölünmesi
+açısından gereksiz yük; sıra ev noktasında ortalandığından en uzak hücre 20 interceptor/4'lü için ~10 m (ölçekli) kayar; (3) kutu sayısı envanterden türediği için
+"dolu hücre" ile görev sayısı çelişemez (görevde sihirbazın dolu hücre ayarı yok sayılır, kartta not).
+
+**3B** (`flightsim_launcher3d.js createIceptRig`; `flightsim_launch.createLaunchRig` ile aynı arayüz — anchor/needsAnchor/resurface/update/setPhase/carrying —
++ `carryPose`, `setInventory`, `setAim`, `scopePose`, `screenPose`, `focus`). Ölçüler dronun GERÇEK boyutundan (`cellDims(fit)`: hücre iç genişliği açıklığın
+~%112'si, derinlik boyun %92'si — burun ağız hizasında; tüp yarıçapı açıklığın ~%60'ı) ve dron gibi ×MODEL_SCALE.
+- *Kutu:* kızaklı kaide + ayaklar + forklift cepleri, nervürlü dış duvarlar, hücre ızgarası (iç bölmeler), üst çerçeve, köşe kaldırma halkaları, sarı-siyah ikaz
+  şeridi, kablo kutusu; her hücrede arka kenardan menteşeli kapak (X nervürlü, ikaz bandı; 0,6 sn'de 110° açılır), LED, hücre dibi. *Tüp:* üç ayaklı sehpa,
+  taban bileziği, çift cidarlı tüp + bilezikler + boyuna nervürler, menteşeli kapak, kontrol kutusu + LED. *El:* pilot (bot, diz koruyucu, kalça/kemer, gövde,
+  yelek + cepler, telsiz, sırt çantası, boyun, baş, kask + gözlük) ve omzunda sekizgen tüp (bilezikler, ağız bileziği, kırılabilir ağız kapağı — sarı X kesimli, fırlatmada
+  parçalanır —, ikaz şeridi, omuz yastığı, tabanca kabzası + tetik korkuluğu, ön kabza) + tüpün solunda, gözün önünde **nişan birimi** (lens, düğmeler, LED, güneşlik) ve göze bakan **EKRAN**. Pilot nişan azimutuna
+  döner, tüp yükselişe kalkar (dik nişanda gövde hafif geriye), kollar iki parçalı (basit IK: dirsek aşağı/dışa) ellere yeniden kurulur.
+- *Dron düzenekteyken:* burun ekseni hücre/tüp ekseni, kuyruk tabanda (`carryPose`: yuva + burun × `drone.ground`); `launch` aşamasında SITL tırmanışı kadar
+  eksen boyunca çıkar; `released` → §13 ofset sönümü (gösterilen z düşmez). Fırlatma anı: ağızda turuncu parlama (0,3 sn) + 18 duman sprite'ı (sürtünmeli
+  yayılım, ılık yükselme); el fırlatıcısında yarısı **arka uçtan geri tepme dumanı**, tüp 0,3 sn geri teper. Termal: pilot 0,9 (sıcak), ekran 0,7, kutu 0,45.
+- *Sihirbaz önizlemesi:* Kalkış adımında kamera düzeneğin çevresinde tur atar (`setPreviewFocus('rig')`; §13 rampa/araç da yakından görünür).
+
+**Nişangâh** (yalnız el fırlatıcısı; TEK WebGL bağlamı — İKİNCİ BAĞLAM YOK): `flightsim3d renderScope` lensten nişan yönüne (az, el; yuvarlanma yok; FOV 40° /
+zoom ×1·2·4·8) küçük render hedefine çizer (düzenek ve tüpteki dron gizli; hedef etiket sprite'ları ve görev çizimi gizli). Aynı doku (1) aparatın **3B ekranına**
+(MeshBasic harita; ana kamera aparata < 80 m iken 6 fps) ve (2) **NİŞANGÂH penceresi** açıksa viewport/scissor kopyasıyla ana tuvale (20 fps; yavaş karede 10)
+gider. 3B ekranın sembol katmanı 2B tuvalde → CanvasTexture: F-16 tarzı semboloji (§24.5 `symbology/drawSymbology`: prizma, TD kutusu, menzil · Vc · ΔH, ekran
+dışı hedefe kenar oku + sapma açısı), artı, AZ/EL, zoom ve hedef sayısı. Kilit: elle (Tab / radar) yoksa **nişan çizgisine en yakın hedef** (en küçük sapma).
+- *Pencere* (`flightsim_scope_ui.js createLauncherUi`; HEPGO + SIMUMAV ortak): sürüklenebilir (başlıktan; konum `fs.scope.pos`), varsayılan solda küçük hedef
+  radarının altı; 2B katman: köşe çerçeve, azimut şeridi (10° çentik, 30°'de N/E/S/W ya da sayı), yükseliş ölçeği, mil-dot artı, semboloji, okuma
+  (`AZ 123° EL 45° ×2`), hedef sayısı, durum (HAZIR / ARM / ATEŞLENDİ). Alt bant: ◀▲▼▶ basılı tutulan nişan düğmeleri (sanal kumanda / dokunmatik), ipucu,
+  **▲ Fırlat** (konağın kalkış penceresi; `takeoffExtra()` nişanı `cmd takeoff`a ekler). Alt çubukta **⌖ Nişangâh (G)**; tercih `fs.scope.on`. §17 ekran
+  kaydında görüntü (ana tuvalde) ve 2B semboloji katmanı (`overlay()`, PiP OSD kalıbı) birlikte kaydedilir.
+- *Nişan alma:* pencerede sürükle (fare-bakış; px → derece FOV'a göre), **I/K** yükseliş · **J/L** yön (50°/sn, 35°/sn; Shift ×¼), **Z** / tekerlek zoom, **H** /
+  ⌖ / çift tık "hedefe yönel" (kilitli ya da en yakın hedefe `aimAt`), **Tab** hedef kilidi (§24.5). Nişan 3B'de pilotu/tüpü anında döndürür.
+- Teşhis: `sim.launcherInfo()` → `{method, phase, aim, inventory{total, used, launchers, loaded, spent, empty, active}, cells, puffs, scope, scopeRenders, zoom,
+  screen{x,y,z,nx,ny,nz}}`, `sim.scopeHud()`, `sim.rigFocus`, `sim.getAim()/setAim()/aimAtTarget()`, `sim.setScopeZoom()`.
+
+**Kayıt / kayıttan oynatma:** `drone_sim_runs.launch` (mevcut JSON sütunu) yöntem + `loaded` + nişanı saklar (**DB göçü yok**). Kayıttan oynatmada istekte fırlatıcı
+seçilmediyse canlı oturumunki kullanılır (`ReplaySession`); log listesi (`/api/drone/sim/logs`) simülatör kaydının tipini (`interceptor`) ve `sim_launch`'ı verir →
+sihirbaz kayıt kipinde Kalkış adımında fırlatıcı kartlarını açar ve kayıttaki fırlatıcıyı önerir. Aşamalar logdan (`replayLaunchTimeline`: ilk hareket → `launch`,
+AGL > 1,5 m → `released`).
+
+**Testler:** `node tests/test_flightsim_launcher.mjs` (13: yöntem listeleri, nişan normalize/vektör, nişan noktası — Python vektörleri birebir, aimAt, nişan adımı/
+sürükleme, hücre yerleşimi, envanter durumları, görev kutu/raf sayısı, nişangâh izdüşümü, semboloji (göğe bakarken hedef kutusu / arkadaki hedefe ok), azimut
+şeridi, etiket + kayıt aşamaları); `tests.test_flightsim firlatici_testleri` (doğrulama 400'leri, normalizasyon, aim vektörleri, sahte kipte pod4/el aşamaları +
+nişan yönünde tırmanış, aim 400'leri, runs.launch, kayıttan oynatma + log listesi, görevde hücre sırası); `node tests/test_flightsim_wizard.mjs`;
+`node tests/test_simumav_fly.mjs` (ilaunch); `tests.test_simumav_icept` (422'ler, flights.launch, WS takeoff{aim} aşamaları, pod8 loaded).
+Görsel: `tests/launcher_shots_hepgo.py` (→ /tmp/launcher-shots; `LAUNCHER_REAL=1 HEPGO_SITL_DIR=…` gerçek SITL; `SHOTS=wizard,pod4,tube,hand,defend`).
+**Sınırlar:** SITL'de hücre/tüp fiziği yok (araç her zaman ev noktasında yerde, kuyruk üstünde doğar; düzenek görseldir); el fırlatıcısında SITL 8 m dikey + yön
+hizalama (~1–3 sn) sonra sabit kanada geçer — 3B'de tüpten nişan açısıyla çıkış ofset sönümüyle SITL yoluna bağlanır; nişan noktasında 90+ m/s ile loiter geniş
+dairedir (pilot devralır); `?mock=1` istemci kipi aşamaları zamanlayıcıyla taklit eder.

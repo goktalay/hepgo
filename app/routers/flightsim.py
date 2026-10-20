@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, config, db, drone_hub, flightsim, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, flightsim_targets, sim_terrain
+from .. import auth, config, db, drone_hub, flightsim, flightsim_gcs, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, flightsim_targets, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -36,6 +36,8 @@ class SessionIn(BaseModel):
     camera: Optional[str] = None     # §22.3 kamera türü: day | thermal | night (varsayılan day; kayıtta kaydın türü öncelikli)
     layout: Optional[str] = None     # §13.1 kontrol düzeni (yalnız sabit kanat): classic | elevon | vtail; eksikse modelin düzeni (Caymaz/Delta elevon, Talon vtail), yoksa classic
     targets: Optional[Union[list, dict]] = None   # §24 hedefler: [{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}] ya da {items, radius_m}
+    site: Optional[dict] = None      # §26 yer kontrol sahası (istasyon + EO/radar kulesi): {station, radar, radar_km?, eo, eo_km?} (flightsim_gcs.gcs_dogrula)
+    defend: Optional[dict] = None    # §26 "Yer kontrolünü koru" (yalnız INTERCEPTOR): {seed?, waves?, interceptors?, difficulty?, radius_m?, prep_s?}
 
 
 class ModelPatch(BaseModel):
@@ -86,7 +88,12 @@ def meta(request: Request, user=Depends(sim_user), conn=db.DB):
             # §24 hedefler: seçilebilen modeller (hedef modelleri + sistemdeki dron türleri) ve sınırlar
             'targets': {'models': flightsim_targets.katalog(), 'max': flightsim_targets.HEDEF_MAX, 'diameter_m': list(flightsim_targets.CAP_SINIR),
                         'alt_m': list(flightsim_targets.IRTIFA_SINIR), 'radius_m': list(flightsim_targets.YARICAP_SINIR), 'radius_default': flightsim_targets.YARICAP_VARSAYILAN,
-                        'offset_m': flightsim_targets.OFSET_SINIR}}
+                        'offset_m': flightsim_targets.OFSET_SINIR},
+            # §26 yer kontrol merkezi / EO-radar kulesi + "Yer kontrolünü koru" görevi sınırları
+            'site': {'radar_km': list(flightsim_gcs.RADAR_KM), 'radar_km_default': flightsim_gcs.RADAR_KM_VARSAYILAN, 'eo_km': list(flightsim_gcs.EO_KM),
+                    'eo_km_default': flightsim_gcs.EO_KM_VARSAYILAN, 'sweep_s': flightsim_gcs.RADAR_DONUS_S,
+                    'defend': {'defaults': dict(flightsim_gcs.SAVUNMA_VARSAYILAN), 'limits': {k: list(v) for k, v in flightsim_gcs.SAVUNMA_SINIR.items()},
+                               'difficulties': list(flightsim_gcs.ZORLUKLAR), 'models': list(flightsim_gcs.TEHDIT_MODELLERI)}}}
 
 
 @router.get('/g3d-key')
@@ -166,7 +173,7 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
             s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera,
-                                           targets=body.targets)
+                                           targets=body.targets, site=body.site, defend=body.defend)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')

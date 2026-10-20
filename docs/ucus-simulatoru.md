@@ -1595,3 +1595,87 @@ Tümü burun +X, yukarı +Y, metre; ≤ 55 k üçgen, doku ≤ 1024².
 itki uyumu, sahte INTERCEPTOR oturumu att_body/dikey tırmanış, WS `target` + olay, GCS ADSB_VEHICLE, runs.targets/intercept_count, replay tipi + hedefler, meta/modeller);
 `node tests/test_flightsim_targets.mjs` (Python vektörleriyle birebir, izleyici, puan, doğrulama, radar); `tests.test_step2glb`; `tests.test_simumav_icept`.
 Görsel: `tests/icept_shots_hepgo.py` (gerçek SITL), `tests/icept_shots_simumav.py` → /tmp/icept-shots.
+
+## 26. Yer Kontrol Merkezi — istasyon + EO/radar kulesi, radar/EO ekranları ve "Yer kontrolünü koru" görevi (`app/flightsim_gcs.py`, `static/js/modules/flightsim_gcs*.js`)
+Kullanıcı isteği (özet): rampanın / kalkış aracının yakınında isteğe bağlı **yer kontrol istasyonu** ve **EO + radar taşıyan kule**; radar 360° sürekli döner (kapsama
+20 km), EO yakınlaştırma menzili 5 km. Uçuş öncesi RADAR / YER KONTROL İSTASYONU / ELEKTRO-OPTİK var/yok + menziller. Uçuşta **sol altta radar ekranı**, hemen
+yanında **EO ekranı**; ayrı ayrı aç/kapa. Radar: 3B harita üzerinde dron + hedefler **prizma ikon**, dönen tarama hüzmesi, kapsama halkası; kapsama dışı hedef
+görünmez; seçilen hedefi EO izler. Görev **"Yer kontrolünü koru"**: tamamen manuel; istasyonun yanında 10 interceptor (§25); dalgalar hâlinde rastgele mesafe/
+yükseklikten hedefler istasyona dalar; önlenemeyen hedef istasyona çarparsa hasar; görev sonu başarı raporu.
+
+**Sihirbaz** (canlı kip; "◈ Yer Kontrol Merkezi" kartı, `createSiteSection`): üç geçiş kartı (Radar · Yer kontrol istasyonu · Elektro-Optik; radar kapsama 1–50 km,
+vars. 20; EO görüş menzili 0,5–15 km, vars. 5; kaydırıcı + sayı), şematik (kuzey yukarı: pist, kalkış, istasyon, kule, raf; radar/EO halkaları), **Görev senaryosu**:
+Serbest uçuş · Yer kontrolünü koru (yalnız INTERCEPTOR; zorluk Kolay/Normal/Zor, dalga 1–10, interceptor 1–20 (vars. 10), önleme yarıçapı 10–100 m (vars. 30),
+hazırlık 15–300 sn (vars. 45), tohum + "yeni tohum"). Görev seçiliyken istasyon zorunlu (kilitli kart). Son seçim `localStorage fs.site.wiz`.
+Oturum gövdesi `site: {station, radar, radar_km, eo, eo_km}` (oturum yanıtında **`site`** — `gcs` anahtarı Mission Planner bağlantısıdır), `defend: {seed?, waves?,
+interceptors?, difficulty?, radius_m?, prep_s?}`. Sunucu doğrulaması (`gcs_dogrula`, `savunma_dogrula` → 400): bilinmeyen alan, bool olmayan bayrak, aralık dışı/NaN
+menzil, tam sayı olmayan dalga/interceptor, bilinmeyen zorluk, tohum 0…2³¹−1; görev INTERCEPTOR dışında 400. Tohum yoksa sunucu üretir. Meta `site` (sınırlar).
+
+**Yerleşim** (`yerlesim(pist yönü)` = istemci `siteLayout`; yerel ENU, merkez = pad/rampa/araç başlangıcı; f ileri, r sağ): istasyon (−40 f, +55 r), kule (−40, +85),
+interceptor rafı (−14, +34); hepsi pist yönüne döner. Prosedürel dünyada saha çevresinde ağaç yok (`opts.site`); gerçek/Google 3B'de gerçek nesnelerle çakışabilir.
+
+**3B modeller** (`flightsim_gcs3d.js`, prosedürel, ağ isteği yok; `userData.heat` termal ipucu): **istasyon** — 20 ft askerî shelter (nervürler, köşe dökümleri, kapı,
+pencere bandı, klima ünitesi + fan), çatıda uydu çanağı ve ekipman kutusu, teleskopik anten direği + kırbaç antenler, jeneratör + egzoz, beton taban (konteyner ılık
+0,5, klima 0,72, jeneratör 0,86); **kule** — 18 m kafes (4 ayak, 6 kuşak çapraz bağ, merdiven), platform + korkuluk, elektronik kabini, tepede **dönen radar**
+(panel dizisi, `SWEEP_S` = 4 sn/tur, ekrandaki hüzmeyle aynı açı) + ikaz lambası, platform köşesinde direk üstünde **EO top kulesi** (pan/tilt; seçili hedefe 90°/sn
+dönüş hızı sınırıyla döner, hedef yoksa yavaş tarar); **raf** — beton pad + 10 yuva (sarı işaret), yuvalarda dronun kendi modeli (tailsitter, kuyruk üstünde, soğuk
+0,38), konuşlandırılan interceptor sayısı kadar eksilir. Görevde isabet: turuncu parlama + sağlık düştükçe yoğunlaşan duman.
+
+**Radar ekranı** (aynı WebGL bağlamı; PiP kalıbı — İKİNCİ BAĞLAM YOK): kule merkezli eğik (52°, kuzey yukarı) kamera; (1) sahne (arazi/bina/su; sis kapalı, hedef
+etiketleri ve görev çizimi gizli, gölge güncellenmez) küçük render hedefine 8 fps (yavaş karede 4) → (2) taktik ton gölgelendiricisi (`TINT_FRAG`: yeşil-lacivert ton,
+vinyet, tarama çizgisi) ile viewport/scissor kopyası → (3) AYRI radar sahnesi aynı kamerayla derinlik temizlenerek her karede: kapsama halkası + 3 kesikli ara halka
++ 12 yön çentiği, **dönen tarama hüzmesi** (8 dilimli sönen yelpaze + parlak ön kenar), **prizma ikonlar** (`buildRadarPrism`: yön gösteren üçgen prizma + beyaz kenar;
+ekran boyutu sabit ~13–19 px; yere iniş çubuğu = irtifa; kendi dron camgöbeği, görev tehditleri kırmızı, §24 yörünge hedefleri turuncu, seçili sarı + nabız halkası;
+parlaklık hüzme geçişinden sonra söner — `sweepGlow`). **Kapsama dışındaki hedef çizilmez** (`radarCovers`, kuleye yatay uzaklık ≤ kapsama). Ekran menzili
+otomatik (`autoRadarRange`: kapsamadaki en uzak nesne %15 payla, basamaklar 1/2/5/10/20/50 km ≤ kapsama) ya da − / OTO / + ile sabit. 2B katman (`radarInfo()`):
+halka etiketleri, N, kule, hedef numarası + irtifa, seçili hedefin adı, "n hedef / TEMAS YOK", hüzme açısı. **Tıklama** → en yakın ikon (≤ 22 px) → `lockTarget(i)`
+(§24.5 Tab kilidiyle aynı durum; HUD TD kutusu da o hedefe geçer); boşluğa tıklama kilidi bırakır. Açıkken §24 küçük hedef radarı (sol üst) gizlenir (birleşik).
+
+**EO ekranı**: kamera EO topunun merkezinden (0,9 m ileri, near 1 m; kule gövdesi bu geçişte gizli) seçili hedefe; oto yakınlaştırma `eoZoom` (hedef dikey kadrajın
+~%22'si; FOV 48°…0,35° → ×1…×137, yumuşak); **menzil dışı** (eğik mesafe > EO menzili) → geniş açı + parazit + "MENZİL DIŞI · r > 5 km"; hedef yokken "HEDEF
+SEÇİLMEDİ" + yavaş tarama; dönüş sürerken "YÖNLENİYOR". Kamera türü gündüz / termal / gece (◐ düğmesi; §22.3 `CAM_FRAG`, kendi türü — `setCamUniforms(…, typeOverride)`;
+tercih `fs.site.eoType`), 15 fps (yavaş karede 7,5). OSD: köşe parantezleri, nişangâh, iz kutusu, `İZ · n ad`, AZ / EL / MZL, FOV. Teşhis `eoInfo()`.
+
+**Yerleşim (DOM, `createSiteScreens`)**: sol altta dok (alt çubuğun 10 px üstü; sanal kumandada çubukların üstü) — [görev şeridi] + [RADAR | EO] (304×204; < 1280 px
+268×182; < 900 px 230×158). Başlıkta simge + metin + düğmeler (menzil / tür / ×). Alt çubukta **Radar (Y)**, **EO (U)** (SVG simgeli; tercih `fs.site`). Dok
+açıkken: MP / kayıt bilgisi kutusu ve Google atfı dokun üstüne çıkar (`--fs-site-top`), güç kadranları ve olay şeridi dokun sağındaki boşluğun ortasına kayar
+(`--fs-site-r`; panel açıkken ×0,68), PiP dok engelini tanır (`pipObstacleInsets`), askeri HUD / FPV OSD sol alt satırları dokun üstüne çıkar.
+
+**"Yer kontrolünü koru"** (`SavunmaGorevi`; istemci eşleniği `createDefendTracker`, kayıtta `defendStateAt`):
+- **Plan** (`savunma_plani` = `defendPlan`, **mulberry32** — Python/JS bit düzeyinde aynı; vektör testi): dalga w başı = hazırlık + w·aralık (kolay 90 / normal 70 /
+  zor 55 sn), tehdit sayısı min(8, n0 + w) (n0 1/2/3), dalga içi doğuşlar 8–16 / 5–12 / 3–9 sn arayla; model Switchblade 300 · Lancet-3 · Altius-600M · Octopus-100;
+  kerteriz 0–360°, uzaklık 2,5–4,5 / 3–6 / 3,5–8 km (her dalga +%4), irtifa 120–350 / 150–450 / 150–600 m, dalış açısı 25–50°, seyir hızı model seyir × zorluk
+  (0,85/1/1,15) × (1 + 0,05w) (≤ azami), dalış hızı azami × min(1, 0,85 + 0,05w); hasar 15 / 35 / 25 / 20 (istasyon 100). En çok 60 tehdit.
+- **Kinematik** (`tehdit_durum` = `threatState`): seyir sabit irtifada istasyona doğru → dalış başlangıcından (yatay h/tan(dalış)) istasyon çatısına (2,6 m) düz
+  çizgi; çarpma anı t_impact. Önlenen tehdit istemcide balistik + takla ile düşer (`fallState`, ≤ 8 sn).
+- **Önleme**: ARM'lı interceptor tehdide `radius_m` içine girerse önleme (tehdit yok olur; olay: istasyona uzaklık, önleme süresi, interceptor no). **Sızma**:
+  t ≥ t_impact → sağlık − hasar. **Bitiş**: sağlık 0 (başarısız) ya da tüm tehditler çözüldü (sağlık ≥ %50 → başarılı, aksi başarısız).
+- **Görev saati**: tm = taban + tbm/1000 (SITL saati; simülasyon hızıyla hızlanır). SITL yeniden başlayınca (tbm geri) taban önceki bölümün son saatini ekler →
+  saat kesintisiz; yeniden açılış sürerken senaryo bekler (adil, deterministik).
+- **İnterceptor değişimi — karar**: aynı SITL aracı aynı oturumda **yeniden konuşlandırılır** (`cmd defend {action:'next'}` ya da görevde "Sıfırla" → mevcut
+  `reset` yolu: SITL aynı ayarlarla yeniden başlar, araç pad'de kuyruk üstünde doğar; MP aynı adreste, WS/kayıt sürer). Gerekçe: 10 ayrı SITL ya da oturum yenileme
+  bellek/CPU/port/MP bağlantısı/kayıt bölünmesi açısından ağır ve kırılgan; reset yolu zaten test edilmiş. Yalnız **ARM edilmiş** interceptor harcanır; raf boşsa
+  400 "İnterceptor kalmadı". Yeni araç için güç durumu taze (batarya dolu; simülasyon hızı korunur). Çarpışma (`zorla_disarm`) ya da batarya bitişi →
+  WS `down` + kırmızı olay + şeritte yanıp sönen "▶ Sıradaki interceptor (N)".
+- **WS** `{t:'defend', kind: wave|spawn|kill|leak|down|next|end, …, tt (görev saati), state}`; `state` = `{t, base, health, wave, waves, icept{total, used, lost, down},
+  remaining, killed[[k, t]], leaked[[k, t]], spawned, total, ended}`; oturum/hello `defend: {config, plan (görsel bilgiyle), station, state}`.
+- **Puan / rütbe** (`savunma_puan` = `scoreDefend`): önleme başına 300 + istasyona uzaklık/10 (≤ 400) + max(0, 200 − önleme süresi); sızma −250; sağlık ×10;
+  kullanılmayan interceptor ×100; başarı +1000; ≥ 0. İsabet = önlenen / doğan; rütbe 0,65·isabet + 0,35·sağlık/100 → Er · Onbaşı · Çavuş · Teğmen · Yüzbaşı ·
+  Binbaşı · Albay.
+- **Uçuşta**: şerit (YER KONTROLÜNÜ KORU · DALGA w/n · Hazırlık / Sonraki dalga mm:ss · İSTASYON sağlık çubuğu · INTERCEPTOR rafı (kullanılmış / aktif / düşmüş /
+  hazır) · ✓ Önlenen · ✗ Sızan · ◎ Aktif tehdit · ▶ Sıradaki interceptor (N)), ortada bant (DALGA n · m TEHDİT, TEHDİT ÖNLENDİ, İSTASYON VURULDU −d,
+  INTERCEPTOR KAYBEDİLDİ, GÖREV BAŞARILI/BAŞARISIZ), olay şeridi; tehditler sahnede (modeller tembel kurulur), HUD/OSD prizmalarında ve radarda; Tab / radar
+  tıklaması ile kilit → EO izler.
+- **Görev sonu raporu** (`defendReportBody`; bitişte otomatik pencere + "Bitir"): sonuç, tohum/zorluk, rütbe nişanı, puan; karolar (önlenen/doğan, kaçan, istasyon
+  sağlığı, kullanılan interceptor, isabet, ortalama/en hızlı önleme, ulaşılan dalga); zaman çizelgesi (sağlık basamakları, önleme ▲, sızma ▼, dalga başları);
+  önleme tablosu. Özet rapor (`/summary`, Bitir modalı, `/reports`) `site` + `defend` taşır; metin paylaşımına satır eklenir.
+- **Kayıt**: `drone_sim_runs.targets` JSON'una `site` + `defend {config, result}` eklenir (**DB göçü yok**). Kayıttan oynatma (`ReplaySession._site_dict`): canlı
+  oturumun pist yönüyle yerleşim, plan tohumdan yeniden üretilir, şerit ve olaylar kayıt saatiyle sonuçtan (ilk SITL bölümü; yeniden konuşlandırma sonrası
+  bölümler ayrı .bin'dedir).
+
+**Testler**: `tests.test_flightsim gcs_testleri` (doğrulama 400'leri, yerleşim, radar/EO, mulberry32 vektörleri, plan determinizmi/sınırları, kinematik, önleme/sızma/
+bitiş, konuşlandırma + görev saati tabanı, puan/rütbe, sahte kipte oturum: site/defend alanları, WS wave/leak/end (`t` çerçeve türü korunur, kayıt zamanı `tt`),
+`defend next`, reset = konuşlandırma, özet, `drone_sim_runs.targets`, kayıttan oynatma, meta); `node tests/test_flightsim_gcs.mjs` (12; Python vektörleri birebir).
+Görsel: `tests/gcs_shots_hepgo.py` (→ /tmp/gcs-shots/hepgo-*.png; `GCS_REAL=1 HEPGO_SITL_DIR=/opt/hepgo/sitl/bin` gerçek SITL).
+**Sınırlar**: tek SITL aracı (aynı anda tek interceptor); sahte kipte (HEPGO_SITL=0) dron sabit dairede uçar (önleme kendiliğinden olabilir); `?mock=1` istemci
+kipi sahayı/görevi kurmaz; görüş hattı (arazi örtmesi) hesaplanmaz; radar terrain'i yüklü dünyayı gösterir (prosedürel dünya dışı koyu zemin).

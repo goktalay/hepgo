@@ -2279,6 +2279,179 @@ def hedef_icept_testleri(a, c1, sitl):
     print('  hedefler (§24) + INTERCEPTOR (§25) testleri geçti')
 
 
+def gcs_testleri(a, c1, sitl):
+    """§26 yer kontrol sahası + "Yer kontrolünü koru": saf fonksiyonlar (doğrulama 400'leri, yerleşim, radar/EO, mulberry32 — ön yüzle aynı vektörler,
+    plan determinizmi, tehdit kinematiği, önleme/sızma/bitiş, yeniden konuşlandırma ve görev saati tabanı, puan/rütbe); sahte kipte oturum: site/defend
+    alanları, WS `defend` (dalga, doğuş, sızma) 8× hızda, `defend next` (uçmamış → ücretsiz; uçmuş → harcanır; SITL yeniden başlar, taban sürer),
+    reset = konuşlandırma, özet + drone_sim_runs.targets (site/defend), kayıttan oynatmada plan + sonuç; tip INTERCEPTOR değilse 400."""
+    from app import db, flightsim_gcs as GC, flightsim_replay as R
+    S = '/api/drone/sim/sessions'
+    # --- doğrulama ---
+    assert GC.gcs_dogrula(None) is None and GC.gcs_dogrula({}) is None and GC.gcs_dogrula({'station': False, 'radar': False, 'eo': False}) is None
+    g = GC.gcs_dogrula({'station': True, 'radar': True, 'eo': True})
+    assert g == {'station': True, 'radar': True, 'radar_km': 20.0, 'eo': True, 'eo_km': 5.0}, g
+    assert GC.gcs_dogrula({'radar': True, 'radar_km': 50, 'eo': True, 'eo_km': 0.5})['radar_km'] == 50.0
+    for kotu in ({'radar': 1}, {'radar': True, 'radar_km': 0.9}, {'radar': True, 'radar_km': 51}, {'eo': True, 'eo_km': 15.5}, {'eo': True, 'eo_km': float('nan')},
+                 {'radar': True, 'radar_km': '20'}, {'radar': True, 'radar_km': True}, {'radar': True, 'x': 1}, 'x', [1], {'station': 'evet'}):
+        try:
+            GC.gcs_dogrula(kotu); raise AssertionError(kotu)
+        except GC.GcsHata:
+            pass
+    d = GC.savunma_dogrula({'seed': 7}, 'interceptor')
+    assert d == {'waves': 5, 'interceptors': 10, 'difficulty': 'normal', 'radius_m': 30.0, 'prep_s': 45.0, 'seed': 7}, d
+    assert GC.savunma_dogrula(None) is None and 1 <= GC.savunma_dogrula({}, 'interceptor')['seed'] <= 2 ** 31 - 1
+    for kotu, tip in (({}, 'sabit_kanat'), ({'waves': 0}, None), ({'waves': 11}, None), ({'interceptors': 21}, None), ({'interceptors': 2.5}, None), ({'radius_m': 5}, None),
+                      ({'prep_s': 301}, None), ({'difficulty': 'nightmare'}, None), ({'seed': -1}, None), ({'seed': 2 ** 31}, None), ({'seed': True}, None), ({'evil': 1}, None), ('x', None)):
+        try:
+            GC.savunma_dogrula(kotu, tip); raise AssertionError((kotu, tip))
+        except GC.GcsHata:
+            pass
+    # --- yerleşim / radar / EO (tests/test_flightsim_gcs.mjs aynı değerleri sınar) ---
+    y0, y90 = GC.yerlesim(0), GC.yerlesim(90)
+    assert y0['station'] == {'x': 55.0, 'y': -40.0, 'yaw_deg': 0.0} and y0['tower'] == {'x': 85.0, 'y': -40.0, 'yaw_deg': 0.0} and y0['rack'] == {'x': 34.0, 'y': -14.0, 'yaw_deg': 0.0}, y0
+    assert y90['station'] == {'x': -40.0, 'y': -55.0, 'yaw_deg': 90.0}, y90   # pist doğuya: ileri +x, sağ −y
+    assert GC.radar_kapsar(g, y0['tower'], 85 + 19999, -40) and not GC.radar_kapsar(g, y0['tower'], 85 + 20001, -40) and not GC.radar_kapsar(None, y0['tower'], 85, -40)
+    lk = GC.eo_bakis(y0['tower'], 85, 960, 18 + 1000)
+    assert abs(lk['az']) < 1e-9 and abs(lk['el'] - 45) < 1e-9 and abs(lk['range_m'] - 1000 * math.sqrt(2)) < 1e-6, lk
+    assert abs(GC.eo_bakis(y0['tower'], 85 - 100, -40, 18)['az'] - 270) < 1e-9
+    r = GC.mulberry32(42)
+    assert [r(), r(), r()] == [0.6011037519201636, 0.44829055899754167, 0.8524657934904099]
+    # --- plan: deterministik, sınırlar ---
+    cfg = GC.savunma_dogrula({'seed': 12345}, 'interceptor')
+    p1, p2 = GC.savunma_plani(cfg), GC.savunma_plani(dict(cfg))
+    assert p1 == p2 and len(p1) == 2 + 3 + 4 + 5 + 6, len(p1)
+    assert [p1[0][k] for k in ('model', 'spawn_t', 'bearing_deg', 'dist_m', 'alt_m', 'dive_deg', 'cruise_ms', 'dive_ms')] == ['tgt:octopus', 45.0, 110.43, 4452.6, 395.4, 37.74, 55.56, 70.83], p1[0]
+    assert p1[0]['glb_url'] == '/static/simumav/models/tgt_octopus.glb' and p1[0]['damage'] == 20.0 and p1[0]['name'] == 'Octopus-100 · T1'
+    assert GC.savunma_plani(dict(cfg, seed=12346)) != p1
+    for th in p1:
+        assert 3000 <= th['dist_m'] <= 6000 * 1.16 and 150 <= th['alt_m'] <= 450 and 25 <= th['dive_deg'] <= 50 and th['dive_ms'] > th['cruise_ms'] and th['model'] in GC.TEHDIT_MODELLERI, th
+    zor = GC.savunma_plani(GC.savunma_dogrula({'seed': 1, 'waves': 10, 'difficulty': 'hard'}, 'interceptor'), False)
+    assert len(zor) == GC.TEHDIT_MAX and all(th['wave'] < 10 for th in zor)
+    # --- kinematik: seyir → dalış → çarpma (istasyon çatısı) ---
+    ist = {'x': 55.0, 'y': -40.0, 'z': GC.ISTASYON_Z}
+    th = dict(p1[0])
+    geo = GC.tehdit_geometri(th, ist)
+    assert GC.tehdit_durum(th, 44.9, ist) is None
+    s0 = GC.tehdit_durum(th, 45.0, ist)
+    assert abs(math.hypot(s0['x'] - 55, s0['y'] + 40) - 4452.6) < 1e-6 and s0['z'] == 395.4 and s0['phase'] == 'cruise' and abs(s0['heading'] - (110.43 + 180) % 360) < 1e-9
+    s1 = GC.tehdit_durum(th, 45 + geo['tc'] + geo['td'] / 2, ist)
+    assert s1['phase'] == 'dive' and abs(s1['z'] - (395.4 + GC.ISTASYON_Z) / 2) < 1e-6 and s1['pitch'] < 0 and s1['vz'] < 0, s1
+    s2 = GC.tehdit_durum(th, geo['t_impact'] + 5, ist)
+    assert s2['phase'] == 'impact' and abs(s2['x'] - 55) < 1e-6 and abs(s2['y'] + 40) < 1e-6 and abs(s2['z'] - GC.ISTASYON_Z) < 1e-9
+    assert abs(math.degrees(-s1['pitch']) - math.degrees(math.atan2(395.4 - GC.ISTASYON_Z, geo['dd']))) < 1e-9
+    # --- izleyici: önleme (yarıçap içinde ARM'lı), sızma (sağlık), bitiş; görev saati tabanı (tbm geri sarma) ---
+    sv = GC.SavunmaGorevi(GC.savunma_dogrula({'seed': 12345, 'waves': 1, 'prep_s': 15}, 'interceptor'), y0)
+    assert len(sv.plan) == 2 and sv.durum()['health'] == 100 and sv.durum()['remaining'] == 9
+    ev = sv.adim(15000, 0, 0, 0, False)
+    assert [e['kind'] for e in ev] == ['wave', 'spawn'] and ev[0]['wave'] == 1 and ev[0]['count'] == 2, ev
+    k0 = GC.tehdit_durum(sv.plan[0], 20.0, sv.ist)
+    ev = sv.adim(20000, k0['x'] + 10, k0['y'], k0['z'], False)
+    assert not [e for e in ev if e['kind'] == 'kill'], ev                              # disarm: önleme yok
+    ev = sv.adim(20000, k0['x'] + 10, k0['y'], k0['z'], True)
+    kill = [e for e in ev if e['kind'] == 'kill']
+    assert len(kill) == 1 and kill[0]['k'] == 0 and kill[0]['dist_m'] == 10.0 and kill[0]['ttk_s'] == 5.0 and kill[0]['interceptor'] == 1 and kill[0]['station_m'] > 3000, kill
+    assert sv.durum()['killed'] == [[0, 20.0]] and sv.icept['armed']
+    # sıradaki interceptor: uçmuş → harcanır; görev saati SITL geri sarmasında sürer
+    assert sv.konuslandir() is True and sv.icept['used'] == 2 and not sv.icept['armed']
+    assert sv.konuslandir() is False and sv.icept['used'] == 2                         # uçmamış → ücretsiz
+    sv.adim(3000, 0, 0, 0, False)                                                     # yeni SITL: tbm 3 sn → görev saati 23 sn
+    assert abs(sv.t - 23.0) < 1e-9 and sv.taban == 20.0, (sv.t, sv.taban)
+    g1 = GC.tehdit_geometri(sv.plan[1], sv.ist)
+    ev = sv.adim(int((g1['t_impact'] - 20.0 + 0.5) * 1000), 0, 0, 0, False)
+    leak = [e for e in ev if e['kind'] == 'leak']
+    end = [e for e in ev if e['kind'] == 'end']
+    assert len(leak) == 1 and leak[0]['health'] == 100 - sv.plan[1]['damage'] and end and end[0]['success'] is True and end[0]['reason'] == 'all_resolved', ev
+    oz = end[0]['result']
+    assert oz['spawned'] == 2 and len(oz['kills']) == 1 and len(oz['leaks']) == 1 and oz['accuracy'] == 0.5 and oz['icept'] == {'total': 10, 'used': 2, 'lost': 1}, oz
+    beklenen = 300 + min(400, int(round(kill[0]['station_m'] / 10))) + 195 - 250 + int(round(oz['health'])) * 10 + 800 + 1000
+    assert oz['score'] == beklenen and oz['rank'] == GC.rutbe(0.65 * 0.5 + 0.35 * oz['health'] / 100) and oz['rank_name'] == GC.RUTBE_TR[oz['rank']], (oz['score'], beklenen, oz['rank'])
+    assert sv.adim(999999, 0, 0, 0, True) == []                                        # bitti: olay yok
+    sv2 = GC.SavunmaGorevi(dict(cfg, interceptors=1), y0)
+    sv2.icept['armed'] = True
+    try:
+        sv2.konuslandir(); raise AssertionError('raf boşken konuşlandırıldı')
+    except GC.GcsHata:
+        pass
+    sv3 = GC.SavunmaGorevi(GC.savunma_dogrula({'seed': 5, 'waves': 3, 'difficulty': 'hard'}, 'interceptor'), y0)   # hiç önleme yok: istasyon düşer
+    son = []
+    for t in range(0, 2000, 2):
+        son = sv3.adim(t * 1000, 0, 0, 0, False) or son
+        if sv3.bitti:
+            break
+    assert sv3.bitti and sv3.bitti['success'] is False and sv3.bitti['reason'] == 'station_destroyed' and sv3.health == 0 and sv3.ozet()['rank'] == 'private', sv3.bitti
+    assert GC.savunma_puan({'kills': [], 'leaks': [{}] * 20, 'health': 0, 'icept': {'total': 1, 'used': 1}, 'spawned': 20})['score'] == 0   # ≥ 0
+    # --- sahte kipte oturum ---
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'defend': {'seed': 1}}).status_code == 400
+    assert a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'site': {'radar': True, 'radar_km': 99}}).status_code == 400
+    assert a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'defend': {'waves': 'çok'}}).status_code == 400
+    s = ok(a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'site': {'station': False, 'radar': True, 'radar_km': 12, 'eo': False},
+                           'defend': {'seed': 12345, 'waves': 1, 'prep_s': 15, 'interceptors': 3}}), 201)
+    sid = s['id']
+    assert s['site']['station'] is True and s['site']['radar_km'] == 12 and s['site']['eo'] is False and s['site']['layout']['tower'] == y0['tower'], s['site']   # görev istasyonu açar
+    assert s['gcs']['connected'] is False   # 'gcs' = Mission Planner bağlantısı (çakışma yok)
+    D = s['defend']
+    assert D['config']['seed'] == 12345 and len(D['plan']) == 2 and D['plan'][0]['glb_url'] and D['station'] == {'x': 55.0, 'y': -40.0, 'z': GC.ISTASYON_Z} and D['state']['remaining'] == 2, D['state']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hl = json.loads(ws.receive_text())
+        assert hl['session']['defend']['config']['waves'] == 1 and hl['session']['site']['radar'] is True
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'speed', 'params': {'factor': 8}, 'rid': 'g1'}))
+        m = ws_bekle(ws, lambda m: m['t'] == 'defend' and m['kind'] == 'wave', 12)
+        assert m and m['wave'] == 1 and m['count'] == 2 and m['state']['wave'] == 1, m
+        m = ws_bekle(ws, lambda m: m['t'] == 'event' and 'DALGA 1/1' in m['text'], 3)
+        assert m and m['severity'] == 4, m
+        # uçmamış interceptor: yeniden konuşlandırma ücretsiz
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'defend', 'params': {'action': 'next'}, 'rid': 'g2'}))
+        m = ws_bekle(ws, lambda m: m['t'] == 'defend' and m['kind'] == 'next', 5)
+        assert m and m['spent'] is False and m['state']['icept']['used'] == 1, m
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    r = a.post(f'{S}/{sid}/cmd', json={'name': 'defend', 'params': {'action': 'yok'}})
+    assert r.status_code == 400
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'arm'}))
+    assert bekle(lambda: flightsim.MANAGER.get(sid).savunma.icept['armed'] or None, 5)
+    t_once = flightsim.MANAGER.get(sid).savunma.t
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'reset'}))                                   # görevde Sıfırla = konuşlandırma (uçmuş → harcanır)
+    sess = flightsim.MANAGER.get(sid)
+    assert sess.savunma.icept['used'] == 2 and sess.savunma.icept['lost'] == 1
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    assert bekle(lambda: (sess.savunma.taban > 0 and sess.savunma.t >= t_once) or None, 5), (sess.savunma.taban, sess.savunma.t, t_once)   # görev saati sürer
+    assert ok(a.get(f'{S}/{sid}'))['defend']['state']['remaining'] == 1
+    # sızma (8×): 2 tehdit istasyona ulaşır → görev biter (önleme yok → başarı yalnız sağlık > 0)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        json.loads(ws.receive_text())
+        m = ws_bekle(ws, lambda m: m['t'] == 'defend' and m['kind'] == 'leak', 40)   # çerçeve türü `t` korunur (kayıt zamanı `tt`)
+        assert m and m['tt'] > 0 and m['health'] < 100 and m['state']['leaked'], m
+        m = ws_bekle(ws, lambda m: m['t'] == 'defend' and m['kind'] == 'end', 40)
+        assert m and m['result']['spawned'] == 2 and 'score' in m['result'] and m['tt'] > 0, m
+    assert sess.savunma.bitti, sess.savunma.durum()
+    sm = ok(a.get(f'{S}/{sid}/summary'))
+    assert sm['defend']['spawned'] == 2 and len(sm['defend']['leaks']) == 2 and sm['defend']['ended'] and sm['site']['radar'] is True, sm.get('defend')
+    ok(a.delete(f'{S}/{sid}'))
+    it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['session_id'] == sid)
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT targets, world FROM drone_sim_runs WHERE id = ?', (it['id'],)))
+    tj = json.loads(row['targets'])
+    assert tj['config'] is None and tj['site']['radar_km'] == 12 and tj['defend']['config']['seed'] == 12345 and len(tj['defend']['result']['leaks']) == 2, tj
+    with db.connect() as conn:
+        lid = conn.execute('SELECT MAX(id) FROM flight_logs').fetchone()[0]
+        conn.execute('UPDATE drone_sim_runs SET bin_log_id = ? WHERE id = ?', (lid, it['id']))
+        conn.commit()
+    try:
+        rp = R.ReplaySession(1, {'id': lid, 'file_name': 'g.bin', 'vehicle': 'ArduPlane'}, {'runway_heading': 90}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        rd = rp.to_dict()
+        assert rd['site']['radar_km'] == 12 and rd['site']['layout']['tower'] == y0['tower'], rd['site']   # canlı oturumun pist yönü (0), kayıt dünyasının değil
+        assert rd['defend']['plan'][0]['spawn_t'] == 15.0 and rd['defend']['replay'] and len(rd['defend']['state']['leaked']) == 2 and rd['defend']['result']['spawned'] == 2, rd['defend']['state']
+    finally:
+        with db.connect() as conn:
+            conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
+            conn.commit()
+    m = ok(a.get('/api/drone/sim/meta'))
+    assert m['site']['radar_km'] == [1.0, 50.0] and m['site']['eo_km_default'] == 5.0 and m['site']['defend']['defaults']['interceptors'] == 10 and 'hard' in m['site']['defend']['difficulties']
+    assert 'defend' in flightsim.KOMUTLAR
+    print('  yer kontrol sahası + "Yer kontrolünü koru" (§26) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2550,6 +2723,7 @@ def main():
         # --- kamera türü (§22.3) ---
         kamera_testleri(a, c1, sitl)
         hedef_icept_testleri(a, c1, sitl)   # §24 hedefler + §25 INTERCEPTOR
+        gcs_testleri(a, c1, sitl)   # §26 yer kontrol sahası + görev
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

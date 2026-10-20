@@ -96,7 +96,7 @@ test('EO yakınlaştırma ve durum', () => {
   const z1 = eoZoom(1000, 3), z2 = eoZoom(4000, 3);
   assert.ok(z2.fov < z1.fov && z2.zoom > z1.zoom);
   near(eoZoom(5, 3).fov, EO_FOV_MAX); near(eoZoom(1e7, 3).fov, EO_FOV_MIN);
-  near(eoZoom(1000, 3).fov, 2 * Math.atan(3 / 0.22 / 2 / 1000) * 180 / Math.PI, 1e-9);
+  near(eoZoom(1000, 3).fov, 2 * Math.atan(3 / 0.4 / 2 / 1000) * 180 / Math.PI, 1e-9);
   assert.equal(eoStatus({ eo: false }, 1, 100), 'off'); assert.equal(eoStatus({ eo: true, eo_km: 5 }, null, null), 'idle');
   assert.equal(eoStatus({ eo: true, eo_km: 5 }, 2, 5001), 'out'); assert.equal(eoStatus({ eo: true, eo_km: 5 }, 2, 4999), 'track');
 });

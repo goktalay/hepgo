@@ -1632,7 +1632,7 @@ halka etiketleri, N, kule, hedef numarası + irtifa, seçili hedefin adı, "n he
 (§24.5 Tab kilidiyle aynı durum; HUD TD kutusu da o hedefe geçer); boşluğa tıklama kilidi bırakır. Açıkken §24 küçük hedef radarı (sol üst) gizlenir (birleşik).
 
 **EO ekranı**: kamera EO topunun merkezinden (0,9 m ileri, near 1 m; kule gövdesi bu geçişte gizli) seçili hedefe; oto yakınlaştırma `eoZoom` (hedef dikey kadrajın
-~%22'si; FOV 48°…0,35° → ×1…×137, yumuşak); **menzil dışı** (eğik mesafe > EO menzili) → geniş açı + parazit + "MENZİL DIŞI · r > 5 km"; hedef yokken "HEDEF
+~%40'ı; FOV 48°…0,35° → ×1…×137, yumuşak); **menzil dışı** (eğik mesafe > EO menzili) → geniş açı + parazit + "MENZİL DIŞI · r > 5 km"; hedef yokken "HEDEF
 SEÇİLMEDİ" + yavaş tarama; dönüş sürerken "YÖNLENİYOR". Kamera türü gündüz / termal / gece (◐ düğmesi; §22.3 `CAM_FRAG`, kendi türü — `setCamUniforms(…, typeOverride)`;
 tercih `fs.site.eoType`), 15 fps (yavaş karede 7,5). OSD: köşe parantezleri, nişangâh, iz kutusu, `İZ · n ad`, AZ / EL / MZL, FOV. Teşhis `eoInfo()`.
 

@@ -126,13 +126,13 @@ try:
             yaw = math.degrees(math.atan2(-dx, dy)); pitch = math.degrees(math.asin(dz / math.sqrt(dx * dx + dy * dy + dz * dz)))
             pg.evaluate(f"window.__fsSim.setFreeView({cam[0]}, {cam[1]}, {cam[2]}, {yaw}, {pitch})")
         hx, hy = (st[0] + tw[0]) / 2, (st[1] + tw[1]) / 2
-        bak((hx - 30, hy - 62, st[2] + 16), (hx + 4, hy + 6, st[2] + 7))
+        bak((hx - 22, hy - 58, st[2] + 34), (hx - 2, hy + 4, st[2] + 2))
         pg.wait_for_timeout(4000)
         shot(pg, 'hepgo-02-scene-site.png')
         pg.evaluate("window.__fsSim.setCamType('thermal')")
         pg.evaluate("window.__fsSim.setCamera('fpv')"); pg.wait_for_timeout(300)
         pg.evaluate("window.__fsSim.setCamera('free')")
-        bak((hx - 30, hy - 62, st[2] + 16), (hx + 4, hy + 6, st[2] + 7))
+        bak((hx - 22, hy - 58, st[2] + 34), (hx - 2, hy + 4, st[2] + 2))
         pg.wait_for_timeout(1500)
         pg.evaluate("window.__fsSim.setCamType('day')")
         # ---- uçuş: kalkış + hızlandırma

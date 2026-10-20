@@ -83,8 +83,8 @@ export function eoLook(tower, x, y, z, eoZ = TOWER_EO_Z) {
   const dx = x - tower.x, dy = y - tower.y, dz = z - eoZ, g = Math.hypot(dx, dy);
   return { az: ((Math.atan2(dx, dy) / DEG) % 360 + 360) % 360, el: Math.atan2(dz, g) / DEG, range_m: Math.hypot(g, dz), ground_m: g };
 }
-/** Oto yakınlaştırma: hedef (boyu sizeM, çizimde ×2,5) dikey kadrajın ~%22'sini kaplasın. Dönüş {fov (°), zoom (×)}. */
-export function eoZoom(rangeM, sizeM = 3, frac = 0.22) {
+/** Oto yakınlaştırma: hedef (boyu sizeM, çizimde ×2,5) dikey kadrajın ~%40ını kaplasın. Dönüş {fov (°), zoom (×)}. */
+export function eoZoom(rangeM, sizeM = 3, frac = 0.4) {
   const fov = clamp(2 * Math.atan((sizeM / frac) / 2 / Math.max(1, rangeM)) / DEG, EO_FOV_MIN, EO_FOV_MAX);
   return { fov, zoom: EO_FOV_MAX / fov };
 }

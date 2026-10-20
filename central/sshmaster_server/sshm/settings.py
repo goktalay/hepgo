@@ -55,7 +55,7 @@ RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.g
                 'mt': os.environ.get('MASTERTOOL_RELEASE_KEY', ''),
                 # Araçlar (main.TOOLS): anahtar adı = slug'ın tiresiz büyük harfi + _RELEASE_KEY
                 'ip': os.environ.get('IPTOOLS_RELEASE_KEY', ''), 'fs': os.environ.get('FILESEARCH_RELEASE_KEY', ''),
-                'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', ''),
+                'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', ''), 'm3': os.environ.get('MASTER3D_RELEASE_KEY', ''),
                 'sv': os.environ.get('SIMUMAV_RELEASE_KEY', ''),   # mt = Master Tool masaüstü (başlatıcı); sv = SIMUMAV web paketi (/api/sv/web-releases)
                 'mw': os.environ.get('MASTERWORLD_RELEASE_KEY', '')}   # mw = MASTERWORLD web paketi (/api/mw/web-releases)
 # Destek talepleri Merkez'in talep ekranına düşer: Merkez aynı sunucuda UNIX soketinde (ya da MT_MERKEZ_URL) iç anahtarla çağrılır

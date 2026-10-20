@@ -1,0 +1,119 @@
+[
+ {
+  "stem": "m3-01-hos-geldiniz-gece",
+  "theme": "dark",
+  "title": "Sürükle-bırak ve son açılanlar",
+  "caption": "43 biçim ailesi; dosyalar yalnız bu bilgisayarda açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-02-step-montaj-gece",
+  "theme": "dark",
+  "title": "STEP montajı: parça ağacı ve özellikler",
+  "caption": "OpenCascade ile; boyut, alan, hacim, B-rep yüzleri",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-03-patlatma-gece",
+  "theme": "dark",
+  "title": "Patlatma: parçalar ortadan dışa açılır",
+  "caption": "Kaydırıcıyla %0–100; ortadan, X / Y / Z ya da montaj ağacına göre",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-04-patlatma-montaj-gunduz",
+  "theme": "light",
+  "title": "Montaj ağacına göre patlatma",
+  "caption": "Her alt montaj kendi ortasından; 3MF, STEP, glTF, FBX",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-05-gltf-pbr-gece",
+  "theme": "dark",
+  "title": "glTF / GLB: PBR malzeme ve dokular",
+  "caption": "Stüdyo ışığı, zemin gölgesi; FBX, OBJ, USDZ, COLLADA da açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-06-ifc-bim-gunduz",
+  "theme": "light",
+  "title": "IFC (BIM): kat ve yapı elemanları",
+  "caption": "Duvar, döşeme, pencere, kapı; mekânsal yapıya göre ağaç",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-07-kesit-gece",
+  "theme": "dark",
+  "title": "Kesit düzlemi",
+  "caption": "X / Y / Z ekseninde kaydırarak modelin içini görün",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-08-olcum-gunduz",
+  "theme": "light",
+  "title": "Ölçüm ve sınır kutusu",
+  "caption": "İki nokta arası uzaklık; G × Y × D ölçüleri model biriminde",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-09-tel-kafes-gece",
+  "theme": "dark",
+  "title": "Gölgeli + kenarlar, tel kafes, X-ışını",
+  "caption": "Görünüm kipleri: W ile değiştirin",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-10-nokta-bulutu-gece",
+  "theme": "dark",
+  "title": "Nokta bulutu: PCD, PLY, XYZ",
+  "caption": "Milyonlarca nokta; renkli taramalar",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-11-disa-aktar-gunduz",
+  "theme": "light",
+  "title": "Dışa aktar: 15 biçim",
+  "caption": "GLB, FBX, OBJ, STEP, STL, 3MF, USDZ…; seçili parça ya da her parça ayrı dosya",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-12-ayarlar-bicimler-gece",
+  "theme": "dark",
+  "title": "Ayarlar › Biçimler",
+  "caption": "Hangi biçim hangi okuyucuyla açılır; bilinen sınırlar",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ },
+ {
+  "stem": "m3-13-giris-gunduz",
+  "theme": "light",
+  "title": "Mastertool hesabıyla giriş",
+  "caption": "Başka bir Mastertool uygulamasında giriş yapıldıysa şifresiz açılır",
+  "w": 1600,
+  "h": 1000,
+  "en": true
+ }
+]

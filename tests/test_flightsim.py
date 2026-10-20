@@ -2279,6 +2279,125 @@ def hedef_icept_testleri(a, c1, sitl):
     print('  hedefler (§24) + INTERCEPTOR (§25) testleri geçti')
 
 
+def firlatici_testleri(a, c1):
+    """§27 INTERCEPTOR fırlatıcıları: world.launch doğrulaması (yöntem, loaded, aim_*; 400'ler), tipe göre normalizasyon, nişan noktası (istemci
+    aimWaypoint ile birebir vektörler), sahte kipte kalkış aşamaları (kutu: armed → launch → released; el: nişan alanları + nişan yönünde tırmanış),
+    `cmd takeoff {aim}` doğrulaması, görevde hücre sırası, drone_sim_runs.launch kaydı ve kayıttan oynatmada fırlatıcı türü (kayıttan önerilir)."""
+    from app import db, flightsim_launcher as FL, flightsim_replay as R
+    S = '/api/drone/sim/sessions'
+    # --- doğrulama / normalizasyon ---
+    assert flightsim.LAUNCH_METHODS == ('wheels', 'ramp', 'vehicle', 'pod4', 'pod8', 'tube', 'handheld')
+    assert flightsim.launch_dogrula({'method': 'pod4'}) == {'method': 'pod4', 'angle_deg': 15, 'release_kmh': 70, 'loaded': 4}
+    assert flightsim.launch_dogrula({'method': 'pod8', 'loaded': 5})['loaded'] == 5 and 'loaded' not in flightsim.launch_dogrula({'method': 'tube'})
+    h = flightsim.launch_dogrula({'method': 'handheld', 'aim_az_deg': 360, 'aim_el_deg': 85})
+    assert h['aim_az_deg'] == 0.0 and h['aim_el_deg'] == 85.0, h
+    assert flightsim.launch_dogrula({'method': 'handheld'})['aim_el_deg'] == FL.AIM_DEFAULTS['aim_el_deg']
+    assert flightsim.launch_dogrula({'method': 'ramp'}) == {'method': 'ramp', 'angle_deg': 15, 'release_kmh': 70}   # sabit kanat gövdesi değişmedi
+    for bad in ({'method': 'pod4', 'loaded': 5}, {'method': 'pod4', 'loaded': 0}, {'method': 'pod8', 'loaded': 2.5}, {'method': 'pod8', 'loaded': True},
+                {'method': 'handheld', 'aim_el_deg': 9}, {'method': 'handheld', 'aim_el_deg': 86}, {'method': 'handheld', 'aim_az_deg': -1},
+                {'method': 'handheld', 'aim_az_deg': 361}, {'method': 'handheld', 'aim_az_deg': '10'}, {'method': 'hand'}, {'method': 'pod16'}):
+        assert a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'world': {'launch': bad}}).status_code == 400, bad
+    n = flightsim.launch_normalize
+    assert n('interceptor', {'method': 'pod8', 'loaded': 3})['method'] == 'pod8' and n('interceptor', {'method': 'ramp'})['method'] == 'wheels'
+    sk = n('sabit_kanat', {'method': 'handheld', 'aim_az_deg': 10.0, 'aim_el_deg': 30.0})
+    assert sk['method'] == 'wheels' and 'aim_az_deg' not in sk and 'aim_el_deg' not in sk, sk
+    assert n('vtol', {'method': 'pod4', 'loaded': 2})['method'] == 'wheels' and n('sabit_kanat', {'method': 'ramp'})['method'] == 'ramp'
+    # nişan noktası: istemci aimWaypoint (tests/test_flightsim_launcher.mjs AIM_VECTORS) ile birebir
+    for az, el, beklenen in ((0, 10, {'east_m': 0.0, 'north_m': 492.4, 'alt_m': 86.82, 'horiz_m': 492.4}), (90, 30, {'east_m': 433.01, 'north_m': 0.0, 'alt_m': 250.0, 'horiz_m': 433.01}),
+                             (225, 45, {'east_m': -247.49, 'north_m': -247.49, 'alt_m': 350.0, 'horiz_m': 350.0}), (300, 80, {'east_m': -103.92, 'north_m': 60.0, 'alt_m': 350.0, 'horiz_m': 120.0})):
+        assert FL.aim_noktasi(az, el) == beklenen, (az, el, FL.aim_noktasi(az, el))
+    assert FL.aim_dogrula(None) is None and FL.aim_dogrula({'az_deg': 360, 'el_deg': 45}) == (0.0, 45.0)
+    for bad in ({'az_deg': 10}, {'az_deg': 10, 'el_deg': 5}, 'x', {'az_deg': True, 'el_deg': 30}):
+        try:
+            FL.aim_dogrula(bad); raise AssertionError(bad)
+        except FL.LauncherHata:
+            pass
+    assert FL.firlatici_sayisi('pod4', 10) == 3 and FL.firlatici_sayisi('pod8', 12) == 2 and FL.firlatici_sayisi('tube', 10) == 1 and FL.firlatici_sayisi('ramp', 5) == 0
+    assert FL.etiket({'method': 'pod4', 'loaded': 3}) == "4'lü fırlatıcı (3 dolu)" and FL.etiket({'method': 'handheld', 'aim_az_deg': 40, 'aim_el_deg': 30}) == 'El fırlatıcısı 30° / 40°'
+    token = a.cookies.get(auth.COOKIE)
+    # --- 4'lü kutu: sahte kipte aşamalar ---
+    s = ok(a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'world': {'launch': {'method': 'pod4', 'loaded': 3}}}), 201)
+    sid = s['id']
+    assert s['launch'] == {'method': 'pod4', 'angle_deg': 15, 'release_kmh': 70, 'loaded': 3, 'phase': None}, s['launch']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hl = json.loads(ws.receive_text())
+        assert hl['t'] == 'hello' and hl['session']['launch']['method'] == 'pod4'
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 40}, 'rid': 'p1'}))
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'speed', 'params': {'factor': 4}, 'rid': 'p2'}))
+        fazlar, bitis = [], time.time() + 10
+        while time.time() < bitis and (not fazlar or fazlar[-1]['phase'] != 'released'):
+            m = json.loads(ws.receive_text())
+            if m['t'] == 'launch':
+                fazlar.append(m)
+        assert [f['phase'] for f in fazlar] == ['armed', 'launch', 'released'] and all(f['method'] == 'pod4' for f in fazlar), fazlar
+        m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['alt_rel'] > 5, 6)
+        assert m and m['groundspeed'] == 0 and m['att_body'][1] == round(math.pi / 2, 4), m   # kutudan dikey (kuyruk üstünde)
+    assert ok(a.get(f'{S}/{sid}'))['launch']['phase'] == 'released'
+    ok(a.delete(f'{S}/{sid}'))
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT launch FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (sid,)))
+    assert json.loads(row['launch'])['method'] == 'pod4' and json.loads(row['launch'])['loaded'] == 3, row
+    # --- el fırlatıcısı: canlı nişan (cmd takeoff aim) + nişan yönünde tırmanış ---
+    s = ok(a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'world': {'launch': {'method': 'handheld', 'aim_az_deg': 10, 'aim_el_deg': 20}}}), 201)
+    sid = s['id']
+    assert s['launch']['aim_az_deg'] == 10.0 and s['launch']['aim_el_deg'] == 20.0
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    assert a.post(f'{S}/{sid}/cmd', json={'name': 'takeoff', 'params': {'alt': 40, 'aim': {'az_deg': 90, 'el_deg': 5}}}).status_code == 400
+    assert a.post(f'{S}/{sid}/cmd', json={'name': 'takeoff', 'params': {'alt': 40, 'aim': [90, 30]}}).status_code == 400
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        json.loads(ws.receive_text())
+        t0 = ws_bekle(ws, lambda x: x['t'] == 'tele')
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 40, 'aim': {'az_deg': 90, 'el_deg': 30}}, 'rid': 'h1'}))
+        fazlar, bitis = [], time.time() + 10
+        while time.time() < bitis and (not fazlar or fazlar[-1]['phase'] != 'released'):
+            m = json.loads(ws.receive_text())
+            if m['t'] == 'launch':
+                fazlar.append(m)
+        assert [f['phase'] for f in fazlar] == ['armed', 'launch', 'released'], fazlar
+        assert fazlar[1]['aim_az_deg'] == 90.0 and fazlar[1]['aim_el_deg'] == 30.0 and fazlar[1]['method'] == 'handheld', fazlar[1]
+        m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['alt_rel'] > 6, 8)
+        assert m, 'tırmanış yok'
+        de = (m['lon'] - t0['lon']) * 111320.0 * math.cos(math.radians(t0['lat'])); dn = (m['lat'] - t0['lat']) * 110574.0
+        assert de > 5 and abs(dn) < de * 0.1, (de, dn)   # doğuya (az 90°)
+        assert abs(math.degrees(math.atan2(m['alt_rel'], math.hypot(de, dn))) - 30) < 6, (m['alt_rel'], de)   # tan(30°) eğimiyle
+        assert abs(m['att_body'][1] - math.radians(30)) < 0.01 and abs(m['att_body'][2] - math.radians(90)) < 0.01, m['att_body']   # gövde nişan açısında
+    g = ok(a.get(f'{S}/{sid}'))
+    assert g['launch']['aim_az_deg'] == 90.0 and g['launch']['phase'] == 'released', g['launch']
+    ok(a.delete(f'{S}/{sid}'))
+    it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['session_id'] == sid)
+    # --- kayıttan oynatma: istekte fırlatıcı yoksa canlı oturumunki ---
+    with db.connect() as conn:
+        lid = conn.execute("INSERT INTO flight_logs (task_id, file, file_name, size, status, analysis, uploaded_by, uploaded_at) VALUES (NULL, 'flightlogs/l.bin', 'l.bin', 1, 'TAMAM', '{}', 1, ?)", (db.now(),)).lastrowid
+        conn.execute('UPDATE drone_sim_runs SET bin_log_id = ? WHERE id = ?', (lid, it['id']))
+        conn.commit()
+    try:
+        r = R.ReplaySession(2, {'id': lid, 'file_name': 'l.bin', 'vehicle': 'ArduPlane'}, {}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        assert r.type == 'interceptor' and r.launch['method'] == 'handheld' and r.launch['aim_az_deg'] == 90.0, r.launch
+        r2 = R.ReplaySession(3, {'id': lid, 'file_name': 'l.bin', 'vehicle': 'ArduPlane'}, {'launch': {'method': 'pod8'}}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        assert r2.launch['method'] == 'pod8', r2.launch   # istekte seçilen fırlatıcı öncelikli
+        with db.connect() as conn:
+            lst = [x for x in R.loglari_listele(conn, {'modules': ['tools']}) if x['id'] == lid]
+        assert lst and lst[0]['type'] == 'interceptor' and lst[0]['sim_launch']['method'] == 'handheld', lst
+    finally:
+        with db.connect() as conn:
+            conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
+            conn.execute('DELETE FROM flight_logs WHERE id = ?', (lid,))
+            conn.commit()
+    # --- görev: 8'li kutu + "Yer kontrolünü koru": hücre sırası olayda ---
+    s = ok(a.post(S, json={'type': 'interceptor', 'center_id': c1['id'], 'world': {'launch': {'method': 'pod8'}}, 'site': {'station': True},
+                           'defend': {'seed': 5, 'waves': 1, 'interceptors': 12, 'prep_s': 300}}), 201)
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        json.loads(ws.receive_text())
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 30}, 'rid': 'd1'}))
+        m = ws_bekle(ws, lambda x: x['t'] == 'launch' and x['phase'] == 'launch', 5)
+        assert m and m['cell'] == 1 and m['method'] == 'pod8', m
+    ok(a.delete(f'{S}/{sid}'))
+    print('  fırlatıcı (§27) testleri geçti')
+
+
 def gcs_testleri(a, c1, sitl):
     """§26 yer kontrol sahası + "Yer kontrolünü koru": saf fonksiyonlar (doğrulama 400'leri, yerleşim, radar/EO, mulberry32 — ön yüzle aynı vektörler,
     plan determinizmi, tehdit kinematiği, önleme/sızma/bitiş, yeniden konuşlandırma ve görev saati tabanı, puan/rütbe); sahte kipte oturum: site/defend
@@ -2724,6 +2843,7 @@ def main():
         kamera_testleri(a, c1, sitl)
         hedef_icept_testleri(a, c1, sitl)   # §24 hedefler + §25 INTERCEPTOR
         gcs_testleri(a, c1, sitl)   # §26 yer kontrol sahası + görev
+        firlatici_testleri(a, c1)   # §27 INTERCEPTOR fırlatıcıları
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

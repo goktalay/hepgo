@@ -11,7 +11,8 @@ const test = (name, fn) => { fn(); n++; console.log('  ✓', name); };
 test('adım sırası (canlı): kopterde kalkış adımı yok; sabit kanatta Dünya ile Güç arasında', () => {
   assert.deepEqual(wizardSteps({ mode: 'sitl', type: 'multirotor' }), ['vehicle', 'world', 'power', 'camera', 'targets', 'site', 'summary']);
   assert.deepEqual(wizardSteps({ mode: 'sitl', type: 'sabit_kanat' }), ['vehicle', 'world', 'launch', 'power', 'camera', 'targets', 'site', 'summary']);
-  for (const t of ['hexarotor', 'helikopter', 'vtol', 'interceptor']) assert.ok(!wizardSteps({ mode: 'sitl', type: t }).includes('launch'), t);
+  for (const t of ['hexarotor', 'helikopter', 'vtol']) assert.ok(!wizardSteps({ mode: 'sitl', type: t }).includes('launch'), t);
+  assert.deepEqual(wizardSteps({ mode: 'sitl', type: 'interceptor' }), ['vehicle', 'world', 'launch', 'power', 'camera', 'targets', 'site', 'summary']);   // §27 fırlatıcılar
 });
 test('adım sırası (kayıttan oynat): log → (kalkış) → dünya → kamera → özet; güç/hedef/yer kontrol yok', () => {
   assert.deepEqual(wizardSteps({ mode: 'replay', type: 'multirotor' }), ['log', 'world', 'camera', 'summary']);
@@ -20,11 +21,15 @@ test('adım sırası (kayıttan oynat): log → (kalkış) → dünya → kamera
 test('kalkış seçenekleri veriden: LAUNCH_METHODS ile birebir; yeni seçenek eklenince adım o tipte açılır', () => {
   assert.deepEqual(LAUNCH_OPTIONS.map(o => o.key), LAUNCH_METHODS.map(([k]) => k));
   assert.ok(LAUNCH_OPTIONS.every(o => o.name && o.desc && o.params.every(p => LAUNCH_PARAM_DEFS[p])));
-  assert.equal(launchOptionsFor('interceptor').length, 0);
-  const ext = [...LAUNCH_OPTIONS, { key: 'rack4', types: ['interceptor'], name: '4\'lü fırlatıcı', desc: 'x', params: [] }];
-  assert.deepEqual(launchOptionsFor('interceptor', ext).map(o => o.key), ['rack4']);
-  assert.ok(wizardSteps({ mode: 'sitl', type: 'interceptor', options: ext }).includes('launch'));
-  assert.equal(normLaunchMethod('wheels', 'interceptor', ext), 'rack4');
+  assert.deepEqual(launchOptionsFor('interceptor').map(o => o.key), ['pod4', 'pod8', 'tube', 'handheld']);   // §27 kullanıcının sırası
+  assert.equal(launchOptionsFor('vtol').length, 0);
+  const ext = [...LAUNCH_OPTIONS, { key: 'rack4', types: ['vtol'], name: '4\'lü raf', desc: 'x', params: [] }];
+  assert.deepEqual(launchOptionsFor('vtol', ext).map(o => o.key), ['rack4']);
+  assert.ok(wizardSteps({ mode: 'sitl', type: 'vtol', options: ext }).includes('launch'));
+  assert.equal(normLaunchMethod('wheels', 'vtol', ext), 'rack4');
+  assert.equal(normLaunchMethod('wheels', 'interceptor'), 'pod4');
+  assert.equal(normLaunchMethod('handheld', 'interceptor'), 'handheld');
+  assert.equal(normLaunchMethod('handheld', 'sabit_kanat'), 'wheels');
   assert.equal(normLaunchMethod('ramp', 'sabit_kanat'), 'ramp');
   assert.equal(normLaunchMethod('wheels', 'multirotor'), 'wheels');   // seçenek yok: dokunulmaz (gövde aynı kalır)
   assert.equal(LAUNCH_DEFAULTS.angle_deg >= LAUNCH_PARAM_DEFS.angle_deg.min && LAUNCH_DEFAULTS.angle_deg <= LAUNCH_PARAM_DEFS.angle_deg.max, true);

@@ -695,6 +695,12 @@ class Session:
         except Exception:
             self.send('session:status', {'state': 'disconnected'})
             raise
+        if self.closed:   # istemci bu açılış sürerken kapandı: bağlantı (ve eşzamanlı oturum yuvası) sızmasın
+            try:
+                r.close()
+            except Exception:   # noqa: BLE001
+                pass
+            raise MtError('Client is closed')
         self.send('session:status', {'state': 'connected'})
         return r
 
@@ -1462,4 +1468,4 @@ async def ws_ftp(ws: WebSocket):
     finally:
         win.closed = True
         sender.cancel()
-        await asyncio.to_thread(win.close_session)
+        threading.Thread(target=win.close_session, daemon=True, name='ftp-close').start()   # iptalden bağımsız: bağlantılar ve oturum yuvaları mutlaka bırakılır

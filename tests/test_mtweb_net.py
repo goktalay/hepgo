@@ -472,7 +472,10 @@ def test_ssh_e2e(root):
                 # Kötü ad ile kaçış yok
                 d = call(32, 'sftp:download', {'pane': 'p1', 'id': 't3', 'remotePath': '/..', 'localDir': 'H:\\'})
                 assert d['ok'] is False or d['v']['ok'] is False, d
-            time.sleep(0.3)
+            for _ in range(100):   # WS kapanınca oturumlar kapanış iş parçacığında bırakılır (eşzamansız; ≤ 10 sn)
+                if guard.open_sessions(1, 'sshmaster') == 0:
+                    break
+                time.sleep(0.1)
             assert guard.open_sessions(1, 'sshmaster') == 0, guard._sessions     # WS kapanınca oturumlar bırakılır
             assert tools_ssh.known_hosts_path(1).read_text().strip()               # kullanıcının known_hosts'u
             assert not ('agent',) in srv.log and not any(x[0] in ('port-forward', 'x11', 'direct-tcpip') for x in srv.log), srv.log

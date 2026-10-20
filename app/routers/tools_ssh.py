@@ -420,6 +420,9 @@ class Window:
             return {'ok': False, 'message': friendly_error(e)}, pub
         s = {'client': client, 'chan': chan, 'sftp': None, 'conn': conn, 'wq': queue.Queue(), 'lock': threading.Lock(), 'release': release}
         self.sessions[pane] = s
+        if self.closed:   # pencere bu çağrı sürerken kapandı (close_all önce çalıştı): oturum sızmasın, eşzamanlı oturum yuvası bırakılsın
+            self.close_session(pane)
+            return {'ok': False, 'message': T('main.errNoSession')}, pub
         threading.Thread(target=self._reader, args=(pane, s), daemon=True, name=f'ssh-rd-{pane}').start()
         threading.Thread(target=self._writer, args=(s,), daemon=True, name=f'ssh-wr-{pane}').start()
         if conn.get('rememberLastDir'):   # son klasörü takip et / oraya git
@@ -696,4 +699,6 @@ async def ws_ssh(ws: WebSocket):
         pass
     finally:
         sender.cancel()
-        await asyncio.to_thread(win.close_all)
+        # Ayrı iş parçacığında, beklemeden başlatılır: bağlantı koparken görev iptal edilse de (CancelledError) oturumlar mutlaka kapanır,
+        # eşzamanlı oturum yuvaları (mtweb kotası) bırakılır.
+        threading.Thread(target=win.close_all, daemon=True, name='ssh-close-all').start()

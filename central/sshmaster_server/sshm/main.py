@@ -42,7 +42,8 @@ APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'porta
 # Master Tool'dan. Yeni araç = buraya bir satır + <SLUG büyük harf>_RELEASE_KEY (sunucu .env + GitHub) + static/mt/araclar/<slug>.html.
 TOOLS = {'ip': {'name': 'IP Tools', 'slug': 'ip-tools', 'setup': 'IP-Tools-Setup-{v}.exe', 'portable': 'IP-Tools-Portable-{v}.exe'},
          'fs': {'name': 'File Search', 'slug': 'file-search', 'setup': 'File-Search-Setup-{v}.exe', 'portable': 'File-Search-Portable-{v}.exe'},
-         'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'}}
+         'qp': {'name': 'Quick Preview', 'slug': 'quick-preview', 'setup': 'Quick-Preview-Setup-{v}.exe', 'portable': 'Quick-Preview-Portable-{v}.exe'},
+         'm3': {'name': 'Master 3D', 'slug': 'master-3d', 'setup': 'Master-3D-Setup-{v}.exe', 'portable': 'Master-3D-Portable-{v}.exe'}}
 TOOLS['ip']['desc'] = {'tr': 'Ağdaki cihazları, açık portları ve servisleri tarar', 'en': 'Scans your network for devices, open ports and services',
                        'fr': 'Analyse le réseau : appareils, ports ouverts et services', 'de': 'Durchsucht das Netzwerk nach Geräten, offenen Ports und Diensten',
                        'es': 'Escanea la red en busca de dispositivos, puertos abiertos y servicios', 'ar': 'يفحص الشبكة بحثًا عن الأجهزة والمنافذ المفتوحة والخدمات',
@@ -55,6 +56,14 @@ TOOLS['qp']['desc'] = {'tr': 'Sağ tıkla dosyaları anında önizler (resim, PS
                        'fr': 'Aperçu instantané des fichiers depuis le clic droit (images, PSD, PDF)', 'de': 'Sofortvorschau von Dateien per Rechtsklick (Bilder, PSD, PDF)',
                        'es': 'Vista previa instantánea de archivos con clic derecho (imágenes, PSD, PDF)', 'ar': 'يعاين الملفات فورًا من قائمة النقر بزر الماوس الأيمن (صور، PSD، PDF)',
                        'zh': '通过右键菜单即时预览文件（图片、PSD、PDF）', 'ru': 'Мгновенный предпросмотр файлов из контекстного меню (изображения, PSD, PDF)'}
+TOOLS['m3']['desc'] = {'tr': '3B dosyaları açar, parçalarına ayırır (patlatma) ve 15 biçime dışa aktarır (STEP, FBX, glTF, STL…)',
+                       'en': 'Opens 3D files, explodes them into parts and exports to 15 formats (STEP, FBX, glTF, STL…)',
+                       'fr': 'Ouvre les fichiers 3D, les éclate en pièces et exporte vers 15 formats (STEP, FBX, glTF, STL…)',
+                       'de': 'Öffnet 3D-Dateien, zerlegt sie in Teile (Explosionsansicht) und exportiert in 15 Formate (STEP, FBX, glTF, STL…)',
+                       'es': 'Abre archivos 3D, los despieza (vista explosionada) y exporta a 15 formatos (STEP, FBX, glTF, STL…)',
+                       'ar': 'يفتح الملفات ثلاثية الأبعاد ويفككها إلى قطع ويصدّرها إلى 15 صيغة (STEP وFBX وglTF وSTL…)',
+                       'zh': '打开 3D 文件，拆分为零件（爆炸视图），并导出为 15 种格式（STEP、FBX、glTF、STL…）',
+                       'ru': 'Открывает 3D-файлы, разносит их на детали и экспортирует в 15 форматов (STEP, FBX, glTF, STL…)'}
 APPS |= TOOLS                                          # lisans, oturum, senkron, sürüm ve indirme araçlarda da aynı
 # Oyunlar: mastertool.download altında sunulan web (HTML5) oyunları — kurulum, lisans ve sürüm yok; Mastertool hesabıyla giriş ve
 # kullanıcı başına tek profil JSON'u (/api/<kod>/profile). Dosyalar depoda DEĞİLDİR: dağıtımda static/mt/oyunlar/<slug>/ altına

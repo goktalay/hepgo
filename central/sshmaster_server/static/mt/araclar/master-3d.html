@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master 3D — 3B dosya görüntüleyici, patlatma ve dönüştürücü (Master Tool aracı)</title>
+<meta name="description" content="Master 3D: STEP, IGES, glTF, FBX, OBJ, STL, 3MF, IFC, USDZ ve 40'tan fazla 3B biçimi açın; parçalarına ayırın, ölçün, kesit alın ve 15 biçime dışa aktarın. Master Tool › Araçlar; Mastertool hesabınızla ücretsiz.">
+<meta property="og:title" content="Master 3D — 3B dosya görüntüleyici, patlatma ve dönüştürücü">
+<meta property="og:description" content="STEP, glTF, FBX, STL, IFC ve 40'tan fazla 3B biçim: aç, patlat, ölç, dışa aktar. Master Tool aracı.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mastertool.download/araclar/master-3d">
+<link rel="icon" href="/brand/m3.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/kit.css">
+<script src="/kit.js" data-site="mt" defer></script>
+<style>
+  :root { --bg: #0b0f17; --bg2: #0f1522; --card: #131b2b; --line: #1f2a40; --text: #d6deeb; --head: #ffffff; --muted: #8b98b0; --acc: #22d3ee; --acc2: #6366f1; --ok: #34d399; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); background: var(--hdr, rgba(11, 15, 23, .75)); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .01em; text-decoration: none; font-size: 18px; color: var(--head); }
+  .brand svg { width: 30px; height: 30px; }
+  nav.links { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--head); }
+  .store { display: inline-flex; align-items: center; gap: 12px; padding: 12px 22px; border-radius: 12px; background: #fff; color: #111; text-decoration: none; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: transform .15s; }
+  .store:hover { transform: translateY(-2px); }
+  .store small { display: block; font-size: 11px; font-weight: 500; color: #444; line-height: 1.1; }
+  .store b { display: block; font-size: 18px; line-height: 1.15; }
+  .store svg { width: 26px; height: 26px; flex: 0 0 auto; }
+  .store.sm { padding: 8px 14px; gap: 8px; border-radius: 10px; box-shadow: none; }
+  .navbtn { color: var(--muted); text-decoration: none; font-size: 14px; margin-right: 4px; } .navbtn:hover { color: var(--head); }
+  .store.sm b { font-size: 14px; } .store.sm small { display: none; } .store.sm svg { width: 18px; height: 18px; }
+  .hero { padding: 88px 0 72px; background: radial-gradient(900px 420px at 85% -10%, rgba(99,102,241,.28), transparent 60%), radial-gradient(700px 380px at 0% 10%, rgba(34,211,238,.16), transparent 60%); }
+  .hero .wrap { display: grid; grid-template-columns: .95fr 1.05fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.3); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(36px, 5vw, 56px); line-height: 1.08; margin: 18px 0 16px; letter-spacing: -.02em; color: var(--head); }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 540px; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .app { background: #0b0f17; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden; font-size: 12px; }
+  .app-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #10172a; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .app-bar b { color: var(--head); font-weight: 600; }
+  .app-bar .sp { flex: 1; }
+  .chip { padding: 2px 8px; border-radius: 6px; background: #19223a; }
+  .chip.on { background: rgba(34,211,238,.15); color: var(--acc); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .pane { background: #0b0f17; display: grid; grid-template-columns: 112px 1fr; grid-template-rows: auto 1fr; min-height: 270px; }
+  .side { border-right: 1px solid var(--line); background: #0e1424; padding: 8px; color: var(--muted); }
+  .side h6 { margin: 0 0 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6b7a96; }
+  .side div { padding: 2px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .sel { background: rgba(99,102,241,.25); color: var(--head); }
+  .side .grp { margin-bottom: 10px; }
+  .pane-head { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--line); background: #0f1626; color: var(--muted); }
+  .pane-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pane pre { margin: 0; padding: 10px 12px; font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #d6deeb; white-space: pre-wrap; overflow: hidden; }
+  .g { color: #34d399; } .cy { color: #22d3ee; } .y { color: #fbbf24; } .mg { color: #c084fc; }
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  h2 { font-size: clamp(28px, 3.4vw, 38px); margin: 0 0 12px; letter-spacing: -.01em; color: var(--head); }
+  .sub { color: var(--muted); margin: 0 0 40px; max-width: 680px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: rgba(34,211,238,.12); color: var(--acc); margin-bottom: 14px; }
+  .card .ic svg { width: 22px; height: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; color: var(--head); }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; background: #1b2438; border: 1px solid #2b3856; border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--head); white-space: nowrap; }
+  .themes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .theme { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .theme i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.18); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .keys { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .keys td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .keys td:first-child { width: 46%; padding-right: 16px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #06101c; }
+  .step h3 { margin: 0 0 4px; font-size: 17px; color: var(--head); } .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .final { text-align: center; }
+  .final .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  footer .sp { flex: 1; }
+  @media (max-width: 960px) {
+    .hero .wrap, .two { grid-template-columns: 1fr; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+    .hero { padding-top: 56px; }
+    .panes { grid-template-columns: 1fr; }
+    .panes .pane + .pane { display: none; }
+  }
+</style>
+<style>
+  .tool-hero .brand-ic { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 18px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 10px; } .crumb a { color: inherit; text-decoration: none; }
+  .fmt-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .fmt-cloud span { font: 12.5px ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 3px 9px; border-radius: 999px; background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.25); color: var(--head); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)"/><path d="M8 23V10l8 8 8-8v13" fill="none" stroke="#06101c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Mastertool</a>
+    <nav class="links"><a href="#ozellikler">Özellikler</a><a href="#bicimler">Biçimler</a><a href="#ekranlar">Ekranlar</a><a href="#teknik">Teknik</a><a href="#indir">İndir</a></nav>
+    <span data-kit-controls></span><a class="navbtn" href="/giris">Giriş</a><a class="store sm" href="/hesabim"><span><b>Hesabım</b></span></a>
+  </div>
+</header>
+
+<main>
+  <section class="hero tool-hero" data-globe>
+    <div class="wrap">
+      <div>
+        <div class="crumb"><a href="/">Mastertool</a> › <a href="/#master-tool">Master Tool</a> › Araçlar</div>
+        <img class="brand-ic" src="/brand/m3-512.png" alt="">
+        <span class="eyebrow">Master Tool aracı · Windows</span>
+        <h1>Her 3B dosyayı <em>aç, patlat, dönüştür.</em></h1>
+        <p class="lead">Master 3D; STEP, IGES, glTF, FBX, OBJ, STL, 3MF, IFC, USDZ ve 40'tan fazla 3B biçimi ek program kurmadan açar, parçalarına ayırır ve 15 biçime dışa aktarır. Dosyalarınız yalnız bu bilgisayarda işlenir.</p>
+        <div class="cta">
+          <a class="store" href="/hesabim"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#06101c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span><small>Hesabım sayfanızdan ya da Master Tool'dan</small><b>İndirin</b></span></a>
+          <span class="note">Windows 10 / 11 (x64) · ücretsiz · Mastertool hesabıyla</span>
+        </div>
+      </div>
+      <!--HERO--><div class="hero-shot" aria-hidden="false"><img class="hs-dark" data-shot-en src="/shots/m3-03-patlatma-gece.webp" width="1600" height="1000" alt="Patlatma: parçalar ortadan dışa açılır" fetchpriority="high"><img class="hs-light" data-shot-en src="/shots/m3-04-patlatma-montaj-gunduz.webp" width="1600" height="1000" alt="Montaj ağacına göre patlatma" loading="lazy"></div><!--/HERO-->
+    </div>
+  </section>
+
+  <section id="ozellikler">
+    <div class="wrap">
+      <h2>Tek pencerede bütün 3B dünyası</h2>
+      <p class="sub">CAD montajından oyun karakterine, 3B baskı dosyasından bina modeline: açın, inceleyin, parçalarına ayırın, istediğiniz biçimde kaydedin.</p>
+      <div class="grid">
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></div>
+          <h3>43 biçim ailesi</h3><p>glTF, FBX, OBJ, COLLADA, USDZ, 3DS, Blender, DirectX; STEP, IGES, Rhino, IFC, DXF; STL, 3MF, AMF, G-code; PLY, PCD, VTK ve daha fazlası. Her biçim gerçek örnek dosyalarla doğrulanır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div>
+          <h3>CAD ve BIM, programsız</h3><p>STEP, IGES ve BREP OpenCascade ile; montaj ağacı, gövde ve yüz renkleriyle. IFC binaları katlarına, duvar, döşeme, pencere ve kapılarına ayrılır. Rhino 3DM yüzeyleri de açılır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M4 4l3 3M20 4l-3 3M4 20l3-3M20 20l-3-3"/><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/></svg></div>
+          <h3>Patlatma</h3><p>Parçaları kaydırıcıyla ortadan dışa, X / Y / Z boyunca ya da montaj ağacına göre ayırın; canlandırın. Montaj bilgisi olmayan STL gibi dosyalarda birbirine dokunmayan gövdeler tek tıkla ayrı parçalara bölünür.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg></div>
+          <h3>15 biçime dışa aktarma</h3><p>GLB, glTF, FBX, OBJ + MTL, COLLADA, USDZ, STEP, STL, 3MF, PLY, VRML, X3D, OFF. Tüm model, seçili parça ya da her parça ayrı dosya; birim ve eksen hedef biçime göre dönüştürülür.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 14-14 4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg></div>
+          <h3>Ölç, kes, incele</h3><p>İki nokta arası uzaklık, sınır kutusu ve G × Y × D ölçüleri, parça alanı ve hacmi; X / Y / Z kesit düzlemi; gölgeli, kenarlı, tel kafes, X-ışını ve normaller görünümleri.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+          <h3>Parça ağacı</h3><p>Dosyanın hiyerarşisi olduğu gibi: arama, gizle / göster, yalnız bunu göster, diğerlerini soluklaştır. Seçili parçanın üçgen, köşe, B-rep yüz sayısı, malzemeleri ve IFC türü.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></div>
+          <h3>Gezgin'den bir tıkla</h3><p>Desteklenen dosyalarda sağ tık › "Master 3D ile aç" ve "Birlikte aç" listesi; varsayılan uygulamanız değişmez. Sürükle-bırak, son açılanlar, tek pencere.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Tamamen yerel</h3><p>Modeller, dokular ve dosya adları hiçbir sunucuya gönderilmez. Pencerede ağ adresi ve eval yasak; dosyalar yalnız açtığınız klasörden okunur. Dönüştürücüler ayrı iş parçacığında çalışır.</p></div>
+        <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+          <h3>Tek hesap, 8 dil</h3><p>Diğer Mastertool uygulamalarıyla ortak oturum: birinde giriş yaptıysanız şifre sorulmaz. Ayarlar AES-256-GCM ile şifrelenerek eşitlenir. Türkçe, English, Français, Deutsch, Español, العربية, 中文, Русский; Gece, Gündüz ya da Sistem teması.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="detay">
+    <div class="wrap">
+      <h2>Yakından bakın</h2>
+      <p class="sub">Montaj ağacından patlatmaya, BIM katlarından dışa aktarmaya: Master 3D'nin işleyişi.</p>
+      <div data-gallery>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-02-step-montaj-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-02-step-montaj-gece-800.webp" srcset="/shots/m3-02-step-montaj-gece-800.webp 800w, /shots/m3-02-step-montaj-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="STEP montajı: parça ağacı ve özellikler"></a></figure><div><h3>STEP montajı, olduğu gibi</h3><p>STEP, IGES ve BREP dosyaları OpenCascade ile WebAssembly üzerinde, ayrı bir iş parçacığında üçgenlenir; arayüz donmaz.</p><ul><li>Montaj ağacı, parça adları, gövde ve yüz renkleri korunur.</li><li>Üçgenleme kalitesi: düşük, orta ya da yüksek (Ayarlar › Görüntüleyici).</li><li>Seçili parçanın boyutu, yüzey alanı, kapalı gövdelerde hacmi ve B-rep yüz sayısı.</li><li>Birim mm, Z yukarı; tek tıkla Y yukarıya çevrilir.</li><li>Kapalı biçimler (SolidWorks, CATIA, Inventor, Creo) için programdan STEP olarak kaydedin.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-03-patlatma-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-03-patlatma-gece-800.webp" srcset="/shots/m3-03-patlatma-gece-800.webp 800w, /shots/m3-03-patlatma-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Patlatma: parçalar ortadan dışa açılır"></a></figure><div><h3>Patlatma: parçalarına ayırın</h3><p>Kaydırıcıyla %0–100 arası patlatın ya da Oynat ile canlandırın (E). Model görüş alanından taşarsa kamera yeniden sığdırılır, zemin parçaları izler.</p><ul><li>Ortadan: parçalar modelin ortasından oransal olarak dışarı.</li><li>X / Y / Z: yalnız bir eksen boyunca; iç içe halkalar boyutlarına göre sıralanır.</li><li>Montaj: her alt montaj kendi ortasından açılır, yapısı görünür kalır.</li><li>Parça düzeyi: tüm gövdeler ya da yalnız 1., 2.… düzeydeki alt montajlar.</li><li>Patlatılmış konum dışa aktarmaya taşınabilir.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-04-patlatma-montaj-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-04-patlatma-montaj-gunduz-800.webp" srcset="/shots/m3-04-patlatma-montaj-gunduz-800.webp 800w, /shots/m3-04-patlatma-montaj-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Montaj ağacına göre patlatma, gündüz teması"></a></figure><div><h3>Montaj bilgisi yoksa da</h3><p>STL, OBJ ya da PLY gibi tek ağdan oluşan dosyalarda "Parçalara ayır" birbirine dokunmayan gövdeleri bulur ve ayrı parçalar yapar.</p><ul><li>Aynı konumdaki köşeler kaynaştırılır; üçgenler birleşim-bul (union-find) ile öbeklenir.</li><li>Hesap ayrı bir iş parçacığında; milyonlarca üçgende de arayüz akıcı kalır.</li><li>Ayrılan parçalar ağaçta numaralanır, patlatılabilir ve tek tek dışa aktarılabilir.</li><li>glTF'in çok malzemeli ağları tek parça sayılır.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-06-ifc-bim-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-06-ifc-bim-gunduz-800.webp" srcset="/shots/m3-06-ifc-bim-gunduz-800.webp 800w, /shots/m3-06-ifc-bim-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="IFC (BIM) bina modeli"></a></figure><div><h3>IFC: binayı katlarına ayırın</h3><p>IFC dosyaları web-ifc ile açılır; ağaç mekânsal yapıyı izler: Proje › Arsa › Bina › Kat › yapı elemanları.</p><ul><li>Duvar, döşeme, kiriş, pencere, kapı, merdiven ve mobilya elemanları adlarıyla.</li><li>Montaj kipinde patlatma katları birbirinden ayırır.</li><li>Seçili elemanın IFC türü ve GUID'i özelliklerde.</li><li>Ülke koordinatlı (uzak) modeller başlangıç noktasına taşınır; hassasiyet bozulmaz.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-11-disa-aktar-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-11-disa-aktar-gunduz-800.webp" srcset="/shots/m3-11-disa-aktar-gunduz-800.webp 800w, /shots/m3-11-disa-aktar-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dışa aktar penceresi: 15 biçim"></a></figure><div><h3>Dışa aktar: 15 biçim</h3><p>Her biçim uygulamada yazılıp yeniden açılarak ve bağımsız okuyucularla (three.js, assimp, OpenCascade) doğrulanır.</p><ul><li>GLB / glTF hiyerarşi, PBR malzeme, doku ve animasyonla; USDZ Apple AR için.</li><li>FBX 7.4 ikili: Blender, Maya, 3ds Max, Unity ve Unreal açar.</li><li>STEP AP214: her parça ayrı ürün, adlar ve renkler; CAD programlarında açılır ve ölçülür.</li><li>3MF ve STL 3B baskı için; 3MF parçaları ve renkleri korur.</li><li>Kapsam: tüm model, seçili parçalar ya da görünenler; her parça ayrı dosya.</li></ul></div></div>
+        <div class="detail"><figure class="d-shot"><a href="/shots/m3-08-olcum-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-08-olcum-gunduz-800.webp" srcset="/shots/m3-08-olcum-gunduz-800.webp 800w, /shots/m3-08-olcum-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 600px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ölçüm ve sınır kutusu"></a></figure><div><h3>Ölçüm, kesit ve görünüm</h3><p>Ölçü etiketleri modelin biriminde ya da seçtiğiniz birimde (mm, cm, m, in, ft) gösterilir; ekran görüntüsüne de girer.</p><ul><li>Ölç (M): modelde iki noktaya tıklayın.</li><li>Sınır kutusu (B): G × Y × D ölçüleri; seçim varsa seçili parçanın.</li><li>Kesit: X / Y / Z düzlemi, kaydırıcı ve ters çevirme.</li><li>Görünüm kipleri (W): gölgeli, gölgeli + kenarlar, tel kafes, X-ışını, normaller.</li><li>Ekran görüntüsü (P): 2× PNG, panoya kopyalama, saydam arka plan.</li></ul></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" id="bicimler">
+    <div class="wrap">
+      <h2>Açılan ve yazılan biçimler</h2>
+      <p class="sub">Okuyucular uygulamanın içindedir; ek program, eklenti ya da internet gerekmez.</p>
+      <div class="specs">
+        <div class="spec"><h3>Genel ve animasyon</h3><p style="margin:0 0 8px;color:var(--muted)">glTF / GLB · FBX · OBJ + MTL · COLLADA (DAE) · USD / USDA / USDC / USDZ · 3DS · Blender (2.4–2.7x) · DirectX X</p><div class="fmt-cloud"><span>.gltf</span><span>.glb</span><span>.fbx</span><span>.obj</span><span>.dae</span><span>.usdz</span><span>.usda</span><span>.usdc</span><span>.usd</span><span>.3ds</span><span>.blend</span><span>.x</span></div></div>
+        <div class="spec"><h3>CAD, mühendislik ve BIM</h3><p style="margin:0 0 8px;color:var(--muted)">STEP (AP203 / AP214 / AP242) · IGES · BREP · Rhino 3DM · IFC · AutoCAD DXF (3B yüzeyler)</p><div class="fmt-cloud"><span>.step</span><span>.stp</span><span>.p21</span><span>.iges</span><span>.igs</span><span>.brep</span><span>.brp</span><span>.3dm</span><span>.ifc</span><span>.dxf</span></div></div>
+        <div class="spec"><h3>3B baskı</h3><p style="margin:0 0 8px;color:var(--muted)">STL (ikili / ASCII, renkli) · 3MF · AMF · G-code · OFF</p><div class="fmt-cloud"><span>.stl</span><span>.3mf</span><span>.amf</span><span>.gcode</span><span>.gco</span><span>.off</span></div></div>
+        <div class="spec"><h3>Nokta bulutu ve bilim</h3><p style="margin:0 0 8px;color:var(--muted)">Stanford PLY · PCD · XYZ · VTK / VTP · Protein Data Bank (PDB)</p><div class="fmt-cloud"><span>.ply</span><span>.pcd</span><span>.xyz</span><span>.vtk</span><span>.vtp</span><span>.pdb</span></div></div>
+        <div class="spec"><h3>Oyun ve diğer biçimler</h3><p style="margin:0 0 8px;color:var(--muted)">VRML · X3D · LightWave · MagicaVoxel · KMZ · MD2 · MD5 · MilkShape · Blitz3D · AC3D · ASE · trueSpace · NFF · OpenGEX · Quick3D · Valve SMD · XGL · BVH · ZIP</p><div class="fmt-cloud"><span>.wrl</span><span>.vrml</span><span>.x3d</span><span>.lwo</span><span>.vox</span><span>.kmz</span><span>.md2</span><span>.md5mesh</span><span>.ms3d</span><span>.b3d</span><span>.ac</span><span>.ac3d</span><span>.ase</span><span>.ask</span><span>.cob</span><span>.scn</span><span>.nff</span><span>.ogex</span><span>.q3o</span><span>.q3s</span><span>.smd</span><span>.vta</span><span>.xgl</span><span>.zgl</span><span>.bvh</span><span>.zip</span></div></div>
+        <div class="spec"><h3>Dışa aktarma</h3><p style="margin:0 0 8px;color:var(--muted)">GLB · glTF · FBX 7.4 · OBJ + MTL · COLLADA · USDZ · STEP AP214 · STL (ikili / ASCII) · 3MF · PLY (ikili / ASCII) · VRML · X3D · OFF</p><div class="fmt-cloud"><span>.glb</span><span>.gltf</span><span>.fbx</span><span>.obj</span><span>.dae</span><span>.usdz</span><span>.step</span><span>.stl</span><span>.3mf</span><span>.ply</span><span>.wrl</span><span>.x3d</span><span>.off</span></div></div>
+      </div>
+    </div>
+  </section>
+
+<!--SHOTS-->
+  <section class="alt" id="ekranlar">
+    <div class="wrap">
+      <h2>Uygulamadan görüntüler</h2>
+      <p class="sub">Gerçek ekranlar: gece ve gündüz temasıyla. Büyütmek için tıklayın.</p>
+      <div class="shots" data-gallery>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-01-hos-geldiniz-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-01-hos-geldiniz-gece-800.webp" srcset="/shots/m3-01-hos-geldiniz-gece-800.webp 800w, /shots/m3-01-hos-geldiniz-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Sürükle-bırak ve son açılanlar"></a><figcaption><b>Sürükle-bırak ve son açılanlar</b><span>43 biçim ailesi; dosyalar yalnız bu bilgisayarda açılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-02-step-montaj-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-02-step-montaj-gece-800.webp" srcset="/shots/m3-02-step-montaj-gece-800.webp 800w, /shots/m3-02-step-montaj-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="STEP montajı: parça ağacı ve özellikler"></a><figcaption><b>STEP montajı: parça ağacı ve özellikler</b><span>OpenCascade ile; boyut, alan, hacim, B-rep yüzleri</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-03-patlatma-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-03-patlatma-gece-800.webp" srcset="/shots/m3-03-patlatma-gece-800.webp 800w, /shots/m3-03-patlatma-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Patlatma: parçalar ortadan dışa açılır"></a><figcaption><b>Patlatma: parçalar ortadan dışa açılır</b><span>Kaydırıcıyla %0–100; ortadan, X / Y / Z ya da montaj ağacına göre</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m3-04-patlatma-montaj-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-04-patlatma-montaj-gunduz-800.webp" srcset="/shots/m3-04-patlatma-montaj-gunduz-800.webp 800w, /shots/m3-04-patlatma-montaj-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Montaj ağacına göre patlatma"></a><figcaption><b>Montaj ağacına göre patlatma</b><span>Her alt montaj kendi ortasından; 3MF, STEP, glTF, FBX</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-05-gltf-pbr-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-05-gltf-pbr-gece-800.webp" srcset="/shots/m3-05-gltf-pbr-gece-800.webp 800w, /shots/m3-05-gltf-pbr-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="glTF / GLB: PBR malzeme ve dokular"></a><figcaption><b>glTF / GLB: PBR malzeme ve dokular</b><span>Stüdyo ışığı, zemin gölgesi; FBX, OBJ, USDZ, COLLADA da açılır</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m3-06-ifc-bim-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-06-ifc-bim-gunduz-800.webp" srcset="/shots/m3-06-ifc-bim-gunduz-800.webp 800w, /shots/m3-06-ifc-bim-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="IFC (BIM): kat ve yapı elemanları"></a><figcaption><b>IFC (BIM): kat ve yapı elemanları</b><span>Duvar, döşeme, pencere, kapı; mekânsal yapıya göre ağaç</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-07-kesit-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-07-kesit-gece-800.webp" srcset="/shots/m3-07-kesit-gece-800.webp 800w, /shots/m3-07-kesit-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Kesit düzlemi"></a><figcaption><b>Kesit düzlemi</b><span>X / Y / Z ekseninde kaydırarak modelin içini görün</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m3-08-olcum-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-08-olcum-gunduz-800.webp" srcset="/shots/m3-08-olcum-gunduz-800.webp 800w, /shots/m3-08-olcum-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ölçüm ve sınır kutusu"></a><figcaption><b>Ölçüm ve sınır kutusu</b><span>İki nokta arası uzaklık; G × Y × D ölçüleri model biriminde</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-09-tel-kafes-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-09-tel-kafes-gece-800.webp" srcset="/shots/m3-09-tel-kafes-gece-800.webp 800w, /shots/m3-09-tel-kafes-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Gölgeli + kenarlar, tel kafes, X-ışını"></a><figcaption><b>Gölgeli + kenarlar, tel kafes, X-ışını</b><span>Görünüm kipleri: W ile değiştirin</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-10-nokta-bulutu-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-10-nokta-bulutu-gece-800.webp" srcset="/shots/m3-10-nokta-bulutu-gece-800.webp 800w, /shots/m3-10-nokta-bulutu-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Nokta bulutu: PCD, PLY, XYZ"></a><figcaption><b>Nokta bulutu: PCD, PLY, XYZ</b><span>Milyonlarca nokta; renkli taramalar</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m3-11-disa-aktar-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-11-disa-aktar-gunduz-800.webp" srcset="/shots/m3-11-disa-aktar-gunduz-800.webp 800w, /shots/m3-11-disa-aktar-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Dışa aktar: 15 biçim"></a><figcaption><b>Dışa aktar: 15 biçim</b><span>GLB, FBX, OBJ, STEP, STL, 3MF, USDZ…; seçili parça ya da her parça ayrı dosya</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="dark"><a href="/shots/m3-12-ayarlar-bicimler-gece.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-12-ayarlar-bicimler-gece-800.webp" srcset="/shots/m3-12-ayarlar-bicimler-gece-800.webp 800w, /shots/m3-12-ayarlar-bicimler-gece.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Ayarlar › Biçimler"></a><figcaption><b>Ayarlar › Biçimler</b><span>Hangi biçim hangi okuyucuyla açılır; bilinen sınırlar</span></figcaption></figure>
+        <figure class="shot" data-theme-shot="light"><a href="/shots/m3-13-giris-gunduz.webp" data-lightbox data-shot-en><img data-shot-en src="/shots/m3-13-giris-gunduz-800.webp" srcset="/shots/m3-13-giris-gunduz-800.webp 800w, /shots/m3-13-giris-gunduz.webp 1600w" sizes="(max-width: 960px) 100vw, 380px" width="1600" height="1000" loading="lazy" decoding="async" alt="Mastertool hesabıyla giriş"></a><figcaption><b>Mastertool hesabıyla giriş</b><span>Başka bir Mastertool uygulamasında giriş yapıldıysa şifresiz açılır</span></figcaption></figure>
+      </div>
+    </div>
+  </section>
+<!--/SHOTS-->
+
+  <section id="teknik">
+    <div class="wrap">
+      <h2>Teknik özellikler</h2>
+      <p class="sub">Sürüm 1.0.0 için bileşenler, okuyucular, güvenlik, sınırlar ve kısayollar.</p>
+      <div class="specs">
+        <div class="spec"><h3>Sistem gereksinimleri</h3><div class="t-wrap"><table><tr><th>İşletim sistemi</th><td>Windows 10 ve 11, 64 bit (x64)</td></tr><tr><th>Ekran kartı</th><td>WebGL 2 destekleyen herhangi bir ekran kartı; tümleşik grafik yeterli</td></tr><tr><th>Paketler</th><td><code>Master-3D-Setup-&lt;sürüm&gt;.exe</code> (NSIS kurulum) ve <code>Master-3D-Portable-&lt;sürüm&gt;.exe</code> (taşınabilir)</td></tr><tr><th>Kurulum klasörü</th><td><code>Program Files\Mastertool\Master 3D</code>; yalnız bu kullanıcı için kurulumda <code>%LOCALAPPDATA%\Programs\Mastertool\Master 3D</code></td></tr><tr><th>Başlat menüsü</th><td>Master Tool › Master 3D</td></tr><tr><th>Hesap</th><td>Mastertool hesabı; diğer Mastertool uygulamalarıyla ortak oturum</td></tr><tr><th>İnternet</th><td>Giriş, ayar senkronu ve sürüm denetimi için; açma ve dönüştürme tamamen yereldir</td></tr><tr><th>Yönetici izni</th><td>Gerekmez; sağ tık kaydı kullanıcı kapsamındadır (HKCU)</td></tr></table></div></div>
+        <div class="spec"><h3>Teknoloji</h3><div class="t-wrap"><table><tr><th>Electron</th><td>33 (Chromium 130, Node.js 20) — masaüstü çatısı; sandbox'lı pencereler</td></tr><tr><th>three.js</th><td>r186 — WebGL 2 görüntüleme, okuyucular ve yazıcılar</td></tr><tr><th>OpenCascade</th><td>occt-import-js, WebAssembly — STEP, IGES, BREP</td></tr><tr><th>Assimp</th><td>assimpjs, WebAssembly — Blender, DirectX, DXF, OFF ve 15 biçim daha; FBX, COLLADA, 3DS, LWO için yedek</td></tr><tr><th>web-ifc</th><td>WebAssembly — IFC (BIM)</td></tr><tr><th>rhino3dm</th><td>WebAssembly — Rhino 3DM</td></tr><tr><th>Draco · KTX2 · meshopt</th><td>Sıkıştırılmış glTF ağları ve dokuları</td></tr><tr><th>esbuild · electron-builder</th><td>Paketleme; NSIS kurulum ve taşınabilir paket</td></tr></table></div></div>
+        <div class="spec"><h3>Görüntüleme</h3><div class="t-wrap"><table><tr><th>Gezinme</th><td>Döndür, kaydır, imlece yakınlaştır; Ön, Arka, Sol, Sağ, Üst, Alt, İzometrik; perspektif / ortografik</td></tr><tr><th>Görünüm kipleri</th><td>Gölgeli, gölgeli + kenarlar (25° üstü keskin kenarlar), tel kafes, X-ışını, normaller</td></tr><tr><th>Işık</th><td>Stüdyo (ortam + anahtar ışık + yumuşak gölge), Yumuşak, Kamera ışığı</td></tr><tr><th>Arka plan</th><td>Degrade, tema rengi, koyu, açık, saydam</td></tr><tr><th>Yardımcılar</th><td>Zemin ızgarası, eksenler, sınır kutusu ve ölçüler, köşe normalleri</td></tr><tr><th>Animasyon</th><td>glTF, FBX, COLLADA, MD2, BVH klipleri; oynat / duraklat, klip, zaman çubuğu</td></tr></table></div></div>
+        <div class="spec"><h3>Dışa aktarmanın içeriği</h3><div class="t-wrap"><table><tr><th>GLB / glTF</th><td>Hiyerarşi, PBR malzeme, dokular, animasyon — m, Y yukarı</td></tr><tr><th>FBX 7.4 ikili</th><td>Hiyerarşi, ağlar, normaller, UV, çoklu malzeme</td></tr><tr><th>OBJ + MTL</th><td>Adlı parçalar, malzemeler, renk dokuları (PNG)</td></tr><tr><th>STEP AP214</th><td>Her parça ayrı ürün, adlar, renkler; kapalı ağ katı, açık ağ yüzey — mm, Z yukarı</td></tr><tr><th>3MF</th><td>Parçalar ayrı nesne, renkler — mm, Z yukarı</td></tr><tr><th>STL / PLY / OFF</th><td>Üçgenler; PLY köşe renkleri ve nokta bulutları</td></tr><tr><th>COLLADA, VRML, X3D, USDZ</th><td>Hiyerarşi ve malzemeler</td></tr></table></div></div>
+        <div class="spec wide"><h3>Gizlilik ve güvenlik</h3><div class="t-wrap"><table><tr><th>Yerel işlem</th><td>Okuma, dönüştürme ve dışa aktarma bu bilgisayarda; 3B dosyalar, dokular, dosya adları ve son açılanlar hiçbir sunucuya gönderilmez</td></tr><tr><th>Dosya erişimi</th><td>Pencereler yalnız <code>m3://</code> adresinden yüklenir; kullanıcı dosyaları yalnız açılan dosyanın klasöründen okunur (<code>..</code>, mutlak yol ve klasör dışına giden bağlar reddedilir)</td></tr><tr><th>İçerik güvenlik politikası</th><td>Pencerede ağ adresi ve <code>eval</code> yok; WebAssembly dönüştürücüleri DOM'suz ve ağsız iş parçacıklarında</td></tr><tr><th>Pencereler</th><td><code>contextIsolation</code> açık, <code>nodeIntegration</code> kapalı, <code>sandbox</code> açık</td></tr><tr><th>Senkron</th><td>Yalnız ayarlar (tema, dil, görüntüleyici ve dışa aktarma tercihleri), uçtan uca şifreli: PBKDF2 → HKDF → AES-256-GCM</td></tr></table></div></div>
+        <div class="spec wide"><h3>Yerel veri ve kayıtlar</h3><div class="t-wrap"><table><tr><th>Ayarlar</th><td><code>%APPDATA%\Master 3D\store.json</code> — ayarlar, son açılanlar (yalnız bu cihazda), pencere boyutu, senkron meta verisi</td></tr><tr><th>Hesap</th><td><code>%APPDATA%\Master 3D\account.json</code> — cihaz kimliği, e-posta; "Beni hatırla" açıksa DPAPI ile şifreli oturum</td></tr><tr><th>Sağ tık kaydı</th><td><code>HKCU\Software\Classes\SystemFileAssociations\.&lt;uzantı&gt;\shell\MastertoolMaster3D</code> (59 uzantı) — komut: <code>"&lt;exe&gt;" --open "%1"</code></td></tr><tr><th>Birlikte aç</th><td><code>HKCU\Software\Classes\Applications\Master 3D.exe</code> — desteklenen türler; varsayılan uygulama değiştirilmez</td></tr></table></div></div>
+        <div class="spec wide"><h3>Klavye kısayolları</h3><div class="specs"><div><div class="t-wrap"><table><tr><th><kbd>Ctrl</kbd>+<kbd>O</kbd></th><td>Dosya aç (ya da pencereye sürükleyin)</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Dışa aktar</td></tr><tr><th><kbd>F</kbd></th><td>Sığdır / seçili parçaya odakla</td></tr><tr><th><kbd>1</kbd>–<kbd>7</kbd></th><td>Ön · Üst · Sağ · Arka · Sol · Alt · İzometrik</td></tr><tr><th><kbd>W</kbd></th><td>Görünüm kipini değiştir</td></tr><tr><th><kbd>G</kbd> / <kbd>B</kbd></th><td>Zemin ızgarası / sınır kutusu</td></tr></table></div></div><div><div class="t-wrap"><table><tr><th><kbd>E</kbd></th><td>Patlat / topla</td></tr><tr><th><kbd>H</kbd> / <kbd>Alt</kbd>+<kbd>H</kbd></th><td>Seçiliyi gizle / tümünü göster</td></tr><tr><th><kbd>I</kbd></th><td>Yalnız seçiliyi göster</td></tr><tr><th><kbd>M</kbd></th><td>Ölçüm</td></tr><tr><th><kbd>P</kbd></th><td>Ekran görüntüsü</td></tr><tr><th><kbd>Boşluk</kbd></th><td>Animasyonu oynat / duraklat</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>Parça ara</td></tr></table></div></div></div></div>
+        <div class="spec"><h3>Sürüm geçmişi</h3><div class="t-wrap"><table><tr><th>1.0.0</th><td>İlk sürüm: 43 biçim ailesini açma (three.js, OpenCascade, assimp, web-ifc, rhino3dm), parça ağacı ve özellikler, patlatma (ortadan, eksen, montaj) ve parçalara ayırma, ölçüm, kesit, görünüm kipleri, animasyon, ekran görüntüsü, 15 biçime dışa aktarma, Gezgin sağ tık menüsü, Mastertool ortak oturumu ve şifreli ayar senkronu, 8 dil.</td></tr></table></div></div>
+        <div class="spec"><h3>Arayüz dilleri</h3><div class="tags"><span>Türkçe</span><span>English</span><span>Français</span><span>Deutsch</span><span>Español</span><span>العربية</span><span>中文</span><span>Русский</span></div><p>Arapça sağdan sola. İlk açılışta sistem dili kullanılır, listede yoksa İngilizce. Sağ tık menüsündeki etiket de seçili dilde yazılır ve dil değişince güncellenir.</p></div>
+      </div>
+      <div class="limits"><h3>Bilinen sınırlar</h3><ul><li>Kapalı (lisanslı) biçimler doğrudan okunamaz: 3ds Max (.max), Maya (.ma / .mb), SolidWorks (.sldprt / .sldasm), CATIA (.CATPart), Inventor (.ipt / .iam), Creo ve NX (.prt), SketchUp (.skp), Cinema 4D (.c4d). Bu programlardan STEP, FBX, glTF ya da OBJ olarak kaydedin.</li><li>Blender 2.8 ve sonrası .blend dosyaları okunamaz (2.4–2.7x kısmen); sürüm algılanır ve glTF / FBX olarak dışa aktarmanız önerilir.</li><li>STEP dışa aktarma üçgen yüzeylidir (faceted B-rep): CAD programlarında açılır ve ölçülür, ancak silindir, NURBS yüzey ve unsur geçmişi gibi parametrik bilgi üçgen ağdan geri üretilemez.</li><li>FBX dışa aktarmada iskelet, animasyon ve dokular bu sürümde yazılmaz; animasyonu korumak için GLB kullanın.</li><li>USD'de katman birleştirme (sublayer, variant, payload) ve animasyon kısmidir; DXF'te yalnız 3B yüzeyler gösterilir; X3D'de Inline, betik ve algılayıcılar atlanır.</li><li>Kenar çizgileri 2,5 milyon, zemin gölgesi 4 milyon üçgene kadar çizilir; daha büyük modellerde kendiliğinden kapanır.</li><li>Windows 11'in yeni (kısa) sağ tık menüsünde görünmez; "Daha fazla seçenek göster" altındadır. Kod imzası olmadığından ilk indirmede Windows SmartScreen uyarı gösterebilir.</li><li>Uygulama Mastertool hesabı olmadan çalışmaz. Yalnız Windows 10 ve 11 (x64).</li></ul></div>
+    </div>
+  </section>
+
+  <section class="final" id="indir">
+    <div class="wrap">
+      <h2>Master 3D'yi edinin</h2>
+      <p class="sub" style="margin: 0 auto 28px">Mastertool hesabınızla Hesabım sayfasından indirin ya da Master Tool'da "Araçlar" bölümünden tek tıkla kurun.</p>
+      <div class="cta"><a class="store" href="/hesabim"><span><small>Hesabım › Araçlar</small><b>İndirin</b></span></a><a class="navbtn" href="/#master-tool">Master Tool nedir? →</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="yil"></span> Mastertool</span>
+    <span class="sp"></span>
+    <a href="/">Mastertool</a> · <a href="/#master-tool">Master Tool</a> · <a href="/giris">Giriş</a> · <a href="/kayit">Hesap oluştur</a>
+  </div>
+</footer>
+<script>
+  document.getElementById('yil').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

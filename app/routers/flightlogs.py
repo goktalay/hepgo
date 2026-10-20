@@ -23,7 +23,7 @@ tools_user = auth.require_module('tools')
 
 _SELECT = '''
     SELECT l.id, l.task_id, l.flight_id, l.file, l.file_name, l.size, l.status, l.error, l.aircraft, l.pilot, l.location,
-           l.note, l.fuel, l.origin, l.source, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
+           l.note, l.fuel, l.origin, l.source, l.progress, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
            json_extract(l.analysis, '$.summary.vehicle') AS vehicle,
            json_extract(l.analysis, '$.summary.flight_s') AS flight_s,
            json_extract(l.analysis, '$.summary.takeoff_utc') AS takeoff_utc,
@@ -124,9 +124,20 @@ async def chunked_tool_log(body: ChunkedLogIn, user=Depends(tools_user), conn=db
                            body.aircraft, body.pilot, body.location, body.note)
 
 
+def _kuyruk_durumu(logs):
+    """ISLENIYOR kayıtlara analiz ilerlemesi (progress: 0…100, None = sırada) ve kuyruk sırası (queue) eklenir; bellekteki durum
+    (flight_analysis.durum) DB'deki saniyelik değerden tazedir."""
+    d = flight_analysis.durum() if any(l['status'] == 'ISLENIYOR' for l in logs) else {}
+    for l in logs:
+        l['queue'] = None
+        if l['status'] == 'ISLENIYOR' and l['id'] in d:
+            l['progress'], l['queue'] = d[l['id']]['progress'], d[l['id']]['queue']
+    return logs
+
+
 @router.get('/tools/flight-logs')
 def list_logs(user=Depends(tools_user), conn=db.DB):
-    return db.rows(conn.execute(_SELECT + ' ORDER BY l.id DESC LIMIT 500'))
+    return _kuyruk_durumu(db.rows(conn.execute(_SELECT + ' ORDER BY l.id DESC LIMIT 500')))
 
 
 @router.delete('/tools/flight-logs/{lid}')
@@ -161,6 +172,7 @@ def get_log(lid: int, user=Depends(auth.current_user), conn=db.DB):
     if not allowed & set(user['modules']):
         raise HTTPException(403, 'Bu rapora erişim yetkiniz yok')
     log['analysis'] = json.loads(log['analysis']) if log['analysis'] else None
+    _kuyruk_durumu([log])
     log['fuel'] = json.loads(log['fuel']) if log.get('fuel') else None
     if log['fuel']:   # rapor için seyreltilmiş seri (≤ 600 nokta) + motor çalışırken en düşük tüketim
         try:

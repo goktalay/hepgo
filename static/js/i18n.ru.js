@@ -4557,4 +4557,7 @@ registerCatalog('ru', {
   "Sıralamak için tıklayın": "Нажмите для сортировки",
   "Ayrıntı yükleniyor…": "Загрузка деталей…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "Загружаются кадры этого участка в полном разрешении; пока воспроизводится прореженный трек",
+  "Sırada ({n}.)": "В очереди (№ {n})",
+  "Sırada": "В очереди",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Анализ выполняется в отдельном процессе; можно покинуть страницу. Отчёт откроется сам, когда будет готов.",
 });

@@ -75,6 +75,12 @@ export function logBadge(status) {
   const [color, label] = LOG_STATES[status] || ['gray', status || '—'];
   return h('span', { class: `badge ${color}` }, label);
 }
+// Analiz ilerlemesi (ISLENIYOR): ayrı süreçte çalışan analizin yüzdesi; progress null → kuyrukta sırada (queue: sıra no)
+export function analysisProgress(l, style) {
+  if (!l || l.status !== 'ISLENIYOR') return null;
+  if (l.progress == null) return h('div', { class: 'small muted fl-queue', style }, l.queue ? t('Sırada ({n}.)', { n: l.queue }) : t('Sırada'));
+  return h('div', { class: 'fl-progress', style: { minWidth: '150px', marginTop: '4px', ...(style || {}) } }, progressBar(l.progress));
+}
 
 // ---------- Uçuş Logu Analizi: yükleme + geçmiş ----------
 async function renderFlightLogs(view, ctx) {
@@ -145,7 +151,7 @@ async function renderFlightLogs(view, ctx) {
         h('td', null, fmtDateTime(l.takeoff_utc || l.start_utc)),
         h('td', null, l.flight_s != null ? clock(l.flight_s) : '—'),
         h('td', null, l.task_code ? t('Saha görevi {code}', { code: l.task_code }) : 'Araçlar'),
-        h('td', null, logBadge(l.status), l.error ? h('div', { class: 'small', style: { color: 'var(--danger)', whiteSpace: 'normal', maxWidth: '260px' } }, l.error) : null),
+        h('td', null, logBadge(l.status), analysisProgress(l), l.error ? h('div', { class: 'small', style: { color: 'var(--danger)', whiteSpace: 'normal', maxWidth: '260px' } }, l.error) : null),
         h('td', { class: 'muted' }, l.uploaded_by_name || '—', h('div', { class: 'small' }, fmtDateTime(l.uploaded_at))),
         h('td', { class: 'num' },
           l.status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/tools/flight-log/${l.id}` }, 'Raporu Aç') : null,
@@ -170,7 +176,9 @@ async function renderFlightLogs(view, ctx) {
     h('div', { class: 'filters' }, q, org, st, src),
     list);
   await load();
-  every(5000, () => load().catch(() => {}));
+  // analiz sürerken ilerleme çubukları 2 sn'de bir, aksi 10 sn'de bir tazelenir
+  let tick = 0;
+  every(2000, () => { if (logs.some(l => l.status === 'ISLENIYOR') || ++tick % 5 === 0) load().catch(() => {}); });
 }
 
 async function remove(l, reload) {
@@ -187,12 +195,17 @@ export async function renderReportView(view, id, back, ctx) {
   const log = await api.get(`/api/flight-logs/${id}`);
   const title = t('Uçuş Raporu — {name}', { name: log.file_name });
   if (log.status === 'ISLENIYOR') {
+    const bar = h('div', { style: { maxWidth: '440px', margin: '14px auto 0' } });
+    const paint = l => clear(bar, analysisProgress(l, { textAlign: 'center' }));
+    paint(log);
     clear(view, pageHead(title, { back }),
-      h('div', { class: 'card empty' }, h('b', null, 'Log analiz ediliyor…'),
-        h('div', { class: 'small', style: { marginTop: '6px' } }, 'Büyük dosyalarda birkaç dakika sürebilir. Sayfa hazır olunca kendiliğinden açılır.')));
-    every(3000, async () => {
+      h('div', { class: 'card empty fl-analyzing' }, h('b', null, 'Log analiz ediliyor…'), bar,
+        h('div', { class: 'small', style: { marginTop: '10px' } }, 'Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.')));
+    every(1500, async () => {
       const l = await api.get(`/api/flight-logs/${id}`).catch(() => null);
-      if (l && l.status !== 'ISLENIYOR') window.dispatchEvent(new HashChangeEvent('hashchange'));
+      if (!l) return;
+      if (l.status !== 'ISLENIYOR') window.dispatchEvent(new HashChangeEvent('hashchange'));
+      else paint(l);
     });
     return;
   }

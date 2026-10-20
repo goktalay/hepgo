@@ -4557,4 +4557,7 @@ registerCatalog('de', {
   "Sıralamak için tıklayın": "Zum Sortieren klicken",
   "Ayrıntı yükleniyor…": "Details werden geladen…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "Die Bilder dieses Abschnitts in voller Auflösung werden geladen; bis dahin wird eine ausgedünnte Spur abgespielt",
+  "Sırada ({n}.)": "In Warteschlange (Nr. {n})",
+  "Sırada": "In Warteschlange",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Die Analyse läuft in einem separaten Prozess; Sie können die Seite verlassen. Der Bericht öffnet sich automatisch, sobald er fertig ist.",
 });

@@ -4557,4 +4557,7 @@ registerCatalog('ar', {
   "Sıralamak için tıklayın": "انقر للفرز",
   "Ayrıntı yükleniyor…": "جارٍ تحميل التفاصيل…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "يتم تحميل إطارات هذا الجزء بدقة كاملة؛ في الأثناء يُعرض مسار مخفف",
+  "Sırada ({n}.)": "في قائمة الانتظار (رقم {n})",
+  "Sırada": "في قائمة الانتظار",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "يجري التحليل في عملية منفصلة؛ يمكنك مغادرة الصفحة. يُفتح التقرير تلقائيًا عند الجهوزية.",
 });

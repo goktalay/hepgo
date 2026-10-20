@@ -1535,4 +1535,7 @@ registerCatalog('en', {
   "Sıralamak için tıklayın": "Click to sort",
   "Ayrıntı yükleniyor…": "Loading detail…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "Full-resolution frames for this section are loading; a thinned track is playing meanwhile",
+  "Sırada ({n}.)": "Queued (#{n})",
+  "Sırada": "Queued",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "Analysis runs in a separate process; you can leave this page. The report opens automatically when ready.",
 });

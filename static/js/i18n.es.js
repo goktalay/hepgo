@@ -4557,4 +4557,7 @@ registerCatalog('es', {
   "Sıralamak için tıklayın": "Haga clic para ordenar",
   "Ayrıntı yükleniyor…": "Cargando detalle…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "Se están cargando los fotogramas a resolución completa de esta sección; mientras tanto se reproduce una traza reducida",
+  "Sırada ({n}.)": "En cola (n.º {n})",
+  "Sırada": "En cola",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "El análisis se ejecuta en un proceso aparte; puede salir de la página. El informe se abrirá solo cuando esté listo.",
 });

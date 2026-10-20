@@ -4557,4 +4557,7 @@ registerCatalog('fr', {
   "Sıralamak için tıklayın": "Cliquer pour trier",
   "Ayrıntı yükleniyor…": "Chargement des détails…",
   "Bu bölümün tam çözünürlüklü kareleri yükleniyor; şimdilik seyreltilmiş iz oynatılıyor": "Les images pleine résolution de cette section se chargent ; une trace allégée est lue en attendant",
+  "Sırada ({n}.)": "En file d'attente (n° {n})",
+  "Sırada": "En file d'attente",
+  "Analiz ayrı bir işlemde yürür; sayfadan ayrılabilirsiniz. Rapor hazır olunca kendiliğinden açılır.": "L'analyse s'exécute dans un processus séparé ; vous pouvez quitter la page. Le rapport s'ouvre automatiquement une fois prêt.",
 });

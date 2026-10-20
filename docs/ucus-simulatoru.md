@@ -294,6 +294,50 @@ Kullanıcı bildirimi: "Sistemde 3 saatlik gerçek bir uçuşun bin dosyası var
 - **Testler:** `tests/test_binperf.py` (okuyucu = pymavlink, 1 saatlik üretilmiş 68 MB .BIN: süre/bellek/ilerleme, parça sürekliliği, genel bakış seyreltmesi,
   eksik parça → yeniden üretim, 3B hızlı yol eşdeğerliği, oturum parça ucu, kaynak çıkarımı ve göç).
 
+### 8.4 Uçuş logu ANALİZİ — hızlı okuyucu + alt süreç + kuyruk (`app/flightlog.py` `analyze`, `app/flight_analysis.py`)
+Kalan sorun (§8.3 sonrası): .BIN/.tlog **yüklenince** çalışan analiz (Araçlar › Uçuş Logu Analizi, saha uçuşu logu, dron köprüsü, §19 simülatör
+kaydı — hepsi `flight_analysis.start`) pymavlink ile **sunucu sürecinin içinde** (iş parçacığı, GIL) çalışıyordu: 754 MB'lık logda 134 sn,
+sunucu RSS 2,5 GB, API gecikmesi ortalama 0,4 sn / en çok 3,3 sn (aynı makinede 7 firma servisi).
+- **Hızlı analiz (`flightlog._analyze_hizli`):** ikili DataFlash'ta `dataflash.oku(kesin=True, ofs=True, tanimsizda_dur=True)`; metin `.log` / `.tlog`
+  pymavlink'te kalır (`_analyze_pymavlink`, eski kod aynen — yalnız ilerleme geri çağrısı eklendi). Sonuç eski analizle **BİREBİR aynı JSON**:
+  - `kesin`: değerler pymavlink ile bit bit aynı — tamsayı biçimler int64 (Python int → JSON'da `21`, `21.0` değil; `M` işaretli), `f/g/d` float64,
+    `c/C/e/E/L` = float(ham) / 100 ya da 1e7 (pymavlink bölme sırası). Metinler pymavlink gibi önce tüm alan çözülür (UTF-8, olmazsa ISO-8859-1)
+    sonra NUL'da kesilir (`_metin`; NUL sonrası çöp UTF-8 değilse tüm metin ISO-8859-1).
+  - `ofs`: '_ofs' (mesajın dosya konumu) — tipler arası sıra gereken yerler: t0 (ilk mesaj), BAT+CURR ve XKF2+NKF2 birleştirme, POS'tan
+    önceki BARO irtifası. `'ARSP' in log.messages` pymavlink'te indeksleme sırasında dolar → "logda hiç ARSP yoksa CTUN.As".
+  - `tanimsizda_dur`: pymavlink indeksleyicisi (init_arrays / dfindexer) FMT'si görülmemiş tipli geçerli bir `A3 95` başlığında **okumayı bitirir**
+    ("unknown msg type" → break); analiz de orada biter (3B oynatma okuyucusu varsayılanda toleranslı kalır: 1 bayt ilerler).
+  - Ortalama/RMS Python `sum` ile aynı sırada, en büyük/en küçük Python `max/min` ile (ilk eşit eleman, NaN davranışı), `math.hypot` /
+    haversine Python'da (numpy ikili toplam ve SIMD sin/hypot son bit farkı olmasın); seyreltme `_thin` ile aynı indeksler.
+- **Alt süreç (`python -m app.flightlog analyze <log> <çıktı.json> <ebeveyn pid>`):** `nice` (FLIGHTLOG_ANALIZ_NICE, 10), bellek tavanı
+  `RLIMIT_AS` (FLIGHTLOG_ANALIZ_BELLEK_MB, 3072; aşılırsa MemoryError → HATA "Analiz bellek sınırını aştı"), BLAS tek iş parçacığı,
+  `PR_SET_PDEATHSIG` (sunucu ölürse çocuk da ölür; yetim süreç kalmaz). İlerleme stdout'ta `P <yüzde>` (okuma 0–90, hesap 90–100), hata
+  `ERR <mesaj>`, çıktı atomik yazılır (`<log>.analiz.json`, sunucu okuyup siler).
+- **Kuyruk (`flight_analysis`):** `start(id)` yalnız kuyruğa ekler (istek beklemez); FLIGHTLOG_ANALIZ_PARALEL (1) kalıcı işçi iş parçacığı
+  alt süreçleri çalıştırır. `flight_logs.progress` (yeni sütun; 0…100, NULL = sırada) en çok saniyede bir yazılır; `durum()` bellekteki
+  ilerleme + kuyruk sırası → `GET /api/tools/flight-logs` ve `GET /api/flight-logs/{id}` yanıtlarında `progress`, `queue`. Zaman aşımı
+  FLIGHTLOG_ANALIZ_ZAMAN_ASIMI_S (3600) → süreç öldürülür, HATA. Durumlar: ISLENIYOR → TAMAM | HATA (hurda/görev tamamlama yan etkileri aynı).
+- **Yeniden başlatma:** `resume_pending` (açılış) ISLENIYOR'daki her kaydın `progress`'ini NULL yapar ve **baştan** kuyruğa alır (yarım çıktı
+  dosyası üzerine yazılır); ISLENIYOR'da takılı kayıt kalmaz.
+- **Arayüz (`tools.js`):** liste Durum sütununda ilerleme çubuğu (`analysisProgress`) ya da "Sırada (n.)"; analiz sürerken liste 2 sn'de bir
+  tazelenir. Rapor sayfası ISLENIYOR iken ilerleme çubuklu kart, 1,5 sn'de bir güncellenir, bitince rapor kendiliğinden açılır.
+- **Ölçümler (DEV; PROD log #6 kopyası `13.10.26_565km_700m.BIN`, 754 MB; sunucu ayrı süreçte, analiz sırasında 0,2 sn'de bir API isteği):**
+
+  | | Önce (iş parçacığı, pymavlink) | Sonra (alt süreç, akış okuyucu) |
+  |---|---|---|
+  | Analiz süresi | 134,5 sn (bağımsız: 122 sn) | **9,9 sn** (bağımsız: 9,1–9,5 sn) |
+  | Sunucu süreci tepe RSS | 2.497 MB | **204 MB** (boşta 152 MB) |
+  | Analiz süreci tepe RSS | — (sunucunun içinde) | 484–506 MB (ayrı süreç, nice 10) |
+  | API gecikmesi analiz sırasında (ort. / en çok) | 376 ms / 3.349 ms | **35 ms / 277 ms** |
+  | Sonuç | — | eski analizle birebir aynı JSON |
+
+  Diğer gerçek loglar (eski → yeni, hepsi birebir aynı): 491 MB 85,6 → 5,9 sn · 439 MB 72,3 → 4,4 sn · 275 MB 48,0 → 2,8 sn · 253 MB 43,7 → 3,4 sn ·
+  SITL kayıtları 253 MB 44,4 → 2,4 sn, 4,0 → 0,5 sn.
+- **Testler:** `tests/test_binanalyze.py` (eşdeğerlik: gerçek örnek + 3 sentetik varyant — Plane/eski Copter/ThrOut tamsayı, bozuk bayt, sahte
+  başlık, ortada FMT, tanımsız tip; isteğe bağlı gerçek loglar `BINANALYZE_GERCEK=yol1:yol2`; CLI ilerleme/nice/RLIMIT_AS/PDEATHSIG/bellek;
+  kuyruk + ilerleme API; yeniden başlatma; bozuk dosya / zaman aşımı / bellek tavanı → HATA). Görsel: `tests/binanalyze_shots.py`
+  (yükleme → rapor sayfasında ilerleme → listede ilerleme + "Sırada (1.)" → rapor; `BINANALYZE_KOD=<eski worktree> BINANALYZE_GORSEL=0` ile "önce" ölçümü).
+
 ## 9. Gerçek topoğrafya (`world.mode = "real"`; `app/sim_terrain.py`, ön yüz `loadRealTerrain`)
 Kullanıcı sihirbazın Dünya adımında **Gerçek arazi / Prosedürel** seçer. Gerçek kipte seçili merkezin çevresi (kenar `size_m`, 1–12 km)
 gerçek yükseklik + uydu doku + OpenStreetMap nesneleriyle kurulur; prosedürel ayarlar *özelleştirme* olarak kalır: `tree_density` OSM orman
@@ -945,7 +989,7 @@ Kullanıcı isteği: "Simülasyon sonunda tüm veri, aynı dronun içinde kaydet
   TCP/UDP kapanır → SITL durur → `_bin_kaydet`: `drone_sitl.bin_dosyalari` (büyükten küçüğe) → `flightsim_bin.kaydet`: en büyük .BIN
   `UPLOAD_DIR/flightlogs/<rastgele>.bin`'e taşınır, `flight_logs` satırı (file_name **`SIM-<oturum>-<YYYYMMDD-HHMM>.bin`**, aircraft "Simülatör · <tip>
   [· <dron kodu>]", pilot = oturum sahibi, location = merkez adı, note "Uçuş Simülatörü oturumu #N (SITL DataFlash)", task yok), iz kaydı,
-  `flight_analysis.start` (analiz kuyruğu) → TAMAM olunca Araçlar › Uçuş Logu Analizi ve sihirbazın Kayıttan oynat listesinde görünür; kalan .BIN'ler
+  `flight_analysis.start` (analiz kuyruğu, alt süreç — §8.4) → TAMAM olunca Araçlar › Uçuş Logu Analizi ve sihirbazın Kayıttan oynat listesinde görünür; kalan .BIN'ler
   silinir. `< 1 KB` (yalnız başlık, armed süre yok) → kaydedilmez (null). Sonuç `DELETE /sessions/{id}` yanıtında `bin: {log_id, file_name, size} |
   {error} | null` ve olay şeridinde; ön yüz Bitir'de toast ("Uçuş logu kaydedildi: … — analiz bitince …"). Sunucu kapanışında (`sunucu_kapaniyor`) ve
   boşta/süre kapanışlarında da kaydedilir. `kapat()` bekleme süresi 30 sn.

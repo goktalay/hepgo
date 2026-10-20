@@ -391,7 +391,17 @@ def list_runs(request: Request, user=Depends(sim_user), conn=db.DB):
             raise HTTPException(400, f'{k} tam sayı olmalı')
     return flightsim_runs.listele(conn, user, dfrom=qp.get('from') or None, dto=qp.get('to') or None, center_id=_int('center_id'), type=qp.get('type') or None,
                                   owner_id=_int('owner_id'), result=qp.get('result') or None, mode=qp.get('mode') or None, q=qp.get('q') or None,
-                                  sort=qp.get('sort') or '-started_at', page=_int('page') or 1)
+                                  sort=qp.get('sort') or '-started_at', page=_int('page') or 1,
+                                  preset=_preset(qp.get('preset')), per_page=_int('per_page'))   # §27: ?preset=free|<kimlik> · ?per_page (kart listesi)
+
+
+def _preset(v):
+    if v in (None, '', 'free'):
+        return v or None
+    try:
+        return int(v)
+    except ValueError:
+        raise HTTPException(400, 'preset free ya da kimlik olmalı')
 
 
 @router.get('/runs/stats')

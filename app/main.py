@@ -212,6 +212,8 @@ for r in (admin.router, auth_routes.router, faceauth_router.router, users.router
           tools_mt.router, tools_ssh.router, tools_ssh.ws_router, tools_ftp.router, tools_ftp.ws_router, tools_sql.router, tools_notepad.router, tools_convert.router, tools_volfai.router,
           central.router, central.fed_router, sshmaster_admin.router, sshmaster_admin.fed, support_router.router, support_router.fed, membership.router, factory.router, mobile.router, worktime_router.router, kvkk_router.router, search_router.router):
     app.include_router(r)
+from .routers import flightsim_presets as flightsim_presets_router  # noqa: E402 — Uçuş Simülatörü §27 Kayıtlı Simülasyonlar
+app.include_router(flightsim_presets_router.router)
 
 app.mount('/static', StaticFiles(directory=config.STATIC_DIR), name='static')
 

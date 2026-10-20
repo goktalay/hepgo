@@ -2452,6 +2452,181 @@ def gcs_testleri(a, c1, sitl):
     print('  yer kontrol sahası + "Yer kontrolünü koru" (§26) testleri geçti')
 
 
+def preset_testleri(a, c1, sitl, mon):
+    """§27 Kayıtlı Simülasyonlar: pilot listesi, CRUD + doğrulama (başlatma gövdesiyle aynı), ad benzersizliği (Türkçe büyük/küçük harf, boşluk),
+    yetki (başlat = atanan pilot / tasarlayan; düzenle-sil = tasarlayan / ADMIN; diğer pilot ve salt okuyan 403), atama bildirimi (push + zil),
+    kayıtla başlat → oturum + kapanışta drone_sim_runs.preset_id, ?preset=free|<id> süzgeci, yumuşak silme; azami süre/menzil saf hesabı."""
+    from app import db, flightsim_icept, flightsim_power, flightsim_presets, notifications, push
+    P = '/api/drone/sim/presets'
+    # --- saf hesap: azami uçuş süresi / menzil (JS flightBudget ile birebir: tests/test_flightsim_saved.mjs aynı sayılar) ---
+    b = flightsim_power.menzil_sure({}, 'sabit_kanat')   # CAYMAZ 45 m/s, 5 L @ 25 km/L, 4S 10000 mAh 30 W
+    assert b['speed'] == {'cruise_ms': 24.5, 'max_ms': 45.0, 'cruise_thr': 0.3}, b
+    assert b['fuel'] == {'range_km': 192.7, 'time_min': 130.8, 'range_km_max': 125.0, 'time_min_max': 46.3}, b
+    assert b['elec'] == {'wh': 148.0, 'time_min': 296.0, 'range_km': 435.9, 'time_min_max': 296.0, 'range_km_max': 799.2}, b
+    assert b['limit'] == 'fuel' and b['time_min'] == 130.8 and b['range_km'] == 192.7 and b['time_min_max'] == 46.3 and b['range_km_max'] == 125.0, b
+    k = flightsim_power.menzil_sure({'fuel_l': 2.0}, 'multirotor')   # kopter: 10 m/s seyir, askı gazı 0,5
+    assert k['speed']['cruise_ms'] == 10.0 and k['fuel'] == {'range_km': 66.7, 'time_min': 111.1, 'range_km_max': 50.0, 'time_min_max': 66.7} and k['limit'] == 'fuel', k
+    i = flightsim_power.menzil_sure({}, 'interceptor')
+    assert i['fuel'] is None and i['limit'] == 'elec' and i['speed']['cruise_ms'] == 88.9 and i['elec']['time_min'] == 266.4, i
+    e = flightsim_power.menzil_sure({'fuel_l': 1, 'elec_w': 5}, 'sabit_kanat')
+    assert e['limit'] == 'fuel' and e['time_min'] == 26.2 and e['elec']['time_min'] == 1776.0, e
+    w = flightsim_power.menzil_sure({'fuel_l': 50, 'fuel_km_per_l': 100, 'elec_mah': 1000, 'elec_cells': 1}, 'sabit_kanat')
+    assert w['limit'] == 'elec' and w['time_min'] == w['elec']['time_min'] == 7.4 and w['range_km'] == 10.9, w   # batarya sınırlar
+    yok = flightsim_power.menzil_sure({'fuel_l': 0, 'elec_w': 0}, 'sabit_kanat')
+    assert yok['fuel'] is None and yok['elec'] is None and yok['limit'] is None and yok['time_min'] is None, yok
+    assert flightsim_power.ICEPT_SEYIR_ORAN == flightsim_icept.CRUISE_ORAN
+    assert dict(flightsim_power.hiz_parametreleri(45.0))['AIRSPEED_CRUISE'] == b['speed']['cruise_ms']   # seyir oranı oturum parametreleriyle aynı
+    assert flightsim_power.yuvarla(0.25, 1) == 0.3 and flightsim_power.yuvarla(2.675, 2) == 2.68   # yarım yukarı (JS Math.floor(x+0,5) ile aynı)
+
+    # --- kullanıcılar: tasarlayan (Saha Sorumlusu), atanan pilot, diğer pilot ---
+    ok(a.post('/api/users', json={'username': 'lead', 'full_name': 'Saha Lideri', 'roles': [auth.FIELD_LEAD], 'password': 'sifre-1234'}))
+    ok(a.post('/api/users', json={'username': 'pilot2', 'full_name': 'İkinci Pilot', 'roles': [auth.PILOT], 'password': 'sifre-1234'}))
+    lead, pil, pil2 = (TestClient(app, base_url='https://testserver') for _ in range(3))
+    tok = {'lead': login(lead, 'lead', 'sifre-1234'), 'pilot': login(pil, 'pilot', 'sifre-1234'), 'pilot2': login(pil2, 'pilot2', 'sifre-1234'), 'admin': a.cookies.get(auth.COOKIE)}
+
+    def kim(ad):   # oturum açan istekler `with` içindeki istemciden (a) gider: with'siz TestClient'ın olay döngüsü istek bitince kapanır, oturum görevi ölür
+        a.cookies.clear()
+        a.cookies.set(auth.COOKIE, tok[ad])
+        return a
+    me = {n: ok(c.get('/api/auth/me'))['id'] for n, c in (('lead', lead), ('pilot', pil), ('pilot2', pil2), ('admin', a))}
+    pl = ok(lead.get(f'{P}/pilots'))
+    ids = {x['id']: x for x in pl}
+    assert {me['lead'], me['pilot'], me['pilot2'], me['admin']} <= set(ids), pl   # kendisi de seçilebilir
+    assert ids[me['pilot']]['pilot'] is True and ids[me['lead']]['pilot'] is False and pl[0]['pilot'] is True, pl   # PILOT rolü önce
+    assert not any(x['username'] == 'montaj' for x in pl) and not any(x['username'] == 'guv' for x in pl), pl   # salt okuyan / yetkisiz pilot olamaz
+    mon_id = next(u['id'] for u in ok(a.get('/api/users')) if u['username'] == 'montaj')
+
+    # --- doğrulama (başlatma gövdesiyle aynı doğrulayıcılar; oturum açılmaz) ---
+    ayar = {'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'mode': 'procedural', 'seed': 42, 'size_m': 3000, 'launch': {'method': 'ramp', 'angle_deg': 18}},
+            'model': {'id': 'builtin:caymaz'}, 'power': {'max_speed_ms': 40, 'fuel_l': 3, 'fuel_km_per_l': 20, 'elec_cells': 4, 'elec_mah': 8000, 'elec_w': 25},
+            'layout': 'elevon', 'camera': 'thermal', 'rec': {'bin': False}, 'targets': None}
+    govde = lambda **kw: {'name': 'Görev A', 'description': 'Rampadan kalkış, termal kamera', 'pilot_id': me['pilot'], 'settings': ayar, **kw}   # noqa: E731
+    acik_once = len(flightsim.MANAGER.sessions)
+    for bozuk, ipucu in ((dict(ayar, center_id=None), 'center'), (dict(ayar, center_id=99999), 'Merkez'), (dict(ayar, type='ucan_hali'), 'tip'),
+                         (dict(ayar, power={'max_speed_ms': 500}), 'power'), (dict(ayar, world={'tree_density': 5}), None), (dict(ayar, camera='rontgen'), None),
+                         (dict(ayar, layout='kanatsiz'), None), (dict(ayar, model={'id': 'builtin:yok'}), None), (dict(ayar, mode='replay'), 'SITL'),
+                         (dict(ayar, drone_id=99999), 'Dron'), (dict(ayar, targets=[{'model': 'yok', 'alt_m': 100, 'diameter_m': 300}]), None)):
+        r = lead.post(P, json=govde(settings=bozuk))
+        assert r.status_code == 400 and (ipucu is None or ipucu.lower() in r.json()['detail'].lower()), (bozuk, r.status_code, r.text)
+    assert len(flightsim.MANAGER.sessions) == acik_once   # doğrulama oturum açmaz
+    assert lead.post(P, json=govde(name='   ')).status_code == 400
+    assert lead.post(P, json=govde(name='x' * 81)).status_code == 400
+    assert lead.post(P, json=govde(pilot_id=mon_id)).status_code == 400   # pilot yetkisi yok (salt okuyan)
+    assert lead.post(P, json=govde(settings='metin')).status_code in (400, 422)
+    assert mon.post(P, json=govde()).status_code == 403                   # salt okuyan: yazma izni yok
+
+    # --- oluştur (+ atama bildirimi: push anında, zilde 'sim-assigned') ---
+    gonderilen = []
+    eski_send = push.send
+    push.send = lambda ids_, payload, ttl=300: gonderilen.append((sorted(ids_), payload))
+    try:
+        p = ok(lead.post(P, json=govde()), 201)
+        assert p['name'] == 'Görev A' and p['pilot_id'] == me['pilot'] and p['created_by'] == me['lead'] and p['pilot_name'] == 'Pilot' and p['created_by_name'] == 'Saha Lideri', p
+        assert p['type'] == 'sabit_kanat' and p['center_id'] == c1['id'] and p['center_name'] == 'Test Merkezi' and p['run_count'] == 0 and p['deleted_at'] is None, p
+        assert p['settings']['world']['launch'] == {'method': 'ramp', 'angle_deg': 18} and p['settings']['camera'] == 'thermal' and 'targets' not in p['settings'], p['settings']
+        assert p['can_start'] is True and p['can_edit'] is True and p['budget'] == flightsim_power.menzil_sure(ayar['power'], 'sabit_kanat'), p
+        assert gonderilen == [([me['pilot']], {'type': 'notif', 'title': 'Size bir simülasyon atandı', 'tag': f"notif-sim-assigned-{p['id']}",
+                                               'body': 'Görev A · Saha Lideri', 'url': f"/app#/drone/sim?tab=saved&preset={p['id']}"})], gonderilen
+        # kendine atama: bildirim yok
+        p_kendi = ok(lead.post(P, json=govde(name='Kendi Uçuşum', pilot_id=me['lead'])), 201)
+        p_pilotsuz = ok(lead.post(P, json=govde(name='Pilotsuz', pilot_id=None, description=None)), 201)
+        assert len(gonderilen) == 1 and p_pilotsuz['pilot_id'] is None and p_pilotsuz['description'] is None
+        # ad benzersizliği: baş/son/ardışık boşluk ve Türkçe büyük/küçük harf duyarsız → 409
+        for ad in ('Görev A', '  görev   a ', 'GÖREV A', 'görev a'):
+            r = lead.post(P, json=govde(name=ad))
+            assert r.status_code == 409 and 'Görev A' in r.json()['detail'], (ad, r.status_code, r.text)
+        assert flightsim_presets.ad_anahtari('IŞIK İz') == flightsim_presets.ad_anahtari('ışık iz')
+        with db.connect() as conn:
+            u_pil = db.row(conn.execute('SELECT id, prefs FROM users WHERE id = ?', (me['pilot'],)))
+            u_pil.update(roles=[auth.PILOT], real_roles=[auth.PILOT], modules=['drone', 'drone.sim'])
+            zil = notifications.sim_assigned(conn, u_pil)
+            assert [r['id'] for r in zil['rows']] == [p['id']] and zil['href'] == f"#/drone/sim?tab=saved&preset={p['id']}" and zil['names'] == ['Görev A (Saha Lideri)'], zil
+            assert any(n['key'] == 'sim-assigned' and n['push'] is False for n in notifications.NOTIFICATIONS)
+            assert notifications.sim_assigned(conn, dict(u_pil, modules=['stock']))['rows'] == []   # modülsüz kullanıcıya düşmez
+
+        # --- liste ve yetki: diğer pilot görür ama başlatamaz/düzenleyemez; ADMIN düzenler/siler ama başlatamaz (MASTER değil) ---
+        l2 = {x['id']: x for x in ok(pil2.get(P))}
+        assert p['id'] in l2 and l2[p['id']]['can_start'] is False and l2[p['id']]['can_edit'] is False and l2[p['id']]['mine'] is False
+        assert ok(pil.get(P)) and next(x for x in ok(pil.get(P)) if x['id'] == p['id'])['can_start'] is True and next(x for x in ok(pil.get(P)) if x['id'] == p['id'])['can_edit'] is False
+        la = next(x for x in ok(a.get(P)) if x['id'] == p['id'])
+        assert la['can_edit'] is True and la['can_start'] is False, la
+        assert ok(mon.get(P)) and ok(mon.get(f"{P}/{p['id']}"))['name'] == 'Görev A'   # salt okuyan görür
+        assert pil2.post(f"{P}/{p['id']}/start").status_code == 403
+        assert a.post(f"{P}/{p['id']}/start").status_code == 403
+        assert pil2.put(f"{P}/{p['id']}", json=govde()).status_code == 403 and pil.put(f"{P}/{p['id']}", json=govde()).status_code == 403
+        assert pil2.delete(f"{P}/{p['id']}").status_code == 403 and pil.delete(f"{P}/{p['id']}").status_code == 403
+        assert lead.get(f'{P}/99999').status_code == 404 and lead.post(f'{P}/99999/start').status_code == 404
+
+        # --- atanan pilot başlatır: kayıtlı gövdeyle oturum (sihirbaz yok) → kapanışta drone_sim_runs.preset_id ---
+        s = ok(kim('pilot').post(f"{P}/{p['id']}/start"), 201)
+        assert s['preset'] == {'id': p['id'], 'name': 'Görev A'} and s['type'] == 'sabit_kanat' and s['center']['id'] == c1['id'] and s['owner']['id'] == me['pilot'], s
+        assert s['world']['seed'] == 42 and s['world']['launch']['method'] == 'ramp' and s['power']['max_speed_ms'] == 40 and s['camera'] == 'thermal' and s['layout'] == 'elevon', s
+        assert bekle(lambda: ok(a.get(f"/api/drone/sim/sessions/{s['id']}"))['state'] == 'HAZIR')
+        ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+        with db.connect() as conn:
+            run = bekle(lambda: db.row(conn.execute('SELECT id, preset_id, owner_id FROM drone_sim_runs WHERE session_id = ? AND mode = ? ORDER BY id DESC LIMIT 1', (s['id'], 'sitl'))), 10)
+        assert run and run['preset_id'] == p['id'] and run['owner_id'] == me['pilot'], run
+        with db.connect() as conn:
+            assert flightsim_presets.atanan_bekleyenler(conn, me['pilot']) == []   # ilk uçuşla zil düşer
+        # tasarlayan da başlatabilir (pilot atanmış olsa bile)
+        s2 = ok(kim('lead').post(f"{P}/{p_pilotsuz['id']}/start"), 201)
+        assert s2['preset']['id'] == p_pilotsuz['id'] and s2['owner']['id'] == me['lead']
+        ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}"))
+        with db.connect() as conn:
+            assert bekle(lambda: db.row(conn.execute('SELECT preset_id FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (s2['id'],))), 10)['preset_id'] == p_pilotsuz['id']
+        # serbest sihirbaz oturumu: preset_id NULL
+        s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+        ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
+        kim('admin')
+        with db.connect() as conn:
+            r3 = bekle(lambda: db.row(conn.execute('SELECT id, preset_id FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (s3['id'],))), 10)
+        assert r3 and r3['preset_id'] is None, r3
+
+        # --- uçuş kayıtları süzgeci: ?preset=<id> | free; preset_name; per_page ---
+        R = '/api/drone/sim/runs'
+        rp = ok(lead.get(R, params={'preset': p['id']}))
+        assert [x['id'] for x in rp['items']] == [run['id']] and rp['items'][0]['preset_name'] == 'Görev A' and rp['items'][0]['preset_id'] == p['id'], rp
+        rf = ok(lead.get(R, params={'preset': 'free', 'per_page': 100}))
+        fids = {x['id'] for x in rf['items']}
+        assert r3['id'] in fids and run['id'] not in fids and rf['per_page'] == 100 and all(x['preset_id'] is None for x in rf['items']), rf['per_page']
+        assert lead.get(R, params={'preset': 'abc'}).status_code == 400
+        assert ok(lead.get(R, params={'per_page': 500}))['per_page'] == 100
+        assert next(x for x in ok(lead.get(P)) if x['id'] == p['id'])['run_count'] == 1
+
+        # --- düzenle: tasarlayan; pilot değişince yeni pilota bildirim; ad çakışması; ADMIN de düzenler ---
+        gonderilen.clear()
+        ayar2 = dict(ayar, world=dict(ayar['world'], seed=43), camera='night')
+        assert lead.put(f"{P}/{p['id']}", json=govde(name='Kendi Uçuşum', settings=ayar2)).status_code == 409   # başka kaydın adı
+        u = ok(lead.put(f"{P}/{p['id']}", json=govde(name='Görev A (gece)', pilot_id=me['pilot2'], settings=ayar2)))
+        assert u['name'] == 'Görev A (gece)' and u['pilot_id'] == me['pilot2'] and u['settings']['camera'] == 'night' and u['settings']['world']['seed'] == 43 and u['updated_at'] >= p['updated_at'], u
+        assert [g[0] for g in gonderilen] == [[me['pilot2']]], gonderilen
+        ok(lead.put(f"{P}/{p['id']}", json=govde(name='Görev A (gece)', pilot_id=me['pilot2'], settings=ayar2)))   # aynı ad (kendisi) + aynı pilot: bildirim yok
+        assert len(gonderilen) == 1
+        assert lead.put(f"{P}/{p['id']}", json=govde(name='Görev A (gece)', settings=dict(ayar2, center_id=99999))).status_code == 400
+        assert ok(a.put(f"{P}/{p['id']}", json=govde(name='Görev A (gece)', pilot_id=me['pilot2'], settings=ayar2)))['name'] == 'Görev A (gece)'   # ADMIN
+        l2 = {x['id']: x for x in ok(pil2.get(P))}
+        assert l2[p['id']]['can_start'] is True and l2[p['id']]['mine'] is True   # yeni pilot artık başlatabilir
+        assert pil.post(f"{P}/{p['id']}/start").status_code == 403                 # eski pilot artık başlatamaz
+    finally:
+        push.send = eski_send
+        kim('admin')
+
+    # --- sil (yumuşak): liste/başlat dışı, uçuşları Serbest Uçuş altında 'silinmiş' rozetiyle; ad yeniden kullanılabilir ---
+    ok(lead.delete(f"{P}/{p['id']}"))
+    assert p['id'] not in {x['id'] for x in ok(lead.get(P))} and lead.get(f"{P}/{p['id']}").status_code == 404
+    assert pil2.post(f"{P}/{p['id']}/start").status_code == 404 and lead.delete(f"{P}/{p['id']}").status_code == 404
+    rf = ok(lead.get(R, params={'preset': 'free', 'per_page': 100}))
+    sil_run = next(x for x in rf['items'] if x['id'] == run['id'])
+    assert sil_run['preset_id'] == p['id'] and sil_run['preset_name'] == 'Görev A (gece)' and sil_run['preset_deleted_at'], sil_run
+    assert ok(lead.get(R, params={'preset': p['id']}))['total'] == 1   # kimlikle hâlâ erişilir
+    ok(lead.post(P, json=govde(name='Görev A (gece)')), 201)                 # silinmiş kaydın adı serbest
+    ok(a.delete(f"{P}/{p_kendi['id']}"))                                     # ADMIN siler
+    assert pil.delete(f"{P}/{p_pilotsuz['id']}").status_code == 403
+    for c in (lead, pil, pil2):
+        c.close()
+    print('  kayıtlı simülasyonlar (§27) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2724,6 +2899,7 @@ def main():
         kamera_testleri(a, c1, sitl)
         hedef_icept_testleri(a, c1, sitl)   # §24 hedefler + §25 INTERCEPTOR
         gcs_testleri(a, c1, sitl)   # §26 yer kontrol sahası + görev
+        preset_testleri(a, c1, sitl, mon)   # §27 kayıtlı simülasyonlar
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

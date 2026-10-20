@@ -133,7 +133,8 @@ def main():
                                       'last_flight_at': None, 'last_version': None}, ali['games']
         assert ali['games']['vf'] == {'has_profile': False, 'last_at': None, 'hi_score': 0, 'levels': 0, 'parkurs': 0, 'coins': 0}
         assert au['stats']['games'] == {'sv': {'name': 'SIMUMAV', 'users': 0, 'flights': 0, 'hours': 0, 'release': None},
-                                        'vf': {'name': 'VOLFAI', 'users': 0, 'release': None}}, au['stats']['games']
+                                        'vf': {'name': 'VOLFAI', 'users': 0, 'release': None},
+                                        'mw': {'name': 'MASTERWORLD', 'users': 0, 'release': None}}, au['stats']['games']
         assert det['games'] == ali['games']
         assert c.put(f"/api/sm/admin/users/{ali['id']}", headers=ADMIN, json={'status': 'ASKIDA'}).json()['ok']
         assert c.get('/api/sm/me').status_code == 401   # askıya alınan oturumları düştü

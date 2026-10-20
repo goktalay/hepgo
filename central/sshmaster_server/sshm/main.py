@@ -30,7 +30,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import db, mailer, merkez, seo, settings
+from . import db, mailer, merkez, mw_catalog, seo, settings
 
 VERSION = '2.0.0'
 APPS = {'sm': {'name': 'SSH Master', 'setup': 'SSH Master Setup {v}.exe', 'portable': 'SSH-Master-Portable-{v}.exe'},
@@ -61,7 +61,10 @@ APPS |= TOOLS                                          # lisans, oturum, senkron
 # kopyalanır (tanıtım sayfası static/mt/oyunlar/<slug>/tanitim/ depodan gelir). Simge: static/mt/img/<slug>.svg|.png|-512.png.
 GAMES = {'vf': {'name': 'VOLFAI', 'slug': 'volfai', 'icon': 'volfai'},
          # SIMUMAV: kendi sitesinde çalışan oyun (site → url/tanıtım simumav.com; mastertool.download altında dosya sunulmaz); profil sv_profiles
-         'sv': {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': settings.SIMUMAV_SITE, 'promo': settings.SIMUMAV_SITE + '/'}}
+         'sv': {'name': 'SIMUMAV', 'slug': 'simumav', 'icon': 'simumav', 'site': settings.SIMUMAV_SITE, 'promo': settings.SIMUMAV_SITE + '/'},
+         # MASTERWORLD: kendi sitesinde çalışan web UYGULAMASI (oyun değil: group 'apps'); üyelik isteğe bağlı, ayarlar mw_profiles (docs/masterworld.md §7)
+         'mw': {'name': 'MASTERWORLD', 'slug': 'masterworld', 'icon': 'masterworld', 'site': settings.MASTERWORLD_SITE,
+                'promo': settings.MASTERWORLD_SITE + '/', 'group': 'apps'}}
 GAMES['vf']['desc'] = {'tr': "Volfied'in dokunmatik yeniden doğuşu: alanı ele geçir, uzaylıları kuşat", 'en': 'A touch-first rebirth of Volfied: claim the field, trap the aliens',
                        'fr': "Renaissance tactile de Volfied : conquérez le terrain, encerclez les aliens", 'de': 'Volfied neu für Touch: Fläche erobern, Aliens einkesseln',
                        'es': 'El renacer táctil de Volfied: conquista el campo, acorrala a los aliens', 'ar': 'ولادة جديدة للمس للعبة Volfied: استولِ على الساحة وحاصر الفضائيين',
@@ -74,6 +77,14 @@ GAMES['sv']['desc'] = {'tr': 'ArduPilot SITL fiziği, Google 3B dünyası ve Mis
                        'ar': 'لعبة محاكاة طائرات بدون طيار تعمل في المتصفح بفيزياء ArduPilot SITL وعالم Google ثلاثي الأبعاد واتصال Mission Planner',
                        'zh': '在浏览器中运行的无人机模拟游戏：ArduPilot SITL 物理、Google 3D 世界与 Mission Planner 连接',
                        'ru': 'Игра-симулятор дрона в браузере: физика ArduPilot SITL, 3D-мир Google и связь с Mission Planner'}
+GAMES['mw']['desc'] = {'tr': 'Uçak, gemi, uydu, deprem, kamera ve radyo gibi kamuya açık canlı verileri tam ekran 3B kürede gösteren web uygulaması',
+                       'en': 'A web app that shows public live data such as aircraft, ships, satellites, earthquakes, cameras and radio on a full-screen 3D globe',
+                       'fr': "Application web qui affiche sur un globe 3D plein écran des données publiques en direct : avions, navires, satellites, séismes, caméras et radios",
+                       'de': 'Web-App, die öffentliche Live-Daten wie Flugzeuge, Schiffe, Satelliten, Erdbeben, Kameras und Radio auf einem 3D-Vollbild-Globus zeigt',
+                       'es': 'Aplicación web que muestra en un globo 3D a pantalla completa datos públicos en directo: aviones, barcos, satélites, terremotos, cámaras y radio',
+                       'ar': 'تطبيق ويب يعرض البيانات الحية العامة مثل الطائرات والسفن والأقمار الصناعية والزلازل والكاميرات والراديو على كرة أرضية ثلاثية الأبعاد بملء الشاشة',
+                       'zh': '在全屏 3D 地球上展示飞机、船舶、卫星、地震、摄像头和电台等公开实时数据的网页应用',
+                       'ru': 'Веб-приложение, показывающее на полноэкранном 3D-глобусе открытые данные в реальном времени: самолёты, суда, спутники, землетрясения, камеры и радио'}
 GAME_FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')          # oyun dizinindeki yol parçaları (gizli dosya ve .. yok)
 GAME_MIME = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
              '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json',
@@ -130,15 +141,28 @@ def need_prefix(a, apps_only=False):
     return a
 
 
-SV_CORS_ORIGINS = {settings.SIMUMAV_SITE, settings.SIMUMAV_SITE.replace('https://', 'https://www.')}
+def _site_origins(site):
+    return {site, site.replace('https://', 'https://www.')}
+
+
+SV_CORS_ORIGINS = _site_origins(settings.SIMUMAV_SITE)
+MW_CORS_ORIGINS = _site_origins(settings.MASTERWORLD_SITE)
+# yol öneki → izinli kökenler: her site YALNIZ kendi önekinde (simumav.com /api/sv/*, masterworld.app /api/mw/*). Sunucular arası iç uçlar hariç.
+CORS_SITES = (('/api/sv/', SV_CORS_ORIGINS), ('/api/mw/', MW_CORS_ORIGINS))
+CORS_EXCLUDE = ('/api/mw/internal/',)
+
+
+def cors_allowed(path, origin):
+    return bool(origin) and not path.startswith(CORS_EXCLUDE) and any(path.startswith(p) and origin in o for p, o in CORS_SITES)
 
 
 @app.middleware('http')
-async def _sv_cors(request: Request, call_next):
-    """CORS yalnız SIMUMAV yolları (/api/sv/*) ve yalnız simumav.com kökeni: tarayıcı hesap servisine simumav.com'dan Bearer ile giriş yapar.
+async def _site_cors(request: Request, call_next):
+    """CORS yalnız kendi sitesinde çalışan uygulamaların yolları ve yalnız o sitenin kökeni (SIMUMAV /api/sv/* ← simumav.com,
+    MASTERWORLD /api/mw/* ← masterworld.app): tarayıcı hesap servisine o siteden Bearer ile giriş yapar.
     Çerez gönderilmez (credentials yok); izinli başlıklar Authorization, Content-Type, X-SSHM."""
     origin = request.headers.get('origin')
-    izinli = origin in SV_CORS_ORIGINS and request.url.path.startswith('/api/sv/')
+    izinli = cors_allowed(request.url.path, origin)
     if izinli and request.method == 'OPTIONS':
         resp = Response(status_code=204)
     else:
@@ -950,7 +974,7 @@ def app_site(k):
 
 def game_entry(k):
     """Katalog / Hesabım kaydı (kind:'web'): kurulum, lisans ve sürüm yok; url tarayıcıda açılır, site tanıtım sayfası."""
-    return {'app': k, 'code': k, 'name': GAMES[k]['name'], 'group': 'games', 'kind': 'web', 'url': game_url(k), 'site': game_url(k, promo=True),
+    return {'app': k, 'code': k, 'name': GAMES[k]['name'], 'group': GAMES[k].get('group', 'games'), 'kind': 'web', 'url': game_url(k), 'site': game_url(k, promo=True),
             'icon_svg': f'/brand/{k}.svg', 'icon_png': f'/brand/{k}.png', 'description': GAMES[k].get('desc')}
 
 
@@ -1138,14 +1162,14 @@ async def release_part(a: str, version: str, kind: str, request: Request, file: 
 
 
 # ---------------- web uygulaması paketleri (SIMUMAV: GitHub Actions → tar.gz; sunucudaki root yayın birimi `latest` dosyasını izler) ----------------
-WEB_RELEASE_APPS = {'sv': 'simumav'}          # kod → paket adı öneki (simumav-<v>.tar.gz)
+WEB_RELEASE_APPS = {'sv': 'simumav', 'mw': 'masterworld'}   # kod → paket adı öneki (simumav-<v>.tar.gz, masterworld-<v>.tar.gz)
 TAR_MAX_UYE = 20000
 
 
-def _tar_dogrula(path, version):
+def _tar_dogrula(path, version, paket='simumav'):
     """Paket güvenliği (docs/simumav.md §6.2): gzip imzası (`not_gzip`); tar yalnız LİSTELENİR, açılmaz; üye adı normalize edilir — mutlak yol,
     `..` bileşeni, sembolik/sert bağ, aygıt/fifo → `unsafe_archive`; üye sayısı ≤ TAR_MAX_UYE; kökte (`VERSION`, `./VERSION` ya da tek kök klasör
-    altında) VERSION == version (`version_mismatch`); `requirements.txt` ve `run-simumav.sh` yoksa `incomplete`."""
+    altında) VERSION == version (`version_mismatch`); `requirements.txt` ve `run-<paket>.sh` (run-simumav.sh, run-masterworld.sh) yoksa `incomplete`."""
     import tarfile
     with open(path, 'rb') as f:
         if f.read(2) != b'\x1f\x8b':
@@ -1180,13 +1204,13 @@ def _tar_dogrula(path, version):
         raise Err(422, 'version_mismatch', 'Pakette kök VERSION dosyası yok')
     if ver_icerik.lstrip('vV') != version:
         raise Err(422, 'version_mismatch', f'Paketteki VERSION ({ver_icerik[:20]}) sürümle eşleşmiyor')
-    if f'{on}requirements.txt' not in dosyalar or f'{on}run-simumav.sh' not in dosyalar:
-        raise Err(422, 'incomplete', 'Pakette requirements.txt / run-simumav.sh yok')
+    if f'{on}requirements.txt' not in dosyalar or f'{on}run-{paket}.sh' not in dosyalar:
+        raise Err(422, 'incomplete', f'Pakette requirements.txt / run-{paket}.sh yok')
 
 
 @app.post('/api/{a}/web-releases')
 async def web_release_upload(a: str, request: Request, version: str = Form(...), package: UploadFile = File(...), sha256: str = Form(...), notes: str = Form('')):
-    """SIMUMAV web paketi (tar.gz ≤ 95 MB): X-Release-Key (SIMUMAV_RELEASE_KEY) ya da Merkez anahtarı. Kayıt RELEASE_DIR/sv/<v>/simumav-<v>.tar.gz +
+    """SIMUMAV / MASTERWORLD web paketi (tar.gz ≤ 95 MB): X-Release-Key (SIMUMAV_RELEASE_KEY / MASTERWORLD_RELEASE_KEY) ya da Merkez anahtarı. Kayıt RELEASE_DIR/sv/<v>/simumav-<v>.tar.gz +
     web_releases satırı; `RELEASE_DIR/sv/latest` dosyasına sürüm ATOMİK yazılır (tmp + os.replace) — root yayın birimi (deploy/simumav) izler."""
     if a not in WEB_RELEASE_APPS:
         raise Err(404, 'not_found', 'Bulunamadı')
@@ -1218,7 +1242,7 @@ async def web_release_upload(a: str, request: Request, version: str = Form(...),
             raise Err(422, 'invalid', 'Paket boş')
         if h.hexdigest() != sha:
             raise Err(422, 'bad_sha256', 'sha256 dosya ile eşleşmiyor')
-        _tar_dogrula(tmp, version)
+        _tar_dogrula(tmp, version, WEB_RELEASE_APPS[a])
         tmp.replace(d / name)
         os.chmod(d / name, 0o644)
         (d / f'{name}.sha256').write_text(f'{sha}  {name}\n')
@@ -1395,7 +1419,9 @@ def _admin_games(conn, uid):
             p = {}
         p = p if isinstance(p, dict) else {}
         g = {'has_profile': bool(r), 'last_at': r['updated_at'] if r else None}
-        if k == 'sv':
+        if k == 'mw':   # MASTERWORLD: ayarlar (katman seçimi, görünüm); yalnız var mı + son güncelleme
+            pass
+        elif k == 'sv':
             g |= {'flights': _num(p.get('flights'), int), 'hours': round(_num(p.get('hours')), 2), 'pilots': _num(p.get('pilots'), int),
                   'drones': _num(p.get('drones'), int), 'pilot': p.get('pilot') or None, 'last_flight_at': p.get('last_flight_at') or None,
                   'last_version': p.get('version') or None}
@@ -1408,12 +1434,15 @@ def _admin_games(conn, uid):
 
 
 def _games_stats(conn, users):
-    """Üst kartlar: oyun başına kullanıcı (profili olan) sayısı; SIMUMAV için toplam uçuş/saat ve son web paketi sürümü."""
+    """Üst kartlar: oyun / web uygulaması başına kullanıcı (profili olan) sayısı; SIMUMAV için toplam uçuş/saat; web paketli olanlarda son sürüm."""
+    def rel(a):
+        r = conn.execute('SELECT version, created_at FROM web_releases WHERE app = ? ORDER BY id DESC LIMIT 1', (a,)).fetchone()
+        return dict(r) if r else None
     sv = [u['games']['sv'] for u in users if u['games']['sv']['has_profile']]
-    rel = conn.execute("SELECT version, created_at FROM web_releases WHERE app = 'sv' ORDER BY id DESC LIMIT 1").fetchone()
     return {'sv': {'name': GAMES['sv']['name'], 'users': len(sv), 'flights': sum(x['flights'] for x in sv), 'hours': round(sum(x['hours'] for x in sv), 1),
-                   'release': dict(rel) if rel else None},
-            'vf': {'name': GAMES['vf']['name'], 'users': sum(1 for u in users if u['games']['vf']['has_profile']), 'release': None}}
+                   'release': rel('sv')},
+            'vf': {'name': GAMES['vf']['name'], 'users': sum(1 for u in users if u['games']['vf']['has_profile']), 'release': None},
+            'mw': {'name': GAMES['mw']['name'], 'users': sum(1 for u in users if u['games']['mw']['has_profile']), 'release': rel('mw')}}
 
 
 @app.get('/api/sm/admin/users')
@@ -1540,6 +1569,193 @@ def admin_release_delete(rid: int, request: Request):
     shutil.rmtree(rel_dir(r['app'], r['version']), ignore_errors=True)
     return {'ok': True}
 
+
+# ---------------- MASTERWORLD kaynak kaydı (docs/masterworld.md §3.2–§3.3) ----------------
+# Yönetim Merkez › Mastertool › MASTERWORLD (X-Central-Secret). api_key YALNIZ YAZILIR: yönetici yanıtlarında has_key; değer yalnız iç uçta.
+MW_SRC_OUT = ('id', 'slug', 'category', 'kind', 'name', 'data_desc', 'endpoint', 'protocol', 'auth', 'push_pull', 'scale', 'license', 'note', 'adapter',
+              'key_required', 'noncommercial', 'attribution_required', 'attribution', 'attribution_url', 'rate_per_min', 'ttl_s', 'enabled',
+              'default_on', 'sort', 'origin', 'created_at', 'updated_at')
+MW_PT_OUT = ('id', 'source_id', 'name', 'lat', 'lon', 'media_type', 'media_url', 'enabled', 'created_at', 'updated_at')
+
+
+def _jload(s):
+    try:
+        v = json.loads(s or '{}')
+    except ValueError:
+        return {}
+    return v if isinstance(v, dict) else {}
+
+
+def _mw_source(r, points=0):
+    has_key = bool(r['api_key'])
+    return {k: r[k] for k in MW_SRC_OUT} | {'params': _jload(r['params']), 'has_key': has_key, 'live': mw_catalog.is_live(r, has_key),
+                                            'key_missing': bool(r['adapter'] and r['key_required'] and not has_key), 'points': points}
+
+
+def _mw_point(p):
+    return {k: p[k] for k in MW_PT_OUT} | {'props': _jload(p['props'])}
+
+
+def _mw_get(conn, sid):
+    r = conn.execute('SELECT * FROM mw_sources WHERE id = ?', (sid,)).fetchone()
+    if not r:
+        raise Err(404, 'not_found', 'Kaynak bulunamadı')
+    return r
+
+
+def _mw_clean(fn, b, partial):
+    try:
+        return fn(b, partial)
+    except mw_catalog.Invalid as e:
+        raise Err(422, 'invalid', str(e))
+
+
+@app.get('/api/sm/admin/mw/sources')
+def mw_sources(request: Request):
+    central(request)
+    with db.connect() as conn:
+        counts = dict(conn.execute('SELECT source_id, COUNT(*) FROM mw_points GROUP BY source_id').fetchall())
+        rows = [_mw_source(r, counts.get(r['id'], 0)) for r in conn.execute('SELECT * FROM mw_sources ORDER BY sort, name COLLATE NOCASE')]
+    return {'sources': rows, 'adapters': list(mw_catalog.ADAPTERS), 'categories': {k: list(v) for k, v in mw_catalog.CATEGORIES.items()},
+            'category_labels': mw_catalog.CATEGORY_LABELS, 'kinds': list(mw_catalog.KINDS), 'media_types': list(mw_catalog.MEDIA_TYPES),
+            'stats': {'total': len(rows), 'enabled': sum(1 for r in rows if r['enabled']), 'live': sum(1 for r in rows if r['live']),
+                      'key_missing': sum(1 for r in rows if r['key_missing'])}}
+
+
+@app.post('/api/sm/admin/mw/sources')
+async def mw_source_create(request: Request):
+    central(request)
+    v = _mw_clean(mw_catalog.clean_source, await body(request), False)
+    with db.connect() as conn:
+        if conn.execute('SELECT 1 FROM mw_sources WHERE slug = ?', (v['slug'],)).fetchone():
+            raise Err(409, 'exists', 'Bu slug zaten kayıtlı')
+        sid = mw_catalog._insert(conn, v | {'params': json.loads(v.get('params') or '{}'), 'origin': 'manual'})
+        conn.commit()
+        return JSONResponse(_mw_source(_mw_get(conn, sid)), status_code=201)
+
+
+@app.put('/api/sm/admin/mw/sources/{sid}')
+async def mw_source_update(sid: int, request: Request):
+    central(request)
+    b = await body(request)
+    v = _mw_clean(mw_catalog.clean_source, b, True)
+    if isinstance(b, dict) and b.get('api_key') == '':
+        v['api_key'] = None   # "" = anahtarı sil (None/yok = dokunma)
+    with db.connect() as conn:
+        _mw_get(conn, sid)
+        if 'slug' in v and conn.execute('SELECT 1 FROM mw_sources WHERE slug = ? AND id != ?', (v['slug'], sid)).fetchone():
+            raise Err(409, 'exists', 'Bu slug zaten kayıtlı')
+        if v:
+            v['updated_at'] = db.now()
+            conn.execute(f"UPDATE mw_sources SET {', '.join(f'{k} = ?' for k in v)} WHERE id = ?", [*v.values(), sid])
+            conn.commit()
+        n = conn.execute('SELECT COUNT(*) FROM mw_points WHERE source_id = ?', (sid,)).fetchone()[0]
+        return _mw_source(_mw_get(conn, sid), n)
+
+
+@app.delete('/api/sm/admin/mw/sources/{sid}')
+def mw_source_delete(sid: int, request: Request):
+    central(request)
+    with db.connect() as conn:
+        r = _mw_get(conn, sid)
+        conn.execute('DELETE FROM mw_sources WHERE id = ?', (sid,))   # noktalar ON DELETE CASCADE
+        conn.commit()
+    return {'ok': True, 'slug': r['slug']}
+
+
+@app.post('/api/sm/admin/mw/import')
+async def mw_import(request: Request, file: UploadFile = File(...)):
+    """Excel (.xlsx ≤ 5 MB, zip imzası PK) → §3.1 idempotent içe aktarma; önce veritabanı yedeği (data/sshm-pre-mw-<ts>.db)."""
+    central(request)
+    data = await file.read(mw_catalog.XLSX_MAX + 1)
+    if len(data) > mw_catalog.XLSX_MAX:
+        raise Err(413, 'too_large', 'Dosya 5 MB sınırını aşıyor')
+    if data[:2] != b'PK':
+        raise Err(422, 'not_xlsx', 'Dosya .xlsx değil')
+    with db.connect() as conn:
+        try:
+            recs, skipped = mw_catalog.parse_sources(data)
+        except mw_catalog.XlsxError as e:
+            raise Err(422, 'not_xlsx', str(e))
+        mw_catalog.backup(conn)
+        res = mw_catalog.import_records(conn, recs, skipped)
+        conn.commit()
+    return res | {'rows': len(recs) + len(skipped)}
+
+
+@app.get('/api/sm/admin/mw/sources/{sid}/points')
+def mw_points(sid: int, request: Request):
+    central(request)
+    with db.connect() as conn:
+        _mw_get(conn, sid)
+        return {'points': [_mw_point(p) for p in conn.execute('SELECT * FROM mw_points WHERE source_id = ? ORDER BY name COLLATE NOCASE, id', (sid,))]}
+
+
+@app.post('/api/sm/admin/mw/sources/{sid}/points')
+async def mw_point_create(sid: int, request: Request):
+    central(request)
+    v = _mw_clean(mw_catalog.clean_point, await body(request), False)
+    with db.connect() as conn:
+        if _mw_get(conn, sid)['adapter'] != 'points':
+            raise Err(422, 'invalid', "Noktalar yalnız 'points' adaptörlü kaynağa eklenir")
+        now = db.now()
+        v = {'props': '{}', 'enabled': 1} | v | {'source_id': sid, 'created_at': now, 'updated_at': now}
+        pid = conn.execute(f"INSERT INTO mw_points ({', '.join(v)}) VALUES ({', '.join('?' * len(v))})", list(v.values())).lastrowid
+        conn.execute('UPDATE mw_sources SET updated_at = ? WHERE id = ?', (now, sid))
+        conn.commit()
+        return JSONResponse(_mw_point(conn.execute('SELECT * FROM mw_points WHERE id = ?', (pid,)).fetchone()), status_code=201)
+
+
+@app.put('/api/sm/admin/mw/points/{pid}')
+async def mw_point_update(pid: int, request: Request):
+    central(request)
+    v = _mw_clean(mw_catalog.clean_point, await body(request), True)
+    with db.connect() as conn:
+        p = conn.execute('SELECT * FROM mw_points WHERE id = ?', (pid,)).fetchone()
+        if not p:
+            raise Err(404, 'not_found', 'Nokta bulunamadı')
+        if v:
+            v['updated_at'] = db.now()
+            conn.execute(f"UPDATE mw_points SET {', '.join(f'{k} = ?' for k in v)} WHERE id = ?", [*v.values(), pid])
+            conn.commit()
+        return _mw_point(conn.execute('SELECT * FROM mw_points WHERE id = ?', (pid,)).fetchone())
+
+
+@app.delete('/api/sm/admin/mw/points/{pid}')
+def mw_point_delete(pid: int, request: Request):
+    central(request)
+    with db.connect() as conn:
+        p = conn.execute('SELECT * FROM mw_points WHERE id = ?', (pid,)).fetchone()
+        if not p:
+            raise Err(404, 'not_found', 'Nokta bulunamadı')
+        conn.execute('DELETE FROM mw_points WHERE id = ?', (pid,))
+        conn.execute('UPDATE mw_sources SET updated_at = ? WHERE id = ?', (db.now(), p['source_id']))
+        conn.commit()
+    return {'ok': True}
+
+
+MW_INTERNAL_SRC = ('id', 'slug', 'category', 'kind', 'name', 'data_desc', 'adapter', 'api_key', 'key_required', 'noncommercial', 'attribution_required',
+                   'attribution', 'attribution_url', 'license', 'rate_per_min', 'ttl_s', 'enabled', 'default_on', 'sort', 'scale')
+
+
+@app.get('/api/mw/internal/sources')
+def mw_internal_sources(request: Request):
+    """masterworld sunucusu → hesap servisi (§3.3): X-Masterworld-Secret; yalnız enabled=1 kaynaklar (katalog satırları dahil) ve etkin noktaları.
+    api_key YALNIZ burada döner."""
+    sec = request.headers.get('x-masterworld-secret') or ''
+    if not settings.MASTERWORLD_SHARED_SECRET or not hmac.compare_digest(sec.encode(), settings.MASTERWORLD_SHARED_SECRET.encode()):
+        raise Err(403, 'forbidden', 'Yetkisiz')
+    with db.connect() as conn:
+        rows = conn.execute('SELECT * FROM mw_sources WHERE enabled = 1 ORDER BY sort, name COLLATE NOCASE').fetchall()
+        ids = [r['id'] for r in rows]
+        points = {}
+        if ids:
+            for p in conn.execute(f"SELECT * FROM mw_points WHERE enabled = 1 AND source_id IN ({', '.join('?' * len(ids))}) ORDER BY id", ids):
+                points.setdefault(str(p['source_id']), []).append({k: p[k] for k in ('id', 'name', 'lat', 'lon', 'media_type', 'media_url')}
+                                                                  | {'props': _jload(p['props'])})
+        version = max([r['updated_at'] for r in rows] + [x[0] for x in conn.execute('SELECT MAX(updated_at) FROM mw_points') if x[0]] or [None])
+    return JSONResponse({'version': version, 'sources': [{k: r[k] for k in MW_INTERNAL_SRC} | {'params': _jload(r['params'])} for r in rows],
+                         'points': points}, headers={'Cache-Control': 'no-store'})
 
 # ---------------- sayfalar (Host'a göre site) ----------------
 APP_ALIASES = {'sshmaster': 'sm', 'sshmasters': 'sm', 'ftpmasters': 'fm', 'ftpmaster': 'fm', 'sqlmaster': 'sq', 'notepadmaster': 'np',

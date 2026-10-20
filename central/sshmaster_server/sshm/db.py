@@ -1,5 +1,6 @@
 """Mastertool hesap veritabanı (data/sshm.db, stdlib sqlite3): tek kullanıcı hesabı, uygulama bazında lisans / kütüphane / sürüm.
-Uygulama kodları: sm = SSH Master, fm = FTP Masters; oyunlar vf = VOLFAI, sv = SIMUMAV (<kod>_profiles). Kütüphane blob'u uçtan uca şifrelidir: sunucu okuyamaz.
+Uygulama kodları: sm = SSH Master, fm = FTP Masters; oyunlar vf = VOLFAI, sv = SIMUMAV; web uygulaması mw = MASTERWORLD (<kod>_profiles;
+mw ayrıca canlı veri kaynak kaydı mw_sources + mw_points — docs/masterworld.md §3). Kütüphane blob'u uçtan uca şifrelidir: sunucu okuyamaz.
 Eski SSH Master şeması (uygulama sütunsuz) init() içinde yerinde taşınır; mevcut veriler sm'e bağlanır."""
 import os
 import sqlite3
@@ -116,7 +117,50 @@ CREATE TABLE IF NOT EXISTS sv_profiles (            -- SIMUMAV (simumav.com, uyg
     profile TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS web_releases (           -- web uygulaması paketleri (SIMUMAV tar.gz; GitHub Actions → /api/sv/web-releases)
+CREATE TABLE IF NOT EXISTS mw_profiles (            -- MASTERWORLD (masterworld.app, uygulama kodu mw): üyenin küre ayarları (katmanlar, görünüm …)
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    profile TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mw_sources (             -- MASTERWORLD canlı veri kaynakları (docs/masterworld.md §3; Merkez › Mastertool › MASTERWORLD)
+    id INTEGER PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,                     -- [a-z0-9-]{2,40}; Excel içe aktarma anahtarı
+    category TEXT NOT NULL,                        -- air | sea | space | natural | weather | environment | camera | radio | ground | basemap | ham | infra | news
+    kind TEXT NOT NULL,                            -- katman türü (aircraft, vessel, quake, camera, radio …)
+    name TEXT NOT NULL,
+    data_desc TEXT, endpoint TEXT, protocol TEXT, auth TEXT, push_pull TEXT, scale TEXT, license TEXT, note TEXT,
+    adapter TEXT,                                  -- masterworld sunucusundaki adaptör; NULL = yalnız katalog
+    params TEXT NOT NULL DEFAULT '{}',             -- adaptör parametreleri JSON (≤ 4 KB)
+    api_key TEXT,                                  -- YALNIZ YAZILIR: yönetici yanıtlarında has_key; değer yalnız iç uçta (§3.3)
+    key_required INTEGER NOT NULL DEFAULT 0,
+    noncommercial INTEGER NOT NULL DEFAULT 0,
+    attribution_required INTEGER NOT NULL DEFAULT 0,
+    attribution TEXT,
+    attribution_url TEXT,
+    rate_per_min REAL,
+    ttl_s INTEGER,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    default_on INTEGER NOT NULL DEFAULT 0,
+    sort INTEGER NOT NULL DEFAULT 100,
+    origin TEXT NOT NULL DEFAULT 'manual',         -- excel | builtin | manual
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mw_points (              -- elle eklenen tekil noktalar (kamera / radyo …): adapter='points' kaynağa bağlı
+    id INTEGER PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES mw_sources(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    media_type TEXT,                               -- image | mjpeg | audio | link | NULL
+    media_url TEXT,
+    props TEXT NOT NULL DEFAULT '{}',              -- serbest JSON (≤ 2 KB)
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_mw_points_source ON mw_points(source_id);
+CREATE TABLE IF NOT EXISTS web_releases (           -- web uygulaması paketleri (SIMUMAV / MASTERWORLD tar.gz; GitHub Actions → /api/<sv|mw>/web-releases)
     id INTEGER PRIMARY KEY,
     app TEXT NOT NULL,
     version TEXT NOT NULL,

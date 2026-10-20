@@ -98,13 +98,108 @@ def release_delete(rid: int, user=Depends(sshm_user), conn=db.DB):
     return r
 
 
+# ======================= MASTERWORLD canlı veri kaynakları (docs/masterworld.md §3.2) =======================
+# Hesap servisinin /api/sm/admin/mw/* uçlarına iç anahtarla vekil; her değişiklik audit'e yazılır (api_key DEĞERİ asla yazılmaz).
+MW_SRC_FIELDS = ('slug', 'category', 'kind', 'name', 'data_desc', 'endpoint', 'protocol', 'auth', 'push_pull', 'scale', 'license', 'note', 'adapter',
+                 'params', 'api_key', 'key_required', 'noncommercial', 'attribution_required', 'attribution', 'attribution_url', 'rate_per_min',
+                 'ttl_s', 'enabled', 'default_on', 'sort')
+MW_PT_FIELDS = ('name', 'lat', 'lon', 'media_type', 'media_url', 'props', 'enabled')
+
+
+def _mw_body(b, fields):
+    if not isinstance(b, dict):
+        raise HTTPException(422, 'İstek gövdesi geçersiz')
+    return {k: b[k] for k in fields if k in b}
+
+
+def _mw_detail(body):
+    """Audit ayrıntısı: alan adları ve değerleri; anahtar yalnız 'api_key=değişti/silindi' olarak."""
+    out = []
+    for k, v in body.items():
+        if k == 'api_key':
+            out.append('api_key=' + ('silindi' if v == '' else 'değişti') if v is not None else '')
+        elif k == 'params':
+            out.append('params=…')
+        else:
+            out.append(f'{k}={v}')
+    return ', '.join(x for x in out if x)[:300]
+
+
+@router.get('/mw/sources')
+def mw_sources(user=Depends(sshm_user)):
+    return _sm('GET', '/api/sm/admin/mw/sources')
+
+
+@router.post('/mw/sources')
+async def mw_source_create(request: Request, user=Depends(sshm_user), conn=db.DB):
+    body = _mw_body(await request.json(), MW_SRC_FIELDS)
+    r = _sm('POST', '/api/sm/admin/mw/sources', body)
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD kaynağı ekledi', 'mw_source', r.get('id'), _mw_detail(body))
+    return r
+
+
+@router.put('/mw/sources/{sid}')
+async def mw_source_update(sid: int, request: Request, user=Depends(sshm_user), conn=db.DB):
+    body = _mw_body(await request.json(), MW_SRC_FIELDS)
+    r = _sm('PUT', f'/api/sm/admin/mw/sources/{sid}', body)
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD kaynağını düzenledi', 'mw_source', sid, _mw_detail(body))
+    return r
+
+
+@router.delete('/mw/sources/{sid}')
+def mw_source_delete(sid: int, user=Depends(sshm_user), conn=db.DB):
+    r = _sm('DELETE', f'/api/sm/admin/mw/sources/{sid}')
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD kaynağını sildi', 'mw_source', sid, r.get('slug'))
+    return r
+
+
+@router.post('/mw/import')
+def mw_import(file: UploadFile = File(...), user=Depends(sshm_user), conn=db.DB):
+    data = file.file.read(5 * 1024 * 1024 + 1)
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(413, 'Dosya 5 MB sınırını aşıyor')
+    r = _sm('POST', '/api/sm/admin/mw/import', files={'file': (file.filename or 'kaynaklar.xlsx', data,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}, timeout=120)
+    db.audit(conn, user['id'], "Merkez: MASTERWORLD kaynaklarını Excel'den içe aktardı", 'mw_source', None,
+             f"{(file.filename or '')[:80]}: +{r.get('added')} ~{r.get('updated')} ={r.get('unchanged')} atlanan {len(r.get('skipped') or [])}")
+    return r
+
+
+@router.get('/mw/sources/{sid}/points')
+def mw_points(sid: int, user=Depends(sshm_user)):
+    return _sm('GET', f'/api/sm/admin/mw/sources/{sid}/points')
+
+
+@router.post('/mw/sources/{sid}/points')
+async def mw_point_create(sid: int, request: Request, user=Depends(sshm_user), conn=db.DB):
+    body = _mw_body(await request.json(), MW_PT_FIELDS)
+    r = _sm('POST', f'/api/sm/admin/mw/sources/{sid}/points', body)
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD noktası ekledi', 'mw_point', r.get('id'), f"kaynak {sid}: {body.get('name')}"[:300])
+    return r
+
+
+@router.put('/mw/points/{pid}')
+async def mw_point_update(pid: int, request: Request, user=Depends(sshm_user), conn=db.DB):
+    body = _mw_body(await request.json(), MW_PT_FIELDS)
+    r = _sm('PUT', f'/api/sm/admin/mw/points/{pid}', body)
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD noktasını düzenledi', 'mw_point', pid, _mw_detail(body))
+    return r
+
+
+@router.delete('/mw/points/{pid}')
+def mw_point_delete(pid: int, user=Depends(sshm_user), conn=db.DB):
+    r = _sm('DELETE', f'/api/sm/admin/mw/points/{pid}')
+    db.audit(conn, user['id'], 'Merkez: MASTERWORLD noktasını sildi', 'mw_point', pid)
+    return r
+
+
 # ======================= Mastertool destek köprüsü =======================
 # Mastertool hesap servisi, kullanıcının Hesabım › Destek isteklerini İÇ anahtarla buraya iletir (kullanıcı Merkez'i hiç görmez).
 # Talepler mevcut talep ekranına slug='mastertool', kanal 'mastertool', etiket = uygulama adıyla düşer; kullanıcı yalnız kendi
 # e-postasıyla açılmış talepleri görür. İç notlar ve atanan kişi bilgisi dışarı verilmez.
 SLUG = 'mastertool'
 TICKET_APPS = {'sm': 'SSH Master', 'fm': 'FTP Masters', 'sq': 'SQL Master', 'np': 'Notepad Master', 'cv': 'Convert Master', 'mt': 'Hesap / genel',
-               'sv': 'SIMUMAV'}   # sv: simumav.com oyunu — talep SIMUMAV sunucusu → hesap servisi (/api/sv/tickets, X-Simumav-Secret) → buraya (docs/simumav.md §9)
+               'sv': 'SIMUMAV', 'mw': 'MASTERWORLD'}   # mw: masterworld.app (henüz talep köprüsü yok; Hesabım › Destek'ten açılabilir) · sv: simumav.com oyunu — talep SIMUMAV sunucusu → hesap servisi (/api/sv/tickets, X-Simumav-Secret) → buraya (docs/simumav.md §9)
 _APP_OF = {v: k for k, v in TICKET_APPS.items()}
 
 

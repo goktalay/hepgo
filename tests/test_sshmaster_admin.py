@@ -74,6 +74,34 @@ def mastertool_tickets(a):
     assert plain.post(f'/api/federation/mastertool/tickets/{tid}/close', headers=K, json={'email': 'u@test.com'}).json()['status'] == 'cozuldu'
 
 
+def masterworld(a):
+    """Merkez › Mastertool › MASTERWORLD vekil uçları: Excel içe aktarma (multipart iletimi), CRUD, noktalar; api_key ne yanıtta ne audit'te."""
+    from app import db
+    xlsx = os.environ.get('MW_XLSX', '/home/gelistirici/mt-work/masterworld-ref/Cesium_Canli_Veri_Kaynaklari.xlsx')
+    r = a.post('/api/central/sshm/mw/import', files={'file': ('Kaynaklar.xlsx', open(xlsx, 'rb').read(), 'application/octet-stream')})
+    assert r.status_code == 200 and r.json()['added'] >= 51 and r.json()['skipped'] == [], r.text
+    assert a.post('/api/central/sshm/mw/import', files={'file': ('x.xlsx', b'degil', 'application/octet-stream')}).status_code == 422
+    L = a.get('/api/central/sshm/mw/sources').json()
+    assert L['stats']['total'] >= 54 and 'adsb_lol' in L['adapters'] and all('api_key' not in s for s in L['sources'])
+    osk = next(s for s in L['sources'] if s['slug'] == 'opensky-network')
+    r = a.put(f"/api/central/sshm/mw/sources/{osk['id']}", json={'api_key': 'cok-gizli-anahtar', 'enabled': True, 'zararli': 1})
+    assert r.status_code == 200 and r.json()['has_key'] and r.json()['live'] and 'cok-gizli-anahtar' not in r.text, r.text
+    r = a.post('/api/central/sshm/mw/sources', json={'slug': 'elle-kamera', 'category': 'camera', 'kind': 'camera', 'name': 'Elle kamera', 'adapter': 'points'})
+    assert r.status_code == 200 and r.json()['origin'] == 'manual', r.text
+    sid = r.json()['id']
+    r = a.post('/api/central/sshm/mw/sources', json={'slug': 'K Ö T Ü', 'category': 'camera', 'kind': 'camera', 'name': 'x'})
+    assert r.status_code == 422 and 'slug' in r.json()['detail'], r.text
+    p = a.post(f'/api/central/sshm/mw/sources/{sid}/points', json={'name': 'Galata', 'lat': 41.02, 'lon': 28.97, 'media_type': 'image', 'media_url': 'https://k.example/a.jpg'}).json()
+    assert a.put(f"/api/central/sshm/mw/points/{p['id']}", json={'name': 'Galata Kulesi'}).json()['name'] == 'Galata Kulesi'
+    assert [x['name'] for x in a.get(f'/api/central/sshm/mw/sources/{sid}/points').json()['points']] == ['Galata Kulesi']
+    assert a.delete(f"/api/central/sshm/mw/points/{p['id']}").json()['ok']
+    assert a.delete(f'/api/central/sshm/mw/sources/{sid}').json()['ok']
+    with db.connect() as conn:
+        logs = conn.execute("SELECT action, detail FROM audit_logs WHERE action LIKE 'Merkez: MASTERWORLD%'").fetchall()
+    assert len(logs) >= 7 and not any('cok-gizli-anahtar' in (x[1] or '') for x in logs), logs
+    assert any('api_key=değişti' in (x[1] or '') for x in logs) and any("Excel'den" in x[0] for x in logs)
+
+
 def main():
     env = dict(os.environ, SSHM_DATA_DIR=SD, SSHM_ENV_FILE=os.path.join(SD, 'x'), VEILOX_ENV_FILE=os.path.join(SD, 'y'), SSHM_MAIL_TEST='1',
                SSHM_CENTRAL_SECRET='ic-anahtar', SSHM_SECURE_COOKIE='0', SIMUMAV_MT_SHARED_SECRET='sv-gizli')
@@ -121,6 +149,7 @@ def main():
             assert a.post('/api/central/sshm/releases', data={'version': '1.0.1', 'app': 'zz'},
                           files={'setup': ('x.exe', b'MZ', 'application/octet-stream')}).status_code == 400
             mastertool_tickets(a)
+            masterworld(a)
             r = a.post('/api/central/sshm/releases', data={'version': '2.0.1', 'notes': 'deneme'},
                        files={'setup': ('SSH Master Setup 2.0.1.exe', b'MZ' + b'0' * 500, 'application/octet-stream')})
             assert r.status_code == 200 and r.json()['version'] == '2.0.1', r.text

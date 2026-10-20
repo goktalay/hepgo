@@ -557,15 +557,15 @@ def main():
         assert [x['app'] for x in c.get('/api/mt/apps?v=1.1.0', headers=MT4).json()['apps']] == base_apps
         assert [x['app'] for x in c.get('/api/mt/apps?v=bozuk', headers=MT4).json()['apps']] == base_apps
         cat = c.get('/api/mt/apps?v=1.2.0', headers=MT4).json()['apps']
-        assert [x['app'] for x in cat] == base_apps + ['vf', 'sv'] and [x['app'] for x in c.get('/api/mt/apps?v=v1.10.0-beta', headers=MT4).json()['apps']][-2:] == ['vf', 'sv']
-        vf = cat[-2]
+        assert [x['app'] for x in cat] == base_apps + ['vf', 'sv', 'mw'] and [x['app'] for x in c.get('/api/mt/apps?v=v1.10.0-beta', headers=MT4).json()['apps']][-3:] == ['vf', 'sv', 'mw']
+        vf = cat[-3]
         assert vf == {'app': 'vf', 'code': 'vf', 'name': 'VOLFAI', 'group': 'games', 'kind': 'web', 'url': 'https://mastertool.download/oyunlar/volfai/',
                       'site': 'https://mastertool.download/oyunlar/volfai/tanitim/', 'icon_svg': '/brand/vf.svg', 'icon_png': '/brand/vf.png', 'description': vf['description']}, vf
         assert len(vf['description']) == 8 and vf['description']['en'].startswith('A touch') and all(k not in vf for k in ('release', 'license', 'exe', 'install_dir'))
         assert c.get('/brand/vf.svg').headers['content-type'] == 'image/svg+xml' and c.get('/brand/vf.png').headers['content-type'] == 'image/png'
         assert c.get('/brand/vf-512.png').status_code == 200
         # SIMUMAV (sv): kendi sitesinde çalışan oyun — url/site simumav.com, ikonlar, açıklama 8 dil
-        sv = cat[-1]
+        sv = cat[-2]
         assert sv['app'] == 'sv' and sv['name'] == 'SIMUMAV' and sv['kind'] == 'web' and sv['group'] == 'games' and sv['url'] == 'https://simumav.com/' and sv['site'] == 'https://simumav.com/', sv
         assert set(sv['description']) == {'tr', 'en', 'fr', 'de', 'es', 'ar', 'zh', 'ru'} and sv['description']['en'].startswith('A drone simulation game') and 'SITL' in sv['description']['tr']
         assert {'app', 'name', 'group', 'kind', 'url', 'site', 'icon_svg', 'icon_png', 'description'} <= set(sv) and sv['icon_svg'] == '/brand/sv.svg' and sv['icon_png'] == '/brand/sv.png'
@@ -579,7 +579,7 @@ def main():
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})
         acc = c.get('/api/mt/account').json()
         assert {a['app'] for a in acc['apps']} == set(base_apps) and acc['games'][0]['app'] == 'vf' and acc['games'][0]['has_profile'] is True
-        assert [g['app'] for g in acc['games']] == ['vf', 'sv'] and acc['games'][1]['has_profile'] is False and acc['games'][1]['url'] == 'https://simumav.com/'   # SIMUMAV kartı (sv_profiles henüz yok)
+        assert [g['app'] for g in acc['games']] == ['vf', 'sv', 'mw'] and acc['games'][1]['has_profile'] is False and acc['games'][1]['url'] == 'https://simumav.com/'   # SIMUMAV kartı (sv_profiles henüz yok)
         acc2 = c2.get('/api/mt/account').json(); assert acc2['games'][0]['has_profile'] is False
         c.post('/api/mt/auth/logout', headers=W)
         # ---- SIMUMAV hesap servisi tarafı: Bearer /api/sv/me (verified), sv_profiles (kullanıcı Bearer + sunucu X-Simumav-Secret), CORS yalnız sv
@@ -621,7 +621,7 @@ def main():
         r = c.post('/api/mt/internal/ticket-reply', headers=ADMIN, json={'id': 5, 'code': 'T-0005', 'subject': 'Düşüyor', 'email': 'eski@test.com', 'app': 'sv'})
         assert r.json()['sent'] is True and 'https://simumav.com/app/#/support/5' in mailer.OUTBOX[-1]['text'], mailer.OUTBOX[-1]['text']
         c.post('/api/mt/auth/login', json={'email': 'eski@test.com', 'auth_hash': AH, 'client': 'web'})   # Hesabım › Oyunlar: SIMUMAV profili artık kayıtlı
-        assert [(x['app'], x['has_profile']) for x in c.get('/api/mt/account').json()['games']] == [('vf', True), ('sv', True)]
+        assert [(x['app'], x['has_profile']) for x in c.get('/api/mt/account').json()['games']] == [('vf', True), ('sv', True), ('mw', False)]
         c.post('/api/mt/auth/logout', headers=W)
         # Merkez › Mastertool: SIMUMAV sunucusunun yazdığı özet admin yanıtında games.sv; VOLFAI profili (hiScore/levels.parkurs) games.vf
         g.put('/api/sv/profile', headers={'X-Simumav-Secret': 'sv-gizli'}, json={'user_id': uid, 'profile': {

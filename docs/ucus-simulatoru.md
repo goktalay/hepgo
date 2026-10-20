@@ -1250,15 +1250,15 @@ Sanal kumanda açıkken 1–5/C çalışır (C `RC_KEYS` dışında).
   **Son işleme** (yalnız `pilot`): sahne → `WebGLRenderTarget` (MSAA 4) → tam ekran quad `ShaderMaterial`: hafif **barrel/balıkgözü** (`uv' = c + d·(1 + k·r²)·s`,
   k 0,12, s köşeleri kadrajda tutar — siyah köşe yok) + **vinyet** (0,28) + analog kipte **doygunluk ×1,35, kontrast 1,08, R↑/B↓** kayması. Ek maliyet tek
   tam ekran geçiş; diğer kiplerde doğrudan render (maliyet yok). `EffectComposer` vendor'da yok, kendi quad'ı (OrthographicCamera + PlaneGeometry 2×2).
-  **PiP** (`fs.fpv.pip`, varsayılan açık): ayrı `PerspectiveCamera` (FOV 50, takip konumu `followOff × yarıçap`, araziye gömülmez) **20 fps** ile 240×135·dpr
-  render hedefine (gölge haritası yenilenmez), her karede sağ üste (`PIP_SIZE` 240×135, kenar 12 px; `setViewport/setScissor` CSS px) **blit**; tam ekranda
-  aynı. Dışa: `setPilotFov/getPilotFov`, `setFpvAnalog`, `setFpvNose`, `setPip/getPip`, `pipRect()`, `pipStats()`; `opts.camera/pilotFov/fpvAnalog/fpvNose`,
+  **PiP**: eski "FPV'de sağ üstte takip kamerası" (fs.fpv.pip, 20 fps) **§22.4 genel kamera PiP'ine** dönüştü (her kipte, sürüklenebilir; FPV'de gimbal
+  kamerasını gösterir; eski anahtar `fs.fpv.pip=0` ilk açılışta PiP'i kapalı başlatır). Gölgelendirici artık `flightsim_camera.js CAM_FRAG` (§22.3).
+  Dışa: `setPilotFov/getPilotFov`, `setFpvAnalog`, `setFpvNose`, `setPip/getPip`, `pipRect()`, `pipStats()`; `opts.camera/pilotFov/fpvAnalog/fpvNose`,
   `onPilotFov`. `wheel`: `fpv` → gimbal ±3°, `pilot` → FOV ±5° (`fs.fpv.fov`). `dispose` render hedeflerini/materyalleri bırakır.
 - **OSD (`createFpvOsd(stage, ctx, {tr})`)**: askeri HUD'dan ayrı dosya/katman; Betaflight/analog tarzı — beyaz monospace (500/700), ince siyah kontur
   (`strokeText`), metin ölçümü yok. Yalnız `camMode === 'pilot'` iken çizilir (kendi rAF'ı; diğer kiplerde canvas gizli, döngü durur); açıkken
   `.fs-stage.fs-osd-on` (sağ veri paneli ve ÇARPIŞMA bandı gizli — OSD kapsar). **Alanlar**: üst sol **mod** + **ARM/DISARM**; üst orta **FLY mm:ss**
-  (canlı: oturum başı `t0`; kayıt: log zamanı `t.t`, altında "▸ REPLAY") — gezinti kapsülünün altına yerleşir (`.fs-nav` ölçülür); üst sağ PiP çerçevesi +
-  "TAKİP" etiketi + **FOV**; orta küçük artı + **yatan yapay ufuk** (`horizonLine`: odak `f = (H/2)/tan(fov/2)`, burun yukarı → ufuk aşağı `f·tan(pitch)`,
+  (canlı: oturum başı `t0`; kayıt: log zamanı `t.t`, altında "▸ REPLAY") — gezinti kapsülünün altına yerleşir (`.fs-nav` ölçülür); üst sağ **FOV** (PiP sağ
+  üstteyse altına iner; PiP çerçevesi/etiketi artık PiP'in kendi OSD'sinde, §22.4); orta küçük artı + **yatan yapay ufuk** (`horizonLine`: odak `f = (H/2)/tan(fov/2)`, burun yukarı → ufuk aşağı `f·tan(pitch)`,
   sağa yatış → sağ uç yukarı; ±10/20° kısa çentikler, ufukla döner; merkezde boşluk); sol **hız km/h** (büyük), sağ **AGL m** (yoksa MSL) + dikey hız ▲/▼;
   alt sol **pil V + % + çubuk + hücre (nS)** (`battPct`: `tele.batt_pct` varsa o, yoksa gerilimden 3,5→0 %…4,2→100 %/hücre; MP/kayıt bilgisi kutusunun
   üstüne çıkar, sanal kumanda açıkken satırlar çubukların üstüne); alt orta **RSSI** (`tele.rssi` yoksa "RSSI --"; SITL'de sabit %99 YOK) + **SAT n fix** +
@@ -1268,7 +1268,7 @@ Sanal kumanda açıkken 1–5/C çalışır (C `RC_KEYS` dışında).
 - **Analog efekt** (`fs.fpv.analog`, varsayılan KAPALI): OSD katmanında tarama çizgisi deseni (1×3 px, bir kez) + rastgele yatay kayma/parazit şeritleri ve
   benekler, yoğunluk `analogNoise(rssi, evMesafesi)` (RSSI varsa %60'ın altında doğrusal 0→1; yoksa eve uzaklıkla 3 km'de 0,6); renk doygunluğu 3B
   gölgelendiricisinde (`sim.setFpvAnalog`).
-- **Alt çubuk**: FPV'de tek kapsül **"FPV 120° ▾"** (`.fs-fpv-ctl`, ses menüsü kalıbı `.fs-audio-menu`): OSD · Analog efekt · PiP takip kamerası ·
+- **Alt çubuk**: FPV'de tek kapsül **"FPV 120° ▾"** (`.fs-fpv-ctl`, ses menüsü kalıbı `.fs-audio-menu`): OSD · Analog efekt ·
   Pervane/burun görünür (onay kutuları) + FOV kaydırıcısı (90–150) + ipucu; dışarı tıklama kapatır. Gimbal kamerasında eski "Gimbal −10°" etiketi + HUD düğmesi.
   Kayıt kipinde oynatma çubuğuyla birlikte tek satıra sığar (1360 px'te alt çubuk 57 px).
 - **Ses (§16)**: `fpvParams(airspeed, mode)` — `pilot`: süzgeç açık (20 kHz), master **×1,3** (`PILOT_BOOST`), rüzgâr `min(hız/35, 1)·0,8` (frekans
@@ -1287,6 +1287,62 @@ Sanal kumanda açıkken 1–5/C çalışır (C `RC_KEYS` dışında).
   sanal kumanda FPV'de görünür, O, C döngüsü, gimbal kamerası HUD çalışır, yenileme sonrası kamera FPV kalır (fs.cam), tam ekran, kayıtta FPV + HUD;
   konsol hatası yok.
 
+
+### 22.3 Kamera türü — gündüz / termal / gece görüşü (`static/js/modules/flightsim_camera.js`; sunucu enum `flightsim.KAMERA_TURLERI`)
+Kullanıcı isteği: "simülasyona girişte kamera türünü sorsun: gündüz kamerası, termal kamera, gece görüşü". Tür **araç üstü kameralara** uygulanır:
+gimbal kamerası (`fpv`) ve FPV (`pilot`) — gerçek dronlarda termal/gece FPV kameraları da var ve gece sahnesinde FPV'yi ancak gece görüşüyle uçurmak
+mümkün; **takip/serbest/yer** dış gözlemci kameraları her zaman gündüz renklidir (`camFxApplies`). PiP araç kamerasını gösteriyorsa onda da uygulanır.
+
+- **Gölgelendirici `CAM_FRAG`** (tek tam ekran geçiş; eski FPV post'unun yerini aldı — balıkgözü/vinyet/analog aynen): `camType` 0 gündüz (değişmez),
+  **1 termal**: 3 örnekli yumuşatılmış parlaklık × `thermalGain` (gece 3,6 · alacakaranlık 1,7 · gündüz 1 — termal aydınlatmadan bağımsız) → AGC `pow(clamp((l − 0,03)·1,5), 0,85)` → palet **beyaz-sıcak / siyah-sıcak / ironbow**
+  (siyah→mor→kırmızı→turuncu→sarı→beyaz), ±%2,5 zamansal gürültü, hafif köşe kararması, **640 px yatay düşük çözünürlük** (PiP'te yok — zaten küçük);
+  **2 gece görüşü**: parlaklık × kazanç (`nightGain`: gece 7 · alacakaranlık 3,4 · gündüz 2 — yoğunlaştırıcı gündüz doyar), 16 örnekli **halo**
+  (eşik 0,8 üstü parlaklık: seyir ışıkları, gece pencereleri, farlar), tanecik (±0,085), **yeşil fosfor** (parlakta beyaza kayar), dairesel **tüp vinyeti**.
+  Ana görüntüde post yalnız `pilot` ya da (`fpv` ve tür ≠ gündüz) iken; aksi doğrudan render (maliyet yok).
+- **Isı ipuçları (termal)**: render öncesi sıcak nesnelerin malzemesi geçici olarak ısı düzeyinde düz renk (`MeshBasicMaterial`, 20 kademe önbellekli)
+  ile değiştirilir, render sonrası geri alınır: **dron gövdesi 0,74, pervane/motor 0,9**, kalkış düzeneği (rampa/**pickup aracı**) 0,58, **su 0,05**
+  (`userData.heat`; prosedürel/gerçek arazi su örgüleri `heatWorld`); gökyüzü ve sis rengi soğuk koyu (0,07); seyir ışığı sprite'ları gizlenir. Liste
+  saniyede bir yeniden toplanır. Arazi/bina/ağaç: sahne parlaklığı (güneşli asfalt ılık, ağaç/gölge serin). Sahnede insan modeli yok (SIMUMAV elden atış
+  pilot figürü ayrı kaplama tuvalindedir — termal geçirmez; bilinen sınır).
+- **Seçim ve kalıcılık**: oturum gövdesi `camera: 'day'|'thermal'|'night'` (sunucu `kamera_dogrula`: boş → day, başka değer **400**); `session.camera`;
+  uçuş içinde **T** (döngü), **Shift+T** (termal paleti; termal değilse termale geçer), alt çubukta **"📷 Tür ▾"** menüsü (tür · palet · PiP aç/boyut ·
+  ipucu). Değişim canlı oturumda **`camera` komutu** ile sunucuya (KOMUTLAR; HAZIR beklemez, SITL'e gitmez; kayıttan oynatma oturumu da kabul eder) →
+  kapanışta **`drone_sim_runs.camera`** (son tür). Tercih `localStorage fs.cam.type` / `fs.cam.palette`; dron başına `fs.cam.byDrone`.
+  `GET /api/drone/sim/drones` her kayda **`camera`** (o dronun son simülasyon kaydındaki tür) ekler → sihirbaz varsayılanı.
+- **Kayıttan oynatma**: `ReplaySession` kaydın canlı oturumundaki türü (`drone_sim_runs.camera`, `bin_log_id` eşleşmesi) okur → aynı türle açılır; dış
+  .bin ise sihirbazda seçilen tür (`ac_replay(camera=…)`), o da yoksa gündüz. `to_dict().camera` her zaman dolu.
+- **Ekran kaydı (§17)**: askeri HUD ve FPV OSD katmanları PiP dikdörtgenini temizler (yazılar PiP'in üstüne binmez); tür efekti ve PiP görüntüsü 3B tuvalin içindedir → birleşik kayıt tuvaline kendiliğinden girer; PiP OSD tuvali `getOverlays`
+  ile PiP dikdörtgenine ölçekli eklenir.
+
+### 22.4 Kamera PiP'i — sürüklenebilir, çift tık → gimbal (`createCameraPip`; 3B `setPipRect / swapPip / getPipSource`)
+- **Kaynak** (`pipSourceFor`): ana kip gimbal değilse PiP **gimbal kamerası** (tür efekti + yakınlaştırma); ana kip gimbal ise **önceki ana kip** (takip:
+  kullanıcının yörünge ofseti `lastFollowOff` korunur; FPV: balıkgözü dahil; serbest/yer PiP'te gösterilmez → takip). **Çift tık / çift dokunma**
+  (`pipSwapTarget`; ≤ 320 ms, ≤ 24 px — kendi algılamamız, tarayıcı dblclick'i bastırılır) ya da ⇄ düğmesi / Enter: ana kip gimbal değilse **gimbal**,
+  gimbalse PiP'teki kipe döner (yer değiştirme). Takipten çıkıp dönünce bakış açısı korunur.
+- **Tek WebGL bağlamı**: PiP ikinci bağlam AÇMAZ (SIMUMAV `__smGl ≤ 1`). Ayrı `PerspectiveCamera` → küçük `WebGLRenderTarget` (CSS boyutu ×
+  min(dpr, 1,5) × **0,75**) → her karede aynı `CAM_FRAG` ile `setViewport/setScissor` kopyası. Yenileme `pipInterval`: **30 fps**, ortalama kare > 22 ms
+  ise **15 fps** (yarı hız); gölge haritası PiP geçişinde yenilenmez; Google 3B karoları ana kameraya göre yüklüdür (PiP için ayrı LOD güncellemesi yok).
+  Sekme gizliyken rAF durur → PiP de durur. `pipStats()` → `{renders, blits, interval, frameMs, rt}`.
+- **Pencere (DOM)**: `.fs-pip` saydam çerçeve (görüntü altta, tuvalde) + OSD tuvali (köşe parantezleri, `● TERMAL · WH`, kaynak `GİMBAL/TAKİP/FPV`,
+  `GMB −30°`, `×2.0`, gimbalde merkez artı; ~6 Hz, değişince çizilir) + üzerine gelince araç düğmeleri (⇄ · S/M/L · ×) + köşe tutamacı (boyut).
+  Fare/dokunmatik/kalem **pointer olaylarıyla sürüklenir** (`touch-action: none`); bırakınca köşe yuvasına **56 px** içindeyse **köşeye yapışır**
+  (`pipSnap`), değilse serbest konum oran olarak saklanır (pencere boyutu değişince orantılı). Varsayılan **sol alt** (kadranlar alt ortada, veri paneli ve harekât
+  kartı sağda; alt çubuk + atıf satırının üstünde, üstte gezinti kapsülünün altında); sağ köşeye taşınırsa görünür harekât kartının solunda kalır
+  ve sol taraftayken yüzen Mission Planner / kayıt bilgisi kutusunun üstünde kalır (`pipObstacleInsets`; kart açılıp kapanınca/kip değişince yeniden
+  yerleşir). z-index 7: askeri HUD / FPV OSD katmanlarının üstünde. Boyut **S 208 / M 288 / L 400** px (16:9; dar ekranda genişliğin
+  %46'sı, geniş ekranda %34'ü). Tercih `localStorage fs.cam.pip` `{on, size, corner, fx, fy}`. **V** gizle/göster; PiP gimbal gösterirken üstünde
+  **tekerlek = yakınlaştırma**. `prefers-reduced-motion`: yapışma/boyut geçiş animasyonu yok.
+- **Gimbal yakınlaştırma** 1–8× (`+`/`−`, Shift+tekerlek, PiP üstünde tekerlek): FOV = 2·atan(tan 39° / z) (`gimbalZoomFov`; ana görünüm ve PiP).
+
+### 22.5 Sihirbaz "Kamera" kartı
+"Yeni Simülasyon Başlat" penceresinde **4. Kamera** (kayıt kipinde 3.): üç kart, her birinde **önizleme** — prosedürel küçük sahne (gökyüzü, tepeler,
+yol, göl, ağaçlar, ev + yanan pencere, araç (sıcak motor/tekerlek), insan, dron) renk ve ısı katmanı olarak 2B tuvale çizilir ve **aynı formüllerle**
+(`camFxPixel`, 1024 girişli tablo) işlenir — ek WebGL bağlamı yok (≈ 5 / 65 / 430 ms SwiftShader'da, açılışta bir kez). Termal seçiliyken palet seçici.
+Varsayılan: dron kaydının son türü → bu dron için yerel son seçim → son tercih → gündüz. Seçim `be.create({camera})`.
+- **Testler**: `node tests/test_flightsim_camera.mjs` (18: tür/palet, kipler, PiP kaynağı + çift tık dizisi, yenileme aralığı, yakınlaştırma FOV, boyut/
+  yerleşim/yapışma/serbest oran, çift dokunma, tercihler + eski anahtar göçü, gölgelendirici sözleşmesi, camFxPixel paletleri, SIMUMAV camera_pick +
+  7 dil anahtarları); `tests.test_flightsim kamera_testleri` (enum 400/422, oturum alanı, `camera` komutu, kayıt satırı, /drones önerisi, kayıttan
+  oynatma türü). Görsel: `/tmp/campip-e2e/shots.py` (HEPGO sahte kip + SIMUMAV dev giriş; görüntüler `/tmp/campip-shots`).
 
 ## 23. Güç ve yakıt — azami hız, simülasyon hızı, yakıt ve elektronik batarya (`app/flightsim_power.py`, `static/js/modules/flightsim_power.js`; SITL yaması `SIM_PLN_THR_MUL` `tools/sitl/0002-sim-pln-thr-mul.patch`; tablo `drone_sitl_options`, `drone_sim_runs.power…`)
 Kullanıcı isteği (özet): **(2)** "CAYMAZ'da 222cc karbüratörlü motor var; sim'de hız yarı yarıya düşük kalıyor; tam gazda 45 m/s olmalı. Sihirbazda Azami

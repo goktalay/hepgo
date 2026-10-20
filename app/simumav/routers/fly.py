@@ -48,6 +48,7 @@ class StartIn(BaseModel):
     mission_id: Optional[int] = None
     launch: Union[LaunchIn, str, None] = None     # {method, angle_deg, release_kmh, hand_speed_ms, hand_pitch_deg} ya da yalnız yöntem adı
     record: Optional[RecordIn] = None
+    camera: Optional[str] = Field(None, max_length=8)   # HEPGO §22.3 kamera türü: day | thermal | night
 
 
 class RecStartIn(BaseModel):
@@ -82,7 +83,7 @@ async def start(body: StartIn, request: Request, user=User):
             raise auth.hata(422, 'invalid', 'Görev bu parkura ait değil')
     launch = body.launch.model_dump(exclude_none=True) if isinstance(body.launch, LaunchIn) else {'method': body.launch or 'wheels'}
     try:
-        out = await bridge.ucus_baslat(user, pilot, drone, track, mission, launch, body.record.model_dump() if body.record else None, request)
+        out = await bridge.ucus_baslat(user, pilot, drone, track, mission, launch, body.record.model_dump() if body.record else None, request, camera=body.camera)
     except bridge.BridgeHata as e:
         if e.error in ('server_full', 'flight_open'):
             db.audit_bagimsiz('quota', user['id'], auth.client_ip(request), e.message)
@@ -115,6 +116,7 @@ def status(fid: int, request: Request, user=User):
     snap = out.get('snapshot') or {}
     out['launch'] = snap.get('launch') or {'method': f.get('launch') or 'wheels'}
     out['record'] = snap.get('record') or {'bin': True, 'video': False}
+    out['camera'] = snap.get('camera') or 'day'   # §22.3 (uçuşa geri dönüşte aynı tür)
     if d and d.get('mp'):
         out['mp'] = {'host': bridge.host_adi(request), 'port': d['mp']['port'], 'proto': 'tcp', 'locked_ip': d['mp']['locked_ip'], 'connected': d['mp']['connected']}
     else:

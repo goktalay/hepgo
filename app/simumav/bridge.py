@@ -512,9 +512,14 @@ def _world(track, drone_type, launch):
     return out
 
 
-async def ucus_baslat(user, pilot, drone, track, mission, launch, record, request=None):
-    """Kotalar → çekirdek oturum → flights satırı → MP köprüsü. Dönüş: {flight_id, sim_id, mp, ws}. Hatalar BridgeHata."""
+async def ucus_baslat(user, pilot, drone, track, mission, launch, record, request=None, camera=None):
+    """Kotalar → çekirdek oturum → flights satırı → MP köprüsü. Dönüş: {flight_id, sim_id, mp, ws}. Hatalar BridgeHata.
+    `camera` (HEPGO §22.3): day | thermal | night — çekirdek oturuma ve flights.snapshot'a."""
     launch = launch_dogrula(launch)
+    try:
+        camera = flightsim.kamera_dogrula(camera)
+    except flightsim.SimHata as e:
+        raise BridgeHata(422, 'invalid', str(e))
     if drone['type'] not in TIP_ESLEME:
         raise BridgeHata(422, 'invalid', 'Dron tipi geçersiz')
     params = params_dogrula(db.j(drone.get('params')))
@@ -551,7 +556,7 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
         owner = {'id': user['id'], 'name': user['display_name']}
         core_drone = {'id': drone['id'], 'code': drone['name'], 'name': drone['name'], 'model': drone['model_key'], 'protocol': 'sanal'}
         try:
-            s = await flightsim.MANAGER.ac(ctip, center, world, owner, None, mdl, core_drone, {'bin': bool((record or {}).get('bin', True))}, layout=drone_airframe(drone))
+            s = await flightsim.MANAGER.ac(ctip, center, world, owner, None, mdl, core_drone, {'bin': bool((record or {}).get('bin', True))}, layout=drone_airframe(drone), camera=camera)
         except flightsim.SimHata as e:
             kod = {'invalid': 422, 'limit': 429, 'sitl': 503}.get(e.kod, 400)
             raise BridgeHata(kod, e.kod, str(e))
@@ -563,7 +568,7 @@ async def ucus_baslat(user, pilot, drone, track, mission, launch, record, reques
                           'gates': db.j(track.get('gates'), []) if isinstance(track.get('gates'), str) else list(track.get('gates') or []),
                           'wind': db.j(track.get('wind')) if isinstance(track.get('wind'), str) else (track.get('wind') or {}), 'time_of_day': track.get('time_of_day'), 'weather': track.get('weather')},
                 'mission': {'id': mission['id'], 'name': mission['name'], 'kind': mission['kind'], 'plan': db.j(mission.get('plan'))} if mission else None,
-                'launch': launch, 'record': {'bin': bool((record or {}).get('bin', True)), 'video': bool((record or {}).get('video'))}}
+                'launch': launch, 'record': {'bin': bool((record or {}).get('bin', True)), 'video': bool((record or {}).get('video'))}, 'camera': camera}
         with db.connect() as conn:
             fid = conn.execute('INSERT INTO flights (user_id, pilot_id, drone_id, track_id, mission_id, launch, started_at, mp_port, snapshot, created_at, updated_at) '
                                'VALUES (?,?,?,?,?,?,?,?,?,?,?)', (user['id'], pilot['id'], drone['id'], track['id'], mission['id'] if mission else None, launch['method'],
@@ -677,7 +682,7 @@ def aktif_ucus_ozeti(user_id, request=None):
     s = flightsim.MANAGER.sessions.get(a['sim_id'])
     return {'flight_id': fid, 'sim_id': a['sim_id'], 'started_at': (f or {}).get('started_at'), 'state': s.state if s else 'KAPANDI',
             'elapsed_s': int(time.time() - a['started']), 'remaining_s': max(0, config.FLIGHT_MINUTES * 60 - int(time.time() - a['started'])),
-            'drone': snap.get('drone'), 'track': snap.get('track'), 'pilot': snap.get('pilot'), 'mission': snap.get('mission'), 'launch': snap.get('launch'),
+            'drone': snap.get('drone'), 'track': snap.get('track'), 'pilot': snap.get('pilot'), 'mission': snap.get('mission'), 'launch': snap.get('launch'), 'camera': snap.get('camera') or 'day',
             'ws_seen': bool(a.get('ws_seen')), 'ws': f"/ws/fly/{a['sim_id']}",
             'mp': {'host': host_adi(request), 'port': a['mp'].port, 'proto': 'tcp'} if a.get('mp') else None}
 

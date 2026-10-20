@@ -2079,6 +2079,54 @@ def guc_testleri(a, c1, sitl, mon):
     print('  güç ve yakıt (§23) testleri geçti')
 
 
+def kamera_testleri(a, c1, sitl):
+    """§22.3 kamera türü: start gövdesi `camera` enum doğrulaması (400), oturum/durum alanı, `camera` komutu (HAZIR beklemez; 400 doğrulama),
+    kapanışta drone_sim_runs.camera + /drones önerisi; kayıttan oynatma kaydın türünü (bin_log_id) okur, yoksa verilen tür."""
+    from app import db, flightsim_replay as R
+    S = '/api/drone/sim/sessions'
+    assert flightsim.kamera_dogrula(None) == 'day' and flightsim.kamera_dogrula('night') == 'night' and flightsim.kamera_dogrula('', 'thermal') == 'thermal'
+    for kotu in ('ir', 'DAY', 5, ['day']):
+        try:
+            flightsim.kamera_dogrula(kotu); raise AssertionError(kotu)
+        except flightsim.SimHata as e:
+            assert e.kod == 'invalid'
+    assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'camera': 'ir'}).status_code == 400
+    assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'camera': ['day']}).status_code == 422
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    dr = ok(a.post('/api/drone/drones', json={'name': 'Kamera Dronu', 'protocol': 'sanal', 'model': 'Quad'}))
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': dr['id'], 'camera': 'thermal'}), 201)
+    sid = s['id']
+    assert s['camera'] == 'thermal', s.get('camera')
+    cmd = lambda name, params=None: a.post(f'{S}/{sid}/cmd', json={'name': name, 'params': params or {}})   # noqa: E731
+    assert ok(cmd('camera', {'type': 'night'})) == {'ok': True, 'camera': 'night'}   # BASLIYOR'da da kabul (SITL'e gitmez)
+    assert cmd('camera', {}).status_code == 400 and cmd('camera', {'type': 'uv'}).status_code == 400
+    assert ok(a.get(f'{S}/{sid}'))['camera'] == 'night'
+    ok(a.delete(f'{S}/{sid}'))
+    it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['session_id'] == sid)
+    assert it['camera'] == 'night', it.get('camera')
+    assert next(x for x in ok(a.get('/api/drone/sim/drones')) if x['id'] == dr['id'])['camera'] == 'night'
+    # varsayılan gündüz
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s2 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    assert s2['camera'] == 'day'
+    ok(a.delete(f'{S}/{s2["id"]}'))
+    # kayıttan oynatma: kaydın türü (drone_sim_runs.bin_log_id) — yoksa ac_replay'e verilen tür
+    with db.connect() as conn:
+        lid = conn.execute('SELECT MAX(id) FROM flight_logs').fetchone()[0]   # replay_testleri'nin logu (FK)
+        conn.execute('UPDATE drone_sim_runs SET bin_log_id = ? WHERE id = ?', (lid, it['id']))
+        conn.commit()
+    try:
+        r = R.ReplaySession(1, {'id': lid, 'file_name': 'k.bin', 'vehicle': 'ArduCopter'}, {}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        assert r.camera == 'night' and r.to_dict()['camera'] == 'night', r.camera
+        r2 = R.ReplaySession(2, {'id': lid + 1000, 'file_name': 'y.bin', 'vehicle': 'ArduCopter'}, {}, {'id': 1, 'name': 'x'}, flightsim.MANAGER)
+        assert r2.camera is None and r2.to_dict()['camera'] == 'day'
+    finally:
+        with db.connect() as conn:
+            conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
+            conn.commit()
+    print('  kamera türü (§22.3) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2347,6 +2395,8 @@ def main():
         runs_testleri(a, c1, sitl, mon)
         # --- güç ve yakıt (§23) ---
         guc_testleri(a, c1, sitl, mon)
+        # --- kamera türü (§22.3) ---
+        kamera_testleri(a, c1, sitl)
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

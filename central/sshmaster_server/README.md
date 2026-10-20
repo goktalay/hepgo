@@ -20,6 +20,10 @@ Testler: `cd central/sshmaster_server && ../../.venv/bin/python -m tests.test_ss
   e-posta bağlantıları portala), `MT_PUBLIC_URL`, `FTPM_PUBLIC_URL`, `MT_SMTP_HOST/PORT/USER/PASS` + `MT_MAIL_FROM`
   (yoksa VEILOX_SMTP_* ile register@hepgo.com), `MT_MERKEZ_UDS` (vars. /run/hepgo/merkez.sock — destek talepleri Merkez'e).
 - Testler: `../../.venv/bin/python -m tests.test_sshm` (v1 uyumu) ve `-m tests.test_mastertool`.
+- MASTERWORLD (`mw`, docs/masterworld.md): web uygulaması (`GAMES['mw']`, `group:'apps'`, ayarlar `mw_profiles`), canlı veri kaynak kaydı
+  `mw_sources` + `mw_points` (`sshm/mw_catalog.py`; Excel içe aktarma `python -m sshm.mw_catalog <xlsx>`, önce DB yedeği), yönetici uçları
+  `/api/sm/admin/mw/*`, iç uç `/api/mw/internal/sources` (`X-Masterworld-Secret`). Ortam: `MASTERWORLD_MT_SHARED_SECRET`, `MASTERWORLD_RELEASE_KEY`,
+  `MASTERWORLD_PUBLIC_URL` (vars. https://masterworld.app). Test: `../../.venv/bin/python -m tests.test_masterworld`.
 - Oyunlar (`main.GAMES`, kod `vf` = VOLFAI, HTML5): kimlik uçları `/api/vf/auth/*` (web oturumu `client:'web'` → çerez; lisans / kütüphane /
   sürüm yok), profil `GET|PUT /api/vf/profile` (kullanıcı başına tek JSON, ≤ 64 KB, tablo `vf_profiles`). Oyun `mastertool.download/oyunlar/volfai/`
   altından sunulur: dosyalar DEPODA DEĞİL (goktalay/Volfia `release/*`: `index.html, manifest.webmanifest, sw.js, css/, js/, icons/`) —

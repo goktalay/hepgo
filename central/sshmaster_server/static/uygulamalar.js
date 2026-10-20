@@ -144,7 +144,7 @@ async function logout() {
 }
 
 // ---------------------------------------------------------------- kutucuklar
-const GROUPS = a => (a.kind === 'web' ? 'games' : a.group === 'tools' || a.group === 'launcher' ? a.group : 'apps');
+const GROUPS = a => (a.kind === 'web' ? (a.group === 'apps' ? 'apps' : 'games') : a.group === 'tools' || a.group === 'launcher' ? a.group : 'apps');
 const desc = a => { const d = a.description; return (d && typeof d === 'object' ? d[lang()] || d.en || d.tr : d) || DESC[a.app]?.() || ''; };
 const DESC = {   // uygulamaların kısa tanımı (masaüstü Master Tool sözlüğüyle aynı)
   sm: () => t('SSH bağlantıları, terminal ve SFTP'), fm: () => t('FTP, FTPS ve SFTP dosya yöneticisi'), sq: () => t('Veritabanı istemcisi ve sorgu düzenleyici'),
@@ -173,18 +173,20 @@ function renderHome() {
 function tile(a) {
   const g = GROUPS(a), r = a.release, dis = off(a);
   const webSrc = a.web && frameSrc(a.web);
-  const gameFrame = g === 'games' ? frameSrc(a.url) : null;
+  const site = a.kind === 'web';   // tarayıcıda açılan kayıt: oyun (games) ya da kendi sitesindeki web uygulaması (MASTERWORLD, group 'apps')
+  const gameFrame = site ? frameSrc(a.url) : null;
+  const play = g === 'games' ? t('Oyna') : t('Aç');
   const canDl = !dis && r && a.download_url;
   let cls = 'tile', sub = '', subCls = 't-sub', acts = '';
   if (dis) { cls += ' disabled'; sub = `${icon('lock')}<span>${esc(t('Hesabınızda kapalı'))}</span>`; subCls += ' muted'; }
-  else if (g === 'games') { cls += ' web'; sub = `${icon('globe')}<span>${esc(t('Tarayıcıda açılır'))}</span>`; }
+  else if (site) { cls += ' web'; sub = `${icon('globe')}<span>${esc(t('Tarayıcıda açılır'))}</span>`; }
   else if (webSrc) { cls += ' web'; sub = `${icon('globe')}<span>${esc(t('Web + Windows'))}${r ? ` · ${esc(t('Sürüm {version}', { version: r.version }))}` : ''}</span>`; }
   else if (r) { cls += ' dl'; sub = `${icon('monitor')}<span>${esc(t('Sürüm {version}', { version: r.version }))}${r.size ? ` · ${fmtSize(r.size)}` : ''}</span>`; }
   else { cls += ' unreleased'; sub = esc(t('Yakında')); subCls += ' warn'; }
   if (S.tabs.some(x => x.id === a.app)) cls += ' running';
   if (!dis) {
-    if (g === 'games') {
-      acts += `<button class="btn sm primary" data-act="open" type="button">${icon('play')}${esc(t('Oyna'))}</button>`;
+    if (site) {
+      acts += `<button class="btn sm primary" data-act="open" type="button">${icon('play')}${esc(play)}</button>`;
       acts += `<a class="icon-btn" href="${esc(safeHref(a.url))}" target="_blank" rel="noopener" title="${esc(t('Yeni sekmede aç'))}" aria-label="${esc(t('Yeni sekmede aç'))}">${icon('open')}</a>`;
     } else {
       if (webSrc) {
@@ -208,7 +210,7 @@ function tile(a) {
   </div>`);
   const primary = () => {
     if (dis) { toast(t('Bu uygulamanın kullanımı hesabınız için kapatılmış. Bilgi için Destek sekmesinden talep açabilirsiniz.'), 'err'); return; }
-    if (g === 'games') { if (gameFrame) openTab(a, gameFrame); else window.open(safeHref(a.url), '_blank', 'noopener'); return; }
+    if (site) { if (gameFrame) openTab(a, gameFrame); else window.open(safeHref(a.url), '_blank', 'noopener'); return; }
     if (webSrc) { openTab(a, webSrc); return; }
     if (canDl) location.href = a.download_url;
   };
@@ -218,8 +220,8 @@ function tile(a) {
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
     contextMenu(e.clientX, e.clientY, [
-      (webSrc || gameFrame) && !dis && { label: g === 'games' ? t('Oyna') : t('Aç'), icon: 'play', action: primary },
-      g === 'games' && !gameFrame && !dis && { label: t('Oyna'), icon: 'play', href: safeHref(a.url), blank: true },
+      (webSrc || gameFrame) && !dis && { label: play, icon: 'play', action: primary },
+      site && !gameFrame && !dis && { label: play, icon: 'play', href: safeHref(a.url), blank: true },
       (webSrc || gameFrame) && !dis && { label: t('Yeni sekmede aç'), icon: 'open', href: webSrc || gameFrame, blank: true },
       canDl && { label: t('İndir (.exe)'), icon: 'download', href: a.download_url },
       canDl && r.portable && { label: t('Taşınabilir sürüm'), icon: 'download', href: `${a.download_url}?tur=portable` },

@@ -56,7 +56,8 @@ RELEASE_KEYS = {'sm': os.environ.get('SSHM_RELEASE_KEY', ''), 'fm': os.environ.g
                 # Araçlar (main.TOOLS): anahtar adı = slug'ın tiresiz büyük harfi + _RELEASE_KEY
                 'ip': os.environ.get('IPTOOLS_RELEASE_KEY', ''), 'fs': os.environ.get('FILESEARCH_RELEASE_KEY', ''),
                 'qp': os.environ.get('QUICKPREVIEW_RELEASE_KEY', ''),
-                'sv': os.environ.get('SIMUMAV_RELEASE_KEY', '')}   # mt = Master Tool masaüstü (başlatıcı); sv = SIMUMAV web paketi (/api/sv/web-releases)
+                'sv': os.environ.get('SIMUMAV_RELEASE_KEY', ''),   # mt = Master Tool masaüstü (başlatıcı); sv = SIMUMAV web paketi (/api/sv/web-releases)
+                'mw': os.environ.get('MASTERWORLD_RELEASE_KEY', '')}   # mw = MASTERWORLD web paketi (/api/mw/web-releases)
 # Destek talepleri Merkez'in talep ekranına düşer: Merkez aynı sunucuda UNIX soketinde (ya da MT_MERKEZ_URL) iç anahtarla çağrılır
 MERKEZ_UDS = os.environ.get('MT_MERKEZ_UDS', '/run/hepgo/merkez.sock')
 MERKEZ_URL = os.environ.get('MT_MERKEZ_URL', 'http://merkez').rstrip('/')
@@ -66,6 +67,10 @@ SECURE_COOKIE = os.environ.get('SSHM_SECURE_COOKIE', '1') != '0'
 # SIMUMAV sunucusunun sv_profiles yazımı için paylaşılan gizli (X-Simumav-Secret; simumav .env'deki SIMUMAV_MT_SHARED_SECRET ile aynı)
 SIMUMAV_SHARED_SECRET = os.environ.get('SIMUMAV_MT_SHARED_SECRET', '')
 SIMUMAV_SITE = os.environ.get('SIMUMAV_PUBLIC_URL', 'https://simumav.com').rstrip('/')
+# MASTERWORLD (masterworld.app, docs/masterworld.md): sunucunun kaynak kaydını çektiği iç uç (/api/mw/internal/sources) için paylaşılan gizli
+# (X-Masterworld-Secret; masterworld .env'deki MASTERWORLD_MT_SHARED_SECRET ile aynı) ve CORS'a izinli site kökeni
+MASTERWORLD_SHARED_SECRET = os.environ.get('MASTERWORLD_MT_SHARED_SECRET', '')
+MASTERWORLD_SITE = os.environ.get('MASTERWORLD_PUBLIC_URL', 'https://masterworld.app').rstrip('/')
 WEB_RELEASE_MAX = 95 * 1024 * 1024   # Cloudflare tek istek sınırı altında
 TOKEN_DAYS = 30            # uygulama/web oturumu: bu kadar gün kullanılmazsa düşer (her istekte uzar)
 VERIFY_HOURS = 24          # e-posta doğrulama bağlantısı

@@ -13,7 +13,8 @@ view.setAttribute('data-noi18n', '');
 const SITE = document.body.dataset.site || 'sm';
 const BRAND = document.body.dataset.brand || SITE;
 const NAMES = { sm: 'SSH Master', fm: 'FTP Masters', sq: 'SQL Master', np: 'Notepad Master', cv: 'Convert Master', mt: 'Mastertool' };
-const GAME_URLS = { vf: '/oyunlar/volfai/', sv: 'https://simumav.com/' };   // web oyunları: ?app=vf|sv ile gelen giriş / kayıt sonrası dönüş adresi (sv kendi sitesinde)
+const GAME_URLS = { vf: '/oyunlar/volfai/', sv: 'https://simumav.com/', mw: 'https://masterworld.app/' };   // web oyunları / web uygulamaları: ?app=vf|sv|mw ile gelen giriş / kayıt sonrası dönüş adresi (sv, mw kendi sitesinde)
+const WEB_APP_CODES = new Set(['mw']);   // oyun değil, kendi sitesindeki web uygulaması (MASTERWORLD): metinler 'uygulama' der
 const SNAME = NAMES[SITE] || 'Mastertool';
 const PORTAL = document.body.dataset.portal || 'https://mastertool.download';
 const WEB = document.body.dataset.web || '';   // sunucu üretir: /web/<slug>/ ya da bilinen ürün sitesi adresi
@@ -108,7 +109,7 @@ function pageLogin() {
     <p class="muted small">${t('Mastertool hesabınız tüm Mastertool uygulamalarında aynıdır.')}</p>
     ${wn ? `<div class="msg info">${t('Giriş yapınca {name} tarayıcınızda açılır.', { name: esc(wn) })}</div>` : ''}
     ${qs.get('sonra') ? `<div class="msg info">${t('İndirme bağlantınız kişiye özeldir; devam etmek için giriş yapın.')}</div>` : ''}
-    ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Giriş yapınca oyuna dönersiniz; ilerlemeniz hesabınızda saklanır.')}</div>` : ''}
+    ${GAME_URLS[BRAND] ? `<div class="msg info">${WEB_APP_CODES.has(BRAND) ? t('Giriş yapınca uygulamaya dönersiniz; ayarlarınız hesabınızda saklanır.') : t('Giriş yapınca oyuna dönersiniz; ilerlemeniz hesabınızda saklanır.')}</div>` : ''}
     ${durum ? `<div class="msg ${durum[1]}">${durum[0]}</div>` : ''}
     <form id="f" autocomplete="on">
       <label for="e">${t('E-posta')}</label><input id="e" type="email" autocomplete="username" required>
@@ -199,7 +200,7 @@ async function pageAccount() {
     <h1>${t('Merhaba, {name}', { name: esc(ACC.user.name) })}</h1><p class="muted small">${esc(ACC.user.email)} · ${t('Mastertool hesabı')}</p>
     ${qs.get('durum') === 'dogrulandi' ? `<div class="msg ok">${t('E-postanız doğrulandı, hesabınız açıldı.')}</div>` : ''}
     ${WEB && (SITE === 'mt' || qs.get('durum') === 'dogrulandi') ? `<div class="msg info web-open"><span>${t('{name} web sürümünü tarayıcınızda hemen açabilirsiniz.', { name: esc(NAMES[BRAND] || '') })}</span> <a class="btn sm primary" href="${esc(WEB)}">${t('{name} web\'de aç', { name: esc(NAMES[BRAND] || '') })}</a></div>` : ''}
-    ${GAME_URLS[BRAND] ? `<div class="msg info">${t('Oyuna dönmek için:')} <a href="${GAME_URLS[BRAND]}">${esc((ACC.games || []).find(g => g.app === BRAND)?.name || BRAND)}</a></div>` : ''}
+    ${GAME_URLS[BRAND] ? `<div class="msg info">${WEB_APP_CODES.has(BRAND) ? t('Uygulamaya dönmek için:') : t('Oyuna dönmek için:')} <a href="${GAME_URLS[BRAND]}">${esc((ACC.games || []).find(g => g.app === BRAND)?.name || BRAND)}</a></div>` : ''}
     <div class="tabs">${TABS().map(([k, l]) => `<button type="button" data-tab="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="pane"></div>`;
   $('#out').onclick = async () => { await api(`${API}/auth/logout`, { method: 'POST' }).catch(() => {}); location.href = `/giris${AQ}${AQ ? '&' : '?'}durum=cikis`; };
@@ -247,17 +248,21 @@ function paneApps(pane) {
   ${paneGames()}`;
 }
 
-function paneGames() {   // web oyunları (kind:'web'): kurulum yok, tarayıcıda açılır; profil hesaba bağlı tek kayıt
-  const games = ACC.games || [];
-  if (!games.length) return '';
+function paneGames() {   // web oyunları ve kendi sitesindeki web uygulamaları (kind:'web'): kurulum yok, tarayıcıda açılır; profil hesaba bağlı tek kayıt
+  const all = ACC.games || [];
   const lang = window.mtKit?.lang || 'tr';
-  return `<h3 class="grp-h">${t('Oyunlar')}</h3><p class="hint" style="margin-top:-6px">${t('Tarayıcıda oynanan Mastertool oyunları; ilerlemeniz bu hesapta saklanır ve cihazlarınız arasında eşitlenir.')}</p>
-    <div class="apps">${games.map(g => `<div class="app-card">
+  const card = (g, app) => `<div class="app-card">
       <div class="head"><img src="${esc(g.icon_svg || `/brand/${g.app}.svg`)}" alt=""><div class="grow"><b>${esc(g.name)}</b>${g.site ? ` <a class="small" href="${esc(g.site)}">${t('Tanıtım')}</a>` : ''}
         <div class="muted small">${esc((g.description && (g.description[lang] || g.description.en)) || '')}</div></div></div>
-      <div class="row"><a class="btn primary" href="${esc(g.url)}">${t('Oyna')}</a></div>
-      <div class="kv" style="margin-top:12px"><span>${t('Oyun profili')}</span><span>${g.has_profile ? `<span class="badge on">${t('Hesapta kayıtlı')}</span>` : t('Henüz kayıt yok; oyunda giriş yapınca oluşur')}</span></div>
-    </div>`).join('')}</div>`;
+      <div class="row"><a class="btn primary" href="${esc(g.url)}">${app ? t('Aç') : t('Oyna')}</a></div>
+      <div class="kv" style="margin-top:12px"><span>${app ? t('Ayarlar') : t('Oyun profili')}</span><span>${g.has_profile ? `<span class="badge on">${t('Hesapta kayıtlı')}</span>`
+        : app ? t('Henüz kayıt yok; uygulamada giriş yapınca oluşur') : t('Henüz kayıt yok; oyunda giriş yapınca oluşur')}</span></div>
+    </div>`;
+  const apps = all.filter(g => g.group === 'apps'), games = all.filter(g => g.group !== 'apps');
+  return (apps.length ? `<h3 class="grp-h">${t('Web uygulamaları')}</h3><p class="hint" style="margin-top:-6px">${t('Kendi sitesinde tarayıcıda çalışan Mastertool uygulamaları; üyelik isteğe bağlıdır, ayarlarınız bu hesapta saklanır.')}</p>
+    <div class="apps">${apps.map(g => card(g, true)).join('')}</div>` : '')
+    + (games.length ? `<h3 class="grp-h">${t('Oyunlar')}</h3><p class="hint" style="margin-top:-6px">${t('Tarayıcıda oynanan Mastertool oyunları; ilerlemeniz bu hesapta saklanır ve cihazlarınız arasında eşitlenir.')}</p>
+    <div class="apps">${games.map(g => card(g, false)).join('')}</div>` : '');
 }
 
 function paneDevices(pane) {

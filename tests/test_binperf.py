@@ -450,17 +450,22 @@ def oturum_testleri(a, lid_buyuk, yol_buyuk):
 
 
 def main():
+    import shutil
     d = tempfile.mkdtemp(prefix='binperf-')
-    okuyucu_testleri(d)
-    replay3d_eslik(d)
-    lid, yol = buyuk_testleri(d)
-    R.onbellek_sil(lid)
-    with TestClient(app, base_url='https://testserver') as a:
-        ok(a.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
-        assert a.cookies.get(auth.COOKIE)
-        kaynak_testleri(a, d)
-        oturum_testleri(a, lid, yol)
-        flightsim.MANAGER.sessions.clear()
+    try:
+        okuyucu_testleri(d)
+        replay3d_eslik(d)
+        lid, yol = buyuk_testleri(d)
+        R.onbellek_sil(lid)
+        with TestClient(app, base_url='https://testserver') as a:
+            ok(a.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
+            assert a.cookies.get(auth.COOKIE)
+            kaynak_testleri(a, d)
+            oturum_testleri(a, lid, yol)
+            flightsim.MANAGER.sessions.clear()
+    finally:   # üretilen büyük .BIN'ler (~70 MB) ve testin geçici veri dizini silinir
+        shutil.rmtree(d, ignore_errors=True)
+        shutil.rmtree(os.environ['CAYMAZ_DATA_DIR'], ignore_errors=True)
     print('Büyük .BIN + kaynak testleri geçti.')
 
 

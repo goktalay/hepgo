@@ -146,17 +146,72 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
   (Caymaz GLB `te_down` −1 ve delta +1 tutarlı); roll sağa: sol elevon +25 (TE aşağı), sağ −22,7 (TE yukarı). Kalkışta flaplar AŞAĞI (+17,5°,
   `TKOFF_FLAP_PCNT` 50) — ArduPlane uzlaşımı, ters değil.
 
-## 6. Kurulum sihirbazı (`flightsim.js`)
-1. Dron tipi kartları (SITL `TIP_ESLEME` anahtarları) + altında **Model** bölümü (§12: görsel kart ızgarası, yükleme, sistemdeki dosyalardan
-ekleme, yönelim paneli; kayıt kipinde log listesinin altında, log tipine göre). 2. Merkez seçimi (liste; ad, konum adı, koordinat; merkez yoksa Rotalar'a bağlantı).
-3. Dünya: kip (Gerçek arazi / Google 3B (fotogerçekçi; yalnız `meta.google3d.enabled`, §10) / Prosedürel, §9), kaydırıcılar/seçimler
-(yukarıdaki `world`), "Rastgele tohum", önizleme (küçük 3B; gerçek kipte yükleme şeridi + özet; Google 3B'de karo yüzdesi + logo). 3a. **Güç ve yakıt**
-kutusu (§23; `createPowerSection`): azami hız (yalnız uçak) · yakıt L + km/L · batarya S / mAh / W — dron kaydından öneri rozeti. 3b. **Kayıt** kutusu
-(`recOptionsBox`, §17/§19; yalnız yazma izni): ☐ Ekran kaydı al (video) › ☐ Şirketten Haberler'de paylaş · ☐ Uçuş logunu (.bin) kaydet (yalnız canlı).
-4. Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya verisi) → oturum ekranı.
-Açık oturum varsa liste: devam et / bitir; "Yarım kayıt" ve "Kayıtlarım" kutuları (§17). 8 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
+## 6. Kurulum sihirbazı — adım adım (`flightsim.js wizardModal`; saf mantık `flightsim_wizard.js`, görsel girişler `fs_inputs.js`)
+Kullanıcı isteği (birebir): "HEPGO'da yeni simülasyonu başlattığımızda çok karışık görünüyor; onun yerine sihirbaz ile yapalım, aşama aşama girsin." ·
+"Yeni özellik sihirbazında basit inputları daha görsel hale getirelim; mesela sayısal girişleri slider şeklinde çevirelim."
+
+**Düzen.** "Yeni Simülasyon Başlat" penceresi (sabit yükseklik, adım değişince zıplamaz): üstte yapışkan bant — **Kip** kapsülü (Canlı simülasyon /
+Kayıttan oynat) + **ilerleme şeridi** (numaralı adımlar; geçilmiş ve geçerli olan yeşil ✓, geçilmiş ama sonradan geçersizleşen kırmızı !, geçerli adım
+mavi halkalı; altında ilerleme çizgisi). Şeritte geri adımlara her zaman, ileri adımlara yalnız aradaki adımlar geçerliyse tıklanır (`canGoto`). Gövde:
+solda adım başlığı ("Adım 2 / 8", başlık, isteğe bağlı rozeti, tek satır açıklama) + yalnız o adımın alanları; sağda **3B önizleme** (Araç / Uçuş logu /
+Dünya / Kalkış adımlarında görünür; diğerlerinde gizlenir ama yaşar — model küçük resimleri ve hedef kartı önizlemeleri aynı WebGL bağlamını kullanır).
+Altbilgi: **İptal et** · gerekçe metni · **‹ Geri** · **İleri ›** (son adımda **▶ Başlat** / kayıtta **▶ Oynat**). Klavye: **Enter = İleri** (son adımda
+Başlat; metin alanı/seçim/bağlantı/altbilgi/şerit ve sayı kutularında değil — sayı kutusunda Enter değeri uygular), **Esc = kapat** (sayı kutusunda
+önce düzenlemeyi geri alır). ≤ 860 px (telefon/dar tablet): tek sütun, önizleme içeriğin altında, şeritte yalnız geçerli adımın adı, düğmeler tam
+genişlik ve gerekçe kendi satırında; 860–1100 px önizleme sütunu 320 px.
+
+**Adımlar (sıra ve gerekçe).** Canlı: **1 Araç** (tip kartları · dron kaydı · görsel model · kontrol düzeni [yalnız sabit kanat]) → **2 Dünya ve konum**
+(merkez listesi + dünya kipi/kaydırıcılar + önizleme) → **3 Kalkış** (yalnız kalkış seçeneği olan tiplerde; bugün sabit kanat) → **4 Güç ve yakıt** →
+**5 Kamera** → **6 Hedefler** (isteğe bağlı) → **7 Yer kontrol** (isteğe bağlı) → **8 Kayıt ve özet**. Gerekçe: araç her şeyi belirler (hangi adımların
+görüneceği, güç varsayılanları, kamera önerisi dron kaydından, model → kontrol düzeni) → dünya pist yönünü ve kalkış noktasını kurar, kalkış düzeneği o
+pistte önizlenir → güç bütçesi araç + kalkıştan sonra → kamera, hedefler ve yer kontrol uçuşun "görev" katmanı (isteğe bağlı olanlar sonda, atlanabilir)
+→ son adımda kayıt seçenekleri ve özet. Kayıttan oynat: **Uçuş logu** (+ model) → **Dünya ve konum** → **Kalkış** (log aracı sabit kanatsa) →
+**Kamera** → **Kayıt ve özet** (güç/hedef/yer kontrol kayıttan gelir). Tip/kip değişince adım listesi yeniden hesaplanır (`wizardSteps`); kaybolan
+adımdaysanız en yakın önceki adıma geçilir (`reconcileStep`); kip değişince ilk adıma dönülür.
+
+**Doğrulama.** `valid(adım)`: Uçuş logu (erişim yok / yükleniyor / seçilmedi), Dünya (canlıda merkez yok → "Bir merkez seçin." ya da merkez yoksa
+Rotalar › Merkezler yönlendirmesi), Hedefler (`targetsSec.error()`), Yer kontrol (`siteSec.error()`), Özet (yazma izni yok). Geçersiz adımda İleri pasif,
+gerekçe altbilgide kırmızı; son adımda ilk geçersiz adım "Adım: gerekçe" olarak yazılır ve Başlat pasif. Başlat'taki eski denetimler (log/merkez/hedef/saha)
+korunur; hata olursa ilgili adıma dönülür. Alan değişimleri (tıklama/girdi) şeridi ve altbilgiyi kare başına bir kez yeniler.
+
+**Özet adımı.** Görünür her adım için kart (numara, başlık, **Düzenle** → o adıma atlar): Araç (tip, model, kontrol düzeni, dron kaydı) · Uçuş logu
+(dosya, araç, süre, model) · Dünya (merkez + koordinat, kip + boyut, saat, rüzgâr, sis, pist) · Kalkış (`launchLabel`) · Güç (azami hız, yakıt L · km/L,
+batarya S · mAh · W) · Kamera türü · Hedefler (sayı, modeller, önleme yarıçapı) · Yer kontrol (saha, görev). Geçersiz adımın kartı kırmızı çerçeveli.
+Altında §17/§19 **Kayıt** kutusu (ekran kaydı › paylaş · .bin; anahtar görünümlü onay kutuları) ve oturum sınırı notu.
+
+**Görsel girişler (`fs_inputs.js numSlider`).** Her sayısal alan: etiket + sağda **düzenlenebilir değer kutusu** (virgül kabul; Enter/odak kaybı uygular,
+Esc geri alır, ↑/↓ adım, Shift ×10) + birim, altında **dolu izli kaydırıcı**. Değer her zaman [min, max]'a kırpılır ve adıma oturtulur — sınırlar eskisiyle
+aynı (sunucuya giden değerler ve sunucu doğrulaması değişmedi). Geniş aralıklar **logaritmik** (konum ↔ log(v + o); 0 içeren aralıklarda kaydırma `o`;
+kaydırıcıdan gelen değer 2 anlamlı basamağa "güzel" yuvarlanır): yakıt 0–500 L, tüketim 0,5–500 km/L, kapasite 100–200 000 mAh, saatlik tüketim 0–2000 W,
+hedef irtifası 10–3000 m, yörünge çapı 50–5000 m. Doğrusal: azami hız 5–150 m/s, hücre 1–16 S (tam sayı), dünya boyutu, ağaç/su/sis (% olarak gösterilir,
+sunucuya 0–1), dağ yüksekliği/sayısı, bina sayısı, rüzgâr hızı/yönü, pist yönü, iniş dairesi, fırlatma açısı 10–30°, bırakma hızı 40–110 km/h, hedef hızı
+(km/h, azami = modelin azami hızı), merkez doğu/kuzey ofseti, önleme yarıçapı 5–200 m. Seçimler kart (tip, kalkış, kontrol düzeni, merkez, kamera, saha)
+ya da segment (dünya kipi, saat, hedef yönü); aç/kapat alanları HEPGO'nun genel anahtar görünümü. Yer kontrol bölümü (§26) zaten kaydırıcı + sayı
+kutusuydu (SIMUMAV ile ortak modül; dokunulmadı).
+
+**Kalkış seçenekleri veriden.** `flightsim_wizard.js LAUNCH_OPTIONS` = `[{ key, types, name, desc, params, icon, note? }]` (bugün `wheels` / `ramp` /
+`vehicle`, `types: ['sabit_kanat']`, ad/açıklama `flightsim_launch.LAUNCH_METHODS`'tan) + `LAUNCH_PARAM_DEFS` (`angle_deg`, `release_kmh`: etiket, min,
+max, adım, birim). Kalkış adımı `launchOptionsFor(tip)` boş değilse görünür; kartlar ve görünen ayar kaydırıcıları bu listeden üretilir; tip değişince
+seçili yöntem o tipte yoksa ilk seçeneğe geçer (`normLaunchMethod`). **Yeni fırlatıcı eklemek** (ör. INTERCEPTOR 4'lü / 8'li fırlatıcı, yerden tekli, el
+aparatı): `LAUNCH_OPTIONS`'a satır (`types: ['interceptor']`), gerekiyorsa `LAUNCH_PARAM_DEFS`'e ayar, `flightsim.js LAUNCH_ICON`'a simge; sunucu
+`world.launch` doğrulaması ve 3B düzenek ayrıca.
+
+**Son seçimler.** Mevcut hatırlamalar aynen: kamera türü/paleti (`createCamPrefs`), kayıt seçenekleri (`recPrefs`), yer kontrol sahası (`fs.site.*`).
+Ek: Başlat'ta (canlı) **tip, merkez ve kalkış yöntemi/ayarları** `caymaz.fs.wz.last`a yazılır, sonraki açılışta önerilir (bilinmeyen tip/merkez ya da
+sınır dışı değer yok sayılır). Oturum başlatma isteği gövdesi DEĞİŞMEDİ (`mode, type, center_id, world{…, launch}, model, drone_id, rec, power, layout,
+camera, targets, site, defend` / kayıtta `mode, log_id, world, model, camera`).
+
+**Test kancası.** `window.__fsWz` → `{ goto(adım) (doğrulamasız), steps, step }` (görsel betikler: `tests/wizard_shots_hepgo.py`,
+`gcs_shots_hepgo.py`, `tgthud_shots_hepgo.py`, `icept_shots_hepgo.py`). `#/drone/sim?new=1` pencereyi açık getirir.
+
+Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya verisi) → oturum ekranı. Açık oturum varsa liste: devam et / bitir; "Yarım kayıt" ve
+"Kayıtlarım" kutuları (§17). 7 dil (i18n.*.js; sözlük dosyaları modül olarak `node --check` ile denetlenir).
 
 ## 7. Testler
+- `node tests/test_flightsim_wizard.mjs` (tarayıcısız, §6): adım listesi (kip/tip; kopterde Kalkış yok, kayıtta Güç/Hedef/Yer kontrol yok), veriden kalkış
+  seçenekleri (yeni fırlatıcı eklenince adım açılır), `canGoto`/`reconcileStep`/`createStepper` (İleri doğrulamaya bağlı, şerit durumları), `fs_inputs`
+  (sayı ayrıştırma — virgül, adım/sınır oturtma, logaritmik ölçek gidiş-dönüş, 0 içeren log aralığı, değer kutusu uygulama). Görsel + uçtan uca:
+  `./.venv/bin/python -m tests.wizard_shots_hepgo` → `/tmp/wizard-shots` (açık/koyu × masaüstü/tablet/mobil, her adım; sihirbazdan gerçek Başlat ve gövde denetimi).
 - `node tests/test_flightsim_interp.mjs` (tarayıcısız; vendor three.module): telemetri zaman çizgisi (§5) — sentetik 50 Hz sabit kanat dairesi
   (ATTITUDE/GLOBAL_POSITION_INT farklı damgalı), ağ bozulması (jitter 30/60 ms, %5/%10 kayıp, sırası bozuk teslim, SITL saati %3 yavaş), 60/25
   fps sanal rAF; eski algoritma (9e639ef) aynı arayüzle karşılaştırılır: yeni jerk ≤ 0,02°, DR ≤ 2/dk, maks adım < 4× ideal, yarım karede konum
@@ -1258,9 +1313,9 @@ Tümü** (`from` = bugün − n gün, `to` boş) + aynı kapsülde **Detaylı** 
 tarih aralığı (iki `date`; dolu ise dönem `custom`, kapsülde seçili dönem yok), merkez / tip / kullanıcı (facet listeleri, sayılarla), sonuç, kaynak
 (canlı / kayıt), arama; **Uygula** (değerler o ana kadar bekler) / **Temizle** (hepsi sıfır, 1 hafta). Sağda kayıt sayısı; boş durumda "Tüm kayıtları
 göster". Sıralama sütun başlığından (▲/▼); 25'li sayfalama (‹ Sayfa p / n ›).
-**Pencere** (`ui.js modal`, `wide` + `.fs-wizard-modal` 1240 px, gövde kaydırılabilir): başlık **"Yeni Simülasyon Başlat"**, gövde = Kip · 1 Dron tipi
-(+ kalkış yöntemi + model) · 2 Merkez (+ dron kaydı) · 1 Uçuş logu (kayıt kipi) · 3 Dünya (+ 3B önizleme) · Kayıt seçenekleri · not; altbilgi
-**"İptal et"** + **"▶ Başlat"** (primary; kayıt kipinde "▶ Oynat"). Başlat → mevcut akış: tam ekran + ekran paylaşımı izni → `POST /sessions` →
+**Pencere** (`ui.js modal`, `wide` + `.fs-wizard-modal` 1240 px, sabit yükseklik): başlık **"Yeni Simülasyon Başlat"**, gövde = **adım adım sihirbaz** (§6:
+kip + ilerleme şeridi, adım içeriği, 3B önizleme); altbilgi **"İptal et"** · gerekçe · **‹ Geri** / **İleri ›** / son adımda **"▶ Başlat"** (primary; kayıt kipinde
+"▶ Oynat"). Başlat → mevcut akış: tam ekran + ekran paylaşımı izni → `POST /sessions` →
 pencere gizlenir, **hazırlık kartı** (§8 `prepareSession`, sihirbaz önizlemesiyle dünya ön yüklemesi) → `location.hash` oturum ekranı
 (hashchange pencereyi kapatır → önizleme serbest). Hata/iptal → pencere geri gelir. Pencere kapanışı → açık oturumlar, yarım kayıt, tablo
 yenilenir. `#/drone/sim?new=1` pencereyi açık getirir (testler). Sahte kipte (`?mock=1`) tablo yok.

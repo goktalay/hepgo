@@ -93,6 +93,7 @@ try:
             pg.wait_for_selector('.fs-wizard .fs-types', timeout=60000)
             pg.wait_for_timeout(3000)
             pg.locator('.fs-type', has_text='INTERCEPTOR').first.click(); pg.wait_for_timeout(600)
+            pg.evaluate("window.__fsWz.goto('site')"); pg.wait_for_timeout(300)   # §6 adım adım sihirbaz: Yer kontrol adımı
             for k in ('radar', 'station', 'eo'):
                 card = pg.locator(f'.fs-site-card[data-key="{k}"]')
                 if 'on' not in (card.get_attribute('class') or ''):

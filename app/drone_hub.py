@@ -775,9 +775,11 @@ async def _log_end(bridge):
             if flight_id and not task_id:
                 r = conn.execute('SELECT task_id FROM field_flights WHERE id = ?', (flight_id,)).fetchone()
                 task_id = r[0] if r else None
-            cur = conn.execute('''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, uploaded_by, uploaded_at, source, note)
-                                  VALUES (?,?,?,?,?,?,?,'BRIDGE',?)''',
-                               (task_id, flight_id, lg['rel'], lg['name'], lg['got'], s.get('started_by'), db.now(), f'Köprü: {bridge.name}'))
+            from .dataflash import sim_isareti   # köprüye SITL bağlıysa (sanal dron) SIM, aksi gerçek uçuş
+            origin = 'SIM' if sim_isareti(lg['path']) else 'REAL'
+            cur = conn.execute('''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, uploaded_by, uploaded_at, source, note, origin)
+                                  VALUES (?,?,?,?,?,?,?,'BRIDGE',?,?)''',
+                               (task_id, flight_id, lg['rel'], lg['name'], lg['got'], s.get('started_by'), db.now(), f'Köprü: {bridge.name}', origin))
             db.audit(conn, s.get('started_by'), 'Dron köprüsünden uçuş logu alındı', 'flight_log', cur.lastrowid, f"{lg['name']} · {lg['got']} bayt")
             conn.commit()
             lid = cur.lastrowid

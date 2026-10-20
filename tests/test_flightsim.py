@@ -2269,7 +2269,7 @@ def hedef_icept_testleri(a, c1, sitl):
         with db.connect() as conn:
             conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
             conn.commit()
-    assert 'body' in R.FIELDS and R.ONBELLEK_SURUM == 4 and 'SIM' in R.BIN_TIPLERI
+    assert 'body' in R.FIELDS and R.ONBELLEK_SURUM >= 4 and 'SIM' in R.BIN_TIPLERI and 'SIM' in R.BIN_SUTUNLAR   # v5: hızlı ikili yol (§8.3) da SIM okur
     # meta: hedef kataloğu + INTERCEPTOR modelleri
     m = ok(a.get('/api/drone/sim/meta'))
     keys = {x['key'] for x in m['targets']['models']}

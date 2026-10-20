@@ -440,7 +440,118 @@ REPLAY_MAX = 40000       # en fazla örnek (çok uzun uçuşlarda aralık büyü
 
 def replay(path):
     """Cesium 3B oynatma için zaman serisi: [t, enlem, boylam, eve göre irtifa (m), roll, pitch, yaw (derece),
-    yer hızı, hava hızı (m/s), gaz (%), batarya (V)]. Konum EKF'den (POS), yoksa GPS'ten alınır."""
+    yer hızı, hava hızı (m/s), gaz (%), batarya (V), devir]. Konum EKF'den (POS), yoksa GPS'ten alınır.
+    İkili DataFlash'ta hızlı akış okuyucu (dataflash; 700 MB'lık logda ~8 sn / ~0,3 GB), aksi (metin .log) pymavlink."""
+    from . import dataflash
+    if dataflash.ikili_mi(path):
+        return _replay_hizli(path)
+    return _replay_pymavlink(path)
+
+
+def _replay_hizli(path):
+    import numpy as np
+    from . import dataflash
+    D = dataflash.oku(str(path), {
+        'ATT': ['TimeUS', 'TimeMS', 'Roll', 'Pitch', 'Yaw'], 'POS': ['TimeUS', 'Lat', 'Lng', 'RelHomeAlt'],
+        'GPS': ['TimeUS', 'TimeMS', 'I', 'Instance', 'Status', 'Lat', 'Lng', 'Alt', 'Spd'], 'CTUN': ['TimeUS', 'TimeMS', 'ThO', 'ThrOut', 'As'],
+        'ARSP': ['TimeUS', 'I', 'Airspeed'], 'BAT': ['TimeUS', 'Inst', 'Instance', 'Volt'], 'CURR': ['TimeUS', 'TimeMS', 'Inst', 'Instance', 'Volt'],
+        'RPM': ['TimeUS', 'I', 'RPM', 'rpm1']})
+    Z = {k: dataflash.zaman(v) for k, v in D.items()}
+    Z = {k: v for k, v in Z.items() if v is not None and len(v)}
+    if not Z:
+        raise ValueError('Logda 3B oynatma için konum verisi yok')
+    t0 = min(float(v[0]) for v in Z.values())
+    Z = {k: v - t0 for k, v in Z.items()}
+
+    def orn0(c):
+        for k in ('I', 'Inst', 'Instance'):
+            if k in c:
+                return np.isnan(c[k]) | (c[k] == 0)
+        return None
+
+    def tut(z, v, g):
+        if z is None or not len(z):
+            return np.full(len(g), np.nan)
+        i = np.searchsorted(z, g, side='right') - 1
+        out = np.asarray(v, dtype=np.float64)[np.maximum(i, 0)]
+        out[i < 0] = np.nan
+        return out
+    pos, gps = D.get('POS'), D.get('GPS')
+    zp = zg = None
+    if pos is not None and 'RelHomeAlt' in pos:
+        m = (pos['Lat'] != 0) & (pos['Lng'] != 0) & ~np.isnan(pos['RelHomeAlt'])
+        zp = Z['POS'][m] if m.any() else None
+        if zp is not None:
+            pos = {k: v[m] for k, v in pos.items()}
+    if gps is not None:
+        m = orn0(gps)
+        m = (m if m is not None else np.ones(len(Z['GPS']), bool)) & ((gps['Status'] >= 3) if 'Status' in gps else True)
+        if np.any(m):
+            gps = {k: v[m] for k, v in gps.items()}
+            zg = Z['GPS'][m]
+    ilk = [float(z[0]) for z in (zp, zg) if z is not None]
+    if not ilk:
+        raise ValueError('Logda 3B oynatma için konum verisi yok')
+    son = max(float(v[-1]) for v in Z.values())
+    g = np.arange(min(ilk), son + 1e-9, 1.0 / REPLAY_HZ)
+    if len(g) < 2:
+        raise ValueError('Logda 3B oynatma için konum verisi yok')
+    lat = np.full(len(g), np.nan); lng = np.full(len(g), np.nan); alt = np.full(len(g), np.nan)
+    if zg is not None:   # GPS: eve göre irtifa = Alt − ilk GPS irtifası (POS gelene kadar)
+        lat, lng = tut(zg, gps['Lat'], g), tut(zg, gps['Lng'], g)
+        alt = tut(zg, gps['Alt'] - gps['Alt'][0], g) if 'Alt' in gps else alt
+    if zp is not None:
+        s_ = g >= zp[0]
+        lat[s_], lng[s_], alt[s_] = tut(zp, pos['Lat'], g)[s_], tut(zp, pos['Lng'], g)[s_], tut(zp, pos['RelHomeAlt'], g)[s_]
+    att = D.get('ATT')
+    roll, pitch, yaw = ((tut(Z['ATT'], att[k], g) for k in ('Roll', 'Pitch', 'Yaw')) if att else (np.zeros(len(g)),) * 3)
+    gs = tut(zg, gps['Spd'], g) if zg is not None and 'Spd' in gps else np.full(len(g), np.nan)
+    ctun, arsp = D.get('CTUN'), D.get('ARSP')
+    if arsp is not None:
+        m = orn0(arsp)
+        m = m if m is not None else np.ones(len(Z['ARSP']), bool)
+        as_ = tut(Z['ARSP'][m], arsp['Airspeed'][m], g)
+    elif ctun is not None and 'As' in ctun:
+        as_ = tut(Z['CTUN'], ctun['As'], g)
+    else:
+        as_ = np.full(len(g), np.nan)
+    thr = np.full(len(g), np.nan)
+    if ctun is not None and ('ThO' in ctun or 'ThrOut' in ctun):
+        v = (ctun['ThO'] if 'ThO' in ctun else ctun['ThrOut']).astype(np.float64)
+        thr = tut(Z['CTUN'], np.where(v <= 1.5, v * 100, v), g)
+    volt = np.full(len(g), np.nan)
+    for ad in ('BAT', 'CURR'):
+        b = D.get(ad)
+        if b is not None and 'Volt' in b:
+            m = orn0(b)
+            m = (m if m is not None else np.ones(len(Z[ad]), bool)) & (b['Volt'] > 0.5)
+            volt = tut(Z[ad][m], b['Volt'][m], g)
+            break
+    rpm = np.full(len(g), np.nan)
+    r = D.get('RPM')
+    if r is not None:
+        k = 'RPM' if 'RPM' in r else ('rpm1' if 'rpm1' in r else None)
+        if k:
+            m = orn0(r)
+            m = m if m is not None else np.ones(len(Z['RPM']), bool)
+            rpm = tut(Z['RPM'][m], r[k][m], g)
+    ok = ~np.isnan(lat)
+    cols = [np.round(g, 2), np.round(lat, 7), np.round(lng, 7), np.round(alt, 1), np.round(roll, 1), np.round(pitch, 1), np.round(yaw, 1),
+            np.round(gs, 1), np.round(as_, 1), np.round(thr, 0), np.round(volt, 2), np.round(rpm, 0)]
+    idx = np.flatnonzero(ok)
+    if len(idx) > REPLAY_MAX:   # _thin ile aynı seçim
+        idx = np.concatenate([idx[(np.arange(REPLAY_MAX) * (len(idx) / REPLAY_MAX)).astype(np.int64)], idx[-1:]])
+    lst = []
+    for c in cols:
+        v = c[idx].tolist()
+        lst.append([None if x != x else x for x in v])
+    samples = [list(x) for x in zip(*lst)]
+    if len(samples) < 2:
+        raise ValueError('Logda 3B oynatma için konum verisi yok')
+    return {'fields': ['t', 'lat', 'lng', 'alt', 'roll', 'pitch', 'yaw', 'gs', 'as', 'thr', 'volt', 'rpm'], 'samples': samples}
+
+
+def _replay_pymavlink(path):
     log = mavutil.mavlink_connection(str(path), zero_time_base=False)
     t0 = None
     cur = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0, 'gs': None, 'as': None, 'thr': None, 'volt': None, 'rpm': None}
@@ -505,3 +616,29 @@ def replay(path):
         raise ValueError('Logda 3B oynatma için konum verisi yok')
     samples = _thin(samples, REPLAY_MAX)
     return {'fields': ['t', 'lat', 'lng', 'alt', 'roll', 'pitch', 'yaw', 'gs', 'as', 'thr', 'volt', 'rpm'], 'samples': samples}
+
+
+def _main(argv):
+    """Alt süreç: `python -m app.flightlog replay <log> <çıktı.json>` — 3B oynatma verisini üretir, atomik yazar. Çıkış 0 = tamam;
+    hata stdout'ta `ERR <mesaj>`. (pymavlink/numpy ayrıştırması sunucu sürecinin olay döngüsünü ve belleğini meşgul etmesin.)"""
+    import json
+    import os
+    import sys
+    if len(argv) != 3 or argv[0] != 'replay':
+        print('ERR kullanım: replay <log> <çıktı>', flush=True)
+        sys.exit(2)
+    try:
+        data = replay(argv[1])
+    except Exception as e:   # noqa: BLE001
+        print(f'ERR {e}'[:300], flush=True)
+        sys.exit(1)
+    tmp = argv[2] + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, separators=(',', ':'))
+    os.replace(tmp, argv[2])
+    print('OK', flush=True)
+
+
+if __name__ == '__main__':
+    import sys as _sys
+    _main(_sys.argv[1:])

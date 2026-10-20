@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .. import auth, config, db, flight_analysis
-from ..flightlog import replay
+from ..dataflash import sim_isareti
 from ..files import FLIGHT_LOG_MAX_BYTES, local_only, save_upload_stream, take_upload
 from .field import flight_row, get_task, require_flight_editor, field_user
 
@@ -23,7 +23,7 @@ tools_user = auth.require_module('tools')
 
 _SELECT = '''
     SELECT l.id, l.task_id, l.flight_id, l.file, l.file_name, l.size, l.status, l.error, l.aircraft, l.pilot, l.location,
-           l.note, l.fuel, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
+           l.note, l.fuel, l.origin, l.source, l.uploaded_at, l.analyzed_at, u.full_name AS uploaded_by_name, t.code AS task_code,
            json_extract(l.analysis, '$.summary.vehicle') AS vehicle,
            json_extract(l.analysis, '$.summary.flight_s') AS flight_s,
            json_extract(l.analysis, '$.summary.takeoff_utc') AS takeoff_utc,
@@ -54,10 +54,12 @@ async def _store(conn, user, stored, task_id=None, flight_id=None, aircraft=None
     path, size, file_name = stored
 
     def write():   # dosya yüklenene kadar yazma kilidi alınmaz; yazım iş parçacığında
+        isaret = sim_isareti(config.UPLOAD_DIR / path)   # SITL logu mu (SIM_* parametreleri; dosyanın ilk 4 MB'ı)
         cur = conn.execute(
             '''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, aircraft, pilot, location, note,
-                                        uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-            (task_id, flight_id, path, file_name, size, aircraft, pilot, location, note, user['id'], db.now()))
+                                        uploaded_by, uploaded_at, origin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (task_id, flight_id, path, file_name, size, aircraft, pilot, location, note, user['id'], db.now(),
+             None if isaret is None else ('SIM' if isaret else 'REAL')))
         conn.commit()   # analiz iş parçacığı kaydı görebilsin
         return cur.lastrowid
     log_id = await run_in_threadpool(write)
@@ -138,9 +140,9 @@ def delete_log(lid: int, user=Depends(tools_user), conn=db.DB):
         raise HTTPException(400, 'Analiz sürerken silinemez')
     (config.UPLOAD_DIR / log['file']).unlink(missing_ok=True)
     _replay_path(log).unlink(missing_ok=True)
-    try:   # Uçuş Simülatörü kayıttan oynatma önbelleği (DATA_DIR/sim_replay/<id>.json.gz)
-        from ..flightsim_replay import onbellek_yolu
-        onbellek_yolu(lid).unlink(missing_ok=True)
+    try:   # Uçuş Simülatörü kayıttan oynatma önbelleği (DATA_DIR/sim_replay/<id>.json.gz + büyük kayıtta <id>.p<k>.json.gz parçaları)
+        from ..flightsim_replay import onbellek_sil
+        onbellek_sil(lid)
     except OSError:
         pass
     conn.execute('DELETE FROM flight_logs WHERE id = ?', (lid,))
@@ -193,14 +195,31 @@ async def get_replay(lid: int, user=Depends(auth.current_user), conn=db.DB):
         except OSError:
             pass
     if not path.exists():
-        try:
-            data = await run_in_threadpool(replay, config.UPLOAD_DIR / log['file'])
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from None
-        tmp = path.with_suffix('.tmp')
-        tmp.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
-        tmp.rename(path)
+        await _replay_uret(log, path)
     return FileResponse(path, media_type='application/json', headers={'Cache-Control': 'private, max-age=86400'})
+
+
+_REPLAY_KILIT = {}   # log id → asyncio.Lock (aynı log için eşzamanlı iki istek tek üretim)
+
+
+async def _replay_uret(log, path):
+    """3B oynatma verisini ALT SÜREÇTE üretir (`python -m app.flightlog replay`): ayrıştırma GIL'i tutar; iş parçacığında 700 MB'lık
+    logda sunucu olay döngüsü dakikalarca ağırlaşıyor ve süreç ~1,6 GB'a çıkıyordu (kök neden; hızlı okuyucuyla ~7 sn / ~0,2 GB)."""
+    import asyncio
+    import sys
+    kilit = _REPLAY_KILIT.setdefault(log['id'], asyncio.Lock())
+    async with kilit:
+        if path.exists():
+            return
+        proc = await asyncio.create_subprocess_exec(sys.executable, '-m', 'app.flightlog', 'replay', str(config.UPLOAD_DIR / log['file']), str(path),
+                                                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, cwd=str(config.BASE_DIR))
+        try:
+            out, _ = await proc.communicate()
+        except asyncio.CancelledError:   # istemci koptu: üretim yarıda kalmasın (kısa sürer); süreç kendi biter
+            raise
+        if proc.returncode != 0 or not path.exists():
+            msg = out.decode('utf-8', 'replace').strip()
+            raise HTTPException(400, msg[4:] if msg.startswith('ERR ') else 'Log çözümlenemedi')
 
 
 # ---------- Yakıt: başlangıç / bitiş litre → toplam tüketim, motor itkisine (gaz) göre zamana dağıtım ----------
@@ -260,13 +279,8 @@ async def compute_fuel(lid: int, body: FuelIn, user=Depends(auth.current_user), 
     total = body.start_l - body.end_l
     rpath = _replay_path(log)
     if not rpath.exists():
-        try:
-            data = await run_in_threadpool(replay, config.UPLOAD_DIR / log['file'])
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from None
-        rpath.write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
-    else:
-        data = json.loads(rpath.read_text(encoding='utf-8'))
+        await _replay_uret(log, rpath)
+    data = json.loads(rpath.read_text(encoding='utf-8'))
     series, stats = await run_in_threadpool(fuel_series, data['samples'], total, float(body.thrust_max_kg or 51))
     summary = {'start_l': body.start_l, 'end_l': body.end_l, 'total_l': round(total, 3), 'thrust_max_kg': float(body.thrust_max_kg or 51),
                'flight_s': log.get('flight_s'), 'computed_at': db.now(), 'computed_by': user['full_name'], **stats}

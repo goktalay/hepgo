@@ -87,6 +87,7 @@ Her REST hatası: HTTP durum kodu + gövde `{"detail": {"error": "<kod>", "messa
 | `DELETE /sessions/{id}` | kapatır (SITL + UDP kapanır; izleyicilere `end`) → `{ok:true}` |
 | `POST /sessions/{id}/cmd` | `{name, params}` (§5) → `{ok:true}`; hata 400 `invalid` |
 | `GET /sessions/{id}/replay` | Kayıttan oynatma kareleri: gzip JSON (`Content-Encoding: gzip`), §7. Oturum `replay` değilse 400; hazır değilse 409. |
+| `GET /sessions/{id}/replay/{k}` | Uzun kayıt (`lod`) k. zaman parçası (tam hız), gzip JSON; aralık dışı 404. |
 | `GET /sessions/{id}/mavlink` | `{host, udp_port, gcs_locked, gcs_addr, note}` — ham MAVLink isteyen istemci için SITL UDP kapısı (§8). |
 | `OPTIONS *` | 204 |
 
@@ -292,7 +293,9 @@ Ardışık `tbm` farkı ≈ 20 ms. CAYSIM 50 Hz kareleri Unreal kare hızına (6
 
 `POST /sessions {mode:'replay', log_id, world?, model?}` → oturum; sunucu logu ayrıştırır (`state` BASLIYOR → HAZIR; `state.replay.progress` %).
 HAZIR olunca `GET /sessions/{id}/replay` → gzip JSON `{hz: 25, frames:[[t, lat, lon, alt_msl, alt_rel, roll, pitch, yaw, vn, ve, vd, mode, armed, …]], home, duration_s, takeoff_t, modes}`
-(alan sırası web ile birebir — docs/ucus-simulatoru.md §8). WS'te replay oturumu `tele` **yaymaz**; oynatma istemcide yürür (web gibi); `reset`
+(alan sırası web ile birebir — docs/ucus-simulatoru.md §8). **Uzun kayıt** (25 Hz'de 30 dk'dan uzun; eklenen alan `lod: {chunk_s, chunks, chunk_n,
+step, n_overview}`): `frames` 1 Hz genel bakıştır, tam hızdaki kareler `GET /sessions/{id}/replay/{k}` → gzip JSON `{v, k, a, frames}` (k = 0…chunks−1;
+her parça `chunk_s` sn; `a` parçanın ilk karesinin tam dizideki sırası) ile parça parça alınır; `lod` yoksa davranış aynıdır. WS'te replay oturumu `tele` **yaymaz**; oynatma istemcide yürür (web gibi); `reset`
 komutu izleyicilere `{t:'replay', action:'reset'}` yayar (senkron sıfırlama).
 
 ---

@@ -310,6 +310,15 @@ def get_replay(sid: int, client=CLIENT):
         _cevir(e)
 
 
+@router.get('/sessions/{sid}/replay/{k}')
+def get_replay_chunk(sid: int, k: int, client=CLIENT):
+    """Uzun kayıt (`lod` alanı varsa): k. zaman parçası, tam hızda kareler (docs/caysim-api.md §7)."""
+    try:
+        return fs.get_replay_chunk(sid, k, user=None)
+    except HTTPException as e:
+        _cevir(e)
+
+
 @router.get('/sessions/{sid}/mavlink')
 def session_mavlink(sid: int, request: Request, client=CLIENT):
     """Ham MAVLink isteyen istemci için SITL UDP kapısı (Mission Planner ile aynı kapı; GCS kilidi: oturumda tek UDP GCS)."""

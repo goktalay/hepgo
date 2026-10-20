@@ -193,7 +193,7 @@ ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, k
 - **Yetki:** oturum `drone.sim` yazma izni; log listesi flightlogs yetkisiyle kesişir (`tools` → tüm loglar, `field` → yalnız göreve
   bağlı loglar; ikisi de yoksa boş liste, `meta.replay.logs_allowed=false`).
 - **Uçlar:** `GET /api/drone/sim/logs?q=` → `[{id, file_name, ext, size, uploaded_at, aircraft, pilot, location, task_code, vehicle,
-  type, flight_s, duration_s, takeoff_utc, start_utc, home_lat, home_lon, cached}]` · `POST /sessions {mode:'replay', log_id, world}` →
+  type, flight_s, duration_s, takeoff_utc, start_utc, home_lat, home_lon, cached, source, origin}]` (`origin` SIM | REAL — §19) · `POST /sessions {mode:'replay', log_id, world}` →
   `session` (201; 400 log yok/yetkisiz/analiz bitmemiş/biçim; 409 limit) · `GET /sessions/{id}/replay` → gzip JSON kareler
   (`Content-Encoding: gzip`; 409 HAZIR değilken; 400 SITL oturumu için).
 - **session eklemeleri:** `mode: 'sitl'|'replay'`; replay'de `udp_port=null`, `center = {id:null, name:file_name, lat, lon, alt}` (ev),
@@ -222,6 +222,9 @@ ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, k
   ARSP. `.tlog` → `mavutil.mavlogfile` (8 bayt BE µs + çerçeve; `_timestamp`): HEARTBEAT (araç; armed, mod adı), GLOBAL_POSITION_INT,
   ATTITUDE, RC_CHANNELS(_RAW), SERVO_OUTPUT_RAW, SYS_STATUS, VFR_HUD, GPS_RAW_INT, STATUSTEXT, HOME_POSITION, PARAM_VALUE. Yeniden örnekleme:
   sample-and-hold, `SIM_REPLAY_HZ` (25); 150.000 kareyi aşarsa seyreltme. `alt_rel = alt_msl − home.alt`.
+- **Ayrıştırma (v5, ikili DataFlash):** yukarıdaki pymavlink yolu artık yalnız metin `.log` içindir; ikili `.bin` (ilk baytlar `A3 95`)
+  `app/dataflash.py` akış okuyucusu + numpy ile sütunlu ayrıştırılır ve sabit `SIM_REPLAY_HZ` ızgarasına sample-and-hold yeniden örneklenir
+  (`flightsim_replay._bin_hizli`; kare anlamı aynı, seyreltme yok). Ayrıntı ve ölçümler §8.3.
 - **Önbellek (v3):** `DATA_DIR/sim_replay/<log_id>.json.gz` = `{v:3, hz, fields, frames, modes, events:[{t,text,sev}], duration_s, home,
   takeoff_t, start_utc, vehicle, type, n, source, servo_fn}`; `fields` = `[t, lat, lon, alt_msl, alt_rel, roll, pitch, yaw, vn, ve, vd, gs, as, hdg,
   thr, mode, armed, batt_v, batt_pct, sats, fix, rc, servo]` (rc ve servo 8'li iç dizi). Sürüm uyuşmazsa yeniden üretilir (v2 önbellekler ilk açılışta
@@ -249,6 +252,48 @@ ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, k
   olayları ve ilk ARM işaretli), `mm:ss / mm:ss` + kayıt saati; ←/→ 5 sn (Shift 30 sn). Kareler arası doğrusal enterpolasyon (açılar en
   kısa yol; 5 sn'den uzun boşlukta tutma), HUD/RC/mod/arm karelerden, olay şeridi MSG/STATUSTEXT'ten log zamanıyla (atlamada son 8 olay).
   Başlangıç: ilk ARM − 5 sn, otomatik oynatır. `?mock=1`: sahte log listesi + 2 dk sahte kare (kalkış, daire, iniş).
+
+### 8.3 Uzun kayıtlar (3+ saat, ~700 MB .BIN) — akış ayrıştırma, parçalı önbellek, LOD oynatma
+Kullanıcı bildirimi: "Sistemde 3 saatlik gerçek bir uçuşun bin dosyası var, onu izlemek için açmaya çalıştığımda kilitleniyor."
+- **Kök neden (ölçüldü, PROD log #6 `13.10.26_565km_700m.BIN`, 754 MB, 4 sa 41 dk, ~19 M mesaj):** pymavlink `DFReader_binary` dosyayı mmap'leyip
+  Cython indeksleyiciyle **her** mesajın ofsetini Python listelerine yazar (~1,6 GB RSS), ilerleme geri çağrısı yalnız bu 3 sn'lik indeksleme
+  sırasında çalışır (çubuk %100'e sıçrayıp kalır), sonra istenen ~5 M mesaj tek tek Python nesnesine çözülür: kayıttan oynatma alt süreci
+  **155 sn / 2,6 GB**, Uçuş Logu Analizi › 3B izleme ucu (`/api/flight-logs/{id}/replay`) **67 sn / 1,6 GB — istek içinde iş parçacığında, GIL
+  tutarak** (sunucu olay döngüsü dakikalarca ağırlaşıyor, proxy zaman aşımı). Ardından tarayıcı 150 k karelik ~30 MB JSON'u tek seferde
+  ayrıştırıyordu. PROD'da kullanıcı log #6'yı açıp 27 sn sonra kapatmış (drone_sim_runs #11); büyük logların hiçbirinin önbelleği yoktu.
+- **Akış okuyucu (`app/dataflash.py`):** dosya 16 MB bloklarla sırayla okunur; bloktaki `A3 95` aday başlıkları numpy ile (iki uint16 hizası)
+  bulunur, her adayın ardılı (konum + FMT uzunluğu) eşlenir, mesaj zinciri **gelen-derece soyma + ardıl doğrulaması** ile vektörel çıkarılır
+  (yüklerdeki sahte başlıklar elenir); FMT, tanımsız tip, bozuk bayt (sonraki başlığa atlama — pymavlink kuralı) ve blok sınırı tam (mesaj mesaj)
+  yolda işlenir, 4000 sakin mesajdan sonra hızlı yola dönülür. Yalnız istenen tip/sütunlar yapılı dtype görünümüyle toplu çözülür (float32 / zaman,
+  enlem-boylam float64). Değerler pymavlink ile birebir (testte bozuk bayt + sahte başlık + ortada FMT ile değer değer karşılaştırılır).
+  İlerleme okunan bayta göre gerçek yüzde. `sim_isareti(path)`: dosyanın ilk 4 MB'ında `SIM_*` parametresi → SITL logu (§19 kaynak).
+- **Önbellek v5:** kısa kayıt (≤ `SIM_REPLAY_TEK_PARCA` = 45.000 kare, 25 Hz'de 30 dk) eskisi gibi tek `<id>.json.gz` (tüm kareler).
+  Uzun kayıtta önce **zaman parçaları** `<id>.p<k>.json.gz` = `{v, k, a (ilk kare sırası), frames}` (`PARCA_S` = 120 sn × 25 Hz = 3000 kare, tam hız),
+  sonra meta `<id>.json.gz`: `frames` = **1 Hz genel bakış** (`GENEL_HZ`; ızgaranın her `step`'inci karesi + son kare) ve
+  `lod: {chunk_s, chunks, chunk_n, step, n_overview}`; `n` tam kare sayısı. Meta en son yazılır (varlığı = tamamlanmış önbellek); parça eksikse
+  önbellek geçersiz sayılır ve yeniden üretilir. Parça JSON'u alt süreçte `SIM_REPLAY_ISCI` (4) fork'lu işçiyle üretilir (JSON GIL'e bağlı).
+  Silme: `onbellek_sil` (meta + parçalar; log silinince).
+- **Uçlar:** `GET /sessions/{id}/replay` (meta + genel bakış; kısa kayıtta tüm kareler) · **`GET /sessions/{id}/replay/{k}`** (k. parça; gzip olduğu gibi;
+  404 aralık dışı, 409 HAZIR değil) — CAYSIM'de de aynı yol (`/api/caysim/v1/sessions/{id}/replay/{k}`; docs/caysim-api.md §7).
+- **Oynatıcı (`createReplayPlayer`, flightsim.js):** `lod` varsa t anının parçası `be.replayChunk` ile istenir; gelene kadar genel bakış enterpolasyonla
+  oynar (donma yok; oynatma çubuğunda "Ayrıntı yükleniyor…" rozeti), parçanın %60'ı geçilince sıradaki önceden çekilir, parça sonunda bir sonrakinin
+  ilk karesiyle enterpolasyon; bellekte en çok 8 parça. Atlama (kaydırıcı) yalnız o parçayı çeker. `fitWorldSize`, kalkış zaman çizelgesi ve §23 güç
+  yeniden kurulumu genel bakış karelerini kullanır.
+- **3B izleme (Cesium, `/api/flight-logs/{id}/replay`):** `flightlog.replay` ikili logda aynı okuyucuyla 5 Hz ızgara (≤ 40.000 örnek); üretim
+  **alt süreçte** (`python -m app.flightlog replay <log> <çıktı>`; aynı log için eşzamanlı istekler tek üretim — `_REPLAY_KILIT`), sonuç eskisi gibi
+  `<log>.replay.json`. Yakıt hesabı da aynı yolu kullanır.
+- **Ölçümler (DEV, Xeon E5-2697A; PROD log #6 kopyası, 754 MB):**
+
+  | | Önce | Sonra |
+  |---|---|---|
+  | Kayıttan oynatma ayrıştırma + önbellek | 155 sn · 2,6 GB RSS · ilerleme %100'de takılı | **13–19 sn** (okuma ~9 sn + 141 parça yazımı ~4 sn) · ~0,43 GB · gerçek ilerleme |
+  | Önbellek | 6,1 MB gz (150 k kare seyreltilmiş, ~8,9 Hz) | 14,3 MB (421.861 kare tam 25 Hz, 141 parça) + 0,8 MB genel bakış |
+  | Tarayıcıya ilk yük | ~30 MB JSON (150 k kare) | 0,8 MB gz genel bakış + ~0,1 MB gz parça; ilk görüntü < 1 sn (önbellekten) |
+  | 3B izleme (Cesium) verisi | 67 sn · 1,6 GB · istek iş parçacığında (GIL) | **6,6 sn** · 0,2 GB · alt süreç |
+  | İkinci açılış | — | 0,2 sn (meta) |
+- **Testler:** `tests/test_binperf.py` (okuyucu = pymavlink, 1 saatlik üretilmiş 68 MB .BIN: süre/bellek/ilerleme, parça sürekliliği, genel bakış seyreltmesi,
+  eksik parça → yeniden üretim, 3B hızlı yol eşdeğerliği, oturum parça ucu, kaynak çıkarımı ve göç).
+
 ## 9. Gerçek topoğrafya (`world.mode = "real"`; `app/sim_terrain.py`, ön yüz `loadRealTerrain`)
 Kullanıcı sihirbazın Dünya adımında **Gerçek arazi / Prosedürel** seçer. Gerçek kipte seçili merkezin çevresi (kenar `size_m`, 1–12 km)
 gerçek yükseklik + uydu doku + OpenStreetMap nesneleriyle kurulur; prosedürel ayarlar *özelleştirme* olarak kalır: `tree_density` OSM orman
@@ -904,6 +949,14 @@ Kullanıcı isteği: "Simülasyon sonunda tüm veri, aynı dronun içinde kaydet
   silinir. `< 1 KB` (yalnız başlık, armed süre yok) → kaydedilmez (null). Sonuç `DELETE /sessions/{id}` yanıtında `bin: {log_id, file_name, size} |
   {error} | null` ve olay şeridinde; ön yüz Bitir'de toast ("Uçuş logu kaydedildi: … — analiz bitince …"). Sunucu kapanışında (`sunucu_kapaniyor`) ve
   boşta/süre kapanışlarında da kaydedilir. `kapat()` bekleme süresi 30 sn.
+- **Kaynak (Gerçek / Simülasyon):** `flight_logs.origin` = `SIM` | `REAL` (NULL: dosya okunamadı). Bu kayıt yolu `SIM` yazar; elle yükleme
+  (`/api/tools/flight-logs`, saha uçuşu) ve dron köprüsü dosyanın başındaki SITL işaretine bakar (`dataflash.sim_isareti`: ArduPilot yalnız SITL
+  derlemesinde `SIM_*` parametrelerini yazar). Mevcut satırlar uygulama açılışında doldurulur (`db.flight_log_origin_doldur`, idempotent, yalnız
+  NULL'lar): `drone_sim_runs.bin_log_id` bağı ya da bu yolun izi (ad `SIM-<n>-<tarih>.bin` + aircraft "Simülatör · …"/not) → SIM; kalanlar dosya
+  başı işaretiyle. Araçlar › Uçuş Logu Analizi tablosunda **Kaynak** sütunu (uçak simgeli yeşil Gerçek / ekran simgeli mor Simülasyon; `static/js/modules/flightlog_origin.js`), süzgeç (Tüm kaynaklar / Gerçek uçuş /
+  Simülasyon) ve başlığa tıklayarak sıralama (Log dosyası, Kaynak, Uçuş tarihi, Havada, Yükleyen); eski "Kaynak" (Araçlar / Saha görevi) sütunu
+  **Bağlam** oldu. Simülatör sihirbazının "Kayıttan oynat" listesinde her satırda kaynak rozeti, **Kaynak** süzgeci (Tümü / Gerçek / Simülasyon),
+  sıralama (yeni/eski, uçuş süresi, boyut, kaynak, ad) ve "N gerçek · M simülasyon" sayacı; seçimler tercihte saklanır.
 - **Boyut/disk:** `SIM_BIN_MAX_MB` (varsayılan 500) — aşan dosya kaydedilmez (`error`, uyarı) ve silinir; oturum süresi `SIM_MAX_MINUTES` (120) ve
   LOG_DISARMED 0 ile boyut sınırlı kalır (ArduCopter ≈ 1–2 MB/dk). Sahte kip (`HEPGO_SITL=0`): `MANAGER.sahte_bin_dosyalari` test kancası.
 - **Doğrulama (DEV, gerçek SITL):** `/tmp/flsim/rp2/rp2_e2e.py` — bin:true oturum → arm + takeoff → Bitir → `SIM-…bin` Uçuş Logları'nda (analiz TAMAM)

@@ -210,6 +210,25 @@ def get_replay(sid: int, user=Depends(sim_user)):
                         headers={'Content-Encoding': 'gzip', 'Cache-Control': 'private, max-age=3600', 'Vary': 'Accept-Encoding'})
 
 
+@router.get('/sessions/{sid}/replay/{k}')
+def get_replay_chunk(sid: int, k: int, user=Depends(sim_user)):
+    """Büyük kayıt (önbellek `lod`): k. zaman parçası — {v, k, a (ilk kare sırası), frames} tam hızda (PARCA_S sn). gzip JSON olduğu gibi."""
+    s = flightsim.MANAGER.get(sid)
+    if s is None:
+        raise HTTPException(404, 'Oturum bulunamadı')
+    if getattr(s, 'mode', 'sitl') != 'replay':
+        raise HTTPException(400, 'Bu oturum kayıttan oynatma değil')
+    if s.state != 'HAZIR':
+        raise HTTPException(409, 'Kayıt henüz hazır değil')
+    if k < 0:
+        raise HTTPException(404, 'Parça bulunamadı')
+    path = flightsim_replay.onbellek_parca_yolu(s.replay['log_id'], k)
+    if not path.exists():
+        raise HTTPException(404, 'Parça bulunamadı')
+    return FileResponse(path, media_type='application/json',
+                        headers={'Content-Encoding': 'gzip', 'Cache-Control': 'private, max-age=3600', 'Vary': 'Accept-Encoding'})
+
+
 @router.get('/sessions/{sid}/live')
 def session_live(sid: int, request: Request, user=Depends(sim_user)):
     """§14 harekât paneli bağlamı (static/ops ?sim=<id>; /api/field/tasks/{id}/live biçimi): sahte görev + tek 'sanal' uçuş + can_command

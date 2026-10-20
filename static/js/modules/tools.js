@@ -1,13 +1,14 @@
 // Araçlar: yazılımdaki yardımcı araçlar. İlk araç: Uçuş Logu Analizi (saha görevinden bağımsız).
 import { api, uploadLarge } from '../api.js';
 import { render3D } from './replay3d.js';
+import { logOrigin, originBadge } from './flightlog_origin.js';
 import { renderPlanner } from './planner.js';
 import { renderProductionErrors } from './prod_errors.js';
 import { renderNetscan } from './netscan.js';
 import { buildFlightReport, printFlightReport } from '../flightreport.js';
 import { icons } from '../icons.js';
 import {
-  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, moduleToolbar, pageHead, progressBar, selectInput, statStrip,
+  clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, moduleToolbar, pageHead, pref, progressBar, selectInput, setPref, statStrip,
   svgIcon, t, toast, uploadPanel,
   toastError,
 } from '../ui.js';
@@ -88,7 +89,10 @@ async function renderFlightLogs(view, ctx) {
   const stats = statStrip();
   const q = h('input', { class: 'input', type: 'search', placeholder: 'Dosya, uçak, pilot, yer ara…', style: { width: '240px' } });
   const st = selectInput(Object.entries(LOG_STATES).map(([k, v]) => [k, v[1]]), { all: 'Tüm durumlar' });
-  const src = selectInput([['tools', 'Araçlar'], ['field', 'Saha görevi']], { all: 'Tüm kaynaklar' });
+  const src = selectInput([['tools', 'Araçlar'], ['field', 'Saha görevi']], { all: 'Tüm bağlamlar' });
+  // Kaynak: gerçek uçuş / simülasyon (SITL) — süzgeç + sütun başlığına tıklayarak sıralama (tercih saklanır)
+  const org = selectInput([['REAL', 'Gerçek uçuş'], ['SIM', 'Simülasyon']], { all: 'Tüm kaynaklar (gerçek + simülasyon)', value: pref('flightlogs.origin', '') });
+  let sort = pref('flightlogs.sort', '-uploaded');
   let logs = [];
 
   go.addEventListener('click', async () => {
@@ -112,17 +116,30 @@ async function renderFlightLogs(view, ctx) {
     }
   });
 
+  const SORT_KEY = {
+    file: l => String(l.file_name || '').toLocaleLowerCase('tr'), origin: l => (logOrigin(l) === 'REAL' ? 0 : 1),
+    flight: l => Date.parse(l.takeoff_utc || l.start_utc || '') || 0, air: l => Number(l.flight_s) || 0, uploaded: l => Date.parse(l.uploaded_at || '') || l.id,
+  };
+  const th = (label, key) => {
+    if (!key) return h('th', null, label);
+    const on = sort.replace('-', '') === key, desc = sort.startsWith('-');
+    return h('th', { class: `sortable ${on ? 'on' : ''}`, title: t('Sıralamak için tıklayın'), onclick: () => { sort = on && !desc ? `-${key}` : key; setPref('flightlogs.sort', sort); draw(); } },
+      t(label), on ? (desc ? ' ▼' : ' ▲') : '');
+  };
   const draw = () => {
     stats.set(logStats(logs, 0));
     const rows = logs.filter(l => (!st.value || l.status === st.value) &&
-      (!src.value || (src.value === 'field') === !!l.task_id) &&
+      (!src.value || (src.value === 'field') === !!l.task_id) && (!org.value || logOrigin(l) === org.value) &&
       matches(q.value, l.file_name, l.aircraft, l.pilot, l.location, l.note, l.task_code, l.vehicle, l.uploaded_by_name));
+    const kf = SORT_KEY[sort.replace('-', '')], dir = sort.startsWith('-') ? -1 : 1;
+    if (kf) rows.sort((a, b) => { const x = kf(a), y = kf(b); return (x < y ? -1 : x > y ? 1 : b.id - a.id) * dir; });
     clear(list, rows.length ? h('div', { class: 'table-wrap' }, h('table', null,
-      h('thead', null, h('tr', null, ['Log dosyası', 'Uçak', 'Pilot', 'Uçuş tarihi', 'Havada', 'Kaynak', 'Durum', 'Yükleyen', ''].map(t => h('th', null, t)))),
+      h('thead', null, h('tr', null, th('Log dosyası', 'file'), th('Kaynak', 'origin'), th('Uçak'), th('Pilot'), th('Uçuş tarihi', 'flight'), th('Havada', 'air'), th('Bağlam'), th('Durum'), th('Yükleyen', 'uploaded'), th(''))),
       h('tbody', null, rows.map(l => h('tr', { class: l.status === 'TAMAM' ? 'click' : '', onclick: e => {
         if (l.status === 'TAMAM' && !e.target.closest('button')) location.hash = `#/tools/flight-log/${l.id}`;
       } },
         h('td', null, h('b', null, l.file_name), h('div', { class: 'small muted' }, l.vehicle || '')),
+        h('td', null, originBadge(l)),
         h('td', null, l.aircraft || '—'),
         h('td', { style: { whiteSpace: 'normal' } }, l.pilot || '—'),
         h('td', null, fmtDateTime(l.takeoff_utc || l.start_utc)),
@@ -139,6 +156,7 @@ async function renderFlightLogs(view, ctx) {
   q.addEventListener('input', draw);
   st.addEventListener('change', draw);
   src.addEventListener('change', draw);
+  org.addEventListener('change', () => { setPref('flightlogs.origin', org.value); draw(); });
 
   clear(view,
     pageHead('Uçuş Logu Analizi', { back: '#/tools', sub: 'Uçuş logu (.bin/.log) → rapor' }),
@@ -149,7 +167,7 @@ async function renderFlightLogs(view, ctx) {
         h('div', { class: 'field', style: { flex: '0 0 auto' } }, go)),
       progress]),
     h('h2', { style: { fontSize: '16px', margin: '4px 0 10px' } }, 'Analiz geçmişi'),
-    h('div', { class: 'filters' }, q, st, src),
+    h('div', { class: 'filters' }, q, org, st, src),
     list);
   await load();
   every(5000, () => load().catch(() => {}));

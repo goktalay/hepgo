@@ -2153,7 +2153,8 @@ CREATE TABLE IF NOT EXISTS flight_logs (
     uploaded_at TEXT NOT NULL,
     analyzed_at TEXT,
     flight_id   INTEGER REFERENCES field_flights(id) ON DELETE SET NULL,
-    source      TEXT NOT NULL DEFAULT 'UPLOAD'   -- UPLOAD (elle yükleme) | BRIDGE (dron köprüsünden uçuş sonrası .bin)
+    source      TEXT NOT NULL DEFAULT 'UPLOAD',  -- UPLOAD (elle yükleme) | BRIDGE (dron köprüsünden uçuş sonrası .bin)
+    origin      TEXT                             -- SIM (SITL simülasyon logu) | REAL (gerçek uçuş) | NULL (dosya okunamadı); flight_log_origin_doldur
 );
 CREATE INDEX IF NOT EXISTS ix_flight_logs_task ON flight_logs(task_id);
 
@@ -3302,6 +3303,9 @@ def _migrate(conn):
         conn.execute('ALTER TABLE companies ADD COLUMN is_supplier INTEGER NOT NULL DEFAULT 0')
     if 'source' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # log kaynağı: UPLOAD | BRIDGE (dron köprüsü)
         conn.execute("ALTER TABLE flight_logs ADD COLUMN source TEXT NOT NULL DEFAULT 'UPLOAD'")
+    if 'origin' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # uçuşun kendisi: SIM (SITL simülasyonu) | REAL (gerçek uçuş)
+        conn.execute('ALTER TABLE flight_logs ADD COLUMN origin TEXT')
+    flight_log_origin_doldur(conn)
     if 'fuel' not in {r[1] for r in conn.execute('PRAGMA table_info(flight_logs)')}:   # uçuş yakıtı: başlangıç/bitiş litre + itkiye göre dağıtılmış tüketim özeti (JSON)
         conn.execute('ALTER TABLE flight_logs ADD COLUMN fuel TEXT')
     if 'duration_min' not in {r[1] for r in conn.execute('PRAGMA table_info(online_meetings)')}:   # görüntülü toplantı süresi (davet metni: 15:00 – 16:00)
@@ -3559,3 +3563,22 @@ def next_code(conn, table, column, prefix, width=4):
         (f'{prefix}-%',)).fetchone()
     n = int(last[0].rsplit('-', 1)[1]) + 1 if last else 1
     return f'{prefix}-{n:0{width}d}'
+
+
+def flight_log_origin_doldur(conn):
+    """flight_logs.origin boş satırlar için kaynak çıkarımı (idempotent; yalnız NULL satırlar, uygulama açılışında):
+    1) Uçuş Simülatörü kaydı: drone_sim_runs.bin_log_id bağı ya da flightsim_bin'in yazdığı iz (dosya adı SIM-<oturum>-<tarih>.bin +
+       aircraft 'Simülatör · …' / not 'Uçuş Simülatörü oturumu #…') → SIM.
+    2) Kalanlar: .BIN dosyasının başındaki SITL işareti (ArduPilot yalnız SITL derlemesinde SIM_* parametreleri yazar; dataflash.sim_isareti,
+       dosyanın ilk 4 MB'ı) → SIM / REAL. Dosya yoksa NULL kalır (bir sonraki açılışta yeniden denenir)."""
+    if not conn.execute("SELECT 1 FROM flight_logs WHERE origin IS NULL LIMIT 1").fetchone():
+        return
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'drone_sim_runs'").fetchone():
+        conn.execute("UPDATE flight_logs SET origin = 'SIM' WHERE origin IS NULL AND id IN (SELECT bin_log_id FROM drone_sim_runs WHERE bin_log_id IS NOT NULL)")
+    conn.execute("""UPDATE flight_logs SET origin = 'SIM' WHERE origin IS NULL AND file_name GLOB 'SIM-[0-9]*-[0-9]*.bin'
+                    AND (aircraft LIKE 'Simülatör%' OR note LIKE 'Uçuş Simülatörü oturumu%')""")
+    from .dataflash import sim_isareti
+    for lid, f in conn.execute('SELECT id, file FROM flight_logs WHERE origin IS NULL').fetchall():
+        isaret = sim_isareti(config.UPLOAD_DIR / f) if f else None
+        if isaret is not None:
+            conn.execute('UPDATE flight_logs SET origin = ? WHERE id = ?', ('SIM' if isaret else 'REAL', lid))

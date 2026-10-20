@@ -1492,7 +1492,7 @@ hedefleri de hızlandırır, istemci hedefi dronun enterpolasyon oynatma başıy
 
 **3B** (`flightsim3d.setTargets`): modeller ×2,5 (dron gibi), yatış + yön, pervaneler döner (bulanık disk), ekran boyutlu etiket (ad, uzaklık, bağıl irtifa; yarıçap içinde
 sarı), kesikli kırmızı yörünge çizgisi, önlemede genişleyen halka (`flashTarget`), sol üstte **radar** (burun yukarı, menzil basamağı en uzak hedefe göre). Tüm kamera
-kiplerinde ve PiP'te görünür; `targetsInfo()` teşhis.
+kiplerinde ve PiP'te görünür; `targetsInfo()` teşhis. Gimbal/FPV kiplerinde HUD/OSD sembolojisi (§24.5) etiketlerin yerini alır.
 
 **Önleme** (`HedefIzleyici`; istemci eşleniği `createInterceptTracker`): ARM'lı dron bir hedefe yarıçap içine girince önleme (geçiş başına bir; çıkış 1,5×R histerezisi);
 WS `{t:'target', kind:'intercept', i, name, dist_m, n, first, after_s, tt, state}` + olay şeridi "ÖNLEME · ad · m · ilk önleme N sn" (sev 5) + toast. Özet raporda
@@ -1508,6 +1508,47 @@ irtifa MSL, yön/hız, SIMULATED bayrağı; yalnız GCS'ye — SITL'e gitmez) �
 veri sayfası), ZALA Lancet-3 `tgt_lancet` (0,45 MB; seyir 80–110 → 110, dalış 300), Altius-600M `tgt_altius` (0,25 MB; kullanıcının ZIP'indeki FBX three.js FBXLoader ile;
 seyir ~60 / azami ~90 km/h — kaynaklar tutarsız: bazıları knot verir, kullanıcı değeri alındı), Octopus-100 `tgt_octopus` (1,10 MB; normatif azami 300 (geliştirilmiş 360),
 seyir kaynakta yok → 200 km/h seçildi: elektrikli pervaneli önleyicilerde seyir/azami ≈ 0,6–0,7). Dahili modellerin hedef hızları `BUILTIN_HIZ`.
+
+### 24.4 Sihirbazda hedefin 3B önizlemesi (`static/js/modules/flightsim_tgtview.js`; `flightsim3d.createModelViewer`)
+Kullanıcı isteği: "Simülasyonda seçilen hedefi girmeden önce 3 boyutlu olarak görelim." Her hedef kartında (HEPGO "◎ Hedefler", SIMUMAV HEDEFLER adımı) seçili modelin
+dönen 3B görüntüsü: fareyle sürükle → döndür, tekerlek → yakınlaştır (0,4–4×), çift tık → sıfırla; etkileşimden 2,5 sn sonra kendiliğinden döner. Tuvalin altında
+ölçek çubuğu (40–110 px'e sığan 5 cm…50 m adımı; `niceScale`) ve zemin ızgarası adımı (10 cm / 25 cm / 50 cm / 1 m — modelin boyuna göre); altında model adı,
+seyir/azami hız ve **gerçek boyut** (sınır kutusu x × y × z m, ×1; uçuşta modeller ×2,5 çizilir — görünürlük).
+- **Tek WebGL bağlamı:** kartlar 2B tuvaldir. Görüntü 3B katmanın model görüntüleyicisinden kopyalanır: aynı renderer'da ayrı küçük sahne (ışıklar + ızgara) →
+  render hedefi (MSAA) → `readRenderTargetPixels` → `putImageData`. HEPGO'da sihirbazın dünya önizlemesinin (preview sim) renderer'ı paylaşılır; SIMUMAV hedef
+  adımında başka 3B sahne olmadığından tek bir **stüdyo** bağlamı açılır (`createFlightSim3D(div, null, {studio: true})`: dünya/dron/kare döngüsü kurulmaz, tuval
+  gizli) ve adımdan çıkınca / BAŞLA'da / sayfa değişiminde kapatılır. Sim dispose'u görüntüleyicileri de temizler.
+- **Kare bütçesi:** tur başına (~30 fps) EN ÇOK BİR kart çizilir: etkileşimdeki kart çoğu turda, diğer görünür kartlar sırayla (IntersectionObserver; DOM'dan düşen
+  kart bırakılır). Modeller anahtar başına bir kez kurulur (`buildTargetModel`; GLB hatasında delta yedeği). Kartlar yeniden çizildiğinde önizleme öğesi hedef nesnesine
+  bağlı (WeakMap) taşınır — yön/sayı değişiminde görüntü sıfırlanmaz.
+
+### 24.5 F-16 tarzı hedef sembolojisi — gimbal HUD'u ve FPV OSD'si (`static/js/modules/flightsim_tgthud.js`)
+Kullanıcı isteği: "Uçarken gimbal ve FPV modundayken aynı F-16 uçaklarında olduğu gibi hedefler prizma şeklinde görünsün, HUD'un ortasından hedefe doğru çizgi
+çizilsin, hedef ekrandan çıkarsa hedefin yönüne doğru tarif etsin."
+- **Veri:** `sim.targetsHud()` SON render edilen ana kameranın pozunu (konum, ileri/sağ/yukarı, tan(FOV/2), en-boy; FPV'de CAM_FRAG balıkgözü `k/scale`) ve her hedefin
+  **yönlendirilmiş sınır kutusunun 8 köşesini** (gövde çerçevesindeki kutu × gövde matrisi; yatış/yön dahil) dünya uzayında verir + hız, uzaklık, ΔH, yarıçap içi,
+  önleme olayından sonraki 2 sn (`flash`). HUD (`flightsim_hud.js`, gimbal 'fpv') ve OSD (`flightsim_fpv_osd.js`, FPV 'pilot') her karede `ctx.targets()` ile okur,
+  saf `symbology()` ekran pikseline çözer, `drawSymbology()` kendi 2B tuvaline çizer (DOM yok; HUD/OSD tuvalleri ekran kaydına girer → kayıtta ve kayıttan oynatmada da görünür).
+- **İzdüşüm:** kamera uzayı xc = d·sağ, yc = d·yukarı, zf = d·ileri; ekran = 0,5 + xc/(zf·tan·en-boy)/2, 0,5 − yc/(zf·tan)/2. FPV'de görünen nokta balıkgözü tersiyle
+  (`barrelScreen`: q = d·(1 + k·|d|²)·scale sabit nokta yinelemesi) — prizma görüntüdeki hedefin üstüne oturur.
+- **Prizma:** 8 köşenin izdüşümünden 12 kenarlı tel kafes (perspektif; hedef döndükçe biçimi değişir). Uzakta küçülür; **en küçük boyut** 22 px × ölçek — merkez
+  etrafında büyütülür (biçim korunur). Kilitsiz hedefte üstte numara, altta menzil.
+- **Kilit (TD kutusu):** varsayılan **oto = en yakın hedef**; **Tab / Shift+Tab** sıradaki/önceki hedefe kilitlenir (i sırası, döngü; kilitli hedef düşerse oto).
+  Kilitli hedefte prizmayı saran kare TD kutusu (en az 34 px, **dolgulu köşeler**) + veri bloğu: `T<n> <ad>`, menzil (m/km) + kapanma hızı `Vc ±m/s`
+  (−d·(v_hedef − v_dron)/|d|), `ΔH ±m`. HUD ipucu satırına "· Tab: hedef" eklenir.
+- **Target Locator Line (TLL):** boresight'tan (HUD W işareti / OSD merkez işareti) kilitli hedefe; TD kutusunun kenarında biter (boresight kutunun içindeyse çizilmez).
+- **Ekran dışı:** hedef ekran dışında ya da kameranın arkasındaysa ekran merkezli elipsin kenarında (HUD: başlık şeridinin altında, alt çubuğun üstünde) dışa bakan
+  ok + numara; kilitli hedefte dolu ok, TLL oka uzanır, yanında **sapma açısı** (boresight'tan °, 0–180) + menzil. Yön **bölmeden** (xc, −yc) alınır → arka yarım
+  kürede de doğru taraf (ndc bölümü arkada işareti çevirirdi; test). Tam arkadaki hedef: aşağı ok.
+- **Önleme:** hedef önleme yarıçapı içindeyse (ya da önleme olayından sonraki 2 sn) prizma ve TD kutusu yanıp söner, kutunun altında **"ÖNLEME"** (İng. INTERCEPT)
+  ibaresi (ekran dışındaysa ok etiketinin altında).
+- **Renk:** HUD rengi (yeşil/beyaz/amber; Shift+H) ya da OSD beyazı + siyah dış çizgi → termal/gece görüşü görüntüsünde de okunur. Araç kameralarında HUD/OSD
+  sembolojiyi çizerken (son 3 sn) sahnedeki ad/uzaklık etiketleri gizlenir (tekrar etmesin); takip/serbest/yer kiplerinde etiketler sürer. PiP OSD'sine eklenmedi
+  (küçük pencerede okunmaz; ana görüntü sembolojiyi taşır).
+- **Maliyet:** hedef başına 9 nokta izdüşümü + ≤ 30 çizgi; DOM ölçümü yok. Teşhis: `.fs-mhud.__hud.targets()` / `.fs-osd.__osd.targets()` (kilit, ok açıları),
+  `sim.targetLock`, `sim.cycleTarget(±1)`.
+- **Testler:** `node tests/test_flightsim_tgthud.mjs` (izdüşüm, balıkgözü tersi, ekran dışı yön — arka yarım küre, elips kenarı, en küçük boyut, Vc, TLL kutu girişi,
+  hedef seçimi, symbology bütünü, çizim duman testi; önizleme ölçek çubuğu). Görsel: `tests/tgthud_shots_hepgo.py`, `tests/tgthud_shots_simumav.py` → /tmp/tgthud-shots.
 
 ## 25. INTERCEPTOR — 4 pervaneli tailsitter (`app/flightsim_icept.py`; `drone_sitl.TIP_ESLEME['interceptor']`)
 Kullanıcı isteği: "4 pervane ile dikey kalkıp havada yatay hareket ediyor, o yüzden 400 km/h hızlara çıkabiliyor; ayrı bir tür olarak INTERCEPTOR altında ekle."

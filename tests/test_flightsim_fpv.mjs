@@ -4,7 +4,8 @@
 // Çalıştırma: node tests/test_flightsim_fpv.mjs
 import assert from 'node:assert/strict';
 import { homeVector, relBearing, horizonLine, battPct, cellCount, osdWarnings, analogNoise, fmtClock, homeArrow, createFpvPrefs, wrap180, LS, LOW_BATT_PCT, LOW_ALT_M } from '../static/js/modules/flightsim_fpv_osd.js';
-import { CAMERA_MODES, PILOT_FOV, PIP_SIZE, PIP_FPS, nextCameraMode } from '../static/js/modules/flightsim3d.js';
+import { CAMERA_MODES, PILOT_FOV, PIP_SIZE, GIMBAL_FOV, nextCameraMode } from '../static/js/modules/flightsim3d.js';
+import { pipInterval } from '../static/js/modules/flightsim_camera.js';
 import { fpvParams, PILOT_BOOST, createEngineAudio } from '../static/js/modules/flightsim_audio.js';
 
 let n = 0;
@@ -23,9 +24,10 @@ test('C döngüsü: follow → pilot → fpv → free → ground → follow; bil
   assert.equal(nextCameraMode('follow'), 'pilot'); assert.equal(nextCameraMode('pilot'), 'fpv'); assert.equal(nextCameraMode('fpv'), 'free');
   assert.equal(nextCameraMode('free'), 'ground'); assert.equal(nextCameraMode('ground'), 'follow'); assert.equal(nextCameraMode('yok'), 'follow');
 });
-test('FPV görüş açısı 120° (90–150, adım 5); PiP 240×135 @ 20 fps', () => {
+test('FPV görüş açısı 120° (90–150, adım 5); PiP varsayılan 240×135, 30 fps (yavaşta 15; §22.4); gimbal 78°', () => {
   assert.deepEqual(PILOT_FOV, { def: 120, min: 90, max: 150, step: 5 });
-  assert.equal(PIP_SIZE.w, 240); assert.equal(PIP_SIZE.h, 135); assert.equal(PIP_FPS, 20);
+  assert.equal(PIP_SIZE.w, 240); assert.equal(PIP_SIZE.h, 135); assert.equal(GIMBAL_FOV, 78);
+  close(pipInterval(16), 1000 / 30); close(pipInterval(40), 1000 / 15);
 });
 
 console.log('OSD yardımcıları');

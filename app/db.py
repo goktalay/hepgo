@@ -1665,6 +1665,7 @@ CREATE TABLE IF NOT EXISTS drone_sim_runs (
     world           TEXT,                               -- JSON: dünya ayarları
     launch          TEXT,                               -- JSON: kalkış yöntemi (sabit kanat)
     layout          TEXT,                               -- §13.1 kontrol düzeni: classic | elevon | vtail (sabit kanat; SITL'de fiilen uçan)
+    camera          TEXT,                               -- §22.3 kamera türü: day | thermal | night (son seçim; kayıttan oynatma aynı türle)
     started_at      TEXT NOT NULL,
     ended_at        TEXT,
     duration_s      INTEGER,
@@ -2950,8 +2951,8 @@ def _migrate(conn):
         if inv_cols and col not in inv_cols:
             conn.execute(f'ALTER TABLE team_meeting_invites ADD COLUMN {col} TEXT')
     run_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_sim_runs)')}
-    for col, ddl in (('power', 'TEXT'), ('fuel_used_l', 'REAL'), ('fuel_km_per_l', 'REAL'), ('elec_wh', 'REAL'), ('elec_w_avg', 'REAL'), ('speedup_max', 'REAL'), ('layout', 'TEXT')):
-        if run_cols and col not in run_cols:   # Uçuş Simülatörü §23 güç ve yakıt sütunları; §13.1 kontrol düzeni (layout)
+    for col, ddl in (('power', 'TEXT'), ('fuel_used_l', 'REAL'), ('fuel_km_per_l', 'REAL'), ('elec_wh', 'REAL'), ('elec_w_avg', 'REAL'), ('speedup_max', 'REAL'), ('layout', 'TEXT'), ('camera', 'TEXT')):
+        if run_cols and col not in run_cols:   # Uçuş Simülatörü §23 güç ve yakıt sütunları; §13.1 kontrol düzeni (layout); §22.3 kamera türü
             conn.execute(f'ALTER TABLE drone_sim_runs ADD COLUMN {col} {ddl}')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
     if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün

@@ -27,6 +27,7 @@ birebir uçar. HEPGO, SITL ile Mission Planner arasında MAVLink köprüsüdür 
 | `POST /sessions/{id}/cmd` | `{name, params}`; name ∈ `arm` (force), `disarm`, `mode` (`params.mode` ArduPilot mod adı), `takeoff` (`params.alt`; sabit kanatta yönteme göre dizi + WS `launch` olayları, §13), `rtl`, `reset` (SITL'i aynı ayarlarla yeniden başlatır), `crash` (ön yüz çarpışma: zorla disarm + olay), `set_home`, `rc` (`params.ch` 8 kanal 1000–2000, RC_CHANNELS_OVERRIDE; ileride Gamepad), `speed` (`params.factor` 1 \| 2 \| 4 \| 8 → SITL `SIM_SPEEDUP` canlı, §23) → `{ok}` |
 | `GET /power-defaults?type&drone_id` | §23 sihirbaz "Güç ve yakıt": `{type, defaults, suggested, from_drone, limits, stock_max_ms, thr_mul, thr_scale_supported, speedups}` |
 | `GET /drones` | sihirbaz dron kaydı listesi; her satırda `power` (dron kaydındaki güç/yakıt önerisi, §23) |
+| `/presets…` | §27 Kayıtlı Simülasyonlar: liste, pilotlar, oluştur/güncelle/sil, `POST /presets/{id}/start` (kayıtlı gövdeyle oturum) |
 | `GET/PUT /api/drone/drones/{id}/sim-power` | dron kaydı güç/yakıt seçenekleri (`drone_sitl_options`: max_speed_ms, fuel_l, fuel_km_per_l_last, elec_cells, elec_mah, elec_w_last; PUT yalnız gönderilen alanlar, `null` siler; §23) |
 
 `session` = `{id, type, model:{id,name,source,type,orient,glb_url,thumb_url,has_prop,ready}, airframe, center:{id,name,lat,lon,alt}, world,
@@ -155,7 +156,7 @@ Kayıttan oynat) + **ilerleme şeridi** (numaralı adımlar; geçilmiş ve geçe
 mavi halkalı; altında ilerleme çizgisi). Şeritte geri adımlara her zaman, ileri adımlara yalnız aradaki adımlar geçerliyse tıklanır (`canGoto`). Gövde:
 solda adım başlığı ("Adım 2 / 8", başlık, isteğe bağlı rozeti, tek satır açıklama) + yalnız o adımın alanları; sağda **3B önizleme** (Araç / Uçuş logu /
 Dünya / Kalkış adımlarında görünür; diğerlerinde gizlenir ama yaşar — model küçük resimleri ve hedef kartı önizlemeleri aynı WebGL bağlamını kullanır).
-Altbilgi: **İptal et** · gerekçe metni · **‹ Geri** · **İleri ›** (son adımda **▶ Başlat** / kayıtta **▶ Oynat**). Klavye: **Enter = İleri** (son adımda
+Altbilgi: **İptal et** · gerekçe metni · **‹ Geri** · **İleri ›** (son adımda **Kaydet** + yanıp sönen **Uç** — §27 / kayıtta **▶ Oynat**). Klavye: **Enter = İleri** (son adımda
 Başlat; metin alanı/seçim/bağlantı/altbilgi/şerit ve sayı kutularında değil — sayı kutusunda Enter değeri uygular), **Esc = kapat** (sayı kutusunda
 önce düzenlemeyi geri alır). ≤ 860 px (telefon/dar tablet): tek sütun, önizleme içeriğin altında, şeritte yalnız geçerli adımın adı, düğmeler tam
 genişlik ve gerekçe kendi satırında; 860–1100 px önizleme sütunu 320 px.
@@ -213,6 +214,7 @@ Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya veri
   seçenekleri (yeni fırlatıcı eklenince adım açılır), `canGoto`/`reconcileStep`/`createStepper` (İleri doğrulamaya bağlı, şerit durumları), `fs_inputs`
   (sayı ayrıştırma — virgül, adım/sınır oturtma, logaritmik ölçek gidiş-dönüş, 0 içeren log aralığı, değer kutusu uygulama). Görsel + uçtan uca:
   `./.venv/bin/python -m tests.wizard_shots_hepgo` → `/tmp/wizard-shots` (açık/koyu × masaüstü/tablet/mobil, her adım; sihirbazdan gerçek Başlat ve gövde denetimi).
+- §27 Kayıtlı Simülasyonlar: `node tests/test_flightsim_saved.mjs`, `tests.test_flightsim preset_testleri`, görsel `./.venv/bin/python -m tests.saved_shots_hepgo` (ayrıntı §27).
 - `node tests/test_flightsim_interp.mjs` (tarayıcısız; vendor three.module): telemetri zaman çizgisi (§5) — sentetik 50 Hz sabit kanat dairesi
   (ATTITUDE/GLOBAL_POSITION_INT farklı damgalı), ağ bozulması (jitter 30/60 ms, %5/%10 kayıp, sırası bozuk teslim, SITL saati %3 yavaş), 60/25
   fps sanal rAF; eski algoritma (9e639ef) aynı arayüzle karşılaştırılır: yeni jerk ≤ 0,02°, DR ≤ 2/dk, maks adım < 4× ideal, yarım karede konum
@@ -1325,7 +1327,7 @@ oturumu da kaydedilir (mode replay, source_log_id, parametre/script yok). Sunucu
 **Video bağı:** `POST /rec/{id}/finish` (share true/false) ve `/share` → `flightsim_runs.video_bagla(sid, rec_id, post_id, path)`: oturum açıksa
 `s.video` (kapanışta satıra), kapanmışsa aynı rec_id ya da aynı session_id'li son satır güncellenir (yarım kayıt sonradan paylaşımı dahil).
 
-**REST (`/api/drone/sim/runs`; okuma `drone.sim`):** `GET /runs?from&to&center_id&type&owner_id&result&mode&q&sort&page` → `{items, total,
+**REST (`/api/drone/sim/runs`; okuma `drone.sim`):** `GET /runs?from&to&center_id&type&owner_id&result&mode&q&sort&page[&preset=free|<id>&per_page]` (§27) → `{items, total,
 page, pages, per_page:25, facets:{centers[{id,name,n}], owners[{id,name,n}], types[]}}`; `sort` ∈ started_at | owner | type | center |
 duration_s | result | mode (başında `-` azalan; ikincil anahtar id aynı yön); `q` merkez/kullanıcı/model/dron kodu/log adı LIKE ya da oturum no;
 `from/to` `YYYY-MM-DD` (started_at günü); geçersiz sayı 400. Satır alanları + `bin_status/bin_file_name`, `source_file_name`, `has_params/
@@ -1923,3 +1925,94 @@ Görsel: `tests/launcher_shots_hepgo.py` (→ /tmp/launcher-shots; `LAUNCHER_REA
 **Sınırlar:** SITL'de hücre/tüp fiziği yok (araç her zaman ev noktasında yerde, kuyruk üstünde doğar; düzenek görseldir); el fırlatıcısında SITL 8 m dikey + yön
 hizalama (~1–3 sn) sonra sabit kanada geçer — 3B'de tüpten nişan açısıyla çıkış ofset sönümüyle SITL yoluna bağlanır; nişan noktasında 90+ m/s ile loiter geniş
 dairedir (pilot devralır); `?mock=1` istemci kipi aşamaları zamanlayıcıyla taklit eder.
+## 28. Kayıtlı Simülasyonlar — Uç / Kaydet, pilot ataması, azami süre-menzil, üç sütunlu ekran (`app/flightsim_presets.py`, `app/routers/flightsim_presets.py`, `static/js/modules/flightsim_saved.js`, saf `flightsim_presets.js`; tablo `drone_sim_presets`, `drone_sim_runs.preset_id`)
+Kullanıcı isteği (özet): **(4)** "Simülasyonlarda başlatmak zorunlu olmasın: tasarlayan yönetici pilot atayabilsin — sihirbazda pilot yetkisi olan kişilerden
+(kendisi de seçilebilir) pilot seçimi." **(5)** "Sihirbazın son adımında 'Uç' düğmesi yanıp sönsün, yanında 'Kaydet'." **(6)** "Kaydet ayarları kaydeder; Uçuş
+Simülatörü altında 'Kayıtlı Simülasyonlar': atanan pilot bunu defalarca, farklı zamanlarda çalıştırabilir, her seferinde yeniden ayar yapmaz." **(7)** "Kaydederken
+isim sorulur (benzersiz; açıklama isteğe bağlı)." **(8)** "Kartta Başlat / Düzenle / Sil." **(9)** "Başlat → bu ayarlarla doğrudan başlar (sihirbaz atlanır; yalnız
+onay/özet ve geri sayım)." **(11)** "Sihirbazın sonunda benzin, elektrik, azami hız vb. değerlere göre azami uçuş süresi ve azami menzil (yakıt ve batarya ayrı,
+sınırlayan vurgulu)." **(12)** "Alt modül ekranı: en solda kayıtlı sihirbaz kartları, en başta 'Serbest Uçuş'; seçilince ortada o ayarlarla yapılan uçuşlar kart
+olarak; uçuş kartı seçilince sağda özet ve üstte uçulan model 3B olarak sürekli dönerek." **Yetki kararı (kullanıcı)**: başlatmayı atanan pilot ve tasarlayan yapar,
+diğer pilotlar yalnız görür; düzenle/sil tasarlayan ve yönetici (ADMIN); atanan pilota bildirim.
+
+**Tablo `drone_sim_presets`** (`CREATE IF NOT EXISTS`, app/db.py): `id, name, description, settings JSON, type, center_id, created_by, pilot_id, created_at, updated_at,
+deleted_at` + indeks pilot_id. `settings` = **oturum başlatma gövdesinin aynısı** (`POST /sessions`, mode sitl; alanlar `flightsim_presets.ALANLAR` = type, center_id,
+world{…, launch}, model, drone_id, rec, power, camera, layout, targets, site, defend — mode/log_id/airframe atılır). Kaydederken **başlatmadaki doğrulayıcılardan**
+geçer (`ayar_dogrula`: tip, etkin merkez, `flightsim_models.coz`, aktif dron kaydı, `kamera_dogrula`, `flightsim_power.dogrula`, `layout_dogrula`, `flightsim_targets.
+dogrula`, `gcs_dogrula`/`savunma_dogrula`, `world_dogrula`; oturum AÇILMAZ, limit/SITL denetimi başlatırken) ama **normalize edilmeden** saklanır (başlatırken yeniden
+doğrulanır; sonradan değişen varsayılanlar uygulanır). Silme **yumuşak** (`deleted_at`). **Göç** (idempotent): `drone_sim_runs.preset_id INTEGER REFERENCES
+drone_sim_presets(id) ON DELETE SET NULL` + `ix_drone_sim_runs_preset`. Oturuma `s.preset_id` işlenir → kapanışta `flightsim_runs._oturum_alanlari` satıra yazar
+(serbest sihirbaz ve kayıttan oynatma NULL).
+
+**Ad benzersizliği**: silinmemişler arasında; baş/son/ardışık boşluk ve büyük/küçük harf (Türkçe İ/I dahil, NFC) duyarsız (`ad_anahtari` ↔ JS `nameKey`); ≤ 80
+karakter; açıklama ≤ 500. Çakışma → 409 (pencerede kırmızı uyarı, Kaydet pasif; sunucu 409'u da aynı yere yazılır). Silinmiş kaydın adı yeniden kullanılabilir.
+
+**Pilotlar** (`GET /presets/pilots`): etkin kullanıcılardan Uçuş Simülatörü'nde **yazma** izni olanlar (Rol Yönetimi `rbac.writable` ∋ `drone.sim`; PILOT rolü
+`drone` modülünden miras alır) ya da MASTER — oturum açıp uçurabilmek yazma ister; PILOT rolündekiler önce (`pilot: true`), kendisi `(ben)` ile seçilebilir. Salt
+okuyan/yetkisiz kullanıcı atanamaz (400). Pilot atanmazsa (NULL) tasarlayan uçar.
+
+**Yetki** (`baslatabilir` / `duzenleyebilir`; satırda `can_start`, `can_edit`, `mine`): Başlat = `pilot_id` ya da `created_by` (MASTER her zaman); Düzenle/Sil =
+`created_by` ya da ADMIN rolü / MASTER. Liste herkese (drone.sim okuma). Yazma uçları ayrıca `drone.sim` yazma izni ister (salt okuyan 403).
+
+**Bildirim**: atamada (oluştur; düzenlemede yalnız pilot DEĞİŞİNCE; kendine atamada değil) anlık push `push.send` (`Size bir simülasyon atandı`, gövde `ad · tasarlayan`,
+url `/app#/drone/sim?tab=saved&preset=<id>`); zil türü **`sim-assigned`** (`notifications.sim_assigned`; `push: False` — tarama ikinci kez atmaz): bana atanan,
+başkasının tasarladığı, silinmemiş ve **henüz benim uçmadığım** kayıtlar → ilk uçuşla kendiliğinden düşer. Grup "Dron Yönetimi".
+
+**REST (`/api/drone/sim/presets`)**: `GET` → liste (son güncellenen önce; satır + `settings` + ad alanları `created_by_name/pilot_name/center_name` + `run_count`,
+`last_run_at` + `can_start/can_edit/mine` + **`budget`** = `menzil_sure`) · `GET /pilots` · `GET /{id}` · `POST {name, description?, pilot_id?, settings}` → 201 ·
+`PUT /{id}` (aynı gövde; 403/404/409/400) · `DELETE /{id}` (yumuşak) · `POST /{id}/start {rec?}` → 201 `session` + `preset {id, name}` (oturum açma çekirdeği
+`routers.flightsim.oturum_ac` kayıtlı gövdeyle; `rec` verilirse yalnız .bin seçimi uçanınki; hatalar başlatma ucuyla aynı 400/409/503; yetkisiz 403). İz kaydı
+(audit) oluştur/güncelle/sil. **Kayıtlar** `GET /runs?preset=free|<id>&per_page≤100`: `free` = `preset_id` yok ya da kayıt silinmiş; satırda `preset_name`,
+`preset_deleted_at`.
+
+**Azami uçuş süresi / menzil** (`flightsim_power.menzil_sure` ↔ `flightsim_power.js flightBudget`; sayılar birebir, yuvarlama `floor(x·10ⁿ + 0,5)/10ⁿ`): §23 modeli
+SEYİR koşulunda çözülür — uçakta seyir hızı = azami × AIRSPEED_CRUISE oranı (`hiz_parametreleri` ile aynı 12/22; INTERCEPTOR 0,8 = `flightsim_icept.CRUISE_ORAN`),
+seyir gazı = (v_seyir/v_azami)² (sürükleme ∝ V², tam gaz = azami hız); kopterde 10 m/s (WPNAV_SPEED), gaz 0,5 (askı). **Yakıt**: menzil = L × km/L ÷ (0,5 + 0,5·gaz),
+süre = menzil ÷ v_seyir (`yakit_lpm`'in tersi). **Batarya**: süre = Wh ÷ W (servo ek yükü hariç), menzil = süre × v_seyir. **Sınırlayan** = süresi kısa olan kaynak;
+azami hızda (gaz 1) aynı hesap `*_max`. CAYMAZ varsayılanı (45 m/s, 5 L @ 25 km/L, 4S 10000 mAh 30 W): seyir 88 km/h, gaz %30 → yakıt **2 sa 11 dk / 193 km**
+(sınırlayan), batarya 4 sa 56 dk / 436 km; azami hızda 46 dk / 125 km. Yakıt ve batarya kapalıysa hesap yok.
+
+**Sihirbaz** (§6; `flightsim.js wizardModal`): son adımda (canlı kip) altbilgi **Kaydet** + **Uç** — Uç birincil, **nabız animasyonu** (`fsFlyPulse` 1,4 s parlaklık +
+genişleyen halka `fsFlyRing`; `prefers-reduced-motion: reduce` → animasyon yok, sabit 3 px halka), "Bu ayarlarla şimdi uç (kaydetmeden)" — davranış eski
+Başlat'ın aynısı (kayıttan oynat kipinde "▶ Oynat", Kaydet yok). Özet adımının üstünde **azami süre/menzil kutusu** (iki büyük sayı + Kaynak/Süre/Menzil/Azami
+hızda tablosu; sınırlayan satır turuncu + "Sınırlayan" rozeti; model notu) ve **Pilot ataması** seçimi (yazma izni varsa). **Kaydet** → ad penceresi (ad, açıklama,
+"Atanacak pilot"; canlı benzersizlik uyarısı; Enter = Kaydet, Esc yalnız bu pencereyi kapatır) → `POST /presets` → sihirbaz kapanır, sayfa "Kayıtlı Simülasyonlar"
+sekmesinde yeni kayıt seçili açılır. Gövde `sitlBody()` = Uç'un gövdesiyle aynı (`presetBodyFromSession`). **Düzenle** (`preset.edit`): sihirbaz kayıtlı ayarlarla
+açılır — tip/merkez/dünya (+ tohum, kalkış)/dron kaydı/kontrol düzeni başlangıç durumundan; model `picker.prefer`; güç `powerSec.set` (öneriden SONRA); kamera kartı;
+hedefler `targetsSec.set({items, radius_m})`; saha `createSiteSection({initial})` (kayıtta yoksa kapalı); .bin `recOpts.setBin` — Uç gizli, **Kaydet (güncelle)**
+birincil, ad penceresi önceden dolu → `PUT`. Başlık "Kayıtlı simülasyonu düzenle: <ad>". Kayıtlı ayar varken `fs.wz.last` önerisi kullanılmaz/yazılmaz.
+**Başlat** (`preset.quick`): aynı pencere yalnız özet adımıyla (kip/şerit, Geri, Düzenle düğmeleri, Kaydet gizli), başlıkta kayıt adı + açıklama + pilot/tasarlayan,
+azami süre/menzil, kayıt seçenekleri (ekran kaydı/.bin uçanın tercihi) → **Uç** → tam ekran + ekran paylaşımı izni (kullanıcı etkinleştirmesi içinde) → **3-2-1 geri
+sayım** (`countdown`; tam ekran örtü, İptal/Esc → geri alınır) → `POST /presets/{id}/start` → mevcut hazırlık kartı (§8) → oturum ekranı. Merkez/model sonradan
+silindiyse özet kartı kırmızı + Uç pasif (gerekçe altbilgide).
+
+**Ekran (§21 sayfası; ilk sekme "Kayıtlı Simülasyonlar", tercih `fs.tab2`; `?tab=saved&preset=free|<id>`)** — `savedScreen` üç sütun (≥ 1280 px: 250–300 px ·
+esnek · 300–380 px): **(1) sol** "Simülasyonlar" başlığı + sayı + "+ Yeni" (sihirbaz); en üstte **Serbest Uçuş** kartı (yeşil simge, serbest uçuş sayısı), altında
+kayıtlı simülasyon kartları: ad, tip · merkez, açıklama (2 satır), pilot (bana atanmışsa vurgulu) + tasarlayan, **azami süre · menzil** çipi (sınırlayan kaynak simgesi;
+ipucu "yakıt/batarya sınırlar"), uçuş sayısı rozeti, başkası bana atadıysa üstte "Size atandı" rozeti; **▶ Başlat** (`can_start` değilse pasif + gerekçe ipucu) ·
+Düzenle / Sil simgeleri (`can_edit`; Sil onaylı — uçuşlar silinmez). **(2) orta** seçimin uçuşları kart ızgarası (`GET /runs?preset=…&per_page=30`, "Daha fazla
+göster"): tarih-saat, sonuç rozeti (çarpışma kartı kırmızı sol kenar), kullanıcı · tip · model, süre · merkez · hız (4×) · ek simgeleri (video/.bin/rapor); serbestte
+silinmiş kayıttan uçuşlar "silinmiş kayıt" rozetiyle; "Tablo görünümü" → Simülasyon Kayıtları sekmesi (filtreli tablo aynen). **(3) sağ** üstte **dönen 3B model**
+(uçuşun `model_id`'si; kütüphane modeli `GET /models/{id}` ile GLB + yönelim; kayıt seçiliyken kaydın modeli), altında özet: tarih + sonuç, kullanıcı · oturum no ·
+kayıt adı, **karolar** (`runFacts`: süre, mesafe, sonuç, çarpışma, önleme n/hedef, yakıt L · km/L [bitti → kırmızı], batarya Wh · W, en yüksek hız, simülasyon hızı,
+kapanış), ayrıntı listesi (merkez, dünya, kalkış, kamera, dron kaydı, bitiş) ve işlemler: **Oynat · Rapor · Video** (+ MASTER **Download ▾** — `runDownloadMenu`,
+tabloyla ortak) · Sil. Kayıtlı simülasyon seçili ve uçuş seçili değilken sağda kaydın özeti: model, açıklama, azami süre/menzil kutusu (dar), pilot/tasarlayan/
+merkez/dünya/kalkış/kamera/hedefler/uçuş sayısı, Başlat/Düzenle. Serbest Uçuş seçilince en yeni uçuş seçili gelir. **Tek WebGL bağlamı**: dönen model flightsim3d
+**stüdyo** kipiyle (`createFlightSim3D(…, {studio: true})` → yalnız `createModelViewer`; dünya/kare döngüsü yok), görüntü 2B tuvale kopyalanır (§24.4 kalıbı;
+≤ 30 fps; görünmezken/sekme gizliyken çizim yok; sürükle → döndür; reduced-motion'da yavaş). Sihirbaz açılırken stüdyo bağlamı **bırakılır** (`suspend3d`;
+sihirbaz önizlemesi kendi bağlamını kurar), kapanınca yeniden kurulur; sayfadan çıkınca dispose. **Düzen**: ≤ 1280 px sol sütun iki satır boyu, uçuşlar ve özet sağda
+alt alta (uçuş seçilince özete kaydırılır); ≤ 760 px tek sütun. CSS modülde (`ensureSavedCss`, HEPGO tema değişkenleri; açık/koyu). Sahte kipte (`?mock=1`) ekran
+"Sahte veri kipinde … yok" notu, Kaydet pasif.
+
+**Testler**: `tests.test_flightsim preset_testleri` — saf hesap (CAYMAZ/kopter/INTERCEPTOR/sınırlayan/yok; `ICEPT_SEYIR_ORAN` = `CRUISE_ORAN`, seyir =
+`hiz_parametreleri` AIRSPEED_CRUISE; yarım yukarı yuvarlama), pilot listesi (PILOT önce, kendisi, salt okuyan/yetkisiz yok), doğrulama 400'leri (merkez, tip, güç,
+dünya, kamera, düzen, model, replay, dron kaydı, hedef; oturum açılmaz), ad (boş/uzun/çakışma: boşluk + Türkçe harf), salt okuyan 403, oluştur (alanlar, budget,
+push yükü), kendine atama bildirimsiz, zil `sim_assigned` (modülsüz kullanıcıya düşmez), diğer pilot/ADMIN/eski pilot yetkileri, pilot başlatır → oturum alanları
+(dünya tohumu, kalkış, güç, kamera, düzen) → kapanışta `preset_id` + zil düşer, tasarlayan başlatır, serbest oturum `preset_id` NULL, `?preset=` süzgeci
+(+ 400, per_page tavanı), `run_count`, düzenle (409, pilot değişince tek bildirim, 400, ADMIN), yumuşak sil (404'ler, serbestte "silinmiş", ad yeniden kullanılır).
+`node tests/test_flightsim_saved.mjs` (10: flightBudget sayıları sunucuyla aynı, budgetView, ad kuralları, gövde alanları, runFacts). Görsel + uçtan uca:
+`./.venv/bin/python -m tests.saved_shots_hepgo` → `/tmp/saved-shots` (sihirbaz son adımı açık/koyu + mobil, ad çakışması/sorma, Esc yalnız ad penceresi, kaydedilen
+seçili; üç sütun açık/koyu × masaüstü/tablet/mobil + dönen model piksel denetimi; Düzenle → önceden dolu → güncelle; pilot girişi: "Size atandı", başkasının
+kaydında Başlat pasif, hızlı başlat özeti, geri sayım, oturum, uçuş kayda bağlı; zil; Sil).
+**Sınırlar**: geri sayım oturum ekranındaki giriş geri sayımından (uçuş içi ayarlar dalı) bağımsızdır — ikisi birlikte gelirse biri kaldırılabilir. Kayıtlı ayardaki
+model/merkez/dron kaydı sonradan silinirse başlatma 400 verir (kart Düzenle ile onarılır). Atama bildirimi tarama tabanlı zil + anlık push'tur; e-posta yok.

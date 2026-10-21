@@ -444,7 +444,8 @@ export function createPowerSection({ h, tr, api = null, getType, getDroneId = ()
     } catch { setValues(defaultsFor(getType()), null); }
   };
   applyType(); drawInfo();
-  return { el, refresh, setType: () => refresh(), values: () => { const o = {}; for (const k of POWER_FIELDS) { if (k === 'max_speed_ms' && !isPlaneType(getType())) continue; if (V[k] != null) o[k] = k === 'elec_cells' ? Math.round(V[k]) : V[k]; } return o; }, get source() { return src; }, inputs: inp };
+  // §27 kayıtlı simülasyonu düzenle / başlat: kayıtlı değerler (refresh'ten SONRA çağrılır; rozetsiz)
+  return { el, refresh, set: vals => setValues(vals || {}, null), setType: () => refresh(), values: () => { const o = {}; for (const k of POWER_FIELDS) { if (k === 'max_speed_ms' && !isPlaneType(getType())) continue; if (V[k] != null) o[k] = k === 'elec_cells' ? Math.round(V[k]) : V[k]; } return o; }, get source() { return src; }, inputs: inp };
 }
 
 // ---------- simülasyon hızı kapsülü (panel + üst çubuk) ----------
@@ -454,4 +455,37 @@ export function createSpeedPill({ h, tr, onPick, cls = '' }) {
   const el = h('div', { class: `pill-group fs-speeds fs-speed-pill ${cls}`, title: tr('Simülasyon hızı') }, btns);
   const set = f => { cur = Number(f) || 1; btns.forEach(b => b.classList.toggle('primary', Number(b.dataset.speed) === cur)); el.classList.toggle('fast', cur > 1); };
   return { el, set, get value() { return cur; }, setEnabled: v => btns.forEach(b => { b.disabled = !v; }) };
+}
+
+// ---------- §27 sihirbaz özeti: azami uçuş süresi ve azami menzil (saf; sunucu eşleniği flightsim_power.menzil_sure — sayılar birebir) ----------
+// Seyir: uçakta hız = azami × AIRSPEED_CRUISE oranı (12/22; INTERCEPTOR 0,8), gaz = (v_seyir/v_azami)²; kopterde 10 m/s (WPNAV_SPEED), gaz 0,5 (askı).
+// Yakıt menzili = L × km/L ÷ (0,5 + 0,5·gaz), süre = menzil ÷ v_seyir · batarya süresi = Wh ÷ W, menzil = süre × v_seyir · sınırlayan = süresi kısa olan.
+// Azami hızda (gaz 1) aynı hesap *_max alanlarında. Yuvarlama floor(x·10ⁿ + 0,5)/10ⁿ (Python ile aynı).
+export const KOPTER_SEYIR_MS = 10, KOPTER_AZAMI_MS = 12.5, KOPTER_ASKI_GAZ = 0.5, SEYIR_ORAN = 12 / 22, ICEPT_SEYIR_ORAN = 0.8;
+export const roundN = (x, n = 1) => (x == null ? null : Math.floor(Number(x) * 10 ** n + 0.5) / 10 ** n);
+export function flightBudget(p, type) {
+  const a = defaultsFor(type);
+  for (const [k, v] of Object.entries(p || {})) if (k in a && v != null) a[k] = v;
+  const fin = v => { const f = Number(v); return v == null || v === '' || !Number.isFinite(f) ? 0 : f; };
+  let vmax, vc, thr;
+  if (isPlaneType(type)) {
+    vmax = fin(a.max_speed_ms) || defaultsFor(type).max_speed_ms;
+    vc = vmax * (type === 'interceptor' ? ICEPT_SEYIR_ORAN : SEYIR_ORAN);
+    thr = clamp((vc / vmax) ** 2, 0, 1);
+  } else { vmax = KOPTER_AZAMI_MS; vc = KOPTER_SEYIR_MS; thr = KOPTER_ASKI_GAZ; }
+  const kmhC = vc * 3.6, kmhM = vmax * 3.6;
+  const fl = fin(a.fuel_l), kml = fin(a.fuel_km_per_l);
+  let fuel = null;
+  if (fl > 0 && kml > 0) {
+    const rC = fl * kml / (0.5 + 0.5 * thr), rM = fl * kml;
+    fuel = { range_km: roundN(rC, 1), time_min: roundN(rC / kmhC * 60, 1), range_km_max: roundN(rM, 1), time_min_max: roundN(rM / kmhM * 60, 1) };
+  }
+  const wh = fin(a.elec_mah) / 1000 * Math.trunc(fin(a.elec_cells)) * HUCRE_V, w = fin(a.elec_w);
+  let elec = null;
+  if (wh > 0 && w > 0) { const tH = wh / w; elec = { wh: roundN(wh, 1), time_min: roundN(tH * 60, 1), range_km: roundN(tH * kmhC, 1), time_min_max: roundN(tH * 60, 1), range_km_max: roundN(tH * kmhM, 1) }; }
+  const src = [['fuel', fuel], ['elec', elec]].filter(([, v]) => v);
+  let limit = null, sec = null, secM = null;
+  for (const [k, v] of src) { if (!sec || v.time_min < sec.time_min) { sec = v; limit = k; } if (!secM || v.time_min_max < secM.time_min_max) secM = v; }
+  return { speed: { cruise_ms: roundN(vc, 1), max_ms: roundN(vmax, 1), cruise_thr: roundN(thr, 2) }, fuel, elec, limit,
+    time_min: sec ? sec.time_min : null, range_km: sec ? sec.range_km : null, time_min_max: secM ? secM.time_min_max : null, range_km_max: secM ? secM.range_km_max : null };
 }

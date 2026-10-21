@@ -1696,6 +1696,23 @@ CREATE TABLE IF NOT EXISTS drone_sim_runs (
 CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_started ON drone_sim_runs(started_at);
 CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_owner ON drone_sim_runs(owner_id);
 CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_center ON drone_sim_runs(center_id);
+-- Uçuş Simülatörü KAYITLI SİMÜLASYONLAR (docs/ucus-simulatoru.md §27): sihirbazın ayarları adla saklanır; tasarlayan bir pilot atar, pilot defalarca
+-- yeniden ayar yapmadan başlatır. settings = POST /api/drone/sim/sessions gövdesi (mode sitl; kaydederken de aynı doğrulayıcılardan geçer).
+-- Silme yumuşak (deleted_at): uçuş kayıtlarının preset_id bağı kopmaz (Serbest Uçuş altında "silinmiş" rozetiyle görünür).
+CREATE TABLE IF NOT EXISTS drone_sim_presets (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,                          -- benzersiz (silinmemişler arasında; büyük/küçük harf ve boşluk duyarsız — kodda denetlenir)
+    description TEXT,
+    settings    TEXT NOT NULL,                          -- JSON: oturum başlatma gövdesi {type, center_id, world{…, launch}, model, drone_id, rec, power, layout, camera, targets, site, defend}
+    type        TEXT,                                   -- settings.type (liste/simge için kopya)
+    center_id   INTEGER REFERENCES drone_route_centers(id) ON DELETE SET NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- tasarlayan
+    pilot_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- atanan pilot (NULL: tasarlayan uçar)
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    deleted_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_presets_pilot ON drone_sim_presets(pilot_id);
 CREATE TABLE IF NOT EXISTS drone_sim_clients (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -2959,6 +2976,10 @@ def _migrate(conn):
                      ('targets', 'TEXT'), ('intercept_count', 'INTEGER')):
         if run_cols and col not in run_cols:   # Uçuş Simülatörü §23 güç ve yakıt sütunları; §13.1 kontrol düzeni (layout); §22.3 kamera türü; §24 hedefler
             conn.execute(f'ALTER TABLE drone_sim_runs ADD COLUMN {col} {ddl}')
+    if run_cols and 'preset_id' not in run_cols:   # §27 kayıtlı simülasyondan başlatılan uçuşun bağı (NULL: serbest sihirbaz)
+        conn.execute('ALTER TABLE drone_sim_runs ADD COLUMN preset_id INTEGER REFERENCES drone_sim_presets(id) ON DELETE SET NULL')
+    if run_cols:
+        conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_preset ON drone_sim_runs(preset_id)')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
     if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün
         conn.execute('ALTER TABLE mail_boxes ADD COLUMN sync_error TEXT')

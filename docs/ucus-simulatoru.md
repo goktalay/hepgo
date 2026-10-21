@@ -1773,7 +1773,7 @@ interceptor rafı (−14, +34); hepsi pist yönüne döner. §27: kutu fırlatı
 pencere bandı, klima ünitesi + fan), çatıda uydu çanağı ve ekipman kutusu, teleskopik anten direği + kırbaç antenler, jeneratör + egzoz, beton taban (konteyner ılık
 0,5, klima 0,72, jeneratör 0,86); **kule** — 18 m kafes (4 ayak, 6 kuşak çapraz bağ, merdiven), platform + korkuluk, elektronik kabini, tepede **dönen radar**
 (panel dizisi, `SWEEP_S` = 4 sn/tur, ekrandaki hüzmeyle aynı açı) + ikaz lambası, platform köşesinde direk üstünde **EO top kulesi** (pan/tilt; seçili hedefe 90°/sn
-dönüş hızı sınırıyla döner, hedef yoksa yavaş tarar); **raf** — beton pad + 10 yuva (sarı işaret), yuvalarda dronun kendi modeli (tailsitter, kuyruk üstünde, soğuk
+dönüş hızı sınırıyla döner, hedef yoksa SON YÖNDE sabit kalır — §30.2); **raf** — beton pad + 10 yuva (sarı işaret), yuvalarda dronun kendi modeli (tailsitter, kuyruk üstünde, soğuk
 0,38), konuşlandırılan interceptor sayısı kadar eksilir. Görevde isabet: turuncu parlama + sağlık düştükçe yoğunlaşan duman.
 
 **Radar ekranı** (aynı WebGL bağlamı; PiP kalıbı — İKİNCİ BAĞLAM YOK): kule merkezli eğik (52°, kuzey yukarı) kamera; (1) sahne (arazi/bina/su; sis kapalı, hedef
@@ -1788,7 +1788,7 @@ halka etiketleri, N, kule, hedef numarası + irtifa, seçili hedefin adı, "n he
 
 **EO ekranı**: kamera EO topunun merkezinden (0,9 m ileri, near 1 m; kule gövdesi bu geçişte gizli) seçili hedefe; oto yakınlaştırma `eoZoom` (hedef dikey kadrajın
 ~%40'ı; FOV 48°…0,35° → ×1…×137, yumuşak); **menzil dışı** (eğik mesafe > EO menzili) → geniş açı + parazit + "MENZİL DIŞI · r > 5 km"; hedef yokken "HEDEF
-SEÇİLMEDİ" + yavaş tarama; dönüş sürerken "YÖNLENİYOR". Kamera türü gündüz / termal / gece (◐ düğmesi; §22.3 `CAM_FRAG`, kendi türü — `setCamUniforms(…, typeOverride)`;
+SEÇİLMEDİ" (başlık son yönde sabit; tarama YOK — §30.2), fare tekerleği zoom / basılı sürükle pan-tilt (§30.2); dönüş sürerken "YÖNLENİYOR". Kamera türü gündüz / termal / gece (◐ düğmesi; §22.3 `CAM_FRAG`, kendi türü — `setCamUniforms(…, typeOverride)`;
 tercih `fs.site.eoType`), 15 fps (yavaş karede 7,5). OSD: köşe parantezleri, nişangâh, iz kutusu, `İZ · n ad`, AZ / EL / MZL, FOV. Teşhis `eoInfo()`.
 
 **Yerleşim (DOM, `createSiteScreens`)**: sol altta dok (alt çubuğun 10 px üstü; sanal kumandada çubukların üstü) — [görev şeridi] + [RADAR | EO] (304×204; < 1280 px
@@ -1833,7 +1833,7 @@ bitiş, konuşlandırma + görev saati tabanı, puan/rütbe, sahte kipte oturum:
 `defend next`, reset = konuşlandırma, özet, `drone_sim_runs.targets`, kayıttan oynatma, meta); `node tests/test_flightsim_gcs.mjs` (12; Python vektörleri birebir).
 Görsel: `tests/gcs_shots_hepgo.py` (→ /tmp/gcs-shots/hepgo-*.png; `GCS_REAL=1 HEPGO_SITL_DIR=/opt/hepgo/sitl/bin` gerçek SITL).
 **Sınırlar**: tek SITL aracı (aynı anda tek interceptor); sahte kipte (HEPGO_SITL=0) dron sabit dairede uçar (önleme kendiliğinden olabilir); `?mock=1` istemci
-kipi sahayı/görevi kurmaz; görüş hattı (arazi örtmesi) hesaplanmaz; radar terrain'i yüklü dünyayı gösterir (prosedürel dünya dışı koyu zemin).
+kipi sahayı/görevi kurmaz; görüş hattı (arazi örtmesi) hesaplanmaz; radar yüklü dünyanın altına düz altlık çizer (§30.1: gerçek/Google'da uydu karosu, prosedürelde arazi paleti) — dünya kenarı ve yüklenmemiş karo boşluğu dolu.
 
 ## 27. INTERCEPTOR fırlatıcıları — 4'lü / 8'li kutu, yerden tekli tüp, el fırlatıcısı + nişangâh ekranı (`static/js/modules/flightsim_launcher*.js`, `flightsim_scope_ui.js`, `app/flightsim_launcher.py`)
 Kullanıcı isteği (birebir): "INTERCEPTOR içinde fırlatıcı olarak 4'lü, 8'li, yerden tekli, pilot elindeki bir silah benzeri aparattan çıkmalı; eğer böyle bir aparatı
@@ -2083,3 +2083,95 @@ farklı tasarım seçenekleri", "tüm başlatmalarda kamera 100 m yüksekten bak
   durumları, bip planı, ses tercihi.
 - Görsel: `tests/flyui_shots_hepgo.py`, `tests/flyui_shots_simumav.py` → `/tmp/flyui-shots/` (sihirbaz gösterge kartları açık/koyu, giriş sekansı kareleri,
   hassasiyet paneli, radar/EO taşınmış + büyütülmüş + yeniden yükleme sonrası + sıfırlama, 5 tema × açık/koyu).
+
+## 30. Radar/EO tam görüntü, EO elle kumanda, alt bant uçuş denetimi, çarpışma efekti (HEPGO + SIMUMAV ortak)
+Kullanıcı bildirimleri (Google 3B, Ankara, elevon + rampa): radar ve EO ekranında harita "yarım" (bir kısmı siyah); EO'da tekerlek zoom ve basılı sürükle
+pan/tilt istenir; EO kendiliğinden dönmesin; alt bantta tüm kamera kiplerinden mod değiştirme; DISARM'da sabit kanat düşmesin, süzülsün; çarpışma efekti
+ve daha yüksek darbe sesi; "PREARM: check mag field" uyarısı; sanal kumanda hassasiyeti düğmesi fark edilmiyor.
+
+### 30.1 Radar / EO / PiP / nişangâh "yarım" görüntü — kök neden ve düzeltme
+- **Kök neden (Google 3B):** 3DTilesRenderer karo seçimini (frustum + LOD) yalnız `setCamera` ile kaydedilmiş kameralara göre yapar; oturumda yalnız ANA kamera
+  kayıtlıydı. Radar (kule merkezli 20 km eğik bakış), EO (kuleden hedefe), kamera PiP'i (§22.4) ve nişangâh (§27) aynı sahneyi başka kameralarla render
+  hedefine çizer → ana kameranın görmediği bölgelerde karo YÜKLENMEZ / gizlenir → görüntünün o kısmı siyah (sahne arka planı).
+- **Düzeltme:** `flightsim_g3d.setAuxCameras([{cam, w, h}])` — etkin ikincil kameralar her karede kendi render hedefi çözünürlüğüyle (`tiles.setResolution`)
+  karo yükleyicisine eklenir, kapanan silinir (`deleteCamera`); karo kümesi tüm kameraların birleşimi, LOD gereken en ince. `flightsim3d.auxCameras()`: PiP açık,
+  radar/EO dikdörtgeni var, nişangâh penceresi açıkken. Teşhis `siteStats().aux`. Yeni WebGL bağlamı YOK (tek renderer kuralı). Küçük render hedefleri
+  (≈ 240×160) kaba LOD ister → ek karo yükü düşük.
+- **Dünya kenarı (gerçek arazi 4–20 km + 48 km uzak halka, prosedürel 4 km):** radar kapsaması 50 km'ye dek → kenar ötesi boştu. **Radar altlığı**: kule
+  merkezli ±2,5·kapsama karesi, YALNIZ radar geçişinde görünür, derinlik testi/yazımı kapalı + en düşük renderOrder (önce çizilir; arazi/karo üstüne yazar).
+  Doku: gerçek/Google dünyada uydu karoları (`/api/drone/sim/tile/img` vekili, eksen başına ≤ 8 karo — saf `flightsim_gcs.underlayPlan/underlayUV`; Ankara
+  20 km → z 11), prosedürelde (ya da karo alınamazsa) arazi paletinde tohumlu gürültü. Teşhis `siteStats().underlay` (`proc` | `img z11 49/49`).
+
+### 30.2 EO elle kumanda (`flightsim_gcs_ui.js` EO gövdesi + 3B `eoWheel / eoPinch / eoDrag / eoFollow`; saf `eoWheelFov / eoPinchFov / eoDragLook / eoAimMode`)
+- **Zoom:** fare tekerleği (üstel: FOV · e^(0,0016·deltaY); her konumda aynı oransal adım, 48°…0,35° = ×1…×137), dokunmatikte iki parmak sıkıştırma. Elle zoom
+  izlemedeki oto yakınlaştırmayı geçersiz kılar; yumuşak geçiş. Elle zoomda optik pus da azalır.
+- **Pan/tilt:** EO GÖRÜNTÜSÜNE basılı tut + sürükle (fare, dokunmatik tek parmak, kalem): "tut ve sürükle" — görüntüdeki nokta imleçle kayar; hassasiyet zooma
+  göre (1 px = FOV / görüntü yüksekliği); el −60…+85°. Pencere YALNIZ başlık çubuğundan taşınır (gövde sürüklemesi kamerayı çevirir).
+- **Takip:** elle pan/tilt hedef takibini bırakır (OSD "ELLE · n ad"); başlıkta sarı **◎ TAKİP** düğmesi, EO'ya çift tık ya da yeni hedef seçimi (Tab / radar
+  tıklaması) takibe + oto zooma döndürür. **Hedef yokken başlık son yönde sabit** (eski 8°/sn kendiliğinden tarama kaldırıldı; ilk yön pist yönü).
+
+### 30.3 Alt bant uçuş denetimi (`static/js/modules/flightsim_fltbar.js`; HEPGO `flightsim.js`, SIMUMAV `fly/session.js`)
+- **Mod seçici** (alt bant, harekât paneli açıkken de ve tüm kamera kiplerinde): etkin mod renkli rozet (Q kipleri mor, AUTO/GUIDED yeşil, RTL/LAND sarı);
+  tıkla ya da **F** → mod ızgarası (ok tuşları + Enter, Esc). Liste araç ailesine göre (`flightModesFor`): sabit kanat MANUAL, STABILIZE, ACRO, FBWA, FBWB,
+  CRUISE, TAKEOFF, AUTO, LOITER, CIRCLE, GUIDED, RTL; VTOL + "Dikey (Q)" grubu QSTABILIZE, QHOVER, QLOITER, QACRO, QLAND, QRTL; INTERCEPTOR (tailsitter) yatay
+  + Q; kopter STABILIZE, ALT_HOLD, LOITER, POSHOLD, ACRO, GUIDED, AUTO, BRAKE, CIRCLE, RTL, SMART_RTL, LAND. Komut harekât panelinin `mode` komutu (sunucu
+  pymavlink mod eşlemesiyle doğrular). Eski `.fs-cmds` içindeki ARM düğmesi ve mod `<select>`'i buraya taşındı (Kalkış/RTL yerinde).
+- **DISARM düğmesi** (**X**; saf `disarmAction(kind, tele)`): disarm'lı → ARM; yerde → DISARM; **havada sabit kanat** (ve yatay kipte VTOL/INTERCEPTOR) →
+  **motor kes** (`motor_cut {on:true}` — §30.4): motor durur, uçak süzülür, kumanda yüzeyleri çalışır; düğme **MOTOR VER** olur, sahnede sarı "MOTOR KESİK ·
+  SÜZÜLÜYOR" bandı; **havada kopter / askıdaki VTOL** → onay penceresi ("araç DÜŞER") sonra gerçek DISARM. Havada = irtifa > 3 m ya da hız > 6 m/s.
+- **Kumanda hassasiyeti** (§27.1) düğmesi artık açık etiketli: kaydırıcı simgesi + "Hassasiyet" (< 900 px yalnız simge + title); sanal kumanda kapalıyken de
+  görünür (klavye de aynı eğriden geçer).
+- Metinler: HEPGO Türkçe anahtar (6 dil kataloğu), SIMUMAV `flt.*` (7 dil).
+
+### 30.4 DISARM / motor kesme — ArduPlane davranışı ve sunucu komutu (`app/flightsim.py` `motor_cut`, `_motor_kes`)
+- **Kök neden ("DISARM'da direkt düşüyor"):** gerçek ArduPlane 4.7.2 SITL'de havada zorla disarm (400, 21196) uçağı aslında düşürmez — yüzeyler stabilize
+  etmeye devam eder, fizik süzülür (vz ≈ 1,2 m/s) — ama ArduPlane disarm'lıyken **HOME'u o anki konuma taşır** (home 900 → 1047 m): `alt_rel` 0,7 sn'de
+  145 → −11 m'ye "düşer" (HUD/AGL/çarpışma görüntüsü), `alt_msl` doğru kalır; yeniden ARM'da HOME geri gelmez (RTL disarm noktasına döner). Sunucu
+  disarm'ı çarpışma saymaz. Bu yüzden havada sabit kanat için DISARM yerine motor kesme kullanılır.
+- **Seçilen yöntem:** `MAV_CMD_DO_AUX_FUNCTION` (218), RC seçeneği 31 **MOTOR_ESTOP** — HIGH keser, LOW geri verir. Tüm kiplerde (MANUAL/TAKEOFF dahil)
+  SERVO3 = 1000 µs; ARM, HOME ve irtifa korunur; yüzeyler çalışır; parametre yazmaz. (THR_MAX=0 MANUAL'de motoru kesmez — elendi.)
+- **Komut:** `{name:'motor_cut', params:{on:true|false}}` → `{ok:true, motor_cut}`; `on` bool değilse 400; aynı değer idempotent; kopter tiplerinde 400 (UI
+  orada onaylı gerçek DISARM kullanır). WS `tele` ve oturum `to_dict`'te **`motor_cut`** (bool); kesikken `tele.throttle` 0 (yakıt tüketmez). Olay şeridi:
+  "MOTOR KESİLDİ — süzülüyor" / "Motor geri verildi". Motoru geri verenler: `motor_cut {on:false}`, `arm`, `takeoff`, `reset` (interceptor konuşlandırma
+  dahil), çarpışma (`zorla_disarm`). Araç 218'i reddederse bayrak geri alınır. SIMUMAV `SIM_KOMUT = set(KOMUTLAR)` ile kendiliğinden kabul eder.
+- **Sahte kip:** itki yok, L/D 10, 12 m/s; RC1 yatışı (≤ 45°) koordineli dönüş; 100 m'den ≈ 84 sn / ≈ 1 km; motor geri verilince daireye ışınlanmadan döner.
+  Sahte kipte havada disarm edilen uçak da artık süzülür (eskiden havada donardı).
+- **Ölçüm (gerçek SITL, stok `plane` modeli, rüzgâr 0, kesmeden sonra 20–40 sn ortalaması; rulo = 6 sn RC1 1850):**
+
+| Yol | Kip | Batış | Hava hızı | L/D | 100 m → yer | Rulo yanıtı |
+|---|---|---|---|---|---|---|
+| zorla disarm | FBWA | 1,20 m/s | 7,8 m/s | 7,2 | 82 sn / 699 m | Δhdg 163°, yatış 27° (alt_rel bozulur) |
+| e-stop | FBWA | 1,15 | 7,6 | 7,2 | 86 sn / 712 m | 144°, 24° |
+| e-stop | FBWB | 1,14 | 7,5 | 7,2 | 82 sn / 666 m | 134°, 23° |
+| e-stop | CRUISE | 1,14 | 7,5 | 7,2 | 86 sn / 711 m | 132°, 23° |
+| e-stop | AUTO | 1,12 | 7,5 | 7,3 | 82 sn / 683 m | 142°, 16° |
+| e-stop | RTL | 1,19 | 7,5 | 6,9 | 84 sn / 700 m | 96°, 14° |
+| e-stop | MANUAL | — | — | — | stabilizasyon yok | tam aileron spiral dalış (pilota bağlı) |
+
+  Otomatik gazlı kiplerde TECS irtifa tutmaya çalışır, elevatör doyar → ~7,5 m/s'de stall sınırında fügoid salınımlı süzülme (stok SITL modelinin motorsuz
+  L/D'si ≈ 7). VTOL/INTERCEPTOR'da e-stop VTOL motorlarını da durdurur — askıda (Q kipi) UI onaylı DISARM ister.
+
+### 30.4.1 PreArm "Check mag field (xy diff:338>100)" — kök neden
+- Konum/declination değil: dron kaydı seçilen oturumlarda **gerçek uçağın kalıcı parametre kaydındaki pusula kalibrasyonu** (`COMPASS_OFS*`, `COMPASS_USE2/3=0`,
+  `COMPASS_DEC` + `AUTODEC=0`, `COMPASS_ORIENT`) SITL'in ideal sanal pusulasına uygulanıyordu → Ankara'da birebir "xy diff:276–327>100"; temiz SITL'de yok.
+- Düzeltme (`app/drone_params.py`): `COMPASS_*`, `AHRS_ORIENTATION`, `INS_ACC*OFFS_/SCAL_`, `INS_ACC*/GYR*_ID` SITL'e YAZILMAZ (varsayılan .parm ve
+  PARAM_SET), kayıtta ve .param dışa aktarımında korunur; açılışta olay satırı ("N sensör kalibrasyonu/yönelimi parametresi … simülasyonda uygulanmadı");
+  SITL'in ürettiği sensör değerleri gerçek kaydın üstüne yazılmaz. `ARMING_CHECK`'e dokunulmadı. Ankara, 41 K 29 D, 37 K 35 D'de uyarı yok (heading 0,3°).
+
+### 30.5 Çarpışma efekti ve darbe sesi (`static/js/modules/flightsim_crashfx.js`, `flightsim_audio.js impactParams`)
+- Çarpışma bandı açıldığında (sunucunun kesin `crash` çerçevesi) `sim.crashFx({speed})`: dronun çizilen konumunda **beyaz flaş** (≈ 0,2–0,4 sn, DOM katmanı),
+  **ateş topu** (toplamalı sprite'lar; büyür, yükselir, söner), **toz bulutu** (yavaş yayılan kahverengi sprite'lar, 3,5–6,5 sn), **kıvılcım/enkaz** (≤ 200 nokta,
+  balistik + sürüklenme, zemine iner), **kor** (küçük, 6–14 sn; `userData.heat = 1` → TERMAL kamerada sıcak nokta; ateş topu/kıvılcım toplamalı = parlak = sıcak),
+  **kamera sarsıntısı** (üstel sönen çok frekanslı öteleme + yuvarlanma; render sonrası geri yüklenir — takip/serbest kamera pozu bozulmaz). Şiddet çarpma
+  hızıyla (`crashFxParams`: 3 m/s → 0,2…0,3; ≥ 40 m/s → 1), boyut model çapıyla (×0,4…×2; 1 m'lik dronda dev ateş topu yok). Sıfırla → temizlenir.
+  Teşhis: `crashFxInfo()`, `window.__fsCrashHold = t` (efekti t. saniyede sabitler — yazılım WebGL görsel betikleri).
+- **Ses:** ayrı "darbe" yolu (master'dan bağımsız, ses düzeyi × `IMPACT_BOOST` 2,2 → kompresör → çıkış): alçak "bum" (frekansı düşen sinüs + alt üçgen),
+  kapanan lowpass enkaz gürültüsü, highpass kıvılcım çıtırtısı; şiddet çarpma hızıyla (`impactParams`). Ses kapalıysa (tercih / sekme gizli) çalmaz.
+- Ek: kapanmış AudioContext'i ikinci kez kapatma reddi yakalandı (giriş bip'i, motor sesi — konsolda "Cannot close a closed AudioContext").
+
+### 30.6 Testler ve görsel doğrulama
+- `tests.test_flightsim` `motor_cut_birim_testleri`, `motor_cut_testleri`, `sensor_param_testleri`.
+- `node tests/test_flightsim_simfix.mjs` (tekerlek/sıkıştırma/sürükleme, nişan kipi, altlık planı + UV, çarpışma parametreleri/sarsıntı/flaş/kıvılcım, mod listeleri,
+  `disarmAction`, metinler); `tests/test_flightsim_audio.mjs` darbe sesi.
+- Görsel: `SIMFIX_WORLD=procedural|real|google3d ./.venv/bin/python -m tests.simfix_shots_hepgo` → `/tmp/simfix-shots/` (radar/EO tam görüntü + boş piksel oranı,
+  EO izleme/zoom/pan, radar 5/20 km, PiP, çarpışma flaş/ateş topu/toz/termal EO, mod menüsü, motor kesme süzülmesi, panel açıkken bant).

@@ -1645,7 +1645,7 @@ def param_testleri(a, c1, sitl, mon):
     assert drone_params.srv_rev_mask({'SERVO1_REVERSED': 1}, 'sabit_kanat', None, 0, {'SERVO1_REVERSED': 0.0}) == 1               # klasik: eski davranış
     assert drone_params.sitl_kayitlari([{'name': 'SERVO1_REVERSED', 'value': 0}], True, 'sabit_kanat', 3, ev)[1]['mask'] == 1
     _, bm = drone_params.sitl_kayitlari([{'name': 'SERVO1_REVERSED', 'value': 1.0}], True, 'multirotor')
-    assert bm == {'virtual_mount': True, 'mask': 0, 'neutral': [], 'reversed': [], 'motor_skipped': ['SERVO1_REVERSED']} and 'motor (ESC)' in drone_params.montaj_olayi(bm)[0] and drone_params.montaj_olayi(bm)[1] == 6, bm
+    assert bm == {'virtual_mount': True, 'mask': 0, 'neutral': [], 'reversed': [], 'motor_skipped': ['SERVO1_REVERSED'], 'sensor_skipped': []} and 'motor (ESC)' in drone_params.montaj_olayi(bm)[0] and drone_params.montaj_olayi(bm)[1] == 6, bm
     assert not drone_params.haric_mi('SERVO1_REVERSED') and not drone_params.haric_mi('RC1_REVERSED')   # kaydedilir
     assert drone_params.haric_mi('SIM_SRV_REV') and not drone_params.kaydet(pd_['id'], 'SIM_SRV_REV', 3.0)   # üretilen maske kalıcı kayda girmez
     destek_orj = drone_sitl.sanal_montaj_destegi
@@ -1662,14 +1662,14 @@ def param_testleri(a, c1, sitl, mon):
         rows = drone_params.yukle(pd_['id'])
         # sanal montaj destekli ikili: değer aynen + SIM_SRV_REV (INT32) son satır; parm satırlarında SIM_SRV_REV hariç listesine rağmen yazılır
         sitl_r, bilgi = drone_params.sitl_kayitlari(rows, True)
-        assert bilgi == {'virtual_mount': True, 'mask': 1, 'neutral': [], 'reversed': ['SERVO1_REVERSED'], 'motor_skipped': []}, bilgi
+        assert bilgi == {'virtual_mount': True, 'mask': 1, 'neutral': [], 'reversed': ['SERVO1_REVERSED'], 'motor_skipped': [], 'sensor_skipped': []}, bilgi
         assert sitl_r[-1] == {'name': 'SIM_SRV_REV', 'value': 1.0, 'ptype': 6} and {x['name']: x['value'] for x in sitl_r}['SERVO1_REVERSED'] == 1.0
         satir = drone_params.parm_satirlari(rows, True)
         assert 'SERVO1_REVERSED 1' in satir and 'SERVO2_REVERSED 0' in satir and 'RC1_REVERSED 1' in satir and satir[-1] == 'SIM_SRV_REV 1', satir
         assert drone_params.montaj_olayi(bilgi) == ('SERVO1_REVERSED: sanal uçakta servo montajı da ters (SIM_SRV_REV = 1) — gerçek uçakla aynı davranış', 6)
         # eski ikili: 0'a çekilir, SIM_SRV_REV yok, sarı olay
         sitl_r, bilgi = drone_params.sitl_kayitlari(rows, False)
-        assert bilgi == {'virtual_mount': False, 'mask': 0, 'neutral': ['SERVO1_REVERSED'], 'reversed': [], 'motor_skipped': []}, bilgi
+        assert bilgi == {'virtual_mount': False, 'mask': 0, 'neutral': ['SERVO1_REVERSED'], 'reversed': [], 'motor_skipped': [], 'sensor_skipped': []}, bilgi
         assert {x['name']: x['value'] for x in sitl_r}['SERVO1_REVERSED'] == 0.0 and all(x['name'] != 'SIM_SRV_REV' for x in sitl_r) and {x['name']: x['value'] for x in sitl_r}['RC1_REVERSED'] == 1.0
         satir = drone_params.parm_satirlari(rows, False)
         assert 'SERVO1_REVERSED 0' in satir and 'SERVO1_REVERSED 1' not in satir and not any(x.startswith('SIM_SRV_REV') for x in satir), satir
@@ -2125,6 +2125,171 @@ def kamera_testleri(a, c1, sitl):
             conn.execute('UPDATE drone_sim_runs SET bin_log_id = NULL WHERE id = ?', (it['id'],))
             conn.commit()
     print('  kamera türü (§22.3) testleri geçti')
+
+
+def _yatay_m(la, lo, la2, lo2):
+    return math.hypot((la2 - la) * 110574.0, (lo2 - lo) * 111320.0 * math.cos(math.radians(la)))
+
+
+def motor_cut_birim_testleri():
+    """Sahte kinematik motor kesme: itki 0, ARM korunur, süzülme oranı 1:8–1:12, 100 m'den yere iniş, rulo girişiyle dönüş, yerde durma,
+    motor geri verilince daireye ışınlanmadan yaklaşma, havada disarm'da da süzülme (uçak), ARM/kalkış/sıfırlamada bayrak kalkar."""
+    K = flightsim.SahteKinematik
+
+    def havada(tip='sabit_kanat', alt=100.0):
+        k = K(tip, 39.925, 32.837, 900, 0)
+        k.armed, k.alt_rel, k.hedef_alt, k.mode = True, alt, alt, 'FBWA'
+        k.vn, k.ve, k.yaw = 12.0, 0.0, 0.0
+        return k
+
+    k = havada()
+    k.komut('motor_cut', {'on': True})
+    assert k.motor_cut and k.armed
+    yol, t = 0.0, 0.0
+    while k.alt_rel > 0 and t < 300:
+        la, lo = k.lat, k.lon
+        k.adim(0.02); t += 0.02
+        yol += _yatay_m(la, lo, k.lat, k.lon)
+        assert k.throttle == 0.0 and k.armed
+    ld = yol / 100.0
+    assert k.alt_rel == 0.0 and 8.0 <= ld <= 12.0 and 60 <= t <= 120, (k.alt_rel, ld, t)   # 100 m → ≈ 1000 m, ≈ 84 sn
+    te = k.tele()
+    assert te['throttle'] == 0.0 and te['vd'] == 0.0 and te['groundspeed'] == 0.0 and te['armed'], te   # yere indi: durur, ARM'lı kalır
+    la, lo = k.lat, k.lon
+    for _ in range(100):
+        k.adim(0.02)
+    assert (k.lat, k.lon, k.alt_rel) == (la, lo, 0.0)   # yerde, motor kesik: kıpırdamaz (hedef_alt'a tırmanmaz)
+    # süzülme anı: düşey hız ≈ hız / 10, burun aşağı; RC 1 (aileron) ile yatış → yön değişir
+    k = havada()
+    k.komut('motor_cut', {'on': True})
+    for _ in range(250):
+        k.adim(0.02)
+    te = k.tele()
+    assert 1.0 <= te['vd'] <= 1.4 and te['pitch'] < 0 and abs(te['groundspeed'] - flightsim.SAHTE_SUZULME_HIZ) < 0.6, te
+    h0 = te['heading']
+    k.komut('rc', {'ch': [1900, 0, 0, 0, 0, 0, 0, 0]})
+    for _ in range(250):
+        k.adim(0.02)
+    te = k.tele()
+    assert te['roll'] > math.radians(30) and ((te['heading'] - h0) % 360) > 60, (te['roll'], te['heading'], h0)   # sağa yatış → sağa dönüş
+    # motor geri: ARM ile; havada daireye ışınlanmadan yaklaşır (adım başına ≤ HIZ·dt)
+    k.komut('arm', {})
+    assert not k.motor_cut and k._daireye_don
+    for _ in range(5000):
+        la, lo = k.lat, k.lon
+        k.adim(0.02)
+        d = _yatay_m(la, lo, k.lat, k.lon)
+        assert d <= K.HIZ * 0.02 * 1.05 + 0.05, d
+        if not k._daireye_don:
+            break
+    assert not k._daireye_don and k.throttle > 0
+    # motor_cut {on:false} ve kalkış da geri verir; sıfırlama temizler
+    k = havada(); k.komut('motor_cut', {'on': True}); k.komut('motor_cut', {'on': False}); assert not k.motor_cut
+    k = havada(); k.komut('motor_cut', {'on': True}); k.komut('takeoff', {'alt': 120}); assert not k.motor_cut
+    k = havada(); k.komut('motor_cut', {'on': True}); k.komut('reset', {}); assert not k.motor_cut and k.alt_rel == 0.0
+    # uçak havada disarm: ArduPlane gibi süzülür (eskiden havada donuyordu); kopter davranışı değişmedi
+    k = havada(); k.komut('disarm', {})
+    for _ in range(250):
+        k.adim(0.02)
+    assert not k.armed and k.alt_rel < 99.0 and k.tele()['groundspeed'] > 5, k.tele()
+    k = havada('multirotor', 20.0); k.komut('disarm', {})
+    for _ in range(50):
+        k.adim(0.02)
+    assert k.alt_rel == 20.0
+    print('  motor kesme (sahte kinematik) birim testleri geçti')
+
+
+def motor_cut_testleri(a, c1, sitl):
+    """`motor_cut {on: bool}` sözleşmesi: doğrulama (400), kopter reddi, yanıt {ok, motor_cut}, to_dict + WS tele `motor_cut`, olay şeridi satırları,
+    ARM / motor_cut{on:false} geri verir, reset ve 3B çarpışması sıfırlar, KOMUTLAR'da (SIMUMAV aynı listeyi kullanır)."""
+    S = '/api/drone/sim/sessions'
+    assert 'motor_cut' in flightsim.KOMUTLAR
+    from app.simumav.routers import fly as smfly
+    assert 'motor_cut' in smfly.SIM_KOMUT
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id']}), 201)
+    sid = s['id']
+    assert s['motor_cut'] is False, s.get('motor_cut')
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    cmd = lambda name, params=None: a.post(f'{S}/{sid}/cmd', json={'name': name, 'params': params or {}})   # noqa: E731
+    for kotu in ({}, {'on': 1}, {'on': 'true'}, {'on': None}):
+        r = cmd('motor_cut', kotu)
+        assert r.status_code == 400 and 'motor_cut.on' in r.text, (kotu, r.status_code, r.text)
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        hello = json.loads(ws.receive_text()); assert hello['session']['motor_cut'] is False
+        t = ws_bekle(ws, lambda x: x['t'] == 'tele', 3); assert t and t['motor_cut'] is False, t and list(t)
+        ok(cmd('takeoff', {'alt': 60}))
+        assert ok(cmd('motor_cut', {'on': True})) == {'ok': True, 'motor_cut': True}
+        e = ws_bekle(ws, lambda x: x['t'] == 'event' and 'MOTOR' in x['text'], 3); assert e and e['text'] == 'MOTOR KESİLDİ — süzülüyor' and e['severity'] == 4, e
+        t = ws_bekle(ws, lambda x: x['t'] == 'tele' and x.get('motor_cut') is True, 3); assert t and t['throttle'] == 0.0 and t['armed'], t
+        assert ok(a.get(f'{S}/{sid}'))['motor_cut'] is True
+        assert ok(cmd('motor_cut', {'on': True})) == {'ok': True, 'motor_cut': True}   # yineleme: idempotent (ikinci olay yok)
+        ok(cmd('arm'))   # ARM motoru geri verir
+        e = ws_bekle(ws, lambda x: x['t'] == 'event' and x['text'] in ('Motor geri verildi', 'MOTOR KESİLDİ — süzülüyor'), 3)
+        assert e and e['text'] == 'Motor geri verildi' and e['severity'] == 6, e
+        t = ws_bekle(ws, lambda x: x['t'] == 'tele' and x.get('motor_cut') is False, 3); assert t, t
+        assert ok(cmd('motor_cut', {'on': True}))['motor_cut'] is True and ok(cmd('motor_cut', {'on': False})) == {'ok': True, 'motor_cut': False}
+        assert ok(cmd('motor_cut', {'on': True}))['motor_cut'] is True
+    ok(cmd('reset'))
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    assert ok(a.get(f'{S}/{sid}'))['motor_cut'] is False
+    s_obj = flightsim.MANAGER.get(sid)
+    assert s_obj.sahte.motor_cut is False
+    # 3B çarpışması (zorla disarm) da kesmeyi kaldırır (sonraki ARM'ı MOTOR_ESTOP engellemesin)
+    ok(cmd('takeoff', {'alt': 60})); ok(cmd('motor_cut', {'on': True}))
+    ok(cmd('crash', {'kind': 'building', 'speed': 10}))
+    assert s_obj.motor_cut is False and s_obj.sahte.motor_cut is False
+    ok(a.delete(f'{S}/{sid}'))
+    # kopter: reddedilir (havada motor kesmek düşürür; ön yüz DISARM'ı onayla gönderir)
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
+    assert bekle(lambda: ok(a.get(f"{S}/{s['id']}"))['state'] == 'HAZIR')
+    r = a.post(f"{S}/{s['id']}/cmd", json={'name': 'motor_cut', 'params': {'on': True}})
+    assert r.status_code == 400 and 'kopter' in r.text, r.text
+    ok(a.delete(f"{S}/{s['id']}"))
+    print('  motor kesme (motor_cut) testleri geçti')
+
+
+def sensor_param_testleri():
+    """Görev B: gerçek uçağın sensör kalibrasyonu / yönelimi (COMPASS_*, AHRS_ORIENTATION, INS_ACC* kalibrasyonu/kimlikleri) SITL'e yazılmaz
+    ("PreArm: Check mag field (xy diff …)" kök nedeni), kayıtta kalır; SITL'in kendi değeri ('sitl' kaynağı) kayda yazılmaz."""
+    from app import drone_params as dp
+    for ad in ('COMPASS_OFS_X', 'COMPASS_USE2', 'COMPASS_DEC', 'COMPASS_AUTODEC', 'COMPASS_ORIENT', 'COMPASS_PRIO1_ID', 'AHRS_ORIENTATION',
+               'INS_ACCOFFS_X', 'INS_ACC2SCAL_Z', 'INS_GYR_ID', 'compass_dia_x'):
+        assert dp.sensor_mu(ad), ad
+    for ad in ('SERVO1_REVERSED', 'AHRS_EKF_TYPE', 'INS_GYROFFS_X', 'ARSPD_USE', 'COMPAS', 'TRIM_ARSPD_CM'):
+        assert not dp.sensor_mu(ad), ad
+    assert not dp.haric_mi('COMPASS_OFS_X')   # kayıt/içe aktarma korunur (yalnız SITL'e gitmez)
+    rows = [{'name': 'COMPASS_USE2', 'value': 0.0}, {'name': 'COMPASS_OFS_X', 'value': 250.0}, {'name': 'AHRS_ORIENTATION', 'value': 2.0},
+            {'name': 'TRIM_ARSPD_CM', 'value': 1500.0}, {'name': 'SERVO1_REVERSED', 'value': 1.0}]
+    sitl_r, bilgi = dp.sitl_kayitlari(rows, True, 'sabit_kanat')
+    adlar = [x['name'] for x in sitl_r]
+    assert adlar == ['TRIM_ARSPD_CM', 'SERVO1_REVERSED', 'SIM_SRV_REV'] and bilgi['sensor_skipped'] == ['COMPASS_USE2', 'COMPASS_OFS_X', 'AHRS_ORIENTATION'], (adlar, bilgi)
+    satir = dp.parm_satirlari(rows, True, 'sabit_kanat')
+    assert not any(x.startswith(('COMPASS_', 'AHRS_ORIENTATION')) for x in satir) and 'TRIM_ARSPD_CM 1500' in satir, satir
+    metin, sev = dp.sensor_olayi(bilgi)
+    assert sev == 6 and metin.startswith('3 sensör kalibrasyonu/yönelimi parametresi (COMPASS_USE2, COMPASS_OFS_X, AHRS_ORIENTATION)') and 'Check mag field' in metin, metin
+    assert dp.sensor_olayi(dp.sitl_kayitlari([{'name': 'TRIM_ARSPD_CM', 'value': 1.0}], True)[1]) is None
+    uzun = dp.sensor_olayi({'sensor_skipped': [f'COMPASS_OFS{i}_X' for i in range(8)]})[0]
+    assert '… (+2)' in uzun, uzun
+    h = dp.haric_listesi()['sensor']
+    assert h['badge'] == dp.SENSOR_ROZET and 'COMPASS_' in h['prefixes'] and 'AHRS_ORIENTATION' in h['names'], h
+    # izleyici: tam liste sonrası SITL'in kendi değiştirdiği COMPASS_DEC (AUTODEC) / kalibrasyon ofseti 'sitl' kaydı üretmez
+    kayit = []
+    eski = dp.kaydet
+    dp.kaydet = lambda *a, **k: kayit.append((a, k)) or True
+    try:
+        izl = dp.Izleyici(1, lambda t, s: None)
+        for i, (ad, v) in enumerate((('COMPASS_DEC', 0.0), ('COMPASS_OFS_X', 5.0), ('RTL_ALT', 100.0))):
+            izl.param_value(ad, v, 9, i, 3)
+        assert izl.taban_tam
+        assert izl.param_value('COMPASS_DEC', 0.1056, 9) is None and izl.param_value('COMPASS_OFS_X', 40.0, 9) is None and kayit == []
+        izl.param_value('RTL_ALT', 150.0, 9)
+        assert len(kayit) == 1 and kayit[0][0][1] == 'RTL_ALT', kayit   # sensör dışı 'sitl' değişikliği eskisi gibi kaydedilir
+    finally:
+        dp.kaydet = eski
+    print('  sensör kalibrasyonu (Görev B: "Check mag field") testleri geçti')
 
 
 def hedef_icept_testleri(a, c1, sitl):
@@ -3016,6 +3181,9 @@ def main():
         guc_testleri(a, c1, sitl, mon)
         # --- kamera türü (§22.3) ---
         kamera_testleri(a, c1, sitl)
+        motor_cut_birim_testleri()          # motor kesme: sahte kinematik süzülme
+        motor_cut_testleri(a, c1, sitl)     # motor kesme: komut sözleşmesi, tele/to_dict alanı, olaylar, sıfırlama
+        sensor_param_testleri()             # Görev B: sensör kalibrasyonu SITL'de nötr ("Check mag field")
         hedef_icept_testleri(a, c1, sitl)   # §24 hedefler + §25 INTERCEPTOR
         gcs_testleri(a, c1, sitl)   # §26 yer kontrol sahası + görev
         firlatici_testleri(a, c1)   # §27 INTERCEPTOR fırlatıcıları

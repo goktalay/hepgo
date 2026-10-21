@@ -1379,9 +1379,9 @@ class SitlDrone:
             self._event(f'Sanal dron (SITL) bağlandı: tcp:127.0.0.1:{port}', 6)
             n = 0
             yuklenecek = list(sitl_kayit) if self.kayitli_params else []   # kayıt yoksa yalnız SIM_SRV_REV=0 satırı kalır → parm yeter
-            olay = drone_params.montaj_olayi(self.montaj)
-            if olay:
-                self._event(*olay)
+            for olay in (drone_params.montaj_olayi(self.montaj), drone_params.sensor_olayi(self.montaj)):   # sensör kalibrasyonu: SITL'de nötr
+                if olay:
+                    self._event(*olay)
             while True:
                 await asyncio.sleep(1.0)
                 n += 1

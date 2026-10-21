@@ -4,7 +4,7 @@
 // ilk etkileşim (resume) kilidi, sekme gizlenme, oynatma hızı ≥ 2× sessizliği, FPV kokpit, kalkış efektleri, çarpışma, dispose.
 // Çalıştırma: node tests/test_flightsim_audio.mjs
 import assert from 'node:assert/strict';
-import { AUDIO_MODELS, MOTOR_RATIOS, REF_DISTANCE, TAU_UP, TAU_DOWN, SPIN_UP, SPIN_DOWN, COPTER_IDLE, audioModel, copterBpf, planeRpm, firingHz, heliBpf, vtolMix, vehicleRpm,
+import { AUDIO_MODELS, IMPACT_BOOST, impactParams, MOTOR_RATIOS, REF_DISTANCE, TAU_UP, TAU_DOWN, SPIN_UP, SPIN_DOWN, COPTER_IDLE, audioModel, copterBpf, planeRpm, firingHz, heliBpf, vtolMix, vehicleRpm,
   engineTargets, smoothFollow, spinStep, distanceGain, fpvParams, dopplerFactor, createAudioPrefs, createEngineAudio } from '../static/js/modules/flightsim_audio.js';
 
 let n = 0;
@@ -258,6 +258,13 @@ test('ilk etkileşim öncesi sessiz (waiting); bağlam resume ile açılır; kap
   assert.equal(FakeAudioContext.created, 0, 'kapalıyken bağlam kurulmaz'); assert.equal(b.enabled, false);
   b.dispose();
 });
+test('çarpışma darbesi: şiddet hızla artar (3 m/s ≥ 0,25; ≥ 40 m/s = 1), bum frekansı düşer, kazanç > eski 0,9', () => {
+  const lo = impactParams(3), hi = impactParams(42.3), z = impactParams(null);
+  assert.ok(lo.i >= 0.25 && lo.i < 0.4); close(hi.i, 1); close(z.i, 0.25);
+  assert.ok(hi.boom > lo.boom && hi.debris > lo.debris && hi.decay > lo.decay && hi.boomHz < lo.boomHz);
+  assert.ok(hi.noise > 0.9 && IMPACT_BOOST >= 2);
+  for (const v of [0, 5, 10, 20, 40, 80]) { const k = impactParams(v); for (const x of Object.values(k)) assert.ok(Number.isFinite(x) && x >= 0); }
+});
 test('rampa fırlatma: launch → "pşşt" zarfı; released → kızak çarpması; araç: released → fren; çarpışma → patlama + motor durur, sıfırla → döner', () => {
   const sim = fakeSim(); let crashed = false;
   const a = mk('sabit_kanat', { launch: { method: 'ramp' }, getSim: () => sim, getCrashed: () => crashed }); a.unlock();
@@ -266,7 +273,9 @@ test('rampa fırlatma: launch → "pşşt" zarfı; released → kızak çarpmas�
   sim.phase = 'armed'; tick(a, { armed: true }); assert.equal(a.graph.fx.g.gain.peak, undefined);
   sim.phase = 'launch'; tick(a, { armed: true }); close(a.graph.fx.g.gain.peak, 0.7);
   sim.phase = 'released'; tick(a, { armed: true, throttle: 100 }); close(a.graph.thump.g.gain.peak, 0.6);
-  crashed = true; tick(a, { armed: false }); close(a.graph.crashN.g.gain.peak, 0.9); assert.equal(a.graph.src.gain.value, 0, 'motor durur');
+  crashed = true; tick(a, { armed: false, groundspeed: 42.3 }); close(a.graph.crashN.g.gain.peak, impactParams(42.3).noise); assert.equal(a.graph.src.gain.value, 0, 'motor durur');
+  assert.ok(a.graph.impact.bus.gain.value > 1, 'darbe yolu ses düzeyi × IMPACT_BOOST (master\'dan bağımsız, daha yüksek)'); close(a.graph.impact.boom.g.gain.peak, 1); assert.ok(a.graph.impact.crackle.g.gain.peak > 0.6);
+  assert.equal(a.stats.impacts, 1);
   crashed = false; tick(a, { armed: false }); assert.equal(a.graph.src.gain.value, 1, 'sıfırla → motor grubu döner');
   a.dispose();
   const v = mk('sabit_kanat', { launch: { method: 'vehicle' }, getSim: () => sim }); v.unlock();

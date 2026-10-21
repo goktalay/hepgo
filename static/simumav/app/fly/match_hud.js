@@ -184,5 +184,5 @@ export function resultTable(rows, me) {
       h('td', null, r.winner ? '★' : String(r.rank)), h('td', null, h('b', null, r.name)), h('td', { class: 'mono' }, r.time_s != null ? fmtClock(r.time_s) : '—'),
       h('td', { class: 'mono' }, `${r.rings}/${r.total}`), h('td', { class: 'mono' }, r.time_s != null ? '—' : fmtDist(r.dist_next_m)),
       h('td', { class: 'mono' }, r.max_speed_ms != null ? `${Math.round(r.max_speed_ms * 3.6)} km/h` : '—'),
-      h('td', null, h('span', { class: `sm-mt-badge st-${r.status}` }, r.finished ? tr('match.st_finished') : tr(STATUS_KEY[r.status] || r.status)))))));
+      h('td', null, h('span', { class: `sm-mt-badge st-${r.status}` }, r.finished ? tr('match.st_finished') : (ACTIVE.has(r.status) ? tr('match.st_dnf') : tr(STATUS_KEY[r.status] || r.status))))))));
 }

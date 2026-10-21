@@ -993,5 +993,6 @@
   "match.wait_title": "Diğer oyuncular bekleniyor",
   "match.wrong_way": "Ters yön! Halkayı ok yönünde geçin",
   "match.you": "siz",
-  "match.you_finished": "BİTİRDİNİZ! {t}"
+  "match.you_finished": "BİTİRDİNİZ! {t}",
+  "match.st_dnf": "Bitirmedi"
 }

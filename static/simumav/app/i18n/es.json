@@ -993,5 +993,6 @@
   "match.wait_title": "Esperando al resto de jugadores",
   "match.wrong_way": "¡Sentido contrario! Pasa el aro en la dirección de la flecha",
   "match.you": "tú",
-  "match.you_finished": "¡TERMINASTE! {t}"
+  "match.you_finished": "¡TERMINASTE! {t}",
+  "match.st_dnf": "No terminó"
 }

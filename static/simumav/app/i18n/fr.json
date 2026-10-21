@@ -993,5 +993,6 @@
   "match.wait_title": "En attente des autres joueurs",
   "match.wrong_way": "Mauvais sens ! Passez l’anneau dans le sens de la flèche",
   "match.you": "vous",
-  "match.you_finished": "TERMINÉ ! {t}"
+  "match.you_finished": "TERMINÉ ! {t}",
+  "match.st_dnf": "Non terminé"
 }

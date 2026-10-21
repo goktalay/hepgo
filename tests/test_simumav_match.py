@@ -257,6 +257,8 @@ def calis(c):
     assert row['state'] == 'BITTI' and row['winner_id'] == ali.id and json.loads(row['result'])['winner'] == ali.id and row['started_at'] and row['ended_at'], row
     assert mp[ali.id]['rank'] == 1 and mp[veli.id]['rank'] == 2 and mp[ali.id]['rings'] == 3 and mp[ali.id]['flight_id'] == fids[ali.id], mp
     assert all(f['ended_at'] for f in fr.values())
+    from app import flightsim_runs   # çekirdek drone_sim_runs (SIMUMAV shim DB): match_id sütunu var → kayıt düşmez
+    assert bekle(lambda: len(flightsim_runs.db.rows(flightsim_runs.db.connect().execute('SELECT id FROM drone_sim_runs WHERE match_id = ?', (mid,)))) == 2, sn=20), 'drone_sim_runs match_id kaydı'
     g = ok(veli.get(f'{A}/{mid}'))
     assert g['state'] == 'BITTI' and g['result']['winner'] == ali.id
     hl = ok(veli.get(A))

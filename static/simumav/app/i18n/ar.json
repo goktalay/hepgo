@@ -993,5 +993,6 @@
   "match.wait_title": "بانتظار اللاعبين الآخرين",
   "match.wrong_way": "اتجاه خاطئ! اعبر الحلقة باتجاه السهم",
   "match.you": "أنت",
-  "match.you_finished": "أنهيت! {t}"
+  "match.you_finished": "أنهيت! {t}",
+  "match.st_dnf": "لم يُكمل"
 }

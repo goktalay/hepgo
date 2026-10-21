@@ -993,5 +993,6 @@
   "match.wait_title": "Warten auf die anderen Spieler",
   "match.wrong_way": "Falsche Richtung! Ring in Pfeilrichtung durchfliegen",
   "match.you": "Sie",
-  "match.you_finished": "IM ZIEL! {t}"
+  "match.you_finished": "IM ZIEL! {t}",
+  "match.st_dnf": "Nicht beendet"
 }

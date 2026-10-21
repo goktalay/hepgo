@@ -993,5 +993,6 @@
   "match.wait_title": "Ожидание других игроков",
   "match.wrong_way": "Не тот путь! Проходите кольцо по стрелке",
   "match.you": "вы",
-  "match.you_finished": "ФИНИШ! {t}"
+  "match.you_finished": "ФИНИШ! {t}",
+  "match.st_dnf": "Не финишировал"
 }

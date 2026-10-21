@@ -2016,3 +2016,70 @@ seçili; üç sütun açık/koyu × masaüstü/tablet/mobil + dönen model pikse
 kaydında Başlat pasif, hızlı başlat özeti, geri sayım, oturum, uçuş kayda bağlı; zil; Sil).
 **Sınırlar**: geri sayım oturum ekranındaki giriş geri sayımından (uçuş içi ayarlar dalı) bağımsızdır — ikisi birlikte gelirse biri kaldırılabilir. Kayıtlı ayardaki
 model/merkez/dron kaydı sonradan silinirse başlatma 400 verir (kart Düzenle ile onarılır). Atama bildirimi tarama tabanlı zil + anlık push'tur; e-posta yok.
+## 29. Uçuş arayüzü kişiselleştirme — kumanda hassasiyeti, giriş sekansı, gösterge tasarımı, taşınabilir radar/EO pencereleri (HEPGO + SIMUMAV ortak)
+Kullanıcı istekleri: "sanal joystick hassasiyeti değiştirilebilsin", "radar ve EO pencerelerinin yeri ve boyutu değiştirilebilsin", "ortadaki göstergeler için
+farklı tasarım seçenekleri", "tüm başlatmalarda kamera 100 m yüksekten baksın, 3‑2‑1 geri sayım ve dıt dıt dıt sesi". Dört özellik de istemci tarafıdır
+(sunucuya yeni alan gitmez); tercihler tarayıcıda (localStorage) kalıcıdır. Modüller `flightsim*.js` kalıbıyla SIMUMAV dışa aktarımına kendiliğinden girer.
+
+### 27.1 Sanal kumanda hassasiyeti (`static/js/modules/flightsim_rcfeel.js`)
+- **Eğri** (eksen başına: roll, pitch, yaw, gaz): ölü bölge % 0–20 (merkezde tepkisiz; dışarısı 0…1'e yeniden ölçeklenir) → expo % 0–90
+  (`y = (1−e)·x + e·x³`; merkezde yumuşak, uçta tam) → hassasiyet (oran) % 30–100 (tam çubukta azami çıkış). `shapeAxis` tek fonksiyon, monoton.
+- **Uygulandığı yer:** kumandanın ÇIKIŞI (kanal PWM'i) — HEPGO `virtualRC({ shape })`, SIMUMAV `rc.js channelsOf(ax, ch5, shape)`. Böylece sanal çubuk ve
+  klavye (WASD/oklar) aynı eğriden geçer; ileride gamepad eklenirse aynı `shape` kullanılır (şu an uçuşta gamepad girişi yok). Çubuk topuzu ham konumu
+  gösterir. **Uçakta gaz doğrusal** kalır (tutmalı gaz kolu, −1 = rölanti; eğri gaz ekseninde yalnız kopter ailesinde — merkez = askı).
+- **Hazır ayarlar:** Hassas (oran 70, expo 45, ölü 4), Normal (varsayılan; 100/20/3, yaw 90/20/4), Çevik (100/0/2); elle değişince "Özel".
+  "Roll ve pitch birlikte" (varsayılan açık) iki ekseni birlikte değiştirir. "Varsayılan" sıfırlar.
+- **Arayüz:** alt çubukta 🎮 Sanal kumanda'nın yanında ⚙ (kaydırıcı simgesi) düğmesi → küçük açılır panel (hazır ayarlar, eksen sekmeleri, üç kaydırıcı,
+  canlı eğri önizlemesi: doğrusal kesikli çizgi, ölü bölge sarı, uç noktası). Değişiklik anında kumandaya uygulanır. Kalıcı: `fs.rc.feel`. Sihirbazda ayar yok.
+- Metinler: HEPGO Türkçe anahtar; SIMUMAV `rcfeel.*` (7 dil).
+
+### 27.2 Giriş sekansı — 100 m bakış + 3‑2‑1 geri sayım (`static/js/modules/flightsim_intro.js`, 3B `flightsim3d.js playIntro/endIntro`)
+- **Ne zaman:** her oturumda bir kez, 3B dünya kurulmuş + perde (`.fs-msg`) kalkmış + oturum HAZIR iken (HEPGO canlı, sahte ve kayıttan oynatma; SIMUMAV
+  her uçuş). SIMUMAV sihirbazının eski BAŞLA geri sayımı (`COUNTDOWN_S`) bununla birleştirildi: sihirbazda artık yalnız "Hazır ol…" perdesi var, sayım sahnede.
+- **Kamera:** kamera kipi DEĞİŞMEZ. Her karede normal kip hesaplanır, ardından poz `introPose(u)` ile ezilir ve render SONRASI geri yüklenir (takip
+  kamerasının yörünge ofseti, serbest kameranın konumu bozulmaz). Yol: hedefin (dronun çizilen konumu / kalkış noktası) 100 m üstünden ve 80 m uzağından,
+  bitiş yönünden 110° geride başlayan spiral; yükseklik ve yarıçap quintic yumuşak eğriyle iner, sonunda normal kipin kamera ofsetine (takipte yörünge ofseti,
+  diğer kiplerde takip ofseti) varır. Sekans (3 sn sayım + 0,7 sn "BAŞLA") bitince 1,4 sn'de son seçilen kipe yumuşak geçiş (konum lerp + yönelim slerp + FOV).
+  Sekans sırasında FPV/termal son işleme, OSD/askerî HUD ve kamera PiP'i gizlenir.
+- **Ekran:** üst-ortada büyük 3 / 2 / 1 / BAŞLA (pop animasyonu), ilerleme halkası, altında merkez/parkur adı ve "Atla (Boşluk / tıkla)". Boşluk, Enter, Esc ya
+  da tıklama sekansı keser (kamera 0,6 sn'de normale döner).
+- **Ses:** "dıt dıt dıt" (880 Hz, 0,11 sn kare + oktav sinüs) ve sonda farklı ve uzun "diiit" (1320 Hz, 0,55 sn) — Web Audio, ayrı kısa ömürlü bağlam.
+  Ses tercihine uyulur: HEPGO `fs.audio.on`/`fs.audio.vol` (motor sesi düğmesi), SIMUMAV Ayarlar › Ses (`sfx.config()`). Kapalıysa bip çalmaz.
+- Teşhis: `window.__fsIntroHold = t` (sn) overlay'i ve kamerayı o anda sabitler (görsel betikler: yavaş yazılım WebGL'de kare almak için).
+
+### 27.3 Gösterge tasarımı — alt ortadaki kadranlar (`static/js/modules/flightsim_gtheme.js`; `createPowerGauges` `data-gtheme`)
+| Anahtar | Ad | Görünüm |
+|---|---|---|
+| `classic` | Klasik otomobil | §23.6 (HEPGO açık/koyu; SIMUMAV oyun teması `.sm-game`) — varsayılan |
+| `cockpit` | Uçak kokpiti | siyah kadran, kalın koyu çerçeve, beyaz ibre/çentik/rakam, kokpit yazı tipi (B612/DIN benzeri); gece (koyu tema) amber arka aydınlatma |
+| `glass` | Dijital cam kokpit | MFD karoları: etiket, büyük sayısal değer + birim, seviye şeridi (ibre doluluğu `--f`, seviyeye göre yeşil/sarı/kırmızı); açık temada beyaz karo |
+| `minimal` | Minimal / şeffaf | zeminsiz ince halkalar, yalnız ana çentikler, ince beyaz ibre, gölgeli yazılar (HUD uyumlu); koyu temada açık yeşil ton |
+| `military` | Retro askerî | zeytin yeşili gövde, fosfor yeşili parlayan rakam/ibre, monospace |
+- Seçim kalıcıdır (`fs.gauge.theme`); geçersiz değer `classic`'e düşer (`normGaugeTheme` — enum doğrulaması; sunucuya gitmez).
+- **Sihirbaz:** HEPGO "Kamera" adımının altında "Gösterge tasarımı" bölümü (önizlemeli kartlar: gökyüzü/arazi zemininde iki kadran ya da üç MFD karosu;
+  gün/gece temasına göre önizleme), özet satırı "Gösterge tasarımı". SIMUMAV "Pilot" adımında kamera kartlarının altında (oyun teması önizlemesi).
+- **Uçuşta:** kadranlara tıklayınca açılan ayrıntı kutusunun altında "TASARIM" satırı; **G** tuşu temalar arasında döner; değişim olay şeridine yazılır.
+- Kurallar tema özniteliğiyle `.fs-stage .fs-gauges[data-gtheme=…]` (HEPGO app.css ve SIMUMAV power.css'in önünde); JS bir kez `<style id="fs-gtheme-css">` ekler.
+
+### 27.4 Taşınabilir / boyutlandırılabilir radar ve EO pencereleri (`flightsim_gcs_ui.js createSiteScreens` + saf `flightsim_dock.js`)
+- Varsayılan yerleşim §26 (sol alt dok). **Başlık çubuğundan sürükle** (fare, dokunmatik, kalem — pointer olayları, `touch-action: none`) → pencere yüzen
+  olur (sahne içinde mutlak konum). **Sağ alt köşe tutamacı** → boyut; **en/boy oranı korunur** (radar ölçekli harita, EO kamera görüntüsü — serbest oran
+  görüntüyü gererdi). En küçük 190 px; en büyük sahne genişliğinin %60'ı ve yüksekliğe sığan.
+- **Bırakınca:** kenarlara ≤ 28 px yaklaşınca yapışma (köşelere iki eksende); sonra engellerden kaçınma — kamera PiP'i, alt ortadaki kadranlar (ve SIMUMAV hız
+  kadranı), Mission Planner kutusu, harekât kartı / yüzen panel, sanal kumanda çubukları, hassasiyet paneli, dolu dok ve diğer yüzen pencere (8 px boşluk):
+  çakışan engellerin dört yanına itilmiş adaylar genişlik öncelikli (4 tur) aranır, sınır içinde ve çakışmasız en yakın aday seçilir. Sınırlar: üst gezinti
+  şeridinin altı, alt çubuğun üstü. PiP de yüzen pencereleri sol taraf engeli sayar (`pipObstacleInsets`).
+- **Kalıcı:** `fs.site.win` = `{radar, eo}` her biri ekran boyutuna ORANLI `{fx, fy, fw, sx, sy}`; `sx/sy` yapışılan kenar — ekran boyutu değişince yapışık kenar
+  yapışık kalır (sağ alttaki pencere sağ altta), yapışmayan eksende oran korunur. Bozuk kayıt yok sayılır (`normWin`).
+- **Varsayılana dön:** başlıktaki ⟲ (yalnız yüzen pencerede görünür) ya da başlığa çift tık → iki pencere de doka döner.
+- **Render:** görüntü yine tek paylaşılan WebGL renderer'da viewport/scissor kopyası (§26); `sync()` her tikte ve sürükleme sırasında her harekette yeni
+  dikdörtgeni `sim.setRadarRect/setEoRect`'e verir, render hedefi (`rv.rt/ev.rt`) yeni piksel boyutunda yeniden kurulur. Dok tamamen boşalınca kadran/olay
+  şeridi kaydırması (`--fs-site-r`) sıfırlanır ve PiP yeniden yerleşir.
+
+### 27.5 Testler ve görsel doğrulama
+- `tests/test_flightsim_flyui.mjs` (node): eğri (tek/monoton/uçlar/ölü bölge/expo), normFeel sınırları, uçakta doğrusal gaz, hazır ayar tanıma, kalıcılık;
+  SIMUMAV `channelsOf` eğrili/eğrisiz; pencere boyutu (oran, sınırlar, tutamaç), kırpma, yapışma, engelden kaçınma (kalabalık ekran dâhil), oranlı kayıt ve
+  ekran boyutu değişimi; tema enum/döngü/kalıcılık/önizleme SVG/metinler; giriş yolu (100 m başlangıç, bitiş ofseti, monoton iniş, spiral açı), geri sayım
+  durumları, bip planı, ses tercihi.
+- Görsel: `tests/flyui_shots_hepgo.py`, `tests/flyui_shots_simumav.py` → `/tmp/flyui-shots/` (sihirbaz gösterge kartları açık/koyu, giriş sekansı kareleri,
+  hassasiyet paneli, radar/EO taşınmış + büyütülmüş + yeniden yükleme sonrası + sıfırlama, 5 tema × açık/koyu).

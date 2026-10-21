@@ -35,6 +35,9 @@ import { createDefendHud, createSiteScreens, createSiteSection, defendReportBody
 import { aimWaypoint, isIceptLauncher, rackCountFor } from './flightsim_launcher.js';   // §27 INTERCEPTOR fırlatıcıları (saf)
 import { createLauncherUi } from './flightsim_scope_ui.js';   // §27 hücre envanteri + el fırlatıcısı nişangâh penceresi   // §26 yer kontrol sahası: sihirbaz, radar/EO ekranları, görev şeridi, rapor
 import { defendStateAt } from './flightsim_gcs.js';   // §26 kayıtta görev şeridi durumu
+import { createRcFeelPanel } from './flightsim_rcfeel.js';   // §27.1 sanal kumanda hassasiyeti (oran / expo / ölü bölge)
+import { createGaugeThemePicker, gaugeThemeLabel } from './flightsim_gtheme.js';   // §27.3 gösterge tasarımı (sihirbaz kartları; uçuşta createPowerGauges)
+import { createIntro, hepgoSound } from './flightsim_intro.js';   // §27.2 giriş sekansı: 100 m bakış + 3-2-1 geri sayım + bip
 import { createPowerGauges, createPowerSection, createPowerSim, createSpeedPill, elecText, fuelText, rangeText } from './flightsim_power.js';   // §23: güç ve yakıt (sihirbaz bölümü, göstergeler, güç paneli kadranları §23.6, kayıtta istemci modeli, hız kapsülü)
 import { LAUNCH_OPTIONS, LAUNCH_PARAM_DEFS, createStepper, firstInvalid, launchOptionsFor, launchStepDesc, normLaunchMethod, paramField, stepDef, wizardSteps } from './flightsim_wizard.js';   // §6 adım adım sihirbaz (saf: adım listesi, doğrulama geçişleri, veriden kalkış seçenekleri)
 import { numSlider } from './fs_inputs.js';   // §6.1 görsel giriş: kaydırıcı + düzenlenebilir değer kutusu + birim
@@ -633,7 +636,8 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
   const camCards = createCameraCards({ tr, value: P0?.camera || camPrefs.type, palette: camPrefs.palette, onChange: t => { camTouched = true; camPrefs.setType(t); if (S.drone != null) camPrefs.rememberDrone(S.drone, t); }, onPalette: p => camPrefs.setPalette(p) });
   function camForDrone() { if (camTouched) return; const t = (S.drone != null && (droneCam.get(S.drone) || camPrefs.typeForDrone(S.drone))) || camPrefs.type; camCards.set(t); }
   const camNote = h('p', { class: 'small muted' }, '');
-  const stepCam = h('div', { class: 'fs-cam-step' }, camNote, camCards.el);
+  const gtPick = createGaugeThemePicker({ tr });   // §27.3 gösterge tasarımı (önizlemeli kartlar; kalıcı tercih fs.gauge.theme — uçuşta G / kadran kutusu)
+  const stepCam = h('div', { class: 'fs-cam-step' }, camNote, camCards.el, h('div', { class: 'fs-gt-wiz' }, gtPick.el));
   // ---------- 3b. kayıt seçenekleri (§17/§19): ☐ ekran kaydı (video) › ☐ Şirketten Haberler'de paylaş · ☐ uçuş logu (.bin; yalnız canlı) ----------
   const recOpts = recOptionsBox(tr, { getMode: () => S.mode });
   if (P0?.rec && typeof P0.rec.bin === 'boolean') recOpts.setBin(P0.rec.bin);   // §27 kayıtlı .bin seçimi
@@ -754,8 +758,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
     enterFullscreen();
     if (!mock && recPrefs.on) { const { stream, reason } = await acquireDisplayStream(); stashStream(stream); if (!stream && reason === 'denied') toast(tr('Ekran paylaşımı reddedildi; 3B sahne + HUD kaydedilecek (panel kayda girmez)')); }
     const geriAl = () => { takeStashedStream()?.getTracks().forEach(t => t.stop()); exitFullscreen(); if (back) back.hidden = false; };   // §17: oturum açılamadı/iptal → paylaşım akışı ve tam ekran bırakılır, pencere geri gelir
-    // §27 kayıtlı simülasyonu başlat: tam ekran + paylaşım izni (kullanıcı etkinleştirmesi içinde) ALINDIKTAN sonra 3-2-1 geri sayım; İptal → geri al
-    if (quick && !await countdown({ tr, seconds: 3, title: quick.name })) { geriAl(); return true; }
+    // §28 kayıtlı simülasyon: ayrı başlatma geri sayımı yok — §29 oturum girişi (100 m bakış + 3-2-1 + sesli bip) her başlatmada çalışır (çift sayım olmasın)
     let s;
     try {
       const model = modelBody(picker.selectionFor(activeType()), mock);
@@ -875,7 +878,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
       power: [isPlane(t) && pv.max_speed_ms ? ['Azami hız', `${pv.max_speed_ms} m/s (${Math.round(pv.max_speed_ms * 3.6)} km/h)`] : null,
         ['Yakıt', pv.fuel_l > 0 ? `${pv.fuel_l} L · ${pv.fuel_km_per_l} km/L` : tr('Yok')],
         ['Batarya', pv.elec_mah ? `${pv.elec_cells}S · ${pv.elec_mah} mAh · ${pv.elec_w} W` : '—']],
-      camera: [['Kamera türü', camTypeLabel(camCards.value, tr)]],
+      camera: [['Kamera türü', camTypeLabel(camCards.value, tr)], ['Gösterge tasarımı', tr(gaugeThemeLabel(gtPick.value))]],
       targets: [['Hedefler', tg?.items?.length ? tr('{n} hedef', { n: tg.items.length }) : tr('Hedef yok')], tg?.items?.length ? ['Modeller', tg.items.map(x => x.model_name || x.model).join(', ')] : null,
         tg?.items?.length ? ['Önleme yarıçapı', `${tg.radius_m} m`] : null],
       site: [['Saha', sv.site ? [sv.site.radar ? `${tr('Radar')} ${sv.site.radar_km} km` : null, sv.site.station ? tr('İstasyon') : null, sv.site.eo ? `EO ${sv.site.eo_km} km` : null].filter(Boolean).join(' · ') : tr('Yok')],
@@ -907,7 +910,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
     clear(phTitle, d.title, d.optional ? h('span', { class: 'badge gray' }, 'isteğe bağlı') : null);
     phDesc.textContent = tr(d.desc);
     if (cur === 'summary') drawSummary();
-    if (cur === 'camera') camCards.redraw?.();
+    if (cur === 'camera') { camCards.redraw?.(); gtPick.redraw(); }
     if (cur === 'site') siteSec.refresh();
     preview?.setPreviewFocus?.(cur === 'launch' ? 'rig' : null);   // Kalkış adımı: önizleme kamerası düzeneğe yakın tur atar
     drawFoot();
@@ -1157,6 +1160,9 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     h('div', { class: 'pill-group fs-speeds' }, speedBtns),
     h('div', { class: 'fs-seek-wrap' }, seek, h('i', { class: 'fs-seek-marks' })),
     timeLbl, clockLbl, lodLbl) : null;
+  // §27.1 kumanda hassasiyeti: ⚙ düğmesi alt çubukta (🎮 yanında), küçük açılır panel (oran / expo / ölü bölge, eksen başına; localStorage fs.rc.feel)
+  const rcFeel = createRcFeelPanel(stage, { tr, plane: isPlane(type), onChange: () => { rcShape = rcFeel.shaper(); } });
+  let rcShape = rcFeel.shaper();
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
     gimbalLbl, mhudBtn, fpvCtl, camCtl.el, opsBtn,
@@ -1165,7 +1171,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       armBtn, modeSel,
       h('button', { class: 'btn sm fs-takeoff-btn', type: 'button', onclick: () => takeoffDialog() }, LAUNCH_BTN[launch?.method] || 'Kalkış'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => cmd('rtl') }, 'RTL')) : null,
-    canWrite && !replay ? h('div', { class: 'pill-group' }, rcBtn) : null,
+    canWrite && !replay ? h('div', { class: 'pill-group' }, rcBtn, rcFeel.el) : null,   // §27.1 ⚙ hassasiyet
     h('div', { class: 'pill-group' },
       replay ? null : h('button', { class: 'btn sm', type: 'button', title: 'SITL aynı ayarlarla yeniden başlar; çarpışma kaldırılır', onclick: () => reset() }, '↺ Sıfırla'),
       h('button', { class: 'btn sm danger', type: 'button', onclick: () => endSession() }, 'Bitir')));
@@ -1183,7 +1189,8 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   // §23.6 güç paneli: alt çubuğun üstünde ortada dört otomobil tarzı kadran (YAKIT · HIZ · MOTOR · BATARYA), takip/serbest/yer kiplerinde ve panelden bağımsız;
   // FPV OSD / gimbal HUD açıkken onlar çizer (CSS gizler). Hız kadranı azami hızı session.power'dan; uyarı üçgeni çarpışma bandından (getCollision).
   // Ayrıntı kutusu kayıt/sahte kipte istemci modelinin özetinden (mesafe, harcanan, ölçülen), canlıda kendi mesafe toplayıcısından.
-  const gauges = createPowerGauges(stage, { h, tr, getSettings: () => session.power || null, getSummary: () => clientPower?.summary() || null, plane: isPlane(type), getCollision: () => !crash.hidden });
+  const gauges = createPowerGauges(stage, { h, tr, getSettings: () => session.power || null, getSummary: () => clientPower?.summary() || null, plane: isPlane(type), getCollision: () => !crash.hidden,
+    onTheme: t => addEvent(tr('Gösterge tasarımı: {t}', { t: tr(gaugeThemeLabel(t)) })) });   // §27.3 tasarım (sihirbaz seçimi; uçuşta G / kadran kutusu)
   stage.append(mount, msg, crash, hud, ...(mp ? [mp] : []), events, sticks, gauges.el, bar, nav, ended);
   if (attrib) stage.append(attrib);
   // §13 düzenek yüzey teşhisi: ?rigdiag=1 → sol üstte canlı kutu (h, eğim, kilit, karo inceliği/geometricError, örnekler); window.__fsRig() her oturumda
@@ -1381,7 +1388,12 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   };
   if (replay && session.state === 'HAZIR') prefetchReplay()?.catch(() => {});   // önbellekli / sihirbazdan gelen kayıt: kareler 3B ile paralel
   await buildSim();
+  // §27.2 giriş sekansı (tüm başlatmalar: canlı, sahte, kayıt): 3B hazır + perde kalkınca bir kez — 100 m'den sinematik iniş, 3-2-1 + bip, sonra son kamera kipi
+  const intro = createIntro(stage, { getSim: () => sim, tr, sound: () => hepgoSound(), sub: session.center?.name || null });
+  let introStarted = false;
+  const maybeIntro = () => { if (introStarted || destroyed || !sim || !msg.hidden || !(session.state === 'HAZIR' || mock)) return; introStarted = true; intro.start(); };
   const gimbalTick = setInterval(() => {
+    maybeIntro();
     if (!gimbalLbl.hidden && sim) gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim.getGimbal() });
     if (g3dMode && sim?.google) {   // Google atfı canlı (görünür karoların veri sağlayıcıları) + yükleme yüzdesi
       const a = sim.g3dAttribution();
@@ -1674,7 +1686,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
       return;
     }
     rc = virtualRC({ plane: isPlane(type), stickL, stickR, send: ch => socket?.send({ t: 'rc', ch }), onChange: () => drawRcBars(last?.rc),
-      throttle0: last?.armed ? last.throttle : null });   // uçuştayken açılırsa gaz çubuğu mevcut gazdan başlar (yerde/disarm: 1000)
+      throttle0: last?.armed ? last.throttle : null, shape: (k, v) => rcShape(k, v) });   // §27.1 hassasiyet (⚙ panel; değişiklik anında)   // uçuştayken açılırsa gaz çubuğu mevcut gazdan başlar (yerde/disarm: 1000)
     sticks.hidden = false; stage.classList.add('rc-on'); rcBtn.classList.add('primary');
     rcWarn.hidden = !last?.gcs_connected;
     sim?.setKeyboardLock(true);
@@ -1701,7 +1713,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     socket?.close();
     milHud?.dispose(); osd?.dispose(); camPip?.dispose(); camCtl.dispose(); siteUi?.dispose(); defHud?.dispose(); launcherUi?.dispose();   // §26 + §27
     if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
-    audio.dispose(); ops?.dispose(); gauges.dispose();
+    audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose();
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;
     if (player && window.__fsPlayer === player) delete window.__fsPlayer;
@@ -1723,7 +1735,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
 // 20 Hz: tick (klavye entegrasyonu + çizim) → send(channels()). dispose(): zamanlayıcı/dinleyiciler kalkar, 8×0 (override serbest) gönderilir.
 // ======================================================================
 const RC_KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
-function virtualRC({ plane, stickL, stickR, send, onChange, throttle0 = null }) {
+function virtualRC({ plane, stickL, stickR, send, onChange, throttle0 = null, shape = null }) {   // shape(eksen, v): §27.1 hassasiyet eğrisi (flightsim_rcfeel.js) — çıkışa uygulanır
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   // thr: −1 = 1000 (uçak boşta), 0 = 1500 (kopter askı). Uçakta kumanda uçuş sırasında açılırsa (throttle0: telemetri gazı %) çubuk o gazda başlar:
   // ArduPlane TAKEOFF/AUTO'da gazı RC'den bağımsız verir; çubuk altta (1000) iken HUD %100 "ters" görünmesin, FBWA'ya geçişte gaz aniden kesilmesin.
@@ -1735,7 +1747,8 @@ function virtualRC({ plane, stickL, stickR, send, onChange, throttle0 = null }) 
   const KEY_RATE = 3.5, SPRING = 9, THR_RATE = 0.7;
   const editable = el => el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
   const pwm = v => Math.round(clamp(1500 + v * 500, 1000, 2000));
-  const channels = () => [pwm(ax.roll), pwm(-ax.pitch), pwm(ax.thr), pwm(ax.yaw), ch5, 0, 0, 0];   // 6–8: 0 = o kanala dokunma
+  const S = (k, v) => (shape ? shape(k, v) : v);
+  const channels = () => [pwm(S('roll', ax.roll)), pwm(-S('pitch', ax.pitch)), pwm(S('thr', ax.thr)), pwm(S('yaw', ax.yaw)), ch5, 0, 0, 0];   // 6–8: 0 = o kanala dokunma
 
   // --- klavye ---
   const onKeyDown = e => {

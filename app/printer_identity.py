@@ -17,11 +17,14 @@ Aynı IP'yi iki kayıt tutamaz: bir yazıcıya IP atanırken o IP'yi tutan eski 
 printers.ip artık UNIQUE değildir, bu yüzden eski "UNIQUE constraint failed: printers.ip" hatası oluşmaz.
 """
 import ipaddress
+import logging
 import re
 import threading
 import time
 
 from . import config, db
+
+log = logging.getLogger(__name__)
 
 SCAN_TTL = 60   # sn — tarama önbelleği
 MAC_SOURCES = {'elle': 'Elle girildi', 'arp': 'Ağ taraması (ARP)', 'cihaz': 'Yazıcının kendi API’si',
@@ -521,7 +524,11 @@ def migrate(conn):
     rep = {'at': db.now(), 'rebuilt': False, 'ip_cleared': [], 'normalized': [], 'invalid': [], 'merged': [], 'conflicts': []}
     sql = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'printers'").fetchone()[0]
     if re.search(r'\bip\s+TEXT\s+NOT\s+NULL\s+UNIQUE', sql, re.I):
-        _rebuild_without_ip_unique(conn, sql)
+        try:
+            _rebuild_without_ip_unique(conn, sql)
+        except YedekYok as e:   # yedeksiz şema değişikliği yok; eski şemada (ip NOT NULL) aşağıdaki NULL atamaları da yapılamaz → çık
+            log.error('%s', e)
+            return None
         rep['rebuilt'] = True
     # Geçici park değerleri (eski iki aşamalı IP yazımından kalan) → IP bilinmiyor
     for pid, ip in conn.execute("SELECT id, ip FROM printers WHERE ip LIKE '#%' OR ip LIKE '%#eski' OR ip = ''").fetchall():
@@ -552,6 +559,10 @@ def migrate(conn):
     return rep
 
 
+class YedekYok(RuntimeError):
+    """Göç yedeği hiçbir dizine yazılamadı — şema değişikliği yapılmadı."""
+
+
 def _rebuild_without_ip_unique(conn, sql):
     """SQLite sütun kısıtını değiştiremediği için printers tablosu yeniden kurulur: ip TEXT (boş olabilir, benzersiz değil).
     Veriler, dizinler ve diğer tabloların printers(id) bağları korunur; öncesinde tam veritabanı yedeği alınır."""
@@ -564,13 +575,24 @@ def _rebuild_without_ip_unique(conn, sql):
     indexes = [r[0] for r in conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'printers' AND sql IS NOT NULL")]
     before = conn.execute('SELECT COUNT(*) FROM printers').fetchone()[0]
     conn.commit()
-    bdir = config.DATA_DIR / 'backups' / 'migration'
-    bdir.mkdir(parents=True, exist_ok=True)
-    dst = sqlite3.connect(bdir / f'before-printers-mac-{datetime.now():%Y%m%d-%H%M%S}.db')
-    try:
-        conn.backup(dst)
-    finally:
-        dst.close()
+    # Yedek: yazılabilir ilk dizine (PROD'da backups/migration root sahipliydi → "unable to open database file" servisi açılışta düşürmüştü).
+    # Hiçbiri yazılamıyorsa yeniden kurma YAPILMAZ (yedeksiz şema değişikliği yok) — göç bir sonraki açılışta yeniden denenir.
+    ad = f'before-printers-mac-{datetime.now():%Y%m%d-%H%M%S}.db'
+    yedek = None
+    for bdir in (config.DATA_DIR / 'backups' / 'migration', config.DATA_DIR / 'backups', config.DATA_DIR):
+        try:
+            bdir.mkdir(parents=True, exist_ok=True)
+            dst = sqlite3.connect(bdir / ad)
+            try:
+                conn.backup(dst)
+            finally:
+                dst.close()
+            yedek = bdir / ad
+            break
+        except (OSError, sqlite3.Error) as e:
+            log.warning('printers göçü yedeği %s dizinine yazılamadı: %s', bdir, e)
+    if yedek is None:
+        raise YedekYok('printers göçü: yedek yazılamadı, tablo yeniden kurulmadı (sonraki açılışta yeniden denenir)')
     conn.execute('PRAGMA foreign_keys = OFF')
     try:
         conn.executescript('BEGIN;\n' + new_sql + ';\n'

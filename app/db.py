@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from datetime import datetime
 
@@ -2750,7 +2751,11 @@ def init():
         conn.commit()
         _company_people_free(conn)
         from . import printer_identity   # yazıcı kimliği MAC: ip UNIQUE kalkar, MAC normalize + UNIQUE dizin (idempotent)
-        printer_identity.migrate(conn)
+        try:
+            printer_identity.migrate(conn)
+        except Exception:   # noqa: BLE001 — yazıcı göçü servisin açılmasını ENGELLEMEZ (21.10 PROD: yedek dizini izni açılışı düşürmüştü); sonraki açılışta yeniden denenir
+            conn.rollback()
+            logging.getLogger(__name__).exception('printers MAC göçü başarısız — sonraki açılışta yeniden denenecek')
 
 
 def _migrate_field_tasks(conn):

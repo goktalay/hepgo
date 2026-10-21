@@ -2438,6 +2438,196 @@ def motor_cut_testleri(a, c1, sitl):
     print('  motor kesme (motor_cut) testleri geçti')
 
 
+def servo_tetik_birim_testleri():
+    """§34 servo tetik saf mantığı (sahte oturum nesnesiyle): doğrulama, koşul, kenar tetik (dinleme başında zaten koşuldaysa tetik YOK),
+    simülasyon zamanıyla gecikme, çarpma anı / tetik anı anlık görüntüleri (AGL arazi ↔ ev, evden mesafe, uçuş süresi), PWM 0 = koşul yok (çıkış yok → komutla kenar),
+    `on:false` bekleyeni iptal, reset, kısa özet (drone_sim_runs.servo_trig), işlev adları."""
+    import asyncio as aio
+    from app import flightsim_servotrig as ST
+    D = ST.dogrula
+    assert D({'on': False}) == {'on': False}
+    assert D({'on': True, 'ch': 9, 'pwm': 1900}) == {'on': True, 'ch': 9, 'pwm': 1900, 'cmp': 'ge', 'tol': 50, 'delay_ms': 0}
+    assert D({'on': True, 'ch': 16, 'pwm': 800, 'cmp': 'eq', 'tol': 20, 'delay_ms': 60000.0})['delay_ms'] == 60000
+    for kotu in ({}, {'on': 1}, {'on': True}, {'on': True, 'ch': 0, 'pwm': 1500}, {'on': True, 'ch': 17, 'pwm': 1500}, {'on': True, 'ch': True, 'pwm': 1500},
+                 {'on': True, 'ch': 9, 'pwm': 799}, {'on': True, 'ch': 9, 'pwm': 2201}, {'on': True, 'ch': 9, 'pwm': 1900, 'cmp': 'gt'},
+                 {'on': True, 'ch': 9, 'pwm': 1900, 'delay_ms': -1}, {'on': True, 'ch': 9, 'pwm': 1900, 'delay_ms': 60001},
+                 {'on': True, 'ch': 9, 'pwm': 1900, 'tol': 0}, {'on': True, 'ch': 9, 'pwm': float('nan')}):
+        try:
+            D(kotu)
+        except ST.ServoTetikHata:
+            continue
+        raise AssertionError(kotu)
+    c = {'cmp': 'ge', 'pwm': 1900, 'tol': 50}
+    assert ST.kosul(c, 1900) is True and ST.kosul(c, 1899) is False and ST.kosul(c, 0) is False and ST.kosul(c, 65535) is False and ST.kosul(c, None) is None and ST.kosul({**c, 'cmp': 'le'}, 0) is False
+    assert ST.kosul({**c, 'cmp': 'le'}, 1100) is True and ST.kosul({**c, 'cmp': 'eq'}, 1949) is True and ST.kosul({**c, 'cmp': 'eq'}, 1951) is False
+    assert ST.islev_adi(59) == ('RCIN9', True) and ST.islev_adi(4) == ('Aileron', False) and ST.islev_adi(33) == ('Motor1', False) and ST.islev_adi(28) == ('Gripper', True)
+    assert ST.islev_adi(999) == ('F999', False) and ST.islev_adi(None) == (None, False)
+
+    class Gorev:
+        def __init__(self):
+            self.crashes = []
+
+        def carpisma(self, sebep, hiz=None, detay_metin=None, vz=None):
+            self.crashes.append({'reason': sebep, 'speed': hiz, 'text': detay_metin})
+            return self.crashes[-1]
+
+    class Ses:
+        def __init__(self):
+            self.tele = {'lat': 39.925, 'lon': 32.837, 'alt_msl': 900.0, 'alt_rel': 0.0, 'tbm': 0, 'armed': False, 'airspeed': 0.0, 'groundspeed': 0.0,
+                         'heading': 90.0, 'climb': 0.0, 'mode': 'GUIDED', 'home': {'lat': 39.925, 'lon': 32.837, 'alt': 900.0}}
+            self.center = {'lat': 39.925, 'lon': 32.837, 'alt': 900.0}
+            self.sahte, self.loop, self.viewers, self.state, self.drone, self.owner = object(), None, {}, 'HAZIR', None, {}
+            self.end_reason, self._heartbeat_alindi, self.motor_cut = None, False, False
+            self.yayin, self.olaylar, self.gorev, self.disarm = [], [], Gorev(), 0
+            self.sahte = type('K', (), {'komut': lambda _s, n, p: setattr(self, 'disarm', self.disarm + (n == 'disarm'))})()
+
+        def _yay(self, o):
+            self.yayin.append(o)
+
+        def _olay(self, t, sev=6):
+            self.olaylar.append((t, sev))
+
+    s = Ses()
+    st = ST.ServoTetik(s)
+    run = lambda name, p: aio.run(st.komut(name, p))   # noqa: E731
+    assert st.ozet() is None and st.durum()['phase'] == 'idle'
+    arr = [1500] * 8 + [1100] * 8
+    # ARM: uçuş süresi tabanı (tbm 1000)
+    s.tele.update(armed=True, tbm=1000); st.adim()
+    # dinleme başında kanal ZATEN koşulda → tetik yok (kenar), uyarı olayı bir kez
+    arr[8] = 1950
+    run('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900, 'delay_ms': 1500})
+    st.gozlem(arr, 2000); st.gozlem(arr, 2100)
+    assert st.phase == 'listening' and sum('zaten koşulda' in o[0] for o in s.olaylar) == 1, s.olaylar
+    arr[8] = 0; st.gozlem(arr, 2150)   # çıkış yok: koşul sağlanmıyor (kenar tabanı)
+    arr[8] = 1100; st.gozlem(arr, 2200)
+    assert st.phase == 'listening'
+    # yeni kenar → tetik anı (konum: evden ~111 m kuzey, 80 m AGL, arazi verisi yok → ev referansı)
+    s.tele.update(lat=39.926, alt_rel=80.0, alt_msl=980.0, airspeed=21.0, groundspeed=19.5, tbm=5000)
+    arr[8] = 1900; st.gozlem(arr, 5000)
+    assert st.phase == 'pending' and st.seen_pwm == 1900, st.phase
+    T = st.trigger
+    assert T['agl'] == 80.0 and T['agl_src'] == 'home' and T['alt_msl'] == 980.0 and 110 < T['dist_home_m'] < 112 and T['flight_s'] == 4.0 and T['tbm'] == 5000, T
+    assert any(o.get('phase') == 'pending' for o in s.yayin)
+    # gecikme simülasyon zamanıyla: 1499 ms'de çarpma yok, 1500'de var; çarpma anında arazi AGL'si (TERRAIN_REPORT) öncelikli
+    s.tele.update(tbm=6499, lat=39.9265); st.adim()
+    assert st.phase == 'pending'
+    s.tele.update(tbm=6500, lat=39.927, alt_rel=75.0, terrain_agl=62.5, alt_msl=975.0); st.adim()
+    assert st.phase == 'fired' and st.donuk and s.end_reason == 'servo_trigger' and s.disarm == 1, (st.phase, s.end_reason)
+    H = st.hit
+    assert H['agl'] == 62.5 and H['agl_src'] == 'terrain' and H['delay_sim_ms'] == 1500 and 221 < H['dist_home_m'] < 223 and H['flight_s'] == 5.5, H
+    assert s.gorev.crashes[-1]['reason'] == 'servo_trigger' and s.gorev.crashes[-1]['speed'] == 21.0, s.gorev.crashes
+    assert any(o.get('phase') == 'fired' for o in s.yayin)
+    o = st.ozet()
+    assert o['ch'] == 9 and o['pwm'] == 1900 and o['seen_pwm'] == 1900 and o['delay_ms'] == 1500 and o['trigger']['agl'] == 80.0 and o['hit']['agl'] == 62.5 and o['time_base'] == 'sim', o
+    k = ST.kisa_ozet(o)
+    assert k == {'ch': 9, 'fn': None, 'pwm': 1900, 'cmp': 'ge', 'delay_ms': 1500, 'trig_agl': 80.0, 'trig_msl': 980.0, 'trig_dist_m': T['dist_home_m'],
+                 'hit_agl': 62.5, 'hit_dist_m': H['dist_home_m'], 'fired': True}, k
+    try:   # çarpmadan sonra yeniden dinleme yok (oturum kapanıyor)
+        run('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900})
+        raise AssertionError('fired sonrası kabul edildi')
+    except ST.ServoTetikHata:
+        pass
+    # ≤ koşulu + gecikme 0 → anında; on:false bekleyeni iptal eder; reset taban + bekleyeni sıfırlar
+    s2 = Ses(); st2 = ST.ServoTetik(s2)
+    aio.run(st2.komut('servo_trigger', {'on': True, 'ch': 3, 'pwm': 1200, 'cmp': 'le', 'delay_ms': 0}))
+    a2 = [1500] * 16; st2.gozlem(a2, 100); a2[2] = 1150; st2.gozlem(a2, 200)
+    assert st2.phase == 'fired' and st2.hit['delay_sim_ms'] == 0
+    s5 = Ses(); st5 = ST.ServoTetik(s5)   # gerçek SITL: SERVO9_FUNCTION 0 → kanal 0 bildirir; DO_SET_SERVO 0 → 1900 kenardır
+    aio.run(st5.komut('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900, 'delay_ms': 1500}))
+    a5 = [0] * 16; st5.gozlem(a5, 100); a5[8] = 1900; st5.gozlem(a5, 200)
+    assert st5.phase == 'pending', st5.phase
+    s3 = Ses(); st3 = ST.ServoTetik(s3)
+    aio.run(st3.komut('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900, 'delay_ms': 5000}))
+    a3 = [1500] * 16; st3.gozlem(a3, 100); a3[8] = 2000; st3.gozlem(a3, 200)
+    assert st3.phase == 'pending'
+    st3.sifirla(); assert st3.phase == 'listening' and st3.trigger is None and st3._onceki is None
+    st3.gozlem(a3, 300); assert st3.phase == 'listening'   # reset sonrası ilk örnek taban (zaten koşulda)
+    a3[8] = 1500; st3.gozlem(a3, 400); a3[8] = 2000; st3.gozlem(a3, 500); assert st3.phase == 'pending'
+    aio.run(st3.komut('servo_trigger', {'on': False}))
+    assert st3.phase == 'idle' and not st3.on and any('iptal' in o[0] for o in s3.olaylar)
+    s3.tele['tbm'] = 99999; st3.adim(); assert st3.phase == 'idle' and st3.hit is None
+    # SERVO_OUTPUT_RAW (MAVLink2 uzantı alanları 9…16) → 16 kanal; port ≠ 0 yok sayılır
+    from pymavlink.dialects.v20 import ardupilotmega as Dv
+    mv = Dv.MAVLink(None, srcSystem=1, srcComponent=1)
+    m = mv.parse_buffer(mv.servo_output_raw_encode(7_000_000, 0, *([1500] * 8), servo9_raw=1900, servo16_raw=1234).pack(mv))[0]
+    assert ST.servo_raw_dizisi(m)[8] == 1900 and ST.servo_raw_dizisi(m)[15] == 1234
+    s4 = Ses(); st4 = ST.ServoTetik(s4); st4.gozlem_mesaj(m)
+    assert s4.tele['servo16'][8] == 1900 and st4.pwm[15] == 1234
+    m2 = mv.parse_buffer(mv.servo_output_raw_encode(1, 1, *([1000] * 8)).pack(mv))[0]
+    st4.gozlem_mesaj(m2); assert st4.pwm[0] == 1500   # port 1 (17…32) yok sayıldı
+    st4.param('SERVO9_FUNCTION', 59.0); st4.param('SERVO17_FUNCTION', 1.0); st4.param('SERVO1_FUNCTION', 4)
+    assert st4.fn[8] == 59 and st4.fn[0] == 4 and len(st4.fn) == 16
+    print('  servo tetik (§34) birim testleri geçti')
+
+
+def servo_tetik_testleri(a, c1, sitl):
+    """§34 uçtan uca (sahte kinematik): komut sözleşmesi (400'ler, KOMUTLAR + SIMUMAV SIM_KOMUT), servo_set → kenar → sim zamanı gecikme →
+    `crash` (reason servo_trigger) + `servo_trigger fired`, 3B donar (tele kesilir), özet `servo_trigger` bölümü, izleyici kalmayınca sunucu
+    kapatır (end_reason servo_trigger), drone_sim_runs.servo_trig + result carpisma, dron kaydına son ayarlar (sonraki oturumda öneri)."""
+    from app import db, drone_params, flightsim_servotrig as ST
+    S = '/api/drone/sim/sessions'
+    assert 'servo_trigger' in flightsim.KOMUTLAR and 'servo_set' in flightsim.KOMUTLAR
+    from app.simumav.routers import fly as smfly
+    assert 'servo_trigger' in smfly.SIM_KOMUT
+    dr = ok(a.post('/api/drone/drones', json={'name': 'Servo Kopter', 'protocol': 'sanal', 'model': 'Quad'}))
+    assert bekle(lambda: len(sitl.baglar) == 1 or None, 5) or len(sitl.baglar) == 0
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': dr['id']}), 201)
+    sid = s['id']
+    assert s['servo_trigger']['phase'] == 'idle' and s['servo_trigger']['suggest'] is None and len(s['servo_trigger']['fn']) == 16, s['servo_trigger']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    cmd = lambda name, params=None: a.post(f'{S}/{sid}/cmd', json={'name': name, 'params': params or {}})   # noqa: E731
+    for kotu in ({}, {'on': True, 'ch': 0, 'pwm': 1900}, {'on': True, 'ch': 9, 'pwm': 3000}, {'on': True, 'ch': 9, 'pwm': 1900, 'cmp': 'x'}):
+        r = cmd('servo_trigger', kotu); assert r.status_code == 400 and 'servo_trigger.' in r.text, (kotu, r.text)
+    assert cmd('servo_set', {'ch': 9}).status_code == 400 and cmd('servo_set', {'ch': 20, 'pwm': 1500}).status_code == 400
+    ok(cmd('speed', {'factor': 4}))   # gecikme sim zamanında: 4× hızda duvar saatinde ~4 kat kısa
+    ok(cmd('takeoff', {'alt': 30}))
+    ok(cmd('servo_set', {'ch': 9, 'pwm': 1950}))   # dinleme öncesi koşulda → tetik değil
+    token = a.cookies.get(auth.COOKIE)
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        r = ok(cmd('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900, 'cmp': 'ge', 'delay_ms': 1500}))
+        assert r['servo_trigger']['phase'] == 'listening' and r['servo_trigger']['pwm_now'] == 1950, r
+        e = ws_bekle(ws, lambda x: x['t'] == 'event' and 'zaten koşulda' in x['text'], 3); assert e, 'zaten koşulda uyarısı yok'
+        assert bekle(lambda: flightsim.MANAGER.get(sid).tele['alt_rel'] > 5, 8), 'kalkış olmadı'
+        ok(cmd('servo_set', {'ch': 9, 'pwm': 1100}))
+        assert flightsim.MANAGER.get(sid).servo_tetik.phase == 'listening'
+        t_duvar = time.time()
+        ok(cmd('servo_set', {'ch': 9, 'pwm': 1900}))   # Mission Planner DO_SET_SERVO karşılığı
+        p = ws_bekle(ws, lambda x: x['t'] == 'servo_trigger' and x.get('phase') == 'pending', 3); assert p and p['trigger']['agl'] > 5, p
+        c = ws_bekle(ws, lambda x: x['t'] == 'crash', 6); assert c and c['reason'] == 'servo_trigger', c
+        f = ws_bekle(ws, lambda x: x['t'] == 'servo_trigger' and x.get('phase') == 'fired', 3)
+        assert f and f['hit']['delay_sim_ms'] >= 1500 and f['hit']['delay_wall_ms'] < 1400, f and f['hit']
+        assert time.time() - t_duvar < 3
+        # donma: çarpmadan sonra tele yayınlanmaz (3B çarpma anı pozunda kalır)
+        ses = flightsim.MANAGER.get(sid)
+        t1 = ses._tele_son; time.sleep(0.6)
+        assert ses._tele_son == t1 and ses.servo_tetik.donuk
+        o = ok(a.get(f'{S}/{sid}/summary'))
+        sv = o['servo_trigger']
+        assert sv['ch'] == 9 and sv['seen_pwm'] == 1900 and sv['delay_ms'] == 1500 and sv['trigger']['agl'] > 5 and sv['hit'] and sv['hit']['dist_home_m'] is not None, sv
+        assert o['crash']['reason'] == 'servo_trigger' and o['end_reason'] == 'servo_trigger', (o['crash'], o['end_reason'])
+        assert cmd('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900}).status_code == 400   # oturum kapanıyor
+    # izleyici yok → sunucu kendisi kapatır (BOS_KAPANIS_S)
+    assert bekle(lambda: a.get(f'{S}/{sid}').status_code == 404 or None, ST.BOS_KAPANIS_S + 8), 'sunucu kapatmadı'
+    with db.connect() as conn:
+        run = db.row(conn.execute('SELECT * FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (sid,)))
+    assert run['end_reason'] == 'servo_trigger' and run['result'] == 'carpisma', (run['end_reason'], run['result'])
+    k = json.loads(run['servo_trig'])
+    assert k['ch'] == 9 and k['fired'] is True and k['trig_agl'] > 5 and k['delay_ms'] == 1500, k
+    it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['id'] == run['id'])
+    assert it['servo_trig']['trig_agl'] == k['trig_agl'], it['servo_trig']   # liste/kart için JSON çözülmüş
+    # dron kaydına son ayarlar → sonraki oturumda öneri
+    o2 = drone_params.secenekleri_oku(dr['id'])
+    assert o2['srvtrig_ch'] == 9 and o2['srvtrig_pwm'] == 1900 and o2['srvtrig_delay_ms'] == 1500 and o2['srvtrig_cmp'] == 0, o2
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'drone_id': dr['id']}), 201)
+    assert s['servo_trigger']['suggest'] == {'ch': 9, 'pwm': 1900, 'cmp': 'ge', 'tol': 50, 'delay_ms': 1500}, s['servo_trigger']
+    ok(a.delete(f"{S}/{s['id']}"))
+    with db.connect() as conn:
+        run2 = db.row(conn.execute('SELECT servo_trig FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (s['id'],)))
+    assert run2['servo_trig'] is None   # dinlenmeyen oturumda NULL
+    print('  servo tetik (§34) uçtan uca testleri geçti')
+
+
 def sensor_param_testleri():
     """Görev B: gerçek uçağın sensör kalibrasyonu / yönelimi (COMPASS_*, AHRS_ORIENTATION, INS_ACC* kalibrasyonu/kimlikleri) SITL'e yazılmaz
     ("PreArm: Check mag field (xy diff …)" kök nedeni), kayıtta kalır; SITL'in kendi değeri ('sitl' kaynağı) kayda yazılmaz."""
@@ -3466,6 +3656,8 @@ def main():
         firlatici_testleri(a, c1)   # §27 INTERCEPTOR fırlatıcıları
         preset_testleri(a, c1, sitl, mon)   # §27 kayıtlı simülasyonlar
         rover_testleri(a, c1)   # §31 kara aracı
+        servo_tetik_birim_testleri()   # §34 servo tetik (saf mantık)
+        servo_tetik_testleri(a, c1, sitl)   # §34 servo tetik uçtan uca
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

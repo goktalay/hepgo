@@ -170,16 +170,22 @@ def probe(ip):
 
 
 def poll_all():
+    """Kayıtlı yazıcıların canlı durumu, SON GÖRÜLEN IP'lerinden okunur. Kimlik denetimi: Moonraker'ın bildirdiği ağ adı
+    (K2Plus-XXXX) yazıcının MAC'iyle uyuşmazsa o IP'de BAŞKA bir yazıcı vardır — durum bu kayda yazılmaz (çevrimdışı
+    sayılır) ve bir sonraki tazelemede ağ taramasıyla doğru IP bulunur. IP'si bilinmeyen kayıt çevrimdışıdır."""
+    from .printer_identity import hw_matches
     with db.connect() as conn:
         printers = db.rows(conn.execute(
-            'SELECT id, ip, model, live_state, live_file, live_progress, live_since, current_part_id, maint_since, arge_since FROM printers'))
+            'SELECT id, ip, mac, hw_id, model, live_state, live_file, live_progress, live_since, current_part_id, maint_since, arge_since FROM printers'))
     if not printers:
         return
     with ThreadPoolExecutor(max_workers=16) as pool:
-        results = list(pool.map(lambda p: (p, probe(p['ip'])), printers))
+        results = list(pool.map(lambda p: (p, probe(p['ip']) if p['ip'] else None), printers))
     now = db.now()
     with db.connect() as conn:
         for p, live in results:
+            if live and _other_device(p, live.get('hostname') if live.get('source') == 'moonraker' else None, hw_matches):
+                live = None   # bu IP'de başka yazıcı: durumu bu kayda yazma
             if live:
                 since = p['live_since'] if p['live_state'] == live['state'] and p['live_since'] else now
                 conn.execute(
@@ -191,6 +197,17 @@ def poll_all():
             else:
                 conn.execute('UPDATE printers SET live_state = ? WHERE id = ?', (OFFLINE, p['id']))
         track_jobs(conn, now)
+
+
+def _other_device(p, hostname, hw_matches):
+    """Yoklanan IP'deki cihazın ağ adı bu kaydın MAC'ine / kayıtlı ağ adına ait değilse True (başka yazıcı)."""
+    if not hostname:
+        return False
+    from .printer_identity import is_netname
+    if p.get('mac'):
+        return hw_matches(hostname, p['mac']) is False
+    hw = p.get('hw_id') or ''
+    return is_netname(hw) and is_netname(hostname) and hostname.upper() != hw.upper()
 
 
 def detect_unrecorded_abort(conn, before, state, now):
@@ -237,55 +254,14 @@ _recon_last = 0.0
 
 
 def reconcile_ips():
-    """Ağı tarayıp yazıcıların IP'lerini kalıcı donanım kimliğine (hw_id) göre günceller: IP değişen yazıcının
-    kaydı silinmez, yalnızca IP'si güncellenir. Değişen IP sayısını döner."""
-    found = discover()
+    """Ağı tarayıp yazıcıların IP'lerini MAC'e (yoksa MAC'ten türeyen / kayıtlı ağ adına) göre günceller: IP değişen
+    yazıcının kaydı silinmez, yalnızca son görülen IP'si güncellenir; aynı IP'yi tutan eski kaydın IP'si boşaltılır
+    (printer_identity.apply_scan). Değişen IP sayısını döner."""
+    from . import printer_identity
+    found, _ = printer_identity.scan()
     if not found:
         return 0
-    # Donanım kimliği taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
-    hw, missing = {}, []
-    for ip, live in found:
-        if isinstance(live, dict) and 'hw' in live:
-            hw[ip] = live['hw']
-        else:
-            missing.append(ip)
-    if missing:
-        with ThreadPoolExecutor(max_workers=24) as pool:
-            hw.update(zip(missing, pool.map(hardware_id, missing)))
-    live_by_ip = {ip: live for ip, live in found}
-    moved = 0
-    now = db.now()
-    with db.connect() as conn:
-        by_hw = {}
-        for r in db.rows(conn.execute('SELECT id, ip, hw_id, hw_alias FROM printers')):
-            for k in (r['hw_id'], r['hw_alias']):   # kalıcı kimlik (K2Plus-XXXX) ya da elle verilmiş ağ adı
-                if k:
-                    by_hw[k.upper()] = r
-        ips_of = {}
-        for ip, h in hw.items():
-            if h:
-                ips_of.setdefault(h.upper(), set()).add(ip)
-        for ip, _live in found:
-            h = (hw.get(ip) or '').upper()
-            if not h or h not in by_hw or by_hw[h]['ip'] == ip:
-                continue
-            if by_hw[h]['ip'] in ips_of.get(h, ()):   # aynı yazıcının ikinci ağ bağlantısı (kablolu + Wi-Fi): mevcut IP hâlâ geçerli
-                continue
-            # IP degisti: kaydi koru, IP'sini guncelle
-            conn.execute("UPDATE printers SET ip = ip || '#eski' WHERE ip = ? AND id != ?", (ip, by_hw[h]['id']))
-            conn.execute('UPDATE printers SET ip = ? WHERE id = ?', (ip, by_hw[h]['id']))
-            by_hw[h]['ip'] = ip
-            moved += 1
-        conn.execute("UPDATE printers SET ip = replace(ip, '#eski', '') WHERE ip LIKE '%#eski'")
-        cols = 'live_state = ?, live_progress = ?, live_file = ?, live_source = ?, last_seen = ?, live_since = ?, live_print_s = ?'
-        for pr in db.rows(conn.execute('SELECT id, ip, live_state, live_since FROM printers')):
-            live = live_by_ip.get(pr['ip'])
-            if live:
-                since = pr['live_since'] if pr['live_state'] == live['state'] and pr['live_since'] else now
-                conn.execute('UPDATE printers SET ' + cols + ' WHERE id = ?',
-                             (live['state'], live['progress'], live['file'], live['source'], now, since, live.get('print_s'), pr['id']))
-        conn.commit()
-    return moved
+    return len(printer_identity.apply_scan(found)['moved'])
 
 
 def reconcile_if_offline(min_interval=25):
@@ -347,14 +323,19 @@ def _port_open(ip, port):
 
 def _discover_local():
     """Bu makinenin ağ bloğunda (/24) 9999/7125 portu açık cihazları bulur, yazıcı olduğunu doğrular ve her biri için
-    kalıcı donanım kimliğini (hw) de okur. [[ip, live], …] döner (live['hw'] IP değişimini tanımak için)."""
+    MAC'ini (ARP, live['mac']) ve ağ adını (live['hw'], K2Plus-XXXX) da okur. [[ip, live], …] döner."""
     hosts = [str(h) for net in _local_networks() for h in net.hosts()]
+
+    from .printer_identity import _moonraker_macs, arp_mac
 
     def check(ip):
         if _port_open(ip, MOONRAKER_PORT) or _port_open(ip, CREALITY_WS_PORT):
             live = _probe_direct(ip)
             if live:
-                return [ip, dict(live, hw=hardware_id(ip))]
+                # mac: ARP (ulaşılan arayüz; Wi-Fi'de rastgele olabilir) · macs: yazıcının kendi API'sinin bildirdiği tüm
+                # arayüz MAC'leri (kablolu dahil) — yazıcının benzersiz kimliği bunlardan biridir
+                macs = _moonraker_macs(ip) if live.get('source') == 'moonraker' else []
+                return [ip, dict(live, hw=hardware_id(ip), mac=arp_mac(ip), macs=macs)]
         return None
 
     with ThreadPoolExecutor(max_workers=64) as pool:

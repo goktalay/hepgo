@@ -46,7 +46,9 @@ def _multipart_stream(path, filename, fields, boundary, progress):
 
 
 def _upload(printer, path, filename, start_print, job):
-    """Uzak modda G-code içeriği fabrikadaki ajana aktarılır, ajan yazıcıya yükler; yerelde doğrudan yüklenir."""
+    """Uzak modda G-code içeriği fabrikadaki ajana aktarılır, ajan yazıcıya yükler; yerelde doğrudan yüklenir.
+    printer['ip'] MAC ile doğrulanmış IP'dir (printer_identity.resolve_ip); printer['mac'] ajana da verilir — ajan
+    yüklemeden hemen önce aynı IP'deki cihazın MAC'ini bir kez daha denetler (arada IP el değiştirdiyse reddeder)."""
     if config.AGENT_MODE == 'remote':
         import base64
         from . import devices
@@ -54,12 +56,26 @@ def _upload(printer, path, filename, start_print, job):
             data = f.read()
         job['total'] = len(data)
         job['sent'] = 0
-        res = devices.call_sync('printer.send', {'ip': printer['ip'], 'filename': filename,
+        res = devices.call_sync('printer.send', {'ip': printer['ip'], 'expect_mac': printer.get('mac'), 'filename': filename,
                                                  'start': bool(start_print), 'content_b64': base64.b64encode(data).decode()},
                                 timeout=300)
         job['sent'] = len(data)
         return res
+    _recheck(printer['ip'], printer.get('mac'))
     return _upload_direct(printer, path, filename, start_print, job)
+
+
+def _recheck(ip, mac):
+    """Yükleme öncesi son denetim (yerelde ya da ajanda): IP'deki cihaz kesin olarak BAŞKA bir MAC'e aitse durdur."""
+    if not mac:
+        return
+    from . import printer_identity as pi
+    try:
+        ident = pi.identify_local(ip)
+    except Exception:   # noqa: BLE001 — okunamadı: merkezdeki doğrulama geçerli
+        return
+    if pi.verdict(ident, mac) == 'mismatch':
+        raise RuntimeError(f'{ip} adresindeki cihaz beklenen yazıcı değil (MAC {mac} uyuşmadı) — gönderim yapılmadı')
 
 
 def _upload_direct(printer, path, filename, start_print, job):
@@ -91,6 +107,7 @@ def agent_send(args):
     try:
         os.write(fd, data)
         os.close(fd)
+        _recheck(args['ip'], args.get('expect_mac'))   # eski merkez bu alanı göndermez → denetim atlanır
         return _upload_direct({'ip': args['ip']}, tmp, args['filename'], bool(args.get('start', True)), {})
     finally:
         try:
@@ -102,6 +119,12 @@ def agent_send(args):
 def _run(order_part_id, printer, path, filename, at, user_id, order_id, order_code, part_id):
     job = _jobs[order_part_id]
     try:
+        # Hedef MAC ile çözülür: bilinen IP'de MAC doğrulanır, değilse ağ taranıp güncel IP bulunur; doğrulanmazsa gönderilmez
+        job['status'] = 'resolving'
+        from . import printer_identity
+        res = printer_identity.resolve_ip(printer['id'], user_id)
+        printer = dict(printer, ip=res['ip'], mac=res['mac'])
+        job.update(ip=res['ip'], mac=res['mac'], verified_by=res['method'])
         job['status'] = 'uploading'
         _upload(printer, path, filename, start_print=True, job=job)
         job['status'] = 'starting'
@@ -150,9 +173,9 @@ def start(order_part_id, printer, gcode_rel, at, user_id, order_id, order_code, 
         raise FileNotFoundError('G-code dosyası bulunamadı')
     with _lock:
         cur = _jobs.get(order_part_id)
-        if cur and cur['status'] in ('uploading', 'starting'):
+        if cur and cur['status'] in ('resolving', 'uploading', 'starting'):
             return False
-        _jobs[order_part_id] = {'status': 'uploading', 'sent': 0, 'total': path.stat().st_size,
+        _jobs[order_part_id] = {'status': 'resolving', 'sent': 0, 'total': path.stat().st_size,
                                 'filename': path.name, 'printer': printer['name'], 'error': None, 'started_at': time.time()}
     threading.Thread(target=_run, name=f'send-{order_part_id}',
                      args=(order_part_id, printer, path, path.name, at, user_id, order_id, order_code, part_id),

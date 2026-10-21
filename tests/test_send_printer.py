@@ -13,7 +13,7 @@ os.environ.update(CAYMAZ_DATA_DIR=tmp, CAYMAZ_PRINTER_POLL='0',
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import db, printer_send  # noqa: E402
+from app import db, printer_identity, printer_send  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -35,11 +35,14 @@ def main():
             time.sleep(0.05)
         return {'item': {'path': filename}}
     printer_send._upload = fake_upload
+    # Ağ yok: 10.0.0.9'daki cihaz K2-09'un MAC'ini bildiriyor (gönderim öncesi MAC doğrulaması)
+    printer_identity.identify = lambda ip: {'ip': ip, 'reachable': True, 'arp_mac': {'10.0.0.9': 'FC:EE:28:00:00:09'}.get(ip), 'macs': [], 'hw': None}
 
     with TestClient(app) as a:
         ok(a.post('/api/auth/login', json={'username': 'admin@test', 'password': 'admin-sifre-1'}))
-        prn = ok(a.post('/api/printers', json={'name': 'K2-09', 'ip': '10.0.0.9'}))['id']
-        prn2 = ok(a.post('/api/printers', json={'name': 'K2-10', 'ip': '10.0.0.10'}))['id']
+        prn = ok(a.post('/api/printers', json={'name': 'K2-09', 'ip': '10.0.0.9', 'mac': 'fc-ee-28-00-00-09'}))['id']
+        prn2 = ok(a.post('/api/printers', json={'name': 'K2-10', 'ip': '10.0.0.10', 'mac': 'FC:EE:28:00:00:10'}))['id']
+        prn3 = ok(a.post('/api/printers', json={'name': 'K2-MACSIZ', 'ip': '10.0.0.11'}))['id']   # MAC'siz: gönderim yok
         cyz = next(p for p in ok(a.get('/api/products')) if p['code'] == 'CYZ')
         oid = ok(a.post('/api/orders', json={'product_id': cyz['id'], 'quantity': 1}))[0]['id']
         part = ok(a.get(f'/api/orders/{oid}'))['parts'][0]['part_id']
@@ -53,6 +56,8 @@ def main():
             conn.execute("UPDATE products SET gcode_file = 'gcode/test.gcode' WHERE schema = ?", (f'part-{part}',))
             conn.commit()
         assert a.post(f'/api/orders/{oid}/parts/{part}/send-to-printer', json={'printer_id': 99999}).status_code == 404
+        r = a.post(f'/api/orders/{oid}/parts/{part}/send-to-printer', json={'printer_id': prn3})
+        assert r.status_code == 400 and 'MAC' in r.text, r.text
         # Gönder
         ok(a.post(f'/api/orders/{oid}/parts/{part}/send-to-printer', json={'printer_id': prn, 'at': '2026-09-25T09:00'}))
         # ilerleme akışı
@@ -64,6 +69,7 @@ def main():
                 break
             time.sleep(0.05)
         assert 'uploading' in seen and st['status'] == 'done' and st['percent'] == 100
+        assert st['ip'] == '10.0.0.9' and st['mac'] == 'FC:EE:28:00:00:09' and st['verified_by'] == 'mac', st
         # parça o yazıcıda üretimde
         d = ok(a.get(f'/api/orders/{oid}/parts/{part}'))
         assert d['state'] == 'URETIMDE' and d['printer_name'] == 'K2-09' and d['started_at'].startswith('2026-09-25')

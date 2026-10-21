@@ -646,6 +646,43 @@ Creality K2 Plus yazıcıların durumu Moonraker API'den (`http://IP:7125`) okun
 yerel WebSocket'i (`ws://IP:9999`) denenir. **Otomatik Ekle**, makinenin bağlı olduğu yerel /24 ağında bu portları
 tarar ve yazıcı olarak doğrulanan cihazları, ağdaki adlarıyla kalıcı olarak ekler.
 
+### Kimlik: MAC adresi (IP değil)
+
+Yazıcının benzersiz anahtarı **MAC adresidir** (`printers.mac`, büyük harf + iki nokta: `FC:EE:28:0F:36:97`;
+`ux_printers_mac` UNIQUE dizini, NULL'lar hariç). `printers.ip` yalnız **son görülen IP**'dir: DHCP ile değişir,
+boş olabilir, benzersiz değildir. Bir IP bir yazıcıya atanırken o IP'yi tutan başka kaydın IP'si boşaltılır
+(`printer_identity.set_ip`) — eski `UNIQUE constraint failed: printers.ip` hatası bu yüzden artık oluşmaz.
+MAC'in kaynağı `mac_source` (`elle` / `arp` / `cihaz` = yazıcının API'si / `kayit` = göç öncesi kayıt), son MAC
+doğrulaması `mac_checked_at` sütunundadır. K2 Plus ağ adı (`K2Plus-XXXX`) kablolu MAC'in son iki baytıdır.
+
+**Gönderim (Yazıcıya Gönder):** `printer_identity.resolve_ip` — önce son görülen IP'deki cihazın kimliği okunur
+(ARP MAC'i, Moonraker `/machine/system_info` arayüz MAC'leri, Moonraker ağ adı). Kayıtlı MAC (ya da ondan türeyen
+ağ adı; ağ adı elle sayıya çevrilmiş yazıcılarda yalnız o yazıcıya özgü kayıtlı ad) uyuşursa o IP'ye gönderilir.
+Uyuşmazsa ağ taranır (uzak modda fabrikadaki ajan; sonuç 60 sn önbellekte, eşzamanlı isteklerde tek tarama), MAC'i
+eşleşen cihazın güncel IP'si kaydedilir ve oraya gönderilir. Bulunamazsa "Yazıcı ağda bulunamadı — MAC …" hatası
+verilir. **MAC'i olmayan ya da doğrulanamayan yazıcıya dosya gönderilmez.** Ajan da yüklemeden hemen önce aynı
+IP'deki cihazın MAC'ini bir kez daha denetler (`expect_mac`). Wi-Fi'deki K2 Plus'lar rastgele (yerel yönetilen) MAC
+kullanır: bu MAC kalıcı kimlik yapılmaz ve tek başına ne doğrulama ne ret kanıtı sayılır.
+
+**Durum yoklaması:** Moonraker'ın bildirdiği ağ adı kaydın MAC'ine uymuyorsa o IP'de başka yazıcı vardır; durum o
+kayda yazılmaz (çevrimdışı görünür), sonraki tazelemede tarama doğru IP'yi bulur.
+
+**Arayüz:** Yazıcı listesinde MAC birincil kimlik (kaynağı, ağ adı, son doğrulama), IP "son görülen IP · zaman"
+olarak gösterilir. MAC'i olmayan yazıcıda **MAC'i Öğren** (`POST /api/printers/{id}/learn-mac`: son görülen IP'de
+ARP / yazıcının API'si; ulaşılamazsa kayıtlı ağ adıyla tarama; o IP'de başka yazıcı varsa reddedilir), olanlarda
+**MAC ile Bul** (`POST /api/printers/{id}/locate`) vardır. Excel dışa aktarımı MAC, MAC kaynağı, ağ adı, son görülen
+IP ve son doğrulama sütunlarını içerir; MAC'i olmayan yazıcılar için sonda uyarı satırı bulunur.
+
+**Ajan op'ları:** `printer.identify` (yeni), `printer.discover` (artık `mac` + `macs` de döner), `printer.send`
+(`expect_mac`). Ajan eskiyse merkez `printer.probe`'un ağ adıyla yetinir (yalnız ad doğrulaması).
+
+**Göç (`printer_identity.migrate`, `db.init` içinde, idempotent):** `printers.ip NOT NULL UNIQUE` ise tablo yeniden
+kurulur (öncesinde `data/backups/migration/before-printers-mac-*.db` tam yedek); park değerli IP'ler (`#tasima-…`,
+`…#eski`) boşaltılır; MAC'ler normalize edilir, geçersiz MAC kaldırılır (denetim izine yazılır); aynı MAC'li kayıtlar
+güvenliyse birleştirilir (bağlı parça / olay / talep / olay kaydı / denetim izi kalan kayda taşınır; iki kayıtta da
+sürmekte olan iş varsa birleştirilmez, fazladan kaydın MAC'i boşaltılıp raporlanır). Rapor `app_kv`
+`printers.mac_migration` anahtarındadır.
+
 ## Veri ve yedekleme
 
 Tüm veri `data/` klasöründedir: `caymaz.db` (SQLite) ve `uploads/` (kullanıcı resimleri, hata fotoğrafları, görev
@@ -675,6 +712,8 @@ Canlı veriler (`data/`, `tenants/`) ve gizli ayarlar (`.env`) da depoda değild
 .venv/bin/python -m tests.test_documents     # firma ve evrak
 .venv/bin/python -m tests.test_spares        # yedek parça stoğu
 .venv/bin/python -m tests.test_print_tracking   # baskı dosyası, uyarılar, yazıcıda bekleme
+.venv/bin/python -m tests.test_printer_mac     # yazıcı kimliği MAC: göç, IP çakışması, gönderimde MAC doğrulama
+node tests/test_printers_export.mjs            # yazıcı Excel'i: MAC sütunu
 .venv/bin/python -m tests.test_crm           # rehber, notlar, takvim
 .venv/bin/python -m tests.test_media         # ses → metin, videodaki kişiler
 .venv/bin/python -m tests.test_v2            # CAYMAZ V2 şeması, ürün ağacı, sipariş

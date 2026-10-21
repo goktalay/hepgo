@@ -640,7 +640,8 @@ async function choosePrinter(order, op, part, refresh) {
       const el = h('div', { class: `pick ${busy ? 'disabled' : ''} ${p.id === selected ? 'on' : ''}` },
         h('input', { type: 'radio', name: 'printer', disabled: busy, checked: p.id === selected }),
         h('div', { class: 'grow' }, h('b', null, p.name),
-          h('span', { class: 'small muted' }, busy ? t('Meşgul: {order} / {part}', { order: p.current_order, part: p.current_part }) : p.ip)),
+          h('span', { class: 'small muted' }, busy ? t('Meşgul: {order} / {part}', { order: p.current_order, part: p.current_part })
+            : (p.mac ? `${p.mac} · ${p.ip || '—'}` : t('MAC yok — gönderilemez · {ip}', { ip: p.ip || '—' })))),
         p.live_state ? badge(PRINTER_STATES, p.live_state) : null);
       if (!busy) {
         el.addEventListener('click', () => {
@@ -753,10 +754,13 @@ function sendProgress(order, op, part, refresh) {
     if (closed) return;
     let st;
     try { st = await api.get(`/api/orders/${order.id}/parts/${encodeURIComponent(op.part_id)}/send-progress`); } catch { setTimeout(poll, 1000); return; }
-    if (st.status === 'uploading') {
+    if (st.status === 'resolving') {
+      label.textContent = t('Yazıcı MAC ile doğrulanıyor… · {printer}', { printer: st.printer });
+    } else if (st.status === 'uploading') {
       bar.style.width = `${st.percent}%`;
       v3?.setProgress(st.percent / 100);   // parça yükleme yüzdesi kadar dolar
-      label.textContent = t('Yükleniyor… %{percent} ({sent} / {total}) · {printer}', { percent: Math.floor(st.percent), sent: mb(st.sent), total: mb(st.total), printer: st.printer });
+      label.textContent = t('Yükleniyor… %{percent} ({sent} / {total}) · {printer}', { percent: Math.floor(st.percent), sent: mb(st.sent), total: mb(st.total), printer: st.printer })
+        + (st.mac ? ` · ${st.mac} @ ${st.ip}` : '');
     } else if (st.status === 'starting') {
       bar.style.width = '100%'; v3?.done();
       label.textContent = 'Yükleme bitti, baskı başlatılıyor…';

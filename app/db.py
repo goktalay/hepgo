@@ -1494,7 +1494,7 @@ CREATE TABLE IF NOT EXISTS part_events (
 CREATE TABLE IF NOT EXISTS printers (
     id              INTEGER PRIMARY KEY,
     name            TEXT NOT NULL,
-    ip              TEXT NOT NULL UNIQUE,
+    ip              TEXT,          -- SON GÖRÜLEN IP (geçici; DHCP ile değişir). Benzersiz anahtar MAC'tir (ux_printers_mac)
     model           TEXT,
     auto_added      INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL,
@@ -2749,6 +2749,8 @@ def init():
         _migrate(conn)
         conn.commit()
         _company_people_free(conn)
+        from . import printer_identity   # yazıcı kimliği MAC: ip UNIQUE kalkar, MAC normalize + UNIQUE dizin (idempotent)
+        printer_identity.migrate(conn)
 
 
 def _migrate_field_tasks(conn):

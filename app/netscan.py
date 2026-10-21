@@ -208,8 +208,11 @@ def _kind(d):
 def _known(conn):
     """Sistemde kayıtlı cihazlar: IP → açıklama (yazıcılar, kameralar)."""
     out = {}
-    for name, ip in conn.execute('SELECT name, ip FROM printers WHERE ip IS NOT NULL'):
-        out[ip] = f'3B yazıcı: {name}'
+    for name, ip, mac in conn.execute('SELECT name, ip, mac FROM printers WHERE ip IS NOT NULL OR mac IS NOT NULL'):
+        if mac:   # yazıcının benzersiz kimliği MAC: IP değişse de tanınır
+            out[mac.lower()] = f'3B yazıcı: {name}'
+        if ip:
+            out.setdefault(ip, f'3B yazıcı: {name}')
     for name, ip, url in conn.execute('SELECT name, ip, stream_url FROM cameras'):
         host = ip or (urlparse(url).hostname if url else None)
         if host:
@@ -261,7 +264,7 @@ def _scan():
             hostname = names.get('netbios') or names.get('mdns', '').removesuffix('.local') or names.get('dns') or None
             d = {'ip': ip, 'mac': mac, 'vendor': vendor(mac), 'hostname': hostname, 'netbios': names.get('netbios'),
                  'mdns': names.get('mdns'), 'dns': names.get('dns'), 'workgroup': names.get('workgroup'), 'ports': ports,
-                 'is_gateway': ip == gw, 'is_server': ip in server_ips, 'known': known.get(ip)}
+                 'is_gateway': ip == gw, 'is_server': ip in server_ips, 'known': known.get(mac or '') or known.get(ip)}
             d['kind'] = _kind(d)
             key = mac or f'ip:{ip}'   # cihaz MAC ile izlenir (IP değişse de aynı kayıt)
             row = conn.execute('SELECT id FROM network_devices WHERE key = ?', (key,)).fetchone()

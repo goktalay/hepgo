@@ -1,6 +1,6 @@
 """Yazıcı 'Otomatik Ekle / IP Düzelt': tarama geçici tabloya alınır, mevcut yazıcılarla FİZİKSEL ADRESE (donanım kimliği)
 göre eşleştirilir, yeni bilgiler eskinin üzerine yazılır. IP değişimi/TAKASI ve IP'yi tutan eski kayıt olsa bile benzersizlik
-kısıtı (printers.ip UNIQUE) iki aşamalı yazımla aşılır. Ağ gerektirmez; _add_discovered doğrudan test edilir.
+kısıtı yoktur (IP geçici; benzersiz anahtar MAC) — IP'yi tutan eski kaydın IP'si boşaltılır. Ağ gerektirmez; _add_discovered doğrudan test edilir.
 Çalıştırma: .venv/bin/python -m tests.test_printer_discover
 """
 import os
@@ -64,7 +64,7 @@ def main():
     add_printer('D', '192.168.1.80', 'K2-D')   # taramada yok (çevrimdışı)
     r = _add_discovered([['192.168.1.80', live('K2-E')]], USER)   # .80'de artık başka cihaz (K2-E)
     cur = ips()
-    assert cur.get('D', '').startswith('#tasima-'), ('eski kayıt parkta', cur)   # D IP'den feragat etti (çevrimdışı)
+    assert cur.get('D', 'yok') is None, ('eski kaydın IP’si boşaltıldı', cur)   # D IP'den feragat etti (çevrimdışı; IP geçici)
     new = [n for n in cur if n != 'D']
     assert len(new) == 1 and cur[new[0]] == '192.168.1.80', ('yeni cihaz eklendi', cur)
     assert total() == 2 and len(r['added']) == 1, r

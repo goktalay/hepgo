@@ -416,11 +416,12 @@ def send_to_printer(oid: int, part_id: str, body: SendIn, user=Depends(part_oper
         raise HTTPException(400, 'Bu parça zaten üretimde veya üretilmiş')
     if conn.execute("SELECT 1 FROM direct_part_requests WHERE order_part_id = ? AND status = 'BEKLIYOR'", (op['id'],)).fetchone():
         raise HTTPException(409, 'Bu parça için doğrudan depo ekleme talebi onayda')
-    printer = db.row(conn.execute('SELECT id, name, ip, current_part_id FROM printers WHERE id = ?', (body.printer_id,)))
+    printer = db.row(conn.execute('SELECT id, name, ip, mac, current_part_id FROM printers WHERE id = ?', (body.printer_id,)))
     if not printer:
         raise HTTPException(404, 'Yazıcı bulunamadı')
-    if not printer['ip']:
-        raise HTTPException(400, 'Yazıcının IP adresi tanımlı değil')
+    if not printer['mac']:   # benzersiz kimlik MAC: IP'ye güvenilmez (DHCP); MAC doğrulanmadan gönderim yok
+        raise HTTPException(400, f'{printer["name"]}: MAC adresi tanımlı değil — Yazıcı Yönetimi’nde “MAC’i Öğren” ile kaydedin; '
+                                 'MAC doğrulanmadan dosya gönderilmez')
     if printer['current_part_id']:
         busy = db.row(conn.execute('SELECT o.code, op.part_id FROM order_parts op JOIN orders o ON o.id = op.order_id WHERE op.id = ?', (printer['current_part_id'],)))
         if busy:
@@ -456,7 +457,8 @@ def send_progress(oid: int, part_id: str, user=Depends(_order_reader), conn=db.D
         return {'status': 'none'}
     pct = round(st['sent'] * 100 / st['total'], 1) if st['total'] else 0
     return {'status': st['status'], 'sent': st['sent'], 'total': st['total'], 'percent': pct,
-            'filename': st['filename'], 'printer': st['printer'], 'error': st['error']}
+            'filename': st['filename'], 'printer': st['printer'], 'error': st['error'],
+            'ip': st.get('ip'), 'mac': st.get('mac'), 'verified_by': st.get('verified_by')}
 
 
 @router.post('/{oid}/parts/{part_id}/assembly-error')

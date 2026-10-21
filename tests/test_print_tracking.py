@@ -108,7 +108,8 @@ def main():
         from app.printer_driver import detect_unrecorded_abort
         p3 = ok(a.post('/api/printers', json={'name': 'P3', 'ip': '10.0.0.3'}))['id']
         before = lambda state, part=None: {'id': p3, 'live_state': state, 'live_file': 'c5-orta-part2_ABS_18h0m.gcode',
-                                           'live_progress': 37.5, 'live_since': '2026-09-28T10:00:00', 'current_part_id': part}
+                                           'live_progress': 37.5, 'live_since': '2026-09-28T10:00:00', 'current_part_id': part,
+                                           'maint_since': None, 'arge_since': None}
         with db.connect() as c:
             detect_unrecorded_abort(c, before('YAZDIRIYOR'), 'TAMAMLANDI', db.now())   # bitti: olay yok
             detect_unrecorded_abort(c, before('YAZDIRIYOR'), 'CEVRIMDISI', db.now())   # bağlantı koptu: olay yok

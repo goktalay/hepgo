@@ -1,11 +1,10 @@
 import ipaddress
-import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import auth, config, db, printer_driver, printer_layout
+from .. import auth, config, db, printer_driver, printer_identity, printer_layout
 
 router = APIRouter(prefix='/api/printers')
 printer_admin = auth.require_module('printers')
@@ -20,8 +19,8 @@ def _printer_reader(user=Depends(auth.current_user)):
 
 class PrinterIn(BaseModel):
     name: str
-    ip: str
-    mac: str = ''
+    ip: str = ''     # son görülen IP (isteğe bağlı; gönderimde MAC ile doğrulanır / bulunur)
+    mac: str = ''    # benzersiz kimlik
 
 
 class SlotIn(BaseModel):
@@ -38,12 +37,21 @@ class LayoutIn(BaseModel):
 def _validate(conn, body, pid=None):
     if not body.name.strip():
         raise HTTPException(400, 'Yazıcı adı zorunlu')
-    try:
-        ipaddress.IPv4Address(body.ip.strip())
-    except ValueError:
-        raise HTTPException(400, 'Geçersiz IP adresi')
-    if conn.execute('SELECT 1 FROM printers WHERE ip = ? AND id IS NOT ?', (body.ip.strip(), pid)).fetchone():
-        raise HTTPException(400, 'Bu IP adresi zaten kayıtlı')
+    ip = body.ip.strip()
+    if ip:
+        try:
+            ipaddress.IPv4Address(ip)
+        except ValueError:
+            raise HTTPException(400, 'Geçersiz IP adresi')
+        other = db.row(conn.execute('SELECT name FROM printers WHERE ip = ? AND id IS NOT ?', (ip, pid)))
+        if other:
+            raise HTTPException(400, f'Bu IP adresi şu an “{other["name"]}” yazıcısında görülüyor')
+    mac = _mac(body.mac)
+    if mac:
+        other = db.row(conn.execute('SELECT name FROM printers WHERE mac = ? AND id IS NOT ?', (mac, pid)))
+        if other:
+            raise HTTPException(409, f'Bu MAC adresi zaten “{other["name"]}” yazıcısında kayıtlı (MAC benzersiz kimliktir)')
+    return ip or None, mac
 
 
 @router.get('')
@@ -122,37 +130,56 @@ def save_layout(body: LayoutIn, user=Depends(printer_admin), conn=db.DB):
 
 
 def _mac(raw):
-    """MAC'i normalize eder (AA:BB:CC:DD:EE:FF) ve ondan kalıcı kimliği türetir (K2Plus-EEFF). Boşsa (None, None)."""
-    s = re.sub(r'[^0-9A-Fa-f]', '', raw or '').upper()
-    if not s:
-        return None, None
-    if len(s) != 12:
+    """MAC'i normalize eder (AA:BB:CC:DD:EE:FF). Boşsa None."""
+    try:
+        return printer_identity.normalize_mac(raw)
+    except ValueError:
         raise HTTPException(400, 'MAC adresi 12 onaltılık haneden oluşmalı (ör. FC:EE:28:0F:36:97)')
-    mac = ':'.join(s[i:i + 2] for i in range(0, 12, 2))
-    return mac, f'K2Plus-{s[-4:]}'
 
 
 @router.post('')
 def add_printer(body: PrinterIn, user=Depends(printer_admin), conn=db.DB):
-    _validate(conn, body)
-    mac, hw = _mac(body.mac)
-    cur = conn.execute('INSERT INTO printers (name, ip, created_at, mac, hw_id) VALUES (?,?,?,?,?)',
-                       (body.name.strip(), body.ip.strip(), db.now(), mac, hw))
-    db.audit(conn, user['id'], 'Yazıcı ekledi', 'printer', cur.lastrowid, f'{body.name} ({body.ip})')
+    ip, mac = _validate(conn, body)
+    cur = conn.execute('INSERT INTO printers (name, ip, created_at, mac, mac_source, hw_id) VALUES (?,?,?,?,?,?)',
+                       (body.name.strip(), ip, db.now(), mac, 'elle' if mac else None, printer_identity.hw_from_mac(mac)))
+    db.audit(conn, user['id'], 'Yazıcı ekledi', 'printer', cur.lastrowid, f'{body.name} (MAC {mac or "—"}, IP {ip or "—"})')
     printer_layout.assign_missing(conn)   # odada ilk boş rafa
     return {'id': cur.lastrowid}
 
 
 @router.put('/{pid}')
 def update_printer(pid: int, body: PrinterIn, user=Depends(printer_admin), conn=db.DB):
-    if not conn.execute('SELECT 1 FROM printers WHERE id = ?', (pid,)).fetchone():
+    cur = db.row(conn.execute('SELECT mac, mac_source FROM printers WHERE id = ?', (pid,)))
+    if not cur:
         raise HTTPException(404, 'Yazıcı bulunamadı')
-    _validate(conn, body, pid)
-    mac, hw = _mac(body.mac)
-    conn.execute('UPDATE printers SET name = ?, ip = ?, mac = ?, hw_id = COALESCE(?, hw_id) WHERE id = ?',
-                 (body.name.strip(), body.ip.strip(), mac, hw, pid))
-    db.audit(conn, user['id'], 'Yazıcı düzenledi', 'printer', pid, f'{body.name} ({body.ip})')
+    ip, mac = _validate(conn, body, pid)
+    src = cur['mac_source'] if mac == cur['mac'] else ('elle' if mac else None)
+    conn.execute('UPDATE printers SET name = ?, ip = ?, mac = ?, mac_source = ?, hw_id = COALESCE(hw_id, ?), '
+                 'mac_checked_at = CASE WHEN mac IS ? THEN mac_checked_at ELSE NULL END WHERE id = ?',
+                 (body.name.strip(), ip, mac, src, printer_identity.hw_from_mac(mac), mac, pid))
+    db.audit(conn, user['id'], 'Yazıcı düzenledi', 'printer', pid, f'{body.name} (MAC {mac or "—"}, IP {ip or "—"})')
     return {'ok': True}
+
+
+@router.post('/{pid}/learn-mac')
+async def learn_mac(pid: int, user=Depends(printer_admin)):
+    """MAC'i olmayan yazıcının MAC'ini cihazdan öğrenir (son görülen IP'de ARP / yazıcının API'si; ulaşılamazsa kayıtlı
+    ağ adıyla ağ taraması). O IP'de başka bir yazıcı varsa reddedilir."""
+    try:
+        return await run_in_threadpool(printer_identity.learn_mac, pid, user['id'])
+    except printer_identity.IdentityError as e:
+        raise HTTPException(409, str(e)) from e
+    except Exception as e:   # noqa: BLE001 — ajan/ağ hatası
+        raise HTTPException(502, f'MAC okunamadı: {e}') from e
+
+
+@router.post('/{pid}/locate')
+async def locate(pid: int, user=Depends(printer_admin)):
+    """Yazıcıyı MAC ile bulur: bilinen IP'de doğrular, değilse ağı tarar ve güncel IP'yi kaydeder (gönderimle aynı yol)."""
+    try:
+        return await run_in_threadpool(printer_identity.resolve_ip, pid, user['id'])
+    except printer_identity.IdentityError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 class MaintIn(BaseModel):
@@ -237,7 +264,7 @@ def _refresh_names(user):
         printers = db.rows(conn.execute('SELECT id, name, ip FROM printers'))
     with ThreadPoolExecutor(max_workers=16) as pool:
         names = dict(zip([p['id'] for p in printers],
-                         pool.map(lambda p: printer_driver.device_name(p['ip']), printers)))
+                         pool.map(lambda p: printer_driver.device_name(p['ip']) if p['ip'] else None, printers)))
     from collections import defaultdict
     changed, no_name = [], 0
     # Hedef ad: cihazdan okunan güncel ad (çevrimiçi) ya da mevcut ad (okunamayan). Aynı ada birden çok yazıcı düşerse
@@ -267,7 +294,7 @@ def _refresh_names(user):
         else:
             winner = None
         for p in grp:
-            final[p['id']] = nm if p['id'] == winner else f'{nm} ({p["ip"].rsplit(".", 1)[-1]})'
+            final[p['id']] = nm if p['id'] == winner else f'{nm} ({(p["ip"] or "").rsplit(".", 1)[-1] or p["id"]})'
     with db.connect() as conn:
         for p in printers:
             name = final[p['id']]
@@ -284,7 +311,7 @@ def _refresh_names(user):
 @router.post('/discover')
 async def discover(user=Depends(printer_admin)):
     try:
-        found = await run_in_threadpool(printer_driver.discover)
+        found, _ = await run_in_threadpool(printer_identity.scan, 0)   # elle tarama: taze (önbelleği de tazeler)
     except Exception as e:   # noqa: BLE001 — uzak modda ajan bağlı değil / eski ajan: anlaşılır mesaj
         msg = str(e)
         if 'bilinmeyen op' in msg.lower():
@@ -308,101 +335,9 @@ async def discover(user=Depends(printer_admin)):
 
 
 def _add_discovered(found, user):
-    """Tarama sonuçlarını GEÇİCİ bir tabloya (_scan) alır, mevcut yazıcılarla FİZİKSEL ADRESE (kalıcı donanım kimliği —
-    Moonraker seri-adı) göre eşleştirir ve yeni bilgileri (IP + canlı durum) eskinin ÜZERİNE yazar. Donanım kimliği sabit
-    olduğundan, elektrik kesintisinde IP'ler değişse hatta takas olsa bile kayıt silinmez; yalnız IP güncellenir.
-    IP benzersizlik çakışmasını (A↔B takası ya da IP'yi hâlâ tutan eski kayıt) iki aşamalı yazımla aşar: önce çakışanlar
-    geçici bir değere park edilir, sonra gerçek IP yazılır. Kimliği okunamayan (hw yok) cihazlar IP'ye göre eklenir."""
-    from concurrent.futures import ThreadPoolExecutor
-    added, moved = [], []
-    # Donanım kimliği taramada geldiyse onu kullan (uzak modda ajan döner); yoksa yerelde oku
-    hwids, missing = {}, []
-    for ip, live in found:
-        if isinstance(live, dict) and 'hw' in live:
-            hwids[ip] = live['hw']
-        else:
-            missing.append(ip)
-    if missing:
-        with ThreadPoolExecutor(max_workers=24) as pool:
-            hwids.update(zip(missing, pool.map(printer_driver.hardware_id, missing)))
-    # Tarama satırları; aynı cihaz iki IP'de göründüyse (kablolu+Wi-Fi) ilk IP'de bir kez
-    scan, seen_hw = [], set()
-    for ip, live in sorted((f for f in found if isinstance(f[1], dict)), key=lambda f: ipaddress.IPv4Address(f[0])):
-        hw = hwids.get(ip)
-        if hw:
-            if hw in seen_hw:
-                continue
-            seen_hw.add(hw)
-        scan.append({'ip': ip, 'hw': hw, 'live': live})
-
-    with db.connect() as conn:
-        now = db.now()
-        conn.execute('DROP TABLE IF EXISTS _scan')
-        conn.execute('CREATE TEMP TABLE _scan (ip TEXT, hw TEXT, state TEXT, progress REAL, file TEXT, source TEXT, model TEXT, hostname TEXT)')
-        conn.executemany('INSERT INTO _scan (ip, hw, state, progress, file, source, model, hostname) VALUES (?,?,?,?,?,?,?,?)',
-                         [(s['ip'], s['hw'], s['live'].get('state'), s['live'].get('progress'), s['live'].get('file'),
-                           s['live'].get('source'), s['live'].get('model'), s['live'].get('hostname')) for s in scan])
-        existing = db.rows(conn.execute('SELECT id, name, ip, hw_id, hw_alias FROM printers'))
-
-        # Geçici tabloyu eski tabloyla fiziksel adrese göre eşleştir (her kayıt bir kez): eşleşen → güncelle, yoksa → ekle
-        matched_pid, scan_ip_owner = {}, {}   # pid → tarama satırı ; hedef IP → onu hak eden pid
-        for r in db.rows(conn.execute('''SELECT p.id AS pid, s.ip AS ip FROM _scan s
-                                         JOIN printers p ON s.hw IS NOT NULL AND (s.hw = p.hw_id OR s.hw = p.hw_alias)''')):
-            matched_pid.setdefault(r['pid'], r['ip'])
-            scan_ip_owner.setdefault(r['ip'], r['pid'])
-        # hw ile eşleşmemiş tarama satırı mevcut bir IP'deyse: aynı cihaz say ANCAK kimlikler çelişmiyorsa (tarama kimliksiz
-        # ya da kayıt kimliksiz ya da ikisinin kimliği aynı). Farklı kimlikli bir cihaz aynı IP'deyse eski kayıt feragat eder.
-        by_id = {r['id']: r for r in existing}
-        ip_to_pid = {r['ip']: r['id'] for r in existing}
-        for s in scan:
-            if s['ip'] in scan_ip_owner:
-                continue
-            pid = ip_to_pid.get(s['ip'])
-            if pid is None or pid in matched_pid:
-                continue
-            pr_hw = {by_id[pid]['hw_id'], by_id[pid]['hw_alias']} - {None}
-            if (not s['hw']) or (not pr_hw) or (s['hw'] in pr_hw):
-                matched_pid[pid] = s['ip']
-                scan_ip_owner[s['ip']] = pid
-        live_of = {s['ip']: s['live'] for s in scan}
-        name_of = {r['id']: r['name'] for r in existing}
-
-        # Park: bir tarama IP'sini tutan ama o IP'nin sahibi OLMAYAN kayıtları geçici benzersiz değere çek (çakışmayı kır)
-        scan_ips = {s['ip'] for s in scan}
-        for r in existing:
-            if r['ip'] in scan_ips and scan_ip_owner.get(r['ip']) != r['id']:
-                conn.execute("UPDATE printers SET ip = '#tasima-' || id WHERE id = ?", (r['id'],))
-
-        # Eşleşenler: IP + canlı durum eskinin üzerine yazılır (fiziksel adres aynı → aynı yazıcı)
-        for pid, ip in matched_pid.items():
-            old = next((r['ip'] for r in existing if r['id'] == pid), None)
-            live = live_of.get(ip, {})
-            conn.execute('''UPDATE printers SET ip = ?, live_state = ?, live_progress = ?, live_file = ?, live_source = ?,
-                            last_seen = ? WHERE id = ?''',
-                         (ip, live.get('state'), live.get('progress'), live.get('file'), live.get('source'), now, pid))
-            if old and old != ip:
-                moved.append({'id': pid, 'name': name_of.get(pid), 'old': old, 'ip': ip})
-                db.audit(conn, user['id'], 'Yazıcının IP adresini düzeltti (ağ taraması)', 'printer', pid,
-                         f"{name_of.get(pid) or pid}: {old} → {ip}")
-
-        # Eşleşmeyen tarama satırları: IP artık boşsa yeni yazıcı olarak eklenir
-        count = conn.execute('SELECT COUNT(*) FROM printers').fetchone()[0]
-        for s in scan:
-            if s['ip'] in scan_ip_owner:   # zaten mevcut bir yazıcıya (fiziksel adres) eşleşti
-                continue
-            if conn.execute('SELECT 1 FROM printers WHERE ip = ?', (s['ip'],)).fetchone():
-                continue
-            count += 1
-            live = s['live']
-            name = live.get('hostname') or f'K2 Plus {count:02d}'
-            cur = conn.execute(
-                '''INSERT INTO printers (name, ip, hw_id, model, auto_added, created_at, live_state, live_progress,
-                   live_file, live_source, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                (name, s['ip'], s['hw'], live.get('model') or 'Creality K2 Plus', 1, now, live.get('state'),
-                 live.get('progress'), live.get('file'), live.get('source'), now))
-            db.audit(conn, user['id'], 'Yazıcı otomatik ekledi', 'printer', cur.lastrowid, f"{name} ({s['ip']})")
-            added.append({'name': name, 'ip': s['ip']})
-
-        conn.execute('DROP TABLE IF EXISTS _scan')
-        printer_layout.assign_missing(conn)
-    return {'found': len(found), 'added': added, 'moved': moved}
+    """Tarama sonuçlarını kayıtlarla MAC MERKEZLİ eşleştirir (printer_identity.apply_scan): MAC'i (ya da MAC'ten
+    türeyen ağ adı / kayıtlı ağ adı) eşleşen yazıcının yalnız son görülen IP'si ve canlı durumu güncellenir — elektrik
+    kesintisinde IP'ler değişse hatta takas olsa bile kayıt silinmez. Aynı IP'yi tutan eski kaydın IP'si boşaltılır
+    (UNIQUE çakışması yok). Eşleşmeyen cihazlar MAC'leriyle yeni yazıcı olarak eklenir; MAC'i olmayan kayıtlara
+    taramadan gelen kablolu MAC yazılır."""
+    return printer_identity.apply_scan(found, user['id'], add_new=True)

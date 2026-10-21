@@ -2,7 +2,9 @@
 import { api } from '../api.js';
 import { icons } from '../icons.js';
 import { PRINTER_STATES, badge } from '../status.js';
+import { setListExport } from '../listexport.js';
 import { printerRoom } from './printers3d.js';
+import { macSourceLabel, printersExportSpec } from './printers_export.js';
 import { subnav } from './production.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, matches, modal, moduleToolbar, pageHead, pref, segmented, selectInput, setPref,
@@ -12,12 +14,14 @@ import {
 export async function render(view, params, ctx) {
   const body = h('div');
   const canOpen = ctx.user.modules.includes('production');
-  const q = h('input', { class: 'input', type: 'search', placeholder: 'Yazıcı adı, IP veya dosya ara…', style: { width: '230px' } });
+  const q = h('input', { class: 'input', type: 'search', placeholder: 'Yazıcı adı, MAC, IP veya dosya ara…', style: { width: '230px' } });
   const state = selectInput([
     ...Object.entries(PRINTER_STATES).map(([k, s]) => [k, s.label]),
     ['SYSTEM', 'Sistemde işi olan'], ['MISMATCH', 'Durumu uyumsuz olan'], ['AUTO', 'Otomatik eklenen'],
   ], { all: 'Tüm durumlar' });
   let printers = [];
+  let shown = [];   // Excel'e aktarılacak (liste görünümünde filtrelenmiş) yazıcılar
+  setListExport(() => printersExportSpec(shown));   // MAC birincil kimlik; MAC'siz yazıcılar için uyarı satırı
   // Görünüm: Liste | 3B (yazıcı odası); seçim kullanıcı tercihinde saklanır
   let mode = pref('printers.view', 'list');
   let room = null;
@@ -36,7 +40,8 @@ export async function render(view, params, ctx) {
     const list = printers.filter(p =>
       (!state.value || (state.value === 'SYSTEM' ? p.current_part : state.value === 'MISMATCH' ? mismatch(p)
         : state.value === 'AUTO' ? p.auto_added : stateMatch(p, state.value))) &&
-      matches(q.value, p.name, p.ip, p.model, p.live_file, p.last_job, p.current_order, p.current_part));
+      matches(q.value, p.name, p.mac, p.hw_id, p.ip, p.model, p.live_file, p.last_job, p.current_order, p.current_part));
+    shown = mode === 'list' ? list : printers;
     if (mode === '3d') {   // oda tüm yazıcıları gösterir; filtreler liste görünümü içindir
       room ??= printerRoom({ canEdit, canOpen, reload: () => load() });
       if (!body.contains(room.el)) clear(body, room.el);
@@ -75,14 +80,15 @@ export async function render(view, params, ctx) {
     if (r.changed.length) toast(t('{n} yazıcının adı güncellendi: {list}{more}', { n: r.changed.length, list: r.changed.map(c => `${c.old} → ${c.new}`).slice(0, 4).join(', '), more: r.changed.length > 4 ? '…' : '' }));
     else toast(t('Değişen ad yok · {noName}/{total} yazıcının ekranında ad girilmemiş ya da ulaşılamadı', { noName: r.no_name, total: r.total }), r.no_name ? '' : 'ok');
   }));
-  const discoverBtn = h('button', { class: 'btn', title: 'Tüm ağ bloğunu tarar: yeni yazıcıları ekler, elektrik kesintisi gibi sebeplerle IP’si değişen kayıtlı yazıcıların IP’sini düzeltir (cihaz donanım kimliğinden tanınır)' }, svgIcon(icons.radar), 'Otomatik Ekle / IP Düzelt');
+  const discoverBtn = h('button', { class: 'btn', title: 'Tüm ağ bloğunu tarar: yeni yazıcıları ekler, IP’si değişen kayıtlı yazıcıların IP’sini düzeltir (yazıcı MAC adresinden tanınır), MAC’i eksik yazıcıların MAC’ini öğrenir' }, svgIcon(icons.radar), 'Otomatik Ekle / IP Düzelt');
   discoverBtn.addEventListener('click', () => busy(discoverBtn, async () => {
     toast('Ağ bloğu taranıyor, bu işlem birkaç saniye sürebilir…');
     const res = await api.post('/api/printers/discover');
     await load();
     const moved = res.moved || [];
     const msgs = [];
-    if (res.added.length) msgs.push(t('{n} yeni yazıcı eklendi: {ips}', { n: res.added.length, ips: res.added.map(a => a.ip).join(', ') }));
+    if (res.added.length) msgs.push(t('{n} yeni yazıcı eklendi: {ips}', { n: res.added.length, ips: res.added.map(a => a.mac || a.ip).join(', ') }));
+    if (res.learned?.length) msgs.push(t('{n} yazıcının MAC adresi öğrenildi', { n: res.learned.length }));
     if (moved.length) msgs.push(t('{n} yazıcının IP’si düzeltildi: {list}', { n: moved.length, list: moved.map(m => `${m.name || m.ip} → ${m.ip}`).join(', ') }));
     if (msgs.length) toast(msgs.join(' · '), 'success');
     else toast(res.found ? 'Ağdaki yazıcıların hepsi zaten kayıtlı ve IP’leri güncel' : 'Ağda yazıcı bulunamadı', res.found ? '' : 'err');
@@ -119,7 +125,7 @@ function rackBoard(printers, onSaved) {
   const item = p => {
     const el = h('div', { class: 'rack-item', 'data-id': p.id },
       h('span', { class: 'rack-grip', 'aria-hidden': 'true' }, '⋮⋮'), h('span', { class: 'rack-no' }), dot(p), h('b', null, p.name),
-      h('span', { class: 'small muted rack-ip' }, p.ip || ''));
+      h('span', { class: 'small muted rack-ip mono' }, p.mac || p.ip || ''));
     el.addEventListener('pointerdown', e => startDrag(e, el));
     return el;
   };
@@ -251,10 +257,13 @@ async function toggleArge(p, done) {
 function table(printers, reload, canOpen) {
   return h('div', { class: 'table-wrap' }, h('table', null,
     h('thead', null, h('tr', null,
-      ['Yazıcı', 'IP adresi', 'Durum', 'Son yüklenen iş', 'İş başlama', 'İş bitiş', 'Son görülme', ''].map(t => h('th', null, t)))),
+      ['Yazıcı', 'MAC adresi (kimlik)', 'Son görülen IP', 'Durum', 'Son yüklenen iş', 'İş başlama', 'İş bitiş', ''].map(t => h('th', null, t)))),
     h('tbody', null, printers.map(p => h('tr', { class: p.arge_since ? 'pr-arge' : (p.maint_since ? 'pr-maint' : '') },
       h('td', null, h('b', null, p.name), h('div', { class: 'small muted' }, [p.model, p.auto_added ? 'otomatik eklendi' : null].filter(Boolean).join(' · ') || '—')),
-      h('td', { class: 'mono' }, p.ip),
+      h('td', null, macCell(p, reload)),
+      h('td', null, h('span', { class: 'mono' }, p.ip || '—'),
+        h('div', { class: 'small muted', title: 'IP geçicidir (DHCP); gönderimde yazıcı MAC ile doğrulanır, gerekirse ağ taranıp güncel IP bulunur' },
+          p.last_seen ? t('son görülme {at}', { at: fmtDateTime(p.last_seen) }) : 'hiç görülmedi')),
       h('td', null, status(p),
         p.current_part ? h('div', { class: 'small' }, 'Sistemde: ', canOpen
           ? h('a', { href: `#/production/${p.current_order_id}` }, `${p.current_order} / ${p.current_part}`)
@@ -264,12 +273,33 @@ function table(printers, reload, canOpen) {
       h('td', null, p.last_job || '—'),
       h('td', { class: 'muted' }, fmtDateTime(p.last_job_start)),
       h('td', { class: 'muted' }, p.last_job_start && !p.last_job_end ? 'Devam ediyor' : fmtDateTime(p.last_job_end)),
-      h('td', { class: 'muted' }, fmtDateTime(p.last_seen)),
       h('td', { class: 'num' },
         h('button', { class: `btn sm ${p.maint_since ? 'primary' : 'ghost'}`, title: p.maint_since ? 'Bakımı bitir, hatta geri ver' : 'Yazıcıyı bakıma al', onclick: () => toggleMaint(p, reload) }, p.maint_since ? 'Hatta Al' : 'Bakıma Al'),
         h('button', { class: `btn sm ${p.arge_since ? 'primary' : 'ghost'}`, title: p.arge_since ? 'Ar-Ge bitir, hatta geri ver' : 'Yazıcıyı Ar-Ge moduna al (hata vermez)', onclick: () => toggleArge(p, reload) }, p.arge_since ? 'Hatta Al' : 'Ar-Ge'),
         h('button', { class: 'btn sm ghost', onclick: () => printerForm(p, reload) }, 'Düzenle'),
         h('button', { class: 'btn sm ghost', onclick: () => remove(p, reload) }, 'Sil')))))));
+}
+
+// MAC hücresi: birincil kimlik + kaynağı / son doğrulama; MAC'i olmayan yazıcıya "MAC'i Öğren"; olanlara "MAC ile Bul"
+function macCell(p, reload) {
+  if (!p.mac) {
+    const btn = h('button', { class: 'btn sm', title: 'Yazıcının MAC adresini cihazdan okur (son görülen IP’de ARP / yazıcının API’si; ulaşılamazsa ağ adıyla ağ taraması)' }, 'MAC’i Öğren');
+    btn.addEventListener('click', () => busy(btn, async () => {
+      const r = await api.post(`/api/printers/${p.id}/learn-mac`);
+      toast(t('MAC öğrenildi: {mac} ({src}) · IP {ip}', { mac: r.mac, src: macSourceLabel(r.source), ip: r.ip || '—' }), 'success');
+      reload();
+    }));
+    return h('div', null, h('span', { class: 'badge orange', title: 'MAC doğrulanmadan bu yazıcıya dosya gönderilmez' }, 'MAC yok'), ' ', btn);
+  }
+  const find = h('button', { class: 'btn sm ghost', title: 'Yazıcıyı MAC ile bul: son görülen IP’de doğrular, değilse ağı tarayıp güncel IP’yi kaydeder' }, 'MAC ile Bul');
+  find.addEventListener('click', () => busy(find, async () => {
+    const r = await api.post(`/api/printers/${p.id}/locate`);
+    toast(r.moved_from ? t('Yazıcı yeni IP’de bulundu: {old} → {ip}', { old: r.moved_from, ip: r.ip }) : t('MAC doğrulandı · IP {ip}', { ip: r.ip }), 'success');
+    reload();
+  }));
+  return h('div', null, h('b', { class: 'mono' }, p.mac), ' ', find,
+    h('div', { class: 'small muted' }, [macSourceLabel(p.mac_source), p.hw_id,
+      p.mac_checked_at ? t('doğrulandı {at}', { at: fmtDateTime(p.mac_checked_at) }) : null].filter(Boolean).join(' · ')));
 }
 
 function printerForm(p, done) {
@@ -278,9 +308,9 @@ function printerForm(p, done) {
   const mac = h('input', { class: 'input mono', value: p?.mac || '', placeholder: 'FC:EE:28:0F:36:97', autocapitalize: 'characters', spellcheck: 'false' });
   modal({
     title: p ? 'Yazıcıyı Düzenle' : 'Yeni Yazıcı',
-    body: h('div', null, field('Yazıcı adı', name), field('IP adresi', ip),
-      field('MAC adresi (kablolu)', mac),
-      h('p', { class: 'small muted' }, 'MAC, yazıcının kalıcı kimliğidir: IP (DHCP) değişse de sistem yazıcıyı MAC’ten türeyen ağ adıyla (K2Plus-XXXX) bulur.')),
+    body: h('div', null, field('Yazıcı adı', name), field('MAC adresi (kablolu) — benzersiz kimlik', mac),
+      field('Son görülen IP (isteğe bağlı)', ip),
+      h('p', { class: 'small muted' }, 'MAC, yazıcının benzersiz kimliğidir; IP (DHCP) değişebilir. Dosya gönderilirken yazıcı MAC ile doğrulanır, IP’si değiştiyse ağ taranıp güncel IP bulunur. MAC’i boş bırakırsanız kayıttan sonra “MAC’i Öğren” ile cihazdan okuyun.')),
     actions: [
       { label: 'Vazgeç' },
       {
@@ -297,7 +327,7 @@ function printerForm(p, done) {
 }
 
 async function remove(p, reload) {
-  if (!await confirmDialog('Yazıcıyı sil', t('{name} ({ip}) listeden silinsin mi?', { name: p.name, ip: p.ip }), { okLabel: 'Sil', danger: true })) return;
+  if (!await confirmDialog('Yazıcıyı sil', t('{name} ({ip}) listeden silinsin mi?', { name: p.name, ip: p.mac || p.ip || '—' }), { okLabel: 'Sil', danger: true })) return;
   try {
     await api.del(`/api/printers/${p.id}`);
     toast('Yazıcı silindi');

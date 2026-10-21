@@ -72,6 +72,11 @@ def _printer_discover(args):
     return printer_driver._discover_local()   # fabrika LAN'ında tüm /24 bloğu taranır (ajan ağda)
 
 
+def _printer_identify(args):
+    from . import printer_identity
+    return printer_identity.identify_local(args['ip'])   # ARP MAC + yazıcının API'sindeki MAC'ler + ağ adı
+
+
 def _printer_send(args):
     from . import printer_send
     return printer_send.agent_send(args)
@@ -193,6 +198,7 @@ OPS = {
     'printer.probe': _printer_probe,
     'printer.discover': _printer_discover,
     'printer.send': _printer_send,
+    'printer.identify': _printer_identify,
     'nvr.probe': _nvr_probe,
     'nvr.channels': _nvr_channels,
     'nvr.gpu': _nvr_gpu,

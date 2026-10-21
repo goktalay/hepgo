@@ -10054,7 +10054,7 @@ html[dir="rtl"] .fs-nav .fs-back-ico { display: inline-block; transform: scaleX(
 /* simülasyon hızı kapsülü: üst çubukta (koyu zemin) ve panelde */
 .fs-speed-pill { gap: 2px; }
 .fs-speed-pill .fs-speed-btn { min-width: 34px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
-.fs-nav .fs-speed-pill { margin-left: 2px; }
+.fs-nav .fs-speed-pill { margin-left: 2px; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); }   /* koyu üst şerit: açık pill-group zemini 0.25×…8× metnini okunmaz yapıyordu */
 .fs-nav .fs-speed-pill .btn { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); color: #e6e9ef; }
 .fs-nav .fs-speed-pill .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .fs-nav .fs-speed-pill.fast .btn.primary { background: #f59e0b; border-color: #f59e0b; color: #1a1300; }

@@ -2236,8 +2236,10 @@ def guc_testleri(a, c1, sitl, mon):
     assert pw['elec']['w_avg'] is not None and 'Güç ve yakıt:' in flightsim_mission.rapor_metni(sm), flightsim_mission.rapor_metni(sm)
     ok(a.delete(f'{S}/{sid}'))
     it = ok(a.get('/api/drone/sim/runs'))['items'][0]
-    # özet ile kapanış arasında uçuş sürdü: mesafe arttı, yakıt bitmişti → kapanıştaki km/L özetten büyük/eşit; ortalama W aynı (sabit 20 W, servo yok)
-    assert it['session_id'] == sid and it['fuel_used_l'] == 0.05 and it['fuel_km_per_l'] >= pw['fuel']['km_per_l'] and it['elec_wh'] == 0.37 and it['elec_w_avg'] == pw['elec']['w_avg'] and it['speedup_max'] == 8.0, it
+    # özet ile kapanış arasında uçuş sürdü: mesafe arttı, yakıt bitmişti → kapanıştaki km/L özetten büyük/eşit; ortalama W ≈ aynı (sabit 20 W, servo yok).
+    # Batarya bittikten sonra w_avg = wh_used / time_s zamanla AZALIR (time_s işlemeye devam eder) → özet↔kapanış arasındaki birkaç yüz ms 0,1 W
+    # yuvarlama sınırını aşabilir; tam eşitlik zamanlamaya bağlı (aralıklı başarısızlık) → ±0,5 W
+    assert it['session_id'] == sid and it['fuel_used_l'] == 0.05 and it['fuel_km_per_l'] >= pw['fuel']['km_per_l'] and it['elec_wh'] == 0.37 and abs(it['elec_w_avg'] - pw['elec']['w_avg']) <= 0.5 and it['elec_w_avg'] <= pw['elec']['w_avg'] and it['speedup_max'] == 8.0, (it, pw['elec'])
     assert it['power']['settings']['elec_mah'] == 100.0 and it['power']['fuel']['empty_t'] is not None, it['power']
     # ölçümler dron kaydına yazıldı → sonraki öneri
     opts = ok(a.get(f'/api/drone/drones/{did}/sim-power'))['options']
@@ -2609,9 +2611,11 @@ def servo_tetik_testleri(a, c1, sitl):
         assert cmd('servo_trigger', {'on': True, 'ch': 9, 'pwm': 1900}).status_code == 400   # oturum kapanıyor
     # izleyici yok → sunucu kendisi kapatır (BOS_KAPANIS_S)
     assert bekle(lambda: a.get(f'{S}/{sid}').status_code == 404 or None, ST.BOS_KAPANIS_S + 8), 'sunucu kapatmadı'
-    with db.connect() as conn:
-        run = db.row(conn.execute('SELECT * FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (sid,)))
-    assert run['end_reason'] == 'servo_trigger' and run['result'] == 'carpisma', (run['end_reason'], run['result'])
+    def son_run():   # KAPANDI durumunda GET 404 verir; satır _temizle sonunda yazılır → satırı bekle
+        with db.connect() as conn:
+            return db.row(conn.execute("SELECT * FROM drone_sim_runs WHERE session_id = ? AND created_at >= ? ORDER BY id DESC LIMIT 1", (sid, s['created_at'])))
+    run = bekle(son_run, 15)
+    assert run and run['end_reason'] == 'servo_trigger' and run['result'] == 'carpisma', (run['end_reason'], run['result'])
     k = json.loads(run['servo_trig'])
     assert k['ch'] == 9 and k['fired'] is True and k['trig_agl'] > 5 and k['delay_ms'] == 1500, k
     it = next(x for x in ok(a.get('/api/drone/sim/runs'))['items'] if x['id'] == run['id'])
@@ -2623,8 +2627,8 @@ def servo_tetik_testleri(a, c1, sitl):
     assert s['servo_trigger']['suggest'] == {'ch': 9, 'pwm': 1900, 'cmp': 'ge', 'tol': 50, 'delay_ms': 1500}, s['servo_trigger']
     ok(a.delete(f"{S}/{s['id']}"))
     with db.connect() as conn:
-        run2 = db.row(conn.execute('SELECT servo_trig FROM drone_sim_runs WHERE session_id = ? ORDER BY id DESC LIMIT 1', (s['id'],)))
-    assert run2['servo_trig'] is None   # dinlenmeyen oturumda NULL
+        run2 = db.row(conn.execute('SELECT servo_trig FROM drone_sim_runs WHERE session_id = ? AND created_at >= ? ORDER BY id DESC LIMIT 1', (s['id'], s['created_at'])))
+    assert run2 and run2['servo_trig'] is None   # dinlenmeyen oturumda NULL
     print('  servo tetik (§34) uçtan uca testleri geçti')
 
 

@@ -1082,6 +1082,118 @@ def kalkis_testleri(a, c1):
     print('  kalkış yöntemi testleri geçti')
 
 
+def ruzgar_hava_testleri(a, c1):
+    """§31: world.weather / wind_gust / wind_turb / launch.azimuth_deg doğrulama, esinti formülü (JS gustFactor ile aynı değerler), SITL ev yönü,
+    sahte kinematikte rüzgâr etkisi (daire yer hızı salınımı, kopter eğimi, süzülme sürüklenmesi), `wind` (uçuşta rüzgâr) ve `launch_aim` (rampa) komutları."""
+    S = '/api/drone/sim/sessions'
+    # --- doğrulama ---
+    w = flightsim.world_dogrula({'weather': 'storm', 'wind_gust': 4, 'wind_turb': 2.5, 'launch': {'method': 'ramp', 'azimuth_deg': 275}})
+    assert w['weather'] == 'storm' and w['wind_gust'] == 4.0 and w['wind_turb'] == 2.5 and w['launch']['azimuth_deg'] == 275.0, w
+    d = flightsim.world_dogrula({})
+    assert d['weather'] == 'clear' and d['wind_gust'] == 0 and d['wind_turb'] == 0 and 'azimuth_deg' not in d['launch'], d
+    for bad in ({'weather': 'hail'}, {'weather': 3}, {'wind_gust': 25}, {'wind_turb': -1}, {'wind_turb': 11}, {'launch': {'azimuth_deg': 360}}, {'launch': {'azimuth_deg': True}}):
+        try:
+            flightsim.world_dogrula(bad)
+        except flightsim.SimHata:
+            continue
+        raise AssertionError(f'kabul edilmemeliydi: {bad}')
+    assert a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'weather': 'hail'}}).status_code == 400
+    # --- esinti: JS flightsim_weather.gustFactor ile aynı (tests/test_flightsim_worldfx.mjs aynı tabloyu doğrular) ---
+    for t, beklenen in ((0.0, 0.25), (3.2, 0.3184), (7.7, 0.0256), (12.5, 0.2581)):
+        assert abs(flightsim.esinti_carpani(t) - beklenen) < 1e-4, (t, flightsim.esinti_carpani(t))
+    gs = [flightsim.esinti_carpani(i * 0.25) for i in range(400)]
+    assert min(gs) >= 0 and max(gs) <= 1 and max(gs) > 0.8 and min(gs) < 0.05, (min(gs), max(gs))
+    n, e = flightsim.ruzgar_vektoru(10, 270)   # batıdan esen → doğuya akar
+    assert abs(n) < 1e-9 and abs(e - 10) < 1e-9, (n, e)
+    # --- SITL ev yönü: sabit kanat rampa azimutu > pist yönü; diğer tipler 0 ---
+    assert flightsim.kalkis_yonu('sabit_kanat', {'method': 'ramp', 'azimuth_deg': 95}, {'runway_heading': 10}) == 95
+    assert flightsim.kalkis_yonu('sabit_kanat', {'method': 'wheels', 'azimuth_deg': 95}, {'runway_heading': 10}) == 10
+    assert flightsim.kalkis_yonu('multirotor', {'method': 'ramp', 'azimuth_deg': 95}, {'runway_heading': 10}) == 0
+    # --- sahte kinematik: rüzgâr ---
+    def dairede(tip, ms, yon=270, turb=0):
+        k = flightsim.SahteKinematik(tip, 39.9, 32.8, 900, ms, None, 0, yon, 0, turb)
+        k.komut('arm', {}); k.hedef_alt = 50.0; k.alt_rel = 50.0; k.aci = 0.0
+        out = []
+        for _ in range(int(2 * math.pi * k.YARICAP / k.HIZ / 0.05) + 40):
+            k.adim(0.05); out.append(k.tele())
+        return k, out
+    _, sakin = dairede('sabit_kanat', 0)
+    _, ruz = dairede('sabit_kanat', 6)
+    g0 = [t['groundspeed'] for t in sakin]; g1 = [t['groundspeed'] for t in ruz]; a1 = [t['airspeed'] for t in ruz]
+    assert max(g0) - min(g0) < 0.2, (min(g0), max(g0))
+    assert 10 <= max(g1) - min(g1) <= 13, (min(g1), max(g1))   # yer hızı = hava hızı ± rüzgâr (12 ± 6)
+    assert max(a1) - min(a1) < 0.6 and abs(sum(a1) / len(a1) - 12) < 0.5, (min(a1), max(a1))   # hava hızı sabit
+    yengec = max(abs(((math.degrees(math.atan2(t['ve'], t['vn'])) - t['heading'] + 540) % 360) - 180) for t in ruz)
+    assert 20 <= yengec <= 40, yengec   # burun hava hızı yönünde: yengeç açısı ≈ asin(6/12) = 30°
+    kk, kop = dairede('multirotor', 8)
+    _, kop0 = dairede('multirotor', 0)
+    assert max(abs(t['pitch'] - (-0.05)) + abs(t['roll'] - 0.12) for t in kop) > 0.08 and max(abs(t['pitch'] + 0.05) for t in kop0) < 1e-6
+    _, tur = dairede('sabit_kanat', 3, turb=4)
+    assert max(t['roll'] for t in tur) - min(t['roll'] for t in tur) > 0.05   # türbülans: yönelim salınımı
+    k = flightsim.SahteKinematik('sabit_kanat', 39.9, 32.8, 900, 10, None, 0, 270, 0, 0)   # süzülme: hava kütlesiyle doğuya sürüklenir
+    k.komut('arm', {}); k.alt_rel = 100.0; k.hedef_alt = 100.0; k.yaw = 0.0; k.komut('motor_cut', {'on': True})
+    lon0 = k.lon
+    for _ in range(100):
+        k.adim(0.05)
+    assert (k.lon - lon0) * 111320 * math.cos(math.radians(39.9)) > 40, (k.lon - lon0)
+    # esinti: anlık hız taban + gust·g(t)
+    k = flightsim.SahteKinematik('multirotor', 39.9, 32.8, 900, 5, None, 0, 90, 4, 0)
+    vs = []
+    for _ in range(300):
+        k.adim(0.1); vs.append(k.ruzgar_simdi())
+    assert min(vs) >= 5 - 1e-9 and max(vs) <= 9 + 1e-9 and max(vs) - min(vs) > 2.5, (min(vs), max(vs))
+    # --- oturum: `wind` komutu (uçuşta rüzgâr) + tele.wind_spd/wind_dir + WS `wind` olayı ---
+    token = a.cookies.get(auth.COOKIE)
+    s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'world': {'wind_ms': 3, 'wind_dir': 200, 'weather': 'rain'}}), 201)
+    sid = s['id']
+    assert s['world']['weather'] == 'rain' and s['world']['wind_gust'] == 0, s['world']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        json.loads(ws.receive_text())
+        m = ws_bekle(ws, lambda x: x['t'] == 'tele', 3)
+        assert m['wind_spd'] == 3.0 and m['wind_dir'] == 200.0, m
+        r = ok(a.post(f'{S}/{sid}/cmd', json={'name': 'wind', 'params': {'ms': 9, 'dir': 250, 'gust': 3, 'turb': 1.5}}))
+        assert r['wind'] == {'wind_ms': 9.0, 'wind_dir': 250.0, 'wind_gust': 3.0, 'wind_turb': 1.5}, r
+        e = ws_bekle(ws, lambda x: x['t'] == 'wind', 3)
+        assert e and e['wind_ms'] == 9.0 and e['wind_dir'] == 250.0, e
+        m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x.get('wind_dir') == 250.0, 3)
+        assert m and 9.0 <= m['wind_spd'] <= 12.0, m
+        ss = flightsim.MANAGER.sessions[sid]
+        assert ss.world['wind_ms'] == 9.0 and ss.sahte.ruzgar == 9.0 and ss.sahte.ruzgar_yon == 250.0 and ss.sahte.ruzgar_turb == 1.5
+        r = ok(a.post(f'{S}/{sid}/cmd', json={'name': 'wind', 'params': {'dir': 10}}))   # yalnız yön: diğerleri korunur
+        assert r['wind']['wind_ms'] == 9.0 and r['wind']['wind_dir'] == 10.0
+        for bad in ({}, {'ms': 31}, {'dir': 360}, {'gust': True}, {'turb': 'x'}):
+            assert a.post(f'{S}/{sid}/cmd', json={'name': 'wind', 'params': bad}).status_code == 400, bad
+        # rampa olmayan oturumda launch_aim 400
+        assert a.post(f'{S}/{sid}/cmd', json={'name': 'launch_aim', 'params': {'azimuth_deg': 90}}).status_code == 400
+    ok(a.delete(f'{S}/{sid}'))
+    # --- `launch_aim`: rampa yön/açı ARM öncesi (sahte kipte kalkış yönü anında; gerçek SITL'de yön → yeniden konuşlandırma) ---
+    s = ok(a.post(S, json={'type': 'sabit_kanat', 'center_id': c1['id'], 'world': {'runway_heading': 30, 'launch': {'method': 'ramp', 'angle_deg': 15}}}), 201)
+    sid = s['id']
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ss = flightsim.MANAGER.sessions[sid]
+    assert abs(math.degrees(ss.sahte.heading) - 30) < 1e-6   # azimut yok → pist yönü
+    with a.websocket_connect(f'/ws/drone/sim/{sid}', headers={'cookie': f'{auth.COOKIE}={token}'}) as ws:
+        json.loads(ws.receive_text())
+        r = ok(a.post(f'{S}/{sid}/cmd', json={'name': 'launch_aim', 'params': {'azimuth_deg': 250, 'angle_deg': 22.5}}))
+        assert r['launch']['azimuth_deg'] == 250.0 and r['launch']['angle_deg'] == 22.5 and r['heading'] == 250.0 and r['redeploy'] is False, r
+        e = ws_bekle(ws, lambda x: x['t'] == 'launch_cfg', 3)
+        assert e and e['launch']['azimuth_deg'] == 250.0 and e['redeploy'] is False, e
+        assert abs(math.degrees(ss.sahte.heading) - 250) < 1e-6 and ss.sahte.launch['angle_deg'] == 22.5
+        assert ok(a.get(f'{S}/{sid}'))['launch']['azimuth_deg'] == 250.0
+        for bad in ({}, {'azimuth_deg': 360}, {'angle_deg': 9}, {'angle_deg': 31}, {'azimuth_deg': 'x'}):
+            assert a.post(f'{S}/{sid}/cmd', json={'name': 'launch_aim', 'params': bad}).status_code == 400, bad
+        # kalkış: rampa azimutu yönünde (250° → batı-güneybatı) ilerler; ARM sonrası launch_aim 400
+        ws.send_text(json.dumps({'t': 'cmd', 'name': 'takeoff', 'params': {'alt': 40}, 'rid': 'r1'}))
+        assert ws_bekle(ws, lambda x: x['t'] == 'launch' and x['phase'] == 'released', 8)
+        m = ws_bekle(ws, lambda x: x['t'] == 'tele' and x['alt_rel'] > 0.2, 6)
+        kerteriz = math.degrees(math.atan2((m['lon'] - m['home']['lon']) * math.cos(math.radians(m['home']['lat'])), m['lat'] - m['home']['lat'])) % 360
+        assert m and abs(((kerteriz - 250) + 180) % 360 - 180) < 3, (kerteriz, m)   # fırlatma yönü = rampa azimutu
+        assert a.post(f'{S}/{sid}/cmd', json={'name': 'launch_aim', 'params': {'azimuth_deg': 90}}).status_code == 400
+    ok(a.delete(f'{S}/{sid}'))
+    print('  hava durumu / rüzgâr / rampa yön-açı (§31) testleri geçti')
+
+
 def duzen_testleri(a, c1):
     """§13.1 kontrol düzeni: layout doğrulama (400), model → varsayılan düzen, parametre setleri (ArduPilot autotest ile aynı), kalıcı kayıt
     önceliği (yazılacak/atlanan, etkin düzen, SITL model son eki), oturum alanları (layout, layout_effective, layout_sitl_model), model kütüphanesi
@@ -3165,6 +3277,7 @@ def main():
         bin_testleri(a, c1)
         # --- sabit kanat kalkış yöntemi (§13) ---
         kalkis_testleri(a, c1)
+        ruzgar_hava_testleri(a, c1)   # §31 hava durumu / rüzgâr / rampa yön-açı
         duzen_testleri(a, c1)   # §13.1 kontrol düzeni
         # --- harekât paneli köprüsü (§14) ---
         hub_testleri(a, c1)

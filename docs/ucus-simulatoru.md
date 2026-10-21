@@ -83,6 +83,8 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 
 ## 5. 3B dünya (tarayıcı; `static/js/modules/flightsim3d.js`, three.js r170 `static/vendor/three`)
 - Yerel koordinat: ENU, merkez referanslı: `x = (lon − lon0)·111320·cos(lat0)`, `y = (lat − lat0)·110574`, `z = alt_rel` (pist seviyesi 0).
+- **§31 (güncel):** arazi 6 oktav fbm + alan bükme + çok-fraktal sırt gürültüsü, yükseklik/eğime göre doku karışımı, ufuk halkası, gökyüzü kubbesi, bulut,
+  hava durumu, ağaç türleri + LOD, kasaba/bina cephesi, rüzgâr tulumu/akış çizgileri — ayrıntı §31; aşağıdaki iki satır ilk sürümün tanımıdır.
 - Arazi: 2D simplex gürültü (tohumlu), 3 oktav; yükseklik `h(x,y) = mountain_height · n(x,y)` + merkez çevresinde 300 m yarıçapta
   düzleştirme (pist/kalkış alanı); su seviyesi `water` oranına göre; renkler yüksekliğe göre (çim → kaya → kar).
 - Nesneler: ağaçlar (InstancedMesh, yoğunluk `tree_density`, su/pist/bina üzerinde değil), binalar (`building_count`, kutular, yükseklik
@@ -115,7 +117,7 @@ terrarium karosundan (`sim_terrain.ev_irtifa`, 12 sn üst sınır; alınamazsa `
 - HUD (3B üstünde, sağ): mod, arm, yükseklik (AGL/MSL), hava/yer hızı, dikey hız, yön, GPS/uydu, batarya, gaz, RC çubukları, rüzgâr;
   **Mission Planner bağlantısı** (`UDP <host>:<port>`, "Bağlı (ip)" / "Bekleniyor"; Kopyala; kısa talimat) harekât panelinin MISSION PLANNER
   bölümünde; panel kapalı/FPV'de sol altta koyu yüzen kutu (§14).
-- Performans: 60 fps hedef; arazi 256×256 ızgara, LOD yok (gerçek kipte ek 192×192 "uzak arazi" halkası, §9); ağaç ≤ 20.000 örnek.
+- Performans: 60 fps hedef (§31: orta düzey dizüstünde ≥ 45 fps); prosedürel arazi 320×320 + 128×128 ufuk halkası, gerçek kipte 256×256 + 192×192 "uzak arazi" halkası (§9); ağaç ≤ 20.000 örnek, parçalı InstancedMesh + LOD (§31).
 - Sis / görüş uzaklığı (`skyAndLights(size, horizon)`): prosedürelde `Fog(size·0,12 … size·(1,6 − 1,25·fog))` (dünya kenarında biter). Gerçek arazi
   ve Google 3B kipinde ufuk dünya boyutuna değil **görüş uzaklığına** bağlıdır: `far = horizon·(1,25 − fog)` (`horizon` = uzak arazi yarıçapı 24 km /
   Google 30 km; fog 0,2 → 25 km, fog 1 → 6 km; fog 0 → sis yok), `near = 0,12·far`. Eski formül 4 km dünyada sisi 5,4 km'de kapatıyordu → 20 km'deki
@@ -2175,3 +2177,132 @@ ve daha yüksek darbe sesi; "PREARM: check mag field" uyarısı; sanal kumanda h
   `disarmAction`, metinler); `tests/test_flightsim_audio.mjs` darbe sesi.
 - Görsel: `SIMFIX_WORLD=procedural|real|google3d ./.venv/bin/python -m tests.simfix_shots_hepgo` → `/tmp/simfix-shots/` (radar/EO tam görüntü + boş piksel oranı,
   EO izleme/zoom/pan, radar 5/20 km, PiP, çarpışma flaş/ateş topu/toz/termal EO, mod menüsü, motor kesme süzülmesi, panel açıkken bant).
+
+## 31. Gerçekçi dünya, hava durumu, rüzgâr fiziği ve göstergeleri, rampa yön/açı arayüzü (HEPGO + SIMUMAV ortak)
+Kullanıcı isteği (özet): Google olmayan dünyada (prosedürel + gerçek arazi) binalar/ağaçlar/dağlar gerçekçi değil → gerçekçi arazi, ağaç, bina, gökyüzü, gölge,
+su; atmosfer seçenekleri (yağmur, kar, sis, bulutlu, açık, fırtına); rüzgâr dronlara GERÇEKTEN etki etsin (SITL ölçümü), türbülans ve esinti; 3B rüzgâr
+tulumu + HUD rüzgâr göstergesi (baş/yan/kuyruk); rüzgâr akış çizgileri; rampaya tıklayınca yön/açı arayüzü (ARM öncesi, SITL'e uygulanır).
+
+**Modüller.** Saf kurallar `static/js/modules/flightsim_weather.js` (three.js'siz; `tests/test_flightsim_worldfx.mjs`), çizim
+`static/js/modules/flightsim_worldfx.js` (`createWorldFx(T, {renderer, scene, preview})` — flightsim3d.js içinden, TEK WebGL bağlamı; ek bağlam/tuval yok,
+mercek damlaları DOM 2B tuvali), DOM göstergeler `static/js/modules/flightsim_windui.js` (`createWindGauge`, `createRampPanel`; HEPGO Türkçe anahtar,
+SIMUMAV `wfx.*` anahtarları — `makeWfxT(tr, keyed)`, fltbar kalıbı; stiller modülde tek `<style>`). Sunucu `app/flightsim.py` (`WEATHER`, `esinti_carpani`,
+`ruzgar_vektoru`, `ruzgar_dogrula`, `rampa_aim_dogrula`, `kalkis_yonu`, `SimSession.ruzgar_degistir / rampa_ayarla / _esinti_adim`, `SahteKinematik` rüzgâr),
+`app/drone_sitl.py baslat(..., yon=)`, SIMUMAV `app/simumav/bridge.py _world` (+ `FOG_HAVA`, `WEATHER_CEKIRDEK`), `routers/fly.py guvenlik_komut`.
+
+### 31.1 Dünya gerçekçiliği (`flightsim_worldfx.js`; prosedürel + gerçek arazi; Google 3B'de gök/sis/yağış/tulum/akış çizgileri)
+- **Arazi (prosedürel, `makeTerrain`)**: 6 oktav fbm (lacunarity 2,03) + alan bükme (kıvrımlı vadiler) + dağlık bölgede (fbm maskesi) çok-fraktal **sırt**
+  gürültüsü (keskin tepe hatları, erozyon benzeri dereler). Izgara 320×320 (önizleme 160); `height(x, y)` her noktada tanımlı → **ufuk halkası**
+  (dünya genişliğinin 8 katı, 128×128; ana karenin içinde 2 m altta saklı, dikişsiz) — dağlar dünya kenarında bitmez; sis ufku `size·3` (halkayı aşmaz).
+- **Zemin malzemesi** (`patchGround`, MeshStandard + onBeforeCompile): prosedürelde yükseklik/eğime göre **çim** (iki ton + mezo/makro gürültü lekeleri) /
+  **toprak** lekeleri / **kaya** (eğim > ~0,3 ve yüksek kesimler; katman şeritleri) / doğal **kar** (dağ ≥ 150 m ise yüksekliğin %74'ü üstü, düz yüzeyler) /
+  su kıyısında **kum**; iki ölçekli (7,5 m + 31 m) prosedürel ayrıntı dokusu + **normal haritası** (canvas'ta üretilir, tekrarlanabilir; 250–2200 m'de söner).
+  Gerçek arazide uydu dokusu üstüne aynı ayrıntı + normal. **Hava**: kar örtüsü (`snowCover`, düz yüzeyler beyazlar, gürültülü sınır), ıslaklık (`wet`:
+  koyulaşma × 0,56 + pürüzlülük 0,22 → güneşte parlama); yollar da ıslanır (`patchWet`).
+- **Gökyüzü** (kameraya bağlı kubbe, uzak düzlemde): ufuk/zenit gradyanı, güneş diski + Mie parıltısı, **güneş konumu saat ön ayarına göre**
+  (`sunPosition`: gündüz 52°/150°, akşam 4°/252°, gece ay 28°), gece yıldızlar + ay, bulutlulukta kapalı gök, fırtınada **şimşek** (5–16 sn'de bir çakma;
+  hemi ışık + gök). Sis rengi = pusa çekilmiş ufuk rengi → atmosferik saçılım dikişsiz; ışıklar (güneş/hemi/ortam) saat + hava ile.
+- **Bulut katmanı**: tek düzlem (90 km), gölgelendiricide 2 katman fbm; örtü hava ön ayarından, rüzgârla kayar (×2,5 irtifa), güneş yönüne göre gölgeli,
+  uzakta sise karışır/söner, kamera katmana 60 m'den yakınken saydamlaşır; taban arazi + 700…900 m (≥ 1500 m).
+- **Su** (gölgelendirici; prosedürel düzlem + OSM su çokgenleri): Fresnel gökyüzü yansıması, 3 katman hareketli dalga normali (uzakta düzleşir — piksel
+  altı parıltı yok), güneş parlaması, yağmurda halka dalgacıkları. Termalde soğuk (heatWorld).
+- **Ağaçlar**: iki tür — iğne yapraklı (gövde + 3 katmanlı koni, uçta açık/tabanda koyu köşe rengi) ve geniş yapraklı (gövde + 3 bozulmuş ikosahedron
+  topak); tür biyom gürültüsü + yükseklikle (yükseklerde iğne yapraklı). **Parçalı InstancedMesh** (~450 m hücre × tür; parça başına frustum ve gölge
+  kutusu ayıklaması) + **LOD**: kameradan ~520 m'ye dek 3B model, ötesinde çapraz düzlem **impostor** (canvas atlası, alphaTest); 5 Hz güncellenir.
+  **Rüzgârda salınım**: köşe gölgelendiricisinde tepe yer değiştirmesi (yükseklik², rüzgâr yönü + küçük daire; ağaç başına faz). Kar havasında taçlar açılır.
+- **Binalar (prosedürel + gerçek kipte "ek bina")**: **kasabalar** — merkezden 520 m+ düz alanlarda (180 m'de ≤ 25 m fark) sokak ızgarası (66 m blok, 8 m
+  asfalt + iki yanda kaldırım şeridi; araziye serili şerit geometrisi), türler merkezden uzaklıkla: **kule** (cam cephe, 36–82 m), **apartman** (3–9 kat,
+  çatı üniteleri), **müstakil ev** (1–2 kat, **beşik çatı** kiremit/antrasit), kenarda **sanayi**; kalan kota kırsalda ev/ahır. Cephe gölgelendiricisi
+  (`patchFacade`): kat (3–3,6 m) / bölme ızgarasında **pencereler** (türüne göre oran), cam gök yansıması rengi + düşük pürüzlülük, zemin kat bandı,
+  korniş, taban koyulaşması; **gece rastgele ışıklı pencereler** (sıcak, emissive). OSM binaları (gerçek kip) aynı gölgelendiriciyle (öznitelik `aFac` =
+  çevre boyunca u, taban üstü v, çatı; `aBld` = tür/tohum/yükseklik) — eski çatı köşesi ışık noktaları kalktı. Çarpışma AABB'leri döndürülmüş taban sınırından.
+- **Gölgeler**: güneş gölge kutusu dronun çevresinde ±90 m (2048², normalBias), binalar, yakın ağaç parçaları, tulum ve düzenek gölge düşürür.
+- **Performans** (orta düzey dizüstü ≥ 45 fps hedefi): instancing (ağaç/bina/çatı), parça frustum ayıklaması, ağaç LOD, impostor, gökyüzü tek kubbe,
+  yağış ve akış çizgileri GPU'da (CPU'da parçacık güncellemesi yok), dokular canvas'ta bir kez (paylaşılan program önbellek anahtarları). Ölçüm §31.7.
+
+### 31.2 Hava durumu (`world.weather`; sihirbaz Dünya adımı)
+`clear | cloudy | rain | snow | fog | storm` (Açık hava · Bulutlu · Yağmurlu · Karlı · Sisli · Fırtınalı). Ön ayarlar `WEATHER_PRESETS` (bulut örtüsü, yağmur/kar
+yoğunluğu, ıslaklık, kar örtüsü, ışık çarpanı, görüş çarpanı, pus, şimşek). **Görüş**: `fogRange(fog, weather, {size|horizon})` — "açık"ta eski formülle
+birebir aynı (geri uyum), diğerlerinde sis uzaklığı × `vis` (sis ≤ 900 m). **Yağış**: kameraya bağlı 60–70 m'lik hacimde GPU parçacıkları — yağmur çizgi
+(14 000 × yoğunluk; düşüş 9–12 m/s), kar tanesi (9 000; 1,1 m/s + salınım), rüzgârla sürüklenir (yatay hız = rüzgâr vektörü). **FPV/gimbal'da mercek
+damlaları** (yağmur/fırtına; DOM tuvali, ≤ 26 damla, büyük damla akar). Sihirbaz: Dünya adımında hava segmenti (simgeli), özet kartında "Hava durumu".
+**Google 3B**: gök kubbesi, sis, yağış, bulut, tulum, akış çizgileri aynen; karolar havaya göre koyulaşır (`g3d.setWeatherLight`). Termal kamerada gök/bulut/
+yağış/akış çizgileri gizlenir (gök soğuk). **SIMUMAV**: parkur hava durumu (`bridge.WEATHER` clear/cloudy/rain/fog/snow) → `world.weather` birebir
+(`worldFromTrack` + `bridge._world`); görüşü hava kıstığından parkurun sis değeri yalnız hafif pus (`FOG_HAVA`, çift kısma yok); parkur düzenleyicisine
+**kar** eklendi.
+
+### 31.3 Rüzgâr fiziği — SITL (`SIM_WIND_SPD/DIR/TURB`), esinti, uçuşta rüzgâr; sahte kinematik
+- **Doğrulama**: SITL'e rüzgâr ZATEN yazılıyordu (`_ruzgar_yaz`, ilk kalp atışında `SIM_WIND_SPD = wind_ms`, `SIM_WIND_DIR = wind_dir`; SIM_WIND_DIR =
+  rüzgârın GELDİĞİ yön). Artık + `SIM_WIND_TURB = wind_turb` (ArduPilot SITL rastgele türbülansı, m/s). `SIM_WIND_*` kalıcı parametre kaydına girmez
+  (`drone_params.HARIC_ONEKLER`).
+- **Esinti** (`world.wind_gust`, 0–20 m/s): sunucu `_dongu` 1 Hz'de `SIM_WIND_SPD = wind_ms + wind_gust · g(t)` yazar; `g(t) = esinti_carpani(t)` (üç
+  uyumsuz sinüs, kare; JS `gustFactor` ile birebir — iki test aynı tabloyu doğrular), t = SITL saati (`tbm`). `tele.wind_spd / wind_dir` anlık değer
+  (tulum, gösterge, akış çizgileri bunu kullanır; yoksa istemci aynı formülle hesaplar).
+- **Uçuşta rüzgâr** — `cmd wind {ms?, dir?, gust?, turb?}` (KOMUTLAR; verilmeyen alan korunur; sınırlar world ile aynı): dünya güncellenir, SITL'e
+  PARAM_SET, olay şeridi, WS `{t:'wind', wind_ms, wind_dir, wind_gust, wind_turb}`. HEPGO rüzgâr göstergesinde ✎ (yazma izni). **SIMUMAV'ta kapalı**
+  (`guvenlik_komut`: "Rüzgâr parkur ayarıdır"; adil skor) — parkurun rüzgârı + esintisi (`track.wind.gust` artık çekirdeğe gidiyor) uygulanır.
+- **Sahte kinematik** (`HEPGO_SITL=0`): `ruzgar_ayarla(ms, yön, esinti, türbülans)`; dairede yer izi korunur (ArduPilot loiter gibi), **yer hızı = iz boyu
+  rüzgâr + √(V² − yan²)** (hava hızı sabit V), burun hava hızı yönünde (**yengeç açısı**), kopter rüzgâra karşı eğilir (~1°/m/s, ≤ 25°), türbülansta
+  yönelim salınımı, süzülmede hava kütlesiyle sürüklenme, tekerlekli kalkışta baş rüzgârı döndürme yer hızını düşürür; `airspeed` artık gerçek hava hızı
+  (eski `+ rüzgâr·0,3` hilesi kalktı).
+- **Gerçek SITL ölçümü** (`tests/wind_sitl_olcum.py`; ArduPilot 4.7.2 SITL, HEPGO oturum kodu üzerinden — `wind` komutu, esinti döngüsü, `launch_aim`):
+
+| Senaryo (rüzgâr 270°'den) | Ölçüm |
+|---|---|
+| Kopter, rüzgâr 0 | LOITER ort. eğim 1,5° · ALT_HOLD'da (konum tutma yok) 15 sn sürüklenme **0,9 m** |
+| Kopter, rüzgâr 8 m/s (`wind` komutuyla uçuşta) | LOITER ort. eğim **10,7°** (rüzgâra karşı yatar, konum tutar) · ALT_HOLD 15 sn sürüklenme **57,4 m doğuya** (rüzgâr yönü) |
+| Kopter, esinti 5 + 5 m/s | `tele.wind_spd` 5,0…8,1 m/s (SITL `SIM_WIND_SPD` PARAM_VALUE ile teyitli) |
+| Uçak LOITER, rüzgâr 0 | yer hızı 30,5…34,7 (aralık 4,3) · hava hızı 30,7 ± 1,1 m/s |
+| Uçak LOITER, rüzgâr 8 m/s | yer hızı **22,2…42,6 (aralık 20,4 ≈ 2×8 + temel)** · hava hızı 30,0 ± 1,7 m/s |
+| Uçak LOITER, rüzgâr 8 + türbülans 3 | yer hızı 23,4…46,7 (aralık 23,3) · hava hızı 32,7 ± **1,9** m/s (oynaklık artar) |
+| Rampa azimut 120° (oturum açılışı) | SITL ilk yön **120,0°** (`--home …,120`) |
+| `launch_aim` 210° / 20° | `redeploy: true`, 3,1 sn'de HAZIR, `TKOFF_LVL_PITCH 20`; fırlatma yer izi kerterizi **209,0°** |
+| `launch_aim` yalnız açı 25° | `redeploy: false`, `TKOFF_LVL_PITCH 25` (yeniden başlatma yok) |
+
+Sonuç: rüzgâr önceden de SITL'e yazılıyordu ve fiziksel olarak etkiliydi (doğrulandı); eksik olan türbülans/esinti, uçuşta değiştirme, ev yönü ve
+göstergelerdi. Not: yeniden konuşlandırmadan hemen sonra `tele.heading` ilk kalp atışına dek eski değeri gösterebilir (ölçümde 120°), fırlatma yönü doğrudur.
+
+### 31.4 Rüzgâr göstergeleri — 3B rüzgâr tulumu + HUD (`createWindGauge`)
+- **Tulum** (`createWindsock`): 6,5 m direk + çember + 5 bölmeli turuncu/beyaz koni (×1,6 görünürlük), pistin yanında (merkezden 60 m ileride, pist
+  kenarından 24 m dışarıda; pist yoksa kalkış noktasının 28/28 m'si), yüzeye oturur (Google'da 1 Hz). **Rüzgârın estiği yöne döner**, hızla şişer
+  (`sockState`: 15 kt ≈ 7,7 m/s'de tam açık, 0'da %12; sarkma 78°→0°), hız/esintiyle dalgalanır; gölge düşürür.
+- **HUD göstergesi** (sahne sol üst; HEPGO + SIMUMAV): pusula (kuzey işareti uçağa göre döner, burun yukarı), mavi ok rüzgârın **akış** yönü, `7.2 m/s
+  300° BKB · Esinti +3.0`, **baş/yan/kuyruk bileşenleri** uçağın burnuna göre (`windComponents`: head = V·cos(geliş − burun), cross = V·sin(…)):
+  "Baş 5.2 · Yan 2.9 sağdan" — kuyruk > 1 m/s kırmızı, yan > 6 m/s sarı (kalkış/iniş uyarısı). 〰 düğmesi akış çizgileri (kalıcı tercih: HEPGO
+  `caymaz.fs.windStreaks`, SIMUMAV `sm.windStreaks`); ✎ (HEPGO, yazma izni) hız/yön/esinti/türbülans kaydırıcıları → `wind` komutu. HEPGO sağ HUD'daki
+  eski "Rüzgâr" satırı korunur.
+- **Sihirbaz Kalkış adımında öneri** (`takeoffAdvice`): kalkış yönü (rampa azimutu / pist yönü) için baş/yan/kuyruk metni; kuyruk > 1 ya da yan > 6 m/s
+  ise uyarı rengi; yön rüzgârdan ≥ 15° saparsa **"Rüzgâra karşı çevir (X°)"** düğmesi (rampada azimutu, diğerlerinde pist yönünü rüzgârın geldiği yöne,
+  5°'ye yuvarlı, çevirir — önizleme anında döner).
+
+### 31.5 Rüzgâr akış çizgileri (`STREAK_*`; aç/kapa)
+Uçak çevresinde (kamera uzaklığına göre 30–120 m küp) 60–420 yarı saydam çizgi; konumlar GPU'da rüzgâr vektörüyle **gerçek hızda** taşınır (sarmalı
+hacim), uzunluk 1,5–14 m, saydamlık 0,12–0,55 ve sayı rüzgâr hızıyla (`streakParams`), merkezden uzaklıkla ve kuyruğa doğru söner; 0,3 m/s altında
+kapalı. `sim.setWindStreaks(bool)` / `opts.windStreaks`.
+
+### 31.6 Rampa yön/açı arayüzü (`createRampPanel`; `cmd launch_aim`)
+- **Tıklama**: 3B'de rampaya (ya da üstündeki uçağa) kısa tıklama (≤ 6 px, ≤ 450 ms; `pickRig` ışını) → `opts.onRigClick` → panel (sağ üst): pusula
+  (sürükle) + **yön (azimut 0–359°)** kaydırıcısı, **açı 10–30°** (0,5° adım; sunucu `launch_dogrula` sınırları) + yan görünüş, rüzgâr satırı (o yön için
+  baş/yan/kuyruk), **"Rüzgâra karşı çevir"**, Vazgeç / **Uygula**. Değişiklik 3B'de **anında** önizlenir (`sim.setRampAim` düzeneği yeniden kurar — eğim
+  silindiri geometrisi açıya bağlı); Vazgeç eski değere döner. Yalnız **kalkıştan önce** (DISARM, AGL < 1 m, düzenek `idle`; `rampEditable`) — sonra kilitli.
+- **SITL'e uygulama — gerekçe**: rampa yönü SITL'de uçağın **ev/burun yönüdür**. ArduPlane'de yerdeki uçağın yönünü değiştiren parametre/komut yok;
+  `SIM_OPOS_HDG` yalnız `--home` VERİLMEDİĞİNDE açılışta okunur (biz `--home lat,lon,alt,yön` veriyoruz). Bu yüzden: **açı** → `TKOFF_LVL_PITCH` PARAM_SET
+  (yeniden başlatma yok; `_kalkis_dizisi` zaten her kalkışta yazar); **yön** → oturum **aynı ayarlarla yeniden konuşlandırılır** (`reset()`: SITL `--home …,yön`
+  ile yeniden başlar — §26 "Sıfırla" ile aynı yol; ~5 sn; görev/güç/parametreler korunur). Sahte kipte kinematiğin kalkış yönü anında değişir.
+- **Ev yönü düzeltmesi**: önceden SITL her zaman `--home …,0` ile açılıyordu — pist yönü ≠ 0 iken 3B pist/rampa bir yöne, SITL uçağı kuzeye bakıyordu.
+  Artık sabit kanatta ev yönü `kalkis_yonu()` = rampa azimutu (varsa) ya da pist yönü (tekerlekli/araç da pist boyunca koşar); diğer tiplerde 0 (değişmedi).
+- **Sözleşme**: `world.launch.azimuth_deg` (isteğe bağlı, 0–359,99; yalnız rampada anlamlı; sihirbazın Kalkış adımında "Rampa yönü (azimut)" kaydırıcısı,
+  varsayılan pist yönü). `cmd launch_aim {azimuth_deg?, angle_deg?}` → `{ok, launch, heading, redeploy}`; 400: rampalı sabit kanat değil / ARM'lı / havada /
+  kalkış dizisi sürüyor / sınır dışı. WS `{t:'launch_cfg', launch, redeploy}` (tüm izleyiciler düzeneği günceller). SIMUMAV'ta da açık (oyun WS yolu
+  `SIM_KOMUT`).
+
+### 31.7 Testler, görsel doğrulama ve performans
+- `node tests/test_flightsim_worldfx.mjs` (hava ön ayarları + sunucu/SIMUMAV listeleri, görüş formülü geri uyumu, yağış, güneş, rüzgâr vektörü/bileşenleri,
+  kalkış önerisi, esinti tablosu Python ile aynı, tulum/akış çizgileri, rampa sınırları/değişiklik/kilit, gösterge metinleri, SIMUMAV `wfx.*` 7 dil).
+- `tests.test_flightsim` `ruzgar_hava_testleri` (doğrulama 400'leri, esinti tablosu, `kalkis_yonu`, sahte kinematik: daire yer hızı aralığı ≈ 2×rüzgâr,
+  hava hızı sabit, yengeç ≈ 30°, kopter eğimi, türbülans, süzülme sürüklenmesi, esinti aralığı; oturumda `wind` komutu + WS `wind` + tele, `launch_aim` +
+  WS `launch_cfg` + kalkış kerterizi = azimut + ARM sonrası 400); `tests.test_simumav` (parkur hava → world.weather/wind_gust/FOG_HAVA, `wind` engeli).
+- Görsel: `./.venv/bin/python -m tests.worldfx_shots_hepgo` (`WFX_WORLD=procedural|real`, `WFX_ONLY=day,dusk,night,rain,snow,fog,storm,cloudy,wind,ramp,fly`;
+  önce/sonra: aynı betik `git archive` kopyasında `WFX_PREFIX=before`) ve `tests.worldfx_shots_simumav` → `/tmp/worldfx-shots/`.
+
+<<PERF>>

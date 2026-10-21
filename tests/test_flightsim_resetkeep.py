@@ -280,7 +280,35 @@ def main():
         finally:
             mp.kapat()
         ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}"))
-    print('§35 reset/MP/ağır çekim/kamera yok testi geçti.')
+
+        # 6) "Uçuş logunu kaydet" açıkken Sıfırla: o ana kadarki uçuşun .BIN'i ayrı log olarak kaydedilir (yeni SITL logs/*.BIN'i siler)
+        s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'multirotor', 'center_id': c['id'], 'world': {'mode': 'procedural'}, 'rec': {'bin': True}}), 201)
+        sid3 = s3['id']
+        s = flightsim.MANAGER.get(sid3)
+        bekle(lambda: hazir(s), 90, mesaj='bin oturumu SITL')
+        ok(a.post(f'/api/drone/sim/sessions/{sid3}/cmd', json={'name': 'mode', 'params': {'mode': 'GUIDED'}}))
+
+        def kalkti():
+            if not s.tele.get('armed'):
+                a.post(f'/api/drone/sim/sessions/{sid3}/cmd', json={'name': 'arm', 'params': {}})
+                time.sleep(2)
+                if s.tele.get('armed'):
+                    a.post(f'/api/drone/sim/sessions/{sid3}/cmd', json={'name': 'takeoff', 'params': {'alt': 20}})
+            return s.tele.get('armed') and (s.tele.get('alt_rel') or 0) > 5
+        bekle(kalkti, 150, adim=2, mesaj='ARM + kalkış (EKF hazır)')
+        time.sleep(8)
+        ok(a.post(f'/api/drone/sim/sessions/{sid3}/cmd', json={'name': 'reset', 'params': {}}))
+        bekle(lambda: hazir(s), 60, mesaj='bin oturumu reset')
+        assert len(s.bin_ara) == 1 and s.bin_ara[0]['size'] > 1024, s.bin_ara
+        from app import db
+        with db.connect() as conn:
+            row = conn.execute('SELECT note, origin, size FROM flight_logs WHERE id = ?', (s.bin_ara[0]['log_id'],)).fetchone()
+        assert row and row['origin'] == 'SIM' and 'sıfırlama #1 öncesi' in row['note'], dict(row) if row else None
+        assert ok(a.get(f'/api/drone/sim/sessions/{sid3}'))['rec']['bin_logs_reset'][0]['log_id'] == s.bin_ara[0]['log_id']
+        ok(a.delete(f'/api/drone/sim/sessions/{sid3}'))
+        assert s.bin_sonuc and s.bin_sonuc.get('log_id') == s.bin_ara[0]['log_id'], (s.bin_sonuc, s.bin_ara)   # reset sonrası uçulmadı → oturumun logu
+        print('Sıfırla öncesi uçuş logu kaydedildi:', s.bin_ara[0])
+    print('§35 reset/MP/ağır çekim/kamera yok/.bin testi geçti.')
 
 
 if __name__ == '__main__':

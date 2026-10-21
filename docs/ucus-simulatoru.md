@@ -2597,6 +2597,8 @@ oturumda yazdıkları ayrıca tutulur: `oturum_paramlari` (Mission Planner PARAM
 parametreyi yeniden belirlerse MP'nin eski değeri unutulur (`speed` → SIM_SPEEDUP, `wind` → SIM_WIND_*, `launch_aim` açı → TKOFF_LVL_PITCH).
 SIM_SPEEDUP reset sonrası her zaman `speedup_istek` ile yazılır (1× dahil; eeprom'daki değer değil).
 
+**Uçuş logu (.BIN) ve Sıfırla.** "Uçuş logunu kaydet" açıksa `reset()` SITL durduktan hemen sonra o ana kadarki .BIN'i `_bin_kaydet(ara=True)` ile ayrı bir Uçuş Logu olarak kaydeder (not: "sıfırlama #N öncesi"; `rec.bin_logs_reset`). Yeni SITL `logs/*.BIN`'i sildiği için önceden bu log kayboluyordu. Kapanışta yeni .BIN yoksa son ara log oturumun logu (`bin_log`) sayılır; varsa kapanış logunun notu "sıfırlama #N sonrası" olur.
+
 **Mission Planner reset'te kopmaz.** UDP soketi ve portu oturum boyunca aynı; GCS kilidi (`gcs_addr`) reset'te sıfırlanmaz (MP 1 Hz kalp atışıyla
 tazeler). SITL yokken (~2–4 sn) `_kopru_kalp`: MP'ye aynı sysid/compid ve araç tipiyle 1 Hz HEARTBEAT (MAV_STATE_BOOT) + bir STATUSTEXT
 "HEPGO: SITL yeniden baslatiliyor"; yeni SITL'in ilk kalp atışında biter. Ölçüm (gerçek SITL, pymavlink MP taklidi): en uzun araç kalp atışı boşluğu

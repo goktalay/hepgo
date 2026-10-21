@@ -5127,5 +5127,17 @@ registerCatalog('es', {
   "Simülatör sıfırlandı": "Simulador reiniciado",
 "ArduPilot DataFlash ikili log": "Registro binario DataFlash de ArduPilot",
 "ArduPilot DataFlash metin log": "Registro de texto DataFlash de ArduPilot",
-"MAVLink telemetri kaydı (Mission Planner / QGroundControl)": "Registro de telemetría MAVLink (Mission Planner / QGroundControl)"
+"MAVLink telemetri kaydı (Mission Planner / QGroundControl)": "Registro de telemetría MAVLink (Mission Planner / QGroundControl)",
+  // Uçuş simülatörü alt bandı: servo tetik paneli + görünüm kapsülü
+  "Dinleniyor": "Escuchando",
+  "Tetiklendi": "Disparado",
+  "Dinlemeye başla": "Empezar a escuchar",
+  "Dinlemeyi durdur": "Dejar de escuchar",
+  "Canlı PWM": "PWM en vivo",
+  "Koşul": "Condición",
+  "Tolerans": "Tolerancia",
+  "Servo tetik: kanal, koşul, PWM eşiği ve gecikme ayarı; dinlemeyi başlat / durdur": "Disparador servo: canal, condición, umbral PWM y retardo; empezar / dejar de escuchar",
+  "Görünüm": "Vista",
+  "Görünüm (1–5 · C)": "Vista (1–5 · C)",
+  "1–5: görünüm · C: sıradaki görünüm": "1–5: vista · C: siguiente vista",
 });

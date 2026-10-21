@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import {
   CAMERA_TYPES, CAMERA_CHOICES, CAM_TYPE_KEYS, CAM_CHOICE_KEYS, isCamChoice, normCamChoice, isNoCam, camTypeLabel, CAM_TYPE_NAME_SHORT, isCamType, normCamType, nextCamType, THERMAL_PALETTES, normPalette, nextPalette, camTypeIndex, paletteIndex, camFxApplies, nightGain,
   GIMBAL_ZOOM, clampZoom, gimbalZoomFov, pipSourceFor, pipSwapTarget, pipInterval, PIP_SIZES, PIP_DEFAULT, normPipPref, pipSize, pipInsets, pipPlace, pipSnap,
-  pipSizeForWidth, nextPipSize, isDoubleTap, createCamPrefs, LS_CAM, CAM_FRAG, camUniforms, camFxPixel,
+  pipSizeForWidth, nextPipSize, isDoubleTap, createCamPrefs, LS_CAM, CAM_FRAG, camUniforms, camFxPixel, viewDisabled, viewLabel,
 } from '../static/js/modules/flightsim_camera.js';
 import { CAMERA_KEYS, normCamera, cameraDefault, CAM_TEXT_KEYS, camTr } from '../static/simumav/app/fly/camera_pick.js';
 
@@ -176,6 +176,19 @@ test('metin → camera.* anahtarı: paylaşılan modülün tüm tür/palet adlar
   const dict = { 'camera.thermal': 'Thermal camera' };
   const t = camTr((s, p) => dict[s] ?? s);
   assert.equal(t('Termal kamera'), 'Thermal camera'); assert.equal(t('Gece görüşü'), 'Gece görüşü'); assert.equal(t('başka'), 'başka');
+});
+
+test('alt bant görünüm + kamera TEK kapsül: görünüm adı düğmede; kamera yokken gimbal devre dışı; HEPGO + SIMUMAV aynı bileşen', () => {
+  const V = [['follow', 'Takip'], ['pilot', 'FPV'], ['fpv', 'Gimbal kamerası'], ['free', 'Serbest'], ['ground', 'Yer']];
+  assert.equal(viewLabel(V, 'free'), 'Serbest'); assert.equal(viewLabel(V, 'bozuk'), 'Takip'); assert.equal(viewLabel(null, 'free'), '');
+  assert.ok(viewDisabled('fpv', 'none')); assert.ok(!viewDisabled('fpv', 'day')); assert.ok(!viewDisabled('follow', 'none'));
+  for (const f of ['../static/js/modules/flightsim.js', '../static/simumav/app/fly/session.js']) {
+    const src = fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+    assert.ok(/views: (M3D\.)?CAMERA_MODES, onView: k => sim\?\.setCamera\(k\)/.test(src), `${f}: görünüm listesi kapsülde`);
+    assert.ok(!/camBtns/.test(src), `${f}: ayrı görünüm düğmeleri kalktı`);
+    assert.ok(/camCtl\.setView\(mode\)/.test(src), `${f}: 1–5 kısayolu düğme metnini günceller`);
+    assert.ok(/class: 'pill-group fs-ops-snd' }, opsBtn\)/.test(src) && /opsSnd\.nextSibling/.test(src), `${f}: Panel + ses TEK kapsül`);
+  }
 });
 
 console.log(`\n${n} test geçti`);

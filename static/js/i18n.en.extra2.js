@@ -2109,4 +2109,16 @@ registerCatalog('en', {
   "Simülatör sıfırlansın mı? Araç başlangıç noktasına döner; parametreler, scriptler ve görev korunur, Mission Planner bağlantısı kopmaz.": "Reset the simulator? The vehicle returns to its start point; parameters, scripts and mission are kept, and the Mission Planner link stays up.",
   "Sıfırla (onaylı): araç başlangıca döner; parametreler ve scriptler korunur": "Reset (confirmed): vehicle returns to start; parameters and scripts are kept",
   "Simülatör sıfırlandı": "Simulator reset",
+  // Uçuş simülatörü alt bandı: servo tetik paneli + görünüm kapsülü
+  "Dinleniyor": "Listening",
+  "Tetiklendi": "Triggered",
+  "Dinlemeye başla": "Start listening",
+  "Dinlemeyi durdur": "Stop listening",
+  "Canlı PWM": "Live PWM",
+  "Koşul": "Condition",
+  "Tolerans": "Tolerance",
+  "Servo tetik: kanal, koşul, PWM eşiği ve gecikme ayarı; dinlemeyi başlat / durdur": "Servo trigger: channel, condition, PWM threshold and delay; start / stop listening",
+  "Görünüm": "View",
+  "Görünüm (1–5 · C)": "View (1–5 · C)",
+  "1–5: görünüm · C: sıradaki görünüm": "1–5: view · C: next view",
 });

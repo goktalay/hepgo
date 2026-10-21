@@ -1544,7 +1544,7 @@ mümkün; **takip/serbest/yer** dış gözlemci kameraları her zaman gündüz r
   saniyede bir yeniden toplanır. Arazi/bina/ağaç: sahne parlaklığı (güneşli asfalt ılık, ağaç/gölge serin). Sahnede insan modeli yok (SIMUMAV elden atış
   pilot figürü ayrı kaplama tuvalindedir — termal geçirmez; bilinen sınır).
 - **Seçim ve kalıcılık**: oturum gövdesi `camera: 'day'|'thermal'|'night'` (sunucu `kamera_dogrula`: boş → day, başka değer **400**); `session.camera`;
-  uçuş içinde **T** (döngü), **Shift+T** (termal paleti; termal değilse termale geçer), alt çubukta **"📷 Tür ▾"** menüsü (tür · palet · PiP aç/boyut ·
+  uçuş içinde **T** (döngü), **Shift+T** (termal paleti; termal değilse termale geçer), alt çubukta görünüm kapsülünün sağ yarısı **"📷 Tür ▾"** menüsü (§36) (tür · palet · PiP aç/boyut ·
   ipucu). Değişim canlı oturumda **`camera` komutu** ile sunucuya (KOMUTLAR; HAZIR beklemez, SITL'e gitmez; kayıttan oynatma oturumu da kabul eder) →
   kapanışta **`drone_sim_runs.camera`** (son tür). Tercih `localStorage fs.cam.type` / `fs.cam.palette`; dron başına `fs.cam.byDrone`.
   `GET /api/drone/sim/drones` her kayda **`camera`** (o dronun son simülasyon kaydındaki tür) ekler → sihirbaz varsayılanı.
@@ -2569,10 +2569,15 @@ Kullanıcı isteği: "Simülasyon ortamında altta bir Servo kanalı seçme olsu
 olsun. Dinle'ye basarsa o servo kanalından gelen PWM değerini dinlesin ve komut gelirse gecikme süresini bekleyip sanki dağa ya da bir nesneye çarpmış gibi
 hareket edip simülasyonu bitirip özet ekranı gelsin. Son özette de bu işlemin kaç metrede çalıştığını görebilelim."
 
-**Alt bant (tüm kamera kipleri; sanal kumanda / harekât paneli açıkken de).** `SERVO` grubu: kanal seçici S1–S16 (etiket dronun `SERVOn_FUNCTION`
+**Alt bant (tüm kamera kipleri; sanal kumanda / harekât paneli açıkken de).** Bantta yalnız TEK servo simgeli **Dinle** düğmesi (`.fs-srv-btn`;
+satır içi girişler §36'da kalktı). Basınca düğmenin ÜSTÜNDE yukarı açılan panel (`.fs-srv-pop`: başlık "Servo tetik" + ×) aşağıdaki girişleri ve
+**Dinlemeye başla** düğmesini (`.fs-srv-act`) taşır; başlayınca panel KAPANIR, bant düğmesi kırmızı yanıp söner ve **Dinleniyor** yazar (gecikme
+sürerken **Tetiklendi**, çarpmada **ÇARPMA**). Dinlerken düğmeye basınca panel yine açılır: değerler kilitli, canlı PWM görünür, eylem **Dinlemeyi
+durdur**. Panel dışına tıklama / **Esc** kapatır (Esc yakalama evresinde: oturumdan çıkış kısayoluna gitmez); dar ekranda panel görüntü alanına
+kaydırılır. Panel içeriği: kanal seçici S1–S16 (etiket dronun `SERVOn_FUNCTION`
 işleviyle: "9 · RCIN9 / Yük" — RCINn, Gripper, Parachute, CameraTrigger, Sprayer, Winch, ScriptN "yük" sayılır), koşul `≥` / `≤` / `=` (eşitte
-± tolerans kutusu), PWM eşiği (µs, 800–2200), gecikme (ms, 0–60000), **Dinle** (açıkken **Durdur**; ayar kutuları kilitli). Sağda canlı değer:
-dinlerken yanıp sönen kırmızı nokta + kanalın anlık PWM'i (`tele.servo16`; koşul sağlanınca sarı), tetikte turuncu hızlı nokta, çarpmada "ÇARPMA".
+± tolerans satırı), PWM eşiği (µs, 800–2200), gecikme (ms, 0–60000), **Canlı PWM**: dinlerken yanıp sönen kırmızı nokta + kanalın anlık PWM'i
+(`tele.servo16`; koşul sağlanınca sarı), tetikte turuncu hızlı nokta, çarpmada "ÇARPMA". Dinleme komutları, tercihler ve dron kaydı önerisi aynen.
 Tetik gelince sahnede kırmızı bant "SERVO TETİK · S9 1900 µs — 1500 ms sonra çarpma · AGL 80 m · evden 111 m". Kanal adları sunucunun ilk kalp atışında
 istediği `SERVO1…16_FUNCTION` değerlerinden (WS `{t:'servo_trigger', phase:'fn', fn}`). Tercih kalıcı: `localStorage fs.srvtrig` + dron başına
 `fs.srvtrig.byDrone`; sunucu da Dinle'de dron kaydına yazar (`drone_sitl_options srvtrig_ch/pwm/cmp/tol/delay_ms`) → sonraki oturumda
@@ -2669,3 +2674,24 @@ yalnız kendi aracı — `mac_yazabilir`); komut `POST /api/drone/sim/sessions/{
 **Testler.** `tests.test_flightsim_resetkeep` (GERÇEK SITL, ~3 dk: copter — MP PARAM_SET + script + görev korunumu, 0,25×/0,5× ölçümü, MP kalp
 atışı boşluğu, yeni oturumun temiz başlaması; ArduPlane elevon — düzen parametreleri + SIM_SRV_REV korunur, MP'nin MIXING_GAIN'i geri yazılır);
 `node tests/test_flightsim_camera.mjs` (none), `tests/test_flightsim_power.mjs` (seçici), `tests/test_simumav_fly.mjs`.
+
+## 36. Alt bant kapsülleri — görünüm + kamera, Panel + ses, servo "Dinle" (HEPGO + SIMUMAV ortak)
+Kullanıcı isteği (ekran görüntüleri 174–176): alt bant kalabalık; servo girişleri tek düğmeye, Panel ile ses tek kapsüle, görünüm düğmeleri ile kamera
+seçimi tek kapsüle. Yalnız sunum değişti; komutlar, tercihler ve kısayollar aynı.
+- **Görünüm + kamera türü TEK kapsül** (`flightsim_camera.js createCameraCtl({views: CAMERA_MODES, onView})`, `.fs-cam-ctl.fs-viewcam`): sol yarı
+  görünüm düğmesi `.fs-view-btn` (👁 + kısayol numarası + aktif görünümün adı, ör. "1 Takip ▾") → açılır liste `.fs-view-menu` (Takip / FPV / Gimbal
+  kamerası / Serbest / Yer; numaralı, ↑↓ gezinme, Esc kapatır); sağ yarı kamera türü "📷 Kamera yok ▾" (eski menü). 1–5 ve C kısayolları 3B modülünde
+  kalır; `onCameraChange` → `camCtl.setView(mode)` düğme metnini günceller. §35 kuralı: kamera yokken "Gimbal kamerası" listede **devre dışı**
+  ("Kamera yok" notuyla; `viewDisabled`). Eski ayrı `[data-cam]` düğmeleri kalktı.
+- **Panel + ses TEK kapsül** (`.fs-ops-snd`): `opsBtn` kapsülün içinde; `createEngineAudio` 🔊 ▾ kapsülünü `.fs-ops-btn`'in yanına ekler (iç kapsül
+  çerçevesiz, ince ayraç). §17 ⏺ Kayıt anahtarı kapsülün ARDINA (`flightsim_record.js` önce `.fs-ops-snd`); §26 Radar/EO ve §27 Nişangâh grupları da
+  `opsSnd.nextSibling`'e.
+- **Servo tetik**: §34'teki tek düğme + yukarı açılan panel.
+- Kapsül CSS'i JS ile enjekte (`ensureBarCss` `#fs-bar-css`, servo `#fs-srv-css`) → HEPGO `app.css` ile SIMUMAV `fly-sim.css` ayrışmaz. Kara aracı
+  (§31) aynı kapsüller; kayıttan oynatmada servo yok (görünüm + kamera, Panel + ses, oynatma çubuğu); karşılaşmada (§33) bant değişmez. 1600 px'te bant
+  tek satır (önce iki satırdı), 900 px'te iki satır, taşma yok.
+- Metinler: HEPGO 6 dil ("Dinleniyor", "Dinlemeye başla", "Görünüm"…), SIMUMAV `srv.*` (listening, start, stop_l, live, ch, cmp, tol, delay, close,
+  btn_t, trig) ve `camera.view*` (7 dil; `camera_pick.js CAM_TEXT_KEYS`).
+- **Testler.** `node tests/test_flightsim_servotrig.mjs` (düğme/eylem metni aşamaya göre), `node tests/test_flightsim_camera.mjs` (görünüm etiketi,
+  gimbal devre dışı, iki istemcinin bant kurgusu); görsel `./.venv/bin/python -m tests.fltbar_shots_hepgo` / `tests.fltbar_shots_simumav`
+  (/tmp/fltbar-shots: 1600 / 1280 / 900 px, liste ve panel açık, dinleme, tetik → özet, rover, replay, İngilizce; taşma denetimi).

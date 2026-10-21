@@ -259,7 +259,6 @@ export async function openSession(view, start, picked, ctx = {}) {
 
   let sim = null, milHud = null, osd = null, ops = null, hand = null, overlay = null, gateLayer = null, last = null, destroyed = false, socket = null, rec = null, sceneError = null;
   let siteUi = null, defHud = null, defResult = null;   // HEPGO §26 radar/EO ekranları + "Yer kontrolünü koru" şeridi
-  const camBtns = M3D.CAMERA_MODES.map(([k, label], i) => h('button', { class: 'btn sm', type: 'button', 'data-cam': k, title: tr('{label} (tuş {n})', { label, n: i + 1 }), onclick: () => sim?.setCamera(k) }, `${i + 1} `, label));
   const gimbalLbl = h('span', { class: 'small fs-gimbal', hidden: true }, '');
   const mhudBtn = h('button', { class: 'btn sm fs-mhud-btn', type: 'button', hidden: true, title: tr('Askeri HUD aç/kapa (H) · Shift+H renk'), onclick: () => { milHud?.toggle(); mhudBtn.classList.toggle('primary', !!milHud?.enabled); } }, 'HUD');
   // FPV ('pilot') ayarları: OSD · analog efekt · burun — HEPGO alt çubuğundaki kapsülün sade karşılığı (PiP artık genel kamera PiP'i: 📷 menüsü / V)
@@ -275,6 +274,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   const fpvCtl = h('span', { class: 'fs-audio pill-group fs-fpv-ctl', hidden: true }, fpvBtn, fpvMenu);
   const trc = camTr(tr);
   const camCtl = MCam.createCameraCtl({ getSim: () => sim, tr: trc, prefs: camPrefs, getPip: () => camPip,
+    views: M3D.CAMERA_MODES, onView: k => sim?.setCamera(k),   // HEPGO: görünüm açılır listesi + kamera türü TEK kapsül (1–5 kısayolları 3B modülünde)
     onType: t => {   // sunucuya sessiz `camera` komutu (çekirdek oturum → kayıt satırı); yanıtı beklenmez
       addEvent(trc('Kamera türü: {t}', { t: MCam.camTypeLabel(t, trc) }));
       if (drone.id != null) camPrefs.rememberDrone(drone.id, t);
@@ -284,6 +284,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     } });
   const drawFpv = () => { camCtl?.sync(); camPip?.layout(); fpvRows.forEach(r => r.__sync()); const fov = sim?.getPilotFov?.() ?? fpvPrefs.fov; fovTxt.textContent = `${fov}°`; fpvBtn.classList.toggle('primary', !!osd?.enabled); };
   const opsBtn = h('button', { class: 'btn sm fs-ops-btn', type: 'button', title: tr('Dron panelini göster/gizle (P)'), onclick: () => ops?.toggle() }, 'Panel');
+  const opsSnd = h('span', { class: 'pill-group fs-ops-snd' }, opsBtn);   // HEPGO: Panel + ses TEK kapsül (ses kapsülü opsBtn'in yanına eklenir)
   const gauge = createSpeedGauge(maxKmh, dType === 'interceptor' ? 'INTERCEPTOR' : rover ? LT('rover.speed', 'HIZ') : (TYPE_LABEL[dType] || '').toUpperCase());
   if (rover) { gauge.el.classList.add('rover'); gauge.el.title = LT('rover.gauge_title', 'Yer hızı (km/h)'); }
   const endBtn = h('button', { class: 'btn sm danger fs-end-btn', type: 'button', onclick: () => endFlight() }, '■ ', 'Uçuşu Bitir');
@@ -306,7 +307,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   // HEPGO §34 servo tetik (kanal + PWM eşiği + gecikme + Dinle; mantık çekirdekte): çarpınca uçuş onaysız bitirilir → özet raporu
   const srvTrig = MSrv.createServoTrigger({ tr, keyed: true, stage, session, droneId: drone?.id ?? null,
     cmd: (name, params = {}) => cmd(name, params).then(r => { if (!r?.ok) throw new Error(r?.error || name); return r; }), onEvent: (t, sev) => addEvent(t, sev) });
-  const bar = h('div', { class: 'fs-bar' }, h('div', { class: 'pill-group' }, camBtns), gimbalLbl, mhudBtn, fpvCtl, camCtl.el, opsBtn, h('span', { class: 'spacer' }),
+  const bar = h('div', { class: 'fs-bar' }, camCtl.el, gimbalLbl, mhudBtn, fpvCtl, opsSnd, h('span', { class: 'spacer' }),
     srvTrig.el, fltBar.el,
     h('div', { class: 'pill-group fs-cmds' },
       rover ? h('button', { class: 'btn sm fs-hold-btn', type: 'button', title: LT('rover.hold_title', 'Aracı durdur (HOLD kipi)'), onclick: () => cmd('mode', { mode: 'HOLD' }) }, LT('rover.hold', 'Dur'))   // §15 kara aracında kalkış yok
@@ -357,7 +358,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   // HEPGO §27 fırlatıcı: hücre envanteri (3B) + el fırlatıcısında NİŞANGÂH penceresi (alt çubukta Nişangâh — G); "Fırlat" → kalkış penceresi
   if (isIcept) {
     launcherUi = MScope.createLauncherUi(stage, { tr, keyed: true, getSim: () => sim, launch: session.launch, session, mount, onFire: () => takeoffDialog(), onToggle: () => camPip?.layout() });
-    if (launcherUi.buttons.length) bar.insertBefore(h('div', { class: 'pill-group fs-scope-btns' }, launcherUi.buttons), opsBtn.nextSibling);
+    if (launcherUi.buttons.length) bar.insertBefore(h('div', { class: 'pill-group fs-scope-btns' }, launcherUi.buttons), opsSnd.nextSibling);
   }
   view.classList.add('sm-fly-session');
   clear(view, stage);
@@ -456,7 +457,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     msg.textContent = p.stage === 'elev' ? tr('Yükseklik karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'img' ? tr('Uydu karoları {d}/{n}', { d: p.done, n: p.total }) : p.stage === 'osm' ? tr('Harita verileri (OSM) alınıyor…') : tr('Arazi planı alınıyor…');
   };
   const onCamChange = mode => {
-    camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === mode)); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; fpvCtl.hidden = mode !== 'pilot';
+    camCtl.setView(mode); gimbalLbl.hidden = mode !== 'fpv'; mhudBtn.hidden = mode !== 'fpv'; fpvCtl.hidden = mode !== 'pilot';
     milHud?.setCamMode(mode); osd?.setCamMode(mode); ops?.setFpv(mode === 'fpv' || mode === 'pilot'); gimbalLbl.textContent = tr('Gimbal {d}° (↑↓ / tekerlek)', { d: sim?.getGimbal() ?? 0 }); fpvPrefs.setCam(mode); drawFpv();
   };
   try {
@@ -479,7 +480,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     if (sim.terrainInfo && !worldReady) progMsg({ stage: 'done', real: sim.real, google: sim.google, ...sim.terrainInfo });
     msg.hidden = session.state === 'HAZIR';
     camPip?.layout();   // §22.4 kamera PiP'i (aç/kapa + dikdörtgen 3B'ye)
-    sim.setCamera(cam0); camBtns.forEach(b => b.classList.toggle('primary', b.dataset.cam === sim.getCamera()));
+    sim.setCamera(cam0); camCtl.setView(sim.getCamera());
     drawFpv();
     if (isHand || gates.length) {
       const T = await import(THREE_URL);
@@ -587,7 +588,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     if (D) sim.setDefend(D);
     launcherUi?.sync();
     siteUi = MSite.createSiteScreens(stage, { tr, keyed: true, getSim: () => sim, site: session.site, mount, onToggle: () => camPip?.layout() });
-    if (siteUi.buttons.length) bar.insertBefore(h('div', { class: 'pill-group fs-site-btns' }, siteUi.buttons), opsBtn.nextSibling);
+    if (siteUi.buttons.length) bar.insertBefore(h('div', { class: 'pill-group fs-site-btns' }, siteUi.buttons), opsSnd.nextSibling);
     siteUi.applyPrefs();
     if (D) {
       defHud = MSite.createDefendHud({ stage, tr, keyed: true, defend: D, getSim: () => sim, holder: siteUi.stripHolder, canWrite: true,

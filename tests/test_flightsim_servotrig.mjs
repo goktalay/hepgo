@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_CFG, LIMITS, SRV_TEXTS, chanLabel, condText, fnName, isPayloadFn, makeSrvT, normalizeCfg, pickInitial, pwmFor, servoMapPoints, servoReportLines, servoRunBadge } from '../static/js/modules/flightsim_servotrig.js';
+import { DEFAULT_CFG, LIMITS, SRV_TEXTS, chanLabel, condText, fnName, isPayloadFn, makeSrvT, normalizeCfg, pickInitial, pwmFor, servoMapPoints, servoReportLines, servoRunBadge, srvActKey, srvBtnKey } from '../static/js/modules/flightsim_servotrig.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let n = 0;
@@ -93,6 +93,16 @@ test('SIMUMAV 7 dil: srv.* anahtarları + rapor metinleri', () => {
     assert.deepEqual(missing, [], `${l}: eksik ${missing.join(' | ')}`);
     if (l !== 'tr') assert.notEqual(d['srv.listen'], 'Dinle', l);
   }
+});
+
+test('alt bant: tek düğme metni aşamaya göre (Dinle → Dinleniyor → Tetiklendi → ÇARPMA); panel eylemi başla / durdur', () => {
+  const tx = Object.fromEntries(SRV_TEXTS);
+  assert.equal(tx[srvBtnKey('idle')], 'Dinle'); assert.equal(tx[srvBtnKey('listening')], 'Dinleniyor');
+  assert.equal(tx[srvBtnKey('pending')], 'Tetiklendi'); assert.equal(tx[srvBtnKey('fired')], 'ÇARPMA');
+  assert.equal(tx[srvActKey('idle')], 'Dinlemeye başla'); assert.equal(tx[srvActKey('listening')], 'Dinlemeyi durdur'); assert.equal(tx[srvActKey('pending')], 'Dinlemeyi durdur');
+  const src = readFileSync(join(ROOT, 'static/js/modules/flightsim_servotrig.js'), 'utf8');
+  assert.ok(/fs-srv-pop/.test(src) && /if \(on\) setOpen\(false\)/.test(src), 'dinleme başlayınca panel kapanır');
+  assert.ok(/key === 'Escape' && !pop\.hidden/.test(src) && /root\.contains\(e\.target\)/.test(src), 'Esc / dışarı tıklama kapatır');
 });
 
 console.log(`\n${n} test geçti`);

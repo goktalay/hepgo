@@ -653,8 +653,11 @@ doğrulama, sihirbaz, tema ve güvenlik katmanını ekler.
   Görsel: `tests/rover_shots_simumav.py` → `/tmp/rover-shots/simumav-*.png`.
 
 ## 16. Servo tetik — HEPGO docs/ucus-simulatoru.md §34'ün SIMUMAV karşılığı (`fly/session.js`, ortak `flightsim_servotrig.js`, çekirdek `app/flightsim_servotrig.py`)
-- `loadSim` listesinde `flightsim_servotrig.js` (`MSrv`): alt bantta mod seçicinin solunda `SERVO` grubu (kanal S1–S16 · koşul · PWM µs · gecikme ms ·
-  **Dinle**; canlı PWM + yanıp sönen nokta). Metinler `srv.*` anahtarları (7 dil; `makeSrvT(tr, true)`), rapor kartı metinleri Türkçe anahtarla 7 dilde.
+- `loadSim` listesinde `flightsim_servotrig.js` (`MSrv`): alt bantta mod seçicinin solunda TEK servo simgeli **Dinle** düğmesi; basınca yukarı açılan
+  panel (kanal S1–S16 · koşul · PWM µs · gecikme ms · canlı PWM · Dinlemeye başla / Dinlemeyi durdur); dinlerken düğme kırmızı yanıp söner
+  ("Dinleniyor"), Esc / dışarı tıklama kapatır (HEPGO §34, §36). Metinler `srv.*` anahtarları (7 dil; `makeSrvT(tr, true)`), rapor kartı metinleri Türkçe anahtarla 7 dilde.
+- Alt bant kapsülleri (HEPGO §36, `fly/session.js`): görünüm + kamera türü TEK kapsül (`createCameraCtl({views: M3D.CAMERA_MODES})`; görünüm adları
+  `camera.view_*` 7 dil, `camTr`), Panel + ses TEK kapsül (`.fs-ops-snd`). Görsel: `tests.fltbar_shots_simumav`.
 - Komut çekirdeğe WS `cmd servo_trigger` ile gider (`SIM_KOMUT = KOMUTLAR`; `guvenlik_komut` engel koymaz). Tetik/gecikme/çarpma çekirdekte; WS
   `servo_trigger fired` → 2,5 sn sonra `endFlight({auto: true})` (onaysız) → `/api/fly/{id}/stop` → uçuş özeti (`MReport.reportBody` "⚡ Servo tetik"
   kartı). Oyuncu sekmeyi kapatırsa çekirdek 5 sn sonra kendisi kapatır (`end_reason servo_trigger`; `bridge._sonuc` → `crash`).

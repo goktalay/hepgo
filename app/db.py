@@ -1669,6 +1669,7 @@ CREATE TABLE IF NOT EXISTS drone_sim_runs (
     camera          TEXT,                               -- §22.3 kamera türü: day | thermal | night (son seçim; kayıttan oynatma aynı türle)
     targets         TEXT,                               -- JSON (§24): {config: {items, radius_m}, result: önleme özeti} — hedef yoksa NULL
     intercept_count INTEGER,                            -- §24 toplam önleme sayısı (hedefli oturumlarda)
+    servo_trig      TEXT,                               -- JSON (§34): servo tetik kısa özeti {ch, fn, pwm, cmp, delay_ms, trig_agl, trig_msl, trig_dist_m, hit_agl, hit_dist_m, fired}
     started_at      TEXT NOT NULL,
     ended_at        TEXT,
     duration_s      INTEGER,
@@ -2980,7 +2981,7 @@ def _migrate(conn):
             conn.execute(f'ALTER TABLE team_meeting_invites ADD COLUMN {col} TEXT')
     run_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_sim_runs)')}
     for col, ddl in (('power', 'TEXT'), ('fuel_used_l', 'REAL'), ('fuel_km_per_l', 'REAL'), ('elec_wh', 'REAL'), ('elec_w_avg', 'REAL'), ('speedup_max', 'REAL'), ('layout', 'TEXT'), ('camera', 'TEXT'),
-                     ('targets', 'TEXT'), ('intercept_count', 'INTEGER')):
+                     ('targets', 'TEXT'), ('intercept_count', 'INTEGER'), ('servo_trig', 'TEXT')):   # + §34 servo tetik
         if run_cols and col not in run_cols:   # Uçuş Simülatörü §23 güç ve yakıt sütunları; §13.1 kontrol düzeni (layout); §22.3 kamera türü; §24 hedefler
             conn.execute(f'ALTER TABLE drone_sim_runs ADD COLUMN {col} {ddl}')
     if run_cols and 'preset_id' not in run_cols:   # §27 kayıtlı simülasyondan başlatılan uçuşun bağı (NULL: serbest sihirbaz)

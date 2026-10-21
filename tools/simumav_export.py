@@ -36,7 +36,8 @@ from pathlib import Path
 # --------------------------------------------------------------------------- manifest
 PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'app/flightsim_mission.py', 'app/flightsim_rec.py',
                'app/flightsim_bin.py', 'app/flightsim_replay.py', 'app/flightsim_runs.py', 'app/flightsim_models.py',
-               'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py', 'app/flightsim_power.py', 'app/flightsim_icept.py', 'app/flightsim_targets.py', 'app/flightsim_gcs.py', 'app/flightsim_launcher.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar
+               'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py', 'app/flightsim_power.py', 'app/flightsim_icept.py', 'app/flightsim_targets.py', 'app/flightsim_gcs.py', 'app/flightsim_launcher.py',
+               'app/flightsim_servotrig.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar
 JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/fs_inputs.js', 'static/js/modules/flightlog_origin.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
             # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)

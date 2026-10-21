@@ -2409,3 +2409,68 @@ ağaç %40): ağaç ~8 000 örnek / ~200 parça, yakın (3B) parça 12–15, gö
 akış çizgileri ≤ 420. Orta düzey dizüstü GPU'da (Iris Xe / GTX 1650 sınıfı) hedef ≥ 45 fps — doğrulama için `window.__fsSim.fxInfo()` (çizim çağrısı,
 üçgen, parça/LOD sayısı, sis aralığı) ve tarayıcı FPS ölçeri; gerekirse ilk ayar düğmeleri: `MAX_TREES`, LOD uzaklığı (`updateTreeLod` 520 m), gölge
 haritası (2048), yağış sayısı (`precipParams quality`).
+
+## 34. Servo tetik — servo kanalı komutu → gecikme → çarpma → özet (`app/flightsim_servotrig.py`, `static/js/modules/flightsim_servotrig.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: "Simülasyon ortamında altta bir Servo kanalı seçme olsun, yanında PWM değeri olsun, gecikme milisaniye cinsinden olsun, Dinle düğmesi
+olsun. Dinle'ye basarsa o servo kanalından gelen PWM değerini dinlesin ve komut gelirse gecikme süresini bekleyip sanki dağa ya da bir nesneye çarpmış gibi
+hareket edip simülasyonu bitirip özet ekranı gelsin. Son özette de bu işlemin kaç metrede çalıştığını görebilelim."
+
+**Alt bant (tüm kamera kipleri; sanal kumanda / harekât paneli açıkken de).** `SERVO` grubu: kanal seçici S1–S16 (etiket dronun `SERVOn_FUNCTION`
+işleviyle: "9 · RCIN9 / Yük" — RCINn, Gripper, Parachute, CameraTrigger, Sprayer, Winch, ScriptN "yük" sayılır), koşul `≥` / `≤` / `=` (eşitte
+± tolerans kutusu), PWM eşiği (µs, 800–2200), gecikme (ms, 0–60000), **Dinle** (açıkken **Durdur**; ayar kutuları kilitli). Sağda canlı değer:
+dinlerken yanıp sönen kırmızı nokta + kanalın anlık PWM'i (`tele.servo16`; koşul sağlanınca sarı), tetikte turuncu hızlı nokta, çarpmada "ÇARPMA".
+Tetik gelince sahnede kırmızı bant "SERVO TETİK · S9 1900 µs — 1500 ms sonra çarpma · AGL 80 m · evden 111 m". Kanal adları sunucunun ilk kalp atışında
+istediği `SERVO1…16_FUNCTION` değerlerinden (WS `{t:'servo_trigger', phase:'fn', fn}`). Tercih kalıcı: `localStorage fs.srvtrig` + dron başına
+`fs.srvtrig.byDrone`; sunucu da Dinle'de dron kaydına yazar (`drone_sitl_options srvtrig_ch/pwm/cmp/tol/delay_ms`) → sonraki oturumda
+`session.servo_trigger.suggest` (öncelik: dron başına yerel > dron kaydı önerisi > son genel tercih > varsayılan S9 ≥ 1900 µs, 1500 ms).
+
+**Sunucu (tetik mantığı burada — istemci kapalı / yavaş olsa da güvenilir).**
+- Komut `servo_trigger {on, ch 1…16, pwm 800…2200, cmp 'ge'|'le'|'eq', tol 1…500 (vars. 50), delay_ms 0…60000}`; `on:false` dinlemeyi (ve bekleyen
+  çarpmayı) bırakır. Kaynak: SITL `SERVO_OUTPUT_RAW` (port 0; `servo9…16_raw` MAVLink2 uzantı alanları) → `tele.servo16`. Yardımcı komut
+  `servo_set {ch, pwm}`: gerçek SITL'de `MAV_CMD_DO_SET_SERVO` (Mission Planner "Servo/Relay" sekmesinin gönderdiği komut), sahte kipte sanal çıkış
+  (test/otomasyon; ön yüzde düğmesi yok). İkisi de `KOMUTLAR`'da (SIMUMAV `SIM_KOMUT` aynı listeyi kullanır).
+- **Kenar tetikli**: dinleme açıldıktan sonraki ilk geçerli örnek TABANDIR; koşul ancak "sağlanmıyor → sağlanıyor" geçişinde tetikler. Dinle'ye
+  basıldığında kanal zaten koşuldaysa (ör. ≥ 1100 ve kanal 1500'de) olay şeridine "zaten koşulda; yeni komut bekleniyor" yazılır, tetik olmaz.
+  Gerekçe: istek "komut gelirse" diyor; seviye tetiği Dinle anında çarpma üretirdi. PWM 0 / 65535 (kanal çıkış vermiyor; SITL’de SERVO9_FUNCTION 0) "koşul sağlanmıyor" sayılır → Mission Planner DO_SET_SERVO 9 1900 ile 0 → 1900 geçişi tetiktir (SITL’de ölçüldü). `reset` bekleyen çarpmayı
+  iptal eder, dinleme sürer (taban yeniden alınır).
+- **Gecikme SİMÜLASYON zamanıyla** (SITL `time_boot_ms`; tetik zamanı `SERVO_OUTPUT_RAW.time_usec`). SIM_SPEEDUP 4× iken 1500 ms gecikme ~375 ms gerçek
+  zamanda dolar. Gerekçe: gecikme fiziksel bir süreyi (yük bırakma, sigorta, paraşüt açılımı) taklit eder ve araç da sim zamanında hareket eder → çarpma
+  konumu simülasyon hızından bağımsızdır. SITL saati ilerlemezse duvar saati bekçisi (gecikme × 2 + 5 sn) çarpmayı yine üretir (`hit.watchdog`).
+- **Çarpma**: araç o anki konum/hız/yönüyle "çarpmış" sayılır — `GorevIzleyici.carpisma('servo_trigger', max(hava, yer hızı))` (drone_sim_events
+  `crash`, WS `crash` → ön yüz çarpışma bandı + crashfx patlama/toz/kıvılcım + darbe sesi §30), zorla disarm (sahte kipte yalnız disarm), `end_reason =
+  'servo_trigger'`, **3B donar** (sonraki `tele` yayınlanmaz; araç çarpma pozunda kalır, SITL fiziği düşüşü sürdürse de görünmez), SITL'e
+  STATUSTEXT `SERVO TRIG …` / `SERVO HIT …` (ArduPilot GCS metnini DataFlash `MSG` olarak yazar → .bin kayıttan oynatmada olay şeridinde).
+  WS `{t:'servo_trigger', phase:'pending'|'fired', trigger, hit, …}`.
+- **Bitiş**: ön yüz `fired`ten 2,5 sn sonra (efekt görünsün) Bitir akışını ONAYSIZ çalıştırır: ekran kaydı → özet raporu (`GET /summary`) → kapat
+  (SIMUMAV `endFlight({auto})` → `/api/fly/{id}/stop` → uçuş özeti). İzleyici kalmazsa 5 sn (`BOS_KAPANIS_S`) sonra, rapor açık kalsa da en geç
+  300 sn (`AZAMI_BEKLEME_S`) sonra sunucu kapatır (`end_reason servo_trigger`; özet + `drone_sim_runs` kapanışta yazılır; SIMUMAV sonucu `crash`).
+
+**Özet ve kayıt.** `summary.servo_trigger` = {ch, fn, fn_name, payload, pwm, cmp, tol, delay_ms, seen_pwm, phase, time_base:'sim', trigger, hit};
+`trigger`/`hit` anlık görüntüsü: tbm, lat/lon, alt_msl, alt_rel, **agl** (TERRAIN_REPORT varsa arazi üstü `agl_src:'terrain'`, yoksa ev seviyesine
+göre `'home'`), **dist_home_m** (evden yatay), airspeed, groundspeed, heading, climb, mode, **flight_s** (ilk ARM'dan bu yana sim saniyesi), pwm;
+`hit.delay_sim_ms` / `delay_wall_ms`. Rapor (`flightsim_report.js` → `servoSection`): "⚡ Servo tetik" kartı — tetik/çarpma AGL ve evden mesafe
+karoları, kanal/koşul/görülen PWM/gecikme (istenen + ölçülen sim + gerçek), iki sütunda tetik anı (komutun geldiği an) ve çarpma anı; mini haritada
+turuncu ▲ tetik, kırmızı ✱ çarpma; paylaşım metninde satırlar. `drone_sim_runs.servo_trig` (JSON kısa özet: ch, fn, pwm, cmp, delay_ms, trig_agl,
+trig_msl, trig_dist_m, hit_agl, hit_dist_m, fired; kullanılmadıysa NULL — eski/SIMUMAV çekirdek DB'sinde sütun yoksa yazılmaz, `shim/db.py`
+göçü ekler) → Simülasyon Kayıtları sonuç sütununda ve Kayıtlı Simülasyonlar uçuş kartında turuncu rozet "⚡ S9 · 80 m" (tetik AGL; ipucunda evden
+mesafe ve gecikme).
+
+**Mission Planner uyumu.** Kanal Mission Planner'dan tetiklenebilir: Servo/Relay sekmesi ya da görevdeki `DO_SET_SERVO` (183) öğesi, RC geçişli
+kanallar (`SERVOn_FUNCTION = 51…66 RCINn` → RC override / joystick), Lua betiği. Sunucu yalnız SITL'in gerçek servo çıkışını izler; komutun kaynağı
+önemsizdir. Gerçek SITL ölçümü: `tools/sitl/dogrula_servotrig.py` (pymavlink GCS = Mission Planner yerine, UDP portundan `DO_SET_SERVO 9 1900`).
+
+**Gerçek SITL ölçümü (ArduPilot 4.7.2, `/opt/hepgo/sitl/bin`; 21.10.2026).** SERVO9_FUNCTION 0 iken SITL kanal 9'u **0 µs** bildirir; GCS'den
+`DO_SET_SERVO 9 1900` → COMMAND_ACK 0, 50 ms içinde `servo9_raw` 1900 (MAVLink2 uzantı alanı geliyor) → kenar (0 = koşul sağlanmıyor).
+| | Kopter 1× (GUIDED askı 40 m) | Sabit kanat 4× (seyir ~33 m/s) |
+|---|---|---|
+| tetik anı | AGL 40,0 m · evden 0 m · uçuş 22,0 sn | AGL 72,4 m · evden 451,5 m · uçuş 17,3 sn |
+| çarpma anı | AGL 39,9 m · evden 0 m · sim gecikme 1500 ms / gerçek 1502 ms | AGL 68,7 m · evden 469,0 m · sim 1501 ms / gerçek **372 ms** |
+| GCS GLOBAL_POSITION_INT ile fark (aynı time_boot_ms) | konum 0,0 m · irtifa 0,02–0,03 m | konum 1,45 m · irtifa 0,07–0,17 m |
+| kapanış | izleyicisiz 5,7 sn sonra sunucu; run `carpisma` / `servo_trigger` | 5,2 sn; aynı |
+.bin `MSG`: `GCS:SERVO TRIG S9 1900us AGL 72m D 452m`, `GCS:SERVO HIT S9 AGL 69m D 469m` (ArduPilot GCS STATUSTEXT'i kaydediyor → kayıttan
+oynatma olay şeridinde görünür). Uçakta 1,45 m fark: anlık görüntünün tbm'i SERVO_OUTPUT_RAW / ATTITUDE zamanıdır, konum ise son alınan GLOBAL_POSITION_INT (bir örnek ≈ 40 ms geride; 36 m/s × 0,04 s ≈ 1,4 m).
+
+**Testler.** `tests.test_flightsim` `servo_tetik_birim_testleri` (doğrulama, koşul, kenar, sim zamanı gecikme, anlık görüntüler, 9–16 uzantı alanları,
+işlev adları, iptal/reset, kısa özet) + `servo_tetik_testleri` (uçtan uca sahte kip: 400'ler, KOMUTLAR/SIM_KOMUT, zaten-koşulda uyarısı, 4× hızda
+gecikme, `crash` reason, donma, özet, izleyicisiz sunucu kapanışı, drone_sim_runs + liste JSON, dron kaydı önerisi); `node tests/test_flightsim_servotrig.mjs`
+(saf katman + HEPGO 6 dil + SIMUMAV 7 dil `srv.*`); görsel `./.venv/bin/python -m tests.servotrig_shots_hepgo` → `/tmp/servotrig-shots/`.

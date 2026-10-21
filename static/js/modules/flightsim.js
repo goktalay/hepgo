@@ -38,7 +38,8 @@ import { createDefendHud, createSiteScreens, createSiteSection, defendReportBody
 import { aimWaypoint, isIceptLauncher, rackCountFor } from './flightsim_launcher.js';   // §27 INTERCEPTOR fırlatıcıları (saf)
 import { createLauncherUi } from './flightsim_scope_ui.js';   // §27 hücre envanteri + el fırlatıcısı nişangâh penceresi   // §26 yer kontrol sahası: sihirbaz, radar/EO ekranları, görev şeridi, rapor
 import { defendStateAt } from './flightsim_gcs.js';   // §26 kayıtta görev şeridi durumu
-import { createFlightBar, flightModesFor, modeKind } from './flightsim_fltbar.js';   // §29.6 alt bant: uçuş modu seçici (F) + DISARM/motor kes (X), tüm kamera kiplerinde
+import { createFlightBar, flightModesFor, modeKind } from './flightsim_fltbar.js';
+import { createServoTrigger } from './flightsim_servotrig.js';   // §34 servo tetik: kanal + PWM eşiği + gecikme + Dinle (mantık sunucuda); çarpınca otomatik Bitir → özet   // §29.6 alt bant: uçuş modu seçici (F) + DISARM/motor kes (X), tüm kamera kiplerinde
 import { createRcFeelPanel } from './flightsim_rcfeel.js';   // §27.1 sanal kumanda hassasiyeti (oran / expo / ölü bölge)
 import { createGaugeThemePicker, gaugeThemeLabel } from './flightsim_gtheme.js';   // §27.3 gösterge tasarımı (sihirbaz kartları; uçuşta createPowerGauges)
 import { createIntro, hepgoSound } from './flightsim_intro.js';   // §27.2 giriş sekansı: 100 m bakış + 3-2-1 geri sayım + bip
@@ -1283,10 +1284,14 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const fltBar = canWrite && !replay ? createFlightBar({ tr, kind: modeKind(type), modes: flightModesFor(modeKind(type)), stage,
     cmd: (name, params = {}) => be.cmd(sid, name, params), onEvent: (t, sev) => addEvent(t, sev),
     confirm: msg => confirmDialog(tr('DISARM'), msg, { okLabel: tr('DISARM'), danger: true }) }) : null;
+  // §34 servo tetik (alt bant; tüm kamera kipleri): seçili kanala PWM komutu gelince sunucu gecikme sonunda aracı çarptırır → otomatik Bitir + özet
+  const srvTrig = canWrite && !replay ? createServoTrigger({ tr, stage, session, droneId: session.drone?.id ?? null,
+    cmd: (name, params = {}) => be.cmd(sid, name, params), onEvent: (t, sev) => addEvent(t, sev) }) : null;
   const bar = h('div', { class: 'fs-bar' },
     h('div', { class: 'pill-group' }, camBtns),
     gimbalLbl, mhudBtn, fpvCtl, camCtl.el, opsBtn,
     replay ? playBar : h('span', { class: 'spacer' }),
+    srvTrig ? srvTrig.el : null,   // §34 servo tetik
     fltBar ? fltBar.el : null,   // §29.6 mod + DISARM: her zaman (ARM/mod seçici eski .fs-cmds'ten buraya taşındı)
     canWrite && !replay ? h('div', { class: 'pill-group fs-cmds' },   // .fs-cmds: harekât paneli açıkken gizli (komutlar panelden)
       rover ? h('button', { class: 'btn sm fs-hold-btn', type: 'button', title: tr('Aracı durdur (HOLD kipi)'), onclick: () => cmd('mode', { mode: 'HOLD' }) }, 'Dur')   // §31 kara aracında kalkış yok
@@ -1630,6 +1635,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     drawRcBars(t.rc);
     if (rc) rcWarn.hidden = !t.gcs_connected;
     fltBar?.update(t);
+    srvTrig?.update(t);   // §34 anlık PWM
     if (canWrite && !replay) { armBtn.textContent = t.armed ? 'DISARM' : 'ARM'; armBtn.classList.toggle('danger', !!t.armed); if (t.mode && modeSel.value !== t.mode && document.activeElement !== modeSel) modeSel.value = modes.includes(t.mode) ? t.mode : ''; }
     if (t.gcs_connected != null) setGcs(!!t.gcs_connected, t.gcs_addr);
   };
@@ -1749,7 +1755,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     const txt = (LAUNCH_PHASE_TEXT[m.phase] || {})[launch.method] || m.phase;
     addEvent(m.phase === 'released' && m.speed_kmh != null ? `${tr(txt)} · ${f0(m.speed_kmh)} km/h` : tr(txt), m.phase === 'released' || m.phase === 'launch' ? 'warning' : 'info');
   };
-  const CRASH_KIND = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma', sitl_hit: 'SITL yer teması', sitl: 'Otopilot çarpışma algısı' };
+  const CRASH_KIND = { terrain: 'Arazi ile temas', water: 'Suya düşüş', building: 'Binaya çarpma', sitl_hit: 'SITL yer teması', sitl: 'Otopilot çarpışma algısı', servo_trigger: 'Servo tetik' };
   // ÇARPIŞMA bandı yalnız sunucunun KESİN `crash` çerçevesiyle açılır (§18): 3B arazi teması sunucuda adaydır (SITL fizik teyidi), bina/su kesindir.
   let crashSpeed = null;   // §18.6: darbe sesi ve görsel efekt şiddeti
   const showCrash = (reason, speed) => {
@@ -1758,8 +1764,15 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     crash.hidden = false;
     crashSpeed = Number(speed) || null;
     sim?.crashFx?.({ speed: crashSpeed ?? undefined });   // patlama/toz/kıvılcım + sarsıntı + flaş
-    crash.querySelector('.fs-crash-sub').textContent = tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k, v: f1(speed) });
+    crash.querySelector('.fs-crash-sub').textContent = reason === 'servo_trigger' ? tr('{k} · {v} m/s · simülasyon bitiriliyor, özet raporu açılacak', { k, v: f1(speed) })
+      : tr('{k} · {v} m/s · "Sıfırla" ile yeniden başlayın', { k, v: f1(speed) });
     addEvent(tr('ÇARPIŞMA: {k} ({v} m/s)', { k, v: f1(speed) }), 'error');
+  };
+  // §34 servo tetik çarpması: çarpma efekti görünsün diye kısa bekleme, sonra Bitir akışı ONAYSIZ (kayıt → özet raporu → kapat)
+  let autoEndTimer = null;
+  const onServoFrame = m => {
+    srvTrig?.onFrame(m);
+    if (m.phase === 'fired' && canWrite && !autoEndTimer) autoEndTimer = setTimeout(() => endSession({ auto: true }), 2500);
   };
   const onCrash = info => {
     if (mock) { showCrash(info.kind, info.speed); be.cmd(sid, 'crash', { kind: info.kind, speed: info.speed }).catch(() => {}); return; }
@@ -1774,21 +1787,24 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     sim?.resetCamera();
     if (canWrite) await cmd('reset'); else toast('Sıfırlamak için yazma izni gerekir', 'err');
   };
-  const endSession = async () => {
+  let ending = false;
+  const endSession = async ({ auto = false } = {}) => {
     if (!canWrite) { location.hash = be.href(); return; }
-    if (!await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
+    if (ending) return;
+    if (!auto && !await confirmDialog('Oturumu bitir', replay ? 'Kayıttan oynatma oturumu kapatılsın mı?' : 'Simülatör oturumu kapatılsın mı? SITL süreci ve UDP portu kapanır; Mission Planner bağlantısı düşer.', { okLabel: 'Bitir', danger: true })) return;
+    ending = true;   // §34 otomatik bitiş (servo tetik) ile elle Bitir üst üste binmesin
     try {
       if (rec?.hasData) await rec.finishWithDialog();   // §17: son parça + finish → Şirketten Haberler paylaşımı ya da sunucuda sakla (ilerleme penceresi; hata → indir)
       if (!replay) { try { const sum = await be.summary(sid); await showReport(sum, { tr, be, canWrite }); } catch (err) { toastError(err); } }   // §18: özet rapor (kapatmadan önce, tam ekranda — modal görünür)
       exitFullscreen();
-      const r = await be.end(sid);   // §19: rec.bin açıksa sunucu kapanışta DataFlash .bin'i Uçuş Logları'na kaydeder → r.bin
+      const r = await be.end(sid).catch(err => { if (auto && err?.status === 404) return null; throw err; });   // §34 otomatik bitişte sunucu çoktan kapatmış olabilir   // §19: rec.bin açıksa sunucu kapanışta DataFlash .bin'i Uçuş Logları'na kaydeder → r.bin
       toast('Oturum kapatıldı');
       if (r?.bin?.log_id) toast(tr('Uçuş logu kaydedildi: {f} ({kb} KB) — analiz bitince Uçuş Logları ve Kayıttan oynat listesinde', { f: r.bin.file_name, kb: Math.round((r.bin.size || 0) / 1024) }));
       else if (r?.bin?.error) toast(r.bin.error, 'err');
       location.hash = be.href();
-    } catch (err) { toastError(err); }
+    } catch (err) { ending = false; toastError(err); }
   };
-  const END_REASON = { kapatildi: 'Oturum kapatıldı', bosta: 'İzleyici ve GCS olmadığından kapatıldı', sure: 'Oturum süresi doldu', sunucu_kapaniyor: 'Sunucu kapanıyor' };
+  const END_REASON = { servo_trigger: 'Servo tetik çarpması — simülasyon bitti', kapatildi: 'Oturum kapatıldı', bosta: 'İzleyici ve GCS olmadığından kapatıldı', sure: 'Oturum süresi doldu', sunucu_kapaniyor: 'Sunucu kapanıyor' };
   const showEnded = reason => {
     clear(ended, h('div', { class: 'fs-ended-box' }, h('b', null, 'Oturum sona erdi'), h('div', { class: 'small muted' }, tr(END_REASON[reason] || reason || '')),
       h('a', { class: 'btn primary', href: be.href() }, 'Simülatör ana sayfası')));
@@ -1810,6 +1826,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
         return;
       }
       if (m.t === 'mission_cur') { sim?.setMissionCurrent(m.seq); return; }   // §18: aktif bacak (MISSION_CURRENT)
+      if (m.t === 'servo_trigger') return onServoFrame(m);   // §34 dinleme / tetik / çarpma
       if (m.t === 'crash') return showCrash(m.reason, m.speed);   // §18: sunucunun kesin çarpışma kaydı (SITL fizik teması / 3B bina-su / teyitli arazi)
       if (m.t === 'warn') {
         if (m.kind === 'fuel_empty' || m.kind === 'elec_empty') { toast(m.text || tr('Güç kaynağı bitti'), 'err'); return; }   // §23: kırmızı olay satırı sunucu `event`inden gelir; ek olarak toast
@@ -1872,7 +1889,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     socket?.close();
     milHud?.dispose(); osd?.dispose(); camPip?.dispose(); camCtl.dispose(); siteUi?.dispose(); defHud?.dispose(); launcherUi?.dispose();   // §26 + §27
     if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
-    audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose();
+    audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose(); srvTrig?.dispose(); clearTimeout(autoEndTimer);
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;
     if (player && window.__fsPlayer === player) delete window.__fsPlayer;

@@ -4768,4 +4768,8 @@ registerCatalog('ru', {
   "Motor geri verildi": "Мотор возвращён",
   "Mod isteği: {m}": "Запрос режима: {m}",
   "Komut başarısız: {e}": "Команда не выполнена: {e}",
+  "Bu sayfaya giriş saati": "Время входа на эту страницу",
+  "Bu sayfada geçen süre": "Время на этой странице",
+  "Bu sayfanın anlık indirme hızı (son 2 sn)": "Текущая скорость загрузки этой страницы (последние 2 с)",
+  "Bu sayfaya girildiğinden beri indirilen veri": "Загружено данных с момента входа на страницу",
 });

@@ -4768,4 +4768,8 @@ registerCatalog('ar', {
   "Motor geri verildi": "أُعيد تشغيل المحرك",
   "Mod isteği: {m}": "طلب وضع: {m}",
   "Komut başarısız: {e}": "فشل الأمر: {e}",
+  "Bu sayfaya giriş saati": "وقت الدخول إلى هذه الصفحة",
+  "Bu sayfada geçen süre": "الوقت المستغرق في هذه الصفحة",
+  "Bu sayfanın anlık indirme hızı (son 2 sn)": "سرعة التنزيل الحالية لهذه الصفحة (آخر ثانيتين)",
+  "Bu sayfaya girildiğinden beri indirilen veri": "البيانات المنزّلة منذ دخول هذه الصفحة",
 });

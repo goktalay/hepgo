@@ -1745,4 +1745,8 @@ registerCatalog('en', {
   "Motor geri verildi": "Motor restored",
   "Mod isteği: {m}": "Mode request: {m}",
   "Komut başarısız: {e}": "Command failed: {e}",
+  "Bu sayfaya giriş saati": "Time you entered this page",
+  "Bu sayfada geçen süre": "Time spent on this page",
+  "Bu sayfanın anlık indirme hızı (son 2 sn)": "This page's current download speed (last 2 s)",
+  "Bu sayfaya girildiğinden beri indirilen veri": "Data downloaded since entering this page",
 });

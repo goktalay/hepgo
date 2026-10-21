@@ -4768,4 +4768,8 @@ registerCatalog('fr', {
   "Motor geri verildi": "Moteur rétabli",
   "Mod isteği: {m}": "Demande de mode : {m}",
   "Komut başarısız: {e}": "Échec de la commande : {e}",
+  "Bu sayfaya giriş saati": "Heure d'arrivée sur cette page",
+  "Bu sayfada geçen süre": "Temps passé sur cette page",
+  "Bu sayfanın anlık indirme hızı (son 2 sn)": "Débit de téléchargement actuel de cette page (2 dernières s)",
+  "Bu sayfaya girildiğinden beri indirilen veri": "Données téléchargées depuis l'arrivée sur cette page",
 });

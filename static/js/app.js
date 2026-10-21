@@ -2,6 +2,7 @@
 import { api, logActivity } from './api.js';
 import { icons } from './icons.js';
 import { statusBar, stopStatusBar } from './statusbar.js';
+import { pageMeter } from './pagemeter.js';   // altbilgi: sayfaya giriş saati, geçen süre, anlık indirme hızı, toplam indirilen
 import { chatButton, chatSummary, closeChat, setChatUser } from './chat.js';
 import { eventOfNotification, playEvent } from './sounds.js';
 import { applySettings, desktopNotify, flashMs, flashOn } from './prefs.js';
@@ -1053,6 +1054,7 @@ function renderShell() {
     h('footer', { class: 'app-footer' },
       brandBadge(ctx),
       betaButton(ctx),
+      pageMeter(),
       statusBar())));
   // Açılış sayfası (Ayarlar → Arayüz): girişte ana sayfa yerine seçilen modül
   const start = u.prefs?.settings?.start;

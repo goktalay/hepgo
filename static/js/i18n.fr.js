@@ -4830,4 +4830,7 @@ registerCatalog('fr', {
   "H: gösterge aç/kapa": "H : afficher/masquer l’affichage",
   "Kokpit": "Cockpit",
   "Kara aracı göstergesi": "Affichage véhicule terrestre",
+  "Göstergesiz": "Sans cadrans",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "Cadrans masqués, écran dégagé ; réaffichez-les avec le petit bouton ou G.",
+  "Göstergeler": "Cadrans",
 });

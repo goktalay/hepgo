@@ -717,5 +717,8 @@
   "power.step_sub_rover": "{name} — Fahrakku (Motoren + Elektronik); für Verbrenner kann ein Tank gewählt werden. Werte der letzten Fahrt werden vorgeschlagen.",
   "power.hourly_w_hint_rover": "Durchschnitt Fahrmotoren + Elektronik (bestimmt die Fahrzeit)",
   "power.col_batt_rover": "Fahrakku",
-  "rcfeel.steer": "Lenkung"
+  "rcfeel.steer": "Lenkung",
+  "gtheme.none": "Ohne Anzeigen",
+  "gtheme.none_desc": "Anzeigen ausgeblendet, freie Sicht; mit der kleinen Taste oder G wieder einblenden.",
+  "gtheme.none_show": "Anzeigen"
 }

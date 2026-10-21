@@ -717,5 +717,8 @@
   "power.step_sub_rover": "{name} — batterie de traction (moteurs + électronique) ; un réservoir peut être choisi pour un véhicule thermique. Les valeurs mesurées lors du dernier trajet sont suggérées.",
   "power.hourly_w_hint_rover": "Moyenne moteurs de traction + électronique (détermine l’autonomie)",
   "power.col_batt_rover": "Batterie de traction",
-  "rcfeel.steer": "Direction"
+  "rcfeel.steer": "Direction",
+  "gtheme.none": "Sans cadrans",
+  "gtheme.none_desc": "Cadrans masqués, écran dégagé ; réaffichez-les avec le petit bouton ou G.",
+  "gtheme.none_show": "Cadrans"
 }

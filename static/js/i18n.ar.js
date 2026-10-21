@@ -4830,4 +4830,7 @@ registerCatalog('ar', {
   "H: gösterge aç/kapa": "H: إظهار/إخفاء المؤشر",
   "Kokpit": "قمرة القيادة",
   "Kara aracı göstergesi": "مؤشر المركبة البرية",
+  "Göstergesiz": "بدون عدادات",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "العدادات مخفية والشاشة نظيفة؛ أعدها بالزر الصغير أو بالمفتاح G.",
+  "Göstergeler": "العدادات",
 });

@@ -4830,4 +4830,7 @@ registerCatalog('ru', {
   "H: gösterge aç/kapa": "H: показать/скрыть индикатор",
   "Kokpit": "Кабина",
   "Kara aracı göstergesi": "Индикатор наземного аппарата",
+  "Göstergesiz": "Без приборов",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "Приборы скрыты, экран чистый; вернуть — маленькой кнопкой или клавишей G.",
+  "Göstergeler": "Приборы",
 });

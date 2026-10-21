@@ -4830,4 +4830,7 @@ registerCatalog('de', {
   "H: gösterge aç/kapa": "H: Anzeige ein/aus",
   "Kokpit": "Cockpit",
   "Kara aracı göstergesi": "Bodenfahrzeug-Anzeige",
+  "Göstergesiz": "Ohne Anzeigen",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "Anzeigen ausgeblendet, freie Sicht; mit der kleinen Taste oder G wieder einblenden.",
+  "Göstergeler": "Anzeigen",
 });

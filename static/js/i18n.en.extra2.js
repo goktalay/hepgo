@@ -1808,4 +1808,7 @@ registerCatalog('en', {
   "H: gösterge aç/kapa": "H: toggle display",
   "Kokpit": "Cockpit",
   "Kara aracı göstergesi": "Ground vehicle display",
+  "Göstergesiz": "No gauges",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "Gauges hidden for a clean screen; bring them back with the small button or G.",
+  "Göstergeler": "Gauges",
 });

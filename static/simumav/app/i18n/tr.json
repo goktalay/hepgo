@@ -717,5 +717,8 @@
   "power.step_sub_rover": "{name} — sürüş bataryası (motorlar + elektronik); içten yanmalı araç için yakıt deposu seçilebilir. Son sürüşten ölçülen değerler önerilir.",
   "power.hourly_w_hint_rover": "Sürüş motorları + elektronik ortalaması (sürüş süresini belirler)",
   "power.col_batt_rover": "Sürüş bataryası",
-  "rcfeel.steer": "Direksiyon"
+  "rcfeel.steer": "Direksiyon",
+  "gtheme.none": "Göstergesiz",
+  "gtheme.none_desc": "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.",
+  "gtheme.none_show": "Göstergeler"
 }

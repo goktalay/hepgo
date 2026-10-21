@@ -4830,4 +4830,7 @@ registerCatalog('es', {
   "H: gösterge aç/kapa": "H: mostrar/ocultar indicador",
   "Kokpit": "Cabina",
   "Kara aracı göstergesi": "Indicador de vehículo terrestre",
+  "Göstergesiz": "Sin indicadores",
+  "Kadranlar gizli, ekran temiz; küçük düğme ya da G tuşuyla geri açılır.": "Indicadores ocultos, pantalla limpia; vuelva a mostrarlos con el botón pequeño o G.",
+  "Göstergeler": "Indicadores",
 });

@@ -111,10 +111,10 @@ test('oranlı kayıt: ekran boyutu değişince yapışık kenar korunur; bozuk k
 // ---------------------------------------------------------------- §27.3 gösterge tasarımı ----------------------------------------------------------------
 test('tema listesi ≥ 4 + doğrulama (enum) + döngü', () => {
   assert.ok(GAUGE_THEMES.length >= 4); assert.equal(GAUGE_THEME_DEFAULT, 'classic');
-  assert.deepEqual(GAUGE_THEME_KEYS, ['classic', 'cockpit', 'glass', 'minimal', 'military']);
+  assert.deepEqual(GAUGE_THEME_KEYS, ['classic', 'cockpit', 'glass', 'minimal', 'military', 'none']);
   assert.ok(isGaugeTheme('glass') && !isGaugeTheme('neon') && !isGaugeTheme(null));
   assert.equal(normGaugeTheme('<script>'), 'classic'); assert.equal(normGaugeTheme('cockpit'), 'cockpit');
-  assert.equal(nextGaugeTheme('military'), 'classic'); assert.equal(nextGaugeTheme('bozuk'), 'cockpit');
+  assert.equal(nextGaugeTheme('military'), 'none'); assert.equal(nextGaugeTheme('none'), 'classic'); assert.equal(nextGaugeTheme('bozuk'), 'cockpit');
   const seen = new Set(); let t = 'classic'; for (let i = 0; i < GAUGE_THEME_KEYS.length; i++) { seen.add(t); t = nextGaugeTheme(t); } assert.equal(seen.size, GAUGE_THEME_KEYS.length);
 });
 test('kalıcı tercih (fs.gauge.theme) + seviye şeridi doluluğu + önizleme SVG + metinler', () => {

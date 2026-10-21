@@ -717,5 +717,8 @@
   "power.step_sub_rover": "{name} — batería de tracción (motores + electrónica); se puede elegir depósito para un vehículo de combustión. Se sugieren los valores medidos en la última conducción.",
   "power.hourly_w_hint_rover": "Promedio de motores de tracción + electrónica (determina el tiempo de conducción)",
   "power.col_batt_rover": "Batería de tracción",
-  "rcfeel.steer": "Dirección"
+  "rcfeel.steer": "Dirección",
+  "gtheme.none": "Sin indicadores",
+  "gtheme.none_desc": "Indicadores ocultos, pantalla limpia; vuelva a mostrarlos con el botón pequeño o G.",
+  "gtheme.none_show": "Indicadores"
 }

@@ -56,7 +56,7 @@ test('nameConflict / nameError: çakışma, kendisi hariç, silinmiş yok sayıl
 test('presetBodyFromSession: mode/log_id/airframe atılır; null/undefined alanlar girmez', () => {
   const b = presetBodyFromSession({ mode: 'sitl', log_id: 4, airframe: 'delta', type: 'sabit_kanat', center_id: 3, world: { seed: 1 }, drone_id: undefined, targets: undefined, site: null, power: { fuel_l: 2 }, camera: 'day' });
   assert.deepEqual(b, { type: 'sabit_kanat', center_id: 3, world: { seed: 1 }, power: { fuel_l: 2 }, camera: 'day' });
-  assert.deepEqual(PRESET_FIELDS, ['type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend']);   // sunucu ALANLAR
+  assert.deepEqual(PRESET_FIELDS, ['type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend', 'drive']);   // sunucu ALANLAR
 });
 
 console.log('Uçuş özeti karoları');

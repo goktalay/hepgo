@@ -2175,3 +2175,64 @@ ve daha yüksek darbe sesi; "PREARM: check mag field" uyarısı; sanal kumanda h
   `disarmAction`, metinler); `tests/test_flightsim_audio.mjs` darbe sesi.
 - Görsel: `SIMFIX_WORLD=procedural|real|google3d ./.venv/bin/python -m tests.simfix_shots_hepgo` → `/tmp/simfix-shots/` (radar/EO tam görüntü + boş piksel oranı,
   EO izleme/zoom/pan, radar 5/20 km, PiP, çarpışma flaş/ateş topu/toz/termal EO, mod menüsü, motor kesme süzülmesi, panel açıkken bant).
+
+## 31. KARA ARACI — ArduRover (`rover`; `drone_sitl.TIP_ESLEME['rover']`, `static/js/modules/flightsim_rover*.js`; HEPGO + SIMUMAV ortak)
+
+Kullanıcı isteği: "Araçlara rover yani kara araçlarını da ekleyelim."
+
+**SITL.** Tip `rover` → ikili `ardurover` (resmi **Rover stable-4.7.2**, yamasız; `drone_sitl.indir` kalıbıyla `firmware.ardupilot.org/Rover/stable-4.7.2/SITL_x86_64_linux_gnu/ardurover`).
+DEV: `/opt/hepgo/sitl/bin/ardurover` (sha256 `f453fd8217b9d798c873e5c424e139a2a3597b52e31658f76b2c177b523391af`, 6 845 664 bayt). PROD: HEPGO `HEPGO_SITL_DIR`
+(`/opt/hepgo/caymazbuild/data/sitl`) — ikili yoksa ilk rover oturumunda kendiliğinden indirilir (aynı sha). SIM_SRV_REV / SIM_PLN_THR_MUL yamaları rover'da
+gerekmez (sanal montaj nötr yol; azami hız uçak tiplerinde).
+- Sürüş biçimi `drive`: `ackermann` → `--model rover` (ön teker direksiyonu; SERVO1 26 GroundSteering, SERVO3 70 Throttle) · `skid` → `--model rover-skid`
+  (paletli / diferansiyel; SERVO1 73 ThrottleLeft, SERVO3 74 ThrottleRight). Oturum gövdesinde isteğe bağlı; yoksa görsel modelin `drive`'ı (dahili 4×4 →
+  ackermann, paletli UGV / teslimat robotu → skid). Bilinmeyen değer 400. `to_dict`: `ground: true`, `drive`.
+- `varsayilan.parm`: ArduPilot `Tools/autotest/default_params/rover.parm` özü (CRUISE_SPEED 5, CRUISE_THROTTLE 30, ATC_SPEED_P 0,1, ATC_STR_RAT_FF 0,75,
+  WP_RADIUS 3, WP_SPEED 5, RC1/RC3 ve SERVO1/SERVO3 1000–2000, BATT_MONITOR 4) + skid'de `rover-skid.parm` (CRUISE 3 m/s @ %75, 73/74). Kayıtlı parametreler sonra.
+- Kalp atışı MAV_TYPE_GROUND_ROVER (10) → kip doğrulaması pymavlink rover eşlemesi: MANUAL, ACRO, STEERING, HOLD, LOITER, FOLLOW, SIMPLE, AUTO, RTL,
+  SMART_RTL, GUIDED (+ LEARNING, INITIALISING). Başlangıç MANUAL.
+- **Kalkış yok**: `cmd takeoff` 400 ("Kara aracında kalkış yok…"), hub `takeoff` reddedilir, hub `land` → HOLD. `motor_cut` 400. DISARM her zaman yerde.
+- RC: RC1 direksiyon, RC3 gaz — **1500 = dur**, 2000 tam ileri, 1000 tam geri (fren). Sanal kumanda: sol çubuk dikey gaz (yaylı), sağ çubuk yatay direksiyon;
+  W/S ↑↓ gaz, A/D ←→ direksiyon, Boşluk dur (`flightsim_rover.roverRcChannels`; RC2/RC4 0 = dokunma).
+- Konum isteyen kipler (AUTO / RTL / GUIDED / LOITER) EKF GPS'i kullanmaya başlayana dek (ölçüm: kalp atışından ≈ 30 sn sonra "EKF3 IMU0 is using GPS")
+  reddedilir ("Flight mode change failed"); MANUAL hemen çalışır.
+- Sahte kip (HEPGO_SITL=0) `SahteKinematik._surus`: SIM_Rover sabitleri (Ackermann azami 20 m/s, 35° teker, 1,8 m dönüş çapı; skid 4 m/s, 140°/sn),
+  RTL eve sürüp HOLD'a geçer, otomatik kiplerde merkez çevresinde tur; `tele.servo` ArduRover çıkışı taklidi.
+- Güç: `ROVER_VARSAYILAN` elektrikli (yakıt 0 L; 4S 16000 mAh 60 W; içten yanmalı araç için L / km/L girilir), azami hız yok; menzil hesabı seyir 5 m/s @ gaz 0,3,
+  azami 20 m/s (`menzil_sure` / JS `flightBudget` birebir).
+- Kayıtlı simülasyon alanları (`ALANLAR` / `PRESET_FIELDS`) `drive` içerir. Replay: ArduRover logu → tip `rover`. Hedef kataloğu kara araçlarını içermez.
+
+**Modeller** (`tools/rover_models_build.py`, prosedürel GLB; `static/simumav/models/rover_{4x4,ugv,bot}.glb`; LICENSES.md): `builtin:rover_4x4` Keşif 4×4
+(2,2 m, Ackermann; `steer_fl/fr` → `wheel_fl/fr`, `wheel_rl/rr`), `builtin:rover_ugv` Paletli UGV (2,5 m; `track_l/r`, `wheel_l1..7`/`wheel_r1..7`),
+`builtin:rover_bot` Teslimat robotu (0,78 m, 6 teker). Kök düğüm extras: `drive`, `wheelbase`, `track`, `cockpit` (sürücü gözü), `sensor` (gimbal) noktaları.
+
+**3B** (`flightsim3d.js` + `flightsim_rover3d.js` + saf `flightsim_rover.js`):
+- Kara aracı **gerçek boyutta** (×1; uçaklar ×2,5). SITL'den yalnız yatay konum ve yön alınır; **yükseklik + eğim + yatış 3B zeminden**: 4 temas noktası
+  (dingil × iz) ≈ 16 Hz örneklenir — Google 3B `g3d.surfaceAt(x, y, err, top)` (ışın aracın 4 m üstünden: ağaç tacı / köprü sayılmaz; kaba karo → önceki değer),
+  gerçek arazi örgüsüne ışın, prosedürelde analitik yükseklik. Köşe yükseklikleri süspansiyon yayından (`createSuspension`, 3,2 Hz) geçer, `roverGroundFit`
+  düzlemi z + eğim + yatışı verir; köşe sıkışması teker düğümlerine ofset olur.
+- Tekerler yer hızıyla döner (sol/sağ ayrı — skid/palet), Ackermann ön tekerleri servo çıkışından (yoksa bisiklet modeli δ = atan(L·ω/v)) iç/dış
+  Ackermann açısıyla döner; hız > 1,5 m/s'de arka tekerlerden toz izi (`setRoverDust`).
+- Kameralar: **takip** = kovalama (araç dönünce bakış açısı da döner; zemine gömülmez), **2 FPV = KOKPİT** (sürücü gözü, 80°, balıkgözü yok, gövdeyle eğilir),
+  **3 gimbal** = sensör başlığı, serbest, yer. Çarpışma: arazi teması çarpışma değil; bina ve derin su (> 0,6 m) çarpışmadır.
+- Gösterge (`flightsim_rover_hud.js`; createMilHud / createFpvOsd rover oturumunda bunu döndürür): hız km/h + vites (P/N/D/R), direksiyon yayı, GAZ/FREN
+  çubukları, pusula şeridi + EV yönü, **irtifa yerine EĞİM / YATIŞ** inklinometresi (> 25° / 20° "DEVRİLME RİSKİ"), kip/ARM, batarya/yakıt, EV mesafesi.
+  Teşhis: `window.__fsSim.roverState()`.
+- Alt bant mod seçici `FLIGHT_MODES.rover`; harekât paneli "SÜRÜŞ GÖSTERGESİ" (km/h + eğim bandı), Kalkış yerine "Dur (HOLD)".
+
+**Sihirbaz**: Araç adımında "Kara Aracı" kartı; Kalkış ve kontrol düzeni adımları yok; Sürüş biçimi kartları (Ackermann / Paletli-diferansiyel; varsayılan
+modelin); güç adımı rover varsayılanları; hedefler / yer kontrol isteğe bağlı ("Yer kontrolünü koru" yalnız INTERCEPTOR). CAYSIM `GET /types` `rover` içerir,
+oturum gövdesi `drive` kabul eder. SIMUMAV: docs/simumav.md §15.
+
+**Ölçüm (gerçek ArduRover 4.7.2 SITL, `tools/sitl/dogrula_rover.py`; Mission Planner yerine pymavlink UDP ile 3 noktalı ≈ 60 m görev):**
+
+| | Ackermann (`rover`) | Skid (`rover-skid`) |
+|---|---|---|
+| kalp atışı / EKF GPS | 3,0 sn / 32 sn | 3,0 sn / 32 sn |
+| ARM (MANUAL) | 1,0 sn | 1,0 sn |
+| MANUAL düz, RC3 1800 (%60) 8 sn | azami 11,1 m/s, 65,9 m | azami 2,3 m/s, 17,2 m |
+| MANUAL dönüş (RC1 2000) 6 sn | yön hızı ≤ 370°/sn (SIM_Rover 1,8 m dönüş çapı), servo [2000, –, 1680] | yerinde dönüş ≤ 206°/sn, servo sol 2000 / sağ 1265 |
+| HOLD ile durma | 6,2 sn | 0,6 sn |
+| AUTO 3 WP (MP yüklemesi ACK 0; 3B rota 3 nokta) | 12,4 / 24,2 / 35,9 sn; en yakın 2,6 / 3,4 / 3,7 m; ort. 3,8 m/s | 16,2 / 33,1 / 51,3 sn; 1,6 / 1,6 / 3,5 m; ort. 2,7 m/s |
+| RTL eve varış | 12,2 sn, 2,5 m (kip RTL'de kalır, araç durur) | 10,8 sn, 2,6 m |
+| takeoff / motor_cut | 400 / 400 | 400 / 400 |

@@ -298,7 +298,7 @@ test('kayıttan oynatma: tele biçimi aynı (thr/armed/airspeed) → kopter sesi
   const u = a.stats.updates; a.dispose(); tick(a, { armed: true, throttle: 55 }); assert.equal(a.stats.updates, u);
 });
 test('ARM rampası (saf): spinStep kopter 0,6 sn / heli 3 sn / uçak 0,8 sn ile 0 → 1, DISARM 1 sn ile 1 → 0; kopter rölanti belirgin (≥ 0,3)', () => {
-  assert.deepEqual(SPIN_UP, { copter: 0.6, heli: 3.0, plane: 0.8, vtol: 0.6 }); assert.equal(SPIN_DOWN, 1.0);
+  assert.deepEqual(SPIN_UP, { copter: 0.6, heli: 3.0, plane: 0.8, vtol: 0.6, rover: 0.4 }); assert.equal(SPIN_DOWN, 1.0);
   let v = 0; for (let i = 0; i < 6; i++) v = spinStep(v, true, 0.05, 'copter'); close(v, 0.5, 1e-9);      // 0,3 sn → yarı devir
   for (let i = 0; i < 6; i++) v = spinStep(v, true, 0.05, 'copter'); close(v, 1, 1e-9);                    // 0,6 sn → rölanti
   for (let i = 0; i < 10; i++) v = spinStep(v, false, 0.05, 'copter'); close(v, 0.5, 1e-9);               // DISARM 0,5 sn → yarı

@@ -2752,6 +2752,12 @@ def preset_testleri(a, c1, sitl, mon):
     assert k['speed']['cruise_ms'] == 10.0 and k['fuel'] == {'range_km': 66.7, 'time_min': 111.1, 'range_km_max': 50.0, 'time_min_max': 66.7} and k['limit'] == 'fuel', k
     i = flightsim_power.menzil_sure({}, 'interceptor')
     assert i['fuel'] is None and i['limit'] == 'elec' and i['speed']['cruise_ms'] == 88.9 and i['elec']['time_min'] == 266.4, i
+    # §31 kara aracı (JS flightBudget rover dalı ile birebir: tests/test_flightsim_rover.mjs aynı sayılar)
+    rv = flightsim_power.menzil_sure({}, 'rover')
+    assert rv['speed'] == {'cruise_ms': 5.0, 'max_ms': 20.0, 'cruise_thr': 0.3} and rv['fuel'] is None and rv['limit'] == 'elec', rv
+    assert rv['elec'] == {'wh': 236.8, 'time_min': 236.8, 'range_km': 71.0, 'time_min_max': 236.8, 'range_km_max': 284.2}, rv
+    rf = flightsim_power.menzil_sure({'fuel_l': 10}, 'rover')
+    assert rf['fuel'] == {'range_km': 184.6, 'time_min': 615.4, 'range_km_max': 120.0, 'time_min_max': 100.0} and rf['limit'] == 'elec' and rf['time_min_max'] == 100.0, rf
     e = flightsim_power.menzil_sure({'fuel_l': 1, 'elec_w': 5}, 'sabit_kanat')
     assert e['limit'] == 'fuel' and e['time_min'] == 26.2 and e['elec']['time_min'] == 1776.0, e
     w = flightsim_power.menzil_sure({'fuel_l': 50, 'fuel_km_per_l': 100, 'elec_mah': 1000, 'elec_cells': 1}, 'sabit_kanat')
@@ -2911,6 +2917,89 @@ def preset_testleri(a, c1, sitl, mon):
     print('  kayıtlı simülasyonlar (§27) testleri geçti')
 
 
+def rover_testleri(a, c1):
+    """§31 KARA ARACI: tip/ikili eşlemesi, sürüş biçimi doğrulaması (400), SITL modeli + rover.parm seti, kalkış/motor kesme 400, ArduRover kipleri,
+    sahte kipte yerde sürüş (MANUAL RC1 direksiyon / RC3 gaz, servo çıkışı, HOLD), dahili modeller ve güç varsayılanları."""
+    from app import drone_sitl, flightsim_models, flightsim_power, flightsim_targets
+    S = '/api/drone/sim/sessions'
+    assert drone_sitl.TIP_ESLEME['rover'] == ('ardurover', 'rover') and drone_sitl.SURUM['ardurover'] == ('Rover', 'stable-4.7.2')
+    assert drone_sitl.model_tipi('Rover UGV-2') == 'rover' and drone_sitl.model_tipi('Caymaz') == 'multirotor'
+    pm = drone_sitl.parm_metni(1, tip='rover', model='rover-skid')
+    assert 'SERVO1_FUNCTION 73' in pm and 'SERVO3_FUNCTION 74' in pm and 'CRUISE_SPEED 3' in pm, pm
+    pa = drone_sitl.parm_metni(1, tip='rover', model='rover')
+    assert 'SERVO1_FUNCTION 26' in pa and 'SERVO3_FUNCTION 70' in pa and 'WP_SPEED 5' in pa and 'SERVO1_FUNCTION 73' not in pa, pa
+    assert flightsim._varsayilan_vtype('rover') == flightsim.MAV_TYPE_GROUND_ROVER == 10
+    kipler = set(flightsim._modlar(10))
+    assert {'MANUAL', 'ACRO', 'STEERING', 'HOLD', 'LOITER', 'FOLLOW', 'SIMPLE', 'AUTO', 'RTL', 'SMART_RTL', 'GUIDED'} <= kipler, kipler
+    # sürüş biçimi: modelden / açık / hatalı
+    assert flightsim.drive_dogrula('rover', None, {'drive': 'skid'}) == 'skid' and flightsim.drive_dogrula('rover', '', None) == 'ackermann'
+    assert flightsim.drive_dogrula('sabit_kanat', 'skid') is None
+    assert a.post(S, json={'type': 'rover', 'center_id': c1['id'], 'drive': 'tank'}).status_code == 400
+    # dahili modeller
+    mods = ok(a.get('/api/drone/sim/models', params={'type': 'rover'}))
+    ids = {m['id']: m for m in mods['models']}
+    assert {'builtin:rover_4x4', 'builtin:rover_ugv', 'builtin:rover_bot'} <= set(ids), ids
+    assert ids['builtin:rover_ugv']['drive'] == 'skid' and ids['builtin:rover_4x4']['drive'] == 'ackermann' and ids['builtin:rover_4x4']['has_prop'] is False
+    assert flightsim_models.VARSAYILAN['rover'] == 'builtin:rover_4x4'
+    assert all(not k.startswith('builtin:rover') for k in (t['key'] for t in flightsim_targets.katalog()))   # kara aracı hava hedefi değil
+    # güç varsayılanları
+    pw = flightsim_power.dogrula({'max_speed_ms': 30}, 'rover')
+    assert pw['max_speed_ms'] is None and pw['fuel_l'] == 0.0 and pw['elec_mah'] == 16000.0, pw
+    # oturum: UGV → skid (modelden), SITL modeli rover-skid
+    s = ok(a.post(S, json={'type': 'rover', 'center_id': c1['id'], 'model': {'id': 'builtin:rover_ugv'}}), 201)
+    sid = s['id']
+    assert s['type'] == 'rover' and s['drive'] == 'skid' and s['ground'] is True and s['vertical'] is False and s['layout'] is None, s
+    assert s['model']['id'] == 'builtin:rover_ugv' and s['launch']['method'] == 'wheels', s
+    ss = flightsim.MANAGER.sessions[sid]
+    assert ss._sitl_modeli() == 'rover-skid'
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    r = a.post(f'{S}/{sid}/cmd', json={'name': 'takeoff', 'params': {'alt': 10}})
+    assert r.status_code == 400 and 'kalkış yok' in r.text, r.text
+    assert a.post(f'{S}/{sid}/cmd', json={'name': 'motor_cut', 'params': {'on': True}}).status_code == 400
+    assert a.post(f'{S}/{sid}/cmd', json={'name': 'mode', 'params': {'mode': 'FBWA'}}).status_code == 400   # uçak kipi kara aracında yok
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'mode', 'params': {'mode': 'MANUAL'}}))
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'arm'}))
+    k = ss.sahte
+    assert k.rover and k.drive == 'skid' and k.rc[2] == 1500   # gaz ortası = dur
+    lat0, lon0 = k.lat, k.lon
+    for _ in range(12):   # %60 ileri + hafif sağ
+        ok(a.post(f'{S}/{sid}/cmd', json={'name': 'rc', 'params': {'ch': [1600, 0, 1800, 0, 0, 0, 0, 0]}}))
+        time.sleep(0.1)
+    assert bekle(lambda: k.hiz > 1.0, 3), k.hiz
+    te = ss.tele
+    assert te['alt_rel'] == 0.0 and te['groundspeed'] > 1.0 and te['armed'] is True, te
+    assert te['servo'][0] > te['servo'][2] > 1500, te['servo']   # skid: sol palet (SERVO1) sağdan (SERVO3) hızlı → sağa dönüş
+    assert (k.lat, k.lon) != (lat0, lon0)
+    assert k.hiz <= flightsim.SahteKinematik.ROVER_VMAX['skid'] + 1e-6
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'mode', 'params': {'mode': 'HOLD'}}))
+    assert bekle(lambda: abs(k.hiz) < 0.05, 3), k.hiz
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'rtl'}))
+    assert bekle(lambda: k.mode == 'HOLD' and abs(k.hiz) < 0.5, 20), (k.mode, k.hiz)   # eve sürer, varınca HOLD
+    ok(a.delete(f'{S}/{sid}'))
+    # Ackermann: direksiyon SERVO1, gaz SERVO3; geri vites (RC3 < 1500)
+    s = ok(a.post(S, json={'type': 'rover', 'center_id': c1['id']}), 201)
+    sid = s['id']
+    assert s['drive'] == 'ackermann' and s['model']['id'] == 'builtin:rover_4x4', s
+    ss = flightsim.MANAGER.sessions[sid]
+    assert ss._sitl_modeli() == 'rover'
+    assert bekle(lambda: ok(a.get(f'{S}/{sid}'))['state'] == 'HAZIR')
+    ok(a.post(f'{S}/{sid}/cmd', json={'name': 'arm'}))
+    for _ in range(8):
+        ok(a.post(f'{S}/{sid}/cmd', json={'name': 'rc', 'params': {'ch': [2000, 0, 1200, 0, 0, 0, 0, 0]}}))
+        time.sleep(0.1)
+    k = ss.sahte
+    assert bekle(lambda: k.hiz < -0.5, 3), k.hiz   # geri
+    sv = ss.tele['servo']
+    assert sv[0] > 1900 and sv[2] < 1500, sv
+    import asyncio   # panel 'land' kara aracında HOLD, 'takeoff' reddedilir
+    res = asyncio.run_coroutine_threadsafe(ss.hub_komut('land', {}), ss.loop).result(5)
+    assert res['ok'] and res['result']['mode'] == 'HOLD', res
+    res = asyncio.run_coroutine_threadsafe(ss.hub_komut('takeoff', {'alt_rel_m': 10}), ss.loop).result(5)
+    assert not res['ok'], res
+    ok(a.delete(f'{S}/{sid}'))
+    print('  kara aracı (§31) testleri geçti')
+
+
 def runs_kapanis_testi():
     """Sunucu kapanışı (lifespan kapat_hepsi): kayıt tablosu kapanış sonrası okunabilir; son satırlar tutarlı."""
     from app import db
@@ -2937,7 +3026,7 @@ def main():
 
         # --- meta ---
         m = ok(a.get('/api/drone/sim/meta'))
-        assert {t['key'] for t in m['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol', 'interceptor'} and all(t['binary'] for t in m['types']), m
+        assert {t['key'] for t in m['types']} == {'multirotor', 'hexarotor', 'helikopter', 'sabit_kanat', 'vtol', 'interceptor', 'rover'} and all(t['binary'] for t in m['types']), m
         assert {c['id'] for c in m['centers']} == {c1['id'], c_altsiz['id']} and next(c for c in m['centers'] if c['id'] == c1['id'])['alt'] == 900, m   # pasif merkez listelenmez
         assert m['limits'] == {'max_sessions': 2, 'max_minutes': flightsim.MAX_MINUTES} and m['host'] == 'testserver' and m['can_command'] is True, m
         assert m['world_defaults']['seed'] == 12345 and m['world_defaults']['mode'] == 'procedural'
@@ -3188,6 +3277,7 @@ def main():
         gcs_testleri(a, c1, sitl)   # §26 yer kontrol sahası + görev
         firlatici_testleri(a, c1)   # §27 INTERCEPTOR fırlatıcıları
         preset_testleri(a, c1, sitl, mon)   # §27 kayıtlı simülasyonlar
+        rover_testleri(a, c1)   # §31 kara aracı
     assert flightsim.MANAGER.sessions == {}, flightsim.MANAGER.sessions   # lifespan: kapat_hepsi
     runs_kapanis_testi()
     sitl.kapat()

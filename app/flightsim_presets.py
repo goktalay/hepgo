@@ -19,7 +19,7 @@ from . import auth, db
 AD_MAX = 80
 ACIKLAMA_MAX = 500
 # Oturum gövdesinin kayda giren alanları (routers/flightsim.SessionIn ile aynı; mode/log_id/airframe hariç — kayıtlı simülasyon yalnız canlı SITL)
-ALANLAR = ('type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend')
+ALANLAR = ('type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend', 'drive')
 
 
 class PresetHata(ValueError):
@@ -99,6 +99,7 @@ def ayar_dogrula(conn, settings):
         except ValueError as e:
             raise PresetHata('invalid', str(e))
         flightsim.layout_dogrula(tip, s.get('layout'), mdl)
+        flightsim.drive_dogrula(tip, s.get('drive'), mdl)   # §31 kara aracı sürüş biçimi
         try:
             flightsim_targets.dogrula(s.get('targets'))
         except flightsim_targets.HedefHata as e:

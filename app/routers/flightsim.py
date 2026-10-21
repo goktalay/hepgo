@@ -34,6 +34,7 @@ class SessionIn(BaseModel):
     rec: Optional[dict] = None       # §19 kayıt seçenekleri: {bin: bool} — SITL DataFlash .BIN kaydı, kapanışta Uçuş Logları'na (yalnız sitl)
     power: Optional[dict] = None     # §23 güç ve yakıt: {max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}; eksikler dron kaydı önerisi → tip varsayılanı
     camera: Optional[str] = None     # §22.3 kamera türü: day | thermal | night (varsayılan day; kayıtta kaydın türü öncelikli)
+    drive: Optional[str] = None      # §31 kara aracı sürüş biçimi: ackermann | skid (eksikse modelin `drive`'ı, yoksa ackermann); diğer tiplerde yok sayılır
     layout: Optional[str] = None     # §13.1 kontrol düzeni (yalnız sabit kanat): classic | elevon | vtail; eksikse modelin düzeni (Caymaz/Delta elevon, Talon vtail), yoksa classic
     targets: Optional[Union[list, dict]] = None   # §24 hedefler: [{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}] ya da {items, radius_m}
     site: Optional[dict] = None      # §26 yer kontrol sahası (istasyon + EO/radar kulesi): {station, radar, radar_km?, eo, eo_km?} (flightsim_gcs.gcs_dogrula)
@@ -173,7 +174,7 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
             s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera,
-                                           targets=body.targets, site=body.site, defend=body.defend)
+                                           targets=body.targets, site=body.site, defend=body.defend, drive=body.drive)
         except flightsim.SimHata as e:
             _hata(e)
         detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')

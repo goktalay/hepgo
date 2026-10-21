@@ -33,7 +33,7 @@ test('varsayılanlar: uçak CAYMAZ (45 m/s · 5 L · 25 km/L · 4S 10000 mAh 30 
   assert.equal(defaultsFor('multirotor').fuel_l, 0); assert.equal(defaultsFor('multirotor').max_speed_ms, null);
   assert.ok(isPlaneType('vtol') && !isPlaneType('helikopter'));
   assert.deepEqual(POWER_FIELDS, ['max_speed_ms', 'fuel_l', 'fuel_km_per_l', 'elec_cells', 'elec_mah', 'elec_w']);
-  assert.deepEqual(LIMITS.elec_cells, [1, 16]); assert.deepEqual(SPEEDUPS, [1, 2, 4, 8]);
+  assert.deepEqual(LIMITS.elec_cells, [1, 16]); assert.deepEqual(SPEEDUPS, [0.25, 0.5, 1, 2, 4, 8]);   // §35 ağır çekim
 });
 
 console.log('Kayıttan oynatma modeli (createPowerSim)');
@@ -117,11 +117,13 @@ test('simülasyon hızı kapsülü: 1×/2×/4×/8× düğmeleri, seçim (set) ve
     el.classList.toggle = (c, v) => { if (v) el.classList.add(c); else el.classList.delete(c); }; el.classList.contains = c => el.classList.has(c); el.click = () => attrs.onclick?.(); return el; };
   const picked = [];
   const pill = createSpeedPill({ h: mk, tr: s => s, onPick: f => picked.push(f) });
-  assert.deepEqual(pill.el.children.map(b => b.dataset.speed), [1, 2, 4, 8]);
-  assert.ok(pill.el.children[0].classList.has('primary') && !pill.el.children[2].classList.has('primary'));
-  pill.el.children[2].click(); assert.deepEqual(picked, [4]);
-  pill.set(4); assert.ok(pill.el.children[2].classList.has('primary') && !pill.el.children[0].classList.has('primary') && pill.el.classList.has('fast')); assert.equal(pill.value, 4);
+  assert.deepEqual(pill.el.children.map(b => b.dataset.speed), [0.25, 0.5, 1, 2, 4, 8]);
+  assert.deepEqual(pill.el.children.map(b => b.children[0]), ['0.25×', '0.5×', '1×', '2×', '4×', '8×']);   // §35 etiketler
+  assert.ok(pill.el.children[2].classList.has('primary') && !pill.el.children[4].classList.has('primary'));
+  pill.el.children[4].click(); assert.deepEqual(picked, [4]);
+  pill.set(4); assert.ok(pill.el.children[4].classList.has('primary') && !pill.el.children[2].classList.has('primary') && pill.el.classList.has('fast')); assert.equal(pill.value, 4);
   pill.set(1); assert.ok(!pill.el.classList.has('fast'));
+  pill.set(0.25); assert.ok(pill.el.children[0].classList.has('primary') && pill.el.classList.has('slow') && !pill.el.classList.has('fast'));
   pill.setEnabled(false); assert.ok(pill.el.children.every(b => b.disabled));
 });
 

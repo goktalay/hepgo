@@ -5118,4 +5118,11 @@ registerCatalog('de', {
   "{n} (siz dahil)": "{n} (inkl. Ihnen)",
   "Karşılaşma oyuncu simülatörleri ayrı sınırla açılır (eşzamanlı en çok {n}; şu an {u} kullanımda).": "Match-Simulatoren haben ein eigenes Limit (höchstens {n} gleichzeitig; derzeit {u} belegt).",
   "Simülatörü zamanında hazır olmadı": "Simulator nicht rechtzeitig bereit",
+  "Kamera yok": "Keine Kamera",
+  "Araçta görev kamerası yok: PiP penceresi açılmaz, gimbal kamerası kapalı (daha hafif çizim).": "Keine Nutzlastkamera am Fahrzeug: kein PiP-Fenster, Gimbalkamera aus (leichteres Rendering).",
+  "YOK": "KEINE",
+  "simülasyon hızı en az": "Simulationsgeschwindigkeit bis hinunter zu",
+  "Simülatör sıfırlansın mı? Araç başlangıç noktasına döner; parametreler, scriptler ve görev korunur, Mission Planner bağlantısı kopmaz.": "Simulator zurücksetzen? Das Fahrzeug kehrt zum Startpunkt zurück; Parameter, Skripte und Mission bleiben erhalten, die Mission-Planner-Verbindung bleibt bestehen.",
+  "Sıfırla (onaylı): araç başlangıca döner; parametreler ve scriptler korunur": "Zurücksetzen (mit Bestätigung): Fahrzeug zurück zum Start; Parameter und Skripte bleiben erhalten",
+  "Simülatör sıfırlandı": "Simulator zurückgesetzt",
 });

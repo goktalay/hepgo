@@ -2171,7 +2171,7 @@ def guc_testleri(a, c1, sitl, mon):
     dr = ok(a.post('/api/drone/drones', json={'name': 'Güç Uçağı', 'protocol': 'sanal', 'model': 'Caymaz sabit kanat'}))
     did = dr['id']
     pd = ok(a.get('/api/drone/sim/power-defaults', params={'type': 'sabit_kanat', 'drone_id': did}))
-    assert pd['suggested'] == d and pd['from_drone'] == {} and pd['stock_max_ms'] == 31.8 and pd['thr_mul'] == mul and pd['thr_scale_supported'] is False and pd['speedups'] == [1, 2, 4, 8], pd
+    assert pd['suggested'] == d and pd['from_drone'] == {} and pd['stock_max_ms'] == 31.8 and pd['thr_mul'] == mul and pd['thr_scale_supported'] is False and pd['speedups'] == [0.25, 0.5, 1, 2, 4, 8], pd
     assert ok(a.get('/api/drone/sim/power-defaults', params={'type': 'multirotor'}))['suggested']['fuel_l'] == 0.0
     r = ok(a.get(f'/api/drone/drones/{did}/sim-power'))
     assert r['options'] == {} and r['type'] == 'sabit_kanat' and r['suggested'] == d and r['can_write'] is True, r

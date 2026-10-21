@@ -2102,4 +2102,11 @@ registerCatalog('en', {
   "{n} (siz dahil)": "{n} (including you)",
   "Karşılaşma oyuncu simülatörleri ayrı sınırla açılır (eşzamanlı en çok {n}; şu an {u} kullanımda).": "Match player simulators have a separate limit (at most {n} at once; {u} in use now).",
   "Simülatörü zamanında hazır olmadı": "Did not get the simulator ready in time",
+  "Kamera yok": "No camera",
+  "Araçta görev kamerası yok: PiP penceresi açılmaz, gimbal kamerası kapalı (daha hafif çizim).": "No payload camera on the vehicle: no PiP window, gimbal camera off (lighter rendering).",
+  "YOK": "NONE",
+  "simülasyon hızı en az": "simulation speed down to",
+  "Simülatör sıfırlansın mı? Araç başlangıç noktasına döner; parametreler, scriptler ve görev korunur, Mission Planner bağlantısı kopmaz.": "Reset the simulator? The vehicle returns to its start point; parameters, scripts and mission are kept, and the Mission Planner link stays up.",
+  "Sıfırla (onaylı): araç başlangıca döner; parametreler ve scriptler korunur": "Reset (confirmed): vehicle returns to start; parameters and scripts are kept",
+  "Simülatör sıfırlandı": "Simulator reset",
 });

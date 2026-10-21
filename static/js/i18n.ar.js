@@ -5118,4 +5118,11 @@ registerCatalog('ar', {
   "{n} (siz dahil)": "{n} (بما فيهم أنت)",
   "Karşılaşma oyuncu simülatörleri ayrı sınırla açılır (eşzamanlı en çok {n}; şu an {u} kullanımda).": "لمحاكيات لاعبي المباريات حد منفصل ({n} في الوقت نفسه كحد أقصى؛ {u} قيد الاستخدام الآن).",
   "Simülatörü zamanında hazır olmadı": "لم يكن المحاكي جاهزًا في الوقت المحدد",
+  "Kamera yok": "بدون كاميرا",
+  "Araçta görev kamerası yok: PiP penceresi açılmaz, gimbal kamerası kapalı (daha hafif çizim).": "لا توجد كاميرا مهمة على المركبة: لا نافذة PiP، كاميرا الجيمبال متوقفة (عرض أخف).",
+  "YOK": "لا يوجد",
+  "simülasyon hızı en az": "سرعة المحاكاة حتى أدنى",
+  "Simülatör sıfırlansın mı? Araç başlangıç noktasına döner; parametreler, scriptler ve görev korunur, Mission Planner bağlantısı kopmaz.": "إعادة ضبط المحاكي؟ تعود المركبة إلى نقطة البداية؛ تُحفظ المعاملات والسكربتات والمهمة، ولا ينقطع اتصال Mission Planner.",
+  "Sıfırla (onaylı): araç başlangıca döner; parametreler ve scriptler korunur": "إعادة الضبط (بتأكيد): تعود المركبة إلى البداية؛ تُحفظ المعاملات والسكربتات",
+  "Simülatör sıfırlandı": "تمت إعادة ضبط المحاكي",
 });

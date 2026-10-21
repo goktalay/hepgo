@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CAMERA_TYPES, CAM_TYPE_KEYS, isCamType, normCamType, nextCamType, THERMAL_PALETTES, normPalette, nextPalette, camTypeIndex, paletteIndex, camFxApplies, nightGain,
+  CAMERA_TYPES, CAMERA_CHOICES, CAM_TYPE_KEYS, CAM_CHOICE_KEYS, isCamChoice, normCamChoice, isNoCam, camTypeLabel, CAM_TYPE_NAME_SHORT, isCamType, normCamType, nextCamType, THERMAL_PALETTES, normPalette, nextPalette, camTypeIndex, paletteIndex, camFxApplies, nightGain,
   GIMBAL_ZOOM, clampZoom, gimbalZoomFov, pipSourceFor, pipSwapTarget, pipInterval, PIP_SIZES, PIP_DEFAULT, normPipPref, pipSize, pipInsets, pipPlace, pipSnap,
   pipSizeForWidth, nextPipSize, isDoubleTap, createCamPrefs, LS_CAM, CAM_FRAG, camUniforms, camFxPixel,
 } from '../static/js/modules/flightsim_camera.js';
@@ -25,7 +25,17 @@ test('türler day · thermal · night (sunucu enum ile aynı); doğrulama ve dö
   assert.equal(normCamType('night'), 'night'); assert.equal(normCamType('THERMAL'), 'day'); assert.equal(normCamType(undefined), 'day');
   assert.equal(nextCamType('day'), 'thermal'); assert.equal(nextCamType('thermal'), 'night'); assert.equal(nextCamType('night'), 'day'); assert.equal(nextCamType('x'), 'thermal');
   const py = fs.readFileSync(new URL('../app/flightsim.py', import.meta.url), 'utf8');
-  assert.match(py, /KAMERA_TURLERI = \('day', 'thermal', 'night'\)/);
+  assert.match(py, /KAMERA_TURLERI = \('day', 'thermal', 'night', 'none'\)/);
+});
+test('§35 kamera yok (none): seçim türü, görüntü türü gündüz, T döngüsü, tercih, kart önizlemesi yok yerine simge', () => {
+  assert.deepEqual(CAM_CHOICE_KEYS, ['day', 'thermal', 'night', 'none']);
+  assert.ok(isCamChoice('none') && !isCamType('none') && isNoCam('none') && !isNoCam('day'));
+  assert.equal(normCamChoice('none'), 'none'); assert.equal(normCamChoice('x'), 'day'); assert.equal(normCamType('none'), 'day');
+  assert.equal(camTypeIndex('none'), 0); assert.equal(nextCamType('none'), 'day');
+  assert.equal(camTypeLabel('none'), 'Kamera yok'); assert.equal(CAM_TYPE_NAME_SHORT.none, 'Kamera yok');
+  const st = memStorage(); const p = createCamPrefs(st);
+  assert.equal(p.setType('none'), 'none'); assert.equal(createCamPrefs(st).type, 'none');
+  p.rememberDrone(5, 'none'); assert.equal(p.typeForDrone(5), 'none');
 });
 test('termal paletleri beyaz-sıcak · siyah-sıcak · ironbow; gölgelendirici dizinleri', () => {
   assert.deepEqual(THERMAL_PALETTES.map(([k]) => k), ['white', 'black', 'iron']);
@@ -148,7 +158,7 @@ test('camFxPixel: gündüz değişmez; termal beyaz-sıcak artan, siyah-sıcak t
 
 console.log('SIMUMAV camera_pick.js');
 test('varsayılan: dron kaydı → dron için yerel → son tercih → gündüz; anahtarlar', () => {
-  assert.deepEqual(CAMERA_KEYS, CAM_TYPE_KEYS);
+  assert.deepEqual(CAMERA_KEYS, CAM_CHOICE_KEYS);   // §35 + none
   assert.equal(normCamera('night'), 'night'); assert.equal(normCamera('x'), 'day');
   assert.equal(cameraDefault({ camera: 'thermal' }, 'night', 'day'), 'thermal');
   assert.equal(cameraDefault({}, 'night', 'thermal'), 'night');
@@ -156,7 +166,7 @@ test('varsayılan: dron kaydı → dron için yerel → son tercih → gündüz;
   assert.equal(cameraDefault(null, 'bozuk', undefined), 'day');
 });
 test('metin → camera.* anahtarı: paylaşılan modülün tüm tür/palet adları eşlenir; 7 dil sözlüğünde anahtarlar var', () => {
-  for (const [, name, desc] of CAMERA_TYPES) { assert.ok(CAM_TEXT_KEYS[name], name); assert.ok(CAM_TEXT_KEYS[desc], desc); }
+  for (const [, name, desc] of CAMERA_CHOICES) { assert.ok(CAM_TEXT_KEYS[name], name); assert.ok(CAM_TEXT_KEYS[desc], desc); }
   for (const [, name] of THERMAL_PALETTES) assert.ok(CAM_TEXT_KEYS[name], name);
   const keys = [...new Set(Object.values(CAM_TEXT_KEYS)), 'camera.hint'];
   for (const lang of ['tr', 'en', 'de', 'fr', 'es', 'ru', 'ar']) {

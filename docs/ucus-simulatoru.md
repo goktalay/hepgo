@@ -2582,3 +2582,42 @@ oynatma olay şeridinde görünür). Uçakta 1,45 m fark: anlık görüntünün 
 işlev adları, iptal/reset, kısa özet) + `servo_tetik_testleri` (uçtan uca sahte kip: 400'ler, KOMUTLAR/SIM_KOMUT, zaten-koşulda uyarısı, 4× hızda
 gecikme, `crash` reason, donma, özet, izleyicisiz sunucu kapanışı, drone_sim_runs + liste JSON, dron kaydı önerisi); `node tests/test_flightsim_servotrig.mjs`
 (saf katman + HEPGO 6 dil + SIMUMAV 7 dil `srv.*`); görsel `./.venv/bin/python -m tests.servotrig_shots_hepgo` → `/tmp/servotrig-shots/`.
+
+## 35. "Sıfırla" parametre/script korunumu, ağır çekim (0,25× / 0,5×), "Kamera yok", uçuş kartında onaylı Sıfırla (HEPGO + SIMUMAV ortak)
+
+**Sıfırla korunumu.** `SimSession._sitl_ac(temiz)`: oturum BAŞINDA `temiz=True` (eeprom.bin + `scripts/` + `APM/scripts/` silinir — önceki oturumdan
+parametre/script sızıntısı yok; elevon AIRSPEED_MIN olayı kuralı korunur, artık scriptler de; önceki oturumun scriptleri yeni oturumun `scripts.zip`
+kaydına da girmiyordu → girmez). `reset()` (komut `reset`, §26 interceptor değişimi, §31 rampa yönü) `temiz=False` açar: eeprom.bin (parametreler +
+görev/fence/rally) ve script dizinleri yeni SITL sürecinde aynen durur; 3B rota (`route`) artık reset'te temizlenmez (görev SITL'de yüklü kalır).
+Oturumun ilk kalp atışında yazdığı set (RC/GPS-RTK/düzen §13.1/flap/hız §23/kalkış/arazi) eeprom'daki kullanıcı değerini ezeceği için kullanıcının
+oturumda yazdıkları ayrıca tutulur: `oturum_paramlari` (Mission Planner PARAM_SET — UDP baytlarından `_gcs_param_ayikla`; panel `param_set` —
+`hub_komut`) → reset sonrası ilk kalp atışında oturum setinden SONRA yeniden yazılır (`_oturum_paramlari_yaz`; kalıcı izleyici yankıları
+`yukleme_isaretle` ile yeniden kaydetmez). Yazılmayanlar `OTURUM_PARAM_HARIC_*`: MAV_SYSID/SYSID_THISMAV (yeni SITL aynı sysid 1), FORMAT_VERSION,
+*_TOTAL, STAT_*, SIM_SRV_REV (kayıtlı SERVOn_REVERSED'den üretilir), SIM_PLN_THR_MUL (oturum azami hızından). HEPGO'nun kendi komutu aynı
+parametreyi yeniden belirlerse MP'nin eski değeri unutulur (`speed` → SIM_SPEEDUP, `wind` → SIM_WIND_*, `launch_aim` açı → TKOFF_LVL_PITCH).
+SIM_SPEEDUP reset sonrası her zaman `speedup_istek` ile yazılır (1× dahil; eeprom'daki değer değil).
+
+**Mission Planner reset'te kopmaz.** UDP soketi ve portu oturum boyunca aynı; GCS kilidi (`gcs_addr`) reset'te sıfırlanmaz (MP 1 Hz kalp atışıyla
+tazeler). SITL yokken (~2–4 sn) `_kopru_kalp`: MP'ye aynı sysid/compid ve araç tipiyle 1 Hz HEARTBEAT (MAV_STATE_BOOT) + bir STATUSTEXT
+"HEPGO: SITL yeniden baslatiliyor"; yeni SITL'in ilk kalp atışında biter. Ölçüm (gerçek SITL, pymavlink MP taklidi): en uzun araç kalp atışı boşluğu
+≈ 2,0 sn, reset sonrası PARAM_VALUE/ATTITUDE/görev aynı UDP'den akar. MP'nin önbelleğindeki parametre listesi yenilenmez (değerler zaten korunduğu için gerekmez).
+
+**Ağır çekim.** `flightsim_power.SPEEDUPS = (0.25, 0.5, 1, 2, 4, 8)`; ArduPilot SITL SIM_SPEEDUP float kabul eder (ölçüldü: 0,25× → time_boot_ms/duvar
+0,25; 0,5× → 0,50). Yavaşta SITL akışı duvar saatinde azalır (50 Hz SITL → 0,25×'te ~12,5 Hz); 3B enterpolasyonu kaynak saat oranını zaten izler
+(0,05…5). Yakıt/batarya simülasyon zamanıyla; `GucDurumu.speedup_min` → özet `speedup.min` (rapor: "simülasyon hızı en az"). Seçiciler (HEPGO üst çubuk +
+panel `createSpeedPill`, SIMUMAV sihirbaz/kapsül) `0.25×` `0.5×` etiketleriyle; `.fs-speed-pill.slow`. SIMUMAV `speedup_dogrula` 0,25/0,5 kabul eder
+(MAX_SPEEDUP yalnız üst sınır), başlangıç hızı ≠ 1 ise bekçi yazar.
+
+**Kamera yok (`camera: 'none'`).** `KAMERA_TURLERI` + 'none' (DB `drone_sim_runs.camera`, kayıtlı ön ayar `settings.camera`, SIMUMAV shim sütunu TEXT —
+göç yok). Ön yüz `flightsim_camera.js`: `CAMERA_CHOICES` (türler + none), `isCamChoice/normCamChoice/isNoCam`; görüntü türü (`normCamType`) none → gündüz.
+Sihirbaz kartı "Kamera yok" (üstü çizili kamera simgesi), 📷 menüsünde seçenek (PiP satırı gizli, V etkisiz). none iken `createCameraPip` HİÇ kurulmaz
+(seçilince kaldırılır, başka türe geçilince kurulur), 3B `renderPip` çağrılmaz, gimbal ('fpv') kipine geçilmez (C döngüsü atlar, 3 tuşu/düğmesi yok;
+gimbaldeyken none seçilirse önceki kipe döner), `swapPip` null. HEPGO + SIMUMAV (`camera_pick.js` CAMERA_KEYS; `camera.none*` 7 dil).
+
+**Uçuş kartında Sıfırla.** Harekât kartı (`flightsim_panel.js`, HEPGO + SIMUMAV ortak) başlığında ↺ düğmesi + İŞLEMLER "↺ Sıfırla" artık onay
+soruyor; HEPGO "Açık Oturumlar" satırında "↺ Sıfırla" (kayıttan oynatmada yok). Yetki mevcut komut kuralı: `drone.sim` yazma izni (karşılaşmada
+yalnız kendi aracı — `mac_yazabilir`); komut `POST /api/drone/sim/sessions/{id}/cmd {name:'reset'}`.
+
+**Testler.** `tests.test_flightsim_resetkeep` (GERÇEK SITL, ~3 dk: copter — MP PARAM_SET + script + görev korunumu, 0,25×/0,5× ölçümü, MP kalp
+atışı boşluğu, yeni oturumun temiz başlaması; ArduPlane elevon — düzen parametreleri + SIM_SRV_REV korunur, MP'nin MIXING_GAIN'i geri yazılır);
+`node tests/test_flightsim_camera.mjs` (none), `tests/test_flightsim_power.mjs` (seçici), `tests/test_simumav_fly.mjs`.

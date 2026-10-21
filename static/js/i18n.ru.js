@@ -5118,4 +5118,11 @@ registerCatalog('ru', {
   "{n} (siz dahil)": "{n} (включая вас)",
   "Karşılaşma oyuncu simülatörleri ayrı sınırla açılır (eşzamanlı en çok {n}; şu an {u} kullanımda).": "Для симуляторов игроков действует отдельный лимит (одновременно не более {n}; сейчас занято {u}).",
   "Simülatörü zamanında hazır olmadı": "Симулятор не был готов вовремя",
+  "Kamera yok": "Без камеры",
+  "Araçta görev kamerası yok: PiP penceresi açılmaz, gimbal kamerası kapalı (daha hafif çizim).": "На аппарате нет полезной камеры: окно PiP не открывается, камера подвеса выключена (лёгкий рендеринг).",
+  "YOK": "НЕТ",
+  "simülasyon hızı en az": "скорость симуляции минимум",
+  "Simülatör sıfırlansın mı? Araç başlangıç noktasına döner; parametreler, scriptler ve görev korunur, Mission Planner bağlantısı kopmaz.": "Сбросить симулятор? Аппарат вернётся в точку старта; параметры, скрипты и миссия сохраняются, связь с Mission Planner не прерывается.",
+  "Sıfırla (onaylı): araç başlangıca döner; parametreler ve scriptler korunur": "Сброс (с подтверждением): аппарат возвращается на старт; параметры и скрипты сохраняются",
+  "Simülatör sıfırlandı": "Симулятор сброшен",
 });

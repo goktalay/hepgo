@@ -4772,4 +4772,9 @@ registerCatalog('fr', {
   "Bu sayfada geçen süre": "Temps passé sur cette page",
   "Bu sayfanın anlık indirme hızı (son 2 sn)": "Débit de téléchargement actuel de cette page (2 dernières s)",
   "Bu sayfaya girildiğinden beri indirilen veri": "Données téléchargées depuis l'arrivée sur cette page",
+  "Sayfa trafiği": "Trafic de la page",
+  "indirildi": "téléchargés",
+  "Giriş saati": "Arrivée à",
+  "Anlık hız": "Débit actuel",
+  "Ortalama hız": "Débit moyen",
 });

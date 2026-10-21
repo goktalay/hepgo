@@ -4772,4 +4772,9 @@ registerCatalog('ar', {
   "Bu sayfada geçen süre": "الوقت المستغرق في هذه الصفحة",
   "Bu sayfanın anlık indirme hızı (son 2 sn)": "سرعة التنزيل الحالية لهذه الصفحة (آخر ثانيتين)",
   "Bu sayfaya girildiğinden beri indirilen veri": "البيانات المنزّلة منذ دخول هذه الصفحة",
+  "Sayfa trafiği": "حركة بيانات الصفحة",
+  "indirildi": "تم تنزيلها",
+  "Giriş saati": "وقت الدخول",
+  "Anlık hız": "السرعة الحالية",
+  "Ortalama hız": "متوسط السرعة",
 });

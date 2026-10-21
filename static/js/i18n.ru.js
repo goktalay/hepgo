@@ -4772,4 +4772,9 @@ registerCatalog('ru', {
   "Bu sayfada geçen süre": "Время на этой странице",
   "Bu sayfanın anlık indirme hızı (son 2 sn)": "Текущая скорость загрузки этой страницы (последние 2 с)",
   "Bu sayfaya girildiğinden beri indirilen veri": "Загружено данных с момента входа на страницу",
+  "Sayfa trafiği": "Трафик страницы",
+  "indirildi": "загружено",
+  "Giriş saati": "Время входа",
+  "Anlık hız": "Текущая скорость",
+  "Ortalama hız": "Средняя скорость",
 });

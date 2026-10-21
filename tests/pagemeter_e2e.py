@@ -51,22 +51,24 @@ try:
         pg.goto(f'{BASE}/#/', wait_until='domcontentloaded')
         pg.wait_for_selector('.pagemeter .pm-v', timeout=60000)
         pg.wait_for_timeout(4000)
-        vals = lambda: pg.eval_on_selector_all('.pagemeter .pm-v', 'els => els.map(e => e.textContent)')
-        v1 = vals()
-        print('pano:', v1)
-        assert len(v1) == 4 and ':' in v1[0] and v1[1] >= '00:02', v1
-        # aynı sayfada indirme: büyük bir dosya iste → toplam artmalı
+        tot = lambda: pg.text_content('.pagemeter .pm-v')
+        t1 = tot(); print('altbilgi toplam:', t1)
+        assert t1 and t1 != '0 B', t1
+        pg.keyboard.press('Escape'); pg.evaluate("document.querySelectorAll('.modal-back').forEach(e => e.remove())")
+        pg.hover('.pagemeter'); pg.wait_for_selector('.pm-pop', timeout=5000); pg.wait_for_timeout(1200)
+        kv = pg.eval_on_selector_all('.pm-pop .sbp-kv dd', 'els => els.map(e => e.textContent)')
+        print('panel:', kv)
+        assert len(kv) == 5 and ':' in kv[0] and kv[1] >= '00:04', kv
+        assert pg.get_attribute('.pm-pop .pm-line', 'points'), 'grafik çizilmedi'
         pg.evaluate("fetch('/static/js/app.js?pm=' + Date.now()).then(r => r.text())")
         pg.wait_for_timeout(2500)
-        v2 = vals()
-        print('indirme sonrası:', v2)
-        assert v2[3] != '0 B', v2
-        # sayfa değişimi → süre ve toplam sıfırlanır
+        t2 = tot(); print('indirme sonrası:', t2)
+        assert t2 != t1, (t1, t2)
+        pg.screenshot(path='/tmp/pagemeter-pop.png', clip={'x': 900, 'y': 540, 'width': 540, 'height': 360})
         pg.goto(f'{BASE}/#/settings', wait_until='domcontentloaded')
         pg.wait_for_timeout(1300)
-        v3 = vals()
-        print('yeni sayfa:', v3)
-        assert v3[1] in ('00:00', '00:01', '00:02'), v3
+        assert not pg.query_selector('.pm-pop'), 'sayfa değişince panel kapanmalı'
+        print('yeni sayfa toplam:', tot())
         pg.screenshot(path='/tmp/pagemeter.png', clip={'x': 0, 'y': 840, 'width': 1440, 'height': 60})
         b.close()
 finally:

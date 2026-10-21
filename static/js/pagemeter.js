@@ -56,49 +56,101 @@ export const fmtElapsed = s => {
 };
 const fmtClock = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+// Zaman çizelgesi: saniyelik hız örnekleri → SVG alan grafiği (n > 300 ise en çok 300 noktaya ortalanarak seyreltilir)
+export function timelinePoints(samples, w, hgt, maxPts = 300) {
+  if (!samples.length) return { pts: [], max: 0 };
+  const step = Math.max(1, Math.ceil(samples.length / maxPts));
+  const agg = [];
+  for (let k = 0; k < samples.length; k += step) {
+    const part = samples.slice(k, k + step);
+    agg.push(part.reduce((a, b) => a + b, 0) / part.length);
+  }
+  const max = Math.max(...agg, 1);
+  const dx = agg.length > 1 ? w / (agg.length - 1) : 0;
+  return { pts: agg.map((v, k) => [k * dx, hgt - 1 - (v / max) * (hgt - 4)]), max };
+}
+
 export function pageMeter() {
   wrapWebSocket();
   observeResources();
-  let path = PATH(), entered = new Date(), total = 0, recent = [];
-  const since = h('b', { class: 'pm-v' }), elapsed = h('b', { class: 'pm-v' }), rate = h('b', { class: 'pm-v' }), sum = h('b', { class: 'pm-v' });
-  // Simgeler satır içi SVG (emoji yazı tipi olmayan sistemlerde kare görünmesin)
-  const icon = d => {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('class', 'pm-i'); svg.setAttribute('aria-hidden', 'true');
-    svg.innerHTML = d;
-    return svg;
+  const NS = 'http://www.w3.org/2000/svg';
+  const hover = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+  let path = PATH(), entered = new Date(), total = 0, recent = [], samples = [], secBytes = 0, peak = 0, pop = null, closeTimer = null;
+  const icon = d => { const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('class', 'pm-i'); svg.setAttribute('aria-hidden', 'true'); svg.innerHTML = d; return svg; };
+  const sum = h('b', { class: 'pm-v' });
+  // Altbilgide yalnız toplam indirilen; üzerine gelince (dokunmatikte dokununca) yukarı kayan ayrıntı paneli
+  const bar = h('button', { type: 'button', class: 'pagemeter sb-hot', 'aria-haspopup': 'dialog', 'aria-label': tr('Bu sayfaya girildiğinden beri indirilen veri') },
+    icon('<path d="M12 4v13M6 11l6 6 6-6M5 21h14"/>'), sum);
+  const W = 268, HH = 70;
+  const chart = document.createElementNS(NS, 'svg');
+  chart.setAttribute('viewBox', `0 0 ${W} ${HH}`); chart.setAttribute('class', 'pm-chart'); chart.setAttribute('preserveAspectRatio', 'none');
+  const area = document.createElementNS(NS, 'path'), line = document.createElementNS(NS, 'polyline');
+  area.setAttribute('class', 'pm-area'); line.setAttribute('class', 'pm-line'); chart.append(area, line);
+  const v = () => h('dd');
+  const kv = { since: v(), elapsed: v(), rate: v(), avg: v(), peak: v() };
+  const big = h('b'), maxLbl = h('span', { class: 'pm-ax' }), t0Lbl = h('span', { class: 'pm-ax' }), t1Lbl = h('span', { class: 'pm-ax' });
+  const close = () => { if (!pop) return; pop.remove(); pop = null; bar.classList.remove('open'); };
+  const open = pinned => {
+    if (pop) { pop.pinned ||= pinned; return; }
+    pop = h('div', { class: 'sb-pop pm-pop', role: 'dialog', onclick: e => e.stopPropagation(),
+      onmouseenter: () => clearTimeout(closeTimer), onmouseleave: () => { if (hover && !pop?.pinned) closeTimer = setTimeout(close, 300); } },
+      h('div', { class: 'sbp-head' }, h('b', null, tr('Sayfa trafiği')), h('button', { type: 'button', class: 'sbp-x', title: tr('Kapat'), onclick: close }, '×')),
+      h('div', { class: 'sbp-body' },
+        h('div', { class: 'sbp-big' }, big, h('span', null, tr('indirildi'))),
+        h('div', { class: 'pm-chartbox' }, maxLbl, chart, h('div', { class: 'pm-axis' }, t0Lbl, t1Lbl)),
+        h('dl', { class: 'sbp-kv' },
+          h('dt', null, tr('Giriş saati')), kv.since, h('dt', null, tr('Geçen süre')), kv.elapsed,
+          h('dt', null, tr('Anlık hız')), kv.rate, h('dt', null, tr('Ortalama hız')), kv.avg, h('dt', null, tr('En yüksek hız')), kv.peak)));
+    pop.pinned = pinned;
+    document.body.append(pop);
+    const r = bar.getBoundingClientRect();
+    pop.style.bottom = `${innerHeight - r.top + 8}px`;
+    pop.style.right = `${Math.max(8, Math.min(innerWidth - r.right - 10, innerWidth - pop.offsetWidth - 8))}px`;
+    bar.classList.add('open');
+    draw();
   };
-  const ICON = {
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    timer: '<circle cx="12" cy="13" r="8"/><path d="M12 13V9M9 2h6M12 2v3"/>',
-    down: '<path d="M12 4v13M6 11l6 6 6-6M5 21h14"/>',
-    sum: '<path d="M17 5H7l6 7-6 7h10"/>',
-  };
-  const item = (ic, el, title) => h('span', { class: 'pm-item', title }, icon(ICON[ic]), el);
-  const bar = h('div', { class: 'pagemeter', role: 'status', 'aria-live': 'off' },
-    item('clock', since, tr('Bu sayfaya giriş saati')),
-    item('timer', elapsed, tr('Bu sayfada geçen süre')),
-    item('down', rate, tr('Bu sayfanın anlık indirme hızı (son 2 sn)')),
-    item('sum', sum, tr('Bu sayfaya girildiğinden beri indirilen veri')));
-  const reset = () => { path = PATH(); entered = new Date(); total = 0; recent = []; draw(); };
-  const onBytes = (b, at) => { total += b; recent.push([at, b]); };
+  bar.addEventListener('click', e => { e.stopPropagation(); if (pop?.pinned) close(); else open(true); });
+  if (hover) {
+    bar.addEventListener('mouseenter', () => { clearTimeout(closeTimer); open(false); });
+    bar.addEventListener('mouseleave', () => { if (!pop?.pinned) closeTimer = setTimeout(close, 300); });
+  }
+  const onDoc = () => close(), onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('click', onDoc);
+  document.addEventListener('keydown', onKey);
+  const reset = () => { path = PATH(); entered = new Date(); total = 0; recent = []; samples = []; secBytes = 0; peak = 0; draw(); };
+  const onBytes = (b, at) => { total += b; secBytes += b; recent.push([at, b]); };
   const draw = () => {
     const now = performance.now();
     recent = recent.filter(([at]) => now - at <= 2000);
     const bps = recent.reduce((a, [, b]) => a + b, 0) / 2;
-    since.textContent = fmtClock(entered);
-    elapsed.textContent = fmtElapsed((Date.now() - entered.getTime()) / 1000);
-    rate.textContent = `${fmtBytes(bps)}/s`;
+    const secs = (Date.now() - entered.getTime()) / 1000;
     sum.textContent = fmtBytes(total);
+    if (!pop) return;
+    big.textContent = fmtBytes(total);
+    kv.since.textContent = fmtClock(entered);
+    kv.elapsed.textContent = fmtElapsed(secs);
+    kv.rate.textContent = `${fmtBytes(bps)}/s`;
+    kv.avg.textContent = `${fmtBytes(secs > 0 ? total / secs : 0)}/s`;
+    kv.peak.textContent = `${fmtBytes(peak)}/s`;
+    const { pts, max } = timelinePoints(samples, W, HH);
+    const str = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
+    line.setAttribute('points', str);
+    area.setAttribute('d', pts.length ? `M${pts[0][0]},${HH} L${str.replaceAll(' ', ' L')} L${pts[pts.length - 1][0]},${HH}Z` : '');
+    maxLbl.textContent = `${fmtBytes(max)}/s`;
+    t0Lbl.textContent = fmtClock(entered);
+    t1Lbl.textContent = fmtClock(new Date());
   };
   listeners.add(onBytes);
-  const onHash = () => { if (PATH() !== path) reset(); };
+  const onHash = () => { close(); if (PATH() !== path) reset(); };
   window.addEventListener('hashchange', onHash);
   const timer = setInterval(() => {
-    if (!bar.isConnected && document.readyState === 'complete' && bar._mounted) {   // kabuk yeniden çizildi: temizle
-      clearInterval(timer); listeners.delete(onBytes); window.removeEventListener('hashchange', onHash); return;
+    if (!bar.isConnected && bar._mounted) {   // kabuk yeniden çizildi: temizle
+      clearInterval(timer); listeners.delete(onBytes); close();
+      window.removeEventListener('hashchange', onHash); document.removeEventListener('click', onDoc); document.removeEventListener('keydown', onKey); return;
     }
     if (bar.isConnected) bar._mounted = true;
+    samples.push(secBytes); peak = Math.max(peak, secBytes); secBytes = 0;   // saniyelik zaman çizelgesi örneği
+    if (samples.length > 7200) samples.splice(0, samples.length - 7200);      // en çok 2 saat
     draw();
   }, 1000);
   draw();

@@ -10296,11 +10296,18 @@ html[data-theme="dark"] .set-dnd-status.on { background: #3a2a12; border-color: 
 .fs-rp-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 @media (max-width: 760px) { .fs-tg-list { grid-template-columns: 1fr; } .fs-rp-tg-tiles { grid-template-columns: repeat(2, 1fr); } }
 
-/* Altbilgi sayfa ölçeri (pagemeter.js): giriş saati · geçen süre · anlık indirme hızı · toplam indirilen */
-.pagemeter { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); white-space: nowrap;
-  margin-left: auto; margin-right: 18px; }   /* sağda, aktif kullanıcının solunda (ortadaki Beta rozeti mutlak konumlu) */
-.pagemeter .pm-item { display: inline-flex; align-items: center; gap: 4px; }
+/* Altbilgi sayfa ölçeri (pagemeter.js): altbilgide yalnız toplam indirilen; üzerine gelince yukarı kayan panel (sb-pop) — giriş saati,
+   geçen süre, anlık / ortalama / en yüksek hız ve saniyelik zaman çizelgesi grafiği */
+.pagemeter { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; color: var(--muted); white-space: nowrap;
+  background: transparent; border: 0; margin-left: auto; margin-right: 18px; }
 .pagemeter .pm-i { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
 .pagemeter .pm-v { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-@media (max-width: 1100px) { .pagemeter .pm-item:nth-child(1) { display: none; } }
-@media (max-width: 760px) { .pagemeter { gap: 8px; font-size: 11px; margin-right: 8px; } .pagemeter .pm-item:nth-child(2) { display: none; } }
+.pm-pop { width: 320px; }
+.pm-chartbox { position: relative; margin: 8px 0 4px; padding: 14px 0 0; border-top: 1px solid var(--border); }
+.pm-chart { display: block; width: 100%; height: 70px; }
+.pm-area { fill: color-mix(in srgb, var(--primary) 18%, transparent); stroke: none; }
+.pm-line { fill: none; stroke: var(--primary); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.pm-ax { font-size: 10.5px; color: var(--faint, var(--muted)); font-variant-numeric: tabular-nums; }
+.pm-chartbox > .pm-ax { position: absolute; top: 0; left: 0; }
+.pm-axis { display: flex; justify-content: space-between; margin-top: 2px; }
+@media (max-width: 760px) { .pagemeter { margin-right: 8px; font-size: 11px; } }

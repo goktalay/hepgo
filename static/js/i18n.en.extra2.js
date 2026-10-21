@@ -1749,4 +1749,10 @@ registerCatalog('en', {
   "Bu sayfada geçen süre": "Time spent on this page",
   "Bu sayfanın anlık indirme hızı (son 2 sn)": "This page's current download speed (last 2 s)",
   "Bu sayfaya girildiğinden beri indirilen veri": "Data downloaded since entering this page",
+  "Sayfa trafiği": "Page traffic",
+  "indirildi": "downloaded",
+  "Giriş saati": "Entered at",
+  "Geçen süre": "Time on page",
+  "Anlık hız": "Current speed",
+  "Ortalama hız": "Average speed",
 });

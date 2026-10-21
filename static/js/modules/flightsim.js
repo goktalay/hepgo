@@ -1335,7 +1335,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     h('div', { class: 'fs-seek-wrap' }, seek, h('i', { class: 'fs-seek-marks' })),
     timeLbl, clockLbl, lodLbl) : null;
   // §27.1 kumanda hassasiyeti: ⚙ düğmesi alt çubukta (🎮 yanında), küçük açılır panel (oran / expo / ölü bölge, eksen başına; localStorage fs.rc.feel)
-  const rcFeel = createRcFeelPanel(stage, { tr, plane: isPlane(type), rover, onChange: () => { rcShape = rcFeel.shaper(); } });   // §31 kara aracı: direksiyon + gaz
+  const rcFeel = createRcFeelPanel(stage, { tr, plane: isPlane(type), rover, onChange: () => { rcShape = rcFeel.shaper(); padCtl?.refreshCurve(); } });   // §31 kara aracı: direksiyon + gaz; §37 kumanda paneli birleşik eğri
   let rcShape = rcFeel.shaper();
   // §29.6 uçuş denetimi (harekât paneli açıkken de görünür): mod seçici + DISARM (sabit kanatta havada motor kesme → süzülme; kopterde onaylı)
   const fltBar = canWrite && !replay ? createFlightBar({ tr, kind: modeKind(type), modes: flightModesFor(modeKind(type)), stage,
@@ -1346,7 +1346,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     cmd: (name, params = {}) => be.cmd(sid, name, params), onEvent: (t, sev) => addEvent(t, sev) }) : null;
   // §37 fiziksel kumanda: bağlanınca alt bantta simge (eksen/düğme ataması paneli); sanal kumanda açık değilse açılır; düğmeler ARM / DISARM / mod / ch5
   const padT = makePadT(tr, false);
-  const padCtl = canWrite && !replay ? createGamepadCtl({ tr,
+  const padCtl = canWrite && !replay ? createGamepadCtl({ tr, vehicle: rover ? 'rover' : isPlane(type) ? 'plane' : 'copter', feelShape: (k, v) => rcShape(k, v),   // §37 girdi hassasiyeti + ⚙ ortak eğri önizlemesi
     onConnect: i => { try { toast(padT('pad.connected', { n: i.id })); addEvent(padT('pad.connected', { n: i.id })); if (!rc) rcToggle({ auto: true }); } catch { /* oturum kurulumu sürüyor: varsayılan açılış zaten açar */ } },
     onDisconnect: i => { toast(padT('pad.disconnected', { n: i.id })); addEvent(padT('pad.disconnected', { n: i.id }), 'warning'); },
     onAction: a => {
@@ -2097,7 +2097,7 @@ function virtualRC({ plane, rover = false, stickL, stickR, send, onChange, throt
       const a = ps.axes, set = (k, v) => { if (v != null) ax[k] = clamp(v, -1, 1); };
       if (!drag.l) {
         if (plane && ps.profile === 'standard') { if (a.thr) ax.thr = clamp(ax.thr + a.thr * THR_RATE * dt, -1, 1); }   // yaylı gamepad kolu: uçakta tutmalı gaz hızla
-        else set('thr', a.thr);
+        else set('thr', plane && ps.thrAbs != null ? ps.thrAbs : a.thr);   // uçakta RC verici: mutlak tek yönlü eğri (rölanti hep −1)
         if (!rover) set('yaw', a.yaw); if (a.thr) thrUsed = true;
       }
       if (!drag.r) { set('roll', a.roll); if (!rover) set('pitch', a.pitch); }

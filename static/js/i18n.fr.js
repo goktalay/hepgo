@@ -5189,6 +5189,18 @@ registerCatalog('fr', {
   "Kilitli angajmanla önleme bonusu +{p}": "Bonus d’interception verrouillée +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "Espace : verrouiller / engager quand un cadre de cible est à l’écran",
   "Hedef kilidi (angajman)": "Verrouillage de cible (engagement)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "Sensibilité d'entrée de la manette",
+  "Genel ölçek": "Échelle globale",
+  "Tutum eksenleri (gaz hariç)": "Axes d’attitude (hors gaz)",
+  "Eksen ölçeği": "Échelle de l'axe",
+  "giriş {i} → çıkış {o}": "entrée {i} → sortie {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "S'applique uniquement à cette manette physique ; la courbe ⚙ Sensibilité (courbe de sortie commune avec les manches virtuels et le clavier) suit. Orange pointillé : les deux combinées.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "Avion avec gaz d’émetteur RC : courbe du ralenti au plein gaz (ralenti toujours atteignable)",
+  "Algıla": "Détecter",
+  "Atama: düğmeye basın ya da kolu oynatın": "Affecter : appuyez sur un bouton ou bougez un manche",
+  "Düğmeye basın…": "Appuyez sur un bouton…",
+  "Kolu yukarı / sağa itin…": "Poussez le manche vers le haut / la droite…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "Type de match",
   "Halka yarışı": "Course d’anneaux",

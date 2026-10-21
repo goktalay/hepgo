@@ -786,6 +786,11 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
 - `fly/session.js` `loadSim` listesinde `flightsim_gamepad.js` (`MPad`): bağlanan gamepad / USB RC verici sanal kumandanın RC yoluna (`rc.js virtualRC`
   `pad`, `lazyThr`, `bumpCh5`) beslenir; alt bantta Kumanda simgesi + eşleme paneli; metinler `pad.*` (7 dil). Sanal kumanda varsayılan açık
   (`sm.rcOn`; kullanıcı kapatırsa hatırlanır). Ayrıntılar HEPGO §37.
+- Kumanda paneli: **kumanda girdisi hassasiyeti** (genel ölçek, eksen başına ölçek + expo, SVG eğri önizlemesi; ⚙ Hassasiyet = ortak çıkış eğrisi,
+  önizlemede kesikli turuncu — `createGamepadCtl({ vehicle, feelShape: rcShape })`), basılı düğme / oynatılan eksen satırı parlaması
+  (requestAnimationFrame, yalnız panel açıkken) ve satır başına **Algıla**; uçak + RC verici gazı `rc.js` içinde `ps.thrAbs` (tek yönlü eğri).
+  Metinler `pad.sens`, `pad.scale*`, `pad.rate`, `pad.expo`, `pad.axis_steer`, `pad.in_out`, `pad.sens_note`, `pad.thr_abs`, `pad.learn*`,
+  `pad.press`, `pad.move`, `pad.live` (7 dil). Ayrıntılar HEPGO §37.
 - Kumanda açıkken kadranlar alt ortada ince ilerleme çubukları (HEPGO §38; `power.css` kadranları üzerine `flightsim_gtheme.js` CSS'i). Mobilde
   (`flightsim_mobile.js`, `MMob`; HEPGO §39) üst şerit + alt bant ☰ menüsünde; `mob.*` 7 dil.
 

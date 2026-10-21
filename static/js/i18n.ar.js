@@ -5189,6 +5189,18 @@ registerCatalog('ar', {
   "Kilitli angajmanla önleme bonusu +{p}": "مكافأة الاعتراض مع القفل +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "مسافة: قفل / اشتباك عند ظهور إطار الهدف على الشاشة",
   "Hedef kilidi (angajman)": "قفل الهدف (اشتباك)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "حساسية إدخال وحدة التحكم",
+  "Genel ölçek": "المقياس العام",
+  "Tutum eksenleri (gaz hariç)": "محاور الوضعية (باستثناء الخانق)",
+  "Eksen ölçeği": "مقياس المحور",
+  "giriş {i} → çıkış {o}": "دخل {i} ← خرج {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "يُطبَّق على وحدة التحكم الفعلية هذه فقط؛ ثم يأتي منحنى ⚙ الحساسية (منحنى الخرج المشترك مع العصي الافتراضية ولوحة المفاتيح). البرتقالي المتقطع: الاثنان معًا.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "طائرة بخانق جهاز إرسال RC: المنحنى من الخمول إلى الأقصى (الخمول متاح دائمًا)",
+  "Algıla": "اكتشاف",
+  "Atama: düğmeye basın ya da kolu oynatın": "تعيين: اضغط زرًا أو حرّك عصا",
+  "Düğmeye basın…": "اضغط زرًا…",
+  "Kolu yukarı / sağa itin…": "ادفع العصا لأعلى / لليمين…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "نوع المباراة",
   "Halka yarışı": "سباق الحلقات",

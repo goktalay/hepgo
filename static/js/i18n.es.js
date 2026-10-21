@@ -5189,6 +5189,18 @@ registerCatalog('es', {
   "Kilitli angajmanla önleme bonusu +{p}": "Bonificación por interceptación bloqueada +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "Espacio: bloquear / enfrentar cuando un recuadro de objetivo está en pantalla",
   "Hedef kilidi (angajman)": "Bloqueo de objetivo (enfrentamiento)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "Sensibilidad de entrada del mando",
+  "Genel ölçek": "Escala general",
+  "Tutum eksenleri (gaz hariç)": "Ejes de actitud (sin acelerador)",
+  "Eksen ölçeği": "Escala del eje",
+  "giriş {i} → çıkış {o}": "entrada {i} → salida {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "Se aplica solo a este mando físico; después actúa la curva ⚙ Sensibilidad (curva de salida común con las palancas virtuales y el teclado). Naranja discontinuo: ambas combinadas.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "Avión con acelerador de emisora RC: curva de ralentí a máximo (el ralentí siempre se alcanza)",
+  "Algıla": "Detectar",
+  "Atama: düğmeye basın ya da kolu oynatın": "Asignar: pulse un botón o mueva una palanca",
+  "Düğmeye basın…": "Pulse un botón…",
+  "Kolu yukarı / sağa itin…": "Empuje la palanca arriba / a la derecha…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "Tipo de partida",
   "Halka yarışı": "Carrera de anillos",

@@ -2171,6 +2171,18 @@ registerCatalog('en', {
   "Kilitli angajmanla önleme bonusu +{p}": "Locked-engagement intercept bonus +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "Space: lock / engage while a target box is on screen",
   "Hedef kilidi (angajman)": "Target lock (engagement)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "Controller input sensitivity",
+  "Genel ölçek": "Overall scale",
+  "Tutum eksenleri (gaz hariç)": "Attitude axes (throttle excluded)",
+  "Eksen ölçeği": "Axis scale",
+  "giriş {i} → çıkış {o}": "in {i} → out {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "Applies only to this physical controller; the ⚙ Sensitivity curve (shared output curve with the virtual sticks and keyboard) follows. Dashed orange: both combined.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "Plane with RC transmitter throttle: curve from idle to full (idle always reachable)",
+  "Algıla": "Detect",
+  "Atama: düğmeye basın ya da kolu oynatın": "Assign: press a button or move a stick",
+  "Düğmeye basın…": "Press a button…",
+  "Kolu yukarı / sağa itin…": "Push the stick up / right…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "Match type",
   "Halka yarışı": "Ring race",

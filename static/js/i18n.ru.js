@@ -5189,6 +5189,18 @@ registerCatalog('ru', {
   "Kilitli angajmanla önleme bonusu +{p}": "Бонус за перехват с захватом +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "Пробел: захват / атака, когда рамка цели на экране",
   "Hedef kilidi (angajman)": "Захват цели (атака)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "Чувствительность ввода контроллера",
+  "Genel ölçek": "Общий масштаб",
+  "Tutum eksenleri (gaz hariç)": "Оси ориентации (кроме газа)",
+  "Eksen ölçeği": "Масштаб оси",
+  "giriş {i} → çıkış {o}": "вход {i} → выход {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "Применяется только к этому физическому контроллеру; затем действует кривая ⚙ Чувствительность (общая выходная кривая с виртуальными стиками и клавиатурой). Оранжевый пунктир: обе вместе.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "Самолёт с газом от RC-передатчика: кривая от холостого хода до полного газа (холостой ход всегда достижим)",
+  "Algıla": "Определить",
+  "Atama: düğmeye basın ya da kolu oynatın": "Назначение: нажмите кнопку или сдвиньте стик",
+  "Düğmeye basın…": "Нажмите кнопку…",
+  "Kolu yukarı / sağa itin…": "Отклоните стик вверх / вправо…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "Тип матча",
   "Halka yarışı": "Гонка через кольца",

@@ -2714,8 +2714,31 @@ Kullanıcı isteği: "Tüm simülasyonlarda sanal kumanda açık gelsin. Tarayı
   sonraki / önceki mod, 12 / 13 yön = ch5 ±. `rc` (eşleme '' — EdgeTX / OpenTX / Radiomaster USB joystick): X kanatçık, Y irtifa (ters), Z gaz, Rx
   istikamet, ölü bölge %3, düğme ataması yok. Panel: ölü bölge, eksen başına dizin + Ters (canlı çubuk), düğme başına dizin (basılınca yeşil),
   Varsayılana dön. SIMUMAV menüsündeki gamepad gezinmesi (`menu/index.js`) yalnız menü sayfasında yoklar; uçuş ekranıyla çakışmaz.
-- **Testler**: `node tests/test_flightsim_gamepad.mjs` (ölü bölge, eşleme + ters çevirme, ayar kalıcılığı, düğme kenarları, sahte gamepad ile
-  RC kanalları, dokunma önceliği, uçak gaz hızı, kara aracı, lazyThr, 6 + 7 dil), `node tests/test_simumav_rc.mjs`.
+- **Kumanda girdisi hassasiyeti** (panelde "Kumanda girdisi hassasiyeti"; `fs.pad.cfg` profil başına `scale` + `sens.{thr,yaw,pitch,roll}.{rate,expo}`;
+  eski kayıt / eksik alan → %100 / expo 0 = kimlik, davranış değişmez): ölü bölgeden ve ters çevirmeden SONRA `padCurve`: expo
+  `y = (1−e)·x + e·x³` (%0–80; merkezde yumuşak, uçta tam) → × eksen ölçeği (%25–150) × genel ölçek (%25–150) → ±1 kırpma (>%100: tam çıkışa daha
+  kısa kolda ulaşılır). Genel ölçek tutum eksenlerine (sapma / yunuslama / yatış; kara aracında direksiyon) uygulanır, **gaza uygulanmaz** (RC "rate"
+  geleneği: askı / rölanti noktası kaymaz); gazın yalnız kendi eksen ölçeği + expo'su vardır. Gaz kipleri korunur: kopter / kara aracı simetrik
+  (merkez = askı / dur); uçak + standart gamepad yaylı kol → eğri HIZA uygulanır; uçak + RC verici MUTLAK tek yönlü → `padThrAbs` eğriyi
+  rölanti…tam (0…1) aralığında uygular, rölanti (−1 → 1000 µs) her ayarda ulaşılır (`state().thrAbs`, `virtualRC` uçakta bunu kullanır).
+  Kara aracında sekmeler yalnız Gaz + Direksiyon (`vehicle: 'rover'`), genel ölçek gizli.
+  **§27.1 ⚙ Hassasiyet ile ilişki — iki katman, çakışmaz**: bu ayar YALNIZ fiziksel kumandanın kolunu, eksen değeri sanal kumandaya yazılmadan
+  önce şekillendirir (girdi katmanı); ⚙ Hassasiyet (`fs.rc.feel`) sanal çubuk, klavye ve kumanda için ORTAK çıkış eğrisidir (kanal PWM'i). Panelde
+  ayrı başlık ("Kumanda girdisi hassasiyeti") + açıklama; SVG önizlemede mavi = kumanda girdi eğrisi, kesikli turuncu = ⚙ ile birlikte
+  (`feelShape` = oturumun `rcShape`'i; ⚙ değişince `refreshCurve()`), kesikli gri = doğrusal; sarı nokta + "giriş → çıkış" canlı.
+- **Canlı gösterge + Algıla** (panel açıkken `requestAnimationFrame` döngüsü `padFrame`; panel kapalıyken döngü yok, kontrol yoklaması 20 Hz
+  `setInterval` ile ayrı): basılı düğmenin satırı + numara rozeti yeşil halka / parıltı ile PARLAR (bırakınca kısa geçişle söner; "Canlı" şeridinde
+  tüm düğme rozetleri), oynatılan eksenin satırı hafif mavi parlar + çubuk (eğrili çıkış) + beyaz işaret (ham giriş), eksen sekmesi de parlar.
+  Satır başına **Algıla**: düğmede "Düğmeye basın…" → atama başlarken basılı olmayan ilk basılan düğme anında atanır (aynı düğme başka eylemdeyse o
+  eylem boşa düşer); eksende "Kolu yukarı / sağa itin…" → tabandan ≥ 0,5 oynatılan en büyük eksen (`padLearnAxis`; ham değer azaldıysa Ters),
+  aynı eksen başka satırdaysa boşa düşer. Atanan satır sarı onay parlaması; atama sırasında ve düğme bırakılana dek o basış eylem TETİKLEMEZ
+  (`muted`); Esc önce atamayı bırakır. `prefers-reduced-motion` → geçiş / nabız yok. Mobilde (≤ 760 px) panel ☰ menüsünün dışına (tam ekran öğesi
+  ya da body) taşınır, ekrana sığan sabit katman (`.fs-pad-pop.mob`).
+- **Testler**: `node tests/test_flightsim_gamepad.mjs` (ölü bölge, eşleme + ters çevirme, ayar kalıcılığı, düğme kenarları, hassasiyet / expo /
+  ölçek / kırpma / sınırlar, eski kayıt uyumu, gazda genel ölçek yok, uçak mutlak gazı, eksen algılama, sahte gamepad ile RC kanalları, dokunma
+  önceliği, uçak gaz hızı, kara aracı, lazyThr, 6 + 7 dil), `node tests/test_simumav_rc.mjs`. Görsel: `RCPAD_TARGET=hepgo|simumav
+  ./.venv/bin/python -m tests.padcfg_shots` (panel, basılı düğme parlaması, eğri önizleme, Algıla, rAF yalnız açıkken, RC'ye yansıma; masaüstü +
+  390×844 mobil → `/tmp/padcfg-shots`).
 
 ## 38. Kumanda açıkken göstergeler ince ilerleme çubukları (`flightsim_gtheme.js` CSS; HEPGO + SIMUMAV ortak)
 Kullanıcı isteği: sanal ya da fiziksel kumanda aktifken ortadaki yuvarlak kadranlar çubukların arasında yer kaplamasın. `.fs-stage.rc-on` iken

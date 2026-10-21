@@ -298,7 +298,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     h('option', { value: '' }, 'Mod…'), modes.map(mm => h('option', { value: mm }, mm)));
   const LAUNCH_BTN = { ramp: 'Fırlat', vehicle: 'Aracı sür', wheels: 'Kalkış', hand: 'Elden at', pod4: 'Fırlat', pod8: 'Fırlat', tube: 'Fırlat', handheld: 'Fırlat' };
   // HEPGO §27.1 kumanda hassasiyeti (⚙ panel: eksen başına oran / expo / ölü bölge; localStorage fs.rc.feel; rcfeel.* i18n)
-  const rcFeel = MFeel.createRcFeelPanel(stage, { tr, keyed: true, plane: type === 'sabit_kanat' || type === 'vtol', rover, onChange: () => { rcShape = rcFeel.shaper(); } });   // §15: direksiyon + gaz
+  const rcFeel = MFeel.createRcFeelPanel(stage, { tr, keyed: true, plane: type === 'sabit_kanat' || type === 'vtol', rover, onChange: () => { rcShape = rcFeel.shaper(); padCtl?.refreshCurve(); } });   // §15: direksiyon + gaz; HEPGO §37 kumanda paneli birleşik eğri
   let rcShape = rcFeel.shaper();
   // HEPGO §29.6 uçuş denetimi (panel açıkken de görünür): mod seçici (F) + DISARM (X; sabit kanatta havada motor kesme → süzülme, kopterde onaylı)
   const fltKind = MFlt.modeKind(type);
@@ -310,7 +310,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     cmd: (name, params = {}) => cmd(name, params).then(r => { if (!r?.ok) throw new Error(r?.error || name); return r; }), onEvent: (t, sev) => addEvent(t, sev) });
   // HEPGO §37 fiziksel kumanda (Gamepad API → sanal kumandanın RC yolu; pad.* 7 dil): bağlanınca alt bantta simge + ayar paneli; düğmeler ARM / DISARM / mod / ch5
   const padT = MPad.makePadT(tr, true);
-  const padCtl = MPad.createGamepadCtl({ tr, keyed: true,
+  const padCtl = MPad.createGamepadCtl({ tr, keyed: true, vehicle: rover ? 'rover' : (type === 'sabit_kanat' || type === 'vtol') ? 'plane' : 'copter', feelShape: (k, v) => rcShape(k, v),   // §37 girdi hassasiyeti + ⚙ ortak eğri
     onConnect: i => { try { toast(padT('pad.connected', { n: i.id })); addEvent(padT('pad.connected', { n: i.id })); if (!rc) rcToggle({ auto: true }); } catch { /* oturum kurulumu sürüyor: varsayılan açılış zaten açar */ } },
     onDisconnect: i => { toast(padT('pad.disconnected', { n: i.id })); addEvent(padT('pad.disconnected', { n: i.id }), 'warning'); },
     onAction: a => {

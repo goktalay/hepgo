@@ -5189,6 +5189,18 @@ registerCatalog('de', {
   "Kilitli angajmanla önleme bonusu +{p}": "Bonus für Abfangen mit Aufschaltung +{p}",
   "Boşluk: hedef kutusu ekrandayken kilit / angajman": "Leertaste: Aufschalten / Angriff, solange ein Zielrahmen sichtbar ist",
   "Hedef kilidi (angajman)": "Zielaufschaltung (Angriff)",
+  // Uçuş simülatörü §37 kumanda girdisi hassasiyeti + algılama
+  "Kumanda girdisi hassasiyeti": "Eingangsempfindlichkeit des Controllers",
+  "Genel ölçek": "Gesamtskalierung",
+  "Tutum eksenleri (gaz hariç)": "Lageachsen (ohne Gas)",
+  "Eksen ölçeği": "Achsenskalierung",
+  "giriş {i} → çıkış {o}": "Eingang {i} → Ausgang {o}",
+  "Yalnız bu fiziksel kumandaya uygulanır; ardından ⚙ Hassasiyet (sanal çubuk ve klavyeyle ortak çıkış eğrisi) gelir. Kesikli turuncu: ikisi birlikte.": "Gilt nur für diesen physischen Controller; danach folgt die ⚙ Empfindlichkeit (gemeinsame Ausgangskurve mit virtuellen Sticks und Tastatur). Gestrichelt orange: beide zusammen.",
+  "Uçakta RC verici gazı: eğri rölantiden tama (rölanti hep ulaşılır)": "Flugzeug mit RC-Sender-Gas: Kurve von Leerlauf bis Vollgas (Leerlauf immer erreichbar)",
+  "Algıla": "Erkennen",
+  "Atama: düğmeye basın ya da kolu oynatın": "Zuweisen: Taste drücken oder Stick bewegen",
+  "Düğmeye basın…": "Taste drücken…",
+  "Kolu yukarı / sağa itin…": "Stick nach oben / rechts drücken…",
   // Uçuş simülatörü §41 it dalaşı
   "Karşılaşma türü": "Spieltyp",
   "Halka yarışı": "Ringrennen",

@@ -5162,4 +5162,7 @@ registerCatalog('es', {
   "Eksenler": "Ejes",
   "Düğmeler": "Botones",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "Modo 2: palanca izquierda acelerador / guiñada, palanca derecha cabeceo / alabeo. Mientras las palancas no estén en neutro, el mando tiene prioridad; la palanca virtual tocada gana en su lado.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "Menú",
+  "Menüyü kapat": "Cerrar menú",
 });

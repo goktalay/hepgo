@@ -1041,5 +1041,7 @@
   "pad.buttons": "Buttons",
   "pad.reset": "Reset to defaults",
   "pad.close": "Close",
-  "pad.hint": "Mode 2: left stick throttle / yaw, right stick pitch / roll. While the sticks are off-centre the controller has priority; a touched virtual stick wins on its side."
+  "pad.hint": "Mode 2: left stick throttle / yaw, right stick pitch / roll. While the sticks are off-centre the controller has priority; a touched virtual stick wins on its side.",
+  "mob.menu": "Menu",
+  "mob.close": "Close menu"
 }

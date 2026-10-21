@@ -5162,4 +5162,7 @@ registerCatalog('de', {
   "Eksenler": "Achsen",
   "Düğmeler": "Tasten",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "Mode 2: linker Stick Gas / Gieren, rechter Stick Nicken / Rollen. Solange die Sticks nicht neutral sind, hat der Controller Vorrang; ein berührter virtueller Stick gewinnt auf seiner Seite.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "Menü",
+  "Menüyü kapat": "Menü schließen",
 });

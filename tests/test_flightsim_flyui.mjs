@@ -8,6 +8,8 @@ import { WIN_MIN_W, avoidRects, boundsOf, clampRect, fromFrac, normWin, overlaps
 import { GAUGE_THEMES, GAUGE_THEME_DEFAULT, GAUGE_THEME_KEYS, GTHEME_TEXTS, gaugeFrac, gaugeThemePreviewSvg, isGaugeTheme, loadGaugeTheme, makeGThemeT, nextGaugeTheme, normGaugeTheme, saveGaugeTheme } from '../static/js/modules/flightsim_gtheme.js';
 import { INTRO, INTRO_TEXTS, beepPlan, countdownState, hepgoSound, introEase, introPose } from '../static/js/modules/flightsim_intro.js';
 import { channelsOf } from '../static/simumav/app/fly/rc.js';
+import { MOBILE_MQ, MOB_TEXTS, isMobileEnv } from '../static/js/modules/flightsim_mobile.js';
+import { readFileSync } from 'node:fs';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log('  ✓', name); };
@@ -151,6 +153,27 @@ test('ses tercihi: HEPGO fs.audio.on / fs.audio.vol (kapalı → sessiz)', () =>
   const st = mem(); assert.deepEqual(hepgoSound(st), { on: true, vol: 0.7 });
   st.setItem('fs.audio.on', '0'); st.setItem('fs.audio.vol', '40'); assert.deepEqual(hepgoSound(st), { on: false, vol: 0.4 });
   assert.ok(INTRO_TEXTS.every(([k, v]) => k.startsWith('intro.') && v));
+});
+
+test('§38 kumanda açıkken ilerleme çubukları: rc-on kuralları gösterge tema CSS\'inde (kadran svg gizli, çubuk görünür, Göstergesiz → yok)', () => {
+  const src = readFileSync(new URL('../static/js/modules/flightsim_gtheme.js', import.meta.url), 'utf8');
+  assert.ok(/\.fs-stage\.rc-on \.fs-gauge-dial>svg[^{]*\{display:none!important\}/.test(src), 'kadran svg gizli');
+  assert.ok(/\.fs-stage\.rc-on \.fs-gauge-bar\{order:2;display:block!important/.test(src), 'doluluk çubuğu');
+  assert.ok(/\.fs-stage\.rc-on \.fs-gauges\[data-gtheme="none"\]\{display:none!important\}/.test(src), 'Göstergesiz');
+});
+test('§39 mobil menü: ortam sorgusu (dar / dokunmatik), metinler HEPGO 6 + SIMUMAV 7 dil, iki istemci bağlar', () => {
+  assert.ok(isMobileEnv(q => ({ matches: q === MOBILE_MQ })) && !isMobileEnv(() => ({ matches: false })) && !isMobileEnv(null));
+  assert.ok(/max-width: 820px/.test(MOBILE_MQ) && /pointer: coarse/.test(MOBILE_MQ));
+  for (const l of ['tr', 'en', 'de', 'fr', 'es', 'ru', 'ar']) {
+    const d = JSON.parse(readFileSync(new URL(`../static/simumav/app/i18n/${l}.json`, import.meta.url), 'utf8'));
+    for (const [k] of MOB_TEXTS) assert.ok(d[k], `${l} ${k}`);
+  }
+  for (const f of ['i18n.en.extra2.js', 'i18n.de.js', 'i18n.fr.js', 'i18n.es.js', 'i18n.ru.js', 'i18n.ar.js']) {
+    const src = readFileSync(new URL(`../static/js/${f}`, import.meta.url), 'utf8');
+    for (const [, v] of MOB_TEXTS) assert.ok(src.includes(JSON.stringify(v) + ':'), `${f} ${v}`);
+  }
+  assert.ok(/createMobileMenu\(stage, \{ tr \}\)/.test(readFileSync(new URL('../static/js/modules/flightsim.js', import.meta.url), 'utf8')));
+  assert.ok(/MMob\.createMobileMenu\(stage, \{ tr, keyed: true \}\)/.test(readFileSync(new URL('../static/simumav/app/fly/session.js', import.meta.url), 'utf8')));
 });
 
 console.log(`\n${n} test geçti`);

@@ -2143,4 +2143,7 @@ registerCatalog('en', {
   "Eksenler": "Axes",
   "Düğmeler": "Buttons",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "Mode 2: left stick throttle / yaw, right stick pitch / roll. While the sticks are off-centre the controller has priority; a touched virtual stick wins on its side.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "Menu",
+  "Menüyü kapat": "Close menu",
 });

@@ -40,6 +40,7 @@ import { createLauncherUi } from './flightsim_scope_ui.js';   // §27 hücre env
 import { defendStateAt } from './flightsim_gcs.js';   // §26 kayıtta görev şeridi durumu
 import { createFlightBar, flightModesFor, modeKind } from './flightsim_fltbar.js';
 import { createGamepadCtl, makePadT } from './flightsim_gamepad.js';   // §37 fiziksel kumanda (Gamepad API → sanal kumandanın RC yolu)
+import { createMobileMenu } from './flightsim_mobile.js';   // §39 telefonda üst şerit + alt bant ☰ menüsünde
 import { createServoTrigger } from './flightsim_servotrig.js';   // §34 servo tetik: kanal + PWM eşiği + gecikme + Dinle (mantık sunucuda); çarpınca otomatik Bitir → özet   // §29.6 alt bant: uçuş modu seçici (F) + DISARM/motor kes (X), tüm kamera kiplerinde
 import { createRcFeelPanel } from './flightsim_rcfeel.js';   // §27.1 sanal kumanda hassasiyeti (oran / expo / ölü bölge)
 import { createGaugeThemePicker, gaugeThemeLabel } from './flightsim_gtheme.js';   // §27.3 gösterge tasarımı (sihirbaz kartları; uçuşta createPowerGauges)
@@ -1385,6 +1386,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   const gauges = createPowerGauges(stage, { h, tr, getSettings: () => session.power || null, getSummary: () => clientPower?.summary() || null, plane: isPlane(type), rover, getCollision: () => !crash.hidden,
     onTheme: t => addEvent(tr('Gösterge tasarımı: {t}', { t: tr(gaugeThemeLabel(t)) })) });   // §27.3 tasarım (sihirbaz seçimi; uçuşta G / kadran kutusu)
   stage.append(mount, msg, crash, hud, ...(mp ? [mp] : []), events, sticks, gauges.el, bar, nav, ended);
+  const mobMenu = createMobileMenu(stage, { tr });   // §39 mobil: üst şerit + alt bant varsayılan gizli, ☰ ile açılır
   if (attrib) stage.append(attrib);
   // §31 rüzgâr göstergesi (sol üst; baş/yan/kuyruk bileşenleri uçağın burnuna göre, akış çizgileri aç/kapa, yazma izniyle uçuşta rüzgâr) +
   // rampa yön/açı paneli (rampaya tıklayınca; ARM öncesi; sunucu `launch_aim` — yön değişirse SITL yeniden konuşlandırılır)
@@ -1971,7 +1973,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     socket?.close();
     milHud?.dispose(); osd?.dispose(); camPip?.dispose(); camCtl.dispose(); siteUi?.dispose(); defHud?.dispose(); launcherUi?.dispose();   // §26 + §27
     if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
-    padCtl?.dispose(); audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose(); srvTrig?.dispose(); matchUi?.dispose(); clearTimeout(autoEndTimer);
+    padCtl?.dispose(); mobMenu.dispose(); audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose(); srvTrig?.dispose(); matchUi?.dispose(); clearTimeout(autoEndTimer);
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;
     if (player && window.__fsPlayer === player) delete window.__fsPlayer;

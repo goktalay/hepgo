@@ -5162,4 +5162,7 @@ registerCatalog('ru', {
   "Eksenler": "Оси",
   "Düğmeler": "Кнопки",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "Mode 2: левый стик — газ / рыскание, правый — тангаж / крен. Пока стики не в нейтрали, контроллер имеет приоритет; касание виртуального стика побеждает на его стороне.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "Меню",
+  "Menüyü kapat": "Закрыть меню",
 });

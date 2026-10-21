@@ -1041,5 +1041,7 @@
   "pad.buttons": "Düğmeler",
   "pad.reset": "Varsayılana dön",
   "pad.close": "Kapat",
-  "pad.hint": "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır."
+  "pad.hint": "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.",
+  "mob.menu": "Menü",
+  "mob.close": "Menüyü kapat"
 }

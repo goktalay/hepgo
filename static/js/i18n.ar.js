@@ -5162,4 +5162,7 @@ registerCatalog('ar', {
   "Eksenler": "المحاور",
   "Düğmeler": "الأزرار",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "الوضع 2: العصا اليسرى للخانق / الانعراج، واليمنى للانحدار / الدوران. ما دامت العصي خارج الوضع المحايد فالأولوية لوحدة التحكم؛ والعصا الافتراضية الملموسة تتقدم في جهتها.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "القائمة",
+  "Menüyü kapat": "إغلاق القائمة",
 });

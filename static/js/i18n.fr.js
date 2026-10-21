@@ -5162,4 +5162,7 @@ registerCatalog('fr', {
   "Eksenler": "Axes",
   "Düğmeler": "Boutons",
   "Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.": "Mode 2 : manche gauche gaz / lacet, manche droit tangage / roulis. Tant que les manches ne sont pas au neutre, la manette est prioritaire ; un manche virtuel touché l’emporte de son côté.",
+  // Uçuş simülatörü §39 mobil menü
+  "Menü": "Menu",
+  "Menüyü kapat": "Fermer le menu",
 });

@@ -2699,7 +2699,7 @@ seçimi tek kapsüle. Yalnız sunum değişti; komutlar, tercihler ve kısayolla
 ## 37. Sanal kumanda varsayılan açık + fiziksel kumanda (Gamepad API) (`static/js/modules/flightsim_gamepad.js`; HEPGO + SIMUMAV ortak)
 Kullanıcı isteği: "Tüm simülasyonlarda sanal kumanda açık gelsin. Tarayıcıya takılan fiziksel kumanda / joystick tanınsın ve aracı RC olarak kontrol etsin."
 - **Varsayılan açık**: yazma izni olan canlı oturumda (karşılaşma §33 dahil) sanal kumanda kendiliğinden açılır; kullanıcı 🎮 ile kapatırsa tercih
-  hatırlanır (HEPGO `localStorage fs.rc.on = '0'`, SIMUMAV `sm.rcOn = false`); ilk açılış / yeni kullanıcıda açık. Kayıttan oynatmada kumanda yok.
+  hatırlanır (HEPGO `localStorage caymaz.fs.rc.on = '0'`, SIMUMAV `sm.rcOn = false`); ilk açılış / yeni kullanıcıda açık. Kayıttan oynatmada kumanda yok.
   Otomatik açılışta kopterde gaz kanalı (ch3) ilk gaz girdisine (W/S, Boşluk, sol çubuk, fiziksel kumanda gazı) dek **0 = dokunma** gönderilir
   (`virtualRC lazyThr`): yerde 1500 µs gaz override'ı ARM ön denetimini ("Throttle too high") bozmasın; uçakta gaz zaten 1000 (rölanti). Sahne,
   kumandadan sonra kurulursa klavye kilidi (`setKeyboardLock`) sahne hazır olunca uygulanır.
@@ -2716,3 +2716,24 @@ Kullanıcı isteği: "Tüm simülasyonlarda sanal kumanda açık gelsin. Tarayı
   Varsayılana dön. SIMUMAV menüsündeki gamepad gezinmesi (`menu/index.js`) yalnız menü sayfasında yoklar; uçuş ekranıyla çakışmaz.
 - **Testler**: `node tests/test_flightsim_gamepad.mjs` (ölü bölge, eşleme + ters çevirme, ayar kalıcılığı, düğme kenarları, sahte gamepad ile
   RC kanalları, dokunma önceliği, uçak gaz hızı, kara aracı, lazyThr, 6 + 7 dil), `node tests/test_simumav_rc.mjs`.
+
+## 38. Kumanda açıkken göstergeler ince ilerleme çubukları (`flightsim_gtheme.js` CSS; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: sanal ya da fiziksel kumanda aktifken ortadaki yuvarlak kadranlar çubukların arasında yer kaplamasın. `.fs-stage.rc-on` iken
+(sanal kumanda açık; fiziksel kumanda §37 de bu yoldan) `.fs-gauges` alt ortada TEK kutu: her gösterge bir satır — etiket (HIZ / MOTOR / YAKIT /
+BATARYA) · doluluk çubuğu (`.fs-gauge-bar` `--f` = kadran ibresi doluluğu `gaugeFrac`) · değer + birim; hız ve motor üstte. Renkler seçili temadan
+(cam kokpit `--gl-*`, diğerleri `--fsg-*`; askerî yeşil parıltı; düşük sarı, kritik / boş kırmızı); "Göstergesiz" temada hiç görünmez. Kutu 300 px
+(dar ekranda `100% − 24 px`), çubukların ortasında (`bottom: 104px`); ≤ 1180 px'te sanal çubuklar kenarlara alınır (arada yer kalsın), ≤ 600 px'te
+kutu çubukların üstüne çıkar. Kumanda kapanınca kadranlar aynen döner (yalnız CSS; DOM ve güncelleme aynı). Ayrıntı kutusu (tıklayınca) çalışır.
+Görsel: `RCPAD_TARGET=hepgo|simumav ./.venv/bin/python -m tests.rcpad_shots` → `/tmp/fltbar-shots/rcpad-*` (önce: `rcpad-once-*`).
+
+## 39. Mobil: üst şerit + alt bant ☰ menüsünde (`static/js/modules/flightsim_mobile.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: telefonda simülasyon ekranında üst başlık ve alt bant varsayılan gizli; şık tek bir yüzen düğme ile açılır menü.
+- Ortam sorgusu `MOBILE_MQ`: `(max-width: 820px)` ya da dokunmatik (`pointer: coarse`) + genişlik ≤ 1024 px ya da yükseklik ≤ 500 px (yatay telefon).
+  Eşleşince `.fs-stage.fs-mob` + `body.fs-mob`: `.fs-nav` ve `.fs-bar` gizli, HEPGO uygulama başlığı / alt çubuğu gizli, sahne tüm ekranı kaplar,
+  `--fs-bar-h: 0` (panel, kadran, PiP yerleşimleri). Masaüstü değişmez.
+- Sol üstte `.fs-mob-btn` (46 px, cam görünüm; `env(safe-area-inset-*)` çentik payı): ☰ → menü açık (✕): üst şerit üstte kapsül (Geri, başlık, durum,
+  hız, tam ekran), alt bant altta çekmece (40 px dokunma hedefleri, alt güvenli alan payı); arka plan karartılır. Tekrar basınca, arka plana
+  dokununca ya da Esc ile kapanır. Bant içindeki açılır menüler (görünüm, servo paneli, mod, ses) çekmecenin üstünde açılır. Rüzgâr göstergesi
+  düğmenin altına iner. Metinler "Menü" / "Menüyü kapat" (HEPGO 6 dil, SIMUMAV `mob.*` 7 dil).
+- Görsel (Chromium mobil emülasyonu: `is_mobile` + `has_touch`, iPhone UA; WebKit kurulu değil): 390×844, 412×915, yatay 844×390 — kapalı / açık,
+  taşma denetimi (`tests.rcpad_shots`).

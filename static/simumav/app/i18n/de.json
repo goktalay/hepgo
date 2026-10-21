@@ -1041,5 +1041,7 @@
   "pad.buttons": "Tasten",
   "pad.reset": "Auf Standard zurücksetzen",
   "pad.close": "Schließen",
-  "pad.hint": "Mode 2: linker Stick Gas / Gieren, rechter Stick Nicken / Rollen. Solange die Sticks nicht neutral sind, hat der Controller Vorrang; ein berührter virtueller Stick gewinnt auf seiner Seite."
+  "pad.hint": "Mode 2: linker Stick Gas / Gieren, rechter Stick Nicken / Rollen. Solange die Sticks nicht neutral sind, hat der Controller Vorrang; ein berührter virtueller Stick gewinnt auf seiner Seite.",
+  "mob.menu": "Menü",
+  "mob.close": "Menü schließen"
 }

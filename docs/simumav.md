@@ -782,8 +782,10 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
 - Görsel: `.venv/bin/python -m tests.simumav_match_e2e` → `/tmp/smmatch-shots/` (seçim ekranı, kurucu halkalar / davet-şifre, salon bağlantı+şifre,
   oturumsuz davet → giriş, davetli şifre ekranı + yanlış şifre, salon hazır, hazırlık bekleme, yarış HUD'u (iki taraf), sonuç (iki taraf), salonda sonuç).
 
-## 19. Alt bant kapsülleri, sanal kumanda varsayılan açık, fiziksel kumanda — HEPGO docs/ucus-simulatoru.md §36–§37'nin SIMUMAV karşılığı
+## 19. Alt bant kapsülleri, sanal kumanda varsayılan açık, fiziksel kumanda, kumandada çubuk göstergeler, mobil menü — HEPGO docs/ucus-simulatoru.md §36–§39'un SIMUMAV karşılığı
 - `fly/session.js` `loadSim` listesinde `flightsim_gamepad.js` (`MPad`): bağlanan gamepad / USB RC verici sanal kumandanın RC yoluna (`rc.js virtualRC`
   `pad`, `lazyThr`, `bumpCh5`) beslenir; alt bantta Kumanda simgesi + eşleme paneli; metinler `pad.*` (7 dil). Sanal kumanda varsayılan açık
   (`sm.rcOn`; kullanıcı kapatırsa hatırlanır). Ayrıntılar HEPGO §37.
+- Kumanda açıkken kadranlar alt ortada ince ilerleme çubukları (HEPGO §38; `power.css` kadranları üzerine `flightsim_gtheme.js` CSS'i). Mobilde
+  (`flightsim_mobile.js`, `MMob`; HEPGO §39) üst şerit + alt bant ☰ menüsünde; `mob.*` 7 dil.
 

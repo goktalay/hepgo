@@ -33,7 +33,7 @@ export function lineChart(o) {
   const wrap = h('figure', { class: 'chart' }, h('figcaption', null, o.title,
     o.unit ? h('span', { class: 'unit' }, ` (${o.unit})`) : null));
   if (!all.length) {
-    wrap.append(h('div', { class: 'chart-empty' }, 'Logda bu veri yok'));
+    wrap.append(h('div', { class: 'chart-empty' }, o.empty || 'Logda bu veri yok'));
     return wrap;
   }
   let t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0]));
@@ -86,11 +86,11 @@ export function lineChart(o) {
 }
 
 /** Uçuş izi: yerel metrik izdüşüm, havada/yerde ayrımı, kalkış/bitiş/ev işaretleri, ölçek ve kuzey oku. */
-export function trackMap(track, home, { height = 330 } = {}) {
+export function trackMap(track, home, { height = 330, empty } = {}) {
   const W = 520, H = height, P = 22;
   const wrap = h('figure', { class: 'chart track' }, h('figcaption', null, 'Uçuş izi'));
   if (!track?.length) {
-    wrap.append(h('div', { class: 'chart-empty' }, 'Logda GPS konumu yok'));
+    wrap.append(h('div', { class: 'chart-empty' }, empty || 'Logda GPS konumu yok'));
     return wrap;
   }
   const lat0 = track[0][0], lng0 = track[0][1];

@@ -12,7 +12,7 @@ import {
 import { tabView } from './crm.js';
 import { aircraftReviewModal } from './mrp.js';
 import { render3D } from './replay3d.js';
-import { logBadge } from './tools.js';
+import { logBadge, logFormatBadge } from './tools.js';
 
 const LAUNCH = { ARAC_USTU: 'Araç Üstü', RAMPA: 'Fırlatma Rampası' };
 const NOTE_COLORS = { GORUS: 'blue', IYILESTIRME: 'purple', ARIZA: 'red', GOZLEM: 'green', DIGER: 'gray' };
@@ -25,14 +25,14 @@ export async function renderFlight(view, id, ctx, tab) {
   const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
   const kv = (k, v) => (v || v === 0 ? [h('dt', null, k), h('dd', null, v)] : null);
 
-  // ---- Uçuş logu yükleme (.bin / .log; yalnızca yerel ağdan)
+  // ---- Uçuş logu yükleme (.bin / .log / .tlog; yalnızca yerel ağdan)
   const logCard = () => {
-    const input = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG', style: { height: 'auto', padding: '6px' } });
+    const input = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();
     const send = h('button', { class: 'btn primary', type: 'button' }, svgIcon(icons.upload), log ? 'Yeni Log Yükle' : 'Logu Yükle');
     send.addEventListener('click', async () => {
       const file = input.files?.[0];
-      if (!file) { toastError(new Error('Önce .bin dosyasını seçin')); return; }
+      if (!file) { toastError(new Error('Önce log dosyasını seçin (.bin / .log / .tlog)')); return; }
       send.disabled = true;
       try {
         const signal = progress.start();
@@ -51,13 +51,14 @@ export async function renderFlight(view, id, ctx, tab) {
       h('div', { class: 'fl-log-head' },
         h('b', null, 'Uçuş logu'),
         log ? logBadge(log.status) : h('span', { class: 'badge gray' }, 'Yüklenmedi'),
+        log ? logFormatBadge(log) : null,
         log ? h('span', { class: 'small muted' }, `${log.file_name} · ${fmtDateTime(log.uploaded_at)}`) : null),
       log?.status === 'HATA' ? h('div', { class: 'alert err' }, log.error || 'Log analiz edilemedi') : null,
       log?.status === 'ISLENIYOR' ? h('div', { class: 'small muted' }, 'Log analiz ediliyor; hazır olunca sayfa yenilenir.') : null,
       d.can.upload ? (ctx.meta.remote ? localUploadNotice(ctx.meta, 'Uçuş logu')
         : h('div', { class: 'fl-log-up' }, input, send, progress,
           h('div', { class: 'small muted' }, log ? 'Yeni log yüklerseniz rapor ve 3B izleme yeniden oluşturulur. En fazla 2 GB.'
-            : 'ArduPilot .bin (ya da .log) dosyasını seçin. Yüklenince uçuş raporu ve 3B izleme hazırlanır.')))
+            : 'ArduPilot .bin (ya da .log) ya da MAVLink telemetri kaydı (.tlog) seçin. Yüklenince uçuş raporu ve 3B izleme hazırlanır.')))
         : h('div', { class: 'small muted' }, t.status === 'BASLANGIC' ? 'Log, görev başladıktan sonra yüklenebilir.'
           : 'Log yükleme yetkisi saha sorumlusu ve pilottadır.'));
   };

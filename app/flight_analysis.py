@@ -3,7 +3,7 @@
 Neden: analiz sunucu sürecinin içinde (iş parçacığında) çalışınca 700 MB'lık .BIN'de ~2 dk GIL tutuluyor ve süreç ~2,4 GB'a
 çıkıyordu; aynı makinedeki firma servisleri ağırlaşıyordu. Şimdi:
   * Her analiz ayrı süreçte: `python -m app.flightlog analyze <log> <çıktı.json> <ebeveyn pid>` (nice, bellek tavanı RLIMIT_AS, BLAS tek
-    iş parçacığı, ebeveyn ölürse PDEATHSIG ile kendini kapatır). İkili .BIN hızlı akış okuyucuyla (dataflash), metin .log / .tlog pymavlink.
+    iş parçacığı, ebeveyn ölürse PDEATHSIG ile kendini kapatır). İkili .BIN hızlı akış okuyucuyla (dataflash), metin .log pymavlink, .tlog app/tlog.py (§8.6).
   * İstek iş parçacığı beklemez: `start(id)` yalnız kuyruğa ekler. Aynı anda en çok FLIGHTLOG_ANALIZ_PARALEL (vars. 1) analiz; kalanlar
     sırada bekler (status ISLENIYOR, progress NULL = sırada).
   * İlerleme: alt süreç `P <yüzde>` satırları yazar → flight_logs.progress (0…100; en çok saniyede bir yazılır) + bellekteki durum().

@@ -14,7 +14,7 @@ import { clock } from '../chart.js';
 import { qrSvgEl } from '../qr.js';
 import { render3D } from './replay3d.js';
 import { renderFlight } from './flight.js';
-import { logBadge, renderReportView } from './tools.js';
+import { logBadge, logFormatBadge, renderReportView } from './tools.js';
 import * as droneMod from './drone.js';
 
 const DRONE_PAGES = ['drones', 'live', 'routes', 'bridges'];   // Dron Yönetimi alt sayfaları (#/field/drones …; #/field/live?task=<id>)
@@ -524,7 +524,7 @@ async function renderTask(view, id, ctx) {
       if (!Number.isInteger(port) || port < 1 || port > 65535) fail('Port 1–65535 arası olmalı');
       return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port } };
     };
-    const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG', style: { height: 'auto', padding: '6px' } });
+    const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();
     const remote = ctx.meta.remote;   // internetten bağlanıldı: video/log yalnızca yerel ağdan yüklenir
     const canUpload = can && !['BASLANGIC', 'IPTAL'].includes(t.status) && f.log_status !== 'ISLENIYOR';
@@ -547,7 +547,7 @@ async function renderTask(view, id, ctx) {
         fold('Uçuş bilgileri', [field('Fırlatma sistemi', choice), field('Uçuş notu', note)], { open: true }),
         linkFold,
         fold('Uçuş logu', h('div', null,
-          f.log_status ? h('div', { style: { marginBottom: '8px' } }, logBadge(f.log_status), ' ', h('span', { class: 'small muted' }, f.log_file || ''),
+          f.log_status ? h('div', { style: { marginBottom: '8px' } }, logBadge(f.log_status), ' ', logFormatBadge({ file_name: f.log_file }), ' ', h('span', { class: 'small muted' }, f.log_file || ''),
             f.log_status === 'TAMAM' ? [' · ', h('a', { href: `#/field/report/${f.log_id}` }, 'Raporu aç')] : null) : null,
           canUpload ? (remote ? localUploadNotice(ctx.meta, 'Uçuş logu') : [file, progress]) : h('div', { class: 'small muted' },
             t.status === 'BASLANGIC' ? 'Log, görev başladıktan sonra yüklenebilir.' : f.log_status === 'ISLENIYOR' ? 'Log analiz ediliyor…' : 'Log yükleme yetkiniz yok.'),

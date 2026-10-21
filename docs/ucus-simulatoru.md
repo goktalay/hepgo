@@ -359,8 +359,8 @@ Kullanıcı bildirimi: "Sistemde 3 saatlik gerçek bir uçuşun bin dosyası var
 Kalan sorun (§8.3 sonrası): .BIN/.tlog **yüklenince** çalışan analiz (Araçlar › Uçuş Logu Analizi, saha uçuşu logu, dron köprüsü, §19 simülatör
 kaydı — hepsi `flight_analysis.start`) pymavlink ile **sunucu sürecinin içinde** (iş parçacığı, GIL) çalışıyordu: 754 MB'lık logda 134 sn,
 sunucu RSS 2,5 GB, API gecikmesi ortalama 0,4 sn / en çok 3,3 sn (aynı makinede 7 firma servisi).
-- **Hızlı analiz (`flightlog._analyze_hizli`):** ikili DataFlash'ta `dataflash.oku(kesin=True, ofs=True, tanimsizda_dur=True)`; metin `.log` / `.tlog`
-  pymavlink'te kalır (`_analyze_pymavlink`, eski kod aynen — yalnız ilerleme geri çağrısı eklendi). Sonuç eski analizle **BİREBİR aynı JSON**:
+- **Hızlı analiz (`flightlog._analyze_hizli`):** ikili DataFlash'ta `dataflash.oku(kesin=True, ofs=True, tanimsizda_dur=True)`; metin `.log`
+  pymavlink'te kalır (`.tlog` → §8.6) (`_analyze_pymavlink`, eski kod aynen — yalnız ilerleme geri çağrısı eklendi). Sonuç eski analizle **BİREBİR aynı JSON**:
   - `kesin`: değerler pymavlink ile bit bit aynı — tamsayı biçimler int64 (Python int → JSON'da `21`, `21.0` değil; `M` işaretli), `f/g/d` float64,
     `c/C/e/E/L` = float(ham) / 100 ya da 1e7 (pymavlink bölme sırası). Metinler pymavlink gibi önce tüm alan çözülür (UTF-8, olmazsa ISO-8859-1)
     sonra NUL'da kesilir (`_metin`; NUL sonrası çöp UTF-8 değilse tüm metin ISO-8859-1).
@@ -435,6 +435,50 @@ bile görünmemeli. Saha yönetiminde uçuşun yanında 'Simüle et' diye bir d�
   404/409/403, dünya-hava-rüzgâr-sis-tohum-pist-rampa açı/yön-kamera-model korunur, Google 3B kapalı → gerçek arazi, eski satır → varsayılan +
   `launch` sütunu); `replay_testleri` güncellendi (bağımsız gerçek log listede yok, `?id=` ile var). Node: `tests/test_flightsim_wizard.mjs`
   (`isSimLog/simLogsOnly`, `simulateParam`, `simulateHref`, `wizardStartStep`). Görsel: `tests/replayfix_shots_hepgo.py` → `/tmp/replayfix-shots`.
+
+### 8.6 MAVLink telemetri kaydı (.tlog) — Uçuş Logları'na yükleme ve analiz (`app/tlog.py`)
+Mission Planner / QGroundControl'ün kaydettiği `.tlog` (her paket: 8 bayt big-endian µs zaman damgası + MAVLink v1 `0xFE` / v2 `0xFD`
+çerçevesi) `.bin` / `.log` gibi yüklenir ve analiz edilir. Boyut sınırı, yerel ağ kuralı, parça parça yükleme ve analiz kuyruğu `.bin` ile aynı.
+- **Yükleme:** `files.KINDS['flightlogs']` `.tlog` içerir; ön yüz giriş noktaları (Araçlar › Uçuş Logu Analizi `tools.js`, saha uçuşu
+  `flight.js`, saha görevi uçuş penceresi `field.js`) `accept` + metinler. **İçerik doğrulaması** (`routers/flightlogs._store` →
+  `tlog.dogrula`; ilk 2 MB): pymavlink'siz ham çerçeve tarayıcısı (`tlog.tara`; bir çerçeve, ardından gelen de geçerli başlangıçsa kabul).
+  Değilse **400** + dosya silinir, kayıt açılmaz: boş · metin ("…ikili MAVLink telemetri kaydı olmalı") · DataFlash başlığı `A3 95`
+  ("…`.bin` uzantısıyla yükleyin") · MAVLink çerçevesi yok · çerçeve var ama zaman damgası yok (ham akış). Bazı köprü kayıtlarında
+  damgasız çerçeveler araya karışır (örn. `/tmp/flsim/ornek/ornek.tlog`): kabul edilir, zaman ekseni pymavlink'in damga taramasıyla.
+- **Araç seçimi (`tlog.arac_sec`):** tüm dosyadaki HEARTBEAT sayımı; sysid 255, GCS / eş bilgisayar / gimbal / kamera / ADSB / … MAV_TYPE'ları
+  ve `MAV_AUTOPILOT_INVALID` sayılmaz; en çok HEARTBEAT'li sysid'nin en çok HEARTBEAT'li bileşeni. Yalnız o (sysid, compid) okunur
+  (STATUSTEXT aynı sysid'nin her bileşeninden). Diğerleri `summary.other_systems`.
+- **Analiz (`flightlog.analyze` → `tlog.analiz`):** `flightlog._sonuclandir` (metin `.log` yoluyla ortak son işlem; `.bin` sonuçları değişmedi —
+  `test_binanalyze` eşdeğerliği) ile **aynı JSON şeması**; ön yüz rapor/grafik/harita/3B değişmeden çalışır. Eşleme:
+
+  | Rapor | MAVLink |
+  |---|---|
+  | iz / mesafe / ev | GPS_RAW_INT (fix ≥ 3; yoksa GLOBAL_POSITION_INT) · ev HOME_POSITION, yoksa ilk konum |
+  | irtifa (eve göre) | GLOBAL_POSITION_INT.relative_alt; yoksa VFR_HUD.alt − ev irtifası |
+  | yer / hava hızı, gaz | VFR_HUD groundspeed (yoksa GPS vel) / airspeed (**yalnız** SYS_STATUS sensör bit 16 varsa; yoksa tahmindir, gösterilmez) / throttle |
+  | tutum, istenen tutum | ATTITUDE (rad → °) · NAV_CONTROLLER_OUTPUT nav_roll/nav_pitch; takip hatası her NAV anında en son ATTITUDE ile |
+  | batarya | SYS_STATUS voltage/current/remaining · BATTERY_STATUS id 0 current_consumed (mAh), energy_consumed (hJ → Wh), hücre toplamı (SYS_STATUS yoksa) |
+  | GPS | GPS_RAW_INT satellites_visible, eph/100 (HDop) |
+  | titreşim / doygunluk | VIBRATION vibration_x/y/z, clipping_0..2 (birikimli, son değer) |
+  | rüzgâr | WIND speed / direction (geldiği yön) |
+  | modlar | HEARTBEAT custom_mode değişimi; ad `_mode_names(yazılım ya da MAV_TYPE → ArduXxx)`; PX4: `interpret_px4_mode` |
+  | ARM/DISARM | HEARTBEAT base_mode bit 7 geçişleri → olay 10/11 (kayıt kurulu başladıysa başlangıç kurulu) |
+  | havada aralıkları | EXTENDED_SYS_STATE.landed_state (2/3/4); yoksa kurulu iken irtifa > 2 m ya da yer hızı > 4 m/s (≤ 3 sn atılır) |
+  | mesajlar, yazılım, kart | STATUSTEXT (önem ≤ 4 ya da uyarı kalıbı → uyarı; `sev`), "ArduXxx V…" / kart adı; yoksa AUTOPILOT_VERSION; parametre sayısı PARAM_VALUE |
+  | zaman | yer istasyonu damgası (`_timestamp`; t0 = aracın ilk mesajı; bozuk damgalar atlanır) → start/takeoff/landing UTC |
+
+  Ek alanlar: `summary.source = 'tlog'`, `sysid`, `compid`, `mav_type`, `other_systems`, `missing` (boş kalan bölümler: seri anahtarları
+  `alt/gs/as/volt/curr/vx/roll/droll/sats/hdop/wind/thr` + `errors` (DataFlash ERR/EV telemetride **hiç yok**), `energy`, `track`,
+  `messages`, `modes`). Bulgularda ERR yerine STATUSTEXT önemi: 0–2 → Kritik, 3 → Dikkat, yoksa "Kritik sistem mesajı yok".
+  **Telemetride hiç olmayan:** ERR alt sistem/kod kayıtları, EV olayları (ARM/DISARM dışında), ORGN (EKF orijini), STAT.isFlying, ham IMU
+  yüksek hızlı veri; hız çözünürlüğü yer istasyonu akış oranıyla sınırlı (genelde 1–10 Hz).
+- **Ön yüz:** listede / rapor araç çubuğunda / saha uçuş kartında biçim rozeti (`tools.logFormatBadge`: BIN mavi · LOG gri · TLOG mor);
+  raporda tlog notu (kaynak + "bu kayıtta bulunmayan: …"), "Log biçimi" satırı (sysid, diğer sistemler), boş grafiklerde "Telemetri kaydında
+  (.tlog) bu veri yok" (`lineChart`/`trackMap` `empty`). **3B oynatma** (`/api/flight-logs/{id}/replay` → `flightlog.replay` → `tlog.replay`,
+  aynı alanlar; devir RPM / ESC_TELEMETRY_1_TO_4) ve Uçuş Simülatörü kayıttan oynatma (§8, `flightsim_replay._tlog_ayristir`) yüklenen tlog ile çalışır.
+- **Testler:** `tests/test_tlog.py` (doğrulama kabul/ret, araç seçimi çok sysid/GCS/gimbal, şema = .bin, makul değerler, EXTENDED_SYS_STATE,
+  bozuk bayt + yarım paket, MAVLink1, eksik veri, replay, CLI alt süreç, HTTP tek istek + parça parça, 400'ler). Görsel uçtan uca:
+  `tests/tlog_e2e.py` (yükle → analiz TAMAM → liste rozeti + rapor + harita + 3B ekran görüntüleri → `/tmp/tlog-shots`).
 
 ## 9. Gerçek topoğrafya (`world.mode = "real"`; `app/sim_terrain.py`, ön yüz `loadRealTerrain`)
 Kullanıcı sihirbazın Dünya adımında **Gerçek arazi / Prosedürel** seçer. Gerçek kipte seçili merkezin çevresi (kenar `size_m`, 1–12 km)

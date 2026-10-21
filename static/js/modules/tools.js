@@ -16,7 +16,7 @@ import { clock } from '../chart.js';
 
 // Araç listesi; yeni araç eklemek için bir satır yeterli.
 const TOOLS = [
-  { key: 'flight-log', title: 'Uçuş Logu Analizi', icon: 'flightlog', desc: 'ArduPilot .bin / .log dosyasından uçuş raporu' },
+  { key: 'flight-log', title: 'Uçuş Logu Analizi', icon: 'flightlog', desc: 'ArduPilot .bin / .log ya da MAVLink .tlog dosyasından uçuş raporu' },
   { key: 'planner', title: 'Üretim Planlayıcı', icon: 'planner', desc: 'Mamul ve adet seçin; yazıcılara yükleme sırası (Gantt)' },
   { key: 'production-errors', title: 'Üretim Hataları', icon: 'warning', desc: 'Parçalara girilen hata kayıtları: hata kodu, açıklama, resim',
     modules: ['production', 'printers', 'orders'] },
@@ -75,6 +75,17 @@ export function logBadge(status) {
   const [color, label] = LOG_STATES[status] || ['gray', status || '—'];
   return h('span', { class: `badge ${color}` }, label);
 }
+// Log biçimi rozeti (dosya uzantısından): BIN = DataFlash ikili, LOG = DataFlash metin, TLOG = MAVLink telemetri kaydı (yer istasyonu)
+const LOG_FORMATS = { bin: ['BIN', 'blue', 'ArduPilot DataFlash ikili log'], log: ['LOG', 'gray', 'ArduPilot DataFlash metin log'],
+  tlog: ['TLOG', 'purple', 'MAVLink telemetri kaydı (Mission Planner / QGroundControl)'] };
+export function logFormat(l) {
+  const m = /\.([a-z0-9]+)$/i.exec(String((l && (l.file || l.file_name || l.log_file)) || ''));
+  return m && LOG_FORMATS[m[1].toLowerCase()] ? m[1].toLowerCase() : null;
+}
+export function logFormatBadge(l) {
+  const f = LOG_FORMATS[logFormat(l)];
+  return f ? h('span', { class: `badge ${f[1]} fl-format`, title: f[2] }, f[0]) : null;
+}
 // Analiz ilerlemesi (ISLENIYOR): ayrı süreçte çalışan analizin yüzdesi; progress null → kuyrukta sırada (queue: sıra no)
 export function analysisProgress(l, style) {
   if (!l || l.status !== 'ISLENIYOR') return null;
@@ -84,7 +95,7 @@ export function analysisProgress(l, style) {
 
 // ---------- Uçuş Logu Analizi: yükleme + geçmiş ----------
 async function renderFlightLogs(view, ctx) {
-  const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG', style: { height: 'auto', padding: '6px' } });
+  const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
   const aircraft = h('input', { class: 'input', placeholder: 'Ör. CYZ-0001' });
   const pilot = h('input', { class: 'input', placeholder: 'Pilot adı' });
   const place = h('input', { class: 'input', placeholder: 'Ör. Test sahası' });
@@ -104,7 +115,7 @@ async function renderFlightLogs(view, ctx) {
 
   go.addEventListener('click', async () => {
     const f = file.files[0];
-    if (!f) return toastError(new Error('Log dosyası seçin (.bin veya .log)'));
+    if (!f) return toastError(new Error('Log dosyası seçin (.bin, .log veya .tlog)'));
     const meta = Object.fromEntries([['aircraft', aircraft], ['pilot', pilot], ['location', place], ['note', note]]
       .map(([k, i]) => [k, i.value.trim() || null]));
     go.disabled = true;
@@ -145,7 +156,7 @@ async function renderFlightLogs(view, ctx) {
       h('tbody', null, rows.map(l => h('tr', { class: l.status === 'TAMAM' ? 'click' : '', onclick: e => {
         if (l.status === 'TAMAM' && !e.target.closest('button')) location.hash = `#/tools/flight-log/${l.id}`;
       } },
-        h('td', null, h('b', null, l.file_name), h('div', { class: 'small muted' }, l.vehicle || '')),
+        h('td', null, h('b', null, l.file_name), ' ', logFormatBadge(l), h('div', { class: 'small muted' }, l.vehicle || '')),
         h('td', null, originBadge(l)),
         h('td', null, l.aircraft || '—'),
         h('td', { style: { whiteSpace: 'normal' } }, l.pilot || '—'),
@@ -168,7 +179,7 @@ async function renderFlightLogs(view, ctx) {
   org.addEventListener('change', () => { setPref('flightlogs.origin', org.value); draw(); });
 
   clear(view,
-    pageHead('Uçuş Logu Analizi', { back: '#/tools', sub: 'Uçuş logu (.bin/.log) → rapor' }),
+    pageHead('Uçuş Logu Analizi', { back: '#/tools', sub: 'Uçuş logu (.bin/.log/.tlog) → rapor' }),
     stats,
     h('div', { class: 'card upload-card' }, ctx.meta.remote ? localUploadNotice(ctx.meta, 'Uçuş logu') : [
       h('div', { class: 'row' }, field('Log dosyası', file, 'En fazla 2 GB'), field('Uçak', aircraft), field('Pilot', pilot)),
@@ -219,7 +230,7 @@ export async function renderReportView(view, id, back, ctx) {
   }
   clear(view,
     pageHead('Uçuş Raporu', { back, sub: log.file_name }),
-    moduleToolbar(
+    moduleToolbar(logFormatBadge(log),
       h('a', { class: 'btn', href: `${location.hash.replace(/\/3d$/, '')}/3d` }, '3B Oynat'),
       h('button', { class: 'btn primary', onclick: () => printFlightReport(log, ctx.meta.company) }, 'Yazdır / PDF')),
     h('div', { class: 'fr-doc' }, buildFlightReport(log, ctx.meta.company)));

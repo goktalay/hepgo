@@ -13,7 +13,7 @@ KINDS = {
     'users': {'.jpg', '.jpeg', '.png', '.webp', '.gif'},
     'errors': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'},
     'reports': {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.jpg', '.jpeg', '.png', '.zip'},
-    'flightlogs': {'.bin', '.log'},
+    'flightlogs': {'.bin', '.log', '.tlog'},   # ArduPilot DataFlash (.bin ikili / .log metin) + MAVLink telemetri kaydı (.tlog; app/tlog.py)
     'videos': {'.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.3gp', '.ts'},
     'receipts': {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'},
     'logos': {'.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif'},

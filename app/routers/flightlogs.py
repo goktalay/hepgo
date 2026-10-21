@@ -1,4 +1,4 @@
-"""ArduPilot uçuş logu yükleme ve uçuş raporları.
+"""ArduPilot uçuş logu (DataFlash .bin / .log ya da MAVLink telemetri kaydı .tlog) yükleme ve uçuş raporları.
 
 İki giriş noktası aynı analiz motorunu kullanır:
   * Saha Yönetimi: görevdeki her uçuşa (uçağa) log yüklenir; görev bitmiş ve tüm uçuşların raporu hazırsa
@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from .. import auth, config, db, flight_analysis
 from ..dataflash import sim_isareti
+from ..tlog import TlogHatasi, dogrula as tlog_dogrula
 from ..files import FLIGHT_LOG_MAX_BYTES, local_only, save_upload_stream, take_upload
 from .field import flight_row, get_task, require_flight_editor, field_user
 
@@ -54,6 +55,12 @@ async def _store(conn, user, stored, task_id=None, flight_id=None, aircraft=None
     path, size, file_name = stored
 
     def write():   # dosya yüklenene kadar yazma kilidi alınmaz; yazım iş parçacığında
+        if path.lower().endswith('.tlog'):   # içerik gerçekten zaman damgalı MAVLink mi (değilse anlaşılır hata, dosya silinir)
+            try:
+                tlog_dogrula(config.UPLOAD_DIR / path)
+            except TlogHatasi as e:
+                (config.UPLOAD_DIR / path).unlink(missing_ok=True)
+                raise HTTPException(400, str(e)) from e
         isaret = sim_isareti(config.UPLOAD_DIR / path)   # SITL logu mu (SIM_* parametreleri; dosyanın ilk 4 MB'ı)
         cur = conn.execute(
             '''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, aircraft, pilot, location, note,
@@ -195,7 +202,7 @@ def _replay_path(log):
 
 @router.get('/flight-logs/{lid}/replay')
 async def get_replay(lid: int, user=Depends(auth.current_user), conn=db.DB):
-    """3B oynatma verisi: .bin dosyasından ilk istekte üretilir ve log dosyasının yanında saklanır."""
+    """3B oynatma verisi: log dosyasından (.bin / .log / .tlog) ilk istekte üretilir ve log dosyasının yanında saklanır."""
     log = await run_in_threadpool(get_log, lid, user, conn)   # erişim kontrolü aynı
     if log['status'] != 'TAMAM':
         raise HTTPException(400, 'Log analizi tamamlanmadan 3B oynatma açılamaz')

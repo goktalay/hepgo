@@ -1,7 +1,7 @@
-"""ArduPilot DataFlash (.bin / .log) uçuş logu analizi.
+"""ArduPilot DataFlash (.bin / .log) ve MAVLink telemetri kaydı (.tlog) uçuş logu analizi.
 
-İkili .BIN hızlı akış okuyucuyla (dataflash; sonuç pymavlink yoluyla birebir aynı — docs/ucus-simulatoru.md §8.4), metin .log / .tlog
-pymavlink ile okunur; analiz sunucuda alt süreçte çalışır (flight_analysis). Özet değerler, zaman serileri (grafikler için seyreltilmiş), uçuş izi,
+İkili .BIN hızlı akış okuyucuyla (dataflash; sonuç pymavlink yoluyla birebir aynı — docs/ucus-simulatoru.md §8.4), metin .log
+pymavlink ile, .tlog app/tlog.py ile (MAVLink → aynı şema; §8.6) okunur; analiz sunucuda alt süreçte çalışır (flight_analysis). Özet değerler, zaman serileri (grafikler için seyreltilmiş), uçuş izi,
 modlar, olaylar/hatalar ve otomatik değerlendirme bulguları JSON olarak döner. Alan adları ArduPilot
 sürümüne göre değiştiğinden (ör. BAT.RemPct, VIBE.Clip / Clip0..2, XKF2 / NKF2) okuma toleranslıdır.
 """
@@ -106,9 +106,13 @@ def _in(intervals, t):
 
 def analyze(path, ilerleme=None):
     """Uçuş logu analizi. İkili DataFlash (.BIN) → akış okuyucu (dataflash, numpy; 700 MB'lık logda ~10 sn / ~0,4 GB);
-    metin .log / .tlog → pymavlink. İki yolun sonucu BİREBİR aynıdır (tests/test_binanalyze). `ilerleme(yüzde)` 0…100.
+    metin .log → pymavlink (iki yolun sonucu BİREBİR aynıdır; tests/test_binanalyze); MAVLink telemetri kaydı (.tlog; Mission Planner /
+    QGroundControl) → app/tlog.py (MAVLink mesajlarından aynı şemaya eşleme). `ilerleme(yüzde)` 0…100.
     Sunucuda ALT SÜREÇTE çalıştırılır (flight_analysis; `python -m app.flightlog analyze`)."""
     from . import dataflash
+    if str(path).lower().endswith('.tlog'):
+        from . import tlog
+        return tlog.analiz(path, ilerleme)
     if dataflash.ikili_mi(path):
         return _analyze_hizli(path, ilerleme)
     return _analyze_pymavlink(path, ilerleme)
@@ -119,7 +123,7 @@ def _analyze_pymavlink(path, ilerleme=None):
     t0 = None
     s = {k: [] for k in ('alt', 'gs', 'as', 'volt', 'curr', 'vx', 'vy', 'vz', 'roll', 'droll', 'pitch', 'dpitch',
                          'sats', 'hdop', 'wind', 'thr')}
-    track, gps_pts, pos_pts = [], [], []
+    gps_pts, pos_pts = [], []
     firmware = board = None
     msgs, modes, events, errors = [], [], [], []
     arm_flags, stat_flags = [], []
@@ -257,6 +261,16 @@ def _analyze_pymavlink(path, ilerleme=None):
 
     if t0 is None or count == 0:
         raise ValueError('Logda okunabilir uçuş verisi bulunamadı')
+    return _sonuclandir(s, gps_pts, pos_pts, firmware, board, msgs, modes, events, errors, arm_flags, stat_flags, bat, clips,
+                        wind_dirs, origin, params, gps_time_ref)
+
+
+def _sonuclandir(s, gps_pts, pos_pts, firmware, board, msgs, modes, events, errors, arm_flags, stat_flags, bat, clips,
+                 wind_dirs, origin, params, gps_time_ref, mod_adlari=None, takip=None, kaynak=None):
+    """Toplanan ham dizilerden özet + bulgular + seyreltilmiş seriler (metin .log ve .tlog ortak; app/tlog.py).
+    `mod_adlari`: numara → ad (verilmezse firmware'den); `takip`: (yatış farkları, yunuslama farkları) — tlog'da istenen/gerçekleşen
+    tutum farklı hızlarda gelir, zamana göre eşlenmiş farklar dışarıda hesaplanır; `kaynak`: 'tlog' → bulgularda ERR yerine STATUSTEXT önemi."""
+    track = []
     duration = max((v[-1][0] for v in s.values() if v), default=0)
     if gps_pts:
         duration = max(duration, gps_pts[-1][0])
@@ -316,10 +330,12 @@ def _analyze_pymavlink(path, ilerleme=None):
             k = j - 1
             climb.append((alt[i][1] - alt[k][1]) / (alt[i][0] - alt[k][0]))
     track_err = lambda des, act: [a[1] - d[1] for d, a in zip(s[des], s[act]) if in_air(a[0])]
+    if takip is not None:
+        track_err = lambda des, act: [e for tt, e in takip[0 if des == 'droll' else 1] if in_air(tt)]
     rms = lambda v: math.sqrt(sum(x * x for x in v) / len(v)) if v else None
 
     # Modlar
-    names = _mode_names(firmware)
+    names = mod_adlari if mod_adlari is not None else _mode_names(firmware)
     mode_rows = []
     for i, (tt, num, rsn) in enumerate(modes):
         end = modes[i + 1][0] if i + 1 < len(modes) else duration
@@ -367,7 +383,7 @@ def _analyze_pymavlink(path, ilerleme=None):
 
     result = {
         'summary': summary,
-        'findings': _findings(summary, errors, msgs),
+        'findings': _findings(summary, errors, msgs, kaynak),
         'modes': mode_rows,
         'events': events[:MAX_MESSAGES],
         'errors': errors,
@@ -803,7 +819,7 @@ def _analyze_hizli(path, ilerleme=None):
     return result
 
 
-def _findings(s, errors, msgs):
+def _findings(s, errors, msgs, kaynak=None):
     out = []
 
     def add(level, title, detail):
@@ -851,12 +867,21 @@ def _findings(s, errors, msgs):
     if s['roll_max'] is not None and s['roll_max'] > 60:
         add('warn', 'Aşırı yatış açısı', f'En yüksek yatış {s["roll_max"]}°.')
 
-    open_errors = [e for e in errors if not e['resolved']]
-    for e in open_errors[:15]:
-        level = 'bad' if e['subsys'] in (5, 6, 7, 8, 12, 16, 17, 25, 26, 29, 30, 31) else 'warn'
-        add(level, f'Hata: {e["text"]}', f'{_clock(e["t"])} anında kod {e["code"]}.')
-    if not open_errors:
-        add('ok', 'Kayıtlı sistem hatası yok', 'ERR kaydı bulunmadı veya tüm hatalar giderildi.')
+    if kaynak == 'tlog':
+        # Telemetri kaydında DataFlash ERR kaydı yoktur; otopilotun yer istasyonuna gönderdiği STATUSTEXT önem derecesine bakılır
+        # (0 acil · 1 alarm · 2 kritik · 3 hata).
+        kritik = [m for m in msgs if m.get('sev') is not None and m['sev'] <= 3]
+        for m in kritik[:15]:
+            add('bad' if m['sev'] <= 2 else 'warn', f'Sistem mesajı: {m["text"]}', f'{_clock(m["t"])} anında (önem {m["sev"]}).')
+        if not kritik:
+            add('ok', 'Kritik sistem mesajı yok', 'Telemetri kaydında (.tlog) ERR kaydı bulunmaz; hata/kritik önemde STATUSTEXT mesajı görülmedi.')
+    else:
+        open_errors = [e for e in errors if not e['resolved']]
+        for e in open_errors[:15]:
+            level = 'bad' if e['subsys'] in (5, 6, 7, 8, 12, 16, 17, 25, 26, 29, 30, 31) else 'warn'
+            add(level, f'Hata: {e["text"]}', f'{_clock(e["t"])} anında kod {e["code"]}.')
+        if not open_errors:
+            add('ok', 'Kayıtlı sistem hatası yok', 'ERR kaydı bulunmadı veya tüm hatalar giderildi.')
 
     warn_msgs = [m for m in msgs if m['warn']]
     if warn_msgs:
@@ -882,6 +907,9 @@ def replay(path):
     yer hızı, hava hızı (m/s), gaz (%), batarya (V), devir]. Konum EKF'den (POS), yoksa GPS'ten alınır.
     İkili DataFlash'ta hızlı akış okuyucu (dataflash; 700 MB'lık logda ~8 sn / ~0,3 GB), aksi (metin .log) pymavlink."""
     from . import dataflash
+    if str(path).lower().endswith('.tlog'):   # MAVLink telemetri kaydı (app/tlog.py)
+        from . import tlog
+        return tlog.replay(path)
     if dataflash.ikili_mi(path):
         return _replay_hizli(path)
     return _replay_pymavlink(path)

@@ -32,8 +32,16 @@ const section = (title, ...c) => h('div', { class: 'fr-section' }, h('h2', null,
 const kv = rows => h('table', { class: 'pf-table fr-kv' }, h('tbody', null,
   rows.filter(Boolean).map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, v)))));
 
+// MAVLink telemetri kaydında (.tlog) karşılığı olmayan bölümler (summary.missing; app/tlog.py SERI_ADI ile aynı anahtarlar)
+const TLOG_MISSING = { alt: 'irtifa', gs: 'yer hızı', as: 'hava hızı (sensör yok)', volt: 'batarya voltajı', curr: 'batarya akımı', vx: 'titreşim (VIBRATION)',
+  roll: 'tutum (ATTITUDE)', droll: 'istenen tutum (NAV_CONTROLLER_OUTPUT)', sats: 'GPS uydu sayısı', hdop: 'GPS HDop', wind: 'rüzgâr (WIND)', thr: 'gaz',
+  errors: 'hata (ERR) ve olay (EV) kayıtları', energy: 'tüketilen enerji (BATTERY_STATUS)', track: 'konum', messages: 'sistem mesajları (STATUSTEXT)',
+  modes: 'uçuş modları' };
+
 export function buildFlightReport(log, company) {
   const a = log.analysis, s = a.summary, S = a.series, task = log.task;
+  const tlog = s.source === 'tlog';
+  const NONE = tlog ? 'Telemetri kaydında (.tlog) bu veri yok' : undefined;
   const flightDate = s.takeoff_utc || s.start_utc;
   const meta = [
     ['Uçuş tarihi', flightDate ? fmtDateTime(flightDate).slice(0, 10) : '—'],
@@ -53,7 +61,8 @@ export function buildFlightReport(log, company) {
     log.flight ? ['Fırlatma sistemi', log.flight.launch_text || '—'] : null,
     task?.vehicle_plate ? ['Araç plakası', task.vehicle_plate] : null,
     ['Uçuş yeri', log.location || (s.home ? `${s.home.lat.toFixed(5)}, ${s.home.lng.toFixed(5)}` : '—')],
-    ['Otopilot yazılımı', s.firmware || '—'],
+    ['Otopilot yazılımı', s.firmware || (tlog ? s.vehicle : '—')],
+    tlog ? ['Log biçimi', `MAVLink telemetri kaydı (.tlog) · sistem ${s.sysid}${s.other_systems?.length ? ` (kayıttaki diğer sistemler: ${s.other_systems.join(', ')})` : ''}`] : null,
     ['Uçuş kartı', s.board || '—'],
     ['Kalkış / iniş', `${localTime(s.takeoff_utc)} – ${localTime(s.landing_utc)}`],
     task ? ['Görev sonucu', `${TASK_STATES[task.status]?.label || task.status}${task.result ? ` (${task.result === 'BASARILI' ? 'Başarılı' : 'Başarısız'})` : ''}`] : null,
@@ -83,27 +92,29 @@ export function buildFlightReport(log, company) {
           { label: 'Yakılan (L)', color: C.blue, data: log.fuel.series.map(r => [r[0], r[2]]) },
           { label: 'İtki (kg)', color: C.orange, dash: '4 3', data: log.fuel.series.map(r => [r[0], r[3]]) }] })) : null,
     ] : []),
-    h('div', { class: 'fr-two' }, section('Uçuş bilgileri', info), trackMap(a.track, s.home, { height: 330 })),
+    tlog ? h('p', { class: 'fr-note fr-tlog-note' }, 'Kaynak MAVLink telemetri kaydı (.tlog): otopilotun yer istasyonuna gönderdiği seyreltilmiş akış (genelde 1–10 Hz); DataFlash (.bin) loguna göre daha az ayrıntı içerir.',
+      s.missing?.length ? ` Bu kayıtta bulunmayan: ${s.missing.map(k => TLOG_MISSING[k] || k).join(', ')}.` : '') : null,
+    h('div', { class: 'fr-two' }, section('Uçuş bilgileri', info), trackMap(a.track, s.home, { height: 330, empty: tlog ? 'Telemetri kaydında (.tlog) GPS konumu yok' : undefined })),
     section('Değerlendirme', findings),
   ];
 
   const charts = [
-    lineChart({ title: 'İrtifa (eve göre)', unit: 'm', bands, series: [{ label: 'İrtifa', color: C.blue, data: S.alt }] }),
-    lineChart({ title: 'Hız', unit: 'm/s', bands, series: [
+    lineChart({ empty: NONE, title: 'İrtifa (eve göre)', unit: 'm', bands, series: [{ label: 'İrtifa', color: C.blue, data: S.alt }] }),
+    lineChart({ empty: NONE, title: 'Hız', unit: 'm/s', bands, series: [
       { label: 'Yer hızı', color: C.blue, data: S.gs }, { label: 'Hava hızı', color: C.orange, data: S.as }] }),
-    lineChart({ title: 'Batarya voltajı', unit: 'V', bands, zero: false, series: [{ label: 'Voltaj', color: C.green, data: S.volt }] }),
-    lineChart({ title: 'Batarya akımı', unit: 'A', bands, series: [{ label: 'Akım', color: C.red, data: S.curr }] }),
-    lineChart({ title: 'Yatış (roll)', unit: '°', bands, zero: false, series: [
+    lineChart({ empty: NONE, title: 'Batarya voltajı', unit: 'V', bands, zero: false, series: [{ label: 'Voltaj', color: C.green, data: S.volt }] }),
+    lineChart({ empty: NONE, title: 'Batarya akımı', unit: 'A', bands, series: [{ label: 'Akım', color: C.red, data: S.curr }] }),
+    lineChart({ empty: NONE, title: 'Yatış (roll)', unit: '°', bands, zero: false, series: [
       { label: 'Gerçekleşen', color: C.blue, data: S.roll }, { label: 'İstenen', color: C.orange, data: S.droll, dash: '4 3' }] }),
-    lineChart({ title: 'Yunuslama (pitch)', unit: '°', bands, zero: false, series: [
+    lineChart({ empty: NONE, title: 'Yunuslama (pitch)', unit: '°', bands, zero: false, series: [
       { label: 'Gerçekleşen', color: C.blue, data: S.pitch }, { label: 'İstenen', color: C.orange, data: S.dpitch, dash: '4 3' }] }),
-    lineChart({ title: 'Titreşim', unit: 'm/s²', bands, series: [
+    lineChart({ empty: NONE, title: 'Titreşim', unit: 'm/s²', bands, series: [
       { label: 'X', color: C.blue, data: S.vx }, { label: 'Y', color: C.green, data: S.vy }, { label: 'Z', color: C.purple, data: S.vz }],
       thresholds: [{ value: 30, color: C.orange, label: 'Dikkat 30' }, { value: 60, color: C.red, label: 'Kritik 60' }] }),
-    lineChart({ title: 'GPS', unit: 'uydu / HDop', bands, series: [
+    lineChart({ empty: NONE, title: 'GPS', unit: 'uydu / HDop', bands, series: [
       { label: 'Uydu sayısı', color: C.blue, data: S.sats }, { label: 'HDop', color: C.red, data: S.hdop }] }),
-    lineChart({ title: 'Tahmini rüzgâr hızı', unit: 'm/s', bands, series: [{ label: 'Rüzgâr', color: C.sky, data: S.wind }] }),
-    lineChart({ title: 'Gaz (throttle)', unit: '%', bands, series: [{ label: 'Gaz', color: C.gray, data: S.thr }] }),
+    lineChart({ empty: NONE, title: 'Tahmini rüzgâr hızı', unit: 'm/s', bands, series: [{ label: 'Rüzgâr', color: C.sky, data: S.wind }] }),
+    lineChart({ empty: NONE, title: 'Gaz (throttle)', unit: '%', bands, series: [{ label: 'Gaz', color: C.gray, data: S.thr }] }),
   ];
   const p2 = [h('p', { class: 'fr-note' }, 'Gri arka planlı bölgeler havada geçen süreyi gösterir. Zaman ekseni log başlangıcına göredir (dk:sn).'),
     h('div', { class: 'fr-charts' }, charts)];
@@ -138,12 +149,12 @@ export function buildFlightReport(log, company) {
     details,
     section('Uçuş modları', table(['Başlangıç', 'Mod', 'Süre'],
       a.modes.map(m => h('tr', null, h('td', null, clock(m.t)), h('td', null, h('b', null, m.name)), h('td', null, clock(m.dur)))),
-      'Mod değişikliği kaydı yok')),
+      tlog ? 'Telemetri kaydında HEARTBEAT modu yok' : 'Mod değişikliği kaydı yok')),
     section('Hatalar ve olaylar', table(['Zaman', 'Tür', 'Açıklama'], [
       ...a.errors.map(e => ({ t: e.t, row: h('tr', { class: e.resolved ? '' : 'bad' }, h('td', null, clock(e.t)), h('td', null, 'Hata'),
         h('td', null, `${e.text} — kod ${e.code}${e.resolved ? ' (giderildi)' : ''}`)) })),
       ...a.events.map(e => ({ t: e.t, row: h('tr', null, h('td', null, clock(e.t)), h('td', null, 'Olay'), h('td', null, e.text)) })),
-    ].sort((x, y) => x.t - y.t).map(r => r.row), 'Kayıtlı hata veya olay yok')),
+    ].sort((x, y) => x.t - y.t).map(r => r.row), tlog ? 'Telemetri kaydında (.tlog) ERR/EV kaydı yok; ARM/DISARM geçişi de görülmedi' : 'Kayıtlı hata veya olay yok')),
     section('Sistem mesajları', table(['Zaman', 'Mesaj'],
       a.messages.map(m => h('tr', { class: m.warn ? 'warn' : '' }, h('td', null, clock(m.t)), h('td', null, m.text))),
       'Sistem mesajı yok')),

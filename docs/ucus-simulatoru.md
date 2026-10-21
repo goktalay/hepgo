@@ -2305,4 +2305,9 @@ kapalı. `sim.setWindStreaks(bool)` / `opts.windStreaks`.
 - Görsel: `./.venv/bin/python -m tests.worldfx_shots_hepgo` (`WFX_WORLD=procedural|real`, `WFX_ONLY=day,dusk,night,rain,snow,fog,storm,cloudy,wind,ramp,fly`;
   önce/sonra: aynı betik `git archive` kopyasında `WFX_PREFIX=before`) ve `tests.worldfx_shots_simumav` → `/tmp/worldfx-shots/`.
 
-<<PERF>>
+**Performans ölçümü (bu ortam).** GPU'suz geliştirme sunucusunda yalnız SwiftShader (yazılım WebGL, 1440×900) var: aynı oturum/bakış noktasında kare hızı
+önce 0,3–0,5 fps → sonra 0,1–0,3 fps (yazılım rasterleştiricide ~1,5–2× maliyet; gerçek GPU'da ölçülemedi). Sahne bütçesi (4 km prosedürel, 120 bina,
+ağaç %40): ağaç ~8 000 örnek / ~200 parça, yakın (3B) parça 12–15, gölge kutusu ±90 m; yağmur 14 000 çizgi (fırtına 18 000), kar 9 000 nokta (GPU);
+akış çizgileri ≤ 420. Orta düzey dizüstü GPU'da (Iris Xe / GTX 1650 sınıfı) hedef ≥ 45 fps — doğrulama için `window.__fsSim.fxInfo()` (çizim çağrısı,
+üçgen, parça/LOD sayısı, sis aralığı) ve tarayıcı FPS ölçeri; gerekirse ilk ayar düğmeleri: `MAX_TREES`, LOD uzaklığı (`updateTreeLod` 520 m), gölge
+haritası (2048), yağış sayısı (`precipParams quality`).

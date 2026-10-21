@@ -377,7 +377,7 @@ void main(){
   vA = (1.0 - smoothstep(uBox * 0.28, uBox * 0.5, distance(p, uCam))) * (0.35 + 0.65 * aSeed) * (1.0 - aEnd * 0.7);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = uPx / max(0.5, -mv.z);
+  gl_PointSize = min(uPx / max(0.5, -mv.z), 14.0);   // kameraya çok yakın tane (PiP/gimbal) ekranı kaplamasın
 }`;
 const PRECIP_FRAG = `uniform float uSnow, uOpacity; uniform vec3 uColor; varying float vA;
 void main(){

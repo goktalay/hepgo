@@ -8,7 +8,7 @@ import { stockPicker } from '../stockpick.js';
 import {
   clear, confirmDialog, dateTimeInput, every, field, fmtDate, fmtDateTime, fmtDuration, fold, h, matches, modal, moduleToolbar, pageHead, pref,
   progressBar, secondsSince, segmented, selectInput, setPref, statStrip, svgIcon, toast, toastError, uploadPanel, localUploadNotice,
-  internTag, nameWithIntern, periodFilter, t as tr
+  internTag, nameWithIntern, periodFilter, t as tr, FLIGHT_LOG_ACCEPT,
 } from '../ui.js';
 import { clock } from '../chart.js';
 import { qrSvgEl } from '../qr.js';
@@ -524,7 +524,7 @@ async function renderTask(view, id, ctx) {
       if (!Number.isInteger(port) || port < 1 || port > 65535) fail('Port 1–65535 arası olmalı');
       return { bridge_id: bridgeId, sysid, link: { type: linkType, host: hostIn.value.trim(), port } };
     };
-    const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
+    const file = h('input', { class: 'input', type: 'file', accept: FLIGHT_LOG_ACCEPT, style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();
     const remote = ctx.meta.remote;   // internetten bağlanıldı: video/log yalnızca yerel ağdan yüklenir
     const canUpload = can && !['BASLANGIC', 'IPTAL'].includes(t.status) && f.log_status !== 'ISLENIYOR';

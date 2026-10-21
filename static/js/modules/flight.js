@@ -7,7 +7,7 @@ import { icons } from '../icons.js';
 import { ORDER_STATES, TASK_STATES, USAGE_TYPES, badge, queuePlate } from '../status.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, modal, pageHead, svgIcon, t as tr, toast, toastError,
-  uploadPanel,
+  uploadPanel, FLIGHT_LOG_ACCEPT,
 } from '../ui.js';
 import { tabView } from './crm.js';
 import { aircraftReviewModal } from './mrp.js';
@@ -27,7 +27,7 @@ export async function renderFlight(view, id, ctx, tab) {
 
   // ---- Uçuş logu yükleme (.bin / .log / .tlog; yalnızca yerel ağdan)
   const logCard = () => {
-    const input = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
+    const input = h('input', { class: 'input', type: 'file', accept: FLIGHT_LOG_ACCEPT, style: { height: 'auto', padding: '6px' } });
     const progress = uploadPanel();
     const send = h('button', { class: 'btn primary', type: 'button' }, svgIcon(icons.upload), log ? 'Yeni Log Yükle' : 'Logu Yükle');
     send.addEventListener('click', async () => {

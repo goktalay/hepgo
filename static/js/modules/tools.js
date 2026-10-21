@@ -10,7 +10,7 @@ import { icons } from '../icons.js';
 import {
   clear, confirmDialog, every, field, fmtDateTime, h, localUploadNotice, matches, moduleToolbar, pageHead, pref, progressBar, selectInput, setPref, statStrip,
   svgIcon, t, toast, uploadPanel,
-  toastError,
+  toastError, FLIGHT_LOG_ACCEPT,
 } from '../ui.js';
 import { clock } from '../chart.js';
 
@@ -95,7 +95,7 @@ export function analysisProgress(l, style) {
 
 // ---------- Uçuş Logu Analizi: yükleme + geçmiş ----------
 async function renderFlightLogs(view, ctx) {
-  const file = h('input', { class: 'input', type: 'file', accept: '.bin,.BIN,.log,.LOG,.tlog,.TLOG', style: { height: 'auto', padding: '6px' } });
+  const file = h('input', { class: 'input', type: 'file', accept: FLIGHT_LOG_ACCEPT, style: { height: 'auto', padding: '6px' } });
   const aircraft = h('input', { class: 'input', placeholder: 'Ör. CYZ-0001' });
   const pilot = h('input', { class: 'input', placeholder: 'Pilot adı' });
   const place = h('input', { class: 'input', placeholder: 'Ör. Test sahası' });

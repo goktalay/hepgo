@@ -2,6 +2,7 @@
 // Ses akışı uçtan uca (peer-to-peer). Kayıt yalnızca tüm katılımcı onaylayınca; karışık sesi başlatan kaydeder,
 // bitince yükler. Görüşmelerim: geçmiş + konuşmacı tanımalı transkript + özet.
 import { api } from '../api.js';
+import { simActive } from '../simfocus.js';   // simülasyon sahnesindeyken gelen arama ekranı açılmaz (meşgul)
 import { avatar, clear, confirmDialog, fmtDateTime, fmtDuration, h, modal, pageHead, t, toast, toastError } from '../ui.js';
 import { playEvent } from '../sounds.js';
 
@@ -248,7 +249,7 @@ try {
 } catch { /* */ }
 
 function onRing(m) {
-  if (call || ring) { send({ t: 'reject', call_id: m.call_id }); return; }   // meşgul
+  if (call || ring || simActive()) { send({ t: 'reject', call_id: m.call_id }); return; }   // meşgul (simülasyon uçuşu da meşgul sayılır)
   startRing('in');
   try { if (document.hidden) nativeCall()?.show({ name: (m.caller && m.caller.full_name) || 'Arama', video: !!m.video }); } catch { /* */ }
   const sub = m.kind === 'grup'

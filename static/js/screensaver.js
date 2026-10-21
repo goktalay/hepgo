@@ -1,6 +1,7 @@
 // Bekleme ekranı (ekran koruyucu): Ayarlar → Bekleme ekranı. Belirlenen süre boyunca dokunma / fare / klavye yoksa tam ekran
 // animasyon, saat ve tarih gösterilir; herhangi bir dokunuşta kapanır (o dokunuş alttaki sayfaya geçmez).
 import { api, fileUrl } from './api.js';
+import { simActive } from './simfocus.js';   // simülasyonda bekleme ekranı açılmaz
 import { createGlobe } from './globe.js';
 import { captureShards, createGravityScene } from './screensaver-gravity.js';
 
@@ -35,7 +36,7 @@ export function setScreensaver(s, u) {
 
 function reset() {
   clearTimeout(idleTimer);
-  if (cfg.on && !overlay) idleTimer = setTimeout(() => showScreensaver(), cfg.after * 1000);
+  if (cfg.on && !overlay) idleTimer = setTimeout(() => { if (simActive()) reset(); else showScreensaver(); }, cfg.after * 1000);
 }
 
 // iOS 13+ DeviceMotion iznini bir kullanıcı dokunuşuyla önceden iste (yıkım sahnesi sallama için gerekir; bekleme

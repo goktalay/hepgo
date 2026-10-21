@@ -1,3 +1,4 @@
+import { simActive } from './simfocus.js';   // simülasyon sahnesinde sistem sesleri susar
 // Sistem sesleri: her olay türünün (uyarı, bildirim, kargo, mesaj…) kendi sesi vardır; kullanıcı Ayarlar'dan değiştirir.
 // Sesler dosya değil, tarayıcıda Web Audio ile üretilir (lisans / indirme yok, her cihazda aynı). Tarayıcılar ilk dokunuş /
 // tıklamadan önce ses çalmaya izin vermez; ilk etkileşimde ses motoru açılır.
@@ -124,7 +125,7 @@ const inQuiet = () => {   // sessiz saatler (ör. 22:00–08:00; gece yarısın�
 };
 
 export function playEvent(event) {
-  if (!settings.on || inQuiet()) return;
+  if (!settings.on || inQuiet() || simActive()) return;
   const now = Date.now();
   if (now - lastPlay < 1500) return;
   lastPlay = now;

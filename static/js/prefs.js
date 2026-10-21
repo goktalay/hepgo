@@ -1,6 +1,7 @@
 // Kullanıcı ayarlarını uygular (Ayarlar sayfası yazar; users.prefs.settings). Tema ve yazı boyutu ayrıca cihazda saklanır ki
 // giriş ekranı da aynı açılsın.
 import { setScreensaver } from './screensaver.js';
+import { simActive } from './simfocus.js';   // simülasyon sahnesi açıkken bildirim kartı / masaüstü bildirimi yok
 import { setSoundSettings } from './sounds.js';
 
 let current = {};
@@ -69,7 +70,7 @@ export function applySettings(s, user) {
 
 // Masaüstü bildirimi: sekme arka plandayken (ayar açıksa ve izin verildiyse)
 export function desktopNotify(title, body, onClick) {
-  if (!current.desktop || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (simActive() || !current.desktop || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const n = new Notification(title, { body, icon: '/static/img/logo-mark.png?v=3', tag: `${title}:${body}` });
     n.onclick = () => { window.focus(); onClick?.(); n.close(); };
@@ -77,4 +78,4 @@ export function desktopNotify(title, body, onClick) {
 }
 
 export const flashMs = () => (current.flashSec || 3) * 1000;
-export const flashOn = () => current.flash !== false;
+export const flashOn = () => current.flash !== false && !simActive();

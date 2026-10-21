@@ -1,6 +1,7 @@
 // Alarmlar (cihazda saklanır): belirli saat + haftanın günleri; saat gelince alarm sesiyle uyarır. Global denetleyici
 // pano açık olmasa da çalışır (app.js başlangıcında initAlarms). Ses WebAudio ile üretilir (dosya gerekmez).
 import { h, modal, field, toast } from './ui.js';
+import { simActive } from './simfocus.js';   // simülasyon sahnesindeyken alarm ertelenir, sahne kapanınca çalar
 
 const KEY = 'caymaz.alarms';
 export const DAYS = [['1', 'Pzt'], ['2', 'Sal'], ['3', 'Çar'], ['4', 'Per'], ['5', 'Cum'], ['6', 'Cmt'], ['0', 'Paz']];
@@ -25,7 +26,9 @@ function beep() {
   } catch { /* ses açılamadı */ }
 }
 
+let deferred = null;   // simülasyon sahnesi açıkken çalan alarm (sahne kapanınca çalar)
 function ring(alarm) {
+  if (simActive()) { deferred = alarm; return; }
   if (ringing) return;
   beep();
   const iv = setInterval(beep, 900);
@@ -42,6 +45,7 @@ function ring(alarm) {
 }
 
 function check() {
+  if (deferred && !simActive()) { const a = deferred; deferred = null; ring(a); }
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   const day = String(now.getDay());   // 0=Paz

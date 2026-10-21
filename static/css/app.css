@@ -10311,3 +10311,6 @@ html[data-theme="dark"] .set-dnd-status.on { background: #3a2a12; border-color: 
 .pm-chartbox > .pm-ax { position: absolute; top: 0; left: 0; }
 .pm-axis { display: flex; justify-content: space-between; margin-top: 2px; }
 @media (max-width: 760px) { .pagemeter { margin-right: 8px; font-size: 11px; } }
+
+/* Simülasyon odak kipi (simfocus.js): uçuş sahnesi açıkken arka plan öğeleri dronun / HUD'un üstünü kapatmasın */
+body:has(.fs-stage) .flash-stack, body:has(.fs-stage) .mascot, body:has(.fs-stage) .mascot-fig, body:has(.fs-stage) .support-pill { display: none !important; }

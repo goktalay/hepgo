@@ -11,17 +11,17 @@
 //   { el, state(), connected, info, openPanel(), closePanel(), dispose() }   (state(): {active, axes:{thr,yaw,pitch,roll}} ya da null)
 
 export const PAD_AXES = ['thr', 'yaw', 'pitch', 'roll'];
-export const PAD_ACTIONS = ['arm', 'disarm', 'mode_next', 'mode_prev', 'ch5_up', 'ch5_down'];
+export const PAD_ACTIONS = ['arm', 'disarm', 'mode_next', 'mode_prev', 'ch5_up', 'ch5_down', 'lock'];   // lock: §40 hedef kilidi / angajman (Boşluk ile aynı)
 export const PAD_PREF = 'fs.pad.cfg';
 export const PAD_ACTIVE_MS = 1500;
 // Standart eşleme (Xbox / PlayStation / çoğu USB gamepad; Chrome/Firefox/Safari 'standard'): eksen 0 sol X, 1 sol Y (aşağı +), 2 sağ X, 3 sağ Y (aşağı +);
-// düğme 9 Start/Menü = ARM, 8 Back/Select = DISARM, 5 RB / 4 LB = sonraki / önceki mod, 12 / 13 yön yukarı / aşağı = ch5 (mod anahtarı).
+// düğme 9 Start/Menü = ARM, 8 Back/Select = DISARM, 5 RB / 4 LB = sonraki / önceki mod, 12 / 13 yön yukarı / aşağı = ch5 (mod anahtarı), 0 A/✕ = §40 hedef kilidi.
 // RC verici (USB joystick kipi; eşleme ''): yaygın EdgeTX/OpenTX sırası X = kanatçık, Y = irtifa dümeni, Z = gaz, Rx = istikamet dümeni; düğme ataması yok.
 export const DEFAULT_PAD = {
   standard: { dead: 0.08, axes: { yaw: { i: 0, inv: false }, thr: { i: 1, inv: true }, roll: { i: 2, inv: false }, pitch: { i: 3, inv: true } },
-    buttons: { arm: 9, disarm: 8, mode_next: 5, mode_prev: 4, ch5_up: 12, ch5_down: 13 } },
+    buttons: { arm: 9, disarm: 8, mode_next: 5, mode_prev: 4, ch5_up: 12, ch5_down: 13, lock: 0 } },
   rc: { dead: 0.03, axes: { roll: { i: 0, inv: false }, pitch: { i: 1, inv: true }, thr: { i: 2, inv: false }, yaw: { i: 3, inv: false } },
-    buttons: { arm: -1, disarm: -1, mode_next: -1, mode_prev: -1, ch5_up: -1, ch5_down: -1 } },
+    buttons: { arm: -1, disarm: -1, mode_next: -1, mode_prev: -1, ch5_up: -1, ch5_down: -1, lock: -1 } },
 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -77,7 +77,7 @@ export const PAD_TEXTS = [
   ['pad.profile_std', 'Standart eşleme'], ['pad.profile_rc', 'RC verici / diğer'], ['pad.dead', 'Ölü bölge'], ['pad.inv', 'Ters'],
   ['pad.axis_thr', 'Gaz'], ['pad.axis_yaw', 'Sapma (yaw)'], ['pad.axis_pitch', 'Yunuslama (pitch)'], ['pad.axis_roll', 'Yatış (roll)'],
   ['pad.act_arm', 'ARM'], ['pad.act_disarm', 'DISARM'], ['pad.act_mode_next', 'Sonraki mod'], ['pad.act_mode_prev', 'Önceki mod'],
-  ['pad.act_ch5_up', 'Mod kanalı (ch5) +'], ['pad.act_ch5_down', 'Mod kanalı (ch5) −'], ['pad.none', '—'], ['pad.axis_n', 'Eksen {n}'], ['pad.button_n', 'Düğme {n}'],
+  ['pad.act_ch5_up', 'Mod kanalı (ch5) +'], ['pad.act_ch5_down', 'Mod kanalı (ch5) −'], ['pad.act_lock', 'Hedef kilidi (angajman)'], ['pad.none', '—'], ['pad.axis_n', 'Eksen {n}'], ['pad.button_n', 'Düğme {n}'],
   ['pad.axes', 'Eksenler'], ['pad.buttons', 'Düğmeler'], ['pad.reset', 'Varsayılana dön'], ['pad.close', 'Kapat'],
   ['pad.hint', 'Mode 2: sol çubuk gaz / sapma, sağ çubuk yunuslama / yatış. Kollar nötr dışındayken kumanda önceliklidir; dokunulan sanal çubuk o tarafta kazanır.'],
 ];

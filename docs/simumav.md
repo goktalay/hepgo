@@ -789,3 +789,10 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
 - Kumanda açıkken kadranlar alt ortada ince ilerleme çubukları (HEPGO §38; `power.css` kadranları üzerine `flightsim_gtheme.js` CSS'i). Mobilde
   (`flightsim_mobile.js`, `MMob`; HEPGO §39) üst şerit + alt bant ☰ menüsünde; `mob.*` 7 dil.
 
+## 20. Hedefli uçuşta Boşluk ile kilit + angajman — HEPGO docs/ucus-simulatoru.md §40'ın SIMUMAV karşılığı
+- `fly/session.js` `loadSim` listesinde `flightsim_engage.js` (`MEng`): hedefli uçuşta (`session.targets`, hello'da gelebilir → `ensureEngage`)
+  Boşluk / kumanda `lock` düğmesi → `cmd engage` (WS `cmd`; şeride "Komut: engage" yazılmaz), WS `engage` → panel + olay + skor rozeti
+  (`m.state`). Kumanda ipucunda `eng.rc_hint`. Çekirdek komutu ve sunucu angajman takibi HEPGO ile aynıdır (`app/flightsim.py`,
+  `app/flightsim_targets.py`); kilitli önleme bonusu (+250) skora eklenir.
+- Uçuş özeti hedef kartında "◆ Angajmanlar" satırları (`fly/targets.js engagementRowsEl`). Metinler `eng.*` + "KİLİT" / "Boşluk: kilit" (HUD) +
+  `pad.act_lock` (7 dil).

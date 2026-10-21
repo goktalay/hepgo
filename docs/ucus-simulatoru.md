@@ -2737,3 +2737,48 @@ Kullanıcı isteği: telefonda simülasyon ekranında üst başlık ve alt bant 
   düğmenin altına iner. Metinler "Menü" / "Menüyü kapat" (HEPGO 6 dil, SIMUMAV `mob.*` 7 dil).
 - Görsel (Chromium mobil emülasyonu: `is_mobile` + `has_touch`, iPhone UA; WebKit kurulu değil): 390×844, 412×915, yatay 844×390 — kapalı / açık,
   taşma denetimi (`tests.rcpad_shots`).
+
+## 40. Hedefli uçuşta BOŞLUK ile kilit + ANGAJMAN (`static/js/modules/flightsim_engage.js`; sunucu `app/flightsim_targets.HedefIzleyici`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: hedefli uçuşta bir hedefin TD kutusu ekrandayken Boşluk o hedefe kilit açsın, tekrar Boşluk bıraksın; kilitle angajman başlasın
+(HUD'da kilit sembolü, süre, mesafe, kapanma hızı, hedef açısı), hedef önlenince "ANGAJMAN BAŞARILI", kilit bırakılınca ya da hedef 3 sn'den uzun
+görüş dışında kalınca "ANGAJMAN KESİLDİ"; sunucuda kayıt + özet raporda liste; kayıttan oynatmada görünsün; fiziksel kumandada atanabilir düğme.
+**Kapsam:** yalnız simülasyon içi oyun mekaniği (HUD kilidi, süre, sonuç, puan). Araca otonom yönelme / güdüm / takip komutu YOKTUR — pilot
+aracı kendisi uçurur; kilit yalnız göstergeyi ve puanlamayı etkiler.
+
+- **Görünürlük = §24.5 sembolojisinin kutusu ekranda** (`symbology()` → öğe `on`): son render edilen ana kameranın pozuyla hesaplanır, kamera kipi
+  fark etmez. Gimbal/FPV kiplerinde HUD/OSD TD kutusunu zaten çizer; takip/serbest/yer kiplerinde (ya da HUD kapalıyken) modülün kaplama tuvali
+  (`.fs-eng-cv`) aday ya da kilitli hedefin TD kutusunu + "Boşluk: kilit" ipucunu çizer (HUD/OSD son 1,5 sn'de çizdiyse kaplama çizmez —
+  `targetsHud({peek:true}).hudFresh`; `peek` sahne etiketlerini gizlemez).
+- **Boşluk** (pencere yakalama evresinde dinlenir; yalnız canlı + yazma izni + hedefli oturum): kilitliyse → bırak; değilse aday = HUD'un TD
+  kutusundaki hedef (oto en yakın ya da Tab seçimi) ekrandaysa o, değilse ekranda görünen hedeflerden boresight'a (ekran merkezi) en yakını →
+  `cmd engage {action:'lock', i}`. Aday yoksa: sanal kumanda kapalıysa kısa ipucu "Kilit için bir hedefin kutusu ekranda olmalı", **açıksa Boşluk
+  eski davranışına** (kopterde gaz orta, kara aracında dur) geçer. Kumanda ipucu satırına hedefli oturumda "Boşluk: hedef kutusu ekrandayken
+  kilit / angajman" eklenir; HUD/OSD ipucu "Tab: hedef · Boşluk: kilit". Kayıttan oynatmada Boşluk oynat/duraklat kalır. Angajman sürerken Tab ve
+  radar tıklaması kilidi değiştirmez (`flightsim3d` `tg.eng`).
+- **Fiziksel kumanda** (§37): `PAD_ACTIONS` + `lock` (standart eşlemede düğme 0 = A / ✕; RC verici profilinde atanmamış); eşleme panelinde
+  "Hedef kilidi (angajman)" satırı; basınca Boşluk ile aynı (`engage.toggle()`).
+- **Sunucu (otoriter):** `HedefIzleyici.kilit_ac(i)` → angajman başlar (başka hedefe kilit varken önce `switched` ile kesilir), `kilit_birak(sebep)`
+  (`released` | `lost`); her telemetri adımında kilitli hedefe en yakın mesafe güncellenir; **kilitli hedef önlenince** (mevcut önleme yarıçapı,
+  §24) angajman `success` (`reason: intercept`, `end_dist_m`), önleme olayına `locked: true`; Sıfırla (SITL saati geri) etkin angajmanı `reset`
+  ile keser. Görüş dışı süresini istemci ölçer (`ENGAGE_LOST_MS` 3000; kamera sunucuda yok) → `release {reason:'lost'}`. Zaman = SITL saati
+  (`t0` tt saniyesi, `start_s` ilk ARM'dan, `dur_s`). WS `{t:'engage', kind: start | success | cut, i, name, t0, start_s, dur_s, start_dist_m,
+  min_dist_m, result?, reason?, state}`; oturum yanıtı/hello `engagement` (etkin angajman; yeniden bağlanan istemci için). SITL'e STATUSTEXT
+  `ENGAGE T1 LOCK | OK 7.8s | CUT lost` (ArduPilot DataFlash MSG → .bin kayıttan oynatma şeridinde de görünür; Mission Planner mesajlarında).
+  Komut doğrulaması 400: hedefsiz oturum, `i` tam sayı değil / bilinmeyen, `action`/`reason` geçersiz. SIMUMAV aynı çekirdek komutu (`KOMUTLAR`).
+- **Puan:** kilitli angajmanla önleme bonusu **+250** (hedef başına bir kez; `HedefIzleyici.ozet().items[].locked_hits`, `flightsim_targets.js
+  ENGAGE_BONUS` aynı kural). Özet: `targets.engagements[{i, name, t0, start_s, dur_s, start_dist_m, min_dist_m, end_dist_m?, result: success |
+  cut | active, reason}]` (≤ 200), `engaged_hits`; `drone_sim_runs.targets.result` içinde kalıcı (göç yok — JSON alanı).
+- **HUD:** tgthud `data.eng` → kilitli hedefin TD kutusu **çift çerçeve** + üstte "KİLİT" (ekran dışındaysa ok bloğunda). Angajman paneli
+  (`.fs-eng`, üst orta, her kipte): "◆ KİLİT · ANGAJMAN · T1 ad", süre, mesafe, Vc (±m/s, yaklaşma +), açı (burun yönünden yatay sapma, R/L°),
+  ΔH; görüş dışıyken "GÖRÜŞ DIŞI 2.1 sn" geri sayımı; başarıda 2,5 sn yeşil "ANGAJMAN BAŞARILI · ad · 7.8 s". Olay şeridi (ön yüz kendi dilinde):
+  "ANGAJMAN · ad", "ANGAJMAN BAŞARILI · ad · süre", "ANGAJMAN KESİLDİ · ad · süre · sebep". Sesler: kilit çift bip, başarı üçlü, kesilme alçalan
+  (Web Audio; dosya yok).
+- **Kayıttan oynatma:** oynatma oturumu `engagements` (kaydın `drone_sim_runs.targets.result.engagements`, `bin_log_id` eşleşmesi) → istemci kare
+  `tt`'siyle eşler (`engagementAt` / `engagementEvents`): kilit + panel + olay satırları; atlamada sıfırlanır.
+- **Rapor:** HEPGO özet raporu "◎ Hedefler" bölümünde "◆ Angajmanlar n/m" tablosu (hedef, başlangıç, süre, sonuç, en yakın) + bonus notu;
+  SIMUMAV uçuş özeti hedef kartında aynı satırlar (`eng.*`).
+- **Metinler:** HEPGO 6 dil (Türkçe anahtar), SIMUMAV 7 dil (`eng.*`, `pad.act_lock`, HUD'un Türkçe anahtarları "KİLİT", "Boşluk: kilit").
+- **Testler:** `node tests/test_flightsim_engage.mjs` (aday seçimi, Boşluk kararı, 3 sn sayacı, açı/Vc, oynatma eşlemesi, rapor satırları, puan,
+  tgthud kilit sembolü, 6 + 7 dil, bağlama, gamepad); `.venv/bin/python -m tests.test_flightsim_engage` (izleyici + API uçtan uca sahte kip +
+  kalıcı kayıt). Görsel: `./.venv/bin/python -m tests.engage_shots` → `/tmp/dogfight-shots/engage-*.png` (takipte aday, kilit + panel, gimbal
+  HUD'unda çift çerçeve, başarı, raporda liste, kutu yokken ipucu).

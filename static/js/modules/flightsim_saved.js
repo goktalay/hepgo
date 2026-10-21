@@ -503,7 +503,7 @@ export function savedScreen({ be, tr, user = null, canWrite = false, initial = n
       dl([['Merkez', r.center_name || '—'], ['Dünya', tr(WORLD_MODE[w.mode] || w.mode || '—')], r.launch?.method ? ['Kalkış', launchLabel(r.launch, tr)] : null,
         r.camera ? ['Kamera', tr(CAMERA[r.camera] || r.camera)] : null, r.drone_code ? ['Dron kaydı', r.drone_code] : null, ['Bitiş', r.ended_at ? fmtDateTime(r.ended_at) : '—']]),
       h('div', { class: 'fs-sv-dacts pill-group' },
-        btn(tr('Oynat'), RUN_ICON.play, { disabled: !playOk, 'data-act': 'play', title: r.play_log_id ? tr('Kayıttan oynat kipinde aç') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, playOk ? 'primary' : ''),
+        btn(tr('Oynat'), RUN_ICON.play, { disabled: !playOk, 'data-act': 'play', title: r.play_log_id ? tr('Kaydedilen ayarlarla doğrudan izle') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, playOk ? 'primary' : ''),
         btn(tr('Rapor'), RUN_ICON.report, { disabled: !r.has_summary, 'data-act': 'report', onclick: async () => { try { await onReport?.(r); } catch (err) { toastError(err); } } }),
         r.has_video ? btn(tr('Video'), RUN_ICON.video, { 'data-act': 'video', onclick: () => runVideoDialog(r, tr) }) : null,
         master ? h('button', { class: 'btn sm danger', type: 'button', 'data-act': 'download', 'aria-haspopup': 'menu', onclick: e => runDownloadMenu(e.currentTarget, r, { tr, onReport }) },

@@ -99,6 +99,7 @@ async function renderFlightLogs(view, ctx) {
   // Kaynak: gerçek uçuş / simülasyon (SITL) — süzgeç + sütun başlığına tıklayarak sıralama (tercih saklanır)
   const org = selectInput([['REAL', 'Gerçek uçuş'], ['SIM', 'Simülasyon']], { all: 'Tüm kaynaklar (gerçek + simülasyon)', value: pref('flightlogs.origin', '') });
   let sort = pref('flightlogs.sort', '-uploaded');
+  const canSim = !!(ctx.user?.master || (ctx.user?.write_modules || []).includes('drone.sim') || (ctx.user?.write_modules || []).includes('drone'));   // §8.5 "Simüle et" (Uçuş Simülatörü yazma izni)
   let logs = [];
 
   go.addEventListener('click', async () => {
@@ -155,6 +156,8 @@ async function renderFlightLogs(view, ctx) {
         h('td', { class: 'muted' }, l.uploaded_by_name || '—', h('div', { class: 'small' }, fmtDateTime(l.uploaded_at))),
         h('td', { class: 'num' },
           l.status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/tools/flight-log/${l.id}` }, 'Raporu Aç') : null,
+          // §8.5 Uçuş Simülatörü "Simüle et": log kayıttan oynat sihirbazında sabit açılır (atmosfer, rampa, kamera orada sorulur)
+          l.status === 'TAMAM' && canSim ? h('a', { class: 'btn sm fs-simulate', href: `#/drone/sim?simulate=${encodeURIComponent(l.id)}`, title: t('Uçuş Simülatörü\'nde bu logu oynat: dünya, hava, rampa ve kamera sorulur') }, 'Simüle et') : null,
           !l.task_id && l.status !== 'ISLENIYOR' ? h('button', { class: 'btn sm ghost', onclick: () => remove(l, load) }, 'Sil') : null))))))
       : h('div', { class: 'card empty' }, logs.length ? 'Filtreye uyan log yok' : 'Henüz analiz edilmiş uçuş logu yok'));
   };

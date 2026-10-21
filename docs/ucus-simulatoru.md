@@ -247,13 +247,14 @@ Başlat → **ön hazırlık kartı** (§8: sunucu HAZIR + kareler + dünya veri
   bayat yenileme, yedek Overpass, 503), yetki (modülsüz 403), `world.mode` doğrulama ve gerçek kipte ev irtifası.
 
 ## 8. Kayıttan oynatma (`mode: 'replay'`; `app/flightsim_replay.py`)
-Kullanıcı sihirbazda **Kip › Kayıttan oynat** seçer: sisteme yüklenmiş uçuş logları (flight_logs; analizi TAMAM; `.bin` / `.log`
-DataFlash ya da `.tlog` MAVLink) listelenir (ad, tarih, dron, pilot, konum, görev kodu, süre, boyut; arama), biri seçilir, dünya
+Kullanıcı sihirbazda **Kip › Kayıttan oynat** seçer: **simülatörün kendi kayıtları** (flight_logs; analizi TAMAM; `.bin` / `.log`
+DataFlash ya da `.tlog` MAVLink; saha görevi logları ve bağımsız gerçek loglar listelenmez — §8.5) listelenir (ad, tarih, dron, pilot, konum, görev kodu, süre, boyut; arama), biri seçilir, dünya
 ayarlanır, **Oynat**. Kontrol kullanıcıda değildir: SITL ve UDP açılmaz, komut düğmeleri yoktur; kayıt 3B dünyada aynen oynatılır.
-- **Yetki:** oturum `drone.sim` yazma izni; log listesi flightlogs yetkisiyle kesişir (`tools` → tüm loglar, `field` → yalnız göreve
-  bağlı loglar; ikisi de yoksa boş liste, `meta.replay.logs_allowed=false`).
-- **Uçlar:** `GET /api/drone/sim/logs?q=` → `[{id, file_name, ext, size, uploaded_at, aircraft, pilot, location, task_code, vehicle,
-  type, flight_s, duration_s, takeoff_utc, start_utc, home_lat, home_lon, cached, source, origin}]` (`origin` SIM | REAL — §19) · `POST /sessions {mode:'replay', log_id, world}` →
+- **Yetki:** oturum `drone.sim` yazma izni; simülatör kayıtları `drone.sim` erişimiyle görünür (`meta.replay.logs_allowed=true`); gerçek loglar
+  ("Simüle et" girişi, `?id=`) flightlogs yetkisiyle kesişir (`tools` → tüm loglar, `field` → yalnız göreve bağlı loglar; `meta.replay.real_allowed`).
+- **Uçlar:** `GET /api/drone/sim/logs?q=&id=` → `[{id, file_name, ext, size, uploaded_at, aircraft, pilot, location, task_code, vehicle,
+  type, flight_s, duration_s, takeoff_utc, start_utc, home_lat, home_lon, cached, source, origin, sim}]` (`origin` SIM | REAL — §19; `sim` simülatör
+  kaydı mı; `id` yoksa yalnız `sim=true` satırlar) · `POST /runs/{id}/replay` (§8.5, kaydı doğrudan izle) · `POST /sessions {mode:'replay', log_id, world}` →
   `session` (201; 400 log yok/yetkisiz/analiz bitmemiş/biçim; 409 limit) · `GET /sessions/{id}/replay` → gzip JSON kareler
   (`Content-Encoding: gzip`; 409 HAZIR değilken; 400 SITL oturumu için).
 - **session eklemeleri:** `mode: 'sitl'|'replay'`; replay'de `udp_port=null`, `center = {id:null, name:file_name, lat, lon, alt}` (ev),
@@ -397,6 +398,43 @@ sunucu RSS 2,5 GB, API gecikmesi ortalama 0,4 sn / en çok 3,3 sn (aynı makined
   başlık, ortada FMT, tanımsız tip; isteğe bağlı gerçek loglar `BINANALYZE_GERCEK=yol1:yol2`; CLI ilerleme/nice/RLIMIT_AS/PDEATHSIG/bellek;
   kuyruk + ilerleme API; yeniden başlatma; bozuk dosya / zaman aşımı / bellek tavanı → HATA). Görsel: `tests/binanalyze_shots.py`
   (yükleme → rapor sayfasında ilerleme → listede ilerleme + "Sırada (1.)" → rapor; `BINANALYZE_KOD=<eski worktree> BINANALYZE_GORSEL=0` ile "önce" ölçümü).
+
+### 8.5 Kayıttan oynatma girişleri — kaydı doğrudan izle · yalnız simülatör kayıtları · "Simüle et"
+Kullanıcı isteği: *"Bir oturumu kaydediyorum, sonra tekrar izlemek için Başlat dediğimde tekrar tekrar rampasını falan soruyor. Direkt izlemeye
+geçmesi ve o oturumda hangi ayarlarla uçtuysak o ayarlarla getirmesi gerekir. Saha görevlerinin logları burada görünmemeli, hatta yeni simülasyonda
+bile görünmemeli. Saha yönetiminde uçuşun yanında 'Simüle et' diye bir düğmeye bastığımda o zaman sorsun — atmosferi, rampayı falan."*
+
+Üç giriş, tek ReplaySession:
+1. **Simülasyon kaydını izle (sihirbazsız)** — Simülasyon Kayıtları tablosu (§21) ve Kayıtlı Simülasyonlar uçuş kartı (§28) **Oynat** →
+   `POST /api/drone/sim/runs/{id}/replay` (201 → `session` + `run_id`). Sunucu (`flightsim_runs.oynatma_ayarlari`) satırın KAYDEDİLMİŞ ayarlarını
+   kurar: `world` (dünya kipi, saat, hava, rüzgâr/esinti/türbülans, sis, pist yönü, tohum, boyut) + kalkış (`world.launch`, yoksa `launch` sütunu;
+   `phase` atılır — rampa açı/yön, fırlatıcı, dolu hücre, nişan), görsel model (`model_id`; silinmiş/tip uyumsuz → tipin varsayılanı), kamera türü
+   (`camera`). Hedefler (§24), yer kontrol sahası + görev (§26) ve güç (§23) ReplaySession'da zaten kaydın canlı oturumundan (`bin_log_id`) gelir.
+   Eksik/eski alan varsayılanla dolar; artık geçersiz değer (ör. Google 3B anahtarı kaldırıldı) → gerçek arazi, olmazsa yalnız kalkış, en son
+   varsayılan dünya (kayıt her durumda açılır). Ön yüz (`flightsim.js directReplay`) tıklama içinde tam ekran + (kayıt açıksa) ekran paylaşımı izni →
+   aynı **ön hazırlık kartı** (`prepareSessionCard`, modül düzeyine taşındı; önizlemesiz: log ayrıştırma % → kareler → oturum ekranı dünyayı kurar).
+   Gösterge tasarımı kullanıcının kalıcı tercihidir (`fs.gauge.theme`). Yetki: `drone.sim` yazma + (sahip ∨ MASTER ∨ yazma izni); log yetkisi
+   `log_izinli` (simülatör kaydı → `drone.sim` yeter). Hatalar: 404 kayıt yok · 409 oynatılabilir log yok (.bin kaydı kapalıydı / analiz sürüyor)
+   ya da oturum sınırı · 403 yetki.
+2. **Yeni Simülasyon › Kayıttan oynat** listesi YALNIZ simülatör kayıtları: `flightsim_replay.SIM_LOG_SQL` =
+   `task_id IS NULL AND flight_id IS NULL AND (origin = 'SIM' OR id ∈ drone_sim_runs.bin_log_id)`. Saha görevine (`task_id`) ya da saha uçuşuna
+   (`flight_id`) bağlı loglar kaynağı SIM olsa bile listelenmez. Ön yüz de süzer (`flightsim_wizard.isSimLog / simLogsOnly`; sahte kip aynı). Kaynak
+   (Tümü/Gerçek/Simülasyon) süzgeci kaldırıldı; boş listede "Saha Yönetimi / Uçuş Logu Analizi › Simüle et" yönlendirmesi.
+   **Karar — bağımsız gerçek loglar (Araçlar › Uçuş Logu Analizi'ne elle yüklenen, görevsiz):** onlar da simülatör listesinden çıkarıldı. Gerekçe:
+   kullanıcı simülatör listesini "simülatörün kendi kayıtları" olarak istiyor; gerçek uçuşun yeniden canlandırılması atmosfer/rampa sorusu
+   gerektirir — bu da "Simüle et" yolunun işi. İki yol ayrık: simülatör kaydı → doğrudan izle; gerçek log → "Simüle et" (sorulur). Uçuş Logu
+   Analizi listesinde de **Simüle et** düğmesi var, gerçek loga erişim kaybolmaz.
+   CAYSIM `GET /api/caysim/v1/logs` sözleşmesi değişmez (`loglari_listele(..., hepsi=True)`: tüm oynatılabilir loglar, sahibin yetkisiyle).
+3. **"Simüle et"** — Saha Yönetimi › görev › Uçuş Yönetimi tablosunda logu TAMAM olan her uçuşun yanında ve Uçuş Logu Analizi listesinde (yalnız
+   `drone.sim`/`drone` yazma izni olana) → `#/drone/sim?simulate=<log>`. Sihirbaz kayıttan oynat kipinde **log sabit** açılır (`preset.pinned`;
+   kip seçimi yerine "Simüle et" bandı; başlık "Uçuşu simüle et"; log `GET /logs?id=` ile — gerçek logda flightlogs yetkisi), loglar gelince
+   **Dünya** adımına geçer (`wizardStartStep`): atmosfer (dünya kipi, saat, hava, rüzgâr) → kalkış/rampa (sabit kanat/INTERCEPTOR) → kamera →
+   özet → ▶ Oynat. Log adımı geri dönülebilir (görsel model seçimi orada). `?simulate` adresten silinir (yenilemede pencere tekrar açılmaz).
+- **Testler:** `tests/test_flightsim.py` `oynatma_girisleri_testleri` (liste süzgeci: SIM görevsiz ✓, bin'i simülasyon kaydı olan kaynaksız ✓,
+  saha görevi ✗, saha uçuşu ✗; `?id=` admin ✓ / flightlogs yetkisiz ✗; montaj (okuma) simülatör kayıtlarını görür; `/runs/{id}/replay`
+  404/409/403, dünya-hava-rüzgâr-sis-tohum-pist-rampa açı/yön-kamera-model korunur, Google 3B kapalı → gerçek arazi, eski satır → varsayılan +
+  `launch` sütunu); `replay_testleri` güncellendi (bağımsız gerçek log listede yok, `?id=` ile var). Node: `tests/test_flightsim_wizard.mjs`
+  (`isSimLog/simLogsOnly`, `simulateParam`, `simulateHref`, `wizardStartStep`). Görsel: `tests/replayfix_shots_hepgo.py` → `/tmp/replayfix-shots`.
 
 ## 9. Gerçek topoğrafya (`world.mode = "real"`; `app/sim_terrain.py`, ön yüz `loadRealTerrain`)
 Kullanıcı sihirbazın Dünya adımında **Gerçek arazi / Prosedürel** seçer. Gerçek kipte seçili merkezin çevresi (kenar `size_m`, 1–12 km)
@@ -1335,7 +1373,7 @@ duration_s | result | mode (başında `-` azalan; ikincil anahtar id aynı yön)
 `from/to` `YYYY-MM-DD` (started_at günü); geçersiz sayı 400. Satır alanları + `bin_status/bin_file_name`, `source_file_name`, `has_params/
 has_scripts/has_video/has_summary`, `play_log_id` (bin_log_id analizi TAMAM, yoksa source_log_id TAMAM), `can_delete`. `GET /runs/{id}`;
 `GET /runs/{id}/params` ve `GET /runs/{id}/scripts` **yalnız MASTER** (`user.master`; aksi 403; `Content-Disposition` SIM-<oturum>-<tarih>-
-params.param / scripts.zip); `GET /runs/{id}/bin` (.bin dosyası, drone.sim okuma izniyle; uçuş logu yetkisi gerekmez); `GET /runs/{id}/video[?dl=1]`
+params.param / scripts.zip); `GET /runs/{id}/bin` (.bin dosyası, drone.sim okuma izniyle; uçuş logu yetkisi gerekmez); `POST /runs/{id}/replay` (§8.5: kaydedilen ayarlarla doğrudan izleme oturumu; yazma izni); `GET /runs/{id}/video[?dl=1]`
 (paylaşılmışsa `UPLOAD_DIR/feed/…`, değilse `sim_rec/<rec>.webm`); `DELETE /runs/{id}` (sahip ya da yazma izni; satır + `sim_runs/<id>/`
 silinir — özet, .bin, video kendi yerlerinde kalır; iz kaydı). Dosya yolları yalnız satır kimliğinden türetilir ve DB'deki göreli yol beklenenle
 karşılaştırılır (yol gezinmesi yok).
@@ -1352,8 +1390,8 @@ Sahte kipte (`?mock=1`) kayıt ve istemci sekmeleri "Sahte veri kipinde … yok.
 Tablo (HEPGO `.table-wrap > table.table` kalıbı): tarih/saat (+ `#oturum · kapanış nedeni`), kullanıcı, dron tipi/model (kayıt rozeti), merkez/konum
 (+ koordinat), dünya kipi, kalkış yöntemi (sabit kanat), süre, sonuç rozeti (**ÇARPIŞMA** kırmızı `×n` / Tamam yeşil / Hata turuncu; çarpışma
 satırı `row-alert`), ekler (SVG simgeler: video, .bin [analiz sürüyorsa sarı], parametre, script — emoji yok), işlemler: **kapsül** (`.pill-group
-.fs-runs-rowpill`) **Oynat** (`play_log_id` ∧ yazma izni; pasifse soluk; pencereyi kayıttan oynat kipinde o log seçili açar → dünya seçimi → Başlat →
-mevcut replay akışı) · **Rapor** (`showReport`; `has_summary` yoksa pasif) · **Video** (yalnız `has_video`; modal `<video>` + İndir); **yalnız
+.fs-runs-rowpill`) **Oynat** (`play_log_id` ∧ yazma izni; pasifse soluk; §8.5: sihirbaz AÇILMAZ — `POST /runs/{id}/replay` kaydın kaydedilmiş ayarlarıyla
+oturum açar → hazırlık kartı → izleme) · **Rapor** (`showReport`; `has_summary` yoksa pasif) · **Video** (yalnız `has_video`; modal `<video>` + İndir); **yalnız
 `ctx.user.master`**: kırmızı **Download ▾** düğmesi → açılır menü (`popover`, body'ye fixed; dışarı tıklama / Escape / kaydırma kapatır): "Uçuş logu
 (.bin)" · "Parametreler (.param)" · "Script arşivi (.zip)" · "Video (.webm)" · "Rapor (yazdır)" (`<a download>`; olmayanlar pasif). Master olmayanda
 Download YOK — .bin indirme yalnız Download menüsünde; master olmayan .bin'i Oynat ile kullanır. **Sil** küçük simge, kapsülün sağında (`can_delete`;
@@ -1997,7 +2035,7 @@ göster"): tarih-saat, sonuç rozeti (çarpışma kartı kırmızı sol kenar), 
 silinmiş kayıttan uçuşlar "silinmiş kayıt" rozetiyle; "Tablo görünümü" → Simülasyon Kayıtları sekmesi (filtreli tablo aynen). **(3) sağ** üstte **dönen 3B model**
 (uçuşun `model_id`'si; kütüphane modeli `GET /models/{id}` ile GLB + yönelim; kayıt seçiliyken kaydın modeli), altında özet: tarih + sonuç, kullanıcı · oturum no ·
 kayıt adı, **karolar** (`runFacts`: süre, mesafe, sonuç, çarpışma, önleme n/hedef, yakıt L · km/L [bitti → kırmızı], batarya Wh · W, en yüksek hız, simülasyon hızı,
-kapanış), ayrıntı listesi (merkez, dünya, kalkış, kamera, dron kaydı, bitiş) ve işlemler: **Oynat · Rapor · Video** (+ MASTER **Download ▾** — `runDownloadMenu`,
+kapanış), ayrıntı listesi (merkez, dünya, kalkış, kamera, dron kaydı, bitiş) ve işlemler: **Oynat** (§8.5 doğrudan izleme, sihirbazsız) **· Rapor · Video** (+ MASTER **Download ▾** — `runDownloadMenu`,
 tabloyla ortak) · Sil. Kayıtlı simülasyon seçili ve uçuş seçili değilken sağda kaydın özeti: model, açıklama, azami süre/menzil kutusu (dar), pilot/tasarlayan/
 merkez/dünya/kalkış/kamera/hedefler/uçuş sayısı, Başlat/Düzenle. Serbest Uçuş seçilince en yeni uçuş seçili gelir. **Tek WebGL bağlamı**: dönen model flightsim3d
 **stüdyo** kipiyle (`createFlightSim3D(…, {studio: true})` → yalnız `createModelViewer`; dünya/kare döngüsü yok), görüntü 2B tuvale kopyalanır (§24.4 kalıbı;

@@ -335,6 +335,9 @@ async function renderTask(view, id, ctx) {
     return drawFlights();
   }
 
+  // §8.5 "Simüle et" görünürlüğü: Uçuş Simülatörü (drone.sim) YAZMA izni (oturum açar)
+  const canSimulate = () => !!(ctx.user?.master || ['drone.sim', 'drone'].some(k => (ctx.user?.write_modules || []).includes(k)));
+
   // Uçuş Yönetimi: görevin uçakları/dronları. Eylem alanında "Dron Ekle" (saha yöneticisi, açık görev); satırda Düzenle / Kaldır.
   function drawFlights() {
     const open = TASK_OPEN.includes(t.status);
@@ -356,6 +359,8 @@ async function renderTask(view, id, ctx) {
         h('td', null, f.videos.length ? h('span', { class: 'badge blue' }, `${f.videos.length} video`) : h('span', { class: 'muted' }, '—')),
         h('td', { class: 'num' }, h('div', { class: 'pill-group' },
           f.log_status === 'TAMAM' ? h('a', { class: 'btn sm', href: `#/field/report/${f.log_id}` }, 'Uçuş Raporu') : null,
+          // §8.5 Uçuş Simülatörü "Simüle et": bu uçuşun logu kayıttan oynat sihirbazında sabit açılır (atmosfer, rampa, kamera orada sorulur)
+          f.log_status === 'TAMAM' && canSimulate() ? h('a', { class: 'btn sm fs-simulate', href: `#/drone/sim?simulate=${encodeURIComponent(f.log_id)}`, title: 'Uçuş Simülatörü\'nde bu logu oynat: dünya, hava, rampa ve kamera sorulur' }, 'Simüle et') : null,
           t.can.flights ? h('button', { class: 'btn sm primary', onclick: () => flightModal(f) }, 'Düzenle') : null,
           // Kaldır: yalnız saha yöneticisi, açık görev, logu ve videosu olmayan uçuş (sunucu da aynı kuralı uygular)
           t.can.manage && open && !f.log_id && !f.videos.length

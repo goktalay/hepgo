@@ -1666,7 +1666,7 @@ CREATE TABLE IF NOT EXISTS drone_sim_runs (
     world           TEXT,                               -- JSON: dünya ayarları
     launch          TEXT,                               -- JSON: kalkış yöntemi (sabit kanat)
     layout          TEXT,                               -- §13.1 kontrol düzeni: classic | elevon | vtail (sabit kanat; SITL'de fiilen uçan)
-    camera          TEXT,                               -- §22.3 kamera türü: day | thermal | night (son seçim; kayıttan oynatma aynı türle)
+    camera          TEXT,                               -- §22.3 kamera türü: day | thermal | night | none (§35 kamera yok; son seçim; kayıttan oynatma aynı türle)
     targets         TEXT,                               -- JSON (§24): {config: {items, radius_m}, result: önleme özeti} — hedef yoksa NULL
     intercept_count INTEGER,                            -- §24 toplam önleme sayısı (hedefli oturumlarda)
     servo_trig      TEXT,                               -- JSON (§34): servo tetik kısa özeti {ch, fn, pwm, cmp, delay_ms, trig_agl, trig_msl, trig_dist_m, hit_agl, hit_dist_m, fired}

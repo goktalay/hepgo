@@ -33,7 +33,7 @@ class SessionIn(BaseModel):
     drone_id: Optional[int] = None   # §14 isteğe bağlı: Dron Envanteri kaydı — harekât panelinde telemetri bu dronun adıyla akar (yoksa "Simülatör #N")
     rec: Optional[dict] = None       # §19 kayıt seçenekleri: {bin: bool} — SITL DataFlash .BIN kaydı, kapanışta Uçuş Logları'na (yalnız sitl)
     power: Optional[dict] = None     # §23 güç ve yakıt: {max_speed_ms, fuel_l, fuel_km_per_l, elec_cells, elec_mah, elec_w}; eksikler dron kaydı önerisi → tip varsayılanı
-    camera: Optional[str] = None     # §22.3 kamera türü: day | thermal | night (varsayılan day; kayıtta kaydın türü öncelikli)
+    camera: Optional[str] = None     # §22.3 kamera türü: day | thermal | night | none (§35 kamera yok; varsayılan day; kayıtta kaydın türü öncelikli)
     drive: Optional[str] = None      # §31 kara aracı sürüş biçimi: ackermann | skid (eksikse modelin `drive`'ı, yoksa ackermann); diğer tiplerde yok sayılır
     layout: Optional[str] = None     # §13.1 kontrol düzeni (yalnız sabit kanat): classic | elevon | vtail; eksikse modelin düzeni (Caymaz/Delta elevon, Talon vtail), yoksa classic
     targets: Optional[Union[list, dict]] = None   # §24 hedefler: [{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}] ya da {items, radius_m}

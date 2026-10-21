@@ -2409,3 +2409,112 @@ ağaç %40): ağaç ~8 000 örnek / ~200 parça, yakın (3B) parça 12–15, gö
 akış çizgileri ≤ 420. Orta düzey dizüstü GPU'da (Iris Xe / GTX 1650 sınıfı) hedef ≥ 45 fps — doğrulama için `window.__fsSim.fxInfo()` (çizim çağrısı,
 üçgen, parça/LOD sayısı, sis aralığı) ve tarayıcı FPS ölçeri; gerekirse ilk ayar düğmeleri: `MAX_TREES`, LOD uzaklığı (`updateTreeLod` 520 m), gölge
 haritası (2048), yağış sayısı (`precipParams quality`).
+
+## 33. ÇOK OYUNCULU KARŞILAŞMA — halka yarışı (HEPGO aşama 1; çekirdek SIMUMAV aşama 2 ile ortak)
+
+Kullanıcı isteği: "HEPGO'da **Yeni Karşılaşma** butonu: Yeni Simülasyon ile aynı özellikler, yalnız **radar, elektro-optik ve yer kontrol yok**; sihirbaz
+sonunda Başlat/Kaydet değil **Davet et** bölümü (solda davet edilmeyenler, sağda edilenler), İleri → yalnız **Başlat**. Başlat → **bekleme salonu**;
+davetliler **bildirime basıp** salona gelir; **herkes gelince başlar**; herkes **aynı haritada farklı noktada**; havada **farklı yüksekliklerde halkalar**
+(oyundan önce **minimum/maksimum yükseklik, halka sayısı**); takeoff verip halkalardan geçen; **ilk bitiren birinci, oyun biter**; **herkeste sonuç ekranı**."
+
+### 33.1 Dosyalar ve katmanlar
+| Katman | Dosya | Not |
+|---|---|---|
+| **Saf çekirdek** (platformdan bağımsız) | `app/flightsim_match_core.py` | halka ayarı/üretimi, başlangıç noktaları, geçiş tespiti, durum makinesi, sıralama — DB/ağ/asyncio YOK; zaman dışarıdan |
+| HEPGO çalışma zamanı | `app/flightsim_match.py` | `MatchManager` / `MatchRuntime`: oyuncu SITL oturumları, tele kancası, komut kapısı, WS yayını, `drone_sim_matches`, davet push'u |
+| HEPGO REST + WS | `app/routers/flightsim_match.py` | `/api/drone/sim/matches…`, `/ws/drone/match/{id}` |
+| Simülatör çekirdeği eklemeleri | `app/flightsim.py`, `app/routers/flightsim.py`, `app/flightsim_runs.py` | `start` / `match_id` / `tele_kanca` / `komut_kapisi`, ayrı SITL tavanı, sahibi dışında komut 403, `drone_sim_runs.match_id` |
+| Bildirim | `app/notifications.py` `sim-match-invite` | zil (5 sn yoklama); anlık push oluşturma anında (`push=False`, çift olmasın) |
+| Ön yüz saf | `static/js/modules/flightsim_match.js` | sınırlar/varsayılanlar, davet listesi bölme, saat eşitleme, geri sayım evresi, geometri, canlı sıralama |
+| Ön yüz 3B | `static/js/modules/flightsim_match3d.js` | numaralı halkalar (sıradaki yeşil nabız, geçilen soluk, sonrakiler turuncu, yön oku) + diğer oyuncular (renkli gövde + isim) |
+| Ön yüz DOM | `static/js/modules/flightsim_match_ui.js` | sihirbaz Halkalar / Davet et, bekleme salonu, oturum katmanı (şerit, sıralama, bekleme/geri sayım, sonuç), Karşılaşmalar sekmesi |
+| Sihirbaz | `static/js/modules/flightsim_wizard.js` (`wizardSteps({match})`, `stepDefFor`), `flightsim.js` (`wizardModal({match:true})`) | |
+
+### 33.2 Akış ve durumlar
+`LOBI → HAZIRLIK → GERI_SAYIM → YARIS → BITTI` (+ `IPTAL`). Kullanıcının dört durumuna **HAZIRLIK** eklendi: SITL'ler boşta lobide beklemesin diye
+oyuncu simülatörleri **herkes geldiğinde** açılır (kaynak), istemciler 3B dünyayı kurar.
+1. **Sihirbaz** (Uçuş Simülatörü ana ekranı › "+ Yeni Karşılaşma", Yeni Simülasyon'un solunda): Araç (kara aracı yok — halkalar havada; **dron kaydı yok**)
+   → Dünya ve konum → Kalkış (sabit kanat / fırlatıcı) → Güç ve yakıt → Kamera → **Halkalar** → **Davet et** → **Özet ve başlat** (yalnız ▶ Başlat;
+   Kaydet / Uç / kayıt seçenekleri / pilot ataması yok). **Hedefler** de karşılaşmada yoktur (yarışa odak; dikkat dağıtan kinematik hedefler ve önleme
+   sayımı anlamsız). Halkalar adımı: halka sayısı (1–30), minimum/maksimum yükseklik (5–400 m, merkez zemininden), halka çapı (4–80 m), parkur yarıçapı
+   (80–3000 m), süre sınırı (2–60 dk), parkur tohumu (🎲) — sağda sunucu önizlemesi (`POST /rings-preview`, aynı tohum = aynı parkur) kuş bakışı + yükseklik
+   profili. Varsayılanlar tip sınıfına göre: dikey (kopter/heli/VTOL/INTERCEPTOR) 8 halka 15–60 m Ø12 R220; sabit kanat 8 halka 40–140 m Ø36 R700.
+   Davet et: Uçuş Simülatörü **yazma** izni olan etkin kullanıcılar (`flightsim_presets.pilotlar`, siz hariç); iki liste — tık seç (Ctrl çoklu),
+   çift tık taşı, ›/» ekle, ‹/« çıkar, sürükle-bırak, arama; en az 1, en çok 7 davetli (8 oyuncu, kurucu dahil).
+2. **Başlat** → `POST /api/drone/sim/matches` → **LOBI** (kurucu "geldi"); davetlilere anlık push (`url /app#/drone/sim/match/{id}`) + zilde "Karşılaşma
+   daveti › Bekleme salonuna katılın". Kurucu **bekleme salonuna** (`#/drone/sim/match/{id}`) geçer.
+3. **Bekleme salonu**: oyuncular (renk, çevrimiçi noktası = salon WS'ine bağlı, durum rozeti Bekleniyor / Geldi / Hazırlanıyor / Hazır / Ayrıldı /
+   Çıkarıldı / Düştü), ayarlar + parkur çizimi, sohbet. Davetli bildirimden gelince sayfa **kendiliğinden katılır** (`POST /join`). Kurucu: oyuncu çıkar (✕),
+   **iptal**, **"Gelmeyenler olmadan başlat"** (yalnız ≥ 2 oyuncu gelmiş ve `LOBI_ZORLA_S` = 60 sn geçmişse; varsayılan HERKESİ bekler — kullanıcı "tüm
+   kullanıcılar geldiğinde" dedi). Davetli: Ayrıl (= daveti reddet). Lobi 30 dk içinde başlamazsa IPTAL `zaman_asimi`. Kurucu lobide ayrılırsa IPTAL.
+4. **Tüm davetliler geldi** (ya da çıkarıldı / düştü) ve ≥ 2 oyuncu → **HAZIRLIK**: her oyuncuya kendi **SITL oturumu** açılır (ortak ayarlar: tip, dünya,
+   model, güç, düzen, kamera; `rec.bin` kapalı) — **aynı merkez/dünya, farklı başlangıç noktası** (`SimSession.start` → SITL `--home` ve sahte kinematik).
+   Salon sayfası oyuncuyu oturum ekranına götürür (`#/drone/sim/{sid}?match={id}`). 3B dünya kurulunca istemci WS `ready` gönderir; oturum HAZIR + ready
+   → oyuncu **hazır**. 150 sn'de hazır olmayan düşer; < 2 oyuncu kalırsa IPTAL.
+5. **Herkes hazır** → **GERI_SAYIM**: `start_at = now + 6 sn` (sunucu saati; istemciler WS `pong.now` ile saat farkını en küçük gidiş-dönüş örneğiyle
+   kestirir). Son 3 sn'de §29 giriş sekansı (100 m bakış + 3‑2‑1 + "dıt dıt") — herkeste aynı anda "BAŞLA". Bu sürede ve öncesinde **komut kapısı**
+   ARM / kalkış / görev başlatmayı (web, CAYSIM, harekât paneli) ve sanal kumanda RC'sini (çubukla ARM olmasın) reddeder: "Yarış henüz başlamadı".
+6. **YARIS**: kalkış serbest. Halka geçişi **sunucuda doğrulanır** (oyuncu oturumunun `tele_kanca`sı; gerçek SITL'de her ATTITUDE/konum karesi):
+   ardışık iki konum halka düzlemini **doğru yönde** (−→+) keser ve kesişim **halka yarıçapı içinde** ise geçiş; yalnız **sıradaki** halka denetlenir;
+   ters yön (WS `wrong_way` uyarısı) ve dışından geçiş sayılmaz; tek adımda > 250 m sıçrama (Sıfırla/ışınlanma) yok sayılır. 10 Hz `pos` çerçeveleri
+   diğer oyuncuları 3B'de taşır (≈150 ms gecikmeli ara değer; çarpışma yok, yalnız görsel). Çarpışan oyuncu Sıfırla ile başlangıca döner, ilerlemesi kalır.
+7. **İlk tüm halkaları bitiren** → **BITTI** (`birinci_bitirdi`); süre sınırı dolarsa `sure` (birinci en çok ilerleyen). Herkese WS `result` →
+   **sonuç ekranı** (oturum ekranında katman + salon sayfasında tablo). Oyuncu oturumları 8 sn sonra kapanır (`drone_sim_runs.match_id` ile kayıt);
+   oturum ekranındaki "Oturum sona erdi" perdesi karşılaşma kapanışında gösterilmez (sonuç kalır).
+
+### 33.3 Halkalar, başlangıç noktaları, sıralama (çekirdek)
+- **Halka üretimi** (`halkalar_uret(ayar, merkez)`, `random.Random(seed)`): yükseklikler [min, max]'a eşit adımla (uçlar dahil) dağıtılıp karıştırılır →
+  hepsi farklı yükseklikte; yatayda merkez çevresinde dolanan parkur (açı adımı 360/n ±%30, yön rastgele, uzaklık 0,45R…R). Halka düzlemi dikey,
+  **normali bir önceki halkadan bu halkaya** (ilk halkada başlangıçların ağırlık merkezinden = merkez) → sırayla uçan doğru yönde keser. Alanlar:
+  `{i, lat, lon, x, y (merkez ENU m), agl_m, alt_msl (= merkez zemini + agl), yaw_deg, nx, ny, radius_m}`.
+- **Başlangıç noktaları** (`baslangic_noktalari(n, tip, pist_yonu, ayrik=40, hedef)`): dikey kalkanlar merkez çevresinde eşit aralıklı çember (komşular
+  ≥ 40 m), burun ilk halkaya; sabit kanat pist yönüne **dik şeritlerde** 40 m arayla, hepsi pist yönünde (rampa yönteminde rampa azimutu `kalkis_yonu`).
+  Tüm oyuncuların SITL ev irtifası merkezinkidir (aynı `alt_rel` ölçeği; ≤ birkaç yüz m'de arazi farkı ihmal — gerçek arazi kipinde çok eğimli sahada
+  sınır).
+- **Sıralama**: bitirenler bitiş süresiyle; bitirmeyenler geçtiği halka sayısı (çok → önde), eşitlikte sıradaki halkaya 3B mesafe (az → önde);
+  ayrılanlar yarışanlardan sonra, çıkarılan/düşen/gelmeyenler sonda. Sonuç satırı: sıra, süre, halka x/n, sıradakine mesafe, azami yer hızı, çarpışma
+  sayısı (oturumun `gorev.crashes`), durum.
+
+### 33.4 REST / WS sözleşmesi (HEPGO)
+- `GET /api/drone/sim/matches/meta` → `{users[{id, full_name, username, pilot}], limits{players_max, invite_min, count, alt_m, diameter_m, radius_m,
+  time_limit_min, defaults{dikey, ucak}, types, countdown_s, force_after_s}, capacity{max, used}, can_create}`.
+- `POST /rings-preview {type, center_id, rings}` → `{cfg, rings}` · `GET ''` son karşılaşmalarım (oyuncusu olduklarım) · `POST '' {settings, rings, invite[]}`
+  → 201 anlık görüntü (settings yalnız `type, center_id, world, model, power, layout, camera, drive`; `site/defend/targets/drone_id/rec` yok sayılır;
+  oturum gövdesiyle AYNI doğrulayıcılar `flightsim_presets.ayar_dogrula`) · 400 geçersiz / izinsiz davetli · 403 yazma izni yok · 409 kapasite.
+- `GET /{id}` (yalnız oyuncular; bellekte değilse DB satırı) · `POST /{id}/join | /leave | /kick {user_id} | /start | /cancel` (409 çakışma, 403 kurucu değil).
+- WS `/ws/drone/match/{id}` (oturum çerezi; oyuncu değilse 4403): sunucu → `hello {match, me, chat}`, `match {match}` (her değişimde anlık görüntü; `now`
+  sunucu saati), `player`, `state`, `countdown {start_at}`, `pos {ts, p[{id, lat, lon, alt_msl, alt_rel, yaw, roll, pitch, gs, armed, rings, next, dist}]}`
+  (10 Hz), `ring {id, i, total, elapsed_s}`, `finish {id, elapsed_s}`, `wrong_way {id, i}`, `result {result}`, `chat {id, name, text}`, `pong {now}`;
+  istemci → `ping`, `ready`, `chat {text}`.
+- Oyuncu oturumu (`/api/drone/sim/sessions/{sid}`): `match_id`, `start`; **yalnız sahibi** komut verir (REST 403, WS salt izleme).
+
+### 33.5 Kaynak sınırları ve kalıcılık
+- Oyuncu tavanı 8 (kurucu dahil). Karşılaşma SITL'leri **ayrı tavanla** sayılır: `SIM_MATCH_MAX_SESSIONS` (varsayılan 8) — normal `SIM_MAX_SESSIONS`'ı
+  tüketmez; oluşturmada bitmemiş karşılaşmaların aktif oyuncuları + yeni oyuncular tavanı aşarsa 409. Bitince/iptalde oturumlar kapanır.
+- **DB göçü**: yeni tablo `drone_sim_matches` (id, host_id, state, reason, settings, rings_cfg, rings, players, result, winner_id, created_at, started_at,
+  ended_at) + `drone_sim_runs.match_id` (+ indeks) — `db.init` içinde (CREATE IF NOT EXISTS / ALTER ADD COLUMN; geri alınması gerekmez).
+- Durum makinesi bellektedir; satır her durum değişiminde güncellenir. Sunucu yeniden başlarsa bitmemiş satırlar ilk erişimde `IPTAL
+  sunucu_yeniden_basladi`; kapanışta (lifespan) süren karşılaşmalar `sunucu_kapaniyor`. Biten karşılaşma 15 dk bellekte (canlı WS/GET), sonra DB'den.
+- Uçuş Simülatörü ana ekranında **Karşılaşmalar** sekmesi (rozet: süren karşılaşma sayısı): durum, kurucu, araç, oyuncular, kazanan, tarih → Salona git / Sonuç.
+
+### 33.6 SIMUMAV aşama 2 için yeniden kullanım
+- Sunucu: `flightsim_match_core` doğrudan (Karsilasma, halkalar_uret, baslangic_noktalari, HalkaIzleyici, siralama, halka_ayar_dogrula); oturum açma
+  `flightsim.MANAGER.ac(..., start=, match_id=)`, `SimSession.tele_kanca` / `komut_kapisi` kancaları. `flightsim_match.MatchRuntime` HEPGO'ya bağlı
+  kısımları (oturum açma `routers.flightsim.oturum_ac`, `db`, push, kullanıcı adları) ayrık; SIMUMAV kendi davet kodu/şifre/salon akışını ve DB'sini
+  yazıp çekirdeği + kancaları kullanır (davet kodu/linki, e-posta → kurucunun ürettiği şifre → salon; Uç bölümünde Çok oyunculu / Tek oyunculu).
+- Ön yüz: `flightsim_match.js` (saf) ve `flightsim_match3d.js` (yalnız flightsim3d nesnesinin `three/scene/toLocal/homeAlt/addFrameHook` alanları)
+  doğrudan; `flightsim_match_ui.js` HEPGO DOM'udur (SIMUMAV kendi arayüzünü yazar; `ringsSvg`, `resultsBody` örnek alınabilir).
+
+### 33.7 Testler ve görsel doğrulama
+- `.venv/bin/python -m tests.test_flightsim_match`: saf çekirdek (halka ayarı sınırları, min/max/sayı, deterministik tohum, normaller; başlangıç noktası
+  ayrıklığı ve pist şeritleri; geçiş doğru/ters yön, dışından, sıra dışı, sıçrama; sıralama; durum makinesi: davet, katılım, hazırlık, geri sayım, yarış,
+  ilk bitiren → BİTTİ, süre sınırı, iptal, çıkarma, zorla başlatma, hazırlık zaman aşımı, lobi zaman aşımı) + HEPGO API uçtan uca (sahte kinematik +
+  `tests/match_bot.py` rota pilotu: davet/yetki, zil + push, farklı başlangıçlar, komut kapısı, başkasının aracı 403, WS ready → countdown → YARIS,
+  halka olayları 1‑2‑3, birinci, iki WS'de sonuç, `drone_sim_runs.match_id`, kapasite 409, iptal / ret / çıkarma).
+- **Gerçek SITL**: `.venv/bin/python -m tests.match_sitl_e2e` — iki ArduCopter SITL (ev konumları 40 m ayrık), geri sayımda ARM 400, YARIS'ta
+  ARM + kalkış + GUIDED goto ile 2 halka → sunucu tele kancası halka 1‑2'yi sayar, birinci → sonuç, SITL'ler kapanır (≈ 2 dk). Bu sırada bulunan
+  hata düzeltildi: eşzamanlı açılan oyuncu SITL'leri aynı port bloğunu seçiyordu (`drone_sitl.SitlYoneticisi._ayrilan`: açılıştaki bloklar ayrılır).
+- `node tests/test_flightsim_match.mjs` (saf ön yüz: doğrulama, davet listesi, saat, geri sayım, geometri, sıralama, sihirbaz adımları).
+- Görsel: `./.venv/bin/python -m tests.match_shots_hepgo` → `/tmp/match-shots/` — iki tarayıcı bağlamı (kurucu + davetli) + tarayıcısız üçüncü oyuncu:
+  sihirbaz Halkalar ve Davet et (iki liste), özet (yalnız Başlat), salon (bekleniyor → geldi), zil bildirimi → salon, hazırlık bekleme katmanı,
+  geri sayım, yarışta halkalar + diğer oyuncular, iki tarafta sonuç, Karşılaşmalar sekmesi.

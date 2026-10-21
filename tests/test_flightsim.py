@@ -2160,11 +2160,11 @@ def guc_testleri(a, c1, sitl, mon):
     assert abs(g.dist_m - 40.0 * 59.1) < 1e-6 and abs(g.armed_s - 59.1) < 1e-6 and abs(g.time_s - 60.0) < 1e-6, (g.dist_m, g.armed_s, g.time_s)   # armed adım 10…600 = 591 × 0,1 sn
     assert abs(g.fuel_used - 0.05) < 1e-9 and 0.33 < g.wh_used < 0.37 and 19 < t['elec']['w'] < 24 and t['elec']['empty'] is False, (g.fuel_used, g.wh_used, t['elec'])
     o = g.ozet()
-    assert o['fuel']['start_l'] == 0.05 and o['fuel']['km_per_l'] == round(2.364 / 0.05, 2) and o['elec']['wh_cap'] == 0.37 and o['max_speed_seen'] == 40.0 and o['speedup'] == {'max': 1.0, 'changes': 0, 'last': 1.0}, o
+    assert o['fuel']['start_l'] == 0.05 and o['fuel']['km_per_l'] == round(2.364 / 0.05, 2) and o['elec']['wh_cap'] == 0.37 and o['max_speed_seen'] == 40.0 and o['speedup'] == {'max': 1.0, 'min': 1.0, 'changes': 0, 'last': 1.0}, o
     assert 'elec_w_last' in P.drona_yazilacaklar(o) and 'fuel_km_per_l_last' in P.drona_yazilacaklar(o), P.drona_yazilacaklar(o)   # mesafe 2,36 km, yakıt ≥ 0,02 L, süre ≥ 60 s
     g.sifirla_zaman(); assert g.adim({'armed': True, 'groundspeed': 40.0, 'throttle': 80.0}, 0) == [] and g.adim({'armed': True, 'groundspeed': 40.0, 'throttle': 80.0}, 100) == []   # yeni SITL saati: ilk kare dt yok
     g.hiz_ayarla(4); g.hiz_ayarla(4); g.hiz_ayarla(1)
-    assert g.ozet()['speedup'] == {'max': 4.0, 'changes': 2, 'last': 1.0}
+    assert g.ozet()['speedup'] == {'max': 4.0, 'min': 1.0, 'changes': 2, 'last': 1.0}
     assert drone_params.haric_mi('SIM_PLN_THR_MUL') and drone_params.haric_mi('SIM_SPEEDUP') and not drone_params.haric_mi('AIRSPEED_MAX')
     assert drone_sitl.hiz_olcegi_destegi('sabit_kanat') is False and drone_sitl.hiz_olcegi_destegi('multirotor') is False   # sahte kip: ikili yok
     # --- dron kaydı seçenekleri (drone_sitl_options) ---

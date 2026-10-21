@@ -74,7 +74,8 @@ async def lifespan(app):
     from . import drone_hub
     drone_hub.start()   # Dron Yönetimi: önceki süreçten açık kalan köprü oturumları KESILDI; bakım döngüsü
     yield
-    from . import flightsim
+    from . import flightsim, flightsim_match
+    await flightsim_match.MANAGER.kapat_hepsi()   # §33 çok oyunculu karşılaşmalar (bitmemişler IPTAL; oyuncu oturumları kapanır)
     await flightsim.MANAGER.kapat_hepsi()   # Uçuş Simülatörü: açık oturumlar (SITL süreçleri, UDP portları) kapanır
 
 
@@ -214,6 +215,9 @@ for r in (admin.router, auth_routes.router, faceauth_router.router, users.router
     app.include_router(r)
 from .routers import flightsim_presets as flightsim_presets_router  # noqa: E402 — Uçuş Simülatörü §27 Kayıtlı Simülasyonlar
 app.include_router(flightsim_presets_router.router)
+from .routers import flightsim_match as flightsim_match_router  # noqa: E402 — Uçuş Simülatörü §33 çok oyunculu karşılaşma
+app.include_router(flightsim_match_router.router)
+app.include_router(flightsim_match_router.ws_router)
 
 app.mount('/static', StaticFiles(directory=config.STATIC_DIR), name='static')
 

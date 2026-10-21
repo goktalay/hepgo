@@ -194,6 +194,16 @@ def sim_assigned(conn, user):
                    f'#/drone/sim?tab=saved&preset={rows[0]["id"]}' if len(rows) == 1 else '#/drone/sim?tab=saved', 'Kayıtlı Simülasyonlar › Başlat')
 
 
+def sim_match_invite(conn, user):
+    """Uçuş Simülatörü §33: bekleme salonunda beni bekleyen karşılaşma davetleri (tıklayınca salona; gelince ya da karşılaşma başlayınca düşer)."""
+    if 'drone.sim' not in (user.get('modules') or []):
+        return _result([], [], '#/drone/sim')
+    from .flightsim_match import MANAGER
+    rows = MANAGER.davetler(user['id'])
+    return _result(rows, [f"{r['host_name']} · #{r['id']}" for r in rows], f'#/drone/sim/match/{rows[0]["id"]}' if rows else '#/drone/sim?tab=matches',
+                   'Bekleme salonuna katılın')
+
+
 def signatures_pending(conn, user):
     """Kullanıcının imzasını bekleyen evraklar (herkes; tıklayınca evrak ve İmzala / Reddet / Vazgeç)."""
     rows = db.rows(conn.execute(
@@ -623,6 +633,8 @@ NOTIFICATIONS = [
      'title': 'Size atanan saha görevi'},
     # Uçuş Simülatörü §27: anlık push'u routers/flightsim_presets (atama anında) atar; tarama ikinci kez atmasın
     {'key': 'sim-assigned', 'roles': None, 'fn': sim_assigned, 'title': 'Size bir simülasyon atandı', 'push': False},
+    # §33 karşılaşma daveti: anlık push'u flightsim_match._davet_bildir (oluşturma anında) atar
+    {'key': 'sim-match-invite', 'roles': None, 'fn': sim_match_invite, 'title': 'Karşılaşma daveti', 'push': False},
     # Sonda: dakikalık push taramasında önemli bildirimlerin önüne geçmesin. push=False: telefon bildirimini paylaşım
     # anında routers/feed._announce atar; tarama aynı artış için ikinci kez atmasın (çift bildirim olmasın).
     {'key': 'feed-new', 'roles': None, 'fn': feed_new, 'title': 'Şirketten Haberler: yeni paylaşım', 'push': False},
@@ -704,7 +716,7 @@ _GROUP = {
     'mail-unread': 'Mail', 'calendar-due': 'Takvim', 'chat-waiting': 'Mesajlar',
     'signature-pending': 'Evrak / İmza', 'printers-down': 'Yazıcılar',
     'field-report-lead': 'Saha Yönetimi', 'field-report-pilot': 'Saha Yönetimi',
-    'field-road': 'Saha Yönetimi', 'field-assigned': 'Saha Yönetimi', 'sim-assigned': 'Dron Yönetimi',
+    'field-road': 'Saha Yönetimi', 'field-assigned': 'Saha Yönetimi', 'sim-assigned': 'Dron Yönetimi', 'sim-match-invite': 'Dron Yönetimi',
     'live-now': 'Canlı Yayın', 'certs-expiring': 'Sertifikalar', 'audits-upcoming': 'Sertifikalar',
     'contracts-pending': 'Sözleşmeler', 'todo-pending': 'Yapılacaklar', 'todo-done': 'Yapılacaklar',
 }

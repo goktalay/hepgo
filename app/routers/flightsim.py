@@ -128,9 +128,10 @@ async def open_session(body: SessionIn, request: Request, response: Response, us
     return s.to_dict(_host(request))
 
 
-async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
+async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None, start=None, match_id=None):
     """Oturum açma çekirdeği (web `POST /sessions` ve CAYSIM `POST /api/caysim/v1/sessions` ortak): doğrulama → MANAGER.ac / ac_replay →
     iz kaydı. `user` kayıttan oynatma log yetkisi için (modules); `client` {id, name} verilirse oturuma CAYSIM işareti konur.
+    §33 karşılaşma: `start` {lat, lon, yaw_deg?} oyuncunun başlangıç noktası, `match_id` karşılaşma bağı (ayrı SITL tavanı).
     Hatalar HTTPException (400 invalid · 409 limit · 503 sitl)."""
     loop = asyncio.get_running_loop()
     if body.mode == 'replay':
@@ -177,10 +178,10 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None):
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
             s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera,
-                                           targets=body.targets, site=body.site, defend=body.defend, drive=body.drive)
+                                           targets=body.targets, site=body.site, defend=body.defend, drive=body.drive, start=start, match_id=match_id)
         except flightsim.SimHata as e:
             _hata(e)
-        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
+        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f' · karşılaşma #{match_id}' if match_id else '') + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
         pw = s.power
         detay += f" · güç: {pw.get('max_speed_ms') or '-'} m/s, {pw.get('fuel_l'):g} L @ {pw.get('fuel_km_per_l'):g} km/L, {pw.get('elec_cells')}S {pw.get('elec_mah'):g} mAh {pw.get('elec_w'):g} W"
     else:
@@ -311,6 +312,8 @@ async def session_cmd(sid: int, body: CmdIn, user=Depends(sim_user)):
     s = flightsim.MANAGER.get(sid)
     if s is None:
         raise HTTPException(404, 'Oturum bulunamadı')
+    if not mac_yazabilir(s, user):
+        raise HTTPException(403, 'Karşılaşmada yalnız kendi aracınızı yönetebilirsiniz')
     try:
         return await s.komut(body.name, body.params or {}, kaynak=user['id'])
     except flightsim.SimHata as e:
@@ -872,6 +875,11 @@ def terrain_osm(lat: float, lon: float, size_m: float = 4000, user=Depends(sim_u
 
 
 # ---------------- WebSocket: /ws/drone/sim/{id} ----------------
+def mac_yazabilir(s, user):
+    """§33: karşılaşma oyuncu oturumunu yalnız sahibi yönetir (diğerleri izleyebilir)."""
+    return not getattr(s, 'match_id', None) or (s.owner or {}).get('id') == user.get('id')
+
+
 async def _sender(ws, q):
     try:
         while True:
@@ -893,7 +901,7 @@ async def ws_sim(ws: WebSocket, sid: int):
         await drone_hub._safe_send(ws, {'t': 'error', 'error': 'not_found'})
         await ws.close(code=4404)
         return
-    yazabilir = MODUL in user.get('write_modules', [])
+    yazabilir = MODUL in user.get('write_modules', []) and mac_yazabilir(s, user)
     host = flightsim.PUBLIC_HOST or _req_host(ws) or None
     await ws_dongu(ws, s, {'t': 'hello', 'session': s.to_dict(host), 'can_command': yazabilir}, yazabilir, user['id'])
 

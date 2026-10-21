@@ -1715,6 +1715,25 @@ CREATE TABLE IF NOT EXISTS drone_sim_presets (
     deleted_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_drone_sim_presets_pilot ON drone_sim_presets(pilot_id);
+-- Uçuş Simülatörü ÇOK OYUNCULU KARŞILAŞMA (docs/ucus-simulatoru.md §33): halka yarışı. Durum makinesi bellekte (app/flightsim_match.py);
+-- satır her durum değişiminde güncellenir (sunucu yeniden başlarsa bitmemiş karşılaşmalar IPTAL 'sunucu_yeniden_basladi' olur).
+-- Oyuncu uçuşları drone_sim_runs.match_id ile bağlanır.
+CREATE TABLE IF NOT EXISTS drone_sim_matches (
+    id          INTEGER PRIMARY KEY,
+    host_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    state       TEXT NOT NULL,                          -- LOBI | HAZIRLIK | GERI_SAYIM | YARIS | BITTI | IPTAL
+    reason      TEXT,                                   -- bitiş / iptal nedeni (birinci_bitirdi, sure, kurucu_iptal, oyuncu_kalmadi, zaman_asimi, …)
+    settings    TEXT NOT NULL,                          -- JSON: oturum gövdesi {type, center_id, world{…, launch}, model, power, layout, camera, drive}
+    rings_cfg   TEXT NOT NULL,                          -- JSON: {count, min_alt_m, max_alt_m, diameter_m, radius_m, time_limit_min, seed}
+    rings       TEXT,                                   -- JSON: üretilen halkalar [{i, lat, lon, agl_m, alt_msl, yaw_deg, radius_m, …}]
+    players     TEXT NOT NULL,                          -- JSON: [{id, name, host, status, rings, finished, …}]
+    result      TEXT,                                   -- JSON: {winner, reason, duration_s, total, standings[]}
+    winner_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    started_at  TEXT,
+    ended_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_drone_sim_matches_created ON drone_sim_matches(created_at);
 CREATE TABLE IF NOT EXISTS drone_sim_clients (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -2988,6 +3007,10 @@ def _migrate(conn):
         conn.execute('ALTER TABLE drone_sim_runs ADD COLUMN preset_id INTEGER REFERENCES drone_sim_presets(id) ON DELETE SET NULL')
     if run_cols:
         conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_preset ON drone_sim_runs(preset_id)')
+    if run_cols and 'match_id' not in run_cols:   # §33 çok oyunculu karşılaşmanın oyuncu uçuşu (NULL: tek oyunculu)
+        conn.execute('ALTER TABLE drone_sim_runs ADD COLUMN match_id INTEGER REFERENCES drone_sim_matches(id) ON DELETE SET NULL')
+    if run_cols:
+        conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_match ON drone_sim_runs(match_id)')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
     if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün
         conn.execute('ALTER TABLE mail_boxes ADD COLUMN sync_error TEXT')

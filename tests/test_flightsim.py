@@ -718,12 +718,13 @@ def oynatma_girisleri_testleri(a, mon, tl):
     r = ok(a.get(f'{RR}/{rid}'))
     assert r['play_log_id'] == sim_id, r
     ayar = flightsim_runs.oynatma_ayarlari(r)
-    assert ayar['world']['mode'] == 'real' and ayar['world']['time'] == 'dusk' and ayar['camera'] == 'thermal' and ayar['model'] == {'id': 'builtin:quad'}, ayar   # Google 3B kapalı → gerçek arazi
+    beklenen_kip = 'google3d' if flightsim.google3d_etkin() else 'real'   # Google 3B anahtarı yoksa gerçek araziye düşer (ortama bağlı)
+    assert ayar['world']['mode'] == beklenen_kip and ayar['world']['time'] == 'dusk' and ayar['camera'] == 'thermal' and ayar['model'] == {'id': 'builtin:quad'}, ayar
     assert ayar['world']['launch']['method'] == 'ramp' and ayar['world']['launch']['angle_deg'] == 22 and ayar['world']['launch']['azimuth_deg'] == 135, ayar['world']['launch']
     s = ok(a.post(f'{RR}/{rid}/replay'), 201)
     assert s['mode'] == 'replay' and s['run_id'] == rid and s['replay']['log_id'] == sim_id, s
     W = s['world']
-    assert (W['mode'], W['time'], W['weather'], W['wind_ms'], W['wind_dir'], W['fog'], W['seed'], W['size_m'], W['runway_heading']) == ('real', 'dusk', 'rain', 7.0, 200.0, 0.3, 42, 3000, 120.0), W
+    assert (W['mode'], W['time'], W['weather'], W['wind_ms'], W['wind_dir'], W['fog'], W['seed'], W['size_m'], W['runway_heading']) == (beklenen_kip, 'dusk', 'rain', 7.0, 200.0, 0.3, 42, 3000, 120.0), W
     assert W['launch']['method'] == 'ramp' and W['launch']['angle_deg'] == 22 and W['launch']['azimuth_deg'] == 135, W['launch']   # kayıttaki rampa yön/açı
     assert s['camera'] == 'thermal' and s['model']['id'] == 'builtin:quad', (s['camera'], s['model'])
     g = bekle(lambda: (lambda x: x if x['state'] == 'HAZIR' else None)(ok(a.get(f"/api/drone/sim/sessions/{s['id']}"))), 10)

@@ -1724,7 +1724,8 @@ CREATE TABLE IF NOT EXISTS drone_sim_matches (
     state       TEXT NOT NULL,                          -- LOBI | HAZIRLIK | GERI_SAYIM | YARIS | BITTI | IPTAL
     reason      TEXT,                                   -- bitiş / iptal nedeni (birinci_bitirdi, sure, kurucu_iptal, oyuncu_kalmadi, zaman_asimi, …)
     settings    TEXT NOT NULL,                          -- JSON: oturum gövdesi {type, center_id, world{…, launch}, model, power, layout, camera, drive}
-    rings_cfg   TEXT NOT NULL,                          -- JSON: {count, min_alt_m, max_alt_m, diameter_m, radius_m, time_limit_min, seed}
+    rings_cfg   TEXT NOT NULL,                          -- JSON: {count, min_alt_m, max_alt_m, diameter_m, radius_m, time_limit_min, seed} (it dalaşında {})
+    -- §41 göçle eklenir (ALTER): kind TEXT 'rings' | 'dogfight', game_cfg TEXT (it dalaşı ayarı JSON: distance_m, alt_m, time_limit_min, range_m, cone_deg, hold_s, area_radius_m, roles, seed)
     rings       TEXT,                                   -- JSON: üretilen halkalar [{i, lat, lon, agl_m, alt_msl, yaw_deg, radius_m, …}]
     players     TEXT NOT NULL,                          -- JSON: [{id, name, host, status, rings, finished, …}]
     result      TEXT,                                   -- JSON: {winner, reason, duration_s, total, standings[]}
@@ -3011,6 +3012,10 @@ def _migrate(conn):
         conn.execute('ALTER TABLE drone_sim_runs ADD COLUMN match_id INTEGER REFERENCES drone_sim_matches(id) ON DELETE SET NULL')
     if run_cols:
         conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_match ON drone_sim_runs(match_id)')
+    dsm_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_sim_matches)')}
+    for col, ddl in (('kind', "TEXT NOT NULL DEFAULT 'rings'"), ('game_cfg', 'TEXT')):   # §41 karşılaşma türü (rings | dogfight) + it dalaşı ayarı (JSON)
+        if dsm_cols and col not in dsm_cols:
+            conn.execute(f'ALTER TABLE drone_sim_matches ADD COLUMN {col} {ddl}')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}
     if mb_cols and 'sync_error' not in mb_cols:   # takvim / kişi eşitleme hatası (ör. People API kapalı) görünsün
         conn.execute('ALTER TABLE mail_boxes ADD COLUMN sync_error TEXT')

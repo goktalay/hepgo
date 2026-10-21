@@ -8,6 +8,9 @@ sunucuda halka doğrulama, komut kapısı (yarış başlamadan ARM/kalkış yok)
 Akış: kurucu sihirbazdan oluşturur (LOBI; kurucu "geldi") → davetliler bildirimden salona gelir (`join`) → hepsi gelince HAZIRLIK: her oyuncuya
 kendi başlangıç noktasında SITL açılır; istemci oturum ekranına geçer, 3B dünya kurulunca WS `ready` → herkes hazır → GERI_SAYIM (sunucu saatiyle
 `start_at`) → YARIS (ARM/kalkış serbest) → ilk bitiren / süre sınırı → BITTI (sonuç herkese) → oturumlar KAPANIS_GECIKME_S sonra kapanır.
+§41 İT DALAŞI (`kind: 'dogfight'`, tam 2 oyuncu): roller HAZIRLIK'ta atanır, başlangıç noktaları `core.it_baslangiclari` (rol başına), angajman
+sunucuda (`core.ItDalasi`; her iki oyuncunun telemetrisi tele kancasından), çarpışma (`gorev.crashes` artışı) → `k.carpti`, `pos` çerçevesinde
+`df` (mesafe, koni açısı, tutma süresi, koruma) — HUD. Yarışta Sıfırla yok (kaçış ışınlanması olmasın).
 """
 import asyncio
 import json
@@ -91,9 +94,12 @@ class MatchRuntime:
         from fastapi import HTTPException
         k = self.k
         n = len(k.aktifler())
-        noktalar = core.baslangic_noktalari(n, self.settings['type'], (self.settings.get('world') or {}).get('runway_heading') or 0,
-                                            hedef=(k.halkalar[0]['x'], k.halkalar[0]['y']) if k.halkalar else None)
-        x, y, yaw = noktalar[o.sira_no % len(noktalar)]
+        pist = (self.settings.get('world') or {}).get('runway_heading') or 0
+        if k.tur == core.TUR_IT:   # §41: rol başına (kaçan önde)
+            x, y, yaw = core.it_baslangiclari(k.halka_ayar, self.settings['type'], pist)[o.rol or core.KOVALAYAN]
+        else:
+            noktalar = core.baslangic_noktalari(n, self.settings['type'], pist, hedef=(k.halkalar[0]['x'], k.halkalar[0]['y']) if k.halkalar else None)
+            x, y, yaw = noktalar[o.sira_no % len(noktalar)]
         lat, lon = core.latlon(self.center['lat'], self.center['lon'], x, y)
         o.baslangic = {'x': x, 'y': y, 'lat': round(lat, 7), 'lon': round(lon, 7), 'yaw_deg': yaw}
         body = SessionIn(**{**self.settings, 'mode': 'sitl', 'rec': {'bin': False}})
@@ -116,6 +122,8 @@ class MatchRuntime:
         self.isle([{'t': 'player', 'id': o.uid, 'status': o.durum, 'session_id': s.id}])
 
     def _kapi(self, ad):
+        if ad == 'reset':   # §41: Sıfırla başlangıca ışınlar → it dalaşında (geri sayım + yarış) yok; halka yarışında serbest
+            return 'İt dalaşında Sıfırla yok' if self.k.tur == core.TUR_IT and self.k.durum in (core.GERI_SAYIM, core.YARIS) else None
         if self.k.durum == core.YARIS:
             return None
         if self.k.durum in core.SON_DURUMLAR:
@@ -131,11 +139,16 @@ class MatchRuntime:
         o.poz = {'lat': tele.get('lat'), 'lon': tele.get('lon'), 'alt_msl': tele.get('alt_msl'), 'alt_rel': tele.get('alt_rel'), 'yaw': tele.get('yaw'),
                  'roll': tele.get('roll'), 'pitch': tele.get('pitch'), 'gs': tele.get('groundspeed'), 'armed': bool(tele.get('armed'))}
         try:
-            o.carpisma = len(getattr(s.gorev, 'crashes', []) or [])
+            n = len(getattr(s.gorev, 'crashes', []) or [])
+            if n > o.carpisma and self.k.tur == core.TUR_IT:   # §41: kesin çarpışma kaydı → çarpan kaybeder
+                o.carpisma = n
+                self.isle(self.k.carpti(uid, time.time()))
+            o.carpisma = n
         except Exception:   # noqa: BLE001
             pass
         if self.k.durum == core.YARIS and tele.get('lat') is not None:
-            self.isle(self.k.konum(uid, tele['lat'], tele['lon'], float(tele.get('alt_msl') or 0), time.time(), tele.get('groundspeed')))
+            self.isle(self.k.konum(uid, tele['lat'], tele['lon'], float(tele.get('alt_msl') or 0), time.time(), tele.get('groundspeed'),
+                                   heading=tele.get('heading'), pitch=tele.get('pitch')))
 
     def pos_cercevesi(self, now):
         p = []
@@ -146,7 +159,10 @@ class MatchRuntime:
             p.append({'id': o.uid, **{k: (round(v, 7) if k in ('lat', 'lon') else round(v, 3)) if isinstance(v, float) else v for k, v in o.poz.items()},
                       'rings': len(iz.gecisler) if iz else 0, 'next': (iz.sira + 1) if iz and not iz.bitti else None,
                       'dist': round(iz.mesafe, 1) if iz and iz.mesafe is not None else None})
-        return {'t': 'pos', 'ts': round(now, 3), 'p': p}
+        out = {'t': 'pos', 'ts': round(now, 3), 'p': p}
+        if self.k.tur == core.TUR_IT:   # §41 HUD: mesafe, koni açısı, tutma süresi, koruma, roller
+            out['df'] = self.k.it_durum()
+        return out
 
     # ---------------------------------------------------------------- döngü
     async def run(self):
@@ -261,9 +277,9 @@ class MatchManager:
                 out.append({'id': r.k.id, 'host_name': h.ad if h else '', 'created_at': r.k.olusturma_t})
         return sorted(out, key=lambda x: -x['created_at'])
 
-    async def olustur(self, host, settings, center, rings_cfg, davetliler):
-        """host {id, name}; settings: doğrulanmış oturum gövdesi; center: merkez satırı; rings_cfg: core.halka_ayar_dogrula çıktısı;
-        davetliler [(uid, ad)] (doğrulanmış). Dönüş MatchRuntime."""
+    async def olustur(self, host, settings, center, rings_cfg, davetliler, tur=core.TUR_HALKA):
+        """host {id, name}; settings: doğrulanmış oturum gövdesi; center: merkez satırı; rings_cfg: core.halka_ayar_dogrula çıktısı (§41 it dalaşında
+        core.it_ayar_dogrula çıktısı); davetliler [(uid, ad)] (doğrulanmış). Dönüş MatchRuntime."""
         self.kurtar()
         n = 1 + len(davetliler)
         if self.ayrilmis_slot() + n > flightsim.MATCH_MAX_SESSIONS:
@@ -272,28 +288,30 @@ class MatchManager:
         if not cfg.get('seed'):
             cfg['seed'] = random.randint(1, 2 ** 31 - 2)
         merkez = {'lat': float(center['lat']), 'lon': float(center['lon']), 'alt': float(center['alt']) if center.get('alt') is not None else 0.0}
-        halkalar = core.halkalar_uret(cfg, merkez)
+        it = tur == core.TUR_IT
+        halkalar = [] if it else core.halkalar_uret(cfg, merkez)
         now = time.time()
-        # çekirdek doğrulaması (davetli sayısı, tavan) DB satırından önce
-        core.Karsilasma(0, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar)
+        # çekirdek doğrulaması (davetli sayısı, tavan; it dalaşında tam 2 oyuncu) DB satırından önce
+        core.Karsilasma(0, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur)
         loop = asyncio.get_running_loop()
 
         def ekle():
             with db.connect() as conn:
-                cur = conn.execute('INSERT INTO drone_sim_matches (host_id, state, settings, rings_cfg, rings, players, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                   (host['id'], core.LOBI, json.dumps(settings, ensure_ascii=False), json.dumps(cfg), json.dumps(halkalar), '[]', db.now()))
+                cur = conn.execute('INSERT INTO drone_sim_matches (host_id, state, settings, rings_cfg, rings, players, created_at, kind, game_cfg) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                                   (host['id'], core.LOBI, json.dumps(settings, ensure_ascii=False), '{}' if it else json.dumps(cfg), json.dumps(halkalar), '[]', db.now(),
+                                    tur, json.dumps(cfg) if it else None))
                 mid = cur.lastrowid
                 db.audit(conn, host['id'], 'Çok oyunculu karşılaşma oluşturdu', 'drone_sim_match', mid,
-                         f"{settings.get('type')} · {center.get('name')} · {cfg['count']} halka · davetli: {', '.join(a for _, a in davetliler)}")
+                         f"{settings.get('type')} · {center.get('name')} · " + ('it dalaşı' if it else f"{cfg['count']} halka") + f" · davetli: {', '.join(a for _, a in davetliler)}")
                 conn.commit()
                 return mid
         mid = await loop.run_in_executor(None, ekle)
-        k = core.Karsilasma(mid, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar)
+        k = core.Karsilasma(mid, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur)
         r = MatchRuntime(self, k, center, settings)
         self.matches[mid] = r
         r.kaydet()
         r.task = loop.create_task(r.run())
-        _davet_bildir([u for u, _ in davetliler], host, mid, settings, center)
+        _davet_bildir([u for u, _ in davetliler], host, mid, settings, center, tur)
         return r
 
     async def kapat_hepsi(self):
@@ -307,12 +325,12 @@ class MatchManager:
         self.matches.clear()
 
 
-def _davet_bildir(uids, host, mid, settings, center):
+def _davet_bildir(uids, host, mid, settings, center, tur=core.TUR_HALKA):
     """Davetlilere anlık bildirim (Web Push + mobil); zil ayrıca 'sim-match-invite' taramasıyla (push=False — çift olmasın)."""
     try:
         from . import push
         push.send(list(uids), {'type': 'notif', 'title': 'Karşılaşma daveti', 'tag': f'notif-sim-match-{int(mid)}',
-                               'body': f"{host.get('name') or ''} sizi halka yarışına davet etti · {center.get('name') or ''}".strip(' ·'),
+                               'body': f"{host.get('name') or ''} sizi {'it dalaşına' if tur == core.TUR_IT else 'halka yarışına'} davet etti · {center.get('name') or ''}".strip(' ·'),
                                'url': f'/app#/drone/sim/match/{int(mid)}'})
     except Exception:   # noqa: BLE001
         pass
@@ -321,9 +339,10 @@ def _davet_bildir(uids, host, mid, settings, center):
 def satir_dict(r):
     """DB satırı → GET biçimi (bellekte olmayan, bitmiş karşılaşma)."""
     j = lambda v, d=None: json.loads(v) if v else d   # noqa: E731
+    kind = r.get('kind') or core.TUR_HALKA
     return {'id': r['id'], 'state': r['state'], 'reason': r['reason'], 'host_id': r['host_id'], 'settings': j(r['settings'], {}),
-            'rings_cfg': j(r['rings_cfg'], {}), 'rings': j(r['rings'], []), 'players': j(r['players'], []), 'result': j(r['result']),
-            'winner': r['winner_id'], 'created_at': r['created_at'], 'started_at': r['started_at'], 'ended_at': r['ended_at'], 'live': False}
+            'rings_cfg': j(r['game_cfg'], {}) if kind == core.TUR_IT else j(r['rings_cfg'], {}), 'rings': j(r['rings'], []), 'players': j(r['players'], []), 'result': j(r['result']),
+            'winner': r['winner_id'], 'created_at': r['created_at'], 'started_at': r['started_at'], 'ended_at': r['ended_at'], 'live': False, 'kind': kind}
 
 
 MANAGER = MatchManager()

@@ -2455,7 +2455,7 @@ class SimSession:
             self._gonder(enc.rc_channels_override_encode(s, c, *p['ch']))
         return {'ok': True}
 
-    KAPI_KOMUTLARI = ('arm', 'takeoff')   # §33: yarış dışında kapalı (hub'da ayrıca mission_start)
+    KAPI_KOMUTLARI = ('arm', 'takeoff', 'reset')   # §33: yarış dışında kapalı (hub'da ayrıca mission_start); §41 reset: kapı yalnız it dalaşında reddeder
 
     def _kapi_denetle(self, name):
         if self.komut_kapisi is None or name not in self.KAPI_KOMUTLARI + ('mission_start',):

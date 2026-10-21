@@ -796,3 +796,17 @@ anlık görüntüde adları durur); `snapshot.match = {id, start}`.
   `app/flightsim_targets.py`); kilitli önleme bonusu (+250) skora eklenir.
 - Uçuş özeti hedef kartında "◆ Angajmanlar" satırları (`fly/targets.js engagementRowsEl`). Metinler `eng.*` + "KİLİT" / "Boşluk: kilit" (HUD) +
   `pad.act_lock` (7 dil).
+
+## 21. Karşılaşmada "İt dalaşı" türü — HEPGO docs/ucus-simulatoru.md §41'in SIMUMAV karşılığı
+- Kurucu sihirbazının "Tür ve kurallar" adımı (`match.step_rings`; `fly/match.js createRingsStep`): "◎ Halka yarışı" | "✈ İt dalaşı" kartları; it
+  dalaşında mesafe, irtifa, süre, menzil, koni, tutma süresi, alan sınırı + roller ("Rastgele / Ben kovalarım / Ben kaçarım") ve sunucu önizlemesi
+  (`POST /api/match/rings-preview {kind:'dogfight', dogfight}` → iki başlangıç noktası, ortak `dfSvg`). Davet adımında oyuncu sayısı 2'ye sabit.
+  Gövde `POST /api/match {…, kind, dogfight, max_players: 2}`; davet linki / şifre / salon akışı aynı.
+- `app/simumav/match.py` `Mac.tur`: oyuncu tavanı 2, halka yok, roller BAŞLAT'ta (çekirdek HAZIRLIK), başlangıç rol başına, tele kancası yön +
+  yunuslama, çarpışma → kaybeder, `pos.df`, Sıfırla kapısı. Anlık görüntü / davet özeti / liste `kind`; DB satırından (`satir_dict`) rol sonuçtan.
+- **DB göçü v4** (`app/simumav/db.py`, idempotent): `matches.kind TEXT NOT NULL DEFAULT 'rings'` + `matches.game_cfg TEXT` (`init()` içinde
+  `PRAGMA table_info` denetimiyle ALTER; `schema_version` 4; veri dönüşümü yok).
+- Yarış ekranı (`fly/match_hud.js`): it dalaşında sıralama tablosu yerine ortak `createDogfightHud` (rakip işaretçisi, angajman halkası,
+  KİLİTLENİYOR! + ses, rol/süre/mesafe/bağıl irtifa şeridi); sonuç penceresi ve salonda `dfResultTable` (rol, oyuncu, sonuç, azami hız + angajman
+  süresi / en yakın mesafe). Metinler `df.*` (7 dil). Testler: `tests.test_simumav_match` `it_dalasi`, `node tests/test_flightsim_dogfight.mjs`.
+

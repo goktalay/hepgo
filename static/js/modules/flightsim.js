@@ -841,7 +841,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
   // ---------- 3a''''. §33 karşılaşma: halkalar (sayı, min/max yükseklik, çap, parkur, süre; sunucu önizlemesi) + davet (iki liste) ----------
   // eslint-disable-next-line prefer-const
   let ringsSec = null;
-  ringsSec = isMatch ? createRingsSection({ getType: activeType, getCenter: () => centerOf(), limits: mmeta?.limits }) : null;
+  ringsSec = isMatch ? createRingsSection({ getType: activeType, getCenter: () => centerOf(), limits: mmeta?.limits, onKind: k => inviteSec?.setMax(k === 'dogfight' ? 1 : null) }) : null;   // §41 tür: it dalaşında tam 1 davetli
   const inviteSec = isMatch ? createInviteSection({ users: mmeta?.users || [], limits: mmeta?.limits }) : null;
   // ---------- 3a'. kamera (§22.3): gündüz / termal / gece görüşü — önizlemeli kartlar (aynı formüllerle 2B tuvalde; ek WebGL bağlamı yok). Varsayılan:
   // dron kaydının son türü (sunucu) → bu dron için yerel son seçim → son tercih → gündüz. Seçim oturuma (`camera`), tercihe ve dron kaydına kalıcı.
@@ -868,7 +868,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
     if (S.mode === 'replay' && S.log == null) { toast('Önce bir uçuş logu seçin', 'err'); goStep('log'); return false; }
     if (S.mode === 'sitl' && S.center == null) { toast('Önce bir merkez seçin', 'err'); goStep('world'); return false; }
     if (isMatch) {   // §33
-      if (ringsSec.error()) { toast(`${tr('Halkalar')}: ${tr(ringsSec.error())}`, 'err'); goStep('rings'); return false; }
+      if (ringsSec.error()) { toast(`${tr('Tür ve kurallar')}: ${tr(ringsSec.error())}`, 'err'); goStep('rings'); return false; }
       if (inviteSec.error()) { toast(tr(inviteSec.error()), 'err'); goStep('invite'); return false; }
       return true;
     }
@@ -897,7 +897,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
     const body = sitlBody();
     for (const k of ['drone_id', 'targets', 'site', 'defend', 'rec']) delete body[k];
     let mt;
-    try { mt = await matchApi.create({ settings: body, rings: ringsSec.values(), invite: inviteSec.values() }); } catch (err) {
+    try { mt = await matchApi.create({ settings: body, rings: ringsSec.values(), invite: inviteSec.values(), kind: ringsSec.kind(), dogfight: ringsSec.kind() === 'dogfight' ? ringsSec.dogfight() : null }); } catch (err) {
       toast(err?.status === 409 ? (err.message || tr('Simülatör kapasitesi dolu')) : err.message, 'err');
       return true;
     }
@@ -1040,7 +1040,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
       camera: [['Kamera türü', camTypeLabel(camCards.value, tr)], ['Gösterge tasarımı', tr(gaugeThemeLabel(gtPick.value))]],
       targets: [['Hedefler', tg?.items?.length ? tr('{n} hedef', { n: tg.items.length }) : tr('Hedef yok')], tg?.items?.length ? ['Modeller', tg.items.map(x => x.model_name || x.model).join(', ')] : null,
         tg?.items?.length ? ['Önleme yarıçapı', `${tg.radius_m} m`] : null],
-      rings: isMatch ? [['Halkalar', ringsSummary(ringsSec.values())], ['Süre sınırı', tr('{n} dk', { n: ringsSec.values().time_limit_min })], ['Parkur tohumu', String(ringsSec.values().seed)]] : [],   // §33
+      rings: isMatch ? ringsSec.summary() : [],   // §33 halkalar / §41 it dalaşı kuralları
       invite: isMatch ? [['Davet edilenler', inviteSec.names().join(', ') || '—'], ['Oyuncu sayısı', tr('{n} (siz dahil)', { n: inviteSec.values().length + 1 })]] : [],
       site: [['Saha', sv.site ? [sv.site.radar ? `${tr('Radar')} ${sv.site.radar_km} km` : null, sv.site.station ? tr('İstasyon') : null, sv.site.eo ? `EO ${sv.site.eo_km} km` : null].filter(Boolean).join(' · ') : tr('Yok')],
         ['Görev', sv.defend ? tr('Yer kontrolünü koru · {w} dalga · {i} önleyici', { w: sv.defend.waves, i: sv.defend.interceptors }) : tr('Serbest uçuş')]],

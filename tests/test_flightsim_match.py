@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import auth, flightsim, flightsim_match  # noqa: E402
 from app import flightsim_match_core as core  # noqa: E402
 from app.main import app  # noqa: E402
-from tests.match_bot import rota_pilotu  # noqa: E402
+from tests.match_bot import it_pilotu, rota_pilotu  # noqa: E402
 
 MERKEZ = {'lat': 39.925, 'lon': 32.837, 'alt': 900.0}
 
@@ -202,6 +202,134 @@ def durum_makinesi_testleri():
     assert k7.tik(core.LOBI_ZAMAN_ASIMI_S + 1)[0]['state'] == core.IPTAL and k7.neden == 'zaman_asimi'
     assert k7.iptal(99999) == []   # son durumdan çıkılmaz
     print('  durum makinesi geçti')
+
+
+def it_dalasi_testleri():
+    """§41 it dalaşı: ayar doğrulama, başlangıç noktaları, koni/menzil/kesintisiz süre, kazanan (angaje / süre / alan dışı / çarpma / rakip ayrıldı),
+    kalkış koruması, roller, sonuç."""
+    v = core.it_ayar_dogrula(None, 'multirotor')
+    assert v['type'] == 'dogfight' and v['distance_m'] == 400 and v['range_m'] == 120 and v['cone_deg'] == 30 and v['hold_s'] == 3 and v['roles'] == 'random' and v['vclass'] == 'dikey', v
+    u = core.it_ayar_dogrula({}, 'sabit_kanat')
+    assert u['distance_m'] == 1000 and u['alt_m'] == 120 and u['vclass'] == 'ucak' and u['area_radius_m'] == 3000, u
+    assert core.it_ayar_dogrula({'distance_m': 1500}, 'multirotor')['area_radius_m'] == 1150   # varsayılan alan mesafeye göre büyür
+    for bad in ({'distance_m': 200}, {'distance_m': 1600}, {'time_limit_min': 1}, {'time_limit_min': 11}, {'time_limit_min': 2.5}, {'range_m': 40},
+                {'range_m': 500}, {'cone_deg': 10}, {'cone_deg': 50}, {'hold_s': 1}, {'hold_s': 6}, {'area_radius_m': 200}, {'roles': 'x'},
+                {'distance_m': 1400, 'area_radius_m': 800}, {'alt_m': 5}, {'distance_m': '500'}, {'hold_s': True}):
+        assert hata_kodu(core.it_ayar_dogrula, bad, 'multirotor') == 'invalid', bad
+    assert hata_kodu(core.it_ayar_dogrula, {}, 'rover') == 'invalid'
+    # başlangıç: aynı hat, mesafe kadar ayrık, kaçan önde (bakış yönünde), ikisi aynı yöne bakar
+    for tip, pist in (('multirotor', 0), ('sabit_kanat', 75)):
+        cfg = core.it_ayar_dogrula({'distance_m': 600, 'seed': 9}, tip)
+        P = core.it_baslangiclari(cfg, tip, pist)
+        c, e = P['chaser'], P['evader']
+        assert abs(math.dist(c[:2], e[:2]) - 600) < 0.05 and c[2] == e[2], P
+        h = math.radians(c[2])
+        assert (e[0] - c[0]) * math.sin(h) + (e[1] - c[1]) * math.cos(h) > 599, 'kaçan önde'
+        if tip == 'sabit_kanat':
+            assert c[2] == 75.0
+    assert core.it_baslangiclari(cfg, 'multirotor') == core.it_baslangiclari(cfg, 'multirotor')   # deterministik
+    # koni açısı / burun
+    assert abs(core.koni_acisi(core.burun(0, 0, 'dikey'), (0, 100, 0))) < 1e-9
+    assert abs(core.koni_acisi(core.burun(90, 0, 'dikey'), (0, 100, 0)) - 90) < 1e-9
+    assert abs(core.koni_acisi(core.burun(0, math.radians(30), 'ucak'), (0, 100, 100 * math.tan(math.radians(30))))) < 1e-6   # uçakta yunuslama dahil
+    assert abs(core.koni_acisi(core.burun(0, math.radians(30), 'dikey'), (0, 100, 0))) < 1e-9   # kopterde gövde eğimi yok sayılır
+
+    # ItDalasi saf: koruma → koni içinde kesintisiz tutma → angaje; koniden çıkınca sıfırlanır
+    a = core.it_ayar_dogrula({'range_m': 150, 'cone_deg': 20, 'hold_s': 3, 'alt_m': 40, 'seed': 1}, 'multirotor')
+    iz = core.ItDalasi(a, 0.0)
+    ev = iz.konum('chaser', 0, 0, 10, 0, 0, 1.0) + iz.konum('evader', 0, 100, 10, 0, 0, 1.0)
+    assert iz.koruma and ev == [] and iz.durum()['dist'] == 100   # irtifa düşük: koruma (angajman sayılmaz)
+    for k in range(10):
+        iz.konum('chaser', 0, 0, 10, 0, 0, 1.1 + k * 0.1); iz.konum('evader', 0, 100, 10, 0, 0, 1.1 + k * 0.1)
+    assert iz.tutma == 0 and not iz.koni_ici
+    ev = iz.konum('chaser', 0, 0, 40, 0, 0, 3.0) + iz.konum('evader', 0, 100, 40, 0, 0, 3.0)
+    assert {'kind': 'guard_off'} in ev and {'kind': 'lock_on'} in ev and not iz.koruma, ev
+    t = 3.0
+    for _ in range(20):                                  # 2 sn tut
+        t += 0.1; iz.konum('chaser', 0, 0, 40, 0, 0, t); iz.konum('evader', 0, 100, 40, 0, 0, t)
+    assert 1.9 <= iz.tutma <= 2.1 and iz.koni_ici, iz.tutma
+    ev = iz.konum('chaser', 0, 0, 40, 30, 0, t + 0.1)    # burun 30° saptı (> 20°) → kesinti, sayaç sıfır
+    assert ev and ev[0]['kind'] == 'lock_off' and iz.tutma == 0
+    t += 0.1
+    for _ in range(25):
+        t += 0.1; iz.konum('chaser', 0, 0, 40, 0, 0, t); iz.konum('evader', 0, 100, 40, 0, 0, t)
+    assert not iz.bitti and iz.tutma < 3
+    ev = []
+    for _ in range(8):
+        t += 0.1; ev += iz.konum('chaser', 0, 0, 40, 0, 0, t) + iz.konum('evader', 0, 100, 40, 0, 0, t)
+    eng = [e for e in ev if e['kind'] == 'engage']
+    assert eng and eng[0]['held_s'] >= 3 and iz.bitti and iz.durum()['max_hold_s'] >= 3, ev
+    # menzil dışı (koni içinde ama 200 m) sayılmaz; koruma en geç KORUMA_S sonra kalkar; bayat örnek (> 2 sn fark) hesaplanmaz
+    iz2 = core.ItDalasi(a, 0.0)
+    for k in range(80):
+        tt = 61.0 + k * 0.1; iz2.konum('chaser', 0, 0, 10, 0, 0, tt); iz2.konum('evader', 0, 200, 10, 0, 0, tt)
+    assert not iz2.bitti and iz2.tutma == 0 and not iz2.koruma
+    iz3 = core.ItDalasi(a, 0.0)
+    iz3.konum('chaser', 0, 0, 40, 0, 0, 1.0); iz3.konum('evader', 0, 50, 40, 0, 0, 10.0)
+    assert iz3.durum()['dist'] is None
+    # alan dışı
+    iz4 = core.ItDalasi(a, 0.0)
+    assert iz4.konum('evader', a['area_radius_m'] + 1, 0, 40, 0, 0, 1.0) == [{'kind': 'area', 'role': 'evader'}] and iz4.bitti
+
+    # Karsilasma: tam 2 oyuncu, roller, kazanan
+    def kur(roles='host_chaser', seed=5, now=0.0, **kw):
+        cfg = core.it_ayar_dogrula({'roles': roles, 'seed': seed, 'range_m': 150, 'cone_deg': 25, 'hold_s': 2, 'alt_m': 30, 'time_limit_min': 2, **kw}, 'multirotor')
+        k = core.Karsilasma(11, (10, 'Kurucu'), [(20, 'Rakip')], {'type': 'multirotor'}, cfg, MERKEZ, now, [], tur='dogfight')
+        k.katil(20, now + 1); k.hazir(10, now + 2); k.hazir(20, now + 3); k.tik(now + 3 + core.GERI_SAYIM_S)
+        assert k.durum == core.YARIS and k.it is not None
+        return k
+    assert hata_kodu(core.Karsilasma, 1, (10, 'K'), [(20, 'A'), (30, 'B')], {}, core.it_ayar_dogrula({}, 'multirotor'), MERKEZ, 0, [], tur='dogfight') == 'invalid'
+    assert hata_kodu(core.Karsilasma, 1, (10, 'K'), [(20, 'A')], {}, {}, MERKEZ, 0, [], tur='x') == 'invalid'
+    k = kur('host_chaser')
+    assert k.oyuncu(10).rol == 'chaser' and k.oyuncu(20).rol == 'evader' and k.dict(0)['kind'] == 'dogfight' and k.dict(0)['dogfight']['roles'] == {'10': 'chaser', '20': 'evader'}
+    assert kur('host_evader').oyuncu(10).rol == 'evader'
+    rs = {kur('random', seed=sd).oyuncu(10).rol for sd in range(1, 30)}
+    assert rs == {'chaser', 'evader'}, 'rastgele roller iki yöne de düşer'
+    assert kur('random', seed=7).oyuncu(10).rol == kur('random', seed=7).oyuncu(10).rol   # tohum = aynı roller
+
+    def poz(k, uid, x, y, z, hdg, t):
+        lat, lon = core.latlon(MERKEZ['lat'], MERKEZ['lon'], x, y)
+        return k.konum(uid, lat, lon, MERKEZ['alt'] + z, t, hiz=15, heading=hdg, pitch=0)
+    # (a) kovalayan tutar → ANGAJE → kovalayan kazanır
+    t0 = k.baslangic_t
+    t = t0
+    ev = []
+    for _ in range(40):
+        t += 0.1
+        ev += poz(k, 10, 0, 0, 35, 0, t) + poz(k, 20, 0, 90, 35, 0, t)
+        if k.durum == core.BITTI:
+            break
+    assert k.durum == core.BITTI and k.kazanan == 10 and k.neden == 'angaje', (k.durum, k.neden)
+    kinds = [e.get('kind') for e in ev if e['t'] == 'dogfight']
+    assert kinds[:2] == ['guard_off', 'lock_on'] and 'engaged' in kinds, kinds
+    r = [e for e in ev if e['t'] == 'result'][0]['result']
+    assert r['kind'] == 'dogfight' and r['winner'] == 10 and r['dogfight']['engage_s'] >= 2 and abs(r['dogfight']['min_dist_m'] - 90) < 0.5 and r['standings'][0]['id'] == 10 and r['standings'][0]['role'] == 'chaser', r
+    assert poz(k, 10, 0, 0, 35, 0, t + 1) == []   # bittikten sonra işlenmez
+    # (b) süre biter → kaçan kazanır
+    k = kur('host_evader')
+    poz(k, 10, 0, 0, 35, 0, k.baslangic_t + 1)
+    poz(k, 20, 0, 500, 35, 0, k.baslangic_t + 1)
+    assert k.tik(k.baslangic_t + 119) == []
+    ev = k.tik(k.baslangic_t + 120)
+    assert k.durum == core.BITTI and k.neden == 'sure' and k.kazanan == 10 and ev[-1]['result']['winner'] == 10, ev   # 10 kaçan
+    # (c) alan dışına çıkan kaybeder
+    k = kur('host_chaser', area_radius_m=600)
+    ev = poz(k, 20, 0, 650, 35, 0, k.baslangic_t + 5)
+    assert k.durum == core.BITTI and k.neden == 'alan_disi' and k.kazanan == 10 and any(e['t'] == 'dogfight' and e['kind'] == 'area' and e['id'] == 20 for e in ev), ev
+    # (d) çarpan kaybeder
+    k = kur('host_chaser')
+    ev = k.carpti(10, k.baslangic_t + 4)
+    assert k.durum == core.BITTI and k.neden == 'carpti' and k.kazanan == 20, ev
+    assert kur('host_chaser').carpti(99, 1) == []
+    # (e) rakip ayrılır → kalan kazanır
+    k = kur('host_chaser')
+    k.ayril(20, k.baslangic_t + 3)
+    assert k.durum == core.BITTI and k.neden == 'rakip_ayrildi' and k.kazanan == 10
+    # halka yarışında carpti etkisiz; anlık görüntüde tür
+    cfgh = core.halka_ayar_dogrula({'count': 2, 'seed': 3}, 'multirotor')
+    kh = core.Karsilasma(12, (10, 'K'), [(20, 'A')], {}, cfgh, MERKEZ, 0.0, core.halkalar_uret(cfgh, MERKEZ))
+    assert kh.carpti(10, 1) == [] and kh.dict(0)['kind'] == 'rings' and kh.dict(0)['dogfight'] is None
+    print('  it dalaşı çekirdeği geçti')
 
 
 # ================================================================ HEPGO API uçtan uca (sahte kinematik)
@@ -420,11 +548,80 @@ def api_testleri():
             assert ok(a.post(f"{M}/{m4['id']}/kick", json={'user_id': me['mehmet']}))['state'] == 'HAZIRLIK'
             assert ok(a.post(f"{M}/{m4['id']}/cancel"))['state'] == 'IPTAL'
             assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=10)
+            it_dalasi_api(a, p1, me, ayar, M)
             print('  API uçtan uca geçti (karşılaşma', mid, ')')
     finally:
         push.send = eski_send
         core.GERI_SAYIM_S = core_geri
         flightsim_match.KAPANIS_GECIKME_S = eski_kapanis
+
+
+def it_dalasi_api(a, p1, me, ayar, M):
+    """§41 HEPGO API: tür doğrulaması, tam 2 oyuncu, roller, başlangıçta mesafe (kaçan önde), Sıfırla kapısı, sahte kinematikle kovalayan kaçanı
+    koni içinde tutar → ANGAJE → kovalayan kazanır; pos `df` alanı; sonuç + DB (kind, game_cfg); geçmiş listesinde tür; rövanşta roller değişir."""
+    from app import db
+    df = {'distance_m': 400, 'alt_m': 30, 'range_m': 150, 'cone_deg': 25, 'hold_s': 2, 'time_limit_min': 3, 'roles': 'host_chaser'}
+    assert a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'dogfight': df, 'invite': [me['ayse'], me['mehmet']]}).status_code == 400   # tam 2 oyuncu
+    assert a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'dogfight': {**df, 'cone_deg': 80}, 'invite': [me['ayse']]}).status_code == 400
+    assert a.post(M, json={'settings': ayar, 'kind': 'yaris', 'invite': [me['ayse']]}).status_code == 400
+    meta = ok(a.get(f'{M}/meta'))
+    assert meta['limits']['kinds'] == ['rings', 'dogfight'] and meta['limits']['dogfight']['cone_deg'] == [15.0, 45.0], meta['limits'].get('dogfight')
+    m = ok(a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'dogfight': df, 'invite': [me['ayse']]}), 201)
+    mid = m['id']
+    assert m['kind'] == 'dogfight' and m['rings'] == [] and m['rings_cfg']['range_m'] == 150, m
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT kind, game_cfg, rings_cfg FROM drone_sim_matches WHERE id = ?', (mid,)))
+    assert row['kind'] == 'dogfight' and json.loads(row['game_cfg'])['cone_deg'] == 25 and row['rings_cfg'] == '{}', dict(row)
+    with p1.websocket_connect(f'/ws/drone/match/{mid}') as w1, a.websocket_connect(f'/ws/drone/match/{mid}') as wa:
+        ws_bekle(w1, lambda x: x['t'] == 'hello')
+        ok(p1.post(f'{M}/{mid}/join'))
+        st = ws_bekle(wa, lambda x: x['t'] == 'match' and x['match']['state'] == 'HAZIRLIK')['match']
+        roles = {p['id']: p['role'] for p in st['players']}
+        assert roles == {me['admin']: 'chaser', me['ayse']: 'evader'}, roles
+        d = bekle(lambda: (lambda x: x if all(p['session_id'] for p in x['players']) else None)(ok(a.get(f'{M}/{mid}'))))
+        sids = {p['id']: p['session_id'] for p in d['players']}
+        ss = {u: flightsim.MANAGER.get(sid) for u, sid in sids.items()}
+        assert all(bekle(lambda s=s: s.state == 'HAZIR') for s in ss.values())
+        P = core.it_baslangiclari(d['rings_cfg'], 'multirotor')
+        pc = core.enu(MERKEZ['lat'], MERKEZ['lon'], ss[me['admin']].start['lat'], ss[me['admin']].start['lon'])
+        pe = core.enu(MERKEZ['lat'], MERKEZ['lon'], ss[me['ayse']].start['lat'], ss[me['ayse']].start['lon'])
+        assert abs(math.dist(pc, pe) - 400) < 1 and math.dist(pc, P['chaser'][:2]) < 0.5 and math.dist(pe, P['evader'][:2]) < 0.5, (pc, pe, P)
+        for w in (w1, wa):
+            w.send_text(json.dumps({'t': 'ready'}))
+        ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=8)
+        sa = sids[me['ayse']]
+        r = p1.post(f'/api/drone/sim/sessions/{sa}/cmd', json={'name': 'reset'})
+        assert r.status_code == 400 and 'Sıfırla' in r.text, r.text   # it dalaşında ışınlanma yok
+        yon = P['evader'][2]
+        kac = it_pilotu(ss[me['ayse']], MERKEZ, yon, P['evader'][:2], hiz=8.0, alt=30.0)
+        it_pilotu(ss[me['admin']], MERKEZ, yon, P['chaser'][:2], gecikme_m=90.0, takip=kac)
+        gorulen = []
+        res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=30, biriktir=gorulen)
+        assert res, [x['t'] for x in gorulen][-15:]
+        rs = res['result']
+        assert rs['kind'] == 'dogfight' and rs['winner'] == me['admin'] and rs['reason'] == 'angaje' and rs['dogfight']['engage_s'] >= 2 and rs['dogfight']['min_dist_m'] <= 91, rs
+        dfs = [x['df'] for x in gorulen if x['t'] == 'pos' and x.get('df')]
+        assert dfs and any(x['in_cone'] for x in dfs) and any(x['guard'] for x in dfs) and dfs[-1]['roles'] == {str(me['admin']): 'chaser', str(me['ayse']): 'evader'}, dfs[-3:]
+        kinds = [x['kind'] for x in gorulen if x['t'] == 'dogfight']
+        assert 'guard_off' in kinds and 'lock_on' in kinds and 'engaged' in kinds, kinds
+        assert ws_bekle(w1, lambda x: x['t'] == 'result')['result']['winner'] == me['admin']
+        # rövanş: yalnız kurucu; roller değişir; eski salona bildirim
+        assert p1.post(f'{M}/{mid}/rematch').status_code == 403
+        assert bekle(lambda: all(flightsim.MANAGER.get(s) is None for s in sids.values()), sn=15)
+        rm = ok(a.post(f'{M}/{mid}/rematch'), 201)
+        assert rm['kind'] == 'dogfight' and rm['rings_cfg']['roles'] == 'host_evader' and rm['id'] != mid, rm
+        assert ws_bekle(w1, lambda x: x['t'] == 'rematch')['id'] == rm['id']
+    with db.connect() as conn:
+        row = db.row(conn.execute('SELECT state, reason, winner_id, kind FROM drone_sim_matches WHERE id = ?', (mid,)))
+    assert row['state'] == 'BITTI' and row['reason'] == 'angaje' and row['winner_id'] == me['admin'] and row['kind'] == 'dogfight', dict(row)
+    gecmis = {x['id']: x for x in ok(p1.get(M))}
+    assert gecmis[mid]['kind'] == 'dogfight' and gecmis[mid]['rings_cfg']['hold_s'] == 2, gecmis[mid]
+    ok(p1.post(f"{M}/{rm['id']}/join"))   # rövanş: roller ters
+    st = ok(a.get(f"{M}/{rm['id']}"))
+    assert {p['id']: p['role'] for p in st['players']} == {me['admin']: 'evader', me['ayse']: 'chaser'}, st['players']
+    assert ok(a.post(f"{M}/{rm['id']}/cancel"))['state'] == 'IPTAL'
+    assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=10)
+    print('  it dalaşı API geçti (karşılaşma', mid, ')')
 
 
 def main():
@@ -433,6 +630,7 @@ def main():
     gecis_testleri()
     siralama_testi()
     durum_makinesi_testleri()
+    it_dalasi_testleri()
     api_testleri()
     print('test_flightsim_match: TAMAM')
 

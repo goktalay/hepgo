@@ -118,10 +118,6 @@ try:
         st = pg.evaluate(ENG)
         print('  kilit:', st, ss.hedef_iz.angajman_durumu(), flush=True)
         shot(pg, 'engage-02-follow-locked.png')
-        # ---- 03 gimbal HUD (ufuk) — kilit sembolü
-        pg.evaluate("window.__fsSim.setCamera('fpv'); window.__fsSim.setGimbal(-window.__fsSim.getGimbal())"); pg.wait_for_timeout(2000)
-        shot(pg, 'engage-03-gimbal-locked.png')
-        print('  gimbal kaplama:', pg.evaluate(ENG), flush=True)
         # ---- 04 ANGAJMAN BAŞARILI: takipte Lancet-1'e (i=0) kilitli kal; önlenince yeşil panel
         pg.evaluate("window.__fsSim.setCamera('follow')"); pg.wait_for_timeout(500)
         t_end = time.time() + 150
@@ -138,6 +134,16 @@ try:
         else:
             hatalar.append('angajman başarılı karesi alınamadı')
         print('  angajmanlar:', ss.hedef_iz.ozet()['engagements'], flush=True)
+        # ---- 03 gimbal HUD (ufuk) — kilit sembolü
+        pg.evaluate("window.__fsSim.setCamera('fpv'); window.__fsSim.setGimbal(-window.__fsSim.getGimbal())"); pg.wait_for_timeout(2000)
+        t_end = time.time() + 90   # gimbal HUD'unda yeniden kilit (TD kutusundaki aday)
+        while time.time() < t_end and not (pg.evaluate(ENG) or {}).get('engaged'):
+            if (pg.evaluate(ENG) or {}).get('candidate') is not None:
+                (pg.evaluate('document.activeElement && document.activeElement.blur && document.activeElement.blur()'), pg.keyboard.press('Space'))
+            time.sleep(0.6)
+        pg.wait_for_timeout(1500)
+        shot(pg, 'engage-03-gimbal-locked.png')
+        print('  gimbal kaplama:', pg.evaluate(ENG), flush=True)
         # ---- 05 özet rapor (Bitir)
         pg.locator('button.danger:has-text("Bitir")').first.click(); pg.wait_for_timeout(800)
         pg.locator('.modal button:has-text("Bitir")').last.click()

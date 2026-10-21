@@ -7,6 +7,8 @@ REST `/api/drone/sim/matches` (yetki `drone.sim`; oluşturma/katılma yazma izni
   POST ''                     {settings, rings, invite: [user_id]} → 201 karşılaşma (LOBI; kurucu "geldi"; davetlilere bildirim)
   GET  /{id}                  anlık görüntü (bellekte değilse DB satırı)
   POST /{id}/join · /leave · /kick {user_id} · /start (kurucu: gelmeyenler olmadan) · /cancel (kurucu)
+  POST /{id}/rematch          §41 it dalaşı rövanşı (kurucu, BITTI): aynı ayarlar, roller değişir; rakip davet edilir → yeni karşılaşma
+  §41 tür: POST '' {kind: 'rings' | 'dogfight', dogfight: {distance_m, alt_m, time_limit_min, range_m, cone_deg, hold_s, area_radius_m, roles}}
 WS `/ws/drone/match/{id}` (oturum çerezi; yalnız oyuncular): hello {match, me, chat} · match (anlık görüntü) · player · state · countdown · pos (10 Hz)
   · ring · finish · wrong_way · result · chat. İstemci → ping, ready (3B dünya hazır), chat {text}.
 """
@@ -32,6 +34,8 @@ class MatchIn(BaseModel):
     settings: dict
     rings: Optional[dict] = None
     invite: list
+    kind: Optional[str] = core.TUR_HALKA      # §41 'rings' | 'dogfight'
+    dogfight: Optional[dict] = None
 
 
 class PreviewIn(BaseModel):
@@ -63,7 +67,11 @@ def meta(user=Depends(sim_user), conn=db.DB):
     lim = {'players_max': core.OYUNCU_MAX, 'invite_min': core.DAVET_MIN, 'count': list(core.HALKA_SAYI), 'alt_m': list(core.YUKSEKLIK),
            'diameter_m': list(core.CAP), 'radius_m': list(core.PARKUR), 'time_limit_min': list(core.SURE_DK),
            'defaults': {'dikey': core.halka_ayar_varsayilan('multirotor'), 'ucak': core.halka_ayar_varsayilan('sabit_kanat')},
-           'types': list(core.TIPLER), 'countdown_s': core.GERI_SAYIM_S, 'force_after_s': core.LOBI_ZORLA_S}
+           'types': list(core.TIPLER), 'countdown_s': core.GERI_SAYIM_S, 'force_after_s': core.LOBI_ZORLA_S,
+           'kinds': list(core.TURLER), 'dogfight': {'distance_m': list(core.IT_MESAFE), 'alt_m': list(core.IT_IRTIFA), 'time_limit_min': list(core.IT_SURE_DK),
+                                                    'range_m': list(core.IT_MENZIL), 'cone_deg': list(core.IT_KONI), 'hold_s': list(core.IT_TUTMA),
+                                                    'area_radius_m': list(core.IT_ALAN), 'roles': list(core.IT_ROLLER), 'guard_s': core.KORUMA_S,
+                                                    'defaults': {'dikey': core.it_ayar_varsayilan('multirotor'), 'ucak': core.it_ayar_varsayilan('sabit_kanat')}}}
     return {'users': [{'id': u['id'], 'full_name': u['full_name'], 'username': u.get('username'), 'pilot': u.get('pilot')} for u in _davetliler(conn, user['id'])],
             'limits': lim, 'capacity': {'max': flightsim.MATCH_MAX_SESSIONS, 'used': flightsim_match.MANAGER.ayrilmis_slot()},
             'can_create': MODUL in user.get('write_modules', [])}
@@ -95,7 +103,7 @@ def list_matches(user=Depends(sim_user), conn=db.DB):
         if user['id'] != d['host_id'] and not any(p.get('id') == user['id'] for p in d['players']) and not user.get('master'):
             continue
         d['host_name'] = r['host_name']
-        out.append({k: d.get(k) for k in ('id', 'state', 'reason', 'host_id', 'host_name', 'players', 'winner', 'created_at', 'started_at', 'ended_at', 'live', 'rings_cfg')}
+        out.append({k: d.get(k) for k in ('id', 'state', 'reason', 'host_id', 'host_name', 'players', 'winner', 'created_at', 'started_at', 'ended_at', 'live', 'rings_cfg', 'kind')}
                    | {'type': (d.get('settings') or {}).get('type'), 'center_name': ((d.get('center') or {}).get('name')) if canli else None})
         if len(out) >= 50:
             break
@@ -108,10 +116,15 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
     settings = {k: body.settings[k] for k in AYAR_ALANLARI if isinstance(body.settings, dict) and body.settings.get(k) is not None}
     if settings.get('type') not in core.TIPLER:
         raise HTTPException(400, 'Karşılaşmada bu araç tipi yok (halkalar havada; kara aracı seçilemez)')
+    tur = body.kind or core.TUR_HALKA
+    if tur not in core.TURLER:
+        raise HTTPException(400, "kind 'rings' | 'dogfight' olmalı")
     try:
-        rcfg = core.halka_ayar_dogrula(body.rings, settings['type'])
+        rcfg = core.it_ayar_dogrula(body.dogfight, settings['type']) if tur == core.TUR_IT else core.halka_ayar_dogrula(body.rings, settings['type'])
     except core.MacHata as e:
         _hata(e)
+    if tur == core.TUR_IT and len(set(body.invite or [])) != 1:
+        raise HTTPException(400, 'İt dalaşı tam 2 oyuncuyla oynanır: bir kullanıcı davet edin')
     if not isinstance(body.invite, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in body.invite):
         raise HTTPException(400, 'invite kullanıcı kimlikleri listesi olmalı')
 
@@ -129,10 +142,35 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
             return s, _centers(conn, s['center_id']), davet
     s, center, davet = await asyncio.get_running_loop().run_in_executor(None, hazirla)
     try:
-        r = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, s, center, rcfg, davet)
+        r = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, s, center, rcfg, davet, tur)
     except core.MacHata as e:
         _hata(e)
     return r.anlik()
+
+
+@router.post('/{mid}/rematch', status_code=201)
+async def rematch(mid: int, user=Depends(sim_user)):
+    """§41 it dalaşı rövanşı: kurucu, biten karşılaşmanın ayarlarıyla yeni karşılaşma açar; roller değişir (kurucu kovalayan idiyse artık kaçan).
+    Eski karşılaşmanın salonuna `{t:'rematch', id}` yayınlanır (rakip bağlantıyla geçer) + davet bildirimi."""
+    _yazar(user)
+    r = _canli(mid)
+    k = r.k
+    if user['id'] != k.kurucu_id:
+        raise HTTPException(403, 'Rövanşı yalnız kurucu başlatabilir')
+    if k.tur != core.TUR_IT or k.durum != core.BITTI:
+        raise HTTPException(409, 'Rövanş yalnız biten it dalaşında')
+    rakip = next((o for o in k.oyuncular.values() if not o.kurucu), None)
+    kur = k.oyuncu(k.kurucu_id)
+    if rakip is None:
+        raise HTTPException(409, 'Rakip yok')
+    cfg = {**k.halka_ayar, 'roles': 'host_evader' if kur.rol == core.KOVALAYAN else 'host_chaser', 'seed': None}
+    center = r.center
+    try:
+        yeni = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, r.settings, center, cfg, [(rakip.uid, rakip.ad)], core.TUR_IT)
+    except core.MacHata as e:
+        _hata(e)
+    r._yay({'t': 'rematch', 'id': yeni.k.id, 'host': user['id']})
+    return yeni.anlik()
 
 
 def _canli(mid):

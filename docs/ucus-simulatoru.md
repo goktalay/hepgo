@@ -2782,3 +2782,73 @@ aracı kendisi uçurur; kilit yalnız göstergeyi ve puanlamayı etkiler.
   tgthud kilit sembolü, 6 + 7 dil, bağlama, gamepad); `.venv/bin/python -m tests.test_flightsim_engage` (izleyici + API uçtan uca sahte kip +
   kalıcı kayıt). Görsel: `./.venv/bin/python -m tests.engage_shots` → `/tmp/dogfight-shots/engage-*.png` (takipte aday, kilit + panel, gimbal
   HUD'unda çift çerçeve, başarı, raporda liste, kutu yokken ipucu).
+
+## 41. Karşılaşmada "İT DALAŞI" türü — 2 kişilik kovala / kaç (`app/flightsim_match_core.py` `ItDalasi`; ön yüz `static/js/modules/flightsim_dogfight.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: mevcut karşılaşmaya (§33 halka yarışı) tür seçimi "Halka yarışı | İt dalaşı". İt dalaşı tam 2 oyuncu; roller KOVALAYAN / KAÇAN
+(kurucu seçer ya da rastgele; rövanşta roller değişir); aynı irtifada, ayarlanabilir mesafe, kaçan önde başlar; kovalayan kaçanı menzil + burun konisi
+içinde gereken süre kesintisiz tutarsa ANGAJE → kovalayan kazanır; süre biterse kaçan; alan dışına çıkan / yere çarpan kaybeder; sunucu otoriter.
+**Kapsam:** yalnız oyun mekaniği (HUD, kazanan, puan). Araca otonom yönelme / güdüm / takip komutu YOKTUR — iki pilot da aracını kendisi uçurur.
+
+### 41.1 Çekirdek (saf; `flightsim_match_core.py`)
+- **Ayar** `it_ayar_dogrula(r, tip)` (MacHata `invalid`): `distance_m` 300–1500 (başlangıç mesafesi), `alt_m` 20–400 (başlangıç irtifası, merkez
+  zemininden), `time_limit_min` 2–10 (tam sayı), `range_m` 50–400 (angajman menzili), `cone_deg` 15–45 (kovalayanın burnundan ±), `hold_s` 2–5
+  (kesintisiz tutma), `area_radius_m` 300–5000 (merkezden yatay alan sınırı; ≥ mesafe/2 + 150; verilmezse sınıf varsayılanı mesafeye göre büyür),
+  `roles` `random` | `host_chaser` | `host_evader`, `seed`. Varsayılanlar: dikey (kopter/heli/VTOL/INTERCEPTOR) 400 m · 40 m · 5 dk · 120 m · ±30° ·
+  3 s · R 800; sabit kanat 1000 m · 120 m · 6 dk · 300 m · ±25° · 3 s · R 3000. `vclass` (dikey | ucak) ayara gömülür.
+- **Roller** HAZIRLIK'a geçişte (`_roller_ata`): kurucunun seçimi ya da tohumlu rastgele (aynı tohum = aynı roller). `Oyuncu.rol`, anlık görüntüde
+  `players[].role` ve `dogfight.roles`.
+- **Başlangıç** `it_baslangiclari(ayar, tip, pist_yonu)`: iki araç merkezden geçen ortak hatta `distance_m` ayrık, ikisi de hat yönüne bakar →
+  kaçan önde, kovalayan arkada. Hat yönü sabit kanatta pist yönü (kalkış koridoru), dikeyde tohumdan. SITL'de araçlar yerden kalkar: "aynı irtifada"
+  koşulu **kalkış koruması** ile sağlanır — iki araç da `alt_m`'nin %80'ine çıkana ya da `KORUMA_S` (60 sn) dolana dek angajman sayılmaz (HUD
+  "KALKIŞ KORUMASI — 32 m'ye çıkın"; olay `guard_off`).
+- **Angajman** `ItDalasi.konum(rol, x, y, z, heading, pitch, t)` (her iki oyuncunun telemetrisi; örnekler arası en çok 2 sn fark): görüş hattı d
+  (kovalayan → kaçan), burun vektörü (`burun`: sabit kanatta yön + yunuslama; dikey kalkanlarda gövde eğimi burun değildir → yalnız yön), açı
+  `koni_acisi`; `dist ≤ range_m` ve `açı ≤ cone_deg` ve koruma kalktı → koni içinde; tutma süresi ardışık örnekler arası dt (≤ 0,5 s) toplanır,
+  koniden çıkınca SIFIRLANIR (kesintisiz). `tutma ≥ hold_s` → `engage` → kovalayan kazanır (`angaje`). Olaylar `lock_on` / `lock_off` (kaçana uyarı
+  için), `guard_off`, `area` (yatay uzaklık > `area_radius_m` → o rol kaybeder, `alan_disi`). İstatistik: en uzun tutma, en yakın mesafe, koni süresi.
+- **Karsilasma** (`tur='dogfight'`): tam 2 oyuncu (oluşturmada denetim); `tik`: GERI_SAYIM → YARIS'ta `ItDalasi`; süre dolunca kaçan kazanır
+  (`sure`); `carpti(uid)` (platformun kesin çarpışma kaydı) → çarpan kaybeder (`carpti`); yarışta rakip ayrılır / düşerse kalan kazanır
+  (`rakip_ayrildi`). `konum(..., heading, pitch)` it dalaşında `_it_konum`'a gider. Sonuç `{kind:'dogfight', winner, reason, duration_s,
+  standings (kazanan önce, role), dogfight {engage_s, max_hold_s, min_dist_m, need_s, roles}}`; `dict()` ek alanları `kind`, `dogfight` (HUD ölçüleri).
+  Halka yarışı davranışı değişmedi (`kind: 'rings'`).
+
+### 41.2 HEPGO çalışma zamanı / REST / DB
+- `POST /api/drone/sim/matches {settings, kind: 'rings' | 'dogfight', rings?, dogfight?, invite}`: it dalaşında tam 1 davetli (400), ayar 400.
+  Meta `limits.kinds`, `limits.dogfight {sınırlar, roles, guard_s, defaults}`. Liste satırında `kind`. `POST /{id}/rematch` (kurucu, BITTI, it dalaşı):
+  aynı ayarlar, roller ters (`host_chaser` ↔ `host_evader`), rakip davet edilir; eski salona WS `{t:'rematch', id}`.
+- `MatchRuntime`: başlangıç noktaları rol başına; tele kancası `heading` + `pitch`'i çekirdeğe verir; `gorev.crashes` artışı → `k.carpti`; `pos`
+  çerçevesine `df {roles, dist, off_deg, rel_alt, bearing_deg, in_cone, hold_s, need_s, guard, max_hold_s, min_dist_m}`; komut kapısı
+  `KAPI_KOMUTLARI` + `reset`: it dalaşında geri sayım/yarışta Sıfırla reddi ("İt dalaşında Sıfırla yok"; başlangıca ışınlanma kaçış olmasın; halka
+  yarışında serbest). WS `{t:'dogfight', kind: guard_off | lock_on | lock_off | engaged | area | crash, id?, held_s?}`. Davet push metni türe göre.
+- **DB göçü (HEPGO `app/db.py`, idempotent):** `drone_sim_matches.kind TEXT NOT NULL DEFAULT 'rings'` + `game_cfg TEXT` (`PRAGMA table_info`
+  denetimiyle `ALTER TABLE … ADD COLUMN`, yalnız yoksa; eski satırlar 'rings'). İt dalaşında `rings_cfg = '{}'`, ayar `game_cfg`'de; GET/liste
+  `rings_cfg` alanında it dalaşı ayarını döndürür (istemci için tek alan).
+
+### 41.3 Arayüz
+- **Sihirbaz** "Tür ve kurallar" adımı (eski "Halkalar"; `flightsim_wizard.js` başlığı): üstte iki kart "◎ Halka yarışı" | "✈ İt dalaşı"; it
+  dalaşında kaydırıcılar (mesafe, irtifa, süre, menzil, koni, tutma, alan) + roller seçimi + kurallar metni + şema (`dfSvg`: alan dairesi, K arkada /
+  Ç önde, kovalayanın koni kaması, mesafe). Davet adımı it dalaşında tam 1 davetli (`setMax(1)`); özet satırları türe göre.
+- **Salon**: ayarlarda tür + kurallar özeti + rolüm (atanınca rozet), oyuncu listesinde rol rozetleri, şema; bitmiş it dalaşında kurucuya "Rövanş
+  (roller değişir)", rakibe gelen bildirimle "Rövanş" bağlantısı.
+- **Yarış ekranı HUD'u** (`createDogfightHud`, `.fs-df-cv` + `.fs-df-bar` + `.fs-df-alert`; sıralama tablosu ve halka şeridi gizlenir): rakip
+  işaretçisi (TD kutusu benzeri kare + merkez elmas; kovalayanda sarı, koni içinde kırmızı; kaçanda mavi), ekran dışında kenar oku + mesafe
+  (`opponentMarker`: tgthud izdüşümü + `sim.cameraView()`); **kovalayanda** kutunun çevresinde dolan angajman halkası (tutma / gereken) ve şeritte
+  "KONİ İÇİNDE 1.4/3.0 s" | "KONİ DIŞI 34° / 25°" | "MENZİL DIŞI 220 / 150 m"; **kaçanda** koni içindeyken yanıp sönen "⚠ KİLİTLENİYOR!" + dolan
+  çubuk + uyarı sesi (çift bip, ~0,45 sn'de bir). Şerit: rol rozeti (KOVALAYAN kırmızı / KAÇAN mavi), kalan süre, mesafe, rakibin bağıl irtifası
+  (↑/↓), kalkış koruması, alan sınırına %85'te "ALAN SINIRI! d / R m". 3B'de rakip §33 oyuncu katmanıyla (renkli gövde + isim) görünür.
+- **Sonuç**: kazanan + "KAZANDINIZ / KAYBETTİNİZ", sebep (angaje / süre — kaçan kazandı / alan dışı / çarptı / rakip ayrıldı), angajman süresi, en
+  uzun tutma / gereken, en yakın mesafe; tablo: rol, oyuncu, sonuç, azami hız, çarpışma. Karşılaşmalar sekmesinde "Karşılaşma türü" sütunu.
+- **Metinler**: `DF_TEXTS` (HEPGO Türkçe anahtar, 6 dil; SIMUMAV `df.*` 7 dil).
+
+### 41.4 Testler ve görsel doğrulama
+- `.venv/bin/python -m tests.test_flightsim_match`: `it_dalasi_testleri` (ayar sınırları, başlangıç hattı / kaçan önde / deterministik, burun ve koni
+  açısı (uçakta yunuslama, kopterde yok), koruma, kesintisiz tutma + kesinti sıfırlama, menzil dışı, bayat örnek, alan dışı, roller (kurucu / rastgele
+  iki yöne / tohum), kazanan: angaje / süre → kaçan / alan dışı / çarpma / rakip ayrıldı, halka yarışı etkilenmez) + `it_dalasi_api` (sahte kinematik
+  `tests/match_bot.it_pilotu`: kaçan düz uçar, kovalayan 90 m gerisinden ona dönük → ANGAJE; 400'ler, roller, başlangıç mesafesi, Sıfırla kapısı,
+  `pos.df`, `dogfight` olayları, sonuç iki WS'de, DB kind/game_cfg, liste türü, rövanşta roller ters).
+- `.venv/bin/python -m tests.test_simumav_match`: `it_dalasi` (SIMUMAV: önizleme iki başlangıç, oyuncu 2'ye sabit, davet özetinde tür, roller,
+  Sıfırla kapısı, ANGAJE, DB v4 göçü kind/game_cfg, geçmişte tür).
+- `node tests/test_flightsim_dogfight.mjs` (sınırlar çekirdekle aynı, doğrulama, rol/kalan süre/koni durumu, sonuç satırları, işaretçi, şema, 6 + 7
+  dil, bağlama). Görsel: `./.venv/bin/python -m tests.dogfight_shots` → `/tmp/dogfight-shots/df-*.png` (tür seçimi, salon, kovalayan HUD'u, kaçan
+  uyarısı, sonuç, salonda rövanş, Karşılaşmalar sekmesinde tür); SIMUMAV: `./.venv/bin/python -m tests.simumav_dogfight_shots` → `df-sm-*.png`
+  (sihirbaz tür seçimi + şema, davet 2 oyuncu, salon). Not: görsel betikte tutma süresi görüntü alınırken geçici büyütülür (`20.5/120.0 s`).

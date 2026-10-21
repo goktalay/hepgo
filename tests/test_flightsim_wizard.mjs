@@ -1,7 +1,8 @@
 // Uçuş Simülatörü — adım adım sihirbaz mantığı (static/js/modules/flightsim_wizard.js) ve görsel sayı girişi yardımcıları
 // (static/js/modules/fs_inputs.js) tarayıcısız birim testi. Çalıştırma: node tests/test_flightsim_wizard.mjs
 import assert from 'node:assert/strict';
-import { STEP_DEFS, LAUNCH_OPTIONS, LAUNCH_PARAM_DEFS, launchOptionsFor, normLaunchMethod, wizardSteps, canGoto, firstInvalid, reconcileStep, createStepper } from '../static/js/modules/flightsim_wizard.js';
+import { STEP_DEFS, LAUNCH_OPTIONS, LAUNCH_PARAM_DEFS, launchOptionsFor, normLaunchMethod, wizardSteps, canGoto, firstInvalid, reconcileStep, createStepper,
+  isSimLog, simLogsOnly, simulateParam, wizardStartStep, simulateHref } from '../static/js/modules/flightsim_wizard.js';
 import { LAUNCH_METHODS, LAUNCH_DEFAULTS } from '../static/js/modules/flightsim_launch.js';
 import { parseNum, clampNum, decimalsOf, snapStep, niceRound, makeScale, fmtNum, valueFromPos, commitValue } from '../static/js/modules/fs_inputs.js';
 
@@ -122,6 +123,33 @@ test('valueFromPos / commitValue: sınır + adım (eski <input type=number> doğ
 });
 test('fmtNum', () => {
   assert.equal(fmtNum(12.5, 0.5), '12.5'); assert.equal(fmtNum(12, 0.5), '12'); assert.equal(fmtNum(0.30000000000000004, 0.05), '0.3'); assert.equal(fmtNum(null), ''); assert.equal(fmtNum(1500, 25), '1500');
+});
+
+test('§8.5 simülatör log listesi: yalnız simülatör kayıtları — saha görevi/uçuşu logları ve bağımsız gerçek loglar dışarıda', () => {
+  const L = [
+    { id: 1, origin: 'SIM', file_name: 'SIM-3-20261021-1000.bin' },
+    { id: 2, origin: 'REAL', file_name: '00000012.BIN' },                        // Araçlar'dan bağımsız gerçek log
+    { id: 3, origin: 'REAL', task_id: 7, task_code: 'SG-1', file_name: 'a.bin' },  // saha görevi
+    { id: 4, origin: 'SIM', task_id: 7, flight_id: 9, file_name: 'b.bin' },        // saha uçuşuna bağlı (kaynak SIM olsa da)
+    { id: 5, origin: null, aircraft: 'Simülatör · Multikopter', file_name: 'x.bin' },   // eski satır: ad çıkarımı
+    { id: 6, origin: null, file_name: 'SIM-12-20261001-0930.bin' },
+    { id: 7, origin: null, file_name: 'y.bin', aircraft: 'CZ-07' },
+    { id: 8, sim: true, origin: 'REAL', file_name: 'z.bin' },                       // sunucu bayrağı önceliklidir (.bin'i bir simülasyon kaydının)
+    { id: 9, sim: false, origin: 'SIM', file_name: 'w.bin' },
+  ];
+  assert.deepEqual(simLogsOnly(L).map(l => l.id), [1, 5, 6, 8]);
+  assert.equal(isSimLog(null), false);
+  assert.deepEqual(simLogsOnly(null), []);
+});
+test('§8.5 "Simüle et" girişi: ?simulate=<log> ayrıştırma, bağlantı, başlangıç adımı (Dünya)', () => {
+  assert.equal(simulateParam('42'), 42); assert.equal(simulateParam(7), 7);
+  for (const v of [null, undefined, '', '0', '-3', '1.5', 'abc']) assert.equal(simulateParam(v), null, String(v));
+  assert.equal(simulateHref(42), '#/drone/sim?simulate=42');
+  assert.equal(wizardStartStep({ mode: 'replay', pinned: true }), 'world');
+  assert.equal(wizardStartStep({ mode: 'replay', pinned: false }), null);
+  assert.equal(wizardStartStep({ mode: 'sitl', pinned: true }), null);
+  assert.ok(wizardSteps({ mode: 'replay', type: 'sabit_kanat' }).includes(wizardStartStep({ mode: 'replay', pinned: true })));   // atmosfer → rampa → kamera → özet sorulur
+  assert.deepEqual(wizardSteps({ mode: 'replay', type: 'sabit_kanat' }).slice(1), ['world', 'launch', 'camera', 'summary']);
 });
 
 console.log(`\n${n} test geçti`);

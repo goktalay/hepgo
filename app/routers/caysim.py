@@ -252,7 +252,7 @@ def g3d_key(client=CLIENT):
 # ---------------- loglar / oturumlar ----------------
 @router.get('/logs')
 def logs(q: Optional[str] = None, client=CLIENT, conn=db.DB):
-    return {'logs': flightsim_replay.loglari_listele(conn, caysim.sahip_kullanici(conn, client), q)}
+    return {'logs': flightsim_replay.loglari_listele(conn, caysim.sahip_kullanici(conn, client), q, hepsi=True)}   # CAYSIM sözleşmesi: tüm oynatılabilir loglar (HEPGO sihirbazının §8.5 süzgeci uygulanmaz)
 
 
 @router.get('/sessions')

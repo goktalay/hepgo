@@ -571,18 +571,22 @@ def replay_testleri(a, c1, mon_token_login):
         lid = cur.lastrowid
         conn.execute('''INSERT INTO flight_logs (task_id, file, file_name, size, status, uploaded_by, uploaded_at) VALUES (NULL, 'flightlogs/yarim.bin', 'yarim.bin', 10, 'ISLENIYOR', 1, ?)''', (db.now(),))
         conn.commit()
-    # --- /logs: admin (tools) görür; analizi bitmemiş listelenmez; arama ---
+    # --- /logs: §8.5 varsayılan liste YALNIZ simülatör kayıtları — bağımsız gerçek log (Araçlar) listelenmez; `?id=` ("Simüle et") o logu verir
+    #     (admin tools yetkili); analizi bitmemiş listelenmez; arama ---
     m = ok(a.get('/api/drone/sim/meta'))
-    assert m['replay']['logs_allowed'] is True and m['replay']['hz'] == R.REPLAY_HZ and '.tlog' in m['replay']['formats'], m['replay']
-    logs = ok(a.get('/api/drone/sim/logs'))
-    assert [l['id'] for l in logs] == [lid] and logs[0]['ext'] == 'tlog' and logs[0]['type'] == 'multirotor' and logs[0]['cached'] is False and logs[0]['aircraft'] == 'CZ-TEST', logs
-    assert ok(a.get('/api/drone/sim/logs?q=cz-test')) and ok(a.get('/api/drone/sim/logs?q=yokboyle')) == []
+    assert m['replay']['logs_allowed'] is True and m['replay']['real_allowed'] is True and m['replay']['hz'] == R.REPLAY_HZ and '.tlog' in m['replay']['formats'], m['replay']
+    assert ok(a.get('/api/drone/sim/logs')) == [], 'gerçek log simülatör listesinde görünmemeli (§8.5)'
+    logs = ok(a.get('/api/drone/sim/logs', params={'id': lid}))
+    assert [l['id'] for l in logs] == [lid] and logs[0]['ext'] == 'tlog' and logs[0]['type'] == 'multirotor' and logs[0]['cached'] is False and logs[0]['aircraft'] == 'CZ-TEST' and logs[0]['sim'] is False, logs
+    assert ok(a.get('/api/drone/sim/logs', params={'id': lid, 'q': 'cz-test'})) and ok(a.get('/api/drone/sim/logs', params={'id': lid, 'q': 'yokboyle'})) == []
+    assert ok(a.get('/api/drone/sim/logs', params={'id': lid + 1})) == []   # ISLENIYOR
     # montaj: drone.sim var; Araçlar (tools) rolden kapatılır, Saha (field) zaten yok → log listesi boş, oturum açamaz (yazma yok → 403)
     ok(a.put('/api/roles/perms', params={'name': 'Montaj Personeli'}, json={'changes': [{'node': 'tools', 'cap': 'open', 'value': False}]}))
     mon = TestClient(app, base_url='https://testserver')
     login(mon, 'montaj', 'sifre-1234')
     assert not ({'tools', 'field'} & set(ok(mon.get('/api/auth/me'))['modules'])), ok(mon.get('/api/auth/me'))['modules']
-    assert ok(mon.get('/api/drone/sim/meta'))['replay']['logs_allowed'] is False and ok(mon.get('/api/drone/sim/logs')) == []
+    mm_ = ok(mon.get('/api/drone/sim/meta'))['replay']
+    assert mm_['logs_allowed'] is True and mm_['real_allowed'] is False and ok(mon.get('/api/drone/sim/logs')) == [] and ok(mon.get('/api/drone/sim/logs', params={'id': lid})) == [], mm_
     assert mon.post('/api/drone/sim/sessions', json={'mode': 'replay', 'log_id': lid}).status_code == 403
     # --- oturum: doğrulama ---
     assert a.post('/api/drone/sim/sessions', json={'mode': 'replay'}).status_code == 400
@@ -607,7 +611,7 @@ def replay_testleri(a, c1, mon_token_login):
     g = bekle(lambda: (lambda r: r if r['state'] == 'HAZIR' else None)(ok(a.get(f'/api/drone/sim/sessions/{sid}'))), 10)
     assert g and g['replay']['frames'] == d['n'] and g['replay']['duration_s'] == d['duration_s'] and g['replay']['home'] == d['home'] and g['replay']['progress'] == 100, g and g['replay']
     assert g['center']['lat'] == d['home']['lat'] and g['center']['alt'] == d['home']['alt'] and g['replay']['modes'] == ['STABILIZE', 'LOITER'] and g['replay']['takeoff_t'] == d['takeoff_t'], g['center']
-    assert R.onbellek_yolu(lid).exists() and ok(a.get('/api/drone/sim/logs'))[0]['cached'] is True
+    assert R.onbellek_yolu(lid).exists() and ok(a.get('/api/drone/sim/logs', params={'id': lid}))[0]['cached'] is True
     # --- kareler (gzip JSON) ---
     r = a.get(f'/api/drone/sim/sessions/{sid}/replay')
     assert r.status_code == 200 and r.headers.get('content-type', '').startswith('application/json'), (r.status_code, r.headers)
@@ -662,10 +666,80 @@ def replay_testleri(a, c1, mon_token_login):
     assert g and g['state'] == 'HATA' and g['sitl']['error'], g
     assert a.get(f"/api/drone/sim/sessions/{s4['id']}/replay").status_code == 409
     ok(a.delete(f"/api/drone/sim/sessions/{s4['id']}"))
+    oynatma_girisleri_testleri(a, mon, tl)   # §8.5 simülatör listesi süzgeci + kaydı doğrudan izleme
     # log silinince önbellek de silinir
     ok(a.delete(f'/api/tools/flight-logs/{lid}'))
     assert not R.onbellek_yolu(lid).exists()
     print('Kayıttan oynatma testleri geçti.')
+
+
+def oynatma_girisleri_testleri(a, mon, tl):
+    """§8.5 (kullanıcı isteği): (1) simülatörün log listesi YALNIZ simülatör kayıtları — saha görevine (task_id) ya da saha uçuşuna (flight_id)
+    bağlı loglar ve bağımsız gerçek loglar listelenmez; `?id=` "Simüle et" girişi; simülatör kaydına drone.sim erişimi yeter.
+    (2) POST /runs/{id}/replay: sihirbazsız, kaydın ayarlarıyla (dünya/hava/rüzgâr/saat/sis, kalkış rampa açı-yön, model, kamera) oturum;
+    yetki (okuma izni 403), log yok 409, bulunamadı 404; Google 3B artık kapalıysa gerçek araziye düşer."""
+    import shutil
+    from app import config, db, flightsim_runs
+    hedef = config.UPLOAD_DIR / 'flightlogs' / 'sim-kayit.tlog'
+    shutil.copy(tl, hedef)
+    ozet = json.dumps({'summary': {'vehicle': 'ArduCopter', 'flight_s': 40, 'duration_s': 60, 'home': {'lat': 39.925, 'lng': 32.837}}})
+    with db.connect() as conn:
+        ins = lambda ad, origin, task_id=None, flight_id=None: conn.execute(   # noqa: E731
+            '''INSERT INTO flight_logs (task_id, flight_id, file, file_name, size, status, analysis, aircraft, uploaded_by, uploaded_at, origin)
+               VALUES (?, ?, 'flightlogs/sim-kayit.tlog', ?, ?, 'TAMAM', ?, 'Simülatör · Multikopter', 1, ?, ?)''', (task_id, flight_id, ad, hedef.stat().st_size, ozet, db.now(), origin)).lastrowid
+        tid = conn.execute("INSERT INTO field_tasks (code, created_at) VALUES ('SG-SIMTEST', ?)", (db.now(),)).lastrowid
+        fid = conn.execute('INSERT INTO field_flights (task_id) VALUES (?)', (tid,)).lastrowid
+        sim_id = ins('SIM-9-20261021-1000.bin.tlog', 'SIM')                  # simülatör kaydı (görevsiz)
+        gorev_id = ins('gorev-ucus.tlog', 'REAL', task_id=tid)                 # saha görevi logu
+        ucus_id = ins('saha-ucus-sim.tlog', 'SIM', task_id=tid, flight_id=fid)   # saha uçuşuna bağlı (kaynak SIM olsa da)
+        nul_id = ins('kosu.tlog', None)                                         # kaynağı okunamamış ama bir simülasyon kaydının .bin'i
+        w = {'mode': 'google3d', 'time': 'dusk', 'weather': 'rain', 'wind_ms': 7.0, 'wind_dir': 200.0, 'fog': 0.3, 'seed': 42, 'size_m': 3000,
+             'runway_heading': 120.0, 'launch': {'method': 'ramp', 'angle_deg': 22, 'azimuth_deg': 135, 'phase': 'ARM'}}
+        run = lambda bin_id, world, camera='thermal', model='builtin:quad', owner=1: conn.execute(   # noqa: E731
+            '''INSERT INTO drone_sim_runs (session_id, owner_id, owner_name, type, model_id, world, launch, camera, started_at, mode, result, bin_log_id, created_at)
+               VALUES (900, ?, 'Yönetici', 'multirotor', ?, ?, ?, ?, ?, 'sitl', 'tamam', ?, ?)''',
+            (owner, model, json.dumps(world) if world is not None else None, json.dumps({'method': 'ramp', 'angle_deg': 18, 'phase': None}), camera, db.now(), bin_id, db.now())).lastrowid
+        rid = run(sim_id, w)
+        rid_nul = run(nul_id, None, camera=None, model=None)   # eski satır: dünya yok → varsayılan + launch sütunu
+        rid_yok = run(None, {'mode': 'procedural'})            # .bin kaydı kapalıydı
+        conn.commit()
+    # (1) liste süzgeci
+    ids = [l['id'] for l in ok(a.get('/api/drone/sim/logs'))]
+    assert sim_id in ids and nul_id in ids and gorev_id not in ids and ucus_id not in ids, (ids, sim_id, nul_id, gorev_id, ucus_id)
+    assert all(l['sim'] for l in ok(a.get('/api/drone/sim/logs'))), 'liste yalnız simülatör kayıtları'
+    assert [l['id'] for l in ok(a.get('/api/drone/sim/logs', params={'id': gorev_id}))] == [gorev_id]   # "Simüle et" girişi: saha logu (tools yetkisi)
+    mids = [l['id'] for l in ok(mon.get('/api/drone/sim/logs'))]   # montaj: flightlogs yetkisi yok ama simülatör kayıtlarını görür
+    assert sim_id in mids and gorev_id not in mids and ok(mon.get('/api/drone/sim/logs', params={'id': gorev_id})) == [], mids
+    # (2) kaydı doğrudan izle
+    RR = '/api/drone/sim/runs'
+    assert a.post(f'{RR}/999999/replay').status_code == 404
+    assert a.post(f'{RR}/{rid_yok}/replay').status_code == 409
+    assert mon.post(f'{RR}/{rid}/replay').status_code == 403   # okuma izni (yazma yok) → oturum açamaz
+    r = ok(a.get(f'{RR}/{rid}'))
+    assert r['play_log_id'] == sim_id, r
+    ayar = flightsim_runs.oynatma_ayarlari(r)
+    assert ayar['world']['mode'] == 'real' and ayar['world']['time'] == 'dusk' and ayar['camera'] == 'thermal' and ayar['model'] == {'id': 'builtin:quad'}, ayar   # Google 3B kapalı → gerçek arazi
+    assert ayar['world']['launch']['method'] == 'ramp' and ayar['world']['launch']['angle_deg'] == 22 and ayar['world']['launch']['azimuth_deg'] == 135, ayar['world']['launch']
+    s = ok(a.post(f'{RR}/{rid}/replay'), 201)
+    assert s['mode'] == 'replay' and s['run_id'] == rid and s['replay']['log_id'] == sim_id, s
+    W = s['world']
+    assert (W['mode'], W['time'], W['weather'], W['wind_ms'], W['wind_dir'], W['fog'], W['seed'], W['size_m'], W['runway_heading']) == ('real', 'dusk', 'rain', 7.0, 200.0, 0.3, 42, 3000, 120.0), W
+    assert W['launch']['method'] == 'ramp' and W['launch']['angle_deg'] == 22 and W['launch']['azimuth_deg'] == 135, W['launch']   # kayıttaki rampa yön/açı
+    assert s['camera'] == 'thermal' and s['model']['id'] == 'builtin:quad', (s['camera'], s['model'])
+    g = bekle(lambda: (lambda x: x if x['state'] == 'HAZIR' else None)(ok(a.get(f"/api/drone/sim/sessions/{s['id']}"))), 10)
+    assert g and g['replay']['frames'], g
+    ok(a.delete(f"/api/drone/sim/sessions/{s['id']}"))
+    s2 = ok(a.post(f'{RR}/{rid_nul}/replay'), 201)   # eski satır: dünya yok → varsayılan dünya + launch sütunundaki rampa (phase atılır)
+    assert s2['world']['launch']['method'] == 'ramp' and s2['world']['launch']['angle_deg'] == 18 and s2['world']['mode'] == flightsim.WORLD_DEFAULTS['mode'] and s2['camera'] == 'day', s2['world']
+    ok(a.delete(f"/api/drone/sim/sessions/{s2['id']}"))
+    with db.connect() as conn:
+        conn.execute('DELETE FROM drone_sim_runs WHERE id IN (?, ?, ?)', (rid, rid_nul, rid_yok))
+        conn.execute('DELETE FROM drone_sim_runs WHERE source_log_id IN (?, ?)', (sim_id, nul_id))
+        conn.execute('DELETE FROM flight_logs WHERE id IN (?, ?, ?, ?)', (sim_id, gorev_id, ucus_id, nul_id))
+        conn.execute('DELETE FROM field_flights WHERE id = ?', (fid,))
+        conn.execute('DELETE FROM field_tasks WHERE id = ?', (tid,))
+        conn.commit()
+    print('  §8.5 kayıttan oynatma girişleri (liste süzgeci + kaydı doğrudan izle) testleri geçti')
 
 
 def kucuk_glb():
@@ -3357,7 +3431,7 @@ def main():
         sk.bind(('0.0.0.0', udp_port)); sk.close()   # port serbest
         # yeniden açılabilir (limit sayacı düştü); lifespan kapanışı kalanı temizler
         s3 = ok(a.post('/api/drone/sim/sessions', json={'type': 'hexarotor', 'center_id': c1['id']}), 201)
-        assert s3['id'] == sid + 14 and s3['udp_port'] == udp_port   # kimlik sayacı (s2 + vekil testlerinin 5 oturumu + arazi sunumunun 2 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
+        assert s3['id'] == sid + 14 and s3['udp_port'] == udp_port, (s3['id'], sid, s3['udp_port'], udp_port)   # kimlik sayacı (s2 + vekil testlerinin 5 oturumu + arazi sunumunun 2 oturumu + model testlerinin 5 oturumu) ilerler; ilk boş port yeniden verilir
         ok(a.delete(f"/api/drone/sim/sessions/{s3['id']}"))
         # --- ekran kaydı (§17) ---
         rec_testleri(a, c1)

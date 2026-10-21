@@ -304,6 +304,32 @@ def getir(conn, rid, user=None):
     return _satir(r, user) if r else None
 
 
+def oynatma_ayarlari(r):
+    """§8.5 kaydı doğrudan izleme: satırın kaydedilmiş ayarlarından kayıttan oynatma gövdesi → {world, model, camera}.
+    world = kaydın dünyası (kip, saat, hava, rüzgâr/esinti/türbülans, sis, pist yönü, tohum, boyut) + kalkış (world.launch, yoksa `launch`
+    sütunu; `phase` atılır). Eksik alan varsayılanla dolar (world_dogrula); geçersiz/artık desteklenmeyen değer (ör. Google 3B anahtarı
+    kaldırıldı) → önce gerçek araziye, olmazsa yalnız kalkışla, en son varsayılan dünyaya düşer — kayıt her durumda açılır."""
+    from . import flightsim
+    w = dict(r.get('world') or {}) if isinstance(r.get('world'), dict) else {}
+    la = w.get('launch') if isinstance(w.get('launch'), dict) else (r.get('launch') if isinstance(r.get('launch'), dict) else None)
+    if la:
+        w['launch'] = {k: v for k, v in la.items() if k != 'phase'}
+    world = None
+    adaylar = [w]
+    if w.get('mode') == 'google3d':
+        adaylar.append({**w, 'mode': 'real'})
+    adaylar += [{'launch': w['launch']} if w.get('launch') else {}, {}]
+    for aday in adaylar:
+        try:
+            world = flightsim.world_dogrula(aday)
+            break
+        except flightsim.SimHata:
+            continue
+    cam = r.get('camera') if r.get('camera') in flightsim.KAMERA_TURLERI else None
+    mid = r.get('model_id')
+    return {'world': world or dict(flightsim.WORLD_DEFAULTS), 'model': {'id': mid} if mid not in (None, '') else None, 'camera': cam}
+
+
 def dosya(r, tur):
     """İndirme: (yol, görünen ad, mime) — `tur` params | scripts. Yol yalnız satır kimliğinden (DB'deki göreli yol doğrulanır)."""
     rel = r.get('params_path') if tur == 'params' else r.get('scripts_path')

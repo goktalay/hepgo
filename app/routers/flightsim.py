@@ -82,8 +82,9 @@ def meta(request: Request, user=Depends(sim_user), conn=db.DB):
     return {'types': flightsim.tipler(), 'centers': _centers(conn), 'world_defaults': dict(flightsim.WORLD_DEFAULTS),
             'limits': {'max_sessions': flightsim.MAX_SESSIONS, 'max_minutes': flightsim.MAX_MINUTES}, 'host': _host(request),
             'can_command': MODUL in user.get('write_modules', []),
-            # Kayıttan oynatma: uçuş logu listesine erişim flightlogs yetkisiyle kesişir (tools → tümü, field → göreve bağlı olanlar)
-            'replay': {'logs_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)},
+            # Kayıttan oynatma (§8.5): simülatör listesi yalnız simülatörün kendi kayıtları (drone.sim erişimi yeter); gerçek loglar (saha / Araçlar)
+            # yalnız "Simüle et" girişiyle — flightlogs yetkisiyle kesişir (tools → tümü, field → göreve bağlı olanlar) → `real_allowed`
+            'replay': {'logs_allowed': True, 'real_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)},
             # Google Photorealistic 3D Tiles dünya kipi (§10): yalnız GOOGLE_MAPS_API_KEY tanımlıysa; anahtar /g3d-key ile ayrı verilir
             'google3d': {'enabled': flightsim.google3d_etkin()},
             # §24 hedefler: seçilebilen modeller (hedef modelleri + sistemdeki dron türleri) ve sınırlar
@@ -108,9 +109,11 @@ def g3d_key(user=Depends(sim_user)):
 
 
 @router.get('/logs')
-def list_logs(q: Optional[str] = None, user=Depends(sim_user), conn=db.DB):
-    """Kayıttan oynatılabilir uçuş logları (analizi TAMAM; .bin/.log/.tlog) — flightlogs yetkisiyle kesişim; `q` ad/dron/pilot/konum/görev arar."""
-    return flightsim_replay.loglari_listele(conn, user, q)
+def list_logs(q: Optional[str] = None, id: Optional[int] = None, user=Depends(sim_user), conn=db.DB):   # noqa: A002
+    """Kayıttan oynatılabilir uçuş logları (analizi TAMAM; .bin/.log/.tlog). Varsayılan YALNIZ simülatör kayıtları (saha görevi / bağımsız
+    gerçek loglar listelenmez; §8.5). `?id=` "Simüle et" girişi: yalnız o log (gerçek logda flightlogs yetkisiyle kesişim; yetkisizse boş liste).
+    `q` ad/dron/pilot/konum/görev arar."""
+    return flightsim_replay.loglari_listele(conn, user, q, log_id=id)
 
 
 @router.get('/sessions')
@@ -416,6 +419,57 @@ def runs_stats(days: int = 30, user=Depends(sim_user), conn=db.DB):
 @router.get('/runs/{rid}')
 def get_run(rid: int, user=Depends(sim_user), conn=db.DB):
     return _run(conn, rid, user)
+
+
+class RunReplayIn(BaseModel):
+    camera: Optional[str] = None   # isteğe bağlı: kaydın kamera türü yerine (verilmezse kayıttaki)
+
+
+@router.post('/runs/{rid}/replay', status_code=201)
+async def run_replay(rid: int, request: Request, body: Optional[RunReplayIn] = None, user=Depends(sim_user)):
+    """§8.5 Simülasyon kaydını İZLE: sihirbaz AÇILMADAN kaydın oynatılabilir logu (.bin ya da kayıttan oynatma kaynağı), oturumun KAYDEDİLMİŞ
+    ayarlarıyla (dünya kipi/merkez/saat/hava/rüzgâr/sis/pist, kalkış-rampa yön/açı/fırlatıcı, görsel model, kamera türü; hedefler, yer kontrol
+    sahası ve güç ReplaySession'da kaydın canlı oturumundan) açılır. Yetki: drone.sim yazma (POST) + kaydın sahibi, MASTER ya da yazma izinli.
+    Oynatılabilir log yoksa 409; log yetkisi yoksa 403."""
+    loop = asyncio.get_running_loop()
+
+    def load():
+        with db.connect() as conn:
+            r = flightsim_runs.getir(conn, rid, user)
+            if not r:
+                return None, None, None, None
+            lg = flightsim_replay.log_getir(conn, r['play_log_id']) if r.get('play_log_id') else None
+            ayar = flightsim_runs.oynatma_ayarlari(r)
+            mdl = None
+            if lg and ayar.get('model'):
+                try:   # kayıtlı görsel model (silinmiş / tip uyumsuz → tipin varsayılanı)
+                    mdl = flightsim_models.coz(conn, r.get('type') if r.get('type') in flightsim.TIP_ADLARI else flightsim_replay.arac_tipi(lg.get('vehicle')), ayar['model'])
+                except flightsim.SimHata:
+                    mdl = None
+            return r, lg, ayar, mdl
+    r, log, ayar, mdl = await loop.run_in_executor(None, load)
+    if not r:
+        raise HTTPException(404, 'Simülasyon kaydı bulunamadı')
+    if not (user.get('master') or r.get('owner_id') == user['id'] or _yazar(user)):
+        raise HTTPException(403, 'Bu kaydı oynatma yetkiniz yok')
+    if not log:
+        raise HTTPException(409, 'Bu kaydın oynatılabilir uçuş logu yok (.bin kaydı kapalıydı ya da analiz sürüyor)')
+    if not flightsim_replay.log_izinli(user, log):
+        raise HTTPException(403, 'Bu uçuş loguna erişim yetkiniz yok')
+    cam = (body.camera if body and body.camera else None) or ayar.get('camera')
+    try:
+        s = await flightsim.MANAGER.ac_replay(log, ayar['world'], {'id': user['id'], 'name': user['full_name']}, mdl, camera=cam)
+    except flightsim.SimHata as e:
+        _hata(e)
+    if ayar.get('camera') and not (body and body.camera):
+        s.camera = ayar['camera']   # kaydın kendi kamera türü (oynatma_ayarlari doğruladı; .bin araması başka satırı bulmuş olabilir)
+
+    def audit():
+        with db.connect() as conn:
+            db.audit(conn, user['id'], 'Uçuş simülatörü kaydını oynattı', 'drone_sim', s.id, f"kayıt {rid} · {log['file_name']} (log {log['id']})")
+            conn.commit()
+    await loop.run_in_executor(None, audit)
+    return {**s.to_dict(_host(request)), 'run_id': rid}
 
 
 @router.get('/runs/{rid}/params')

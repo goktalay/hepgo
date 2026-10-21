@@ -198,7 +198,7 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
       h('span', { class: 'fs-runs-bi', html: RUN_ICON.download }), 'Download', h('span', { class: 'fs-runs-caret', 'aria-hidden': 'true' }, '▾')) : null;
     return h('div', { class: 'fs-runs-actions' },
       h('div', { class: 'pill-group fs-runs-rowpill' },
-        btn(tr('Oynat'), RUN_ICON.play, { disabled: !playOk, 'data-act': 'play', title: r.play_log_id ? tr('Kayıttan oynat kipinde aç') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, playOk ? 'primary' : ''),
+        btn(tr('Oynat'), RUN_ICON.play, { disabled: !playOk, 'data-act': 'play', title: r.play_log_id ? tr('Kaydedilen ayarlarla doğrudan izle') : tr('Oynatılabilir .bin yok (kayıt kapalıydı ya da analiz sürüyor)'), onclick: () => onPlay?.(r) }, playOk ? 'primary' : ''),
         btn(tr('Rapor'), RUN_ICON.report, { disabled: !r.has_summary, 'data-act': 'report', title: r.has_summary ? tr('Özet raporu aç') : tr('Özet rapor yok'), onclick: async () => { try { await onReport?.(r); } catch (err) { toastError(err); } } }),
         r.has_video ? btn(tr('Video'), RUN_ICON.video, { 'data-act': 'video', title: tr('Ekran kaydını izle'), onclick: () => videoDialog(r) }) : null),
       dl,
@@ -259,7 +259,7 @@ export function runsTable({ be, tr, canWrite = false, user = null, onPlay = null
     h('div', { class: 'fs-runs-head' }, filters, pager),
     h('p', { class: 'small muted fs-runs-note' }, master
       ? tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu, ekran kaydı, son parametre dökümü ve SITL script arşivi. Download menüsü yalnız sistem sahibine (MASTER) açıktır.')
-      : tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu ve ekran kaydı. Oynat, kaydı kayıttan oynat kipinde açar.')),
+      : tr('Her oturumun kapanışında: özet rapor, .bin uçuş logu ve ekran kaydı. Oynat, kaydı kaydedilen ayarlarıyla (hava, rampa, kamera…) doğrudan izlemeye açar.')),
     tableBox);
   refresh();
   // setPeriod(k): kapsül dönemi ('1d' | '7d' | '30d' | 'all') · setFilter({result:'carpisma', …}): Detaylı alanlarını ayarlar (sayfa üstü widget tıklaması)

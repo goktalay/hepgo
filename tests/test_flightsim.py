@@ -1034,10 +1034,10 @@ def bin_testleri(a, c1):
     assert 'LOG_BACKEND_TYPE 0\n' in p0 and 'LOG_DISARMED 0\n' in p0 and 'DSRMROT' not in p0 and 'MAV_SYSID 7\n' in p0, p0
     assert a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': 'evet'}).status_code in (400, 422)   # rec nesne olmalı (pydantic 422)
     s0 = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id']}), 201)
-    assert s0['rec'] == {'bin': False, 'bin_log': None}, s0['rec']
+    assert s0['rec'] == {'bin': False, 'bin_log': None, 'bin_logs_reset': []}, s0['rec']
     assert ok(a.delete(f"{S}/{s0['id']}")) == {'ok': True, 'bin': None}
     s = ok(a.post(S, json={'type': 'multirotor', 'center_id': c1['id'], 'rec': {'bin': True}}), 201)
-    assert s['rec'] == {'bin': True, 'bin_log': None}, s['rec']
+    assert s['rec'] == {'bin': True, 'bin_log': None, 'bin_logs_reset': []}, s['rec']
     bekle(lambda: ok(a.get(f"{S}/{s['id']}"))['state'] == 'HAZIR' or None)
     d = pathlib.Path(tempfile.mkdtemp())
     buyuk, kucuk = d / '00000002.BIN', d / '00000001.BIN'

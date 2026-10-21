@@ -2695,3 +2695,24 @@ seçimi tek kapsüle. Yalnız sunum değişti; komutlar, tercihler ve kısayolla
 - **Testler.** `node tests/test_flightsim_servotrig.mjs` (düğme/eylem metni aşamaya göre), `node tests/test_flightsim_camera.mjs` (görünüm etiketi,
   gimbal devre dışı, iki istemcinin bant kurgusu); görsel `./.venv/bin/python -m tests.fltbar_shots_hepgo` / `tests.fltbar_shots_simumav`
   (/tmp/fltbar-shots: 1600 / 1280 / 900 px, liste ve panel açık, dinleme, tetik → özet, rover, replay, İngilizce; taşma denetimi).
+
+## 37. Sanal kumanda varsayılan açık + fiziksel kumanda (Gamepad API) (`static/js/modules/flightsim_gamepad.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: "Tüm simülasyonlarda sanal kumanda açık gelsin. Tarayıcıya takılan fiziksel kumanda / joystick tanınsın ve aracı RC olarak kontrol etsin."
+- **Varsayılan açık**: yazma izni olan canlı oturumda (karşılaşma §33 dahil) sanal kumanda kendiliğinden açılır; kullanıcı 🎮 ile kapatırsa tercih
+  hatırlanır (HEPGO `localStorage fs.rc.on = '0'`, SIMUMAV `sm.rcOn = false`); ilk açılış / yeni kullanıcıda açık. Kayıttan oynatmada kumanda yok.
+  Otomatik açılışta kopterde gaz kanalı (ch3) ilk gaz girdisine (W/S, Boşluk, sol çubuk, fiziksel kumanda gazı) dek **0 = dokunma** gönderilir
+  (`virtualRC lazyThr`): yerde 1500 µs gaz override'ı ARM ön denetimini ("Throttle too high") bozmasın; uçakta gaz zaten 1000 (rölanti). Sahne,
+  kumandadan sonra kurulursa klavye kilidi (`setKeyboardLock`) sahne hazır olunca uygulanır.
+- **Fiziksel kumanda**: `navigator.getGamepads()` + `gamepadconnected/disconnected`; bağlanınca tost + olay şeridi, alt bantta 🎮 Sanal kumanda / ⚙
+  kapsülünde **Kumanda** simgesi (`.fs-pad-btn`; kol oynarken yeşil). Sanal kumanda kapalıysa açılır. Kumanda 20 Hz yoklanır ve durumu sanal kumandanın
+  20 Hz tick'ine `pad()` olarak girer — aynı `{t:'rc', ch}` yolu, aynı §27.1 eğrisi, Mode 2 (sol çubuk gaz / sapma, sağ yunuslama / yatış); kara
+  aracında sol dikey gaz + sağ yatay direksiyon (`roverRcChannels`). Öncelik: kollar nötr dışındaysa ya da son 1,5 sn'de oynatıldıysa kumanda yazar;
+  dokunulan sanal çubuk o tarafta kazanır; kumanda nötr ve hareketsizken klavye / sanal çubuk çalışır. Uçakta standart gamepad'in yaylı gaz kolu
+  HIZ olarak (klavye W/S gibi tutmalı); RC vericide mutlak.
+- **Eşleme** (profil başına, `fs.pad.cfg`): `standard` (W3C standart eşleme; Xbox / PS / çoğu USB gamepad): eksen 0/1 sol X/Y, 2/3 sağ X/Y (Y ters),
+  ölü bölge %8, düğme 9 Start = ARM, 8 Back = DISARM (güvenli: `fltBar.act()` — sabit kanatta havada motor kesme, kopterde onaylı), 5 RB / 4 LB =
+  sonraki / önceki mod, 12 / 13 yön = ch5 ±. `rc` (eşleme '' — EdgeTX / OpenTX / Radiomaster USB joystick): X kanatçık, Y irtifa (ters), Z gaz, Rx
+  istikamet, ölü bölge %3, düğme ataması yok. Panel: ölü bölge, eksen başına dizin + Ters (canlı çubuk), düğme başına dizin (basılınca yeşil),
+  Varsayılana dön. SIMUMAV menüsündeki gamepad gezinmesi (`menu/index.js`) yalnız menü sayfasında yoklar; uçuş ekranıyla çakışmaz.
+- **Testler**: `node tests/test_flightsim_gamepad.mjs` (ölü bölge, eşleme + ters çevirme, ayar kalıcılığı, düğme kenarları, sahte gamepad ile
+  RC kanalları, dokunma önceliği, uçak gaz hızı, kara aracı, lazyThr, 6 + 7 dil), `node tests/test_simumav_rc.mjs`.

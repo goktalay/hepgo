@@ -12,6 +12,7 @@
 //   gaugeLevel/gaugeArc/fuelGauge/elecGauge/gaugeModels, needleAngle/niceScaleMax/scaleTicks/zoneArc/arcPath/easeNeedle, speedGauge/engineGauge/dashModels, createPowerAcc, powerDetailRows.
 // ui.js içe aktarılmaz (Node testinde çalışır): DOM üreten fonksiyonlar `h` ve `tr`'yi parametre alır. Sihirbaz alanları fs_inputs.numSlider (içe aktarmasız saf modül).
 import { numSlider } from './fs_inputs.js';
+import { GAUGE_THEME_KEYS, ensureGaugeThemeCss, gaugeFrac, loadGaugeTheme, makeGThemeT, nextGaugeTheme, normGaugeTheme, saveGaugeTheme } from './flightsim_gtheme.js';   // §27.3 kadran tasarımları
 
 export const HUCRE_V = 3.7, SERVO_J_PER_US = 0.0005, W_PENCERE_S = 30, FUEL_MIN_KM = 0.3, FUEL_MIN_L = 0.02, ELEC_MIN_S = 60;
 export const FUEL_LOW_PCT = 20, ELEC_LOW_PCT = 25;
@@ -306,7 +307,12 @@ function dialSvg(kind) {
 </svg>`;
 }
 const SPEEP = kind => SPEC[kind];
-export function createPowerGauges(stage, { h, tr, getSettings = () => null, getSummary = () => null, plane = false, getCollision = () => false }) {
+// §27.3 tasarım seçenekleri (flightsim_gtheme.js): kapsayıcıda data-gtheme; cam kokpitte .fs-gauge-bar seviye şeridi (--f = ibre doluluğu);
+// ayrıntı kutusunda tema satırı + G tuşu (döngü). theme: başlangıç (yoksa kalıcı tercih); gtT: tema metinleri (HEPGO tr / SIMUMAV keyed); onTheme(t).
+export function createPowerGauges(stage, { h, tr, getSettings = () => null, getSummary = () => null, plane = false, getCollision = () => false, theme = null, gtT = null, onTheme = () => {} }) {
+  ensureGaugeThemeCss();
+  const GT = gtT || makeGThemeT(tr, false);
+  let gtheme = normGaugeTheme(theme ?? loadGaugeTheme());
   const acc = createPowerAcc();
   let last = null, lastAt = 0, popOpen = false, disposed = false, raf = 0, rafAt = 0;
   const LABEL = { fuel: 'YAKIT', speed: 'HIZ', engine: 'MOTOR', elec: 'BATARYA' };
@@ -317,7 +323,8 @@ export function createPowerGauges(stage, { h, tr, getSettings = () => null, getS
     const dial = h('span', { class: 'fs-gauge-dial', html: dialSvg(kind) });
     g.needle = dial.querySelector('.fs-gauge-needle'); g.warn = dial.querySelector('.fs-gauge-warn'); g.ticks = dial.querySelector('.fs-gauge-ticks'); g.red = dial.querySelector('.fs-gauge-zone.red');
     g.ico = h('span', { class: 'fs-gauge-ico', html: GAUGE_ICO[kind] || '' , hidden: !GAUGE_ICO[kind] });
-    dial.append(g.ico, h('span', { class: 'fs-gauge-digits' }, g.main, g.unit), g.sub, g.badge);
+    g.bar = h('i');
+    dial.append(g.ico, h('span', { class: 'fs-gauge-digits' }, g.main, g.unit), g.sub, g.badge, h('span', { class: 'fs-gauge-bar', 'aria-hidden': 'true' }, g.bar));
     g.el = h('button', { class: `fs-gauge ${big ? 'big' : 'small'}`, type: 'button', 'data-g': kind, title: `${tr(LABEL[kind])} · ${tr('Güç paneli: ayrıntı için tıklayın')}`, onclick: () => togglePop() }, dial, h('span', { class: 'fs-gauge-lbl' }, tr(LABEL[kind])));
     return g;
   };
@@ -326,7 +333,22 @@ export function createPowerGauges(stage, { h, tr, getSettings = () => null, getS
   const pop = h('div', { class: 'fs-power-pop', hidden: true, role: 'dialog' },
     h('div', { class: 'fs-power-pop-h' }, h('b', null, tr('Güç ve yakıt')), h('button', { class: 'fs-power-x', type: 'button', title: tr('Kapat'), onclick: () => togglePop(false) }, '×')),
     popBody, h('div', { class: 'fs-power-foot small' }, tr('Yakıt: mesafe + gaz kolu · Batarya: saatlik W + servo · Biterse yalnız uyarı, uçuş sürer')));
-  const el = h('div', { class: 'fs-gauges', hidden: true, 'data-nofuel': tr('ELEKTRİK') }, G.fuel.el, G.speed.el, G.engine.el, G.elec.el, pop);
+  const gtBtns = GAUGE_THEME_KEYS.map(k => h('button', { type: 'button', 'data-gtheme': k, title: GT(`gtheme.${k}_desc`), onclick: e => { e.stopPropagation(); setTheme(k, true); } }, GT(`gtheme.${k}`)));
+  pop.append(h('div', { class: 'fs-gt-row' }, h('span', null, GT('gtheme.short')), gtBtns));
+  const el = h('div', { class: 'fs-gauges', hidden: true, 'data-nofuel': tr('ELEKTRİK'), 'data-gtheme': gtheme }, G.fuel.el, G.speed.el, G.engine.el, G.elec.el, pop);
+  function setTheme(t, user = false) {
+    gtheme = normGaugeTheme(t); el.dataset.gtheme = gtheme;
+    gtBtns.forEach(b => b.classList.toggle('on', b.dataset.gtheme === gtheme));
+    if (user) { saveGaugeTheme(gtheme); onTheme(gtheme); }
+  }
+  setTheme(gtheme);
+  const onKeyG = e => {   // G: tasarım döngüsü (form alanında / değiştirici tuşla değil)
+    if (e.key !== 'g' && e.key !== 'G') return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const a = document.activeElement; if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return;
+    setTheme(nextGaugeTheme(gtheme), true); e.preventDefault();
+  };
+  window.addEventListener('keydown', onKeyG);
   const onDocClick = e => { if (popOpen && !el.contains(e.target)) togglePop(false); };
   document.addEventListener('click', onDocClick, true);
   const togglePop = v => { popOpen = v == null ? !popOpen : !!v; pop.hidden = !popOpen; el.classList.toggle('open', popOpen); if (popOpen) drawPop(); };
@@ -369,6 +391,7 @@ export function createPowerGauges(stage, { h, tr, getSettings = () => null, getS
     g.sub.textContent = m.kind === 'fuel' ? `${m.sub} · ${m.pctText}` : m.kind === 'elec' ? (m.sitl ? `${m.sub} · ${tr(m.rate)}` : m.sub) : m.sub; g.sub.hidden = !g.sub.textContent;
     g.badge.hidden = !m.badge; if (m.badge) g.badge.textContent = tr(m.badge);
     g.warn.hidden = !m.warn; g.el.classList.toggle('warn', !!m.warn);
+    if (Number.isFinite(m.angle)) g.bar.style.setProperty('--f', String(gaugeFrac(m.angle)));
     setNeedle(g, m.angle);
   };
   const update = t => {
@@ -384,7 +407,8 @@ export function createPowerGauges(stage, { h, tr, getSettings = () => null, getS
     el.classList.toggle('no-fuel', on && !m.fuel);   // elektrikli dron: yakıt kadranı yerine ELEKTRİK rozeti (CSS ::before)
     if (popOpen) drawPop();
   };
-  return { el, update, reset: () => acc.reset(), get open() { return popOpen; }, togglePop, dispose() { disposed = true; if (raf) cancelAnimationFrame(raf); document.removeEventListener('click', onDocClick, true); stage.classList.remove('fs-power-on'); el.remove(); } };
+  return { el, update, reset: () => acc.reset(), get open() { return popOpen; }, togglePop, setTheme: t => setTheme(t, true), get theme() { return gtheme; },
+    dispose() { disposed = true; if (raf) cancelAnimationFrame(raf); document.removeEventListener('click', onDocClick, true); window.removeEventListener('keydown', onKeyG); stage.classList.remove('fs-power-on'); el.remove(); } };
 }
 
 // ---------- sihirbaz bölümü ----------

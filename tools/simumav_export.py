@@ -37,13 +37,14 @@ from pathlib import Path
 PY_CEKIRDEK = ['app/__init__.py', 'app/flightsim.py', 'app/flightsim_hub.py', 'app/flightsim_mission.py', 'app/flightsim_rec.py',
                'app/flightsim_bin.py', 'app/flightsim_replay.py', 'app/flightsim_runs.py', 'app/flightsim_models.py',
                'app/sim_terrain.py', 'app/drone_sitl.py', 'app/drone_params.py', 'app/flightsim_power.py', 'app/flightsim_icept.py', 'app/flightsim_targets.py', 'app/flightsim_gcs.py', 'app/flightsim_launcher.py',
-               'app/flightsim_servotrig.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar
+               'app/flightsim_servotrig.py', 'app/flightsim_match_core.py']   # §23 güç · §25 INTERCEPTOR · §24 hedefler · §26 yer kontrol sahası · §27 fırlatıcılar · §33/SIMUMAV §18 karşılaşma çekirdeği
 JS_CEKIRDEK = ['static/js/modules/flightsim*.js', 'static/js/modules/fs_inputs.js', 'static/js/modules/flightlog_origin.js', 'static/js/modules/replay3d.js', 'static/js/modules/flightsim_g3d.js']
 MANIFEST = ['app/simumav/**', *PY_CEKIRDEK, 'static/simumav/**', *JS_CEKIRDEK, 'static/vendor/three/**', 'static/vendor/xterm/**',
             # HEPGO modüllerinin kök seviye bağımlılıkları (simumav main.py `/<ad>.js` beyaz listesi) ve sabit yollu varlıklar (§2 yönlendirmeler)
             'static/js/ui.js', 'static/js/i18n.js', 'static/js/icons.js', 'static/js/segicons.js', 'static/js/fa-icons.js', 'static/js/step3d.js',
             'static/js/engine3d.js', 'static/js/gcode3d.js', 'static/js/imgopt.js', 'static/img/google-logo.png', 'static/models/caymaz-sim.glb',
-            'run-simumav.sh', 'deploy/simumav/**', 'docs/simumav.md', 'tests/test_simumav*', 'tests/simumav_*.py', 'tests/__init__.py']
+            'run-simumav.sh', 'deploy/simumav/**', 'docs/simumav.md', 'tests/test_simumav*', 'tests/simumav_*.py', 'tests/__init__.py',
+            'tests/match_bot.py']   # §18 karşılaşma testinin rota pilotu (yalnız test aracı)
 
 # HEPGO'ya özgü app/ modülleri: SIMUMAV ağacına girmemeli (ERP veritabanı/kullanıcı/yetki/akış). Zincirde çıkarsa UYARI.
 HEPGO_OZGU = {'main', 'db', 'config', 'auth', 'feed', 'users', 'rbac', 'permissions', 'tenants', 'mail', 'chat', 'notify',
@@ -107,7 +108,8 @@ cp .env.example .env 2>/dev/null || true     # GOOGLE_MAPS_API_KEY, SIMUMAV_SECR
 SIMUMAV_DEV_LOGIN=1 PORT=8600 ./run-simumav.sh    # http://127.0.0.1:8600
 python -m tests.test_simumav                      # SITL gerekmez
 python -m tests.test_simumav_power                # güç ve yakıt (§10); SITL gerekmez
-node tests/test_simumav_power.mjs && node tests/test_simumav_fly.mjs
+python -m tests.test_simumav_match                # çok oyunculu karşılaşma (§18); SITL gerekmez
+node tests/test_simumav_power.mjs && node tests/test_simumav_fly.mjs && node tests/test_simumav_match.mjs
 ```
 
 SITL (ArduPilot) kurulu değilse uçuş sahte kinematikle çalışır (`HEPGO_SITL=0`).

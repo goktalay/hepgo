@@ -2504,6 +2504,8 @@ oyuncu simülatörleri **herkes geldiğinde** açılır (kaynak), istemciler 3B 
   yazıp çekirdeği + kancaları kullanır (davet kodu/linki, e-posta → kurucunun ürettiği şifre → salon; Uç bölümünde Çok oyunculu / Tek oyunculu).
 - Ön yüz: `flightsim_match.js` (saf) ve `flightsim_match3d.js` (yalnız flightsim3d nesnesinin `three/scene/toLocal/homeAlt/addFrameHook` alanları)
   doğrudan; `flightsim_match_ui.js` HEPGO DOM'udur (SIMUMAV kendi arayüzünü yazar; `ringsSvg`, `resultsBody` örnek alınabilir).
+- **Gerçekleşti (SIMUMAV aşama 2)**: docs/simumav.md §18 — `app/simumav/match.py` + `routers/match.py` (davet kodu + scrypt şifre + lobi, çekirdek
+  `Karsilasma` BAŞLAT'ta kurulur), ön yüz `static/simumav/app/fly/match*.js`. Ortak çekirdek ve ön yüz modülleri DEĞİŞTİRİLMEDİ; HEPGO'ya etkisi yok.
 
 ### 33.7 Testler ve görsel doğrulama
 - `.venv/bin/python -m tests.test_flightsim_match`: saf çekirdek (halka ayarı sınırları, min/max/sayı, deterministik tohum, normaller; başlangıç noktası

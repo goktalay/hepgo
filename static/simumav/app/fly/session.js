@@ -69,8 +69,8 @@ const f0 = v => (v == null ? '—' : String(Math.round(Number(v))));
 const f1 = v => (v == null ? '—' : Number(v).toFixed(1));
 const copyText = async (txt, what = 'Kopyalandı') => { try { await navigator.clipboard.writeText(txt); toast(what); } catch { toast('Kopyalanamadı; metni elle seçin', 'err'); } };
 let libsP = null;
-const loadSim = () => (libsP ??= Promise.all(['flightsim3d.js', 'flightsim_panel.js', 'flightsim_hud.js', 'flightsim_fpv_osd.js', 'flightsim_audio.js', 'flightsim_record.js', 'flightsim_report.js', 'flightsim_power.js', 'flightsim_camera.js', 'flightsim_gcs_ui.js', 'flightsim_scope_ui.js', 'flightsim_launcher.js', 'flightsim_rcfeel.js', 'flightsim_gtheme.js', 'flightsim_intro.js', 'flightsim_fltbar.js', 'flightsim_rover.js', 'flightsim_windui.js', 'flightsim_servotrig.js', 'flightsim_gamepad.js', 'flightsim_mobile.js', 'flightsim_engage.js'].map(f => import(SIM + f)))
-  .then(([M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng]) => ({ M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng })).catch(e => { libsP = null; throw e; }));
+const loadSim = () => (libsP ??= Promise.all(['flightsim3d.js', 'flightsim_panel.js', 'flightsim_hud.js', 'flightsim_fpv_osd.js', 'flightsim_audio.js', 'flightsim_record.js', 'flightsim_report.js', 'flightsim_power.js', 'flightsim_camera.js', 'flightsim_gcs_ui.js', 'flightsim_scope_ui.js', 'flightsim_launcher.js', 'flightsim_rcfeel.js', 'flightsim_gtheme.js', 'flightsim_intro.js', 'flightsim_fltbar.js', 'flightsim_rover.js', 'flightsim_windui.js', 'flightsim_servotrig.js', 'flightsim_gamepad.js', 'flightsim_mobile.js', 'flightsim_engage.js', 'flightsim_gfx_ui.js'].map(f => import(SIM + f)))
+  .then(([M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng, MGfx]) => ({ M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng, MGfx })).catch(e => { libsP = null; throw e; }));
 
 // HEPGO çekirdeğinin anladığı kalkış nesnesi: sabit kanat ailesi dışı → null; hand → {method:'hand', …} (3B: düzenek/iniş takımı yok)
 // HEPGO §27: INTERCEPTOR + fırlatıcı (pod4 | pod8 | tube | handheld) → {method, loaded? | aim_*?}; fırlatıcısız INTERCEPTOR → null (pad, eski davranış)
@@ -194,7 +194,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   const gaTrack = typeof ctx.track === 'function' ? ctx.track : () => {};   // GA4 olayları (kabuk app.js; kişisel veri yok)
   const tOpen = Date.now();
   releaseShared();   // Uç sahnesi (createFlightSim3D kendi WebGLRenderer'ını açar) öncesi kabuğun paylaşılan WebGL bağlamı bırakılır
-  const { M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng } = await loadSim();
+  const { M3D, MPanel, MHud, MOsd, MAudio, MRec, MReport, MPower, MCam, MSite, MScope, MLaunch, MFeel, MGt, MIntro, MFlt, MRover, MWind, MSrv, MPad, MMob, MEng, MGfx } = await loadSim();
   MSiteRef = MSite;
   const [meta, settings] = await Promise.all([ctx.meta ? Promise.resolve(ctx.meta) : fetchMeta(), ctx.settings ? Promise.resolve(ctx.settings) : fetchSettings()]);
   const drone = picked.drone || start.drone || { name: 'Dron', type: 'multirotor' }, track = picked.track || start.track || {}, pilot = picked.pilot || start.pilot || null, mission = picked.mission || start.mission || null;
@@ -441,6 +441,8 @@ export async function openSession(view, start, picked, ctx = {}) {
   patchMpBox(stage, mp);
   if (MAudio.AUDIO_MODELS && !MAudio.AUDIO_MODELS.jet) MAudio.AUDIO_MODELS.jet = { ...JET_AUDIO };   // jet modelleri: yüksek devirli ayrı ses modeli (dosyaya dokunmadan)
   const audio = MAudio.createEngineAudio(stage, { type: audioTypeFor(dType, drone.model_key), launch: launch && !isHand ? launch : null, replay: false, tr, getSim: () => sim, getCrashed: () => !crash.hidden, getCrashSpeed: () => crashSpeed, getSpeed: () => 1 });
+  const gfxCtl = MGfx.createGfxCtl({ tr, keyed: true, storageKey: 'sm.gfx', getSim: () => sim, stage, onEvent: t => addEvent(t) });   // HEPGO §43 grafik kalitesi: Panel/ses kapsülünde "Grafik ▾" (sm.gfx; gfx.* 7 dil)
+  opsSnd.append(gfxCtl.el);
   const hudCtx = { world, session, replay: false, launch: launch && !isHand ? launch : null, fov: 78, t0: Date.now(),
     get pose() { return sim?.getPose?.() || null; }, get gimbalDeg() { return sim?.getGimbal() ?? 0; }, get camMode() { return sim?.getCamera(); }, get collision() { return !crash.hidden; }, get pipRect() { return sim?.getPip?.() ? sim.pipRect : null; },
     targets: () => sim?.targetsHud?.() ?? null };   // §24.5 hedef sembolojisi (prizma/TLL/kenar okları)
@@ -482,6 +484,7 @@ export async function openSession(view, start, picked, ctx = {}) {
       camera: cam0, pilotFov: fpvPrefs.fov, fpvAnalog: fpvPrefs.analog, fpvNose: fpvPrefs.nose, onPilotFov: v => { fpvPrefs.setFov(v); drawFpv(); },
       camType: camType0, thermalPalette: camPrefs.palette, onGimbalZoom: () => camPip?.redraw(),
       site: picked.site || start.site || start.session?.site || null,   // HEPGO §26 (dünya kurulurken saha çevresi açık alan)
+      gfx: gfxCtl.initial(),   // HEPGO §43 grafik kalitesi (tuval antialias'ı + ilk piksel oranı)
       onCameraChange: onCamChange, onCollision: info => cmd('crash', { kind: info.kind, speed: info.speed, dz: info.dz }).catch(() => {}),
       windStreaks: streakPref.get(), onRigClick: rampUi ? ev => { if (ev.aim) rampUi.open(ev.aim); } : null,   // HEPGO §31
       onProgress: progMsg, g3dKey: async () => meta?.maps_key || '',
@@ -489,6 +492,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     });
     if (destroyed) { s3.dispose(); return { dispose() {} }; }
     sim = s3; window.__smSim = sim;
+    gfxCtl.attach(sim);   // HEPGO §43 cihaz algılama + otomatik/uyarlamalı kademe
     if (rc) sim.setKeyboardLock?.(true);   // §37 varsayılan açık sanal kumanda sahneden önce açıldı
     launcherUi?.sync();   // §27 hücre envanteri + nişangâh dikdörtgeni
     if (netsim) window.__fsSim = sim;   // HEPGO teşhis adı: Playwright/konsol sim.netStats() · sim.motionStats(true)
@@ -515,7 +519,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   // Sahne kurulamadı (WebGL bağlamı yok vb.): uçuş sunucuda açık BIRAKILMAZ → otomatik stop + anlaşılır mesaj (BAŞLA tekrar denenebilir)
   if (sceneError) {
     const e = sceneError.message || String(sceneError);
-    const dispose0 = () => { if (destroyed) return; destroyed = true; safe(() => milHud?.dispose()); safe(() => osd?.dispose()); safe(() => camPip?.dispose()); safe(() => camCtl.dispose()); safe(() => { if (rec) { rec.abandon(); rec.dispose(); } }); safe(() => audio.dispose()); safe(() => ops?.dispose()); safe(() => restoreWs()); document.removeEventListener('fullscreenchange', onFullChange); document.body.classList.remove('fs-full'); view.classList.remove('sm-fly-session'); stage.remove(); };
+    const dispose0 = () => { if (destroyed) return; destroyed = true; safe(() => milHud?.dispose()); safe(() => osd?.dispose()); safe(() => camPip?.dispose()); safe(() => camCtl.dispose()); safe(() => { if (rec) { rec.abandon(); rec.dispose(); } }); safe(() => audio.dispose()); safe(() => gfxCtl.dispose()); safe(() => ops?.dispose()); safe(() => restoreWs()); document.removeEventListener('fullscreenchange', onFullChange); document.body.classList.remove('fs-full'); view.classList.remove('sm-fly-session'); stage.remove(); };
     dispose0();
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     let stopped = false;
@@ -754,7 +758,7 @@ export async function openSession(view, start, picked, ctx = {}) {
     safe(() => { if (rc) { rc.dispose(); rc = null; } });   // override serbest bırakılır (soket kapanmadan önce)
     safe(clearHandTimers); safe(() => socket?.close());
     for (const [, p] of pending) { clearTimeout(p.timer); p.resolve({ ok: false, error: 'kapandı' }); } pending.clear();
-    safe(() => milHud?.dispose()); safe(() => osd?.dispose()); safe(() => engage?.dispose()); safe(() => camPip?.dispose()); safe(() => camCtl.dispose()); safe(() => siteUi?.dispose()); safe(() => defHud?.dispose()); safe(() => launcherUi?.dispose()); safe(() => { if (rec) { rec.abandon(); rec.dispose(); } }); safe(() => audio.dispose()); safe(() => ops?.dispose());
+    safe(() => milHud?.dispose()); safe(() => osd?.dispose()); safe(() => engage?.dispose()); safe(() => camPip?.dispose()); safe(() => camCtl.dispose()); safe(() => siteUi?.dispose()); safe(() => defHud?.dispose()); safe(() => launcherUi?.dispose()); safe(() => { if (rec) { rec.abandon(); rec.dispose(); } }); safe(() => audio.dispose()); safe(() => gfxCtl.dispose()); safe(() => ops?.dispose());
     safe(() => hand?.dispose()); safe(() => gateLayer?.dispose()); safe(() => overlay?.dispose()); safe(() => sim?.dispose());
     safe(restoreWs);
     if (window.__smSim === sim) delete window.__smSim; if (window.__fsSim === sim) delete window.__fsSim; delete window.__smHand; delete window.__smGates; if (window.__smSession === api) delete window.__smSession;

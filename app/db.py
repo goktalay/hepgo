@@ -1728,6 +1728,7 @@ CREATE TABLE IF NOT EXISTS drone_sim_matches (
     settings    TEXT NOT NULL,                          -- JSON: oturum gövdesi {type, center_id, world{…, launch}, model, power, layout, camera, drive}
     rings_cfg   TEXT NOT NULL,                          -- JSON: {count, min_alt_m, max_alt_m, diameter_m, radius_m, time_limit_min, seed} (it dalaşında {})
     -- §41 göçle eklenir (ALTER): kind TEXT 'rings' | 'dogfight', game_cfg TEXT (it dalaşı ayarı JSON: distance_m, alt_m, time_limit_min, range_m, cone_deg, hold_s, area_radius_m, roles, seed)
+    -- §44 göçle eklenir (ALTER): bots INTEGER (yapay zekâ pilot sayısı; oyuncu satırları players JSON'unda is_bot + level, bot kimlikleri negatif)
     rings       TEXT,                                   -- JSON: üretilen halkalar [{i, lat, lon, agl_m, alt_msl, yaw_deg, radius_m, …}]
     players     TEXT NOT NULL,                          -- JSON: [{id, name, host, status, rings, finished, …}]
     result      TEXT,                                   -- JSON: {winner, reason, duration_s, total, standings[]}
@@ -3016,7 +3017,8 @@ def _migrate(conn):
     if run_cols:
         conn.execute('CREATE INDEX IF NOT EXISTS ix_drone_sim_runs_match ON drone_sim_runs(match_id)')
     dsm_cols = {r[1] for r in conn.execute('PRAGMA table_info(drone_sim_matches)')}
-    for col, ddl in (('kind', "TEXT NOT NULL DEFAULT 'rings'"), ('game_cfg', 'TEXT')):   # §41 karşılaşma türü (rings | dogfight) + it dalaşı ayarı (JSON)
+    for col, ddl in (('kind', "TEXT NOT NULL DEFAULT 'rings'"), ('game_cfg', 'TEXT'),   # §41 karşılaşma türü (rings | dogfight) + it dalaşı ayarı (JSON)
+                     ('bots', 'INTEGER NOT NULL DEFAULT 0')):   # §44 yapay zekâ pilot sayısı (oyuncu satırı players JSON'unda is_bot + level)
         if dsm_cols and col not in dsm_cols:
             conn.execute(f'ALTER TABLE drone_sim_matches ADD COLUMN {col} {ddl}')
     mb_cols = {r[1] for r in conn.execute('PRAGMA table_info(mail_boxes)')}

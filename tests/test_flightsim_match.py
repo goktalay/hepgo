@@ -549,6 +549,7 @@ def api_testleri():
             assert ok(a.post(f"{M}/{m4['id']}/cancel"))['state'] == 'IPTAL'
             assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=10)
             it_dalasi_api(a, p1, me, ayar, M)
+            bot_api(a, p1, me, ayar, M)
             print('  API uçtan uca geçti (karşılaşma', mid, ')')
     finally:
         push.send = eski_send
@@ -622,6 +623,123 @@ def it_dalasi_api(a, p1, me, ayar, M):
     assert ok(a.post(f"{M}/{rm['id']}/cancel"))['state'] == 'IPTAL'
     assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=10)
     print('  it dalaşı API geçti (karşılaşma', mid, ')')
+
+
+def _bot_mac(a, M, govde):
+    """§44: oluştur → (yalnız botlarla hemen HAZIRLIK) → oturumlar HAZIR. Dönüş (karşılaşma, {uid: oturum})."""
+    m = ok(a.post(M, json=govde), 201)
+    d = bekle(lambda: (lambda x: x if x['state'] == 'HAZIRLIK' and all(p['session_id'] for p in x['players']) else None)(ok(a.get(f"{M}/{m['id']}"))), sn=15)
+    assert d, ok(a.get(f"{M}/{m['id']}"))
+    ss = {p['id']: flightsim.MANAGER.get(p['session_id']) for p in d['players']}
+    assert all(bekle(lambda s=s: s is not None and s.state == 'HAZIR') for s in ss.values())
+    return d, ss
+
+
+def bot_api(a, p1, me, ayar, M):
+    """§44 YAPAY ZEKÂ PİLOT (sahte kinematik, uçtan uca): doğrulama, yalnız botla kurulum → hemen HAZIRLIK, bot kendi SITL'inde (sahibi bot →
+    insan komutu 403, uçuş kaydı yok), bot hazır sayılır, YARIS'ta kendisi ARM + kalkış + halkalar → BOT KAZANIR (winner_id NULL, players.is_bot);
+    insan hızlı uçarsa İNSAN KAZANIR; it dalaşında kovalayan bot (Zor) → ANGAJE; salonda bot ekle/çıkar; kapasite 409."""
+    from app import db
+    halka = {'count': 2, 'min_alt_m': 10, 'max_alt_m': 16, 'diameter_m': 14, 'radius_m': 80, 'seed': 5}
+    meta = ok(a.get(f'{M}/meta'))
+    assert meta['limits']['bot']['levels'] == ['easy', 'normal', 'hard'], meta['limits'].get('bot')
+    assert a.post(M, json={'settings': ayar, 'rings': halka, 'invite': [], 'bots': [{'level': 'uzman'}]}).status_code == 400
+    assert a.post(M, json={'settings': ayar, 'rings': halka, 'invite': [], 'bots': ['hard'] * 8}).status_code == 400
+    assert a.post(M, json={'settings': ayar, 'kind': 'dogfight', 'invite': [me['ayse']], 'bots': ['hard']}).status_code == 400   # it dalaşı: tek rakip
+    eski = flightsim.MATCH_MAX_SESSIONS
+    flightsim.MATCH_MAX_SESSIONS = 2
+    r = a.post(M, json={'settings': ayar, 'rings': halka, 'invite': [], 'bots': ['easy', 'easy']})
+    assert r.status_code == 409 and 'yapay zekâ' in r.text, r.text
+    flightsim.MATCH_MAX_SESSIONS = eski
+
+    # --- 1) yalnız bot rakip; insan uçmaz → bot kazanır ---
+    d, ss = _bot_mac(a, M, {'settings': ayar, 'rings': halka, 'invite': [], 'bots': [{'level': 'hard'}]})
+    mid = d['id']
+    bot = next(p for p in d['players'] if p['is_bot'])
+    assert bot['id'] < 0 and bot['level'] == 'hard' and bot['name'] == 'AI-Şahin (Zor)' and bot['color'], bot
+    sb = ss[bot['id']]
+    assert sb.bot == {'uid': bot['id'], 'level': 'hard'} and sb.owner['id'] == bot['id']
+    assert a.post(f"/api/drone/sim/sessions/{sb.id}/cmd", json={'name': 'mode', 'params': {'mode': 'GUIDED'}}).status_code == 403   # botun aracı insana kapalı
+    with a.websocket_connect(f'/ws/drone/match/{mid}') as wa:
+        ws_bekle(wa, lambda x: x['t'] == 'hello')
+        wa.send_text(json.dumps({'t': 'ready'}))   # bot için ready gerekmez (oturum HAZIR → hazır)
+        ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+        assert bekle(lambda: sb.sahte.armed, sn=5), 'bot ARM etmedi'
+        gorulen = []
+        res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=120, biriktir=gorulen)
+        assert res, ([x for x in gorulen if x['t'] == 'ring'], sb.tele.get('alt_rel'))
+        rs = res['result']
+        assert rs['winner'] == bot['id'] and rs['reason'] == 'birinci_bitirdi' and rs['standings'][0]['is_bot'] and rs['standings'][0]['level'] == 'hard', rs
+        assert [x['i'] for x in gorulen if x['t'] == 'ring' and x['id'] == bot['id']] == [1, 2]
+        assert bekle(lambda: all(flightsim.MANAGER.get(s.id) is None for s in ss.values()), sn=15)
+    def satir():
+        with db.connect() as conn:
+            r = db.row(conn.execute('SELECT * FROM drone_sim_matches WHERE id = ?', (mid,)))
+            return r if r['state'] == 'BITTI' else None
+    row = bekle(satir, sn=5)
+    with db.connect() as conn:
+        runs = db.rows(conn.execute('SELECT owner_id FROM drone_sim_runs WHERE match_id = ?', (mid,)))
+    assert row['state'] == 'BITTI' and row['winner_id'] is None and row['bots'] == 1 and json.loads(row['result'])['winner'] == bot['id'], dict(row)
+    pl = {p['id']: p for p in json.loads(row['players'])}
+    assert pl[bot['id']]['is_bot'] and pl[bot['id']]['level'] == 'hard' and not pl[me['admin']]['is_bot'], pl
+    assert [r['owner_id'] for r in runs] == [me['admin']], runs   # bot oturumu uçuş kaydı yazmaz
+    g = ok(a.get(f'{M}/{mid}'))
+    assert g['winner'] == bot['id']
+    print('  bot kazandı (karşılaşma', mid, ')')
+
+    # --- 2) insan hızlı uçar → insan kazanır (bot Kolay) ---
+    d, ss = _bot_mac(a, M, {'settings': ayar, 'rings': halka, 'invite': [], 'bots': ['easy']})
+    mid = d['id']
+    bot = next(p for p in d['players'] if p['is_bot'])
+    with a.websocket_connect(f'/ws/drone/match/{mid}') as wa:
+        ws_bekle(wa, lambda x: x['t'] == 'hello')
+        wa.send_text(json.dumps({'t': 'ready'}))
+        ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+        rota_pilotu(ss[me['admin']], d['rings'], MERKEZ, hiz=40.0)
+        res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=40)
+        assert res and res['result']['winner'] == me['admin'] and res['result']['standings'][1]['id'] == bot['id'], res
+    def kazanan_db():
+        with db.connect() as conn:
+            return db.row(conn.execute('SELECT winner_id FROM drone_sim_matches WHERE id = ?', (mid,)))['winner_id'] == me['admin']
+    assert bekle(kazanan_db, sn=5)
+    assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+    print('  insan kazandı (karşılaşma', mid, ')')
+
+    # --- 3) it dalaşı: kovalayan bot (Zor) insan kaçanı angaje eder ---
+    df = {'distance_m': 300, 'alt_m': 25, 'range_m': 150, 'cone_deg': 30, 'hold_s': 2, 'time_limit_min': 3, 'area_radius_m': 800, 'roles': 'host_evader'}
+    d, ss = _bot_mac(a, M, {'settings': ayar, 'kind': 'dogfight', 'dogfight': df, 'invite': [], 'bots': ['hard']})
+    mid = d['id']
+    roles = {p['id']: p['role'] for p in d['players']}
+    bot = next(p for p in d['players'] if p['is_bot'])
+    assert roles == {me['admin']: 'evader', bot['id']: 'chaser'}, roles
+    P = core.it_baslangiclari(d['rings_cfg'], 'multirotor')
+    with a.websocket_connect(f'/ws/drone/match/{mid}') as wa:
+        ws_bekle(wa, lambda x: x['t'] == 'hello')
+        wa.send_text(json.dumps({'t': 'ready'}))
+        ws_bekle(wa, lambda x: x['t'] == 'state' and x['state'] == 'YARIS', sn=10)
+        it_pilotu(ss[me['admin']], MERKEZ, P['evader'][2], P['evader'][:2], hiz=3.0, alt=25.0)
+        gorulen = []
+        res = ws_bekle(wa, lambda x: x['t'] == 'result', sn=120, biriktir=gorulen)
+        assert res, [x.get('df') for x in gorulen if x['t'] == 'pos'][-2:]
+        rs = res['result']
+        assert rs['winner'] == bot['id'] and rs['reason'] == 'angaje', rs
+    assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+    print('  it dalaşı bot angaje etti (karşılaşma', mid, ')')
+
+    # --- 4) salonda bot ekle / çıkar (davetli beklenirken) ---
+    m = ok(a.post(M, json={'settings': ayar, 'rings': halka, 'invite': [me['ayse']]}), 201)
+    assert p1.post(f"{M}/{m['id']}/bot", json={'level': 'normal'}).status_code == 403   # yalnız kurucu
+    m2 = ok(a.post(f"{M}/{m['id']}/bot", json={'level': 'normal'}))
+    b = next(p for p in m2['players'] if p['is_bot'])
+    assert b['status'] == 'geldi' and b['level'] == 'normal' and m2['state'] == 'LOBI', m2['players']
+    m3 = ok(a.post(f"{M}/{m['id']}/kick", json={'user_id': b['id']}))
+    assert not any(p['is_bot'] for p in m3['players']) and m3['state'] == 'LOBI', m3
+    ok(a.post(f"{M}/{m['id']}/bot", json={'level': 'easy'}))
+    m4 = ok(p1.post(f"{M}/{m['id']}/join"))   # davetli geldi → HAZIRLIK (insan + bot)
+    assert m4['state'] == 'HAZIRLIK' and len(m4['players']) == 3, m4
+    assert ok(a.post(f"{M}/{m['id']}/cancel"))['state'] == 'IPTAL'
+    assert bekle(lambda: flightsim.MANAGER.acik_sayisi(match=True) == 0, sn=15)
+    print('  bot API geçti')
 
 
 def main():

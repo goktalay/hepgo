@@ -11,6 +11,9 @@ kendi başlangıç noktasında SITL açılır; istemci oturum ekranına geçer, 
 §41 İT DALAŞI (`kind: 'dogfight'`, tam 2 oyuncu): roller HAZIRLIK'ta atanır, başlangıç noktaları `core.it_baslangiclari` (rol başına), angajman
 sunucuda (`core.ItDalasi`; her iki oyuncunun telemetrisi tele kancasından), çarpışma (`gorev.crashes` artışı) → `k.carpti`, `pos` çerçevesinde
 `df` (mesafe, koni açısı, tutma süresi, koruma) — HUD. Yarışta Sıfırla yok (kaçış ışınlanması olmasın).
+§44 YAPAY ZEKÂ PİLOT: kurucu oluştururken (`bots`) ya da salonda (`POST /{id}/bot`) bot ekler; bot "geldi" sayılır, HAZIRLIK'ta KENDİ SITL oturumu
+açılır (karşılaşma tavanına sayılır; sahibi bot kimliği → insan komut veremez; uçuş kaydı yok), oturum HAZIR olunca hazırdır; YARIS'ta
+`flightsim_match_bot.BotSurucu` ARM + kalkış + 5 Hz GUIDED komutlarıyla uçurur. Bot kazanırsa `winner_id` NULL (kullanıcı değil; sonuç JSON'unda).
 """
 import asyncio
 import json
@@ -18,6 +21,7 @@ import random
 import time
 
 from . import db, flightsim
+from . import flightsim_match_bot as mbot
 from . import flightsim_match_core as core
 
 POS_HZ = 10                      # konum çerçevesi yayını (diğer oyuncular 3B'de)
@@ -42,6 +46,7 @@ class MatchRuntime:
         self._son_kayit = None
         self._kapanis = None
         self.bitti_t = None
+        self.bot_gorevleri = {}         # §44 uid → asyncio.Task (BotSurucu)
 
     # ---------------------------------------------------------------- yayın
     def _yay(self, obj):
@@ -103,8 +108,11 @@ class MatchRuntime:
         lat, lon = core.latlon(self.center['lat'], self.center['lon'], x, y)
         o.baslangic = {'x': x, 'y': y, 'lat': round(lat, 7), 'lon': round(lon, 7), 'yaw_deg': yaw}
         body = SessionIn(**{**self.settings, 'mode': 'sitl', 'rec': {'bin': False}})
+        # §44 bot: sahibi bot kimliği (insanın REST/WS komutu mac_yazabilir'de reddedilir), kullanıcı/denetim kaydı kurucu adına
+        owner = {'id': o.uid, 'name': o.ad, 'bot': True} if o.bot else {'id': o.uid, 'name': o.ad}
+        audit_uid = k.kurucu_id if o.bot else o.uid
         try:
-            s = await oturum_ac(body, {'id': o.uid, 'name': o.ad}, {'id': o.uid, 'modules': []}, o.uid,
+            s = await oturum_ac(body, owner, {'id': audit_uid, 'modules': []}, audit_uid,
                                 start={'lat': lat, 'lon': lon, 'yaw_deg': None if self.settings['type'] in core.UCAK_TIPLER else yaw}, match_id=k.id)
         except HTTPException as e:
             self.isle(k.dusur(o.uid, time.time(), f'Simülatör açılamadı: {e.detail}'))
@@ -119,6 +127,10 @@ class MatchRuntime:
         k.oturum_bagla(o.uid, s.id)
         s.tele_kanca = lambda tele, uid=o.uid, ss=s: self._tele(uid, ss, tele)
         s.komut_kapisi = self._kapi
+        if o.bot:   # §44: istemcisi yok → oturum HAZIR olunca hazır; sürücü yarışta uçurur
+            s.bot = {'uid': o.uid, 'level': o.bot}
+            self.ready.add(o.uid)
+            self.bot_gorevleri[o.uid] = asyncio.get_running_loop().create_task(mbot.BotSurucu(k, o.uid, s, self.settings['type']).calis())
         self.isle([{'t': 'player', 'id': o.uid, 'status': o.durum, 'session_id': s.id}])
 
     def _kapi(self, ad):
@@ -200,6 +212,8 @@ class MatchRuntime:
             self.yonetici.matches.pop(self.k.id, None)
 
     async def _oturumlari_kapat(self, gecikme=KAPANIS_GECIKME_S):
+        for t in list(self.bot_gorevleri.values()):   # §44 bot sürücüleri hemen durur (araç komutu kesilir)
+            t.cancel()
         if gecikme:
             await asyncio.sleep(gecikme)
         for uid, s in list(self.sessions.items()):
@@ -214,14 +228,16 @@ class MatchRuntime:
         k = self.k
         d = {'state': k.durum, 'reason': k.neden, 'rings': json.dumps(k.halkalar or [], ensure_ascii=False),
              'players': json.dumps([o.dict(len(k.halkalar or [])) for o in k.oyuncular.values()], ensure_ascii=False),
-             'result': json.dumps(k.sonuc(), ensure_ascii=False) if k.durum == core.BITTI else None, 'winner_id': k.kazanan,
+             'result': json.dumps(k.sonuc(), ensure_ascii=False) if k.durum == core.BITTI else None,
+             'winner_id': k.kazanan if k.kazanan is not None and k.kazanan > 0 else None,   # §44 bot kazanırsa NULL (users FK); sonuç JSON'unda
+             'bots': len(k.botlar()),
              'started_at': _iso(k.baslangic_t) if k.durum in (core.YARIS, core.BITTI) else None, 'ended_at': _iso(k.bitis_t) if k.bitis_t else None}
         mid = k.id
 
         def yaz():
             with db.connect() as conn:
-                conn.execute('UPDATE drone_sim_matches SET state = ?, reason = ?, rings = ?, players = ?, result = ?, winner_id = ?, started_at = COALESCE(?, started_at), ended_at = ? WHERE id = ?',
-                             (d['state'], d['reason'], d['rings'], d['players'], d['result'], d['winner_id'], d['started_at'], d['ended_at'], mid))
+                conn.execute('UPDATE drone_sim_matches SET state = ?, reason = ?, rings = ?, players = ?, result = ?, winner_id = ?, started_at = COALESCE(?, started_at), ended_at = ?, bots = ? WHERE id = ?',
+                             (d['state'], d['reason'], d['rings'], d['players'], d['result'], d['winner_id'], d['started_at'], d['ended_at'], d['bots'], mid))
                 conn.commit()
         try:
             asyncio.get_running_loop().run_in_executor(None, yaz)
@@ -277,13 +293,19 @@ class MatchManager:
                 out.append({'id': r.k.id, 'host_name': h.ad if h else '', 'created_at': r.k.olusturma_t})
         return sorted(out, key=lambda x: -x['created_at'])
 
-    async def olustur(self, host, settings, center, rings_cfg, davetliler, tur=core.TUR_HALKA):
+    async def olustur(self, host, settings, center, rings_cfg, davetliler, tur=core.TUR_HALKA, botlar=()):
         """host {id, name}; settings: doğrulanmış oturum gövdesi; center: merkez satırı; rings_cfg: core.halka_ayar_dogrula çıktısı (§41 it dalaşında
-        core.it_ayar_dogrula çıktısı); davetliler [(uid, ad)] (doğrulanmış). Dönüş MatchRuntime."""
+        core.it_ayar_dogrula çıktısı); davetliler [(uid, ad)] (doğrulanmış); §44 botlar [seviye] (yapay zekâ pilotlar). Dönüş MatchRuntime."""
         self.kurtar()
-        n = 1 + len(davetliler)
+        botlar = list(botlar or ())
+        for sev in botlar:
+            core.bot_seviye(sev)
+        n = 1 + len(davetliler) + len(botlar)
         if self.ayrilmis_slot() + n > flightsim.MATCH_MAX_SESSIONS:
-            raise core.MacHata('limit', f'Şu an yeterli simülatör kapasitesi yok (eşzamanlı en çok {flightsim.MATCH_MAX_SESSIONS} karşılaşma oyuncusu); bir karşılaşmanın bitmesini bekleyin')
+            bot_not = f' — her yapay zekâ pilot da kendi simülatörünü kullanır ({len(botlar)} bot)' if botlar else ''
+            raise core.MacHata('limit', f'Şu an yeterli simülatör kapasitesi yok (eşzamanlı en çok {flightsim.MATCH_MAX_SESSIONS} karşılaşma oyuncusu, '
+                               f'{max(0, flightsim.MATCH_MAX_SESSIONS - self.ayrilmis_slot())} boş; bu karşılaşma {n} ister){bot_not}; bir karşılaşmanın bitmesini bekleyin')
+        bot_kayit = [(-(i + 1), core.bot_adi(sev, i), sev, core.BOT_RENKLERI[i % len(core.BOT_RENKLERI)]) for i, sev in enumerate(botlar)]
         cfg = dict(rings_cfg)
         if not cfg.get('seed'):
             cfg['seed'] = random.randint(1, 2 ** 31 - 2)
@@ -292,7 +314,7 @@ class MatchManager:
         halkalar = [] if it else core.halkalar_uret(cfg, merkez)
         now = time.time()
         # çekirdek doğrulaması (davetli sayısı, tavan; it dalaşında tam 2 oyuncu) DB satırından önce
-        core.Karsilasma(0, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur)
+        core.Karsilasma(0, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur, botlar=bot_kayit)
         loop = asyncio.get_running_loop()
 
         def ekle():
@@ -302,16 +324,20 @@ class MatchManager:
                                     tur, json.dumps(cfg) if it else None))
                 mid = cur.lastrowid
                 db.audit(conn, host['id'], 'Çok oyunculu karşılaşma oluşturdu', 'drone_sim_match', mid,
-                         f"{settings.get('type')} · {center.get('name')} · " + ('it dalaşı' if it else f"{cfg['count']} halka") + f" · davetli: {', '.join(a for _, a in davetliler)}")
+                         f"{settings.get('type')} · {center.get('name')} · " + ('it dalaşı' if it else f"{cfg['count']} halka") + f" · davetli: {', '.join(a for _, a in davetliler) or '-'}"
+                         + (f" · yapay zekâ: {', '.join(b[1] for b in bot_kayit)}" if bot_kayit else ''))
                 conn.commit()
                 return mid
         mid = await loop.run_in_executor(None, ekle)
-        k = core.Karsilasma(mid, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur)
+        k = core.Karsilasma(mid, (host['id'], host['name']), davetliler, settings, cfg, merkez, now, halkalar, tur=tur, botlar=bot_kayit)
         r = MatchRuntime(self, k, center, settings)
         self.matches[mid] = r
         r.kaydet()
         r.task = loop.create_task(r.run())
-        _davet_bildir([u for u, _ in davetliler], host, mid, settings, center, tur)
+        if davetliler:
+            _davet_bildir([u for u, _ in davetliler], host, mid, settings, center, tur)
+        else:   # §44 yalnız yapay zekâ rakip(ler): beklenecek davetli yok → HAZIRLIK
+            r.isle(k.lobi_denetle(time.time()))
         return r
 
     async def kapat_hepsi(self):
@@ -342,7 +368,7 @@ def satir_dict(r):
     kind = r.get('kind') or core.TUR_HALKA
     return {'id': r['id'], 'state': r['state'], 'reason': r['reason'], 'host_id': r['host_id'], 'settings': j(r['settings'], {}),
             'rings_cfg': j(r['game_cfg'], {}) if kind == core.TUR_IT else j(r['rings_cfg'], {}), 'rings': j(r['rings'], []), 'players': j(r['players'], []), 'result': j(r['result']),
-            'winner': r['winner_id'], 'created_at': r['created_at'], 'started_at': r['started_at'], 'ended_at': r['ended_at'], 'live': False, 'kind': kind}
+            'winner': (j(r['result']) or {}).get('winner', r['winner_id']) if r['result'] else r['winner_id'], 'created_at': r['created_at'], 'started_at': r['started_at'], 'ended_at': r['ended_at'], 'live': False, 'kind': kind}
 
 
 MANAGER = MatchManager()

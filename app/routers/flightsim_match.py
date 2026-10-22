@@ -9,6 +9,8 @@ REST `/api/drone/sim/matches` (yetki `drone.sim`; oluşturma/katılma yazma izni
   POST /{id}/join · /leave · /kick {user_id} · /start (kurucu: gelmeyenler olmadan) · /cancel (kurucu)
   POST /{id}/rematch          §41 it dalaşı rövanşı (kurucu, BITTI): aynı ayarlar, roller değişir; rakip davet edilir → yeni karşılaşma
   §41 tür: POST '' {kind: 'rings' | 'dogfight', dogfight: {distance_m, alt_m, time_limit_min, range_m, cone_deg, hold_s, area_radius_m, roles}}
+  §44 yapay zekâ pilot: POST '' {bots: [{level: 'easy' | 'normal' | 'hard'}]} (davet + bot ≥ 1; it dalaşında toplam tam 1 rakip; yalnız botlarla
+       kurulursa hemen HAZIRLIK) · POST /{id}/bot {level} (kurucu, LOBI) · bot çıkarma /kick {user_id: <negatif bot kimliği>}
 WS `/ws/drone/match/{id}` (oturum çerezi; yalnız oyuncular): hello {match, me, chat} · match (anlık görüntü) · player · state · countdown · pos (10 Hz)
   · ring · finish · wrong_way · result · chat. İstemci → ping, ready (3B dünya hazır), chat {text}.
 """
@@ -36,6 +38,11 @@ class MatchIn(BaseModel):
     invite: list
     kind: Optional[str] = core.TUR_HALKA      # §41 'rings' | 'dogfight'
     dogfight: Optional[dict] = None
+    bots: Optional[list] = None               # §44 [{level}] yapay zekâ pilotlar
+
+
+class BotIn(BaseModel):
+    level: str
 
 
 class PreviewIn(BaseModel):
@@ -71,7 +78,8 @@ def meta(user=Depends(sim_user), conn=db.DB):
            'kinds': list(core.TURLER), 'dogfight': {'distance_m': list(core.IT_MESAFE), 'alt_m': list(core.IT_IRTIFA), 'time_limit_min': list(core.IT_SURE_DK),
                                                     'range_m': list(core.IT_MENZIL), 'cone_deg': list(core.IT_KONI), 'hold_s': list(core.IT_TUTMA),
                                                     'area_radius_m': list(core.IT_ALAN), 'roles': list(core.IT_ROLLER), 'guard_s': core.KORUMA_S,
-                                                    'defaults': {'dikey': core.it_ayar_varsayilan('multirotor'), 'ucak': core.it_ayar_varsayilan('sabit_kanat')}}}
+                                                    'defaults': {'dikey': core.it_ayar_varsayilan('multirotor'), 'ucak': core.it_ayar_varsayilan('sabit_kanat')}},
+           'bot': {'levels': list(core.BOT_SEVIYELER), 'names': list(core.BOT_ADLARI), 'colors': list(core.BOT_RENKLERI), 'default': 'normal'}}
     return {'users': [{'id': u['id'], 'full_name': u['full_name'], 'username': u.get('username'), 'pilot': u.get('pilot')} for u in _davetliler(conn, user['id'])],
             'limits': lim, 'capacity': {'max': flightsim.MATCH_MAX_SESSIONS, 'used': flightsim_match.MANAGER.ayrilmis_slot()},
             'can_create': MODUL in user.get('write_modules', [])}
@@ -123,10 +131,13 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
         rcfg = core.it_ayar_dogrula(body.dogfight, settings['type']) if tur == core.TUR_IT else core.halka_ayar_dogrula(body.rings, settings['type'])
     except core.MacHata as e:
         _hata(e)
-    if tur == core.TUR_IT and len(set(body.invite or [])) != 1:
-        raise HTTPException(400, 'İt dalaşı tam 2 oyuncuyla oynanır: bir kullanıcı davet edin')
     if not isinstance(body.invite, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in body.invite):
         raise HTTPException(400, 'invite kullanıcı kimlikleri listesi olmalı')
+    botlar = _bot_seviyeleri(body.bots)
+    if tur == core.TUR_IT and len(set(body.invite or [])) + len(botlar) != 1:
+        raise HTTPException(400, 'İt dalaşı tam 2 oyuncuyla oynanır: bir kullanıcı davet edin ya da bir yapay zekâ pilot ekleyin')
+    if len(set(body.invite or [])) + len(botlar) > core.OYUNCU_MAX - 1:
+        raise HTTPException(400, f'Karşılaşmada en çok {core.OYUNCU_MAX} oyuncu olabilir (siz dahil; yapay zekâ pilotlar da sayılır)')
 
     def hazirla():
         with db.connect() as conn:
@@ -142,9 +153,40 @@ async def create_match(body: MatchIn, user=Depends(sim_user)):
             return s, _centers(conn, s['center_id']), davet
     s, center, davet = await asyncio.get_running_loop().run_in_executor(None, hazirla)
     try:
-        r = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, s, center, rcfg, davet, tur)
+        r = await flightsim_match.MANAGER.olustur({'id': user['id'], 'name': user['full_name']}, s, center, rcfg, davet, tur, botlar)
     except core.MacHata as e:
         _hata(e)
+    return r.anlik()
+
+
+def _bot_seviyeleri(bots):
+    """§44 [{level}] | ['hard'] → seviye listesi (400 geçersiz)."""
+    if bots is None:
+        return []
+    if not isinstance(bots, list) or len(bots) > core.OYUNCU_MAX - 1:
+        raise HTTPException(400, 'bots en çok 7 öğeli liste olmalı')
+    out = []
+    for b in bots:
+        sev = b.get('level') if isinstance(b, dict) else b
+        if sev not in core.BOT_SEVIYELER:
+            raise HTTPException(400, f"Yapay zekâ seviyesi {' | '.join(core.BOT_SEVIYELER)} olmalı")
+        out.append(sev)
+    return out
+
+
+@router.post('/{mid}/bot')
+async def add_bot(mid: int, body: BotIn, user=Depends(sim_user)):
+    """§44 kurucu salonda yapay zekâ pilot ekler (LOBI; oyuncu ve simülatör tavanı içinde)."""
+    import time
+    _yazar(user)
+    r = _canli(mid)
+    if flightsim_match.MANAGER.ayrilmis_slot() + 1 > flightsim.MATCH_MAX_SESSIONS:
+        raise HTTPException(409, f'Şu an yeterli simülatör kapasitesi yok: yapay zekâ pilot da kendi simülatörünü kullanır (eşzamanlı en çok {flightsim.MATCH_MAX_SESSIONS})')
+    try:
+        ev, _uid = r.k.bot_ekle(user['id'], body.level, time.time())
+    except core.MacHata as e:
+        _hata(e)
+    r.isle(ev)
     return r.anlik()
 
 

@@ -5254,4 +5254,6 @@ registerCatalog('de', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "Start: Jäger (J) hinten, Flüchtender (F) vorn; der Kreis ist die Arenagrenze",
   "Tür ve kurallar": "Typ & Regeln",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "Spieltyp (Ringrennen / Luftkampf) und Regeln: Ringe oder Kampfreichweite, Kegel, Zeit.",
+  "Bir daha sorma": "Nicht mehr fragen",
+  "Kaydı sil (Del)": "Datensatz löschen (Entf)",
 });

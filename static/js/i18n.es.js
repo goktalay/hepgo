@@ -5254,4 +5254,6 @@ registerCatalog('es', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "Inicio: perseguidor (P) detrás, evasor (E) delante; el círculo es el límite del área",
   "Tür ve kurallar": "Tipo y reglas",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "Tipo de partida (carrera de anillos / combate aéreo) y reglas: anillos, o alcance, cono y tiempo.",
+  "Bir daha sorma": "No volver a preguntar",
+  "Kaydı sil (Del)": "Eliminar registro (Supr)",
 });

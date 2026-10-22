@@ -5254,4 +5254,6 @@ registerCatalog('ru', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "Старт: преследователь (П) сзади, убегающий (У) впереди; круг — граница зоны",
   "Tür ve kurallar": "Тип и правила",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "Тип матча (гонка через кольца / воздушный бой) и правила: кольца или дальность, конус и время атаки.",
+  "Bir daha sorma": "Больше не спрашивать",
+  "Kaydı sil (Del)": "Удалить запись (Del)",
 });

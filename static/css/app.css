@@ -10317,3 +10317,7 @@ html[data-theme="dark"] .set-dnd-status.on { background: #3a2a12; border-color: 
 
 /* Simülasyon odak kipi (simfocus.js): uçuş sahnesi açıkken arka plan öğeleri dronun / HUD'un üstünü kapatmasın */
 body:has(.fs-stage) .flash-stack, body:has(.fs-stage) .mascot, body:has(.fs-stage) .mascot-fig, body:has(.fs-stage) .support-pill { display: none !important; }
+
+/* Simülasyon kayıtları: seçili satır (fare üzerinde / tıklanan; Del ile silinir) */
+.table.fs-runs tbody tr.fs-runs-cur > td { background: color-mix(in srgb, var(--primary) 9%, transparent); }
+.table.fs-runs tbody tr.fs-runs-cur > td:first-child { box-shadow: inset 3px 0 0 var(--primary); }

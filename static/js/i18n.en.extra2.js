@@ -2238,4 +2238,6 @@ registerCatalog('en', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "Start: chaser (C) behind, evader (E) ahead; the circle is the arena limit",
   "Tür ve kurallar": "Type & rules",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "Match type (ring race / dogfight) and rules: rings, or engagement range, cone and time.",
+  "Bir daha sorma": "Do not ask again",
+  "Kaydı sil (Del)": "Delete record (Del)",
 });

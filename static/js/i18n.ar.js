@@ -5254,4 +5254,6 @@ registerCatalog('ar', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "البداية: المطارِد (م) في الخلف والهارب (ه) في الأمام؛ الدائرة حدود الساحة",
   "Tür ve kurallar": "النوع والقواعد",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "نوع المباراة (سباق الحلقات / قتال جوي) والقواعد: الحلقات أو مدى الاشتباك ومخروطه والوقت.",
+  "Bir daha sorma": "لا تسأل مرة أخرى",
+  "Kaydı sil (Del)": "حذف السجل (Del)",
 });

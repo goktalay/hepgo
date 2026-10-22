@@ -5254,4 +5254,6 @@ registerCatalog('fr', {
   "Başlangıç: kovalayan (K) arkada, kaçan (Ç) önde; daire alan sınırı": "Départ : chasseur (C) derrière, fuyard (F) devant ; le cercle est la limite de zone",
   "Tür ve kurallar": "Type et règles",
   "Karşılaşma türü (halka yarışı / it dalaşı) ve kuralları: halkalar ya da angajman menzili, konisi, süre.": "Type de match (course d’anneaux / combat aérien) et règles : anneaux, ou portée, cône et durée d’engagement.",
+  "Bir daha sorma": "Ne plus demander",
+  "Kaydı sil (Del)": "Supprimer l’enregistrement (Suppr)",
 });

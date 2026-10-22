@@ -9,6 +9,8 @@ import { initAnalytics } from '/js/analytics.js';   // GA4 + çerez rızası (ta
 import { sweep } from './ui/transition.js';
 import { toast, toastErr } from './ui/components.js';
 import * as sfx from './ui/sfx.js';
+import * as backdrop from './ui/backdrop.js';   // bölüm başına hareketli Canvas2D arka plan (#backdrop; içerik kodu değişmez)
+import * as music from './ui/music.js';         // prosedürel arka plan müziği (ilk etkileşimde; uçuş oturumunda susar)
 
 // Rota tablosu: modül `mount(root, ctx)` (oyun arayüzü modülleri) YA DA `render(view, params, ctx)` (fly/index.js) dışa aktarır; router ikisini de destekler.
 export const ROUTES = {
@@ -68,6 +70,20 @@ function renderChip() {
   gear.setAttribute('aria-label', t('menu.settings'));
 }
 
+// ---------- Ortam: arka plan sahnesi + müzik (bölüm → sahne; uçuş oturumu (#view.sm-fly-session) → ikisi de durur) ----------
+function syncAmbience() {
+  const name = (state.current || 'menu').split('/')[0], inFlight = view.classList.contains('sm-fly-session');
+  backdrop.setScene(backdrop.sceneFor(name, { inFlight, enabled: backdrop.bgEnabled() }));
+  music.setScene(name, { inFlight });
+}
+new MutationObserver(syncAmbience).observe(view, { attributes: true, attributeFilter: ['class'] });
+addEventListener('sm:bgfx', syncAmbience);
+// Arayüz düğmelerine hafif üzerine gelme / tıklama sesleri (efekt düzeyine bağlı; kendi sesi olan menü kartları ve uçuş oturumu hariç)
+const UI_BTN = 'button, .btn, [role="button"], .sm-mode-card, .sm-card';
+const uiBtn = e => { const b = e.target?.closest?.(UI_BTN); return b && !b.disabled && view.contains(b) && !b.closest('.mcard, .sm-fly-session, [data-nosfx]') ? b : null; };
+view.addEventListener('pointerover', e => { const b = uiBtn(e); if (b && !b.contains(e.relatedTarget)) sfx.hover(); });
+view.addEventListener('click', e => { if (uiBtn(e)) sfx.tick(); });
+
 // ---------- Router ----------
 const ctx = {
   state, api, t,
@@ -126,6 +142,7 @@ async function route(force = false) {
       state.unmount = typeof r === 'function' ? r : r?.unmount || r?.dispose || (typeof mod.unmount === 'function' ? () => mod.unmount() : null);
       if (name !== 'menu' && back.hidden && name !== 'fly') ctx.setBack(t('common.menu'));
     } catch (e) { console.error(e); toastErr(e); sfx.error(); }
+    syncAmbience();
   }, { dir, duration: prev ? (dir === 'back' ? 480 : 620) : 400 });
   routing = false;
 }
@@ -149,6 +166,8 @@ async function boot() {
   help.addEventListener('pointerenter', () => sfx.hover());
   chip.addEventListener('click', () => { sfx.select(); ctx.go('crew'); });
   back.addEventListener('pointerenter', () => sfx.hover()); gear.addEventListener('pointerenter', () => sfx.hover()); chip.addEventListener('pointerenter', () => sfx.hover());
+  music.initMusic();
+  window.__smBackdrop = backdrop.state; window.__smMusic = music.state;   // teşhis (kare süresi / müzik düzeyi)
   window.addEventListener('hashchange', () => route());
   window.addEventListener('sm:session', () => ctx.refreshSession());
   if (!location.hash) location.hash = '#/menu'; else route();

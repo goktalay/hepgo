@@ -41,6 +41,7 @@ import { createGateLayer } from './gates.js';
 import { netsimDeliver, netsimFromLocation, parseNetsim, virtualRC } from './rc.js';
 import { releaseShared } from '../core/three.js';
 import * as sfx from '../ui/sfx.js';
+import { withAlertGain } from '../ui/audiomix.js';   // Ayarlar › Uyarı sesleri düzeyi (sm.alertvol) §42 uyarı yoluna
 import { localizeUnits, powerReportCard, trPower, warnInfo } from './power.js';
 import { camTr } from './camera_pick.js';   // kamera türü/PiP metinleri → camera.* i18n anahtarları
 
@@ -463,7 +464,7 @@ export async function openSession(view, start, picked, ctx = {}) {
   osd.setAnalog?.(fpvPrefs.analog);
   // HEPGO §42 uçuş uyarı sistemi (GPWS / stall / yatış / IMU …): büyük kutu + MASTER düğmeleri + vinyet + ses; ayar ses kapsülü menüsünde (sm.gpws);
   // biten uyarılar çekirdeğe (`cmd gpws`) → uçuş özetinde "Uçuş uyarıları" + disiplin puanı. Parkur yarıçapı sanal çit.
-  gpws = MGpws.createGpwsCtl(stage, { tr, keyed: true, vehicle: type, getSim: () => sim, audio, replay: false, canWrite: true, storage: gpwsStorage, menuHost: audio.menu,
+  gpws = MGpws.createGpwsCtl(stage, { tr, keyed: true, vehicle: type, getSim: () => sim, audio: withAlertGain(audio), replay: false, canWrite: true, storage: gpwsStorage, menuHost: audio.menu,
     send: p => cmd('gpws', p).then(r => { if (!r?.ok) throw new Error(r?.error || 'gpws'); return r; }), onEvent: (t, sev) => addEvent(t, sev, 'UYARI'),
     uiLang: () => document.documentElement.lang || 'en',
     getCtx: () => { const cm = sim?.getCamera?.(); return { crashed: !crash.hidden, phase: sim?.launchPhase ?? null, maxSpeed: session.power?.max_speed_ms ?? null,

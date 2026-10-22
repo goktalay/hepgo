@@ -3069,3 +3069,87 @@ yok); değişiklikler simülasyonu yeniden başlatmadan canlı uygulanır.
   SMAA yok (MSAA 8× / FXAA); su yansıması düzlemsel yansıma değil (Fresnel gök yansıması, kalite oktav/mesafe); FPV balıkgözü ve termal/gece
   görüşünde son işlem (ACES/bloom/SSAO) uygulanmaz; bina sayısı oyun dünyasıdır (çarpışma) — yalnız ağaç yoğunluğu ölçeklenir; tuval antialias'ı
   açılışta sabittir.
+
+## 45. UÇUŞ YIĞINI (otopilot) seçimi — ArduPilot · PX4 SIH (`app/flightsim_px4.py` + `static/js/modules/ucus_yigini.js`; **YALNIZ HEPGO**)
+
+Sihirbazın Araç adımında "Uçuş yığını": dron SITL olarak hangi uçuş yazılımıyla uçacak. Varsayılan **ArduPilot** (mevcut çekirdek, değişmez).
+**SIMUMAV'da görünmez**: `meta.stacks` yalnız HEPGO `/api/drone/sim/meta`'da; `ucus_yigini.js` `tools/simumav_export.py` `JS_DISLANAN`'da;
+`flightsim.py` `flightsim_px4`'ü `importlib` ile yalnız `stack` verilince yükler (göreli import zincirine girmez; SIMUMAV köprüsü yığın geçmez →
+çekirdek ArduPilot yolunda birebir aynı çalışır). Testler: `tests/test_flightsim_px4.py` (birim + dışa aktarım), `tests/test_ucus_yigini.mjs`,
+`tests/test_flightsim_px4_sitl.py` (gerçek PX4 SIH uçtan uca), görseller `tests/stacks_shots_hepgo.py` → `/tmp/stacks-shots`.
+
+### 45.1 Fizibilite
+
+| Yığın | RTOS / lisans | SITL / fizik | MAVLink / HEPGO köprüsü | Derleme | Karar |
+|---|---|---|---|---|---|
+| **ArduPilot** | ChibiOS · GPLv3 | Yerleşik SITL fiziği (copter/plane/rover/heli/quadplane) | Tam (MP) | Hazır ikili 4.7.2 (+HEPGO yamaları) | **Varsayılan** |
+| **PX4** | NuttX · BSD-3 | **SIH** (Simulation-In-Hardware, Gazebo'suz; quad X, sabit kanat, tailsitter, standart VTOL) | Tam MAVLink (UDP); QGC önerilir, MP bağlanır | `make px4_sitl_default` (cmake+ninja, ~10 dk, 4,9 MB strip) | **Entegre** |
+| INAV | bare-metal STM32 · GPLv3 | SITL var ama fizik **yok**: X-Plane / RealFlight köprüsü ister | Yalnız telemetri; komut/görev kısıtlı, yapılandırma MSP | make SITL | **Planlandı** (HEPGO fiziğiyle X-Plane UDP köprüsü gerekir) |
+| Betaflight | bare-metal STM32 · GPLv3 | SITL yalnız Gazebo/RealFlight köprüsüyle | MSP; MAVLink tek yönlü telemetri; GPS seyrüseferi/görev/otomatik kip yok | make SITL | **Uygun değil** (görev/RTL akışlarına uymaz) |
+| Paparazzi | ChibiOS · GPLv2+ | NPS (JSBSim/OCaml araç zinciri) | Ivy bus + PPRZLINK; MAVLink ek modülle kısmi | Ağır (OCaml, JSBSim) | **Planlandı** |
+| Rotorflight | bare-metal STM32 · GPLv3 | Betaflight türevi; bakımı yapılan SITL ve helikopter fiziği yok | MSP | — | **Uygun değil** |
+
+Lisans etkisi: tüm yığınlar **ayrı süreç** olarak çalıştırılır (bağlama/link yok) → HEPGO koduna copyleft yayılmaz. GPL ikilileri üçüncü kişilere
+dağıtılırsa kaynak sunma yükümlülüğü (ArduPilot zaten böyle); PX4 BSD-3 yalnız lisans/telif bildirimini korumayı ister (`data/sitl/px4/LICENSE`).
+
+### 45.2 PX4 SITL süreci (`flightsim_px4.baslat`)
+
+- Kurulum: `HEPGO_PX4_DIR` > `<SITL klasörü>/px4` (PROD `data/sitl/px4`) > SITL klasörünün kardeşi (DEV `HEPGO_SITL_DIR=/opt/hepgo/sitl/bin` → `/opt/hepgo/sitl/px4`).
+  İçerik: `bin/px4` (+ `px4-*` sembolik bağlar, `px4-alias.sh`), `etc/` (ROMFS), `LICENSE`, `VERSION`, `SOURCE.txt`, `px4.sha256`.
+- Komut: `bin/px4 -d -i <örnek> <kurulum>/etc`, çalışma dizini `sitl_calisma/<kimlik>/px4` (parameters.bson, dataman, log/*.ulg, px4.log).
+- Örnek 70…99 (`/tmp/px4_lock-<i>` kilidi boş olan ilki; başka oturumların 0…69 örneklerine dokunulmaz); MAVLink yerel portu 18600+(i−70).
+- **Tuzak P1 (14550 sızıntısı)**: PX4'ün GCS bağlantısı eş gelmeden 127.0.0.1:14550'ye yollar = HEPGO'nun ilk oturum UDP portu. Örnek dizinindeki
+  `hepgo/px4-rc.mavlink` PATH'te PX4'ün kendisinden önce bulunur; yalnız GCS bağlantısını, partneri baştan HEPGO'nun yerel UDP soketi olarak açar
+  (`-t 127.0.0.1 -o <port>`); offboard/kamera/gimbal/SIH görüntü bağlantıları açılmaz. Ölçüldü: 14550'ye tek paket gitmiyor.
+- **Tuzak P2 (sysid)**: rcS `MAV_SYS_ID = örnek+1` yazar, commander bunu yalnız başlarken okur → `hepgo/px4-rc.simulator` commander'dan önce
+  `MAV_SYS_ID 1` yapar, sonra PX4'ün kendi simülatör betiğini çağırır. MP/QGC her zaman sysid 1 görür.
+- Ev: `PX4_HOME_LAT/LON/ALT` (SIH_LOC_*; ev irtifası §9 kuralıyla araziden). Airframe: `PX4_SYS_AUTOSTART` (10040 quad X · 10041 sabit kanat ·
+  10043 standart VTOL · 10042 tailsitter). Hız: `PX4_SIM_SPEED_FACTOR` (0,5/1/2/4; **yalnız açılışta**).
+- Parametreler: `PX4_PARAM_<AD>=<değer>` (rcS, airframe'den önce): HEPGO tabanı `COM_RC_IN_MODE 1, NAV_RCL_ACT 0, COM_RCL_EXCEPT 7, NAV_DLL_ACT 0,
+  COM_ARM_WO_GPS 0, MAV_PROTO_VER 2, SDLOG_MODE 0|-1` (ULog yalnız "Uçuş logunu kaydet" açıkken), üstüne yüklenen dosya. NAV_RCL_ACT 0: sanal kumanda
+  kapanınca "kumanda kaybı" failsafe'i (Hold → RTL) tetiklenmesin (ölçüldü).
+- Temiz başlangıç (ArduPilot `temiz=True` eşleniği): parameters.bson, parameters_backup.bson, dataman, log/ silinir; "Sıfırla" korur.
+- Süreç `drone_sitl.YONETICI.surec_kaydet` ile ortak yöneticide: `calisiyor_mu`, `durdur` (SIGTERM → 5 sn → KILL), `artiklari_temizle` (cwd kökte).
+- Oturum bağlantısı UDP (`udp_akisi`: SimSession'ın TCP okuyucu/yazıcı arayüzü) → GCS köprüsü (UDP 14550+), 3B, HUD, harekât paneli aynı yoldan.
+
+### 45.3 Oturum katmanı (`Px4Session(SimSession)`) — PX4'te çalışan / çalışmayan
+
+Çalışan: telemetri (ATTITUDE, GLOBAL_POSITION_INT, VFR_HUD, SYS_STATUS, GPS_RAW_INT, SERVO_OUTPUT_RAW, HOME_POSITION; SET_MESSAGE_INTERVAL 50 Hz) ·
+GCS köprüsü (QGC önerisi panelde "QGROUNDCONTROL / MP") · ARM/DISARM (ön uçuş denetimli, zorla değil) · kalkış (ARM, EKF hazır olana dek ≤ 25 sn
+yinelenir → `MAV_CMD_NAV_TAKEOFF` param7 **AMSL** = ev + irtifa; VTOL `NAV_VTOL_TAKEOFF` 84; sabit kanat pist kalkışı RWTO) · RTL (`NAV_RETURN_TO_LAUNCH`,
+kopter/VTOL iniş + disarm) · kipler (`DO_SET_MODE` base 1, main/sub; HEARTBEAT custom_mode → `AUTO.LOITER` vb.; ArduPilot adları takma ad olarak:
+GUIDED/LOITER → AUTO.LOITER, AUTO → AUTO.MISSION, RTL → AUTO.RTL, LAND → AUTO.LAND, ALT_HOLD → ALTCTL, POSHOLD → POSCTL, STABILIZE → STABILIZED) ·
+sanal kumanda (`MANUAL_CONTROL`: x = −(ch2−1500)·2, y = (ch1−1500)·2, z = ch3−1000, r = (ch4−1500)·2; 8×0 → gönderilmez) · harekât paneli
+(Px4MavKomut: kip, kalkış, iniş 21, RTL 20, goto DO_REPOSITION AMSL, görev yükleme ev öğesiz) · parametre dosyası · yakıt/batarya göstergesi ·
+hedefler · uçuş uyarıları (PX4 kip adları GPWS'te iniş/RTL sayılır) · PX4 bayt düzeyi tamsayı parametreleri çözülür (`param_coz/param_kodla`) ·
+parçalı STATUSTEXT tek satır.
+
+Çalışmayan (arayüzde gri + gerekçe, komutlar 400 "PX4'te desteklenmiyor: …"): uçuşta simülasyon hızı (yalnız açılışta), rüzgâr fiziği (SIH v1.16'da
+rüzgâr parametresi yok; yalnız görsel/HUD), motor kesme (MOTOR_ESTOP ArduPilot'a özgü; uçuş çubuğu PX4'te havada onaylı DISARM), servo tetik
+(DO_SET_SERVO), rampa/araç/fırlatıcı kalkışları (yalnız pist), arazi sunumu (TERRAIN_DATA), `.bin` → Uçuş Logları (PX4 ULog `.ulg` örnek dizinine
+yazılır; kapanışta yol olay şeridinde — **Uçuş Logları'na .ulg yükleme henüz yok**), dron kaydının kalıcı (ArduPilot) parametreleri, kontrol düzeni,
+"Yer kontrolünü koru" ve karşılaşma (§33).
+
+### 45.4 REST / sihirbaz
+
+- `POST /api/drone/sim/sessions` ek alanlar: `stack` (`ardupilot` | `px4`), `stack_cfg` `{airframe?, speed?, params_text?, params_name?}`.
+  Hatalar: planlanan/uygun olmayan yığın, PX4'te desteklenmeyen tip (heli/hexa/rover/INTERCEPTOR), yanlış airframe, hız → 400; PX4 kurulumu yok → 503.
+- Parametre dosyası: QGC `.params` (`sysid⇥compid⇥AD⇥değer⇥tip`), ArduPilot `.parm` (`AD değer` / `AD,değer`), `AD=değer`; # ve // yorum; ≤ 512 KB,
+  ≤ 3000 parametre. ArduPilot'ta `varsayilan.parm` sonuna (aynı adda dron kaydının kalıcı değeri önceliklidir — §13.1 kuralı), PX4'te `PX4_PARAM_*`.
+- Oturum `to_dict`: `stack: 'px4'`, `stack_info` (airframe, hız, yüklenen parametre sayısı, özellik listesi, ULog), `modes` (uçuş çubuğu listesi).
+- Kayıtlı simülasyonlar (§27) `stack`/`stack_cfg`'yi saklar. Sihirbaz: PX4'te kalkış adımı yalnız pist, kontrol düzeni gizli; özet satırı "Uçuş yığını".
+
+### 45.5 Görsel ve test
+
+`tests/stacks_shots_hepgo.py` (gerçek PX4): 01 yığın kartları · 02 PX4 kopter yapılandırması · 03 helikopter uyarısı · 04 VTOL airframe ·
+05 özet · 06 PX4 ile uçuş · 07 PX4 kip listesi. `tests/test_flightsim_px4_sitl.py`: kopter/sabit kanat/VTOL — HAZIR, GCS taklidi UDP heartbeat ↔
+PX4 HEARTBEAT (autopilot 12), ARM+kalkış, tele alanları, takma ad kip, desteklenmeyen komut 400, RTL (iniş+disarm), Sıfırla, kapanış.
+
+### 45.6 PROD kurulumu (kullanıcı onayıyla)
+
+DEV'de derlenen kurulum `/opt/hepgo/sitl/px4` (5,6 MB: bin 4,9 MB strip + etc 0,8 MB). PROD'da SITL klasörü `data/sitl` olduğundan hedef
+`/opt/hepgo/caymazbuild/data/sitl/px4`:
+1. `tar -C /opt/hepgo/sitl -czf /tmp/px4-sitl-v1.16.2.tgz px4` (sembolik bağlar korunur) → PROD'a kopyala, `sha256sum` karşılaştır.
+2. PROD: `tar -C /opt/hepgo/caymazbuild/data/sitl -xzf …` · sahiplik servis kullanıcısı (`--chown` kök dizine UYGULANMAZ; yalnız `px4/` alt ağacı).
+3. Bağımlılık yalnız glibc/libstdc++ (Ubuntu 24.04 derlemesi; PROD aynı sürüm olmalı) — `data/sitl/px4/bin/px4 -h` ile denetle.
+4. Kod dağıtımı (`app/flightsim_px4.py` vd.) + servis yeniden başlatma; `/api/drone/sim/meta` `stacks[px4].available = true`.

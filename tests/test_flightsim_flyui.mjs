@@ -9,6 +9,7 @@ import { GAUGE_THEMES, GAUGE_THEME_DEFAULT, GAUGE_THEME_KEYS, GTHEME_TEXTS, gaug
 import { INTRO, INTRO_TEXTS, beepPlan, countdownState, hepgoSound, introEase, introPose } from '../static/js/modules/flightsim_intro.js';
 import { channelsOf } from '../static/simumav/app/fly/rc.js';
 import { MOBILE_MQ, MOB_TEXTS, isMobileEnv } from '../static/js/modules/flightsim_mobile.js';
+import { pickFitLevel, setGimbalLabel } from '../static/js/modules/flightsim_fltbar.js';
 import { readFileSync } from 'node:fs';
 
 let n = 0;
@@ -174,6 +175,22 @@ test('§39 mobil menü: ortam sorgusu (dar / dokunmatik), metinler HEPGO 6 + SIM
   }
   assert.ok(/createMobileMenu\(stage, \{ tr \}\)/.test(readFileSync(new URL('../static/js/modules/flightsim.js', import.meta.url), 'utf8')));
   assert.ok(/MMob\.createMobileMenu\(stage, \{ tr, keyed: true \}\)/.test(readFileSync(new URL('../static/simumav/app/fly/session.js', import.meta.url), 'utf8')));
+});
+
+// ---------------------------------------------------------------- alt bant sığdırma (§29.6 düzeltme) ----------------------------------------------------------------
+test('pickFitLevel: tek satıra sığan ilk kademe; hiçbiri sığmazsa en son kademe', () => {
+  assert.equal(pickFitLevel(() => 1), 0);
+  assert.equal(pickFitLevel(k => (k >= 2 ? 1 : 2)), 2);
+  assert.equal(pickFitLevel(() => 2), 3);
+  assert.equal(pickFitLevel(() => 2, 2), 2);
+  const seen = []; pickFitLevel(k => { seen.push(k); return k >= 1 ? 1 : 2; }); assert.deepEqual(seen, [0, 1]);
+});
+test('setGimbalLabel (DOM yok): düz metin + title; fitFlightBar her iki arayüzde bağlı', () => {
+  const e = { title: '', textContent: '', childNodes: [] };
+  setGimbalLabel(e, 'Gimbal -10° (↑↓ / tekerlek)');
+  assert.equal(e.textContent, 'Gimbal -10° (↑↓ / tekerlek)'); assert.equal(e.title, 'Gimbal -10° (↑↓ / tekerlek)');
+  assert.ok(/fitFlightBar\(bar, \{ stage \}\)/.test(readFileSync(new URL('../static/js/modules/flightsim.js', import.meta.url), 'utf8')));
+  assert.ok(/MFlt\.fitFlightBar\(bar, \{ stage \}\)/.test(readFileSync(new URL('../static/simumav/app/fly/session.js', import.meta.url), 'utf8')));
 });
 
 console.log(`\n${n} test geçti`);

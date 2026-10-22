@@ -50,7 +50,8 @@ import { createGaugeThemePicker, gaugeThemeLabel } from './flightsim_gtheme.js';
 import { createIntro, hepgoSound } from './flightsim_intro.js';   // §27.2 giriş sekansı: 100 m bakış + 3-2-1 geri sayım + bip
 import { createPowerGauges, createPowerSection, createPowerSim, createSpeedPill, elecText, fuelText, rangeText } from './flightsim_power.js';   // §23: güç ve yakıt (sihirbaz bölümü, göstergeler, güç paneli kadranları §23.6, kayıtta istemci modeli, hız kapsülü)
 import { LAUNCH_OPTIONS, LAUNCH_PARAM_DEFS, createStepper, firstInvalid, launchOptionsFor, launchStepDesc, normLaunchMethod, paramField, simLogsOnly, simulateParam, stepDefFor, wizardStartStep, wizardSteps } from './flightsim_wizard.js';
-import { attachMatch, createInviteSection, createRingsSection, matchApi, matchesCard, renderLobby } from './flightsim_match_ui.js';   // §33 çok oyunculu karşılaşma: sihirbaz Halkalar / Davet et, bekleme salonu, oturum katmanı, sekme
+import { attachMatch, createInviteSection, createRingsSection, matchApi, matchesCard, renderLobby } from './flightsim_match_ui.js';
+import { createSfx } from './flightsim_sfx.js';   // §44 oyun efektleri (halka, sıralama, angajman, puan; ses kapsülü menüsünde aç/kapa + düzey)   // §33 çok oyunculu karşılaşma: sihirbaz Halkalar / Davet et, bekleme salonu, oturum katmanı, sekme
 import { matchHref, ringsSummary } from './flightsim_match.js';   // §6 adım adım sihirbaz (saf: adım listesi, doğrulama geçişleri, veriden kalkış seçenekleri)
 import { numSlider } from './fs_inputs.js';   // §6.1 görsel giriş: kaydırıcı + düzenlenebilir değer kutusu + birim
 import { askPresetName, budgetBox, countdown, ensureSavedCss, pilotPicker, savedScreen } from './flightsim_saved.js';   // §27 Kayıtlı Simülasyonlar: üç sütunlu ekran, Uç/Kaydet, pilot, ad sorma, geri sayım
@@ -900,7 +901,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
     const body = sitlBody();
     for (const k of ['drone_id', 'targets', 'site', 'defend', 'rec']) delete body[k];
     let mt;
-    try { mt = await matchApi.create({ settings: body, rings: ringsSec.values(), invite: inviteSec.values(), kind: ringsSec.kind(), dogfight: ringsSec.kind() === 'dogfight' ? ringsSec.dogfight() : null }); } catch (err) {
+    try { mt = await matchApi.create({ settings: body, rings: ringsSec.values(), invite: inviteSec.values(), bots: inviteSec.bots(), kind: ringsSec.kind(), dogfight: ringsSec.kind() === 'dogfight' ? ringsSec.dogfight() : null }); } catch (err) {
       toast(err?.status === 409 ? (err.message || tr('Simülatör kapasitesi dolu')) : err.message, 'err');
       return true;
     }
@@ -1045,7 +1046,7 @@ async function wizardModal({ be, meta, mock, canWrite, preset = {}, onClosed, us
       targets: [['Hedefler', tg?.items?.length ? tr('{n} hedef', { n: tg.items.length }) : tr('Hedef yok')], tg?.items?.length ? ['Modeller', tg.items.map(x => x.model_name || x.model).join(', ')] : null,
         tg?.items?.length ? ['Önleme yarıçapı', `${tg.radius_m} m`] : null],
       rings: isMatch ? ringsSec.summary() : [],   // §33 halkalar / §41 it dalaşı kuralları
-      invite: isMatch ? [['Davet edilenler', inviteSec.names().join(', ') || '—'], ['Oyuncu sayısı', tr('{n} (siz dahil)', { n: inviteSec.values().length + 1 })]] : [],
+      invite: isMatch ? [['Davet edilenler', inviteSec.names().join(', ') || '—'], ['Oyuncu sayısı', tr('{n} (siz dahil)', { n: inviteSec.values().length + inviteSec.bots().length + 1 })]] : [],
       site: [['Saha', sv.site ? [sv.site.radar ? `${tr('Radar')} ${sv.site.radar_km} km` : null, sv.site.station ? tr('İstasyon') : null, sv.site.eo ? `EO ${sv.site.eo_km} km` : null].filter(Boolean).join(' · ') : tr('Yok')],
         ['Görev', sv.defend ? tr('Yer kontrolünü koru · {w} dalga · {i} önleyici', { w: sv.defend.waves, i: sv.defend.interceptors }) : tr('Serbest uçuş')]],
     };
@@ -1497,9 +1498,11 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     onEvent: (t, sev) => addEvent(t, sev, replay ? (player?.time() ?? null) : null, 'UYARI'), menuHost: audio.menu,
     getCtx: () => { const cm = sim?.getCamera?.(); return { crashed: !crash.hidden, phase: sim?.launchPhase ?? null, maxSpeed: session.power?.max_speed_ms ?? null,
       fence: Number(world.size_m) > 0 ? Number(world.size_m) / 2 : null, hudDraws: (cm === 'pilot' && !!osd?.enabled) || (cm === 'fpv' && !!milHud?.enabled) }; } });
+  // §44 oyun efektleri: motor sesinin master yolunda (🔊/🔇, düzey, gizli sekme, hızlı oynatma); uçuş uyarısı çalarken kısılır; menüde aç/kapa + düzey
+  const sfx = createSfx({ audio, isAlert: () => (gpws?.state()?.active?.length || 0) > 0 && gpws.state().mode === 'full', menuHost: replay ? null : audio.menu, T: tr });
   // §40 hedefli uçuş: Boşluk ile kilit + angajman (kutu ekrandayken; kamera kipi fark etmez), kayıttan oynatmada kayıtlı angajmanlar
   if (session.targets?.items?.length) {
-    engage = createEngageCtl(stage, { getSim: () => sim, tr, replay, canWrite: canWrite && !mock, cmd: (name, p) => be.cmd(sid, name, p),
+    engage = createEngageCtl(stage, { getSim: () => sim, tr, replay, canWrite: canWrite && !mock, cmd: (name, p) => be.cmd(sid, name, p), sfx,
       onEvent: (t, sev) => addEvent(t, sev, replay ? (player?.time() ?? null) : null, 'HEDEF'), toast: (t, k) => toast(t, k), isRcOn: () => !!rc });
     if (replay) engage.setReplay(session.engagements || []);
     else if (session.engagement) engage.onHello(session.engagement);
@@ -1645,7 +1648,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
   // §33 karşılaşma oturumu: halkalar + diğer oyuncular (3B), durum şeridi, canlı sıralama, sonuç ekranı. Giriş sekansı burada değil SUNUCU saatine
   // göre geri sayımın son 3 sn'sinde oynar (herkes aynı anda "BAŞLA"); 3B hazır olunca sunucuya `ready`.
   const matchUi = matchId && !replay && !mock && String(session.match_id ?? '') === String(matchId)
-    ? attachMatch({ stage, getSim: () => sim, mid: matchId, me: ctx.user?.id ?? null, sid, startIntro: () => { introStarted = true; intro.start(); }, getTele: () => last }) : null;
+    ? attachMatch({ stage, getSim: () => sim, mid: matchId, me: ctx.user?.id ?? null, sid, startIntro: () => { introStarted = true; intro.start(); }, getTele: () => last, sfx }) : null;
   const maybeIntro = () => {
     if (introStarted || destroyed || !sim || !msg.hidden || !(session.state === 'HAZIR' || mock)) return;
     if (matchUi) { matchUi.onWorldReady(); return; }
@@ -1854,7 +1857,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     sim?.flashTarget(m.i);
     const ek = m.first ? tr('ilk önleme {s} sn', { s: f1(m.after_s) }) : tr('{n}. geçiş', { n: m.n });
     addEvent(`${tr('ÖNLEME')} · ${m.name} · ${f0(m.dist_m)} m · ${ek}`, 'warning', at, 'HEDEF');
-    if (!replay) toast(`◎ ${tr('ÖNLEME')} · ${m.name}`);
+    if (!replay) { toast(`◎ ${tr('ÖNLEME')} · ${m.name}`); sfx.play('coin'); }   // §44 önleme bonusu
   };
   // Kalkış aşaması (WS `launch`): 3B düzenek + olay şeridi
   const onLaunch = m => {
@@ -2003,7 +2006,7 @@ async function renderSession(view, ctx, be, sid, { mock, canWrite, netsim = null
     socket?.close();
     milHud?.dispose(); osd?.dispose(); engage?.dispose(); gpws?.dispose(); camPip?.dispose(); camCtl.dispose(); siteUi?.dispose(); defHud?.dispose(); launcherUi?.dispose();   // §26 + §27
     if (rec) { rec.abandon(); rec.dispose(); }   // §17: Bitir'siz çıkış → kayıt durur, parçalar akıtılır, sunucuda yarım kayıt (24 sa)
-    padCtl?.dispose(); mobMenu.dispose(); gfxCtl.dispose(); audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose(); srvTrig?.dispose(); matchUi?.dispose(); clearTimeout(autoEndTimer);
+    padCtl?.dispose(); mobMenu.dispose(); gfxCtl.dispose(); audio.dispose(); ops?.dispose(); gauges.dispose(); rcFeel.dispose(); intro.dispose(); fltBar?.dispose(); srvTrig?.dispose(); matchUi?.dispose(); sfx.dispose(); clearTimeout(autoEndTimer);
     sim?.dispose();
     if (window.__fsSim === sim) delete window.__fsSim;
     if (player && window.__fsPlayer === player) delete window.__fsPlayer;

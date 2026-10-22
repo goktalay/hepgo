@@ -332,6 +332,8 @@ class BotSurucu:
                     alt = self._kalkis_irtifasi()
                     if not ben['armed'] and self.tip not in ('sabit_kanat',) and now - self.arm_t > 2.0:
                         self.arm_t = now
+                        if core.sinif(self.tip) == 'dikey' and self.tip not in ('interceptor',) and str(ben.get('mode') or '').upper() != 'GUIDED':
+                            await self._komut('mode', {'mode': 'GUIDED'})   # kopter: kalkış GUIDED'da (EKF/GPS hazır olana dek ARM reddedilir → yinelenir)
                         await self._komut('arm')
                         continue
                     if ben['armed'] or self.tip == 'sabit_kanat':

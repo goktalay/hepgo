@@ -3069,3 +3069,100 @@ yok); değişiklikler simülasyonu yeniden başlatmadan canlı uygulanır.
   SMAA yok (MSAA 8× / FXAA); su yansıması düzlemsel yansıma değil (Fresnel gök yansıması, kalite oktav/mesafe); FPV balıkgözü ve termal/gece
   görüşünde son işlem (ACES/bloom/SSAO) uygulanmaz; bina sayısı oyun dünyasıdır (çarpışma) — yalnız ağaç yoğunluğu ölçeklenir; tuval antialias'ı
   açılışta sabittir.
+
+## 44. Karşılaşmada YAPAY ZEKÂ PİLOT (bot oyuncu) + karşılaşma OYUN EFEKTLERİ (`app/flightsim_match_bot.py` + `flightsim_match_core.BOT_*`; ön yüz `static/js/modules/flightsim_sfx.js`; HEPGO + SIMUMAV ortak)
+Kullanıcı isteği: karşılaşma kurulumunda "Yapay zekâ pilot ekle" (Kolay / Normal / Zor; isim + renk; halka yarışında birden çok bot, it dalaşında tek
+rakip — kişi tek başına bota karşı oynayabilsin), bot gerçek oyuncu gibi KENDİ SITL'inde (aynı fizik) uçsun; ayrıca "kat edilen seviye ve alınan
+puanlarda ses efekti çıksın". **Kapsam:** bot yalnız OYUN İÇİ rakip davranışıdır — "hedefe doğru yönel + seviye gecikmesi + dönüş oranı sınırı";
+gerçek güdüm/önleme yasası (orantılı seyrüsefer vb.) KULLANILMAZ. §41'deki "araca güdüm/takip komutu yok" kuralı insan oyuncular içindir.
+
+### 44.1 Seviye tablosu (TEK tablo: `flightsim_match_core.BOT_SEVIYE`; test `tests.test_flightsim_match_bot`)
+| Alan | Kolay | Normal | Zor | Anlam |
+|---|---|---|---|---|
+| `hiz` | 0,55 | 0,75 | 0,95 | sınıf azamisine oran (dikey 16 m/s, uçak 30 m/s hava hızı; uçakta en az 15 m/s) |
+| `gecikme_s` | 1,5 | 0,7 | 0,25 | tepki gecikmesi: halka geçişinden sonra eski yönde sürer; it dalaşında rakibi bu kadar eski görür |
+| `donus_dps` | 45 | 75 | 120 | komut yönünün dönüş oranı sınırı (°/sn) — Kolay geniş döner |
+| `sapma` / `iska` | 0,45 / 0,15 | 0,22 / 0,03 | 0,06 / 0 | halka merkezinden kaçıklık (yarıçapa oran) / ıskalama olasılığı (ilk denemede; sonra geri dönüp yeniden dener) |
+| `giris_aci` | 30° | 40° | 50° | düz girişe geçiş konisi (uçakta ×0,6) |
+| `on_donus` | — | — | ✓ | halkaya çok yaklaşınca sıradaki halkanın yaklaşma noktasına önceden döner (giriş açısı optimizasyonu) |
+| `tahmin_hata_m` | 30 | 12 | 3 | it dalaşı: rakip konum tahmin hatası (yavaş değişen) |
+| `onculuk` | 0,15 | 0,45 | 0,8 | kovalarken öngörü karışımı (0 = doğrudan rakibe, 1 = tahmini ileri konuma) |
+| `manevra_s` / `manevra_aci` / `rastgele` | 7 / 45° / 0 | 4,5 / 70° / 0,5 | 2,8 / 95° / 1 | kaçış zikzakı aralığı / büyüklüğü / öngörülemezlik (Kolay hep sağ-sol-sağ) |
+| `irtifa_oyunu` / `alan_esik` / `zemin_pay` | — / 0,9 / 0,75 | ✓ / 0,8 / 1 | ✓ / 0,72 / 1 | kaçarken irtifa değişimi / alan sınırına bu oranda içeri dönüş / güvenli irtifa çarpanı (dikey 8 m, uçak 35 m) |
+Adlar `AI-Şahin, AI-Kartal, AI-Doğan, AI-Atmaca, AI-Kerkenez, AI-Albatros, AI-Akbaba` (HEPGO "AI-Şahin (Zor)"; SIMUMAV ad + 7 dilli rozet),
+renkler `BOT_RENKLERI`. Sahte kinematikte ortalama süre (5 halka, 3 tohum): kopter Zor 90 sn < Normal 102 < Kolay 133; sabit kanat 136 < 166 < 231.
+
+### 44.2 Çekirdek ve pilot
+- `Karsilasma(..., botlar=[(uid<0, ad, seviye, renk)])`: bot "geldi" (hazır sayılır; davetli beklenmez); `bot_ekle(kurucu, seviye, now)` LOBI'de
+  (oyuncu sınırı 8, it dalaşında rakip varsa 409), `cikar` LOBI'de botu listeden siler, `lobi_denetle` (yalnız botlarla kurulunca hemen HAZIRLIK).
+  `insanlar()` boşalınca HAZIRLIK/GERI_SAYIM'da IPTAL, YARIS'ta BITTI `oyuncu_kalmadi` (it dalaşında insan ayrılırsa bot kazanır `rakip_ayrildi`).
+  Oyuncu dict'inde `is_bot`, `level`, `color`. Kazanan bot olabilir (negatif kimlik).
+- `BotPilot` (saf): `halka_adim(t, ben, halkalar, sıra)` — halkanın önündeki yaklaşma noktası (dikey 22 m; uçakta v²'yle uzar, dönüş yarıçapı içinde
+  geriye kayar), yanal koni içindeyse halkadan düz geçiş; arkadaysa yandan dolaşır (ters yönde içinden geçmez); düzlemi sayılmadan geçerse yeni
+  deneme. `it_adim(t, ben, rakip, rol, ayar)` — KOVALAYAN: gecikmeli + hatalı rakip görüşü, öngörü karışımı, yakında hızını rakibe uydurur;
+  KAÇAN: rakipten uzaklaşan yön ± seviye manevrası, rakip menzile yaklaşınca usta kaçan düz kaçar, alan sınırında sınır boyunca kıvrılır. Her ikisi
+  `_guvenli` ile alan sınırı içinde ve güvenli irtifanın üstünde hedef seçer. Çıktı `{vx, vy, vz (ENU m/s), hedef (x, y, z), hiz, yaw_deg}`.
+- `BotSurucu` (asyncio, HEPGO + SIMUMAV): YARIS'a kadar bekler (komut kapısı); sonra kopterde GUIDED + ARM (EKF/GPS hazır olana dek yineler) +
+  kalkış (halka yarışında ilk halkanın yüksekliği, it dalaşında `alt_m`; sabit kanatta kalkış dizisi), irtifaya varınca 5 Hz komut.
+  `SimSession.bot_yonlendir`: kopter (ve sahte kinematik) `SET_POSITION_TARGET_LOCAL_NED` hız + yön (ArduCopter 3 sn yenilenmeyen hız komutunda
+  durur), uçak ailesi GUIDED hedef noktası (`MISSION_ITEM_INT` current=2, göreli irtifa, en az 250 m ileri uzatılmış) + `DO_CHANGE_SPEED`.
+  `bot_hazirla`: gerçek kopterde `WPNAV_SPEED` seviyenin hızına (cm/s) — GUIDED hız tavanı. Sahte kinematiğe `bot_hiz` (6 m/s² ivme sınırı).
+- Bot oturumu: sahibi bot kimliği (`owner.id < 0`, `s.bot = {uid, level}`) → insanın REST/WS komutu 403 (`mac_yazabilir`); **uçuş kaydı
+  (`drone_sim_runs`) yazılmaz**, `.bin` yok; karşılaşma SITL tavanına sayılır (HEPGO `SIM_MATCH_MAX_SESSIONS`, SIMUMAV `MAX_FLIGHTS` + `MAC_REZERV`).
+  Karşılaşma bitince / insan ayrılınca sürücü durur, oturum `KAPANIS_GECIKME_S` sonra kapanır.
+
+### 44.3 HEPGO
+- `POST /api/drone/sim/matches {…, invite: [], bots: [{level}]}` — davet + bot ≥ 1, ≤ 7; it dalaşında toplam tam 1 rakip (400). Kapasite
+  yetmezse 409 "… her yapay zekâ pilot da kendi simülatörünü kullanır (n bot)". Yalnız botlarla kurulursa davet bildirimi yok, hemen HAZIRLIK.
+  `POST /{id}/bot {level}` (kurucu, LOBI; kapasite 409); bot çıkarma `/kick {user_id: <negatif>}`. Meta `limits.bot {levels, names, colors, default}`.
+- **DB göçü (`app/db.py`, idempotent):** `drone_sim_matches.bots INTEGER NOT NULL DEFAULT 0` (PRAGMA denetimiyle ALTER). Oyuncu satırları
+  `players` JSON'unda `is_bot`, `level`, `color`; bot kazanırsa `winner_id` NULL (users FK) — kazanan `result.winner`'da (negatif); GET/liste
+  `winner` alanı sonuçtan.
+- Arayüz (`flightsim_match_ui.js`): Davet et adımında "🤖 Yapay zekâ pilot ekle" kutusu (seviye Kolay/Normal/Zor + Ekle; çipler ✕; sayaç davet +
+  bot; it dalaşında tek rakip), özet satırında bot adları; salonda bot satırı 🤖 + "AI · Zor" rozeti (çevrimiçi sayılır), kurucuya ✕ (onaysız) ve
+  LOBI'de "Yapay zekâ pilot ekle" satırı; 3B'de botlar diğer oyuncular gibi (kendi renkleri, "AI-…" etiketi); sonuç tablosunda AI rozeti.
+
+### 44.4 SIMUMAV
+- Salonda kurucu boş yerde "🤖 Kolay / Normal / Zor" ile bot ekler (`POST /api/match/{id}/bot`), ✕ ile kaldırır (yasak listesine girmez). BAŞLAT'ta
+  botlar da yuva sayılır (429 mesajında "(n yapay zekâ pilot dahil)"). Bot oturumu `bridge.bot_ucusu_ac` (kurucunun dronu/parkuru/parametreleri;
+  flights satırı ve MP köprüsü yok).
+- **"Yapay zekâya karşı"** (Uç › Çok oyunculu altında): `#/fly/ai` sihirbazı Dron → Parkur → (Kalkış) → Tür ve kurallar → **Yapay zekâ** (seviye,
+  rakip sayısı; it dalaşında rol "Roller" seçiminden) → BAŞLAT → `POST /api/match/ai {…, level, bots}` (rastgele şifre, botlar, hemen BAŞLAT) →
+  salon → yarış ekranı.
+- **DB v5 (idempotent):** `match_players` yeniden kurulur — `user_id`'deki users FK'si kalkar (bot kimlikleri negatif), `is_bot`, `level` eklenir,
+  satırlar taşınır, kullanıcı silme temizliği `tr_match_players_user_sil` tetikleyicisiyle. `matches.winner_id` bot kimliği olabilir.
+
+### 44.5 Oyun efektleri (`flightsim_sfx.js`; Web Audio sentezi, ses dosyası/lisans yok)
+| Olay | Ses | Nerede |
+|---|---|---|
+| halka geçişi | yükselen "ding" (C5'ten sıra arttıkça tam ton, ≤ 2 oktav) | kendi halkam |
+| son halka / bitiş | fanfar (C5-E5-G5-C6) | kendi son halkam |
+| sıralama değişimi | öne geçince whoosh + ding, geride kalınca alçak ton (≥ 1,2 sn aralık) | halka olaylarında canlı sıra |
+| ters yön | testere kayması | `wrong_way` |
+| angajman | kovalayan koni içindeyken dolum oranıyla yükselen, sıklaşan ton | it dalaşı HUD'u (`createDogfightHud({sfx})`) |
+| zafer / yenilgi | jingle / alçalan dört nota | sonuç ekranı |
+| puan | sonuç ekranında "Puanınız" sayacı tıklamalarla artar, sonunda "coin"; §24 önleme ve §40 angajman başarısında "coin"; §42 rapor kartında disiplin puanı sayacı | |
+Geri sayım 3‑2‑1‑BAŞLA bipleri mevcut §29 giriş sekansıdır (birleştirildi; ikinci kez çalınmaz). Puan (gösterim): halka yarışı halka başına 100,
+bitirene 250 + sıra bonusu (150/100/50); it dalaşı kazanana 1000 + kovalayanın en uzun tutması × 100 (≤ 500).
+- Ses yolu: motor sesinin master kazancı (`audio.alertBus` bağlamı) → ses kapsülü 🔊/🔇 + düzey, gizli sekme, hızlı oynatma susturmaları ve ekran
+  kaydı kapsanır; salonda/raporda yedek bağlam (`fs.audio.*`). **Uçuş uyarıları önceliklidir:** §42 uyarısı çalarken önemsiz efektler (angajman
+  tonu, tıklama, sıralama, sayım) hiç çalmaz, diğerleri ×0,3. simfocus yalnız sistem seslerini bastırır (oyun efektleri sahnenin parçası).
+- Ayar: ses kapsülü menüsünde "Oyun efektleri [Efekt kapalı | Efekt açık] + düzey" (HEPGO `fs.sfx`, SIMUMAV `sm.sfx`; varsayılan açık / 80).
+
+### 44.6 Testler ve görsel doğrulama
+- `.venv/bin/python -m tests.test_flightsim_match_bot` (saf): seviye tablosu tekdüzeliği, ad/renk, halka hedefi (yaklaşma → geçiş, arkadan
+  dolaşma, Zor önceden dönüş, kaçıklık sıralaması, ıskalama + yeniden deneme, tepki gecikmesi), kovala/kaç (öngörü, gecikme, uzaklaşma, Kolay
+  düzeni, alan + zemin), Karsilasma botları (ekle/çıkar, sınırlar, insan ayrılınca bitiş, it dalaşında bot kazanır), SAHTE KİNEMATİKLE yarış
+  (kopter + uçak, Zor < Normal < Kolay) ve it dalaşı (kovalayan Zor daha hızlı angaje eder; kaçan alanda ve yerden yüksekte kalır).
+- `tests.test_flightsim_match` `bot_api`: doğrulama 400'leri, kapasite 409, yalnız bot → HAZIRLIK, bot oturumuna insan komutu 403, BOT KAZANIR
+  (winner_id NULL, players.is_bot, bot uçuş kaydı yok), İNSAN KAZANIR, it dalaşında kovalayan bot angaje eder, salonda bot ekle/çıkar.
+- `tests.test_simumav_match` `yapay_zeka`: salonda ekle/çıkar/dolu, 429 mesajı, hızlı başlat (bot uçuşu yok), bot kazanır (DB is_bot/level,
+  geçmişte kazanan adı), insan kazanır; v4 → v5 göçü (satırlar korunur, FK kalktı).
+- `node tests/test_flightsim_sfx.mjs`: plan/perde/sıra/sayaç, tercih ve kazanç (uyarı önceliği), sahte Web Audio ile çalma, bot yardımcıları
+  (ad, rozet, renk, rakip doğrulaması, sıra, puan, çekirdek sabitleriyle aynı), SIMUMAV `#/fly/ai` + `aiBody`, metinler HEPGO 6 + SIMUMAV 7 dil.
+- **Gerçek SITL**: `.venv/bin/python -m tests.match_bot_sitl` — kurucu + Zor kopter botu (ArduCopter SITL): bot GUIDED + ARM (EKF hazır olana
+  dek ~35 sn yineler) + kalkış, 3 halkanın üçünü de geçti (55 / 73 / 98 sn) ve kazandı; SITL süreçleri PID ile denetlenir.
+- Görsel: `./.venv/bin/python -m tests.aibot_shots_hepgo` ve `tests.simumav_aibot_shots` → `/tmp/aibot-shots/{hepgo,sm}-*.png`.
+- **Sınırlar**: uçak/VTOL/INTERCEPTOR botu gerçek SITL'de GUIDED hedef noktasıyla uçar (dönüş oranı ArduPlane'in L1'i belirler; seviye farkı hız,
+  kaçıklık ve gecikmeyle) — gerçek SITL doğrulaması kopterle yapıldı; VTOL kalkışı genel `takeoff` yolundadır. Bot çarpışma kaçınması yalnız zemin
+  (güvenli irtifa) ve alan sınırıdır — binalar/arazi engeli gözetilmez. Kolay ara sıra alan sınırını zorlayabilir. Puan gösterim içindir (DB'de yok).

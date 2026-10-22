@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import auth, config, db, drone_hub, flightsim, flightsim_gcs, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, flightsim_targets, sim_terrain
+from .. import auth, config, db, drone_hub, flightsim, flightsim_gcs, flightsim_px4, flightsim_mission, flightsim_models, flightsim_rec, flightsim_replay, flightsim_runs, flightsim_targets, sim_terrain
 from .drone import _req_host
 
 router = APIRouter(prefix='/api/drone/sim')
@@ -39,6 +39,8 @@ class SessionIn(BaseModel):
     targets: Optional[Union[list, dict]] = None   # §24 hedefler: [{model, alt_m, diameter_m, speed_ms?, dir?, east_m?, north_m?, phase_deg?, name?}] ya da {items, radius_m}
     site: Optional[dict] = None      # §26 yer kontrol sahası (istasyon + EO/radar kulesi): {station, radar, radar_km?, eo, eo_km?} (flightsim_gcs.gcs_dogrula)
     defend: Optional[dict] = None    # §26 "Yer kontrolünü koru" (yalnız INTERCEPTOR): {seed?, waves?, interceptors?, difficulty?, radius_m?, prep_s?}
+    stack: Optional[str] = None      # §45 uçuş yığını (YALNIZ HEPGO): ardupilot (varsayılan) | px4 — flightsim_px4.YIGINLAR
+    stack_cfg: Optional[dict] = None   # §45 {airframe? (PX4 SYS_AUTOSTART), speed? (PX4_SIM_SPEED_FACTOR), params_text?, params_name?} (.params / .parm)
 
 
 class ModelPatch(BaseModel):
@@ -87,6 +89,8 @@ def meta(request: Request, user=Depends(sim_user), conn=db.DB):
             'replay': {'logs_allowed': True, 'real_allowed': bool({'tools', 'field'} & mods), 'hz': flightsim_replay.REPLAY_HZ, 'formats': list(flightsim_replay.UZANTILAR)},
             # Google Photorealistic 3D Tiles dünya kipi (§10): yalnız GOOGLE_MAPS_API_KEY tanımlıysa; anahtar /g3d-key ile ayrı verilir
             'google3d': {'enabled': flightsim.google3d_etkin()},
+            # §45 uçuş yığını kataloğu (YALNIZ HEPGO; SIMUMAV meta'sında yok): ArduPilot · PX4 (SIH) · planlanan/uygun olmayanlar gerekçeli
+            'stacks': flightsim_px4.katalog(),
             # §24 hedefler: seçilebilen modeller (hedef modelleri + sistemdeki dron türleri) ve sınırlar
             'targets': {'models': flightsim_targets.katalog(), 'max': flightsim_targets.HEDEF_MAX, 'diameter_m': list(flightsim_targets.CAP_SINIR),
                         'alt_m': list(flightsim_targets.IRTIFA_SINIR), 'radius_m': list(flightsim_targets.YARICAP_SINIR), 'radius_default': flightsim_targets.YARICAP_VARSAYILAN,
@@ -178,10 +182,11 @@ async def oturum_ac(body: SessionIn, owner, user, audit_uid, client=None, start=
             raise HTTPException(400, 'Dron kaydı bulunamadı (Dron Yönetimi › Dron Envanteri)')
         try:
             s = await flightsim.MANAGER.ac(body.type, center, body.world, owner, body.airframe, mdl, drone, body.rec, body.power, layout=body.layout, camera=body.camera,
-                                           targets=body.targets, site=body.site, defend=body.defend, drive=body.drive, start=start, match_id=match_id)
+                                           targets=body.targets, site=body.site, defend=body.defend, drive=body.drive, start=start, match_id=match_id,
+                                           stack=body.stack, stack_cfg=body.stack_cfg)   # §45
         except flightsim.SimHata as e:
             _hata(e)
-        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f' · karşılaşma #{match_id}' if match_id else '') + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
+        detay = f"{body.type} · {center['name']} · udp {s.udp_port}" + (f" · yığın {body.stack}" if body.stack else '') + (f' · karşılaşma #{match_id}' if match_id else '') + (f" · dron {drone['code']}" if drone else '') + (' · .bin kaydı' if s.rec['bin'] else '')
         pw = s.power
         detay += f" · güç: {pw.get('max_speed_ms') or '-'} m/s, {pw.get('fuel_l'):g} L @ {pw.get('fuel_km_per_l'):g} km/L, {pw.get('elec_cells')}S {pw.get('elec_mah'):g} mAh {pw.get('elec_w'):g} W"
     else:

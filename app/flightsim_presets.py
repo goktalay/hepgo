@@ -19,7 +19,7 @@ from . import auth, db
 AD_MAX = 80
 ACIKLAMA_MAX = 500
 # Oturum gövdesinin kayda giren alanları (routers/flightsim.SessionIn ile aynı; mode/log_id/airframe hariç — kayıtlı simülasyon yalnız canlı SITL)
-ALANLAR = ('type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend', 'drive')
+ALANLAR = ('type', 'center_id', 'world', 'model', 'drone_id', 'rec', 'power', 'camera', 'layout', 'targets', 'site', 'defend', 'drive', 'stack', 'stack_cfg')   # §45 uçuş yığını
 
 
 class PresetHata(ValueError):
@@ -69,6 +69,14 @@ def ayar_dogrula(conn, settings):
         raise PresetHata('invalid', 'type ve center_id gerekir')
     if tip not in flightsim.TIP_ADLARI:
         raise PresetHata('invalid', 'Geçersiz dron tipi')
+    if s.get('stack') is not None or s.get('stack_cfg') is not None:   # §45: yığın/airframe/parametre dosyası (ikili kurulumu başlatırken denetlenir)
+        from . import flightsim_px4
+        try:
+            flightsim_px4.yigin_dogrula(s.get('stack'), tip, s.get('stack_cfg'))
+        except ValueError as e:
+            raise PresetHata('invalid', str(e))
+        except RuntimeError:
+            pass
     try:
         cid = int(s['center_id'])
     except (TypeError, ValueError):

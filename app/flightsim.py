@@ -464,6 +464,13 @@ def world_dogrula(w):
     return out
 
 
+def _yigin_modulu():
+    """§45 HEPGO'ya özgü uçuş yığını modülü (flightsim_px4): yalnız `stack` verilince, importlib ile yüklenir — SIMUMAV dışa aktarımının
+    göreli import zincirine girmez (SIMUMAV hep ArduPilot)."""
+    import importlib
+    return importlib.import_module(f'{__package__}.flightsim_px4')
+
+
 def tipler():
     """GET /meta types: SITL tipleri + ikili var mı (sahte kipte her zaman var sayılır)."""
     return [{'key': k, 'name': TIP_ADLARI.get(k, k), 'binary': (not SITL_ENABLED) or drone_sitl.ikili_yolu(k).is_file()}
@@ -1394,7 +1401,9 @@ class SimSession:
                                                                           irtifa=c.get('alt') or EV_IRTIFA, konsol=self._konsol, model=sitl_model,
                                                                           yon=ev['yaw'] if ev['yaw'] is not None else kalkis_yonu(self.type, self.launch, self.world),   # §31: uçak burnu kalkış yönünde (rampa azimutu / pist)
                                                                           log_bin=self.rec['bin'], ekstra_parm=drone_params.parm_satirlari(self.kayitli_params, self.sanal_montaj, self.type, **self.montaj_arg)
-                                                                          + [f'{a} {v:g}' for a, v in self.layout_parametreleri()[0]], temiz=temiz))   # §13.1 düzen seti parm dosyasına da (SITL ilk andan doğru; ilk kalp atışında PARAM_SET yinelenir)
+                                                                          + [f'{a} {v:g}' for a, v in self.layout_parametreleri()[0]] + list(getattr(self, 'ek_parm', None) or []), temiz=temiz))   # §13.1 düzen seti parm dosyasına da (SITL ilk andan doğru; ilk kalp atışında PARAM_SET yinelenir) · §45 yüklenen .parm
+            if port and getattr(self, 'ek_parm', None):
+                self._olay(f'Parametre dosyası: {len(self.ek_parm) - 1} parametre varsayilan.parm\'a yazıldı (aynı adda dron kaydının kalıcı değeri öncelikli)', 6)
             if port and self.rec['bin']:
                 self._olay('DataFlash kaydı açık: uçuş logu (.bin) oturum kapanışında Uçuş Logları\'na kaydedilir', 6)
             if not port:
@@ -3047,7 +3056,7 @@ class SimManager:
         return len([s for s in self.sessions.values() if s.state != 'KAPANDI' and bool(getattr(s, 'match_id', None)) == bool(match)])
 
     async def ac(self, tip, center, world, owner, airframe=None, model=None, drone=None, rec=None, power=None, layout=None, camera=None, targets=None,
-                 targets_katalog=None, site=None, defend=None, drive=None, start=None, match_id=None):
+                 targets_katalog=None, site=None, defend=None, drive=None, start=None, match_id=None, stack=None, stack_cfg=None):
         """Yeni oturum: doğrulama (400) → limit (409) → SITL ikilisi (503) → UDP port (503, oturum içinde HATA) → görev.
         `model`: flightsim_models.coz ile çözülmüş kütüphane nesnesi (router); yoksa `airframe` ile dahili model.
         `drone` (§14, isteğe bağlı): Dron Envanteri kaydı {id, code, name, model} — harekât panelinde telemetri bu adla akar.
@@ -3059,6 +3068,17 @@ class SimManager:
         camera = kamera_dogrula(camera)
         if tip not in drone_sitl.TIP_ESLEME:
             raise SimHata('invalid', 'Geçersiz dron tipi')
+        yigin = None   # §45 uçuş yığını: yalnız HEPGO router'ı verir (SIMUMAV köprüsü vermez → ArduPilot, yığın modülü hiç yüklenmez)
+        if stack is not None or stack_cfg is not None:
+            try:
+                yigin = _yigin_modulu().yigin_dogrula(stack, tip, stack_cfg)
+            except ValueError as e:
+                raise SimHata('invalid', str(e))
+            except RuntimeError as e:
+                raise SimHata('sitl', str(e))
+        px4 = bool(yigin and yigin['stack'] == 'px4')
+        if px4 and (defend or match_id is not None):
+            raise SimHata('invalid', 'PX4 yığınında "Yer kontrolünü koru" görevi ve karşılaşma yok (ArduPilot akışları)')
         try:
             oneri = drone_params.guc_onerisi(drone['id']) if drone and drone.get('id') else None
         except Exception:   # noqa: BLE001 — öneri okunamazsa varsayılanlar
@@ -3092,7 +3112,7 @@ class SimManager:
                 raise SimHata('limit', f'Karşılaşmalar için en fazla {MATCH_MAX_SESSIONS} eşzamanlı simülatör')
         elif self.acik_sayisi() >= MAX_SESSIONS:
             raise SimHata('limit', f'En fazla {MAX_SESSIONS} açık oturum')
-        if SITL_ENABLED and not drone_sitl.ikili_yolu(tip).is_file():
+        if SITL_ENABLED and not px4 and not drone_sitl.ikili_yolu(tip).is_file():
             loop = asyncio.get_running_loop()
             try:   # ikili yoksa yönetici indirir (sabit sürüm); olmazsa 503
                 yol, err = await asyncio.wait_for(loop.run_in_executor(None, drone_sitl.indir, tip), 180)
@@ -3119,9 +3139,12 @@ class SimManager:
                 alt_not = f'Arazi yüksekliği alınamadı ({str(e)[:80]}); SITL ev irtifası {girilen if girilen is not None else EV_IRTIFA:.0f} m (kayıtlı/varsayılan) ile kuruldu'
         sid = self._next
         self._next += 1
-        s = SimSession(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
-                                  'alt': alt, 'alt_entered': girilen}, world, owner, self, airframe, model, drone, rec, power, layout, camera, targets,
-                       site, defend, drive, start=start, match_id=match_id)
+        cls, ek = (_yigin_modulu().Px4Session, {'yigin': yigin}) if px4 else (SimSession, {})   # §45
+        s = cls(sid, tip, {'id': center.get('id'), 'name': center.get('name'), 'lat': float(center['lat']), 'lon': float(center['lon']),
+                           'alt': alt, 'alt_entered': girilen}, world, owner, self, airframe, model, drone, rec, power, layout, camera, targets,
+                site, defend, drive, start=start, match_id=match_id, **ek)
+        if yigin and not px4:   # §45 ArduPilot + yüklenen .parm: varsayilan.parm sonuna (kalıcı kayıttan sonra)
+            s.ek_parm = _yigin_modulu().ardupilot_parm_satirlari(yigin)
         s.alt_not = alt_not
         self.sessions[sid] = s
         s.task = asyncio.get_running_loop().create_task(s.run())

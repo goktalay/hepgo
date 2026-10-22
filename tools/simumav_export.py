@@ -51,7 +51,9 @@ HEPGO_OZGU = {'main', 'db', 'config', 'auth', 'feed', 'users', 'rbac', 'permissi
               'push', 'drone_hub', 'flightlog', 'flight_analysis', 'documents', 'crm', 'hr', 'planner', 'console'}
 # Göreli JS importu kopyalanmaz: YALNIZ HEPGO static/js/api.js (simumav kendi api köprüsünü sağlar: static/simumav/app/simapi.js, /sim/api.js
 # yönlendirmesi). static/simumav/app/core/api.js gerçek bir SIMUMAV dosyasıdır ve kopyalanır.
-JS_DISLANAN = {'static/js/api.js'}
+# §45 uçuş yığını seçici (ucus_yigini.js) YALNIZ HEPGO: flightsim.js sihirbazı onu meta.stacks varsa dinamik yükler; SIMUMAV'a kopyalanmaz
+# (Python tarafı app/flightsim_px4.py zaten zincirde yok: flightsim.py importlib ile yalnız stack verilince yükler).
+JS_DISLANAN = {'static/js/api.js', 'static/js/modules/ucus_yigini.js'}
 
 # Hedefte asla silinmeyen girdiler (yayın deposunun kendi dosyaları)
 KORUNAN = {'.git', '.github', 'scripts', 'CHANGELOG.md', 'README.md', '.gitignore', 'VERSION'}
